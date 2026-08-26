@@ -1,6 +1,7 @@
 """素材管理 — 批量操作服务"""
 
 from __future__ import annotations
+from app.core.time import beijing_now
 
 import os
 import zipfile
@@ -50,5 +51,5 @@ def batch_download(
         data = f.read()
     os.unlink(tmp_path)
 
-    timestamp = __import__("datetime").datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = beijing_now().strftime("%Y%m%d_%H%M%S")
     return data, f"leshine_assets_{timestamp}.zip"

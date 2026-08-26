@@ -1,6 +1,7 @@
 """物流跟踪 / 运单录入 — Schemas (合并自 schemas/tracking.py + schemas/waybill.py)"""
 
 from datetime import date, datetime
+from app.core.time import beijing_today
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -123,7 +124,7 @@ class WaybillCreate(BaseModel):
     @field_validator("ship_date")
     @classmethod
     def ship_date_not_future(cls, v: date) -> date:
-        if v > date.today():
+        if v > beijing_today():
             raise ValueError("发件日期不能是未来日期")
         return v
 

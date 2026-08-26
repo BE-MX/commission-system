@@ -7,6 +7,7 @@
 import calendar
 import logging
 from datetime import date, datetime
+from app.core.time import BEIJING_TIMEZONE, beijing_today
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -50,6 +51,15 @@ logger = logging.getLogger("commission")
 router = APIRouter()
 
 _READ_PERMS = ("salary:read", "salary:write", "salary:admin")
+
+
+def _beijing_epoch_ms(value: str) -> int:
+    """将钉钉月度边界的北京钟面字符串转为 epoch ms。"""
+    return int(
+        datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+        .replace(tzinfo=BEIJING_TIMEZONE)
+        .timestamp() * 1000
+    )
 
 
 def _operator_id(current_user: dict) -> int | None:
@@ -202,7 +212,7 @@ def list_grades(
     # 默认只出当前生效版本：档案页职级下拉按 grade_code 做 key，
     # 一旦 HR 建了未来生效的新版本，全量返回会让同一个 P1 出现两行、
     # key 重复且无从判断选哪个。规则页要看历史，显式传 include_history=1。
-    rows = service.list_grades(db, scheme=scheme, on_date=None if include_history else date.today())
+    rows = service.list_grades(db, scheme=scheme, on_date=None if include_history else beijing_today())
     return ok({
         "schemes": [{"code": k, "label": v} for k, v in GRADE_SCHEMES.items()],
         "items": [
@@ -602,8 +612,8 @@ async def sync_period_attendance(
     # 请假自动拉取（2026-08-07 权限开通后接入）。类型映射拿不到
     # （qyapi_holiday_readonly 未开）就整段降级，主同步照常；降级原因必须写进
     # summary——不说的话 HR 会以为请假在自动拉，实际还是全手工。
-    from_ms = int(datetime.strptime(from_date, "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
-    to_ms = int(datetime.strptime(to_date, "%Y-%m-%d %H:%M:%S").timestamp() * 1000) + 999
+    from_ms = _beijing_epoch_ms(from_date)
+    to_ms = _beijing_epoch_ms(to_date) + 999
     leave_map: dict[str, dict] = {}
     leave_meta: dict = {"degraded": None, "unknown_types": [], "failed_userids": []}
     type_map = await attendance_source.fetch_leave_types()

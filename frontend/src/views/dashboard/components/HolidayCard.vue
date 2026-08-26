@@ -42,6 +42,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { beijingCalendarDate } from '@/utils/datetime'
 
 const props = defineProps({
   data: { type: Object, required: true }, // reactive 化的 useDashboardData 返回
@@ -55,7 +56,7 @@ const shown = computed(() =>
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
 function formatDay(iso) {
-  const d = new Date(`${iso}T00:00:00`)
+  const d = beijingCalendarDate(iso)
   return `${d.getMonth() + 1}月${d.getDate()}日 周${WEEKDAYS[d.getDay()]}`
 }
 

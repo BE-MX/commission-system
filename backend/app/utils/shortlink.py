@@ -4,6 +4,7 @@ import hashlib
 import logging
 import time
 from datetime import datetime, timedelta
+from app.core.time import beijing_now
 
 from sqlalchemy.exc import IntegrityError
 
@@ -37,7 +38,7 @@ def generate_short_link(url: str) -> str:
     db = SessionLocal()
     try:
         # 1. 同 URL 7 天内复用
-        cutoff = datetime.now() - timedelta(days=_REUSE_WINDOW_DAYS)
+        cutoff = beijing_now() - timedelta(days=_REUSE_WINDOW_DAYS)
         existing = (
             db.query(ArkShortLink)
             .filter(ArkShortLink.original_url == url)

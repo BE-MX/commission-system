@@ -20,12 +20,14 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 
+from app.core.time import beijing_now
+
 from app.core.database import Base
 
 
 def bj_now() -> datetime:
     """北京时间（naive）。与生产报工模块口径一致：业务时间一律 UTC+8。"""
-    return datetime.now(timezone(timedelta(hours=8))).replace(tzinfo=None)
+    return beijing_now()
 
 
 class PmProject(Base):

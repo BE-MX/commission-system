@@ -194,6 +194,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getShipmentList, getTrackingStats, refreshShipment, deleteShipment, triggerScanStaging, triggerPoll } from '@/api/tracking'
 import { useAuthStore } from '@/stores/auth'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatBeijingDate, formatBeijingDateTime } from '@/utils/datetime'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -281,8 +282,7 @@ function handleKanbanClick(item) {
 }
 
 function formatUpdatedAt(d = new Date()) {
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return formatBeijingDateTime(d, { seconds: false })
 }
 
 const STATUS_MAP = {
@@ -405,11 +405,10 @@ function copyLink(link) {
 }
 
 function fmtDateShort(dateStr) {
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return '-'
-  const m = d.getMonth() + 1
-  const day = d.getDate()
-  return `${m}/${day}`
+  const formatted = formatBeijingDate(dateStr)
+  if (formatted === '-') return '-'
+  const [, month, day] = formatted.split('-')
+  return `${Number(month)}/${Number(day)}`
 }
 
 onMounted(() => {

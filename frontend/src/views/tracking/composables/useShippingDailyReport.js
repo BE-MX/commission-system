@@ -11,6 +11,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getDailyReport, generateDailyReport, getTrackingStats, getShipmentList } from '@/api/tracking'
+import { beijingCalendarDate, currentBeijingDate } from '@/utils/datetime'
 
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
@@ -21,7 +22,7 @@ function formatDate(d) {
 
 
 export function useShippingDailyReport() {
-  const now = new Date()
+  const now = beijingCalendarDate()
   const calendarYear = ref(now.getFullYear())
   const calendarMonth = ref(now.getMonth())
   const selectedDate = ref(formatDate(now))
@@ -43,7 +44,7 @@ export function useShippingDailyReport() {
     const firstDay = new Date(year, month, 1).getDay()
     const daysInMonth = new Date(year, month + 1, 0).getDate()
     const daysInPrevMonth = new Date(year, month, 0).getDate()
-    const todayStr = formatDate(new Date())
+    const todayStr = currentBeijingDate()
     const days = []
 
     for (let i = firstDay - 1; i >= 0; i--) {
@@ -86,7 +87,7 @@ export function useShippingDailyReport() {
   }
 
   function goToday() {
-    const t = new Date()
+    const t = beijingCalendarDate()
     calendarYear.value = t.getFullYear()
     calendarMonth.value = t.getMonth()
     selectedDate.value = formatDate(t)

@@ -99,9 +99,10 @@
 import { ref, reactive, onMounted } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { getDesignStats } from '@/api/design'
+import { beijingCalendarDate } from '@/utils/datetime'
 
 function getDefaultDateRange() {
-  const now = new Date()
+  const now = beijingCalendarDate()
   const start = new Date(now.getFullYear(), now.getMonth(), 1)
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 0)
   return [formatDate(start), formatDate(end)]

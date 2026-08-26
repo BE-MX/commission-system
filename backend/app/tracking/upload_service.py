@@ -12,6 +12,7 @@
 import asyncio
 import logging
 from datetime import datetime
+from app.core.time import beijing_now
 from pathlib import Path as FilePath
 
 from sqlalchemy import func
@@ -166,7 +167,7 @@ async def create_waybill_with_tracking(
             ship_date=payload.ship_date,
             entry_source=payload.entry_source,
             created_by=current_user.get("username", "unknown"),
-            created_at=datetime.now(),
+            created_at=beijing_now(),
         )
         db.add(waybill)
         db.commit()

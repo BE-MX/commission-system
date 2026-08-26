@@ -19,6 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 class ExpoCustomer(Base):
@@ -35,7 +36,7 @@ class ExpoCustomer(Base):
     style_pref = Column(String(32), nullable=True, comment="知性优雅/减龄轻盈/自然日常")
     consent_at = Column(DateTime, nullable=True, comment="拍照存储同意时间，非空才允许存照片")
     expo_code = Column(String(64), nullable=False, default="", comment="届次标记，如 2026-08-hangzhou")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     sessions = relationship("ExpoSession", back_populates="customer", cascade="all, delete-orphan")
     store = relationship("ExpoStore", lazy="noload")
@@ -68,8 +69,8 @@ class ExpoWig(Base):
     priority = Column(Integer, nullable=False, default=0, comment="人工权重，同评级内小幅折算加分/平手决胜")
     must_recommend = Column(SmallInteger, nullable=False, default=0, comment="1=主推(置顶推荐列表最前,仍按性别过滤);0=否")
     is_active = Column(Integer, nullable=False, default=1, comment="1=启用,0=停用")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (Index("idx_ark_expo_wigs_active", "is_active"), {"comment": "展会AI试戴-发型库（fit_tags 驱动匹配引擎）"})
 
@@ -87,8 +88,8 @@ class ExpoHairColor(Base):
     color_description = Column(Text, nullable=True, comment="喂给合成 prompt 的颜色描述")
     priority = Column(Integer, nullable=False, default=0, comment="人工权重，kiosk 排序用")
     is_active = Column(Integer, nullable=False, default=1, comment="1=启用,0=停用")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (Index("idx_ark_expo_hair_colors_active", "is_active"), {"comment": "展会AI试戴-发色库（色板图+颜色描述喂给合成管线）"})
 
@@ -109,8 +110,8 @@ class ExpoWigColor(Base):
     angle_photos = Column(JSON, nullable=True, comment="该发型该发色的三角度参考图路径列表")
     cover_path = Column(String(512), nullable=True, comment="缩略图相对路径，默认取首张")
     is_active = Column(SmallInteger, nullable=False, default=1, comment="1=启用,0=停用")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (
         Index("idx_ark_expo_wig_colors_wig", "wig_id"),
@@ -133,8 +134,8 @@ class ExpoScript(Base):
     evidence_points = Column(JSON, nullable=True, comment="可引用的硬证据 key 列表")
     source_version = Column(String(16), nullable=False, default="v4", comment="话术来源版本，如 v4=直播话术v4")
     is_active = Column(Integer, nullable=False, default=1, comment="1=启用,0=停用")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (Index("idx_ark_expo_scripts_type", "script_type", "is_active"), {"comment": "展会AI试戴-话术卡库"})
 
@@ -155,8 +156,8 @@ class ExpoSession(Base):
     status = Column(String(16), nullable=False, default="pending", comment="pending/analyzed/generating/done/failed")
     error_message = Column(Text, nullable=True, comment="失败错误信息")
     operator_user_id = Column(Integer, nullable=True, comment="展位登录的销售 ark_users.id")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     customer = relationship("ExpoCustomer", back_populates="sessions")
     store = relationship("ExpoStore", lazy="noload")
@@ -188,8 +189,8 @@ class ExpoResult(Base):
     status = Column(String(16), nullable=False, default="pending", comment="pending/generating/done/failed")
     reaction = Column(String(16), nullable=True, comment="loved/soso")
     short_code = Column(String(16), nullable=True, comment="分享短码")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     session = relationship("ExpoSession", back_populates="results")
     wig = relationship("ExpoWig")
@@ -214,8 +215,8 @@ class ExpoStore(Base):
     used_quota = Column(Integer, nullable=False, default=0, comment="已用配额")
     contact_name = Column(String(64), nullable=True, comment="联系人")
     contact_phone = Column(String(32), nullable=True, comment="联系电话")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     users = relationship("ExpoStoreUser", back_populates="store", lazy="noload")
     quota_records = relationship("ExpoQuotaRecord", back_populates="store", lazy="noload")
@@ -232,7 +233,7 @@ class ExpoStoreUser(Base):
     store_id = Column(BigInteger, ForeignKey("ark_expo_stores.id", ondelete="CASCADE"), nullable=False, comment="关联门店/展位ID")
     user_id = Column(Integer, ForeignKey("ark_users.id", ondelete="CASCADE"), nullable=False, comment="关联系统用户ID")
     is_primary = Column(Boolean, nullable=False, default=False, comment="是否主负责人")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     store = relationship("ExpoStore", back_populates="users", lazy="noload")
     user = relationship("ArkUser", lazy="noload")
@@ -258,7 +259,7 @@ class ExpoQuotaRecord(Base):
     related_type = Column(String(32), nullable=True, comment="关联业务类型")
     operator_user_id = Column(Integer, ForeignKey("ark_users.id", ondelete="CASCADE"), nullable=False, comment="操作人 ark_users.id")
     remark = Column(String(255), nullable=True, comment="备注")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     store = relationship("ExpoStore", back_populates="quota_records", lazy="noload")
     operator = relationship("ArkUser", lazy="noload")
@@ -278,7 +279,7 @@ class ExpoFeedback(Base):
     intent_level = Column(String(4), nullable=False, comment="A/B/C/D")
     notes = Column(Text, nullable=True, comment="销售备注")
     next_action = Column(String(64), nullable=True, comment="如 约到店复试/加微信跟进")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         Index("idx_ark_expo_feedback_customer", "customer_id"),

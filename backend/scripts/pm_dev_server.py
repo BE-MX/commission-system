@@ -10,7 +10,7 @@
 
 import argparse
 import sys
-from datetime import date, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -25,6 +25,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, get_db
+from app.core.time import beijing_today
 from app.pm import diff_service
 from app.pm.auth import issue_pm_token
 from app.pm.models import (
@@ -124,10 +125,11 @@ def seed_demo() -> None:
             _write(faq, 1, b"faq v1", "faq-v1.txt", "lijc.rf56", None, 1, "failed", None)
 
         # workshop 任务 + 演示任务铺开四列
+        today = beijing_today()
         for title, desc, link_no in TASKS_SEED:
             t = PmTask(project_id=project.id, title=title, description=desc,
                        status="todo", created_by="seed",
-                       due_date=date.today() + timedelta(days=7))
+                       due_date=today + timedelta(days=7))
             db.add(t)
             db.flush()
             if link_no in by_no:
@@ -142,7 +144,7 @@ def seed_demo() -> None:
             t = PmTask(
                 project_id=project.id, title=title, status=status, assignee=assignee,
                 blocked_reason="等服务商审核企业资质" if status == "blocked" else None,
-                due_date=date.today() + timedelta(days=due_in), created_by="liang.xz26",
+                due_date=today + timedelta(days=due_in), created_by="liang.xz26",
             )
             db.add(t)
             db.flush()

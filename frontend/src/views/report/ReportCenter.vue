@@ -194,6 +194,7 @@ import {
 } from '@/api/reportCenter'
 import { useStimulsoft } from '@/composables/useStimulsoft'
 import StimulsoftViewer from '@/components/StimulsoftViewer.vue'
+import { formatBeijingDateTime } from '@/utils/datetime'
 
 const authStore = useAuthStore()
 const { createDesigner } = useStimulsoft()
@@ -431,8 +432,7 @@ function refreshPreview() {
 
 // ── 工具函数 ──────────────────────────────────
 function formatTime(dt) {
-  if (!dt) return ''
-  return new Date(dt).toLocaleString('zh-CN')
+  return formatBeijingDateTime(dt, { fallback: '' })
 }
 
 async function loadTemplates() {

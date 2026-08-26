@@ -401,6 +401,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, CircleClose, CircleCheck, Filter, Loading } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatBeijingDateTime, formatBeijingShortDateTime } from '@/utils/datetime'
 import StimulsoftViewer from '@/components/StimulsoftViewer.vue'
 import { getProgress, initProgress, getPrintCardData } from '@/api/production'
 import {
@@ -434,9 +435,7 @@ const statusLabel = (s) => ({ 0: '已提交', 1: '已终止', 2: '已完成' })[
 const headerStyle = () => ({ fontWeight: 600 })
 
 function formatDate(iso) {
-  if (!iso) return '-'
-  const d = new Date(iso)
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+  return formatBeijingDateTime(iso, { seconds: false })
 }
 
 // ── 订单维度 ────────────────────────────
@@ -723,9 +722,7 @@ function progressColor(rate) {
 }
 
 function formatShortDate(dt) {
-  if (!dt) return ''
-  const d = new Date(dt)
-  return `${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+  return formatBeijingShortDateTime(dt)
 }
 
 async function toggleItemProgress(item) {

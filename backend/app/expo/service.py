@@ -3,6 +3,7 @@
 import logging
 import shutil
 from datetime import datetime
+from app.core.time import beijing_now
 from pathlib import Path
 
 from sqlalchemy.exc import IntegrityError
@@ -51,7 +52,7 @@ def register_customer(db: Session, body: CustomerRegister, operator_user_id: int
         wechat_id=(body.wechat_id or "").strip() or None,
         primary_need=body.primary_need,
         style_pref=body.style_pref,
-        consent_at=datetime.utcnow() if body.consent else None,
+        consent_at=beijing_now() if body.consent else None,
         expo_code=body.expo_code,
         store_id=store.id if store else None,
     )
@@ -75,7 +76,7 @@ def update_customer(db: Session, customer_id: int, body: CustomerRegister) -> Ex
     customer.primary_need = body.primary_need
     customer.style_pref = body.style_pref
     if body.consent and not customer.consent_at:
-        customer.consent_at = datetime.utcnow()
+        customer.consent_at = beijing_now()
     # 届次只在显式传值时覆写：schema 默认空串，漏传不擦掉已有 expo_code
     if body.expo_code and body.expo_code.strip():
         customer.expo_code = body.expo_code.strip()
@@ -234,7 +235,7 @@ def _heal_stale_session(db: Session, session: ExpoSession) -> None:
     ref = session.updated_at or session.created_at
     if not ref or session.status not in ("pending", "generating"):
         return
-    age = (datetime.utcnow() - ref).total_seconds()
+    age = (beijing_now() - ref).total_seconds()
 
     if session.status == "pending" and age > STALE_PENDING_SECS:
         session.status = "failed"
@@ -425,8 +426,8 @@ async def notify_ai_issue_admins(db: Session, session: ExpoSession) -> dict:
         try:
             claimed_at = datetime.fromisoformat(str(notified_marker).removeprefix("pending:"))
         except ValueError:
-            claimed_at = datetime.utcnow()
-        if (datetime.utcnow() - claimed_at).total_seconds() < 120:
+            claimed_at = beijing_now()
+        if (beijing_now() - claimed_at).total_seconds() < 120:
             return {
                 "sent": False,
                 "already_notified": False,
@@ -449,7 +450,7 @@ async def notify_ai_issue_admins(db: Session, session: ExpoSession) -> dict:
 
     # 在 await 外先用条件 UPDATE 抢占发送权，避免双击/多 worker 同时通过检查各发一条。
     original_error = session.error_message
-    claim_marker = f"pending:{datetime.utcnow().isoformat(timespec='seconds')}"
+    claim_marker = f"pending:{beijing_now().isoformat(timespec='seconds')}"
     claim_error = ai_pipeline.format_ai_issue(
         stage=issue["stage"],
         state=issue["state"],
@@ -501,7 +502,7 @@ async def notify_ai_issue_admins(db: Session, session: ExpoSession) -> dict:
         db.commit()
         raise RuntimeError("钉钉管理员通知发送失败")
 
-    notified_at = datetime.utcnow().isoformat(timespec="seconds")
+    notified_at = beijing_now().isoformat(timespec="seconds")
     final_error = ai_pipeline.format_ai_issue(
         stage=issue["stage"],
         state=issue["state"],

@@ -10,6 +10,7 @@ from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 USER_ID = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
@@ -38,8 +39,8 @@ class CustomerMediaBatch(Base):
     reviewed_at = Column(DateTime, nullable=True, comment="最近审核时间")
     published_at = Column(DateTime, nullable=True, comment="发布时间")
     unpublished_at = Column(DateTime, nullable=True, comment="下架时间")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     assets = relationship("CustomerMediaAsset", lazy="selectin", order_by="CustomerMediaAsset.sort_order")
     reviews = relationship("CustomerMediaReview", lazy="selectin", order_by="CustomerMediaReview.created_at")
@@ -70,7 +71,7 @@ class CustomerMediaAsset(Base):
     duration_seconds = Column(Integer, nullable=True, comment="视频时长秒数")
     sort_order = Column(Integer, nullable=False, default=0, comment="批次内排序")
     uploaded_by = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False, comment="上传人方舟用户ID")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     deleted_at = Column(DateTime, nullable=True, comment="软删除时间")
 
     __table_args__ = (
@@ -90,7 +91,7 @@ class CustomerMediaReview(Base):
     action = Column(String(24), nullable=False, comment="审计动作")
     remark = Column(Text, nullable=True, comment="审核或操作说明")
     actor_user_id = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False, comment="操作人方舟用户ID")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         Index("idx_customer_media_review_batch", "batch_id", "created_at"),
@@ -112,8 +113,8 @@ class CustomerPortalAccount(Base):
     last_login_ip = Column(String(45), nullable=True, comment="最近登录IP")
     created_by = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False, comment="创建人方舟用户ID")
     updated_by = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False, comment="更新人方舟用户ID")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = ({"comment": "客户素材门户单客户单账号"},)
 
@@ -129,7 +130,7 @@ class CustomerPortalSession(Base):
     user_agent = Column(String(500), nullable=True, comment="浏览器标识")
     expires_at = Column(DateTime, nullable=False, comment="过期时间")
     revoked_at = Column(DateTime, nullable=True, comment="撤销时间")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     account = relationship("CustomerPortalAccount", lazy="joined")
 
@@ -146,7 +147,7 @@ class CustomerMediaDownload(Base):
     asset_id = Column(BigInteger, ForeignKey("ark_customer_media_assets.id"), nullable=False, comment="下载素材ID")
     account_id = Column(BigInteger, ForeignKey("ark_customer_portal_accounts.id"), nullable=False, comment="门户账号ID")
     ip_address = Column(String(45), nullable=True, comment="下载IP")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="下载时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="下载时间")
 
     __table_args__ = (
         Index("idx_customer_media_download_account", "account_id", "created_at"),

@@ -3,6 +3,7 @@
 import logging
 import uuid
 from datetime import date, datetime
+from app.core.time import beijing_now
 from pathlib import Path
 from typing import Optional
 
@@ -420,7 +421,7 @@ def update_expect_date(
     req.expect_start_period = data.get("expect_start_period", "am")
     req.expect_end_date = _date.fromisoformat(data["expect_end_date"])
     req.expect_end_period = data.get("expect_end_period", "pm")
-    req.updated_at = datetime.now()
+    req.updated_at = beijing_now()
     db.commit()
 
     return {"code": 200, "message": "期望日期已更新", "data": None}

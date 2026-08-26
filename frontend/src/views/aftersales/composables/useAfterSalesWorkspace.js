@@ -30,14 +30,13 @@ import {
   withdrawAfterSalesCase,
 } from '@/api/aftersales'
 import { buildEnglishReply, canEditCase, validateActionDetails, validateEnglishReply } from '../aftersalesRules'
+import { currentBeijingDate } from '@/utils/datetime'
 
 const VALUE_CODES = new Set(['free_rework', 'replacement', 'resend', 'cash_refund', 'discount', 'order_credit', 'freight_subsidy'])
 const AMOUNT_CODES = new Set(['cash_refund', 'discount', 'order_credit', 'freight_subsidy'])
 
 function today() {
-  const now = new Date()
-  const pad = value => String(value).padStart(2, '0')
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+  return currentBeijingDate()
 }
 function blankForm() {
   return {

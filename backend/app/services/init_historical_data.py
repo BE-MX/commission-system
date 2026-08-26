@@ -3,6 +3,8 @@
 import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from app.core.time import beijing_today
+from app.core.time import beijing_now
 from decimal import Decimal
 from typing import Optional
 
@@ -196,7 +198,7 @@ def init_historical_payments(
             period_end=cutoff_date,
             status="confirmed",
             created_by="system_init",
-            confirmed_at=datetime.now(),
+            confirmed_at=beijing_now(),
             confirmed_by="system_init",
         )
         db.add(hist_batch)
@@ -245,7 +247,7 @@ def run_full_init(
         InitResult
     """
     if cutoff_date is None:
-        cutoff_date = date.today()
+        cutoff_date = beijing_today()
 
     result = InitResult()
     prefix = "[DRY-RUN] " if dry_run else ""

@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import and_, or_
@@ -19,6 +19,7 @@ from app.sales_automation.models import (
     SearchResult,
 )
 from app.sales_automation.identity import normalize_domain, normalize_source_url
+from app.core.time import beijing_now, to_beijing_naive, utc_now_naive
 
 
 class SalesAutomationError(ValueError):
@@ -43,18 +44,17 @@ def _data(value: Any) -> dict:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    """业务字段的北京时间；租约比较必须显式调 utc_now_naive。"""
+    return beijing_now()
 
 
 def _datetime(value: Any, field: str) -> datetime:
     if isinstance(value, datetime):
-        return value
+        return to_beijing_naive(value)
     if isinstance(value, str):
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            if parsed.tzinfo is not None:
-                parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
-            return parsed
+            return to_beijing_naive(parsed)
         except ValueError as exc:
             raise SalesAutomationError(f"{field} 格式无效") from exc
     raise SalesAutomationError(f"{field} 必填")
@@ -179,7 +179,7 @@ def list_search_jobs(db: Session, page: int, page_size: int, status: str | None 
 
 
 def list_claimable_search_jobs(db: Session, page: int, page_size: int) -> tuple[list[SearchJob], int]:
-    now = _now()
+    now = utc_now_naive()
     query = db.query(SearchJob).filter(
         SearchJob.deleted_at.is_(None),
         or_(
@@ -201,19 +201,19 @@ def _claim_owner(actor_id: int, agent_id: str) -> str:
 
 def claim_search_job(db: Session, job_id: int, actor_id: int, agent_id: str) -> tuple[SearchJob, str]:
     job = get_search_job(db, job_id, for_update=True)
-    now = _now()
-    reclaimable = job.status == "running" and job.lease_expires_at is not None and job.lease_expires_at <= now
+    lease_now = utc_now_naive()
+    reclaimable = job.status == "running" and job.lease_expires_at is not None and job.lease_expires_at <= lease_now
     if job.status != "pending" and not reclaimable:
         raise ConflictError("任务不是等待领取状态，或仍由其他Agent执行")
     lease_token = secrets.token_urlsafe(32)
     job.status = "running"
-    job.started_at = job.started_at or now
+    job.started_at = job.started_at or _now()
     job.finished_at = None
     job.error_code = None
     job.error_message = None
     job.claimed_by = _claim_owner(actor_id, agent_id)
     job.lease_token_hash = _hash(lease_token)
-    job.lease_expires_at = now + timedelta(minutes=LEASE_MINUTES)
+    job.lease_expires_at = lease_now + timedelta(minutes=LEASE_MINUTES)
     job.attempt_count += 1
     job.updated_by = actor_id
     db.commit()
@@ -233,7 +233,7 @@ def _leased_job(
         raise ConflictError("任务租约不属于当前Agent")
     if not lease_token or not secrets.compare_digest(job.lease_token_hash or "", _hash(lease_token)):
         raise ConflictError("任务租约无效")
-    if job.lease_expires_at is None or job.lease_expires_at <= _now():
+    if job.lease_expires_at is None or job.lease_expires_at <= utc_now_naive():
         raise ConflictError("任务租约已过期，请重新领取")
     return job
 
@@ -242,7 +242,7 @@ def heartbeat_search_job(db: Session, job_id: int, actor_id: int, agent_id: str,
     job = _leased_job(db, job_id, actor_id, agent_id, lease_token)
     if job.status != "running":
         raise ConflictError("只有执行中的任务可以续租")
-    job.lease_expires_at = _now() + timedelta(minutes=LEASE_MINUTES)
+    job.lease_expires_at = utc_now_naive() + timedelta(minutes=LEASE_MINUTES)
     db.commit()
     db.refresh(job)
     return job

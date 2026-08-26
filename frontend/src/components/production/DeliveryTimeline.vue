@@ -50,6 +50,7 @@
 
 <script setup>
 import { ref } from 'vue'
+import { beijingCalendarDaysUntil } from '@/utils/datetime'
 
 const props = defineProps({
   groups: { type: Array, default: () => [] },
@@ -60,11 +61,7 @@ defineEmits(['node-click'])
 const trackRef = ref(null)
 
 function daysLeft(dateStr) {
-  if (!dateStr) return null
-  const target = new Date(dateStr)
-  const now    = new Date()
-  now.setHours(0, 0, 0, 0)
-  return Math.round((target - now) / (1000 * 60 * 60 * 24))
+  return beijingCalendarDaysUntil(dateStr)
 }
 
 function nodeColor(group) {

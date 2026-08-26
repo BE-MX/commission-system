@@ -13,6 +13,7 @@ import unicodedata
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
+from app.core.time import beijing_now
 from difflib import SequenceMatcher
 from pathlib import Path, PurePosixPath
 from typing import Optional
@@ -218,7 +219,7 @@ def create_direct_upload_session(
         "relative_paths": normalized_paths,
         "file_sizes": file_sizes,
         "payload": payload,
-        "created_at": datetime.now().isoformat(),
+        "created_at": beijing_now().isoformat(),
     }
     (batch_root / DIRECT_UPLOAD_SESSION_FILE).write_text(
         json.dumps(manifest, ensure_ascii=False),
@@ -1116,7 +1117,7 @@ def start_folder_upload_async(
     _folder_upload_jobs[job_id] = {
         "id": job_id,
         "status": "pending",
-        "created_at": datetime.now().isoformat(),
+        "created_at": beijing_now().isoformat(),
         "folder_path": folder_path,
         "uploader_id": uploader_id,
     }
@@ -1141,7 +1142,7 @@ def start_folder_upload_async(
             _folder_upload_jobs[job_id].update({
                 "status": "completed",
                 "report": report,
-                "finished_at": datetime.now().isoformat(),
+                "finished_at": beijing_now().isoformat(),
             })
         except Exception as e:
             import traceback
@@ -1151,7 +1152,7 @@ def start_folder_upload_async(
             _folder_upload_jobs[job_id].update({
                 "status": "failed",
                 "error": str(e),
-                "finished_at": datetime.now().isoformat(),
+                "finished_at": beijing_now().isoformat(),
             })
         finally:
             db.close()

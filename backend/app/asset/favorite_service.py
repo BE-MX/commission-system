@@ -3,6 +3,7 @@
 from sqlalchemy.orm import Session
 
 from app.asset.models import FavoriteFolder, FavoriteItem
+from app.core.time import beijing_now
 
 
 # ── 收藏夹 ──────────────────────────────────────────────
@@ -195,7 +196,7 @@ def share_folder(
         return None
 
     folder.share_token = secrets.token_urlsafe(16)
-    folder.share_expires_at = datetime.utcnow() + timedelta(hours=expires_hours)
+    folder.share_expires_at = beijing_now() + timedelta(hours=expires_hours)
     db.commit()
     db.refresh(folder)
     return folder
@@ -207,7 +208,7 @@ def get_shared_folder(db: Session, token: str) -> FavoriteFolder | None:
         db.query(FavoriteFolder)
         .filter(
             FavoriteFolder.share_token == token,
-            FavoriteFolder.share_expires_at > datetime.utcnow(),
+            FavoriteFolder.share_expires_at > beijing_now(),
         )
         .first()
     )

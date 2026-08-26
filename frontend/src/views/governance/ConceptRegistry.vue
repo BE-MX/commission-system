@@ -160,6 +160,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Download, UploadFilled, Search } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import { formatBeijingDateTime } from '@/utils/datetime'
 import {
   listConcepts, createConcept, transitionStatus,
   getGovernanceStats, exportConcepts, seedGovernanceData,
@@ -330,8 +331,7 @@ async function handleSeed() {
 }
 
 function formatDate(dt) {
-  if (!dt) return '-'
-  return new Date(dt).toLocaleString('zh-CN', { hour12: false })
+  return formatBeijingDateTime(dt)
 }
 
 // ── 初始化 ───────────────────────────────────────────────

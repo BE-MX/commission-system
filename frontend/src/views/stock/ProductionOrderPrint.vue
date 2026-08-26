@@ -156,6 +156,7 @@ import { ref, onMounted } from 'vue'
 import { Search, Refresh, Printer } from '@element-plus/icons-vue'
 import { getProductionPrintOrders, getOrderPrintCategories, createProductionPrintJob } from '@/api/stock'
 import StimulsoftViewer from '@/components/StimulsoftViewer.vue'
+import { formatBeijingDateTime, parseApiDateTime } from '@/utils/datetime'
 
 const keyword = ref('')
 const statusFilter = ref(null)
@@ -264,10 +265,7 @@ async function recordPrintLog(row, scope, cat = null) {
 }
 
 function formatTime(iso) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  const pad = n => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return formatBeijingDateTime(iso, { seconds: false, fallback: '' })
 }
 
 function formatLabel(label) {
@@ -276,8 +274,9 @@ function formatLabel(label) {
 }
 
 function isStale(iso) {
-  if (!iso) return false
-  const diff = Date.now() - new Date(iso).getTime()
+  const parsed = parseApiDateTime(iso)
+  if (!parsed) return false
+  const diff = Date.now() - parsed.getTime()
   return diff > 7 * 24 * 60 * 60 * 1000
 }
 

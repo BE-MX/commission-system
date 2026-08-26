@@ -12,6 +12,7 @@ import {
 import { useListPage } from '@/composables/useListPage'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import { downloadBlob } from '@/utils/download'
+import { currentBeijingDateTime } from '@/utils/datetime'
 
 export function useDomesticOrders() {
   const route = useRoute()
@@ -80,7 +81,7 @@ export function useDomesticOrders() {
   function openShip(item) {
     Object.assign(shipDialog, {
       visible: true, item,
-      ship_time: new Date().toISOString().slice(0, 19).replace('T', ' '),
+      ship_time: currentBeijingDateTime().replace('T', ' '),
       ship_weight: null,
     })
   }

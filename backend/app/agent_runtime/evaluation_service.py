@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from app.core.time import beijing_today
+from app.core.time import beijing_now
 import logging
 
 from sqlalchemy import or_
@@ -197,7 +199,7 @@ def _preflight_case(
     }
     try:
         scope = order_service.resolve_scope(db, identity)
-        end = date.today()
+        end = beijing_today()
         start = end - timedelta(days=1095)
         timeline = order_service.get_customer_order_timeline(
             db, scope, customer.customer_external_id, start, end, limit=50,
@@ -424,7 +426,7 @@ def readiness_report(db: Session) -> dict:
     all_passed = copilot_pass and repurchase_pass and shadow_pass
 
     return {
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": beijing_now().isoformat(),
         "business_validation_complete": all_passed,
         "copilot": {
             "completed_standard_runs": len(copilot_runs),

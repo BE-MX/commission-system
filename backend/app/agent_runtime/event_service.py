@@ -3,6 +3,7 @@
 import hashlib
 import json
 from datetime import datetime
+from app.core.time import beijing_now, to_beijing_naive
 from typing import Any
 
 from sqlalchemy import func
@@ -101,7 +102,7 @@ def append_event(
         raw_payload_cipher=raw_payload_cipher,
         source_event_ids=source_event_ids or [],
         payload_sha256=digest,
-        created_at=created_at or datetime.utcnow(),
+        created_at=to_beijing_naive(created_at) if created_at else beijing_now(),
     )
     db.add(event)
     session = db.query(AgentSession).filter(AgentSession.id == run.session_id).one()

@@ -6,6 +6,7 @@ from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON
 from sqlalchemy.dialects import mysql
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 # ark_users.id 实际是 INT UNSIGNED，FK 类型必须完全一致（cerebrum 2026-06-10）
 _UINT = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
@@ -26,5 +27,5 @@ class DashboardPreference(Base):
         nullable=False, unique=True, comment="所属用户，一人一行",
     )
     prefs = Column(JSON, nullable=False, comment="布局配置 {version, metrics:{hidden,order}, actions:{hidden,order}}")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")

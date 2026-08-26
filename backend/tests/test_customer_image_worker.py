@@ -161,7 +161,8 @@ def test_claim_uses_skip_locked_and_transitions_oldest_queue_row(db):
     assert first.claimed_by == "customer-worker"
     assert first.claim_count == 1
     assert first.started_at is not None
-    assert first.lease_expires_at > first.started_at
+    # started_at 是可展示的北京业务时间，lease_expires_at 是 UTC 技术租约。
+    assert first.lease_expires_at > _utcnow()
 
 
 def test_snapshot_uses_frozen_logo_references_prompt_and_runtime_parameters(db, monkeypatch):

@@ -24,19 +24,14 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useDashboardTheme } from '@/views/production/composables/useDashboardTheme'
+import { formatBeijingDateTime } from '@/utils/datetime'
 
 const { isDark, toggleTheme } = useDashboardTheme()
 
 const clockStr = ref('')
 
 function formatClock() {
-  const now = new Date()
-  const mm = String(now.getMonth() + 1).padStart(2, '0')
-  const dd = String(now.getDate()).padStart(2, '0')
-  const hh = String(now.getHours()).padStart(2, '0')
-  const mi = String(now.getMinutes()).padStart(2, '0')
-  const ss = String(now.getSeconds()).padStart(2, '0')
-  clockStr.value = `${mm}-${dd} ${hh}:${mi}:${ss}`
+  clockStr.value = formatBeijingDateTime(new Date()).slice(5)
 }
 
 let timer = null

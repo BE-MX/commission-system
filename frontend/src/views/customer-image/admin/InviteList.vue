@@ -58,6 +58,7 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import InviteCreateDialog from './InviteCreateDialog.vue'
+import { formatBeijingDateTime, parseApiDateTime } from '@/utils/datetime'
 
 const props = defineProps({
   state: { type: Object, required: true },
@@ -66,10 +67,10 @@ const props = defineProps({
 const { invites, invitePage, invitePageSize, inviteTotal } = props.state
 const loading = ref(false)
 
-const formatDate = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-'
+const formatDate = value => formatBeijingDateTime(value, { naiveTimeZone: 'UTC' })
 function statusOf(invite) {
   if (invite.revoked_at) return { label: '已停用', type: 'danger' }
-  if (new Date(invite.expires_at) <= new Date()) return { label: '已失效', type: 'info' }
+  if (parseApiDateTime(invite.expires_at, { naiveTimeZone: 'UTC' })?.getTime() <= Date.now()) return { label: '已失效', type: 'info' }
   if (invite.quota_used >= invite.quota_total) return { label: '额度用尽', type: 'warning' }
   return { label: '有效', type: 'success' }
 }

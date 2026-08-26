@@ -5,6 +5,7 @@ import os
 import shutil
 import uuid
 from datetime import datetime, timedelta
+from app.core.time import beijing_now
 from pathlib import Path
 from typing import Optional
 
@@ -38,7 +39,7 @@ SIGNED_URL_EXPIRY = 7200
 
 def _build_storage_path(file_type: str, file_format: str) -> str:
     """生成存储路径: {root}/{year}/{month}/{uuid}.{ext}"""
-    now = datetime.now()
+    now = beijing_now()
     ext = file_format.lower().lstrip(".")
     uid = uuid.uuid4().hex[:16]
     rel_path = f"{now.year}/{now.month:02d}/{uid}.{ext}"

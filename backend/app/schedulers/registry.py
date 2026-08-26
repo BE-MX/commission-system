@@ -20,6 +20,8 @@ from apscheduler.events import (
 from apscheduler.executors.base import MaxInstancesReachedError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from app.core.time import beijing_now_aware, utc_now
+
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 
@@ -382,7 +384,7 @@ def _record_job_event(event) -> None:
         return
     _queue_job_event_persistence(event)
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = utc_now().isoformat()
     with _job_runtime_lock:
         state = _job_runtime.setdefault(job_id, {"running_instances": 0})
         if event.code == EVENT_JOB_SUBMITTED:
@@ -462,7 +464,7 @@ def submit_job_now(scheduler: AsyncIOScheduler, job_id: str, triggered_by: str =
             job = scheduler.get_job(job_id)
             if job is None:
                 raise ValueError("任务不存在")
-            run_time = datetime.now(scheduler.timezone)
+            run_time = beijing_now_aware()
             jobstore_alias = getattr(job, "_jobstore_alias", "default")
             executor = scheduler._lookup_executor(job.executor)
             try:

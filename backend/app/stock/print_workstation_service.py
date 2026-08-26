@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timedelta
+from app.core.time import beijing_now
 from typing import Any, Optional
 
 from sqlalchemy import text
@@ -240,7 +241,7 @@ def create_print_job(
         item_ids_json=item_ids,
         printed_by=user_id,
         printed_by_name=user_name,
-        printed_at=datetime.utcnow(),
+        printed_at=beijing_now(),
     )
     db.add(log)
     db.commit()

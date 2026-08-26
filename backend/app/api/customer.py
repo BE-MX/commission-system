@@ -2,6 +2,7 @@
 
 import tempfile
 from datetime import datetime
+from app.core.time import beijing_now
 from io import BytesIO
 
 from fastapi import APIRouter, Depends, UploadFile, File, Query, Path
@@ -169,7 +170,7 @@ def create_customer_snapshot(
         CustomerCommissionSnapshot.is_current == True,
     ).update({"is_current": False}, synchronize_session="fetch")
 
-    now = datetime.now()
+    now = beijing_now()
     snapshot = CustomerCommissionSnapshot(
         customer_id=req.customer_id,
         salesperson_id=req.salesperson_id,

@@ -2,6 +2,7 @@
 
 import tempfile
 from datetime import date
+from app.core.time import beijing_today
 
 from fastapi import APIRouter, Depends, UploadFile, File, Query
 from openpyxl import load_workbook
@@ -35,7 +36,7 @@ def _set_employee_attribute(
     if current and current.attribute_type == attribute_type:
         return "skipped"
 
-    eff_date = effective_date or date.today()
+    eff_date = effective_date or beijing_today()
 
     if current:
         current.is_current = False

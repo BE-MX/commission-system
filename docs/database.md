@@ -59,10 +59,11 @@
 - `ark_safety_stock` — 安全库存配置（product_id UNIQUE, safety_stock, lead_time_days, safety_factor, source: 0手动/1公式/2TFT）
 - `ark_stock_daily_reports` — 安全库存日报（report_date UNIQUE, shortage_skus/warning_skus JSON, dingtalk_sent）
 - **生产订单（025/026 迁移）**：
-  - `ark_production_orders` — 生产订单主表（order_no UNIQUE, status 0已提交/1已终止/2已完成, deleted_flag 软删, created_by, remark）
+  - `ark_production_orders` — 生产订单主表（order_no UNIQUE, status 0已提交/1已终止/2已完成, deleted_flag 软删, created_by, remark；新写入的 created_at/updated_at 均为北京时间；123 只平移写路径确定为 UTC 的历史 created_at，历史 updated_at 因 ORM UTC 与 SQL NOW() 混写不盲改）
   - `ark_production_order_items` — 生产订单明细（order_id, product_id, product_name, model, spec_info, order_qty, received_qty, status, is_urgent SmallInteger, expected_delivery_date Date, remark；无独立软删字段，靠 FK CASCADE 跟随订单删除）
   - `ark_production_cart` — 生产购物车（user_id + product_id UNIQUE, product_name, model, spec_info, order_qty, remark）
   - `ark_production_audit_log` — 生产订单审计日志（order_id, action, old_value, new_value, operator_id）
+  - `ark_platform_time_backup_123` — 123 时间治理迁移对 58 张表、142 个经逐写路径确认的 UTC-naive 字段保存逐表/逐行/逐字段原值；仅用于核对和可逆回滚，不参与业务查询。存在 `NOW()`/旧 UTC/外部时间混写证据的列（如素材 `updated_at`、设计生图提示词模板时间）不猜测平移。
   - `ark_production_print_logs` — 打印日志（039 迁移，order_id, order_no, scope order/category, category_index, category_label, item_ids_json JSON, printed_by, printed_by_name, printed_at）
 - **生产报工（027 迁移）**：
   - `process` — 工序基础表（name UNIQUE, description, sort_order, status 0禁用/1启用）

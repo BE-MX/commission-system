@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from app.core.time import beijing_now
 
 from sqlalchemy.orm import Session
 
@@ -99,7 +100,7 @@ def ensure_candidate(
     if candidate:
         if candidate.candidate_status == "ignored":
             return candidate
-        candidate.last_seen_at = datetime.utcnow()
+        candidate.last_seen_at = beijing_now()
         candidate.seen_count = (candidate.seen_count or 0) + 1
         if external_display_name:
             candidate.external_display_name = external_display_name
@@ -307,6 +308,6 @@ def delete_binding(db: Session, binding_id: int) -> None:
     binding = db.query(ArkUserExternalBinding).get(binding_id)
     if not binding:
         raise ValueError(f"Binding {binding_id} not found")
-    binding.deleted_at = datetime.utcnow()
+    binding.deleted_at = beijing_now()
     binding.binding_status = "inactive"
     db.flush()

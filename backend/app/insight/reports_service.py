@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 import re
 from datetime import date, datetime
+from app.core.time import beijing_today
+from app.core.time import beijing_now
 from pathlib import Path
 from typing import Any, Optional
 
@@ -305,7 +307,7 @@ def _organize_with_ai(db: Session, raw_items: list[dict], report_date: date) -> 
 
 def generate_industry_daily_report(db: Session, report_date: date | None = None) -> InsightReport:
     """管线1：外部信源抓取 → 关键词过滤 → AI 整理 → 模板渲染 → 存库。"""
-    report_date = report_date or date.today()
+    report_date = report_date or beijing_today()
     sources = list_sources(db, is_active=True, pipeline="external")
     all_items: list[dict] = []
 
@@ -325,7 +327,7 @@ def generate_industry_daily_report(db: Session, report_date: date | None = None)
                 item["source"] = src.name
             all_items.extend(filtered)
 
-            src.last_fetched_at = datetime.utcnow()
+            src.last_fetched_at = beijing_now()
             src.last_error = None
             src.consecutive_failures = 0
         except Exception as e:
@@ -347,7 +349,7 @@ def generate_industry_daily_report(db: Session, report_date: date | None = None)
 
 def generate_ai_tools_report(db: Session, report_date: date | None = None) -> InsightReport:
     """管线2：aihot API 日报 → 板块映射 → 模板渲染 → 存库。"""
-    report_date = report_date or date.today()
+    report_date = report_date or beijing_today()
     raw = fetch_aihot_daily()
 
     # 构建 grouped dict

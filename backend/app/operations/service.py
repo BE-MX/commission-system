@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from app.core.config import get_settings
+from app.core.time import utc_now, utc_now_naive
 from app.operations.models import JOB_METADATA
 from app.operations.schemas import (
     JobRunView,
@@ -38,7 +39,7 @@ _invalid_job_control_lock = threading.Lock()
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return utc_now().isoformat()
 
 
 def _safe_endpoint(url: str) -> str | None:
@@ -154,14 +155,14 @@ async def _probe_service(item: dict, timeout_seconds: float) -> RuntimeServiceVi
         if str(name).lower() in {"authorization", "x-api-key"}
     }
 
-    started = datetime.now(timezone.utc)
+    started = utc_now()
     try:
         async with httpx.AsyncClient(timeout=timeout_seconds, follow_redirects=False) as client:
             response = await client.get(
                 health_url,
                 headers={"User-Agent": "ark-operations-probe/1.0", **normalized_headers},
             )
-        latency_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+        latency_ms = int((utc_now() - started).total_seconds() * 1000)
         healthy = 200 <= response.status_code < 300
         return RuntimeServiceView(
             **base,
@@ -295,7 +296,7 @@ async def _build_overview() -> OperationsOverview:
         services.extend(await asyncio.gather(*(
             _probe_service(item, settings.OPERATIONS_PROBE_TIMEOUT_SECONDS) for item in probe_items
         )))
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = utc_now_naive()
     runtime_instances = []
     try:
         for item in list_runtime_instances():

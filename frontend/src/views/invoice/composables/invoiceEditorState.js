@@ -1,4 +1,5 @@
 import { normalizeDiscount } from './invoiceSettlement.js'
+import { currentBeijingDate } from '../../../utils/datetime.js'
 
 export const INVOICE_NO_MAX_LENGTH = 64
 
@@ -17,7 +18,7 @@ export function emptyInvoiceForm() {
     id: null, invoice_no: '', order_type: 'stock', sales_user_id: null, customer_id: '', customer_name: '',
     contact_name: '', contact_phone: '', contact_email: '', delivery_address: '',
     sales_user_name: '', sales_phone: '', sales_email: '',
-    invoice_date: new Date().toISOString().slice(0, 10), currency: 'USD', express_channel: '',
+    invoice_date: currentBeijingDate(), currency: 'USD', express_channel: '',
     shipping_fee: 0, surcharge_name: '', surcharge_amount: 0, payment_term: '',
     internal_payment_method: '', internal_discount: 0, packaging_quantity: 0,
     internal_accessory: 0, internal_received: null, internal_balance: null,

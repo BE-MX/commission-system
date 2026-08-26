@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from app.core.time import beijing_now
 from typing import Optional
 
 from sqlalchemy import func
@@ -69,7 +70,7 @@ def get_or_create_profile(
         return profile
 
     # 新建画像
-    now = datetime.utcnow()
+    now = beijing_now()
     profile = CustomerProfile(
         customer_name=customer_name or "",
         customer_region=customer_region,
@@ -180,7 +181,7 @@ def ingest_opportunity_event(
             owner_resolve_status=opportunity.owner_resolve_status or "unassigned",
         )
 
-        now = datetime.utcnow()
+        now = beijing_now()
 
         # 事件分数：不同事件对优先级的贡献
         score_map = {

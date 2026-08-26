@@ -21,6 +21,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.dialects import mysql
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 USER_ID = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
@@ -29,8 +30,8 @@ USER_ID = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
 class AuditMixin:
     created_by = Column(USER_ID, nullable=True, comment="创建人用户ID")
     updated_by = Column(USER_ID, nullable=True, comment="最后更新人用户ID")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
     deleted_at = Column(DateTime, nullable=True, comment="软删除时间")
 
 

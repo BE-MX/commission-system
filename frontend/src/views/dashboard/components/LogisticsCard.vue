@@ -53,6 +53,8 @@
 </template>
 
 <script setup>
+import { beijingCalendarDaysUntil, formatBeijingDate, parseApiDateTime } from '@/utils/datetime'
+
 /**
  * 物流进度卡 — 在途运单的阶段化进度 + 异常高亮 + ETA 倒计时。
  * 状态口径与后端 tracking/status.py 统一状态码一致（current_status 存的就是统一码）。
@@ -122,22 +124,22 @@ function countryFlag(country) {
 }
 
 function relativeTime(dateLike) {
-  const t = new Date(dateLike)
-  if (Number.isNaN(t.getTime())) return ''
+  const t = parseApiDateTime(dateLike)
+  if (!t) return ''
   const diffMin = Math.max(0, Math.floor((Date.now() - t.getTime()) / 60000))
   if (diffMin < 60) return `${diffMin || 1} 分钟前`
   const diffHour = Math.floor(diffMin / 60)
   if (diffHour < 24) return `${diffHour} 小时前`
   const diffDay = Math.floor(diffHour / 24)
   if (diffDay < 30) return `${diffDay} 天前`
-  return `${t.getMonth() + 1}月${t.getDate()}日`
+  const [, month, day] = formatBeijingDate(t).split('-')
+  return `${Number(month)}月${Number(day)}日`
 }
 
 function etaText(s) {
   if (!s.estimated_delivery_date || s.current_status === 'delivered') return ''
-  const eta = new Date(s.estimated_delivery_date)
-  if (Number.isNaN(eta.getTime())) return ''
-  const days = Math.ceil((eta - Date.now()) / 86400000)
+  const days = beijingCalendarDaysUntil(s.estimated_delivery_date)
+  if (days == null) return ''
   if (days < 0) return '预计送达已过，待更新'
   if (days === 0) return '预计今天送达'
   if (days === 1) return '预计明天送达'

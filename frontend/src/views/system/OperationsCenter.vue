@@ -156,6 +156,7 @@
 import { RefreshRight, VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
 import { useOperationsCenter } from './composables/useOperationsCenter'
+import { formatBeijingDateTime } from '@/utils/datetime'
 
 const {
   loading, actionJobId, overview, scheduler, services, runtimeInstances, summary,
@@ -173,7 +174,7 @@ function jobStatusLabel(value) { return JOB_STATUS_LABELS[value] || '未知' }
 function jobStatusType(value) { return JOB_STATUS_TYPES[value] || 'info' }
 function managementLabel(value) { return ({ managed: '平台管理', observed: '状态监测', unmanaged: '待接入' })[value] || '待接入' }
 function roleLabel(value) { return value === 'scheduler-primary' ? '调度主实例' : '应用副本' }
-function formatTime(value) { return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '已暂停 / 无计划' }
+function formatTime(value) { return formatBeijingDateTime(value, { naiveTimeZone: 'UTC', fallback: '已暂停 / 无计划' }) }
 function ageLabel(seconds) {
   if (seconds < 60) return `${seconds} 秒前`
   if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`

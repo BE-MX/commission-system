@@ -40,6 +40,7 @@
 
 <script setup>
 import UrgentBarChart from './UrgentBarChart.vue'
+import { beijingCalendarDaysUntil } from '@/utils/datetime'
 
 defineProps({
   products:     { type: Array,  default: () => [] },
@@ -49,11 +50,7 @@ defineProps({
 defineEmits(['item-click'])
 
 function daysLeft(product) {
-  if (!product.expected_delivery_date) return null
-  const target = new Date(product.expected_delivery_date)
-  const now = new Date()
-  now.setHours(0, 0, 0, 0)
-  return Math.round((target - now) / (1000 * 60 * 60 * 24))
+  return beijingCalendarDaysUntil(product.expected_delivery_date)
 }
 
 function daysClass(product) {

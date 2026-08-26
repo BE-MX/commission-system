@@ -10,6 +10,7 @@ from app.aftersales.notification_service import (
     process_due_notifications,
 )
 from app.auth.models import ArkUser
+from app.core.time import beijing_now
 
 
 def _records(db):
@@ -154,8 +155,8 @@ async def test_due_retry_worker_only_processes_due_failed_notifications(db):
     future = enqueue_notification(db, case, "case:1:future", user, "approved", {"title": "已通过"})
     due.status = future.status = "failed"
     due.attempt_count = future.attempt_count = 1
-    due.next_retry_at = datetime.utcnow() - timedelta(seconds=1)
-    future.next_retry_at = datetime.utcnow() + timedelta(hours=1)
+    due.next_retry_at = beijing_now() - timedelta(seconds=1)
+    future.next_retry_at = beijing_now() + timedelta(hours=1)
     db.commit()
 
     class Notifier:

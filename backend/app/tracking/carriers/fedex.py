@@ -86,7 +86,8 @@ class FedExAdapter(CarrierAdapter):
                 try:
                     dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
                 except Exception:
-                    dt = datetime.now()
+                    # 外部时间不可解析时不伪造“当前北京时间”事件。
+                    continue
                 loc = evt.get("scanLocation", {})
                 loc_str = f"{loc.get('city', '')} - {loc.get('countryCode', '')}".strip(" -")
                 events.append(TrackingEvent(

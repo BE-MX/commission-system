@@ -7,6 +7,7 @@ claims builder（get_user_roles / get_user_permissions）→ 产出 current_user
 
 import logging
 from datetime import datetime
+from app.core.time import beijing_now, utc_now_naive
 
 from sqlalchemy.orm import Session
 
@@ -61,7 +62,7 @@ def resolve_token(db: Session, raw_token: str) -> dict:
 
     # best-effort 更新最后使用时间
     try:
-        row.last_used_at = datetime.utcnow()
+        row.last_used_at = beijing_now()
         db.commit()
     except Exception as exc:  # noqa: BLE001
         db.rollback()
@@ -100,7 +101,7 @@ def resolve_run_token(db: Session, raw_token: str) -> dict:
         raise MCPAuthError("Agent Run 尚未开始或已经结束")
     if run.cancel_requested or profile.status != "active":
         raise MCPAuthError("Agent Run 已取消或 Profile 已停用")
-    if run.lease_expires_at is None or run.lease_expires_at <= datetime.utcnow():
+    if run.lease_expires_at is None or run.lease_expires_at <= utc_now_naive():
         raise MCPAuthError("Agent Run 租约已过期")
 
     current = build_current_user(user)

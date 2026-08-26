@@ -19,6 +19,7 @@ from app.customer_image.models import (
 from app.design_image import file_service as shared_files
 from app.design_image.models import DesignImageLibraryAsset
 from app.design_image.service import _thumbnail_path
+from app.core.time import beijing_now
 
 
 ImageStorageError = shared_files.ImageStorageError
@@ -31,8 +32,8 @@ NormalizedImage = shared_files.NormalizedImage
 logger = logging.getLogger("commission")
 
 
-def utcnow() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
+def business_now() -> datetime:
+    return beijing_now()
 
 
 def _delete_stored_files(
@@ -82,7 +83,7 @@ def _replace_with_normalized(
                 CustomerImageProductAsset.retired_at.is_(None),
             )
         ).all()
-        retired_at = utcnow()
+        retired_at = business_now()
         for old_asset in current:
             old_asset.retired_at = retired_at
         asset = CustomerImageProductAsset(

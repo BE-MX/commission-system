@@ -5,6 +5,7 @@
 
 import logging
 from datetime import date, timedelta
+from app.core.time import beijing_today
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -207,7 +208,7 @@ async def push_daily_report(db: Session, report: ShippingDailyReport) -> bool:
 async def generate_daily_reports() -> dict:
     """生成所有用户的日报并推送。APScheduler 定时任务入口。"""
     db = SessionLocal()
-    today = date.today()
+    today = beijing_today()
 
     try:
         from app.auth.models import ArkUser

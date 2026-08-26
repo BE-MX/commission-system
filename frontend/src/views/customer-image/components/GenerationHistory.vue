@@ -1,4 +1,6 @@
 <script setup>
+import { formatBeijingShortDateTime } from '@/utils/datetime'
+
 defineProps({
   generations: { type: Array, default: () => [] },
   generationUrls: { type: Object, default: () => ({}) },
@@ -12,8 +14,7 @@ function statusLabel(status) {
 }
 
 function dateLabel(value) {
-  if (!value) return ''
-  return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
+  return formatBeijingShortDateTime(value)
 }
 </script>
 

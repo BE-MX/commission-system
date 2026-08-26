@@ -24,6 +24,7 @@ from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 # ark_users.id 实际是 INT UNSIGNED，FK 类型必须完全一致（cerebrum 2026-06-10）
 _UINT = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
@@ -47,8 +48,8 @@ class DomesticCustomer(Base):
     balance = Column(Numeric(14, 2), nullable=False, default=0, comment="充值可用余额")
     status = Column(SmallInteger, nullable=False, default=1, comment="0=停用,1=启用")
     created_by = Column(_UINT, ForeignKey("ark_users.id"), nullable=False, comment="创建人")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
 
 class DomesticProduct(Base):
@@ -69,8 +70,8 @@ class DomesticProduct(Base):
                       comment="工艺路线，按 craft 映射自动绑定；NULL=未匹配到路线")
     status = Column(SmallInteger, nullable=False, default=1, comment="0=停用,1=启用")
     use_count = Column(Integer, nullable=False, default=0, comment="被下单次数")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (
         Index("idx_dom_product_type", "product_type", "status"),
@@ -88,8 +89,8 @@ class DomesticCraftRoute(Base):
     craft = Column(String(64), nullable=False, comment="工艺值（对应字典 code）")
     route_id = Column(Integer, ForeignKey("process_route.id", ondelete="RESTRICT"), nullable=False, comment="默认工艺路线")
     updated_by = Column(_UINT, ForeignKey("ark_users.id"), comment="最后维护人")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (
         UniqueConstraint("product_type", "craft", name="uk_dom_craft_route"),
@@ -118,8 +119,8 @@ class DomesticOrder(Base):
     remark = Column(String(1000), comment="订单备注")
     created_by = Column(_UINT, ForeignKey("ark_users.id"), nullable=False, comment="下单人")
     deleted_flag = Column(SmallInteger, nullable=False, default=0, comment="0=正常,1=已删除")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     items = relationship("DomesticOrderItem", back_populates="order", lazy="noload",
                          cascade="all, delete-orphan")
@@ -160,8 +161,8 @@ class DomesticOrderItem(Base):
     status = Column(SmallInteger, nullable=False, default=0, comment="0=生产中,1=已完工,2=已发货")
     ship_time = Column(DateTime, comment="发货时间")
     ship_weight = Column(Numeric(10, 2), comment="发货克重 g")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     order = relationship("DomesticOrder", back_populates="items", lazy="noload")
     product = relationship("DomesticProduct", lazy="noload")
@@ -196,7 +197,7 @@ class DomesticItemAppendRequest(Base):
     )
     request_id = Column(String(64), nullable=False, comment="客户端追加明细幂等键")
     request_hash = Column(String(64), nullable=False, comment="追加载荷 SHA-256 指纹")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         UniqueConstraint("order_id", "request_id", name="uq_dom_append_order_request"),
@@ -222,8 +223,8 @@ class DomesticItemProgress(Base):
     status = Column(SmallInteger, nullable=False, default=0, comment="0=进行中,1=本道已做完")
     first_reported_at = Column(DateTime, comment="首次报工时间")
     last_reported_at = Column(DateTime, comment="最后一次报工时间")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     item = relationship("DomesticOrderItem", back_populates="progress", lazy="noload")
 
@@ -254,7 +255,7 @@ class DomesticReportLog(Base):
     reported_at = Column(DateTime, nullable=False, comment="报工时间（北京时）")
     revoked = Column(SmallInteger, nullable=False, default=0, comment="0=有效,1=已撤销")
     revoked_at = Column(DateTime, comment="撤销时间")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         Index("idx_dom_log_item", "item_id", "step_order"),
@@ -278,7 +279,7 @@ class DomesticCustomerLedger(Base):
     business_key = Column(String(128), unique=True, comment="可选幂等键")
     remark = Column(String(500), comment="说明")
     created_by = Column(_UINT, ForeignKey("ark_users.id", ondelete="RESTRICT"), nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
 
     __table_args__ = (
         Index("idx_dom_ledger_customer_time", "customer_id", "created_at"),
@@ -295,7 +296,7 @@ class DomesticItemUnit(Base):
     item_id = Column(Integer, ForeignKey("ark_domestic_order_items.id", ondelete="CASCADE"), nullable=False)
     unit_no = Column(Integer, nullable=False, comment="明细内单件序号，从1开始")
     status = Column(SmallInteger, nullable=False, default=1, comment="0=数量缩减停用,1=有效")
-    created_at = Column(DateTime, nullable=False, default=datetime.now)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
 
     __table_args__ = (
         UniqueConstraint("item_id", "unit_no", name="uq_dom_unit_item_no"),

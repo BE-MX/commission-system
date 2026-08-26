@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from app.core.time import beijing_now
 
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
@@ -37,7 +38,7 @@ def get_top_downloaded(db: Session, limit: int = 20) -> list[dict]:
 
 def get_download_trend(db: Session, days: int = 30) -> list[dict]:
     """最近 N 天每日下载量趋势。"""
-    start_date = datetime.utcnow() - timedelta(days=days)
+    start_date = beijing_now() - timedelta(days=days)
     rows = (
         db.query(
             func.date(DownloadLog.created_at).label("date"),
@@ -55,7 +56,7 @@ def get_download_stats(db: Session) -> dict:
     """下载统计概览。"""
     total_downloads = db.query(func.count(DownloadLog.id)).scalar() or 0
     total_assets = db.query(func.count(Asset.id)).filter(Asset.status != "offline").scalar() or 0
-    today = datetime.utcnow().date()
+    today = beijing_now().date()
     today_downloads = (
         db.query(func.count(DownloadLog.id))
         .filter(func.date(DownloadLog.created_at) == today)

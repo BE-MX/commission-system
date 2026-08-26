@@ -13,6 +13,8 @@
  *   { t:'table',  dates:{YYYY:'MM-DD'} }  农历等无规律日期查表
  */
 
+import { beijingCalendarDate } from '../../utils/datetime.js'
+
 // 复活节星期日（Anonymous Gregorian algorithm）
 export function easterSunday(year) {
   const a = year % 19
@@ -308,7 +310,7 @@ function startOfDay(date) {
 }
 
 /** 今天（或指定日）哪些国家在放假 */
-export function getTodayHolidays(from = new Date()) {
+export function getTodayHolidays(from = beijingCalendarDate()) {
   const iso = toISODate(from)
   return holidaysForYear(from.getFullYear()).filter(h => h.date === iso)
 }
@@ -317,7 +319,7 @@ export function getTodayHolidays(from = new Date()) {
  * 未来 days 天内的节假日（含今天），按日期升序，附带 daysUntil。
  * perCountry>0 时每个国家最多保留 perCountry 条最近的（工作台卡片防刷屏）。
  */
-export function getUpcomingHolidays({ from = new Date(), days = 60, perCountry = 0 } = {}) {
+export function getUpcomingHolidays({ from = beijingCalendarDate(), days = 60, perCountry = 0 } = {}) {
   const fromDay = startOfDay(from)
   const toDay = new Date(fromDay.getFullYear(), fromDay.getMonth(), fromDay.getDate() + days)
   const years = [fromDay.getFullYear(), toDay.getFullYear()]

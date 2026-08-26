@@ -1,6 +1,7 @@
 """半成品订单创建、查询、收货和状态流转。"""
 
 from datetime import date
+from app.core.time import beijing_today
 from decimal import Decimal
 from uuid import uuid4
 
@@ -18,7 +19,7 @@ ACTIVE_STATUSES = ("submitted", "partial")
 
 def _next_order_no(db: Session) -> str:
     del db  # 订单号不依赖“查最大值”，避免并发下单生成重复号。
-    return f"SFO{date.today():%Y%m%d}-{uuid4().hex[:12].upper()}"
+    return f"SFO{beijing_today():%Y%m%d}-{uuid4().hex[:12].upper()}"
 
 
 def create_order(

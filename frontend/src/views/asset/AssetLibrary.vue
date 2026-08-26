@@ -344,6 +344,7 @@ import {
   addFavoriteItem, analyzeAsset, batchDownload,
 } from '@/api/asset'
 import { useTableSort } from '@/composables/useTableSort'
+import { currentBeijingDate, formatBeijingDate } from '@/utils/datetime'
 
 const orderSort = useTableSort()
 
@@ -674,7 +675,7 @@ async function handleBatchDownload() {
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `leshine_assets_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.zip`
+    a.download = `leshine_assets_${currentBeijingDate().replace(/-/g, '')}.zip`
     a.click()
     window.URL.revokeObjectURL(url)
     ElMessage.success('下载开始')
@@ -712,9 +713,7 @@ function formatSize(bytes) {
 }
 
 function formatDate(iso) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return formatBeijingDate(iso, { fallback: '' })
 }
 
 function fileTypeLabel(type) {

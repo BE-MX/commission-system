@@ -2,6 +2,7 @@
 
 import logging
 from datetime import date
+from app.core.time import beijing_today
 
 from app.core.database import SessionLocal
 from app.design.models import DesignScheduleRequest
@@ -15,7 +16,7 @@ async def check_today_shoot_reminders():
     try:
         from app.design.models import DesignScheduleTask
 
-        today = date.today()
+        today = beijing_today()
 
         # 1. 待确认预约单（pending_design）：期望开始日期=今天
         pending_requests = db.query(DesignScheduleRequest).filter(

@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.auth.dependencies import require_permission
 from app.core.response import ok as _ok
+from app.core.time import beijing_today
 from app.report.models import ReportTemplate, ReportTemplateVersion
 from app.report.schemas import (
     ReportTemplateCreate,
@@ -348,7 +349,6 @@ def print_production_order(
     db: Session = Depends(get_db),
 ):
     """生产订单打印页（HTML，无需登录，供打印窗口直接访问）"""
-    from datetime import date
     params = {"order_no": order_no}
     if category_index is not None:
         params["category_index"] = category_index
@@ -358,7 +358,7 @@ def print_production_order(
         raise HTTPException(status_code=404, detail=f"订单不存在: {order_no}")
 
     data["header"]["reviewer_name"] = reviewer
-    data["header"]["print_date"] = date.today().strftime("%Y-%m-%d")
+    data["header"]["print_date"] = beijing_today().strftime("%Y-%m-%d")
 
     # 任一明细 model 含「中间打孔」时注入要求图（base64 data URI）
     if data.get("has_middle_punch"):
@@ -397,9 +397,8 @@ def export_production_order_docx(
         raise HTTPException(status_code=404, detail=f"订单不存在: {order_no}")
 
     # 签字区补充字段（与 HTML 打印端点保持一致）
-    from datetime import date
     data["header"]["reviewer_name"] = reviewer
-    data["header"]["print_date"] = date.today().strftime("%Y-%m-%d")
+    data["header"]["print_date"] = beijing_today().strftime("%Y-%m-%d")
 
     try:
         docx_bytes = generate_production_order_docx(

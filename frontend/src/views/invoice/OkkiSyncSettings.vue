@@ -127,6 +127,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { Delete, Refresh, Search } from '@element-plus/icons-vue'
 import { msgSuccess } from '@/utils/feedback'
+import { formatBeijingDateTime, parseApiDateTime } from '@/utils/datetime'
 import {
   fetchXiaomanToken,
   getXiaomanEnums,
@@ -158,10 +159,10 @@ const statusOptions = ref([])
 const tokenExpiryText = computed(() => {
   const iso = current.value.token_expires_at
   if (!iso) return '有效期未知'
-  const d = new Date(iso.endsWith('Z') ? iso : `${iso}Z`)
-  if (Number.isNaN(d.getTime())) return '有效期未知'
+  const d = parseApiDateTime(iso, { naiveTimeZone: 'UTC' })
+  if (!d) return '有效期未知'
   return d.getTime() > Date.now()
-    ? `有效至 ${d.toLocaleString('zh-CN', { hour12: false })}`
+    ? `有效至 ${formatBeijingDateTime(d)}`
     : '已过期，推单时会自动续期'
 })
 
@@ -272,11 +273,9 @@ async function save() {
   }
 }
 
-// updated_at 是后端 UTC 时间，转本地时区显示
+// 后端业务 DATETIME 直接使用北京时间
 function formatTime(iso) {
-  if (!iso) return ''
-  const d = new Date(iso.endsWith('Z') ? iso : `${iso}Z`)
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('zh-CN', { hour12: false })
+  return formatBeijingDateTime(iso, { fallback: '' })
 }
 </script>
 

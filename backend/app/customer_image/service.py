@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from datetime import UTC, datetime
+from app.core.time import beijing_now, utc_now_naive
 
 from sqlalchemy import String, column, func, or_, select, table, update
 from sqlalchemy.exc import IntegrityError
@@ -471,7 +472,7 @@ def create_invite(
         okki_salesperson_id_snapshot=salesperson_id,
         token_hash="",
         token_suffix="",
-        starts_at=datetime.utcnow(),
+        starts_at=utc_now_naive(),
         expires_at=payload.expires_at,
         quota_total=payload.quota_total,
     )
@@ -521,7 +522,7 @@ def revoke_invite(
     if invite is None:
         raise CustomerImageNotFoundError("invite not found")
     if invite.revoked_at is None:
-        invite.revoked_at = datetime.utcnow()
+        invite.revoked_at = utc_now_naive()
         db.commit()
         db.refresh(invite)
     return invite
@@ -634,7 +635,7 @@ def create_generation(
     invite_id: int,
     payload: CustomerImageGenerationCreate,
 ) -> CustomerImageGeneration:
-    now = datetime.utcnow()
+    now = utc_now_naive()
     settings = get_settings()
     try:
         invite = db.scalar(_locked_invite_statement(invite_id))
@@ -712,7 +713,7 @@ def create_generation(
             preset_name=preset_name,
             model=model,
             pricing_snapshot=pricing_snapshot,
-            created_at=now,
+            created_at=beijing_now(),
         )
         try:
             with db.begin_nested():
@@ -863,7 +864,7 @@ def retire_product_reference(db: Session, product_id: int, asset_id: int) -> Non
     if product.is_published and len(current) == 1:
         db.rollback()
         raise CustomerImageConflictError("published product requires a reference")
-    target.retired_at = datetime.now(UTC).replace(tzinfo=None)
+    target.retired_at = beijing_now()
     remaining = [row for row in current if row.id != asset_id]
     _set_reference_positions(db, remaining)
     product.config_version += 1

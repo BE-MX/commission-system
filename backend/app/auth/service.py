@@ -2,6 +2,7 @@
 
 import json
 from datetime import datetime, timedelta
+from app.core.time import beijing_now
 
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
@@ -39,7 +40,7 @@ def get_user_permissions(user: ArkUser) -> list[str]:
 
 def check_account_lockout(db: Session, username: str) -> None:
     """30 分钟内连续失败 5 次则锁定"""
-    cutoff = datetime.utcnow() - timedelta(minutes=settings.LOGIN_LOCK_MINUTES)
+    cutoff = beijing_now() - timedelta(minutes=settings.LOGIN_LOCK_MINUTES)
     fail_count = db.query(func.count()).filter(
         ArkLoginLog.username == username,
         ArkLoginLog.status == "failed",
@@ -121,12 +122,12 @@ def authenticate_user(
         user_id=user.id,
         device_info=user_agent[:255] if user_agent else "",
         ip_address=ip,
-        expires_at=datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+        expires_at=beijing_now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
     )
     db.add(rt_record)
 
     # 更新最后登录
-    user.last_login_at = datetime.utcnow()
+    user.last_login_at = beijing_now()
     user.last_login_ip = ip
 
     # 记录成功日志
@@ -559,7 +560,7 @@ def refresh_access_token(db: Session, refresh_token_plain: str) -> tuple:
     if not rt_record:
         raise InvalidCredentialsException("Refresh Token 无效")
 
-    if rt_record.expires_at < datetime.utcnow():
+    if rt_record.expires_at < beijing_now():
         raise InvalidCredentialsException("Refresh Token 已过期")
 
     user = db.query(ArkUser).filter(
@@ -609,7 +610,7 @@ def logout_user(db: Session, refresh_token_plain: str | None) -> None:
         .first()
     )
     if rt_record:
-        rt_record.revoked_at = datetime.utcnow()
+        rt_record.revoked_at = beijing_now()
         db.commit()
 
 

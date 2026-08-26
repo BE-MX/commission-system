@@ -23,6 +23,7 @@ from sqlalchemy.orm import relationship
 from app.ai.models import AiCallLog  # noqa: F401 -- registers FK target
 from app.auth.models import ArkUser  # noqa: F401 -- registers FK target
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 USER_ID = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
@@ -42,8 +43,8 @@ class CustomerImageProduct(Base):
     is_published = Column(Boolean, nullable=False, default=False)
     sort = Column(Integer, nullable=False, default=0)
     created_by = Column(USER_ID, ForeignKey("ark_users.id", ondelete="RESTRICT"), nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now)
 
     __table_args__ = (
         CheckConstraint("config_version > 0", name="ck_ci_product_config_version_positive"),
@@ -74,7 +75,7 @@ class CustomerImageProductAsset(Base):
     height = Column(Integer, nullable=False)
     sha256 = Column(String(64), nullable=False)
     position = Column(Integer, nullable=False, default=0)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
     retired_at = Column(DateTime, nullable=True, comment="退役时间，历史生成仍可引用")
 
     __table_args__ = (
@@ -97,8 +98,8 @@ class CustomerImageProductOption(Base):
     required = Column(Boolean, nullable=False, default=False)
     default_value = Column(String(200), nullable=True)
     sort = Column(Integer, nullable=False, default=0)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now)
 
     __table_args__ = (
         UniqueConstraint("product_id", "key", name="uq_ci_product_option_key"),
@@ -126,8 +127,8 @@ class CustomerImageOptionValue(Base):
     pantone_code = Column(String(32), nullable=True)
     sort = Column(Integer, nullable=False, default=0)
     is_active = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now)
 
     __table_args__ = (
         UniqueConstraint("option_id", "value", name="uq_ci_option_value"),
@@ -162,7 +163,7 @@ class CustomerImageInvite(Base):
         nullable=True,
     )
     revoked_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
 
     __table_args__ = (
         CheckConstraint("quota_total > 0", name="ck_ci_invite_quota_total_positive"),
@@ -191,7 +192,7 @@ class CustomerImageInviteProduct(Base):
     id = Column(CUSTOMER_IMAGE_ID, primary_key=True, autoincrement=True)
     invite_id = Column(CUSTOMER_IMAGE_ID, ForeignKey("ark_customer_image_invites.id", ondelete="CASCADE"), nullable=False)
     product_id = Column(CUSTOMER_IMAGE_ID, ForeignKey("ark_customer_image_products.id", ondelete="RESTRICT"), nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
 
     __table_args__ = (
         UniqueConstraint("invite_id", "product_id", name="uq_ci_invite_product"),
@@ -214,7 +215,7 @@ class CustomerImageAsset(Base):
     width = Column(Integer, nullable=False)
     height = Column(Integer, nullable=False)
     sha256 = Column(String(64), nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
     deleted_at = Column(DateTime, nullable=True)
 
     __table_args__ = (
@@ -279,7 +280,7 @@ class CustomerImageGeneration(Base):
     quota_refunded_at = Column(DateTime, nullable=True)
     started_at = Column(DateTime, nullable=True)
     finished_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
 
     __table_args__ = (
         UniqueConstraint("invite_id", "request_id", name="uq_ci_generation_invite_request"),

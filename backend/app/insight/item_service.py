@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime
+from app.core.time import beijing_now
 from typing import Optional
 
 from sqlalchemy import desc, func, or_
@@ -152,8 +153,8 @@ def upload_manual_md(db: Session, title: str, content_md: str, tags: Optional[li
     """手工上传 Markdown 文件入库。"""
     item = InsightItem(
         source_type="manual",
-        collected_at=datetime.utcnow(),
-        published_at=datetime.utcnow(),
+        collected_at=beijing_now(),
+        published_at=beijing_now(),
         title=title,
         content_mode="full_text",
         content_md=content_md,

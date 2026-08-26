@@ -22,6 +22,7 @@ description: 开新领域模块、或改动收尾自查时使用。给出新模�
 - check_conventions 无红项；测试/构建通过并**贴出实际输出**
 - 涉及 UI 对照 DESIGN.md；新增文件 <500 行或已拆 composable
 - 上传/文件路径锚定 REPO_ROOT（cerebrum 2026-07-03 条目）
+- 新增或修改时间字段时，业务时间必须经后端 `app.core.time`、主站 `utils/datetime.js`、PM 站/小程序各自的北京时间工具统一读写；技术性 UTC 例外必须登记到 `scripts/check_conventions.py` 白名单，并补非东八区运行环境和北京零点边界测试
 
 ## 对抗性审查触发标准（满足任一即派独立 agent）
 

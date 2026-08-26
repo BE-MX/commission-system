@@ -3,6 +3,7 @@
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
+from app.core.time import beijing_now
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -307,7 +308,7 @@ def confirm_batch(db: Session, batch_id: int, confirmed_by: str) -> None:
     ).update({"status": "confirmed"}, synchronize_session="fetch")
 
     batch.status = "confirmed"
-    batch.confirmed_at = datetime.now()
+    batch.confirmed_at = beijing_now()
     batch.confirmed_by = confirmed_by
     db.flush()
     logger.info(f"批次 {batch_id} 已确认 (by {confirmed_by})")

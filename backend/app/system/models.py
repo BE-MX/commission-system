@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Index
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 class SysDict(Base):
@@ -17,9 +18,9 @@ class SysDict(Base):
     sort = Column(Integer, nullable=False, default=0, server_default="0", comment="排序，越小越靠前")
     is_active = Column(Boolean, nullable=False, default=True, server_default="1", comment="是否启用")
     remark = Column(String(256), nullable=True, comment="备注")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     updated_at = Column(
-        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间"
+        DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间"
     )
 
     __table_args__ = (

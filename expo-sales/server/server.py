@@ -34,6 +34,11 @@ app = FastAPI(title="展会样品销售库存服务")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 _lock = threading.Lock()  # 串行化写操作，配合 BEGIN IMMEDIATE 保证不超卖
+BEIJING_TZ = datetime.timezone(datetime.timedelta(hours=8))
+
+
+def beijing_now():
+    return datetime.datetime.now(BEIJING_TZ).replace(tzinfo=None)
 
 
 def db():
@@ -135,7 +140,7 @@ def create_order(o: OrderIn):
                 conn.execute("UPDATE stock SET qty = qty - ? WHERE item_id = ?", (q, _id))
             seq = int(conn.execute("SELECT v FROM meta WHERE k='seq'").fetchone()["v"])
             no = "GZ" + str(seq).zfill(4)
-            now = datetime.datetime.now().isoformat(timespec="seconds")
+            now = beijing_now().isoformat(timespec="seconds")
             conn.execute("UPDATE meta SET v=? WHERE k='seq'", (str(seq + 1),))
             conn.execute("INSERT INTO orders VALUES(?,?,?,?,?,'done')",
                          (no, now, cust, json.dumps(lines, ensure_ascii=False), total))

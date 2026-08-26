@@ -19,6 +19,7 @@ import time
 import urllib.request
 import uuid
 from datetime import datetime
+from app.core.time import beijing_now
 from pathlib import Path
 
 import httpx
@@ -157,7 +158,7 @@ def _set_ai_issue(
         detail=f"{type(exc).__name__}: {exc}",
         result_id=result_id,
     )
-    now = datetime.utcnow()
+    now = beijing_now()
     terminal_pattern = f'{AI_ISSUE_PREFIX}%"state":"contact_admin"%'
     # 条件 UPDATE 让 contact_admin 成为数据库层面的单调终态：无论并发线程
     # 谁先读到旧值，后续 retrying/terminal 都不能覆盖已提交的终态及 notified_at。
@@ -751,7 +752,7 @@ def _run_analysis(session_id: int) -> None:
         session.analysis_json = analysis
         session.matched_wig_ids = ranking
         session.status = "analyzed"
-        session.updated_at = datetime.utcnow()
+        session.updated_at = beijing_now()
         db.commit()
     except Exception as exc:
         db.rollback()

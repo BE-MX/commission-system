@@ -1,6 +1,6 @@
 """SQLAlchemy 引擎、Session 配置"""
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
 from app.core.config import get_settings
@@ -21,6 +21,13 @@ engine = create_engine(
     # echo=False 挡不住异常文案，只有这个开关能。（2026-08-07 对抗性审查实测）
     hide_parameters=True,
 )
+
+
+@event.listens_for(engine, "connect")
+def _set_mysql_session_timezone(dbapi_connection, _connection_record) -> None:
+    """每个连接都固定为北京时区，保证 NOW()/CURRENT_TIMESTAMP 口径一致。"""
+    with dbapi_connection.cursor() as cursor:
+        cursor.execute("SET time_zone = '+08:00'")
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 

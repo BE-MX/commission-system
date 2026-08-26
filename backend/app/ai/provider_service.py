@@ -3,6 +3,7 @@
 import json
 import time
 from datetime import datetime
+from app.core.time import beijing_now
 from typing import Optional
 
 import httpx
@@ -132,7 +133,7 @@ def delete_provider(db: Session, provider_id: int) -> None:
             f"Provider 下存在 {active_presets} 个活跃 Preset，无法删除。"
             f"请先删除或迁移 Preset：{names}"
         )
-    p.deleted_at = datetime.utcnow()
+    p.deleted_at = beijing_now()
     db.commit()
 
 

@@ -2,6 +2,7 @@
 
 import json
 from datetime import datetime, timedelta
+from app.core.time import beijing_now
 
 from pydantic import ValidationError
 from sqlalchemy import func
@@ -31,7 +32,7 @@ class AiAnalysisError(ValueError):
 
 def recover_stale_analyses(db: Session, *, stale_minutes: int = 15) -> int:
     """将因进程退出而遗留的分析中单据恢复为可重试状态。"""
-    cutoff = datetime.utcnow() - timedelta(minutes=stale_minutes)
+    cutoff = beijing_now() - timedelta(minutes=stale_minutes)
     cases = (
         db.query(AfterSalesCase)
         .filter(
@@ -247,7 +248,7 @@ def run_analysis(
         run.status = "success"
         run.output_json = output
         run.duration_ms = duration_ms
-        run.completed_at = datetime.utcnow()
+        run.completed_at = beijing_now()
         case.current_status = "awaiting_sales_decision"
         case.responsibility_class = output["responsibility"]["class"]
         case.responsibility_reason = "；".join(output["responsibility"]["reasoning"])
@@ -259,7 +260,7 @@ def run_analysis(
     run.status = "failed"
     run.duration_ms = duration_ms
     run.error_summary = (validation_error or "AI 结果未知错误")[:500]
-    run.completed_at = datetime.utcnow()
+    run.completed_at = beijing_now()
     case.current_status = "ai_failed"
     case.version += 1
     db.flush()

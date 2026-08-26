@@ -11,6 +11,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.expo import ai_pipeline, service
+from app.core.time import beijing_now
 from app.expo.models import ExpoHairColor, ExpoResult, ExpoSession, ExpoWig
 from app.expo.schemas import GenerateRequest, HairColorUpsert, WigUpsert
 from app.expo.service import (
@@ -850,7 +851,7 @@ def test_chat_json_raises_after_all_retries(monkeypatch):
 def _stale_session(db, status, secs, results=()):
     s = ExpoSession(
         customer_id=1, photo_path="p.jpg", status=status,
-        updated_at=datetime.utcnow() - timedelta(seconds=secs),
+        updated_at=beijing_now() - timedelta(seconds=secs),
     )
     db.add(s)
     db.flush()

@@ -20,6 +20,7 @@ from uuid import uuid4
 
 from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.orm import noload
+from app.core.time import beijing_now, utc_now_naive
 
 from app.ai import service as ai_service
 from app.ai import image_job_runtime as image_runtime
@@ -46,7 +47,7 @@ class WorkerConfigurationError(ValueError):
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return utc_now_naive()
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,7 +171,7 @@ def _claim_update_statement(
             lease_token=lease_token,
             claimed_by=worker_id,
             lease_expires_at=lease_expires_at,
-            started_at=_utcnow(),
+            started_at=beijing_now(),
             claim_count=DesignImageJob.claim_count + 1,
         )
     )
@@ -422,7 +423,7 @@ def _finalize_success(
             job.output_tokens = result.output_tokens
             job.total_tokens = result.total_tokens
             job.estimated_cost_microusd = result.estimated_cost_microusd
-            job.finished_at = now
+            job.finished_at = beijing_now()
             job.lease_token = job.lease_expires_at = job.claimed_by = None
             job.error_code = job.error_message = None
             db.commit()
@@ -471,7 +472,7 @@ def _finalize_failure(job_id: int, lease_token: str, exc: Exception) -> bool:
             job.provider_attempt_count = attempts
             job.ai_call_log_id = effective_log_id
             job.billing_certainty = "unknown"
-            job.finished_at = now
+            job.finished_at = beijing_now()
             job.lease_token = job.lease_expires_at = job.claimed_by = None
             db.commit()
             return True
@@ -580,7 +581,7 @@ def recover_stale_jobs(db, stale_before: datetime) -> int:
                 error_code="worker_timeout",
                 error_message="任务执行超时，请手动重试",
                 billing_certainty="unknown",
-                finished_at=now,
+                finished_at=beijing_now(),
                 lease_token=None,
                 lease_expires_at=None,
                 claimed_by=None,
@@ -656,7 +657,7 @@ def process_design_image_queue() -> None:
     try:
         with SessionLocal() as db:
             recover_stale_jobs(
-                db, now - timedelta(seconds=settings.DESIGN_IMAGE_STALE_SECONDS)
+                db, beijing_now() - timedelta(seconds=settings.DESIGN_IMAGE_STALE_SECONDS)
             )
         with SessionLocal() as db:
             cleanup_expired_drafts(db, now)

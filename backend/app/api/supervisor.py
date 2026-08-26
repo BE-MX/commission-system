@@ -2,6 +2,7 @@
 
 import tempfile
 from datetime import date
+from app.core.time import beijing_today
 
 from fastapi import APIRouter, Depends, UploadFile, File, Query
 from openpyxl import load_workbook
@@ -36,7 +37,7 @@ def _set_supervisor_relation(
         and current.second_supervisor_id == second_supervisor_id):
         return "skipped"
 
-    today = date.today()
+    today = beijing_today()
 
     if current:
         current.is_current = False
