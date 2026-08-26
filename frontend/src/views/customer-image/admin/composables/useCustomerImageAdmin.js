@@ -201,44 +201,61 @@ export function createProductCoverController({ fetchCover, urlApi = URL } = {}) 
 
 export function createAssetBlobController({ fetchBlob, urlApi = URL } = {}) {
   const urls = ref({})
+  const errors = ref({})
+  const loading = ref({})
+  const itemsById = new Map()
+  const requests = new Map()
   let epoch = 0
-  let activeController = null
   let disposed = false
-
-  function releaseAll() {
-    for (const url of Object.values(urls.value)) urlApi.revokeObjectURL(url)
-    urls.value = {}
-  }
 
   function invalidate() {
     epoch += 1
-    activeController?.abort()
-    activeController = null
-    releaseAll()
+    for (const request of requests.values()) request.controller.abort()
+    requests.clear()
+    itemsById.clear()
+    for (const url of Object.values(urls.value)) urlApi.revokeObjectURL(url)
+    urls.value = {}
+    errors.value = {}
+    loading.value = {}
+  }
+
+  async function retry(id) {
+    if (disposed || !itemsById.has(id)) return
+    if (requests.has(id)) return requests.get(id).promise
+    const item = itemsById.get(id)
+    const requestEpoch = epoch
+    const controller = new AbortController()
+    const isCurrent = () => !disposed && epoch === requestEpoch && !controller.signal.aborted
+    delete errors.value[id]
+    loading.value[id] = true
+    const request = { controller }
+    requests.set(id, request)
+    request.promise = (async () => {
+      try {
+        const response = await fetchBlob(item, { signal: controller.signal })
+        if (!isCurrent()) return
+        const url = urlApi.createObjectURL(response.data)
+        if (urls.value[id]) urlApi.revokeObjectURL(urls.value[id])
+        urls.value[id] = url
+      } catch (error) {
+        if (!isCurrent()) return
+        errors.value[id] = error?.response?.status === 404
+          ? '图片无法读取，请重试；仍失败可重新上传或联系管理员'
+          : '图片加载失败，请检查网络后重试'
+      } finally {
+        if (isCurrent()) loading.value[id] = false
+        if (requests.get(id) === request) requests.delete(id)
+      }
+    })()
+    return request.promise
   }
 
   async function load(items) {
     if (disposed) return urls.value
     invalidate()
-    const requestEpoch = epoch
-    const controller = new AbortController()
-    activeController = controller
-    try {
-      const blobs = await Promise.all((items || []).map(async item => {
-        const response = await fetchBlob(item, { signal: controller.signal })
-        return [item.id, response.data]
-      }))
-      if (disposed || epoch !== requestEpoch || controller.signal.aborted) return urls.value
-      const next = {}
-      for (const [id, blob] of blobs) next[id] = urlApi.createObjectURL(blob)
-      urls.value = next
-      return urls.value
-    } catch (error) {
-      if (disposed || epoch !== requestEpoch || controller.signal.aborted) return urls.value
-      throw error
-    } finally {
-      if (activeController === controller) activeController = null
-    }
+    for (const item of items || []) itemsById.set(item.id, item)
+    await Promise.all([...itemsById.keys()].map(retry))
+    return urls.value
   }
 
   function dispose() {
@@ -246,7 +263,7 @@ export function createAssetBlobController({ fetchBlob, urlApi = URL } = {}) {
     invalidate()
   }
 
-  return { urls, load, invalidate, dispose }
+  return { urls, errors, loading, load, retry, invalidate, dispose }
 }
 
 function cloneProduct(product) {

@@ -69,6 +69,95 @@ test('asset blob epochs ignore inverse late loads and disposal without creating 
   assert.deepEqual(revoked, ['blob:new'])
 })
 
+test('asset previews appear independently before a slow or missing reference finishes', async () => {
+  const cover = deferred()
+  const reference = deferred()
+  const controller = createAssetBlobController({
+    fetchBlob: item => item.id === 73 ? cover.promise : reference.promise,
+  })
+  const loading = controller.load([{ id: 73 }, { id: 14 }])
+  cover.resolve({ data: new Blob(['cover'], { type: 'image/png' }) })
+  await cover.promise
+  await Promise.resolve()
+  assert.ok(controller.urls.value[73], 'successful cover must not wait for the reference')
+  assert.equal(controller.loading.value[73], false)
+  assert.equal(controller.loading.value[14], true)
+
+  reference.reject({ response: { status: 404 } })
+  await loading
+  assert.ok(controller.urls.value[73], 'failed reference must not remove the cover')
+  assert.equal(controller.urls.value[14], undefined)
+  assert.match(controller.errors.value[14], /无法读取.*重新上传/)
+  assert.equal(controller.loading.value[14], false)
+  controller.dispose()
+})
+
+test('retry reloads only the failed asset and clears its error without hiding other previews', async () => {
+  const calls = []
+  const retryRequest = deferred()
+  const controller = createAssetBlobController({
+    fetchBlob: async item => {
+      calls.push(item.id)
+      if (item.id === 2 && calls.length === 2) throw { response: { status: 503 } }
+      return item.id === 2 ? retryRequest.promise : { data: new Blob(['cover']) }
+    },
+  })
+  await controller.load([{ id: 1 }, { id: 2 }])
+  const coverUrl = controller.urls.value[1]
+  assert.match(controller.errors.value[2], /重试/)
+  const retrying = controller.retry(2)
+  const duplicateRetry = controller.retry(2)
+  assert.deepEqual(calls, [1, 2, 2])
+  assert.equal(controller.loading.value[2], true)
+  assert.equal(controller.errors.value[2], undefined)
+  assert.equal(controller.urls.value[1], coverUrl)
+  retryRequest.resolve({ data: new Blob(['reference']) })
+  await Promise.all([retrying, duplicateRetry])
+  assert.ok(controller.urls.value[2])
+  assert.equal(controller.urls.value[1], coverUrl)
+  assert.deepEqual(controller.errors.value, {})
+  controller.dispose()
+})
+
+test('closing or switching products aborts retries and prevents late errors or URLs', async () => {
+  const lateRetry = deferred()
+  const signals = []
+  const revoked = []
+  const controller = createAssetBlobController({
+    fetchBlob: async (item, { signal }) => {
+      signals.push(signal)
+      if (signals.length === 1) throw new Error('offline')
+      return item.id === 1 ? lateRetry.promise : { data: new Blob(['new']) }
+    },
+    urlApi: { createObjectURL: URL.createObjectURL, revokeObjectURL: url => { revoked.push(url); URL.revokeObjectURL(url) } },
+  })
+  await controller.load([{ id: 1 }])
+  const retrying = controller.retry(1)
+  await controller.load([{ id: 2 }])
+  assert.equal(signals[1].aborted, true)
+  lateRetry.reject(new Error('old request failed'))
+  await retrying
+  assert.deepEqual(controller.errors.value, {})
+  assert.equal(controller.urls.value[1], undefined)
+  const currentUrl = controller.urls.value[2]
+  controller.dispose()
+  await controller.retry(2)
+  assert.deepEqual(controller.urls.value, {})
+  assert.deepEqual(controller.loading.value, {})
+  assert.deepEqual(controller.errors.value, {})
+  assert.deepEqual(revoked, [currentUrl])
+})
+
+test('editor distinguishes existing images that failed from images not yet uploaded', () => {
+  const editor = read('../src/views/customer-image/admin/ProductTemplateEditor.vue')
+  assert.match(editor, /v-else-if="coverAsset"/)
+  assert.match(editor, /assetErrors\[coverAsset\.id\]/)
+  assert.match(editor, /assetErrors\[asset\.id\]/)
+  assert.match(editor, /assetBlobs\.retry\(coverAsset\.id\)/)
+  assert.match(editor, /assetBlobs\.retry\(asset\.id\)/)
+  assert.match(editor, /图片加载中/)
+})
+
 test('admin list request versions keep only the latest result per independent resource', async () => {
   const pending = {
     customers: [deferred(), deferred()], products: [deferred(), deferred()],
