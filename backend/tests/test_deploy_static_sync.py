@@ -56,6 +56,19 @@ def test_design_image_render_preflight_runs_as_backend_module() -> None:
     assert r"scripts\check_design_image_document_render.py" not in script
 
 
+def test_database_config_preflight_runs_as_module_and_fails_before_stop() -> None:
+    """The DB preflight must import app and abort before taking the backend offline."""
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    migration = script.split("REM ---------- [4/7] Database migration ----------", 1)[1]
+
+    module_index = migration.index(r".\.venv\Scripts\python.exe -m scripts.show_db_config")
+    guard_index = migration.index("Database configuration preflight failed")
+    stop_index = migration.index('"%NSSM_EXE%" stop "%SERVICE_NAME%"')
+
+    assert module_index < guard_index < stop_index
+    assert r"scripts\show_db_config.py" not in migration[:stop_index]
+
+
 def test_deploy_stops_backend_before_database_migration() -> None:
     """Old application code must not write while a data migration is running."""
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
