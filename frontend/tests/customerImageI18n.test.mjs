@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { createRenderer, defineComponent, h } from 'vue'
 
 import {
@@ -13,6 +14,17 @@ import {
   useCustomerImageI18n,
   writeCustomerImageLocale,
 } from '../src/views/customer-image/i18n.js'
+
+function read(relativePath) {
+  try {
+    return readFileSync(new URL(relativePath, import.meta.url), 'utf8')
+  } catch {
+    return ''
+  }
+}
+
+const languageSwitcherSource = read('../src/views/customer-image/components/LanguageSwitcher.vue')
+const portalSource = read('../src/views/customer-image/CustomerImagePortal.vue')
 
 test('normalizes missing and unsupported locales to English', () => {
   assert.equal(CUSTOMER_IMAGE_LOCALE_KEY, 'ark_customer_image_locale')
@@ -203,4 +215,53 @@ test('requires an installed provider', () => {
   } finally {
     console.error = originalError
   }
+})
+
+test('language switcher is a native accessible two-language control', () => {
+  assert.ok(languageSwitcherSource, 'missing LanguageSwitcher.vue')
+  assert.match(languageSwitcherSource, /useCustomerImageI18n/)
+  assert.match(languageSwitcherSource, /:aria-label="t\('language\.label'\)"/)
+  assert.match(languageSwitcherSource, /aria-pressed/)
+  assert.match(languageSwitcherSource, /setLocale\('en'\)/)
+  assert.match(languageSwitcherSource, /setLocale\('zh-CN'\)/)
+  assert.match(languageSwitcherSource, />\s*EN\s*</)
+  assert.match(languageSwitcherSource, />\s*中文\s*</)
+  assert.match(languageSwitcherSource, /min-height:\s*44px/)
+})
+
+test('language switcher motion is bounded and pointer-aware', () => {
+  assert.match(languageSwitcherSource, /transition:\s*transform\s+160ms\s+cubic-bezier\(0\.23,\s*1,\s*0\.32,\s*1\)/)
+  assert.match(languageSwitcherSource, /:active[\s\S]*?transform:\s*scale\(\.97\)/)
+  assert.match(languageSwitcherSource, /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)/)
+  assert.match(languageSwitcherSource, /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?transform:\s*none/)
+  assert.doesNotMatch(languageSwitcherSource, /transition:\s*all/)
+})
+
+test('portal installs i18n before its hook and keeps the switcher outside every state branch', () => {
+  const provider = portalSource.indexOf('provideCustomerImageI18n()')
+  const portalHook = portalSource.indexOf('useCustomerImagePortal({')
+  const switcher = portalSource.indexOf('<LanguageSwitcher')
+  const firstStateBranch = portalSource.indexOf('v-if="state.view')
+
+  assert.ok(provider >= 0, 'portal must install customer image i18n')
+  assert.ok(portalHook > provider, 'i18n provider must be installed before the portal hook')
+  assert.ok(switcher >= 0 && switcher < firstStateBranch, 'switcher must remain outside state branches')
+  assert.match(portalSource, /const\s*\{\s*t,\s*tm\s*\}\s*=\s*provideCustomerImageI18n\(\)/)
+  assert.match(portalSource, /<LanguageSwitcher\s*\/?>/)
+  assert.match(portalSource, /tm\(state\.(?:notice|error)\)/)
+})
+
+test('portal shell copy is fully catalog-driven', () => {
+  for (const key of [
+    'portal.loading.title', 'portal.loading.detail', 'portal.invalid.title', 'portal.invalid.detail',
+    'portal.contactManager', 'portal.empty.title', 'portal.empty.detail', 'portal.error.title',
+    'portal.retry', 'portal.brand.kicker', 'portal.brand.subtitle', 'portal.exclusiveChannel',
+  ]) assert.match(portalSource, new RegExp(`t\\(['"]${key.replaceAll('.', '\\.')}`), `missing ${key}`)
+
+  const withoutLanguageLabel = portalSource.replaceAll('中文', '')
+  for (const copy of [
+    '正在加载产品效果图工作台', '马上就好', '此链接已失效', '请联系您的业务经理',
+    '联系您的业务经理', '当前没有可设计的产品', '页面暂时无法加载', '重新加载',
+    '莱莎产品效果图', '专属定制通道',
+  ]) assert.equal(withoutLanguageLabel.includes(copy), false, `portal shell still hard-codes ${copy}`)
 })
