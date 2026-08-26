@@ -26,6 +26,7 @@ export function useCustomerImagePortal({
   cancelSchedule = clearTimeout,
   scrollResultIntoView = () => {},
   clearInvite = () => {},
+  downloadFilename = generation => `generation-${generation?.id}.png`,
 } = {}) {
   const {
     createGeneration,
@@ -60,11 +61,11 @@ export function useCustomerImagePortal({
   })
   const generateEnabled = computed(() => canGenerate(state, selectedProduct.value))
   const generateHint = computed(() => {
-    if (!state.logo?.id) return '请先上传品牌 LOGO'
-    if (!requiredOptionsComplete(selectedProduct.value, state.selections)) return '请完成必选参数'
-    if (state.quota.remaining <= 0) return '本次邀请的生成额度已用完，历史结果仍可查看下载'
-    if (state.submitting) return '正在提交，请稍候'
-    return ''
+    if (!state.logo?.id) return customerImageMessage('quota.logoRequired')
+    if (!requiredOptionsComplete(selectedProduct.value, state.selections)) return customerImageMessage('quota.optionsRequired')
+    if (state.quota.remaining <= 0) return customerImageMessage('quota.exhausted')
+    if (state.submitting) return customerImageMessage('quota.submitting')
+    return null
   })
 
   async function bootstrap() {
@@ -287,7 +288,7 @@ export function useCustomerImagePortal({
     if (!url) return
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = `${generation.product_name || '产品效果图'}-${generation.id}.png`
+    anchor.download = downloadFilename(generation)
     anchor.click()
   }
 

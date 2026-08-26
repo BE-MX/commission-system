@@ -16,7 +16,7 @@ test('mobile flow is product rail then logo parameters requirement result and hi
 
 test('one responsive DOM tree maps each customer section to its executable grid area', () => {
   const expected = {
-    products: '选择产品',
+    products: "t\\('editor\\.selectProduct'\\)",
     logo: 'CustomerLogoUpload',
     options: 'ProductOptionGroup',
     requirement: 'customer-requirement',

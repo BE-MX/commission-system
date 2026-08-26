@@ -25,6 +25,14 @@ function read(relativePath) {
 
 const languageSwitcherSource = read('../src/views/customer-image/components/LanguageSwitcher.vue')
 const portalSource = read('../src/views/customer-image/CustomerImagePortal.vue')
+const fixedCopySources = {
+  catalog: read('../src/views/customer-image/CustomerProductCatalog.vue'),
+  editor: read('../src/views/customer-image/CustomerProductEditor.vue'),
+  logo: read('../src/views/customer-image/components/CustomerLogoUpload.vue'),
+  options: read('../src/views/customer-image/components/ProductOptionGroup.vue'),
+  preview: read('../src/views/customer-image/components/GenerationPreview.vue'),
+  history: read('../src/views/customer-image/components/GenerationHistory.vue'),
+}
 
 test('normalizes missing and unsupported locales to English', () => {
   assert.equal(CUSTOMER_IMAGE_LOCALE_KEY, 'ark_customer_image_locale')
@@ -103,7 +111,8 @@ test('contains bilingual fixed UI copy for every portal surface', () => {
     'catalog.category.all', 'catalog.products.label', 'catalog.product.fallback',
     'catalog.product.descriptionFallback', 'catalog.product.designNow', 'catalog.empty.title',
     'catalog.empty.detail', 'catalog.empty.showAll',
-    'editor.allProducts', 'editor.selectProduct', 'editor.selectProductDetail',
+    'editor.allProducts', 'editor.styleEyebrow', 'editor.customizeEyebrow',
+    'editor.selectProduct', 'editor.selectProductDetail',
     'editor.customize', 'editor.options.title', 'editor.options.detail',
     'editor.requirement.title', 'editor.requirement.detail', 'editor.requirement.placeholder',
     'editor.quota.label', 'editor.generate', 'editor.submitting',
@@ -128,7 +137,7 @@ test('contains bilingual fixed UI copy for every portal surface', () => {
   const messages = CUSTOMER_IMAGE_MESSAGES
   assert.ok(messages, 'the production catalog must be directly inspectable')
   assert.equal(Object.isFrozen(messages), true, 'the catalog root must be read-only')
-  assert.equal(keys.length, 102)
+  assert.equal(keys.length, 104)
 
   for (const locale of ['en', 'zh-CN']) {
     assert.equal(Object.isFrozen(messages[locale]), true, `${locale} catalog must be read-only`)
@@ -271,4 +280,54 @@ test('portal shell copy is fully catalog-driven', () => {
     '联系您的业务经理', '当前没有可设计的产品', '页面暂时无法加载', '重新加载',
     '莱莎产品效果图', '专属定制通道',
   ]) assert.equal(withoutLanguageLabel.includes(copy), false, `portal shell still hard-codes ${copy}`)
+})
+
+test('all six customer surfaces consume the shared i18n provider without fixed Chinese copy', () => {
+  for (const [name, source] of Object.entries(fixedCopySources)) {
+    assert.ok(source, `missing ${name} source`)
+    assert.match(source, /useCustomerImageI18n\(\)/, `${name} must consume the portal locale`)
+    assert.match(source, /\bt\(/, `${name} must translate fixed copy`)
+    assert.doesNotMatch(source, /[\u3400-\u9fff]/u, `${name} still contains fixed Chinese copy`)
+  }
+
+  assert.match(fixedCopySources.editor, /\btm\(error\)/)
+  assert.match(fixedCopySources.editor, /\btm\(notice\)/)
+  assert.match(fixedCopySources.editor, /\btm\(generateHint\)/)
+  assert.match(fixedCopySources.editor, /\btm\(resultAnnouncement\)/)
+  assert.match(fixedCopySources.preview, /\btm\(message\)/)
+})
+
+test('catalog uses a locale-independent category sentinel and never translates business data', () => {
+  const source = fixedCopySources.catalog
+  assert.match(source, /const\s+ALL_CATEGORIES\s*=\s*['"]__all__['"]/)
+  assert.match(source, /t\('catalog\.category\.all'\)/)
+  assert.match(source, /product\.name/)
+  assert.match(source, /product\.category/)
+  assert.match(source, /product\.description/)
+  assert.doesNotMatch(source, /t\(\s*product\.(?:name|category|description)/)
+})
+
+test('editor descriptor props keep the descriptor contract and business labels stay raw', () => {
+  const editor = fixedCopySources.editor
+  for (const prop of ['generationMessage', 'generateHint', 'error', 'notice', 'resultAnnouncement']) {
+    assert.match(editor, new RegExp(`${prop}: \\{ type: Object`), `${prop} must accept a descriptor`)
+  }
+
+  const options = fixedCopySources.options
+  assert.match(options, /\{\{\s*option\.label\s*\}\}/)
+  assert.match(options, /\{\{\s*value\.label\s*\}\}/)
+  assert.match(options, /\{\{\s*value\.pantone_code\s*\}\}/)
+  assert.doesNotMatch(options, /t\(\s*(?:option|value)\.(?:label|pantone_code)/)
+  assert.match(fixedCopySources.history, /\{\{\s*generation\.product_name\s*\}\}/)
+  assert.doesNotMatch(fixedCopySources.history, /t\(\s*generation\.product_name/)
+})
+
+test('editor section markers translate and historical results announce their own product', () => {
+  assert.match(fixedCopySources.editor, /t\('editor\.styleEyebrow'\)/)
+  assert.match(fixedCopySources.editor, /t\('editor\.customizeEyebrow'\)/)
+  assert.equal(CUSTOMER_IMAGE_MESSAGES.en['editor.styleEyebrow'], '01 / STYLE')
+  assert.equal(CUSTOMER_IMAGE_MESSAGES['zh-CN']['editor.styleEyebrow'], '01 / 选择产品')
+
+  assert.match(fixedCopySources.preview, /generation\?\.product_name\s*\|\|\s*product\?\.name/)
+  assert.match(fixedCopySources.preview, /preview\.resultAlt[\s\S]*generation\?\.product_name/)
 })

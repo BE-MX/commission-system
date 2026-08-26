@@ -9,6 +9,11 @@ import { provideCustomerImageI18n } from './i18n.js'
 
 const { t, tm } = provideCustomerImageI18n()
 
+function downloadFilename(generation) {
+  const product = generation?.product_name || t('download.productFallback')
+  return `${product}-${t('download.suffix')}-${generation?.id}.png`
+}
+
 const {
   state,
   assets,
@@ -29,6 +34,7 @@ const {
 } = useCustomerImagePortal({
   api: publicApi,
   clearInvite: clearInviteToken,
+  downloadFilename,
   scrollResultIntoView() {
     requestAnimationFrame(() => {
       document.getElementById('customer-generation-result')?.scrollIntoView({

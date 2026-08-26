@@ -41,6 +41,8 @@ const MESSAGES = {
     'catalog.empty.showAll': 'View all products',
 
     'editor.allProducts': 'All products',
+    'editor.styleEyebrow': '01 / STYLE',
+    'editor.customizeEyebrow': '02 / CUSTOMIZE',
     'editor.selectProduct': 'Choose a product',
     'editor.selectProductDetail': 'Switching products keeps your uploaded logo and previous results.',
     'editor.customize': 'Customize your product',
@@ -156,6 +158,8 @@ const MESSAGES = {
     'catalog.empty.showAll': '查看全部产品',
 
     'editor.allProducts': '全部产品',
+    'editor.styleEyebrow': '01 / 选择产品',
+    'editor.customizeEyebrow': '02 / 定制',
     'editor.selectProduct': '选择产品',
     'editor.selectProductDetail': '切换产品会保留已上传的 LOGO 与历史结果。',
     'editor.customize': '定制你的产品',

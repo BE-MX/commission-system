@@ -1,4 +1,6 @@
 <script setup>
+import { useCustomerImageI18n } from '../i18n.js'
+
 defineProps({
   logoUrl: { type: String, default: '' },
   uploading: { type: Boolean, default: false },
@@ -6,6 +8,7 @@ defineProps({
 })
 
 const emit = defineEmits(['upload'])
+const { t } = useCustomerImageI18n()
 
 function chooseFile(event) {
   const file = event.target.files?.[0]
@@ -19,24 +22,24 @@ function chooseFile(event) {
     <div class="section-heading">
       <span class="step-number">A</span>
       <div>
-        <h2 id="logo-title">上传品牌 LOGO</h2>
-        <p>PNG / JPG / WEBP，将用于生成产品效果图</p>
+        <h2 id="logo-title">{{ t('upload.title') }}</h2>
+        <p>{{ t('upload.detail') }}</p>
       </div>
     </div>
 
     <div v-if="logoUrl" class="logo-preview">
-      <img :src="logoUrl" alt="已上传的品牌 LOGO">
+      <img :src="logoUrl" :alt="t('upload.previewAlt')">
     </div>
 
     <label class="upload-action" :class="{ disabled: uploading || disabled }">
       <input type="file" accept="image/*" :disabled="uploading || disabled" @change="chooseFile">
       <span class="plus" aria-hidden="true">＋</span>
       <span class="upload-copy">
-        <b>{{ uploading ? '正在上传…' : logoUrl ? '更换 LOGO' : '点击上传品牌 LOGO' }}</b>
-        <small>{{ logoUrl ? '替换后新生成将使用最新 LOGO' : '上传后自动保存到本次邀请' }}</small>
+        <b>{{ uploading ? t('upload.uploading') : logoUrl ? t('upload.replace') : t('upload.choose') }}</b>
+        <small>{{ logoUrl ? t('upload.replaceDetail') : t('upload.chooseDetail') }}</small>
       </span>
     </label>
-    <p v-if="!logoUrl" class="required-copy">请先上传品牌 LOGO</p>
+    <p v-if="!logoUrl" class="required-copy">{{ t('upload.required') }}</p>
   </section>
 </template>
 

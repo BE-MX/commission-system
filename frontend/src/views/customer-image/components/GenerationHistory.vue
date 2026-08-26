@@ -1,5 +1,6 @@
 <script setup>
 import { formatBeijingShortDateTime } from '@/utils/datetime'
+import { useCustomerImageI18n } from '../i18n.js'
 
 defineProps({
   generations: { type: Array, default: () => [] },
@@ -8,9 +9,10 @@ defineProps({
 })
 
 defineEmits(['select'])
+const { t } = useCustomerImageI18n()
 
 function statusLabel(status) {
-  return { queued: '已提交', running: '生成中', succeeded: '已完成', failed: '未完成' }[status] || '处理中'
+  return t(`history.status.${['queued', 'running', 'succeeded', 'failed'].includes(status) ? status : 'processing'}`)
 }
 
 function dateLabel(value) {
@@ -21,10 +23,10 @@ function dateLabel(value) {
 <template>
   <section class="generation-history" aria-labelledby="history-title">
     <div class="history-heading">
-      <h2 id="history-title">历史效果图</h2>
+      <h2 id="history-title">{{ t('history.title') }}</h2>
       <span>{{ generations.length }}</span>
     </div>
-    <p v-if="!generations.length" class="empty">生成结果会保留在这里，邀请有效期内可随时查看。</p>
+    <p v-if="!generations.length" class="empty">{{ t('history.empty') }}</p>
     <div v-else class="history-list">
       <button
         v-for="generation in generations"
