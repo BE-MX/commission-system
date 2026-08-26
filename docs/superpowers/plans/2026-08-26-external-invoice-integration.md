@@ -58,7 +58,8 @@ Also assert the migration is chained from `124_ai_chat_modes`, table/constraint 
 
 - [ ] **Step 2: Run tests and verify RED**
 
-Run: `python -m pytest tests/test_integration_models.py -q`  
+Run: `python -m pytest tests/test_integration_models.py -q`
+
 Expected: collection/import failure because `app.integration` and migration 125 do not exist.
 
 - [ ] **Step 3: Implement minimal models and migration**
@@ -91,7 +92,8 @@ Use `status in processing|created|rejected`, `attempt_count`, `request_sha256`, 
 
 - [ ] **Step 4: Run tests and verify GREEN**
 
-Run: `python -m pytest tests/test_integration_models.py -q`  
+Run: `python -m pytest tests/test_integration_models.py -q`
+
 Expected: all model/migration tests pass.
 
 - [ ] **Step 5: Stage and commit immediately**
@@ -129,7 +131,8 @@ class SubmissionPrincipal:
 
 - [ ] **Step 2: Run tests and verify RED**
 
-Run: `python -m pytest tests/test_integration_admin.py -q`  
+Run: `python -m pytest tests/test_integration_admin.py -q`
+
 Expected: missing admin router/auth service.
 
 - [ ] **Step 3: Implement minimal credential service and routes**
@@ -148,7 +151,8 @@ Issue `ark_live_<urlsafe secret>`, persist only `hash_token(secret)`, return pla
 
 - [ ] **Step 4: Run tests and verify GREEN**
 
-Run: `python -m pytest tests/test_integration_admin.py -q`  
+Run: `python -m pytest tests/test_integration_admin.py -q`
+
 Expected: all credential and permission tests pass.
 
 - [ ] **Step 5: Commit**
@@ -174,7 +178,8 @@ The sample test posts the seven de-identified lines from the workbook and assert
 
 - [ ] **Step 2: Run tests and verify RED**
 
-Run: `python -m pytest tests/test_integration_api.py -k "resolve or validate or sample" -q`  
+Run: `python -m pytest tests/test_integration_api.py -k "resolve or validate or sample" -q`
+
 Expected: public endpoints/service functions missing.
 
 - [ ] **Step 3: Implement resolver and validation contract**
@@ -199,7 +204,8 @@ Resolve stock items to canonical OKKI snapshots, preserve submitted `unit_price`
 
 - [ ] **Step 4: Run tests and verify GREEN**
 
-Run: `python -m pytest tests/test_integration_api.py -k "resolve or validate or sample" -q`  
+Run: `python -m pytest tests/test_integration_api.py -k "resolve or validate or sample" -q`
+
 Expected: all resolver/validation tests pass.
 
 - [ ] **Step 5: Commit**
@@ -226,7 +232,8 @@ Assert `source_type=external_api`, `source_order_id=request.public_id`, `sync_st
 
 - [ ] **Step 2: Run tests and verify RED**
 
-Run: `python -m pytest tests/test_integration_api.py -k "create or replay or concurrent or lookup" -q`  
+Run: `python -m pytest tests/test_integration_api.py -k "create or replay or concurrent or lookup" -q`
+
 Expected: creation/query behavior missing.
 
 - [ ] **Step 3: Implement one-transaction idempotency**
@@ -246,7 +253,8 @@ Ordinary invoice creation must reject `source_type=external_api`; only the integ
 
 - [ ] **Step 4: Run tests and verify GREEN**
 
-Run: `python -m pytest tests/test_integration_api.py -q`  
+Run: `python -m pytest tests/test_integration_api.py -q`
+
 Expected: all integration API tests pass.
 
 - [ ] **Step 5: Commit**
@@ -279,7 +287,8 @@ test('builds a server-only environment snippet without exposing browser usage', 
 
 - [ ] **Step 2: Run tests and verify RED**
 
-Run: `node --test tests/integrationAppManagement.test.mjs`  
+Run: `node --test tests/integrationAppManagement.test.mjs`
+
 Expected: module/navigation missing.
 
 - [ ] **Step 3: Implement the management page**
@@ -319,7 +328,8 @@ Test that every documented endpoint exists in FastAPI OpenAPI, the TypeScript he
 
 - [ ] **Step 2: Run and verify RED**
 
-Run: `node --test tests/integrationDocs.test.mjs`  
+Run: `node --test tests/integrationDocs.test.mjs`
+
 Expected: files/exports absent.
 
 - [ ] **Step 3: Write the concrete Phase 2 assets**
@@ -338,7 +348,8 @@ Use `AbortController`, preserve the same `external_order_id`, query after timeou
 
 - [ ] **Step 4: Run and verify GREEN**
 
-Run: `node --test tests/integrationDocs.test.mjs`  
+Run: `node --test tests/integrationDocs.test.mjs`
+
 Expected: all contract assets pass.
 
 - [ ] **Step 5: Commit**
