@@ -296,6 +296,37 @@ def test_customer_and_product_resolvers_use_the_same_schema_error_envelope(api):
     assert product_issue["field"] == "catalog_ref.sku_id"
 
 
+def test_schema_error_messages_are_stable_actionable_chinese(api):
+    client, _ = api
+    cases = []
+
+    unknown = _submission()
+    unknown["customer"]["contact"]["unknown"] = "must not leak"
+    cases.append((unknown, "接口不接受该字段，请删除后重试"))
+
+    missing = _submission()
+    missing.pop("external_order_id")
+    cases.append((missing, "必填字段缺失，请补充该字段"))
+
+    boundary = _submission()
+    boundary["items"][0]["quantity"] = 0
+    cases.append((boundary, "数值必须大于接口规定的下限"))
+
+    wrong_money_type = _submission()
+    wrong_money_type["items"][0]["unit_price"] = 10.0
+    cases.append((wrong_money_type, "金额必须使用 JSON 十进制字符串"))
+
+    for payload, expected_message in cases:
+        issue = _schema_issue(client.post(
+            "/api/integrations/v1/invoices/validate", json=payload, headers=_headers(),
+        ))
+        assert issue["message"] == expected_message
+        assert not any(
+            english in issue["message"]
+            for english in ("Field required", "Extra inputs", "Input should", "Value error")
+        )
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

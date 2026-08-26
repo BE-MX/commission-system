@@ -43,15 +43,61 @@ def _field_path(location: tuple) -> str:
     return result or "request"
 
 
+_SCHEMA_ERROR_MESSAGES = {
+    "missing": "必填字段缺失，请补充该字段",
+    "extra_forbidden": "接口不接受该字段，请删除后重试",
+    "literal_error": "字段值不在允许范围，请按接口契约选择",
+    "string_pattern_mismatch": "字段格式不符合要求，请按接口契约修正",
+    "string_too_short": "字段长度过短，请按接口契约补充内容",
+    "string_too_long": "字段长度过长，请按接口契约缩短内容",
+    "too_short": "列表项数量不足，请按接口契约补充",
+    "too_long": "列表项数量过多，请减少后重试",
+    "greater_than": "数值必须大于接口规定的下限",
+    "greater_than_equal": "数值不能低于接口规定的下限",
+    "less_than": "数值必须小于接口规定的上限",
+    "less_than_equal": "数值不能超过接口规定的上限",
+    "int_type": "字段必须使用整数，请修正后重试",
+    "int_parsing": "字段必须使用整数，请修正后重试",
+    "int_from_float": "字段必须使用整数，请删除小数部分",
+    "decimal_type": "金额必须使用合法十进制字符串",
+    "decimal_parsing": "金额必须使用合法十进制字符串",
+    "decimal_max_places": "金额小数位超过允许范围，请减少小数位",
+    "decimal_whole_digits": "金额整数位超过允许范围，请缩小金额",
+    "decimal_max_digits": "金额位数超过允许范围，请缩小金额",
+    "finite_number": "金额必须是有限十进制字符串",
+    "date_type": "日期必须使用 YYYY-MM-DD 格式",
+    "date_parsing": "日期格式无效，请使用 YYYY-MM-DD",
+    "date_from_datetime_parsing": "日期格式无效，请使用 YYYY-MM-DD",
+    "date_from_datetime_inexact": "日期不能包含时间，请使用 YYYY-MM-DD",
+    "string_type": "字段必须使用字符串，请修正后重试",
+}
+
+
+def _schema_error_message(error: dict, field: str) -> str:
+    error_type = str(error.get("type") or "")
+    mapped = _SCHEMA_ERROR_MESSAGES.get(error_type)
+    if mapped:
+        return mapped
+    if error_type == "value_error":
+        if field == "invoice_date":
+            return "日期必须使用 YYYY-MM-DD 格式且为有效日期"
+        raw_message = str(error.get("msg") or "")
+        prefix = "Value error, "
+        detail = raw_message[len(prefix):] if raw_message.startswith(prefix) else raw_message
+        if any("\u4e00" <= character <= "\u9fff" for character in detail):
+            return detail
+    return "字段值无效，请按接口契约修正"
+
+
 def _request_validation_error(exc: RequestValidationError) -> JSONResponse:
-    issues = [
-        {
+    issues = []
+    for error in exc.errors():
+        field = _field_path(tuple(error.get("loc") or ()))
+        issues.append({
             "code": "SCHEMA_INVALID",
-            "field": _field_path(tuple(error.get("loc") or ())),
-            "message": str(error.get("msg") or "请求字段不符合合同"),
-        }
-        for error in exc.errors()
-    ]
+            "field": field,
+            "message": _schema_error_message(error, field),
+        })
     return JSONResponse(
         status_code=422,
         content={
