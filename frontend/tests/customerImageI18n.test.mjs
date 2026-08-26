@@ -232,6 +232,41 @@ test('provides one reactive locale and restores document language and title on u
   }
 })
 
+test('leaving create keeps the router title and resets internal document language on unmount', () => {
+  const originalDocument = globalThis.document
+  const originalLocation = Object.getOwnPropertyDescriptor(globalThis, 'location')
+  const location = { pathname: '/create/token' }
+  globalThis.document = { documentElement: { lang: 'en' }, title: 'Create bootstrap' }
+  Object.defineProperty(globalThis, 'location', { configurable: true, value: location })
+
+  const Root = defineComponent({
+    setup() {
+      provideCustomerImageI18n({ getItem: () => null, setItem() {} })
+      return () => h('div')
+    },
+  })
+  const renderer = createRenderer({
+    patchProp() {}, insert() {}, remove() {}, createElement: type => ({ type }),
+    createText: text => ({ text }), createComment: text => ({ comment: text }),
+    setText() {}, setElementText() {}, parentNode: () => null, nextSibling: () => null,
+  })
+  const app = renderer.createApp(Root)
+
+  try {
+    app.mount({})
+    assert.equal(globalThis.document.title, 'LeShine Product Visual Studio')
+    location.pathname = '/internal'
+    globalThis.document.title = 'Internal Page'
+    app.unmount()
+    assert.equal(globalThis.document.title, 'Internal Page')
+    assert.equal(globalThis.document.documentElement.lang, 'zh-CN')
+  } finally {
+    globalThis.document = originalDocument
+    if (originalLocation) Object.defineProperty(globalThis, 'location', originalLocation)
+    else delete globalThis.location
+  }
+})
+
 test('requires an installed provider', () => {
   const errors = []
   const originalError = console.error
@@ -272,20 +307,39 @@ test('language switcher is a native accessible two-language control', () => {
   assert.match(languageSwitcherSource, /(?:^|\n)\s*width:\s*44px/)
 })
 
-test('language switcher width fits the desktop and safe-area mobile topbar reservations', () => {
+test('language switcher stays inside safe-area-aware desktop and mobile topbar reservations', () => {
   const buttonWidth = Number(languageSwitcherSource.match(/(?:^|\n)\s*width:\s*(\d+)px/)?.[1])
   const switcherGap = Number(languageSwitcherSource.match(/gap:\s*(\d+)px/)?.[1])
   const switcherPadding = Number(languageSwitcherSource.match(/padding:\s*(\d+)px/)?.[1])
   const switcherBorder = Number(languageSwitcherSource.match(/border:\s*(\d+)px\s+solid/)?.[1])
-  const desktopRight = Number(languageSwitcherSource.match(/right:\s*(\d+)px/)?.[1])
-  const mobileRight = Number(languageSwitcherSource.match(/right:\s*max\((\d+)px,\s*env\(safe-area-inset-right\)\)/)?.[1])
-  const desktopReservation = Number(portalSource.match(/padding:\s*0\s+(\d+)px\s+0\s+28px/)?.[1])
-  const mobileReservation = Number(portalSource.match(/\.topbar\s*\{[^}]*padding:\s*0\s+(\d+)px\s+0\s+14px/)?.[1])
+  const desktopRules = languageSwitcherSource.match(/\.language-switcher\s*\{([\s\S]*?)\}/)?.[1] || ''
+  const mobileRules = languageSwitcherSource.match(/@media\s*\(max-width:\s*760px\)[\s\S]*?\.language-switcher\s*\{([\s\S]*?)\}/)?.[1] || ''
+  const desktopRight = Number(desktopRules.match(/right:\s*max\((\d+)px,\s*env\(safe-area-inset-right\)\)/)?.[1])
+  const desktopTop = Number(desktopRules.match(/top:\s*max\((\d+)px,\s*env\(safe-area-inset-top\)\)/)?.[1])
+  const mobileRight = Number(mobileRules.match(/right:\s*max\((\d+)px,\s*env\(safe-area-inset-right\)\)/)?.[1])
+  const mobileTop = Number(mobileRules.match(/top:\s*max\((\d+)px,\s*env\(safe-area-inset-top\)\)/)?.[1])
+  const desktopReservation = Number(portalSource.match(/padding:\s*env\(safe-area-inset-top\)\s+calc\((\d+)px\s*\+\s*env\(safe-area-inset-right\)\)\s+0\s+28px/)?.[1])
+  const mobileReservation = Number(portalSource.match(/padding:\s*env\(safe-area-inset-top\)\s+calc\((\d+)px\s*\+\s*env\(safe-area-inset-right\)\)\s+0\s+14px/)?.[1])
+  const desktopHeight = Number(portalSource.match(/min-height:\s*calc\((\d+)px\s*\+\s*env\(safe-area-inset-top\)\)/)?.[1])
+  const mobileHeight = Number(portalSource.match(/@media\s*\(max-width:\s*760px\)[\s\S]*?min-height:\s*calc\((\d+)px\s*\+\s*env\(safe-area-inset-top\)\)/)?.[1])
   const controlWidth = (buttonWidth * 2) + switcherGap + (switcherPadding * 2) + (switcherBorder * 2)
+  const controlHeight = 44 + (switcherPadding * 2) + (switcherBorder * 2)
 
   assert.equal(controlWidth, 98)
-  assert.ok(desktopRight + controlWidth <= desktopReservation)
-  assert.ok(mobileRight + controlWidth <= mobileReservation)
+  assert.equal(controlHeight, 52)
+  const safeRight = 47
+  const safeTop = 30
+  for (const layout of [
+    { viewport: 1200, right: desktopRight, top: desktopTop, reservation: desktopReservation, height: desktopHeight },
+    { viewport: 390, right: mobileRight, top: mobileTop, reservation: mobileReservation, height: mobileHeight },
+  ]) {
+    const switchLeft = layout.viewport - Math.max(layout.right, safeRight) - controlWidth
+    const contentRight = layout.viewport - layout.reservation - safeRight
+    const switchBottom = Math.max(layout.top, safeTop) + controlHeight
+    const topbarBottom = layout.height + safeTop
+    assert.ok(switchLeft >= contentRight, JSON.stringify({ layout, switchLeft, contentRight }))
+    assert.ok(switchBottom <= topbarBottom, JSON.stringify({ layout, switchBottom, topbarBottom }))
+  }
 })
 
 test('create boot scripts execute before resources and localize initial and slow copy without touching internal defaults', () => {

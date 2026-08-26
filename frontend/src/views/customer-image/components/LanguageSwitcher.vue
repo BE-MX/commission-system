@@ -28,8 +28,8 @@ const languageOptions = Object.freeze([
 .language-switcher {
   position: fixed;
   z-index: 50;
-  top: 12px;
-  right: 20px;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(20px, env(safe-area-inset-right));
   display: inline-flex;
   gap: 2px;
   padding: 3px;

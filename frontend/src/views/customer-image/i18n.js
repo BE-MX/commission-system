@@ -335,6 +335,18 @@ function browserStorage() {
   }
 }
 
+function browserPathname() {
+  try {
+    return globalThis.location?.pathname
+  } catch {
+    return undefined
+  }
+}
+
+function isCustomerImagePath(pathname) {
+  return pathname === '/create' || pathname?.startsWith('/create/')
+}
+
 export function provideCustomerImageI18n(storage = browserStorage()) {
   const locale = ref(readCustomerImageLocale(storage))
   let previousDocumentLanguage
@@ -375,8 +387,13 @@ export function provideCustomerImageI18n(storage = browserStorage()) {
 
   onBeforeUnmount(() => {
     if (mounted && globalThis.document?.documentElement) {
-      globalThis.document.documentElement.lang = previousDocumentLanguage
-      globalThis.document.title = previousDocumentTitle
+      const pathname = browserPathname()
+      if (typeof pathname === 'string' && !isCustomerImagePath(pathname)) {
+        globalThis.document.documentElement.lang = 'zh-CN'
+      } else {
+        globalThis.document.documentElement.lang = previousDocumentLanguage
+        globalThis.document.title = previousDocumentTitle
+      }
     }
     mounted = false
   })

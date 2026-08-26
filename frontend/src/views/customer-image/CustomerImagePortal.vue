@@ -169,12 +169,13 @@ const {
   position: sticky;
   z-index: 10;
   top: 0;
+  box-sizing: border-box;
   display: flex;
-  min-height: 72px;
+  min-height: calc(72px + env(safe-area-inset-top));
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  padding: 0 154px 0 28px;
+  padding: env(safe-area-inset-top) calc(154px + env(safe-area-inset-right)) 0 28px;
   border-bottom: 1px solid var(--cip-border);
   background: color-mix(in srgb, var(--cip-surface) 90%, transparent);
   backdrop-filter: blur(14px);
@@ -257,7 +258,10 @@ const {
 .page-state button:active { transform: scale(.98); }
 @media (hover: hover) and (pointer: fine) { .page-state button:hover { background: var(--cip-accent-hover); } }
 @media (max-width: 760px) {
-  .topbar { min-height: 60px; padding: 0 118px 0 14px; }
+  .topbar {
+    min-height: calc(60px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) calc(118px + env(safe-area-inset-right)) 0 14px;
+  }
   .brand-mark { width: 34px; height: 34px; flex-basis: 34px; border-radius: 11px; font-size: 14px; }
   .brand-copy strong { font-size: 16px; }
   .topbar-status { display: none; }
