@@ -5,17 +5,18 @@ import {
   canGenerate,
   emptyPortalState,
   ensureRequestId,
-  generationStatusText,
+  generationStatusMessage,
   hasActiveGenerations,
   markInputsChanged,
   mergeGeneration,
   requiredOptionsComplete,
   selectProductState,
 } from '../state.js'
+import { customerImageMessage } from '../i18n.js'
 import { useCustomerImageAssets } from './useCustomerImageAssets.js'
 
 const POLL_DELAY_MS = 2500
-const INVALID_LINK = '此链接已失效，请联系您的业务经理重新获取。'
+const INVALID_LINK = customerImageMessage('errors.invalidLink')
 
 export function useCustomerImagePortal({
   api,
@@ -55,7 +56,7 @@ export function useCustomerImagePortal({
   const generationMessage = computed(() => {
     const current = previewGeneration.value
       || state.generations.find(item => ['queued', 'running'].includes(item.status))
-    return current ? generationStatusText(current.status) : ''
+    return current ? generationStatusMessage(current.status) : null
   })
   const generateEnabled = computed(() => canGenerate(state, selectedProduct.value))
   const generateHint = computed(() => {
@@ -69,7 +70,7 @@ export function useCustomerImagePortal({
   async function bootstrap() {
     const epoch = portalEpoch
     state.loading = true
-    state.error = ''
+    state.error = null
     try {
       const [contextResponse, productsResponse, generationsResponse] = await Promise.all([
         getContext(),
@@ -138,7 +139,9 @@ export function useCustomerImagePortal({
       )
       if (completed) {
         state.previewGenerationId = completed.id
-        state.resultAnnouncement = `${completed.product_name || '产品'}效果图已生成`
+        state.resultAnnouncement = customerImageMessage('generation.completed.announcement', {
+          product: completed.product_name || '',
+        })
         scrollResultIntoView(completed.id)
       }
       if (!state.previewGenerationId) {
@@ -176,7 +179,7 @@ export function useCustomerImagePortal({
     state.selections = {}
     state.requirement = ''
     state.requestId = null
-    state.error = ''
+    state.error = null
   }
 
   function updateSelection(key, value) {
@@ -195,18 +198,18 @@ export function useCustomerImagePortal({
     if (!file || state.uploadingLogo || state.submitting) return
     const epoch = portalEpoch
     state.uploadingLogo = true
-    state.error = ''
+    state.error = null
     try {
       const response = await uploadLogo(file)
       if (epoch !== portalEpoch) return
       state.logo = response.data
       await assets.loadLogo(state.logo)
       Object.assign(state, markInputsChanged(state))
-      state.notice = 'LOGO 已更新，可以继续选择参数。'
+      state.notice = customerImageMessage('settings.logoUpdated')
     } catch (error) {
       if (epoch !== portalEpoch) return
       if (isUnauthorized(error)) invalidateInvite()
-      else state.error = customerSafeError(error, 'LOGO 上传失败，请检查图片后重试')
+      else state.error = customerSafeError(error, 'errors.logoUploadFailed')
     } finally {
       if (epoch === portalEpoch) state.uploadingLogo = false
     }
@@ -218,8 +221,8 @@ export function useCustomerImagePortal({
     if (!canGenerate(state, product)) return
     Object.assign(state, ensureRequestId(state))
     state.submitting = true
-    state.error = ''
-    state.notice = ''
+    state.error = null
+    state.notice = null
     const epoch = portalEpoch
     const payload = {
       product_id: product.id,
@@ -235,7 +238,7 @@ export function useCustomerImagePortal({
       state.generations = mergeGeneration(state.generations, generation)
       state.previewGenerationId = generation.id
       state.requestId = null
-      state.notice = generationStatusText(generation.status)
+      state.notice = generationStatusMessage(generation.status)
       await refreshContextBestEffort()
       schedulePolling()
     } catch (error) {
@@ -251,17 +254,17 @@ export function useCustomerImagePortal({
           } else {
             Object.assign(state, applySubmitFailure(
               state,
-              customerSafeError(refreshError, '产品设置更新失败，请检查网络后重试'),
+              customerSafeError(refreshError, 'errors.settingsRefreshFailed'),
             ))
           }
         }
       } else if (isQuotaOrLogoConflict(error)) {
         await refreshContextBestEffort()
-        if (epoch === portalEpoch) state.error = customerSafeError(error, '请确认额度和 LOGO 后重试')
+        if (epoch === portalEpoch) state.error = customerSafeError(error, 'errors.generationConflict')
       } else {
         Object.assign(state, applySubmitFailure(
           state,
-          customerSafeError(error, '生图服务暂时不可用，本次设置已保留，请稍后重试'),
+          customerSafeError(error, 'errors.generationFailed'),
         ))
       }
     } finally {
@@ -291,7 +294,7 @@ export function useCustomerImagePortal({
   function handlePublicError(error) {
     if (isUnauthorized(error)) return invalidateInvite()
     state.view = state.products.length ? state.view : 'error'
-    state.error = customerSafeError(error, '页面暂时无法加载，请检查网络后重试')
+    state.error = customerSafeError(error, 'errors.pageLoadFailed')
   }
 
   function stopPolling() {
@@ -315,7 +318,7 @@ export function useCustomerImagePortal({
     const refreshedProduct = state.products.find(item => item.id === productId)
     if (refreshedProduct) Object.assign(state, selectProductState(state, refreshedProduct))
     state.requestId = null
-    state.notice = '产品设置已更新，请确认最新参数后再次生成'
+    state.notice = customerImageMessage('settings.updated')
     await Promise.all([
       assets.loadProductCovers(state.products),
       assets.loadLogo(state.logo),
@@ -343,9 +346,9 @@ export function useCustomerImagePortal({
       submitting: false,
       uploadingLogo: false,
       requestId: null,
-      error: '',
+      error: null,
       notice: INVALID_LINK,
-      resultAnnouncement: '',
+      resultAnnouncement: null,
     })
   }
 
@@ -402,15 +405,15 @@ export function preservePendingGenerations(current, incoming) {
   ))
 }
 
-function customerSafeError(error, fallback) {
+function customerSafeError(error, fallbackKey) {
   const status = error.response?.status
   const detail = String(error.response?.data?.detail || '')
-  if (status === 429) return '操作过于频繁，请稍候一分钟再试'
-  if (status === 413) return 'LOGO 图片过大，请压缩后重新上传'
-  if (status === 400 && /logo|image|upload/i.test(detail)) return 'LOGO 图片无法识别，请更换 PNG、JPG 或 WebP 图片'
-  if (status === 409 && /quota/i.test(detail)) return '本次邀请的生成额度已用完，历史结果仍可查看下载'
-  if (status === 409 && /settings changed|Product settings/i.test(detail)) return '产品设置已更新，请重新选择参数后生成'
-  if (status === 409 && /logo/i.test(detail)) return '请先上传品牌 LOGO'
-  if (status === 503) return '生图服务暂时不可用，本次设置已保留，请稍后重试'
-  return fallback
+  if (status === 429) return customerImageMessage('errors.rateLimited')
+  if (status === 413) return customerImageMessage('errors.uploadTooLarge')
+  if (status === 400 && /logo|image|upload/i.test(detail)) return customerImageMessage('errors.uploadInvalid')
+  if (status === 409 && /quota/i.test(detail)) return customerImageMessage('errors.quotaExhausted')
+  if (status === 409 && /settings changed|Product settings/i.test(detail)) return customerImageMessage('errors.settingsChanged')
+  if (status === 409 && /logo/i.test(detail)) return customerImageMessage('errors.logoRequired')
+  if (status === 503) return customerImageMessage('errors.serviceUnavailable')
+  return customerImageMessage(fallbackKey)
 }

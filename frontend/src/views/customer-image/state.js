@@ -1,3 +1,5 @@
+import { customerImageMessage } from './i18n.js'
+
 const ACTIVE_STATUSES = new Set(['queued', 'running'])
 
 export function emptyPortalState() {
@@ -16,9 +18,9 @@ export function emptyPortalState() {
     submitting: false,
     uploadingLogo: false,
     requestId: null,
-    error: '',
-    notice: '',
-    resultAnnouncement: '',
+    error: null,
+    notice: null,
+    resultAnnouncement: null,
   }
 }
 
@@ -51,9 +53,9 @@ export function applyBootstrap(current, { context, products, generations }) {
     previewGenerationId: latestResult?.id ?? null,
     view: onlyProduct ? 'editor' : visibleProducts.length ? 'catalog' : 'empty',
     notice: visibleProducts.length
-      ? ''
-      : '当前没有可设计的产品，请联系您的业务经理。',
-    error: '',
+      ? null
+      : customerImageMessage('portal.empty.detail'),
+    error: null,
   }
 }
 
@@ -65,7 +67,7 @@ export function selectProductState(current, product) {
     selections: defaultSelections(product),
     requirement: '',
     requestId: null,
-    error: '',
+    error: null,
   }
 }
 
@@ -93,20 +95,20 @@ export function ensureRequestId(current, createId = defaultRequestId) {
 }
 
 export function markInputsChanged(current) {
-  return { ...current, requestId: null, error: '' }
+  return { ...current, requestId: null, error: null }
 }
 
 export function applySubmitFailure(current, message) {
-  return { ...current, submitting: false, error: message, notice: '' }
+  return { ...current, submitting: false, error: message, notice: null }
 }
 
-export function generationStatusText(status) {
+export function generationStatusMessage(status) {
   return {
-    queued: '已提交，可以关闭页面，结果会保留在这里',
-    running: '正在生成，通常需要几十秒到数分钟',
-    succeeded: '效果图已完成，可以预览和下载',
-    failed: '生成未完成，本次设置已保留，可以重试',
-  }[status] || '状态正在更新'
+    queued: customerImageMessage('generation.queued.detail'),
+    running: customerImageMessage('generation.running.detail'),
+    succeeded: customerImageMessage('generation.succeeded.detail'),
+    failed: customerImageMessage('generation.failed.detail'),
+  }[status] || customerImageMessage('generation.processing.detail')
 }
 
 function compareGenerationNewest(left, right) {
