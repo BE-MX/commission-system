@@ -163,7 +163,143 @@ test('ambiguous create recovers and retries only with the original external orde
   assert.match(client, /getInvoiceByExternalId\(payload\.external_order_id\)/)
   assert.match(client, /createOnce\(payload\)/)
   assert.match(client, /kind:\s*'timeout'\s*\|\s*'network'/)
-  assert.doesNotMatch(client, /external_order_id\s*=(?!=)/)
+  assert.doesNotMatch(client, /payload\.external_order_id\s*=(?!=)/)
+})
+
+test('client rejects cleartext base URLs unless localhost is explicitly enabled', async () => {
+  await withRuntimeClient(async ({ ArkInvoiceClient }) => {
+    assert.throws(
+      () => new ArkInvoiceClient({
+        baseUrl: 'http://api.example.com/api/integrations/v1',
+        token: 'ark_live_test',
+      }),
+      /HTTPS/,
+    )
+    assert.throws(
+      () => new ArkInvoiceClient({
+        baseUrl: 'http://localhost:8000/api/integrations/v1',
+        token: 'ark_live_test',
+      }),
+      /HTTPS/,
+    )
+    assert.doesNotThrow(() => new ArkInvoiceClient({
+      baseUrl: 'http://127.0.0.1:8000/api/integrations/v1',
+      token: 'ark_live_test',
+      allowInsecureLocalhost: true,
+    }))
+    assert.throws(
+      () => new ArkInvoiceClient({
+        baseUrl: 'https://leshine.work/api/integrations/v1',
+        token: 'ark_live_test',
+        timeoutMs: Number.POSITIVE_INFINITY,
+      }),
+      /timeoutMs/,
+    )
+  })
+})
+
+test('timeout covers a response body that never completes', async () => {
+  await withRuntimeClient(async ({ ArkInvoiceClient, ArkInvoiceTransportError }) => {
+    const client = new ArkInvoiceClient({
+      baseUrl: 'https://leshine.work/api/integrations/v1',
+      token: 'ark_live_test',
+      timeoutMs: 10,
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: () => new Promise(() => {}),
+      }),
+    })
+
+    await assert.rejects(
+      client.validateInvoice(runtimePayload),
+      error => error instanceof ArkInvoiceTransportError && error.kind === 'timeout',
+    )
+  })
+})
+
+test('create waits through processing responses and returns the eventual result', async () => {
+  await withRuntimeClient(async ({ ArkInvoiceClient }) => {
+    const calls = []
+    const client = new ArkInvoiceClient({
+      baseUrl: 'https://leshine.work/api/integrations/v1',
+      token: 'ark_live_test',
+      recoveryDelayMs: 1,
+      fetchImpl: async (url, init) => {
+        calls.push({ url: String(url), method: init.method })
+        if (calls.length <= 2) {
+          return jsonResponse({
+            code: 409,
+            message: 'invoice processing',
+            data: { error_code: 'INVOICE_PROCESSING' },
+          }, 409)
+        }
+        return jsonResponse({ code: 200, message: 'invoice replayed', data: recoveredResult })
+      },
+    })
+
+    assert.deepEqual(await client.createInvoice(runtimePayload), recoveredResult)
+    assert.deepEqual(calls.map(call => call.method), ['POST', 'GET', 'GET'])
+  })
+})
+
+test('429 recovery queries then retries the unchanged payload after a 404', async () => {
+  await withRuntimeClient(async ({ ArkInvoiceClient }) => {
+    const calls = []
+    const client = new ArkInvoiceClient({
+      baseUrl: 'https://leshine.work/api/integrations/v1',
+      token: 'ark_live_test',
+      recoveryDelayMs: 1,
+      fetchImpl: async (url, init) => {
+        calls.push({ url: String(url), method: init.method, body: init.body })
+        if (calls.length === 1) {
+          return jsonResponse({ code: 429, message: 'too many requests', data: {} }, 429)
+        }
+        if (calls.length === 2) {
+          return jsonResponse({ code: 404, message: 'not found', data: {} }, 404)
+        }
+        return jsonResponse({
+          code: 201,
+          message: 'invoice created',
+          data: { ...recoveredResult, replayed: false },
+        }, 201)
+      },
+    })
+
+    const result = await client.createInvoice(runtimePayload)
+    assert.equal(result.replayed, false)
+    assert.deepEqual(calls.map(call => call.method), ['POST', 'GET', 'POST'])
+    assert.equal(calls[0].body, calls[2].body)
+  })
+})
+
+test('bounded recovery reports an unknown result instead of leaking a lookup error', async () => {
+  await withRuntimeClient(async ({ ArkInvoiceClient, ArkInvoiceResultUnknownError }) => {
+    let calls = 0
+    const client = new ArkInvoiceClient({
+      baseUrl: 'https://leshine.work/api/integrations/v1',
+      token: 'ark_live_test',
+      recoveryDelayMs: 1,
+      recoveryAttempts: 2,
+      fetchImpl: async () => {
+        calls += 1
+        if (calls === 1) throw new TypeError('socket closed')
+        return jsonResponse({
+          code: 409,
+          message: 'invoice processing',
+          data: { error_code: 'INVOICE_PROCESSING' },
+        }, 409)
+      },
+    })
+
+    await assert.rejects(
+      client.createInvoice(runtimePayload),
+      error => error instanceof ArkInvoiceResultUnknownError
+        && error.externalOrderId === runtimePayload.external_order_id,
+    )
+    assert.equal(calls, 3)
+  })
 })
 
 test('broken 201 create response recovers by querying the same external order id', async () => {

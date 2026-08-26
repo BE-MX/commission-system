@@ -130,11 +130,11 @@ ARK_INVOICE_API_TOKEN=<管理员发放的 Integration App Token>
 1. 调用 `GET /invoices/by-external-id/{external_order_id}` 查询原订单号。
 2. 查询已创建就采用该结果。
 3. 查询 404 时短暂等待，再用原 payload 和同一个 `external_order_id` 重试创建。
-4. 第二次仍不确定时再次查询；绝不生成新的 external_order_id 自动重试。
+4. 第二次仍不确定时继续进行有上限的查询；耗尽后保持“结果确认中”，稍后仍用原 `external_order_id` 查询，绝不生成新的 external_order_id 自动重试。
 
 相同内容重放可能返回 HTTP 200（`replayed=true`），首次创建返回 201。两者都算成功。HTTP 409 `EXTERNAL_ORDER_CHANGED` 不能自动修复或覆盖，应提示用户：“该站点订单已在方舟生成发票，但当前订单内容发生变化，请在方舟核对原发票。”
 
-优先复制并使用方舟提供的 `ark-invoice-client.ts`，不要引入新的 HTTP 包。调用代码只能位于站点服务端路由、Server Action、云函数或后端服务。
+优先复制并使用方舟提供的 `ark-invoice-client.ts`，不要引入新的 HTTP 包。调用代码只能位于站点服务端路由、Server Action、云函数或后端服务。生产 Base URL 必须使用 HTTPS；不要开启本地 HTTP 例外。
 
 ## 用户错误反馈
 

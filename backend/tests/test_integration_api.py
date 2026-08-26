@@ -1226,6 +1226,33 @@ def test_create_invoice_is_atomic_external_provenance_and_never_pushes_okki(api,
     assert calls == []
 
 
+def test_external_invoice_cannot_be_deleted_and_remains_replayable(api):
+    client, db = api
+    from app.invoice import service as invoice_service
+
+    created = client.post(
+        "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
+    )
+    assert created.status_code == 201, created.text
+    invoice = invoice_service.get_invoice(db, created.json()["data"]["invoice_id"])
+
+    with pytest.raises(ValueError, match="站点接入"):
+        invoice_service.delete_invoice(db, invoice)
+
+    replay = client.post(
+        "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
+    )
+    lookup = client.get(
+        "/api/integrations/v1/invoices/by-external-id/SITE%3A2026-0001",
+        headers=_headers(),
+    )
+    assert replay.status_code == 200, replay.text
+    assert lookup.status_code == 200, lookup.text
+    assert replay.json()["data"]["invoice_id"] == created.json()["data"]["invoice_id"]
+    assert lookup.json()["data"]["invoice_id"] == created.json()["data"]["invoice_id"]
+    assert db.query(InvoiceIngestRequest).one().status == "created"
+
+
 def test_create_schema_failure_uses_stable_422_without_ingest(api):
     client, db = api
     payload = _submission()

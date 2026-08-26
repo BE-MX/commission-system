@@ -294,7 +294,9 @@ GET `/invoices/by-external-id/{external_order_id}`
 | 500/503 | 结果可能不确定；先查询，再以完全相同内容和相同订单号重试 |
 | 网络失败/超时 | 结果未知；先查询相同 external_order_id，绝不生成新订单号 |
 
-可直接使用同目录的 `ark-invoice-client.ts`。它在创建出现网络、超时或服务端不确定性后先查询；查询确认未创建时，只会用原 payload 再提交一次，第二次仍不确定则再次查询。
+可直接使用同目录的 `ark-invoice-client.ts`。它在创建出现网络、超时、429、`INVOICE_PROCESSING` 或服务端不确定性后进行有上限的等待和查询；查询 404 时只会用原 payload 再提交一次，之后继续查询。默认最多恢复查询 3 次，仍无法确认时抛出 `ArkInvoiceResultUnknownError`，调用方应保持“结果确认中”并稍后用原 `external_order_id` 查询，不能生成新订单号。
+
+客户端默认只接受 HTTPS Base URL，避免长期 Bearer Token 被明文发送。仅本机开发可显式设置 `allowInsecureLocalhost: true`，且只放行 `localhost`、`127.0.0.1` 或 `::1`。
 
 ## 11. 服务端使用示例
 

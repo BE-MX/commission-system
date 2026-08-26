@@ -173,6 +173,32 @@ interface ErrorData {
   request_id?: string | null
 }
 
+function cleanErrorData(value: unknown): ErrorData {
+  if (!isRecord(value)) return {}
+  const result: ErrorData = {}
+  if (typeof value.error_code === 'string') result.error_code = value.error_code
+  if (Array.isArray(value.issues)) result.issues = value.issues.filter(isValidationIssue)
+  if (Array.isArray(value.warnings)) result.warnings = value.warnings.filter(isValidationIssue)
+  if (typeof value.action === 'string') result.action = value.action
+  if (typeof value.field === 'string') result.field = value.field
+  if (typeof value.external_order_id === 'string') {
+    result.external_order_id = value.external_order_id
+  }
+  if (value.request_id === null || typeof value.request_id === 'string') {
+    result.request_id = value.request_id
+  }
+  return result
+}
+
+function retryAfterMilliseconds(value: string | null): number | null {
+  if (!value) return null
+  const seconds = Number(value)
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1_000, 30_000)
+  const date = Date.parse(value)
+  if (!Number.isFinite(date)) return null
+  return Math.min(Math.max(0, date - new Date().getTime()), 30_000)
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
@@ -301,6 +327,7 @@ export class ArkInvoiceApiError extends Error {
     public readonly status: number,
     message: string,
     public readonly data: ErrorData,
+    public readonly retryAfterMs: number | null = null,
   ) {
     super(message)
     this.name = 'ArkInvoiceApiError'
@@ -324,10 +351,23 @@ export class ArkInvoiceSuccessfulResponseError extends Error {
   }
 }
 
+export class ArkInvoiceResultUnknownError extends Error {
+  constructor(
+    public readonly externalOrderId: string,
+    public readonly lastError: unknown,
+  ) {
+    super(`Ark invoice result is still unknown for external order ${externalOrderId}`)
+    this.name = 'ArkInvoiceResultUnknownError'
+  }
+}
+
 export interface ArkInvoiceClientOptions {
   baseUrl: string
   token: string
   timeoutMs?: number
+  recoveryDelayMs?: number
+  recoveryAttempts?: number
+  allowInsecureLocalhost?: boolean
   fetchImpl?: typeof fetch
 }
 
@@ -335,22 +375,56 @@ export class ArkInvoiceClient {
   private readonly baseUrl: string
   private readonly token: string
   private readonly timeoutMs: number
+  private readonly recoveryDelayMs: number
+  private readonly recoveryAttempts: number
   private readonly fetchImpl: typeof fetch
 
   constructor(options: ArkInvoiceClientOptions) {
-    if (!/^https?:\/\//.test(options.baseUrl)) {
-      throw new TypeError('Ark invoice baseUrl must be an absolute HTTP(S) URL')
+    let baseUrl: URL
+    try {
+      baseUrl = new URL(options.baseUrl)
+    } catch {
+      throw new TypeError('Ark invoice baseUrl must be an absolute HTTPS URL')
+    }
+    const localhost = ['localhost', '127.0.0.1', '[::1]'].includes(baseUrl.hostname)
+    const allowedLocalHttp = options.allowInsecureLocalhost === true
+      && baseUrl.protocol === 'http:'
+      && localhost
+    if (baseUrl.protocol !== 'https:' && !allowedLocalHttp) {
+      throw new TypeError('Ark invoice baseUrl must use HTTPS')
+    }
+    if (baseUrl.username || baseUrl.password || baseUrl.search || baseUrl.hash) {
+      throw new TypeError('Ark invoice baseUrl cannot contain credentials, query, or fragment')
     }
     if (!options.token.startsWith('ark_live_')) {
       throw new TypeError('Ark invoice token is missing or invalid')
     }
-    if (options.timeoutMs !== undefined && options.timeoutMs <= 0) {
-      throw new TypeError('timeoutMs must be greater than zero')
+    if (
+      options.timeoutMs !== undefined
+      && (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0)
+    ) {
+      throw new TypeError('timeoutMs must be a finite number greater than zero')
+    }
+    if (
+      options.recoveryDelayMs !== undefined
+      && (!Number.isFinite(options.recoveryDelayMs) || options.recoveryDelayMs < 0)
+    ) {
+      throw new TypeError('recoveryDelayMs must be a finite non-negative number')
+    }
+    if (
+      options.recoveryAttempts !== undefined
+      && (!Number.isInteger(options.recoveryAttempts)
+        || options.recoveryAttempts < 1
+        || options.recoveryAttempts > 10)
+    ) {
+      throw new TypeError('recoveryAttempts must be an integer from 1 to 10')
     }
 
-    this.baseUrl = options.baseUrl.replace(/\/+$/, '')
+    this.baseUrl = baseUrl.toString().replace(/\/+$/, '')
     this.token = options.token
     this.timeoutMs = options.timeoutMs ?? 15_000
+    this.recoveryDelayMs = options.recoveryDelayMs ?? 500
+    this.recoveryAttempts = options.recoveryAttempts ?? 3
     this.fetchImpl = options.fetchImpl ?? fetch
   }
 
@@ -370,29 +444,51 @@ export class ArkInvoiceClient {
   }
 
   async createInvoice(payload: InvoiceSubmission): Promise<CreateResult> {
+    let initialError: unknown
     try {
       return await this.createOnce(payload)
     } catch (error) {
       if (!this.isAmbiguousCreateError(error)) throw error
+      initialError = error
     }
+    return this.recoverCreate(payload, initialError)
+  }
 
-    try {
-      return await this.getInvoiceByExternalId(payload.external_order_id)
-    } catch (lookupError) {
-      if (!(lookupError instanceof ArkInvoiceApiError && lookupError.status === 404)) {
-        throw lookupError
+  private async recoverCreate(
+    payload: InvoiceSubmission,
+    initialError: unknown,
+  ): Promise<CreateResult> {
+    let lastError = initialError
+    let retriedCreate = false
+
+    for (let attempt = 0; attempt < this.recoveryAttempts; attempt += 1) {
+      await this.waitBeforeRecovery(lastError, attempt)
+      try {
+        return await this.getInvoiceByExternalId(payload.external_order_id)
+      } catch (lookupError) {
+        if (this.isExternalOrderChanged(lookupError)) throw lookupError
+
+        if (lookupError instanceof ArkInvoiceApiError && lookupError.status === 404) {
+          lastError = lookupError
+          if (!retriedCreate) {
+            retriedCreate = true
+            await this.waitBeforeRecovery(lookupError, attempt)
+            try {
+              return await this.createOnce(payload)
+            } catch (retryError) {
+              if (!this.isAmbiguousCreateError(retryError)) throw retryError
+              lastError = retryError
+            }
+          }
+          continue
+        }
+
+        if (!this.isRetryableLookupError(lookupError)) throw lookupError
+        lastError = lookupError
       }
     }
 
-    // A lookup can briefly return 404 while the first request is still reaching
-    // Ark. Retrying the unchanged payload is safe because Ark keys idempotency by
-    // the same Integration App and payload.external_order_id.
-    try {
-      return await this.createOnce(payload)
-    } catch (retryError) {
-      if (!this.isAmbiguousCreateError(retryError)) throw retryError
-      return this.getInvoiceByExternalId(payload.external_order_id)
-    }
+    throw new ArkInvoiceResultUnknownError(payload.external_order_id, lastError)
   }
 
   getInvoiceByExternalId(externalOrderId: string): Promise<CreateResult> {
@@ -436,7 +532,37 @@ export class ArkInvoiceClient {
   private isAmbiguousCreateError(error: unknown): boolean {
     return error instanceof ArkInvoiceTransportError
       || error instanceof ArkInvoiceSuccessfulResponseError
-      || (error instanceof ArkInvoiceApiError && error.status >= 500)
+      || (error instanceof ArkInvoiceApiError && (
+        error.status >= 500
+        || error.status === 429
+        || (error.status === 409 && error.data.error_code === 'INVOICE_PROCESSING')
+      ))
+  }
+
+  private isRetryableLookupError(error: unknown): boolean {
+    return error instanceof ArkInvoiceTransportError
+      || error instanceof ArkInvoiceSuccessfulResponseError
+      || (error instanceof ArkInvoiceApiError && (
+        error.status === 404
+        || error.status === 429
+        || error.status >= 500
+        || (error.status === 409 && error.data.error_code === 'INVOICE_PROCESSING')
+      ))
+  }
+
+  private isExternalOrderChanged(error: unknown): boolean {
+    return error instanceof ArkInvoiceApiError
+      && error.status === 409
+      && error.data.error_code === 'EXTERNAL_ORDER_CHANGED'
+  }
+
+  private async waitBeforeRecovery(error: unknown, attempt: number): Promise<void> {
+    const retryAfterMs = error instanceof ArkInvoiceApiError
+      ? error.retryAfterMs
+      : null
+    const backoffMs = Math.min(this.recoveryDelayMs * (2 ** attempt), 5_000)
+    const delayMs = retryAfterMs ?? backoffMs
+    if (delayMs > 0) await new Promise(resolve => setTimeout(resolve, delayMs))
   }
 
   private async request<T>(
@@ -454,9 +580,8 @@ export class ArkInvoiceClient {
       controller.abort()
     }, this.timeoutMs)
 
-    let response: Response
     try {
-      response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+      const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
         ...init,
         signal: controller.signal,
         headers: {
@@ -466,7 +591,44 @@ export class ArkInvoiceClient {
           ...init.headers,
         },
       })
-    } catch {
+
+      let parsed: unknown
+      try {
+        parsed = await this.readJson(response, controller.signal)
+      } catch (error) {
+        if (timedOut) throw error
+        if (response.ok) {
+          throw new ArkInvoiceSuccessfulResponseError(response.status)
+        }
+        throw new ArkInvoiceApiError(
+          response.status,
+          'Ark invoice API returned an invalid response',
+          {},
+          retryAfterMilliseconds(response.headers.get('Retry-After')),
+        )
+      }
+
+      const envelope = isRecord(parsed)
+        ? parsed as Partial<ApiEnvelope<unknown>>
+        : {}
+
+      if (!response.ok) {
+        throw new ArkInvoiceApiError(
+          response.status,
+          typeof envelope.message === 'string'
+            ? envelope.message
+            : 'Ark invoice API rejected the request',
+          cleanErrorData(envelope.data),
+          retryAfterMilliseconds(response.headers.get('Retry-After')),
+        )
+      }
+      return parseSuccess(response, envelope)
+    } catch (error) {
+      if (
+        error instanceof ArkInvoiceApiError
+        || error instanceof ArkInvoiceSuccessfulResponseError
+        || error instanceof ArkInvoiceTransportError
+      ) throw error
       throw new ArkInvoiceTransportError(
         timedOut ? 'timeout' : 'network',
         timedOut ? 'Ark invoice request timed out' : 'Ark invoice network request failed',
@@ -474,32 +636,15 @@ export class ArkInvoiceClient {
     } finally {
       clearTimeout(timeout)
     }
+  }
 
-    let parsed: unknown
-    try {
-      parsed = await response.json()
-    } catch {
-      if (response.ok) {
-        throw new ArkInvoiceSuccessfulResponseError(response.status)
-      }
-      throw new ArkInvoiceApiError(
-        response.status,
-        'Ark invoice API returned an invalid response',
-        {},
-      )
-    }
-
-    const envelope = isRecord(parsed)
-      ? parsed as Partial<ApiEnvelope<unknown>>
-      : {}
-
-    if (!response.ok) {
-      throw new ArkInvoiceApiError(
-        response.status,
-        envelope.message || 'Ark invoice API rejected the request',
-        (envelope.data || {}) as ErrorData,
-      )
-    }
-    return parseSuccess(response, envelope)
+  private readJson(response: Response, signal: AbortSignal): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      const abort = () => reject(new Error('Ark invoice response body aborted'))
+      signal.addEventListener('abort', abort, { once: true })
+      response.json().then(resolve, reject).finally(() => {
+        signal.removeEventListener('abort', abort)
+      })
+    })
   }
 }

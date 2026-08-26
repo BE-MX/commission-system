@@ -211,6 +211,8 @@ def delete_invoice(db: Session, invoice: Invoice) -> None:
     """Judge by xiaoman_order_id, not sync_status: editing flips a synced invoice
     back to not_synced while the real OKKI order still exists, and deleting would
     orphan it AND cascade-drop its push audit logs."""
+    if invoice.source_type == "external_api":
+        raise ValueError("站点接入发票不允许删除，以保留外部订单的幂等查询结果")
     if invoice.xiaoman_order_id or invoice.sync_status in {"synced", "sync_uncertain"}:
         raise ValueError("该发票已同步或同步结果待核对，不允许删除，请先在小满侧确认")
     # 半成品同步失败可能留下 allocated=0 的审计占位行。它们不代表真实出库，
