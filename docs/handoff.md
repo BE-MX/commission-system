@@ -10,6 +10,18 @@
 
 > ✅ **功能分支完成（2026-08-25）**：`codex/semifinished-inventory` 已实现迁移 120/121 的半成品列表、产品解析关联与人工组成修正、按 g 下单/分批入库、实存/占用/可用/在制库存、生产购物车同步下单及生产发票的 OKKI 同步预占—出库—补偿恢复。线上迁移已到 121，产品同步结果为 794 个关联、233 个半成品、429 个待审核关联；待审核项不会自动下单或领料。详细规则见 `docs/requirements/2026-08-25-semifinished-orders-inventory.md`；尚未合入 main、发布前端或重启后端。
 
+## 2026-08-26 AI 方案对话 · 四种对话方式
+
+- **实现分支**：`codex/ai-chat-modes-20260826`。将旧四入口替换为深度思考、天赋挖掘、未知领域引导、寓言讲概念；规则文件化，点击不覆盖草稿、不自动发送。Skill 显示服务端确认的加载状态并可折叠预览；内置规则不占附件名额。历史方式固定，另开会话换方式；草稿、刷新、停止/重试与只读模式均保留对应边界。
+- **安全与上下文**：首次发送在会话行锁事务内保存 SHA-256 规则快照。普通上传文件仍是数据；未知领域使用明确标注的网页适配版，原始 Skill 留作来源。模式上下文不受最近20条窗口影响，但超过200条/120,000正文字符或附件被截断时明确失败；重试不会读到原问题之后的消息。长度终止原因透传，报告被截断时明确提示回复“继续”。
+- **数据库已应用**：开发/生产共用数据库已执行 `124_ai_chat_modes`，`alembic current` 为唯一 head；已核查 `ark_ai_chat_sessions.mode_snapshot` 是可空 JSON。原会话 NULL，不会被自动改成某种方式。
+- **验证**：后端全量 `2974 passed, 1 skipped`（268.65秒；已有 warnings），ai_chat专项 `158 passed, 1 skipped`；前端 `aiChatState.test.mjs` 30项通过，Vite build通过，约定检查/差异空白检查通过。后端单独测试需预先导入 `app.invoice.models`，因现有 conftest 的半成品FK注册依赖；未为绕过问题修改生产代码。
+- **独立审查**：修复普通请求幂等重放忽略模式、早期附件截断、历史重试读未来消息、旧会话加载覆盖新草稿、切新会话loading卡住、409版本冲突无法重载等问题，均有回归测试。
+- **真实模型冒烟**：现有 `customer_ai_chat`/`claude-fable-5` 调用，四种方式分别成功返回（AI日志2421–2424）；深度思考先论证再问关键问题，天赋先介绍流程并进入第一轮，未知领域给盲区和候选问题，寓言给故事/解析/检验问题。全部为虚构验收素材，无真实个人访谈数据；未把万字最终报告效果当作已完整验证。
+- **页面验收**：实际构建页面 + 真实ai_chat路由，使用内存SQLite、虚构用户和模拟模型完成四入口、草稿、文件预览/加载失败/重试、历史刷新、天赋免输入启动、长度提示、只读和移动端检查。检查平台真实导航/页签后修复高度计算与输入框裁切；390×844/390×500仅为响应式与键盘高度模拟，尚非实体手机键盘实测。临时脚本/截图在本分支 `tmp/qa-chat-*`，不发布到生产。
+- **未发布**：办公室服务器 `192.168.101.193` 的22/5985端口本次实测不可达，本机也没有 `D:\commission-system` 或 `CommissionSystem` 服务；不能从此机器执行生产 `deploy\deploy.bat`。尚需合入main、亮哥明确授权main push，再由办公室服务器执行 `D:\commission-system\deploy\deploy.bat`；发布后验证 `/api/ai-chat/modes`、Skill快照预览、真实会话与手机键盘。
+- 设计与契约：`docs/requirements/2026-08-26-ai-chat-modes.md`、`docs/api-reference.md`、`docs/database.md`、`docs/module-notes.md`。
+
 ## 2026-08-26 openlux Grok Image 2 接入
 
 - 已用现有 openlux Provider #7 完成鉴权及实时目录校验，创建 Preset #28 `design_image_generation_grok_image_2`，实际模型 `grok-imagine-image-2.0`，参数 `response_format=b64_json / output_format=jpeg / n=1`；未修改其他 Provider/Preset。开发与生产共用数据库，因此配置已经保存。

@@ -670,7 +670,17 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 ## 客户 AI 方案对话（`/api/ai-chat`，100 迁移，2026-08-09）
 
-共 8 个 URL pattern、9 个 HTTP 操作（`/sessions` 同时提供 GET/POST）。资源按当前用户 owner 隔离；跨账号与不存在资源统一返回 404。`ai_chat:read` 用于配置、会话和附件内容读取，`ai_chat:write` 用于建会话、上传/删除草稿附件、发送和重试；`ai_chat:admin` 已登记但不绕过 owner，也没有 MVP 管理端点。
+### 内置对话方式（2026-08-26，迁移 124）
+
+- `GET /modes`（`ai_chat:read`）：四种方式的元数据，不含规则全文。固定 ID：`deep-thinking / talent / unknowns / fable`。
+- `GET /modes/{mode_id}`（`ai_chat:read`）：读取部署目录中的内置 Markdown，返回元数据、`content` 和 SHA-256 `version`；未登记 ID 为 404，文件损坏/缺失为 503。Skill 返回明确标注的网页适配版。
+- `GET /sessions/{session_id}/mode`（`ai_chat:read`）：返回本人会话实际使用的规则快照（含正文）；普通会话返回 null，跨 owner 与不存在统一 404。
+- 会话列表及详情的 `session.mode` 为快照摘要（不含正文）。首次 `POST /sessions/{session_id}/turns/stream` 可提供 `mode_id` 和 `mode_version`，两项必须同时存在；服务端校验实际文件版本后与消息在同一事务保存快照。版本变更或已开始会话换方式返回 409，不自动降级普通聊天。普通会话的幂等请求也不允许追加方式。
+- 已开始会话继续/重试使用保存的规则，不读取最新文件。方式文件不算普通附件，不占 5 个附件名额；上传 Markdown 仍仅为不可信参考资料。
+- 内置方式保留至多 200 条有效历史消息、120,000 字符对话正文；超出上限或参考文档被截断时返回明确的 `context_limit` SSE 错误，不丢失早期经历继续报告。普通聊天仍取最近 20 条有效消息。重试只使用原问题及之前的上下文。
+- 上游因输出长度结束时，SSE 追加明确的“内容尚未完成，回复继续”提示并持久保存，`done.finish_reason` 保留上游终止原因。
+
+共 11 个 URL pattern、12 个 HTTP 操作（含上述 3 个方式读取操作，`/sessions` 同时提供 GET/POST）。资源按当前用户 owner 隔离；跨账号与不存在资源统一返回 404。`ai_chat:read` 用于配置、会话和附件内容读取，`ai_chat:write` 用于建会话、上传/删除草稿附件、发送和重试；`ai_chat:admin` 已登记但不绕过 owner，也没有 MVP 管理端点。
 
 | 方法 | 路径 | 权限 | 契约 |
 |---|---|---|---|
