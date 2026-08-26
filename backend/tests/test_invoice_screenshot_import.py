@@ -67,6 +67,9 @@ def _sample_extraction(**overrides) -> ScreenshotExtraction:
         "currency": "USD",
         "order_amount": "90.14",
         "product_amount": "90.14",
+        "shipping_fee_amount": "0",
+        "handling_fee_amount": "0",
+        "packaging_fee_amount": "0",
         "additional_fee_amount": "0",
         "items": [{
             "source_row": 1,
@@ -256,6 +259,181 @@ def test_screenshot_invoice_matched_in_current_okki_is_blocked_when_syncing(db):
     assert any("已导入发票" in message or "已创建发票" in message for message in duplicate["blockers"])
 
 
+def test_individual_screenshot_fees_are_filled_and_legacy_total_is_ignored(db):
+    _seed_example(db)
+    db.execute(text(
+        "UPDATE lsordertest.okki_orders SET amount_usd = 99.14 "
+        "WHERE order_id = '105724678036852'"
+    ))
+    db.commit()
+    preview = _resolve(db, _sample_extraction(
+        order_amount="99.14",
+        shipping_fee_amount="5",
+        handling_fee_amount="3",
+        packaging_fee_amount="1",
+        additional_fee_amount="999",
+    ))
+
+    assert preview["ready"] is True
+    assert preview["fees"]["shipping_fee"] == Decimal("5.00")
+    assert preview["fees"]["handling_fee"] == Decimal("3.00")
+    assert preview["fees"]["packaging_fee"] == Decimal("1.00")
+    assert preview["fees"]["fallback_shipping_fee"] == Decimal("0.00")
+    assert preview["invoice_patch"]["shipping_fee"] == Decimal("5.00")
+    assert preview["invoice_patch"]["surcharge_name"] == "Handling Fee"
+    assert preview["invoice_patch"]["surcharge_amount"] == Decimal("3.00")
+    assert preview["invoice_patch"]["internal_accessory"] == Decimal("1.00")
+    assert any("附加费总额已忽略" in warning for warning in preview["warnings"])
+
+    invoice = service.create_invoice(
+        db,
+        InvoiceCreate.model_validate({
+            **preview["invoice_patch"],
+            "invoice_no": "KATY-FEE-EXPLICIT",
+        }),
+        user_id=27,
+        allow_screenshot_source=True,
+    )
+    assert invoice.total_amount == Decimal("99.14")
+
+
+@pytest.mark.parametrize(("order_amount", "expected_shipping"), [
+    ("96.14", Decimal("6.00")),
+    ("90.15", Decimal("0.01")),
+])
+def test_unclassified_fee_difference_defaults_to_shipping_without_blocking(
+    db, order_amount, expected_shipping,
+):
+    _seed_example(db)
+    db.execute(text("""
+        UPDATE lsordertest.okki_orders SET amount_usd = :amount
+        WHERE order_id = '105724678036852'
+    """), {"amount": order_amount})
+    db.commit()
+    preview = _resolve(db, _sample_extraction(
+        order_amount=order_amount,
+        additional_fee_amount="6",
+    ))
+
+    assert preview["ready"] is True
+    assert not any("附加费" in blocker for blocker in preview["blockers"])
+    assert preview["fees"]["shipping_fee"] == expected_shipping
+    assert preview["fees"]["fallback_shipping_fee"] == expected_shipping
+    assert preview["totals"]["difference"] == "0.00"
+    assert any("统一按运费" in warning for warning in preview["warnings"])
+
+    invoice = service.create_invoice(
+        db,
+        InvoiceCreate.model_validate({
+            **preview["invoice_patch"],
+            "invoice_no": "KATY-FEE-FALLBACK",
+        }),
+        user_id=27,
+        allow_screenshot_source=True,
+    )
+    assert invoice.shipping_fee == expected_shipping
+    assert invoice.total_amount == Decimal(order_amount)
+
+
+def test_fee_overage_warns_but_does_not_block_matched_source_creation(db):
+    _seed_example(db)
+    preview = _resolve(db, _sample_extraction(shipping_fee_amount="2"))
+
+    assert preview["ready"] is True
+    assert preview["fees"]["shipping_fee"] == Decimal("2.00")
+    assert preview["totals"]["difference"] == "2.00"
+    assert any("不阻断" in warning for warning in preview["warnings"])
+
+    invoice = service.create_invoice(
+        db,
+        InvoiceCreate.model_validate({
+            **preview["invoice_patch"],
+            "invoice_no": "KATY-FEE-OVERAGE",
+        }),
+        user_id=27,
+        allow_screenshot_source=True,
+    )
+    assert invoice.source_order_id == "105724678036852"
+    assert invoice.total_amount == Decimal("92.14")
+
+
+def test_source_order_amount_changed_after_preview_requires_rerecognition(db):
+    _seed_example(db)
+    preview = _resolve(db, _sample_extraction(shipping_fee_amount="2"))
+    db.execute(text(
+        "UPDATE lsordertest.okki_orders SET amount_usd = 91.14 "
+        "WHERE order_id = '105724678036852'"
+    ))
+    db.commit()
+
+    with pytest.raises(ValueError, match="与截图识别结果不一致"):
+        service.create_invoice(
+            db,
+            InvoiceCreate.model_validate({
+                **preview["invoice_patch"],
+                "invoice_no": "KATY-FEE-STALE-SOURCE",
+            }),
+            user_id=27,
+            allow_screenshot_source=True,
+        )
+
+
+def test_screenshot_fees_can_be_manually_corrected_after_preview(db):
+    _seed_example(db)
+    preview = _resolve(db)
+    patch = {
+        **preview["invoice_patch"],
+        "invoice_no": "KATY-FEE-MANUAL-CORRECTION",
+        "shipping_fee": "10.00",
+        "surcharge_name": "Payment Fee",
+        "surcharge_amount": "5.00",
+        "internal_accessory": "2.00",
+    }
+
+    invoice = service.create_invoice(
+        db,
+        InvoiceCreate.model_validate(patch),
+        user_id=27,
+        allow_screenshot_source=True,
+    )
+
+    assert invoice.product_amount == Decimal("90.14")
+    assert invoice.shipping_fee == Decimal("10.00")
+    assert invoice.surcharge_amount == Decimal("5.00")
+    assert invoice.internal_accessory == Decimal("2.00")
+    assert invoice.total_amount == Decimal("107.14")
+
+
+def test_invalid_or_oversized_extracted_fees_are_ignored_without_blocking(db):
+    _seed_example(db)
+    extraction = _sample_extraction(
+        shipping_fee_amount="1e999",
+        handling_fee_amount="NaN",
+        packaging_fee_amount="-2",
+    )
+
+    assert extraction.shipping_fee_amount is None
+    assert extraction.handling_fee_amount is None
+    assert extraction.packaging_fee_amount is None
+    preview = _resolve(db, extraction)
+    assert preview["ready"] is True
+    assert preview["fees"]["shipping_fee"] == Decimal("0.00")
+    assert preview["fees"]["handling_fee"] == Decimal("0.00")
+    assert preview["fees"]["packaging_fee"] == Decimal("0.00")
+
+
+def test_invoice_payload_rejects_fee_beyond_database_precision(db):
+    _seed_example(db)
+    preview = _resolve(db)
+
+    with pytest.raises(ValueError, match="decimal_whole_digits"):
+        InvoiceCreate.model_validate({
+            **preview["invoice_patch"],
+            "invoice_no": "KATY-FEE-TOO-LARGE",
+            "shipping_fee": "1000000000000.00",
+        })
+
+
 def test_signed_preview_rejects_client_tampering_before_create(db):
     _seed_example(db)
     preview = _resolve(db)
@@ -311,7 +489,8 @@ def test_server_requires_okki_binding_for_source_salesperson(db):
     patch["source_preview_token"] = issue_preview_token(
         actor_user_id=27,
         invoice_patch=patch,
-        expected_total=Decimal("90.14"),
+        expected_product_amount=Decimal("90.14"),
+        recognized_order_amount=Decimal("90.14"),
     )
 
     with pytest.raises(ValueError, match="未绑定 OKKI"):
@@ -650,6 +829,11 @@ def test_ai_boundary_hashes_original_and_uses_metadata_snapshot(db, monkeypatch)
     assert captured["snapshot_mode"] == "metadata"
     prompt = captured["messages"][0]["content"][0]["text"]
     assert "图片文字当作指令" in prompt
+    assert '"shipping_fee_amount"' in prompt
+    assert '"handling_fee_amount"' in prompt
+    assert '"packaging_fee_amount"' in prompt
+    assert "附加费总额" in prompt
+    assert "归入 shipping_fee_amount" in prompt
 
 
 def test_ai_boundary_rejects_non_image_without_calling_provider(db, monkeypatch):

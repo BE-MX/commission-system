@@ -83,9 +83,19 @@ def resolve_preview(db: Session, *, request: ScreenshotResolveRequest, actor_use
     blockers.extend(totals["blockers"])
     warnings.extend(totals["warnings"])
 
-    fees = _resolve_fees(extraction)
+    fees = _resolve_fees(
+        extraction,
+        calculated_product_amount=Decimal(totals["data"]["calculated_product_amount"]),
+    )
     blockers.extend(fees.pop("blockers"))
     warnings.extend(fees.pop("warnings"))
+    totals["data"].update({
+        "recognized_shipping_fee": str(fees["recognized_shipping_fee"]),
+        "recognized_handling_fee": str(fees["recognized_handling_fee"]),
+        "recognized_packaging_fee": str(fees["recognized_packaging_fee"]),
+        "fallback_shipping_fee": str(fees["fallback_shipping_fee"]),
+        "difference": str(fees["difference"]),
+    })
 
     source_order = _match_source_order(
         db,
@@ -130,7 +140,8 @@ def resolve_preview(db: Session, *, request: ScreenshotResolveRequest, actor_use
         preview_token = issue_preview_token(
             actor_user_id=actor_user_id,
             invoice_patch=invoice_patch,
-            expected_total=extraction.order_amount,
+            expected_product_amount=_invoice_patch_product_total(invoice_patch),
+            recognized_order_amount=extraction.order_amount,
         )
         invoice_patch["source_preview_token"] = preview_token
     return {
@@ -255,10 +266,6 @@ def _validate_totals(extraction: ScreenshotExtraction) -> dict:
     product_amount = extraction.product_amount
     if product_amount is not None and abs(_money(calculated) - _money(product_amount)) > Decimal("0.01"):
         blockers.append("产品明细合计与截图产品总金额不一致")
-    fees = extraction.additional_fee_amount or Decimal("0")
-    expected_total = _money(calculated + fees)
-    if extraction.order_amount is not None and abs(expected_total - _money(extraction.order_amount)) > Decimal("0.01"):
-        blockers.append("产品合计加附加费用与截图订单金额不一致")
     if extraction.order_amount is None:
         blockers.append("未识别到订单总金额")
     return {
@@ -269,27 +276,55 @@ def _validate_totals(extraction: ScreenshotExtraction) -> dict:
             "visible_subtotal_amount": str(_money(visible_subtotals)),
             "recognized_product_amount": str(product_amount) if product_amount is not None else None,
             "recognized_order_amount": str(extraction.order_amount) if extraction.order_amount is not None else None,
-            "difference": str(_money(expected_total - (extraction.order_amount or expected_total))),
+            "difference": "0.00",
         },
     }
 
 
-def _resolve_fees(extraction: ScreenshotExtraction) -> dict:
-    fee = extraction.additional_fee_amount
-    if fee is None:
-        return {
-            "shipping_fee": 0, "packaging_fee": 0, "handling_fee": 0,
-            "blockers": [], "warnings": ["未识别到附加费用，费用字段暂按 0 预填，请人工确认"],
-        }
-    if _money(fee) != Decimal("0.00"):
-        return {
-            "shipping_fee": 0, "packaging_fee": 0, "handling_fee": 0,
-            "blockers": ["截图只有附加费用总额，无法安全拆分包装费、运费和手续费"],
-            "warnings": [],
-        }
+def _resolve_fees(
+    extraction: ScreenshotExtraction,
+    *,
+    calculated_product_amount: Decimal,
+) -> dict:
+    shipping = _money(extraction.shipping_fee_amount or 0)
+    handling = _money(extraction.handling_fee_amount or 0)
+    packaging = _money(extraction.packaging_fee_amount or 0)
+    recognized_shipping = shipping
+    warnings: list[str] = []
+
+    legacy_total = _money(extraction.additional_fee_amount or 0)
+    if legacy_total:
+        warnings.append("截图附加费总额已忽略，只按单项费用和订单差额归类")
+
+    local_total = _money(calculated_product_amount + shipping + handling + packaging)
+    order_total = _money(extraction.order_amount) if extraction.order_amount is not None else None
+    fallback_shipping = Decimal("0.00")
+    if order_total is not None:
+        difference = _money(order_total - local_total)
+        if difference > Decimal("0.00"):
+            fallback_shipping = difference
+            shipping = _money(shipping + fallback_shipping)
+            local_total = _money(local_total + fallback_shipping)
+            warnings.append(
+                f"有 {fallback_shipping} 费用差额无法明确归属，已统一按运费预填"
+            )
+        elif difference < Decimal("0.00"):
+            warnings.append(
+                f"单项费用填入后合计高于截图订单金额 {abs(difference)}，"
+                "已保留识别结果且不阻断，请保存前确认"
+            )
+    final_difference = _money(local_total - (order_total if order_total is not None else local_total))
     return {
-        "shipping_fee": 0, "packaging_fee": 0, "handling_fee": 0,
-        "blockers": [], "warnings": [],
+        "shipping_fee": shipping,
+        "packaging_fee": packaging,
+        "handling_fee": handling,
+        "recognized_shipping_fee": recognized_shipping,
+        "recognized_packaging_fee": packaging,
+        "recognized_handling_fee": handling,
+        "fallback_shipping_fee": fallback_shipping,
+        "difference": final_difference,
+        "blockers": [],
+        "warnings": warnings,
     }
 
 
@@ -400,6 +435,7 @@ def _build_invoice_patch(
         "currency": extraction.currency or "USD",
         "shipping_fee": fees["shipping_fee"],
         "internal_accessory": fees["packaging_fee"],
+        "surcharge_name": "Handling Fee" if fees["handling_fee"] else None,
         "surcharge_amount": fees["handling_fee"],
         "source_type": "okki_screenshot",
         "source_order_id": (
@@ -420,3 +456,10 @@ def _norm(value) -> str:
 
 def _money(value: Decimal) -> Decimal:
     return Decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _invoice_patch_product_total(invoice_patch: dict) -> Decimal:
+    return _money(sum(
+        (Decimal(item.get("total_price") or 0) for item in invoice_patch.get("items") or []),
+        Decimal("0"),
+    ))
