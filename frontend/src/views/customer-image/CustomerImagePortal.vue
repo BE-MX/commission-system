@@ -5,14 +5,9 @@ import CustomerProductCatalog from './CustomerProductCatalog.vue'
 import CustomerProductEditor from './CustomerProductEditor.vue'
 import LanguageSwitcher from './components/LanguageSwitcher.vue'
 import { useCustomerImagePortal } from './composables/useCustomerImagePortal'
-import { provideCustomerImageI18n } from './i18n.js'
+import { customerImageDownloadFilename, provideCustomerImageI18n } from './i18n.js'
 
-const { t, tm } = provideCustomerImageI18n()
-
-function downloadFilename(generation) {
-  const product = generation?.product_name || t('download.productFallback')
-  return `${product}-${t('download.suffix')}-${generation?.id}.png`
-}
+const { locale, t, tm } = provideCustomerImageI18n()
 
 const {
   state,
@@ -34,7 +29,7 @@ const {
 } = useCustomerImagePortal({
   api: publicApi,
   clearInvite: clearInviteToken,
-  downloadFilename,
+  downloadFilename: generation => customerImageDownloadFilename(locale.value, generation),
   scrollResultIntoView() {
     requestAnimationFrame(() => {
       document.getElementById('customer-generation-result')?.scrollIntoView({

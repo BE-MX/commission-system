@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { useCustomerImagePortal } from '../src/views/customer-image/composables/useCustomerImagePortal.js'
-import { translateCustomerImage } from '../src/views/customer-image/i18n.js'
 
 function deferred() {
   let resolve
@@ -359,7 +358,7 @@ test('active generation completion announces politely and scrolls the result wit
   assert.equal(portal.state.previewGenerationId, 71)
 })
 
-test('download filename follows the UI locale while API payloads remain locale-free', async () => {
+test('default download filename is safe and API payloads remain locale-free', async () => {
   const originalDocument = globalThis.document
   const downloads = []
   globalThis.document = {
@@ -371,38 +370,34 @@ test('download filename follows the UI locale while API payloads remain locale-f
   }
 
   try {
-    for (const locale of ['en', 'zh-CN']) {
-      const submissions = []
-      const generation = {
-        id: 92,
-        product_id: 9,
-        product_name: '包装盒 Box',
-        status: 'succeeded',
-        result_url: '/api/customer-image/public/assets/92/content',
-        created_at: '2026-08-09T02:00:00Z',
-      }
-      const portal = useCustomerImagePortal({
-        api: baseApi({
-          listGenerations: async () => ({ data: [generation] }),
-          getAssetBlob: async () => ({ data: {} }),
-          createGeneration: async payload => {
-            submissions.push(payload)
-            return { data: generation }
-          },
-        }),
-        lifecycle: lifecycle(),
-        ...quietPolling(),
-        urlApi: { createObjectURL: () => 'blob:result', revokeObjectURL() {} },
-        downloadFilename: item => `${item.product_name || translateCustomerImage(locale, 'download.productFallback')}-${translateCustomerImage(locale, 'download.suffix')}-${item.id}.png`,
-      })
-
-      await portal.bootstrap()
-      portal.downloadGeneration(generation)
-      await portal.submitGeneration()
-      assert.equal(Object.hasOwn(submissions[0], 'locale'), false)
+    const submissions = []
+    const generation = {
+      id: 92,
+      product_id: 9,
+      product_name: '包装盒 Box',
+      status: 'succeeded',
+      result_url: '/api/customer-image/public/assets/92/content',
+      created_at: '2026-08-09T02:00:00Z',
     }
+    const portal = useCustomerImagePortal({
+      api: baseApi({
+        listGenerations: async () => ({ data: [generation] }),
+        getAssetBlob: async () => ({ data: {} }),
+        createGeneration: async payload => {
+          submissions.push(payload)
+          return { data: generation }
+        },
+      }),
+      lifecycle: lifecycle(),
+      ...quietPolling(),
+      urlApi: { createObjectURL: () => 'blob:result', revokeObjectURL() {} },
+    })
 
-    assert.deepEqual(downloads, ['包装盒 Box-visual-92.png', '包装盒 Box-效果图-92.png'])
+    await portal.bootstrap()
+    portal.downloadGeneration(generation)
+    await portal.submitGeneration()
+    assert.equal(Object.hasOwn(submissions[0], 'locale'), false)
+    assert.deepEqual(downloads, ['generation-92.png'])
   } finally {
     globalThis.document = originalDocument
   }

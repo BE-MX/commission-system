@@ -10,7 +10,7 @@ const props = defineProps({
 
 defineEmits(['select'])
 
-const ALL_CATEGORIES = '__all__'
+const ALL_CATEGORIES = Symbol('all-categories')
 const { locale, t } = useCustomerImageI18n()
 const search = ref('')
 const category = ref(ALL_CATEGORIES)

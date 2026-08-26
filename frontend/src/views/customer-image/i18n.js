@@ -278,6 +278,11 @@ export function translateCustomerImage(locale, key, params = {}, messages = MESS
   return template.replace(/\{(\w+)\}/g, (_, name) => String(params[name] ?? ''))
 }
 
+export function customerImageDownloadFilename(locale, generation) {
+  const product = generation?.product_name || translateCustomerImage(locale, 'download.productFallback')
+  return `${product}-${translateCustomerImage(locale, 'download.suffix')}-${generation?.id}.png`
+}
+
 function browserStorage() {
   try {
     return globalThis.localStorage

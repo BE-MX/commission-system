@@ -6,6 +6,7 @@ import { createRenderer, defineComponent, h } from 'vue'
 import {
   CUSTOMER_IMAGE_LOCALE_KEY,
   CUSTOMER_IMAGE_MESSAGES,
+  customerImageDownloadFilename,
   customerImageMessage,
   normalizeCustomerImageLocale,
   provideCustomerImageI18n,
@@ -32,6 +33,28 @@ const fixedCopySources = {
   options: read('../src/views/customer-image/components/ProductOptionGroup.vue'),
   preview: read('../src/views/customer-image/components/GenerationPreview.vue'),
   history: read('../src/views/customer-image/components/GenerationHistory.vue'),
+}
+const publicUiSources = { portal: portalSource, ...fixedCopySources }
+const descriptorSources = [
+  read('../src/views/customer-image/state.js'),
+  read('../src/views/customer-image/composables/useCustomerImagePortal.js'),
+]
+
+function assertCatalogKey(key) {
+  for (const locale of ['en', 'zh-CN']) {
+    assert.equal(typeof CUSTOMER_IMAGE_MESSAGES[locale][key], 'string', `${locale}.${key} is missing`)
+    assert.notEqual(CUSTOMER_IMAGE_MESSAGES[locale][key].trim(), '', `${locale}.${key} is empty`)
+  }
+}
+
+function staticVisibleCopy(source) {
+  const template = source.match(/<template>([\s\S]*?)<\/template>/)?.[1] || ''
+  const textNodes = [...template.matchAll(/>([^<>]+)</g)]
+    .map(match => match[1].replace(/\{\{[\s\S]*?\}\}/g, '').trim())
+    .filter(Boolean)
+  const plainAttributes = [...template.matchAll(/(?:^|\s)(?:aria-label|placeholder|alt|title|active-text|inactive-text|empty-text|description|label)="([^"]+)"/gm)]
+    .map(match => match[1].trim())
+  return [...textNodes, ...plainAttributes].filter(value => /[A-Za-z]{2,}/.test(value))
 }
 
 test('normalizes missing and unsupported locales to English', () => {
@@ -262,7 +285,7 @@ test('portal installs i18n before its hook and keeps the switcher outside every 
   assert.ok(provider >= 0, 'portal must install customer image i18n')
   assert.ok(portalHook > provider, 'i18n provider must be installed before the portal hook')
   assert.ok(switcher >= 0 && switcher < firstStateBranch, 'switcher must remain outside state branches')
-  assert.match(portalSource, /const\s*\{\s*t,\s*tm\s*\}\s*=\s*provideCustomerImageI18n\(\)/)
+  assert.match(portalSource, /const\s*\{\s*locale,\s*t,\s*tm\s*\}\s*=\s*provideCustomerImageI18n\(\)/)
   assert.match(portalSource, /<LanguageSwitcher\s*\/?>/)
   assert.match(portalSource, /tm\(state\.(?:notice|error)\)/)
 })
@@ -299,7 +322,7 @@ test('all six customer surfaces consume the shared i18n provider without fixed C
 
 test('catalog uses a locale-independent category sentinel and never translates business data', () => {
   const source = fixedCopySources.catalog
-  assert.match(source, /const\s+ALL_CATEGORIES\s*=\s*['"]__all__['"]/)
+  assert.match(source, /const\s+ALL_CATEGORIES\s*=\s*Symbol\(['"]all-categories['"]\)/)
   assert.match(source, /t\('catalog\.category\.all'\)/)
   assert.match(source, /product\.name/)
   assert.match(source, /product\.category/)
@@ -330,4 +353,57 @@ test('editor section markers translate and historical results announce their own
 
   assert.match(fixedCopySources.preview, /generation\?\.product_name\s*\|\|\s*product\?\.name/)
   assert.match(fixedCopySources.preview, /preview\.resultAlt[\s\S]*generation\?\.product_name/)
+})
+
+test('every public UI and descriptor key resolves in both production catalogs', () => {
+  const literalUiKeys = new Set(Object.values(publicUiSources).flatMap(source => (
+    [...source.matchAll(/\bt\(\s*['"]([^'"]+)['"]/g)].map(match => match[1])
+  )))
+  const descriptorKeys = new Set(descriptorSources.flatMap(source => (
+    [...source.matchAll(/['"]((?:portal|errors|quota|generation|settings)\.[A-Za-z0-9.]+)['"]/g)]
+      .map(match => match[1])
+  )))
+  const dynamicUiKeys = [
+    'preview.failed', 'preview.running', 'preview.queued',
+    'history.status.queued', 'history.status.running', 'history.status.succeeded',
+    'history.status.failed', 'history.status.processing',
+  ]
+
+  assert.ok(literalUiKeys.size > 50, 'literal key extraction must cover the full public UI')
+  assert.ok(descriptorKeys.size > 15, 'descriptor key extraction must cover runtime messages')
+  for (const key of new Set([...literalUiKeys, ...descriptorKeys, ...dynamicUiKeys])) assertCatalogKey(key)
+})
+
+test('public templates contain no unlocalized ordinary English copy', () => {
+  const allowedStaticCopy = new Set(['Le'])
+  for (const [name, source] of Object.entries(publicUiSources)) {
+    const unexpected = staticVisibleCopy(source).filter(copy => !allowedStaticCopy.has(copy))
+    assert.deepEqual(unexpected, [], `${name} contains visible English copy outside i18n`)
+  }
+})
+
+test('production download filename uses locale catalog and preserves business product names', () => {
+  assert.equal(
+    customerImageDownloadFilename('en', { id: 92, product_name: '包装盒 Box' }),
+    '包装盒 Box-visual-92.png',
+  )
+  assert.equal(
+    customerImageDownloadFilename('zh-CN', { id: 92, product_name: '包装盒 Box' }),
+    '包装盒 Box-效果图-92.png',
+  )
+  assert.equal(
+    customerImageDownloadFilename('zh-CN', { id: 93 }),
+    '产品效果图-效果图-93.png',
+  )
+  assert.match(portalSource, /customerImageDownloadFilename\(locale\.value,\s*generation\)/)
+})
+
+test('catalog all-category sentinel cannot collide with a backend category value', () => {
+  const source = fixedCopySources.catalog
+  assert.match(source, /const\s+ALL_CATEGORIES\s*=\s*Symbol\(['"]all-categories['"]\)/)
+  assert.match(source, /\[ALL_CATEGORIES,\s*\.\.\.new Set\(props\.products\.map\(product => product\.category\)/)
+  assert.match(source, /category\.value\s*===\s*ALL_CATEGORIES\s*\|\|\s*product\.category\s*===\s*category\.value/)
+  assert.match(source, /item\s*===\s*ALL_CATEGORIES\s*\?\s*t\('catalog\.category\.all'\)\s*:\s*item/)
+  assert.doesNotMatch(source, /ALL_CATEGORIES\s*=\s*['"]__all__['"]/)
+  assert.ok('__all__' !== Symbol('all-categories'), 'business category strings stay distinct from the sentinel')
 })
