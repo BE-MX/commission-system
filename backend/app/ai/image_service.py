@@ -8,6 +8,7 @@ import re
 import time
 from copy import deepcopy
 from dataclasses import dataclass
+from math import gcd
 from typing import Optional, TypedDict
 
 import httpx
@@ -147,9 +148,14 @@ def _buffer_streamed_response(response: httpx.Response) -> httpx.Response:
             if total > _MAX_IMAGE_RESPONSE_BYTES:
                 raise ValueError("provider image response is too large")
             chunks.append(chunk)
+        # iter_bytes() already decompresses the wire body. Do not ask the new
+        # Response to decode it again, or retain the compressed Content-Length.
+        headers = response.headers.copy()
+        headers.pop("content-encoding", None)
+        headers.pop("content-length", None)
         return httpx.Response(
             response.status_code,
-            headers=response.headers,
+            headers=headers,
             content=b"".join(chunks),
             request=response.request,
             extensions=dict(response.extensions),
@@ -449,6 +455,19 @@ def _image_prompt_snapshot(prompt: str, images: list[ImageInput]) -> str:
     )
 
 
+def _apply_grok_aspect_ratio(params: dict) -> None:
+    """Grok uses aspect_ratio; its images API silently ignores OpenAI size."""
+    if params.get("model") != "grok-imagine-image-2.0" or not params.get("size"):
+        return
+    match = re.fullmatch(r"([1-9]\d*)x([1-9]\d*)", str(params["size"]))
+    if match is None:
+        raise ValueError("Grok image size must be WIDTHxHEIGHT")
+    width, height = map(int, match.groups())
+    divisor = gcd(width, height)
+    params["aspect_ratio"] = f"{width // divisor}:{height // divisor}"
+    del params["size"]
+
+
 def _image_params(
     preset: AiPreset, prompt: str, size: Optional[str] = None, quality: Optional[str] = None,
 ) -> dict:
@@ -466,6 +485,7 @@ def _image_params(
     # expo 的客户端档位选择器已据此撤除。逻辑保留给将来真正支持该参数的通道。
     if quality:
         params["quality"] = quality
+    _apply_grok_aspect_ratio(params)
     return params
 
 
@@ -480,6 +500,7 @@ def _generation_params(
         params["size"] = size
     if quality:
         params["quality"] = quality
+    _apply_grok_aspect_ratio(params)
     return params
 
 

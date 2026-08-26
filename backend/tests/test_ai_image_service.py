@@ -864,3 +864,53 @@ def test_edit_image_omits_large_base64_from_response_snapshot(db, monkeypatch):
     assert large_b64 not in log.response_snapshot
     assert "[omitted base64 image" in log.response_snapshot
     assert len(log.response_snapshot) < 5000
+
+
+@pytest.mark.parametrize("builder", [image_service._generation_params, image_service._image_params])
+@pytest.mark.parametrize("size,ratio", [("1024x1024", "1:1"), ("1024x1536", "2:3"), ("1536x1024", "3:2")])
+def test_grok_image_requests_translate_size_to_aspect_ratio(builder, size, ratio):
+    from types import SimpleNamespace
+    preset = SimpleNamespace(model="grok-imagine-image-2.0", parameters={
+        "response_format": "b64_json", "output_format": "jpeg", "size": "1024x1024",
+    })
+    payload = builder(preset, "draw a mug", size=size, quality="medium")
+    assert payload["aspect_ratio"] == ratio
+    assert "size" not in payload
+    assert payload["quality"] == "medium"
+    assert payload["response_format"] == "b64_json"
+    assert payload["output_format"] == "jpeg"
+
+
+@pytest.mark.parametrize("encoding", ["gzip", "deflate"])
+def test_buffer_streamed_image_response_does_not_decode_compression_twice(encoding):
+    import gzip
+    import zlib
+    import httpx
+    payload = b'{"data":[{"b64_json":"test"}]}'
+    compressed = gzip.compress(payload) if encoding == "gzip" else zlib.compress(payload)
+    response = httpx.Response(
+        200, request=httpx.Request("POST", "https://api.openlux.ai/v1/images/generations"),
+        headers={"Content-Encoding": encoding, "Content-Length": str(len(compressed)), "x-request-id": "req-grok"},
+        stream=httpx.ByteStream(compressed),
+    )
+    buffered = image_service._buffer_streamed_response(response)
+    assert buffered.json() == {"data": [{"b64_json": "test"}]}
+    assert "content-encoding" not in buffered.headers
+    assert int(buffered.headers["content-length"]) == len(payload)
+    assert buffered.headers["x-request-id"] == "req-grok"
+    assert response.is_closed
+
+
+def test_buffer_streamed_image_rejects_decompressed_size_over_limit(monkeypatch):
+    import gzip
+    import httpx
+    compressed = gzip.compress(b"a" * 4096)
+    monkeypatch.setattr(image_service, "_MAX_IMAGE_RESPONSE_BYTES", 100)
+    response = httpx.Response(
+        200, request=httpx.Request("POST", "https://api.openlux.ai/v1/images/generations"),
+        headers={"Content-Encoding": "gzip", "Content-Length": str(len(compressed))},
+        stream=httpx.ByteStream(compressed),
+    )
+    with pytest.raises(ValueError, match="too large"):
+        image_service._buffer_streamed_response(response)
+    assert response.is_closed
