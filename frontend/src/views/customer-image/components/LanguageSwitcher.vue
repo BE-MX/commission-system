@@ -2,25 +2,24 @@
 import { useCustomerImageI18n } from '../i18n.js'
 
 const { locale, setLocale, t } = useCustomerImageI18n()
+
+const languageOptions = Object.freeze([
+  { value: 'en', labelKey: 'language.english', shortLabel: 'EN' },
+  { value: 'zh-CN', labelKey: 'language.chinese', shortLabel: '中文' },
+])
 </script>
 
 <template>
   <div class="language-switcher" role="group" :aria-label="t('language.label')">
     <button
+      v-for="option in languageOptions"
+      :key="option.value"
       type="button"
-      :aria-label="t('language.english')"
-      :aria-pressed="locale === 'en'"
-      @click="setLocale('en')"
+      :aria-label="t(option.labelKey)"
+      :aria-pressed="locale === option.value"
+      @click="setLocale(option.value)"
     >
-      EN
-    </button>
-    <button
-      type="button"
-      :aria-label="t('language.chinese')"
-      :aria-pressed="locale === 'zh-CN'"
-      @click="setLocale('zh-CN')"
-    >
-      中文
+      {{ option.shortLabel }}
     </button>
   </div>
 </template>
@@ -62,8 +61,8 @@ button[aria-pressed='true'] {
 }
 
 button:focus-visible {
-  outline: 3px solid var(--cip-focus);
-  outline-offset: 1px;
+  outline: 3px solid var(--cip-accent-strong);
+  outline-offset: 2px;
 }
 
 button:active {
@@ -79,8 +78,8 @@ button:active {
 
 @media (max-width: 760px) {
   .language-switcher {
-    top: 5px;
-    right: 8px;
+    top: max(5px, env(safe-area-inset-top));
+    right: max(8px, env(safe-area-inset-right));
   }
 }
 
