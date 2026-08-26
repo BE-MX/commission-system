@@ -1,5 +1,5 @@
 <template>
-  <el-drawer :model-value="open" class="chat-mode-drawer" :title="mode?.title || '对话方式说明'" size="min(560px, 100vw)" append-to-body :destroy-on-close="true" @update:model-value="$emit('update:open', $event)">
+  <el-drawer :model-value="open" class="chat-mode-drawer" modal-class="chat-mode-overlay" :title="mode?.title || '对话方式说明'" size="min(560px, 100vw)" append-to-body :destroy-on-close="true" @update:model-value="$emit('update:open', $event)">
     <template v-if="mode">
       <p class="mode-description">{{ mode.description }}</p>
       <dl class="mode-facts">
@@ -29,6 +29,7 @@ const rendered = computed(() => DOMPurify.sanitize(marked.parse(props.content ||
 </script>
 
 <style scoped>
+:global(.chat-mode-overlay), :global(.chat-mode-overlay .el-drawer) { transition: none; }
 .mode-description { color: var(--text-primary); line-height: 1.6; }
 .mode-facts { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 14px 12px; font-size: 13px; line-height: 1.6; }
 .mode-facts dt { color: var(--text-secondary); }
