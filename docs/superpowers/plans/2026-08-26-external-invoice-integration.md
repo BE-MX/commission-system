@@ -414,9 +414,9 @@ Bind it to a test-capable Ark user with `invoice:write`. Store the plaintext onl
 
 Call resolver and validation with de-identified data, then create one explicitly marked pilot invoice. Verify the Ark invoice page shows canonical customer/product snapshots, server-computed totals, `source_type=external_api`, `sync_status=not_synced`, repeated create returns the same invoice, changed content returns 409, and result lookup works.
 
-- [ ] **Step 4: Cleanup pilot business data**
+- [ ] **Step 4: Close the pilot without breaking idempotency**
 
-Delete the unsynced pilot invoice through the normal Ark UI/API and revoke the pilot App. Confirm no OKKI order or sync log was created.
+Revoke the pilot App and retain the explicitly marked pilot invoice as an audit record. Confirm no OKKI order or sync log was created. Normal Ark UI/API deletion intentionally rejects `external_api` invoices because removing one would destroy permanent replay and result lookup. If pilot-data removal becomes a compliance requirement, design a dedicated tombstone workflow that preserves the App + external order id result before any physical cleanup.
 
 - [ ] **Step 5: Completion audit**
 

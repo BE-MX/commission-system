@@ -274,6 +274,54 @@ test('429 recovery queries then retries the unchanged payload after a 404', asyn
   })
 })
 
+test('5xx create failure recovers by querying the original external id', async () => {
+  await withRuntimeClient(async ({ ArkInvoiceClient }) => {
+    const calls = []
+    const client = new ArkInvoiceClient({
+      baseUrl: 'https://leshine.work/api/integrations/v1',
+      token: 'ark_live_test',
+      recoveryDelayMs: 1,
+      fetchImpl: async (url, init) => {
+        calls.push({ url: String(url), method: init.method })
+        if (calls.length === 1) {
+          return jsonResponse({ code: 503, message: 'service unavailable', data: {} }, 503)
+        }
+        return jsonResponse({ code: 200, message: 'invoice replayed', data: recoveredResult })
+      },
+    })
+
+    assert.deepEqual(await client.createInvoice(runtimePayload), recoveredResult)
+    assert.deepEqual(calls.map(call => call.method), ['POST', 'GET'])
+    assert.match(calls[1].url, /\/invoices\/by-external-id\/SITE%3ARECOVER-001$/)
+  })
+})
+
+test('external order content conflict stops immediately without recovery', async () => {
+  await withRuntimeClient(async ({ ArkInvoiceClient, ArkInvoiceApiError }) => {
+    let calls = 0
+    const client = new ArkInvoiceClient({
+      baseUrl: 'https://leshine.work/api/integrations/v1',
+      token: 'ark_live_test',
+      recoveryDelayMs: 1,
+      fetchImpl: async () => {
+        calls += 1
+        return jsonResponse({
+          code: 409,
+          message: 'external order conflict',
+          data: { error_code: 'EXTERNAL_ORDER_CHANGED' },
+        }, 409)
+      },
+    })
+
+    await assert.rejects(
+      client.createInvoice(runtimePayload),
+      error => error instanceof ArkInvoiceApiError
+        && error.data.error_code === 'EXTERNAL_ORDER_CHANGED',
+    )
+    assert.equal(calls, 1)
+  })
+})
+
 test('bounded recovery reports an unknown result instead of leaking a lookup error', async () => {
   await withRuntimeClient(async ({ ArkInvoiceClient, ArkInvoiceResultUnknownError }) => {
     let calls = 0
