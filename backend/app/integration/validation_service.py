@@ -68,7 +68,20 @@ def _customer_by_name(db: Session, company_name: str) -> list[dict]:
     schema = product_service._schema()
     bind = db.get_bind()
     is_sqlite = bind is not None and bind.dialect.name == "sqlite"
-    comparison = "ci.company_name = :company_name COLLATE NOCASE" if is_sqlite else "ci.company_name = :company_name"
+    if is_sqlite:
+        normalized_column = (
+            "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("
+            "ci.company_name, CHAR(9), ' '), CHAR(10), ' '), "
+            "CHAR(11), ' '), CHAR(12), ' '), CHAR(13), ' ')"
+        )
+        for _ in range(8):
+            normalized_column = f"REPLACE({normalized_column}, '  ', ' ')"
+        comparison = f"TRIM({normalized_column}) = :company_name COLLATE NOCASE"
+    else:
+        comparison = (
+            "REGEXP_REPLACE(TRIM(ci.company_name), '[[:space:]]+', ' ') "
+            "= :company_name"
+        )
     rows = db.execute(text(f"""
         SELECT ci.company_id, ci.company_name, ci.country_name
         FROM `{schema}`.customer_info ci
@@ -99,29 +112,20 @@ def _contact_company_ids(db: Session, contact) -> set[str]:
         email_ids = {str(company_id) for company_id in rows if company_id is not None}
 
     if phone:
-        raw_rows = db.execute(text(f"""
+        if is_sqlite:
+            digits_expression = (
+                "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("
+                "cc.tel, ' ', ''), '+', ''), '-', ''), '(', ''), ')', ''), '.', ''), '/', '')"
+            )
+        else:
+            digits_expression = "REGEXP_REPLACE(cc.tel, '[^0-9]', '')"
+        phone_rows = db.execute(text(f"""
             SELECT DISTINCT cc.company_id
             FROM `{schema}`.customer_contacts cc
-            WHERE cc.tel = :raw_phone
+            WHERE cc.tel = :raw_phone OR {digits_expression} = :phone
             LIMIT 2
-        """), {"raw_phone": raw_phone}).scalars().all()
-        phone_ids.update(str(company_id) for company_id in raw_rows if company_id is not None)
-
-        if not phone_ids:
-            if is_sqlite:
-                digits_expression = (
-                    "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("
-                    "cc.tel, ' ', ''), '+', ''), '-', ''), '(', ''), ')', ''), '.', ''), '/', '')"
-                )
-            else:
-                digits_expression = "REGEXP_REPLACE(cc.tel, '[^0-9]', '')"
-            digit_rows = db.execute(text(f"""
-                SELECT DISTINCT cc.company_id
-                FROM `{schema}`.customer_contacts cc
-                WHERE {digits_expression} = :phone
-                LIMIT 2
-            """), {"phone": phone}).scalars().all()
-            phone_ids.update(str(company_id) for company_id in digit_rows if company_id is not None)
+        """), {"raw_phone": raw_phone, "phone": phone}).scalars().all()
+        phone_ids.update(str(company_id) for company_id in phone_rows if company_id is not None)
 
     if email_ids and phone_ids and email_ids != phone_ids:
         return email_ids | phone_ids

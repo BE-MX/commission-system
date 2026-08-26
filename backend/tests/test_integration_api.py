@@ -52,7 +52,7 @@ def _seed_catalog(db) -> None:
         VALUES
             (1001, 'Acme Global', 'US', '[]'),
             (1002, 'Beta Buyer', 'GB', '[]'),
-            (1003, 'Space Name Ltd', 'CA', '[]')
+            (1003, 'Space   Name Ltd', 'CA', '[]')
     """))
     db.execute(text("""
         INSERT INTO lsordertest.customer_contacts
@@ -728,6 +728,43 @@ def test_customer_not_found_and_ambiguity_have_stable_business_codes(api):
     ))
     assert ambiguous_name["code"] == "CUSTOMER_NOT_UNIQUE"
     assert ambiguous_name["field"] == "customer"
+
+
+def test_customer_phone_raw_and_normalized_matches_are_both_considered(api):
+    client, db = api
+    db.execute(text("""
+        INSERT INTO lsordertest.customer_contacts (id, company_id, name, email, tel, is_main)
+        VALUES (10, 1002, 'Digits duplicate', NULL, '15550100200', 0)
+    """))
+    db.commit()
+
+    issue = _issue(client.post(
+        "/api/integrations/v1/customers/resolve",
+        json={"contact": {"phone": "+1 (555) 010-0200"}},
+        headers=_headers(),
+    ))
+    assert issue["code"] == "CUSTOMER_NOT_UNIQUE"
+    assert issue["field"] == "customer"
+
+
+def test_customer_name_collapses_database_whitespace_before_ambiguity_check(api):
+    client, db = api
+    db.execute(text("""
+        INSERT INTO lsordertest.customer_info
+            (company_id, company_name, country_name, owner_user_ids)
+        VALUES
+            (1004, 'Whitespace   Collision', 'US', '[]'),
+            (1005, 'Whitespace\tCollision', 'GB', '[]')
+    """))
+    db.commit()
+
+    issue = _issue(client.post(
+        "/api/integrations/v1/customers/resolve",
+        json={"name": "  whitespace collision  "},
+        headers=_headers(),
+    ))
+    assert issue["code"] == "CUSTOMER_NOT_UNIQUE"
+    assert issue["field"] == "customer"
 
 
 def test_customer_conflicting_email_and_phone_is_not_unique(api):
