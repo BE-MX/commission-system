@@ -1141,7 +1141,11 @@ AI_IMAGE_PROXY=
 
 部署前用 Windows ACL 检查并收紧存储根及其父目录：服务账号需要读、写、建目录、替换和删除；普通用户、Web 静态服务和其他应用账号不得写入，也不得通过 junction/reparse point 进入该根。先以服务账号创建测试图并删除，再启动灰度。默认 Preset 必须为启用的 direct/openai TeamRouter Provider（`https://api.teamorouter.cn`）、名称 `design_image_generation`、model 精确为 `gpt-image-2`；不要在证据里记录密钥。
 
-可选模型使用独立 Preset，禁止覆盖默认 Preset 的 model：Grok Image 2 为 `design_image_generation_grok_image_2 / grok-image-2`，Nano Banana Pro 为 `design_image_generation_nano_banana_pro / gemini-3-pro-image`，Nano Banana 2 为 `design_image_generation_nano_banana_2 / gemini-3.1-flash-image`。Gemini Preset 必须额外配置 `parameters.api_style="chat"`；该兼容端点的尺寸/质量仅为提示词软约束，不能当成协议级像素保证。先用同一 TeamRouter Key 调 `GET /v1/models` 确认精确 model ID 存在，再分别完成无参考图 generation、单参考图 edit、多参考图 edit、Markdown 与 `message.images[]` 响应、错误与 usage 探针，最后才启用 Preset；否则页面会显示“未配置”且不可选。2026-08-17 实时目录尚无 `grok-image-2` 与 `gemini-3-pro-image`，不得用相近文本模型或别名冒充。
+可选模型使用独立 Preset，禁止覆盖默认 Preset 的 model：Grok Image 2 为 `design_image_generation_grok_image_2 / grok-imagine-image-2.0`，绑定 openlux `https://api.openlux.ai/v1`；Nano Banana Pro 为 `design_image_generation_nano_banana_pro / gemini-3-pro-image`，Nano Banana 2 为 `design_image_generation_nano_banana_2 / gemini-3.1-flash-image`，仍绑定 TeamRouter。Grok 的旧 `grok-image-2` 占位 ID 已删除，不保留别名。
+
+Grok Preset 参数固定为 `{"response_format":"b64_json","output_format":"jpeg","n":1}`：2026-08-26 实测模型目录、文字生图、单图改色、双参考图合成均成功，返回为 JPEG。必须使用 `jpeg` 声明匹配返回的文件魔数，否则工作台运行时会拒绝图片；使用 base64 无需扩大下载域名白名单。Grok 不采用 OpenAI `size`，AI facade 将工作台尺寸约分成 `aspect_ratio`（正方形 1:1、竖图 2:3、横图 3:2）；`1:1` 实测返回 1024×1024，其他比例不承诺精确像素，质量档位也未验证有差异。 Grok 最多 3 张输入图片（含基准图）；超过上限在入队前返回可操作的删图提示。真实 facade + runtime 解码已验证正方形生成 1024×1024 和三图编辑竖图 832×1248。公共图片传输层同时修复 gzip/deflate 响应被重复解压的问题。供应商文档：[images/generations](https://doc.openlux.ai/reference/v1?op=post-v1-images-generations&leaf=425475208)。
+
+Gemini Preset 必须配置 `parameters.api_style="chat"`；尺寸/质量仅为提示词软约束。新增模型应使用对应 Provider Key 调 `GET /v1/models` 确认精确 ID，再验证 generation、单图/多图 edit、响应解码与错误/usage，最后启用 Preset。Nano Banana Pro 没有完成真实探针前保持不可用，不得用相近文本模型或别名冒充。
 
 ### 上线与核验
 

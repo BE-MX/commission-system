@@ -10,6 +10,14 @@
 
 > ✅ **功能分支完成（2026-08-25）**：`codex/semifinished-inventory` 已实现迁移 120/121 的半成品列表、产品解析关联与人工组成修正、按 g 下单/分批入库、实存/占用/可用/在制库存、生产购物车同步下单及生产发票的 OKKI 同步预占—出库—补偿恢复。线上迁移已到 121，产品同步结果为 794 个关联、233 个半成品、429 个待审核关联；待审核项不会自动下单或领料。详细规则见 `docs/requirements/2026-08-25-semifinished-orders-inventory.md`；尚未合入 main、发布前端或重启后端。
 
+## 2026-08-26 openlux Grok Image 2 接入
+
+- 已用现有 openlux Provider #7 完成鉴权及实时目录校验，创建 Preset #28 `design_image_generation_grok_image_2`，实际模型 `grok-imagine-image-2.0`，参数 `response_format=b64_json / output_format=jpeg / n=1`；未修改其他 Provider/Preset。开发与生产共用数据库，因此配置已经保存。
+- 工作台显示名仍为 Grok Image 2；替换未配置的旧占位 ID，限定 openlux HTTPS API 地址，其他模型继续限定 TeamRouter。Grok 请求 size 转 aspect_ratio，输入最多 3 张（含基准图），超限入队前提示删图。修复公共图片传输层 gzip/deflate 二次解压错误。
+- 实测：原始接口文字/单图/双图通过；统一 facade + runtime 正方形生成成功（log #2414，52.964 秒，1024×1024 JPEG）、三图竖版编辑成功（log #2416，14.643 秒，832×1248 JPEG）。5 图探针明确被上游拒绝，已落实 3 图限制。尺寸只承诺比例，质量档位差异未验证；不配置未经核实的费率。
+- 验证：535 项后端相关测试、27 项前端状态测试、Vite build 通过；独立对抗审查无阻断项，`git diff --check` 通过。`check_conventions.py` 被既有 `InvoiceManage.vue` 的 lines_over_500 基线失配拦截（未改动的 main 同样失败）；独立执行增量代码检查结果为空，未重置基线或修改发票页面。
+- **待上线**：尚未推送 main、未部署办公室服务器。当前 `http://192.168.101.193:8001` 实测仍返回旧 Grok ID / `available=false`；仅保存 Preset 不会自动更新目录代码。待亮哥授权推送 main 后，办公室 `D:\commission-system\deploy\deploy.bat` 发布后端与前端，再验证 `/api/design-image/config` 出现新 ID / `available=true` 及真实工作台生成。当前机器能访问办公室 API，但 SSH/WinRM 均不可达，没有可用的远程部署通道。
+
 ## 2026-08-20 DSH Agent Runtime 交接
 
 - 开发分支 `codex/agent-runtime-phase1` 已实现迁移 118、统一 Agent 控制面、受控模型/MCP 网关、隔离 DSH Worker、客户经营副驾驶、复购行动卡、获客 Shadow、任务中心和运行时间线；Feature Flag 全部默认关闭，尚未合入 main 或部署生产。
