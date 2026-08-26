@@ -4,6 +4,7 @@ import { createRenderer, defineComponent, h } from 'vue'
 
 import {
   CUSTOMER_IMAGE_LOCALE_KEY,
+  CUSTOMER_IMAGE_MESSAGES,
   customerImageMessage,
   normalizeCustomerImageLocale,
   provideCustomerImageI18n,
@@ -81,8 +82,9 @@ test('creates stable message descriptors', () => {
 
 test('contains bilingual fixed UI copy for every portal surface', () => {
   const keys = [
-    'portal.loading.title', 'portal.invalid.title', 'portal.empty.title', 'portal.error.title',
-    'portal.retry', 'portal.brand.subtitle', 'portal.exclusiveChannel',
+    'portal.loading.title', 'portal.loading.detail', 'portal.invalid.title', 'portal.invalid.detail',
+    'portal.contactManager', 'portal.empty.title', 'portal.empty.detail', 'portal.error.title',
+    'portal.retry', 'portal.brand.kicker', 'portal.brand.subtitle', 'portal.exclusiveChannel',
     'language.label', 'language.english', 'language.chinese',
     'catalog.eyebrow', 'catalog.title', 'catalog.titleForCustomer', 'catalog.intro',
     'catalog.search.label', 'catalog.search.placeholder', 'catalog.categories.label',
@@ -104,16 +106,25 @@ test('contains bilingual fixed UI copy for every portal surface', () => {
     'preview.queued', 'preview.queuedNote', 'preview.runningNote', 'preview.live', 'preview.signature',
     'history.title', 'history.empty', 'history.status.queued', 'history.status.running',
     'history.status.succeeded', 'history.status.failed', 'history.status.processing',
-    'errors.rateLimited', 'errors.uploadTooLarge', 'errors.uploadInvalid', 'errors.quotaExhausted',
-    'errors.settingsChanged', 'errors.logoRequired', 'errors.serviceUnavailable',
+    'errors.invalidLink', 'errors.rateLimited', 'errors.uploadTooLarge', 'errors.uploadInvalid',
+    'errors.quotaExhausted', 'errors.settingsChanged', 'errors.logoRequired', 'errors.serviceUnavailable',
     'errors.logoUploadFailed', 'errors.settingsRefreshFailed', 'errors.generationConflict',
     'errors.generationFailed', 'errors.pageLoadFailed',
     'settings.logoUpdated', 'settings.updated', 'download.productFallback', 'download.suffix',
   ]
 
-  for (const key of keys) {
-    assert.notEqual(translateCustomerImage('en', key), key, `missing English: ${key}`)
-    assert.notEqual(translateCustomerImage('zh-CN', key), key, `missing Chinese: ${key}`)
+  const messages = CUSTOMER_IMAGE_MESSAGES
+  assert.ok(messages, 'the production catalog must be directly inspectable')
+  assert.equal(Object.isFrozen(messages), true, 'the catalog root must be read-only')
+  assert.equal(keys.length, 102)
+
+  for (const locale of ['en', 'zh-CN']) {
+    assert.equal(Object.isFrozen(messages[locale]), true, `${locale} catalog must be read-only`)
+    assert.deepEqual(Object.keys(messages[locale]).sort(), [...keys].sort(), `${locale} keys`)
+    for (const [key, value] of Object.entries(messages[locale])) {
+      assert.equal(typeof value, 'string', `${locale}.${key} must be a string`)
+      assert.notEqual(value.trim(), '', `${locale}.${key} must not be empty`)
+    }
   }
 })
 

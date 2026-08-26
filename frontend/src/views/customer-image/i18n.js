@@ -238,6 +238,11 @@ const MESSAGES = {
   },
 }
 
+export const CUSTOMER_IMAGE_MESSAGES = Object.freeze({
+  en: Object.freeze(MESSAGES.en),
+  'zh-CN': Object.freeze(MESSAGES['zh-CN']),
+})
+
 export function normalizeCustomerImageLocale(value) {
   return CUSTOMER_IMAGE_LOCALES.includes(value) ? value : 'en'
 }
