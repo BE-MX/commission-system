@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
+import { CUSTOMER_IMAGE_MESSAGES } from '../src/views/customer-image/i18n.js'
+
 function read(relativePath) {
   try {
     return readFileSync(new URL(relativePath, import.meta.url), 'utf8')
@@ -103,9 +105,21 @@ test('UI exposes actionable safe states without internal prompt or provider cont
     '请先上传品牌 LOGO',
     '可以关闭页面',
     '几十秒到数分钟',
-    '此链接已失效',
-    '联系您的业务经理',
   ]) assert.ok(combined.includes(copy), `missing ${copy}`)
+  assert.match(files.portal, /t\('portal\.invalid\.title'\)/)
+  assert.match(files.portal, /t\('portal\.invalid\.detail'\)/)
+  assert.match(files.portal, /t\('portal\.contactManager'\)/)
+  assert.match(files.portal, /tm\(state\.notice\)/)
+  assert.equal(CUSTOMER_IMAGE_MESSAGES.en['portal.invalid.title'], 'This link is no longer valid')
+  assert.equal(
+    CUSTOMER_IMAGE_MESSAGES.en['portal.invalid.detail'],
+    'Please contact your account manager for a new private access link.',
+  )
+  assert.equal(CUSTOMER_IMAGE_MESSAGES['zh-CN']['portal.invalid.title'], '此链接已失效')
+  assert.equal(
+    CUSTOMER_IMAGE_MESSAGES['zh-CN']['portal.invalid.detail'],
+    '请联系您的业务经理重新获取专属访问链接。',
+  )
   assert.doesNotMatch(combined, /Provider|provider_id|prompt_snapshot|pricing_snapshot|storage_path/)
   assert.doesNotMatch(combined, /自由提示词|模型选择|质量选择/)
 })
