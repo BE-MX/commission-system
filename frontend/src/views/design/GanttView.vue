@@ -113,10 +113,11 @@ import { ElMessage } from 'element-plus'
 import { getGanttData, getDesigners } from '@/api/design'
 import { getDictMap, buildDictLabel } from '@/utils/dict'
 import GanttChart from '@/components/design/GanttChart.vue'
+import { beijingCalendarDate } from '@/utils/datetime'
 
 // --- Default date range: today ±7 days ---
 function getDefaultDateRange() {
-  const now = new Date()
+  const now = beijingCalendarDate()
   const start = new Date(now)
   start.setDate(now.getDate() - 7)
   const end = new Date(now)

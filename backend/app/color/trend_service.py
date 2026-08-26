@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timedelta
+from app.core.time import beijing_today
 from typing import Optional
 
 from sqlalchemy import func
@@ -19,7 +20,7 @@ COLOR_FAMILIES = ["black", "brown", "blonde", "red", "silver", "vibrant"]
 def get_trend_overview(db: Session) -> list[dict]:
     """获取各色族当前热度概览"""
     # 取最近一周的各数据源平均值
-    week_ago = date.today() - timedelta(days=7)
+    week_ago = beijing_today() - timedelta(days=7)
 
     results = []
     for family in COLOR_FAMILIES:

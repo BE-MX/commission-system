@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.time import beijing_now, to_beijing_naive
 from app.tracking.models import ShipmentTracking, TrackingEvent, CarrierConfig
 from app.tracking.models import Waybill
 from app.tracking.carriers import get_adapter
@@ -22,14 +23,14 @@ async def poll_single(db: Session, shipment: ShipmentTracking) -> dict:
     adapter = get_adapter(shipment.carrier)
     if not adapter:
         shipment.poll_error = f"no adapter for {shipment.carrier}"
-        shipment.last_polled_at = datetime.now()
+        shipment.last_polled_at = beijing_now()
         db.commit()
         return {"waybill_no": shipment.waybill_no, "status": "skipped", "reason": "no adapter"}
 
     result = await adapter.track(shipment.waybill_no)
 
     shipment.poll_count += 1
-    shipment.last_polled_at = datetime.now()
+    shipment.last_polled_at = beijing_now()
 
     if not result.success:
         shipment.poll_error = result.error
@@ -54,55 +55,63 @@ async def poll_single(db: Session, shipment: ShipmentTracking) -> dict:
     )
     latest_existing_time = latest_existing.event_time if latest_existing else datetime.min
 
-    new_events = [
-        e for e in result.events
-        if e.event_time.replace(tzinfo=None) > latest_existing_time
+    # Carrier 时间可能带 Z/地点 offset；入库前统一换算为
+    # 北京钟面 DATETIME，不能用 replace(tzinfo=None) 直接丢偏移。
+    normalized_events = [
+        (event, to_beijing_naive(event.event_time))
+        for event in result.events
     ]
-    for evt in new_events:
+
+    new_events = [
+        (event, event_time)
+        for event, event_time in normalized_events
+        if event_time is not None and event_time > latest_existing_time
+    ]
+    eta = to_beijing_naive(result.estimated_delivery_date)
+    for evt, event_time in new_events:
         db.add(TrackingEvent(
             waybill_no=shipment.waybill_no,
             carrier=shipment.carrier,
-            event_time=evt.event_time.replace(tzinfo=None),
+            event_time=event_time,
             status_code=evt.status_code,
             description=evt.description,
             location=evt.location,
             raw_response=json.dumps(evt.raw, default=str, ensure_ascii=False) if evt.raw else None,
-            estimated_delivery_date=result.estimated_delivery_date.replace(tzinfo=None) if result.estimated_delivery_date else None,
+            estimated_delivery_date=eta,
         ))
 
     shipment.current_status = result.current_status
     shipment.current_status_text = result.current_status_text
     shipment.current_location = result.current_location
-    shipment.last_event_time = result.last_event_time
-    if result.estimated_delivery_date:
-        est_naive = result.estimated_delivery_date.replace(tzinfo=None)
-        shipment.estimated_delivery_date = est_naive
+    shipment.last_event_time = to_beijing_naive(result.last_event_time)
+    if eta:
+        shipment.estimated_delivery_date = eta
 
     if result.current_status == "delivered":
-        shipment.delivered_at = result.last_event_time
+        shipment.delivered_at = to_beijing_naive(result.last_event_time)
         shipment.is_active = False
     elif result.current_status == "returned":
         shipment.is_active = False
 
     if not shipment.shipped_at and result.current_status not in ("pending",):
-        shipment.shipped_at = datetime.now()
+        shipment.shipped_at = beijing_now()
 
     # 更新统一状态码
     shipment.unified_status = normalize_status(shipment.carrier, result.current_status)
 
     # 同步预计送达时间到 ark_waybills
-    if result.estimated_delivery_date:
+    if eta:
         try:
             waybill = db.query(Waybill).filter(Waybill.waybill_no == shipment.waybill_no).first()
             if waybill:
-                waybill.estimated_delivery_date = result.estimated_delivery_date.replace(tzinfo=None)
+                waybill.estimated_delivery_date = eta
         except Exception as exc:
             logger.warning("sync ETA to waybill failed: %s err=%s", shipment.waybill_no, exc)
             print(f"[tracking] ETA sync failed {shipment.waybill_no} err={exc}", flush=True)
 
     carrier_cfg = db.query(CarrierConfig).filter(CarrierConfig.carrier == shipment.carrier).first()
     max_days = carrier_cfg.max_poll_days if carrier_cfg else 90
-    if shipment.created_at and (datetime.now() - shipment.created_at).days > max_days:
+    if shipment.created_at and (beijing_now() - shipment.created_at).days > max_days:
         shipment.is_active = False
         logger.info(f"{shipment.waybill_no}: deactivated, exceeded {max_days} days")
 

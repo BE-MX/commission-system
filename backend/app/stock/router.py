@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from app.core.time import beijing_today
 from io import BytesIO
 from typing import Any, Optional
 
@@ -266,7 +267,7 @@ def trigger_daily_report(
     """手动触发日报生成(管理员调试用)"""
     from app.stock.scheduler import generate_stock_daily_report_sync
 
-    target_date = report_date_value or date.today()
+    target_date = report_date_value or beijing_today()
     rec = generate_stock_daily_report_sync(db=db, target_date=target_date, push_dingtalk=push_dingtalk)
     return _ok({
         "report_date": rec.report_date.isoformat(),
@@ -288,7 +289,7 @@ def push_daily_report_endpoint(
     from app.stock.scheduler import generate_stock_daily_report_sync
     from app.stock.daily_report_service import push_daily_report
 
-    target_date = report_date_value or date.today()
+    target_date = report_date_value or beijing_today()
 
     # 检查日报是否存在
     rec = service.get_daily_report(db=db, report_date_value=target_date)

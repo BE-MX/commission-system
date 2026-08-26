@@ -82,6 +82,7 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 // 统一 client：token 注入 / 401 跳转 / 错误提示由拦截器处理（宪法 11）
 import { adminClient as authApi } from '@/api/clients'
+import { formatBeijingDateTime } from '@/utils/datetime'
 
 const loading = ref(false)
 const candidates = ref([])
@@ -173,7 +174,7 @@ function candidateStatusType(s) {
   return { pending: 'warning', bound: 'success', ignored: 'info' }[s] || 'info'
 }
 function formatTime(t) {
-  return t ? new Date(t).toLocaleString('zh-CN') : '-'
+  return formatBeijingDateTime(t)
 }
 
 onMounted(() => loadCandidates())

@@ -208,7 +208,7 @@
 import { computed, ref, onBeforeUnmount, h } from 'vue'
 import { Clock, Calendar, VideoPlay, CircleCheck, CircleClose } from '@element-plus/icons-vue'
 import { getDictMap, buildDictLabel } from '@/utils/dict'
-
+import { currentBeijingDate } from '@/utils/datetime'
 // 状态图标映射（SVG Unicode 字符，兼容性好且无需额外渲染层）
 const STATUS_ICONS = {
   pending_design: Clock,
@@ -255,7 +255,7 @@ function formatDate(date) {
 }
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
-const todayStr = formatDate(new Date())
+const todayStr = currentBeijingDate()
 
 const dateRange = computed(() => {
   const start = parseDate(props.startDate)

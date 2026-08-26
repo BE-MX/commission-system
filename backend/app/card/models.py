@@ -21,6 +21,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 class CardSalesperson(Base):
@@ -38,8 +39,8 @@ class CardSalesperson(Base):
     intro = Column(Text, nullable=True, comment="主页介绍文案")
     links_json = Column(JSON, nullable=True, comment="店铺/独立站链接 [{label,url}]")
     is_active = Column(SmallInteger, nullable=False, default=1, comment="1=启用,0=停用")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     customers = relationship("CardCustomer", back_populates="salesperson", cascade="all, delete-orphan")
 
@@ -65,8 +66,8 @@ class CardCustomer(Base):
     expo_code = Column(String(64), nullable=False, default="", comment="届次标记，如 2026-08")
     remark = Column(Text, nullable=True, comment="内部备注（不对客户展示）")
     created_by = Column(Integer, nullable=True, comment="录入人 ark_users.id（无 FK，随 expo.operator_user_id 先例）")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     salesperson = relationship("CardSalesperson", back_populates="customers")
     entries = relationship("CardEntry", back_populates="customer", cascade="all, delete-orphan")
@@ -94,8 +95,8 @@ class CardEntry(Base):
     content = Column(Text, nullable=True, comment="文字内容")
     attachment_path = Column(String(512), nullable=True, comment="附件相对路径 uploads/card/...")
     created_by = Column(Integer, nullable=True, comment="录入人 ark_users.id（无 FK）")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     customer = relationship("CardCustomer", back_populates="entries")
 
@@ -122,7 +123,7 @@ class CardInquiry(Base):
     contact = Column(String(128), nullable=False, comment="客户留的联系方式原文")
     message = Column(Text, nullable=False, comment="需求/问题正文")
     status = Column(String(16), nullable=False, default="new", comment="new=未处理 / handled=已处理")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         Index("idx_ark_card_inquiries_sp", "salesperson_id", "status"),

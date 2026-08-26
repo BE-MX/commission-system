@@ -6,6 +6,7 @@ import logging
 import shutil
 import uuid
 from datetime import date
+from app.core.time import beijing_today
 from pathlib import Path
 from typing import Optional
 
@@ -172,7 +173,7 @@ def manual_create_case(db: Session, user_id: int, user_name: str, data: CaseManu
     case = InsightCase(
         title=data.title,
         share_person=(data.share_person or user_name or "")[:50],
-        share_date=data.share_date or date.today(),
+        share_date=data.share_date or beijing_today(),
         source_type="manual",
         uploaded_by=user_id,
         status="published",

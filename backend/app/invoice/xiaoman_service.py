@@ -22,6 +22,7 @@ import json
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
+from app.core.time import utc_now_naive
 from decimal import Decimal
 
 from sqlalchemy import text, update
@@ -922,9 +923,9 @@ def update_settings(
         row.access_token = token or None
         # 手动覆盖 token 时表单里的过期时间是旧 token 的残值，不可信：
         # 保守按"刚签发"算 8 小时；清除 token 则联动清空
-        token_expires_at = datetime.utcnow() + timedelta(hours=8) if token else None
+        token_expires_at = utc_now_naive() + timedelta(hours=8) if token else None
     row.token_expires_at = token_expires_at
 
     row.updated_by = user_id
-    row.updated_at = datetime.utcnow()
+    row.updated_at = beijing_now()
     return row

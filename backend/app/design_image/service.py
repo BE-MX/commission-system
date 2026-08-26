@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
 from sqlalchemy import and_, or_, select
+from app.core.time import beijing_now, beijing_now_aware, to_beijing_naive, utc_now
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, noload
 
@@ -142,20 +143,27 @@ def _warn_visible(message: str) -> None:
 
 
 def _utc_naive(value: datetime | None = None) -> datetime:
-    value = value or datetime.now(UTC)
+    value = value or utc_now()
     if value.tzinfo is None:
         return value
     return value.astimezone(UTC).replace(tzinfo=None)
 
 
+def _beijing_naive(value: datetime | None = None) -> datetime:
+    """生图会话、消息和任务的北京业务时间。"""
+    if value is None:
+        return beijing_now()
+    return to_beijing_naive(value)
+
+
 def _day_window(now: datetime | None = None) -> tuple[datetime, datetime]:
-    instant = now or datetime.now(SHANGHAI)
+    instant = now or beijing_now_aware()
     if instant.tzinfo is None:
         instant = instant.replace(tzinfo=UTC)
     local = instant.astimezone(SHANGHAI)
     start_local = local.replace(hour=0, minute=0, second=0, microsecond=0)
     end_local = start_local + timedelta(days=1)
-    return _utc_naive(start_local), _utc_naive(end_local)
+    return start_local.replace(tzinfo=None), end_local.replace(tzinfo=None)
 
 
 def _owner_lock_statement(owner_user_id: int):
@@ -949,7 +957,7 @@ def create_turn(
             if payload.session_id is not None
             else None
         )
-        operation_time = _utc_naive(now)
+        operation_time = _beijing_naive(now)
         if session is None:
             session = DesignImageSession(
                 owner_user_id=owner_user_id,
@@ -1190,18 +1198,18 @@ def resolve_message_action(
             intent,
             base,
             references,
-            operation_time=_utc_naive(now),
+            operation_time=_beijing_naive(now),
         )
         stored.update(
             {
                 "status": "resolved",
                 "selected_mode": payload.mode,
                 "resolved_request_id": payload.request_id,
-                "resolved_at": _utc_naive(now).isoformat(),
+                "resolved_at": _beijing_naive(now).isoformat(),
             }
         )
         clarification.interaction_json = stored
-        session.updated_at = _utc_naive(now)
+        session.updated_at = _beijing_naive(now)
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -1269,7 +1277,7 @@ def retry_job(
         session = _owner_session(
             db, owner_user_id, old.session_id, for_update=True
         )
-        operation_time = _utc_naive(now)
+        operation_time = _beijing_naive(now)
         session.updated_at = operation_time
         job = DesignImageJob(
             owner_user_id=owner_user_id,
@@ -1377,9 +1385,9 @@ def get_usage(
     if owner_user_id is not None:
         query = query.filter(DesignImageJob.owner_user_id == owner_user_id)
     if start_at is not None:
-        query = query.filter(DesignImageJob.created_at >= _utc_naive(start_at))
+        query = query.filter(DesignImageJob.created_at >= _beijing_naive(start_at))
     if end_at is not None:
-        query = query.filter(DesignImageJob.created_at < _utc_naive(end_at))
+        query = query.filter(DesignImageJob.created_at < _beijing_naive(end_at))
     if status is not None:
         query = query.filter(DesignImageJob.status == status)
     rows = query.all()
@@ -1392,7 +1400,7 @@ def get_usage(
         if job.finished_at is None:
             continue
         elapsed_ms = round(
-            (_utc_naive(job.finished_at) - _utc_naive(job.created_at)).total_seconds()
+            (job.finished_at - job.created_at).total_seconds()
             * 1000
         )
         if elapsed_ms >= 0:
@@ -1419,13 +1427,7 @@ def get_usage(
     for job, log in rows:
         by_user[job.owner_user_id] = by_user.get(job.owner_user_id, 0) + 1
         by_status[job.status] = by_status.get(job.status, 0) + 1
-        local_date = (
-            _utc_naive(job.created_at)
-            .replace(tzinfo=UTC)
-            .astimezone(SHANGHAI)
-            .date()
-            .isoformat()
-        )
+        local_date = job.created_at.date().isoformat()
         by_date[local_date] = by_date.get(local_date, 0) + 1
         if job.status == "failed":
             code = job.error_code or (log.error_code if log else None) or "unknown"

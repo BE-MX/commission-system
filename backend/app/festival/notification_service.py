@@ -11,6 +11,7 @@ import random
 import subprocess
 import tempfile
 from datetime import date, datetime, time as dt_time, timedelta
+from app.core.time import beijing_now
 from pathlib import Path, PureWindowsPath
 from urllib.parse import urlencode
 
@@ -322,7 +323,7 @@ def render_event_image(event: dict) -> Path:
     if isinstance(created, datetime):
         created_text = created.strftime("%Y-%m-%d %H:%M")
     else:
-        created_text = str(created or datetime.now().strftime("%Y-%m-%d %H:%M"))
+        created_text = str(created or beijing_now().strftime("%Y-%m-%d %H:%M"))
     draw.text((82, 565), f"2026 莱莎采购节  ·  {created_text}",
               font=_font(24), fill=ink)
 
@@ -450,7 +451,7 @@ def _event_dict(row: FestivalEvent) -> dict:
 
 
 def _detect_and_load_pending() -> list[dict]:
-    now = datetime.now()
+    now = beijing_now()
     stale = now - timedelta(minutes=15)
     with SessionLocal() as db:
         service.get_headline_payload(db, None, None)
@@ -465,7 +466,7 @@ def _detect_and_load_pending() -> list[dict]:
 
 
 def _claim_event_delivery(event_id: int) -> bool:
-    now = datetime.now()
+    now = beijing_now()
     stale = now - timedelta(minutes=15)
     with SessionLocal() as db:
         updated = (db.query(FestivalEvent)
@@ -490,11 +491,11 @@ def _mark_event_delivery(event_id: int, error: str | None = None) -> None:
         row.dingtalk_claimed_at = None
         row.dingtalk_last_error = error[:500] if error else None
         if error is None:
-            row.dingtalk_sent_at = datetime.now()
+            row.dingtalk_sent_at = beijing_now()
             row.dingtalk_next_retry_at = None
         else:
             delay_minutes = min(30, 2 ** min(row.dingtalk_attempts - 1, 5))
-            row.dingtalk_next_retry_at = datetime.now() + timedelta(minutes=delay_minutes)
+            row.dingtalk_next_retry_at = beijing_now() + timedelta(minutes=delay_minutes)
         db.commit()
 
 
@@ -552,7 +553,7 @@ def _daily_claim(target_date: date) -> bool:
         try:
             db.add(FestivalState(
                 state_key=key,
-                value_json=json.dumps({"status": "sending", "claimed_at": datetime.now().isoformat()}),
+                value_json=json.dumps({"status": "sending", "claimed_at": beijing_now().isoformat()}),
             ))
             db.commit()
             return True
@@ -570,11 +571,11 @@ def _daily_claim(target_date: date) -> bool:
             except (AttributeError, TypeError, ValueError):
                 claim = {}
                 claimed_at = datetime.min
-            if claim.get("status") == "sent" or claimed_at > datetime.now() - timedelta(minutes=15):
+            if claim.get("status") == "sent" or claimed_at > beijing_now() - timedelta(minutes=15):
                 return False
             # 进程在发送中途退出时不会执行 _daily_finish；15 分钟后释放僵尸 claim。
             row.value_json = json.dumps({
-                "status": "sending", "claimed_at": datetime.now().isoformat(),
+                "status": "sending", "claimed_at": beijing_now().isoformat(),
             })
             db.commit()
             return True
@@ -587,7 +588,7 @@ def _daily_finish(target_date: date, success: bool) -> None:
         if not row:
             return
         if success:
-            row.value_json = json.dumps({"status": "sent", "sent_at": datetime.now().isoformat()})
+            row.value_json = json.dumps({"status": "sent", "sent_at": beijing_now().isoformat()})
         else:
             db.delete(row)  # 释放 claim，下一分钟恢复任务可重试
         db.commit()
@@ -687,7 +688,7 @@ def build_daily_markdown(snapshot: dict, screenshots: list[dict]) -> str:
 
 async def send_daily_report_if_due(*, force: bool = False,
                                    now: datetime | None = None) -> dict:
-    now = now or datetime.now()
+    now = now or beijing_now()
     sender = _festival_sender()
     if sender is None:
         return {"sent": False, "reason": "disabled"}

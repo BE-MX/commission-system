@@ -210,6 +210,7 @@ import { getDictItems } from '@/api/system'
 import ConflictAlert from '@/components/design/ConflictAlert.vue'
 import CustomerInfoPicker from '@/components/design/CustomerInfoPicker.vue'
 import DatePeriodPicker from '@/components/design/DatePeriodPicker.vue'
+import { beijingCalendarDate } from '@/utils/datetime'
 const router = useRouter()
 const authStore = useAuthStore()
 const formRef = ref()
@@ -283,8 +284,8 @@ const unavailableDateSet = ref(new Set())
  */
 function countAvailableDays(startStr, endStr) {
   if (!startStr || !endStr) return 0
-  const start = new Date(startStr)
-  const end = new Date(endStr)
+  const start = beijingCalendarDate(startStr)
+  const end = beijingCalendarDate(endStr)
   let count = 0
   const d = new Date(start)
   while (d <= end) {
@@ -301,7 +302,7 @@ function countAvailableDays(startStr, endStr) {
 }
 
 function disablePastDate(date) {
-  if (date < new Date(new Date().setHours(0, 0, 0, 0))) return true
+  if (date < beijingCalendarDate()) return true
   const y = date.getFullYear()
   const m = String(date.getMonth() + 1).padStart(2, '0')
   const d = String(date.getDate()).padStart(2, '0')

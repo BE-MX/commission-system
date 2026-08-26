@@ -9,6 +9,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { createPeriod, listPeriods } from '@/api/salary'
 import { msgSuccess } from '@/utils/feedback'
+import { beijingCalendarDate } from '@/utils/datetime'
 
 export function useSalaryPeriods() {
   const router = useRouter()
@@ -39,7 +40,7 @@ export function useSalaryPeriods() {
 
   function openCreate() {
     // 默认上个月：工资在次月发，HR 打开这一页十有八九是要建上月的批次
-    const d = new Date()
+    const d = beijingCalendarDate()
     d.setDate(1)
     d.setMonth(d.getMonth() - 1)
     form.year_month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`

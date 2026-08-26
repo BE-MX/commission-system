@@ -13,6 +13,7 @@ from collections import Counter, OrderedDict, defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date, timedelta
+from app.core.time import beijing_today
 from statistics import median
 from threading import RLock
 from time import monotonic
@@ -151,7 +152,7 @@ def resolve_scope(
 
 
 def normalize_window(date_from: date | None, date_to: date | None) -> tuple[date, date]:
-    end = date_to or date.today()
+    end = date_to or beijing_today()
     start = date_from or (end - timedelta(days=364))
     if start > end:
         raise HTTPException(422, "开始日期不能晚于结束日期")

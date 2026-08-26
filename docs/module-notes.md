@@ -386,6 +386,14 @@ frontend/src/
 | report_code | 函数 | 说明 |
 |---|---|---|
 | `production_order_print` | `get_production_order_print_data` | 生产订单打印，按 `(model, unit)` 双键 17 规则拆表（源自《发帘与贴发产品清单.xlsx》，Excel 顺序先匹配先胜，"其他"兜底），每张子表 `_pivot_items` 透视为宽格式（按 group 排序）+ 公斤数统计（纯色/T色，全量列）+ Jinja2 HTML 渲染（方案C）+ Word 导出。左上角分类标签来自 Excel「左上角单元格显示内容」列，含 `\n` 多行：HTML 用 `white-space: pre-line`，Word 用 `_set_cell_multiline()` + `<w:br/>` |
+
+### 全平台时间口径（2026-08-26）
+
+- 业务库 `DATETIME` 与 API 默认都表示北京钟面时间；Python 写入走 `app.core.time.beijing_now()`，MySQL 连接每次执行 `SET time_zone='+08:00'`。
+- 123 迁移只转换 58 张表、142 个能从真实写路径证明为 UTC-naive 的历史字段，涵盖生产单/明细创建时间、售后重试/审批、素材与 AI 会话、洞察采集、客户/设计生图、智能获客和 Agent 审计时间；转换前原值存入 `ark_platform_time_backup_123`。108 已处理的发票时间不再二次转换；素材 `updated_at`、设计生图提示词模板等已确认混合 `NOW()`/UTC 的列明确保留，不做破坏性猜测。
+- 旧代码的 `datetime.now()`、SQL `NOW()`、外部系统时间以及 ORM `datetime.utcnow()` 可能共同写入同一列（生产单 `updated_at` 即为实例）；无法仅凭数值安全判定历史偏移，因此混合列只修正未来写入，不做猜测性批量平移。
+- 123 有强制维护窗口门禁：必须停止所有连接同库的写实例并设置 `ARK_TIME_MIGRATION_MAINTENANCE=1` 才能执行；上线顺序和失败恢复见 `docs/runbook.md`，开发中的活动实例不得直接在线升级。
+- JWT/OAuth 签名、跨机器作业租约和外部协议保留 UTC 内部契约；它们进入页面时由 `frontend/src/utils/datetime.js` 按 `Asia/Shanghai` 转换展示。
 | `process_card_print` | `get_process_card_print_data` | 工序卡片打印，查询明细 + okki_products 字段(color/size/unit/description/product_remark) + 工序链(order_product_process) + 二维码纯文本(qr_data `ARK-P:{id}:{sign}`) |
 
 新增报表只需：(1) 加一个 `get_xxx_data(db, params)` 函数 (2) 注册到 `_DATA_DISPATCH` 字典。

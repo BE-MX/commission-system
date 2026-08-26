@@ -92,6 +92,7 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
 import * as api from '@/api/production'
+import { formatBeijingDateTime } from '@/utils/datetime'
 
 const loading = ref(false)
 const items = ref([])
@@ -110,8 +111,7 @@ const formRules = {
 }
 
 function formatTime(dt) {
-  if (!dt) return ''
-  return new Date(dt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  return formatBeijingDateTime(dt, { seconds: false, fallback: '' })
 }
 
 async function loadData() {

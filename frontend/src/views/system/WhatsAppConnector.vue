@@ -163,6 +163,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { formatBeijingDateTime } from '@/utils/datetime'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createWhatsAppBindSession,
@@ -173,7 +174,6 @@ import {
   pullWhatsAppResource,
   revokeWhatsAppAccount,
 } from '@/api/whatsapp'
-
 const accounts = ref([])
 const conversations = ref([])
 const messages = ref([])
@@ -352,7 +352,7 @@ function connectorStatusType(status) {
 }
 
 function formatTime(value) {
-  return value ? new Date(value).toLocaleString('zh-CN') : '-'
+  return formatBeijingDateTime(value)
 }
 
 function arkUserText(row) {

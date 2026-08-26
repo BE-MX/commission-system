@@ -42,8 +42,8 @@ def _invite(db, suffix="aaaaaa"):
         okki_salesperson_id_snapshot="1007",
         token_hash=suffix[0] * 64,
         token_suffix=suffix,
-        starts_at=file_service.utcnow(),
-        expires_at=file_service.utcnow().replace(year=2099),
+        starts_at=file_service.business_now(),
+        expires_at=file_service.business_now().replace(year=2099),
         quota_total=2,
     )
     db.add(row)
@@ -257,7 +257,7 @@ def test_library_copy_survives_source_deletion(db, tmp_path, monkeypatch):
 
     asset = file_service.replace_product_asset_from_library(db, product, "reference", 0, library.id, admin_id=1)
     file_service.delete_private_file(library.storage_path)
-    library.deleted_at = file_service.utcnow()
+    library.deleted_at = file_service.business_now()
     db.commit()
 
     assert file_service.open_product_asset_content(db, product.id, asset.id).read() == normalized.content
@@ -347,7 +347,7 @@ def test_product_asset_open_rejects_retired_and_cross_product_rows(db, tmp_path,
     with pytest.raises(FileNotFoundError):
         file_service.open_product_asset_content(db, second_product.id, asset.id)
 
-    asset.retired_at = file_service.utcnow()
+    asset.retired_at = file_service.business_now()
     db.commit()
     with pytest.raises(FileNotFoundError):
         file_service.open_product_asset_content(db, first_product.id, asset.id)
@@ -363,8 +363,8 @@ def test_frozen_generation_reads_only_its_listed_retired_reference(db, tmp_path,
     unlisted = file_service.replace_product_asset_from_upload(
         db, product, "reference", 1, _png_bytes("green"), "image/png"
     )
-    listed.retired_at = file_service.utcnow()
-    unlisted.retired_at = file_service.utcnow()
+    listed.retired_at = file_service.business_now()
+    unlisted.retired_at = file_service.business_now()
     logo = CustomerImageAsset(
         invite_id=invite.id, asset_type="logo", storage_path="unused.png",
         mime_type="image/png", file_size=1, width=1, height=1, sha256="f" * 64,
@@ -440,7 +440,7 @@ def test_invite_assets_use_private_kinds_and_enforce_invite_scope(db, tmp_path, 
     ).read()
     with pytest.raises(FileNotFoundError):
         file_service.open_invite_asset_content(db, other_invite.id, asset.id)
-    asset.deleted_at = file_service.utcnow()
+    asset.deleted_at = file_service.business_now()
     db.commit()
     with pytest.raises(FileNotFoundError):
         file_service.open_invite_asset_content(db, invite.id, asset.id)

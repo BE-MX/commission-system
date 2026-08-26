@@ -31,6 +31,7 @@ from sqlalchemy.dialects import mysql
 
 from app.auth import models as _auth_models  # noqa: F401 - 注册 ark_users 供 FK 解析
 from app.core.database import Base
+from app.core.time import beijing_now
 
 # 金额与工时的统一精度。MONEY 到分，HOURS 到 0.01 小时（day_hours=7.83 需要两位）
 MONEY = Numeric(12, 2)
@@ -104,9 +105,9 @@ class SalaryEmployeeProfile(Base):
     mobile = Column(String(32), nullable=True, comment="手机号")
     remark = Column(Text, nullable=True, comment="备注")
 
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     updated_at = Column(
-        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间",
+        DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间",
     )
 
     __table_args__ = (
@@ -135,9 +136,9 @@ class SalaryDeptMapping(Base):
     dept_detail = Column(String(64), nullable=False, comment="明细部门名（工资表明细 sheet 口径）")
     dept_group = Column(String(64), nullable=False, comment="汇总大部门（后综部/业务部…）")
     sort_order = Column(Integer, nullable=False, default=0, comment="汇总表分组排序")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     updated_at = Column(
-        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间",
+        DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间",
     )
 
     __table_args__ = (
@@ -162,7 +163,7 @@ class SalaryGradeTable(Base):
     team_rate = Column(Numeric(8, 4), nullable=True, comment="团队提成参考费率")
     effective_from = Column(Date, nullable=False, comment="生效起日")
     effective_to = Column(Date, nullable=True, comment="生效止日（NULL=当前版本）")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         UniqueConstraint("scheme", "grade_code", "effective_from", name="uk_salary_grade_ver"),
@@ -188,7 +189,7 @@ class SalaryRuleParam(Base):
     description = Column(String(255), nullable=True, comment="含义说明（配置页展示）")
     effective_from = Column(Date, nullable=False, comment="生效起日")
     effective_to = Column(Date, nullable=True, comment="生效止日（NULL=当前版本）")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         UniqueConstraint("param_key", "effective_from", name="uk_salary_param_ver"),
@@ -213,7 +214,7 @@ class SalaryChangeLog(Base):
     new_value = Column(JSON, nullable=True, comment="变更后快照")
     reason = Column(String(255), nullable=True, comment="变更原因")
     created_by = Column(USER_ID, nullable=True, comment="操作人 ark_users.id")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         Index("idx_salary_change_emp_date", "employee_id", "effective_date"),
@@ -251,9 +252,9 @@ class SalaryPeriod(Base):
     unlocked_at = Column(DateTime, nullable=True, comment="最近一次 admin 解锁时间（A4 留痕）")
     unlock_reason = Column(String(255), nullable=True, comment="解锁原因")
     remark = Column(Text, nullable=True, comment="批次备注")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     updated_at = Column(
-        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间",
+        DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间",
     )
 
     __table_args__ = (
@@ -297,9 +298,9 @@ class SalaryAttendance(Base):
     sync_source = Column(String(16), nullable=False, default="manual", comment="dingtalk/manual")
     raw_payload = Column(JSON, nullable=True, comment="钉钉原始返回（排障用）")
     synced_at = Column(DateTime, nullable=True, comment="同步时间")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     updated_at = Column(
-        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间",
+        DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间",
     )
 
     __table_args__ = (
@@ -336,7 +337,7 @@ class SalaryInsuranceImport(Base):
         comment="matched/not_payroll(参保未发薪)/unmatched(未识别)",
     )
     dept_text = Column(String(64), nullable=True, comment="源表部门文本")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         Index("idx_salary_ins_period", "period_id"),
@@ -368,7 +369,7 @@ class SalaryFundImport(Base):
     company_amount = Column(MONEY, nullable=True, comment="单位缴存额（仅对账）")
     match_status = Column(String(16), nullable=False, default="matched", comment="matched/not_payroll/unmatched")
     dept_text = Column(String(64), nullable=True, comment="源表部门文本")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         Index("idx_salary_fund_period", "period_id"),
@@ -460,9 +461,9 @@ class SalaryRecord(Base):
     calculated_at = Column(DateTime, nullable=True, comment="最近计算时间")
     modified_by = Column(USER_ID, nullable=True, comment="最近人工修改人 ark_users.id")
     modify_reason = Column(String(255), nullable=True, comment="修改原因")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     updated_at = Column(
-        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间",
+        DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间",
     )
 
     __table_args__ = (
@@ -503,7 +504,7 @@ class SalaryPeriodEvent(Base):
     reason = Column(String(255), nullable=True, comment="原因（解锁必填）")
     payload = Column(JSON, nullable=True, comment="事件附加数据")
     created_by = Column(USER_ID, nullable=True, comment="操作人 ark_users.id")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="发生时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="发生时间")
 
     __table_args__ = (
         Index("idx_salary_period_event_pid", "period_id", "id"),

@@ -2,6 +2,7 @@
 
 var recorderManager = wx.getRecorderManager()
 var app = getApp()
+var beijingNow = require('../../utils/time').beijingNow
 
 Page({
   data: {
@@ -117,7 +118,7 @@ Page({
     var text = this.data.inputText.trim()
     if (!text || this.data.isSending) return
 
-    var now = new Date()
+    var now = beijingNow()
     var h = now.getHours().toString()
     var m = now.getMinutes().toString()
     if (m.length < 2) m = '0' + m

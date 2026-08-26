@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from app.core.time import beijing_now
 
 import os
 from pathlib import Path
@@ -177,7 +178,7 @@ def update_user(
         for rid in req.role_ids:
             db.add(ArkUserRole(user_id=user_id, role_id=rid))
 
-    user.updated_at = datetime.utcnow()
+    user.updated_at = beijing_now()
     db.commit()
 
     return ResponseModel(message="更新成功")
@@ -200,7 +201,7 @@ def delete_user(
     if not user:
         return ResponseModel(code=404, message="用户不存在")
 
-    user.deleted_at = datetime.utcnow()
+    user.deleted_at = beijing_now()
     user.is_active = False
     db.commit()
 
@@ -223,7 +224,7 @@ def reset_user_password(
 
     user.password_hash = hash_password(req.new_password)
     user.must_change_password = False
-    user.updated_at = datetime.utcnow()
+    user.updated_at = beijing_now()
     db.commit()
 
     return ResponseModel(message="密码已重置")
@@ -247,7 +248,7 @@ def toggle_user_active(
         return ResponseModel(code=404, message="用户不存在")
 
     user.is_active = not user.is_active
-    user.updated_at = datetime.utcnow()
+    user.updated_at = beijing_now()
     db.commit()
 
     return ResponseModel(data={"is_active": bool(user.is_active)})
@@ -284,7 +285,7 @@ async def sync_user_dingtalk(
         return ResponseModel(code=400, message=f"未找到手机号 {user.phone} 对应的钉钉用户，请确认手机号与钉钉注册号一致")
 
     user.dingtalk_id = dingtalk_id
-    user.updated_at = datetime.utcnow()
+    user.updated_at = beijing_now()
     _propagate_dingtalk_to_salary_profile(db, user)
     db.commit()
 
@@ -345,7 +346,7 @@ async def sync_all_users_dingtalk(
             dingtalk_id = None
         if dingtalk_id:
             user.dingtalk_id = dingtalk_id
-            user.updated_at = datetime.utcnow()
+            user.updated_at = beijing_now()
             _propagate_dingtalk_to_salary_profile(db, user)
             success_count += 1
         else:
@@ -736,7 +737,7 @@ def update_profile(
     if req.avatar_url is not None:
         user.avatar_url = req.avatar_url
 
-    user.updated_at = datetime.utcnow()
+    user.updated_at = beijing_now()
     db.commit()
 
     return ResponseModel(message="资料已更新")
@@ -776,7 +777,7 @@ async def upload_avatar(
 
     # 保存新头像
     ext = os.path.splitext(file.filename or "")[1].lower() or ".png"
-    filename = f"avatar_{user_id}_{int(datetime.utcnow().timestamp())}{ext}"
+    filename = f"avatar_{user_id}_{int(beijing_now().timestamp())}{ext}"
     file_path = AVATAR_UPLOAD_DIR / filename
     with open(file_path, "wb") as f:
         f.write(content)
@@ -784,7 +785,7 @@ async def upload_avatar(
     # 更新用户头像 URL
     avatar_url = f"/uploads/avatars/{filename}"
     user.avatar_url = avatar_url
-    user.updated_at = datetime.utcnow()
+    user.updated_at = beijing_now()
     db.commit()
 
     return ResponseModel(message="头像上传成功", data={"avatar_url": avatar_url})
@@ -806,7 +807,7 @@ def change_password(
 
     user.password_hash = hash_password(req.new_password)
     user.must_change_password = False
-    user.updated_at = datetime.utcnow()
+    user.updated_at = beijing_now()
     db.commit()
 
     return ResponseModel(message="密码已修改")

@@ -9,6 +9,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 class ArkUser(Base):
@@ -30,8 +31,8 @@ class ArkUser(Base):
     must_change_password = Column(Boolean, nullable=False, default=False, comment="1=首次登录需改密")
     last_login_at = Column(DateTime, comment="最后登录时间")
     last_login_ip = Column(String(45), comment="最后登录IP（支持IPv6）")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
     deleted_at = Column(DateTime, comment="软删除时间戳")
 
     roles = relationship("ArkRole", secondary="ark_user_roles", back_populates="users", lazy="joined")
@@ -46,7 +47,7 @@ class ArkRole(Base):
     label = Column(String(100), nullable=False, comment="角色中文名")
     description = Column(String(255), comment="角色说明")
     is_system = Column(Boolean, nullable=False, default=False, comment="1=系统内置角色，不可删除")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     users = relationship("ArkUser", secondary="ark_user_roles", back_populates="roles")
     permissions = relationship("ArkPermission", secondary="ark_role_permissions", back_populates="roles", lazy="joined")
@@ -66,7 +67,7 @@ class ArkPermission(Base):
     is_legacy = Column(Integer, nullable=False, default=0, comment="1=已下架，UI 不展示，端点暂保留兼容")
     sort = Column(Integer, nullable=False, default=0, comment="模块内展示顺序")
 
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     roles = relationship("ArkRole", secondary="ark_role_permissions", back_populates="permissions")
 
@@ -84,7 +85,7 @@ class ArkPermissionAudit(Base):
     operator_name = Column(String(64), nullable=True, comment="操作人姓名")
     added_codes = Column(JSON, nullable=True, comment="本次新增的权限 code 列表")
     removed_codes = Column(JSON, nullable=True, comment="本次移除的权限 code 列表")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="操作时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="操作时间")
 
 
 class ArkUserRole(Base):
@@ -93,7 +94,7 @@ class ArkUserRole(Base):
 
     user_id = Column(Integer, ForeignKey("ark_users.id", ondelete="CASCADE"), primary_key=True, comment="用户ID")
     role_id = Column(Integer, ForeignKey("ark_roles.id", ondelete="CASCADE"), primary_key=True, comment="角色ID")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="分配时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="分配时间")
     created_by = Column(Integer, comment="分配操作人ID")
 
 
@@ -103,7 +104,7 @@ class ArkRolePermission(Base):
 
     role_id = Column(Integer, ForeignKey("ark_roles.id", ondelete="CASCADE"), primary_key=True, comment="角色ID")
     permission_id = Column(Integer, ForeignKey("ark_permissions.id", ondelete="CASCADE"), primary_key=True, comment="权限ID")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="分配时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="分配时间")
 
 
 class ArkRefreshToken(Base):
@@ -117,7 +118,7 @@ class ArkRefreshToken(Base):
     ip_address = Column(String(45), comment="创建时IP")
     expires_at = Column(DateTime, nullable=False, comment="Token过期时间")
     revoked_at = Column(DateTime, comment="主动吊销时间")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
 
 class ArkLoginLog(Base):
@@ -131,7 +132,7 @@ class ArkLoginLog(Base):
     user_agent = Column(String(500), comment="浏览器 User-Agent")
     status = Column(Enum("success", "failed", "locked", name="login_status"), nullable=False, comment="登录结果(success=成功/failed=失败/locked=锁定)")
     fail_reason = Column(String(255), comment="失败原因")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="登录时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="登录时间")
 
 
 # ── 外部账号绑定 ────────────────────────────────────────────
@@ -150,8 +151,8 @@ class ArkUserExternalBinding(Base):
     remark = Column(String(255), nullable=True, comment="人工备注")
     created_by = Column(Integer, nullable=True, comment="创建人用户ID")
     updated_by = Column(Integer, nullable=True, comment="更新人用户ID")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
     deleted_at = Column(DateTime, nullable=True, comment="软删除")
 
     user = relationship("ArkUser", backref="external_bindings")
@@ -166,8 +167,8 @@ class ArkExternalBindingCandidate(Base):
     external_account_id = Column(String(100), nullable=False, comment="外部账号稳定ID")
     external_display_name = Column(String(100), nullable=True, comment="外部账号显示名")
     source = Column(String(50), nullable=False, default="accio_work", comment="候选来源，如 accio_work")
-    first_seen_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="首次发现时间")
-    last_seen_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="最近发现时间")
+    first_seen_at = Column(DateTime, nullable=False, default=beijing_now, comment="首次发现时间")
+    last_seen_at = Column(DateTime, nullable=False, default=beijing_now, comment="最近发现时间")
     seen_count = Column(Integer, nullable=False, default=1, comment="累计出现次数")
     suggested_user_id = Column(Integer, ForeignKey("ark_users.id"), nullable=True, comment="按名称等规则推测的用户")
     suggestion_reason = Column(String(255), nullable=True, comment="推荐绑定理由")

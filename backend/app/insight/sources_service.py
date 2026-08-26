@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime
+from app.core.time import beijing_now
 from pathlib import Path
 from typing import Optional
 
@@ -156,7 +157,7 @@ def test_source(db: Session, source_id: int) -> dict:
             preview = [{"title": (t or "")[:80]} for t in items[:5]]
 
         # 标记成功
-        s.last_fetched_at = datetime.utcnow()
+        s.last_fetched_at = beijing_now()
         s.last_error = None
         s.consecutive_failures = 0
         db.commit()

@@ -1,6 +1,7 @@
 """Lease-protected Agent worker operations."""
 
 from datetime import datetime, timedelta
+from app.core.time import beijing_now, utc_now_naive
 import hashlib
 import secrets
 
@@ -25,8 +26,8 @@ _FIRST_PARTY_ARTIFACT_TYPES = {
 }
 
 
-def _now() -> datetime:
-    return datetime.utcnow()
+def _utc_now() -> datetime:
+    return utc_now_naive()
 
 
 def _hash_token(token: str) -> str:
@@ -50,7 +51,7 @@ def _runtime_limits(profile: AgentProfile) -> tuple[int, int]:
 def _fail_runtime_limit(db: Session, row: AgentRun, message: str) -> None:
     require_transition(row.status, RunStatus.FAILED)
     row.status = RunStatus.FAILED.value
-    row.completed_at = _now()
+    row.completed_at = beijing_now()
     row.error_code = "RUN_LIMIT_EXCEEDED"
     row.error_message = message
     row.lease_token_hash = None
@@ -67,7 +68,7 @@ def _fail_runtime_limit(db: Session, row: AgentRun, message: str) -> None:
 
 
 def reconcile_expired_runs(db: Session, *, limit: int = 100) -> int:
-    now = _now()
+    now = _utc_now()
     rows = db.query(AgentRun).filter(
         AgentRun.status.in_([RunStatus.LEASED.value, RunStatus.RUNNING.value, RunStatus.WAITING_INPUT.value]),
         AgentRun.lease_expires_at.isnot(None),
@@ -93,7 +94,7 @@ def reconcile_expired_runs(db: Session, *, limit: int = 100) -> int:
             else:
                 require_transition(row.status, RunStatus.FAILED)
                 row.status = RunStatus.FAILED.value
-                row.completed_at = now
+                row.completed_at = beijing_now()
                 row.error_code = "WORKER_LEASE_EXHAUSTED"
                 row.error_message = "Worker 多次领取后均未开始执行"
                 row.lease_token_hash = None
@@ -110,7 +111,7 @@ def reconcile_expired_runs(db: Session, *, limit: int = 100) -> int:
         else:
             require_transition(row.status, RunStatus.AMBIGUOUS)
             row.status = RunStatus.AMBIGUOUS.value
-            row.completed_at = now
+            row.completed_at = beijing_now()
             row.error_code = "WORKER_LEASE_EXPIRED"
             row.error_message = "Worker 在执行期间失联，任务结果不确定，禁止自动重试"
             row.lease_token_hash = None
@@ -152,7 +153,7 @@ def claim_run(db: Session, *, worker_id: str, runtimes: list[str]) -> dict | Non
     if row.cancel_requested:
         require_transition(row.status, RunStatus.CANCELLED)
         row.status = RunStatus.CANCELLED.value
-        row.completed_at = _now()
+        row.completed_at = beijing_now()
         append_event(
             db, row,
             event_id=f"run-{row.id}-cancelled-on-claim",
@@ -167,7 +168,7 @@ def claim_run(db: Session, *, worker_id: str, runtimes: list[str]) -> dict | Non
     if profile.status != "active":
         require_transition(row.status, RunStatus.FAILED)
         row.status = RunStatus.FAILED.value
-        row.completed_at = _now()
+        row.completed_at = beijing_now()
         row.error_code = "PROFILE_DISABLED"
         row.error_message = "Agent Profile 已停用"
         append_event(
@@ -189,7 +190,7 @@ def claim_run(db: Session, *, worker_id: str, runtimes: list[str]) -> dict | Non
     row.status = RunStatus.LEASED.value
     row.claimed_by = worker_id
     row.lease_token_hash = _hash_token(lease_token)
-    row.lease_expires_at = _now() + timedelta(seconds=settings.AGENT_RUNTIME_WORKER_LEASE_SECONDS)
+    row.lease_expires_at = _utc_now() + timedelta(seconds=settings.AGENT_RUNTIME_WORKER_LEASE_SECONDS)
     row.attempt_no += 1
     append_event(
         db, row,
@@ -229,7 +230,7 @@ def _leased_run(db: Session, run_id: int, *, worker_id: str, lease_token: str) -
         raise LeaseError("Agent Worker 与租约不匹配")
     if not lease_token or not secrets.compare_digest(row.lease_token_hash or "", _hash_token(lease_token)):
         raise LeaseError("Agent 租约令牌无效")
-    if row.lease_expires_at is None or row.lease_expires_at <= _now():
+    if row.lease_expires_at is None or row.lease_expires_at <= _utc_now():
         raise LeaseError("Agent 租约已经过期")
     return row
 
@@ -250,7 +251,7 @@ def heartbeat(
     if effective_steps > max_steps:
         _fail_runtime_limit(db, row, "Agent 步骤数超过 Profile 限制")
         raise ConflictError("Agent 步骤数超过 Profile 限制")
-    if row.started_at and (_now() - row.started_at).total_seconds() > timeout_seconds:
+    if row.started_at and (beijing_now() - row.started_at).total_seconds() > timeout_seconds:
         _fail_runtime_limit(db, row, "Agent 执行时间超过 Profile 限制")
         raise ConflictError("Agent 执行时间超过 Profile 限制")
     if runtime_run_id:
@@ -261,7 +262,7 @@ def heartbeat(
         if steps_used < row.steps_used:
             raise ConflictError("steps_used 不能回退")
         row.steps_used = steps_used
-    row.lease_expires_at = _now() + timedelta(seconds=get_settings().AGENT_RUNTIME_WORKER_LEASE_SECONDS)
+    row.lease_expires_at = _utc_now() + timedelta(seconds=get_settings().AGENT_RUNTIME_WORKER_LEASE_SECONDS)
     db.commit()
     db.refresh(row)
     return row
@@ -330,7 +331,7 @@ def append_worker_events(
             raise ConflictError("租约任务的第一个新事件必须是 run.started")
         require_transition(row.status, RunStatus.RUNNING)
         row.status = RunStatus.RUNNING.value
-        row.started_at = row.started_at or _now()
+        row.started_at = row.started_at or beijing_now()
     forbidden = {"run.created", "run.claimed", "run.requeued", "run.completed", "run.failed", "run.cancelled", "run.ambiguous"}
     for item in events:
         if item.event_type in forbidden:
@@ -370,7 +371,7 @@ def complete_run(
     if row.cancel_requested:
         require_transition(row.status, RunStatus.CANCELLED)
         row.status = RunStatus.CANCELLED.value
-        row.completed_at = _now()
+        row.completed_at = beijing_now()
         append_event(
             db, row,
             event_id=f"run-{row.id}-cancelled-by-worker",
@@ -413,7 +414,7 @@ def complete_run(
     max_steps, timeout_seconds = _runtime_limits(profile)
     if steps_used > max_steps:
         raise ConflictError("Agent 步骤数超过 Profile 限制")
-    if row.started_at and (_now() - row.started_at).total_seconds() > timeout_seconds:
+    if row.started_at and (beijing_now() - row.started_at).total_seconds() > timeout_seconds:
         raise ConflictError("Agent 执行时间超过 Profile 限制")
     max_total_tokens = int(limits.get("max_total_tokens") or 0)
     if max_total_tokens and max(row.prompt_tokens + row.completion_tokens, prompt_tokens + completion_tokens) > max_total_tokens:
@@ -427,7 +428,7 @@ def complete_run(
     row.prompt_tokens = max(row.prompt_tokens, prompt_tokens)
     row.completion_tokens = max(row.completion_tokens, completion_tokens)
     row.cost_usd = cost_usd
-    row.completed_at = _now()
+    row.completed_at = beijing_now()
     row.lease_token_hash = None
     row.lease_expires_at = None
     append_event(
@@ -474,7 +475,7 @@ def fail_run(
     row.status = target.value
     row.error_code = error_code
     row.error_message = error_message
-    row.completed_at = _now()
+    row.completed_at = beijing_now()
     row.lease_token_hash = None
     row.lease_expires_at = None
     append_event(

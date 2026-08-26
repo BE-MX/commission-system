@@ -7,6 +7,7 @@ import io
 import logging
 import re
 from datetime import date, datetime
+from app.core.time import beijing_now
 from pathlib import Path
 from typing import Optional
 
@@ -208,7 +209,7 @@ def update_task(db: Session, task_id: int, user_id: int, data: TaskUpdate) -> In
         if payload["status"] not in ("pending", "in_progress", "completed", "overdue"):
             raise ValueError("非法的任务状态")
         if payload["status"] == "completed" and t.status != "completed":
-            t.completed_at = datetime.utcnow()
+            t.completed_at = beijing_now()
             t.completed_by = user_id
         elif payload["status"] != "completed":
             t.completed_at = None

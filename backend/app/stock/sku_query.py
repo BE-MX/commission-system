@@ -4,6 +4,7 @@
 """
 
 from datetime import date, timedelta
+from app.core.time import beijing_today
 from typing import Any, Optional
 
 from sqlalchemy import text
@@ -21,7 +22,7 @@ settings = get_settings()
 def get_sku_sales(db: Session, product_id: int, days: int) -> int:
     """指定 SKU 最近 N 天的销量 (只统计已结束订单+7 个指定部门)"""
     business_db = settings.BUSINESS_DB_NAME
-    since = date.today() - timedelta(days=days)
+    since = beijing_today() - timedelta(days=days)
     sql = f"""
         SELECT COALESCE(SUM(oi.quantity), 0) AS total_sales
         FROM `{business_db}`.okki_order_items oi
@@ -53,7 +54,7 @@ def query_all_sku_status(
     被销量备货一览 + 日报生成 复用。
     """
     business_db = settings.BUSINESS_DB_NAME
-    today = date.today()
+    today = beijing_today()
     d30 = today - timedelta(days=30)
     d90 = today - timedelta(days=90)
 

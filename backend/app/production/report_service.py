@@ -3,14 +3,13 @@
 import hmac
 import hashlib
 import re
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 
-# 北京时间 UTC+8
-_BJ_TZ = timezone(timedelta(hours=8))
-
+from app.core.time import beijing_now
 
 def _bj_now():
-    return datetime.now(_BJ_TZ)
+    """兼容既有调用的无时区北京时间。"""
+    return beijing_now()
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session

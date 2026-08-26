@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+from app.core.time import beijing_now, to_beijing_naive
 from app.whatsapp.connector_client import WhatsAppConnectorClient
 from app.whatsapp.models import (
     WhatsAppAccount,
@@ -22,10 +23,13 @@ def _parse_dt(value: Any) -> datetime | None:
     if not value:
         return None
     if isinstance(value, datetime):
-        return value
+        return to_beijing_naive(value)
     if isinstance(value, str):
         try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            # Connector 带 Z/offset 时先换算为北京时间，绝不只丢
+            # tzinfo；无 offset 按双方约定的北京业务钟面处理。
+            return to_beijing_naive(parsed)
         except ValueError:
             return None
     return None
@@ -270,9 +274,9 @@ def _pull_conversations_for_account(db: Session, account: WhatsAppAccount, limit
         _upsert_conversation(db, account_uid, item)
 
     cursor.cursor_value = payload.get("next_cursor")
-    cursor.last_pulled_at = datetime.utcnow()
+    cursor.last_pulled_at = beijing_now()
     cursor.last_error = None
-    account.last_sync_at = datetime.utcnow()
+    account.last_sync_at = beijing_now()
     account.status = "active"
     account.last_error = None
     _audit(db, action="pull_conversations", result="success", ark_user_id=account.ark_user_id, account_uid=account_uid, detail=f"pulled={len(items)}")
@@ -323,7 +327,7 @@ def _pull_messages_for_account(
                     latest_sent_at = msg.sent_at
 
             cursor.cursor_value = payload.get("next_cursor") or cursor.cursor_value
-            cursor.last_pulled_at = datetime.utcnow()
+            cursor.last_pulled_at = beijing_now()
             cursor.last_error = None
             account.last_message_at = latest_sent_at
             total += len(items)
@@ -331,13 +335,13 @@ def _pull_messages_for_account(
         except Exception as exc:
             errors += 1
             first_error = first_error or exc
-            cursor.last_pulled_at = datetime.utcnow()
+            cursor.last_pulled_at = beijing_now()
             cursor.last_error = str(exc)[:1000]
 
     if synced_conversations == 0 and first_error:
         raise first_error
 
-    account.last_sync_at = datetime.utcnow()
+    account.last_sync_at = beijing_now()
     account.status = "active"
     account.last_error = None
     detail = f"pulled={total},conversations={synced_conversations},errors={errors}"

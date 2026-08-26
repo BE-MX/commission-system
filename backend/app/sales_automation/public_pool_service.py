@@ -7,7 +7,8 @@ import json
 import logging
 import random
 import secrets
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta
+from app.core.time import beijing_now, beijing_today, to_beijing_naive, utc_now_naive
 from decimal import Decimal
 from typing import Any
 
@@ -66,7 +67,8 @@ def _valid_order_sql(alias: str) -> str:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    """业务字段的北京时间；租约比较必须显式使用 UTC。"""
+    return beijing_now()
 
 
 def _data(value: Any) -> dict:
@@ -113,15 +115,13 @@ def _as_datetime(value: Any) -> datetime | None:
     if value is None:
         return None
     if isinstance(value, datetime):
-        return value.replace(tzinfo=None)
+        return to_beijing_naive(value)
     if isinstance(value, date):
         return datetime.combine(value, time.min)
     if isinstance(value, str):
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            if parsed.tzinfo:
-                parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
-            return parsed
+            return to_beijing_naive(parsed)
         except ValueError:
             return None
     return None
@@ -630,9 +630,10 @@ class BusinessPoolGateway:
 
         stale_days = conditions.get("stale_followup_days")
         if stale_days is not None:
+            params["profile_stale_followup_before"] = utc_now_naive() - timedelta(days=int(stale_days))
             filters.append(
                 "(f.last_followup_at IS NULL OR "
-                f"f.last_followup_at <= DATE_SUB(NOW(), INTERVAL {int(stale_days)} DAY))"
+                "f.last_followup_at <= :profile_stale_followup_before)"
             )
 
         priority = []
@@ -1128,7 +1129,7 @@ def queue_high_score_lead_research(
     batch = db.query(PublicPoolBatch).filter(PublicPoolBatch.idempotency_key == batch_key).first()
     if batch is None:
         batch = PublicPoolBatch(
-            batch_date=date.today(),
+            batch_date=beijing_today(),
             policy_version="lead-score-70-v1",
             status="completed",
             quota_per_tier=1,
@@ -1175,7 +1176,7 @@ def prepare_batch(
 ) -> tuple[PublicPoolBatch, bool]:
     """幂等登记批次；未完成批次存在时绝不重复排队。"""
     data = _data(payload)
-    batch_date = data.get("batch_date") or date.today()
+    batch_date = data.get("batch_date") or beijing_today()
     quota = int(data.get("quota_per_tier") or 20)
     policy_version = str(data.get("policy_version") or "v3")
     if policy_version == "lead-score-70-v1":
@@ -1446,7 +1447,7 @@ def list_tasks(
 
 
 def list_claimable_tasks(db: Session, page: int, page_size: int) -> tuple[list[PublicPoolTask], int]:
-    now = _now()
+    now = utc_now_naive()
     query = db.query(PublicPoolTask).filter(
         PublicPoolTask.deleted_at.is_(None),
         or_(
@@ -1470,18 +1471,18 @@ def _claim_owner(actor_id: int, agent_id: str) -> str:
 
 def claim_task(db: Session, task_id: int, actor_id: int, agent_id: str) -> tuple[PublicPoolTask, str]:
     task = get_task(db, task_id, for_update=True)
-    now = _now()
-    reclaimable = task.status == "running" and task.lease_expires_at is not None and task.lease_expires_at <= now
+    lease_now = utc_now_naive()
+    reclaimable = task.status == "running" and task.lease_expires_at is not None and task.lease_expires_at <= lease_now
     if task.status != "pending" and not reclaimable:
         raise ConflictError("任务不是等待领取状态，或仍由其他Agent执行")
     token = secrets.token_urlsafe(32)
     task.status = "running"
-    task.started_at = task.started_at or now
+    task.started_at = task.started_at or _now()
     task.finished_at = None
     task.error_message = None
     task.claimed_by = _claim_owner(actor_id, agent_id)
     task.lease_token_hash = _hash(token)
-    task.lease_expires_at = now + timedelta(minutes=LEASE_MINUTES)
+    task.lease_expires_at = lease_now + timedelta(minutes=LEASE_MINUTES)
     task.attempt_count += 1
     task.updated_by = actor_id
     db.commit()
@@ -1495,7 +1496,7 @@ def _leased_task(db: Session, task_id: int, actor_id: int, agent_id: str, lease_
         raise ConflictError("任务租约不属于当前Agent")
     if not lease_token or not secrets.compare_digest(task.lease_token_hash or "", _hash(lease_token)):
         raise ConflictError("任务租约无效")
-    if task.lease_expires_at is None or task.lease_expires_at <= _now():
+    if task.lease_expires_at is None or task.lease_expires_at <= utc_now_naive():
         raise ConflictError("任务租约已过期，请重新领取")
     return task
 
@@ -1504,7 +1505,7 @@ def heartbeat_task(db: Session, task_id: int, actor_id: int, agent_id: str, leas
     task = _leased_task(db, task_id, actor_id, agent_id, lease_token)
     if task.status != "running":
         raise ConflictError("只有执行中的任务可以续租")
-    task.lease_expires_at = _now() + timedelta(minutes=LEASE_MINUTES)
+    task.lease_expires_at = utc_now_naive() + timedelta(minutes=LEASE_MINUTES)
     db.commit()
     db.refresh(task)
     return task

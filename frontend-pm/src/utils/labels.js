@@ -40,10 +40,32 @@ export const CATEGORY_ORDER = ['产品与报价', '客户分类与分配', '知�
 
 export const PHASES = [1, 2, 3, 4]
 
+export function beijingDate() {
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date())
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day}`
+}
+
+function beijingTimeParts(iso) {
+  const raw = String(iso).trim().replace(' ', 'T')
+  const instant = /(?:Z|[+-]\d{2}:?\d{2})$/.test(raw) ? raw : `${raw}+08:00`
+  const date = new Date(instant)
+  if (Number.isNaN(date.getTime())) return null
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(date)
+  return Object.fromEntries(parts.map(part => [part.type, part.value]))
+}
+
 export function fmtTime(iso, withTime = true) {
   if (!iso) return '—'
-  const s = String(iso).replace('T', ' ')
-  return withTime ? s.slice(0, 16) : s.slice(0, 10)
+  const p = beijingTimeParts(iso)
+  if (!p) return '—'
+  const date = `${p.year}-${p.month}-${p.day}`
+  return withTime ? `${date} ${p.hour}:${p.minute}` : date
 }
 
 export function fmtSize(bytes) {
@@ -55,7 +77,8 @@ export function fmtSize(bytes) {
 
 export function relTime(iso) {
   if (!iso) return ''
-  const then = new Date(String(iso).replace(' ', 'T')) // 服务器时间即北京时间（bj_now）
+  const raw = String(iso).replace(' ', 'T')
+  const then = new Date(/(?:Z|[+-]\d{2}:?\d{2})$/.test(raw) ? raw : `${raw}+08:00`)
   const diff = Date.now() - then.getTime()
   const mins = Math.round(diff / 60000)
   if (mins < 1) return '刚刚'

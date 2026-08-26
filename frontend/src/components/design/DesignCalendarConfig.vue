@@ -120,11 +120,12 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Check } from '@element-plus/icons-vue'
 import { getUnavailableDates, createUnavailableDates, deleteUnavailableDate } from '@/api/design'
+import { beijingCalendarDate, currentBeijingDate } from '@/utils/datetime'
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 const operatorParams = { operator_id: 1, operator_name: '设计部', operator_role: 'design_staff' }
 
-const calendarValue = ref(new Date())
+const calendarValue = ref(beijingCalendarDate())
 const loading = ref(false)
 const submitting = ref(false)
 const unavailableList = ref([]) // [{ date, reason }]
@@ -147,8 +148,7 @@ const removeDate = ref('')
 const unavailableSet = computed(() => new Set(unavailableList.value.map(d => d.date || d)))
 
 const todayStr = computed(() => {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  return currentBeijingDate()
 })
 
 const upcomingDates = computed(() => {

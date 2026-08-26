@@ -19,6 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects import mysql
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 USER_ID = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
@@ -46,8 +47,8 @@ class AgentProfile(Base):
     output_schema = Column(JSON, nullable=False, default=dict, comment="成果JSON Schema")
     status = Column(String(16), nullable=False, default="active", comment="active/inactive")
     created_by = Column(USER_ID, ForeignKey("ark_users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now)
 
     __table_args__ = (
         UniqueConstraint("profile_key", "version", name="uq_agent_profile_key_version"),
@@ -69,8 +70,8 @@ class AgentSession(Base):
     status = Column(String(16), nullable=False, default="active")
     last_event_seq = Column(Integer, nullable=False, default=0)
     summary_json = Column(JSON)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now)
 
     __table_args__ = (
         Index("idx_agent_session_owner", "owner_user_id", "status", "updated_at"),
@@ -110,8 +111,8 @@ class AgentRun(Base):
     error_message = Column(String(1000))
     started_at = Column(DateTime)
     completed_at = Column(DateTime)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now)
 
     __table_args__ = (
         UniqueConstraint("owner_user_id", "idempotency_key", name="uq_agent_run_owner_idem"),
@@ -138,7 +139,7 @@ class AgentEvent(Base):
     raw_payload_cipher = Column(MEDIUM_TEXT)
     source_event_ids = Column(JSON, nullable=False, default=list)
     payload_sha256 = Column(String(64), nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
 
     __table_args__ = (
         UniqueConstraint("run_id", "sequence_no", name="uq_agent_event_run_seq"),
@@ -168,8 +169,8 @@ class AgentArtifact(Base):
     feedback_note = Column(String(1000))
     business_ref_type = Column(String(40))
     business_ref_id = Column(String(128))
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now)
 
     __table_args__ = (
         UniqueConstraint("run_id", "artifact_type", "content_sha256", name="uq_agent_artifact_content"),

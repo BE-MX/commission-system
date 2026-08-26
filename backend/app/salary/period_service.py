@@ -28,6 +28,7 @@ import calendar
 import logging
 import re
 from datetime import date, datetime
+from app.core.time import beijing_now
 from collections.abc import Sequence
 from typing import Any, Optional
 
@@ -308,7 +309,7 @@ def guarded_write(
     if expected_version is not None:
         conds.append(SalaryPeriod.status_version == expected_version)
 
-    stmt = update(SalaryPeriod).where(*conds).values(**values, updated_at=datetime.now())
+    stmt = update(SalaryPeriod).where(*conds).values(**values, updated_at=beijing_now())
     result = db.execute(stmt)
     if result.rowcount == 0:
         db.rollback()
@@ -376,7 +377,7 @@ def transition(
     stmt = (
         update(SalaryPeriod)
         .where(SalaryPeriod.id == period.id, SalaryPeriod.status_version == from_version)
-        .values(**values, updated_at=datetime.now())
+        .values(**values, updated_at=beijing_now())
     )
     result = db.execute(stmt)
     if result.rowcount == 0:
@@ -407,7 +408,7 @@ def confirm(
     return transition(
         db, period, STATUS_CONFIRMED,
         expected_version=expected_version, operator_id=operator_id,
-        extra_values={"confirmed_at": datetime.now(), "confirmed_by": operator_id},
+        extra_values={"confirmed_at": beijing_now(), "confirmed_by": operator_id},
     )
 
 
@@ -440,9 +441,9 @@ def unlock(
         .values(
             status=STATUS_REVIEWING,
             status_version=from_version + 1,
-            unlocked_at=datetime.now(),
+            unlocked_at=beijing_now(),
             unlock_reason=text[:255],
-            updated_at=datetime.now(),
+            updated_at=beijing_now(),
         )
     )
     result = db.execute(stmt)

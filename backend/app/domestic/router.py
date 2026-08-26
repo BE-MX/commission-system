@@ -9,6 +9,7 @@ import base64
 import io
 import logging
 from datetime import date, datetime
+from app.core.time import beijing_now
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -540,7 +541,7 @@ def get_print_card(
         "order_type_label": detail["order_type_label"],
         "qr_data": qr_data,
         "qr_code_base64": _qr_png_base64(qr_data),
-        "printed_at": datetime.now(),
+        "printed_at": beijing_now(),
     })
 
 

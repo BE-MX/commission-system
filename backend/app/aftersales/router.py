@@ -1,6 +1,7 @@
 """客户售后管理 HTTP API。业务逻辑位于 service 层。"""
 
 from datetime import date, datetime
+from app.core.time import beijing_now
 from decimal import Decimal
 from pathlib import Path
 
@@ -310,7 +311,7 @@ def list_cases(
         owner.id: owner.real_name
         for owner in db.query(ArkUser).filter(ArkUser.id.in_(owner_ids)).all()
     } if owner_ids else {}
-    now = datetime.utcnow()
+    now = beijing_now()
     rows = []
     for item in items:
         row = _case_data(item)
@@ -559,7 +560,7 @@ def delete_evidence(
     )
     if item is None:
         raise HTTPException(status_code=404, detail="证据不存在")
-    item.deleted_at = datetime.utcnow()
+    item.deleted_at = beijing_now()
     service.invalidate_evidence_waiver(case)
     service.refresh_evidence(db, case)
     case.version += 1

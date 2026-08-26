@@ -1,3 +1,5 @@
+import { formatBeijingDateTime } from '../../utils/datetime.js'
+
 export const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled', 'ambiguous'])
 
 export const STATUS_META = {
@@ -35,7 +37,7 @@ export function evaluationProgress(completed, total) {
 }
 
 export function formatTime(value) {
-  return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-'
+  return formatBeijingDateTime(value)
 }
 
 export function formatPayload(value) {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from app.core.time import beijing_today
 import hashlib
 import logging
 
@@ -41,7 +42,7 @@ def enqueue_repurchase_runs(db: Session, *, action_date: date | None = None, lim
     settings = get_settings()
     if not settings.AGENT_RUNTIME_REPURCHASE_ENABLED or not settings.AGENT_RUNTIME_DSH_ENABLED:
         return 0
-    target_date = action_date or date.today()
+    target_date = action_date or beijing_today()
     batch_size = min(limit or settings.AGENT_RUNTIME_REPURCHASE_BATCH_SIZE, 100)
     actions = db.query(CustomerAction).filter(
         CustomerAction.action_date == target_date,

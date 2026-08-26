@@ -5,6 +5,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from app.core.time import utc_now
 from app.governance.models import (
     DataConcept,
     ConceptRelationship,
@@ -158,8 +159,7 @@ def _export_markdown(concepts, relationships) -> dict:
 
 
 def _now_str() -> str:
-    from datetime import datetime
-    return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    return utc_now().strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 # ── 种子数据 ──────────────────────────────────────────────

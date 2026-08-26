@@ -3,6 +3,7 @@
 import logging
 import re
 from datetime import datetime, timedelta
+from app.core.time import beijing_now
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -55,7 +56,7 @@ def enqueue_notification(
         template_code=template_code,
         payload_json=payload,
         status="pending" if recipient.dingtalk_id else "failed",
-        next_retry_at=None if recipient.dingtalk_id else datetime.utcnow() + timedelta(seconds=60),
+        next_retry_at=None if recipient.dingtalk_id else beijing_now() + timedelta(seconds=60),
         last_error_summary=None if recipient.dingtalk_id else "通知接收人尚未绑定钉钉账号",
     )
     db.add(log)
@@ -101,14 +102,14 @@ async def deliver_notification(
         if sent is False:
             raise RuntimeError("DingTalk notifier returned failure")
         log.status = "success"
-        log.sent_at = datetime.utcnow()
+        log.sent_at = beijing_now()
         log.next_retry_at = None
         log.last_error_summary = None
     except Exception as exc:
         summary = _sanitize_error(exc)
         log.status = "failed"
         log.last_error_summary = summary
-        log.next_retry_at = datetime.utcnow() + timedelta(
+        log.next_retry_at = beijing_now() + timedelta(
             seconds=60 * (2 ** (log.attempt_count - 1))
         )
         logger.warning("售后通知发送失败 notification_id=%s: %s", log.id, summary)
@@ -128,7 +129,7 @@ async def process_due_notifications(
     batch_size: int = 50,
 ) -> int:
     """发送因进程退出遗留的 pending 通知及到期失败通知。"""
-    now = datetime.utcnow()
+    now = beijing_now()
     notification_ids = [
         item[0]
         for item in (

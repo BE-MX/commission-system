@@ -18,7 +18,6 @@ import argparse
 import os
 import sys
 from collections import defaultdict
-from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -26,6 +25,7 @@ from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal
+from app.core.time import beijing_now
 
 settings = get_settings()
 from app.asset.color_rules import derive_family  # noqa: E402 — 色系规则唯一实现
@@ -71,7 +71,7 @@ def main():
     args = ap.parse_args()
 
     db = SessionLocal()
-    report: list[str] = [f"# 存量重打标报告  {datetime.now():%Y-%m-%d %H:%M:%S}  mode={'EXECUTE' if args.execute else 'DRY-RUN'}"]
+    report: list[str] = [f"# 存量重打标报告  {beijing_now():%Y-%m-%d %H:%M:%S}  mode={'EXECUTE' if args.execute else 'DRY-RUN'}"]
 
     dims = load_dims(db)
     values = load_values(db, dims)

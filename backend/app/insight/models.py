@@ -21,6 +21,7 @@ from sqlalchemy.dialects.mysql import LONGTEXT, MEDIUMTEXT
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 # ── 报告主表 ────────────────────────────────────────────
@@ -62,8 +63,8 @@ class InsightReport(Base):
     config_snapshot = Column(JSON, nullable=True, comment="生成时配置快照")
     is_pinned = Column(Boolean, nullable=False, default=False, comment="0=否,1=置顶")
     trigger_type = Column(String(32), nullable=False, default="manual", comment="manual/scheduled")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (
         Index("idx_insight_report_date", "report_date"),
@@ -118,8 +119,8 @@ class InsightSource(Base):
         comment="所属管线",
     )
     sort_order = Column(SmallInteger, nullable=False, default=0, comment="排序")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (
         Index("idx_insight_source_type", "source_type"),
@@ -186,8 +187,8 @@ class InsightCase(Base):
     error_msg = Column(Text, nullable=True, comment="处理失败信息")
     like_count = Column(Integer, nullable=False, default=0, comment="认可数")
     view_count = Column(Integer, nullable=False, default=0, comment="查看次数")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = {"comment": "方舟洞见-业务员案例库"}
 
@@ -217,8 +218,8 @@ class MeetingMinutes(Base):
     )
     error_msg = Column(Text, nullable=True, comment="处理失败信息")
     uploaded_by = Column(Integer, nullable=False, comment="上传人用户ID")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = {"comment": "方舟洞见-周会纪要"}
 
@@ -260,8 +261,8 @@ class InsightTask(Base):
     completed_at = Column(DateTime, nullable=True, comment="完成时间")
     completed_by = Column(Integer, nullable=True, comment="标记完成的用户ID")
     notes = Column(Text, nullable=True, comment="跟进备注")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = {"comment": "方舟洞见-任务执行清单"}
 
@@ -298,7 +299,7 @@ class InsightItem(Base):
     ai_meaning = Column(String(200), nullable=True, comment="AI分析业务意义")
     ai_action_hint = Column(String(150), nullable=True, comment="AI建议可执行动作")
     priority = Column(String(16), nullable=False, default="medium", comment="high/medium/low")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         Index("idx_insight_item_collected", "collected_at"),
@@ -325,7 +326,7 @@ class InsightCollectionLog(Base):
     items_filtered = Column(Integer, nullable=False, default=0, comment="过滤丢弃条数")
     error_message = Column(Text, nullable=True, comment="错误信息")
     duration_ms = Column(Integer, nullable=True, comment="执行耗时(毫秒)")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         Index("idx_insight_log_source", "source_id"),
@@ -345,7 +346,7 @@ class InsightScheduleRule(Base):
     config_json = Column(JSON, nullable=True, comment="选材规则、生成配置")
     notify_dingtalk = Column(Boolean, nullable=False, default=True, comment="0=否,1=是")
     last_run_at = Column(DateTime, nullable=True, comment="最近执行时间")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         Index("idx_insight_rule_active", "is_active"),
@@ -372,7 +373,7 @@ class InquiryImportBatch(Base):
     status = Column(String(20), nullable=False, default="processing", comment="processing/success/partial_failed/failed")
     raw_payload = Column(JSON, nullable=True, comment="原始推送数据")
     error_msg = Column(Text, nullable=True, comment="失败错误信息")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = {"comment": "阿里询盘导入批次表"}
 
@@ -414,8 +415,8 @@ class CustomerOpportunity(Base):
     due_at = Column(DateTime, nullable=True, comment="处理截止时间(按优先等级计算)")
     latest_message_at = Column(DateTime, nullable=True, comment="客户最新消息时间")
     handled_at = Column(DateTime, nullable=True, comment="处理时间")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     events = relationship(
         "CustomerOpportunityEvent",
@@ -442,7 +443,7 @@ class CustomerOpportunityEvent(Base):
     event_type = Column(String(50), nullable=False, comment="created/imported/viewed/copied/status_changed/feedback/assigned")
     actor_user_id = Column(Integer, nullable=True, comment="操作人用户ID")
     event_payload = Column(JSON, nullable=True, comment="事件附加数据JSON")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     opportunity = relationship("CustomerOpportunity", back_populates="events")
 
@@ -481,8 +482,8 @@ class CustomerProfile(Base):
     suggested_message = Column(Text, comment="推荐话术")
     weight_adjustments = Column(JSON, comment="权重调整JSON")
     status = Column(String(20), nullable=False, default="active", comment="画像状态，默认 active")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     events = relationship("CustomerProfileEvent", back_populates="profile",
                           cascade="all, delete-orphan", order_by="CustomerProfileEvent.occurred_at.desc()")
@@ -514,7 +515,7 @@ class CustomerProfileEvent(Base):
     event_score = Column(SmallInteger, nullable=False, default=0, comment="事件评分(正负分)")
     actor_user_id = Column(Integer, comment="操作人用户ID")
     occurred_at = Column(DateTime, nullable=False, comment="事件发生时间")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     profile = relationship("CustomerProfile", back_populates="events")
 
@@ -552,9 +553,9 @@ class CustomerAction(Base):
     source_fingerprint = Column(String(64), nullable=True, unique=True, comment="行动生成幂等指纹")
     policy_version = Column(String(32), nullable=True, comment="行动策略版本")
     evidence_status = Column(String(20), nullable=False, default="unverified", comment="unverified/valid/invalid")
-    generated_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="本版本生成时间")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    generated_at = Column(DateTime, nullable=False, default=beijing_now, comment="本版本生成时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     profile = relationship("CustomerProfile", back_populates="actions")
 

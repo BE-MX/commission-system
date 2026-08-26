@@ -49,7 +49,7 @@ export function saveStatusLabel(state, options = {}) {
   if (state.dirty) return '有未保存修改'
   if (!state.savedAt) return '已保存'
   const locale = options.locale || 'zh-CN'
-  const formatterOptions = { hour: '2-digit', minute: '2-digit', hour12: false }
+  const formatterOptions = { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Shanghai' }
   if (options.timeZone) formatterOptions.timeZone = options.timeZone
   return `已保存 ${new Intl.DateTimeFormat(locale, formatterOptions).format(state.savedAt)}`
 }

@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { parseApiDateTime } from '../../../../utils/datetime.js'
 
 export function customerOptionLabel(customer) {
   const name = String(customer?.name || '').trim() || '未知客户'
@@ -55,8 +56,8 @@ export function createEmptyOptionValue(sort = 0) {
 export function validateInviteDraft(draft, now = new Date()) {
   if (!String(draft?.customer_id || '').trim()) return '请选择客户'
   if (!draft?.expires_at) return '请明确设置失效时间'
-  const expiresAt = new Date(draft.expires_at)
-  if (Number.isNaN(expiresAt.getTime()) || expiresAt <= now) return '失效时间必须设置在未来'
+  const expiresAt = parseApiDateTime(draft.expires_at)
+  if (!expiresAt || expiresAt <= now) return '失效时间必须设置在未来'
   if (!Number.isInteger(draft?.quota_total) || draft.quota_total <= 0) return '生成额度必须是正整数'
   if (!Array.isArray(draft?.product_ids) || draft.product_ids.length === 0) return '请至少选择一个产品'
   return ''
@@ -352,7 +353,7 @@ export function createCustomerImageAdminState({
     const payload = {
       customer_id: String(draft.customer_id),
       product_ids: [...draft.product_ids],
-      expires_at: new Date(draft.expires_at).toISOString(),
+      expires_at: parseApiDateTime(draft.expires_at).toISOString(),
       quota_total: Number(draft.quota_total),
     }
     const response = await api.createInvite(payload)

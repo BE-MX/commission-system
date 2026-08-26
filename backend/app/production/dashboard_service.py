@@ -1,29 +1,23 @@
 """生产看板数据聚合 service — 批量查询版，零 N+1"""
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 from collections import defaultdict
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.time import beijing_now
 from app.production.models import (
     Process, OrderProductProcessProgress,
 )
 from app.stock.models import ProductionOrderItem, ProductionOrder
-
-_BJ_TZ = timezone(timedelta(hours=8))
-
-
-def _bj_now():
-    return datetime.now(_BJ_TZ)
-
 
 _STATUS_MAP = {0: "pending", 1: "terminated", 2: "completed"}
 
 
 def get_dashboard_data(db: Session) -> dict:
     """生产看板数据：3 条批量 SQL + 内存聚合，无 N+1"""
-    today = _bj_now().date()
+    today = beijing_now().date()
 
     # ── SQL 1: 活跃订单 + 明细 ────────────────────────────────────
     active_orders = (
@@ -137,7 +131,7 @@ def get_dashboard_data(db: Session) -> dict:
         db.query(ProductionOrderItem)
         .filter(
             ProductionOrderItem.status == 2,
-            func.date(func.convert_tz(ProductionOrderItem.updated_at, "+00:00", "+08:00")) == today,
+            func.date(ProductionOrderItem.updated_at) == today,
         )
         .all()
     )
@@ -152,10 +146,7 @@ def get_dashboard_data(db: Session) -> dict:
     today_completions = []
     for item in today_completed:
         at = item.updated_at
-        time_str = (
-            at.replace(tzinfo=timezone.utc).astimezone(_BJ_TZ).strftime("%H:%M")
-            if at else ""
-        )
+        time_str = at.strftime("%H:%M") if at else ""
         today_completions.append({
             "model": item.model or "",
             "qty": item.received_qty,

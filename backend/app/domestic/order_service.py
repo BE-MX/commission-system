@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 from datetime import date
+from app.core.time import beijing_today
 
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -97,7 +98,7 @@ def _validate_order_replay(order: DomesticOrder, request_hash: str) -> None:
 
 def _generate_domestic_no(db: Session) -> str:
     """系统单号 DO{YYYYMMDD}-{NNN}，按天自增。撞号由调用方 savepoint 重试。"""
-    prefix = f"DO{date.today().strftime('%Y%m%d')}-"
+    prefix = f"DO{beijing_today().strftime('%Y%m%d')}-"
     # 锁定读是必须的：MySQL 默认 RR 下普通读走事务开头的快照，撞号后重试
     # 会一直读到同一个旧最大值，5 次全撞同一个号永远不收敛。
     # 走 ORM 而不是裸 SQL —— with_for_update 会按方言决定是否发 FOR UPDATE，

@@ -11,6 +11,7 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
+from app.core.time import beijing_now
 from app.insight.models import (
     CustomerOpportunity,
     CustomerProfile,
@@ -91,9 +92,7 @@ def add_manual_note(
     user_id: int,
 ) -> CustomerProfileEvent:
     """添加手动备注（存为事件）。"""
-    from datetime import datetime
-
-    now = datetime.utcnow()
+    now = beijing_now()
     evt = CustomerProfileEvent(
         profile_id=profile_id,
         event_source="manual_note",

@@ -8,6 +8,7 @@
 """
 
 from datetime import date, timedelta
+from app.core.time import beijing_today
 from typing import Optional
 
 from sqlalchemy import text
@@ -75,7 +76,7 @@ def query_stock_overview(
     """
     settings = get_settings()
     business_db = settings.BUSINESS_DB_NAME
-    today = date.today()
+    today = beijing_today()
     d30 = today - timedelta(days=30)
     d90 = today - timedelta(days=90)
 

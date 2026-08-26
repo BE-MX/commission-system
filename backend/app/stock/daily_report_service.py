@@ -1,6 +1,7 @@
 """备货管理 — 安全库存日报 (写入 / 查询 / 推送标记 / 接收人列表)"""
 
 from datetime import date, datetime
+from app.core.time import beijing_now
 from typing import Optional
 
 from sqlalchemy import text
@@ -90,7 +91,7 @@ def mark_daily_report_pushed(db: Session, report_date_value: date) -> None:
     )
     if rec:
         rec.dingtalk_sent = 1
-        rec.sent_at = datetime.utcnow()
+        rec.sent_at = beijing_now()
         db.commit()
 
 

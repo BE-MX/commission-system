@@ -31,6 +31,23 @@ DHL_TYPECODE_MAP = {
 }
 
 
+def _parse_event_datetime(event: dict) -> datetime:
+    """Parse MyDHL local event time only when its instant is unambiguous."""
+    value = event.get("date", "")
+    if value and event.get("time"):
+        value = f"{value}T{event['time']}"
+    offset = event.get("GMTOffset") or event.get("gmtOffset") or event.get("gmt_offset")
+    if offset and value and not value.endswith(("Z", "z")):
+        if len(value) < 6 or value[-6] not in "+-":
+            value = f"{value}{offset}"
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        # 官方契约规定无 offset 时是事件地当地时间；仅有
+        # serviceArea 文字无法唯一推出 IANA 时区，不得冒充北京时间。
+        raise ValueError("DHL event missing GMT offset")
+    return parsed
+
+
 class DHLAdapter(CarrierAdapter):
 
     ENV_URLS = {
@@ -50,7 +67,12 @@ class DHLAdapter(CarrierAdapter):
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.get(url, auth=self.auth, headers=headers)
+                resp = await client.get(
+                    url,
+                    auth=self.auth,
+                    headers=headers,
+                    params={"requestGMTOffsetPerEvent": "true"},
+                )
         except Exception as e:
             return TrackingResult(False, waybill_no, "exception", "请求失败", "", None, [], error=str(e))
 
@@ -70,13 +92,13 @@ class DHLAdapter(CarrierAdapter):
         raw_events = shipment.get("events", [])
         events = []
         for evt in raw_events:
-            dt_str = evt.get("date", "")
-            if dt_str and evt.get("time"):
-                dt_str = f"{dt_str}T{evt['time']}"
             try:
-                dt = datetime.fromisoformat(dt_str)
-            except Exception:
-                dt = datetime.now()
+                dt = _parse_event_datetime(evt)
+            except (TypeError, ValueError) as exc:
+                return TrackingResult(
+                    False, waybill_no, "exception", "DHL事件缺少时区偏移", "",
+                    None, [], error=str(exc),
+                )
             loc_raw = evt.get("serviceArea", [])
             if isinstance(loc_raw, list):
                 loc = loc_raw[0].get("description", "") if loc_raw else ""

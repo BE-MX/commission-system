@@ -7,6 +7,7 @@ AsyncIOScheduler 会放线程池执行；写成 async def 会阻塞主事件循�
 
 import logging
 from datetime import date
+from app.core.time import beijing_today
 
 from app.core.database import SessionLocal
 
@@ -19,7 +20,7 @@ def generate_industry_daily():
     try:
         from app.insight.service import generate_industry_daily_report
 
-        report = generate_industry_daily_report(db, report_date=date.today())
+        report = generate_industry_daily_report(db, report_date=beijing_today())
         logger.info("industry_daily report generated: id=%s date=%s", report.id, report.report_date)
     except Exception:
         logger.exception("industry_daily report generation failed")
@@ -33,7 +34,7 @@ def generate_ai_tools():
     try:
         from app.insight.service import generate_ai_tools_report
 
-        report = generate_ai_tools_report(db, report_date=date.today())
+        report = generate_ai_tools_report(db, report_date=beijing_today())
         logger.info("ai_tools report generated: id=%s date=%s", report.id, report.report_date)
     except Exception:
         logger.exception("ai_tools report generation failed")
@@ -55,8 +56,8 @@ def generate_intelligence_overview():
                 config = rule.config_json or {}
                 gen_config = IntelligenceReportGenerate(
                     report_title=config.get("report_title"),
-                    date_range_start=config.get("date_range_start", date.today()),
-                    date_range_end=config.get("date_range_end", date.today()),
+                    date_range_start=config.get("date_range_start", beijing_today()),
+                    date_range_end=config.get("date_range_end", beijing_today()),
                     mode=config.get("mode", "rule_based"),
                     min_credibility_score=config.get("min_credibility_score", 3),
                     source_types=config.get("source_types"),

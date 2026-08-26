@@ -177,6 +177,7 @@ import { ElMessage } from 'element-plus'
 import { Document, WarningFilled, Timer, CircleCheckFilled, Promotion } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { getLatestDailyReport, getDailyReportByDate, triggerDailyReport, pushDailyReport } from '@/api/stock'
+import { currentBeijingDate, formatBeijingTime } from '@/utils/datetime'
 
 const authStore = useAuthStore()
 const loading = ref(false)
@@ -185,7 +186,7 @@ const selectedDate = ref('')
 const reportData = ref(null)
 
 function formatTime(iso) {
-  try { return new Date(iso).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) } catch { return iso }
+  return formatBeijingTime(iso, { fallback: iso || '' })
 }
 
 function shortageHeaderStyle() {
@@ -248,7 +249,7 @@ async function pushDingTalk() {
 }
 
 onMounted(() => {
-  selectedDate.value = new Date().toISOString().slice(0, 10)
+  selectedDate.value = currentBeijingDate()
   loadData()
 })
 </script>

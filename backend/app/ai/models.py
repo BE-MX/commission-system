@@ -10,6 +10,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 class AiProvider(Base):
@@ -37,9 +38,9 @@ class AiProvider(Base):
         SmallInteger, nullable=False, default=60, comment="请求超时秒数"
     )
     remark = Column(String(256), nullable=True, comment="备注")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     updated_at = Column(
-        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow,
+        DateTime, nullable=False, default=beijing_now, onupdate=beijing_now,
         comment="更新时间",
     )
     deleted_at = Column(DateTime, nullable=True, comment="软删除时间")
@@ -73,9 +74,9 @@ class AiPreset(Base):
     parameters = Column(JSON, nullable=True, comment="调用参数覆盖")
     description = Column(String(512), nullable=True, comment="预设用途说明")
     is_enabled = Column(Boolean, nullable=False, default=True, comment="0=禁用 1=启用")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     updated_at = Column(
-        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow,
+        DateTime, nullable=False, default=beijing_now, onupdate=beijing_now,
         comment="更新时间",
     )
     deleted_at = Column(DateTime, nullable=True, comment="软删除时间")
@@ -118,9 +119,9 @@ class AiCallLog(Base):
     prompt_snapshot = Column(Text, nullable=True, comment="发送给模型的完整 messages JSON")
     response_snapshot = Column(Text, nullable=True, comment="模型返回的原始 response JSON")
     usage_detail = Column(JSON, nullable=True, comment="Provider 返回的原始用量明细")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     updated_at = Column(
-        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow,
+        DateTime, nullable=False, default=beijing_now, onupdate=beijing_now,
         comment="更新时间",
     )
 

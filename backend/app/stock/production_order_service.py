@@ -10,6 +10,7 @@
 
 import logging
 from datetime import date
+from app.core.time import beijing_today
 from typing import Any, Optional
 
 from app.core.config import get_settings
@@ -27,7 +28,7 @@ STATUS_LABELS = {0: "已提交", 1: "已终止", 2: "已完成"}
 
 def _generate_order_no(db: Session) -> str:
     """生成订单号: PO{YYYYMMDD}-{NNN}, 按天自增"""
-    today_str = date.today().strftime("%Y%m%d")
+    today_str = beijing_today().strftime("%Y%m%d")
     prefix = f"PO{today_str}-"
 
     result = db.execute(

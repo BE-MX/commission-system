@@ -33,6 +33,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import date, datetime
+from app.core.time import beijing_now
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Optional
 
@@ -676,7 +677,7 @@ def calculate_period(
         for r in db.query(SalaryRecord).filter(SalaryRecord.period_id == period.id)
     }
 
-    now = datetime.now()
+    now = beijing_now()
     override_changed: list[dict[str, Any]] = []
     negative_net: list[dict[str, Any]] = []
     guaranteed: list[dict[str, Any]] = []
@@ -988,7 +989,7 @@ def edit_record_manual(
         "modified_by": operator_id,
         "modify_reason": (reason or "")[:255] or None,
         "row_version": row.row_version + 1,
-        "updated_at": datetime.now(),
+        "updated_at": beijing_now(),
     }
     stmt = (
         update(SalaryRecord)

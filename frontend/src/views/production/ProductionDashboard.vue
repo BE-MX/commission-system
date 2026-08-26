@@ -297,6 +297,7 @@ import OrderDetailBarChart from '@/components/production/OrderDetailBarChart.vue
 import DeliveryTimeline    from '@/components/production/DeliveryTimeline.vue'
 import BaseModal           from '@/components/production/BaseModal.vue'
 import DetailTable         from '@/components/production/DetailTable.vue'
+import { beijingCalendarDaysUntil } from '@/utils/datetime'
 
 // ── 主题 ──────────────────────────────────────────
 const { theme } = useDashboardTheme()
@@ -315,14 +316,13 @@ const statusChartData = computed(() => [
   { name: '已完成', value: allProducts.value.filter(p => p.status === 'completed').length },
 ])
 
-const today = new Date()
-const daysLeft = d => Math.round((new Date(d) - today) / 86400000)
+const daysLeft = d => beijingCalendarDaysUntil(d)
 
 const expiring7d = computed(() =>
   allProducts.value.filter(p => {
     const dl = daysLeft(p.expected_delivery_date)
     return dl >= 0 && dl <= 7 && p.status !== 'completed'
-  }).sort((a, b) => new Date(a.expected_delivery_date) - new Date(b.expected_delivery_date))
+  }).sort((a, b) => a.expected_delivery_date.localeCompare(b.expected_delivery_date))
 )
 
 const urgentWithDays = computed(() =>

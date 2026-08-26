@@ -13,6 +13,7 @@ import logging
 import os
 import tempfile
 from datetime import date, datetime, timedelta
+from app.core.time import beijing_today
 from typing import Optional
 
 import httpx
@@ -111,7 +112,7 @@ def extract_social_colors(db: Session, target_accounts: Optional[list[str]] = No
                 pass
 
     # 写入趋势表
-    today = date.today()
+    today = beijing_today()
     for family, count in family_counts.items():
         write_trend_data(
             db=db,
@@ -145,7 +146,7 @@ def aggregate_sales_by_color(db: Session) -> dict:
     """
     from app.core.database import engine
 
-    week_start = date.today() - timedelta(days=date.today().weekday())
+    week_start = beijing_today() - timedelta(days=beijing_today().weekday())
 
     try:
         # 尝试从 okki_orders 聚合（假设有 color 字段）

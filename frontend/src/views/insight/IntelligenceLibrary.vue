@@ -163,6 +163,7 @@ import { Plus, Upload, StarFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { listItems, toggleItemFeature, batchFeature as apiBatchFeature, batchStatus, uploadMd } from '@/api/insight'
 import { useTableSort } from '@/composables/useTableSort'
+import { formatBeijingDate } from '@/utils/datetime'
 
 const authStore = useAuthStore()
 const libSort = useTableSort()
@@ -319,8 +320,7 @@ function statusType(status) {
   return map[status] || 'info'
 }
 function formatDate(dt) {
-  if (!dt) return '-'
-  return new Date(dt).toLocaleDateString('zh-CN')
+  return formatBeijingDate(dt)
 }
 
 onMounted(loadItems)

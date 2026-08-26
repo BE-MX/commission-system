@@ -1,5 +1,6 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getDashboardData } from '@/api/production'
+import { currentBeijingDate, formatBeijingDate } from '@/utils/datetime'
 
 /**
  * 生产看板数据 composable
@@ -80,14 +81,12 @@ export function useDashboardData() {
 
   // 时间轴分组（30天内，按交期日期升序）
   const timelineGroups = computed(() => {
-    const todayStr = new Date().toISOString().slice(0, 10)
-    const cutoff = new Date()
-    cutoff.setDate(cutoff.getDate() + 30)
+    const todayStr = currentBeijingDate()
+    const cutoffStr = formatBeijingDate(new Date(Date.now() + 30 * 86400000))
 
     const items = inTransit.value.filter(p => {
       if (!p.expected_delivery_date) return false
-      const d = new Date(p.expected_delivery_date)
-      return d >= new Date(todayStr) && d <= cutoff
+      return p.expected_delivery_date >= todayStr && p.expected_delivery_date <= cutoffStr
     })
 
     const map = {}

@@ -3,6 +3,8 @@
 import json
 from calendar import monthrange
 from datetime import date, datetime
+from app.core.time import beijing_today
+from app.core.time import beijing_now
 from decimal import Decimal
 from io import BytesIO
 from urllib.parse import quote
@@ -393,8 +395,8 @@ def _build_sales_summary(rows, user_ids: list[str]) -> SalesCommissionSummary:
         CommissionBatch(
             id=0,
             batch_name="",
-            period_start=date.today(),
-            period_end=date.today(),
+            period_start=beijing_today(),
+            period_end=beijing_today(),
             status="confirming",
         ),
         rows,
@@ -590,7 +592,7 @@ def confirm_my_commission_batch(
         business_user_ids=",".join(user_ids),
         confirmation_text=req.confirmation_text,
         status="confirmed",
-        confirmed_at=datetime.utcnow(),
+        confirmed_at=beijing_now(),
     )
     db.add(confirmation)
     db.commit()

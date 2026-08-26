@@ -14,6 +14,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.auth.dependencies import get_current_user
 from app.core.database import Base, get_db
+from app.core.time import utc_now_naive
 from app.sales_automation import agent_router, enrichment_service, models, public_pool_service, router, service
 from app.sales_automation.dependencies import require_sales_agent
 
@@ -395,7 +396,7 @@ def test_agent_lease_blocks_takeover_and_terminal_state_regression(db):
         service.claim_search_job(db, job.id, 18, "intruder")
     with pytest.raises(ValueError, match="租约"):
         service.ingest_candidates(db, job.id, [], "empty", 18, "intruder", lease["lease_token"])
-    job.lease_expires_at = service._now() - timedelta(seconds=1)
+    job.lease_expires_at = utc_now_naive() - timedelta(seconds=1)
     db.commit()
     queue = _agent_client(db).get("/api/sales-automation/agent/search-jobs").json()["data"]
     assert [item["id"] for item in queue["items"]] == [job.id]
@@ -430,7 +431,7 @@ def test_duplicate_batch_rows_are_stable_with_production_autoflush_disabled(db):
     assert db.query(models.LeadCompany).count() == 1
     result = db.query(models.SearchResult).one()
     assert result.source_url == "https://duplicate.example/contact"
-    assert result.captured_at.isoformat() == "2026-08-09T00:10:00"
+    assert result.captured_at.isoformat() == "2026-08-09T08:10:00"
 
     company = db.query(models.LeadCompany).one()
     contacts = [{

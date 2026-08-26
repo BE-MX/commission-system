@@ -524,7 +524,8 @@ def test_business_pool_profile_compiles_bound_filters_and_instagram_priority():
     assert "LEFT JOIN profile_order_rollup po" in session.statement
     assert "LIMIT 10" in session.statement
     assert "INTERVAL 60 DAY" in session.statement
-    assert "INTERVAL 30 DAY" in session.statement
+    assert "f.last_followup_at <= :profile_stale_followup_before" in session.statement
+    assert "profile_stale_followup_before" in session.params
     assert "LOCATE(LOWER(:profile_product_keyword_0)" in session.statement
     assert set(session.params.values()) >= {2, 1500.0, 1000.0, "天才", "平型", "贴发"}
 

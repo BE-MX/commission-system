@@ -162,7 +162,7 @@ import TaskDrawer from '../components/TaskDrawer.vue'
 import UiDropdown from '../components/UiDropdown.vue'
 import UiModal from '../components/UiModal.vue'
 import { useTasks } from '../composables/useTasks.js'
-import { MATERIAL_STATUS, TASK_STATUS, TASK_STATUS_ORDER } from '../utils/labels.js'
+import { beijingDate, MATERIAL_STATUS, TASK_STATUS, TASK_STATUS_ORDER } from '../utils/labels.js'
 
 const { tasks, members, materialOptions, loading, filters, view, load, save, changeStatus, remove } = useTasks()
 
@@ -184,9 +184,7 @@ const nameOf = (username) => members.value.find((m) => m.username === username)?
 
 function isOverdue(task) {
   if (!task.due_date || task.status === 'done') return false
-  const today = new Date()
-  const ymd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-  return task.due_date < ymd
+  return task.due_date < beijingDate()
 }
 
 function nextStatuses(current) {

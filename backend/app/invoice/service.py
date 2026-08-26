@@ -3,6 +3,7 @@
 import json
 import re
 from datetime import date, datetime
+from app.core.time import beijing_today
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException
@@ -539,7 +540,7 @@ def suggest_invoice_no(db: Session, user_id: int | None, order_type: str) -> str
 
 
 def _next_invoice_no(db: Session) -> str:
-    today = date.today().strftime("%Y%m%d")
+    today = beijing_today().strftime("%Y%m%d")
     prefix = f"INV{today}"
     latest = db.execute(
         select(Invoice.invoice_no)

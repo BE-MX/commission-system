@@ -19,6 +19,7 @@ from app.ai.service import build_image_config_version
 from app.ai.models import AiCallLog, AiPreset, AiProvider
 from app.core.config import get_settings
 from app.core.database import SessionLocal
+from app.core.time import beijing_now, utc_now_naive
 from app.customer_image import file_service
 from app.customer_image.models import (
     CustomerImageAsset,
@@ -40,7 +41,7 @@ class FrozenInputReadError(ValueError):
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return utc_now_naive()
 
 
 def _warn_visible(message: str) -> None:
@@ -106,7 +107,7 @@ def claim_next_job(db, worker_id: str, lease_seconds: int) -> ClaimedJob | None:
                 claimed_by=worker_id,
                 lease_token=lease_token,
                 lease_expires_at=expires_at,
-                started_at=now,
+                started_at=beijing_now(),
                 claim_count=CustomerImageGeneration.claim_count + 1,
             )
         ).rowcount
@@ -349,7 +350,7 @@ def _finalize_success(
             generation.total_tokens = result.total_tokens
             generation.estimated_cost_microusd = result.estimated_cost_microusd
             generation.error_code = generation.error_message = None
-            generation.finished_at = now
+            generation.finished_at = beijing_now()
             generation.claimed_by = None
             generation.lease_token = None
             generation.lease_expires_at = None
@@ -400,7 +401,7 @@ def finalize_failure(
             generation.billing_certainty = (
                 "not_billed" if failure.refund_eligible else "unknown"
             )
-            generation.finished_at = now
+            generation.finished_at = beijing_now()
             generation.claimed_by = None
             generation.lease_token = None
             generation.lease_expires_at = None
@@ -410,7 +411,7 @@ def finalize_failure(
                 and invite.quota_used > 0
             ):
                 invite.quota_used -= 1
-                generation.quota_refunded_at = now
+                generation.quota_refunded_at = beijing_now()
             db.commit()
             return True
         except Exception:
@@ -573,7 +574,7 @@ def recover_stale_jobs(db, stale_before: datetime) -> int:
                 error_code="worker_timeout",
                 error_message="任务执行超时，请联系业务员重试",
                 billing_certainty="unknown",
-                finished_at=now,
+                finished_at=beijing_now(),
                 claimed_by=None,
                 lease_token=None,
                 lease_expires_at=None,
@@ -646,7 +647,7 @@ def process_customer_image_queue() -> None:
         with SessionLocal() as db:
             recover_stale_jobs(
                 db,
-                now - timedelta(seconds=settings.CUSTOMER_IMAGE_STALE_SECONDS),
+                beijing_now() - timedelta(seconds=settings.CUSTOMER_IMAGE_STALE_SECONDS),
             )
         worker_id = f"{socket.gethostname()}:{os.getpid()}:{uuid4().hex[:8]}"
         claims: list[ClaimedJob] = []

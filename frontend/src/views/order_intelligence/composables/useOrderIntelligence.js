@@ -11,18 +11,11 @@ import {
   getOrderOverview,
   getPeopleAnalysis,
 } from '@/api/orderIntelligence'
+import { currentBeijingDate, formatBeijingDate } from '@/utils/datetime'
 
-const isoDate = value => {
-  const year = value.getFullYear()
-  const month = String(value.getMonth() + 1).padStart(2, '0')
-  const day = String(value.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-const today = () => isoDate(new Date())
+const today = () => currentBeijingDate()
 const oneYearAgo = () => {
-  const value = new Date()
-  value.setDate(value.getDate() - 364)
-  return isoDate(value)
+  return formatBeijingDate(new Date(Date.now() - 364 * 86400000))
 }
 
 export function useOrderIntelligence() {

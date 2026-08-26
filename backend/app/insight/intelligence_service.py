@@ -6,6 +6,8 @@ import json
 import logging
 import re
 from datetime import date, datetime
+from app.core.time import beijing_today
+from app.core.time import beijing_now
 from pathlib import Path
 from typing import Any, Optional
 
@@ -217,7 +219,7 @@ def _render_html(report_date: date, data: dict, config: IntelligenceReportGenera
         data=data,
         config=config.model_dump(),
         item_count=item_count,
-        generated_at=datetime.utcnow().isoformat(),
+        generated_at=beijing_now().isoformat(),
     )
 
 
@@ -228,7 +230,7 @@ def generate_intelligence_report(
     user_id: Optional[int] = None,
 ) -> InsightReport:
     """生成行业情报速览报告 — 核心入口。"""
-    report_date = date.today()
+    report_date = beijing_today()
     report_title = config.report_title or f"行业情报速览 {report_date}"
 
     # 创建 pending 记录

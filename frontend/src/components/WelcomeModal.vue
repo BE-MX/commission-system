@@ -117,6 +117,7 @@ import {
 } from '@element-plus/icons-vue'
 import dailyTipsData from '@/assets/daily-tips.json'
 import greetingsData from '@/assets/greetings.json'
+import { BEIJING_TIME_ZONE, currentBeijingDate, currentBeijingHour } from '@/utils/datetime'
 
 const props = defineProps({
   userName: { type: String, default: '' },
@@ -124,14 +125,13 @@ const props = defineProps({
   pendingCount: { type: Number, default: 0 },
   shootCount: { type: Number, default: 0 },
 })
-
 const authStore = useAuthStore()
 const visible = ref(false)
 const dontShowAgain = ref(false)
 
 // 时段问候
 const greeting = computed(() => {
-  const hour = new Date().getHours()
+  const hour = currentBeijingHour()
   if (hour < 6)  return { text: '深夜好', icon: Moon }
   if (hour < 9)  return { text: '早上好', icon: Sunrise }
   if (hour < 12) return { text: '上午好', icon: PartlyCloudy }
@@ -143,17 +143,17 @@ const greeting = computed(() => {
 
 const greetingText = computed(() => greeting.value.text)
 const greetingIcon = computed(() => greeting.value.icon)
-
 // 今日日期
 const todayDate = computed(() => {
   return new Date().toLocaleDateString('zh-CN', {
+    timeZone: BEIJING_TIME_ZONE,
     year: 'numeric', month: 'long', day: 'numeric', weekday: 'long'
   })
 })
 
 // 时段问候语（根据时间段随机从 greetings.json 中选择）
 function getTimePeriod() {
-  const hour = new Date().getHours()
+  const hour = currentBeijingHour()
   if (hour >= 0 && hour < 5) return '凌晨'
   if (hour >= 5 && hour < 9) return '早上'
   if (hour >= 9 && hour < 12) return '上午'
@@ -206,7 +206,7 @@ function isDontShowToday() {
   if (!stored) return false
   try {
     const { date } = JSON.parse(stored)
-    return date === new Date().toDateString()
+    return date === currentBeijingDate()
   } catch {
     return false
   }
@@ -214,7 +214,7 @@ function isDontShowToday() {
 
 function markDontShowToday() {
   localStorage.setItem(LS_KEY, JSON.stringify({
-    date: new Date().toDateString(),
+    date: currentBeijingDate(),
   }))
 }
 

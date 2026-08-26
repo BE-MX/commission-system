@@ -203,7 +203,7 @@ import {
 } from '@/api/insight'
 import { downloadBlob } from '@/utils/download'
 import { useAuthStore } from '@/stores/auth'
-
+import { currentBeijingDate, currentBeijingDateTime } from '@/utils/datetime'
 const authStore = useAuthStore()
 const canWrite = computed(() => authStore.hasAnyPermission(['insight_minutes:write', 'insight:admin']))
 
@@ -263,7 +263,7 @@ async function selectMinutes(id) {
 function openUpload() {
   uploadVisible.value = true
   uploadForm.value = {
-    meeting_date: new Date().toISOString().slice(0, 10),
+    meeting_date: currentBeijingDate(),
     title: '',
     duration: '',
     participants: '',
@@ -294,7 +294,7 @@ async function onTaskCheck(task, isChecked) {
     await updateTask(task.id, { status: newStatus })
     task.status = newStatus
     if (newStatus === 'completed') {
-      task.completed_at = new Date().toISOString()
+      task.completed_at = currentBeijingDateTime()
     } else {
       task.completed_at = null
       task.notes = ''
@@ -318,7 +318,7 @@ function priorityLabel(p) {
 function isOverdue(t) {
   if (!t.deadline) return false
   if (t.status === 'completed') return false
-  const today = new Date().toISOString().slice(0, 10)
+  const today = currentBeijingDate()
   return t.deadline < today
 }
 

@@ -71,7 +71,7 @@
   },
   "frontend/src/views/asset/AssetLibrary.vue": {
     "hex_colors": 17,
-    "lines_over_500": 758,
+    "lines_over_500": 757,
     "transition_all": 0
   },
   "frontend/src/views/asset/AssetStats.vue": {
@@ -336,7 +336,7 @@
   },
   "frontend/src/views/stock/ProductionOrderManage.vue": {
     "hex_colors": 29,
-    "lines_over_500": 392,
+    "lines_over_500": 389,
     "transition_all": 0
   },
   "frontend/src/views/stock/ProductionOrderPrint.vue": {
@@ -411,7 +411,7 @@
   },
   "frontend/src/views/tracking/TrackingList.vue": {
     "hex_colors": 28,
-    "lines_over_500": 154,
+    "lines_over_500": 153,
     "transition_all": 0
   },
   "frontend/src/views/tracking/WaybillUpload.vue": {

@@ -14,6 +14,7 @@ exactly as get_order_enums does — the recorded expiry is not authoritative
 
 import logging
 from datetime import datetime, timedelta
+from app.core.time import utc_now_naive
 
 import httpx
 from sqlalchemy.orm import Session
@@ -76,7 +77,7 @@ def fetch_token() -> tuple[str, datetime]:
 
     # 文档称 client_credentials 不返回 expires_in（一般 8 小时），实测返回；两头都兜住
     expires_in = int(data.get("expires_in") or 8 * 3600)
-    return token, datetime.utcnow() + timedelta(seconds=expires_in)
+    return token, utc_now_naive() + timedelta(seconds=expires_in)
 
 
 def ensure_access_token(db: Session, *, force: bool = False) -> str:
@@ -89,7 +90,7 @@ def ensure_access_token(db: Session, *, force: bool = False) -> str:
         not force
         and row.access_token
         and row.token_expires_at
-        and row.token_expires_at - EXPIRY_BUFFER > datetime.utcnow()
+        and row.token_expires_at - EXPIRY_BUFFER > utc_now_naive()
     ):
         return row.access_token
 

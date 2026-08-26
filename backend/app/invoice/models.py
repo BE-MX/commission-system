@@ -181,8 +181,8 @@ class CustomProduct(Base):
     okki_sku_id = Column(BigInteger, nullable=True, comment="OKKI SKU ID（对账回填）")
     use_count = Column(Integer, nullable=False, default=1, comment="被引用次数")
     created_by = Column(Integer, nullable=True, comment="创建人 user_id")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="最后修改时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="最后修改时间")
 
     __table_args__ = ({"comment": "非标产品沉淀表（生产单录入沉淀，OKKI 建品后回填 ID）"},)
 
@@ -195,8 +195,8 @@ class PriceColorType(Base):
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     color_code = Column(String(64), nullable=False, unique=True, comment="色号，唯一")
     color_type = Column(String(16), nullable=False, comment="solid/piano/ombre/balayage")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="最后修改时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="最后修改时间")
 
     __table_args__ = ({"comment": "色号→计价颜色类型映射表"},)
 
@@ -220,8 +220,8 @@ class StdPrice(Base):
     price = Column(Numeric(12, 4), nullable=False, comment="标准参考单价/件（currency 币种，客户价调整前基准）")
     currency = Column(String(8), nullable=False, default="USD", comment="币种，默认 USD")
     updated_by = Column(Integer, nullable=True, comment="最后修改人 user_id")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="最后修改时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="最后修改时间")
 
     __table_args__ = (
         UniqueConstraint(
@@ -247,8 +247,8 @@ class CustomerPriceRule(Base):
     preferred_template = Column(String(8), nullable=True, comment="invoice export template A/B")
     remark = Column(String(512), nullable=True, comment="备注")
     updated_by = Column(Integer, nullable=True, comment="最后修改人 user_id")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="最后修改时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="最后修改时间")
 
     __table_args__ = ({"comment": "客户价格调整规则（固定差价/百分比二选一，作用于标准价）"},)
 
@@ -295,7 +295,7 @@ class ReceiptRepairLog(Base):
     new_date = Column(Date, nullable=False, comment="collection_date after fix")
     source_file = Column(String(256), nullable=True, comment="uploaded workbook name")
     operator_id = Column(Integer, nullable=True, comment="操作人 user_id")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         Index("idx_ark_receipt_repair_batch", "batch_id"),
@@ -318,6 +318,6 @@ class XiaomanSettings(Base):
     access_token = Column(Text, nullable=True, comment="OKKI API access token")
     token_expires_at = Column(DateTime, nullable=True, comment="access_token 过期时间")
     updated_by = Column(Integer, nullable=True, comment="最后修改人 user_id")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="最后修改时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="最后修改时间")
 
     __table_args__ = ({"comment": "OKKI 推单设置（单行表，后台管理页维护）"},)

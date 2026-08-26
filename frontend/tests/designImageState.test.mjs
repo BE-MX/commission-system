@@ -180,9 +180,11 @@ test('color params are detected by key or label for the pantone swatch entry', (
   assert.equal(isColorParam(null), false)
 })
 
-test('sidebar sessions group by local day half with most recent on top', () => {
-  // 用本地时间构造、走 UTC 往返，保证任何时区下结果一致
-  const stamp = (year, month, day, hour) => new Date(year, month - 1, day, hour).toISOString().slice(0, -1)
+test('sidebar sessions group by Beijing day half with most recent on top', () => {
+  const stamp = (year, month, day, hour) => (
+    `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    + `T${String(hour).padStart(2, '0')}:00:00`
+  )
   const groups = groupSessionsByDayHalf([
     { id: 1, updated_at: stamp(2026, 8, 5, 9) },
     { id: 2, updated_at: stamp(2026, 8, 6, 13) },

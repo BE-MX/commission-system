@@ -74,6 +74,38 @@ BUSINESS_RO_TABLES = {"okki_orders", "okki_receipts", "okki_products", "okki_inv
 
 RED, YELLOW = "红", "黄"
 
+# UTC 是窄门：按文件登记明确的技术契约。新业务代码不得靠
+# 把 datetime.utcnow 换成 utc_now 绕过北京时间门禁；确需 UTC 先登记用途。
+UTC_TIME_ALLOWLIST = {
+    "backend/app/agent_runtime/token_service.py": "JWT 签发",
+    "backend/app/agent_runtime/worker_service.py": "跨机器 worker 租约",
+    "backend/app/ai/agent_service.py": "Agent 租约校验",
+    "backend/app/ai/call_service.py": "外部 AI 任务 ID 协议",
+    "backend/app/auth/utils.py": "JWT exp/iat",
+    "backend/app/customer_image/public_router.py": "邀请 token 有效期",
+    "backend/app/customer_image/schemas.py": "邀请 token 有效期",
+    "backend/app/customer_image/service.py": "邀请 token 与有效期",
+    "backend/app/customer_image/worker.py": "worker 租约与资产清理截止",
+    "backend/app/design_image/service.py": "草稿过期截止",
+    "backend/app/design_image/worker.py": "worker 租约与草稿清理截止",
+    "backend/app/governance/import_service.py": "导入文件 UTC 标记",
+    "backend/app/invoice/okki_client.py": "OAuth token 有效期",
+    "backend/app/invoice/screenshot_token.py": "截图签名 token 有效期",
+    "backend/app/invoice/xiaoman_service.py": "OKKI token 有效期",
+    "backend/app/mcp/auth.py": "Agent 租约校验",
+    "backend/app/operations/observability.py": "跨机器心跳",
+    "backend/app/operations/service.py": "跨机器心跳/调度观测",
+    "backend/app/sales_automation/public_pool_service.py": "Agent 租约与外部档案 UTC 截止",
+    "backend/app/sales_automation/service.py": "Agent 租约",
+    "backend/app/schedulers/registry.py": "调度器心跳协议",
+    "backend/scripts/design_image_orphan_recovery.py": "跨机器恢复日志与文件 mtime UTC 协议",
+}
+TZINFO_STRIP_ALLOWLIST = {
+    "backend/app/customer_image/datetime_utils.py": "邀请/租约技术 UTC 规范化",
+    "backend/app/design_image/service.py": "租约 UTC 与北京日边界规范化",
+    "backend/app/operations/observability.py": "跨机器心跳 UTC 规范化",
+}
+
 
 def sh(*args: str) -> str:
     return subprocess.run(args, capture_output=True, text=True, cwd=REPO, encoding="utf-8", errors="replace").stdout
@@ -116,6 +148,7 @@ def check(base: str) -> list[tuple[str, str, str]]:
         is_vue_view = (posix.startswith(("frontend/src/views/", "frontend-pm/src/views/")) and posix.endswith(".vue"))
         is_frontend = posix.startswith(("frontend/src/", "frontend-pm/src/"))
         is_backend = posix.startswith("backend/app/")
+        is_backend_time = posix.startswith(("backend/app/", "backend/scripts/"))
 
         for n, line in lines:
             loc = f"{posix}:{n}"
@@ -130,6 +163,32 @@ def check(base: str) -> list[tuple[str, str, str]]:
                 nxt = next((l for m, l in lines if m == n + 1), "")
                 if re.fullmatch(r"\s*pass\s*", nxt or "pass"):
                     findings.append((RED, loc, "疑似无声吞异常（except+pass）——至少 logger+print(flush=True)（宪法 6）"))
+            # 10.[红] 业务时间禁止跟随服务器本地时区或直接写 UTC
+            if is_backend_time and not posix.endswith("core/time.py") and re.search(
+                r"datetime\.(?:utcnow|today)\s*\(|datetime\.now\s*\(|date\.today\s*\(", line
+            ):
+                findings.append((RED, loc, "业务时间必须用 app.core.time.beijing_now/beijing_today（协议/\u79df约 UTC 用显式 UTC 工具，宪法 23）"))
+            if is_backend_time and not posix.endswith("core/time.py") and re.search(
+                r"\butc_now(?:_naive)?\s*\(", line
+            ) and posix not in UTC_TIME_ALLOWLIST:
+                findings.append((RED, loc, "utc_now 未登记技术契约——业务时间改用 beijing_now，或先在 UTC 窄白名单登记字段/用途（宪法 23）"))
+            if is_backend_time and not posix.endswith("core/time.py") and re.search(
+                r"\.replace\(\s*tzinfo\s*=\s*None\s*\)", line
+            ) and posix not in TZINFO_STRIP_ALLOWLIST:
+                findings.append((RED, loc, "禁止直接丢弃时区偏移——外部时间先用 to_beijing_time/to_beijing_naive 换算（宪法 23）"))
+            # 11.[红] 前端不允许用浏览器本地时区直接格式化业务时间
+            if is_frontend and re.search(
+                r"new Date\([^)]*\)\.toLocale(?:String|DateString|TimeString)\s*\(", line
+            ):
+                findings.append((RED, loc, "页面时间必须走 utils/datetime 并固定 Asia/Shanghai（宪法 23）"))
+            if is_frontend and re.search(
+                r"new Date\(\)\.toISOString\(\)\.slice\(\s*0\s*,\s*10\s*\)", line
+            ):
+                findings.append((RED, loc, "业务日期不能从 UTC ISO 截取，用 currentBeijingDate（宪法 23）"))
+            if is_frontend and not posix.endswith("utils/datetime.js") and re.search(
+                r"\.(?:getFullYear|getMonth|getDate|getDay|getHours|getMinutes|getSeconds)\s*\(", line
+            ) and "Beijing calendar contract" not in line:
+                findings.append((RED, loc, "页面不得从浏览器本地时区读日历字段——移入 utils/datetime，或对纯日历算法标注 Beijing calendar contract（宪法 23）"))
             # 7.[黄] 共享层冻结
             if re.match(r"backend/app/(api|services|models|schemas)/[^/]+\.py$", posix) \
                     and posix.split("/")[-1] not in ("__init__.py",) and (REPO / file).exists():

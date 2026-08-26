@@ -64,6 +64,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { listChangeLogs, rollbackToVersion } from '@/api/governance'
+import { formatBeijingDateTime } from '@/utils/datetime'
 
 const authStore = useAuthStore()
 const isAdmin = computed(() => authStore.hasAnyPermission(['governance:admin']))
@@ -121,8 +122,7 @@ async function handleRollback(log) {
 }
 
 function formatDate(dt) {
-  if (!dt) return '-'
-  return new Date(dt).toLocaleString('zh-CN', { hour12: false })
+  return formatBeijingDateTime(dt)
 }
 
 function formatVal(v) {

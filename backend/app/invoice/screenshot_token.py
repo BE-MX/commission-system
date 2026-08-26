@@ -8,6 +8,7 @@ import json
 from jose import JWTError, jwt
 
 from app.core.config import get_settings
+from app.core.time import utc_now
 
 PURPOSE = "invoice_screenshot_preview"
 TOKEN_TTL_MINUTES = 30
@@ -15,7 +16,7 @@ TOKEN_TTL_MINUTES = 30
 
 def issue_preview_token(*, actor_user_id: int, invoice_patch: dict, expected_total) -> str:
     settings = get_settings()
-    now = datetime.now(timezone.utc)
+    now = utc_now()
     claims = {
         "purpose": PURPOSE,
         "actor_user_id": int(actor_user_id),

@@ -20,6 +20,7 @@ from app.ai.http_client import (
 )
 from app.ai.log_snapshot import serialize_response_snapshot
 from app.ai.provider_service import get_provider
+from app.core.time import utc_now
 
 # 带图 chat（如 expo 面容分析）的超时下限：多模态请求模型处理更慢，Provider 常配的
 # 60s 会掐死正常请求（2026-07-08 expo session=31/32/34/35 实测 61~75s 全超时→分析失败
@@ -255,7 +256,7 @@ def delegate(
     if not provider.is_enabled:
         raise ValueError(f"Provider '{provider.name}' 当前不可用")
 
-    task_id = f"aw_task_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:12]}"
+    task_id = f"aw_task_{utc_now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:12]}"
 
     log = AiCallLog(
         task_id=task_id,

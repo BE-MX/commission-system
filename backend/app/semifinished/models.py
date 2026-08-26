@@ -10,6 +10,7 @@ from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 QTY = Numeric(14, 3)
@@ -29,8 +30,8 @@ class SemifinishedMaterial(Base):
     safety_stock_grams = Column(QTY, nullable=False, default=0, comment="安全库存克数")
     status = Column(String(16), nullable=False, default="active", comment="状态 active/inactive")
     source = Column(String(16), nullable=False, default="auto", comment="来源 auto/manual")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (
         UniqueConstraint("size", "color_key", name="uq_semifinished_size_color"),
@@ -54,8 +55,8 @@ class ProductMapping(Base):
     source = Column(String(16), nullable=False, default="auto", comment="映射来源 auto/manual")
     parser_version = Column(String(32), nullable=False, comment="解析器版本")
     parse_message = Column(String(500), nullable=True, comment="解析提示")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
     components = relationship("ProductComponent", cascade="all, delete-orphan", lazy="noload")
 
     __table_args__ = (
@@ -95,8 +96,8 @@ class SemifinishedOrder(Base):
     expected_delivery_date = Column(Date, nullable=True, comment="预计交期")
     remark = Column(String(500), nullable=True, comment="备注")
     created_by = Column(USER_ID, ForeignKey("ark_users.id", ondelete="RESTRICT"), nullable=False, comment="创建人")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
     items = relationship("SemifinishedOrderItem", cascade="all, delete-orphan", lazy="noload")
 
     __table_args__ = (
@@ -114,8 +115,8 @@ class SemifinishedOrderItem(Base):
     order_qty_grams = Column(QTY, nullable=False, comment="下单克数")
     received_qty_grams = Column(QTY, nullable=False, default=0, comment="累计入库克数")
     remark = Column(String(500), nullable=True, comment="备注")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
     material = relationship("SemifinishedMaterial", lazy="noload")
 
     __table_args__ = (
@@ -132,7 +133,7 @@ class InventoryBalance(Base):
     on_hand_grams = Column(QTY, nullable=False, default=0, comment="实存克数")
     reserved_grams = Column(QTY, nullable=False, default=0, comment="占用克数")
     version = Column(Integer, nullable=False, default=0, comment="余额版本号")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
     material = relationship("SemifinishedMaterial", lazy="noload")
 
     __table_args__ = ({"comment": "半成品库存余额"},)
@@ -153,7 +154,7 @@ class InventoryLedger(Base):
     idempotency_key = Column(String(128), nullable=False, unique=True, comment="全局幂等键")
     created_by = Column(USER_ID, ForeignKey("ark_users.id", ondelete="SET NULL"), nullable=True, comment="操作人")
     remark = Column(String(500), nullable=True, comment="备注")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         Index("idx_semifinished_ledger_material", "material_id", "created_at"),
@@ -186,7 +187,7 @@ class InvoiceAllocation(Base):
     operation_key = Column(String(64), nullable=True, comment="同步操作批次键")
     status = Column(String(16), nullable=False, default="allocated", comment="状态 allocated/pending")
     pending_at = Column(DateTime, nullable=True, comment="进入待处理时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (
         UniqueConstraint("invoice_id", "material_id", name="uq_invoice_semifinished_material"),

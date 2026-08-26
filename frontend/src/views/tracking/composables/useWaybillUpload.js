@@ -14,6 +14,7 @@
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { uploadOCR, checkWaybill, createWaybill } from '@/api/tracking'
+import { beijingCalendarDate } from '@/utils/datetime'
 
 
 // 物流商运单号格式识别
@@ -83,7 +84,7 @@ export function useWaybillUpload() {
 
   // ── Helpers ────────────────────────────────────────
   function disableFutureDate(date) {
-    return date > new Date()
+    return date > beijingCalendarDate()
   }
 
   function resetRightPanel() {

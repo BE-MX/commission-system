@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from app.core.time import beijing_today
 from typing import Optional
 
 from fastapi import (
@@ -246,9 +247,9 @@ def trigger_report_generation(
         raise HTTPException(status_code=400, detail="report_type 仅支持 industry_daily 或 ai_tools")
     try:
         if report_type == "industry_daily":
-            report = service.generate_industry_daily_report(db, report_date=date.today())
+            report = service.generate_industry_daily_report(db, report_date=beijing_today())
         else:
-            report = service.generate_ai_tools_report(db, report_date=date.today())
+            report = service.generate_ai_tools_report(db, report_date=beijing_today())
         return _ok(
             {"id": report.id, "report_type": report.report_type, "status": report.status},
             "报告生成成功",
@@ -1246,7 +1247,7 @@ def radar_profile_detail(
     ]
 
     # 今日行动
-    today = date.today()
+    today = beijing_today()
     action = db.query(CustomerAction).filter(
         CustomerAction.profile_id == profile_id,
         CustomerAction.action_date == today,

@@ -14,6 +14,7 @@ from uuid import uuid4
 from sqlalchemy import text
 
 from app.core.database import SessionLocal, engine
+from app.core.time import utc_now
 from app.design_image import file_service
 from app.design_image.models import DesignImageAsset
 
@@ -186,7 +187,7 @@ def digest(path: Path) -> str:
 
 
 def append_journal(path: Path, event: dict) -> None:
-    event = {"recorded_at": datetime.now(timezone.utc).isoformat(), **event}
+    event = {"recorded_at": utc_now().isoformat(), **event}
     with path.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
         handle.flush()
@@ -196,7 +197,7 @@ def append_journal(path: Path, event: dict) -> None:
 def create_journal(action: str, batch: str, items: list[dict],
                    barrier_connection_id: int | None = None, *, recovery=None,
                    min_age_hours: int = 24) -> tuple[Path, str]:
-    run_id = (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ") +
+    run_id = (utc_now().strftime("%Y%m%dT%H%M%S%fZ") +
               f"-{os.getpid()}-{uuid4().hex[:8]}")
     relative = (PurePosixPath(QUARANTINE_NAME) / "audit" /
                 f"{batch}.{action}.{run_id}.jsonl").as_posix()
@@ -212,7 +213,7 @@ def create_journal(action: str, batch: str, items: list[dict],
         plan["recovery"] = recovery
     with journal.open("x", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps({
-            "recorded_at": datetime.now(timezone.utc).isoformat(), **plan,
+            "recorded_at": utc_now().isoformat(), **plan,
         }, ensure_ascii=False, sort_keys=True) + "\n")
         handle.flush()
         os.fsync(handle.fileno())
@@ -627,7 +628,7 @@ def run_purge(batch: str, inventory: dict, barrier) -> dict:
 
 def scan_or_quarantine(action: str, min_age_hours: int) -> dict:
     root = file_service.validate_storage_boundary()
-    cutoff = datetime.now(timezone.utc).timestamp() - timedelta(hours=min_age_hours).total_seconds()
+    cutoff = utc_now().timestamp() - timedelta(hours=min_age_hours).total_seconds()
     inventory, refs, candidates = quarantine_inventory(), referenced_paths(), []
     for path in walk_files(root, skip_quarantine=True):
         relative = path.relative_to(root).as_posix()
@@ -643,7 +644,7 @@ def scan_or_quarantine(action: str, min_age_hours: int) -> dict:
     if os.getenv("DESIGN_IMAGE_ORPHAN_APPLY") != "QUARANTINE" or inventory["manual_hold"]:
         raise RuntimeError("quarantine requires APPLY=QUARANTINE and no inventory manual hold")
     assert_existing_batches_safe(inventory)
-    batch = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    batch = utc_now().strftime("%Y%m%dT%H%M%S%fZ")
     prepared = []
     for relative, size, mtime in candidates:
         source = file_service.validate_storage_boundary(relative)

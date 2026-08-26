@@ -18,6 +18,7 @@ from sqlalchemy import (
 )
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 # ── 枚举常量 ──────────────────────────────────────────────
 
@@ -137,9 +138,9 @@ class DataConcept(Base):
     notes = Column(Text, nullable=True, comment="补充备注")
     created_by = Column(Integer, nullable=True, comment="创建人 user_id")
     updated_by = Column(Integer, nullable=True, comment="最后修改人 user_id")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     updated_at = Column(
-        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow,
+        DateTime, nullable=False, default=beijing_now, onupdate=beijing_now,
         comment="更新时间",
     )
 
@@ -200,7 +201,7 @@ class ConceptRelationship(Base):
     )
     description = Column(String(200), nullable=True, comment="关联备注说明")
     created_by = Column(Integer, nullable=True, comment="创建人 user_id")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     is_auto_generated = Column(
         Boolean, nullable=False, default=False,
         comment="是否由系统自动生成（如 conflicts_with 反向边）",
@@ -228,7 +229,7 @@ class ConceptChangeLog(Base):
         nullable=False, comment="概念ID FK→data_concepts.id",
     )
     timestamp = Column(
-        DateTime, nullable=False, default=datetime.utcnow, comment="操作时间",
+        DateTime, nullable=False, default=beijing_now, comment="操作时间",
     )
     operator = Column(String(64), nullable=True, comment="操作人")
     action = Column(
