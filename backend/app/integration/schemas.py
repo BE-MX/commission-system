@@ -1,6 +1,9 @@
-"""Strict request schemas for external-system credential administration."""
+"""Strict request schemas for external-system administration and invoices."""
 
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
+import re
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -24,3 +27,99 @@ class IntegrationAppCreate(StrictSchema):
 
 class IntegrationAppRotate(StrictSchema):
     current_token_suffix: str = Field(min_length=6, max_length=6)
+
+
+class CustomerContactSubmission(StrictSchema):
+    name: str | None = Field(default=None, max_length=256)
+    email: str | None = Field(default=None, max_length=256)
+    phone: str | None = Field(default=None, max_length=100)
+
+
+class CustomerSubmission(StrictSchema):
+    ark_customer_id: str | None = Field(default=None, min_length=1, max_length=64)
+    name: str | None = Field(default=None, min_length=1, max_length=256)
+    contact: CustomerContactSubmission = Field(default_factory=CustomerContactSubmission)
+
+
+class CatalogReference(StrictSchema):
+    product_id: int = Field(gt=0)
+    sku_id: int = Field(gt=0)
+
+
+class ProductDescriptionSubmission(StrictSchema):
+    product_display: str | None = Field(default=None, max_length=256)
+    model: str | None = Field(default=None, max_length=128)
+    color: str | None = Field(default=None, max_length=128)
+    length: str | None = Field(default=None, max_length=128)
+    unit: str | None = Field(default=None, max_length=64)
+
+
+class ProductResolutionRequest(StrictSchema):
+    product_kind: Literal["hair", "accessory"]
+    catalog_ref: CatalogReference | None = None
+    description: ProductDescriptionSubmission = Field(
+        default_factory=ProductDescriptionSubmission,
+    )
+
+
+class InvoiceLineSubmission(ProductResolutionRequest):
+    external_line_id: str | None = Field(default=None, max_length=64)
+    quantity: int = Field(gt=0)
+    unit_price: Decimal = Field(gt=0)
+    discount_amount: Decimal = Field(default=Decimal("0"), le=0)
+
+
+class DeliverySubmission(StrictSchema):
+    address: str | None = None
+    express_channel: str | None = Field(default=None, max_length=64)
+
+
+class SurchargeSubmission(StrictSchema):
+    name: str | None = Field(default=None, max_length=128)
+    amount: Decimal = Field(default=Decimal("0"), ge=0)
+
+
+class FeeSubmission(StrictSchema):
+    packaging_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    packaging_quantity: int = Field(default=0, ge=0)
+    shipping_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    surcharge: SurchargeSubmission = Field(default_factory=SurchargeSubmission)
+
+
+class DeclaredTotals(StrictSchema):
+    product_amount: Decimal = Field(ge=0)
+    total_amount: Decimal = Field(ge=0)
+
+
+class InvoiceSubmission(StrictSchema):
+    schema_version: Literal["1.0"]
+    external_order_id: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    )
+    order_type: Literal["stock", "production"]
+    invoice_date: date
+    currency: str = Field(pattern=r"^[A-Z]{3}$")
+    customer: CustomerSubmission
+    delivery: DeliverySubmission
+    fees: FeeSubmission = Field(default_factory=FeeSubmission)
+    declared_totals: DeclaredTotals | None = None
+    items: list[InvoiceLineSubmission] = Field(min_length=1, max_length=200)
+    payment_term: str | None = Field(default=None, max_length=256)
+    remark: str | None = None
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def normalize_currency(cls, value) -> str:
+        return str(value or "").strip().upper()
+
+    @field_validator("invoice_date", mode="before")
+    @classmethod
+    def require_iso_json_date(cls, value) -> date:
+        if not isinstance(value, str) or re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) is None:
+            raise ValueError("invoice_date 必须是 YYYY-MM-DD ISO 日期")
+        try:
+            return date.fromisoformat(value)
+        except ValueError as exc:
+            raise ValueError("invoice_date 必须是有效的 ISO 日期") from exc

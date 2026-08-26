@@ -1,16 +1,80 @@
-"""Integration App administration routes."""
+"""Integration App administration and public invoice-integration routes."""
 
 from fastapi import APIRouter, Depends, Path, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.response import ok
-from app.integration.auth import require_permission_current_integration_admin
-from app.integration import service
-from app.integration.schemas import IntegrationAppCreate, IntegrationAppRotate
+from app.integration.auth import (
+    SubmissionPrincipal,
+    require_integration_scope,
+    require_permission_current_integration_admin,
+)
+from app.integration import service, validation_service
+from app.integration.schemas import (
+    CustomerSubmission,
+    IntegrationAppCreate,
+    IntegrationAppRotate,
+    InvoiceSubmission,
+    ProductResolutionRequest,
+)
 
 
 router = APIRouter()
+# Machine-to-machine endpoints use a revocable Integration App token rather
+# than a user JWT. The factory still rechecks the bound user's current scope.
+_require_invoice_integration = require_integration_scope("invoice:write")
+
+
+def _validation_error(exc: validation_service.InvoiceValidationError) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={
+            "code": 422,
+            "message": "invoice validation failed",
+            "data": {"issues": exc.issues, "warnings": exc.warnings},
+        },
+    )
+
+
+@router.post("/v1/customers/resolve", summary="Resolve one existing OKKI customer exactly")
+def post_resolve_customer(
+    request: CustomerSubmission,
+    db: Session = Depends(get_db),
+    _: SubmissionPrincipal = Depends(_require_invoice_integration),
+):
+    try:
+        customer = validation_service.resolve_customer(db, request)
+    except validation_service.InvoiceValidationError as exc:
+        return _validation_error(exc)
+    return ok({"customer": customer})
+
+
+@router.post("/v1/products/resolve", summary="Resolve one active catalog product exactly")
+def post_resolve_product(
+    request: ProductResolutionRequest,
+    db: Session = Depends(get_db),
+    _: SubmissionPrincipal = Depends(_require_invoice_integration),
+):
+    try:
+        item = validation_service.resolve_product(db, request)
+    except validation_service.InvoiceValidationError as exc:
+        return _validation_error(exc)
+    return ok({"item": item})
+
+
+@router.post("/v1/invoices/validate", summary="Validate an invoice submission without writes")
+def post_validate_invoice(
+    request: InvoiceSubmission,
+    db: Session = Depends(get_db),
+    _: SubmissionPrincipal = Depends(_require_invoice_integration),
+):
+    try:
+        data = validation_service.validate_submission(db, request)
+    except validation_service.InvoiceValidationError as exc:
+        return _validation_error(exc)
+    return ok(data)
 
 
 @router.get("/admin/user-candidates", summary="Search eligible Integration App owners")
