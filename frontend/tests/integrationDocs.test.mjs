@@ -49,6 +49,51 @@ const recoveredResult = {
   review_url: 'https://leshine.work/invoice/manage',
 }
 
+const validationResult = {
+  schema_version: '1.0',
+  external_order_id: 'SITE:RECOVER-001',
+  order_type: 'stock',
+  invoice_date: '2026-08-26',
+  currency: 'USD',
+  customer: {
+    ark_customer_id: '1001',
+    name: 'Example Buyer',
+    country_name: null,
+    contact: { name: null, email: null, phone: null },
+  },
+  delivery: { address: null, express_channel: null },
+  fees: {
+    packaging_amount: '0.00',
+    packaging_quantity: 0,
+    shipping_amount: '0.00',
+    surcharge: { name: null, amount: '0.00' },
+  },
+  payment_term: null,
+  remark: null,
+  items: [{
+    external_line_id: 'line-1',
+    product_kind: 'hair',
+    catalog_ref: { product_id: 1, sku_id: 1001 },
+    description: {
+      product_name: 'Canonical Hair',
+      product_display: 'Canonical Hair',
+      model: 'M1',
+      color: 'Natural',
+      length: '16',
+      unit: '20g',
+    },
+    quantity: 2,
+    unit_price: '10.0000',
+    discount_amount: '0.00',
+    standard_price: '10.0000',
+    customer_price: null,
+    price_source: 'standard',
+    total_price: '20.00',
+  }],
+  totals: { product_amount: '20.00', total_amount: '20.00' },
+  warnings: [],
+}
+
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -233,6 +278,200 @@ test('malformed get success throws once without create recovery', async () => {
       error => error instanceof ArkInvoiceSuccessfulResponseError,
     )
     assert.equal(calls, 1)
+  })
+})
+
+test('create message and replay semantics must match first-create status', async () => {
+  await withRuntimeClient(async ({ ArkInvoiceClient }) => {
+    const invalidFirstResponses = [
+      {
+        code: 201,
+        message: 'ok',
+        data: { ...recoveredResult, replayed: false },
+      },
+      {
+        code: 201,
+        message: 'invoice created',
+        data: { ...recoveredResult, replayed: true },
+      },
+    ]
+    for (const invalid of invalidFirstResponses) {
+      const calls = []
+      const client = new ArkInvoiceClient({
+        baseUrl: 'https://leshine.work/api/integrations/v1',
+        token: 'ark_live_test',
+        fetchImpl: async (url, init) => {
+          calls.push({ url: String(url), method: init.method })
+          if (calls.length === 1) return jsonResponse(invalid, 201)
+          return jsonResponse({
+            code: 200,
+            message: 'invoice replayed',
+            data: recoveredResult,
+          })
+        },
+      })
+
+      assert.deepEqual(await client.createInvoice(runtimePayload), recoveredResult)
+      assert.equal(calls.length, 2)
+      assert.match(calls[1].url, /\/invoices\/by-external-id\/SITE%3ARECOVER-001$/)
+    }
+  })
+})
+
+test('validate and get reject invalid success messages or replay flags once', async () => {
+  await withRuntimeClient(async ({ ArkInvoiceClient, ArkInvoiceSuccessfulResponseError }) => {
+    const invalidCalls = [
+      {
+        invoke: client => client.validateInvoice(runtimePayload),
+        response: jsonResponse({ code: 200, message: 'invoice replayed', data: validationResult }),
+      },
+      {
+        invoke: client => client.getInvoiceByExternalId('SITE:RECOVER-001'),
+        response: jsonResponse({ code: 200, message: 'ok', data: recoveredResult }),
+      },
+      {
+        invoke: client => client.getInvoiceByExternalId('SITE:RECOVER-001'),
+        response: jsonResponse({
+          code: 200,
+          message: 'invoice replayed',
+          data: { ...recoveredResult, replayed: false },
+        }),
+      },
+    ]
+    for (const invalid of invalidCalls) {
+      let calls = 0
+      const client = new ArkInvoiceClient({
+        baseUrl: 'https://leshine.work/api/integrations/v1',
+        token: 'ark_live_test',
+        fetchImpl: async () => {
+          calls += 1
+          return invalid.response
+        },
+      })
+
+      await assert.rejects(
+        invalid.invoke(client),
+        error => error instanceof ArkInvoiceSuccessfulResponseError,
+      )
+      assert.equal(calls, 1)
+    }
+  })
+})
+
+test('validate rejects backend-pattern violations for dates currency and money', async () => {
+  await withRuntimeClient(async ({ ArkInvoiceClient, ArkInvoiceSuccessfulResponseError }) => {
+    const invalidResults = [
+      { ...validationResult, invoice_date: '2026/08/26' },
+      { ...validationResult, currency: 'usd' },
+      { ...validationResult, totals: { ...validationResult.totals, total_amount: 'NaN' } },
+      {
+        ...validationResult,
+        fees: { ...validationResult.fees, shipping_amount: 'garbage' },
+      },
+      {
+        ...validationResult,
+        items: [{ ...validationResult.items[0], unit_price: '10.00' }],
+      },
+      {
+        ...validationResult,
+        items: [{ ...validationResult.items[0], discount_amount: '-0.001' }],
+      },
+    ]
+    for (const invalid of invalidResults) {
+      let calls = 0
+      const client = new ArkInvoiceClient({
+        baseUrl: 'https://leshine.work/api/integrations/v1',
+        token: 'ark_live_test',
+        fetchImpl: async () => {
+          calls += 1
+          return jsonResponse({ code: 200, message: 'ok', data: invalid })
+        },
+      })
+
+      await assert.rejects(
+        client.validateInvoice(runtimePayload),
+        error => error instanceof ArkInvoiceSuccessfulResponseError,
+      )
+      assert.equal(calls, 1)
+    }
+  })
+})
+
+test('create rejects malformed totals and recovers with the same external id', async () => {
+  await withRuntimeClient(async ({ ArkInvoiceClient }) => {
+    const calls = []
+    const client = new ArkInvoiceClient({
+      baseUrl: 'https://leshine.work/api/integrations/v1',
+      token: 'ark_live_test',
+      fetchImpl: async (url, init) => {
+        calls.push({ url: String(url), method: init.method })
+        if (calls.length === 1) {
+          return jsonResponse({
+            code: 201,
+            message: 'invoice created',
+            data: {
+              ...recoveredResult,
+              replayed: false,
+              totals: { product_amount: 'NaN', total_amount: 'garbage' },
+            },
+          }, 201)
+        }
+        return jsonResponse({ code: 200, message: 'invoice replayed', data: recoveredResult })
+      },
+    })
+
+    assert.deepEqual(await client.createInvoice(runtimePayload), recoveredResult)
+    assert.equal(calls.length, 2)
+    assert.match(calls[1].url, /\/invoices\/by-external-id\/SITE%3ARECOVER-001$/)
+  })
+})
+
+test('valid validate first-create replay and get envelopes are accepted', async () => {
+  await withRuntimeClient(async ({ ArkInvoiceClient }) => {
+    const cases = [
+      {
+        invoke: client => client.validateInvoice(runtimePayload),
+        body: { code: 200, message: 'ok', data: validationResult },
+        status: 200,
+        expected: validationResult,
+      },
+      {
+        invoke: client => client.createInvoice(runtimePayload),
+        body: {
+          code: 201,
+          message: 'invoice created',
+          data: { ...recoveredResult, replayed: false },
+        },
+        status: 201,
+        expected: { ...recoveredResult, replayed: false },
+      },
+      {
+        invoke: client => client.createInvoice(runtimePayload),
+        body: { code: 200, message: 'invoice replayed', data: recoveredResult },
+        status: 200,
+        expected: recoveredResult,
+      },
+      {
+        invoke: client => client.getInvoiceByExternalId('SITE:RECOVER-001'),
+        body: { code: 200, message: 'invoice replayed', data: recoveredResult },
+        status: 200,
+        expected: recoveredResult,
+      },
+    ]
+    for (const item of cases) {
+      let calls = 0
+      const client = new ArkInvoiceClient({
+        baseUrl: 'https://leshine.work/api/integrations/v1',
+        token: 'ark_live_test',
+        fetchImpl: async () => {
+          calls += 1
+          return jsonResponse(item.body, item.status)
+        },
+      })
+
+      assert.deepEqual(await item.invoke(client), item.expected)
+      assert.equal(calls, 1)
+    }
   })
 })
 

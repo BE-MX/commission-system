@@ -177,12 +177,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0
-}
-
 function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === 'string'
+}
+
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+const CURRENCY_PATTERN = /^[A-Z]{3}$/
+const MONEY_2_PATTERN = /^\d+\.\d{2}$/
+const SIGNED_MONEY_2_PATTERN = /^-?\d+\.\d{2}$/
+const MONEY_4_PATTERN = /^\d+\.\d{4}$/
+
+function isMoney2(value: unknown): value is string {
+  return typeof value === 'string' && MONEY_2_PATTERN.test(value)
+}
+
+function isMoney4(value: unknown): value is string {
+  return typeof value === 'string' && MONEY_4_PATTERN.test(value)
+}
+
+function isNullableMoney4(value: unknown): value is string | null {
+  return value === null || isMoney4(value)
 }
 
 function isCatalogReference(value: unknown): value is CatalogReference {
@@ -193,7 +207,7 @@ function isCatalogReference(value: unknown): value is CatalogReference {
 
 function isCanonicalDescription(value: unknown): boolean {
   return isRecord(value)
-    && isNonEmptyString(value.product_name)
+    && typeof value.product_name === 'string'
     && typeof value.product_display === 'string'
     && typeof value.model === 'string'
     && typeof value.color === 'string'
@@ -203,14 +217,14 @@ function isCanonicalDescription(value: unknown): boolean {
 
 function isValidationIssue(value: unknown): value is ValidationIssue {
   return isRecord(value)
-    && isNonEmptyString(value.code)
-    && isNonEmptyString(value.field)
-    && isNonEmptyString(value.message)
+    && typeof value.code === 'string'
+    && typeof value.field === 'string'
+    && typeof value.message === 'string'
 }
 
 function isCanonicalCustomer(value: unknown): value is CanonicalCustomer {
   if (!isRecord(value) || !isRecord(value.contact)) return false
-  return isNonEmptyString(value.ark_customer_id)
+  return typeof value.ark_customer_id === 'string'
     && typeof value.name === 'string'
     && isNullableString(value.country_name)
     && isNullableString(value.contact.name)
@@ -225,12 +239,13 @@ function isValidationLine(value: unknown): boolean {
     && isCatalogReference(value.catalog_ref)
     && isCanonicalDescription(value.description)
     && Number.isInteger(value.quantity)
-    && typeof value.unit_price === 'string'
+    && isMoney4(value.unit_price)
     && typeof value.discount_amount === 'string'
-    && isNullableString(value.standard_price)
-    && isNullableString(value.customer_price)
-    && isNonEmptyString(value.price_source)
-    && typeof value.total_price === 'string'
+    && SIGNED_MONEY_2_PATTERN.test(value.discount_amount)
+    && isNullableMoney4(value.standard_price)
+    && isNullableMoney4(value.customer_price)
+    && typeof value.price_source === 'string'
+    && isMoney2(value.total_price)
 }
 
 function isValidationResult(value: unknown, externalOrderId: string): value is ValidationResult {
@@ -247,37 +262,38 @@ function isValidationResult(value: unknown, externalOrderId: string): value is V
     && value.external_order_id === externalOrderId
     && (value.order_type === 'stock' || value.order_type === 'production')
     && typeof value.invoice_date === 'string'
+    && ISO_DATE_PATTERN.test(value.invoice_date)
     && typeof value.currency === 'string'
+    && CURRENCY_PATTERN.test(value.currency)
     && isNullableString(value.delivery.address)
     && isNullableString(value.delivery.express_channel)
-    && typeof value.fees.packaging_amount === 'string'
+    && isMoney2(value.fees.packaging_amount)
     && Number.isInteger(value.fees.packaging_quantity)
-    && typeof value.fees.shipping_amount === 'string'
+    && isMoney2(value.fees.shipping_amount)
     && isNullableString(value.fees.surcharge.name)
-    && typeof value.fees.surcharge.amount === 'string'
+    && isMoney2(value.fees.surcharge.amount)
     && isNullableString(value.payment_term)
     && isNullableString(value.remark)
     && Array.isArray(value.items)
     && value.items.every(isValidationLine)
-    && typeof value.totals.product_amount === 'string'
-    && typeof value.totals.total_amount === 'string'
+    && isMoney2(value.totals.product_amount)
+    && isMoney2(value.totals.total_amount)
     && Array.isArray(value.warnings)
     && value.warnings.every(isValidationIssue)
 }
 
 function isCreateResult(value: unknown, externalOrderId: string): value is CreateResult {
   if (!isRecord(value) || !isRecord(value.totals)) return false
-  return isNonEmptyString(value.request_id)
+  return typeof value.request_id === 'string'
     && typeof value.replayed === 'boolean'
     && value.external_order_id === externalOrderId
     && Number.isInteger(value.invoice_id)
-    && Number(value.invoice_id) > 0
-    && isNonEmptyString(value.invoice_no)
-    && isNonEmptyString(value.status)
-    && isNonEmptyString(value.sync_status)
-    && typeof value.totals.product_amount === 'string'
-    && typeof value.totals.total_amount === 'string'
-    && isNonEmptyString(value.review_url)
+    && typeof value.invoice_no === 'string'
+    && typeof value.status === 'string'
+    && typeof value.sync_status === 'string'
+    && isMoney2(value.totals.product_amount)
+    && isMoney2(value.totals.total_amount)
+    && typeof value.review_url === 'string'
 }
 
 export class ArkInvoiceApiError extends Error {
@@ -346,6 +362,7 @@ export class ArkInvoiceClient {
       if (
         response.status !== 200
         || envelope.code !== 200
+        || envelope.message !== 'ok'
         || !isValidationResult(envelope.data, payload.external_order_id)
       ) throw new ArkInvoiceSuccessfulResponseError(response.status)
       return envelope.data
@@ -386,7 +403,9 @@ export class ArkInvoiceClient {
         if (
           response.status !== 200
           || envelope.code !== 200
+          || envelope.message !== 'invoice replayed'
           || !isCreateResult(envelope.data, externalOrderId)
+          || envelope.data.replayed !== true
         ) throw new ArkInvoiceSuccessfulResponseError(response.status)
         return envelope.data
       },
@@ -398,11 +417,18 @@ export class ArkInvoiceClient {
       method: 'POST',
       body: JSON.stringify(payload),
     }, (response, envelope) => {
-      const codesMatch = (response.status === 201 && envelope.code === 201)
-        || (response.status === 200 && envelope.code === 200)
-      if (!codesMatch || !isCreateResult(envelope.data, payload.external_order_id)) {
+      if (!isCreateResult(envelope.data, payload.external_order_id)) {
         throw new ArkInvoiceSuccessfulResponseError(response.status)
       }
+      const firstCreate = response.status === 201
+        && envelope.code === 201
+        && envelope.message === 'invoice created'
+        && envelope.data.replayed === false
+      const replay = response.status === 200
+        && envelope.code === 200
+        && envelope.message === 'invoice replayed'
+        && envelope.data.replayed === true
+      if (!firstCreate && !replay) throw new ArkInvoiceSuccessfulResponseError(response.status)
       return envelope.data
     })
   }
