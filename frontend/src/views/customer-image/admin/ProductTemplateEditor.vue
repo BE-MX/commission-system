@@ -36,6 +36,10 @@
           <article class="asset-card">
             <div class="asset-preview">
               <img v-if="coverAsset && urls[coverAsset.id]" :src="urls[coverAsset.id]" alt="产品封面">
+              <div v-else-if="coverAsset" class="preview-status" role="status">
+                <span>{{ assetErrors[coverAsset.id] || '图片加载中…' }}</span>
+                <GlassButton v-if="assetErrors[coverAsset.id]" variant="link" left-icon="Refresh" :disabled="assetLoading[coverAsset.id]" aria-label="重试产品封面" @click="assetBlobs.retry(coverAsset.id)">重试</GlassButton>
+              </div>
               <span v-else>产品封面待上传</span>
             </div>
             <strong>产品封面</strong>
@@ -62,6 +66,10 @@
           <article v-for="(asset, index) in referenceAssets" :key="asset.id" class="asset-card">
             <div class="asset-preview">
               <img v-if="urls[asset.id]" :src="urls[asset.id]" :alt="`参考图 ${index + 1}`">
+              <div v-else class="preview-status" role="status">
+                <span>{{ assetErrors[asset.id] || '图片加载中…' }}</span>
+                <GlassButton v-if="assetErrors[asset.id]" variant="link" left-icon="Refresh" :disabled="assetLoading[asset.id]" :aria-label="`重试参考图 ${index + 1}`" @click="assetBlobs.retry(asset.id)">重试</GlassButton>
+              </div>
             </div>
             <strong>参考图 {{ index + 1 }}</strong>
             <div class="asset-actions">
@@ -142,6 +150,7 @@
       <div v-loading="libraryLoading" class="library-grid">
         <button v-for="asset in libraryAssets" :key="asset.id" type="button" class="library-item" @click="copyFromLibrary(asset)">
           <img v-if="libraryUrls[asset.id]" :src="libraryUrls[asset.id]" :alt="asset.title || '图库图片'">
+          <span v-else>{{ libraryErrors[asset.id] ? '预览失败，请重新打开图库重试' : '图片加载中…' }}</span>
           <span>{{ asset.title || `素材 #${asset.id}` }}</span>
         </button>
         <el-empty v-if="!libraryLoading && !libraryAssets.length" description="图库暂无可复制图片" />
@@ -189,7 +198,10 @@ const libraryBlobs = createAssetBlobController({
   fetchBlob: (asset, config) => api.getLibraryAssetBlob(asset.id, { thumbnail: true, ...config }),
 })
 const urls = assetBlobs.urls
+const assetErrors = assetBlobs.errors
+const assetLoading = assetBlobs.loading
 const libraryUrls = libraryBlobs.urls
+const libraryErrors = libraryBlobs.errors
 
 const coverAsset = computed(() => assets.value.find(asset => asset.role === 'cover'))
 const referenceAssets = computed(() => assets.value
@@ -357,6 +369,7 @@ label { display: grid; gap: 7px; color: var(--el-text-color-regular); font-size:
 .asset-card { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--el-border-color-lighter); border-radius: 12px; }
 .asset-preview { display: grid; place-items: center; min-height: 150px; overflow: hidden; border-radius: 9px; background: var(--el-fill-color-light); color: var(--el-text-color-secondary); }
 .asset-preview img { width: 100%; height: 180px; object-fit: contain; }
+.preview-status { display: grid; justify-items: center; gap: 8px; padding: 16px; font-size: 13px; text-align: center; }
 .asset-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .file-action { display: grid; place-items: center; min-height: 44px; padding: 0 16px; border: 1px solid var(--el-border-color); border-radius: 10px; cursor: pointer; }
 .file-action input { position: absolute; width: 1px; height: 1px; opacity: 0; }
