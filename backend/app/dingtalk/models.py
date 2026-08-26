@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 class DingTalkCallbackLog(Base):
@@ -18,7 +19,7 @@ class DingTalkCallbackLog(Base):
     raw_data = Column(Text, nullable=False, comment="原始回调数据")
     processed = Column(Boolean, nullable=False, default=False, comment="是否已处理")
     process_result = Column(String(255), nullable=True, comment="处理结果")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="接收时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="接收时间")
     processed_at = Column(DateTime, nullable=True, comment="处理时间")
 
 
@@ -37,5 +38,5 @@ class DingTalkMessageLog(Base):
     error_msg = Column(Text, nullable=True, comment="错误信息")
     related_type = Column(String(32), nullable=True, comment="关联业务类型")
     related_id = Column(String(64), nullable=True, comment="关联业务ID")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     sent_at = Column(DateTime, nullable=True, comment="发送时间")

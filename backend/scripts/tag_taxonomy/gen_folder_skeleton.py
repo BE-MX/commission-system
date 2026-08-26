@@ -14,11 +14,11 @@
 
 import os
 import sys
-from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from app.core.database import SessionLocal
+from app.core.time import beijing_today
 from app.asset.models import TagDimension, TagValue
 
 README = """【素材上传目录模板 · 使用说明】
@@ -62,7 +62,8 @@ def _safe(name: str) -> str:
 
 
 def main():
-    year = f"{date.today().year}年"
+    today = beijing_today()
+    year = f"{today.year}年"
     out_root = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
         os.path.expanduser("~"), "Desktop", "素材上传目录模板")
 
@@ -122,7 +123,7 @@ def main():
                 mk(cat_name, st_name)
 
     with open(os.path.join(out_root, "使用说明.txt"), "w", encoding="utf-8") as f:
-        f.write(README.format(year=year, today=date.today().isoformat()))
+        f.write(README.format(year=year, today=today.isoformat()))
 
     print(f"生成完成：{out_root}", flush=True)
     print(f"叶子文件夹 {made} 个（含中间层自动创建）", flush=True)

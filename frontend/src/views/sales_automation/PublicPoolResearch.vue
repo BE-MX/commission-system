@@ -111,6 +111,7 @@ import PublicPoolBatchDialog from './components/PublicPoolBatchDialog.vue'
 import { approvePublicPoolTask, claimPublicPoolTask, createPublicPoolBatch, getPublicPoolAudit, getPublicPoolBatches, getPublicPoolTask, getPublicPoolTasks, refreshPublicPoolAudit, rejectPublicPoolTask } from '@/api/salesAutomation'
 import { useListPage } from '@/composables/useListPage'
 import { msgSuccess } from '@/utils/feedback'
+import { formatBeijingDateTime } from '@/utils/datetime'
 
 const audit = ref({}); const auditLoading = ref(false); const batchLoading = ref(false)
 const batchDialogVisible = ref(false)
@@ -134,7 +135,7 @@ const customerTypeLabel = v => ({ salon: '沙龙', stylist: '发型师', educato
 const purchaseStageLabel = v => ({ first_purchase: '首次采购', first_cross_border: '首次跨境采购', supplier_exploration: '供应商探索', supplier_switching: '切换供应商', supplier_addition: '增加供应商', sample_testing: '样品测试', regular_buying: '稳定采购', expansion: '扩张期', dormant_lost: '沉睡 / 流失', unclear: '不明确' }[v] || '-')
 const scaleStageLabel = v => ({ solo_professional: '独立专业者', small_team: '小团队 / 单店', multi_location: '多门店', regional_operation: '区域经营', expansion_stage: '扩张期', unclear: '不明确' }[v] || '-')
 const volumeLabel = v => ({ small_trial: '小单试水', stable_medium: '中等稳定', high_volume: '大批量', unclear: '不明确' }[v] || '-')
-const number = v => Number(v || 0).toLocaleString('zh-CN'); const formatTime = v => v ? new Date(v).toLocaleString('zh-CN', { hour12: false }) : '-'
+const number = v => Number(v || 0).toLocaleString('zh-CN'); const formatTime = v => formatBeijingDateTime(v)
 const sourceLabel = subject => subject.source_system === 'ark_lead' ? `智能获客 #${subject.linked_company_id || subject.source_customer_id}` : `OKKI ${subject.source_customer_id}`
 
 const { loading, list: tasks, total, page, pageSize, searchForm: filters, fetchList: fetchTasks, handleSearch: search, handlePageChange, handleSizeChange } = useListPage(async params => {

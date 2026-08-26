@@ -19,6 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 class TagDimension(Base):
@@ -35,7 +36,7 @@ class TagDimension(Base):
     is_visible = Column(SmallInteger, nullable=False, default=1, comment="0=隐藏(前端/folder_upload匹配均不参与),1=可见")
     is_managed = Column(SmallInteger, nullable=False, default=0, comment="1=系统托管,值由派生脚本写入,禁人工编辑")
     sort_order = Column(Integer, nullable=False, default=0, comment="排序权重")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     values = relationship("TagValue", back_populates="dimension", lazy="selectin")
 
@@ -62,7 +63,7 @@ class TagValue(Base):
     image_path = Column(String(512), nullable=True, comment="标签图片路径")
     sort_order = Column(Integer, nullable=False, default=0, comment="排序权重")
     is_active = Column(SmallInteger, nullable=False, default=1, comment="0=禁用,1=启用")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     dimension = relationship("TagDimension", back_populates="values", lazy="joined")
 
@@ -105,8 +106,8 @@ class Asset(Base):
     status = Column(String(32), nullable=False, default="latest", comment="latest/history/offline")
     download_count = Column(Integer, nullable=False, default=0, comment="累计下载次数")
     remark = Column(Text, nullable=True, comment="备注")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     versions = relationship("AssetVersion", back_populates="asset", lazy="noload",
                            primaryjoin="Asset.id==AssetVersion.asset_id")
@@ -135,7 +136,7 @@ class AssetVersion(Base):
     file_size = Column(BigInteger, nullable=False, default=0, comment="文件大小(字节)")
     uploader_id = Column(Integer, ForeignKey("ark_users.id"), nullable=False, comment="上传人用户ID")
     remark = Column(Text, nullable=True, comment="版本备注")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     asset = relationship("Asset", back_populates="versions", foreign_keys=[asset_id])
 
@@ -156,8 +157,8 @@ class AssetPermission(Base):
     allow_preview = Column(SmallInteger, nullable=False, default=1, comment="0=否,1=是")
     allow_download = Column(SmallInteger, nullable=False, default=1, comment="0=否,1=是")
     specified_user_ids = Column(JSON, nullable=True, comment="指定人员ID数组")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     asset = relationship("Asset", back_populates="permissions")
 
@@ -175,7 +176,7 @@ class FavoriteFolder(Base):
     sort_order = Column(Integer, nullable=False, default=0, comment="排序权重")
     share_token = Column(String(64), nullable=True, comment="分享令牌(NULL=未分享)")
     share_expires_at = Column(DateTime, nullable=True, comment="分享链接过期时间")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     items = relationship("FavoriteItem", back_populates="folder", lazy="selectin")
 
@@ -194,7 +195,7 @@ class FavoriteItem(Base):
     folder_id = Column(Integer, ForeignKey("ark_favorite_folders.id"), nullable=False, comment="所属收藏夹ID")
     asset_id = Column(Integer, ForeignKey("ark_assets.id"), nullable=False, comment="素材ID")
     sort_order = Column(Integer, nullable=False, default=0, comment="排序权重")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     folder = relationship("FavoriteFolder", back_populates="items")
 
@@ -214,7 +215,7 @@ class DownloadLog(Base):
     asset_id = Column(Integer, ForeignKey("ark_assets.id"), nullable=False, comment="素材ID")
     user_id = Column(Integer, ForeignKey("ark_users.id"), nullable=False, comment="下载人用户ID")
     version_number = Column(Integer, nullable=True, comment="下载的版本号")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="下载时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="下载时间")
 
     __table_args__ = (
         Index("idx_dl_log_asset", "asset_id"),

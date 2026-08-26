@@ -19,6 +19,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 class ColorPalette(Base):
@@ -49,8 +50,8 @@ class ColorPalette(Base):
     source = Column(String(32), nullable=False, default="industry", comment="industry/bellami/luxy/great_lengths/leshine/organic_hair")
     is_leshine_stock = Column(SmallInteger, nullable=False, default=0, comment="0=否,1=是莱莎现有库存色")
     peak_season = Column(String(64), nullable=True, comment="高峰季节（高峰销售季节 spring/summer/autumn/winter 逗号分隔）")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (
         UniqueConstraint("industry_code", "source", name="uk_industry_source"),
@@ -81,8 +82,8 @@ class ColorBlend(Base):
     computed_lab_b = Column(Numeric(6, 2), nullable=True, comment="加权混合色 LAB b*")
     source = Column(String(32), nullable=False, comment="bellami/luxy/great_lengths/leshine/organic_hair/custom")
     brand_name = Column(String(100), nullable=True, comment="品牌命名，如 Vanilla Latte")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (
         UniqueConstraint("blend_code", "source", name="uk_blend_source"),
@@ -138,8 +139,8 @@ class CompetitorColorWatch(Base):
     first_seen = Column(Date, nullable=False, comment="首次发现日期")
     last_seen = Column(Date, nullable=False, comment="最近一次确认在售")
     is_new_launch = Column(SmallInteger, nullable=False, default=0, comment="0=否,1=近期新品")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (
         UniqueConstraint("brand", "color_code", name="uk_brand_code"),
@@ -161,7 +162,7 @@ class ColorTrendData(Base):
     period_type = Column(String(16), nullable=False, default="weekly", comment="daily/weekly/monthly")
     raw_value = Column(Numeric(10, 2), nullable=False, comment="原始值（销量/提及次数/搜索指数）")
     normalized_score = Column(Numeric(5, 2), nullable=True, comment="归一化分数0-100")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         UniqueConstraint("color_family", "data_source", "period_date", "period_type",
@@ -189,7 +190,7 @@ class ColorSwatchImage(Base):
     pass_check = Column(SmallInteger, nullable=True, comment="0=否,1=通过色差校验")
     status = Column(String(32), nullable=False, default="pending", comment="pending/generating/completed/failed/rejected")
     retry_count = Column(SmallInteger, nullable=False, default=0, comment="生成重试次数")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         Index("idx_swatch_palette", "palette_id"),

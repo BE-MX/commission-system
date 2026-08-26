@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
 from app.core.config import get_settings
+from app.core.time import beijing_now_aware
 from app.production.models import (
     OrderProductProcessProgress,
     Process,
@@ -19,7 +20,7 @@ _BJ_TZ = timezone(timedelta(hours=8))
 
 
 def _bj_now():
-    return datetime.now(_BJ_TZ)
+    return beijing_now_aware()
 
 
 

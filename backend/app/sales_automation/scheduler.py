@@ -2,6 +2,7 @@
 
 import logging
 from datetime import date
+from app.core.time import beijing_today
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal
@@ -19,7 +20,7 @@ def generate_public_pool_daily_batch() -> None:
             batch = generate_batch(
                 db,
                 {
-                    "batch_date": date.today(),
+                    "batch_date": beijing_today(),
                     "quota_per_tier": settings.SALES_PUBLIC_POOL_QUOTA_PER_TIER,
                     "policy_version": "v3",
                     "profile_conditions": default_profile_conditions(),

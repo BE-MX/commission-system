@@ -94,6 +94,7 @@ import GlassButton from '@/components/GlassButton.vue'
 import { createSearchJob, getSearchJobs, requeueSearchJob } from '@/api/salesAutomation'
 import { useListPage } from '@/composables/useListPage'
 import { msgError, msgSuccess } from '@/utils/feedback'
+import { formatBeijingDateTime } from '@/utils/datetime'
 
 const STATUS_OPTIONS = [
   { value: 'pending', label: '等待 Agent', type: 'info' },
@@ -102,7 +103,7 @@ const STATUS_OPTIONS = [
   { value: 'failed', label: '失败', type: 'danger' },
 ]
 const statusMeta = value => STATUS_OPTIONS.find(item => item.value === value) || { label: value || '-', type: 'info' }
-const formatTime = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-'
+const formatTime = value => formatBeijingDateTime(value)
 const resultText = row => row.status === 'completed' ? `新增 ${row.created_count}，去重 ${row.deduplicated_count}（公海 ${row.public_pool_deduplicated_count || 0}）` : '等待结果'
 
 const {

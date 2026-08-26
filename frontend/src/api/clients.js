@@ -50,6 +50,7 @@ export const mcpClient = createApiClient({ baseURL: '/api/mcp', timeout: 30000 }
 export const festivalClient = createApiClient({ baseURL: '/api/festival', timeout: 30000 })
 export const orderIntelligenceClient = createApiClient({ baseURL: '/api/order-intelligence', timeout: 120000 })
 export const operationsClient = createApiClient({ baseURL: '/api/operations', timeout: 15000 })
+export const dingtalkClient = createApiClient({ baseURL: '/api/dingtalk', timeout: 120000 })
 export const agentRuntimeClient = createApiClient({ baseURL: '/api/agent-runtime', timeout: 30000 })
 export const customerMediaClient = createApiClient({
   baseURL: import.meta.env.VITE_CUSTOMER_MEDIA_API_BASE || '/api/customer-media',

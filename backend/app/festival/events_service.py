@@ -11,6 +11,8 @@
 import json
 import logging
 from datetime import date, datetime, timedelta
+from app.core.time import beijing_today
+from app.core.time import beijing_now
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -229,7 +231,7 @@ def _write_state(db: Session, key: str, value: dict) -> None:
     row = db.get(FestivalState, key)
     if row:
         row.value_json = raw
-        row.updated_at = datetime.now()
+        row.updated_at = beijing_now()
     else:
         try:
             with db.begin_nested():
@@ -239,7 +241,7 @@ def _write_state(db: Session, key: str, value: dict) -> None:
             row = db.get(FestivalState, key)
             if row:
                 row.value_json = raw
-                row.updated_at = datetime.now()
+                row.updated_at = beijing_now()
     db.flush()
 
 
@@ -439,7 +441,7 @@ def detect_stateful_candidates(db: Session, *, summary: dict, items: list,
                                state_scope: str,
                                today: date | None = None) -> list:
     """检测依赖前后状态的事件；首次观察只建基线，不补发历史。"""
-    today = today or date.today()
+    today = today or beijing_today()
     candidates = []
     candidates += _ranking_candidates(
         db, board="new_sign", event_type="rank_up_sign", rows=items, top_n=3,
@@ -538,7 +540,7 @@ def feed(db: Session, limit: int = 40, within_hours: int = 48,
     ``after_id`` 缺省时返回最新事件供底栏展示；传入游标时按正序返回最老的
     未读批次，避免一次同步超过 ``limit`` 条时跳过较早事件。
     """
-    cutoff = datetime.now() - timedelta(hours=within_hours)
+    cutoff = beijing_now() - timedelta(hours=within_hours)
     query = db.query(FestivalEvent).filter(FestivalEvent.created_at >= cutoff)
     excluded_ids = tuple(fsvc.EXCLUDED_FESTIVAL_USER_IDS)
     if excluded_ids:

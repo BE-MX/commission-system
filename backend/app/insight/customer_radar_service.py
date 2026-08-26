@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 import hashlib
 from datetime import date, datetime, timedelta
+from app.core.time import beijing_today
+from app.core.time import beijing_now
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import and_, func
@@ -145,7 +147,7 @@ def compute_thread_group(
     latest_opportunities: List[CustomerOpportunity],
 ) -> str:
     """根据画像和最近机会数据，返回经营线索分组（首匹配规则链）。"""
-    now = datetime.utcnow()
+    now = beijing_now()
     seven_days_ago = now - timedelta(days=7)
     thirty_days_ago = now - timedelta(days=30)
     ninety_days_ago = now - timedelta(days=90)
@@ -214,7 +216,7 @@ def generate_daily_actions(
     已完成、已忽略和已延后的行动属于用户事实，刷新不得覆盖。
     """
     if not action_date:
-        action_date = date.today()
+        action_date = beijing_today()
 
     policy_version = "rule-v2-idempotent"
     # 锁住画像行，串行化同一业务员的并发刷新；唯一指纹是第二道防线。
@@ -230,7 +232,7 @@ def generate_daily_actions(
     for existing in existing_rows:
         existing_by_profile.setdefault(existing.profile_id, existing)
 
-    now = datetime.utcnow()
+    now = beijing_now()
     actions = []
 
     for profile in profiles:
@@ -336,7 +338,7 @@ def get_daily_focus(
 ) -> dict:
     """获取今日经营重点（懒生成）。"""
     if not action_date:
-        action_date = date.today()
+        action_date = beijing_today()
 
     # 检查是否已有今日行动
     existing = db.query(CustomerAction).filter(
@@ -403,7 +405,7 @@ def get_daily_focus(
 def get_thread_counts(db: Session, owner_user_id: int, action_date: Optional[date] = None) -> dict:
     """各线索数量（侧边栏角标用）。"""
     if not action_date:
-        action_date = date.today()
+        action_date = beijing_today()
 
     # 确保行动已生成
     existing = db.query(CustomerAction).filter(
@@ -442,7 +444,7 @@ def complete_action(
     if not action:
         raise ValueError(f"行动不存在: id={action_id}")
     action.action_status = "done"
-    action.completed_at = datetime.utcnow()
+    action.completed_at = beijing_now()
     action.completed_by = user_id
     if feedback:
         action.user_feedback = feedback
@@ -463,7 +465,7 @@ def dismiss_action(
     if not action:
         raise ValueError(f"行动不存在: id={action_id}")
     action.action_status = "dismissed"
-    action.completed_at = datetime.utcnow()
+    action.completed_at = beijing_now()
     action.completed_by = user_id
     if note:
         action.user_note = note

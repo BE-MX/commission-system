@@ -474,7 +474,6 @@ const {
   saveAndSync, showIssues, markOkkiFlagTouched, onPaymentMethodChange, markHandlingFeeTouched,
 } = useInvoiceEditor({ onSaved: loadInvoices })
 bindIssueHandler(showIssues)
-
 const pasteImportVisible = ref(false)
 const screenshotImportVisible = ref(false)
 const canPasteImport = computed(() => Boolean(form.customer_id && form.order_type && form.currency))
@@ -489,7 +488,6 @@ const drawerTitle = computed(() => {
   const typeLabel = form.order_type === 'production' ? '生产单' : '库存单'
   return form.id ? `编辑${typeLabel} ${form.invoice_no}` : `新建${typeLabel}`
 })
-
 function appendPastedLines({ rows, fingerprint }) {
   if (!appendImportedLines(rows, fingerprint)) {
     ElMessage.warning('这批数据已经加入当前发票')

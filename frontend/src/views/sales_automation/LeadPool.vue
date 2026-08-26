@@ -189,6 +189,7 @@ import DetailDrawer from '@/components/DetailDrawer.vue'
 import { approveLead, getLead, getLeads } from '@/api/salesAutomation'
 import { useListPage } from '@/composables/useListPage'
 import { msgSuccess } from '@/utils/feedback'
+import { formatBeijingDateTime } from '@/utils/datetime'
 
 const leadStatus = value => ({
   candidate: { label: '待确认', type: 'warning' },
@@ -208,7 +209,7 @@ const emailStatus = value => ({
   risky: { label: '有风险', type: 'warning' },
   invalid: { label: '无效', type: 'danger' },
 }[value] || { label: value || '-', type: 'info' })
-const formatTime = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-'
+const formatTime = value => formatBeijingDateTime(value)
 const confidence = value => `${Math.round((value || 0) * 100)}%`
 const identityLabel = value => ({ confirmed: '已确认', candidate: '候选匹配', unverifiable: '无法验证', rejected: '主体不符' }[value] || '-')
 const relevanceLabel = value => ({ core: '核心相关', adjacent: '邻近相关', uncertain: '待确认', irrelevant: '行业无关' }[value] || '-')

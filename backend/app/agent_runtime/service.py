@@ -1,6 +1,7 @@
 """User-facing Agent session, run and task services."""
 
 from datetime import datetime
+from app.core.time import beijing_now
 
 from sqlalchemy import desc
 from sqlalchemy.exc import IntegrityError
@@ -279,7 +280,7 @@ def cancel_run(db: Session, run_id: int, *, user_id: int, can_read_all: bool) ->
         require_transition(row.status, RunStatus.CANCELLED)
         row.status = RunStatus.CANCELLED.value
         row.cancel_requested = True
-        row.completed_at = datetime.utcnow()
+        row.completed_at = beijing_now()
         append_event(
             db, row,
             event_id=f"run-{row.id}-cancelled",

@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
 from app.core.config import get_settings
+from app.core.time import beijing_now
 from app.domestic import constants as C
 from app.domestic import progress_service, unit_service
 from app.domestic.models import (
@@ -38,7 +39,7 @@ _BJ_TZ = timezone(timedelta(hours=8))
 
 def _bj_now() -> datetime:
     """北京时间，与外贸报工口径一致（存 naive datetime）"""
-    return datetime.now(_BJ_TZ).replace(tzinfo=None)
+    return beijing_now()
 
 
 # ── 二维码 ────────────────────────────────────────────

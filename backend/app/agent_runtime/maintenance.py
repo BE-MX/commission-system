@@ -1,6 +1,7 @@
 """Retention jobs for Agent runtime sensitive payloads."""
 
 from datetime import datetime, timedelta
+from app.core.time import beijing_now
 
 from sqlalchemy.orm import Session
 
@@ -17,7 +18,7 @@ def redact_expired_raw_events(
 ) -> int:
     """Remove only encrypted raw payloads; keep normalized audit events intact."""
     days = retention_days or get_settings().AGENT_RUNTIME_RAW_EVENT_RETENTION_DAYS
-    cutoff = (now or datetime.utcnow()) - timedelta(days=days)
+    cutoff = (now or beijing_now()) - timedelta(days=days)
     count = db.query(AgentEvent).filter(
         AgentEvent.created_at < cutoff,
         AgentEvent.raw_payload_cipher.isnot(None),

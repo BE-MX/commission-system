@@ -5,6 +5,7 @@
 """
 
 from datetime import datetime
+from app.core.time import beijing_now
 from typing import Optional
 
 from sqlalchemy import func, or_
@@ -201,7 +202,7 @@ def delete_shipment(db: Session, waybill_no: str) -> bool:
     )
     if not shipment:
         return False
-    shipment.deleted_at = datetime.now()
+    shipment.deleted_at = beijing_now()
     shipment.is_active = False
     db.commit()
     return True

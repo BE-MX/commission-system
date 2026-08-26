@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 from dataclasses import dataclass
 from datetime import datetime
+from app.core.time import beijing_now
 
 from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
@@ -306,7 +307,7 @@ def begin_turn(
             )
             if len(attachments) != len(request.attachment_ids):
                 _not_found()
-        now = datetime.utcnow()
+        now = beijing_now()
         user = AiChatMessage(
             session_id=session_id,
             role="user",
@@ -441,7 +442,7 @@ def _set_terminal(
     row.error_message = error_message
     if ai_call_log_id is not None:
         row.ai_call_log_id = ai_call_log_id
-    row.updated_at = datetime.utcnow()
+    row.updated_at = beijing_now()
     try:
         db.commit()
         db.refresh(row)

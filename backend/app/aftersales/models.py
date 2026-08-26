@@ -20,6 +20,7 @@ from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 USER_ID = mysql.INTEGER(unsigned=True)
@@ -94,8 +95,8 @@ class AfterSalesCase(Base):
 
     approved_at = Column(DateTime)
     closed_at = Column(DateTime)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now)
     deleted_at = Column(DateTime)
 
     evidence = relationship(
@@ -132,7 +133,7 @@ class AfterSalesEvidence(Base):
     file_size = Column(BigInteger, nullable=False)
     summary = Column(Text)
     uploaded_by_user_id = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
     deleted_at = Column(DateTime)
 
     case = relationship("AfterSalesCase", back_populates="evidence", lazy="noload")
@@ -158,7 +159,7 @@ class AfterSalesAiRun(Base):
     duration_ms = Column(mysql.INTEGER(unsigned=True))
     error_summary = Column(String(500))
     created_by_user_id = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
     completed_at = Column(DateTime)
 
     case = relationship("AfterSalesCase", back_populates="ai_runs", lazy="noload")
@@ -182,7 +183,7 @@ class AfterSalesReview(Base):
     remark = Column(Text, comment="审核意见")
     compensation_snapshot_json = Column(JSON)
     idempotency_key = Column(String(64), unique=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
 
     case = relationship("AfterSalesCase", back_populates="reviews", lazy="noload")
 
@@ -205,7 +206,7 @@ class AfterSalesEvent(Base):
     workflow_round = Column(mysql.INTEGER(unsigned=True), nullable=False, default=0)
     detail_json = Column(JSON)
     idempotency_key = Column(String(64), unique=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
 
     case = relationship("AfterSalesCase", back_populates="events", lazy="noload")
 
@@ -232,7 +233,7 @@ class AfterSalesSopVersion(Base):
     is_active = Column(Boolean, nullable=False, default=False)
     activated_at = Column(DateTime)
     uploaded_by_user_id = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
 
     __table_args__ = (
         Index("ix_aftersales_sop_active", "is_active"),
@@ -255,8 +256,8 @@ class AfterSalesNotificationLog(Base):
     next_retry_at = Column(DateTime)
     last_error_summary = Column(String(500))
     sent_at = Column(DateTime)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now)
 
     __table_args__ = (
         UniqueConstraint(

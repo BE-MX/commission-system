@@ -3,6 +3,7 @@
 import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from app.core.time import beijing_now
 from decimal import Decimal
 from typing import Optional
 
@@ -98,7 +99,7 @@ def reset_customer_attribution(
         new_second_supervisor_id,
     )
 
-    now = datetime.now()
+    now = beijing_now()
     snapshot = CustomerCommissionSnapshot(
         customer_id=customer_id,
         salesperson_id=new_salesperson_id,
@@ -167,7 +168,7 @@ def complete_snapshot(
     snapshot.second_supervisor_rate = sv2_rate
     snapshot.is_complete = True
     snapshot.operator = operator
-    snapshot.operated_at = datetime.now()
+    snapshot.operated_at = beijing_now()
     db.flush()
 
     logger.info(f"快照 {snapshot_id} (客户 {snapshot.customer_id}) 已补全 (by {operator})")
@@ -203,7 +204,7 @@ def auto_match_incomplete_snapshots(db: Session, operator: str) -> AutoMatchResu
     ).all()
 
     matched = 0
-    now = datetime.now()
+    now = beijing_now()
 
     for snap in incomplete:
         first_receipt = _get_first_receipt_date(db, snap.customer_id)
@@ -327,7 +328,7 @@ def import_snapshots_from_excel(db: Session, file_path: str, operator: str) -> I
                 is_current=True,
                 source="import",
                 operator=operator,
-                operated_at=datetime.now(),
+                operated_at=beijing_now(),
             )
             db.add(snapshot)
             result.success += 1
@@ -360,7 +361,7 @@ def refresh_snapshots_by_employees(
     按客户首次成交日期匹配员工属性，重新计算提成比例。
     """
     result = RefreshResult()
-    now = datetime.now()
+    now = beijing_now()
 
     snapshots = db.query(CustomerCommissionSnapshot).filter(
         CustomerCommissionSnapshot.is_current == True,

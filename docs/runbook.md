@@ -206,6 +206,16 @@ cd backend
 alembic upgrade head
 ```
 
+#### 123 全平台北京时间迁移（仅维护窗口）
+
+123 会改写存量时间，禁止让旧代码或任何写实例与迁移并行：
+
+1. 先做 RDS 快照，并停止办公室 `CommissionSystem`、北京云后端、调度器、临时脚本及所有连接同库的写实例；入口应进入维护状态。
+2. 确认待启动文件已经是包含 123 的新代码，但服务仍保持停止；执行 `alembic current`，只允许从 122 升级。
+3. 在唯一迁移 shell 设置 `ARK_TIME_MIGRATION_MAINTENANCE=1`，执行 `alembic upgrade 123_platform_beijing_time`。没有该变量迁移会主动拒绝运行。
+4. 核对 `ark_platform_time_backup_123` 行数、`alembic current`，并抽查 `ark_production_orders.created_at` 等于备份原值加 8 小时；迁移失败时保持停服，修复后可重跑，备份表会复用原值而不是二次累加。
+5. 清除维护变量，只启动新代码实例，再撤维护页；旧版本实例不得恢复写入。历史 `updated_at` 等混合来源列不在 123 中猜测平移。
+
 ### 6. 配置 NSSM 服务
 
 ```bash

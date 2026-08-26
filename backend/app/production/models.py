@@ -15,6 +15,7 @@ from sqlalchemy import (
 from sqlalchemy import Index
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 class Process(Base):
@@ -31,8 +32,8 @@ class Process(Base):
         SmallInteger, nullable=False, default=1,
         comment="1=在内贸客户进度页显示,0=隐藏",
     )
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (
         Index("idx_process_status", "status"),
@@ -49,8 +50,8 @@ class ProcessRoute(Base):
     name = Column(String(100), nullable=False, unique=True, comment="路线名称")
     description = Column(String(500), nullable=True, comment="路线描述")
     status = Column(SmallInteger, nullable=False, default=1, comment="0=禁用,1=启用")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (
         Index("idx_route_status", "status"),
@@ -67,7 +68,7 @@ class ProcessRouteStep(Base):
     route_id = Column(Integer, ForeignKey("process_route.id", ondelete="CASCADE"), nullable=False, comment="关联路线ID（关联 process_route.id）")
     process_id = Column(Integer, ForeignKey("process.id", ondelete="RESTRICT"), nullable=False, comment="关联工序ID（关联 process.id）")
     step_order = Column(SmallInteger, nullable=False, comment="执行顺序,从1开始")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         UniqueConstraint("route_id", "step_order", name="uk_route_step"),
@@ -86,8 +87,8 @@ class ProductProcessRoute(Base):
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     product_id = Column(BigInteger, nullable=False, unique=True, comment="产品ID")
     route_id = Column(Integer, ForeignKey("process_route.id", ondelete="RESTRICT"), nullable=False, comment="关联路线ID（关联 process_route.id）")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (
         Index("idx_ppr_route_id", "route_id"),
@@ -113,8 +114,8 @@ class OrderProductProcessProgress(Base):
     completed_at = Column(DateTime, nullable=True, comment="完成时间")
     completed_by_user_id = Column(Integer, nullable=True, comment="完成操作人方舟用户ID")
     completed_by_wx_id = Column(String(100), nullable=True, comment="完成操作人微信原始ID")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (
         UniqueConstraint("order_product_id", "step_order", name="uk_progress_order_product_step"),
@@ -134,7 +135,7 @@ class UserProcessBinding(Base):
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     user_id = Column(Integer, nullable=False, comment="方舟用户ID")
     process_id = Column(Integer, ForeignKey("process.id", ondelete="CASCADE"), nullable=False, comment="工序ID")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         UniqueConstraint("user_id", "process_id", name="uk_user_process"),

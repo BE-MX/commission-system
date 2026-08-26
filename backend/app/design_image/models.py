@@ -22,6 +22,7 @@ from sqlalchemy.orm import relationship
 from app.ai.models import AiCallLog  # noqa: F401 -- registers FK target for isolated metadata
 from app.auth.models import ArkUser  # noqa: F401 -- registers user FK target in isolation
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 USER_ID = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
@@ -34,8 +35,8 @@ class DesignImageSession(Base):
     owner_user_id = Column(USER_ID, ForeignKey("ark_users.id", ondelete="RESTRICT"), nullable=False, comment="会话所有者")
     title = Column(String(200), nullable=False, comment="会话标题")
     status = Column(String(16), nullable=False, default="active", comment="会话状态")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (
         Index("idx_di_session_owner_updated", "owner_user_id", "updated_at"),
@@ -57,7 +58,7 @@ class DesignImageMessage(Base):
     status = Column(String(16), nullable=False, default="normal", comment="消息状态")
     client_request_id = Column(String(64), nullable=True, comment="客户端请求幂等键")
     interaction_json = Column(JSON, nullable=True, comment="结构化消息交互")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         UniqueConstraint(
@@ -98,7 +99,7 @@ class DesignImageAsset(Base):
     status = Column(String(16), nullable=False, default="attached", comment="草稿或已附加状态")
     expires_at = Column(DateTime, nullable=True, comment="草稿过期时间")
     created_by = Column(USER_ID, ForeignKey("ark_users.id", ondelete="RESTRICT"), nullable=False, comment="创建人")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     deleted_at = Column(DateTime, nullable=True, comment="软删除时间")
 
     __table_args__ = (
@@ -158,7 +159,7 @@ class DesignImageJob(Base):
     pricing_snapshot = Column(JSON, nullable=True, comment="定价规则快照")
     started_at = Column(DateTime, nullable=True, comment="开始执行时间")
     finished_at = Column(DateTime, nullable=True, comment="执行完成时间")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         UniqueConstraint("owner_user_id", "idempotency_key", name="uq_di_job_owner_idem"),
@@ -223,8 +224,8 @@ class DesignImagePromptTemplate(Base):
     options = Column(JSON, nullable=True, comment="参数槽定义 [{key, label, choices[]}]")
     is_active = Column(Boolean, nullable=False, default=True, comment="是否启用")
     sort = Column(Integer, nullable=False, default=0, comment="排序权重，小在前")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (
         Index("idx_di_prompt_tpl_category", "category", "is_active", "sort"),
@@ -246,7 +247,7 @@ class DesignImageLibraryAsset(Base):
     height = Column(Integer, nullable=False, comment="图片高度")
     sha256 = Column(String(64), nullable=False, comment="文件 SHA-256")
     created_by = Column(USER_ID, ForeignKey("ark_users.id", ondelete="RESTRICT"), nullable=False, comment="创建人")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     deleted_at = Column(DateTime, nullable=True, comment="软删除时间")
 
     __table_args__ = (

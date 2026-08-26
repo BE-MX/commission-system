@@ -144,6 +144,7 @@ import { ElMessage } from 'element-plus'
 import { getEmployeeList, setEmployeeAttribute, getAttributeHistory, importEmployeeAttributes } from '@/api/employee'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 import { useTableSort } from '@/composables/useTableSort'
+import { currentBeijingDate } from '@/utils/datetime'
 
 const { tableRef, maxHeight } = useTableMaxHeight()
 const orderSort = useTableSort()
@@ -173,8 +174,7 @@ const attrForm = ref({ attribute_type: '', effective_date: '' })
 const saving = ref(false)
 
 function formatToday() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return currentBeijingDate()
 }
 
 function openSetDialog(row) {

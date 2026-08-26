@@ -1,6 +1,7 @@
 """设计预约 — Pydantic 数据模式"""
 
 from datetime import date, datetime
+from app.core.time import beijing_today
 from typing import Optional, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
@@ -52,7 +53,7 @@ class DesignRequestCreate(OperatorMixin):
 
     @model_validator(mode="after")
     def validate_dates(self):
-        today = date.today()
+        today = beijing_today()
         if not self.shoot_type or not self.shoot_type.strip():
             raise ValueError("请选择拍摄类型")
         if self.expect_start_date > self.expect_end_date:

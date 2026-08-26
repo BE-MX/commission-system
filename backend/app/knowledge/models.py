@@ -6,10 +6,11 @@ from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, Index,
 
 from app.ai.models import AiCallLog, AiPreset  # noqa: F401 -- register FK targets
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 def bj_now() -> datetime:
-    return datetime.now(timezone(timedelta(hours=8))).replace(tzinfo=None)
+    return beijing_now()
 
 
 class KnowledgeLibrary(Base):

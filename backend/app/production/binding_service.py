@@ -1,6 +1,7 @@
 """产品路线绑定 + 用户工序绑定 service"""
 
 from datetime import datetime
+from app.core.time import beijing_now
 
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
@@ -153,7 +154,7 @@ def bind_product_route(db: Session, product_id: int, route_id: int | None) -> di
         "product_id": product_id,
         "route_id": route_id,
         "route_name": route.name,
-        "updated_at": datetime.utcnow().isoformat(),
+        "updated_at": beijing_now().isoformat(),
     }
 
 

@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from app.core.time import beijing_now
 
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -66,7 +67,7 @@ def update_digest(db: Session, digest: TrainingDigest, payload: DigestUpdate) ->
         digest.summary = payload.summary.strip()
     if payload.sections is not None:
         digest.sections_json = payload.sections.model_dump()
-    digest.updated_at = datetime.now()
+    digest.updated_at = beijing_now()
     db.commit()
     db.refresh(digest)
     return digest
@@ -124,8 +125,8 @@ def publish_digest(db: Session, digest: TrainingDigest) -> TrainingDigest:
     digest.read_minutes = estimate_read_minutes(digest)
     if digest.status != "published":
         digest.status = "published"
-        digest.published_at = datetime.now()
-    digest.updated_at = datetime.now()
+        digest.published_at = beijing_now()
+    digest.updated_at = beijing_now()
     db.commit()
     db.refresh(digest)
     return digest

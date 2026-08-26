@@ -20,6 +20,8 @@ from apscheduler.events import (
 from apscheduler.executors.base import MaxInstancesReachedError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from app.core.time import beijing_now_aware, utc_now
+
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 
@@ -59,6 +61,7 @@ JOB_KNOWLEDGE_IMAGE_CLEANUP = "knowledge_image_cleanup"
 JOB_AGENT_REPURCHASE_ENQUEUE = "agent_repurchase_enqueue"
 JOB_AGENT_LEASE_RECONCILE = "agent_lease_reconcile"
 JOB_AGENT_RAW_EVENT_REDACTION = "agent_raw_event_redaction"
+JOB_DINGTALK_GMV_DAILY = "dingtalk_gmv_daily"
 
 
 def _console_safe(value: object, encoding: str | None = None) -> str:
@@ -99,6 +102,7 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     from app.agent_runtime.orchestration import enqueue_repurchase_job
     from app.agent_runtime.maintenance import redact_expired_raw_events_job
     from app.agent_runtime.worker_service import reconcile_expired_runs_job
+    from app.dingtalk.gmv_daily_scheduler import send_gmv_daily_report_job
 
     settings = get_settings()
 
@@ -226,6 +230,12 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         generate_stock_daily_report,
         trigger="cron", hour=8, minute=30,
         id=JOB_STOCK_DAILY_REPORT, replace_existing=True,
+    )
+    scheduler.add_job(
+        send_gmv_daily_report_job,
+        trigger="cron", hour=8, minute="0,5,15,30",
+        id=JOB_DINGTALK_GMV_DAILY, replace_existing=True,
+        max_instances=1, coalesce=True, misfire_grace_time=3600,
     )
 
     # ── 色彩趋势 ──────────────────────────────────────────
@@ -382,7 +392,7 @@ def _record_job_event(event) -> None:
         return
     _queue_job_event_persistence(event)
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = utc_now().isoformat()
     with _job_runtime_lock:
         state = _job_runtime.setdefault(job_id, {"running_instances": 0})
         if event.code == EVENT_JOB_SUBMITTED:
@@ -462,7 +472,7 @@ def submit_job_now(scheduler: AsyncIOScheduler, job_id: str, triggered_by: str =
             job = scheduler.get_job(job_id)
             if job is None:
                 raise ValueError("任务不存在")
-            run_time = datetime.now(scheduler.timezone)
+            run_time = beijing_now_aware()
             jobstore_alias = getattr(job, "_jobstore_alias", "default")
             executor = scheduler._lookup_executor(job.executor)
             try:

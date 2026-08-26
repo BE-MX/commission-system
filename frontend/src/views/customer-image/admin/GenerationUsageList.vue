@@ -47,13 +47,14 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
+import { formatBeijingDateTime } from '@/utils/datetime'
 
 const props = defineProps({ state: { type: Object, required: true } })
 const { generations, generationPage, generationPageSize, generationTotal } = props.state
 const loading = ref(false)
 const statusLabel = { queued: '排队中', running: '生成中', succeeded: '已完成', failed: '失败', cancelled: '已取消' }
 const statusType = { queued: 'info', running: 'warning', succeeded: 'success', failed: 'danger', cancelled: 'info' }
-const formatDate = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-'
+const formatDate = value => formatBeijingDateTime(value)
 const formatNumber = value => Number(value || 0).toLocaleString('zh-CN')
 const formatCost = value => value == null ? '-' : `$${(Number(value) / 1_000_000).toFixed(4)}`
 

@@ -16,6 +16,8 @@ commission 库表不带前缀（生产默认 schema 即 commission_db）；聚�
 import json
 import logging
 from datetime import date, datetime
+from app.core.time import beijing_today
+from app.core.time import beijing_now
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
@@ -478,7 +480,7 @@ def get_headline_payload(db: Session, date_from: str | None, date_to: str | None
             teams=teams_payload["teams"],
             first_board=rep["first_board"],
             amount_board=rep["amount_board"],
-            daily_orders=get_daily_orders(db, date.today(), source=None),
+            daily_orders=get_daily_orders(db, beijing_today(), source=None),
             state_scope=state_scope,
         )
         events_service.persist_new(db, candidates)
@@ -496,7 +498,7 @@ def get_headline_payload(db: Session, date_from: str | None, date_to: str | None
         "camps": camps_mini,
         "teams_top3": teams_top3,
         "events": events,
-        "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "as_of": beijing_now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
 
@@ -535,7 +537,7 @@ def get_reconcile(db: Session, date_from: str | None, date_to: str | None) -> di
         "rows": rows,
         "diff_count": diff_count,
         "verdict": "两轨一致，可切 ark" if diff_count == 0 else f"{diff_count} 人存在差异",
-        "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "as_of": beijing_now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
 
@@ -620,7 +622,7 @@ def get_repurchase_payload(db: Session, date_from: str | None, date_to: str | No
         "summary": summary if summary is not None else _summary(db, ns, gmv, custom, source=source),
         "first_board": first_board,
         "amount_board": amount_board,
-        "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "as_of": beijing_now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
 
@@ -632,7 +634,7 @@ def get_screen_payload(db: Session, date_from: str | None, date_to: str | None,
     return {
         "summary": _summary(db, ns, gmv, custom, source=source),
         "items": board["items"],
-        "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "as_of": beijing_now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
 
@@ -722,7 +724,7 @@ def get_camps_payload(db: Session, date_from: str | None, date_to: str | None,
         "summary": summary if summary is not None else _summary(db, ns, gmv, custom, source=source),
         "camps": camps,
         "unassigned": unassigned,
-        "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "as_of": beijing_now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
 
@@ -802,5 +804,5 @@ def get_teams_payload(db: Session, date_from: str | None, date_to: str | None,
         "summary": summary if summary is not None else _summary(db, ns, gmv, custom, source=source),
         "teams": teams,
         "unassigned": unassigned,
-        "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "as_of": beijing_now().strftime("%Y-%m-%d %H:%M:%S"),
     }

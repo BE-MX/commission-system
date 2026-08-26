@@ -8,6 +8,7 @@ budgets and audit metadata.  Business modules import this through
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from app.core.time import beijing_now, utc_now_naive
 import hashlib
 import json
 import logging
@@ -124,7 +125,7 @@ def _load_run_and_profile(db: Session, claims: dict) -> tuple[AgentRun, AgentPro
         raise ConflictError("Agent Run 尚未开始或已经结束")
     if run.cancel_requested:
         raise ConflictError("Agent Run 已请求取消")
-    if run.lease_expires_at is None or run.lease_expires_at <= datetime.utcnow():
+    if run.lease_expires_at is None or run.lease_expires_at <= utc_now_naive():
         raise ConflictError("Agent Run 租约已过期")
     return run, profile
 
@@ -182,7 +183,7 @@ def _reserve_budget(
     *, messages: list[dict], tools: list[dict], desired_output_tokens: int,
 ) -> tuple[int, int, int]:
     settings = get_settings()
-    stale_before = datetime.utcnow() - timedelta(seconds=settings.AGENT_RUNTIME_RUN_TIMEOUT_SECONDS * 2)
+    stale_before = beijing_now() - timedelta(seconds=settings.AGENT_RUNTIME_RUN_TIMEOUT_SECONDS * 2)
     stale = db.query(AiCallLog).filter(
         AiCallLog.caller_module == "agent_runtime",
         AiCallLog.status == "pending",
@@ -208,7 +209,7 @@ def _reserve_budget(
         AiCallLog.task_id.like(f"agent-run-{run.id}-%"),
     ).count():
         raise ConflictError("Agent Run 已有进行中的模型请求")
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today = beijing_now().replace(hour=0, minute=0, second=0, microsecond=0)
     used_today = db.query(func.coalesce(func.sum(AiCallLog.tokens_used), 0)).filter(
         AiCallLog.caller_module == "agent_runtime",
         AiCallLog.created_at >= today,
@@ -251,7 +252,7 @@ def _remaining_runtime_seconds(db: Session, run: AgentRun, profile: AgentProfile
     )
     if run.started_at is None:
         return timeout_seconds
-    remaining = timeout_seconds - int((datetime.utcnow() - run.started_at).total_seconds())
+    remaining = timeout_seconds - int((beijing_now() - run.started_at).total_seconds())
     if remaining <= 0:
         raise ConflictError("Agent 执行时间超过 Profile 限制")
     return remaining

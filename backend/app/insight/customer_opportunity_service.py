@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime, timedelta
+from app.core.time import beijing_now
 
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
@@ -30,7 +31,7 @@ def import_accio_inquiries(db: Session, payload: dict) -> dict:
     schema_version = payload.get("schema_version", "")
     batch_id_str = payload.get("batch_id", "")
     items = payload.get("items", [])
-    now = datetime.utcnow()
+    now = beijing_now()
 
     # 创建或获取批次
     batch = db.query(InquiryImportBatch).filter(InquiryImportBatch.batch_id == batch_id_str).first()
@@ -351,7 +352,7 @@ def list_unassigned_opportunities(db: Session, page: int = 1, page_size: int = 2
 
 def get_opportunity_stats(db: Session, user_id: int) -> dict:
     """获取当前用户的 KPI 统计"""
-    now = datetime.utcnow()
+    now = beijing_now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     base = db.query(CustomerOpportunity).filter(CustomerOpportunity.owner_user_id == user_id)
@@ -404,7 +405,7 @@ def update_opportunity_status(db: Session, opp_id: int, new_status: str, note: s
     opp.status = new_status
     if new_status in ("contacted", "replied", "quoted", "won", "lost", "dismissed"):
         if not opp.handled_at:
-            opp.handled_at = datetime.utcnow()
+            opp.handled_at = beijing_now()
     db.add(CustomerOpportunityEvent(
         opportunity_id=opp_id,
         event_type="status_changed",

@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime
+from app.core.time import beijing_now
 from decimal import ROUND_CEILING, Decimal
 from typing import Any, Optional
 
@@ -320,7 +321,7 @@ def sync_from_dingtalk(
     leave_kept_manual = 0
     failures: list[dict[str, str]] = []
     dirty_people: list[dict[str, Any]] = []
-    now = datetime.now()
+    now = beijing_now()
 
     for person in fetched.get("results") or []:
         profile = profiles.get(person.userid)

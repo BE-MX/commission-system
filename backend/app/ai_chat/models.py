@@ -22,6 +22,7 @@ from sqlalchemy.orm import foreign, relationship, remote
 from app.ai.models import AiCallLog  # noqa: F401 -- registers isolated FK target
 from app.auth.models import ArkUser  # noqa: F401 -- registers isolated FK target
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 USER_ID = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
@@ -47,12 +48,12 @@ class AiChatSession(Base):
         comment="会话所有者",
     )
     title = Column(String(200), nullable=False, comment="会话标题")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     updated_at = Column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=beijing_now,
+        onupdate=beijing_now,
         comment="更新时间",
     )
 
@@ -101,12 +102,12 @@ class AiChatMessage(Base):
         nullable=True,
         comment="共享 AI 调用日志",
     )
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     updated_at = Column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=beijing_now,
+        onupdate=beijing_now,
         comment="更新时间",
     )
 
@@ -211,7 +212,7 @@ class AiChatAttachment(Base):
         nullable=False,
         comment="上传人",
     )
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         ForeignKeyConstraint(

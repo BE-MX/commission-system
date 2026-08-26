@@ -1,6 +1,8 @@
 """设计预约 — 申请单 CRUD / 审批 / 操作 / 修改备注与拍摄类型"""
 
 from datetime import date, datetime
+from app.core.time import beijing_today
+from app.core.time import beijing_now
 
 from sqlalchemy.orm import Session
 from sqlalchemy import select
@@ -120,7 +122,7 @@ def audit_request(
         OperatorRole.supervisor,
     )
     req.status = new_status.value
-    req.updated_at = datetime.now()
+    req.updated_at = beijing_now()
 
     _write_audit_log(
         db,
@@ -166,7 +168,7 @@ def action_request(
         OperatorRole(operator_role),
     )
     req.status = new_status.value
-    req.updated_at = datetime.now()
+    req.updated_at = beijing_now()
 
     task_id = None
 
@@ -222,32 +224,32 @@ def action_request(
                 logger.info("同步设置不可用日期: %s", created_dates)
 
     elif data.action == "start":
-        req.actual_start_date = date.today()
+        req.actual_start_date = beijing_today()
         req.actual_start_period = "am"
         for t in req.tasks:
             if t.status == "scheduled":
                 t.status = "in_progress"
-                t.actual_start_date = date.today()
+                t.actual_start_date = beijing_today()
                 t.actual_start_period = "am"
-                t.updated_at = datetime.now()
+                t.updated_at = beijing_now()
 
     elif data.action == "complete":
         if req.customer_id:
             raise ValueError("新预约请在素材工作台上传文件并点击“完成并送审”")
-        req.actual_end_date = date.today()
+        req.actual_end_date = beijing_today()
         req.actual_end_period = "pm"
         for t in req.tasks:
             if t.status == "in_progress":
                 t.status = "completed"
-                t.actual_end_date = date.today()
+                t.actual_end_date = beijing_today()
                 t.actual_end_period = "pm"
-                t.updated_at = datetime.now()
+                t.updated_at = beijing_now()
 
     elif data.action == "cancel":
         for t in req.tasks:
             if t.status not in ("completed", "cancelled"):
                 t.status = "cancelled"
-                t.updated_at = datetime.now()
+                t.updated_at = beijing_now()
                 # 释放确认排期时同步创建的不可用日期（reason 契约同 confirm 分支）
                 db.query(DesignUnavailableDate).filter(
                     DesignUnavailableDate.reason == f"排期任务 {t.task_no}",
@@ -291,7 +293,7 @@ def update_request_remark(
         raise ValueError("申请单不存在")
 
     req.remark = remark
-    req.updated_at = datetime.now()
+    req.updated_at = beijing_now()
     db.commit()
     db.refresh(req)
 
@@ -315,7 +317,7 @@ def update_request_shoot_type(
 
     old_shoot_type = req.shoot_type
     req.shoot_type = shoot_type
-    req.updated_at = datetime.now()
+    req.updated_at = beijing_now()
 
     _write_audit_log(
         db,
@@ -350,7 +352,7 @@ def update_task_shoot_type(
 
     old_shoot_type = task.shoot_type
     task.shoot_type = shoot_type
-    task.updated_at = datetime.now()
+    task.updated_at = beijing_now()
 
     # 同步更新关联 request 的拍摄类型
     req = db.query(DesignScheduleRequest).filter(
@@ -359,7 +361,7 @@ def update_task_shoot_type(
     ).first()
     if req:
         req.shoot_type = shoot_type
-        req.updated_at = datetime.now()
+        req.updated_at = beijing_now()
 
     _write_audit_log(
         db,

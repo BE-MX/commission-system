@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from app.core.time import beijing_now
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -129,7 +130,7 @@ async def scan_staging(db: Session) -> dict:
                 stats["success"] += 1
 
             row.processed = True
-            row.processed_at = datetime.now()
+            row.processed_at = beijing_now()
             stats["processed"] += 1
 
             db.flush()
@@ -139,7 +140,7 @@ async def scan_staging(db: Session) -> dict:
             row.process_result = "error"
             row.process_note = str(e)[:500]
             row.processed = True
-            row.processed_at = datetime.now()
+            row.processed_at = beijing_now()
             stats["error"] += 1
             db.rollback()
 

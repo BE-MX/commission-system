@@ -7,6 +7,7 @@ from jose import JWTError, jwt
 from app.agent_runtime.errors import ForbiddenError
 from app.agent_runtime.models import AgentProfile, AgentRun
 from app.core.config import get_settings
+from app.core.time import utc_now
 
 
 _AUDIENCE = "ark-agent-run"
@@ -19,7 +20,7 @@ def _secret() -> str:
 
 
 def create_run_token(run: AgentRun, profile: AgentProfile, *, ttl_seconds: int) -> str:
-    now = datetime.now(timezone.utc)
+    now = utc_now()
     payload = {
         "iss": _ISSUER,
         "aud": _AUDIENCE,

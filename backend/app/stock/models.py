@@ -18,6 +18,7 @@ from sqlalchemy import (
 )
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 class SafetyStock(Base):
@@ -32,8 +33,8 @@ class SafetyStock(Base):
     safety_factor = Column(Numeric(4, 2), nullable=False, default=1.50, comment="安全系数")
     source = Column(SmallInteger, nullable=False, default=0, comment="0=手动,1=公式估算,2=TFT模型")
     updated_by = Column(Integer, nullable=False, comment="最后修改人 user_id")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="最后修改时间")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="最后修改时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         UniqueConstraint("product_id", name="uk_product_id"),
@@ -56,7 +57,7 @@ class StockDailyReport(Base):
     warning_skus = Column(JSON, nullable=False, default=list, comment="预警SKU详情JSON数组")
     dingtalk_sent = Column(SmallInteger, nullable=False, default=0, comment="钉钉推送是否已发:0否1是")
     sent_at = Column(DateTime, nullable=True, comment="推送时间")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         UniqueConstraint("report_date", name="uk_report_date"),
@@ -76,9 +77,9 @@ class ProductionOrder(Base):
     remark = Column(String(500), nullable=True, comment="生产单备注")
     status = Column(SmallInteger, nullable=False, default=0, comment="0=已提交,1=已终止,2=已完成")
     created_by = Column(Integer, nullable=False, comment="创建人 user_id")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     updated_by = Column(Integer, nullable=True, comment="最后修改人 user_id")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="最后修改时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="最后修改时间")
     deleted_flag = Column(SmallInteger, nullable=False, default=0, comment="0=正常,1=已删除(软删)")
 
     __table_args__ = (
@@ -107,8 +108,8 @@ class ProductionOrderItem(Base):
     is_urgent = Column(SmallInteger, nullable=False, default=0, comment="0=正常,1=加急")
     expected_delivery_date = Column(Date, nullable=True, comment="预计交期")
     remark = Column(String(500), nullable=True, comment="明细备注")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="最后修改时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="最后修改时间")
 
     __table_args__ = (
         Index("idx_production_items_order_id", "order_id"),
@@ -131,8 +132,8 @@ class ProductionCart(Base):
     spec_info = Column(String(255), nullable=True, comment="规格属性")
     order_qty = Column(Integer, nullable=False, comment="生产下单数量")
     remark = Column(String(500), nullable=True, comment="备注")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="最后修改时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="最后修改时间")
 
     __table_args__ = (
         UniqueConstraint("user_id", "product_id", name="uk_cart_user_product"),
@@ -156,7 +157,7 @@ class ProductionAuditLog(Base):
     to_status = Column(SmallInteger, nullable=True, comment="目标状态")
     comment = Column(String(500), nullable=True, comment="操作备注")
     snapshot = Column(JSON, nullable=True, comment="变更快照JSON")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="操作时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="操作时间")
 
     __table_args__ = (
         Index("idx_production_audit_order_id", "order_id"),
@@ -179,7 +180,7 @@ class ProductionPrintLog(Base):
     item_ids_json = Column(JSON, nullable=True, comment="打印的明细ID列表")
     printed_by = Column(Integer, nullable=False, comment="操作人 user_id")
     printed_by_name = Column(String(64), nullable=False, default="", comment="操作人姓名快照")
-    printed_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="打印时间")
+    printed_at = Column(DateTime, nullable=False, default=beijing_now, comment="打印时间")
 
     __table_args__ = (
         Index("idx_print_log_order", "order_id", "scope", "category_index", "printed_at"),

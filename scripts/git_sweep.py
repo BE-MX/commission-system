@@ -28,15 +28,18 @@ import html
 import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 REPO_ROOT = Path(__file__).resolve().parents[1]  # 锚定仓库根，cwd 无关（定时任务 cwd=system32）
 OUTPUT_HTML = REPO_ROOT / "tmp" / "git-sweep.html"
 MAIN = "main"
 TOOL_PREFIXES = {"claude": "Claude", "codex": "Codex", "kimi": "Kimi"}
 MIGRATION_DIR = "backend/alembic/versions"
+BEIJING_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 # Windows 控制台默认 GBK，中文分支名/提交题目会炸
 if hasattr(sys.stdout, "reconfigure"):
@@ -92,7 +95,7 @@ class Branch:
 
     @property
     def idle_days(self) -> int:
-        return max(0, int((datetime.now().timestamp() - self.committer_unix) // 86400))
+        return max(0, int((time.time() - self.committer_unix) // 86400))
 
     @property
     def unpushed(self) -> bool:
@@ -282,7 +285,7 @@ def build_report(do_fetch: bool) -> Report:
     worktrees = collect_worktrees()
     branches = collect_branches(worktrees)
     return Report(
-        generated_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
+        generated_at=datetime.now(BEIJING_TIMEZONE).strftime("%Y-%m-%d %H:%M"),
         fetch_ok=fetch_ok, fetch_note=fetch_note,
         worktrees=worktrees, branches=branches,
         stashes=collect_stashes(),

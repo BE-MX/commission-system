@@ -16,7 +16,7 @@
 - 工作台显示名仍为 Grok Image 2；替换未配置的旧占位 ID，限定 openlux HTTPS API 地址，其他模型继续限定 TeamRouter。Grok 请求 size 转 aspect_ratio，输入最多 3 张（含基准图），超限入队前提示删图。修复公共图片传输层 gzip/deflate 二次解压错误。
 - 实测：原始接口文字/单图/双图通过；统一 facade + runtime 正方形生成成功（log #2414，52.964 秒，1024×1024 JPEG）、三图竖版编辑成功（log #2416，14.643 秒，832×1248 JPEG）。5 图探针明确被上游拒绝，已落实 3 图限制。尺寸只承诺比例，质量档位差异未验证；不配置未经核实的费率。
 - 验证：535 项后端相关测试、27 项前端状态测试、Vite build 通过；独立对抗审查无阻断项，`git diff --check` 通过。`check_conventions.py` 被既有 `InvoiceManage.vue` 的 lines_over_500 基线失配拦截（未改动的 main 同样失败）；独立执行增量代码检查结果为空，未重置基线或修改发票页面。
-- **待上线**：尚未推送 main、未部署办公室服务器。当前 `http://192.168.101.193:8001` 实测仍返回旧 Grok ID / `available=false`；仅保存 Preset 不会自动更新目录代码。待亮哥授权推送 main 后，办公室 `D:\commission-system\deploy\deploy.bat` 发布后端与前端，再验证 `/api/design-image/config` 出现新 ID / `available=true` 及真实工作台生成。当前机器能访问办公室 API，但 SSH/WinRM 均不可达，没有可用的远程部署通道。
+- **待部署**：2026-08-26 亮哥已授权合并、推送 main；已合并远端最新北京时间与 GMV 等更新并复验 Grok 接入，办公室服务器尚未部署。此前 `http://192.168.101.193:8001` 实测仍返回旧 Grok ID / `available=false`；仅保存 Preset 不会自动更新目录代码。main 推送完成后，办公室 `D:\commission-system\deploy\deploy.bat` 发布后端与前端，再验证 `/api/design-image/config` 出现新 ID / `available=true` 及真实工作台生成。当前机器能访问办公室 API，但 SSH/WinRM 均不可达，没有可用的远程部署通道。
 
 ## 2026-08-20 DSH Agent Runtime 交接
 

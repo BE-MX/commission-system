@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from app.core.time import beijing_today
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -46,7 +47,7 @@ def generate_stock_daily_report_sync(
     同步入口: 生成日报并(可选)推送钉钉。
     异步 scheduler 入口会把这个跑在线程池里。
     """
-    target_date = target_date or date.today()
+    target_date = target_date or beijing_today()
     logger.info("开始生成库存日报 date=%s push_dingtalk=%s", target_date, push_dingtalk)
 
     # 1. 查全量状态
@@ -85,7 +86,7 @@ async def generate_stock_daily_report() -> None:
 
     def _run():
         with SessionLocal() as db:
-            generate_stock_daily_report_sync(db=db, target_date=date.today(), push_dingtalk=True)
+            generate_stock_daily_report_sync(db=db, target_date=beijing_today(), push_dingtalk=True)
 
     # 在线程池里跑(同步 SQLAlchemy)
     try:

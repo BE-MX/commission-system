@@ -80,6 +80,7 @@ miniprogram/  services/whatsapp-connector/  deploy/  docs/  config/
 20. 展会试戴(expo)文案禁用词：便宜/划算/性价比/打折/薅羊毛；发量头皮判断只进 internal 字段
 21. **移动端 `/m/` 冻结为素材域专用**，不再往里加新领域；新移动端需求走主站响应式或微信小程序两条既有路径
 22. **多智能体并行 Git**（细则见根目录 `AGENTS.md`，两处同步维护）：①分支 `<tool>/<topic>`（claude/codex/kimi），每个代理固定用自己的 worktree，merge 回 main 只在主目录做，合并后立删本地+远端分支；②分支创建当天 `push -u`；③零散小改动不开新分支；④同模块同时只允许一个代理，接力者先 rebase 最新 main 且当天合并；⑤commit 前 `git branch --show-current` 确认分支、建迁移前 `git log --all --oneline -- backend/alembic/versions/` 查撞号；⑥收工跑 `python scripts/git_sweep.py`（每日 18:00 定时巡检推钉钉）
+23. **全平台业务时间统一北京时间**：①写 MySQL `DATETIME` 一律用 `app.core.time.beijing_now()`（naive UTC+8），业务日期用 `beijing_today()`，禁止任何直接 `datetime.now(...)` / `datetime.utcnow()` / `datetime.today()` / `date.today()`；②`NOW()` / `CURRENT_TIMESTAMP` 依赖数据库连接初始化 `SET time_zone='+08:00'`；③主站展示、“今日”和日期默认值统一走 `frontend/src/utils/datetime.js`，PM 站走 `frontend-pm/src/utils/labels.js` 的北京时间函数，小程序走 `miniprogram/utils/time.js`，全部固定 `Asia/Shanghai`/UTC+8，禁止直接用客户端本地时区或 `toISOString().slice(0,10)`；④JWT/OAuth 签名、外部协议、跨机器租约可保留 UTC，但必须显式使用 `utc_now()` / `utc_now_naive()`、在 `scripts/check_conventions.py` 的 UTC 窄白名单登记文件与用途，普通 created/updated/started/finished 审计字段不得使用 UTC；外部 Z/offset 时间必须先换算后再去 tzinfo，禁止直接 `.replace(tzinfo=None)` 丢偏移；⑤新增时间字段的测试必须同时覆盖“服务器非东八区”和“北京时间 00:00 跨日”；⑥历史时间迁移只能转换有确定写入证据的列，混合 `NOW()`/UTC/外来时间不得猜测平移，且必须在停掉所有写实例的维护窗口执行。
 
 ## 完工 DoD（每次改动落地前自查）
 

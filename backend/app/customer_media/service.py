@@ -5,6 +5,7 @@ import hmac
 import secrets
 import time
 from datetime import datetime, timedelta
+from app.core.time import beijing_now
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -358,7 +359,7 @@ async def upload_asset(db: Session, batch_id: int, payload: dict, upload) -> Cus
             uploaded_by=user_id,
         )
         db.add(asset)
-        batch.updated_at = datetime.now()
+        batch.updated_at = beijing_now()
         db.commit()
     except Exception:
         db.rollback()
@@ -383,8 +384,8 @@ def delete_asset(db: Session, batch_id: int, asset_id: int, payload: dict) -> Cu
     ))
     if not asset:
         raise CustomerMediaNotFound("素材不存在")
-    asset.deleted_at = datetime.now()
-    batch.updated_at = datetime.now()
+    asset.deleted_at = beijing_now()
+    batch.updated_at = beijing_now()
     db.commit()
     # 软删除提交成功后再删物理文件；失败会留下可清理孤儿，不会出现 DB 指向空文件。
     try:
@@ -415,7 +416,7 @@ def submit_batch(db: Session, batch_id: int, payload: dict, lock_version: int) -
         raise CustomerMediaConflict("至少上传一个图片或视频后才能送审")
     if batch.status == "changes_requested":
         batch.revision += 1
-    now = datetime.now()
+    now = beijing_now()
     batch.status = "pending_review"
     batch.submitted_at = now
     batch.review_comment = None
@@ -448,7 +449,7 @@ def review_batch(db: Session, batch_id: int, payload: dict, action: str, comment
         raise CustomerMediaConflict("素材批次已被其他人处理，请刷新后重试")
     if batch.status != "pending_review":
         raise CustomerMediaConflict("该批次已不在待审核状态")
-    now = datetime.now()
+    now = beijing_now()
     if action == "request_changes":
         if not (comment or "").strip():
             raise CustomerMediaConflict("退回时必须填写修改原因")
@@ -483,7 +484,7 @@ def unpublish_batch(db: Session, batch_id: int, payload: dict, comment: str | No
     if batch.status != "published":
         raise CustomerMediaConflict("只有已发布批次可以下架")
     batch.status = "unpublished"
-    batch.unpublished_at = datetime.now()
+    batch.unpublished_at = beijing_now()
     batch.lock_version += 1
     db.add(CustomerMediaReview(
         batch_id=batch.id, revision=batch.revision, action="unpublish",
@@ -538,7 +539,7 @@ def update_portal_account(db: Session, payload: dict, account_id: int, *, email=
         account.is_active = active
     account.session_version += 1
     account.updated_by = user_id
-    account.updated_at = datetime.now()
+    account.updated_at = beijing_now()
     try:
         db.commit()
     except IntegrityError as exc:
@@ -572,7 +573,7 @@ def authenticate_portal(db: Session, email: str, password: str, ip: str, user_ag
     if not verify_password(password, account.password_hash):
         raise CustomerMediaForbidden("邮箱或密码错误")
     token = secrets.token_urlsafe(48)
-    expires = datetime.now() + timedelta(days=session_days)
+    expires = beijing_now() + timedelta(days=session_days)
     db.add(CustomerPortalSession(
         account_id=account.id,
         token_hash=hashlib.sha256(token.encode()).hexdigest(),
@@ -581,7 +582,7 @@ def authenticate_portal(db: Session, email: str, password: str, ip: str, user_ag
         user_agent=user_agent[:500],
         expires_at=expires,
     ))
-    account.last_login_at = datetime.now()
+    account.last_login_at = beijing_now()
     account.last_login_ip = ip[:45]
     db.commit()
     return account, token, expires
@@ -596,7 +597,7 @@ def portal_session(db: Session, token: str | None) -> CustomerPortalAccount:
     ).where(
         CustomerPortalSession.token_hash == token_hash,
         CustomerPortalSession.revoked_at.is_(None),
-        CustomerPortalSession.expires_at > datetime.now(),
+        CustomerPortalSession.expires_at > beijing_now(),
     ))
     if not session or not session.account.is_active or session.session_version != session.account.session_version:
         raise CustomerMediaForbidden("登录已失效")
@@ -611,7 +612,7 @@ def revoke_portal_session(db: Session, token: str | None) -> None:
         CustomerPortalSession.revoked_at.is_(None),
     ))
     if row:
-        row.revoked_at = datetime.now()
+        row.revoked_at = beijing_now()
         db.commit()
 
 

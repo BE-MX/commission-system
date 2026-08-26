@@ -584,7 +584,7 @@ def test_quota_uses_asia_shanghai_natural_day_and_counts_failed_accepted_jobs(
     monkeypatch.setattr(service.get_settings(), "DESIGN_IMAGE_DAILY_LIMIT", 2)
     session = _session(db, owner.id)
     message = _message(db, session.id)
-    # 2026-08-05 00:00 Shanghai == 2026-08-04 16:00 UTC.
+    # 业务 DATETIME 直接保存北京钟面，以 2026-08-05 00:00 为日切换点。
     _job(
         db,
         owner.id,
@@ -592,7 +592,7 @@ def test_quota_uses_asia_shanghai_natural_day_and_counts_failed_accepted_jobs(
         message.id,
         key="before-day",
         status="failed",
-        created_at=datetime(2026, 8, 4, 15, 59, 59),
+        created_at=datetime(2026, 8, 4, 23, 59, 59),
     )
     _job(
         db,
@@ -601,7 +601,7 @@ def test_quota_uses_asia_shanghai_natural_day_and_counts_failed_accepted_jobs(
         message.id,
         key="today-failed",
         status="failed",
-        created_at=datetime(2026, 8, 4, 16, 0, 0),
+        created_at=datetime(2026, 8, 5, 0, 0, 0),
     )
     db.commit()
     now = datetime(2026, 8, 5, 12, 0, tzinfo=SHANGHAI)
@@ -1046,7 +1046,7 @@ def test_success_updates_session_activity_but_idempotent_replay_does_not(configu
     payload = _turn(request_id="activity-turn", session_id=session.id)
 
     created = service.create_turn(db, owner.id, payload, now=turn_time)
-    assert created.session.updated_at == datetime(2026, 8, 5, 1, 0, 0)
+    assert created.session.updated_at == datetime(2026, 8, 5, 9, 0, 0)
     page = service.list_sessions(db, owner.id, limit=1)
     assert [row.id for row in page.items] == [session.id]
     assert page.next_cursor is not None
@@ -1057,7 +1057,7 @@ def test_success_updates_session_activity_but_idempotent_replay_does_not(configu
         payload,
         now=datetime(2026, 8, 6, 1, 0, tzinfo=timezone.utc),
     )
-    assert replay.session.updated_at == datetime(2026, 8, 5, 1, 0, 0)
+    assert replay.session.updated_at == datetime(2026, 8, 5, 9, 0, 0)
     second_page = service.list_sessions(db, owner.id, limit=1, cursor=page.next_cursor)
     assert [row.id for row in second_page.items] == [other.id]
 
@@ -1070,7 +1070,7 @@ def test_success_updates_session_activity_but_idempotent_replay_does_not(configu
         RetryJobRequest(request_id="activity-retry"),
         now=datetime(2026, 8, 7, 1, 0, tzinfo=timezone.utc),
     )
-    assert retry.session.updated_at == datetime(2026, 8, 7, 1, 0, 0)
+    assert retry.session.updated_at == datetime(2026, 8, 7, 9, 0, 0)
     retry_replay = service.retry_job(
         db,
         owner.id,
@@ -1078,7 +1078,7 @@ def test_success_updates_session_activity_but_idempotent_replay_does_not(configu
         RetryJobRequest(request_id="activity-retry"),
         now=datetime(2026, 8, 8, 1, 0, tzinfo=timezone.utc),
     )
-    assert retry_replay.session.updated_at == datetime(2026, 8, 7, 1, 0, 0)
+    assert retry_replay.session.updated_at == datetime(2026, 8, 7, 9, 0, 0)
 
 
 def test_draft_upload_uses_file_service_and_db_failure_cleans_only_created_files(
@@ -1330,14 +1330,14 @@ def test_delete_rechecks_references_after_owner_lock_before_soft_delete(
     assert deleted_files == []
 
 
-def test_day_window_treats_naive_datetimes_as_utc_at_shanghai_midnight():
+def test_day_window_returns_beijing_naive_storage_boundaries():
     naive_utc = datetime(2026, 8, 4, 16, 0, 0)
     aware_utc = naive_utc.replace(tzinfo=timezone.utc)
 
     assert service._day_window(naive_utc) == service._day_window(aware_utc)
     assert service._day_window(naive_utc) == (
-        datetime(2026, 8, 4, 16, 0, 0),
-        datetime(2026, 8, 5, 16, 0, 0),
+        datetime(2026, 8, 5, 0, 0, 0),
+        datetime(2026, 8, 6, 0, 0, 0),
     )
 
 

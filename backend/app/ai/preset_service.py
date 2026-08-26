@@ -3,6 +3,7 @@
 import base64
 import time
 from datetime import datetime
+from app.core.time import beijing_now
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -156,7 +157,7 @@ def update_preset(db: Session, preset_id: int, data: dict) -> AiPreset:
 
 def delete_preset(db: Session, preset_id: int) -> None:
     p = get_preset(db, preset_id)
-    p.deleted_at = datetime.utcnow()
+    p.deleted_at = beijing_now()
     db.commit()
 
 

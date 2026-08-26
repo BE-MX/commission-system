@@ -11,12 +11,13 @@
 import argparse
 import logging
 import sys
-from datetime import date, datetime
+from datetime import datetime
 
 # 确保 app 包可导入
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
 
 from app.core.database import SessionLocal
+from app.core.time import beijing_today
 from app.services.init_historical_data import run_full_init
 from app.system.models import SysDict
 
@@ -95,7 +96,7 @@ def main():
     if args.cutoff_date:
         cutoff = datetime.strptime(args.cutoff_date, "%Y-%m-%d").date()
     else:
-        cutoff = date.today()
+        cutoff = beijing_today()
 
     mode = "DRY-RUN" if args.dry_run else "LIVE"
     logger.info(f"=== 存量数据初始化 ({mode}) ===")

@@ -3,6 +3,7 @@
 import json
 import logging
 from datetime import datetime
+from app.core.time import beijing_now
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse
@@ -96,7 +97,7 @@ async def _handle_approval_change(body: dict, log: DingTalkCallbackLog, db: Sess
 
     log.processed = True
     log.process_result = f"action={action_type}, result={result}"
-    log.processed_at = datetime.now()
+    log.processed_at = beijing_now()
     db.commit()
 
 
@@ -106,5 +107,5 @@ async def _handle_task_change(body: dict, log: DingTalkCallbackLog, db: Session)
 
     log.processed = True
     log.process_result = "task_change_recorded"
-    log.processed_at = datetime.now()
+    log.processed_at = beijing_now()
     db.commit()

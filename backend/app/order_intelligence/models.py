@@ -21,6 +21,7 @@ from sqlalchemy.dialects import mysql
 
 from app.auth import models as _auth_models  # noqa: F401 - register ark_users for FK resolution
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 USER_ID = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
@@ -51,10 +52,10 @@ class OrderIntelligenceBriefJob(Base):
     source = Column(String(16), nullable=True, comment="ai/rules")
     evidence = Column(JSON, nullable=True, comment="生成简报的结构化证据")
     error_message = Column(String(1000), nullable=True, comment="可行动失败原因")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     started_at = Column(DateTime, nullable=True, comment="开始生成时间")
     finished_at = Column(DateTime, nullable=True, comment="结束时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (
         Index("idx_oi_brief_owner_created", "owner_user_id", "created_at"),

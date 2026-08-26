@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime
+from app.core.time import beijing_now
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -125,7 +126,7 @@ def _write_items(db: Session, source: InsightSource, raw_items: list[dict]) -> i
         item = InsightItem(
             source_id=source.id,
             source_type=source.source_type,
-            collected_at=datetime.utcnow(),
+            collected_at=beijing_now(),
             title=title,
             content_mode="summary",
             content_md=summary,
@@ -155,7 +156,7 @@ def collect_source(db: Session, source_id: int) -> dict:
 
     log = InsightCollectionLog(
         source_id=source.id,
-        run_at=datetime.utcnow(),
+        run_at=beijing_now(),
         status="success",
     )
 
@@ -176,7 +177,7 @@ def collect_source(db: Session, source_id: int) -> dict:
         log.items_filtered = len(raw_items) - written
 
         # 更新信源状态
-        source.last_fetched_at = datetime.utcnow()
+        source.last_fetched_at = beijing_now()
         source.last_error = None
         source.consecutive_failures = 0
 

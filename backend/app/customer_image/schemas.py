@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.customer_image.datetime_utils import as_utc_naive
+from app.core.time import utc_now_naive
 
 
 class CustomerImageOptionValueUpsert(BaseModel):
@@ -91,7 +92,7 @@ class CustomerImageInviteCreate(BaseModel):
     @classmethod
     def validate_future_expiry(cls, value: datetime) -> datetime:
         value = as_utc_naive(value)
-        now = datetime.now(UTC).replace(tzinfo=None)
+        now = utc_now_naive()
         if value <= now:
             raise ValueError("失效时间必须晚于当前时间")
         return value

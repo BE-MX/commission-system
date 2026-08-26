@@ -3,6 +3,7 @@
 import json
 import re
 from datetime import date, datetime
+from app.core.time import beijing_today
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException
@@ -539,7 +540,7 @@ def suggest_invoice_no(db: Session, user_id: int | None, order_type: str) -> str
 
 
 def _next_invoice_no(db: Session) -> str:
-    today = date.today().strftime("%Y%m%d")
+    today = beijing_today().strftime("%Y%m%d")
     prefix = f"INV{today}"
     latest = db.execute(
         select(Invoice.invoice_no)
@@ -812,10 +813,11 @@ def _validate_screenshot_source(
         return
     if source_type != "okki_screenshot":
         raise ValueError("不支持的发票来源")
+    preview_claims = None
     if require_preview_token:
         if not preview_token or actor_user_id is None:
             raise ValueError("截图预览凭证缺失，请重新识别")
-        verify_preview_token(
+        preview_claims = verify_preview_token(
             preview_token,
             actor_user_id=actor_user_id,
             invoice=invoice,
@@ -871,9 +873,17 @@ def _validate_screenshot_source(
         raise ValueError("OKKI 来源订单与所选客户不一致")
     if str(row["account_date"] or "") != invoice.invoice_date.isoformat():
         raise ValueError("OKKI 来源订单日期与发票日期不一致")
-    if str(invoice.currency or "").upper() == "USD" and row["amount_usd"] is not None:
-        if _money(Decimal(row["amount_usd"])) != _money(Decimal(invoice.total_amount or 0)):
-            raise ValueError("OKKI 来源订单金额与发票应付合计不一致")
+    # 截图中附加费汇总不可信，单项费用可能不全或归属不清。
+    # 来源订单已按截图订单总额匹配；创建时仍校验客户、日期和业务员，
+    # 但不因本地费用预填与 amount_usd 的差异阻断创建。
+    if (
+        preview_claims is not None
+        and str(invoice.currency or "").upper() == "USD"
+        and row["amount_usd"] is not None
+        and _money(Decimal(row["amount_usd"]))
+        != _money(preview_claims["recognized_order_amount"])
+    ):
+        raise ValueError("OKKI 来源订单金额已与截图识别结果不一致，请重新识别")
 
     binding = db.query(ArkUserExternalBinding.external_account_id).filter(
         ArkUserExternalBinding.ark_user_id == invoice.sales_user_id,

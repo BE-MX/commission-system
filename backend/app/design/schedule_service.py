@@ -1,6 +1,7 @@
 """设计预约 — 排期 / 容量 / 不可日 / 调度模式 / 甘特图"""
 
 from datetime import date, datetime, timedelta
+from app.core.time import beijing_now
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -130,7 +131,7 @@ def reschedule_task(
     task.plan_end_period = data.plan_end_period or "pm"
     if data.designer_id is not None:
         task.designer_id = data.designer_id
-    task.updated_at = datetime.now()
+    task.updated_at = beijing_now()
 
     # 迁移确认排期时同步创建的不可用日期（reason 契约为 "排期任务 {task_no}"，
     # 见 request_service.action_request 的 confirm 分支）：旧日期释放、新区间补齐；
@@ -330,7 +331,7 @@ def update_capacity(
         if existing:
             existing.max_parallel_tasks = entry.max_parallel_tasks
             existing.updated_by = operator_id
-            existing.updated_at = datetime.now()
+            existing.updated_at = beijing_now()
         else:
             row = DesignCapacityConfig(
                 config_date=entry.config_date,
@@ -375,7 +376,7 @@ def update_scheduling_mode(
     if row:
         row.scheduling_mode = data.scheduling_mode
         row.updated_by = operator_id
-        row.updated_at = datetime.now()
+        row.updated_at = beijing_now()
     else:
         row = DesignCapacityConfig(
             config_date=None,

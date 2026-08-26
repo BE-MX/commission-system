@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timedelta
+from app.core.time import beijing_now
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -24,7 +25,7 @@ class BriefJobNotFoundError(ValueError):
 
 
 def _now() -> datetime:
-    return datetime.now()
+    return beijing_now()
 
 
 def _active_key(owner_user_id: int) -> str:

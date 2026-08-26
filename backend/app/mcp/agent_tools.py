@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager
 from datetime import date, timedelta
+from app.core.time import beijing_today
 import json
 import logging
 
@@ -96,7 +97,7 @@ class SearchJobInput(BaseModel):
 
 
 def _window(start: date | None, end: date | None) -> tuple[date, date]:
-    actual_end = end or date.today()
+    actual_end = end or beijing_today()
     actual_start = start or (actual_end - timedelta(days=1095))
     return order_service.normalize_window(actual_start, actual_end)
 

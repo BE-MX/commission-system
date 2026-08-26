@@ -95,6 +95,7 @@ import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { TrendCharts, Trophy } from '@element-plus/icons-vue'
 import { getDownloadStats } from '@/api/asset'
+import { formatBeijingDate } from '@/utils/datetime'
 
 const loading = ref(false)
 const stats = ref({
@@ -136,9 +137,10 @@ function getBarHeight(count) {
 }
 
 function formatDateLabel(dateStr) {
-  if (!dateStr) return ''
-  const d = new Date(dateStr)
-  return `${d.getMonth() + 1}/${d.getDate()}`
+  const formatted = formatBeijingDate(dateStr, { fallback: '' })
+  if (!formatted) return ''
+  const [, month, day] = formatted.split('-')
+  return `${Number(month)}/${Number(day)}`
 }
 
 function fileTypeLabel(type) {

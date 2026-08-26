@@ -98,6 +98,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { getPublicInventory } from '@/api/stock'
+import { currentBeijingDate } from '@/utils/datetime'
 
 const keyword = ref('')
 const inStockOnly = ref(false)
@@ -107,7 +108,7 @@ const page = ref(1)
 const pageSize = 50
 const loading = ref(false)
 const errorText = ref('')
-const year = new Date().getFullYear()
+const year = Number(currentBeijingDate().slice(0, 4))
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
 const rangeStart = computed(() => (page.value - 1) * pageSize + 1)

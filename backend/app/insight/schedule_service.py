@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from app.core.time import beijing_now
 from typing import Optional
 
 from sqlalchemy import desc
@@ -63,5 +64,5 @@ def delete_rule(db: Session, rule_id: int) -> None:
 
 def update_last_run(db: Session, rule_id: int) -> None:
     r = get_rule(db, rule_id)
-    r.last_run_at = datetime.utcnow()
+    r.last_run_at = beijing_now()
     db.commit()

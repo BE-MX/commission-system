@@ -1,6 +1,7 @@
 """Human-confirmed Agent artifact projections into existing business records."""
 
 from datetime import datetime
+from app.core.time import beijing_now
 
 from sqlalchemy.orm import Session
 
@@ -44,4 +45,4 @@ def project_accepted_artifact(
     action.source_fingerprint = f"dsh:{run.id}:{artifact.content_sha256}"[:64]
     action.policy_version = f"{profile.profile_key}-v{profile.version}"
     action.evidence_status = "valid"
-    action.generated_at = datetime.utcnow()
+    action.generated_at = beijing_now()

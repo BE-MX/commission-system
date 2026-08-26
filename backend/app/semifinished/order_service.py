@@ -1,6 +1,7 @@
 """半成品订单创建、查询、收货和状态流转。"""
 
 from datetime import date
+from app.core.time import beijing_today
 from decimal import Decimal
 from uuid import uuid4
 
@@ -18,7 +19,7 @@ ACTIVE_STATUSES = ("submitted", "partial")
 
 def _next_order_no(db: Session) -> str:
     del db  # 订单号不依赖“查最大值”，避免并发下单生成重复号。
-    return f"SFO{date.today():%Y%m%d}-{uuid4().hex[:12].upper()}"
+    return f"SFO{beijing_today():%Y%m%d}-{uuid4().hex[:12].upper()}"
 
 
 def create_order(
@@ -92,7 +93,14 @@ def list_orders(db: Session, page: int, page_size: int, status: str | None, keyw
         .group_by(SemifinishedOrderItem.order_id)
         .subquery()
     )
-    query = db.query(SemifinishedOrder, totals).join(totals, totals.c.order_id == SemifinishedOrder.id)
+    # 不要直接选择整个 subquery。SQLAlchemy 会把其中四列展开为独立的 Row
+    # 元素，后续按 `(order, totals)` 两项解包就会报 too many values to unpack。
+    query = db.query(
+        SemifinishedOrder,
+        totals.c.item_count,
+        totals.c.order_qty,
+        totals.c.received_qty,
+    ).join(totals, totals.c.order_id == SemifinishedOrder.id)
     if status:
         query = query.filter(SemifinishedOrder.status == status)
     if keyword:
@@ -113,10 +121,10 @@ def list_orders(db: Session, page: int, page_size: int, status: str | None, keyw
             "remark": order.remark,
             "created_by": order.created_by,
             "created_at": order.created_at.isoformat() if order.created_at else None,
-            "item_count": int(row_totals.item_count or 0),
-            "order_qty_grams": qty(row_totals.order_qty),
-            "received_qty_grams": qty(row_totals.received_qty),
-        } for order, row_totals in rows],
+            "item_count": int(item_count or 0),
+            "order_qty_grams": qty(order_qty),
+            "received_qty_grams": qty(received_qty),
+        } for order, item_count, order_qty, received_qty in rows],
         "total": total,
         "page": page,
         "page_size": page_size,

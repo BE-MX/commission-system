@@ -1,6 +1,7 @@
 """Artifact validation, idempotency and human decisions."""
 
 from datetime import datetime
+from app.core.time import beijing_now
 import re
 from typing import Any
 
@@ -177,7 +178,7 @@ def decide_artifact(
         raise ConflictError("Agent 成果已经做出不同决策")
     artifact.decision_status = decision
     artifact.decided_by = user_id
-    artifact.decided_at = datetime.utcnow()
+    artifact.decided_at = beijing_now()
     artifact.feedback_note = note
     if decision == "accepted":
         from app.agent_runtime.projection_service import project_accepted_artifact

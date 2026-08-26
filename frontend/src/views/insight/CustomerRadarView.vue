@@ -216,6 +216,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { startCustomerCopilot } from '@/api/agentRuntime'
 import { useAuthStore } from '@/stores/auth'
 import { useCustomerRadar } from './composables/useCustomerRadar'
+import { formatBeijingDateTime } from '@/utils/datetime'
 import {
   RefreshRight, CircleCheck, Search, MagicStick, PriceTag, Aim,
   Position, ChatDotRound, SuccessFilled, Clock, Top, Bottom,
@@ -240,7 +241,7 @@ const canStartCopilot = computed(() => (
   && auth.hasPermission('order_intelligence:read')
 ))
 
-const snoozeUntil = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 16)
+const snoozeUntil = formatBeijingDateTime(new Date(Date.now() + 24 * 3600 * 1000), { seconds: false }).replace(' ', 'T')
 
 function tagType(color) {
   const map = { gold: 'warning', green: 'success', blue: '', purple: 'info', teal: 'success', red: 'danger', gray: 'info' }

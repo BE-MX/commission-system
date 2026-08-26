@@ -9,6 +9,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 class DesignDesigner(Base):
@@ -19,7 +20,7 @@ class DesignDesigner(Base):
     dingtalk_id = Column(String(64), nullable=True, comment="钉钉ID")
     email = Column(String(128), nullable=True, comment="邮箱")
     is_active = Column(Boolean, nullable=False, default=True, server_default="1", comment="是否启用")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = {"comment": "设计师表"}
 
@@ -62,8 +63,8 @@ class DesignScheduleRequest(Base):
     actual_start_period = Column(String(2), nullable=True, comment="实际开始时段(am/pm)")
     actual_end_date = Column(Date, nullable=True, comment="实际结束日期")
     actual_end_period = Column(String(2), nullable=True, comment="实际结束时段(am/pm)")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
     deleted_at = Column(DateTime, nullable=True, comment="软删除时间")
 
     tasks = relationship("DesignScheduleTask", back_populates="request", lazy="selectin")
@@ -114,8 +115,8 @@ class DesignScheduleTask(Base):
         comment="任务状态",
     )
     remark = Column(Text, nullable=True, comment="备注")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     request = relationship("DesignScheduleRequest", back_populates="tasks")
 
@@ -138,7 +139,7 @@ class DesignUnavailableDate(Base):
     period = Column(String(2), nullable=True, comment="时段(am/pm, NULL=全天)")
     reason = Column(String(256), nullable=True, comment="原因")
     created_by = Column(Integer, nullable=True, comment="创建人ID")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         UniqueConstraint("date", "period", name="uq_unavailable_date_period"),
@@ -159,7 +160,7 @@ class DesignCapacityConfig(Base):
         nullable=False, default="pool", server_default="pool", comment="排期模式",
     )
     updated_by = Column(Integer, nullable=True, comment="更新人ID")
-    updated_at = Column(DateTime, nullable=True, default=datetime.now, onupdate=datetime.now, comment="更新时间")
+    updated_at = Column(DateTime, nullable=True, default=beijing_now, onupdate=beijing_now, comment="更新时间")
 
     __table_args__ = (
         UniqueConstraint("config_date", "designer_id", "period", name="uq_config_date_designer_period"),
@@ -189,7 +190,7 @@ class DesignAuditLog(Base):
     to_status = Column(String(32), nullable=True, comment="目标状态")
     comment = Column(Text, nullable=True, comment="操作备注")
     snapshot = Column(JSON, nullable=True, comment="快照数据")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = {"comment": "设计预约操作审计日志"}
 
@@ -214,7 +215,7 @@ class DesignRequestAttachment(Base):
     content_type = Column(String(128), nullable=True, comment="MIME类型")
     uploaded_by = Column(Integer, nullable=True, comment="上传人ID")
     uploaded_by_name = Column(String(64), nullable=True, comment="上传人姓名")
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     request = relationship("DesignScheduleRequest", back_populates="attachments")
 

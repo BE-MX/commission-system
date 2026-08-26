@@ -109,7 +109,7 @@
 
     <el-drawer v-model="logsDrawer" :title="`配置记录 · ${logsProfile?.name || ''}`" size="min(560px, 92vw)">
       <el-timeline>
-        <el-timeline-item v-for="item in logs" :key="item.id" :timestamp="new Date(item.created_at).toLocaleString('zh-CN')">
+        <el-timeline-item v-for="item in logs" :key="item.id" :timestamp="formatBeijingDateTime(item.created_at)">
           <strong>{{ { create: '创建', update: '更新', delete: '删除' }[item.action] || item.action }} · v{{ item.config_version }}</strong>
           <p>操作人 ID {{ item.actor_user_id }} · 来源 {{ item.detail?.source_library_ids?.length || 0 }} 个 · 目标 {{ item.detail?.target_library_ids?.length || 0 }} 个</p>
         </el-timeline-item>
@@ -126,6 +126,7 @@ import {
   listAiProfileLogs, listAiProfiles, previewAiRetrieval, testAiProfile, updateAiProfile,
 } from '@/api/knowledge'
 import { msgError, msgSuccess } from '@/utils/feedback'
+import { formatBeijingDateTime } from '@/utils/datetime'
 
 const profiles = ref([])
 const presets = ref([])

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.response import ok
+from app.core.time import utc_now
 from app.customer_image import file_service, service
 from app.customer_image.models import CustomerImageInvite
 from app.customer_image.schemas import (
@@ -160,7 +161,7 @@ def require_invite(
     if len(parts) != 2 or parts[0] != "Invite" or not parts[1]:
         raise HTTPException(status_code=401, detail=AUTH_ERROR, headers=SECURITY_HEADERS)
     try:
-        return resolve_active_invite(db, parts[1], datetime.now(UTC))
+        return resolve_active_invite(db, parts[1], utc_now())
     except InviteUnavailableError:
         raise HTTPException(status_code=401, detail=AUTH_ERROR, headers=SECURITY_HEADERS) from None
 

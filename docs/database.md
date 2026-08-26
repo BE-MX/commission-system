@@ -41,7 +41,8 @@
 - `ark_invoice_semifinished_allocations` — 发票当前已出库量和 OKKI 同步期间待处理差额；`(invoice_id,material_id)` 唯一，`pending` 批次通过 `operation_key` 串联预占、完成或释放。
 - `ark_invoice_sync_logs.inventory_operation_key` — 121 迁移新增；把 OKKI 成功日志与本次半成品预占批次精确关联，管理员恢复时禁止用历史成功日志误确认新批次。
 - `ark_invoice_items.semifinished_enabled` / `semifinished_plan` — 生产型发票行是否使用半成品及当次计划快照；JSON 只保存 `material_id/quantity_grams`，同步前重新校验已审核映射。
-- `sys_dict` — 系统字典（type, code, label, sort, is_active）；`(type, code)` 唯一索引
+- `sys_dict` — 系统字典（type, code, label, sort, is_active）；`(type, code)` 唯一索引。GMV 钉钉日报复用三个保留 type：`dingtalk_gmv_team`（部门/队长）、`dingtalk_gmv_member`（人员/所属队/是否排除）、`dingtalk_gmv_admin`（明确勾选的管理员接收人），不增加专用配置表；三个 type 从通用字典列表/读取中隐藏，通用 CRUD 明确拒绝，只能经 `dingtalk:admin` 专页校验后写入
+- `dingtalk_message_log` — 钉钉消息日志；GMV 日报用 `related_type + related_id` 标识日期、队伍/管理员接收人，保存首次消息快照并实现成功幂等、失败重试
 - `ark_permissions` — 权限表（code 唯一, module, action, label；046 起新增 **kind** page/action/data、**is_legacy** 下架标记、**sort**；seed 为 upsert，元数据每次启动刷新）
 - `ark_permission_audit` — 角色权限变更审计（046 迁移：role_id/role_name, operator, added_codes/removed_codes JSON）
 - `ark_waybills` — 运单录入表（waybill_no 唯一，carrier, recipient_name, recipient_country, ship_date, status, estimated_delivery_date, entry_source, created_by）；通过图片 OCR 或手动录入
@@ -59,10 +60,11 @@
 - `ark_safety_stock` — 安全库存配置（product_id UNIQUE, safety_stock, lead_time_days, safety_factor, source: 0手动/1公式/2TFT）
 - `ark_stock_daily_reports` — 安全库存日报（report_date UNIQUE, shortage_skus/warning_skus JSON, dingtalk_sent）
 - **生产订单（025/026 迁移）**：
-  - `ark_production_orders` — 生产订单主表（order_no UNIQUE, status 0已提交/1已终止/2已完成, deleted_flag 软删, created_by, remark）
+  - `ark_production_orders` — 生产订单主表（order_no UNIQUE, status 0已提交/1已终止/2已完成, deleted_flag 软删, created_by, remark；新写入的 created_at/updated_at 均为北京时间；123 只平移写路径确定为 UTC 的历史 created_at，历史 updated_at 因 ORM UTC 与 SQL NOW() 混写不盲改）
   - `ark_production_order_items` — 生产订单明细（order_id, product_id, product_name, model, spec_info, order_qty, received_qty, status, is_urgent SmallInteger, expected_delivery_date Date, remark；无独立软删字段，靠 FK CASCADE 跟随订单删除）
   - `ark_production_cart` — 生产购物车（user_id + product_id UNIQUE, product_name, model, spec_info, order_qty, remark）
   - `ark_production_audit_log` — 生产订单审计日志（order_id, action, old_value, new_value, operator_id）
+  - `ark_platform_time_backup_123` — 123 时间治理迁移对 58 张表、142 个经逐写路径确认的 UTC-naive 字段保存逐表/逐行/逐字段原值；仅用于核对和可逆回滚，不参与业务查询。存在 `NOW()`/旧 UTC/外部时间混写证据的列（如素材 `updated_at`、设计生图提示词模板时间）不猜测平移。
   - `ark_production_print_logs` — 打印日志（039 迁移，order_id, order_no, scope order/category, category_index, category_label, item_ids_json JSON, printed_by, printed_by_name, printed_at）
 - **生产报工（027 迁移）**：
   - `process` — 工序基础表（name UNIQUE, description, sort_order, status 0禁用/1启用）

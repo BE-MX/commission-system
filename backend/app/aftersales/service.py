@@ -1,6 +1,8 @@
 """售后单生命周期与条件审批状态机。"""
 
 from datetime import date, datetime
+from app.core.time import beijing_today
+from app.core.time import beijing_now
 import re
 
 from sqlalchemy import func
@@ -110,7 +112,7 @@ def _apply_payload(case: AfterSalesCase, payload: CaseCreate) -> None:
 
 
 def _next_case_no(db: Session) -> str:
-    prefix = f"AS-{date.today():%Y%m%d}-"
+    prefix = f"AS-{beijing_today():%Y%m%d}-"
     highest = (
         db.query(func.max(AfterSalesCase.case_no))
         .filter(AfterSalesCase.case_no.like(f"{prefix}%"))
@@ -162,7 +164,7 @@ def delete_draft(db: Session, case_id: int, actor: ArkUser) -> AfterSalesCase:
     _require_creator(case, actor)
     if case.current_status != "draft":
         raise WorkflowOperationError("只有草稿可以删除")
-    case.deleted_at = datetime.utcnow()
+    case.deleted_at = beijing_now()
     case.current_status = "cancelled"
     case.current_owner_user_id = None
     case.version += 1
@@ -410,7 +412,7 @@ def review_evidence_waiver(
     case.evidence_waiver_approved = decision == "approve"
     case.evidence_waiver_decision_note = comment.strip()
     case.evidence_waived_by_user_id = actor.id if decision == "approve" else None
-    case.evidence_waived_at = datetime.utcnow() if decision == "approve" else None
+    case.evidence_waived_at = beijing_now() if decision == "approve" else None
     case.current_status = "awaiting_sales_decision" if decision == "approve" else "returned"
     case.current_owner_user_id = case.creator_user_id
     case.version += 1
@@ -599,7 +601,7 @@ def review_case(
     else:
         case.current_owner_user_id = case.creator_user_id
     if new_status == "approved":
-        case.approved_at = datetime.utcnow()
+        case.approved_at = beijing_now()
     case.version += 1
     if is_proxy:
         _event(
@@ -752,7 +754,7 @@ def close_case(
     case.customer_feedback = customer_feedback
     case.current_status = "closed"
     case.current_owner_user_id = None
-    case.closed_at = datetime.utcnow()
+    case.closed_at = beijing_now()
     case.version += 1
     _event(db, case, "closed", actor)
     db.flush()

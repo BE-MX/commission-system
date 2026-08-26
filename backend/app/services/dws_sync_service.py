@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 from datetime import datetime
+from app.core.time import beijing_now
 
 from sqlalchemy.orm import Session
 
@@ -105,7 +106,7 @@ def sync_shipment(db: Session, shipment: ShipmentTracking) -> bool:
             )
             record_id = data["data"]["newRecordIds"][0]
             shipment.dingtalk_sheet_row_id = record_id
-            shipment.last_synced_at = datetime.now()
+            shipment.last_synced_at = beijing_now()
             db.commit()
             logger.info(f"{shipment.waybill_no}: created row {record_id}")
         else:
@@ -118,7 +119,7 @@ def sync_shipment(db: Session, shipment: ShipmentTracking) -> bool:
                     ensure_ascii=False,
                 ),
             )
-            shipment.last_synced_at = datetime.now()
+            shipment.last_synced_at = beijing_now()
             db.commit()
             logger.info(f"{shipment.waybill_no}: updated row {shipment.dingtalk_sheet_row_id}")
         return True

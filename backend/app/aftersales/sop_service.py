@@ -1,6 +1,7 @@
 """售后 SOP 版本、结构化解析和启用。"""
 
 from datetime import date, datetime
+from app.core.time import beijing_now
 from hashlib import sha256
 from pathlib import Path
 
@@ -183,7 +184,7 @@ def activate_sop_version(
         {AfterSalesSopVersion.is_active: False}, synchronize_session=False
     )
     version.is_active = True
-    version.activated_at = datetime.utcnow()
+    version.activated_at = beijing_now()
     actor = db.get(ArkUser, actor_user_id)
     db.add(
         AfterSalesEvent(

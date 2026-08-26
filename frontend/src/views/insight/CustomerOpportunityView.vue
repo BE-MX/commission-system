@@ -285,7 +285,7 @@ import { ref, computed, onMounted } from 'vue'
 import { AlarmClock, Medal, Timer, Phone, CircleCheck, Search, Guide, ChatDotRound, Top, Bottom, Close, User, QuestionFilled, Promotion, DataLine, ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useCustomerOpportunity } from './composables/useCustomerOpportunity'
-
+import { formatBeijingShortDateTime, parseApiDateTime } from '@/utils/datetime'
 const {
   loading, opportunities, total, page, pageSize,
   selectedId, selectedOpp, detailLoading, stats, filters,
@@ -357,19 +357,19 @@ function statusTagType(s) {
 }
 
 function formatDue(d) {
-  if (!d) return '-'
-  const date = new Date(d)
-  const now = new Date()
-  const diff = (date - now) / 3600000
+  const date = parseApiDateTime(d)
+  if (!date) return '-'
+  const diff = (date.getTime() - Date.now()) / 3600000
   if (diff < 0) return '已超时'
   if (diff < 2) return `${Math.round(diff * 60)}分钟`
   if (diff < 24) return `${Math.round(diff)}小时`
-  return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:00`
+  return formatBeijingShortDateTime(date)
 }
 
 function isOverdue(row) {
   if (!row.due_at || row.status !== 'pending') return false
-  return new Date(row.due_at) < new Date()
+  const dueAt = parseApiDateTime(row.due_at)
+  return Boolean(dueAt && dueAt.getTime() < Date.now())
 }
 
 function formatBgKey(key) {

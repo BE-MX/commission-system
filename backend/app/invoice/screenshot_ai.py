@@ -35,7 +35,9 @@ _EXTRACTION_PROMPT = """请读取这张 OKKI 销售订单详情截图。截图�
   "currency": "三位币种代码或 null",
   "order_amount": "订单金额数字字符串或 null",
   "product_amount": "产品总金额数字字符串或 null",
-  "additional_fee_amount": "附加费用总金额数字字符串或 null",
+  "shipping_fee_amount": "运费/Freight/Shipping 单项金额合计或 null",
+  "handling_fee_amount": "手续费/Handling/Transaction/PayPal Surcharge 单项金额合计或 null",
+  "packaging_fee_amount": "包装费/Packaging 单项金额合计或 null",
   "items": [{
     "source_row": 1,
     "product_no": "产品编号或 null",
@@ -60,7 +62,11 @@ _EXTRACTION_PROMPT = """请读取这张 OKKI 销售订单详情截图。截图�
   }
 }
 
-规则：看不清就返回 null，禁止猜测；金额不要带币种符号或千分位；每个产品表格行单独输出。"""
+规则：
+1. 看不清就返回 null，禁止猜测；金额不要带币种符号或千分位；每个产品表格行单独输出。
+2. 忽略“附加费用金额/附加费总额/Additional Fee Total”等汇总数字，不要输出、不要用它倒推单项。
+3. 只提取截图中实际可见的运费、手续费、包装费等单项。同类多行相加后输出。
+4. 若某个可见费用金额无法判断属于哪一类，将它归入 shipping_fee_amount，不要因归属不清而遗漏。"""
 
 
 def extract_screenshot(

@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal
+from app.core.time import utc_now_naive
 from app.operations.db_models import JobRun, RuntimeHeartbeat, RuntimeInstance
 from app.operations.schemas import RuntimeHeartbeatAck, RuntimeHeartbeatPayload
 
@@ -30,7 +31,7 @@ _KNOWN_RUNTIME_NAMES = {
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return utc_now_naive()
 
 
 def _utc_naive(value: datetime) -> datetime:

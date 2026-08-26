@@ -11,11 +11,10 @@ import {
   createOrder, getOptions, listCraftRoutes, listCustomers, uploadImage,
 } from '@/api/domestic'
 import { msgError } from '@/utils/feedback'
+import { currentBeijingDate } from '@/utils/datetime'
 
 function todayStr() {
-  const now = new Date()
-  const pad = n => String(n).padStart(2, '0')
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+  return currentBeijingDate()
 }
 
 function makeRequestId() {

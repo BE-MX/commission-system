@@ -17,6 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects import mysql
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 
 class ReportTemplate(Base):
@@ -37,8 +38,8 @@ class ReportTemplate(Base):
     status = Column(SmallInteger, nullable=False, default=1, comment="0=禁用,1=启用")
     created_by = Column(Integer, nullable=True, comment="创建人 user_id")
     updated_by = Column(Integer, nullable=True, comment="最后修改人 user_id")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="最后修改时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="最后修改时间")
 
     __table_args__ = (
         UniqueConstraint("report_code", name="uk_report_code"),
@@ -62,7 +63,7 @@ class ReportTemplateVersion(Base):
     )
     change_summary = Column(String(500), nullable=True, comment="变更说明")
     created_by = Column(Integer, nullable=True, comment="操作人 user_id")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
     __table_args__ = (
         Index("idx_template_versions_template_id", "template_id"),

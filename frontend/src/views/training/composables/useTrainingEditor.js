@@ -11,6 +11,7 @@ import {
   updateDigestFileMeta, inferFileType, generateDraft, publishDigest,
 } from '@/api/training'
 import { msgSuccess, msgError, confirmDanger } from '@/utils/feedback'
+import { currentBeijingDate } from '@/utils/datetime'
 
 // 与后端 draft_service.ROLE_OPTIONS / service 校验阈值保持同一口径
 export const ROLE_OPTIONS = ['业务/销售', '电商运营', '设计', '生产', '管理层', 'AI/技术', '全员']
@@ -41,7 +42,7 @@ export function useTrainingEditor() {
     title: '',
     org: '',
     lecturer: '',
-    trained_at: new Date().toISOString().slice(0, 10),
+    trained_at: currentBeijingDate(),
     attendees: [],
     tags: [],
   })

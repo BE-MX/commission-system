@@ -2,6 +2,7 @@
 
 import logging
 from datetime import date, timedelta
+from app.core.time import beijing_today
 from typing import Any, Optional
 
 import httpx
@@ -55,7 +56,7 @@ def query_safety_stock_list(
     所有筛选/排序/分页下沉到 SQL,主查询包含一次 LEFT JOIN 预聚合表,无主表 GROUP BY。
     """
     business_db = settings.BUSINESS_DB_NAME
-    today = date.today()
+    today = beijing_today()
     d30 = today - timedelta(days=30)
 
     kw_clause = ""

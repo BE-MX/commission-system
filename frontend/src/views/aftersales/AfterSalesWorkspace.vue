@@ -106,6 +106,7 @@ import ApprovalRoute from './components/ApprovalRoute.vue'
 import ReviewActions from './components/ReviewActions.vue'
 import { useAfterSalesWorkspace } from './composables/useAfterSalesWorkspace'
 import { approvalSteps, STATUS_LABELS } from './aftersalesRules'
+import { formatBeijingDateTime } from '@/utils/datetime'
 
 const timelineVisible = ref(false)
 const transferVisible = ref(false)
@@ -137,7 +138,7 @@ const actionHint = computed(() => ({
   awaiting_supervisor: '等待直属主管审核，未处理前可以撤回', awaiting_director: '主管已通过，等待销售总监终审',
   approved: '方案已批准，请登记实际执行结果', processing: '记录客户最终反馈后关闭', closed: '售后单已关闭并进入复盘数据',
 })[caseData.current_status] || '查看当前流程状态')
-function formatTime(value) { return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '' }
+function formatTime(value) { return formatBeijingDateTime(value, { fallback: '' }) }
 function eventLabel(type) { return ({ created: '创建售后单', updated: '更新登记信息', decision_saved: '保存处理措施', evidence_waiver_requested: '申请证据豁免', evidence_waiver_approve: '证据豁免通过', evidence_waiver_reject: '证据豁免拒绝', submitted: '提交审核', review_proxied: '管理员代理审核', review_approve: '审核通过', review_return: '退回补充', review_reject: '拒绝方案', approval_transferred: '审批转交', withdrawn: '撤回审核', execution_updated: '登记执行结果', closed: '关闭售后单', reopened: '重新打开' })[type] || type }
 function notificationLabel(type) { return ({ awaiting_supervisor: '主管待审通知', awaiting_director: '总监待审通知', approved: '最终通过通知', returned: '退回通知', rejected: '拒绝通知', approval_transferred: '审批转交通知', evidence_waiver_requested: '证据豁免待确认', evidence_waiver_approve: '证据豁免通过', evidence_waiver_reject: '证据豁免拒绝' })[type] || type }
 async function openTransfer() { selectedReviewerId.value = null; transferReason.value = ''; transferVisible.value = true; await searchReviewers('') }

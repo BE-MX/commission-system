@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from app.core.time import beijing_today
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -59,7 +60,7 @@ def resolve_dept_group(
 
 def load_grade_map(db: Session, on_date: Optional[date] = None) -> dict[tuple[str, str], SalaryGradeTable]:
     """取指定日期生效的职级表，键 (scheme, grade_code)。默认取今天。"""
-    d = on_date or date.today()
+    d = on_date or beijing_today()
     rows = (
         db.query(SalaryGradeTable)
         .filter(SalaryGradeTable.effective_from <= d)
@@ -157,7 +158,7 @@ def _log_pay_changes(
         SalaryChangeLog(
             employee_id=profile.id,
             change_type=change_type,
-            effective_date=date.today(),
+            effective_date=beijing_today(),
             old_value=_jsonable(changed_before),
             new_value=_jsonable(changed_after),
             reason="档案编辑",
@@ -364,7 +365,7 @@ def list_rule_params(db: Session, category: str = "", on_date: Optional[date] = 
 
 def load_params(db: Session, on_date: Optional[date] = None) -> dict[str, str]:
     """取生效参数快照（key → 原始字符串）。M3 计算前冻结进 period.param_snapshot。"""
-    d = on_date or date.today()
+    d = on_date or beijing_today()
     rows = (
         db.query(SalaryRuleParam)
         .filter(SalaryRuleParam.effective_from <= d)

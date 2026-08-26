@@ -74,6 +74,7 @@ import { Calendar, ArrowRight, Document, Loading } from '@element-plus/icons-vue
 import GlassButton from '@/components/GlassButton.vue'
 import { listReports, getReportHtml, triggerReportGeneration } from '@/api/insight'
 import { useAuthStore } from '@/stores/auth'
+import { currentBeijingDate } from '@/utils/datetime'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -91,7 +92,7 @@ const canAdmin = computed(() => authStore.hasPermission('insight:admin'))
 
 const monthGroups = computed(() => {
   const groups = new Map()
-  const todayStr = new Date().toISOString().slice(0, 10)
+  const todayStr = currentBeijingDate()
   for (const r of reports.value) {
     if (!r.report_date) continue
     const [y, m, d] = r.report_date.split('-')

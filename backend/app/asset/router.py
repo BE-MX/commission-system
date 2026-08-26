@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.api.deps import get_db
 from app.auth.dependencies import require_any_permission, require_permission
 from app.core.response import ok as _ok
+from app.core.time import beijing_now
 from app.asset import service
 from sqlalchemy import and_, desc, func
 from app.asset.analyze_service import analyze_asset_tags
@@ -156,8 +157,6 @@ def upload_tag_image(
     _user: dict = Depends(require_permission("asset:admin")),
 ):
     """上传标签图片到系统 uploads 目录，返回相对路径"""
-    from datetime import datetime
-
     from app.bootstrap.static_files import UPLOADS_DIR
 
     tag_dir = UPLOADS_DIR / "tag_images"
@@ -167,7 +166,7 @@ def upload_tag_image(
     if ext not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
         raise HTTPException(status_code=400, detail="仅支持 jpg/png/webp/gif 格式")
 
-    now = datetime.now()
+    now = beijing_now()
     filename = f"tag_{now.strftime('%Y%m%d%H%M%S')}_{os.urandom(4).hex()}{ext}"
     save_path = tag_dir / filename
 
@@ -1342,7 +1341,7 @@ def get_asset_share_link(
 
     # 生成签名URL
     url = get_asset_download_url(asset, expiry_seconds=expires)
-    expires_at = datetime.utcnow() + timedelta(seconds=expires)
+    expires_at = beijing_now() + timedelta(seconds=expires)
 
     return _ok({
         "url": url,

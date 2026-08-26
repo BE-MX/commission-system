@@ -1,6 +1,7 @@
 // pages/entry/entry.js — 登录后的模块选择（外贸报工 / 内贸报工）
 // 零 import，纯回调（与其余页面同一套风格）
 var app = getApp()
+var beijingNow = require('../../utils/time').beijingNow
 
 Page({
   data: {
@@ -12,7 +13,7 @@ Page({
 
   onLoad: function () {
     var info = wx.getSystemInfoSync()
-    var hour = new Date().getHours()
+    var hour = beijingNow().getHours()
     var greeting = '你好，'
     if (hour < 6) greeting = '夜里好，'
     else if (hour < 11) greeting = '早上好，'

@@ -19,14 +19,7 @@ export function initials(name) {
 }
 
 export function formatPortalDate(value) {
-  if (!value) return '尚未更新'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '尚未更新'
-  return new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  }).format(date)
+  return formatBeijingDate(value, { fallback: '尚未更新' })
 }
 
 export function formatFileSize(bytes) {
@@ -51,3 +44,4 @@ export function appendDownload(url) {
   if (!url) return ''
   return `${url}${url.includes('?') ? '&' : '?'}download=true`
 }
+import { formatBeijingDate } from '../../../utils/datetime.js'

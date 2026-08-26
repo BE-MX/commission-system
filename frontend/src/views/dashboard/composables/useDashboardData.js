@@ -22,6 +22,7 @@ import { fetchGreeting } from '@/api/dashboard'
 
 import dailyTipsData from '@/assets/daily-tips.json'
 import { getTodayHolidays, getUpcomingHolidays } from '../holidays'
+import { beijingCalendarDate, currentBeijingDate, currentBeijingHour, formatBeijingDate } from '@/utils/datetime'
 
 
 // ── 状态映射工具 ─────────────────────────────────────────
@@ -65,13 +66,7 @@ function toLocalISODate(date) {
 }
 
 function formatDate(date) {
-  if (!date) return '-'
-  const d = new Date(date)
-  if (isNaN(d.getTime())) return '-'
-  const Y = d.getFullYear()
-  const M = String(d.getMonth() + 1).padStart(2, '0')
-  const D = String(d.getDate()).padStart(2, '0')
-  return `${Y}-${M}-${D}`
+  return formatBeijingDate(date)
 }
 
 function formatMoney(amount) {
@@ -90,7 +85,7 @@ export function useDashboardData() {
 
   // 问候语
   const greeting = computed(() => {
-    const hour = new Date().getHours()
+    const hour = currentBeijingHour()
     if (hour >= 5 && hour < 11) return '早上好'
     if (hour >= 11 && hour < 14) return '中午好'
     if (hour >= 14 && hour < 18) return '下午好'
@@ -132,12 +127,12 @@ export function useDashboardData() {
   const GREETING_CACHE_KEY = 'ark_ai_greeting_v1'
 
   function todayISO() {
-    return toLocalISODate(new Date())
+    return currentBeijingDate()
   }
 
   function buildGreetingContext() {
-    const now = new Date()
-    const hour = now.getHours()
+    const now = beijingCalendarDate()
+    const hour = currentBeijingHour()
     const period = hour < 5 ? '晚上' : hour < 11 ? '上午' : hour < 14 ? '中午' : hour < 18 ? '下午' : '晚上'
     const weekday = `周${'日一二三四五六'[now.getDay()]}`
     const pending = {}
@@ -363,7 +358,7 @@ export function useDashboardData() {
       try {
         // 设计统计 — 需要 audit/manage 才能看 (任务分布是管理视角,非业务员视角)
         if (authStore.hasAnyPermission(['design:audit', 'design:manage'])) {
-          const today = new Date()
+          const today = beijingCalendarDate()
           const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
           const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
           const res = await getDesignStats({
@@ -405,7 +400,7 @@ export function useDashboardData() {
     // 回款记录
     if (authStore.hasAnyPermission(['payment:read'])) {
       try {
-        const today = new Date()
+        const today = beijingCalendarDate()
         const thirtyDaysAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30)
         const paymentParams = {
           date_start: toLocalISODate(thirtyDaysAgo),

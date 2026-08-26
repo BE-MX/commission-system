@@ -88,6 +88,7 @@
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { customerOptionLabel, inviteSubmissionErrorMessage, validateInviteDraft } from './composables/useCustomerImageAdmin'
+import { beijingStartOfToday } from '@/utils/datetime'
 
 const props = defineProps({ state: { type: Object, required: true } })
 const { customers, oneTimeInviteUrl, productCoverUrls, products } = props.state
@@ -111,7 +112,7 @@ async function searchCustomers(query) {
   try { await props.state.searchScopedCustomers(query) } finally { customerLoading.value = false }
 }
 
-const disablePastDate = date => date < new Date(new Date().setHours(0, 0, 0, 0))
+const disablePastDate = date => date < beijingStartOfToday()
 
 async function submit() {
   const error = validateInviteDraft(draft.value)

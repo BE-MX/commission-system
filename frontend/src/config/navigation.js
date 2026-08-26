@@ -165,6 +165,7 @@ export const MENU_GROUPS = {
       'user:read', 'role:read', 'dict:read', 'ai:admin',
       'mcp:admin',
       'operations:read', 'operations:admin',
+      'dingtalk:admin',
       'external_binding:read', 'external_binding:write',
       'whatsapp:read', 'whatsapp:write',
     ],
@@ -1334,6 +1335,17 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'system', title: 'Agent 接入凭证', icon: Key, order: 45,
       permission: 'mcp:admin',
+    },
+  },
+  {
+    path: '/system/dingtalk-gmv-daily',
+    name: 'GmvDailyConfig',
+    component: () => import('@/views/system/GmvDailyConfig.vue'),
+    title: 'GMV 日报配置',
+    permission: 'dingtalk:admin',
+    menu: {
+      group: 'system', title: 'GMV 日报配置', icon: DataAnalysis, order: 46,
+      permission: 'dingtalk:admin',
     },
   },
   {
