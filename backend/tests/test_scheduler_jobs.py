@@ -104,6 +104,7 @@ class TestSchedulerRegistration:
                 "runtime_heartbeat_monitor",
                 "operations_history_cleanup",
                 "agent_raw_event_redaction",
+                "dingtalk_gmv_daily",
             }
             design_image = scheduler.get_job("design_image_queue")
             assert design_image.max_instances == 1
@@ -130,6 +131,11 @@ class TestSchedulerRegistration:
             assert daily.kwargs == {}
             festival_monitor = scheduler.get_job("festival_event_monitor")
             assert festival_monitor.misfire_grace_time == 60
+            gmv_daily = scheduler.get_job("dingtalk_gmv_daily")
+            gmv_daily_fields = {field.name: str(field) for field in gmv_daily.trigger.fields}
+            assert gmv_daily_fields["hour"] == "8"
+            assert gmv_daily_fields["minute"] == "0,5,15,30"
+            assert gmv_daily.max_instances == 1
         finally:
             shutdown_scheduler(scheduler)
 
@@ -143,6 +149,42 @@ class TestSchedulerRegistration:
 
 
 # ── 单 job smoke tests ───────────────────────────────
+
+class TestDingtalkGmvDaily:
+    @staticmethod
+    def _session_factory():
+        class SessionContext:
+            def __enter__(self):
+                return object()
+
+            def __exit__(self, *_args):
+                return None
+
+        return SessionContext()
+
+    async def test_job_calls_daily_report_service(self, monkeypatch):
+        from app.dingtalk import gmv_daily_scheduler
+
+        monkeypatch.setattr(gmv_daily_scheduler, "SessionLocal", self._session_factory)
+        sender = AsyncMock(return_value={"status": "completed", "deliveries": []})
+        monkeypatch.setattr(gmv_daily_scheduler, "send_daily_report", sender)
+
+        await gmv_daily_scheduler.send_gmv_daily_report_job()
+
+        sender.assert_awaited_once()
+
+    async def test_job_marks_partial_delivery_as_failed(self, monkeypatch):
+        from app.dingtalk import gmv_daily_scheduler
+
+        monkeypatch.setattr(gmv_daily_scheduler, "SessionLocal", self._session_factory)
+        monkeypatch.setattr(gmv_daily_scheduler, "send_daily_report", AsyncMock(return_value={
+            "status": "partial_failure",
+            "deliveries": [{"recipient": "队长甲", "status": "failed"}],
+        }))
+
+        with pytest.raises(RuntimeError, match="1 个接收人"):
+            await gmv_daily_scheduler.send_gmv_daily_report_job()
+
 
 class TestDesignShootReminder:
     async def test_empty_db_skips_silently(self, session_factory, monkeypatch):
