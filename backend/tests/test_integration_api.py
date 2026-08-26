@@ -2,18 +2,31 @@
 
 from copy import deepcopy
 from decimal import Decimal
+import json
+import threading
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import event, text
+from sqlalchemy import create_engine, event, text
+from sqlalchemy.orm import sessionmaker
 
 from app.auth.models import ArkPermission, ArkRole, ArkUser
-from app.auth.utils import hash_token
-from app.core.database import get_db
+from app.auth.utils import create_access_token, hash_token
+from app.core.database import Base, get_db
+from app.integration import service as integration_service
+from app.integration.auth import SubmissionPrincipal
 from app.integration.models import IntegrationApp, InvoiceIngestRequest
 from app.integration.router import router as integration_router
-from app.invoice.models import Invoice, PriceColorType, StdPrice
+from app.integration.schemas import InvoiceSubmission
+from app.invoice.models import (
+    CustomerPriceRule,
+    Invoice,
+    InvoiceItem,
+    InvoiceSyncLog,
+    PriceColorType,
+    StdPrice,
+)
 
 
 TOKEN = "ark_live_external_invoice_contract_token"
@@ -1101,3 +1114,624 @@ def test_full_application_registers_public_phase_one_paths():
         openapi["paths"]["/api/integrations/v1/invoices/validate"]["post"]["summary"]
         == "Validate without creating invoice/ingest records"
     )
+
+
+def test_create_invoice_is_atomic_external_provenance_and_never_pushes_okki(api, monkeypatch):
+    client, db = api
+    from app.invoice import okki_client, xiaoman_service
+
+    calls = []
+    monkeypatch.setattr(xiaoman_service, "sync_invoice", lambda *args, **kwargs: calls.append("sync"))
+    monkeypatch.setattr(okki_client, "push_order", lambda *args, **kwargs: calls.append("push"))
+
+    response = client.post(
+        "/api/integrations/v1/invoices",
+        json=_submission(),
+        headers=_headers(),
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json() == {
+        "code": 201,
+        "message": "invoice created",
+        "data": {
+            "request_id": response.json()["data"]["request_id"],
+            "replayed": False,
+            "external_order_id": "SITE:2026-0001",
+            "invoice_id": response.json()["data"]["invoice_id"],
+            "invoice_no": response.json()["data"]["invoice_no"],
+            "status": "ready",
+            "sync_status": "not_synced",
+            "totals": {"product_amount": "20.00", "total_amount": "20.00"},
+            "review_url": "https://leshine.work/invoice/manage",
+        },
+    }
+    request_row = db.query(InvoiceIngestRequest).one()
+    invoice = db.query(Invoice).one()
+    assert request_row.status == "created"
+    assert request_row.invoice_id == invoice.id
+    assert request_row.attempt_count == 1
+    assert invoice.source_type == "external_api"
+    assert invoice.source_order_id == request_row.public_id
+    assert invoice.source_order_name == "SITE:2026-0001"
+    assert invoice.source_order_no is None
+    assert invoice.source_image_sha256 is None
+    assert invoice.sync_status == "not_synced"
+    assert invoice.xiaoman_order_id is None
+    assert invoice.xiaoman_order_no is None
+    assert db.query(InvoiceSyncLog).count() == 0
+    assert calls == []
+
+
+def test_create_schema_failure_uses_stable_422_without_ingest(api):
+    client, db = api
+    payload = _submission()
+    payload["sales_user_id"] = 999
+    response = client.post(
+        "/api/integrations/v1/invoices", json=payload, headers=_headers(),
+    )
+    issue = _schema_issue(response)
+    assert issue["field"] == "sales_user_id"
+    assert db.query(InvoiceIngestRequest).count() == 0
+    assert db.query(Invoice).count() == 0
+
+
+def test_same_canonical_request_replays_original_invoice_and_semantic_money_is_stable(api):
+    client, db = api
+    first_payload = _submission()
+    first_payload["fees"]["packaging_amount"] = "0.00"
+    first_payload["items"][0]["unit_price"] = "19.6700"
+    first = client.post(
+        "/api/integrations/v1/invoices", json=first_payload, headers=_headers(),
+    )
+    assert first.status_code == 201, first.text
+
+    replay_payload = json.loads(json.dumps(first_payload, sort_keys=True))
+    replay_payload["currency"] = " USD "
+    replay_payload["customer"]["name"] = " Untrusted customer name "
+    replay_payload["fees"]["packaging_amount"] = "0"
+    replay_payload["items"][0]["unit_price"] = "19.67"
+    replay = client.post(
+        "/api/integrations/v1/invoices", json=replay_payload, headers=_headers(),
+    )
+
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["code"] == 200
+    assert replay.json()["message"] == "invoice replayed"
+    assert replay.json()["data"]["replayed"] is True
+    assert replay.json()["data"]["invoice_id"] == first.json()["data"]["invoice_id"]
+    assert db.query(Invoice).count() == 1
+    assert db.query(InvoiceIngestRequest).one().attempt_count == 1
+
+
+def test_changed_created_request_returns_stable_409_and_preserves_original(api):
+    client, db = api
+    first = client.post(
+        "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
+    )
+    invoice_id = first.json()["data"]["invoice_id"]
+    original_digest = db.query(InvoiceIngestRequest).one().request_sha256
+    changed = _submission()
+    changed["remark"] = "changed after creation"
+
+    response = client.post(
+        "/api/integrations/v1/invoices", json=changed, headers=_headers(),
+    )
+
+    assert response.status_code == 409, response.text
+    assert response.json()["data"]["error_code"] == "EXTERNAL_ORDER_CHANGED"
+    assert "external_order_id" in response.json()["data"]["action"]
+    row = db.query(InvoiceIngestRequest).one()
+    assert row.request_sha256 == original_digest
+    assert row.attempt_count == 1
+    assert row.invoice_id == invoice_id
+    assert db.query(Invoice).count() == 1
+
+
+def test_rejected_request_records_stable_422_then_corrected_same_id_succeeds(api):
+    client, db = api
+    rejected_payload = _submission()
+    rejected_payload["items"][0]["catalog_ref"]["sku_id"] = 9999
+    rejected = client.post(
+        "/api/integrations/v1/invoices", json=rejected_payload, headers=_headers(),
+    )
+
+    assert rejected.status_code == 422, rejected.text
+    request_id = rejected.json()["data"]["request_id"]
+    assert rejected.json()["data"]["issues"][0]["code"] == "PRODUCT_NOT_FOUND"
+    row = db.query(InvoiceIngestRequest).one()
+    assert row.public_id == request_id
+    assert row.status == "rejected"
+    assert row.error_code == "PRODUCT_NOT_FOUND"
+    assert row.error_json["issues"] == rejected.json()["data"]["issues"]
+    assert db.query(Invoice).count() == 0
+
+    created = client.post(
+        "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
+    )
+    assert created.status_code == 201, created.text
+    row = db.query(InvoiceIngestRequest).one()
+    assert row.public_id == request_id
+    assert row.status == "created"
+    assert row.attempt_count == 2
+    assert row.error_code is None
+    assert row.error_json is None
+    assert db.query(Invoice).count() == 1
+
+
+def test_same_rejected_content_is_a_new_attempt_and_get_replays_original_422(api):
+    client, db = api
+    payload = _submission()
+    payload["items"][0]["catalog_ref"]["sku_id"] = 9999
+    first = client.post(
+        "/api/integrations/v1/invoices", json=payload, headers=_headers(),
+    )
+    second = client.post(
+        "/api/integrations/v1/invoices", json=payload, headers=_headers(),
+    )
+    recovered = client.get(
+        "/api/integrations/v1/invoices/by-external-id/SITE:2026-0001",
+        headers=_headers(),
+    )
+
+    assert first.status_code == second.status_code == recovered.status_code == 422
+    assert second.json()["data"] == recovered.json()["data"]
+    assert db.query(InvoiceIngestRequest).one().attempt_count == 2
+    assert db.query(Invoice).count() == 0
+
+
+def test_get_by_external_id_recovers_created_result_and_is_app_scoped(api):
+    client, db = api
+    created = client.post(
+        "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
+    )
+    recovered = client.get(
+        "/api/integrations/v1/invoices/by-external-id/SITE:2026-0001",
+        headers=_headers(),
+    )
+    assert recovered.status_code == 200, recovered.text
+    assert recovered.json()["data"]["invoice_id"] == created.json()["data"]["invoice_id"]
+    assert recovered.json()["data"]["replayed"] is True
+
+    other_token = "ark_live_other_app_token"
+    db.add(IntegrationApp(
+        public_id="app_other_invoice_contract",
+        name="Other app",
+        owner_user_id=8101,
+        token_hash=hash_token(other_token),
+        token_suffix=other_token[-6:],
+        scopes=["invoice:write"],
+    ))
+    db.commit()
+    isolated = client.get(
+        "/api/integrations/v1/invoices/by-external-id/SITE:2026-0001",
+        headers=_headers(other_token),
+    )
+    assert isolated.status_code == 404
+    assert isolated.json()["data"] is None
+
+
+def test_invoice_service_rounding_matches_validate_for_half_cent_and_fee_snapshots(api):
+    client, db = api
+    payload = _submission()
+    payload["items"][0]["quantity"] = 1
+    payload["items"][0]["unit_price"] = "10.0050"
+    payload["items"][0]["discount_amount"] = "-0.01"
+    payload["fees"] = {
+        "packaging_amount": "2.00",
+        "packaging_quantity": 3,
+        "shipping_amount": "4.00",
+        "surcharge": {"name": "Card fee", "amount": "1.00"},
+    }
+    validated = client.post(
+        "/api/integrations/v1/invoices/validate", json=payload, headers=_headers(),
+    )
+    created = client.post(
+        "/api/integrations/v1/invoices", json=payload, headers=_headers(),
+    )
+    assert validated.status_code == 200, validated.text
+    assert created.status_code == 201, created.text
+    assert created.json()["data"]["totals"] == validated.json()["data"]["totals"]
+    invoice = db.query(Invoice).one()
+    item = db.query(InvoiceItem).one()
+    assert invoice.internal_accessory == Decimal("2.00")
+    assert invoice.packaging_quantity == 3
+    assert invoice.shipping_fee == Decimal("4.00")
+    assert invoice.surcharge_name == "Card fee"
+    assert invoice.surcharge_amount == Decimal("1.00")
+    assert item.price_per_piece == Decimal("10.0050")
+    assert item.discount_amount == Decimal("-0.01")
+
+
+def test_invoice_create_value_error_becomes_safe_stable_rejection(api, monkeypatch):
+    client, db = api
+    from app.invoice import service as invoice_service
+
+    def reject_after_validation(*_args, **_kwargs):
+        raise ValueError("raw database/catalog detail must not leak")
+
+    monkeypatch.setattr(invoice_service, "create_invoice", reject_after_validation)
+    response = client.post(
+        "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
+    )
+    assert response.status_code == 422, response.text
+    issue = response.json()["data"]["issues"][0]
+    assert issue == {
+        "code": "INVOICE_CREATE_REJECTED",
+        "field": "invoice",
+        "message": "发票创建条件已变化，请刷新客户或产品信息后重试",
+    }
+    assert "raw database" not in response.text
+    row = db.query(InvoiceIngestRequest).one()
+    assert row.status == "rejected"
+    assert row.error_code == "INVOICE_CREATE_REJECTED"
+    assert db.query(Invoice).count() == 0
+
+
+def test_unexpected_create_error_rolls_back_invoice_and_ingest(api, monkeypatch):
+    client, db = api
+    from app.invoice import service as invoice_service
+
+    original_create = invoice_service.create_invoice
+
+    def crash_after_invoice_flush(*args, **kwargs):
+        original_create(*args, **kwargs)
+        raise RuntimeError("simulated server crash after invoice flush")
+
+    monkeypatch.setattr(invoice_service, "create_invoice", crash_after_invoice_flush)
+    with pytest.raises(RuntimeError, match="simulated server crash"):
+        client.post(
+            "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
+        )
+    assert db.query(Invoice).count() == 0
+    assert db.query(InvoiceIngestRequest).count() == 0
+
+
+def test_unexpected_validation_error_rolls_back_processing_ingest(api, monkeypatch):
+    client, db = api
+    from app.integration import validation_service
+
+    def crash_during_validation(*_args, **_kwargs):
+        raise RuntimeError("simulated catalog outage")
+
+    monkeypatch.setattr(validation_service, "validate_submission", crash_during_validation)
+    with pytest.raises(RuntimeError, match="simulated catalog outage"):
+        client.post(
+            "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
+        )
+    assert db.query(Invoice).count() == 0
+    assert db.query(InvoiceIngestRequest).count() == 0
+
+
+def test_processing_lookup_is_stable_actionable_409(api):
+    client, db = api
+    app_row = db.query(IntegrationApp).filter_by(public_id="app_invoice_contract").one()
+    db.add(InvoiceIngestRequest(
+        public_id="req_processing_lookup",
+        integration_app_id=app_row.id,
+        external_order_id="SITE:PROCESSING",
+        request_sha256="f" * 64,
+        status="processing",
+        attempt_count=1,
+    ))
+    db.commit()
+
+    response = client.get(
+        "/api/integrations/v1/invoices/by-external-id/SITE:PROCESSING",
+        headers=_headers(),
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["data"]["error_code"] == "INVOICE_PROCESSING"
+    assert "external_order_id" in response.json()["data"]["action"]
+
+
+def test_create_accepts_exact_numeric_capacity_without_amount_drift(api):
+    client, db = api
+    payload = _submission()
+    payload["items"][0]["quantity"] = 10_000
+    payload["items"][0]["unit_price"] = "99999999.9999"
+    validated = client.post(
+        "/api/integrations/v1/invoices/validate", json=payload, headers=_headers(),
+    )
+    created = client.post(
+        "/api/integrations/v1/invoices", json=payload, headers=_headers(),
+    )
+    assert validated.status_code == 200, validated.text
+    assert created.status_code == 201, created.text
+    assert created.json()["data"]["totals"] == {
+        "product_amount": "999999999999.00",
+        "total_amount": "999999999999.00",
+    }
+    assert created.json()["data"]["totals"] == validated.json()["data"]["totals"]
+    assert db.query(Invoice).one().total_amount == Decimal("999999999999.00")
+
+
+def test_ordinary_jwt_invoice_create_cannot_forge_external_api_provenance(api):
+    _, db = api
+    from app.invoice.router import router as invoice_router
+
+    app = FastAPI()
+    app.include_router(invoice_router, prefix="/api/invoice")
+    app.dependency_overrides[get_db] = lambda: db
+    token = create_access_token({
+        "sub": "8101",
+        "username": "integration-owner",
+        "roles": [],
+        "permissions": ["invoice:write"],
+    })
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/invoice/invoices",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "customer_id": "1001",
+                "customer_name": "Acme Global",
+                "invoice_date": "2026-08-26",
+                "source_type": "external_api",
+                "source_order_id": "forged-request",
+                "items": [],
+            },
+        )
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"] == "外部 API 来源发票只能通过站点接入接口创建"
+    assert db.query(Invoice).count() == 0
+
+
+def test_internal_edit_preserves_existing_external_api_provenance(api):
+    client, db = api
+    from app.invoice import service as invoice_service
+    from app.invoice.schemas import InvoiceItemPayload, InvoiceUpdate
+
+    created = client.post(
+        "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
+    )
+    assert created.status_code == 201, created.text
+    invoice = invoice_service.get_invoice(db, created.json()["data"]["invoice_id"])
+    item = invoice.items[0]
+    original_source = (
+        invoice.source_type,
+        invoice.source_order_id,
+        invoice.source_order_name,
+    )
+    update = InvoiceUpdate(
+        invoice_no=invoice.invoice_no,
+        sales_user_id=invoice.sales_user_id,
+        customer_id=invoice.customer_id,
+        customer_name=invoice.customer_name,
+        order_type=invoice.order_type,
+        contact_name=invoice.contact_name,
+        contact_phone=invoice.contact_phone,
+        contact_email=invoice.contact_email,
+        delivery_address=invoice.delivery_address,
+        invoice_date=invoice.invoice_date,
+        currency=invoice.currency,
+        express_channel=invoice.express_channel,
+        shipping_fee=invoice.shipping_fee,
+        surcharge_name=invoice.surcharge_name,
+        surcharge_amount=invoice.surcharge_amount,
+        payment_term=invoice.payment_term,
+        packaging_quantity=invoice.packaging_quantity,
+        internal_accessory=invoice.internal_accessory,
+        remark="reviewed internally",
+        source_type=invoice.source_type,
+        source_order_id=invoice.source_order_id,
+        source_order_no=invoice.source_order_no,
+        source_order_name=invoice.source_order_name,
+        source_image_sha256=invoice.source_image_sha256,
+        items=[InvoiceItemPayload(
+            id=item.id,
+            product_kind=item.product_kind,
+            item_type=item.item_type,
+            product_id=item.product_id,
+            sku_id=item.sku_id,
+            product_name=item.product_name,
+            product_display=item.product_display,
+            net_weight_grams=item.net_weight_grams,
+            model=item.model,
+            color=item.color,
+            length=item.length,
+            quantity=item.quantity,
+            price_per_piece=item.price_per_piece,
+            discount_amount=item.discount_amount,
+        )],
+    )
+
+    updated = invoice_service.update_invoice(db, invoice, update, user_id=8101)
+    db.commit()
+    assert updated.remark == "reviewed internally"
+    assert (
+        updated.source_type,
+        updated.source_order_id,
+        updated.source_order_name,
+    ) == original_source
+
+
+def test_external_invoice_openapi_declares_create_replay_lookup_and_error_models():
+    app = FastAPI()
+    app.include_router(integration_router, prefix="/api/integrations")
+    openapi = app.openapi()
+
+    create = openapi["paths"]["/api/integrations/v1/invoices"]["post"]
+    assert set(create["responses"]) >= {"200", "201", "409", "422"}
+    assert create["responses"]["201"]["content"]["application/json"]["schema"]["$ref"].endswith(
+        "/InvoiceCreatedEnvelope"
+    )
+    assert create["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith(
+        "/InvoiceReplayedEnvelope"
+    )
+    lookup = openapi["paths"][
+        "/api/integrations/v1/invoices/by-external-id/{external_order_id}"
+    ]["get"]
+    assert set(lookup["responses"]) >= {"200", "404", "409", "422"}
+    for code in ("404", "409"):
+        assert "$ref" in lookup["responses"][code]["content"]["application/json"]["schema"]
+
+
+def test_two_real_sessions_racing_same_app_order_create_one_invoice(tmp_path):
+    database_path = tmp_path / "invoice-race.sqlite3"
+    catalog_path = tmp_path / "invoice-race-catalog.sqlite3"
+    engine = create_engine(
+        f"sqlite:///{database_path.as_posix()}",
+        connect_args={"check_same_thread": False, "timeout": 15},
+    )
+
+    @event.listens_for(engine, "connect")
+    def configure_connection(dbapi_connection, _record):
+        dbapi_connection.execute("PRAGMA journal_mode=WAL")
+        escaped_catalog = str(catalog_path).replace("'", "''")
+        dbapi_connection.execute(f"ATTACH DATABASE '{escaped_catalog}' AS lsordertest")
+
+    Base.metadata.create_all(engine, tables=[
+        Base.metadata.tables["ark_permissions"],
+        Base.metadata.tables["ark_roles"],
+        ArkUser.__table__,
+        Base.metadata.tables["ark_role_permissions"],
+        Base.metadata.tables["ark_user_roles"],
+        IntegrationApp.__table__,
+        Invoice.__table__,
+        InvoiceItem.__table__,
+        InvoiceIngestRequest.__table__,
+        StdPrice.__table__,
+        PriceColorType.__table__,
+        CustomerPriceRule.__table__,
+    ])
+    Session = sessionmaker(bind=engine)
+    setup = Session()
+    try:
+        setup.execute(text("""
+            CREATE TABLE lsordertest.customer_info (
+                company_id TEXT PRIMARY KEY, company_name TEXT,
+                country_name TEXT, owner_user_ids TEXT
+            )
+        """))
+        setup.execute(text("""
+            CREATE TABLE lsordertest.customer_contacts (
+                id INTEGER PRIMARY KEY, company_id TEXT, name TEXT,
+                email TEXT, tel TEXT, is_main INTEGER
+            )
+        """))
+        setup.execute(text("""
+            CREATE TABLE lsordertest.okki_products (
+                product_id INTEGER PRIMARY KEY, product_no TEXT, product_name TEXT,
+                model TEXT, color TEXT, size TEXT, unit TEXT, disable_flag INTEGER
+            )
+        """))
+        setup.execute(text("""
+            CREATE TABLE lsordertest.okki_inventory (
+                product_id INTEGER, sku_id INTEGER, disable_flag INTEGER
+            )
+        """))
+        setup.execute(text("""
+            CREATE TABLE lsordertest.okki_orders (
+                order_id TEXT PRIMARY KEY, company_id TEXT, account_date TEXT
+            )
+        """))
+        setup.execute(text("""
+            INSERT INTO lsordertest.customer_info VALUES
+                ('1001', 'Acme Global', 'US', '[]')
+        """))
+        setup.execute(text("""
+            INSERT INTO lsordertest.okki_products VALUES
+                (1, 'HAIR-001', 'Canonical Hair/16/Natural/20g',
+                 'M1', 'Natural', '16', '20g', 0)
+        """))
+        setup.execute(text("INSERT INTO lsordertest.okki_inventory VALUES (1, 1001, 0)"))
+        owner = ArkUser(
+            id=8201,
+            username="race-owner",
+            real_name="Race Owner",
+            password_hash="test",
+        )
+        setup.add_all([
+            owner,
+            IntegrationApp(
+                public_id="app_invoice_race",
+                name="Invoice race",
+                owner_user_id=owner.id,
+                token_hash="a" * 64,
+                token_suffix="aaaaaa",
+                scopes=["invoice:write"],
+            ),
+            StdPrice(
+                product_kind="hair",
+                series_grade="Canonical Hair",
+                length="16",
+                weight_unit="20g",
+                color_type="solid",
+                price=Decimal("10.0000"),
+                currency="USD",
+            ),
+            PriceColorType(color_code="natural", color_type="solid"),
+        ])
+        setup.commit()
+    finally:
+        setup.close()
+
+    initial_read_barrier = threading.Barrier(2)
+    local = threading.local()
+    unique_races: list[str] = []
+
+    @event.listens_for(engine, "handle_error")
+    def record_unique_race(exception_context):
+        if isinstance(exception_context.sqlalchemy_exception, Exception) and (
+            "uq_invoice_ingest_app_order" in str(exception_context.original_exception)
+            or "ark_invoice_ingest_requests.integration_app_id" in str(
+                exception_context.original_exception
+            )
+        ):
+            unique_races.append(str(exception_context.original_exception))
+
+    @event.listens_for(engine, "after_cursor_execute")
+    def synchronize_initial_reads(_conn, _cursor, statement, _params, _context, _many):
+        if (
+            getattr(local, "race_participant", False)
+            and "FROM ark_invoice_ingest_requests" in statement
+            and not getattr(local, "initial_read_seen", False)
+        ):
+            local.initial_read_seen = True
+            initial_read_barrier.wait(timeout=10)
+
+    payload = InvoiceSubmission.model_validate(_submission())
+    principal = SubmissionPrincipal(
+        actor_user_id=8201,
+        sales_user_id=8201,
+        idempotency_namespace="app_invoice_race",
+        scopes=frozenset({"invoice:write"}),
+    )
+    outcomes: list[tuple[dict, bool]] = []
+    failures: list[BaseException] = []
+
+    def create_from_one_session():
+        session = Session()
+        local.race_participant = True
+        try:
+            outcomes.append(
+                integration_service.create_external_invoice(session, payload, principal)
+            )
+        except BaseException as exc:  # test thread must surface every failure
+            failures.append(exc)
+        finally:
+            session.close()
+
+    threads = [threading.Thread(target=create_from_one_session) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=20)
+
+    verify = Session()
+    try:
+        assert all(not thread.is_alive() for thread in threads)
+        assert failures == []
+        assert len(outcomes) == 2
+        assert sorted(replayed for _, replayed in outcomes) == [False, True]
+        assert len(unique_races) == 1
+        assert verify.query(InvoiceIngestRequest).count() == 1
+        assert verify.query(Invoice).count() == 1
+        assert verify.query(InvoiceItem).count() == 1
+        row = verify.query(InvoiceIngestRequest).one()
+        assert row.status == "created"
+        assert row.invoice_id == verify.query(Invoice).one().id
+    finally:
+        verify.close()
+        engine.dispose()

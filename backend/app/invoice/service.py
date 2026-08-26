@@ -249,11 +249,18 @@ def create_invoice(
     user_id: int | None = None,
     *,
     allow_screenshot_source: bool = False,
+    allow_external_source: bool = False,
 ) -> Invoice:
+    if allow_screenshot_source and allow_external_source:
+        raise ValueError("发票创建入口来源授权冲突")
     if body.source_type == "okki_screenshot" and not allow_screenshot_source:
         raise ValueError("截图来源发票必须通过截图预览入口创建")
     if allow_screenshot_source and body.source_type != "okki_screenshot":
         raise ValueError("截图创建入口只接受已确认的 OKKI 截图发票")
+    if body.source_type == "external_api" and not allow_external_source:
+        raise ValueError("外部 API 来源发票只能通过站点接入接口创建")
+    if allow_external_source and body.source_type != "external_api":
+        raise ValueError("站点接入入口只接受 external_api 来源发票")
     if body.source_type == "manual" and body.source_preview_token:
         raise ValueError("手工发票不能携带截图预览凭证")
     sales_user_id = body.sales_user_id or user_id
@@ -807,6 +814,12 @@ def _validate_screenshot_source(
         invoice.source_order_id, invoice.source_order_no,
         invoice.source_order_name, invoice.source_image_sha256,
     )
+    if source_type == "external_api":
+        if not invoice.source_order_id:
+            raise ValueError("外部 API 来源发票缺少接入请求 ID")
+        if invoice.source_order_no or invoice.source_image_sha256 or preview_token:
+            raise ValueError("外部 API 来源发票不能携带 OKKI 截图来源字段")
+        return
     if source_type == "manual":
         if any(value for value in source_values):
             raise ValueError("手工发票不能携带 OKKI 截图来源信息")

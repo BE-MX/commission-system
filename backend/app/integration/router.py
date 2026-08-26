@@ -1,6 +1,6 @@
 """Integration App administration and public invoice-integration routes."""
 
-from fastapi import APIRouter, Depends, Path, Query, Request
+from fastapi import APIRouter, Depends, Path, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
@@ -19,6 +19,11 @@ from app.integration.schemas import (
     CustomerSubmission,
     IntegrationAppCreate,
     IntegrationAppRotate,
+    InvoiceConflictEnvelope,
+    InvoiceCreatedEnvelope,
+    InvoiceCreateValidationErrorEnvelope,
+    InvoiceNotFoundEnvelope,
+    InvoiceReplayedEnvelope,
     InvoiceSubmission,
     InvoiceValidationErrorEnvelope,
     InvoiceValidationSuccessEnvelope,
@@ -133,6 +138,16 @@ _VALIDATION_RESPONSES = {
         "description": "Stable external invoice validation envelope",
     },
 }
+_CREATE_RESPONSES = {
+    200: {"model": InvoiceReplayedEnvelope, "description": "Idempotent replay"},
+    409: {"model": InvoiceConflictEnvelope, "description": "External order conflict or processing"},
+    422: {"model": InvoiceCreateValidationErrorEnvelope, "description": "Stable create rejection"},
+}
+_LOOKUP_RESPONSES = {
+    404: {"model": InvoiceNotFoundEnvelope, "description": "No result in this App namespace"},
+    409: {"model": InvoiceConflictEnvelope, "description": "Request is still processing"},
+    422: {"model": InvoiceCreateValidationErrorEnvelope, "description": "Original stable rejection"},
+}
 
 
 def _validation_error(exc: validation_service.InvoiceValidationError) -> JSONResponse:
@@ -198,6 +213,112 @@ def post_validate_invoice(
     except validation_service.InvoiceValidationError as exc:
         return _validation_error(exc)
     return ok(data)
+
+
+def _create_validation_error(exc: service.ExternalInvoiceRejected) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content={
+            "code": 422,
+            "message": "invoice validation failed",
+            "data": {
+                "request_id": exc.row.public_id,
+                "issues": exc.issues,
+                "warnings": exc.warnings,
+            },
+        },
+    )
+
+
+def _conflict(row, *, changed: bool) -> JSONResponse:
+    if changed:
+        content = {
+            "code": 409,
+            "message": "external order conflict",
+            "data": {
+                "request_id": row.public_id,
+                "external_order_id": row.external_order_id,
+                "error_code": "EXTERNAL_ORDER_CHANGED",
+                "action": "已创建订单内容不可覆盖，请为新订单使用新的 external_order_id",
+            },
+        }
+    else:
+        content = {
+            "code": 409,
+            "message": "external invoice processing",
+            "data": {
+                "request_id": row.public_id,
+                "external_order_id": row.external_order_id,
+                "error_code": "INVOICE_PROCESSING",
+                "action": "请求正在处理，请稍后使用相同 external_order_id 重试或查询结果",
+            },
+        }
+    return JSONResponse(status_code=409, content=content)
+
+
+@public_router.post(
+    "/v1/invoices",
+    summary="Create one local Ark invoice idempotently",
+    status_code=201,
+    response_model=InvoiceCreatedEnvelope,
+    responses=_CREATE_RESPONSES,
+)
+def post_create_invoice(
+    request: InvoiceSubmission,
+    response: Response,
+    db: Session = Depends(get_db),
+    principal: SubmissionPrincipal = Depends(_require_invoice_integration),
+):
+    try:
+        data, replayed = service.create_external_invoice(db, request, principal)
+    except service.ExternalOrderChanged as exc:
+        return _conflict(exc.row, changed=True)
+    except service.ExternalInvoiceProcessing as exc:
+        return _conflict(exc.row, changed=False)
+    except service.ExternalInvoiceRejected as exc:
+        return _create_validation_error(exc)
+    if replayed:
+        return JSONResponse(
+            status_code=200,
+            content={"code": 200, "message": "invoice replayed", "data": data},
+        )
+    response.status_code = 201
+    return {"code": 201, "message": "invoice created", "data": data}
+
+
+@public_router.get(
+    "/v1/invoices/by-external-id/{external_order_id}",
+    summary="Recover one invoice result in the current App namespace",
+    response_model=InvoiceReplayedEnvelope,
+    responses=_LOOKUP_RESPONSES,
+)
+def get_invoice_by_external_id(
+    external_order_id: str = Path(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    ),
+    db: Session = Depends(get_db),
+    principal: SubmissionPrincipal = Depends(_require_invoice_integration),
+):
+    result_type, result = service.get_external_invoice_result(
+        db,
+        external_order_id,
+        principal,
+    )
+    if result_type == "not_found":
+        return JSONResponse(
+            status_code=404,
+            content={"code": 404, "message": "external invoice not found", "data": None},
+        )
+    if result_type == "processing":
+        return _conflict(result, changed=False)
+    if result_type == "rejected":
+        return JSONResponse(
+            status_code=422,
+            content={"code": 422, "message": "invoice validation failed", "data": result},
+        )
+    return {"code": 200, "message": "invoice replayed", "data": result}
 
 
 router.include_router(public_router)

@@ -284,3 +284,63 @@ class InvoiceValidationErrorEnvelope(StrictSchema):
     code: Literal[422]
     message: Literal["invoice validation failed"]
     data: InvoiceValidationErrorData
+
+
+class InvoiceResultTotals(StrictSchema):
+    product_amount: str = Field(pattern=r"^\d+\.\d{2}$")
+    total_amount: str = Field(pattern=r"^\d+\.\d{2}$")
+
+
+class InvoiceResultData(StrictSchema):
+    request_id: str
+    replayed: bool
+    external_order_id: str
+    invoice_id: int
+    invoice_no: str
+    status: str
+    sync_status: str
+    totals: InvoiceResultTotals
+    review_url: str
+
+
+class InvoiceCreatedEnvelope(StrictSchema):
+    code: Literal[201]
+    message: Literal["invoice created"]
+    data: InvoiceResultData
+
+
+class InvoiceReplayedEnvelope(StrictSchema):
+    code: Literal[200]
+    message: Literal["invoice replayed"]
+    data: InvoiceResultData
+
+
+class InvoiceConflictData(StrictSchema):
+    request_id: str | None = None
+    external_order_id: str
+    error_code: Literal["EXTERNAL_ORDER_CHANGED", "INVOICE_PROCESSING"]
+    action: str
+
+
+class InvoiceConflictEnvelope(StrictSchema):
+    code: Literal[409]
+    message: str
+    data: InvoiceConflictData
+
+
+class InvoiceNotFoundEnvelope(StrictSchema):
+    code: Literal[404]
+    message: Literal["external invoice not found"]
+    data: None
+
+
+class InvoiceCreateValidationErrorData(StrictSchema):
+    request_id: str | None = None
+    issues: list[IntegrationValidationIssue]
+    warnings: list[IntegrationValidationIssue]
+
+
+class InvoiceCreateValidationErrorEnvelope(StrictSchema):
+    code: Literal[422]
+    message: Literal["invoice validation failed"]
+    data: InvoiceCreateValidationErrorData
