@@ -5,7 +5,17 @@ from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.system.models import SysDict
+from app.system.reserved_dict_types import RESERVED_DICT_TYPE_SET
 from app.system.schemas import DictItemCreate, DictItemUpdate
+
+
+class ProtectedDictTypeError(ValueError):
+    """保留字典只能由其专用、强鉴权的业务接口维护。"""
+
+
+def _ensure_not_protected(dict_type: str) -> None:
+    if dict_type.strip() in RESERVED_DICT_TYPE_SET:
+        raise ProtectedDictTypeError("该字典类型只能在 GMV 日报配置页维护")
 
 
 def list_types(db: Session) -> list[dict]:
@@ -16,6 +26,7 @@ def list_types(db: Session) -> list[dict]:
             func.count(SysDict.id).label("item_count"),
             func.sum(case((SysDict.is_active.is_(True), 1), else_=0)).label("active_count"),
         )
+        .filter(SysDict.type.notin_(RESERVED_DICT_TYPE_SET))
         .group_by(SysDict.type)
         .order_by(SysDict.type)
         .all()
@@ -28,6 +39,8 @@ def list_types(db: Session) -> list[dict]:
 
 def list_items(db: Session, dict_type: str, only_active: bool = False) -> list[SysDict]:
     """按类型查询字典项，按 sort、id 排序。"""
+    if dict_type.strip() in RESERVED_DICT_TYPE_SET:
+        return []
     query = db.query(SysDict).filter(SysDict.type == dict_type)
     if only_active:
         query = query.filter(SysDict.is_active.is_(True))
@@ -35,6 +48,7 @@ def list_items(db: Session, dict_type: str, only_active: bool = False) -> list[S
 
 
 def create_item(db: Session, data: DictItemCreate) -> SysDict:
+    _ensure_not_protected(data.type)
     exists = (
         db.query(SysDict)
         .filter(SysDict.type == data.type, SysDict.code == data.code)
@@ -61,6 +75,7 @@ def update_item(db: Session, item_id: int, data: DictItemUpdate) -> SysDict:
     item = db.query(SysDict).filter(SysDict.id == item_id).first()
     if not item:
         raise ValueError("字典项不存在")
+    _ensure_not_protected(item.type)
 
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -77,6 +92,7 @@ def delete_item(db: Session, item_id: int) -> None:
     item = db.query(SysDict).filter(SysDict.id == item_id).first()
     if not item:
         raise ValueError("字典项不存在")
+    _ensure_not_protected(item.type)
     db.delete(item)
     db.commit()
 

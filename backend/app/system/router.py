@@ -1,7 +1,7 @@
 """系统字典 — API 路由"""
 
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -40,7 +40,10 @@ def create_dict_item(
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("dict:write")),
 ):
-    item = service.create_item(db, data)
+    try:
+        item = service.create_item(db, data)
+    except service.ProtectedDictTypeError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     return _ok(DictItem.model_validate(item).model_dump(mode="json"), "创建成功")
 
 
@@ -51,7 +54,10 @@ def update_dict_item(
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("dict:write")),
 ):
-    item = service.update_item(db, item_id, data)
+    try:
+        item = service.update_item(db, item_id, data)
+    except service.ProtectedDictTypeError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     return _ok(DictItem.model_validate(item).model_dump(mode="json"), "更新成功")
 
 
@@ -61,5 +67,8 @@ def delete_dict_item(
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("dict:write")),
 ):
-    service.delete_item(db, item_id)
+    try:
+        service.delete_item(db, item_id)
+    except service.ProtectedDictTypeError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     return _ok(None, "删除成功")
