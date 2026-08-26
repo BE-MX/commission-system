@@ -144,7 +144,11 @@ echo.
 REM ---------- [4/7] Database migration ----------
 echo [4/7] Database migration...
 cd /d "%INSTALL_DIR%\backend"
-.\.venv\Scripts\python.exe scripts\show_db_config.py
+.\.venv\Scripts\python.exe -m scripts.show_db_config
+if errorlevel 1 (
+    echo [ERROR] Database configuration preflight failed; migration was not started
+    goto :error
+)
 echo      Stopping Ark backend to prevent writes during migration...
 "%NSSM_EXE%" stop "%SERVICE_NAME%"
 if errorlevel 1 (
