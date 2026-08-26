@@ -96,6 +96,9 @@
       <div class="totals-bar">
         <span>识别产品合计 <strong>{{ money(preview.totals.recognized_product_amount) }}</strong></span>
         <span>明细计算合计 <strong>{{ money(preview.totals.calculated_product_amount) }}</strong></span>
+        <span>运费 <strong>{{ money(preview.fees.shipping_fee) }}</strong></span>
+        <span>手续费 <strong>{{ money(preview.fees.handling_fee) }}</strong></span>
+        <span>包装费 <strong>{{ money(preview.fees.packaging_fee) }}</strong></span>
         <span>订单金额 <strong>{{ preview.extraction.currency || 'USD' }} {{ money(preview.totals.recognized_order_amount) }}</strong></span>
         <span>差额 <strong>{{ money(preview.totals.difference) }}</strong></span>
       </div>

@@ -13,7 +13,9 @@ PURPOSE = "invoice_screenshot_preview"
 TOKEN_TTL_MINUTES = 30
 
 
-def issue_preview_token(*, actor_user_id: int, invoice_patch: dict, expected_total) -> str:
+def issue_preview_token(
+    *, actor_user_id: int, invoice_patch: dict, expected_product_amount, recognized_order_amount,
+) -> str:
     settings = get_settings()
     now = datetime.now(timezone.utc)
     claims = {
@@ -26,7 +28,8 @@ def issue_preview_token(*, actor_user_id: int, invoice_patch: dict, expected_tot
         "invoice_date": invoice_patch.get("invoice_date"),
         "currency": invoice_patch.get("currency"),
         "order_type": invoice_patch.get("order_type"),
-        "expected_total": str(_money(expected_total)),
+        "expected_product_amount": str(_money(expected_product_amount)),
+        "recognized_order_amount": str(_money(recognized_order_amount)),
         "recognized_fields_sha256": _recognized_fields_sha256(invoice_patch),
         "iat": now,
         "exp": now + timedelta(minutes=TOKEN_TTL_MINUTES),
@@ -34,7 +37,7 @@ def issue_preview_token(*, actor_user_id: int, invoice_patch: dict, expected_tot
     return jwt.encode(claims, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
-def verify_preview_token(token: str, *, actor_user_id: int, invoice, request_payload=None) -> None:
+def verify_preview_token(token: str, *, actor_user_id: int, invoice, request_payload=None) -> dict:
     settings = get_settings()
     try:
         claims = jwt.decode(
@@ -54,11 +57,18 @@ def verify_preview_token(token: str, *, actor_user_id: int, invoice, request_pay
         "invoice_date": invoice.invoice_date.isoformat(),
         "currency": invoice.currency,
         "order_type": invoice.order_type,
-        "expected_total": str(_money(invoice.total_amount or 0)),
+        "expected_product_amount": str(_money(invoice.product_amount or 0)),
         "recognized_fields_sha256": _recognized_fields_sha256(request_payload or invoice),
     }
     if any(claims.get(key) != value for key, value in expected.items()):
         raise ValueError("截图预览内容已被修改，请重新识别并确认")
+    try:
+        recognized_order_amount = _money(claims["recognized_order_amount"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("截图预览凭证缺少订单金额，请重新识别") from exc
+    if recognized_order_amount < 0:
+        raise ValueError("截图预览凭证中的订单金额无效")
+    return {**claims, "recognized_order_amount": recognized_order_amount}
 
 
 def _money(value) -> Decimal:
@@ -70,9 +80,6 @@ def _recognized_fields_sha256(payload) -> str:
     canonical = {
         "customer_name": str(_value(payload, "customer_name") or ""),
         "source_order_name": str(_value(payload, "source_order_name") or ""),
-        "shipping_fee": str(_money(_value(payload, "shipping_fee") or 0)),
-        "internal_accessory": str(_money(_value(payload, "internal_accessory") or 0)),
-        "surcharge_amount": str(_money(_value(payload, "surcharge_amount") or 0)),
         "items": [_canonical_item(item) for item in items],
     }
     encoded = json.dumps(

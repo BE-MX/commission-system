@@ -1,7 +1,7 @@
 """Pydantic schemas for order invoice management."""
 
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -99,7 +99,19 @@ class ScreenshotExtraction(BaseModel):
     currency: Optional[str] = Field(None, pattern="^[A-Z]{3}$")
     order_amount: Optional[Decimal] = Field(None, ge=0)
     product_amount: Optional[Decimal] = Field(None, ge=0)
-    additional_fee_amount: Optional[Decimal] = Field(None, ge=0)
+    shipping_fee_amount: Optional[Decimal] = Field(
+        None, ge=0, max_digits=14, decimal_places=2,
+    )
+    handling_fee_amount: Optional[Decimal] = Field(
+        None, ge=0, max_digits=14, decimal_places=2,
+    )
+    packaging_fee_amount: Optional[Decimal] = Field(
+        None, ge=0, max_digits=14, decimal_places=2,
+    )
+    additional_fee_amount: Optional[Decimal] = Field(
+        None, ge=0, max_digits=14, decimal_places=2,
+        description="兼容旧预览；费用解析时忽略该总额",
+    )
     items: list[ScreenshotExtractedItem] = Field(default_factory=list, max_length=200)
     confidence: dict[str, float] = Field(default_factory=dict)
 
@@ -108,6 +120,23 @@ class ScreenshotExtraction(BaseModel):
     def _normalize_optional_currency(cls, value):
         normalized = str(value or "").strip().upper()
         return normalized or None
+
+    @field_validator(
+        "shipping_fee_amount", "handling_fee_amount",
+        "packaging_fee_amount", "additional_fee_amount",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_optional_fee(cls, value):
+        if value is None or str(value).strip() == "":
+            return None
+        try:
+            amount = Decimal(str(value)).quantize(Decimal("0.01"))
+        except (InvalidOperation, ValueError):
+            return None
+        if not amount.is_finite() or amount < 0 or amount > Decimal("999999999999.99"):
+            return None
+        return amount
 
     @field_validator("confidence")
     @classmethod
@@ -206,14 +235,20 @@ class _InvoiceHeaderPayload(BaseModel):
     invoice_date: date
     currency: str = Field(default="USD", pattern="^[A-Z]{3}$")
     express_channel: Optional[str] = Field(None, max_length=64)
-    shipping_fee: Decimal = Field(default=Decimal("0"), ge=0)
+    shipping_fee: Decimal = Field(
+        default=Decimal("0"), ge=0, max_digits=14, decimal_places=2,
+    )
     surcharge_name: Optional[str] = Field(None, max_length=128)
-    surcharge_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    surcharge_amount: Decimal = Field(
+        default=Decimal("0"), ge=0, max_digits=14, decimal_places=2,
+    )
     payment_term: Optional[str] = Field(None, max_length=256)
     internal_payment_method: Optional[str] = Field(None, max_length=64)
     internal_discount: Optional[Decimal] = Field(None, le=0)
     packaging_quantity: int = Field(default=0, ge=0)
-    internal_accessory: Optional[Decimal] = Field(None, ge=0)
+    internal_accessory: Optional[Decimal] = Field(
+        None, ge=0, max_digits=14, decimal_places=2,
+    )
     internal_received: Optional[Decimal] = Field(None, ge=0)
     internal_balance: Optional[Decimal] = Field(None, ge=0)
     internal_shipping_type: Optional[str] = Field(None, max_length=64)

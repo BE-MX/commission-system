@@ -34,6 +34,9 @@ test('AI screenshot flow has upload, clipboard, preview, and resolve endpoints',
   assert.match(editor, /createInvoiceFromScreenshot/)
   assert.match(component, /v-if="row\.candidates\?\.length"/)
   assert.match(component, /v-if="orderType === 'production' && row\.can_create_custom"/)
+  assert.match(component, />运费 <strong>\{\{ money\(preview\.fees\.shipping_fee\) \}\}/)
+  assert.match(component, />手续费 <strong>\{\{ money\(preview\.fees\.handling_fee\) \}\}/)
+  assert.match(component, />包装费 <strong>\{\{ money\(preview\.fees\.packaging_fee\) \}\}/)
 })
 
 
