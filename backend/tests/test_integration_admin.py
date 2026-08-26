@@ -22,7 +22,7 @@ from app.auth.utils import create_access_token, hash_token
 from app.core.database import Base, get_db
 from app.core.response import ok
 from app.core.time import beijing_now
-from app.integration.auth import require_integration_scope
+from app.integration.auth import require_integration_scope, resolve_submission_principal
 from app.integration.models import IntegrationApp
 from app.integration.router import router as integration_router
 
@@ -53,6 +53,13 @@ def _setup():
         action="write",
         label="Invoice write",
     )
+    integration_admin = ArkPermission(
+        id=2,
+        code="integration:admin",
+        module="integration",
+        action="admin",
+        label="Integration admin",
+    )
     writer_role = ArkRole(
         id=1,
         name="invoice_writer",
@@ -60,11 +67,18 @@ def _setup():
         permissions=[invoice_write],
     )
     super_role = ArkRole(id=2, name="super_admin", label="Super admin")
+    integration_admin_role = ArkRole(
+        id=3,
+        name="integration_admin",
+        label="Integration admin",
+        permissions=[integration_admin],
+    )
     operator = ArkUser(
         id=99,
         username="operator",
         real_name="Operator",
         password_hash="test",
+        roles=[integration_admin_role],
     )
     writer = ArkUser(
         id=1,
@@ -192,7 +206,10 @@ def test_rotate_updates_same_app_and_invalidates_old_token_immediately():
         accepted = client.get("/site-protected", headers=_bearer(old_token))
         assert accepted.status_code == 200, accepted.text
 
-        rotated = client.post(f"/api/integrations/admin/apps/{issued['id']}/rotate")
+        rotated = client.post(
+            f"/api/integrations/admin/apps/{issued['id']}/rotate",
+            json={"current_token_suffix": issued["token_suffix"]},
+        )
         assert rotated.status_code == 200, rotated.text
         data = rotated.json()["data"]
         new_token = data["token"]
@@ -206,6 +223,12 @@ def test_rotate_updates_same_app_and_invalidates_old_token_immediately():
         row = db.query(IntegrationApp).filter(IntegrationApp.id == issued["id"]).one()
         assert row.token_hash == hash_token(new_token)
         assert row.token_hash != hash_token(old_token)
+
+        stale = client.post(
+            f"/api/integrations/admin/apps/{issued['id']}/rotate",
+            json={"current_token_suffix": issued["token_suffix"]},
+        )
+        assert stale.status_code == 409
     finally:
         client.close()
         db.close()
@@ -221,7 +244,10 @@ def test_revoked_and_disabled_apps_fail_authentication_and_rotate_is_blocked():
         assert revoked.status_code == 200, revoked.text
         assert client.delete(f"/api/integrations/admin/apps/{issued['id']}").status_code == 200
         assert client.get("/site-protected", headers=_bearer(token)).status_code == 401
-        assert client.post(f"/api/integrations/admin/apps/{issued['id']}/rotate").status_code == 409
+        assert client.post(
+            f"/api/integrations/admin/apps/{issued['id']}/rotate",
+            json={"current_token_suffix": issued["token_suffix"]},
+        ).status_code == 409
 
         second = _issue(client, name="Disabled site")
         row = db.query(IntegrationApp).filter(IntegrationApp.id == second["id"]).one()
@@ -307,7 +333,7 @@ def test_all_admin_endpoints_require_integration_admin_permission():
     try:
         issued = _issue(client)
         app.dependency_overrides[get_current_user] = lambda: {
-            "sub": "99",
+            "sub": "3",
             "roles": [],
             "permissions": [],
         }
@@ -318,12 +344,162 @@ def test_all_admin_endpoints_require_integration_admin_permission():
                 "/api/integrations/admin/apps",
                 json={"name": "Blocked", "owner_user_id": 1},
             ),
-            client.post(f"/api/integrations/admin/apps/{issued['id']}/rotate"),
+            client.post(
+                f"/api/integrations/admin/apps/{issued['id']}/rotate",
+                json={"current_token_suffix": issued["token_suffix"]},
+            ),
             client.delete(f"/api/integrations/admin/apps/{issued['id']}"),
         ]
         assert [response.status_code for response in requests] == [403, 403, 403, 403, 403]
     finally:
         client.close()
+        engine.dispose()
+
+
+def test_stale_admin_claims_fail_all_endpoints_after_db_disable_or_revoke():
+    client, app, db, engine, _, _ = _setup()
+    try:
+        issued = _issue(client)
+        app.dependency_overrides[get_current_user] = lambda: {
+            "sub": "99",
+            "roles": [],
+            "permissions": ["integration:admin"],
+        }
+
+        def statuses() -> list[int]:
+            return [
+                client.get("/api/integrations/admin/user-candidates").status_code,
+                client.get("/api/integrations/admin/apps").status_code,
+                client.post(
+                    "/api/integrations/admin/apps",
+                    json={"name": "Must stay blocked", "owner_user_id": 1},
+                ).status_code,
+                client.post(
+                    f"/api/integrations/admin/apps/{issued['id']}/rotate",
+                    json={"current_token_suffix": issued["token_suffix"]},
+                ).status_code,
+                client.delete(f"/api/integrations/admin/apps/{issued['id']}").status_code,
+            ]
+
+        operator = db.query(ArkUser).filter(ArkUser.id == 99).one()
+        operator.is_active = False
+        db.commit()
+        assert statuses() == [403, 403, 403, 403, 403]
+
+        operator.is_active = True
+        admin_role = next(role for role in operator.roles if role.name == "integration_admin")
+        admin_role.permissions.clear()
+        db.commit()
+        db.expire_all()
+        assert statuses() == [403, 403, 403, 403, 403]
+    finally:
+        client.close()
+        db.close()
+        engine.dispose()
+
+
+def test_resolver_touch_does_not_commit_or_flush_outer_pending_work(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'integration-auth.db'}")
+    Base.metadata.create_all(engine, tables=TABLES)
+    Session = sessionmaker(bind=engine)
+    seed = Session()
+    token = "ark_live_transaction_boundary"
+    permission = ArkPermission(
+        id=1,
+        code="invoice:write",
+        module="invoice",
+        action="write",
+        label="Invoice write",
+    )
+    role = ArkRole(id=1, name="writer", label="Writer", permissions=[permission])
+    owner = ArkUser(
+        id=1,
+        username="owner",
+        real_name="Owner",
+        password_hash="test",
+        roles=[role],
+    )
+    seed.add(owner)
+    seed.flush()
+    seed.add(IntegrationApp(
+        public_id="app_transaction",
+        name="Transaction site",
+        owner_user_id=owner.id,
+        token_hash=hash_token(token),
+        token_suffix=token[-6:],
+        scopes=["invoice:write"],
+    ))
+    seed.commit()
+    seed.close()
+
+    outer = Session()
+    observer = Session()
+    try:
+        pending = ArkUser(
+            id=77,
+            username="pending",
+            real_name="Pending User",
+            password_hash="test",
+        )
+        outer.add(pending)
+        principal = resolve_submission_principal(
+            outer,
+            token,
+            required_scope="invoice:write",
+        )
+        assert principal.actor_user_id == 1
+        assert pending in outer.new
+        assert observer.query(ArkUser).filter(ArkUser.id == 77).first() is None
+
+        outer.commit()
+        observer.expire_all()
+        assert observer.query(ArkUser).filter(ArkUser.id == 77).one().username == "pending"
+    finally:
+        outer.close()
+        observer.close()
+        engine.dispose()
+
+
+def test_touch_failure_rolls_back_only_savepoint_and_outer_work_can_commit():
+    client, _, db, engine, _, _ = _setup()
+    try:
+        issued = _issue(client)
+        db.connection().exec_driver_sql("""
+            CREATE TRIGGER fail_integration_touch
+            BEFORE UPDATE OF last_used_at ON ark_integration_apps
+            BEGIN
+                SELECT RAISE(ABORT, 'simulated telemetry failure');
+            END
+        """)
+        first = ArkUser(
+            id=77,
+            username="first-pending",
+            real_name="First Pending",
+            password_hash="test",
+        )
+        db.add(first)
+
+        principal = resolve_submission_principal(
+            db,
+            issued["token"],
+            required_scope="invoice:write",
+        )
+        assert principal.actor_user_id == 1
+        assert first in db.new
+
+        db.add(ArkUser(
+            id=78,
+            username="second-pending",
+            real_name="Second Pending",
+            password_hash="test",
+        ))
+        db.commit()
+        assert {
+            user.id for user in db.query(ArkUser).filter(ArkUser.id.in_([77, 78])).all()
+        } == {77, 78}
+    finally:
+        client.close()
+        db.close()
         engine.dispose()
 
 

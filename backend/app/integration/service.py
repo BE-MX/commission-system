@@ -135,7 +135,7 @@ def create_app(
     }
 
 
-def rotate_app_token(db: Session, app_id: int) -> dict:
+def rotate_app_token(db: Session, app_id: int, *, current_token_suffix: str) -> dict:
     row = db.query(IntegrationApp).filter(
         IntegrationApp.id == app_id
     ).with_for_update().first()
@@ -143,6 +143,8 @@ def rotate_app_token(db: Session, app_id: int) -> dict:
         raise HTTPException(status_code=404, detail="接入应用不存在")
     if not row.is_active:
         raise HTTPException(status_code=409, detail="接入应用已吊销，不能轮换凭证")
+    if row.token_suffix != current_token_suffix:
+        raise HTTPException(status_code=409, detail="凭证已被其他请求轮换，请刷新后重试")
     owner = _active_owner(db, row.owner_user_id)
 
     token = _plain_token()

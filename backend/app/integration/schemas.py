@@ -20,3 +20,7 @@ class IntegrationAppCreate(StrictSchema):
     @classmethod
     def normalize_expires_at(cls, value: datetime | None) -> datetime | None:
         return to_beijing_naive(value)
+
+
+class IntegrationAppRotate(StrictSchema):
+    current_token_suffix: str = Field(min_length=6, max_length=6)
