@@ -1,25 +1,9 @@
-export const STARTERS = Object.freeze([
-  Object.freeze({
-    id: 'customer-needs',
-    title: '客户需求分析',
-    prompt: '请分析以下客户需求，按已知信息、关键目标、待确认问题、风险和下一步行动整理，并指出优先级。',
-  }),
-  Object.freeze({
-    id: 'product-solution',
-    title: '产品方案',
-    prompt: '请根据以下客户需求制定产品方案，说明产品组合、选型理由、交付建议、风险和需要客户确认的事项。',
-  }),
-  Object.freeze({
-    id: 'marketing-copy',
-    title: '营销推广方案',
-    prompt: '请基于以下产品与客户信息制定营销推广方案，包含目标受众、核心卖点、渠道内容、执行节奏和效果衡量。',
-  }),
-  Object.freeze({
-    id: 'customer-communication',
-    title: '邮件与沟通话术',
-    prompt: '请根据以下背景起草专业、自然的客户邮件与沟通话术，给出主题、正文、跟进问题和下一步行动。',
-  }),
-])
+export function modeCanSubmit({ mode = null, prompt = '', attachments = [], loading = false, error = '', locked = false } = {}) {
+  if (loading || error || (mode && !mode.version)) return false
+  if (prompt.trim()) return true
+  if (mode && !locked) return Boolean(mode.start_text)
+  return attachments.length > 0
+}
 
 const DEFAULT_STATE = Object.freeze({
   sessions: [],
@@ -192,8 +176,6 @@ function applyStreamEvent(state, action) {
 
 export function reduceChatState(state, action) {
   switch (action.type) {
-    case 'apply-starter':
-      return { ...state, prompt: action.starter?.prompt || '' }
     case 'set-prompt':
       return { ...state, prompt: action.prompt || '' }
     case 'set-sessions':

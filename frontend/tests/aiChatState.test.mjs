@@ -1,9 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { computed, ref } from 'vue'
+import { useChatDrafts } from '../src/views/design/ai-chat/composables/useChatDrafts.js'
 
 import {
-  STARTERS,
   createInitialState,
   createSseParser,
   isComposerSubmit,
@@ -50,21 +51,137 @@ function bodyFromChunks(chunks, readError = null) {
   }
 }
 
-test('provides four fixed starters that only fill the composer', () => {
-  assert.deepEqual(STARTERS.map(item => item.title), [
-    '客户需求分析',
-    '产品方案',
-    '营销推广方案',
-    '邮件与沟通话术',
-  ])
+test('mode submission requires loaded rules and a real topic except talent start', () => {
+  const mode = { id: 'unknowns', version: 'abc', start_text: '' }
+  assert.equal(chatState.modeCanSubmit({ mode, prompt: '', attachments: [1] }), false)
+  assert.equal(chatState.modeCanSubmit({ mode, prompt: '供应链', loading: true }), false)
+  assert.equal(chatState.modeCanSubmit({ mode, prompt: '供应链', error: 'load failed' }), false)
+  assert.equal(chatState.modeCanSubmit({ mode, prompt: '供应链' }), true)
+  assert.equal(chatState.modeCanSubmit({ mode: { id: 'unknowns' }, prompt: '供应链' }), false)
+  assert.equal(chatState.modeCanSubmit({ mode: { ...mode, id: 'talent', start_text: '请开始天赋探索' } }), true)
+  assert.equal(chatState.modeCanSubmit({ attachments: [1] }), true)
+  assert.equal(chatState.modeCanSubmit({}), false)
+  assert.equal(chatState.modeCanSubmit({ mode, locked: true, attachments: [1] }), true)
+})
 
-  const next = reduceChatState(createInitialState(), {
-    type: 'apply-starter',
-    starter: STARTERS[0],
+test('selecting a mode leaves user text and attachments outside the instruction body', () => {
+  const source = readSource('../src/views/design/ai-chat/AiChat.vue')
+  assert.doesNotMatch(source, /chat\.prompt\.value\s*=\s*prompt/)
+  const composable = readSource('../src/views/design/ai-chat/composables/useChatModes.js')
+  assert.match(composable, /getMode\(/)
+  assert.match(composable, /getSessionMode\(/)
+})
+
+function loadModes(api = {}) {
+  const code = readSource('../src/views/design/ai-chat/composables/useChatModes.js')
+    .replace(/^import .*$/gm, '').replace('export function', 'function')
+  const factory = new Function('computed', 'ref', 'onMounted', 'getMode', 'getSessionMode', 'listModes', `${code}; return useChatModes`)
+  const input = { messages: ref([]), streaming: ref(false), currentSessionId: ref(12) }
+  const modes = factory(computed, ref, () => {}, api.getMode, api.getSessionMode, async () => ({ data: { items: [] } }))(input)
+  return { ...input, modes }
+}
+
+function loadChat(api = {}) {
+  const code = readSource('../src/views/design/ai-chat/composables/useAiChat.js')
+    .replace(/^import[\s\S]*?from ['"][^'"]+['"]\r?$/gm, '').replace('export function', 'function')
+  const modesCode = readSource('../src/views/design/ai-chat/composables/useChatModes.js')
+    .replace(/^import .*$/gm, '').replace('export function', 'function')
+  const modeFactory = new Function('computed', 'ref', 'onMounted', 'getMode', 'getSessionMode', 'listModes', `${modesCode}; return useChatModes`)(
+    computed, ref, () => {}, api.getMode, api.getSessionMode, async () => ({ data: { items: [] } }),
+  )
+  const bindings = { computed, ref, onMounted() {}, onBeforeUnmount() {},
+    useAuthStore: () => ({ user: { id: 1 }, hasPermission: () => true }),
+    createSession: async () => ({ data: { id: 99 } }), deleteAttachment: async () => {},
+    getConfig: async () => ({ data: { configured: true } }),
+    getSession: api.getSession, listSessions: async () => ({ data: { items: [] } }),
+    streamRetry: async () => {}, streamTurn: api.streamTurn || (async () => {}), uploadAttachment: async () => {},
+    requestId, modeCanSubmit: chatState.modeCanSubmit, useChatModes: modeFactory, useChatDrafts,
+    msgError() {}, sessionStorage: { getItem() {}, setItem() {}, removeItem() {} },
+  }
+  return new Function(...Object.keys(bindings), `${code}; return useAiChat()`)(...Object.values(bindings))
+}
+
+const detail = id => ({ data: { session: { id, mode: null }, messages: [], attachments: [] } })
+
+test('late session loads cannot overwrite newer composer input', async () => {
+  let resolveA
+  const chat = loadChat({ getSession: id => id === 1 ? new Promise(resolve => { resolveA = resolve }) : Promise.resolve(detail(id)) })
+  await chat.selectSession(2)
+  chat.prompt.value = 'saved B draft'
+  const pending = chat.selectSession(1)
+  await chat.selectSession(2)
+  chat.prompt.value = 'NEW typing must survive'
+  resolveA(detail(1))
+  await pending
+  assert.equal(chat.prompt.value, 'NEW typing must survive')
+})
+
+test('new conversation cancels session loading without disabling send forever', async () => {
+  let finish
+  const chat = loadChat({ getSession: () => new Promise(resolve => { finish = resolve }) })
+  const pending = chat.selectSession(1)
+  chat.newConversation()
+  chat.prompt.value = 'new question'
+  finish(detail(1))
+  await pending
+  assert.equal(chat.sessionLoading.value, false)
+  assert.equal(chat.canSubmit.value, true)
+})
+
+test('version conflict exposes a direct mode reload action', async () => {
+  const chat = loadChat({ getSession: async id => detail(id), streamTurn: async () => {
+    const error = new Error('规则文件已更新，请重新选择对话方式')
+    error.status = 409
+    error.detail = error.message
+    throw error
+  } })
+  chat.modes.restore({ id: 'talent', version: 'old', start_text: 'start' })
+  await chat.send()
+  assert.match(chat.modes.error.value, /更新/)
+})
+
+test('mode loading ignores stale results, preserves failure, and recovers explicitly', async () => {
+  let firstDone
+  const { modes } = loadModes({ getMode: id => id === 'first'
+    ? new Promise(resolve => { firstDone = resolve })
+    : Promise.reject(new Error('file unavailable')) })
+  const first = modes.select({ id: 'first' })
+  await modes.select({ id: 'second' })
+  assert.equal(modes.selected.value.id, 'second')
+  assert.match(modes.error.value, /file unavailable/)
+  firstDone({ data: { id: 'first', version: 'old', content: 'old instructions' } })
+  await first
+  assert.equal(modes.selected.value.id, 'second')
+  assert.equal(modes.preview.value, null)
+  await modes.select(null)
+  assert.equal(modes.selected.value, null)
+  assert.equal(modes.error.value, '')
+})
+
+test('history preview loads pinned session content and prevents changing a sent mode', async () => {
+  const { modes, messages } = loadModes({
+    getMode: () => { throw new Error('must not read latest file') },
+    getSessionMode: async id => ({ data: { id: 'talent', content: `snapshot-${id}` } }),
   })
-  assert.match(next.prompt, /客户需求/)
-  assert.equal(next.streaming, false)
-  assert.deepEqual(next.messages, [])
+  messages.value = [{ id: 1, role: 'user' }]
+  modes.restore({ id: 'talent', version: 'pinned' })
+  await modes.select({ id: 'unknowns' })
+  assert.equal(modes.selected.value.id, 'talent')
+  await modes.showDetails()
+  assert.equal(modes.preview.value.content, 'snapshot-12')
+})
+
+test('returning to a session keeps text but uses freshly loaded server attachments', () => {
+  const { modes, currentSessionId } = loadModes()
+  const prompt = ref('unsent question')
+  const attachments = ref([{ id: 'uploading', optimistic: true }])
+  const drafts = useChatDrafts({ prompt, attachments, modes, sessionId: currentSessionId })
+  drafts.save()
+  prompt.value = ''
+  attachments.value = [{ id: 123, original_name: 'uploaded.txt' }]
+  drafts.restore({ locked: true })
+  assert.equal(prompt.value, 'unsent question')
+  assert.deepEqual(attachments.value.map(a => a.id), [123])
 })
 
 test('exposes one AI workspace menu with permission-safe image and chat routes', () => {
@@ -99,7 +216,7 @@ test('shares route-backed workspace tabs across both AI pages', () => {
 test('keeps the visible AI workspace menu active on the hidden chat route', () => {
   const navigation = readSource('../src/config/navigation.js')
   const router = readSource('../src/router/index.js')
-  const layout = readSource('../src/views/layout/MainLayout.vue')
+  const layout = readSource('../src/views/layout/SidebarNavigation.vue')
   const chatRoute = routeEntry(navigation, '/design/ai-chat')
 
   assert.match(chatRoute, /activeMenu:\s*['"]\/design\/image-studio['"]/)

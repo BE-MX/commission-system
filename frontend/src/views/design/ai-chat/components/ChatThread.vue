@@ -7,9 +7,10 @@
     <div v-else-if="!messages.length" class="thread-welcome">
       <span class="welcome-kicker">LESHINE AI</span>
       <h1>今天想一起解决什么？</h1>
-      <p v-if="canWrite">从业务场景开始，或在下方直接描述任务。快捷卡片只会填写输入框，不会自动发送。</p>
+      <p v-if="canWrite">选择一种对话方式，或直接输入问题</p>
       <p v-else>你当前只有查看权限。可从左侧打开已有会话，阅读历史方案。</p>
-      <StarterCards v-if="canWrite" @select="emit('starter', $event)" />
+      <StarterCards v-if="canWrite" :starters="modes" :selected-id="selectedModeId" :disabled="modeDisabled" @select="emit('starter', $event)" />
+      <p v-if="catalogError" role="alert">{{ catalogError }} <button type="button" @click="emit('reload-modes')">重试</button></p>
     </div>
 
     <TransitionGroup v-else tag="div" name="msg" class="message-list">
@@ -83,11 +84,15 @@ import StarterCards from './StarterCards.vue'
 import { msgError, msgSuccess } from '@/utils/feedback'
 
 const props = defineProps({
+  modes: { type: Array, default: () => [] },
+  selectedModeId: { type: String, default: '' },
+  modeDisabled: { type: Boolean, default: false },
+  catalogError: { type: String, default: '' },
   messages: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
   canWrite: { type: Boolean, default: false },
 })
-const emit = defineEmits(['starter', 'retry'])
+const emit = defineEmits(['starter', 'retry', 'reload-modes'])
 const scrollPane = ref(null)
 
 marked.setOptions({ gfm: true, breaks: true })
@@ -162,7 +167,7 @@ watch(
 .message-list { width: min(100%, 820px); margin: 0 auto; }
 
 .thread-welcome {
-  padding-top: clamp(26px, 8vh, 88px);
+  padding-top: clamp(12px, 2vh, 24px);
   animation: welcome-in 260ms var(--ease-out-strong) backwards;
 }
 

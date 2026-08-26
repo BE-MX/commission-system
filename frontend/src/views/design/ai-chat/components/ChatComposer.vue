@@ -1,5 +1,6 @@
 <template>
   <footer class="chat-composer">
+    <slot name="mode" />
     <div v-if="attachments.length" class="attachment-strip" aria-label="待发送附件">
       <span v-for="attachment in attachments" :key="attachment.id" class="attachment-chip">
         <el-icon aria-hidden="true"><Document /></el-icon>
@@ -24,7 +25,7 @@
         :autosize="{ minRows: 2, maxRows: 7 }"
         resize="none"
         :disabled="!canWrite"
-        :placeholder="canWrite ? '描述客户、目标、约束和期望输出…' : '你只有查看权限，无法发送消息'"
+        :placeholder="canWrite ? placeholder : '你只有查看权限，无法发送消息'"
         aria-label="方案对话输入"
         @update:model-value="emit('update:prompt', $event)"
         @keydown="handleKeydown"
@@ -67,7 +68,7 @@
           @click="emit('send')"
         >
           <el-icon aria-hidden="true"><Promotion /></el-icon>
-          发送
+          {{ sendLabel }}
         </button>
       </div>
     </div>
@@ -93,6 +94,8 @@ const props = defineProps({
   canWrite: { type: Boolean, default: false },
   canSubmit: { type: Boolean, default: false },
   streaming: { type: Boolean, default: false },
+  placeholder: { type: String, default: '描述你的问题、目标和约束…' },
+  sendLabel: { type: String, default: '发送' },
 })
 const emit = defineEmits(['update:prompt', 'remove', 'send', 'stop'])
 const inputRef = ref(null)
@@ -159,6 +162,7 @@ defineExpose({ focus })
 .attachment-chip button:disabled { cursor: not-allowed; opacity: 0.45; }
 
 .composer-surface {
+  box-sizing: border-box;
   width: min(100%, 820px);
   margin: 0 auto;
   padding: 12px;

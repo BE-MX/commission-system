@@ -5,29 +5,25 @@
       :key="starter.id"
       type="button"
       class="starter-card"
-      @click="emit('select', starter.prompt)"
+      :aria-pressed="selectedId === starter.id"
+      :disabled="disabled"
+      @click="emit('select', starter)"
     >
-      <span class="starter-index">0{{ index + 1 }}</span>
+      <span class="starter-index">{{ selectedId === starter.id ? '✓ 已选' : `0${index + 1}` }}</span>
       <strong>{{ starter.title }}</strong>
-      <span>{{ descriptions[starter.id] }}</span>
+      <span>{{ starter.description }}</span>
     </button>
   </div>
 </template>
 
 <script setup>
-import { STARTERS } from '../state'
-
 defineProps({
-  starters: { type: Array, default: () => STARTERS },
+  starters: { type: Array, default: () => [] },
+  selectedId: { type: String, default: '' },
+  disabled: { type: Boolean, default: false },
 })
 const emit = defineEmits(['select'])
 
-const descriptions = {
-  'customer-needs': '梳理目标、信息缺口与下一步',
-  'product-solution': '形成选型、交付与风险建议',
-  'marketing-copy': '规划受众、渠道与执行节奏',
-  'customer-communication': '起草邮件、话术与跟进问题',
-}
 </script>
 
 <style scoped>
@@ -51,11 +47,6 @@ const descriptions = {
   color: var(--text-primary);
   cursor: pointer;
   text-align: left;
-  animation: card-in 260ms var(--ease-out-strong) backwards;
-  transition:
-    transform 200ms var(--ease-out-strong),
-    box-shadow 200ms var(--ease-out-strong),
-    border-color 200ms var(--ease-out-strong);
 }
 
 .starter-card strong {
@@ -86,21 +77,13 @@ const descriptions = {
   outline-offset: 2px;
 }
 
-.starter-card:nth-child(2) { animation-delay: 60ms; }
-.starter-card:nth-child(3) { animation-delay: 120ms; }
-.starter-card:nth-child(4) { animation-delay: 180ms; }
-
-@keyframes card-in {
-  from { opacity: 0; transform: translateY(12px); }
-}
-
-.starter-card:active { transform: scale(0.98); }
+.starter-card[aria-pressed="true"] { border-color: var(--color-primary); background: var(--color-gold-soft); }
+.starter-card:disabled { cursor: not-allowed; opacity: .55; }
 
 @media (hover: hover) and (pointer: fine) {
   .starter-card:hover {
     border-color: var(--border-hover);
     box-shadow: var(--dash-glass-highlight), var(--dash-glass-shadow-hover);
-    transform: translateY(-3px);
   }
 }
 

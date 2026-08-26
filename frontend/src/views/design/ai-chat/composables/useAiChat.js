@@ -10,7 +10,9 @@ import {
   streamTurn,
   uploadAttachment,
 } from '@/api/aiChat'
-import { requestId } from '../state'
+import { requestId, modeCanSubmit } from '../state'
+import { useChatModes } from './useChatModes'
+import { useChatDrafts } from './useChatDrafts'
 import { msgError } from '@/utils/feedback'
 
 function dataOf(response) {
@@ -20,7 +22,7 @@ function dataOf(response) {
 function errorMessage(error) {
   const detail = error?.detail || error?.response?.data?.detail
   if (error?.status === 409 || error?.response?.status === 409) {
-    return '会话状态已变化，请先刷新，再决定是否重试。'
+    return typeof detail === 'string' ? detail : '会话状态已变化，请先刷新，再决定是否重试。'
   }
   if (typeof detail === 'string' && detail) return detail
   if (detail?.message) return detail.message
@@ -46,7 +48,12 @@ export function useAiChat() {
   const initializing = ref(true)
   const sessionLoading = ref(false)
   const streaming = ref(false)
+  const preparing = ref(false)
+  const busy = computed(() => streaming.value || preparing.value)
   const error = ref(null)
+  const modes = useChatModes({ messages, streaming: busy, currentSessionId })
+  const drafts = useChatDrafts({ prompt, attachments: draftAttachments, modes, sessionId: currentSessionId })
+  const activeKey = `ai-chat-session:${auth.user?.id}`
 
   let workspaceGeneration = 0
   let streamGeneration = 0
@@ -58,9 +65,11 @@ export function useAiChat() {
   const canWrite = computed(() => auth.hasPermission('ai_chat:write'))
   const uploadsPending = computed(() => draftAttachments.value.some(item => item.optimistic))
   const canSubmit = computed(() => canWrite.value
-    && !streaming.value
+    && !busy.value
+    && !sessionLoading.value
     && !uploadsPending.value
-    && (Boolean(prompt.value.trim()) || draftAttachments.value.length > 0))
+    && modeCanSubmit({ mode: modes.selected.value, prompt: prompt.value, attachments: draftAttachments.value,
+      loading: modes.loading.value, error: modes.error.value, locked: modes.locked.value }))
   const currentSession = computed(() => (
     sessions.value.find(item => item.id === currentSessionId.value) || null
   ))
@@ -101,6 +110,7 @@ export function useAiChat() {
       }
       const session = detail.session
       if (session) {
+        if (!preserveDrafts || messages.value.length) modes.restore(session.mode)
         const index = sessions.value.findIndex(item => item.id === session.id)
         if (index === -1) sessions.value.unshift(session)
         else sessions.value.splice(index, 1, session)
@@ -120,6 +130,8 @@ export function useAiChat() {
       const session = dataOf(response)
       if (expectedWorkspace !== workspaceGeneration) throw new Error('会话已切换，请重试')
       currentSessionId.value = session.id
+      drafts.materialize(session.id)
+      sessionStorage.setItem(activeKey, String(session.id))
       sessions.value = [session, ...sessions.value.filter(item => item.id !== session.id)]
       return session.id
     }).finally(() => { sessionPromise = null })
@@ -248,12 +260,18 @@ export function useAiChat() {
   }
 
   async function runStream({ retryMessageId = null } = {}) {
-    if (!canWrite.value || streaming.value) return
+    if (!canWrite.value || busy.value) return
     const composerPrompt = prompt.value
-    const content = composerPrompt.trim()
+    const mode = modes.selected.value
+    const content = composerPrompt.trim() || (!modes.locked.value ? mode?.start_text || '' : '')
     const outgoing = [...draftAttachments.value]
     if (!retryMessageId && !content && outgoing.length === 0) return
-    const sessionId = retryMessageId ? currentSessionId.value : await ensureSession()
+    const beforePrepare = workspaceGeneration
+    preparing.value = true
+    let sessionId
+    try { sessionId = retryMessageId ? currentSessionId.value : await ensureSession() }
+    finally { preparing.value = false }
+    if (beforePrepare !== workspaceGeneration) return
     if (!sessionId) return
 
     const generation = ++streamGeneration
@@ -300,6 +318,8 @@ export function useAiChat() {
           request_id: requestId(),
           content,
           attachment_ids: outgoing.map(item => item.id),
+          mode_id: mode?.id || null,
+          mode_version: mode?.version || null,
         }, options)
       }
       if (generation !== streamGeneration || expectedWorkspace !== workspaceGeneration) return
@@ -316,6 +336,8 @@ export function useAiChat() {
       error.value = { message, conflict: streamError?.status === 409 || streamError?.response?.status === 409 }
       streaming.value = false
       await reloadFailedSession(sessionId, generation, expectedWorkspace)
+      if (generation === streamGeneration && !messages.value.length && mode
+          && [409, 503].includes(streamError?.status || streamError?.response?.status)) modes.error.value = message
     } finally {
       if (generation === streamGeneration) {
         abortController = null
@@ -359,14 +381,19 @@ export function useAiChat() {
   }
 
   function newConversation() {
+    if (!sessionLoading.value) drafts.save()
     abortActive()
     workspaceGeneration += 1
     currentSessionId.value = null
+    sessionLoading.value = false
     messages.value = []
     draftAttachments.value = []
     prompt.value = ''
     error.value = null
     drawerOpen.value = false
+    modes.restore()
+    sessionStorage.removeItem(activeKey)
+    drafts.restore()
   }
 
   async function selectSession(sessionId) {
@@ -374,6 +401,7 @@ export function useAiChat() {
       drawerOpen.value = false
       return
     }
+    if (!sessionLoading.value) drafts.save()
     abortActive()
     workspaceGeneration += 1
     currentSessionId.value = sessionId
@@ -382,13 +410,18 @@ export function useAiChat() {
     prompt.value = ''
     error.value = null
     drawerOpen.value = false
+    modes.restore()
+    sessionStorage.setItem(activeKey, String(sessionId))
+    const expectedWorkspace = workspaceGeneration
     await loadDetail(sessionId)
+    if (expectedWorkspace !== workspaceGeneration || currentSessionId.value !== sessionId) return
+    drafts.restore({ locked: modes.locked.value })
   }
 
   async function refreshCurrent() {
     if (!currentSessionId.value) return
     error.value = null
-    await loadDetail(currentSessionId.value)
+    await loadDetail(currentSessionId.value, workspaceGeneration, null, true)
   }
 
   async function initialize() {
@@ -396,6 +429,8 @@ export function useAiChat() {
     try {
       const [configResponse] = await Promise.all([getConfig(), loadSessions()])
       config.value = dataOf(configResponse) || config.value
+      const savedId = Number(sessionStorage.getItem(activeKey))
+      if (savedId && sessions.value.some(session => session.id === savedId)) await selectSession(savedId)
     } catch (initError) {
       error.value = { message: errorMessage(initError) }
     } finally {
@@ -421,6 +456,8 @@ export function useAiChat() {
     initializing,
     sessionLoading,
     streaming,
+    busy,
+    modes,
     error,
     canWrite,
     canSubmit,

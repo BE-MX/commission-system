@@ -29,10 +29,14 @@
             <span class="title-mark" aria-hidden="true"><el-icon><ChatLineRound /></el-icon></span>
             <div>
               <h2>{{ chat.currentSession.value?.title || '方案对话' }}</h2>
-              <p>把客户背景和约束讲清楚，一起形成可执行方案</p>
+              <p v-if="!chat.modes.locked.value">把问题与目标讲清楚，一起找到下一步</p>
             </div>
           </div>
           <span class="privacy-label"><el-icon aria-hidden="true"><Lock /></el-icon> 仅自己可见</span>
+          <div v-if="chat.modes.locked.value && chat.modes.selected.value" class="header-mode-row">
+            <button class="header-mode" type="button" @click="chat.modes.showDetails">{{ chat.modes.selected.value.title }} · 查看说明</button>
+            <button v-if="chat.canWrite.value" class="header-mode" type="button" :disabled="chat.busy.value" @click="startConversation">新对话换方式</button>
+          </div>
         </header>
 
         <div v-if="!chat.config.value.configured" class="notice-banner" role="alert">
@@ -47,7 +51,12 @@
           :messages="chat.messages.value"
           :loading="chat.initializing.value || chat.sessionLoading.value"
           :can-write="chat.canWrite.value"
+          :modes="chat.modes.items.value"
+          :selected-mode-id="chat.modes.selected.value?.id || ''"
+          :mode-disabled="chat.busy.value || !chat.config.value.configured"
+          :catalog-error="chat.modes.catalogError.value"
           @starter="applyStarter"
+          @reload-modes="chat.modes.loadCatalog"
           @retry="chat.retry"
         />
 
@@ -59,12 +68,25 @@
           :can-write="chat.canWrite.value && chat.config.value.configured"
           :can-submit="chat.canSubmit.value && chat.config.value.configured"
           :streaming="chat.streaming.value"
+          :placeholder="chat.modes.locked.value ? '继续补充或回答…' : chat.modes.selected.value?.placeholder || '描述你的问题、目标和约束…'"
+          :send-label="!chat.modes.locked.value && chat.modes.selected.value?.id === 'talent' ? '开始探索' : '发送'"
           @remove="chat.removeDraft"
           @send="chat.send"
           @stop="chat.stop"
-        />
+        >
+          <template #mode>
+            <ChatModeBar v-if="chat.modes.selected.value && !chat.modes.locked.value"
+              :mode="chat.modes.selected.value" :loading="chat.modes.loading.value" :error="chat.modes.error.value"
+              :disabled="chat.busy.value || !chat.canWrite.value"
+              @details="chat.modes.showDetails" @remove="chat.modes.select(null)"
+              @retry="chat.modes.select(chat.modes.selected.value, { force: true })" />
+          </template>
+        </ChatComposer>
       </main>
     </div>
+    <ChatModeDetails v-model:open="chat.modes.detailsOpen.value" :mode="chat.modes.selected.value"
+      :content="chat.modes.preview.value?.content || ''" :loading="chat.modes.previewLoading.value"
+      :error="chat.modes.previewError.value" @retry="chat.modes.showDetails" />
   </div>
 </template>
 
@@ -75,15 +97,18 @@ import AiWorkspaceTabs from '../ai-workspace/AiWorkspaceTabs.vue'
 import ChatComposer from './components/ChatComposer.vue'
 import ChatSidebar from './components/ChatSidebar.vue'
 import ChatThread from './components/ChatThread.vue'
+import ChatModeBar from './components/ChatModeBar.vue'
+import ChatModeDetails from './components/ChatModeDetails.vue'
 import { useAiChat } from './composables/useAiChat'
 
 const chat = useAiChat()
 const composerRef = ref(null)
 
-async function applyStarter(prompt) {
-  chat.prompt.value = prompt
+async function applyStarter(mode) {
+  const loading = chat.modes.select(mode)
   await nextTick()
   composerRef.value?.focus()
+  await loading
 }
 
 async function startConversation() {
@@ -94,13 +119,18 @@ async function startConversation() {
 </script>
 
 <style scoped>
+:global(.main-content:has(.ai-chat-page) > .page-wrapper) { height: 100%; }
+.header-mode-row { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: space-between; margin-top: -8px; font-size: 12px; }
+.header-mode { padding: 0 8px 0 0; min-height: 44px; border: 0; background: transparent; color: var(--color-primary); cursor: pointer; font: inherit; }
+.header-mode:focus-visible { outline: 2px solid var(--color-primary); }
+.header-mode:disabled { opacity: .55; cursor: not-allowed; }
 .ai-chat-page {
   position: relative;
   display: flex;
   width: 100%;
   max-width: 1240px;
-  height: calc(100dvh - var(--header-height) - 48px);
-  min-height: 560px;
+  height: 100%;
+  min-height: 0;
   flex-direction: column;
   gap: 10px;
   margin: 0 auto;
@@ -139,7 +169,7 @@ async function startConversation() {
   display: grid;
   min-height: 72px;
   flex: 0 0 auto;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 12px 18px;
@@ -148,6 +178,7 @@ async function startConversation() {
 }
 
 .chat-title { display: flex; min-width: 0; align-items: center; gap: 11px; }
+.chat-title > div { min-width: 0; }
 .title-mark {
   display: grid;
   width: 38px;
@@ -247,7 +278,7 @@ async function startConversation() {
 }
 
 @media (max-width: 640px) {
-  .ai-chat-page { height: calc(100dvh - var(--header-height) - 24px); min-height: 0; gap: 8px; }
+  .ai-chat-page { gap: 8px; }
   .chat-header { min-height: 60px; }
   .privacy-label { padding: 5px 7px; }
   .notice-banner,
