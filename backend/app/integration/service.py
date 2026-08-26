@@ -27,6 +27,7 @@ from app.invoice.schemas import InvoiceCreate, InvoiceItemPayload
 INVOICE_SCOPE = "invoice:write"
 _MONEY = Decimal("0.01")
 _REVIEW_URL = "https://leshine.work/invoice/manage"
+_INVOICE_NO_CREATE_ATTEMPTS = 3
 logger = logging.getLogger("commission.integration.service")
 
 
@@ -35,9 +36,14 @@ def _commit_or_rollback(db: Session, operation: str) -> None:
         db.commit()
     except Exception as exc:
         db.rollback()
-        logger.exception("外部发票事务提交失败 operation=%s", operation)
+        error_type = type(exc).__name__
+        logger.error(
+            "外部发票事务提交失败 operation=%s error_type=%s",
+            operation,
+            error_type,
+        )
         print(
-            f"[integration] commit failed operation={operation} err={type(exc).__name__}",
+            f"[integration] commit failed operation={operation} error_type={error_type}",
             flush=True,
         )
         raise
@@ -241,7 +247,55 @@ def _existing_result(
     return None
 
 
+def _is_invoice_no_unique_conflict(exc: IntegrityError) -> bool:
+    original = exc.orig
+    message = str(original).lower()
+    if "unique constraint failed: ark_invoices.invoice_no" in message:
+        return True
+    args = getattr(original, "args", ())
+    if not args or args[0] != 1062:
+        return False
+    normalized = message.translate(str.maketrans("", "", "`'\""))
+    return (
+        "for key invoice_no" in normalized
+        or "for key ark_invoices.invoice_no" in normalized
+    )
+
+
 def create_external_invoice(
+    db: Session,
+    submission: InvoiceSubmission,
+    principal,
+) -> tuple[dict, bool]:
+    for attempt in range(1, _INVOICE_NO_CREATE_ATTEMPTS + 1):
+        try:
+            return _create_external_invoice_once(db, submission, principal)
+        except IntegrityError as exc:
+            db.rollback()
+            if not _is_invoice_no_unique_conflict(exc):
+                raise
+            error_type = type(exc).__name__
+            logger.warning(
+                "外部发票号并发冲突 error_type=%s external_order_id=%s attempt=%s",
+                error_type,
+                submission.external_order_id,
+                attempt,
+            )
+            print(
+                "[integration] invoice number conflict "
+                f"error_type={error_type} "
+                f"external_order_id={submission.external_order_id} attempt={attempt}",
+                flush=True,
+            )
+            if attempt == _INVOICE_NO_CREATE_ATTEMPTS:
+                raise HTTPException(
+                    status_code=503,
+                    detail="发票号分配冲突，请稍后使用相同 external_order_id 重试",
+                ) from None
+    raise RuntimeError("invoice number retry loop exhausted")
+
+
+def _create_external_invoice_once(
     db: Session,
     submission: InvoiceSubmission,
     principal,
@@ -299,15 +353,17 @@ def create_external_invoice(
         raise ExternalInvoiceRejected(row, exc.issues, exc.warnings) from exc
     except Exception as exc:
         db.rollback()
-        logger.exception(
-            "外部发票校验发生未预期异常 app_id=%s external_order_id=%s",
+        error_type = type(exc).__name__
+        logger.error(
+            "外部发票校验发生未预期异常 error_type=%s app_id=%s external_order_id=%s",
+            error_type,
             app.id,
             submission.external_order_id,
         )
         print(
             "[integration] unexpected validation error "
             f"app_id={app.id} external_order_id={submission.external_order_id} "
-            f"err={type(exc).__name__}",
+            f"error_type={error_type}",
             flush=True,
         )
         raise

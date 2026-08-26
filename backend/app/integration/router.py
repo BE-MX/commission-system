@@ -219,25 +219,51 @@ class IntegrationValidationRoute(APIRoute):
                     exc,
                     external_order_id=await _external_order_id_from_request(request),
                 )
-            except OperationalError:
-                logger.exception("Public integration dependency is unavailable")
+            except OperationalError as exc:
+                external_order_id = await _external_order_id_from_request(request)
+                error_type = type(exc).__name__
+                logger.error(
+                    "Public integration dependency unavailable error_type=%s "
+                    "external_order_id=%s",
+                    error_type,
+                    external_order_id or "-",
+                )
+                print(
+                    "[integration] dependency unavailable "
+                    f"error_type={error_type} "
+                    f"external_order_id={external_order_id or '-'}",
+                    flush=True,
+                )
                 return _external_error_response(
                     status_code=503,
                     error_code="SERVICE_UNAVAILABLE",
                     message="integration service unavailable",
                     field="request",
                     action="服务暂不可用，请稍后使用相同 external_order_id 查询或重试",
-                    external_order_id=await _external_order_id_from_request(request),
+                    external_order_id=external_order_id,
                 )
-            except Exception:
-                logger.exception("Unexpected public integration request failure")
+            except Exception as exc:
+                external_order_id = await _external_order_id_from_request(request)
+                error_type = type(exc).__name__
+                logger.error(
+                    "Unexpected public integration failure error_type=%s "
+                    "external_order_id=%s",
+                    error_type,
+                    external_order_id or "-",
+                )
+                print(
+                    "[integration] unexpected request failure "
+                    f"error_type={error_type} "
+                    f"external_order_id={external_order_id or '-'}",
+                    flush=True,
+                )
                 return _external_error_response(
                     status_code=500,
                     error_code="INTERNAL_ERROR",
                     message="internal error",
                     field="request",
                     action="请保持相同 external_order_id 查询结果或重试",
-                    external_order_id=await _external_order_id_from_request(request),
+                    external_order_id=external_order_id,
                 )
 
         return validation_envelope_handler

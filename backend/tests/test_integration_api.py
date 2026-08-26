@@ -3,13 +3,14 @@
 from copy import deepcopy
 from decimal import Decimal
 import json
+import logging
 import threading
 
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, text
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import sessionmaker
 
 from app.auth.models import ArkPermission, ArkRole, ArkUser
@@ -1459,21 +1460,181 @@ def test_unexpected_create_error_rolls_back_invoice_and_ingest(api, monkeypatch)
     assert db.query(InvoiceIngestRequest).count() == 0
 
 
-def test_unexpected_validation_error_rolls_back_processing_ingest(api, monkeypatch):
+def test_unexpected_validation_error_rolls_back_processing_ingest(
+    api, monkeypatch, caplog,
+):
     client, db = api
     from app.integration import validation_service
 
+    secret = "secret@example.com +8613800000000"
+    printed: list[str] = []
+
     def crash_during_validation(*_args, **_kwargs):
-        raise RuntimeError("simulated catalog outage")
+        raise RuntimeError(secret)
 
     monkeypatch.setattr(validation_service, "validate_submission", crash_during_validation)
+    monkeypatch.setattr(
+        "builtins.print",
+        lambda *values, **_kwargs: printed.append(" ".join(map(str, values))),
+    )
+    caplog.set_level(logging.ERROR)
     response = client.post(
         "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
     )
     error = _assert_external_error(response, 500, "INTERNAL_ERROR")
     assert error["data"]["external_order_id"] == "SITE:2026-0001"
     assert "相同 external_order_id" in error["data"]["action"]
-    assert "simulated catalog outage" not in response.text
+    combined = "\n".join((response.text, caplog.text, *printed))
+    assert secret not in combined
+    assert "RuntimeError" in caplog.text
+    assert "SITE:2026-0001" in caplog.text
+    assert "RuntimeError" in "\n".join(printed)
+    assert "SITE:2026-0001" in "\n".join(printed)
+    assert db.query(Invoice).count() == 0
+    assert db.query(InvoiceIngestRequest).count() == 0
+
+
+def test_invoice_number_conflict_retries_the_whole_transaction(api, monkeypatch):
+    client, db = api
+    from app.invoice import service as invoice_service
+
+    original_create = invoice_service.create_invoice
+    create_calls = 0
+    public_ids = iter(("req_first_attempt", "req_second_attempt"))
+
+    def conflict_once(*args, **kwargs):
+        nonlocal create_calls
+        create_calls += 1
+        if create_calls == 1:
+            raise IntegrityError(
+                "INSERT INTO ark_invoices (invoice_no) VALUES (?)",
+                {"invoice_no": "integration-owner-KC-0801"},
+                RuntimeError(
+                    "UNIQUE constraint failed: ark_invoices.invoice_no"
+                ),
+            )
+        return original_create(*args, **kwargs)
+
+    monkeypatch.setattr(invoice_service, "create_invoice", conflict_once)
+    monkeypatch.setattr(integration_service, "_request_public_id", lambda: next(public_ids))
+
+    response = client.post(
+        "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["data"]["request_id"] == "req_second_attempt"
+    assert create_calls == 2
+    assert db.query(Invoice).count() == 1
+    rows = db.query(InvoiceIngestRequest).all()
+    assert [(row.public_id, row.status) for row in rows] == [
+        ("req_second_attempt", "created"),
+    ]
+
+
+def test_different_external_ids_recover_from_simulated_invoice_number_race(
+    api, monkeypatch,
+):
+    client, db = api
+    from app.invoice import service as invoice_service
+
+    first_payload = _submission()
+    first_payload["external_order_id"] = "SITE:RACE-A"
+    first = client.post(
+        "/api/integrations/v1/invoices", json=first_payload, headers=_headers(),
+    )
+    assert first.status_code == 201, first.text
+    first_number = first.json()["data"]["invoice_no"]
+
+    original_create = invoice_service.create_invoice
+    create_calls = 0
+
+    def lose_stale_number_once(*args, **kwargs):
+        nonlocal create_calls
+        create_calls += 1
+        if create_calls == 1:
+            raise IntegrityError(
+                "INSERT INTO ark_invoices (invoice_no) VALUES (?)",
+                {"invoice_no": first_number},
+                RuntimeError(
+                    "UNIQUE constraint failed: ark_invoices.invoice_no"
+                ),
+            )
+        return original_create(*args, **kwargs)
+
+    monkeypatch.setattr(invoice_service, "create_invoice", lose_stale_number_once)
+    second_payload = _submission()
+    second_payload["external_order_id"] = "SITE:RACE-B"
+    second = client.post(
+        "/api/integrations/v1/invoices", json=second_payload, headers=_headers(),
+    )
+
+    assert second.status_code == 201, second.text
+    assert create_calls == 2
+    invoices = db.query(Invoice).order_by(Invoice.id).all()
+    assert len(invoices) == 2
+    assert len({invoice.invoice_no for invoice in invoices}) == 2
+    ingests = db.query(InvoiceIngestRequest).order_by(
+        InvoiceIngestRequest.external_order_id,
+    ).all()
+    assert [(row.external_order_id, row.status) for row in ingests] == [
+        ("SITE:RACE-A", "created"),
+        ("SITE:RACE-B", "created"),
+    ]
+    assert all(row.invoice_id is not None for row in ingests)
+
+
+def test_non_invoice_unique_conflict_is_not_retried(api, monkeypatch):
+    client, db = api
+    from app.invoice import service as invoice_service
+
+    create_calls = 0
+
+    def different_unique_conflict(*_args, **_kwargs):
+        nonlocal create_calls
+        create_calls += 1
+        raise IntegrityError(
+            "INSERT INTO ark_invoices (source_type, source_order_id) VALUES (?, ?)",
+            {"source_type": "external_api", "source_order_id": "secret"},
+            RuntimeError(
+                "UNIQUE constraint failed: ark_invoices.source_type, "
+                "ark_invoices.source_order_id"
+            ),
+        )
+
+    monkeypatch.setattr(invoice_service, "create_invoice", different_unique_conflict)
+    response = client.post(
+        "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
+    )
+
+    _assert_external_error(response, 500, "INTERNAL_ERROR")
+    assert create_calls == 1
+    assert db.query(Invoice).count() == 0
+    assert db.query(InvoiceIngestRequest).count() == 0
+
+
+def test_exhausted_invoice_number_conflicts_return_stable_503(api, monkeypatch):
+    client, db = api
+    from app.invoice import service as invoice_service
+
+    create_calls = 0
+
+    def always_conflict(*_args, **_kwargs):
+        nonlocal create_calls
+        create_calls += 1
+        raise IntegrityError(
+            "INSERT INTO ark_invoices (invoice_no) VALUES (?)",
+            {"invoice_no": "integration-owner-KC-0801"},
+            RuntimeError("UNIQUE constraint failed: ark_invoices.invoice_no"),
+        )
+
+    monkeypatch.setattr(invoice_service, "create_invoice", always_conflict)
+    response = client.post(
+        "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
+    )
+
+    _assert_external_error(response, 503, "SERVICE_UNAVAILABLE")
+    assert create_calls in {2, 3}
     assert db.query(Invoice).count() == 0
     assert db.query(InvoiceIngestRequest).count() == 0
 
@@ -1500,6 +1661,74 @@ def test_operational_dependency_error_is_safe_503_and_rolls_back(api, monkeypatc
     assert "internal host" not in response.text
     assert db.query(Invoice).count() == 0
     assert db.query(InvoiceIngestRequest).count() == 0
+
+
+def test_external_exception_logs_and_prints_are_redacted(
+    api, monkeypatch, caplog,
+):
+    client, _ = api
+    from app.integration import validation_service
+
+    secret = "secret@example.com +8613800000000"
+    printed: list[str] = []
+
+    def unavailable_dependency(*_args, **_kwargs):
+        raise OperationalError(
+            "SELECT password FROM contacts WHERE email=:email",
+            {"email": secret},
+            RuntimeError(secret),
+        )
+
+    monkeypatch.setattr(validation_service, "validate_submission", unavailable_dependency)
+    monkeypatch.setattr(
+        "builtins.print",
+        lambda *values, **_kwargs: printed.append(" ".join(map(str, values))),
+    )
+    caplog.set_level(logging.ERROR)
+
+    response = client.post(
+        "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
+    )
+
+    _assert_external_error(response, 503, "SERVICE_UNAVAILABLE")
+    combined = "\n".join((response.text, caplog.text, *printed))
+    assert secret not in combined
+    assert "SELECT password" not in combined
+    assert "contacts WHERE" not in combined
+    assert "OperationalError" in caplog.text
+    assert "SITE:2026-0001" in caplog.text
+    assert "OperationalError" in "\n".join(printed)
+    assert "SITE:2026-0001" in "\n".join(printed)
+
+
+def test_commit_failure_logs_and_prints_only_safe_metadata(monkeypatch, caplog):
+    secret = "secret@example.com +8613800000000"
+    printed: list[str] = []
+
+    class FailingSession:
+        rolled_back = False
+
+        def commit(self):
+            raise RuntimeError(secret)
+
+        def rollback(self):
+            self.rolled_back = True
+
+    session = FailingSession()
+    monkeypatch.setattr(
+        "builtins.print",
+        lambda *values, **_kwargs: printed.append(" ".join(map(str, values))),
+    )
+    caplog.set_level(logging.ERROR)
+
+    with pytest.raises(RuntimeError, match="secret@example.com"):
+        integration_service._commit_or_rollback(session, "create_invoice_ingest")
+
+    combined = "\n".join((caplog.text, *printed))
+    assert session.rolled_back is True
+    assert secret not in combined
+    assert "RuntimeError" in caplog.text
+    assert "RuntimeError" in "\n".join(printed)
 
 
 def test_rate_limit_http_exception_maps_to_public_error_contract():
