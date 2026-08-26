@@ -2,9 +2,11 @@
 
 from copy import deepcopy
 from datetime import UTC, datetime
+import json
+
 from app.core.time import beijing_now, utc_now_naive
 
-from sqlalchemy import String, column, func, or_, select, table, update
+from sqlalchemy import String, cast, column, exists, func, or_, select, table, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -14,7 +16,6 @@ from app.auth.models import ArkUserExternalBinding
 from app.core.config import get_settings
 from app.customer_image.datetime_utils import as_utc_naive
 from app.models.business import CustomerInfo
-from app.models.customer import CustomerCommissionSnapshot
 from app.customer_image.prompt_service import validate_and_build_prompt
 from app.customer_image.models import (
     CustomerImageAsset,
@@ -349,14 +350,49 @@ def _available_customer_statement(
     )
     if not is_admin:
         okki_user_id = _okki_account_id(db, ark_user_id)
-        statement = statement.join(
-            CustomerCommissionSnapshot,
-            CustomerCommissionSnapshot.customer_id == CustomerInfo.company_id,
-        ).where(
-            CustomerCommissionSnapshot.is_current.is_(True),
-            CustomerCommissionSnapshot.salesperson_id == okki_user_id,
-        ).distinct()
+        statement = statement.where(_customer_owner_contains(db, okki_user_id))
     return statement
+
+
+def _customer_owner_contains(db: Session, okki_user_id: str):
+    """Match the live OKKI customer owner array.
+
+    Production stores ``owner_user_ids`` as a JSON array of numeric OKKI user
+    IDs. String elements are accepted defensively so admin and salesperson
+    paths keep the same scope if an upstream representation ever drifts.
+    """
+    bind = db.get_bind()
+    if bind is not None and bind.dialect.name == "sqlite":
+        owner_values = func.json_each(CustomerInfo.owner_user_ids).table_valued(
+            "value"
+        ).alias("customer_owner_values")
+        return exists(
+            select(1).select_from(owner_values).where(
+                cast(owner_values.c.value, String) == okki_user_id
+            )
+        )
+    numeric_owner = str(int(okki_user_id))
+    string_owner = json.dumps(numeric_owner)
+    return or_(
+        func.json_contains(CustomerInfo.owner_user_ids, numeric_owner) == 1,
+        func.json_contains(CustomerInfo.owner_user_ids, string_owner) == 1,
+    )
+
+
+def _normalized_owner_ids(value) -> list[str]:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (TypeError, ValueError):
+            return []
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    for item in value:
+        normalized = str(item).strip() if not isinstance(item, bool) else ""
+        if normalized.isdigit():
+            result.append(normalized)
+    return result
 
 
 def _serialize_customer(row) -> dict:
@@ -417,33 +453,24 @@ def _customer_for_invite(
     ark_user_id: int,
     is_admin: bool,
 ) -> tuple[str, str]:
-    statement = select(CustomerInfo.company_name).where(
+    statement = select(
+        CustomerInfo.company_name,
+        CustomerInfo.owner_user_ids,
+    ).where(
         CustomerInfo.company_id == customer_id
     )
     if not is_admin:
         salesperson_id = _okki_account_id(db, ark_user_id)
-        statement = statement.join(
-            CustomerCommissionSnapshot,
-            CustomerCommissionSnapshot.customer_id == CustomerInfo.company_id,
-        ).where(
-            CustomerCommissionSnapshot.is_current.is_(True),
-            CustomerCommissionSnapshot.salesperson_id == salesperson_id,
-        )
-    customer_name = db.scalar(statement.distinct())
-    if customer_name is None:
+        statement = statement.where(_customer_owner_contains(db, salesperson_id))
+    customer = db.execute(statement.limit(1)).first()
+    if customer is None:
         raise CustomerImageNotFoundError("customer not found")
     if is_admin:
-        salesperson_id = db.scalar(
-            select(CustomerCommissionSnapshot.salesperson_id)
-            .where(
-                CustomerCommissionSnapshot.customer_id == customer_id,
-                CustomerCommissionSnapshot.is_current.is_(True),
-            )
-            .order_by(CustomerCommissionSnapshot.id.desc())
-        )
-        if not salesperson_id:
+        owner_ids = _normalized_owner_ids(customer.owner_user_ids)
+        if not owner_ids:
             raise CustomerImageNotFoundError("customer owner not found")
-    return customer_name, salesperson_id
+        salesperson_id = owner_ids[0]
+    return customer.company_name, salesperson_id
 
 
 def create_invite(

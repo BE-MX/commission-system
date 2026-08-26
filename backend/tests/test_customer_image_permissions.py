@@ -157,11 +157,13 @@ def test_non_admin_cross_owner_revoke_is_404(db):
 def test_create_invite_persists_only_digest_and_published_product_links(db):
     from app.customer_image.service import create_invite
     db.execute(
-        text("INSERT INTO lsordertest.customer_info (company_id, company_name) VALUES ('C7', 'Owned')")
+        text(
+            "INSERT INTO lsordertest.customer_info "
+            "(company_id, company_name, owner_user_ids) "
+            "VALUES ('C7', 'Owned', '[1007]')"
+        )
     )
     db.add(ArkUserExternalBinding(ark_user_id=7, provider="okki", external_account_id="1007", binding_status="active", is_primary=True))
-    from app.models.customer import CustomerCommissionSnapshot
-    db.add(CustomerCommissionSnapshot(customer_id="C7", salesperson_id="1007", is_current=True, source="auto"))
     product = CustomerImageProduct(name="P", category="wig", fixed_prompt="x", output_prompt="y", created_by=1, is_published=True)
     db.add(product)
     db.commit()
@@ -179,12 +181,14 @@ def test_create_invite_persists_only_digest_and_published_product_links(db):
     assert [link.product_id for link in db.query(CustomerImageInviteProduct).all()] == [product.id]
 
 
-def test_admin_invite_snapshots_customers_current_okki_owner_without_own_binding(db):
+def test_admin_invite_snapshots_customers_live_okki_owner_without_own_binding(db):
     from app.customer_image.service import create_invite
-    from app.models.customer import CustomerCommissionSnapshot
 
-    db.execute(text("INSERT INTO lsordertest.customer_info (company_id, company_name) VALUES ('CA', 'Admin Customer')"))
-    db.add(CustomerCommissionSnapshot(customer_id="CA", salesperson_id="2008", is_current=True, source="auto"))
+    db.execute(text(
+        "INSERT INTO lsordertest.customer_info "
+        "(company_id, company_name, owner_user_ids) "
+        "VALUES ('CA', 'Admin Customer', '[2008]')"
+    ))
     product = CustomerImageProduct(name="P", category="wig", fixed_prompt="x", output_prompt="y", created_by=1, is_published=True)
     db.add(product)
     db.commit()

@@ -1,6 +1,7 @@
 """Customer image invitation schemas and customer-scope tests."""
 
 from datetime import UTC, datetime, timedelta, timezone
+import json
 
 import pytest
 from pydantic import ValidationError
@@ -31,14 +32,22 @@ from app.customer_image.service import (
 from app.models.customer import CustomerCommissionSnapshot
 
 
-def _seed_customer(db, customer_id, name, country="CN", origin="OKKI"):
+def _seed_customer(
+    db, customer_id, name, country="CN", origin="OKKI", owner_ids=None
+):
     db.execute(
         text(
             "INSERT INTO lsordertest.customer_info "
-            "(company_id, company_name, country_name, origin_name) "
-            "VALUES (:id, :name, :country, :origin)"
+            "(company_id, company_name, country_name, origin_name, owner_user_ids) "
+            "VALUES (:id, :name, :country, :origin, :owner_ids)"
         ),
-        {"id": customer_id, "name": name, "country": country, "origin": origin},
+        {
+            "id": customer_id,
+            "name": name,
+            "country": country,
+            "origin": origin,
+            "owner_ids": json.dumps(owner_ids or []),
+        },
     )
 
 
@@ -79,13 +88,10 @@ def _snapshot(db, customer_id, salesperson_id, current=True):
 
 
 def test_salesperson_only_lists_current_owned_customers(db):
-    _seed_customer(db, "c1", "Owned Customer", "US", "OKKI")
-    _seed_customer(db, "c2", "Other Customer")
+    _seed_customer(db, "c1", "Owned Customer", "US", "OKKI", [1007])
+    _seed_customer(db, "c2", "Other Customer", owner_ids=[1008])
     _seed_customer(db, "c3", "Former Customer")
     _bind_okki(db, 7, "1007")
-    _snapshot(db, "c1", "1007", current=True)
-    _snapshot(db, "c2", "1008", current=True)
-    _snapshot(db, "c3", "1007", current=False)
     db.flush()
 
     assert list_available_customers(db, 7, False, "Owned") == [
@@ -93,14 +99,31 @@ def test_salesperson_only_lists_current_owned_customers(db):
     ]
 
 
-def test_salesperson_customer_list_deduplicates_inconsistent_current_snapshots(db):
-    _seed_customer(db, "c1", "Owned Customer")
+def test_salesperson_scope_uses_live_owner_and_ignores_stale_commission_snapshots(db):
+    _seed_customer(db, "c1", "Owned Customer", owner_ids=[1007])
     _bind_okki(db, 7, "1007")
-    _snapshot(db, "c1", "1007", current=True)
-    _snapshot(db, "c1", "1007", current=True)
+    _snapshot(db, "c1", "9999", current=True)
     db.flush()
 
     assert [row["id"] for row in list_available_customers(db, 7, False, "Owned")] == ["c1"]
+
+
+def test_salesperson_owner_scope_matches_json_elements_exactly(db):
+    _seed_customer(db, "nearby", "Nearby Owner", owner_ids=[11007])
+    _bind_okki(db, 7, "1007")
+    db.flush()
+
+    assert list_available_customers(db, 7, False, "Nearby") == []
+
+
+def test_salesperson_scope_accepts_defensive_string_owner_ids(db):
+    _seed_customer(db, "string-owner", "String Owner", owner_ids=["1007"])
+    _bind_okki(db, 7, "1007")
+    db.flush()
+
+    assert [
+        row["id"] for row in list_available_customers(db, 7, False, "String")
+    ] == ["string-owner"]
 
 
 def test_admin_searches_all_customers_without_okki_binding(db):
@@ -164,18 +187,15 @@ def test_contact_search_compiles_to_non_correlated_company_id_subquery():
 
 
 def test_contact_search_preserves_ownership_and_deduplicates_customers(db):
-    _seed_customer(db, "owned-a", "Alpha Customer")
-    _seed_customer(db, "owned-b", "Beta Customer")
-    _seed_customer(db, "unowned", "Other Customer")
+    _seed_customer(db, "owned-a", "Alpha Customer", owner_ids=[1007])
+    _seed_customer(db, "owned-b", "Beta Customer", owner_ids=[1007])
+    _seed_customer(db, "unowned", "Other Customer", owner_ids=[1008])
     _seed_contact(db, 201, "owned-a", "Shared Contact One")
     _seed_contact(db, 202, "owned-a", "Shared Contact Two")
     _seed_contact(db, 203, "owned-b", "Shared Contact Three")
     _seed_contact(db, 204, "owned-b", "Shared Contact Four")
     _seed_contact(db, 205, "unowned", "Shared Contact Five")
     _bind_okki(db, 7, "1007")
-    _snapshot(db, "owned-a", "1007")
-    _snapshot(db, "owned-b", "1007")
-    _snapshot(db, "unowned", "1008")
     db.flush()
 
     rows = list_available_customers(db, 7, False, "Shared Contact")
@@ -184,11 +204,9 @@ def test_contact_search_preserves_ownership_and_deduplicates_customers(db):
 
 
 def test_exact_customer_lookup_preserves_non_admin_scope(db):
-    _seed_customer(db, "owned", "Owned Customer", "US", "OKKI")
-    _seed_customer(db, "unowned", "Unowned Customer")
+    _seed_customer(db, "owned", "Owned Customer", "US", "OKKI", [1007])
+    _seed_customer(db, "unowned", "Unowned Customer", owner_ids=[1008])
     _bind_okki(db, 7, "1007")
-    _snapshot(db, "owned", "1007")
-    _snapshot(db, "unowned", "1008")
     db.flush()
 
     assert get_available_customer(db, 7, False, "owned") == {
@@ -205,13 +223,22 @@ def test_invite_customer_lookup_is_exact_and_not_limited_by_autocomplete(db):
 
     for index in range(21):
         customer_id = f"CUST-{index:02d}"
-        _seed_customer(db, customer_id, f"A Customer {index:02d}")
-        _snapshot(db, customer_id, "1007")
-    _seed_customer(db, "CUST", "Z Target Customer")
-    _snapshot(db, "CUST", "1007")
+        _seed_customer(db, customer_id, f"A Customer {index:02d}", owner_ids=[1007])
+    _seed_customer(db, "CUST", "Z Target Customer", owner_ids=[1007])
     db.flush()
 
     assert _customer_for_invite(db, "CUST", 99, True) == ("Z Target Customer", "1007")
+
+
+def test_multi_owner_invite_snapshots_creator_or_admins_first_live_owner(db):
+    from app.customer_image.service import _customer_for_invite
+
+    _seed_customer(db, "multi", "Multi Owner", owner_ids=[1008, 1007])
+    _bind_okki(db, 7, "1007")
+    db.flush()
+
+    assert _customer_for_invite(db, "multi", 7, False) == ("Multi Owner", "1007")
+    assert _customer_for_invite(db, "multi", 99, True) == ("Multi Owner", "1008")
 
 
 @pytest.mark.parametrize(
@@ -233,31 +260,27 @@ def test_non_admin_without_active_numeric_okki_binding_gets_actionable_conflict(
 
 
 def test_non_admin_uses_active_non_primary_binding_when_no_primary_exists(db):
-    _seed_customer(db, "c1", "Owned Customer")
+    _seed_customer(db, "c1", "Owned Customer", owner_ids=[1007])
     _bind_okki(db, 7, "1007", is_primary=False)
-    _snapshot(db, "c1", "1007")
     db.flush()
 
     assert [row["id"] for row in list_available_customers(db, 7, False, "Owned")] == ["c1"]
 
 
 def test_non_admin_skips_invalid_primary_and_uses_first_numeric_binding(db):
-    _seed_customer(db, "c1", "Fallback Customer")
+    _seed_customer(db, "c1", "Fallback Customer", owner_ids=[1007])
     _bind_okki(db, 7, "not-numeric", is_primary=True)
     _bind_okki(db, 7, "1007", is_primary=False)
-    _snapshot(db, "c1", "1007")
     db.flush()
 
     assert [row["id"] for row in list_available_customers(db, 7, False, "Fallback")] == ["c1"]
 
 
 def test_non_admin_prefers_numeric_primary_over_other_numeric_binding(db):
-    _seed_customer(db, "primary", "Primary Customer")
-    _seed_customer(db, "secondary", "Secondary Customer")
+    _seed_customer(db, "primary", "Primary Customer", owner_ids=[1007])
+    _seed_customer(db, "secondary", "Secondary Customer", owner_ids=[1008])
     _bind_okki(db, 7, "1008", is_primary=False)
     _bind_okki(db, 7, "1007", is_primary=True)
-    _snapshot(db, "primary", "1007")
-    _snapshot(db, "secondary", "1008")
     db.flush()
 
     assert [row["id"] for row in list_available_customers(db, 7, False, "Primary")] == ["primary"]
