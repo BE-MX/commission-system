@@ -208,6 +208,33 @@ test('copy failure or unavailable clipboard keeps the one-time URL for manual co
   assert.match(invite, /自动复制失败，请手动选择上方链接复制/)
 })
 
+test('invite link copy falls back when the Clipboard API is rejected', async () => {
+  const textarea = {
+    style: {},
+    setAttribute() {},
+    focus() {},
+    select() {},
+    setSelectionRange() {},
+    removeCalled: false,
+    remove() { this.removeCalled = true },
+  }
+  const documentRef = {
+    body: { appendChild() {} },
+    createElement: () => textarea,
+    execCommand: command => command === 'copy',
+  }
+  const state = createCustomerImageAdminState({
+    clipboard: { writeText: async () => { throw new Error('permission denied') } },
+    documentRef,
+    api: { getProductCoverBlob: async () => ({}) },
+  })
+  state.oneTimeInviteUrl.value = 'https://example.test/create/fallback'
+
+  assert.equal(await state.copyOneTimeInviteUrl(), true)
+  assert.equal(textarea.value, 'https://example.test/create/fallback')
+  assert.equal(textarea.removeCalled, true)
+})
+
 test('invite validation requires one scoped customer explicit future expiry positive quota and a product', () => {
   const now = new Date('2026-08-09T08:00:00.000Z')
   const valid = {

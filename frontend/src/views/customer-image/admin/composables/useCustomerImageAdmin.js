@@ -301,6 +301,7 @@ function productPayload(draft) {
 export function createCustomerImageAdminState({
   api,
   clipboard = globalThis.navigator?.clipboard,
+  documentRef = globalThis.document,
   now = () => new Date(),
 } = {}) {
   const products = ref([])
@@ -381,12 +382,37 @@ export function createCustomerImageAdminState({
   }
 
   async function copyOneTimeInviteUrl() {
-    if (!oneTimeInviteUrl.value || !clipboard?.writeText) return false
+    const text = oneTimeInviteUrl.value
+    if (!text) return false
+    if (clipboard?.writeText) {
+      try {
+        await clipboard.writeText(text)
+        return true
+      } catch { /* Some embedded browsers reject the Clipboard API at runtime. */ }
+    }
+
+    if (
+      !documentRef?.body
+      || typeof documentRef.createElement !== 'function'
+      || typeof documentRef.execCommand !== 'function'
+    ) return false
+
+    const textarea = documentRef.createElement('textarea')
+    textarea.value = text
+    textarea.setAttribute('readonly', '')
+    textarea.style.position = 'fixed'
+    textarea.style.top = '-9999px'
+    textarea.style.opacity = '0'
+    documentRef.body.appendChild(textarea)
     try {
-      await clipboard.writeText(oneTimeInviteUrl.value)
-      return true
+      textarea.focus({ preventScroll: true })
+      textarea.select()
+      textarea.setSelectionRange?.(0, text.length)
+      return Boolean(documentRef.execCommand('copy'))
     } catch {
       return false
+    } finally {
+      textarea.remove()
     }
   }
 
