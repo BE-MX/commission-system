@@ -105,6 +105,9 @@ def test_mysql_connections_are_pinned_to_utc_plus_eight():
 
     alembic_env = (Path(__file__).parents[1] / "alembic/env.py").read_text(encoding="utf-8")
     assert alembic_env.count("SET time_zone = '+08:00'") == 2
+    online_setup = alembic_env.split("def run_migrations_online()", 1)[1]
+    assert online_setup.index("connection.exec_driver_sql") < online_setup.index("connection.commit()")
+    assert online_setup.index("connection.commit()") < online_setup.index("context.configure")
 
 
 def test_migration_covers_production_and_keeps_invoice_108_excluded():

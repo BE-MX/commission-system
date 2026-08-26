@@ -44,6 +44,11 @@ def run_migrations_online() -> None:
     connectable = create_engine(settings.commission_db_url, poolclass=pool.NullPool)
     with connectable.connect() as connection:
         connection.exec_driver_sql("SET time_zone = '+08:00'")
+        # SQLAlchemy 2 starts an implicit transaction for the SET statement.
+        # End that initialization transaction before Alembic establishes its
+        # own commit boundary; otherwise successful DML migrations and the
+        # alembic_version update are rolled back when the connection closes.
+        connection.commit()
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
