@@ -3,15 +3,33 @@
 from datetime import date, datetime
 from decimal import Decimal
 import re
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
 from app.core.time import to_beijing_naive
 
 
 class StrictSchema(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+
+def _parse_json_decimal(value) -> Decimal:
+    if not isinstance(value, str):
+        raise ValueError("金额必须使用 JSON 十进制字符串")
+    normalized = value.strip()
+    if re.fullmatch(r"-?\d+(?:\.\d+)?", normalized) is None:
+        raise ValueError("金额必须是有限十进制字符串")
+    amount = Decimal(normalized)
+    if not amount.is_finite():
+        raise ValueError("金额必须是有限十进制字符串")
+    return amount
+
+
+JsonDecimal = Annotated[
+    Decimal,
+    BeforeValidator(_parse_json_decimal, json_schema_input_type=str),
+]
 
 
 class IntegrationAppCreate(StrictSchema):
@@ -65,8 +83,8 @@ class ProductResolutionRequest(StrictSchema):
 class InvoiceLineSubmission(ProductResolutionRequest):
     external_line_id: str | None = Field(default=None, max_length=64)
     quantity: int = Field(gt=0, le=2_147_483_647, strict=True)
-    unit_price: Decimal = Field(gt=0, max_digits=12, decimal_places=4)
-    discount_amount: Decimal = Field(
+    unit_price: JsonDecimal = Field(gt=0, max_digits=12, decimal_places=4)
+    discount_amount: JsonDecimal = Field(
         default=Decimal("0"), le=0, max_digits=14, decimal_places=2,
     )
 
@@ -78,27 +96,27 @@ class DeliverySubmission(StrictSchema):
 
 class SurchargeSubmission(StrictSchema):
     name: str | None = Field(default=None, max_length=128)
-    amount: Decimal = Field(
+    amount: JsonDecimal = Field(
         default=Decimal("0"), ge=0, max_digits=14, decimal_places=2,
     )
 
 
 class FeeSubmission(StrictSchema):
-    packaging_amount: Decimal = Field(
+    packaging_amount: JsonDecimal = Field(
         default=Decimal("0"), ge=0, max_digits=14, decimal_places=2,
     )
     packaging_quantity: int = Field(
         default=0, ge=0, le=2_147_483_647, strict=True,
     )
-    shipping_amount: Decimal = Field(
+    shipping_amount: JsonDecimal = Field(
         default=Decimal("0"), ge=0, max_digits=14, decimal_places=2,
     )
     surcharge: SurchargeSubmission = Field(default_factory=SurchargeSubmission)
 
 
 class DeclaredTotals(StrictSchema):
-    product_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
-    total_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+    product_amount: JsonDecimal = Field(ge=0, max_digits=14, decimal_places=2)
+    total_amount: JsonDecimal = Field(ge=0, max_digits=14, decimal_places=2)
 
 
 class InvoiceSubmission(StrictSchema):
@@ -133,3 +151,20 @@ class InvoiceSubmission(StrictSchema):
             return date.fromisoformat(value)
         except ValueError as exc:
             raise ValueError("invoice_date 必须是有效的 ISO 日期") from exc
+
+
+class IntegrationValidationIssue(StrictSchema):
+    code: str
+    field: str
+    message: str
+
+
+class InvoiceValidationErrorData(StrictSchema):
+    issues: list[IntegrationValidationIssue]
+    warnings: list[IntegrationValidationIssue]
+
+
+class InvoiceValidationErrorEnvelope(StrictSchema):
+    code: Literal[422]
+    message: Literal["invoice validation failed"]
+    data: InvoiceValidationErrorData

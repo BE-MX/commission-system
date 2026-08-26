@@ -125,6 +125,13 @@ def resolve_customer(
     *,
     field: str = "customer",
 ) -> dict:
+    """Resolve at organization scope, matching the existing invoice:write contract.
+
+    The Integration App inherits its bound user's current invoice permission; customer
+    private-pool ownership is an optional internal search filter, not an authorization
+    boundary. This resolver returns one canonical customer or one stable issue and never
+    returns contact candidates or other PII from the customer library.
+    """
     if submission.ark_customer_id:
         row = _customer_by_id(db, submission.ark_customer_id)
         if row is None:

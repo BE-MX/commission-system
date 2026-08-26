@@ -223,6 +223,19 @@ def _issue(response) -> dict:
     return body["data"]["issues"][0]
 
 
+def _schema_issue(response) -> dict:
+    assert response.status_code == 422, response.text
+    body = response.json()
+    assert body["code"] == 422
+    assert body["message"] == "invoice validation failed"
+    assert body["data"]["warnings"] == []
+    assert "detail" not in body
+    issue = body["data"]["issues"][0]
+    assert issue["code"] == "SCHEMA_INVALID"
+    assert set(issue) == {"code", "field", "message"}
+    return issue
+
+
 def test_submission_rejects_top_level_and_nested_unknown_fields(api):
     client, _ = api
     for field, value in (
@@ -235,16 +248,52 @@ def test_submission_rejects_top_level_and_nested_unknown_fields(api):
         response = client.post(
             "/api/integrations/v1/invoices/validate", json=top_level, headers=_headers(),
         )
-        assert response.status_code == 422
-        assert response.json()["detail"][0]["loc"][-1] == field
+        issue = _schema_issue(response)
+        assert issue["field"] == field
 
     nested = _submission()
     nested["customer"]["contact"]["secret_note"] = "must be rejected"
     response = client.post(
         "/api/integrations/v1/invoices/validate", json=nested, headers=_headers(),
     )
-    assert response.status_code == 422
-    assert response.json()["detail"][0]["loc"][-1] == "secret_note"
+    issue = _schema_issue(response)
+    assert issue["field"] == "customer.contact.secret_note"
+
+
+def test_schema_error_paths_cover_nested_type_and_boundary_failures(api):
+    client, _ = api
+    cases = [
+        (("items", 0, "quantity"), True, "items[0].quantity"),
+        (("items", 0, "unit_price"), "0.0000", "items[0].unit_price"),
+        (("fees", "surcharge", "amount"), "-0.01", "fees.surcharge.amount"),
+    ]
+    for path, value, expected_field in cases:
+        payload = _submission()
+        target = payload
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = value
+        issue = _schema_issue(client.post(
+            "/api/integrations/v1/invoices/validate", json=payload, headers=_headers(),
+        ))
+        assert issue["field"] == expected_field
+
+
+def test_customer_and_product_resolvers_use_the_same_schema_error_envelope(api):
+    client, _ = api
+    customer_issue = _schema_issue(client.post(
+        "/api/integrations/v1/customers/resolve",
+        json={"contact": {"unknown": "must not leak"}},
+        headers=_headers(),
+    ))
+    assert customer_issue["field"] == "contact.unknown"
+
+    product_issue = _schema_issue(client.post(
+        "/api/integrations/v1/products/resolve",
+        json={"product_kind": "hair", "catalog_ref": {"product_id": 1}},
+        headers=_headers(),
+    ))
+    assert product_issue["field"] == "catalog_ref.sku_id"
 
 
 @pytest.mark.parametrize(
@@ -321,6 +370,63 @@ def test_line_rejects_amounts_outside_internal_decimal_precision(api, field, val
         "/api/integrations/v1/invoices/validate", json=payload, headers=_headers(),
     )
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("items", 0, "unit_price"), 10.0),
+        (("items", 0, "unit_price"), True),
+        (("items", 0, "discount_amount"), -1),
+        (("fees", "packaging_amount"), 1.25),
+        (("fees", "shipping_amount"), 1),
+        (("fees", "surcharge", "amount"), 1.5),
+        (("declared_totals", "product_amount"), 20.0),
+        (("declared_totals", "total_amount"), 20),
+    ],
+)
+def test_money_fields_reject_json_numbers_and_booleans(api, path, value):
+    client, _ = api
+    payload = _submission()
+    payload["declared_totals"] = {"product_amount": "20.00", "total_amount": "20.00"}
+    target = payload
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = value
+    issue = _schema_issue(client.post(
+        "/api/integrations/v1/invoices/validate", json=payload, headers=_headers(),
+    ))
+    expected = "".join(
+        f"[{part}]" if isinstance(part, int) else (("." if index else "") + part)
+        for index, part in enumerate(path)
+    )
+    assert issue["field"] == expected
+
+
+def test_money_fields_accept_decimal_strings_and_omitted_defaults(api):
+    client, _ = api
+    payload = _submission()
+    payload["items"][0]["unit_price"] = "10.0000"
+    payload["items"][0]["discount_amount"] = "-0.00"
+    payload["fees"] = {
+        "packaging_amount": "0.00",
+        "packaging_quantity": 0,
+        "shipping_amount": "0.00",
+        "surcharge": {"amount": "0.00"},
+    }
+    payload["declared_totals"] = {"product_amount": "20.00", "total_amount": "20.00"}
+    response = client.post(
+        "/api/integrations/v1/invoices/validate", json=payload, headers=_headers(),
+    )
+    assert response.status_code == 200, response.text
+
+    omitted_defaults = _submission()
+    omitted_defaults.pop("fees")
+    omitted_defaults["items"][0].pop("discount_amount")
+    response = client.post(
+        "/api/integrations/v1/invoices/validate", json=omitted_defaults, headers=_headers(),
+    )
+    assert response.status_code == 200, response.text
 
 
 def test_line_rejects_calculated_total_outside_invoice_money_capacity(api):
@@ -427,6 +533,24 @@ def test_customer_id_uses_canonical_company_name_and_keeps_contact_snapshot(api)
     assert customer["name"] == "Acme Global"
     assert customer["contact"] == {
         "name": "Snapshot Person", "email": "Snapshot@Example.com", "phone": None,
+    }
+
+
+def test_customer_resolution_returns_one_canonical_customer_without_candidates(api):
+    client, _ = api
+    response = client.post(
+        "/api/integrations/v1/customers/resolve",
+        json={"name": "Acme Global"},
+        headers=_headers(),
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert set(data) == {"customer"}
+    assert data["customer"] == {
+        "ark_customer_id": "C001",
+        "name": "Acme Global",
+        "country_name": "US",
+        "contact": {"name": None, "email": None, "phone": None},
     }
 
 
@@ -580,8 +704,8 @@ def test_product_rejects_invalid_pair_and_accessory_without_catalog_ref(api):
         json={"product_kind": "hair", "catalog_ref": {"product_id": 1}},
         headers=_headers(),
     )
-    assert incomplete_pair.status_code == 422
-    assert incomplete_pair.json()["detail"][0]["loc"][-1] == "sku_id"
+    issue = _schema_issue(incomplete_pair)
+    assert issue["field"] == "catalog_ref.sku_id"
 
 
 def test_product_resolves_unique_four_dimensions(api):
@@ -756,3 +880,14 @@ def test_full_application_registers_public_phase_one_paths():
         "/api/integrations/v1/products/resolve",
         "/api/integrations/v1/invoices/validate",
     }.issubset(paths)
+
+    openapi = app.openapi()
+    for path in (
+        "/api/integrations/v1/customers/resolve",
+        "/api/integrations/v1/products/resolve",
+        "/api/integrations/v1/invoices/validate",
+    ):
+        response_schema = openapi["paths"][path]["post"]["responses"]["422"]["content"][
+            "application/json"
+        ]["schema"]
+        assert response_schema["$ref"].endswith("/InvoiceValidationErrorEnvelope")

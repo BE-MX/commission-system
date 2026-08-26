@@ -1,7 +1,9 @@
 """Integration App administration and public invoice-integration routes."""
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, Path, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -17,6 +19,7 @@ from app.integration.schemas import (
     IntegrationAppCreate,
     IntegrationAppRotate,
     InvoiceSubmission,
+    InvoiceValidationErrorEnvelope,
     ProductResolutionRequest,
 )
 
@@ -25,6 +28,62 @@ router = APIRouter()
 # Machine-to-machine endpoints use a revocable Integration App token rather
 # than a user JWT. The factory still rechecks the bound user's current scope.
 _require_invoice_integration = require_integration_scope("invoice:write")
+
+
+def _field_path(location: tuple) -> str:
+    parts = list(location)
+    if parts and parts[0] in {"body", "query", "path", "header", "cookie"}:
+        parts.pop(0)
+    result = ""
+    for part in parts:
+        if isinstance(part, int):
+            result += f"[{part}]"
+        else:
+            result += ("." if result else "") + str(part)
+    return result or "request"
+
+
+def _request_validation_error(exc: RequestValidationError) -> JSONResponse:
+    issues = [
+        {
+            "code": "SCHEMA_INVALID",
+            "field": _field_path(tuple(error.get("loc") or ())),
+            "message": str(error.get("msg") or "请求字段不符合合同"),
+        }
+        for error in exc.errors()
+    ]
+    return JSONResponse(
+        status_code=422,
+        content={
+            "code": 422,
+            "message": "invoice validation failed",
+            "data": {"issues": issues, "warnings": []},
+        },
+    )
+
+
+class IntegrationValidationRoute(APIRoute):
+    """Normalize schema failures only for public Integration App endpoints."""
+
+    def get_route_handler(self):
+        original_handler = super().get_route_handler()
+
+        async def validation_envelope_handler(request: Request):
+            try:
+                return await original_handler(request)
+            except RequestValidationError as exc:
+                return _request_validation_error(exc)
+
+        return validation_envelope_handler
+
+
+public_router = APIRouter(route_class=IntegrationValidationRoute)
+_VALIDATION_RESPONSES = {
+    422: {
+        "model": InvoiceValidationErrorEnvelope,
+        "description": "Stable external invoice validation envelope",
+    },
+}
 
 
 def _validation_error(exc: validation_service.InvoiceValidationError) -> JSONResponse:
@@ -38,7 +97,11 @@ def _validation_error(exc: validation_service.InvoiceValidationError) -> JSONRes
     )
 
 
-@router.post("/v1/customers/resolve", summary="Resolve one existing OKKI customer exactly")
+@public_router.post(
+    "/v1/customers/resolve",
+    summary="Resolve one existing OKKI customer exactly",
+    responses=_VALIDATION_RESPONSES,
+)
 def post_resolve_customer(
     request: CustomerSubmission,
     db: Session = Depends(get_db),
@@ -51,7 +114,11 @@ def post_resolve_customer(
     return ok({"customer": customer})
 
 
-@router.post("/v1/products/resolve", summary="Resolve one active catalog product exactly")
+@public_router.post(
+    "/v1/products/resolve",
+    summary="Resolve one active catalog product exactly",
+    responses=_VALIDATION_RESPONSES,
+)
 def post_resolve_product(
     request: ProductResolutionRequest,
     db: Session = Depends(get_db),
@@ -64,7 +131,11 @@ def post_resolve_product(
     return ok({"item": item})
 
 
-@router.post("/v1/invoices/validate", summary="Validate an invoice submission without writes")
+@public_router.post(
+    "/v1/invoices/validate",
+    summary="Validate an invoice submission without writes",
+    responses=_VALIDATION_RESPONSES,
+)
 def post_validate_invoice(
     request: InvoiceSubmission,
     db: Session = Depends(get_db),
@@ -75,6 +146,9 @@ def post_validate_invoice(
     except validation_service.InvoiceValidationError as exc:
         return _validation_error(exc)
     return ok(data)
+
+
+router.include_router(public_router)
 
 
 @router.get("/admin/user-candidates", summary="Search eligible Integration App owners")
