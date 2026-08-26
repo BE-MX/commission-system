@@ -15,11 +15,14 @@ from app.integration.auth import (
 )
 from app.integration import service, validation_service
 from app.integration.schemas import (
+    CustomerResolveSuccessEnvelope,
     CustomerSubmission,
     IntegrationAppCreate,
     IntegrationAppRotate,
     InvoiceSubmission,
     InvoiceValidationErrorEnvelope,
+    InvoiceValidationSuccessEnvelope,
+    ProductResolveSuccessEnvelope,
     ProductResolutionRequest,
 )
 
@@ -146,6 +149,7 @@ def _validation_error(exc: validation_service.InvoiceValidationError) -> JSONRes
 @public_router.post(
     "/v1/customers/resolve",
     summary="Resolve one existing OKKI customer exactly",
+    response_model=CustomerResolveSuccessEnvelope,
     responses=_VALIDATION_RESPONSES,
 )
 def post_resolve_customer(
@@ -163,6 +167,7 @@ def post_resolve_customer(
 @public_router.post(
     "/v1/products/resolve",
     summary="Resolve one active catalog product exactly",
+    response_model=ProductResolveSuccessEnvelope,
     responses=_VALIDATION_RESPONSES,
 )
 def post_resolve_product(
@@ -179,7 +184,8 @@ def post_resolve_product(
 
 @public_router.post(
     "/v1/invoices/validate",
-    summary="Validate an invoice submission without writes",
+    summary="Validate without creating invoice/ingest records",
+    response_model=InvoiceValidationSuccessEnvelope,
     responses=_VALIDATION_RESPONSES,
 )
 def post_validate_invoice(

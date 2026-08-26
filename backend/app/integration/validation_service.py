@@ -12,7 +12,6 @@ from app.integration.schemas import (
     ProductResolutionRequest,
 )
 from app.invoice import accessory_price_service, price_service, product_service
-from app.invoice.models import StdPrice
 
 
 _MONEY = Decimal("0.01")
@@ -47,20 +46,11 @@ def _price_text(value: Decimal | None) -> str | None:
 
 
 def _normalize_company_name(value: str | None) -> str:
-    return re.sub(r"\s+", " ", str(value or "").strip()).casefold()
+    return re.sub(r"\s+", " ", str(value or "").strip())
 
 
 def _normalize_phone(value: str | None) -> str:
     return "".join(re.findall(r"\d", str(value or "")))
-
-
-def _customer_rows(db: Session) -> list[dict]:
-    schema = product_service._schema()
-    return [dict(row) for row in db.execute(text(f"""
-        SELECT ci.company_id, ci.company_name, ci.country_name
-        FROM `{schema}`.customer_info ci
-        ORDER BY ci.company_id
-    """)).mappings().all()]
 
 
 def _customer_by_id(db: Session, customer_id: str) -> dict | None:
@@ -68,42 +58,70 @@ def _customer_by_id(db: Session, customer_id: str) -> dict | None:
     row = db.execute(text(f"""
         SELECT ci.company_id, ci.company_name, ci.country_name
         FROM `{schema}`.customer_info ci
-        WHERE CAST(ci.company_id AS CHAR) = :company_id
+        WHERE ci.company_id = :company_id
         LIMIT 1
-    """), {"company_id": customer_id}).mappings().first()
+    """), {"company_id": int(customer_id)}).mappings().first()
     return dict(row) if row is not None else None
+
+
+def _customer_by_name(db: Session, company_name: str) -> list[dict]:
+    schema = product_service._schema()
+    bind = db.get_bind()
+    is_sqlite = bind is not None and bind.dialect.name == "sqlite"
+    comparison = "ci.company_name = :company_name COLLATE NOCASE" if is_sqlite else "ci.company_name = :company_name"
+    rows = db.execute(text(f"""
+        SELECT ci.company_id, ci.company_name, ci.country_name
+        FROM `{schema}`.customer_info ci
+        WHERE {comparison}
+        LIMIT 2
+    """), {"company_name": company_name}).mappings().all()
+    return [dict(row) for row in rows]
 
 
 def _contact_company_ids(db: Session, contact) -> set[str]:
     schema = product_service._schema()
     email = str(contact.email or "").strip().casefold()
+    raw_phone = str(contact.phone or "").strip()
     phone = _normalize_phone(contact.phone)
     email_ids: set[str] = set()
     phone_ids: set[str] = set()
+    bind = db.get_bind()
+    is_sqlite = bind is not None and bind.dialect.name == "sqlite"
 
     if email:
+        email_comparison = "cc.email = :email COLLATE NOCASE" if is_sqlite else "cc.email = :email"
         rows = db.execute(text(f"""
             SELECT DISTINCT cc.company_id
             FROM `{schema}`.customer_contacts cc
-            WHERE LOWER(TRIM(cc.email)) = :email
-            ORDER BY cc.company_id
+            WHERE {email_comparison}
+            LIMIT 2
         """), {"email": email}).scalars().all()
         email_ids = {str(company_id) for company_id in rows if company_id is not None}
 
     if phone:
-        # Phone punctuation varies by source. Comparing normalized digits in Python
-        # keeps SQLite tests and MySQL production behavior identical.
-        rows = db.execute(text(f"""
-            SELECT cc.company_id, cc.tel
+        raw_rows = db.execute(text(f"""
+            SELECT DISTINCT cc.company_id
             FROM `{schema}`.customer_contacts cc
-            WHERE cc.tel IS NOT NULL AND TRIM(cc.tel) != ''
-            ORDER BY cc.company_id, cc.id
-        """)).mappings().all()
-        phone_ids = {
-            str(row["company_id"])
-            for row in rows
-            if row["company_id"] is not None and _normalize_phone(row["tel"]) == phone
-        }
+            WHERE cc.tel = :raw_phone
+            LIMIT 2
+        """), {"raw_phone": raw_phone}).scalars().all()
+        phone_ids.update(str(company_id) for company_id in raw_rows if company_id is not None)
+
+        if not phone_ids:
+            if is_sqlite:
+                digits_expression = (
+                    "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("
+                    "cc.tel, ' ', ''), '+', ''), '-', ''), '(', ''), ')', ''), '.', ''), '/', '')"
+                )
+            else:
+                digits_expression = "REGEXP_REPLACE(cc.tel, '[^0-9]', '')"
+            digit_rows = db.execute(text(f"""
+                SELECT DISTINCT cc.company_id
+                FROM `{schema}`.customer_contacts cc
+                WHERE {digits_expression} = :phone
+                LIMIT 2
+            """), {"phone": phone}).scalars().all()
+            phone_ids.update(str(company_id) for company_id in digit_rows if company_id is not None)
 
     if email_ids and phone_ids and email_ids != phone_ids:
         return email_ids | phone_ids
@@ -155,10 +173,7 @@ def resolve_customer(
             return _canonical_customer(row, submission)
 
     normalized_name = _normalize_company_name(submission.name)
-    matches = [
-        row for row in _customer_rows(db)
-        if normalized_name and _normalize_company_name(row["company_name"]) == normalized_name
-    ]
+    matches = _customer_by_name(db, normalized_name) if normalized_name else []
     company_ids = {str(row["company_id"]) for row in matches}
     if len(company_ids) == 1:
         return _canonical_customer(matches[0], submission)
@@ -314,18 +329,16 @@ def _price_snapshot(
     ref = canonical["catalog_ref"]
     description = canonical["description"]
     if canonical["product_kind"] == "accessory":
-        row = db.query(StdPrice).filter(
-            StdPrice.product_kind == "accessory",
-            StdPrice.product_id == ref["product_id"],
-            StdPrice.sku_id == ref["sku_id"],
-        ).first()
-        if row is None or str(row.currency or "").upper() != currency:
-            return {"standard_price": None, "customer_price": None, "price_source": "missing_std"}
-        standard = Decimal(row.price)
-        rule = price_service.get_customer_rule_row(db, customer_id)
+        pricing = accessory_price_service.resolve_configured_price(
+            db,
+            customer_id=customer_id,
+            product_id=ref["product_id"],
+            sku_id=ref["sku_id"],
+            currency=currency,
+        )
         return {
-            "standard_price": standard,
-            "customer_price": price_service.apply_rule(standard, rule),
+            "standard_price": pricing["standard_price"],
+            "customer_price": pricing["customer_price"],
             "price_source": "customer_rule",
         }
 
@@ -382,12 +395,22 @@ def validate_submission(db: Session, submission: InvoiceSubmission) -> dict:
             continue
         line_total = _money(raw_line_total)
         product_amount += line_total
-        snapshot = _price_snapshot(
-            db,
-            customer_id=customer["ark_customer_id"] if customer else None,
-            currency=submission.currency,
-            canonical=canonical,
-        )
+        try:
+            snapshot = _price_snapshot(
+                db,
+                customer_id=customer["ark_customer_id"] if customer else None,
+                currency=submission.currency,
+                canonical=canonical,
+            )
+        except ValueError:
+            if canonical["product_kind"] != "accessory":
+                raise
+            issues.append(_issue(
+                "ACCESSORY_PRICE_NOT_CONFIGURED",
+                product_field,
+                "配件未配置当前币种的有效标准价，请先在方舟价格表配置",
+            ))
+            continue
         expected_price = snapshot["customer_price"]
         price_source = snapshot["price_source"]
         if expected_price is not None and line.unit_price != Decimal(expected_price):

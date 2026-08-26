@@ -50,16 +50,16 @@ def _seed_catalog(db) -> None:
         INSERT INTO lsordertest.customer_info
             (company_id, company_name, country_name, owner_user_ids)
         VALUES
-            ('C001', 'Acme Global', 'US', '[]'),
-            ('C002', 'Beta Buyer', 'GB', '[]'),
-            ('C003', 'Space   Name Ltd', 'CA', '[]')
+            (1001, 'Acme Global', 'US', '[]'),
+            (1002, 'Beta Buyer', 'GB', '[]'),
+            (1003, 'Space Name Ltd', 'CA', '[]')
     """))
     db.execute(text("""
         INSERT INTO lsordertest.customer_contacts
             (id, company_id, name, email, tel, is_main)
         VALUES
-            (1, 'C001', 'Alice', 'Buyer@Example.com', '+1 (555) 010-0200', 1),
-            (2, 'C002', 'Bob', 'beta@example.com', '+44 20 7946 0958', 1)
+            (1, 1001, 'Alice', 'Buyer@Example.com', '+1 (555) 010-0200', 1),
+            (2, 1002, 'Bob', 'beta@example.com', '+44 20 7946 0958', 1)
     """))
     db.execute(text("""
         INSERT INTO lsordertest.okki_products
@@ -185,6 +185,32 @@ def _line(*, product_id: int = 1, sku_id: int = 1001) -> dict:
     }
 
 
+def _accessory_line() -> dict:
+    return {
+        "external_line_id": "accessory-1",
+        "product_kind": "accessory",
+        "catalog_ref": {"product_id": 2, "sku_id": 2001},
+        "description": {"product_display": "forged", "model": "forged", "color": "forged"},
+        "quantity": 2,
+        "unit_price": "5.0000",
+        "discount_amount": "0.00",
+    }
+
+
+def _seed_accessory_price(db, *, currency: str = "USD") -> None:
+    db.add(StdPrice(
+        product_kind="accessory",
+        product_id=2,
+        sku_id=2001,
+        accessory_name="Canonical Clip",
+        accessory_model="Clip-M",
+        accessory_color="Black",
+        price=Decimal("4.5000"),
+        currency=currency,
+    ))
+    db.commit()
+
+
 def _submission() -> dict:
     return {
         "schema_version": "1.0",
@@ -193,7 +219,7 @@ def _submission() -> dict:
         "invoice_date": "2026-08-26",
         "currency": "usd",
         "customer": {
-            "ark_customer_id": "C001",
+            "ark_customer_id": "1001",
             "name": "Untrusted customer name",
             "contact": {
                 "name": "Order Contact",
@@ -533,10 +559,10 @@ def test_discount_cannot_make_line_total_negative(api):
 @pytest.mark.parametrize(
     ("customer", "expected_id"),
     [
-        ({"ark_customer_id": "C001"}, "C001"),
-        ({"contact": {"email": " buyer@example.COM "}}, "C001"),
-        ({"contact": {"phone": "1-555-010-0200"}}, "C001"),
-        ({"name": "  SPACE name   LTD "}, "C003"),
+        ({"ark_customer_id": "1001"}, "1001"),
+        ({"contact": {"email": " buyer@example.COM "}}, "1001"),
+        ({"contact": {"phone": "1-555-010-0200"}}, "1001"),
+        ({"name": "  SPACE name   LTD "}, "1003"),
     ],
 )
 def test_customer_resolves_by_id_email_phone_or_normalized_exact_name(api, customer, expected_id):
@@ -553,7 +579,7 @@ def test_customer_id_uses_canonical_company_name_and_keeps_contact_snapshot(api)
     response = client.post(
         "/api/integrations/v1/customers/resolve",
         json={
-            "ark_customer_id": "C001",
+            "ark_customer_id": "1001",
             "name": "Forged Company",
             "contact": {"name": "Snapshot Person", "email": "Snapshot@Example.com"},
         },
@@ -578,14 +604,41 @@ def test_customer_resolution_returns_one_canonical_customer_without_candidates(a
     data = response.json()["data"]
     assert set(data) == {"customer"}
     assert data["customer"] == {
-        "ark_customer_id": "C001",
+        "ark_customer_id": "1001",
         "name": "Acme Global",
         "country_name": "US",
         "contact": {"name": None, "email": None, "phone": None},
     }
 
 
-def test_customer_id_lookup_compares_the_full_external_value_as_text(api):
+def test_customer_id_lookup_binds_numeric_id_without_casting_indexed_column(api):
+    client, db = api
+    statements: list[tuple[str, object]] = []
+
+    def capture_statement(_conn, _cursor, statement, parameters, _context, _executemany):
+        statements.append((statement, parameters))
+
+    engine = db.get_bind()
+    event.listen(engine, "before_cursor_execute", capture_statement)
+    try:
+        response = client.post(
+            "/api/integrations/v1/customers/resolve",
+            json={"ark_customer_id": "1001"},
+            headers=_headers(),
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", capture_statement)
+    assert response.status_code == 200, response.text
+    customer_queries = [(sql, params) for sql, params in statements if "customer_info" in sql]
+    assert customer_queries
+    sql, params = customer_queries[0]
+    assert "CAST" not in sql.upper()
+    assert "ci.company_id =" in sql
+    assert "LIMIT 1" in sql
+    assert params == (1001,)
+
+
+def test_customer_lookup_queries_are_database_bounded_and_do_not_select_contact_pii(api):
     client, db = api
     statements: list[str] = []
 
@@ -595,17 +648,48 @@ def test_customer_id_lookup_compares_the_full_external_value_as_text(api):
     engine = db.get_bind()
     event.listen(engine, "before_cursor_execute", capture_statement)
     try:
-        response = client.post(
+        assert client.post(
             "/api/integrations/v1/customers/resolve",
-            json={"ark_customer_id": "C001"},
+            json={"contact": {"email": " buyer@example.COM "}},
             headers=_headers(),
-        )
+        ).status_code == 200
+        assert client.post(
+            "/api/integrations/v1/customers/resolve",
+            json={"contact": {"phone": "1-555-010-0200"}},
+            headers=_headers(),
+        ).status_code == 200
+        assert client.post(
+            "/api/integrations/v1/customers/resolve",
+            json={"name": "  SPACE name   LTD "},
+            headers=_headers(),
+        ).status_code == 200
     finally:
         event.remove(engine, "before_cursor_execute", capture_statement)
-    assert response.status_code == 200, response.text
-    customer_queries = [sql for sql in statements if "customer_info" in sql]
-    assert customer_queries
-    assert "CAST(ci.company_id AS CHAR)" in customer_queries[0]
+
+    contact_queries = [sql for sql in statements if "customer_contacts" in sql]
+    assert contact_queries
+    assert all("LIMIT 2" in sql for sql in contact_queries)
+    for sql in contact_queries:
+        projection = sql.upper().split("FROM", 1)[0]
+        assert "CC.EMAIL" not in projection
+        assert "CC.TEL" not in projection
+
+    name_queries = [
+        sql for sql in statements
+        if "customer_info" in sql and "company_name" in sql.split("WHERE", 1)[-1]
+    ]
+    assert name_queries
+    assert all("LIMIT 2" in sql for sql in name_queries)
+
+
+def test_customer_id_rejects_non_numeric_external_values(api):
+    client, _ = api
+    issue = _schema_issue(client.post(
+        "/api/integrations/v1/customers/resolve",
+        json={"ark_customer_id": "1001junk"},
+        headers=_headers(),
+    ))
+    assert issue["field"] == "ark_customer_id"
 
 
 def test_customer_not_found_and_ambiguity_have_stable_business_codes(api):
@@ -620,7 +704,7 @@ def test_customer_not_found_and_ambiguity_have_stable_business_codes(api):
 
     db.execute(text("""
         INSERT INTO lsordertest.customer_contacts (id, company_id, name, email, tel, is_main)
-        VALUES (10, 'C002', 'Duplicate', 'buyer@example.com', '+1 555 999 0000', 0)
+        VALUES (10, 1002, 'Duplicate', 'buyer@example.com', '+1 555 999 0000', 0)
     """))
     db.commit()
     ambiguous = _issue(client.post(
@@ -634,7 +718,7 @@ def test_customer_not_found_and_ambiguity_have_stable_business_codes(api):
     db.execute(text("""
         INSERT INTO lsordertest.customer_info
             (company_id, company_name, country_name, owner_user_ids)
-        VALUES ('C004', 'Beta   Buyer', 'AU', '[]')
+        VALUES (1004, 'Beta Buyer', 'AU', '[]')
     """))
     db.commit()
     ambiguous_name = _issue(client.post(
@@ -710,6 +794,47 @@ def test_accessory_resolves_only_from_active_accessory_sku_catalog(api):
         headers=_headers(),
     ))
     assert wrong_catalog["code"] == "PRODUCT_NOT_FOUND"
+
+
+def test_invoice_validation_rejects_accessory_without_configured_price(api):
+    client, _ = api
+    payload = _submission()
+    payload["items"] = [_accessory_line()]
+    issue = _issue(client.post(
+        "/api/integrations/v1/invoices/validate", json=payload, headers=_headers(),
+    ))
+    assert issue["code"] == "ACCESSORY_PRICE_NOT_CONFIGURED"
+    assert issue["field"] == "items[0].catalog_ref"
+
+
+def test_invoice_validation_rejects_accessory_price_currency_mismatch(api):
+    client, db = api
+    _seed_accessory_price(db, currency="USD")
+    payload = _submission()
+    payload["currency"] = "EUR"
+    payload["items"] = [_accessory_line()]
+    issue = _issue(client.post(
+        "/api/integrations/v1/invoices/validate", json=payload, headers=_headers(),
+    ))
+    assert issue["code"] == "ACCESSORY_PRICE_NOT_CONFIGURED"
+    assert issue["field"] == "items[0].catalog_ref"
+
+
+def test_invoice_validation_uses_configured_accessory_price_and_canonical_snapshot(api):
+    client, db = api
+    _seed_accessory_price(db)
+    payload = _submission()
+    payload["items"] = [_accessory_line()]
+    response = client.post(
+        "/api/integrations/v1/invoices/validate", json=payload, headers=_headers(),
+    )
+    assert response.status_code == 200, response.text
+    item = response.json()["data"]["items"][0]
+    assert item["description"]["product_name"] == "Canonical Clip"
+    assert item["standard_price"] == "4.5000"
+    assert item["customer_price"] == "4.5000"
+    assert item["unit_price"] == "5.0000"
+    assert response.json()["data"]["warnings"][0]["code"] == "PRICE_DIFFERS_FROM_CURRENT"
 
 
 def test_product_rejects_invalid_pair_and_accessory_without_catalog_ref(api):
@@ -846,7 +971,7 @@ def test_declared_totals_match_or_return_field_specific_mismatch(api):
     assert issue["field"] == "declared_totals.total_amount"
 
 
-def test_seven_line_workbook_sample_recalculates_server_totals_without_writes(api):
+def test_seven_line_workbook_sample_recalculates_without_business_record_writes(api):
     client, db = api
     prices = ["19.6700", "24.1300", "28.4500", "31.2000", "33.5400", "37.8600", "38.1100"]
     payload = _submission()
@@ -884,6 +1009,8 @@ def test_seven_line_workbook_sample_recalculates_server_totals_without_writes(ap
     assert response.json()["data"]["totals"] == {
         "product_amount": "1064.80", "total_amount": "1173.69",
     }
+    # Integration-token last_used_at telemetry is allowed; validation must not
+    # create invoice-domain business records.
     assert db.query(Invoice).count() == 0
     assert db.query(InvoiceIngestRequest).count() == 0
 
@@ -891,7 +1018,7 @@ def test_seven_line_workbook_sample_recalculates_server_totals_without_writes(ap
 def test_public_endpoints_require_site_token_and_reject_jwt(api):
     client, _ = api
     paths_and_bodies = [
-        ("/api/integrations/v1/customers/resolve", {"ark_customer_id": "C001"}),
+        ("/api/integrations/v1/customers/resolve", {"ark_customer_id": "1001"}),
         ("/api/integrations/v1/products/resolve", {"product_kind": "hair", "catalog_ref": {"product_id": 1, "sku_id": 1001}}),
         ("/api/integrations/v1/invoices/validate", _submission()),
     ]
@@ -913,12 +1040,27 @@ def test_full_application_registers_public_phase_one_paths():
     }.issubset(paths)
 
     openapi = app.openapi()
-    for path in (
-        "/api/integrations/v1/customers/resolve",
-        "/api/integrations/v1/products/resolve",
-        "/api/integrations/v1/invoices/validate",
-    ):
+    success_models = {
+        "/api/integrations/v1/customers/resolve": "CustomerResolveSuccessEnvelope",
+        "/api/integrations/v1/products/resolve": "ProductResolveSuccessEnvelope",
+        "/api/integrations/v1/invoices/validate": "InvoiceValidationSuccessEnvelope",
+    }
+    for path, success_model in success_models.items():
+        operation = openapi["paths"][path]["post"]
+        success_schema = operation["responses"]["200"]["content"]["application/json"][
+            "schema"
+        ]
+        assert success_schema["$ref"].endswith(f"/{success_model}")
         response_schema = openapi["paths"][path]["post"]["responses"]["422"]["content"][
             "application/json"
         ]["schema"]
         assert response_schema["$ref"].endswith("/InvoiceValidationErrorEnvelope")
+
+    schemas = openapi["components"]["schemas"]
+    assert schemas["InvoiceValidationLine"]["properties"]["unit_price"]["type"] == "string"
+    assert schemas["InvoiceValidationFees"]["properties"]["shipping_amount"]["type"] == "string"
+    assert schemas["InvoiceValidationTotals"]["properties"]["total_amount"]["type"] == "string"
+    assert (
+        openapi["paths"]["/api/integrations/v1/invoices/validate"]["post"]["summary"]
+        == "Validate without creating invoice/ingest records"
+    )

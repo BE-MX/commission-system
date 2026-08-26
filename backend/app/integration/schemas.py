@@ -54,7 +54,12 @@ class CustomerContactSubmission(StrictSchema):
 
 
 class CustomerSubmission(StrictSchema):
-    ark_customer_id: str | None = Field(default=None, min_length=1, max_length=64)
+    ark_customer_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=20,
+        pattern=r"^\d+$",
+    )
     name: str | None = Field(default=None, min_length=1, max_length=256)
     contact: CustomerContactSubmission = Field(default_factory=CustomerContactSubmission)
 
@@ -157,6 +162,117 @@ class IntegrationValidationIssue(StrictSchema):
     code: str
     field: str
     message: str
+
+
+class CanonicalCustomerContact(StrictSchema):
+    name: str | None
+    email: str | None
+    phone: str | None
+
+
+class CanonicalCustomer(StrictSchema):
+    ark_customer_id: str
+    name: str
+    country_name: str | None
+    contact: CanonicalCustomerContact
+
+
+class CanonicalCatalogReference(StrictSchema):
+    product_id: int
+    sku_id: int
+
+
+class CanonicalProductDescription(StrictSchema):
+    product_name: str
+    product_display: str
+    model: str
+    color: str
+    length: str
+    unit: str
+
+
+class CanonicalProduct(StrictSchema):
+    product_kind: Literal["hair", "accessory"]
+    catalog_ref: CanonicalCatalogReference
+    description: CanonicalProductDescription
+
+
+class CustomerResolveData(StrictSchema):
+    customer: CanonicalCustomer
+
+
+class CustomerResolveSuccessEnvelope(StrictSchema):
+    code: Literal[200]
+    message: Literal["ok"]
+    data: CustomerResolveData
+
+
+class ProductResolveData(StrictSchema):
+    item: CanonicalProduct
+
+
+class ProductResolveSuccessEnvelope(StrictSchema):
+    code: Literal[200]
+    message: Literal["ok"]
+    data: ProductResolveData
+
+
+class InvoiceValidationDelivery(StrictSchema):
+    address: str | None
+    express_channel: str | None
+
+
+class InvoiceValidationSurcharge(StrictSchema):
+    name: str | None
+    amount: str = Field(pattern=r"^\d+\.\d{2}$")
+
+
+class InvoiceValidationFees(StrictSchema):
+    packaging_amount: str = Field(pattern=r"^\d+\.\d{2}$")
+    packaging_quantity: int
+    shipping_amount: str = Field(pattern=r"^\d+\.\d{2}$")
+    surcharge: InvoiceValidationSurcharge
+
+
+class InvoiceValidationLine(StrictSchema):
+    external_line_id: str | None
+    product_kind: Literal["hair", "accessory"]
+    catalog_ref: CanonicalCatalogReference
+    description: CanonicalProductDescription
+    quantity: int
+    unit_price: str = Field(pattern=r"^\d+\.\d{4}$")
+    discount_amount: str = Field(pattern=r"^-?\d+\.\d{2}$")
+    standard_price: str | None = Field(pattern=r"^\d+\.\d{4}$")
+    customer_price: str | None = Field(pattern=r"^\d+\.\d{4}$")
+    price_source: str
+    total_price: str = Field(pattern=r"^\d+\.\d{2}$")
+
+
+class InvoiceValidationTotals(StrictSchema):
+    product_amount: str = Field(pattern=r"^\d+\.\d{2}$")
+    total_amount: str = Field(pattern=r"^\d+\.\d{2}$")
+
+
+class InvoiceValidationData(StrictSchema):
+    schema_version: Literal["1.0"]
+    external_order_id: str
+    order_type: Literal["stock", "production"]
+    invoice_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    currency: str = Field(pattern=r"^[A-Z]{3}$")
+    customer: CanonicalCustomer
+    delivery: InvoiceValidationDelivery
+    fees: InvoiceValidationFees
+    payment_term: str | None
+    remark: str | None
+    items: list[InvoiceValidationLine]
+    totals: InvoiceValidationTotals
+    warnings: list[IntegrationValidationIssue]
+
+
+class InvoiceValidationSuccessEnvelope(StrictSchema):
+    code: Literal[200]
+    message: Literal["ok"]
+    data: InvoiceValidationData
 
 
 class InvoiceValidationErrorData(StrictSchema):
