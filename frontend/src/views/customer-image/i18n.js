@@ -262,9 +262,9 @@ export function customerImageMessage(key, params = {}) {
   return { key, params }
 }
 
-export function translateCustomerImage(locale, key, params = {}) {
-  const template = MESSAGES[normalizeCustomerImageLocale(locale)]?.[key]
-    ?? MESSAGES.en[key]
+export function translateCustomerImage(locale, key, params = {}, messages = MESSAGES) {
+  const template = messages[normalizeCustomerImageLocale(locale)]?.[key]
+    ?? messages.en?.[key]
     ?? key
   return template.replace(/\{(\w+)\}/g, (_, name) => String(params[name] ?? ''))
 }

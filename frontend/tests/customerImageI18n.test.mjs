@@ -59,6 +59,18 @@ test('translates, interpolates, and falls back through English to the key', () =
   assert.equal(translateCustomerImage('zh-CN', 'missing.message'), 'missing.message')
 })
 
+test('falls back to English when a supported locale is missing a message', () => {
+  const messages = {
+    en: { 'fallback.greeting': 'Hello, {name}.' },
+    'zh-CN': {},
+  }
+
+  assert.equal(
+    translateCustomerImage('zh-CN', 'fallback.greeting', { name: 'Mia' }, messages),
+    'Hello, Mia.',
+  )
+})
+
 test('creates stable message descriptors', () => {
   assert.deepEqual(customerImageMessage('status.completed', { product: 'Box' }), {
     key: 'status.completed',
