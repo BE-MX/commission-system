@@ -6,9 +6,10 @@ import json
 import threading
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
 from app.auth.models import ArkPermission, ArkRole, ArkUser
@@ -273,6 +274,17 @@ def _schema_issue(response) -> dict:
     assert issue["code"] == "SCHEMA_INVALID"
     assert set(issue) == {"code", "field", "message"}
     return issue
+
+
+def _assert_external_error(response, status_code: int, error_code: str) -> dict:
+    assert response.status_code == status_code, response.text
+    body = response.json()
+    assert body["code"] == status_code
+    assert set(body) == {"code", "message", "data"}
+    assert body["data"]["error_code"] == error_code
+    assert body["data"]["action"]
+    assert "detail" not in body
+    return body
 
 
 def test_submission_rejects_top_level_and_nested_unknown_fields(api):
@@ -1073,8 +1085,58 @@ def test_public_endpoints_require_site_token_and_reject_jwt(api):
         ("/api/integrations/v1/invoices/validate", _submission()),
     ]
     for path, body in paths_and_bodies:
-        assert client.post(path, json=body).status_code == 401
-        assert client.post(path, json=body, headers=_headers("jwt-user-token")).status_code == 401
+        for headers in ({}, _headers("jwt-user-token")):
+            response = client.post(path, json=body, headers=headers)
+            error = _assert_external_error(
+                response, 401, "AUTHENTICATION_FAILED",
+            )
+            assert error["data"]["field"] == "authorization"
+            assert "Token" in error["data"]["action"]
+            assert response.headers["www-authenticate"] == "Bearer"
+            assert "jwt-user-token" not in response.text
+
+
+def test_public_auth_disabled_app_and_revoked_scope_use_stable_safe_envelopes(api):
+    client, db = api
+    app_row = db.query(IntegrationApp).filter_by(public_id="app_invoice_contract").one()
+    app_row.is_active = False
+    db.commit()
+    disabled = client.post(
+        "/api/integrations/v1/invoices/validate",
+        json=_submission(),
+        headers=_headers(),
+    )
+    _assert_external_error(disabled, 401, "AUTHENTICATION_FAILED")
+    assert TOKEN not in disabled.text
+
+    app_row.is_active = True
+    app_row.scopes = []
+    db.commit()
+    revoked_scope = client.post(
+        "/api/integrations/v1/invoices/validate",
+        json=_submission(),
+        headers=_headers(),
+    )
+    error = _assert_external_error(
+        revoked_scope, 403, "INTEGRATION_PERMISSION_DENIED",
+    )
+    assert error["data"]["field"] == "authorization"
+    assert "权限" in error["data"]["action"]
+    assert TOKEN not in revoked_scope.text
+
+
+def test_public_auth_revoked_owner_permission_uses_same_403_envelope(api):
+    client, db = api
+    owner = db.get(ArkUser, 8101)
+    owner.roles[0].permissions = []
+    db.commit()
+    response = client.post(
+        "/api/integrations/v1/invoices/validate",
+        json=_submission(),
+        headers=_headers(),
+    )
+    _assert_external_error(response, 403, "INTEGRATION_PERMISSION_DENIED")
+    assert TOKEN not in response.text
 
 
 def test_full_application_registers_public_phase_one_paths():
@@ -1307,8 +1369,15 @@ def test_get_by_external_id_recovers_created_result_and_is_app_scoped(api):
         "/api/integrations/v1/invoices/by-external-id/SITE:2026-0001",
         headers=_headers(other_token),
     )
-    assert isolated.status_code == 404
-    assert isolated.json()["data"] is None
+    error = _assert_external_error(
+        isolated, 404, "EXTERNAL_INVOICE_NOT_FOUND",
+    )
+    assert error["data"] == {
+        "error_code": "EXTERNAL_INVOICE_NOT_FOUND",
+        "field": "external_order_id",
+        "external_order_id": "SITE:2026-0001",
+        "action": "确认订单号和站点凭证后重试",
+    }
 
 
 def test_invoice_service_rounding_matches_validate_for_half_cent_and_fee_snapshots(api):
@@ -1379,10 +1448,13 @@ def test_unexpected_create_error_rolls_back_invoice_and_ingest(api, monkeypatch)
         raise RuntimeError("simulated server crash after invoice flush")
 
     monkeypatch.setattr(invoice_service, "create_invoice", crash_after_invoice_flush)
-    with pytest.raises(RuntimeError, match="simulated server crash"):
-        client.post(
-            "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
-        )
+    response = client.post(
+        "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
+    )
+    error = _assert_external_error(response, 500, "INTERNAL_ERROR")
+    assert error["data"]["external_order_id"] == "SITE:2026-0001"
+    assert "相同 external_order_id" in error["data"]["action"]
+    assert "simulated server crash" not in response.text
     assert db.query(Invoice).count() == 0
     assert db.query(InvoiceIngestRequest).count() == 0
 
@@ -1395,12 +1467,52 @@ def test_unexpected_validation_error_rolls_back_processing_ingest(api, monkeypat
         raise RuntimeError("simulated catalog outage")
 
     monkeypatch.setattr(validation_service, "validate_submission", crash_during_validation)
-    with pytest.raises(RuntimeError, match="simulated catalog outage"):
-        client.post(
-            "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
-        )
+    response = client.post(
+        "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
+    )
+    error = _assert_external_error(response, 500, "INTERNAL_ERROR")
+    assert error["data"]["external_order_id"] == "SITE:2026-0001"
+    assert "相同 external_order_id" in error["data"]["action"]
+    assert "simulated catalog outage" not in response.text
     assert db.query(Invoice).count() == 0
     assert db.query(InvoiceIngestRequest).count() == 0
+
+
+def test_operational_dependency_error_is_safe_503_and_rolls_back(api, monkeypatch):
+    client, db = api
+    from app.integration import validation_service
+
+    def unavailable_dependency(*_args, **_kwargs):
+        raise OperationalError(
+            "SELECT secret FROM dependency",
+            {},
+            RuntimeError("database password and internal host must not leak"),
+        )
+
+    monkeypatch.setattr(validation_service, "validate_submission", unavailable_dependency)
+    response = client.post(
+        "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
+    )
+    error = _assert_external_error(response, 503, "SERVICE_UNAVAILABLE")
+    assert error["data"]["external_order_id"] == "SITE:2026-0001"
+    assert "相同 external_order_id" in error["data"]["action"]
+    assert "password" not in response.text
+    assert "internal host" not in response.text
+    assert db.query(Invoice).count() == 0
+    assert db.query(InvoiceIngestRequest).count() == 0
+
+
+def test_rate_limit_http_exception_maps_to_public_error_contract():
+    from app.integration.router import _http_error_response
+
+    response = _http_error_response(
+        HTTPException(status_code=429, detail="raw limiter detail"),
+    )
+    assert response.status_code == 429
+    body = json.loads(response.body)
+    assert body["data"]["error_code"] == "RATE_LIMITED"
+    assert body["data"]["action"]
+    assert "raw limiter detail" not in response.body.decode("utf-8")
 
 
 def test_processing_lookup_is_stable_actionable_409(api):
@@ -1551,8 +1663,25 @@ def test_external_invoice_openapi_declares_create_replay_lookup_and_error_models
     app.include_router(integration_router, prefix="/api/integrations")
     openapi = app.openapi()
 
+    common_errors = {"401", "403", "429", "500", "503"}
+    public_operations = {
+        ("/api/integrations/v1/customers/resolve", "post"): {"200", "422"},
+        ("/api/integrations/v1/products/resolve", "post"): {"200", "422"},
+        ("/api/integrations/v1/invoices/validate", "post"): {"200", "422"},
+        ("/api/integrations/v1/invoices", "post"): {"200", "201", "409", "422"},
+        (
+            "/api/integrations/v1/invoices/by-external-id/{external_order_id}",
+            "get",
+        ): {"200", "404", "409", "422"},
+    }
+    for (path, method), expected in public_operations.items():
+        responses = openapi["paths"][path][method]["responses"]
+        assert set(responses) == expected | common_errors
+        for code in common_errors:
+            schema = responses[code]["content"]["application/json"]["schema"]
+            assert schema["$ref"].endswith("/ExternalErrorEnvelope")
+
     create = openapi["paths"]["/api/integrations/v1/invoices"]["post"]
-    assert set(create["responses"]) >= {"200", "201", "409", "422"}
     assert create["responses"]["201"]["content"]["application/json"]["schema"]["$ref"].endswith(
         "/InvoiceCreatedEnvelope"
     )
@@ -1562,7 +1691,6 @@ def test_external_invoice_openapi_declares_create_replay_lookup_and_error_models
     lookup = openapi["paths"][
         "/api/integrations/v1/invoices/by-external-id/{external_order_id}"
     ]["get"]
-    assert set(lookup["responses"]) >= {"200", "404", "409", "422"}
     for code in ("404", "409"):
         assert "$ref" in lookup["responses"][code]["content"]["application/json"]["schema"]
 

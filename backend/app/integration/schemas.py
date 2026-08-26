@@ -328,10 +328,24 @@ class InvoiceConflictEnvelope(StrictSchema):
     data: InvoiceConflictData
 
 
-class InvoiceNotFoundEnvelope(StrictSchema):
-    code: Literal[404]
-    message: Literal["external invoice not found"]
-    data: None
+class ExternalErrorData(StrictSchema):
+    error_code: Literal[
+        "AUTHENTICATION_FAILED",
+        "INTEGRATION_PERMISSION_DENIED",
+        "EXTERNAL_INVOICE_NOT_FOUND",
+        "RATE_LIMITED",
+        "SERVICE_UNAVAILABLE",
+        "INTERNAL_ERROR",
+    ]
+    field: str
+    action: str
+    external_order_id: str | None = None
+
+
+class ExternalErrorEnvelope(StrictSchema):
+    code: Literal[401, 403, 404, 429, 500, 503]
+    message: str
+    data: ExternalErrorData
 
 
 class InvoiceCreateValidationErrorData(StrictSchema):

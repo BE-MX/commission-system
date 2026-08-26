@@ -1,9 +1,13 @@
 """Integration App administration and public invoice-integration routes."""
 
-from fastapi import APIRouter, Depends, Path, Query, Request, Response
+import logging
+import re
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -17,12 +21,12 @@ from app.integration import service, validation_service
 from app.integration.schemas import (
     CustomerResolveSuccessEnvelope,
     CustomerSubmission,
+    ExternalErrorEnvelope,
     IntegrationAppCreate,
     IntegrationAppRotate,
     InvoiceConflictEnvelope,
     InvoiceCreatedEnvelope,
     InvoiceCreateValidationErrorEnvelope,
-    InvoiceNotFoundEnvelope,
     InvoiceReplayedEnvelope,
     InvoiceSubmission,
     InvoiceValidationErrorEnvelope,
@@ -32,6 +36,7 @@ from app.integration.schemas import (
 )
 
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 # Machine-to-machine endpoints use a revocable Integration App token rather
 # than a user JWT. The factory still rechecks the bound user's current scope.
@@ -116,8 +121,88 @@ def _request_validation_error(exc: RequestValidationError) -> JSONResponse:
     )
 
 
+_EXTERNAL_ORDER_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
+
+
+def _external_error_response(
+    *,
+    status_code: int,
+    error_code: str,
+    message: str,
+    field: str,
+    action: str,
+    external_order_id: str | None = None,
+    headers: dict[str, str] | None = None,
+) -> JSONResponse:
+    data = {"error_code": error_code, "field": field, "action": action}
+    if external_order_id is not None:
+        data["external_order_id"] = external_order_id
+    return JSONResponse(
+        status_code=status_code,
+        content={"code": status_code, "message": message, "data": data},
+        headers=headers,
+    )
+
+
+def _http_error_response(
+    exc: HTTPException,
+    *,
+    external_order_id: str | None = None,
+) -> JSONResponse:
+    errors = {
+        401: (
+            "AUTHENTICATION_FAILED",
+            "integration authentication failed",
+            "authorization",
+            "请检查服务端 Integration App Token 后重试",
+        ),
+        403: (
+            "INTEGRATION_PERMISSION_DENIED",
+            "integration permission denied",
+            "authorization",
+            "请联系管理员检查 Integration App scope 和绑定用户权限后重试",
+        ),
+        429: (
+            "RATE_LIMITED",
+            "integration request rate limited",
+            "request",
+            "请求过于频繁，请稍后使用相同 external_order_id 重试",
+        ),
+        503: (
+            "SERVICE_UNAVAILABLE",
+            "integration service unavailable",
+            "request",
+            "服务暂不可用，请稍后使用相同 external_order_id 查询或重试",
+        ),
+    }
+    error_code, message, field, action = errors[exc.status_code]
+    return _external_error_response(
+        status_code=exc.status_code,
+        error_code=error_code,
+        message=message,
+        field=field,
+        action=action,
+        external_order_id=external_order_id,
+        headers=exc.headers,
+    )
+
+
+async def _external_order_id_from_request(request: Request) -> str | None:
+    value = request.path_params.get("external_order_id")
+    if value is None:
+        try:
+            body = await request.json()
+        except (ValueError, RuntimeError):
+            return None
+        if isinstance(body, dict):
+            value = body.get("external_order_id")
+    if isinstance(value, str) and _EXTERNAL_ORDER_ID_PATTERN.fullmatch(value):
+        return value
+    return None
+
+
 class IntegrationValidationRoute(APIRoute):
-    """Normalize schema failures only for public Integration App endpoints."""
+    """Normalize public Integration App failures without affecting admin routes."""
 
     def get_route_handler(self):
         original_handler = super().get_route_handler()
@@ -127,24 +212,61 @@ class IntegrationValidationRoute(APIRoute):
                 return await original_handler(request)
             except RequestValidationError as exc:
                 return _request_validation_error(exc)
+            except HTTPException as exc:
+                if exc.status_code not in {401, 403, 429, 503}:
+                    raise
+                return _http_error_response(
+                    exc,
+                    external_order_id=await _external_order_id_from_request(request),
+                )
+            except OperationalError:
+                logger.exception("Public integration dependency is unavailable")
+                return _external_error_response(
+                    status_code=503,
+                    error_code="SERVICE_UNAVAILABLE",
+                    message="integration service unavailable",
+                    field="request",
+                    action="服务暂不可用，请稍后使用相同 external_order_id 查询或重试",
+                    external_order_id=await _external_order_id_from_request(request),
+                )
+            except Exception:
+                logger.exception("Unexpected public integration request failure")
+                return _external_error_response(
+                    status_code=500,
+                    error_code="INTERNAL_ERROR",
+                    message="internal error",
+                    field="request",
+                    action="请保持相同 external_order_id 查询结果或重试",
+                    external_order_id=await _external_order_id_from_request(request),
+                )
 
         return validation_envelope_handler
 
 
 public_router = APIRouter(route_class=IntegrationValidationRoute)
+_PUBLIC_ERROR_RESPONSES = {
+    401: {"model": ExternalErrorEnvelope, "description": "Authentication failed"},
+    403: {"model": ExternalErrorEnvelope, "description": "Integration permission denied"},
+    429: {"model": ExternalErrorEnvelope, "description": "Request rate limited"},
+    500: {"model": ExternalErrorEnvelope, "description": "Unexpected server error"},
+    503: {"model": ExternalErrorEnvelope, "description": "Dependency unavailable"},
+}
 _VALIDATION_RESPONSES = {
+    **_PUBLIC_ERROR_RESPONSES,
     422: {
         "model": InvoiceValidationErrorEnvelope,
         "description": "Stable external invoice validation envelope",
     },
 }
 _CREATE_RESPONSES = {
+    **_PUBLIC_ERROR_RESPONSES,
     200: {"model": InvoiceReplayedEnvelope, "description": "Idempotent replay"},
     409: {"model": InvoiceConflictEnvelope, "description": "External order conflict or processing"},
     422: {"model": InvoiceCreateValidationErrorEnvelope, "description": "Stable create rejection"},
 }
 _LOOKUP_RESPONSES = {
-    404: {"model": InvoiceNotFoundEnvelope, "description": "No result in this App namespace"},
+    **_PUBLIC_ERROR_RESPONSES,
+    404: {"model": ExternalErrorEnvelope, "description": "No result in this App namespace"},
     409: {"model": InvoiceConflictEnvelope, "description": "Request is still processing"},
     422: {"model": InvoiceCreateValidationErrorEnvelope, "description": "Original stable rejection"},
 }
@@ -307,9 +429,13 @@ def get_invoice_by_external_id(
         principal,
     )
     if result_type == "not_found":
-        return JSONResponse(
+        return _external_error_response(
             status_code=404,
-            content={"code": 404, "message": "external invoice not found", "data": None},
+            error_code="EXTERNAL_INVOICE_NOT_FOUND",
+            message="external invoice not found",
+            field="external_order_id",
+            external_order_id=external_order_id,
+            action="确认订单号和站点凭证后重试",
         )
     if result_type == "processing":
         return _conflict(result, changed=False)
