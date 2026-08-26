@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import event, text
 
 from app.auth.models import ArkPermission, ArkRole, ArkUser
 from app.auth.utils import hash_token
@@ -40,6 +40,13 @@ def _seed_catalog(db) -> None:
         )
     """))
     db.execute(text("""
+        CREATE TABLE lsordertest.okki_product_skus (
+            product_id INTEGER,
+            sku_id INTEGER,
+            disable_flag INTEGER
+        )
+    """))
+    db.execute(text("""
         INSERT INTO lsordertest.customer_info
             (company_id, company_name, country_name, owner_user_ids)
         VALUES
@@ -63,7 +70,11 @@ def _seed_catalog(db) -> None:
     """))
     db.execute(text("""
         INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
-        VALUES (1, 1001, 0), (2, 2001, 0)
+        VALUES (1, 1001, 0)
+    """))
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag)
+        VALUES (2, 2001, 0)
     """))
     db.add(StdPrice(
         product_kind="hair",
@@ -295,6 +306,58 @@ def test_line_rejects_quantity_price_and_positive_discount_boundaries(api, field
 
 
 @pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("unit_price", "1e1000"),
+        ("unit_price", "10.00001"),
+        ("discount_amount", "-0.001"),
+    ],
+)
+def test_line_rejects_amounts_outside_internal_decimal_precision(api, field, value):
+    client, _ = api
+    payload = _submission()
+    payload["items"][0][field] = value
+    response = client.post(
+        "/api/integrations/v1/invoices/validate", json=payload, headers=_headers(),
+    )
+    assert response.status_code == 422
+
+
+def test_line_rejects_calculated_total_outside_invoice_money_capacity(api):
+    client, _ = api
+    payload = _submission()
+    payload["items"][0]["quantity"] = 2_000_000_000
+    payload["items"][0]["unit_price"] = "99999999.9999"
+    issue = _issue(client.post(
+        "/api/integrations/v1/invoices/validate", json=payload, headers=_headers(),
+    ))
+    assert issue["code"] == "AMOUNT_OUT_OF_RANGE"
+    assert issue["field"] == "items[0].total_price"
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("items", 0, "quantity"), True),
+        (("items", 0, "quantity"), 1.0),
+        (("items", 0, "catalog_ref", "product_id"), True),
+        (("fees", "packaging_quantity"), True),
+    ],
+)
+def test_integer_contract_rejects_booleans_and_floats(api, path, value):
+    client, _ = api
+    payload = _submission()
+    target = payload
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = value
+    response = client.post(
+        "/api/integrations/v1/invoices/validate", json=payload, headers=_headers(),
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
     ("path", "value"),
     [
         (("fees", "packaging_amount"), "-0.01"),
@@ -365,6 +428,29 @@ def test_customer_id_uses_canonical_company_name_and_keeps_contact_snapshot(api)
     assert customer["contact"] == {
         "name": "Snapshot Person", "email": "Snapshot@Example.com", "phone": None,
     }
+
+
+def test_customer_id_lookup_compares_the_full_external_value_as_text(api):
+    client, db = api
+    statements: list[str] = []
+
+    def capture_statement(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(statement)
+
+    engine = db.get_bind()
+    event.listen(engine, "before_cursor_execute", capture_statement)
+    try:
+        response = client.post(
+            "/api/integrations/v1/customers/resolve",
+            json={"ark_customer_id": "C001"},
+            headers=_headers(),
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", capture_statement)
+    assert response.status_code == 200, response.text
+    customer_queries = [sql for sql in statements if "customer_info" in sql]
+    assert customer_queries
+    assert "CAST(ci.company_id AS CHAR)" in customer_queries[0]
 
 
 def test_customer_not_found_and_ambiguity_have_stable_business_codes(api):
@@ -438,6 +524,37 @@ def test_product_resolves_valid_pair_and_overwrites_forged_catalog_text(api):
         "length": "16",
         "unit": "20g",
     }
+
+
+def test_accessory_resolves_only_from_active_accessory_sku_catalog(api):
+    client, _ = api
+    response = client.post(
+        "/api/integrations/v1/products/resolve",
+        json={
+            "product_kind": "accessory",
+            "catalog_ref": {"product_id": 2, "sku_id": 2001},
+            "description": {"product_display": "forged", "model": "forged", "color": "forged"},
+        },
+        headers=_headers(),
+    )
+    assert response.status_code == 200, response.text
+    item = response.json()["data"]["item"]
+    assert item["catalog_ref"] == {"product_id": 2, "sku_id": 2001}
+    assert item["description"] == {
+        "product_name": "Canonical Clip",
+        "product_display": "Canonical Clip",
+        "model": "Clip-M",
+        "color": "Black",
+        "length": "",
+        "unit": "",
+    }
+
+    wrong_catalog = _issue(client.post(
+        "/api/integrations/v1/products/resolve",
+        json={"product_kind": "accessory", "catalog_ref": {"product_id": 1, "sku_id": 1001}},
+        headers=_headers(),
+    ))
+    assert wrong_catalog["code"] == "PRODUCT_NOT_FOUND"
 
 
 def test_product_rejects_invalid_pair_and_accessory_without_catalog_ref(api):

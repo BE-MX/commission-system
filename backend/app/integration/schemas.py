@@ -42,8 +42,8 @@ class CustomerSubmission(StrictSchema):
 
 
 class CatalogReference(StrictSchema):
-    product_id: int = Field(gt=0)
-    sku_id: int = Field(gt=0)
+    product_id: int = Field(gt=0, strict=True)
+    sku_id: int = Field(gt=0, strict=True)
 
 
 class ProductDescriptionSubmission(StrictSchema):
@@ -64,9 +64,11 @@ class ProductResolutionRequest(StrictSchema):
 
 class InvoiceLineSubmission(ProductResolutionRequest):
     external_line_id: str | None = Field(default=None, max_length=64)
-    quantity: int = Field(gt=0)
-    unit_price: Decimal = Field(gt=0)
-    discount_amount: Decimal = Field(default=Decimal("0"), le=0)
+    quantity: int = Field(gt=0, le=2_147_483_647, strict=True)
+    unit_price: Decimal = Field(gt=0, max_digits=12, decimal_places=4)
+    discount_amount: Decimal = Field(
+        default=Decimal("0"), le=0, max_digits=14, decimal_places=2,
+    )
 
 
 class DeliverySubmission(StrictSchema):
@@ -76,19 +78,27 @@ class DeliverySubmission(StrictSchema):
 
 class SurchargeSubmission(StrictSchema):
     name: str | None = Field(default=None, max_length=128)
-    amount: Decimal = Field(default=Decimal("0"), ge=0)
+    amount: Decimal = Field(
+        default=Decimal("0"), ge=0, max_digits=14, decimal_places=2,
+    )
 
 
 class FeeSubmission(StrictSchema):
-    packaging_amount: Decimal = Field(default=Decimal("0"), ge=0)
-    packaging_quantity: int = Field(default=0, ge=0)
-    shipping_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    packaging_amount: Decimal = Field(
+        default=Decimal("0"), ge=0, max_digits=14, decimal_places=2,
+    )
+    packaging_quantity: int = Field(
+        default=0, ge=0, le=2_147_483_647, strict=True,
+    )
+    shipping_amount: Decimal = Field(
+        default=Decimal("0"), ge=0, max_digits=14, decimal_places=2,
+    )
     surcharge: SurchargeSubmission = Field(default_factory=SurchargeSubmission)
 
 
 class DeclaredTotals(StrictSchema):
-    product_amount: Decimal = Field(ge=0)
-    total_amount: Decimal = Field(ge=0)
+    product_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+    total_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
 
 
 class InvoiceSubmission(StrictSchema):

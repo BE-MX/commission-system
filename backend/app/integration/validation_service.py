@@ -11,13 +11,14 @@ from app.integration.schemas import (
     InvoiceSubmission,
     ProductResolutionRequest,
 )
-from app.invoice import price_service, product_service
+from app.invoice import accessory_price_service, price_service, product_service
 from app.invoice.models import StdPrice
 
 
 _MONEY = Decimal("0.01")
 _PRICE = Decimal("0.0001")
 _DECLARED_TOLERANCE = Decimal("0.01")
+_MAX_MONEY = Decimal("999999999999.99")
 
 
 class InvoiceValidationError(Exception):
@@ -67,7 +68,7 @@ def _customer_by_id(db: Session, customer_id: str) -> dict | None:
     row = db.execute(text(f"""
         SELECT ci.company_id, ci.company_name, ci.country_name
         FROM `{schema}`.customer_info ci
-        WHERE ci.company_id = :company_id
+        WHERE CAST(ci.company_id AS CHAR) = :company_id
         LIMIT 1
     """), {"company_id": customer_id}).mappings().first()
     return dict(row) if row is not None else None
@@ -213,11 +214,32 @@ def resolve_product(
     field: str = "catalog_ref",
 ) -> dict:
     if submission.catalog_ref is not None:
-        item = _catalog_pair(
-            db,
-            submission.catalog_ref.product_id,
-            submission.catalog_ref.sku_id,
-        )
+        if submission.product_kind == "accessory":
+            try:
+                snapshot = accessory_price_service.validate_active_identity(
+                    db,
+                    product_id=submission.catalog_ref.product_id,
+                    sku_id=submission.catalog_ref.sku_id,
+                )
+            except (accessory_price_service.AccessoryCatalogUnavailable, ValueError):
+                item = None
+            else:
+                item = {
+                    "product_id": submission.catalog_ref.product_id,
+                    "sku_id": submission.catalog_ref.sku_id,
+                    "product_name": snapshot["accessory_name"],
+                    "product_display": snapshot["accessory_name"],
+                    "model": snapshot["accessory_model"],
+                    "color": snapshot["accessory_color"],
+                    "size": "",
+                    "unit": "",
+                }
+        else:
+            item = _catalog_pair(
+                db,
+                submission.catalog_ref.product_id,
+                submission.catalog_ref.sku_id,
+            )
         if item is None:
             raise InvoiceValidationError([_issue(
                 "PRODUCT_NOT_FOUND",
@@ -344,6 +366,13 @@ def validate_submission(db: Session, submission: InvoiceSubmission) -> dict:
                 "产品行折扣不能超过该行金额",
             ))
             continue
+        if raw_line_total > _MAX_MONEY:
+            issues.append(_issue(
+                "AMOUNT_OUT_OF_RANGE",
+                f"items[{index}].total_price",
+                "产品行金额超过方舟发票可保存范围",
+            ))
+            continue
         line_total = _money(raw_line_total)
         product_amount += line_total
         snapshot = _price_snapshot(
@@ -379,6 +408,18 @@ def validate_submission(db: Session, submission: InvoiceSubmission) -> dict:
     shipping = _money(submission.fees.shipping_amount)
     surcharge = _money(submission.fees.surcharge.amount)
     total_amount = _money(product_amount + packaging + shipping + surcharge)
+    if product_amount > _MAX_MONEY:
+        issues.append(_issue(
+            "AMOUNT_OUT_OF_RANGE",
+            "totals.product_amount",
+            "产品金额合计超过方舟发票可保存范围",
+        ))
+    if total_amount > _MAX_MONEY:
+        issues.append(_issue(
+            "AMOUNT_OUT_OF_RANGE",
+            "totals.total_amount",
+            "发票总金额超过方舟发票可保存范围",
+        ))
 
     if submission.declared_totals is not None:
         declared = submission.declared_totals
