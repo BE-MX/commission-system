@@ -1,12 +1,19 @@
 """钉钉集成 — API 路由"""
 
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 
 from app.api.deps import get_db
 from app.auth.dependencies import require_permission
+from app.core.response import ok
+from app.dingtalk import gmv_daily_config, gmv_daily_service
+from app.dingtalk.gmv_daily_schemas import (
+    GmvDailyConfigUpdate,
+    GmvDailyPreviewRequest,
+    GmvDailySendRequest,
+)
 from app.schemas.common import ResponseModel, PageResponse
 from app.dingtalk.models import DingTalkMessageLog, DingTalkCallbackLog
 from app.dingtalk.schemas import (
@@ -19,6 +26,55 @@ from app.dingtalk.schemas import (
 from app.dingtalk.webhook import get_webhook_sender
 
 router = APIRouter()
+
+
+# ── 每日 GMV 点对点推送 ─────────────────────────────────
+
+
+@router.get("/gmv-daily/config", summary="GMV 日报配置与候选项")
+def get_gmv_daily_config(
+    db: Session = Depends(get_db),
+    _current_user: dict = Depends(require_permission("dingtalk:admin")),
+):
+    return ok({
+        "config": gmv_daily_config.decorate_config(db),
+        "options": gmv_daily_config.config_options(db),
+    })
+
+
+@router.put("/gmv-daily/config", summary="保存 GMV 日报配置")
+def update_gmv_daily_config(
+    request: GmvDailyConfigUpdate,
+    db: Session = Depends(get_db),
+    _current_user: dict = Depends(require_permission("dingtalk:admin")),
+):
+    try:
+        saved = gmv_daily_config.save_config(db, request)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ok(saved, "GMV 日报配置已保存")
+
+
+@router.post("/gmv-daily/preview", summary="预览 GMV 日报")
+def preview_gmv_daily_report(
+    request: GmvDailyPreviewRequest,
+    db: Session = Depends(get_db),
+    _current_user: dict = Depends(require_permission("dingtalk:admin")),
+):
+    return ok(gmv_daily_service.preview_report(db, request.report_date))
+
+
+@router.post("/gmv-daily/send", summary="手动发送或补发 GMV 日报")
+async def send_gmv_daily_report(
+    request: GmvDailySendRequest,
+    db: Session = Depends(get_db),
+    _current_user: dict = Depends(require_permission("dingtalk:admin")),
+):
+    try:
+        result = await gmv_daily_service.send_daily_report(db, request.report_date, request.scope)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ok(result, "GMV 日报发送任务已完成")
 
 
 # ── 手动发送消息（测试用）───────────────────────────────
