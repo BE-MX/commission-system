@@ -148,6 +148,39 @@ def test_order_partial_receive_is_idempotent_and_completes(db):
     assert db.query(InventoryBalance).filter_by(material_id=material.id).one().on_hand_grams == Decimal("100.000")
 
 
+def test_order_list_serializes_expanded_aggregate_columns(db):
+    first = _material(db, code="SF-16-LIST-1", color="#1")
+    second = _material(db, code="SF-16-LIST-2", color="#2")
+    order = order_service.create_order(
+        db,
+        items=[
+            {"material_id": first.id, "quantity_grams": Decimal("100")},
+            {"material_id": second.id, "quantity_grams": Decimal("50")},
+        ],
+        user_id=1,
+    )
+
+    result = order_service.list_orders(db, page=1, page_size=20, status=None, keyword=None)
+
+    assert result["total"] == 1
+    assert result["items"] == [{
+        "id": order.id,
+        "order_no": order.order_no,
+        "batch_no": None,
+        "source_type": "manual",
+        "production_order_id": None,
+        "status": "submitted",
+        "is_urgent": 0,
+        "expected_delivery_date": None,
+        "remark": None,
+        "created_by": 1,
+        "created_at": order.created_at.isoformat(),
+        "item_count": 2,
+        "order_qty_grams": Decimal("150.000"),
+        "received_qty_grams": Decimal("0.000"),
+    }]
+
+
 def test_order_receipt_rejects_idempotency_key_reuse_with_different_payload(db):
     material = _material(db)
     order = order_service.create_order(
