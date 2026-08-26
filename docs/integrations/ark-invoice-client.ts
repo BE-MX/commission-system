@@ -173,6 +173,113 @@ interface ErrorData {
   request_id?: string | null
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string'
+}
+
+function isCatalogReference(value: unknown): value is CatalogReference {
+  return isRecord(value)
+    && Number.isInteger(value.product_id)
+    && Number.isInteger(value.sku_id)
+}
+
+function isCanonicalDescription(value: unknown): boolean {
+  return isRecord(value)
+    && isNonEmptyString(value.product_name)
+    && typeof value.product_display === 'string'
+    && typeof value.model === 'string'
+    && typeof value.color === 'string'
+    && typeof value.length === 'string'
+    && typeof value.unit === 'string'
+}
+
+function isValidationIssue(value: unknown): value is ValidationIssue {
+  return isRecord(value)
+    && isNonEmptyString(value.code)
+    && isNonEmptyString(value.field)
+    && isNonEmptyString(value.message)
+}
+
+function isCanonicalCustomer(value: unknown): value is CanonicalCustomer {
+  if (!isRecord(value) || !isRecord(value.contact)) return false
+  return isNonEmptyString(value.ark_customer_id)
+    && typeof value.name === 'string'
+    && isNullableString(value.country_name)
+    && isNullableString(value.contact.name)
+    && isNullableString(value.contact.email)
+    && isNullableString(value.contact.phone)
+}
+
+function isValidationLine(value: unknown): boolean {
+  if (!isRecord(value) || !isRecord(value.description)) return false
+  return isNullableString(value.external_line_id)
+    && (value.product_kind === 'hair' || value.product_kind === 'accessory')
+    && isCatalogReference(value.catalog_ref)
+    && isCanonicalDescription(value.description)
+    && Number.isInteger(value.quantity)
+    && typeof value.unit_price === 'string'
+    && typeof value.discount_amount === 'string'
+    && isNullableString(value.standard_price)
+    && isNullableString(value.customer_price)
+    && isNonEmptyString(value.price_source)
+    && typeof value.total_price === 'string'
+}
+
+function isValidationResult(value: unknown, externalOrderId: string): value is ValidationResult {
+  if (
+    !isRecord(value)
+    || !isCanonicalCustomer(value.customer)
+    || !isRecord(value.delivery)
+    || !isRecord(value.fees)
+    || !isRecord(value.fees.surcharge)
+    || !isRecord(value.totals)
+  ) return false
+
+  return value.schema_version === '1.0'
+    && value.external_order_id === externalOrderId
+    && (value.order_type === 'stock' || value.order_type === 'production')
+    && typeof value.invoice_date === 'string'
+    && typeof value.currency === 'string'
+    && isNullableString(value.delivery.address)
+    && isNullableString(value.delivery.express_channel)
+    && typeof value.fees.packaging_amount === 'string'
+    && Number.isInteger(value.fees.packaging_quantity)
+    && typeof value.fees.shipping_amount === 'string'
+    && isNullableString(value.fees.surcharge.name)
+    && typeof value.fees.surcharge.amount === 'string'
+    && isNullableString(value.payment_term)
+    && isNullableString(value.remark)
+    && Array.isArray(value.items)
+    && value.items.every(isValidationLine)
+    && typeof value.totals.product_amount === 'string'
+    && typeof value.totals.total_amount === 'string'
+    && Array.isArray(value.warnings)
+    && value.warnings.every(isValidationIssue)
+}
+
+function isCreateResult(value: unknown, externalOrderId: string): value is CreateResult {
+  if (!isRecord(value) || !isRecord(value.totals)) return false
+  return isNonEmptyString(value.request_id)
+    && typeof value.replayed === 'boolean'
+    && value.external_order_id === externalOrderId
+    && Number.isInteger(value.invoice_id)
+    && Number(value.invoice_id) > 0
+    && isNonEmptyString(value.invoice_no)
+    && isNonEmptyString(value.status)
+    && isNonEmptyString(value.sync_status)
+    && typeof value.totals.product_amount === 'string'
+    && typeof value.totals.total_amount === 'string'
+    && isNonEmptyString(value.review_url)
+}
+
 export class ArkInvoiceApiError extends Error {
   constructor(
     public readonly status: number,
@@ -235,6 +342,13 @@ export class ArkInvoiceClient {
     return this.request<ValidationResult>('/invoices/validate', {
       method: 'POST',
       body: JSON.stringify(payload),
+    }, (response, envelope) => {
+      if (
+        response.status !== 200
+        || envelope.code !== 200
+        || !isValidationResult(envelope.data, payload.external_order_id)
+      ) throw new ArkInvoiceSuccessfulResponseError(response.status)
+      return envelope.data
     })
   }
 
@@ -268,6 +382,14 @@ export class ArkInvoiceClient {
     return this.request<CreateResult>(
       `/invoices/by-external-id/${encodeURIComponent(externalOrderId)}`,
       { method: 'GET' },
+      (response, envelope) => {
+        if (
+          response.status !== 200
+          || envelope.code !== 200
+          || !isCreateResult(envelope.data, externalOrderId)
+        ) throw new ArkInvoiceSuccessfulResponseError(response.status)
+        return envelope.data
+      },
     )
   }
 
@@ -275,6 +397,13 @@ export class ArkInvoiceClient {
     return this.request<CreateResult>('/invoices', {
       method: 'POST',
       body: JSON.stringify(payload),
+    }, (response, envelope) => {
+      const codesMatch = (response.status === 201 && envelope.code === 201)
+        || (response.status === 200 && envelope.code === 200)
+      if (!codesMatch || !isCreateResult(envelope.data, payload.external_order_id)) {
+        throw new ArkInvoiceSuccessfulResponseError(response.status)
+      }
+      return envelope.data
     })
   }
 
@@ -284,7 +413,14 @@ export class ArkInvoiceClient {
       || (error instanceof ArkInvoiceApiError && error.status >= 500)
   }
 
-  private async request<T>(path: string, init: RequestInit): Promise<T> {
+  private async request<T>(
+    path: string,
+    init: RequestInit,
+    parseSuccess: (
+      response: Response,
+      envelope: Partial<ApiEnvelope<unknown>>,
+    ) => T,
+  ): Promise<T> {
     const controller = new AbortController()
     let timedOut = false
     const timeout = setTimeout(() => {
@@ -327,19 +463,9 @@ export class ArkInvoiceClient {
       )
     }
 
-    const envelope = parsed as Partial<ApiEnvelope<T | ErrorData>>
-    if (
-      response.ok
-      && (
-        parsed === null
-        || typeof parsed !== 'object'
-        || !Object.prototype.hasOwnProperty.call(parsed, 'data')
-        || envelope.data === null
-        || envelope.data === undefined
-      )
-    ) {
-      throw new ArkInvoiceSuccessfulResponseError(response.status)
-    }
+    const envelope = isRecord(parsed)
+      ? parsed as Partial<ApiEnvelope<unknown>>
+      : {}
 
     if (!response.ok) {
       throw new ArkInvoiceApiError(
@@ -348,6 +474,6 @@ export class ArkInvoiceClient {
         (envelope.data || {}) as ErrorData,
       )
     }
-    return envelope.data as T
+    return parseSuccess(response, envelope)
   }
 }

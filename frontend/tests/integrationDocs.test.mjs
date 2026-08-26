@@ -26,6 +26,55 @@ function readAsset(name) {
   return readFileSync(paths[name], 'utf8')
 }
 
+const runtimePayload = {
+  schema_version: '1.0',
+  external_order_id: 'SITE:RECOVER-001',
+  order_type: 'stock',
+  invoice_date: '2026-08-26',
+  currency: 'USD',
+  customer: { ark_customer_id: '1001' },
+  delivery: {},
+  items: [],
+}
+
+const recoveredResult = {
+  request_id: 'request-1',
+  replayed: true,
+  external_order_id: 'SITE:RECOVER-001',
+  invoice_id: 123,
+  invoice_no: 'ARK-123',
+  status: 'ready',
+  sync_status: 'not_synced',
+  totals: { product_amount: '20.00', total_amount: '20.00' },
+  review_url: 'https://leshine.work/invoice/manage',
+}
+
+function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+async function withRuntimeClient(callback) {
+  const buildDirectory = mkdtempSync(join(tmpdir(), 'ark-invoice-client-test-'))
+  try {
+    const { build } = await import('esbuild')
+    const outputFile = join(buildDirectory, 'ark-invoice-client.mjs')
+    await build({
+      entryPoints: [fileURLToPath(paths.client)],
+      outfile: outputFile,
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+    })
+    const runtime = await import(pathToFileURL(outputFile).href)
+    await callback(runtime)
+  } finally {
+    rmSync(buildDirectory, { recursive: true, force: true })
+  }
+}
+
 test('published endpoint list matches the FastAPI OpenAPI paths', () => {
   const apiDoc = readAsset('api')
   const python = process.env.PYTHON || 'python'
@@ -69,34 +118,12 @@ test('ambiguous create recovers and retries only with the original external orde
   assert.match(client, /getInvoiceByExternalId\(payload\.external_order_id\)/)
   assert.match(client, /createOnce\(payload\)/)
   assert.match(client, /kind:\s*'timeout'\s*\|\s*'network'/)
-  assert.doesNotMatch(client, /external_order_id\s*=/)
+  assert.doesNotMatch(client, /external_order_id\s*=(?!=)/)
 })
 
 test('broken 201 create response recovers by querying the same external order id', async () => {
-  const buildDirectory = mkdtempSync(join(tmpdir(), 'ark-invoice-client-test-'))
-  try {
-    const { build } = await import('esbuild')
-    const outputFile = join(buildDirectory, 'ark-invoice-client.mjs')
-    await build({
-      entryPoints: [fileURLToPath(paths.client)],
-      outfile: outputFile,
-      bundle: true,
-      platform: 'node',
-      format: 'esm',
-    })
-    const { ArkInvoiceClient } = await import(pathToFileURL(outputFile).href)
+  await withRuntimeClient(async ({ ArkInvoiceClient }) => {
     const calls = []
-    const recovered = {
-      request_id: 'request-1',
-      replayed: true,
-      external_order_id: 'SITE:RECOVER-001',
-      invoice_id: 123,
-      invoice_no: 'ARK-123',
-      status: 'ready',
-      sync_status: 'not_synced',
-      totals: { product_amount: '20.00', total_amount: '20.00' },
-      review_url: 'https://leshine.work/invoice/manage',
-    }
     const fetchImpl = async (url, init) => {
       calls.push({ url: String(url), method: init.method, body: init.body })
       if (calls.length === 1) {
@@ -105,38 +132,108 @@ test('broken 201 create response recovers by querying the same external order id
           headers: { 'Content-Type': 'application/json' },
         })
       }
-      return new Response(
-        JSON.stringify({ code: 200, message: 'invoice replayed', data: recovered }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      )
+      return jsonResponse({ code: 200, message: 'invoice replayed', data: recoveredResult })
     }
     const client = new ArkInvoiceClient({
       baseUrl: 'https://leshine.work/api/integrations/v1',
       token: 'ark_live_test',
       fetchImpl,
     })
-    const payload = {
-      schema_version: '1.0',
-      external_order_id: 'SITE:RECOVER-001',
-      order_type: 'stock',
-      invoice_date: '2026-08-26',
-      currency: 'USD',
-      customer: { ark_customer_id: '1001' },
-      delivery: {},
-      items: [],
-    }
 
-    const result = await client.createInvoice(payload)
+    const result = await client.createInvoice(runtimePayload)
 
-    assert.deepEqual(result, recovered)
+    assert.deepEqual(result, recoveredResult)
     assert.equal(calls.length, 2)
     assert.equal(calls[0].method, 'POST')
     assert.equal(JSON.parse(calls[0].body).external_order_id, 'SITE:RECOVER-001')
     assert.equal(calls[1].method, 'GET')
     assert.match(calls[1].url, /\/invoices\/by-external-id\/SITE%3ARECOVER-001$/)
-  } finally {
-    rmSync(buildDirectory, { recursive: true, force: true })
-  }
+  })
+})
+
+test('empty 201 create data recovers by querying the same external order id', async () => {
+  await withRuntimeClient(async ({ ArkInvoiceClient }) => {
+    const calls = []
+    const client = new ArkInvoiceClient({
+      baseUrl: 'https://leshine.work/api/integrations/v1',
+      token: 'ark_live_test',
+      fetchImpl: async (url, init) => {
+        calls.push({ url: String(url), method: init.method })
+        if (calls.length === 1) {
+          return jsonResponse({ code: 201, message: 'invoice created', data: {} }, 201)
+        }
+        return jsonResponse({ code: 200, message: 'invoice replayed', data: recoveredResult })
+      },
+    })
+
+    assert.deepEqual(await client.createInvoice(runtimePayload), recoveredResult)
+    assert.equal(calls.length, 2)
+    assert.match(calls[1].url, /\/invoices\/by-external-id\/SITE%3ARECOVER-001$/)
+  })
+})
+
+test('mismatched create HTTP and envelope codes recover by external order id', async () => {
+  await withRuntimeClient(async ({ ArkInvoiceClient }) => {
+    const calls = []
+    const client = new ArkInvoiceClient({
+      baseUrl: 'https://leshine.work/api/integrations/v1',
+      token: 'ark_live_test',
+      fetchImpl: async (url, init) => {
+        calls.push({ url: String(url), method: init.method })
+        if (calls.length === 1) {
+          return jsonResponse(
+            { code: 200, message: 'wrong create code', data: recoveredResult },
+            201,
+          )
+        }
+        return jsonResponse({ code: 200, message: 'invoice replayed', data: recoveredResult })
+      },
+    })
+
+    assert.deepEqual(await client.createInvoice(runtimePayload), recoveredResult)
+    assert.equal(calls.length, 2)
+    assert.match(calls[1].url, /\/invoices\/by-external-id\/SITE%3ARECOVER-001$/)
+  })
+})
+
+test('malformed validate success throws once without create recovery', async () => {
+  await withRuntimeClient(async ({ ArkInvoiceClient, ArkInvoiceSuccessfulResponseError }) => {
+    let calls = 0
+    const client = new ArkInvoiceClient({
+      baseUrl: 'https://leshine.work/api/integrations/v1',
+      token: 'ark_live_test',
+      fetchImpl: async () => {
+        calls += 1
+        return jsonResponse({ code: 200, message: 'ok', data: {} })
+      },
+    })
+
+    await assert.rejects(
+      client.validateInvoice(runtimePayload),
+      error => error instanceof ArkInvoiceSuccessfulResponseError,
+    )
+    assert.equal(calls, 1)
+  })
+})
+
+test('malformed get success throws once without create recovery', async () => {
+  await withRuntimeClient(async ({ ArkInvoiceClient, ArkInvoiceSuccessfulResponseError }) => {
+    let calls = 0
+    const client = new ArkInvoiceClient({
+      baseUrl: 'https://leshine.work/api/integrations/v1',
+      token: 'ark_live_test',
+      fetchImpl: async () => {
+        calls += 1
+        return jsonResponse({ code: 200, message: 'invoice replayed', data: {} })
+      },
+    })
+
+    await assert.rejects(
+      client.getInvoiceByExternalId('SITE:RECOVER-001'),
+      error => error instanceof ArkInvoiceSuccessfulResponseError,
+    )
+    assert.equal(calls, 1)
+  })
 })
 
 test('documents keep money, idempotency, totals and OKKI boundaries explicit', () => {
