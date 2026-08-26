@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import test from 'node:test'
 
 const paths = {
@@ -69,6 +72,73 @@ test('ambiguous create recovers and retries only with the original external orde
   assert.doesNotMatch(client, /external_order_id\s*=/)
 })
 
+test('broken 201 create response recovers by querying the same external order id', async () => {
+  const buildDirectory = mkdtempSync(join(tmpdir(), 'ark-invoice-client-test-'))
+  try {
+    const { build } = await import('esbuild')
+    const outputFile = join(buildDirectory, 'ark-invoice-client.mjs')
+    await build({
+      entryPoints: [fileURLToPath(paths.client)],
+      outfile: outputFile,
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+    })
+    const { ArkInvoiceClient } = await import(pathToFileURL(outputFile).href)
+    const calls = []
+    const recovered = {
+      request_id: 'request-1',
+      replayed: true,
+      external_order_id: 'SITE:RECOVER-001',
+      invoice_id: 123,
+      invoice_no: 'ARK-123',
+      status: 'ready',
+      sync_status: 'not_synced',
+      totals: { product_amount: '20.00', total_amount: '20.00' },
+      review_url: 'https://leshine.work/invoice/manage',
+    }
+    const fetchImpl = async (url, init) => {
+      calls.push({ url: String(url), method: init.method, body: init.body })
+      if (calls.length === 1) {
+        return new Response('{broken-json', {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(
+        JSON.stringify({ code: 200, message: 'invoice replayed', data: recovered }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+    const client = new ArkInvoiceClient({
+      baseUrl: 'https://leshine.work/api/integrations/v1',
+      token: 'ark_live_test',
+      fetchImpl,
+    })
+    const payload = {
+      schema_version: '1.0',
+      external_order_id: 'SITE:RECOVER-001',
+      order_type: 'stock',
+      invoice_date: '2026-08-26',
+      currency: 'USD',
+      customer: { ark_customer_id: '1001' },
+      delivery: {},
+      items: [],
+    }
+
+    const result = await client.createInvoice(payload)
+
+    assert.deepEqual(result, recovered)
+    assert.equal(calls.length, 2)
+    assert.equal(calls[0].method, 'POST')
+    assert.equal(JSON.parse(calls[0].body).external_order_id, 'SITE:RECOVER-001')
+    assert.equal(calls[1].method, 'GET')
+    assert.match(calls[1].url, /\/invoices\/by-external-id\/SITE%3ARECOVER-001$/)
+  } finally {
+    rmSync(buildDirectory, { recursive: true, force: true })
+  }
+})
+
 test('documents keep money, idempotency, totals and OKKI boundaries explicit', () => {
   const requirements = readAsset('requirements')
   const apiDoc = readAsset('api')
@@ -83,7 +153,18 @@ test('documents keep money, idempotency, totals and OKKI boundaries explicit', (
   assert.match(combined, /不.*同步 OKKI/)
   assert.match(apiDoc, /超时|网络/)
   assert.match(apiDoc, /相同 external_order_id/)
+  assert.match(combined, /绝对差额 <= 0\.01.*通过/)
+  assert.match(combined, /> 0\.01.*DECLARED_TOTAL_MISMATCH.*422/s)
   assert.doesNotMatch(apiDoc, /token=.*ark_live_/i)
+})
+
+test('customer resolution documents the authoritative id and fallback order', () => {
+  const apiDoc = readAsset('api')
+
+  assert.match(apiDoc, /ark_customer_id.*权威/)
+  assert.match(apiDoc, /命中后.*不.*反向核对/)
+  assert.match(apiDoc, /未提供.*ark_customer_id.*联系人.*公司名/s)
+  assert.match(apiDoc, /当前尝试的条件.*多命中.*CUSTOMER_NOT_UNIQUE/)
 })
 
 test('Codex site prompt requires a server route, environment secret and source-order JSON', () => {

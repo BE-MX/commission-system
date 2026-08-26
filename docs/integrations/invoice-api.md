@@ -61,13 +61,13 @@ Accept: application/json
 
 ### 3.3 金额与归属
 
-方舟服务端重算行金额、产品金额和总额。可选 `declared_totals` 只用于对账，误差超过接口允许值会返回 422。请求不能传 `sales_user_id` 或 `invoice_no`；订单归属取 Integration App 绑定用户，发票号由方舟生成。
+方舟服务端重算行金额、产品金额和总额。可选 `declared_totals` 只用于对账：声明值与重算值的绝对差额 <= 0.01 时通过；> 0.01 时返回 HTTP 422 `DECLARED_TOTAL_MISMATCH`。请求不能传 `sales_user_id` 或 `invoice_no`；订单归属取 Integration App 绑定用户，发票号由方舟生成。
 
 ## 4. 客户解析
 
 POST `/customers/resolve`
 
-按以下方式之一提交，字段可以组合，但结果必须唯一：
+可提交方舟客户 ID，或在没有 ID 时提交联系人/公司名：
 
 ```json
 {
@@ -81,7 +81,9 @@ POST `/customers/resolve`
 }
 ```
 
-解析顺序是数字型 `ark_customer_id`、联系人精确邮箱/规范化电话、规范化精确公司名。零命中返回 `CUSTOMER_NOT_FOUND`，多命中或输入条件指向不同客户返回 `CUSTOMER_NOT_UNIQUE`。接口不会返回候选名单，也不会自动创建客户。
+`ark_customer_id` 是权威条件。只要请求提供它，方舟就只按这个数字 ID 查询：命中后直接返回该客户，不用邮箱、电话或公司名反向核对；ID 不存在时直接返回 `CUSTOMER_NOT_FOUND`，也不回退到弱条件。请求中同时提供的联系人字段作为本单联系人快照保留，不用于推翻已命中的客户。
+
+未提供 `ark_customer_id` 时，才先尝试联系人精确邮箱和规范化电话；联系人没有命中时，再尝试规范化后的精确公司名。只有当前尝试的条件自身多命中时才返回 `CUSTOMER_NOT_UNIQUE`：例如邮箱与电话合计指向多个公司，或公司名精确匹配到多个公司。联系人已经唯一命中后不会再拿公司名交叉否决。所有条件均无结果时返回 `CUSTOMER_NOT_FOUND`。接口不会返回候选名单，也不会自动创建客户。
 
 成功示意：
 

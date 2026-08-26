@@ -194,6 +194,13 @@ export class ArkInvoiceTransportError extends Error {
   }
 }
 
+export class ArkInvoiceSuccessfulResponseError extends Error {
+  constructor(public readonly status: number) {
+    super('Ark invoice API returned an invalid successful response')
+    this.name = 'ArkInvoiceSuccessfulResponseError'
+  }
+}
+
 export interface ArkInvoiceClientOptions {
   baseUrl: string
   token: string
@@ -273,6 +280,7 @@ export class ArkInvoiceClient {
 
   private isAmbiguousCreateError(error: unknown): boolean {
     return error instanceof ArkInvoiceTransportError
+      || error instanceof ArkInvoiceSuccessfulResponseError
       || (error instanceof ArkInvoiceApiError && error.status >= 500)
   }
 
@@ -305,15 +313,32 @@ export class ArkInvoiceClient {
       clearTimeout(timeout)
     }
 
-    let envelope: ApiEnvelope<T | ErrorData>
+    let parsed: unknown
     try {
-      envelope = await response.json() as ApiEnvelope<T | ErrorData>
+      parsed = await response.json()
     } catch {
+      if (response.ok) {
+        throw new ArkInvoiceSuccessfulResponseError(response.status)
+      }
       throw new ArkInvoiceApiError(
         response.status,
         'Ark invoice API returned an invalid response',
         {},
       )
+    }
+
+    const envelope = parsed as Partial<ApiEnvelope<T | ErrorData>>
+    if (
+      response.ok
+      && (
+        parsed === null
+        || typeof parsed !== 'object'
+        || !Object.prototype.hasOwnProperty.call(parsed, 'data')
+        || envelope.data === null
+        || envelope.data === undefined
+      )
+    ) {
+      throw new ArkInvoiceSuccessfulResponseError(response.status)
     }
 
     if (!response.ok) {
