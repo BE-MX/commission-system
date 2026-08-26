@@ -398,8 +398,10 @@ def test_stale_admin_claims_fail_all_endpoints_after_db_disable_or_revoke():
         engine.dispose()
 
 
-def test_resolver_touch_does_not_commit_or_flush_outer_pending_work(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'integration-auth.db'}")
+def _setup_file_resolver(path):
+    engine = create_engine(f"sqlite:///{path}")
+    with engine.connect() as connection:
+        connection.exec_driver_sql("PRAGMA journal_mode=WAL")
     Base.metadata.create_all(engine, tables=TABLES)
     Session = sessionmaker(bind=engine)
     seed = Session()
@@ -431,6 +433,11 @@ def test_resolver_touch_does_not_commit_or_flush_outer_pending_work(tmp_path):
     ))
     seed.commit()
     seed.close()
+    return engine, Session, token
+
+
+def test_resolver_persists_touch_independently_without_flushing_outer_work(tmp_path):
+    engine, Session, token = _setup_file_resolver(tmp_path / "integration-auth.db")
 
     outer = Session()
     observer = Session()
@@ -442,6 +449,9 @@ def test_resolver_touch_does_not_commit_or_flush_outer_pending_work(tmp_path):
             password_hash="test",
         )
         outer.add(pending)
+        # Force a real outer transaction. SQLite's legacy transaction mode does
+        # not BEGIN for SELECT, which would make a released SAVEPOINT commit by accident.
+        outer.connection().exec_driver_sql("BEGIN")
         principal = resolve_submission_principal(
             outer,
             token,
@@ -450,56 +460,57 @@ def test_resolver_touch_does_not_commit_or_flush_outer_pending_work(tmp_path):
         assert principal.actor_user_id == 1
         assert pending in outer.new
         assert observer.query(ArkUser).filter(ArkUser.id == 77).first() is None
-
-        outer.commit()
-        observer.expire_all()
-        assert observer.query(ArkUser).filter(ArkUser.id == 77).one().username == "pending"
+        assert observer.query(IntegrationApp).filter(
+            IntegrationApp.public_id == "app_transaction"
+        ).one().last_used_at is not None
     finally:
+        outer.rollback()
         outer.close()
         observer.close()
         engine.dispose()
 
 
-def test_touch_failure_rolls_back_only_savepoint_and_outer_work_can_commit():
-    client, _, db, engine, _, _ = _setup()
-    try:
-        issued = _issue(client)
-        db.connection().exec_driver_sql("""
+def test_independent_touch_failure_does_not_affect_outer_transaction(tmp_path):
+    engine, Session, token = _setup_file_resolver(tmp_path / "integration-touch-failure.db")
+    with engine.begin() as connection:
+        connection.exec_driver_sql("""
             CREATE TRIGGER fail_integration_touch
             BEFORE UPDATE OF last_used_at ON ark_integration_apps
             BEGIN
                 SELECT RAISE(ABORT, 'simulated telemetry failure');
             END
         """)
+
+    outer = Session()
+    try:
         first = ArkUser(
             id=77,
             username="first-pending",
             real_name="First Pending",
             password_hash="test",
         )
-        db.add(first)
+        outer.add(first)
 
         principal = resolve_submission_principal(
-            db,
-            issued["token"],
+            outer,
+            token,
             required_scope="invoice:write",
         )
         assert principal.actor_user_id == 1
-        assert first in db.new
+        assert first in outer.new
 
-        db.add(ArkUser(
+        outer.add(ArkUser(
             id=78,
             username="second-pending",
             real_name="Second Pending",
             password_hash="test",
         ))
-        db.commit()
+        outer.commit()
         assert {
-            user.id for user in db.query(ArkUser).filter(ArkUser.id.in_([77, 78])).all()
+            user.id for user in outer.query(ArkUser).filter(ArkUser.id.in_([77, 78])).all()
         } == {77, 78}
     finally:
-        client.close()
-        db.close()
+        outer.close()
         engine.dispose()
 
 

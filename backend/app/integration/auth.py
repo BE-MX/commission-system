@@ -6,7 +6,9 @@ import logging
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import update
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
 from app.auth.dependencies import get_current_user
 from app.auth.models import ArkUser
@@ -74,19 +76,26 @@ def require_permission_current_integration_admin(
 
 
 def _touch_last_used_at(db: Session, app_id: int) -> None:
-    """Update telemetry inside a connection savepoint without flushing Session state."""
-    connection = db.connection()
-    savepoint = connection.begin_nested()
-    try:
+    """Persist telemetry in an independent transaction, never the caller's Session."""
+    bind = db.get_bind()
+    engine = bind if isinstance(bind, Engine) else getattr(bind, "engine", None)
+    if engine is None:
+        return
+
+    # In-memory SQLite and StaticPool may hand out the caller's physical connection.
+    # Skipping nonessential telemetry is safer than committing or rolling back its work.
+    if engine.dialect.name == "sqlite" and (
+        isinstance(engine.pool, StaticPool)
+        or engine.url.database in {None, "", ":memory:"}
+    ):
+        return
+
+    with engine.begin() as connection:
         connection.execute(
             update(IntegrationApp)
             .where(IntegrationApp.id == app_id)
             .values(last_used_at=beijing_now())
         )
-        savepoint.commit()
-    except Exception:
-        savepoint.rollback()
-        raise
 
 
 def resolve_submission_principal(
