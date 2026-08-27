@@ -1030,6 +1030,81 @@ def test_human_approval_then_claim_projects_t1_to_reactivation_radar(db):
     assert db.query(models.PublicPoolTask).filter_by(id=task.id).one().review_status == "approved"
 
 
+def test_bulk_review_approves_one_batch_atomically_and_is_idempotent(db):
+    batch = _generate(db, quota=1)
+    tasks = db.query(models.PublicPoolTask).filter_by(batch_id=batch.id).order_by(models.PublicPoolTask.id).all()
+    for task in tasks:
+        _row, lease = public_pool_service.claim_task(db, task.id, 17, "pool-agent")
+        public_pool_service.submit_industry_gate(db, task.id, _gate_payload(lease), actor_id=17)
+        public_pool_service.complete_task_research(
+            db, task.id, _research_payload(lease), actor_id=17,
+        )
+
+    payload = {"batch_id": batch.id, "task_ids": [task.id for task in tasks], "action": "approve"}
+    first = _admin_client(db).post("/api/sales-automation/public-pool/tasks/bulk-review", json=payload)
+    second = _admin_client(db).post("/api/sales-automation/public-pool/tasks/bulk-review", json=payload)
+
+    assert first.status_code == 200, first.text
+    assert first.json()["data"]["processed_count"] == 3
+    assert second.status_code == 200, second.text
+    assert second.json()["data"]["processed_count"] == 0
+    assert second.json()["data"]["unchanged_count"] == 3
+    assert {row.review_status for row in db.query(models.PublicPoolTask).all()} == {"approved"}
+
+
+def test_bulk_reject_rolls_back_entire_selection_when_one_task_is_approved(db):
+    batch = _generate(db, quota=1)
+    tasks = db.query(models.PublicPoolTask).filter_by(batch_id=batch.id).order_by(models.PublicPoolTask.id).all()
+    for task in tasks[:2]:
+        _row, lease = public_pool_service.claim_task(db, task.id, 17, "pool-agent")
+        public_pool_service.submit_industry_gate(db, task.id, _gate_payload(lease), actor_id=17)
+        public_pool_service.complete_task_research(
+            db, task.id, _research_payload(lease), actor_id=17,
+        )
+    public_pool_service.approve_task(db, tasks[0].id, actor_id=9)
+
+    response = _admin_client(db).post("/api/sales-automation/public-pool/tasks/bulk-review", json={
+        "batch_id": batch.id,
+        "task_ids": [tasks[0].id, tasks[1].id],
+        "action": "reject",
+        "reason": "本批次统一拒绝",
+    })
+
+    assert response.status_code == 409, response.text
+    db.expire_all()
+    assert db.query(models.PublicPoolTask).filter_by(id=tasks[0].id).one().review_status == "approved"
+    assert db.query(models.PublicPoolTask).filter_by(id=tasks[1].id).one().review_status == "pending"
+
+
+def test_batch_task_list_filter_and_bulk_review_validation(db):
+    batch = _generate(db, quota=1)
+    task = db.query(models.PublicPoolTask).filter_by(batch_id=batch.id).first()
+    listed = _human_client(db).get(
+        "/api/sales-automation/public-pool/tasks",
+        params={"batch_id": batch.id, "page_size": 300},
+    )
+    forbidden = _human_client(db).post(
+        "/api/sales-automation/public-pool/tasks/bulk-review",
+        json={"batch_id": batch.id, "task_ids": [task.id], "action": "approve"},
+    )
+    wrong_batch = _admin_client(db).post(
+        "/api/sales-automation/public-pool/tasks/bulk-review",
+        json={"batch_id": batch.id + 1, "task_ids": [task.id], "action": "approve"},
+    )
+    missing_reason = _admin_client(db).post(
+        "/api/sales-automation/public-pool/tasks/bulk-review",
+        json={"batch_id": batch.id, "task_ids": [1], "action": "reject"},
+    )
+
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["data"]["total"] == 3
+    assert {row["batch_id"] for row in listed.json()["data"]["items"]} == {batch.id}
+    assert forbidden.status_code == 403
+    assert wrong_batch.status_code == 404
+    assert db.query(models.PublicPoolTask).filter_by(id=task.id).one().review_status == "pending"
+    assert missing_reason.status_code == 422
+
+
 def test_public_pool_claim_is_idempotent_for_owner_and_rejects_other_salesperson(db):
     _generate(db, quota=1)
     task = db.query(models.PublicPoolTask).filter(models.PublicPoolTask.tier == "T2").one()

@@ -18,48 +18,75 @@
       </article>
     </section>
 
-    <div class="toolbar">
-      <el-input v-model="filters.keyword" clearable placeholder="客户名称 / OKKI ID" class="keyword-filter" @keyup.enter="search" @clear="search" />
+    <div class="toolbar batch-filter-toolbar">
+      <el-input v-model="filters.keyword" clearable placeholder="筛选批次内客户 / OKKI ID" class="keyword-filter" @keyup.enter="search" @clear="search" />
       <el-select v-model="filters.tier" clearable placeholder="全部分档" style="width: 130px" @change="search">
         <el-option label="T1 历史订单" value="T1" /><el-option label="T2 身份完善" value="T2" /><el-option label="T3 低信息量" value="T3" />
       </el-select>
-      <el-select v-model="filters.status" clearable placeholder="全部进度" style="width: 130px" @change="search">
-        <el-option label="待领取" value="pending" /><el-option label="背调中" value="running" /><el-option label="已完成" value="completed" /><el-option label="失败" value="failed" />
-      </el-select>
-      <el-select v-model="filters.review_status" clearable placeholder="全部审核" style="width: 130px" @change="search">
-        <el-option label="待审核" value="pending" /><el-option label="已确认" value="approved" /><el-option label="已拒绝" value="rejected" />
-      </el-select>
-      <el-select v-model="filters.allocation_status" clearable placeholder="全部分配" style="width: 130px" @change="search">
-        <el-option label="待领取" value="claimable" /><el-option label="已领取" value="claimed" />
-      </el-select>
       <GlassButton variant="primary" left-icon="Search" @click="search">查询</GlassButton>
-      <GlassButton variant="secondary" left-icon="Refresh" :loading="loading" @click="fetchTasks">刷新</GlassButton>
+      <GlassButton variant="secondary" left-icon="Refresh" :loading="batchListLoading" @click="refreshBatchTree">刷新</GlassButton>
+      <span class="toolbar-hint">筛选只影响明细显示，整批操作始终覆盖完整批次</span>
     </div>
 
-    <section class="surface-card table-card">
-      <el-table v-loading="loading" :data="tasks" border class="list-table">
-        <el-table-column label="客户" min-width="210">
-          <template #default="{ row }"><div class="company-cell"><strong>{{ row.subject.display_name }}</strong><span>{{ row.subject.country || '地区未知' }} · {{ sourceLabel(row.subject) }}</span></div></template>
-        </el-table-column>
-        <el-table-column label="档位" min-width="105"><template #default="{ row }"><el-tag :type="tierMeta(row.tier).type">{{ tierMeta(row.tier).label }}</el-tag></template></el-table-column>
-        <el-table-column label="订单 / 完整度" min-width="145"><template #default="{ row }">{{ row.subject.order_count }} 单 / {{ row.subject.completeness_score }}%</template></el-table-column>
-        <el-table-column label="背调进度" min-width="105"><template #default="{ row }"><el-tag :type="statusMeta(row.status).type" effect="plain">{{ statusMeta(row.status).label }}</el-tag></template></el-table-column>
-        <el-table-column label="成交等级" min-width="110"><template #default="{ row }"><span v-if="row.assessment" class="grade" :data-grade="row.assessment.grade">{{ row.assessment.grade }}</span><span v-else>-</span></template></el-table-column>
-        <el-table-column label="行业判定" min-width="115"><template #default="{ row }"><el-tag v-if="row.assessment" :type="relevanceMeta(row.assessment.industry_relevance).type" effect="plain">{{ relevanceMeta(row.assessment.industry_relevance).label }}</el-tag><span v-else>-</span></template></el-table-column>
-        <el-table-column label="证据置信度" min-width="115"><template #default="{ row }">{{ confidenceLabel(row.assessment?.evidence_confidence) }}</template></el-table-column>
-        <el-table-column label="团队分配" min-width="125"><template #default="{ row }"><el-tag :type="allocationMeta(row).type" effect="plain">{{ allocationMeta(row).label }}</el-tag></template></el-table-column>
-        <el-table-column label="操作" min-width="230" fixed="right">
-          <template #default="{ row }">
-            <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
-            <template v-if="row.status === 'completed' && row.review_status === 'pending'">
-              <GlassButton v-permission="'sales_automation:admin'" variant="link" link-tone="success" left-icon="Check" @click="approve(row)">审核通过</GlassButton>
-              <GlassButton v-permission="'sales_automation:admin'" variant="link" link-tone="danger" left-icon="Close" @click="reject(row)">拒绝</GlassButton>
-            </template>
-            <GlassButton v-else-if="row.status === 'completed' && row.review_status === 'approved' && !row.opportunity_id" v-any-permission="['sales_automation:write', 'sales_automation:admin']" variant="link" link-tone="success" left-icon="UserFilled" @click="claim(row)">领取客户</GlassButton>
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" class="pager" @current-change="handlePageChange" @size-change="handleSizeChange" />
+    <section v-loading="batchListLoading" class="batch-tree" aria-label="公海背调批次列表">
+      <article v-for="batch in batches" :key="batch.id" class="surface-card batch-node">
+        <button class="batch-toggle" type="button" :aria-expanded="isBatchExpanded(batch.id)" @click="toggleBatch(batch)">
+          <span class="batch-chevron" :class="{ 'is-expanded': isBatchExpanded(batch.id) }" aria-hidden="true">›</span>
+          <span class="batch-identity">
+            <strong>{{ batch.batch_date }} · 批次 #{{ batch.id }}</strong>
+            <small>策略 {{ batch.policy_version }} · {{ batch.result_counts?.total ?? 0 }} 位客户</small>
+          </span>
+          <span class="batch-tier-summary">
+            <span>T1 {{ batch.result_counts?.selected?.T1 ?? 0 }}</span><span>T2 {{ batch.result_counts?.selected?.T2 ?? 0 }}</span><span>T3 {{ batch.result_counts?.selected?.T3 ?? 0 }}</span>
+          </span>
+          <el-tag :type="batchStatusMeta(batch.status).type" effect="plain">{{ batchStatusMeta(batch.status).label }}</el-tag>
+        </button>
+
+        <div v-if="isBatchExpanded(batch.id)" class="batch-children">
+          <el-tabs v-model="activeStatusByBatch[batch.id]" class="batch-status-tabs" @tab-change="clearBatchSelection(batch.id)">
+            <el-tab-pane v-for="tab in statusTabs" :key="tab.key" :name="tab.key">
+              <template #label><span class="status-tab-label">{{ tab.label }}<b>{{ batchCounts(batch.id)[tab.key] }}</b></span></template>
+            </el-tab-pane>
+          </el-tabs>
+
+          <div v-if="activeStatusByBatch[batch.id] === 'pending_review' && reviewableTasks(batch.id).length" class="batch-review-toolbar">
+            <span>已选 {{ selectedTaskIds(batch.id).length }} 位</span>
+            <GlassButton v-permission="'sales_automation:admin'" variant="secondary" left-icon="Check" :disabled="!selectedTaskIds(batch.id).length" @click="reviewTasks(batch, 'approve', 'selected')">通过所选</GlassButton>
+            <GlassButton v-permission="'sales_automation:admin'" variant="secondary" left-icon="Close" :disabled="!selectedTaskIds(batch.id).length" @click="reviewTasks(batch, 'reject', 'selected')">拒绝所选</GlassButton>
+            <span class="toolbar-spacer" />
+            <GlassButton v-permission="'sales_automation:admin'" variant="success" left-icon="Check" @click="reviewTasks(batch, 'approve', 'all')">整批通过（{{ reviewableTasks(batch.id).length }}）</GlassButton>
+            <GlassButton v-permission="'sales_automation:admin'" variant="danger" left-icon="Close" @click="reviewTasks(batch, 'reject', 'all')">整批拒绝（{{ reviewableTasks(batch.id).length }}）</GlassButton>
+          </div>
+
+          <div class="table-card batch-table-card">
+            <el-table v-loading="batchTasksLoading[batch.id]" :data="visibleBatchTasks(batch.id)" row-key="id" border class="list-table" @selection-change="setBatchSelection(batch.id, $event)">
+              <el-table-column v-if="activeStatusByBatch[batch.id] === 'pending_review'" type="selection" min-width="52" />
+              <el-table-column label="客户" min-width="210" show-overflow-tooltip>
+                <template #default="{ row }"><div class="company-cell"><strong>{{ row.subject.display_name }}</strong><span>{{ row.subject.country || '地区未知' }} · {{ sourceLabel(row.subject) }}</span></div></template>
+              </el-table-column>
+              <el-table-column label="档位" min-width="105"><template #default="{ row }"><el-tag :type="tierMeta(row.tier).type">{{ tierMeta(row.tier).label }}</el-tag></template></el-table-column>
+              <el-table-column label="订单 / 完整度" min-width="145"><template #default="{ row }">{{ row.subject.order_count }} 单 / {{ row.subject.completeness_score }}%</template></el-table-column>
+              <el-table-column label="背调进度" min-width="105"><template #default="{ row }"><el-tag :type="statusMeta(row.status).type" effect="plain">{{ statusMeta(row.status).label }}</el-tag></template></el-table-column>
+              <el-table-column label="成交等级" min-width="110"><template #default="{ row }"><span v-if="row.assessment" class="grade" :data-grade="row.assessment.grade">{{ row.assessment.grade }}</span><span v-else>-</span></template></el-table-column>
+              <el-table-column label="行业判定" min-width="115"><template #default="{ row }"><el-tag v-if="row.assessment" :type="relevanceMeta(row.assessment.industry_relevance).type" effect="plain">{{ relevanceMeta(row.assessment.industry_relevance).label }}</el-tag><span v-else>-</span></template></el-table-column>
+              <el-table-column label="证据置信度" min-width="115"><template #default="{ row }">{{ confidenceLabel(row.assessment?.evidence_confidence) }}</template></el-table-column>
+              <el-table-column label="团队分配" min-width="125"><template #default="{ row }"><el-tag :type="allocationMeta(row).type" effect="plain">{{ allocationMeta(row).label }}</el-tag></template></el-table-column>
+              <el-table-column label="操作" min-width="230" fixed="right">
+                <template #default="{ row }">
+                  <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
+                  <template v-if="row.status === 'completed' && row.review_status === 'pending'">
+                    <GlassButton v-permission="'sales_automation:admin'" variant="link" link-tone="success" left-icon="Check" @click="approve(row)">审核通过</GlassButton>
+                    <GlassButton v-permission="'sales_automation:admin'" variant="link" link-tone="danger" left-icon="Close" @click="reject(row)">拒绝</GlassButton>
+                  </template>
+                  <GlassButton v-else-if="row.status === 'completed' && row.review_status === 'approved' && !row.opportunity_id" v-any-permission="['sales_automation:write', 'sales_automation:admin']" variant="link" link-tone="success" left-icon="UserFilled" @click="claim(row)">领取客户</GlassButton>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
+      </article>
+      <el-empty v-if="!batchListLoading && !batches.length" description="暂无背调批次" />
+      <el-pagination v-if="batchTotal" v-model:current-page="batchPage" v-model:page-size="batchPageSize" :total="batchTotal" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next" class="pager" @current-change="handleBatchPageChange" @size-change="handleBatchSizeChange" />
     </section>
 
     <PublicPoolBatchDialog v-model="batchDialogVisible" :loading="batchLoading" @submit="generateBatch" />
@@ -103,19 +130,27 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import PublicPoolBatchDialog from './components/PublicPoolBatchDialog.vue'
-import { approvePublicPoolTask, claimPublicPoolTask, createPublicPoolBatch, getPublicPoolAudit, getPublicPoolBatches, getPublicPoolTask, getPublicPoolTasks, refreshPublicPoolAudit, rejectPublicPoolTask } from '@/api/salesAutomation'
+import { approvePublicPoolTask, bulkReviewPublicPoolTasks, claimPublicPoolTask, createPublicPoolBatch, getPublicPoolAudit, getPublicPoolBatches, getPublicPoolTask, getPublicPoolTasks, refreshPublicPoolAudit, rejectPublicPoolTask } from '@/api/salesAutomation'
 import { useListPage } from '@/composables/useListPage'
 import { msgSuccess } from '@/utils/feedback'
 import { formatBeijingDateTime } from '@/utils/datetime'
+import { PUBLIC_POOL_STATUS_TABS, defaultBatchTab, taskStatusBucket, taskStatusCounts } from './publicPoolBatchState'
 
 const audit = ref({}); const auditLoading = ref(false); const batchLoading = ref(false)
 const batchDialogVisible = ref(false)
 const activeBatch = ref(null); let batchPollTimer = null
+const filters = reactive({ keyword: '', tier: '' })
+const statusTabs = PUBLIC_POOL_STATUS_TABS
+const expandedBatchIds = ref([])
+const batchTasks = ref({})
+const batchTasksLoading = ref({})
+const activeStatusByBatch = ref({})
+const batchSelections = ref({})
 const metrics = computed(() => [
   { key: 'public_customers', label: '公海客户', note: 'owner_user_ids 为空' }, { key: 'tier_t1', label: 'T1 历史订单', note: '最近 60 天无下单' },
   { key: 'tier_t2', label: 'T2 身份完善', note: '企业邮箱 / 官网 / 社媒' }, { key: 'tier_t3', label: 'T3 低信息量', note: '私人邮箱 / 电话 / WhatsApp' },
@@ -137,10 +172,51 @@ const scaleStageLabel = v => ({ solo_professional: '独立专业者', small_team
 const volumeLabel = v => ({ small_trial: '小单试水', stable_medium: '中等稳定', high_volume: '大批量', unclear: '不明确' }[v] || '-')
 const number = v => Number(v || 0).toLocaleString('zh-CN'); const formatTime = v => formatBeijingDateTime(v)
 const sourceLabel = subject => subject.source_system === 'ark_lead' ? `智能获客 #${subject.linked_company_id || subject.source_customer_id}` : `OKKI ${subject.source_customer_id}`
+const batchStatusMeta = v => ({ pending: { label: '等待生成', type: 'info' }, running: { label: '生成中', type: 'warning' }, completed: { label: '已完成', type: 'success' }, failed: { label: '生成失败', type: 'danger' } }[v] || { label: v || '-', type: 'info' })
 
-const { loading, list: tasks, total, page, pageSize, searchForm: filters, fetchList: fetchTasks, handleSearch: search, handlePageChange, handleSizeChange } = useListPage(async params => {
-  const clean = Object.fromEntries(Object.entries(params).filter(([, value]) => value !== '')); const res = await getPublicPoolTasks(clean); return res.data || {}
-}, { searchForm: { keyword: '', tier: '', status: '', review_status: '', allocation_status: '' } })
+const { loading: batchListLoading, list: batches, total: batchTotal, page: batchPage, pageSize: batchPageSize, fetchList: fetchBatches, handlePageChange: handleBatchPageChange, handleSizeChange: handleBatchSizeChange } = useListPage(async params => {
+  const res = await getPublicPoolBatches(params); return res.data || {}
+}, { pageSize: 10 })
+const isBatchExpanded = batchId => expandedBatchIds.value.includes(batchId)
+const batchCounts = batchId => taskStatusCounts(batchTasks.value[batchId] || [])
+function matchesTaskFilters(task) {
+  if (filters.tier && task.tier !== filters.tier) return false
+  const keyword = filters.keyword.trim().toLocaleLowerCase()
+  if (!keyword) return true
+  return [task.subject?.display_name, task.subject?.source_customer_id]
+    .some(value => String(value || '').toLocaleLowerCase().includes(keyword))
+}
+const visibleBatchTasks = batchId => (batchTasks.value[batchId] || []).filter(task => (
+  taskStatusBucket(task) === activeStatusByBatch.value[batchId] && matchesTaskFilters(task)
+))
+const reviewableTasks = batchId => (batchTasks.value[batchId] || []).filter(task => taskStatusBucket(task) === 'pending_review')
+const selectedTaskIds = batchId => batchSelections.value[batchId] || []
+function setBatchSelection(batchId, rows) { batchSelections.value = { ...batchSelections.value, [batchId]: rows.map(row => row.id) } }
+function clearBatchSelection(batchId) { batchSelections.value = { ...batchSelections.value, [batchId]: [] } }
+async function loadBatchTasks(batchId) {
+  batchTasksLoading.value = { ...batchTasksLoading.value, [batchId]: true }
+  try {
+    const data = (await getPublicPoolTasks({ batch_id: batchId, page: 1, page_size: 300 })).data || {}
+    batchTasks.value = { ...batchTasks.value, [batchId]: data.items || [] }
+    if (!activeStatusByBatch.value[batchId] || !taskStatusCounts(data.items || [])[activeStatusByBatch.value[batchId]]) {
+      activeStatusByBatch.value = { ...activeStatusByBatch.value, [batchId]: defaultBatchTab(data.items || []) }
+    }
+    clearBatchSelection(batchId)
+  } finally {
+    batchTasksLoading.value = { ...batchTasksLoading.value, [batchId]: false }
+  }
+}
+async function toggleBatch(batch) {
+  if (isBatchExpanded(batch.id)) {
+    expandedBatchIds.value = expandedBatchIds.value.filter(id => id !== batch.id)
+    clearBatchSelection(batch.id)
+    return
+  }
+  expandedBatchIds.value = [...expandedBatchIds.value, batch.id]
+  await loadBatchTasks(batch.id)
+}
+async function search() { expandedBatchIds.value.forEach(clearBatchSelection) }
+async function refreshBatchTree() { await fetchBatches(); await search() }
 const detailVisible = ref(false); const detailLoading = ref(false); const detail = ref(null); const activeTab = ref('seed')
 async function loadAudit() { auditLoading.value = true; try { audit.value = (await getPublicPoolAudit()).data || {} } finally { auditLoading.value = false } }
 async function refreshAudit() { auditLoading.value = true; try { audit.value = (await refreshPublicPoolAudit()).data || {}; msgSuccess('公海审计') } finally { auditLoading.value = false } }
@@ -151,7 +227,7 @@ async function syncBatchState() {
   const wasActive = Boolean(activeBatch.value)
   activeBatch.value = latest && ['pending', 'running'].includes(latest.status) ? latest : null
   if (activeBatch.value) scheduleBatchPoll()
-  else if (wasActive && latest?.status === 'completed') { msgSuccess('今日批次生成完成'); await Promise.all([loadAudit(), fetchTasks()]) }
+  else if (wasActive && latest?.status === 'completed') { msgSuccess('今日批次生成完成'); await Promise.all([loadAudit(), refreshBatchTree()]) }
 }
 async function generateBatch(payload) {
   if (activeBatch.value) return
@@ -164,14 +240,180 @@ async function generateBatch(payload) {
   } finally { batchLoading.value = false }
 }
 async function openDetail(row) { detailVisible.value = true; detailLoading.value = true; activeTab.value = 'seed'; try { detail.value = (await getPublicPoolTask(row.id)).data } finally { detailLoading.value = false } }
-async function approve(row) { await approvePublicPoolTask(row.id); msgSuccess('审核通过，已进入团队待领取公海'); await fetchTasks(); if (detail.value?.id === row.id) detail.value = (await getPublicPoolTask(row.id)).data }
-async function claim(row) { await claimPublicPoolTask(row.id); msgSuccess('领取成功，客户已进入我的机会'); await fetchTasks(); if (detail.value?.id === row.id) detail.value = (await getPublicPoolTask(row.id)).data }
-async function reject(row) { try { const { value } = await ElMessageBox.prompt('请填写拒绝原因，便于后续调整筛选和背调策略。', '拒绝公海客户', { inputType: 'textarea', inputValidator: v => Boolean(v?.trim()) || '拒绝原因不能为空' }); await rejectPublicPoolTask(row.id, value.trim()); msgSuccess('拒绝'); await fetchTasks() } catch (error) { if (error !== 'cancel' && error !== 'close') throw error } }
+async function approve(row) { await approvePublicPoolTask(row.id); msgSuccess('审核通过，已进入团队待领取公海'); await loadBatchTasks(row.batch_id); if (detail.value?.id === row.id) detail.value = (await getPublicPoolTask(row.id)).data }
+async function claim(row) { await claimPublicPoolTask(row.id); msgSuccess('领取成功，客户已进入我的机会'); await loadBatchTasks(row.batch_id); if (detail.value?.id === row.id) detail.value = (await getPublicPoolTask(row.id)).data }
+async function reject(row) { try { const { value } = await ElMessageBox.prompt('请填写拒绝原因，便于后续调整筛选和背调策略。', '拒绝公海客户', { inputType: 'textarea', inputValidator: v => Boolean(v?.trim()) || '拒绝原因不能为空' }); await rejectPublicPoolTask(row.id, value.trim()); msgSuccess('拒绝'); await loadBatchTasks(row.batch_id) } catch (error) { if (error !== 'cancel' && error !== 'close') throw error } }
+async function reviewTasks(batch, action, scope) {
+  const taskIds = scope === 'all' ? reviewableTasks(batch.id).map(task => task.id) : selectedTaskIds(batch.id)
+  if (!taskIds.length) return
+  let reason
+  try {
+    if (action === 'approve') {
+      await ElMessageBox.confirm(`确认通过批次 #${batch.id} 中的 ${taskIds.length} 位客户？通过后将进入团队待领取公海。`, scope === 'all' ? '整批审核通过' : '批量审核通过', { type: 'success' })
+    } else {
+      const result = await ElMessageBox.prompt(`将拒绝批次 #${batch.id} 中的 ${taskIds.length} 位客户，请填写统一拒绝原因。`, scope === 'all' ? '整批拒绝' : '批量拒绝', { inputType: 'textarea', inputValidator: v => Boolean(v?.trim()) || '拒绝原因不能为空' })
+      reason = result.value.trim()
+    }
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    throw error
+  }
+  const result = (await bulkReviewPublicPoolTasks({ batch_id: batch.id, task_ids: taskIds, action, reason })).data || {}
+  msgSuccess(`${action === 'approve' ? '审核通过' : '拒绝'} ${result.processed_count || 0} 位客户`)
+  await loadBatchTasks(batch.id)
+}
 onMounted(async () => { await syncBatchState(); if (!activeBatch.value) await loadAudit() })
 onBeforeUnmount(() => { if (batchPollTimer) clearTimeout(batchPollTimer) })
 </script>
 
 <style scoped>
 @import './salesAutomation.css';
-.heading-actions,.tag-list { display: flex; flex-wrap: wrap; gap: 8px; }.batch-state { align-self: center; color: var(--text-muted); font-size: 12px; }.metric-grid { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 12px; margin-bottom: 18px; }.metric-card { display: grid; gap: 4px; padding: 14px 16px; }.metric-card span,.metric-card small,.company-cell span,.detail-summary p,.score-stack span { color: var(--text-muted); font-size: 12px; }.metric-card strong { color: var(--text-primary); font: 700 24px/1.2 var(--font-display); }.keyword-filter { width: 230px; }.company-cell { display: grid; gap: 4px; }.company-cell strong { color: var(--text-primary); }.grade { color: var(--color-primary); font-size: 20px; font-weight: 800; }.detail-summary { display: flex; justify-content: space-between; gap: 16px; padding: 14px; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: var(--card-radius); background: var(--toolbar-bg); }.detail-summary h2 { margin: 8px 0 4px; color: var(--text-primary); font-size: 18px; }.detail-summary p { margin: 0; }.score-stack { display: grid; align-content: center; text-align: center; min-width: 80px; }.score-stack strong { color: var(--color-primary); font-size: 30px; }.summary-text,.draft-text { color: var(--text-secondary); line-height: 1.7; white-space: pre-wrap; }.draft-text,.knowledge-ref { padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--toolbar-bg); }.knowledge-ref + .knowledge-ref { margin-top: 8px; }.knowledge-ref p { margin: 6px 0 0; color: var(--text-secondary); }.signal-groups { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin-top: 12px; }.signal-groups > div { padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; }.signal-groups p { margin: 6px 0 0; color: var(--text-secondary); }h3 { margin: 20px 0 8px; color: var(--text-primary); font-size: 14px; }a { color: var(--color-primary); text-decoration: none; }a:hover { text-decoration: underline; }@media(max-width:1100px){.metric-grid{grid-template-columns:repeat(3,1fr)}}@media(max-width:720px){.heading-actions{width:100%}.metric-grid{grid-template-columns:repeat(2,1fr)}.keyword-filter{width:100%}.signal-groups{grid-template-columns:1fr}}
+.heading-actions,
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.batch-state,
+.toolbar-hint {
+  align-self: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.metric-card {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+}
+.metric-card span,
+.metric-card small,
+.company-cell span,
+.detail-summary p,
+.score-stack span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.metric-card strong {
+  color: var(--text-primary);
+  font: 700 24px/1.2 var(--font-display);
+}
+.keyword-filter { width: 260px; }
+.toolbar-hint { margin-left: auto; }
+.batch-tree {
+  display: grid;
+  gap: 12px;
+  min-height: 120px;
+}
+.batch-node { padding: 0; overflow: hidden; }
+.batch-toggle {
+  display: grid;
+  grid-template-columns: 24px minmax(220px, 1fr) auto auto;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-height: 76px;
+  padding: 14px 18px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.batch-toggle:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+.batch-chevron {
+  display: inline-block;
+  color: var(--color-primary);
+  font-size: 28px;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.batch-chevron.is-expanded { transform: rotate(90deg); }
+.batch-identity { display: grid; gap: 5px; min-width: 0; }
+.batch-identity strong { color: var(--text-primary); font: 700 15px/1.3 var(--font-display); }
+.batch-identity small { color: var(--text-muted); font-size: 12px; }
+.batch-tier-summary { display: flex; gap: 6px; }
+.batch-tier-summary span,
+.status-tab-label b {
+  padding: 2px 7px;
+  border-radius: 9999px;
+  background: var(--toolbar-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.batch-children { border-top: 1px solid var(--border-color); }
+.batch-status-tabs { padding: 0 18px; }
+.status-tab-label { display: inline-flex; align-items: center; gap: 6px; }
+.batch-review-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--toolbar-bg);
+}
+.batch-review-toolbar > span:first-child { color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+.batch-table-card { border-radius: 0; box-shadow: none; }
+.company-cell { display: grid; gap: 4px; }
+.company-cell strong { color: var(--text-primary); }
+.grade { color: var(--color-primary); font-size: 20px; font-weight: 800; }
+.detail-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--card-radius);
+  background: var(--toolbar-bg);
+}
+.detail-summary h2 { margin: 8px 0 4px; color: var(--text-primary); font-size: 18px; }
+.detail-summary p { margin: 0; }
+.score-stack { display: grid; align-content: center; min-width: 80px; text-align: center; }
+.score-stack strong { color: var(--color-primary); font-size: 30px; }
+.summary-text,
+.draft-text { color: var(--text-secondary); line-height: 1.7; white-space: pre-wrap; }
+.draft-text,
+.knowledge-ref { padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--toolbar-bg); }
+.knowledge-ref + .knowledge-ref { margin-top: 8px; }
+.knowledge-ref p { margin: 6px 0 0; color: var(--text-secondary); }
+.signal-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.signal-groups > div { padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; }
+.signal-groups p { margin: 6px 0 0; color: var(--text-secondary); }
+h3 { margin: 20px 0 8px; color: var(--text-primary); font-size: 14px; }
+a { color: var(--color-primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+@media (hover: hover) and (pointer: fine) {
+  .batch-toggle:hover { background: var(--toolbar-bg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .batch-toggle,
+  .batch-chevron { transition-duration: 0ms; }
+}
+@media (max-width: 1100px) {
+  .metric-grid { grid-template-columns: repeat(3, 1fr); }
+  .batch-toggle { grid-template-columns: 24px minmax(180px, 1fr) auto; }
+  .batch-tier-summary { display: none; }
+}
+@media (max-width: 720px) {
+  .heading-actions { width: 100%; }
+  .metric-grid { grid-template-columns: repeat(2, 1fr); }
+  .keyword-filter { width: 100%; }
+  .toolbar-hint { width: 100%; margin-left: 0; }
+  .batch-toggle { grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; padding: 12px; }
+  .batch-review-toolbar .toolbar-spacer { display: none; }
+  .signal-groups { grid-template-columns: 1fr; }
+}
 </style>

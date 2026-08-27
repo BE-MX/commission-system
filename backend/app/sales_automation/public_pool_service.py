@@ -1410,6 +1410,7 @@ def list_tasks(
     review_status: str | None = None,
     allocation_status: str | None = None,
     keyword: str | None = None,
+    batch_id: int | None = None,
 ) -> tuple[list[tuple[PublicPoolTask, ResearchSubject, DealAssessment | None, CustomerOpportunity | None]], int]:
     query = db.query(PublicPoolTask, ResearchSubject, DealAssessment, CustomerOpportunity).join(
         ResearchSubject, ResearchSubject.id == PublicPoolTask.subject_id,
@@ -1421,6 +1422,8 @@ def list_tasks(
         ResearchSubject.source_system == "okki",
         ResearchSubject.subject_type == "okki_customer",
     )
+    if batch_id is not None:
+        query = query.filter(PublicPoolTask.batch_id == batch_id)
     if status:
         query = query.filter(PublicPoolTask.status == status)
     if tier:
@@ -1930,3 +1933,89 @@ def reject_task(db: Session, task_id: int, actor_id: int, reason: str) -> Public
     db.commit()
     db.refresh(task)
     return task
+
+
+def bulk_review_tasks(
+    db: Session,
+    batch_id: int,
+    task_ids: list[int],
+    action: str,
+    actor_id: int,
+    reason: str | None = None,
+) -> dict:
+    """原子审核同一批次内的多条任务；任一任务不合法时整批不落库。"""
+    normalized_ids = list(dict.fromkeys(task_ids))
+    tasks = db.query(PublicPoolTask).filter(
+        PublicPoolTask.id.in_(normalized_ids),
+        PublicPoolTask.batch_id == batch_id,
+        PublicPoolTask.deleted_at.is_(None),
+    ).order_by(PublicPoolTask.id.asc()).with_for_update().all()
+    if len(tasks) != len(normalized_ids):
+        found_ids = {task.id for task in tasks}
+        missing = [task_id for task_id in normalized_ids if task_id not in found_ids]
+        raise NotFoundError(f"批次中不存在任务：{', '.join(map(str, missing))}")
+
+    if action == "approve":
+        pending = [task for task in tasks if task.review_status != "approved"]
+        if any(task.review_status == "rejected" for task in pending):
+            raise ConflictError("已拒绝任务不能直接确认")
+        if any(task.status != "completed" for task in pending):
+            raise ConflictError("只有研究完成的客户可以审核")
+
+        subject_ids = [task.subject_id for task in pending]
+        subject_map = {
+            row.id: row for row in db.query(ResearchSubject).filter(ResearchSubject.id.in_(subject_ids)).all()
+        } if subject_ids else {}
+        assessment_map = {
+            row.task_id: row for row in db.query(DealAssessment).filter(
+                DealAssessment.task_id.in_([task.id for task in pending]),
+            ).all()
+        } if pending else {}
+        for task in pending:
+            subject = subject_map.get(task.subject_id)
+            assessment = assessment_map.get(task.id)
+            if subject is None or assessment is None:
+                raise ConflictError(f"任务 #{task.id} 缺少研究主体或成交研判")
+            if subject.source_system != "okki" or subject.subject_type != "okki_customer":
+                raise ConflictError("智能获客背调结果只能回到客户池审核，不能进入公海领取流程")
+            if (
+                assessment.identity_decision == "rejected"
+                or assessment.industry_relevance == "irrelevant"
+                or assessment.outreach_type == "no_outreach"
+            ):
+                raise ConflictError(f"任务 #{task.id} 主体不符、行业无关或不建议触达，不能审核通过")
+    elif action == "reject":
+        pending = [task for task in tasks if task.review_status != "rejected"]
+        if any(task.review_status == "approved" for task in pending):
+            raise ConflictError("已进入开发队列的任务不能拒绝")
+        if any(task.status != "completed" for task in pending):
+            raise ConflictError("只有研究完成的客户可以审核")
+    else:
+        raise SalesAutomationError("不支持的批量审核动作")
+
+    reviewed_at = _now()
+    cleaned_reason = str(reason or "").strip()
+    for task in pending:
+        task.review_status = "approved" if action == "approve" else "rejected"
+        task.reviewed_by = actor_id
+        task.reviewed_at = reviewed_at
+        task.updated_by = actor_id
+        if action == "reject":
+            task.error_message = f"人工拒绝：{cleaned_reason[:900]}"
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("public pool bulk review commit failed: batch=%s action=%s: %s", batch_id, action, exc)
+        print(
+            f"public pool bulk review commit failed: batch={batch_id} action={action} {type(exc).__name__}",
+            flush=True,
+        )
+        raise
+    return {
+        "batch_id": batch_id,
+        "action": action,
+        "processed_count": len(pending),
+        "unchanged_count": len(tasks) - len(pending),
+        "task_ids": normalized_ids,
+    }

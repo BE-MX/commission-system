@@ -335,3 +335,23 @@ class PublicPoolResearchSubmit(AgentLease):
 
 class PublicPoolTaskReject(BaseModel):
     reason: str = Field(..., min_length=1, max_length=1000)
+
+
+class PublicPoolTaskBulkReview(BaseModel):
+    batch_id: int = Field(..., gt=0)
+    task_ids: list[int] = Field(..., min_length=1, max_length=300)
+    action: Literal["approve", "reject"]
+    reason: str | None = Field(None, max_length=1000)
+
+    @field_validator("task_ids")
+    @classmethod
+    def unique_task_ids(cls, value: list[int]) -> list[int]:
+        if any(task_id <= 0 for task_id in value):
+            raise ValueError("任务 ID 必须大于 0")
+        return list(dict.fromkeys(value))
+
+    @model_validator(mode="after")
+    def validate_reason(self):
+        if self.action == "reject" and not str(self.reason or "").strip():
+            raise ValueError("批量拒绝必须填写原因")
+        return self
