@@ -93,6 +93,7 @@ from app.semifinished.models import (
     SemifinishedOrder,
     SemifinishedOrderItem,
 )
+from app.integration.models import IntegrationApp, InvoiceIngestRequest
 
 __all__ = [
     # 提成系统自有表
@@ -193,4 +194,7 @@ __all__ = [
     "InventoryLedger",
     "CartPlan",
     "InvoiceAllocation",
+    # 外部发票接入
+    "IntegrationApp",
+    "InvoiceIngestRequest",
 ]

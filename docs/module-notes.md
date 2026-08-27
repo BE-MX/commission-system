@@ -703,6 +703,15 @@ frontend/src/
 - Excel/HTML/PDF 导出将头发与配件分成两个明细区，配件区同时保留标准价、客户价和实际成交价以便审计，汇总顺序与录入页一致。Excel 对 `= + - @` 起始的外部文本加文本前缀，防止公式注入。导出 PDF 启动前需通过字体预检，当前使用项目既有中文字体回退链，禁止静默丢失中文字形。
 - 设计与验收基线：`docs/superpowers/specs/2026-07-14-invoice-quick-paste-import-design.md`；核心回归测试：`backend/tests/test_invoice_paste_import.py`、`frontend/tests/invoicePasteImport.test.mjs`。
 
+## 外部站点订单发票接入（integration，2026-08-26）
+
+- 领域入口为 `backend/app/integration/`。每个 Codex 站点使用一个 Integration App；Token 只允许站点服务端持有，数据库仅存 SHA-256 和末六位。每次调用同时校验 App 有效期/吊销状态、绑定用户状态、App scope 与用户当前 `invoice:write`；管理端要求 `integration:admin`，页面入口为「系统管理 → 站点接入凭证」。
+- 客户解析只接受已有 OKKI 客户的确定性精确结果；产品解析只接受唯一且启用的目录产品/SKU。命中后，公司名与产品描述使用方舟 canonical 快照；不会模糊猜测、返回候选或自动建主数据。
+- `/api/integrations/v1` 的 JSON 契约严格拒绝未知字段；金额必须用十进制字符串。明细成交价与费用是输入，行金额、`product_amount`、`total_amount` 由服务端按发票域规则重算，可选 `declared_totals` 仅用于差异拦截，不能覆盖计算结果。
+- 幂等范围是 `(Integration App, external_order_id)`。规范化请求计算 SHA-256；首次创建为 201，相同内容重放原结果为 200，已创建后同订单号改内容为 409，`rejected` 请求可修正后沿用同一订单号重试。网络结果不确定时必须先按原 external_order_id 查询，禁止生成替代订单号。
+- 创建复用发票 service，但只有 integration service 能开启 `external_api` 来源保护；落库为 `source_type=external_api`、`source_order_id=ingest public_id`、`sync_status=not_synced`。创建路径不调用 OKKI，也不授予 App `invoice:sync`；后续如需推送，仍由方舟现有人工权限和流程负责。
+- 管理页与开发者材料：`frontend/src/views/system/IntegrationAppManagement.vue`；对外契约、TypeScript helper、Codex 改造任务书分别在 `docs/integrations/invoice-api.md`、`docs/integrations/ark-invoice-client.ts`、`docs/integrations/codex-site-prompt.md`。Excel 仍只作为人工下载，不作为系统间输入。
+
 ## OKKI 开放平台对接（订单发票推单，2026-07-10 鉴权打通）
 
 ### 鉴权与域名

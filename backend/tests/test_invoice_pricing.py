@@ -380,6 +380,27 @@ def test_delete_invoice_blocked_when_synced(db):
     assert db.query(InvoiceItem).count() == 0
 
 
+def test_delete_invoice_blocked_for_external_api_source(db):
+    import pytest
+
+    _seed_okki(db)
+    body = InvoiceCreate(
+        customer_id="CUST001", customer_name="客户A", order_type="production",
+        invoice_date=date(2026, 7, 7),
+        items=[_custom_item(price_per_piece=Decimal("10"))],
+    )
+    invoice = service.create_invoice(db, body, user_id=1)
+    invoice.source_type = "external_api"
+    db.flush()
+
+    with pytest.raises(ValueError, match="站点接入"):
+        service.delete_invoice(db, invoice)
+
+    db.flush()
+    assert db.query(Invoice).count() == 1
+    assert db.query(InvoiceItem).count() == 1
+
+
 # ── workbook import ───────────────────────────────────────────
 
 def test_import_price_workbook(db):
