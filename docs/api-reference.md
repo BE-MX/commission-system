@@ -914,7 +914,8 @@ Base path：`/api/sales-automation`。所有接口使用统一 `{code,message,da
 | POST | `/public-pool/audit/refresh` | admin | 强制从 `lsordertest` 重新计算 T1/T2/T3/冷藏区数量 |
 | GET | `/public-pool/batches` | read/write/admin 任一 | 公海每日批次列表与抽样统计 |
 | POST | `/public-pool/batches` | write/admin 任一 | 202 登记后台生成批次。可传 `profile_conditions`：成交画像三路 OR（单数+累计金额、单笔金额、仅样品单），再与 Top N 成交国家、Instagram/Facebook/电话、历史产品关键词、未下单天数及跟进代理天数逐项 AND；Instagram 在合格候选中优先排序。当前画像规则均要求历史订单，因此只生成 T1，T2/T3 为 0。条件经规范化后参与幂等键并冻结到批次快照；同条件 pending/running/completed 不重复执行，failed 才允许重试 |
-| GET | `/public-pool/tasks` | read/write/admin 任一 | 按档位、Agent 状态、审核状态、分配状态（claimable/claimed）和关键词分页查询 |
+| GET | `/public-pool/tasks` | read/write/admin 任一 | 按批次 `batch_id`、档位、Agent 状态、审核状态、分配状态（claimable/claimed）和关键词分页查询；单批次最多返回 300 条 |
+| POST | `/public-pool/tasks/bulk-review` | admin | `scope=selected` 时原子审核 1~300 个 `task_ids`；`scope=all` 时服务端在事务内按 `batch_id` 重新锁定全部待审核任务。拒绝必须填写统一原因 |
 | GET | `/public-pool/tasks/{id}` | read/write/admin 任一 | OKKI 公海或智能获客 70 分以上候选的来源快照、公开联系人、原子事实与成交研判 |
 | POST | `/public-pool/tasks/{id}/approve` | admin | 管理员审核通过，进入团队待领取公海，不自动归属审核人 |
 | POST | `/public-pool/tasks/{id}/claim` | write/admin 任一 | 抢领审核通过的客户；行锁保证仅一名业务员成功，领取后投影到本人客户机会/经营雷达 |

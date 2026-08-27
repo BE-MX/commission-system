@@ -18,5 +18,6 @@ export const getPublicPoolBatches = params => salesAutomationClient.get('/public
 export const getPublicPoolTasks = params => salesAutomationClient.get('/public-pool/tasks', { params })
 export const getPublicPoolTask = id => salesAutomationClient.get(`/public-pool/tasks/${id}`)
 export const approvePublicPoolTask = id => salesAutomationClient.post(`/public-pool/tasks/${id}/approve`)
+export const bulkReviewPublicPoolTasks = payload => salesAutomationClient.post('/public-pool/tasks/bulk-review', payload)
 export const claimPublicPoolTask = id => salesAutomationClient.post(`/public-pool/tasks/${id}/claim`)
 export const rejectPublicPoolTask = (id, reason) => salesAutomationClient.post(`/public-pool/tasks/${id}/reject`, { reason })

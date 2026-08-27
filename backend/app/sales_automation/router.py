@@ -15,6 +15,7 @@ from app.sales_automation.models import DealAssessment, LeadContact, PublicPoolT
 from app.sales_automation.schemas import (
     ProfileUpsert,
     PublicPoolBatchCreate,
+    PublicPoolTaskBulkReview,
     PublicPoolTaskReject,
     SearchJobCreate,
 )
@@ -456,21 +457,40 @@ def create_public_pool_batch(
 @router.get("/public-pool/tasks")
 def list_public_pool_tasks(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=300),
     task_status: str | None = Query(None, alias="status"),
     tier: str | None = Query(None),
     review_status: str | None = Query(None),
     allocation_status: str | None = Query(None, pattern="^(claimable|claimed)$"),
     keyword: str | None = Query(None, max_length=100),
+    batch_id: int | None = Query(None, ge=1),
     db: Session = Depends(get_db),
     _user=Depends(require_any_permission(*READ_PERMISSIONS)),
 ):
     rows, total = public_pool_service.list_tasks(
-        db, page, page_size, task_status, tier, review_status, allocation_status, keyword,
+        db, page, page_size, task_status, tier, review_status, allocation_status, keyword, batch_id,
     )
     return ok(page_result(
         [_pool_task(task, subject, assessment, opportunity) for task, subject, assessment, opportunity in rows],
         total, page, page_size,
+    ))
+
+
+@router.post("/public-pool/tasks/bulk-review")
+def bulk_review_public_pool_tasks(
+    payload: PublicPoolTaskBulkReview,
+    db: Session = Depends(get_db),
+    user=Depends(require_permission("sales_automation:admin")),
+):
+    return ok(_call(
+        public_pool_service.bulk_review_tasks,
+        db,
+        payload.batch_id,
+        payload.task_ids,
+        payload.action,
+        _user_id(user),
+        payload.reason,
+        payload.scope,
     ))
 
 

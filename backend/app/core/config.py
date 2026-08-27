@@ -14,6 +14,7 @@ from functools import lru_cache
 _JWT_DEFAULT_PLACEHOLDER = "change-this-to-a-random-64-char-secret-in-production"
 _BACKEND_DIR = Path(__file__).resolve().parents[2]
 _PositiveInt = Annotated[int, Field(gt=0)]
+_PublicPoolQuota = Annotated[int, Field(gt=0, le=100)]
 
 
 class Settings(BaseSettings):
@@ -53,7 +54,7 @@ class Settings(BaseSettings):
     SALES_PUBLIC_POOL_AUTO_BATCH_ENABLED: bool = False
     SALES_PUBLIC_POOL_BATCH_HOUR: int = 7
     SALES_PUBLIC_POOL_BATCH_MINUTE: int = 30
-    SALES_PUBLIC_POOL_QUOTA_PER_TIER: _PositiveInt = 20
+    SALES_PUBLIC_POOL_QUOTA_PER_TIER: _PublicPoolQuota = 20
 
     # ── 短链接 ───────────────────────────────────────────
     SHORT_LINK_BASE_URL: str = "https://leshine.work"
