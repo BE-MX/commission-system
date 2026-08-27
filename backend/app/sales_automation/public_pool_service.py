@@ -1178,6 +1178,8 @@ def prepare_batch(
     data = _data(payload)
     batch_date = data.get("batch_date") or beijing_today()
     quota = int(data.get("quota_per_tier") or 20)
+    if quota < 1 or quota > 100:
+        raise SalesAutomationError("每档批次配额必须在 1 到 100 之间")
     policy_version = str(data.get("policy_version") or "v3")
     if policy_version == "lead-score-70-v1":
         raise SalesAutomationError("该策略版本为系统保留值")
@@ -1942,18 +1944,32 @@ def bulk_review_tasks(
     action: str,
     actor_id: int,
     reason: str | None = None,
+    scope: str = "selected",
 ) -> dict:
     """原子审核同一批次内的多条任务；任一任务不合法时整批不落库。"""
-    normalized_ids = list(dict.fromkeys(task_ids))
-    tasks = db.query(PublicPoolTask).filter(
-        PublicPoolTask.id.in_(normalized_ids),
-        PublicPoolTask.batch_id == batch_id,
-        PublicPoolTask.deleted_at.is_(None),
-    ).order_by(PublicPoolTask.id.asc()).with_for_update().all()
-    if len(tasks) != len(normalized_ids):
-        found_ids = {task.id for task in tasks}
-        missing = [task_id for task_id in normalized_ids if task_id not in found_ids]
-        raise NotFoundError(f"批次中不存在任务：{', '.join(map(str, missing))}")
+    if scope == "all":
+        tasks = db.query(PublicPoolTask).filter(
+            PublicPoolTask.batch_id == batch_id,
+            PublicPoolTask.status == "completed",
+            PublicPoolTask.review_status == "pending",
+            PublicPoolTask.deleted_at.is_(None),
+        ).order_by(PublicPoolTask.id.asc()).with_for_update().all()
+        normalized_ids = [task.id for task in tasks]
+    elif scope == "selected":
+        normalized_ids = list(dict.fromkeys(task_ids))
+        if not normalized_ids:
+            raise SalesAutomationError("批量审核至少选择一条任务")
+        tasks = db.query(PublicPoolTask).filter(
+            PublicPoolTask.id.in_(normalized_ids),
+            PublicPoolTask.batch_id == batch_id,
+            PublicPoolTask.deleted_at.is_(None),
+        ).order_by(PublicPoolTask.id.asc()).with_for_update().all()
+        if len(tasks) != len(normalized_ids):
+            found_ids = {task.id for task in tasks}
+            missing = [task_id for task_id in normalized_ids if task_id not in found_ids]
+            raise NotFoundError(f"批次中不存在任务：{', '.join(map(str, missing))}")
+    else:
+        raise SalesAutomationError("不支持的批量审核范围")
 
     if action == "approve":
         pending = [task for task in tasks if task.review_status != "approved"]

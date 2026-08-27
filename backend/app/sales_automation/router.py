@@ -490,6 +490,7 @@ def bulk_review_public_pool_tasks(
         payload.action,
         _user_id(user),
         payload.reason,
+        payload.scope,
     ))
 
 

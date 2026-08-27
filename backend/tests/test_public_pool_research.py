@@ -1052,6 +1052,26 @@ def test_bulk_review_approves_one_batch_atomically_and_is_idempotent(db):
     assert {row.review_status for row in db.query(models.PublicPoolTask).all()} == {"approved"}
 
 
+def test_bulk_review_all_resolves_pending_scope_on_server(db):
+    batch = _generate(db, quota=1)
+    tasks = db.query(models.PublicPoolTask).filter_by(batch_id=batch.id).order_by(models.PublicPoolTask.id).all()
+    for task in tasks:
+        _row, lease = public_pool_service.claim_task(db, task.id, 17, "pool-agent")
+        public_pool_service.submit_industry_gate(db, task.id, _gate_payload(lease), actor_id=17)
+        public_pool_service.complete_task_research(db, task.id, _research_payload(lease), actor_id=17)
+
+    response = _admin_client(db).post("/api/sales-automation/public-pool/tasks/bulk-review", json={
+        "batch_id": batch.id,
+        "scope": "all",
+        "action": "approve",
+    })
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["processed_count"] == 3
+    assert set(response.json()["data"]["task_ids"]) == {task.id for task in tasks}
+    assert {row.review_status for row in db.query(models.PublicPoolTask).all()} == {"approved"}
+
+
 def test_bulk_reject_rolls_back_entire_selection_when_one_task_is_approved(db):
     batch = _generate(db, quota=1)
     tasks = db.query(models.PublicPoolTask).filter_by(batch_id=batch.id).order_by(models.PublicPoolTask.id).all()
@@ -1103,6 +1123,11 @@ def test_batch_task_list_filter_and_bulk_review_validation(db):
     assert wrong_batch.status_code == 404
     assert db.query(models.PublicPoolTask).filter_by(id=task.id).one().review_status == "pending"
     assert missing_reason.status_code == 422
+
+
+def test_public_pool_service_rejects_quota_above_visible_batch_limit(db):
+    with pytest.raises(public_pool_service.SalesAutomationError, match="1 到 100"):
+        public_pool_service.prepare_batch(db, {"quota_per_tier": 101}, actor_id=9)
 
 
 def test_public_pool_claim_is_idempotent_for_owner_and_rejects_other_salesperson(db):

@@ -216,7 +216,13 @@ async function toggleBatch(batch) {
   await loadBatchTasks(batch.id)
 }
 async function search() { expandedBatchIds.value.forEach(clearBatchSelection) }
-async function refreshBatchTree() { await fetchBatches(); await search() }
+async function refreshBatchTree() {
+  await fetchBatches()
+  const visibleBatchIds = new Set(batches.value.map(batch => batch.id))
+  expandedBatchIds.value = expandedBatchIds.value.filter(batchId => visibleBatchIds.has(batchId))
+  await Promise.all(expandedBatchIds.value.map(loadBatchTasks))
+  await search()
+}
 const detailVisible = ref(false); const detailLoading = ref(false); const detail = ref(null); const activeTab = ref('seed')
 async function loadAudit() { auditLoading.value = true; try { audit.value = (await getPublicPoolAudit()).data || {} } finally { auditLoading.value = false } }
 async function refreshAudit() { auditLoading.value = true; try { audit.value = (await refreshPublicPoolAudit()).data || {}; msgSuccess('公海审计') } finally { auditLoading.value = false } }
@@ -249,16 +255,24 @@ async function reviewTasks(batch, action, scope) {
   let reason
   try {
     if (action === 'approve') {
-      await ElMessageBox.confirm(`确认通过批次 #${batch.id} 中的 ${taskIds.length} 位客户？通过后将进入团队待领取公海。`, scope === 'all' ? '整批审核通过' : '批量审核通过', { type: 'success' })
+      const message = scope === 'all'
+        ? `确认通过批次 #${batch.id} 当前全部待审核客户？通过后将进入团队待领取公海。`
+        : `确认通过批次 #${batch.id} 中选中的 ${taskIds.length} 位客户？通过后将进入团队待领取公海。`
+      await ElMessageBox.confirm(message, scope === 'all' ? '整批审核通过' : '批量审核通过', { type: 'success' })
     } else {
-      const result = await ElMessageBox.prompt(`将拒绝批次 #${batch.id} 中的 ${taskIds.length} 位客户，请填写统一拒绝原因。`, scope === 'all' ? '整批拒绝' : '批量拒绝', { inputType: 'textarea', inputValidator: v => Boolean(v?.trim()) || '拒绝原因不能为空' })
+      const message = scope === 'all'
+        ? `将拒绝批次 #${batch.id} 当前全部待审核客户，请填写统一拒绝原因。`
+        : `将拒绝批次 #${batch.id} 中选中的 ${taskIds.length} 位客户，请填写统一拒绝原因。`
+      const result = await ElMessageBox.prompt(message, scope === 'all' ? '整批拒绝' : '批量拒绝', { inputType: 'textarea', inputValidator: v => Boolean(v?.trim()) || '拒绝原因不能为空' })
       reason = result.value.trim()
     }
   } catch (error) {
     if (error === 'cancel' || error === 'close') return
     throw error
   }
-  const result = (await bulkReviewPublicPoolTasks({ batch_id: batch.id, task_ids: taskIds, action, reason })).data || {}
+  const payload = { batch_id: batch.id, scope, action, reason }
+  if (scope === 'selected') payload.task_ids = taskIds
+  const result = (await bulkReviewPublicPoolTasks(payload)).data || {}
   msgSuccess(`${action === 'approve' ? '审核通过' : '拒绝'} ${result.processed_count || 0} 位客户`)
   await loadBatchTasks(batch.id)
 }
