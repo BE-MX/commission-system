@@ -1,21 +1,29 @@
 <script setup>
+import { useCustomerImageI18n } from '../i18n.js'
+
 defineProps({
   product: { type: Object, default: null },
   coverUrl: { type: String, default: '' },
   generation: { type: Object, default: null },
   resultUrl: { type: String, default: '' },
-  message: { type: String, default: '' },
+  message: { type: Object, default: null },
 })
 
 defineEmits(['download'])
+
+const { t, tm } = useCustomerImageI18n()
+
+function statusLabel(status) {
+  return t(`preview.${status === 'failed' ? 'failed' : status === 'running' ? 'running' : 'queued'}`)
+}
 </script>
 
 <template>
   <section id="customer-generation-result" class="preview-panel" aria-labelledby="preview-title">
     <div class="preview-heading">
       <div class="preview-title">
-        <span class="eyebrow">CUSTOM PREVIEW</span>
-        <h2 id="preview-title">{{ product?.name || '产品效果图' }}</h2>
+        <span class="eyebrow">{{ t('preview.eyebrow') }}</span>
+        <h2 id="preview-title">{{ generation?.product_name || product?.name || t('preview.titleFallback') }}</h2>
       </div>
       <button
         v-if="generation?.status === 'succeeded' && resultUrl"
@@ -23,26 +31,26 @@ defineEmits(['download'])
         class="download"
         @click="$emit('download', generation)"
       >
-        下载效果图
+        {{ t('preview.download') }}
       </button>
     </div>
 
     <div class="preview-stage">
-      <img v-if="resultUrl" :src="resultUrl" :alt="`${product?.name || '产品'}生成效果图`" class="generated-result">
-      <img v-else-if="coverUrl" :src="coverUrl" :alt="`${product?.name || '产品'}参考图`" class="reference">
-      <div v-else class="placeholder">选择产品后查看参考图</div>
+      <img v-if="resultUrl" :src="resultUrl" :alt="t('preview.resultAlt', { product: generation?.product_name || product?.name || t('catalog.product.fallback') })" class="generated-result">
+      <img v-else-if="coverUrl" :src="coverUrl" :alt="t('preview.referenceAlt', { product: product?.name || t('catalog.product.fallback') })" class="reference">
+      <div v-else class="placeholder">{{ t('preview.placeholder') }}</div>
       <div v-if="generation && generation.status !== 'succeeded'" class="status-overlay" aria-live="polite">
         <span class="status-dot" :data-status="generation.status" />
-        <strong>{{ generation.status === 'failed' ? '本次未完成' : generation.status === 'running' ? '正在生成' : '等待生成' }}</strong>
-        <p>{{ message }}</p>
+        <strong>{{ statusLabel(generation.status) }}</strong>
+        <p>{{ tm(message) }}</p>
       </div>
     </div>
 
     <div class="stage-note">
-      <span v-if="generation?.status === 'queued'">已提交，可以关闭页面，结果会保留在这里</span>
-      <span v-else-if="generation?.status === 'running'">正在生成，通常需要几十秒到数分钟</span>
-      <span v-else>{{ product?.category || '实时预览' }}</span>
-      <span>AI 生成 · 莱莎专属定制</span>
+      <span v-if="generation?.status === 'queued'">{{ t('preview.queuedNote') }}</span>
+      <span v-else-if="generation?.status === 'running'">{{ t('preview.runningNote') }}</span>
+      <span v-else>{{ product?.category || t('preview.live') }}</span>
+      <span>{{ t('preview.signature') }}</span>
     </div>
   </section>
 </template>

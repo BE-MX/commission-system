@@ -442,6 +442,8 @@ def seed_role_permissions(db: Session):
         ("knowledge_ai:admin", "knowledge_ai", "admin", "管理知识库 AI 优化配置"),
         # MCP 网关(物流录单/查询的入口无关 MCP 服务)
         ("mcp:admin", "mcp", "admin", "发放/吊销 MCP 个人 access token"),
+        # 外部站点接入凭证：只管理应用生命周期，不替代 owner 的发票写权限。
+        ("integration:admin", "integration", "admin", "管理站点接入凭证"),
         # 运行与自动化中心：读取状态与控制任务严格分离；不提供任意远程命令执行。
         ("operations:read", "operations", "read", "查看运行服务与定时任务状态"),
         ("operations:admin", "operations", "admin", "立即执行、暂停或恢复本实例定时任务"),

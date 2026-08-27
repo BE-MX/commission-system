@@ -163,7 +163,7 @@ export const MENU_GROUPS = {
     // 会让只有这些权限的用户看不到整个分组）
     anyPermission: [
       'user:read', 'role:read', 'dict:read', 'ai:admin',
-      'mcp:admin',
+      'mcp:admin', 'integration:admin',
       'operations:read', 'operations:admin',
       'dingtalk:admin',
       'external_binding:read', 'external_binding:write',
@@ -1335,6 +1335,17 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'system', title: 'Agent 接入凭证', icon: Key, order: 45,
       permission: 'mcp:admin',
+    },
+  },
+  {
+    path: '/system/integration-apps',
+    name: 'IntegrationAppManagement',
+    component: () => import('@/views/system/IntegrationAppManagement.vue'),
+    title: '站点接入凭证',
+    permission: 'integration:admin',
+    menu: {
+      group: 'system', title: '站点接入凭证', icon: Key, order: 44,
+      permission: 'integration:admin',
     },
   },
   {

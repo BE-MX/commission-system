@@ -1,4 +1,6 @@
 <script setup>
+import { useCustomerImageI18n } from '../i18n.js'
+
 defineProps({
   option: { type: Object, required: true },
   modelValue: { type: [String, Boolean, Number], default: undefined },
@@ -6,13 +8,14 @@ defineProps({
 })
 
 const emit = defineEmits(['update:modelValue'])
+const { t } = useCustomerImageI18n()
 </script>
 
 <template>
   <fieldset class="option-group">
     <legend>
       {{ option.label }}
-      <span v-if="option.required" class="required">必选</span>
+      <span v-if="option.required" class="required">{{ t('options.required') }}</span>
     </legend>
 
     <el-switch
@@ -20,8 +23,8 @@ const emit = defineEmits(['update:modelValue'])
       :model-value="Boolean(modelValue)"
       size="large"
       inline-prompt
-      active-text="是"
-      inactive-text="否"
+      :active-text="t('options.yes')"
+      :inactive-text="t('options.no')"
       :disabled="disabled"
       @update:model-value="emit('update:modelValue', $event)"
     />

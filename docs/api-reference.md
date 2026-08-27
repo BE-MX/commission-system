@@ -63,6 +63,22 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 
 生产购物车 `POST /api/stock/cart/add` 可附带 `semifinished_items=[{material_id,quantity_grams}]`；提交生产订单时与关联半成品订单在同一数据库事务创建。生产型发票明细可保存 `semifinished_enabled` 与 `semifinished_plan`；同步 OKKI 前先预占、成功后转正式出库、明确失败才释放。若 OKKI 已受理但响应缺行，则整批保持 pending，管理员核对 OKKI 后再选择正式出库或释放；pending 存续期间发票禁止编辑和删除。
 
+### 外部站点订单发票接入（`/api/integrations`，迁移 125，2026-08-26）
+
+公开接口使用每个站点独立的 Integration App Bearer Token，只允许服务端调用；App scope 与绑定用户当前 `invoice:write` 权限实时取交集。五个公开端点均在 `/api/integrations/v1` 下：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/customers/resolve` | 精确解析一个已有 OKKI 客户；零命中或多命中返回 422 |
+| POST | `/products/resolve` | 精确解析一个启用的产品/SKU，返回方舟目录快照 |
+| POST | `/invoices/validate` | 严格校验、规范化并由服务端重算金额；不写发票或接入请求 |
+| POST | `/invoices` | 幂等创建方舟本地发票；首次 201，相同内容重放 200，已创建后改内容 409 |
+| GET | `/invoices/by-external-id/{external_order_id}` | 在当前 App 的幂等命名空间恢复创建或拒绝结果 |
+
+管理接口均在 `/api/integrations/admin` 下并要求当前 `integration:admin`：`GET /user-candidates`、`GET /apps`、`POST /apps`、`POST /apps/{id}/rotate`、`DELETE /apps/{id}`。创建和轮换只返回一次明文 `ark_live_...` Token，数据库仅保存 SHA-256 与末六位；吊销、过期、绑定用户停用或权限撤销后不再允许调用。
+
+幂等键为 `(Integration App, external_order_id)`；`processing/created/rejected` 记录请求摘要和可恢复结果。创建结果写入 `source_type=external_api`、`sync_status=not_synced`，不调用 OKKI。完整字段、稳定错误码与超时恢复规则见 [方舟外部订单发票 API](integrations/invoice-api.md)。
+
 ### 运行与自动化中心（`/api/operations`，2026-08-12）
 
 - `GET /overview`：服务、调度器与跨服务器运行实例汇总（`operations:read` 或 `operations:admin`）。

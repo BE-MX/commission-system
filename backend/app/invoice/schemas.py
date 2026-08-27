@@ -257,7 +257,7 @@ class _InvoiceHeaderPayload(BaseModel):
     okki_free_shipping: Optional[int] = Field(None, ge=0, le=1)
     okki_first_return: Optional[int] = Field(None, ge=0, le=1)
     remark: Optional[str] = None
-    source_type: str = Field(default="manual", pattern="^(manual|okki_screenshot)$")
+    source_type: str = Field(default="manual", pattern="^(manual|okki_screenshot|external_api)$")
     source_order_id: Optional[str] = Field(None, max_length=64)
     source_order_no: Optional[str] = Field(None, max_length=64)
     source_order_name: Optional[str] = Field(None, max_length=256)

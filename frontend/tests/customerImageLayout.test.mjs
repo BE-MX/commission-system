@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
+import { CUSTOMER_IMAGE_MESSAGES } from '../src/views/customer-image/i18n.js'
+
 function read(relativePath) {
   try {
     return readFileSync(new URL(relativePath, import.meta.url), 'utf8')
@@ -35,7 +37,7 @@ test('catalog is a bounded search and category flow with real image cards and on
   assert.match(files.catalog, /search/i)
   assert.match(files.catalog, /category|分类/)
   assert.match(files.catalog, /aspect-ratio/)
-  assert.match(files.catalog, /立即设计/)
+  assert.match(files.catalog, /t\('catalog\.product\.designNow'\)/)
   assert.match(files.catalog, /coverUrls/)
 })
 
@@ -55,7 +57,7 @@ test('desktop workbench keeps products and history left, preview center, and con
   const left = files.editor.match(/<aside class="product-rail"[\s\S]*?<\/aside>/)?.[0] || ''
   const center = files.editor.match(/<section class="[^"]*preview-column[^"]*"[\s\S]*?<\/section>/)?.[0] || ''
   const right = files.editor.match(/<aside class="control-panel"[\s\S]*?<\/aside>/)?.[0] || ''
-  assert.match(left, /选择产品/)
+  assert.match(left, /t\('editor\.selectProduct'\)/)
   assert.match(left, /product-card/)
   assert.match(left, /GenerationHistory/)
   assert.match(center, /GenerationPreview/)
@@ -73,9 +75,9 @@ test('customer controls cover logo color boolean requirement quota history previ
   assert.match(files.options, /el-switch/)
   assert.match(files.editor, /maxlength="500"|:maxlength="500"/)
   assert.match(files.editor, /aria-labelledby="requirement-label"/)
-  assert.match(files.editor, /剩余额度/)
+  assert.match(files.editor, /t\('editor\.quota\.label'\)/)
   assert.match(files.history, /generation/i)
-  assert.match(files.preview, /下载/)
+  assert.match(files.preview, /t\('preview\.download'\)/)
 })
 
 test('submission lock reaches every mutable editor control', () => {
@@ -99,13 +101,25 @@ test('portal data flow uses registered wrappers polling idempotency and blob cle
 
 test('UI exposes actionable safe states without internal prompt or provider controls', () => {
   const combined = Object.values(files).join('\n')
-  for (const copy of [
-    '请先上传品牌 LOGO',
-    '可以关闭页面',
-    '几十秒到数分钟',
-    '此链接已失效',
-    '联系您的业务经理',
-  ]) assert.ok(combined.includes(copy), `missing ${copy}`)
+  for (const key of [
+    'quota.logoRequired',
+    'preview.queuedNote',
+    'preview.runningNote',
+  ]) assert.ok(combined.includes(key), `missing ${key}`)
+  assert.match(files.portal, /t\('portal\.invalid\.title'\)/)
+  assert.match(files.portal, /t\('portal\.invalid\.detail'\)/)
+  assert.match(files.portal, /t\('portal\.contactManager'\)/)
+  assert.match(files.portal, /tm\(state\.notice\)/)
+  assert.equal(CUSTOMER_IMAGE_MESSAGES.en['portal.invalid.title'], 'This link is no longer valid')
+  assert.equal(
+    CUSTOMER_IMAGE_MESSAGES.en['portal.invalid.detail'],
+    'Please contact your account manager for a new private access link.',
+  )
+  assert.equal(CUSTOMER_IMAGE_MESSAGES['zh-CN']['portal.invalid.title'], '此链接已失效')
+  assert.equal(
+    CUSTOMER_IMAGE_MESSAGES['zh-CN']['portal.invalid.detail'],
+    '请联系您的业务经理重新获取专属访问链接。',
+  )
   assert.doesNotMatch(combined, /Provider|provider_id|prompt_snapshot|pricing_snapshot|storage_path/)
   assert.doesNotMatch(combined, /自由提示词|模型选择|质量选择/)
 })

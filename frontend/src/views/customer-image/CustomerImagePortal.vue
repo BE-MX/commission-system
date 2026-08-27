@@ -3,7 +3,11 @@ import * as publicApi from '@/api/customerImagePublic'
 import { clearInviteToken } from './inviteSession.js'
 import CustomerProductCatalog from './CustomerProductCatalog.vue'
 import CustomerProductEditor from './CustomerProductEditor.vue'
+import LanguageSwitcher from './components/LanguageSwitcher.vue'
 import { useCustomerImagePortal } from './composables/useCustomerImagePortal'
+import { customerImageDownloadFilename, provideCustomerImageI18n } from './i18n.js'
+
+const { locale, t, tm } = provideCustomerImageI18n()
 
 const {
   state,
@@ -25,6 +29,7 @@ const {
 } = useCustomerImagePortal({
   api: publicApi,
   clearInvite: clearInviteToken,
+  downloadFilename: generation => customerImageDownloadFilename(locale.value, generation),
   scrollResultIntoView() {
     requestAnimationFrame(() => {
       document.getElementById('customer-generation-result')?.scrollIntoView({
@@ -38,31 +43,33 @@ const {
 
 <template>
   <div class="customer-portal">
+    <LanguageSwitcher />
+
     <div v-if="state.view === 'loading'" class="page-state" role="status" aria-live="polite">
       <span class="state-mark">Le</span>
-      <h1>正在加载产品效果图工作台…</h1>
-      <p>马上就好</p>
+      <h1>{{ t('portal.loading.title') }}</h1>
+      <p>{{ t('portal.loading.detail') }}</p>
     </div>
 
     <div v-else-if="state.view === 'invalid'" class="page-state invalid" role="alert">
       <span class="state-mark">!</span>
-      <h1>此链接已失效</h1>
-      <p>{{ state.notice || '请联系您的业务经理重新获取专属访问链接。' }}</p>
-      <strong>联系您的业务经理</strong>
+      <h1>{{ t('portal.invalid.title') }}</h1>
+      <p>{{ tm(state.notice) || t('portal.invalid.detail') }}</p>
+      <strong>{{ t('portal.contactManager') }}</strong>
     </div>
 
     <div v-else-if="state.view === 'empty'" class="page-state">
       <span class="state-mark">0</span>
-      <h1>当前没有可设计的产品</h1>
-      <p>请联系您的业务经理为此邀请添加产品。</p>
-      <strong>联系您的业务经理</strong>
+      <h1>{{ t('portal.empty.title') }}</h1>
+      <p>{{ t('portal.empty.detail') }}</p>
+      <strong>{{ t('portal.contactManager') }}</strong>
     </div>
 
     <div v-else-if="state.view === 'error'" class="page-state" role="alert">
       <span class="state-mark">!</span>
-      <h1>页面暂时无法加载</h1>
-      <p>{{ state.error }}</p>
-      <button type="button" @click="bootstrap">重新加载</button>
+      <h1>{{ t('portal.error.title') }}</h1>
+      <p>{{ tm(state.error) }}</p>
+      <button type="button" @click="bootstrap">{{ t('portal.retry') }}</button>
     </div>
 
     <template v-else>
@@ -70,13 +77,13 @@ const {
         <div class="brand">
           <span class="brand-mark" aria-hidden="true">Le</span>
           <div class="brand-copy">
-            <small>LESHINE STUDIO</small>
-            <strong>莱莎产品效果图</strong>
+            <small>{{ t('portal.brand.kicker') }}</small>
+            <strong>{{ t('portal.brand.subtitle') }}</strong>
           </div>
         </div>
         <div class="topbar-status">
           <span v-if="state.context?.customer_display_name" class="customer">{{ state.context.customer_display_name }}</span>
-          <span class="status-pill"><span class="dot" aria-hidden="true" />专属定制通道</span>
+          <span class="status-pill"><span class="dot" aria-hidden="true" />{{ t('portal.exclusiveChannel') }}</span>
         </div>
       </header>
 
@@ -162,12 +169,13 @@ const {
   position: sticky;
   z-index: 10;
   top: 0;
+  box-sizing: border-box;
   display: flex;
-  min-height: 72px;
+  min-height: calc(72px + env(safe-area-inset-top));
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  padding: 0 28px;
+  padding: env(safe-area-inset-top) calc(154px + env(safe-area-inset-right)) 0 28px;
   border-bottom: 1px solid var(--cip-border);
   background: color-mix(in srgb, var(--cip-surface) 90%, transparent);
   backdrop-filter: blur(14px);
@@ -250,11 +258,13 @@ const {
 .page-state button:active { transform: scale(.98); }
 @media (hover: hover) and (pointer: fine) { .page-state button:hover { background: var(--cip-accent-hover); } }
 @media (max-width: 760px) {
-  .topbar { min-height: 60px; padding: 0 14px; }
+  .topbar {
+    min-height: calc(60px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) calc(118px + env(safe-area-inset-right)) 0 14px;
+  }
   .brand-mark { width: 34px; height: 34px; flex-basis: 34px; border-radius: 11px; font-size: 14px; }
   .brand-copy strong { font-size: 16px; }
-  .customer { display: none; }
-  .status-pill { min-height: 28px; padding: 0 11px; font-size: 10px; }
+  .topbar-status { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .page-state button { transition: none; } .page-state button:active { transform: none; } }
 </style>

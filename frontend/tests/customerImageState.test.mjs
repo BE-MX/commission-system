@@ -50,6 +50,8 @@ test('single visible product opens the editor with typed defaults', () => {
   assert.equal(next.view, 'editor')
   assert.deepEqual(next.selections, { finish: 'matte', accent: 'gold', foil: false })
   assert.equal(next.quota.remaining, 3)
+  assert.equal(next.notice, null)
+  assert.equal(next.error, null)
 })
 
 test('multiple products stay in a searchable catalog and zero products show an actionable empty state', () => {
@@ -69,7 +71,16 @@ test('multiple products stay in a searchable catalog and zero products show an a
     generations: [],
   })
   assert.equal(empty.view, 'empty')
-  assert.match(empty.notice, /联系.*业务/)
+  assert.deepEqual(empty.notice, { key: 'portal.empty.detail', params: {} })
+  assert.equal(empty.error, null)
+})
+
+test('empty portal messages use one nullable descriptor contract', () => {
+  const emptyPortalState = required(state, 'emptyPortalState')
+  const empty = emptyPortalState()
+  assert.equal(empty.error, null)
+  assert.equal(empty.notice, null)
+  assert.equal(empty.resultAnnouncement, null)
 })
 
 test('required options treat boolean false as complete and gate generation on logo quota and submission', () => {
@@ -98,12 +109,15 @@ test('idempotency key remains stable across uncertain failure and resets when in
   const markInputsChanged = required(state, 'markInputsChanged')
   const started = ensureRequestId({ ...emptyPortalState(), submitting: true }, () => 'request-1')
   const repeated = ensureRequestId(started, () => 'request-2')
-  const failed = applySubmitFailure(repeated, '服务暂不可用')
+  const message = { key: 'errors.generationFailed', params: {} }
+  const failed = applySubmitFailure(repeated, message)
 
   assert.equal(repeated.requestId, 'request-1')
   assert.equal(failed.requestId, 'request-1')
   assert.equal(failed.submitting, false)
+  assert.equal(failed.notice, null)
   assert.equal(markInputsChanged(failed).requestId, null)
+  assert.equal(markInputsChanged(failed).error, null)
 })
 
 test('failed submission preserves logo selections requirement and customer-safe error', () => {
@@ -115,21 +129,23 @@ test('failed submission preserves logo selections requirement and customer-safe 
     submitting: true,
     requestId: 'request-1',
   }
-  const failed = applySubmitFailure(ready, '生图服务暂时不可用，本次设置已保留，请稍后重试')
+  const message = { key: 'errors.generationFailed', params: {} }
+  const failed = applySubmitFailure(ready, message)
   assert.deepEqual(failed.selections, ready.selections)
   assert.equal(failed.logo.id, 21)
   assert.equal(failed.requirement, ready.requirement)
-  assert.match(failed.error, /设置已保留/)
+  assert.deepEqual(failed.error, message)
 })
 
 test('status copy and generation merging keep active work recoverable and newest first', () => {
-  const generationStatusText = required(state, 'generationStatusText')
+  const generationStatusMessage = required(state, 'generationStatusMessage')
   const mergeGeneration = required(state, 'mergeGeneration')
   const hasActiveGenerations = required(state, 'hasActiveGenerations')
-  assert.match(generationStatusText('queued'), /可以关闭页面/)
-  assert.match(generationStatusText('running'), /几十秒到数分钟/)
-  assert.match(generationStatusText('succeeded'), /已完成/)
-  assert.match(generationStatusText('failed'), /重试/)
+  assert.deepEqual(generationStatusMessage('queued'), { key: 'generation.queued.detail', params: {} })
+  assert.deepEqual(generationStatusMessage('running'), { key: 'generation.running.detail', params: {} })
+  assert.deepEqual(generationStatusMessage('succeeded'), { key: 'generation.succeeded.detail', params: {} })
+  assert.deepEqual(generationStatusMessage('failed'), { key: 'generation.failed.detail', params: {} })
+  assert.deepEqual(generationStatusMessage('other'), { key: 'generation.processing.detail', params: {} })
 
   const merged = mergeGeneration(
     [{ id: 1, status: 'queued', created_at: '2026-08-09T01:00:00Z' }],

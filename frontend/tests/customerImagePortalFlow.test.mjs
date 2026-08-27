@@ -85,7 +85,7 @@ test('settings conflict refreshes product defaults and the next explicit submit 
   assert.equal(portal.selectedProduct.value.config_version, 2)
   assert.deepEqual(portal.state.selections, { finish: 'linen' })
   assert.equal(portal.state.requestId, null)
-  assert.match(portal.state.notice, /已更新/)
+  assert.deepEqual(portal.state.notice, { key: 'settings.updated', params: {} })
 
   await portal.submitGeneration()
   assert.equal(submissions.length, 2)
@@ -122,6 +122,9 @@ test('deferred submit locks every mutation and keeps one stable request payload'
 
   assert.equal(submissions.length, 1)
   assert.equal(submissions[0].request_id, requestId)
+  assert.deepEqual(Object.keys(submissions[0]).sort(), [
+    'config_version', 'product_id', 'request_id', 'requirement', 'selections',
+  ])
   assert.deepEqual(submissions[0].selections, { finish: 'matte' })
   assert.equal(submissions[0].requirement, 'keep me')
   assert.equal(portal.state.selectedProductId, 9)
@@ -177,9 +180,9 @@ test('accepted generation remains successful when the independent context refres
   await portal.submitGeneration()
   assert.equal(createCalls, 1)
   assert.equal(portal.state.generations[0].id, 81)
-  assert.equal(portal.state.error, '')
+  assert.equal(portal.state.error, null)
   assert.equal(portal.state.requestId, null)
-  assert.match(portal.state.notice, /关闭页面/)
+  assert.deepEqual(portal.state.notice, { key: 'generation.queued.detail', params: {} })
 })
 
 test('an older generation list cannot overwrite a newly accepted queued generation', async () => {
@@ -232,6 +235,9 @@ test('public 401 invalidates invite state token polling and loaded assets in one
   assert.deepEqual(portal.state.products, [])
   assert.deepEqual(portal.state.selections, {})
   assert.equal(portal.state.logo, null)
+  assert.deepEqual(portal.state.notice, { key: 'errors.invalidLink', params: {} })
+  assert.equal(portal.state.error, null)
+  assert.equal(portal.state.resultAnnouncement, null)
   assert.deepEqual(revoked, ['blob:logo'])
 })
 
@@ -259,7 +265,7 @@ test('quota or logo conflict refreshes both values and clears stale logo preview
   assert.equal(portal.state.logo, null)
   assert.equal(portal.assets.logoUrl.value, '')
   assert.deepEqual(revoked, ['blob:logo'])
-  assert.match(portal.state.error, /额度/)
+  assert.deepEqual(portal.state.error, { key: 'errors.quotaExhausted', params: {} })
 })
 
 test('upload blob and settings-refresh 401s all use the same invite invalidation', async (t) => {
@@ -344,7 +350,55 @@ test('active generation completion announces politely and scrolls the result wit
   }]
   await portal.pollGenerations()
 
-  assert.equal(portal.state.resultAnnouncement, '包装盒效果图已生成')
+  assert.deepEqual(portal.state.resultAnnouncement, {
+    key: 'generation.completed.announcement',
+    params: { product: '包装盒' },
+  })
   assert.deepEqual(scrolled, [71])
   assert.equal(portal.state.previewGenerationId, 71)
+})
+
+test('default download filename is safe and API payloads remain locale-free', async () => {
+  const originalDocument = globalThis.document
+  const downloads = []
+  globalThis.document = {
+    createElement() {
+      return {
+        click() { downloads.push(this.download) },
+      }
+    },
+  }
+
+  try {
+    const submissions = []
+    const generation = {
+      id: 92,
+      product_id: 9,
+      product_name: '包装盒 Box',
+      status: 'succeeded',
+      result_url: '/api/customer-image/public/assets/92/content',
+      created_at: '2026-08-09T02:00:00Z',
+    }
+    const portal = useCustomerImagePortal({
+      api: baseApi({
+        listGenerations: async () => ({ data: [generation] }),
+        getAssetBlob: async () => ({ data: {} }),
+        createGeneration: async payload => {
+          submissions.push(payload)
+          return { data: generation }
+        },
+      }),
+      lifecycle: lifecycle(),
+      ...quietPolling(),
+      urlApi: { createObjectURL: () => 'blob:result', revokeObjectURL() {} },
+    })
+
+    await portal.bootstrap()
+    portal.downloadGeneration(generation)
+    await portal.submitGeneration()
+    assert.equal(Object.hasOwn(submissions[0], 'locale'), false)
+    assert.deepEqual(downloads, ['generation-92.png'])
+  } finally {
+    globalThis.document = originalDocument
+  }
 })

@@ -3,6 +3,7 @@ import CustomerLogoUpload from './components/CustomerLogoUpload.vue'
 import GenerationHistory from './components/GenerationHistory.vue'
 import GenerationPreview from './components/GenerationPreview.vue'
 import ProductOptionGroup from './components/ProductOptionGroup.vue'
+import { useCustomerImageI18n } from './i18n.js'
 import { MOBILE_FLOW_TEMPLATE } from './layout.js'
 
 defineProps({
@@ -19,16 +20,18 @@ defineProps({
   generations: { type: Array, default: () => [] },
   generationUrls: { type: Object, default: () => ({}) },
   previewGeneration: { type: Object, default: null },
-  generationMessage: { type: String, default: '' },
+  generationMessage: { type: Object, default: null },
   generateEnabled: { type: Boolean, default: false },
-  generateHint: { type: String, default: '' },
+  generateHint: { type: Object, default: null },
   submitting: { type: Boolean, default: false },
-  error: { type: String, default: '' },
-  notice: { type: String, default: '' },
-  resultAnnouncement: { type: String, default: '' },
+  error: { type: Object, default: null },
+  notice: { type: Object, default: null },
+  resultAnnouncement: { type: Object, default: null },
 })
 
 defineEmits(['back', 'download', 'generate', 'select-generation', 'select-product', 'update-requirement', 'update-selection', 'upload-logo'])
+
+const { t, tm } = useCustomerImageI18n()
 </script>
 
 <template>
@@ -36,13 +39,13 @@ defineEmits(['back', 'download', 'generate', 'select-generation', 'select-produc
     <div class="workbench-grid" :style="{ '--customer-mobile-flow': MOBILE_FLOW_TEMPLATE }">
       <aside class="product-rail" data-mobile-step="1">
         <div class="flow-products">
-          <button v-if="canGoBack" type="button" class="back" :disabled="submitting" @click="$emit('back')">‹ 全部产品</button>
+          <button v-if="canGoBack" type="button" class="back" :disabled="submitting" @click="$emit('back')">‹ {{ t('editor.allProducts') }}</button>
           <div class="rail-heading">
-            <span class="eyebrow">01 / STYLE</span>
-            <h2>选择产品</h2>
-            <p>切换产品会保留已上传的 LOGO 与历史结果。</p>
+            <span class="eyebrow">{{ t('editor.styleEyebrow') }}</span>
+            <h2>{{ t('editor.selectProduct') }}</h2>
+            <p>{{ t('editor.selectProductDetail') }}</p>
           </div>
-          <div class="product-list" aria-label="产品列表">
+          <div class="product-list" :aria-label="t('catalog.products.label')">
             <button
               v-for="(item, index) in products"
               :key="item.id"
@@ -54,7 +57,7 @@ defineEmits(['back', 'download', 'generate', 'select-generation', 'select-produc
             >
               <span class="num">{{ String(index + 1).padStart(2, '0') }}</span>
               <img v-if="coverUrls[item.id]" :src="coverUrls[item.id]" :alt="item.name">
-              <span v-else class="thumb-fallback" aria-hidden="true">{{ item.category || '产品' }}</span>
+              <span v-else class="thumb-fallback" aria-hidden="true">{{ item.category || t('catalog.product.fallback') }}</span>
               <span class="product-copy">
                 <strong>{{ item.name }}</strong>
                 <small>{{ item.category }}</small>
@@ -87,8 +90,8 @@ defineEmits(['back', 'download', 'generate', 'select-generation', 'select-produc
 
       <aside class="control-panel" data-mobile-step="3">
         <div class="control-heading">
-          <span class="eyebrow">02 / CUSTOMIZE</span>
-          <h2>定制你的产品</h2>
+          <span class="eyebrow">{{ t('editor.customizeEyebrow') }}</span>
+          <h2>{{ t('editor.customize') }}</h2>
         </div>
         <div class="flow-logo">
           <CustomerLogoUpload :logo-url="logoUrl" :uploading="uploadingLogo" :disabled="submitting" @upload="$emit('upload-logo', $event)" />
@@ -97,8 +100,8 @@ defineEmits(['back', 'download', 'generate', 'select-generation', 'select-produc
           <div class="section-heading">
             <span class="badge">B</span>
             <div>
-              <h2 id="options-title">确认产品参数</h2>
-              <p>已为您预设标准选项</p>
+              <h2 id="options-title">{{ t('editor.options.title') }}</h2>
+              <p>{{ t('editor.options.detail') }}</p>
             </div>
           </div>
           <ProductOptionGroup
@@ -114,8 +117,8 @@ defineEmits(['back', 'download', 'generate', 'select-generation', 'select-produc
           <div class="section-heading">
             <span class="badge">C</span>
             <div>
-              <h2 id="requirement-label">补充要求</h2>
-              <p>可选，最多 500 字</p>
+              <h2 id="requirement-label">{{ t('editor.requirement.title') }}</h2>
+              <p>{{ t('editor.requirement.detail') }}</p>
             </div>
           </div>
           <textarea
@@ -125,21 +128,21 @@ defineEmits(['back', 'download', 'generate', 'select-generation', 'select-produc
             :disabled="submitting"
             maxlength="500"
             rows="4"
-            placeholder="例如：LOGO 稍微缩小，整体更简洁"
+            :placeholder="t('editor.requirement.placeholder')"
             @input="$emit('update-requirement', $event.target.value)"
           />
           <small class="count">{{ requirement.length }} / 500</small>
           <div class="generate-feedback" aria-live="polite">
-            <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
-            <p v-else-if="notice" class="feedback notice" role="status">{{ notice }}</p>
-            <p v-if="generateHint" class="hint">{{ generateHint }}</p>
+            <p v-if="error" class="feedback error" role="alert">{{ tm(error) }}</p>
+            <p v-else-if="notice" class="feedback notice" role="status">{{ tm(notice) }}</p>
+            <p v-if="generateHint" class="hint">{{ tm(generateHint) }}</p>
           </div>
         </section>
 
         <div class="flow-spacer mobile-action-spacer" aria-hidden="true" />
         <div class="generate-block">
-          <div class="quota-line" aria-label="生成额度">
-            <span>剩余额度</span>
+          <div class="quota-line" :aria-label="t('editor.quota.label')">
+            <span>{{ t('editor.quota.label') }}</span>
             <strong>{{ quota.remaining }}</strong>
             <small>/ {{ quota.total }}</small>
           </div>
@@ -149,12 +152,12 @@ defineEmits(['back', 'download', 'generate', 'select-generation', 'select-produc
             :disabled="!generateEnabled"
             @click="$emit('generate')"
           >
-            {{ submitting ? '正在提交…' : '生成效果图' }}
+            {{ submitting ? t('editor.submitting') : t('editor.generate') }}
           </button>
-          <p class="quota-copy">本次生成将使用 1 次额度，剩余 {{ quota.remaining }} 次</p>
+          <p class="quota-copy">{{ t('quota.copy', { count: quota.remaining }) }}</p>
         </div>
 
-        <span class="sr-only" aria-live="polite">{{ resultAnnouncement }}</span>
+        <span class="sr-only" aria-live="polite">{{ tm(resultAnnouncement) }}</span>
       </aside>
     </div>
   </main>

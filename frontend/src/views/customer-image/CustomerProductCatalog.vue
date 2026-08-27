@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
+import { useCustomerImageI18n } from './i18n.js'
 
 const props = defineProps({
   products: { type: Array, default: () => [] },
@@ -9,14 +10,16 @@ const props = defineProps({
 
 defineEmits(['select'])
 
+const ALL_CATEGORIES = Symbol('all-categories')
+const { locale, t } = useCustomerImageI18n()
 const search = ref('')
-const category = ref('全部')
-const categories = computed(() => ['全部', ...new Set(props.products.map(product => product.category).filter(Boolean))])
+const category = ref(ALL_CATEGORIES)
+const categories = computed(() => [ALL_CATEGORIES, ...new Set(props.products.map(product => product.category).filter(Boolean))])
 const visibleProducts = computed(() => {
-  const term = search.value.trim().toLocaleLowerCase('zh-CN')
+  const term = search.value.trim().toLocaleLowerCase(locale.value)
   return props.products.filter(product => {
-    const categoryMatches = category.value === '全部' || product.category === category.value
-    const searchMatches = !term || `${product.name} ${product.description || ''}`.toLocaleLowerCase('zh-CN').includes(term)
+    const categoryMatches = category.value === ALL_CATEGORIES || product.category === category.value
+    const searchMatches = !term || `${product.name} ${product.description || ''}`.toLocaleLowerCase(locale.value).includes(term)
     return categoryMatches && searchMatches
   })
 })
@@ -26,17 +29,17 @@ const visibleProducts = computed(() => {
   <main class="catalog-shell">
     <header class="catalog-header">
       <div>
-        <p class="eyebrow">01 / STYLE · 专属产品效果图</p>
-        <h1>{{ customerName ? `${customerName}，选择要设计的产品` : '选择要设计的产品' }}</h1>
-        <p>选好产品后，上传 LOGO 并确认预设参数即可生成。</p>
+        <p class="eyebrow">{{ t('catalog.eyebrow') }}</p>
+        <h1>{{ customerName ? t('catalog.titleForCustomer', { name: customerName }) : t('catalog.title') }}</h1>
+        <p>{{ t('catalog.intro') }}</p>
       </div>
       <label class="search-field">
-        <span>搜索</span>
-        <input v-model="search" type="search" placeholder="搜索产品名称">
+        <span>{{ t('catalog.search.label') }}</span>
+        <input v-model="search" type="search" :placeholder="t('catalog.search.placeholder')">
       </label>
     </header>
 
-    <nav class="category-list" aria-label="产品分类">
+    <nav class="category-list" :aria-label="t('catalog.categories.label')">
       <button
         v-for="item in categories"
         :key="item"
@@ -44,28 +47,28 @@ const visibleProducts = computed(() => {
         :class="{ active: category === item }"
         @click="category = item"
       >
-        {{ item }}
+        {{ item === ALL_CATEGORIES ? t('catalog.category.all') : item }}
       </button>
     </nav>
 
-    <section v-if="visibleProducts.length" class="product-grid" aria-label="产品列表">
+    <section v-if="visibleProducts.length" class="product-grid" :aria-label="t('catalog.products.label')">
       <article v-for="product in visibleProducts" :key="product.id" class="product-card">
         <div class="product-image">
           <img v-if="coverUrls[product.id]" :src="coverUrls[product.id]" :alt="product.name">
-          <span v-else>{{ product.category || '产品' }}</span>
+          <span v-else>{{ product.category || t('catalog.product.fallback') }}</span>
         </div>
         <div class="product-copy">
           <small>{{ product.category }}</small>
           <h2>{{ product.name }}</h2>
-          <p>{{ product.description || '上传品牌 LOGO，快速查看产品应用效果。' }}</p>
-          <button type="button" @click="$emit('select', product)">立即设计</button>
+          <p>{{ product.description || t('catalog.product.descriptionFallback') }}</p>
+          <button type="button" @click="$emit('select', product)">{{ t('catalog.product.designNow') }}</button>
         </div>
       </article>
     </section>
     <div v-else class="search-empty">
-      <strong>没有找到匹配的产品</strong>
-      <p>换个关键词或分类试试。</p>
-      <button type="button" @click="search = ''; category = '全部'">查看全部产品</button>
+      <strong>{{ t('catalog.empty.title') }}</strong>
+      <p>{{ t('catalog.empty.detail') }}</p>
+      <button type="button" @click="search = ''; category = ALL_CATEGORIES">{{ t('catalog.empty.showAll') }}</button>
     </div>
   </main>
 </template>
