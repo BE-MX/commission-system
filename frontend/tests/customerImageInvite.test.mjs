@@ -132,7 +132,7 @@ test('public client injects only Invite auth and never redirects a public 401', 
 
   assert.match(request, /getAuthorization/)
   assert.match(request, /redirectOnUnauthorized\s*=\s*true/)
-  assert.match(request, /redirectOnUnauthorized\s*&&/)
+  assert.match(request, /shouldRedirectOnUnauthorized\s*&&/)
   assert.match(clients, /customerImageClient\s*=\s*createApiClient\(\{\s*baseURL:\s*['"]\/api\/customer-image['"]/s)
   assert.match(clients, /customerImagePublicClient\s*=\s*createApiClient\(\{[\s\S]*?getAuthorization:\s*getInviteAuthorization[\s\S]*?redirectOnUnauthorized:\s*false/)
 })
@@ -215,6 +215,29 @@ test('default client injects Ark Bearer auth and redirects a 401 after clearing 
     await assert.rejects(harness.handlers.responseFailure(error), value => value === error)
     assert.equal(harness.cleared(), 1)
     assert.equal(globalThis.window.location.href, '/login')
+  } finally {
+    globalThis.window = originalWindow
+  }
+})
+
+test('a request can suppress shared auth redirects without changing the client default', async () => {
+  const originalWindow = globalThis.window
+  globalThis.window = { location: { href: '/expo/kiosk' } }
+  try {
+    const harness = loadCreateApiClient()
+    harness.factory({ baseURL: '/api/expo' })
+    for (const response of [
+      { status: 401, data: { detail: 'expired' } },
+      { status: 403, data: { detail: 'Not authenticated' } },
+    ]) {
+      const error = {
+        config: { showLoading: false, suppressToast: true, redirectOnUnauthorized: false },
+        response,
+      }
+      await assert.rejects(harness.handlers.responseFailure(error), value => value === error)
+    }
+    assert.equal(harness.cleared(), 0)
+    assert.equal(globalThis.window.location.href, '/expo/kiosk')
   } finally {
     globalThis.window = originalWindow
   }

@@ -78,7 +78,9 @@ export function createApiClient({
         return Promise.reject(error)
       }
       const detail = error.response?.data?.detail
-      if (redirectOnUnauthorized && (error.response?.status === 401
+      const shouldRedirectOnUnauthorized = error.config?.redirectOnUnauthorized
+        ?? redirectOnUnauthorized
+      if (shouldRedirectOnUnauthorized && (error.response?.status === 401
           || (error.response?.status === 403 && detail === 'Not authenticated'))) {
         clearAuthState()
         window.location.href = '/login'
