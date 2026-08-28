@@ -1352,9 +1352,13 @@ def test_external_invoice_delete_guards_preserve_ingest(
     assert ingest.invoice_id == preserved_invoice.id == invoice_id
 
 
-def test_external_invoice_delete_rolls_back_and_removes_multiple_ingests(api):
+def test_external_invoice_delete_rollback_restores_all_ingest_rows(api):
     client, db = api
     from app.invoice import service as invoice_service
+
+    db.rollback()
+    db.execute(text("PRAGMA foreign_keys=ON"))
+    assert db.execute(text("PRAGMA foreign_keys")).scalar_one() == 1
 
     created = client.post(
         "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
