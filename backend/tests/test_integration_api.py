@@ -1226,31 +1226,41 @@ def test_create_invoice_is_atomic_external_provenance_and_never_pushes_okki(api,
     assert calls == []
 
 
-def test_external_invoice_cannot_be_deleted_and_remains_replayable(api):
+def test_external_invoice_can_be_deleted_and_recreated_with_same_order_id(api):
     client, db = api
     from app.invoice import service as invoice_service
 
+    submission = _submission()
     created = client.post(
-        "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
+        "/api/integrations/v1/invoices", json=submission, headers=_headers(),
     )
     assert created.status_code == 201, created.text
-    invoice = invoice_service.get_invoice(db, created.json()["data"]["invoice_id"])
+    original = created.json()["data"]
+    invoice = invoice_service.get_invoice(db, original["invoice_id"])
 
-    with pytest.raises(ValueError, match="站点接入"):
-        invoice_service.delete_invoice(db, invoice)
+    invoice_service.delete_invoice(db, invoice)
+    db.commit()
+    assert invoice_service.get_invoice(db, original["invoice_id"]) is None
+    assert db.query(InvoiceIngestRequest).count() == 0
+
+    recreated = client.post(
+        "/api/integrations/v1/invoices", json=submission, headers=_headers(),
+    )
+    assert recreated.status_code == 201, recreated.text
+    recreated_data = recreated.json()["data"]
+    assert recreated_data["replayed"] is False
+    assert recreated_data["request_id"] != original["request_id"]
+    assert recreated_data["external_order_id"] == original["external_order_id"]
+    assert db.query(Invoice).count() == 1
+    ingest = db.query(InvoiceIngestRequest).one()
+    assert ingest.status == "created"
+    assert ingest.invoice_id == recreated_data["invoice_id"]
 
     replay = client.post(
-        "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
-    )
-    lookup = client.get(
-        "/api/integrations/v1/invoices/by-external-id/SITE%3A2026-0001",
-        headers=_headers(),
+        "/api/integrations/v1/invoices", json=submission, headers=_headers(),
     )
     assert replay.status_code == 200, replay.text
-    assert lookup.status_code == 200, lookup.text
-    assert replay.json()["data"]["invoice_id"] == created.json()["data"]["invoice_id"]
-    assert lookup.json()["data"]["invoice_id"] == created.json()["data"]["invoice_id"]
-    assert db.query(InvoiceIngestRequest).one().status == "created"
+    assert replay.json()["data"]["invoice_id"] == recreated_data["invoice_id"]
 
 
 def test_create_schema_failure_uses_stable_422_without_ingest(api):
