@@ -35,7 +35,7 @@
 删除成功后，原 App 与 `external_order_id` 的唯一接入记录不再存在。独立站再次提交同一 `external_order_id` 时：
 
 - 按首次请求处理并返回 HTTP 201。
-- 创建新的接入请求 ID、发票 ID 和发票号。
+- 创建新的接入请求记录与发票记录，`request_id` 必定重新生成；数据库物理删除后数值 `invoice_id` 可能复用，发票号生成器也可能在旧号释放后再次给出同一号，因此不承诺 `invoice_id` 或发票号变化。
 - 新发票继续保持 `source_type=external_api`、`sync_status=not_synced`，且不会自动同步 OKKI。
 - 后续相同内容重放仍返回新发票，幂等行为从新记录开始计算。
 
@@ -52,7 +52,7 @@
 1. 通过外部 API 创建发票，确认一张发票和一条 `created` 接入记录。
 2. 调用发票删除业务逻辑并提交，确认发票和接入记录均消失。
 3. 使用相同 App、相同 `external_order_id` 和相同内容再次提交，确认返回 HTTP 201。
-4. 确认新的请求 ID、发票 ID 与原记录不同，数据库仍只有一张当前发票和一条当前接入记录。
+4. 确认返回 HTTP 201，新的 `request_id` 与原请求不同，数据库当前只有一张 fresh invoice 和一条 fresh ingest；不断言 `invoice_id` 或 `invoice_no` 与原记录不同。
 5. 运行现有发票删除、外部接入幂等、OKKI 同步保护和库存保护测试，确认其他来源与安全限制不受影响。
 
 ## 非目标
