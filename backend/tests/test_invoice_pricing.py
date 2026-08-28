@@ -7,6 +7,7 @@ from io import BytesIO
 from openpyxl import Workbook
 from sqlalchemy import text
 
+from app.integration.models import InvoiceIngestRequest
 from app.invoice import price_service, product_service, service
 from app.invoice.models import (  # noqa: F401 - register metadata for create_all
     CustomerPriceRule,
@@ -389,7 +390,10 @@ def test_delete_external_api_invoice_without_ingest_record(db):
     )
     invoice = service.create_invoice(db, body, user_id=1)
     invoice.source_type = "external_api"
+    invoice.source_order_id = "req_orphan_external"
+    invoice.source_order_name = "SITE:ORPHAN-1"
     db.flush()
+    assert db.query(InvoiceIngestRequest).count() == 0
 
     service.delete_invoice(db, invoice)
     db.flush()
