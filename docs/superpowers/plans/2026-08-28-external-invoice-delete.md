@@ -101,7 +101,7 @@ This locks the approved compatibility rule: a historical `external_api` invoice 
 Run from `backend`:
 
 ```powershell
-.venv\Scripts\python.exe -m pytest tests/test_integration_api.py::test_external_invoice_can_be_deleted_and_recreated_with_same_order_id tests/test_invoice_pricing.py::test_delete_external_api_invoice_without_ingest_record -q
+D:\MyProgram\commission-system\backend\.venv\Scripts\python.exe -m pytest tests/test_integration_api.py::test_external_invoice_can_be_deleted_and_recreated_with_same_order_id tests/test_invoice_pricing.py::test_delete_external_api_invoice_without_ingest_record -q
 ```
 
 Expected: two failures with `ValueError: 站点接入发票不允许删除，以保留外部订单的幂等查询结果`. Failures must occur at `delete_invoice`, not during fixture setup or API creation.
@@ -157,7 +157,7 @@ Do not call `commit()` in the service. The existing router owns the transaction 
 Run from `backend`:
 
 ```powershell
-.venv\Scripts\python.exe -m pytest tests/test_integration_api.py::test_external_invoice_can_be_deleted_and_recreated_with_same_order_id tests/test_invoice_pricing.py::test_delete_external_api_invoice_without_ingest_record -q
+D:\MyProgram\commission-system\backend\.venv\Scripts\python.exe -m pytest tests/test_integration_api.py::test_external_invoice_can_be_deleted_and_recreated_with_same_order_id tests/test_invoice_pricing.py::test_delete_external_api_invoice_without_ingest_record -q
 ```
 
 Expected: `2 passed`.
@@ -167,7 +167,7 @@ Expected: `2 passed`.
 Run from `backend`:
 
 ```powershell
-.venv\Scripts\python.exe -m pytest tests/test_invoice_pricing.py::test_delete_invoice_blocked_when_synced tests/test_invoice_okki_push.py::test_delete_invoice_blocked_by_okki_order_id -q
+D:\MyProgram\commission-system\backend\.venv\Scripts\python.exe -m pytest tests/test_invoice_pricing.py::test_delete_invoice_blocked_when_synced tests/test_invoice_okki_push.py::test_delete_invoice_blocked_by_okki_order_id -q
 ```
 
 Expected: `2 passed`; neither blocked path may delete an invoice or its ingest record.
@@ -259,7 +259,7 @@ git commit -m "docs: document external invoice resync"
 Run from `backend`:
 
 ```powershell
-.venv\Scripts\python.exe -m pytest tests/test_integration_api.py tests/test_invoice_pricing.py tests/test_invoice_okki_push.py -q
+D:\MyProgram\commission-system\backend\.venv\Scripts\python.exe -m pytest tests/test_integration_api.py tests/test_invoice_pricing.py tests/test_invoice_okki_push.py -q
 ```
 
 Expected: all selected tests pass with zero failures.
@@ -269,7 +269,7 @@ Expected: all selected tests pass with zero failures.
 Run from `backend`:
 
 ```powershell
-.venv\Scripts\python.exe -m pytest -q
+D:\MyProgram\commission-system\backend\.venv\Scripts\python.exe -m pytest -q
 ```
 
 Expected: exit code 0 with zero failures. Report the actual pass and skip counts; do not reuse the historical count in `docs/handoff.md`.
@@ -280,7 +280,7 @@ Run from the repository root:
 
 ```powershell
 $base = git merge-base main HEAD
-.\backend\.venv\Scripts\python.exe scripts/check_conventions.py --base $base
+D:\MyProgram\commission-system\backend\.venv\Scripts\python.exe scripts/check_conventions.py --base $base
 ```
 
 Expected: exit code 0 and no red violations.
@@ -302,9 +302,9 @@ Run from the repository root after all fixes:
 ```powershell
 $base = git merge-base main HEAD
 Push-Location backend
-.\.venv\Scripts\python.exe -m pytest tests/test_integration_api.py tests/test_invoice_pricing.py tests/test_invoice_okki_push.py -q
+D:\MyProgram\commission-system\backend\.venv\Scripts\python.exe -m pytest tests/test_integration_api.py tests/test_invoice_pricing.py tests/test_invoice_okki_push.py -q
 Pop-Location
-.\backend\.venv\Scripts\python.exe scripts/check_conventions.py --base $base
+D:\MyProgram\commission-system\backend\.venv\Scripts\python.exe scripts/check_conventions.py --base $base
 git diff --check "$base..HEAD"
 git status --short
 ```
@@ -314,7 +314,7 @@ Expected: focused tests and conventions exit 0, diff check is clean, and `git st
 - [ ] **Step 6: Run the worktree sweep and push the feature backup**
 
 ```powershell
-.\backend\.venv\Scripts\python.exe scripts/git_sweep.py
+D:\MyProgram\commission-system\backend\.venv\Scripts\python.exe scripts/git_sweep.py
 git branch --show-current
 git push
 ```
