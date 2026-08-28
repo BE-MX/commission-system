@@ -88,5 +88,5 @@
 - 不提供 Excel 导入或公式解析。
 - 不自动新建客户、模糊选择客户或 SKU。
 - 不同步 OKKI，不在本接口提供同步开关。
-- 不提供外部发票更新、删除、作废或提成字段。
+- 外部 REST API 不提供发票更新（update）、删除（delete）、作废（void）端点或提成（commission）字段。方舟人员需具备 `invoice:write` 且遵守现有发票可见范围，才可在“订单发票”页面删除 `external_api` 站点接入发票；已有 `xiaoman_order_id`、`sync_status=synced`/`sync_status=sync_uncertain` 或存在未恢复半成品库存时拒绝。允许删除时同一事务删除关联 ingest 和发票，释放该 App + `external_order_id`；之后独立站同订单重新 POST，按首次创建返回 HTTP 201 并建立新的幂等记录。
 - 本阶段不要求站点运行时使用 MCP；后续 MCP 如建设，必须复用同一业务服务与权限规则。

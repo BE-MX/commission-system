@@ -29,6 +29,7 @@ from app.invoice.models import (
     PriceColorType,
     StdPrice,
 )
+from app.semifinished.models import InvoiceAllocation
 
 
 TOKEN = "ark_live_external_invoice_contract_token"
@@ -1226,7 +1227,99 @@ def test_create_invoice_is_atomic_external_provenance_and_never_pushes_okki(api,
     assert calls == []
 
 
-def test_external_invoice_cannot_be_deleted_and_remains_replayable(api):
+def test_external_invoice_can_be_deleted_and_recreated_with_same_order_id(api):
+    client, db = api
+    from app.invoice import service as invoice_service
+
+    submission = _submission()
+    created = client.post(
+        "/api/integrations/v1/invoices", json=submission, headers=_headers(),
+    )
+    assert created.status_code == 201, created.text
+    original = created.json()["data"]
+    invoice = invoice_service.get_invoice(db, original["invoice_id"])
+
+    invoice_service.delete_invoice(db, invoice)
+    db.commit()
+    assert invoice_service.get_invoice(db, original["invoice_id"]) is None
+    assert db.query(InvoiceIngestRequest).count() == 0
+
+    recreated = client.post(
+        "/api/integrations/v1/invoices", json=submission, headers=_headers(),
+    )
+    assert recreated.status_code == 201, recreated.text
+    recreated_data = recreated.json()["data"]
+    assert recreated_data["replayed"] is False
+    assert recreated_data["request_id"] != original["request_id"]
+    assert recreated_data["external_order_id"] == original["external_order_id"]
+    assert db.query(Invoice).count() == 1
+    ingest = db.query(InvoiceIngestRequest).one()
+    assert ingest.status == "created"
+    assert ingest.invoice_id == recreated_data["invoice_id"]
+
+    replay = client.post(
+        "/api/integrations/v1/invoices", json=submission, headers=_headers(),
+    )
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["data"]["invoice_id"] == recreated_data["invoice_id"]
+
+
+@pytest.mark.parametrize(
+    ("case_name", "invoice_updates", "allocation_values"),
+    [
+        pytest.param(
+            "xiaoman_order_id",
+            {"xiaoman_order_id": "OKKI-DELETE-GUARD", "sync_status": "not_synced"},
+            None,
+            id="xiaoman_order_id",
+        ),
+        pytest.param(
+            "synced",
+            {"sync_status": "synced"},
+            None,
+            id="synced",
+        ),
+        pytest.param(
+            "sync_uncertain",
+            {"sync_status": "sync_uncertain"},
+            None,
+            id="sync_uncertain",
+        ),
+        pytest.param(
+            "pending_zero_quantity",
+            {},
+            {
+                "status": "pending",
+                "allocated_qty_grams": Decimal("0"),
+                "pending_delta_grams": Decimal("0"),
+            },
+            id="pending_zero_quantity",
+        ),
+        pytest.param(
+            "allocated_quantity",
+            {},
+            {
+                "status": "allocated",
+                "allocated_qty_grams": Decimal("1"),
+                "pending_delta_grams": Decimal("0"),
+            },
+            id="allocated_quantity",
+        ),
+        pytest.param(
+            "allocated_pending_delta",
+            {},
+            {
+                "status": "allocated",
+                "allocated_qty_grams": Decimal("0"),
+                "pending_delta_grams": Decimal("1"),
+            },
+            id="allocated_pending_delta",
+        ),
+    ],
+)
+def test_external_invoice_delete_guards_preserve_ingest(
+    api, case_name, invoice_updates, allocation_values,
+):
     client, db = api
     from app.invoice import service as invoice_service
 
@@ -1234,23 +1327,77 @@ def test_external_invoice_cannot_be_deleted_and_remains_replayable(api):
         "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
     )
     assert created.status_code == 201, created.text
-    invoice = invoice_service.get_invoice(db, created.json()["data"]["invoice_id"])
+    invoice_id = created.json()["data"]["invoice_id"]
+    invoice = invoice_service.get_invoice(db, invoice_id)
+    assert invoice is not None
 
-    with pytest.raises(ValueError, match="站点接入"):
+    for field, value in invoice_updates.items():
+        setattr(invoice, field, value)
+    if allocation_values is not None:
+        db.add(InvoiceAllocation(
+            invoice_id=invoice.id,
+            material_id=1,
+            **allocation_values,
+        ))
+    db.commit()
+
+    with pytest.raises(ValueError):
         invoice_service.delete_invoice(db, invoice)
 
-    replay = client.post(
+    db.rollback()
+    preserved_invoice = invoice_service.get_invoice(db, invoice_id)
+    assert preserved_invoice is not None, case_name
+    ingest = db.query(InvoiceIngestRequest).one()
+    assert ingest.status == "created", case_name
+    assert ingest.invoice_id == preserved_invoice.id == invoice_id
+
+
+def test_external_invoice_delete_rollback_restores_all_ingest_rows(api):
+    client, db = api
+    from app.invoice import service as invoice_service
+
+    db.rollback()
+    db.execute(text("PRAGMA foreign_keys=ON"))
+    assert db.execute(text("PRAGMA foreign_keys")).scalar_one() == 1
+
+    created = client.post(
         "/api/integrations/v1/invoices", json=_submission(), headers=_headers(),
     )
-    lookup = client.get(
-        "/api/integrations/v1/invoices/by-external-id/SITE%3A2026-0001",
-        headers=_headers(),
+    assert created.status_code == 201, created.text
+    invoice_id = created.json()["data"]["invoice_id"]
+    app_row = db.query(IntegrationApp).filter_by(
+        public_id="app_invoice_contract",
+    ).one()
+    db.add(InvoiceIngestRequest(
+        public_id="req_external_delete_second",
+        integration_app_id=app_row.id,
+        external_order_id="SITE:2026-0001-second",
+        request_sha256="b" * 64,
+        invoice_id=invoice_id,
+        status="created",
+        attempt_count=1,
+    ))
+    db.commit()
+
+    invoice = invoice_service.get_invoice(db, invoice_id)
+    invoice_service.delete_invoice(db, invoice)
+    db.flush()
+    assert db.query(Invoice).count() == 0
+    assert db.query(InvoiceIngestRequest).count() == 0
+
+    db.rollback()
+    preserved_invoice = invoice_service.get_invoice(db, invoice_id)
+    assert preserved_invoice is not None
+    ingests = db.query(InvoiceIngestRequest).order_by(InvoiceIngestRequest.id).all()
+    assert len(ingests) == 2
+    assert {row.public_id for row in ingests} == {
+        created.json()["data"]["request_id"],
+        "req_external_delete_second",
+    }
+    assert all(
+        row.status == "created" and row.invoice_id == preserved_invoice.id == invoice_id
+        for row in ingests
     )
-    assert replay.status_code == 200, replay.text
-    assert lookup.status_code == 200, lookup.text
-    assert replay.json()["data"]["invoice_id"] == created.json()["data"]["invoice_id"]
-    assert lookup.json()["data"]["invoice_id"] == created.json()["data"]["invoice_id"]
-    assert db.query(InvoiceIngestRequest).one().status == "created"
 
 
 def test_create_schema_failure_uses_stable_422_without_ingest(api):

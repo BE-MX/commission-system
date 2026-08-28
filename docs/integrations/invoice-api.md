@@ -223,6 +223,7 @@ POST `/invoices`
 - 相同 App、相同 external_order_id、相同标准化内容重放返回 HTTP 200，`message=invoice replayed`，`data.replayed=true`。
 - 相同 external_order_id、不同内容在已创建后返回 HTTP 409 `EXTERNAL_ORDER_CHANGED`，原发票不变。
 - 上一次为 422 校验失败时，可修正后继续使用相同 external_order_id。
+- 外部 REST API 本身不提供发票更新（update）、删除（delete）或作废（void）端点，也不提供提成（commission）字段；方舟人员需具备 `invoice:write` 且遵守现有发票可见范围，才可在“订单发票”页面删除 `external_api` 站点接入发票。已有 `xiaoman_order_id`、`sync_status` 为 `synced`/`sync_uncertain` 或存在未恢复半成品库存时拒绝删除；允许删除时同一事务删除关联 ingest 和发票，释放该 App + `external_order_id`，独立站同订单重新 POST，按首次创建返回 HTTP 201 并建立新的幂等记录。
 
 成功 `data`：
 

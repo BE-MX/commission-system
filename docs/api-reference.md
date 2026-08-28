@@ -168,7 +168,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `POST /invoices` — 创建普通发票；请求显式提交 `sales_user_id`，后端校验本人/代办授权并从该用户生成姓名、电话、邮箱快照，忽略客户端伪造文本；保存 `created_by=实际录入人`。截图来源发票必须走 `/import/screenshot/create`；同来源订单或同图唯一约束防并发重复创建。
   - `GET /invoices/{id}` — 发票详情
   - `PUT /invoices/{id}` — 更新发票（`sales_user_id` 与 order_type 创建后不可改；金额与折扣由服务端重算）
-  - `DELETE /invoices/{id}` — 删除发票（invoice:write；sync_status=synced 拒绝删除）
+  - `DELETE /invoices/{id}` — 删除发票（需 `invoice:write` 且符合当前数据可见范围；已有 `xiaoman_order_id`、`sync_status` 为 `synced`/`sync_uncertain` 或存在未恢复半成品库存时拒绝。`external_api` 站点接入发票通过 guard 后允许删除时，同一事务删除关联 `ark_invoice_ingest_requests`，释放 App + `external_order_id`，独立站可重新 POST，首次创建返回 HTTP 201 并建立新的幂等记录）
   - `POST /invoices/{id}/validate` — 同步前校验
   - `POST /invoices/{id}/sync` — 推单到小满（invoice:sync；真实调 OKKI `POST /v1/invoices/order/push`，无沙箱=真实订单）。`source_type=okki_screenshot` 表示来源 OKKI 订单已经存在，本端点直接拒绝，避免重复建单。其他发票已存 xiaoman_order_id 走编辑语义（明细带 unique_id、本地删行发 remove:1）；前置校验（客户数字ID/默认订单状态/业务员OKKI绑定/**业务员归属部门**/通用产品）不过返回 issues 不置失败态；payload 含企业必填字段：departments（业务员用户设置的部门）+ 4 个自定义字段（订单类型 691123983470 按 order_type 自动映射规格品/定制品，新成交 22595163468 / 包邮 20528077262544 / 首返 20528142733548 取发票三标记）；明细折扣已计入 product_list 的 `cost_amount`，不再进入 cost_list，Packaging/Shipping Fee 用 percent_type=0 加绝对值；Handling Fee 仅在方舟记录和计入方舟应付合计，不推送 OKKI；推送失败标 sync_failed 并落日志
   - `GET /invoices/{id}/sync-logs` — OKKI 推单审计日志（invoice:read；倒序 50 条，含请求摘要/响应/错误）

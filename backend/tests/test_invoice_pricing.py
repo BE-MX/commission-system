@@ -7,6 +7,7 @@ from io import BytesIO
 from openpyxl import Workbook
 from sqlalchemy import text
 
+from app.integration.models import InvoiceIngestRequest
 from app.invoice import price_service, product_service, service
 from app.invoice.models import (  # noqa: F401 - register metadata for create_all
     CustomerPriceRule,
@@ -380,9 +381,7 @@ def test_delete_invoice_blocked_when_synced(db):
     assert db.query(InvoiceItem).count() == 0
 
 
-def test_delete_invoice_blocked_for_external_api_source(db):
-    import pytest
-
+def test_delete_external_api_invoice_without_ingest_record(db):
     _seed_okki(db)
     body = InvoiceCreate(
         customer_id="CUST001", customer_name="客户A", order_type="production",
@@ -391,14 +390,15 @@ def test_delete_invoice_blocked_for_external_api_source(db):
     )
     invoice = service.create_invoice(db, body, user_id=1)
     invoice.source_type = "external_api"
+    invoice.source_order_id = "req_orphan_external"
+    invoice.source_order_name = "SITE:ORPHAN-1"
     db.flush()
+    assert db.query(InvoiceIngestRequest).count() == 0
 
-    with pytest.raises(ValueError, match="站点接入"):
-        service.delete_invoice(db, invoice)
-
+    service.delete_invoice(db, invoice)
     db.flush()
-    assert db.query(Invoice).count() == 1
-    assert db.query(InvoiceItem).count() == 1
+    assert db.query(Invoice).count() == 0
+    assert db.query(InvoiceItem).count() == 0
 
 
 # ── workbook import ───────────────────────────────────────────
