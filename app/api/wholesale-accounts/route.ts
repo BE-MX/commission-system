@@ -20,10 +20,18 @@ export async function POST(request: Request) {
   if (!companyName) return Response.json({ error: "请填写批发商或门店名称" }, { status: 400 });
   if (!/^1\d{10}$/.test(phone)) return Response.json({ error: "请填写正确的11位手机号" }, { status: 400 });
   try {
-    const row = await getD1().prepare(`INSERT INTO wholesale_accounts
+    const db = getD1();
+    const now = new Date().toISOString();
+    const row = await db.prepare(`INSERT INTO wholesale_accounts
       (company_name, phone, level, sales_person, note, status, created_at)
       VALUES (?, ?, ?, ?, ?, 'active', ?) RETURNING id`)
-      .bind(companyName, phone, level, salesPerson, note, new Date().toISOString()).first<{ id: number }>();
+      .bind(companyName, phone, level, salesPerson, note, now).first<{ id: number }>();
+    await db.prepare(`INSERT INTO customer_profiles
+      (phone, channel, display_name, store_name, level, sales_person, customer_service, note, referral_code, status, created_at)
+      VALUES (?, 'wholesale', ?, ?, ?, ?, '小莱客服', ?, ?, 'active', ?)
+      ON CONFLICT(phone) DO UPDATE SET display_name=excluded.display_name, store_name=excluded.store_name,
+        level=excluded.level, sales_person=excluded.sales_person, note=excluded.note, status='active'`)
+      .bind(phone, companyName, companyName, level, salesPerson, note, `D-${phone.slice(-4)}`, now).run();
     return Response.json({ id: row?.id }, { status: 201 });
   } catch {
     return Response.json({ error: "该手机号已经建立过批发商账户" }, { status: 409 });

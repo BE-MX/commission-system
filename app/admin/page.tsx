@@ -1,23 +1,29 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { AccessLog, LevelCode, Product, WholesaleAccount, WholesaleLevel } from "../lib/types";
+import type { AccessLog, CustomerProfile, LevelCode, Order, Product, SalesPerson, WholesaleAccount, WholesaleLevel } from "../lib/types";
 
 const emptyProduct: Omit<Product, "id" | "createdAt"> = {
   name: "", material: "真人发", length: "45cm", color: "自然黑", retailPrice: 0,
-  priceA: 0, priceB: 0, minLevel: "retail", stock: 0, status: "active", tone: "espresso",
+  priceA: 0, priceB: 0, minLevel: "retail", stock: 0, status: "active", tone: "espresso", category: "短发系列", sku: "",
 };
 const levelName: Record<LevelCode, string> = { retail: "所有客户", a: "批发A及以上", b: "仅批发B" };
 
-type Tab = "products" | "levels" | "customers" | "access";
+type Tab = "dashboard" | "products" | "levels" | "customers" | "orders" | "sales" | "finance" | "analytics" | "access";
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<Tab>("products");
+  const [tab, setTab] = useState<Tab>("dashboard");
   const [products, setProducts] = useState<Product[]>([]);
   const [levels, setLevels] = useState<WholesaleLevel[]>([]);
   const [accessLogs, setAccessLogs] = useState<AccessLog[]>([]);
   const [wholesaleAccounts, setWholesaleAccounts] = useState<WholesaleAccount[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [customers, setCustomers] = useState<CustomerProfile[]>([]);
+  const [sales, setSales] = useState<SalesPerson[]>([]);
+  const [referrals, setReferrals] = useState<Array<{ id: number; code: string; ownerName: string; visitorPhone: string; orderNo: string; amount: number; commission: number; status: string; createdAt: string }>>([]);
+  const [dashboard, setDashboard] = useState<{ summary?: Record<string, Record<string, number>>; daily?: Array<{ day: string; orders: number; revenue: number }> }>({});
   const [accountForm, setAccountForm] = useState({ companyName: "", phone: "", level: "a", salesPerson: "", note: "" });
+  const [salesForm, setSalesForm] = useState({ name: "", phone: "", role: "销售顾问", customerService: "小莱客服" });
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState<Omit<Product, "id" | "createdAt">>(emptyProduct);
   const [modalOpen, setModalOpen] = useState(false);
@@ -25,8 +31,14 @@ export default function AdminPage() {
   const [notice, setNotice] = useState("");
 
   const load = async () => {
-    const [p, l, a, w] = await Promise.all([fetch("/api/products").then((r) => r.json()), fetch("/api/levels").then((r) => r.json()), fetch("/api/access-logs").then((r) => r.json()), fetch("/api/wholesale-accounts").then((r) => r.json())]);
+    const [p, l, a, w, o, c, s, d] = await Promise.all([
+      fetch("/api/products").then((r) => r.json()), fetch("/api/levels").then((r) => r.json()),
+      fetch("/api/access-logs").then((r) => r.json()), fetch("/api/wholesale-accounts").then((r) => r.json()),
+      fetch("/api/orders").then((r) => r.json()), fetch("/api/customer-profiles").then((r) => r.json()),
+      fetch("/api/sales-team").then((r) => r.json()), fetch("/api/dashboard").then((r) => r.json()),
+    ]);
     setProducts(p.products ?? []); setLevels(l.levels ?? []); setAccessLogs(a.logs ?? []); setWholesaleAccounts(w.accounts ?? []);
+    setOrders(o.orders ?? []); setCustomers(c.customers ?? []); setSales(s.sales ?? []); setReferrals(s.referrals ?? []); setDashboard(d ?? {});
   };
   useEffect(() => { load(); }, []);
 
@@ -76,24 +88,64 @@ export default function AdminPage() {
     setNotice("批发商手机号账户已添加，可以进行验证登录"); await load();
   };
 
+  const updateCustomer = async (customer: CustomerProfile, patch: Partial<CustomerProfile>) => {
+    const next = { ...customer, ...patch };
+    const response = await fetch(`/api/customer-profiles/${customer.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) });
+    if (!response.ok) return setNotice("客户资料修改失败");
+    setNotice("客户身份、店面和备注已更新"); await load();
+  };
+
+  const shipOrder = async (order: Order) => {
+    const trackingNo = window.prompt("请输入物流单号", order.trackingNo || `SF${Date.now()}`);
+    if (!trackingNo) return;
+    const logisticsCompany = window.prompt("请输入物流公司", order.logisticsCompany || "顺丰速运") || "顺丰速运";
+    await fetch(`/api/orders/${order.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "已发货", logisticsCompany, trackingNo, logisticsStatus: "快件已揽收，等待运输" }) });
+    setNotice("订单已发货，客户现在可以查看物流轨迹"); await load();
+  };
+
+  const addSalesPerson = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const response = await fetch("/api/sales-team", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(salesForm) });
+    const data = await response.json();
+    if (!response.ok) return setNotice(data.error ?? "添加销售失败");
+    setSalesForm({ name: "", phone: "", role: "销售顾问", customerService: "小莱客服" });
+    setNotice("销售员已添加，推广码与店面宣传码已自动生成"); await load();
+  };
+
   return (
     <div className="admin-shell">
       <aside className="admin-sidebar">
         <a className="brand admin-brand" href="/"><span className="brand-mark">莱</span><span>莱莎管理台</span></a>
         <div className="admin-menu-label">经营管理</div>
+        <button className={tab === "dashboard" ? "selected" : ""} onClick={() => setTab("dashboard")}><span>总</span>经营总览</button>
         <button className={tab === "products" ? "selected" : ""} onClick={() => setTab("products")}><span>款</span>商品与款式</button>
         <button className={tab === "levels" ? "selected" : ""} onClick={() => setTab("levels")}><span>级</span>批发等级</button>
         <button className={tab === "customers" ? "selected" : ""} onClick={() => setTab("customers")}><span>客</span>批发商账户</button>
+        <button className={tab === "orders" ? "selected" : ""} onClick={() => setTab("orders")}><span>单</span>订单与发货 <i>{orders.filter((item) => item.status === "待发货").length || ""}</i></button>
+        <button className={tab === "sales" ? "selected" : ""} onClick={() => setTab("sales")}><span>销</span>销售与推广</button>
+        <button className={tab === "finance" ? "selected" : ""} onClick={() => setTab("finance")}><span>财</span>财务与佣金</button>
+        <button className={tab === "analytics" ? "selected" : ""} onClick={() => setTab("analytics")}><span>数</span>运营数据</button>
         <button className={tab === "access" ? "selected" : ""} onClick={() => setTab("access")}><span>访</span>进入记录 <i>{accessLogs.length || ""}</i></button>
-        <div className="admin-menu-label secondary-label">其他模块</div>
-        <button disabled><span>单</span>订单发货 <i>规划中</i></button>
-        <button disabled><span>销</span>销售推广 <i>规划中</i></button>
         <a className="back-store" href="/">← 返回店铺访问端</a>
       </aside>
 
       <main className="admin-main">
         <header className="admin-top"><div><small>山东自营仓 · 演示环境</small><strong>管理员</strong></div><span className="admin-avatar">管</span></header>
         {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice("")}>×</button></div>}
+
+        {tab === "dashboard" && <>
+          <div className="admin-title"><div><p>经营总览</p><h1>零售、批发与分销一体化后台</h1><span>价格、客户、订单、物流、销售归属和财务数据集中管理</span></div><button className="admin-primary" onClick={load}>刷新数据</button></div>
+          <section className="stat-grid dashboard-stats">
+            <article><span>累计销售额</span><strong>¥{Number(dashboard.summary?.orders?.revenue ?? 0).toLocaleString()}</strong><small>{dashboard.summary?.orders?.count ?? 0} 笔订单</small></article>
+            <article><span>有效客户</span><strong>{dashboard.summary?.customers?.count ?? customers.length}</strong><small>批发客户 {dashboard.summary?.customers?.wholesale ?? 0}</small></article>
+            <article><span>待发货订单</span><strong>{orders.filter((item) => item.status === "待发货").length}</strong><small>请及时录入物流</small></article>
+            <article><span>库存预警</span><strong>{dashboard.summary?.products?.lowStock ?? lowStock}</strong><small>总库存 {dashboard.summary?.products?.stock ?? stockCount} 件</small></article>
+          </section>
+          <div className="dashboard-layout">
+            <section className="admin-panel dashboard-orders"><div className="panel-head"><div><strong>最新订单</strong><span>零售与批发订单统一显示</span></div><button className="text-action" onClick={() => setTab("orders")}>查看全部</button></div>{orders.slice(0, 5).map((order) => <article key={order.id}><div><b>{order.customerName}</b><span>{order.orderNo} · {order.itemCount}件</span></div><strong>¥{order.amount.toLocaleString()}</strong><i className={order.status === "待发货" ? "pending" : ""}>{order.status}</i></article>)}</section>
+            <section className="admin-panel operations-card"><div className="panel-head"><div><strong>今日运营重点</strong><span>按当前经营数据自动汇总</span></div></div><ul><li><b>{orders.filter((item) => item.status === "待发货").length}</b><span>笔订单等待仓库发货</span></li><li><b>{lowStock}</b><span>款商品库存低于25件</span></li><li><b>{referrals.filter((item) => item.status === "待结算").length}</b><span>笔推广佣金等待结算</span></li><li><b>{accessLogs.filter((item) => item.result === "success").length}</b><span>个账户最近成功进入商城</span></li></ul></section>
+          </div>
+        </>}
 
         {tab === "products" && <>
           <div className="admin-title"><div><p>商品中心</p><h1>假发款式与价格</h1><span>管理款式、不同等级价格和查看权限</span></div><button className="admin-primary" onClick={openCreate}>＋ 添加假发款式</button></div>
@@ -105,10 +157,10 @@ export default function AdminPage() {
           </section>
           <section className="admin-panel">
             <div className="panel-head"><div><strong>全部商品</strong><span>价格修改后只影响新订单</span></div><label className="admin-search">⌕ <input aria-label="搜索商品" placeholder="搜索款式（演示）" /></label></div>
-            <div className="product-table-wrap"><table className="product-table"><thead><tr><th>款式</th><th>零售价</th><th>批发A</th><th>批发B</th><th>查看权限</th><th>库存</th><th>状态</th><th>操作</th></tr></thead><tbody>
+            <div className="product-table-wrap"><table className="product-table"><thead><tr><th>款式</th><th>分类</th><th>零售价</th><th>批发A</th><th>批发B</th><th>查看权限</th><th>库存</th><th>状态</th><th>操作</th></tr></thead><tbody>
               {products.map((product) => <tr key={product.id}>
-                <td><div className={`table-art ${product.tone}`}><div className="tiny-hair" /></div><div><strong>{product.name}</strong><small>{product.material} · {product.length} · {product.color}</small></div></td>
-                <td>¥{product.retailPrice}</td><td>¥{product.priceA}</td><td>¥{product.priceB}</td>
+                <td><div className={`table-art ${product.tone}`}><div className="tiny-hair" /></div><div><strong>{product.name}</strong><small>{product.sku || "未设置货号"} · {product.material} · {product.length} · {product.color}</small></div></td>
+                <td>{product.category}</td><td>¥{product.retailPrice}</td><td>¥{product.priceA}</td><td>¥{product.priceB}</td>
                 <td><span className={`access-pill ${product.minLevel}`}>{levelName[product.minLevel]}</span></td><td className={product.stock < 25 ? "stock-low" : ""}>{product.stock} 件</td>
                 <td><button className={`status-toggle ${product.status}`} onClick={() => toggleStatus(product)}><i />{product.status === "active" ? "已上架" : "已下架"}</button></td>
                 <td><button className="text-action" onClick={() => openEdit(product)}>编辑</button></td>
@@ -137,6 +189,34 @@ export default function AdminPage() {
               {wholesaleAccounts.map((account) => <tr key={account.id}><td><strong>{account.companyName}</strong></td><td>{account.phone}</td><td><span className={`access-pill ${account.level}`}>批发{account.level.toUpperCase()}</span></td><td>{account.salesPerson}</td><td>{account.note || "—"}</td></tr>)}
             </tbody></table></div>
           </section>
+          <section className="admin-panel customer-control"><div className="panel-head"><div><strong>客户权限与店面资料</strong><span>可修改等级、店面名称、来源销售、客服和后台备注</span></div></div>
+            <div className="customer-card-grid">{customers.map((customer) => <article key={customer.id}><header><div><small>{customer.channel === "wholesale" ? "批发账户" : "零售账户"}</small><strong>{customer.storeName || customer.displayName}</strong><span>{customer.phone}</span></div><select value={customer.level} onChange={(e) => updateCustomer(customer, { level: e.target.value as LevelCode })}><option value="retail">零售</option><option value="a">批发A</option><option value="b">批发B</option></select></header><div className="customer-fields"><label>店面名称<input defaultValue={customer.storeName} onBlur={(e) => e.target.value !== customer.storeName && updateCustomer(customer, { storeName: e.target.value })} /></label><label>来源销售员<input defaultValue={customer.salesPerson} onBlur={(e) => e.target.value !== customer.salesPerson && updateCustomer(customer, { salesPerson: e.target.value })} /></label><label>专属客服<input defaultValue={customer.customerService} onBlur={(e) => e.target.value !== customer.customerService && updateCustomer(customer, { customerService: e.target.value })} /></label><label>后台备注<input defaultValue={customer.note} onBlur={(e) => e.target.value !== customer.note && updateCustomer(customer, { note: e.target.value })} /></label></div><footer><span>推广码 {customer.referralCode}</span><button onClick={() => updateCustomer(customer, { status: customer.status === "active" ? "disabled" : "active" })}>{customer.status === "active" ? "停用账户" : "启用账户"}</button></footer></article>)}</div>
+          </section>
+        </>}
+
+        {tab === "orders" && <>
+          <div className="admin-title"><div><p>订单履约</p><h1>订单、发货与物流</h1><span>客户提交订单后，仓库可录入物流公司和单号</span></div><button className="admin-primary" onClick={load}>刷新订单</button></div>
+          <section className="stat-grid"><article><span>全部订单</span><strong>{orders.length}</strong><small>零售与批发合计</small></article><article><span>待发货</span><strong>{orders.filter((item) => item.status === "待发货").length}</strong><small>仓库待处理</small></article><article><span>运输中</span><strong>{orders.filter((item) => ["已发货", "运输中"].includes(item.status)).length}</strong><small>客户可查轨迹</small></article><article><span>商品数量</span><strong>{orders.reduce((sum, item) => sum + item.itemCount, 0)}</strong><small>订单总件数</small></article></section>
+          <section className="admin-panel"><div className="panel-head"><div><strong>全部订单</strong><span>发货后客户个人中心即时显示物流信息</span></div></div><div className="product-table-wrap"><table className="product-table order-table"><thead><tr><th>订单/客户</th><th>类型</th><th>商品</th><th>金额</th><th>销售归属</th><th>物流</th><th>状态</th><th>操作</th></tr></thead><tbody>{orders.map((order) => <tr key={order.id}><td><strong>{order.orderNo}</strong><small>{order.customerName} · {order.customerPhone}</small></td><td><span className={`channel-pill ${order.channel}`}>{order.channel === "retail" ? "零售" : `批发${order.level.toUpperCase()}`}</span></td><td>{order.itemCount} 件</td><td>¥{order.amount.toLocaleString()}</td><td>{order.salesPerson}</td><td><strong>{order.logisticsCompany || "待录入"}</strong><small>{order.trackingNo || order.logisticsStatus}</small></td><td><span className={`order-status ${order.status === "待发货" ? "pending" : "shipped"}`}>{order.status}</span></td><td><button className="text-action" onClick={() => shipOrder(order)}>{order.trackingNo ? "更新物流" : "立即发货"}</button></td></tr>)}</tbody></table></div></section>
+        </>}
+
+        {tab === "sales" && <>
+          <div className="admin-title"><div><p>渠道增长</p><h1>销售员、推广码与店面宣传码</h1><span>为每位销售自动生成唯一推广归属</span></div></div>
+          <form className="admin-panel sales-create" onSubmit={addSalesPerson}><div className="panel-head"><div><strong>添加销售员</strong><span>系统自动生成销售推广码和店面宣传码</span></div><button className="admin-primary">生成推广身份</button></div><div className="account-create-grid"><label>销售姓名<input required value={salesForm.name} onChange={(e) => setSalesForm({ ...salesForm, name: e.target.value })} /></label><label>手机号<input required value={salesForm.phone} onChange={(e) => setSalesForm({ ...salesForm, phone: e.target.value.replace(/\D/g, "").slice(0, 11) })} /></label><label>岗位<input value={salesForm.role} onChange={(e) => setSalesForm({ ...salesForm, role: e.target.value })} /></label><label>配合客服<input value={salesForm.customerService} onChange={(e) => setSalesForm({ ...salesForm, customerService: e.target.value })} /></label></div></form>
+          <div className="sales-card-grid">{sales.map((person) => <article key={person.id}><header><span>{person.name.slice(0, 1)}</span><div><strong>{person.name}</strong><small>{person.role} · {person.phone}</small></div></header><dl><div><dt>销售推广码</dt><dd>{person.promoCode}</dd></div><div><dt>店面宣传码</dt><dd>{person.storeCode}</dd></div></dl><footer><span>客户 {person.customerCount ?? 0} 人</span><b>成交 ¥{Number(person.orderAmount ?? 0).toLocaleString()}</b></footer></article>)}</div>
+          <section className="admin-panel"><div className="panel-head"><div><strong>推广成交记录</strong><span>追踪推广码、订单和佣金归属</span></div></div><div className="product-table-wrap"><table className="product-table"><thead><tr><th>时间</th><th>推广码</th><th>归属人员</th><th>客户</th><th>订单</th><th>成交金额</th><th>佣金</th><th>状态</th></tr></thead><tbody>{referrals.length ? referrals.map((item) => <tr key={item.id}><td>{new Date(item.createdAt).toLocaleDateString("zh-CN")}</td><td><strong>{item.code}</strong></td><td>{item.ownerName}</td><td>{item.visitorPhone}</td><td>{item.orderNo}</td><td>¥{item.amount}</td><td>¥{item.commission}</td><td>{item.status}</td></tr>) : <tr><td colSpan={8} className="empty-records">暂无推广成交记录</td></tr>}</tbody></table></div></section>
+        </>}
+
+        {tab === "finance" && <>
+          <div className="admin-title"><div><p>财务中心</p><h1>收入、佣金与结算</h1><span>按订单和销售推广归属核对经营账目</span></div></div>
+          <section className="stat-grid finance-stats"><article><span>订单收入</span><strong>¥{orders.reduce((sum, item) => sum + item.amount, 0).toLocaleString()}</strong><small>已支付订单</small></article><article><span>待结算佣金</span><strong>¥{referrals.filter((item) => item.status === "待结算").reduce((sum, item) => sum + item.commission, 0).toLocaleString()}</strong><small>{referrals.filter((item) => item.status === "待结算").length} 笔推广</small></article><article><span>销售绩效佣金</span><strong>¥{orders.reduce((sum, item) => sum + item.commissionAmount, 0).toLocaleString()}</strong><small>按3%演示计算</small></article><article><span>客单价</span><strong>¥{orders.length ? Math.round(orders.reduce((sum, item) => sum + item.amount, 0) / orders.length).toLocaleString() : 0}</strong><small>零售批发综合</small></article></section>
+          <section className="admin-panel"><div className="panel-head"><div><strong>订单财务明细</strong><span>每笔订单保留成交价格，不受后续改价影响</span></div></div><div className="product-table-wrap"><table className="product-table"><thead><tr><th>订单号</th><th>客户</th><th>付款状态</th><th>订单金额</th><th>来源销售</th><th>销售绩效</th><th>订单状态</th></tr></thead><tbody>{orders.map((order) => <tr key={order.id}><td><strong>{order.orderNo}</strong></td><td>{order.customerName}</td><td>{order.paymentStatus}</td><td>¥{order.amount.toLocaleString()}</td><td>{order.salesPerson}</td><td>¥{order.commissionAmount}</td><td>{order.status}</td></tr>)}</tbody></table></div></section>
+        </>}
+
+        {tab === "analytics" && <>
+          <div className="admin-title"><div><p>运营分析</p><h1>销量、客户与渠道数据</h1><span>查看不同身份、产品库存和销售推广表现</span></div></div>
+          <section className="analytics-grid"><article className="admin-panel"><div className="panel-head"><div><strong>近期开单趋势</strong><span>订单金额按日期汇总</span></div></div><div className="bar-chart">{(dashboard.daily ?? []).map((item) => { const max = Math.max(...(dashboard.daily ?? []).map((day) => Number(day.revenue)), 1); return <div key={item.day}><span style={{ height: `${Math.max(12, Number(item.revenue) / max * 100)}%` }}><b>¥{Number(item.revenue).toLocaleString()}</b></span><small>{item.day.slice(5)}</small></div>; })}</div></article><article className="admin-panel channel-breakdown"><div className="panel-head"><div><strong>客户结构</strong><span>按账户身份统计</span></div></div><div className="donut-wrap"><div className="donut"><strong>{customers.length}</strong><span>客户总数</span></div><ul><li><i className="retail-dot" />零售客户 <b>{customers.filter((item) => item.channel === "retail").length}</b></li><li><i className="a-dot" />批发A <b>{customers.filter((item) => item.level === "a").length}</b></li><li><i className="b-dot" />批发B <b>{customers.filter((item) => item.level === "b").length}</b></li></ul></div></article></section>
+          <section className="admin-panel"><div className="panel-head"><div><strong>商品经营情况</strong><span>实时库存、价格和销售权限</span></div></div><div className="product-table-wrap"><table className="product-table"><thead><tr><th>款式</th><th>分类</th><th>库存</th><th>零售价</th><th>批发A</th><th>批发B</th><th>可见等级</th><th>状态</th></tr></thead><tbody>{products.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small>{item.sku || "未设置货号"}</small></td><td>{item.category}</td><td className={item.stock < 25 ? "stock-low" : ""}>{item.stock}</td><td>¥{item.retailPrice}</td><td>¥{item.priceA}</td><td>¥{item.priceB}</td><td>{levelName[item.minLevel]}</td><td>{item.status === "active" ? "已上架" : "已下架"}</td></tr>)}</tbody></table></div></section>
         </>}
 
         {tab === "access" && <>
@@ -160,6 +240,8 @@ export default function AdminPage() {
           <div className="modal-head"><div><small>{editing ? "编辑商品" : "新增商品"}</small><h2>{editing ? editing.name : "添加假发款式"}</h2></div><button type="button" onClick={() => setModalOpen(false)} aria-label="关闭">×</button></div>
           <div className="form-grid">
             <label className="wide">款式名称<input required value={form.name} onChange={(e) => updateForm("name", e.target.value)} placeholder="例如：自然头皮直发" /></label>
+            <label>货号 SKU<input value={form.sku} onChange={(e) => updateForm("sku", e.target.value)} placeholder="例如：LS-016" /></label>
+            <label>产品分类<select value={form.category} onChange={(e) => updateForm("category", e.target.value)}><option>短发系列</option><option>中长发</option><option>真人发</option><option>男士系列</option><option>高端定制</option></select></label>
             <label>材质<select value={form.material} onChange={(e) => updateForm("material", e.target.value)}><option>真人发</option><option>高温丝</option><option>真人发混合</option></select></label>
             <label>长度<input value={form.length} onChange={(e) => updateForm("length", e.target.value)} placeholder="45cm" /></label>
             <label>颜色<input value={form.color} onChange={(e) => updateForm("color", e.target.value)} placeholder="自然黑" /></label>

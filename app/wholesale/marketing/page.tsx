@@ -1,0 +1,7 @@
+import WholesaleProtectedPage from "../protected-page";
+
+export const dynamic = "force-dynamic";
+
+export default function WholesaleMarketing() {
+  return <WholesaleProtectedPage view="marketing" />;
+}
