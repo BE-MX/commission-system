@@ -392,6 +392,18 @@ class TestLimitedFaceAdaptation:
         assert all(word not in scene_prompt for word in banned)
         assert "compatible with her existing gaze direction" in scene_prompt
 
+    def test_no_tryon_scene_overrides_the_shared_face_policy(self):
+        facial_direction = re.compile(
+            r"\b(expression|smile|smiling|radiant|refreshed|looking)\b",
+            re.IGNORECASE,
+        )
+        for scene in ai_pipeline.TRYON_SCENES:
+            prompt = scene["prompt"]
+            hit = facial_direction.search(prompt)
+            assert not hit, f"{scene['key']} 强制面部状态: {hit.group() if hit else ''}"
+            assert "key light" not in prompt, f"{scene['key']} 仍指定面部主光"
+            assert "shaping her wig" in prompt, f"{scene['key']} 未把场景光限定到假发/身体/环境"
+
 
 def test_scene_swap_framing_preserves_head_neck_and_shoulders():
     """腰上构图继续保证发丝可辨，但人体比例改用头、颈、肩之间的关系锚定。"""
@@ -408,6 +420,9 @@ def test_scene_swap_framing_preserves_head_neck_and_shoulders():
     assert "never raise the shoulders, shorten the neck" in prompt
     assert "one third of the frame height" not in prompt
     assert "no wide-angle facial distortion" in prompt
+    assert "individual strands" in prompt
+    assert "entire hairstyle inside the frame" in prompt
+    assert "comfortable space above it" in prompt
 
 
 def _variant_prompts(variant="real"):
@@ -570,6 +585,17 @@ class TestLightingBase:
             assert "uniform exposure and colour-temperature blend" in prompt, name
             assert "never repaint the facial shadow pattern" in prompt, name
             assert "directional light fully to the wig, neck, clothing, body and background" in prompt, name
+
+    def test_variants_do_not_reintroduce_local_face_redrawing(self):
+        banned = (
+            "specular sheen on the forehead",
+            "reduce under-eye shadows",
+            "liveliness must come from light, gaze and colour",
+        )
+        for variant in ai_pipeline.PROMPT_VARIANTS:
+            prompt = ai_pipeline.resolve_prompt_variant(variant)
+            for phrase in banned:
+                assert phrase not in prompt, f"{variant} 仍含局部重画面部指令: {phrase}"
 
     def test_face_geometry_lock_on_every_variant_and_path(self):
         """对称几何锁（2026-08-01 补光上线次日瘦脸客户两颊变胖，2026-08-02 修）：

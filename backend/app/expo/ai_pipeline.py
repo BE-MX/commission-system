@@ -978,11 +978,11 @@ _LIGHTING_BASE = (
 #   「do not slim the face or enlarge the eyes」→ 删——单向否定禁令，已被 _LIGHTING_BASE
 #   的对称几何锁（含 eye size 由 identity 锁兜底）取代，别再加回来。
 _SKIN_UNTOUCHED = (
-    " Keep the skin alive rather than smooth: a fine specular sheen on the forehead, "
-    "cheekbones, nose bridge and lips, and natural blood warmth in the lips. "
-    "Every pore, fine line, wrinkle, eye bag and age spot stays exactly as in the original "
+    " Keep the facial skin exactly as photographed, including its natural blood warmth in "
+    "the lips. Every pore, fine line, wrinkle, eye bag and age spot stays exactly as in the original "
     "photo - do not smooth, retouch, plump, lighten or rejuvenate the skin. The liveliness "
-    "must come from light, gaze and colour, never from erasing her age."
+    "of the portrait must come from the wig, body, environment and overall colour balance, "
+    "never from repainting facial skin or erasing her age."
 )
 
 # 头发保护句：只出现在美颜版。磨皮会连带把发丝磨成塑料感，而发丝正是这个产品要卖的东西，
@@ -1014,7 +1014,7 @@ _PROMPT_VARIANT_CLAUSES = {
         + " Use a restrained beauty finish within the existing facial boundary. Retouch her "
         "facial skin the way a magazine "
         "portrait is finished: even out the complexion, soften fine lines and wrinkles, reduce "
-        "under-eye shadows and blemishes, and give the skin a smooth, luminous finish - while "
+        "temporary blemishes, and give the skin a smooth, luminous finish - while "
         "keeping her facial features, bone structure and identity unmistakably the same person, "
         "and keeping enough skin texture that she still reads as a photograph rather than an "
         # 图像模型位置权重偏向靠后（同 C1 审查）：几何复锁必须排在磨皮指令之后（顺序有
@@ -1096,26 +1096,26 @@ _PORTRAIT_SPEC_CLAUSE = (
 TRYON_SCENES = [
     {"key": "whitecollar", "label": "白领高管", "tagline": "从容主场",
      "prompt": ("a bright modern corporate boardroom during a meeting, she stands "
-                "confidently mid-presentation in a chic lightweight summer outfit, one hand gesturing "
-                "naturally toward a softly glowing presentation screen, cool daylight "
-                "from tall windows on her front-left as the key light, a long conference "
+                "mid-presentation in a chic lightweight summer outfit, one hand gesturing "
+                "naturally toward a softly glowing presentation screen, cool window daylight "
+                "shaping her wig, clothing and boardroom, a long conference "
                 "table and blurred out-of-focus seated colleagues far behind")},
     {"key": "teacher", "label": "老师", "tagline": "讲台风采",
      "prompt": ("a warm university lecture hall at the podium, she stands poised while "
                 "teaching with an engaging open-hand gesture in an elegant lightweight summer outfit, "
-                "soft daylight from her front as the key light, a blurred blackboard or "
+                "soft daylight shaping her wig, clothing and lecture hall, a blurred blackboard or "
                 "projection behind and out-of-focus students seated far below, suggested "
                 "only as soft shapes")},
     {"key": "shopowner", "label": "老板娘", "tagline": "门店主理",
-     "prompt": ("an elegant boutique storefront, she stands warmly welcoming a guest "
+     "prompt": ("an elegant boutique storefront, she stands welcoming a guest "
                 "with an inviting open gesture toward tasteful product displays in a "
-                "refined lightweight summer outfit, soft warm shop lighting from her front-right as "
-                "the key light, blurred shelves of merchandise and a faint out-of-focus "
+                "refined lightweight summer outfit, soft warm shop lighting shaping her wig, "
+                "clothing and storefront, blurred shelves of merchandise and a faint out-of-focus "
                 "customer beside her")},
     {"key": "civilservant", "label": "公务员", "tagline": "沉稳干练",
      "prompt": ("a composed government office meeting room, she sits in the front row "
-                "reviewing documents with a calm attentive expression in a crisp "
-                "lightweight summer outfit, even soft ceiling lighting as the key light, a blurred long "
+                "reviewing documents in a crisp lightweight summer outfit, even soft ceiling "
+                "lighting shaping her wig, clothing and meeting room, a blurred long "
                 "table and out-of-focus colleagues seated further back")},
     {"key": "doctor", "label": "医生", "tagline": "专业信赖", "uniform": True,
      "prompt": ("a clean bright clinic consulting room, she stands professionally in a "
@@ -1124,42 +1124,41 @@ TRYON_SCENES = [
                 "her wig, white coat and room, blurred medical shelving and a faintly "
                 "out-of-focus patient seated to the side")},
     {"key": "home", "label": "居家", "tagline": "温馨日常",
-     "prompt": ("a cozy living room beside a sofa, warm afternoon window light from "
-                "her front-left, blurred green plants and wooden furniture behind")},
+     "prompt": ("a cozy living room beside a sofa, warm afternoon window light shaping her wig, "
+                "clothing and living room, blurred green plants and wooden furniture behind")},
     {"key": "gathering", "label": "聚会", "tagline": "晚间光彩",
-     "prompt": ("an evening dinner party, warm pendant light overhead as the key "
-                "light, golden bokeh of string lights and candles behind")},
+     "prompt": ("an evening dinner party, warm pendant light shaping her wig, clothing and "
+                "dining room, golden bokeh of string lights and candles behind")},
     # ── 职场专业（2026-07-10 扩充） ──
     {"key": "lawyer", "label": "律师", "tagline": "庭上锋芒", "uniform": True,
      "prompt": ("a solemn courtroom, she stands confidently delivering her argument with "
-                "a composed articulate expression and a measured hand gesture in a sharp "
-                "lightweight dark summer suit over a silk short-sleeve blouse, focused "
-                "daylight from her front as the key light, blurred "
+                "a measured hand gesture in a sharp lightweight dark summer suit over a silk "
+                "short-sleeve blouse, focused daylight shaping her wig, clothing and courtroom, blurred "
                 "wooden benches and out-of-focus figures seated behind")},
     {"key": "banker", "label": "银行柜员", "tagline": "专业干练", "uniform": True,
      "prompt": ("a bright modern bank hall counter, she stands poised serving a customer "
-                "with a courteous professional smile in a tidy short-sleeve summer uniform, cool even ceiling "
-                "lighting as the key light, blurred glass partitions and a faint "
+                "in a tidy short-sleeve summer uniform, cool even ceiling lighting shaping her wig, "
+                "clothing and bank hall, blurred glass partitions and a faint "
                 "out-of-focus customer in front of the counter")},
     {"key": "accountant", "label": "公司财务", "tagline": "沉稳可靠",
      "prompt": ("a tidy modern office by a filing cabinet, she stands retrieving a "
-                "document with a calm capable expression in an elegant lightweight summer outfit, soft daylight "
-                "as the key light, a blurred desk with a monitor and a faint out-of-focus "
+                "document in an elegant lightweight summer outfit, soft daylight shaping her wig, "
+                "clothing and office, a blurred desk with a monitor and a faint out-of-focus "
                 "colleague waiting beside her")},
     {"key": "director", "label": "社区主任", "tagline": "亲切为民",
      "prompt": ("a warm community service center, she sits attentively helping an elderly "
-                "resident fill out a form with a kind patient smile, pen in hand, in a smart "
-                "lightweight summer outfit, soft daylight from a side window as the key light, blurred "
+                "resident fill out a form, pen in hand, in a smart lightweight summer outfit, "
+                "soft side-window daylight shaping her wig, clothing and service center, blurred "
                 "notice boards and a faint out-of-focus elderly resident across the desk")},
     {"key": "pharmacist", "label": "药剂师", "tagline": "专业亲和", "uniform": True,
      "prompt": ("a clean bright pharmacy, she stands filling a prescription at the medicine "
-                "shelves with a warm attentive expression in a short-sleeve white pharmacist coat, soft "
-                "even lighting from her front as the key light, blurred rows of medicine "
+                "shelves in a short-sleeve white pharmacist coat, soft even lighting shaping her wig, "
+                "white coat and pharmacy, blurred rows of medicine "
                 "drawers and a faint out-of-focus customer waiting at the counter")},
     {"key": "propertymanager", "label": "小区管理员", "tagline": "邻里亲和",
-     "prompt": ("a residential compound lobby, she stands chatting warmly with a resident "
-                "while holding a notebook, a friendly approachable smile in a neat "
-                "lightweight summer outfit, soft daylight from the entrance as the key light, blurred mailboxes "
+     "prompt": ("a residential compound lobby, she stands chatting with a resident "
+                "while holding a notebook in a neat lightweight summer outfit, soft entrance "
+                "daylight shaping her wig, clothing and lobby, blurred mailboxes "
                 "and a faint out-of-focus resident beside her")},
     {"key": "hsrtravel", "label": "高铁出差", "tagline": "出差精致",
      "prompt": ("a high-speed train window seat, she sits in a natural business-travel pose "
@@ -1169,33 +1168,32 @@ TRYON_SCENES = [
     # ── 长辈 / 退休生活（发型提升气质，从容优雅，不改脸/年龄） ──
     {"key": "weddinghost", "label": "喜婆婆", "tagline": "喜庆体面", "uniform": True,  # 旗袍是场景规定装
      "prompt": ("an elegant wedding banquet entrance, she stands graciously welcoming guests "
-                "with a warm delighted smile in a refined festive short-sleeve silk qipao with tasteful "
-                "jewelry, looking poised and radiant, warm golden banquet lighting as the "
-                "key light, a blurred floral arch and out-of-focus guests arriving behind")},
+                "in a refined festive short-sleeve silk qipao with tasteful jewelry, warm golden "
+                "banquet lighting shaping her wig, qipao and entrance, a blurred floral arch "
+                "and out-of-focus guests arriving behind")},
     {"key": "schoolpickup", "label": "接孙放学", "tagline": "校门风采",
      "prompt": ("a primary school gate in the afternoon, she stands waiting to pick up her "
-                "grandchild with a warm expectant smile, in an elegant breezy summer outfit and "
-                "looking notably graceful, soft afternoon daylight as the key light, a "
+                "grandchild in an elegant breezy summer outfit, soft afternoon daylight shaping her wig, "
+                "clothing and school entrance, a "
                 "blurred school gate and out-of-focus parents and grandparents around her")},
     {"key": "squaredance", "label": "广场舞领舞", "tagline": "广场C位", "uniform": True,  # 舞蹈活动装是场景规定装
      "prompt": ("a community plaza at dusk, she leads a group dance rehearsal at the front "
-                "with an energetic radiant smile mid-gesture in a bright well-cut T-shirt "
-                "and comfortable summer activewear, warm low evening light as the key light, blurred plaza trees "
+                "mid-gesture in a bright well-cut T-shirt and comfortable summer activewear, warm low "
+                "evening light shaping her wig, clothing and plaza, blurred plaza trees "
                 "and out-of-focus dancers following behind her")},
     {"key": "seniorcollege", "label": "老年大学", "tagline": "老有所乐",
      "prompt": ("a bright senior-university classroom, she sits gracefully learning a "
-                "musical instrument among peers with a joyful absorbed expression, holding "
-                "the instrument, warm window daylight as the key light, blurred music stands "
+                "musical instrument among peers, holding the instrument, warm window daylight "
+                "shaping her wig, clothing and classroom, blurred music stands "
                 "and out-of-focus classmates around her")},
     {"key": "seniorcafe", "label": "闺蜜咖啡", "tagline": "闺蜜时光",
-     "prompt": ("a cozy sunlit cafe, she sits chatting happily over coffee with friends, a "
-                "relaxed radiant smile in a tasteful breezy summer outfit, warm afternoon window "
-                "light as the key light, a blurred cafe interior and out-of-focus friends "
+     "prompt": ("a cozy sunlit cafe, she sits chatting over coffee with friends in a tasteful "
+                "breezy summer outfit, warm afternoon window light shaping her wig, clothing and cafe, "
+                "a blurred cafe interior and out-of-focus friends "
                 "across the small table")},
     {"key": "parkwalk", "label": "晨间公园", "tagline": "晨间从容",
-     "prompt": ("a green park path in the morning, she takes a leisurely walk looking "
-                "refreshed and at ease with a gentle serene smile in an elegant "
-                "lightweight summer outfit, soft golden morning light from her side as the key light, "
+     "prompt": ("a green park path in the morning, she takes a leisurely walk in an elegant "
+                "lightweight summer outfit, soft golden morning light shaping her wig, clothing and path, "
                 "blurred trees and greenery behind")},
 ]
 
