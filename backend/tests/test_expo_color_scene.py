@@ -163,8 +163,10 @@ def test_build_prompt_tryon_with_scene_swaps_background():
     assert "background and framing exactly the same" not in prompt
     assert "85mm" in prompt  # 场景置换路径带摄像语言
     assert "magazine-quality" not in prompt  # 不能误入 scene 模式模板
-    # 叙事化：放开姿势/表情但锁身份，第二人物只作虚化背景（用户定稿 2026-07-09）
-    assert "adapt the background, outfit, pose, gesture and facial expression" in prompt
+    # 场景置换放开身体/环境，但脸只做有限适配（用户确认 2026-08-29）
+    assert "Adapt the background, outfit, body pose and gesture" in prompt
+    assert "minimal coordinated adjustment" in prompt
+    assert "Naturally adapt the background, outfit, pose, gesture and facial expression" not in prompt
     assert "never with detailed faces or hands" in prompt
 
 
@@ -351,26 +353,76 @@ def test_unlocked_scene_prompts_have_no_hardcoded_garments():
         assert not m, f"{s['key']} 泄漏单品词 {m.group() if m else ''}: {s['prompt']}"
 
 
-def test_scene_swap_framing_is_waist_up_with_both_bounds():
-    """构图锚点（2026-07-31）：这条子句已在 07-27 与 07-31 之间来回过一次，
-    且回退是静默的——原有 `assert "85mm" in prompt` 挡不住任何回退（85mm 在
-    _TRYON_SCENE_CLAUSE 里另有一份）。上下两道边界必须同时在场：
-    收太远发丝看不清，放太近就是 07-27 的大头畸变。"""
+def _tryon_scene_prompt(scene_key: str, variant: str = "real") -> str:
+    scene = ai_pipeline.resolve_tryon_scene(scene_key)
+    session = _session()
+    wig = ExpoWig(model_no="LS-FACE", name="身份测试发", wig_description="short bob")
+    row = ExpoResult(
+        session_id=1,
+        wig_id=1,
+        scene_json={"key": scene_key, "label": scene["label"]},
+    )
+    return ai_pipeline._build_prompt(session, row, wig, variant=variant)[0]
+
+
+class TestLimitedFaceAdaptation:
+    def test_customer_photo_is_the_only_face_source(self):
+        prompt = _tryon_scene_prompt("doctor")
+        assert "sole visual source of truth for her face" in prompt
+        assert "stable natural asymmetry, age traits and identifying skin marks" in prompt
+        assert "wig references provide hair information only" in prompt
+
+    def test_scene_is_composed_around_the_existing_gaze_first(self):
+        prompt = _tryon_scene_prompt("hsrtravel")
+        assert "compose the props and interaction around her existing gaze" in prompt
+        assert "minimal coordinated adjustment" in prompt
+        assert "same head-pose family" in prompt
+        assert "same expression category and mouth-open state" in prompt
+
+    def test_scene_no_longer_requires_free_face_reinterpretation(self):
+        prompt = _tryon_scene_prompt("doctor")
+        assert "Naturally adapt the background, outfit, pose, gesture and facial expression" not in prompt
+        assert "locks identity, not expression" not in prompt
+        assert "from frontal to profile or profile to frontal" in prompt
+
+    @pytest.mark.parametrize("scene_key", ["doctor", "hsrtravel"])
+    def test_identity_sensitive_scenes_do_not_prescribe_a_new_expression(self, scene_key):
+        scene_prompt = ai_pipeline.resolve_tryon_scene(scene_key)["prompt"]
+        banned = ("expression", "smile", "reassuring", "looking composed", "confident expression")
+        assert all(word not in scene_prompt for word in banned)
+        assert "compatible with her existing gaze direction" in scene_prompt
+
+    def test_no_tryon_scene_overrides_the_shared_face_policy(self):
+        facial_direction = re.compile(
+            r"\b(expression|smile|smiling|radiant|refreshed|looking)\b",
+            re.IGNORECASE,
+        )
+        for scene in ai_pipeline.TRYON_SCENES:
+            prompt = scene["prompt"]
+            hit = facial_direction.search(prompt)
+            assert not hit, f"{scene['key']} 强制面部状态: {hit.group() if hit else ''}"
+            assert "key light" not in prompt, f"{scene['key']} 仍指定面部主光"
+            assert "shaping her wig" in prompt, f"{scene['key']} 未把场景光限定到假发/身体/环境"
+
+
+def test_scene_swap_framing_preserves_head_neck_and_shoulders():
+    """腰上构图继续保证发丝可辨，但人体比例改用头、颈、肩之间的关系锚定。"""
     session = _session()
     wig = ExpoWig(model_no="LS-9", name="胎毛波波", wig_description="airy bob")
     row = ExpoResult(session_id=1, wig_id=9,
                      scene_json={"key": "whitecollar", "label": "白领高管"})
     prompt, _, _ = ai_pipeline._build_prompt(session, row, wig)
 
-    assert "waist-up" in prompt                      # 下限：收到腰上，发丝可辨
-    assert "one third of the frame height" in prompt  # 上限：头占画面高约 1/3
-    assert "shoulders and upper torso must stay in frame" in prompt
-    assert "no wide-angle facial distortion" in prompt  # 防 07-27 畸变复发
-    # 已被证伪的旧口径不得回填
-    assert "mid-thigh" not in prompt
-    assert "one-seventh" not in prompt
-    # 「主体/subject」是摆拍语义，会顶掉 07-09 定稿的抓拍感
-    assert "subject of this photograph" not in prompt
+    assert "waist-up" in prompt
+    assert "full shoulder span, upper chest and collarbone area" in prompt
+    assert "original head scale and natural neck length" in prompt
+    assert "visible space from jawline to neckline" in prompt
+    assert "never raise the shoulders, shorten the neck" in prompt
+    assert "one third of the frame height" not in prompt
+    assert "no wide-angle facial distortion" in prompt
+    assert "individual strands" in prompt
+    assert "entire hairstyle inside the frame" in prompt
+    assert "comfortable space above it" in prompt
 
 
 def _variant_prompts(variant="real"):
@@ -396,13 +448,14 @@ class TestPromptVariantSwitch:
     最要命的失败形态是「一个非法值让展位生不出图」，所以回落而不是抛。
     """
 
-    def test_all_three_variants_light_the_face(self):
-        """用光底座三版共有：真实版若不打光，今早那条「脸上没精神」的反馈
-        对每个不改默认值的客户就原封不动地留着。"""
+    def test_all_three_variants_limit_face_relighting(self):
+        """三版都保留场景光影，但不得靠局部重打面部光来实现。"""
         for name in ai_pipeline.PROMPT_VARIANTS:
             clause = ai_pipeline.resolve_prompt_variant(name)
-            assert "never flat, dim or muddy" in clause, f"{name} 没打光"
-            assert "distinct catchlights" in clause, f"{name} 缺眼神光"
+            assert "uniform exposure and colour-temperature blend" in clause, name
+            assert "do not add a new local key light, fill light or catchlight" in clause, name
+            assert "directional light fully to the wig, neck, clothing, body and background" in clause, name
+            assert "distinct catchlights" not in clause, name
 
     def test_skin_handling_is_what_actually_differs(self):
         """三版不能是「换了措辞的同一件事」——上一个选择器就是因为假选择被撤的。
@@ -525,17 +578,24 @@ class TestPromptVariantWiring:
 
 
 class TestLightingBase:
-    """三版共有的用光底座（2026-08-01）：补的是用光与眼神。
+    """三版共有的身份安全光影底座（2026-08-29）。"""
 
-    真实/柔光两版最容易被后人"顺手优化"成美颜词，那样就跟美颜版没区别了。
-    正反两面都锚死。
-    """
-
-    def test_present_on_every_output_path(self):
-        """脸的用光与场景无关，三条路径都得有——漏一条就是「有的图有神采有的没有」。"""
+    def test_identity_safe_lighting_reaches_every_output_path(self):
         for name, prompt in _variant_prompts().items():
-            assert "never flat, dim or muddy" in prompt, f"{name} 缺面部用光指令"
-            assert "distinct catchlights" in prompt, f"{name} 缺眼神光指令"
+            assert "uniform exposure and colour-temperature blend" in prompt, name
+            assert "never repaint the facial shadow pattern" in prompt, name
+            assert "directional light fully to the wig, neck, clothing, body and background" in prompt, name
+
+    def test_variants_do_not_reintroduce_local_face_redrawing(self):
+        banned = (
+            "specular sheen on the forehead",
+            "reduce under-eye shadows",
+            "liveliness must come from light, gaze and colour",
+        )
+        for variant in ai_pipeline.PROMPT_VARIANTS:
+            prompt = ai_pipeline.resolve_prompt_variant(variant)
+            for phrase in banned:
+                assert phrase not in prompt, f"{variant} 仍含局部重画面部指令: {phrase}"
 
     def test_face_geometry_lock_on_every_variant_and_path(self):
         """对称几何锁（2026-08-01 补光上线次日瘦脸客户两颊变胖，2026-08-02 修）：
@@ -547,8 +607,8 @@ class TestLightingBase:
                 assert "neither slimmer nor fuller" in prompt, f"{variant}/{name} 缺对称几何锁"
                 assert "same face width, cheek contour and jawline" in prompt, \
                     f"{variant}/{name} 缺脸型几何锚定"
-                assert "locks her facial structure, not her expression" in prompt, \
-                    f"{variant}/{name} 几何锁缺表情豁免"
+                assert "facial anatomy stays immutable during any allowed micro-expression" in prompt, \
+                    f"{variant}/{name} 缺有限表情下的面部结构锁"
         # 美颜版必须在磨皮指令**之后**再锁一次几何（含 eye size——磨皮语境下笑会眯眼）；
         # 位置权重靠后，先锁后磨等于没锁，顺序也锚死
         beauty = ai_pipeline.resolve_prompt_variant("beauty")
@@ -575,7 +635,7 @@ class TestLightingBase:
         for name, prompt in _variant_prompts(variant="real").items():
             assert "do not smooth, retouch, plump, lighten or rejuvenate" in prompt, name
             assert "wrinkle, eye bag and age spot stays exactly as in the original" in prompt, name
-            assert "light may model her features, never reshape them" in prompt, name
+            assert "light may blend the portrait, never reshape the face" in prompt, name
 
     def test_only_the_beauty_variant_may_use_retouch_words(self):
         """radiant/glowing/youthful 是美颜滤镜触发词：真实/柔光两版一旦沾上就翻车成磨皮脸。

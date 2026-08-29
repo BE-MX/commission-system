@@ -778,7 +778,11 @@ _COMPOSITE_TEMPLATE = (
     "Reproduce the wig's exact silhouette, length, layering, fringe, volume, parting and "
     "texture precisely as shown in the reference images, even if it looks very different "
     "from the original hair. Keep the customer's face, facial features and skin tone "
-    "exactly the same as the first image, with light natural makeup. The hairline "
+    "exactly the same as the first image, with light natural makeup. Treat the FIRST "
+    "image as the sole visual source of truth for her face. Preserve its exact geometry, "
+    "stable natural asymmetry, age traits and identifying skin marks; do not average, "
+    "symmetrize, idealize or reinterpret them. The wig references provide hair information "
+    "only and must never influence the face. The hairline "
     "transition must look naturally grown, with realistic fine baby hairs at the "
     "temples. {extra}"
 )
@@ -885,55 +889,43 @@ _TRYON_KEEP_BG_CLAUSE = (
     "as the first image, preserve the original photo's depth of field, and light the new "
     "hair to match the original photo's light direction."
 )
-# 场景置换（叙事化 · 单人收敛）：放开姿势/手势/表情让人物自然融入场景并呈现自信、投入的
-# 神态；但硬锁面部身份与发型发色（与合成锚定一致，保证换脸不换人）；场景里的其他人物只作
-# 虚化背景暗示，绝不清晰出镜——单人自拍合成出第二张清晰人脸/手极易崩坏（用户定稿 2026-07-09）
+# 场景置换（有限面部适配）：身体、服装和环境按场景变化；头部、视线和表情默认沿用原图，
+# 优先让道具与互动方向迁就原视线。只有场景明显不协调时才允许三者作为一个整体做最小调整，
+# 不得跨越正脸/侧脸或表情类别，避免为场景叙事重画整张脸（用户确认 2026-08-29）。
 _TRYON_SCENE_CLAUSE = (
-    " Recreate the portrait in {scene}. Naturally adapt the background, outfit, pose, "
-    "gesture and facial expression to suit this scene with a confident, engaged demeanor "
-    "- this refines the earlier same-face note, which locks identity, not expression. "
-    "Keep the face's identity, bone structure and skin tone recognizably identical to the "
-    "first image, and the hairstyle and hair color exactly as composited. Any other people "
-    "may appear only as a soft, blurred, out-of-focus background presence - never in sharp "
-    "focus, never with detailed faces or hands. The hair highlights and shadows must follow "
-    "the scene's light direction, blending naturally with no cut-and-paste look. Shot like a "
-    "candid 85mm documentary snapshot with shallow depth of field focused on the face and "
-    "hair - caught naturally mid-action and unposed, as if a third person quietly "
-    "photographed her in the moment. Her gaze and head are directed naturally within the "
-    "scene (toward what she is doing, looking at or speaking to), not fixed straight at the "
-    "camera unless that truly fits the moment, with a relaxed natural micro-expression rather "
-    "than a stiff, posed, camera-facing studio look."
+    " Recreate the portrait in {scene}. Adapt the background, outfit, body pose and gesture "
+    "to suit the scene, while preserving the FIRST image as the facial reference. Prefer her "
+    "existing head angle, gaze direction and expression category, and first compose the props "
+    "and interaction around her existing gaze. Only when the scene would otherwise look "
+    "physically inconsistent, allow a minimal coordinated adjustment of head, eyes and "
+    "micro-expression together, staying in the same head-pose family and the same expression "
+    "category and mouth-open state. Never turn her from frontal to profile or profile to "
+    "frontal, and never introduce a large head tilt, turn or pitch. Such adjustment may change "
+    "only demeanor, never identity, facial geometry, age traits or skin marks. Keep the wig and "
+    "hair color exactly as composited. Any other people may appear only as a soft, blurred, "
+    "out-of-focus background presence - never in sharp focus, never with detailed faces or "
+    "hands. The hair highlights and shadows must follow the scene's light direction, blending "
+    "naturally with no cut-and-paste look. Shot like a candid 85mm documentary snapshot with "
+    "shallow depth of field focused on the face and hair, natural and unposed."
 ) + _SUMMER_WARDROBE_CLAUSE
 
-# 构图与人体比例（2026-07-27 亮哥反馈「人物与背景比例不协调、融入感差」「头身比不协调」，
-# 2026-07-31 亮哥反馈「全是全身远景，体现不出写真效果和头发质感」——上一版矫枉过正）：
-# **两轮反馈是两个不同的病，别再来回推翻**：
-#   头身比失衡 / 贴图感 ← 相机太近造成的**透视畸变**与背景压缩，靠「拍摄距离 + 85mm 长焦」
-#                          治，不是靠把人拍小治；
-#   发丝质感看不清      ← **景别**太远，只能靠把取景收到腰以上治。
-# 85mm 配 1.5m 正是经典半身人像组合，收景别本身不会把 7-27 的畸变带回来。但**光学语言
-# （距离/焦距）对图像模型的约束力远弱于画面占比语言**，所以下限收近的同时必须补一道显式
-# 上限，否则「fill a generous share」上不封顶会把大头推回来（审查 2026-07-31）。
-# 相对 7-27 版的实际增删，别再照猜：
-#   保留 = 85mm 焦距、头身比正确、无广角畸变、统一透视/视平线/光线、非贴图
-#   替换 = 「头占身高 1/7」(全身语境下的锚，waist-up 无意义) → 「头占画面高约 1/3」(实测值固化)
-#          「禁止头肩特写」→ 「肩与上半身必须在框内」(同一道上限，改用 waist-up 语境表述)
-#          「前中后三层景深」→ 「人物与背景景深分离」(waist-up 下前景层多数落框外)
-#   删除 = 「no foreshortened torso or legs」「properly grounded」(腿与落地点已不在画面内)
-# 试戴产品的主体就是那顶假发——发丝质感看不清，这张照片对客户就没有价值。但措辞只约束
-# 「可辨识度」不写「主体/subject」：后者是摆拍语义，会顶掉 07-09 定稿的抓拍感。
-# **只用于场景置换路径**：原景保持(_TRYON_KEEP_BG_CLAUSE)要求构图与原图完全一致，冲突。
+# 构图与人体比例（2026-08-29）：保留 85mm 腰上景别以展示发丝，但删除「头占画面三分之一」
+# 这一会把蓬松假发解释成大头的单点锚。改用头、颈、肩、锁骨之间的关系互相校验：假发可改变
+# 发型轮廓，不能改变客户头骨、颈长和肩宽。只用于场景置换，原景保持路径继续锁原构图。
 _FRAMING_CLAUSE = (
     " Framing and human proportion: photograph her from about 1.5 metres away on the 85mm lens "
     "as a waist-up portrait. At this crop the hairstyle must read clearly - individual strands, "
     "the cut's layering, its silhouette and its sheen all legible at a glance. Keep her entire "
     "hairstyle inside the frame with comfortable space above it - never crop the top, the sides "
-    "or the ends of the hair. Her shoulders and upper torso must stay in frame: this is a "
-    "waist-up shot, not a head-and-shoulders close-up, and her head should span roughly one "
-    "third of the frame height. Her head must stay in correct natural proportion to her "
-    "shoulders and torso; no enlarged head, no wide-angle facial distortion. Only her upper "
-    "body is in frame - render her top, neckline and any visible accessories faithfully, while "
-    "her lower garments and footwear simply fall outside the crop. Keep the setting around her "
+    "or the ends of the hair. Keep her full shoulder span, upper chest and collarbone area in "
+    "frame: this is a waist-up portrait, not a head-and-shoulders close-up. Preserve the FIRST "
+    "image's original head scale and natural neck length relative to her shoulders and torso, "
+    "with natural visible space from jawline to neckline; never raise the shoulders, shorten "
+    "the neck, enlarge the skull or let the wig's volume change the body's proportions. The wig "
+    "silhouette comes from its references, but the customer's head, neck and shoulder proportions "
+    "do not. Keep correct natural human proportions with no enlarged head and no wide-angle facial "
+    "distortion. Render her top, neckline and any visible accessories faithfully, while her lower "
+    "garments and footwear simply fall outside the crop. Keep the setting around her "
     "readable behind and beside her but softly out of focus, sharing one consistent perspective, "
     "eye level and lighting with her, with genuine depth separation between her and the "
     "background, so she belongs in the scene rather than being a cut-out pasted onto a backdrop."
@@ -963,32 +955,20 @@ _FRAMING_CLAUSE = (
 PROMPT_VARIANTS = ("real", "soft", "beauty")
 DEFAULT_PROMPT_VARIANT = "real"
 
-# 三版共用的用光底座：补的是**摄影用光与眼神**，不是美颜。
-# 四条刻意为之的措辞，改动前先读：
-# ①不写 radiant/glowing/youthful——这些是美颜滤镜触发词，一写就翻车成磨皮脸（真实/柔光两版
-#   尤其不能出现；美颜版另有专门措辞，见下）；
-# ②不指定主光位，只说「跟随现场光方向再塑形」——原景保持路径要求沿用客户原照片的光，
-#   硬派一盏新主光会让脸与背景光不咬合，反而更像贴图；
-# ③不提年龄：prompt 里出现 mature/elderly 会把人往老里推，而 age_range 是模型估的本就不可靠。
-# ④几何锁必须**对称且正向**（2026-08-02 亮哥反馈「瘦脸颊客户出图两颊显著变胖」）：
-#   上一版「lift the shadow side with gentle fill」把瘦脸的颧下凹陷当暗部填掉——生图模型
-#   不是真打光而是重画脸，凹陷一填脸颊就圆；且旧禁令「do not slim the face」是单向的，
-#   模型为保险只往「不瘦」偏，瘦脸客户首当其冲。修法=填光限定「保住暗部细节即可、
-#   结构性阴影不许动」+ 对称几何锁「neither slimmer nor fuller」锚回第一张图。
-#   锁里不点名 hollows 方向（瘦脸保凹陷/圆脸不许挖凹陷，条件措辞模型执行不稳，
-#   锚「与原图一致」两个方向都兜住）。锁必须带「structure, not expression」豁免：
-#   场景置换路径放开表情且多个场景文案明写 smile（微笑天然改变颊形），无豁免的
-#   exact geometry 排在其后会打架——要么僵脸要么锁被无视（对抗性审查 2026-08-02）。
+# 三版共用的身份安全光影底座（2026-08-29）：场景光影完整作用于假发、身体和环境，
+# 面部只做低强度的整体曝光/色温融合，不再单独塑造颧骨、眉弓、阴影侧或眼神光。
+# 原因：图像模型不是在原脸上真实补光，而是通过重画脸实现局部用光，医生和高铁场景因此
+# 出现身份、年龄与脸型漂移。对称几何锁继续保留，有限微表情只能动神态，不能动面部结构。
 _LIGHTING_BASE = (
-    " Give her face the same attention a portrait photographer would: follow the existing "
-    "light direction of the scene, but shape it - lift the shadow side only enough to keep "
-    "its detail readable, preserving the natural shadows that define her bone structure, "
-    "and let a soft key catch the cheekbones and brow, so her face reads three-dimensional "
-    "and never flat, dim or muddy. Her face must keep the exact geometry of the first "
-    "image - the same face width, cheek contour and jawline, neither slimmer nor fuller; "
-    "this locks her facial structure, not her expression - light may model her features, "
-    "never reshape them. Her eyes must look clear, awake and engaged, with distinct "
-    "catchlights."
+    " Preserve the FIRST image's facial lighting pattern and visible facial skin as the visual "
+    "anchor. Match the face to the scene only with a gentle, uniform exposure and "
+    "colour-temperature blend; do not add a new local key light, fill light or catchlight on "
+    "the face, and never repaint the facial shadow pattern around the cheekbones, brow, eyes, "
+    "nose or mouth. Apply the scene's directional light fully to the wig, neck, clothing, body "
+    "and background, including coherent highlights, contact shadows and colour. Her face keeps "
+    "the exact geometry of the first image - the same face width, cheek contour and jawline, "
+    "neither slimmer nor fuller; facial anatomy stays immutable during any allowed "
+    "micro-expression; light may blend the portrait, never reshape the face."
 )
 
 # 皮肤纹理不可动的措辞（真实版）：逐项写死，堵掉模型「变年轻=变好看」的捷径。
@@ -998,11 +978,11 @@ _LIGHTING_BASE = (
 #   「do not slim the face or enlarge the eyes」→ 删——单向否定禁令，已被 _LIGHTING_BASE
 #   的对称几何锁（含 eye size 由 identity 锁兜底）取代，别再加回来。
 _SKIN_UNTOUCHED = (
-    " Keep the skin alive rather than smooth: a fine specular sheen on the forehead, "
-    "cheekbones, nose bridge and lips, and natural blood warmth in the lips. "
-    "Every pore, fine line, wrinkle, eye bag and age spot stays exactly as in the original "
+    " Keep the facial skin exactly as photographed, including its natural blood warmth in "
+    "the lips. Every pore, fine line, wrinkle, eye bag and age spot stays exactly as in the original "
     "photo - do not smooth, retouch, plump, lighten or rejuvenate the skin. The liveliness "
-    "must come from light, gaze and colour, never from erasing her age."
+    "of the portrait must come from the wig, body, environment and overall colour balance, "
+    "never from repainting facial skin or erasing her age."
 )
 
 # 头发保护句：只出现在美颜版。磨皮会连带把发丝磨成塑料感，而发丝正是这个产品要卖的东西，
@@ -1022,18 +1002,19 @@ _PROMPT_VARIANT_CLAUSES = {
     # 柔=光源大、影缘软，不等于把结构阴影填没，见 _LIGHTING_BASE ④
     "soft": (
         _LIGHTING_BASE
-        + " Use a softer, more diffused light overall - a large gentle source that lowers "
-        "contrast for a smooth, flattering render, while the shadows that define her face "
-        "shape stay present, only softer-edged."
+        + " Use a softer, more diffused light on the wig, clothing, body and background, "
+        "lowering contrast outside the facial anchor while keeping the face limited to the "
+        "uniform blend described above."
         + _SKIN_UNTOUCHED
     ),
     # 美颜版：真磨皮提亮。这里刻意允许上面禁掉的那类词，因为这正是本版要的效果；
     # 但范围死死限定在面部皮肤，并配上头发保护句
     "beauty": (
         _LIGHTING_BASE
-        + " Use a soft, flattering beauty light. Retouch her facial skin the way a magazine "
+        + " Use a restrained beauty finish within the existing facial boundary. Retouch her "
+        "facial skin the way a magazine "
         "portrait is finished: even out the complexion, soften fine lines and wrinkles, reduce "
-        "under-eye shadows and blemishes, and give the skin a smooth, luminous finish - while "
+        "temporary blemishes, and give the skin a smooth, luminous finish - while "
         "keeping her facial features, bone structure and identity unmistakably the same person, "
         "and keeping enough skin texture that she still reads as a photograph rather than an "
         # 图像模型位置权重偏向靠后（同 C1 审查）：几何复锁必须排在磨皮指令之后（顺序有
@@ -1115,105 +1096,104 @@ _PORTRAIT_SPEC_CLAUSE = (
 TRYON_SCENES = [
     {"key": "whitecollar", "label": "白领高管", "tagline": "从容主场",
      "prompt": ("a bright modern corporate boardroom during a meeting, she stands "
-                "confidently mid-presentation in a chic lightweight summer outfit, one hand gesturing "
-                "naturally toward a softly glowing presentation screen, cool daylight "
-                "from tall windows on her front-left as the key light, a long conference "
+                "mid-presentation in a chic lightweight summer outfit, one hand gesturing "
+                "naturally toward a softly glowing presentation screen, cool window daylight "
+                "shaping her wig, clothing and boardroom, a long conference "
                 "table and blurred out-of-focus seated colleagues far behind")},
     {"key": "teacher", "label": "老师", "tagline": "讲台风采",
      "prompt": ("a warm university lecture hall at the podium, she stands poised while "
                 "teaching with an engaging open-hand gesture in an elegant lightweight summer outfit, "
-                "soft daylight from her front as the key light, a blurred blackboard or "
+                "soft daylight shaping her wig, clothing and lecture hall, a blurred blackboard or "
                 "projection behind and out-of-focus students seated far below, suggested "
                 "only as soft shapes")},
     {"key": "shopowner", "label": "老板娘", "tagline": "门店主理",
-     "prompt": ("an elegant boutique storefront, she stands warmly welcoming a guest "
+     "prompt": ("an elegant boutique storefront, she stands welcoming a guest "
                 "with an inviting open gesture toward tasteful product displays in a "
-                "refined lightweight summer outfit, soft warm shop lighting from her front-right as "
-                "the key light, blurred shelves of merchandise and a faint out-of-focus "
+                "refined lightweight summer outfit, soft warm shop lighting shaping her wig, "
+                "clothing and storefront, blurred shelves of merchandise and a faint out-of-focus "
                 "customer beside her")},
     {"key": "civilservant", "label": "公务员", "tagline": "沉稳干练",
      "prompt": ("a composed government office meeting room, she sits in the front row "
-                "reviewing documents with a calm attentive expression in a crisp "
-                "lightweight summer outfit, even soft ceiling lighting as the key light, a blurred long "
+                "reviewing documents in a crisp lightweight summer outfit, even soft ceiling "
+                "lighting shaping her wig, clothing and meeting room, a blurred long "
                 "table and out-of-focus colleagues seated further back")},
     {"key": "doctor", "label": "医生", "tagline": "专业信赖", "uniform": True,
      "prompt": ("a clean bright clinic consulting room, she stands professionally in a "
-                "short-sleeve white coat with a stethoscope, attentive and reassuring as she reviews "
-                "a chart, cool clinical daylight from her front as the key light, blurred "
-                "medical shelving and a faintly out-of-focus patient seated to the side")},
+                "short-sleeve white coat with a stethoscope while reviewing a chart positioned "
+                "compatible with her existing gaze direction, cool clinical daylight shaping "
+                "her wig, white coat and room, blurred medical shelving and a faintly "
+                "out-of-focus patient seated to the side")},
     {"key": "home", "label": "居家", "tagline": "温馨日常",
-     "prompt": ("a cozy living room beside a sofa, warm afternoon window light from "
-                "her front-left, blurred green plants and wooden furniture behind")},
+     "prompt": ("a cozy living room beside a sofa, warm afternoon window light shaping her wig, "
+                "clothing and living room, blurred green plants and wooden furniture behind")},
     {"key": "gathering", "label": "聚会", "tagline": "晚间光彩",
-     "prompt": ("an evening dinner party, warm pendant light overhead as the key "
-                "light, golden bokeh of string lights and candles behind")},
+     "prompt": ("an evening dinner party, warm pendant light shaping her wig, clothing and "
+                "dining room, golden bokeh of string lights and candles behind")},
     # ── 职场专业（2026-07-10 扩充） ──
     {"key": "lawyer", "label": "律师", "tagline": "庭上锋芒", "uniform": True,
      "prompt": ("a solemn courtroom, she stands confidently delivering her argument with "
-                "a composed articulate expression and a measured hand gesture in a sharp "
-                "lightweight dark summer suit over a silk short-sleeve blouse, focused "
-                "daylight from her front as the key light, blurred "
+                "a measured hand gesture in a sharp lightweight dark summer suit over a silk "
+                "short-sleeve blouse, focused daylight shaping her wig, clothing and courtroom, blurred "
                 "wooden benches and out-of-focus figures seated behind")},
     {"key": "banker", "label": "银行柜员", "tagline": "专业干练", "uniform": True,
      "prompt": ("a bright modern bank hall counter, she stands poised serving a customer "
-                "with a courteous professional smile in a tidy short-sleeve summer uniform, cool even ceiling "
-                "lighting as the key light, blurred glass partitions and a faint "
+                "in a tidy short-sleeve summer uniform, cool even ceiling lighting shaping her wig, "
+                "clothing and bank hall, blurred glass partitions and a faint "
                 "out-of-focus customer in front of the counter")},
     {"key": "accountant", "label": "公司财务", "tagline": "沉稳可靠",
      "prompt": ("a tidy modern office by a filing cabinet, she stands retrieving a "
-                "document with a calm capable expression in an elegant lightweight summer outfit, soft daylight "
-                "as the key light, a blurred desk with a monitor and a faint out-of-focus "
+                "document in an elegant lightweight summer outfit, soft daylight shaping her wig, "
+                "clothing and office, a blurred desk with a monitor and a faint out-of-focus "
                 "colleague waiting beside her")},
     {"key": "director", "label": "社区主任", "tagline": "亲切为民",
      "prompt": ("a warm community service center, she sits attentively helping an elderly "
-                "resident fill out a form with a kind patient smile, pen in hand, in a smart "
-                "lightweight summer outfit, soft daylight from a side window as the key light, blurred "
+                "resident fill out a form, pen in hand, in a smart lightweight summer outfit, "
+                "soft side-window daylight shaping her wig, clothing and service center, blurred "
                 "notice boards and a faint out-of-focus elderly resident across the desk")},
     {"key": "pharmacist", "label": "药剂师", "tagline": "专业亲和", "uniform": True,
      "prompt": ("a clean bright pharmacy, she stands filling a prescription at the medicine "
-                "shelves with a warm attentive expression in a short-sleeve white pharmacist coat, soft "
-                "even lighting from her front as the key light, blurred rows of medicine "
+                "shelves in a short-sleeve white pharmacist coat, soft even lighting shaping her wig, "
+                "white coat and pharmacy, blurred rows of medicine "
                 "drawers and a faint out-of-focus customer waiting at the counter")},
     {"key": "propertymanager", "label": "小区管理员", "tagline": "邻里亲和",
-     "prompt": ("a residential compound lobby, she stands chatting warmly with a resident "
-                "while holding a notebook, a friendly approachable smile in a neat "
-                "lightweight summer outfit, soft daylight from the entrance as the key light, blurred mailboxes "
+     "prompt": ("a residential compound lobby, she stands chatting with a resident "
+                "while holding a notebook in a neat lightweight summer outfit, soft entrance "
+                "daylight shaping her wig, clothing and lobby, blurred mailboxes "
                 "and a faint out-of-focus resident beside her")},
     {"key": "hsrtravel", "label": "高铁出差", "tagline": "出差精致",
-     "prompt": ("a high-speed train window seat, she sits looking composed and put-together "
-                "with a subtle confident expression in a crisp lightweight summer outfit, a laptop on the tray, "
-                "bright daylight streaming through the large train window as the key light, "
-                "blurred landscape rushing past outside")},
+     "prompt": ("a high-speed train window seat, she sits in a natural business-travel pose "
+                "with a laptop and tray positioned compatible with her existing gaze direction, "
+                "bright window daylight shaping her wig, shoulders, clothing and seat, with a "
+                "simple softly blurred sense of landscape motion outside")},
     # ── 长辈 / 退休生活（发型提升气质，从容优雅，不改脸/年龄） ──
     {"key": "weddinghost", "label": "喜婆婆", "tagline": "喜庆体面", "uniform": True,  # 旗袍是场景规定装
      "prompt": ("an elegant wedding banquet entrance, she stands graciously welcoming guests "
-                "with a warm delighted smile in a refined festive short-sleeve silk qipao with tasteful "
-                "jewelry, looking poised and radiant, warm golden banquet lighting as the "
-                "key light, a blurred floral arch and out-of-focus guests arriving behind")},
+                "in a refined festive short-sleeve silk qipao with tasteful jewelry, warm golden "
+                "banquet lighting shaping her wig, qipao and entrance, a blurred floral arch "
+                "and out-of-focus guests arriving behind")},
     {"key": "schoolpickup", "label": "接孙放学", "tagline": "校门风采",
      "prompt": ("a primary school gate in the afternoon, she stands waiting to pick up her "
-                "grandchild with a warm expectant smile, in an elegant breezy summer outfit and "
-                "looking notably graceful, soft afternoon daylight as the key light, a "
+                "grandchild in an elegant breezy summer outfit, soft afternoon daylight shaping her wig, "
+                "clothing and school entrance, a "
                 "blurred school gate and out-of-focus parents and grandparents around her")},
     {"key": "squaredance", "label": "广场舞领舞", "tagline": "广场C位", "uniform": True,  # 舞蹈活动装是场景规定装
      "prompt": ("a community plaza at dusk, she leads a group dance rehearsal at the front "
-                "with an energetic radiant smile mid-gesture in a bright well-cut T-shirt "
-                "and comfortable summer activewear, warm low evening light as the key light, blurred plaza trees "
+                "mid-gesture in a bright well-cut T-shirt and comfortable summer activewear, warm low "
+                "evening light shaping her wig, clothing and plaza, blurred plaza trees "
                 "and out-of-focus dancers following behind her")},
     {"key": "seniorcollege", "label": "老年大学", "tagline": "老有所乐",
      "prompt": ("a bright senior-university classroom, she sits gracefully learning a "
-                "musical instrument among peers with a joyful absorbed expression, holding "
-                "the instrument, warm window daylight as the key light, blurred music stands "
+                "musical instrument among peers, holding the instrument, warm window daylight "
+                "shaping her wig, clothing and classroom, blurred music stands "
                 "and out-of-focus classmates around her")},
     {"key": "seniorcafe", "label": "闺蜜咖啡", "tagline": "闺蜜时光",
-     "prompt": ("a cozy sunlit cafe, she sits chatting happily over coffee with friends, a "
-                "relaxed radiant smile in a tasteful breezy summer outfit, warm afternoon window "
-                "light as the key light, a blurred cafe interior and out-of-focus friends "
+     "prompt": ("a cozy sunlit cafe, she sits chatting over coffee with friends in a tasteful "
+                "breezy summer outfit, warm afternoon window light shaping her wig, clothing and cafe, "
+                "a blurred cafe interior and out-of-focus friends "
                 "across the small table")},
     {"key": "parkwalk", "label": "晨间公园", "tagline": "晨间从容",
-     "prompt": ("a green park path in the morning, she takes a leisurely walk looking "
-                "refreshed and at ease with a gentle serene smile in an elegant "
-                "lightweight summer outfit, soft golden morning light from her side as the key light, "
+     "prompt": ("a green park path in the morning, she takes a leisurely walk in an elegant "
+                "lightweight summer outfit, soft golden morning light shaping her wig, clothing and path, "
                 "blurred trees and greenery behind")},
 ]
 
