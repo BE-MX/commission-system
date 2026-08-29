@@ -393,26 +393,21 @@ class TestLimitedFaceAdaptation:
         assert "compatible with her existing gaze direction" in scene_prompt
 
 
-def test_scene_swap_framing_is_waist_up_with_both_bounds():
-    """构图锚点（2026-07-31）：这条子句已在 07-27 与 07-31 之间来回过一次，
-    且回退是静默的——原有 `assert "85mm" in prompt` 挡不住任何回退（85mm 在
-    _TRYON_SCENE_CLAUSE 里另有一份）。上下两道边界必须同时在场：
-    收太远发丝看不清，放太近就是 07-27 的大头畸变。"""
+def test_scene_swap_framing_preserves_head_neck_and_shoulders():
+    """腰上构图继续保证发丝可辨，但人体比例改用头、颈、肩之间的关系锚定。"""
     session = _session()
     wig = ExpoWig(model_no="LS-9", name="胎毛波波", wig_description="airy bob")
     row = ExpoResult(session_id=1, wig_id=9,
                      scene_json={"key": "whitecollar", "label": "白领高管"})
     prompt, _, _ = ai_pipeline._build_prompt(session, row, wig)
 
-    assert "waist-up" in prompt                      # 下限：收到腰上，发丝可辨
-    assert "one third of the frame height" in prompt  # 上限：头占画面高约 1/3
-    assert "shoulders and upper torso must stay in frame" in prompt
-    assert "no wide-angle facial distortion" in prompt  # 防 07-27 畸变复发
-    # 已被证伪的旧口径不得回填
-    assert "mid-thigh" not in prompt
-    assert "one-seventh" not in prompt
-    # 「主体/subject」是摆拍语义，会顶掉 07-09 定稿的抓拍感
-    assert "subject of this photograph" not in prompt
+    assert "waist-up" in prompt
+    assert "full shoulder span, upper chest and collarbone area" in prompt
+    assert "original head scale and natural neck length" in prompt
+    assert "visible space from jawline to neckline" in prompt
+    assert "never raise the shoulders, shorten the neck" in prompt
+    assert "one third of the frame height" not in prompt
+    assert "no wide-angle facial distortion" in prompt
 
 
 def _variant_prompts(variant="real"):

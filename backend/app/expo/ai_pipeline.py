@@ -909,35 +909,23 @@ _TRYON_SCENE_CLAUSE = (
     "shallow depth of field focused on the face and hair, natural and unposed."
 ) + _SUMMER_WARDROBE_CLAUSE
 
-# 构图与人体比例（2026-07-27 亮哥反馈「人物与背景比例不协调、融入感差」「头身比不协调」，
-# 2026-07-31 亮哥反馈「全是全身远景，体现不出写真效果和头发质感」——上一版矫枉过正）：
-# **两轮反馈是两个不同的病，别再来回推翻**：
-#   头身比失衡 / 贴图感 ← 相机太近造成的**透视畸变**与背景压缩，靠「拍摄距离 + 85mm 长焦」
-#                          治，不是靠把人拍小治；
-#   发丝质感看不清      ← **景别**太远，只能靠把取景收到腰以上治。
-# 85mm 配 1.5m 正是经典半身人像组合，收景别本身不会把 7-27 的畸变带回来。但**光学语言
-# （距离/焦距）对图像模型的约束力远弱于画面占比语言**，所以下限收近的同时必须补一道显式
-# 上限，否则「fill a generous share」上不封顶会把大头推回来（审查 2026-07-31）。
-# 相对 7-27 版的实际增删，别再照猜：
-#   保留 = 85mm 焦距、头身比正确、无广角畸变、统一透视/视平线/光线、非贴图
-#   替换 = 「头占身高 1/7」(全身语境下的锚，waist-up 无意义) → 「头占画面高约 1/3」(实测值固化)
-#          「禁止头肩特写」→ 「肩与上半身必须在框内」(同一道上限，改用 waist-up 语境表述)
-#          「前中后三层景深」→ 「人物与背景景深分离」(waist-up 下前景层多数落框外)
-#   删除 = 「no foreshortened torso or legs」「properly grounded」(腿与落地点已不在画面内)
-# 试戴产品的主体就是那顶假发——发丝质感看不清，这张照片对客户就没有价值。但措辞只约束
-# 「可辨识度」不写「主体/subject」：后者是摆拍语义，会顶掉 07-09 定稿的抓拍感。
-# **只用于场景置换路径**：原景保持(_TRYON_KEEP_BG_CLAUSE)要求构图与原图完全一致，冲突。
+# 构图与人体比例（2026-08-29）：保留 85mm 腰上景别以展示发丝，但删除「头占画面三分之一」
+# 这一会把蓬松假发解释成大头的单点锚。改用头、颈、肩、锁骨之间的关系互相校验：假发可改变
+# 发型轮廓，不能改变客户头骨、颈长和肩宽。只用于场景置换，原景保持路径继续锁原构图。
 _FRAMING_CLAUSE = (
     " Framing and human proportion: photograph her from about 1.5 metres away on the 85mm lens "
     "as a waist-up portrait. At this crop the hairstyle must read clearly - individual strands, "
     "the cut's layering, its silhouette and its sheen all legible at a glance. Keep her entire "
     "hairstyle inside the frame with comfortable space above it - never crop the top, the sides "
-    "or the ends of the hair. Her shoulders and upper torso must stay in frame: this is a "
-    "waist-up shot, not a head-and-shoulders close-up, and her head should span roughly one "
-    "third of the frame height. Her head must stay in correct natural proportion to her "
-    "shoulders and torso; no enlarged head, no wide-angle facial distortion. Only her upper "
-    "body is in frame - render her top, neckline and any visible accessories faithfully, while "
-    "her lower garments and footwear simply fall outside the crop. Keep the setting around her "
+    "or the ends of the hair. Keep her full shoulder span, upper chest and collarbone area in "
+    "frame: this is a waist-up portrait, not a head-and-shoulders close-up. Preserve the FIRST "
+    "image's original head scale and natural neck length relative to her shoulders and torso, "
+    "with natural visible space from jawline to neckline; never raise the shoulders, shorten "
+    "the neck, enlarge the skull or let the wig's volume change the body's proportions. The wig "
+    "silhouette comes from its references, but the customer's head, neck and shoulder proportions "
+    "do not. Keep correct natural human proportions with no enlarged head and no wide-angle facial "
+    "distortion. Render her top, neckline and any visible accessories faithfully, while her lower "
+    "garments and footwear simply fall outside the crop. Keep the setting around her "
     "readable behind and beside her but softly out of focus, sharing one consistent perspective, "
     "eye level and lighting with her, with genuine depth separation between her and the "
     "background, so she belongs in the scene rather than being a cut-out pasted onto a backdrop."
