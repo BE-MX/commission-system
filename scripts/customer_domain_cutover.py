@@ -439,6 +439,7 @@ def _command_export_suppressions(args: argparse.Namespace) -> None:
             db, source_manifest, hmac_key, args.key_version,
             inventory_sha256=inventory.inventory_sha256,
             preflight_report_sha256=report["report_sha256"],
+            now=beijing_now().replace(tzinfo=BEIJING_TIMEZONE),
         )
     _write_canonical_json(output_path, manifest.to_dict())
     print(f"HMAC-only suppression manifest: {output_path}")

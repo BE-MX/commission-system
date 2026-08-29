@@ -129,7 +129,7 @@ REQUIRED_EXTERNAL_SUPPRESSION_SOURCE_KINDS = frozenset(
 )
 BEIJING_TIMEZONE = ZoneInfo("Asia/Shanghai")
 _CANONICAL_SHA256 = re.compile(r"^[0-9a-f]{64}$")
-WRITER_EVIDENCE_MAX_AGE = timedelta(minutes=5)
+CUTOVER_EVIDENCE_MAX_AGE = timedelta(minutes=5)
 MIGRATION_CONTRACT_MAX_LIFETIME = timedelta(minutes=5)
 MIGRATION_LOCK_NAME = "ark_customer_domain_cutover"
 CUTOVER_EVIDENCE_ROOT = (
@@ -819,6 +819,7 @@ def _source_evidence(
     source: Mapping[str, Any],
     *,
     rows: list[Mapping[str, Any]],
+    now: datetime,
 ) -> AuthoritativeSourceEvidence:
     source_kind = _required_stable_text(source.get("source_kind"), "source_kind")
     namespace = _required_stable_text(
@@ -849,6 +850,11 @@ def _source_evidence(
         raise CutoverGuardError(
             f"source row reconciliation failed for {namespace}/{account}"
         )
+    _verify_evidence_time(
+        source.get("approved_at"),
+        now,
+        f"authoritative source {namespace}/{account} approval",
+    )
     approved_at = _beijing_timestamp(source.get("approved_at"), "source approved_at")
     payload = {
         "source_kind": source_kind,
@@ -866,6 +872,7 @@ def _source_evidence(
 def _database_suppression_source(
     db: Session,
     approved_at: Any,
+    now: datetime,
 ) -> tuple[AuthoritativeSourceEvidence, list[dict[str, Any]]]:
     table = _table_or_none(db, "ark_sales_contacts")
     required_columns = {
@@ -927,7 +934,7 @@ def _database_suppression_source(
         "unresolved_count": len(raw_rows),
         "approved_at": approved_at,
     }
-    return _source_evidence(source, rows=raw_rows), candidates
+    return _source_evidence(source, rows=raw_rows, now=now), candidates
 
 
 def _suppression_entry(
@@ -1048,12 +1055,14 @@ def build_suppression_manifest(
     *,
     inventory_sha256: str,
     preflight_report_sha256: str,
+    now: datetime,
 ) -> SuppressionManifest:
     """Build an inventory-bound replay manifest from every authoritative source."""
     key = hmac_key.encode("utf-8") if isinstance(hmac_key, str) else hmac_key
     if not isinstance(key, bytes) or len(key) < 32:
         raise CutoverGuardError("suppression HMAC key must contain at least 32 bytes")
     key_version = _required_stable_text(key_version, "key_version")
+    now = _parse_writer_timestamp(now, "suppression export now")
     for digest, field_name in (
         (inventory_sha256, "inventory_sha256"),
         (preflight_report_sha256, "preflight_report_sha256"),
@@ -1087,7 +1096,7 @@ def build_suppression_manifest(
         rows = source["rows"]
         if any(not isinstance(row, Mapping) for row in rows):
             raise CutoverGuardError("authoritative source rows must be objects")
-        item = _source_evidence(source, rows=rows)
+        item = _source_evidence(source, rows=rows, now=now)
         identity = (item.source_namespace, item.source_account_key)
         if identity in identities:
             raise CutoverGuardError(f"duplicate authoritative source: {identity}")
@@ -1101,7 +1110,7 @@ def build_suppression_manifest(
         evidence.append(item)
         candidates.extend(rows)
     database_evidence, database_candidates = _database_suppression_source(
-        db, authoritative_source_manifest.get("database_approved_at")
+        db, authoritative_source_manifest.get("database_approved_at"), now
     )
     evidence.append(database_evidence)
     candidates.extend(database_candidates)
@@ -1159,7 +1168,7 @@ def _verify_evidence_time(value: Any, now: datetime, label: str) -> None:
     checked_at = _parse_writer_timestamp(value, f"{label} checked_at")
     if checked_at > now:
         raise CutoverGuardError(f"{label} evidence is future-dated")
-    if now - checked_at > WRITER_EVIDENCE_MAX_AGE:
+    if now - checked_at > CUTOVER_EVIDENCE_MAX_AGE:
         raise CutoverGuardError(f"{label} evidence is stale")
 
 
@@ -1211,7 +1220,9 @@ def verify_ready(
     _verify_evidence(
         approved.get("approval_evidence"), "approved instance inventory"
     )
-    _parse_writer_timestamp(approved.get("approved_at"), "instance inventory approved_at")
+    _verify_evidence_time(
+        approved.get("approved_at"), now, "instance inventory"
+    )
 
     expected_instances: set[tuple[str, str]] = set()
     for item in approved_instances:
@@ -1453,24 +1464,37 @@ def expected_customer_schema_sha256() -> str:
 def verify_frozen_business_ids_removed(
     db: Session, inventory: CutoverInventory
 ) -> bool:
-    """Ensure the reset did not retain any approved old J/P/A business row."""
-    frozen = (
-        ("ark_sales_search_jobs", inventory.old_business_ids.search_job_ids),
-        ("ark_customer_profiles", inventory.old_business_ids.customer_profile_ids),
-        ("ark_customer_actions", inventory.old_business_ids.customer_action_ids),
-    )
+    """Ensure no exact preflight PK from any retired business table survived."""
     remaining: list[str] = []
-    for table_name, ids in frozen:
+    for table_name in RETIRED_CUSTOMER_BUSINESS_TABLES:
+        snapshot = inventory.table(table_name)
+        if not snapshot.exists or not snapshot.primary_key_ids:
+            continue
         table = _table_or_none(db, table_name)
         if table is None:
-            if table_name in REBUILT_CUSTOMER_WORKFLOW_TABLES:
-                remaining.append(f"{table_name}:missing")
             continue
-        if "id" not in table.c:
-            remaining.append(f"{table_name}:missing-id")
-            continue
-        found = db.execute(select(table.c.id).where(table.c.id.in_(ids))).scalars().all()
-        remaining.extend(f"{table_name}:{value}" for value in found)
+        primary_key = tuple(table.primary_key.columns)
+        if not primary_key:
+            raise CutoverGuardError(f"post-reset table {table_name} has no primary key")
+        frozen_keys = {
+            tuple(value) if isinstance(value, list) else value
+            for value in snapshot.primary_key_ids
+        }
+        statement = (
+            select(*primary_key)
+            .order_by(*primary_key)
+            .execution_options(stream_results=True, yield_per=500)
+        )
+        result = db.execute(statement)
+        try:
+            for row in result:
+                current_key: Any = row[0] if len(primary_key) == 1 else tuple(row)
+                if current_key in frozen_keys:
+                    remaining.append(f"{table_name}:{current_key}")
+        finally:
+            result.close()
     if remaining:
-        raise CutoverGuardError("frozen retired business IDs remain: " + ", ".join(remaining))
+        raise CutoverGuardError(
+            "frozen retired business rows remain: " + ", ".join(remaining)
+        )
     return True

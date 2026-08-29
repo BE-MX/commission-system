@@ -103,12 +103,12 @@ def _authoritative_source_manifest(*, provider_rows=None, omit=None):
                 "unresolved_count": sum(
                     row["mapping_status"] != "mapped" for row in rows
                 ),
-                "approved_at": datetime(2026, 8, 30, 8, 30, tzinfo=BEIJING),
+                "approved_at": READY_CHECKED_AT,
                 "rows": rows,
             }
         )
     return {
-        "database_approved_at": datetime(2026, 8, 30, 8, 30, tzinfo=BEIJING),
+        "database_approved_at": READY_CHECKED_AT,
         "sources": sources,
     }
 
@@ -128,6 +128,7 @@ def _build_suppression(
         "v1",
         inventory_sha256=inventory.inventory_sha256,
         preflight_report_sha256=preflight_report_sha256,
+        now=READY_CHECKED_AT + timedelta(minutes=1),
     )
 
 
@@ -296,6 +297,7 @@ def _writer_manifest(
     preflight_report_sha256=PREFLIGHT_REPORT_SHA256,
     weak_evidence=False,
     active_transactions=0,
+    inventory_approved_at=READY_CHECKED_AT,
 ):
     instance_inventory = [
         {"category": category, "instance_id": f"{category}-01"}
@@ -326,7 +328,7 @@ def _writer_manifest(
         writers.append(extra_writer)
     approval_payload = {
         "instances": instance_inventory,
-        "approved_at": READY_CHECKED_AT,
+        "approved_at": inventory_approved_at,
         "approved_by": "cutover-approver",
         "approval_evidence": {
             "method": "change_control_approval",
@@ -532,12 +534,48 @@ def test_verify_after_requires_all_frozen_business_ids_removed():
     engine = _create_cutover_db()
     with Session(engine) as db:
         inventory = build_inventory(db)
-        with pytest.raises(CutoverGuardError, match="frozen retired business IDs remain"):
+        with pytest.raises(CutoverGuardError, match="frozen retired business rows remain"):
             verify_frozen_business_ids_removed(db, inventory)
         db.execute(text("DELETE FROM ark_sales_search_jobs WHERE id=7"))
         db.execute(text("DROP TABLE ark_customer_profiles"))
         db.execute(text("DELETE FROM ark_customer_actions WHERE id=9"))
         assert verify_frozen_business_ids_removed(db, inventory) is True
+
+
+@pytest.mark.parametrize("table_name", RETIRED_CUSTOMER_BUSINESS_TABLES)
+def test_verify_after_rejects_a_surviving_frozen_row_from_every_business_table(
+    table_name,
+):
+    engine = _create_cutover_db()
+    seeded_ids = {
+        "ark_sales_search_jobs": 7,
+        "ark_customer_profiles": 12,
+        "ark_customer_actions": 9,
+    }
+    frozen_id = seeded_ids.get(table_name, 9000)
+    with engine.begin() as connection:
+        if table_name == "ark_sales_search_result_sources":
+            connection.execute(
+                text(
+                    "CREATE TABLE ark_sales_search_result_sources "
+                    "(id INTEGER PRIMARY KEY)"
+                )
+            )
+        if table_name not in seeded_ids:
+            connection.execute(
+                text(f"INSERT INTO {table_name} (id) VALUES (:frozen_id)"),
+                {"frozen_id": frozen_id},
+            )
+    with Session(engine) as db:
+        inventory = build_inventory(db)
+        for seeded_table, seeded_id in seeded_ids.items():
+            if seeded_table != table_name:
+                db.execute(
+                    text(f"DELETE FROM {seeded_table} WHERE id=:seeded_id"),
+                    {"seeded_id": seeded_id},
+                )
+        with pytest.raises(CutoverGuardError, match=table_name):
+            verify_frozen_business_ids_removed(db, inventory)
 
 
 def test_authoritative_suppression_export_matches_registry_replay_contract():
@@ -554,6 +592,7 @@ def test_authoritative_suppression_export_matches_registry_replay_contract():
             "v3",
             inventory_sha256=inventory.inventory_sha256,
             preflight_report_sha256=PREFLIGHT_REPORT_SHA256,
+            now=READY_CHECKED_AT + timedelta(minutes=1),
         )
 
     replay = manifest.entries[0].to_dict()
@@ -600,6 +639,7 @@ def test_suppression_export_reconciles_every_required_authoritative_source():
                 "v1",
                 inventory_sha256=inventory.inventory_sha256,
                 preflight_report_sha256=PREFLIGHT_REPORT_SHA256,
+                now=READY_CHECKED_AT + timedelta(minutes=1),
             )
         unknown = _authoritative_source_manifest()
         unknown["sources"].append(
@@ -623,6 +663,7 @@ def test_suppression_export_reconciles_every_required_authoritative_source():
                 "v1",
                 inventory_sha256=inventory.inventory_sha256,
                 preflight_report_sha256=PREFLIGHT_REPORT_SHA256,
+                now=READY_CHECKED_AT + timedelta(minutes=1),
             )
         mismatched = _authoritative_source_manifest(
             provider_rows=[_suppression_row()]
@@ -636,6 +677,7 @@ def test_suppression_export_reconciles_every_required_authoritative_source():
                 "v1",
                 inventory_sha256=inventory.inventory_sha256,
                 preflight_report_sha256=PREFLIGHT_REPORT_SHA256,
+                now=READY_CHECKED_AT + timedelta(minutes=1),
             )
 
 
@@ -663,6 +705,7 @@ def test_suppression_export_accepts_explicit_beijing_timestamps_from_json():
             "v1",
             inventory_sha256=inventory.inventory_sha256,
             preflight_report_sha256=PREFLIGHT_REPORT_SHA256,
+            now=READY_CHECKED_AT + timedelta(minutes=1),
         )
     assert manifest.entries[0].effective_at == "2026-08-30T09:00:00+08:00"
 
@@ -687,6 +730,35 @@ def test_suppression_export_reads_authoritative_legacy_invalid_addresses():
     assert manifest.entries[0].normalized_value_hmac == hmac.new(
         SUPPRESSION_HMAC_KEY, b"legacy@example.com", hashlib.sha256
     ).hexdigest()
+
+
+@pytest.mark.parametrize(
+    ("approved_at", "message"),
+    [
+        (READY_CHECKED_AT - timedelta(minutes=6), "stale"),
+        (READY_CHECKED_AT + timedelta(minutes=2), "future"),
+    ],
+)
+def test_suppression_export_rejects_stale_or_future_approval_before_accepting_empty_dnc_evidence(
+    approved_at, message
+):
+    engine = _create_cutover_db()
+    source_manifest = _authoritative_source_manifest()
+    source_manifest["database_approved_at"] = approved_at
+    for source in source_manifest["sources"]:
+        source["approved_at"] = approved_at
+    with Session(engine) as db:
+        inventory = build_inventory(db)
+        with pytest.raises(CutoverGuardError, match=message):
+            build_suppression_manifest(
+                db,
+                source_manifest,
+                SUPPRESSION_HMAC_KEY,
+                "v1",
+                inventory_sha256=inventory.inventory_sha256,
+                preflight_report_sha256=PREFLIGHT_REPORT_SHA256,
+                now=READY_CHECKED_AT + timedelta(minutes=1),
+            )
 
 def test_suppression_manifest_contains_only_hmac_and_preserves_ambiguous_rows():
     engine = _create_cutover_db()
@@ -864,6 +936,14 @@ def test_verify_ready_recomputes_inventory_content_before_trusting_supplied_hash
         ({"preflight_report_sha256": "d" * 64}, "preflight"),
         ({"weak_evidence": True}, "structured evidence"),
         ({"active_transactions": 1}, "active transactions"),
+        (
+            {"inventory_approved_at": READY_CHECKED_AT - timedelta(minutes=6)},
+            "instance inventory.*stale",
+        ),
+        (
+            {"inventory_approved_at": READY_CHECKED_AT + timedelta(minutes=2)},
+            "instance inventory.*future",
+        ),
     ],
 )
 def test_verify_ready_rejects_stale_future_weak_wrongly_bound_or_active_evidence(
@@ -893,6 +973,29 @@ def test_verify_ready_rejects_unlisted_second_instance():
     }
     manifest = _writer_manifest(inventory.inventory_sha256, extra_writer=extra)
     with pytest.raises(CutoverGuardError, match="instance inventory"):
+        verify_ready(
+            inventory,
+            manifest,
+            inventory.inventory_sha256,
+            PREFLIGHT_REPORT_SHA256,
+            now=READY_CHECKED_AT + timedelta(minutes=1),
+        )
+
+
+def test_stale_approved_instance_inventory_cannot_omit_a_later_instance():
+    engine = _create_cutover_db()
+    with Session(engine) as db:
+        inventory = build_inventory(db)
+    extra = {
+        **_writer_manifest(inventory.inventory_sha256)["writers"][0],
+        "instance_id": "local-api-started-after-stale-approval",
+    }
+    manifest = _writer_manifest(
+        inventory.inventory_sha256,
+        inventory_approved_at=READY_CHECKED_AT - timedelta(minutes=6),
+        extra_writer=extra,
+    )
+    with pytest.raises(CutoverGuardError, match="instance inventory.*stale"):
         verify_ready(
             inventory,
             manifest,
