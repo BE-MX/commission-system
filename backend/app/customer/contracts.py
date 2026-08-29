@@ -53,6 +53,14 @@ class DataClassification(StrEnum):
     RESTRICTED_INTERNAL = "restricted_internal"
 
 
+_DATA_CLASSIFICATION_ORDER = (
+    DataClassification.PUBLIC_BUSINESS,
+    DataClassification.INTERNAL_BUSINESS,
+    DataClassification.PERSONAL_CONTACT,
+    DataClassification.RESTRICTED_INTERNAL,
+)
+
+
 IDENTITY_STATUSES = frozenset(item.value for item in IdentityStatus)
 RELATIONSHIP_STAGES = frozenset(item.value for item in RelationshipStage)
 QUALIFICATION_DECISIONS = frozenset(item.value for item in QualificationDecision)
@@ -206,7 +214,7 @@ def _registrations(
             allowed_purposes=purposes,
             supports_high_impact=False,
         )
-        for fact_key in fact_keys
+        for fact_key in sorted(fact_keys)
     }
 
 
@@ -275,7 +283,7 @@ del _fact_registry
 def validate_registered_fact(
     fact_key: str,
     source_system: str,
-    source_entity_type: str | None = None,
+    source_entity_type: str,
 ) -> DataClassification:
     """Return the fact classification, failing closed for unknown combinations."""
     if not source_entity_type:
@@ -293,7 +301,11 @@ def validate_registered_fact(
         or fact_key not in source_registration.allowed_fact_keys
     ):
         return DataClassification.RESTRICTED_INTERNAL
-    return registration.data_classification
+    return max(
+        registration.data_classification,
+        source_registration.default_classification,
+        key=_DATA_CLASSIFICATION_ORDER.index,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -468,6 +480,15 @@ def allowed_relationship_transition(
     has_open_opportunity: bool = False,
 ) -> bool:
     """Evaluate the frozen relationship-stage transition matrix."""
+    boolean_context = {
+        "condition_met": condition_met,
+        "has_primary_assignment": has_primary_assignment,
+        "has_open_opportunity": has_open_opportunity,
+    }
+    for field, value in boolean_context.items():
+        if type(value) is not bool:
+            raise TypeError(f"{field} must be bool")
+
     try:
         current = RelationshipStage(current_stage)
         target = RelationshipStage(target_stage)
@@ -475,7 +496,15 @@ def allowed_relationship_transition(
         return False
 
     if current is RelationshipStage.ACTIVE_CUSTOMER and target is current:
-        return True
+        return bool(
+            trigger in {
+                "valid_order",
+                "historical_order_replay",
+                "qualification_approved",
+                "new_product_opportunity",
+            }
+            and condition_met
+        )
 
     if target is RelationshipStage.INACTIVE and current is not target:
         return trigger == "manual_inactivation" and condition_met

@@ -178,6 +178,73 @@ def test_active_customer_never_regresses_on_historical_order_replay():
     )
 
 
+@pytest.mark.parametrize(
+    "trigger",
+    [
+        "valid_order",
+        "historical_order_replay",
+        "qualification_approved",
+        "new_product_opportunity",
+    ],
+)
+def test_active_customer_stays_active_only_for_approved_keep_triggers(trigger):
+    assert allowed_relationship_transition(
+        "active_customer", "active_customer", trigger, True,
+    )
+    assert not allowed_relationship_transition(
+        "active_customer", "active_customer", trigger, False,
+    )
+
+
+@pytest.mark.parametrize("trigger", ["", "unknown_event", "manual_reactivation"])
+def test_active_customer_rejects_unknown_keep_triggers(trigger):
+    assert not allowed_relationship_transition(
+        "active_customer", "active_customer", trigger, True,
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid_value"),
+    [
+        ("condition_met", "true"),
+        ("condition_met", 1),
+        ("condition_met", None),
+        ("has_primary_assignment", "true"),
+        ("has_primary_assignment", 1),
+        ("has_primary_assignment", None),
+        ("has_open_opportunity", "true"),
+        ("has_open_opportunity", 1),
+        ("has_open_opportunity", None),
+    ],
+)
+def test_relationship_transition_rejects_non_boolean_context(field, invalid_value):
+    context = {
+        "condition_met": True,
+        "has_primary_assignment": True,
+        "has_open_opportunity": True,
+    }
+    context[field] = invalid_value
+
+    with pytest.raises(TypeError, match=field):
+        allowed_relationship_transition(
+            "qualified",
+            "developing",
+            "sales_development_ready",
+            context["condition_met"],
+            has_primary_assignment=context["has_primary_assignment"],
+            has_open_opportunity=context["has_open_opportunity"],
+        )
+
+
+def test_relationship_transition_always_returns_bool():
+    assert type(allowed_relationship_transition(
+        "discovered", "qualified", "qualification_approved", True,
+    )) is bool
+    assert type(allowed_relationship_transition(
+        "unknown", "qualified", "qualification_approved", True,
+    )) is bool
+
+
 def test_historical_order_replay_does_not_override_newer_inactive_stage():
     assert not allowed_relationship_transition(
         "inactive", "active_customer", "historical_order_replay", False,
@@ -229,6 +296,21 @@ def test_registered_fact_exposes_governance_metadata_and_classification():
     ) == DataClassification.PUBLIC_BUSINESS
 
 
+def test_registered_fact_uses_the_stricter_source_classification():
+    assert validate_registered_fact(
+        "business.industry", "okki", "customer",
+    ) == DataClassification.INTERNAL_BUSINESS
+    assert validate_registered_fact(
+        "business.industry", "public_web", "company_page",
+    ) == DataClassification.PUBLIC_BUSINESS
+    assert validate_registered_fact(
+        "preference.expressed.color", "email", "message",
+    ) == DataClassification.RESTRICTED_INTERNAL
+    assert validate_registered_fact(
+        "preference.expressed.color", "alibaba", "inquiry",
+    ) == DataClassification.INTERNAL_BUSINESS
+
+
 def test_high_impact_fact_is_explicitly_registered():
     registration = FACT_REGISTRY["commercial.has_valid_order"]
 
@@ -251,7 +333,7 @@ def test_unregistered_or_disallowed_fact_is_rejected_by_default():
 
 
 def test_fact_validation_requires_source_entity_type_argument():
-    with pytest.raises(ValueError, match="source_entity_type"):
+    with pytest.raises(TypeError):
         validate_registered_fact("commercial.has_valid_order", "okki")
 
 
@@ -282,6 +364,43 @@ def test_every_allowed_fact_source_has_a_matching_source_registration():
             assert fact_key in source_registration.allowed_fact_keys
             assert source_registration.registry_version == "source_registry_v1"
             assert source_registration.collection_legal_basis
+
+
+def test_fact_registry_order_is_stable():
+    expected_keys = (
+        "business.industry",
+        "commercial.has_valid_order",
+        "behavior.confirmed.priority",
+        "behavior.confirmed.relationship_note",
+        "preference.expressed.color",
+        "preference.expressed.delivery_window",
+        "preference.expressed.length",
+        "preference.expressed.model",
+        "preference.expressed.price_range",
+        "preference.expressed.product_family",
+        "preference.expressed.quantity",
+        "preference.observed.color",
+        "preference.observed.length",
+        "preference.observed.model",
+        "preference.observed.order_size",
+        "preference.observed.product_family",
+        "preference.observed.sample_or_bulk",
+        "behavior.inferred.buying_stage",
+        "behavior.inferred.churn_risk",
+        "behavior.inferred.growth_signal",
+        "behavior.inferred.supplier_switch_signal",
+        "preference.inferred.price_sensitivity",
+        "preference.inferred.product_direction",
+        "preference.inferred.seasonality",
+        "behavior.observed.active_hours",
+        "behavior.observed.decision_speed",
+        "behavior.observed.inquiry_frequency",
+        "behavior.observed.preferred_channel",
+        "behavior.observed.response_latency",
+        "behavior.observed.silence_period",
+    )
+
+    assert tuple(FACT_REGISTRY) == expected_keys
 
 
 def test_source_registry_freezes_authority_and_promotion_contract():
