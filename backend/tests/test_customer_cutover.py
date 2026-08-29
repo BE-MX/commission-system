@@ -24,7 +24,7 @@ from app.agent_runtime.models import (
     AgentSession,
 )
 from app.core.database import Base
-from app.customer.models import CustomerSuppressionRegistry
+from app.customer.models import CustomerAccount, CustomerSuppressionRegistry
 from app.customer.cutover_service import (
     AGENT_CONTROL_TABLES,
     KNOWN_WRITER_CATEGORIES,
@@ -568,6 +568,69 @@ def test_agent_closure_selects_only_required_reference_columns():
         "evidence_json",
     ):
         assert forbidden_column not in closure_sql
+
+
+def test_agent_projected_rows_are_lazy_and_agent_id_queries_are_bounded(monkeypatch):
+    engine = _create_cutover_db()
+    parameter_counts = []
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def _capture(_connection, _cursor, statement, params, _context, _many):
+        if statement.lstrip().upper().startswith("SELECT") and "ark_agent_" in statement:
+            parameter_counts.append(len(params))
+
+    with Session(engine) as db:
+        projected = cutover_service._projected_rows(
+            db,
+            "ark_agent_sessions",
+            ("id", "context_type", "context_id"),
+        )
+        assert not isinstance(projected, list)
+        assert next(iter(projected))["id"] == 1
+        projected.close()
+
+        inventory = build_inventory(db)
+
+        class _StreamingOnlyResult:
+            def __init__(self, result):
+                self._result = result
+
+            def mappings(self):
+                return _StreamingOnlyResult(self._result.mappings())
+
+            def __iter__(self):
+                return iter(self._result)
+
+            def close(self):
+                return self._result.close()
+
+            def all(self):
+                raise AssertionError("Agent scans must not call all()")
+
+            def fetchall(self):
+                raise AssertionError("Agent scans must not call fetchall()")
+
+        execute = db.execute
+
+        def _streaming_execute(*args, **kwargs):
+            return _StreamingOnlyResult(execute(*args, **kwargs))
+
+        monkeypatch.setattr(db, "execute", _streaming_execute)
+        closure = resolve_agent_history_closure(db, inventory)
+        large_ids = frozenset(range(10_000, 11_001))
+        large_closure = replace(
+            closure,
+            session_ids=closure.session_ids | large_ids,
+            run_ids=closure.run_ids | large_ids,
+            event_ids=closure.event_ids | large_ids,
+            artifact_ids=closure.artifact_ids | large_ids,
+        )
+        snapshot_unrelated_agent_rows(db, large_closure)
+        with pytest.raises(CutoverGuardError, match="closure rows remain"):
+            verify_agent_history_removed(db, large_closure)
+
+    assert cutover_service.AGENT_ID_QUERY_CHUNK_SIZE == 200
+    assert max(parameter_counts, default=0) <= cutover_service.AGENT_ID_QUERY_CHUNK_SIZE
 
 
 def test_unrelated_snapshot_preserves_all_profiles_and_detects_content_change():
@@ -1451,6 +1514,99 @@ def test_physical_schema_signature_rejects_every_structural_category(category):
     actual = normalize_physical_schema_signature(**changed)
     with pytest.raises(CutoverGuardError, match="physical schema"):
         compare_physical_schema_signature(expected, actual, "synthetic_customer")
+
+
+def test_customer_account_integer_pk_autoincrement_modes_match_mysql_reflection():
+    model_id = CustomerAccount.__table__.c.id
+
+    def _signature(autoincrement):
+        return normalize_physical_schema_signature(
+            columns=[
+                {
+                    "name": model_id.name,
+                    "type": model_id.type,
+                    "nullable": model_id.nullable,
+                    "default": None,
+                    "computed": None,
+                    "autoincrement": autoincrement,
+                    "comment": model_id.comment,
+                }
+            ],
+            primary_key={"name": "PRIMARY", "constrained_columns": ["id"]},
+            unique_constraints=[],
+            indexes=[],
+            foreign_keys=[],
+            checks=[],
+            table_comment="synthetic customer account",
+        )
+
+    reflected_mysql = _signature(True)
+    assert model_id.autoincrement == "ignore_fk"
+    assert _signature(model_id.autoincrement) == reflected_mysql
+    assert _signature("auto") == reflected_mysql
+
+
+def test_mysql_check_enforcement_requires_authoritative_yes_for_every_check():
+    inspector_checks = [{"name": "ck_value", "sqltext": "id > 0"}]
+    missing_enforcement = normalize_physical_schema_signature(
+        columns=[],
+        primary_key={"name": None, "constrained_columns": []},
+        unique_constraints=[],
+        indexes=[],
+        foreign_keys=[],
+        checks=inspector_checks,
+        table_comment="synthetic",
+    )
+    assert missing_enforcement["checks"] == (("ck_value", "id > 0", False),)
+
+    class _Rows:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def mappings(self):
+            return self
+
+        def __iter__(self):
+            return iter(self._rows)
+
+        def close(self):
+            return None
+
+    class _Connection:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def execute(self, statement, params):
+            assert "information_schema.TABLE_CONSTRAINTS" in str(statement)
+            assert params == {"table_name": "ark_customer_accounts"}
+            return _Rows(self.rows)
+
+    enforced = cutover_service._mysql_enforced_checks(
+        _Connection([{"constraint_name": "ck_value", "enforced": "YES"}]),
+        "ark_customer_accounts",
+        inspector_checks,
+    )
+    signature = normalize_physical_schema_signature(
+        columns=[],
+        primary_key={"name": None, "constrained_columns": []},
+        unique_constraints=[],
+        indexes=[],
+        foreign_keys=[],
+        checks=enforced,
+        table_comment="synthetic",
+    )
+    assert signature["checks"] == (("ck_value", "id > 0", True),)
+
+    for rows in (
+        [{"constraint_name": "ck_value", "enforced": "NO"}],
+        [],
+    ):
+        with pytest.raises(CutoverGuardError, match="CHECK enforcement"):
+            cutover_service._mysql_enforced_checks(
+                _Connection(rows),
+                "ark_customer_accounts",
+                inspector_checks,
+            )
 
 
 def test_revision_126_must_register_all_38_physical_table_contracts():

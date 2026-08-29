@@ -12,6 +12,7 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
+from itertools import islice
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 from zoneinfo import ZoneInfo
@@ -57,6 +58,7 @@ AGENT_CONTROL_TABLES = (
     "ark_agent_events",
     "ark_agent_artifacts",
 )
+AGENT_ID_QUERY_CHUNK_SIZE = 200
 REQUIRED_CUTOVER_TABLES = REQUIRED_LEGACY_TABLES + AGENT_CONTROL_TABLES
 
 NEW_CUSTOMER_TABLES = tuple(CORE_TABLE_NAMES)
@@ -533,10 +535,10 @@ def _projected_rows(
     db: Session,
     table_name: str,
     column_names: tuple[str, ...],
-) -> list[dict[str, Any]]:
+) -> Iterable[dict[str, Any]]:
     table = _table_or_none(db, table_name)
     if table is None:
-        return []
+        return
     missing = [name for name in column_names if name not in table.c]
     if missing:
         raise CutoverGuardError(
@@ -549,7 +551,8 @@ def _projected_rows(
     )
     result = db.execute(statement).mappings()
     try:
-        return [dict(row) for row in result]
+        for row in result:
+            yield dict(row)
     finally:
         result.close()
 
@@ -586,64 +589,69 @@ def resolve_agent_history_closure(
         "customer_profile": _canonical_decimal_ids(ids.customer_profile_ids),
         "customer_action": _canonical_decimal_ids(ids.customer_action_ids),
     }
-    sessions = _projected_rows(
-        db,
-        "ark_agent_sessions",
-        ("id", "context_type", "context_id"),
-    )
-    runs = _projected_rows(
-        db,
-        "ark_agent_runs",
-        ("id", "session_id", "business_ref_type", "business_ref_id"),
-    )
-    events = _projected_rows(
-        db,
-        "ark_agent_events",
-        ("id", "run_id", "session_id"),
-    )
-    artifacts = _projected_rows(
-        db,
-        "ark_agent_artifacts",
-        ("id", "run_id", "business_ref_type", "business_ref_id"),
-    )
-
     session_ids = {
         row["id"]
-        for row in sessions
+        for row in _projected_rows(
+            db,
+            "ark_agent_sessions",
+            ("id", "context_type", "context_id"),
+        )
         if _business_reference_matches(row.get("context_type"), row.get("context_id"), session_refs)
     }
     run_ids = {
         row["id"]
-        for row in runs
+        for row in _projected_rows(
+            db,
+            "ark_agent_runs",
+            ("id", "session_id", "business_ref_type", "business_ref_id"),
+        )
         if row.get("session_id") in session_ids
         or _business_reference_matches(
             row.get("business_ref_type"), row.get("business_ref_id"), business_refs
         )
     }
-    direct_artifact_ids = {
-        row["id"]
-        for row in artifacts
+    direct_artifact_ids: set[Any] = set()
+    for row in _projected_rows(
+        db,
+        "ark_agent_artifacts",
+        ("id", "run_id", "business_ref_type", "business_ref_id"),
+    ):
         if _business_reference_matches(
             row.get("business_ref_type"), row.get("business_ref_id"), business_refs
-        )
-    }
-    run_ids.update(
-        row["run_id"] for row in artifacts if row["id"] in direct_artifact_ids
-    )
+        ):
+            direct_artifact_ids.add(row["id"])
+            run_ids.add(row["run_id"])
 
     while True:
         previous = (len(session_ids), len(run_ids))
-        session_ids.update(row["session_id"] for row in runs if row["id"] in run_ids)
-        run_ids.update(row["id"] for row in runs if row["session_id"] in session_ids)
+        for row in _projected_rows(
+            db,
+            "ark_agent_runs",
+            ("id", "session_id", "business_ref_type", "business_ref_id"),
+        ):
+            if row["id"] in run_ids:
+                session_ids.add(row["session_id"])
+            if row["session_id"] in session_ids:
+                run_ids.add(row["id"])
         if previous == (len(session_ids), len(run_ids)):
             break
 
     artifact_ids = direct_artifact_ids | {
-        row["id"] for row in artifacts if row["run_id"] in run_ids
+        row["id"]
+        for row in _projected_rows(
+            db,
+            "ark_agent_artifacts",
+            ("id", "run_id", "business_ref_type", "business_ref_id"),
+        )
+        if row["run_id"] in run_ids
     }
     event_ids = {
         row["id"]
-        for row in events
+        for row in _projected_rows(
+            db,
+            "ark_agent_events",
+            ("id", "run_id", "session_id"),
+        )
         if row["run_id"] in run_ids or row["session_id"] in session_ids
     }
     return AgentHistoryClosure(
@@ -676,8 +684,6 @@ def snapshot_unrelated_agent_rows(
         if not primary_key:
             raise CutoverGuardError(f"target table {table.name} has no primary key")
         statement = select(table).order_by(*primary_key)
-        if excluded[table_name]:
-            statement = statement.where(table.c.id.not_in(excluded[table_name]))
         result = db.execute(
             statement.execution_options(stream_results=True, yield_per=500)
         ).mappings()
@@ -687,6 +693,8 @@ def snapshot_unrelated_agent_rows(
         content_hasher.update(b"[")
         try:
             for row in result:
+                if row[table.c.id.name] in excluded[table_name]:
+                    continue
                 if row_count:
                     content_hasher.update(b",")
                 content_hasher.update(canonical_json_bytes(dict(row)))
@@ -749,16 +757,19 @@ def verify_agent_history_removed(db: Session, closure: AgentHistoryClosure) -> b
         table = _table_or_none(db, table_name)
         if table is None:
             continue
-        result = db.execute(
-            select(table.c.id)
-            .where(table.c.id.in_(expected_removed_ids))
-            .order_by(table.c.id)
-            .execution_options(stream_results=True, yield_per=500)
-        )
-        try:
-            existing_ids = {row[0] for row in result}
-        finally:
-            result.close()
+        existing_ids: set[Any] = set()
+        id_iterator = iter(expected_removed_ids)
+        while chunk := tuple(islice(id_iterator, AGENT_ID_QUERY_CHUNK_SIZE)):
+            result = db.execute(
+                select(table.c.id)
+                .where(table.c.id.in_(chunk))
+                .order_by(table.c.id)
+                .execution_options(stream_results=True, yield_per=500)
+            )
+            try:
+                existing_ids.update(row[0] for row in result)
+            finally:
+                result.close()
         if existing_ids:
             remaining.append(
                 f"{table_name}={','.join(str(value) for value in sorted(existing_ids))}"
@@ -1918,7 +1929,7 @@ def normalize_physical_schema_signature(
         computed = column.get("computed")
         column_type = column.get("type")
         autoincrement = column.get("autoincrement", False)
-        if autoincrement == "auto":
+        if autoincrement in {"auto", "ignore_fk"}:
             autoincrement = (
                 column.get("name") in pk_columns
                 and "INT" in str(column_type).upper()
@@ -1989,7 +2000,7 @@ def normalize_physical_schema_signature(
                 [(
                     item.get("name"),
                     _sql_expression(item.get("sqltext")),
-                    (item.get("dialect_options") or {}).get("mysql_enforced", True),
+                    (item.get("dialect_options") or {}).get("mysql_enforced", False),
                 ) for item in checks],
                 key=canonical_json_bytes,
             )
@@ -2222,14 +2233,80 @@ def _model_physical_schema_signature(table: Table) -> dict[str, Any]:
     )
 
 
-def _reflected_physical_schema_signature(inspector: Any, table_name: str) -> dict[str, Any]:
+def _mysql_enforced_checks(
+    connection: Any,
+    table_name: str,
+    inspector_checks: Iterable[Mapping[str, Any]],
+) -> tuple[dict[str, Any], ...]:
+    """Bind reflected CHECK SQL to MySQL's authoritative enforcement state."""
+    checks = tuple(dict(item) for item in inspector_checks)
+    try:
+        result = connection.execute(
+            text(
+                "SELECT CONSTRAINT_NAME AS constraint_name, ENFORCED AS enforced "
+                "FROM information_schema.TABLE_CONSTRAINTS "
+                "WHERE CONSTRAINT_SCHEMA = DATABASE() "
+                "AND TABLE_NAME = :table_name AND CONSTRAINT_TYPE = 'CHECK'"
+            ),
+            {"table_name": table_name},
+        ).mappings()
+        authoritative: dict[str, str] = {}
+        try:
+            for row in result:
+                constraint_name = row.get("constraint_name")
+                enforced = row.get("enforced")
+                if (
+                    not isinstance(constraint_name, str)
+                    or not constraint_name
+                    or constraint_name in authoritative
+                ):
+                    raise CutoverGuardError(
+                        f"MySQL CHECK enforcement evidence is invalid for {table_name}"
+                    )
+                authoritative[constraint_name] = str(enforced).upper()
+        finally:
+            result.close()
+    except CutoverGuardError:
+        raise
+    except Exception as exc:
+        raise CutoverGuardError(
+            f"could not read MySQL CHECK enforcement for {table_name}"
+        ) from exc
+
+    reflected_names = {item.get("name") for item in checks}
+    if (
+        None in reflected_names
+        or reflected_names != set(authoritative)
+        or any(authoritative[name] != "YES" for name in reflected_names)
+    ):
+        raise CutoverGuardError(
+            f"MySQL CHECK enforcement is missing or disabled for {table_name}"
+        )
+    enriched = []
+    for item in checks:
+        dialect_options = dict(item.get("dialect_options") or {})
+        dialect_options["mysql_enforced"] = True
+        item["dialect_options"] = dialect_options
+        enriched.append(item)
+    return tuple(enriched)
+
+
+def _reflected_physical_schema_signature(
+    inspector: Any,
+    table_name: str,
+    *,
+    connection: Any | None = None,
+) -> dict[str, Any]:
+    checks = inspector.get_check_constraints(table_name)
+    if connection is not None and connection.dialect.name == "mysql":
+        checks = _mysql_enforced_checks(connection, table_name, checks)
     return normalize_physical_schema_signature(
         columns=inspector.get_columns(table_name),
         primary_key=inspector.get_pk_constraint(table_name),
         unique_constraints=inspector.get_unique_constraints(table_name),
         indexes=inspector.get_indexes(table_name),
         foreign_keys=inspector.get_foreign_keys(table_name),
-        checks=inspector.get_check_constraints(table_name),
+        checks=checks,
         table_comment=inspector.get_table_comment(table_name).get("text"),
     )
 
@@ -2332,7 +2409,11 @@ def verify_expected_customer_table_state(
                 raise CutoverGuardError(f"column comments are incomplete for {table_name}")
             compare_physical_schema_signature(
                 expected_physical_tables[table_name],
-                _reflected_physical_schema_signature(inspector, table_name),
+                _reflected_physical_schema_signature(
+                    inspector,
+                    table_name,
+                    connection=connection,
+                ),
                 table_name,
             )
     return True
