@@ -967,32 +967,20 @@ _FRAMING_CLAUSE = (
 PROMPT_VARIANTS = ("real", "soft", "beauty")
 DEFAULT_PROMPT_VARIANT = "real"
 
-# 三版共用的用光底座：补的是**摄影用光与眼神**，不是美颜。
-# 四条刻意为之的措辞，改动前先读：
-# ①不写 radiant/glowing/youthful——这些是美颜滤镜触发词，一写就翻车成磨皮脸（真实/柔光两版
-#   尤其不能出现；美颜版另有专门措辞，见下）；
-# ②不指定主光位，只说「跟随现场光方向再塑形」——原景保持路径要求沿用客户原照片的光，
-#   硬派一盏新主光会让脸与背景光不咬合，反而更像贴图；
-# ③不提年龄：prompt 里出现 mature/elderly 会把人往老里推，而 age_range 是模型估的本就不可靠。
-# ④几何锁必须**对称且正向**（2026-08-02 亮哥反馈「瘦脸颊客户出图两颊显著变胖」）：
-#   上一版「lift the shadow side with gentle fill」把瘦脸的颧下凹陷当暗部填掉——生图模型
-#   不是真打光而是重画脸，凹陷一填脸颊就圆；且旧禁令「do not slim the face」是单向的，
-#   模型为保险只往「不瘦」偏，瘦脸客户首当其冲。修法=填光限定「保住暗部细节即可、
-#   结构性阴影不许动」+ 对称几何锁「neither slimmer nor fuller」锚回第一张图。
-#   锁里不点名 hollows 方向（瘦脸保凹陷/圆脸不许挖凹陷，条件措辞模型执行不稳，
-#   锚「与原图一致」两个方向都兜住）。锁必须带「structure, not expression」豁免：
-#   场景置换路径放开表情且多个场景文案明写 smile（微笑天然改变颊形），无豁免的
-#   exact geometry 排在其后会打架——要么僵脸要么锁被无视（对抗性审查 2026-08-02）。
+# 三版共用的身份安全光影底座（2026-08-29）：场景光影完整作用于假发、身体和环境，
+# 面部只做低强度的整体曝光/色温融合，不再单独塑造颧骨、眉弓、阴影侧或眼神光。
+# 原因：图像模型不是在原脸上真实补光，而是通过重画脸实现局部用光，医生和高铁场景因此
+# 出现身份、年龄与脸型漂移。对称几何锁继续保留，有限微表情只能动神态，不能动面部结构。
 _LIGHTING_BASE = (
-    " Give her face the same attention a portrait photographer would: follow the existing "
-    "light direction of the scene, but shape it - lift the shadow side only enough to keep "
-    "its detail readable, preserving the natural shadows that define her bone structure, "
-    "and let a soft key catch the cheekbones and brow, so her face reads three-dimensional "
-    "and never flat, dim or muddy. Her face must keep the exact geometry of the first "
-    "image - the same face width, cheek contour and jawline, neither slimmer nor fuller; "
-    "this locks her facial structure, not her expression - light may model her features, "
-    "never reshape them. Her eyes must look clear, awake and engaged, with distinct "
-    "catchlights."
+    " Preserve the FIRST image's facial lighting pattern and visible facial skin as the visual "
+    "anchor. Match the face to the scene only with a gentle, uniform exposure and "
+    "colour-temperature blend; do not add a new local key light, fill light or catchlight on "
+    "the face, and never repaint the facial shadow pattern around the cheekbones, brow, eyes, "
+    "nose or mouth. Apply the scene's directional light fully to the wig, neck, clothing, body "
+    "and background, including coherent highlights, contact shadows and colour. Her face keeps "
+    "the exact geometry of the first image - the same face width, cheek contour and jawline, "
+    "neither slimmer nor fuller; facial anatomy stays immutable during any allowed "
+    "micro-expression; light may blend the portrait, never reshape the face."
 )
 
 # 皮肤纹理不可动的措辞（真实版）：逐项写死，堵掉模型「变年轻=变好看」的捷径。
@@ -1026,16 +1014,17 @@ _PROMPT_VARIANT_CLAUSES = {
     # 柔=光源大、影缘软，不等于把结构阴影填没，见 _LIGHTING_BASE ④
     "soft": (
         _LIGHTING_BASE
-        + " Use a softer, more diffused light overall - a large gentle source that lowers "
-        "contrast for a smooth, flattering render, while the shadows that define her face "
-        "shape stay present, only softer-edged."
+        + " Use a softer, more diffused light on the wig, clothing, body and background, "
+        "lowering contrast outside the facial anchor while keeping the face limited to the "
+        "uniform blend described above."
         + _SKIN_UNTOUCHED
     ),
     # 美颜版：真磨皮提亮。这里刻意允许上面禁掉的那类词，因为这正是本版要的效果；
     # 但范围死死限定在面部皮肤，并配上头发保护句
     "beauty": (
         _LIGHTING_BASE
-        + " Use a soft, flattering beauty light. Retouch her facial skin the way a magazine "
+        + " Use a restrained beauty finish within the existing facial boundary. Retouch her "
+        "facial skin the way a magazine "
         "portrait is finished: even out the complexion, soften fine lines and wrinkles, reduce "
         "under-eye shadows and blemishes, and give the skin a smooth, luminous finish - while "
         "keeping her facial features, bone structure and identity unmistakably the same person, "

@@ -163,8 +163,10 @@ def test_build_prompt_tryon_with_scene_swaps_background():
     assert "background and framing exactly the same" not in prompt
     assert "85mm" in prompt  # 场景置换路径带摄像语言
     assert "magazine-quality" not in prompt  # 不能误入 scene 模式模板
-    # 叙事化：放开姿势/表情但锁身份，第二人物只作虚化背景（用户定稿 2026-07-09）
-    assert "adapt the background, outfit, pose, gesture and facial expression" in prompt
+    # 场景置换放开身体/环境，但脸只做有限适配（用户确认 2026-08-29）
+    assert "Adapt the background, outfit, body pose and gesture" in prompt
+    assert "minimal coordinated adjustment" in prompt
+    assert "Naturally adapt the background, outfit, pose, gesture and facial expression" not in prompt
     assert "never with detailed faces or hands" in prompt
 
 
@@ -436,13 +438,14 @@ class TestPromptVariantSwitch:
     最要命的失败形态是「一个非法值让展位生不出图」，所以回落而不是抛。
     """
 
-    def test_all_three_variants_light_the_face(self):
-        """用光底座三版共有：真实版若不打光，今早那条「脸上没精神」的反馈
-        对每个不改默认值的客户就原封不动地留着。"""
+    def test_all_three_variants_limit_face_relighting(self):
+        """三版都保留场景光影，但不得靠局部重打面部光来实现。"""
         for name in ai_pipeline.PROMPT_VARIANTS:
             clause = ai_pipeline.resolve_prompt_variant(name)
-            assert "never flat, dim or muddy" in clause, f"{name} 没打光"
-            assert "distinct catchlights" in clause, f"{name} 缺眼神光"
+            assert "uniform exposure and colour-temperature blend" in clause, name
+            assert "do not add a new local key light, fill light or catchlight" in clause, name
+            assert "directional light fully to the wig, neck, clothing, body and background" in clause, name
+            assert "distinct catchlights" not in clause, name
 
     def test_skin_handling_is_what_actually_differs(self):
         """三版不能是「换了措辞的同一件事」——上一个选择器就是因为假选择被撤的。
@@ -565,17 +568,13 @@ class TestPromptVariantWiring:
 
 
 class TestLightingBase:
-    """三版共有的用光底座（2026-08-01）：补的是用光与眼神。
+    """三版共有的身份安全光影底座（2026-08-29）。"""
 
-    真实/柔光两版最容易被后人"顺手优化"成美颜词，那样就跟美颜版没区别了。
-    正反两面都锚死。
-    """
-
-    def test_present_on_every_output_path(self):
-        """脸的用光与场景无关，三条路径都得有——漏一条就是「有的图有神采有的没有」。"""
+    def test_identity_safe_lighting_reaches_every_output_path(self):
         for name, prompt in _variant_prompts().items():
-            assert "never flat, dim or muddy" in prompt, f"{name} 缺面部用光指令"
-            assert "distinct catchlights" in prompt, f"{name} 缺眼神光指令"
+            assert "uniform exposure and colour-temperature blend" in prompt, name
+            assert "never repaint the facial shadow pattern" in prompt, name
+            assert "directional light fully to the wig, neck, clothing, body and background" in prompt, name
 
     def test_face_geometry_lock_on_every_variant_and_path(self):
         """对称几何锁（2026-08-01 补光上线次日瘦脸客户两颊变胖，2026-08-02 修）：
@@ -587,8 +586,8 @@ class TestLightingBase:
                 assert "neither slimmer nor fuller" in prompt, f"{variant}/{name} 缺对称几何锁"
                 assert "same face width, cheek contour and jawline" in prompt, \
                     f"{variant}/{name} 缺脸型几何锚定"
-                assert "locks her facial structure, not her expression" in prompt, \
-                    f"{variant}/{name} 几何锁缺表情豁免"
+                assert "facial anatomy stays immutable during any allowed micro-expression" in prompt, \
+                    f"{variant}/{name} 缺有限表情下的面部结构锁"
         # 美颜版必须在磨皮指令**之后**再锁一次几何（含 eye size——磨皮语境下笑会眯眼）；
         # 位置权重靠后，先锁后磨等于没锁，顺序也锚死
         beauty = ai_pipeline.resolve_prompt_variant("beauty")
@@ -615,7 +614,7 @@ class TestLightingBase:
         for name, prompt in _variant_prompts(variant="real").items():
             assert "do not smooth, retouch, plump, lighten or rejuvenate" in prompt, name
             assert "wrinkle, eye bag and age spot stays exactly as in the original" in prompt, name
-            assert "light may model her features, never reshape them" in prompt, name
+            assert "light may blend the portrait, never reshape the face" in prompt, name
 
     def test_only_the_beauty_variant_may_use_retouch_words(self):
         """radiant/glowing/youthful 是美颜滤镜触发词：真实/柔光两版一旦沾上就翻车成磨皮脸。
