@@ -1,0 +1,394 @@
+import importlib
+import inspect
+import re
+from pathlib import Path
+
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKeyConstraint,
+    Integer,
+    JSON,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    create_engine,
+    inspect as sqlalchemy_inspect,
+)
+from sqlalchemy.dialects import mysql
+
+from app.core.database import Base
+from app.customer import models
+
+
+EXPECTED_TABLES = {
+    "ark_customer_accounts",
+    "ark_customer_names",
+    "ark_customer_external_identities",
+    "ark_customer_relationships",
+    "ark_customer_assignments",
+    "ark_customer_contacts",
+    "ark_customer_contact_points",
+    "ark_customer_contact_relationships",
+    "ark_customer_source_records",
+    "ark_customer_facts",
+    "ark_customer_events",
+    "ark_customer_annotations",
+    "ark_customer_qualification_reviews",
+    "ark_customer_profile_versions",
+    "ark_customer_agent_contexts",
+    "ark_customer_conversations",
+    "ark_customer_messages",
+    "ark_customer_conversation_analyses",
+    "ark_customer_orders",
+    "ark_customer_order_items",
+    "ark_customer_research_tasks",
+    "ark_customer_sync_cursors",
+    "ark_customer_fact_evidence_links",
+    "ark_customer_fact_conflicts",
+    "ark_customer_list_projections",
+    "ark_customer_change_proposals",
+    "ark_customer_agent_run_scopes",
+    "ark_customer_suppression_registry",
+    "ark_customer_resolution_keys",
+    "ark_customer_target_matches",
+    "ark_customer_acquisition_attributions",
+}
+
+DEFERRED_WORKFLOW_TABLES = {
+    "ark_sales_search_jobs",
+    "ark_sales_search_results",
+    "ark_sales_search_result_sources",
+    "ark_sales_public_pool_batches",
+    "ark_customer_opportunities",
+    "ark_customer_opportunity_events",
+    "ark_customer_actions",
+}
+
+DESIGN_PATH = (
+    Path(__file__).parents[2]
+    / "docs/requirements/2026-08-28-unified-customer-profile-design.md"
+)
+
+
+def _design_tables():
+    text = DESIGN_PATH.read_text(encoding="utf-8")
+    section = text.split("## 7. 目标数据表与字段字典", 1)[1].split(
+        "## 8. 偏好与行为的四层模型", 1
+    )[0]
+    tables = {}
+    matches = list(re.finditer(r"^### 7\.(\d+) (ark_customer_[a-z_]+)$", section, re.M))
+    for index, match in enumerate(matches):
+        body_start = match.end()
+        body_end = matches[index + 1].start() if index + 1 < len(matches) else len(section)
+        body = section[body_start:body_end]
+        table_comment = re.search(r"^表备注：(.+)$", body, re.M).group(1)
+        fields = {}
+        for row in re.finditer(
+            r"^\| ([a-z][a-z0-9_]*) \| (.+?) \| (是|否) \|\s*(.*?)\s*\| (.+?) \|$",
+            body,
+            re.M,
+        ):
+            fields[row.group(1)] = {
+                "type": row.group(2),
+                "nullable": row.group(3) == "是",
+                "constraint": row.group(4),
+                "comment": row.group(5),
+            }
+        tables[match.group(2)] = {"comment": table_comment, "fields": fields}
+    return tables
+
+
+def _module_models():
+    return tuple(
+        value
+        for _, value in inspect.getmembers(models, inspect.isclass)
+        if issubclass(value, Base) and value is not Base and value.__module__ == models.__name__
+    )
+
+
+def _unique_column_sets(table):
+    unique_sets = {
+        (column.name,)
+        for column in table.columns
+        if column.unique
+    }
+    unique_sets.update(
+        tuple(column.name for column in constraint.columns)
+        for constraint in table.constraints
+        if isinstance(constraint, UniqueConstraint)
+    )
+    return unique_sets
+
+
+def _fk_signatures(table):
+    return {
+        (
+            tuple(element.parent.name for element in constraint.elements),
+            tuple(element.target_fullname for element in constraint.elements),
+        )
+        for constraint in table.constraints
+        if isinstance(constraint, ForeignKeyConstraint)
+    }
+
+
+def _assert_design_type(column, design_type):
+    if " AS (" in design_type:
+        assert isinstance(column.type, String)
+        assert column.info.get("read_only") is True
+        return
+    if design_type == "BIGINT":
+        assert isinstance(column.type, BigInteger)
+    elif design_type == "INT UNSIGNED":
+        assert column.type.compile(dialect=mysql.dialect()) == "INTEGER UNSIGNED"
+    elif design_type == "INT":
+        assert isinstance(column.type, Integer)
+    elif design_type.startswith("VARCHAR("):
+        assert isinstance(column.type, String)
+        assert column.type.length == int(re.search(r"\d+", design_type).group())
+    elif design_type.startswith("CHAR("):
+        assert isinstance(column.type, String)
+        assert column.type.length == int(re.search(r"\d+", design_type).group())
+        assert column.type.compile(dialect=mysql.dialect()).startswith("CHAR(")
+    elif design_type.startswith("DECIMAL("):
+        precision, scale = map(int, re.findall(r"\d+", design_type))
+        assert isinstance(column.type, Numeric)
+        assert (column.type.precision, column.type.scale) == (precision, scale)
+    elif design_type == "DATETIME":
+        assert isinstance(column.type, DateTime)
+    elif design_type == "DATE":
+        assert isinstance(column.type, Date)
+    elif design_type == "BOOLEAN":
+        assert isinstance(column.type, Boolean)
+    elif design_type == "JSON":
+        assert isinstance(column.type, JSON)
+    elif design_type in {"TEXT", "LONGTEXT"}:
+        assert isinstance(column.type, Text)
+    else:
+        raise AssertionError(f"unhandled design type: {design_type}")
+
+
+def test_customer_module_supplies_exactly_the_31_core_tables():
+    module_models = _module_models()
+
+    assert len(module_models) == 31
+    assert {model.__tablename__ for model in module_models} == EXPECTED_TABLES
+    assert set(models.CORE_TABLE_NAMES) == EXPECTED_TABLES
+    assert not (set(models.CORE_TABLE_NAMES) & DEFERRED_WORKFLOW_TABLES)
+
+
+def test_every_core_table_matches_the_approved_field_dictionary_and_comments():
+    design_tables = _design_tables()
+
+    assert set(design_tables) == EXPECTED_TABLES
+    for model in _module_models():
+        table = model.__table__
+        expected = design_tables[table.name]
+        assert table.comment == expected["comment"]
+        assert set(table.columns.keys()) == set(expected["fields"])
+        unique_sets = _unique_column_sets(table)
+        indexed_columns = {
+            column.name
+            for index in table.indexes
+            for column in index.columns
+        }
+        for column in table.columns:
+            field = expected["fields"][column.name]
+            assert column.comment and field["comment"] in column.comment
+            assert column.nullable is field["nullable"]
+            _assert_design_type(column, field["type"])
+            if "INDEX" in field["constraint"]:
+                assert column.name in indexed_columns
+            if field["constraint"] == "UNIQUE":
+                assert (column.name,) in unique_sets
+
+
+def test_critical_enum_json_amount_and_business_time_comments_are_explicit():
+    accounts = models.CustomerAccount.__table__.c
+    facts = models.CustomerFact.__table__.c
+    contexts = models.CustomerAgentContext.__table__.c
+    messages = models.CustomerMessage.__table__.c
+    orders = models.CustomerOrder.__table__.c
+    research = models.CustomerResearchTask.__table__.c
+
+    assert all(value in accounts.entity_type.comment for value in (
+        "registered_company", "sole_proprietor", "individual_business", "unknown"
+    ))
+    assert all(value in facts.fact_layer.comment for value in (
+        "source", "expressed", "observed", "inferred", "confirmed"
+    ))
+    assert "customer_profile_v1" in models.CustomerProfileVersion.__table__.c.profile_json.comment
+    assert "customer_context_v1" in contexts.context_json.comment
+    assert "file_name" in messages.attachment_meta_json.comment
+    assert "currency" in facts.value_json.comment and "unit" in facts.value_json.comment
+    assert "美元" in orders.amount_usd.comment
+    assert "原币种" in orders.amount_original.comment
+    assert "北京时间" in accounts.relationship_stage_changed_at.comment
+    assert "北京时间" in research.lease_expires_at.comment
+
+
+def test_company_name_is_nullable_and_never_a_unique_identity():
+    column = models.CustomerAccount.__table__.c.canonical_company_name
+
+    assert column.nullable is True
+    assert column.unique is not True
+    assert (column.name,) not in _unique_column_sets(models.CustomerAccount.__table__)
+
+
+def test_external_identity_has_xor_check_and_read_only_strong_slots():
+    table = models.CustomerExternalIdentity.__table__
+    checks = {
+        str(constraint.sqltext)
+        for constraint in table.constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+
+    assert any("customer_id IS NULL" in check and "contact_id IS NULL" in check for check in checks)
+    assert {"primary_identity_slot", "verified_strong_key"} <= set(table.columns.keys())
+    for name in ("primary_identity_slot", "verified_strong_key"):
+        column = table.c[name]
+        assert column.nullable is True
+        assert column.info == {"read_only": True, "mysql_generated": True}
+        assert (name,) in _unique_column_sets(table)
+
+
+def test_assignment_has_one_current_primary_unique_slot():
+    table = models.CustomerAssignment.__table__
+
+    assert table.c.active_primary_slot.info["read_only"] is True
+    assert ("active_assignment_key",) in _unique_column_sets(table)
+    assert ("customer_id", "active_primary_slot") in _unique_column_sets(table)
+
+
+def test_core_composite_unique_constraints_preserve_scope_and_identity():
+    expected = {
+        models.CustomerSourceRecord: {("external_record_key_hash", "content_hash")},
+        models.CustomerProfileVersion: {
+            ("customer_id", "version_no"),
+            ("customer_id", "profile_fingerprint"),
+            ("id", "customer_id"),
+        },
+        models.CustomerConversation: {
+            ("source_system", "source_account_key", "external_conversation_id")
+        },
+        models.CustomerMessage: {("conversation_id", "external_message_id")},
+        models.CustomerConversationAnalysis: {
+            ("conversation_id", "version_no"),
+            ("conversation_id", "analysis_fingerprint"),
+        },
+        models.CustomerOrder: {
+            ("source_system", "source_account_key", "external_order_id"),
+            ("id", "customer_id"),
+        },
+        models.CustomerOrderItem: {("order_id", "item_fingerprint")},
+        models.CustomerSyncCursor: {("source_system", "resource_type", "scope_key")},
+    }
+    for model, unique_sets in expected.items():
+        assert unique_sets <= _unique_column_sets(model.__table__)
+
+
+def test_profile_consumers_enforce_same_customer_composite_foreign_keys():
+    accounts = _fk_signatures(models.CustomerAccount.__table__)
+    assert (
+        ("current_profile_version_id", "id"),
+        ("ark_customer_profile_versions.id", "ark_customer_profile_versions.customer_id"),
+    ) in accounts
+
+    for model in (
+        models.CustomerAgentContext,
+        models.CustomerListProjection,
+        models.CustomerChangeProposal,
+    ):
+        assert (
+            ("profile_version_id", "customer_id"),
+            ("ark_customer_profile_versions.id", "ark_customer_profile_versions.customer_id"),
+        ) in _fk_signatures(model.__table__)
+
+
+def test_fact_evidence_and_conflict_tables_keep_customer_content_guards():
+    facts = models.CustomerFact.__table__
+    evidence = models.CustomerFactEvidenceLink.__table__
+    conflicts = models.CustomerFactConflict.__table__
+
+    assert facts.c.customer_id.nullable is False
+    assert ("fact_fingerprint",) in _unique_column_sets(facts)
+    assert evidence.c.customer_id.nullable is False
+    assert evidence.c.evidence_content_hash.nullable is False
+    assert ("evidence_fingerprint",) in _unique_column_sets(evidence)
+    assert conflicts.c.customer_id.nullable is False
+    assert ("conflict_fingerprint",) in _unique_column_sets(conflicts)
+    checks = {
+        str(constraint.sqltext)
+        for constraint in conflicts.constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+    assert any("left_fact_id < right_fact_id" in check for check in checks)
+
+
+def test_every_confidence_column_has_a_structural_zero_to_one_check():
+    models_and_columns = {
+        models.CustomerAccount: ("identity_confidence",),
+        models.CustomerName: ("confidence",),
+        models.CustomerExternalIdentity: ("confidence",),
+        models.CustomerRelationship: ("confidence",),
+        models.CustomerContact: ("confidence",),
+        models.CustomerContactRelationship: ("confidence",),
+        models.CustomerFact: ("confidence",),
+        models.CustomerConversationAnalysis: ("confidence",),
+    }
+
+    for model, column_names in models_and_columns.items():
+        checks = " ".join(
+            str(constraint.sqltext)
+            for constraint in model.__table__.constraints
+            if isinstance(constraint, CheckConstraint)
+        )
+        for column_name in column_names:
+            assert f"{column_name} >= 0" in checks
+            assert f"{column_name} <= 1" in checks
+
+
+def test_no_core_default_uses_datetime_now_or_utcnow():
+    for model in _module_models():
+        for column in model.__table__.columns:
+            for default in (column.default, column.onupdate):
+                if default is None or not default.is_callable:
+                    continue
+                callable_default = default.arg
+                while hasattr(callable_default, "__wrapped__"):
+                    callable_default = callable_default.__wrapped__
+                assert getattr(callable_default, "__name__", "") not in {"now", "utcnow"}
+                assert getattr(callable_default, "__module__", "") != "datetime"
+
+
+def test_relationships_are_minimal_and_use_noload():
+    account_relationships = sqlalchemy_inspect(models.CustomerAccount).relationships
+    name_relationships = sqlalchemy_inspect(models.CustomerName).relationships
+
+    assert set(account_relationships.keys()) == {"names"}
+    assert set(name_relationships.keys()) == {"customer"}
+    assert account_relationships.names.lazy == "noload"
+    assert name_relationships.customer.lazy == "noload"
+
+
+def test_app_models_registers_core_once_and_retains_sales_tables():
+    imported = importlib.import_module("app.models")
+    importlib.reload(imported)
+
+    assert EXPECTED_TABLES <= set(Base.metadata.tables)
+    assert "ark_sales_target_profiles" in Base.metadata.tables
+    assert "ark_sales_search_jobs" in Base.metadata.tables
+    for table_name in EXPECTED_TABLES:
+        assert Base.metadata.tables[table_name] is models.CORE_TABLES[table_name]
+
+
+def test_core_metadata_can_create_on_sqlite():
+    importlib.import_module("app.models")
+    engine = create_engine("sqlite:///:memory:")
+
+    Base.metadata.create_all(engine, tables=list(models.CORE_TABLES.values()))
+    assert set(models.CORE_TABLE_NAMES) <= set(Base.metadata.tables)
