@@ -20,8 +20,10 @@ from sqlalchemy import (
     inspect as sqlalchemy_inspect,
 )
 from sqlalchemy.dialects import mysql
+from sqlalchemy.schema import CreateTable
 
 from app.core.database import Base
+from app.core import time as core_time
 from app.customer import models
 
 
@@ -198,7 +200,7 @@ def test_every_core_table_matches_the_approved_field_dictionary_and_comments():
         }
         for column in table.columns:
             field = expected["fields"][column.name]
-            assert column.comment and field["comment"] in column.comment
+            assert column.comment == field["comment"]
             assert column.nullable is field["nullable"]
             _assert_design_type(column, field["type"])
             if "INDEX" in field["constraint"]:
@@ -254,6 +256,38 @@ def test_external_identity_has_xor_check_and_read_only_strong_slots():
         assert column.nullable is True
         assert column.info == {"read_only": True, "mysql_generated": True}
         assert (name,) in _unique_column_sets(table)
+
+
+def test_generated_slots_and_deferred_workflow_ids_use_exact_business_comments():
+    exact_columns = {
+        "ark_customer_external_identities": (
+            "primary_identity_slot",
+            "verified_strong_key",
+        ),
+        "ark_customer_relationships": ("active_relation_key",),
+        "ark_customer_assignments": (
+            "active_assignment_key",
+            "active_primary_slot",
+        ),
+        "ark_customer_contact_points": ("primary_point_slot",),
+        "ark_customer_contact_relationships": ("active_relation_key",),
+        "ark_customer_annotations": ("active_dnc_key",),
+        "ark_customer_qualification_reviews": ("current_scope_slot",),
+        "ark_customer_suppression_registry": ("active_suppression_key",),
+        "ark_customer_target_matches": ("current_match_slot",),
+        "ark_customer_acquisition_attributions": (
+            "search_job_id",
+            "opportunity_id",
+        ),
+    }
+    design_tables = _design_tables()
+
+    for table_name, column_names in exact_columns.items():
+        table = models.CORE_TABLES[table_name]
+        for column_name in column_names:
+            assert table.c[column_name].comment == (
+                design_tables[table_name]["fields"][column_name]["comment"]
+            )
 
 
 def test_assignment_has_one_current_primary_unique_slot():
@@ -352,17 +386,31 @@ def test_every_confidence_column_has_a_structural_zero_to_one_check():
             assert f"{column_name} <= 1" in checks
 
 
-def test_no_core_default_uses_datetime_now_or_utcnow():
+def _callable_origin(value):
+    while hasattr(value, "__wrapped__"):
+        value = value.__wrapped__
+    return value
+
+
+def test_core_audit_defaults_use_beijing_now_and_never_datetime_now():
     for model in _module_models():
         for column in model.__table__.columns:
             for default in (column.default, column.onupdate):
                 if default is None or not default.is_callable:
                     continue
-                callable_default = default.arg
-                while hasattr(callable_default, "__wrapped__"):
-                    callable_default = callable_default.__wrapped__
+                callable_default = _callable_origin(default.arg)
                 assert getattr(callable_default, "__name__", "") not in {"now", "utcnow"}
                 assert getattr(callable_default, "__module__", "") != "datetime"
+
+        for audit_name in ("created_at", "updated_at"):
+            if audit_name not in model.__table__.c:
+                continue
+            audit_column = model.__table__.c[audit_name]
+            assert audit_column.default is not None
+            assert _callable_origin(audit_column.default.arg) is core_time.beijing_now
+            if audit_name == "updated_at":
+                assert audit_column.onupdate is not None
+                assert _callable_origin(audit_column.onupdate.arg) is core_time.beijing_now
 
 
 def test_relationships_are_minimal_and_use_noload():
@@ -392,3 +440,14 @@ def test_core_metadata_can_create_on_sqlite():
 
     Base.metadata.create_all(engine, tables=list(models.CORE_TABLES.values()))
     assert set(models.CORE_TABLE_NAMES) <= set(Base.metadata.tables)
+
+
+def test_every_core_table_compiles_complete_mysql_ddl_with_comments():
+    importlib.import_module("app.models")
+
+    assert len(models.CORE_TABLES) == 31
+    for table_name, table in models.CORE_TABLES.items():
+        ddl = str(CreateTable(table).compile(dialect=mysql.dialect()))
+        assert table_name in ddl
+        assert ddl.lstrip().startswith("CREATE TABLE")
+        assert "COMMENT=" in ddl

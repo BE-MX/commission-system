@@ -33,10 +33,7 @@ def _generated_slot(comment: str, *, unique: bool = True) -> Column:
         String(64),
         nullable=True,
         unique=unique,
-        comment=(
-            f"{comment}；ORM中为只读可空字符串占位，"
-            "MySQL迁移将定义为STORED生成列"
-        ),
+        comment=comment,
         info={"read_only": True, "mysql_generated": True},
     )
 
@@ -1067,10 +1064,12 @@ class CustomerAcquisitionAttribution(Base):
     origin_type = Column(String(24), nullable=False, index=True, comment="首始来源：search、public_pool、alibaba_inquiry、okki、manual")
     origin_ref_type = Column(String(32), nullable=False, comment="首始来源对象：search_result、public_pool_batch、source_record、manual")
     origin_ref_id = Column(BigInteger, nullable=False, index=True, comment="首始来源方舟对象ID")
-    search_job_id = Column(BigInteger, nullable=True, index=True, comment="归因关联搜索任务ID；工作流表替换前暂不建立ORM外键")
+    # Deferred workflow reference: Task 6 adds the FK atomically with its model.
+    search_job_id = Column(BigInteger, nullable=True, index=True, comment="归因关联搜索任务ID")
     research_task_id = Column(BigInteger, nullable=True, comment="归因关联研究任务ID")
     qualification_review_id = Column(BigInteger, nullable=True, comment="归因关联资格审核ID")
-    opportunity_id = Column(BigInteger, nullable=True, index=True, comment="归因关联销售机会ID；工作流表替换前暂不建立ORM外键")
+    # Deferred workflow reference: Task 7 adds the FK atomically with its model.
+    opportunity_id = Column(BigInteger, nullable=True, index=True, comment="归因关联销售机会ID")
     order_id = Column(BigInteger, nullable=True, index=True, comment="转化后关联的有效订单ID")
     attribution_role = Column(String(16), nullable=False, index=True, comment="归因角色：first_touch、influenced、conversion")
     attribution_weight = Column(Numeric(7, 6), nullable=False, comment="按策略分配的归因权重0至1，同一转化权重和为1")
