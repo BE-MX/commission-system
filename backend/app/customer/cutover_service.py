@@ -72,6 +72,7 @@ KNOWN_WRITER_CATEGORIES = (
     "schedulers",
     "agent_workers",
     "search",
+    "public_pool_batch",
     "inquiry_import",
     "customer_sync",
     "profile_compiler",

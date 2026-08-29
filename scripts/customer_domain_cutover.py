@@ -42,22 +42,35 @@ from app.customer.cutover_service import (  # noqa: E402
 BEIJING_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 
+def _resolve_explicit_safe_root(safe_root: str | Path | None) -> Path | None:
+    if safe_root is None:
+        return None
+    raw_root = Path(safe_root)
+    if not raw_root.is_absolute():
+        raise CutoverGuardError("safe output root must be an explicit absolute path")
+    resolved_root = raw_root.resolve()
+    repository_root = REPO_ROOT.resolve()
+    if resolved_root == repository_root:
+        raise CutoverGuardError("safe output root must be a dedicated evidence directory")
+    if not resolved_root.is_relative_to(repository_root):
+        raise CutoverGuardError("safe output root must remain inside the repository")
+    return resolved_root
+
+
 def resolve_safe_path(
     value: str | Path,
     *,
     safe_root: str | Path | None = None,
 ) -> Path:
-    """Resolve a CLI path under the repository or an explicitly named safe root."""
-    if safe_root is not None and not Path(safe_root).is_absolute():
-        raise CutoverGuardError("safe output root must be an explicit absolute path")
-    explicit_root = Path(safe_root).resolve() if safe_root is not None else None
+    """Resolve a CLI path under the repository or its explicit safe subdirectory."""
+    explicit_root = _resolve_explicit_safe_root(safe_root)
     anchor = explicit_root or REPO_ROOT
     candidate = Path(value)
     if not candidate.is_absolute():
         candidate = anchor / candidate
     candidate = candidate.resolve()
-    allowed_roots = (REPO_ROOT.resolve(),) + ((explicit_root,) if explicit_root else ())
-    if not any(candidate == root or candidate.is_relative_to(root) for root in allowed_roots):
+    allowed_root = explicit_root or REPO_ROOT.resolve()
+    if candidate != allowed_root and not candidate.is_relative_to(allowed_root):
         raise CutoverGuardError(
             f"path must remain under the configured safe roots: {candidate}"
         )
@@ -70,23 +83,7 @@ def resolve_safe_output_path(
     safe_root: str | Path | None = None,
 ) -> Path:
     """Keep generated evidence inside one explicit, non-source output tree."""
-    if safe_root is not None and not Path(safe_root).is_absolute():
-        raise CutoverGuardError("safe output root must be an explicit absolute path")
-    output_root = (
-        Path(safe_root).resolve() if safe_root is not None else DEFAULT_OUTPUT_ROOT.resolve()
-    )
-    repository_root = REPO_ROOT.resolve()
-    default_root = DEFAULT_OUTPUT_ROOT.resolve()
-    root_contains_repository = (
-        output_root == repository_root or repository_root.is_relative_to(output_root)
-    )
-    root_is_source_tree = output_root.is_relative_to(repository_root) and not (
-        output_root == default_root or output_root.is_relative_to(default_root)
-    )
-    if root_contains_repository or root_is_source_tree or output_root == Path(output_root.anchor):
-        raise CutoverGuardError(
-            "safe output root must be a dedicated evidence directory, not a source or drive root"
-        )
+    output_root = _resolve_explicit_safe_root(safe_root) or DEFAULT_OUTPUT_ROOT.resolve()
     candidate = Path(value)
     if not candidate.is_absolute():
         candidate = output_root / candidate

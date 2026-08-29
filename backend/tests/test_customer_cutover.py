@@ -448,6 +448,26 @@ def test_verify_ready_fails_on_hash_mismatch_missing_writer_and_running_writer()
         )
 
 
+def test_verify_ready_requires_stopped_public_pool_batch_writer():
+    engine = _create_cutover_db()
+    with Session(engine) as db:
+        inventory = build_inventory(db)
+
+    assert "public_pool_batch" in KNOWN_WRITER_CATEGORIES
+    with pytest.raises(CutoverGuardError, match="missing writer categories"):
+        verify_ready(
+            inventory,
+            _writer_manifest(omitted="public_pool_batch"),
+            inventory.inventory_sha256,
+        )
+    with pytest.raises(CutoverGuardError, match="still running"):
+        verify_ready(
+            inventory,
+            _writer_manifest(running="public_pool_batch"),
+            inventory.inventory_sha256,
+        )
+
+
 def test_verify_ready_recomputes_inventory_content_before_trusting_supplied_hash():
     engine = _create_cutover_db()
     with Session(engine) as db:
@@ -493,6 +513,34 @@ def test_cli_exposes_only_guarded_commands_and_rejects_escaping_paths():
         script.resolve_safe_output_path(REPO_ROOT / "README.md")
     with pytest.raises(CutoverGuardError, match="dedicated evidence directory"):
         script.resolve_safe_output_path(Path("report.json"), safe_root=REPO_ROOT)
+
+
+def test_safe_output_root_is_repo_contained_and_blocks_relative_traversal(tmp_path):
+    script = _load_cutover_script()
+    safe_root = REPO_ROOT / "tmp/explicit-cutover-evidence"
+    expected = safe_root / "reports/preflight.json"
+
+    assert (
+        script.resolve_safe_output_path(
+            Path("reports/preflight.json"), safe_root=safe_root
+        )
+        == expected
+    )
+    assert script.resolve_safe_path(Path("writers.json"), safe_root=safe_root) == (
+        safe_root / "writers.json"
+    )
+    with pytest.raises(CutoverGuardError, match="root"):
+        script.resolve_safe_output_path(
+            Path("../escaped.json"), safe_root=safe_root
+        )
+    with pytest.raises(CutoverGuardError, match="root"):
+        script.resolve_safe_path(Path("../escaped.json"), safe_root=safe_root)
+
+    outside_root = tmp_path / "outside-cutover-evidence"
+    with pytest.raises(CutoverGuardError, match="repository"):
+        script.resolve_safe_output_path(Path("report.json"), safe_root=outside_root)
+    with pytest.raises(CutoverGuardError, match="repository"):
+        script.resolve_safe_path(Path("writers.json"), safe_root=outside_root)
 
 
 def test_apply_reset_never_invokes_alembic_when_guard_or_marker_hash_fails(tmp_path):
