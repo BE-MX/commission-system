@@ -9,12 +9,14 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    FetchedValue,
     Integer,
     JSON,
     Numeric,
     String,
     Text,
     UniqueConstraint,
+    event,
 )
 from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import relationship
@@ -33,6 +35,7 @@ def _generated_slot(comment: str, *, unique: bool = True) -> Column:
         String(64),
         nullable=True,
         unique=unique,
+        server_default=FetchedValue(),
         comment=comment,
         info={"read_only": True, "mysql_generated": True},
     )
@@ -67,7 +70,7 @@ class CustomerAccount(Base):
         },
     )
 
-    id = Column(BigInteger, primary_key=True, comment="方舟内部永久稳定客户ID；外部系统不得指定")
+    id = Column(BigInteger, primary_key=True, autoincrement="ignore_fk", comment="方舟内部永久稳定客户ID；外部系统不得指定")
     customer_code = Column(String(32), nullable=False, unique=True, comment="面向用户和Agent展示的稳定客户编码；不承载业务含义")
     display_name = Column(String(255), nullable=False, comment="当前界面显示名称；待识别客户可使用“姓名（公司待识别）”")
     canonical_company_name = Column(String(255), nullable=True, comment="经公开商业证据或人工确认的规范公司名称；不得直接使用平台个人名称填充；个体经营者允许为空")
@@ -1116,6 +1119,32 @@ CORE_MODELS = (
 
 CORE_TABLE_NAMES = tuple(model.__tablename__ for model in CORE_MODELS)
 CORE_TABLES = {model.__tablename__: model.__table__ for model in CORE_MODELS}
+
+
+def _reject_generated_slot_assignment(_target, _value, _oldvalue, initiator):
+    raise ValueError(f"{initiator.key} is database-generated and read-only")
+
+
+def _configure_generated_slots():
+    for slot_model in CORE_MODELS:
+        slot_names = tuple(
+            column.name
+            for column in slot_model.__table__.columns
+            if column.info.get("read_only") is True
+        )
+        if not slot_names:
+            continue
+        slot_model.__mapper__.eager_defaults = False
+        for slot_name in slot_names:
+            event.listen(
+                getattr(slot_model, slot_name),
+                "set",
+                _reject_generated_slot_assignment,
+                retval=True,
+            )
+
+
+_configure_generated_slots()
 
 __all__ = [
     *(model.__name__ for model in CORE_MODELS),

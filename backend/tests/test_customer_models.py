@@ -3,6 +3,7 @@ import inspect
 import re
 from pathlib import Path
 
+import pytest
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -17,9 +18,12 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     create_engine,
+    event,
     inspect as sqlalchemy_inspect,
+    insert,
 )
 from sqlalchemy.dialects import mysql
+from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateTable
 
 from app.core.database import Base
@@ -69,6 +73,24 @@ DEFERRED_WORKFLOW_TABLES = {
     "ark_customer_opportunities",
     "ark_customer_opportunity_events",
     "ark_customer_actions",
+}
+
+GENERATED_SLOT_COLUMNS = {
+    "ark_customer_external_identities": (
+        "primary_identity_slot",
+        "verified_strong_key",
+    ),
+    "ark_customer_relationships": ("active_relation_key",),
+    "ark_customer_assignments": (
+        "active_assignment_key",
+        "active_primary_slot",
+    ),
+    "ark_customer_contact_points": ("primary_point_slot",),
+    "ark_customer_contact_relationships": ("active_relation_key",),
+    "ark_customer_annotations": ("active_dnc_key",),
+    "ark_customer_qualification_reviews": ("current_scope_slot",),
+    "ark_customer_suppression_registry": ("active_suppression_key",),
+    "ark_customer_target_matches": ("current_match_slot",),
 }
 
 DESIGN_PATH = (
@@ -260,21 +282,7 @@ def test_external_identity_has_xor_check_and_read_only_strong_slots():
 
 def test_generated_slots_and_deferred_workflow_ids_use_exact_business_comments():
     exact_columns = {
-        "ark_customer_external_identities": (
-            "primary_identity_slot",
-            "verified_strong_key",
-        ),
-        "ark_customer_relationships": ("active_relation_key",),
-        "ark_customer_assignments": (
-            "active_assignment_key",
-            "active_primary_slot",
-        ),
-        "ark_customer_contact_points": ("primary_point_slot",),
-        "ark_customer_contact_relationships": ("active_relation_key",),
-        "ark_customer_annotations": ("active_dnc_key",),
-        "ark_customer_qualification_reviews": ("current_scope_slot",),
-        "ark_customer_suppression_registry": ("active_suppression_key",),
-        "ark_customer_target_matches": ("current_match_slot",),
+        **GENERATED_SLOT_COLUMNS,
         "ark_customer_acquisition_attributions": (
             "search_job_id",
             "opportunity_id",
@@ -288,6 +296,118 @@ def test_generated_slots_and_deferred_workflow_ids_use_exact_business_comments()
             assert table.c[column_name].comment == (
                 design_tables[table_name]["fields"][column_name]["comment"]
             )
+
+
+@pytest.mark.parametrize("explicit_value", [None, "caller-supplied-slot"])
+def test_generated_slots_reject_every_explicit_orm_assignment(explicit_value):
+    models_by_table = {model.__tablename__: model for model in models.CORE_MODELS}
+
+    for table_name, column_names in GENERATED_SLOT_COLUMNS.items():
+        model = models_by_table[table_name]
+        for column_name in column_names:
+            with pytest.raises(ValueError, match=column_name):
+                model(**{column_name: explicit_value})
+
+
+def _required_insert_values(table, excluded):
+    values = {}
+    now = core_time.beijing_now()
+    for column in table.columns:
+        if column.name in excluded or column.nullable or column.default is not None:
+            continue
+        if column.primary_key and column is table.autoincrement_column:
+            continue
+        if isinstance(column.type, Boolean):
+            values[column.name] = False
+        elif isinstance(column.type, DateTime):
+            values[column.name] = now
+        elif isinstance(column.type, Date):
+            values[column.name] = now.date()
+        elif isinstance(column.type, JSON):
+            values[column.name] = {}
+        elif isinstance(column.type, (BigInteger, Integer, Numeric)):
+            values[column.name] = 1
+        else:
+            values[column.name] = "x"
+    return values
+
+
+def test_normal_compiled_inserts_omit_all_generated_slots():
+    for table_name, column_names in GENERATED_SLOT_COLUMNS.items():
+        table = models.CORE_TABLES[table_name]
+        statement = insert(table).values(
+            **_required_insert_values(table, set(column_names))
+        )
+        sql = str(statement.compile(dialect=mysql.dialect()))
+        for column_name in column_names:
+            assert column_name not in sql
+
+
+def _new_account():
+    return models.CustomerAccount(
+        customer_code="CUST-TEST-001",
+        display_name="Autoincrement Test",
+        entity_type="unknown",
+        identity_status="provisional",
+        relationship_stage="discovered",
+        relationship_stage_changed_at=core_time.beijing_now(),
+        relationship_stage_reason="created",
+        record_status="active",
+        identity_confidence=0,
+        profile_completeness=0,
+        profile_input_seq=0,
+    )
+
+
+def test_account_primary_key_autoincrements_despite_composite_profile_fk():
+    table = models.CustomerAccount.__table__
+    ddl = str(CreateTable(table).compile(dialect=mysql.dialect()))
+
+    assert table.autoincrement_column is table.c.id
+    assert re.search(r"\bid BIGINT NOT NULL[^\n]*AUTO_INCREMENT\b", ddl)
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine, tables=list(models.CORE_TABLES.values()))
+    with Session(engine) as session:
+        account = _new_account()
+        session.add(account)
+        session.flush()
+        assert isinstance(account.id, int)
+        assert account.id > 0
+
+
+def test_generated_slots_are_omitted_on_flush_and_refresh_loads_physical_nulls():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine, tables=list(models.CORE_TABLES.values()))
+    assignment_inserts = []
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def _capture_assignment_insert(_conn, _cursor, statement, _params, _context, _many):
+        if statement.startswith("INSERT INTO ark_customer_assignments"):
+            assignment_inserts.append(statement)
+
+    with Session(engine) as session:
+        account = _new_account()
+        session.add(account)
+        session.flush()
+        assignment = models.CustomerAssignment(
+            customer_id=account.id,
+            user_id=1,
+            assignment_role="primary",
+            assignment_status="active",
+            assignment_source="manual",
+            effective_from=core_time.beijing_now(),
+        )
+        session.add(assignment)
+        session.flush()
+
+        assert len(assignment_inserts) == 1
+        assert "active_assignment_key" not in assignment_inserts[0]
+        assert "active_primary_slot" not in assignment_inserts[0]
+        session.expire(assignment)
+        session.refresh(assignment)
+        assert assignment.active_assignment_key is None
+        assert assignment.active_primary_slot is None
 
 
 def test_assignment_has_one_current_primary_unique_slot():
