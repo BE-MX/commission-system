@@ -70,14 +70,14 @@ def test_unregistered_fact_is_rejected():
 - [ ] **Step 4: Run the contract tests and confirm all pass.**
 - [ ] **Step 5: Commit `feat: define customer domain contracts`.**
 
-## Task 2: Define the unified ORM and comment invariant
+## Task 2: Define the 31-table customer core ORM and comment invariant
 
 **Files:**
 - Create: `backend/app/customer/models.py`
 - Modify: `backend/app/models/__init__.py`
 - Create: `backend/tests/test_customer_models.py`
 
-- [ ] **Step 1: Write failing metadata tests** that import the 31 core tables and seven workflow tables listed in the approved design, assert every table has `comment`, every column has `comment`, and assert these physical constraints:
+- [ ] **Step 1: Write failing metadata tests** that import the 31 non-conflicting core tables listed in approved design section 7, assert every table has `comment`, every column has `comment`, and assert the core physical constraints. The seven existing workflow table names are replaced atomically with their services in Tasks 6 and 7; defining them here would register duplicate SQLAlchemy tables while old runtime code is still live.
 
 ```python
 EXPECTED = {
@@ -86,10 +86,6 @@ EXPECTED = {
     "ark_customer_facts",
     "ark_customer_profile_versions",
     "ark_customer_suppression_registry",
-    "ark_sales_search_results",
-    "ark_sales_search_result_sources",
-    "ark_customer_opportunities",
-    "ark_customer_actions",
 }
 
 
@@ -101,18 +97,18 @@ def test_customer_tables_and_columns_have_comments():
         assert all(column.comment for column in tables[name].columns)
 
 
-def test_search_candidate_is_unique_per_job_customer():
-    table = Base.metadata.tables["ark_sales_search_results"]
+def test_profile_version_is_unique_per_customer_version():
+    table = Base.metadata.tables["ark_customer_profile_versions"]
     assert any(
-        {column.name for column in item.columns} == {"job_id", "customer_id"}
+        {column.name for column in item.columns} == {"customer_id", "version_no"}
         for item in table.constraints
         if isinstance(item, UniqueConstraint)
     )
 ```
 
 - [ ] **Step 2: Run the focused test and confirm the tables are absent.**
-- [ ] **Step 3: Implement all fields, comments, generated slots, unique keys, composite same-customer foreign keys and `lazy="noload"` relationships from design sections 7 and 12.8. Use Beijing defaults only for business/audit times and explicit UTC only for fencing leases already allowlisted.**
-- [ ] **Step 4: Replace old sales model exports in `app.models` with the customer model exports so Alembic metadata is complete.**
+- [ ] **Step 3: Implement all fields, comments, generated slots, unique keys, composite same-customer foreign keys and `lazy="noload"` relationships for the 31 core tables from design section 7. References to the seven not-yet-replaced workflow tables use string foreign keys and are added only when the referenced workflow model is introduced. Use Beijing defaults only for business/audit times and explicit UTC only for fencing leases already allowlisted.**
+- [ ] **Step 4: Add customer core model exports to `app.models` while retaining old sales model exports until Task 6; Alembic metadata must contain each physical table exactly once.**
 - [ ] **Step 5: Run `pytest tests/test_customer_models.py -q` and confirm pass.**
 - [ ] **Step 6: Commit `feat: add unified customer data model`.**
 
@@ -166,6 +162,7 @@ def test_search_candidate_is_unique_per_job_customer():
 
 **Files:**
 - Modify: `backend/app/sales_automation/models.py`
+- Modify: `backend/app/customer/models.py`
 - Modify: `backend/app/sales_automation/schemas.py`
 - Modify: `backend/app/sales_automation/service.py`
 - Modify: `backend/app/sales_automation/public_pool_service.py`
@@ -176,7 +173,7 @@ def test_search_candidate_is_unique_per_job_customer():
 
 - [ ] **Step 1: Replace old sales tests with failing customer-ID tests** for duplicate sources under one result, one active research task per strategy, gate stop, result quality review versus qualification, current-scope qualification CAS, DNC deny gate and target-specific poor-fit.
 - [ ] **Step 2: Run the focused file and confirm RED.**
-- [ ] **Step 3: Remove `LeadCompany`, `LeadContact`, `ResearchSubject`, `PublicPoolTask`, `DealAssessment`, `ResearchRun` and `ResearchFact` runtime use. Re-export only preserved target-profile and unified workflow models from the customer domain.**
+- [ ] **Step 3: Add the rebuilt search job, search result, result source and public-pool batch models to `app.customer.models`; then remove `LeadCompany`, `LeadContact`, `ResearchSubject`, `PublicPoolTask`, `DealAssessment`, `ResearchRun` and `ResearchFact` runtime use. Re-export only preserved target-profile and these unified workflow models from `sales_automation.models`, so every table remains registered once.**
 - [ ] **Step 4: Rewrite ingestion to append source records, resolve/create customer, upsert `(job_id, customer_id)`, append result sources, aggregate scores and create the research task by stable fingerprint.**
 - [ ] **Step 5: Rewrite public-pool selection and research submission around `customer_id`, research tasks, facts and qualification reviews. Accepted research creates a pending qualification queue; it never silently means qualified.**
 - [ ] **Step 6: Return only new envelopes and identifiers from HTTP/Agent endpoints; delete lead/company/subject endpoints rather than aliasing them.**
@@ -187,6 +184,8 @@ def test_search_candidate_is_unique_per_job_customer():
 
 **Files:**
 - Create: `backend/app/customer/workflow_service.py`
+- Modify: `backend/app/customer/models.py`
+- Modify: `backend/app/insight/models.py`
 - Modify: `backend/app/insight/customer_opportunity_service.py`
 - Modify: `backend/app/insight/customer_radar_service.py`
 - Modify: `backend/app/insight/customer_profile_service.py`
@@ -195,7 +194,7 @@ def test_search_candidate_is_unique_per_job_customer():
 
 - [ ] **Step 1: Write failing workflow tests** for approved search/public-pool qualification creating one namespaced pending opportunity and one first action, deferred/rejected creating neither, atomic public-pool claim, owner conflict, opportunity transition evidence, valid-order activation and action completion creating `sales_activity.logged` without fabricating replied/quoted.
 - [ ] **Step 2: Verify RED.**
-- [ ] **Step 3: Implement qualification orchestration, primary/collaborator assignment history, request-time claimability, opportunity upsert by `(source_system, source_account_key, source_key)`, append-only opportunity events and idempotent action generation.**
+- [ ] **Step 3: Add rebuilt opportunity, opportunity-event and action models to `app.customer.models`, remove their old definitions plus the retired inquiry import batch/profile/profile-event definitions from `insight.models`, and re-export the new models there for non-customer insight code during the same commit. Implement qualification orchestration, primary/collaborator assignment history, request-time claimability, opportunity upsert by `(source_system, source_account_key, source_key)`, append-only opportunity events and idempotent action generation.**
 - [ ] **Step 4: Replace insight customer profile reads with customer query/profile services; remove all name/profile-ID joins and old profile event writes.**
 - [ ] **Step 5: Implement merge/split proposal handling so other draft/pending/approved proposals become superseded in the same transaction.**
 - [ ] **Step 6: Run workflow tests and all existing opportunity/radar tests updated to `customer_id`.**
