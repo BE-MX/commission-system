@@ -235,6 +235,7 @@ def validate_execution_receipt(
     receipt: Mapping[str, Any],
     *,
     evidence_contract: Mapping[str, Any],
+    receipt_resolved_path: Path,
 ) -> bool:
     if receipt.get("status") != "succeeded":
         raise CutoverGuardError("cutover execution receipt is not successful")
@@ -260,6 +261,7 @@ def validate_execution_receipt(
     bindings.update({
         "contract_sha256": evidence_contract.get("contract_sha256"),
         "contract_path": evidence_contract.get("contract_path"),
+        "receipt_path": evidence_contract.get("receipt_path"),
         "migration_revision": evidence_contract.get("migration_revision"),
         "schema_signature_sha256": evidence_contract.get(
             "physical_schema_contract_sha256"
@@ -268,6 +270,20 @@ def validate_execution_receipt(
     for field_name, expected in bindings.items():
         if receipt.get(field_name) != expected:
             raise CutoverGuardError(f"execution receipt does not bind {field_name}")
+    receipt_relative = Path(str(evidence_contract.get("receipt_path")))
+    expected_receipt_name = f"migration-receipt-{evidence_contract.get('nonce')}.json"
+    if (
+        receipt_relative.is_absolute()
+        or ".." in receipt_relative.parts
+        or receipt_relative.parent != Path(".")
+        or receipt_relative.name != expected_receipt_name
+    ):
+        raise CutoverGuardError(
+            "contract receipt_path must be canonical fixed evidence-relative path"
+        )
+    expected_receipt_path = resolve_evidence_output_path(receipt_relative)
+    if receipt_resolved_path.resolve() != expected_receipt_path:
+        raise CutoverGuardError("execution receipt path does not match contract receipt path")
     started_at = _parse_beijing(receipt.get("started_at"), "execution receipt started_at")
     completed_at = _parse_beijing(receipt.get("completed_at"), "execution receipt completed_at")
     issued_at = _parse_beijing(evidence_contract.get("issued_at"), "contract issued_at")
@@ -288,6 +304,7 @@ def verify_after(
     writer_manifest: Mapping[str, Any],
     approved_marker: Mapping[str, Any],
     execution_receipt: Mapping[str, Any],
+    execution_receipt_path: Path,
     physical_schema_contract: Mapping[str, Any],
 ) -> bool:
     _validate_preflight_report(preflight_report)
@@ -330,7 +347,11 @@ def verify_after(
             raise CutoverGuardError(
                 f"execution contract does not bind original {field_name}"
             )
-    validate_execution_receipt(execution_receipt, evidence_contract=contract)
+    validate_execution_receipt(
+        execution_receipt,
+        evidence_contract=contract,
+        receipt_resolved_path=execution_receipt_path,
+    )
     closure = AgentHistoryClosure.from_dict(preflight_report["agent_history_closure"])
     before = AgentPreservationSnapshot.from_dict(
         preflight_report["unrelated_agent_snapshot"]
@@ -475,7 +496,7 @@ def apply_reset(
             "instance_inventory_artifact_sha256"
         ],
         "contract_path": str(contract_path),
-        "receipt_path": str(receipt_path),
+        "receipt_path": receipt_path.relative_to(EVIDENCE_ROOT.resolve()).as_posix(),
         "migration_revision": CUTOVER_MIGRATION_REVISION,
         "evidence_artifacts": evidence_artifacts,
         "physical_schema_contract_sha256": physical_schema_contract_sha256,
@@ -516,7 +537,11 @@ def apply_reset(
         receipt = _read_json(receipt_path)
         if not isinstance(receipt, Mapping):
             raise CutoverGuardError("migration receipt must be an object")
-        validate_execution_receipt(receipt, evidence_contract=contract)
+        validate_execution_receipt(
+            receipt,
+            evidence_contract=contract,
+            receipt_resolved_path=receipt_path,
+        )
     except CutoverGuardError as exc:
         raise CutoverGuardError(
             f"Alembic exited successfully but receipt is invalid; evidence={receipt_path}; "
@@ -606,7 +631,8 @@ def _command_verify_after(args: argparse.Namespace) -> None:
     suppression = _load_suppression_manifest(resolve_read_path(args.suppression_manifest))
     writer = _read_json(resolve_read_path(args.stopped_writer_manifest))
     marker = _read_json(resolve_read_path(args.approved_marker))
-    receipt = _read_json(resolve_read_path(args.execution_receipt))
+    receipt_path = resolve_read_path(args.execution_receipt)
+    receipt = _read_json(receipt_path)
     physical_schema_contract = _read_json(
         resolve_read_path(args.physical_schema_contract)
     )
@@ -623,6 +649,7 @@ def _command_verify_after(args: argparse.Namespace) -> None:
             writer_manifest=writer,
             approved_marker=marker,
             execution_receipt=receipt,
+            execution_receipt_path=receipt_path,
             physical_schema_contract=physical_schema_contract,
         )
     print("Verified: approval receipt, retired IDs, Agent history, and schema all match.")

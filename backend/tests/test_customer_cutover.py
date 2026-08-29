@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import BigInteger, Text, create_engine, event, text
+from sqlalchemy.dialects.mysql import DATETIME as MYSQL_DATETIME
 from sqlalchemy.orm import Session
 
 import app.models  # noqa: F401 -- registers string FK targets for Agent DDL
@@ -88,7 +89,12 @@ def _suppression_row(**overrides):
 
 
 def _authoritative_source_manifest(
-    *, provider_rows=None, omit=None, approved_at=READY_CHECKED_AT
+    *,
+    provider_rows=None,
+    omit=None,
+    approved_at=READY_CHECKED_AT,
+    omit_confirmed_empty=None,
+    confirmed_empty_overrides=None,
 ):
     rows_by_kind = {
         "okki": [],
@@ -116,6 +122,10 @@ def _authoritative_source_manifest(
             "approved_at": approved_at.isoformat(),
             "rows": artifact_rows,
         }
+        if source_kind != omit_confirmed_empty:
+            artifact["confirmed_empty"] = (confirmed_empty_overrides or {}).get(
+                source_kind, not artifact_rows
+            )
         artifact_bytes = canonical_json_bytes(artifact) + b"\n"
         artifact_hash = hashlib.sha256(artifact_bytes).hexdigest()
         relative_path = Path("pytest-suppressions") / f"{source_kind}-{artifact_hash}.json"
@@ -948,6 +958,35 @@ def test_self_hashed_empty_suppression_and_repeated_key_fail_closed():
             _build_suppression(db, inventory, [], key=b"x" * 64)
 
 
+@pytest.mark.parametrize(
+    "source_manifest",
+    [
+        _authoritative_source_manifest(omit_confirmed_empty="okki"),
+        _authoritative_source_manifest(
+            confirmed_empty_overrides={"okki": False}
+        ),
+        _authoritative_source_manifest(
+            provider_rows=[_suppression_row()],
+            confirmed_empty_overrides={"provider": True},
+        ),
+    ],
+)
+def test_suppression_empty_confirmation_must_match_artifact_rows(source_manifest):
+    engine = _create_cutover_db()
+    with Session(engine) as db:
+        inventory = build_inventory(db)
+        with pytest.raises(CutoverGuardError, match="confirmed_empty"):
+            build_suppression_manifest(
+                db,
+                source_manifest,
+                SUPPRESSION_HMAC_KEY,
+                "v1",
+                inventory_sha256=inventory.inventory_sha256,
+                preflight_report_sha256=PREFLIGHT_REPORT_SHA256,
+                now=READY_CHECKED_AT + timedelta(minutes=1),
+            )
+
+
 def test_verify_ready_fails_on_hash_mismatch_missing_writer_and_running_writer():
     engine = _create_cutover_db()
     with Session(engine) as db:
@@ -1194,9 +1233,7 @@ def test_migration_preflight_requires_short_lived_contract_lock_and_live_invento
             "contract_path": str(
                 CUTOVER_EVIDENCE_ROOT / f"migration-contract-{nonce}.json"
             ),
-            "receipt_path": str(
-                CUTOVER_EVIDENCE_ROOT / f"migration-receipt-{nonce}.json"
-            ),
+            "receipt_path": f"migration-receipt-{nonce}.json",
             "migration_revision": "126",
             "evidence_artifacts": evidence_artifacts,
             "physical_schema_contract_sha256": physical_contract[
@@ -1270,6 +1307,45 @@ def test_migration_preflight_requires_short_lived_contract_lock_and_live_invento
             )
 
 
+@pytest.mark.parametrize(
+    ("expires_at", "expected"),
+    [
+        (READY_CHECKED_AT.replace(tzinfo=None) + timedelta(minutes=3), True),
+        (READY_CHECKED_AT.replace(tzinfo=None) - timedelta(seconds=1), False),
+        (READY_CHECKED_AT.replace(tzinfo=None) + timedelta(minutes=6), False),
+    ],
+)
+def test_mysql_fence_treats_naive_datetime_as_beijing_wall_time(
+    expires_at, expected
+):
+    class _MappingsResult:
+        def mappings(self):
+            return self
+
+        def one_or_none(self):
+            return {
+                "fence_token": "fence-token-20260830",
+                "inventory_sha256": "a" * 64,
+                "preflight_report_sha256": "b" * 64,
+                "expires_at": expires_at,
+                "active": 1,
+            }
+
+    class _FakeDb:
+        def execute(self, *_args, **_kwargs):
+            return _MappingsResult()
+
+    contract = {
+        "maintenance_fence_token": "fence-token-20260830",
+        "inventory_sha256": "a" * 64,
+        "preflight_report_sha256": "b" * 64,
+        "expires_at": (READY_CHECKED_AT + timedelta(minutes=3)).isoformat(),
+    }
+    assert cutover_service._mysql_maintenance_fence_active(
+        _FakeDb(), contract, now=READY_CHECKED_AT
+    ) is expected
+
+
 def test_verify_after_table_state_requires_all_new_tables_and_no_retired_only_tables():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(
@@ -1300,6 +1376,8 @@ def test_verify_after_table_state_requires_all_new_tables_and_no_retired_only_ta
         "foreign_key",
         "check",
         "generated",
+        "autoincrement",
+        "temporal_fsp",
         "comment",
     ],
 )
@@ -1312,14 +1390,16 @@ def test_physical_schema_signature_rejects_every_structural_category(category):
                 "nullable": False,
                 "default": None,
                 "computed": None,
+                "autoincrement": True,
                 "comment": "identity",
             },
             {
                 "name": "normalized",
-                "type": Text(),
+                "type": MYSQL_DATETIME(fsp=6),
                 "nullable": False,
                 "default": "''",
                 "computed": {"sqltext": "lower(source)", "persisted": True},
+                "autoincrement": False,
                 "comment": "generated value",
             },
         ],
@@ -1362,6 +1442,10 @@ def test_physical_schema_signature_rejects_every_structural_category(category):
         changed["checks"][0]["sqltext"] = "id >= 0"
     elif category == "generated":
         changed["columns"][1]["computed"]["sqltext"] = "upper(source)"
+    elif category == "autoincrement":
+        changed["columns"][0]["autoincrement"] = False
+    elif category == "temporal_fsp":
+        changed["columns"][1]["type"] = MYSQL_DATETIME(fsp=0)
     else:
         changed["table_comment"] = "wrong"
     actual = normalize_physical_schema_signature(**changed)
@@ -1548,6 +1632,7 @@ def test_apply_reset_invokes_only_alembic_upgrade_head_after_both_hashes_bind(tm
                         "nonce",
                         "contract_sha256",
                         "contract_path",
+                        "receipt_path",
                         "migration_revision",
                     )
                 },
@@ -1703,7 +1788,7 @@ def test_execution_receipt_must_bind_the_exact_approval_marker():
         "physical_schema_contract_sha256": "2" * 64,
         "nonce": "receipt-nonce-20260830",
         "contract_path": str(CUTOVER_EVIDENCE_ROOT / "contract.json"),
-        "receipt_path": str(CUTOVER_EVIDENCE_ROOT / "receipt.json"),
+        "receipt_path": "migration-receipt-receipt-nonce-20260830.json",
         "migration_revision": script.CUTOVER_MIGRATION_REVISION,
         "issued_at": "2026-08-30T09:00:00+08:00",
         "expires_at": "2026-08-30T09:04:00+08:00",
@@ -1727,6 +1812,7 @@ def test_execution_receipt_must_bind_the_exact_approval_marker():
                 "nonce",
                 "contract_sha256",
                 "contract_path",
+                "receipt_path",
                 "migration_revision",
             )
         },
@@ -1740,6 +1826,9 @@ def test_execution_receipt_must_bind_the_exact_approval_marker():
     assert script.validate_execution_receipt(
         receipt,
         evidence_contract=contract,
+        receipt_resolved_path=(
+            CUTOVER_EVIDENCE_ROOT / contract["receipt_path"]
+        ),
     ) is True
     with pytest.raises(CutoverGuardError, match="approved_marker_sha256"):
         script.validate_execution_receipt(
@@ -1760,4 +1849,15 @@ def test_execution_receipt_must_bind_the_exact_approval_marker():
                     )
                 ).hexdigest(),
             },
+            receipt_resolved_path=(
+                CUTOVER_EVIDENCE_ROOT / contract["receipt_path"]
+            ),
+        )
+
+    alternate = CUTOVER_EVIDENCE_ROOT / "alternate-valid-looking-receipt.json"
+    with pytest.raises(CutoverGuardError, match="receipt path"):
+        script.validate_execution_receipt(
+            receipt,
+            evidence_contract=contract,
+            receipt_resolved_path=alternate,
         )

@@ -901,8 +901,13 @@ def _external_source_artifact(
         "source_account_key",
         "exported_at",
         "approved_at",
+        "confirmed_empty",
         "rows",
     }
+    if "confirmed_empty" not in document:
+        raise CutoverGuardError(
+            f"suppression artifact is missing confirmed_empty: {artifact_path}"
+        )
     if set(document) != required_fields or document.get("schema_version") != 1:
         raise CutoverGuardError(f"invalid suppression artifact schema: {artifact_path}")
     source_kind = _required_stable_text(document.get("source_kind"), "source_kind")
@@ -915,6 +920,15 @@ def _external_source_artifact(
     rows = document.get("rows")
     if not isinstance(rows, list) or any(not isinstance(row, Mapping) for row in rows):
         raise CutoverGuardError(f"suppression artifact rows are invalid: {artifact_path}")
+    confirmed_empty = document.get("confirmed_empty")
+    if not rows and confirmed_empty is not True:
+        raise CutoverGuardError(
+            f"empty suppression artifact requires confirmed_empty=true: {artifact_path}"
+        )
+    if rows and confirmed_empty is not False:
+        raise CutoverGuardError(
+            f"nonempty suppression artifact requires confirmed_empty=false: {artifact_path}"
+        )
     _verify_evidence_time(
         document.get("approved_at"),
         now,
@@ -1576,7 +1590,26 @@ def _mysql_active_write_transaction_count(db: Session) -> int:
         ) from exc
 
 
-def _mysql_maintenance_fence_active(db: Session, contract: Mapping[str, Any]) -> bool:
+def _mysql_beijing_wall_time(value: Any, field_name: str) -> datetime:
+    """Interpret MySQL naive DATETIME using the application's Beijing convention."""
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError as exc:
+            raise CutoverGuardError(f"{field_name} must be a MySQL DATETIME") from exc
+    if not isinstance(value, datetime):
+        raise CutoverGuardError(f"{field_name} must be a MySQL DATETIME")
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=BEIJING_TIMEZONE)
+    return value.astimezone(BEIJING_TIMEZONE)
+
+
+def _mysql_maintenance_fence_active(
+    db: Session,
+    contract: Mapping[str, Any],
+    *,
+    now: datetime | None = None,
+) -> bool:
     """Task 3B contract: bootstrap ark_customer_cutover_fences before reset DDL."""
     try:
         row = db.execute(
@@ -1592,13 +1625,23 @@ def _mysql_maintenance_fence_active(db: Session, contract: Mapping[str, Any]) ->
             "maintenance fence table is unavailable; Task 3B must bootstrap "
             "ark_customer_cutover_fences before destructive DDL"
         ) from exc
+    current = now or beijing_now().replace(tzinfo=BEIJING_TIMEZONE)
+    _beijing_timestamp(current, "database fence check now")
+    database_expiry = (
+        _mysql_beijing_wall_time(row["expires_at"], "database fence expires_at")
+        if row
+        else None
+    )
+    contract_expiry = _parse_writer_timestamp(
+        contract["expires_at"], "contract expires_at"
+    )
     return bool(
         row
         and row["active"] in (True, 1)
         and row["inventory_sha256"] == contract["inventory_sha256"]
         and row["preflight_report_sha256"] == contract["preflight_report_sha256"]
-        and _parse_writer_timestamp(row["expires_at"], "database fence expires_at")
-        >= _parse_writer_timestamp(contract["expires_at"], "contract expires_at")
+        and database_expiry == contract_expiry
+        and current < database_expiry <= current + MIGRATION_CONTRACT_MAX_LIFETIME
     )
 
 
@@ -1743,7 +1786,15 @@ def migration_preflight(
         raw_path = evidence_contract.get(field_name)
         if not isinstance(raw_path, str):
             raise CutoverGuardError(f"migration {field_name} is required")
-        resolved_path = Path(raw_path).resolve()
+        if field_name == "receipt_path":
+            relative_path = Path(raw_path)
+            if relative_path.is_absolute() or ".." in relative_path.parts:
+                raise CutoverGuardError(
+                    "migration receipt_path must be fixed evidence-relative path"
+                )
+            resolved_path = (CUTOVER_EVIDENCE_ROOT / relative_path).resolve()
+        else:
+            resolved_path = Path(raw_path).resolve()
         if (
             not resolved_path.is_relative_to(CUTOVER_EVIDENCE_ROOT)
             or resolved_path.parent != CUTOVER_EVIDENCE_ROOT
@@ -1865,13 +1916,24 @@ def normalize_physical_schema_signature(
     normalized_columns = []
     for column in columns:
         computed = column.get("computed")
+        column_type = column.get("type")
+        autoincrement = column.get("autoincrement", False)
+        if autoincrement == "auto":
+            autoincrement = (
+                column.get("name") in pk_columns
+                and "INT" in str(column_type).upper()
+            )
         normalized_columns.append(
             {
                 "name": column.get("name"),
-                "type": _type_signature(column.get("type")),
+                "type": _type_signature(column_type),
                 "nullable": bool(column.get("nullable")),
                 "default": _sql_expression(column.get("default")),
                 "primary_key": column.get("name") in pk_columns,
+                "autoincrement": autoincrement is True,
+                "temporal_fsp": column.get(
+                    "temporal_fsp", getattr(column_type, "fsp", None)
+                ),
                 "computed": (
                     None
                     if not computed
@@ -2015,6 +2077,8 @@ def validate_customer_physical_schema_contract(
                 "nullable",
                 "default",
                 "primary_key",
+                "autoincrement",
+                "temporal_fsp",
                 "computed",
                 "comment",
             }:
@@ -2098,6 +2162,8 @@ def _model_physical_schema_signature(table: Table) -> dict[str, Any]:
                     else None
                 ),
                 "computed": computed,
+                "autoincrement": column.autoincrement,
+                "temporal_fsp": getattr(column.type, "fsp", None),
                 "comment": column.comment,
             }
         )
