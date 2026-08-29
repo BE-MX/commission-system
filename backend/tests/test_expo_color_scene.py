@@ -351,6 +351,46 @@ def test_unlocked_scene_prompts_have_no_hardcoded_garments():
         assert not m, f"{s['key']} 泄漏单品词 {m.group() if m else ''}: {s['prompt']}"
 
 
+def _tryon_scene_prompt(scene_key: str, variant: str = "real") -> str:
+    scene = ai_pipeline.resolve_tryon_scene(scene_key)
+    session = _session()
+    wig = ExpoWig(model_no="LS-FACE", name="身份测试发", wig_description="short bob")
+    row = ExpoResult(
+        session_id=1,
+        wig_id=1,
+        scene_json={"key": scene_key, "label": scene["label"]},
+    )
+    return ai_pipeline._build_prompt(session, row, wig, variant=variant)[0]
+
+
+class TestLimitedFaceAdaptation:
+    def test_customer_photo_is_the_only_face_source(self):
+        prompt = _tryon_scene_prompt("doctor")
+        assert "sole visual source of truth for her face" in prompt
+        assert "stable natural asymmetry, age traits and identifying skin marks" in prompt
+        assert "wig references provide hair information only" in prompt
+
+    def test_scene_is_composed_around_the_existing_gaze_first(self):
+        prompt = _tryon_scene_prompt("hsrtravel")
+        assert "compose the props and interaction around her existing gaze" in prompt
+        assert "minimal coordinated adjustment" in prompt
+        assert "same head-pose family" in prompt
+        assert "same expression category and mouth-open state" in prompt
+
+    def test_scene_no_longer_requires_free_face_reinterpretation(self):
+        prompt = _tryon_scene_prompt("doctor")
+        assert "Naturally adapt the background, outfit, pose, gesture and facial expression" not in prompt
+        assert "locks identity, not expression" not in prompt
+        assert "from frontal to profile or profile to frontal" in prompt
+
+    @pytest.mark.parametrize("scene_key", ["doctor", "hsrtravel"])
+    def test_identity_sensitive_scenes_do_not_prescribe_a_new_expression(self, scene_key):
+        scene_prompt = ai_pipeline.resolve_tryon_scene(scene_key)["prompt"]
+        banned = ("expression", "smile", "reassuring", "looking composed", "confident expression")
+        assert all(word not in scene_prompt for word in banned)
+        assert "compatible with her existing gaze direction" in scene_prompt
+
+
 def test_scene_swap_framing_is_waist_up_with_both_bounds():
     """构图锚点（2026-07-31）：这条子句已在 07-27 与 07-31 之间来回过一次，
     且回退是静默的——原有 `assert "85mm" in prompt` 挡不住任何回退（85mm 在

@@ -778,7 +778,11 @@ _COMPOSITE_TEMPLATE = (
     "Reproduce the wig's exact silhouette, length, layering, fringe, volume, parting and "
     "texture precisely as shown in the reference images, even if it looks very different "
     "from the original hair. Keep the customer's face, facial features and skin tone "
-    "exactly the same as the first image, with light natural makeup. The hairline "
+    "exactly the same as the first image, with light natural makeup. Treat the FIRST "
+    "image as the sole visual source of truth for her face. Preserve its exact geometry, "
+    "stable natural asymmetry, age traits and identifying skin marks; do not average, "
+    "symmetrize, idealize or reinterpret them. The wig references provide hair information "
+    "only and must never influence the face. The hairline "
     "transition must look naturally grown, with realistic fine baby hairs at the "
     "temples. {extra}"
 )
@@ -885,24 +889,24 @@ _TRYON_KEEP_BG_CLAUSE = (
     "as the first image, preserve the original photo's depth of field, and light the new "
     "hair to match the original photo's light direction."
 )
-# 场景置换（叙事化 · 单人收敛）：放开姿势/手势/表情让人物自然融入场景并呈现自信、投入的
-# 神态；但硬锁面部身份与发型发色（与合成锚定一致，保证换脸不换人）；场景里的其他人物只作
-# 虚化背景暗示，绝不清晰出镜——单人自拍合成出第二张清晰人脸/手极易崩坏（用户定稿 2026-07-09）
+# 场景置换（有限面部适配）：身体、服装和环境按场景变化；头部、视线和表情默认沿用原图，
+# 优先让道具与互动方向迁就原视线。只有场景明显不协调时才允许三者作为一个整体做最小调整，
+# 不得跨越正脸/侧脸或表情类别，避免为场景叙事重画整张脸（用户确认 2026-08-29）。
 _TRYON_SCENE_CLAUSE = (
-    " Recreate the portrait in {scene}. Naturally adapt the background, outfit, pose, "
-    "gesture and facial expression to suit this scene with a confident, engaged demeanor "
-    "- this refines the earlier same-face note, which locks identity, not expression. "
-    "Keep the face's identity, bone structure and skin tone recognizably identical to the "
-    "first image, and the hairstyle and hair color exactly as composited. Any other people "
-    "may appear only as a soft, blurred, out-of-focus background presence - never in sharp "
-    "focus, never with detailed faces or hands. The hair highlights and shadows must follow "
-    "the scene's light direction, blending naturally with no cut-and-paste look. Shot like a "
-    "candid 85mm documentary snapshot with shallow depth of field focused on the face and "
-    "hair - caught naturally mid-action and unposed, as if a third person quietly "
-    "photographed her in the moment. Her gaze and head are directed naturally within the "
-    "scene (toward what she is doing, looking at or speaking to), not fixed straight at the "
-    "camera unless that truly fits the moment, with a relaxed natural micro-expression rather "
-    "than a stiff, posed, camera-facing studio look."
+    " Recreate the portrait in {scene}. Adapt the background, outfit, body pose and gesture "
+    "to suit the scene, while preserving the FIRST image as the facial reference. Prefer her "
+    "existing head angle, gaze direction and expression category, and first compose the props "
+    "and interaction around her existing gaze. Only when the scene would otherwise look "
+    "physically inconsistent, allow a minimal coordinated adjustment of head, eyes and "
+    "micro-expression together, staying in the same head-pose family and the same expression "
+    "category and mouth-open state. Never turn her from frontal to profile or profile to "
+    "frontal, and never introduce a large head tilt, turn or pitch. Such adjustment may change "
+    "only demeanor, never identity, facial geometry, age traits or skin marks. Keep the wig and "
+    "hair color exactly as composited. Any other people may appear only as a soft, blurred, "
+    "out-of-focus background presence - never in sharp focus, never with detailed faces or "
+    "hands. The hair highlights and shadows must follow the scene's light direction, blending "
+    "naturally with no cut-and-paste look. Shot like a candid 85mm documentary snapshot with "
+    "shallow depth of field focused on the face and hair, natural and unposed."
 ) + _SUMMER_WARDROBE_CLAUSE
 
 # 构图与人体比例（2026-07-27 亮哥反馈「人物与背景比例不协调、融入感差」「头身比不协调」，
@@ -1138,9 +1142,10 @@ TRYON_SCENES = [
                 "table and out-of-focus colleagues seated further back")},
     {"key": "doctor", "label": "医生", "tagline": "专业信赖", "uniform": True,
      "prompt": ("a clean bright clinic consulting room, she stands professionally in a "
-                "short-sleeve white coat with a stethoscope, attentive and reassuring as she reviews "
-                "a chart, cool clinical daylight from her front as the key light, blurred "
-                "medical shelving and a faintly out-of-focus patient seated to the side")},
+                "short-sleeve white coat with a stethoscope while reviewing a chart positioned "
+                "compatible with her existing gaze direction, cool clinical daylight shaping "
+                "her wig, white coat and room, blurred medical shelving and a faintly "
+                "out-of-focus patient seated to the side")},
     {"key": "home", "label": "居家", "tagline": "温馨日常",
      "prompt": ("a cozy living room beside a sofa, warm afternoon window light from "
                 "her front-left, blurred green plants and wooden furniture behind")},
@@ -1180,10 +1185,10 @@ TRYON_SCENES = [
                 "lightweight summer outfit, soft daylight from the entrance as the key light, blurred mailboxes "
                 "and a faint out-of-focus resident beside her")},
     {"key": "hsrtravel", "label": "高铁出差", "tagline": "出差精致",
-     "prompt": ("a high-speed train window seat, she sits looking composed and put-together "
-                "with a subtle confident expression in a crisp lightweight summer outfit, a laptop on the tray, "
-                "bright daylight streaming through the large train window as the key light, "
-                "blurred landscape rushing past outside")},
+     "prompt": ("a high-speed train window seat, she sits in a natural business-travel pose "
+                "with a laptop and tray positioned compatible with her existing gaze direction, "
+                "bright window daylight shaping her wig, shoulders, clothing and seat, with a "
+                "simple softly blurred sense of landscape motion outside")},
     # ── 长辈 / 退休生活（发型提升气质，从容优雅，不改脸/年龄） ──
     {"key": "weddinghost", "label": "喜婆婆", "tagline": "喜庆体面", "uniform": True,  # 旗袍是场景规定装
      "prompt": ("an elegant wedding banquet entrance, she stands graciously welcoming guests "
