@@ -243,11 +243,26 @@ def test_high_impact_fact_is_explicitly_registered():
 
 def test_unregistered_or_disallowed_fact_is_rejected_by_default():
     assert validate_registered_fact(
-        "unknown.key", "public_web",
+        "unknown.key", "public_web", "company_page",
     ) == DataClassification.RESTRICTED_INTERNAL
     assert validate_registered_fact(
         "commercial.has_valid_order", "public_web", "company_page",
     ) == DataClassification.RESTRICTED_INTERNAL
+
+
+def test_fact_validation_requires_source_entity_type_argument():
+    with pytest.raises(ValueError, match="source_entity_type"):
+        validate_registered_fact("commercial.has_valid_order", "okki")
+
+
+@pytest.mark.parametrize("source_entity_type", [None, ""])
+def test_fact_validation_rejects_empty_source_entity_type(source_entity_type):
+    with pytest.raises(ValueError, match="source_entity_type"):
+        validate_registered_fact(
+            "commercial.has_valid_order",
+            "okki",
+            source_entity_type,
+        )
 
 
 def test_fact_validation_rejects_wrong_source_entity_type():

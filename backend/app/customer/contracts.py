@@ -278,23 +278,14 @@ def validate_registered_fact(
     source_entity_type: str | None = None,
 ) -> DataClassification:
     """Return the fact classification, failing closed for unknown combinations."""
+    if not source_entity_type:
+        raise ValueError("source_entity_type is required")
+
     registration = FACT_REGISTRY.get(fact_key)
     if registration is None:
         return DataClassification.RESTRICTED_INTERNAL
 
-    if source_entity_type is None:
-        matching_sources = [
-            source_key
-            for source_key in registration.allowed_sources
-            if source_key[0] == source_system
-            and fact_key in SOURCE_REGISTRY[source_key].allowed_fact_keys
-        ]
-        if len(matching_sources) != 1:
-            return DataClassification.RESTRICTED_INTERNAL
-        source_key = matching_sources[0]
-    else:
-        source_key = (source_system, source_entity_type)
-
+    source_key = (source_system, source_entity_type)
     source_registration = SOURCE_REGISTRY.get(source_key)
     if (
         source_key not in registration.allowed_sources
