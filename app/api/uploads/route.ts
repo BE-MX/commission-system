@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { requireAdminApi } from "../../lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -7,6 +8,8 @@ const allowedTypes = new Set([
 ]);
 
 export async function POST(request: Request) {
+  const unauthorized = await requireAdminApi();
+  if (unauthorized) return unauthorized;
   const formData = await request.formData();
   const file = formData.get("file");
   if (!(file instanceof File)) return Response.json({ error: "请选择要上传的图片或视频" }, { status: 400 });

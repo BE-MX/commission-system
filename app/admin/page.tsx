@@ -32,6 +32,7 @@ export default function AdminPage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [notice, setNotice] = useState("");
+  const [adminAccess, setAdminAccess] = useState<"checking" | "allowed" | "denied">("checking");
 
   const load = async () => {
     const [p, l, a, w, o, c, s, d] = await Promise.all([
@@ -43,7 +44,16 @@ export default function AdminPage() {
     setProducts(p.products ?? []); setLevels(l.levels ?? []); setAccessLogs(a.logs ?? []); setWholesaleAccounts(w.accounts ?? []);
     setOrders(o.orders ?? []); setCustomers(c.customers ?? []); setSales(s.sales ?? []); setReferrals(s.referrals ?? []); setDashboard(d ?? {});
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    fetch("/api/admin-auth").then(async (response) => {
+      if (response.status === 401) {
+        window.location.href = `/signin-with-chatgpt?return_to=${encodeURIComponent("/admin")}`;
+        return;
+      }
+      if (!response.ok) { setAdminAccess("denied"); return; }
+      setAdminAccess("allowed"); await load();
+    });
+  }, []);
 
   const activeCount = products.filter((item) => item.status === "active").length;
   const stockCount = products.reduce((sum, item) => sum + item.stock, 0);
@@ -132,6 +142,9 @@ export default function AdminPage() {
     setSalesForm({ name: "", phone: "", role: "销售顾问", customerService: "小莱客服" });
     setNotice("销售员已添加，推广码与店面宣传码已自动生成"); await load();
   };
+
+  if (adminAccess === "checking") return <main className="admin-access-state"><div><span>莱</span><h1>正在验证管理员身份</h1><p>请稍候…</p></div></main>;
+  if (adminAccess === "denied") return <main className="admin-access-state"><div><span>锁</span><h1>无后台管理权限</h1><p>请使用网站管理员的ChatGPT账号登录。</p><a href="/">返回前台</a></div></main>;
 
   return (
     <div className="admin-shell">

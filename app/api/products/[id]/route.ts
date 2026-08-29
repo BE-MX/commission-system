@@ -1,10 +1,13 @@
 import { ensureDatabase, getD1 } from "../../../../db/runtime";
+import { requireAdminApi } from "../../../lib/admin-auth";
 
 const serializeList = (value: unknown) => JSON.stringify(Array.isArray(value)
   ? value.map(String).filter(Boolean)
   : String(value ?? "").split(/[\n；;]+/).map((item) => item.trim()).filter(Boolean));
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
+  const unauthorized = await requireAdminApi();
+  if (unauthorized) return unauthorized;
   await ensureDatabase();
   const { id } = await context.params;
   const body = await request.json() as Record<string, unknown>;
@@ -27,6 +30,8 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
 }
 
 export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const unauthorized = await requireAdminApi();
+  if (unauthorized) return unauthorized;
   await ensureDatabase();
   const { id } = await context.params;
   await getD1().prepare("DELETE FROM products WHERE id=?").bind(Number(id)).run();

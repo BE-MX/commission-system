@@ -1,4 +1,5 @@
 import { ensureDatabase, getD1 } from "../../../db/runtime";
+import { requireAdminApi } from "../../lib/admin-auth";
 import { getRetailPhone } from "../../lib/retail-session";
 import { getWholesaleAccount } from "../../lib/wholesale-session";
 import type { Product } from "../../lib/types";
@@ -12,6 +13,8 @@ const orderSelect = `SELECT id, order_no AS orderNo, channel, customer_phone AS 
   commission_amount AS commissionAmount, created_at AS createdAt, shipped_at AS shippedAt FROM orders`;
 
 export async function GET() {
+  const unauthorized = await requireAdminApi();
+  if (unauthorized) return unauthorized;
   await ensureDatabase();
   const rows = await getD1().prepare(`${orderSelect} ORDER BY created_at DESC LIMIT 200`).all();
   return Response.json({ orders: rows.results });

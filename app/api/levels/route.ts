@@ -1,4 +1,5 @@
 import { ensureDatabase, getD1 } from "../../../db/runtime";
+import { requireAdminApi } from "../../lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,8 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
+  const unauthorized = await requireAdminApi();
+  if (unauthorized) return unauthorized;
   await ensureDatabase();
   const body = await request.json() as { levels?: Array<{ code: string; name: string; threshold: number }> };
   if (!body.levels?.length) return Response.json({ error: "等级数据不能为空" }, { status: 400 });

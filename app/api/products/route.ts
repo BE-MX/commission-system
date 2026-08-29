@@ -1,4 +1,5 @@
 import { ensureDatabase, getD1 } from "../../../db/runtime";
+import { requireAdminApi } from "../../lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const unauthorized = await requireAdminApi();
+  if (unauthorized) return unauthorized;
   await ensureDatabase();
   const body = await request.json() as Record<string, unknown>;
   const name = String(body.name ?? "").trim();

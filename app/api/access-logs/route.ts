@@ -1,8 +1,11 @@
 import { ensureDatabase, getD1 } from "../../../db/runtime";
+import { requireAdminApi } from "../../lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const unauthorized = await requireAdminApi();
+  if (unauthorized) return unauthorized;
   await ensureDatabase();
   const rows = await getD1().prepare(`SELECT * FROM (
     SELECT l.id, 'wholesale' AS channel, a.company_name AS companyName, l.phone, l.level,

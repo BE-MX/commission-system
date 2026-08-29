@@ -1,8 +1,11 @@
 import { ensureDatabase, getD1 } from "../../../db/runtime";
+import { requireAdminApi } from "../../lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const unauthorized = await requireAdminApi();
+  if (unauthorized) return unauthorized;
   await ensureDatabase();
   const rows = await getD1().prepare(`SELECT s.id, s.name, s.phone, s.role, s.promo_code AS promoCode,
     s.store_code AS storeCode, s.customer_service AS customerService, s.status,
@@ -18,6 +21,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const unauthorized = await requireAdminApi();
+  if (unauthorized) return unauthorized;
   await ensureDatabase();
   const body = await request.json() as Record<string, unknown>;
   const name = String(body.name ?? "").trim();

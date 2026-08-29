@@ -1,6 +1,9 @@
 import { ensureDatabase, getD1 } from "../../../../db/runtime";
+import { requireAdminApi } from "../../../lib/admin-auth";
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
+  const unauthorized = await requireAdminApi();
+  if (unauthorized) return unauthorized;
   await ensureDatabase();
   const { id } = await context.params;
   const body = await request.json() as Record<string, unknown>;
