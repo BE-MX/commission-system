@@ -301,48 +301,54 @@ git commit -m "fix(expo): preserve natural head and neck proportions"
 
 - [ ] **Step 1: 在事务中校验目标并更新**
 
-从含 `backend/.env` 的主工作区运行下面的 Python 事务。`expected` 必须与当前启用记录完全匹配；任一缺失、停用或名称变化都会抛错并回滚。
+从含 `backend/.env` 的主工作区运行下面的 Python 事务。按唯一业务键 `model_no` 定位，并同时校验名称、启用状态和预期旧提示词；任一不匹配都说明运营或其他任务已先行修改，必须整体回滚，不能覆盖。
 
 ```python
 from sqlalchemy import bindparam, text
 from app.core.database import SessionLocal
 
-prompts = {
-    1: ("6010", "刘海为自然斜向的齐碎结构：左侧厚重堆积、右侧轻薄过渡；缩短鬓角并软化末端，鬓角和刘海均不能形成整齐水平切线。"),
-    2: ("6010-B", "保持纯直发，禁止波纹、纹理卷或蓬松束状；刘海整体斜向但单根发丝有垂直下落感，边缘干净连续，不做碎刘海。"),
-    3: ("35厘米长直发", "最终发尾到上胸位置，比当前结果向下延长约5厘米；底边自然轻微错落和渐薄，不能形成过齐的水平切线；发型贴合颅顶，不过度饱满和蓬松。"),
-    4: ("8003", "两侧层次起点和外轮廓向下调整约1.5厘米，保留更低、更连贯的侧区重量，避免高层次台阶。"),
-    5: ("完全挂耳波波", "两侧长度到耳垂以下约1厘米；刘海加长并保持正向，不能变成斜刘海；削薄两侧下部和发尾堆积，避免耳下区域过厚。"),
-    6: ("9005纹理卷", "卷纹和走向比当前结果更清晰，但每束保持柔软自然；降低头顶高度和蓬松度；刘海适当加长，减少额头暴露。"),
-    7: ("6010时尚款", "整体轮廓比标准6010更短、更贴合、更精练，重点收短耳周和后颈，保持轻盈而不膨大。"),
-    8: ("一刀切", "发尾垂直笔直落下，禁止内扣或向脸侧弯曲；最终长度稳定在肩膀以下约2厘米。"),
-    9: ("8001眉上刘海纹理", "保持现有长度和轮廓；纹理拆成细密、柔和、连续的小束，束间自然融合，避免僵硬、粗大、彼此分离的一撮一撮效果。"),
-    11: ("果阳雪棕", "发型变化不得改变客户身份、年龄、脸型、五官比例和原有皮肤特征，禁止将人物老化、年轻化或替换为另一张脸。"),
-    12: ("25厘米侧分直发", "保持侧分方向；额前刘海发根轻微抬起并带自然空气感，不贴额头；发梢位置保持在脖子以下。"),
-    13: ("6201锡纸烫", "两侧、刘海和整体下缘较当前结果向下延长约1.5厘米；锡纸烫束条细、窄、密，整体更自然下垂，避免粗束和向外炸开。"),
-    14: ("6307小清新波波", "此发型合成时严格要求原始人物的脸型与五官不能做任何改动。刘海长度和疏密自然错落、松散柔和，避免均匀梳齿状；整体外轮廓再缩短一些，同时保留波波头形态。"),
-    15: ("胎毛波波", "此发型合成时严格要求原始人物的脸型与五官不能做任何改动。刘海按四六比例侧分；发量较多的一侧由短到长斜向过渡，不能形成齐刘海；胎毛只保留为贴近发际线的短细绒毛，不能延长成刘海。"),
-    16: ("主持人纹理", "两侧、鬓角和刘海整体向下延长约1.5厘米；刘海下缘为自然松散的不规则锯齿轮廓，不能剪成水平齐线。"),
+face_guard = "此发型合成时严格要求原始人物的脸型与五官不能做任何改动"
+targets = {
+    # model_no: (expected_name, expected_old_prompt, new_prompt)
+    "6010": ("6010", "", "刘海为自然斜向的齐碎结构：左侧厚重堆积、右侧轻薄过渡；缩短鬓角并软化末端，鬓角和刘海均不能形成整齐水平切线。"),
+    "6010-B": ("6010-B", "", "保持纯直发，禁止波纹、纹理卷或蓬松束状；刘海整体斜向但单根发丝有垂直下落感，边缘干净连续，不做碎刘海。"),
+    "35厘米长直发": ("35厘米长直发", "发型要更加贴合颅顶的形状不要过于饱满和蓬松。", "最终发尾到上胸位置，比当前结果向下延长约5厘米；底边自然轻微错落和渐薄，不能形成过齐的水平切线；发型贴合颅顶，不过度饱满和蓬松。"),
+    "8003": ("8003", "", "两侧层次起点和外轮廓向下调整约1.5厘米，保留更低、更连贯的侧区重量，避免高层次台阶。"),
+    "完全挂耳波波": ("完全挂耳波波", "", "两侧长度到耳垂以下约1厘米；刘海加长并保持正向，不能变成斜刘海；削薄两侧下部和发尾堆积，避免耳下区域过厚。"),
+    "9005纹理卷": ("9005纹理卷", "", "卷纹和走向比当前结果更清晰，但每束保持柔软自然；降低头顶高度和蓬松度；刘海适当加长，减少额头暴露。"),
+    "6010时尚款": ("6010时尚款", "", "整体轮廓比标准6010更短、更贴合、更精练，重点收短耳周和后颈，保持轻盈而不膨大。"),
+    "一刀切": ("一刀切", "", "发尾垂直笔直落下，禁止内扣或向脸侧弯曲；最终长度稳定在肩膀以下约2厘米。"),
+    "8001眉上刘海纹理": ("8001眉上刘海纹理", "", "保持现有长度和轮廓；纹理拆成细密、柔和、连续的小束，束间自然融合，避免僵硬、粗大、彼此分离的一撮一撮效果。"),
+    "果阳雪棕": ("果阳雪棕", "", "发型变化不得改变客户身份、年龄、脸型、五官比例和原有皮肤特征，禁止将人物老化、年轻化或替换为另一张脸。"),
+    "25厘米侧分直发": ("25厘米侧分直发", "特别注意，这里的发梢位置要在脖子以下，不要过短。", "保持侧分方向；额前刘海发根轻微抬起并带自然空气感，不贴额头；发梢位置保持在脖子以下。"),
+    "6201": ("6201锡纸烫", "", "两侧、刘海和整体下缘较当前结果向下延长约1.5厘米；锡纸烫束条细、窄、密，整体更自然下垂，避免粗束和向外炸开。"),
+    "6307": ("6307小清新波波", face_guard, f"{face_guard}。刘海长度和疏密自然错落、松散柔和，避免均匀梳齿状；整体外轮廓再缩短一些，同时保留波波头形态。"),
+    "胎毛波波": ("胎毛波波", face_guard, f"{face_guard}。刘海按四六比例侧分；发量较多的一侧由短到长斜向过渡，不能形成齐刘海；胎毛只保留为贴近发际线的短细绒毛，不能延长成刘海。"),
+    "主持人纹理": ("主持人纹理", "", "两侧、鬓角和刘海整体向下延长约1.5厘米；刘海下缘为自然松散的不规则锯齿轮廓，不能剪成水平齐线。"),
 }
 
 db = SessionLocal()
 try:
     query = text(
-        "SELECT id, name, is_active, composite_prompt FROM ark_expo_wigs "
-        "WHERE id IN :ids FOR UPDATE"
-    ).bindparams(bindparam("ids", expanding=True))
-    rows = db.execute(query, {"ids": list(prompts)}).mappings().all()
-    actual = {row["id"]: row for row in rows}
-    if set(actual) != set(prompts):
-        raise RuntimeError(f"发型ID不完整: expected={sorted(prompts)}, actual={sorted(actual)}")
-    for wig_id, (expected_name, prompt) in prompts.items():
-        row = actual[wig_id]
-        if row["is_active"] != 1 or row["name"].strip() != expected_name:
-            raise RuntimeError(f"发型校验失败: id={wig_id}, row={dict(row)}")
-        db.execute(
-            text("UPDATE ark_expo_wigs SET composite_prompt=:prompt WHERE id=:wig_id"),
-            {"prompt": prompt, "wig_id": wig_id},
+        "SELECT model_no, name, is_active, composite_prompt FROM ark_expo_wigs "
+        "WHERE model_no IN :model_nos FOR UPDATE"
+    ).bindparams(bindparam("model_nos", expanding=True))
+    rows = db.execute(query, {"model_nos": list(targets)}).mappings().all()
+    actual = {row["model_no"]: row for row in rows}
+    if set(actual) != set(targets):
+        raise RuntimeError(f"发型型号不完整: expected={sorted(targets)}, actual={sorted(actual)}")
+    for model_no, (expected_name, expected_old, new_prompt) in targets.items():
+        row = actual[model_no]
+        if (row["is_active"] != 1 or row["name"].strip() != expected_name
+                or (row["composite_prompt"] or "") != expected_old):
+            raise RuntimeError(f"发型旧值校验失败: model_no={model_no}, row={dict(row)}")
+        result = db.execute(
+            text("UPDATE ark_expo_wigs SET composite_prompt=:new_prompt "
+                 "WHERE model_no=:model_no AND COALESCE(composite_prompt, '')=:expected_old"),
+            {"new_prompt": new_prompt, "model_no": model_no, "expected_old": expected_old},
         )
+        if result.rowcount != 1:
+            raise RuntimeError(f"发型并发更新冲突: model_no={model_no}")
     db.commit()
 except Exception:
     db.rollback()
@@ -356,9 +362,8 @@ finally:
 Run a read-only query asserting:
 
 ```python
-assert all(actual[id]["composite_prompt"] == prompts[id][1] for id in prompts)
-assert charm["id"] == 10
-assert charm["name"].strip() == "9003 ·魅力卷"
+assert all(actual[model_no]["composite_prompt"] == targets[model_no][2] for model_no in targets)
+assert charm["model_no"] == "9003"
 assert charm["composite_prompt"] == "此发型合成时严格要求原始人物的脸型与五官不能做任何改动"
 ```
 
