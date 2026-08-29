@@ -7,6 +7,7 @@ import getpass
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -33,8 +34,11 @@ from app.customer.cutover_service import (  # noqa: E402
     build_suppression_manifest,
     canonical_json_bytes,
     expected_customer_schema_sha256,
+    read_maintenance_fence_evidence,
     resolve_agent_history_closure,
     snapshot_unrelated_agent_rows,
+    validate_customer_physical_schema_contract,
+    validate_suppression_manifest,
     verify_agent_history_removed,
     verify_expected_customer_table_state,
     verify_frozen_business_ids_removed,
@@ -44,6 +48,8 @@ from app.customer.cutover_service import (  # noqa: E402
 
 
 BEIJING_TIMEZONE = ZoneInfo("Asia/Shanghai")
+CUTOVER_MIGRATION_REVISION = "126"
+_CUTOVER_NONCE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 
 
 def resolve_read_path(value: str | Path) -> Path:
@@ -184,7 +190,13 @@ def _load_suppression_manifest(path: Path) -> dict[str, Any]:
     return raw
 
 
-def _validate_suppression_manifest(raw: Mapping[str, Any]) -> None:
+def _validate_suppression_manifest(
+    raw: Mapping[str, Any],
+    *,
+    db=None,
+    hmac_key: bytes | str | None = None,
+    now: datetime | None = None,
+) -> None:
     try:
         source_evidence = raw["source_evidence"]
         entries = raw["entries"]
@@ -213,33 +225,55 @@ def _validate_suppression_manifest(raw: Mapping[str, Any]) -> None:
         }
         if evidence.get("evidence_sha256") != _report_hash(evidence_payload):
             raise CutoverGuardError("suppression source evidence SHA-256 mismatch")
+    if db is not None:
+        if hmac_key is None or now is None:
+            raise CutoverGuardError("suppression revalidation requires key and bounded clock")
+        validate_suppression_manifest(db, raw, hmac_key, now=now)
 
 
 def validate_execution_receipt(
     receipt: Mapping[str, Any],
     *,
-    inventory_sha256: str,
-    preflight_report_sha256: str,
-    suppression_manifest_sha256: str,
-    writer_manifest_sha256: str,
-    approved_marker_sha256: str,
-    nonce: str,
+    evidence_contract: Mapping[str, Any],
 ) -> bool:
     if receipt.get("status") != "succeeded":
         raise CutoverGuardError("cutover execution receipt is not successful")
-    bindings = {
-        "inventory_sha256": inventory_sha256,
-        "preflight_report_sha256": preflight_report_sha256,
-        "suppression_manifest_sha256": suppression_manifest_sha256,
-        "writer_manifest_sha256": writer_manifest_sha256,
-        "approved_marker_sha256": approved_marker_sha256,
-        "nonce": nonce,
-        "schema_signature_sha256": expected_customer_schema_sha256(),
+    contract_payload = {
+        key: value for key, value in evidence_contract.items() if key != "contract_sha256"
     }
+    if evidence_contract.get("contract_sha256") != _report_hash(contract_payload):
+        raise CutoverGuardError("execution contract SHA-256 does not match its content")
+    bindings = {
+        field_name: evidence_contract.get(field_name)
+        for field_name in (
+            "inventory_sha256",
+            "preflight_report_sha256",
+            "suppression_manifest_sha256",
+            "writer_manifest_sha256",
+            "approved_marker_sha256",
+            "maintenance_fence_artifact_sha256",
+            "instance_inventory_artifact_sha256",
+            "physical_schema_contract_sha256",
+            "nonce",
+        )
+    }
+    bindings.update({
+        "contract_sha256": evidence_contract.get("contract_sha256"),
+        "contract_path": evidence_contract.get("contract_path"),
+        "migration_revision": evidence_contract.get("migration_revision"),
+        "schema_signature_sha256": evidence_contract.get(
+            "physical_schema_contract_sha256"
+        ),
+    })
     for field_name, expected in bindings.items():
         if receipt.get(field_name) != expected:
             raise CutoverGuardError(f"execution receipt does not bind {field_name}")
-    _parse_beijing(receipt.get("completed_at"), "execution receipt completed_at")
+    started_at = _parse_beijing(receipt.get("started_at"), "execution receipt started_at")
+    completed_at = _parse_beijing(receipt.get("completed_at"), "execution receipt completed_at")
+    issued_at = _parse_beijing(evidence_contract.get("issued_at"), "contract issued_at")
+    expires_at = _parse_beijing(evidence_contract.get("expires_at"), "contract expires_at")
+    if not issued_at <= started_at <= completed_at <= expires_at:
+        raise CutoverGuardError("execution receipt timestamps exceed approved window")
     payload = {key: value for key, value in receipt.items() if key != "receipt_sha256"}
     if receipt.get("receipt_sha256") != _report_hash(payload):
         raise CutoverGuardError("execution receipt SHA-256 does not match its content")
@@ -254,6 +288,7 @@ def verify_after(
     writer_manifest: Mapping[str, Any],
     approved_marker: Mapping[str, Any],
     execution_receipt: Mapping[str, Any],
+    physical_schema_contract: Mapping[str, Any],
 ) -> bool:
     _validate_preflight_report(preflight_report)
     _validate_suppression_manifest(suppression_manifest)
@@ -262,6 +297,9 @@ def verify_after(
     suppression_sha256 = str(suppression_manifest["manifest_sha256"])
     writer_sha256 = _report_hash(writer_manifest)
     marker_sha256 = _report_hash(approved_marker)
+    physical_schema_contract_sha256 = validate_customer_physical_schema_contract(
+        physical_schema_contract
+    )
     if (
         suppression_manifest.get("inventory_sha256") != inventory.inventory_sha256
         or suppression_manifest.get("preflight_report_sha256") != report_sha256
@@ -272,6 +310,7 @@ def verify_after(
         "preflight_report_sha256": report_sha256,
         "suppression_manifest_sha256": suppression_sha256,
         "writer_manifest_sha256": writer_sha256,
+        "physical_schema_contract_sha256": physical_schema_contract_sha256,
     }
     if approved_marker.get("approved") is not True:
         raise CutoverGuardError("verify-after approved marker is not approved")
@@ -280,15 +319,18 @@ def verify_after(
             raise CutoverGuardError(
                 f"verify-after approved marker does not bind {field_name}"
             )
-    validate_execution_receipt(
-        execution_receipt,
-        inventory_sha256=inventory.inventory_sha256,
-        preflight_report_sha256=report_sha256,
-        suppression_manifest_sha256=suppression_sha256,
-        writer_manifest_sha256=writer_sha256,
-        approved_marker_sha256=marker_sha256,
-        nonce=str(approved_marker.get("nonce")),
-    )
+    contract = _load_execution_contract(execution_receipt)
+    receipt_bindings = {
+        **marker_bindings,
+        "approved_marker_sha256": marker_sha256,
+        "nonce": str(approved_marker.get("nonce")),
+    }
+    for field_name, expected in receipt_bindings.items():
+        if contract.get(field_name) != expected:
+            raise CutoverGuardError(
+                f"execution contract does not bind original {field_name}"
+            )
+    validate_execution_receipt(execution_receipt, evidence_contract=contract)
     closure = AgentHistoryClosure.from_dict(preflight_report["agent_history_closure"])
     before = AgentPreservationSnapshot.from_dict(
         preflight_report["unrelated_agent_snapshot"]
@@ -297,7 +339,7 @@ def verify_after(
     verify_frozen_business_ids_removed(db, inventory)
     after = snapshot_unrelated_agent_rows(db, closure)
     verify_unrelated_unchanged(before, after)
-    verify_expected_customer_table_state(db)
+    verify_expected_customer_table_state(db, physical_schema_contract)
     return True
 
 
@@ -312,6 +354,15 @@ def _parse_beijing(value: Any, field_name: str) -> datetime:
     return value.astimezone(BEIJING_TIMEZONE)
 
 
+def _load_execution_contract(receipt: Mapping[str, Any]) -> dict[str, Any]:
+    contract_path = receipt.get("contract_path")
+    path = resolve_evidence_output_path(str(contract_path))
+    raw = _read_json(path)
+    if not isinstance(raw, dict):
+        raise CutoverGuardError("execution contract must be an object")
+    return raw
+
+
 def apply_reset(
     *,
     db,
@@ -320,13 +371,24 @@ def apply_reset(
     stopped_writer_manifest: Mapping[str, Any],
     expected_inventory_sha256: str,
     approved_marker_path: Path,
+    suppression_hmac_key: bytes | str,
+    physical_schema_contract: Mapping[str, Any],
     subprocess_runner: Callable[..., Any] | None = None,
     now: datetime | None = None,
 ) -> CutoverInventory:
     """Validate the complete evidence chain and invoke the fixed Alembic command."""
     _validate_preflight_report(preflight_report)
     inventory = build_inventory(db)
-    _validate_suppression_manifest(suppression_manifest)
+    current = now or beijing_now().replace(tzinfo=BEIJING_TIMEZONE)
+    physical_schema_contract_sha256 = validate_customer_physical_schema_contract(
+        physical_schema_contract
+    )
+    _validate_suppression_manifest(
+        suppression_manifest,
+        db=db,
+        hmac_key=suppression_hmac_key,
+        now=current,
+    )
     report_sha256 = preflight_report.get("report_sha256")
     if not isinstance(report_sha256, str):
         raise CutoverGuardError("preflight report hash is required")
@@ -355,18 +417,48 @@ def apply_reset(
         "preflight_report_sha256": report_sha256,
         "suppression_manifest_sha256": suppression_sha256,
         "writer_manifest_sha256": writer_sha256,
+        "physical_schema_contract_sha256": physical_schema_contract_sha256,
     }
     for field_name, expected in expected_bindings.items():
         if marker.get(field_name) != expected:
             raise CutoverGuardError(f"approved marker does not bind {field_name}")
     nonce = marker.get("nonce")
-    if not isinstance(nonce, str) or len(nonce.strip()) < 16 or nonce != nonce.strip():
+    if not isinstance(nonce, str) or not _CUTOVER_NONCE.fullmatch(nonce):
         raise CutoverGuardError("approved marker requires a stable nonce")
-    current = now or beijing_now().replace(tzinfo=BEIJING_TIMEZONE)
     expires_at = _parse_beijing(marker.get("expires_at"), "approved marker expires_at")
     if expires_at <= current or expires_at - current > timedelta(minutes=5):
         raise CutoverGuardError("approved marker is expired or exceeds five-minute lifetime")
     marker_sha256 = _report_hash(marker)
+    fence = read_maintenance_fence_evidence(stopped_writer_manifest)
+    receipt_path = resolve_evidence_output_path(f"migration-receipt-{nonce}.json")
+    contract_path = resolve_evidence_output_path(f"migration-contract-{nonce}.json")
+    if receipt_path.exists():
+        raise CutoverGuardError(
+            f"receipt path already exists; evidence={receipt_path}; keep all writers stopped"
+        )
+    bound_values = {
+        "preflight_report": preflight_report,
+        "suppression_manifest": suppression_manifest,
+        "writer_manifest": stopped_writer_manifest,
+        "approved_marker": marker,
+        "physical_schema_contract": physical_schema_contract,
+    }
+    evidence_artifacts: dict[str, dict[str, str]] = {}
+    try:
+        for label, value in bound_values.items():
+            path = resolve_evidence_output_path(f"bound-{label}-{nonce}.json")
+            _write_canonical_json(path, value)
+            evidence_artifacts[label] = {
+                "path": str(path),
+                "artifact_sha256": hashlib.sha256(
+                    canonical_json_bytes(value) + b"\n"
+                ).hexdigest(),
+            }
+    except CutoverGuardError as exc:
+        raise CutoverGuardError(
+            "cannot stage bound cutover evidence (exit=not-started); "
+            f"evidence={EVIDENCE_ROOT}; keep all writers stopped"
+        ) from exc
     contract = {
         "schema_version": 1,
         "approved": True,
@@ -376,9 +468,19 @@ def apply_reset(
         "expires_at": expires_at.isoformat(timespec="seconds"),
         **expected_bindings,
         "approved_marker_sha256": marker_sha256,
+        "maintenance_fence_artifact": fence["artifact_path"],
+        "maintenance_fence_artifact_sha256": fence["artifact_sha256"],
+        "maintenance_fence_token": fence["token"],
+        "instance_inventory_artifact_sha256": fence[
+            "instance_inventory_artifact_sha256"
+        ],
+        "contract_path": str(contract_path),
+        "receipt_path": str(receipt_path),
+        "migration_revision": CUTOVER_MIGRATION_REVISION,
+        "evidence_artifacts": evidence_artifacts,
+        "physical_schema_contract_sha256": physical_schema_contract_sha256,
     }
     contract["contract_sha256"] = _report_hash(contract)
-    contract_path = resolve_evidence_output_path(f"migration-contract-{nonce}.json")
     try:
         _write_canonical_json(contract_path, contract)
     except CutoverGuardError as exc:
@@ -408,6 +510,16 @@ def apply_reset(
         exit_code = getattr(exc, "returncode", "not-started")
         raise CutoverGuardError(
             f"Alembic cutover failed (exit={exit_code}); evidence={contract_path}; "
+            "keep all writers stopped and inspect the migration receipt"
+        ) from exc
+    try:
+        receipt = _read_json(receipt_path)
+        if not isinstance(receipt, Mapping):
+            raise CutoverGuardError("migration receipt must be an object")
+        validate_execution_receipt(receipt, evidence_contract=contract)
+    except CutoverGuardError as exc:
+        raise CutoverGuardError(
+            f"Alembic exited successfully but receipt is invalid; evidence={receipt_path}; "
             "keep all writers stopped and inspect the migration receipt"
         ) from exc
     return inventory
@@ -465,8 +577,14 @@ def _command_apply_reset(args: argparse.Namespace) -> None:
     writer_path = resolve_read_path(args.stopped_writer_manifest)
     marker_path = resolve_read_path(args.approved_marker)
     writer_manifest = _read_json(writer_path)
-    if not isinstance(writer_manifest, dict):
-        raise CutoverGuardError("stopped-writer manifest must be an object")
+    physical_schema_contract = _read_json(
+        resolve_read_path(args.physical_schema_contract)
+    )
+    if not isinstance(writer_manifest, dict) or not isinstance(
+        physical_schema_contract, dict
+    ):
+        raise CutoverGuardError("writer and physical schema evidence must be objects")
+    hmac_key = getpass.getpass("Suppression HMAC key (hidden): ")
     with SessionLocal() as db:
         inventory = apply_reset(
             db=db,
@@ -475,6 +593,8 @@ def _command_apply_reset(args: argparse.Namespace) -> None:
             stopped_writer_manifest=writer_manifest,
             expected_inventory_sha256=args.expected_inventory_sha256,
             approved_marker_path=marker_path,
+            suppression_hmac_key=hmac_key,
+            physical_schema_contract=physical_schema_contract,
         )
     print(f"Alembic reset applied for inventory: {inventory.inventory_sha256}")
     print("Next: run verify-after before any writer is resumed.")
@@ -487,7 +607,13 @@ def _command_verify_after(args: argparse.Namespace) -> None:
     writer = _read_json(resolve_read_path(args.stopped_writer_manifest))
     marker = _read_json(resolve_read_path(args.approved_marker))
     receipt = _read_json(resolve_read_path(args.execution_receipt))
-    if not all(isinstance(item, dict) for item in (writer, marker, receipt)):
+    physical_schema_contract = _read_json(
+        resolve_read_path(args.physical_schema_contract)
+    )
+    if not all(
+        isinstance(item, dict)
+        for item in (writer, marker, receipt, physical_schema_contract)
+    ):
         raise CutoverGuardError("verify-after evidence files must be JSON objects")
     with SessionLocal() as db:
         verify_after(
@@ -497,6 +623,7 @@ def _command_verify_after(args: argparse.Namespace) -> None:
             writer_manifest=writer,
             approved_marker=marker,
             execution_receipt=receipt,
+            physical_schema_contract=physical_schema_contract,
         )
     print("Verified: approval receipt, retired IDs, Agent history, and schema all match.")
     print("Next: replay suppressions before restoring any customer contact writer.")
@@ -531,6 +658,7 @@ def build_parser() -> argparse.ArgumentParser:
     reset.add_argument("--stopped-writer-manifest", required=True)
     reset.add_argument("--expected-inventory-sha256", required=True)
     reset.add_argument("--approved-marker", required=True)
+    reset.add_argument("--physical-schema-contract", required=True)
     reset.set_defaults(handler=_command_apply_reset)
 
     verify_after = subparsers.add_parser(
@@ -541,6 +669,7 @@ def build_parser() -> argparse.ArgumentParser:
     verify_after.add_argument("--stopped-writer-manifest", required=True)
     verify_after.add_argument("--approved-marker", required=True)
     verify_after.add_argument("--execution-receipt", required=True)
+    verify_after.add_argument("--physical-schema-contract", required=True)
     verify_after.set_defaults(handler=_command_verify_after)
     return parser
 

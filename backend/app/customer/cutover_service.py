@@ -129,6 +129,9 @@ REQUIRED_EXTERNAL_SUPPRESSION_SOURCE_KINDS = frozenset(
 )
 BEIJING_TIMEZONE = ZoneInfo("Asia/Shanghai")
 _CANONICAL_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_CUTOVER_NONCE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
+_RAW_EMAIL = re.compile(r"(?i)(?<![\w.-])[\w.+-]+@[\w.-]+\.[a-z]{2,}(?![\w.-])")
+_RAW_PHONE = re.compile(r"(?<!\d)(?:\+?\d[\d ().-]{7,}\d)(?!\d)")
 CUTOVER_EVIDENCE_MAX_AGE = timedelta(minutes=5)
 MIGRATION_CONTRACT_MAX_LIFETIME = timedelta(minutes=5)
 MIGRATION_LOCK_NAME = "ark_customer_domain_cutover"
@@ -286,10 +289,12 @@ class AuthoritativeSourceEvidence:
     source_kind: str
     source_namespace: str
     source_account_key: str
+    artifact_path: str | None
     artifact_sha256: str
     source_row_count: int
     extracted_count: int
     unresolved_count: int
+    exported_at: str
     approved_at: str
     evidence_sha256: str
 
@@ -298,10 +303,12 @@ class AuthoritativeSourceEvidence:
             "source_kind": self.source_kind,
             "source_namespace": self.source_namespace,
             "source_account_key": self.source_account_key,
+            "artifact_path": self.artifact_path,
             "artifact_sha256": self.artifact_sha256,
             "source_row_count": self.source_row_count,
             "extracted_count": self.extracted_count,
             "unresolved_count": self.unresolved_count,
+            "exported_at": self.exported_at,
             "approved_at": self.approved_at,
             "evidence_sha256": self.evidence_sha256,
         }
@@ -443,21 +450,6 @@ def _table_or_none(db: Session, table_name: str) -> Table | None:
     )
 
 
-def _ordered_rows(db: Session, table: Table) -> list[dict[str, Any]]:
-    primary_key = tuple(table.primary_key.columns)
-    if not primary_key:
-        raise CutoverGuardError(f"target table {table.name} has no primary key")
-    statement = select(table).order_by(*primary_key)
-    return [dict(row) for row in db.execute(statement).mappings()]
-
-
-def _primary_key_ids(table: Table, rows: Iterable[Mapping[str, Any]]) -> tuple[Any, ...]:
-    columns = tuple(column.name for column in table.primary_key.columns)
-    if len(columns) == 1:
-        return tuple(row[columns[0]] for row in rows)
-    return tuple(tuple(row[column] for column in columns) for row in rows)
-
-
 def _snapshot_table(db: Session, table_name: str) -> TableSnapshot:
     table = _table_or_none(db, table_name)
     if table is None:
@@ -537,11 +529,6 @@ def build_inventory(db: Session) -> CutoverInventory:
     return CutoverInventory(tables, frozen_ids, _sha256(inventory._hash_payload()))
 
 
-def _rows_for(db: Session, table_name: str) -> list[dict[str, Any]]:
-    table = _table_or_none(db, table_name)
-    return [] if table is None else _ordered_rows(db, table)
-
-
 def _projected_rows(
     db: Session,
     table_name: str,
@@ -555,8 +542,16 @@ def _projected_rows(
         raise CutoverGuardError(
             f"required columns missing from {table_name}: {', '.join(missing)}"
         )
-    statement = select(*(table.c[name] for name in column_names)).order_by(table.c.id)
-    return [dict(row) for row in db.execute(statement).mappings()]
+    statement = (
+        select(*(table.c[name] for name in column_names))
+        .order_by(table.c.id)
+        .execution_options(stream_results=True, yield_per=500)
+    )
+    result = db.execute(statement).mappings()
+    try:
+        return [dict(row) for row in result]
+    finally:
+        result.close()
 
 
 def _canonical_decimal_ids(values: frozenset[int]) -> frozenset[str]:
@@ -677,14 +672,41 @@ def snapshot_unrelated_agent_rows(
         if table is None:
             tables.append(TableSnapshot(table_name, False, (), None, None))
             continue
-        rows = [row for row in _ordered_rows(db, table) if row["id"] not in excluded[table_name]]
+        primary_key = tuple(table.primary_key.columns)
+        if not primary_key:
+            raise CutoverGuardError(f"target table {table.name} has no primary key")
+        statement = select(table).order_by(*primary_key)
+        if excluded[table_name]:
+            statement = statement.where(table.c.id.not_in(excluded[table_name]))
+        result = db.execute(
+            statement.execution_options(stream_results=True, yield_per=500)
+        ).mappings()
+        row_count = 0
+        primary_key_ids: list[Any] = []
+        content_hasher = hashlib.sha256()
+        content_hasher.update(b"[")
+        try:
+            for row in result:
+                if row_count:
+                    content_hasher.update(b",")
+                content_hasher.update(canonical_json_bytes(dict(row)))
+                if len(primary_key) == 1:
+                    primary_key_ids.append(row[primary_key[0].name])
+                else:
+                    primary_key_ids.append(
+                        tuple(row[column.name] for column in primary_key)
+                    )
+                row_count += 1
+        finally:
+            result.close()
+        content_hasher.update(b"]")
         tables.append(
             TableSnapshot(
                 table_name=table_name,
                 exists=True,
-                primary_key_ids=_primary_key_ids(table, rows),
-                row_count=len(rows),
-                content_sha256=_sha256(rows),
+                primary_key_ids=tuple(primary_key_ids),
+                row_count=row_count,
+                content_sha256=content_hasher.hexdigest(),
             )
         )
     provisional = AgentPreservationSnapshot(tuple(tables), "")
@@ -724,11 +746,19 @@ def verify_agent_history_removed(db: Session, closure: AgentHistoryClosure) -> b
     for table_name, expected_removed_ids in targets.items():
         if not expected_removed_ids:
             continue
-        existing_ids = {
-            row["id"]
-            for row in _rows_for(db, table_name)
-            if row["id"] in expected_removed_ids
-        }
+        table = _table_or_none(db, table_name)
+        if table is None:
+            continue
+        result = db.execute(
+            select(table.c.id)
+            .where(table.c.id.in_(expected_removed_ids))
+            .order_by(table.c.id)
+            .execution_options(stream_results=True, yield_per=500)
+        )
+        try:
+            existing_ids = {row[0] for row in result}
+        finally:
+            result.close()
         if existing_ids:
             remaining.append(
                 f"{table_name}={','.join(str(value) for value in sorted(existing_ids))}"
@@ -815,63 +845,113 @@ def _generated_at() -> str:
     return value.isoformat(timespec=timespec)
 
 
-def _source_evidence(
-    source: Mapping[str, Any],
-    *,
-    rows: list[Mapping[str, Any]],
-    now: datetime,
-) -> AuthoritativeSourceEvidence:
-    source_kind = _required_stable_text(source.get("source_kind"), "source_kind")
+def _resolved_evidence_artifact(value: Any) -> tuple[Path, str]:
+    relative = Path(_required_stable_text(value, "artifact_path"))
+    if relative.is_absolute() or ".." in relative.parts:
+        raise CutoverGuardError("evidence artifact path must be relative to fixed root")
+    root = CUTOVER_EVIDENCE_ROOT.resolve()
+    lexical = root / relative
+    current = lexical
+    while current != root:
+        if current.exists():
+            stat_result = current.lstat()
+            if current.is_symlink() or bool(
+                getattr(stat_result, "st_file_attributes", 0) & 0x400
+            ):
+                raise CutoverGuardError("evidence artifact uses a symlink/reparse point")
+        current = current.parent
+    path = lexical.resolve()
+    if not path.is_relative_to(root):
+        raise CutoverGuardError("evidence artifact escaped fixed evidence root")
+    if not path.is_file():
+        raise CutoverGuardError(f"required evidence artifact is missing: {relative.as_posix()}")
+    return path, relative.as_posix()
+
+
+def _read_canonical_artifact(value: Any) -> tuple[dict[str, Any], str, str]:
+    path, relative = _resolved_evidence_artifact(value)
+    try:
+        raw = path.read_bytes()
+        document = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CutoverGuardError(f"cannot parse evidence artifact: {relative}") from exc
+    if not isinstance(document, dict):
+        raise CutoverGuardError(f"evidence artifact must contain an object: {relative}")
+    if raw != canonical_json_bytes(document) + b"\n":
+        raise CutoverGuardError(f"evidence artifact is not canonical JSON: {relative}")
+    # This digest covers immutable artifact bytes, unlike canonical evidence hashes.
+    artifact_sha256 = hashlib.sha256(raw).hexdigest()
+    if not Path(relative).stem.endswith(artifact_sha256):
+        raise CutoverGuardError(
+            f"evidence artifact path is not content-addressed: {relative}"
+        )
+    return document, artifact_sha256, relative
+
+
+def _external_source_artifact(
+    source: Mapping[str, Any], now: datetime
+) -> tuple[AuthoritativeSourceEvidence, list[Mapping[str, Any]]]:
+    document, artifact_sha256, artifact_path = _read_canonical_artifact(
+        source.get("artifact_path")
+    )
+    required_fields = {
+        "schema_version",
+        "source_kind",
+        "source_namespace",
+        "source_account_key",
+        "exported_at",
+        "approved_at",
+        "rows",
+    }
+    if set(document) != required_fields or document.get("schema_version") != 1:
+        raise CutoverGuardError(f"invalid suppression artifact schema: {artifact_path}")
+    source_kind = _required_stable_text(document.get("source_kind"), "source_kind")
     namespace = _required_stable_text(
-        source.get("source_namespace"), "source_namespace"
+        document.get("source_namespace"), "source_namespace"
     )
     account = _required_stable_text(
-        source.get("source_account_key"), "source_account_key"
+        document.get("source_account_key"), "source_account_key"
     )
-    artifact_sha256 = _required_stable_text(
-        source.get("artifact_sha256"), "artifact_sha256"
-    )
-    if not _CANONICAL_SHA256.fullmatch(artifact_sha256):
-        raise CutoverGuardError("authoritative artifact SHA-256 must be lowercase hex")
-    canonical_rows = sorted(rows, key=canonical_json_bytes)
-    if not hmac.compare_digest(artifact_sha256, _sha256(canonical_rows)):
-        raise CutoverGuardError(
-            f"authoritative artifact SHA-256 mismatch for {namespace}/{account}"
-        )
-    expected_unresolved = sum(
-        row.get("mapping_status", "unmapped") != "mapped" for row in rows
-    )
-    counts = (
-        source.get("source_row_count"),
-        source.get("extracted_count"),
-        source.get("unresolved_count"),
-    )
-    if counts != (len(rows), len(rows), expected_unresolved):
-        raise CutoverGuardError(
-            f"source row reconciliation failed for {namespace}/{account}"
-        )
+    rows = document.get("rows")
+    if not isinstance(rows, list) or any(not isinstance(row, Mapping) for row in rows):
+        raise CutoverGuardError(f"suppression artifact rows are invalid: {artifact_path}")
     _verify_evidence_time(
-        source.get("approved_at"),
+        document.get("approved_at"),
         now,
         f"authoritative source {namespace}/{account} approval",
     )
-    approved_at = _beijing_timestamp(source.get("approved_at"), "source approved_at")
+    _verify_evidence_time(
+        document.get("exported_at"),
+        now,
+        f"authoritative source {namespace}/{account} export",
+    )
+    exported_at = _beijing_timestamp(document.get("exported_at"), "source exported_at")
+    approved_at = _beijing_timestamp(document.get("approved_at"), "source approved_at")
+    if datetime.fromisoformat(exported_at) > datetime.fromisoformat(approved_at):
+        raise CutoverGuardError("source approval cannot precede artifact export")
+    unresolved_count = sum(
+        row.get("mapping_status", "unmapped") != "mapped" for row in rows
+    )
     payload = {
         "source_kind": source_kind,
         "source_namespace": namespace,
         "source_account_key": account,
+        "artifact_path": artifact_path,
         "artifact_sha256": artifact_sha256,
         "source_row_count": len(rows),
         "extracted_count": len(rows),
-        "unresolved_count": expected_unresolved,
+        "unresolved_count": unresolved_count,
+        "exported_at": exported_at,
         "approved_at": approved_at,
     }
-    return AuthoritativeSourceEvidence(**payload, evidence_sha256=_sha256(payload))
+    return (
+        AuthoritativeSourceEvidence(**payload, evidence_sha256=_sha256(payload)),
+        rows,
+    )
 
 
 def _database_suppression_source(
     db: Session,
-    approved_at: Any,
     now: datetime,
 ) -> tuple[AuthoritativeSourceEvidence, list[dict[str, Any]]]:
     table = _table_or_none(db, "ark_sales_contacts")
@@ -924,17 +1004,23 @@ def _database_suppression_source(
                 "created_by": None,
             }
         )
-    source = {
+    approved_at = _beijing_timestamp(now, "Ark database query time")
+    payload = {
         "source_kind": "ark_database",
         "source_namespace": "ark",
         "source_account_key": "commission_db",
+        "artifact_path": None,
         "artifact_sha256": _sha256(sorted(raw_rows, key=canonical_json_bytes)),
         "source_row_count": len(raw_rows),
         "extracted_count": len(raw_rows),
         "unresolved_count": len(raw_rows),
         "approved_at": approved_at,
+        "exported_at": approved_at,
     }
-    return _source_evidence(source, rows=raw_rows, now=now), candidates
+    return (
+        AuthoritativeSourceEvidence(**payload, evidence_sha256=_sha256(payload)),
+        candidates,
+    )
 
 
 def _suppression_entry(
@@ -966,11 +1052,17 @@ def _suppression_entry(
     )
     if reason_code not in ALLOWED_SUPPRESSION_REASONS:
         raise CutoverGuardError(f"unsupported suppression reason: {reason_code}")
-    mapping_status = _required_stable_text(
+    source_mapping_status = _required_stable_text(
         _candidate_field(candidate, "mapping_status"), "mapping_status"
     )
-    if mapping_status not in ALLOWED_MAPPING_STATUSES:
-        raise CutoverGuardError(f"unsupported mapping_status: {mapping_status}")
+    if source_mapping_status not in ALLOWED_MAPPING_STATUSES:
+        raise CutoverGuardError(
+            f"unsupported mapping_status: {source_mapping_status}"
+        )
+    stable_matches = candidate.get("stable_match_candidates", [])
+    if not isinstance(stable_matches, list):
+        raise CutoverGuardError("stable_match_candidates must be a list")
+    mapping_status = "ambiguous" if len(stable_matches) > 1 else "unmapped"
     status = _required_stable_text(_candidate_field(candidate, "status"), "status")
     if status not in {"active", "revoked"}:
         raise CutoverGuardError(f"unsupported suppression status: {status}")
@@ -1023,6 +1115,10 @@ def _suppression_entry(
             or normalized_value.casefold() in str(metadata).casefold()
         ):
             raise CutoverGuardError("suppression metadata must not contain raw identifier")
+        if metadata and (
+            _RAW_EMAIL.search(str(metadata)) or _RAW_PHONE.search(str(metadata))
+        ):
+            raise CutoverGuardError("suppression metadata must not contain raw PII")
     return SuppressionManifestEntry(
         identifier_type=identifier_type,
         source_system=source_system,
@@ -1037,8 +1133,8 @@ def _suppression_entry(
         source_ref_id=source_ref_id,
         status=status,
         mapping_status=mapping_status,
-        mapped_customer_id=candidate.get("mapped_customer_id"),
-        mapped_contact_point_id=candidate.get("mapped_contact_point_id"),
+        mapped_customer_id=None,
+        mapped_contact_point_id=None,
         suppression_fingerprint=_sha256(fingerprint_payload),
         effective_at=effective_at,
         revoked_by=candidate.get("revoked_by"),
@@ -1059,7 +1155,7 @@ def build_suppression_manifest(
 ) -> SuppressionManifest:
     """Build an inventory-bound replay manifest from every authoritative source."""
     key = hmac_key.encode("utf-8") if isinstance(hmac_key, str) else hmac_key
-    if not isinstance(key, bytes) or len(key) < 32:
+    if not isinstance(key, bytes) or len(key) < 32 or len(set(key)) < 8:
         raise CutoverGuardError("suppression HMAC key must contain at least 32 bytes")
     key_version = _required_stable_text(key_version, "key_version")
     now = _parse_writer_timestamp(now, "suppression export now")
@@ -1072,31 +1168,15 @@ def build_suppression_manifest(
     sources = authoritative_source_manifest.get("sources")
     if not isinstance(sources, list):
         raise CutoverGuardError("authoritative source manifest requires sources list")
-    actual_kinds = {source.get("source_kind") for source in sources if isinstance(source, Mapping)}
-    missing_kinds = sorted(REQUIRED_EXTERNAL_SUPPRESSION_SOURCE_KINDS - actual_kinds)
-    if missing_kinds:
-        raise CutoverGuardError(
-            "missing authoritative source kinds: " + ", ".join(missing_kinds)
-        )
-    unsupported_kinds = sorted(
-        kind
-        for kind in actual_kinds - REQUIRED_EXTERNAL_SUPPRESSION_SOURCE_KINDS
-        if isinstance(kind, str)
-    )
-    if unsupported_kinds:
-        raise CutoverGuardError(
-            "unsupported authoritative source kinds: " + ", ".join(unsupported_kinds)
-        )
     evidence: list[AuthoritativeSourceEvidence] = []
     candidates: list[Mapping[str, Any]] = []
     identities: set[tuple[str, str]] = set()
+    actual_kinds: set[str] = set()
     for source in sources:
-        if not isinstance(source, Mapping) or not isinstance(source.get("rows"), list):
-            raise CutoverGuardError("authoritative source requires explicit rows list")
-        rows = source["rows"]
-        if any(not isinstance(row, Mapping) for row in rows):
-            raise CutoverGuardError("authoritative source rows must be objects")
-        item = _source_evidence(source, rows=rows, now=now)
+        if not isinstance(source, Mapping):
+            raise CutoverGuardError("authoritative source descriptor must be an object")
+        item, rows = _external_source_artifact(source, now)
+        actual_kinds.add(item.source_kind)
         identity = (item.source_namespace, item.source_account_key)
         if identity in identities:
             raise CutoverGuardError(f"duplicate authoritative source: {identity}")
@@ -1109,9 +1189,17 @@ def build_suppression_manifest(
                 raise CutoverGuardError("source row namespace/account does not match evidence")
         evidence.append(item)
         candidates.extend(rows)
-    database_evidence, database_candidates = _database_suppression_source(
-        db, authoritative_source_manifest.get("database_approved_at"), now
-    )
+    missing_kinds = sorted(REQUIRED_EXTERNAL_SUPPRESSION_SOURCE_KINDS - actual_kinds)
+    unsupported_kinds = sorted(actual_kinds - REQUIRED_EXTERNAL_SUPPRESSION_SOURCE_KINDS)
+    if missing_kinds:
+        raise CutoverGuardError(
+            "missing authoritative source kinds: " + ", ".join(missing_kinds)
+        )
+    if unsupported_kinds:
+        raise CutoverGuardError(
+            "unsupported authoritative source kinds: " + ", ".join(unsupported_kinds)
+        )
+    database_evidence, database_candidates = _database_suppression_source(db, now)
     evidence.append(database_evidence)
     candidates.extend(database_candidates)
     entries = [_suppression_entry(row, key, key_version) for row in candidates]
@@ -1137,6 +1225,112 @@ def build_suppression_manifest(
     )
 
 
+def validate_suppression_manifest(
+    db: Session,
+    raw: Mapping[str, Any],
+    hmac_key: bytes | str,
+    *,
+    now: datetime,
+) -> bool:
+    """Re-read every authority and prove a serialized replay manifest is current."""
+    if not isinstance(raw, Mapping):
+        raise CutoverGuardError("suppression manifest must be an object")
+    source_evidence = raw.get("source_evidence")
+    entries = raw.get("entries")
+    if not isinstance(source_evidence, list) or not source_evidence:
+        raise CutoverGuardError("suppression source evidence cannot be empty")
+    if not isinstance(entries, list):
+        raise CutoverGuardError("suppression entries must be a list")
+    try:
+        payload = {
+            key: raw[key]
+            for key in (
+                "schema_version",
+                "key_version",
+                "inventory_sha256",
+                "preflight_report_sha256",
+                "source_evidence",
+                "entries",
+            )
+        }
+    except KeyError as exc:
+        raise CutoverGuardError(
+            f"suppression manifest is missing {exc.args[0]}"
+        ) from exc
+    if raw.get("manifest_sha256") != _sha256(payload):
+        raise CutoverGuardError("suppression manifest SHA-256 does not match its content")
+
+    external_descriptors: list[dict[str, str]] = []
+    stored_database: Mapping[str, Any] | None = None
+    for item in source_evidence:
+        if not isinstance(item, Mapping):
+            raise CutoverGuardError("suppression source evidence must be objects")
+        if item.get("source_kind") == "ark_database":
+            if stored_database is not None:
+                raise CutoverGuardError("duplicate Ark database suppression evidence")
+            stored_database = item
+        else:
+            external_descriptors.append({"artifact_path": item.get("artifact_path")})
+    if stored_database is None:
+        raise CutoverGuardError("Ark database suppression evidence is required")
+
+    rebuilt = build_suppression_manifest(
+        db,
+        {"sources": external_descriptors},
+        hmac_key,
+        str(raw.get("key_version")),
+        inventory_sha256=str(raw.get("inventory_sha256")),
+        preflight_report_sha256=str(raw.get("preflight_report_sha256")),
+        now=now,
+    )
+    rebuilt_external = {
+        (item.source_kind, item.source_namespace, item.source_account_key): item.to_dict()
+        for item in rebuilt.source_evidence
+        if item.source_kind != "ark_database"
+    }
+    stored_external = {
+        (str(item.get("source_kind")), str(item.get("source_namespace")), str(item.get("source_account_key"))): dict(item)
+        for item in source_evidence
+        if isinstance(item, Mapping) and item.get("source_kind") != "ark_database"
+    }
+    if stored_external != rebuilt_external:
+        raise CutoverGuardError("suppression external source evidence changed")
+
+    rebuilt_database = next(
+        item.to_dict()
+        for item in rebuilt.source_evidence
+        if item.source_kind == "ark_database"
+    )
+    _verify_evidence_time(
+        stored_database.get("approved_at"), now, "Ark database suppression evidence"
+    )
+    database_stable_fields = (
+        "source_kind",
+        "source_namespace",
+        "source_account_key",
+        "artifact_path",
+        "artifact_sha256",
+        "source_row_count",
+        "extracted_count",
+        "unresolved_count",
+    )
+    if any(
+        stored_database.get(field) != rebuilt_database.get(field)
+        for field in database_stable_fields
+    ):
+        raise CutoverGuardError("Ark database suppression evidence changed")
+    stored_database_payload = {
+        key: value
+        for key, value in stored_database.items()
+        if key != "evidence_sha256"
+    }
+    if stored_database.get("evidence_sha256") != _sha256(stored_database_payload):
+        raise CutoverGuardError("Ark database suppression evidence SHA-256 mismatch")
+    if entries != [entry.to_dict() for entry in rebuilt.entries]:
+        raise CutoverGuardError("suppression replay entries do not match authorities")
+    return True
+
+
 def _parse_writer_timestamp(value: Any, field_name: str = "writer checked_at") -> datetime:
     if isinstance(value, str):
         try:
@@ -1145,23 +1339,6 @@ def _parse_writer_timestamp(value: Any, field_name: str = "writer checked_at") -
             raise CutoverGuardError(f"{field_name} must be an ISO Beijing datetime") from exc
     _beijing_timestamp(value, field_name)
     return value.astimezone(BEIJING_TIMEZONE)
-
-
-def _verify_evidence(value: Any, label: str) -> None:
-    if not isinstance(value, Mapping):
-        raise CutoverGuardError(f"{label} requires structured evidence")
-    method = value.get("method")
-    artifact = value.get("artifact_sha256")
-    detail = value.get("detail")
-    if (
-        not isinstance(method, str)
-        or len(method.strip()) < 8
-        or not isinstance(artifact, str)
-        or not _CANONICAL_SHA256.fullmatch(artifact)
-        or not isinstance(detail, str)
-        or len(detail.strip()) < 20
-    ):
-        raise CutoverGuardError(f"{label} requires nontrivial structured evidence")
 
 
 def _verify_evidence_time(value: Any, now: datetime, label: str) -> None:
@@ -1197,29 +1374,36 @@ def verify_ready(
     now = now or beijing_now().replace(tzinfo=BEIJING_TIMEZONE)
     _beijing_timestamp(now, "readiness now")
 
-    approved = stopped_writer_manifest.get("instance_inventory")
-    writers = stopped_writer_manifest.get("writers")
-    if not isinstance(approved, Mapping) or not isinstance(writers, list):
-        raise CutoverGuardError("stopped-writer manifest requires a writers list")
+    approved, approved_artifact_sha256, _ = _read_canonical_artifact(
+        stopped_writer_manifest.get("instance_inventory_artifact")
+    )
+    if set(approved) != {
+        "schema_version",
+        "artifact_kind",
+        "instances",
+        "approved_at",
+        "approved_by",
+        "approval_detail",
+        "inventory_sha256",
+        "preflight_report_sha256",
+    } or approved.get("schema_version") != 1 or approved.get("artifact_kind") != "writer_instance_inventory":
+        raise CutoverGuardError("invalid approved instance inventory artifact schema")
+    writer_artifacts = stopped_writer_manifest.get("writer_artifacts")
+    if not isinstance(writer_artifacts, list):
+        raise CutoverGuardError("stopped-writer manifest requires writer artifacts")
     approved_instances = approved.get("instances")
     if not isinstance(approved_instances, list):
         raise CutoverGuardError("approved instance inventory requires instances list")
-    approved_payload = {
-        key: value for key, value in approved.items() if key != "instance_inventory_sha256"
-    }
-    if not hmac.compare_digest(
-        str(approved.get("instance_inventory_sha256")), _sha256(approved_payload)
-    ):
-        raise CutoverGuardError("approved instance inventory SHA-256 mismatch")
     if (
         approved.get("inventory_sha256") != inventory.inventory_sha256
         or approved.get("preflight_report_sha256") != preflight_report_sha256
     ):
         raise CutoverGuardError("approved instance inventory has wrong preflight binding")
     _required_stable_text(approved.get("approved_by"), "instance inventory approved_by")
-    _verify_evidence(
-        approved.get("approval_evidence"), "approved instance inventory"
-    )
+    if len(_required_stable_text(
+        approved.get("approval_detail"), "instance inventory approval_detail"
+    )) < 20:
+        raise CutoverGuardError("approved instance inventory requires structured evidence")
     _verify_evidence_time(
         approved.get("approved_at"), now, "instance inventory"
     )
@@ -1241,9 +1425,19 @@ def verify_ready(
 
     actual_instances: set[tuple[str, str]] = set()
     running: list[str] = []
-    for writer in writers:
-        if not isinstance(writer, Mapping):
-            raise CutoverGuardError("each stopped-writer entry must be an object")
+    expected_writer_schema = {
+        "category",
+        "instance_id",
+        "stopped",
+        "checked_at",
+        "inventory_sha256",
+        "preflight_report_sha256",
+        "evidence_detail",
+    }
+    for writer_path in writer_artifacts:
+        writer, _, _ = _read_canonical_artifact(writer_path)
+        if set(writer) != expected_writer_schema:
+            raise CutoverGuardError("invalid writer stop artifact schema")
         category = _required_stable_text(writer.get("category"), "writer category")
         instance_id = _required_stable_text(writer.get("instance_id"), "writer instance_id")
         identity = (category, instance_id)
@@ -1256,7 +1450,12 @@ def verify_ready(
         ):
             raise CutoverGuardError(f"writer {category}/{instance_id} has wrong preflight binding")
         _verify_evidence_time(writer.get("checked_at"), now, f"writer {category}/{instance_id}")
-        _verify_evidence(writer.get("evidence"), f"writer {category}/{instance_id}")
+        if len(_required_stable_text(
+            writer.get("evidence_detail"), f"writer {category}/{instance_id} evidence"
+        )) < 20:
+            raise CutoverGuardError(
+                f"writer {category}/{instance_id} requires nontrivial structured evidence"
+            )
         if writer.get("stopped") is not True:
             running.append(f"{category}/{instance_id}")
     if actual_instances != expected_instances:
@@ -1264,18 +1463,64 @@ def verify_ready(
     if running:
         raise CutoverGuardError("writer instances still running: " + ", ".join(running))
 
-    transactions = stopped_writer_manifest.get("active_transactions")
-    if not isinstance(transactions, Mapping):
-        raise CutoverGuardError("active transaction evidence is required")
+    transactions, _, _ = _read_canonical_artifact(
+        stopped_writer_manifest.get("active_transaction_artifact")
+    )
+    if set(transactions) != {
+        "schema_version",
+        "artifact_kind",
+        "count",
+        "checked_at",
+        "inventory_sha256",
+        "preflight_report_sha256",
+        "evidence_detail",
+    } or transactions.get("schema_version") != 1 or transactions.get("artifact_kind") != "active_transaction_snapshot":
+        raise CutoverGuardError("invalid active transaction artifact schema")
     if (
         transactions.get("inventory_sha256") != inventory.inventory_sha256
         or transactions.get("preflight_report_sha256") != preflight_report_sha256
     ):
         raise CutoverGuardError("active transaction evidence has wrong preflight binding")
     _verify_evidence_time(transactions.get("checked_at"), now, "active transaction")
-    _verify_evidence(transactions.get("evidence"), "active transaction")
+    if len(_required_stable_text(
+        transactions.get("evidence_detail"), "active transaction evidence"
+    )) < 20:
+        raise CutoverGuardError("active transaction requires structured evidence")
     if transactions.get("count") != 0:
         raise CutoverGuardError("relevant active transactions must be zero")
+
+    fence, _, _ = _read_canonical_artifact(
+        stopped_writer_manifest.get("maintenance_fence_artifact")
+    )
+    if set(fence) != {
+        "schema_version",
+        "artifact_kind",
+        "token",
+        "instance_inventory_artifact_sha256",
+        "inventory_sha256",
+        "preflight_report_sha256",
+        "issued_at",
+        "expires_at",
+        "approval_detail",
+    } or fence.get("schema_version") != 1 or fence.get("artifact_kind") != "maintenance_fence":
+        raise CutoverGuardError("invalid maintenance fence artifact schema")
+    if (
+        fence.get("instance_inventory_artifact_sha256") != approved_artifact_sha256
+        or fence.get("inventory_sha256") != inventory.inventory_sha256
+        or fence.get("preflight_report_sha256") != preflight_report_sha256
+    ):
+        raise CutoverGuardError("maintenance fence has wrong readiness binding")
+    _required_stable_text(fence.get("token"), "maintenance fence token")
+    if len(_required_stable_text(
+        fence.get("approval_detail"), "maintenance fence approval_detail"
+    )) < 20:
+        raise CutoverGuardError("maintenance fence requires nontrivial evidence")
+    _verify_evidence_time(fence.get("issued_at"), now, "maintenance fence")
+    fence_expiry = _parse_writer_timestamp(
+        fence.get("expires_at"), "maintenance fence expires_at"
+    )
+    if fence_expiry <= now or fence_expiry - now > MIGRATION_CONTRACT_MAX_LIFETIME:
+        raise CutoverGuardError("maintenance fence is expired or exceeds five-minute lifetime")
     return True
 
 
@@ -1290,12 +1535,196 @@ def _acquire_mysql_cutover_lock(db: Session) -> bool:
     return result == 1
 
 
+def read_maintenance_fence_evidence(
+    stopped_writer_manifest: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return content-addressed fence bindings after reading immutable bytes."""
+    document, artifact_sha256, artifact_path = _read_canonical_artifact(
+        stopped_writer_manifest.get("maintenance_fence_artifact")
+    )
+    return {
+        "artifact_path": artifact_path,
+        "artifact_sha256": artifact_sha256,
+        "token": document.get("token"),
+        "instance_inventory_artifact_sha256": document.get(
+            "instance_inventory_artifact_sha256"
+        ),
+    }
+
+
+def _mysql_active_write_transaction_count(db: Session) -> int:
+    """Inspect live MySQL transactions on the same fenced Alembic connection."""
+    try:
+        connection_id = db.execute(text("SELECT CONNECTION_ID()" )).scalar_one()
+        rows = db.execute(
+            text(
+                "SELECT trx_mysql_thread_id, trx_rows_modified, trx_tables_locked "
+                "FROM information_schema.innodb_trx"
+            )
+        ).mappings()
+        return sum(
+            int(row["trx_mysql_thread_id"]) != int(connection_id)
+            and (
+                int(row.get("trx_rows_modified") or 0) > 0
+                or int(row.get("trx_tables_locked") or 0) > 0
+            )
+            for row in rows
+        )
+    except Exception as exc:
+        raise CutoverGuardError(
+            "cannot inspect MySQL active transactions; keep writers stopped"
+        ) from exc
+
+
+def _mysql_maintenance_fence_active(db: Session, contract: Mapping[str, Any]) -> bool:
+    """Task 3B contract: bootstrap ark_customer_cutover_fences before reset DDL."""
+    try:
+        row = db.execute(
+            text(
+                "SELECT fence_token, inventory_sha256, preflight_report_sha256, "
+                "expires_at, active FROM ark_customer_cutover_fences "
+                "WHERE fence_token=:token FOR UPDATE"
+            ),
+            {"token": contract["maintenance_fence_token"]},
+        ).mappings().one_or_none()
+    except Exception as exc:
+        raise CutoverGuardError(
+            "maintenance fence table is unavailable; Task 3B must bootstrap "
+            "ark_customer_cutover_fences before destructive DDL"
+        ) from exc
+    return bool(
+        row
+        and row["active"] in (True, 1)
+        and row["inventory_sha256"] == contract["inventory_sha256"]
+        and row["preflight_report_sha256"] == contract["preflight_report_sha256"]
+        and _parse_writer_timestamp(row["expires_at"], "database fence expires_at")
+        >= _parse_writer_timestamp(contract["expires_at"], "contract expires_at")
+    )
+
+
+def _read_bound_contract_artifact(
+    descriptor: Any, label: str, nonce: str
+) -> Mapping[str, Any]:
+    if not isinstance(descriptor, Mapping) or set(descriptor) != {
+        "path",
+        "artifact_sha256",
+    }:
+        raise CutoverGuardError(f"migration {label} evidence descriptor is invalid")
+    path_value = descriptor.get("path")
+    if not isinstance(path_value, str):
+        raise CutoverGuardError(f"migration {label} evidence path is required")
+    lexical = Path(path_value)
+    expected_name = f"bound-{label}-{nonce}.json"
+    if lexical.name != expected_name:
+        raise CutoverGuardError(f"migration {label} evidence path is not fixed")
+    root = CUTOVER_EVIDENCE_ROOT.resolve()
+    current = lexical
+    while current != root and current.is_relative_to(root):
+        if current.exists() and current.is_symlink():
+            raise CutoverGuardError(f"migration {label} evidence uses a symlink")
+        current = current.parent
+    path = lexical.resolve()
+    if path.parent != root or path.name != expected_name or not path.is_file():
+        raise CutoverGuardError(f"migration {label} evidence is missing from fixed root")
+    try:
+        raw = path.read_bytes()
+        document = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CutoverGuardError(f"cannot read migration {label} evidence") from exc
+    if not isinstance(document, Mapping) or raw != canonical_json_bytes(document) + b"\n":
+        raise CutoverGuardError(f"migration {label} evidence is not canonical JSON")
+    artifact_sha256 = hashlib.sha256(raw).hexdigest()
+    if artifact_sha256 != descriptor.get("artifact_sha256"):
+        raise CutoverGuardError(f"migration {label} artifact SHA-256 mismatch")
+    return document
+
+
+def _validate_bound_contract_evidence(contract: Mapping[str, Any], nonce: str) -> None:
+    descriptors = contract.get("evidence_artifacts")
+    labels = (
+        "preflight_report",
+        "suppression_manifest",
+        "writer_manifest",
+        "approved_marker",
+        "physical_schema_contract",
+    )
+    if not isinstance(descriptors, Mapping) or set(descriptors) != set(labels):
+        raise CutoverGuardError("migration bound evidence set is incomplete")
+    documents = {
+        label: _read_bound_contract_artifact(descriptors[label], label, nonce)
+        for label in labels
+    }
+    report = documents["preflight_report"]
+    report_payload = {key: value for key, value in report.items() if key != "report_sha256"}
+    if (
+        report.get("report_sha256") != _sha256(report_payload)
+        or report.get("report_sha256") != contract.get("preflight_report_sha256")
+    ):
+        raise CutoverGuardError("migration preflight report binding is invalid")
+    inventory = CutoverInventory.from_dict(report.get("inventory", {}))
+    if inventory.inventory_sha256 != contract.get("inventory_sha256"):
+        raise CutoverGuardError("migration inventory report binding is invalid")
+
+    suppression = documents["suppression_manifest"]
+    suppression_payload_keys = (
+        "schema_version",
+        "key_version",
+        "inventory_sha256",
+        "preflight_report_sha256",
+        "source_evidence",
+        "entries",
+    )
+    try:
+        suppression_payload = {
+            key: suppression[key] for key in suppression_payload_keys
+        }
+    except KeyError as exc:
+        raise CutoverGuardError("migration suppression evidence is incomplete") from exc
+    if (
+        suppression.get("manifest_sha256") != _sha256(suppression_payload)
+        or suppression.get("manifest_sha256")
+        != contract.get("suppression_manifest_sha256")
+        or suppression.get("inventory_sha256") != contract.get("inventory_sha256")
+        or suppression.get("preflight_report_sha256")
+        != contract.get("preflight_report_sha256")
+    ):
+        raise CutoverGuardError("migration suppression manifest binding is invalid")
+
+    writer = documents["writer_manifest"]
+    if _sha256(writer) != contract.get("writer_manifest_sha256"):
+        raise CutoverGuardError("migration writer manifest binding is invalid")
+    marker = documents["approved_marker"]
+    if marker.get("approved") is not True or _sha256(marker) != contract.get(
+        "approved_marker_sha256"
+    ):
+        raise CutoverGuardError("migration approved marker binding is invalid")
+    for field_name in (
+        "inventory_sha256",
+        "preflight_report_sha256",
+        "suppression_manifest_sha256",
+        "writer_manifest_sha256",
+        "physical_schema_contract_sha256",
+        "nonce",
+    ):
+        if marker.get(field_name) != contract.get(field_name):
+            raise CutoverGuardError(
+                f"migration approved marker does not bind {field_name}"
+            )
+    physical_contract_sha256 = validate_customer_physical_schema_contract(
+        documents["physical_schema_contract"]
+    )
+    if physical_contract_sha256 != contract.get("physical_schema_contract_sha256"):
+        raise CutoverGuardError("migration physical schema contract binding is invalid")
+
+
 def migration_preflight(
     db: Session,
     evidence_contract: Mapping[str, Any] | None,
     *,
     now: datetime | None = None,
     lock_acquirer: Callable[[Session], bool] | None = None,
+    transaction_inspector: Callable[[Session], int] | None = None,
+    fence_inspector: Callable[[Session, Mapping[str, Any]], bool] | None = None,
 ) -> CutoverInventory:
     """Migration-facing fail-closed guard; the caller retains this locked bind for DDL."""
     if not isinstance(evidence_contract, Mapping):
@@ -1304,6 +1733,25 @@ def migration_preflight(
         raise CutoverGuardError("migration evidence contract is not approved")
     if evidence_contract.get("evidence_root") != str(CUTOVER_EVIDENCE_ROOT):
         raise CutoverGuardError("migration evidence contract is outside the fixed evidence root")
+    nonce = _required_stable_text(evidence_contract.get("nonce"), "migration nonce")
+    if not _CUTOVER_NONCE.fullmatch(nonce):
+        raise CutoverGuardError("migration nonce contains unsafe characters")
+    for field_name, prefix in (
+        ("contract_path", "migration-contract-"),
+        ("receipt_path", "migration-receipt-"),
+    ):
+        raw_path = evidence_contract.get(field_name)
+        if not isinstance(raw_path, str):
+            raise CutoverGuardError(f"migration {field_name} is required")
+        resolved_path = Path(raw_path).resolve()
+        if (
+            not resolved_path.is_relative_to(CUTOVER_EVIDENCE_ROOT)
+            or resolved_path.parent != CUTOVER_EVIDENCE_ROOT
+            or resolved_path.name != f"{prefix}{nonce}.json"
+        ):
+            raise CutoverGuardError(f"migration {field_name} is not the fixed evidence path")
+        if field_name == "receipt_path" and resolved_path.exists():
+            raise CutoverGuardError("migration receipt path already exists")
     contract_payload = {
         key: value for key, value in evidence_contract.items() if key != "contract_sha256"
     }
@@ -1311,13 +1759,18 @@ def migration_preflight(
         str(evidence_contract.get("contract_sha256")), _sha256(contract_payload)
     ):
         raise CutoverGuardError("migration evidence contract SHA-256 mismatch")
-    _required_stable_text(evidence_contract.get("nonce"), "migration nonce")
+    if evidence_contract.get("migration_revision") != "126":
+        raise CutoverGuardError("migration revision is not the approved cutover revision")
+    _validate_bound_contract_evidence(evidence_contract, nonce)
     for field_name in (
         "inventory_sha256",
         "preflight_report_sha256",
         "suppression_manifest_sha256",
         "writer_manifest_sha256",
         "approved_marker_sha256",
+        "maintenance_fence_artifact_sha256",
+        "instance_inventory_artifact_sha256",
+        "physical_schema_contract_sha256",
     ):
         digest = evidence_contract.get(field_name)
         if not isinstance(digest, str) or not _CANONICAL_SHA256.fullmatch(digest):
@@ -1336,9 +1789,38 @@ def migration_preflight(
         raise CutoverGuardError("migration evidence contract is expired")
     if expires_at - now > MIGRATION_CONTRACT_MAX_LIFETIME:
         raise CutoverGuardError("migration evidence contract lifetime exceeds five minutes")
+    fence_document, fence_artifact_sha256, fence_artifact_path = _read_canonical_artifact(
+        evidence_contract.get("maintenance_fence_artifact")
+    )
+    if (
+        fence_artifact_sha256
+        != evidence_contract.get("maintenance_fence_artifact_sha256")
+        or fence_document.get("token")
+        != evidence_contract.get("maintenance_fence_token")
+        or fence_document.get("instance_inventory_artifact_sha256")
+        != evidence_contract.get("instance_inventory_artifact_sha256")
+        or fence_document.get("inventory_sha256")
+        != evidence_contract.get("inventory_sha256")
+        or fence_document.get("preflight_report_sha256")
+        != evidence_contract.get("preflight_report_sha256")
+    ):
+        raise CutoverGuardError(
+            f"maintenance fence artifact has wrong binding: {fence_artifact_path}"
+        )
+    fence_expiry = _parse_writer_timestamp(
+        fence_document.get("expires_at"), "maintenance fence expires_at"
+    )
+    if fence_expiry < expires_at:
+        raise CutoverGuardError("maintenance fence expires before migration contract")
     acquire = lock_acquirer or _acquire_mysql_cutover_lock
     if acquire(db) is not True:
         raise CutoverGuardError("customer cutover advisory lock is unavailable")
+    inspect_transactions = transaction_inspector or _mysql_active_write_transaction_count
+    if inspect_transactions(db) != 0:
+        raise CutoverGuardError("relevant active write transactions must be zero")
+    inspect_fence = fence_inspector or _mysql_maintenance_fence_active
+    if inspect_fence(db, evidence_contract) is not True:
+        raise CutoverGuardError("database maintenance fence is not active")
     live_inventory = build_inventory(db)
     if not hmac.compare_digest(
         live_inventory.inventory_sha256, str(evidence_contract["inventory_sha256"])
@@ -1347,10 +1829,356 @@ def migration_preflight(
     return live_inventory
 
 
-def verify_expected_customer_table_state(db: Session) -> bool:
+def _sql_expression(value: Any) -> str | None:
+    if value is None:
+        return None
+    text_value = " ".join(str(value).strip().split())
+    while text_value.startswith("(") and text_value.endswith(")"):
+        text_value = text_value[1:-1].strip()
+    return text_value
+
+
+def _type_signature(value: Any) -> dict[str, Any]:
+    rendered = str(value).upper()
+    return {
+        "name": rendered.split("(", 1)[0].strip(),
+        "length": getattr(value, "length", None),
+        "precision": getattr(value, "precision", None),
+        "scale": getattr(value, "scale", None),
+        "unsigned": bool(getattr(value, "unsigned", False)),
+        "enum_values": tuple(getattr(value, "enums", ()) or ()),
+    }
+
+
+def normalize_physical_schema_signature(
+    *,
+    columns: Iterable[Mapping[str, Any]],
+    primary_key: Mapping[str, Any],
+    unique_constraints: Iterable[Mapping[str, Any]],
+    indexes: Iterable[Mapping[str, Any]],
+    foreign_keys: Iterable[Mapping[str, Any]],
+    checks: Iterable[Mapping[str, Any]],
+    table_comment: str | None,
+) -> dict[str, Any]:
+    """Normalize SQLAlchemy/MySQL reflection into one comparison-safe contract."""
+    pk_columns = tuple(primary_key.get("constrained_columns") or ())
+    normalized_columns = []
+    for column in columns:
+        computed = column.get("computed")
+        normalized_columns.append(
+            {
+                "name": column.get("name"),
+                "type": _type_signature(column.get("type")),
+                "nullable": bool(column.get("nullable")),
+                "default": _sql_expression(column.get("default")),
+                "primary_key": column.get("name") in pk_columns,
+                "computed": (
+                    None
+                    if not computed
+                    else {
+                        "expression": _sql_expression(computed.get("sqltext")),
+                        "persisted": computed.get("persisted"),
+                    }
+                ),
+                "comment": column.get("comment"),
+            }
+        )
+    return {
+        "columns": tuple(normalized_columns),
+        "primary_key": {
+            "name": primary_key.get("name"),
+            "columns": pk_columns,
+        },
+        "unique_constraints": tuple(
+            sorted(
+                [(
+                    item.get("name"),
+                    tuple(item.get("column_names") or ()),
+                ) for item in unique_constraints],
+                key=canonical_json_bytes,
+            )
+        ),
+        "indexes": tuple(
+            sorted(
+                [(
+                    item.get("name"),
+                    bool(item.get("unique")),
+                    tuple(item.get("column_names") or ()),
+                ) for item in indexes],
+                key=canonical_json_bytes,
+            )
+        ),
+        "foreign_keys": tuple(
+            sorted(
+                [(
+                    item.get("name"),
+                    tuple(item.get("constrained_columns") or ()),
+                    item.get("referred_schema"),
+                    item.get("referred_table"),
+                    tuple(item.get("referred_columns") or ()),
+                    (item.get("options") or {}).get("ondelete"),
+                    (item.get("options") or {}).get("onupdate"),
+                ) for item in foreign_keys],
+                key=canonical_json_bytes,
+            )
+        ),
+        "checks": tuple(
+            sorted(
+                [(
+                    item.get("name"),
+                    _sql_expression(item.get("sqltext")),
+                    (item.get("dialect_options") or {}).get("mysql_enforced", True),
+                ) for item in checks],
+                key=canonical_json_bytes,
+            )
+        ),
+        "table_comment": table_comment,
+    }
+
+
+def compare_physical_schema_signature(
+    expected: Mapping[str, Any], actual: Mapping[str, Any], table_name: str
+) -> bool:
+    """Fail at the first physical category that differs from the approved contract."""
+    for category in (
+        "columns",
+        "primary_key",
+        "unique_constraints",
+        "indexes",
+        "foreign_keys",
+        "checks",
+        "table_comment",
+    ):
+        if canonical_json_bytes(expected.get(category)) != canonical_json_bytes(
+            actual.get(category)
+        ):
+            raise CutoverGuardError(
+                f"physical schema {category} mismatch for {table_name}"
+            )
+    return True
+
+
+def validate_customer_physical_schema_contract(
+    contract: Mapping[str, Any] | None,
+) -> str:
+    """Validate revision 126's mandatory 38-table expected physical contract."""
+    if not isinstance(contract, Mapping):
+        raise CutoverGuardError("revision 126 physical schema contract is required")
+    if set(contract) != {
+        "schema_version",
+        "migration_revision",
+        "tables",
+        "contract_sha256",
+    } or contract.get("schema_version") != 1 or contract.get("migration_revision") != "126":
+        raise CutoverGuardError("physical schema contract must be revision 126 schema v1")
+    tables = contract.get("tables")
+    expected_table_names = set(NEW_CUSTOMER_TABLES + REBUILT_CUSTOMER_WORKFLOW_TABLES)
+    if not isinstance(tables, Mapping) or set(tables) != expected_table_names:
+        raise CutoverGuardError(
+            "revision 126 physical schema contract must contain exactly 38 tables"
+        )
+    signature_categories = {
+        "columns",
+        "primary_key",
+        "unique_constraints",
+        "indexes",
+        "foreign_keys",
+        "checks",
+        "table_comment",
+    }
+    for table_name, signature in tables.items():
+        if not isinstance(signature, Mapping) or set(signature) != signature_categories:
+            raise CutoverGuardError(
+                f"physical schema contract is incomplete for {table_name}"
+            )
+        columns = signature.get("columns")
+        if not isinstance(columns, (list, tuple)) or any(
+            not isinstance(column, Mapping) for column in columns
+        ):
+            raise CutoverGuardError(f"physical columns are invalid for {table_name}")
+        actual_column_names = [column.get("name") for column in columns]
+        expected_column_names = (
+            list(CORE_TABLES[table_name].c.keys())
+            if table_name in CORE_TABLES
+            else list(REBUILT_WORKFLOW_COLUMNS[table_name])
+        )
+        if set(actual_column_names) != set(expected_column_names) or len(
+            actual_column_names
+        ) != len(expected_column_names):
+            raise CutoverGuardError(
+                f"physical schema contract has wrong columns for {table_name}"
+            )
+        for column in columns:
+            if set(column) != {
+                "name",
+                "type",
+                "nullable",
+                "default",
+                "primary_key",
+                "computed",
+                "comment",
+            }:
+                raise CutoverGuardError(
+                    f"physical column contract is incomplete for {table_name}.{column.get('name')}"
+                )
+            type_contract = column.get("type")
+            if not isinstance(type_contract, Mapping) or set(type_contract) != {
+                "name",
+                "length",
+                "precision",
+                "scale",
+                "unsigned",
+                "enum_values",
+            }:
+                raise CutoverGuardError(
+                    f"physical type contract is incomplete for {table_name}.{column.get('name')}"
+                )
+            computed = column.get("computed")
+            if computed is not None and (
+                not isinstance(computed, Mapping)
+                or set(computed) != {"expression", "persisted"}
+            ):
+                raise CutoverGuardError(
+                    f"physical generated-column contract is incomplete for {table_name}.{column.get('name')}"
+                )
+            if not isinstance(column.get("comment"), str) or not column["comment"].strip():
+                raise CutoverGuardError(
+                    f"physical column comment is required for {table_name}.{column.get('name')}"
+                )
+        if not isinstance(signature.get("table_comment"), str) or not signature[
+            "table_comment"
+        ].strip():
+            raise CutoverGuardError(f"physical table comment is required for {table_name}")
+        primary_key = signature.get("primary_key")
+        if (
+            not isinstance(primary_key, Mapping)
+            or set(primary_key) != {"name", "columns"}
+            or not isinstance(primary_key.get("columns"), (list, tuple))
+            or not primary_key["columns"]
+        ):
+            raise CutoverGuardError(f"physical primary key is incomplete for {table_name}")
+        for category, item_length in (
+            ("unique_constraints", 2),
+            ("indexes", 3),
+            ("foreign_keys", 7),
+            ("checks", 3),
+        ):
+            items = signature.get(category)
+            if not isinstance(items, (list, tuple)) or any(
+                not isinstance(item, (list, tuple)) or len(item) != item_length
+                for item in items
+            ):
+                raise CutoverGuardError(
+                    f"physical {category} contract is incomplete for {table_name}"
+                )
+    payload = {key: value for key, value in contract.items() if key != "contract_sha256"}
+    expected_sha256 = _sha256(payload)
+    if contract.get("contract_sha256") != expected_sha256:
+        raise CutoverGuardError("physical schema contract SHA-256 mismatch")
+    return expected_sha256
+
+
+def _model_physical_schema_signature(table: Table) -> dict[str, Any]:
+    columns = []
+    for column in table.c:
+        computed = None
+        if column.computed is not None:
+            computed = {
+                "sqltext": str(column.computed.sqltext),
+                "persisted": column.computed.persisted,
+            }
+        columns.append(
+            {
+                "name": column.name,
+                "type": column.type,
+                "nullable": column.nullable,
+                "default": (
+                    str(getattr(column.server_default, "arg", column.server_default))
+                    if column.server_default is not None
+                    else None
+                ),
+                "computed": computed,
+                "comment": column.comment,
+            }
+        )
+    constraints = tuple(table.constraints)
+    return normalize_physical_schema_signature(
+        columns=columns,
+        primary_key={
+            "name": table.primary_key.name,
+            "constrained_columns": [column.name for column in table.primary_key.columns],
+        },
+        unique_constraints=(
+            {
+                "name": item.name,
+                "column_names": [column.name for column in item.columns],
+            }
+            for item in constraints
+            if item.__class__.__name__ == "UniqueConstraint"
+        ),
+        indexes=(
+            {
+                "name": item.name,
+                "unique": item.unique,
+                "column_names": [column.name for column in item.columns],
+            }
+            for item in table.indexes
+        ),
+        foreign_keys=(
+            {
+                "name": item.name,
+                "constrained_columns": [element.parent.name for element in item.elements],
+                "referred_schema": next(iter(item.elements)).column.table.schema,
+                "referred_table": next(iter(item.elements)).column.table.name,
+                "referred_columns": [element.column.name for element in item.elements],
+                "options": {
+                    "ondelete": item.ondelete,
+                    "onupdate": item.onupdate,
+                },
+            }
+            for item in constraints
+            if item.__class__.__name__ == "ForeignKeyConstraint"
+        ),
+        checks=(
+            {
+                "name": item.name,
+                "sqltext": str(item.sqltext),
+                "dialect_options": {
+                    "mysql_enforced": item.dialect_options["mysql"].get(
+                        "enforced", True
+                    )
+                },
+            }
+            for item in constraints
+            if item.__class__.__name__ == "CheckConstraint"
+        ),
+        table_comment=table.comment,
+    )
+
+
+def _reflected_physical_schema_signature(inspector: Any, table_name: str) -> dict[str, Any]:
+    return normalize_physical_schema_signature(
+        columns=inspector.get_columns(table_name),
+        primary_key=inspector.get_pk_constraint(table_name),
+        unique_constraints=inspector.get_unique_constraints(table_name),
+        indexes=inspector.get_indexes(table_name),
+        foreign_keys=inspector.get_foreign_keys(table_name),
+        checks=inspector.get_check_constraints(table_name),
+        table_comment=inspector.get_table_comment(table_name).get("text"),
+    )
+
+
+def verify_expected_customer_table_state(
+    db: Session,
+    physical_schema_contract: Mapping[str, Any] | None = None,
+) -> bool:
     """Verify approved table names plus exact model/design schema signatures."""
     connection = db.connection()
     inspector = inspect(connection)
+    expected_physical_tables = None
+    if connection.dialect.name == "mysql":
+        validate_customer_physical_schema_contract(physical_schema_contract)
+        expected_physical_tables = physical_schema_contract["tables"]
     missing = [
         table_name
         for table_name in NEW_CUSTOMER_TABLES + REBUILT_CUSTOMER_WORKFLOW_TABLES
@@ -1374,8 +2202,13 @@ def verify_expected_customer_table_state(db: Session) -> bool:
             model_table = CORE_TABLES[table_name]
             expected_names = set(model_table.c.keys())
         else:
-            model_table = None
             expected_names = set(REBUILT_WORKFLOW_COLUMNS[table_name])
+            candidate = next(iter(CORE_TABLES.values())).metadata.tables.get(table_name)
+            model_table = (
+                candidate
+                if candidate is not None and set(candidate.c.keys()) == expected_names
+                else None
+            )
         if actual_names != expected_names:
             missing_columns = sorted(expected_names - actual_names)
             extra_columns = sorted(actual_names - expected_names)
@@ -1431,34 +2264,39 @@ def verify_expected_customer_table_state(db: Session) -> bool:
                     )
             elif any(not column.get("comment") for column in reflected_columns):
                 raise CutoverGuardError(f"column comments are incomplete for {table_name}")
+            compare_physical_schema_signature(
+                expected_physical_tables[table_name],
+                _reflected_physical_schema_signature(inspector, table_name),
+                table_name,
+            )
     return True
 
 
-def expected_customer_schema_sha256() -> str:
+def expected_customer_schema_sha256(
+    physical_schema_contract: Mapping[str, Any] | None = None,
+) -> str:
     """Return the immutable schema contract hash shared by reset and verification."""
+    if physical_schema_contract is not None:
+        return validate_customer_physical_schema_contract(physical_schema_contract)
     core = {}
     for table_name in NEW_CUSTOMER_TABLES:
         table = CORE_TABLES[table_name]
-        core[table_name] = {
-            "columns": list(table.c.keys()),
-            "computed_columns": sorted(
-                column.name for column in table.c if column.computed is not None
-            ),
-            "check_constraints": sorted(
-                constraint.name
-                for constraint in table.constraints
-                if constraint.__class__.__name__ == "CheckConstraint"
-            ),
-            "table_comment": table.comment,
-        }
-    rebuilt = {
-        table_name: {
-            "columns": sorted(REBUILT_WORKFLOW_COLUMNS[table_name]),
-            "table_comment": REBUILT_WORKFLOW_COMMENTS[table_name],
-        }
-        for table_name in REBUILT_CUSTOMER_WORKFLOW_TABLES
-    }
-    return _sha256({"schema_version": 1, "core": core, "rebuilt": rebuilt})
+        core[table_name] = _model_physical_schema_signature(table)
+    rebuilt = {}
+    metadata = next(iter(CORE_TABLES.values())).metadata
+    for table_name in REBUILT_CUSTOMER_WORKFLOW_TABLES:
+        candidate = metadata.tables.get(table_name)
+        if candidate is not None and set(candidate.c.keys()) == set(
+            REBUILT_WORKFLOW_COLUMNS[table_name]
+        ):
+            rebuilt[table_name] = _model_physical_schema_signature(candidate)
+        else:
+            rebuilt[table_name] = {
+                "physical_contract": "unavailable",
+                "columns": sorted(REBUILT_WORKFLOW_COLUMNS[table_name]),
+                "table_comment": REBUILT_WORKFLOW_COMMENTS[table_name],
+            }
+    return _sha256({"schema_version": 2, "core": core, "rebuilt": rebuilt})
 
 
 def verify_frozen_business_ids_removed(

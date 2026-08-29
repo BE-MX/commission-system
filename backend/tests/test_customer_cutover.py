@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import importlib.util
 import json
+import copy
 from dataclasses import FrozenInstanceError, replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -9,10 +10,11 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import BigInteger, Text, create_engine, event, text
 from sqlalchemy.orm import Session
 
 import app.models  # noqa: F401 -- registers string FK targets for Agent DDL
+import app.customer.cutover_service as cutover_service
 from app.agent_runtime.models import (
     AgentArtifact,
     AgentEvent,
@@ -35,10 +37,15 @@ from app.customer.cutover_service import (
     build_inventory,
     build_suppression_manifest,
     canonical_json_bytes,
+    compare_physical_schema_signature,
     expected_customer_schema_sha256,
     migration_preflight,
+    normalize_physical_schema_signature,
+    read_maintenance_fence_evidence,
     resolve_agent_history_closure,
     snapshot_unrelated_agent_rows,
+    validate_suppression_manifest,
+    validate_customer_physical_schema_contract,
     verify_ready,
     verify_expected_customer_table_state,
     verify_frozen_business_ids_removed,
@@ -80,7 +87,9 @@ def _suppression_row(**overrides):
     return row
 
 
-def _authoritative_source_manifest(*, provider_rows=None, omit=None):
+def _authoritative_source_manifest(
+    *, provider_rows=None, omit=None, approved_at=READY_CHECKED_AT
+):
     rows_by_kind = {
         "okki": [],
         "alibaba": [],
@@ -90,27 +99,32 @@ def _authoritative_source_manifest(*, provider_rows=None, omit=None):
     for source_kind, rows in rows_by_kind.items():
         if source_kind == omit:
             continue
-        sources.append(
-            {
-                "source_kind": source_kind,
-                "source_namespace": source_kind,
-                "source_account_key": f"{source_kind}-account-01",
-                "artifact_sha256": hashlib.sha256(
-                    canonical_json_bytes(sorted(rows, key=canonical_json_bytes))
-                ).hexdigest(),
-                "source_row_count": len(rows),
-                "extracted_count": len(rows),
-                "unresolved_count": sum(
-                    row["mapping_status"] != "mapped" for row in rows
-                ),
-                "approved_at": READY_CHECKED_AT,
-                "rows": rows,
-            }
-        )
-    return {
-        "database_approved_at": READY_CHECKED_AT,
-        "sources": sources,
-    }
+        artifact_rows = []
+        for original in rows:
+            row = dict(original)
+            for field_name in ("effective_at", "revoked_at"):
+                if isinstance(row.get(field_name), datetime):
+                    row[field_name] = row[field_name].isoformat()
+            artifact_rows.append(row)
+        artifact_rows.sort(key=canonical_json_bytes)
+        artifact = {
+            "schema_version": 1,
+            "source_kind": source_kind,
+            "source_namespace": source_kind,
+            "source_account_key": f"{source_kind}-account-01",
+            "exported_at": approved_at.isoformat(),
+            "approved_at": approved_at.isoformat(),
+            "rows": artifact_rows,
+        }
+        artifact_bytes = canonical_json_bytes(artifact) + b"\n"
+        artifact_hash = hashlib.sha256(artifact_bytes).hexdigest()
+        relative_path = Path("pytest-suppressions") / f"{source_kind}-{artifact_hash}.json"
+        artifact_path = CUTOVER_EVIDENCE_ROOT / relative_path
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        if not artifact_path.exists():
+            artifact_path.write_bytes(artifact_bytes)
+        sources.append({"artifact_path": relative_path.as_posix()})
+    return {"sources": sources}
 
 
 def _build_suppression(
@@ -308,54 +322,115 @@ def _writer_manifest(
                 "category": category,
                 "instance_id": f"{category}-01",
                 "stopped": category != running,
-                "checked_at": checked_at,
+                "checked_at": checked_at.isoformat(),
                 "inventory_sha256": inventory_sha256,
                 "preflight_report_sha256": preflight_report_sha256,
-                "evidence": (
-                    {"method": "x"}
+                "evidence_detail": (
+                    "x"
                     if weak_evidence
-                    else {
-                        "method": "service_manager_snapshot",
-                        "artifact_sha256": "b" * 64,
-                        "detail": "independent process and queue inspection confirmed stopped",
-                    }
+                    else "independent process and queue inspection confirmed stopped"
                 ),
             }
             for category in KNOWN_WRITER_CATEGORIES
             if category != omitted
         ]
     if extra_writer:
+        extra_writer = dict(extra_writer)
+        if isinstance(extra_writer.get("checked_at"), datetime):
+            extra_writer["checked_at"] = extra_writer["checked_at"].isoformat()
         writers.append(extra_writer)
     approval_payload = {
+        "schema_version": 1,
+        "artifact_kind": "writer_instance_inventory",
         "instances": instance_inventory,
-        "approved_at": inventory_approved_at,
+        "approved_at": inventory_approved_at.isoformat(),
         "approved_by": "cutover-approver",
-        "approval_evidence": {
-            "method": "change_control_approval",
-            "artifact_sha256": "e" * 64,
-            "detail": "approved deployment inventory exported from independent control plane",
-        },
+        "approval_detail": "approved deployment inventory exported from independent control plane",
         "inventory_sha256": inventory_sha256,
         "preflight_report_sha256": preflight_report_sha256,
     }
-    approval_payload["instance_inventory_sha256"] = hashlib.sha256(
-        canonical_json_bytes(approval_payload)
-    ).hexdigest()
-    return {
-        "instance_inventory": approval_payload,
-        "writers": writers,
-        "active_transactions": {
-            "count": active_transactions,
-            "checked_at": checked_at,
-            "inventory_sha256": inventory_sha256,
-            "preflight_report_sha256": preflight_report_sha256,
-            "evidence": {
-                "method": "performance_schema_transaction_snapshot",
-                "artifact_sha256": "c" * 64,
-                "detail": "active relevant customer writer transactions enumerated",
-            },
-        },
+    def write_artifact(label, payload):
+        raw = canonical_json_bytes(payload) + b"\n"
+        digest = hashlib.sha256(raw).hexdigest()
+        relative = Path("pytest-readiness") / f"{label}-{digest}.json"
+        path = CUTOVER_EVIDENCE_ROOT / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.write_bytes(raw)
+        return relative.as_posix(), digest
+
+    inventory_path, inventory_artifact_sha256 = write_artifact(
+        "instance-inventory", approval_payload
+    )
+    writer_paths = [write_artifact("writer-stop", writer)[0] for writer in writers]
+    transaction_payload = {
+        "schema_version": 1,
+        "artifact_kind": "active_transaction_snapshot",
+        "count": active_transactions,
+        "checked_at": checked_at.isoformat(),
+        "inventory_sha256": inventory_sha256,
+        "preflight_report_sha256": preflight_report_sha256,
+        "evidence_detail": "active relevant customer writer transactions enumerated",
     }
+    transaction_path, _ = write_artifact("transactions", transaction_payload)
+    fence_payload = {
+        "schema_version": 1,
+        "artifact_kind": "maintenance_fence",
+        "token": f"cutover-fence-{inventory_sha256[:20]}",
+        "instance_inventory_artifact_sha256": inventory_artifact_sha256,
+        "inventory_sha256": inventory_sha256,
+        "preflight_report_sha256": preflight_report_sha256,
+        "issued_at": checked_at.isoformat(),
+        "expires_at": (checked_at + timedelta(minutes=4)).isoformat(),
+        "approval_detail": "independent deployment controller disabled restart and write admission",
+    }
+    fence_path, _ = write_artifact("maintenance-fence", fence_payload)
+    return {
+        "instance_inventory_artifact": inventory_path,
+        "writer_artifacts": writer_paths,
+        "active_transaction_artifact": transaction_path,
+        "maintenance_fence_artifact": fence_path,
+    }
+
+
+def _physical_schema_contract(*, omit=None):
+    tables = {}
+    for table_name in NEW_CUSTOMER_TABLES + REBUILT_CUSTOMER_WORKFLOW_TABLES:
+        if table_name == omit:
+            continue
+        column_names = (
+            list(cutover_service.CORE_TABLES[table_name].c.keys())
+            if table_name in cutover_service.CORE_TABLES
+            else sorted(REBUILT_WORKFLOW_COLUMNS[table_name])
+        )
+        tables[table_name] = normalize_physical_schema_signature(
+            columns=[
+                {
+                    "name": name,
+                    "type": BigInteger(),
+                    "nullable": name != "id",
+                    "default": None,
+                    "computed": None,
+                    "comment": f"approved {table_name}.{name}",
+                }
+                for name in column_names
+            ],
+            primary_key={"name": "PRIMARY", "constrained_columns": ["id"]},
+            unique_constraints=[],
+            indexes=[],
+            foreign_keys=[],
+            checks=[],
+            table_comment=f"approved {table_name}",
+        )
+    contract = {
+        "schema_version": 1,
+        "migration_revision": "126",
+        "tables": tables,
+    }
+    contract["contract_sha256"] = hashlib.sha256(
+        canonical_json_bytes(contract)
+    ).hexdigest()
+    return contract
 
 
 def _load_cutover_script():
@@ -511,6 +586,18 @@ def test_unrelated_snapshot_preserves_all_profiles_and_detects_content_change():
         verify_unrelated_unchanged(before, after)
 
 
+def test_agent_snapshot_and_removed_id_checks_never_use_resident_ordered_rows():
+    engine = _create_cutover_db()
+    with Session(engine) as db:
+        inventory = build_inventory(db)
+        closure = resolve_agent_history_closure(db, inventory)
+        assert not hasattr(cutover_service, "_ordered_rows")
+        snapshot = snapshot_unrelated_agent_rows(db, closure)
+        assert snapshot.table("ark_agent_profiles").row_count == 2
+        with pytest.raises(CutoverGuardError, match="closure rows remain"):
+            verify_agent_history_removed(db, closure)
+
+
 def test_verify_after_requires_every_exact_agent_closure_row_to_be_absent():
     engine = _create_cutover_db()
     with Session(engine) as db:
@@ -641,38 +728,14 @@ def test_suppression_export_reconciles_every_required_authoritative_source():
                 preflight_report_sha256=PREFLIGHT_REPORT_SHA256,
                 now=READY_CHECKED_AT + timedelta(minutes=1),
             )
-        unknown = _authoritative_source_manifest()
-        unknown["sources"].append(
-            {
-                "source_kind": "undeclared_crm",
-                "source_namespace": "undeclared_crm",
-                "source_account_key": "crm-01",
-                "artifact_sha256": hashlib.sha256(canonical_json_bytes([])).hexdigest(),
-                "source_row_count": 0,
-                "extracted_count": 0,
-                "unresolved_count": 0,
-                "approved_at": READY_CHECKED_AT,
-                "rows": [],
-            }
-        )
-        with pytest.raises(CutoverGuardError, match="unsupported authoritative source"):
+        missing_artifact = _authoritative_source_manifest()
+        missing_artifact["sources"][-1] = {
+            "artifact_path": "pytest-suppressions/does-not-exist.json"
+        }
+        with pytest.raises(CutoverGuardError, match="artifact is missing"):
             build_suppression_manifest(
                 db,
-                unknown,
-                SUPPRESSION_HMAC_KEY,
-                "v1",
-                inventory_sha256=inventory.inventory_sha256,
-                preflight_report_sha256=PREFLIGHT_REPORT_SHA256,
-                now=READY_CHECKED_AT + timedelta(minutes=1),
-            )
-        mismatched = _authoritative_source_manifest(
-            provider_rows=[_suppression_row()]
-        )
-        mismatched["sources"][-1]["source_row_count"] = 2
-        with pytest.raises(CutoverGuardError, match="source row reconciliation"):
-            build_suppression_manifest(
-                db,
-                mismatched,
+                missing_artifact,
                 SUPPRESSION_HMAC_KEY,
                 "v1",
                 inventory_sha256=inventory.inventory_sha256,
@@ -686,16 +749,6 @@ def test_suppression_export_accepts_explicit_beijing_timestamps_from_json():
     source_manifest = _authoritative_source_manifest(
         provider_rows=[_suppression_row()]
     )
-    source_manifest["database_approved_at"] = source_manifest[
-        "database_approved_at"
-    ].isoformat()
-    for source in source_manifest["sources"]:
-        source["approved_at"] = source["approved_at"].isoformat()
-        for row in source["rows"]:
-            row["effective_at"] = row["effective_at"].isoformat()
-        source["artifact_sha256"] = hashlib.sha256(
-            canonical_json_bytes(sorted(source["rows"], key=canonical_json_bytes))
-        ).hexdigest()
     with Session(engine) as db:
         inventory = build_inventory(db)
         manifest = build_suppression_manifest(
@@ -743,10 +796,7 @@ def test_suppression_export_rejects_stale_or_future_approval_before_accepting_em
     approved_at, message
 ):
     engine = _create_cutover_db()
-    source_manifest = _authoritative_source_manifest()
-    source_manifest["database_approved_at"] = approved_at
-    for source in source_manifest["sources"]:
-        source["approved_at"] = approved_at
+    source_manifest = _authoritative_source_manifest(approved_at=approved_at)
     with Session(engine) as db:
         inventory = build_inventory(db)
         with pytest.raises(CutoverGuardError, match=message):
@@ -770,6 +820,7 @@ def test_suppression_manifest_contains_only_hmac_and_preserves_ambiguous_rows():
             reason_code="manual_block",
             source_ref_id="block-7",
             mapping_status="ambiguous",
+            stable_match_candidates=[101, 102],
         ),
     ]
     with Session(engine) as db:
@@ -784,7 +835,9 @@ def test_suppression_manifest_contains_only_hmac_and_preserves_ambiguous_rows():
 
     assert len(manifest.entries) == 2
     assert expected in {entry.normalized_value_hmac for entry in manifest.entries}
-    assert {entry.mapping_status for entry in manifest.entries} == {"mapped", "ambiguous"}
+    assert {entry.mapping_status for entry in manifest.entries} == {"unmapped", "ambiguous"}
+    assert all(entry.mapped_customer_id is None for entry in manifest.entries)
+    assert all(entry.mapped_contact_point_id is None for entry in manifest.entries)
     assert "Alice@Example.COM" not in serialized
     assert "alice@example.com" not in serialized
     assert SUPPRESSION_HMAC_KEY.decode("ascii") not in serialized
@@ -844,6 +897,55 @@ def test_suppression_rejects_raw_identity_copied_into_source_metadata():
         inventory = build_inventory(db)
         with pytest.raises(CutoverGuardError, match="raw identifier"):
             _build_suppression(db, inventory, [candidate])
+
+
+def test_suppression_revalidation_reads_authoritative_artifact_bytes():
+    engine = _create_cutover_db()
+    with Session(engine) as db:
+        inventory = build_inventory(db)
+        raw = _build_suppression(db, inventory, [_suppression_row()]).to_dict()
+        assert validate_suppression_manifest(
+            db, raw, SUPPRESSION_HMAC_KEY, now=READY_CHECKED_AT + timedelta(minutes=1)
+        ) is True
+        provider = next(
+            item for item in raw["source_evidence"] if item["source_kind"] == "provider"
+        )
+        artifact_path = CUTOVER_EVIDENCE_ROOT / provider["artifact_path"]
+        original = artifact_path.read_bytes()
+        try:
+            artifact_path.write_bytes(original + b" ")
+            with pytest.raises(CutoverGuardError, match="canonical JSON"):
+                validate_suppression_manifest(
+                    db,
+                    raw,
+                    SUPPRESSION_HMAC_KEY,
+                    now=READY_CHECKED_AT + timedelta(minutes=1),
+                )
+        finally:
+            artifact_path.write_bytes(original)
+
+
+def test_self_hashed_empty_suppression_and_repeated_key_fail_closed():
+    engine = _create_cutover_db()
+    with Session(engine) as db:
+        inventory = build_inventory(db)
+        empty = {
+            "schema_version": 1,
+            "key_version": "v1",
+            "inventory_sha256": inventory.inventory_sha256,
+            "preflight_report_sha256": PREFLIGHT_REPORT_SHA256,
+            "source_evidence": [],
+            "entries": [],
+        }
+        empty["manifest_sha256"] = hashlib.sha256(
+            canonical_json_bytes(empty)
+        ).hexdigest()
+        with pytest.raises(CutoverGuardError, match="cannot be empty"):
+            validate_suppression_manifest(
+                db, empty, SUPPRESSION_HMAC_KEY, now=READY_CHECKED_AT
+            )
+        with pytest.raises(CutoverGuardError, match="HMAC key"):
+            _build_suppression(db, inventory, [], key=b"x" * 64)
 
 
 def test_verify_ready_fails_on_hash_mismatch_missing_writer_and_running_writer():
@@ -968,8 +1070,13 @@ def test_verify_ready_rejects_unlisted_second_instance():
     with Session(engine) as db:
         inventory = build_inventory(db)
     extra = {
-        **_writer_manifest(inventory.inventory_sha256)["writers"][0],
+        "category": "local_api",
         "instance_id": "local-api-unapproved-02",
+        "stopped": True,
+        "checked_at": READY_CHECKED_AT,
+        "inventory_sha256": inventory.inventory_sha256,
+        "preflight_report_sha256": PREFLIGHT_REPORT_SHA256,
+        "evidence_detail": "independent process and queue inspection confirmed stopped",
     }
     manifest = _writer_manifest(inventory.inventory_sha256, extra_writer=extra)
     with pytest.raises(CutoverGuardError, match="instance inventory"):
@@ -987,8 +1094,13 @@ def test_stale_approved_instance_inventory_cannot_omit_a_later_instance():
     with Session(engine) as db:
         inventory = build_inventory(db)
     extra = {
-        **_writer_manifest(inventory.inventory_sha256)["writers"][0],
+        "category": "local_api",
         "instance_id": "local-api-started-after-stale-approval",
+        "stopped": True,
+        "checked_at": READY_CHECKED_AT,
+        "inventory_sha256": inventory.inventory_sha256,
+        "preflight_report_sha256": PREFLIGHT_REPORT_SHA256,
+        "evidence_detail": "independent process and queue inspection confirmed stopped",
     }
     manifest = _writer_manifest(
         inventory.inventory_sha256,
@@ -1009,29 +1121,119 @@ def test_migration_preflight_requires_short_lived_contract_lock_and_live_invento
     engine = _create_cutover_db()
     now = READY_CHECKED_AT
     with Session(engine) as db:
+        script = _load_cutover_script()
         inventory = build_inventory(db)
+        report = script.build_preflight_report(db)
+        report_sha256 = report["report_sha256"]
+        suppression = _build_suppression(
+            db,
+            inventory,
+            [],
+            preflight_report_sha256=report_sha256,
+        ).to_dict()
+        writer_manifest = _writer_manifest(
+            inventory.inventory_sha256,
+            preflight_report_sha256=report_sha256,
+        )
+        fence = read_maintenance_fence_evidence(writer_manifest)
+        nonce = f"cutover-{report_sha256[:24]}"
+        writer_sha256 = hashlib.sha256(
+            canonical_json_bytes(writer_manifest)
+        ).hexdigest()
+        physical_contract = _physical_schema_contract()
+        marker = {
+            "approved": True,
+            "inventory_sha256": inventory.inventory_sha256,
+            "preflight_report_sha256": report_sha256,
+            "suppression_manifest_sha256": suppression["manifest_sha256"],
+            "writer_manifest_sha256": writer_sha256,
+            "physical_schema_contract_sha256": physical_contract[
+                "contract_sha256"
+            ],
+            "nonce": nonce,
+            "expires_at": (now + timedelta(minutes=3)).isoformat(),
+        }
+        documents = {
+            "preflight_report": report,
+            "suppression_manifest": suppression,
+            "writer_manifest": writer_manifest,
+            "approved_marker": marker,
+            "physical_schema_contract": physical_contract,
+        }
+        evidence_artifacts = {}
+        for label, document in documents.items():
+            artifact_path = CUTOVER_EVIDENCE_ROOT / f"bound-{label}-{nonce}.json"
+            artifact_bytes = canonical_json_bytes(document) + b"\n"
+            if not artifact_path.exists():
+                artifact_path.write_bytes(artifact_bytes)
+            evidence_artifacts[label] = {
+                "path": str(artifact_path),
+                "artifact_sha256": hashlib.sha256(artifact_bytes).hexdigest(),
+            }
         with pytest.raises(CutoverGuardError, match="migration evidence contract"):
             migration_preflight(db, None, now=now, lock_acquirer=lambda _db: True)
         contract = {
             "approved": True,
-            "nonce": "cutover-nonce-20260830-0001",
+            "nonce": nonce,
             "evidence_root": str(CUTOVER_EVIDENCE_ROOT),
             "issued_at": now,
             "expires_at": now + timedelta(minutes=3),
             "inventory_sha256": inventory.inventory_sha256,
-            "preflight_report_sha256": PREFLIGHT_REPORT_SHA256,
-            "suppression_manifest_sha256": "b" * 64,
-            "writer_manifest_sha256": "c" * 64,
-            "approved_marker_sha256": "d" * 64,
+            "preflight_report_sha256": report_sha256,
+            "suppression_manifest_sha256": suppression["manifest_sha256"],
+            "writer_manifest_sha256": writer_sha256,
+            "approved_marker_sha256": hashlib.sha256(
+                canonical_json_bytes(marker)
+            ).hexdigest(),
+            "maintenance_fence_artifact": fence["artifact_path"],
+            "maintenance_fence_artifact_sha256": fence["artifact_sha256"],
+            "maintenance_fence_token": fence["token"],
+            "instance_inventory_artifact_sha256": fence[
+                "instance_inventory_artifact_sha256"
+            ],
+            "contract_path": str(
+                CUTOVER_EVIDENCE_ROOT / f"migration-contract-{nonce}.json"
+            ),
+            "receipt_path": str(
+                CUTOVER_EVIDENCE_ROOT / f"migration-receipt-{nonce}.json"
+            ),
+            "migration_revision": "126",
+            "evidence_artifacts": evidence_artifacts,
+            "physical_schema_contract_sha256": physical_contract[
+                "contract_sha256"
+            ],
         }
         contract["contract_sha256"] = hashlib.sha256(
             canonical_json_bytes(contract)
         ).hexdigest()
         assert migration_preflight(
-            db, contract, now=now, lock_acquirer=lambda _db: True
+            db,
+            contract,
+            now=now,
+            lock_acquirer=lambda _db: True,
+            transaction_inspector=lambda _db: 0,
+            fence_inspector=lambda _db, _contract: True,
         ).inventory_sha256 == inventory.inventory_sha256
         with pytest.raises(CutoverGuardError, match="lock"):
             migration_preflight(db, contract, now=now, lock_acquirer=lambda _db: False)
+        with pytest.raises(CutoverGuardError, match="active write transactions"):
+            migration_preflight(
+                db,
+                contract,
+                now=now,
+                lock_acquirer=lambda _db: True,
+                transaction_inspector=lambda _db: 1,
+                fence_inspector=lambda _db, _contract: True,
+            )
+        with pytest.raises(CutoverGuardError, match="maintenance fence"):
+            migration_preflight(
+                db,
+                contract,
+                now=now,
+                lock_acquirer=lambda _db: True,
+                transaction_inspector=lambda _db: 0,
+                fence_inspector=lambda _db, _contract: False,
+            )
         with pytest.raises(CutoverGuardError, match="expired"):
             migration_preflight(
                 db,
@@ -1053,10 +1255,19 @@ def test_migration_preflight_requires_short_lived_contract_lock_and_live_invento
                 },
                 now=now,
                 lock_acquirer=lambda _db: True,
+                transaction_inspector=lambda _db: 0,
+                fence_inspector=lambda _db, _contract: True,
             )
         db.execute(text("UPDATE ark_sales_search_jobs SET name='changed' WHERE id=7"))
         with pytest.raises(CutoverGuardError, match="live inventory"):
-            migration_preflight(db, contract, now=now, lock_acquirer=lambda _db: True)
+            migration_preflight(
+                db,
+                contract,
+                now=now,
+                lock_acquirer=lambda _db: True,
+                transaction_inspector=lambda _db: 0,
+                fence_inspector=lambda _db, _contract: True,
+            )
 
 
 def test_verify_after_table_state_requires_all_new_tables_and_no_retired_only_tables():
@@ -1077,6 +1288,97 @@ def test_verify_after_table_state_requires_all_new_tables_and_no_retired_only_ta
         db.execute(text("DROP TABLE ark_customer_suppression_registry"))
         with pytest.raises(CutoverGuardError, match="expected customer tables are missing"):
             verify_expected_customer_table_state(db)
+
+
+@pytest.mark.parametrize(
+    "category",
+    [
+        "type",
+        "nullable_default",
+        "unique",
+        "index",
+        "foreign_key",
+        "check",
+        "generated",
+        "comment",
+    ],
+)
+def test_physical_schema_signature_rejects_every_structural_category(category):
+    raw = {
+        "columns": [
+            {
+                "name": "id",
+                "type": BigInteger(),
+                "nullable": False,
+                "default": None,
+                "computed": None,
+                "comment": "identity",
+            },
+            {
+                "name": "normalized",
+                "type": Text(),
+                "nullable": False,
+                "default": "''",
+                "computed": {"sqltext": "lower(source)", "persisted": True},
+                "comment": "generated value",
+            },
+        ],
+        "primary_key": {"name": "PRIMARY", "constrained_columns": ["id"]},
+        "unique_constraints": [{"name": "uq_value", "column_names": ["normalized"]}],
+        "indexes": [{"name": "ix_value", "unique": False, "column_names": ["normalized"]}],
+        "foreign_keys": [
+            {
+                "name": "fk_id",
+                "constrained_columns": ["id"],
+                "referred_schema": None,
+                "referred_table": "parent",
+                "referred_columns": ["id"],
+                "options": {"ondelete": "CASCADE", "onupdate": "RESTRICT"},
+            }
+        ],
+        "checks": [
+            {
+                "name": "ck_value",
+                "sqltext": "id > 0",
+                "dialect_options": {"mysql_enforced": True},
+            }
+        ],
+        "table_comment": "approved table",
+    }
+    expected = normalize_physical_schema_signature(**raw)
+    changed = copy.deepcopy(raw)
+    if category == "type":
+        changed["columns"][0]["type"] = Text()
+    elif category == "nullable_default":
+        changed["columns"][1]["nullable"] = True
+        changed["columns"][1]["default"] = None
+    elif category == "unique":
+        changed["unique_constraints"] = []
+    elif category == "index":
+        changed["indexes"] = []
+    elif category == "foreign_key":
+        changed["foreign_keys"] = []
+    elif category == "check":
+        changed["checks"][0]["sqltext"] = "id >= 0"
+    elif category == "generated":
+        changed["columns"][1]["computed"]["sqltext"] = "upper(source)"
+    else:
+        changed["table_comment"] = "wrong"
+    actual = normalize_physical_schema_signature(**changed)
+    with pytest.raises(CutoverGuardError, match="physical schema"):
+        compare_physical_schema_signature(expected, actual, "synthetic_customer")
+
+
+def test_revision_126_must_register_all_38_physical_table_contracts():
+    complete = _physical_schema_contract()
+    assert len(complete["tables"]) == 38
+    assert validate_customer_physical_schema_contract(complete) == complete[
+        "contract_sha256"
+    ]
+    with pytest.raises(CutoverGuardError, match="exactly 38 tables"):
+        validate_customer_physical_schema_contract(
+            _physical_schema_contract(omit="ark_sales_search_result_sources")
+        )
 
 
 def test_cli_exposes_only_guarded_commands_and_rejects_escaping_paths():
@@ -1149,6 +1451,8 @@ def test_apply_reset_never_invokes_alembic_when_guard_or_marker_hash_fails(tmp_p
                 stopped_writer_manifest=writer,
                 expected_inventory_sha256=inventory.inventory_sha256,
                 approved_marker_path=marker,
+                suppression_hmac_key=SUPPRESSION_HMAC_KEY,
+                physical_schema_contract=_physical_schema_contract(),
                 subprocess_runner=lambda *args, **kwargs: calls.append((args, kwargs)),
                 now=READY_CHECKED_AT + timedelta(minutes=1),
             )
@@ -1180,6 +1484,8 @@ def test_apply_reset_rejects_tampered_preflight_content_before_runner(tmp_path):
                 stopped_writer_manifest=writer,
                 expected_inventory_sha256=inventory.inventory_sha256,
                 approved_marker_path=marker,
+                suppression_hmac_key=SUPPRESSION_HMAC_KEY,
+                physical_schema_contract=_physical_schema_contract(),
                 subprocess_runner=lambda *args, **kwargs: calls.append((args, kwargs)),
                 now=READY_CHECKED_AT + timedelta(minutes=1),
             )
@@ -1212,6 +1518,9 @@ def test_apply_reset_invokes_only_alembic_upgrade_head_after_both_hashes_bind(tm
                     "writer_manifest_sha256": hashlib.sha256(
                         canonical_json_bytes(writer)
                     ).hexdigest(),
+                    "physical_schema_contract_sha256": _physical_schema_contract()[
+                        "contract_sha256"
+                    ],
                     "nonce": nonce,
                     "expires_at": (READY_CHECKED_AT + timedelta(minutes=4)).isoformat(),
                 }
@@ -1221,6 +1530,37 @@ def test_apply_reset_invokes_only_alembic_upgrade_head_after_both_hashes_bind(tm
         def capture_runner(*args, **kwargs):
             assert db.in_transaction() is False
             calls.append((args, kwargs))
+            contract_path = Path(args[0][-3].split("=", 1)[1])
+            contract = json.loads(contract_path.read_text(encoding="utf-8"))
+            receipt = {
+                "status": "succeeded",
+                **{
+                    field: contract[field]
+                    for field in (
+                        "inventory_sha256",
+                        "preflight_report_sha256",
+                        "suppression_manifest_sha256",
+                        "writer_manifest_sha256",
+                        "approved_marker_sha256",
+                        "maintenance_fence_artifact_sha256",
+                        "instance_inventory_artifact_sha256",
+                        "physical_schema_contract_sha256",
+                        "nonce",
+                        "contract_sha256",
+                        "contract_path",
+                        "migration_revision",
+                    )
+                },
+                "schema_signature_sha256": contract[
+                    "physical_schema_contract_sha256"
+                ],
+                "started_at": (READY_CHECKED_AT + timedelta(minutes=1)).isoformat(),
+                "completed_at": (READY_CHECKED_AT + timedelta(minutes=2)).isoformat(),
+            }
+            receipt["receipt_sha256"] = hashlib.sha256(
+                canonical_json_bytes(receipt)
+            ).hexdigest()
+            script._write_canonical_json(contract["receipt_path"], receipt)
 
         result = script.apply_reset(
             db=db,
@@ -1229,6 +1569,8 @@ def test_apply_reset_invokes_only_alembic_upgrade_head_after_both_hashes_bind(tm
             stopped_writer_manifest=writer,
             expected_inventory_sha256=inventory.inventory_sha256,
             approved_marker_path=marker,
+            suppression_hmac_key=SUPPRESSION_HMAC_KEY,
+            physical_schema_contract=_physical_schema_contract(),
             subprocess_runner=capture_runner,
             now=READY_CHECKED_AT + timedelta(minutes=1),
         )
@@ -1241,6 +1583,56 @@ def test_apply_reset_invokes_only_alembic_upgrade_head_after_both_hashes_bind(tm
     assert command[-3].startswith("customer_cutover_contract=")
     assert calls[0][1]["check"] is True
     assert calls[0][1]["cwd"] == REPO_ROOT / "backend"
+
+
+def test_apply_reset_runner_success_without_receipt_keeps_writers_stopped(tmp_path):
+    script = _load_cutover_script()
+    engine = _create_cutover_db()
+    with Session(engine) as db:
+        inventory = build_inventory(db)
+        report = script.build_preflight_report(db)
+        suppression = _build_suppression(
+            db, inventory, [], preflight_report_sha256=report["report_sha256"]
+        ).to_dict()
+        writer = _writer_manifest(
+            inventory.inventory_sha256,
+            preflight_report_sha256=report["report_sha256"],
+        )
+        marker = tmp_path / "approved-no-receipt.json"
+        marker.write_text(
+            json.dumps(
+                {
+                    "approved": True,
+                    "inventory_sha256": inventory.inventory_sha256,
+                    "preflight_report_sha256": report["report_sha256"],
+                    "suppression_manifest_sha256": suppression["manifest_sha256"],
+                    "writer_manifest_sha256": hashlib.sha256(
+                        canonical_json_bytes(writer)
+                    ).hexdigest(),
+                    "physical_schema_contract_sha256": _physical_schema_contract()[
+                        "contract_sha256"
+                    ],
+                    "nonce": "missing-receipt-" + hashlib.sha256(
+                        str(tmp_path).encode()
+                    ).hexdigest()[:16],
+                    "expires_at": (READY_CHECKED_AT + timedelta(minutes=4)).isoformat(),
+                }
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(CutoverGuardError, match="keep all writers stopped"):
+            script.apply_reset(
+                db=db,
+                preflight_report=report,
+                suppression_manifest=suppression,
+                stopped_writer_manifest=writer,
+                expected_inventory_sha256=inventory.inventory_sha256,
+                approved_marker_path=marker,
+                suppression_hmac_key=SUPPRESSION_HMAC_KEY,
+                physical_schema_contract=_physical_schema_contract(),
+                subprocess_runner=lambda *args, **kwargs: None,
+                now=READY_CHECKED_AT + timedelta(minutes=1),
+            )
 
 
 @pytest.mark.parametrize(
@@ -1271,6 +1663,9 @@ def test_apply_reset_marker_failures_are_independent_and_never_run(tmp_path, mar
             "preflight_report_sha256": report["report_sha256"],
             "suppression_manifest_sha256": suppression["manifest_sha256"],
             "writer_manifest_sha256": hashlib.sha256(canonical_json_bytes(writer)).hexdigest(),
+            "physical_schema_contract_sha256": _physical_schema_contract()[
+                "contract_sha256"
+            ],
             "nonce": "failed-marker-check-20260830",
             "expires_at": (READY_CHECKED_AT + timedelta(minutes=4)).isoformat(),
         }
@@ -1285,6 +1680,8 @@ def test_apply_reset_marker_failures_are_independent_and_never_run(tmp_path, mar
                 stopped_writer_manifest=writer,
                 expected_inventory_sha256=inventory.inventory_sha256,
                 approved_marker_path=marker,
+                suppression_hmac_key=SUPPRESSION_HMAC_KEY,
+                physical_schema_contract=_physical_schema_contract(),
                 subprocess_runner=lambda *args, **kwargs: calls.append((args, kwargs)),
                 now=READY_CHECKED_AT + timedelta(minutes=1),
             )
@@ -1293,15 +1690,48 @@ def test_apply_reset_marker_failures_are_independent_and_never_run(tmp_path, mar
 
 def test_execution_receipt_must_bind_the_exact_approval_marker():
     script = _load_cutover_script()
-    receipt = {
-        "status": "succeeded",
+    contract = {
+        "schema_version": 1,
+        "approved": True,
         "inventory_sha256": "a" * 64,
         "preflight_report_sha256": "b" * 64,
         "suppression_manifest_sha256": "c" * 64,
         "writer_manifest_sha256": "d" * 64,
         "approved_marker_sha256": "e" * 64,
+        "maintenance_fence_artifact_sha256": "f" * 64,
+        "instance_inventory_artifact_sha256": "1" * 64,
+        "physical_schema_contract_sha256": "2" * 64,
         "nonce": "receipt-nonce-20260830",
-        "schema_signature_sha256": expected_customer_schema_sha256(),
+        "contract_path": str(CUTOVER_EVIDENCE_ROOT / "contract.json"),
+        "receipt_path": str(CUTOVER_EVIDENCE_ROOT / "receipt.json"),
+        "migration_revision": script.CUTOVER_MIGRATION_REVISION,
+        "issued_at": "2026-08-30T09:00:00+08:00",
+        "expires_at": "2026-08-30T09:04:00+08:00",
+    }
+    contract["contract_sha256"] = hashlib.sha256(
+        canonical_json_bytes(contract)
+    ).hexdigest()
+    receipt = {
+        "status": "succeeded",
+        **{
+            field: contract[field]
+            for field in (
+                "inventory_sha256",
+                "preflight_report_sha256",
+                "suppression_manifest_sha256",
+                "writer_manifest_sha256",
+                "approved_marker_sha256",
+                "maintenance_fence_artifact_sha256",
+                "instance_inventory_artifact_sha256",
+                "physical_schema_contract_sha256",
+                "nonce",
+                "contract_sha256",
+                "contract_path",
+                "migration_revision",
+            )
+        },
+        "schema_signature_sha256": contract["physical_schema_contract_sha256"],
+        "started_at": "2026-08-30T09:01:00+08:00",
         "completed_at": "2026-08-30T09:03:00+08:00",
     }
     receipt["receipt_sha256"] = hashlib.sha256(
@@ -1309,20 +1739,25 @@ def test_execution_receipt_must_bind_the_exact_approval_marker():
     ).hexdigest()
     assert script.validate_execution_receipt(
         receipt,
-        inventory_sha256="a" * 64,
-        preflight_report_sha256="b" * 64,
-        suppression_manifest_sha256="c" * 64,
-        writer_manifest_sha256="d" * 64,
-        approved_marker_sha256="e" * 64,
-        nonce="receipt-nonce-20260830",
+        evidence_contract=contract,
     ) is True
     with pytest.raises(CutoverGuardError, match="approved_marker_sha256"):
         script.validate_execution_receipt(
             receipt,
-            inventory_sha256="a" * 64,
-            preflight_report_sha256="b" * 64,
-            suppression_manifest_sha256="c" * 64,
-            writer_manifest_sha256="d" * 64,
-            approved_marker_sha256="f" * 64,
-            nonce="receipt-nonce-20260830",
+            evidence_contract={
+                **contract,
+                "approved_marker_sha256": "2" * 64,
+                "contract_sha256": hashlib.sha256(
+                    canonical_json_bytes(
+                        {
+                            **{
+                                key: value
+                                for key, value in contract.items()
+                                if key != "contract_sha256"
+                            },
+                            "approved_marker_sha256": "2" * 64,
+                        }
+                    )
+                ).hexdigest(),
+            },
         )
