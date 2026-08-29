@@ -46,10 +46,10 @@ export default function Storefront() {
           </section>
 
           <section className="quick-grid" aria-label="快捷分类">
-            <a href="#products"><i>全</i><strong>全部假发</strong><span>查看全部款式</span></a>
-            <a href="#products"><i>真</i><strong>真人发</strong><span>自然质感系列</span></a>
-            <a href="#products"><i>短</i><strong>短发系列</strong><span>轻盈日常造型</span></a>
-            <a href="#wholesale"><i>批</i><strong>批发专区</strong><span>等级专属价格</span></a>
+            <a href="#products"><i>安</i><strong>安心系列</strong><span>自然日常好打理</span></a>
+            <a href="#products"><i>气</i><strong>气质系列</strong><span>时尚升级显精神</span></a>
+            <a href="#products"><i>光</i><strong>高光系列</strong><span>重要时刻更上镜</span></a>
+            <a href="#products"><i>藏</i><strong>臻藏系列</strong><span>专属设计与质感</span></a>
           </section>
 
           <section className="app-section role-card">
@@ -60,13 +60,13 @@ export default function Storefront() {
           </section>
 
           <section className="app-section product-section" id="products">
-            <div className="app-section-title"><div><span>RECOMMENDED</span><h2>精选假发款式</h2></div><button>筛选</button></div>
+            <div className="app-section-title"><div><span>RECOMMENDED</span><h2>12款主推发型</h2></div><a href="/retail/category">进入商城</a></div>
             {loading ? <div className="loading-state">正在准备款式…</div> : <div className="product-grid app-product-grid">
               {activeProducts.map((product, index) => {
                 const canView = rank[level] >= rank[product.minLevel];
                 return <article className={`product-card app-product-card ${!canView ? "locked" : ""}`} key={product.id}>
-                  <div className={`product-art ${product.tone}`}><span className="number">{String(index + 1).padStart(2, "0")}</span><span className="favorite">♡</span><div className="mini-hair" />{!canView && <div className="lock-panel"><span>仅{roleLabel[product.minLevel]}可见</span><small>升级后解锁款式与价格</small></div>}</div>
-                  <div className="app-product-info"><span className="product-tag">{canView ? product.material : "等级专属"}</span><h3>{canView ? product.name : "批发专属款式"}</h3><p>{canView ? `${product.length} · ${product.color}` : "登录对应等级查看"}</p><div><strong>{canView ? `¥${getPrice(product)}` : "—"}</strong><button aria-label={`添加${product.name}到购物车`}>＋</button></div></div>
+                  <div className={`product-art ${product.tone}`}><span className="number">{String(index + 1).padStart(2, "0")}</span>{product.images[0] ? <img src={product.images[0]} alt={`${product.name}实拍`} /> : <div className="mini-hair" />}{!canView && <div className="lock-panel"><span>仅{roleLabel[product.minLevel]}可见</span><small>升级后解锁款式与价格</small></div>}</div>
+                  <div className="app-product-info"><span className="product-tag">{canView ? product.category : "等级专属"}</span><h3>{canView ? product.name : "批发专属款式"}</h3><p>{canView ? `${product.length} · ${product.color}` : "登录对应等级查看"}</p><div><strong>{canView ? `¥${getPrice(product)}` : "—"}</strong><a className="product-enter" href="/retail/category">›</a></div></div>
                 </article>;
               })}
             </div>}

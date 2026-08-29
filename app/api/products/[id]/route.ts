@@ -1,5 +1,9 @@
 import { ensureDatabase, getD1 } from "../../../../db/runtime";
 
+const serializeList = (value: unknown) => JSON.stringify(Array.isArray(value)
+  ? value.map(String).filter(Boolean)
+  : String(value ?? "").split(/[\n；;]+/).map((item) => item.trim()).filter(Boolean));
+
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
   await ensureDatabase();
   const { id } = await context.params;
@@ -9,11 +13,16 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     String(body.color ?? "自然黑"), Number(body.retailPrice ?? 0), Number(body.priceA ?? 0),
     Number(body.priceB ?? 0), String(body.minLevel ?? "retail"), Number(body.stock ?? 0),
     String(body.status ?? "active"), String(body.tone ?? "espresso"), String(body.category ?? "短发系列"),
-    String(body.sku ?? "").trim(), Number(id),
+    String(body.sku ?? "").trim(), String(body.construction ?? ""), String(body.hairVolume ?? ""),
+    String(body.parting ?? ""), String(body.craft ?? ""), String(body.description ?? ""),
+    serializeList(body.highlights), serializeList(body.audience), serializeList(body.scenarios),
+    serializeList(body.images), String(body.videoUrl ?? "").trim(), Number(id),
   ];
   if (!values[0]) return Response.json({ error: "请填写款式名称" }, { status: 400 });
   await getD1().prepare(`UPDATE products SET name=?, material=?, length=?, color=?, retail_price=?,
-    price_a=?, price_b=?, min_level=?, stock=?, status=?, tone=?, category=?, sku=? WHERE id=?`).bind(...values).run();
+    price_a=?, price_b=?, min_level=?, stock=?, status=?, tone=?, category=?, sku=?, construction=?,
+    hair_volume=?, parting=?, craft=?, description=?, highlights=?, audience=?, scenarios=?, images=?,
+    video_url=? WHERE id=?`).bind(...values).run();
   return Response.json({ ok: true });
 }
 

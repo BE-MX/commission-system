@@ -23,6 +23,16 @@ export const products = sqliteTable("products", {
   tone: text("tone").notNull().default("espresso"),
   category: text("category").notNull().default("短发系列"),
   sku: text("sku").notNull().default(""),
+  construction: text("construction").notNull().default(""),
+  hairVolume: text("hair_volume").notNull().default(""),
+  parting: text("parting").notNull().default(""),
+  craft: text("craft").notNull().default(""),
+  description: text("description").notNull().default(""),
+  highlights: text("highlights").notNull().default("[]"),
+  audience: text("audience").notNull().default("[]"),
+  scenarios: text("scenarios").notNull().default("[]"),
+  images: text("images").notNull().default("[]"),
+  videoUrl: text("video_url").notNull().default(""),
   createdAt: text("created_at").notNull(),
 }, (table) => [index("idx_products_status_level").on(table.status, table.minLevel)]);
 

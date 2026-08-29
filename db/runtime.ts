@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { featuredProducts } from "./product-data";
 
 let ready: Promise<void> | null = null;
 
@@ -37,9 +38,23 @@ async function initialize() {
       tone TEXT NOT NULL DEFAULT 'espresso',
       category TEXT NOT NULL DEFAULT '短发系列',
       sku TEXT NOT NULL DEFAULT '',
+      construction TEXT NOT NULL DEFAULT '',
+      hair_volume TEXT NOT NULL DEFAULT '',
+      parting TEXT NOT NULL DEFAULT '',
+      craft TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL DEFAULT '',
+      highlights TEXT NOT NULL DEFAULT '[]',
+      audience TEXT NOT NULL DEFAULT '[]',
+      scenarios TEXT NOT NULL DEFAULT '[]',
+      images TEXT NOT NULL DEFAULT '[]',
+      video_url TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_products_status_level ON products(status, min_level)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS app_metadata (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS wholesale_accounts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       company_name TEXT NOT NULL,
@@ -169,6 +184,16 @@ async function initialize() {
   const productColumnNames = new Set(productColumns.results.map((item) => item.name));
   if (!productColumnNames.has("category")) await db.prepare("ALTER TABLE products ADD COLUMN category TEXT NOT NULL DEFAULT '短发系列'").run();
   if (!productColumnNames.has("sku")) await db.prepare("ALTER TABLE products ADD COLUMN sku TEXT NOT NULL DEFAULT ''").run();
+  if (!productColumnNames.has("construction")) await db.prepare("ALTER TABLE products ADD COLUMN construction TEXT NOT NULL DEFAULT ''").run();
+  if (!productColumnNames.has("hair_volume")) await db.prepare("ALTER TABLE products ADD COLUMN hair_volume TEXT NOT NULL DEFAULT ''").run();
+  if (!productColumnNames.has("parting")) await db.prepare("ALTER TABLE products ADD COLUMN parting TEXT NOT NULL DEFAULT ''").run();
+  if (!productColumnNames.has("craft")) await db.prepare("ALTER TABLE products ADD COLUMN craft TEXT NOT NULL DEFAULT ''").run();
+  if (!productColumnNames.has("description")) await db.prepare("ALTER TABLE products ADD COLUMN description TEXT NOT NULL DEFAULT ''").run();
+  if (!productColumnNames.has("highlights")) await db.prepare("ALTER TABLE products ADD COLUMN highlights TEXT NOT NULL DEFAULT '[]'").run();
+  if (!productColumnNames.has("audience")) await db.prepare("ALTER TABLE products ADD COLUMN audience TEXT NOT NULL DEFAULT '[]'").run();
+  if (!productColumnNames.has("scenarios")) await db.prepare("ALTER TABLE products ADD COLUMN scenarios TEXT NOT NULL DEFAULT '[]'").run();
+  if (!productColumnNames.has("images")) await db.prepare("ALTER TABLE products ADD COLUMN images TEXT NOT NULL DEFAULT '[]'").run();
+  if (!productColumnNames.has("video_url")) await db.prepare("ALTER TABLE products ADD COLUMN video_url TEXT NOT NULL DEFAULT ''").run();
 
   await db.prepare("PRAGMA optimize").run();
 
@@ -181,15 +206,22 @@ async function initialize() {
     ]);
   }
 
-  const productCount = await db.prepare("SELECT COUNT(*) AS total FROM products").first<{ total: number }>();
-  if (!productCount?.total) {
+  const catalogVersion = await db.prepare("SELECT value FROM app_metadata WHERE key = 'product_catalog_version'").first<{ value: string }>();
+  if (catalogVersion?.value !== "12-styles-2026-08") {
     const now = new Date().toISOString();
-    await db.batch([
-      db.prepare("INSERT INTO products (name, material, length, color, retail_price, price_a, price_b, min_level, stock, status, tone, category, sku, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("法式轻盈波浪", "真人发", "45cm", "蜜茶棕", 899, 699, 599, "retail", 86, "active", "honey", "中长发", "LS-001", now),
-      db.prepare("INSERT INTO products (name, material, length, color, retail_price, price_a, price_b, min_level, stock, status, tone, category, sku, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("自然头皮直发", "真人发", "55cm", "自然黑", 1299, 999, 849, "a", 42, "active", "espresso", "真人发", "LS-002", now),
-      db.prepare("INSERT INTO products (name, material, length, color, retail_price, price_a, price_b, min_level, stock, status, tone, category, sku, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("高定蕾丝卷发", "真人发", "60cm", "栗棕色", 1899, 1499, 1299, "b", 18, "active", "chestnut", "高端定制", "LS-003", now),
-      db.prepare("INSERT INTO products (name, material, length, color, retail_price, price_a, price_b, min_level, stock, status, tone, category, sku, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("空气感短发", "高温丝", "30cm", "自然黑", 499, 359, 299, "retail", 120, "active", "charcoal", "短发系列", "LS-004", now),
-    ]);
+    await db.prepare("DELETE FROM products").run();
+    const inserts = featuredProducts.map((product) => db.prepare(`INSERT INTO products
+      (name, material, length, color, retail_price, price_a, price_b, min_level, stock, status,
+       tone, category, sku, construction, hair_volume, parting, craft, description, highlights,
+       audience, scenarios, images, video_url, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(product.name, product.material, product.length, product.color, product.retailPrice,
+        product.priceA, product.priceB, product.minLevel, product.stock, product.status, product.tone,
+        product.category, product.sku, product.construction, product.hairVolume, product.parting,
+        product.craft, product.description, JSON.stringify(product.highlights), JSON.stringify(product.audience),
+        JSON.stringify(product.scenarios), JSON.stringify(product.images), product.videoUrl, now));
+    await db.batch(inserts);
+    await db.prepare("INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('product_catalog_version', '12-styles-2026-08')").run();
   }
 
   const accountCount = await db.prepare("SELECT COUNT(*) AS total FROM wholesale_accounts").first<{ total: number }>();

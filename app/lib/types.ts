@@ -4,6 +4,8 @@ export type Product = {
   id: number; name: string; material: string; length: string; color: string;
   retailPrice: number; priceA: number; priceB: number; minLevel: LevelCode;
   stock: number; status: "active" | "draft"; tone: string; category: string; sku: string; createdAt: string;
+  construction: string; hairVolume: string; parting: string; craft: string; description: string;
+  highlights: string[]; audience: string[]; scenarios: string[]; images: string[]; videoUrl: string;
 };
 
 export type WholesaleLevel = {

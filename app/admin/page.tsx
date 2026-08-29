@@ -4,8 +4,10 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { AccessLog, CustomerProfile, LevelCode, Order, Product, SalesPerson, WholesaleAccount, WholesaleLevel } from "../lib/types";
 
 const emptyProduct: Omit<Product, "id" | "createdAt"> = {
-  name: "", material: "真人发", length: "45cm", color: "自然黑", retailPrice: 0,
-  priceA: 0, priceB: 0, minLevel: "retail", stock: 0, status: "active", tone: "espresso", category: "短发系列", sku: "",
+  name: "", material: "保鳞发", length: "15厘米", color: "自然色", retailPrice: 0,
+  priceA: 0, priceB: 0, minLevel: "retail", stock: 0, status: "active", tone: "espresso", category: "安心系列", sku: "",
+  construction: "递针旋", hairVolume: "常规款", parting: "", craft: "", description: "",
+  highlights: [], audience: [], scenarios: [], images: [], videoUrl: "",
 };
 const levelName: Record<LevelCode, string> = { retail: "所有客户", a: "批发A及以上", b: "仅批发B" };
 
@@ -28,6 +30,7 @@ export default function AdminPage() {
   const [form, setForm] = useState<Omit<Product, "id" | "createdAt">>(emptyProduct);
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [notice, setNotice] = useState("");
 
   const load = async () => {
@@ -54,6 +57,24 @@ export default function AdminPage() {
     setForm(values); setModalOpen(true);
   };
   const updateForm = (key: keyof typeof form, value: string | number) => setForm((current) => ({ ...current, [key]: value }));
+
+  const uploadFiles = async (files: FileList | null, kind: "images" | "video") => {
+    if (!files?.length) return;
+    setUploading(true); setNotice("");
+    try {
+      const urls: string[] = [];
+      for (const file of Array.from(files)) {
+        const payload = new FormData(); payload.append("file", file);
+        const response = await fetch("/api/uploads", { method: "POST", body: payload });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error ?? "素材上传失败");
+        urls.push(data.url);
+      }
+      setForm((current) => kind === "images" ? { ...current, images: [...current.images, ...urls].slice(0, 8) } : { ...current, videoUrl: urls[0] });
+      setNotice(kind === "images" ? `已上传${urls.length}张图片` : "视频已上传");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "素材上传失败"); }
+    setUploading(false);
+  };
 
   const saveProduct = async (event: FormEvent) => {
     event.preventDefault(); setSaving(true); setNotice("");
@@ -159,7 +180,7 @@ export default function AdminPage() {
             <div className="panel-head"><div><strong>全部商品</strong><span>价格修改后只影响新订单</span></div><label className="admin-search">⌕ <input aria-label="搜索商品" placeholder="搜索款式（演示）" /></label></div>
             <div className="product-table-wrap"><table className="product-table"><thead><tr><th>款式</th><th>分类</th><th>零售价</th><th>批发A</th><th>批发B</th><th>查看权限</th><th>库存</th><th>状态</th><th>操作</th></tr></thead><tbody>
               {products.map((product) => <tr key={product.id}>
-                <td><div className={`table-art ${product.tone}`}><div className="tiny-hair" /></div><div><strong>{product.name}</strong><small>{product.sku || "未设置货号"} · {product.material} · {product.length} · {product.color}</small></div></td>
+                <td><div className={`table-art ${product.tone}`}>{product.images[0] ? <img src={product.images[0]} alt="" /> : <div className="tiny-hair" />}</div><div><strong>{product.name}</strong><small>{product.sku || "未设置货号"} · {product.material} · {product.length} · {product.color}</small></div></td>
                 <td>{product.category}</td><td>¥{product.retailPrice}</td><td>¥{product.priceA}</td><td>¥{product.priceB}</td>
                 <td><span className={`access-pill ${product.minLevel}`}>{levelName[product.minLevel]}</span></td><td className={product.stock < 25 ? "stock-low" : ""}>{product.stock} 件</td>
                 <td><button className={`status-toggle ${product.status}`} onClick={() => toggleStatus(product)}><i />{product.status === "active" ? "已上架" : "已下架"}</button></td>
@@ -241,8 +262,8 @@ export default function AdminPage() {
           <div className="form-grid">
             <label className="wide">款式名称<input required value={form.name} onChange={(e) => updateForm("name", e.target.value)} placeholder="例如：自然头皮直发" /></label>
             <label>货号 SKU<input value={form.sku} onChange={(e) => updateForm("sku", e.target.value)} placeholder="例如：LS-016" /></label>
-            <label>产品分类<select value={form.category} onChange={(e) => updateForm("category", e.target.value)}><option>短发系列</option><option>中长发</option><option>真人发</option><option>男士系列</option><option>高端定制</option></select></label>
-            <label>材质<select value={form.material} onChange={(e) => updateForm("material", e.target.value)}><option>真人发</option><option>高温丝</option><option>真人发混合</option></select></label>
+            <label>产品分类<select value={form.category} onChange={(e) => updateForm("category", e.target.value)}><option>安心系列</option><option>气质系列</option><option>高光系列</option><option>臻藏系列</option></select></label>
+            <label>材质<input value={form.material} onChange={(e) => updateForm("material", e.target.value)} placeholder="例如：保鳞发" /></label>
             <label>长度<input value={form.length} onChange={(e) => updateForm("length", e.target.value)} placeholder="45cm" /></label>
             <label>颜色<input value={form.color} onChange={(e) => updateForm("color", e.target.value)} placeholder="自然黑" /></label>
             <label>库存数量<input type="number" min="0" value={form.stock} onChange={(e) => updateForm("stock", Number(e.target.value))} /></label>
@@ -250,6 +271,16 @@ export default function AdminPage() {
             <label>批发A价（元）<input type="number" min="0" required value={form.priceA} onChange={(e) => updateForm("priceA", Number(e.target.value))} /></label>
             <label>批发B价（元）<input type="number" min="0" required value={form.priceB} onChange={(e) => updateForm("priceB", Number(e.target.value))} /></label>
             <label>展示色调<select value={form.tone} onChange={(e) => updateForm("tone", e.target.value)}><option value="espresso">自然黑</option><option value="honey">蜜茶棕</option><option value="chestnut">栗棕色</option><option value="charcoal">灰黑色</option></select></label>
+            <label>发网结构<input value={form.construction} onChange={(e) => updateForm("construction", e.target.value)} placeholder="递针顶 / 递针旋" /></label>
+            <label>发量要求<input value={form.hairVolume} onChange={(e) => updateForm("hairVolume", e.target.value)} placeholder="常规款 / 轻薄款" /></label>
+            <label className="wide">分缝方式<input value={form.parting} onChange={(e) => updateForm("parting", e.target.value)} placeholder="例如：左分，可调整中分/侧分" /></label>
+            <label className="wide">产品简介<textarea value={form.description} onChange={(e) => updateForm("description", e.target.value)} placeholder="介绍整体轮廓、风格与佩戴感受" /></label>
+            <label className="wide">工艺特点<textarea value={form.craft} onChange={(e) => updateForm("craft", e.target.value)} placeholder="介绍发网与制作工艺" /></label>
+            <label className="wide">核心卖点<textarea value={form.highlights.join("；")} onChange={(e) => setForm({ ...form, highlights: e.target.value.split(/[；;\n]+/).map((item) => item.trim()).filter(Boolean) })} placeholder="每条卖点用分号隔开" /></label>
+            <label className="wide">适用人群<textarea value={form.audience.join("；")} onChange={(e) => setForm({ ...form, audience: e.target.value.split(/[；;\n]+/).map((item) => item.trim()).filter(Boolean) })} placeholder="每类人群用分号隔开" /></label>
+            <label className="wide">适用场景<input value={form.scenarios.join("；")} onChange={(e) => setForm({ ...form, scenarios: e.target.value.split(/[；;\n]+/).map((item) => item.trim()).filter(Boolean) })} placeholder="通勤；聚会；旅行" /></label>
+            <div className="wide media-upload-box"><div><strong>产品实拍图片</strong><span>最多8张，第一张作为封面</span></div><label className="upload-button">{uploading ? "上传中…" : "选择图片"}<input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={uploading} onChange={(e) => uploadFiles(e.target.files, "images")} /></label>{form.images.length > 0 && <div className="upload-preview">{form.images.map((url, index) => <span key={url}><img src={url} alt={`产品图${index + 1}`} /><button type="button" onClick={() => setForm({ ...form, images: form.images.filter((item) => item !== url) })}>×</button></span>)}</div>}</div>
+            <div className="wide media-upload-box"><div><strong>产品视频</strong><span>支持MP4或MOV，单个不超过100MB</span></div><label className="upload-button">{uploading ? "上传中…" : "选择视频"}<input type="file" accept="video/mp4,video/quicktime" disabled={uploading} onChange={(e) => uploadFiles(e.target.files, "video")} /></label>{form.videoUrl && <div className="uploaded-video"><span>视频已就绪</span><button type="button" onClick={() => setForm({ ...form, videoUrl: "" })}>移除</button></div>}</div>
             <label className="wide">最低查看等级<select value={form.minLevel} onChange={(e) => updateForm("minLevel", e.target.value)}><option value="retail">所有客户可见</option><option value="a">批发A及以上可见</option><option value="b">仅批发B可见</option></select><small>低于该等级的客户只能看到“批发专属款式”，无法看到名称和价格。</small></label>
           </div>
           {notice && <p className="form-error">{notice}</p>}
