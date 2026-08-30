@@ -3013,45 +3013,42 @@ def test_merge_and_split_supersede_other_open_proposals_in_same_transaction(db):
     db.add_all(rows)
     db.flush()
 
-    _workflow().supersede_related_proposals(
+    rows[2].status = "executed"
+    superseded = _workflow().supersede_related_proposals(
         db,
         executing_proposal_id=rows[2].id,
         expected_execution_idempotency_key="a" * 64,
+        declared_plan=[
+            {"proposal_id": rows[0].id, "next_status": "superseded"},
+            {"proposal_id": rows[1].id, "next_status": "superseded"},
+        ],
     )
 
+    assert superseded == rows[:2]
     assert rows[0].status == "superseded"
     assert rows[1].status == "superseded"
-    assert rows[2].status == "approved"
+    assert rows[2].status == "executed"
     assert rows[3].status == "rejected"
     assert rows[4].status == "executed"
 
-    rows[2].action_hash = "9" * 64
     with pytest.raises(
         _workflow().CustomerWorkflowConflict,
-        match="CHANGE_PROPOSAL_APPROVAL_INVALID",
+        match="CHANGE_PROPOSAL_PLAN_STALE",
     ):
         _workflow().supersede_related_proposals(
             db,
             executing_proposal_id=rows[2].id,
             expected_execution_idempotency_key="a" * 64,
+            declared_plan=[{
+                "proposal_id": rows[0].id,
+                "next_status": "superseded",
+            }],
         )
-    rows[2].action_hash = rows[2].approved_action_hash
-    rows[2].expires_at = NOW - timedelta(days=1)
-    with pytest.raises(
-        _workflow().CustomerWorkflowConflict,
-        match="CHANGE_PROPOSAL_APPROVAL_INVALID",
-    ):
-        _workflow().supersede_related_proposals(
-            db,
-            executing_proposal_id=rows[2].id,
-            expected_execution_idempotency_key="a" * 64,
-        )
-    rows[2].expires_at = NOW + timedelta(days=1)
-    rows[2].status = "executed"
     assert _workflow().supersede_related_proposals(
         db,
         executing_proposal_id=rows[2].id,
         expected_execution_idempotency_key="a" * 64,
+        declared_plan=[],
     ) == []
     with pytest.raises(
         _workflow().CustomerWorkflowConflict,
@@ -3061,6 +3058,7 @@ def test_merge_and_split_supersede_other_open_proposals_in_same_transaction(db):
             db,
             executing_proposal_id=rows[2].id,
             expected_execution_idempotency_key="f" * 64,
+            declared_plan=[],
         )
 
 
@@ -3126,7 +3124,7 @@ def test_split_supersede_accepts_only_payload_declared_redirects(db):
         visibility_scope="management",
         action_hash="8" * 64,
         expires_at=NOW + timedelta(days=1),
-        status="approved",
+        status="executed",
         proposed_by=1,
         approved_action_hash="8" * 64,
         decided_by=1,
@@ -3142,47 +3140,31 @@ def test_split_supersede_accepts_only_payload_declared_redirects(db):
         db,
         executing_proposal_id=executing.id,
         expected_execution_idempotency_key="b" * 64,
+        declared_plan=[{
+            "proposal_id": undeclared.id,
+            "next_status": "superseded",
+        }],
     )
 
     assert redirected not in superseded
     assert redirected.status == "pending"
     assert undeclared.status == "superseded"
 
-    executing.payload_json = {
-        "new_customer_ids": [target.id],
-        "redirected_proposal_ids": [redirected.id],
-    }
     with pytest.raises(
         _workflow().CustomerWorkflowConflict,
-        match="CHANGE_PROPOSAL_SCOPE_INVALID",
+        match="CHANGE_PROPOSAL_PLAN_INVALID",
     ):
         _workflow().supersede_related_proposals(
             db,
             executing_proposal_id=executing.id,
             expected_execution_idempotency_key="b" * 64,
+            declared_plan=[{
+                "proposal_id": redirected.id,
+                "next_status": "draft",
+            }],
         )
 
-    redirected.status = "approved"
-    redirected.approved_action_hash = redirected.action_hash
-    redirected.decided_by = 1
-    redirected.decided_at = NOW
-    executing.payload_json = {
-        "new_customer_ids": [target.id],
-        "proposal_redirects": [{
-            "proposal_id": redirected.id,
-            "target_customer_id": target.id,
-            "target_profile_version_id": target_version.id,
-        }],
-    }
-    with pytest.raises(
-        _workflow().CustomerWorkflowConflict,
-        match="CHANGE_PROPOSAL_REDIRECT_APPROVAL_STALE",
-    ):
-        _workflow().supersede_related_proposals(
-            db,
-            executing_proposal_id=executing.id,
-            expected_execution_idempotency_key="b" * 64,
-        )
+    assert redirected.status == "pending"
 
 
 def test_insight_models_only_reexport_unified_workflow_models():
@@ -3631,6 +3613,108 @@ def test_customer_insight_and_scheduler_queries_do_not_use_non_mysql_nulls_last(
         customer_radar_service,
     ):
         assert ".nulls_last(" not in inspect.getsource(module)
+
+
+def test_radar_uses_effective_owner_for_focus_generate_and_mutations(db):
+    from app.insight import customer_radar_service
+
+    _user(db, 1)
+    _user(db, 2)
+    source, source_profile = _account(db, code="RADAR-STORAGE")
+    target, _target_profile = _account(db, code="RADAR-LOGICAL")
+    workflow = _workflow()
+    source_assignment = workflow.assign_customer(
+        db, customer_id=source.id, user_id=1, assignment_role="primary",
+        assignment_source="manual", operated_by=1,
+    )
+    workflow.assign_customer(
+        db, customer_id=target.id, user_id=1, assignment_role="primary",
+        assignment_source="manual", operated_by=1,
+    )
+    workflow.assign_customer(
+        db, customer_id=source.id, user_id=2, assignment_role="collaborator",
+        assignment_source="manual", operated_by=1,
+    )
+    opportunity = workflow.upsert_opportunity(
+        db, customer_id=source.id, source_system="internal",
+        source_account_key="global", source_key="logical-radar",
+        opportunity_type="ali_inquiry", source="manual",
+        title="Logical radar opportunity", owner_user_id=1, actor_user_id=1,
+    )
+    actions = [
+        workflow.create_action(
+            db, customer_id=source.id, owner_user_id=1,
+            opportunity_id=opportunity.id, profile_version_id=source_profile.id,
+            action_type=action_type, thread_group="new_inquiry",
+            priority="high", reason=f"Logical {action_type}", next_action="Handle",
+            policy_version="logical-radar-test", source_type="manual",
+            source_event_ids=[], evidence_fact_ids=[], action_date=NOW.date(),
+        )
+        for action_type in ("review", "message", "call", "email")
+    ]
+    history = customer_models.CustomerChangeProposal(
+        customer_id=source.id, target_customer_id=target.id,
+        action_type="split", payload_schema_version="customer_split_v1",
+        payload_json={}, profile_version_id=source_profile.id, evidence_fact_ids=[],
+        risk_level="critical", data_classification="restricted_internal",
+        visibility_scope="management", action_hash="8" * 64,
+        status="executed", expires_at=NOW + timedelta(days=1),
+    )
+    db.add(history)
+    db.flush()
+    for object_type, row in (
+        ("opportunity", opportunity),
+        *(("action", action) for action in actions),
+    ):
+        db.add(customer_models.CustomerObjectOwnership(
+            object_type=object_type, object_id=row.id,
+            storage_customer_id=source.id, current_customer_id=target.id,
+            ownership_version=1, last_change_proposal_id=history.id,
+            last_action_type="split",
+        ))
+    source_assignment.assignment_status = "ended"
+    source_assignment.effective_to = NOW
+    db.flush()
+
+    focus = customer_radar_service.get_daily_focus(db, 1, NOW.date())
+    assert focus["summary"]["total"] == 4
+    assert {
+        item["customer_id"]
+        for thread in focus["threads"] for item in thread["actions"]
+    } == {target.id}
+    generated = customer_radar_service.generate_daily_actions(db, 1, NOW.date())
+    generated_action = next(
+        row for row in generated if row.policy_version == "customer_radar_v1"
+    )
+    assert generated_action.customer_id == target.id
+    assert generated_action.opportunity_id == opportunity.id
+
+    customer_radar_service.dismiss_action(
+        db, actions[0].id, 1, reason_code="other", note="not now",
+    )
+    customer_radar_service.snooze_action(
+        db, actions[1].id, 1, NOW + timedelta(days=1),
+    )
+    customer_radar_service.submit_feedback(
+        db, actions[2].id, "useful", "logical", 1,
+    )
+    completed = customer_radar_service.complete_action(
+        db, actions[3].id, 1, outcome_code="contacted",
+        occurred_at=NOW, summary="Contacted", next_step="Follow up",
+    )
+    assert completed.logical_customer_id == target.id
+    event = db.query(customer_models.CustomerEvent).filter_by(
+        event_type="sales_activity.logged",
+    ).one()
+    assert event.customer_id == target.id
+    assert event.event_payload["customer_id"] == target.id
+    with pytest.raises(
+        workflow.CustomerWorkflowConflict,
+        match="ACTION_OWNER_REQUIRED|ACTION_ACTOR_FORBIDDEN",
+    ):
+        customer_radar_service.dismiss_action(
+            db, generated_action.id, 2, reason_code="other",
+        )
 
 
 def test_manual_note_appends_registered_annotation_event(db):

@@ -30,10 +30,16 @@ from app.customer.models import (
     CustomerName,
     CustomerOrder,
     CustomerOrderItem,
+    CustomerOpportunity,
+    CustomerAction,
     CustomerProfileVersion,
     CustomerRelationship,
     CustomerSourceRecord,
     CustomerTargetMatch,
+)
+from app.customer.logical_customer_service import (
+    logical_root_predicate,
+    logical_root_query,
 )
 from app.sales_automation.models import AcquisitionProfile
 
@@ -176,6 +182,8 @@ class _Snapshot:
     assignments: tuple[dict, ...]
     orders: tuple[dict, ...]
     annotations: tuple[dict, ...]
+    opportunities: tuple[dict, ...]
+    actions: tuple[dict, ...]
 
 
 def _notify(
@@ -299,23 +307,28 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
             if value is not None and value > now
         )
 
-    name_rows = db.query(CustomerName).filter(
-        CustomerName.customer_id == customer.id
+    name_rows = logical_root_query(
+        db, CustomerName, "name", customer.id,
     ).all()
-    identity_rows = db.query(CustomerExternalIdentity).filter(
-        CustomerExternalIdentity.customer_id == customer.id,
+    identity_rows = logical_root_query(
+        db, CustomerExternalIdentity, "external_identity", customer.id,
     ).all()
     referenced_source_ids = {
         row.source_record_id
         for row in (*name_rows, *identity_rows)
         if row.source_record_id is not None
     }
-    source_filter = CustomerSourceRecord.customer_id == customer.id
-    if referenced_source_ids:
-        source_filter = source_filter | CustomerSourceRecord.id.in_(referenced_source_ids)
     sources = {
         row.id: row
-        for row in db.query(CustomerSourceRecord).filter(source_filter)
+        for row in db.query(CustomerSourceRecord).filter(
+            CustomerSourceRecord.id.in_(referenced_source_ids),
+            (
+                logical_root_predicate(
+                    CustomerSourceRecord, "source_record", customer.id,
+                )
+                | CustomerSourceRecord.customer_id.is_(None)
+            ),
+        )
     }
     names = []
     for row in name_rows:
@@ -357,7 +370,9 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
 
     facts = []
     terminal_tombstones = []
-    fact_rows = db.query(CustomerFact).filter(CustomerFact.customer_id == customer.id).all()
+    fact_rows = logical_root_query(
+        db, CustomerFact, "fact", customer.id,
+    ).all()
     fact_by_id = {row.id: row for row in fact_rows}
     for row in fact_rows:
         fact_section = _section_for_fact_key(row.fact_key)
@@ -406,7 +421,8 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
 
     conflicts = []
     for row in db.query(CustomerFactConflict).filter(
-        CustomerFactConflict.customer_id == customer.id,
+        CustomerFactConflict.left_fact_id.in_(fact_by_id),
+        CustomerFactConflict.right_fact_id.in_(fact_by_id),
     ):
         if row.status in _TERMINAL_CONFLICT_STATUSES:
             track_lineage("quality", row.resolved_at)
@@ -528,9 +544,13 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
             "effective_to": row.effective_to,
         })
 
-    item_rows = db.query(CustomerOrderItem).join(
-        CustomerOrder, CustomerOrder.id == CustomerOrderItem.order_id
-    ).filter(CustomerOrder.customer_id == customer.id).all()
+    order_rows = logical_root_query(
+        db, CustomerOrder, "order", customer.id,
+    ).all()
+    order_ids = [row.id for row in order_rows]
+    item_rows = db.query(CustomerOrderItem).filter(
+        CustomerOrderItem.order_id.in_(order_ids),
+    ).all() if order_ids else []
     items_by_order: dict[int, list[dict]] = defaultdict(list)
     for item in item_rows:
         items_by_order[item.order_id].append({
@@ -549,11 +569,11 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
         "source_category": row.source_category,
         "is_valid_business_order": row.is_valid_business_order,
         "items": tuple(items_by_order.get(row.id, ())),
-    } for row in db.query(CustomerOrder).filter(CustomerOrder.customer_id == customer.id)]
+    } for row in order_rows]
 
     annotations = []
-    for row in db.query(CustomerAnnotation).filter(
-        CustomerAnnotation.customer_id == customer.id,
+    for row in logical_root_query(
+        db, CustomerAnnotation, "annotation", customer.id,
     ):
         if row.annotation_type == "do_not_contact":
             track_lineage("risks", row.policy_effective_at, row.revoked_at)
@@ -621,6 +641,55 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
             ]),
         })
 
+    def root_security(evidence_fact_ids) -> tuple[str, str]:
+        evidence_ids = list(evidence_fact_ids or [])
+        evidence = [fact_by_id[item] for item in evidence_ids if item in fact_by_id]
+        if len(evidence) != len(set(evidence_ids)):
+            return "restricted_internal", "management"
+        return (
+            _max_classification([item.data_classification for item in evidence]),
+            _max_visibility([item.visibility_scope for item in evidence]),
+        ) if evidence else ("internal_business", "customer_team")
+
+    opportunities = []
+    for row in logical_root_query(
+        db, CustomerOpportunity, "opportunity", customer.id,
+    ):
+        classification, visibility = root_security(row.evidence_fact_ids or [])
+        track_lineage("opportunities", row.updated_at, row.stage_entered_at)
+        opportunities.append({
+            "id": row.id,
+            "title": row.title,
+            "status": row.status,
+            "priority_level": row.priority_level,
+            "due_at": row.due_at,
+            "evidence_fact_ids": list(row.evidence_fact_ids or []),
+            "data_classification": classification,
+            "visibility_scope": visibility,
+            "updated_at": row.updated_at,
+        })
+
+    actions = []
+    for row in logical_root_query(
+        db, CustomerAction, "action", customer.id,
+    ):
+        classification, visibility = root_security(row.evidence_fact_ids or [])
+        track_lineage("recommended_actions", row.updated_at, row.generated_at)
+        actions.append({
+            "id": row.id,
+            "action_type": row.action_type,
+            "priority": row.priority,
+            "reason": row.reason,
+            "next_action": row.next_action,
+            "due_at": row.due_at,
+            "status": row.status,
+            "evidence_status": row.evidence_status,
+            "evidence_fact_ids": list(row.evidence_fact_ids or []),
+            "data_classification": classification,
+            "visibility_scope": visibility,
+            "updated_at": row.updated_at,
+        })
+
     return _Snapshot(
         evaluated_at=now,
         next_time_boundary=min(future_boundaries) if future_boundaries else None,
@@ -654,6 +723,8 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
         assignments=tuple(assignments),
         orders=tuple(orders),
         annotations=tuple(annotations),
+        opportunities=tuple(opportunities),
+        actions=tuple(actions),
     )
 
 
@@ -929,7 +1000,24 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
         "commitments": [],
         "recent_changes": [],
     }
-    opportunities = {"open": [], "history_summary": []}
+    open_opportunities = [
+        item for item in snapshot.opportunities
+        if item["status"] not in {"won", "lost", "dismissed"}
+    ]
+    terminal_opportunity_counts = Counter(
+        item["status"] for item in snapshot.opportunities
+        if item["status"] in {"won", "lost", "dismissed"}
+    )
+    opportunities = {
+        "open": sorted(
+            open_opportunities,
+            key=lambda item: (item["priority_level"], item["due_at"] or datetime.max, item["id"]),
+        ),
+        "history_summary": [
+            {"status": status, "count": count}
+            for status, count in sorted(terminal_opportunity_counts.items())
+        ],
+    }
 
     active_dnc = [
         item for item in snapshot.annotations
@@ -1038,6 +1126,12 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
     used_classifications.extend(
         item["data_classification"] for item in terminal_tombstones
     )
+    used_classifications.extend(
+        item["data_classification"] for item in snapshot.opportunities
+    )
+    used_classifications.extend(
+        item["data_classification"] for item in snapshot.actions
+    )
     used_visibilities = [item["visibility_scope"] for item in selected.values()]
     used_visibilities.extend(item["visibility_scope"] for item in stale_facts)
     used_visibilities.extend(item["visibility_scope"] for item in aliases)
@@ -1050,6 +1144,12 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
     used_visibilities.extend(item["visibility_scope"] for item in snapshot.conflicts)
     used_visibilities.extend(
         item["visibility_scope"] for item in terminal_tombstones
+    )
+    used_visibilities.extend(
+        item["visibility_scope"] for item in snapshot.opportunities
+    )
+    used_visibilities.extend(
+        item["visibility_scope"] for item in snapshot.actions
     )
 
     correction_summary = sorted(
@@ -1099,8 +1199,15 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
         "max_data_classification": _max_classification(used_classifications),
         "max_visibility_scope": _max_visibility(used_visibilities),
     }
+    generated_actions = [
+        item for item in snapshot.actions
+        if item["status"] in {"pending", "snoozed"}
+        and item["evidence_status"] == "valid"
+    ]
     recommended_actions = {
-        "items": [
+        "items": sorted(generated_actions, key=lambda item: (
+            item["priority"], item["due_at"] or datetime.max, item["id"],
+        )) + [
             {"action_type": "complete_customer_identity", "reason": "identity_gap"}
             for gap in gaps if gap == "canonical_company_name"
         ]
@@ -1381,6 +1488,8 @@ def _build_context(version: CustomerProfileVersion) -> dict:
     commercial["fact_signals"] = _safe_entries(commercial["fact_signals"])
     safe_contacts = _safe_entries(list(profile["contacts"]["items"]))
     safe_risks = _safe_entries(list(profile["risks"]["items"]))
+    safe_opportunities = _safe_entries(list(profile["opportunities"]["open"]))
+    safe_actions = _safe_entries(list(profile["recommended_actions"]["items"]))
     safe_fact_ids.update(_collect_fact_ids(business))
     safe_fact_ids.update(_collect_fact_ids(behavior))
     safe_fact_ids.update(_collect_fact_ids(commercial))
@@ -1393,6 +1502,8 @@ def _build_context(version: CustomerProfileVersion) -> dict:
         commercial,
         safe_contacts,
         safe_risks,
+        safe_opportunities,
+        safe_actions,
     ):
         fact_keys = _collect_fact_keys(section)
         evidence_facts.update(fact_keys)
@@ -1439,12 +1550,12 @@ def _build_context(version: CustomerProfileVersion) -> dict:
         "commercial_summary": commercial,
         "preferences": preferences,
         "behavior_patterns": behavior,
-        "open_opportunities": profile["opportunities"]["open"],
+        "open_opportunities": safe_opportunities,
         "risks": {
             "has_active_dnc": profile["risks"]["has_active_dnc"],
             "items": safe_risks,
         },
-        "recommended_actions": profile["recommended_actions"]["items"],
+        "recommended_actions": safe_actions,
         "recent_changes": recent_changes,
         "data_quality": {
             "completeness": profile["quality"]["completeness"],

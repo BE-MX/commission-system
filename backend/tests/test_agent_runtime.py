@@ -32,11 +32,13 @@ from app.customer.models import (
     CustomerAction,
     CustomerAgentRunScope,
     CustomerAssignment,
+    CustomerChangeProposal,
     CustomerEvent,
     CustomerExternalIdentity,
     CustomerListProjection,
     CustomerOpportunity,
     CustomerOpportunityEvent,
+    CustomerObjectOwnership,
     CustomerProfileVersion,
 )
 from app.mcp import agent_tools, auth as mcp_auth
@@ -75,6 +77,8 @@ def db():
         CustomerOpportunity.__table__,
         CustomerOpportunityEvent.__table__,
         CustomerAction.__table__,
+        CustomerChangeProposal.__table__,
+        CustomerObjectOwnership.__table__,
         CustomerAgentRunScope.__table__,
     ])
     session = sessionmaker(bind=engine, autoflush=False)()
@@ -1730,6 +1734,7 @@ def test_accepted_repurchase_artifact_projects_only_to_pending_action(db):
         "inactive_user",
         "permission",
         "actor_scope",
+        "ownership",
     ),
 )
 def test_repurchase_projection_revalidates_live_customer_and_run_scope(db, revocation):
@@ -1815,6 +1820,29 @@ def test_repurchase_projection_revalidates_live_customer_and_run_scope(db, revoc
     elif revocation == "permission":
         user = db.get(ArkUser, 7)
         user.roles.clear()
+    elif revocation == "ownership":
+        target = _customer(
+            db, name="Projection moved target",
+            external_id="C-PROJECTION-MOVED", owner_user_id=8,
+        )
+        proposal = CustomerChangeProposal(
+            customer_id=customer.id, target_customer_id=target.id,
+            action_type="split", payload_schema_version="customer_split_v1",
+            payload_json={}, profile_version_id=customer.current_profile_version_id,
+            evidence_fact_ids=[], risk_level="critical",
+            data_classification="restricted_internal", visibility_scope="management",
+            action_hash="7" * 64, status="executed",
+            expires_at=datetime(2026, 9, 1),
+        )
+        db.add(proposal)
+        db.flush()
+        for object_type, row in (("opportunity", opportunity), ("action", action)):
+            db.add(CustomerObjectOwnership(
+                object_type=object_type, object_id=row.id,
+                storage_customer_id=customer.id, current_customer_id=target.id,
+                ownership_version=1, last_change_proposal_id=proposal.id,
+                last_action_type="split",
+            ))
     db.commit()
     original_seq = db.get(CustomerAccount, customer.id).profile_input_seq
     artifact = SimpleNamespace(
@@ -1876,6 +1904,57 @@ def test_repurchase_scheduler_enqueues_once_from_rule_candidate(db):
     assert orchestration.enqueue_repurchase_runs(
         db, action_date=date(2026, 8, 20), limit=10,
     ) == 0
+
+
+def test_repurchase_scheduler_uses_effective_owner_and_canonical_run_context(db):
+    source = _customer(db, name="Overlay Source", owner_user_id=7)
+    target = _customer(db, name="Overlay Target", owner_user_id=8)
+    from app.customer.workflow_service import create_action
+    action = create_action(
+        db, customer_id=source.id, owner_user_id=7,
+        profile_version_id=source.current_profile_version_id,
+        action_type="review", thread_group="reorder", priority="high",
+        reason="Overlay reason", next_action="Overlay next", suggested_message="draft",
+        policy_version="overlay-test", source_type="rule", source_event_ids=(),
+        evidence_fact_ids=(), action_date=date(2026, 8, 21),
+    )
+    proposal = CustomerChangeProposal(
+        customer_id=source.id, target_customer_id=target.id, action_type="split",
+        payload_schema_version="customer_split_v1", payload_json={},
+        profile_version_id=source.current_profile_version_id, evidence_fact_ids=[],
+        risk_level="critical", data_classification="restricted_internal",
+        visibility_scope="management", action_hash="9" * 64,
+        expires_at=datetime(2026, 9, 1), status="executed",
+    )
+    db.add(proposal)
+    db.flush()
+    db.add(CustomerObjectOwnership(
+        object_type="action", object_id=action.id,
+        storage_customer_id=source.id, current_customer_id=target.id,
+        ownership_version=1, last_change_proposal_id=proposal.id,
+        last_action_type="split",
+    ))
+    db.commit()
+
+    assert orchestration.enqueue_repurchase_runs(
+        db, action_date=date(2026, 8, 21), limit=10,
+    ) == 0
+
+    action.owner_user_id = 8
+    db.add(ArkUserRole(user_id=8, role_id=1))
+    db.commit()
+    assert orchestration.enqueue_repurchase_runs(
+        db, action_date=date(2026, 8, 21), limit=10,
+    ) == 1
+    run = db.query(models.AgentRun).filter_by(
+        business_ref_type="customer_action", business_ref_id=str(action.id),
+    ).one()
+    session = db.get(models.AgentSession, run.session_id)
+    assert run.input_json["customer_id"] == target.id
+    assert session.context_id == str(target.id)
+    assert db.query(CustomerAgentRunScope).filter_by(
+        run_id=run.id, customer_id=target.id,
+    ).one_or_none() is not None
 
 
 def test_public_fetch_url_guard_rejects_private_dns(monkeypatch):

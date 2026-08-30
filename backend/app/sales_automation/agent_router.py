@@ -62,14 +62,17 @@ def _research_context(db: Session, task_id: int) -> dict:
     detail = _call(public_pool_service.get_task_detail, db, task_id)
     task = detail["task"]
     customer = detail["customer"]
+    input_snapshot = dict(task.input_snapshot or {})
+    if "customer_id" in input_snapshot:
+        input_snapshot["customer_id"] = task.logical_customer_id
     return {
         "research_task_id": task.id,
-        "customer_id": task.customer_id,
+        "customer_id": task.logical_customer_id,
         "task_type": task.task_type,
         "tier": task.tier,
         "policy_version": task.research_policy_version,
         "input_hash": public_pool_service.research_input_hash(task),
-        "input_snapshot": task.input_snapshot or {},
+        "input_snapshot": input_snapshot,
         "customer": {
             "customer_id": customer.id,
             "customer_code": customer.customer_code,
@@ -155,7 +158,7 @@ def claim_agent_research_task(
     )
     return ok({
         "research_task_id": row.id,
-        "customer_id": row.customer_id,
+        "customer_id": row.logical_customer_id,
         "lease_token": token,
         "lease_generation": row.lease_generation,
         "input_hash": public_pool_service.research_input_hash(row),
@@ -199,7 +202,7 @@ def submit_agent_industry_gate(
     )
     return ok({
         "research_task_id": row.id,
-        "customer_id": row.customer_id,
+        "customer_id": row.logical_customer_id,
         "task_status": row.task_status,
         "gate_status": row.gate_status,
     })
@@ -230,7 +233,7 @@ def complete_agent_research_task(
     )
     return ok({
         "research_task_id": row.id,
-        "customer_id": row.customer_id,
+        "customer_id": row.logical_customer_id,
         "task_status": row.task_status,
         "result_review_status": row.result_review_status,
         "evidence_fact_ids": row.evidence_fact_ids or [],
@@ -253,7 +256,11 @@ def fail_agent_research_task(
         payload.agent_id,
         payload.lease_token,
     )
-    return ok({"research_task_id": row.id, "customer_id": row.customer_id, "task_status": row.task_status})
+    return ok({
+        "research_task_id": row.id,
+        "customer_id": row.logical_customer_id,
+        "task_status": row.task_status,
+    })
 
 
 @router.get("/agent/search-jobs")

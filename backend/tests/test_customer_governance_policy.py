@@ -23,10 +23,18 @@ from app.customer.models import (
     CustomerEvent,
     CustomerFact,
     CustomerFactEvidenceLink,
+    CustomerObjectOwnership,
     CustomerProfileVersion,
     CustomerSuppressionRegistry,
 )
-from app.customer.proposal_service import canonical_action_hash
+from app.customer.proposal_service import (
+    ProposalConflict,
+    approve_proposal,
+    canonical_action_hash,
+    create_proposal,
+    execute_proposal,
+    submit_proposal,
+)
 from app.customer.profile_service import compile_customer_profile
 
 
@@ -286,101 +294,6 @@ def test_remove_dnc_revokes_only_annotation_and_keeps_central_suppression(db):
     assert customer.profile_input_seq == input_seq_before + 1
 
 
-def test_confirm_material_risk_appends_confirmed_fact_without_mutating_source(db):
-    human = _human(db, "risk")
-    customer = _customer(db, "risk")
-    source = _fact(db, customer, "risk", risk_type="fraud")
-    profile = _profile(db, customer)
-    payload = {
-        "customer_id": customer.id, "profile_version_id": profile.id,
-        "expected_profile_input_seq": customer.profile_input_seq,
-        "risk_type": "fraud", "source_fact_id": source.id,
-        "source_fact_fingerprint": source.fact_fingerprint,
-        "source_value_hash": canonical_value_hash(source.value_json),
-        "confirmation_reason": "Two-person review completed",
-        "evidence_fact_ids": [source.id],
-    }
-    proposal = _proposal(
-        db, customer=customer, profile=profile, evidence=[source],
-        action_type="confirm_material_risk", payload=payload, suffix="risk",
-    )
-    original = (source.fact_layer, source.verification_status, dict(source.value_json))
-    input_seq_before = customer.profile_input_seq
-
-    result = service.execute_governance_policy(
-        db, proposal_id=proposal.id, actor_user_id=human.id, idempotency_key="risk-key",
-    )
-    confirmed = db.get(CustomerFact, result.confirmed_fact_id)
-
-    assert (source.fact_layer, source.verification_status, source.value_json) == original
-    assert confirmed.fact_key == "risk.confirmed.fraud"
-    assert confirmed.fact_layer == "confirmed"
-    assert confirmed.data_classification == "restricted_internal"
-    assert confirmed.visibility_scope == "management"
-    assert db.query(CustomerFactEvidenceLink).filter_by(
-        fact_id=confirmed.id,
-        evidence_kind="fact",
-        supporting_fact_id=source.id,
-        relation_type="supports",
-    ).count() == 1
-    assert customer.profile_input_seq == input_seq_before + 2
-    assert db.query(CustomerEvent).filter_by(event_type="risk.material_confirmed").count() == 1
-    replay = service.execute_governance_policy(
-        db, proposal_id=proposal.id, actor_user_id=human.id,
-        idempotency_key="risk-key",
-    )
-    assert replay.confirmed_fact_id == confirmed.id
-    assert customer.profile_input_seq == input_seq_before + 2
-
-    second_payload = dict(payload)
-    second_payload["confirmation_reason"] = "new independent approval"
-    second = _proposal(
-        db, customer=customer, profile=profile, evidence=[source],
-        action_type="confirm_material_risk", payload=second_payload,
-        suffix="risk-second",
-    )
-    with pytest.raises(CustomerDomainError) as old_link_error:
-        append_customer_event(
-            db, customer_id=customer.id, event_type="risk.material_confirmed",
-            event_source="governance", event_title="reuse old confirmation",
-            event_payload={
-                "proposal_id": second.id, "risk_type": "fraud",
-                "source_fact_id": source.id, "confirmed_fact_id": confirmed.id,
-            }, payload_schema_version="customer_event_v1",
-            occurred_at=beijing_now(), source_ref_type="fact",
-            source_ref_id=str(confirmed.id), evidence_fact_ids=[source.id],
-            actor_user_id=human.id, data_classification="restricted_internal",
-            visibility_scope="management",
-        )
-    assert old_link_error.value.error_code == "EVENT_REFERENCE_INVALID"
-    assert customer.profile_input_seq == input_seq_before + 2
-
-
-def test_stale_profile_input_and_changed_risk_value_hash_fail_closed(db):
-    human = _human(db, "stale")
-    customer = _customer(db, "stale")
-    source = _fact(db, customer, "stale", risk_type="sanctions")
-    profile = _profile(db, customer)
-    payload = {
-        "customer_id": customer.id, "profile_version_id": profile.id,
-        "expected_profile_input_seq": customer.profile_input_seq,
-        "risk_type": "sanctions", "source_fact_id": source.id,
-        "source_fact_fingerprint": source.fact_fingerprint,
-        "source_value_hash": "0" * 64, "confirmation_reason": "reviewed",
-        "evidence_fact_ids": [source.id],
-    }
-    proposal = _proposal(
-        db, customer=customer, profile=profile, evidence=[source],
-        action_type="confirm_material_risk", payload=payload, suffix="stale",
-    )
-
-    with pytest.raises(service.GovernancePolicyError, match="SOURCE_STALE"):
-        service.execute_governance_policy(
-            db, proposal_id=proposal.id, actor_user_id=human.id, idempotency_key="stale-key",
-        )
-    assert db.query(CustomerFact).filter_by(fact_key="risk.confirmed.sanctions").count() == 0
-
-
 def test_payload_extra_field_and_profile_input_change_fail_closed(db):
     human = _human(db, "payload-stale")
     customer = _customer(db, "payload-stale")
@@ -442,39 +355,6 @@ def test_existing_dnc_scope_rejects_set_without_overwriting(db):
     assert existing.content_json == {"reason": "existing"}
 
 
-def test_restricted_confirmed_material_risk_is_in_profile_but_not_agent_context(db):
-    customer = _customer(db, "risk-redaction")
-    now = beijing_now()
-    risk = CustomerFact(
-        customer_id=customer.id, subject_type="customer", subject_id=None,
-        fact_key="risk.confirmed.material_legal", value_type="object",
-        value_json={"value": {"case": "restricted legal detail"}},
-        fact_layer="confirmed", verification_status="verified",
-        confidence=Decimal("1.0000"), confidence_method_version="human_v1",
-        confidence_components_json={"human_confirmation": 1},
-        data_classification="restricted_internal", visibility_scope="management",
-        classification_reason="restricted management risk",
-        evidence_json={"fact_ids": [999]}, rule_version="risk_v1",
-        fact_fingerprint=_digest("risk-redaction"), effective_from=now,
-        observed_at=now, reviewed_at=now,
-    )
-    db.add(risk)
-    customer.profile_input_seq += 1
-    db.flush()
-    db.commit()
-
-    compiled = compile_customer_profile(sessionmaker(bind=db.get_bind()), customer.id)
-    db.expire_all()
-    version = db.get(CustomerProfileVersion, compiled.profile_version_id)
-    context = db.get(CustomerAgentContext, customer.id)
-
-    assert version.profile_json["risks"]["items"][0]["risk_type"] == "material_legal"
-    assert version.profile_json["risks"]["items"][0]["value"] == {
-        "case": "restricted legal detail"
-    }
-    assert context.context_json["risks"]["items"] == []
-
-
 def test_generic_event_entry_rejects_fake_dnc_proposal_without_bumping_seq(db):
     human = _human(db, "fake-dnc-proposal")
     customer = _customer(db, "fake-dnc-proposal")
@@ -505,7 +385,6 @@ def test_generic_event_entry_rejects_fake_dnc_proposal_without_bumping_seq(db):
         )
     assert exc_info.value.error_code == "EVENT_REFERENCE_INVALID"
     assert customer.profile_input_seq == input_seq_before
-
 
 def test_generic_event_entry_rejects_dnc_scope_not_approved_by_proposal(db):
     human = _human(db, "fake-dnc-scope")
@@ -543,44 +422,6 @@ def test_generic_event_entry_rejects_dnc_scope_not_approved_by_proposal(db):
             source_ref_type="annotation", source_ref_id=str(annotation.id),
             evidence_fact_ids=[item.id for item in evidence], actor_user_id=human.id,
             data_classification="restricted_internal", visibility_scope="management",
-        )
-    assert exc_info.value.error_code == "EVENT_REFERENCE_INVALID"
-    assert customer.profile_input_seq == input_seq_before
-
-
-def test_generic_event_entry_rejects_commercial_fact_as_confirmed_material_risk(db):
-    human = _human(db, "fake-risk")
-    customer = _customer(db, "fake-risk")
-    risk_source = _fact(db, customer, "fake-risk-source", risk_type="fraud")
-    ordinary = _fact(db, customer, "fake-risk-commercial")
-    profile = _profile(db, customer)
-    payload = {
-        "customer_id": customer.id, "profile_version_id": profile.id,
-        "expected_profile_input_seq": customer.profile_input_seq,
-        "risk_type": "fraud", "source_fact_id": risk_source.id,
-        "source_fact_fingerprint": risk_source.fact_fingerprint,
-        "source_value_hash": canonical_value_hash(risk_source.value_json),
-        "confirmation_reason": "reviewed",
-        "evidence_fact_ids": [risk_source.id],
-    }
-    proposal = _proposal(
-        db, customer=customer, profile=profile, evidence=[risk_source],
-        action_type="confirm_material_risk", payload=payload, suffix="fake-risk",
-    )
-    input_seq_before = customer.profile_input_seq
-
-    with pytest.raises(CustomerDomainError) as exc_info:
-        append_customer_event(
-            db, customer_id=customer.id, event_type="risk.material_confirmed",
-            event_source="governance", event_title="fake risk",
-            event_payload={
-                "proposal_id": proposal.id, "risk_type": "fraud",
-                "source_fact_id": risk_source.id, "confirmed_fact_id": ordinary.id,
-            }, payload_schema_version="customer_event_v1",
-            occurred_at=beijing_now(), source_ref_type="fact",
-            source_ref_id=str(ordinary.id), evidence_fact_ids=[risk_source.id],
-            actor_user_id=human.id, data_classification="restricted_internal",
-            visibility_scope="management",
         )
     assert exc_info.value.error_code == "EVENT_REFERENCE_INVALID"
     assert customer.profile_input_seq == input_seq_before

@@ -15,6 +15,7 @@ from app.customer.models import (
     CustomerAssignment,
     CustomerOpportunity,
 )
+from app.customer.logical_customer_service import logical_owner_expression, logical_root_predicate
 from app.customer.workflow_service import (
     CustomerWorkflowConflict,
     CustomerWorkflowNotFound,
@@ -25,17 +26,11 @@ from app.customer.workflow_service import (
 
 THREAD_GROUPS: dict[str, dict[str, Any]] = {
     "new_inquiry": {
-        "label": "新询盘响应",
-        "priority_label": "优先",
-        "color": "blue",
-        "sort": 10,
+        "label": "新询盘响应", "priority_label": "优先", "color": "blue", "sort": 10,
         "desc": "需要快速判断和首回",
     },
     "sample": {
-        "label": "样单反馈",
-        "priority_label": "优先",
-        "color": "green",
-        "sort": 20,
+        "label": "样单反馈", "priority_label": "优先", "color": "green", "sort": 20,
         "desc": "仅在真实样单证据存在时生成",
     },
     "key_account": {
@@ -60,10 +55,7 @@ THREAD_GROUPS: dict[str, dict[str, Any]] = {
         "desc": "由明确的沉睡客户证据触发",
     },
     "public_pool": {
-        "label": "公海验证",
-        "priority_label": "顺手",
-        "color": "gray",
-        "sort": 60,
+        "label": "公海验证", "priority_label": "顺手", "color": "gray", "sort": 60,
         "desc": "资格审核通过后的首轮人工复核",
     },
 }
@@ -86,6 +78,11 @@ def _live_customer_ids(db: Session, user_id: int):
         CustomerAssignment.assignment_status == "active",
         CustomerAssignment.effective_to.is_(None),
     )
+
+
+def _attach_logical_customer(action: CustomerAction, customer_id: int) -> CustomerAction:
+    action.logical_customer_id = int(customer_id)
+    return action
 
 
 def _opportunity_recommendation(opportunity: CustomerOpportunity) -> dict | None:
@@ -141,20 +138,23 @@ def generate_daily_actions(
             CustomerAccount.current_profile_version_id.isnot(None),
         ).all()
     }
-    opportunities = db.query(CustomerOpportunity).filter(
-        CustomerOpportunity.customer_id.in_(accounts),
+    opportunity_owner = logical_owner_expression(CustomerOpportunity, "opportunity")
+    opportunities = db.query(CustomerOpportunity, opportunity_owner.label(
+        "logical_customer_id",
+    )).filter(
+        opportunity_owner.in_(accounts),
         CustomerOpportunity.owner_user_id == owner_user_id,
         CustomerOpportunity.status.in_(("pending", "contacted", "replied", "quoted")),
     ).order_by(CustomerOpportunity.created_at.desc()).all()
-    actions: list[CustomerAction] = []
     seen_customers: set[int] = set()
-    for opportunity in opportunities:
-        if opportunity.customer_id in seen_customers:
+    for opportunity, logical_customer_id in opportunities:
+        logical_customer_id = int(logical_customer_id)
+        if logical_customer_id in seen_customers:
             continue
         recommendation = _opportunity_recommendation(opportunity)
         if recommendation is None:
             continue
-        account = accounts[opportunity.customer_id]
+        account = accounts[logical_customer_id]
         action = create_action(
             db,
             customer_id=account.id,
@@ -175,18 +175,19 @@ def generate_daily_actions(
             evidence_fact_ids=tuple(opportunity.evidence_fact_ids or ()),
             action_date=target_date,
         )
-        actions.append(action)
-        seen_customers.add(opportunity.customer_id)
+        seen_customers.add(logical_customer_id)
     db.commit()
-    return db.query(CustomerAction).filter(
+    action_owner = logical_owner_expression(CustomerAction, "action")
+    rows = db.query(CustomerAction, action_owner.label("logical_customer_id")).filter(
         CustomerAction.owner_user_id == owner_user_id,
-        CustomerAction.customer_id.in_(_live_customer_ids(db, owner_user_id)),
+        action_owner.in_(_live_customer_ids(db, owner_user_id)),
         CustomerAction.action_date == target_date,
     ).order_by(
         CustomerAction.due_at.is_(None).asc(),
         CustomerAction.due_at.asc(),
         CustomerAction.id,
     ).all()
+    return [_attach_logical_customer(row, owner) for row, owner in rows]
 
 
 def get_daily_focus(
@@ -196,26 +197,30 @@ def get_daily_focus(
     thread_group: str | None = None,
 ) -> dict:
     target_date = action_date or beijing_today()
+    action_owner = logical_owner_expression(CustomerAction, "action")
     query = db.query(CustomerAction).filter(
         CustomerAction.owner_user_id == owner_user_id,
-        CustomerAction.customer_id.in_(_live_customer_ids(db, owner_user_id)),
+        action_owner.in_(_live_customer_ids(db, owner_user_id)),
         CustomerAction.action_date == target_date,
     )
     if query.count() == 0:
         generate_daily_actions(db, owner_user_id, target_date)
     query = db.query(CustomerAction).filter(
         CustomerAction.owner_user_id == owner_user_id,
-        CustomerAction.customer_id.in_(_live_customer_ids(db, owner_user_id)),
+        action_owner.in_(_live_customer_ids(db, owner_user_id)),
         CustomerAction.action_date == target_date,
     )
     if thread_group:
         query = query.filter(CustomerAction.thread_group == thread_group)
-    rows = query.order_by(
+    rows = query.with_entities(CustomerAction, action_owner.label(
+        "logical_customer_id",
+    )).order_by(
         CustomerAction.due_at.is_(None).asc(),
         CustomerAction.due_at.asc(),
         CustomerAction.created_at,
     ).all()
     grouped: dict[str, list[CustomerAction]] = {}
+    rows = [_attach_logical_customer(row, owner) for row, owner in rows]
     for row in rows:
         grouped.setdefault(row.thread_group, []).append(row)
     threads = []
@@ -252,15 +257,16 @@ def get_thread_counts(
     action_date: date | None = None,
 ) -> dict:
     target_date = action_date or beijing_today()
+    action_owner = logical_owner_expression(CustomerAction, "action")
     if db.query(CustomerAction.id).filter(
         CustomerAction.owner_user_id == owner_user_id,
-        CustomerAction.customer_id.in_(_live_customer_ids(db, owner_user_id)),
+        action_owner.in_(_live_customer_ids(db, owner_user_id)),
         CustomerAction.action_date == target_date,
     ).first() is None:
         generate_daily_actions(db, owner_user_id, target_date)
     rows = db.query(CustomerAction.thread_group, func.count(CustomerAction.id)).filter(
         CustomerAction.owner_user_id == owner_user_id,
-        CustomerAction.customer_id.in_(_live_customer_ids(db, owner_user_id)),
+        action_owner.in_(_live_customer_ids(db, owner_user_id)),
         CustomerAction.action_date == target_date,
     ).group_by(CustomerAction.thread_group).all()
     counts = {group: 0 for group in THREAD_GROUPS}
@@ -285,6 +291,9 @@ def complete_action(
     action = db.get(CustomerAction, action_id)
     if action is None:
         raise CustomerWorkflowNotFound("ACTION_NOT_FOUND")
+    logical_customer_id = db.query(
+        logical_owner_expression(CustomerAction, "action"),
+    ).filter(CustomerAction.id == action_id).scalar()
     row = complete_workflow_action(
         db,
         action_id=action_id,
@@ -303,7 +312,7 @@ def complete_action(
         }
     db.commit()
     db.refresh(row)
-    return row
+    return _attach_logical_customer(row, logical_customer_id)
 
 
 def _action_and_account_for_update(
@@ -313,19 +322,22 @@ def _action_and_account_for_update(
     candidate = db.get(CustomerAction, action_id)
     if candidate is None:
         raise CustomerWorkflowNotFound("ACTION_NOT_FOUND")
+    owner_id = db.query(logical_owner_expression(CustomerAction, "action")).filter(
+        CustomerAction.id == action_id,
+    ).scalar()
     account = db.query(CustomerAccount).filter(
-        CustomerAccount.id == candidate.customer_id,
+        CustomerAccount.id == owner_id,
         CustomerAccount.record_status == "active",
     ).with_for_update().one_or_none()
     if account is None:
         raise CustomerWorkflowNotFound("CUSTOMER_NOT_FOUND")
     action = db.query(CustomerAction).filter(
         CustomerAction.id == action_id,
-        CustomerAction.customer_id == account.id,
+        logical_root_predicate(CustomerAction, "action", account.id),
     ).with_for_update().one_or_none()
     if action is None:
         raise CustomerWorkflowNotFound("ACTION_NOT_FOUND")
-    return action, account
+    return _attach_logical_customer(action, account.id), account
 
 
 def _mark_action_changed(account: CustomerAccount, *, changed_at: datetime) -> None:
@@ -343,7 +355,7 @@ def _require_action_actor_scope(
     if can_manage:
         return
     assignment = db.query(CustomerAssignment.id).filter(
-        CustomerAssignment.customer_id == action.customer_id,
+        CustomerAssignment.customer_id == action.logical_customer_id,
         CustomerAssignment.user_id == user_id,
         CustomerAssignment.assignment_role.in_(("primary", "collaborator")),
         CustomerAssignment.assignment_status == "active",
@@ -352,12 +364,13 @@ def _require_action_actor_scope(
     if assignment is None:
         raise CustomerWorkflowConflict("ACTION_ACTOR_FORBIDDEN")
     if action.opportunity_id is not None:
-        opportunity = db.get(CustomerOpportunity, action.opportunity_id)
-        if (
-            opportunity is None
-            or opportunity.customer_id != action.customer_id
-            or opportunity.owner_user_id != user_id
-        ):
+        opportunity = db.query(CustomerOpportunity).filter(
+            CustomerOpportunity.id == action.opportunity_id,
+            logical_root_predicate(
+                CustomerOpportunity, "opportunity", action.logical_customer_id,
+            ),
+        ).one_or_none()
+        if opportunity is None or opportunity.owner_user_id != user_id:
             raise CustomerWorkflowConflict("ACTION_ACTOR_FORBIDDEN")
 
 
@@ -453,7 +466,7 @@ def submit_feedback(
 def _serialize_action(action: CustomerAction) -> dict:
     return {
         "id": action.id,
-        "customer_id": action.customer_id,
+        "customer_id": getattr(action, "logical_customer_id", action.customer_id),
         "opportunity_id": action.opportunity_id,
         "owner_user_id": action.owner_user_id,
         "thread_group": action.thread_group,

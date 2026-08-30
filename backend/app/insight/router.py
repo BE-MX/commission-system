@@ -1318,9 +1318,11 @@ def radar_profile_detail(
     from app.insight.customer_profile_service import get_profile
     from app.insight.customer_radar_service import _serialize_action
     from app.customer.access_service import apply_record_access
+    from app.customer.logical_customer_service import logical_root_predicate
     from app.customer.models import CustomerAction, CustomerEvent
 
     access = _customer_radar_access(db, customer_id, _user)
+    customer_id = access.customer_id
 
     profile = get_profile(db, customer_id, access=access)
     if not profile:
@@ -1346,7 +1348,7 @@ def radar_profile_detail(
     # 今日行动
     today = beijing_today()
     action = db.query(CustomerAction).filter(
-        CustomerAction.customer_id == customer_id,
+        logical_root_predicate(CustomerAction, "action", customer_id),
         CustomerAction.owner_user_id == access.actor_user_id,
         CustomerAction.action_date == today,
     ).first()
@@ -1369,7 +1371,7 @@ def radar_profile_sources(
     access = _customer_radar_access(db, customer_id, _user)
     return _ok(get_source_records(
         db,
-        customer_id,
+        access.customer_id,
         source_type,
         access=access,
     ))
@@ -1390,7 +1392,7 @@ def radar_add_note(
         raise HTTPException(status_code=400, detail="备注内容不能为空")
     annotation = add_manual_note(
         db,
-        customer_id,
+        access.customer_id,
         note_text,
         uid,
         access=access,

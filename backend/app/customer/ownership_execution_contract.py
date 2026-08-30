@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.time import beijing_now
 from app.customer import models
+from app.customer.logical_customer_service import logical_root_predicate
 from app.customer.contracts import (
     OBJECT_OWNERSHIP_REGISTRY,
     OBJECT_OWNERSHIP_REGISTRY_VERSION,
@@ -360,7 +361,9 @@ def validate_execution_contract(
         raise ExecutionContractError("OWNERSHIP_EXECUTION_EVIDENCE_INVALID")
     live_evidence = db.query(models.CustomerFact.id).filter(
         models.CustomerFact.id.in_(evidence),
-        models.CustomerFact.customer_id == proposal.customer_id,
+        logical_root_predicate(
+            models.CustomerFact, "fact", proposal.customer_id,
+        ),
         models.CustomerFact.effective_to.is_(None),
         models.CustomerFact.verification_status.in_(("verified", "candidate", "unverified")),
     ).all()

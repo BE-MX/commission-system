@@ -29,6 +29,7 @@ from app.customer.models import (
     SearchResult,
     SearchResultSource,
 )
+from app.customer.logical_customer_service import logical_owner_expression, logical_root_predicate
 from app.sales_automation.identity import InvalidExternalUrl, normalize_domain, normalize_source_url
 from app.sales_automation.models import AcquisitionProfile
 
@@ -503,8 +504,11 @@ def _ensure_search_research_task(
     result: SearchResult,
     actor_id: int,
 ) -> tuple[CustomerResearchTask, bool]:
+    logical_customer_id = db.query(logical_owner_expression(
+        SearchResult, "search_result",
+    )).filter(SearchResult.id == result.id).scalar()
     account_exists = db.query(CustomerAccount.id).filter(
-        CustomerAccount.id == result.customer_id,
+        CustomerAccount.id == logical_customer_id,
         CustomerAccount.record_status == "active",
     ).with_for_update().one_or_none()
     if account_exists is None:
@@ -516,7 +520,7 @@ def _ensure_search_research_task(
         "profile_snapshot_hash": job.profile_snapshot_hash,
     }
     fingerprint = _hash({
-        "customer_id": result.customer_id,
+        "customer_id": logical_customer_id,
         "task_type": "high_score_candidate",
         "source_ref_type": "search_result",
         "source_ref_id": str(result.id),
@@ -529,7 +533,9 @@ def _ensure_search_research_task(
     if existing is not None:
         return existing, False
     active = db.query(CustomerResearchTask).filter(
-        CustomerResearchTask.customer_id == result.customer_id,
+        logical_root_predicate(
+            CustomerResearchTask, "research_task", logical_customer_id,
+        ),
         CustomerResearchTask.task_type == "high_score_candidate",
         CustomerResearchTask.research_policy_version == job.policy_version,
         or_(
@@ -544,7 +550,7 @@ def _ensure_search_research_task(
         return active, False
     now = beijing_now()
     row = CustomerResearchTask(
-        customer_id=result.customer_id,
+        customer_id=logical_customer_id,
         task_type="high_score_candidate",
         source_ref_type="search_result",
         source_ref_id=str(result.id),
@@ -607,7 +613,7 @@ def _source_fingerprint(
 def _result_for_customer(db: Session, job: SearchJob, customer_id: int) -> tuple[SearchResult, bool]:
     existing = db.query(SearchResult).filter(
         SearchResult.job_id == job.id,
-        SearchResult.customer_id == customer_id,
+        logical_root_predicate(SearchResult, "search_result", customer_id),
     ).with_for_update().one_or_none()
     if existing is not None:
         return existing, False
@@ -627,7 +633,7 @@ def _result_for_customer(db: Session, job: SearchJob, customer_id: int) -> tuple
     except IntegrityError:
         existing = db.query(SearchResult).filter(
             SearchResult.job_id == job.id,
-            SearchResult.customer_id == customer_id,
+            logical_root_predicate(SearchResult, "search_result", customer_id),
         ).with_for_update().one_or_none()
         if existing is None:
             raise
@@ -895,13 +901,20 @@ def list_search_results(
     page_size: int,
 ) -> tuple[list[SearchResult], int]:
     get_search_job(db, job_id)
-    query = db.query(SearchResult).filter(SearchResult.job_id == job_id)
+    owner_id = logical_owner_expression(SearchResult, "search_result")
+    query = db.query(
+        SearchResult, owner_id.label("logical_customer_id"),
+    ).filter(SearchResult.job_id == job_id)
     total = query.count()
-    rows = query.order_by(
+    results = query.order_by(
         SearchResult.best_score.desc(),
         SearchResult.best_rank.asc(),
         SearchResult.id.asc(),
     ).offset((page - 1) * page_size).limit(page_size).all()
+    rows = []
+    for row, logical_customer_id in results:
+        row.logical_customer_id = int(logical_customer_id)
+        rows.append(row)
     return rows, total
 
 

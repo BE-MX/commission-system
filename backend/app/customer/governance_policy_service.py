@@ -40,6 +40,7 @@ from app.customer.models import (
     CustomerProfileVersion,
     CustomerSuppressionRegistry,
 )
+from app.customer.logical_customer_service import logical_root_predicate
 from app.customer.proposal_service import canonical_action_hash
 
 
@@ -132,7 +133,7 @@ def _lock_live_basis(
     fact_ids = set(payload.evidence_fact_ids)
     facts = db.query(CustomerFact).filter(
         CustomerFact.id.in_(fact_ids),
-        CustomerFact.customer_id == row.customer_id,
+        logical_root_predicate(CustomerFact, "fact", row.customer_id),
         CustomerFact.verification_status.in_(("unverified", "candidate", "verified")),
         CustomerFact.effective_to.is_(None),
         or_(CustomerFact.effective_from.is_(None), CustomerFact.effective_from <= now),
@@ -332,7 +333,7 @@ def _execute_confirm_risk(
         raise GovernancePolicyError("GOVERNANCE_EVIDENCE_STALE")
     source = db.query(CustomerFact).filter(
         CustomerFact.id == payload.source_fact_id,
-        CustomerFact.customer_id == row.customer_id,
+        logical_root_predicate(CustomerFact, "fact", row.customer_id),
         CustomerFact.fact_key == RISK_SOURCE_FACT_KEYS[payload.risk_type],
         CustomerFact.fact_layer == "source",
         CustomerFact.verification_status.in_(("unverified", "candidate", "verified")),

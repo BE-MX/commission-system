@@ -30,6 +30,8 @@ from app.customer.models import (
     SearchJob,
     SearchResult,
 )
+from app.customer.logical_customer_service import logical_owner_expression, logical_root_predicate
+from app.customer.ownership_service import require_effective_owner
 from app.sales_automation import service
 from app.sales_automation.schemas import CustomerResearchResult
 
@@ -43,6 +45,11 @@ CLASSIFICATION_ORDER = (
     "restricted_internal",
 )
 VISIBILITY_ORDER = ("all_authorized", "customer_team", "management")
+
+
+def _attach_logical_customer(row, customer_id):
+    row.logical_customer_id = int(customer_id)
+    return row
 
 
 def _data(value: Any) -> dict:
@@ -480,6 +487,7 @@ def get_task(db: Session, task_id: int, *, for_update: bool = False) -> Customer
     row = query.one_or_none()
     if row is None:
         raise service.NotFoundError("研究任务不存在")
+    row.logical_customer_id = require_effective_owner(db, "research_task", row.id)
     return row
 
 
@@ -494,7 +502,8 @@ def list_tasks(
     review_status: str | None = None,
     **_unused,
 ) -> tuple[list[CustomerResearchTask], int]:
-    query = db.query(CustomerResearchTask)
+    owner_id = logical_owner_expression(CustomerResearchTask, "research_task")
+    query = db.query(CustomerResearchTask, owner_id.label("logical_customer_id"))
     if batch_id is not None:
         query = query.filter(
             CustomerResearchTask.source_ref_type == "public_pool_batch",
@@ -508,17 +517,25 @@ def list_tasks(
         query = query.filter(CustomerResearchTask.result_review_status == review_status)
     total = query.count()
     return (
-        query.order_by(CustomerResearchTask.created_at.desc(), CustomerResearchTask.id.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all(),
+        [
+            _attach_logical_customer(row, logical_customer_id)
+            for row, logical_customer_id in query.order_by(
+                CustomerResearchTask.created_at.desc(), CustomerResearchTask.id.desc(),
+            )
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        ],
         total,
     )
 
 
 def list_claimable_tasks(db: Session, page: int, page_size: int) -> tuple[list[CustomerResearchTask], int]:
     now = beijing_now()
-    query = db.query(CustomerResearchTask).filter(or_(
+    owner_id = logical_owner_expression(CustomerResearchTask, "research_task")
+    query = db.query(
+        CustomerResearchTask, owner_id.label("logical_customer_id"),
+    ).filter(or_(
         CustomerResearchTask.task_status == "pending",
         and_(
             CustomerResearchTask.task_status == "running",
@@ -527,16 +544,20 @@ def list_claimable_tasks(db: Session, page: int, page_size: int) -> tuple[list[C
         and_(
             CustomerResearchTask.task_status == "completed",
             CustomerResearchTask.result_review_status == "revision_requested",
+            owner_id == CustomerResearchTask.customer_id,
         ),
     ))
     total = query.count()
-    return (
+    rows = (
         query.order_by(CustomerResearchTask.created_at, CustomerResearchTask.id)
         .offset((page - 1) * page_size)
         .limit(page_size)
-        .all(),
-        total,
+        .all()
     )
+    return [
+        _attach_logical_customer(row, logical_customer_id)
+        for row, logical_customer_id in rows
+    ], total
 
 
 def _claim_owner(actor_id: int, agent_id: str) -> str:
@@ -563,6 +584,10 @@ def claim_task(
         task.task_status == "completed"
         and task.result_review_status == "revision_requested"
     )
+    if task.logical_customer_id != task.customer_id:
+        raise service.ConflictError(
+            "RESEARCH_TASK_LOGICAL_OWNER_CHANGED_RECREATE_REQUIRED"
+        )
     if task.task_status != "pending" and not reclaimable and not revision_requested:
         raise service.ConflictError("研究任务不是等待领取状态，或租约仍有效")
     token = secrets.token_urlsafe(32)
@@ -592,6 +617,10 @@ def _leased_task(
     lease_token: str,
 ) -> CustomerResearchTask:
     task = get_task(db, task_id, for_update=True)
+    if task.logical_customer_id != task.customer_id:
+        raise service.ConflictError(
+            "RESEARCH_TASK_LOGICAL_OWNER_CHANGED_RECREATE_REQUIRED"
+        )
     if task.claimed_by != _claim_owner(actor_id, agent_id):
         raise service.ConflictError("研究任务租约不属于当前Agent")
     if not lease_token or not secrets.compare_digest(task.lease_token_hash or "", _hash(lease_token)):
@@ -759,11 +788,13 @@ def complete_task_research(
         int(citation["evidence_ref"].split(":", 1)[1])
         for citation in result["citations"]
     })
-    facts = db.query(CustomerFact).filter(CustomerFact.id.in_(normalized_fact_ids)).all() \
+    logical_customer_id = task.logical_customer_id
+    facts = db.query(CustomerFact).filter(
+        CustomerFact.id.in_(normalized_fact_ids),
+        logical_root_predicate(CustomerFact, "fact", logical_customer_id),
+    ).all() \
         if normalized_fact_ids else []
-    if len(facts) != len(normalized_fact_ids) or any(
-        fact.customer_id != task.customer_id for fact in facts
-    ):
+    if len(facts) != len(normalized_fact_ids):
         raise service.ConflictError("研究证据事实不属于当前客户或不存在")
     facts_by_id = {fact.id: fact for fact in facts}
     run = _validate_research_run_and_citations(
@@ -861,7 +892,7 @@ def _qualification_reference_customer(
         row = db.get(SearchResult, int(source_ref_id))
         if row is None:
             raise service.ConflictError("资格审核来源对象不存在")
-        return row.customer_id
+        return require_effective_owner(db, "search_result", row.id)
     if review_source == "public_pool_research":
         if not str(source_ref_id or "").isdigit():
             raise service.ConflictError("资格审核来源对象无效")
@@ -870,7 +901,7 @@ def _qualification_reference_customer(
         ).with_for_update().one_or_none()
         if row is None:
             raise service.ConflictError("资格审核来源对象不存在")
-        return row.customer_id
+        return require_effective_owner(db, "research_task", row.id)
     if review_source in {"manual", "identity_conflict"}:
         return None
     raise service.SalesAutomationError("review_source 无效")
@@ -1105,28 +1136,35 @@ def submit_qualification_review(
 
 
 def list_pending_qualification(db: Session) -> list[CustomerResearchTask]:
-    tasks = db.query(CustomerResearchTask).filter(
+    owner_id = logical_owner_expression(CustomerResearchTask, "research_task")
+    task_rows = db.query(
+        CustomerResearchTask, owner_id.label("logical_customer_id"),
+    ).filter(
         CustomerResearchTask.task_status == "completed",
         CustomerResearchTask.result_review_status == "accepted",
     ).order_by(CustomerResearchTask.created_at, CustomerResearchTask.id).all()
+    customer_ids = {int(owner) for _task, owner in task_rows}
+    current_reviews = db.query(CustomerQualificationReview).filter(
+        CustomerQualificationReview.customer_id.in_(customer_ids),
+        CustomerQualificationReview.is_current.is_(True),
+    ).all() if customer_ids else []
+    reviewed = {
+        (row.customer_id, row.review_source, row.source_ref_id)
+        for row in current_reviews
+    }
     pending: list[CustomerResearchTask] = []
-    for task in tasks:
+    for task, logical_customer_id in task_rows:
+        logical_customer_id = int(logical_customer_id)
         review_source = "public_pool_research" if task.task_type == "public_pool" else "search_result"
         source_ref_id = str(task.id) if review_source == "public_pool_research" else task.source_ref_id
-        exists = db.query(CustomerQualificationReview.id).filter(
-            CustomerQualificationReview.customer_id == task.customer_id,
-            CustomerQualificationReview.review_source == review_source,
-            CustomerQualificationReview.source_ref_id == source_ref_id,
-            CustomerQualificationReview.is_current.is_(True),
-        ).first()
-        if exists is None:
-            pending.append(task)
+        if (logical_customer_id, review_source, source_ref_id) not in reviewed:
+            pending.append(_attach_logical_customer(task, logical_customer_id))
     return pending
 
 
 def get_task_detail(db: Session, task_id: int) -> dict:
     task = get_task(db, task_id)
-    account = db.get(CustomerAccount, task.customer_id)
+    account = db.get(CustomerAccount, task.logical_customer_id)
     return {"task": task, "customer": account}
 
 

@@ -191,6 +191,45 @@ def test_pairwise_merge_executes_all_roots_and_is_idempotent(db):
     assert db.query(models.CustomerEvent).count() == 2
 
 
+def test_merge_executes_with_evidence_stored_on_third_customer_but_logically_owned(db):
+    source = _account(db, 111, "LOGICAL-SOURCE")
+    target = _account(db, 112, "LOGICAL-TARGET")
+    storage = _account(db, 113, "HISTORICAL-STORAGE")
+    evidence = _fact(db, storage, 211)
+    actor = _actor(db)
+    history = models.CustomerChangeProposal(
+        id=811, customer_id=storage.id, target_customer_id=source.id,
+        action_type="split", payload_schema_version="customer_split_v1",
+        payload_json={}, profile_version_id=storage.current_profile_version_id,
+        evidence_fact_ids=[evidence.id], risk_level="critical",
+        data_classification="restricted_internal", visibility_scope="management",
+        action_hash=f"{811:064x}", status="executed",
+        expires_at=NOW + timedelta(days=1), created_at=NOW, updated_at=NOW,
+    )
+    db.add(history)
+    db.flush()
+    db.add(models.CustomerObjectOwnership(
+        object_type="fact", object_id=evidence.id,
+        storage_customer_id=storage.id, current_customer_id=source.id,
+        ownership_version=1, last_change_proposal_id=history.id,
+        last_action_type="split", created_at=NOW, updated_at=NOW,
+    ))
+    db.flush()
+    payload = _payload(db, source, target, evidence)
+    proposal = _proposal(
+        db, source, target, evidence, payload, row_id=812,
+    )
+
+    execute_customer_ownership_change(
+        db, proposal_id=proposal.id, actor_user_id=actor.id,
+        idempotency_key="l" * 64,
+    )
+
+    owner = db.get(models.CustomerObjectOwnership, ("fact", evidence.id))
+    assert evidence.customer_id == storage.id
+    assert owner.current_customer_id == target.id
+
+
 def test_execution_rejects_stale_inventory_before_any_write(db):
     source, _target, _evidence, _name_row, actor, proposal = _seed(db)
     _name(db, source, 203)

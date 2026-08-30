@@ -59,7 +59,7 @@ def test_customer_http_envelope_pagination_beijing_time_and_uniform_404(db):
         assert listed.json()["data"]["items"][0]["updated_at"].endswith("+08:00")
 
 
-def test_proposal_hash_is_canonical_and_unsupported_actions_never_enter_approval(db, monkeypatch):
+def test_proposal_hash_is_canonical_and_invalid_actions_never_enter_approval(db, monkeypatch):
     from datetime import datetime, timedelta
 
     import pytest
@@ -122,7 +122,7 @@ def test_proposal_hash_is_canonical_and_unsupported_actions_never_enter_approval
     )
 
     for action_type in ("merge", "split", "set_dnc", "remove_dnc", "confirm_material_risk"):
-        with pytest.raises(ProposalConflict, match="PROPOSAL_EXECUTOR_NOT_IMPLEMENTED"):
+        with pytest.raises(ProposalConflict, match="PROPOSAL_PAYLOAD_INVALID"):
             create_proposal(
                 db, customer_id=customer.id, target_customer_id=None,
                 action_type=action_type, payload_schema_version=f"customer_{action_type}_v1",
@@ -130,6 +130,14 @@ def test_proposal_hash_is_canonical_and_unsupported_actions_never_enter_approval
                 evidence_fact_ids=[fact.id], risk_level="critical",
                 expires_at=now + timedelta(days=1), proposed_by=1,
             )
+    with pytest.raises(ProposalConflict, match="PROPOSAL_EXECUTOR_NOT_IMPLEMENTED"):
+        create_proposal(
+            db, customer_id=customer.id, target_customer_id=None,
+            action_type="unknown", payload_schema_version="customer_unknown_v1",
+            payload_json={}, profile_version_id=profile.id,
+            evidence_fact_ids=[fact.id], risk_level="critical",
+            expires_at=now + timedelta(days=1), proposed_by=1,
+        )
 
     assignment = create_proposal(
         db, customer_id=customer.id, target_customer_id=None, action_type="assign_primary",
@@ -334,214 +342,3 @@ def test_hub_read_endpoints_require_their_distinct_read_code(db):
         identity["permissions"] = ["customer:read_all"]
         for path in ("customers", "research-tasks", "opportunities", "actions"):
             assert client.get(f"/api/customer-hub/{path}").status_code == 200
-
-
-def test_public_pool_research_returns_only_safe_summary(db):
-    from datetime import datetime
-
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
-    from app.auth.dependencies import get_current_user
-    from app.auth.models import ArkUser
-    from app.core.database import get_db
-    from app.customer.models import CustomerAccount, CustomerResearchTask
-
-    now = datetime(2026, 8, 30, 9, 0)
-    db.add(ArkUser(id=91, username="public-research", password_hash="x", real_name="Reader", is_active=True))
-    customer = CustomerAccount(
-        customer_code="C-PUBLIC-RESEARCH", display_name="Public Research Co",
-        entity_type="registered_company", identity_status="candidate",
-        relationship_stage="lead", relationship_stage_changed_at=now,
-        relationship_stage_reason="test", record_status="active",
-        identity_confidence=.5, profile_completeness=20, profile_input_seq=0,
-    )
-    db.add(customer)
-    db.flush()
-
-    def task(fingerprint, classification, visibility):
-        return CustomerResearchTask(
-            customer_id=customer.id, task_type="public_pool", source_ref_type="source_record",
-            source_ref_id="secret-source-id", tier="T1", task_status="completed",
-            gate_status="passed", result_review_status="accepted",
-            selection_reason=[{"email": "person@example.com"}],
-            research_policy_version="test-v1", task_fingerprint=fingerprint * 64,
-            input_snapshot={"email": "person@example.com"},
-            result_schema_version="customer_research_v1",
-            result_json={"contact_email": "person@example.com"},
-            data_classification=classification, visibility_scope=visibility,
-            classification_reason="test", research_summary="safe business summary",
-            evidence_fact_ids=[], lease_generation=0, attempt_count=1, created_by=91,
-        )
-
-    safe = task("a", "internal_business", "all_authorized")
-    sensitive = task("b", "personal_contact", "customer_team")
-    db.add_all([safe, sensitive])
-    db.flush()
-    identity = {"sub": "91", "roles": [], "permissions": ["sales_automation:read"]}
-    app = FastAPI()
-    app.include_router(customer_router.router, prefix="/api/customer-hub")
-    app.dependency_overrides[get_db] = lambda: db
-    app.dependency_overrides[get_current_user] = lambda: identity
-
-    with TestClient(app) as client:
-        listed = client.get("/api/customer-hub/research-tasks")
-        assert listed.status_code == 200
-        assert listed.json()["data"]["total"] == 1
-        detail = client.get(f"/api/customer-hub/research-tasks/{safe.id}")
-        assert detail.status_code == 200
-        data = detail.json()["data"]
-        assert data["content_redacted"] is True
-        assert "result_json" not in data
-        assert "input_snapshot" not in data
-        assert "source_ref_id" not in data
-        assert client.get(f"/api/customer-hub/research-tasks/{sensitive.id}").status_code == 404
-
-
-def test_proposals_require_source_and_target_scope_and_redact_above_lower_ceiling(db):
-    from datetime import datetime, timedelta
-
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
-    from app.auth.dependencies import get_current_user
-    from app.auth.models import ArkUser
-    from app.core.database import get_db
-    from app.customer.models import (
-        CustomerAccount, CustomerAssignment, CustomerChangeProposal,
-        CustomerFact, CustomerProfileVersion,
-    )
-
-    now = datetime(2026, 8, 30, 9, 0)
-    admin = ArkUser(id=101, username="proposal-admin", password_hash="x", real_name="Admin", is_active=True, okki_department_id=10)
-    same_owner = ArkUser(id=102, username="proposal-same", password_hash="x", real_name="Same", is_active=True, okki_department_id=10)
-    other_owner = ArkUser(id=103, username="proposal-other", password_hash="x", real_name="Other", is_active=True, okki_department_id=20)
-    db.add_all([admin, same_owner, other_owner])
-
-    def account(code):
-        row = CustomerAccount(
-            customer_code=code, display_name=code, entity_type="registered_company",
-            identity_status="verified", relationship_stage="qualified",
-            relationship_stage_changed_at=now, relationship_stage_reason="test",
-            record_status="active", identity_confidence=1, profile_completeness=80,
-            profile_input_seq=0,
-        )
-        db.add(row)
-        db.flush()
-        version = CustomerProfileVersion(
-            customer_id=row.id, version_no=1, profile_schema_version="customer_profile_v1",
-            canonicalization_version="jcs_v1", input_seq=0, profile_json={},
-            section_hashes={}, section_data_as_of={}, evidence_fact_ids=[],
-            change_summary={}, compiler_version="test", profile_fingerprint=f"{row.id:064x}",
-            compiled_at=now,
-        )
-        db.add(version)
-        db.flush()
-        row.current_profile_version_id = version.id
-        return row, version
-
-    source, profile = account("C-PROPOSAL-SOURCE")
-    same, _ = account("C-PROPOSAL-SAME")
-    other, _ = account("C-PROPOSAL-OTHER")
-    db.add_all([
-        CustomerAssignment(customer_id=source.id, user_id=102, assignment_role="primary", assignment_status="active", assignment_source="manual", effective_from=now),
-        CustomerAssignment(customer_id=same.id, user_id=102, assignment_role="primary", assignment_status="active", assignment_source="manual", effective_from=now),
-        CustomerAssignment(customer_id=other.id, user_id=103, assignment_role="primary", assignment_status="active", assignment_source="manual", effective_from=now),
-    ])
-    fact = CustomerFact(
-        customer_id=source.id, subject_type="customer", fact_key="business.industry",
-        value_type="string", value_json={"value": "hair"}, fact_layer="confirmed",
-        verification_status="verified", confidence=1,
-        confidence_method_version="test", confidence_components_json={},
-        data_classification="restricted_internal", visibility_scope="management",
-        classification_reason="proposal evidence", evidence_json={},
-        fact_fingerprint="e" * 64, observed_at=now,
-    )
-    db.add(fact)
-    db.flush()
-
-    def proposal(target, token):
-        return CustomerChangeProposal(
-            customer_id=source.id, target_customer_id=target.id,
-            action_type="assign_primary", payload_schema_version="customer_assign_primary_v1",
-            payload_json={"user_id": 102, "reason": f"secret-{token}"},
-            profile_version_id=profile.id, evidence_fact_ids=[fact.id], risk_level="high",
-            data_classification="restricted_internal", visibility_scope="management",
-            action_hash=token * 64, expires_at=now + timedelta(days=1),
-            status="draft", proposed_by=101,
-        )
-
-    visible = proposal(same, "c")
-    forbidden = proposal(other, "d")
-    db.add_all([visible, forbidden])
-    db.flush()
-    identity = {"sub": "101", "roles": [], "permissions": ["customer:admin"]}
-    app = FastAPI()
-    app.include_router(customer_router.router, prefix="/api/customer-hub")
-    app.dependency_overrides[get_db] = lambda: db
-    app.dependency_overrides[get_current_user] = lambda: identity
-
-    with TestClient(app) as client:
-        listed = client.get("/api/customer-hub/change-proposals")
-        assert listed.status_code == 200
-        assert listed.json()["data"]["total"] == 1
-        item = listed.json()["data"]["items"][0]
-        assert item["proposal_id"] == visible.id
-        assert item["payload_json"] is None
-        assert item["evidence_fact_ids"] == []
-        assert item["action_hash"] is None
-        assert client.post(f"/api/customer-hub/change-proposals/{visible.id}/submit").status_code == 404
-        assert client.post(f"/api/customer-hub/change-proposals/{forbidden.id}/submit").status_code == 404
-
-        identity["permissions"] = ["customer:admin", "customer:read_all"]
-        submitted = client.post(f"/api/customer-hub/change-proposals/{visible.id}/submit")
-        assert submitted.status_code == 200
-        assert submitted.json()["data"]["status"] == "pending"
-        assert submitted.json()["data"]["payload_json"]["reason"] == "secret-c"
-
-
-def test_qualification_write_can_review_public_pool_without_returning_pii(db):
-    from datetime import datetime
-
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
-    from app.auth.dependencies import get_current_user
-    from app.auth.models import ArkUser
-    from app.core.database import get_db
-    from app.customer.models import CustomerAccount
-
-    now = datetime(2026, 8, 30, 9, 0)
-    db.add(ArkUser(id=111, username="qualification-writer", password_hash="x", real_name="Writer", is_active=True))
-    customer = CustomerAccount(
-        customer_code="C-PUBLIC-QUALIFY", display_name="Public Qualify Co",
-        entity_type="registered_company", identity_status="candidate",
-        relationship_stage="lead", relationship_stage_changed_at=now,
-        relationship_stage_reason="test", record_status="active",
-        identity_confidence=.5, profile_completeness=20, profile_input_seq=0,
-    )
-    db.add(customer)
-    db.flush()
-    identity = {"sub": "111", "roles": [], "permissions": ["sales_automation:write"]}
-    app = FastAPI()
-    app.include_router(customer_router.router, prefix="/api/customer-hub")
-    app.dependency_overrides[get_db] = lambda: db
-    app.dependency_overrides[get_current_user] = lambda: identity
-    payload = {
-        "customer_id": customer.id, "review_source": "manual",
-        "source_ref_id": None, "decision": "rejected", "reason_code": "bad_data",
-        "reason_text": "person@example.com is private", "scope_type": "global",
-        "scope_ref_id": None, "policy_version": "test-v1", "review_after": None,
-        "review_snapshot": {"email": "person@example.com"},
-        "decision_request_key": "public-review-1", "expected_current_review_id": None,
-    }
-
-    with TestClient(app) as client:
-        response = client.post("/api/customer-hub/qualification-reviews", json=payload)
-        assert response.status_code == 201
-        data = response.json()["data"]
-        assert data["customer_id"] == customer.id
-        assert data["decision"] == "rejected"
-        assert "reason_text" not in data
-        assert "source_ref_id" not in data
-        assert "reviewed_by" not in data

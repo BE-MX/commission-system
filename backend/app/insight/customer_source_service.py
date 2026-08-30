@@ -9,6 +9,7 @@ from app.customer.access_service import CustomerAccess, apply_record_access
 from app.customer.fact_service import append_customer_event
 from app.customer.models import (
     CustomerAccount,
+    CustomerAction,
     CustomerAnnotation,
     CustomerEvent,
     CustomerConversation,
@@ -16,6 +17,10 @@ from app.customer.models import (
     CustomerOpportunity,
     CustomerOrder,
     CustomerSourceRecord,
+)
+from app.customer.logical_customer_service import (
+    logical_root_predicate,
+    resolve_canonical_customer_id,
 )
 
 
@@ -26,14 +31,17 @@ def get_source_records(
     *,
     access: CustomerAccess,
 ) -> list[dict]:
-    if access.customer_id != customer_id or db.get(CustomerAccount, customer_id) is None:
+    canonical_id = resolve_canonical_customer_id(db, customer_id)
+    if canonical_id != access.customer_id or db.get(CustomerAccount, canonical_id) is None:
         return []
+    customer_id = canonical_id
     records: list[dict] = []
     if source_type in {None, "source_record", "all"}:
         rows = apply_record_access(
             db.query(CustomerSourceRecord),
             CustomerSourceRecord,
             access,
+            logical_object_type="source_record",
         ).order_by(CustomerSourceRecord.captured_at.desc()).limit(20).all()
         records.extend({
             "type": "信源记录",
@@ -48,7 +56,9 @@ def get_source_records(
         } for row in rows)
     if source_type in {None, "opportunity", "all"}:
         rows = db.query(CustomerOpportunity).filter(
-            CustomerOpportunity.customer_id == customer_id
+            logical_root_predicate(
+                CustomerOpportunity, "opportunity", customer_id,
+            ),
         ).order_by(CustomerOpportunity.created_at.desc()).limit(20).all()
         records.extend({
             "type": "机会记录",
@@ -70,9 +80,14 @@ def get_source_records(
                 CustomerSourceRecord,
                 CustomerSourceRecord.id == CustomerMessage.source_record_id,
             )
-            .filter(CustomerConversation.customer_id == customer_id)
+            .filter(logical_root_predicate(
+                CustomerConversation, "conversation", customer_id,
+            ))
         )
-        rows = apply_record_access(query, CustomerSourceRecord, access).order_by(
+        rows = apply_record_access(
+            query, CustomerSourceRecord, access,
+            logical_object_type="source_record",
+        ).order_by(
             CustomerMessage.sent_at.desc()
         ).limit(20).all()
         records.extend({
@@ -96,7 +111,14 @@ def get_source_records(
                 CustomerSourceRecord.id == CustomerOrder.source_record_id,
             )
         )
-        rows = apply_record_access(query, CustomerSourceRecord, access).order_by(
+        rows = apply_record_access(
+            query.filter(logical_root_predicate(
+                CustomerOrder, "order", customer_id,
+            )),
+            CustomerSourceRecord,
+            access,
+            logical_object_type="source_record",
+        ).order_by(
             CustomerOrder.account_date.desc(),
             CustomerOrder.id.desc(),
         ).limit(20).all()
@@ -141,6 +163,7 @@ def get_source_records(
             access,
             visibility_field="visibility",
             author_field="authored_by",
+            logical_object_type="annotation",
         ).filter(
             CustomerAnnotation.annotation_type == "note",
             CustomerAnnotation.status == "active",
@@ -155,6 +178,19 @@ def get_source_records(
             "data_classification": row.data_classification,
             "visibility_scope": row.visibility,
             "occurred_at": row.created_at.isoformat(),
+        } for row in rows)
+    if source_type in {None, "action", "all"}:
+        rows = db.query(CustomerAction).filter(
+            logical_root_predicate(CustomerAction, "action", customer_id),
+        ).order_by(CustomerAction.updated_at.desc()).limit(20).all()
+        records.extend({
+            "type": "经营行动",
+            "type_code": "action",
+            "title": row.next_action,
+            "meta": row.action_type,
+            "summary": row.reason,
+            "action_id": row.id,
+            "occurred_at": row.updated_at.isoformat(),
         } for row in rows)
     records.sort(key=lambda row: row.get("occurred_at") or "", reverse=True)
     return records

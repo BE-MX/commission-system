@@ -29,6 +29,7 @@ from app.customer.identity_service import (
     CustomerDomainError,
     reject_ascii_control_characters,
 )
+from app.customer.logical_customer_service import logical_owner_expression, logical_root_predicate
 from app.customer.models import (
     CustomerAccount,
     CustomerAssignment,
@@ -818,18 +819,27 @@ def _validate_subject(
             raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
         return
     if subject_type == "conversation":
-        row = db.get(CustomerConversation, subject_id)
-        if row is None or row.customer_id != customer_id:
+        row = db.query(CustomerConversation).filter(
+            CustomerConversation.id == subject_id,
+            logical_root_predicate(CustomerConversation, "conversation", customer_id),
+        ).one_or_none()
+        if row is None:
             raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
         return
     if subject_type == "order":
-        row = db.get(CustomerOrder, subject_id)
-        if row is None or row.customer_id != customer_id:
+        row = db.query(CustomerOrder).filter(
+            CustomerOrder.id == subject_id,
+            logical_root_predicate(CustomerOrder, "order", customer_id),
+        ).one_or_none()
+        if row is None:
             raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
         return
     if subject_type == "opportunity":
-        row = db.get(CustomerOpportunity, subject_id)
-        if row is None or row.customer_id != customer_id:
+        row = db.query(CustomerOpportunity).filter(
+            CustomerOpportunity.id == subject_id,
+            logical_root_predicate(CustomerOpportunity, "opportunity", customer_id),
+        ).one_or_none()
+        if row is None:
             raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
         return
     raise CustomerDomainError("FACT_SUBJECT_INVALID")
@@ -864,19 +874,32 @@ def _resolved_evidence(
         raise CustomerDomainError("FACT_EVIDENCE_INVALID")
     _canonical_json(locator_json)
     if kind == "source_record":
-        row = db.get(CustomerSourceRecord, item.evidence_id)
-        if row is None or row.customer_id != customer_id:
+        row = db.query(CustomerSourceRecord).filter(
+            CustomerSourceRecord.id == item.evidence_id,
+            logical_root_predicate(
+                CustomerSourceRecord, "source_record", customer_id,
+            ),
+        ).one_or_none()
+        if row is None:
             raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
         lineage = {"kind": kind, "record": _source_lineage(row), "locator": locator_json}
         return lineage, row.data_classification, row.visibility_scope
     if kind == "conversation":
-        row = db.get(CustomerConversation, item.evidence_id)
-        source = db.get(CustomerSourceRecord, row.latest_source_record_id) if row else None
+        row = db.query(CustomerConversation).filter(
+            CustomerConversation.id == item.evidence_id,
+            logical_root_predicate(
+                CustomerConversation, "conversation", customer_id,
+            ),
+        ).one_or_none()
+        source = db.query(CustomerSourceRecord).filter(
+            CustomerSourceRecord.id == row.latest_source_record_id,
+            logical_root_predicate(
+                CustomerSourceRecord, "source_record", customer_id,
+            ),
+        ).one_or_none() if row else None
         if (
             row is None
-            or row.customer_id != customer_id
             or source is None
-            or source.customer_id != customer_id
         ):
             raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
         lineage = {
@@ -890,14 +913,22 @@ def _resolved_evidence(
         return lineage, source.data_classification, source.visibility_scope
     if kind == "message":
         row = db.get(CustomerMessage, item.evidence_id)
-        conversation = db.get(CustomerConversation, row.conversation_id) if row else None
-        source = db.get(CustomerSourceRecord, row.source_record_id) if row else None
+        conversation = db.query(CustomerConversation).filter(
+            CustomerConversation.id == row.conversation_id,
+            logical_root_predicate(
+                CustomerConversation, "conversation", customer_id,
+            ),
+        ).one_or_none() if row else None
+        source = db.query(CustomerSourceRecord).filter(
+            CustomerSourceRecord.id == row.source_record_id,
+            logical_root_predicate(
+                CustomerSourceRecord, "source_record", customer_id,
+            ),
+        ).one_or_none() if row else None
         if (
             row is None
             or conversation is None
-            or conversation.customer_id != customer_id
             or source is None
-            or source.customer_id != customer_id
         ):
             raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
         lineage = {
@@ -909,13 +940,19 @@ def _resolved_evidence(
         }
         return lineage, source.data_classification, source.visibility_scope
     if kind == "order":
-        row = db.get(CustomerOrder, item.evidence_id)
-        source = db.get(CustomerSourceRecord, row.source_record_id) if row else None
+        row = db.query(CustomerOrder).filter(
+            CustomerOrder.id == item.evidence_id,
+            logical_root_predicate(CustomerOrder, "order", customer_id),
+        ).one_or_none()
+        source = db.query(CustomerSourceRecord).filter(
+            CustomerSourceRecord.id == row.source_record_id,
+            logical_root_predicate(
+                CustomerSourceRecord, "source_record", customer_id,
+            ),
+        ).one_or_none() if row else None
         if (
             row is None
-            or row.customer_id != customer_id
             or source is None
-            or source.customer_id != customer_id
         ):
             raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
         lineage = {
@@ -927,8 +964,11 @@ def _resolved_evidence(
         }
         return lineage, source.data_classification, source.visibility_scope
     if kind == "fact":
-        row = db.get(CustomerFact, item.evidence_id)
-        if row is None or row.customer_id != customer_id:
+        row = db.query(CustomerFact).filter(
+            CustomerFact.id == item.evidence_id,
+            logical_root_predicate(CustomerFact, "fact", customer_id),
+        ).one_or_none()
+        if row is None:
             raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
         lineage = {
             "kind": kind,
@@ -1154,17 +1194,24 @@ def append_fact(
         raise CustomerDomainError("FACT_VALUE_TYPE_INVALID")
     normalized_value = _validate_value(value_type, value)
 
-    source_record = db.get(CustomerSourceRecord, source_record_id) if source_record_id else None
+    source_record = db.query(CustomerSourceRecord).filter(
+        CustomerSourceRecord.id == source_record_id,
+        logical_root_predicate(
+            CustomerSourceRecord, "source_record", customer_id,
+        ),
+    ).one_or_none() if source_record_id else None
     if source_record_id is not None and (
         source_record is None
-        or source_record.customer_id != customer_id
         or source_record.source_system != source_system
         or source_record.source_entity_type != source_entity_type
     ):
         raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
     if supersedes_fact_id is not None:
-        superseded = db.get(CustomerFact, supersedes_fact_id)
-        if superseded is None or superseded.customer_id != customer_id:
+        superseded = db.query(CustomerFact).filter(
+            CustomerFact.id == supersedes_fact_id,
+            logical_root_predicate(CustomerFact, "fact", customer_id),
+        ).one_or_none()
+        if superseded is None:
             raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
 
     review_time: datetime | None = None
@@ -1411,12 +1458,11 @@ def _fact_evidence_path_exists(
             return False
         visited.update(current)
         rows = db.query(CustomerFactEvidenceLink.supporting_fact_id).filter(
-            CustomerFactEvidenceLink.customer_id == customer_id,
             CustomerFactEvidenceLink.fact_id.in_(current),
             CustomerFactEvidenceLink.supporting_fact_id.is_not(None),
         ).all()
         direct_rows = db.query(CustomerFact.evidence_json).filter(
-            CustomerFact.customer_id == customer_id,
+            logical_root_predicate(CustomerFact, "fact", customer_id),
             CustomerFact.id.in_(current),
         ).all()
         supporting_ids = {row[0] for row in rows}
@@ -1454,7 +1500,12 @@ def link_fact_evidence(
     fact = db.get(CustomerFact, fact_id)
     if fact is None:
         raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
-    account = _account_for_update(db, fact.customer_id)
+    logical_customer_id = db.query(
+        logical_owner_expression(CustomerFact, "fact"),
+    ).filter(CustomerFact.id == fact.id).scalar()
+    if logical_customer_id is None:
+        raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
+    account = _account_for_update(db, logical_customer_id)
     if relation_type not in {"supports", "contradicts"}:
         raise CustomerDomainError("EVIDENCE_RELATION_INVALID")
     if not isinstance(locator, Mapping) or not locator:
@@ -1477,8 +1528,17 @@ def link_fact_evidence(
         order_id=order_id,
         supporting_fact_id=supporting_fact_id,
     )
-    if evidence_customer_id != fact.customer_id:
-        raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
+    target_id = {
+        "source_record": source_record_id,
+        "message": message_id,
+        "order": order_id,
+        "fact": supporting_fact_id,
+    }[evidence_kind]
+    _resolved_evidence(db, logical_customer_id, DirectFactEvidence(
+        evidence_kind=evidence_kind,
+        evidence_id=target_id,
+        locator=locator_json,
+    ))
     if supporting_fact_id == fact_id:
         raise CustomerDomainError("EVIDENCE_REFERENCE_INVALID")
     if evidence_content_hash != expected_hash:
@@ -1487,7 +1547,7 @@ def link_fact_evidence(
         supporting_fact_id is not None
         and _fact_evidence_path_exists(
             db,
-            customer_id=fact.customer_id,
+            customer_id=logical_customer_id,
             start_fact_id=supporting_fact_id,
             target_fact_id=fact.id,
         )
@@ -1504,12 +1564,6 @@ def link_fact_evidence(
     )
     if effective_visibility != fact.visibility_scope:
         raise CustomerDomainError("EVIDENCE_VISIBILITY_SCOPE_INVALID")
-    target_id = {
-        "source_record": source_record_id,
-        "message": message_id,
-        "order": order_id,
-        "fact": supporting_fact_id,
-    }[evidence_kind]
     fingerprint = _sha256((
         "fact_evidence_v1",
         fact.id,
@@ -1528,7 +1582,7 @@ def link_fact_evidence(
     if existing is not None:
         return existing
     row = CustomerFactEvidenceLink(
-        customer_id=fact.customer_id,
+        customer_id=logical_customer_id,
         fact_id=fact.id,
         relation_type=relation_type,
         evidence_kind=evidence_kind,
@@ -1713,9 +1767,31 @@ def _event_reference(
     elif reference_kind == "research_task":
         row = db.get(CustomerResearchTask, object_id)
     elif reference_kind == "opportunity":
-        row = db.get(CustomerOpportunity, object_id)
+        row = db.query(CustomerOpportunity).filter(
+            CustomerOpportunity.id == object_id,
+            logical_root_predicate(
+                CustomerOpportunity, "opportunity", customer_id,
+            ),
+        ).one_or_none()
+        if row is None:
+            raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
+        return (
+            row,
+            DataClassification.INTERNAL_BUSINESS.value,
+            "customer_team",
+        )
     elif reference_kind == "action":
-        row = db.get(CustomerAction, object_id)
+        row = db.query(CustomerAction).filter(
+            CustomerAction.id == object_id,
+            logical_root_predicate(CustomerAction, "action", customer_id),
+        ).one_or_none()
+        if row is None:
+            raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
+        return (
+            row,
+            DataClassification.INTERNAL_BUSINESS.value,
+            "customer_team",
+        )
     elif reference_kind == "annotation":
         row = db.get(CustomerAnnotation, object_id)
     elif reference_kind == "identity":
@@ -1974,8 +2050,14 @@ def _validate_material_risk_event(
         approved = parse_confirm_material_risk(proposal.payload_json or {})
     except ValueError as exc:
         raise CustomerDomainError("EVENT_REFERENCE_INVALID") from exc
-    source = db.get(CustomerFact, approved.source_fact_id)
-    confirmed = db.get(CustomerFact, object_id)
+    source = db.query(CustomerFact).filter(
+        CustomerFact.id == approved.source_fact_id,
+        logical_root_predicate(CustomerFact, "fact", customer_id),
+    ).one_or_none()
+    confirmed = db.query(CustomerFact).filter(
+        CustomerFact.id == object_id,
+        logical_root_predicate(CustomerFact, "fact", customer_id),
+    ).one_or_none()
     link = db.query(CustomerFactEvidenceLink).filter(
         CustomerFactEvidenceLink.customer_id == customer_id,
         CustomerFactEvidenceLink.fact_id == object_id,
@@ -1989,9 +2071,7 @@ def _validate_material_risk_event(
         or approved.profile_version_id != proposal.profile_version_id
         or source is None
         or confirmed is None
-        or source.customer_id != customer_id
-        or confirmed.customer_id != customer_id
-        or source.fact_key != RISK_SOURCE_FACT_KEYS[approved.risk_type]
+            or source.fact_key != RISK_SOURCE_FACT_KEYS[approved.risk_type]
         or confirmed.fact_key != RISK_CONFIRMED_FACT_KEYS[approved.risk_type]
         or confirmed.fact_layer != "confirmed"
         or confirmed.verification_status != "verified"
@@ -2185,14 +2265,17 @@ def _validate_event_reference_semantics(
         ):
             raise CustomerDomainError("EVENT_REFERENCE_INVALID")
     elif source_ref_type == "action":
-        row = db.get(CustomerAction, object_id)
+        row = db.query(CustomerAction).filter(
+            CustomerAction.id == object_id,
+            logical_root_predicate(CustomerAction, "action", customer_id),
+        ).one_or_none()
         if (
             row is None
             or event_type != "sales_activity.logged"
             or row.status != "done"
             or row.completed_by != actor_user_id
             or payload.get("action_id") != row.id
-            or payload.get("customer_id") != row.customer_id
+            or payload.get("customer_id") != customer_id
             or payload.get("outcome_code") != row.outcome_code
             or (
                 "opportunity_id" in payload

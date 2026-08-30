@@ -17,6 +17,10 @@ from app.auth.models import ArkUser
 from app.auth.service import get_user_permissions, get_user_roles
 from app.core.time import beijing_now, to_beijing_naive
 from app.customer.fact_service import DirectFactEvidence, append_customer_event, append_fact
+from app.customer.logical_customer_service import (
+    logical_owner_expression,
+    logical_root_predicate,
+)
 from app.customer.models import (
     CustomerAccount,
     CustomerAction,
@@ -209,7 +213,7 @@ def _fact_ids(
     if not fact_ids:
         return []
     rows = db.query(CustomerFact.id).filter(
-        CustomerFact.customer_id == customer_id,
+        logical_root_predicate(CustomerFact, "fact", customer_id),
         CustomerFact.id.in_(fact_ids),
     ).all()
     if {row.id for row in rows} != set(fact_ids):
@@ -264,15 +268,37 @@ def _validate_source_reference(
     }.get(source_ref_type)
     if model is None:
         raise CustomerWorkflowError("SOURCE_REFERENCE_INVALID")
-    row = db.get(model, source_ref_id)
-    if row is None:
-        raise CustomerWorkflowNotFound("SOURCE_REFERENCE_NOT_FOUND")
-    if source_ref_type == "message":
-        conversation = db.get(CustomerConversation, row.conversation_id)
-        referenced_customer_id = conversation.customer_id if conversation else None
+    if source_ref_type == "source_record":
+        owned = db.query(CustomerSourceRecord.id).filter(
+            CustomerSourceRecord.id == source_ref_id,
+            logical_root_predicate(CustomerSourceRecord, "source_record", customer_id),
+        ).first()
+    elif source_ref_type == "conversation":
+        owned = db.query(CustomerConversation.id).filter(
+            CustomerConversation.id == source_ref_id,
+            logical_root_predicate(CustomerConversation, "conversation", customer_id),
+        ).first()
+    elif source_ref_type == "message":
+        owned = db.query(CustomerMessage.id).join(
+            CustomerConversation,
+            CustomerConversation.id == CustomerMessage.conversation_id,
+        ).filter(
+            CustomerMessage.id == source_ref_id,
+            logical_root_predicate(CustomerConversation, "conversation", customer_id),
+        ).first()
+    elif source_ref_type == "research_task":
+        owned = db.query(CustomerResearchTask.id).filter(
+            CustomerResearchTask.id == source_ref_id,
+            logical_root_predicate(CustomerResearchTask, "research_task", customer_id),
+        ).first()
     else:
-        referenced_customer_id = row.customer_id
-    if referenced_customer_id != customer_id:
+        owned = db.query(CustomerEvent.id).filter(
+            CustomerEvent.id == source_ref_id,
+            CustomerEvent.customer_id == customer_id,
+        ).first()
+    if owned is None:
+        if db.get(model, source_ref_id) is None:
+            raise CustomerWorkflowNotFound("SOURCE_REFERENCE_NOT_FOUND")
         raise CustomerWorkflowConflict("SOURCE_REFERENCE_CUSTOMER_MISMATCH")
 
 
@@ -291,9 +317,12 @@ def append_opportunity_event(
     if event_type not in OPPORTUNITY_EVENT_TYPES:
         raise CustomerWorkflowError("OPPORTUNITY_EVENT_TYPE_INVALID")
     occurred = to_beijing_naive(occurred_at or beijing_now())
+    customer_id = db.query(logical_owner_expression(
+        CustomerOpportunity, "opportunity",
+    )).filter(CustomerOpportunity.id == opportunity.id).scalar()
     evidence = _fact_ids(
         db,
-        customer_id=opportunity.customer_id,
+        customer_id=customer_id,
         values=evidence_fact_ids,
     )
     payload = {
@@ -303,7 +332,7 @@ def append_opportunity_event(
     fingerprint = _fingerprint(
         "opportunity_event_v1",
         opportunity.id,
-        opportunity.customer_id,
+        customer_id,
         event_type,
         from_status or "",
         to_status or "",
@@ -319,7 +348,7 @@ def append_opportunity_event(
         return existing
     row = CustomerOpportunityEvent(
         opportunity_id=opportunity.id,
-        customer_id=opportunity.customer_id,
+        customer_id=customer_id,
         event_type=event_type,
         from_status=from_status,
         to_status=to_status,
@@ -389,7 +418,13 @@ def upsert_opportunity(
         CustomerOpportunity.source_key == source_key,
     ).one_or_none()
     if existing is not None:
-        if existing.customer_id != customer_id:
+        owned = db.query(CustomerOpportunity.id).filter(
+            CustomerOpportunity.id == existing.id,
+            logical_root_predicate(
+                CustomerOpportunity, "opportunity", customer_id,
+            ),
+        ).first()
+        if owned is None:
             raise CustomerWorkflowConflict("OPPORTUNITY_SOURCE_CONFLICT")
         return existing
     _validate_source_reference(
@@ -567,7 +602,9 @@ def create_action(
     if opportunity_id is not None:
         opportunity = db.query(CustomerOpportunity).filter(
             CustomerOpportunity.id == opportunity_id,
-            CustomerOpportunity.customer_id == customer_id,
+            logical_root_predicate(
+                CustomerOpportunity, "opportunity", customer_id,
+            ),
         ).one_or_none()
         if opportunity is None:
             raise CustomerWorkflowConflict("OPPORTUNITY_CUSTOMER_MISMATCH")
@@ -888,7 +925,7 @@ def assign_customer(
                 _expected_previous_owner_user_id,
             ))
         conflicting_opportunity = db.query(CustomerOpportunity.id).filter(
-            CustomerOpportunity.customer_id == customer_id,
+            logical_root_predicate(CustomerOpportunity, "opportunity", customer_id),
             CustomerOpportunity.status.in_(OPEN_OPPORTUNITY_STATUSES),
             CustomerOpportunity.owner_user_id.isnot(None),
             owner_conflict,
@@ -944,7 +981,7 @@ def assign_customer(
     )
     if assignment_role == "primary":
         opportunities = db.query(CustomerOpportunity).filter(
-            CustomerOpportunity.customer_id == customer_id,
+            logical_root_predicate(CustomerOpportunity, "opportunity", customer_id),
             CustomerOpportunity.status.in_(OPEN_OPPORTUNITY_STATUSES),
             CustomerOpportunity.owner_user_id.is_(None),
         ).with_for_update().all()
@@ -964,7 +1001,7 @@ def assign_customer(
                 occurred_at=now,
             )
         actions = db.query(CustomerAction).filter(
-            CustomerAction.customer_id == customer_id,
+            logical_root_predicate(CustomerAction, "action", customer_id),
             CustomerAction.owner_user_id.is_(None),
             CustomerAction.status == "pending",
         ).with_for_update().all()
@@ -1040,7 +1077,7 @@ def transfer_primary_owner(
         _expected_previous_owner_user_id=old_user_id,
     )
     opportunities = db.query(CustomerOpportunity).filter(
-        CustomerOpportunity.customer_id == customer_id,
+        logical_root_predicate(CustomerOpportunity, "opportunity", customer_id),
         CustomerOpportunity.status.in_(OPEN_OPPORTUNITY_STATUSES),
         or_(
             CustomerOpportunity.owner_user_id == old_user_id,
@@ -1060,7 +1097,7 @@ def transfer_primary_owner(
             occurred_at=now,
         )
     actions = db.query(CustomerAction).filter(
-        CustomerAction.customer_id == customer_id,
+        logical_root_predicate(CustomerAction, "action", customer_id),
         CustomerAction.owner_user_id == old_user_id,
         CustomerAction.status.in_(("pending", "snoozed")),
     ).with_for_update().all()
@@ -1176,7 +1213,7 @@ def claim_public_pool_customer(
         ):
             raise CustomerWorkflowConflict("TARGET_MATCH_REQUIRED")
     conflicting_opportunity = db.query(CustomerOpportunity.id).filter(
-        CustomerOpportunity.customer_id == customer_id,
+        logical_root_predicate(CustomerOpportunity, "opportunity", customer_id),
         CustomerOpportunity.status.in_(OPEN_OPPORTUNITY_STATUSES),
         CustomerOpportunity.owner_user_id.isnot(None),
         CustomerOpportunity.owner_user_id != claimant_user_id,
@@ -1184,7 +1221,7 @@ def claim_public_pool_customer(
     if conflicting_opportunity is not None:
         raise CustomerWorkflowConflict("OPPORTUNITY_OWNER_CONFLICT")
     claim_opportunities = db.query(CustomerOpportunity).filter(
-        CustomerOpportunity.customer_id == customer_id,
+        logical_root_predicate(CustomerOpportunity, "opportunity", customer_id),
         CustomerOpportunity.status.in_(OPEN_OPPORTUNITY_STATUSES),
         or_(
             CustomerOpportunity.owner_user_id.is_(None),
@@ -1221,7 +1258,7 @@ def claim_public_pool_customer(
         )
     if opportunity_ids:
         actions = db.query(CustomerAction).filter(
-            CustomerAction.customer_id == customer_id,
+            logical_root_predicate(CustomerAction, "action", customer_id),
             CustomerAction.opportunity_id.in_(opportunity_ids),
             CustomerAction.status == "pending",
         ).with_for_update().all()
@@ -1339,16 +1376,22 @@ def transition_opportunity(
     candidate = db.get(CustomerOpportunity, opportunity_id)
     if candidate is None:
         raise CustomerWorkflowNotFound("OPPORTUNITY_NOT_FOUND")
-    _account_for_update(db, candidate.customer_id)
+    logical_customer_id = db.query(logical_owner_expression(
+        CustomerOpportunity, "opportunity",
+    )).filter(CustomerOpportunity.id == opportunity_id).scalar()
+    _account_for_update(db, logical_customer_id)
     opportunity = db.query(CustomerOpportunity).filter(
-        CustomerOpportunity.id == opportunity_id
+        CustomerOpportunity.id == opportunity_id,
+        logical_root_predicate(
+            CustomerOpportunity, "opportunity", logical_customer_id,
+        ),
     ).with_for_update().one_or_none()
     if opportunity is None:
         raise CustomerWorkflowNotFound("OPPORTUNITY_NOT_FOUND")
     actor = _active_user(db, actor_user_id)
     if not can_manage:
         assignment = db.query(CustomerAssignment.id).filter(
-            CustomerAssignment.customer_id == opportunity.customer_id,
+            CustomerAssignment.customer_id == logical_customer_id,
             CustomerAssignment.user_id == actor_user_id,
             CustomerAssignment.assignment_role.in_(("primary", "collaborator")),
             CustomerAssignment.assignment_status == "active",
@@ -1392,13 +1435,13 @@ def transition_opportunity(
         event_reason = (reason or "stage_updated").strip()
     evidence = _fact_ids(
         db,
-        customer_id=opportunity.customer_id,
+        customer_id=logical_customer_id,
         values=evidence_fact_ids,
     )
     events = []
     if evidence_event_ids:
         events = db.query(CustomerEvent).filter(
-            CustomerEvent.customer_id == opportunity.customer_id,
+            CustomerEvent.customer_id == logical_customer_id,
             CustomerEvent.id.in_(set(evidence_event_ids)),
         ).all()
         if {row.id for row in events} != set(evidence_event_ids):
@@ -1419,7 +1462,7 @@ def transition_opportunity(
     if new_status == "won" and not manual_won_exception:
         order = db.query(CustomerOrder).filter(
             CustomerOrder.id == linked_order_id,
-            CustomerOrder.customer_id == opportunity.customer_id,
+            logical_root_predicate(CustomerOrder, "order", logical_customer_id),
             CustomerOrder.is_valid_business_order.is_(True),
         ).one_or_none()
         if order is None:
@@ -1480,7 +1523,7 @@ def transition_opportunity(
     )
     append_customer_event(
         db,
-        customer_id=opportunity.customer_id,
+        customer_id=logical_customer_id,
         event_type="opportunity.stage_changed",
         event_source="opportunity",
         event_title="销售机会阶段已更新",
@@ -1534,12 +1577,18 @@ def complete_action(
     occurred = to_beijing_naive(occurred_at)
     if occurred > beijing_now():
         raise CustomerWorkflowError("ACTION_OCCURRED_AT_INVALID")
-    candidate = db.get(CustomerAction, action_id)
+    action_owner = logical_owner_expression(CustomerAction, "action")
+    candidate = db.query(
+        CustomerAction, action_owner.label("logical_customer_id"),
+    ).filter(CustomerAction.id == action_id).one_or_none()
     if candidate is None:
         raise CustomerWorkflowNotFound("ACTION_NOT_FOUND")
-    _account_for_update(db, candidate.customer_id)
+    candidate, logical_customer_id = candidate
+    logical_customer_id = int(logical_customer_id)
+    _account_for_update(db, logical_customer_id)
     action = db.query(CustomerAction).filter(
-        CustomerAction.id == action_id
+        CustomerAction.id == action_id,
+        logical_root_predicate(CustomerAction, "action", logical_customer_id),
     ).with_for_update().one_or_none()
     if action is None:
         raise CustomerWorkflowNotFound("ACTION_NOT_FOUND")
@@ -1547,22 +1596,30 @@ def complete_action(
     if not can_manage and action.owner_user_id != completed_by:
         raise CustomerWorkflowConflict("ACTION_OWNER_REQUIRED")
     assignment = db.query(CustomerAssignment.id).filter(
-        CustomerAssignment.customer_id == action.customer_id,
+        CustomerAssignment.customer_id == logical_customer_id,
         CustomerAssignment.user_id == completed_by,
         CustomerAssignment.assignment_role.in_(("primary", "collaborator")),
         CustomerAssignment.assignment_status == "active",
         CustomerAssignment.effective_to.is_(None),
     ).first()
     opportunity = (
-        db.get(CustomerOpportunity, action.opportunity_id)
+        db.query(CustomerOpportunity).filter(
+            CustomerOpportunity.id == action.opportunity_id,
+            logical_root_predicate(
+                CustomerOpportunity, "opportunity", logical_customer_id,
+            ),
+        ).one_or_none()
         if action.opportunity_id is not None
         else None
     )
     if not can_manage and (
         assignment is None
         or (
-            opportunity is not None
-            and opportunity.owner_user_id != completed_by
+            action.opportunity_id is not None
+            and (
+                opportunity is None
+                or opportunity.owner_user_id != completed_by
+            )
         )
     ):
         raise CustomerWorkflowConflict("ACTION_ACTOR_FORBIDDEN")
@@ -1587,7 +1644,7 @@ def complete_action(
     db.flush()
     payload = {
         "action_id": action.id,
-        "customer_id": action.customer_id,
+        "customer_id": logical_customer_id,
         "channel": channel,
         "occurred_at": occurred.isoformat(),
         "outcome_code": outcome_code,
@@ -1600,7 +1657,7 @@ def complete_action(
         payload["contact_id"] = action.contact_id
     activity = append_customer_event(
         db,
-        customer_id=action.customer_id,
+        customer_id=logical_customer_id,
         event_type="sales_activity.logged",
         event_source="manual",
         event_title="记录销售活动",
@@ -1863,6 +1920,7 @@ def supersede_related_proposals(
     *,
     executing_proposal_id: int,
     expected_execution_idempotency_key: str,
+    declared_plan: Sequence[Mapping[str, object]],
 ) -> list[CustomerChangeProposal]:
     executing = db.query(CustomerChangeProposal).filter(
         CustomerChangeProposal.id == executing_proposal_id
@@ -1879,110 +1937,38 @@ def supersede_related_proposals(
         or not secrets.compare_digest(stored_key, expected_key)
     ):
         raise CustomerWorkflowConflict("CHANGE_PROPOSAL_EXECUTION_KEY_MISMATCH")
-    if executing.status == "executed":
+    if executing.status != "executed":
+        raise CustomerWorkflowConflict("CHANGE_PROPOSAL_NOT_EXECUTED")
+    plan_ids: list[int] = []
+    for item in declared_plan:
+        if (
+            not isinstance(item, Mapping)
+            or set(item) != {"proposal_id", "next_status"}
+            or type(item["proposal_id"]) is not int
+            or item["proposal_id"] <= 0
+            or item["proposal_id"] == executing_proposal_id
+            or item["next_status"] != "superseded"
+            or item["proposal_id"] in plan_ids
+        ):
+            raise CustomerWorkflowConflict("CHANGE_PROPOSAL_PLAN_INVALID")
+        plan_ids.append(item["proposal_id"])
+    if not plan_ids:
         return []
-    if executing.status != "approved":
-        raise CustomerWorkflowConflict("CHANGE_PROPOSAL_NOT_APPROVED")
-    if (
-        not executing.approved_action_hash
-        or not secrets.compare_digest(
-            executing.approved_action_hash,
-            executing.action_hash,
-        )
-        or executing.expires_at <= beijing_now()
-    ):
-        raise CustomerWorkflowConflict("CHANGE_PROPOSAL_APPROVAL_INVALID")
     payload = executing.payload_json or {}
-    if executing.action_type == "merge":
-        if executing.target_customer_id is None:
-            raise CustomerWorkflowConflict("CHANGE_PROPOSAL_SCOPE_INVALID")
-        customer_ids = {executing.customer_id, executing.target_customer_id}
-        if payload.get("keep_customer_id") not in customer_ids:
-            raise CustomerWorkflowConflict("CHANGE_PROPOSAL_SCOPE_INVALID")
-        if payload.get("proposal_redirects") or payload.get("redirected_proposal_ids"):
-            raise CustomerWorkflowConflict("CHANGE_PROPOSAL_SCOPE_INVALID")
-        redirected_proposal_ids: set[int] = set()
-    else:
-        declared_customers = payload.get("new_customer_ids")
-        declared_redirects = payload.get("proposal_redirects", [])
-        if (
-            not isinstance(declared_customers, list)
-            or not declared_customers
-            or any(type(item) is not int or item <= 0 for item in declared_customers)
-            or not isinstance(declared_redirects, list)
-            or "redirected_proposal_ids" in payload
-        ):
-            raise CustomerWorkflowConflict("CHANGE_PROPOSAL_SCOPE_INVALID")
-        customer_ids = {executing.customer_id, *declared_customers}
-        if (
-            executing.target_customer_id is not None
-            and executing.target_customer_id not in customer_ids
-        ):
-            raise CustomerWorkflowConflict("CHANGE_PROPOSAL_SCOPE_INVALID")
-        existing_customers = db.query(CustomerAccount.id).filter(
-            CustomerAccount.id.in_(customer_ids),
-            CustomerAccount.record_status == "active",
-        ).all()
-        if {row.id for row in existing_customers} != customer_ids:
-            raise CustomerWorkflowConflict("CHANGE_PROPOSAL_SCOPE_INVALID")
-        redirect_plan: dict[int, tuple[int, int]] = {}
-        for item in declared_redirects:
-            if (
-                not isinstance(item, Mapping)
-                or set(item) != {
-                    "proposal_id",
-                    "target_customer_id",
-                    "target_profile_version_id",
-                }
-                or any(type(item[key]) is not int or item[key] <= 0 for key in item)
-                or item["target_customer_id"] not in customer_ids
-                or item["proposal_id"] in redirect_plan
-            ):
-                raise CustomerWorkflowConflict("CHANGE_PROPOSAL_SCOPE_INVALID")
-            redirect_plan[item["proposal_id"]] = (
-                item["target_customer_id"],
-                item["target_profile_version_id"],
-            )
-        redirected_proposal_ids = set(redirect_plan)
-        if redirected_proposal_ids:
-            redirects = db.query(CustomerChangeProposal).filter(
-                CustomerChangeProposal.id.in_(redirected_proposal_ids),
-                CustomerChangeProposal.status.in_(PROPOSAL_OPEN_STATUSES),
-            ).with_for_update().all()
-            if {row.id for row in redirects} != redirected_proposal_ids:
-                raise CustomerWorkflowConflict("CHANGE_PROPOSAL_SCOPE_INVALID")
-            for redirect in redirects:
-                target_customer_id, target_profile_version_id = redirect_plan[
-                    redirect.id
-                ]
-                profile = db.query(CustomerProfileVersion.id).filter(
-                    CustomerProfileVersion.id == target_profile_version_id,
-                    CustomerProfileVersion.customer_id == target_customer_id,
-                ).one_or_none()
-                if (
-                    profile is None
-                    or redirect.customer_id != target_customer_id
-                    or redirect.profile_version_id != target_profile_version_id
-                ):
-                    raise CustomerWorkflowConflict("CHANGE_PROPOSAL_SCOPE_INVALID")
-                if (
-                    redirect.status == "approved"
-                    or redirect.approved_action_hash is not None
-                    or redirect.decided_by is not None
-                    or redirect.decided_at is not None
-                ):
-                    raise CustomerWorkflowConflict(
-                        "CHANGE_PROPOSAL_REDIRECT_APPROVAL_STALE"
-                    )
-    excluded = {executing_proposal_id, *redirected_proposal_ids}
+    affected_customer_ids = {
+        executing.customer_id,
+        *(payload.get("target_customer_ids") or []),
+    }
     rows = db.query(CustomerChangeProposal).filter(
-        CustomerChangeProposal.id.notin_(excluded),
+        CustomerChangeProposal.id.in_(plan_ids),
         CustomerChangeProposal.status.in_(PROPOSAL_OPEN_STATUSES),
         or_(
-            CustomerChangeProposal.customer_id.in_(customer_ids),
-            CustomerChangeProposal.target_customer_id.in_(customer_ids),
+            CustomerChangeProposal.customer_id.in_(affected_customer_ids),
+            CustomerChangeProposal.target_customer_id.in_(affected_customer_ids),
         ),
-    ).with_for_update().all()
+    ).order_by(CustomerChangeProposal.id).with_for_update().all()
+    if {row.id for row in rows} != set(plan_ids):
+        raise CustomerWorkflowConflict("CHANGE_PROPOSAL_PLAN_STALE")
     now = beijing_now()
     for row in rows:
         row.status = "superseded"

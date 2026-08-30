@@ -7,7 +7,10 @@ from app.core.time import beijing_now
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
-from app.auth.models import ArkUser, ArkLoginLog, ArkRefreshToken
+from app.auth.models import (
+    ArkLoginLog, ArkPermission, ArkRefreshToken, ArkRole,
+    ArkRolePermission, ArkUser, ArkUserRole,
+)
 from app.auth.utils import (
     verify_password, create_access_token, generate_refresh_token,
     hash_token,
@@ -36,6 +39,27 @@ def get_user_permissions(user: ArkUser) -> list[str]:
         for perm in role.permissions:
             perms.add(perm.code)
     return sorted(perms)
+
+
+def get_live_user_authorization(db: Session, user_id: int) -> tuple[list[str], list[str]]:
+    """Return active human roles and permissions from the database, never JWT state."""
+    active = db.query(ArkUser.id).filter(
+        ArkUser.id == user_id,
+        ArkUser.is_active.is_(True),
+        ArkUser.deleted_at.is_(None),
+    ).one_or_none()
+    if active is None:
+        return [], []
+    roles = [row[0] for row in db.query(ArkRole.name).join(
+        ArkUserRole, ArkUserRole.role_id == ArkRole.id,
+    ).filter(ArkUserRole.user_id == user_id).all()]
+    permissions = [row[0] for row in db.query(ArkPermission.code).join(
+        ArkRolePermission,
+        ArkRolePermission.permission_id == ArkPermission.id,
+    ).join(
+        ArkUserRole, ArkUserRole.role_id == ArkRolePermission.role_id,
+    ).filter(ArkUserRole.user_id == user_id).distinct().all()]
+    return sorted(roles), sorted(permissions)
 
 
 def check_account_lockout(db: Session, username: str) -> None:
@@ -414,6 +438,8 @@ def seed_role_permissions(db: Session):
         ("training:admin",        "training",   "admin",      "管理全部培训速递（编辑/下架/删除）"),
         # 客户机会台
         ("customer:admin", "customer", "admin", "管理本部门范围内的客户、归属和高影响提案"),
+        ("customer:manage_dnc", "customer", "manage_dnc", "执行客户禁止联系政策的设置与撤销"),
+        ("customer:confirm_material_risk", "customer", "confirm_material_risk", "执行客户重大风险人工确认"),
         ("customer:read_all", "customer", "read_all", "读取全部统一客户档案数据范围"),
         ("customer_opportunity:read",   "customer_opportunity", "read",   "查看客户机会（本人）"),
         ("customer_opportunity:write",  "customer_opportunity", "write",  "更新机会状态/添加反馈"),
@@ -534,6 +560,8 @@ def seed_role_permissions(db: Session):
     manual_grant_codes = {
         "operations:admin",
         "customer_opportunity:confirm_without_order",
+        "customer:manage_dnc",
+        "customer:confirm_material_risk",
         "customer:read_all",
     }
     # 给 admin 角色补齐一般非 legacy 权限（跳过已下架和显式授权项）。

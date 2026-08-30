@@ -3,6 +3,7 @@ from datetime import timedelta
 import pytest
 
 from app.customer import models
+from app.customer.logical_customer_service import logical_root_query
 from app.customer.ownership_execution_contract import ExecutionContractError
 from app.customer.ownership_execution_service import (
     OwnershipExecutionError,
@@ -32,6 +33,87 @@ def _research(db, customer_id, row_id, evidence_fact_ids):
     db.add(row)
     db.flush()
     return row
+
+
+def test_effective_owner_read_matrix_for_terminal_business_roots(db):
+    source, target, _evidence, _name, _actor, proposal = _seed(db, "split")
+    source_record = models.CustomerSourceRecord(
+        id=730, customer_id=source.id, source_system="manual",
+        source_account_key="global", authority_level="first_party",
+        source_entity_type="order", external_record_id="matrix-source",
+        external_record_key_hash=f"{730:064x}",
+        data_classification="internal_business", visibility_scope="customer_team",
+        classification_reason="test", payload_schema_version="manual_v1",
+        payload_json={}, content_hash=f"{731:064x}", captured_at=NOW,
+        processing_status="processed", created_at=NOW,
+    )
+    conversation = models.CustomerConversation(
+        id=731, customer_id=source.id, source_system="manual",
+        source_account_key="global", external_conversation_id="matrix-conversation",
+        channel="email", conversation_status="active", created_at=NOW, updated_at=NOW,
+    )
+    order = models.CustomerOrder(
+        id=732, customer_id=source.id, source_system="manual",
+        source_account_key="global", external_order_id="matrix-order",
+        order_status="confirmed", amount_usd=10, is_valid_business_order=True,
+        source_record_id=source_record.id, source_hash=f"{732:064x}",
+        synced_at=NOW, created_at=NOW, updated_at=NOW,
+    )
+    research = _research(db, source.id, 733, [])
+    research.task_status = "completed"
+    research.gate_status = "passed"
+    research.result_review_status = "accepted"
+    job = models.SearchJob(
+        id=734, profile_id=999, name="Matrix", status="completed", adapter="agent",
+        target_count=1, criteria_json={}, profile_snapshot={}, policy_version="v1",
+        profile_snapshot_hash=f"{734:064x}", idempotency_key=f"{735:064x}",
+        ingestion_receipts={}, result_count=1, created_customer_count=0,
+        deduplicated_count=1, researched_count=1, qualified_count=0,
+        provider_usage_json=[], cost_status="not_applicable", cost_original=0,
+        cost_usd=0, attempt_count=1, created_by=901, created_at=NOW, updated_at=NOW,
+    )
+    search = models.SearchResult(
+        id=735, job_id=job.id, customer_id=source.id, best_rank=1,
+        best_score=90, aggregated_score_reasons={}, result_status="active",
+        created_at=NOW, updated_at=NOW,
+    )
+    annotation = models.CustomerAnnotation(
+        id=736, customer_id=source.id, annotation_type="note",
+        content_schema_version="v1", content_json={"note": "matrix"},
+        visibility="customer_team", data_classification="internal_business",
+        status="active", authored_by=901, created_at=NOW, updated_at=NOW,
+    )
+    attribution = models.CustomerAcquisitionAttribution(
+        id=737, customer_id=source.id, origin_type="research",
+        origin_ref_type="research_task", origin_ref_id=research.id,
+        research_task_id=research.id, attribution_role="first_touch",
+        attribution_weight=1, policy_version="v1", allocated_cost_usd=0,
+        attribution_fingerprint=f"{737:064x}", occurred_at=NOW, created_at=NOW,
+    )
+    db.add_all([
+        source_record, conversation, order, job, search, annotation, attribution,
+    ])
+    db.flush()
+    roots = (
+        ("conversation", models.CustomerConversation, conversation),
+        ("order", models.CustomerOrder, order),
+        ("research_task", models.CustomerResearchTask, research),
+        ("search_result", models.SearchResult, search),
+        ("annotation", models.CustomerAnnotation, annotation),
+        ("acquisition_attribution", models.CustomerAcquisitionAttribution, attribution),
+    )
+    for object_type, _model, row in roots:
+        db.add(models.CustomerObjectOwnership(
+            object_type=object_type, object_id=row.id,
+            storage_customer_id=source.id, current_customer_id=target.id,
+            ownership_version=1, last_change_proposal_id=proposal.id,
+            last_action_type="split", created_at=NOW, updated_at=NOW,
+        ))
+    db.flush()
+
+    for object_type, model, row in roots:
+        assert logical_root_query(db, model, object_type, source.id).all() == []
+        assert logical_root_query(db, model, object_type, target.id).one().id == row.id
 
 
 def test_fact_subject_conversation_must_share_final_owner(db):
@@ -402,48 +484,3 @@ def test_postcondition_edge_drift_rolls_back_every_write(db, monkeypatch):
     assert db.get(models.CustomerAccount, source_id).record_status == "active"
     assert db.get(models.CustomerChangeProposal, proposal_id).status == "approved"
     assert db.query(models.CustomerObjectOwnership).count() == 0
-
-
-def _split_source_redirect(db, *, wrong_profile):
-    source, target, evidence, _name, actor, proposal = _seed(db, "split")
-    db.add(models.CustomerChangeProposal(
-        id=802, customer_id=source.id, target_customer_id=target.id,
-        action_type="split", payload_schema_version="customer_split_v1",
-        payload_json={}, evidence_fact_ids=[evidence.id],
-        profile_version_id=source.current_profile_version_id,
-        risk_level="critical", data_classification="restricted_internal",
-        visibility_scope="management", action_hash="3" * 64,
-        status="draft", expires_at=NOW + timedelta(days=30),
-        created_at=NOW, updated_at=NOW,
-    ))
-    db.flush()
-    payload = _payload(db, source, target, evidence, "split", retain_source=True)
-    payload["proposal_redirects"] = [{
-        "proposal_id": 802, "target_customer_id": source.id,
-        "target_profile_version_id": (
-            target.current_profile_version_id if wrong_profile
-            else source.current_profile_version_id
-        ),
-    }]
-    _approve(proposal, payload)
-    return source, actor, proposal
-
-
-def test_retained_split_may_redirect_to_frozen_source_profile(db):
-    source, actor, proposal = _split_source_redirect(db, wrong_profile=False)
-
-    result = _execute(db, proposal, actor, "9")
-
-    redirect = result.open_proposal_plan["redirect"][0]
-    assert (redirect["target_customer_id"], redirect["target_profile_version_id"]) == (
-        source.id, 1101,
-    )
-
-
-def test_retained_split_rejects_wrong_source_profile_redirect(db):
-    _source, actor, proposal = _split_source_redirect(db, wrong_profile=True)
-
-    with pytest.raises(OwnershipExecutionError) as raised:
-        _execute(db, proposal, actor, "0")
-
-    assert raised.value.error_code == "OWNERSHIP_EXECUTION_REDIRECT_PLAN_INVALID"

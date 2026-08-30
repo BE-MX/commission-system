@@ -112,7 +112,7 @@ def _result(row):
     return {
         "result_id": row.id,
         "job_id": row.job_id,
-        "customer_id": row.customer_id,
+        "customer_id": getattr(row, "logical_customer_id", row.customer_id),
         "best_rank": row.best_rank,
         "best_score": float(row.best_score),
         "aggregated_score_reasons": row.aggregated_score_reasons or {},
@@ -142,9 +142,10 @@ def _batch(row):
 
 
 def _research_task(row, *, include_content: bool = False):
+    logical_customer_id = getattr(row, "logical_customer_id", row.customer_id)
     result = {
         "research_task_id": row.id,
-        "customer_id": row.customer_id,
+        "customer_id": logical_customer_id,
         "task_type": row.task_type,
         "source_ref_type": row.source_ref_type,
         "source_ref_id": row.source_ref_id,
@@ -168,9 +169,12 @@ def _research_task(row, *, include_content: bool = False):
         "updated_at": _iso(row.updated_at),
     }
     if include_content:
+        input_snapshot = dict(row.input_snapshot or {})
+        if "customer_id" in input_snapshot:
+            input_snapshot["customer_id"] = logical_customer_id
         result.update({
             "selection_reason": row.selection_reason or [],
-            "input_snapshot": row.input_snapshot or {},
+            "input_snapshot": input_snapshot,
             "result_json": row.result_json,
             "research_summary": row.research_summary,
             "evidence_fact_ids": row.evidence_fact_ids or [],
@@ -195,7 +199,9 @@ def _can_view_research_content(db: Session, user: dict, row) -> bool:
     except HTTPException:
         return False
     return db.query(CustomerAssignment.id).filter(
-        CustomerAssignment.customer_id == row.customer_id,
+        CustomerAssignment.customer_id == getattr(
+            row, "logical_customer_id", row.customer_id,
+        ),
         CustomerAssignment.user_id == user_id,
         CustomerAssignment.assignment_status == "active",
         CustomerAssignment.effective_to.is_(None),

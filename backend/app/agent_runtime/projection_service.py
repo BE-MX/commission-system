@@ -6,10 +6,14 @@ from app.core.time import beijing_now
 from sqlalchemy.orm import Session
 
 from app.agent_runtime.errors import ConflictError
-from app.agent_runtime.models import AgentArtifact, AgentProfile, AgentRun
+from app.agent_runtime.models import AgentArtifact, AgentProfile, AgentRun, AgentSession
 from app.auth.models import ArkUser
 from app.auth.service import get_user_permissions, get_user_roles
 from app.customer.access_service import CustomerAccessDenied, require_customer_access
+from app.customer.logical_customer_service import (
+    logical_root_predicate,
+    resolve_canonical_customer_id,
+)
 from app.customer.models import (
     CustomerAccount,
     CustomerAction,
@@ -37,8 +41,25 @@ def project_accepted_artifact(
     candidate = db.get(CustomerAction, action_id)
     if candidate is None:
         raise ConflictError("复购行动卡原始行动不存在或归属不匹配")
+    session = db.get(AgentSession, run.session_id)
+    requested_customer_id = (run.input_json or {}).get("customer_id")
+    try:
+        requested_customer_id = int(requested_customer_id)
+    except (TypeError, ValueError):
+        requested_customer_id = None
+    logical_customer_id = (
+        resolve_canonical_customer_id(db, requested_customer_id)
+        if requested_customer_id is not None else None
+    )
+    if (
+        logical_customer_id is None
+        or session is None
+        or session.context_type != "customer"
+        or session.context_id != str(logical_customer_id)
+    ):
+        raise ConflictError("复购行动卡原始行动不存在或归属不匹配")
     account = db.query(CustomerAccount).filter(
-        CustomerAccount.id == candidate.customer_id,
+        CustomerAccount.id == logical_customer_id,
         CustomerAccount.record_status == "active",
     ).with_for_update().one_or_none()
     if account is None:
@@ -47,11 +68,13 @@ def project_accepted_artifact(
     if candidate.opportunity_id is not None:
         opportunity = db.query(CustomerOpportunity).filter(
             CustomerOpportunity.id == candidate.opportunity_id,
-            CustomerOpportunity.customer_id == account.id,
+            logical_root_predicate(
+                CustomerOpportunity, "opportunity", account.id,
+            ),
         ).with_for_update().one_or_none()
     action = db.query(CustomerAction).filter(
         CustomerAction.id == action_id,
-        CustomerAction.customer_id == account.id,
+        logical_root_predicate(CustomerAction, "action", account.id),
     ).with_for_update().one_or_none()
     live_assignment = db.query(CustomerAssignment.id).filter(
         CustomerAssignment.customer_id == account.id,

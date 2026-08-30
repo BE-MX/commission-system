@@ -14,6 +14,10 @@ from app.customer.models import (
     CustomerAgentRunScope,
     CustomerAssignment,
 )
+from app.customer.logical_customer_service import (
+    logical_root_predicate,
+    resolve_canonical_customer_id,
+)
 
 
 CLASSIFICATION_ORDER = (
@@ -72,6 +76,10 @@ def require_customer_access(
     allow_public_pool: bool = False,
 ) -> CustomerAccess:
     """Intersect action permission, live customer scope, visibility and Run scope."""
+    canonical_customer_id = resolve_canonical_customer_id(db, customer_id)
+    if canonical_customer_id is None:
+        raise CustomerAccessDenied("CUSTOMER_NOT_FOUND_OR_FORBIDDEN")
+    customer_id = canonical_customer_id
     try:
         actor_user_id = int(user["sub"])
     except (KeyError, TypeError, ValueError) as exc:
@@ -282,6 +290,7 @@ def apply_record_access(
     visibility_field: str = "visibility_scope",
     classification_field: str = "data_classification",
     author_field: str | None = None,
+    logical_object_type: str | None = None,
 ) -> Query:
     """Apply SQL-side visibility/classification limits to a customer record query."""
     visibility = getattr(model, visibility_field)
@@ -295,8 +304,13 @@ def apply_record_access(
                 & (getattr(model, author_field) == access.actor_user_id)
             ),
         )
+    customer_predicate = (
+        logical_root_predicate(model, logical_object_type, access.customer_id)
+        if logical_object_type is not None
+        else model.customer_id == access.customer_id
+    )
     return query.filter(
-        model.customer_id == access.customer_id,
+        customer_predicate,
         visibility_predicate,
         classification.in_(access.allowed_classifications()),
     )
