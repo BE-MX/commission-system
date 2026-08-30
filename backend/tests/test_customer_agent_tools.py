@@ -31,6 +31,7 @@ from app.customer.models import (
     CustomerExternalIdentity,
     CustomerFact,
     CustomerMessage,
+    CustomerName,
     CustomerObjectOwnership,
     CustomerOrder,
     CustomerOrderItem,
@@ -49,6 +50,7 @@ def db():
         ArkUser.__table__, AgentRun.__table__, CustomerAccount.__table__,
         CustomerAssignment.__table__, CustomerProfileVersion.__table__,
         CustomerExternalIdentity.__table__,
+        CustomerName.__table__,
         CustomerContactPoint.__table__,
         CustomerContactRelationship.__table__,
         CustomerAgentContext.__table__, CustomerSourceRecord.__table__,
@@ -800,6 +802,90 @@ def test_identifier_search_respects_classification_and_logical_owner(db, setting
     )["items"] == []
     assert agent_service.search_customers(
         db, user=internal_user, keyword="+15550001", identifier_type="whatsapp",
+    )["items"] == []
+
+
+def test_external_identity_search_inherits_source_classification(db, settings):
+    customer = _customer(db, "Restricted identity")
+    _membership(db, customer.id)
+    source = _source(db, customer.id, suffix=903)
+    source.data_classification = "restricted_internal"
+    db.add(CustomerExternalIdentity(
+        customer_id=customer.id, source_system="alibaba", source_account_key="tenant",
+        identifier_type="company_id", raw_value="secret-company",
+        normalized_value="secret-company", identity_strength="strong",
+        cardinality="one_to_one", auto_match_ceiling="verified",
+        verification_status="verified", confidence=1,
+        confidence_method_version="test", confidence_components_json={}, is_primary=True,
+        source_record_id=source.id, first_seen_at=datetime(2026, 8, 1),
+        last_seen_at=datetime(2026, 8, 1), verified_at=datetime(2026, 8, 1),
+        status="active", identity_fingerprint=f"{903:064x}",
+    ))
+    db.commit()
+    user = _identity(customer.id)
+    user["_agent_run"]["max_data_classification"] = "internal_business"
+    assert agent_service.search_customers(
+        db, user=user, keyword="secret-company", identifier_type="company_id",
+    )["items"] == []
+
+
+def test_name_search_uses_logical_owner_and_current_verified_names(db, settings):
+    customer = _customer(db, "Storage customer")
+    moved_to = _customer(db, "Logical target", owner=8)
+    _membership(db, customer.id)
+    moved = CustomerName(
+        customer_id=customer.id, name="Moved Alias", normalized_name="moved alias",
+        name_type="trading", verification_status="verified", confidence=1,
+        confidence_method_version="test", confidence_components_json={},
+        name_fingerprint=f"{904:064x}", first_seen_at=datetime(2026, 8, 1),
+        last_seen_at=datetime(2026, 8, 1),
+    )
+    disputed = CustomerName(
+        customer_id=customer.id, name="Disputed Alias", normalized_name="disputed alias",
+        name_type="trading", verification_status="disputed", confidence=.2,
+        confidence_method_version="test", confidence_components_json={},
+        name_fingerprint=f"{905:064x}", first_seen_at=datetime(2026, 8, 1),
+        last_seen_at=datetime(2026, 8, 1),
+    )
+    db.add_all([moved, disputed])
+    db.flush()
+    db.add(CustomerObjectOwnership(
+        object_type="name", object_id=moved.id, storage_customer_id=customer.id,
+        current_customer_id=moved_to.id, ownership_version=1,
+        last_change_proposal_id=999, last_action_type="split",
+    ))
+    db.commit()
+    user = _identity(customer.id)
+    assert agent_service.search_customers(db, user=user, keyword="moved alias")["items"] == []
+    assert agent_service.search_customers(db, user=user, keyword="disputed alias")["items"] == []
+
+
+def test_name_search_inherits_source_trust_boundary(db, settings):
+    customer = _customer(db, "Source-backed name")
+    _membership(db, customer.id)
+    restricted = _source(db, customer.id, suffix=906)
+    quarantined = _source(db, customer.id, suffix=907)
+    quarantined.data_classification = "internal_business"
+    quarantined.processing_status = "quarantined"
+    for suffix, label, source in (
+        (906, "Restricted Alias", restricted),
+        (907, "Quarantined Alias", quarantined),
+    ):
+        db.add(CustomerName(
+            customer_id=customer.id, name=label, normalized_name=label.lower(),
+            name_type="platform_alias", verification_status="verified", confidence=1,
+            confidence_method_version="test", confidence_components_json={},
+            source_record_id=source.id, name_fingerprint=f"{suffix:064x}",
+            first_seen_at=datetime(2026, 8, 1), last_seen_at=datetime(2026, 8, 1),
+        ))
+    db.commit()
+    user = _identity(customer.id)
+    user["_agent_run"]["max_data_classification"] = "internal_business"
+    assert agent_service.search_customers(
+        db, user=user, keyword="restricted alias",
+    )["items"] == []
+    assert agent_service.search_customers(
+        db, user=user, keyword="quarantined alias",
     )["items"] == []
 
 

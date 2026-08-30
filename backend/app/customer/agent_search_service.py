@@ -12,13 +12,19 @@ from app.customer.access_service import (
 )
 from app.customer.agent_query_service import ascending_id_page, finish_keyset_page, id_key
 from app.customer.agent_tool_contract import MAX_LIST_BYTES, deny, envelope
-from app.customer.logical_customer_service import logical_subject_matches_customer
+from app.customer.contracts import IDENTITY_REGISTRY
+from app.customer.logical_customer_service import (
+    logical_owner_expression,
+    logical_subject_matches_customer,
+)
 from app.customer.models import (
     CustomerAccount,
     CustomerContactPoint,
     CustomerExternalIdentity,
     CustomerName,
+    CustomerSourceRecord,
 )
+from app.core.time import beijing_now
 
 
 _READ_PERMISSIONS = {"customer:read", "customer:read_all", "customer:admin"}
@@ -36,15 +42,15 @@ def search_customers(
     except CustomerAccessDenied:
         deny()
     cleaned = (keyword or "").strip()
+    run_ceiling = (user.get("_agent_run") or {}).get(
+        "max_data_classification", "restricted_internal",
+    )
+    if run_ceiling not in CLASSIFICATION_ORDER:
+        run_ceiling = "internal_business"
+    allowed = CLASSIFICATION_ORDER[:CLASSIFICATION_ORDER.index(run_ceiling) + 1]
     if identifier_type:
         if identifier_type in {"email", "phone", "whatsapp", "website", "social", "domain"}:
             point_type = "website" if identifier_type == "domain" else identifier_type
-            run_ceiling = (user.get("_agent_run") or {}).get(
-                "max_data_classification", "restricted_internal",
-            )
-            if run_ceiling not in CLASSIFICATION_ORDER:
-                run_ceiling = "internal_business"
-            allowed = CLASSIFICATION_ORDER[:CLASSIFICATION_ORDER.index(run_ceiling) + 1]
             query = query.filter(exists().where(and_(
                 CustomerContactPoint.point_type == point_type,
                 CustomerContactPoint.normalized_value.ilike(
@@ -57,24 +63,53 @@ def search_customers(
                 ),
             )))
         else:
+            registered_sources = [
+                source_system for (source_system, registered_type) in IDENTITY_REGISTRY
+                if registered_type == identifier_type
+            ]
+            source_allowed = exists().where(and_(
+                CustomerSourceRecord.id == CustomerExternalIdentity.source_record_id,
+                logical_owner_expression(
+                    CustomerSourceRecord, "source_record",
+                ) == CustomerAccount.id,
+                CustomerSourceRecord.processing_status == "processed",
+                CustomerSourceRecord.data_classification.in_(allowed),
+            )).correlate(CustomerExternalIdentity, CustomerAccount)
             query = query.filter(exists().where(and_(
                 CustomerExternalIdentity.identifier_type == identifier_type,
+                CustomerExternalIdentity.source_system.in_(registered_sources),
                 CustomerExternalIdentity.normalized_value == cleaned,
                 CustomerExternalIdentity.status == "active",
+                CustomerExternalIdentity.verification_status.notin_(("disputed", "rejected")),
+                source_allowed,
                 logical_subject_matches_customer(
                     CustomerExternalIdentity, "external_identity", CustomerAccount,
                 ),
             )))
     elif cleaned:
         pattern = f"%{cleaned}%"
-        names = db.query(CustomerName.customer_id).filter(
+        now = beijing_now()
+        name_source_allowed = exists().where(and_(
+            CustomerSourceRecord.id == CustomerName.source_record_id,
+            logical_owner_expression(
+                CustomerSourceRecord, "source_record",
+            ) == CustomerAccount.id,
+            CustomerSourceRecord.processing_status == "processed",
+            CustomerSourceRecord.data_classification.in_(allowed),
+        )).correlate(CustomerName, CustomerAccount)
+        name_match = exists().where(
             CustomerName.normalized_name.ilike(pattern),
-        )
+            CustomerName.verification_status.notin_(("disputed", "rejected")),
+            or_(CustomerName.valid_from.is_(None), CustomerName.valid_from <= now),
+            or_(CustomerName.valid_to.is_(None), CustomerName.valid_to > now),
+            logical_owner_expression(CustomerName, "name") == CustomerAccount.id,
+            or_(CustomerName.source_record_id.is_(None), name_source_allowed),
+        ).correlate(CustomerAccount)
         query = query.filter(or_(
             CustomerAccount.display_name.ilike(pattern),
             CustomerAccount.canonical_company_name.ilike(pattern),
             CustomerAccount.customer_code.ilike(pattern),
-            CustomerAccount.id.in_(names),
+            name_match,
         ))
     filters = {"keyword": cleaned, "identifier_type": identifier_type}
     rows, has_more = ascending_id_page(

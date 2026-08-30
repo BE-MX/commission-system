@@ -12,11 +12,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.agent_runtime import artifact_service, evaluation_contract, evaluation_service, maintenance, models, router, seed, service, worker_service
+from app.agent_runtime import artifact_service, evaluation_contract, evaluation_service, evidence_validation, maintenance, models, router, seed, service, worker_service
 from app.agent_runtime import orchestration
 from app.agent_runtime.evaluation_cases import COPILOT_EVALUATION_CASES
 from app.agent_runtime.dependencies import allowed_worker_runtimes, require_agent_worker, verify_worker_token
@@ -330,16 +330,40 @@ def _evidence(call_id="tool-1", source="get_customer_facts", **changes):
     }
 
 
+def _ark_source(
+    db, *, customer_id=1, classification="internal_business", suffix=0,
+    entity_type="company_page", status="processed",
+):
+    source = CustomerSourceRecord(
+        customer_id=customer_id, source_system="website", source_account_key="global",
+        authority_level="official_company", source_entity_type=entity_type,
+        external_record_id=f"fact-source-{customer_id}-{suffix}",
+        external_record_key_hash=f"{customer_id + 8000 + suffix:064x}",
+        data_classification=classification, visibility_scope="customer_team",
+        classification_reason="test", payload_schema_version="company_page_v1",
+        payload_json={"value": "Hair products"},
+        content_hash=f"{customer_id + 9000 + suffix:064x}",
+        captured_at=datetime(2026, 8, 1), processing_status=status,
+    )
+    db.add(source)
+    db.flush()
+    return source
+
+
 def _ark_evidence_fact(
     db, *, customer_id=1, classification="internal_business", expires_at=None, suffix=0,
 ):
+    source = _ark_source(
+        db, customer_id=customer_id, classification=classification, suffix=suffix,
+    )
     row = CustomerFact(
         customer_id=customer_id, subject_type="customer", fact_key="business.industry",
         value_type="string", value_json={"value": "Hair products"}, fact_layer="source",
         verification_status="verified", confidence=0.9,
         confidence_method_version="test", confidence_components_json={},
         data_classification=classification, visibility_scope="customer_team",
-        classification_reason="test", evidence_json={},
+        classification_reason="test", source_record_id=source.id,
+        evidence_json={"source_record_ids": [source.id]},
         fact_fingerprint=f"{customer_id + 7000 + suffix:064x}",
         observed_at=datetime(2026, 8, 1),
         expires_at=expires_at,
@@ -350,6 +374,15 @@ def _ark_evidence_fact(
         "fact_id": row.id, "value": row.value_json, "fingerprint": row.fact_fingerprint,
     }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return row, digest
+
+
+def _ark_citation(fact, digest):
+    return {
+        "claim_id": f"claim-{fact.id}", "tool_call_id": "tool-1",
+        "source": "get_customer_facts", "evidence_ref": f"fact:{fact.id}",
+        "evidence_content_hash": digest, "customer_id": 1,
+        "profile_version": 1, "freshness": "current",
+    }
 
 
 def _tool_success(db, run, claim, *, call_id="tool-1", tool_name="get_customer_facts",
@@ -439,10 +472,13 @@ def test_profile_seed_is_immutable_and_idempotent(db):
     assert db.query(models.AgentProfile).count() == 3
     assert seed.seed_default_profiles(db) == 0
     profile = service.get_active_profile(db, "customer_order_copilot")
-    assert profile.version == 4
+    assert profile.version == 5
     assert "get_customer_profile" in profile.tool_allowlist
     assert profile.policy_json["max_data_classification"] == "restricted_internal"
     assert len(profile.prompt_hash) == 64
+    assert not {"search_knowledge", "track_shipment", "get_standard_price"}.intersection(
+        profile.tool_allowlist,
+    )
 
 
 def test_existing_v1_customer_profile_is_superseded_by_new_trust_contract(db):
@@ -466,6 +502,29 @@ def test_existing_v1_customer_profile_is_superseded_by_new_trust_contract(db):
     assert db.query(models.AgentProfile.status).filter_by(
         profile_key="customer_order_copilot", version=1,
     ).scalar() != "active"
+
+
+def test_existing_v4_customer_profiles_are_superseded_by_fact_only_v5(db):
+    profile_keys = ("customer_order_copilot", "repurchase_risk_analyst")
+    db.query(models.AgentProfile).filter(
+        models.AgentProfile.profile_key.in_(profile_keys),
+    ).delete(synchronize_session=False)
+    for profile_key in profile_keys:
+        legacy = next(item for item in seed.PROFILE_SEEDS if item["profile_key"] == profile_key)
+        db.add(models.AgentProfile(
+            **{**legacy, "version": 4, "tool_allowlist": [
+                *(legacy["tool_allowlist"] or []), "search_knowledge",
+            ]},
+            prompt_hash=f"legacy-v4-{profile_key}", status="active",
+        ))
+    db.commit()
+    assert seed.seed_default_profiles(db) >= 2
+    for profile_key in ("customer_order_copilot", "repurchase_risk_analyst"):
+        active = service.get_active_profile(db, profile_key)
+        assert active.version == 5
+        assert not {"search_knowledge", "track_shipment", "get_standard_price"}.intersection(
+            active.tool_allowlist,
+        )
 
 
 def test_seeded_run_token_can_read_raw_message_and_source_chunk(db, monkeypatch):
@@ -521,16 +580,23 @@ def test_seeded_run_token_can_read_raw_message_and_source_chunk(db, monkeypatch)
 
 
 def test_customer_profile_evidence_schema_requires_exact_envelope_fields(db):
-    profile = service.get_active_profile(db, "customer_order_copilot")
-    required = set(profile.output_schema["properties"]["evidence"]["items"]["required"])
-    assert required == {
-        "claim_id", "tool_call_id", "source", "evidence_ref",
-        "evidence_content_hash", "customer_id", "profile_version", "freshness",
+    customer_tools = {
+        "resolve_customer", "search_customers", "get_customer_profile",
+        "get_customer_facts", "get_customer_orders", "search_customer_messages",
+        "get_customer_actions", "get_customer_evidence", "get_customer_source_chunks",
     }
-    assert all(field in profile.system_prompt for field in (
-        "evidence_ref", "evidence_content_hash", "customer_id",
-        "profile_version", "freshness", "JSON object", "payload.output",
-    ))
+    for profile_key in ("customer_order_copilot", "repurchase_risk_analyst"):
+        profile = service.get_active_profile(db, profile_key)
+        required = set(profile.output_schema["properties"]["evidence"]["items"]["required"])
+        assert required == {
+            "claim_id", "tool_call_id", "source", "evidence_ref",
+            "evidence_content_hash", "customer_id", "profile_version", "freshness",
+        }
+        assert set(profile.tool_allowlist).issubset(customer_tools)
+        assert all(field in profile.system_prompt for field in (
+            "evidence_ref", "evidence_content_hash", "customer_id",
+            "profile_version", "freshness", "JSON object", "payload.output",
+        ))
 
 
 def test_create_run_is_idempotent_and_owner_scoped(db):
@@ -702,13 +768,136 @@ def test_artifact_rejects_not_yet_effective_or_unavailable_ark_evidence(db, case
         "claim_id": "claim", "tool_call_id": "tool-1",
         "source": "get_customer_facts", **returned,
     }
-    with pytest.raises(ConflictError, match="Ark"):
+    with pytest.raises(ConflictError, match="not processed|not yet effective"):
         worker_service.complete_run(
             db, run.id, worker_id="dsh-worker-01", lease_token=claim["lease_token"],
             runtime_run_id=f"unavailable-{case}",
             artifacts=[_copilot_artifact(evidence=[citation])], steps_used=1,
             prompt_tokens=1, completion_tokens=1, cost_usd=Decimal("0"),
         )
+
+
+@pytest.mark.parametrize("case", [
+    "empty_source", "quarantined_message", "quarantined_order",
+    "cross_conversation", "cross_order", "expired_support",
+    "invalid_support", "support_cycle", "invalid_confirmed_review",
+])
+def test_ark_evidence_rejects_invalid_indirect_provenance(db, case):
+    _customer(db, name="Runtime customer", owner_user_id=7)
+    fact, digest = _ark_evidence_fact(db, suffix=100)
+    if case == "empty_source":
+        fact.source_record_id = None
+        fact.evidence_json = {}
+    elif case in {"quarantined_message", "cross_conversation"}:
+        owner_id = 1
+        if case == "cross_conversation":
+            owner_id = _customer(db, name="Other conversation", owner_user_id=7).id
+        source = _ark_source(
+            db, customer_id=owner_id, suffix=101, entity_type="message",
+            status="quarantined" if case == "quarantined_message" else "processed",
+        )
+        conversation = CustomerConversation(
+            customer_id=owner_id, source_system="alibaba", source_account_key="tenant",
+            external_conversation_id=f"evidence-{case}", channel="alibaba",
+            conversation_status="active", latest_source_record_id=source.id,
+        )
+        db.add(conversation)
+        db.flush()
+        message = CustomerMessage(
+            conversation_id=conversation.id, external_message_id=f"message-{case}",
+            direction="in", sender_type="customer_contact", content_type="text",
+            content_text="evidence", attachment_meta_json=[], source_record_id=source.id,
+            content_hash=f"{10101 + owner_id:064x}", sent_at=datetime(2026, 8, 1),
+            captured_at=datetime(2026, 8, 1),
+        )
+        db.add(message)
+        db.flush()
+        fact.fact_layer = "expressed"
+        fact.fact_key = "preference.expressed.color"
+        fact.source_record_id = None
+        fact.evidence_json = {"message_ids": [message.id]}
+    elif case in {"quarantined_order", "cross_order"}:
+        owner_id = 1
+        if case == "cross_order":
+            owner_id = _customer(db, name="Other order", owner_user_id=7).id
+        source = _ark_source(
+            db, customer_id=owner_id, suffix=102, entity_type="order",
+            status="quarantined" if case == "quarantined_order" else "processed",
+        )
+        order = CustomerOrder(
+            customer_id=owner_id, source_system="okki", source_account_key="tenant",
+            external_order_id=f"evidence-{case}", order_no=f"SO-{case}",
+            order_status="confirmed", account_date=date(2026, 8, 1), currency="USD",
+            amount_original=100, amount_usd=100, is_valid_business_order=True,
+            source_record_id=source.id, source_hash=f"{10201 + owner_id:064x}",
+            synced_at=datetime(2026, 8, 1),
+        )
+        db.add(order)
+        db.flush()
+        fact.fact_layer = "observed"
+        fact.fact_key = "preference.observed.product_family"
+        fact.source_record_id = None
+        fact.evidence_json = {"order_ids": [order.id]}
+    else:
+        support, _support_digest = _ark_evidence_fact(db, suffix=103)
+        if case == "expired_support":
+            support.expires_at = datetime(2026, 8, 1)
+        elif case == "invalid_support":
+            support.verification_status = "disputed"
+        fact.fact_layer = "inferred"
+        fact.fact_key = "preference.inferred.product_direction"
+        fact.rule_version = "inference-v1"
+        fact.source_record_id = None
+        fact.evidence_json = {"fact_ids": [support.id]}
+        if case == "support_cycle":
+            support.fact_layer = "inferred"
+            support.fact_key = "preference.inferred.product_direction"
+            support.rule_version = "inference-v1"
+            support.source_record_id = None
+            support.evidence_json = {"fact_ids": [fact.id]}
+        elif case == "invalid_confirmed_review":
+            fact.fact_layer = "confirmed"
+            fact.fact_key = "business.industry"
+            fact.rule_version = None
+            fact.evidence_json = {"fact_ids": [support.id], "human_review": {}}
+    db.flush()
+    errors = evidence_validation.validate_ark_claim_evidence(
+        db, citations=[_ark_citation(fact, digest)], customer_id=1,
+        profile_version=1, max_classification="restricted_internal",
+        max_visibility="customer_team",
+    )
+    assert errors, case
+
+
+def test_ark_supporting_fact_graph_is_loaded_in_batches(db):
+    _customer(db, name="Runtime customer", owner_user_id=7)
+    fact, digest = _ark_evidence_fact(db, suffix=200)
+    supports = [_ark_evidence_fact(db, suffix=201 + index)[0] for index in range(20)]
+    fact.fact_layer = "inferred"
+    fact.fact_key = "preference.inferred.product_direction"
+    fact.rule_version = "inference-v1"
+    fact.source_record_id = None
+    fact.evidence_json = {"fact_ids": [row.id for row in supports]}
+    db.flush()
+    counts = {"facts": 0, "sources": 0}
+
+    def capture(_conn, _cursor, statement, _parameters, _context, _many):
+        if "FROM ark_customer_facts" in statement:
+            counts["facts"] += 1
+        elif "FROM ark_customer_source_records" in statement:
+            counts["sources"] += 1
+
+    event.listen(db.bind, "before_cursor_execute", capture)
+    try:
+        errors = evidence_validation.validate_ark_claim_evidence(
+            db, citations=[_ark_citation(fact, digest)], customer_id=1,
+            profile_version=1, max_classification="restricted_internal",
+            max_visibility="customer_team",
+        )
+    finally:
+        event.remove(db.bind, "before_cursor_execute", capture)
+    assert errors == []
+    assert counts == {"facts": 2, "sources": 1}
 
 
 def test_one_active_run_per_session_and_queued_cancel(db):
@@ -940,7 +1129,7 @@ def test_readiness_report_counts_only_reviewed_and_evidence_bound_copilot_runs(d
         "cohort_id": f"customer_order_copilot_v1:{contract_hash[:12]}",
         "evaluation_contract_hash": contract_hash,
         "contract_ready": True,
-        "profile_version": 4,
+        "profile_version": 5,
         "model": "deepseek-chat",
         "reviewed_runs": 1,
         "directly_usable_runs": 1,
@@ -1002,7 +1191,7 @@ def test_copilot_evaluation_catalog_is_versioned_and_complete(db):
     assert len({item["question"] for item in COPILOT_EVALUATION_CASES}) == 30
     assert all(item["rubric"] and item["requires"] for item in catalog["cases"])
     assert catalog["contract_ready"] is True
-    assert catalog["profile_version"] == 4
+    assert catalog["profile_version"] == 5
     assert catalog["model"] == "deepseek-chat"
     assert not {
         "shipment", "pricing", "knowledge",
@@ -1383,9 +1572,9 @@ def test_artifact_decision_is_idempotent_but_cannot_flip(db):
     run = _run(db, _session(db))
     claim = _claim(db)
     _start(db, run.id, claim)
-    _tool_success(db, run, claim, call_id="decision-tool", tool_name="search_knowledge")
+    _tool_success(db, run, claim, call_id="decision-tool", tool_name="get_customer_facts")
     profile = db.get(models.AgentProfile, run.profile_id)
-    evidence = [_evidence("decision-tool", "search_knowledge")]
+    evidence = [_evidence("decision-tool", "get_customer_facts")]
     artifact = artifact_service.create_artifact(
         db, run, profile,
         artifact_type="copilot_answer",
@@ -1412,14 +1601,14 @@ def test_artifact_decision_is_idempotent_but_cannot_flip(db):
 
 
 def test_all_profile_artifact_contracts_require_replayable_tool_evidence(db):
-    copilot_evidence = [_evidence("c1", "search_knowledge")]
+    copilot_evidence = [_evidence("c1", "get_customer_facts")]
     repurchase_evidence = [_evidence("c2", "get_customer_facts")]
     cases = {
         "customer_order_copilot": ({
             "summary": "结论", "key_findings": [], "risks": [], "recommended_actions": [],
             "evidence": copilot_evidence,
             "open_questions": [],
-        }, copilot_evidence, {"c1": "search_knowledge"}),
+        }, copilot_evidence, {"c1": "get_customer_facts"}),
         "repurchase_risk_analyst": ({
             "action_reason": "原因", "suggested_next_action": "行动", "suggested_message": "草稿",
             "evidence": repurchase_evidence,
@@ -1619,7 +1808,7 @@ class _FakeModelResponse:
         chunks = [
             {"id": "chat-1", "model": "deepseek-chat", "choices": [{
                 "delta": {"tool_calls": [{"function": {
-                    "name": "mcp__ark__search_knowledge", "arguments": "{}",
+                    "name": "mcp__ark__get_customer_facts", "arguments": "{}",
                 }}]}, "finish_reason": None,
             }]},
             {"id": "chat-1", "model": "deepseek-chat", "choices": [{
@@ -1688,16 +1877,16 @@ def test_agent_model_gateway_preserves_tool_calls_and_accounts_usage(db, monkeyp
             {"role": "user", "content": "请查询知识"},
         ],
         tools=[{"type": "function", "function": {
-            "name": "mcp__ark__search_knowledge", "parameters": {"type": "object"},
+            "name": "mcp__ark__get_customer_facts", "parameters": {"type": "object"},
         }}, {"type": "function", "function": {
             "name": "mcp__ark__record_shipment", "parameters": {"type": "object"},
         }}],
     )
     raw = b"".join(stream).decode("utf-8")
     assert model == "deepseek-chat"
-    assert "mcp__ark__search_knowledge" in raw
+    assert "mcp__ark__get_customer_facts" in raw
     assert [item["function"]["name"] for item in _FakeModelClient.last_body["tools"]] == [
-        "mcp__ark__search_knowledge"
+        "mcp__ark__get_customer_facts"
     ]
     assert _FakeModelClient.last_body["messages"][0]["content"] == service.get_active_profile(
         db, "customer_order_copilot",
@@ -1856,11 +2045,11 @@ def test_mcp_run_token_is_bound_to_profile_tool_allowlist(db):
 
     request = SimpleNamespace(headers={"authorization": f"Bearer {claim['run_token']}"})
     ctx = SimpleNamespace(request_context=SimpleNamespace(request=request))
-    identity = mcp_auth.require_identity(ctx, db, tool_name="search_knowledge")
+    identity = mcp_auth.require_identity(ctx, db, tool_name="get_customer_facts")
     assert identity["sub"] == "7"
     assert identity["_agent_run"]["run_id"] == run.id
-    with pytest.raises(mcp_auth.MCPAuthError, match="record_shipment"):
-        mcp_auth.require_identity(ctx, db, tool_name="record_shipment")
+    with pytest.raises(mcp_auth.MCPAuthError, match="search_knowledge"):
+        mcp_auth.require_identity(ctx, db, tool_name="search_knowledge")
 
 
 def test_run_token_does_not_inherit_role_granted_after_creation(db):

@@ -15,12 +15,12 @@ logger = logging.getLogger("commission")
 _COPILOT_PROMPT = """你是莱莎方舟客户与订单经营副驾驶。你只能依据方舟授权工具返回的事实回答。
 先确定问题需要哪些证据，再调用最少的工具。summary 只能做不含数字的定性概括；所有事实、风险和建议
 都必须按 text + evidence_call_ids 输出，并关联 evidence 中本次成功工具调用的 call_id。
-事实、推断、建议必须分开；证据不足时明确说明，不得补造客户、订单、价格、物流或库存信息。
+事实、推断、建议必须分开；证据不足时明确说明，不得补造客户、订单或库存信息。
 每条 evidence 必须原样回传成功工具调用的 tool_call_id，并以 source 填写对应工具名。
 你只能生成建议和草案，不能代表公司对客户作出承诺，也不能直接修改业务数据。"""
 
 _REPURCHASE_PROMPT = """你是莱莎方舟复购与流失干预分析 Agent。候选客户已由确定性规则召回；
-你不能改变客户归属或凭空创造风险。基于订单节奏、客户事件、售后与知识证据解释为什么现在值得跟进，
+你不能改变客户归属或凭空创造风险。基于方舟客户档案与订单事实解释为什么现在值得跟进，
 给出一个具体、克制、可由业务员确认的下一步，并列出全部证据。不得自动发送消息或承诺价格、库存、交期。"""
 
 _SHADOW_PROMPT = """你是莱莎方舟新客户开发影子 Agent。你只能针对冻结的目标画像寻找公开可验证企业，
@@ -102,19 +102,18 @@ def _cited_statement_array() -> dict:
 PROFILE_SEEDS = [
     {
         "profile_key": "customer_order_copilot",
-        "version": 4,
+        "version": 5,
         "name": "客户与订单经营副驾驶",
-        "description": "基于授权客户、订单、知识、物流和价格事实生成可追溯经营建议",
+        "description": "基于授权客户与订单事实生成可追溯经营建议",
         "runtime": "dsh",
         "mode": "interactive",
         "model_preset": "agent_runtime_copilot",
         "system_prompt": _COPILOT_PROMPT,
-        "skill_manifest": [{"name": "ark-customer-order-copilot", "version": "4"}],
+        "skill_manifest": [{"name": "ark-customer-order-copilot", "version": "5"}],
         "tool_allowlist": [
             "get_customer_profile", "get_customer_facts", "get_customer_orders",
             "search_customer_messages", "get_customer_actions", "get_customer_evidence",
-            "get_customer_source_chunks", "search_knowledge", "track_shipment",
-            "get_standard_price",
+            "get_customer_source_chunks",
         ],
         "limits_json": {"max_steps": 12, "timeout_seconds": 300, "max_output_tokens": 4000, "max_total_tokens": 12000},
         "policy_json": {
@@ -134,17 +133,17 @@ PROFILE_SEEDS = [
     },
     {
         "profile_key": "repurchase_risk_analyst",
-        "version": 3,
+        "version": 5,
         "name": "复购与流失干预分析",
         "description": "为规则召回客户生成有证据的行动卡草案",
         "runtime": "dsh",
         "mode": "scheduled",
         "model_preset": "agent_runtime_repurchase",
         "system_prompt": _REPURCHASE_PROMPT,
-        "skill_manifest": [{"name": "ark-repurchase-risk-analyst", "version": "3"}],
+        "skill_manifest": [{"name": "ark-repurchase-risk-analyst", "version": "5"}],
         "tool_allowlist": [
             "get_customer_profile", "get_customer_facts", "get_customer_orders",
-            "get_customer_actions", "get_customer_evidence", "search_knowledge",
+            "get_customer_actions", "get_customer_evidence",
         ],
         "limits_json": {"max_steps": 8, "timeout_seconds": 240, "max_output_tokens": 2500, "max_total_tokens": 8000},
         "policy_json": {
