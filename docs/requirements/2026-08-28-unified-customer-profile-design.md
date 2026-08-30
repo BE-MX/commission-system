@@ -211,7 +211,7 @@ pending → contacted → replied → quoted → won / lost / dismissed
 | 字段 | 类型 | 空值 | 约束 | 数据库字段备注 |
 |---|---|---:|---|---|
 | id | BIGINT | 否 | PK | 客户名称记录ID |
-| customer_id | BIGINT | 否 | FK accounts, INDEX | 所属统一客户ID |
+| customer_id | BIGINT | 否 | FK accounts, INDEX | 创建时不可变的存储客户ID；证据保持同域，当前逻辑客户统一解析ark_customer_object_ownerships |
 | name | VARCHAR(255) | 否 |  | 信源中出现或经确认的原始名称 |
 | normalized_name | VARCHAR(255) | 否 | INDEX | 用于检索和候选匹配的标准化名称；不得单独触发自动合并 |
 | name_type | VARCHAR(24) | 否 | INDEX | 名称类型：legal、trading、brand、platform_alias、person_alias、historical |
@@ -243,7 +243,7 @@ pending → contacted → replied → quoted → won / lost / dismissed
 | 字段 | 类型 | 空值 | 约束 | 数据库字段备注 |
 |---|---|---:|---|---|
 | id | BIGINT | 否 | PK | 外部身份记录ID |
-| customer_id | BIGINT | 是 | FK accounts, INDEX | 公司或商业账户身份所属统一客户ID；与contact_id必须且只能填写一个 |
+| customer_id | BIGINT | 是 | FK accounts, INDEX | 公司级身份创建时不可变的存储客户ID；与contact_id必须且只能填写一个；当前逻辑客户统一解析ark_customer_object_ownerships |
 | contact_id | BIGINT | 是 | FK contacts, INDEX | 个人买家账号或联系人身份所属联系人ID；与customer_id必须且只能填写一个 |
 | source_system | VARCHAR(32) | 否 | INDEX | 身份来源命名空间：okki、alibaba、web、linkedin、google_business或其他登记值 |
 | source_account_key | VARCHAR(128) | 否 | INDEX | 外部数据所属账号或租户命名空间；无账号隔离的公开信源固定为global，不得保存凭证 |
@@ -354,7 +354,7 @@ from_customer_id 不得等于 to_customer_id。客户关系不能直接触发订
 | 字段 | 类型 | 空值 | 约束 | 数据库字段备注 |
 |---|---|---:|---|---|
 | id | BIGINT | 否 | PK | 联系方式或渠道记录ID |
-| customer_id | BIGINT | 是 | FK accounts, INDEX | 公司级渠道所属客户ID；与contact_id必须且只能填写一个 |
+| customer_id | BIGINT | 是 | FK accounts, INDEX | 公司级渠道创建时不可变的存储客户ID；与contact_id必须且只能填写一个；当前逻辑客户统一解析ark_customer_object_ownerships |
 | contact_id | BIGINT | 是 | FK contacts, INDEX | 个人级联系方式所属联系人ID；与customer_id必须且只能填写一个 |
 | point_type | VARCHAR(24) | 否 | INDEX | 渠道类型：email、phone、whatsapp、website、social、other |
 | platform | VARCHAR(32) | 是 | INDEX | 渠道平台：linkedin、instagram、facebook、tiktok、google_business等 |
@@ -416,7 +416,7 @@ from_customer_id 不得等于 to_customer_id。客户关系不能直接触发订
 | 字段 | 类型 | 空值 | 约束 | 数据库字段备注 |
 |---|---|---:|---|---|
 | id | BIGINT | 否 | PK | 原始信源记录ID |
-| customer_id | BIGINT | 是 | FK accounts, INDEX | 已解析的统一客户ID；身份尚未解析时允许为空 |
+| customer_id | BIGINT | 是 | FK accounts, INDEX | 解析后写入创建时不可变的存储客户ID；身份尚未解析时允许为空；当前逻辑客户统一解析ark_customer_object_ownerships |
 | source_system | VARCHAR(32) | 否 | INDEX | 信源系统：okki、alibaba、google、website、linkedin、instagram、facebook、agent_web或登记值 |
 | source_account_key | VARCHAR(128) | 否 | INDEX | 外部记录所属账号或租户命名空间；无账号隔离的公开信源固定为global，不得保存凭证 |
 | publisher_key | VARCHAR(255) | 是 | INDEX | 内容发布主体规范键，例如注册机构、公司官网域名或社媒账号；内部业务系统为空 |
@@ -450,7 +450,7 @@ from_customer_id 不得等于 to_customer_id。客户关系不能直接触发订
 | 字段 | 类型 | 空值 | 约束 | 数据库字段备注 |
 |---|---|---:|---|---|
 | id | BIGINT | 否 | PK | 客户事实ID，也是Agent引用的evidence_id |
-| customer_id | BIGINT | 否 | FK accounts, INDEX | 事实所属统一客户ID |
+| customer_id | BIGINT | 否 | FK accounts, INDEX | 创建时不可变的存储客户ID；证据保持同域，当前逻辑客户统一解析ark_customer_object_ownerships |
 | subject_type | VARCHAR(24) | 否 | INDEX | 事实主体：customer、contact、conversation、order、opportunity |
 | subject_id | BIGINT | 是 | INDEX | 事实主体在方舟对应表的ID；customer主体可为空 |
 | fact_key | VARCHAR(128) | 否 | INDEX | 受Schema注册表约束的事实键，例如business.industry、preference.expressed.color |
@@ -515,7 +515,7 @@ from_customer_id 不得等于 to_customer_id。客户关系不能直接触发订
 | 字段 | 类型 | 空值 | 约束 | 数据库字段备注 |
 |---|---|---:|---|---|
 | id | BIGINT | 否 | PK | 客户人工标记或备注ID |
-| customer_id | BIGINT | 否 | FK accounts, INDEX | 标记所属统一客户ID |
+| customer_id | BIGINT | 否 | FK accounts, INDEX | 创建时不可变的存储客户ID；政策记录保持同域，当前逻辑客户统一解析ark_customer_object_ownerships |
 | annotation_type | VARCHAR(24) | 否 | INDEX | 类型：label、note、correction、priority、do_not_contact、reminder |
 | target_fact_id | BIGINT | 是 | FK facts | correction类型指向被纠正事实；其他类型允许为空 |
 | content_schema_version | VARCHAR(16) | 否 |  | content_json结构版本，第一阶段为v1 |
@@ -614,7 +614,7 @@ from_customer_id 不得等于 to_customer_id。客户关系不能直接触发订
 | 字段 | 类型 | 空值 | 约束 | 数据库字段备注 |
 |---|---|---:|---|---|
 | id | BIGINT | 否 | PK | 方舟客户会话ID |
-| customer_id | BIGINT | 否 | FK accounts, INDEX | 会话所属统一客户ID |
+| customer_id | BIGINT | 否 | FK accounts, INDEX | 创建时不可变的存储客户ID；消息证据保持同域，当前逻辑客户统一解析ark_customer_object_ownerships |
 | contact_id | BIGINT | 是 | FK contacts, INDEX | 已识别的主要外部联系人ID |
 | source_system | VARCHAR(32) | 否 | INDEX | 会话来源系统：alibaba、whatsapp、email或登记值 |
 | source_account_key | VARCHAR(128) | 否 | INDEX | 会话所属外部销售账号或租户命名空间，例如阿里子账号self_ali_id；无账号隔离时为global |
@@ -687,7 +687,7 @@ from_customer_id 不得等于 to_customer_id。客户关系不能直接触发订
 | 字段 | 类型 | 空值 | 约束 | 数据库字段备注 |
 |---|---|---:|---|---|
 | id | BIGINT | 否 | PK | 方舟客户订单投影ID |
-| customer_id | BIGINT | 否 | FK accounts, INDEX | 订单所属统一客户ID |
+| customer_id | BIGINT | 否 | FK accounts, INDEX | 创建时不可变的存储客户ID；订单明细保持同域，当前逻辑客户统一解析ark_customer_object_ownerships |
 | source_system | VARCHAR(32) | 否 | INDEX | 订单来源系统，第一阶段固定okki |
 | source_account_key | VARCHAR(128) | 否 | INDEX | 订单所属外部账号或租户命名空间；用于隔离不同连接中的外部订单ID |
 | external_order_id | VARCHAR(128) | 否 |  | 外部订单稳定ID |
@@ -746,7 +746,7 @@ from_customer_id 不得等于 to_customer_id。客户关系不能直接触发订
 | 字段 | 类型 | 空值 | 约束 | 数据库字段备注 |
 |---|---|---:|---|---|
 | id | BIGINT | 否 | PK | 客户研究任务ID |
-| customer_id | BIGINT | 否 | FK accounts, INDEX | 被研究的统一客户ID |
+| customer_id | BIGINT | 否 | FK accounts, INDEX | 创建时不可变的存储客户ID；任务结果保持同域，当前逻辑客户统一解析ark_customer_object_ownerships |
 | task_type | VARCHAR(32) | 否 | INDEX | 任务类型：identity_enrichment、public_pool、high_score_candidate、full_research |
 | source_ref_type | VARCHAR(32) | 是 |  | 任务来源对象类型：search_result、public_pool_batch、source_record、manual；阿里询盘引用其source_record ID |
 | source_ref_id | VARCHAR(128) | 是 | INDEX | 触发任务的来源对象ID |
@@ -929,7 +929,25 @@ from_customer_id 不得等于 to_customer_id。客户关系不能直接触发订
 
 Agent只能创建`draft`或`pending`提案。批准必须绑定`action_hash`并具有动作专属权限；执行前重新校验实时权限、客户范围、档案版本、证据新鲜度、归属和禁止联系状态。任一输入变化均使旧批准失效，不向模型暴露通用写库能力。
 
-### 7.27 ark_customer_agent_run_scopes
+### 7.27 ark_customer_object_ownerships
+
+表备注：客户业务根对象的逻辑归属覆盖表；原表customer_id保持不可变存储归属，权限、档案和业务读取统一解析本表当前客户。
+
+| 字段 | 类型 | 空值 | 约束 | 数据库字段备注 |
+|---|---|---:|---|---|
+| object_type | VARCHAR(32) | 否 | PK | 受customer_object_ownership_v1注册表约束的业务根对象类型 |
+| object_id | BIGINT | 否 | PK | 对应注册对象表的方舟内部主键；禁止作为动态表名或任意多态引用 |
+| storage_customer_id | BIGINT | 否 | FK accounts | 对象创建时不可变的存储客户ID；必须与注册对象实际存储归属一致 |
+| current_customer_id | BIGINT | 否 | FK accounts | 合并或拆分后对象当前逻辑客户ID；回到存储客户时仍保留覆盖行 |
+| ownership_version | BIGINT | 否 | CHECK > 0 | 归属覆盖CAS版本；首次写入为1，每次变更严格递增 |
+| last_change_proposal_id | BIGINT | 否 | FK change_proposals, INDEX | 最近一次改变逻辑归属的已批准合并或拆分提案ID |
+| last_action_type | VARCHAR(16) | 否 | CHECK | 最近归属动作类型：merge或split |
+| created_at | DATETIME | 否 |  | 归属覆盖行首次创建的北京时间 |
+| updated_at | DATETIME | 否 |  | 归属覆盖版本最近变更的北京时间 |
+
+复合主键为`(object_type, object_id)`；另建`(storage_customer_id, object_type, object_id)`与`(current_customer_id, object_type, object_id)`两个三列索引，以及`last_change_proposal_id`索引。`object_type`只允许来自版本化注册表，执行器通过固定ORM模型注册表验证对象存在和存储客户一致，禁止拼接动态表名SQL。
+
+### 7.28 ark_customer_agent_run_scopes
 
 表备注：客户Agent Run不可变客户范围成员表；把single、set和query_snapshot范围物化为可逐客户校验的成员，范围哈希只用于完整性验证。
 
@@ -947,7 +965,7 @@ Agent只能创建`draft`或`pending`提案。批准必须绑定`action_hash`并�
 
 Run创建事务必须先物化全部范围成员再进入queued；每次客户工具调用必须`EXISTS(run_id, customer_id)`，不能重新执行原查询推断范围。`query_snapshot_hash`只校验整集合未被篡改，不能替代成员关系。
 
-### 7.28 ark_customer_suppression_registry
+### 7.29 ark_customer_suppression_registry
 
 表备注：在客户或联系人尚未建档、无法唯一映射或清库切换期间仍可执行的全局禁止联系、退订、硬退信和坏地址抑制注册表；不保存联系方式原文。
 
@@ -980,7 +998,7 @@ Run创建事务必须先物化全部范围成员再进入queued；每次客户�
 
 身份解析、搜索落库、研究任务、机会创建、行动生成和执行器都必须先用规范标识HMAC查询本表。成功映射后投影到annotation或contact_point，但全局注册项不删除；ambiguous或unmapped仍直接阻断匹配标识，直到人工解决或撤销。
 
-### 7.29 ark_customer_resolution_keys
+### 7.30 ark_customer_resolution_keys
 
 表备注：首次客户身份解析和商业上下文建档的数据库唯一仲裁键表；在创建客户前先取得唯一键，避免并发产生孤立重复客户。
 
@@ -1005,7 +1023,7 @@ Run创建事务必须先物化全部范围成员再进入queued；每次客户�
 
 解析服务先INSERT或锁定resolution_key，再在同一事务创建客户、联系人、名称、关系和外部身份并把键置为resolved；失败时整体回滚业务行。source_records的内容版本唯一键不能替代本表。
 
-### 7.30 ark_customer_target_matches
+### 7.31 ark_customer_target_matches
 
 表备注：统一客户相对某个获客目标模型和策略版本的多行匹配投影；解决一客户一行列表投影无法表达不同目标画像分数的问题。
 
@@ -1026,14 +1044,14 @@ Run创建事务必须先物化全部范围成员再进入queued；每次客户�
 | expires_at | DATETIME | 是 | INDEX | 需要重新评分的截止时间 |
 | computed_at | DATETIME | 否 | INDEX | 匹配投影计算的北京时间 |
 
-### 7.31 ark_customer_acquisition_attributions
+### 7.32 ark_customer_acquisition_attributions
 
 表备注：客户从搜索或询盘发现、背调、资格、机会到订单结果的归因链表；支持获客结果、成本和策略效果计算，不改变客户事实。
 
 | 字段 | 类型 | 空值 | 约束 | 数据库字段备注 |
 |---|---|---:|---|---|
 | id | BIGINT | 否 | PK | 获客归因链记录ID |
-| customer_id | BIGINT | 否 | FK accounts, INDEX | 归因所属统一客户ID |
+| customer_id | BIGINT | 否 | FK accounts, INDEX | 创建时不可变的存储客户ID；归因证据保持同域，当前逻辑客户统一解析ark_customer_object_ownerships |
 | origin_type | VARCHAR(24) | 否 | INDEX | 首始来源：search、public_pool、alibaba_inquiry、okki、manual |
 | origin_ref_type | VARCHAR(32) | 否 |  | 首始来源对象：search_result、public_pool_batch、source_record、manual |
 | origin_ref_id | BIGINT | 否 | INDEX | 首始来源方舟对象ID |
@@ -1056,7 +1074,7 @@ Run创建事务必须先物化全部范围成员再进入queued；每次客户�
 
 #### 跨客户父子引用数据库约束
 
-所有同时保存父对象ID和`customer_id`的表都必须由数据库阻止跨客户挂接，不能只依赖服务校验：`profile_versions`、`orders`、`opportunities`分别建立`UNIQUE(id, customer_id)`；`accounts(current_profile_version_id, id)`复合外键引用`profile_versions(id, customer_id)`；`agent_contexts`、`list_projections`、`actions`、`change_proposals`的`(profile_version_id, customer_id)`复合外键引用档案版本；`opportunity_events`、`actions`的`(opportunity_id, customer_id)`复合外键引用机会；`opportunities(linked_order_id, customer_id)`复合外键引用订单。可空父ID使用MySQL标准空值语义，非空时必须同客户。多态`source_ref_type/source_ref_id`及JSON证据ID无法建立普通外键，继续由事务内类型注册表校验并有跨客户拒绝测试。
+一般规则是：同一不可变存储根内同时保存父对象ID和`customer_id`的表必须由数据库复合外键阻止跨存储客户挂接，不能只依赖服务校验。`profile_versions`、`orders`、`opportunities`分别建立`UNIQUE(id, customer_id)`；`accounts(current_profile_version_id, id)`复合外键引用`profile_versions(id, customer_id)`；`agent_contexts`、`list_projections`、`change_proposals`的`(profile_version_id, customer_id)`复合外键引用档案版本；`opportunity_events(opportunity_id, customer_id)`复合外键引用机会。9.7明确规定三条例外：`opportunities.linked_order_id`普通外键引用`orders.id`，`actions.opportunity_id`普通外键引用`opportunities.id`，`actions.profile_version_id`普通外键引用`profile_versions.id`，均为`ON DELETE RESTRICT`并由锁内resolver校验当前逻辑客户一致。可空父ID使用MySQL标准空值语义。多态`source_ref_type/source_ref_id`及JSON证据ID无法建立普通外键，继续由事务内类型注册表校验并有跨客户拒绝测试。
 
 ## 8. 偏好与行为的四层模型
 
@@ -1181,6 +1199,31 @@ Run创建事务必须先物化全部范围成员再进入queued；每次客户�
 | customer_events、Agent Session/Run/Artifact | 旧审计不改写；目标新增合并/拆分摘要事件，旧Agent上下文不得作为目标授权跳板 | 旧审计不改写，双方新增split事件和新Run |
 
 执行前生成逐表计数与ID清单，执行后断言所有可迁移表只引用规范customer_id、所有证据仍同客户、无孤儿外键、无两个有效主负责人。任何一项失败使整个高影响动作事务失败；不可变审计表按上表保留原归属，不以“全部改customer_id”破坏历史。
+
+### 9.7 合并与拆分的逻辑归属覆盖层
+
+InnoDB不支持延迟外键检查，且多表UPDATE不能保证按父子顺序执行。事实、证据、信源、订单、机会和行动又通过同一`customer_id`形成复合外键图，因此合并或拆分不得通过关闭外键、赌多表更新顺序或改写追加式审计行来搬迁历史。
+
+统一采用“不可变存储归属 + 可变逻辑归属”模型：
+
+- 业务根对象原表的`customer_id`表示创建时的存储客户和证据同域客户，合并或拆分时不修改。
+- 新增`ark_customer_object_ownerships`保存业务根对象当前逻辑客户；权限、档案编译、客户中心、机会行动和Agent工具必须经统一resolver读取逻辑客户。
+- 消息跟随会话、订单明细跟随订单、机会事件跟随机会、搜索结果信源跟随搜索结果，不单独建立归属覆盖。
+- 档案版本、客户事件、Agent Run/Scope/Artifact及终态提案永不迁移；目标客户新增摘要事件并重新编译档案。
+- 当前归属、联系人关系、客户关系、当前资格审核、有效DNC/政策标记和未终结研究任务采用结束旧记录并在目标客户重建，不覆盖历史。
+- DNC拆分默认保守复制到所有目标；只有审批载荷对作用域、联系人或渠道给出完整证据时才允许缩窄。
+
+`ark_customer_object_ownerships`最小字段为`object_type + object_id`主键、`storage_customer_id`、`current_customer_id`、`ownership_version`、`last_change_proposal_id`、`last_action_type`、`created_at`和`updated_at`。`object_type`必须来自版本化注册表；执行器在固定锁序内验证对象存在、存储客户一致和版本CAS。覆盖行不删除，对象回到原存储客户也递增版本并保留当前态。
+
+注册表每个根类型同时声明`storage_mode`、`handling_mode`和`eligibility`。普通根允许`overlay`；有效`do_not_contact`等政策annotation禁止覆盖，必须结束旧政策并按批准作用域重建；未终结research_task禁止覆盖，必须由专用流程结束后重建，只有普通annotation、历史政策记录和终态研究任务允许写覆盖。联系人所属的external_identity/contact_point首次覆盖时，有`source_record_id`只认信源记录的物理`customer_id`；无信源时只接受唯一当前生效、状态为`identified/verified`的联系人关系。多条当前关系必须fail closed。覆盖行建立后以其中冻结的`storage_customer_id`为准，只重验根对象和主体存在，不因联系人关系后来变化而重算存储归属。
+
+批准载荷必须使用版本化`ownership_partitions`，每项只允许并必须包含`object_type`、`object_id`、`expected_storage_customer_id`、`expected_current_customer_id`、`expected_ownership_version`和`target_customer_id`。注册表版本、源客户、目标客户集合和完整partition数组都进入提案`action_hash`；CAS逐项精确匹配批准partition，且提案`customer_id/target_customer_id`必须与载荷作用域一致。任意未声明对象、版本或当前归属不一致、批准后载荷变更、重复对象或目标越界均拒绝执行。`expected_ownership_version=0`只表示预期尚无覆盖行；并发插入统一返回`OWNERSHIP_VERSION_CONFLICT`，死锁、锁等待超时和序列化失败统一回滚并返回`RETRY_NEW_TRANSACTION`，调用方必须开启新事务重试。
+
+`customer_split_v1`必须冻结源客户、源档案版本、`profile_input_seq`、注册表版本、逐类型完整库存计数与ID哈希、每个根对象唯一目标、关系/归属/DNC/资格/研究任务重建计划、主要身份选择和开放提案重定向。遗漏、重复、未知类型、图闭包跨目标、库存或版本变化一律使旧批准失效；保留在源客户的对象也必须显式声明，不允许以遗漏表达默认归属。
+
+执行锁序固定为：执行提案、受影响客户、归属覆盖行、注册表根对象、时态与唯一槽记录、派生投影、其他开放提案。执行器重验权限、动作哈希、批准、过期时间、档案输入序号、完整库存和覆盖版本后，结束并重建时态记录，CAS写入归属覆盖，失效并重建两侧档案投影，追加摘要事件，按审批载荷重绑开放提案、重算其`action_hash`、清除旧批准并退回`draft`，最后使用同一执行幂等键supersede其余开放提案。任一后置条件失败使整个事务回滚。
+
+为允许不同存储分区但同一逻辑客户的后续业务关联，以下三类复合同客户外键改为普通实体外键并使用`ON DELETE RESTRICT`，由锁内resolver强制逻辑同客户：`ark_customer_opportunities.linked_order_id → ark_customer_orders.id`、`ark_customer_actions.opportunity_id → ark_customer_opportunities.id`、`ark_customer_actions.profile_version_id → ark_customer_profile_versions.id`。事实证据、事实冲突和机会事件等始终跟随同一存储根的复合外键继续保留。禁止把`ON UPDATE CASCADE`作为整张客户证据图的迁移方案。
 
 ## 10. 档案编译
 
@@ -1528,7 +1571,7 @@ ark_customer_actions清空并重建，profile_id替换为非空customer_id。
 |---|---|---:|---|---|
 | id | BIGINT | 否 | PK | 搜索结果ID |
 | job_id | BIGINT | 否 | FK search_jobs, INDEX | 所属搜索任务ID |
-| customer_id | BIGINT | 否 | FK accounts, INDEX | 解析或创建的统一客户ID |
+| customer_id | BIGINT | 否 | FK accounts, INDEX | 创建时不可变的存储客户ID；搜索证据保持同域，当前逻辑客户统一解析ark_customer_object_ownerships |
 | best_rank | INT | 是 | INDEX | 此客户在本任务全部来源中的最佳排名；供应商均未提供时为空 |
 | best_score | DECIMAL(5,2) | 否 | INDEX | 此客户相对本任务冻结目标画像的当前最佳匹配分0至100 |
 | aggregated_score_reasons | JSON | 否 |  | search_score_aggregate_v1：维度、权重、聚合分值、理由、证据事实ID和result_source_id |
@@ -1588,7 +1631,7 @@ ark_customer_actions清空并重建，profile_id替换为非空customer_id。
 | 字段 | 类型 | 空值 | 约束 | 数据库字段备注 |
 |---|---|---:|---|---|
 | id | BIGINT | 否 | PK | 客户销售机会ID |
-| customer_id | BIGINT | 否 | FK accounts, INDEX | 机会所属统一客户ID |
+| customer_id | BIGINT | 否 | FK accounts, INDEX | 创建时不可变的存储客户ID；机会事件保持同域，当前逻辑客户统一解析ark_customer_object_ownerships |
 | opportunity_type | VARCHAR(32) | 否 | INDEX | 类型：ali_inquiry、public_pool、customer_reactivation、new_product、manual |
 | source | VARCHAR(32) | 否 | INDEX | 来源：alibaba、public_pool、customer_hub、manual |
 | source_system | VARCHAR(32) | 否 | INDEX | 机会幂等来源系统：alibaba、search、public_pool、internal或登记值 |
@@ -1623,7 +1666,7 @@ ark_customer_actions清空并重建，profile_id替换为非空customer_id。
 | next_step_due_at | DATETIME | 是 | INDEX | 下一步计划完成时间 |
 | close_reason_code | VARCHAR(32) | 是 | INDEX | 关闭原因标准码；开放机会为空 |
 | close_reason_text | VARCHAR(1000) | 是 |  | 关闭原因补充说明 |
-| linked_order_id | BIGINT | 是 | FK orders | won机会对应的方舟有效订单ID |
+| linked_order_id | BIGINT | 是 | FK orders | won机会对应的方舟有效订单ID；服务层按逻辑客户校验 |
 | handled_at | DATETIME | 是 |  | 首次被人工处理的北京时间 |
 | created_by | INT UNSIGNED | 是 | FK ark_users | 手工创建机会的方舟用户ID；同步创建允许为空 |
 | created_at | DATETIME | 否 |  | 机会创建的北京时间 |
@@ -1657,9 +1700,9 @@ ark_customer_actions清空并重建，profile_id替换为非空customer_id。
 | 字段 | 类型 | 空值 | 约束 | 数据库字段备注 |
 |---|---|---:|---|---|
 | id | BIGINT | 否 | PK | 客户经营行动ID |
-| customer_id | BIGINT | 否 | FK accounts, INDEX | 行动所属统一客户ID |
+| customer_id | BIGINT | 否 | FK accounts, INDEX | 创建时不可变的存储客户ID；行动记录保持同域，当前逻辑客户统一解析ark_customer_object_ownerships |
 | owner_user_id | INT UNSIGNED | 是 | FK ark_users, INDEX | 行动执行人方舟用户ID；空表示公海未分配队列，认领时赋值 |
-| opportunity_id | BIGINT | 是 | FK opportunities, INDEX | 可选关联机会ID，必须与customer_id一致 |
+| opportunity_id | BIGINT | 是 | FK opportunities, INDEX | 可选关联机会ID；服务层按逻辑客户校验 |
 | contact_id | BIGINT | 是 | FK contacts | 可选目标联系人ID |
 | action_type | VARCHAR(24) | 否 | INDEX | 行动类型：call、email、message、meeting、research、review |
 | thread_group | VARCHAR(24) | 否 | INDEX | 分组：new_inquiry、sample、key_account、reorder、reactivation、public_pool |
@@ -1680,7 +1723,7 @@ ark_customer_actions清空并重建，profile_id替换为非空customer_id。
 | feedback_json | JSON | 否 |  | action_feedback_v1：评价、备注、结果证据和下一步 |
 | source_event_ids | JSON | 否 |  | Schema v1触发行动的客户事件ID数组 |
 | evidence_fact_ids | JSON | 否 |  | Schema v1支撑行动原因和建议的事实ID数组 |
-| profile_version_id | BIGINT | 否 | FK profile_versions | 生成行动时使用的客户档案版本ID |
+| profile_version_id | BIGINT | 否 | FK profile_versions | 生成行动时使用的客户档案版本ID；服务层按逻辑客户校验 |
 | source_type | VARCHAR(16) | 否 | INDEX | 生成来源：rule、agent、manual |
 | agent_run_id | BIGINT | 是 | FK agent_runs | Agent生成行动时的受控Run ID |
 | policy_version | VARCHAR(32) | 否 |  | 行动生成与抑制策略版本 |

@@ -1519,6 +1519,7 @@ def complete_action(
     outcome_code: str,
     summary: str,
     next_step: str,
+    can_manage: bool = False,
 ) -> CustomerAction:
     if outcome_code not in ACTION_OUTCOME_CODES:
         raise CustomerWorkflowError("ACTION_OUTCOME_INVALID")
@@ -1543,7 +1544,7 @@ def complete_action(
     if action is None:
         raise CustomerWorkflowNotFound("ACTION_NOT_FOUND")
     _active_user(db, completed_by)
-    if action.owner_user_id != completed_by:
+    if not can_manage and action.owner_user_id != completed_by:
         raise CustomerWorkflowConflict("ACTION_OWNER_REQUIRED")
     assignment = db.query(CustomerAssignment.id).filter(
         CustomerAssignment.customer_id == action.customer_id,
@@ -1557,7 +1558,7 @@ def complete_action(
         if action.opportunity_id is not None
         else None
     )
-    if (
+    if not can_manage and (
         assignment is None
         or (
             opportunity is not None

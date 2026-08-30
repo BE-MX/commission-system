@@ -51,6 +51,7 @@ CORE_TABLE_NAMES = (
     "ark_customer_fact_conflicts",
     "ark_customer_list_projections",
     "ark_customer_change_proposals",
+    "ark_customer_object_ownerships",
     "ark_customer_agent_run_scopes",
     "ark_customer_suppression_registry",
     "ark_customer_resolution_keys",
@@ -3489,7 +3490,7 @@ def compare_physical_schema_signature(
 def validate_customer_physical_schema_contract(
     contract: Mapping[str, Any] | None,
 ) -> str:
-    """Validate revision 126's mandatory 38-table expected physical contract."""
+    """Validate revision 126's mandatory 39-table expected physical contract."""
     core_tables = _runtime_core_tables()
     if not isinstance(contract, Mapping):
         raise CutoverGuardError("revision 126 physical schema contract is required")
@@ -3504,7 +3505,7 @@ def validate_customer_physical_schema_contract(
     expected_table_names = set(NEW_CUSTOMER_TABLES + REBUILT_CUSTOMER_WORKFLOW_TABLES)
     if not isinstance(tables, Mapping) or set(tables) != expected_table_names:
         raise CutoverGuardError(
-            "revision 126 physical schema contract must contain exactly 38 tables"
+            "revision 126 physical schema contract must contain exactly 39 tables"
         )
     signature_categories = {
         "columns",

@@ -114,7 +114,7 @@ class CustomerName(Base):
     )
 
     id = Column(BigInteger, primary_key=True, comment="客户名称记录ID")
-    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=False, index=True, comment="所属统一客户ID")
+    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=False, index=True, comment="创建时不可变的存储客户ID；证据保持同域，当前逻辑客户统一解析ark_customer_object_ownerships")
     name = Column(String(255), nullable=False, comment="信源中出现或经确认的原始名称")
     normalized_name = Column(String(255), nullable=False, index=True, comment="用于检索和候选匹配的标准化名称；不得单独触发自动合并")
     name_type = Column(String(24), nullable=False, index=True, comment="名称类型：legal、trading、brand、platform_alias、person_alias、historical")
@@ -156,7 +156,7 @@ class CustomerExternalIdentity(Base):
     )
 
     id = Column(BigInteger, primary_key=True, comment="外部身份记录ID")
-    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=True, index=True, comment="公司或商业账户身份所属统一客户ID；与contact_id必须且只能填写一个")
+    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=True, index=True, comment="公司级身份创建时不可变的存储客户ID；与contact_id必须且只能填写一个；当前逻辑客户统一解析ark_customer_object_ownerships")
     contact_id = Column(BigInteger, ForeignKey("ark_customer_contacts.id"), nullable=True, index=True, comment="个人买家账号或联系人身份所属联系人ID；与customer_id必须且只能填写一个")
     source_system = Column(String(32), nullable=False, index=True, comment="身份来源命名空间：okki、alibaba、web、linkedin、google_business或其他登记值")
     source_account_key = Column(String(128), nullable=False, index=True, comment="外部数据所属账号或租户命名空间；无账号隔离的公开信源固定为global，不得保存凭证")
@@ -274,7 +274,7 @@ class CustomerContactPoint(Base):
     )
 
     id = Column(BigInteger, primary_key=True, comment="联系方式或渠道记录ID")
-    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=True, index=True, comment="公司级渠道所属客户ID；与contact_id必须且只能填写一个")
+    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=True, index=True, comment="公司级渠道创建时不可变的存储客户ID；与contact_id必须且只能填写一个；当前逻辑客户统一解析ark_customer_object_ownerships")
     contact_id = Column(BigInteger, ForeignKey("ark_customer_contacts.id"), nullable=True, index=True, comment="个人级联系方式所属联系人ID；与customer_id必须且只能填写一个")
     point_type = Column(String(24), nullable=False, index=True, comment="渠道类型：email、phone、whatsapp、website、social、other")
     platform = Column(String(32), nullable=True, index=True, comment="渠道平台：linkedin、instagram、facebook、tiktok、google_business等")
@@ -339,7 +339,7 @@ class CustomerSourceRecord(Base):
     )
 
     id = Column(BigInteger, primary_key=True, comment="原始信源记录ID")
-    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=True, index=True, comment="已解析的统一客户ID；身份尚未解析时允许为空")
+    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=True, index=True, comment="解析后写入创建时不可变的存储客户ID；身份尚未解析时允许为空；当前逻辑客户统一解析ark_customer_object_ownerships")
     source_system = Column(String(32), nullable=False, index=True, comment="信源系统：okki、alibaba、google、website、linkedin、instagram、facebook、agent_web或登记值")
     source_account_key = Column(String(128), nullable=False, index=True, comment="外部记录所属账号或租户命名空间；无账号隔离的公开信源固定为global，不得保存凭证")
     publisher_key = Column(String(255), nullable=True, index=True, comment="内容发布主体规范键，例如注册机构、公司官网域名或社媒账号；内部业务系统为空")
@@ -374,7 +374,7 @@ class CustomerFact(Base):
     )
 
     id = Column(BigInteger, primary_key=True, comment="客户事实ID，也是Agent引用的evidence_id")
-    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=False, index=True, comment="事实所属统一客户ID")
+    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=False, index=True, comment="创建时不可变的存储客户ID；证据保持同域，当前逻辑客户统一解析ark_customer_object_ownerships")
     subject_type = Column(String(24), nullable=False, index=True, comment="事实主体：customer、contact、conversation、order、opportunity")
     subject_id = Column(BigInteger, nullable=True, index=True, comment="事实主体在方舟对应表的ID；customer主体可为空")
     fact_key = Column(String(128), nullable=False, index=True, comment="受Schema注册表约束的事实键，例如business.industry、preference.expressed.color")
@@ -442,7 +442,7 @@ class CustomerAnnotation(Base):
     )
 
     id = Column(BigInteger, primary_key=True, comment="客户人工标记或备注ID")
-    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=False, index=True, comment="标记所属统一客户ID")
+    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=False, index=True, comment="创建时不可变的存储客户ID；政策记录保持同域，当前逻辑客户统一解析ark_customer_object_ownerships")
     annotation_type = Column(String(24), nullable=False, index=True, comment="类型：label、note、correction、priority、do_not_contact、reminder")
     target_fact_id = Column(BigInteger, ForeignKey("ark_customer_facts.id"), nullable=True, comment="correction类型指向被纠正事实；其他类型允许为空")
     content_schema_version = Column(String(16), nullable=False, comment="content_json结构版本，第一阶段为v1")
@@ -550,7 +550,7 @@ class CustomerConversation(Base):
     )
 
     id = Column(BigInteger, primary_key=True, comment="方舟客户会话ID")
-    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=False, index=True, comment="会话所属统一客户ID")
+    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=False, index=True, comment="创建时不可变的存储客户ID；消息证据保持同域，当前逻辑客户统一解析ark_customer_object_ownerships")
     contact_id = Column(BigInteger, ForeignKey("ark_customer_contacts.id"), nullable=True, index=True, comment="已识别的主要外部联系人ID")
     source_system = Column(String(32), nullable=False, index=True, comment="会话来源系统：alibaba、whatsapp、email或登记值")
     source_account_key = Column(String(128), nullable=False, index=True, comment="会话所属外部销售账号或租户命名空间，例如阿里子账号self_ali_id；无账号隔离时为global")
@@ -628,7 +628,7 @@ class CustomerOrder(Base):
     )
 
     id = Column(BigInteger, primary_key=True, comment="方舟客户订单投影ID")
-    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=False, index=True, comment="订单所属统一客户ID")
+    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=False, index=True, comment="创建时不可变的存储客户ID；订单明细保持同域，当前逻辑客户统一解析ark_customer_object_ownerships")
     source_system = Column(String(32), nullable=False, index=True, comment="订单来源系统，第一阶段固定okki")
     source_account_key = Column(String(128), nullable=False, index=True, comment="订单所属外部账号或租户命名空间；用于隔离不同连接中的外部订单ID")
     external_order_id = Column(String(128), nullable=False, comment="外部订单稳定ID")
@@ -708,7 +708,7 @@ class CustomerResearchTask(Base):
     )
 
     id = Column(BigInteger, primary_key=True, comment="客户研究任务ID")
-    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=False, index=True, comment="被研究的统一客户ID")
+    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=False, index=True, comment="创建时不可变的存储客户ID；任务结果保持同域，当前逻辑客户统一解析ark_customer_object_ownerships")
     task_type = Column(String(32), nullable=False, index=True, comment="任务类型：identity_enrichment、public_pool、high_score_candidate、full_research")
     source_ref_type = Column(String(32), nullable=True, comment="任务来源对象类型：search_result、public_pool_batch、source_record、manual；阿里询盘引用其source_record ID")
     source_ref_id = Column(String(128), nullable=True, index=True, comment="触发任务的来源对象ID")
@@ -951,6 +951,107 @@ class CustomerChangeProposal(Base):
     updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="提案状态最后更新的北京时间")
 
 
+class CustomerObjectOwnership(Base):
+    __tablename__ = "ark_customer_object_ownerships"
+    __table_args__ = (
+        CheckConstraint(
+            "ownership_version > 0",
+            name="ck_customer_object_owner_version",
+        ),
+        CheckConstraint(
+            "last_action_type IN ('merge', 'split')",
+            name="ck_customer_object_owner_action",
+        ),
+        Index(
+            "ix_customer_object_owner_storage",
+            "storage_customer_id",
+            "object_type",
+            "object_id",
+        ),
+        Index(
+            "ix_customer_object_owner_current",
+            "current_customer_id",
+            "object_type",
+            "object_id",
+        ),
+        Index(
+            "ix_customer_object_owner_proposal",
+            "last_change_proposal_id",
+        ),
+        {
+            "comment": "客户业务根对象的逻辑归属覆盖表；原表customer_id保持不可变存储归属，权限、档案和业务读取统一解析本表当前客户。"
+        },
+    )
+
+    object_type = Column(
+        String(32),
+        primary_key=True,
+        comment="受customer_object_ownership_v1注册表约束的业务根对象类型",
+    )
+    object_id = Column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=False,
+        comment="对应注册对象表的方舟内部主键；禁止作为动态表名或任意多态引用",
+    )
+    storage_customer_id = Column(
+        BigInteger,
+        ForeignKey(
+            "ark_customer_accounts.id",
+            name="fk_customer_object_owner_storage",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=False,
+        comment="对象创建时不可变的存储客户ID；必须与注册对象实际存储归属一致",
+    )
+    current_customer_id = Column(
+        BigInteger,
+        ForeignKey(
+            "ark_customer_accounts.id",
+            name="fk_customer_object_owner_current",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=False,
+        comment="合并或拆分后对象当前逻辑客户ID；回到存储客户时仍保留覆盖行",
+    )
+    ownership_version = Column(
+        BigInteger,
+        nullable=False,
+        comment="归属覆盖CAS版本；首次写入为1，每次变更严格递增",
+    )
+    last_change_proposal_id = Column(
+        BigInteger,
+        ForeignKey(
+            "ark_customer_change_proposals.id",
+            name="fk_customer_object_owner_proposal",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=False,
+        comment="最近一次改变逻辑归属的已批准合并或拆分提案ID",
+    )
+    last_action_type = Column(
+        String(16),
+        nullable=False,
+        comment="最近归属动作类型：merge或split",
+    )
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=beijing_now,
+        comment="归属覆盖行首次创建的北京时间",
+    )
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=beijing_now,
+        onupdate=beijing_now,
+        comment="归属覆盖版本最近变更的北京时间",
+    )
+
+
 class CustomerAgentRunScope(Base):
     __tablename__ = "ark_customer_agent_run_scopes"
     __table_args__ = {"comment": "客户Agent Run不可变客户范围成员表；把single、set和query_snapshot范围物化为可逐客户校验的成员，范围哈希只用于完整性验证。"}
@@ -1123,7 +1224,7 @@ class SearchResult(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="搜索结果ID")
     job_id = Column(BigInteger, ForeignKey("ark_sales_search_jobs.id", ondelete="CASCADE", name="fk_customer_search_result_job"), nullable=False, index=True, comment="所属搜索任务ID")
-    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id", name="fk_customer_search_result_customer"), nullable=False, index=True, comment="解析或创建的统一客户ID")
+    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id", name="fk_customer_search_result_customer"), nullable=False, index=True, comment="创建时不可变的存储客户ID；搜索证据保持同域，当前逻辑客户统一解析ark_customer_object_ownerships")
     best_rank = Column(Integer, nullable=True, index=True, comment="此客户在本任务全部来源中的最佳排名；供应商均未提供时为空")
     best_score = Column(Numeric(5, 2), nullable=False, index=True, comment="此客户相对本任务冻结目标画像的当前最佳匹配分0至100")
     aggregated_score_reasons = Column(JSON, nullable=False, comment="search_score_aggregate_v1：维度、权重、聚合分值、理由、证据事实ID和result_source_id")
@@ -1199,13 +1300,6 @@ class CustomerOpportunity(Base):
             "stage_probability IS NULL OR (stage_probability >= 0 AND stage_probability <= 100)",
             name="ck_customer_opportunity_probability",
         ),
-        ForeignKeyConstraint(
-            ["linked_order_id", "customer_id"],
-            ["ark_customer_orders.id", "ark_customer_orders.customer_id"],
-            name="fk_customer_opportunity_order",
-            ondelete="RESTRICT",
-            onupdate="RESTRICT",
-        ),
         UniqueConstraint(
             "id", "customer_id", name="uq_customer_opportunity_id_customer"
         ),
@@ -1236,7 +1330,7 @@ class CustomerOpportunity(Base):
         ),
         nullable=False,
         index=True,
-        comment="机会所属统一客户ID",
+        comment="创建时不可变的存储客户ID；机会事件保持同域，当前逻辑客户统一解析ark_customer_object_ownerships",
     )
     opportunity_type = Column(String(32), nullable=False, index=True, comment="类型：ali_inquiry、public_pool、customer_reactivation、new_product、manual")
     source = Column(String(32), nullable=False, index=True, comment="来源：alibaba、public_pool、customer_hub、manual")
@@ -1294,7 +1388,17 @@ class CustomerOpportunity(Base):
     next_step_due_at = Column(DateTime, nullable=True, index=True, comment="下一步计划完成时间")
     close_reason_code = Column(String(32), nullable=True, index=True, comment="关闭原因标准码；开放机会为空")
     close_reason_text = Column(String(1000), nullable=True, comment="关闭原因补充说明")
-    linked_order_id = Column(BigInteger, nullable=True, comment="won机会对应的方舟有效订单ID")
+    linked_order_id = Column(
+        BigInteger,
+        ForeignKey(
+            "ark_customer_orders.id",
+            name="fk_customer_opportunity_order",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=True,
+        comment="won机会对应的方舟有效订单ID；服务层按逻辑客户校验",
+    )
     handled_at = Column(DateTime, nullable=True, comment="首次被人工处理的北京时间")
     created_by = Column(
         USER_ID,
@@ -1364,20 +1468,6 @@ class CustomerOpportunityEvent(Base):
 class CustomerAction(Base):
     __tablename__ = "ark_customer_actions"
     __table_args__ = (
-        ForeignKeyConstraint(
-            ["opportunity_id", "customer_id"],
-            ["ark_customer_opportunities.id", "ark_customer_opportunities.customer_id"],
-            name="fk_customer_action_opportunity",
-            ondelete="RESTRICT",
-            onupdate="RESTRICT",
-        ),
-        ForeignKeyConstraint(
-            ["profile_version_id", "customer_id"],
-            ["ark_customer_profile_versions.id", "ark_customer_profile_versions.customer_id"],
-            name="fk_customer_action_profile",
-            ondelete="RESTRICT",
-            onupdate="RESTRICT",
-        ),
         UniqueConstraint(
             "action_fingerprint",
             name="uq_ark_customer_actions_action_fingerprint",
@@ -1408,7 +1498,7 @@ class CustomerAction(Base):
         ),
         nullable=False,
         index=True,
-        comment="行动所属统一客户ID",
+        comment="创建时不可变的存储客户ID；行动记录保持同域，当前逻辑客户统一解析ark_customer_object_ownerships",
     )
     owner_user_id = Column(
         USER_ID,
@@ -1422,7 +1512,18 @@ class CustomerAction(Base):
         index=True,
         comment="行动执行人方舟用户ID；空表示公海未分配队列，认领时赋值",
     )
-    opportunity_id = Column(BigInteger, nullable=True, index=True, comment="可选关联机会ID，必须与customer_id一致")
+    opportunity_id = Column(
+        BigInteger,
+        ForeignKey(
+            "ark_customer_opportunities.id",
+            name="fk_customer_action_opportunity",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=True,
+        index=True,
+        comment="可选关联机会ID；服务层按逻辑客户校验",
+    )
     contact_id = Column(
         BigInteger,
         ForeignKey(
@@ -1465,7 +1566,17 @@ class CustomerAction(Base):
     feedback_json = Column(JSON, nullable=False, comment="action_feedback_v1：评价、备注、结果证据和下一步")
     source_event_ids = Column(JSON, nullable=False, comment="Schema v1触发行动的客户事件ID数组")
     evidence_fact_ids = Column(JSON, nullable=False, comment="Schema v1支撑行动原因和建议的事实ID数组")
-    profile_version_id = Column(BigInteger, nullable=False, comment="生成行动时使用的客户档案版本ID")
+    profile_version_id = Column(
+        BigInteger,
+        ForeignKey(
+            "ark_customer_profile_versions.id",
+            name="fk_customer_action_profile",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=False,
+        comment="生成行动时使用的客户档案版本ID；服务层按逻辑客户校验",
+    )
     source_type = Column(String(16), nullable=False, index=True, comment="生成来源：rule、agent、manual")
     agent_run_id = Column(
         BigInteger,
@@ -1521,7 +1632,7 @@ class CustomerAcquisitionAttribution(Base):
     )
 
     id = Column(BigInteger, primary_key=True, comment="获客归因链记录ID")
-    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=False, index=True, comment="归因所属统一客户ID")
+    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id"), nullable=False, index=True, comment="创建时不可变的存储客户ID；归因证据保持同域，当前逻辑客户统一解析ark_customer_object_ownerships")
     origin_type = Column(String(24), nullable=False, index=True, comment="首始来源：search、public_pool、alibaba_inquiry、okki、manual")
     origin_ref_type = Column(String(32), nullable=False, comment="首始来源对象：search_result、public_pool_batch、source_record、manual")
     origin_ref_id = Column(BigInteger, nullable=False, index=True, comment="首始来源方舟对象ID")
@@ -1566,6 +1677,7 @@ CORE_MODELS = (
     CustomerFactConflict,
     CustomerListProjection,
     CustomerChangeProposal,
+    CustomerObjectOwnership,
     CustomerAgentRunScope,
     CustomerSuppressionRegistry,
     CustomerResolutionKey,

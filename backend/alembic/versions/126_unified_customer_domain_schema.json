@@ -1,6 +1,6 @@
 {
   "customer_domain_physical_contract": {
-    "contract_sha256": "be44793c7532cb572397bbc595dd874c774b960f06cf0186133119783c8bfc95",
+    "contract_sha256": "64c40261e7012542affe5ff060c521d80d3ffe28ee3cfa4f77dfec964a027d5d",
     "migration_revision": "126",
     "schema_version": 1,
     "tables": {
@@ -667,7 +667,7 @@
           },
           {
             "autoincrement": false,
-            "comment": "归因所属统一客户ID",
+            "comment": "创建时不可变的存储客户ID；归因证据保持同域，当前逻辑客户统一解析ark_customer_object_ownerships",
             "computed": null,
             "default": null,
             "name": "customer_id",
@@ -1161,7 +1161,7 @@
           },
           {
             "autoincrement": false,
-            "comment": "行动所属统一客户ID",
+            "comment": "创建时不可变的存储客户ID；行动记录保持同域，当前逻辑客户统一解析ark_customer_object_ownerships",
             "computed": null,
             "default": null,
             "name": "customer_id",
@@ -1197,7 +1197,7 @@
           },
           {
             "autoincrement": false,
-            "comment": "可选关联机会ID，必须与customer_id一致",
+            "comment": "可选关联机会ID；服务层按逻辑客户校验",
             "computed": null,
             "default": null,
             "name": "opportunity_id",
@@ -1575,7 +1575,7 @@
           },
           {
             "autoincrement": false,
-            "comment": "生成行动时使用的客户档案版本ID",
+            "comment": "生成行动时使用的客户档案版本ID；服务层按逻辑客户校验",
             "computed": null,
             "default": null,
             "name": "profile_version_id",
@@ -1792,14 +1792,12 @@
           [
             "fk_customer_action_opportunity",
             [
-              "opportunity_id",
-              "customer_id"
+              "opportunity_id"
             ],
             null,
             "ark_customer_opportunities",
             [
-              "id",
-              "customer_id"
+              "id"
             ],
             "RESTRICT",
             "RESTRICT"
@@ -1820,14 +1818,12 @@
           [
             "fk_customer_action_profile",
             [
-              "profile_version_id",
-              "customer_id"
+              "profile_version_id"
             ],
             null,
             "ark_customer_profile_versions",
             [
-              "id",
-              "customer_id"
+              "id"
             ],
             "RESTRICT",
             "RESTRICT"
@@ -2484,7 +2480,7 @@
           },
           {
             "autoincrement": false,
-            "comment": "标记所属统一客户ID",
+            "comment": "创建时不可变的存储客户ID；政策记录保持同域，当前逻辑客户统一解析ark_customer_object_ownerships",
             "computed": null,
             "default": null,
             "name": "customer_id",
@@ -4002,7 +3998,7 @@
           },
           {
             "autoincrement": false,
-            "comment": "公司级渠道所属客户ID；与contact_id必须且只能填写一个",
+            "comment": "公司级渠道创建时不可变的存储客户ID；与contact_id必须且只能填写一个；当前逻辑客户统一解析ark_customer_object_ownerships",
             "computed": null,
             "default": null,
             "name": "customer_id",
@@ -6097,7 +6093,7 @@
           },
           {
             "autoincrement": false,
-            "comment": "会话所属统一客户ID",
+            "comment": "创建时不可变的存储客户ID；消息证据保持同域，当前逻辑客户统一解析ark_customer_object_ownerships",
             "computed": null,
             "default": null,
             "name": "customer_id",
@@ -6963,7 +6959,7 @@
           },
           {
             "autoincrement": false,
-            "comment": "公司或商业账户身份所属统一客户ID；与contact_id必须且只能填写一个",
+            "comment": "公司级身份创建时不可变的存储客户ID；与contact_id必须且只能填写一个；当前逻辑客户统一解析ark_customer_object_ownerships",
             "computed": null,
             "default": null,
             "name": "customer_id",
@@ -8665,7 +8661,7 @@
           },
           {
             "autoincrement": false,
-            "comment": "事实所属统一客户ID",
+            "comment": "创建时不可变的存储客户ID；证据保持同域，当前逻辑客户统一解析ark_customer_object_ownerships",
             "computed": null,
             "default": null,
             "name": "customer_id",
@@ -10344,7 +10340,7 @@
           },
           {
             "autoincrement": false,
-            "comment": "所属统一客户ID",
+            "comment": "创建时不可变的存储客户ID；证据保持同域，当前逻辑客户统一解析ark_customer_object_ownerships",
             "computed": null,
             "default": null,
             "name": "customer_id",
@@ -10824,6 +10820,261 @@
           ]
         ]
       },
+      "ark_customer_object_ownerships": {
+        "checks": [
+          [
+            "ck_customer_object_owner_action",
+            "last_action_type in ( 'merge' , 'split' )",
+            true
+          ],
+          [
+            "ck_customer_object_owner_version",
+            "ownership_version > 0",
+            true
+          ]
+        ],
+        "columns": [
+          {
+            "autoincrement": false,
+            "comment": "受customer_object_ownership_v1注册表约束的业务根对象类型",
+            "computed": null,
+            "default": null,
+            "name": "object_type",
+            "nullable": false,
+            "primary_key": true,
+            "temporal_fsp": null,
+            "type": {
+              "enum_values": [],
+              "length": 32,
+              "name": "VARCHAR",
+              "precision": null,
+              "scale": null,
+              "unsigned": false
+            }
+          },
+          {
+            "autoincrement": false,
+            "comment": "对应注册对象表的方舟内部主键；禁止作为动态表名或任意多态引用",
+            "computed": null,
+            "default": null,
+            "name": "object_id",
+            "nullable": false,
+            "primary_key": true,
+            "temporal_fsp": null,
+            "type": {
+              "enum_values": [],
+              "length": null,
+              "name": "BIGINT",
+              "precision": null,
+              "scale": null,
+              "unsigned": false
+            }
+          },
+          {
+            "autoincrement": false,
+            "comment": "对象创建时不可变的存储客户ID；必须与注册对象实际存储归属一致",
+            "computed": null,
+            "default": null,
+            "name": "storage_customer_id",
+            "nullable": false,
+            "primary_key": false,
+            "temporal_fsp": null,
+            "type": {
+              "enum_values": [],
+              "length": null,
+              "name": "BIGINT",
+              "precision": null,
+              "scale": null,
+              "unsigned": false
+            }
+          },
+          {
+            "autoincrement": false,
+            "comment": "合并或拆分后对象当前逻辑客户ID；回到存储客户时仍保留覆盖行",
+            "computed": null,
+            "default": null,
+            "name": "current_customer_id",
+            "nullable": false,
+            "primary_key": false,
+            "temporal_fsp": null,
+            "type": {
+              "enum_values": [],
+              "length": null,
+              "name": "BIGINT",
+              "precision": null,
+              "scale": null,
+              "unsigned": false
+            }
+          },
+          {
+            "autoincrement": false,
+            "comment": "归属覆盖CAS版本；首次写入为1，每次变更严格递增",
+            "computed": null,
+            "default": null,
+            "name": "ownership_version",
+            "nullable": false,
+            "primary_key": false,
+            "temporal_fsp": null,
+            "type": {
+              "enum_values": [],
+              "length": null,
+              "name": "BIGINT",
+              "precision": null,
+              "scale": null,
+              "unsigned": false
+            }
+          },
+          {
+            "autoincrement": false,
+            "comment": "最近一次改变逻辑归属的已批准合并或拆分提案ID",
+            "computed": null,
+            "default": null,
+            "name": "last_change_proposal_id",
+            "nullable": false,
+            "primary_key": false,
+            "temporal_fsp": null,
+            "type": {
+              "enum_values": [],
+              "length": null,
+              "name": "BIGINT",
+              "precision": null,
+              "scale": null,
+              "unsigned": false
+            }
+          },
+          {
+            "autoincrement": false,
+            "comment": "最近归属动作类型：merge或split",
+            "computed": null,
+            "default": null,
+            "name": "last_action_type",
+            "nullable": false,
+            "primary_key": false,
+            "temporal_fsp": null,
+            "type": {
+              "enum_values": [],
+              "length": 16,
+              "name": "VARCHAR",
+              "precision": null,
+              "scale": null,
+              "unsigned": false
+            }
+          },
+          {
+            "autoincrement": false,
+            "comment": "归属覆盖行首次创建的北京时间",
+            "computed": null,
+            "default": null,
+            "name": "created_at",
+            "nullable": false,
+            "primary_key": false,
+            "temporal_fsp": null,
+            "type": {
+              "enum_values": [],
+              "length": null,
+              "name": "DATETIME",
+              "precision": null,
+              "scale": null,
+              "unsigned": false
+            }
+          },
+          {
+            "autoincrement": false,
+            "comment": "归属覆盖版本最近变更的北京时间",
+            "computed": null,
+            "default": null,
+            "name": "updated_at",
+            "nullable": false,
+            "primary_key": false,
+            "temporal_fsp": null,
+            "type": {
+              "enum_values": [],
+              "length": null,
+              "name": "DATETIME",
+              "precision": null,
+              "scale": null,
+              "unsigned": false
+            }
+          }
+        ],
+        "foreign_keys": [
+          [
+            "fk_customer_object_owner_current",
+            [
+              "current_customer_id"
+            ],
+            null,
+            "ark_customer_accounts",
+            [
+              "id"
+            ],
+            "RESTRICT",
+            "RESTRICT"
+          ],
+          [
+            "fk_customer_object_owner_proposal",
+            [
+              "last_change_proposal_id"
+            ],
+            null,
+            "ark_customer_change_proposals",
+            [
+              "id"
+            ],
+            "RESTRICT",
+            "RESTRICT"
+          ],
+          [
+            "fk_customer_object_owner_storage",
+            [
+              "storage_customer_id"
+            ],
+            null,
+            "ark_customer_accounts",
+            [
+              "id"
+            ],
+            "RESTRICT",
+            "RESTRICT"
+          ]
+        ],
+        "indexes": [
+          [
+            "ix_customer_object_owner_current",
+            false,
+            [
+              "current_customer_id",
+              "object_type",
+              "object_id"
+            ]
+          ],
+          [
+            "ix_customer_object_owner_proposal",
+            false,
+            [
+              "last_change_proposal_id"
+            ]
+          ],
+          [
+            "ix_customer_object_owner_storage",
+            false,
+            [
+              "storage_customer_id",
+              "object_type",
+              "object_id"
+            ]
+          ]
+        ],
+        "primary_key": {
+          "columns": [
+            "object_type",
+            "object_id"
+          ],
+          "name": null
+        },
+        "table_comment": "客户业务根对象的逻辑归属覆盖表；原表customer_id保持不可变存储归属，权限、档案和业务读取统一解析本表当前客户。",
+        "unique_constraints": []
+      },
       "ark_customer_opportunities": {
         "checks": [
           [
@@ -10858,7 +11109,7 @@
           },
           {
             "autoincrement": false,
-            "comment": "机会所属统一客户ID",
+            "comment": "创建时不可变的存储客户ID；机会事件保持同域，当前逻辑客户统一解析ark_customer_object_ownerships",
             "computed": null,
             "default": null,
             "name": "customer_id",
@@ -11488,7 +11739,7 @@
           },
           {
             "autoincrement": false,
-            "comment": "won机会对应的方舟有效订单ID",
+            "comment": "won机会对应的方舟有效订单ID；服务层按逻辑客户校验",
             "computed": null,
             "default": null,
             "name": "linked_order_id",
@@ -11620,14 +11871,12 @@
           [
             "fk_customer_opportunity_order",
             [
-              "linked_order_id",
-              "customer_id"
+              "linked_order_id"
             ],
             null,
             "ark_customer_orders",
             [
-              "id",
-              "customer_id"
+              "id"
             ],
             "RESTRICT",
             "RESTRICT"
@@ -12604,7 +12853,7 @@
           },
           {
             "autoincrement": false,
-            "comment": "订单所属统一客户ID",
+            "comment": "创建时不可变的存储客户ID；订单明细保持同域，当前逻辑客户统一解析ark_customer_object_ownerships",
             "computed": null,
             "default": null,
             "name": "customer_id",
@@ -14651,7 +14900,7 @@
           },
           {
             "autoincrement": false,
-            "comment": "被研究的统一客户ID",
+            "comment": "创建时不可变的存储客户ID；任务结果保持同域，当前逻辑客户统一解析ark_customer_object_ownerships",
             "computed": null,
             "default": null,
             "name": "customer_id",
@@ -15848,7 +16097,7 @@
           },
           {
             "autoincrement": false,
-            "comment": "已解析的统一客户ID；身份尚未解析时允许为空",
+            "comment": "解析后写入创建时不可变的存储客户ID；身份尚未解析时允许为空；当前逻辑客户统一解析ark_customer_object_ownerships",
             "computed": null,
             "default": null,
             "name": "customer_id",
@@ -19259,7 +19508,7 @@
           },
           {
             "autoincrement": false,
-            "comment": "解析或创建的统一客户ID",
+            "comment": "创建时不可变的存储客户ID；搜索证据保持同域，当前逻辑客户统一解析ark_customer_object_ownerships",
             "computed": null,
             "default": null,
             "name": "customer_id",

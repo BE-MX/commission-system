@@ -125,6 +125,49 @@ IDENTITY_REGISTRY: Mapping[tuple[str, str], IdentityPolicy] = MappingProxyType({
 })
 
 
+@dataclass(frozen=True, slots=True)
+class ObjectOwnershipPolicy:
+    """Declare how a movable business root exposes its storage customer."""
+
+    storage_mode: Literal["direct", "subject"]
+    handling_mode: Literal["overlay", "end_and_rebuild_if_open"]
+    eligibility: Literal[
+        "always",
+        "non_policy_annotation",
+        "terminal_research_task",
+    ]
+
+
+OBJECT_OWNERSHIP_REGISTRY_VERSION = "customer_object_ownership_v1"
+OBJECT_OWNERSHIP_REGISTRY: Mapping[str, ObjectOwnershipPolicy] = MappingProxyType({
+    "name": ObjectOwnershipPolicy("direct", "overlay", "always"),
+    "external_identity": ObjectOwnershipPolicy("subject", "overlay", "always"),
+    "contact_point": ObjectOwnershipPolicy("subject", "overlay", "always"),
+    "source_record": ObjectOwnershipPolicy("direct", "overlay", "always"),
+    "fact": ObjectOwnershipPolicy("direct", "overlay", "always"),
+    "conversation": ObjectOwnershipPolicy("direct", "overlay", "always"),
+    "order": ObjectOwnershipPolicy("direct", "overlay", "always"),
+    "research_task": ObjectOwnershipPolicy(
+        "direct",
+        "end_and_rebuild_if_open",
+        "terminal_research_task",
+    ),
+    "search_result": ObjectOwnershipPolicy("direct", "overlay", "always"),
+    "opportunity": ObjectOwnershipPolicy("direct", "overlay", "always"),
+    "action": ObjectOwnershipPolicy("direct", "overlay", "always"),
+    "annotation": ObjectOwnershipPolicy(
+        "direct",
+        "overlay",
+        "non_policy_annotation",
+    ),
+    "acquisition_attribution": ObjectOwnershipPolicy(
+        "direct",
+        "overlay",
+        "always",
+    ),
+})
+
+
 def identity_policy(source_system: str, identifier_type: str) -> IdentityPolicy:
     """Return the registered identity policy, rejecting undeclared identities."""
     try:

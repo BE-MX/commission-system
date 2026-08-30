@@ -2713,13 +2713,13 @@ def test_mysql_check_enforcement_requires_authoritative_yes_for_every_check():
             )
 
 
-def test_revision_126_must_register_all_38_physical_table_contracts():
+def test_revision_126_must_register_all_39_physical_table_contracts():
     complete = _physical_schema_contract()
-    assert len(complete["tables"]) == 38
+    assert len(complete["tables"]) == 39
     assert validate_customer_physical_schema_contract(complete) == complete[
         "contract_sha256"
     ]
-    with pytest.raises(CutoverGuardError, match="exactly 38 tables"):
+    with pytest.raises(CutoverGuardError, match="exactly 39 tables"):
         validate_customer_physical_schema_contract(
             _physical_schema_contract(omit="ark_sales_search_result_sources")
         )

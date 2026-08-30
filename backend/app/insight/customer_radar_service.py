@@ -280,6 +280,7 @@ def complete_action(
     occurred_at: datetime | None = None,
     summary: str | None = None,
     next_step: str | None = None,
+    can_manage: bool = False,
 ) -> CustomerAction:
     action = db.get(CustomerAction, action_id)
     if action is None:
@@ -293,6 +294,7 @@ def complete_action(
         outcome_code=outcome_code,
         summary=(summary or note or "行动已由业务员完成").strip(),
         next_step=(next_step if next_step is not None else action.next_action),
+        can_manage=can_manage,
     )
     if feedback:
         row.feedback_json = {
@@ -335,7 +337,11 @@ def _require_action_actor_scope(
     db: Session,
     action: CustomerAction,
     user_id: int,
+    *,
+    can_manage: bool = False,
 ) -> None:
+    if can_manage:
+        return
     assignment = db.query(CustomerAssignment.id).filter(
         CustomerAssignment.customer_id == action.customer_id,
         CustomerAssignment.user_id == user_id,
@@ -362,6 +368,7 @@ def dismiss_action(
     *,
     reason_code: str = "user_dismissed",
     note: str | None = None,
+    can_manage: bool = False,
 ) -> CustomerAction:
     if reason_code not in ACTION_DISMISSAL_REASON_CODES:
         raise CustomerWorkflowConflict("ACTION_DISMISSAL_INVALID")
@@ -369,9 +376,9 @@ def dismiss_action(
     if normalized_note is not None and len(normalized_note) > 1000:
         raise CustomerWorkflowConflict("ACTION_DISMISSAL_INVALID")
     action, account = _action_and_account_for_update(db, action_id)
-    if action.owner_user_id != user_id:
+    if not can_manage and action.owner_user_id != user_id:
         raise CustomerWorkflowConflict("ACTION_OWNER_REQUIRED")
-    _require_action_actor_scope(db, action, user_id)
+    _require_action_actor_scope(db, action, user_id, can_manage=can_manage)
     if action.status != "pending":
         raise CustomerWorkflowConflict("ACTION_NOT_PENDING")
     action.status = "dismissed"
@@ -393,11 +400,13 @@ def snooze_action(
     action_id: int,
     user_id: int,
     until: datetime,
+    *,
+    can_manage: bool = False,
 ) -> CustomerAction:
     action, account = _action_and_account_for_update(db, action_id)
-    if action.owner_user_id != user_id:
+    if not can_manage and action.owner_user_id != user_id:
         raise CustomerWorkflowConflict("ACTION_OWNER_REQUIRED")
-    _require_action_actor_scope(db, action, user_id)
+    _require_action_actor_scope(db, action, user_id, can_manage=can_manage)
     if action.status != "pending":
         raise CustomerWorkflowConflict("ACTION_NOT_PENDING")
     normalized_until = to_beijing_naive(until)
@@ -419,11 +428,13 @@ def submit_feedback(
     feedback: str,
     note: str | None,
     user_id: int,
+    *,
+    can_manage: bool = False,
 ) -> CustomerAction:
     action, account = _action_and_account_for_update(db, action_id)
-    if action.owner_user_id != user_id:
+    if not can_manage and action.owner_user_id != user_id:
         raise CustomerWorkflowConflict("ACTION_OWNER_REQUIRED")
-    _require_action_actor_scope(db, action, user_id)
+    _require_action_actor_scope(db, action, user_id, can_manage=can_manage)
     action.feedback_json = {
         **dict(action.feedback_json or {}),
         "user_feedback": feedback,

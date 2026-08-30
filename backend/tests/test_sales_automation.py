@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from app.auth.dependencies import get_current_user
 from app.auth.models import ArkUser
 from app.core.database import get_db
+from app.customer import router as customer_hub_router
 from app.customer.identity_service import (
     CustomerDomainError,
     CustomerTransactionRetryRequired,
@@ -261,7 +262,7 @@ def test_identity_resolution_conflict_is_quarantined_with_specific_code(db, monk
 
 def _human_client(db, identity: dict) -> TestClient:
     app = FastAPI()
-    app.include_router(router.router, prefix="/api/sales-automation")
+    app.include_router(customer_hub_router.router, prefix="/api/customer-hub")
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[get_current_user] = lambda: identity
     return TestClient(app)
@@ -275,12 +276,12 @@ def test_human_http_uses_ok_envelope_permissions_and_new_identifiers(db):
         "permissions": ["sales_automation:admin", "sales_automation:read"],
     }
     with _human_client(db, identity) as client:
-        saved = client.put("/api/sales-automation/profile", json=_profile_payload())
+        saved = client.put("/api/customer-hub/acquisition-profile", json=_profile_payload())
         assert saved.status_code == 200
         assert saved.json()["data"]["policy_version"] == "profile-v1"
 
         identity["permissions"] = ["sales_automation:write"]
-        created = client.post("/api/sales-automation/search-jobs", json={
+        created = client.post("/api/customer-hub/search-jobs", json={
             "name": "US salons",
             "target_count": 20,
             "adapter": "agent",
@@ -293,11 +294,11 @@ def test_human_http_uses_ok_envelope_permissions_and_new_identifiers(db):
         assert "lead_id" not in created.json()["data"]
 
         identity["permissions"] = ["sales_automation:read"]
-        forbidden = client.post("/api/sales-automation/search-jobs", json={
+        forbidden = client.post("/api/customer-hub/search-jobs", json={
             "name": "forbidden", "target_count": 1, "idempotency_key": "3" * 64,
         })
         assert forbidden.status_code == 403
-        listed = client.get("/api/sales-automation/search-jobs")
+        listed = client.get("/api/customer-hub/search-jobs")
         assert listed.status_code == 200
         assert listed.json()["data"]["items"][0]["job_id"] == created.json()["data"]["job_id"]
         assert client.get("/api/sales-automation/leads").status_code == 404

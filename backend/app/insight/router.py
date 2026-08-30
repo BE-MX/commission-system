@@ -899,7 +899,6 @@ def _serialize_item_detail(item) -> dict:
 # ── 客户机会台 ───────────────────────────────────────
 # ──────────────────────────────────────────────────────
 
-@router.get("/customer-opportunities/my", summary="我的客户机会")
 def list_my_opportunities(
     status: str = Query(None),
     priority_level: str = Query(None),
@@ -923,7 +922,6 @@ def list_my_opportunities(
     })
 
 
-@router.get("/customer-opportunities/stats", summary="我的机会统计")
 def get_my_stats(
     db: Session = Depends(get_db),
     _user: dict = Depends(_require_opportunity_read),
@@ -933,7 +931,6 @@ def get_my_stats(
     return _ok(get_opportunity_stats(db, user_id))
 
 
-@router.get("/customer-opportunities/{opp_id}", summary="机会详情")
 def get_opportunity_detail(
     opp_id: int,
     db: Session = Depends(get_db),
@@ -964,7 +961,6 @@ def get_opportunity_detail(
     return _ok(_serialize_opportunity_detail(opp))
 
 
-@router.put("/customer-opportunities/{opp_id}/status", summary="更新机会状态")
 def update_opp_status(
     opp_id: int,
     status: str = Query(..., description="新状态"),
@@ -1008,7 +1004,6 @@ def update_opp_status(
         raise HTTPException(status_code=409, detail=str(e))
 
 
-@router.get("/customer-opportunities/admin/all", summary="管理员: 全部机会")
 def admin_list_all(
     status: str = Query(None),
     priority_level: str = Query(None),
@@ -1030,7 +1025,6 @@ def admin_list_all(
     })
 
 
-@router.get("/customer-opportunities/admin/unassigned", summary="管理员: 未分配机会")
 def admin_list_unassigned(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -1047,7 +1041,6 @@ def admin_list_unassigned(
     })
 
 
-@router.put("/customer-opportunities/{opp_id}/assign", summary="管理员: 分配机会")
 def admin_assign(
     opp_id: int,
     user_id: int = Query(..., description="方舟用户ID"),
@@ -1168,7 +1161,6 @@ def _require_customer_radar_scope(
     _customer_radar_access(db, customer_id, user)
 
 
-@router.get("/customer-radar/focus")
 def radar_daily_focus(
     action_date: Optional[str] = Query(None, description="日期 YYYY-MM-DD"),
     thread_group: Optional[str] = Query(None, description="经营线索分组"),
@@ -1182,7 +1174,6 @@ def radar_daily_focus(
     return _ok(get_daily_focus(db, uid, d, thread_group))
 
 
-@router.get("/customer-radar/threads/counts")
 def radar_thread_counts(
     action_date: Optional[str] = Query(None, description="日期 YYYY-MM-DD"),
     _user: dict = Depends(_require_radar_read),
@@ -1195,7 +1186,6 @@ def radar_thread_counts(
     return _ok(get_thread_counts(db, uid, d))
 
 
-@router.get("/customer-radar/actions")
 def radar_actions(
     action_date: Optional[str] = Query(None, description="日期 YYYY-MM-DD"),
     thread_group: Optional[str] = Query(None, description="经营线索分组"),
@@ -1220,7 +1210,6 @@ def radar_actions(
     return _ok({"actions": all_actions, "total": len(all_actions)})
 
 
-@router.put("/customer-radar/actions/{action_id}/complete")
 def radar_complete_action(
     action_id: int,
     feedback: Optional[str] = Query(None),
@@ -1260,7 +1249,6 @@ def radar_complete_action(
     return _ok(data)
 
 
-@router.put("/customer-radar/actions/{action_id}/dismiss")
 def radar_dismiss_action(
     action_id: int,
     reason_code: str = Query("user_dismissed"),
@@ -1283,7 +1271,6 @@ def radar_dismiss_action(
     return _ok(_serialize_action(action))
 
 
-@router.put("/customer-radar/actions/{action_id}/snooze")
 def radar_snooze_action(
     action_id: int,
     until: str = Query(..., description="延后到 YYYY-MM-DDTHH:MM"),
@@ -1301,7 +1288,6 @@ def radar_snooze_action(
     return _ok(_serialize_action(action))
 
 
-@router.post("/customer-radar/actions/{action_id}/feedback")
 def radar_action_feedback(
     action_id: int,
     body: dict,
@@ -1323,7 +1309,6 @@ def radar_action_feedback(
     return _ok(_serialize_action(action))
 
 
-@router.get("/customer-radar/customers/{customer_id}")
 def radar_profile_detail(
     customer_id: int,
     _user: dict = Depends(_require_radar_read),
@@ -1373,7 +1358,6 @@ def radar_profile_detail(
     })
 
 
-@router.get("/customer-radar/customers/{customer_id}/sources")
 def radar_profile_sources(
     customer_id: int,
     source_type: Optional[str] = Query(None, description="opportunity/event/note"),
@@ -1391,7 +1375,6 @@ def radar_profile_sources(
     ))
 
 
-@router.post("/customer-radar/customers/{customer_id}/notes")
 def radar_add_note(
     customer_id: int,
     body: dict,
@@ -1415,7 +1398,6 @@ def radar_add_note(
     return _ok({"id": annotation.id, "annotation_type": annotation.annotation_type}, code=201)
 
 
-@router.post("/customer-radar/actions/refresh")
 def radar_refresh_actions(
     _user: dict = Depends(_require_radar_write),
     db: Session = Depends(get_db),

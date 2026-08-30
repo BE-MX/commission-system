@@ -1385,6 +1385,51 @@ def test_action_completion_logs_sales_activity_without_fabricating_opportunity_s
     ).count()
 
 
+def test_verified_manager_override_keeps_real_actor_and_bypasses_owner_only_checks(db):
+    _user(db, 1)
+    _user(db, 2)
+    account, version = _account(db, code="C-MANAGED-ACTION")
+    workflow = _workflow()
+    workflow.assign_customer(
+        db, customer_id=account.id, user_id=1, assignment_role="primary",
+        assignment_source="manual", operated_by=2,
+    )
+
+    def action(day_offset):
+        return workflow.create_action(
+            db, customer_id=account.id, owner_user_id=1,
+            profile_version_id=version.id, action_type="review",
+            thread_group="public_pool", priority="normal", reason=f"Managed {day_offset}",
+            next_action="Handle", policy_version="workflow-v1", source_type="manual",
+            source_event_ids=[], evidence_fact_ids=[],
+            action_date=NOW.date() + timedelta(days=day_offset),
+        )
+
+    completed = workflow.complete_action(
+        db, action_id=action(1).id, completed_by=2, occurred_at=NOW,
+        channel="internal", outcome_code="other", summary="Manager completed",
+        next_step="None", can_manage=True,
+    )
+    assert completed.completed_by == 2
+
+    from app.insight import customer_radar_service
+
+    dismissed = customer_radar_service.dismiss_action(
+        db, action(2).id, 2, reason_code="other", note="manager decision",
+        can_manage=True,
+    )
+    assert dismissed.status == "dismissed"
+    snoozed = customer_radar_service.snooze_action(
+        db, action(3).id, 2, NOW + timedelta(days=4), can_manage=True,
+    )
+    assert snoozed.status == "snoozed"
+    feedback = customer_radar_service.submit_feedback(
+        db, action(4).id, "manager feedback", None, 2, can_manage=True,
+    )
+    assert feedback.feedback_json["submitted_by"] == 2
+    assert all(row.owner_user_id == 1 for row in (completed, dismissed, snoozed, feedback))
+
+
 def test_action_generation_and_user_state_changes_advance_profile_input_once(db):
     _user(db, 1)
     account, version = _account(db)
@@ -2183,6 +2228,15 @@ def test_manual_won_permission_is_registered_but_not_auto_granted_to_admin():
     assert session.query(ArkRolePermission).filter_by(
         role_id=admin.id,
         permission_id=permission.id,
+    ).count() == 0
+    customer_admin = session.query(ArkPermission).filter_by(code="customer:admin").one()
+    customer_read_all = session.query(ArkPermission).filter_by(code="customer:read_all").one()
+    assert customer_read_all.kind == "data"
+    assert session.query(ArkRolePermission).filter_by(
+        role_id=admin.id, permission_id=customer_admin.id,
+    ).count() == 1
+    assert session.query(ArkRolePermission).filter_by(
+        role_id=admin.id, permission_id=customer_read_all.id,
     ).count() == 0
     session.close()
     engine.dispose()
@@ -3190,10 +3244,14 @@ def test_opportunity_list_order_is_mysql_portable_without_nulls_last_syntax(db):
 
 def test_insight_routes_only_expose_customer_id_profile_and_no_retired_import_endpoints():
     from app.insight.router import router
+    from app.customer.router import router as customer_hub_router
 
     paths = {route.path for route in router.routes}
-    assert "/customer-radar/customers/{customer_id}" in paths
-    assert "/customer-radar/customers/{customer_id}/sources" in paths
+    hub_paths = {route.path for route in customer_hub_router.routes}
+    assert "/customer-radar/customers/{customer_id}" not in paths
+    assert "/customer-radar/customers/{customer_id}/sources" not in paths
+    assert "/customers/{customer_id}" in hub_paths
+    assert "/customers/{customer_id}/timeline" in hub_paths
     assert "/customer-radar/profiles/{profile_id}" not in paths
     assert "/customer-opportunities/import/accio" not in paths
 
@@ -3415,7 +3473,7 @@ def test_customer_profile_projects_agent_context_for_ordinary_team_reader(db):
         customer_id=account.id,
         user={
             "sub": "1",
-            "permissions": ["customer_radar:manage"],
+                "permissions": ["customer_radar:manage", "customer:read_all"],
             "roles": [],
         },
         action_permissions={"customer_radar:read", "customer_radar:manage"},
@@ -3539,7 +3597,7 @@ def test_customer_source_projection_enforces_visibility_and_classification(db):
 
     manager = {
         "sub": "1",
-        "permissions": ["customer_radar:manage"],
+        "permissions": ["customer_radar:manage", "customer:read_all"],
         "roles": [],
     }
     manager_access = require_customer_access(

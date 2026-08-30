@@ -76,6 +76,7 @@ CORE_TABLES = {
     "ark_customer_fact_conflicts",
     "ark_customer_list_projections",
     "ark_customer_change_proposals",
+    "ark_customer_object_ownerships",
     "ark_customer_agent_run_scopes",
     "ark_customer_suppression_registry",
     "ark_customer_resolution_keys",
@@ -281,7 +282,7 @@ sys.meta_path.insert(0, BlockCustomerModels())
 spec = importlib.util.spec_from_file_location("revision_126_import_guard", sys.argv[1])
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-assert len(module.TARGET_METADATA.tables) == 38
+assert len(module.TARGET_METADATA.tables) == 39
 """
     result = subprocess.run(
         [sys.executable, "-c", program, str(MIGRATION_PATH)],
@@ -504,18 +505,18 @@ def test_every_foreign_key_has_an_explicit_stable_mysql_supporting_index():
             ), f"{table_name}.{foreign_key.name}"
 
 
-def test_alembic_operations_compile_the_complete_38_table_mysql_ddl():
+def test_alembic_operations_compile_the_complete_39_table_mysql_ddl():
     migration = _load_migration()
 
     sql = _offline_mysql_sql(migration._create_target_tables)
 
-    assert len(re.findall(r"^CREATE TABLE ", sql, re.MULTILINE)) == 38
+    assert len(re.findall(r"^CREATE TABLE ", sql, re.MULTILINE)) == 39
     assert set(re.findall(r"CREATE TABLE (ark_[a-z0-9_]+)", sql)) == (
         CORE_TABLES | WORKFLOW_TABLES
     )
     assert "GENERATED ALWAYS AS" in sql
     assert " STORED" in sql
-    assert sql.count("COMMENT") >= 38
+    assert sql.count("COMMENT") >= 39
     expected_indexes = sum(
         len(table.indexes) for table in migration.TARGET_METADATA.tables.values()
     )

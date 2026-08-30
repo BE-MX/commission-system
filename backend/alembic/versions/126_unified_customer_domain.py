@@ -83,6 +83,7 @@ CORE_TABLE_NAMES = (
     "ark_customer_fact_conflicts",
     "ark_customer_list_projections",
     "ark_customer_change_proposals",
+    "ark_customer_object_ownerships",
     "ark_customer_agent_run_scopes",
     "ark_customer_suppression_registry",
     "ark_customer_resolution_keys",
@@ -155,13 +156,13 @@ TARGET_PROFILE_COLUMNS = {
 
 CHAR64 = sa.String(64).with_variant(mysql.CHAR(64), "mysql")
 
-# These literals pin the complete 38-table contract and the revision-owned
+# These literals pin the complete 39-table contract and the revision-owned
 # resource bytes; migration replay never reads mutable runtime ORM metadata.
 FROZEN_TARGET_SCHEMA_SHA256 = (
-    "be44793c7532cb572397bbc595dd874c774b960f06cf0186133119783c8bfc95"
+    "64c40261e7012542affe5ff060c521d80d3ffe28ee3cfa4f77dfec964a027d5d"
 )
 FROZEN_SCHEMA_RESOURCE_SHA256 = (
-    "34672f9cf0c0e0e3d6b6707fb545f3e08b3b05dc6db783f6837defef6733a618"
+    "41a12ffe77956054556fc31bcbcf620170bc5ba1fac20a4f737d8e3d0626ceb4"
 )
 FROZEN_SCHEMA_RESOURCE_PATH = Path(__file__).with_name(
     "126_unified_customer_domain_schema.json"

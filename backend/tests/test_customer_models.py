@@ -58,6 +58,7 @@ EXPECTED_TABLES = {
     "ark_customer_fact_conflicts",
     "ark_customer_list_projections",
     "ark_customer_change_proposals",
+    "ark_customer_object_ownerships",
     "ark_customer_agent_run_scopes",
     "ark_customer_suppression_registry",
     "ark_customer_resolution_keys",
@@ -205,10 +206,10 @@ def _assert_design_type(column, design_type):
         raise AssertionError(f"unhandled design type: {design_type}")
 
 
-def test_customer_module_supplies_exactly_the_31_core_tables():
+def test_customer_module_supplies_exactly_the_32_core_tables():
     module_models = _module_models()
 
-    assert len(module_models) == 31
+    assert len(module_models) == 32
     assert {model.__tablename__ for model in module_models} == EXPECTED_TABLES
     assert set(models.CORE_TABLE_NAMES) == EXPECTED_TABLES
     assert not (set(models.CORE_TABLE_NAMES) & DEFERRED_WORKFLOW_TABLES)
@@ -638,7 +639,7 @@ def test_core_metadata_can_create_on_sqlite():
 def test_every_core_table_compiles_complete_mysql_ddl_with_comments():
     importlib.import_module("app.models")
 
-    assert len(models.CORE_TABLES) == 31
+    assert len(models.CORE_TABLES) == 32
     for table_name, table in models.CORE_TABLES.items():
         ddl = str(CreateTable(table).compile(dialect=mysql.dialect()))
         assert table_name in ddl

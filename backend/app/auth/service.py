@@ -197,7 +197,7 @@ def list_okki_department_options(db: Session) -> list[dict]:
 
 
 # kind 派生规则（权限重设计方案）：data=数据范围，read/日报=页面可见，其余=操作级
-_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all", "agent_runtime:read_all"}
+_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all", "agent_runtime:read_all", "customer:read_all"}
 _PAGE_KIND_EXTRA = {"tracking:daily_report"}
 
 
@@ -247,7 +247,7 @@ def seed_role_permissions(db: Session):
         ("supervisor:read",  "supervisor", "read",  "查看主管关系"),
         ("supervisor:write", "supervisor", "write", "设置/变更/导入主管关系"),
         # 客户管理
-        ("customer:read",  "customer", "read",   "查看客户归属"),
+        ("customer:read",  "customer", "read",   "查看本人、协作和公海摘要范围内的统一客户档案"),
         ("customer:write", "customer", "write",  "编辑客户归属"),
         # 提成管理（2026-07-12 我的提成页拆独立页面码 064；self_read 退回纯数据范围码）
         ("commission:read",      "commission", "read",       "查看提成批次"),
@@ -413,6 +413,8 @@ def seed_role_permissions(db: Session):
         ("training:write",        "training",   "write",      "发布/编辑自己的培训速递 / AI 提炼 / 上传资料 / 钉钉推送"),
         ("training:admin",        "training",   "admin",      "管理全部培训速递（编辑/下架/删除）"),
         # 客户机会台
+        ("customer:admin", "customer", "admin", "管理本部门范围内的客户、归属和高影响提案"),
+        ("customer:read_all", "customer", "read_all", "读取全部统一客户档案数据范围"),
         ("customer_opportunity:read",   "customer_opportunity", "read",   "查看客户机会（本人）"),
         ("customer_opportunity:write",  "customer_opportunity", "write",  "更新机会状态/添加反馈"),
         ("customer_opportunity:import", "customer_opportunity", "import", "ACCIO 导入询盘"),
@@ -532,6 +534,7 @@ def seed_role_permissions(db: Session):
     manual_grant_codes = {
         "operations:admin",
         "customer_opportunity:confirm_without_order",
+        "customer:read_all",
     }
     # 给 admin 角色补齐一般非 legacy 权限（跳过已下架和显式授权项）。
     admin_role = db.query(ArkRole).filter(ArkRole.name == "admin").first()

@@ -223,7 +223,6 @@ def _qualification(row):
     }
 
 
-@router.get("/profile")
 def get_profile(
     db: Session = Depends(get_db),
     _user=Depends(require_any_permission(*READ_PERMISSIONS)),
@@ -231,7 +230,6 @@ def get_profile(
     return ok(_profile(service.get_profile(db)))
 
 
-@router.put("/profile")
 def save_profile(
     payload: ProfileUpsert,
     db: Session = Depends(get_db),
@@ -240,7 +238,6 @@ def save_profile(
     return ok(_profile(_call(service.upsert_profile, db, payload, _user_id(user))))
 
 
-@router.get("/search-jobs")
 def list_search_jobs(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -252,7 +249,6 @@ def list_search_jobs(
     return ok(page_result([_job(row) for row in rows], total, page, page_size))
 
 
-@router.post("/search-jobs", status_code=status.HTTP_201_CREATED)
 def create_search_job(
     payload: SearchJobCreate,
     db: Session = Depends(get_db),
@@ -261,7 +257,6 @@ def create_search_job(
     return ok(_job(_call(service.create_search_job, db, payload, _user_id(user))))
 
 
-@router.post("/search-jobs/{job_id}/requeue")
 def requeue_search_job(
     job_id: int,
     db: Session = Depends(get_db),
@@ -270,7 +265,6 @@ def requeue_search_job(
     return ok(_job(_call(service.requeue_search_job, db, job_id, _user_id(user))))
 
 
-@router.get("/search-jobs/{job_id}/results")
 def list_search_results(
     job_id: int,
     page: int = Query(1, ge=1),
@@ -282,7 +276,6 @@ def list_search_results(
     return ok(page_result([_result(row) for row in rows], total, page, page_size))
 
 
-@router.get("/public-pool/audit")
 def get_public_pool_audit(
     db: Session = Depends(get_db),
     _user=Depends(require_any_permission(*READ_PERMISSIONS)),
@@ -290,7 +283,6 @@ def get_public_pool_audit(
     return ok(_call(public_pool_service.latest_audit, db, False))
 
 
-@router.post("/public-pool/audit/refresh")
 def refresh_public_pool_audit(
     db: Session = Depends(get_db),
     _user=Depends(require_permission("sales_automation:admin")),
@@ -298,7 +290,6 @@ def refresh_public_pool_audit(
     return ok(_call(public_pool_service.latest_audit, db, True))
 
 
-@router.get("/public-pool/batches")
 def list_public_pool_batches(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -309,7 +300,6 @@ def list_public_pool_batches(
     return ok(page_result([_batch(row) for row in rows], total, page, page_size))
 
 
-@router.post("/public-pool/batches", status_code=status.HTTP_201_CREATED)
 def create_public_pool_batch(
     payload: PublicPoolBatchCreate,
     db: Session = Depends(get_db),
@@ -319,7 +309,6 @@ def create_public_pool_batch(
     return ok(_batch(row))
 
 
-@router.get("/research-tasks")
 def list_research_tasks(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -342,7 +331,6 @@ def list_research_tasks(
     return ok(page_result([_research_task(row) for row in rows], total, page, page_size))
 
 
-@router.get("/research-tasks/{task_id}")
 def get_research_task(
     task_id: int,
     db: Session = Depends(get_db),
@@ -355,7 +343,6 @@ def get_research_task(
     ))
 
 
-@router.post("/research-tasks/{task_id}/result-review")
 def review_research_result(
     task_id: int,
     payload: ResearchResultReview,
@@ -372,7 +359,6 @@ def review_research_result(
     return ok(_research_task(row, include_content=True))
 
 
-@router.get("/qualification-queue")
 def list_qualification_queue(
     db: Session = Depends(get_db),
     _user=Depends(require_any_permission(*READ_PERMISSIONS)),
@@ -381,7 +367,6 @@ def list_qualification_queue(
     return ok({"items": [_research_task(row) for row in rows], "total": len(rows)})
 
 
-@router.post("/qualification-reviews", status_code=status.HTTP_201_CREATED)
 def submit_qualification_review(
     payload: QualificationReviewSubmit,
     db: Session = Depends(get_db),
