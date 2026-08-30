@@ -53,7 +53,7 @@ def mount_mcp(app: FastAPI) -> None:
     logger.info(
         "MCP server mounted at /mcp (tools: record_shipment/track_shipment/list_my_shipments"
         "/list_asset_taxonomy/search_assets/search_knowledge/get_knowledge_document"
-        "/get_standard_price/find_product + governed Agent read tools)"
+        "/get_standard_price/find_product + nine governed Ark customer read tools)"
     )
 
 

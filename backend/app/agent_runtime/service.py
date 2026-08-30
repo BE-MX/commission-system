@@ -14,7 +14,8 @@ from app.agent_runtime.models import AgentArtifact, AgentEvent, AgentProfile, Ag
 from app.agent_runtime.state_machine import require_transition
 from app.auth.models import ArkUser
 from app.core.config import get_settings
-from app.customer.models import CustomerAccount, CustomerAgentRunScope
+from app.customer.models import CustomerAgentRunScope
+from app.customer.access_service import CustomerAccessDenied, require_customer_access
 
 
 def get_active_profile(db: Session, profile_key: str) -> AgentProfile:
@@ -157,6 +158,24 @@ def create_run(
                 or input_customer_id != ref_id
             ):
                 raise ForbiddenError("客户经营副驾驶必须绑定会话中的同一统一客户")
+    raw_customer_id = run_input.get("customer_id")
+    customer_id = None
+    if raw_customer_id is not None:
+        try:
+            customer_id = int(raw_customer_id)
+            require_customer_access(
+                db,
+                customer_id=customer_id,
+                user={
+                    "sub": str(user_id),
+                    "permissions": sorted(effective_permissions),
+                    "roles": sorted(set(roles)),
+                },
+                action_permissions={"customer:read", "customer:admin", "customer:read_all"},
+                manage_permissions={"customer:admin", "customer:read_all"},
+            )
+        except (TypeError, ValueError, CustomerAccessDenied) as exc:
+            raise ForbiddenError("CUSTOMER_NOT_FOUND_OR_FORBIDDEN") from exc
     existing = db.query(AgentRun).filter(
         AgentRun.owner_user_id == user_id,
         AgentRun.idempotency_key == data["idempotency_key"],
@@ -206,18 +225,7 @@ def create_run(
     db.add(row)
     try:
         db.flush()
-        raw_customer_id = run_input.get("customer_id")
-        try:
-            customer_id = int(raw_customer_id) if raw_customer_id is not None else None
-        except (TypeError, ValueError):
-            customer_id = None
-        if (
-            customer_id is not None
-            and db.query(CustomerAccount.id).filter(
-                CustomerAccount.id == customer_id,
-                CustomerAccount.record_status == "active",
-            ).first() is not None
-        ):
+        if customer_id is not None:
             scope_snapshot_hash = content_hash({
                 "run_id": row.id,
                 "customer_ids": [customer_id],

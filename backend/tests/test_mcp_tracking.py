@@ -228,9 +228,9 @@ EXPECTED_MCP_TOOLS = {
     "list_asset_taxonomy", "search_assets",
     "search_knowledge", "get_knowledge_document",
     "get_standard_price", "find_product",
-    "get_customer_profile", "get_customer_order_timeline",
-    "get_customer_repurchase_analysis", "get_customer_actions",
-    "get_order_intelligence_snapshot", "get_search_job_context",
+    "resolve_customer", "search_customers", "get_customer_profile",
+    "get_customer_facts", "get_customer_orders", "search_customer_messages",
+    "get_customer_actions", "get_customer_evidence", "get_customer_source_chunks",
     "search_web", "fetch_public_page",
 }
 

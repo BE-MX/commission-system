@@ -1,359 +1,159 @@
-"""Read-only Ark business tools exposed only through governed identity scopes."""
+"""Nine scoped, read-only customer tools backed exclusively by Ark projections."""
 
 from contextlib import contextmanager
-from datetime import date, timedelta
-from app.core.time import beijing_today
+from datetime import date, datetime
 import json
 import logging
 
-from fastapi import HTTPException
 from mcp.server.fastmcp import Context
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import event, text
 
-from app.agent_runtime.models import AgentRun
 from app.core.database import SessionLocal
-from app.customer.access_service import (
-    CustomerAccessDenied,
-    apply_record_access,
-    require_customer_access,
-)
-from app.customer.models import (
-    CustomerAccount,
-    CustomerAction,
-    CustomerEvent,
-    CustomerExternalIdentity,
-    CustomerListProjection,
-)
+from app.customer import agent_service
 from app.mcp.auth import MCPAuthError, require_identity
-from app.order_intelligence import service as order_service
-from app.sales_automation import service as sales_service
 
 
 logger = logging.getLogger("commission.mcp.agent_tools")
 
 
+def _reject_flush(*_args) -> None:
+    raise RuntimeError("READ_ONLY_SESSION")
+
+
 @contextmanager
-def _session():
+def _read_session():
+    """Consumer tools never commit; database grants remain the outer boundary."""
     db = SessionLocal()
+    event.listen(db, "before_flush", _reject_flush)
     try:
-        yield db
+        if db.bind is not None and db.bind.dialect.name == "mysql":
+            db.execute(text("SET TRANSACTION READ ONLY"))
+        with db.no_autoflush:
+            yield db
     finally:
+        db.rollback()
         db.close()
 
 
-def _ok(data) -> str:
-    return json.dumps({"ok": True, "data": data}, ensure_ascii=False, default=str, indent=2)
+def _ok(data: dict) -> str:
+    return json.dumps({"ok": True, "data": data}, ensure_ascii=False, default=str)
 
 
 def _err(message: str) -> str:
     return json.dumps({"ok": False, "error": message}, ensure_ascii=False)
 
 
-def _known_error(exc: Exception) -> str:
-    if isinstance(exc, HTTPException):
-        return str(exc.detail)
-    return str(exc)
-
-
-def _unexpected(exc: Exception, fallback: str) -> str:
-    logger.warning("Agent MCP business tool failed: %s", type(exc).__name__)
-    return _err(fallback)
-
-
-def _has_perm(user: dict, *codes: str) -> bool:
-    return "super_admin" in set(user.get("roles") or []) or bool(set(codes) & set(user.get("permissions") or []))
-
-
 def _require_agent_identity(ctx, db, *, tool_name: str) -> dict:
-    """Agent business tools are callable only inside a governed Run scope."""
     identity = require_identity(ctx, db, tool_name=tool_name)
     if not identity.get("_agent_run"):
         raise MCPAuthError("该工具仅允许受控 Agent Run 调用")
     return identity
 
 
-def _customer_for_user(
-    db,
-    customer_id: int,
-    user: dict,
-    *,
-    minimum_classification: str = "public_business",
-    minimum_visibility: str = "all_authorized",
-) -> CustomerAccount | None:
-    access = _customer_access_for_user(db, customer_id, user)
-    if (
-        access is None
-        or not access.allows_classification(minimum_classification)
-        or not access.allows_visibility(minimum_visibility)
-    ):
-        return None
-    return db.get(CustomerAccount, customer_id)
+def _invoke(ctx, tool_name: str, call):
+    with _read_session() as db:
+        try:
+            user = _require_agent_identity(ctx, db, tool_name=tool_name)
+            return _ok(call(db, user))
+        except (MCPAuthError, agent_service.CustomerAgentAccessError, ValueError) as exc:
+            return _err(str(exc))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Customer Agent tool failed tool=%s type=%s", tool_name, type(exc).__name__)
+            print(f"[mcp.customer] tool={tool_name} failed type={type(exc).__name__}", flush=True)
+            return _err("CUSTOMER_TOOL_FAILED")
 
 
-def _customer_access_for_user(db, customer_id: int, user: dict):
-    try:
-        return require_customer_access(
-            db,
-            customer_id=customer_id,
-            user=user,
-            action_permissions={
-                "customer_radar:read",
-                "customer_radar:write",
-                "customer_radar:manage",
-                "order_intelligence:read",
-                "order_intelligence:read_all",
-            },
-            manage_permissions={
-                "customer_radar:manage",
-                "order_intelligence:read_all",
-            },
-        )
-    except CustomerAccessDenied:
-        return None
-
-
-def _okki_customer_id(db, customer_id: int) -> str | None:
-    identity = db.query(CustomerExternalIdentity).filter(
-        CustomerExternalIdentity.customer_id == customer_id,
-        CustomerExternalIdentity.source_system == "okki",
-        CustomerExternalIdentity.identifier_type.in_(("company_id", "business_id")),
-        CustomerExternalIdentity.verification_status == "verified",
-        CustomerExternalIdentity.status == "active",
-    ).order_by(CustomerExternalIdentity.is_primary.desc(), CustomerExternalIdentity.id).first()
-    return identity.normalized_value if identity is not None else None
-
-
-class CustomerInput(BaseModel):
+class _Input(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    customer_id: int = Field(..., ge=1, description="方舟统一客户 ID")
 
 
-class CustomerOrderInput(CustomerInput):
-    date_from: date | None = Field(None, description="起始日期，默认近三年")
-    date_to: date | None = Field(None, description="截止日期，默认今天")
-    limit: int = Field(50, ge=1, le=100)
+class ResolveCustomerInput(_Input):
+    value: str = Field(..., min_length=1, max_length=255)
+    identifier_type: str | None = Field(None, max_length=32)
+    limit: int = Field(10, ge=1, le=50)
 
 
-class SnapshotInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class SearchCustomersInput(_Input):
+    keyword: str | None = Field(None, max_length=255)
+    identifier_type: str | None = Field(None, max_length=32)
+    cursor: str | None = Field(None, max_length=2048)
+    limit: int = Field(20, ge=1, le=50)
+
+
+class CustomerInput(_Input):
+    customer_id: int = Field(..., ge=1)
+
+
+class CustomerProfileInput(CustomerInput):
+    sections: list[str] | None = Field(None, max_length=20)
+
+
+class CustomerFactsInput(CustomerInput):
+    fact_keys: list[str] | None = Field(None, max_length=50)
+    layers: list[str] | None = Field(None, max_length=10)
+    statuses: list[str] | None = Field(None, max_length=10)
+    cursor: str | None = Field(None, max_length=2048)
+    limit: int = Field(50, ge=1, le=50)
+
+
+class CustomerOrdersInput(CustomerInput):
     date_from: date | None = None
     date_to: date | None = None
+    include_items: bool = False
+    cursor: str | None = Field(None, max_length=2048)
+    limit: int = Field(50, ge=1, le=50)
 
 
-class SearchJobInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    job_id: int = Field(..., ge=1)
+class CustomerMessagesInput(CustomerInput):
+    conversation_id: int | None = Field(None, ge=1)
+    query: str | None = Field(None, max_length=255)
+    date_from: datetime | None = None
+    date_to: datetime | None = None
+    cursor: str | None = Field(None, max_length=2048)
+    limit: int = Field(20, ge=1, le=50)
 
 
-def _window(start: date | None, end: date | None) -> tuple[date, date]:
-    actual_end = end or beijing_today()
-    actual_start = start or (actual_end - timedelta(days=1095))
-    return order_service.normalize_window(actual_start, actual_end)
+class CustomerActionsInput(CustomerInput):
+    statuses: list[str] | None = Field(None, max_length=10)
+    cursor: str | None = Field(None, max_length=2048)
+    limit: int = Field(50, ge=1, le=50)
+
+
+class CustomerEvidenceInput(CustomerInput):
+    fact_ids: list[int] = Field(..., min_length=1, max_length=50)
+
+
+class CustomerSourceChunksInput(CustomerInput):
+    source_record_id: int = Field(..., ge=1)
+    locator: dict | None = None
+    max_chars: int = Field(2_000, ge=1, le=12_000)
 
 
 def register_agent_tools(mcp) -> None:
-    @mcp.tool(name="get_customer_profile", annotations={"readOnlyHint": True})
-    async def get_customer_profile(params: CustomerInput, ctx: Context) -> str:
-        with _session() as db:
-            try:
-                user = _require_agent_identity(ctx, db, tool_name="get_customer_profile")
-            except MCPAuthError as exc:
-                return _err(str(exc))
-            if not _has_perm(user, "customer_radar:read", "customer_radar:write", "customer_radar:manage"):
-                return _err("权限不足：需要客户经营雷达查看权限")
-            access = _customer_access_for_user(db, params.customer_id, user)
-            if access is None:
-                return _err("客户画像不存在或不在当前账号数据范围内")
-            row = db.get(CustomerAccount, params.customer_id)
-            internal_context_allowed = (
-                access.allows_classification("internal_business")
-                and access.allows_visibility("customer_team")
+    def register(name, input_type, service_call):
+        @mcp.tool(name=name, annotations={"readOnlyHint": True})
+        async def tool(params: input_type, ctx: Context) -> str:
+            values = params.model_dump(exclude_none=True)
+            return _invoke(
+                ctx, name, lambda db, user: service_call(db, user=user, **values),
             )
-            if not internal_context_allowed:
-                return _ok({
-                    "customer_id": row.id,
-                    "schema_version": "customer_profile_redacted_v1",
-                    "redacted": True,
-                    "data_classification": "public_business",
-                })
-            events = apply_record_access(
-                db.query(CustomerEvent),
-                CustomerEvent,
-                access,
-            ).order_by(CustomerEvent.occurred_at.desc()).limit(30).all()
-            projection = db.get(CustomerListProjection, row.id)
-            data = {
-                "customer_id": row.id,
-                "display_name": row.display_name,
-                "canonical_company_name": row.canonical_company_name,
-                "events": [{
-                    "event_id": item.id,
-                    "source": item.event_source,
-                    "type": item.event_type,
-                    "title": item.event_title,
-                    "summary": item.event_summary,
-                    "occurred_at": item.occurred_at,
-                } for item in events],
-                "data_classification": "internal_business",
-            }
-            data.update({
-                "customer_code": row.customer_code,
-                "identity_status": row.identity_status,
-                "relationship_stage": row.relationship_stage,
-                "commercial_value_score": (
-                    projection.commercial_value_score if projection else 0
-                ),
-                "data_quality_score": (
-                    projection.data_quality_score if projection else 0
-                ),
-            })
-            return _ok(data)
+        return tool
 
-    @mcp.tool(name="get_customer_order_timeline", annotations={"readOnlyHint": True})
-    async def get_customer_order_timeline(params: CustomerOrderInput, ctx: Context) -> str:
-        with _session() as db:
-            try:
-                user = _require_agent_identity(ctx, db, tool_name="get_customer_order_timeline")
-            except MCPAuthError as exc:
-                return _err(str(exc))
-            if not _has_perm(user, "order_intelligence:read", "order_intelligence:read_all"):
-                return _err("权限不足：需要订单经营分析查看权限")
-            customer = _customer_for_user(
-                db,
-                params.customer_id,
-                user,
-                minimum_classification="internal_business",
-                minimum_visibility="customer_team",
-            )
-            external_id = _okki_customer_id(db, customer.id) if customer is not None else None
-            if customer is None or not external_id:
-                return _err("客户画像不存在、越权或尚未绑定 OKKI 客户 ID")
-            try:
-                start, end = _window(params.date_from, params.date_to)
-                scope = order_service.resolve_scope(db, user)
-                return _ok(order_service.get_customer_order_timeline(
-                    db, scope, external_id, start, end, limit=params.limit,
-                ))
-            except (ValueError, HTTPException) as exc:
-                return _err(_known_error(exc))
-            except Exception as exc:  # noqa: BLE001
-                return _unexpected(exc, "订单时间线查询失败，请稍后重试")
+    register("resolve_customer", ResolveCustomerInput, agent_service.resolve_customer)
+    register("search_customers", SearchCustomersInput, agent_service.search_customers)
+    register("get_customer_profile", CustomerProfileInput, agent_service.get_customer_profile)
+    register("get_customer_facts", CustomerFactsInput, agent_service.get_customer_facts)
+    register("get_customer_orders", CustomerOrdersInput, agent_service.get_customer_orders)
+    register("search_customer_messages", CustomerMessagesInput, agent_service.search_customer_messages)
+    register("get_customer_actions", CustomerActionsInput, agent_service.get_customer_actions)
+    register("get_customer_evidence", CustomerEvidenceInput, agent_service.get_customer_evidence)
+    register("get_customer_source_chunks", CustomerSourceChunksInput, agent_service.get_customer_source_chunks)
 
-    @mcp.tool(name="get_customer_repurchase_analysis", annotations={"readOnlyHint": True})
-    async def get_customer_repurchase_analysis(params: CustomerOrderInput, ctx: Context) -> str:
-        with _session() as db:
-            try:
-                user = _require_agent_identity(ctx, db, tool_name="get_customer_repurchase_analysis")
-            except MCPAuthError as exc:
-                return _err(str(exc))
-            if not _has_perm(user, "order_intelligence:read", "order_intelligence:read_all"):
-                return _err("权限不足：需要订单经营分析查看权限")
-            customer = _customer_for_user(
-                db,
-                params.customer_id,
-                user,
-                minimum_classification="internal_business",
-                minimum_visibility="customer_team",
-            )
-            external_id = _okki_customer_id(db, customer.id) if customer is not None else None
-            if customer is None or not external_id:
-                return _err("客户画像不存在、越权或尚未绑定 OKKI 客户 ID")
-            try:
-                start, end = _window(params.date_from, params.date_to)
-                scope = order_service.resolve_scope(db, user)
-                return _ok(order_service.get_customer_repurchase_analysis(
-                    db, scope, external_id, start, end,
-                ))
-            except (ValueError, HTTPException) as exc:
-                return _err(_known_error(exc))
-            except Exception as exc:  # noqa: BLE001
-                return _unexpected(exc, "复购分析查询失败，请稍后重试")
 
-    @mcp.tool(name="get_customer_actions", annotations={"readOnlyHint": True})
-    async def get_customer_actions(params: CustomerInput, ctx: Context) -> str:
-        with _session() as db:
-            try:
-                user = _require_agent_identity(ctx, db, tool_name="get_customer_actions")
-            except MCPAuthError as exc:
-                return _err(str(exc))
-            if not _has_perm(user, "customer_radar:read", "customer_radar:write", "customer_radar:manage"):
-                return _err("权限不足：需要客户经营雷达查看权限")
-            customer = _customer_for_user(
-                db,
-                params.customer_id,
-                user,
-                minimum_classification="internal_business",
-                minimum_visibility="customer_team",
-            )
-            if customer is None:
-                return _err("客户画像不存在或不在当前账号数据范围内")
-            rows = db.query(CustomerAction).filter(
-                CustomerAction.customer_id == customer.id,
-                CustomerAction.owner_user_id == int(user["sub"]),
-            ).order_by(CustomerAction.action_date.desc(), CustomerAction.id.desc()).limit(30).all()
-            return _ok([{
-                "action_id": row.id,
-                "date": row.action_date,
-                "group": row.thread_group,
-                "reason": row.reason,
-                "next_action": row.next_action,
-                "status": row.status,
-                "source_type": row.source_type,
-                "evidence_status": row.evidence_status,
-            } for row in rows])
-
-    @mcp.tool(name="get_order_intelligence_snapshot", annotations={"readOnlyHint": True})
-    async def get_order_intelligence_snapshot(params: SnapshotInput, ctx: Context) -> str:
-        with _session() as db:
-            try:
-                user = _require_agent_identity(ctx, db, tool_name="get_order_intelligence_snapshot")
-            except MCPAuthError as exc:
-                return _err(str(exc))
-            if not _has_perm(user, "order_intelligence:read", "order_intelligence:read_all"):
-                return _err("权限不足：需要订单经营分析查看权限")
-            try:
-                start, end = _window(params.date_from, params.date_to)
-                scope = order_service.resolve_scope(db, user)
-                result = order_service.get_overview(db, scope, start, end)
-                return _ok({key: result[key] for key in (
-                    "window", "scope", "metrics", "forecast", "customer_risk", "data_quality", "definitions"
-                )})
-            except (ValueError, HTTPException) as exc:
-                return _err(_known_error(exc))
-            except Exception as exc:  # noqa: BLE001
-                return _unexpected(exc, "订单经营快照查询失败，请稍后重试")
-
-    @mcp.tool(name="get_search_job_context", annotations={"readOnlyHint": True})
-    async def get_search_job_context(params: SearchJobInput, ctx: Context) -> str:
-        with _session() as db:
-            try:
-                user = _require_agent_identity(ctx, db, tool_name="get_search_job_context")
-            except MCPAuthError as exc:
-                return _err(str(exc))
-            if not _has_perm(user, "sales_automation:read", "sales_automation:invoke"):
-                return _err("权限不足：需要智能获客查看权限")
-            scope = user.get("_agent_run") or {}
-            run = db.get(AgentRun, scope.get("run_id")) if scope else None
-            if run is not None and (
-                run.business_ref_type != "search_job" or str(params.job_id) != str(run.business_ref_id)
-            ):
-                return _err("只能读取当前 Agent Run 绑定的搜索任务")
-            try:
-                row = sales_service.get_search_job(db, params.job_id)
-            except ValueError as exc:
-                return _err(str(exc))
-            except Exception as exc:  # noqa: BLE001
-                return _unexpected(exc, "搜索任务上下文查询失败，请稍后重试")
-            return _ok({
-                "job": {
-                    "id": row.id, "name": row.name, "status": row.status,
-                    "target_count": row.target_count,
-                    "criteria_json": row.criteria_json or {},
-                },
-                "profile": row.profile_snapshot or {},
-                "output_contract": {
-                    "identifier": "customer_id",
-                    "source_record_first": True,
-                    "company_name_nullable": True,
-                },
-            })
+__all__ = [
+    "CustomerActionsInput", "CustomerEvidenceInput", "CustomerFactsInput", "CustomerInput",
+    "CustomerMessagesInput", "CustomerOrdersInput", "CustomerProfileInput",
+    "CustomerSourceChunksInput", "ResolveCustomerInput", "SearchCustomersInput",
+    "register_agent_tools",
+]

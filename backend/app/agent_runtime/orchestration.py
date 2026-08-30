@@ -76,7 +76,7 @@ def enqueue_repurchase_runs(db: Session, *, action_date: date | None = None, lim
             continue
         permissions, roles = _identity(user)
         if "super_admin" not in roles and not _has_permissions(
-            permissions, "agent_runtime:invoke", "customer_radar:write", "order_intelligence:read",
+            permissions, "agent_runtime:invoke", "customer:read",
         ):
             continue
         try:
@@ -88,8 +88,8 @@ def enqueue_repurchase_runs(db: Session, *, action_date: date | None = None, lim
                     "permissions": permissions,
                     "roles": roles,
                 },
-                action_permissions={"customer_radar:write", "customer_radar:manage"},
-                manage_permissions={"customer_radar:manage"},
+                action_permissions={"customer:read", "customer:admin", "customer:read_all"},
+                manage_permissions={"customer:admin", "customer:read_all"},
             )
         except CustomerAccessDenied:
             continue

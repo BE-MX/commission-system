@@ -6,10 +6,7 @@ retired lead/company/subject tables are not part of the fixture or assertions.
 
 from __future__ import annotations
 
-import asyncio
-from contextlib import contextmanager
 from datetime import date, datetime
-import json
 
 import pytest
 from sqlalchemy.orm import Query
@@ -334,9 +331,7 @@ def test_workflow_models_are_registered_once_and_legacy_models_are_absent():
         assert not hasattr(models, retired)
 
 
-def test_mcp_search_context_uses_customer_id_source_first_contract(db, monkeypatch):
-    job, _token = _running_search_job(db)
-
+def test_customer_agent_registry_has_only_unified_read_contract():
     class CaptureMcp:
         def __init__(self):
             self.tools = {}
@@ -353,33 +348,12 @@ def test_mcp_search_context_uses_customer_id_source_first_contract(db, monkeypat
     capture = CaptureMcp()
     agent_tools.register_agent_tools(capture)
 
-    @contextmanager
-    def test_session():
-        yield db
-
-    monkeypatch.setattr(agent_tools, "_session", test_session)
-    monkeypatch.setattr(
-        agent_tools,
-        "_require_agent_identity",
-        lambda *_args, **_kwargs: {
-            "sub": "1",
-            "permissions": ["sales_automation:invoke"],
-            "_agent_run": {"run_id": 999999},
-        },
-    )
-    payload = json.loads(asyncio.run(capture.tools["get_search_job_context"](
-        agent_tools.SearchJobInput(job_id=job.id),
-        object(),
-    )))
-
-    assert payload["ok"] is True
-    assert payload["data"]["job"]["criteria_json"] == job.criteria_json
-    assert "criteria" not in payload["data"]["job"]
-    assert payload["data"]["output_contract"] == {
-        "identifier": "customer_id",
-        "source_record_first": True,
-        "company_name_nullable": True,
+    assert set(capture.tools) == {
+        "resolve_customer", "search_customers", "get_customer_profile",
+        "get_customer_facts", "get_customer_orders", "search_customer_messages",
+        "get_customer_actions", "get_customer_evidence", "get_customer_source_chunks",
     }
+    assert "get_search_job_context" not in capture.tools
 
 
 def test_duplicate_sources_share_one_customer_result_and_one_strategy_task(db):

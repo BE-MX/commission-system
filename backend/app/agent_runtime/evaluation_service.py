@@ -25,14 +25,53 @@ from app.customer.models import (
     CustomerAction,
     CustomerAssignment,
     CustomerEvent,
-    CustomerExternalIdentity,
     CustomerListProjection,
+    CustomerOrder,
 )
-from app.order_intelligence import service as order_service
 from app.sales_automation.models import SearchJob
 
 
 logger = logging.getLogger("commission.agent_runtime.evaluation")
+
+
+def validate_claim_evidence(
+    citations: list[dict], *, returned_evidence: list[dict],
+    customer_id: int, profile_version: int | None,
+) -> list[str]:
+    """Reject claims not backed by the exact current tool evidence envelope."""
+    errors: list[str] = []
+    returned = {
+        (
+            str(item.get("tool_call_id") or ""),
+            str(item.get("evidence_ref") or ""),
+            str(item.get("evidence_content_hash") or ""),
+            item.get("customer_id"), item.get("profile_version"), item.get("freshness"),
+        )
+        for item in returned_evidence if isinstance(item, dict)
+    }
+    for index, item in enumerate(citations):
+        if not isinstance(item, dict):
+            errors.append(f"claim citation {index + 1} must be an object")
+            continue
+        required = (
+            "claim_id", "tool_call_id", "evidence_ref", "evidence_content_hash",
+            "customer_id", "profile_version", "freshness",
+        )
+        if any(not item.get(key) and item.get(key) != 0 for key in required):
+            errors.append(f"claim citation {index + 1} is incomplete")
+            continue
+        key = (
+            str(item["tool_call_id"]), str(item["evidence_ref"]),
+            str(item["evidence_content_hash"]), item["customer_id"],
+            item["profile_version"], item["freshness"],
+        )
+        if item["customer_id"] != customer_id or item["profile_version"] != profile_version:
+            errors.append(f"claim citation {index + 1} crosses customer or profile version")
+        elif item["freshness"] != "current":
+            errors.append(f"claim citation {index + 1} uses stale evidence")
+        elif key not in returned:
+            errors.append(f"claim citation {index + 1} was not returned by the tool call")
+    return errors
 
 
 def _ratio(numerator: int, denominator: int) -> float:
@@ -64,11 +103,20 @@ def _copilot_artifact_is_evidence_bound(artifact: AgentArtifact) -> bool:
     if artifact.validation_status != "valid":
         return False
     content = artifact.content_json or {}
-    evidence_ids = {
-        str(item.get("tool_call_id"))
-        for item in (artifact.evidence_json or [])
-        if isinstance(item, dict) and item.get("tool_call_id")
-    }
+    customer_id = int(artifact.business_ref_id) if str(artifact.business_ref_id or "").isdigit() else None
+    evidence = [item for item in (artifact.evidence_json or []) if isinstance(item, dict)]
+    if customer_id is None or len(evidence) != len(artifact.evidence_json or []):
+        return False
+    profile_versions = {item.get("profile_version") for item in evidence}
+    if len(profile_versions) != 1:
+        return False
+    errors = validate_claim_evidence(
+        evidence, returned_evidence=evidence, customer_id=customer_id,
+        profile_version=next(iter(profile_versions), None),
+    )
+    if errors:
+        return False
+    evidence_ids = {str(item["tool_call_id"]) for item in evidence}
     if not evidence_ids:
         return False
     for field in ("key_findings", "risks", "recommended_actions"):
@@ -164,12 +212,12 @@ def _customer_scope(
 ):
     can_read = bool(
         "super_admin" in roles
-        or {"customer_radar:read", "customer_radar:write", "customer_radar:manage"} & permissions
+        or {"customer:read", "customer:admin", "customer:read_all"} & permissions
     )
     if not can_read:
-        raise ForbiddenError("启动副驾驶评测需要客户经营雷达查看权限")
+        raise ForbiddenError("启动副驾驶评测需要客户读取权限")
     query = db.query(CustomerAccount).filter(CustomerAccount.record_status == "active")
-    if "super_admin" not in roles and "customer_radar:manage" not in permissions:
+    if "super_admin" not in roles and not {"customer:admin", "customer:read_all"} & permissions:
         query = query.join(
             CustomerAssignment,
             CustomerAssignment.customer_id == CustomerAccount.id,
@@ -180,17 +228,6 @@ def _customer_scope(
             CustomerAssignment.effective_to.is_(None),
         )
     return query
-
-
-def _okki_customer_id(db: Session, customer_id: int) -> str | None:
-    identity = db.query(CustomerExternalIdentity).filter(
-        CustomerExternalIdentity.customer_id == customer_id,
-        CustomerExternalIdentity.source_system == "okki",
-        CustomerExternalIdentity.identifier_type.in_(("company_id", "business_id")),
-        CustomerExternalIdentity.verification_status == "verified",
-        CustomerExternalIdentity.status == "active",
-    ).order_by(CustomerExternalIdentity.is_primary.desc(), CustomerExternalIdentity.id).first()
-    return identity.normalized_value if identity is not None else None
 
 
 def _preflight_case(
@@ -214,43 +251,17 @@ def _preflight_case(
     needs_orders = bool({"order_history", "repurchase_analysis"} & required)
     if not needs_orders:
         return
-    if "super_admin" not in roles and not {
-        "order_intelligence:read", "order_intelligence:read_all",
-    } & permissions:
-        raise ForbiddenError("该标准题需要订单经营分析查看权限")
-    okki_customer_id = _okki_customer_id(db, customer.id)
-    if not okki_customer_id:
-        raise ConflictError("该标准题需要已绑定 OKKI 客户 ID 的客户")
-    identity = {
-        "sub": str(user_id), "permissions": sorted(permissions), "roles": sorted(roles),
-    }
-    try:
-        scope = order_service.resolve_scope(db, identity)
-        end = beijing_today()
-        start = end - timedelta(days=1095)
-        timeline = order_service.get_customer_order_timeline(
-            db, scope, okki_customer_id, start, end, limit=50,
-        )
-        if int((timeline.get("summary") or {}).get("orders") or 0) <= 0:
-            raise ConflictError("该标准题需要近三年内存在有效订单的客户")
-        if "repurchase_analysis" in required:
-            result = order_service.get_customer_repurchase_analysis(
-                db, scope, okki_customer_id, start, end,
-            )
-            analysis = result.get("analysis") or {}
-            typical_cycle = analysis.get("typical_cycle_days")
-            if (
-                not result.get("found")
-                or not isinstance(typical_cycle, (int, float))
-                or typical_cycle <= 0
-                or analysis.get("risk_status") == "insufficient_data"
-            ):
-                raise ConflictError("该标准题需要具备可计算复购周期的客户")
-    except (ForbiddenError, ConflictError):
-        raise
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("副驾驶标准评测数据预检失败 type=%s", type(exc).__name__)
-        raise ConflictError("无法确认该客户的订单评测数据，请检查 OKKI 绑定与数据同步") from None
+    end = beijing_today()
+    start = end - timedelta(days=1095)
+    orders = db.query(CustomerOrder.account_date).filter(
+        CustomerOrder.customer_id == customer.id,
+        CustomerOrder.is_valid_business_order.is_(True),
+        CustomerOrder.account_date.between(start, end),
+    ).order_by(CustomerOrder.account_date).all()
+    if not orders:
+        raise ConflictError("该标准题需要近三年内存在方舟有效订单投影的客户")
+    if "repurchase_analysis" in required and len({row[0] for row in orders}) < 2:
+        raise ConflictError("该标准题需要至少两个不同日期的方舟有效订单")
 
 
 def search_copilot_evaluation_customers(
@@ -283,7 +294,10 @@ def search_copilot_evaluation_customers(
             if db.get(CustomerListProjection, row.id) is not None
             else 0
         ),
-        "has_order_binding": bool(_okki_customer_id(db, row.id)),
+        "has_customer_orders": bool(db.query(CustomerOrder.id).filter(
+            CustomerOrder.customer_id == row.id,
+            CustomerOrder.is_valid_business_order.is_(True),
+        ).first()),
         "has_customer_events": bool(db.query(CustomerEvent.id).filter(
             CustomerEvent.customer_id == row.id,
         ).first()),

@@ -87,9 +87,10 @@ PROFILE_SEEDS = [
         "system_prompt": _COPILOT_PROMPT,
         "skill_manifest": [{"name": "ark-customer-order-copilot", "version": "1"}],
         "tool_allowlist": [
-            "get_customer_profile", "get_customer_order_timeline", "get_customer_repurchase_analysis",
-            "get_order_intelligence_snapshot", "get_customer_actions", "search_knowledge",
-            "track_shipment", "get_standard_price",
+            "get_customer_profile", "get_customer_facts", "get_customer_orders",
+            "search_customer_messages", "get_customer_actions", "get_customer_evidence",
+            "get_customer_source_chunks", "search_knowledge", "track_shipment",
+            "get_standard_price",
         ],
         "limits_json": {"max_steps": 12, "timeout_seconds": 300, "max_output_tokens": 4000, "max_total_tokens": 12000},
         "policy_json": {
@@ -117,8 +118,8 @@ PROFILE_SEEDS = [
         "system_prompt": _REPURCHASE_PROMPT,
         "skill_manifest": [{"name": "ark-repurchase-risk-analyst", "version": "1"}],
         "tool_allowlist": [
-            "get_customer_profile", "get_customer_order_timeline", "get_customer_repurchase_analysis",
-            "get_customer_actions", "search_knowledge",
+            "get_customer_profile", "get_customer_facts", "get_customer_orders",
+            "get_customer_actions", "get_customer_evidence", "search_knowledge",
         ],
         "limits_json": {"max_steps": 8, "timeout_seconds": 240, "max_output_tokens": 2500, "max_total_tokens": 8000},
         "policy_json": {
@@ -143,7 +144,7 @@ PROFILE_SEEDS = [
         "model_preset": "agent_runtime_sales_shadow",
         "system_prompt": _SHADOW_PROMPT,
         "skill_manifest": [{"name": "ark-lead-discovery-shadow", "version": "1"}],
-        "tool_allowlist": ["get_search_job_context", "search_web", "fetch_public_page"],
+        "tool_allowlist": ["search_web", "fetch_public_page"],
         "limits_json": {"max_steps": 20, "timeout_seconds": 600, "max_output_tokens": 6000, "max_total_tokens": 30000},
         "policy_json": {
             "read_only": True, "shadow_only": True, "evidence_required": True,
