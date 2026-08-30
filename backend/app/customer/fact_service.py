@@ -33,6 +33,7 @@ from app.customer.models import (
     CustomerAccount,
     CustomerAssignment,
     CustomerAnnotation,
+    CustomerChangeProposal,
     CustomerContact,
     CustomerContactRelationship,
     CustomerConversation,
@@ -97,9 +98,10 @@ class EventRegistration:
     default_classification: DataClassification
     allowed_reference_kinds: frozenset[str | None]
     human_actor_required: bool = False
+    bumps_profile_input_seq: bool = True
 
 
-EVENT_REGISTRY_VERSION = "customer_event_registry_v3"
+EVENT_REGISTRY_VERSION = "customer_event_registry_v4"
 
 
 def _event_registration(
@@ -111,6 +113,7 @@ def _event_registration(
     reference: str | None = None,
     references: Sequence[str | None] | None = None,
     human: bool = False,
+    bump_profile_input_seq: bool = True,
 ) -> EventRegistration:
     return EventRegistration(
         registry_version=EVENT_REGISTRY_VERSION,
@@ -122,6 +125,7 @@ def _event_registration(
             references if references is not None else (reference,)
         ),
         human_actor_required=human,
+        bumps_profile_input_seq=bump_profile_input_seq,
     )
 
 
@@ -195,6 +199,55 @@ EVENT_REGISTRY: Mapping[str, EventRegistration] = MappingProxyType({
     "annotation.created": _event_registration(
         ("annotation", "manual"), {"annotation_type": str},
         required=("annotation_type",), reference="annotation", human=True,
+        classification=DataClassification.RESTRICTED_INTERNAL,
+    ),
+    "policy.dnc_set": _event_registration(
+        ("governance",),
+        {
+            "proposal_id": int,
+            "annotation_id": int,
+            "scope_type": str,
+            "scope_ref_id": str,
+            "reason_code": str,
+        },
+        required=("proposal_id", "annotation_id", "scope_type", "reason_code"),
+        reference="annotation",
+        human=True,
+        classification=DataClassification.RESTRICTED_INTERNAL,
+    ),
+    "policy.dnc_removed": _event_registration(
+        ("governance",),
+        {
+            "proposal_id": int,
+            "annotation_id": int,
+            "scope_type": str,
+            "scope_ref_id": str,
+            "removal_reason": str,
+            "contactability_still_blocked": bool,
+            "remaining_blockers": list,
+        },
+        required=(
+            "proposal_id", "annotation_id", "scope_type", "removal_reason",
+            "contactability_still_blocked", "remaining_blockers",
+        ),
+        reference="annotation",
+        human=True,
+        classification=DataClassification.RESTRICTED_INTERNAL,
+    ),
+    "risk.material_confirmed": _event_registration(
+        ("governance",),
+        {
+            "proposal_id": int,
+            "risk_type": str,
+            "source_fact_id": int,
+            "confirmed_fact_id": int,
+        },
+        required=(
+            "proposal_id", "risk_type", "source_fact_id", "confirmed_fact_id",
+        ),
+        reference="fact",
+        human=True,
+        bump_profile_input_seq=False,
         classification=DataClassification.RESTRICTED_INTERNAL,
     ),
     "opportunity.created": _event_registration(
@@ -1180,6 +1233,11 @@ def append_fact(
     if source_record_id is not None and source_record_id not in evidence_json["source_record_ids"]:
         evidence_json["source_record_ids"].append(source_record_id)
         evidence_json["source_record_ids"].sort()
+    if human_review is not None:
+        evidence_json["human_review"] = {
+            "review_reference": human_review.review_reference,
+            "reviewer_id": review_by,
+        }
     lineage = {
         "source_record": _source_lineage(source_record) if source_record is not None else None,
         "direct_evidence": direct_lineage,
@@ -1384,7 +1442,7 @@ def link_fact_evidence(
     excerpt_text: str | None = None,
     data_classification: str | None = None,
 ) -> CustomerFactEvidenceLink:
-    """Append an exact immutable evidence locator for one fact."""
+    """Append an immutable evidence locator and advance the profile input sequence."""
     reject_ascii_control_characters(
         evidence_kind,
         relation_type,
@@ -1768,15 +1826,207 @@ def _identity_conflict_security(
     return tuple(classifications), tuple(visibilities)
 
 
+def _approved_governance_proposal(
+    db: Session,
+    *,
+    proposal_id: object,
+    customer_id: int,
+    action_type: str,
+    payload_schema_version: str,
+    evidence_fact_ids: Sequence[int],
+) -> CustomerChangeProposal:
+    if type(proposal_id) is not int or proposal_id <= 0:
+        raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+    proposal = db.get(CustomerChangeProposal, proposal_id)
+    if (
+        proposal is None
+        or proposal.customer_id != customer_id
+        or proposal.target_customer_id is not None
+        or proposal.action_type != action_type
+        or proposal.payload_schema_version != payload_schema_version
+        or proposal.status != "approved"
+        or proposal.expires_at <= beijing_now()
+        or tuple(proposal.evidence_fact_ids or ()) != tuple(evidence_fact_ids)
+    ):
+        raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+    from app.customer.proposal_service import canonical_action_hash
+
+    current_hash = canonical_action_hash(
+        action_type=proposal.action_type,
+        customer_id=proposal.customer_id,
+        target_customer_id=proposal.target_customer_id,
+        payload_json=dict(proposal.payload_json or {}),
+        profile_version_id=proposal.profile_version_id,
+        evidence_fact_ids=list(proposal.evidence_fact_ids or []),
+    )
+    if (
+        proposal.action_hash != current_hash
+        or proposal.approved_action_hash != current_hash
+    ):
+        raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+    return proposal
+
+
+def _validate_dnc_policy_event(
+    db: Session,
+    *,
+    customer_id: int,
+    event_type: str,
+    object_id: int,
+    payload: Mapping[str, object],
+    actor_user_id: int | None,
+    evidence_fact_ids: Sequence[int],
+) -> bool:
+    if event_type not in {"policy.dnc_set", "policy.dnc_removed"}:
+        return False
+    action_type = "set_dnc" if event_type == "policy.dnc_set" else "remove_dnc"
+    schema_version = (
+        "customer_set_dnc_v1"
+        if action_type == "set_dnc"
+        else "customer_remove_dnc_v1"
+    )
+    proposal = _approved_governance_proposal(
+        db,
+        proposal_id=payload.get("proposal_id"),
+        customer_id=customer_id,
+        action_type=action_type,
+        payload_schema_version=schema_version,
+        evidence_fact_ids=evidence_fact_ids,
+    )
+    annotation = db.get(CustomerAnnotation, object_id)
+    try:
+        if action_type == "set_dnc":
+            from app.customer.governance_policy_contract import parse_set_dnc
+
+            approved = parse_set_dnc(proposal.payload_json or {})
+            valid = bool(
+                approved.customer_id == proposal.customer_id
+                and approved.profile_version_id == proposal.profile_version_id
+                and annotation is not None
+                and annotation.customer_id == customer_id
+                and annotation.annotation_type == "do_not_contact"
+                and annotation.status == "active"
+                and annotation.authored_by == actor_user_id
+                and annotation.policy_scope_type == approved.scope_type
+                and annotation.policy_scope_ref_id == approved.scope_ref_id
+                and annotation.policy_effective_at == approved.policy_effective_at
+                and (annotation.content_json or {}).get("proposal_id") == proposal.id
+                and (annotation.content_json or {}).get("reason_code") == approved.reason_code
+                and (annotation.content_json or {}).get("reason_text") == approved.reason_text
+                and payload.get("annotation_id") == annotation.id
+                and payload.get("scope_type") == approved.scope_type
+                and payload.get("scope_ref_id") == approved.scope_ref_id
+                and payload.get("reason_code") == approved.reason_code
+            )
+        else:
+            from app.customer.governance_policy_contract import parse_remove_dnc
+
+            approved = parse_remove_dnc(proposal.payload_json or {})
+            valid = bool(
+                approved.customer_id == proposal.customer_id
+                and approved.profile_version_id == proposal.profile_version_id
+                and annotation is not None
+                and annotation.customer_id == customer_id
+                and annotation.annotation_type == "do_not_contact"
+                and annotation.status == "revoked"
+                and annotation.revoked_by == actor_user_id
+                and annotation.revoked_at is not None
+                and annotation.id == approved.annotation_id
+                and annotation.policy_scope_type == approved.scope_type
+                and annotation.policy_scope_ref_id == approved.scope_ref_id
+                and payload.get("annotation_id") == annotation.id
+                and payload.get("scope_type") == approved.scope_type
+                and payload.get("scope_ref_id") == approved.scope_ref_id
+                and payload.get("removal_reason") == approved.removal_reason
+            )
+    except ValueError as exc:
+        raise CustomerDomainError("EVENT_REFERENCE_INVALID") from exc
+    if not valid:
+        raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+    return True
+
+
+def _validate_material_risk_event(
+    db: Session,
+    *,
+    customer_id: int,
+    object_id: int,
+    payload: Mapping[str, object],
+    actor_user_id: int | None,
+    evidence_fact_ids: Sequence[int],
+) -> None:
+    proposal = _approved_governance_proposal(
+        db,
+        proposal_id=payload.get("proposal_id"),
+        customer_id=customer_id,
+        action_type="confirm_material_risk",
+        payload_schema_version="customer_confirm_material_risk_v1",
+        evidence_fact_ids=evidence_fact_ids,
+    )
+    try:
+        from app.customer.governance_policy_contract import (
+            RISK_CONFIRMED_FACT_KEYS,
+            RISK_SOURCE_FACT_KEYS,
+            canonical_value_hash,
+            parse_confirm_material_risk,
+        )
+
+        approved = parse_confirm_material_risk(proposal.payload_json or {})
+    except ValueError as exc:
+        raise CustomerDomainError("EVENT_REFERENCE_INVALID") from exc
+    source = db.get(CustomerFact, approved.source_fact_id)
+    confirmed = db.get(CustomerFact, object_id)
+    link = db.query(CustomerFactEvidenceLink).filter(
+        CustomerFactEvidenceLink.customer_id == customer_id,
+        CustomerFactEvidenceLink.fact_id == object_id,
+        CustomerFactEvidenceLink.evidence_kind == "fact",
+        CustomerFactEvidenceLink.relation_type == "supports",
+        CustomerFactEvidenceLink.supporting_fact_id == approved.source_fact_id,
+    ).one_or_none()
+    review = (confirmed.evidence_json or {}).get("human_review") if confirmed else None
+    if (
+        approved.customer_id != proposal.customer_id
+        or approved.profile_version_id != proposal.profile_version_id
+        or source is None
+        or confirmed is None
+        or source.customer_id != customer_id
+        or confirmed.customer_id != customer_id
+        or source.fact_key != RISK_SOURCE_FACT_KEYS[approved.risk_type]
+        or confirmed.fact_key != RISK_CONFIRMED_FACT_KEYS[approved.risk_type]
+        or confirmed.fact_layer != "confirmed"
+        or confirmed.verification_status != "verified"
+        or confirmed.reviewed_by != actor_user_id
+        or confirmed.value_json != source.value_json
+        or source.fact_fingerprint != approved.source_fact_fingerprint
+        or canonical_value_hash(source.value_json) != approved.source_value_hash
+        or link is None
+        or link.evidence_content_hash != source.fact_fingerprint
+        or link.locator_json != {
+            "proposal_id": proposal.id,
+            "risk_type": approved.risk_type,
+        }
+        or review != {
+            "review_reference": f"customer_change_proposal:{proposal.id}",
+            "reviewer_id": actor_user_id,
+        }
+        or payload.get("risk_type") != approved.risk_type
+        or payload.get("source_fact_id") != source.id
+        or payload.get("confirmed_fact_id") != confirmed.id
+    ):
+        raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+
+
 def _validate_event_reference_semantics(
     db: Session,
     *,
+    customer_id: int,
     event_type: str,
     event_source: str,
     source_ref_type: str | None,
     source_ref_id: str | None,
     payload: Mapping[str, object],
     actor_user_id: int | None,
+    evidence_fact_ids: Sequence[int],
     target_relationship_stage: str | None,
     fallback_occurred_at: datetime,
 ) -> datetime:
@@ -1845,6 +2095,16 @@ def _validate_event_reference_semantics(
         if source.occurred_at is not None:
             return source.occurred_at
         raise CustomerDomainError("EVENT_TIME_INVALID")
+    if source_ref_type == "fact" and event_type == "risk.material_confirmed":
+        _validate_material_risk_event(
+            db,
+            customer_id=customer_id,
+            object_id=object_id,
+            payload=payload,
+            actor_user_id=actor_user_id,
+            evidence_fact_ids=evidence_fact_ids,
+        )
+        return fallback_occurred_at
     if source_ref_type == "identity":
         row = db.get(CustomerExternalIdentity, object_id)
         if (
@@ -1864,11 +2124,24 @@ def _validate_event_reference_semantics(
             raise CustomerDomainError("EVENT_REFERENCE_INVALID")
     elif source_ref_type == "annotation":
         row = db.get(CustomerAnnotation, object_id)
-        if (
-            row is None
-            or row.status != "active"
-            or payload.get("annotation_type") != row.annotation_type
-            or actor_user_id != row.authored_by
+        policy_valid = _validate_dnc_policy_event(
+            db,
+            customer_id=customer_id,
+            event_type=event_type,
+            object_id=object_id,
+            payload=payload,
+            actor_user_id=actor_user_id,
+            evidence_fact_ids=evidence_fact_ids,
+        )
+        annotation_created_valid = bool(
+            event_type == "annotation.created"
+            and row is not None
+            and row.status == "active"
+            and payload.get("annotation_type") == row.annotation_type
+            and actor_user_id == row.authored_by
+        )
+        if not (
+            policy_valid or annotation_created_valid
         ):
             raise CustomerDomainError("EVENT_REFERENCE_INVALID")
     elif source_ref_type == "assignment":
@@ -2143,6 +2416,9 @@ def append_customer_event(
     occurred = _business_time(occurred_at)
     if occurred is None:
         raise CustomerDomainError("EVENT_TIME_INVALID")
+    if any(type(item) is not int or item <= 0 for item in evidence_fact_ids):
+        raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+    fact_ids = sorted(set(evidence_fact_ids))
     _reference, reference_classification, reference_visibility = _event_reference(
         db,
         customer_id=customer_id,
@@ -2163,12 +2439,14 @@ def append_customer_event(
     )
     occurred = _validate_event_reference_semantics(
         db,
+        customer_id=customer_id,
         event_type=event_type,
         event_source=event_source,
         source_ref_type=source_ref_type,
         source_ref_id=source_ref_id,
         payload=payload,
         actor_user_id=actor_user_id,
+        evidence_fact_ids=fact_ids,
         target_relationship_stage=target_relationship_stage,
         fallback_occurred_at=occurred,
     )
@@ -2178,9 +2456,6 @@ def append_customer_event(
         or payload.get("reason_code") != transition_trigger
     ):
         raise CustomerDomainError("RELATIONSHIP_TRANSITION_INVALID")
-    if any(type(item) is not int or item <= 0 for item in evidence_fact_ids):
-        raise CustomerDomainError("EVENT_REFERENCE_INVALID")
-    fact_ids = sorted(set(evidence_fact_ids))
     all_refs = list(evidence_refs)
     all_refs.extend(EventEvidenceRef("fact", item) for item in fact_ids)
     evidence_classifications: list[str] = []
@@ -2287,7 +2562,8 @@ def append_customer_event(
         account.relationship_stage = target_relationship_stage
         account.relationship_stage_changed_at = occurred
         account.relationship_stage_reason = transition_trigger
-    account.profile_input_seq = int(account.profile_input_seq) + 1
+    if registration.bumps_profile_input_seq:
+        account.profile_input_seq = int(account.profile_input_seq) + 1
     account.updated_at = now
     db.flush()
     return row

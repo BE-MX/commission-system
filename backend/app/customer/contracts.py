@@ -205,6 +205,16 @@ _EXPRESSED_SOURCES = _MESSAGE_SOURCES | {("alibaba", "inquiry")}
 _AGENT_SOURCE = frozenset({("agent", "research_report")})
 _MANUAL_SOURCE = frozenset({("manual", "customer")})
 _PROFILE_PURPOSES = frozenset({"profile", "research", "sales"})
+_MATERIAL_RISK_SOURCE_FACT_KEYS = frozenset({
+    "risk.source.fraud",
+    "risk.source.sanctions",
+    "risk.source.material_legal",
+})
+_MATERIAL_RISK_CONFIRMED_FACT_KEYS = frozenset({
+    "risk.confirmed.fraud",
+    "risk.confirmed.sanctions",
+    "risk.confirmed.material_legal",
+})
 
 _EXPRESSED_FACT_KEYS = frozenset({
     "preference.expressed.product_family",
@@ -278,6 +288,10 @@ def _registered_value_types(fact_key: str) -> frozenset[str]:
     if fact_key in _NUMBER_VALUE_FACT_KEYS:
         return frozenset({"number"})
     if fact_key in _OBJECT_VALUE_FACT_KEYS:
+        return frozenset({"object"})
+    if fact_key in (
+        _MATERIAL_RISK_SOURCE_FACT_KEYS | _MATERIAL_RISK_CONFIRMED_FACT_KEYS
+    ):
         return frozenset({"object"})
     if fact_key in _LIST_VALUE_FACT_KEYS:
         return frozenset({"list"})
@@ -370,6 +384,30 @@ _fact_registry.update(_registrations(
     sources=_MESSAGE_SOURCES,
     ttl_days=180,
 ))
+_fact_registry.update({
+    fact_key: FactRegistration(
+        value_types=frozenset({"object"}),
+        data_classification=DataClassification.RESTRICTED_INTERNAL,
+        allowed_sources=_AGENT_SOURCE,
+        ttl_days=90,
+        conflict_key=fact_key,
+        allowed_purposes=frozenset({"research", "risk_review"}),
+        supports_high_impact=True,
+    )
+    for fact_key in sorted(_MATERIAL_RISK_SOURCE_FACT_KEYS)
+})
+_fact_registry.update({
+    fact_key: FactRegistration(
+        value_types=frozenset({"object"}),
+        data_classification=DataClassification.RESTRICTED_INTERNAL,
+        allowed_sources=_MANUAL_SOURCE,
+        ttl_days=None,
+        conflict_key=fact_key,
+        allowed_purposes=frozenset({"profile", "risk_review"}),
+        supports_high_impact=True,
+    )
+    for fact_key in sorted(_MATERIAL_RISK_CONFIRMED_FACT_KEYS)
+})
 FACT_REGISTRY: Mapping[str, FactRegistration] = MappingProxyType(_fact_registry)
 del _fact_registry
 
@@ -514,7 +552,11 @@ SOURCE_REGISTRY: Mapping[tuple[str, str], SourceRegistration] = MappingProxyType
         authority="first_party",
         publisher_key_rule="governed_agent_run",
         source_family_key_rule="evidence_set_hash",
-        allowed_fact_keys=_INFERRED_PREFERENCE_FACT_KEYS | _INFERRED_BEHAVIOR_FACT_KEYS,
+        allowed_fact_keys=(
+            _INFERRED_PREFERENCE_FACT_KEYS
+            | _INFERRED_BEHAVIOR_FACT_KEYS
+            | _MATERIAL_RISK_SOURCE_FACT_KEYS
+        ),
         default_classification=DataClassification.INTERNAL_BUSINESS,
         ttl_days=90,
         promotion_ceiling="candidate",
@@ -528,7 +570,7 @@ SOURCE_REGISTRY: Mapping[tuple[str, str], SourceRegistration] = MappingProxyType
         allowed_fact_keys=frozenset({
             "behavior.confirmed.priority",
             "behavior.confirmed.relationship_note",
-        }),
+        }) | _MATERIAL_RISK_CONFIRMED_FACT_KEYS,
         default_classification=DataClassification.RESTRICTED_INTERNAL,
         ttl_days=None,
         promotion_ceiling="verified",

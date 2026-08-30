@@ -448,6 +448,12 @@ def test_fact_registry_order_is_stable():
         "behavior.observed.preferred_channel",
         "behavior.observed.response_latency",
         "behavior.observed.silence_period",
+        "risk.source.fraud",
+        "risk.source.material_legal",
+        "risk.source.sanctions",
+        "risk.confirmed.fraud",
+        "risk.confirmed.material_legal",
+        "risk.confirmed.sanctions",
     )
 
     assert tuple(FACT_REGISTRY) == expected_keys

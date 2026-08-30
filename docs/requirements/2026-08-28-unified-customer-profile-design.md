@@ -1219,7 +1219,21 @@ InnoDB不支持延迟外键检查，且多表UPDATE不能保证按父子顺序�
 
 批准载荷必须使用版本化`ownership_partitions`，每项只允许并必须包含`object_type`、`object_id`、`expected_storage_customer_id`、`expected_current_customer_id`、`expected_ownership_version`和`target_customer_id`。注册表版本、源客户、目标客户集合和完整partition数组都进入提案`action_hash`；CAS逐项精确匹配批准partition，且提案`customer_id/target_customer_id`必须与载荷作用域一致。任意未声明对象、版本或当前归属不一致、批准后载荷变更、重复对象或目标越界均拒绝执行。`expected_ownership_version=0`只表示预期尚无覆盖行；并发插入统一返回`OWNERSHIP_VERSION_CONFLICT`，死锁、锁等待超时和序列化失败统一回滚并返回`RETRY_NEW_TRANSACTION`，调用方必须开启新事务重试。
 
+Task 9b首期执行器只接受pairwise merge和指向一个已存在active客户的split，不创建客户。两类载荷共同且只允许`ownership_registry_version`、`source_customer_id`、`target_customer_ids`、`source_profile_version_id`、`source_profile_input_seq`、`target_profile_versions`、`evidence_fact_ids`、`root_inventory`、`ownership_partitions`、`transition_plan`、`proposal_redirects`、`reason_code`和`reason_text`；merge另有`keep_customer_id`且必须等于唯一目标，split另有布尔`retain_source`。`root_inventory`严格包含`registry_version`、固定13类根的`count/sorted_ids_hash`和覆盖根、消息、订单明细、机会事件、搜索来源、事实证据与冲突的全图`graph_hash`。`target_profile_versions`逐目标冻结`customer_id/profile_version_id/profile_input_seq`，所有这些值及源客户当前档案都在锁内重验。`transition_plan`必须显式列全当前assignment、联系人关系、客户关系、DNC、资格审核和未终结研究任务，即使为空也提交空数组；执行时结束旧记录并重建，不更新历史归属。merge及`retain_source=false`的split只允许把根和时态重建发往唯一目标，`retain_source=true`才允许保留源客户；客户关系的未受影响第三方端点必须原值保留，assignment重建可显式冻结`user_id/assignment_role`，身份和唯一主负责人冲突均按执行后的逐客户投影判断，身份投影必须包含物理storage在第三客户但ownership当前属于作用域客户的记录。事实subject、`evidence_json`索引、事实证据、supporting fact、冲突、消息与会话/信源、订单明细、机会事件证据、搜索来源、关系`source_fact_id`、未终结研究任务重建后的`evidence_fact_ids`及其他当前根引用必须落在同一最终逻辑客户；`acquisition_attribution.research_task_id`指向结束重建前的旧任务仅是不可变历史来源边，冻结进graph hash但不要求与新current owner同域。DNC禁止以源记录自身充当`existing_id`，merge按scope取并集，split默认在每个结果客户保留同scope有效策略，并在写前、写后校验。锁序固定为提案、客户账户、ownership覆盖、13类根、时态记录、档案与Agent/List/TargetMatch派生投影、其余开放提案；写入后清除三类当前派生投影并重验源客户无遗留当前根或时态记录。执行人首次执行时至少必须是active且未删除的方舟用户，管理权限仍由统一接入层校验；同键重放只允许提案行冻结的`executed_by`，该用户事后停用不改变既有结果。`proposal_redirects`即使为空也进入动作哈希；本层只输出重定向后重算哈希、清批准退回draft及其余开放提案supersede的确定性计划，由提案接入层执行，不直接调用提案服务。同提案同执行键重放从首次执行事件返回冻结结果，异actor或异键冲突；任一写入或后置条件失败整单回滚。
+
+`proposal_redirects`每项严格包含`proposal_id/target_customer_id/target_profile_version_id`；档案版本必须属于声明目标且与`target_profile_versions`一致。接入层按三字段重绑客户与档案、重算哈希、清审批人和审批时间并退回draft；执行后该档案因输入序列递增必然stale，必须显式重编再提交，执行器不得猜测新版本。
+
 `customer_split_v1`必须冻结源客户、源档案版本、`profile_input_seq`、注册表版本、逐类型完整库存计数与ID哈希、每个根对象唯一目标、关系/归属/DNC/资格/研究任务重建计划、主要身份选择和开放提案重定向。遗漏、重复、未知类型、图闭包跨目标、库存或版本变化一律使旧批准失效；保留在源客户的对象也必须显式声明，不允许以遗漏表达默认归属。
+
+### 9.8 DNC与重大风险审批载荷
+
+`customer_set_dnc_v1`、`customer_remove_dnc_v1`和`customer_confirm_material_risk_v1`均为严格字段契约，禁止额外字段。三者必须同时冻结`customer_id`、`profile_version_id`、`expected_profile_input_seq`以及排序去重后的`evidence_fact_ids`；载荷证据集合必须与提案证据集合完全一致，且执行时每条证据仍当前有效并在事实注册表声明`supports_high_impact=true`。
+
+- `customer_set_dnc_v1`冻结作用域、原因、生效时间和`expected_active_annotation_id=null`。同一客户同一作用域已存在有效DNC时旧批准失效，不以覆盖实现更新。
+- `customer_remove_dnc_v1`冻结待撤销annotation ID、期望有效annotation ID、作用域和撤销原因。执行只将该annotation置为revoked；中央suppression、联系人退订、硬退信和坏地址不会随之解除，仍由deny gate阻断。
+- `customer_confirm_material_risk_v1`仅接受`fraud`、`sanctions`和`material_legal`，冻结来源风险事实ID、事实fingerprint和规范`value_json`哈希。执行不得修改来源candidate，而是通过`append_fact`追加restricted_internal/management的confirmed事实，并保留人工审核与直接事实证据链。
+
+执行器只接受审批哈希仍等于当前动作哈希的approved提案，重新校验当前档案、输入序号、证据、作用域和有效人工执行人。同一执行键重放返回既有结果，异键冲突；领域写入、专用事件`policy.dnc_set`、`policy.dnc_removed`或`risk.material_confirmed`、提案状态与当前档案/Agent上下文失效在同一事务内完成，任一步失败全部回滚。重大风险详细值不得进入Agent上下文；Agent仅能读取通过分级与可见范围过滤后的非受限摘要。
 
 执行锁序固定为：执行提案、受影响客户、归属覆盖行、注册表根对象、时态与唯一槽记录、派生投影、其他开放提案。执行器重验权限、动作哈希、批准、过期时间、档案输入序号、完整库存和覆盖版本后，结束并重建时态记录，CAS写入归属覆盖，失效并重建两侧档案投影，追加摘要事件，按审批载荷重绑开放提案、重算其`action_hash`、清除旧批准并退回`draft`，最后使用同一执行幂等键supersede其余开放提案。任一后置条件失败使整个事务回滚。
 

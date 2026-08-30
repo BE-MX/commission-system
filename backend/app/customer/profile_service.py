@@ -108,6 +108,9 @@ _RISK_FACT_TYPES = {
     "behavior.inferred.churn_risk": "churn_risk",
     "behavior.inferred.supplier_switch_signal": "supplier_switch_signal",
     "behavior.observed.silence_period": "silence_period",
+    "risk.confirmed.fraud": "fraud",
+    "risk.confirmed.sanctions": "sanctions",
+    "risk.confirmed.material_legal": "material_legal",
 }
 _DNC_SCOPE_TYPES = frozenset({
     "global",
@@ -706,6 +709,8 @@ def _section_for_fact_key(fact_key: str) -> str:
         return "behavior"
     if fact_key.startswith("commercial."):
         return "commercial"
+    if fact_key.startswith("risk."):
+        return "risks"
     return "quality"
 
 
@@ -1327,6 +1332,8 @@ def _evidence_description(fact_key: str) -> str:
         return "Supports a manually confirmed customer behavior conclusion"
     if fact_key.startswith("commercial."):
         return "Supports a current commercial profile conclusion"
+    if fact_key.startswith("risk.confirmed."):
+        return "Supports a human-confirmed material risk conclusion"
     return "Supports a current customer profile conclusion"
 
 
