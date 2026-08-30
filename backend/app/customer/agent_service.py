@@ -7,13 +7,11 @@ import hashlib
 import json
 from typing import Iterable
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.time import beijing_now
 from app.customer.access_service import (
     CustomerAccessDenied,
-    apply_customer_scope,
     apply_record_access,
     require_customer_access,
 )
@@ -22,20 +20,26 @@ from app.customer.models import (
     CustomerAction,
     CustomerAgentContext,
     CustomerConversation,
-    CustomerContactPoint,
-    CustomerExternalIdentity,
     CustomerFact,
     CustomerMessage,
-    CustomerName,
     CustomerOrder,
     CustomerOrderItem,
     CustomerProfileVersion,
     CustomerSourceRecord,
 )
 from app.customer.logical_customer_service import logical_root_predicate
+from app.customer.evidence_contract import fact_evidence_content_hash
 from app.customer.agent_freshness import profile_freshness
+from app.customer.agent_search_service import search_customers as _search_customers
+from app.customer.agent_query_service import (
+    ascending_id_page,
+    descending_pair_page,
+    finish_keyset_page,
+    id_key,
+    pair_key,
+)
 from app.customer.agent_tool_contract import (
-    MAX_CURSOR_ROWS, MAX_LIST_BYTES, MAX_LIST_ITEMS, MAX_NESTED_ITEMS,
+    MAX_LIST_BYTES, MAX_LIST_ITEMS, MAX_NESTED_ITEMS,
     MAX_PROFILE_BYTES, MAX_SECTION_BYTES, MAX_SOURCE_BYTES, MAX_SOURCE_CHARS,
     MAX_STRING_CHARS, PROFILE_SECTIONS, CustomerAgentAccessError,
     clip as _clip,
@@ -87,56 +91,9 @@ def search_customers(
     db: Session, *, user: dict, keyword: str | None = None,
     identifier_type: str | None = None, cursor: str | None = None, limit: int = 20,
 ) -> dict:
-    try:
-        query = apply_customer_scope(
-            db.query(CustomerAccount), user=user, read_permissions=_READ_PERMISSIONS,
-            include_public_pool=False,
-        )
-    except CustomerAccessDenied:
-        _deny()
-    cleaned = (keyword or "").strip()
-    if identifier_type:
-        if identifier_type in {"email", "phone", "whatsapp", "website", "social", "domain"}:
-            point_type = "website" if identifier_type == "domain" else identifier_type
-            matches = db.query(CustomerContactPoint.customer_id).filter(
-                CustomerContactPoint.customer_id.is_not(None),
-                CustomerContactPoint.point_type == point_type,
-                CustomerContactPoint.normalized_value.ilike(
-                    f"%{cleaned}%" if identifier_type == "domain" else cleaned,
-                ),
-                CustomerContactPoint.verification_status.notin_(("invalid", "disputed")),
-            )
-        else:
-            matches = db.query(CustomerExternalIdentity.customer_id).filter(
-                CustomerExternalIdentity.identifier_type == identifier_type,
-                CustomerExternalIdentity.normalized_value == cleaned,
-                CustomerExternalIdentity.status == "active",
-            )
-        query = query.filter(CustomerAccount.id.in_(matches))
-    elif cleaned:
-        pattern = f"%{cleaned}%"
-        names = db.query(CustomerName.customer_id).filter(CustomerName.normalized_name.ilike(pattern))
-        query = query.filter(or_(
-            CustomerAccount.display_name.ilike(pattern),
-            CustomerAccount.canonical_company_name.ilike(pattern),
-            CustomerAccount.customer_code.ilike(pattern), CustomerAccount.id.in_(names),
-        ))
-    rows = query.order_by(CustomerAccount.id).limit(MAX_CURSOR_ROWS + 1).all()
-    filters = {"keyword": cleaned, "identifier_type": identifier_type}
-    page, has_more, next_cursor = _page(
-        rows, user=user, customer_id=None, filters=filters,
-        profile_version=None, cursor=cursor, limit=limit,
-    )
-    result = _envelope(profile_version=None, data_as_of=None, items=[{
-        "customer_id": row.id, "customer_code": row.customer_code,
-        "display_name": row.display_name, "canonical_company_name": row.canonical_company_name,
-        "entity_type": row.entity_type, "identity_status": row.identity_status,
-        "relationship_stage": row.relationship_stage,
-    } for row in page])
-    result.update(has_more=has_more, cursor=next_cursor)
-    return _fit_page(
-        result, max_bytes=MAX_LIST_BYTES, user=user, customer_id=None,
-        filters=filters, profile_version=None, incoming_cursor=cursor,
+    return _search_customers(
+        db, user=user, keyword=keyword, identifier_type=identifier_type,
+        cursor=cursor, limit=limit,
     )
 
 
@@ -194,9 +151,9 @@ def get_customer_profile(
 def _fact_ref(
     row: CustomerFact, *, customer_id: int, profile_version: int | None, stale: bool,
 ) -> dict:
-    digest = hashlib.sha256(json.dumps({
-        "fact_id": row.id, "value": row.value_json, "fingerprint": row.fact_fingerprint,
-    }, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+    digest = fact_evidence_content_hash(
+        fact_id=row.id, value=row.value_json, fingerprint=row.fact_fingerprint,
+    )
     return {
         "evidence_ref": f"fact:{row.id}", "evidence_content_hash": digest,
         "customer_id": customer_id, "profile_version": profile_version,
@@ -220,13 +177,12 @@ def get_customer_facts(
         query = query.filter(CustomerFact.fact_layer.in_(layers))
     if statuses:
         query = query.filter(CustomerFact.verification_status.in_(statuses))
-    rows = query.order_by(CustomerFact.id).limit(MAX_CURSOR_ROWS + 1).all()
     customer = db.get(CustomerAccount, customer_id)
     version = _profile_version(db, customer)
     version_no = version.version_no if version else None
     filters = {"fact_keys": fact_keys or [], "layers": layers or [], "statuses": statuses or []}
-    page, has_more, next_cursor = _page(
-        rows, user=user, customer_id=customer_id, filters=filters,
+    page, has_more = ascending_id_page(
+        query, CustomerFact.id, user=user, customer_id=customer_id, filters=filters,
         profile_version=version_no, cursor=cursor, limit=limit,
     )
     current = now or beijing_now()
@@ -248,10 +204,11 @@ def get_customer_facts(
         profile_version=version_no, data_as_of=version.data_as_of if version else None,
         items=items, evidence_refs=refs,
     )
-    result.update(customer_id=customer_id, has_more=has_more, cursor=next_cursor)
-    return _fit_page(
-        result, max_bytes=MAX_LIST_BYTES, user=user, customer_id=customer_id,
-        filters=filters, profile_version=version_no, incoming_cursor=cursor,
+    result.update(customer_id=customer_id)
+    return finish_keyset_page(
+        result, page, max_bytes=MAX_LIST_BYTES, has_more=has_more,
+        key_for_row=id_key, user=user, customer_id=customer_id, filters=filters,
+        profile_version=version_no,
     )
 
 
@@ -273,30 +230,35 @@ def get_customer_orders(
         query = query.filter(CustomerOrder.account_date >= date_from)
     if date_to:
         query = query.filter(CustomerOrder.account_date <= date_to)
-    rows = query.order_by(CustomerOrder.account_date.desc(), CustomerOrder.id.desc()).limit(MAX_CURSOR_ROWS + 1).all()
     customer = db.get(CustomerAccount, customer_id)
     version = _profile_version(db, customer)
     version_no = version.version_no if version else None
     filters = {"date_from": date_from, "date_to": date_to, "include_items": include_items}
-    page, has_more, next_cursor = _page(
-        rows, user=user, customer_id=customer_id, filters=filters,
+    page, has_more = descending_pair_page(
+        query, CustomerOrder.account_date, CustomerOrder.id, sort_type=date,
+        user=user, customer_id=customer_id, filters=filters,
         profile_version=version_no, cursor=cursor, limit=limit,
     )
+    detail_by_order: dict[int, list[CustomerOrderItem]] = {}
+    if include_items and page:
+        detail_rows = db.query(CustomerOrderItem).filter(
+            CustomerOrderItem.order_id.in_([row.id for row in page]),
+        ).order_by(
+            CustomerOrderItem.order_id, CustomerOrderItem.id,
+        ).limit(MAX_NESTED_ITEMS).all()
+        for detail_row in detail_rows:
+            detail_by_order.setdefault(detail_row.order_id, []).append(detail_row)
     nested_left, items = MAX_NESTED_ITEMS, []
     for row in page:
-        detail = []
-        if include_items and nested_left:
-            detail_rows = db.query(CustomerOrderItem).filter(
-                CustomerOrderItem.order_id == row.id,
-            ).order_by(CustomerOrderItem.id).limit(nested_left).all()
-            nested_left -= len(detail_rows)
-            detail = [{
+        selected_details = detail_by_order.get(row.id, [])[:nested_left]
+        nested_left -= len(selected_details)
+        detail = [{
                 "item_id": item.id, "product_name": item.product_name,
                 "product_family": item.product_family, "model": item.model,
                 "color": item.color, "length": item.length,
                 "quantity": item.quantity, "quantity_unit": item.quantity_unit,
                 "line_amount": item.line_amount,
-            } for item in detail_rows]
+            } for item in selected_details]
         items.append({
             "order_id": row.id, "order_no": row.order_no, "order_status": row.order_status,
             "account_date": row.account_date, "currency": row.currency,
@@ -307,10 +269,11 @@ def get_customer_orders(
         profile_version=version_no, data_as_of=version.data_as_of if version else None,
         items=items,
     )
-    result.update(customer_id=customer_id, has_more=has_more, cursor=next_cursor)
-    return _fit_page(
-        result, max_bytes=MAX_LIST_BYTES, user=user, customer_id=customer_id,
-        filters=filters, profile_version=version_no, incoming_cursor=cursor,
+    result.update(customer_id=customer_id)
+    return finish_keyset_page(
+        result, page, max_bytes=MAX_LIST_BYTES, has_more=has_more,
+        key_for_row=pair_key("account_date"), user=user, customer_id=customer_id,
+        filters=filters, profile_version=version_no,
     )
 
 
@@ -340,9 +303,6 @@ def search_customer_messages(
         message_query = message_query.filter(CustomerMessage.sent_at >= date_from)
     if date_to:
         message_query = message_query.filter(CustomerMessage.sent_at <= date_to)
-    rows = message_query.order_by(
-        CustomerMessage.sent_at.desc(), CustomerMessage.id.desc(),
-    ).limit(MAX_CURSOR_ROWS + 1).all()
     customer = db.get(CustomerAccount, customer_id)
     version = _profile_version(db, customer)
     version_no = version.version_no if version else None
@@ -350,8 +310,9 @@ def search_customer_messages(
         "query": cleaned, "conversation_id": conversation_id,
         "date_from": date_from, "date_to": date_to,
     }
-    page, has_more, next_cursor = _page(
-        rows, user=user, customer_id=customer_id, filters=filters,
+    page, has_more = descending_pair_page(
+        message_query, CustomerMessage.sent_at, CustomerMessage.id, sort_type=datetime,
+        user=user, customer_id=customer_id, filters=filters,
         profile_version=version_no, cursor=cursor, limit=limit,
     )
     items = [{
@@ -365,10 +326,11 @@ def search_customer_messages(
         profile_version=version_no, data_as_of=max((row.sent_at for row in page), default=None),
         items=items,
     )
-    result.update(customer_id=customer_id, has_more=has_more, cursor=next_cursor)
-    return _fit_page(
-        result, max_bytes=MAX_LIST_BYTES, user=user, customer_id=customer_id,
-        filters=filters, profile_version=version_no, incoming_cursor=cursor,
+    result.update(customer_id=customer_id)
+    return finish_keyset_page(
+        result, page, max_bytes=MAX_LIST_BYTES, has_more=has_more,
+        key_for_row=pair_key("sent_at"), user=user, customer_id=customer_id,
+        filters=filters, profile_version=version_no,
     )
 
 
@@ -383,15 +345,13 @@ def get_customer_actions(
     )
     if statuses:
         query = query.filter(CustomerAction.status.in_(statuses))
-    rows = query.order_by(
-        CustomerAction.action_date.desc(), CustomerAction.id.desc(),
-    ).limit(MAX_CURSOR_ROWS + 1).all()
     customer = db.get(CustomerAccount, customer_id)
     version = _profile_version(db, customer)
     version_no = version.version_no if version else None
     filters = {"statuses": statuses or []}
-    page, has_more, next_cursor = _page(
-        rows, user=user, customer_id=customer_id, filters=filters,
+    page, has_more = descending_pair_page(
+        query, CustomerAction.action_date, CustomerAction.id, sort_type=date,
+        user=user, customer_id=customer_id, filters=filters,
         profile_version=version_no, cursor=cursor, limit=limit,
     )
     items = [{
@@ -404,10 +364,11 @@ def get_customer_actions(
         profile_version=version_no, data_as_of=version.data_as_of if version else None,
         items=items,
     )
-    result.update(customer_id=customer_id, has_more=has_more, cursor=next_cursor)
-    return _fit_page(
-        result, max_bytes=MAX_LIST_BYTES, user=user, customer_id=customer_id,
-        filters=filters, profile_version=version_no, incoming_cursor=cursor,
+    result.update(customer_id=customer_id)
+    return finish_keyset_page(
+        result, page, max_bytes=MAX_LIST_BYTES, has_more=has_more,
+        key_for_row=pair_key("action_date"), user=user, customer_id=customer_id,
+        filters=filters, profile_version=version_no,
     )
 
 

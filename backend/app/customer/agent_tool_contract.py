@@ -58,11 +58,12 @@ def _cursor_scope(
     *, user: dict, customer_id: int | None, filters: dict, profile_version: int | None,
 ) -> dict:
     run = user.get("_agent_run") or {}
-    return {
+    scope = {
         "run_id": run.get("run_id"), "customer_id": customer_id,
         "filters": filters, "profile_version": profile_version,
         "permissions": effective_permissions(user),
     }
+    return json.loads(json.dumps(scope, sort_keys=True, default=str))
 
 
 def encode_cursor(
@@ -76,15 +77,16 @@ def encode_cursor(
         ),
         "position": position,
     }
+    return _encode_cursor_payload(payload)
+
+
+def _encode_cursor_payload(payload: dict) -> str:
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
     signature = hmac.new(_cursor_key(), raw, hashlib.sha256).digest()
     return base64.urlsafe_b64encode(raw + signature).decode().rstrip("=")
 
 
-def decode_cursor(
-    cursor: str, *, user: dict, customer_id: int | None,
-    filters: dict, profile_version: int | None,
-) -> int:
+def _decode_cursor_payload(cursor: str) -> dict:
     try:
         packed = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4))
         raw, supplied = packed[:-32], packed[-32:]
@@ -96,6 +98,16 @@ def decode_cursor(
         raise
     except (ValueError, TypeError, json.JSONDecodeError):
         deny()
+    if not isinstance(payload, dict):
+        deny()
+    return payload
+
+
+def decode_cursor(
+    cursor: str, *, user: dict, customer_id: int | None,
+    filters: dict, profile_version: int | None,
+) -> int:
+    payload = _decode_cursor_payload(cursor)
     expected = _cursor_scope(
         user=user, customer_id=customer_id, filters=filters,
         profile_version=profile_version,
@@ -106,6 +118,36 @@ def decode_cursor(
     if not isinstance(position, int) or position < 0 or position > MAX_CURSOR_ROWS:
         deny()
     return position
+
+
+def encode_keyset_cursor(
+    *, user: dict, customer_id: int | None, filters: dict,
+    profile_version: int | None, keyset: dict,
+) -> str:
+    return _encode_cursor_payload({
+        **_cursor_scope(
+            user=user, customer_id=customer_id, filters=filters,
+            profile_version=profile_version,
+        ),
+        "keyset": keyset,
+    })
+
+
+def decode_keyset_cursor(
+    cursor: str, *, user: dict, customer_id: int | None,
+    filters: dict, profile_version: int | None,
+) -> dict:
+    payload = _decode_cursor_payload(cursor)
+    expected = _cursor_scope(
+        user=user, customer_id=customer_id, filters=filters,
+        profile_version=profile_version,
+    )
+    if any(payload.get(key) != value for key, value in expected.items()):
+        deny()
+    keyset = payload.get("keyset")
+    if not isinstance(keyset, dict) or not keyset:
+        deny()
+    return keyset
 
 
 def serialize_envelope(value: dict) -> bytes:
@@ -156,6 +198,17 @@ def _shrink_single_item(value: dict, max_bytes: int) -> bool:
     return bool(removed) and len(serialize_envelope(value)) <= max_bytes
 
 
+def _prune_growth_field(value: dict, field: str, max_bytes: int) -> None:
+    collection = value.get(field)
+    while collection and len(serialize_envelope(value)) > max_bytes:
+        if isinstance(collection, list):
+            collection.pop()
+        elif isinstance(collection, dict):
+            collection.pop(next(reversed(collection)))
+        else:
+            break
+
+
 def fit(
     value: dict, *, max_bytes: int,
     cursor_for_count: Callable[[int], str] | None = None,
@@ -190,6 +243,15 @@ def fit(
     if isinstance(refs, list):
         while refs and len(serialize_envelope(value)) > max_bytes:
             refs.pop()
+    for field in (
+        "source_freshness_map", "requested_section_data_as_of",
+        "unavailable_sources", "stale_sections", "truncated_fields", "redactions",
+    ):
+        _prune_growth_field(value, field, max_bytes)
+    final_size = len(serialize_envelope(value))
+    if final_size > max_bytes:
+        raise ValueError("OUTPUT_BUDGET_EXCEEDED")
+    assert final_size <= max_bytes
     return value
 
 

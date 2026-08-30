@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.agent_runtime.errors import ConflictError, NotFoundError
 from app.agent_runtime.event_service import append_event, content_hash
 from app.agent_runtime.models import AgentArtifact, AgentEvent, AgentProfile, AgentRun
+from app.agent_runtime.evidence_validation import validate_ark_claim_evidence
 from app.customer.models import CustomerAccount, CustomerAgentRunScope, CustomerProfileVersion
 
 
@@ -156,6 +157,16 @@ def create_artifact(
         customer_id=customer_id,
         profile_version=profile_version,
     )
+    if (profile.policy_json or {}).get("claim_evidence_required"):
+        policy = profile.policy_json or {}
+        if content.get("evidence") != evidence:
+            errors.append("content evidence must exactly match artifact evidence")
+        errors.extend(validate_ark_claim_evidence(
+            db, citations=evidence, customer_id=customer_id,
+            profile_version=profile_version,
+            max_classification=policy.get("max_data_classification", "internal_business"),
+            max_visibility=policy.get("max_visibility_scope", "customer_team"),
+        ))
     if errors:
         raise ConflictError("成果校验失败: " + "; ".join(errors))
     digest = content_hash({"content": content, "evidence": evidence})

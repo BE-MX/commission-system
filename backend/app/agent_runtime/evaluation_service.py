@@ -19,6 +19,7 @@ from app.agent_runtime.evaluation_cases import (
 )
 from app.agent_runtime.evaluation_contract import copilot_contract
 from app.agent_runtime.models import AgentArtifact, AgentEvent, AgentProfile, AgentRun
+from app.agent_runtime.evidence_validation import validate_ark_claim_evidence
 from app.auth.models import ArkUser
 from app.customer.models import (
     CustomerAccount,
@@ -112,11 +113,23 @@ def _copilot_artifact_is_evidence_bound(db: Session, artifact: AgentArtifact) ->
     evidence = [item for item in (artifact.evidence_json or []) if isinstance(item, dict)]
     if customer_id is None or len(evidence) != len(artifact.evidence_json or []):
         return False
+    if content.get("evidence") != evidence:
+        return False
     errors = validate_claim_evidence(
         evidence, returned_evidence=returned_evidence, customer_id=customer_id,
         profile_version=profile_version,
     )
     if errors:
+        return False
+    profile = db.get(AgentProfile, run.profile_id)
+    if profile is None:
+        return False
+    policy = profile.policy_json or {}
+    if validate_ark_claim_evidence(
+        db, citations=evidence, customer_id=customer_id, profile_version=profile_version,
+        max_classification=policy.get("max_data_classification", "internal_business"),
+        max_visibility=policy.get("max_visibility_scope", "customer_team"),
+    ):
         return False
     evidence_ids = {str(item["tool_call_id"]) for item in evidence}
     if not evidence_ids:

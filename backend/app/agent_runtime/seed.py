@@ -102,14 +102,14 @@ def _cited_statement_array() -> dict:
 PROFILE_SEEDS = [
     {
         "profile_key": "customer_order_copilot",
-        "version": 3,
+        "version": 4,
         "name": "客户与订单经营副驾驶",
         "description": "基于授权客户、订单、知识、物流和价格事实生成可追溯经营建议",
         "runtime": "dsh",
         "mode": "interactive",
         "model_preset": "agent_runtime_copilot",
         "system_prompt": _COPILOT_PROMPT,
-        "skill_manifest": [{"name": "ark-customer-order-copilot", "version": "3"}],
+        "skill_manifest": [{"name": "ark-customer-order-copilot", "version": "4"}],
         "tool_allowlist": [
             "get_customer_profile", "get_customer_facts", "get_customer_orders",
             "search_customer_messages", "get_customer_actions", "get_customer_evidence",
@@ -120,6 +120,7 @@ PROFILE_SEEDS = [
         "policy_json": {
             "read_only": True, "human_confirm_business_write": True, "evidence_required": True,
             "claim_evidence_required": True,
+            "max_data_classification": "restricted_internal",
             "artifact_type": "copilot_answer", "max_artifacts": 1,
         },
         "output_schema": _schema(

@@ -4,6 +4,7 @@ import asyncio
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+import hashlib
 import json
 from types import SimpleNamespace
 
@@ -25,6 +26,8 @@ from app.agent_runtime.token_service import decode_run_token
 from app.auth.dependencies import get_current_user
 from app.auth.models import ArkPermission, ArkRole, ArkRolePermission, ArkUser, ArkUserRole
 from app.ai import agent_service
+from app.customer import agent_service as customer_agent_service
+from app.customer.evidence_contract import fact_evidence_content_hash
 from app.ai.models import AiCallLog, AiPreset, AiProvider
 from app.core.database import Base, get_db
 from app.insight import customer_radar_service
@@ -37,12 +40,16 @@ from app.customer.models import (
     CustomerChangeProposal,
     CustomerEvent,
     CustomerExternalIdentity,
+    CustomerFact,
+    CustomerConversation,
     CustomerListProjection,
+    CustomerMessage,
     CustomerOpportunity,
     CustomerOpportunityEvent,
     CustomerObjectOwnership,
     CustomerOrder,
     CustomerProfileVersion,
+    CustomerSourceRecord,
 )
 from app.mcp import agent_tools, auth as mcp_auth
 from app.mcp.models import MCPToken
@@ -75,6 +82,10 @@ def db():
         CustomerAssignment.__table__,
         CustomerEvent.__table__,
         CustomerExternalIdentity.__table__,
+        CustomerFact.__table__,
+        CustomerSourceRecord.__table__,
+        CustomerConversation.__table__,
+        CustomerMessage.__table__,
         CustomerListProjection.__table__,
         CustomerProfileVersion.__table__,
         CustomerAgentContext.__table__,
@@ -311,14 +322,51 @@ def _run(db, session, key="run-key-0001"):
 def _evidence(call_id="tool-1", source="get_customer_facts", **changes):
     return {
         "claim_id": "claim-1", "tool_call_id": call_id, "source": source,
-        "evidence_ref": "fact:1", "evidence_content_hash": "a" * 64,
+        "evidence_ref": "fact:1", "evidence_content_hash": fact_evidence_content_hash(
+            fact_id=1, value={"value": "Hair products"}, fingerprint=f"{7001:064x}",
+        ),
         "customer_id": 1, "profile_version": 1, "freshness": "current",
         **changes,
     }
 
 
+def _ark_evidence_fact(
+    db, *, customer_id=1, classification="internal_business", expires_at=None, suffix=0,
+):
+    row = CustomerFact(
+        customer_id=customer_id, subject_type="customer", fact_key="business.industry",
+        value_type="string", value_json={"value": "Hair products"}, fact_layer="source",
+        verification_status="verified", confidence=0.9,
+        confidence_method_version="test", confidence_components_json={},
+        data_classification=classification, visibility_scope="customer_team",
+        classification_reason="test", evidence_json={},
+        fact_fingerprint=f"{customer_id + 7000 + suffix:064x}",
+        observed_at=datetime(2026, 8, 1),
+        expires_at=expires_at,
+    )
+    db.add(row)
+    db.flush()
+    digest = hashlib.sha256(json.dumps({
+        "fact_id": row.id, "value": row.value_json, "fingerprint": row.fact_fingerprint,
+    }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return row, digest
+
+
 def _tool_success(db, run, claim, *, call_id="tool-1", tool_name="get_customer_facts",
                   returned_evidence=None):
+    if returned_evidence is None:
+        fact = db.get(CustomerFact, 1)
+        if fact is None:
+            fact, digest = _ark_evidence_fact(db)
+        else:
+            digest = fact_evidence_content_hash(
+                fact_id=fact.id, value=fact.value_json, fingerprint=fact.fact_fingerprint,
+            )
+        returned_evidence = [{
+            "evidence_ref": f"fact:{fact.id}", "evidence_content_hash": digest,
+            "customer_id": 1, "profile_version": 1,
+            "freshness": "current", "metadata_only": True,
+        }]
     sequence = worker_service.next_sequence(db, run.id)
     events = [
         WorkerEventInput(
@@ -335,11 +383,7 @@ def _tool_success(db, run, claim, *, call_id="tool-1", tool_name="get_customer_f
             actor_type="tool",
             payload={
                 "call_id": call_id,
-                "output": {"evidence_refs": returned_evidence or [
-                    {key: value for key, value in _evidence(
-                        call_id=call_id, source=tool_name,
-                    ).items() if key not in {"claim_id", "tool_call_id", "source"}}
-                ]},
+                "output": {"evidence_refs": returned_evidence},
             },
         ),
     ]
@@ -348,8 +392,8 @@ def _tool_success(db, run, claim, *, call_id="tool-1", tool_name="get_customer_f
     )
 
 
-def _copilot_artifact(artifact_type="copilot_answer"):
-    evidence = [_evidence()]
+def _copilot_artifact(artifact_type="copilot_answer", evidence=None):
+    evidence = evidence or [_evidence()]
     return ArtifactInput(
         artifact_type=artifact_type,
         title="Acme 跟进建议",
@@ -395,8 +439,9 @@ def test_profile_seed_is_immutable_and_idempotent(db):
     assert db.query(models.AgentProfile).count() == 3
     assert seed.seed_default_profiles(db) == 0
     profile = service.get_active_profile(db, "customer_order_copilot")
-    assert profile.version == 3
+    assert profile.version == 4
     assert "get_customer_profile" in profile.tool_allowlist
+    assert profile.policy_json["max_data_classification"] == "restricted_internal"
     assert len(profile.prompt_hash) == 64
 
 
@@ -421,6 +466,58 @@ def test_existing_v1_customer_profile_is_superseded_by_new_trust_contract(db):
     assert db.query(models.AgentProfile.status).filter_by(
         profile_key="customer_order_copilot", version=1,
     ).scalar() != "active"
+
+
+def test_seeded_run_token_can_read_raw_message_and_source_chunk(db, monkeypatch):
+    run = _run(db, _session(db), key="restricted-read-chain")
+    source = CustomerSourceRecord(
+        customer_id=1, source_system="alibaba", source_account_key="tenant",
+        authority_level="verified_platform", source_entity_type="message",
+        external_record_id="raw-source", external_record_key_hash=f"{8801:064x}",
+        data_classification="restricted_internal", visibility_scope="customer_team",
+        classification_reason="message", payload_schema_version="message_v1",
+        payload_json={"body": "raw source detail"}, content_hash=f"{8802:064x}",
+        captured_at=datetime(2026, 8, 1), processing_status="processed",
+    )
+    db.add(source)
+    db.flush()
+    conversation = CustomerConversation(
+        customer_id=1, source_system="alibaba", source_account_key="tenant",
+        external_conversation_id="raw-c", channel="alibaba", conversation_status="active",
+    )
+    db.add(conversation)
+    db.flush()
+    db.add(CustomerMessage(
+        conversation_id=conversation.id, external_message_id="raw-m", direction="in",
+        sender_type="customer_contact", content_type="text", content_text="raw message body",
+        attachment_meta_json=[], source_record_id=source.id, content_hash=f"{8803:064x}",
+        sent_at=datetime(2026, 8, 1), captured_at=datetime(2026, 8, 1),
+    ))
+    db.commit()
+    claim = _claim(db)
+    _start(db, run.id, claim)
+    request = SimpleNamespace(headers={"authorization": f"Bearer {claim['run_token']}"})
+    ctx = SimpleNamespace(request_context=SimpleNamespace(request=request))
+
+    @contextmanager
+    def fixed_session():
+        yield db
+
+    monkeypatch.setattr(agent_tools, "_read_session", fixed_session)
+    messages = json.loads(agent_tools._invoke(
+        ctx, "search_customer_messages",
+        lambda session, user: customer_agent_service.search_customer_messages(
+            session, user=user, customer_id=1, query="raw message",
+        ),
+    ))["data"]
+    chunks = json.loads(agent_tools._invoke(
+        ctx, "get_customer_source_chunks",
+        lambda session, user: customer_agent_service.get_customer_source_chunks(
+            session, user=user, customer_id=1, source_record_id=source.id,
+        ),
+    ))["data"]
+    assert messages["items"][0]["excerpt"] == "raw message body"
+    assert "raw source detail" in chunks["items"][0]["content"]
 
 
 def test_customer_profile_evidence_schema_requires_exact_envelope_fields(db):
@@ -506,6 +603,112 @@ def test_merged_alias_run_canonicalizes_input_ref_and_materialized_scope(db):
     assert db.query(CustomerAgentRunScope.customer_id).filter(
         CustomerAgentRunScope.run_id == run.id,
     ).scalar() == target.id
+
+
+@pytest.mark.parametrize("case", ["forged_hash", "cross_customer", "expired", "classification"])
+def test_artifact_revalidates_worker_evidence_against_ark(db, case):
+    run = _run(db, _session(db), key=f"ark-evidence-{case}")
+    if case == "cross_customer":
+        other = _customer(db, name="Other evidence owner", owner_user_id=7)
+        fact, digest = _ark_evidence_fact(db, customer_id=other.id)
+    else:
+        fact, digest = _ark_evidence_fact(
+            db, classification="internal_business",
+            expires_at=datetime(2026, 8, 1) if case == "expired" else None,
+        )
+    profile = db.get(models.AgentProfile, run.profile_id)
+    if case == "classification":
+        profile.policy_json = {**profile.policy_json, "max_data_classification": "public_business"}
+    returned = {
+        "evidence_ref": f"fact:{fact.id}",
+        "evidence_content_hash": "f" * 64 if case == "forged_hash" else digest,
+        "customer_id": 1, "profile_version": 1, "freshness": "current",
+    }
+    claim = _claim(db)
+    _start(db, run.id, claim)
+    _tool_success(db, run, claim, returned_evidence=[returned])
+    citation = {
+        "claim_id": "claim-1", "tool_call_id": "tool-1", "source": "get_customer_facts",
+        **returned,
+    }
+    with pytest.raises(ConflictError, match="Ark"):
+        worker_service.complete_run(
+            db, run.id, worker_id="dsh-worker-01", lease_token=claim["lease_token"],
+            runtime_run_id="ark-proof", artifacts=[_copilot_artifact(evidence=[citation])],
+            steps_used=1, prompt_tokens=1, completion_tokens=1, cost_usd=Decimal("0"),
+        )
+
+
+def test_artifact_rejects_content_evidence_that_differs_from_valid_top_level(db):
+    run = _run(db, _session(db), key="split-evidence")
+    valid_fact, valid_hash = _ark_evidence_fact(db)
+    invalid_fact, invalid_hash = _ark_evidence_fact(
+        db, expires_at=datetime(2026, 8, 1), suffix=1,
+    )
+    valid = {
+        "evidence_ref": f"fact:{valid_fact.id}", "evidence_content_hash": valid_hash,
+        "customer_id": 1, "profile_version": 1, "freshness": "current",
+    }
+    invalid = {
+        "evidence_ref": f"fact:{invalid_fact.id}", "evidence_content_hash": invalid_hash,
+        "customer_id": 1, "profile_version": 1, "freshness": "current",
+    }
+    claim = _claim(db)
+    _start(db, run.id, claim)
+    _tool_success(db, run, claim, returned_evidence=[valid, invalid])
+    artifact = _copilot_artifact(evidence=[{
+        "claim_id": "valid", "tool_call_id": "tool-1",
+        "source": "get_customer_facts", **valid,
+    }])
+    artifact.content["evidence"] = [{
+        "claim_id": "invalid", "tool_call_id": "tool-1",
+        "source": "get_customer_facts", **invalid,
+    }]
+    with pytest.raises(ConflictError, match="evidence"):
+        artifact_service.create_artifact(
+            db, run, db.get(models.AgentProfile, run.profile_id),
+            artifact_type=artifact.artifact_type, schema_version=1,
+            title=artifact.title, content=artifact.content, evidence=artifact.evidence,
+        )
+
+
+@pytest.mark.parametrize("case", ["future_fact", "quarantined_source"])
+def test_artifact_rejects_not_yet_effective_or_unavailable_ark_evidence(db, case):
+    run = _run(db, _session(db), key=f"unavailable-evidence-{case}")
+    fact, digest = _ark_evidence_fact(db)
+    if case == "future_fact":
+        fact.effective_from = datetime(2026, 9, 1)
+    else:
+        source = CustomerSourceRecord(
+            customer_id=1, source_system="alibaba", source_account_key="tenant",
+            authority_level="verified_platform", source_entity_type="message",
+            external_record_id="quarantined", external_record_key_hash=f"{991:064x}",
+            data_classification="internal_business", visibility_scope="customer_team",
+            classification_reason="test", payload_schema_version="message_v1",
+            payload_json={}, content_hash=f"{992:064x}", captured_at=datetime(2026, 8, 1),
+            processing_status="quarantined",
+        )
+        db.add(source)
+        db.flush()
+        fact.source_record_id = source.id
+    claim = _claim(db)
+    _start(db, run.id, claim)
+    returned = {
+        "evidence_ref": f"fact:{fact.id}", "evidence_content_hash": digest,
+        "customer_id": 1, "profile_version": 1, "freshness": "current",
+    }
+    _tool_success(db, run, claim, returned_evidence=[returned])
+    citation = {
+        "claim_id": "claim", "tool_call_id": "tool-1",
+        "source": "get_customer_facts", **returned,
+    }
+    with pytest.raises(ConflictError, match="Ark"):
+        worker_service.complete_run(
+            db, run.id, worker_id="dsh-worker-01", lease_token=claim["lease_token"],
+            runtime_run_id=f"unavailable-{case}",
+            artifacts=[_copilot_artifact(evidence=[citation])], steps_used=1,
+            prompt_tokens=1, completion_tokens=1, cost_usd=Decimal("0"),
+        )
 
 
 def test_one_active_run_per_session_and_queued_cancel(db):
@@ -737,7 +940,7 @@ def test_readiness_report_counts_only_reviewed_and_evidence_bound_copilot_runs(d
         "cohort_id": f"customer_order_copilot_v1:{contract_hash[:12]}",
         "evaluation_contract_hash": contract_hash,
         "contract_ready": True,
-        "profile_version": 3,
+        "profile_version": 4,
         "model": "deepseek-chat",
         "reviewed_runs": 1,
         "directly_usable_runs": 1,
@@ -799,7 +1002,7 @@ def test_copilot_evaluation_catalog_is_versioned_and_complete(db):
     assert len({item["question"] for item in COPILOT_EVALUATION_CASES}) == 30
     assert all(item["rubric"] and item["requires"] for item in catalog["cases"])
     assert catalog["contract_ready"] is True
-    assert catalog["profile_version"] == 3
+    assert catalog["profile_version"] == 4
     assert catalog["model"] == "deepseek-chat"
     assert not {
         "shipment", "pricing", "knowledge",

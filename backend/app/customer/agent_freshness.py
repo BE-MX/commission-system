@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+from sqlalchemy import tuple_
 from sqlalchemy.orm import Session
 
 from app.customer.access_service import CustomerAccess, apply_record_access
@@ -58,16 +59,27 @@ def profile_freshness(
         logical_object_type="source_record",
     ).filter(CustomerSourceRecord.id.in_(source_ids)).all() if source_ids else []
 
+    cursor_keys = {
+        (source.source_system, _RESOURCE_TYPES.get(
+            source.source_entity_type, source.source_entity_type,
+        ), source.source_account_key)
+        for source in sources
+    }
+    cursors = db.query(CustomerSyncCursor).filter(tuple_(
+        CustomerSyncCursor.source_system,
+        CustomerSyncCursor.resource_type,
+        CustomerSyncCursor.scope_key,
+    ).in_(cursor_keys)).all() if cursor_keys else []
+    cursor_by_key = {
+        (row.source_system, row.resource_type, row.scope_key): row for row in cursors
+    }
+
     freshness: dict[str, dict] = {}
     unavailable: list[str] = []
     for source in sources:
         resource = _RESOURCE_TYPES.get(source.source_entity_type, source.source_entity_type)
         key = f"{source.source_system}:{resource}:{source.source_account_key}"
-        cursor = db.query(CustomerSyncCursor).filter_by(
-            source_system=source.source_system,
-            resource_type=resource,
-            scope_key=source.source_account_key,
-        ).one_or_none()
+        cursor = cursor_by_key.get((source.source_system, resource, source.source_account_key))
         success_at = cursor.last_success_at if cursor else None
         policy = SOURCE_REGISTRY.get((source.source_system, source.source_entity_type))
         if cursor is None or cursor.sync_status in {"failed", "degraded"} or success_at is None:

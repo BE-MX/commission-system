@@ -1,11 +1,11 @@
 """Secure, bounded Ark-only customer consumer tools."""
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import importlib.util
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -26,6 +26,8 @@ from app.customer.models import (
     CustomerAgentRunScope,
     CustomerAssignment,
     CustomerConversation,
+    CustomerContactPoint,
+    CustomerContactRelationship,
     CustomerExternalIdentity,
     CustomerFact,
     CustomerMessage,
@@ -47,6 +49,8 @@ def db():
         ArkUser.__table__, AgentRun.__table__, CustomerAccount.__table__,
         CustomerAssignment.__table__, CustomerProfileVersion.__table__,
         CustomerExternalIdentity.__table__,
+        CustomerContactPoint.__table__,
+        CustomerContactRelationship.__table__,
         CustomerAgentContext.__table__, CustomerSourceRecord.__table__,
         CustomerFact.__table__, CustomerConversation.__table__,
         CustomerMessage.__table__, CustomerOrder.__table__, CustomerOrderItem.__table__,
@@ -583,6 +587,220 @@ def test_customer_evidence_mcp_input_accepts_signed_cursor():
     assert params.model_dump(exclude_none=True) == {
         "customer_id": 7, "fact_ids": [3, 1], "cursor": "signed",
     }
+
+
+def test_profile_budget_prunes_large_source_metadata_or_fails_closed(settings):
+    result = agent_tool_contract.envelope(profile_version=1, data_as_of=None)
+    result.update({
+        "source_freshness_map": {
+            f"source:{index}": {"status": "unavailable", "detail": "x" * 2_000}
+            for index in range(100)
+        },
+        "unavailable_sources": [f"source:{index}" for index in range(100)],
+        "stale_sections": [f"section:{index}" for index in range(100)],
+    })
+    fitted = agent_tool_contract.fit(result, max_bytes=32 * 1024)
+    assert len(agent_tool_contract.serialize_envelope(fitted)) <= 32 * 1024
+    assert fitted["truncated"] is True
+    with pytest.raises(ValueError, match="OUTPUT_BUDGET_EXCEEDED"):
+        agent_tool_contract.fit(
+            agent_tool_contract.envelope(profile_version=1, data_as_of=None), max_bytes=8,
+        )
+
+
+def test_message_keyset_cursor_ignores_newer_insert_between_pages(db, settings):
+    customer = _customer(db, "Message keyset")
+    _membership(db, customer.id)
+    source = _source(db, customer.id, suffix=61)
+    conversation = CustomerConversation(
+        customer_id=customer.id, source_system="alibaba", source_account_key="tenant",
+        external_conversation_id="keyset-c", channel="alibaba", conversation_status="active",
+    )
+    db.add(conversation)
+    db.flush()
+    for message_id, day in ((610, 30), (611, 20), (612, 10)):
+        db.add(CustomerMessage(
+            id=message_id, conversation_id=conversation.id,
+            external_message_id=f"keyset-{message_id}", direction="in",
+            sender_type="customer_contact", content_type="text",
+            content_text=f"message-{day}", attachment_meta_json=[],
+            source_record_id=source.id, content_hash=f"{message_id:064x}",
+            sent_at=datetime(2026, 8, day), captured_at=datetime(2026, 8, day),
+        ))
+    db.commit()
+    first = agent_service.search_customer_messages(
+        db, user=_identity(customer.id), customer_id=customer.id, limit=1,
+    )
+    db.add(CustomerMessage(
+        id=613, conversation_id=conversation.id, external_message_id="keyset-new",
+        direction="in", sender_type="customer_contact", content_type="text",
+        content_text="newer insert", attachment_meta_json=[], source_record_id=source.id,
+        content_hash=f"{613:064x}", sent_at=datetime(2026, 8, 31),
+        captured_at=datetime(2026, 8, 31),
+    ))
+    db.commit()
+    second = agent_service.search_customer_messages(
+        db, user=_identity(customer.id), customer_id=customer.id,
+        cursor=first["cursor"], limit=1,
+    )
+    assert [item["message_id"] for item in first["items"] + second["items"]] == [610, 611]
+
+
+def test_keyset_cursor_accepts_same_date_filter_on_next_page(db, settings):
+    customer = _customer(db, "Order date cursor")
+    _membership(db, customer.id)
+    source = _source(db, customer.id, suffix=615)
+    for index in range(2):
+        db.add(CustomerOrder(
+            customer_id=customer.id, source_system="okki", source_account_key="tenant",
+            external_order_id=f"date-cursor-{index}", order_no=f"DATE-{index}",
+            order_status="confirmed", account_date=date(2026, 8, 20 - index),
+            currency="USD", amount_original=100, amount_usd=100,
+            is_valid_business_order=True, source_record_id=source.id,
+            source_hash=f"{6150 + index:064x}", synced_at=datetime(2026, 8, 20),
+        ))
+    db.commit()
+    first = agent_service.get_customer_orders(
+        db, user=_identity(customer.id), customer_id=customer.id,
+        date_from=date(2026, 8, 1), limit=1,
+    )
+    second = agent_service.get_customer_orders(
+        db, user=_identity(customer.id), customer_id=customer.id,
+        date_from=date(2026, 8, 1), cursor=first["cursor"], limit=1,
+    )
+    assert len(first["items"] + second["items"]) == 2
+
+
+def test_dynamic_queries_do_not_apply_global_10001_row_cap(db, settings):
+    customer = _customer(db, "No global cap")
+    _membership(db, customer.id)
+    source = _source(db, customer.id, suffix=62)
+    _fact(db, customer.id, source.id, suffix=620)
+    statements = []
+
+    def capture(_conn, _cursor, statement, parameters, _context, _many):
+        if "ark_customer_facts" in statement:
+            statements.append((statement, parameters))
+
+    event.listen(db.bind, "before_cursor_execute", capture)
+    try:
+        agent_service.get_customer_facts(
+            db, user=_identity(customer.id), customer_id=customer.id, limit=1,
+        )
+    finally:
+        event.remove(db.bind, "before_cursor_execute", capture)
+    assert "10001" not in repr(statements)
+
+
+def test_orders_batch_load_current_page_items_once(db, settings):
+    customer = _customer(db, "Order batch")
+    _membership(db, customer.id)
+    source = _source(db, customer.id, suffix=63)
+    for index in range(3):
+        order = CustomerOrder(
+            customer_id=customer.id, source_system="okki", source_account_key="tenant",
+            external_order_id=f"batch-{index}", order_no=f"SO-{index}",
+            order_status="confirmed", account_date=date(2026, 8, 10 - index),
+            currency="USD", amount_original=100, amount_usd=100,
+            is_valid_business_order=True, source_record_id=source.id,
+            source_hash=f"{700 + index:064x}", synced_at=datetime(2026, 8, 1),
+        )
+        db.add(order)
+        db.flush()
+        db.add(CustomerOrderItem(
+            order_id=order.id, external_item_id=f"item-{index}",
+            product_name="Wig", quantity=1, quantity_unit="pcs", item_type="bulk",
+            source_record_id=source.id, item_fingerprint=f"{800 + index:064x}",
+        ))
+    db.commit()
+    statements = []
+
+    def capture(_conn, _cursor, statement, _parameters, _context, _many):
+        if "FROM ark_customer_order_items" in statement:
+            statements.append(statement)
+
+    event.listen(db.bind, "before_cursor_execute", capture)
+    try:
+        result = agent_service.get_customer_orders(
+            db, user=_identity(customer.id), customer_id=customer.id,
+            include_items=True, limit=3,
+        )
+    finally:
+        event.remove(db.bind, "before_cursor_execute", capture)
+    assert len(result["items"]) == 3
+    assert len(statements) == 1
+    assert "LIMIT" in statements[0].upper()
+
+
+def test_profile_freshness_loads_all_sync_cursors_once(db, settings):
+    customer = _customer(db, "Freshness batch")
+    _membership(db, customer.id)
+    version = db.get(CustomerProfileVersion, customer.current_profile_version_id)
+    fact_ids = []
+    for index in range(3):
+        source = _source(db, customer.id, suffix=70 + index)
+        source.source_account_key = f"tenant-{index}"
+        fact_ids.append(_fact(db, customer.id, source.id, suffix=70 + index).id)
+        db.add(CustomerSyncCursor(
+            source_system="alibaba", resource_type="messages", scope_key=f"tenant-{index}",
+            cursor_value="ok", sync_status="idle", generation=1,
+            last_success_at=datetime(2026, 8, 30), last_record_at=datetime(2026, 8, 30),
+            last_counts_json={},
+        ))
+    version.evidence_fact_ids = fact_ids
+    db.commit()
+    count = 0
+
+    def capture(_conn, _cursor, statement, _parameters, _context, _many):
+        nonlocal count
+        if "FROM ark_customer_sync_cursors" in statement:
+            count += 1
+
+    event.listen(db.bind, "before_cursor_execute", capture)
+    try:
+        agent_service.get_customer_profile(
+            db, user=_identity(customer.id), customer_id=customer.id,
+            sections=["business_profile"], now=datetime(2026, 8, 31),
+        )
+    finally:
+        event.remove(db.bind, "before_cursor_execute", capture)
+    assert count == 1
+
+
+def test_identifier_search_respects_classification_and_logical_owner(db, settings):
+    customer = _customer(db, "Contact search")
+    moved_to = _customer(db, "Moved contact target", owner=8)
+    _membership(db, customer.id)
+    restricted = CustomerContactPoint(
+        customer_id=customer.id, point_type="email", raw_value="secret@example.com",
+        normalized_value="secret@example.com", verification_status="valid",
+        contactability_status="allowed", is_primary=True,
+        data_classification="personal_contact", point_fingerprint=f"{901:064x}",
+        first_seen_at=datetime(2026, 8, 1), last_seen_at=datetime(2026, 8, 1),
+    )
+    moved = CustomerContactPoint(
+        customer_id=customer.id, point_type="whatsapp", raw_value="+15550001",
+        normalized_value="+15550001", verification_status="valid",
+        contactability_status="allowed", is_primary=True,
+        data_classification="internal_business", point_fingerprint=f"{902:064x}",
+        first_seen_at=datetime(2026, 8, 1), last_seen_at=datetime(2026, 8, 1),
+    )
+    db.add_all([restricted, moved])
+    db.flush()
+    db.add(CustomerObjectOwnership(
+        object_type="contact_point", object_id=moved.id,
+        storage_customer_id=customer.id, current_customer_id=moved_to.id,
+        ownership_version=1, last_change_proposal_id=999, last_action_type="split",
+    ))
+    db.commit()
+    internal_user = _identity(customer.id)
+    internal_user["_agent_run"]["max_data_classification"] = "internal_business"
+    assert agent_service.search_customers(
+        db, user=internal_user, keyword="secret@example.com", identifier_type="email",
+    )["items"] == []
+    assert agent_service.search_customers(
+        db, user=internal_user, keyword="+15550001", identifier_type="whatsapp",
+    )["items"] == []
 
 
 def test_claim_envelopes_require_exact_current_same_customer_evidence():

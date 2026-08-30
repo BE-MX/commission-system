@@ -127,6 +127,75 @@ def logical_root_predicate(model, object_type: str, customer_id: int):
     return or_(current_overlay, and_(~overlay_exists, storage_predicate))
 
 
+def logical_subject_matches_customer(model, object_type: str, outer_customer_model):
+    """Match a subject root to a correlated outer customer account."""
+    if object_type not in _SUBJECT_ROOTS or _ROOT_MODELS.get(object_type) is not model:
+        raise ValueError("LOGICAL_SUBJECT_NOT_REGISTERED")
+    customer_id = outer_customer_model.id
+    correlated = (model, outer_customer_model)
+    overlay_exists = exists().where(and_(
+        models.CustomerObjectOwnership.object_type == object_type,
+        models.CustomerObjectOwnership.object_id == model.id,
+    )).correlate(*correlated)
+    current_overlay = exists().where(and_(
+        models.CustomerObjectOwnership.object_type == object_type,
+        models.CustomerObjectOwnership.object_id == model.id,
+        models.CustomerObjectOwnership.current_customer_id == customer_id,
+    )).correlate(*correlated)
+
+    source_overlay_exists = exists().where(and_(
+        models.CustomerObjectOwnership.object_type == "source_record",
+        models.CustomerObjectOwnership.object_id == models.CustomerSourceRecord.id,
+    )).correlate(models.CustomerSourceRecord, outer_customer_model)
+    source_current_overlay = exists().where(and_(
+        models.CustomerObjectOwnership.object_type == "source_record",
+        models.CustomerObjectOwnership.object_id == models.CustomerSourceRecord.id,
+        models.CustomerObjectOwnership.current_customer_id == customer_id,
+    )).correlate(models.CustomerSourceRecord, outer_customer_model)
+    source_owner = exists().where(and_(
+        models.CustomerSourceRecord.id == model.source_record_id,
+        or_(
+            source_current_overlay,
+            and_(
+                ~source_overlay_exists,
+                models.CustomerSourceRecord.customer_id == customer_id,
+            ),
+        ),
+    )).correlate(*correlated)
+
+    now = beijing_now()
+    current_relationship = and_(
+        models.CustomerContactRelationship.contact_id == model.contact_id,
+        models.CustomerContactRelationship.verification_status.in_((
+            "identified", "verified",
+        )),
+        or_(
+            models.CustomerContactRelationship.effective_from.is_(None),
+            models.CustomerContactRelationship.effective_from <= now,
+        ),
+        models.CustomerContactRelationship.effective_to.is_(None),
+    )
+    contact_owner = exists().where(and_(
+        current_relationship,
+        models.CustomerContactRelationship.customer_id == customer_id,
+    )).correlate(*correlated)
+    relationship_owner_count = select(func.count(func.distinct(
+        models.CustomerContactRelationship.customer_id,
+    ))).where(current_relationship).correlate(*correlated).scalar_subquery()
+    storage_owner = or_(
+        and_(model.source_record_id.is_not(None), source_owner),
+        and_(
+            model.source_record_id.is_(None), model.contact_id.is_not(None),
+            relationship_owner_count == 1, contact_owner,
+        ),
+        and_(
+            model.source_record_id.is_(None), model.contact_id.is_(None),
+            model.customer_id == customer_id,
+        ),
+    )
+    return or_(current_overlay, and_(~overlay_exists, storage_owner))
+
+
 def logical_owner_expression(model, object_type: str):
     """Return a correlated logical owner expression for a direct root."""
     if _ROOT_MODELS.get(object_type) is not model or object_type in _SUBJECT_ROOTS:
@@ -143,6 +212,7 @@ def logical_owner_expression(model, object_type: str):
 __all__ = [
     "logical_root_query",
     "logical_root_predicate",
+    "logical_subject_matches_customer",
     "logical_owner_expression",
     "resolve_canonical_customer_id",
 ]
