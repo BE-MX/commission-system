@@ -8,6 +8,9 @@ import pytest
 
 from app.core.time import beijing_now
 from app.customer.fact_service import (
+    DirectFactEvidence,
+    EventEvidenceRef,
+    HumanReviewEvidence,
     append_customer_event,
     append_fact,
     append_source_record,
@@ -17,11 +20,14 @@ from app.customer.fact_service import (
 from app.customer.identity_service import CustomerDomainError, resolve_business_context
 from app.customer.models import (
     CustomerAccount,
+    CustomerContactRelationship,
     CustomerConversation,
     CustomerEvent,
     CustomerFact,
     CustomerFactConflict,
     CustomerFactEvidenceLink,
+    CustomerMessage,
+    CustomerOrder,
     CustomerSourceRecord,
 )
 
@@ -70,10 +76,43 @@ def _industry_fact(db, customer, source, value="Hair products", **overrides):
         "source_system": "public_web",
         "source_entity_type": "company_page",
         "observed_at": source.occurred_at,
-        "evidence": {"source_record_ids": [source.id]},
     }
     values.update(overrides)
     return append_fact(db, **values)
+
+
+def _order(
+    db,
+    customer: CustomerAccount,
+    *,
+    external_id: str,
+    valid: bool,
+) -> CustomerOrder:
+    source = append_source_record(
+        db,
+        customer_id=customer.id,
+        source_system="okki",
+        source_account_key="tenant-events",
+        source_entity_type="order",
+        external_record_id=f"source-{external_id}",
+        payload_schema_version="okki_order_v1",
+        payload_json={"external_order_id": external_id, "valid": valid},
+    )
+    row = CustomerOrder(
+        customer_id=customer.id,
+        source_system="okki",
+        source_account_key="tenant-events",
+        external_order_id=external_id,
+        order_status="confirmed",
+        amount_usd=100,
+        is_valid_business_order=valid,
+        source_record_id=source.id,
+        source_hash=source.content_hash,
+        synced_at=beijing_now(),
+    )
+    db.add(row)
+    db.flush()
+    return row
 
 
 def test_source_record_replay_is_idempotent_and_changed_content_appends_version(db):
@@ -219,6 +258,68 @@ def test_fact_source_policy_and_classification_are_enforced_not_caller_lowered(d
     assert missing_source_record.value.error_code == "FACT_SOURCE_RECORD_REQUIRED"
 
 
+def test_fact_status_cannot_exceed_source_promotion_ceiling(db):
+    customer = _customer(db, "promotion-ceiling")
+    source = _source(db, customer, external_id="promotion-ceiling")
+
+    with pytest.raises(CustomerDomainError) as promoted:
+        _industry_fact(
+            db,
+            customer,
+            source,
+            verification_status="verified",
+        )
+
+    assert promoted.value.error_code == "FACT_PROMOTION_CEILING_EXCEEDED"
+
+
+def test_confirmed_fact_requires_explicit_human_review_evidence(db):
+    customer = _customer(db, "confirmed-review")
+
+    with pytest.raises(CustomerDomainError) as missing:
+        append_fact(
+            db,
+            customer_id=customer.id,
+            subject_type="customer",
+            fact_key="behavior.confirmed.relationship_note",
+            value_type="string",
+            value="Reviewed note",
+            fact_layer="confirmed",
+            verification_status="verified",
+            confidence=1,
+            confidence_method_version="confidence_v1",
+            confidence_components={"human_confirmation": 1},
+            source_system="manual",
+            source_entity_type="customer",
+            observed_at=beijing_now(),
+        )
+
+    assert missing.value.error_code == "FACT_REVIEW_EVIDENCE_REQUIRED"
+
+
+def test_public_web_cannot_write_confirmed_fact(db):
+    customer = _customer(db, "public-confirmed")
+    source = _source(db, customer, external_id="public-confirmed")
+    supporting = _industry_fact(db, customer, source)
+
+    with pytest.raises(CustomerDomainError) as promoted:
+        _industry_fact(
+            db,
+            customer,
+            source,
+            fact_layer="confirmed",
+            verification_status="verified",
+            human_review=HumanReviewEvidence(
+                reviewer_id=1,
+                reviewed_at=beijing_now(),
+                review_reference="review-public-1",
+                supporting_fact_ids=(supporting.id,),
+            ),
+        )
+
+    assert promoted.value.error_code == "FACT_PROMOTION_CEILING_EXCEEDED"
+
+
 @pytest.mark.parametrize(
     ("value_type", "value"),
     [
@@ -255,6 +356,74 @@ def test_fact_replay_is_idempotent_with_temporal_freshness_and_sequence(db):
     assert first.expires_at == observed_at + timedelta(days=365)
     assert first_seq == initial_seq + 1
     assert customer.profile_input_seq == first_seq
+
+
+def test_fact_fingerprint_keeps_independent_source_records_distinct(db):
+    customer = _customer(db, "fact-lineage-records")
+    left_source = _source(
+        db,
+        customer,
+        external_id="publisher-record-left",
+        payload={"industry": "Hair"},
+    )
+    right_source = append_source_record(
+        db,
+        customer_id=customer.id,
+        source_system="public_web",
+        source_account_key="global",
+        source_entity_type="company_page",
+        external_record_id="publisher-record-right",
+        source_version="v1",
+        payload_schema_version="public_company_page_v1",
+        payload_json={"industry": "Hair"},
+        publisher_key="independent.example",
+        source_family_key="independent:right",
+        source_url="https://independent.example/about",
+    )
+    observed = beijing_now()
+
+    left = _industry_fact(db, customer, left_source, value="Hair", observed_at=observed)
+    right = _industry_fact(db, customer, right_source, value="Hair", observed_at=observed)
+
+    assert left.id != right.id
+    assert left.fact_fingerprint != right.fact_fingerprint
+
+
+def test_fact_fingerprint_includes_every_direct_evidence_locator(db):
+    customer = _customer(db, "fact-lineage-locator")
+    source = _source(db, customer, external_id="lineage-locator")
+    observed = beijing_now()
+
+    left = _industry_fact(
+        db,
+        customer,
+        source,
+        observed_at=observed,
+        direct_evidence=[
+            DirectFactEvidence("source_record", source.id, {"json_path": "$.industry"})
+        ],
+    )
+    right = _industry_fact(
+        db,
+        customer,
+        source,
+        observed_at=observed,
+        direct_evidence=[
+            DirectFactEvidence("source_record", source.id, {"json_path": "$.industry_label"})
+        ],
+    )
+    replay = _industry_fact(
+        db,
+        customer,
+        source,
+        observed_at=observed,
+        direct_evidence=[
+            DirectFactEvidence("source_record", source.id, {"json_path": "$.industry"})
+        ],
+    )
+
+    assert left.id != right.id
+    assert replay.id == left.id
 
 
 def test_fact_requires_versioned_nonempty_confidence_components(db):
@@ -323,6 +492,9 @@ def test_expressed_observed_and_inferred_semantics_require_matching_keys(db):
         source_system="alibaba",
         source_entity_type="inquiry",
         observed_at=beijing_now(),
+        direct_evidence=[
+            DirectFactEvidence("conversation", conversation.id, {"field": "customer_request"})
+        ],
     )
     assert expressed.fact_layer == "expressed"
 
@@ -347,6 +519,141 @@ def test_expressed_observed_and_inferred_semantics_require_matching_keys(db):
     assert mismatch.value.error_code == "FACT_LAYER_INVALID"
 
 
+def test_expressed_fact_requires_same_customer_message_or_conversation_evidence(db):
+    customer = _customer(db, "expressed-direct-evidence")
+    inquiry = append_source_record(
+        db,
+        customer_id=customer.id,
+        source_system="alibaba",
+        source_account_key="shop-a",
+        source_entity_type="inquiry",
+        external_record_id="inquiry-no-direct-message",
+        payload_schema_version="alibaba_inquiry_v1",
+        payload_json={"color": "gold"},
+    )
+
+    with pytest.raises(CustomerDomainError) as missing:
+        append_fact(
+            db,
+            customer_id=customer.id,
+            subject_type="customer",
+            fact_key="preference.expressed.color",
+            value_type="string",
+            value="gold",
+            fact_layer="expressed",
+            verification_status="candidate",
+            confidence=0.9,
+            confidence_method_version="confidence_v1",
+            confidence_components={"exactness": 1},
+            source_record_id=inquiry.id,
+            source_system="alibaba",
+            source_entity_type="inquiry",
+            observed_at=beijing_now(),
+        )
+
+    assert missing.value.error_code == "FACT_DIRECT_EVIDENCE_REQUIRED"
+
+
+def test_observed_fact_requires_registered_behavior_or_order_object(db):
+    customer = _customer(db, "observed-direct-evidence")
+    source = append_source_record(
+        db,
+        customer_id=customer.id,
+        source_system="okki",
+        source_account_key="tenant-a",
+        source_entity_type="order",
+        external_record_id="order-observed-source",
+        payload_schema_version="okki_order_v1",
+        payload_json={"valid": True},
+    )
+
+    with pytest.raises(CustomerDomainError) as missing:
+        append_fact(
+            db,
+            customer_id=customer.id,
+            subject_type="customer",
+            fact_key="commercial.has_valid_order",
+            value_type="boolean",
+            value=True,
+            fact_layer="observed",
+            verification_status="verified",
+            confidence=1,
+            confidence_method_version="confidence_v1",
+            confidence_components={"transactional": 1},
+            source_record_id=source.id,
+            source_system="okki",
+            source_entity_type="order",
+            observed_at=beijing_now(),
+        )
+
+    assert missing.value.error_code == "FACT_DIRECT_EVIDENCE_REQUIRED"
+
+
+def test_message_evidence_inherits_underlying_source_classification(db):
+    customer = _customer(db, "message-classification")
+    source = append_source_record(
+        db,
+        customer_id=customer.id,
+        source_system="alibaba",
+        source_account_key="shop-a",
+        source_entity_type="message",
+        external_record_id="message-classification-source",
+        payload_schema_version="alibaba_message_v1",
+        payload_json={"text": "gold"},
+    )
+    conversation = CustomerConversation(
+        customer_id=customer.id,
+        source_system="alibaba",
+        source_account_key="shop-a",
+        external_conversation_id="message-classification-conversation",
+        channel="alibaba",
+        conversation_status="active",
+        latest_source_record_id=source.id,
+    )
+    db.add(conversation)
+    db.flush()
+    message = CustomerMessage(
+        conversation_id=conversation.id,
+        external_message_id="message-classification-1",
+        direction="in",
+        sender_type="customer_contact",
+        content_type="text",
+        content_text="gold",
+        attachment_meta_json=[],
+        source_record_id=source.id,
+        content_hash="a" * 64,
+        sent_at=beijing_now(),
+        captured_at=beijing_now(),
+    )
+    db.add(message)
+    db.flush()
+
+    fact = append_fact(
+        db,
+        customer_id=customer.id,
+        subject_type="conversation",
+        subject_id=conversation.id,
+        fact_key="preference.expressed.color",
+        value_type="string",
+        value="gold",
+        fact_layer="expressed",
+        verification_status="candidate",
+        confidence=0.9,
+        confidence_method_version="confidence_v1",
+        confidence_components={"exactness": 1},
+        source_record_id=source.id,
+        source_system="alibaba",
+        source_entity_type="message",
+        observed_at=beijing_now(),
+        data_classification="public_business",
+        direct_evidence=[
+            DirectFactEvidence("message", message.id, {"text_span": [0, 4]})
+        ],
+    )
+
+    assert fact.data_classification == "restricted_internal"
+
+
 def test_inferred_fact_requires_rule_and_evidence_fact_ids(db):
     customer = _customer(db, "inferred-evidence")
 
@@ -366,7 +673,6 @@ def test_inferred_fact_requires_rule_and_evidence_fact_ids(db):
             source_system="agent",
             source_entity_type="research_report",
             observed_at=beijing_now(),
-            evidence={},
         )
 
     assert missing.value.error_code == "FACT_INFERENCE_EVIDENCE_REQUIRED"
@@ -388,7 +694,7 @@ def test_inferred_fact_requires_rule_and_evidence_fact_ids(db):
         source_system="agent",
         source_entity_type="research_report",
         observed_at=beijing_now(),
-        evidence={"fact_ids": [supporting.id]},
+        direct_evidence=[DirectFactEvidence("fact", supporting.id, {"role": "input"})],
         rule_version="churn_risk_v1",
     )
     assert inferred.evidence_json["fact_ids"] == [supporting.id]
@@ -396,6 +702,9 @@ def test_inferred_fact_requires_rule_and_evidence_fact_ids(db):
 
 def test_derived_fact_inherits_highest_evidence_classification(db):
     customer = _customer(db, "inferred-classification")
+    source = _source(db, customer, external_id="confirmed-review-source")
+    supporting = _industry_fact(db, customer, source)
+    reviewed_at = beijing_now()
     restricted = append_fact(
         db,
         customer_id=customer.id,
@@ -411,8 +720,12 @@ def test_derived_fact_inherits_highest_evidence_classification(db):
         source_system="manual",
         source_entity_type="customer",
         observed_at=beijing_now(),
-        reviewed_by=1,
-        reviewed_at=beijing_now(),
+        human_review=HumanReviewEvidence(
+            reviewer_id=1,
+            reviewed_at=reviewed_at,
+            review_reference="manual-review-1",
+            supporting_fact_ids=(supporting.id,),
+        ),
     )
 
     inferred = append_fact(
@@ -430,7 +743,7 @@ def test_derived_fact_inherits_highest_evidence_classification(db):
         source_system="agent",
         source_entity_type="research_report",
         observed_at=beijing_now(),
-        evidence={"fact_ids": [restricted.id]},
+        direct_evidence=[DirectFactEvidence("fact", restricted.id, {"role": "input"})],
         rule_version="churn_risk_v1",
     )
 
@@ -464,6 +777,66 @@ def test_cross_customer_direct_source_and_evidence_are_rejected_without_leaking_
     assert link.value.error_code == "CUSTOMER_REFERENCE_INVALID"
     assert str(left.id) not in str(link.value)
     assert str(right.id) not in str(link.value)
+
+
+@pytest.mark.parametrize("relation_status", ["candidate", "disputed", "rejected"])
+def test_contact_fact_requires_current_identified_relationship(db, relation_status):
+    resolved = resolve_business_context(
+        db,
+        source_system="alibaba",
+        source_account_key="facts-contact",
+        source_entity_type="inquiry",
+        external_context_id=f"contact-relation-{relation_status}",
+        contact_name="Mina",
+    )
+    source = _source(db, resolved.customer, external_id=f"contact-{relation_status}")
+    relation = db.query(CustomerContactRelationship).filter_by(
+        customer_id=resolved.customer.id,
+        contact_id=resolved.contact.id,
+    ).one()
+    relation.verification_status = relation_status
+    db.flush()
+
+    with pytest.raises(CustomerDomainError) as invalid:
+        _industry_fact(
+            db,
+            resolved.customer,
+            source,
+            subject_type="contact",
+            subject_id=resolved.contact.id,
+        )
+
+    assert invalid.value.error_code == "CUSTOMER_REFERENCE_INVALID"
+
+
+def test_contact_fact_rejects_archived_contact_and_ended_relationship(db):
+    resolved = resolve_business_context(
+        db,
+        source_system="alibaba",
+        source_account_key="facts-contact",
+        source_entity_type="inquiry",
+        external_context_id="contact-inactive",
+        contact_name="Mina",
+    )
+    source = _source(db, resolved.customer, external_id="contact-inactive")
+    relation = db.query(CustomerContactRelationship).filter_by(
+        customer_id=resolved.customer.id,
+        contact_id=resolved.contact.id,
+    ).one()
+    relation.effective_to = beijing_now()
+    resolved.contact.record_status = "archived"
+    db.flush()
+
+    with pytest.raises(CustomerDomainError) as invalid:
+        _industry_fact(
+            db,
+            resolved.customer,
+            source,
+            subject_type="contact",
+            subject_id=resolved.contact.id,
+        )
+
+    assert invalid.value.error_code == "CUSTOMER_REFERENCE_INVALID"
 
 
 def test_evidence_link_requires_exact_hash_and_locator_and_is_append_only_idempotent(db):
@@ -583,6 +956,7 @@ def test_customer_event_replay_is_idempotent_and_current_order_activates_inactiv
     customer.relationship_stage_changed_at = beijing_now() - timedelta(days=30)
     customer.relationship_stage_reason = "manual_inactivation"
     db.flush()
+    order = _order(db, customer, external_id="ORDER-CURRENT", valid=True)
     initial_seq = customer.profile_input_seq
     order_time = beijing_now()
     first = append_customer_event(
@@ -591,13 +965,14 @@ def test_customer_event_replay_is_idempotent_and_current_order_activates_inactiv
         event_type="order.placed",
         event_source="okki",
         source_ref_type="order",
-        source_ref_id="ORDER-CURRENT",
+        source_ref_id=str(order.id),
         event_title="有效订单",
         event_payload={"is_valid_business_order": True},
+        payload_schema_version="customer_event_v1",
         occurred_at=order_time,
+        evidence_refs=[EventEvidenceRef("order", order.id)],
         target_relationship_stage="active_customer",
         transition_trigger="valid_order",
-        transition_condition_met=True,
     )
     seq_after_first = customer.profile_input_seq
     replay = append_customer_event(
@@ -606,13 +981,14 @@ def test_customer_event_replay_is_idempotent_and_current_order_activates_inactiv
         event_type="order.placed",
         event_source="okki",
         source_ref_type="order",
-        source_ref_id="ORDER-CURRENT",
+        source_ref_id=str(order.id),
         event_title="有效订单重放",
         event_payload={"is_valid_business_order": True},
+        payload_schema_version="customer_event_v1",
         occurred_at=order_time,
+        evidence_refs=[EventEvidenceRef("order", order.id)],
         target_relationship_stage="active_customer",
         transition_trigger="valid_order",
-        transition_condition_met=True,
     )
 
     assert first.id == replay.id
@@ -630,19 +1006,21 @@ def test_new_order_on_active_customer_does_not_reset_stage_start_time(db):
     customer.relationship_stage_reason = "first_valid_order"
     db.flush()
 
+    order = _order(db, customer, external_id="ORDER-REPEAT-ACTIVE", valid=True)
     append_customer_event(
         db,
         customer_id=customer.id,
         event_type="order.placed",
         event_source="okki",
         source_ref_type="order",
-        source_ref_id="ORDER-REPEAT-ACTIVE",
+        source_ref_id=str(order.id),
         event_title="活跃客户新订单",
         event_payload={"is_valid_business_order": True},
+        payload_schema_version="customer_event_v1",
         occurred_at=beijing_now(),
+        evidence_refs=[EventEvidenceRef("order", order.id)],
         target_relationship_stage="active_customer",
         transition_trigger="valid_order",
-        transition_condition_met=True,
     )
 
     assert customer.relationship_stage == "active_customer"
@@ -658,19 +1036,21 @@ def test_historical_order_replay_is_recorded_but_cannot_reactivate_inactive(db):
     customer.relationship_stage_reason = "manual_inactivation"
     db.flush()
 
+    order = _order(db, customer, external_id="ORDER-HISTORY", valid=True)
     event = append_customer_event(
         db,
         customer_id=customer.id,
         event_type="order.placed",
         event_source="okki",
         source_ref_type="order",
-        source_ref_id="ORDER-HISTORY",
+        source_ref_id=str(order.id),
         event_title="历史有效订单补录",
         event_payload={"is_valid_business_order": True, "historical_replay": True},
+        payload_schema_version="customer_event_v1",
         occurred_at=inactive_at - timedelta(days=90),
+        evidence_refs=[EventEvidenceRef("order", order.id)],
         target_relationship_stage="active_customer",
         transition_trigger="historical_order_replay",
-        transition_condition_met=True,
     )
 
     assert event.id is not None
@@ -686,23 +1066,145 @@ def test_old_order_timestamp_cannot_reactivate_inactive_even_with_current_trigge
     customer.relationship_stage_reason = "manual_inactivation"
     db.flush()
 
+    order = _order(db, customer, external_id="ORDER-OLD-WITH-CURRENT-TRIGGER", valid=True)
     append_customer_event(
         db,
         customer_id=customer.id,
         event_type="order.placed",
         event_source="okki",
         source_ref_type="order",
-        source_ref_id="ORDER-OLD-WITH-CURRENT-TRIGGER",
+        source_ref_id=str(order.id),
         event_title="迟到的历史订单同步",
         event_payload={"is_valid_business_order": True},
+        payload_schema_version="customer_event_v1",
         occurred_at=inactive_at - timedelta(seconds=1),
+        evidence_refs=[EventEvidenceRef("order", order.id)],
         target_relationship_stage="active_customer",
         transition_trigger="valid_order",
-        transition_condition_met=True,
     )
 
     assert customer.relationship_stage == "inactive"
     assert customer.relationship_stage_changed_at == inactive_at
+
+
+def test_forged_transition_boolean_cannot_activate_without_valid_order(db):
+    customer = _customer(db, "event-forged-condition")
+    customer.relationship_stage = "inactive"
+    customer.relationship_stage_changed_at = beijing_now() - timedelta(days=1)
+    order = _order(db, customer, external_id="ORDER-INVALID", valid=False)
+    db.flush()
+
+    with pytest.raises(CustomerDomainError) as invalid:
+        append_customer_event(
+            db,
+            customer_id=customer.id,
+            event_type="order.placed",
+            event_source="okki",
+            source_ref_type="order",
+            source_ref_id=str(order.id),
+            event_title="伪造有效订单",
+            event_payload={"is_valid_business_order": True},
+            payload_schema_version="customer_event_v1",
+            occurred_at=beijing_now(),
+            evidence_refs=[EventEvidenceRef("order", order.id)],
+            target_relationship_stage="active_customer",
+            transition_trigger="valid_order",
+            transition_condition_met=True,
+        )
+
+    assert invalid.value.error_code == "RELATIONSHIP_TRANSITION_INVALID"
+    assert customer.relationship_stage == "inactive"
+
+
+def test_event_registry_rejects_unknown_type_and_arbitrary_payload(db):
+    customer = _customer(db, "event-registry")
+    with pytest.raises(CustomerDomainError) as unknown:
+        append_customer_event(
+            db,
+            customer_id=customer.id,
+            event_type="mystery.happened",
+            event_source="manual",
+            event_title="Unknown",
+            event_payload={},
+            payload_schema_version="customer_event_v1",
+            occurred_at=beijing_now(),
+            actor_user_id=1,
+        )
+    assert unknown.value.error_code == "EVENT_NOT_REGISTERED"
+
+    order = _order(db, customer, external_id="ORDER-PAYLOAD", valid=True)
+    with pytest.raises(CustomerDomainError) as payload:
+        append_customer_event(
+            db,
+            customer_id=customer.id,
+            event_type="order.placed",
+            event_source="okki",
+            source_ref_type="order",
+            source_ref_id=str(order.id),
+            event_title="Arbitrary payload",
+            event_payload={"is_valid_business_order": True, "admin_override": True},
+            payload_schema_version="customer_event_v1",
+            occurred_at=beijing_now(),
+            evidence_refs=[EventEvidenceRef("order", order.id)],
+        )
+    assert payload.value.error_code == "EVENT_PAYLOAD_INVALID"
+
+
+def test_event_classification_inherits_message_source(db):
+    customer = _customer(db, "event-message-classification")
+    source = append_source_record(
+        db,
+        customer_id=customer.id,
+        source_system="alibaba",
+        source_account_key="shop-a",
+        source_entity_type="message",
+        external_record_id="event-message-source",
+        payload_schema_version="alibaba_message_v1",
+        payload_json={"text": "hello"},
+    )
+    conversation = CustomerConversation(
+        customer_id=customer.id,
+        source_system="alibaba",
+        source_account_key="shop-a",
+        external_conversation_id="event-message-conversation",
+        channel="alibaba",
+        conversation_status="active",
+        latest_source_record_id=source.id,
+    )
+    db.add(conversation)
+    db.flush()
+    message = CustomerMessage(
+        conversation_id=conversation.id,
+        external_message_id="event-message-1",
+        direction="in",
+        sender_type="customer_contact",
+        content_type="text",
+        content_text="hello",
+        attachment_meta_json=[],
+        source_record_id=source.id,
+        content_hash="b" * 64,
+        sent_at=beijing_now(),
+        captured_at=beijing_now(),
+    )
+    db.add(message)
+    db.flush()
+
+    event = append_customer_event(
+        db,
+        customer_id=customer.id,
+        event_type="message.received",
+        event_source="alibaba",
+        source_ref_type="message",
+        source_ref_id=str(message.id),
+        event_title="收到消息",
+        event_payload={"direction": "in"},
+        payload_schema_version="customer_event_v1",
+        occurred_at=message.sent_at,
+        data_classification="public_business",
+        evidence_refs=[EventEvidenceRef("message", message.id)],
+    )
+
+    assert event.data_classification == "restricted_internal"
 
 
 def test_invalid_relationship_transition_rejects_entire_event_mutation(db):
@@ -719,12 +1221,14 @@ def test_invalid_relationship_transition_rejects_entire_event_mutation(db):
             source_ref_id=str(customer.id),
             event_title="非法阶段推进",
             event_payload={},
+            payload_schema_version="customer_event_v1",
             occurred_at=beijing_now(),
             target_relationship_stage="developing",
             transition_trigger="sales_development_ready",
             transition_condition_met=True,
             has_primary_assignment=False,
             has_open_opportunity=True,
+            actor_user_id=1,
         )
     assert invalid.value.error_code == "RELATIONSHIP_TRANSITION_INVALID"
     assert db.query(CustomerEvent).filter_by(customer_id=customer.id).count() == 0

@@ -7,7 +7,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.database import Base
@@ -28,6 +28,7 @@ from app.customer.models import (
     CustomerName,
     CustomerResearchTask,
     CustomerResolutionKey,
+    CustomerSourceRecord,
 )
 
 
@@ -66,6 +67,32 @@ def test_okki_company_id_deterministically_converges_without_name_matching(db):
     assert first.customer.identity_status == "verified"
     assert db.query(CustomerAccount).count() == 1
     assert db.query(CustomerResolutionKey).count() == 1
+
+
+def test_unverified_strong_candidate_is_scoped_to_business_context(db):
+    candidate = IdentityCandidate("company_id", "UNVERIFIED-OKKI")
+    first = resolve_business_context(
+        db,
+        source_system="okki",
+        source_account_key="tenant-unverified",
+        source_entity_type="company",
+        external_context_id="row-unverified-1",
+        identity_candidates=[candidate],
+    )
+    second = resolve_business_context(
+        db,
+        source_system="okki",
+        source_account_key="tenant-unverified",
+        source_entity_type="company",
+        external_context_id="row-unverified-2",
+        identity_candidates=[candidate],
+    )
+
+    assert first.customer.id != second.customer.id
+    assert first.customer.identity_status == "provisional"
+    assert second.customer.identity_status == "provisional"
+    assert first.resolution.resolution_type == "business_context"
+    assert second.resolution.resolution_type == "business_context"
 
 
 def test_resolve_reuses_existing_verified_strong_identity_without_resolution_key(db):
@@ -207,12 +234,38 @@ def test_resolution_does_not_depend_on_session_autoflush(db):
 
 
 def test_provider_explicit_organization_declaration_can_bind_alibaba_member_to_account(db):
+    source = CustomerSourceRecord(
+        customer_id=None,
+        source_system="alibaba",
+        source_account_key="shop-a",
+        authority_level="verified_platform",
+        source_entity_type="inquiry",
+        external_record_id="org-row-1",
+        external_record_key_hash="c" * 64,
+        data_classification="internal_business",
+        visibility_scope="customer_team",
+        classification_reason="test registered schema",
+        payload_schema_version="alibaba_inquiry_v1",
+        payload_json={
+            "provider_identity_declarations": [{
+                "identifier_type": "member_id",
+                "raw_value": "ORG-MEMBER-1",
+                "subject_type": "organization",
+            }],
+        },
+        content_hash="d" * 64,
+        captured_at=beijing_now(),
+        processing_status="pending",
+    )
+    db.add(source)
+    db.flush()
     result = resolve_business_context(
         db,
         source_system="alibaba",
         source_account_key="shop-a",
         source_entity_type="company",
         external_context_id="org-row-1",
+        source_record_id=source.id,
         identity_candidates=[
             IdentityCandidate(
                 "member_id",
@@ -226,6 +279,26 @@ def test_provider_explicit_organization_declaration_can_bind_alibaba_member_to_a
     assert identity.customer_id == result.customer.id
     assert identity.contact_id is None
     assert identity.auto_match_ceiling == "identified"
+
+
+def test_forged_alibaba_organization_flag_without_registered_payload_is_rejected(db):
+    with pytest.raises(CustomerDomainError) as forged:
+        resolve_business_context(
+            db,
+            source_system="alibaba",
+            source_account_key="shop-a",
+            source_entity_type="company",
+            external_context_id="forged-org-row",
+            identity_candidates=[
+                IdentityCandidate(
+                    "member_id",
+                    "FORGED-ORG",
+                    provider_declared_subject_type="customer",
+                )
+            ],
+        )
+
+    assert forged.value.error_code == "IDENTITY_SUBJECT_EVIDENCE_REQUIRED"
 
 
 def test_personal_email_and_person_name_create_provisional_graph_and_research_seed(db):
@@ -304,6 +377,79 @@ def test_replayed_business_context_does_not_increment_profile_sequence(db):
 
     assert replay.created is False
     assert replay.customer.profile_input_seq == initial_seq
+
+
+def test_existing_winner_applies_new_context_material_once(db):
+    first = resolve_business_context(
+        db,
+        source_system="okki",
+        source_account_key="tenant-winner",
+        source_entity_type="company",
+        external_context_id="winner-row-1",
+        identity_candidates=[_okki_candidate("WINNER-COMPANY")],
+    )
+    source = CustomerSourceRecord(
+        customer_id=None,
+        source_system="okki",
+        source_account_key="tenant-winner",
+        authority_level="transactional",
+        source_entity_type="customer",
+        external_record_id="winner-source-2",
+        external_record_key_hash="a" * 64,
+        source_version="v2",
+        data_classification="internal_business",
+        visibility_scope="customer_team",
+        classification_reason="test",
+        payload_schema_version="okki_customer_v1",
+        payload_json={"company_name": "Winner Trading"},
+        content_hash="b" * 64,
+        captured_at=beijing_now(),
+        processing_status="pending",
+    )
+    db.add(source)
+    db.flush()
+    before_seq = first.customer.profile_input_seq
+
+    enriched = resolve_business_context(
+        db,
+        source_system="okki",
+        source_account_key="tenant-winner",
+        source_entity_type="company",
+        external_context_id="winner-row-2",
+        source_record_id=source.id,
+        company_name="Winner Trading",
+        contact_name="Mina",
+        contact_email="mina@winner.example",
+        identity_candidates=[_okki_candidate("WINNER-COMPANY")],
+    )
+    after_seq = first.customer.profile_input_seq
+    replay = resolve_business_context(
+        db,
+        source_system="okki",
+        source_account_key="tenant-winner",
+        source_entity_type="company",
+        external_context_id="winner-row-2",
+        source_record_id=source.id,
+        company_name="Winner Trading",
+        contact_name="Mina",
+        contact_email="mina@winner.example",
+        identity_candidates=[_okki_candidate("WINNER-COMPANY")],
+    )
+
+    assert enriched.customer.id == first.customer.id
+    assert source.customer_id == first.customer.id
+    assert db.query(CustomerName).filter_by(
+        customer_id=first.customer.id,
+        name="Winner Trading",
+        source_record_id=source.id,
+    ).count() == 1
+    assert enriched.contact is not None
+    assert db.query(CustomerContactPoint).filter_by(
+        contact_id=enriched.contact.id,
+        normalized_value="mina@winner.example",
+    ).count() == 1
+    assert after_seq == before_seq + 1
+    assert replay.customer.profile_input_seq == after_seq
 
 
 def test_identity_subject_xor_and_registry_subject_are_enforced(db):
@@ -425,6 +571,50 @@ def test_confirmed_strong_identity_conflict_marks_review_instead_of_merging(db):
     assert right_identity.verification_status == "disputed"
     assert left.customer.profile_input_seq == left_seq
     assert right.customer.profile_input_seq == right_seq
+
+
+def test_contact_identity_confirmation_and_conflict_do_not_dispute_accounts(db):
+    left = resolve_business_context(
+        db,
+        source_system="alibaba",
+        source_account_key="shop-contact-conflict",
+        source_entity_type="inquiry",
+        external_context_id="buyer-left",
+        contact_name="Left Buyer",
+    )
+    right = resolve_business_context(
+        db,
+        source_system="alibaba",
+        source_account_key="shop-contact-conflict",
+        source_entity_type="inquiry",
+        external_context_id="buyer-right",
+        contact_name="Right Buyer",
+    )
+    left_identity = attach_identity_candidate(
+        db,
+        contact_id=left.contact.id,
+        source_system="alibaba",
+        source_account_key="shop-contact-conflict",
+        identifier_type="buyer_id",
+        raw_value="BUYER-CONFLICT",
+    )
+    right_identity = attach_identity_candidate(
+        db,
+        contact_id=right.contact.id,
+        source_system="alibaba",
+        source_account_key="shop-contact-conflict",
+        identifier_type="buyer_id",
+        raw_value="BUYER-CONFLICT",
+    )
+
+    confirm_identity(db, left_identity.id)
+    outcome = confirm_identity(db, right_identity.id)
+
+    assert outcome.conflict is True
+    assert left.contact.identity_status == "disputed"
+    assert right.contact.identity_status == "disputed"
+    assert left.customer.identity_status == "provisional"
+    assert right.customer.identity_status == "provisional"
 
 
 def test_confirm_medium_domain_never_promotes_account_past_candidate(db):
@@ -552,6 +742,30 @@ def test_failure_after_graph_creation_rolls_back_resolution_customer_and_contact
         db.query(CustomerContact).count(),
         db.query(CustomerContactRelationship).count(),
     ) == counts_before
+
+
+def test_first_resolution_key_statement_is_insert_not_gap_lock_select(db):
+    statements = []
+    engine = db.get_bind()
+
+    def _capture(_conn, _cursor, statement, _params, _context, _many):
+        if "ark_customer_resolution_keys" in statement:
+            statements.append(statement.lstrip().upper())
+
+    event.listen(engine, "before_cursor_execute", _capture)
+    try:
+        resolve_business_context(
+            db,
+            source_system="alibaba",
+            source_account_key="insert-first",
+            source_entity_type="inquiry",
+            external_context_id="insert-first-1",
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", _capture)
+
+    assert statements
+    assert statements[0].startswith("INSERT INTO ARK_CUSTOMER_RESOLUTION_KEYS")
 
 
 @pytest.mark.skipif(

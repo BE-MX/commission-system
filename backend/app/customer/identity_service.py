@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import time
 import unicodedata
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -17,7 +18,7 @@ from decimal import Decimal
 from typing import Iterable, Literal, Sequence
 from urllib.parse import urlsplit
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.time import beijing_now
@@ -58,6 +59,8 @@ _CLASSIFICATION_COMPONENTS = {
     "freshness": 0,
     "conflict_penalty": 0,
 }
+_ALIBABA_ORGANIZATION_SCHEMAS = frozenset({"alibaba_inquiry_v1"})
+_RESOLUTION_RETRYABLE_MYSQL_CODES = frozenset({1205, 1213})
 
 
 class CustomerDomainError(ValueError):
@@ -109,26 +112,36 @@ class ResolutionKeyArbiter:
         worker_id: str,
         now: datetime,
     ) -> CustomerResolutionKey | None:
-        try:
-            with db.begin_nested():
-                row = CustomerResolutionKey(
-                    resolution_key=resolution_key,
-                    resolution_type=resolution_type,
-                    source_system=source_system,
-                    source_account_key=source_account_key,
-                    source_entity_type=source_entity_type,
-                    source_record_id=source_record_id,
-                    status="claiming",
-                    generation=1,
-                    claimed_by=worker_id,
-                    created_at=now,
-                    updated_at=now,
+        for attempt in range(3):
+            try:
+                with db.begin_nested():
+                    row = CustomerResolutionKey(
+                        resolution_key=resolution_key,
+                        resolution_type=resolution_type,
+                        source_system=source_system,
+                        source_account_key=source_account_key,
+                        source_entity_type=source_entity_type,
+                        source_record_id=source_record_id,
+                        status="claiming",
+                        generation=1,
+                        claimed_by=worker_id,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    db.add(row)
+                    db.flush()
+                return row
+            except IntegrityError:
+                return None
+            except OperationalError as exc:
+                retryable = bool(
+                    exc.orig.args
+                    and exc.orig.args[0] in _RESOLUTION_RETRYABLE_MYSQL_CODES
                 )
-                db.add(row)
-                db.flush()
-            return row
-        except IntegrityError:
-            return None
+                if not retryable or attempt == 2:
+                    raise
+                time.sleep(0.02 * (attempt + 1))
+        return None
 
 
 DEFAULT_RESOLUTION_KEY_ARBITER = ResolutionKeyArbiter()
@@ -166,6 +179,9 @@ def _effective_policy(
     source_system: str,
     identifier_type: str,
     provider_declared_subject_type: str | None,
+    *,
+    source_record: CustomerSourceRecord | None = None,
+    raw_value: str | None = None,
 ) -> IdentityPolicy:
     try:
         policy = identity_policy(source_system, identifier_type)
@@ -179,6 +195,25 @@ def _effective_policy(
         and identifier_type in {"buyer_id", "member_id"}
         and provider_declared_subject_type == "customer"
     ):
+        declarations = (
+            source_record.payload_json.get("provider_identity_declarations", [])
+            if source_record is not None
+            and source_record.payload_schema_version in _ALIBABA_ORGANIZATION_SCHEMAS
+            and isinstance(source_record.payload_json, dict)
+            else []
+        )
+        declared = any(
+            isinstance(item, dict)
+            and item.get("identifier_type") == identifier_type
+            and item.get("subject_type") == "organization"
+            and isinstance(item.get("raw_value"), str)
+            and raw_value is not None
+            and unicodedata.normalize("NFKC", item["raw_value"]).strip()
+            == unicodedata.normalize("NFKC", raw_value).strip()
+            for item in declarations
+        )
+        if not declared:
+            raise CustomerDomainError("IDENTITY_SUBJECT_EVIDENCE_REQUIRED")
         return replace(
             policy,
             subject_type="customer",
@@ -253,6 +288,7 @@ def _resolution_material(
     source_entity_type: str,
     external_context_id: str,
     candidates: Sequence[IdentityCandidate],
+    source_record: CustomerSourceRecord | None,
 ) -> tuple[str, str]:
     strong_customer_keys: list[tuple[str, str]] = []
     for candidate in candidates:
@@ -260,12 +296,16 @@ def _resolution_material(
             source_system,
             candidate.identifier_type,
             candidate.provider_declared_subject_type,
+            source_record=source_record,
+            raw_value=candidate.raw_value,
         )
         normalized = _normalize_identity_value(policy, candidate.raw_value)
         if (
             policy.subject_type == "customer"
             and policy.strength == "strong"
             and policy.cardinality == "one_to_one"
+            and candidate.verification_status == "verified"
+            and policy.auto_match_ceiling in {"identified", "verified"}
         ):
             strong_customer_keys.append((candidate.identifier_type, normalized))
     if strong_customer_keys:
@@ -292,6 +332,7 @@ def _existing_verified_strong_customer_id(
     source_system: str,
     source_account_key: str,
     candidates: Sequence[IdentityCandidate],
+    source_record: CustomerSourceRecord | None,
 ) -> int | None:
     matches: set[int] = set()
     for candidate in candidates:
@@ -299,11 +340,15 @@ def _existing_verified_strong_customer_id(
             source_system,
             candidate.identifier_type,
             candidate.provider_declared_subject_type,
+            source_record=source_record,
+            raw_value=candidate.raw_value,
         )
         if not (
             policy.subject_type == "customer"
             and policy.strength == "strong"
             and policy.cardinality == "one_to_one"
+            and candidate.verification_status == "verified"
+            and policy.auto_match_ceiling in {"identified", "verified"}
         ):
             continue
         normalized = _normalize_identity_value(policy, candidate.raw_value)
@@ -347,6 +392,7 @@ def _create_contact(
     candidates: Sequence[IdentityCandidate],
     source_system: str,
     source_account_key: str,
+    source_record: CustomerSourceRecord | None,
     created_by: int | None,
     now: datetime,
 ) -> CustomerContact | None:
@@ -357,6 +403,8 @@ def _create_contact(
             source_system,
             candidate.identifier_type,
             candidate.provider_declared_subject_type,
+            source_record=source_record,
+            raw_value=candidate.raw_value,
         )
         if policy.subject_type != "contact":
             continue
@@ -427,10 +475,17 @@ def _attach_identity_candidate(
     created_by: int | None,
     now: datetime,
     bump_profile: bool,
-) -> CustomerExternalIdentity:
+) -> tuple[CustomerExternalIdentity, bool]:
     if (customer_id is None) == (contact_id is None):
         raise CustomerDomainError("IDENTITY_SUBJECT_INVALID")
-    policy = _effective_policy(source_system, identifier_type, provider_declared_subject_type)
+    source_record = db.get(CustomerSourceRecord, source_record_id) if source_record_id else None
+    policy = _effective_policy(
+        source_system,
+        identifier_type,
+        provider_declared_subject_type,
+        source_record=source_record,
+        raw_value=raw_value,
+    )
     expected_subject = "customer" if customer_id is not None else "contact"
     if expected_subject != policy.subject_type:
         raise CustomerDomainError("IDENTITY_SUBJECT_INVALID")
@@ -452,7 +507,6 @@ def _attach_identity_candidate(
         if not affected_ids:
             raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
 
-    source_record = db.get(CustomerSourceRecord, source_record_id) if source_record_id else None
     if source_record_id and (
         source_record is None
         or (
@@ -461,6 +515,13 @@ def _attach_identity_candidate(
         )
     ):
         raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
+    if (
+        provider_declared_subject_type == "customer"
+        and source_system == "alibaba"
+        and identifier_type in {"buyer_id", "member_id"}
+        and (source_record is None or source_record.customer_id != customer_id)
+    ):
+        raise CustomerDomainError("IDENTITY_SUBJECT_EVIDENCE_REQUIRED")
 
     normalized_value = _normalize_identity_value(policy, raw_value)
     subject_type = "customer" if customer_id is not None else "contact"
@@ -481,7 +542,7 @@ def _attach_identity_candidate(
         .one_or_none()
     )
     if existing is not None:
-        return existing
+        return existing, False
 
     row = CustomerExternalIdentity(
         customer_id=customer_id,
@@ -515,7 +576,7 @@ def _attach_identity_candidate(
     if bump_profile:
         _bump_accounts(db, affected_ids)
         db.flush()
-    return row
+    return row, True
 
 
 def attach_identity_candidate(
@@ -536,7 +597,7 @@ def attach_identity_candidate(
     now: datetime | None = None,
 ) -> CustomerExternalIdentity:
     """Append an identity candidate using only registered policy metadata."""
-    return _attach_identity_candidate(
+    row, _created = _attach_identity_candidate(
         db,
         customer_id=customer_id,
         contact_id=contact_id,
@@ -553,6 +614,369 @@ def attach_identity_candidate(
         now=now or beijing_now(),
         bump_profile=True,
     )
+    return row
+
+
+def _new_account(
+    db: Session,
+    *,
+    resolution_key: str,
+    company_name: str | None,
+    contact_name: str | None,
+    created_by: int | None,
+    now: datetime,
+) -> CustomerAccount:
+    personal_alias = bool(
+        company_name
+        and contact_name
+        and _normalize_name(company_name) == _normalize_name(contact_name)
+    )
+    display_seed = contact_name or company_name or "待识别客户"
+    account = CustomerAccount(
+        customer_code=f"CUST-{resolution_key[:20].upper()}",
+        display_name=(
+            f"{display_seed.strip()}（公司待识别）"
+            if contact_name or personal_alias
+            else display_seed.strip()
+        ),
+        canonical_company_name=None,
+        entity_type="unknown",
+        identity_status="provisional",
+        relationship_stage="discovered",
+        relationship_stage_changed_at=now,
+        relationship_stage_reason="business_context_created",
+        record_status="active",
+        identity_confidence=Decimal("0.0000"),
+        profile_completeness=Decimal("0.00"),
+        profile_input_seq=0,
+        created_by=created_by,
+        updated_by=created_by,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(account)
+    db.flush()
+    return account
+
+
+def _policy_for_candidate(
+    source_system: str,
+    candidate: IdentityCandidate,
+    source_record: CustomerSourceRecord | None,
+) -> IdentityPolicy:
+    return _effective_policy(
+        source_system,
+        candidate.identifier_type,
+        candidate.provider_declared_subject_type,
+        source_record=source_record,
+        raw_value=candidate.raw_value,
+    )
+
+
+def _apply_context_material(
+    db: Session,
+    *,
+    account: CustomerAccount,
+    resolution: CustomerResolutionKey,
+    source_system: str,
+    source_account_key: str,
+    source_entity_type: str,
+    external_context_id: str,
+    source_record: CustomerSourceRecord | None,
+    company_name: str | None,
+    contact_name: str | None,
+    contact_email: str | None,
+    normalized_email: str | None,
+    candidates: Sequence[IdentityCandidate],
+    created_by: int | None,
+    now: datetime,
+    is_new_account: bool,
+) -> CustomerContact | None:
+    """Idempotently apply every signal carried by one immutable business context."""
+    changed = False
+    context_ref = (
+        f"source:{source_record.id}"
+        if source_record is not None
+        else f"context:{source_system}:{source_account_key}:{source_entity_type}:{external_context_id}"
+    )
+    if source_record is not None:
+        if source_record.customer_id not in {None, account.id}:
+            raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
+        if source_record.customer_id is None:
+            source_record.customer_id = account.id
+            changed = True
+
+    personal_alias = bool(
+        company_name
+        and contact_name
+        and _normalize_name(company_name) == _normalize_name(contact_name)
+    )
+    if company_name and company_name.strip():
+        name_type = "person_alias" if personal_alias else "platform_alias"
+        normalized_company_name = _normalize_name(company_name)
+        name_fingerprint = _sha256((
+            "name_v1",
+            account.id,
+            name_type,
+            normalized_company_name,
+            "",
+            context_ref,
+        ))
+        if db.query(CustomerName.id).filter_by(name_fingerprint=name_fingerprint).first() is None:
+            db.add(CustomerName(
+                customer_id=account.id,
+                name=company_name.strip(),
+                normalized_name=normalized_company_name,
+                name_type=name_type,
+                verification_status="candidate",
+                confidence=Decimal("0.5000"),
+                confidence_method_version="confidence_v1",
+                confidence_components_json={
+                    "source_authority": 0,
+                    "independence": 0,
+                    "exactness": 1,
+                    "freshness": 1,
+                    "conflict_penalty": 0,
+                },
+                source_record_id=source_record.id if source_record is not None else None,
+                name_fingerprint=name_fingerprint,
+                first_seen_at=now,
+                last_seen_at=now,
+                created_by=created_by,
+                updated_by=created_by,
+                created_at=now,
+                updated_at=now,
+            ))
+            changed = True
+
+    policies = tuple(_policy_for_candidate(source_system, item, source_record) for item in candidates)
+    contact_needed = bool(
+        contact_name or normalized_email or any(item.subject_type == "contact" for item in policies)
+    )
+    contact: CustomerContact | None = None
+    if contact_needed:
+        existing_relations = db.query(CustomerContactRelationship).filter(
+            CustomerContactRelationship.customer_id == account.id,
+            CustomerContactRelationship.effective_to.is_(None),
+        ).all()
+        for relation in existing_relations:
+            expected = _sha256((
+                "contact_relationship_v1",
+                account.id,
+                relation.contact_id,
+                "buyer",
+                context_ref,
+                "",
+            ))
+            if relation.relationship_fingerprint == expected:
+                contact = db.get(CustomerContact, relation.contact_id)
+                break
+        if contact is None:
+            contact = _create_contact(
+                db,
+                contact_name=contact_name,
+                candidates=candidates,
+                source_system=source_system,
+                source_account_key=source_account_key,
+                source_record=source_record,
+                created_by=created_by,
+                now=now,
+            )
+        if contact is None:
+            raise CustomerDomainError("IDENTITY_SUBJECT_INVALID")
+        relationship_fingerprint = _sha256((
+            "contact_relationship_v1",
+            account.id,
+            contact.id,
+            "buyer",
+            context_ref,
+            "",
+        ))
+        if db.query(CustomerContactRelationship.id).filter_by(
+            relationship_fingerprint=relationship_fingerprint,
+        ).first() is None:
+            db.add(CustomerContactRelationship(
+                customer_id=account.id,
+                contact_id=contact.id,
+                relationship_type="buyer",
+                buying_role="unknown",
+                influence_level="unknown",
+                verification_status="identified",
+                confidence=Decimal("0.8000"),
+                confidence_method_version="confidence_v1",
+                confidence_components_json={
+                    "explicit_employment": 0,
+                    "source_authority": 0,
+                    "independence": 0,
+                    "temporal_fit": 1,
+                    "conflict_penalty": 0,
+                },
+                relationship_fingerprint=relationship_fingerprint,
+                created_by=created_by,
+                updated_by=created_by,
+                created_at=now,
+                updated_at=now,
+            ))
+            db.flush()
+            changed = True
+        if resolution.contact_id is None:
+            resolution.contact_id = contact.id
+
+    point: CustomerContactPoint | None = None
+    if contact is not None and normalized_email:
+        email_domain = normalized_email.rsplit("@", 1)[1]
+        point_fingerprint = _sha256((
+            "contact_point_v1",
+            "contact",
+            contact.id,
+            "email",
+            "",
+            normalized_email,
+            context_ref,
+        ))
+        point = db.query(CustomerContactPoint).filter_by(
+            point_fingerprint=point_fingerprint,
+        ).one_or_none()
+        if point is None:
+            point = CustomerContactPoint(
+                contact_id=contact.id,
+                point_type="email",
+                raw_value=contact_email,
+                normalized_value=normalized_email,
+                email_domain_type="free" if email_domain in _FREE_EMAIL_DOMAINS else "unknown",
+                verification_status="unknown",
+                contactability_status="unknown",
+                contactability_reason_code="unknown",
+                contactability_source="import",
+                contactability_effective_at=now,
+                is_primary=True,
+                data_classification="personal_contact",
+                source_record_id=source_record.id if source_record is not None else None,
+                point_fingerprint=point_fingerprint,
+                first_seen_at=now,
+                last_seen_at=now,
+                created_by=created_by,
+                updated_by=created_by,
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(point)
+            db.flush()
+            changed = True
+
+    for candidate, policy in zip(candidates, policies, strict=True):
+        if policy.subject_type == "contact" and contact is None:
+            raise CustomerDomainError("IDENTITY_SUBJECT_INVALID")
+        identity, created = _attach_identity_candidate(
+            db,
+            customer_id=account.id if policy.subject_type == "customer" else None,
+            contact_id=contact.id if policy.subject_type == "contact" else None,
+            source_system=source_system,
+            source_account_key=source_account_key,
+            identifier_type=candidate.identifier_type,
+            raw_value=candidate.raw_value,
+            source_record_id=source_record.id if source_record is not None else None,
+            verification_status=candidate.verification_status,
+            confidence=candidate.confidence,
+            is_primary=candidate.is_primary,
+            provider_declared_subject_type=candidate.provider_declared_subject_type,
+            created_by=created_by,
+            now=now,
+            bump_profile=False,
+        )
+        changed = changed or created
+        if (
+            policy.subject_type == "customer"
+            and candidate.verification_status == "verified"
+            and account.identity_status != "disputed"
+            and policy.auto_match_ceiling in {"identified", "verified"}
+        ):
+            if (
+                account.identity_status != policy.auto_match_ceiling
+                or account.identity_confidence != identity.confidence
+            ):
+                account.identity_status = policy.auto_match_ceiling
+                account.identity_confidence = identity.confidence
+                changed = True
+
+    if point is not None and (point.email_domain_type == "free" or personal_alias):
+        research_fingerprint = _sha256((
+            "identity_enrichment_v1",
+            account.id,
+            context_ref,
+            "reverse_business_identity_v1",
+        ))
+        if db.query(CustomerResearchTask.id).filter_by(
+            task_fingerprint=research_fingerprint,
+        ).first() is None:
+            email_domain = normalized_email.rsplit("@", 1)[1]
+            db.add(CustomerResearchTask(
+                customer_id=account.id,
+                task_type="identity_enrichment",
+                source_ref_type="source_record" if source_record is not None else source_entity_type,
+                source_ref_id=str(source_record.id if source_record is not None else external_context_id),
+                task_status="pending",
+                gate_status="not_required",
+                result_review_status="pending",
+                selection_reason=[{
+                    "reason": "personal_identity_requires_business_resolution",
+                    "fact_ids": [],
+                }],
+                research_policy_version="reverse_business_identity_v1",
+                task_fingerprint=research_fingerprint,
+                input_snapshot={
+                    "contact_id": contact.id,
+                    "contact_point_id": point.id,
+                    "contact_name": contact.display_name,
+                    "email_domain": email_domain,
+                    "email_local_part": normalized_email.split("@", 1)[0],
+                    "allowed_research": [
+                        "public_employment",
+                        "official_company_page",
+                        "public_business_social",
+                        "public_storefront",
+                    ],
+                },
+                data_classification="personal_contact",
+                visibility_scope="customer_team",
+                classification_reason="inherits personal contact identity seed",
+                evidence_fact_ids=[],
+                lease_generation=0,
+                attempt_count=0,
+                created_by=created_by,
+                created_at=now,
+                updated_at=now,
+            ))
+            changed = True
+
+    if is_new_account:
+        account.profile_input_seq = 1
+    elif changed:
+        account.profile_input_seq = int(account.profile_input_seq) + 1
+        account.updated_at = now
+    db.flush()
+    return contact
+
+
+def _retryable_mysql_error(exc: OperationalError) -> bool:
+    return bool(exc.orig.args and exc.orig.args[0] in _RESOLUTION_RETRYABLE_MYSQL_CODES)
+
+
+def _load_resolution_winner(db: Session, resolution_key: str) -> CustomerResolutionKey:
+    for attempt in range(3):
+        try:
+            row = db.query(CustomerResolutionKey).filter(
+                CustomerResolutionKey.resolution_key == resolution_key,
+            ).with_for_update().one_or_none()
+        except OperationalError as exc:
+            if not _retryable_mysql_error(exc) or attempt == 2:
+                raise
+            time.sleep(0.02 * (attempt + 1))
+            continue
+        if row is not None:
+            return row
+        time.sleep(0.02 * (attempt + 1))
+    raise CustomerDomainError("IDENTITY_RESOLUTION_CONFLICT")
 
 
 def resolve_business_context(
@@ -572,12 +996,7 @@ def resolve_business_context(
     arbiter: ResolutionKeyArbiter | None = None,
     now: datetime | None = None,
 ) -> ResolvedBusinessContext:
-    """Resolve or atomically create one business-customer context.
-
-    Names and email addresses are never resolution keys.  A registered strong
-    one-to-one organization identity takes precedence; otherwise the stable
-    business-context ID is the only creation key.
-    """
+    """Resolve a business context through insert-first transaction arbitration."""
     if not all(isinstance(value, str) and value.strip() for value in (
         source_system,
         source_account_key,
@@ -588,68 +1007,21 @@ def resolve_business_context(
     normalized_email = _normalize_email(contact_email) if contact_email else None
     now = now or beijing_now()
     candidates = tuple(identity_candidates)
-    resolution_type, resolution_key = _resolution_material(
-        source_system=source_system,
-        source_account_key=source_account_key,
-        source_entity_type=source_entity_type,
-        external_context_id=external_context_id,
-        candidates=candidates,
-    )
     source_record = _validate_source_record_for_resolution(
         db,
         source_record_id,
         source_system,
         source_account_key,
     )
-    existing = (
-        db.query(CustomerResolutionKey)
-        .filter(CustomerResolutionKey.resolution_key == resolution_key)
-        .with_for_update()
-        .one_or_none()
-    )
-    if existing is not None:
-        return _load_resolved_context(db, existing)
-
-    arbiter = arbiter or DEFAULT_RESOLUTION_KEY_ARBITER
-    matched_customer_id = _existing_verified_strong_customer_id(
-        db,
+    resolution_type, resolution_key = _resolution_material(
         source_system=source_system,
         source_account_key=source_account_key,
+        source_entity_type=source_entity_type,
+        external_context_id=external_context_id,
         candidates=candidates,
+        source_record=source_record,
     )
-    if matched_customer_id is not None:
-        try:
-            with db.begin_nested():
-                resolution = arbiter.try_claim(
-                    db,
-                    resolution_key=resolution_key,
-                    resolution_type=resolution_type,
-                    source_system=source_system,
-                    source_account_key=source_account_key,
-                    source_entity_type=source_entity_type,
-                    source_record_id=source_record_id,
-                    worker_id=worker_id,
-                    now=now,
-                )
-                if resolution is None:
-                    raise _ResolutionClaimLost
-                resolution.customer_id = matched_customer_id
-                resolution.status = "resolved"
-                resolution.updated_at = now
-                db.flush()
-            return ResolvedBusinessContext(
-                _account_for_update(db, matched_customer_id),
-                None,
-                resolution,
-                False,
-            )
-        except _ResolutionClaimLost:
-            winner = db.query(CustomerResolutionKey).filter(
-                CustomerResolutionKey.resolution_key == resolution_key
-            ).with_for_update().one_or_none()
-            if winner is None:
-                raise CustomerDomainError("IDENTITY_RESOLUTION_CONFLICT") from None
-            return _load_resolved_context(db, winner)
+    arbiter = arbiter or DEFAULT_RESOLUTION_KEY_ARBITER
 
     try:
         with db.begin_nested():
@@ -666,271 +1038,73 @@ def resolve_business_context(
             )
             if resolution is None:
                 raise _ResolutionClaimLost
-
-            personal_alias = bool(
-                company_name
-                and contact_name
-                and _normalize_name(company_name) == _normalize_name(contact_name)
-            )
-            display_seed = contact_name or company_name or "待识别客户"
-            display_name = (
-                f"{display_seed.strip()}（公司待识别）"
-                if contact_name or personal_alias
-                else display_seed.strip()
-            )
-            account = CustomerAccount(
-                customer_code=f"CUST-{resolution_key[:20].upper()}",
-                display_name=display_name,
-                canonical_company_name=None,
-                entity_type="unknown",
-                identity_status="provisional",
-                relationship_stage="discovered",
-                relationship_stage_changed_at=now,
-                relationship_stage_reason="business_context_created",
-                record_status="active",
-                identity_confidence=Decimal("0.0000"),
-                profile_completeness=Decimal("0.00"),
-                profile_input_seq=0,
-                created_by=created_by,
-                updated_by=created_by,
-                created_at=now,
-                updated_at=now,
-            )
-            db.add(account)
-            db.flush()
-
-            if source_record is not None:
-                if source_record.customer_id not in {None, account.id}:
-                    raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
-                source_record.customer_id = account.id
-
-            contact_needed = bool(
-                contact_name
-                or normalized_email
-                or any(
-                    _effective_policy(
-                        source_system,
-                        candidate.identifier_type,
-                        candidate.provider_declared_subject_type,
-                    ).subject_type == "contact"
-                    for candidate in candidates
-                )
-            )
-            contact = _create_contact(
+            matched_customer_id = _existing_verified_strong_customer_id(
                 db,
-                contact_name=contact_name if contact_needed else None,
-                candidates=candidates,
                 source_system=source_system,
                 source_account_key=source_account_key,
-                created_by=created_by,
-                now=now,
-            ) if contact_needed else None
-
-            if company_name and company_name.strip():
-                name_type = "person_alias" if personal_alias else "platform_alias"
-                normalized_company_name = _normalize_name(company_name)
-                db.add(CustomerName(
-                    customer_id=account.id,
-                    name=company_name.strip(),
-                    normalized_name=normalized_company_name,
-                    name_type=name_type,
-                    verification_status="candidate",
-                    confidence=Decimal("0.5000"),
-                    confidence_method_version="confidence_v1",
-                    confidence_components_json={
-                        "source_authority": 0,
-                        "independence": 0,
-                        "exactness": 1,
-                        "freshness": 1,
-                        "conflict_penalty": 0,
-                    },
-                    source_record_id=source_record_id,
-                    name_fingerprint=_sha256((
-                        "name_v1",
-                        account.id,
-                        name_type,
-                        normalized_company_name,
-                        "",
-                        source_record_id or resolution_key,
-                    )),
-                    first_seen_at=now,
-                    last_seen_at=now,
-                    created_by=created_by,
-                    updated_by=created_by,
-                    created_at=now,
-                    updated_at=now,
-                ))
-
-            point: CustomerContactPoint | None = None
-            if contact is not None:
-                db.add(CustomerContactRelationship(
-                    customer_id=account.id,
-                    contact_id=contact.id,
-                    relationship_type="buyer",
-                    buying_role="unknown",
-                    influence_level="unknown",
-                    verification_status="identified",
-                    confidence=Decimal("0.8000"),
-                    confidence_method_version="confidence_v1",
-                    confidence_components_json={
-                        "explicit_employment": 0,
-                        "source_authority": 0,
-                        "independence": 0,
-                        "temporal_fit": 1,
-                        "conflict_penalty": 0,
-                    },
-                    relationship_fingerprint=_sha256((
-                        "contact_relationship_v1",
-                        account.id,
-                        contact.id,
-                        "buyer",
-                        source_record_id or resolution_key,
-                        "",
-                    )),
-                    created_by=created_by,
-                    updated_by=created_by,
-                    created_at=now,
-                    updated_at=now,
-                ))
-                # Production SessionLocal disables autoflush.  The contact
-                # identity path below must see this context relationship when
-                # it derives the affected customer set.
-                db.flush()
-                if normalized_email:
-                    email_domain = normalized_email.rsplit("@", 1)[1]
-                    point = CustomerContactPoint(
-                        contact_id=contact.id,
-                        point_type="email",
-                        raw_value=contact_email,
-                        normalized_value=normalized_email,
-                        email_domain_type="free" if email_domain in _FREE_EMAIL_DOMAINS else "unknown",
-                        verification_status="unknown",
-                        contactability_status="unknown",
-                        contactability_reason_code="unknown",
-                        contactability_source="import",
-                        contactability_effective_at=now,
-                        is_primary=True,
-                        data_classification="personal_contact",
-                        source_record_id=source_record_id,
-                        point_fingerprint=_sha256((
-                            "contact_point_v1",
-                            "contact",
-                            contact.id,
-                            "email",
-                            "",
-                            normalized_email,
-                            source_record_id or resolution_key,
-                        )),
-                        first_seen_at=now,
-                        last_seen_at=now,
-                        created_by=created_by,
-                        updated_by=created_by,
-                        created_at=now,
-                        updated_at=now,
-                    )
-                    db.add(point)
-                    db.flush()
-
-            for candidate in candidates:
-                policy = _effective_policy(
-                    source_system,
-                    candidate.identifier_type,
-                    candidate.provider_declared_subject_type,
-                )
-                if policy.subject_type == "contact" and contact is None:
-                    raise CustomerDomainError("IDENTITY_SUBJECT_INVALID")
-                identity = _attach_identity_candidate(
+                candidates=candidates,
+                source_record=source_record,
+            )
+            created = matched_customer_id is None
+            account = (
+                _new_account(
                     db,
-                    customer_id=account.id if policy.subject_type == "customer" else None,
-                    contact_id=contact.id if policy.subject_type == "contact" else None,
-                    source_system=source_system,
-                    source_account_key=source_account_key,
-                    identifier_type=candidate.identifier_type,
-                    raw_value=candidate.raw_value,
-                    source_record_id=source_record_id,
-                    verification_status=candidate.verification_status,
-                    confidence=candidate.confidence,
-                    is_primary=candidate.is_primary,
-                    provider_declared_subject_type=candidate.provider_declared_subject_type,
+                    resolution_key=resolution_key,
+                    company_name=company_name,
+                    contact_name=contact_name,
                     created_by=created_by,
                     now=now,
-                    bump_profile=False,
                 )
-                if (
-                    policy.subject_type == "customer"
-                    and candidate.verification_status == "verified"
-                    and account.identity_status != "disputed"
-                    and policy.auto_match_ceiling in {"identified", "verified"}
-                ):
-                    account.identity_status = policy.auto_match_ceiling
-                    account.identity_confidence = identity.confidence
-
-            if point is not None and (
-                point.email_domain_type == "free" or personal_alias
-            ):
-                email_domain = normalized_email.rsplit("@", 1)[1]
-                research_fingerprint = _sha256((
-                    "identity_enrichment_v1",
-                    account.id,
-                    source_record_id or resolution_key,
-                    "reverse_business_identity_v1",
-                ))
-                db.add(CustomerResearchTask(
-                    customer_id=account.id,
-                    task_type="identity_enrichment",
-                    source_ref_type="source_record" if source_record_id else source_entity_type,
-                    source_ref_id=str(source_record_id or external_context_id),
-                    task_status="pending",
-                    gate_status="not_required",
-                    result_review_status="pending",
-                    selection_reason=[{
-                        "reason": "personal_identity_requires_business_resolution",
-                        "fact_ids": [],
-                    }],
-                    research_policy_version="reverse_business_identity_v1",
-                    task_fingerprint=research_fingerprint,
-                    input_snapshot={
-                        "contact_id": contact.id,
-                        "contact_point_id": point.id,
-                        "contact_name": contact.display_name,
-                        "email_domain": email_domain,
-                        "email_local_part": normalized_email.split("@", 1)[0],
-                        "allowed_research": [
-                            "public_employment",
-                            "official_company_page",
-                            "public_business_social",
-                            "public_storefront",
-                        ],
-                    },
-                    data_classification="personal_contact",
-                    visibility_scope="customer_team",
-                    classification_reason="inherits personal contact identity seed",
-                    evidence_fact_ids=[],
-                    lease_generation=0,
-                    attempt_count=0,
-                    created_by=created_by,
-                    created_at=now,
-                    updated_at=now,
-                ))
-
-            account.profile_input_seq = 1
+                if created
+                else _account_for_update(db, matched_customer_id)
+            )
+            contact = _apply_context_material(
+                db,
+                account=account,
+                resolution=resolution,
+                source_system=source_system,
+                source_account_key=source_account_key,
+                source_entity_type=source_entity_type,
+                external_context_id=external_context_id,
+                source_record=source_record,
+                company_name=company_name,
+                contact_name=contact_name,
+                contact_email=contact_email,
+                normalized_email=normalized_email,
+                candidates=candidates,
+                created_by=created_by,
+                now=now,
+                is_new_account=created,
+            )
             resolution.customer_id = account.id
-            resolution.contact_id = contact.id if contact is not None else None
+            resolution.contact_id = resolution.contact_id or (contact.id if contact else None)
             resolution.status = "resolved"
             resolution.updated_at = now
             db.flush()
-            result = ResolvedBusinessContext(account, contact, resolution, True)
-        return result
+            return ResolvedBusinessContext(account, contact, resolution, created)
     except _ResolutionClaimLost:
-        winner = (
-            db.query(CustomerResolutionKey)
-            .filter(CustomerResolutionKey.resolution_key == resolution_key)
-            .with_for_update()
-            .one_or_none()
-        )
-        if winner is None:
-            raise CustomerDomainError("IDENTITY_RESOLUTION_CONFLICT") from None
-        return _load_resolved_context(db, winner)
+        winner = _load_resolution_winner(db, resolution_key)
+        context = _load_resolved_context(db, winner)
+        with db.begin_nested():
+            contact = _apply_context_material(
+                db,
+                account=context.customer,
+                resolution=winner,
+                source_system=source_system,
+                source_account_key=source_account_key,
+                source_entity_type=source_entity_type,
+                external_context_id=external_context_id,
+                source_record=source_record,
+                company_name=company_name,
+                contact_name=contact_name,
+                contact_email=contact_email,
+                normalized_email=normalized_email,
+                candidates=candidates,
+                created_by=created_by,
+                now=now,
+                is_new_account=False,
+            )
+        return ResolvedBusinessContext(context.customer, contact or context.contact, winner, False)
 
 
 class _ResolutionClaimLost(Exception):
@@ -1007,10 +1181,25 @@ def confirm_identity(
             conflict.status = "disputed"
             conflict.updated_at = now
             affected_ids.update(_identity_customer_ids(db, conflict))
-        for customer_id in affected_ids:
-            account = _account_for_update(db, customer_id)
-            account.identity_status = "disputed"
-            account.identity_confidence = Decimal("0.0000")
+        if identity.contact_id is not None:
+            contact_ids = {identity.contact_id}
+            contact_ids.update(
+                row.contact_id for row in conflicts if row.contact_id is not None
+            )
+            for contact_id in contact_ids:
+                contact = db.query(CustomerContact).filter(
+                    CustomerContact.id == contact_id,
+                    CustomerContact.record_status == "active",
+                ).with_for_update().one_or_none()
+                if contact is not None:
+                    contact.identity_status = "disputed"
+                    contact.confidence = Decimal("0.0000")
+                    contact.updated_at = now
+        else:
+            for customer_id in affected_ids:
+                account = _account_for_update(db, customer_id)
+                account.identity_status = "disputed"
+                account.identity_confidence = Decimal("0.0000")
         _bump_accounts(db, affected_ids)
         db.flush()
         return IdentityConfirmationResult(
@@ -1031,6 +1220,19 @@ def confirm_identity(
         if account.identity_status != "disputed":
             account.identity_status = target
             account.identity_confidence = identity.confidence
+    elif identity.contact_id is not None:
+        contact = db.query(CustomerContact).filter(
+            CustomerContact.id == identity.contact_id,
+            CustomerContact.record_status == "active",
+        ).with_for_update().one_or_none()
+        if contact is None:
+            raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
+        if identity.auto_match_ceiling in {"identified", "verified"}:
+            contact.identity_status = (
+                "verified" if identity.auto_match_ceiling == "verified" else "identified"
+            )
+            contact.confidence = identity.confidence
+            contact.updated_at = now
     _bump_accounts(db, affected_ids)
     db.flush()
     return IdentityConfirmationResult(identity, False)
