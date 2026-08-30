@@ -1,5 +1,5 @@
 import importlib
-import inspect
+import json
 import re
 from pathlib import Path
 
@@ -66,13 +66,16 @@ EXPECTED_TABLES = {
 }
 
 DEFERRED_WORKFLOW_TABLES = {
+    "ark_customer_opportunities",
+    "ark_customer_opportunity_events",
+    "ark_customer_actions",
+}
+
+ACQUISITION_WORKFLOW_TABLES = {
     "ark_sales_search_jobs",
     "ark_sales_search_results",
     "ark_sales_search_result_sources",
     "ark_sales_public_pool_batches",
-    "ark_customer_opportunities",
-    "ark_customer_opportunity_events",
-    "ark_customer_actions",
 }
 
 GENERATED_SLOT_COLUMNS = {
@@ -96,6 +99,10 @@ GENERATED_SLOT_COLUMNS = {
 DESIGN_PATH = (
     Path(__file__).parents[2]
     / "docs/requirements/2026-08-28-unified-customer-profile-design.md"
+)
+SCHEMA_126_PATH = (
+    Path(__file__).parents[1]
+    / "alembic/versions/126_unified_customer_domain_schema.json"
 )
 
 
@@ -128,11 +135,13 @@ def _design_tables():
 
 
 def _module_models():
-    return tuple(
-        value
-        for _, value in inspect.getmembers(models, inspect.isclass)
-        if issubclass(value, Base) and value is not Base and value.__module__ == models.__name__
-    )
+    return tuple(models.CORE_MODELS)
+
+
+def _workflow_contract_tables():
+    payload = json.loads(SCHEMA_126_PATH.read_text(encoding="utf-8"))
+    tables = payload["customer_domain_physical_contract"]["tables"]
+    return {name: tables[name] for name in ACQUISITION_WORKFLOW_TABLES}
 
 
 def _unique_column_sets(table):
@@ -203,6 +212,70 @@ def test_customer_module_supplies_exactly_the_31_core_tables():
     assert {model.__tablename__ for model in module_models} == EXPECTED_TABLES
     assert set(models.CORE_TABLE_NAMES) == EXPECTED_TABLES
     assert not (set(models.CORE_TABLE_NAMES) & DEFERRED_WORKFLOW_TABLES)
+
+
+def test_customer_module_supplies_exactly_the_4_acquisition_workflow_tables():
+    workflow_models = tuple(models.ACQUISITION_WORKFLOW_MODELS)
+
+    assert len(workflow_models) == 4
+    assert {model.__tablename__ for model in workflow_models} == ACQUISITION_WORKFLOW_TABLES
+    assert set(models.ACQUISITION_WORKFLOW_TABLES) == ACQUISITION_WORKFLOW_TABLES
+    assert not (set(models.CORE_TABLE_NAMES) & ACQUISITION_WORKFLOW_TABLES)
+
+
+def test_acquisition_workflow_tables_match_frozen_126_contract():
+    contract_tables = _workflow_contract_tables()
+
+    for model in models.ACQUISITION_WORKFLOW_MODELS:
+        table = model.__table__
+        expected = contract_tables[table.name]
+        expected_columns = {column["name"]: column for column in expected["columns"]}
+        assert table.comment == expected["table_comment"]
+        assert set(table.columns.keys()) == set(expected_columns)
+        for column in table.columns:
+            frozen = expected_columns[column.name]
+            assert column.comment == frozen["comment"]
+            assert column.nullable is frozen["nullable"]
+            assert column.primary_key is frozen["primary_key"]
+
+        check_names = {
+            constraint.name
+            for constraint in table.constraints
+            if isinstance(constraint, CheckConstraint)
+        }
+        unique_signatures = {
+            (constraint.name, tuple(column.name for column in constraint.columns))
+            for constraint in table.constraints
+            if isinstance(constraint, UniqueConstraint)
+        }
+        fk_signatures = {
+            (
+                constraint.name,
+                tuple(element.parent.name for element in constraint.elements),
+                tuple(element.target_fullname for element in constraint.elements),
+            )
+            for constraint in table.constraints
+            if isinstance(constraint, ForeignKeyConstraint)
+        }
+        index_signatures = {
+            (index.name, index.unique, tuple(column.name for column in index.columns))
+            for index in table.indexes
+        }
+        assert check_names == {item[0] for item in expected["checks"]}
+        assert unique_signatures == {
+            (item[0], tuple(item[1])) for item in expected["unique_constraints"]
+        }
+        assert fk_signatures == {
+            (
+                item[0],
+                tuple(item[1]),
+                tuple(f"{item[3]}.{column}" for column in item[4]),
+            )
+            for item in expected["foreign_keys"]
+        }
+        assert index_signatures == {
+            (item[0], item[1], tuple(item[2])) for item in expected["indexes"]
+        }
 
 
 def test_every_core_table_matches_the_approved_field_dictionary_and_comments():

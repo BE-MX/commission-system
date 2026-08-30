@@ -11,7 +11,23 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import BigInteger, Integer, Numeric, Text, create_engine, event, text
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Column,
+    DateTime,
+    Index,
+    Integer,
+    MetaData,
+    Numeric,
+    String,
+    Table,
+    Text,
+    UniqueConstraint,
+    create_engine,
+    event,
+    text,
+)
 from sqlalchemy.dialects import mysql
 from sqlalchemy.dialects.mysql import DECIMAL as MYSQL_DECIMAL
 from sqlalchemy.dialects.mysql import DATETIME as MYSQL_DATETIME
@@ -29,11 +45,11 @@ from app.agent_runtime.models import (
 )
 from app.core.database import Base
 from app.customer.models import (
+    ACQUISITION_WORKFLOW_TABLES as ORM_ACQUISITION_WORKFLOW_TABLES,
     CORE_TABLES as ORM_CORE_TABLES,
     CustomerAccount,
     CustomerSuppressionRegistry,
 )
-from app.sales_automation.models import AcquisitionProfile
 from app.customer.cutover_service import (
     AGENT_CONTROL_TABLES,
     KNOWN_WRITER_CATEGORIES,
@@ -167,6 +183,73 @@ def _target_profile_physical_contract_sha256():
     return resource["target_profile_physical_contract"]["contract_sha256"]
 
 
+def _legacy_target_profile_table() -> Table:
+    """Build the exact pre-126 target-profile table used by cutover fixtures."""
+    resource = json.loads(SCHEMA_RESOURCE_PATH.read_text(encoding="utf-8"))
+    before = resource["target_profile_physical_contract"]["before"]
+    comments = {column["name"]: column["comment"] for column in before["columns"]}
+    metadata = MetaData()
+    table = Table(
+        "ark_sales_target_profiles",
+        metadata,
+        Column("id", BigInteger, primary_key=True, autoincrement=True, comment=comments["id"]),
+        Column("profile_key", String(64), nullable=False, comment=comments["profile_key"]),
+        Column("company_name", String(255), nullable=False, comment=comments["company_name"]),
+        Column("company_website", String(512), nullable=True, comment=comments["company_website"]),
+        Column("products", JSON, nullable=False, comment=comments["products"]),
+        Column("advantages", JSON, nullable=False, comment=comments["advantages"]),
+        Column("target_countries", JSON, nullable=False, comment=comments["target_countries"]),
+        Column("target_industries", JSON, nullable=False, comment=comments["target_industries"]),
+        Column("target_roles", JSON, nullable=False, comment=comments["target_roles"]),
+        Column("exclusions", JSON, nullable=False, comment=comments["exclusions"]),
+        Column("default_language", String(16), nullable=False, comment=comments["default_language"]),
+        Column("status", String(16), nullable=False, comment=comments["status"]),
+        Column("created_by", Integer, nullable=True, comment=comments["created_by"]),
+        Column("updated_by", Integer, nullable=True, comment=comments["updated_by"]),
+        Column("created_at", DateTime, nullable=False, comment=comments["created_at"]),
+        Column("updated_at", DateTime, nullable=False, comment=comments["updated_at"]),
+        Column("deleted_at", DateTime, nullable=True, comment=comments["deleted_at"]),
+        UniqueConstraint(
+            "profile_key",
+            name="uq_ark_sales_target_profiles_profile_key",
+        ),
+        comment=before["table_comment"],
+    )
+    Index("idx_sales_profile_status", table.c.status)
+    assert tuple(table.c.keys()) == tuple(
+        column["name"] for column in before["columns"]
+    )
+    return table
+
+
+def _create_legacy_target_profile_table(engine) -> None:
+    _legacy_target_profile_table().create(engine)
+
+
+def _insert_legacy_target_profile(db: Session, **overrides) -> None:
+    row = {
+        "id": 7,
+        "profile_key": "profile-seven",
+        "company_name": "Ark Hair",
+        "company_website": None,
+        "products": ["wigs"],
+        "advantages": ["quality"],
+        "target_countries": ["US"],
+        "target_industries": ["beauty"],
+        "target_roles": ["buyer"],
+        "exclusions": [],
+        "default_language": "en",
+        "status": "active",
+        "created_by": None,
+        "updated_by": None,
+        "created_at": datetime(2026, 8, 1, 9, 0),
+        "updated_at": datetime(2026, 8, 2, 9, 0),
+        "deleted_at": None,
+    }
+    row.update(overrides)
+    db.execute(_legacy_target_profile_table().insert(), row)
+
+
 def _suppression_row(**overrides):
     row = {
         "identifier_type": "email",
@@ -288,8 +371,8 @@ def _create_cutover_db():
                         "source_provider TEXT, captured_at DATETIME"
                     )
                 connection.execute(text(f"CREATE TABLE {table_name} ({columns})"))
+    _create_legacy_target_profile_table(engine)
     agent_tables = [
-        AcquisitionProfile.__table__,
         AgentProfile.__table__,
         AgentSession.__table__,
         AgentRun.__table__,
@@ -2086,8 +2169,14 @@ def test_verify_after_table_state_requires_all_new_tables_and_no_retired_only_ta
         engine,
         tables=[Base.metadata.tables[name] for name in NEW_CUSTOMER_TABLES],
     )
+    Base.metadata.create_all(
+        engine,
+        tables=list(ORM_ACQUISITION_WORKFLOW_TABLES.values()),
+    )
     with engine.begin() as connection:
         for table_name in REBUILT_CUSTOMER_WORKFLOW_TABLES:
+            if table_name in ORM_ACQUISITION_WORKFLOW_TABLES:
+                continue
             columns = ["id INTEGER PRIMARY KEY"] + [
                 f"{name} TEXT"
                 for name in sorted(REBUILT_WORKFLOW_COLUMNS[table_name] - {"id"})
@@ -2409,25 +2498,12 @@ def test_target_profile_policy_backfill_rejects_stale_approval():
 
 def test_target_profile_policy_backfill_requires_exact_live_set_and_snapshot():
     engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine, tables=[AcquisitionProfile.__table__])
+    _create_legacy_target_profile_table(engine)
     with Session(engine) as db:
-        db.add(
-            AcquisitionProfile(
-                id=7,
-                profile_key="profile-seven",
-                company_name="Ark Hair",
-                company_website="https://example.com",
-                products=["wigs"],
-                advantages=["quality"],
-                target_countries=["US"],
-                target_industries=["beauty"],
-                target_roles=["buyer"],
-                exclusions=["retail"],
-                default_language="en",
-                status="active",
-                created_at=datetime(2026, 8, 1, 9, 0),
-                updated_at=datetime(2026, 8, 2, 9, 0),
-            )
+        _insert_legacy_target_profile(
+            db,
+            company_website="https://example.com",
+            exclusions=["retail"],
         )
         db.flush()
         snapshots = cutover_service.snapshot_target_profile_rows(db)
@@ -2455,7 +2531,7 @@ def test_target_profile_policy_backfill_requires_exact_live_set_and_snapshot():
             )
 
     empty_engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(empty_engine, tables=[AcquisitionProfile.__table__])
+    _create_legacy_target_profile_table(empty_engine)
     with Session(empty_engine) as db:
         assert cutover_service.validate_target_profile_policy_backfill_against_live_rows(
             db,
@@ -2467,23 +2543,7 @@ def test_target_profile_policy_backfill_requires_exact_live_set_and_snapshot():
 def test_target_profile_improvement_requires_valid_bound_approved_agent_artifact():
     engine = _create_cutover_db()
     with Session(engine) as db:
-        db.add(
-            AcquisitionProfile(
-                id=7,
-                profile_key="profile-seven",
-                company_name="Ark Hair",
-                products=["wigs"],
-                advantages=["quality"],
-                target_countries=["US"],
-                target_industries=["beauty"],
-                target_roles=["buyer"],
-                exclusions=[],
-                default_language="en",
-                status="active",
-                created_at=datetime(2026, 8, 1, 9, 0),
-                updated_at=datetime(2026, 8, 2, 9, 0),
-            )
-        )
+        _insert_legacy_target_profile(db)
         db.flush()
         snapshot = cutover_service.snapshot_target_profile_rows(db)[0]
         entry = _target_profile_policy_entry(snapshot)

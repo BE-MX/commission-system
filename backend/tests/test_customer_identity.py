@@ -854,6 +854,113 @@ def test_candidate_replay_cannot_downgrade_verified_identity_material(db):
     assert resolved.customer.profile_input_seq == before_seq
 
 
+def test_new_source_version_reuses_strong_identity_and_updates_direct_evidence(db):
+    resolved = resolve_business_context(
+        db,
+        source_system="okki",
+        source_account_key="tenant-versioned-identity",
+        source_entity_type="company",
+        external_context_id="company-versioned-identity",
+    )
+    first_source = append_source_record(
+        db,
+        customer_id=resolved.customer.id,
+        source_system="okki",
+        source_account_key="tenant-versioned-identity",
+        source_entity_type="customer",
+        external_record_id="company-version-1",
+        payload_schema_version="okki_customer_v1",
+        payload_json={"company_id": "VERSIONED-COMPANY", "version": 1},
+    )
+    first = attach_identity_candidate(
+        db,
+        customer_id=resolved.customer.id,
+        source_system="okki",
+        source_account_key="tenant-versioned-identity",
+        identifier_type="company_id",
+        raw_value="VERSIONED-COMPANY",
+        source_record_id=first_source.id,
+        verification_status="verified",
+        confidence=0.95,
+        is_primary=True,
+    )
+    first_fingerprint = first.identity_fingerprint
+    first_seen = first.last_seen_at
+    second_source = append_source_record(
+        db,
+        customer_id=resolved.customer.id,
+        source_system="okki",
+        source_account_key="tenant-versioned-identity",
+        source_entity_type="customer",
+        external_record_id="company-version-2",
+        payload_schema_version="okki_customer_v1",
+        payload_json={"company_id": "VERSIONED-COMPANY", "version": 2},
+    )
+    before_update_seq = resolved.customer.profile_input_seq
+    replay = attach_identity_candidate(
+        db,
+        customer_id=resolved.customer.id,
+        source_system="okki",
+        source_account_key="tenant-versioned-identity",
+        identifier_type="company_id",
+        raw_value="VERSIONED-COMPANY",
+        source_record_id=second_source.id,
+        verification_status="candidate",
+        confidence=0.1,
+        is_primary=False,
+    )
+
+    assert replay.id == first.id
+    assert db.query(CustomerExternalIdentity).count() == 1
+    assert replay.source_record_id == second_source.id
+    assert replay.identity_fingerprint != first_fingerprint
+    assert replay.last_seen_at >= first_seen
+    assert replay.verification_status == "verified"
+    assert float(replay.confidence) == pytest.approx(0.95)
+    assert replay.is_primary is True
+    assert resolved.customer.profile_input_seq == before_update_seq + 1
+
+
+def test_versioned_strong_identity_does_not_hide_cross_customer_conflict(db):
+    left = resolve_business_context(
+        db,
+        source_system="okki",
+        source_account_key="tenant-versioned-conflict",
+        source_entity_type="company",
+        external_context_id="left-context",
+    )
+    right = resolve_business_context(
+        db,
+        source_system="okki",
+        source_account_key="tenant-versioned-conflict",
+        source_entity_type="company",
+        external_context_id="right-context",
+    )
+    attach_identity_candidate(
+        db,
+        customer_id=left.customer.id,
+        source_system="okki",
+        source_account_key="tenant-versioned-conflict",
+        identifier_type="company_id",
+        raw_value="CONFLICTING-COMPANY",
+        verification_status="verified",
+    )
+
+    with pytest.raises(CustomerDomainError) as conflict:
+        attach_identity_candidate(
+            db,
+            customer_id=right.customer.id,
+            source_system="okki",
+            source_account_key="tenant-versioned-conflict",
+            identifier_type="company_id",
+            raw_value="CONFLICTING-COMPANY",
+            verification_status="verified",
+        )
+
+    assert conflict.value.error_code == "IDENTITY_RESOLUTION_CONFLICT"
+    assert db.query(CustomerExternalIdentity).count() == 1
+
+
 def test_resolved_context_lower_identity_ceiling_cannot_downgrade_verified_account(db):
     source = _alibaba_organization_source(
         db,

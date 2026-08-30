@@ -584,30 +584,60 @@ def _attach_identity_candidate(
         normalized_value,
         source_record_id or "direct",
     ))
-    existing = (
+    semantic_rows = (
         db.query(CustomerExternalIdentity)
-        .filter(CustomerExternalIdentity.identity_fingerprint == fingerprint)
-        .one_or_none()
+        .filter(
+            CustomerExternalIdentity.source_system == source_system,
+            CustomerExternalIdentity.source_account_key == source_account_key,
+            CustomerExternalIdentity.identifier_type == identifier_type,
+            CustomerExternalIdentity.normalized_value == normalized_value,
+            CustomerExternalIdentity.identity_strength == "strong",
+            CustomerExternalIdentity.cardinality == "one_to_one",
+            CustomerExternalIdentity.status == "active",
+        )
+        .with_for_update()
+        .all()
     )
+    same_subject_rows = [row for row in semantic_rows if (
+        row.customer_id == customer_id and row.contact_id == contact_id
+    )]
+    existing = same_subject_rows[0] if same_subject_rows else None
+    if verification_status == "verified" and any(
+        (row.customer_id != customer_id or row.contact_id != contact_id)
+        and row.verification_status == "verified"
+        for row in semantic_rows
+    ):
+        raise CustomerDomainError("IDENTITY_RESOLUTION_CONFLICT")
+    if len(same_subject_rows) > 1:
+        raise CustomerDomainError("IDENTITY_RESOLUTION_CONFLICT")
+    if existing is None:
+        existing = (
+            db.query(CustomerExternalIdentity)
+            .filter(CustomerExternalIdentity.identity_fingerprint == fingerprint)
+            .with_for_update()
+            .one_or_none()
+        )
     if existing is not None:
         changed = False
-        weaker_replay = (
-            existing.verification_status == "verified"
-            and verification_status == "candidate"
-        )
         if verification_status == "verified" and existing.verification_status == "candidate":
             existing.verification_status = "verified"
             existing.status = "active"
             existing.verified_at = now
             changed = True
-        if not weaker_replay and existing.confidence != confidence_value:
+        if confidence_value > existing.confidence:
             existing.confidence = confidence_value
             changed = True
-        if not weaker_replay and is_primary and not existing.is_primary:
+        if is_primary and not existing.is_primary:
             existing.is_primary = True
             changed = True
-        if changed:
+        if source_record_id is not None and existing.source_record_id != source_record_id:
+            existing.source_record_id = source_record_id
+            existing.identity_fingerprint = fingerprint
+            existing.raw_value = raw_value
+            changed = True
+        if changed and now > existing.last_seen_at:
             existing.last_seen_at = now
+        if changed:
             existing.updated_by = created_by
             existing.updated_at = now
             if bump_profile:

@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     FetchedValue,
+    Index,
     Integer,
     JSON,
     Numeric,
@@ -1039,11 +1040,163 @@ class CustomerTargetMatch(Base):
     computed_at = Column(DateTime, nullable=False, index=True, comment="匹配投影计算的北京时间")
 
 
+class SearchJob(Base):
+    __tablename__ = "ark_sales_search_jobs"
+    __table_args__ = (
+        CheckConstraint("target_count > 0", name="ck_customer_search_target_count"),
+        CheckConstraint(
+            "result_count >= 0 AND created_customer_count >= 0 AND "
+            "deduplicated_count >= 0 AND researched_count >= 0 AND "
+            "qualified_count >= 0 AND attempt_count >= 0",
+            name="ck_customer_search_nonnegative_counts",
+        ),
+        CheckConstraint(
+            "(cost_status = 'pending' AND cost_original IS NULL AND "
+            "cost_currency IS NULL AND cost_usd IS NULL) OR "
+            "(cost_status = 'confirmed' AND cost_original IS NOT NULL AND "
+            "cost_currency IS NOT NULL AND cost_usd IS NOT NULL) OR "
+            "(cost_status = 'not_applicable' AND cost_original = 0 AND cost_usd = 0)",
+            name="ck_customer_search_cost_state",
+        ),
+        UniqueConstraint(
+            "idempotency_key",
+            name="uq_ark_sales_search_jobs_idempotency_key",
+        ),
+        {"comment": "智能获客搜索任务、冻结目标画像、执行租约、幂等回执和结果统计表；不保存客户档案副本。"},
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="搜索任务ID")
+    job_run_id = Column(BigInteger, ForeignKey("ark_job_runs.id", name="fk_customer_search_job_run"), nullable=True, index=True, comment="本次搜索任务对应的全平台任务运行ID；仅手工草稿未执行时为空")
+    profile_id = Column(BigInteger, ForeignKey("ark_sales_target_profiles.id", name="fk_customer_search_profile"), nullable=False, index=True, comment="创建任务时使用的获客目标模型ID")
+    name = Column(String(255), nullable=False, comment="面向用户的搜索任务名称")
+    status = Column(String(16), nullable=False, index=True, comment="状态：pending、running、completed、failed、cancelled")
+    adapter = Column(String(64), nullable=False, index=True, comment="搜索执行器：agent、apollo、import或登记值")
+    target_count = Column(Integer, nullable=False, comment="目标候选客户数量，必须大于0")
+    criteria_json = Column(JSON, nullable=False, comment="search_criteria_v1：国家、行业、渠道、产品、规模和排除条件")
+    profile_snapshot = Column(JSON, nullable=False, comment="target_profile_snapshot_v1：模型版本、规则、阈值和创建时字段快照")
+    policy_version = Column(String(32), nullable=False, comment="搜索、去重、评分和背调触发策略版本")
+    profile_snapshot_hash = Column(String(64).with_variant(mysql.CHAR(64), "mysql"), nullable=False, comment="目标模型快照规范JSON的SHA-256")
+    idempotency_key = Column(String(64).with_variant(mysql.CHAR(64), "mysql"), nullable=False, comment="创建任务请求和目标模型快照生成的幂等键")
+    ingestion_receipts = Column(JSON, nullable=False, comment="Schema v1已接受批次request_key到计数和内容哈希的映射")
+    result_count = Column(Integer, nullable=False, comment="成功关联到任务的搜索结果数")
+    created_customer_count = Column(Integer, nullable=False, comment="本任务新建provisional客户数")
+    deduplicated_count = Column(Integer, nullable=False, comment="命中已有统一客户的结果数")
+    researched_count = Column(Integer, nullable=False, comment="已创建或复用背调任务的结果数")
+    qualified_count = Column(Integer, nullable=False, comment="在本任务作用范围内审核通过的客户数")
+    provider_usage_json = Column(JSON, nullable=False, comment="search_provider_usage_v1：供应商、请求数、记录数、计费单位、Agent Run ID和费用分项；无使用量为空数组")
+    cost_status = Column(String(16), nullable=False, index=True, comment="成本核验状态：pending、confirmed、not_applicable；pending时金额字段必须为空")
+    cost_original = Column(Numeric(15, 6), nullable=True, comment="本任务已确认外部搜索与Agent执行原币成本；not_applicable为0，pending为空")
+    cost_currency = Column(String(8), nullable=True, comment="cost_original的ISO币种代码；pending或not_applicable允许为空")
+    cost_usd = Column(Numeric(15, 6), nullable=True, comment="按入账日版本化汇率折算的美元成本；confirmed必填，not_applicable为0，pending为空且不得进入成本指标")
+    claimed_by = Column(String(128), nullable=True, comment="当前执行Agent或Worker稳定标识")
+    lease_token_hash = Column(String(64).with_variant(mysql.CHAR(64), "mysql"), nullable=True, comment="执行租约令牌SHA-256")
+    lease_expires_at = Column(DateTime, nullable=True, index=True, comment="执行租约到期的北京时间")
+    attempt_count = Column(Integer, nullable=False, comment="执行尝试次数")
+    error_code = Column(String(64), nullable=True, comment="最近失败的稳定错误码")
+    error_message = Column(String(1000), nullable=True, comment="最近失败的可行动脱敏说明")
+    started_at = Column(DateTime, nullable=True, comment="最近一次开始执行的北京时间")
+    finished_at = Column(DateTime, nullable=True, comment="到达当前终态的北京时间")
+    created_by = Column(USER_ID, ForeignKey("ark_users.id", name="fk_customer_search_created_by"), nullable=False, index=True, comment="创建任务的方舟用户ID")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="搜索任务创建的北京时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="搜索任务最后更新的北京时间")
+
+
+class SearchResult(Base):
+    __tablename__ = "ark_sales_search_results"
+    __table_args__ = (
+        CheckConstraint("best_rank IS NULL OR best_rank > 0", name="ck_customer_search_result_rank"),
+        CheckConstraint("best_score >= 0 AND best_score <= 100", name="ck_customer_search_result_score"),
+        ForeignKeyConstraint(
+            ["qualification_review_id", "customer_id"],
+            ["ark_customer_qualification_reviews.id", "ark_customer_qualification_reviews.customer_id"],
+            name="fk_customer_search_result_qualification",
+        ),
+        UniqueConstraint("job_id", "customer_id", name="uq_customer_search_result_job_customer"),
+        Index(
+            "ix_ark_sales_search_results_qualification_review_id_customer_id",
+            "qualification_review_id",
+            "customer_id",
+        ),
+        {"comment": "搜索任务发现统一客户的候选成员、聚合排名、匹配评分、处理状态和资格审核引用表；每个任务与客户唯一，不保存独立候选客户主档。"},
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="搜索结果ID")
+    job_id = Column(BigInteger, ForeignKey("ark_sales_search_jobs.id", ondelete="CASCADE", name="fk_customer_search_result_job"), nullable=False, index=True, comment="所属搜索任务ID")
+    customer_id = Column(BigInteger, ForeignKey("ark_customer_accounts.id", name="fk_customer_search_result_customer"), nullable=False, index=True, comment="解析或创建的统一客户ID")
+    best_rank = Column(Integer, nullable=True, index=True, comment="此客户在本任务全部来源中的最佳排名；供应商均未提供时为空")
+    best_score = Column(Numeric(5, 2), nullable=False, index=True, comment="此客户相对本任务冻结目标画像的当前最佳匹配分0至100")
+    aggregated_score_reasons = Column(JSON, nullable=False, comment="search_score_aggregate_v1：维度、权重、聚合分值、理由、证据事实ID和result_source_id")
+    result_status = Column(String(16), nullable=False, index=True, comment="状态：active、ignored、qualified、rejected")
+    qualification_review_id = Column(BigInteger, nullable=True, comment="最近一次与本搜索结果直接相关的资格审核ID")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="搜索结果创建的北京时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="搜索结果状态最后更新的北京时间")
+
+
+class SearchResultSource(Base):
+    __tablename__ = "ark_sales_search_result_sources"
+    __table_args__ = (
+        CheckConstraint("rank IS NULL OR rank > 0", name="ck_customer_search_source_rank"),
+        CheckConstraint("score >= 0 AND score <= 100", name="ck_customer_search_source_score"),
+        CheckConstraint("allocated_cost_usd >= 0", name="ck_customer_search_source_cost"),
+        UniqueConstraint(
+            "source_fingerprint",
+            name="uq_ark_sales_search_result_sources_source_fingerprint",
+        ),
+        {"comment": "搜索候选在不同批次、适配器和公开信源中的逐次发现证据、原始排名、评分和分摊成本表；多条来源汇总到唯一搜索候选。"},
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="搜索候选来源ID")
+    result_id = Column(BigInteger, ForeignKey("ark_sales_search_results.id", ondelete="CASCADE", name="fk_customer_search_source_result"), nullable=False, index=True, comment="所属唯一搜索候选ID")
+    request_key = Column(String(64), nullable=False, index=True, comment="Agent或适配器提交本批结果的幂等键")
+    source_record_id = Column(BigInteger, ForeignKey("ark_customer_source_records.id", name="fk_customer_search_source_record"), nullable=False, index=True, comment="发现该候选的不可变原始信源版本ID")
+    source_provider = Column(String(64), nullable=False, index=True, comment="搜索适配器、外部供应商或受控Agent名称")
+    source_url = Column(String(2048), nullable=True, comment="发现候选的公开证据URL；无URL的结构化供应商记录为空")
+    captured_at = Column(DateTime, nullable=False, index=True, comment="采集此候选信源的北京时间")
+    rank = Column(Integer, nullable=True, index=True, comment="候选在本次请求或供应商结果中的原始排名；未提供时为空")
+    score = Column(Numeric(5, 2), nullable=False, index=True, comment="此来源相对任务冻结画像的匹配分0至100")
+    score_reasons = Column(JSON, nullable=False, comment="search_source_score_v1：维度、分值、理由和证据事实ID")
+    allocated_cost_usd = Column(Numeric(15, 6), nullable=False, comment="按任务费用和供应商用量分摊到本来源的美元成本；无费用为0")
+    source_fingerprint = Column(String(64).with_variant(mysql.CHAR(64), "mysql"), nullable=False, comment="result_id、request_key、source_provider、source_record内容哈希和评分规则版本生成的SHA-256")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="候选来源写入方舟的北京时间")
+
+
+class PublicPoolBatch(Base):
+    __tablename__ = "ark_sales_public_pool_batches"
+    __table_args__ = (
+        UniqueConstraint(
+            "idempotency_key",
+            name="uq_ark_sales_public_pool_batches_idempotency_key",
+        ),
+        {"comment": "公海客户分档抽样批次和冻结策略表；批次只选择统一customer_id并创建research_tasks，不拥有客户副本。"},
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="公海研究批次ID")
+    batch_date = Column(Date, nullable=False, index=True, comment="批次业务日期")
+    policy_version = Column(String(32), nullable=False, comment="T1/T2/T3、配额、冷却和选取规则版本")
+    status = Column(String(16), nullable=False, index=True, comment="状态：pending、running、completed、failed、cancelled")
+    quotas_json = Column(JSON, nullable=False, comment="public_pool_quotas_v1：各档目标数、团队范围和总上限")
+    selection_snapshot = Column(JSON, nullable=False, comment="public_pool_selection_v1：候选计数、过滤原因、输入水位和策略哈希")
+    result_counts = Column(JSON, nullable=False, comment="public_pool_counts_v1：selected、created、reused、skipped、failed按档统计")
+    idempotency_key = Column(String(64).with_variant(mysql.CHAR(64), "mysql"), nullable=False, comment="批次日期、策略版本、团队范围和输入水位生成的幂等键")
+    started_at = Column(DateTime, nullable=True, comment="批次开始生成的北京时间")
+    finished_at = Column(DateTime, nullable=True, comment="批次到达当前终态的北京时间")
+    error_code = Column(String(64), nullable=True, comment="批次失败稳定错误码")
+    error_message = Column(String(1000), nullable=True, comment="批次失败可行动脱敏说明")
+    created_by = Column(USER_ID, ForeignKey("ark_users.id", name="fk_customer_pool_batch_created_by"), nullable=True, index=True, comment="手工创建批次的方舟用户ID；系统批次允许为空但必须有service principal运行记录")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="公海批次创建的北京时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="公海批次最后更新的北京时间")
+
+
 class CustomerAcquisitionAttribution(Base):
     __tablename__ = "ark_customer_acquisition_attributions"
     __table_args__ = (
         CheckConstraint("attribution_weight >= 0 AND attribution_weight <= 1", name="ck_customer_attribution_weight"),
         CheckConstraint("allocated_cost_usd >= 0", name="ck_customer_attribution_cost"),
+        ForeignKeyConstraint(
+            ["search_job_id"],
+            ["ark_sales_search_jobs.id"],
+            name="fk_customer_attribution_search_job",
+        ),
         ForeignKeyConstraint(
             ["research_task_id", "customer_id"],
             ["ark_customer_research_tasks.id", "ark_customer_research_tasks.customer_id"],
@@ -1067,7 +1220,6 @@ class CustomerAcquisitionAttribution(Base):
     origin_type = Column(String(24), nullable=False, index=True, comment="首始来源：search、public_pool、alibaba_inquiry、okki、manual")
     origin_ref_type = Column(String(32), nullable=False, comment="首始来源对象：search_result、public_pool_batch、source_record、manual")
     origin_ref_id = Column(BigInteger, nullable=False, index=True, comment="首始来源方舟对象ID")
-    # Deferred workflow reference: Task 6 adds the FK atomically with its model.
     search_job_id = Column(BigInteger, nullable=True, index=True, comment="归因关联搜索任务ID")
     research_task_id = Column(BigInteger, nullable=True, comment="归因关联研究任务ID")
     qualification_review_id = Column(BigInteger, nullable=True, comment="归因关联资格审核ID")
@@ -1120,6 +1272,16 @@ CORE_MODELS = (
 CORE_TABLE_NAMES = tuple(model.__tablename__ for model in CORE_MODELS)
 CORE_TABLES = {model.__tablename__: model.__table__ for model in CORE_MODELS}
 
+ACQUISITION_WORKFLOW_MODELS = (
+    SearchJob,
+    SearchResult,
+    SearchResultSource,
+    PublicPoolBatch,
+)
+ACQUISITION_WORKFLOW_TABLES = {
+    model.__tablename__: model.__table__ for model in ACQUISITION_WORKFLOW_MODELS
+}
+
 
 def _reject_generated_slot_assignment(_target, _value, _oldvalue, initiator):
     raise ValueError(f"{initiator.key} is database-generated and read-only")
@@ -1148,7 +1310,10 @@ _configure_generated_slots()
 
 __all__ = [
     *(model.__name__ for model in CORE_MODELS),
+    *(model.__name__ for model in ACQUISITION_WORKFLOW_MODELS),
     "CORE_MODELS",
     "CORE_TABLE_NAMES",
     "CORE_TABLES",
+    "ACQUISITION_WORKFLOW_MODELS",
+    "ACQUISITION_WORKFLOW_TABLES",
 ]

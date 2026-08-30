@@ -257,12 +257,13 @@ def register_agent_tools(mcp) -> None:
             return _ok({
                 "job": {
                     "id": row.id, "name": row.name, "status": row.status,
-                    "target_count": row.target_count, "criteria": row.criteria or {},
+                    "target_count": row.target_count,
+                    "criteria_json": row.criteria_json or {},
                 },
                 "profile": row.profile_snapshot or {},
                 "output_contract": {
-                    "identity": "normalized company website domain",
-                    "required_fields": ["name", "website", "source_url", "captured_at", "tool_call_id"],
-                    "forbidden": ["invented company", "unsourced claim", "personal email guess"],
+                    "identifier": "customer_id",
+                    "source_record_first": True,
+                    "company_name_nullable": True,
                 },
             })

@@ -40,6 +40,46 @@ def _digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def _target_profile(**values) -> AcquisitionProfile:
+    """Build a post-cutover target profile with an explicit valid policy."""
+    values.setdefault("policy_version", "test-policy-v1")
+    values.setdefault(
+        "policy_json",
+        {
+            "schema_version": "target_profile_policy_v1",
+            "thresholds": {
+                "research_threshold": 70,
+                "qualification_threshold": 80,
+                "tier_1_min_score": 90,
+                "tier_2_min_score": 75,
+                "tier_3_min_score": 60,
+            },
+            "weights": {"industry_fit": 0.6, "country_fit": 0.4},
+            "research_rules": {
+                "minimum_independent_sources": 2,
+                "evidence_freshness_days": 90,
+                "auto_research_enabled": True,
+                "gate_required": True,
+            },
+            "claim_rules": {
+                "cooldown_days": 30,
+                "requires_qualification": True,
+                "per_user_quota": 20,
+                "per_team_quota": 100,
+                "block_identity_conflict": True,
+                "block_do_not_contact": True,
+            },
+        },
+    )
+    values.setdefault(
+        "policy_snapshot_hash",
+        _digest(f"target-profile-policy|{values['profile_key']}"),
+    )
+    values.setdefault("last_improvement_artifact_id", None)
+    values.setdefault("policy_applied_at", beijing_now())
+    return AcquisitionProfile(**values)
+
+
 def _customer(db, suffix: str, *, input_seq: int = 1) -> CustomerAccount:
     now = beijing_now()
     row = CustomerAccount(
@@ -140,7 +180,7 @@ def test_public_compile_api_owns_fresh_sessions_and_transactions(db):
     customer = _customer(db, "factory-api")
     customer_id = customer.id
     db.commit()
-    caller_pending = AcquisitionProfile(
+    caller_pending = _target_profile(
         profile_key="caller-pending",
         company_name="Pending",
         products=[],
@@ -344,7 +384,7 @@ def test_no_change_profile_rebuilds_target_match_when_target_policy_changes(db):
         value="Hair extensions",
         layer="source",
     )
-    target = AcquisitionProfile(
+    target = _target_profile(
         profile_key="policy-change",
         company_name="LeShine",
         products=[],
@@ -781,7 +821,7 @@ def test_list_and_target_match_do_not_materialize_restricted_fact_values(db):
         classification="restricted_internal",
         visibility="management",
     )
-    target = AcquisitionProfile(
+    target = _target_profile(
         profile_key="secret-vertical",
         company_name="LeShine",
         products=[],
@@ -874,7 +914,7 @@ def test_target_match_is_built_for_each_active_profile_from_published_version(db
         value="Hair extensions",
         layer="source",
     )
-    active = AcquisitionProfile(
+    active = _target_profile(
         profile_key="hair-us",
         company_name="LeShine",
         products=["Wigs"],
@@ -885,7 +925,7 @@ def test_target_match_is_built_for_each_active_profile_from_published_version(db
         exclusions=[],
         status="active",
     )
-    inactive = AcquisitionProfile(
+    inactive = _target_profile(
         profile_key="inactive",
         company_name="LeShine",
         products=[],
@@ -932,7 +972,7 @@ def test_target_match_product_evidence_excludes_unrelated_restricted_preferences
         visibility="management",
         fingerprint_suffix="restricted-color",
     )
-    target = AcquisitionProfile(
+    target = _target_profile(
         profile_key="wigs-secure",
         company_name="LeShine",
         products=["Wigs"],
@@ -967,7 +1007,7 @@ def test_candidate_fact_can_score_but_cannot_auto_qualify_target_match(db):
         layer="source",
         status="candidate",
     )
-    target = AcquisitionProfile(
+    target = _target_profile(
         profile_key="candidate-ceiling",
         company_name="LeShine",
         products=[],
@@ -1017,7 +1057,7 @@ def test_private_annotation_and_unknown_visibility_fail_closed_in_projections(db
         status="active",
         authored_by=987654,
     ))
-    target = AcquisitionProfile(
+    target = _target_profile(
         profile_key="private-fail-closed",
         company_name="LeShine",
         products=[],
@@ -1645,7 +1685,7 @@ def test_restricted_inputs_do_not_change_public_quality_or_engagement_aggregates
 
 def test_target_match_projection_select_count_is_constant_with_target_count(db):
     def add_target(index: int):
-        db.add(AcquisitionProfile(
+        db.add(_target_profile(
             profile_key=f"query-count-{index}",
             company_name="LeShine",
             products=[],

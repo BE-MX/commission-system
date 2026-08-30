@@ -1,74 +1,48 @@
-"""OKKI 公海客户只读审计、分档抽样、Agent 背调与机会投影。"""
+"""Customer-id public-pool research and qualification services."""
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+from decimal import Decimal
 import hashlib
 import json
-import logging
-import random
 import secrets
-from datetime import date, datetime, time, timedelta
-from app.core.time import beijing_now, beijing_today, to_beijing_naive, utc_now_naive
-from decimal import Decimal
-from typing import Any
+from typing import Any, Mapping
 
-from sqlalchemy import and_, bindparam, func, inspect, or_, text
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy import and_, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from pydantic import ValidationError
 
-from app.core.config import get_settings
-from app.core.database import SessionLocal
-from app.insight.models import CustomerOpportunity
-from app.insight.customer_profile_service import ingest_opportunity_event
-from app.sales_automation.identity import normalize_domain, normalize_source_url
-from app.sales_automation.models import (
-    DealAssessment,
-    LeadContact,
-    LeadCompany,
+from app.agent_runtime.models import AgentEvent, AgentRun
+from app.auth.models import ArkUser
+from app.core.time import beijing_now, beijing_today, to_beijing_naive
+from app.customer.models import (
+    CustomerAccount,
+    CustomerAnnotation,
+    CustomerAssignment,
+    CustomerFact,
+    CustomerQualificationReview,
+    CustomerResearchTask,
+    CustomerSuppressionRegistry,
+    CustomerTargetMatch,
     PublicPoolBatch,
-    PublicPoolTask,
-    ResearchFact,
-    ResearchRun,
-    ResearchSubject,
+    SearchJob,
+    SearchResult,
 )
-from app.sales_automation.schemas import PublicPoolProfileConditions
-from app.sales_automation.service import ConflictError, NotFoundError, SalesAutomationError
+from app.sales_automation import service
+from app.sales_automation.schemas import CustomerResearchResult
 
 
-logger = logging.getLogger("commission.sales_public_pool")
-
-TIERS = ("T1", "T2", "T3")
 LEASE_MINUTES = 15
-DEFAULT_COOLDOWN_DAYS = 180
-REACTIVATION_INACTIVE_DAYS = 60
-HIGH_SCORE_RESEARCH_THRESHOLD = 70
-PUBLIC_POOL_EXECUTION_LOCK_NAME = "ark:public_pool_batch_execution"
-PUBLIC_POOL_EXECUTION_LOCK_WAIT_SECONDS = 600
-FREE_EMAIL_DOMAINS = {
-    "gmail.com", "googlemail.com", "hotmail.com", "outlook.com", "live.com",
-    "yahoo.com", "ymail.com", "icloud.com", "me.com", "aol.com", "qq.com",
-    "163.com", "126.com", "sina.com", "foxmail.com", "mail.ru", "proton.me",
-    "protonmail.com", "gmx.com", "gmx.de", "yandex.com", "yandex.ru",
-}
-WEBSITE_COLUMNS = ("website", "company_website", "web_site", "homepage", "company_url")
-ADDRESS_COLUMNS = ("address",)
-LOCALITY_COLUMN_GROUPS = {
-    "city": ("city", "city_name"),
-    "region": ("region", "region_name", "state", "state_name", "province", "province_name"),
-}
-
-
-def _valid_order_sql(alias: str) -> str:
-    return (
-        f"(({alias}.status = '13972831656' OR "
-        f"({alias}.status = '13972831654' AND {alias}.status_name = '已结清')) "
-        f"AND ({alias}.trail IS NULL OR CAST({alias}.trail AS CHAR) NOT LIKE '%个人%'))"
-    )
-
-
-def _now() -> datetime:
-    """业务字段的北京时间；租约比较必须显式使用 UTC。"""
-    return beijing_now()
+ACTIVE_TASK_STATUSES = ("pending", "running")
+CLASSIFICATION_ORDER = (
+    "public_business",
+    "internal_business",
+    "personal_contact",
+    "restricted_internal",
+)
+VISIBILITY_ORDER = ("all_authorized", "customer_team", "management")
 
 
 def _data(value: Any) -> dict:
@@ -77,1440 +51,757 @@ def _data(value: Any) -> dict:
     return dict(value)
 
 
-def _hash(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
-
-
-def _json_safe(value: Any) -> Any:
-    if isinstance(value, (datetime, date)):
+def _json_value(value: Any) -> Any:
+    if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, Decimal):
-        return float(value)
-    if isinstance(value, dict):
-        return {str(key): _json_safe(item) for key, item in value.items()}
+        return format(value, "f")
+    if isinstance(value, Mapping):
+        return {str(key): _json_value(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
-        return [_json_safe(item) for item in value]
+        return [_json_value(item) for item in value]
     return value
 
 
-def _snapshot_hash(snapshot: dict) -> str:
-    payload = json.dumps(_json_safe(snapshot), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return _hash(payload)
+def _canonical_json(value: Any) -> str:
+    return json.dumps(_json_value(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-def normalize_profile_conditions(value: Any) -> dict:
-    """Validate and canonicalize one batch's deterministic public-pool profile."""
-    if value is None:
-        return {}
-    validated = PublicPoolProfileConditions.model_validate(value)
-    return _json_safe(validated.model_dump(mode="python"))
+def _hash(value: Any) -> str:
+    source = value if isinstance(value, str) else _canonical_json(value)
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+
+def research_input_hash(task: CustomerResearchTask) -> str:
+    return _hash({
+        "schema_version": "research_execution_input_v1",
+        "task_fingerprint": task.task_fingerprint,
+        "lease_generation": int(task.lease_generation),
+        "input_snapshot": task.input_snapshot or {},
+    })
+
+
+def _scope_filter(model, scope_type: str, scope_ref_id: str | None):
+    return and_(
+        model.scope_type == scope_type,
+        model.scope_ref_id.is_(None) if scope_ref_id is None else model.scope_ref_id == scope_ref_id,
+    )
+
+
+def _require_active_user(db: Session, user_id: int) -> ArkUser:
+    row = db.query(ArkUser).filter(
+        ArkUser.id == user_id,
+        ArkUser.is_active.is_(True),
+        ArkUser.deleted_at.is_(None),
+    ).one_or_none()
+    if row is None:
+        raise service.ConflictError("审核用户不存在或已停用")
+    return row
 
 
 def default_profile_conditions() -> dict:
-    """Default manual/scheduled profile matching the sales team's current target."""
-    return normalize_profile_conditions(PublicPoolProfileConditions())
-
-
-def _as_datetime(value: Any) -> datetime | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return to_beijing_naive(value)
-    if isinstance(value, date):
-        return datetime.combine(value, time.min)
-    if isinstance(value, str):
-        try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            return to_beijing_naive(parsed)
-        except ValueError:
-            return None
-    return None
-
-
-def email_domain_type(value: Any) -> str:
-    email = str(value or "").split(",", 1)[0].strip().lower()
-    if "@" not in email:
-        return "unknown"
-    domain = email.rsplit("@", 1)[1].strip(" .")
-    if not domain or "." not in domain:
-        return "unknown"
-    return "free" if domain in FREE_EMAIL_DOMAINS else "corporate"
-
-
-def address_search_hint(address: Any, city: Any = None, region: Any = None) -> str | None:
-    """Use only explicitly structured locality fields; never parse free-text streets."""
-    if not str(address or "").strip():
-        return None
-    structured = {}
-    raw = str(address).strip()
-    if raw.startswith("{") and len(raw) <= 2000:
-        try:
-            value = json.loads(raw)
-            if isinstance(value, dict):
-                structured = value
-        except (json.JSONDecodeError, TypeError):
-            pass
-    values = [
-        city or structured.get("city") or structured.get("city_name"),
-        region or structured.get("region") or structured.get("state") or structured.get("province"),
-    ]
-    safe = []
-    for value in values:
-        text_value = " ".join(str(value or "").split()).strip(" .,-")
-        if not (2 <= len(text_value) <= 80) or any(char.isdigit() for char in text_value):
-            continue
-        if any(marker in text_value for marker in ("@", "/", "\\", ":", "+")):
-            continue
-        safe.append(text_value)
-    return ", ".join(dict.fromkeys(safe))[:160] or None
-
-
-def compute_deal_scores(
-    components: dict,
-    identity_decision: str,
-    unique_source_count: int,
-    qualification_coverage: float | None = None,
-) -> dict:
-    positive = sum(float(components.get(key) or 0) for key in (
-        "industry_fit", "pain_switch_trigger", "intent_reactivation",
-        "buying_capacity", "reachability", "timing",
-    ))
-    deal_score = max(0.0, min(100.0, positive - float(components.get("risk_penalty") or 0)))
-    business_quality = min(100.0, round(
-        float(components.get("industry_fit") or 0) / 25 * 45
-        + float(components.get("buying_capacity") or 0) / 15 * 35
-        + float(components.get("pain_switch_trigger") or 0) / 20 * 20,
-        2,
-    ))
-    confidence_factor = {
-        "confirmed": 1.0,
-        "candidate": 0.65,
-        "unverifiable": 0.25,
-        "rejected": 0.0,
-    }[identity_decision]
-    priority_score = round(deal_score * confidence_factor, 2)
-    if identity_decision == "confirmed" and unique_source_count >= 2:
-        evidence_confidence = "high"
-    elif identity_decision in {"confirmed", "candidate"} and unique_source_count >= 1:
-        evidence_confidence = "medium"
-    else:
-        evidence_confidence = "low"
-    if priority_score >= 75:
-        grade, likelihood = "A", "high"
-    elif priority_score >= 55:
-        grade, likelihood = "B", "medium"
-    elif priority_score >= 35:
-        grade, likelihood = "C", "medium"
-    else:
-        grade, likelihood = "D", "low"
-    # High model scores cannot outrun evidence coverage. A requires both two
-    # independent public sources and at least 60% of weighted qualification dimensions.
-    if grade == "A" and (evidence_confidence != "high" or (qualification_coverage is not None and qualification_coverage < 60)):
-        grade, likelihood = "B", "medium"
-    if grade in {"A", "B"} and qualification_coverage is not None and qualification_coverage < 35:
-        grade, likelihood = "C", "medium"
+    """Stable default passed by the scheduler; values live in a policy snapshot."""
     return {
-        "grade": grade,
-        "deal_likelihood": likelihood,
-        "evidence_confidence": evidence_confidence,
-        "business_quality_score": business_quality,
-        "deal_score": round(deal_score, 2),
-        "priority_score": priority_score,
+        "schema_version": "public_pool_selection_v1",
+        "identity_statuses": ["identified", "verified"],
+        "record_status": "active",
+        "require_unassigned": True,
     }
 
 
-def _enforce_industry_gate(data: dict, components: dict) -> tuple[dict, dict]:
-    """Keep an irrelevant lead from receiving invented commercial value downstream."""
-    if data.get("industry_relevance") != "irrelevant":
-        return data, components
-    gated = dict(data)
-    gated["contacts"] = []
-    gated["outreach_angles"] = []
-    gated["risks"] = []
-    gated["pain_points"] = []
-    gated["product_fit"] = []
-    gated["social_profiles"] = []
-    gated["supplier_status"] = "unknown"
-    gated["opening_message_en"] = None
-    gated["outreach_type"] = "no_outreach"
-    gated["research_depth"] = "gate_only"
-    profile = dict(gated.get("commercial_profile") or {})
-    profile.pop("qualification_dimensions", None)
-    profile["positive_signals"] = []
-    profile["negative_signals"] = []
-    profile["next_validation_questions"] = []
-    gated["commercial_profile"] = profile
-    zeroed = dict(components)
-    for key in (
-        "industry_fit", "pain_switch_trigger", "intent_reactivation",
-        "buying_capacity", "reachability", "timing",
-    ):
-        zeroed[key] = 0
-    return gated, zeroed
-
-
-def _normalized_research_submission(payload: Any) -> tuple[dict, dict, str]:
-    data = _data(payload)
-    components = _data(data.get("score_components") or {})
-    data, components = _enforce_industry_gate(data, components)
-    data["score_components"] = components
-    submission = _json_safe({
-        key: value for key, value in data.items()
-        if key not in {"agent_id", "lease_token", "idempotency_key"}
-    })
-    return data, components, _snapshot_hash(submission)
-
-
-def get_idempotent_completed_research(
+def is_development_denied(
     db: Session,
-    task_id: int,
-    payload: Any,
-    actor_id: int,
-) -> tuple[PublicPoolTask, DealAssessment] | None:
-    """Allow an identical retry after response loss, lease expiry, or a knowledge revision change."""
-    raw = _data(payload)
-    data, _components, submission_hash = _normalized_research_submission(payload)
-    task = get_task(db, task_id)
-    if task.status != "completed":
-        return None
-    existing = db.query(DealAssessment).filter(DealAssessment.task_id == task.id).first()
-    if existing is None:
-        raise ConflictError("已完成任务缺少成交研判")
-    if task.claimed_by != _claim_owner(actor_id, raw.get("agent_id")):
-        raise ConflictError("已完成任务不属于当前Agent")
-    if (existing.evidence_snapshot or {}).get("submission_hash") != submission_hash:
-        raise ConflictError("已完成任务不能用不同内容覆盖")
-    return task, existing
-
-
-def submit_industry_gate(
-    db: Session,
-    task_id: int,
-    payload: Any,
-    actor_id: int,
-) -> tuple[PublicPoolTask, bool]:
-    """Persist the low-cost gate and decide whether expensive research may continue."""
-    data = _data(payload)
-    task = _leased_task(db, task_id, actor_id, data.get("agent_id"), data.get("lease_token"))
-    if task.status != "running":
-        raise ConflictError("只有执行中的任务可以提交行业门控")
-    snapshot = _json_safe({key: value for key, value in data.items() if key != "lease_token"})
-    snapshot_hash = _snapshot_hash(snapshot)
-    existing = task.gate_snapshot or {}
-    if task.gate_status in {"passed", "stopped"}:
-        if existing.get("submission_hash") != snapshot_hash:
-            raise ConflictError("行业门控已提交，不能用不同内容覆盖")
-        return task, task.gate_status == "passed"
-    can_deepen = (
-        data.get("industry_relevance") != "irrelevant"
-        and data.get("identity_decision") != "rejected"
-    )
-    task.gate_status = "passed" if can_deepen else "stopped"
-    task.gate_snapshot = {**snapshot, "submission_hash": snapshot_hash, "deep_research_authorized": can_deepen}
-    task.research_summary = data.get("summary")
-    task.updated_by = actor_id
-    if not can_deepen:
-        gated = {
-            **data,
-            "facts": data.get("facts") or [],
-            "contacts": [],
-            "outreach_angles": [],
-            "risks": [],
-            "score_components": {"risk_penalty": 0, "reasons": {"industry_fit": data.get("industry_relevance_reason") or "行业门控停止"}},
-            "supplier_status": "unknown",
-            "pain_points": [],
-            "product_fit": [],
-            "research_depth": "gate_only",
-            "social_profiles": [],
-            "commercial_profile": {"customer_type": "other"},
-            "recommended_strategy": "停止销售开发；如后续出现相反证据，再由人工重新评估。",
-            "outreach_type": "no_outreach",
-            "opening_message_en": None,
-            "idempotency_key": f"public-pool-gate-{task.id}",
-        }
-        complete_task_research(db, task.id, gated, actor_id, allow_stopped_gate=True)
-        db.refresh(task)
-        return task, False
-    db.commit()
-    db.refresh(task)
-    return task, True
-
-
-QUALIFICATION_WEIGHTS = {
-    "authenticity_maturity": 0.12,
-    "purchase_potential": 0.18,
-    "demand_readiness": 0.12,
-    "industry_professionalism": 0.10,
-    "product_market_fit": 0.10,
-    "growth_brand_potential": 0.10,
-    "decision_authority": 0.08,
-    "transaction_compliance": 0.08,
-    "engagement_momentum": 0.07,
-    "strategic_value": 0.05,
-}
-
-
-def _qualification_summary(commercial_profile: dict) -> dict:
-    profile = dict(commercial_profile or {})
-    dimensions = profile.get("qualification_dimensions") or {}
-    weighted_points = 0.0
-    covered_weight = 0.0
-    for key, weight in QUALIFICATION_WEIGHTS.items():
-        score = (dimensions.get(key) or {}).get("score")
-        if score is None:
-            continue
-        weighted_points += weight * float(score) / 5
-        covered_weight += weight
-    profile["qualification_score"] = (
-        round(weighted_points / covered_weight * 100, 2) if covered_weight else None
-    )
-    profile["qualification_coverage"] = round(covered_weight * 100, 2)
-    return profile
-
-
-class BusinessPoolGateway:
-    """读取 lsordertest 的薄网关；绝不执行写语句。"""
-
-    def __init__(self, db: Session):
-        self.db = db
-        self.settings = get_settings()
-        self.schema = self.settings.BUSINESS_DB_NAME
-        self.customer_columns = set() if self.db.get_bind().dialect.name == "sqlite" else self._customer_columns()
-        self.website_column = next((name for name in WEBSITE_COLUMNS if name in self.customer_columns), None)
-        self.address_column = next((name for name in ADDRESS_COLUMNS if name in self.customer_columns), None)
-        self.locality_columns = {
-            key: next((name for name in names if name in self.customer_columns), None)
-            for key, names in LOCALITY_COLUMN_GROUPS.items()
-        }
-
-    def _customer_columns(self) -> set[str]:
-        try:
-            return {
-                str(item["name"]).lower()
-                for item in inspect(self.db.get_bind()).get_columns("customer_info", schema=self.schema)
-            }
-        except SQLAlchemyError as exc:
-            logger.warning("public pool customer capability inspection failed: %s", type(exc).__name__)
-            print("public pool customer capability inspection failed", flush=True)
-            return set()
-
-    @property
-    def _website_expr(self) -> str:
-        return f"NULLIF(TRIM(ci.`{self.website_column}`), '')" if self.website_column else "NULL"
-
-    @property
-    def _website_domain_expr(self) -> str:
-        raw = self._website_expr
-        authority = (
-            f"SUBSTRING_INDEX(CASE WHEN LOCATE('://', {raw}) > 0 "
-            f"THEN SUBSTRING_INDEX({raw}, '://', -1) ELSE {raw} END, '/', 1)"
-        )
-        host = (
-            "LOWER(TRIM(TRAILING '.' FROM SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX("
-            f"{authority}, '?', 1), '#', 1), ':', 1)))"
-        )
-        return f"CASE WHEN {host} LIKE 'www.%' THEN SUBSTRING({host}, 5) ELSE {host} END"
-
-    @property
-    def _address_expr(self) -> str:
-        return f"NULLIF(TRIM(ci.`{self.address_column}`), '')" if self.address_column else "NULL"
-
-    def _locality_expr(self, key: str) -> str:
-        column = self.locality_columns.get(key)
-        return f"NULLIF(TRIM(ci.`{column}`), '')" if column else "NULL"
-
-    @property
-    def _contact_cte(self) -> str:
-        free_domains = ",".join(f"'{domain}'" for domain in sorted(FREE_EMAIL_DOMAINS))
-        return f"""
-        contact_rollup AS (
-            SELECT
-                cc.company_id,
-                MAX(NULLIF(TRIM(cc.email), '')) AS contact_email,
-                MAX(NULLIF(TRIM(cc.tel), '')) AS contact_phone,
-                MAX(NULLIF(TRIM(cc.name), '')) AS contact_name,
-                MAX(CASE
-                    WHEN cc.email LIKE '%@%'
-                     AND LOWER(SUBSTRING_INDEX(SUBSTRING_INDEX(cc.email, ',', 1), '@', -1)) NOT IN ({free_domains})
-                    THEN 1 ELSE 0 END) AS has_corporate_contact_email,
-                MAX(CASE WHEN LOWER(COALESCE(ccs.platform, '')) LIKE '%whatsapp%' AND NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_whatsapp,
-                MAX(CASE WHEN LOWER(COALESCE(ccs.platform, '')) REGEXP 'instagram|(^|[^a-z])ins([^a-z]|$)' AND NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_instagram,
-                MAX(CASE WHEN LOWER(COALESCE(ccs.platform, '')) REGEXP 'facebook|(^|[^a-z])fb([^a-z]|$)' AND NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_facebook,
-                MAX(CASE WHEN LOWER(COALESCE(ccs.platform, '')) NOT LIKE '%whatsapp%' AND NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_business_social,
-                GROUP_CONCAT(DISTINCT CASE WHEN NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN CONCAT(COALESCE(ccs.platform, 'social'), ':', ccs.value) END ORDER BY ccs.id SEPARATOR ' | ') AS social_summary
-            FROM `{self.schema}`.customer_contacts cc
-            LEFT JOIN `{self.schema}`.customer_contact_socials ccs
-              ON BINARY ccs.customer_id = BINARY cc.customer_id
-            GROUP BY cc.company_id
+    customer_id: int,
+    scope_type: str = "global",
+    scope_ref_id: str | None = None,
+) -> bool:
+    now = beijing_now()
+    annotation = db.query(CustomerAnnotation.id).filter(
+        CustomerAnnotation.customer_id == customer_id,
+        CustomerAnnotation.annotation_type == "do_not_contact",
+        CustomerAnnotation.status == "active",
+        CustomerAnnotation.policy_effective_at <= now,
+        or_(
+            CustomerAnnotation.policy_scope_type == "global",
+            and_(
+                CustomerAnnotation.policy_scope_type == scope_type,
+                CustomerAnnotation.policy_scope_ref_id.is_(None)
+                if scope_ref_id is None
+                else CustomerAnnotation.policy_scope_ref_id == scope_ref_id,
+            ),
         ),
-        order_rollup AS (
-            SELECT orders.company_id, COUNT(*) AS order_count,
-                   COALESCE(SUM(orders.amount_usd), 0) AS order_amount_usd,
-                   MAX(orders.account_date) AS last_order_at
-            FROM `{self.schema}`.okki_orders orders
-            GROUP BY orders.company_id
-        )
-        """
-
-    @property
-    def _profile_order_cte(self) -> str:
-        """Extra valid-order aggregation used only by profile-filtered batches."""
-        valid_order = _valid_order_sql("profile_source_order")
-        return f"""
-        profile_order_rollup AS (
-            SELECT profile_source_order.company_id,
-                   SUM(CASE WHEN {valid_order} THEN 1 ELSE 0 END) AS qualifying_order_count,
-                   COALESCE(SUM(CASE WHEN {valid_order} THEN profile_source_order.amount_usd ELSE 0 END), 0) AS qualifying_order_amount_usd,
-                   COALESCE(MAX(CASE WHEN {valid_order} THEN profile_source_order.amount_usd END), 0) AS qualifying_max_order_amount_usd,
-                   SUM(CASE WHEN {valid_order} AND (LOWER(COALESCE(profile_source_order.name, '')) LIKE '%sample%' OR COALESCE(profile_source_order.name, '') REGEXP '样品|样单') THEN 1 ELSE 0 END) AS qualifying_sample_order_count,
-                   SUM(CASE WHEN {valid_order} AND NOT (LOWER(COALESCE(profile_source_order.name, '')) LIKE '%sample%' OR COALESCE(profile_source_order.name, '') REGEXP '样品|样单') THEN 1 ELSE 0 END) AS qualifying_non_sample_order_count,
-                   MAX(CASE WHEN {valid_order} THEN profile_source_order.account_date END) AS qualifying_last_order_at
-            FROM `{self.schema}`.okki_orders profile_source_order
-            GROUP BY profile_source_order.company_id
-        )
-        """
-
-    @property
-    def _feature_sql(self) -> str:
-        free_domains = ",".join(f"'{domain}'" for domain in sorted(FREE_EMAIL_DOMAINS))
-        return f"""
-            COALESCE(o.order_count, 0) AS order_count,
-            COALESCE(o.order_amount_usd, 0) AS order_amount_usd,
-            o.last_order_at,
-            COALESCE(cr.contact_email, NULLIF(TRIM(ci.email), '')) AS primary_email,
-            cr.contact_phone AS primary_phone,
-            cr.contact_name,
-            cr.social_summary,
-            {self._website_expr} AS website,
-            {self._address_expr} AS customer_address,
-            {self._locality_expr("city")} AS customer_city,
-            {self._locality_expr("region")} AS customer_region,
-            CASE WHEN (
-                (ci.email LIKE '%@%' AND LOWER(SUBSTRING_INDEX(SUBSTRING_INDEX(ci.email, ',', 1), '@', -1)) NOT IN ({free_domains}))
-                OR COALESCE(cr.has_corporate_contact_email, 0) = 1
-            ) THEN 1 ELSE 0 END AS has_corporate_email,
-            COALESCE(cr.has_business_social, 0) AS has_business_social,
-            COALESCE(cr.has_whatsapp, 0) AS has_whatsapp,
-            COALESCE(cr.has_instagram, 0) AS has_instagram,
-            COALESCE(cr.has_facebook, 0) AS has_facebook,
-            CASE WHEN {self._website_expr} IS NOT NULL THEN 1 ELSE 0 END AS has_website
-        """
-
-    @property
-    def _profile_feature_sql(self) -> str:
-        return """
-            COALESCE(po.qualifying_order_count, 0) AS qualifying_order_count,
-            COALESCE(po.qualifying_order_amount_usd, 0) AS qualifying_order_amount_usd,
-            COALESCE(po.qualifying_max_order_amount_usd, 0) AS qualifying_max_order_amount_usd,
-            COALESCE(po.qualifying_sample_order_count, 0) AS qualifying_sample_order_count,
-            COALESCE(po.qualifying_non_sample_order_count, 0) AS qualifying_non_sample_order_count,
-            po.qualifying_last_order_at,
-            ci.update_time AS last_followup_at
-        """
-
-    def audit(self) -> dict:
-        sql = text(f"""
-        WITH {self._contact_cte}, features AS (
-            SELECT ci.company_id,
-                   CASE WHEN JSON_LENGTH(COALESCE(ci.owner_user_ids, JSON_ARRAY())) = 0 THEN 1 ELSE 0 END AS is_public,
-                   {self._feature_sql}
-            FROM `{self.schema}`.customer_info ci
-            LEFT JOIN contact_rollup cr ON BINARY cr.company_id = BINARY ci.company_id
-            LEFT JOIN order_rollup o ON BINARY o.company_id = BINARY ci.company_id
-        )
-        SELECT
-            COUNT(*) AS total_customers,
-            SUM(CASE WHEN is_public = 0 THEN 1 ELSE 0 END) AS private_customers,
-            SUM(CASE WHEN is_public = 1 THEN 1 ELSE 0 END) AS public_customers,
-            SUM(CASE WHEN is_public = 1 AND order_count > 0
-                      AND last_order_at <= DATE_SUB(CURDATE(), INTERVAL {REACTIVATION_INACTIVE_DAYS} DAY)
-                     THEN 1 ELSE 0 END) AS tier_t1,
-            SUM(CASE WHEN is_public = 1 AND order_count = 0 AND (has_corporate_email = 1 OR has_website = 1 OR has_business_social = 1) THEN 1 ELSE 0 END) AS tier_t2,
-            SUM(CASE WHEN is_public = 1 AND order_count = 0 AND has_corporate_email = 0 AND has_website = 0 AND has_business_social = 0
-                     AND (primary_email IS NOT NULL OR primary_phone IS NOT NULL OR has_whatsapp = 1) THEN 1 ELSE 0 END) AS tier_t3,
-            SUM(CASE WHEN is_public = 1 AND order_count = 0 AND has_corporate_email = 0 AND has_website = 0 AND has_business_social = 0
-                     AND primary_email IS NULL AND primary_phone IS NULL AND has_whatsapp = 0 THEN 1 ELSE 0 END) AS cold_storage
-        FROM features
-        """)
-        row = self.db.execute(sql).mappings().one()
-        data = {key: int(value or 0) for key, value in row.items()}
-        data.update({
-            "generated_at": _now().isoformat(),
-            "business_schema": self.schema,
-            "website_column": self.website_column,
-            "public_predicate": "JSON_LENGTH(COALESCE(owner_user_ids, JSON_ARRAY())) = 0",
-            "tier_policy_version": "v2",
-            "reactivation_inactive_days": REACTIVATION_INACTIVE_DAYS,
-        })
-        return data
-
-    def _profile_filter(
-        self,
-        profile_conditions: dict,
-    ) -> tuple[str, dict, str]:
-        """Compile validated profile conditions into bound read-only SQL."""
-        if not profile_conditions:
-            return "", {}, ""
-        conditions = normalize_profile_conditions(profile_conditions)
-        value_rules = conditions["value_rules"]
-        params: dict[str, Any] = {}
-        filters: list[str] = []
-        value_filters: list[str] = []
-        if value_rules.get("min_order_count") is not None:
-            params["profile_min_order_count"] = value_rules["min_order_count"]
-            params["profile_total_amount_over_usd"] = value_rules["total_amount_over_usd"]
-            value_filters.append(
-                "(f.qualifying_order_count >= :profile_min_order_count "
-                "AND f.qualifying_order_amount_usd > :profile_total_amount_over_usd)"
-            )
-        if value_rules.get("single_order_over_usd") is not None:
-            params["profile_single_order_over_usd"] = value_rules["single_order_over_usd"]
-            value_filters.append("f.qualifying_max_order_amount_usd > :profile_single_order_over_usd")
-        if value_rules.get("sample_only_orders"):
-            value_filters.append(
-                "(f.qualifying_order_count > 0 AND "
-                "f.qualifying_sample_order_count = f.qualifying_order_count "
-                "AND f.qualifying_non_sample_order_count = 0)"
-            )
-        filters.append(f"({' OR '.join(value_filters)})")
-
-        top_country_limit = conditions.get("top_country_limit")
-        if top_country_limit is not None:
-            # LIMIT is interpolated only after Pydantic constrains it to 1..50.
-            filters.append(f"""
-                f.country_name IN (
-                    SELECT ranked_country.country_name
-                    FROM (
-                        SELECT top_ci.country_name
-                        FROM `{self.schema}`.okki_orders top_o
-                        JOIN `{self.schema}`.customer_info top_ci
-                          ON BINARY top_ci.company_id = BINARY top_o.company_id
-                        WHERE NULLIF(TRIM(top_ci.country_name), '') IS NOT NULL
-                          AND {_valid_order_sql("top_o")}
-                        GROUP BY top_ci.country_name
-                        ORDER BY SUM(COALESCE(top_o.amount_usd, 0)) DESC, top_ci.country_name
-                        LIMIT {int(top_country_limit)}
-                    ) ranked_country
-                )
-            """)
-
-        channels = conditions.get("contact_channels") or []
-        channel_filters = {
-            "instagram": "f.has_instagram = 1",
-            "facebook": "f.has_facebook = 1",
-            "phone": "f.primary_phone IS NOT NULL",
-        }
-        if channels:
-            filters.append(f"({' OR '.join(channel_filters[item] for item in channels)})")
-
-        keywords = conditions.get("product_keywords") or []
-        if keywords:
-            keyword_filters = []
-            for index, keyword in enumerate(keywords):
-                key = f"profile_product_keyword_{index}"
-                params[key] = keyword
-                keyword_filters.append(
-                    f"LOCATE(LOWER(:{key}), LOWER(CONCAT_WS(' ', "
-                    "profile_product.model, profile_product.name, profile_product.cn_name, "
-                    "profile_item.product_model, profile_item.product_name, profile_item.product_cn_name))) > 0"
-                )
-            filters.append(f"""
-                EXISTS (
-                    SELECT 1
-                    FROM `{self.schema}`.okki_orders profile_order
-                    JOIN `{self.schema}`.okki_order_items profile_item
-                      ON profile_item.order_id = profile_order.order_id
-                    LEFT JOIN `{self.schema}`.okki_products profile_product
-                      ON profile_product.product_id = profile_item.product_id
-                    WHERE BINARY profile_order.company_id = BINARY f.company_id
-                      AND {_valid_order_sql("profile_order")}
-                      AND ({' OR '.join(keyword_filters)})
-                )
-            """)
-
-        stale_days = conditions.get("stale_followup_days")
-        if stale_days is not None:
-            params["profile_stale_followup_before"] = utc_now_naive() - timedelta(days=int(stale_days))
-            filters.append(
-                "(f.last_followup_at IS NULL OR "
-                "f.last_followup_at <= :profile_stale_followup_before)"
-            )
-
-        priority = []
-        if "instagram" in channels:
-            priority.append("f.has_instagram DESC")
-        if "facebook" in channels:
-            priority.append("f.has_facebook DESC")
-        if "phone" in channels:
-            priority.append("CASE WHEN f.primary_phone IS NOT NULL THEN 1 ELSE 0 END DESC")
-        return " AND " + " AND ".join(filters), params, (", ".join(priority) + ", " if priority else "")
-
-    def fetch_tier_candidates(
-        self,
-        tier: str,
-        limit: int,
-        seed: str,
-        cooldown_days: int = DEFAULT_COOLDOWN_DAYS,
-        profile_conditions: dict | None = None,
-    ) -> list[dict]:
-        if tier not in TIERS:
-            raise SalesAutomationError("tier 必须是 T1/T2/T3")
-        conditions = normalize_profile_conditions(profile_conditions)
-        # Every supported value rule requires at least one historical order, so a
-        # profiled batch can only yield T1 reactivation customers. Avoid two
-        # expensive cross-schema queries that are provably empty.
-        if conditions and tier in {"T2", "T3"}:
-            return []
-        inactive_days = conditions.get("inactive_order_days") or REACTIVATION_INACTIVE_DAYS
-        tier_filter = {
-            "T1": (
-                f"f.qualifying_order_count > 0 AND f.qualifying_last_order_at <= "
-                f"DATE_SUB(CURDATE(), INTERVAL {int(inactive_days)} DAY)"
-            ) if conditions else (
-                f"f.order_count > 0 AND f.last_order_at <= "
-                f"DATE_SUB(CURDATE(), INTERVAL {REACTIVATION_INACTIVE_DAYS} DAY)"
+    ).first()
+    if annotation is not None:
+        return True
+    suppression = db.query(CustomerSuppressionRegistry.id).filter(
+        CustomerSuppressionRegistry.mapped_customer_id == customer_id,
+        CustomerSuppressionRegistry.status == "active",
+        CustomerSuppressionRegistry.effective_at <= now,
+        or_(
+            CustomerSuppressionRegistry.scope_type == "global",
+            and_(
+                CustomerSuppressionRegistry.scope_type == scope_type,
+                CustomerSuppressionRegistry.scope_ref_id.is_(None)
+                if scope_ref_id is None
+                else CustomerSuppressionRegistry.scope_ref_id == scope_ref_id,
             ),
-            "T2": "f.order_count = 0 AND (f.has_corporate_email = 1 OR f.has_website = 1 OR f.has_business_social = 1)",
-            "T3": "f.order_count = 0 AND f.has_corporate_email = 0 AND f.has_website = 0 AND f.has_business_social = 0 AND (f.primary_email IS NOT NULL OR f.primary_phone IS NOT NULL OR f.has_whatsapp = 1)",
-        }[tier]
-        order_by = {
-            "T1": (
-                "f.qualifying_last_order_at DESC, f.qualifying_order_count DESC, "
-                "f.qualifying_order_amount_usd DESC"
-            ) if conditions else "f.last_order_at DESC, f.order_count DESC, f.order_amount_usd DESC",
-            "T2": "(f.has_corporate_email * 35 + f.has_website * 35 + f.has_business_social * 20 + CASE WHEN f.primary_phone IS NOT NULL THEN 10 ELSE 0 END) DESC",
-            "T3": "CASE WHEN f.primary_email IS NOT NULL THEN 1 ELSE 0 END DESC",
-        }[tier]
-        profile_filter, profile_params, profile_order = self._profile_filter(conditions)
-        profile_cte = f", {self._profile_order_cte}" if conditions else ""
-        profile_fields = f", {self._profile_feature_sql}" if conditions else ""
-        profile_join = (
-            "LEFT JOIN profile_order_rollup po ON BINARY po.company_id = BINARY ci.company_id"
-            if conditions else ""
-        )
-        sql = text(f"""
-        WITH {self._contact_cte}{profile_cte}, features AS (
-            SELECT ci.company_id, ci.company_name, ci.country_name, ci.email AS customer_email,
-                   {self._feature_sql}{profile_fields}
-            FROM `{self.schema}`.customer_info ci
-            LEFT JOIN contact_rollup cr ON BINARY cr.company_id = BINARY ci.company_id
-            LEFT JOIN order_rollup o ON BINARY o.company_id = BINARY ci.company_id
-            {profile_join}
-            WHERE JSON_LENGTH(COALESCE(ci.owner_user_ids, JSON_ARRAY())) = 0
-        )
-        SELECT f.*
-        FROM features f
-        WHERE {tier_filter}
-          {profile_filter}
-          AND NOT EXISTS (
-              SELECT 1
-              FROM ark_sales_research_subjects s
-              JOIN ark_sales_public_pool_tasks t ON t.subject_id = s.id
-              WHERE s.source_system = 'okki'
-                AND BINARY s.source_customer_id = BINARY CAST(f.company_id AS CHAR)
-                AND t.created_at >= :cooldown_cutoff
-                AND t.status IN ('pending', 'running', 'completed')
-          )
-        ORDER BY {profile_order}{order_by}, CRC32(CONCAT(CAST(f.company_id AS CHAR), :seed))
-        LIMIT :limit
-        """)
-        rows = self.db.execute(sql, {
-            "cooldown_cutoff": _now() - timedelta(days=cooldown_days),
-            "seed": seed,
-            "limit": max(limit, 1),
-            **profile_params,
-        }).mappings().all()
-        return [self._candidate(dict(row), tier, conditions) for row in rows]
+        ),
+    ).first()
+    return suppression is not None
 
-    def find_public_customers_by_domains(self, domains: list[str]) -> dict[str, dict]:
-        """Batch-resolve current OKKI public customers by exact website/corporate-email domain."""
-        normalized_domains = list(dict.fromkeys(normalize_domain(item) for item in domains))
-        if not normalized_domains:
-            return {}
-        dialect = self.db.get_bind().dialect.name
-        if dialect == "sqlite":
-            # Unit-test databases do not attach the read-only OKKI schema.
-            return {}
-        if not self.customer_columns:
-            raise SalesAutomationError("公海客户身份字段不可用，已停止候选入库以避免重复开发")
-        free_domains = ",".join(f"'{item}'" for item in sorted(FREE_EMAIL_DOMAINS))
-        customer_email_domain = (
-            "LOWER(TRIM(TRAILING '.' FROM "
-            "SUBSTRING_INDEX(SUBSTRING_INDEX(ci.email, ',', 1), '@', -1)))"
-        )
-        contact_email_domain = (
-            "LOWER(TRIM(TRAILING '.' FROM "
-            "SUBSTRING_INDEX(SUBSTRING_INDEX(match_contact.email, ',', 1), '@', -1)))"
-        )
-        sql = text(f"""
-        WITH identity_candidates AS (
-            SELECT ci.company_id, {self._website_domain_expr} AS matched_domain, 0 AS match_priority
-            FROM `{self.schema}`.customer_info ci
-            WHERE JSON_LENGTH(COALESCE(ci.owner_user_ids, JSON_ARRAY())) = 0
-              AND {self._website_domain_expr} IN :domains
-            UNION ALL
-            SELECT ci.company_id,
-                   {customer_email_domain} AS matched_domain,
-                   1 AS match_priority
-            FROM `{self.schema}`.customer_info ci
-            WHERE JSON_LENGTH(COALESCE(ci.owner_user_ids, JSON_ARRAY())) = 0
-              AND ci.email LIKE '%@%'
-              AND {customer_email_domain} NOT IN ({free_domains})
-              AND {customer_email_domain} IN :domains
-            UNION ALL
-            SELECT ci.company_id,
-                   {contact_email_domain} AS matched_domain,
-                   1 AS match_priority
-            FROM `{self.schema}`.customer_info ci
-            JOIN `{self.schema}`.customer_contacts match_contact
-              ON BINARY match_contact.company_id = BINARY ci.company_id
-            WHERE JSON_LENGTH(COALESCE(ci.owner_user_ids, JSON_ARRAY())) = 0
-              AND match_contact.email LIKE '%@%'
-              AND {contact_email_domain} NOT IN ({free_domains})
-              AND {contact_email_domain} IN :domains
-        ), identity_matches AS (
-            SELECT company_id, matched_domain, MIN(match_priority) AS match_priority
-            FROM identity_candidates
-            GROUP BY company_id, matched_domain
-        ), matched_ids AS (
-            SELECT DISTINCT company_id FROM identity_matches
-        ), contact_rollup AS (
-            SELECT
-                cc.company_id,
-                MAX(NULLIF(TRIM(cc.email), '')) AS contact_email,
-                MAX(NULLIF(TRIM(cc.tel), '')) AS contact_phone,
-                MAX(NULLIF(TRIM(cc.name), '')) AS contact_name,
-                MAX(CASE
-                    WHEN cc.email LIKE '%@%'
-                     AND LOWER(SUBSTRING_INDEX(SUBSTRING_INDEX(cc.email, ',', 1), '@', -1)) NOT IN ({free_domains})
-                    THEN 1 ELSE 0 END) AS has_corporate_contact_email,
-                MAX(CASE WHEN LOWER(COALESCE(ccs.platform, '')) LIKE '%whatsapp%' AND NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_whatsapp,
-                MAX(CASE WHEN LOWER(COALESCE(ccs.platform, '')) REGEXP 'instagram|(^|[^a-z])ins([^a-z]|$)' AND NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_instagram,
-                MAX(CASE WHEN LOWER(COALESCE(ccs.platform, '')) REGEXP 'facebook|(^|[^a-z])fb([^a-z]|$)' AND NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_facebook,
-                MAX(CASE WHEN LOWER(COALESCE(ccs.platform, '')) NOT LIKE '%whatsapp%' AND NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_business_social,
-                GROUP_CONCAT(DISTINCT CASE WHEN NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN CONCAT(COALESCE(ccs.platform, 'social'), ':', ccs.value) END ORDER BY ccs.id SEPARATOR ' | ') AS social_summary
-            FROM `{self.schema}`.customer_contacts cc
-            JOIN matched_ids matched ON BINARY matched.company_id = BINARY cc.company_id
-            LEFT JOIN `{self.schema}`.customer_contact_socials ccs
-              ON BINARY ccs.customer_id = BINARY cc.customer_id
-            GROUP BY cc.company_id
-        ), order_rollup AS (
-            SELECT orders.company_id, COUNT(*) AS order_count,
-                   COALESCE(SUM(orders.amount_usd), 0) AS order_amount_usd,
-                   MAX(orders.account_date) AS last_order_at
-            FROM `{self.schema}`.okki_orders orders
-            JOIN matched_ids matched ON BINARY matched.company_id = BINARY orders.company_id
-            GROUP BY orders.company_id
-        ), features AS (
-            SELECT ci.company_id, ci.company_name, ci.country_name, ci.email AS customer_email,
-                   identities.matched_domain, identities.match_priority,
-                   {self._feature_sql}
-            FROM identity_matches identities
-            JOIN `{self.schema}`.customer_info ci ON BINARY ci.company_id = BINARY identities.company_id
-            LEFT JOIN contact_rollup cr ON BINARY cr.company_id = BINARY ci.company_id
-            LEFT JOIN order_rollup o ON BINARY o.company_id = BINARY ci.company_id
-        )
-        SELECT f.*,
-               CASE WHEN f.match_priority = 0 THEN 'website' ELSE 'corporate_email' END AS match_basis
-        FROM features f
-        ORDER BY f.matched_domain, f.match_priority, f.company_id
-        """).bindparams(bindparam("domains", expanding=True))
-        rows = self.db.execute(sql, {"domains": normalized_domains}).mappings().all()
-        matches: dict[str, dict] = {}
-        for row in rows:
-            data = dict(row)
-            matched_domain = data["matched_domain"]
-            if matched_domain in matches:
-                continue
-            tier = "T1" if int(data.get("order_count") or 0) > 0 else (
-                "T2" if data.get("has_corporate_email") or data.get("has_website") or data.get("has_business_social")
-                else "T3"
-            )
-            candidate = self._candidate(data, tier)
-            candidate["match_basis"] = data.get("match_basis") or "website"
-            candidate["matched_domain"] = matched_domain
-            matches[matched_domain] = candidate
-        return matches
 
-    def find_public_customer_by_domain(self, domain: str) -> dict | None:
-        normalized = normalize_domain(domain)
-        return self.find_public_customers_by_domains([normalized]).get(normalized)
-
-    @staticmethod
-    def _candidate(row: dict, tier: str, profile_conditions: dict | None = None) -> dict:
-        email = row.get("primary_email") or row.get("customer_email")
-        conditions = profile_conditions or {}
-        profiled = bool(profile_conditions)
-        order_count = int((row.get("qualifying_order_count") if profiled else row.get("order_count")) or 0)
-        order_amount = float(
-            (row.get("qualifying_order_amount_usd") if profiled else row.get("order_amount_usd")) or 0
-        )
-        max_order_amount = float(row.get("qualifying_max_order_amount_usd") or 0) if profiled else 0.0
-        sample_order_count = int(row.get("qualifying_sample_order_count") or 0) if profiled else 0
-        non_sample_order_count = int(row.get("qualifying_non_sample_order_count") or 0) if profiled else 0
-        last_order_at = row.get("qualifying_last_order_at") if profiled else row.get("last_order_at")
-        completeness = min(100, (
-            25 * int(bool(row.get("has_corporate_email")))
-            + 25 * int(bool(row.get("has_website")))
-            + 20 * int(bool(row.get("has_business_social")))
-            + 15 * int(bool(email))
-            + 10 * int(bool(row.get("primary_phone")))
-            + 5 * int(bool(row.get("country_name")))
-        ))
-        inactive_days = conditions.get("inactive_order_days") or REACTIVATION_INACTIVE_DAYS
-        reasons = {
-            "T1": [f"当前公海且存在历史订单记录，最近 {inactive_days} 天无下单"],
-            "T2": ["当前公海、无历史订单且具备企业身份锚点"],
-            "T3": ["当前公海、无历史订单且仅有低信息量联系方式"],
-        }[tier]
-        if row.get("has_corporate_email"):
-            reasons.append("存在企业邮箱")
-        if row.get("has_website"):
-            reasons.append("存在独立站")
-        if row.get("has_business_social"):
-            reasons.append("存在非WhatsApp社媒")
-        value_rules = conditions.get("value_rules") or {}
-        if (
-            value_rules.get("min_order_count") is not None
-            and order_count >= int(value_rules["min_order_count"])
-            and order_amount > float(value_rules["total_amount_over_usd"])
-        ):
-            reasons.append("成交单数与累计金额命中画像")
-        if (
-            value_rules.get("single_order_over_usd") is not None
-            and max_order_amount > float(value_rules["single_order_over_usd"])
-        ):
-            reasons.append("单笔成交金额命中画像")
-        if (
-            value_rules.get("sample_only_orders")
-            and order_count > 0
-            and sample_order_count == order_count
-            and non_sample_order_count == 0
-        ):
-            reasons.append("历史成交仅包含样品订单")
-        if row.get("has_instagram"):
-            reasons.append("存在 Instagram 账号（优先）")
-        elif row.get("has_facebook"):
-            reasons.append("存在 Facebook 账号")
-        elif row.get("primary_phone"):
-            reasons.append("存在联系电话")
-        snapshot = {
-            "company_id": str(row.get("company_id")),
-            "company_name": row.get("company_name") or "未命名客户",
-            "country_name": row.get("country_name"),
-            "customer_email": row.get("customer_email"),
-            "contact_name": row.get("contact_name"),
-            "contact_email": row.get("primary_email"),
-            "contact_phone": row.get("primary_phone"),
-            "social_summary": row.get("social_summary"),
-            "website": row.get("website"),
-            "address_search_hint": address_search_hint(
-                row.get("customer_address"), row.get("customer_city"), row.get("customer_region")
+def ensure_research_task(
+    db: Session,
+    *,
+    customer_id: int,
+    task_type: str,
+    source_ref_type: str,
+    source_ref_id: str,
+    research_policy_version: str,
+    input_snapshot: Mapping,
+    selection_reason: list[dict],
+    tier: str | None,
+    created_by: int | None,
+) -> tuple[CustomerResearchTask, bool]:
+    account = db.query(CustomerAccount).filter(
+        CustomerAccount.id == customer_id,
+        CustomerAccount.record_status == "active",
+    ).with_for_update().one_or_none()
+    if account is None:
+        raise service.NotFoundError("客户不存在")
+    canonical_snapshot = _json_value(input_snapshot)
+    fingerprint = _hash({
+        "customer_id": customer_id,
+        "task_type": task_type,
+        "source_ref_type": source_ref_type,
+        "source_ref_id": source_ref_id,
+        "research_policy_version": research_policy_version,
+        "input_snapshot": canonical_snapshot,
+    })
+    exact = db.query(CustomerResearchTask).filter(
+        CustomerResearchTask.task_fingerprint == fingerprint,
+    ).one_or_none()
+    if exact is not None:
+        return exact, False
+    active = db.query(CustomerResearchTask).filter(
+        CustomerResearchTask.customer_id == customer_id,
+        CustomerResearchTask.task_type == task_type,
+        CustomerResearchTask.research_policy_version == research_policy_version,
+        or_(
+            CustomerResearchTask.task_status.in_(ACTIVE_TASK_STATUSES),
+            and_(
+                CustomerResearchTask.task_status == "completed",
+                CustomerResearchTask.result_review_status == "revision_requested",
             ),
-            "order_count": order_count,
-            "order_amount_usd": order_amount,
-            "max_order_amount_usd": max_order_amount,
-            "sample_order_count": sample_order_count,
-            "last_order_at": _json_safe(last_order_at),
-            "last_followup_at": _json_safe(row.get("last_followup_at")),
-        }
-        return {
-            "source_customer_id": str(row.get("company_id")),
-            "display_name": row.get("company_name") or "未命名客户",
-            "country": row.get("country_name"),
-            "primary_email": email,
-            "email_domain_type": email_domain_type(email),
-            "primary_phone": row.get("primary_phone"),
-            "website": row.get("website"),
-            "tier": tier,
-            "completeness_score": completeness,
-            "order_count": order_count,
-            "order_amount_usd": order_amount,
-            "last_order_at": _as_datetime(last_order_at),
-            "contact_snapshot": {
-                "contact_name": row.get("contact_name"),
-                "social_summary": row.get("social_summary"),
-                "has_whatsapp": bool(row.get("has_whatsapp")),
-                "has_business_social": bool(row.get("has_business_social")),
-                "has_instagram": bool(row.get("has_instagram")),
-                "has_facebook": bool(row.get("has_facebook")),
-            },
-            "source_snapshot": snapshot,
-            "selection_reason": reasons,
-        }
-
-
-def latest_audit(db: Session, refresh: bool = False, gateway: BusinessPoolGateway | None = None) -> dict:
-    if not refresh:
-        batch = db.query(PublicPoolBatch).filter(
-            PublicPoolBatch.deleted_at.is_(None),
-            PublicPoolBatch.status == "completed",
-        ).order_by(PublicPoolBatch.batch_date.desc(), PublicPoolBatch.id.desc()).first()
-        if batch and batch.audit_snapshot:
-            return {**batch.audit_snapshot, "cache_source": f"batch:{batch.id}"}
-    data = (gateway or BusinessPoolGateway(db)).audit()
-    data["cache_source"] = "live"
-    return data
-
-
-def _upsert_subject(db: Session, candidate: dict, actor_id: int | None) -> ResearchSubject:
-    external_key = f"okki:{candidate['source_customer_id']}"
-    subject = db.query(ResearchSubject).filter(
-        ResearchSubject.external_key == external_key,
+        ),
     ).with_for_update().first()
-    if subject is None:
-        candidate_subject = ResearchSubject(
-            subject_type="okki_customer",
-            external_key=external_key,
-            source_system="okki",
-            source_customer_id=candidate["source_customer_id"],
-            display_name=candidate["display_name"],
-            country=candidate.get("country"),
-            primary_email=candidate.get("primary_email"),
-            email_domain_type=candidate.get("email_domain_type") or "unknown",
-            primary_phone=candidate.get("primary_phone"),
-            website=candidate.get("website"),
-            seed_tier=candidate["tier"],
-            eligibility_status="eligible",
-            completeness_score=candidate.get("completeness_score") or 0,
-            order_count=candidate.get("order_count") or 0,
-            order_amount_usd=candidate.get("order_amount_usd") or 0,
-            last_order_at=candidate.get("last_order_at"),
-            contact_snapshot=candidate.get("contact_snapshot") or {},
-            source_snapshot=candidate.get("source_snapshot") or {},
-            source_snapshot_hash=_snapshot_hash(candidate.get("source_snapshot") or {}),
-            last_selected_at=_now(),
-            created_by=actor_id,
-            updated_by=actor_id,
-        )
-        try:
-            with db.begin_nested():
-                db.add(candidate_subject)
-                db.flush()
-            subject = candidate_subject
-        except IntegrityError:
-            subject = db.query(ResearchSubject).filter(
-                ResearchSubject.external_key == external_key,
-            ).with_for_update().first()
-            if subject is None:
-                raise
-    for field in (
-        "display_name", "country", "primary_email", "email_domain_type", "primary_phone",
-        "website", "completeness_score", "order_count", "order_amount_usd", "last_order_at",
-        "contact_snapshot", "source_snapshot",
-    ):
-        setattr(subject, field, candidate.get(field))
-    subject.seed_tier = candidate["tier"]
-    subject.eligibility_status = "eligible"
-    subject.source_snapshot_hash = _snapshot_hash(candidate["source_snapshot"])
-    subject.last_selected_at = _now()
-    subject.updated_by = actor_id
-    db.flush()
-    return subject
-
-
-def find_current_public_customer(db: Session, domain: str) -> dict | None:
-    """Fail closed in production when the current OKKI public-pool identity cannot be checked."""
-    return BusinessPoolGateway(db).find_public_customer_by_domain(domain)
-
-
-def record_public_pool_duplicate(
-    db: Session,
-    candidate: dict,
-    actor_id: int | None,
-    linked_company: LeadCompany | None = None,
-) -> ResearchSubject:
-    subject = _upsert_subject(db, candidate, actor_id)
-    if linked_company is not None:
-        subject.linked_company_id = linked_company.id
-        subject.updated_by = actor_id
-        db.flush()
-    return subject
-
-
-def queue_high_score_lead_research(
-    db: Session,
-    company: LeadCompany,
-    job_id: int,
-    actor_id: int | None,
-) -> tuple[PublicPoolTask | None, bool]:
-    """Queue one public-pool-shaped OpenClaw research task for an accepted score-70+ lead."""
-    if float(company.match_score or 0) < HIGH_SCORE_RESEARCH_THRESHOLD:
-        return None, False
-
-    external_key = f"lead_company:{company.id}"
-    subject = db.query(ResearchSubject).filter(ResearchSubject.external_key == external_key).first()
-    snapshot = {
-        "source": "intelligent_acquisition",
-        "search_job_id": job_id,
-        "company_id": company.id,
-        "company_name": company.name,
-        "website": company.website,
-        "country": company.country,
-        "industry": company.industry,
-        "description": company.description,
-        "match_score": float(company.match_score or 0),
-        "score_reasons": company.score_reasons or [],
-    }
-    if subject is None:
-        candidate_subject = ResearchSubject(
-            subject_type="lead_company",
-            external_key=external_key,
-            source_system="ark_lead",
-            source_customer_id=str(company.id),
-            linked_company_id=company.id,
-            display_name=company.name,
-            country=company.country,
-            primary_email=None,
-            email_domain_type="unknown",
-            primary_phone=None,
-            website=company.website,
-            seed_tier="T2",
-            eligibility_status="eligible",
-            completeness_score=min(100, 50 + 15 * int(bool(company.country)) + 15 * int(bool(company.industry)) + 20 * int(bool(company.description))),
-            order_count=0,
-            order_amount_usd=0,
-            contact_snapshot={},
-            source_snapshot=snapshot,
-            source_snapshot_hash=_snapshot_hash(snapshot),
-            last_selected_at=_now(),
-            created_by=actor_id,
-            updated_by=actor_id,
-        )
-        try:
-            with db.begin_nested():
-                db.add(candidate_subject)
-                db.flush()
-            subject = candidate_subject
-        except IntegrityError:
-            subject = db.query(ResearchSubject).filter(ResearchSubject.external_key == external_key).first()
-            if subject is None:
-                raise
-    else:
-        subject.linked_company_id = company.id
-        subject.display_name = company.name
-        subject.country = company.country
-        subject.website = company.website
-        subject.source_snapshot = snapshot
-        subject.source_snapshot_hash = _snapshot_hash(snapshot)
-        subject.last_selected_at = _now()
-        subject.updated_by = actor_id
-        db.flush()
-
-    # Serialize task creation across different search jobs that rediscover the same company.
-    subject = db.query(ResearchSubject).filter(ResearchSubject.id == subject.id).with_for_update().one()
-
-    existing = db.query(PublicPoolTask).filter(
-        PublicPoolTask.subject_id == subject.id,
-        PublicPoolTask.deleted_at.is_(None),
-    ).order_by(PublicPoolTask.created_at.desc(), PublicPoolTask.id.desc()).first()
-    if existing is not None and existing.status in {"pending", "running", "completed"}:
-        return existing, False
-    if existing is not None:
-        existing.status = "pending"
-        existing.review_status = "pending"
-        existing.gate_status = "pending"
-        existing.gate_snapshot = None
-        existing.claimed_by = None
-        existing.lease_token_hash = None
-        existing.lease_expires_at = None
-        existing.error_message = None
-        existing.started_at = None
-        existing.finished_at = None
-        existing.selection_reason = [
-            f"智能获客匹配分 {round(float(company.match_score or 0), 2)} ≥ {HIGH_SCORE_RESEARCH_THRESHOLD}",
-            "自动使用公海背调技能进行证据化研判",
-        ]
-        existing.updated_by = actor_id
-        db.flush()
-        return existing, True
-
-    batch_key = f"lead-research-job-{job_id}"
-    batch = db.query(PublicPoolBatch).filter(PublicPoolBatch.idempotency_key == batch_key).first()
-    if batch is None:
-        batch = PublicPoolBatch(
-            batch_date=beijing_today(),
-            policy_version="lead-score-70-v1",
-            status="completed",
-            quota_per_tier=1,
-            quotas={"lead_company": 1},
-            audit_snapshot={
-                "source": "intelligent_acquisition",
-                "search_job_id": job_id,
-                "score_threshold": HIGH_SCORE_RESEARCH_THRESHOLD,
-            },
-            result_counts={"queued": 0},
-            idempotency_key=batch_key,
-            started_at=_now(),
-            finished_at=_now(),
-            created_by=actor_id,
-            updated_by=actor_id,
-        )
-        db.add(batch)
-        db.flush()
-
-    queued = int((batch.result_counts or {}).get("queued") or 0)
-    task = PublicPoolTask(
-        batch_id=batch.id,
-        subject_id=subject.id,
-        tier="T2",
-        selection_rank=queued + 1,
-        selection_reason=[
-            f"智能获客匹配分 {round(float(company.match_score or 0), 2)} ≥ {HIGH_SCORE_RESEARCH_THRESHOLD}",
-            "自动使用公海背调技能进行证据化研判",
-        ],
-        created_by=actor_id,
-        updated_by=actor_id,
+    if active is not None:
+        return active, False
+    now = beijing_now()
+    row = CustomerResearchTask(
+        customer_id=customer_id,
+        task_type=task_type,
+        source_ref_type=source_ref_type,
+        source_ref_id=source_ref_id,
+        tier=tier,
+        task_status="pending",
+        gate_status="pending",
+        result_review_status="pending",
+        selection_reason=_json_value(selection_reason),
+        research_policy_version=research_policy_version,
+        task_fingerprint=fingerprint,
+        input_snapshot=canonical_snapshot,
+        result_schema_version=None,
+        result_json=None,
+        data_classification="internal_business",
+        visibility_scope="customer_team",
+        classification_reason="versioned acquisition research policy",
+        research_summary=None,
+        evidence_fact_ids=[],
+        lease_generation=0,
+        attempt_count=0,
+        created_by=created_by,
+        created_at=now,
+        updated_at=now,
     )
-    db.add(task)
-    batch.result_counts = {**(batch.result_counts or {}), "queued": queued + 1}
-    batch.updated_by = actor_id
-    db.flush()
-    return task, True
+    try:
+        with db.begin_nested():
+            db.add(row)
+            db.flush()
+    except IntegrityError:
+        exact = db.query(CustomerResearchTask).filter(
+            CustomerResearchTask.task_fingerprint == fingerprint,
+        ).one_or_none()
+        if exact is None:
+            raise
+        return exact, False
+    return row, True
 
 
-def prepare_batch(
-    db: Session,
-    payload: Any,
-    actor_id: int | None,
-) -> tuple[PublicPoolBatch, bool]:
-    """幂等登记批次；未完成批次存在时绝不重复排队。"""
+def prepare_batch(db: Session, payload: Any, actor_id: int | None) -> tuple[PublicPoolBatch, bool]:
     data = _data(payload)
     batch_date = data.get("batch_date") or beijing_today()
-    quota = int(data.get("quota_per_tier") or 20)
-    if quota < 1 or quota > 100:
-        raise SalesAutomationError("每档批次配额必须在 1 到 100 之间")
-    policy_version = str(data.get("policy_version") or "v3")
-    if policy_version == "lead-score-70-v1":
-        raise SalesAutomationError("该策略版本为系统保留值")
-    profile_conditions = normalize_profile_conditions(data.get("profile_conditions"))
-    profile_suffix = f"-{_snapshot_hash(profile_conditions)[:16]}" if profile_conditions else ""
-    idempotency_key = f"public-pool-{batch_date.isoformat()}-{policy_version}-{quota}{profile_suffix}"
-    existing = db.query(PublicPoolBatch).filter(
-        PublicPoolBatch.idempotency_key == idempotency_key,
-    ).with_for_update().first()
-    if existing is not None and existing.status in {"pending", "running", "completed"}:
-        return existing, False
-    if existing is not None:
-        # 失败批次允许人工重试；生成明细在同一事务中，可安全重建同一幂等批次。
-        db.query(PublicPoolTask).filter(PublicPoolTask.batch_id == existing.id).delete(synchronize_session=False)
-        batch = existing
-        batch.status = "pending"
-        batch.audit_snapshot = {"profile_conditions": profile_conditions} if profile_conditions else {}
-        batch.result_counts = {}
-        batch.error_message = None
-        batch.started_at = None
-        batch.finished_at = None
-        batch.updated_by = actor_id
+    policy_version = str(data.get("policy_version") or "").strip()
+    if not policy_version:
+        raise service.SalesAutomationError("policy_version 必填")
+    if "quotas_json" in data:
+        quotas = _json_value(data["quotas_json"])
     else:
-        batch = PublicPoolBatch(
-            batch_date=batch_date,
-            policy_version=policy_version,
-            status="pending",
-            quota_per_tier=quota,
-            quotas={tier: quota for tier in TIERS},
-            audit_snapshot={"profile_conditions": profile_conditions} if profile_conditions else {},
-            result_counts={},
-            idempotency_key=idempotency_key,
-            created_by=actor_id,
-            updated_by=actor_id,
-        )
-        db.add(batch)
+        quota = int(data.get("quota_per_tier") or 20)
+        quotas = {
+            "schema_version": "public_pool_quotas_v1",
+            "tiers": {"T1": quota, "T2": quota, "T3": quota},
+            "team_scope": "all",
+            "total_limit": quota * 3,
+        }
+    selection_policy = _json_value(data.get("profile_conditions") or default_profile_conditions())
+    watermark = db.query(CustomerAccount.id).order_by(CustomerAccount.id.desc()).limit(1).scalar() or 0
+    idem = _hash({
+        "batch_date": batch_date.isoformat(),
+        "policy_version": policy_version,
+        "quotas": quotas,
+        "selection_policy": selection_policy,
+        "input_watermark": watermark,
+    })
+    existing = db.query(PublicPoolBatch).filter(PublicPoolBatch.idempotency_key == idem).one_or_none()
+    if existing is not None:
+        return existing, False
+    row = PublicPoolBatch(
+        batch_date=batch_date,
+        policy_version=policy_version,
+        status="pending",
+        quotas_json=quotas,
+        selection_snapshot={
+            "schema_version": "public_pool_selection_v1",
+            "input_watermark": watermark,
+            "policy": selection_policy,
+            "candidate_count": None,
+            "filter_counts": {},
+        },
+        result_counts={
+            "schema_version": "public_pool_counts_v1",
+            "selected": {},
+            "created": {},
+            "reused": {},
+            "skipped": {},
+            "failed": {},
+        },
+        idempotency_key=idem,
+        created_by=actor_id,
+    )
     try:
-        db.commit()
-    except IntegrityError:
-        # 两次并发首次提交由唯一幂等键裁决；后到请求返回已登记批次且不再排队。
+        with db.begin_nested():
+            db.add(row)
+            db.flush()
+    except IntegrityError as exc:
+        # End the outer transaction so MySQL REPEATABLE READ opens a fresh
+        # read view for the row that won the unique-key race.
         db.rollback()
-        raced = db.query(PublicPoolBatch).filter(PublicPoolBatch.idempotency_key == idempotency_key).first()
-        if raced is None:
-            raise
-        return raced, False
-    db.refresh(batch)
-    return batch, True
+        existing = db.query(PublicPoolBatch).filter(
+            PublicPoolBatch.idempotency_key == idem,
+        ).one_or_none()
+        if existing is None:
+            raise service.ConflictError("RETRY_NEW_TRANSACTION") from exc
+        return existing, False
+    db.commit()
+    db.refresh(row)
+    return row, True
 
 
-def execute_batch(
-    db: Session,
-    batch_id: int,
-    gateway: BusinessPoolGateway | None = None,
-) -> PublicPoolBatch:
-    """领取并执行已登记批次；只有 pending 能进入执行态。"""
-    batch = db.query(PublicPoolBatch).filter(PublicPoolBatch.id == batch_id).with_for_update().first()
+def _tier_for_customer(db: Session, customer_id: int) -> str:
+    match = db.query(CustomerTargetMatch).filter(
+        CustomerTargetMatch.customer_id == customer_id,
+        CustomerTargetMatch.is_current.is_(True),
+    ).order_by(CustomerTargetMatch.match_score.desc()).first()
+    if match is None:
+        return "T3"
+    score = Decimal(match.match_score)
+    if score >= 80:
+        return "T1"
+    if score >= 60:
+        return "T2"
+    return "T3"
+
+
+def execute_batch(db: Session, batch_id: int) -> PublicPoolBatch:
+    batch = db.query(PublicPoolBatch).filter(PublicPoolBatch.id == batch_id).with_for_update().one_or_none()
     if batch is None:
-        raise NotFoundError("公海批次不存在")
-    if batch.status != "pending":
+        raise service.NotFoundError("公海批次不存在")
+    if batch.status == "completed":
         return batch
+    if batch.status not in {"pending", "failed"}:
+        raise service.ConflictError("公海批次当前不可执行")
     batch.status = "running"
-    batch.started_at = _now()
+    batch.started_at = beijing_now()
+    db.flush()
+    active_primary_ids = {
+        customer_id
+        for (customer_id,) in db.query(CustomerAssignment.customer_id).filter(
+        CustomerAssignment.assignment_role == "primary",
+        CustomerAssignment.assignment_status == "active",
+        CustomerAssignment.effective_to.is_(None),
+        ).all()
+    }
+    selection_policy = dict((batch.selection_snapshot or {}).get("policy") or {})
+    input_watermark = int((batch.selection_snapshot or {}).get("input_watermark") or 0)
+    allowed_identity_statuses = set(
+        selection_policy.get("identity_statuses") or ["identified", "verified"]
+    )
+    required_record_status = str(selection_policy.get("record_status") or "active")
+    require_unassigned = bool(selection_policy.get("require_unassigned", True))
+    candidates = db.query(CustomerAccount).filter(
+        CustomerAccount.record_status == required_record_status,
+        CustomerAccount.id <= input_watermark,
+    ).order_by(CustomerAccount.id).all()
+    quotas = dict((batch.quotas_json or {}).get("tiers") or {})
+    total_limit = int((batch.quotas_json or {}).get("total_limit") or sum(
+        max(0, int(value)) for value in quotas.values()
+    ))
+    selected = {"T1": 0, "T2": 0, "T3": 0}
+    created = {"T1": 0, "T2": 0, "T3": 0}
+    reused = {"T1": 0, "T2": 0, "T3": 0}
+    skipped = {"T1": 0, "T2": 0, "T3": 0}
+    filter_counts = {"identity_status": 0, "assigned": 0, "dnc": 0, "quota": 0}
+    selected_customer_ids: list[int] = []
+    research_task_ids: list[int] = []
+    for account in candidates:
+        if account.identity_status not in allowed_identity_statuses:
+            filter_counts["identity_status"] += 1
+            continue
+        if require_unassigned and account.id in active_primary_ids:
+            filter_counts["assigned"] += 1
+            continue
+        tier = _tier_for_customer(db, account.id)
+        if is_development_denied(db, account.id, "source", "public_pool"):
+            skipped[tier] += 1
+            filter_counts["dnc"] += 1
+            continue
+        if (
+            selected[tier] >= max(0, int(quotas.get(tier, 0)))
+            or len(selected_customer_ids) >= total_limit
+        ):
+            filter_counts["quota"] += 1
+            continue
+        task, was_created = ensure_research_task(
+            db,
+            customer_id=account.id,
+            task_type="public_pool",
+            source_ref_type="public_pool_batch",
+            source_ref_id=str(batch.id),
+            research_policy_version=batch.policy_version,
+            input_snapshot={
+                "schema_version": "research_input_v1",
+                "public_pool_batch_id": batch.id,
+                "customer_id": account.id,
+                "profile_input_seq": account.profile_input_seq,
+            },
+            selection_reason=[{"reason": "unassigned_public_pool", "tier": tier}],
+            tier=tier,
+            created_by=batch.created_by,
+        )
+        selected[tier] += 1
+        created[tier] += int(was_created)
+        reused[tier] += int(not was_created)
+        selected_customer_ids.append(account.id)
+        research_task_ids.append(task.id)
+    batch.selection_snapshot = {
+        **dict(batch.selection_snapshot or {}),
+        "candidate_count": len(candidates),
+        "filter_counts": filter_counts,
+        "selected_customer_ids": selected_customer_ids,
+        "research_task_ids": research_task_ids,
+    }
+    batch.result_counts = {
+        "schema_version": "public_pool_counts_v1",
+        "selected": selected,
+        "created": created,
+        "reused": reused,
+        "skipped": skipped,
+        "failed": {"T1": 0, "T2": 0, "T3": 0},
+    }
+    batch.status = "completed"
+    batch.finished_at = beijing_now()
+    batch.error_code = None
+    batch.error_message = None
     db.commit()
     db.refresh(batch)
-    quota = batch.quota_per_tier
-    actor_id = batch.updated_by
-    profile_conditions = normalize_profile_conditions(
-        (batch.audit_snapshot or {}).get("profile_conditions")
-    )
-    source = gateway or BusinessPoolGateway(db)
-    named_lock_acquired = False
-    try:
-        dialect = db.get_bind().dialect.name
-        if dialect in {"mysql", "mariadb"}:
-            # A named lock is session-scoped and is not subject to InnoDB's row
-            # lock wait timeout while a preceding profile query runs. Distinct
-            # profile batches therefore queue reliably instead of racing.
-            acquired = db.execute(text("SELECT GET_LOCK(:lock_name, :wait_seconds)"), {
-                "lock_name": PUBLIC_POOL_EXECUTION_LOCK_NAME,
-                "wait_seconds": PUBLIC_POOL_EXECUTION_LOCK_WAIT_SECONDS,
-            }).scalar()
-            if int(acquired or 0) != 1:
-                raise SalesAutomationError("公海批次执行锁等待超时")
-            named_lock_acquired = True
-        else:
-            # Test/non-MySQL fallback. Production OKKI runs on MySQL and uses the
-            # named-lock branch above.
-            execution_mutex = db.query(PublicPoolBatch.id).filter(
-                PublicPoolBatch.deleted_at.is_(None),
-                or_(
-                    PublicPoolBatch.id == batch.id,
-                    PublicPoolBatch.policy_version != "lead-score-70-v1",
-                ),
-            ).order_by(PublicPoolBatch.id.asc()).with_for_update().first()
-            if execution_mutex is None:
-                raise SalesAutomationError("公海批次执行锁不可用")
-        batch.audit_snapshot = {
-            **source.audit(),
-            "profile_conditions": profile_conditions,
-            "profile_filter_applied": bool(profile_conditions),
-            "followup_time_source": "customer_info.update_time" if profile_conditions.get("stale_followup_days") else None,
-        }
-        result_counts: dict[str, int] = {}
-        for tier in TIERS:
-            fetch_kwargs = {
-                "limit": max(quota * 4, quota),
-                "seed": f"{batch.batch_date.isoformat()}:{tier}:{batch.policy_version}",
-            }
-            if profile_conditions:
-                fetch_kwargs["profile_conditions"] = profile_conditions
-            candidates = source.fetch_tier_candidates(tier, **fetch_kwargs)
-            quality_count = min(len(candidates), max(0, quota - min(4, quota)))
-            selected = candidates[:quality_count]
-            remaining = candidates[quality_count:]
-            rng = random.Random(f"{batch.batch_date.isoformat()}:{tier}:{batch.policy_version}")
-            rng.shuffle(remaining)
-            selected.extend(remaining)
-            created_count = 0
-            for candidate in selected:
-                if created_count >= quota:
-                    break
-                external_key = f"okki:{candidate['source_customer_id']}"
-                existing_subject = db.query(ResearchSubject).filter(
-                    ResearchSubject.external_key == external_key,
-                ).with_for_update().first()
-                if existing_subject is not None:
-                    # Recheck after taking the stable subject lock and before
-                    # mutating its snapshot. This keeps skipped subjects intact.
-                    recent_task = db.query(PublicPoolTask.id).filter(
-                        PublicPoolTask.subject_id == existing_subject.id,
-                        PublicPoolTask.batch_id != batch.id,
-                        PublicPoolTask.deleted_at.is_(None),
-                        PublicPoolTask.created_at >= _now() - timedelta(days=DEFAULT_COOLDOWN_DAYS),
-                        PublicPoolTask.status.in_(("pending", "running", "completed")),
-                    ).first()
-                    if recent_task is not None:
-                        continue
-                subject = _upsert_subject(db, candidate, actor_id)
-                created_count += 1
-                db.add(PublicPoolTask(
-                    batch_id=batch.id,
-                    subject_id=subject.id,
-                    tier=tier,
-                    selection_rank=created_count,
-                    selection_reason=candidate["selection_reason"],
-                    created_by=actor_id,
-                    updated_by=actor_id,
-                ))
-            result_counts[tier] = created_count
-        batch.result_counts = {"selected": result_counts, "total": sum(result_counts.values())}
-        batch.status = "completed"
-        batch.finished_at = _now()
-        db.commit()
-        db.refresh(batch)
-        return batch
-    except Exception as exc:
-        db.rollback()
-        failed = db.query(PublicPoolBatch).filter(PublicPoolBatch.id == batch.id).first()
-        if failed:
-            failed.status = "failed"
-            failed.error_message = f"{type(exc).__name__}: {str(exc)[:1800]}"
-            failed.finished_at = _now()
-            db.commit()
-        logger.warning("public pool batch generation failed: %s", type(exc).__name__)
-        print(f"public pool batch generation failed: {type(exc).__name__}", flush=True)
-        raise
-    finally:
-        if named_lock_acquired:
-            try:
-                db.execute(text("SELECT RELEASE_LOCK(:lock_name)"), {
-                    "lock_name": PUBLIC_POOL_EXECUTION_LOCK_NAME,
-                })
-                db.commit()
-            except SQLAlchemyError:
-                # A broken/disconnected MySQL session releases its named locks;
-                # do not mask the completed batch or the original failure.
-                db.rollback()
-                logger.exception("public pool named execution lock release failed")
+    return batch
 
 
-def generate_batch(
-    db: Session,
-    payload: Any,
-    actor_id: int | None,
-    gateway: BusinessPoolGateway | None = None,
-) -> PublicPoolBatch:
-    """同步入口，供 scheduler 和测试使用，并接管尚未领取的 pending 批次。"""
-    batch, _should_start = prepare_batch(db, payload, actor_id)
-    return execute_batch(db, batch.id, gateway) if batch.status == "pending" else batch
+def generate_batch(db: Session, payload: Any, actor_id: int | None) -> PublicPoolBatch:
+    batch, should_execute = prepare_batch(db, payload, actor_id)
+    return execute_batch(db, batch.id) if should_execute or batch.status in {"pending", "failed"} else batch
 
 
 def run_batch_in_background(batch_id: int) -> None:
-    """FastAPI 后台任务入口，必须使用独立 Session。"""
+    from app.core.database import SessionLocal
+
     with SessionLocal() as db:
-        try:
-            execute_batch(db, batch_id)
-        except Exception as exc:
-            logger.exception("public pool background batch failed: id=%s", batch_id)
-            print(f"public pool background batch failed: id={batch_id} {type(exc).__name__}", flush=True)
+        execute_batch(db, batch_id)
+
+
+def latest_audit(db: Session, refresh: bool = False) -> dict:
+    active_primary = db.query(CustomerAssignment.customer_id).filter(
+        CustomerAssignment.assignment_role == "primary",
+        CustomerAssignment.assignment_status == "active",
+        CustomerAssignment.effective_to.is_(None),
+    )
+    total = db.query(CustomerAccount).filter(CustomerAccount.record_status == "active").count()
+    public_pool = db.query(CustomerAccount).filter(
+        CustomerAccount.record_status == "active",
+        ~CustomerAccount.id.in_(active_primary),
+    ).count()
+    blocked = sum(
+        1 for (customer_id,) in db.query(CustomerAccount.id).filter(CustomerAccount.record_status == "active")
+        if is_development_denied(db, customer_id, "source", "public_pool")
+    )
+    return {
+        "schema_version": "public_pool_audit_v1",
+        "generated_at": beijing_now().isoformat(),
+        "total_customers": total,
+        "unassigned_customers": public_pool,
+        "development_blocked": blocked,
+    }
 
 
 def list_batches(db: Session, page: int, page_size: int) -> tuple[list[PublicPoolBatch], int]:
-    query = db.query(PublicPoolBatch).filter(
-        PublicPoolBatch.deleted_at.is_(None),
-        PublicPoolBatch.policy_version != "lead-score-70-v1",
-    )
+    query = db.query(PublicPoolBatch)
     total = query.count()
     rows = query.order_by(PublicPoolBatch.batch_date.desc(), PublicPoolBatch.id.desc()).offset(
-        (page - 1) * page_size
+        (page - 1) * page_size,
     ).limit(page_size).all()
     return rows, total
 
 
-def get_task(db: Session, task_id: int, *, for_update: bool = False) -> PublicPoolTask:
-    query = db.query(PublicPoolTask).filter(PublicPoolTask.id == task_id, PublicPoolTask.deleted_at.is_(None))
+def get_task(db: Session, task_id: int, *, for_update: bool = False) -> CustomerResearchTask:
+    query = db.query(CustomerResearchTask).filter(CustomerResearchTask.id == task_id)
     if for_update:
         query = query.with_for_update()
-    task = query.first()
-    if task is None:
-        raise NotFoundError("公海研究任务不存在")
-    return task
+    row = query.one_or_none()
+    if row is None:
+        raise service.NotFoundError("研究任务不存在")
+    return row
 
 
 def list_tasks(
     db: Session,
     page: int,
     page_size: int,
+    *,
+    batch_id: int | None = None,
     status: str | None = None,
     tier: str | None = None,
     review_status: str | None = None,
-    allocation_status: str | None = None,
-    keyword: str | None = None,
-    batch_id: int | None = None,
-) -> tuple[list[tuple[PublicPoolTask, ResearchSubject, DealAssessment | None, CustomerOpportunity | None]], int]:
-    query = db.query(PublicPoolTask, ResearchSubject, DealAssessment, CustomerOpportunity).join(
-        ResearchSubject, ResearchSubject.id == PublicPoolTask.subject_id,
-    ).outerjoin(DealAssessment, DealAssessment.task_id == PublicPoolTask.id).outerjoin(
-        CustomerOpportunity, CustomerOpportunity.id == PublicPoolTask.opportunity_id,
-    ).filter(
-        PublicPoolTask.deleted_at.is_(None),
-        ResearchSubject.deleted_at.is_(None),
-        ResearchSubject.source_system == "okki",
-        ResearchSubject.subject_type == "okki_customer",
-    )
+    **_unused,
+) -> tuple[list[CustomerResearchTask], int]:
+    query = db.query(CustomerResearchTask)
     if batch_id is not None:
-        query = query.filter(PublicPoolTask.batch_id == batch_id)
-    if status:
-        query = query.filter(PublicPoolTask.status == status)
-    if tier:
-        query = query.filter(PublicPoolTask.tier == tier)
-    if review_status:
-        query = query.filter(PublicPoolTask.review_status == review_status)
-    if allocation_status == "claimable":
         query = query.filter(
-            PublicPoolTask.review_status == "approved",
-            PublicPoolTask.opportunity_id.is_(None),
+            CustomerResearchTask.source_ref_type == "public_pool_batch",
+            CustomerResearchTask.source_ref_id == str(batch_id),
         )
-    elif allocation_status == "claimed":
-        query = query.filter(PublicPoolTask.opportunity_id.is_not(None))
-    if keyword:
-        query = query.filter(or_(
-            ResearchSubject.display_name.ilike(f"%{keyword.strip()}%"),
-            ResearchSubject.source_customer_id.ilike(f"%{keyword.strip()}%"),
-        ))
+    if status:
+        query = query.filter(CustomerResearchTask.task_status == status)
+    if tier:
+        query = query.filter(CustomerResearchTask.tier == tier)
+    if review_status:
+        query = query.filter(CustomerResearchTask.result_review_status == review_status)
     total = query.count()
-    rows = query.order_by(
-        DealAssessment.priority_score.desc(), PublicPoolTask.created_at.desc(),
-    ).offset((page - 1) * page_size).limit(page_size).all()
-    return rows, total
-
-
-def list_claimable_tasks(db: Session, page: int, page_size: int) -> tuple[list[PublicPoolTask], int]:
-    now = utc_now_naive()
-    query = db.query(PublicPoolTask).filter(
-        PublicPoolTask.deleted_at.is_(None),
-        or_(
-            PublicPoolTask.status == "pending",
-            and_(PublicPoolTask.status == "running", PublicPoolTask.lease_expires_at <= now),
-        ),
+    return (
+        query.order_by(CustomerResearchTask.created_at.desc(), CustomerResearchTask.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all(),
+        total,
     )
+
+
+def list_claimable_tasks(db: Session, page: int, page_size: int) -> tuple[list[CustomerResearchTask], int]:
+    now = beijing_now()
+    query = db.query(CustomerResearchTask).filter(or_(
+        CustomerResearchTask.task_status == "pending",
+        and_(
+            CustomerResearchTask.task_status == "running",
+            CustomerResearchTask.lease_expires_at <= now,
+        ),
+        and_(
+            CustomerResearchTask.task_status == "completed",
+            CustomerResearchTask.result_review_status == "revision_requested",
+        ),
+    ))
     total = query.count()
-    rows = query.order_by(PublicPoolTask.created_at.asc(), PublicPoolTask.id.asc()).offset(
-        (page - 1) * page_size
-    ).limit(page_size).all()
-    return rows, total
+    return (
+        query.order_by(CustomerResearchTask.created_at, CustomerResearchTask.id)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all(),
+        total,
+    )
 
 
 def _claim_owner(actor_id: int, agent_id: str) -> str:
     cleaned = str(agent_id or "").strip()
     if not cleaned or len(cleaned) > 96:
-        raise SalesAutomationError("agent_id 必填且不超过96字符")
+        raise service.SalesAutomationError("agent_id 必填且不超过96字符")
     return f"{actor_id}:{cleaned}"
 
 
-def claim_task(db: Session, task_id: int, actor_id: int, agent_id: str) -> tuple[PublicPoolTask, str]:
+def claim_task(
+    db: Session,
+    task_id: int,
+    actor_id: int,
+    agent_id: str,
+) -> tuple[CustomerResearchTask, str]:
     task = get_task(db, task_id, for_update=True)
-    lease_now = utc_now_naive()
-    reclaimable = task.status == "running" and task.lease_expires_at is not None and task.lease_expires_at <= lease_now
-    if task.status != "pending" and not reclaimable:
-        raise ConflictError("任务不是等待领取状态，或仍由其他Agent执行")
+    now = beijing_now()
+    reclaimable = (
+        task.task_status == "running"
+        and task.lease_expires_at is not None
+        and task.lease_expires_at <= now
+    )
+    revision_requested = (
+        task.task_status == "completed"
+        and task.result_review_status == "revision_requested"
+    )
+    if task.task_status != "pending" and not reclaimable and not revision_requested:
+        raise service.ConflictError("研究任务不是等待领取状态，或租约仍有效")
     token = secrets.token_urlsafe(32)
-    task.status = "running"
-    task.started_at = task.started_at or _now()
-    task.finished_at = None
-    task.error_message = None
+    task.task_status = "running"
+    task.result_review_status = "pending"
+    task.reviewed_by = None
+    task.reviewed_at = None
     task.claimed_by = _claim_owner(actor_id, agent_id)
+    task.lease_generation += 1
     task.lease_token_hash = _hash(token)
-    task.lease_expires_at = lease_now + timedelta(minutes=LEASE_MINUTES)
+    task.lease_expires_at = now + timedelta(minutes=LEASE_MINUTES)
     task.attempt_count += 1
-    task.updated_by = actor_id
+    task.started_at = task.started_at or beijing_now()
+    task.finished_at = None
+    task.error_code = None
+    task.error_message = None
     db.commit()
     db.refresh(task)
     return task, token
 
 
-def _leased_task(db: Session, task_id: int, actor_id: int, agent_id: str, lease_token: str) -> PublicPoolTask:
+def _leased_task(
+    db: Session,
+    task_id: int,
+    actor_id: int,
+    agent_id: str,
+    lease_token: str,
+) -> CustomerResearchTask:
     task = get_task(db, task_id, for_update=True)
     if task.claimed_by != _claim_owner(actor_id, agent_id):
-        raise ConflictError("任务租约不属于当前Agent")
+        raise service.ConflictError("研究任务租约不属于当前Agent")
     if not lease_token or not secrets.compare_digest(task.lease_token_hash or "", _hash(lease_token)):
-        raise ConflictError("任务租约无效")
-    if task.lease_expires_at is None or task.lease_expires_at <= utc_now_naive():
-        raise ConflictError("任务租约已过期，请重新领取")
+        raise service.ConflictError("研究任务租约无效")
+    if task.lease_expires_at is None or task.lease_expires_at <= beijing_now():
+        raise service.ConflictError("研究任务租约已过期")
+    if task.task_status != "running":
+        raise service.ConflictError("研究任务不在执行中")
     return task
 
 
-def heartbeat_task(db: Session, task_id: int, actor_id: int, agent_id: str, lease_token: str) -> PublicPoolTask:
+def heartbeat_task(
+    db: Session,
+    task_id: int,
+    actor_id: int,
+    agent_id: str,
+    lease_token: str,
+) -> CustomerResearchTask:
     task = _leased_task(db, task_id, actor_id, agent_id, lease_token)
-    if task.status != "running":
-        raise ConflictError("只有执行中的任务可以续租")
-    task.lease_expires_at = utc_now_naive() + timedelta(minutes=LEASE_MINUTES)
+    task.lease_expires_at = beijing_now() + timedelta(minutes=LEASE_MINUTES)
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+def submit_industry_gate(
+    db: Session,
+    task_id: int,
+    actor_id: int,
+    agent_id: str,
+    lease_token: str,
+    industry_relevance: str,
+    reason: str,
+) -> CustomerResearchTask:
+    task = _leased_task(db, task_id, actor_id, agent_id, lease_token)
+    if task.gate_status != "pending":
+        raise service.ConflictError("行业门控已提交")
+    cleaned_reason = str(reason or "").strip()
+    if not cleaned_reason:
+        raise service.SalesAutomationError("行业门控原因必填")
+    if industry_relevance == "irrelevant":
+        task.gate_status = "stopped"
+        task.task_status = "skipped"
+        task.result_review_status = "not_required"
+        task.result_schema_version = "research_gate_v1"
+        task.result_json = {
+            "schema_version": "research_gate_v1",
+            "industry_relevance": "irrelevant",
+            "stop_reason": cleaned_reason,
+        }
+        task.research_summary = cleaned_reason
+        task.finished_at = beijing_now()
+        task.claimed_by = None
+        task.lease_token_hash = None
+        task.lease_expires_at = None
+    elif industry_relevance in {"core", "adjacent", "uncertain"}:
+        task.gate_status = "passed"
+        task.result_schema_version = "research_gate_v1"
+        task.result_json = {
+            "schema_version": "research_gate_v1",
+            "industry_relevance": industry_relevance,
+            "gate_reason": cleaned_reason,
+        }
+    else:
+        raise service.SalesAutomationError("industry_relevance 无效")
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+def _validate_research_run_and_citations(
+    db: Session,
+    task: CustomerResearchTask,
+    actor_id: int,
+    agent_run_id: int,
+    input_hash: str,
+    facts_by_id: dict[int, CustomerFact],
+    citations: list[dict],
+) -> AgentRun:
+    run = db.query(AgentRun).filter(AgentRun.id == agent_run_id).one_or_none()
+    run_input = dict(run.input_json or {}) if run is not None else {}
+    run_context = dict(run.context_snapshot or {}) if run is not None else {}
+    if (
+        run is None
+        or run.owner_user_id != actor_id
+        or run.status not in {"running", "completed"}
+        or run.business_ref_type != "research_task"
+        or run.business_ref_id != str(task.id)
+        or run_input.get("research_task_id") != task.id
+        or run_input.get("customer_id") != task.customer_id
+        or run_input.get("input_hash") != input_hash
+        or run_context.get("customer_id") != task.customer_id
+        or run_context.get("input_hash") != input_hash
+    ):
+        raise service.ConflictError("受控Agent Run与当前研究任务或input_hash不匹配")
+
+    events = db.query(AgentEvent).filter(
+        AgentEvent.run_id == run.id,
+        AgentEvent.event_type.in_(("tool.requested", "tool.succeeded")),
+    ).order_by(AgentEvent.sequence_no).all()
+    requested: set[str] = set()
+    succeeded: dict[str, list[dict]] = {}
+    for event in events:
+        payload = event.payload_json or {}
+        call_id = str(payload.get("call_id") or "")
+        if not call_id:
+            continue
+        if event.event_type == "tool.requested":
+            requested.add(call_id)
+        else:
+            refs = payload.get("evidence_refs") or []
+            succeeded[call_id] = [item for item in refs if isinstance(item, Mapping)]
+
+    now = beijing_now()
+    for citation in citations:
+        call_id = citation["tool_call_id"]
+        if call_id not in requested or call_id not in succeeded:
+            raise service.ConflictError("研究citation未关联当前Run的成功工具调用")
+        fact_id = int(citation["evidence_ref"].split(":", 1)[1])
+        fact = facts_by_id[fact_id]
+        if fact.fact_fingerprint != citation["evidence_content_hash"]:
+            raise service.ConflictError("研究citation证据内容哈希已变化")
+        if fact.verification_status in {"disputed", "rejected", "superseded"}:
+            raise service.ConflictError("研究citation引用的事实已失效")
+        if fact.effective_to is not None and to_beijing_naive(fact.effective_to) <= now:
+            raise service.ConflictError("研究citation引用的事实已过期")
+        if fact.expires_at is not None and to_beijing_naive(fact.expires_at) <= now:
+            raise service.ConflictError("研究citation引用的事实已过期")
+        expected = {
+            "customer_id": task.customer_id,
+            "evidence_ref": citation["evidence_ref"],
+            "evidence_content_hash": citation["evidence_content_hash"],
+            "input_hash": input_hash,
+        }
+        if not any(all(reference.get(key) == value for key, value in expected.items())
+                   for reference in succeeded[call_id]):
+            raise service.ConflictError("研究citation不在当前Run实际返回的证据集合中")
+    return run
+
+
+def complete_task_research(
+    db: Session,
+    task_id: int,
+    actor_id: int,
+    agent_id: str,
+    lease_token: str,
+    result_json: Mapping,
+    *,
+    agent_run_id: int,
+    data_classification: str = "internal_business",
+    visibility_scope: str = "customer_team",
+) -> CustomerResearchTask:
+    task = _leased_task(db, task_id, actor_id, agent_id, lease_token)
+    if task.gate_status not in {"passed", "not_required"}:
+        raise service.ConflictError("行业门控未通过，不能提交完整研究")
+    try:
+        contract = CustomerResearchResult.model_validate(result_json)
+    except ValidationError as exc:
+        raise service.ConflictError("customer_research_v1结构、claim或citation无效") from exc
+    result = contract.model_dump(mode="json")
+    input_hash = research_input_hash(task)
+    if result["input_hash"] != input_hash:
+        raise service.ConflictError("customer_research_v1.input_hash与当前任务不匹配")
+    normalized_fact_ids = sorted({
+        int(citation["evidence_ref"].split(":", 1)[1])
+        for citation in result["citations"]
+    })
+    facts = db.query(CustomerFact).filter(CustomerFact.id.in_(normalized_fact_ids)).all() \
+        if normalized_fact_ids else []
+    if len(facts) != len(normalized_fact_ids) or any(
+        fact.customer_id != task.customer_id for fact in facts
+    ):
+        raise service.ConflictError("研究证据事实不属于当前客户或不存在")
+    facts_by_id = {fact.id: fact for fact in facts}
+    run = _validate_research_run_and_citations(
+        db,
+        task,
+        actor_id,
+        agent_run_id,
+        input_hash,
+        facts_by_id,
+        result["citations"],
+    )
+    classifications = [task.data_classification, data_classification]
+    classifications.extend(fact.data_classification for fact in facts)
+    visibilities = [task.visibility_scope, visibility_scope]
+    visibilities.extend(fact.visibility_scope for fact in facts)
+    if any(value not in CLASSIFICATION_ORDER for value in classifications):
+        raise service.SalesAutomationError("研究数据分级无效")
+    if any(value not in VISIBILITY_ORDER for value in visibilities):
+        raise service.SalesAutomationError("研究可见范围无效")
+    strictest_classification = max(classifications, key=CLASSIFICATION_ORDER.index)
+    strictest_visibility = max(visibilities, key=VISIBILITY_ORDER.index)
+    result["evidence_fact_ids"] = normalized_fact_ids
+    task.task_status = "completed"
+    task.result_review_status = "pending"
+    task.result_schema_version = "customer_research_v1"
+    task.result_json = result
+    task.research_summary = "；".join(
+        claim["statement"] for claim in result["claims"]
+    )[:10000]
+    task.evidence_fact_ids = normalized_fact_ids
+    task.agent_run_id = run.id
+    task.data_classification = strictest_classification
+    task.visibility_scope = strictest_visibility
+    task.classification_reason = "strictest classification inherited from task, caller and evidence facts"
+    task.finished_at = beijing_now()
+    task.claimed_by = None
+    task.lease_token_hash = None
+    task.lease_expires_at = None
     db.commit()
     db.refresh(task)
     return task
@@ -1519,519 +810,328 @@ def heartbeat_task(db: Session, task_id: int, actor_id: int, agent_id: str, leas
 def fail_task(
     db: Session,
     task_id: int,
-    error_message: str,
+    error_code: str,
     actor_id: int,
     agent_id: str,
     lease_token: str,
-) -> PublicPoolTask:
+) -> CustomerResearchTask:
     task = _leased_task(db, task_id, actor_id, agent_id, lease_token)
-    if task.status != "running":
-        raise ConflictError("只有执行中的任务可以标记失败")
-    task.status = "failed"
-    task.error_message = str(error_message or "")[:2000]
-    task.finished_at = _now()
-    task.updated_by = actor_id
+    safe_message = service.agent_failure_message(error_code)
+    task.task_status = "failed"
+    task.error_code = str(error_code)
+    task.error_message = safe_message
+    task.finished_at = beijing_now()
+    task.claimed_by = None
+    task.lease_token_hash = None
+    task.lease_expires_at = None
     db.commit()
     db.refresh(task)
     return task
 
 
-def _upsert_subject_contacts(db: Session, subject: ResearchSubject, contacts: list[Any], actor_id: int) -> list[LeadContact]:
-    rows: list[LeadContact] = []
-    for raw in contacts:
-        data = _data(raw)
-        email = str(data.get("email") or "").strip()
-        email_normalized = email.lower() or None
-        name = str(data.get("name") or "").strip() or None
-        role = str(data.get("role") or "").strip() or None
-        if not email_normalized and not name:
-            raise SalesAutomationError("联系人至少需要 email 或 name")
-        identity_key = _hash(email_normalized or f"{(name or '').lower()}|{(role or '').lower()}")
-        source_url = normalize_source_url(data.get("source_url"))
-        row = db.query(LeadContact).filter(
-            LeadContact.subject_id == subject.id, LeadContact.identity_key == identity_key,
-        ).first()
-        if row is None:
-            row = LeadContact(
-                company_id=subject.linked_company_id,
-                subject_id=subject.id,
-                identity_key=identity_key,
-                created_by=actor_id,
-            )
-            db.add(row)
-        elif subject.linked_company_id is not None:
-            row.company_id = subject.linked_company_id
-        row.name = name or row.name
-        row.role = role or row.role
-        row.email = email or row.email
-        row.email_normalized = email_normalized or row.email_normalized
-        requested_status = data.get("email_status")
-        if requested_status is not None:
-            verified_at = data.get("verified_at")
-            if requested_status != "unknown" and (not email_normalized or not verified_at):
-                raise SalesAutomationError("已验证邮箱状态必须同时提供 email 和 verified_at")
-            row.email_status = requested_status
-            row.verified_at = None if requested_status == "unknown" else _as_datetime(verified_at)
-        row.source_provider = data.get("source_provider") or "agent"
-        row.source_url = source_url
-        row.captured_at = _as_datetime(data.get("captured_at"))
-        if row.captured_at is None:
-            raise SalesAutomationError("captured_at 格式无效")
-        row.confidence = data.get("confidence")
-        row.updated_by = actor_id
-        rows.append(row)
-    db.flush()
-    return rows
-
-
-def _create_subject_research(
-    db: Session,
-    subject: ResearchSubject,
-    data: dict,
-    actor_id: int,
-) -> tuple[ResearchRun, list[ResearchFact]]:
-    facts = data.get("facts") or []
-    if not facts and data.get("identity_decision") not in {"unverifiable", "rejected"}:
-        raise SalesAutomationError("主体可用时 facts 至少需要一条公开证据")
-    # 每次 task 是研究版本边界；不允许调用方复用另一个 task 的 key 来借用旧证据。
-    idem = f"pool-task-{data['task_id']}"
-    existing = db.query(ResearchRun).filter(
-        ResearchRun.subject_id == subject.id, ResearchRun.idempotency_key == idem,
-    ).first()
-    if existing:
-        existing_facts = db.query(ResearchFact).filter(ResearchFact.run_id == existing.id).all()
-        return existing, existing_facts
-    run = ResearchRun(
-        company_id=subject.linked_company_id,
-        subject_id=subject.id,
-        status="completed",
-        summary=data.get("summary") or "",
-        outreach_angles=data.get("outreach_angles") or [],
-        risks=data.get("risks") or [],
-        provider=data.get("provider") or "agent",
-        model=data.get("model"),
-        idempotency_key=idem,
-        started_at=_now(),
-        finished_at=_now(),
-        created_by=actor_id,
-        updated_by=actor_id,
-    )
-    db.add(run)
-    db.flush()
-    rows: list[ResearchFact] = []
-    for position, raw in enumerate(facts):
-        fact = _data(raw)
-        claim = str(fact.get("claim") or "").strip()
-        if not claim:
-            raise SalesAutomationError("研究事实 claim 必填")
-        source_url = normalize_source_url(fact.get("source_url"))
-        captured_at = _as_datetime(fact.get("captured_at"))
-        confidence = float(fact.get("confidence"))
-        if captured_at is None:
-            raise SalesAutomationError("研究事实 captured_at 格式无效")
-        if not 0 <= confidence <= 1:
-            raise SalesAutomationError("confidence 必须在0到1之间")
-        row = ResearchFact(
-            run_id=run.id,
-            fact_type=fact.get("fact_type") or "general",
-            claim=claim,
-            fact_hash=_hash(claim.lower()),
-            source_url=source_url,
-            source_url_hash=_hash(source_url),
-            captured_at=captured_at,
-            confidence=confidence,
-            sort_order=position,
-            created_by=actor_id,
-            updated_by=actor_id,
-        )
-        db.add(row)
-        rows.append(row)
-    db.flush()
-    return run, rows
-
-
-def complete_task_research(
+def review_research_result(
     db: Session,
     task_id: int,
-    payload: Any,
-    actor_id: int,
+    review_status: str,
     *,
-    allow_stopped_gate: bool = False,
-) -> tuple[PublicPoolTask, DealAssessment]:
-    retried = get_idempotent_completed_research(db, task_id, payload, actor_id)
-    if retried is not None:
-        return retried
-    data, components, submission_hash = _normalized_research_submission(payload)
-    task = _leased_task(db, task_id, actor_id, data.get("agent_id"), data.get("lease_token"))
-    if task.gate_status != "passed" and not (allow_stopped_gate and task.gate_status == "stopped"):
-        raise ConflictError("请先提交行业门控；只有通过后才能执行深入背调")
-    if data.get("industry_relevance") == "irrelevant" and not allow_stopped_gate:
-        raise ConflictError("行业无关必须在低成本门控阶段停止，不能通过深入背调接口提交")
-    if task.status != "running":
-        raise ConflictError("只有执行中的任务可以提交研究结果")
-    subject = db.query(ResearchSubject).filter(ResearchSubject.id == task.subject_id).with_for_update().first()
-    if subject is None:
-        raise NotFoundError("研究主体不存在")
-    _upsert_subject_contacts(db, subject, data.get("contacts") or [], actor_id)
-    research_data = {**data, "task_id": task.id}
-    run, facts = _create_subject_research(db, subject, research_data, actor_id)
-    unique_sources = len({fact.source_url_hash for fact in facts})
-    commercial_profile = _qualification_summary(data.get("commercial_profile") or {})
-    scores = compute_deal_scores(
-        components,
-        data["identity_decision"],
-        unique_sources,
-        commercial_profile.get("qualification_coverage"),
-    )
-    evidence_snapshot = {
-        "submission_hash": submission_hash,
-        "research_run_id": run.id,
-        "fact_ids": [fact.id for fact in facts],
-        "fact_source_urls": [fact.source_url for fact in facts],
-        "source_snapshot_hash": subject.source_snapshot_hash,
-        "source_customer_id": subject.source_customer_id,
-    }
-    assessment = DealAssessment(
-        task_id=task.id,
-        subject_id=subject.id,
-        identity_decision=data["identity_decision"],
-        score_factors=components,
-        supplier_status=data.get("supplier_status") or "unknown",
-        pain_points=data.get("pain_points") or [],
-        product_fit=data.get("product_fit") or [],
-        industry_relevance=data.get("industry_relevance") or "uncertain",
-        industry_relevance_reason=data.get("industry_relevance_reason") or "",
-        research_depth=data.get("research_depth") or "focused",
-        stop_reason=data.get("stop_reason"),
-        social_profiles=_json_safe(data.get("social_profiles") or []),
-        knowledge_references=_json_safe(data.get("knowledge_references") or []),
-        commercial_profile=_json_safe(commercial_profile),
-        recommended_strategy=data.get("recommended_strategy") or "",
-        outreach_type=data.get("outreach_type") or ("reactivation" if task.tier == "T1" else "new_development"),
-        opening_message_en=data.get("opening_message_en"),
-        risks=data.get("risks") or [],
-        evidence_snapshot=evidence_snapshot,
-        provider=data.get("provider") or "agent",
-        model=data.get("model"),
-        assessment_version="v2",
-        completed_at=_now(),
-        created_by=actor_id,
-        updated_by=actor_id,
-        **scores,
-    )
-    db.add(assessment)
-    task.status = "completed"
-    task.research_summary = data.get("summary")
-    task.finished_at = _now()
-    task.updated_by = actor_id
+    reviewer_id: int,
+) -> CustomerResearchTask:
+    _require_active_user(db, reviewer_id)
+    if review_status not in {"accepted", "revision_requested", "rejected"}:
+        raise service.SalesAutomationError("研究质量审核状态无效")
+    task = get_task(db, task_id, for_update=True)
+    if task.task_status != "completed":
+        raise service.ConflictError("只有已完成研究可进行质量审核")
+    task.result_review_status = review_status
+    task.reviewed_by = reviewer_id
+    task.reviewed_at = beijing_now()
     db.commit()
     db.refresh(task)
-    db.refresh(assessment)
-    return task, assessment
+    return task
+
+
+def _qualification_reference_customer(
+    db: Session,
+    review_source: str,
+    source_ref_id: str | None,
+) -> int | None:
+    if review_source == "search_result":
+        if not str(source_ref_id or "").isdigit():
+            raise service.ConflictError("资格审核来源对象无效")
+        row = db.get(SearchResult, int(source_ref_id))
+        if row is None:
+            raise service.ConflictError("资格审核来源对象不存在")
+        return row.customer_id
+    if review_source == "public_pool_research":
+        if not str(source_ref_id or "").isdigit():
+            raise service.ConflictError("资格审核来源对象无效")
+        row = db.query(CustomerResearchTask).filter(
+            CustomerResearchTask.id == int(source_ref_id),
+        ).with_for_update().one_or_none()
+        if row is None:
+            raise service.ConflictError("资格审核来源对象不存在")
+        return row.customer_id
+    if review_source in {"manual", "identity_conflict"}:
+        return None
+    raise service.SalesAutomationError("review_source 无效")
+
+
+def current_qualification(
+    db: Session,
+    customer_id: int,
+    scope_type: str,
+    scope_ref_id: str | None,
+) -> CustomerQualificationReview | None:
+    return db.query(CustomerQualificationReview).filter(
+        CustomerQualificationReview.customer_id == customer_id,
+        CustomerQualificationReview.is_current.is_(True),
+        _scope_filter(CustomerQualificationReview, scope_type, scope_ref_id),
+    ).one_or_none()
+
+
+def _qualification_request_hash(
+    *,
+    customer_id: int,
+    review_source: str,
+    source_ref_id: str | None,
+    decision: str,
+    reason_code: str,
+    scope_type: str,
+    scope_ref_id: str | None,
+    review_snapshot: Mapping,
+    client_request_key: str,
+) -> str:
+    return _hash({
+        "customer_id": customer_id,
+        "review_source": review_source,
+        "source_ref_id": source_ref_id,
+        "decision": decision,
+        "reason_code": reason_code,
+        "scope_type": scope_type,
+        "scope_ref_id": scope_ref_id,
+        "review_snapshot": review_snapshot,
+        "client_request_key": client_request_key,
+    })
+
+
+def submit_qualification_review(
+    db: Session,
+    *,
+    customer_id: int,
+    review_source: str,
+    source_ref_id: str | None,
+    decision: str,
+    reason_code: str,
+    scope_type: str,
+    scope_ref_id: str | None,
+    policy_version: str,
+    review_snapshot: Mapping,
+    decision_request_key: str,
+    reviewed_by: int,
+    expected_current_review_id: int | None,
+    reason_text: str | None = None,
+    review_after: datetime | None = None,
+) -> CustomerQualificationReview:
+    reviewer = _require_active_user(db, reviewed_by)
+    if decision not in {"approved", "rejected", "deferred"}:
+        raise service.SalesAutomationError("decision 无效")
+    if reason_code not in {
+        "qualified", "not_now", "poor_fit", "wrong_identity",
+        "duplicate", "do_not_contact", "bad_data",
+    }:
+        raise service.SalesAutomationError("reason_code 无效")
+    if scope_type not in {"global", "target_profile", "product", "market", "source", "channel"}:
+        raise service.SalesAutomationError("scope_type 无效")
+    if scope_type == "global" and scope_ref_id is not None:
+        raise service.SalesAutomationError("global范围不得包含scope_ref_id")
+    if scope_type != "global" and not str(scope_ref_id or "").strip():
+        raise service.SalesAutomationError("非global范围必须包含scope_ref_id")
+    if reason_code == "poor_fit" and scope_type == "global":
+        raise service.SalesAutomationError("poor_fit必须限定目标画像、产品或市场范围")
+    if decision == "approved" and reason_code != "qualified":
+        raise service.SalesAutomationError("approved必须使用qualified原因")
+    if reason_code == "do_not_contact" and decision != "rejected":
+        raise service.SalesAutomationError("do_not_contact必须是rejected结论")
+    referenced_customer = _qualification_reference_customer(db, review_source, source_ref_id)
+    if referenced_customer is not None and referenced_customer != customer_id:
+        raise service.ConflictError("资格审核来源对象不属于当前客户")
+    if review_source == "public_pool_research":
+        research = db.get(CustomerResearchTask, int(source_ref_id))
+        if research.task_status != "completed" or research.result_review_status != "accepted":
+            raise service.ConflictError("研究成果尚未完成质量审核")
+    normalized_review_after = (
+        to_beijing_naive(review_after) if review_after is not None else None
+    )
+    now = beijing_now()
+    if normalized_review_after is not None and normalized_review_after <= now:
+        raise service.SalesAutomationError("review_after必须是未来的北京时间")
+    account = db.query(CustomerAccount).filter(
+        CustomerAccount.id == customer_id,
+        CustomerAccount.record_status == "active",
+    ).with_for_update().one_or_none()
+    if account is None:
+        raise service.NotFoundError("客户不存在")
+    request_hash = _qualification_request_hash(
+        customer_id=customer_id,
+        review_source=review_source,
+        source_ref_id=source_ref_id,
+        decision=decision,
+        reason_code=reason_code,
+        scope_type=scope_type,
+        scope_ref_id=scope_ref_id,
+        review_snapshot=review_snapshot,
+        client_request_key=str(decision_request_key),
+    )
+    replay = db.query(CustomerQualificationReview).filter(
+        CustomerQualificationReview.decision_request_key == request_hash,
+    ).one_or_none()
+    if replay is not None:
+        if replay.customer_id != customer_id:
+            raise service.ConflictError("资格审核幂等键冲突")
+        return replay
+    current = current_qualification(db, customer_id, scope_type, scope_ref_id)
+    actual_current_id = current.id if current is not None else None
+    if actual_current_id != expected_current_review_id:
+        raise service.ConflictError("当前作用范围资格结论已变化，请刷新后重试")
+    if decision == "approved" and is_development_denied(db, customer_id, scope_type, scope_ref_id):
+        raise service.ConflictError("客户当前存在禁止开发策略")
+    if current is not None:
+        current.is_current = False
+        db.flush()
+    row = CustomerQualificationReview(
+        customer_id=customer_id,
+        review_version=(current.review_version + 1) if current is not None else 1,
+        supersedes_review_id=current.id if current is not None else None,
+        review_source=review_source,
+        source_ref_id=source_ref_id,
+        decision=decision,
+        reason_code=reason_code,
+        reason_text=reason_text,
+        scope_type=scope_type,
+        scope_ref_id=scope_ref_id,
+        is_current=True,
+        policy_version=policy_version,
+        review_after=normalized_review_after,
+        review_snapshot=_json_value(review_snapshot),
+        decision_request_key=request_hash,
+        reviewed_by=reviewer.id,
+        reviewed_at=now,
+        created_at=now,
+    )
+    db.add(row)
+    db.flush()
+    if reason_code == "do_not_contact":
+        existing_dnc = db.query(CustomerAnnotation).filter(
+            CustomerAnnotation.customer_id == customer_id,
+            CustomerAnnotation.annotation_type == "do_not_contact",
+            CustomerAnnotation.status == "active",
+            CustomerAnnotation.policy_scope_type == scope_type,
+            CustomerAnnotation.policy_scope_ref_id.is_(None)
+            if scope_ref_id is None
+            else CustomerAnnotation.policy_scope_ref_id == scope_ref_id,
+        ).one_or_none()
+        if existing_dnc is None:
+            db.add(CustomerAnnotation(
+                customer_id=customer_id,
+                annotation_type="do_not_contact",
+                target_fact_id=None,
+                content_schema_version="v1",
+                content_json={
+                    "reason": reason_text or "qualification_review",
+                    "qualification_review_id": row.id,
+                },
+                policy_scope_type=scope_type,
+                policy_scope_ref_id=scope_ref_id,
+                policy_effective_at=now,
+                visibility="management",
+                data_classification="restricted_internal",
+                status="active",
+                authored_by=reviewer.id,
+                created_at=now,
+                updated_at=now,
+            ))
+    if review_source == "search_result" and str(source_ref_id or "").isdigit():
+        result = db.get(SearchResult, int(source_ref_id))
+        if result is not None:
+            result.qualification_review_id = row.id
+            result.result_status = {
+                "approved": "qualified",
+                "rejected": "rejected",
+                "deferred": "active",
+            }[decision]
+            job = db.get(SearchJob, result.job_id)
+            if job is not None:
+                db.flush()
+                qualified = db.query(SearchResult).filter(
+                    SearchResult.job_id == job.id,
+                    SearchResult.result_status == "qualified",
+                ).count()
+                job.qualified_count = qualified
+    account.profile_input_seq += 1
+    account.updated_by = reviewer.id
+    account.updated_at = now
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        replay = db.query(CustomerQualificationReview).filter(
+            CustomerQualificationReview.decision_request_key == request_hash,
+        ).one_or_none()
+        if replay is not None:
+            return replay
+        raise service.ConflictError("当前作用范围资格结论已被并发更新") from exc
+    db.refresh(row)
+    return row
+
+
+def list_pending_qualification(db: Session) -> list[CustomerResearchTask]:
+    tasks = db.query(CustomerResearchTask).filter(
+        CustomerResearchTask.task_status == "completed",
+        CustomerResearchTask.result_review_status == "accepted",
+    ).order_by(CustomerResearchTask.created_at, CustomerResearchTask.id).all()
+    pending: list[CustomerResearchTask] = []
+    for task in tasks:
+        review_source = "public_pool_research" if task.task_type == "public_pool" else "search_result"
+        source_ref_id = str(task.id) if review_source == "public_pool_research" else task.source_ref_id
+        exists = db.query(CustomerQualificationReview.id).filter(
+            CustomerQualificationReview.customer_id == task.customer_id,
+            CustomerQualificationReview.review_source == review_source,
+            CustomerQualificationReview.source_ref_id == source_ref_id,
+            CustomerQualificationReview.is_current.is_(True),
+        ).first()
+        if exists is None:
+            pending.append(task)
+    return pending
 
 
 def get_task_detail(db: Session, task_id: int) -> dict:
     task = get_task(db, task_id)
-    # 同一客户可能跨批次产生多个 task；锁共享 subject，跨 task 抢领也串行化。
-    subject = db.query(ResearchSubject).filter(
-        ResearchSubject.id == task.subject_id,
-    ).with_for_update().first()
-    if subject is None:
-        raise NotFoundError("研究主体不存在")
-    assessment = db.query(DealAssessment).filter(DealAssessment.task_id == task.id).first()
-    opportunity = None if task.opportunity_id is None else db.query(CustomerOpportunity).filter(
-        CustomerOpportunity.id == task.opportunity_id,
-    ).first()
-    contacts = db.query(LeadContact).filter(
-        LeadContact.subject_id == subject.id, LeadContact.deleted_at.is_(None),
-    ).order_by(LeadContact.created_at.asc()).all()
-    run = db.query(ResearchRun).filter(
-        ResearchRun.subject_id == subject.id, ResearchRun.deleted_at.is_(None),
-    ).order_by(ResearchRun.created_at.desc()).first()
-    facts = [] if run is None else db.query(ResearchFact).filter(
-        ResearchFact.run_id == run.id, ResearchFact.deleted_at.is_(None),
-    ).order_by(ResearchFact.sort_order.asc()).all()
-    return {
-        "task": task,
-        "subject": subject,
-        "assessment": assessment,
-        "opportunity": opportunity,
-        "contacts": contacts,
-        "research_run": run,
-        "facts": facts,
-    }
+    account = db.get(CustomerAccount, task.customer_id)
+    return {"task": task, "customer": account}
 
 
-def _opportunity_due_at(grade: str) -> datetime | None:
-    now = _now()
-    if grade == "A":
-        return now + timedelta(hours=2)
-    if grade == "B":
-        target = now.replace(hour=18, minute=0, second=0, microsecond=0)
-        return target if target > now else target + timedelta(days=1)
-    if grade == "C":
-        return (now + timedelta(days=1)).replace(hour=18, minute=0, second=0, microsecond=0)
-    return None
-
-
-def approve_task(db: Session, task_id: int, actor_id: int) -> PublicPoolTask:
-    task = get_task(db, task_id, for_update=True)
-    if task.status != "completed":
-        raise ConflictError("只有研究完成的客户可以审核")
-    if task.review_status == "rejected":
-        raise ConflictError("已拒绝任务不能直接确认")
-    if task.review_status == "approved":
-        return task
-    subject = db.query(ResearchSubject).filter(ResearchSubject.id == task.subject_id).first()
-    assessment = db.query(DealAssessment).filter(DealAssessment.task_id == task.id).first()
-    if subject is None or assessment is None:
-        raise ConflictError("任务缺少研究主体或成交研判")
-    if subject.source_system != "okki" or subject.subject_type != "okki_customer":
-        raise ConflictError("智能获客背调结果只能回到客户池审核，不能进入公海领取流程")
-    if (
-        assessment.identity_decision == "rejected"
-        or assessment.industry_relevance == "irrelevant"
-        or assessment.outreach_type == "no_outreach"
-    ):
-        raise ConflictError("主体不符、行业无关或不建议触达的客户不能审核进入团队公海")
-    task.review_status = "approved"
-    task.reviewed_by = actor_id
-    task.reviewed_at = _now()
-    task.updated_by = actor_id
-    db.commit()
-    db.refresh(task)
-    return task
-
-
-def claim_approved_task(db: Session, task_id: int, actor_id: int) -> CustomerOpportunity:
-    """业务员抢领已审核客户；task 行锁保证只有一人成功。"""
-    task = get_task(db, task_id, for_update=True)
-    if task.status != "completed" or task.review_status != "approved":
-        raise ConflictError("只有审核通过的客户可以领取")
-    # High-score intelligent-acquisition leads reuse the research engine only;
-    # they must still pass LeadCompany approval and can never become OKKI opportunities.
-    subject = db.query(ResearchSubject).filter(
-        ResearchSubject.id == task.subject_id,
-    ).with_for_update().first()
-    if subject is None:
-        raise ConflictError("任务缺少研究主体")
-    if subject.source_system != "okki" or subject.subject_type != "okki_customer":
-        raise ConflictError("智能获客背调结果不能通过公海领取，须回客户池单独审批")
-    if task.opportunity_id is not None:
-        claimed = db.query(CustomerOpportunity).filter(CustomerOpportunity.id == task.opportunity_id).first()
-        if claimed is not None and claimed.owner_user_id == actor_id:
-            return claimed
-        raise ConflictError("该公海客户已被其他业务员领取")
-    # 同一客户可能跨批次产生多个 task；锁共享 subject，跨 task 抢领也串行化。
-    assessment = db.query(DealAssessment).filter(DealAssessment.task_id == task.id).first()
-    if subject is None or assessment is None:
-        raise ConflictError("任务缺少研究主体或成交研判")
-    if (
-        assessment.identity_decision == "rejected"
-        or assessment.industry_relevance == "irrelevant"
-        or assessment.outreach_type == "no_outreach"
-    ):
-        raise ConflictError("主体不符、行业无关或不建议触达的客户不能领取")
-    source_key = f"okki-public:{subject.source_customer_id}"
-    opportunity = db.query(CustomerOpportunity).filter(
-        CustomerOpportunity.source_key == source_key,
-    ).with_for_update().first()
-    if opportunity is not None and opportunity.owner_user_id is not None:
-        if opportunity.owner_user_id != actor_id:
-            raise ConflictError("该公海客户已被其他业务员领取")
-        # 同一业务员重复遇到该客户时沿用历史机会，不重置已流失/已忽略等状态。
-        task.opportunity_id = opportunity.id
-        task.updated_by = actor_id
-        db.commit()
-        return opportunity
-    confidence_score = {"high": 90, "medium": 65, "low": 35}[assessment.evidence_confidence]
-    opportunity_type = "customer_reactivation" if task.tier == "T1" else "public_pool"
-    background = {
-        "source_snapshot": subject.source_snapshot or {},
-        "identity_decision": assessment.identity_decision,
-        "business_quality_score": assessment.business_quality_score,
-        "deal_score": assessment.deal_score,
-        "priority_score": assessment.priority_score,
-        "supplier_status": assessment.supplier_status,
-        "pain_points": assessment.pain_points or [],
-        "product_fit": assessment.product_fit or [],
-        "risks": assessment.risks or [],
-    }
-    signals = list(dict.fromkeys((assessment.product_fit or []) + (assessment.pain_points or [])))[:8]
-    if opportunity is None:
-        opportunity = CustomerOpportunity(
-            opportunity_type=opportunity_type,
-            source="okki",
-            source_key=source_key,
-            source_ref_type="customer",
-            source_ref_id=subject.source_customer_id,
-            customer_name=subject.display_name,
-            customer_region=subject.country,
-            customer_external_id=subject.source_customer_id,
-            status="pending",
-        )
-        db.add(opportunity)
-    opportunity.source = "okki"
-    opportunity.source_ref_type = "customer"
-    opportunity.source_ref_id = subject.source_customer_id
-    opportunity.customer_name = subject.display_name
-    opportunity.customer_region = subject.country
-    opportunity.customer_external_id = subject.source_customer_id
-    opportunity.status = "pending"
-    opportunity.opportunity_type = opportunity_type
-    opportunity.owner_user_id = actor_id
-    opportunity.owner_resolve_status = "resolved"
-    opportunity.priority_level = assessment.grade
-    opportunity.confidence_score = confidence_score
-    opportunity.urgency = "high" if assessment.grade == "A" else "normal" if assessment.grade in {"B", "C"} else "low"
-    opportunity.title = f"{subject.display_name} · {'老客再激活' if task.tier == 'T1' else '公海开发'}"
-    opportunity.summary = task.research_summary
-    opportunity.key_signals_json = signals
-    opportunity.background_check_json = background
-    opportunity.background_summary_json = {
-        "recommended_strategy": assessment.recommended_strategy,
-        "deal_likelihood": assessment.deal_likelihood,
-        "evidence_confidence": assessment.evidence_confidence,
-    }
-    opportunity.customer_profile_json = subject.source_snapshot or {}
-    opportunity.recommended_strategy = assessment.recommended_strategy
-    opportunity.opening_message_en = assessment.opening_message_en
-    opportunity.evidence_json = assessment.evidence_snapshot or {}
-    opportunity.due_at = _opportunity_due_at(assessment.grade)
-    task.updated_by = actor_id
-    db.flush()
-    task.opportunity_id = opportunity.id
-    db.commit()
-    db.refresh(opportunity)
-    event = ingest_opportunity_event(
-        db,
-        opportunity,
-        event_type="reactivation" if task.tier == "T1" else "public_pool",
-    )
-    if event is None:
-        logger.warning(
-            "public pool opportunity claimed but radar sync failed: task=%s opp=%s",
-            task.id,
-            opportunity.id,
-        )
-        print(
-            f"public pool opportunity claimed but radar sync failed: task={task.id} opp={opportunity.id}",
-            flush=True,
-        )
-    return opportunity
-
-
-def reject_task(db: Session, task_id: int, actor_id: int, reason: str) -> PublicPoolTask:
-    task = get_task(db, task_id, for_update=True)
-    if task.status != "completed":
-        raise ConflictError("只有研究完成的客户可以审核")
-    if task.review_status == "approved":
-        raise ConflictError("已进入开发队列的任务不能拒绝")
-    task.review_status = "rejected"
-    task.reviewed_by = actor_id
-    task.reviewed_at = _now()
-    task.error_message = f"人工拒绝：{reason[:900]}"
-    task.updated_by = actor_id
-    db.commit()
-    db.refresh(task)
-    return task
-
-
-def bulk_review_tasks(
-    db: Session,
-    batch_id: int,
-    task_ids: list[int],
-    action: str,
-    actor_id: int,
-    reason: str | None = None,
-    scope: str = "selected",
-) -> dict:
-    """原子审核同一批次内的多条任务；任一任务不合法时整批不落库。"""
-    if scope == "all":
-        tasks = db.query(PublicPoolTask).filter(
-            PublicPoolTask.batch_id == batch_id,
-            PublicPoolTask.status == "completed",
-            PublicPoolTask.review_status == "pending",
-            PublicPoolTask.deleted_at.is_(None),
-        ).order_by(PublicPoolTask.id.asc()).with_for_update().all()
-        normalized_ids = [task.id for task in tasks]
-    elif scope == "selected":
-        normalized_ids = list(dict.fromkeys(task_ids))
-        if not normalized_ids:
-            raise SalesAutomationError("批量审核至少选择一条任务")
-        tasks = db.query(PublicPoolTask).filter(
-            PublicPoolTask.id.in_(normalized_ids),
-            PublicPoolTask.batch_id == batch_id,
-            PublicPoolTask.deleted_at.is_(None),
-        ).order_by(PublicPoolTask.id.asc()).with_for_update().all()
-        if len(tasks) != len(normalized_ids):
-            found_ids = {task.id for task in tasks}
-            missing = [task_id for task_id in normalized_ids if task_id not in found_ids]
-            raise NotFoundError(f"批次中不存在任务：{', '.join(map(str, missing))}")
-    else:
-        raise SalesAutomationError("不支持的批量审核范围")
-
-    if action == "approve":
-        pending = [task for task in tasks if task.review_status != "approved"]
-        if any(task.review_status == "rejected" for task in pending):
-            raise ConflictError("已拒绝任务不能直接确认")
-        if any(task.status != "completed" for task in pending):
-            raise ConflictError("只有研究完成的客户可以审核")
-
-        subject_ids = [task.subject_id for task in pending]
-        subject_map = {
-            row.id: row for row in db.query(ResearchSubject).filter(ResearchSubject.id.in_(subject_ids)).all()
-        } if subject_ids else {}
-        assessment_map = {
-            row.task_id: row for row in db.query(DealAssessment).filter(
-                DealAssessment.task_id.in_([task.id for task in pending]),
-            ).all()
-        } if pending else {}
-        for task in pending:
-            subject = subject_map.get(task.subject_id)
-            assessment = assessment_map.get(task.id)
-            if subject is None or assessment is None:
-                raise ConflictError(f"任务 #{task.id} 缺少研究主体或成交研判")
-            if subject.source_system != "okki" or subject.subject_type != "okki_customer":
-                raise ConflictError("智能获客背调结果只能回到客户池审核，不能进入公海领取流程")
-            if (
-                assessment.identity_decision == "rejected"
-                or assessment.industry_relevance == "irrelevant"
-                or assessment.outreach_type == "no_outreach"
-            ):
-                raise ConflictError(f"任务 #{task.id} 主体不符、行业无关或不建议触达，不能审核通过")
-    elif action == "reject":
-        pending = [task for task in tasks if task.review_status != "rejected"]
-        if any(task.review_status == "approved" for task in pending):
-            raise ConflictError("已进入开发队列的任务不能拒绝")
-        if any(task.status != "completed" for task in pending):
-            raise ConflictError("只有研究完成的客户可以审核")
-    else:
-        raise SalesAutomationError("不支持的批量审核动作")
-
-    reviewed_at = _now()
-    cleaned_reason = str(reason or "").strip()
-    for task in pending:
-        task.review_status = "approved" if action == "approve" else "rejected"
-        task.reviewed_by = actor_id
-        task.reviewed_at = reviewed_at
-        task.updated_by = actor_id
-        if action == "reject":
-            task.error_message = f"人工拒绝：{cleaned_reason[:900]}"
-    try:
-        db.commit()
-    except Exception as exc:
-        db.rollback()
-        logger.warning("public pool bulk review commit failed: batch=%s action=%s: %s", batch_id, action, exc)
-        print(
-            f"public pool bulk review commit failed: batch={batch_id} action={action} {type(exc).__name__}",
-            flush=True,
-        )
-        raise
-    return {
-        "batch_id": batch_id,
-        "action": action,
-        "processed_count": len(pending),
-        "unchanged_count": len(tasks) - len(pending),
-        "task_ids": normalized_ids,
-    }
+__all__ = [
+    "claim_task",
+    "complete_task_research",
+    "current_qualification",
+    "default_profile_conditions",
+    "ensure_research_task",
+    "execute_batch",
+    "fail_task",
+    "generate_batch",
+    "get_task",
+    "get_task_detail",
+    "heartbeat_task",
+    "is_development_denied",
+    "latest_audit",
+    "list_batches",
+    "list_claimable_tasks",
+    "list_pending_qualification",
+    "list_tasks",
+    "prepare_batch",
+    "research_input_hash",
+    "review_research_result",
+    "run_batch_in_background",
+    "submit_industry_gate",
+    "submit_qualification_review",
+]

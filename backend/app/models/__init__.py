@@ -69,20 +69,14 @@ from app.customer.models import (
     CustomerSuppressionRegistry,
     CustomerResolutionKey,
     CustomerTargetMatch,
+    SearchJob,
+    SearchResult,
+    SearchResultSource,
+    PublicPoolBatch,
     CustomerAcquisitionAttribution,
 )
 from app.sales_automation.models import (
     AcquisitionProfile,
-    SearchJob,
-    LeadCompany,
-    ResearchSubject,
-    PublicPoolBatch,
-    PublicPoolTask,
-    DealAssessment,
-    SearchResult,
-    LeadContact,
-    ResearchRun,
-    ResearchFact,
 )
 from app.knowledge.models import (
     KnowledgeLibrary,
@@ -213,15 +207,9 @@ __all__ = [
     # 智能获客
     "AcquisitionProfile",
     "SearchJob",
-    "LeadCompany",
-    "ResearchSubject",
-    "PublicPoolBatch",
-    "PublicPoolTask",
-    "DealAssessment",
     "SearchResult",
-    "LeadContact",
-    "ResearchRun",
-    "ResearchFact",
+    "SearchResultSource",
+    "PublicPoolBatch",
     # Knowledge base
     "KnowledgeLibrary",
     "KnowledgeLibraryMember",
