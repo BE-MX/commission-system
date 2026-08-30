@@ -91,6 +91,58 @@ def test_okki_company_id_deterministically_converges_without_name_matching(db):
     assert db.query(CustomerResolutionKey).count() == 1
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("source_system", "alibaba\x1fshadow"),
+        ("source_account_key", "shop\x00shadow"),
+        ("source_entity_type", "inquiry\nshadow"),
+        ("external_context_id", "context\x7fshadow"),
+        ("company_name", "Example\rTrading"),
+        ("contact_name", "Mina\tBuyer"),
+        ("contact_email", "mina@example.com\x1fshadow"),
+    ],
+)
+def test_business_context_rejects_ascii_controls_at_identity_boundaries(db, field, value):
+    arguments = {
+        "source_system": "alibaba",
+        "source_account_key": "control-boundary",
+        "source_entity_type": "inquiry",
+        "external_context_id": f"control-boundary-{field}",
+    }
+    arguments[field] = value
+
+    with pytest.raises(CustomerDomainError) as invalid:
+        resolve_business_context(db, **arguments)
+
+    assert invalid.value.error_code == "ASCII_CONTROL_CHARACTER_INVALID"
+    assert db.query(CustomerAccount).count() == 0
+
+
+def test_identity_fingerprint_collision_material_is_rejected(db):
+    resolved = resolve_business_context(
+        db,
+        source_system="alibaba",
+        source_account_key="identity-control-collision",
+        source_entity_type="inquiry",
+        external_context_id="identity-control-collision",
+        contact_name="Mina",
+    )
+
+    with pytest.raises(CustomerDomainError) as invalid:
+        attach_identity_candidate(
+            db,
+            contact_id=resolved.contact.id,
+            source_system="alibaba",
+            source_account_key="identity-control-collision",
+            identifier_type="buyer_id",
+            raw_value="member_id\x1fCOLLISION",
+        )
+
+    assert invalid.value.error_code == "ASCII_CONTROL_CHARACTER_INVALID"
+    assert db.query(CustomerExternalIdentity).count() == 0
+
+
 def test_unverified_strong_candidate_is_scoped_to_business_context(db):
     candidate = IdentityCandidate("company_id", "UNVERIFIED-OKKI")
     first = resolve_business_context(

@@ -38,6 +38,7 @@ from app.customer.models import (
     CustomerFactEvidenceLink,
     CustomerMessage,
     CustomerOrder,
+    CustomerQualificationReview,
     CustomerResearchTask,
     CustomerSourceRecord,
 )
@@ -219,6 +220,75 @@ def test_source_payload_is_copied_and_hash_is_canonical(db):
     assert len(first.content_hash) == 64
 
 
+def test_source_fingerprint_collision_material_is_rejected_but_raw_payload_is_preserved(db):
+    customer = _customer(db, "source-control-collision")
+    raw = append_source_record(
+        db,
+        customer_id=customer.id,
+        source_system="okki",
+        source_account_key="source-control-collision",
+        source_entity_type="customer",
+        external_record_id="raw-control-payload",
+        payload_schema_version="okki_customer_v1",
+        payload_json={"original_text": "line one\nline two"},
+    )
+    assert raw.payload_json["original_text"] == "line one\nline two"
+
+    collision_materials = (
+        {
+            "source_account_key": "source-control-collision",
+            "source_entity_type": "customer",
+            "external_record_id": "order\x1fEXTERNAL-1",
+        },
+        {
+            "source_account_key": "source-control-collision\x1fcustomer",
+            "source_entity_type": "order",
+            "external_record_id": "EXTERNAL-1",
+        },
+    )
+    for material in collision_materials:
+        with pytest.raises(CustomerDomainError) as invalid:
+            append_source_record(
+                db,
+                customer_id=customer.id,
+                source_system="okki",
+                payload_schema_version="okki_customer_v1",
+                payload_json={"stable": True},
+                **material,
+            )
+        assert invalid.value.error_code == "ASCII_CONTROL_CHARACTER_INVALID"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("source_system", "public_web\x00shadow"),
+        ("payload_schema_version", "public_company_page_v1\x1fshadow"),
+        ("publisher_key", "example.com\x7fshadow"),
+        ("source_family_key", "page\nshadow"),
+        ("source_url", "https://example.com/\rshadow"),
+        ("source_version", "v1\tshadow"),
+    ],
+)
+def test_source_metadata_rejects_ascii_controls(db, field, value):
+    customer = _customer(db, f"source-control-{field}")
+    arguments = {
+        "customer_id": customer.id,
+        "source_system": "public_web",
+        "source_account_key": "global",
+        "source_entity_type": "company_page",
+        "external_record_id": f"source-control-{field}",
+        "payload_schema_version": "public_company_page_v1",
+        "payload_json": {"industry": "Hair"},
+    }
+    arguments[field] = value
+
+    with pytest.raises(CustomerDomainError) as invalid:
+        append_source_record(db, **arguments)
+
+    assert invalid.value.error_code == "ASCII_CONTROL_CHARACTER_INVALID"
+
+
 def test_source_replay_monotonically_tightens_security_metadata_once(db):
     customer = _customer(db, "source-security-tightening")
     arguments = {
@@ -260,6 +330,274 @@ def test_source_replay_monotonically_tightens_security_metadata_once(db):
     assert first.classification_reason == "sensitive review"
     assert after_tightening == before_tightening + 1
     assert customer.profile_input_seq == after_tightening
+
+
+def test_source_security_tightening_fails_closed_for_wider_derivative_graph(db):
+    customer = _customer(db, "source-security-derivatives")
+    source = append_source_record(
+        db,
+        customer_id=customer.id,
+        source_system="public_web",
+        source_account_key="global",
+        source_entity_type="company_page",
+        external_record_id="source-security-derivatives-sensitive",
+        payload_schema_version="public_company_page_v1",
+        payload_json={"industry": "Hair"},
+        visibility_scope="all_authorized",
+        occurred_at=beijing_now() - timedelta(days=1),
+    )
+    base_source = append_source_record(
+        db,
+        customer_id=customer.id,
+        source_system="public_web",
+        source_account_key="global",
+        source_entity_type="company_page",
+        external_record_id="source-security-derivatives-base",
+        payload_schema_version="public_company_page_v1",
+        payload_json={"industry": "Beauty"},
+        visibility_scope="all_authorized",
+        occurred_at=beijing_now() - timedelta(days=1),
+    )
+    fact_a = _industry_fact(
+        db,
+        customer,
+        base_source,
+        value="Hair",
+        visibility_scope="all_authorized",
+    )
+    link_fact_evidence(
+        db,
+        fact_id=fact_a.id,
+        evidence_kind="source_record",
+        source_record_id=source.id,
+        relation_type="supports",
+        evidence_content_hash=source.content_hash,
+        locator={"json_path": "$.industry"},
+    )
+    fact_b = _industry_fact(
+        db,
+        customer,
+        base_source,
+        value="Synthetic Hair",
+        observed_at=fact_a.observed_at + timedelta(seconds=1),
+        visibility_scope="all_authorized",
+        direct_evidence=[
+            DirectFactEvidence("fact", fact_a.id, {"role": "supporting"}),
+        ],
+    )
+    conflict = open_fact_conflict(
+        db,
+        fact_a.id,
+        fact_b.id,
+        detection_rule_version="source_security_v1",
+        visibility_scope="all_authorized",
+    )
+    order = _order(db, customer, external_id="ORDER-SOURCE-SECURITY", valid=True)
+    order_source = db.get(CustomerSourceRecord, order.source_record_id)
+    event = append_customer_event(
+        db,
+        customer_id=customer.id,
+        event_type="order.placed",
+        event_source="okki",
+        source_ref_type="order",
+        source_ref_id=str(order.id),
+        event_title="Order placed",
+        event_payload={"is_valid_business_order": True},
+        payload_schema_version="customer_event_v1",
+        occurred_at=order_source.occurred_at,
+        evidence_fact_ids=[fact_b.id],
+        visibility_scope="all_authorized",
+    )
+    before_tightening = customer.profile_input_seq
+
+    with pytest.raises(CustomerDomainError) as blocked:
+        append_source_record(
+            db,
+            customer_id=customer.id,
+            source_system="public_web",
+            source_account_key="global",
+            source_entity_type="company_page",
+            external_record_id="source-security-derivatives-sensitive",
+            payload_schema_version="public_company_page_v1",
+            payload_json={"industry": "Hair"},
+            visibility_scope="management",
+            classification_reason="sensitive review",
+        )
+
+    assert blocked.value.error_code == "SOURCE_SECURITY_TIGHTENING_REQUIRES_REBUILD"
+    assert source.visibility_scope == "all_authorized"
+    assert fact_a.visibility_scope == "all_authorized"
+    assert fact_b.visibility_scope == "all_authorized"
+    assert conflict.visibility_scope == "all_authorized"
+    assert event.visibility_scope == "customer_team"
+    assert customer.profile_input_seq == before_tightening
+
+
+def test_source_security_tightening_fails_closed_for_wider_direct_event(db):
+    customer = _customer(db, "source-security-event")
+    source = append_source_record(
+        db,
+        customer_id=customer.id,
+        source_system="alibaba",
+        source_account_key="shop-a",
+        source_entity_type="inquiry",
+        external_record_id="source-security-event",
+        payload_schema_version="alibaba_inquiry_v1",
+        payload_json={"subject": "Hair inquiry"},
+        visibility_scope="all_authorized",
+        occurred_at=beijing_now() - timedelta(days=1),
+    )
+    event = append_customer_event(
+        db,
+        customer_id=customer.id,
+        event_type="inquiry.received",
+        event_source="alibaba",
+        source_ref_type="source_record",
+        source_ref_id=str(source.id),
+        event_title="Inquiry received",
+        event_payload={"channel": "alibaba"},
+        payload_schema_version="customer_event_v1",
+        occurred_at=source.occurred_at,
+        visibility_scope="all_authorized",
+    )
+    before_tightening = customer.profile_input_seq
+
+    with pytest.raises(CustomerDomainError) as blocked:
+        append_source_record(
+            db,
+            customer_id=customer.id,
+            source_system="alibaba",
+            source_account_key="shop-a",
+            source_entity_type="inquiry",
+            external_record_id="source-security-event",
+            payload_schema_version="alibaba_inquiry_v1",
+            payload_json={"subject": "Hair inquiry"},
+            visibility_scope="management",
+        )
+
+    assert blocked.value.error_code == "SOURCE_SECURITY_TIGHTENING_REQUIRES_REBUILD"
+    assert source.visibility_scope == "all_authorized"
+    assert event.visibility_scope == "all_authorized"
+    assert customer.profile_input_seq == before_tightening
+
+
+def test_source_security_tightening_fails_closed_for_generic_event_evidence(db):
+    customer = _customer(db, "source-security-generic-event-evidence")
+    source = append_source_record(
+        db,
+        customer_id=customer.id,
+        source_system="public_web",
+        source_account_key="global",
+        source_entity_type="company_page",
+        external_record_id="source-security-generic-event-evidence",
+        payload_schema_version="public_company_page_v1",
+        payload_json={"industry": "Hair"},
+        visibility_scope="all_authorized",
+        occurred_at=beijing_now() - timedelta(days=1),
+    )
+    order = _order(db, customer, external_id="ORDER-GENERIC-EVENT-EVIDENCE", valid=True)
+    order_source = db.get(CustomerSourceRecord, order.source_record_id)
+    event = append_customer_event(
+        db,
+        customer_id=customer.id,
+        event_type="order.placed",
+        event_source="okki",
+        source_ref_type="order",
+        source_ref_id=str(order.id),
+        event_title="Order placed with public evidence",
+        event_payload={"is_valid_business_order": True},
+        payload_schema_version="customer_event_v1",
+        occurred_at=order_source.occurred_at,
+        evidence_refs=[EventEvidenceRef("source_record", source.id)],
+        visibility_scope="all_authorized",
+    )
+    before_tightening = customer.profile_input_seq
+
+    with pytest.raises(CustomerDomainError) as blocked:
+        append_source_record(
+            db,
+            customer_id=customer.id,
+            source_system="public_web",
+            source_account_key="global",
+            source_entity_type="company_page",
+            external_record_id="source-security-generic-event-evidence",
+            payload_schema_version="public_company_page_v1",
+            payload_json={"industry": "Hair"},
+            visibility_scope="management",
+        )
+
+    assert blocked.value.error_code == "SOURCE_SECURITY_TIGHTENING_REQUIRES_REBUILD"
+    assert source.visibility_scope == "all_authorized"
+    assert event.visibility_scope == "customer_team"
+    assert customer.profile_input_seq == before_tightening
+
+
+@pytest.mark.parametrize("bind_customer", [False, True])
+def test_unbound_source_tightening_checks_contact_identity_events(db, bind_customer):
+    source = append_source_record(
+        db,
+        customer_id=None,
+        source_system="alibaba",
+        source_account_key="shop-unbound-security",
+        source_entity_type="inquiry",
+        external_record_id="unbound-contact-identity-source",
+        payload_schema_version="alibaba_inquiry_v1",
+        payload_json={"buyer_id": "UNBOUND-SECURITY-BUYER"},
+        visibility_scope="all_authorized",
+    )
+    context = resolve_business_context(
+        db,
+        source_system="alibaba",
+        source_account_key="shop-unbound-security",
+        source_entity_type="inquiry",
+        external_context_id="unbound-contact-identity-context",
+        contact_name="Unbound Buyer",
+    )
+    actor = _human(db, "unbound-contact-identity-security")
+    identity = attach_identity_candidate(
+        db,
+        contact_id=context.contact.id,
+        source_system="alibaba",
+        source_account_key="shop-unbound-security",
+        identifier_type="buyer_id",
+        raw_value="UNBOUND-SECURITY-BUYER",
+        source_record_id=source.id,
+    )
+    confirm_identity(db, identity.id)
+    event = append_customer_event(
+        db,
+        customer_id=context.customer.id,
+        event_type="identity.confirmed",
+        event_source="manual",
+        source_ref_type="identity",
+        source_ref_id=str(identity.id),
+        event_title="Contact identity confirmed",
+        event_payload={"identity_id": identity.id},
+        payload_schema_version="customer_event_v1",
+        occurred_at=beijing_now(),
+        actor_user_id=actor.id,
+        visibility_scope="all_authorized",
+    )
+    before_tightening = context.customer.profile_input_seq
+
+    with pytest.raises(CustomerDomainError) as blocked:
+        append_source_record(
+            db,
+            customer_id=context.customer.id if bind_customer else None,
+            source_system="alibaba",
+            source_account_key="shop-unbound-security",
+            source_entity_type="inquiry",
+            external_record_id="unbound-contact-identity-source",
+            payload_schema_version="alibaba_inquiry_v1",
+            payload_json={"buyer_id": "UNBOUND-SECURITY-BUYER"},
+            visibility_scope="management",
+        )
+
+    assert blocked.value.error_code == "SOURCE_SECURITY_TIGHTENING_REQUIRES_REBUILD"
+    assert source.customer_id is None
+    assert source.visibility_scope == "all_authorized"
+    assert event.visibility_scope == "all_authorized"
+    assert context.customer.profile_input_seq == before_tightening
 
 
 def test_unregistered_source_and_fact_fail_closed(db):
@@ -355,6 +693,31 @@ def test_fact_source_policy_and_classification_are_enforced_not_caller_lowered(d
             observed_at=beijing_now(),
         )
     assert missing_source_record.value.error_code == "FACT_SOURCE_RECORD_REQUIRED"
+
+
+def test_fact_visibility_inherits_management_source(db):
+    customer = _customer(db, "fact-management-visibility")
+    source = append_source_record(
+        db,
+        customer_id=customer.id,
+        source_system="public_web",
+        source_account_key="global",
+        source_entity_type="company_page",
+        external_record_id="fact-management-visibility",
+        payload_schema_version="public_company_page_v1",
+        payload_json={"industry": "Hair"},
+        visibility_scope="management",
+        occurred_at=beijing_now(),
+    )
+
+    fact = _industry_fact(
+        db,
+        customer,
+        source,
+        visibility_scope="all_authorized",
+    )
+
+    assert fact.visibility_scope == "management"
 
 
 def test_fact_status_cannot_exceed_source_promotion_ceiling(db):
@@ -479,6 +842,26 @@ def test_fact_typed_value_validation_rejects_mismatches(
         _industry_fact(db, customer, source, value_type=value_type, value=value)
 
     assert invalid.value.error_code == error_code
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("fact_key", "business.industry\x1fshadow"),
+        ("value", "Hair\nProducts"),
+        ("confidence_method_version", "confidence_v1\x00shadow"),
+        ("classification_reason", "review\x7fshadow"),
+        ("rule_version", "rule\tshadow"),
+    ],
+)
+def test_fact_string_material_rejects_ascii_controls(db, field, value):
+    customer = _customer(db, f"fact-control-{field}")
+    source = _source(db, customer, external_id=f"fact-control-{field}")
+
+    with pytest.raises(CustomerDomainError) as invalid:
+        _industry_fact(db, customer, source, **{field: value})
+
+    assert invalid.value.error_code == "ASCII_CONTROL_CHARACTER_INVALID"
 
 
 def test_fact_replay_is_idempotent_with_temporal_freshness_and_sequence(db):
@@ -1188,6 +1571,129 @@ def test_evidence_link_requires_exact_hash_and_locator_and_is_append_only_idempo
     assert db.query(CustomerFactEvidenceLink).count() == 1
 
 
+def test_fact_evidence_rejects_transitive_cycle_before_insert(db):
+    customer = _customer(db, "fact-evidence-cycle")
+    source = _source(db, customer, external_id="fact-evidence-cycle")
+    fact_a = _industry_fact(db, customer, source, value="Hair")
+    fact_b = _industry_fact(
+        db,
+        customer,
+        source,
+        value="Synthetic Hair",
+        observed_at=fact_a.observed_at + timedelta(seconds=1),
+    )
+    link_fact_evidence(
+        db,
+        fact_id=fact_a.id,
+        evidence_kind="fact",
+        supporting_fact_id=fact_b.id,
+        relation_type="supports",
+        evidence_content_hash=fact_b.fact_fingerprint,
+        locator={"fact_key": fact_b.fact_key},
+    )
+    before_cycle = customer.profile_input_seq
+
+    with pytest.raises(CustomerDomainError) as cycle:
+        link_fact_evidence(
+            db,
+            fact_id=fact_b.id,
+            evidence_kind="fact",
+            supporting_fact_id=fact_a.id,
+            relation_type="supports",
+            evidence_content_hash=fact_a.fact_fingerprint,
+            locator={"fact_key": fact_a.fact_key},
+        )
+
+    assert cycle.value.error_code == "FACT_EVIDENCE_CYCLE"
+    assert db.query(CustomerFactEvidenceLink).count() == 1
+    assert customer.profile_input_seq == before_cycle
+
+
+def test_fact_evidence_rejects_cycle_through_direct_fact_evidence(db):
+    customer = _customer(db, "fact-evidence-mixed-cycle")
+    source = _source(db, customer, external_id="fact-evidence-mixed-cycle")
+    fact_a = _industry_fact(db, customer, source, value="Hair")
+    fact_b = _industry_fact(
+        db,
+        customer,
+        source,
+        value="Synthetic Hair",
+        observed_at=fact_a.observed_at + timedelta(seconds=1),
+        direct_evidence=[
+            DirectFactEvidence("fact", fact_a.id, {"role": "supporting"}),
+        ],
+    )
+    before_cycle = customer.profile_input_seq
+
+    with pytest.raises(CustomerDomainError) as cycle:
+        link_fact_evidence(
+            db,
+            fact_id=fact_a.id,
+            evidence_kind="fact",
+            supporting_fact_id=fact_b.id,
+            relation_type="supports",
+            evidence_content_hash=fact_b.fact_fingerprint,
+            locator={"fact_key": fact_b.fact_key},
+        )
+
+    assert cycle.value.error_code == "FACT_EVIDENCE_CYCLE"
+    assert db.query(CustomerFactEvidenceLink).count() == 0
+    assert customer.profile_input_seq == before_cycle
+
+
+def test_evidence_locator_and_excerpt_reject_ascii_controls(db):
+    customer = _customer(db, "evidence-control")
+    source = _source(db, customer, external_id="evidence-control")
+    fact = _industry_fact(db, customer, source)
+
+    for locator, excerpt in (
+        ({"json_path": "$.industry\x1fshadow"}, None),
+        ({"json_path": "$.industry"}, "Hair\nProducts"),
+    ):
+        with pytest.raises(CustomerDomainError) as invalid:
+            link_fact_evidence(
+                db,
+                fact_id=fact.id,
+                evidence_kind="source_record",
+                source_record_id=source.id,
+                relation_type="supports",
+                evidence_content_hash=source.content_hash,
+                locator=locator,
+                excerpt_text=excerpt,
+            )
+        assert invalid.value.error_code == "ASCII_CONTROL_CHARACTER_INVALID"
+
+
+def test_evidence_link_rejects_visibility_downgrade_from_management_source(db):
+    customer = _customer(db, "evidence-management-visibility")
+    fact_source = _source(db, customer, external_id="evidence-management-fact")
+    fact = _industry_fact(db, customer, fact_source)
+    restricted_source = append_source_record(
+        db,
+        customer_id=customer.id,
+        source_system="public_web",
+        source_account_key="global",
+        source_entity_type="company_page",
+        external_record_id="evidence-management-source",
+        payload_schema_version="public_company_page_v1",
+        payload_json={"industry": "Restricted Hair"},
+        visibility_scope="management",
+    )
+
+    with pytest.raises(CustomerDomainError) as invalid:
+        link_fact_evidence(
+            db,
+            fact_id=fact.id,
+            evidence_kind="source_record",
+            source_record_id=restricted_source.id,
+            relation_type="supports",
+            evidence_content_hash=restricted_source.content_hash,
+            locator={"json_path": "$.industry"},
+        )
+
+    assert invalid.value.error_code == "EVIDENCE_VISIBILITY_SCOPE_INVALID"
+
+
 def test_evidence_link_security_and_excerpt_are_immutable_material(db):
     customer = _customer(db, "evidence-security-material")
     source = _source(db, customer, external_id="evidence-security-material")
@@ -1346,6 +1852,49 @@ def test_fact_conflict_type_and_visibility_are_immutable_material(db):
             visibility_scope="public",
         )
     assert invalid_visibility.value.error_code == "VISIBILITY_SCOPE_INVALID"
+
+
+def test_fact_conflict_inherits_visibility_and_rejects_control_material(db):
+    customer = _customer(db, "conflict-security-boundary")
+    public_source = _source(db, customer, external_id="conflict-security-public")
+    management_source = append_source_record(
+        db,
+        customer_id=customer.id,
+        source_system="public_web",
+        source_account_key="global",
+        source_entity_type="company_page",
+        external_record_id="conflict-security-management",
+        payload_schema_version="public_company_page_v1",
+        payload_json={"industry": "Textiles"},
+        visibility_scope="management",
+        occurred_at=beijing_now(),
+    )
+    left = _industry_fact(db, customer, public_source, value="Hair")
+    right = _industry_fact(
+        db,
+        customer,
+        management_source,
+        value="Textiles",
+        observed_at=left.observed_at + timedelta(seconds=1),
+    )
+
+    conflict = open_fact_conflict(
+        db,
+        left.id,
+        right.id,
+        detection_rule_version="conflict_v1",
+        visibility_scope="all_authorized",
+    )
+    assert conflict.visibility_scope == "management"
+
+    with pytest.raises(CustomerDomainError) as invalid:
+        open_fact_conflict(
+            db,
+            left.id,
+            right.id,
+            detection_rule_version="conflict_v1\x1fshadow",
+        )
+    assert invalid.value.error_code == "ASCII_CONTROL_CHARACTER_INVALID"
 
 
 def test_fact_conflict_rejects_compatible_or_non_overlapping_facts(db):
@@ -1793,6 +2342,67 @@ def test_old_order_business_time_cannot_be_overridden_by_event_time(db):
     assert customer.relationship_stage == "inactive"
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("event_type", "order.placed\x1fshadow"),
+        ("event_source", "okki\x00shadow"),
+        ("source_ref_type", "order\nshadow"),
+        ("source_ref_id", "1\x7fshadow"),
+        ("event_title", "Order\rPlaced"),
+        ("event_summary", "Summary\tShadow"),
+        ("payload_schema_version", "customer_event_v1\x1fshadow"),
+    ],
+)
+def test_event_string_material_rejects_ascii_controls(db, field, value):
+    customer = _customer(db, f"event-control-{field}")
+    order = _order(db, customer, external_id=f"ORDER-CONTROL-{field}", valid=True)
+    source = db.get(CustomerSourceRecord, order.source_record_id)
+    arguments = {
+        "customer_id": customer.id,
+        "event_type": "order.placed",
+        "event_source": "okki",
+        "source_ref_type": "order",
+        "source_ref_id": str(order.id),
+        "event_title": "Order placed",
+        "event_summary": "Valid order",
+        "event_payload": {"is_valid_business_order": True},
+        "payload_schema_version": "customer_event_v1",
+        "occurred_at": source.occurred_at,
+    }
+    arguments[field] = value
+
+    with pytest.raises(CustomerDomainError) as invalid:
+        append_customer_event(db, **arguments)
+
+    assert invalid.value.error_code == "ASCII_CONTROL_CHARACTER_INVALID"
+
+
+def test_event_payload_string_rejects_ascii_controls_before_schema_validation(db):
+    customer = _customer(db, "event-payload-control")
+    order = _order(db, customer, external_id="ORDER-PAYLOAD-CONTROL", valid=True)
+    source = db.get(CustomerSourceRecord, order.source_record_id)
+
+    with pytest.raises(CustomerDomainError) as invalid:
+        append_customer_event(
+            db,
+            customer_id=customer.id,
+            event_type="order.placed",
+            event_source="okki",
+            source_ref_type="order",
+            source_ref_id=str(order.id),
+            event_title="Order placed",
+            event_payload={
+                "is_valid_business_order": True,
+                "historical_replay": "false\nshadow",
+            },
+            payload_schema_version="customer_event_v1",
+            occurred_at=source.occurred_at,
+        )
+
+    assert invalid.value.error_code == "ASCII_CONTROL_CHARACTER_INVALID"
+
+
 def test_event_registry_rejects_unknown_type_and_arbitrary_payload(db):
     customer = _customer(db, "event-registry")
     with pytest.raises(CustomerDomainError) as unknown:
@@ -1927,6 +2537,40 @@ def test_registered_research_and_annotation_events_validate_owned_references(db)
 
     assert research_event.source_ref_id == str(research.id)
     assert annotation_event.source_ref_id == str(annotation.id)
+
+
+def test_private_annotation_cannot_be_promoted_to_shared_event(db):
+    customer = _customer(db, "event-private-annotation")
+    actor = _human(db, "event-private-annotation")
+    annotation = CustomerAnnotation(
+        customer_id=customer.id,
+        annotation_type="note",
+        content_schema_version="v1",
+        content_json={"text": "Private note"},
+        visibility="private",
+        data_classification="restricted_internal",
+        status="active",
+        authored_by=actor.id,
+    )
+    db.add(annotation)
+    db.flush()
+
+    with pytest.raises(CustomerDomainError) as private:
+        append_customer_event(
+            db,
+            customer_id=customer.id,
+            event_type="annotation.created",
+            event_source="annotation",
+            source_ref_type="annotation",
+            source_ref_id=str(annotation.id),
+            event_title="私密备注",
+            event_payload={"annotation_type": "note"},
+            payload_schema_version="customer_event_v1",
+            occurred_at=beijing_now(),
+            actor_user_id=actor.id,
+        )
+
+    assert private.value.error_code == "PRIVATE_VISIBILITY_NOT_SHAREABLE"
 
 
 def test_registered_reference_events_reject_unfinished_research_and_candidate_identity(db):
@@ -2168,6 +2812,135 @@ def test_event_classification_inherits_message_source(db):
     )
 
     assert event.data_classification == "restricted_internal"
+
+
+def test_event_visibility_inherits_management_evidence_fact(db):
+    customer = _customer(db, "event-management-visibility")
+    management_source = append_source_record(
+        db,
+        customer_id=customer.id,
+        source_system="public_web",
+        source_account_key="global",
+        source_entity_type="company_page",
+        external_record_id="event-management-fact",
+        payload_schema_version="public_company_page_v1",
+        payload_json={"industry": "Hair"},
+        visibility_scope="management",
+        occurred_at=beijing_now(),
+    )
+    management_fact = _industry_fact(db, customer, management_source)
+    order = _order(db, customer, external_id="ORDER-EVENT-MANAGEMENT", valid=True)
+    occurred = db.get(CustomerSourceRecord, order.source_record_id).occurred_at
+
+    event = append_customer_event(
+        db,
+        customer_id=customer.id,
+        event_type="order.placed",
+        event_source="okki",
+        source_ref_type="order",
+        source_ref_id=str(order.id),
+        event_title="管理层证据订单",
+        event_payload={"is_valid_business_order": True},
+        payload_schema_version="customer_event_v1",
+        occurred_at=occurred,
+        visibility_scope="all_authorized",
+        evidence_fact_ids=[management_fact.id],
+    )
+
+    assert event.visibility_scope == "management"
+
+
+def test_approved_qualification_review_advances_discovered_customer(db):
+    customer = _customer(db, "relationship-qualified")
+    actor = _human(db, "relationship-qualified")
+    reviewed_at = beijing_now()
+    review = CustomerQualificationReview(
+        customer_id=customer.id,
+        review_version=1,
+        review_source="manual",
+        decision="approved",
+        reason_code="qualified",
+        scope_type="global",
+        is_current=True,
+        policy_version="qualification_v1",
+        review_snapshot={"identity_status": customer.identity_status},
+        decision_request_key="a" * 64,
+        reviewed_by=actor.id,
+        reviewed_at=reviewed_at,
+    )
+    db.add(review)
+    db.flush()
+
+    event = append_customer_event(
+        db,
+        customer_id=customer.id,
+        event_type="relationship.stage_changed",
+        event_source="qualification",
+        source_ref_type="qualification_review",
+        source_ref_id=str(review.id),
+        event_title="资格审核通过",
+        event_payload={"reason_code": "qualification_approved"},
+        payload_schema_version="customer_event_v1",
+        occurred_at=reviewed_at,
+        actor_user_id=actor.id,
+        target_relationship_stage="qualified",
+        transition_trigger="qualification_approved",
+    )
+
+    assert event.source_ref_type == "qualification_review"
+    assert customer.relationship_stage == "qualified"
+    assert customer.relationship_stage_reason == "qualification_approved"
+
+
+def test_valid_order_relationship_event_advances_active_customer(db):
+    customer = _customer(db, "relationship-active-order")
+    order = _order(db, customer, external_id="ORDER-STAGE-ACTIVE", valid=True)
+    occurred = db.get(CustomerSourceRecord, order.source_record_id).occurred_at
+
+    event = append_customer_event(
+        db,
+        customer_id=customer.id,
+        event_type="relationship.stage_changed",
+        event_source="okki",
+        source_ref_type="order",
+        source_ref_id=str(order.id),
+        event_title="有效订单推进成交客户",
+        event_payload={
+            "reason_code": "valid_order",
+            "is_valid_business_order": True,
+        },
+        payload_schema_version="customer_event_v1",
+        occurred_at=occurred,
+        target_relationship_stage="active_customer",
+        transition_trigger="valid_order",
+    )
+
+    assert event.source_ref_type == "order"
+    assert customer.relationship_stage == "active_customer"
+
+
+def test_relationship_stage_event_rejects_source_reference_mismatch(db):
+    customer = _customer(db, "relationship-reference-mismatch")
+    actor = _human(db, "relationship-reference-mismatch")
+
+    with pytest.raises(CustomerDomainError) as invalid:
+        append_customer_event(
+            db,
+            customer_id=customer.id,
+            event_type="relationship.stage_changed",
+            event_source="qualification",
+            source_ref_type="customer",
+            source_ref_id=str(customer.id),
+            event_title="伪造资格推进",
+            event_payload={"reason_code": "qualification_approved"},
+            payload_schema_version="customer_event_v1",
+            occurred_at=beijing_now(),
+            actor_user_id=actor.id,
+            target_relationship_stage="qualified",
+            transition_trigger="qualification_approved",
+        )
+
+    assert invalid.value.error_code == "EVENT_REFERENCE_INVALID"
 
 
 def test_invalid_relationship_transition_rejects_entire_event_mutation(db):

@@ -14,7 +14,7 @@ import unicodedata
 from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal
-from typing import Iterable, Literal, Sequence
+from typing import Iterable, Literal, Mapping, Sequence
 from urllib.parse import urlsplit
 
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -72,6 +72,21 @@ class CustomerDomainError(ValueError):
     def __init__(self, error_code: str, message: str = "Customer domain operation rejected"):
         self.error_code = error_code
         super().__init__(message)
+
+
+def reject_ascii_control_characters(*values: object) -> None:
+    """Reject normalized external string material that can collide in slots/hashes."""
+    pending = list(values)
+    while pending:
+        value = pending.pop()
+        if isinstance(value, str):
+            if any(ord(character) <= 0x1F or ord(character) == 0x7F for character in value):
+                raise CustomerDomainError("ASCII_CONTROL_CHARACTER_INVALID")
+        elif isinstance(value, Mapping):
+            pending.extend(value.keys())
+            pending.extend(value.values())
+        elif isinstance(value, (list, tuple, set, frozenset)):
+            pending.extend(value)
 
 
 class CustomerTransactionRetryRequired(CustomerDomainError):
@@ -155,15 +170,19 @@ DEFAULT_RESOLUTION_KEY_ARBITER = ResolutionKeyArbiter()
 
 
 def _sha256(parts: Iterable[object]) -> str:
-    encoded = "\x1f".join("" if item is None else str(item) for item in parts)
+    material = tuple(parts)
+    reject_ascii_control_characters(material)
+    encoded = "\x1f".join("" if item is None else str(item) for item in material)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def _normalize_name(value: str) -> str:
+    reject_ascii_control_characters(value)
     return " ".join(unicodedata.normalize("NFKC", value).strip().casefold().split())
 
 
 def _normalize_email(value: str) -> str:
+    reject_ascii_control_characters(value)
     normalized = unicodedata.normalize("NFKC", value).strip().casefold()
     if not _EMAIL_RE.fullmatch(normalized):
         raise CustomerDomainError("CONTACT_POINT_INVALID")
@@ -171,6 +190,7 @@ def _normalize_email(value: str) -> str:
 
 
 def _normalize_domain(value: str) -> str:
+    reject_ascii_control_characters(value)
     candidate = unicodedata.normalize("NFKC", value).strip()
     parsed = urlsplit(candidate if "://" in candidate else f"//{candidate}")
     host = (parsed.hostname or "").rstrip(".").casefold()
@@ -490,6 +510,14 @@ def _attach_identity_candidate(
     now: datetime,
     bump_profile: bool,
 ) -> tuple[CustomerExternalIdentity, bool]:
+    reject_ascii_control_characters(
+        source_system,
+        source_account_key,
+        identifier_type,
+        raw_value,
+        verification_status,
+        provider_declared_subject_type,
+    )
     if (customer_id is None) == (contact_id is None):
         raise CustomerDomainError("IDENTITY_SUBJECT_INVALID")
     source_record = db.get(CustomerSourceRecord, source_record_id) if source_record_id else None
@@ -1094,6 +1122,26 @@ def resolve_business_context(
     now: datetime | None = None,
 ) -> ResolvedBusinessContext:
     """Resolve a business context through insert-first transaction arbitration."""
+    candidates = tuple(identity_candidates)
+    reject_ascii_control_characters(
+        source_system,
+        source_account_key,
+        source_entity_type,
+        external_context_id,
+        company_name,
+        contact_name,
+        contact_email,
+        worker_id,
+        tuple(
+            (
+                candidate.identifier_type,
+                candidate.raw_value,
+                candidate.verification_status,
+                candidate.provider_declared_subject_type,
+            )
+            for candidate in candidates
+        ),
+    )
     if not all(isinstance(value, str) and value.strip() for value in (
         source_system,
         source_account_key,
@@ -1103,7 +1151,6 @@ def resolve_business_context(
         raise CustomerDomainError("RESOLUTION_INPUT_INVALID")
     normalized_email = _normalize_email(contact_email) if contact_email else None
     now = now or beijing_now()
-    candidates = tuple(identity_candidates)
     source_record = _validate_source_record_for_resolution(
         db,
         source_record_id,
@@ -1457,5 +1504,6 @@ __all__ = [
     "ResolutionKeyArbiter",
     "attach_identity_candidate",
     "confirm_identity",
+    "reject_ascii_control_characters",
     "resolve_business_context",
 ]
