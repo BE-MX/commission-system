@@ -9,7 +9,7 @@ import math
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, time as datetime_time, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from types import MappingProxyType
 from typing import Iterable, Literal, Mapping, Sequence
 
@@ -770,7 +770,18 @@ def append_fact(
         raise CustomerDomainError("FACT_PROMOTION_CEILING_EXCEEDED")
     if visibility_scope not in {"all_authorized", "customer_team", "management"}:
         raise CustomerDomainError("VISIBILITY_SCOPE_INVALID")
-    confidence_value = Decimal(str(confidence))
+    try:
+        confidence_value = Decimal(str(confidence))
+        if not confidence_value.is_finite():
+            raise InvalidOperation
+        confidence_value = confidence_value.quantize(
+            Decimal("0.0001"),
+            rounding=ROUND_HALF_UP,
+        )
+        if confidence_value.is_zero():
+            confidence_value = Decimal("0.0000")
+    except (InvalidOperation, ValueError) as exc:
+        raise CustomerDomainError("FACT_CONFIDENCE_INVALID") from exc
     if confidence_value < 0 or confidence_value > 1:
         raise CustomerDomainError("FACT_CONFIDENCE_INVALID")
     if (
@@ -1653,6 +1664,10 @@ def append_customer_event(
         "customer_event_v1",
         customer_id,
         event_type,
+        _canonical_json({
+            "event_title": event_title,
+            "event_summary": event_summary,
+        }),
         event_source,
         source_ref_type or "",
         source_ref_id or "",

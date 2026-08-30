@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.database import Base
 from app.core.time import beijing_now
+from app.customer.fact_service import append_source_record
 from app.customer.identity_service import (
     CustomerDomainError,
     CustomerTransactionRetryRequired,
@@ -40,6 +41,25 @@ def _okki_candidate(value: str = "OKKI-COMPANY-42") -> IdentityCandidate:
         raw_value=value,
         verification_status="verified",
         confidence=1,
+    )
+
+
+def _alibaba_organization_source(db, *, account_key: str, external_id: str, buyer_id: str):
+    return append_source_record(
+        db,
+        customer_id=None,
+        source_system="alibaba",
+        source_account_key=account_key,
+        source_entity_type="inquiry",
+        external_record_id=external_id,
+        payload_schema_version="alibaba_inquiry_v1",
+        payload_json={
+            "provider_identity_declarations": [{
+                "identifier_type": "buyer_id",
+                "raw_value": buyer_id,
+                "subject_type": "organization",
+            }],
+        },
     )
 
 
@@ -780,6 +800,94 @@ def test_candidate_replay_cannot_downgrade_verified_identity_material(db):
     assert resolved.customer.identity_status == "verified"
     assert float(resolved.customer.identity_confidence) == pytest.approx(0.95)
     assert resolved.customer.profile_input_seq == before_seq
+
+
+def test_resolved_context_lower_identity_ceiling_cannot_downgrade_verified_account(db):
+    source = _alibaba_organization_source(
+        db,
+        account_key="shop-monotonic-context",
+        external_id="monotonic-context-source",
+        buyer_id="MONOTONIC-CONTEXT-BUYER",
+    )
+    initial = resolve_business_context(
+        db,
+        source_system="alibaba",
+        source_account_key="shop-monotonic-context",
+        source_entity_type="inquiry",
+        external_context_id="monotonic-context",
+        source_record_id=source.id,
+        identity_candidates=[IdentityCandidate(
+            "company_id",
+            "MONOTONIC-CONTEXT-COMPANY",
+            confidence=0.95,
+        )],
+    )
+    company_identity = db.query(CustomerExternalIdentity).filter_by(
+        identifier_type="company_id",
+    ).one()
+    confirm_identity(db, company_identity.id)
+
+    replay = resolve_business_context(
+        db,
+        source_system="alibaba",
+        source_account_key="shop-monotonic-context",
+        source_entity_type="inquiry",
+        external_context_id="monotonic-context",
+        source_record_id=source.id,
+        identity_candidates=[IdentityCandidate(
+            "buyer_id",
+            "MONOTONIC-CONTEXT-BUYER",
+            verification_status="verified",
+            confidence=0.7,
+            provider_declared_subject_type="customer",
+        )],
+    )
+
+    assert replay.customer.id == initial.customer.id
+    assert replay.customer.identity_status == "verified"
+    assert float(replay.customer.identity_confidence) == pytest.approx(0.95)
+
+
+def test_confirm_lower_identity_ceiling_cannot_downgrade_verified_account(db):
+    source = _alibaba_organization_source(
+        db,
+        account_key="shop-monotonic-confirm",
+        external_id="monotonic-confirm-source",
+        buyer_id="MONOTONIC-CONFIRM-BUYER",
+    )
+    initial = resolve_business_context(
+        db,
+        source_system="alibaba",
+        source_account_key="shop-monotonic-confirm",
+        source_entity_type="inquiry",
+        external_context_id="monotonic-confirm",
+        source_record_id=source.id,
+        identity_candidates=[IdentityCandidate(
+            "company_id",
+            "MONOTONIC-CONFIRM-COMPANY",
+            confidence=0.95,
+        )],
+    )
+    company_identity = db.query(CustomerExternalIdentity).filter_by(
+        identifier_type="company_id",
+    ).one()
+    confirm_identity(db, company_identity.id)
+    buyer_identity = attach_identity_candidate(
+        db,
+        customer_id=initial.customer.id,
+        source_system="alibaba",
+        source_account_key="shop-monotonic-confirm",
+        identifier_type="buyer_id",
+        raw_value="MONOTONIC-CONFIRM-BUYER",
+        source_record_id=source.id,
+        confidence=0.7,
+        provider_declared_subject_type="customer",
+    )
+
+    confirm_identity(db, buyer_identity.id)
+
+    assert initial.customer.identity_status == "verified"
+    assert float(initial.customer.identity_confidence) == pytest.approx(0.95)
 
 
 def test_confirm_preverified_contact_identity_updates_contact_once(db):

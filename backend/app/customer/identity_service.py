@@ -716,6 +716,38 @@ def _policy_for_candidate(
     )
 
 
+_ACCOUNT_IDENTITY_RANK = {
+    "provisional": 0,
+    "identified": 1,
+    "verified": 2,
+}
+
+
+def _merge_account_identity(
+    account: CustomerAccount,
+    *,
+    target_status: str,
+    confidence: Decimal,
+) -> bool:
+    if account.identity_status == "disputed":
+        return False
+    merged_status = (
+        target_status
+        if _ACCOUNT_IDENTITY_RANK[target_status]
+        > _ACCOUNT_IDENTITY_RANK[account.identity_status]
+        else account.identity_status
+    )
+    merged_confidence = max(account.identity_confidence, confidence)
+    if (
+        account.identity_status == merged_status
+        and account.identity_confidence == merged_confidence
+    ):
+        return False
+    account.identity_status = merged_status
+    account.identity_confidence = merged_confidence
+    return True
+
+
 def _apply_context_material(
     db: Session,
     *,
@@ -941,16 +973,14 @@ def _apply_context_material(
         if (
             policy.subject_type == "customer"
             and candidate.verification_status == "verified"
-            and account.identity_status != "disputed"
             and policy.auto_match_ceiling in {"identified", "verified"}
+            and _merge_account_identity(
+                account,
+                target_status=policy.auto_match_ceiling,
+                confidence=identity.confidence,
+            )
         ):
-            if (
-                account.identity_status != policy.auto_match_ceiling
-                or account.identity_confidence != identity.confidence
-            ):
-                account.identity_status = policy.auto_match_ceiling
-                account.identity_confidence = identity.confidence
-                changed = True
+            changed = True
 
     if point is not None and (point.email_domain_type == "free" or personal_alias):
         research_fingerprint = _sha256((
@@ -1264,16 +1294,11 @@ def _sync_verified_identity_subject(
     target = "verified" if identity.auto_match_ceiling == "verified" else "identified"
     if identity.customer_id is not None:
         account = _account_for_update(db, identity.customer_id)
-        if account.identity_status == "disputed":
-            return False
-        if (
-            account.identity_status == target
-            and account.identity_confidence == identity.confidence
-        ):
-            return False
-        account.identity_status = target
-        account.identity_confidence = identity.confidence
-        return True
+        return _merge_account_identity(
+            account,
+            target_status=target,
+            confidence=identity.confidence,
+        )
     contact = db.query(CustomerContact).filter(
         CustomerContact.id == identity.contact_id,
         CustomerContact.record_status == "active",

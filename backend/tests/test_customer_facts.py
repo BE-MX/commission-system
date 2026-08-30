@@ -497,6 +497,65 @@ def test_fact_replay_is_idempotent_with_temporal_freshness_and_sequence(db):
     assert customer.profile_input_seq == first_seq
 
 
+def test_fact_confidence_is_quantized_half_up_before_fingerprint_and_storage(db):
+    customer = _customer(db, "fact-confidence-quantized")
+    source = _source(db, customer, external_id="fact-confidence-quantized")
+    observed_at = source.occurred_at
+    first = _industry_fact(
+        db,
+        customer,
+        source,
+        confidence=0.8,
+        observed_at=observed_at,
+    )
+    seq_after_first = customer.profile_input_seq
+    equivalent = _industry_fact(
+        db,
+        customer,
+        source,
+        confidence=Decimal("0.8000"),
+        observed_at=observed_at,
+    )
+    rounded_up = _industry_fact(
+        db,
+        customer,
+        source,
+        confidence=Decimal("0.80005"),
+        observed_at=observed_at,
+    )
+
+    assert equivalent.id == first.id
+    assert first.confidence == Decimal("0.8000")
+    assert rounded_up.id != first.id
+    assert rounded_up.confidence == Decimal("0.8001")
+    assert customer.profile_input_seq == seq_after_first + 1
+
+
+def test_fact_confidence_quantization_normalizes_negative_zero_replay(db):
+    customer = _customer(db, "fact-confidence-negative-zero")
+    source = _source(db, customer, external_id="fact-confidence-negative-zero")
+    observed_at = source.occurred_at
+    first = _industry_fact(
+        db,
+        customer,
+        source,
+        confidence=0,
+        observed_at=observed_at,
+    )
+    seq_after_first = customer.profile_input_seq
+    equivalent = _industry_fact(
+        db,
+        customer,
+        source,
+        confidence=Decimal("-0.00004"),
+        observed_at=observed_at,
+    )
+
+    assert equivalent.id == first.id
+    assert first.confidence == Decimal("0.0000")
+    assert customer.profile_input_seq == seq_after_first
+
+
 def test_fact_material_status_change_appends_instead_of_replaying(db):
     customer = _customer(db, "fact-status-change")
     source = append_source_record(
@@ -1361,7 +1420,7 @@ def test_customer_event_replay_is_idempotent_and_current_order_activates_inactiv
         event_source="okki",
         source_ref_type="order",
         source_ref_id=str(order.id),
-        event_title="有效订单重放",
+        event_title="有效订单",
         event_payload={"is_valid_business_order": True},
         payload_schema_version="customer_event_v1",
         occurred_at=order_time,
@@ -1375,6 +1434,51 @@ def test_customer_event_replay_is_idempotent_and_current_order_activates_inactiv
     assert customer.relationship_stage_changed_at == order_time
     assert seq_after_first == initial_seq + 1
     assert customer.profile_input_seq == seq_after_first
+
+
+def test_event_title_and_summary_are_immutable_fingerprint_material(db):
+    customer = _customer(db, "event-title-summary")
+    order = _order(db, customer, external_id="ORDER-TITLE-SUMMARY", valid=True)
+    occurred = db.get(CustomerSourceRecord, order.source_record_id).occurred_at
+    event_args = {
+        "customer_id": customer.id,
+        "event_type": "order.placed",
+        "event_source": "okki",
+        "source_ref_type": "order",
+        "source_ref_id": str(order.id),
+        "event_payload": {"is_valid_business_order": True},
+        "payload_schema_version": "customer_event_v1",
+        "occurred_at": occurred,
+        "evidence_refs": [EventEvidenceRef("order", order.id)],
+    }
+    first = append_customer_event(
+        db,
+        event_title="订单已确认",
+        event_summary="客户本期订单",
+        **event_args,
+    )
+    exact_replay = append_customer_event(
+        db,
+        event_title="订单已确认",
+        event_summary="客户本期订单",
+        **event_args,
+    )
+    changed_title = append_customer_event(
+        db,
+        event_title="客户订单已确认",
+        event_summary="客户本期订单",
+        **event_args,
+    )
+    changed_summary = append_customer_event(
+        db,
+        event_title="订单已确认",
+        event_summary="客户追加订单",
+        **event_args,
+    )
+
+    assert exact_replay.id == first.id
+    assert changed_title.id != first.id
+    assert changed_summary.id not in {first.id, changed_title.id}
 
 
 def test_event_material_payload_change_appends_new_immutable_event(db):
