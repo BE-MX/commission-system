@@ -34,9 +34,13 @@ from app.customer.cutover_service import (  # noqa: E402
     build_suppression_manifest,
     canonical_json_bytes,
     expected_customer_schema_sha256,
+    load_bound_target_profile_policy_backfill,
     read_maintenance_fence_evidence,
     resolve_agent_history_closure,
     snapshot_unrelated_agent_rows,
+    validate_target_profile_physical_state,
+    validate_target_profile_policy_backfill_against_live_rows,
+    validate_target_profile_policy_backfill_artifact,
     validate_customer_physical_schema_contract,
     validate_suppression_manifest,
     verify_agent_history_removed,
@@ -44,11 +48,15 @@ from app.customer.cutover_service import (  # noqa: E402
     verify_frozen_business_ids_removed,
     verify_ready,
     verify_unrelated_unchanged,
+    verify_target_profile_post_state,
 )
 
 
 BEIJING_TIMEZONE = ZoneInfo("Asia/Shanghai")
 CUTOVER_MIGRATION_REVISION = "126"
+REVISION_SCHEMA_RESOURCE_PATH = (
+    BACKEND_ROOT / "alembic/versions/126_unified_customer_domain_schema.json"
+)
 _CUTOVER_NONCE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 
 
@@ -145,6 +153,28 @@ def _audit_generated_at() -> str:
 
 def _report_hash(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
+
+
+def _load_revision_target_profile_physical_contract() -> dict[str, Any]:
+    try:
+        resource = json.loads(REVISION_SCHEMA_RESOURCE_PATH.read_bytes())
+        contract = resource["target_profile_physical_contract"]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise CutoverGuardError(
+            "cannot read revision 126 target-profile physical contract"
+        ) from exc
+    if not isinstance(contract, dict):
+        raise CutoverGuardError("target-profile physical contract must be an object")
+    payload = {key: value for key, value in contract.items() if key != "contract_sha256"}
+    if (
+        set(contract)
+        != {"schema_version", "migration_revision", "before", "after", "contract_sha256"}
+        or contract.get("schema_version") != 1
+        or contract.get("migration_revision") != CUTOVER_MIGRATION_REVISION
+        or contract.get("contract_sha256") != _report_hash(payload)
+    ):
+        raise CutoverGuardError("target-profile physical contract SHA-256 mismatch")
+    return contract
 
 
 def build_preflight_report(db) -> dict[str, Any]:
@@ -255,6 +285,8 @@ def validate_execution_receipt(
             "maintenance_fence_artifact_sha256",
             "instance_inventory_artifact_sha256",
             "physical_schema_contract_sha256",
+            "target_profile_physical_contract_sha256",
+            "target_profile_policy_backfill_sha256",
             "nonce",
         )
     }
@@ -306,6 +338,7 @@ def verify_after(
     execution_receipt: Mapping[str, Any],
     execution_receipt_path: Path,
     physical_schema_contract: Mapping[str, Any],
+    target_profile_policy_backfill: Mapping[str, Any],
 ) -> bool:
     _validate_preflight_report(preflight_report)
     _validate_suppression_manifest(suppression_manifest)
@@ -316,6 +349,12 @@ def verify_after(
     marker_sha256 = _report_hash(approved_marker)
     physical_schema_contract_sha256 = validate_customer_physical_schema_contract(
         physical_schema_contract
+    )
+    target_profile_contract = _load_revision_target_profile_physical_contract()
+    target_profile_policy_backfill_sha256 = (
+        validate_target_profile_policy_backfill_artifact(
+            target_profile_policy_backfill
+        )
     )
     if (
         suppression_manifest.get("inventory_sha256") != inventory.inventory_sha256
@@ -328,6 +367,12 @@ def verify_after(
         "suppression_manifest_sha256": suppression_sha256,
         "writer_manifest_sha256": writer_sha256,
         "physical_schema_contract_sha256": physical_schema_contract_sha256,
+        "target_profile_physical_contract_sha256": target_profile_contract[
+            "contract_sha256"
+        ],
+        "target_profile_policy_backfill_sha256": (
+            target_profile_policy_backfill_sha256
+        ),
     }
     if approved_marker.get("approved") is not True:
         raise CutoverGuardError("verify-after approved marker is not approved")
@@ -352,6 +397,13 @@ def verify_after(
         evidence_contract=contract,
         receipt_resolved_path=execution_receipt_path,
     )
+    bound_policy_backfill = load_bound_target_profile_policy_backfill(contract)
+    if canonical_json_bytes(bound_policy_backfill) != canonical_json_bytes(
+        target_profile_policy_backfill
+    ):
+        raise CutoverGuardError(
+            "execution contract target-profile policy backfill does not match review input"
+        )
     closure = AgentHistoryClosure.from_dict(preflight_report["agent_history_closure"])
     before = AgentPreservationSnapshot.from_dict(
         preflight_report["unrelated_agent_snapshot"]
@@ -361,6 +413,11 @@ def verify_after(
     after = snapshot_unrelated_agent_rows(db, closure)
     verify_unrelated_unchanged(before, after)
     verify_expected_customer_table_state(db, physical_schema_contract)
+    verify_target_profile_post_state(
+        db,
+        target_profile_contract["after"],
+        target_profile_policy_backfill,
+    )
     return True
 
 
@@ -394,6 +451,7 @@ def apply_reset(
     approved_marker_path: Path,
     suppression_hmac_key: bytes | str,
     physical_schema_contract: Mapping[str, Any],
+    target_profile_policy_backfill: Mapping[str, Any],
     subprocess_runner: Callable[..., Any] | None = None,
     now: datetime | None = None,
 ) -> CutoverInventory:
@@ -403,6 +461,19 @@ def apply_reset(
     current = now or beijing_now().replace(tzinfo=BEIJING_TIMEZONE)
     physical_schema_contract_sha256 = validate_customer_physical_schema_contract(
         physical_schema_contract
+    )
+    target_profile_contract = _load_revision_target_profile_physical_contract()
+    target_profile_policy_backfill_sha256 = (
+        validate_target_profile_policy_backfill_artifact(
+            target_profile_policy_backfill,
+            now=current,
+        )
+    )
+    validate_target_profile_physical_state(db, target_profile_contract["before"])
+    validate_target_profile_policy_backfill_against_live_rows(
+        db,
+        target_profile_policy_backfill,
+        now=current,
     )
     _validate_suppression_manifest(
         suppression_manifest,
@@ -439,6 +510,12 @@ def apply_reset(
         "suppression_manifest_sha256": suppression_sha256,
         "writer_manifest_sha256": writer_sha256,
         "physical_schema_contract_sha256": physical_schema_contract_sha256,
+        "target_profile_physical_contract_sha256": target_profile_contract[
+            "contract_sha256"
+        ],
+        "target_profile_policy_backfill_sha256": (
+            target_profile_policy_backfill_sha256
+        ),
     }
     for field_name, expected in expected_bindings.items():
         if marker.get(field_name) != expected:
@@ -463,6 +540,7 @@ def apply_reset(
         "writer_manifest": stopped_writer_manifest,
         "approved_marker": marker,
         "physical_schema_contract": physical_schema_contract,
+        "target_profile_policy_backfill": target_profile_policy_backfill,
     }
     evidence_artifacts: dict[str, dict[str, str]] = {}
     try:
@@ -499,7 +577,6 @@ def apply_reset(
         "receipt_path": receipt_path.relative_to(EVIDENCE_ROOT.resolve()).as_posix(),
         "migration_revision": CUTOVER_MIGRATION_REVISION,
         "evidence_artifacts": evidence_artifacts,
-        "physical_schema_contract_sha256": physical_schema_contract_sha256,
     }
     contract["contract_sha256"] = _report_hash(contract)
     try:
@@ -605,10 +682,15 @@ def _command_apply_reset(args: argparse.Namespace) -> None:
     physical_schema_contract = _read_json(
         resolve_read_path(args.physical_schema_contract)
     )
+    target_profile_policy_backfill = _read_json(
+        resolve_read_path(args.target_profile_policy_backfill)
+    )
     if not isinstance(writer_manifest, dict) or not isinstance(
         physical_schema_contract, dict
-    ):
-        raise CutoverGuardError("writer and physical schema evidence must be objects")
+    ) or not isinstance(target_profile_policy_backfill, dict):
+        raise CutoverGuardError(
+            "writer, physical schema and target-profile policy evidence must be objects"
+        )
     hmac_key = getpass.getpass("Suppression HMAC key (hidden): ")
     with SessionLocal() as db:
         inventory = apply_reset(
@@ -620,6 +702,7 @@ def _command_apply_reset(args: argparse.Namespace) -> None:
             approved_marker_path=marker_path,
             suppression_hmac_key=hmac_key,
             physical_schema_contract=physical_schema_contract,
+            target_profile_policy_backfill=target_profile_policy_backfill,
         )
     print(f"Alembic reset applied for inventory: {inventory.inventory_sha256}")
     print("Next: run verify-after before any writer is resumed.")
@@ -636,9 +719,18 @@ def _command_verify_after(args: argparse.Namespace) -> None:
     physical_schema_contract = _read_json(
         resolve_read_path(args.physical_schema_contract)
     )
+    target_profile_policy_backfill = _read_json(
+        resolve_read_path(args.target_profile_policy_backfill)
+    )
     if not all(
         isinstance(item, dict)
-        for item in (writer, marker, receipt, physical_schema_contract)
+        for item in (
+            writer,
+            marker,
+            receipt,
+            physical_schema_contract,
+            target_profile_policy_backfill,
+        )
     ):
         raise CutoverGuardError("verify-after evidence files must be JSON objects")
     with SessionLocal() as db:
@@ -651,6 +743,7 @@ def _command_verify_after(args: argparse.Namespace) -> None:
             execution_receipt=receipt,
             execution_receipt_path=receipt_path,
             physical_schema_contract=physical_schema_contract,
+            target_profile_policy_backfill=target_profile_policy_backfill,
         )
     print("Verified: approval receipt, retired IDs, Agent history, and schema all match.")
     print("Next: replay suppressions before restoring any customer contact writer.")
@@ -686,6 +779,7 @@ def build_parser() -> argparse.ArgumentParser:
     reset.add_argument("--expected-inventory-sha256", required=True)
     reset.add_argument("--approved-marker", required=True)
     reset.add_argument("--physical-schema-contract", required=True)
+    reset.add_argument("--target-profile-policy-backfill", required=True)
     reset.set_defaults(handler=_command_apply_reset)
 
     verify_after = subparsers.add_parser(
@@ -697,6 +791,7 @@ def build_parser() -> argparse.ArgumentParser:
     verify_after.add_argument("--approved-marker", required=True)
     verify_after.add_argument("--execution-receipt", required=True)
     verify_after.add_argument("--physical-schema-contract", required=True)
+    verify_after.add_argument("--target-profile-policy-backfill", required=True)
     verify_after.set_defaults(handler=_command_verify_after)
     return parser
 

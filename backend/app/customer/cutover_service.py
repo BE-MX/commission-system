@@ -60,6 +60,62 @@ AGENT_CONTROL_TABLES = (
     "ark_agent_artifacts",
 )
 AGENT_ID_QUERY_CHUNK_SIZE = 200
+TARGET_PROFILE_EXISTING_COLUMNS = (
+    "id",
+    "profile_key",
+    "company_name",
+    "company_website",
+    "products",
+    "advantages",
+    "target_countries",
+    "target_industries",
+    "target_roles",
+    "exclusions",
+    "default_language",
+    "status",
+    "created_by",
+    "updated_by",
+    "created_at",
+    "updated_at",
+    "deleted_at",
+)
+TARGET_PROFILE_POLICY_SECTIONS = (
+    "thresholds",
+    "weights",
+    "research_rules",
+    "claim_rules",
+)
+TARGET_PROFILE_THRESHOLD_FIELDS = frozenset(
+    {
+        "research_threshold",
+        "qualification_threshold",
+        "tier_1_min_score",
+        "tier_2_min_score",
+        "tier_3_min_score",
+    }
+)
+TARGET_PROFILE_RESEARCH_RULE_FIELDS = frozenset(
+    {
+        "minimum_independent_sources",
+        "evidence_freshness_days",
+        "auto_research_enabled",
+        "gate_required",
+    }
+)
+TARGET_PROFILE_CLAIM_RULE_FIELDS = frozenset(
+    {
+        "cooldown_days",
+        "requires_qualification",
+        "per_user_quota",
+        "per_team_quota",
+        "block_identity_conflict",
+        "block_do_not_contact",
+    }
+)
+TARGET_PROFILE_POLICY_WEIGHT_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+TARGET_PROFILE_POLICY_PLACEHOLDER_RE = re.compile(
+    r"(?:todo|tbd|placeholder|unconfigured|legacy)", re.IGNORECASE
+)
 REQUIRED_CUTOVER_TABLES = REQUIRED_LEGACY_TABLES + AGENT_CONTROL_TABLES
 
 NEW_CUSTOMER_TABLES = tuple(CORE_TABLE_NAMES)
@@ -740,6 +796,287 @@ def verify_unrelated_unchanged(
         )
     if not hmac.compare_digest(before.snapshot_sha256, after.snapshot_sha256):
         raise CutoverGuardError("unrelated Agent snapshot SHA-256 changed")
+    return True
+
+
+def _canonical_evidence_value(value: Any) -> Any:
+    return json.loads(canonical_json_bytes(value))
+
+
+def snapshot_target_profile_rows(db: Session) -> tuple[dict[str, Any], ...]:
+    """Return canonical snapshots of every preserved target-profile row."""
+    table = _table_or_none(db, "ark_sales_target_profiles")
+    if table is None:
+        raise CutoverGuardError("preserved target-profile table is missing")
+    if set(table.c.keys()) < set(TARGET_PROFILE_EXISTING_COLUMNS):
+        raise CutoverGuardError("preserved target-profile columns are incomplete")
+    result = db.execute(
+        select(*(table.c[name] for name in TARGET_PROFILE_EXISTING_COLUMNS)).order_by(
+            table.c.id
+        )
+    ).mappings()
+    try:
+        return tuple(_canonical_evidence_value(dict(row)) for row in result)
+    finally:
+        result.close()
+
+
+def _validate_policy_number_map(value: Any, field_name: str) -> None:
+    if not isinstance(value, Mapping) or not value:
+        raise CutoverGuardError(f"target-profile policy {field_name} must be non-empty")
+    has_positive_value = False
+    for name, number in value.items():
+        if (
+            not isinstance(name, str)
+            or not name.strip()
+            or not TARGET_PROFILE_POLICY_WEIGHT_NAME_RE.fullmatch(name)
+            or TARGET_PROFILE_POLICY_PLACEHOLDER_RE.search(name)
+            or isinstance(number, bool)
+            or not isinstance(number, (int, float, Decimal))
+            or not math.isfinite(float(number))
+            or number < 0
+        ):
+            raise CutoverGuardError(
+                f"target-profile policy {field_name} contains placeholder or invalid values"
+            )
+        has_positive_value = has_positive_value or number > 0
+    if not has_positive_value:
+        raise CutoverGuardError(
+            f"target-profile policy {field_name} must contain a positive value"
+        )
+
+
+def _validate_target_profile_policy(policy: Mapping[str, Any]) -> None:
+    thresholds = policy["thresholds"]
+    if not isinstance(thresholds, Mapping) or set(thresholds) != set(
+        TARGET_PROFILE_THRESHOLD_FIELDS
+    ):
+        raise CutoverGuardError(
+            "target-profile policy thresholds are not a complete semantic policy"
+        )
+    for value in thresholds.values():
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float, Decimal))
+            or not math.isfinite(float(value))
+            or value < 0
+            or value > 100
+        ):
+            raise CutoverGuardError(
+                "target-profile policy thresholds are not a complete semantic policy"
+            )
+    if not (
+        thresholds["tier_1_min_score"]
+        >= thresholds["tier_2_min_score"]
+        >= thresholds["tier_3_min_score"]
+    ):
+        raise CutoverGuardError(
+            "target-profile policy tier thresholds are not ordered"
+        )
+
+    _validate_policy_number_map(policy["weights"], "weights")
+
+    research_rules = policy["research_rules"]
+    if not isinstance(research_rules, Mapping) or set(research_rules) != set(
+        TARGET_PROFILE_RESEARCH_RULE_FIELDS
+    ):
+        raise CutoverGuardError(
+            "target-profile policy research_rules are not a complete semantic policy"
+        )
+    for field_name in ("minimum_independent_sources", "evidence_freshness_days"):
+        value = research_rules[field_name]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise CutoverGuardError(
+                "target-profile policy research_rules are not a complete semantic policy"
+            )
+    for field_name in ("auto_research_enabled", "gate_required"):
+        if not isinstance(research_rules[field_name], bool):
+            raise CutoverGuardError(
+                "target-profile policy research_rules are not a complete semantic policy"
+            )
+
+    claim_rules = policy["claim_rules"]
+    if not isinstance(claim_rules, Mapping) or set(claim_rules) != set(
+        TARGET_PROFILE_CLAIM_RULE_FIELDS
+    ):
+        raise CutoverGuardError(
+            "target-profile policy claim_rules are not a complete semantic policy"
+        )
+    cooldown_days = claim_rules["cooldown_days"]
+    if isinstance(cooldown_days, bool) or not isinstance(cooldown_days, int) or cooldown_days < 0:
+        raise CutoverGuardError(
+            "target-profile policy claim_rules are not a complete semantic policy"
+        )
+    for field_name in ("per_user_quota", "per_team_quota"):
+        value = claim_rules[field_name]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise CutoverGuardError(
+                "target-profile policy claim_rules are not a complete semantic policy"
+            )
+    for field_name in (
+        "requires_qualification",
+        "block_identity_conflict",
+        "block_do_not_contact",
+    ):
+        if not isinstance(claim_rules[field_name], bool):
+            raise CutoverGuardError(
+                "target-profile policy claim_rules are not a complete semantic policy"
+            )
+
+
+def _target_profile_policy_snapshot(entry: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "schema_version": "target_profile_policy_snapshot_v1",
+        "profile": entry["expected_profile_snapshot"],
+        "policy_version": entry["policy_version"],
+        "policy_json": entry["policy_json"],
+        "last_improvement_artifact_id": entry["last_improvement_artifact_id"],
+        "policy_applied_at": entry["policy_applied_at"],
+    }
+
+
+def validate_target_profile_policy_backfill_artifact(
+    artifact: Mapping[str, Any] | None,
+    *,
+    now: datetime | None = None,
+) -> str:
+    """Validate the approved, per-profile policy backfill without inventing defaults."""
+    if not isinstance(artifact, Mapping) or set(artifact) != {
+        "schema_version",
+        "artifact_type",
+        "migration_revision",
+        "approved_at",
+        "confirmed_empty",
+        "profiles",
+        "artifact_sha256",
+    }:
+        raise CutoverGuardError("target-profile policy backfill artifact is incomplete")
+    if (
+        artifact.get("schema_version") != 1
+        or artifact.get("artifact_type") != "target_profile_policy_backfill"
+        or artifact.get("migration_revision") != "126"
+    ):
+        raise CutoverGuardError("target-profile policy backfill artifact type is invalid")
+    payload = {key: value for key, value in artifact.items() if key != "artifact_sha256"}
+    artifact_sha256 = _sha256(payload)
+    if not hmac.compare_digest(
+        str(artifact.get("artifact_sha256")), artifact_sha256
+    ):
+        raise CutoverGuardError("target-profile policy backfill SHA-256 mismatch")
+    approved_at = _parse_writer_timestamp(
+        artifact.get("approved_at"), "target-profile policy approved_at"
+    )
+    current = now or beijing_now().replace(tzinfo=BEIJING_TIMEZONE)
+    _beijing_timestamp(current, "target-profile policy validation now")
+    if approved_at > current:
+        raise CutoverGuardError("target-profile policy approval is in the future")
+    if current - approved_at > CUTOVER_EVIDENCE_MAX_AGE:
+        raise CutoverGuardError("target-profile policy approval is stale")
+    confirmed_empty = artifact.get("confirmed_empty")
+    profiles = artifact.get("profiles")
+    if not isinstance(confirmed_empty, bool) or not isinstance(profiles, list):
+        raise CutoverGuardError("target-profile policy profiles must be a list")
+    if confirmed_empty is not (len(profiles) == 0):
+        raise CutoverGuardError(
+            "target-profile policy confirmed_empty must exactly match an empty profile set"
+        )
+
+    seen_ids: set[int] = set()
+    for entry in profiles:
+        if not isinstance(entry, Mapping) or set(entry) != {
+            "profile_id",
+            "expected_profile_snapshot",
+            "expected_profile_snapshot_hash",
+            "policy_version",
+            "policy_json",
+            "policy_snapshot_hash",
+            "last_improvement_artifact_id",
+            "policy_applied_at",
+        }:
+            raise CutoverGuardError("target-profile policy entry is incomplete")
+        profile_id = entry.get("profile_id")
+        if not isinstance(profile_id, int) or isinstance(profile_id, bool) or profile_id <= 0:
+            raise CutoverGuardError("target-profile policy profile_id must be positive")
+        if profile_id in seen_ids:
+            raise CutoverGuardError("target-profile policy profile_id is duplicated")
+        seen_ids.add(profile_id)
+        snapshot = entry.get("expected_profile_snapshot")
+        if not isinstance(snapshot, Mapping) or set(snapshot) != set(
+            TARGET_PROFILE_EXISTING_COLUMNS
+        ) or snapshot.get("id") != profile_id:
+            raise CutoverGuardError("target-profile expected snapshot is incomplete")
+        if not hmac.compare_digest(
+            str(entry.get("expected_profile_snapshot_hash")), _sha256(snapshot)
+        ):
+            raise CutoverGuardError("target-profile expected snapshot SHA-256 mismatch")
+        policy_version = entry.get("policy_version")
+        if not isinstance(policy_version, str) or not policy_version.strip() or len(
+            policy_version
+        ) > 32:
+            raise CutoverGuardError("target-profile policy_version is invalid")
+        policy = entry.get("policy_json")
+        if not isinstance(policy, Mapping) or set(policy) != {
+            "schema_version",
+            *TARGET_PROFILE_POLICY_SECTIONS,
+        } or policy.get("schema_version") != "target_profile_policy_v1":
+            raise CutoverGuardError(
+                "target-profile policy requires thresholds, weights, research_rules and claim_rules"
+            )
+        _validate_target_profile_policy(policy)
+        improvement_id = entry.get("last_improvement_artifact_id")
+        if improvement_id is not None and (
+            not isinstance(improvement_id, int)
+            or isinstance(improvement_id, bool)
+            or improvement_id <= 0
+        ):
+            raise CutoverGuardError("target-profile improvement Artifact ID is invalid")
+        applied_at = _parse_writer_timestamp(
+            entry.get("policy_applied_at"), "target-profile policy_applied_at"
+        )
+        if applied_at > approved_at:
+            raise CutoverGuardError("target-profile policy_applied_at exceeds approval")
+        if not hmac.compare_digest(
+            str(entry.get("policy_snapshot_hash")),
+            _sha256(_target_profile_policy_snapshot(entry)),
+        ):
+            raise CutoverGuardError("target-profile complete policy snapshot SHA-256 mismatch")
+    return artifact_sha256
+
+
+def validate_target_profile_policy_backfill_against_live_rows(
+    db: Session,
+    artifact: Mapping[str, Any],
+    *,
+    now: datetime | None = None,
+) -> bool:
+    validate_target_profile_policy_backfill_artifact(artifact, now=now)
+    actual = {snapshot["id"]: snapshot for snapshot in snapshot_target_profile_rows(db)}
+    entries = {entry["profile_id"]: entry for entry in artifact["profiles"]}
+    if set(actual) != set(entries):
+        raise CutoverGuardError("target-profile policy live profile set is stale")
+    for profile_id, entry in entries.items():
+        if actual[profile_id] != entry["expected_profile_snapshot"] or not hmac.compare_digest(
+            _sha256(actual[profile_id]), entry["expected_profile_snapshot_hash"]
+        ):
+            raise CutoverGuardError(
+                f"target-profile policy snapshot is stale for profile {profile_id}"
+            )
+    referenced_artifacts = {
+        entry["last_improvement_artifact_id"]
+        for entry in entries.values()
+        if entry["last_improvement_artifact_id"] is not None
+    }
+    if referenced_artifacts:
+        table = _table_or_none(db, "ark_agent_artifacts")
+        if table is None:
+            raise CutoverGuardError("target-profile improvement Artifact table is missing")
+        existing = set(
+            db.execute(
+                select(table.c.id).where(table.c.id.in_(referenced_artifacts))
+            ).scalars()
+        )
+        if existing != referenced_artifacts:
+            raise CutoverGuardError("target-profile improvement Artifact binding is stale")
     return True
 
 
@@ -1662,6 +1999,8 @@ def bootstrap_migration_fence(
     evidence_contract: Mapping[str, Any] | None,
     *,
     now: datetime | None = None,
+    physical_schema_validator: Callable[[Mapping[str, Any] | None], str]
+    | None = None,
 ) -> bool:
     """Create and activate the DB fence only from the immutable evidence chain.
 
@@ -1689,9 +2028,13 @@ def bootstrap_migration_fence(
         str(evidence_contract.get("contract_sha256")), _sha256(contract_payload)
     ):
         raise CutoverGuardError("migration fence bootstrap contract SHA-256 mismatch")
-    load_bound_customer_physical_schema_contract(evidence_contract)
     current = now or beijing_now().replace(tzinfo=BEIJING_TIMEZONE)
     _beijing_timestamp(current, "migration fence bootstrap now")
+    load_bound_customer_physical_schema_contract(
+        evidence_contract,
+        now=current,
+        physical_schema_validator=physical_schema_validator,
+    )
     expires_at = _parse_writer_timestamp(
         evidence_contract.get("expires_at"), "migration contract expires_at"
     )
@@ -1830,7 +2173,12 @@ def _read_bound_contract_artifact(
 
 
 def _validate_bound_contract_evidence(
-    contract: Mapping[str, Any], nonce: str
+    contract: Mapping[str, Any],
+    nonce: str,
+    *,
+    now: datetime | None = None,
+    physical_schema_validator: Callable[[Mapping[str, Any] | None], str]
+    | None = None,
 ) -> dict[str, Mapping[str, Any]]:
     descriptors = contract.get("evidence_artifacts")
     labels = (
@@ -1839,6 +2187,7 @@ def _validate_bound_contract_evidence(
         "writer_manifest",
         "approved_marker",
         "physical_schema_contract",
+        "target_profile_policy_backfill",
     )
     if not isinstance(descriptors, Mapping) or set(descriptors) != set(labels):
         raise CutoverGuardError("migration bound evidence set is incomplete")
@@ -1896,29 +2245,43 @@ def _validate_bound_contract_evidence(
         "suppression_manifest_sha256",
         "writer_manifest_sha256",
         "physical_schema_contract_sha256",
+        "target_profile_physical_contract_sha256",
+        "target_profile_policy_backfill_sha256",
         "nonce",
     ):
         if marker.get(field_name) != contract.get(field_name):
             raise CutoverGuardError(
                 f"migration approved marker does not bind {field_name}"
             )
-    physical_contract_sha256 = validate_customer_physical_schema_contract(
+    validate_physical_schema = (
+        physical_schema_validator or validate_customer_physical_schema_contract
+    )
+    physical_contract_sha256 = validate_physical_schema(
         documents["physical_schema_contract"]
     )
     if physical_contract_sha256 != contract.get("physical_schema_contract_sha256"):
         raise CutoverGuardError("migration physical schema contract binding is invalid")
+    policy_backfill_sha256 = validate_target_profile_policy_backfill_artifact(
+        documents["target_profile_policy_backfill"],
+        now=now,
+    )
+    if policy_backfill_sha256 != contract.get(
+        "target_profile_policy_backfill_sha256"
+    ):
+        raise CutoverGuardError(
+            "migration target-profile policy backfill binding is invalid"
+        )
     return documents
 
 
-def load_bound_customer_physical_schema_contract(
+def load_bound_customer_cutover_evidence(
     evidence_contract: Mapping[str, Any] | None,
-) -> Mapping[str, Any]:
-    """Read the immutable revision-126 schema artifact bound to a contract.
-
-    The returned document is not a descriptor.  Its canonical bytes, artifact
-    bytes, inner contract hash and outer migration-contract hash have all been
-    checked before a migration may compare it with its frozen DDL.
-    """
+    *,
+    now: datetime | None = None,
+    physical_schema_validator: Callable[[Mapping[str, Any] | None], str]
+    | None = None,
+) -> dict[str, Mapping[str, Any]]:
+    """Return actual immutable evidence documents after outer and inner hash checks."""
     if not isinstance(evidence_contract, Mapping):
         raise CutoverGuardError("migration evidence contract is required")
     nonce = evidence_contract.get("nonce")
@@ -1928,25 +2291,62 @@ def load_bound_customer_physical_schema_contract(
         or not isinstance(nonce, str)
         or not _CUTOVER_NONCE.fullmatch(nonce)
     ):
-        raise CutoverGuardError("migration physical schema contract is not approved")
+        raise CutoverGuardError("migration evidence contract is not approved")
     payload = {
-        key: value
-        for key, value in evidence_contract.items()
-        if key != "contract_sha256"
+        key: value for key, value in evidence_contract.items() if key != "contract_sha256"
     }
     if not hmac.compare_digest(
         str(evidence_contract.get("contract_sha256")), _sha256(payload)
     ):
         raise CutoverGuardError("migration evidence contract SHA-256 mismatch")
-    documents = _validate_bound_contract_evidence(evidence_contract, nonce)
+    return _validate_bound_contract_evidence(
+        evidence_contract,
+        nonce,
+        now=now,
+        physical_schema_validator=physical_schema_validator,
+    )
+
+
+def load_bound_customer_physical_schema_contract(
+    evidence_contract: Mapping[str, Any] | None,
+    *,
+    now: datetime | None = None,
+    physical_schema_validator: Callable[[Mapping[str, Any] | None], str]
+    | None = None,
+) -> Mapping[str, Any]:
+    """Read the immutable revision-126 schema artifact bound to a contract.
+
+    The returned document is not a descriptor.  Its canonical bytes, artifact
+    bytes, inner contract hash and outer migration-contract hash have all been
+    checked before a migration may compare it with its frozen DDL.
+    """
+    documents = load_bound_customer_cutover_evidence(
+        evidence_contract,
+        now=now,
+        physical_schema_validator=physical_schema_validator,
+    )
     physical_contract = documents["physical_schema_contract"]
-    physical_sha256 = validate_customer_physical_schema_contract(physical_contract)
+    validate_physical_schema = (
+        physical_schema_validator or validate_customer_physical_schema_contract
+    )
+    physical_sha256 = validate_physical_schema(physical_contract)
     if not hmac.compare_digest(
         physical_sha256,
         str(evidence_contract.get("physical_schema_contract_sha256")),
     ):
         raise CutoverGuardError("migration physical schema contract binding is invalid")
     return physical_contract
+
+
+def load_bound_target_profile_policy_backfill(
+    evidence_contract: Mapping[str, Any] | None,
+    *,
+    now: datetime | None = None,
+) -> Mapping[str, Any]:
+    documents = load_bound_customer_cutover_evidence(evidence_contract, now=now)
+    artifact = documents["target_profile_policy_backfill"]
+    validate_target_profile_policy_backfill_artifact(artifact, now=now)
+    return artifact
 
 
 def migration_preflight(
@@ -1957,6 +2357,10 @@ def migration_preflight(
     lock_acquirer: Callable[[Session], bool] | None = None,
     transaction_inspector: Callable[[Session], int] | None = None,
     fence_inspector: Callable[[Session, Mapping[str, Any]], bool] | None = None,
+    target_profile_physical_contract: Mapping[str, Any] | None = None,
+    target_profile_policy_backfill: Mapping[str, Any] | None = None,
+    physical_schema_validator: Callable[[Mapping[str, Any] | None], str]
+    | None = None,
 ) -> CutoverInventory:
     """Migration-facing fail-closed guard; the caller retains this locked bind for DDL."""
     if not isinstance(evidence_contract, Mapping):
@@ -2001,7 +2405,14 @@ def migration_preflight(
         raise CutoverGuardError("migration evidence contract SHA-256 mismatch")
     if evidence_contract.get("migration_revision") != "126":
         raise CutoverGuardError("migration revision is not the approved cutover revision")
-    _validate_bound_contract_evidence(evidence_contract, nonce)
+    current = now or beijing_now().replace(tzinfo=BEIJING_TIMEZONE)
+    _beijing_timestamp(current, "migration preflight now")
+    _validate_bound_contract_evidence(
+        evidence_contract,
+        nonce,
+        now=current,
+        physical_schema_validator=physical_schema_validator,
+    )
     for field_name in (
         "inventory_sha256",
         "preflight_report_sha256",
@@ -2011,23 +2422,23 @@ def migration_preflight(
         "maintenance_fence_artifact_sha256",
         "instance_inventory_artifact_sha256",
         "physical_schema_contract_sha256",
+        "target_profile_physical_contract_sha256",
+        "target_profile_policy_backfill_sha256",
     ):
         digest = evidence_contract.get(field_name)
         if not isinstance(digest, str) or not _CANONICAL_SHA256.fullmatch(digest):
             raise CutoverGuardError(f"migration {field_name} must be lowercase SHA-256")
-    now = now or beijing_now().replace(tzinfo=BEIJING_TIMEZONE)
-    _beijing_timestamp(now, "migration preflight now")
     issued_at = _parse_writer_timestamp(
         evidence_contract.get("issued_at"), "migration contract issued_at"
     )
-    if issued_at > now or now - issued_at > MIGRATION_CONTRACT_MAX_LIFETIME:
+    if issued_at > current or current - issued_at > MIGRATION_CONTRACT_MAX_LIFETIME:
         raise CutoverGuardError("migration evidence contract issued_at is stale or future")
     expires_at = _parse_writer_timestamp(
         evidence_contract.get("expires_at"), "migration contract expires_at"
     )
-    if expires_at <= now:
+    if expires_at <= current:
         raise CutoverGuardError("migration evidence contract is expired")
-    if expires_at - now > MIGRATION_CONTRACT_MAX_LIFETIME:
+    if expires_at - current > MIGRATION_CONTRACT_MAX_LIFETIME:
         raise CutoverGuardError("migration evidence contract lifetime exceeds five minutes")
     fence_document, fence_artifact_sha256, fence_artifact_path = _read_canonical_artifact(
         evidence_contract.get("maintenance_fence_artifact")
@@ -2061,6 +2472,22 @@ def migration_preflight(
     inspect_fence = fence_inspector or _mysql_maintenance_fence_active
     if inspect_fence(db, evidence_contract) is not True:
         raise CutoverGuardError("database maintenance fence is not active")
+    if (target_profile_physical_contract is None) is not (
+        target_profile_policy_backfill is None
+    ):
+        raise CutoverGuardError(
+            "target-profile physical contract and policy backfill must be supplied together"
+        )
+    if target_profile_physical_contract is not None:
+        validate_target_profile_physical_state(
+            db,
+            target_profile_physical_contract,
+        )
+        validate_target_profile_policy_backfill_against_live_rows(
+            db,
+            target_profile_policy_backfill,
+            now=current,
+        )
     live_inventory = build_inventory(db)
     if not hmac.compare_digest(
         live_inventory.inventory_sha256, str(evidence_contract["inventory_sha256"])
@@ -2590,6 +3017,102 @@ def _reflected_physical_schema_signature(
         checks=checks,
         table_comment=inspector.get_table_comment(table_name).get("text"),
     )
+
+
+def validate_target_profile_physical_state(
+    db: Session,
+    expected_signature: Mapping[str, Any],
+) -> bool:
+    """Compare the preserved target-profile table with revision 126's frozen DDL."""
+    connection = db.connection()
+    inspector = inspect(connection)
+    table_name = "ark_sales_target_profiles"
+    if not inspector.has_table(table_name):
+        raise CutoverGuardError("preserved target-profile table is missing")
+    if connection.dialect.name != "mysql":
+        expected_names = {
+            column["name"] for column in expected_signature.get("columns", ())
+        }
+        actual_names = {
+            column["name"] for column in inspector.get_columns(table_name)
+        }
+        if actual_names != expected_names:
+            raise CutoverGuardError(
+                "preserved target-profile columns do not match frozen contract"
+            )
+        return True
+    actual_signature = _reflected_physical_schema_signature(
+        inspector,
+        table_name,
+        connection=connection,
+    )
+    compare_physical_schema_signature(
+        expected_signature,
+        actual_signature,
+        table_name,
+    )
+    return True
+
+
+def verify_target_profile_post_state(
+    db: Session,
+    expected_signature: Mapping[str, Any],
+    target_profile_policy_backfill: Mapping[str, Any],
+) -> bool:
+    """Verify post-ALTER schema plus exact approved policy values and snapshots."""
+    validate_target_profile_physical_state(db, expected_signature)
+    validate_target_profile_policy_backfill_against_live_rows(
+        db,
+        target_profile_policy_backfill,
+    )
+    table = _table_or_none(db, "ark_sales_target_profiles")
+    if table is None:
+        raise CutoverGuardError("preserved target-profile table is missing")
+    expected_entries = {
+        entry["profile_id"]: entry
+        for entry in target_profile_policy_backfill["profiles"]
+    }
+    result = db.execute(
+        select(
+            table.c.id,
+            table.c.policy_version,
+            table.c.policy_json,
+            table.c.policy_snapshot_hash,
+            table.c.last_improvement_artifact_id,
+            table.c.policy_applied_at,
+        ).order_by(table.c.id)
+    ).mappings()
+    try:
+        actual_rows = {row["id"]: dict(row) for row in result}
+    finally:
+        result.close()
+    if set(actual_rows) != set(expected_entries):
+        raise CutoverGuardError("target-profile post-ALTER profile set changed")
+    for profile_id, entry in expected_entries.items():
+        actual = actual_rows[profile_id]
+        applied_at = to_beijing_naive(
+            _parse_writer_timestamp(
+                entry["policy_applied_at"], "target-profile policy_applied_at"
+            )
+        )
+        expected_values = {
+            "id": profile_id,
+            "policy_version": entry["policy_version"],
+            "policy_json": entry["policy_json"],
+            "policy_snapshot_hash": entry["policy_snapshot_hash"],
+            "last_improvement_artifact_id": entry[
+                "last_improvement_artifact_id"
+            ],
+            "policy_applied_at": applied_at,
+        }
+        if actual != expected_values or not hmac.compare_digest(
+            actual["policy_snapshot_hash"],
+            _sha256(_target_profile_policy_snapshot(entry)),
+        ):
+            raise CutoverGuardError(
+                f"target-profile post-ALTER policy mismatch for profile {profile_id}"
+            )
+    return True
 
 
 def verify_expected_customer_table_state(

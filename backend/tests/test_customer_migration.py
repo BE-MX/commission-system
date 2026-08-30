@@ -37,6 +37,9 @@ from app.customer.models import CORE_TABLES as ORM_CORE_TABLES
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND_ROOT.parent
 MIGRATION_PATH = BACKEND_ROOT / "alembic/versions/126_unified_customer_domain.py"
+SCHEMA_RESOURCE_PATH = (
+    BACKEND_ROOT / "alembic/versions/126_unified_customer_domain_schema.json"
+)
 DESIGN_PATH = (
     REPO_ROOT
     / "docs/requirements/2026-08-28-unified-customer-profile-design.md"
@@ -111,6 +114,25 @@ TARGET_PROFILE_COLUMNS = {
     "last_improvement_artifact_id": "最近人工批准改进Artifact",
     "policy_applied_at": "策略生效北京时间",
 }
+EXISTING_TARGET_PROFILE_COLUMNS = (
+    "id",
+    "profile_key",
+    "company_name",
+    "company_website",
+    "products",
+    "advantages",
+    "target_countries",
+    "target_industries",
+    "target_roles",
+    "exclusions",
+    "default_language",
+    "status",
+    "created_by",
+    "updated_by",
+    "created_at",
+    "updated_at",
+    "deleted_at",
+)
 GENERATED_COLUMNS = {
     ("ark_customer_external_identities", "primary_identity_slot"),
     ("ark_customer_external_identities", "verified_strong_key"),
@@ -202,7 +224,7 @@ def _design_base_type(type_text: str) -> str:
 
 
 def _normalized_expression(value: object) -> str:
-    return " ".join(str(value).strip().split())
+    return re.sub(r"\s+", "", str(value).replace("`", "")).casefold()
 
 
 def _offline_mysql_sql(callback) -> str:
@@ -223,6 +245,83 @@ def test_revision_chain_and_literal_scope_are_frozen():
     assert migration.down_revision == "125_invoice_integration"
     assert len(migration.revision) <= 32
     assert set(migration.TARGET_TABLE_NAMES) == CORE_TABLES | WORKFLOW_TABLES
+
+
+def test_revision_126_is_independent_from_mutable_runtime_customer_models():
+    source = MIGRATION_PATH.read_text(encoding="utf-8")
+    migration = _load_migration()
+    upgrade_source = inspect.getsource(migration.upgrade)
+
+    assert "from app.customer.models" not in source
+    assert "APPROVED_CORE_TABLES" not in source
+    assert "validate_customer_physical_schema_contract" not in source
+    assert "verify_expected_customer_table_state" not in source
+    assert "_verify_frozen_customer_table_state" in upgrade_source
+    assert upgrade_source.count(
+        "physical_schema_validator=_validate_frozen_customer_contract"
+    ) == 3
+
+
+def test_revision_owned_schema_resource_is_hash_pinned_and_drives_ddl(
+    tmp_path,
+    monkeypatch,
+):
+    migration = _load_migration()
+    raw = SCHEMA_RESOURCE_PATH.read_bytes()
+    resource = json.loads(raw)
+
+    expected_bytes = (
+        json.dumps(
+            resource,
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=2,
+            separators=(",", ": "),
+        )
+        + "\n"
+    ).encode("utf-8")
+    assert raw.replace(b"\r\n", b"\n") == expected_bytes
+    assert hashlib.sha256(expected_bytes).hexdigest() == (
+        migration.FROZEN_SCHEMA_RESOURCE_SHA256
+    )
+    crlf_path = tmp_path / SCHEMA_RESOURCE_PATH.name
+    crlf_path.write_bytes(expected_bytes.replace(b"\n", b"\r\n"))
+    monkeypatch.setattr(migration, "FROZEN_SCHEMA_RESOURCE_PATH", crlf_path)
+    assert migration._load_frozen_schema_resource() == resource
+    assert resource["resource_schema_version"] == 1
+    assert resource["migration_revision"] == "126"
+    customer_contract = resource["customer_domain_physical_contract"]
+    target_profile_contract = resource["target_profile_physical_contract"]
+    assert set(customer_contract["tables"]) == CORE_TABLES | WORKFLOW_TABLES
+    assert migration.PHYSICAL_SCHEMA_CONTRACT == customer_contract
+    assert migration.TARGET_PROFILE_PHYSICAL_CONTRACT == target_profile_contract
+
+    profile_payload = {
+        key: value
+        for key, value in target_profile_contract.items()
+        if key != "contract_sha256"
+    }
+    assert target_profile_contract["contract_sha256"] == hashlib.sha256(
+        canonical_json_bytes(profile_payload)
+    ).hexdigest()
+    before = target_profile_contract["before"]
+    after = target_profile_contract["after"]
+    assert tuple(column["name"] for column in before["columns"]) == (
+        EXISTING_TARGET_PROFILE_COLUMNS
+    )
+    assert tuple(column["name"] for column in after["columns"]) == (
+        EXISTING_TARGET_PROFILE_COLUMNS + tuple(TARGET_PROFILE_COLUMNS)
+    )
+    assert after["columns"][: len(before["columns"])] == before["columns"]
+    assert (
+        "fk_sales_target_profile_improvement_artifact",
+        ["last_improvement_artifact_id"],
+        None,
+        "ark_agent_artifacts",
+        ["id"],
+        "RESTRICT",
+        "RESTRICT",
+    ) in tuple(tuple(item) for item in after["foreign_keys"])
     assert tuple(migration.RETIRED_OR_REBUILT_TABLES) == RETIRED_OR_REBUILT_TABLES
     assert migration.TARGET_PROFILE_COLUMNS == TARGET_PROFILE_COLUMNS
 
@@ -293,8 +392,8 @@ def test_frozen_core_metadata_independently_matches_all_31_orm_contracts():
                     (element.column.table.name, element.column.name)
                     for element in constraint.elements
                 ),
-                constraint.ondelete,
-                constraint.onupdate,
+                constraint.ondelete or "RESTRICT",
+                constraint.onupdate or "RESTRICT",
             )
             for constraint in table.constraints
             if isinstance(constraint, migration.sa.ForeignKeyConstraint)
@@ -428,7 +527,7 @@ def test_physical_contract_is_complete_hashed_and_not_a_runtime_placeholder():
 
     assert contract["migration_revision"] == "126"
     assert set(contract["tables"]) == CORE_TABLES | WORKFLOW_TABLES
-    assert migration.validate_customer_physical_schema_contract(contract) == contract[
+    assert migration._validate_frozen_customer_contract(contract) == contract[
         "contract_sha256"
     ]
     for table_name, signature in contract["tables"].items():
@@ -525,9 +624,9 @@ def test_upgrade_source_fails_closed_before_any_destructive_statement():
     assert source.index("_delete_agent_history_closure") < source.index("_drop_retired_tables")
     assert source.index("_drop_retired_tables") < source.index("_create_target_tables")
     assert source.index("_create_target_tables") < source.index(
-        "verify_expected_customer_table_state"
+        "_verify_frozen_customer_table_state"
     )
-    assert source.index("verify_expected_customer_table_state") < source.index(
+    assert source.index("_verify_frozen_customer_table_state") < source.index(
         "_write_success_receipt"
     )
 
@@ -567,11 +666,28 @@ def test_upgrade_rejects_a_bound_physical_contract_that_differs_from_frozen_ddl(
     ).hexdigest()
     calls: list[str] = []
 
-    monkeypatch.setattr(migration, "_load_cutover_contract", lambda: {"approved": True})
     monkeypatch.setattr(
         migration,
-        "load_bound_customer_physical_schema_contract",
-        lambda _contract: mismatched,
+        "_load_cutover_contract",
+        lambda: {
+            "approved": True,
+            "target_profile_physical_contract_sha256": (
+                migration.TARGET_PROFILE_PHYSICAL_CONTRACT["contract_sha256"]
+            ),
+        },
+    )
+    monkeypatch.setattr(
+        migration,
+        "load_bound_customer_cutover_evidence",
+        lambda _contract, **_kwargs: {
+            "physical_schema_contract": mismatched,
+            "target_profile_policy_backfill": {},
+        },
+    )
+    monkeypatch.setattr(
+        migration,
+        "validate_target_profile_policy_backfill_artifact",
+        lambda _artifact: "8" * 64,
     )
     monkeypatch.setattr(
         migration,
@@ -620,6 +736,10 @@ def test_success_receipt_exactly_matches_cutover_validator_and_never_overwrites(
         "maintenance_fence_artifact_sha256": "6" * 64,
         "instance_inventory_artifact_sha256": "7" * 64,
         "physical_schema_contract_sha256": migration.FROZEN_TARGET_SCHEMA_SHA256,
+        "target_profile_physical_contract_sha256": (
+            migration.TARGET_PROFILE_PHYSICAL_CONTRACT["contract_sha256"]
+        ),
+        "target_profile_policy_backfill_sha256": "8" * 64,
         "nonce": nonce,
         "contract_path": str(evidence_root / f"migration-contract-{nonce}.json"),
         "receipt_path": receipt_path.name,
@@ -643,20 +763,49 @@ def test_success_receipt_exactly_matches_cutover_validator_and_never_overwrites(
         migration._write_success_receipt(contract, started_at)
 
 
-def test_target_profile_alterations_compile_comments_backfill_and_constraints():
+def test_target_profile_alterations_require_bound_per_profile_policy_without_placeholder():
     migration = _load_migration()
+    source = inspect.getsource(migration._alter_target_profiles)
 
-    sql = _offline_mysql_sql(migration._alter_target_profiles)
+    for column_name in TARGET_PROFILE_COLUMNS:
+        assert f'TARGET_PROFILE_COLUMNS["{column_name}"]' in source
+    assert "legacy_unconfigured" not in source
+    assert "target_profile_policy_backfill" in inspect.signature(
+        migration._alter_target_profiles
+    ).parameters
+    assert "profile_id" in source
+    assert "expected_profile_snapshot_hash" in source
+    assert "policy_snapshot_hash" in source
+    assert "ix_sales_target_profile_last_improvement_artifact" in source
+    assert "fk_sales_target_profile_improvement_artifact" in source
 
-    for column_name, comment in TARGET_PROFILE_COLUMNS.items():
-        assert re.search(
-            rf"ADD COLUMN {column_name} .*COMMENT '{re.escape(comment)}'", sql
-        ), column_name
-    assert "UPDATE ark_sales_target_profiles SET" in sql
-    assert "policy_snapshot_hash" in sql
-    assert sql.count("NOT NULL") >= 4
-    assert "ix_sales_target_profile_last_improvement_artifact" in sql
-    assert "fk_sales_target_profile_improvement_artifact" in sql
+
+def test_upgrade_binds_target_profile_pre_and_post_contracts_and_agent_proof():
+    migration = _load_migration()
+    source = inspect.getsource(migration.upgrade)
+
+    assert "target_profile_policy_backfill" in source
+    assert re.search(r'TARGET_PROFILE_PHYSICAL_CONTRACT\[\s*"before"\s*\]', source)
+    assert re.search(r'TARGET_PROFILE_PHYSICAL_CONTRACT\[\s*"after"\s*\]', source)
+    assert "validate_target_profile_policy_backfill_against_live_rows" in (
+        inspect.getsource(migration.migration_preflight)
+    )
+    assert "verify_target_profile_post_state" in source
+    assert source.count("snapshot_unrelated_agent_rows") >= 2
+    assert source.count("verify_unrelated_unchanged") >= 2
+
+    preflight = source.index("migration_preflight")
+    drop_incoming_fks = source.index("_drop_foreign_keys_into_retired", preflight)
+    delete_closure = source.index("_delete_agent_history_closure", drop_incoming_fks)
+    verify_closure = source.index("verify_agent_history_removed", delete_closure)
+    drop_tables = source.index("_drop_retired_tables", verify_closure)
+    alter_profiles = source.index("_alter_target_profiles", drop_tables)
+    create_tables = source.index("_create_target_tables", alter_profiles)
+    verify_post = source.index("verify_target_profile_post_state", create_tables)
+    receipt = source.index("_write_success_receipt", verify_post)
+    assert preflight < drop_incoming_fks < delete_closure < verify_closure
+    assert verify_closure < drop_tables < alter_profiles < create_tables
+    assert create_tables < verify_post < receipt
 
 
 def test_drop_scope_is_exact_and_dependency_safe():
@@ -667,8 +816,8 @@ def test_drop_scope_is_exact_and_dependency_safe():
     assert len(set(migration.DROP_ORDER)) == len(migration.DROP_ORDER)
     upgrade_source = inspect.getsource(migration.upgrade)
     assert upgrade_source.index("_drop_foreign_keys_into_retired") < (
-        upgrade_source.index("_drop_retired_tables")
-    )
+        upgrade_source.index("_delete_agent_history_closure")
+    ) < upgrade_source.index("_drop_retired_tables")
 
 
 def test_agent_deletion_is_exact_ordered_and_chunked():

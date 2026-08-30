@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import importlib.util
+import inspect
 import json
 import copy
 from dataclasses import FrozenInstanceError, replace
@@ -27,6 +28,7 @@ from app.agent_runtime.models import (
 )
 from app.core.database import Base
 from app.customer.models import CustomerAccount, CustomerSuppressionRegistry
+from app.sales_automation.models import AcquisitionProfile
 from app.customer.cutover_service import (
     AGENT_CONTROL_TABLES,
     KNOWN_WRITER_CATEGORIES,
@@ -60,9 +62,103 @@ from app.customer.cutover_service import (
 BEIJING = ZoneInfo("Asia/Shanghai")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = REPO_ROOT / "scripts/customer_domain_cutover.py"
+SCHEMA_RESOURCE_PATH = (
+    REPO_ROOT
+    / "backend/alembic/versions/126_unified_customer_domain_schema.json"
+)
 SUPPRESSION_HMAC_KEY = b"cutover-test-hmac-key-32-bytes!!"
 PREFLIGHT_REPORT_SHA256 = "a" * 64
 READY_CHECKED_AT = datetime(2026, 8, 30, 9, 0, tzinfo=BEIJING)
+
+
+def _target_profile_policy_entry(snapshot):
+    policy_json = {
+        "schema_version": "target_profile_policy_v1",
+        "thresholds": {
+            "research_threshold": 70,
+            "qualification_threshold": 80,
+            "tier_1_min_score": 90,
+            "tier_2_min_score": 75,
+            "tier_3_min_score": 60,
+        },
+        "weights": {"industry_fit": 0.6, "country_fit": 0.4},
+        "research_rules": {
+            "minimum_independent_sources": 2,
+            "evidence_freshness_days": 90,
+            "auto_research_enabled": True,
+            "gate_required": True,
+        },
+        "claim_rules": {
+            "cooldown_days": 30,
+            "requires_qualification": True,
+            "per_user_quota": 20,
+            "per_team_quota": 100,
+            "block_identity_conflict": True,
+            "block_do_not_contact": True,
+        },
+    }
+    applied_at = READY_CHECKED_AT.isoformat()
+    entry = {
+        "profile_id": snapshot["id"],
+        "expected_profile_snapshot": snapshot,
+        "expected_profile_snapshot_hash": hashlib.sha256(
+            canonical_json_bytes(snapshot)
+        ).hexdigest(),
+        "policy_version": "policy-2026-08-30-1",
+        "policy_json": policy_json,
+        "last_improvement_artifact_id": None,
+        "policy_applied_at": applied_at,
+    }
+    complete_snapshot = {
+        "schema_version": "target_profile_policy_snapshot_v1",
+        "profile": snapshot,
+        "policy_version": entry["policy_version"],
+        "policy_json": policy_json,
+        "last_improvement_artifact_id": None,
+        "policy_applied_at": applied_at,
+    }
+    entry["policy_snapshot_hash"] = hashlib.sha256(
+        canonical_json_bytes(complete_snapshot)
+    ).hexdigest()
+    return entry
+
+
+def _target_profile_policy_artifact(entries=(), *, confirmed_empty=False):
+    payload = {
+        "schema_version": 1,
+        "artifact_type": "target_profile_policy_backfill",
+        "migration_revision": "126",
+        "approved_at": READY_CHECKED_AT.isoformat(),
+        "confirmed_empty": confirmed_empty,
+        "profiles": list(entries),
+    }
+    return {
+        **payload,
+        "artifact_sha256": hashlib.sha256(canonical_json_bytes(payload)).hexdigest(),
+    }
+
+
+def _rehash_target_profile_policy_entry(entry):
+    refreshed = copy.deepcopy(entry)
+    complete_snapshot = {
+        "schema_version": "target_profile_policy_snapshot_v1",
+        "profile": refreshed["expected_profile_snapshot"],
+        "policy_version": refreshed["policy_version"],
+        "policy_json": refreshed["policy_json"],
+        "last_improvement_artifact_id": refreshed[
+            "last_improvement_artifact_id"
+        ],
+        "policy_applied_at": refreshed["policy_applied_at"],
+    }
+    refreshed["policy_snapshot_hash"] = hashlib.sha256(
+        canonical_json_bytes(complete_snapshot)
+    ).hexdigest()
+    return refreshed
+
+
+def _target_profile_physical_contract_sha256():
+    resource = json.loads(SCHEMA_RESOURCE_PATH.read_text(encoding="utf-8"))
+    return resource["target_profile_physical_contract"]["contract_sha256"]
 
 
 def _suppression_row(**overrides):
@@ -187,6 +283,7 @@ def _create_cutover_db():
                     )
                 connection.execute(text(f"CREATE TABLE {table_name} ({columns})"))
     agent_tables = [
+        AcquisitionProfile.__table__,
         AgentProfile.__table__,
         AgentSession.__table__,
         AgentRun.__table__,
@@ -1245,6 +1342,9 @@ def test_migration_preflight_requires_short_lived_contract_lock_and_live_invento
             canonical_json_bytes(writer_manifest)
         ).hexdigest()
         physical_contract = _physical_schema_contract()
+        target_profile_policy_backfill = _target_profile_policy_artifact(
+            confirmed_empty=True
+        )
         marker = {
             "approved": True,
             "inventory_sha256": inventory.inventory_sha256,
@@ -1254,6 +1354,12 @@ def test_migration_preflight_requires_short_lived_contract_lock_and_live_invento
             "physical_schema_contract_sha256": physical_contract[
                 "contract_sha256"
             ],
+            "target_profile_physical_contract_sha256": (
+                _target_profile_physical_contract_sha256()
+            ),
+            "target_profile_policy_backfill_sha256": (
+                target_profile_policy_backfill["artifact_sha256"]
+            ),
             "nonce": nonce,
             "expires_at": (now + timedelta(minutes=3)).isoformat(),
         }
@@ -1263,6 +1369,7 @@ def test_migration_preflight_requires_short_lived_contract_lock_and_live_invento
             "writer_manifest": writer_manifest,
             "approved_marker": marker,
             "physical_schema_contract": physical_contract,
+            "target_profile_policy_backfill": target_profile_policy_backfill,
         }
         evidence_artifacts = {}
         for label, document in documents.items():
@@ -1304,6 +1411,12 @@ def test_migration_preflight_requires_short_lived_contract_lock_and_live_invento
             "physical_schema_contract_sha256": physical_contract[
                 "contract_sha256"
             ],
+            "target_profile_physical_contract_sha256": (
+                _target_profile_physical_contract_sha256()
+            ),
+            "target_profile_policy_backfill_sha256": (
+                target_profile_policy_backfill["artifact_sha256"]
+            ),
         }
         contract["contract_sha256"] = hashlib.sha256(
             canonical_json_bytes(contract)
@@ -1441,7 +1554,7 @@ def test_fence_bootstrap_rejects_a_spoofed_physical_table_before_activation(
     monkeypatch.setattr(
         cutover_service,
         "load_bound_customer_physical_schema_contract",
-        lambda _contract: {},
+        lambda _contract, **_kwargs: {},
     )
     monkeypatch.setattr(
         cutover_service,
@@ -1744,6 +1857,156 @@ def test_mysql_physical_signature_normalizes_show_create_generated_sql():
     assert expected == reflected
 
 
+def test_target_profile_policy_backfill_requires_complete_approved_policy():
+    bound_validator_source = inspect.getsource(
+        cutover_service._validate_bound_contract_evidence
+    )
+    assert "target_profile_physical_contract_sha256" in bound_validator_source
+    assert "target_profile_policy_backfill_sha256" in bound_validator_source
+
+    empty = _target_profile_policy_artifact(confirmed_empty=True)
+    assert cutover_service.validate_target_profile_policy_backfill_artifact(
+        empty,
+        now=READY_CHECKED_AT,
+    ) == empty["artifact_sha256"]
+
+    snapshot = {
+        "id": 1,
+        "profile_key": "profile-one",
+        "company_name": "Ark",
+        "company_website": None,
+        "products": [],
+        "advantages": [],
+        "target_countries": [],
+        "target_industries": [],
+        "target_roles": [],
+        "exclusions": [],
+        "default_language": "en",
+        "status": "active",
+        "created_by": None,
+        "updated_by": None,
+        "created_at": {"$datetime": "2026-08-01T01:00:00.000000"},
+        "updated_at": {"$datetime": "2026-08-01T01:00:00.000000"},
+        "deleted_at": None,
+    }
+    entry = _target_profile_policy_entry(snapshot)
+    artifact = _target_profile_policy_artifact((entry,))
+    assert cutover_service.validate_target_profile_policy_backfill_artifact(
+        artifact,
+        now=READY_CHECKED_AT,
+    ) == artifact["artifact_sha256"]
+
+    incomplete_entry = copy.deepcopy(entry)
+    incomplete_entry["policy_json"] = {
+        "schema_version": "target_profile_policy_v1",
+        "migration_state": "legacy_unconfigured",
+    }
+    incomplete = _target_profile_policy_artifact((incomplete_entry,))
+    with pytest.raises(CutoverGuardError, match="thresholds.*weights.*research.*claim"):
+        cutover_service.validate_target_profile_policy_backfill_artifact(
+            incomplete,
+            now=READY_CHECKED_AT,
+        )
+
+    placeholder_entry = copy.deepcopy(entry)
+    placeholder_entry["policy_json"] = {
+        "schema_version": "target_profile_policy_v1",
+        "thresholds": {
+            "research_threshold": 0,
+            "qualification_threshold": 0,
+            "tier_1_min_score": 0,
+            "tier_2_min_score": 0,
+            "tier_3_min_score": 0,
+        },
+        "weights": {"todo": 0},
+        "research_rules": {"placeholder": True},
+        "claim_rules": {"todo": "TBD"},
+    }
+    placeholder = _target_profile_policy_artifact(
+        (_rehash_target_profile_policy_entry(placeholder_entry),)
+    )
+    with pytest.raises(CutoverGuardError, match="complete|placeholder|semantic"):
+        cutover_service.validate_target_profile_policy_backfill_artifact(
+            placeholder,
+            now=READY_CHECKED_AT,
+        )
+
+
+def test_target_profile_policy_backfill_rejects_stale_approval():
+    stale = _target_profile_policy_artifact(confirmed_empty=True)
+    stale["approved_at"] = (
+        READY_CHECKED_AT - cutover_service.CUTOVER_EVIDENCE_MAX_AGE - timedelta(seconds=1)
+    ).isoformat()
+    stale_payload = {
+        key: value for key, value in stale.items() if key != "artifact_sha256"
+    }
+    stale["artifact_sha256"] = hashlib.sha256(
+        canonical_json_bytes(stale_payload)
+    ).hexdigest()
+    with pytest.raises(CutoverGuardError, match="approval.*stale|stale.*approval"):
+        cutover_service.validate_target_profile_policy_backfill_artifact(
+            stale,
+            now=READY_CHECKED_AT,
+        )
+
+
+def test_target_profile_policy_backfill_requires_exact_live_set_and_snapshot():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine, tables=[AcquisitionProfile.__table__])
+    with Session(engine) as db:
+        db.add(
+            AcquisitionProfile(
+                id=7,
+                profile_key="profile-seven",
+                company_name="Ark Hair",
+                company_website="https://example.com",
+                products=["wigs"],
+                advantages=["quality"],
+                target_countries=["US"],
+                target_industries=["beauty"],
+                target_roles=["buyer"],
+                exclusions=["retail"],
+                default_language="en",
+                status="active",
+                created_at=datetime(2026, 8, 1, 9, 0),
+                updated_at=datetime(2026, 8, 2, 9, 0),
+            )
+        )
+        db.flush()
+        snapshots = cutover_service.snapshot_target_profile_rows(db)
+        assert len(snapshots) == 1
+        artifact = _target_profile_policy_artifact(
+            (_target_profile_policy_entry(snapshots[0]),)
+        )
+        assert cutover_service.validate_target_profile_policy_backfill_against_live_rows(
+            db,
+            artifact,
+            now=READY_CHECKED_AT,
+        ) is True
+
+        db.execute(
+            text(
+                "UPDATE ark_sales_target_profiles "
+                "SET company_name='changed' WHERE id=7"
+            )
+        )
+        with pytest.raises(CutoverGuardError, match="stale|snapshot"):
+            cutover_service.validate_target_profile_policy_backfill_against_live_rows(
+                db,
+                artifact,
+                now=READY_CHECKED_AT,
+            )
+
+    empty_engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(empty_engine, tables=[AcquisitionProfile.__table__])
+    with Session(empty_engine) as db:
+        assert cutover_service.validate_target_profile_policy_backfill_against_live_rows(
+            db,
+            _target_profile_policy_artifact(confirmed_empty=True),
+            now=READY_CHECKED_AT,
+        ) is True
+
+
 def test_customer_account_integer_pk_autoincrement_modes_match_mysql_reflection():
     model_id = CustomerAccount.__table__.c.id
 
@@ -1921,6 +2184,9 @@ def test_apply_reset_never_invokes_alembic_when_guard_or_marker_hash_fails(tmp_p
                 approved_marker_path=marker,
                 suppression_hmac_key=SUPPRESSION_HMAC_KEY,
                 physical_schema_contract=_physical_schema_contract(),
+                target_profile_policy_backfill=_target_profile_policy_artifact(
+                    confirmed_empty=True
+                ),
                 subprocess_runner=lambda *args, **kwargs: calls.append((args, kwargs)),
                 now=READY_CHECKED_AT + timedelta(minutes=1),
             )
@@ -1954,6 +2220,9 @@ def test_apply_reset_rejects_tampered_preflight_content_before_runner(tmp_path):
                 approved_marker_path=marker,
                 suppression_hmac_key=SUPPRESSION_HMAC_KEY,
                 physical_schema_contract=_physical_schema_contract(),
+                target_profile_policy_backfill=_target_profile_policy_artifact(
+                    confirmed_empty=True
+                ),
                 subprocess_runner=lambda *args, **kwargs: calls.append((args, kwargs)),
                 now=READY_CHECKED_AT + timedelta(minutes=1),
             )
@@ -1989,6 +2258,14 @@ def test_apply_reset_invokes_only_alembic_upgrade_head_after_both_hashes_bind(tm
                     "physical_schema_contract_sha256": _physical_schema_contract()[
                         "contract_sha256"
                     ],
+                    "target_profile_physical_contract_sha256": (
+                        _target_profile_physical_contract_sha256()
+                    ),
+                    "target_profile_policy_backfill_sha256": (
+                        _target_profile_policy_artifact(confirmed_empty=True)[
+                            "artifact_sha256"
+                        ]
+                    ),
                     "nonce": nonce,
                     "expires_at": (READY_CHECKED_AT + timedelta(minutes=4)).isoformat(),
                 }
@@ -2013,6 +2290,8 @@ def test_apply_reset_invokes_only_alembic_upgrade_head_after_both_hashes_bind(tm
                         "maintenance_fence_artifact_sha256",
                         "instance_inventory_artifact_sha256",
                         "physical_schema_contract_sha256",
+                        "target_profile_physical_contract_sha256",
+                        "target_profile_policy_backfill_sha256",
                         "nonce",
                         "contract_sha256",
                         "contract_path",
@@ -2040,6 +2319,9 @@ def test_apply_reset_invokes_only_alembic_upgrade_head_after_both_hashes_bind(tm
             approved_marker_path=marker,
             suppression_hmac_key=SUPPRESSION_HMAC_KEY,
             physical_schema_contract=_physical_schema_contract(),
+            target_profile_policy_backfill=_target_profile_policy_artifact(
+                confirmed_empty=True
+            ),
             subprocess_runner=capture_runner,
             now=READY_CHECKED_AT + timedelta(minutes=1),
         )
@@ -2081,6 +2363,14 @@ def test_apply_reset_runner_success_without_receipt_keeps_writers_stopped(tmp_pa
                     "physical_schema_contract_sha256": _physical_schema_contract()[
                         "contract_sha256"
                     ],
+                    "target_profile_physical_contract_sha256": (
+                        _target_profile_physical_contract_sha256()
+                    ),
+                    "target_profile_policy_backfill_sha256": (
+                        _target_profile_policy_artifact(confirmed_empty=True)[
+                            "artifact_sha256"
+                        ]
+                    ),
                     "nonce": "missing-receipt-" + hashlib.sha256(
                         str(tmp_path).encode()
                     ).hexdigest()[:16],
@@ -2099,6 +2389,9 @@ def test_apply_reset_runner_success_without_receipt_keeps_writers_stopped(tmp_pa
                 approved_marker_path=marker,
                 suppression_hmac_key=SUPPRESSION_HMAC_KEY,
                 physical_schema_contract=_physical_schema_contract(),
+                target_profile_policy_backfill=_target_profile_policy_artifact(
+                    confirmed_empty=True
+                ),
                 subprocess_runner=lambda *args, **kwargs: None,
                 now=READY_CHECKED_AT + timedelta(minutes=1),
             )
@@ -2135,6 +2428,14 @@ def test_apply_reset_marker_failures_are_independent_and_never_run(tmp_path, mar
             "physical_schema_contract_sha256": _physical_schema_contract()[
                 "contract_sha256"
             ],
+            "target_profile_physical_contract_sha256": (
+                _target_profile_physical_contract_sha256()
+            ),
+            "target_profile_policy_backfill_sha256": (
+                _target_profile_policy_artifact(confirmed_empty=True)[
+                    "artifact_sha256"
+                ]
+            ),
             "nonce": "failed-marker-check-20260830",
             "expires_at": (READY_CHECKED_AT + timedelta(minutes=4)).isoformat(),
         }
@@ -2151,6 +2452,9 @@ def test_apply_reset_marker_failures_are_independent_and_never_run(tmp_path, mar
                 approved_marker_path=marker,
                 suppression_hmac_key=SUPPRESSION_HMAC_KEY,
                 physical_schema_contract=_physical_schema_contract(),
+                target_profile_policy_backfill=_target_profile_policy_artifact(
+                    confirmed_empty=True
+                ),
                 subprocess_runner=lambda *args, **kwargs: calls.append((args, kwargs)),
                 now=READY_CHECKED_AT + timedelta(minutes=1),
             )
@@ -2170,6 +2474,8 @@ def test_execution_receipt_must_bind_the_exact_approval_marker():
         "maintenance_fence_artifact_sha256": "f" * 64,
         "instance_inventory_artifact_sha256": "1" * 64,
         "physical_schema_contract_sha256": "2" * 64,
+        "target_profile_physical_contract_sha256": "3" * 64,
+        "target_profile_policy_backfill_sha256": "4" * 64,
         "nonce": "receipt-nonce-20260830",
         "contract_path": str(CUTOVER_EVIDENCE_ROOT / "contract.json"),
         "receipt_path": "migration-receipt-receipt-nonce-20260830.json",
@@ -2193,6 +2499,8 @@ def test_execution_receipt_must_bind_the_exact_approval_marker():
                 "maintenance_fence_artifact_sha256",
                 "instance_inventory_artifact_sha256",
                 "physical_schema_contract_sha256",
+                "target_profile_physical_contract_sha256",
+                "target_profile_policy_backfill_sha256",
                 "nonce",
                 "contract_sha256",
                 "contract_path",
