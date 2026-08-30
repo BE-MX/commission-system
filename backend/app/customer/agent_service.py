@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 import hashlib
-import html
 import json
-import re
 from typing import Iterable
 
 from sqlalchemy import or_
@@ -35,6 +33,7 @@ from app.customer.models import (
     CustomerSourceRecord,
 )
 from app.customer.logical_customer_service import logical_root_predicate
+from app.customer.agent_freshness import profile_freshness
 from app.customer.agent_tool_contract import (
     MAX_CURSOR_ROWS,
     MAX_LIST_BYTES,
@@ -53,12 +52,13 @@ from app.customer.agent_tool_contract import (
     encode_cursor,
     envelope as _envelope,
     fit as _fit,
+    fit_page as _fit_page,
     page as _page,
+    plain_text as _plain_text,
     serialize_envelope,
 )
 
 
-_TAG_RE = re.compile(r"<(script|style)\b[^>]*>.*?</\1>|<[^>]+>", re.I | re.S)
 _READ_PERMISSIONS = {"customer:read", "customer:read_all", "customer:admin"}
 _MANAGE_PERMISSIONS = {"customer:read_all", "customer:admin"}
 
@@ -142,12 +142,15 @@ def search_customers(
         "relationship_stage": row.relationship_stage,
     } for row in page])
     result.update(has_more=has_more, cursor=next_cursor)
-    return _fit(result, max_bytes=MAX_LIST_BYTES)
+    return _fit_page(
+        result, max_bytes=MAX_LIST_BYTES, user=user, customer_id=None,
+        filters=filters, profile_version=None, incoming_cursor=cursor,
+    )
 
 
 def get_customer_profile(
     db: Session, *, user: dict, customer_id: int,
-    sections: Iterable[str] | None = None,
+    sections: Iterable[str] | None = None, now: datetime | None = None,
 ) -> dict:
     access = _access(db, user, customer_id)
     customer_id = access.customer_id
@@ -172,6 +175,10 @@ def get_customer_profile(
             changed = True
         output[name] = clipped
         truncated |= changed
+    freshness, unavailable, stale_sections = profile_freshness(
+        db, access=access, version=version, requested_sections=requested,
+        context_current=context_allowed, now=now or beijing_now(),
+    )
     result = _envelope(
         profile_version=version.version_no if version else None,
         data_as_of=context.data_as_of if context else (version.data_as_of if version else None),
@@ -184,21 +191,23 @@ def get_customer_profile(
             key: (version.section_data_as_of or {}).get(key) if version else None for key in requested
         },
         "profile_data_as_of": version.data_as_of if version else None,
-        "source_freshness_map": {}, "unavailable_sources": [],
-        "stale_sections": requested if not context_allowed else [],
+        "source_freshness_map": freshness, "unavailable_sources": unavailable,
+        "stale_sections": stale_sections,
         "truncated": truncated,
         "truncation_reason": "string_or_section_budget" if truncated else None,
     })
     return _fit(result, max_bytes=MAX_PROFILE_BYTES)
 
 
-def _fact_ref(row: CustomerFact, *, profile_version: int | None, stale: bool) -> dict:
+def _fact_ref(
+    row: CustomerFact, *, customer_id: int, profile_version: int | None, stale: bool,
+) -> dict:
     digest = hashlib.sha256(json.dumps({
         "fact_id": row.id, "value": row.value_json, "fingerprint": row.fact_fingerprint,
     }, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
     return {
         "evidence_ref": f"fact:{row.id}", "evidence_content_hash": digest,
-        "customer_id": row.customer_id, "profile_version": profile_version,
+        "customer_id": customer_id, "profile_version": profile_version,
         "freshness": "stale" if stale else "current", "metadata_only": True,
     }
 
@@ -240,13 +249,18 @@ def get_customer_facts(
             "expires_at": row.expires_at, "stale": stale,
             "can_support_current_claim": not stale,
         })
-        refs.append(_fact_ref(row, profile_version=version_no, stale=stale))
+        refs.append(_fact_ref(
+            row, customer_id=customer_id, profile_version=version_no, stale=stale,
+        ))
     result = _envelope(
         profile_version=version_no, data_as_of=version.data_as_of if version else None,
         items=items, evidence_refs=refs,
     )
     result.update(customer_id=customer_id, has_more=has_more, cursor=next_cursor)
-    return _fit(result, max_bytes=MAX_LIST_BYTES)
+    return _fit_page(
+        result, max_bytes=MAX_LIST_BYTES, user=user, customer_id=customer_id,
+        filters=filters, profile_version=version_no, incoming_cursor=cursor,
+    )
 
 
 def get_customer_orders(
@@ -256,6 +270,8 @@ def get_customer_orders(
 ) -> dict:
     access = _access(db, user, customer_id)
     customer_id = access.customer_id
+    if not access.allows_classification("internal_business"):
+        _deny()
     # Orders are uniformly internal_business; apply_record_access cannot use
     # non-existent policy columns, so retain only its logical customer predicate.
     query = db.query(CustomerOrder).filter(
@@ -300,12 +316,10 @@ def get_customer_orders(
         items=items,
     )
     result.update(customer_id=customer_id, has_more=has_more, cursor=next_cursor)
-    return _fit(result, max_bytes=MAX_LIST_BYTES)
-
-
-def _plain_text(value: str | None, max_chars: int = MAX_SOURCE_CHARS) -> str:
-    without_markup = _TAG_RE.sub("", value or "")
-    return html.unescape(without_markup).strip()[:max_chars]
+    return _fit_page(
+        result, max_bytes=MAX_LIST_BYTES, user=user, customer_id=customer_id,
+        filters=filters, profile_version=version_no, incoming_cursor=cursor,
+    )
 
 
 def search_customer_messages(
@@ -318,8 +332,12 @@ def search_customer_messages(
     if not access.allows_classification("restricted_internal"):
         _deny()
     conversations = db.query(CustomerConversation.id).filter(
-        CustomerConversation.customer_id == customer_id,
+        logical_root_predicate(CustomerConversation, "conversation", customer_id),
     )
+    if conversation_id is not None and conversations.filter(
+        CustomerConversation.id == conversation_id,
+    ).first() is None:
+        _deny()
     message_query = db.query(CustomerMessage).filter(CustomerMessage.conversation_id.in_(conversations))
     if conversation_id is not None:
         message_query = message_query.filter(CustomerMessage.conversation_id == conversation_id)
@@ -356,7 +374,10 @@ def search_customer_messages(
         items=items,
     )
     result.update(customer_id=customer_id, has_more=has_more, cursor=next_cursor)
-    return _fit(result, max_bytes=MAX_LIST_BYTES)
+    return _fit_page(
+        result, max_bytes=MAX_LIST_BYTES, user=user, customer_id=customer_id,
+        filters=filters, profile_version=version_no, incoming_cursor=cursor,
+    )
 
 
 def get_customer_actions(
@@ -392,7 +413,10 @@ def get_customer_actions(
         items=items,
     )
     result.update(customer_id=customer_id, has_more=has_more, cursor=next_cursor)
-    return _fit(result, max_bytes=MAX_LIST_BYTES)
+    return _fit_page(
+        result, max_bytes=MAX_LIST_BYTES, user=user, customer_id=customer_id,
+        filters=filters, profile_version=version_no, incoming_cursor=cursor,
+    )
 
 
 def get_customer_evidence(
@@ -415,7 +439,9 @@ def get_customer_evidence(
     refs, items = [], []
     for row in sorted(rows, key=lambda item: item.id):
         stale = row.expires_at is not None and row.expires_at <= current
-        ref = _fact_ref(row, profile_version=version_no, stale=stale)
+        ref = _fact_ref(
+            row, customer_id=customer_id, profile_version=version_no, stale=stale,
+        )
         refs.append(ref)
         items.append({
             "fact_id": row.id, "fact_key": row.fact_key, "value": _clip(row.value_json)[0],

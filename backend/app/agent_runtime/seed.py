@@ -27,7 +27,13 @@ _SHADOW_PROMPT = """你是莱莎方舟新客户开发影子 Agent。你只能针
 逐一核验企业主体、官网域名、国家、行业相关性与来源。禁止猜测联系人或邮箱，禁止跨主体拼接，
 禁止发送邮件或写入正式线索。输出只用于与现有 OpenClaw 流程做盲评。"""
 
-_REPURCHASE_PROMPT += "\n每条 evidence 必须原样回传成功工具调用的 tool_call_id，并以 source 填写对应工具名。"
+_CUSTOMER_EVIDENCE_PROMPT = (
+    "\n每条 evidence 必须设置唯一 claim_id，原样复制工具 evidence_refs 中的 evidence_ref、"
+    "evidence_content_hash、customer_id、profile_version、freshness，并回传成功调用的 "
+    "tool_call_id，以 source 填写对应工具名；不得自行改写这些字段。"
+)
+_COPILOT_PROMPT += _CUSTOMER_EVIDENCE_PROMPT
+_REPURCHASE_PROMPT += _CUSTOMER_EVIDENCE_PROMPT
 _SHADOW_PROMPT += "\n每个 candidate 必须包含 source_url、source 工具名和取得该证据的成功 tool_call_id。"
 
 
@@ -40,17 +46,33 @@ def _schema(required: list[str], properties: dict) -> dict:
     }
 
 
-def _evidence_array() -> dict:
+def _evidence_array(*, customer_envelope: bool = False) -> dict:
+    required = ["source", "tool_call_id"]
+    properties = {
+        "source": {"type": "string"},
+        "tool_call_id": {"type": "string"},
+        "source_url": {"type": "string"},
+    }
+    if customer_envelope:
+        required = [
+            "claim_id", "tool_call_id", "source", "evidence_ref",
+            "evidence_content_hash", "customer_id", "profile_version", "freshness",
+        ]
+        properties.update({
+            "claim_id": {"type": "string", "minLength": 1},
+            "evidence_ref": {"type": "string", "minLength": 1},
+            "evidence_content_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "customer_id": {"type": "integer", "minimum": 1},
+            "profile_version": {"type": "integer", "minimum": 1},
+            "freshness": {"const": "current"},
+        })
     return {
         "type": "array",
         "items": {
             "type": "object",
-            "required": ["source", "tool_call_id"],
-            "properties": {
-                "source": {"type": "string"},
-                "tool_call_id": {"type": "string"},
-                "source_url": {"type": "string"},
-            },
+            "required": required,
+            "properties": properties,
+            "additionalProperties": False,
         },
     }
 
@@ -78,14 +100,14 @@ def _cited_statement_array() -> dict:
 PROFILE_SEEDS = [
     {
         "profile_key": "customer_order_copilot",
-        "version": 1,
+        "version": 2,
         "name": "客户与订单经营副驾驶",
         "description": "基于授权客户、订单、知识、物流和价格事实生成可追溯经营建议",
         "runtime": "dsh",
         "mode": "interactive",
         "model_preset": "agent_runtime_copilot",
         "system_prompt": _COPILOT_PROMPT,
-        "skill_manifest": [{"name": "ark-customer-order-copilot", "version": "1"}],
+        "skill_manifest": [{"name": "ark-customer-order-copilot", "version": "2"}],
         "tool_allowlist": [
             "get_customer_profile", "get_customer_facts", "get_customer_orders",
             "search_customer_messages", "get_customer_actions", "get_customer_evidence",
@@ -103,20 +125,20 @@ PROFILE_SEEDS = [
             {
                 "summary": {"type": "string"}, "key_findings": _cited_statement_array(),
                 "risks": _cited_statement_array(), "recommended_actions": _cited_statement_array(),
-                "evidence": _evidence_array(), "open_questions": {"type": "array"},
+                "evidence": _evidence_array(customer_envelope=True), "open_questions": {"type": "array"},
             },
         ),
     },
     {
         "profile_key": "repurchase_risk_analyst",
-        "version": 1,
+        "version": 2,
         "name": "复购与流失干预分析",
         "description": "为规则召回客户生成有证据的行动卡草案",
         "runtime": "dsh",
         "mode": "scheduled",
         "model_preset": "agent_runtime_repurchase",
         "system_prompt": _REPURCHASE_PROMPT,
-        "skill_manifest": [{"name": "ark-repurchase-risk-analyst", "version": "1"}],
+        "skill_manifest": [{"name": "ark-repurchase-risk-analyst", "version": "2"}],
         "tool_allowlist": [
             "get_customer_profile", "get_customer_facts", "get_customer_orders",
             "get_customer_actions", "get_customer_evidence", "search_knowledge",
@@ -125,12 +147,14 @@ PROFILE_SEEDS = [
         "policy_json": {
             "read_only": True, "projection": "customer_action", "evidence_required": True,
             "artifact_type": "repurchase_action_card", "max_artifacts": 1,
+            "claim_evidence_required": True,
         },
         "output_schema": _schema(
             ["action_reason", "suggested_next_action", "suggested_message", "evidence"],
             {
                 "action_reason": {"type": "string"}, "suggested_next_action": {"type": "string"},
-                "suggested_message": {"type": "string"}, "evidence": _evidence_array(),
+                "suggested_message": {"type": "string"},
+                "evidence": _evidence_array(customer_envelope=True),
             },
         ),
     },
@@ -179,8 +203,13 @@ def seed_default_profiles(db: Session) -> int:
             actual = {key: getattr(existing, key) for key in expected}
             if json.dumps(actual, ensure_ascii=False, sort_keys=True) != json.dumps(expected, ensure_ascii=False, sort_keys=True):
                 logger.warning("Agent profile seed drift: %s v%s", data["profile_key"], data["version"])
-            continue
-        db.add(AgentProfile(**data, prompt_hash=prompt_hash, status="active"))
-        created += 1
+        else:
+            db.add(AgentProfile(**data, prompt_hash=prompt_hash, status="active"))
+            created += 1
+        db.query(AgentProfile).filter(
+            AgentProfile.profile_key == data["profile_key"],
+            AgentProfile.version < data["version"],
+            AgentProfile.status == "active",
+        ).update({AgentProfile.status: "inactive"}, synchronize_session=False)
     db.commit()
     return created

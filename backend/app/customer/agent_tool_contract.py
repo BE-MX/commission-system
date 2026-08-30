@@ -6,8 +6,10 @@ from datetime import date, datetime
 import base64
 import hashlib
 import hmac
+import html
 import json
-from typing import Any
+import re
+from typing import Any, Callable
 
 from app.core.config import get_settings
 
@@ -27,6 +29,7 @@ PROFILE_SECTIONS = (
     "commercial_summary", "preferences", "behavior_patterns", "open_opportunities",
     "risks", "recommended_actions", "recent_changes", "data_quality", "open_questions",
 )
+_TAG_RE = re.compile(r"<(script|style)\b[^>]*>.*?</\1>|<[^>]+>", re.I | re.S)
 
 
 class CustomerAgentAccessError(ValueError):
@@ -129,16 +132,30 @@ def clip(value: Any, max_chars: int = MAX_STRING_CHARS) -> tuple[Any, bool]:
     return value, False
 
 
-def fit(value: dict, *, max_bytes: int) -> dict:
+def plain_text(value: str | None, max_chars: int = MAX_SOURCE_CHARS) -> str:
+    return html.unescape(_TAG_RE.sub("", value or "")).strip()[:max_chars]
+
+
+def fit(
+    value: dict, *, max_bytes: int,
+    cursor_for_count: Callable[[int], str] | None = None,
+) -> dict:
     if len(serialize_envelope(value)) <= max_bytes:
         return value
     value["truncated"] = True
     value["truncation_reason"] = "output_budget"
     items = value.get("items")
     if isinstance(items, list):
+        original_count = len(items)
+        refs = value.get("evidence_refs")
+        parallel_refs = isinstance(refs, list) and len(refs) == original_count
         while items and len(serialize_envelope(value)) > max_bytes:
             items.pop()
+            if parallel_refs:
+                refs.pop()
         value["has_more"] = True
+        if cursor_for_count is not None and len(items) < original_count:
+            value["cursor"] = cursor_for_count(len(items))
     sections = value.get("sections")
     if isinstance(sections, dict):
         for key in reversed(list(sections)):
@@ -150,6 +167,23 @@ def fit(value: dict, *, max_bytes: int) -> dict:
         while refs and len(serialize_envelope(value)) > max_bytes:
             refs.pop()
     return value
+
+
+def fit_page(
+    value: dict, *, max_bytes: int, user: dict, customer_id: int | None,
+    filters: dict, profile_version: int | None, incoming_cursor: str | None,
+) -> dict:
+    position = decode_cursor(
+        incoming_cursor, user=user, customer_id=customer_id, filters=filters,
+        profile_version=profile_version,
+    ) if incoming_cursor else 0
+    return fit(
+        value, max_bytes=max_bytes,
+        cursor_for_count=lambda count: encode_cursor(
+            user=user, customer_id=customer_id, filters=filters,
+            profile_version=profile_version, position=position + count,
+        ),
+    )
 
 
 def envelope(

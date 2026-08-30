@@ -307,7 +307,17 @@ def _run(db, session, key="run-key-0001"):
     )
 
 
-def _tool_success(db, run, claim, *, call_id="tool-1", tool_name="get_customer_facts"):
+def _evidence(call_id="tool-1", source="get_customer_facts", **changes):
+    return {
+        "claim_id": "claim-1", "tool_call_id": call_id, "source": source,
+        "evidence_ref": "fact:1", "evidence_content_hash": "a" * 64,
+        "customer_id": 1, "profile_version": 1, "freshness": "current",
+        **changes,
+    }
+
+
+def _tool_success(db, run, claim, *, call_id="tool-1", tool_name="get_customer_facts",
+                  returned_evidence=None):
     sequence = worker_service.next_sequence(db, run.id)
     events = [
         WorkerEventInput(
@@ -322,7 +332,14 @@ def _tool_success(db, run, claim, *, call_id="tool-1", tool_name="get_customer_f
             event_id=f"tool-{run.id}-{call_id}-succeeded",
             event_type="tool.succeeded",
             actor_type="tool",
-            payload={"call_id": call_id},
+            payload={
+                "call_id": call_id,
+                "output": {"evidence_refs": returned_evidence or [
+                    {key: value for key, value in _evidence(
+                        call_id=call_id, source=tool_name,
+                    ).items() if key not in {"claim_id", "tool_call_id", "source"}}
+                ]},
+            },
         ),
     ]
     worker_service.append_worker_events(
@@ -331,11 +348,7 @@ def _tool_success(db, run, claim, *, call_id="tool-1", tool_name="get_customer_f
 
 
 def _copilot_artifact(artifact_type="copilot_answer"):
-    evidence = [{
-        "claim_id": "claim-1", "tool_call_id": "tool-1", "source": "get_customer_facts",
-        "evidence_ref": "fact:1", "evidence_content_hash": "a" * 64,
-        "customer_id": 1, "profile_version": 1, "freshness": "current",
-    }]
+    evidence = [_evidence()]
     return ArtifactInput(
         artifact_type=artifact_type,
         title="Acme 跟进建议",
@@ -381,9 +394,45 @@ def test_profile_seed_is_immutable_and_idempotent(db):
     assert db.query(models.AgentProfile).count() == 3
     assert seed.seed_default_profiles(db) == 0
     profile = service.get_active_profile(db, "customer_order_copilot")
-    assert profile.version == 1
+    assert profile.version == 2
     assert "get_customer_profile" in profile.tool_allowlist
     assert len(profile.prompt_hash) == 64
+
+
+def test_existing_v1_customer_profile_is_superseded_by_new_trust_contract(db):
+    db.query(models.AgentProfile).delete()
+    old = next(item for item in seed.PROFILE_SEEDS if item["profile_key"] == "customer_order_copilot")
+    legacy = {
+        **old,
+        "version": 1,
+        "tool_allowlist": ["get_customer_order_timeline", "get_search_job_context"],
+    }
+    db.add(models.AgentProfile(
+        **legacy,
+        prompt_hash="legacy-v1", status="active",
+    ))
+    db.commit()
+    assert seed.seed_default_profiles(db) >= 1
+    active = service.get_active_profile(db, "customer_order_copilot")
+    assert active.version > 1
+    assert "get_customer_profile" in active.tool_allowlist
+    assert "get_customer_order_timeline" not in active.tool_allowlist
+    assert db.query(models.AgentProfile.status).filter_by(
+        profile_key="customer_order_copilot", version=1,
+    ).scalar() != "active"
+
+
+def test_customer_profile_evidence_schema_requires_exact_envelope_fields(db):
+    profile = service.get_active_profile(db, "customer_order_copilot")
+    required = set(profile.output_schema["properties"]["evidence"]["items"]["required"])
+    assert required == {
+        "claim_id", "tool_call_id", "source", "evidence_ref",
+        "evidence_content_hash", "customer_id", "profile_version", "freshness",
+    }
+    assert all(field in profile.system_prompt for field in (
+        "evidence_ref", "evidence_content_hash", "customer_id",
+        "profile_version", "freshness",
+    ))
 
 
 def test_create_run_is_idempotent_and_owner_scoped(db):
@@ -419,6 +468,43 @@ def test_customer_run_never_queues_without_materialized_authorized_member(db, ex
         )
     assert db.query(models.AgentRun).count() == 0
     assert db.query(CustomerAgentRunScope).count() == 0
+
+
+def test_system_customer_profile_rejects_missing_customer_before_queue(db):
+    session = _session(db, profile_key="repurchase_risk_analyst")
+    with pytest.raises(ForbiddenError, match="CUSTOMER_NOT_FOUND_OR_FORBIDDEN"):
+        service.create_run(
+            db, session.id, {
+                "idempotency_key": "missing-system-customer",
+                "input": {}, "trigger_type": "schedule",
+                "business_ref_type": "customer_action", "business_ref_id": "44",
+            }, user_id=7, permissions=["agent_runtime:invoke", "customer:read"],
+            roles=[], system_initiated=True,
+        )
+    assert db.query(models.AgentRun).count() == 0
+    assert db.query(CustomerAgentRunScope).count() == 0
+
+
+def test_merged_alias_run_canonicalizes_input_ref_and_materialized_scope(db):
+    target = _customer(db, name="Canonical target", owner_user_id=7)
+    alias = _customer(db, name="Merged alias", owner_user_id=8)
+    alias.record_status = "merged"
+    alias.merged_into_customer_id = target.id
+    db.commit()
+    session = _session(db, profile_key="repurchase_risk_analyst")
+    run = service.create_run(
+        db, session.id, {
+            "idempotency_key": "canonical-customer-scope",
+            "input": {"customer_id": alias.id}, "trigger_type": "schedule",
+            "business_ref_type": "customer", "business_ref_id": str(alias.id),
+        }, user_id=7, permissions=["agent_runtime:invoke", "customer:read"],
+        roles=[], system_initiated=True,
+    )
+    assert run.input_json["customer_id"] == target.id
+    assert run.business_ref_id == str(target.id)
+    assert db.query(CustomerAgentRunScope.customer_id).filter(
+        CustomerAgentRunScope.run_id == run.id,
+    ).scalar() == target.id
 
 
 def test_one_active_run_per_session_and_queued_cancel(db):
@@ -507,6 +593,80 @@ def test_worker_lease_event_replay_and_complete_artifact(db):
     ]
 
 
+@pytest.mark.parametrize(("field", "value"), (
+    ("evidence_ref", "fact:forged"),
+    ("evidence_content_hash", "f" * 64),
+    ("customer_id", 2),
+    ("profile_version", 2),
+))
+def test_create_artifact_rejects_claim_not_in_successful_tool_output(db, field, value):
+    run = _run(db, _session(db))
+    claim = _claim(db)
+    _start(db, run.id, claim)
+    _tool_success(db, run, claim)
+    forged = _copilot_artifact()
+    forged.evidence[0][field] = value
+    forged.content["evidence"][0][field] = value
+    with pytest.raises(ConflictError, match="not returned|crosses customer"):
+        artifact_service.create_artifact(
+            db, run, db.get(models.AgentProfile, run.profile_id),
+            artifact_type=forged.artifact_type, schema_version=1, title=forged.title,
+            content=forged.content, evidence=forged.evidence,
+        )
+    assert db.query(models.AgentArtifact).filter_by(run_id=run.id).count() == 0
+
+
+def test_worker_completion_rejects_cross_customer_tool_evidence(db):
+    run = _run(db, _session(db))
+    claim = _claim(db)
+    _start(db, run.id, claim)
+    _tool_success(db, run, claim)
+    forged = _copilot_artifact()
+    forged.evidence[0]["customer_id"] = 2
+    forged.content["evidence"][0]["customer_id"] = 2
+    with pytest.raises(ConflictError, match="crosses customer|跨客户"):
+        worker_service.complete_run(
+            db, run.id, worker_id="dsh-worker-01", lease_token=claim["lease_token"],
+            runtime_run_id="forged-evidence", artifacts=[forged], steps_used=1,
+            prompt_tokens=1, completion_tokens=1, cost_usd=Decimal("0"),
+        )
+    assert db.get(models.AgentRun, run.id).status == "running"
+    assert db.query(models.AgentArtifact).filter_by(run_id=run.id).count() == 0
+
+
+def test_readiness_replays_tool_output_instead_of_trusting_artifact_evidence(db):
+    contract_hash = evaluation_service.copilot_contract(db)["hash"]
+    run = _run(db, _session(db), key="forged-readiness")
+    run.input_json = {
+        **run.input_json,
+        "question": COPILOT_EVALUATION_CASES[0]["question"],
+        "evaluation_suite": "customer_order_copilot_v1",
+        "evaluation_case_id": "standard-01",
+        "evaluation_contract_hash": contract_hash,
+    }
+    db.commit()
+    claim = _claim(db)
+    _start(db, run.id, claim)
+    _tool_success(db, run, claim)
+    forged = _copilot_artifact()
+    forged.evidence[0]["evidence_content_hash"] = "f" * 64
+    forged.content["evidence"][0]["evidence_content_hash"] = "f" * 64
+    db.add(models.AgentArtifact(
+        run_id=run.id, artifact_type="copilot_answer", schema_version=1,
+        content_json=forged.content, evidence_json=forged.evidence,
+        content_sha256="forged-readiness", validation_status="valid",
+        validation_errors=[], decision_status="draft",
+        business_ref_type="customer", business_ref_id="1",
+    ))
+    run.status = "completed"
+    run.completed_at = datetime(2026, 8, 31)
+    db.commit()
+    service.add_feedback(
+        db, run.id, user_id=7, can_read_all=False, rating="useful", note="forged",
+    )
+    assert evaluation_service.readiness_report(db)["copilot"]["evidence_bound_runs"] == 0
+
+
 def test_readiness_report_counts_only_reviewed_and_evidence_bound_copilot_runs(db):
     contract_hash = evaluation_service.copilot_contract(db)["hash"]
     run = _run(db, _session(db))
@@ -540,7 +700,7 @@ def test_readiness_report_counts_only_reviewed_and_evidence_bound_copilot_runs(d
         "cohort_id": f"customer_order_copilot_v1:{contract_hash[:12]}",
         "evaluation_contract_hash": contract_hash,
         "contract_ready": True,
-        "profile_version": 1,
+        "profile_version": 2,
         "model": "deepseek-chat",
         "reviewed_runs": 1,
         "directly_usable_runs": 1,
@@ -602,7 +762,7 @@ def test_copilot_evaluation_catalog_is_versioned_and_complete(db):
     assert len({item["question"] for item in COPILOT_EVALUATION_CASES}) == 30
     assert all(item["rubric"] and item["requires"] for item in catalog["cases"])
     assert catalog["contract_ready"] is True
-    assert catalog["profile_version"] == 1
+    assert catalog["profile_version"] == 2
     assert catalog["model"] == "deepseek-chat"
     assert not {
         "shipment", "pricing", "knowledge",
@@ -985,6 +1145,7 @@ def test_artifact_decision_is_idempotent_but_cannot_flip(db):
     _start(db, run.id, claim)
     _tool_success(db, run, claim, call_id="decision-tool", tool_name="search_knowledge")
     profile = db.get(models.AgentProfile, run.profile_id)
+    evidence = [_evidence("decision-tool", "search_knowledge")]
     artifact = artifact_service.create_artifact(
         db, run, profile,
         artifact_type="copilot_answer",
@@ -992,9 +1153,9 @@ def test_artifact_decision_is_idempotent_but_cannot_flip(db):
         title=None,
         content={
             "summary": "结论", "key_findings": [], "risks": [],
-            "recommended_actions": [], "evidence": [], "open_questions": [],
+            "recommended_actions": [], "evidence": evidence, "open_questions": [],
         },
-        evidence=[{"source": "search_knowledge", "tool_call_id": "decision-tool"}],
+        evidence=evidence,
     )
     db.commit()
     accepted = artifact_service.decide_artifact(
@@ -1011,17 +1172,18 @@ def test_artifact_decision_is_idempotent_but_cannot_flip(db):
 
 
 def test_all_profile_artifact_contracts_require_replayable_tool_evidence(db):
+    copilot_evidence = [_evidence("c1", "search_knowledge")]
+    repurchase_evidence = [_evidence("c2", "get_customer_facts")]
     cases = {
         "customer_order_copilot": ({
             "summary": "结论", "key_findings": [], "risks": [], "recommended_actions": [],
-            "evidence": [{"source": "search_knowledge", "tool_call_id": "c1"}],
+            "evidence": copilot_evidence,
             "open_questions": [],
-        }, [{"source": "search_knowledge", "tool_call_id": "c1"}], {"c1": "search_knowledge"}),
+        }, copilot_evidence, {"c1": "search_knowledge"}),
         "repurchase_risk_analyst": ({
             "action_reason": "原因", "suggested_next_action": "行动", "suggested_message": "草稿",
-            "evidence": [{"source": "get_customer_repurchase_analysis", "tool_call_id": "c2"}],
-        }, [{"source": "get_customer_repurchase_analysis", "tool_call_id": "c2"}],
-            {"c2": "get_customer_repurchase_analysis"}),
+            "evidence": repurchase_evidence,
+        }, repurchase_evidence, {"c2": "get_customer_facts"}),
         "sales_discovery_shadow": ({
             "candidates": [{
                 "name": "Acme", "website": "https://acme.example",
@@ -1062,7 +1224,7 @@ def test_artifact_rejects_made_up_evidence_source(db):
 
 def test_copilot_quantitative_claims_require_successful_citations(db):
     profile = service.get_active_profile(db, "customer_order_copilot")
-    evidence = [{"source": "get_customer_order_timeline", "tool_call_id": "orders-1"}]
+    evidence = [_evidence("orders-1", "get_customer_orders")]
     valid = {
         "summary": "客户已经接近历史复购窗口",
         "key_findings": [{"text": "距离平均复购周期还有 7 天", "evidence_call_ids": ["orders-1"]}],
@@ -1072,13 +1234,13 @@ def test_copilot_quantitative_claims_require_successful_citations(db):
         "open_questions": [],
     }
     assert artifact_service.validate_output(
-        valid, evidence, profile, successful_tool_calls={"orders-1": "get_customer_order_timeline"},
+        valid, evidence, profile, successful_tool_calls={"orders-1": "get_customer_orders"},
     ) == []
 
     numeric_summary = {**valid, "summary": "客户还有 7 天进入复购窗口"}
     assert any("定量结论" in error for error in artifact_service.validate_output(
         numeric_summary, evidence, profile,
-        successful_tool_calls={"orders-1": "get_customer_order_timeline"},
+        successful_tool_calls={"orders-1": "get_customer_orders"},
     ))
     missing_citation = {
         **valid,
@@ -1086,7 +1248,7 @@ def test_copilot_quantitative_claims_require_successful_citations(db):
     }
     assert any("未列入 evidence" in error for error in artifact_service.validate_output(
         missing_citation, evidence, profile,
-        successful_tool_calls={"orders-1": "get_customer_order_timeline"},
+        successful_tool_calls={"orders-1": "get_customer_orders"},
     ))
 
 
@@ -1313,7 +1475,7 @@ def test_agent_model_gateway_charges_reservation_when_success_has_no_usage(
     db, monkeypatch, runtime_settings,
 ):
     _seed_agent_preset(db)
-    runtime_settings.AGENT_RUNTIME_DAILY_TOKEN_BUDGET = 5_000
+    runtime_settings.AGENT_RUNTIME_DAILY_TOKEN_BUDGET = 8_000
     run = _run(db, _session(db))
     claim = _claim(db)
     _start(db, run.id, claim)
@@ -1347,7 +1509,7 @@ def test_agent_model_gateway_charges_reservation_when_consumer_disconnects(
     db, monkeypatch, runtime_settings,
 ):
     _seed_agent_preset(db)
-    runtime_settings.AGENT_RUNTIME_DAILY_TOKEN_BUDGET = 5_000
+    runtime_settings.AGENT_RUNTIME_DAILY_TOKEN_BUDGET = 8_000
     run = _run(db, _session(db))
     claim = _claim(db)
     _start(db, run.id, claim)
@@ -1649,15 +1811,16 @@ def test_accepted_repurchase_artifact_projects_only_to_pending_action(db):
     claim = _claim(db)
     _start(db, run.id, claim)
     _tool_success(db, run, claim, call_id="repurchase-tool")
+    evidence = [_evidence("repurchase-tool", "get_customer_facts")]
     artifact = ArtifactInput(
         artifact_type="repurchase_action_card",
         content={
             "action_reason": "DSH 有证据理由",
             "suggested_next_action": "确认库存和采购周期",
             "suggested_message": "Could we review your next replenishment window?",
-            "evidence": [{"source": "get_customer_facts", "tool_call_id": "repurchase-tool"}],
+            "evidence": evidence,
         },
-        evidence=[{"source": "get_customer_facts", "tool_call_id": "repurchase-tool"}],
+        evidence=evidence,
     )
     _, artifacts = worker_service.complete_run(
         db, run.id,

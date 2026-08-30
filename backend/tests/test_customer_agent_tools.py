@@ -32,6 +32,7 @@ from app.customer.models import (
     CustomerOrderItem,
     CustomerProfileVersion,
     CustomerSourceRecord,
+    CustomerSyncCursor,
 )
 
 
@@ -47,7 +48,7 @@ def db():
         CustomerFact.__table__, CustomerConversation.__table__,
         CustomerMessage.__table__, CustomerOrder.__table__, CustomerOrderItem.__table__,
         CustomerAction.__table__, CustomerObjectOwnership.__table__,
-        CustomerAgentRunScope.__table__,
+        CustomerAgentRunScope.__table__, CustomerSyncCursor.__table__,
     ])
     session = sessionmaker(bind=engine, autoflush=False)()
     session.add_all([
@@ -306,6 +307,151 @@ def test_profile_does_not_include_raw_messages_but_search_returns_on_demand_exce
     assert result["items"][0]["excerpt"] == "Hello 500 wigs"
     assert result["items"][0]["untrusted_content"] is True
     assert result["items"][0]["locator"] == {"message_id": 11}
+
+
+def test_moved_conversation_raw_message_is_only_visible_to_logical_owner(db, settings):
+    old = _customer(db, "Old conversation")
+    new = _customer(db, "New conversation")
+    _membership(db, old.id, run_id=91)
+    _membership(db, new.id, run_id=92)
+    source = _source(db, old.id, suffix=9)
+    conversation = CustomerConversation(
+        id=90, customer_id=old.id, source_system="alibaba", source_account_key="tenant",
+        external_conversation_id="moved-c", channel="alibaba", conversation_status="active",
+    )
+    db.add(conversation)
+    db.flush()
+    db.add(CustomerMessage(
+        id=91, conversation_id=conversation.id, external_message_id="moved-m", direction="in",
+        sender_type="customer_contact", content_type="text", content_text="moved private body",
+        attachment_meta_json=[], source_record_id=source.id, content_hash=f"{901:064x}",
+        sent_at=datetime(2026, 8, 3), captured_at=datetime(2026, 8, 3),
+    ))
+    db.add(CustomerObjectOwnership(
+        object_type="conversation", object_id=conversation.id,
+        storage_customer_id=old.id, current_customer_id=new.id,
+        ownership_version=1, last_change_proposal_id=999,
+        last_action_type="split",
+    ))
+    db.commit()
+    with pytest.raises(agent_service.CustomerAgentAccessError):
+        agent_service.search_customer_messages(
+            db, user=_identity(old.id, run_id=91), customer_id=old.id,
+            conversation_id=conversation.id,
+        )
+    moved = agent_service.search_customer_messages(
+        db, user=_identity(new.id, run_id=92), customer_id=new.id,
+        conversation_id=conversation.id,
+    )
+    assert [item["message_id"] for item in moved["items"]] == [91]
+
+
+def test_profile_reports_fresh_stale_and_unavailable_source_metadata(db, settings):
+    customer = _customer(db, "Freshness")
+    _membership(db, customer.id)
+    fresh_source = _source(db, customer.id, suffix=21)
+    fresh_source.captured_at = datetime(2026, 8, 30)
+    stale_source = CustomerSourceRecord(
+        customer_id=customer.id, source_system="okki", source_account_key="tenant",
+        authority_level="transactional", source_entity_type="order",
+        external_record_id="old-order", external_record_key_hash=f"{22:064x}",
+        data_classification="internal_business", visibility_scope="customer_team",
+        classification_reason="order", payload_schema_version="okki_order_v1",
+        payload_json={"order": "old"}, content_hash=f"{122:064x}",
+        captured_at=datetime(2026, 7, 1), processing_status="processed",
+    )
+    db.add(stale_source)
+    db.flush()
+    unavailable_source = CustomerSourceRecord(
+        customer_id=customer.id, source_system="website", source_account_key="global",
+        authority_level="official_company", source_entity_type="company_page",
+        external_record_id="missing-sync", external_record_key_hash=f"{23:064x}",
+        data_classification="public_business", visibility_scope="all_authorized",
+        classification_reason="website", payload_schema_version="company_page_v1",
+        payload_json={"page": "missing"}, content_hash=f"{123:064x}",
+        captured_at=datetime(2026, 8, 20), processing_status="processed",
+    )
+    db.add(unavailable_source)
+    db.flush()
+    fresh_fact = _fact(db, customer.id, fresh_source.id, suffix=21)
+    stale_fact = _fact(db, customer.id, stale_source.id, suffix=22)
+    unavailable_fact = _fact(db, customer.id, unavailable_source.id, suffix=23)
+    version = db.get(CustomerProfileVersion, customer.current_profile_version_id)
+    version.evidence_fact_ids = [fresh_fact.id, stale_fact.id, unavailable_fact.id]
+    db.add_all([
+        CustomerSyncCursor(
+            source_system="alibaba", resource_type="messages", scope_key="tenant",
+            cursor_value="fresh", sync_status="idle", generation=1,
+            last_success_at=datetime(2026, 8, 30), last_record_at=datetime(2026, 8, 30),
+            last_counts_json={},
+        ),
+        CustomerSyncCursor(
+            source_system="okki", resource_type="orders", scope_key="tenant",
+            cursor_value="old", sync_status="idle", generation=1,
+            last_success_at=datetime(2026, 7, 1), last_record_at=datetime(2026, 7, 1),
+            last_counts_json={},
+        ),
+    ])
+    db.commit()
+    result = agent_service.get_customer_profile(
+        db, user=_identity(customer.id), customer_id=customer.id,
+        sections=["identity"], now=datetime(2026, 8, 31),
+    )
+    assert result["source_freshness_map"]["alibaba:messages:tenant"]["status"] == "fresh"
+    assert result["source_freshness_map"]["okki:orders:tenant"]["status"] == "stale"
+    assert result["source_freshness_map"]["website:company_page:global"]["status"] == "unavailable"
+    assert "website:company_page:global" in result["unavailable_sources"]
+    assert result["stale_sections"] == ["identity"]
+
+
+def test_budget_truncation_cursor_covers_every_fact_once_and_refs_match_items(db, settings):
+    customer = _customer(db, "Paged budget")
+    _membership(db, customer.id)
+    source = _source(db, customer.id, suffix=31)
+    expected = []
+    for index in range(80):
+        row = _fact(db, customer.id, source.id, suffix=100 + index)
+        row.value_json = {"value": f"{index}:" + "x" * 4_000}
+        expected.append(row.id)
+    db.commit()
+    cursor = None
+    seen = []
+    while True:
+        page = agent_service.get_customer_facts(
+            db, user=_identity(customer.id), customer_id=customer.id,
+            cursor=cursor, limit=50,
+        )
+        item_ids = [item["fact_id"] for item in page["items"]]
+        seen.extend(item_ids)
+        assert {ref["evidence_ref"] for ref in page["evidence_refs"]} == {
+            f"fact:{fact_id}" for fact_id in item_ids
+        }
+        if not page["has_more"]:
+            break
+        assert page["cursor"] and page["cursor"] != cursor
+        cursor = page["cursor"]
+    assert seen == expected
+
+
+def test_orders_require_internal_business_classification(db, settings):
+    customer = _customer(db, "Public order")
+    _membership(db, customer.id)
+    source = _source(db, customer.id, suffix=77)
+    db.add(CustomerOrder(
+        customer_id=customer.id, source_system="okki", source_account_key="tenant",
+        external_order_id="classified-order", order_status="confirmed",
+        currency="USD", amount_original=100, amount_usd=100,
+        is_valid_business_order=True,
+        source_record_id=source.id,
+        source_hash=f"{777:064x}", synced_at=datetime(2026, 8, 1),
+    ))
+    db.commit()
+    public_user = _identity(customer.id)
+    public_user["_agent_run"]["max_data_classification"] = "public_business"
+    with pytest.raises(agent_service.CustomerAgentAccessError):
+        agent_service.get_customer_orders(
+            db, user=public_user, customer_id=customer.id,
+        )
 
 
 @pytest.mark.skipif(agent_service is None, reason="service not implemented")

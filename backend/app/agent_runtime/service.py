@@ -16,6 +16,10 @@ from app.auth.models import ArkUser
 from app.core.config import get_settings
 from app.customer.models import CustomerAgentRunScope
 from app.customer.access_service import CustomerAccessDenied, require_customer_access
+from app.customer.logical_customer_service import resolve_canonical_customer_id
+
+
+_CUSTOMER_PROFILE_KEYS = {"customer_order_copilot", "repurchase_risk_analyst"}
 
 
 def get_active_profile(db: Session, profile_key: str) -> AgentProfile:
@@ -123,7 +127,7 @@ def create_run(
         effective_permissions.add("agent_runtime:invoke")
     if "agent_runtime:invoke" not in effective_permissions:
         raise ForbiddenError("创建 Agent 任务需要 Agent 调用权限")
-    run_input = data.get("input") or {}
+    run_input = dict(data.get("input") or {})
     reserved_evaluation_fields = {"evaluation_suite", "evaluation_case_id"}
     if reserved_evaluation_fields & set(run_input) and not evaluation_initiated:
         raise ForbiddenError("标准评测标记只能由方舟评测流程生成")
@@ -144,28 +148,21 @@ def create_run(
         raise ConflictError("该 Agent Profile 已停用")
     if not profile_feature_enabled(profile.profile_key):
         raise ConflictError("该 Agent 业务场景尚未开启灰度")
-    if not system_initiated:
-        if profile.mode != "interactive" or data.get("trigger_type", "user") != "user":
-            raise ForbiddenError("用户入口只能启动交互式 Agent 任务")
-        if profile.profile_key == "customer_order_copilot":
-            ref_id = str(data.get("business_ref_id") or "")
-            input_customer_id = str(run_input.get("customer_id") or "")
-            if (
-                session.context_type != "customer"
-                or data.get("business_ref_type") != "customer"
-                or not ref_id
-                or ref_id != str(session.context_id)
-                or input_customer_id != ref_id
-            ):
-                raise ForbiddenError("客户经营副驾驶必须绑定会话中的同一统一客户")
+    customer_scoped = bool(
+        profile.profile_key in _CUSTOMER_PROFILE_KEYS
+        or session.context_type == "customer"
+        or str(data.get("business_ref_type") or "").startswith("customer")
+    )
     raw_customer_id = run_input.get("customer_id")
     customer_id = None
+    if customer_scoped and raw_customer_id is None:
+        raise ForbiddenError("CUSTOMER_NOT_FOUND_OR_FORBIDDEN")
     if raw_customer_id is not None:
         try:
-            customer_id = int(raw_customer_id)
-            require_customer_access(
+            requested_customer_id = int(raw_customer_id)
+            access = require_customer_access(
                 db,
-                customer_id=customer_id,
+                customer_id=requested_customer_id,
                 user={
                     "sub": str(user_id),
                     "permissions": sorted(effective_permissions),
@@ -174,14 +171,36 @@ def create_run(
                 action_permissions={"customer:read", "customer:admin", "customer:read_all"},
                 manage_permissions={"customer:admin", "customer:read_all"},
             )
+            customer_id = access.customer_id
+            run_input["customer_id"] = customer_id
         except (TypeError, ValueError, CustomerAccessDenied) as exc:
             raise ForbiddenError("CUSTOMER_NOT_FOUND_OR_FORBIDDEN") from exc
+    business_ref_type = data.get("business_ref_type") or session.context_type
+    business_ref_id = data.get("business_ref_id") or session.context_id
+    if business_ref_type == "customer" and customer_id is not None:
+        business_ref_id = str(customer_id)
+
+    if not system_initiated:
+        if profile.mode != "interactive" or data.get("trigger_type", "user") != "user":
+            raise ForbiddenError("用户入口只能启动交互式 Agent 任务")
+        if profile.profile_key == "customer_order_copilot":
+            session_customer_id = resolve_canonical_customer_id(
+                db, int(session.context_id),
+            ) if str(session.context_id or "").isdigit() else None
+            if (
+                session.context_type != "customer"
+                or business_ref_type != "customer"
+                or customer_id is None
+                or session_customer_id != customer_id
+                or str(business_ref_id) != str(customer_id)
+            ):
+                raise ForbiddenError("客户经营副驾驶必须绑定会话中的同一统一客户")
     existing = db.query(AgentRun).filter(
         AgentRun.owner_user_id == user_id,
         AgentRun.idempotency_key == data["idempotency_key"],
     ).one_or_none()
     if existing is not None:
-        if existing.session_id != session_id or existing.input_json != data.get("input", {}):
+        if existing.session_id != session_id or existing.input_json != run_input:
             raise ConflictError("相同幂等键对应不同 Agent 任务")
         return existing
 
@@ -215,9 +234,9 @@ def create_run(
         trigger_type=data.get("trigger_type", "user"),
         source_runtime=profile.runtime,
         mode=profile.mode,
-        business_ref_type=data.get("business_ref_type") or session.context_type,
-        business_ref_id=data.get("business_ref_id") or session.context_id,
-        input_json=data.get("input", {}),
+        business_ref_type=business_ref_type,
+        business_ref_id=business_ref_id,
+        input_json=run_input,
         context_snapshot=context_snapshot,
         status=RunStatus.QUEUED.value,
         max_attempts=int((profile.limits_json or {}).get("max_attempts", 3)),
@@ -267,7 +286,7 @@ def create_run(
             AgentRun.owner_user_id == user_id,
             AgentRun.idempotency_key == data["idempotency_key"],
         ).one_or_none()
-        if raced is not None and raced.session_id == session_id and raced.input_json == data.get("input", {}):
+        if raced is not None and raced.session_id == session_id and raced.input_json == run_input:
             return raced
         raise ConflictError("Agent 任务幂等键冲突") from None
     db.refresh(row)

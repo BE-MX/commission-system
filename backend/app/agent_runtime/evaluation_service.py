@@ -99,20 +99,22 @@ def _latest_explicit_ratings(db: Session, run_ids: list[int]) -> dict[int, str]:
     return ratings
 
 
-def _copilot_artifact_is_evidence_bound(artifact: AgentArtifact) -> bool:
+def _copilot_artifact_is_evidence_bound(db: Session, artifact: AgentArtifact) -> bool:
     if artifact.validation_status != "valid":
         return False
     content = artifact.content_json or {}
-    customer_id = int(artifact.business_ref_id) if str(artifact.business_ref_id or "").isdigit() else None
+    from app.agent_runtime import artifact_service
+    run = db.get(AgentRun, artifact.run_id)
+    if run is None:
+        return False
+    customer_id, profile_version = artifact_service.customer_evidence_scope(db, run)
+    _calls, returned_evidence = artifact_service.successful_tool_evidence(db, run.id)
     evidence = [item for item in (artifact.evidence_json or []) if isinstance(item, dict)]
     if customer_id is None or len(evidence) != len(artifact.evidence_json or []):
         return False
-    profile_versions = {item.get("profile_version") for item in evidence}
-    if len(profile_versions) != 1:
-        return False
     errors = validate_claim_evidence(
-        evidence, returned_evidence=evidence, customer_id=customer_id,
-        profile_version=next(iter(profile_versions), None),
+        evidence, returned_evidence=returned_evidence, customer_id=customer_id,
+        profile_version=profile_version,
     )
     if errors:
         return False
@@ -418,7 +420,9 @@ def readiness_report(db: Session) -> dict:
     ratings = _latest_explicit_ratings(db, copilot_run_ids)
     reviewed = len(ratings)
     directly_usable = sum(1 for value in ratings.values() if value == "useful")
-    evidence_bound = sum(1 for item in copilot_artifacts if _copilot_artifact_is_evidence_bound(item))
+    evidence_bound = sum(
+        1 for item in copilot_artifacts if _copilot_artifact_is_evidence_bound(db, item)
+    )
     copilot_evidence_rate = _ratio(evidence_bound, len(copilot_runs))
     copilot_use_rate = _ratio(directly_usable, reviewed)
     copilot_pass = (
