@@ -158,10 +158,10 @@ CHAR64 = sa.String(64).with_variant(mysql.CHAR(64), "mysql")
 # These literals pin the complete 38-table contract and the revision-owned
 # resource bytes; migration replay never reads mutable runtime ORM metadata.
 FROZEN_TARGET_SCHEMA_SHA256 = (
-    "245aca1904cfb113843f0cf18455634b50ccfd0af79e27a7674b6bbf0fcc1b5d"
+    "be44793c7532cb572397bbc595dd874c774b960f06cf0186133119783c8bfc95"
 )
 FROZEN_SCHEMA_RESOURCE_SHA256 = (
-    "4c5292598349bd9ca0e28f3e2daa73e9fc371dd6909bcd378491b3b7b674252c"
+    "34672f9cf0c0e0e3d6b6707fb545f3e08b3b05dc6db783f6837defef6733a618"
 )
 FROZEN_SCHEMA_RESOURCE_PATH = Path(__file__).with_name(
     "126_unified_customer_domain_schema.json"

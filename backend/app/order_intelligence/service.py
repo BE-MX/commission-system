@@ -61,11 +61,28 @@ _FILTER_CACHE_MAX_ENTRIES = 16
 _FILTER_CACHE: OrderedDict[tuple, tuple[float, dict]] = OrderedDict()
 _FILTER_CACHE_LOCK = RLock()
 
-VALID_ORDER_SQL = """
-    ({a}.status = '13972831656'
-     OR ({a}.status = '13972831654' AND {a}.status_name = '已结清'))
-    AND ({a}.trail IS NULL OR CAST({a}.trail AS CHAR) NOT LIKE '%个人%')
+ORDER_STATUS_ENDED = "13972831656"
+ORDER_STATUS_TERMINATED = "13972831654"
+ORDER_STATUS_SETTLED_NAME = "已结清"
+
+VALID_ORDER_SQL = f"""
+    ({{a}}.status = '{ORDER_STATUS_ENDED}'
+     OR ({{a}}.status = '{ORDER_STATUS_TERMINATED}' AND {{a}}.status_name = '{ORDER_STATUS_SETTLED_NAME}'))
+    AND ({{a}}.trail IS NULL OR CAST({{a}}.trail AS CHAR) NOT LIKE '%个人%')
 """
+
+
+def is_valid_business_order(status, status_name, trail) -> bool:
+    """Apply the same effective-order rule used by ``VALID_ORDER_SQL``."""
+    if not isinstance(status, str) or not status:
+        return False
+    if trail is not None and "个人" in str(trail):
+        return False
+    return status == ORDER_STATUS_ENDED or (
+        status == ORDER_STATUS_TERMINATED
+        and isinstance(status_name, str)
+        and status_name == ORDER_STATUS_SETTLED_NAME
+    )
 
 
 @dataclass(frozen=True)

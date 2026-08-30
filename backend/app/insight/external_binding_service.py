@@ -78,6 +78,22 @@ def resolve_owner(
     return OwnerResult(user_id=user.id, binding_id=binding.id, status="resolved")
 
 
+def resolve_projection_owner(
+    db: Session,
+    provider: str,
+    external_account_id: str,
+) -> int | None:
+    """Resolve an Ark owner snapshot without reading an external business DB.
+
+    Customer source adapters pass only the external user ID already present in
+    their immutable source payload.  Missing bindings remain unassigned and
+    enter the existing binding-candidate workflow; they never block customer
+    projection or infer ownership from a display name.
+    """
+    result = resolve_owner(db, provider, external_account_id)
+    return result.user_id if result.status == "resolved" else None
+
+
 # ── 候选管理 ────────────────────────────────────────────
 
 def ensure_candidate(

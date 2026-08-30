@@ -99,7 +99,7 @@ class EventRegistration:
     human_actor_required: bool = False
 
 
-EVENT_REGISTRY_VERSION = "customer_event_registry_v2"
+EVENT_REGISTRY_VERSION = "customer_event_registry_v3"
 
 
 def _event_registration(
@@ -142,6 +142,26 @@ EVENT_REGISTRY: Mapping[str, EventRegistration] = MappingProxyType({
     "order.placed": _event_registration(
         ("okki",), {"is_valid_business_order": bool, "historical_replay": bool},
         required=("is_valid_business_order",), reference="order",
+    ),
+    "order.validity_revoked": _event_registration(
+        ("okki",),
+        {
+            "order_id": int,
+            "source_record_id": int,
+            "was_activation_source": bool,
+            "affected_opportunity_ids": list,
+            "customer_stage_review_required": bool,
+            "reason_code": str,
+        },
+        required=(
+            "order_id",
+            "source_record_id",
+            "was_activation_source",
+            "affected_opportunity_ids",
+            "customer_stage_review_required",
+            "reason_code",
+        ),
+        reference="order",
     ),
     "research.completed": _event_registration(
         ("agent",), {"result_status": str}, required=("result_status",),
@@ -1794,7 +1814,27 @@ def _validate_event_reference_semantics(
             or row.source_system != event_source
         ):
             raise CustomerDomainError("EVENT_REFERENCE_INVALID")
-        if payload.get("is_valid_business_order") is not row.is_valid_business_order:
+        if event_type == "order.validity_revoked":
+            affected_ids = payload.get("affected_opportunity_ids", [])
+            valid_affected_ids = all(
+                type(opportunity_id) is int and opportunity_id > 0
+                for opportunity_id in affected_ids
+            )
+            affected = db.query(CustomerOpportunity.id).filter(
+                CustomerOpportunity.id.in_(affected_ids),
+                CustomerOpportunity.customer_id == row.customer_id,
+            ).all() if affected_ids and valid_affected_ids else []
+            if (
+                row.is_valid_business_order
+                or payload.get("order_id") != row.id
+                or payload.get("source_record_id") != row.source_record_id
+                or payload.get("reason_code") != "source_order_became_invalid"
+                or not valid_affected_ids
+                or affected_ids != sorted(set(affected_ids))
+                or {item.id for item in affected} != set(affected_ids)
+            ):
+                raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+        elif payload.get("is_valid_business_order") is not row.is_valid_business_order:
             raise CustomerDomainError(
                 "RELATIONSHIP_TRANSITION_INVALID"
                 if target_relationship_stage is not None

@@ -111,6 +111,7 @@ _SHARED_DOMAIN = IdentityPolicy(
 
 IDENTITY_REGISTRY: Mapping[tuple[str, str], IdentityPolicy] = MappingProxyType({
     ("okki", "company_id"): _STRONG_CUSTOMER_ID,
+    ("okki", "contact_id"): _STRONG_CONTACT_ID,
     ("alibaba", "company_id"): _STRONG_CUSTOMER_ID,
     ("official_registry", "business_id"): _STRONG_CUSTOMER_ID,
     ("alibaba", "buyer_id"): _STRONG_CONTACT_ID,
@@ -386,6 +387,17 @@ SOURCE_REGISTRY: Mapping[tuple[str, str], SourceRegistration] = MappingProxyType
         promotion_ceiling="verified",
         collection_legal_basis="authorized internal customer-system synchronization",
     ),
+    ("okki", "contact"): SourceRegistration(
+        registry_version=SOURCE_REGISTRY_VERSION,
+        authority="transactional",
+        publisher_key_rule="internal_source_account",
+        source_family_key_rule="external_contact_id",
+        allowed_fact_keys=frozenset(),
+        default_classification=DataClassification.PERSONAL_CONTACT,
+        ttl_days=365,
+        promotion_ceiling="identified",
+        collection_legal_basis="authorized internal customer-system synchronization",
+    ),
     ("okki", "order"): SourceRegistration(
         registry_version=SOURCE_REGISTRY_VERSION,
         authority="transactional",
@@ -394,6 +406,17 @@ SOURCE_REGISTRY: Mapping[tuple[str, str], SourceRegistration] = MappingProxyType
         allowed_fact_keys=(
             _OBSERVED_PREFERENCE_FACT_KEYS | {"commercial.has_valid_order"}
         ),
+        default_classification=DataClassification.INTERNAL_BUSINESS,
+        ttl_days=None,
+        promotion_ceiling="verified",
+        collection_legal_basis="authorized internal order-system synchronization",
+    ),
+    ("okki", "order_item"): SourceRegistration(
+        registry_version=SOURCE_REGISTRY_VERSION,
+        authority="transactional",
+        publisher_key_rule="internal_source_account",
+        source_family_key_rule="external_order_item_id",
+        allowed_fact_keys=frozenset(),
         default_classification=DataClassification.INTERNAL_BUSINESS,
         ttl_days=None,
         promotion_ceiling="verified",

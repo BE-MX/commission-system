@@ -247,7 +247,7 @@ pending → contacted → replied → quoted → won / lost / dismissed
 | contact_id | BIGINT | 是 | FK contacts, INDEX | 个人买家账号或联系人身份所属联系人ID；与customer_id必须且只能填写一个 |
 | source_system | VARCHAR(32) | 否 | INDEX | 身份来源命名空间：okki、alibaba、web、linkedin、google_business或其他登记值 |
 | source_account_key | VARCHAR(128) | 否 | INDEX | 外部数据所属账号或租户命名空间；无账号隔离的公开信源固定为global，不得保存凭证 |
-| identifier_type | VARCHAR(32) | 否 | INDEX | 身份类型：company_id、buyer_id、member_id、website_domain、corporate_email_domain、company_page_url、business_id |
+| identifier_type | VARCHAR(32) | 否 | INDEX | 身份类型：company_id、contact_id、buyer_id、member_id、website_domain、corporate_email_domain、company_page_url、business_id |
 | raw_value | VARCHAR(1024) | 否 |  | 信源提供的原始身份值 |
 | normalized_value | VARCHAR(512) | 否 |  | 按身份类型归一化后的比较值 |
 | identity_strength | VARCHAR(16) | 否 | INDEX | 身份强度：strong=可精确关联，medium=需交叉验证，weak=仅辅助匹配 |

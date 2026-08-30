@@ -11,7 +11,10 @@ from app.customer.models import (
     CustomerAccount,
     CustomerAnnotation,
     CustomerEvent,
+    CustomerConversation,
+    CustomerMessage,
     CustomerOpportunity,
+    CustomerOrder,
     CustomerSourceRecord,
 )
 
@@ -56,6 +59,64 @@ def get_source_records(
             "opportunity_id": row.id,
             "occurred_at": row.created_at.isoformat(),
         } for row in rows)
+    if source_type in {None, "message", "all"}:
+        query = (
+            db.query(CustomerMessage, CustomerConversation, CustomerSourceRecord)
+            .join(
+                CustomerConversation,
+                CustomerConversation.id == CustomerMessage.conversation_id,
+            )
+            .join(
+                CustomerSourceRecord,
+                CustomerSourceRecord.id == CustomerMessage.source_record_id,
+            )
+            .filter(CustomerConversation.customer_id == customer_id)
+        )
+        rows = apply_record_access(query, CustomerSourceRecord, access).order_by(
+            CustomerMessage.sent_at.desc()
+        ).limit(20).all()
+        records.extend({
+            "type": "沟通消息",
+            "type_code": "message",
+            "title": "客户消息" if message.direction == "in" else "我方消息",
+            "meta": f"{conversation.channel} · {message.external_message_id}",
+            "summary": message.content_text or "",
+            "message_id": message.id,
+            "conversation_id": conversation.id,
+            "source_record_id": source.id,
+            "data_classification": source.data_classification,
+            "visibility_scope": source.visibility_scope,
+            "occurred_at": message.sent_at.isoformat(),
+        } for message, conversation, source in rows)
+    if source_type in {None, "order", "all"}:
+        query = (
+            db.query(CustomerOrder, CustomerSourceRecord)
+            .join(
+                CustomerSourceRecord,
+                CustomerSourceRecord.id == CustomerOrder.source_record_id,
+            )
+        )
+        rows = apply_record_access(query, CustomerSourceRecord, access).order_by(
+            CustomerOrder.account_date.desc(),
+            CustomerOrder.id.desc(),
+        ).limit(20).all()
+        records.extend({
+            "type": "订单记录",
+            "type_code": "order",
+            "title": order.order_no or order.external_order_id,
+            "meta": order.order_status or "",
+            "summary": str(order.amount_usd),
+            "order_id": order.id,
+            "source_record_id": source.id,
+            "is_valid_business_order": bool(order.is_valid_business_order),
+            "data_classification": source.data_classification,
+            "visibility_scope": source.visibility_scope,
+            "occurred_at": (
+                order.synced_at.isoformat()
+                if order.account_date is None
+                else f"{order.account_date.isoformat()}T00:00:00"
+            ),
+        } for order, source in rows)
     if source_type in {None, "event", "all"}:
         rows = apply_record_access(
             db.query(CustomerEvent),

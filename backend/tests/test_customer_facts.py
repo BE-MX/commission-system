@@ -3129,3 +3129,53 @@ def test_relationship_stage_event_requires_and_applies_authoritative_transition(
     assert event.id is not None
     assert customer.relationship_stage == "inactive"
     assert customer.relationship_stage_reason == "manual_inactivation"
+
+
+def test_order_validity_revoked_event_requires_exact_invalid_order_source(db):
+    customer = _customer(db, "order-validity-revoked")
+    order = _order(db, customer, external_id="ORDER-REVOKED", valid=False)
+    source = db.get(CustomerSourceRecord, order.source_record_id)
+
+    event = append_customer_event(
+        db,
+        customer_id=customer.id,
+        event_type="order.validity_revoked",
+        event_source="okki",
+        event_title="订单有效性已撤销",
+        event_payload={
+            "order_id": order.id,
+            "source_record_id": source.id,
+            "was_activation_source": False,
+            "affected_opportunity_ids": [],
+            "customer_stage_review_required": False,
+            "reason_code": "source_order_became_invalid",
+        },
+        payload_schema_version="customer_event_v1",
+        occurred_at=source.occurred_at,
+        source_ref_type="order",
+        source_ref_id=str(order.id),
+    )
+
+    assert event.source_ref_id == str(order.id)
+    assert event.event_payload["source_record_id"] == source.id
+    with pytest.raises(CustomerDomainError) as invalid:
+        append_customer_event(
+            db,
+            customer_id=customer.id,
+            event_type="order.validity_revoked",
+            event_source="okki",
+            event_title="伪造订单有效性撤销",
+            event_payload={
+                "order_id": order.id,
+                "source_record_id": source.id + 1,
+                "was_activation_source": False,
+                "affected_opportunity_ids": [],
+                "customer_stage_review_required": False,
+                "reason_code": "source_order_became_invalid",
+            },
+            payload_schema_version="customer_event_v1",
+            occurred_at=source.occurred_at,
+            source_ref_type="order",
+            source_ref_id=str(order.id),
+        )
+    assert invalid.value.error_code == "EVENT_REFERENCE_INVALID"

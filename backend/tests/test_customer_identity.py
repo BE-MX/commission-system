@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 
 import pytest
 from sqlalchemy import create_engine, event
@@ -89,6 +90,136 @@ def test_okki_company_id_deterministically_converges_without_name_matching(db):
     assert first.customer.identity_status == "verified"
     assert db.query(CustomerAccount).count() == 1
     assert db.query(CustomerResolutionKey).count() == 1
+
+
+def test_okki_contact_id_reuses_contact_per_account_namespace(db):
+    company = resolve_business_context(
+        db,
+        source_system="okki",
+        source_account_key="tenant-contact-a",
+        source_entity_type="company",
+        external_context_id="company-a",
+        identity_candidates=[_okki_candidate("COMP-CONTACT-A")],
+    )
+    first_source = append_source_record(
+        db,
+        customer_id=None,
+        source_system="okki",
+        source_account_key="tenant-contact-a",
+        source_entity_type="contact",
+        external_record_id="CONTACT-1",
+        payload_schema_version="okki_contact_v1",
+        payload_json={"contact_id": "CONTACT-1", "version": 1},
+    )
+    first = resolve_business_context(
+        db,
+        source_system="okki",
+        source_account_key="tenant-contact-a",
+        source_entity_type="contact",
+        external_context_id="CONTACT-1",
+        source_record_id=first_source.id,
+        contact_name="Buyer One",
+        identity_candidates=[
+            _okki_candidate("COMP-CONTACT-A"),
+            IdentityCandidate(
+                "contact_id", "CONTACT-1", verification_status="verified", confidence=1,
+            ),
+        ],
+    )
+    second_source = append_source_record(
+        db,
+        customer_id=None,
+        source_system="okki",
+        source_account_key="tenant-contact-a",
+        source_entity_type="contact",
+        external_record_id="CONTACT-1",
+        payload_schema_version="okki_contact_v1",
+        payload_json={"contact_id": "CONTACT-1", "version": 2},
+    )
+    replay = resolve_business_context(
+        db,
+        source_system="okki",
+        source_account_key="tenant-contact-a",
+        source_entity_type="contact",
+        external_context_id="CONTACT-1",
+        source_record_id=second_source.id,
+        contact_name="Buyer One",
+        identity_candidates=[
+            _okki_candidate("COMP-CONTACT-A"),
+            IdentityCandidate(
+                "contact_id", "CONTACT-1", verification_status="verified", confidence=1,
+            ),
+        ],
+    )
+    other_tenant = resolve_business_context(
+        db,
+        source_system="okki",
+        source_account_key="tenant-contact-b",
+        source_entity_type="contact",
+        external_context_id="CONTACT-1",
+        contact_name="Buyer One",
+        identity_candidates=[IdentityCandidate(
+            "contact_id", "CONTACT-1", verification_status="verified", confidence=1,
+        )],
+    )
+
+    assert first.customer.id == replay.customer.id == company.customer.id
+    assert first.contact.id == replay.contact.id
+    assert other_tenant.contact.id != first.contact.id
+    assert db.query(CustomerExternalIdentity).filter_by(
+        identifier_type="contact_id",
+        source_account_key="tenant-contact-a",
+    ).one().contact_id == first.contact.id
+    relation = db.query(CustomerContactRelationship).filter_by(
+        customer_id=company.customer.id,
+        contact_id=first.contact.id,
+        relationship_type="buyer",
+        effective_to=None,
+    ).one()
+    assert db.query(CustomerContactRelationship).filter_by(
+        customer_id=company.customer.id,
+        contact_id=first.contact.id,
+        relationship_type="buyer",
+        effective_to=None,
+    ).count() == 1
+    original_effective_from = datetime(2026, 8, 1, 9, 0)
+    relation.effective_from = original_effective_from
+    relation.verification_status = "verified"
+    third_source = append_source_record(
+        db,
+        customer_id=None,
+        source_system="okki",
+        source_account_key="tenant-contact-a",
+        source_entity_type="contact",
+        external_record_id="CONTACT-1",
+        payload_schema_version="okki_contact_v1",
+        payload_json={"contact_id": "CONTACT-1", "version": 3},
+    )
+    resolve_business_context(
+        db,
+        source_system="okki",
+        source_account_key="tenant-contact-a",
+        source_entity_type="contact",
+        external_context_id="CONTACT-1",
+        source_record_id=third_source.id,
+        contact_name="Buyer One",
+        identity_candidates=[
+            _okki_candidate("COMP-CONTACT-A"),
+            IdentityCandidate(
+                "contact_id", "CONTACT-1", verification_status="verified", confidence=1,
+            ),
+        ],
+        now=datetime(2026, 8, 2, 9, 0),
+    )
+    db.refresh(relation)
+    assert relation.verification_status == "verified"
+    assert relation.effective_from == original_effective_from
+    assert db.query(CustomerContactRelationship).filter_by(
+        customer_id=company.customer.id,
+        contact_id=first.contact.id,
+        relationship_type="buyer",
+        effective_to=None,
+    ).count() == 1
 
 
 @pytest.mark.parametrize(

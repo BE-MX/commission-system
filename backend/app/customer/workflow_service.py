@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.auth.models import ArkUser
 from app.auth.service import get_user_permissions, get_user_roles
 from app.core.time import beijing_now, to_beijing_naive
-from app.customer.fact_service import append_customer_event
+from app.customer.fact_service import DirectFactEvidence, append_customer_event, append_fact
 from app.customer.models import (
     CustomerAccount,
     CustomerAction,
@@ -53,6 +53,7 @@ OPPORTUNITY_EVENT_TYPES = {
     "next_step_changed",
     "closed",
     "reopened",
+    "order_validity_revoked",
 }
 OPPORTUNITY_TRANSITIONS = {
     "pending": {"contacted", "dismissed"},
@@ -1673,6 +1674,189 @@ def activate_customer_from_order(db: Session, order_id: int) -> bool:
     return before != account.relationship_stage
 
 
+def reconcile_invalidated_order(db: Session, order_id: int) -> CustomerEvent:
+    """Correct current Ark projections after an OKKI order becomes invalid."""
+    candidate = db.get(CustomerOrder, order_id)
+    if candidate is None:
+        raise CustomerWorkflowNotFound("ORDER_NOT_FOUND")
+    account = _account_for_update(db, candidate.customer_id)
+    order = db.query(CustomerOrder).filter(
+        CustomerOrder.id == order_id,
+        CustomerOrder.customer_id == account.id,
+    ).with_for_update().one_or_none()
+    if order is None:
+        raise CustomerWorkflowNotFound("ORDER_NOT_FOUND")
+    if order.is_valid_business_order:
+        raise CustomerWorkflowConflict("ORDER_STILL_VALID")
+    source = db.get(CustomerSourceRecord, order.source_record_id)
+    if source is None or source.customer_id != account.id:
+        raise CustomerWorkflowConflict("ORDER_SOURCE_INVALID")
+    existing_correction = db.query(CustomerEvent).filter(
+        CustomerEvent.customer_id == account.id,
+        CustomerEvent.event_type == "order.validity_revoked",
+        CustomerEvent.source_ref_type == "order",
+        CustomerEvent.source_ref_id == str(order.id),
+    ).order_by(CustomerEvent.id.desc()).first()
+    if (
+        existing_correction is not None
+        and existing_correction.event_payload.get("source_record_id") == source.id
+    ):
+        return existing_correction
+
+    other_valid_order = db.query(CustomerOrder).filter(
+        CustomerOrder.customer_id == account.id,
+        CustomerOrder.id != order.id,
+        CustomerOrder.is_valid_business_order.is_(True),
+    ).order_by(CustomerOrder.account_date.desc(), CustomerOrder.id.desc()).with_for_update().first()
+    evidence_order = other_valid_order or order
+    evidence_source = db.get(CustomerSourceRecord, evidence_order.source_record_id)
+    if evidence_source is None or evidence_source.customer_id != account.id:
+        raise CustomerWorkflowConflict("ORDER_SOURCE_INVALID")
+    observed_at = evidence_source.occurred_at or (
+        datetime.combine(evidence_order.account_date, datetime_time.min)
+        if evidence_order.account_date is not None
+        else evidence_order.synced_at
+    )
+    current_facts = db.query(CustomerFact).filter(
+        CustomerFact.customer_id == account.id,
+        CustomerFact.fact_key == "commercial.has_valid_order",
+        CustomerFact.effective_to.is_(None),
+        CustomerFact.verification_status == "verified",
+    ).order_by(CustomerFact.observed_at.desc(), CustomerFact.id.desc()).with_for_update().all()
+    supersedes_fact_id = current_facts[0].id if current_facts else None
+    correction_fact = append_fact(
+        db,
+        customer_id=account.id,
+        subject_type="customer",
+        fact_key="commercial.has_valid_order",
+        value_type="boolean",
+        value=other_valid_order is not None,
+        fact_layer="observed",
+        verification_status="verified",
+        confidence=1,
+        confidence_method_version="confidence_v1",
+        confidence_components={"order_state": 1},
+        source_system="okki",
+        source_entity_type="order",
+        observed_at=observed_at,
+        source_record_id=evidence_source.id,
+        direct_evidence=[DirectFactEvidence(
+            "order", evidence_order.id, {"json_path": "$.status"}
+        )],
+        supersedes_fact_id=supersedes_fact_id,
+    )
+    for prior_fact in current_facts:
+        if prior_fact.id != correction_fact.id:
+            prior_fact.verification_status = "superseded"
+            prior_fact.effective_to = max(
+                prior_fact.effective_from or prior_fact.observed_at,
+                observed_at,
+            )
+
+    linked_opportunities = db.query(CustomerOpportunity).filter(
+        CustomerOpportunity.customer_id == account.id,
+        CustomerOpportunity.linked_order_id == order.id,
+    ).order_by(CustomerOpportunity.id).with_for_update().all()
+    affected_ids: list[int] = []
+    correction_time = source.occurred_at or (
+        datetime.combine(order.account_date, datetime_time.min)
+        if order.account_date is not None
+        else order.synced_at
+    )
+    for opportunity in linked_opportunities:
+        from_status = opportunity.status
+        to_status = opportunity.status
+        if (
+            opportunity.status == "won"
+            and opportunity.close_reason_code == "order_confirmed"
+        ):
+            winning_event = next((
+                event
+                for event in db.query(CustomerOpportunityEvent).filter(
+                    CustomerOpportunityEvent.opportunity_id == opportunity.id,
+                    CustomerOpportunityEvent.customer_id == account.id,
+                    CustomerOpportunityEvent.to_status == "won",
+                ).order_by(
+                    CustomerOpportunityEvent.occurred_at.desc(),
+                    CustomerOpportunityEvent.id.desc(),
+                ).all()
+                if event.from_status
+                and event.event_payload.get("linked_order_id") == order.id
+                and event.event_payload.get("close_reason_code") == "order_confirmed"
+            ), None)
+            if winning_event is None:
+                raise CustomerWorkflowConflict(
+                    "ORDER_INVALIDATION_AUDIT_INSUFFICIENT"
+                )
+            to_status = winning_event.from_status
+            opportunity.status = to_status
+            opportunity.close_reason_code = None
+            opportunity.close_reason_text = None
+            opportunity.stage_entered_at = max(
+                opportunity.stage_entered_at,
+                correction_time,
+            )
+        opportunity.linked_order_id = None
+        opportunity.updated_at = max(opportunity.updated_at, correction_time)
+        append_opportunity_event(
+            db,
+            opportunity=opportunity,
+            event_type="order_validity_revoked",
+            actor_user_id=None,
+            event_payload={
+                "order_id": order.id,
+                "source_record_id": source.id,
+                "reason_code": "source_order_became_invalid",
+            },
+            from_status=from_status,
+            to_status=to_status,
+            occurred_at=max(opportunity.stage_entered_at, correction_time),
+        )
+        affected_ids.append(opportunity.id)
+
+    authoritative_time = correction_time
+    matching_activation_events = [
+        event
+        for event in db.query(CustomerEvent).filter(
+            CustomerEvent.customer_id == account.id,
+            CustomerEvent.event_type == "order.placed",
+            CustomerEvent.occurred_at == account.relationship_stage_changed_at,
+        ).all()
+        if event.event_payload.get("is_valid_business_order") is True
+    ]
+    was_activation_source = bool(
+        account.relationship_stage == "active_customer"
+        and len(matching_activation_events) == 1
+        and matching_activation_events[0].source_ref_id == str(order.id)
+    )
+    stage_review_required = bool(
+        account.relationship_stage == "active_customer"
+        and other_valid_order is None
+    )
+    correction = append_customer_event(
+        db,
+        customer_id=account.id,
+        event_type="order.validity_revoked",
+        event_source="okki",
+        event_title="订单有效性已撤销",
+        event_summary=order.order_no or order.external_order_id,
+        event_payload={
+            "order_id": order.id,
+            "source_record_id": source.id,
+            "was_activation_source": was_activation_source,
+            "affected_opportunity_ids": affected_ids,
+            "customer_stage_review_required": stage_review_required,
+            "reason_code": "source_order_became_invalid",
+        },
+        payload_schema_version="customer_event_v1",
+        occurred_at=authoritative_time,
+        source_ref_type="order",
+        source_ref_id=str(order.id),
+    )
+    db.flush()
+    return correction
+
+
 def supersede_related_proposals(
     db: Session,
     *,
@@ -1818,6 +2002,7 @@ __all__ = [
     "complete_action",
     "create_action",
     "orchestrate_qualification_review",
+    "reconcile_invalidated_order",
     "supersede_related_proposals",
     "transfer_primary_owner",
     "transition_opportunity",

@@ -2868,6 +2868,62 @@ def test_only_valid_order_can_activate_customer_and_historical_replay_cannot_ove
     assert account.relationship_stage == "active_customer"
 
 
+def test_invalidated_order_without_winning_audit_is_rejected_without_partial_correction(db):
+    account, _version = _account(db, code="C-ORDER-AUDIT")
+    source = _source_record(db, account, record_id=9101)
+    order = customer_models.CustomerOrder(
+        customer_id=account.id,
+        source_system="okki",
+        source_account_key="tenant-a",
+        external_order_id="ORDER-AUDIT",
+        order_status="invalid",
+        account_date=NOW.date(),
+        amount_usd=100,
+        is_valid_business_order=False,
+        invalid_reason="not_effective_business_order",
+        source_record_id=source.id,
+        source_hash="a" * 64,
+        synced_at=NOW,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    db.add(order)
+    db.flush()
+    opportunity = _workflow().upsert_opportunity(
+        db,
+        customer_id=account.id,
+        source_system="manual",
+        source_account_key="global",
+        source_key="order-audit",
+        opportunity_type="manual",
+        source="manual",
+        title="Missing won audit",
+    )
+    opportunity.status = "won"
+    opportunity.close_reason_code = "order_confirmed"
+    opportunity.linked_order_id = order.id
+    db.flush()
+
+    with pytest.raises(
+        _workflow().CustomerWorkflowConflict,
+        match="ORDER_INVALIDATION_AUDIT_INSUFFICIENT",
+    ):
+        with db.begin_nested():
+            _workflow().reconcile_invalidated_order(db, order.id)
+
+    db.refresh(opportunity)
+    assert opportunity.status == "won"
+    assert opportunity.linked_order_id == order.id
+    assert db.query(customer_models.CustomerFact).filter_by(
+        customer_id=account.id,
+        fact_key="commercial.has_valid_order",
+    ).count() == 0
+    assert db.query(customer_models.CustomerEvent).filter_by(
+        customer_id=account.id,
+        event_type="order.validity_revoked",
+    ).count() == 0
+
+
 def test_merge_and_split_supersede_other_open_proposals_in_same_transaction(db):
     _user(db, 1)
     left, left_version = _account(db, code="C-LEFT")

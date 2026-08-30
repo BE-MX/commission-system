@@ -1,6 +1,6 @@
 {
   "customer_domain_physical_contract": {
-    "contract_sha256": "245aca1904cfb113843f0cf18455634b50ccfd0af79e27a7674b6bbf0fcc1b5d",
+    "contract_sha256": "be44793c7532cb572397bbc595dd874c774b960f06cf0186133119783c8bfc95",
     "migration_revision": "126",
     "schema_version": 1,
     "tables": {
@@ -7035,7 +7035,7 @@
           },
           {
             "autoincrement": false,
-            "comment": "身份类型：company_id、buyer_id、member_id、website_domain、corporate_email_domain、company_page_url、business_id",
+            "comment": "身份类型：company_id、contact_id、buyer_id、member_id、website_domain、corporate_email_domain、company_page_url、business_id",
             "computed": null,
             "default": null,
             "name": "identifier_type",

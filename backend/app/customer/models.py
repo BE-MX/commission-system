@@ -160,7 +160,7 @@ class CustomerExternalIdentity(Base):
     contact_id = Column(BigInteger, ForeignKey("ark_customer_contacts.id"), nullable=True, index=True, comment="个人买家账号或联系人身份所属联系人ID；与customer_id必须且只能填写一个")
     source_system = Column(String(32), nullable=False, index=True, comment="身份来源命名空间：okki、alibaba、web、linkedin、google_business或其他登记值")
     source_account_key = Column(String(128), nullable=False, index=True, comment="外部数据所属账号或租户命名空间；无账号隔离的公开信源固定为global，不得保存凭证")
-    identifier_type = Column(String(32), nullable=False, index=True, comment="身份类型：company_id、buyer_id、member_id、website_domain、corporate_email_domain、company_page_url、business_id")
+    identifier_type = Column(String(32), nullable=False, index=True, comment="身份类型：company_id、contact_id、buyer_id、member_id、website_domain、corporate_email_domain、company_page_url、business_id")
     raw_value = Column(String(1024), nullable=False, comment="信源提供的原始身份值")
     normalized_value = Column(String(512), nullable=False, comment="按身份类型归一化后的比较值")
     identity_strength = Column(String(16), nullable=False, index=True, comment="身份强度：strong=可精确关联，medium=需交叉验证，weak=仅辅助匹配")

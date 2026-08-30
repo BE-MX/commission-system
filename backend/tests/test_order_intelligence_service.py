@@ -61,6 +61,30 @@ def test_classify_source_prioritizes_owned_social_and_referral():
     assert service.classify_source("") == "unknown"
 
 
+@pytest.mark.parametrize(
+    ("status", "status_name", "trail", "expected"),
+    [
+        ("13972831656", "已结束", None, True),
+        ("13972831654", "已结清", None, True),
+        ("13972831654", "未结清", None, False),
+        ("13972831656", "已结束", "个人订单", False),
+        ("13972831656", "已结束", None, True),
+        ("unknown", "已结清", None, False),
+        ("", "已结清", None, False),
+        (None, None, None, False),
+        ([], "已结清", None, False),
+        ("13972831656", "已结束", {"kind": "个人"}, False),
+    ],
+)
+def test_valid_business_order_rule_is_shared_by_sql_and_python(
+    status, status_name, trail, expected,
+):
+    assert service.is_valid_business_order(status, status_name, trail) is expected
+    assert service.ORDER_STATUS_ENDED in service.VALID_ORDER_SQL
+    assert service.ORDER_STATUS_TERMINATED in service.VALID_ORDER_SQL
+    assert service.ORDER_STATUS_SETTLED_NAME in service.VALID_ORDER_SQL
+
+
 @pytest.mark.parametrize("source_raw", [None, "", False, 0, [], {}])
 def test_decorate_order_falls_back_to_customer_origin_for_empty_extracted_source(source_raw):
     row = service._decorate_order({

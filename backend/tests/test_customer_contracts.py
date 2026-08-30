@@ -125,6 +125,16 @@ def test_alibaba_buyer_keys_are_contact_identities(identifier_type):
     assert policy.cardinality == "one_to_one"
 
 
+def test_okki_contact_id_is_a_namespaced_strong_contact_identity():
+    policy = identity_policy("okki", "contact_id")
+
+    assert policy.subject_type == "contact"
+    assert policy.strength == "strong"
+    assert policy.cardinality == "one_to_one"
+    assert policy.auto_match_ceiling == "identified"
+    assert policy.unique_slot is True
+
+
 def test_discovered_requires_an_approved_qualification_to_become_qualified():
     assert allowed_relationship_transition(
         "discovered", "qualified", "qualification_approved", True,
@@ -330,6 +340,25 @@ def test_every_fact_registration_declares_agent_stable_value_types():
         and registration.value_types <= allowed
         for registration in FACT_REGISTRY.values()
     )
+
+
+def test_okki_contact_and_order_item_sources_are_explicitly_registered():
+    contact = source_policy("okki", "contact")
+    order_item = source_policy("okki", "order_item")
+
+    assert contact.authority == "transactional"
+    assert contact.publisher_key_rule == "internal_source_account"
+    assert contact.source_family_key_rule == "external_contact_id"
+    assert contact.default_classification == DataClassification.PERSONAL_CONTACT
+    assert contact.promotion_ceiling == "identified"
+    assert contact.allowed_fact_keys == frozenset()
+
+    assert order_item.authority == "transactional"
+    assert order_item.publisher_key_rule == "internal_source_account"
+    assert order_item.source_family_key_rule == "external_order_item_id"
+    assert order_item.default_classification == DataClassification.INTERNAL_BUSINESS
+    assert order_item.promotion_ceiling == "verified"
+    assert order_item.allowed_fact_keys == frozenset()
     assert FACT_REGISTRY["preference.expressed.quantity"].value_types == frozenset({
         "number",
     })

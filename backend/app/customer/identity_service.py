@@ -935,10 +935,21 @@ def _apply_context_material(
             context_ref,
             "",
         ))
-        if db.query(CustomerContactRelationship.id).filter_by(
-            relationship_fingerprint=relationship_fingerprint,
-        ).first() is None:
-            db.add(CustomerContactRelationship(
+        relationship = db.query(CustomerContactRelationship).filter(
+            CustomerContactRelationship.customer_id == account.id,
+            CustomerContactRelationship.contact_id == contact.id,
+            CustomerContactRelationship.relationship_type == "buyer",
+            CustomerContactRelationship.effective_to.is_(None),
+            CustomerContactRelationship.verification_status.in_((
+                "candidate", "identified", "verified",
+            )),
+        ).with_for_update().one_or_none()
+        if relationship is None:
+            relationship = db.query(CustomerContactRelationship).filter_by(
+                relationship_fingerprint=relationship_fingerprint,
+            ).one_or_none()
+        if relationship is None:
+            relationship = CustomerContactRelationship(
                 customer_id=account.id,
                 contact_id=contact.id,
                 relationship_type="buyer",
@@ -959,9 +970,25 @@ def _apply_context_material(
                 updated_by=created_by,
                 created_at=now,
                 updated_at=now,
-            ))
+            )
+            db.add(relationship)
             db.flush()
             changed = True
+        else:
+            verification_rank = {
+                "candidate": 0,
+                "identified": 1,
+                "verified": 2,
+                "disputed": 3,
+                "rejected": 3,
+            }
+            if verification_rank.get(relationship.verification_status, 0) < 1:
+                relationship.verification_status = "identified"
+                changed = True
+            merged_confidence = max(relationship.confidence, Decimal("0.8000"))
+            if relationship.confidence != merged_confidence:
+                relationship.confidence = merged_confidence
+                changed = True
         if resolution.contact_id is None:
             resolution.contact_id = contact.id
 
