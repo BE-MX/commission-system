@@ -280,12 +280,12 @@ def _completed_research_material(db, task: CustomerResearchTask) -> tuple[AgentR
             visibility="user",
             payload_json={
                 "call_id": call_id,
-                "evidence_refs": [{
+                "output": {"evidence_refs": [{
                     "customer_id": task.customer_id,
                     "evidence_ref": f"fact:{fact.id}",
                     "evidence_content_hash": fact.fact_fingerprint,
                     "input_hash": input_hash,
-                }],
+                }]},
             },
             source_event_ids=[],
             payload_sha256="2" * 64,

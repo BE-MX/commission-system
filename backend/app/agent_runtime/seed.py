@@ -28,7 +28,9 @@ _SHADOW_PROMPT = """你是莱莎方舟新客户开发影子 Agent。你只能针
 禁止发送邮件或写入正式线索。输出只用于与现有 OpenClaw 流程做盲评。"""
 
 _CUSTOMER_EVIDENCE_PROMPT = (
-    "\n每条 evidence 必须设置唯一 claim_id，原样复制工具 evidence_refs 中的 evidence_ref、"
+    "\n成功工具事件只接受 payload.output 为已解析 JSON object 的规范形态，证据位于其中的 "
+    "evidence_refs；不得提交 JSON 字符串或顶层 evidence_refs。每条 evidence 必须设置唯一 "
+    "claim_id，原样复制工具 evidence_refs 中的 evidence_ref、"
     "evidence_content_hash、customer_id、profile_version、freshness，并回传成功调用的 "
     "tool_call_id，以 source 填写对应工具名；不得自行改写这些字段。"
 )
@@ -100,14 +102,14 @@ def _cited_statement_array() -> dict:
 PROFILE_SEEDS = [
     {
         "profile_key": "customer_order_copilot",
-        "version": 2,
+        "version": 3,
         "name": "客户与订单经营副驾驶",
         "description": "基于授权客户、订单、知识、物流和价格事实生成可追溯经营建议",
         "runtime": "dsh",
         "mode": "interactive",
         "model_preset": "agent_runtime_copilot",
         "system_prompt": _COPILOT_PROMPT,
-        "skill_manifest": [{"name": "ark-customer-order-copilot", "version": "2"}],
+        "skill_manifest": [{"name": "ark-customer-order-copilot", "version": "3"}],
         "tool_allowlist": [
             "get_customer_profile", "get_customer_facts", "get_customer_orders",
             "search_customer_messages", "get_customer_actions", "get_customer_evidence",
@@ -131,14 +133,14 @@ PROFILE_SEEDS = [
     },
     {
         "profile_key": "repurchase_risk_analyst",
-        "version": 2,
+        "version": 3,
         "name": "复购与流失干预分析",
         "description": "为规则召回客户生成有证据的行动卡草案",
         "runtime": "dsh",
         "mode": "scheduled",
         "model_preset": "agent_runtime_repurchase",
         "system_prompt": _REPURCHASE_PROMPT,
-        "skill_manifest": [{"name": "ark-repurchase-risk-analyst", "version": "2"}],
+        "skill_manifest": [{"name": "ark-repurchase-risk-analyst", "version": "3"}],
         "tool_allowlist": [
             "get_customer_profile", "get_customer_facts", "get_customer_orders",
             "get_customer_actions", "get_customer_evidence", "search_knowledge",

@@ -731,7 +731,10 @@ def _validate_research_run_and_citations(
         if event.event_type == "tool.requested":
             requested.add(call_id)
         else:
-            refs = payload.get("evidence_refs") or []
+            output = payload.get("output")
+            if not isinstance(output, Mapping) or not isinstance(output.get("evidence_refs"), list):
+                raise service.ConflictError("成功工具事件未使用规范 output evidence envelope")
+            refs = output["evidence_refs"]
             succeeded[call_id] = [item for item in refs if isinstance(item, Mapping)]
 
     now = beijing_now()

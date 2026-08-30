@@ -136,6 +136,26 @@ def plain_text(value: str | None, max_chars: int = MAX_SOURCE_CHARS) -> str:
     return html.unescape(_TAG_RE.sub("", value or "")).strip()[:max_chars]
 
 
+def _shrink_single_item(value: dict, max_bytes: int) -> bool:
+    items = value.get("items")
+    if not isinstance(items, list) or len(items) != 1 or not isinstance(items[0], dict):
+        return False
+    item = items[0]
+    protected = {key for key in item if key == "id" or key.endswith("_id")}
+    candidates = sorted(
+        (key for key in item if key not in protected and key != "truncated_fields"),
+        key=lambda key: (-len(serialize_envelope({key: item[key]})), key),
+    )
+    removed: list[str] = []
+    for key in candidates:
+        if len(serialize_envelope(value)) <= max_bytes:
+            break
+        item.pop(key)
+        removed.append(key)
+        item["truncated_fields"] = removed.copy()
+    return bool(removed) and len(serialize_envelope(value)) <= max_bytes
+
+
 def fit(
     value: dict, *, max_bytes: int,
     cursor_for_count: Callable[[int], str] | None = None,
@@ -150,11 +170,15 @@ def fit(
         refs = value.get("evidence_refs")
         parallel_refs = isinstance(refs, list) and len(refs) == original_count
         while items and len(serialize_envelope(value)) > max_bytes:
+            if len(items) == 1:
+                if _shrink_single_item(value, max_bytes):
+                    break
+                raise ValueError("OUTPUT_BUDGET_EXCEEDED")
             items.pop()
             if parallel_refs:
                 refs.pop()
-        value["has_more"] = True
         if cursor_for_count is not None and len(items) < original_count:
+            value["has_more"] = True
             value["cursor"] = cursor_for_count(len(items))
     sections = value.get("sections")
     if isinstance(sections, dict):

@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -394,7 +395,7 @@ def test_profile_seed_is_immutable_and_idempotent(db):
     assert db.query(models.AgentProfile).count() == 3
     assert seed.seed_default_profiles(db) == 0
     profile = service.get_active_profile(db, "customer_order_copilot")
-    assert profile.version == 2
+    assert profile.version == 3
     assert "get_customer_profile" in profile.tool_allowlist
     assert len(profile.prompt_hash) == 64
 
@@ -431,7 +432,7 @@ def test_customer_profile_evidence_schema_requires_exact_envelope_fields(db):
     }
     assert all(field in profile.system_prompt for field in (
         "evidence_ref", "evidence_content_hash", "customer_id",
-        "profile_version", "freshness",
+        "profile_version", "freshness", "JSON object", "payload.output",
     ))
 
 
@@ -593,6 +594,42 @@ def test_worker_lease_event_replay_and_complete_artifact(db):
     ]
 
 
+def test_tool_succeeded_event_rejects_noncanonical_evidence_shapes():
+    common = {
+        "sequence_no": 1, "event_id": "invalid-tool-result",
+        "event_type": "tool.succeeded", "actor_type": "tool",
+    }
+    with pytest.raises(ValidationError, match="payload.output"):
+        WorkerEventInput(**common, payload={
+            "call_id": "tool-1", "output": '{"evidence_refs": []}',
+        })
+    with pytest.raises(ValidationError, match="payload.output"):
+        WorkerEventInput(**common, payload={
+            "call_id": "tool-1", "evidence_refs": [],
+        })
+
+
+def test_tool_succeeded_event_persists_canonical_object_output(db):
+    run = _run(db, _session(db))
+    claim = _claim(db)
+    _start(db, run.id, claim)
+    event = WorkerEventInput(
+        sequence_no=4, event_id="canonical-tool-result",
+        event_type="tool.succeeded", actor_type="tool",
+        payload={"call_id": "tool-1", "output": {"evidence_refs": []}},
+    )
+    worker_service.append_worker_events(
+        db, run.id, worker_id="dsh-worker-01",
+        lease_token=claim["lease_token"], events=[event],
+    )
+    stored = db.query(models.AgentEvent).filter_by(
+        run_id=run.id, event_id="canonical-tool-result",
+    ).one()
+    assert stored.payload_json == {
+        "call_id": "tool-1", "output": {"evidence_refs": []},
+    }
+
+
 @pytest.mark.parametrize(("field", "value"), (
     ("evidence_ref", "fact:forged"),
     ("evidence_content_hash", "f" * 64),
@@ -700,7 +737,7 @@ def test_readiness_report_counts_only_reviewed_and_evidence_bound_copilot_runs(d
         "cohort_id": f"customer_order_copilot_v1:{contract_hash[:12]}",
         "evaluation_contract_hash": contract_hash,
         "contract_ready": True,
-        "profile_version": 2,
+        "profile_version": 3,
         "model": "deepseek-chat",
         "reviewed_runs": 1,
         "directly_usable_runs": 1,
@@ -762,7 +799,7 @@ def test_copilot_evaluation_catalog_is_versioned_and_complete(db):
     assert len({item["question"] for item in COPILOT_EVALUATION_CASES}) == 30
     assert all(item["rubric"] and item["requires"] for item in catalog["cases"])
     assert catalog["contract_ready"] is True
-    assert catalog["profile_version"] == 2
+    assert catalog["profile_version"] == 3
     assert catalog["model"] == "deepseek-chat"
     assert not {
         "shipment", "pricing", "knowledge",

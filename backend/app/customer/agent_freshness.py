@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.customer.access_service import CustomerAccess, apply_record_access
+from app.customer.contracts import FACT_REGISTRY, SOURCE_REGISTRY
 from app.customer.models import (
     CustomerFact,
     CustomerProfileVersion,
@@ -20,16 +21,27 @@ _RESOURCE_TYPES = {
     "order_item": "order_items", "conversation": "conversations",
     "message": "messages", "inquiry": "inquiries",
 }
-_MAX_AGE = timedelta(days=7)
+_PROFILE_SECTION_BY_FACT_SECTION = {
+    "business": "business_profile", "commercial": "commercial_summary",
+    "preferences": "preferences", "behavior": "behavior_patterns",
+    "risks": "risks", "quality": "data_quality",
+}
 
 
-def _parsed(value) -> datetime | None:
-    if isinstance(value, datetime):
-        return value
-    try:
-        return datetime.fromisoformat(str(value)) if value else None
-    except ValueError:
-        return None
+def _fact_section(fact_key: str) -> str:
+    prefix = fact_key.split(".", 1)[0]
+    return _PROFILE_SECTION_BY_FACT_SECTION.get(prefix, "data_quality")
+
+
+def _fact_is_stale(fact: CustomerFact, now: datetime) -> bool:
+    if fact.expires_at is not None:
+        return fact.expires_at <= now
+    policy = FACT_REGISTRY.get(fact.fact_key)
+    return bool(
+        policy is not None
+        and policy.ttl_days is not None
+        and fact.observed_at + timedelta(days=policy.ttl_days) <= now
+    )
 
 
 def profile_freshness(
@@ -57,9 +69,12 @@ def profile_freshness(
             scope_key=source.source_account_key,
         ).one_or_none()
         success_at = cursor.last_success_at if cursor else None
+        policy = SOURCE_REGISTRY.get((source.source_system, source.source_entity_type))
         if cursor is None or cursor.sync_status in {"failed", "degraded"} or success_at is None:
             status = "unavailable"
-        elif now - success_at > _MAX_AGE:
+        elif policy is None:
+            status = "unavailable"
+        elif policy.ttl_days is not None and now - success_at > timedelta(days=policy.ttl_days):
             status = "stale"
         else:
             status = "fresh"
@@ -75,12 +90,10 @@ def profile_freshness(
         if status == "unavailable":
             unavailable.append(key)
 
-    section_dates = version.section_data_as_of or {} if version else {}
+    stale_from_facts = {_fact_section(fact.fact_key) for fact in facts if _fact_is_stale(fact, now)}
     stale_sections = [
         section for section in requested_sections
-        if not context_current
-        or (date_value := _parsed(section_dates.get(section))) is None
-        or now - date_value > _MAX_AGE
+        if not context_current or section in stale_from_facts
     ]
     return freshness, sorted(unavailable), stale_sections
 

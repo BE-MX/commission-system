@@ -77,6 +77,24 @@ class WorkerEventInput(BaseModel):
             raise ValueError("原始事件载荷尚未启用服务端认证加密，当前禁止提交")
         return None
 
+    @model_validator(mode="after")
+    def require_canonical_tool_success_output(self):
+        if self.event_type != "tool.succeeded":
+            return self
+        output = self.payload.get("output")
+        if (
+            set(self.payload) != {"call_id", "output"}
+            or not isinstance(self.payload.get("call_id"), str)
+            or not self.payload["call_id"]
+            or not isinstance(output, dict)
+            or not isinstance(output.get("evidence_refs"), list)
+            or any(not isinstance(item, dict) for item in output["evidence_refs"])
+        ):
+            raise ValueError(
+                "tool.succeeded 必须使用 payload.output JSON object，且其中包含 evidence_refs"
+            )
+        return self
+
 
 class WorkerEventBatch(WorkerLeaseInput):
     events: list[WorkerEventInput] = Field(..., min_length=1, max_length=200)

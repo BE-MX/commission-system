@@ -170,12 +170,12 @@ def _record_fact_tool_output(
             visibility="user",
             payload_json={
                 "call_id": call_id,
-                "evidence_refs": [{
+                "output": {"evidence_refs": [{
                     "customer_id": task.customer_id,
                     "evidence_ref": f"fact:{fact.id}",
                     "evidence_content_hash": fact.fact_fingerprint,
                     "input_hash": input_hash,
-                }],
+                }]},
             },
             source_event_ids=[],
             payload_sha256="2" * 64,
@@ -504,7 +504,9 @@ def test_same_run_fact_must_be_in_successful_tool_evidence_refs(db):
         AgentEvent.run_id == run.id,
         AgentEvent.event_type == "tool.succeeded",
     ).one()
-    succeeded.payload_json = {"call_id": "research-tool-1", "evidence_refs": []}
+    succeeded.payload_json = {
+        "call_id": "research-tool-1", "output": {"evidence_refs": []},
+    }
     db.flush()
 
     with pytest.raises(service.ConflictError, match="实际返回"):

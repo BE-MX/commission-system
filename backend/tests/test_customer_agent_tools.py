@@ -25,6 +25,7 @@ from app.customer.models import (
     CustomerAgentRunScope,
     CustomerAssignment,
     CustomerConversation,
+    CustomerExternalIdentity,
     CustomerFact,
     CustomerMessage,
     CustomerObjectOwnership,
@@ -44,6 +45,7 @@ def db():
     Base.metadata.create_all(engine, tables=[
         ArkUser.__table__, AgentRun.__table__, CustomerAccount.__table__,
         CustomerAssignment.__table__, CustomerProfileVersion.__table__,
+        CustomerExternalIdentity.__table__,
         CustomerAgentContext.__table__, CustomerSourceRecord.__table__,
         CustomerFact.__table__, CustomerConversation.__table__,
         CustomerMessage.__table__, CustomerOrder.__table__, CustomerOrderItem.__table__,
@@ -172,16 +174,21 @@ def _source(db, customer_id: int, suffix: int = 1):
     return row
 
 
-def _fact(db, customer_id: int, source_id: int, *, stale: bool = False, suffix: int = 1):
+def _fact(
+    db, customer_id: int, source_id: int, *, stale: bool = False, suffix: int = 1,
+    fact_key: str = "business.industry", observed_at: datetime | None = None,
+    expires_at: datetime | None = None,
+):
     row = CustomerFact(
-        customer_id=customer_id, subject_type="customer", fact_key="business.industry",
+        customer_id=customer_id, subject_type="customer", fact_key=fact_key,
         value_type="string", value_json={"value": "Hair products"}, fact_layer="source",
         verification_status="verified", confidence=0.9, confidence_method_version="test",
         confidence_components_json={}, data_classification="internal_business",
         visibility_scope="customer_team", classification_reason="test",
         source_record_id=source_id, evidence_json={"source_record_ids": [source_id]},
-        fact_fingerprint=f"{suffix + 200:064x}", observed_at=datetime(2026, 8, 3),
-        expires_at=datetime(2026, 8, 4) if stale else None,
+        fact_fingerprint=f"{suffix + 200:064x}",
+        observed_at=observed_at or datetime(2026, 8, 3),
+        expires_at=expires_at or (datetime(2026, 8, 4) if stale else None),
     )
     db.add(row)
     db.flush()
@@ -346,9 +353,20 @@ def test_moved_conversation_raw_message_is_only_visible_to_logical_owner(db, set
     assert [item["message_id"] for item in moved["items"]] == [91]
 
 
-def test_profile_reports_fresh_stale_and_unavailable_source_metadata(db, settings):
+def test_profile_freshness_uses_fact_and_source_policies(db, settings):
     customer = _customer(db, "Freshness")
     _membership(db, customer.id)
+    db.add(CustomerExternalIdentity(
+        customer_id=customer.id, source_system="okki", source_account_key="tenant",
+        identifier_type="company_id", raw_value="old-stable-id",
+        normalized_value="old-stable-id", identity_strength="strong",
+        cardinality="one_to_one", auto_match_ceiling="verified",
+        verification_status="verified", confidence=1,
+        confidence_method_version="test", confidence_components_json={}, is_primary=True,
+        first_seen_at=datetime(2020, 1, 1), last_seen_at=datetime(2020, 1, 1),
+        verified_at=datetime(2020, 1, 1), status="active",
+        identity_fingerprint=f"{991:064x}",
+    ))
     fresh_source = _source(db, customer.id, suffix=21)
     fresh_source.captured_at = datetime(2026, 8, 30)
     stale_source = CustomerSourceRecord(
@@ -373,11 +391,17 @@ def test_profile_reports_fresh_stale_and_unavailable_source_metadata(db, setting
     )
     db.add(unavailable_source)
     db.flush()
-    fresh_fact = _fact(db, customer.id, fresh_source.id, suffix=21)
-    stale_fact = _fact(db, customer.id, stale_source.id, suffix=22)
+    expired_fact = _fact(
+        db, customer.id, fresh_source.id, suffix=21,
+        expires_at=datetime(2026, 8, 20),
+    )
+    permanent_order_fact = _fact(
+        db, customer.id, stale_source.id, suffix=22,
+        fact_key="commercial.has_valid_order", observed_at=datetime(2020, 1, 1),
+    )
     unavailable_fact = _fact(db, customer.id, unavailable_source.id, suffix=23)
     version = db.get(CustomerProfileVersion, customer.current_profile_version_id)
-    version.evidence_fact_ids = [fresh_fact.id, stale_fact.id, unavailable_fact.id]
+    version.evidence_fact_ids = [expired_fact.id, permanent_order_fact.id, unavailable_fact.id]
     db.add_all([
         CustomerSyncCursor(
             source_system="alibaba", resource_type="messages", scope_key="tenant",
@@ -395,13 +419,14 @@ def test_profile_reports_fresh_stale_and_unavailable_source_metadata(db, setting
     db.commit()
     result = agent_service.get_customer_profile(
         db, user=_identity(customer.id), customer_id=customer.id,
-        sections=["identity"], now=datetime(2026, 8, 31),
+        sections=["identity", "business_profile", "commercial_summary"],
+        now=datetime(2026, 8, 31),
     )
     assert result["source_freshness_map"]["alibaba:messages:tenant"]["status"] == "fresh"
-    assert result["source_freshness_map"]["okki:orders:tenant"]["status"] == "stale"
+    assert result["source_freshness_map"]["okki:orders:tenant"]["status"] == "fresh"
     assert result["source_freshness_map"]["website:company_page:global"]["status"] == "unavailable"
     assert "website:company_page:global" in result["unavailable_sources"]
-    assert result["stale_sections"] == ["identity"]
+    assert result["stale_sections"] == ["business_profile"]
 
 
 def test_budget_truncation_cursor_covers_every_fact_once_and_refs_match_items(db, settings):
@@ -430,6 +455,39 @@ def test_budget_truncation_cursor_covers_every_fact_once_and_refs_match_items(db
             break
         assert page["cursor"] and page["cursor"] != cursor
         cursor = page["cursor"]
+    assert seen == expected
+
+
+def test_single_row_over_total_budget_is_clipped_and_pagination_terminates(db, settings):
+    customer = _customer(db, "Huge row budget")
+    _membership(db, customer.id)
+    source = _source(db, customer.id, suffix=41)
+    expected = []
+    for index in range(3):
+        row = _fact(db, customer.id, source.id, suffix=200 + index)
+        row.value_json = {f"field_{field:03d}": "x" * 2_000 for field in range(100)}
+        expected.append(row.id)
+    db.commit()
+
+    cursor = None
+    seen = []
+    for _ in range(4):
+        result = agent_service.get_customer_facts(
+            db, user=_identity(customer.id), customer_id=customer.id,
+            cursor=cursor, limit=2,
+        )
+        assert len(result["items"]) == 1
+        assert len(agent_service.serialize_envelope(result)) <= 64 * 1024
+        item = result["items"][0]
+        assert item["truncated_fields"]
+        seen.append(item["fact_id"])
+        assert [ref["evidence_ref"] for ref in result["evidence_refs"]] == [
+            f"fact:{item['fact_id']}"
+        ]
+        if not result["has_more"]:
+            break
+        assert result["cursor"] and result["cursor"] != cursor
+        cursor = result["cursor"]
     assert seen == expected
 
 
