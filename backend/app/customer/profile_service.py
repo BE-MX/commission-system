@@ -574,13 +574,6 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
                     "object_type": "customer_annotation",
                     "annotation_type": "correction",
                     "target_fact_fingerprint": target_fact.fact_fingerprint,
-                    "annotation_fingerprint": _hash({
-                        "annotation_type": "correction",
-                        "target_fact_fingerprint": target_fact.fact_fingerprint,
-                        "content_schema_version": row.content_schema_version,
-                        "content": row.content_json or {},
-                        "authored_by": row.authored_by,
-                    }),
                     "terminal_status": "revoked",
                     "visibility_scope": _max_visibility([
                         row.visibility,

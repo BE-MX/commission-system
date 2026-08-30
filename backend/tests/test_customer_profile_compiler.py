@@ -1953,14 +1953,15 @@ def test_revoked_correction_uses_stable_tombstone_without_revoked_time(db):
         "object_type": "customer_annotation",
         "annotation_type": "correction",
         "target_fact_fingerprint": fact.fact_fingerprint,
-        "annotation_fingerprint": tombstone["annotation_fingerprint"],
         "terminal_status": "revoked",
         "data_classification": "internal_business",
         "visibility_scope": "customer_team",
     }
-    assert len(tombstone["annotation_fingerprint"]) == 64
+    assert "annotation_fingerprint" not in tombstone
     assert "target_fact_id" not in tombstone
     assert context["data_quality"]["terminal_tombstones"] == [tombstone]
+    assert "Reject the source conclusion" not in str(context)
+    assert "987654" not in str(context["data_quality"]["terminal_tombstones"])
     assert version.data_as_of == observed_at
     assert replay.created is False
     assert replay.profile_version_id == third.profile_version_id
