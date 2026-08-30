@@ -136,6 +136,9 @@ def identity_policy(source_system: str, identifier_type: str) -> IdentityPolicy:
 
 @dataclass(frozen=True, slots=True)
 class FactRegistration:
+    value_types: frozenset[Literal[
+        "string", "number", "boolean", "date", "datetime", "list", "object",
+    ]]
     data_classification: DataClassification
     allowed_sources: frozenset[SourceKey]
     ttl_days: int | None
@@ -196,6 +199,48 @@ _INFERRED_BEHAVIOR_FACT_KEYS = frozenset({
     "behavior.inferred.churn_risk",
 })
 
+_NUMBER_VALUE_FACT_KEYS = frozenset({
+    "preference.expressed.quantity",
+    "preference.observed.order_size",
+    "behavior.observed.response_latency",
+    "behavior.observed.inquiry_frequency",
+    "behavior.observed.decision_speed",
+    "behavior.observed.silence_period",
+})
+_OBJECT_VALUE_FACT_KEYS = frozenset({
+    "preference.expressed.price_range",
+    "preference.inferred.seasonality",
+})
+_LIST_VALUE_FACT_KEYS = frozenset({"behavior.observed.active_hours"})
+_STRING_VALUE_FACT_KEYS = (
+    {
+        "business.industry",
+        "behavior.confirmed.priority",
+        "behavior.confirmed.relationship_note",
+    }
+    | (_EXPRESSED_FACT_KEYS - _NUMBER_VALUE_FACT_KEYS - _OBJECT_VALUE_FACT_KEYS)
+    | (_OBSERVED_PREFERENCE_FACT_KEYS - _NUMBER_VALUE_FACT_KEYS)
+    | (
+        _INFERRED_PREFERENCE_FACT_KEYS
+        | _INFERRED_BEHAVIOR_FACT_KEYS
+    ) - _OBJECT_VALUE_FACT_KEYS
+    | (_OBSERVED_BEHAVIOR_FACT_KEYS - _NUMBER_VALUE_FACT_KEYS - _LIST_VALUE_FACT_KEYS)
+)
+
+
+def _registered_value_types(fact_key: str) -> frozenset[str]:
+    if fact_key == "commercial.has_valid_order":
+        return frozenset({"boolean"})
+    if fact_key in _NUMBER_VALUE_FACT_KEYS:
+        return frozenset({"number"})
+    if fact_key in _OBJECT_VALUE_FACT_KEYS:
+        return frozenset({"object"})
+    if fact_key in _LIST_VALUE_FACT_KEYS:
+        return frozenset({"list"})
+    if fact_key in _STRING_VALUE_FACT_KEYS:
+        return frozenset({"string"})
+    raise KeyError(f"Fact value type is not registered: {fact_key}")
+
 
 def _registrations(
     fact_keys: frozenset[str],
@@ -207,6 +252,7 @@ def _registrations(
 ) -> dict[str, FactRegistration]:
     return {
         fact_key: FactRegistration(
+            value_types=_registered_value_types(fact_key),
             data_classification=classification,
             allowed_sources=sources,
             ttl_days=ttl_days,
@@ -220,6 +266,7 @@ def _registrations(
 
 _fact_registry: dict[str, FactRegistration] = {
     "business.industry": FactRegistration(
+        value_types=_registered_value_types("business.industry"),
         data_classification=DataClassification.PUBLIC_BUSINESS,
         allowed_sources=_PUBLIC_FACT_SOURCES,
         ttl_days=365,
@@ -228,6 +275,7 @@ _fact_registry: dict[str, FactRegistration] = {
         supports_high_impact=False,
     ),
     "commercial.has_valid_order": FactRegistration(
+        value_types=_registered_value_types("commercial.has_valid_order"),
         data_classification=DataClassification.INTERNAL_BUSINESS,
         allowed_sources=frozenset({("okki", "order")}),
         ttl_days=None,
@@ -236,6 +284,7 @@ _fact_registry: dict[str, FactRegistration] = {
         supports_high_impact=True,
     ),
     "behavior.confirmed.priority": FactRegistration(
+        value_types=_registered_value_types("behavior.confirmed.priority"),
         data_classification=DataClassification.INTERNAL_BUSINESS,
         allowed_sources=_MANUAL_SOURCE,
         ttl_days=180,
@@ -244,6 +293,7 @@ _fact_registry: dict[str, FactRegistration] = {
         supports_high_impact=False,
     ),
     "behavior.confirmed.relationship_note": FactRegistration(
+        value_types=_registered_value_types("behavior.confirmed.relationship_note"),
         data_classification=DataClassification.RESTRICTED_INTERNAL,
         allowed_sources=_MANUAL_SOURCE,
         ttl_days=None,

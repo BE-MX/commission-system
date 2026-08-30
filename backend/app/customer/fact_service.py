@@ -5,15 +5,17 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time as datetime_time, timedelta
 from decimal import Decimal
 from types import MappingProxyType
 from typing import Iterable, Literal, Mapping, Sequence
 
 from sqlalchemy.orm import Session
 
+from app.auth.models import ArkUser
 from app.core.time import beijing_now, to_beijing_naive
 from app.customer.contracts import (
     DATA_CLASSIFICATIONS,
@@ -27,16 +29,19 @@ from app.customer.identity_service import CustomerDomainError
 from app.customer.models import (
     CustomerAccount,
     CustomerAssignment,
+    CustomerAnnotation,
     CustomerContact,
     CustomerContactRelationship,
     CustomerConversation,
     CustomerEvent,
+    CustomerExternalIdentity,
     CustomerFact,
     CustomerFactConflict,
     CustomerFactEvidenceLink,
     CustomerMessage,
     CustomerOrder,
     CustomerQualificationReview,
+    CustomerResearchTask,
     CustomerSourceRecord,
 )
 
@@ -47,6 +52,7 @@ _CLASSIFICATION_ORDER = (
     DataClassification.PERSONAL_CONTACT.value,
     DataClassification.RESTRICTED_INTERNAL.value,
 )
+_VISIBILITY_ORDER = ("all_authorized", "customer_team", "management")
 _FACT_LAYERS = {"source", "expressed", "observed", "inferred", "confirmed"}
 _FACT_STATUSES = {"unverified", "candidate", "verified", "disputed", "rejected", "superseded"}
 _ACTIVE_FACT_STATUSES = {"unverified", "candidate", "verified", "disputed"}
@@ -142,7 +148,7 @@ EVENT_REGISTRY: Mapping[str, EventRegistration] = MappingProxyType({
     ),
     "relationship.stage_changed": _event_registration(
         ("manual", "qualification", "opportunity"), {"reason_code": str},
-        reference="customer", human=True,
+        required=("reason_code",), reference="customer", human=True,
     ),
     "assignment.changed": _event_registration(
         ("manual", "assignment"), {"assignment_status": str},
@@ -151,12 +157,6 @@ EVENT_REGISTRY: Mapping[str, EventRegistration] = MappingProxyType({
     "qualification.reviewed": _event_registration(
         ("manual", "qualification"), {"decision": str},
         required=("decision",), reference="qualification_review", human=True,
-    ),
-    "opportunity.changed": _event_registration(
-        ("opportunity",), {"status": str}, required=("status",), reference="opportunity"
-    ),
-    "action.changed": _event_registration(
-        ("sales_automation",), {"status": str}, required=("status",), reference="action"
     ),
     "annotation.created": _event_registration(
         ("annotation", "manual"), {"annotation_type": str},
@@ -206,6 +206,12 @@ def _classification_max(*values: str | DataClassification | None) -> str:
     return max(normalized, key=_CLASSIFICATION_ORDER.index)
 
 
+def _visibility_max(*values: str) -> str:
+    if any(value not in _VISIBILITY_ORDER for value in values):
+        raise CustomerDomainError("VISIBILITY_SCOPE_INVALID")
+    return max(values, key=_VISIBILITY_ORDER.index)
+
+
 def _business_time(value: datetime | None, *, default_now: bool = False) -> datetime | None:
     if value is None:
         return beijing_now() if default_now else None
@@ -229,6 +235,24 @@ def _bump_account(db: Session, customer_id: int) -> CustomerAccount:
     account.profile_input_seq = int(account.profile_input_seq) + 1
     account.updated_at = beijing_now()
     return account
+
+
+def _require_active_human(db: Session, user_id: int, error_code: str) -> ArkUser:
+    user = db.query(ArkUser).filter(
+        ArkUser.id == user_id,
+        ArkUser.is_active.is_(True),
+        ArkUser.deleted_at.is_(None),
+    ).one_or_none()
+    if user is None:
+        raise CustomerDomainError(error_code)
+    authorized = any(
+        role.name == "super_admin"
+        or any(permission.code == "customer:write" for permission in role.permissions)
+        for role in user.roles
+    )
+    if not authorized:
+        raise CustomerDomainError(error_code)
+    return user
 
 
 def _external_key_hash(
@@ -292,6 +316,10 @@ def append_source_record(
     if processing_status not in {"pending", "processed", "quarantined", "superseded"}:
         raise CustomerDomainError("SOURCE_STATUS_INVALID")
     account = _account_for_update(db, customer_id) if customer_id is not None else None
+    effective_classification = _classification_max(
+        policy.default_classification,
+        data_classification,
+    )
 
     payload_copy = copy.deepcopy(payload_json)
     canonical_payload = _canonical_json(payload_copy)
@@ -313,16 +341,32 @@ def append_source_record(
     if existing is not None:
         if customer_id is not None and existing.customer_id not in {None, customer_id}:
             raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
+        changed = False
         if customer_id is not None and existing.customer_id is None:
             existing.customer_id = customer_id
-            _bump_account(db, customer_id)
+            changed = True
+        if _CLASSIFICATION_ORDER.index(effective_classification) > (
+            _CLASSIFICATION_ORDER.index(existing.data_classification)
+        ):
+            existing.data_classification = effective_classification
+            changed = True
+        effective_visibility = _visibility_max(
+            existing.visibility_scope,
+            visibility_scope,
+        )
+        if existing.visibility_scope != effective_visibility:
+            existing.visibility_scope = effective_visibility
+            changed = True
+        if changed and classification_reason:
+            existing.classification_reason = classification_reason
+        if changed:
+            if existing.customer_id is not None:
+                affected = account or _account_for_update(db, existing.customer_id)
+                affected.profile_input_seq = int(affected.profile_input_seq) + 1
+                affected.updated_at = beijing_now()
             db.flush()
         return existing
 
-    effective_classification = _classification_max(
-        policy.default_classification,
-        data_classification,
-    )
     captured = _business_time(captured_at, default_now=True)
     row = CustomerSourceRecord(
         customer_id=customer_id,
@@ -371,8 +415,14 @@ def _validate_value(value_type: str, value: object) -> object:
         valid = isinstance(value, str)
     elif value_type == "number":
         valid = isinstance(value, (int, float, Decimal)) and not isinstance(value, bool)
-        if valid and isinstance(value, Decimal):
-            normalized = format(value, "f")
+        if valid:
+            decimal_value = value if isinstance(value, Decimal) else Decimal(str(value))
+            valid = decimal_value.is_finite()
+            if valid and decimal_value == decimal_value.to_integral_value():
+                normalized = int(decimal_value)
+            elif valid:
+                normalized = float(decimal_value)
+                valid = math.isfinite(normalized)
     elif value_type == "boolean":
         valid = type(value) is bool
     elif value_type == "date":
@@ -501,7 +551,12 @@ def _resolved_evidence(
     if kind == "conversation":
         row = db.get(CustomerConversation, item.evidence_id)
         source = db.get(CustomerSourceRecord, row.latest_source_record_id) if row else None
-        if row is None or row.customer_id != customer_id or source is None:
+        if (
+            row is None
+            or row.customer_id != customer_id
+            or source is None
+            or source.customer_id != customer_id
+        ):
             raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
         lineage = {
             "kind": kind,
@@ -618,6 +673,40 @@ def _validate_layer_provenance(
         raise CustomerDomainError("FACT_REVIEW_EVIDENCE_REQUIRED")
 
 
+def _validate_authoritative_order_fact(
+    db: Session,
+    *,
+    fact_key: str,
+    normalized_value: object,
+    source_record_id: int | None,
+    direct_evidence: Sequence[DirectFactEvidence],
+    observed_at: datetime,
+) -> None:
+    if fact_key != "commercial.has_valid_order":
+        return
+    order_evidence = [
+        item for item in direct_evidence if item.evidence_kind == "order"
+    ]
+    if len(order_evidence) != 1:
+        raise CustomerDomainError("FACT_EVIDENCE_INVALID")
+    order = db.query(CustomerOrder).filter(
+        CustomerOrder.id == order_evidence[0].evidence_id,
+    ).with_for_update().one_or_none()
+    source = db.get(CustomerSourceRecord, source_record_id) if source_record_id else None
+    if (
+        order is None
+        or source is None
+        or order.source_record_id != source.id
+        or normalized_value is not order.is_valid_business_order
+    ):
+        raise CustomerDomainError("FACT_EVIDENCE_INVALID")
+    authoritative_time = source.occurred_at
+    if authoritative_time is None and order.account_date is not None:
+        authoritative_time = datetime.combine(order.account_date, datetime_time.min)
+    if authoritative_time is None or observed_at != authoritative_time:
+        raise CustomerDomainError("FACT_EVIDENCE_INVALID")
+
+
 def append_fact(
     db: Session,
     *,
@@ -692,6 +781,8 @@ def append_fact(
         raise CustomerDomainError("FACT_CONFIDENCE_INVALID")
     _canonical_json(confidence_components)
     _validate_subject(db, customer_id, subject_type, subject_id)
+    if value_type not in registration.value_types:
+        raise CustomerDomainError("FACT_VALUE_TYPE_INVALID")
     normalized_value = _validate_value(value_type, value)
 
     source_record = db.get(CustomerSourceRecord, source_record_id) if source_record_id else None
@@ -723,6 +814,7 @@ def append_fact(
         if review_time is None:
             raise CustomerDomainError("FACT_REVIEW_EVIDENCE_REQUIRED")
         review_by = human_review.reviewer_id
+        _require_active_human(db, review_by, "FACT_REVIEWER_UNAUTHORIZED")
         for supporting_fact_id in human_review.supporting_fact_ids:
             evidence_items.append(DirectFactEvidence(
                 "fact",
@@ -760,6 +852,14 @@ def append_fact(
         customer_id,
         evidence_items,
     )
+    _validate_authoritative_order_fact(
+        db,
+        fact_key=fact_key,
+        normalized_value=normalized_value,
+        source_record_id=source_record_id,
+        direct_evidence=evidence_items,
+        observed_at=observed,
+    )
     if source_record_id is not None and source_record_id not in evidence_json["source_record_ids"]:
         evidence_json["source_record_ids"].append(source_record_id)
         evidence_json["source_record_ids"].sort()
@@ -783,17 +883,34 @@ def append_fact(
         data_classification,
         *evidence_classifications,
     )
+    effective_classification_reason = (
+        classification_reason
+        or f"fact_registry:{fact_key};source:{source_system}/{source_entity_type}"
+    )
     fingerprint = _sha256((
         "fact_v1",
         customer_id,
         subject_type,
         subject_id or "",
         fact_key,
+        value_type,
         fact_layer,
         _canonical_json(value_json),
         _canonical_json(lineage),
+        verification_status,
+        format(confidence_value, "f"),
+        confidence_method_version,
+        _canonical_json(confidence_components),
         rule_version or "",
+        agent_run_id or "",
         observed.isoformat(),
+        effective_start.isoformat(),
+        effective_end.isoformat() if effective_end is not None else "",
+        expiry.isoformat() if expiry is not None else "",
+        supersedes_fact_id or "",
+        effective_classification,
+        visibility_scope,
+        effective_classification_reason,
     ))
     existing = db.query(CustomerFact).filter(
         CustomerFact.fact_fingerprint == fingerprint
@@ -818,10 +935,7 @@ def append_fact(
         confidence_components_json=copy.deepcopy(dict(confidence_components)),
         data_classification=effective_classification,
         visibility_scope=visibility_scope,
-        classification_reason=(
-            classification_reason
-            or f"fact_registry:{fact_key};source:{source_system}/{source_entity_type}"
-        ),
+        classification_reason=effective_classification_reason,
         source_record_id=source_record_id,
         evidence_json=evidence_json,
         agent_run_id=agent_run_id,
@@ -852,7 +966,7 @@ def _evidence_target(
     message_id: int | None,
     order_id: int | None,
     supporting_fact_id: int | None,
-) -> tuple[object, str, int]:
+) -> tuple[object, str, int, str]:
     supplied = {
         "source_record": source_record_id,
         "message": message_id,
@@ -868,22 +982,32 @@ def _evidence_target(
         target = db.get(CustomerSourceRecord, target_id)
         expected_hash = target.content_hash if target is not None else ""
         customer_id = target.customer_id if target is not None else None
+        classification = target.data_classification if target is not None else ""
     elif evidence_kind == "message":
         target = db.get(CustomerMessage, target_id)
         expected_hash = target.content_hash if target is not None else ""
         conversation = db.get(CustomerConversation, target.conversation_id) if target is not None else None
+        source = db.get(CustomerSourceRecord, target.source_record_id) if target is not None else None
         customer_id = conversation.customer_id if conversation is not None else None
+        if source is None or source.customer_id != customer_id:
+            customer_id = None
+        classification = source.data_classification if source is not None else ""
     elif evidence_kind == "order":
         target = db.get(CustomerOrder, target_id)
         expected_hash = target.source_hash if target is not None else ""
         customer_id = target.customer_id if target is not None else None
+        source = db.get(CustomerSourceRecord, target.source_record_id) if target is not None else None
+        if source is None or source.customer_id != customer_id:
+            customer_id = None
+        classification = source.data_classification if source is not None else ""
     else:
         target = db.get(CustomerFact, target_id)
         expected_hash = target.fact_fingerprint if target is not None else ""
         customer_id = target.customer_id if target is not None else None
+        classification = target.data_classification if target is not None else ""
     if target is None or customer_id is None:
         raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
-    return target, expected_hash, customer_id
+    return target, expected_hash, customer_id, classification
 
 
 def link_fact_evidence(
@@ -914,7 +1038,7 @@ def link_fact_evidence(
     _canonical_json(locator_json)
     if not isinstance(evidence_content_hash, str) or not _HEX64.fullmatch(evidence_content_hash):
         raise CustomerDomainError("EVIDENCE_HASH_MISMATCH")
-    target, expected_hash, evidence_customer_id = _evidence_target(
+    target, expected_hash, evidence_customer_id, target_classification = _evidence_target(
         db,
         evidence_kind=evidence_kind,
         source_record_id=source_record_id,
@@ -928,7 +1052,6 @@ def link_fact_evidence(
         raise CustomerDomainError("EVIDENCE_REFERENCE_INVALID")
     if evidence_content_hash != expected_hash:
         raise CustomerDomainError("EVIDENCE_HASH_MISMATCH")
-    target_classification = getattr(target, "data_classification", None)
     effective_classification = _classification_max(
         fact.data_classification,
         target_classification,
@@ -948,6 +1071,8 @@ def link_fact_evidence(
         target_id,
         evidence_content_hash,
         _canonical_json(locator_json),
+        effective_classification,
+        excerpt_text or "",
     ))
     existing = db.query(CustomerFactEvidenceLink).filter(
         CustomerFactEvidenceLink.evidence_fingerprint == fingerprint
@@ -1029,9 +1154,15 @@ def open_fact_conflict(
         raise CustomerDomainError("FACTS_NOT_IN_CONFLICT")
     if conflict_type not in {"contradictory", "ambiguous", "temporal_overlap", "identity_collision"}:
         raise CustomerDomainError("FACT_CONFLICT_TYPE_INVALID")
+    if visibility_scope not in _VISIBILITY_ORDER:
+        raise CustomerDomainError("VISIBILITY_SCOPE_INVALID")
     if not detection_rule_version:
         raise CustomerDomainError("FACT_CONFLICT_RULE_INVALID")
     conflict_key = left_registration.conflict_key
+    effective_classification = _classification_max(
+        left.data_classification,
+        right.data_classification,
+    )
     fingerprint = _sha256((
         "fact_conflict_v1",
         left.customer_id,
@@ -1039,6 +1170,9 @@ def open_fact_conflict(
         first_id,
         second_id,
         detection_rule_version,
+        conflict_type,
+        effective_classification,
+        visibility_scope,
     ))
     existing = db.query(CustomerFactConflict).filter(
         CustomerFactConflict.conflict_fingerprint == fingerprint
@@ -1051,10 +1185,7 @@ def open_fact_conflict(
         left_fact_id=first_id,
         right_fact_id=second_id,
         conflict_type=conflict_type,
-        data_classification=_classification_max(
-            left.data_classification,
-            right.data_classification,
-        ),
+        data_classification=effective_classification,
         visibility_scope=visibility_scope,
         detection_rule_version=detection_rule_version,
         conflict_fingerprint=fingerprint,
@@ -1120,13 +1251,199 @@ def _event_reference(
         row = db.get(CustomerAssignment, object_id)
     elif reference_kind == "qualification_review":
         row = db.get(CustomerQualificationReview, object_id)
+    elif reference_kind == "research_task":
+        row = db.get(CustomerResearchTask, object_id)
+    elif reference_kind == "annotation":
+        row = db.get(CustomerAnnotation, object_id)
+    elif reference_kind == "identity":
+        row = db.get(CustomerExternalIdentity, object_id)
+        if row is None:
+            raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
+        if not _identity_owned_by_customer(db, row, customer_id):
+            raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
+        source = db.get(CustomerSourceRecord, row.source_record_id) if row.source_record_id else None
+        return row, (
+            source.data_classification
+            if source is not None
+            else DataClassification.INTERNAL_BUSINESS.value
+        )
     else:
-        # Opportunity, action, research, annotation, and identity event
-        # references fail closed until their phase service registers ownership.
         raise CustomerDomainError("EVENT_REFERENCE_INVALID")
     if row is None or row.customer_id != customer_id:
         raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
-    return row, DataClassification.INTERNAL_BUSINESS.value
+    return row, getattr(
+        row,
+        "data_classification",
+        DataClassification.INTERNAL_BUSINESS.value,
+    )
+
+
+def _identity_owned_by_customer(
+    db: Session,
+    identity: CustomerExternalIdentity,
+    customer_id: int,
+) -> bool:
+    if identity.customer_id == customer_id:
+        return True
+    if identity.contact_id is None:
+        return False
+    now = beijing_now()
+    contact = db.query(CustomerContact.id).filter(
+        CustomerContact.id == identity.contact_id,
+        CustomerContact.record_status == "active",
+    ).first()
+    relation = db.query(CustomerContactRelationship.id).filter(
+        CustomerContactRelationship.customer_id == customer_id,
+        CustomerContactRelationship.contact_id == identity.contact_id,
+        CustomerContactRelationship.effective_to.is_(None),
+        (
+            CustomerContactRelationship.effective_from.is_(None)
+            | (CustomerContactRelationship.effective_from <= now)
+        ),
+        CustomerContactRelationship.verification_status.in_(("identified", "verified")),
+    ).first()
+    return contact is not None and relation is not None
+
+
+def _identity_conflict_classifications(
+    db: Session,
+    *,
+    customer_id: int,
+    payload: Mapping[str, object],
+) -> tuple[str, ...]:
+    identity_ids = payload.get("identity_ids")
+    if (
+        not isinstance(identity_ids, list)
+        or not identity_ids
+        or any(
+            type(identity_id) is not int or identity_id <= 0
+            for identity_id in identity_ids
+        )
+        or len(set(identity_ids)) != len(identity_ids)
+    ):
+        raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+    rows = db.query(CustomerExternalIdentity).filter(
+        CustomerExternalIdentity.id.in_(identity_ids),
+    ).with_for_update().all()
+    if len(rows) != len(identity_ids):
+        raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
+    classifications: list[str] = []
+    for row in rows:
+        if not _identity_owned_by_customer(db, row, customer_id):
+            raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
+        if row.status != "disputed" or row.verification_status != "disputed":
+            raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+        source = (
+            db.get(CustomerSourceRecord, row.source_record_id)
+            if row.source_record_id
+            else None
+        )
+        if source is not None and source.customer_id != customer_id:
+            raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
+        classifications.append(
+            source.data_classification
+            if source is not None
+            else DataClassification.INTERNAL_BUSINESS.value
+        )
+    return tuple(classifications)
+
+
+def _validate_event_reference_semantics(
+    db: Session,
+    *,
+    event_type: str,
+    event_source: str,
+    source_ref_type: str | None,
+    source_ref_id: str | None,
+    payload: Mapping[str, object],
+    actor_user_id: int | None,
+    target_relationship_stage: str | None,
+    fallback_occurred_at: datetime,
+) -> datetime:
+    if source_ref_type is None or source_ref_id is None:
+        return fallback_occurred_at
+    object_id = int(source_ref_id)
+    if source_ref_type == "source_record":
+        row = db.get(CustomerSourceRecord, object_id)
+        if (
+            row is None
+            or row.source_system != event_source
+            or (event_type == "inquiry.received" and row.source_entity_type != "inquiry")
+        ):
+            raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+        return row.occurred_at or fallback_occurred_at
+    if source_ref_type == "message":
+        row = db.get(CustomerMessage, object_id)
+        conversation = db.get(CustomerConversation, row.conversation_id) if row else None
+        expected_direction = "in" if event_type == "message.received" else "out"
+        if (
+            row is None
+            or conversation is None
+            or conversation.source_system != event_source
+            or row.direction != expected_direction
+            or payload.get("direction") != row.direction
+        ):
+            raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+        return row.sent_at
+    if source_ref_type == "order":
+        row = db.get(CustomerOrder, object_id)
+        source = db.get(CustomerSourceRecord, row.source_record_id) if row else None
+        if (
+            row is None
+            or source is None
+            or row.source_system != event_source
+        ):
+            raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+        if payload.get("is_valid_business_order") is not row.is_valid_business_order:
+            raise CustomerDomainError(
+                "RELATIONSHIP_TRANSITION_INVALID"
+                if target_relationship_stage is not None
+                else "EVENT_REFERENCE_INVALID"
+            )
+        if source.occurred_at is not None:
+            return source.occurred_at
+        if row.account_date is not None:
+            return datetime.combine(row.account_date, datetime_time.min)
+        raise CustomerDomainError("EVENT_TIME_INVALID")
+    if source_ref_type == "identity":
+        row = db.get(CustomerExternalIdentity, object_id)
+        if (
+            row is None
+            or payload.get("identity_id") != object_id
+            or row.verification_status != "verified"
+            or row.status != "active"
+        ):
+            raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+    elif source_ref_type == "research_task":
+        row = db.get(CustomerResearchTask, object_id)
+        if (
+            row is None
+            or row.task_status != "completed"
+            or payload.get("result_status") != row.task_status
+        ):
+            raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+    elif source_ref_type == "annotation":
+        row = db.get(CustomerAnnotation, object_id)
+        if (
+            row is None
+            or row.status != "active"
+            or payload.get("annotation_type") != row.annotation_type
+            or actor_user_id != row.authored_by
+        ):
+            raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+    elif source_ref_type == "assignment":
+        row = db.get(CustomerAssignment, object_id)
+        if row is None or payload.get("assignment_status") != row.assignment_status:
+            raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+    elif source_ref_type == "qualification_review":
+        row = db.get(CustomerQualificationReview, object_id)
+        if (
+            row is None
+            or payload.get("decision") != row.decision
+            or actor_user_id != row.reviewed_by
+        ):
+            raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+    return fallback_occurred_at
 
 
 def _relationship_transition_applies(
@@ -1261,6 +1578,8 @@ def append_customer_event(
         type(actor_user_id) is not int or actor_user_id <= 0
     ):
         raise CustomerDomainError("EVENT_ACTOR_REQUIRED")
+    if registration.human_actor_required:
+        _require_active_human(db, actor_user_id, "EVENT_ACTOR_UNAUTHORIZED")
     if not event_title:
         raise CustomerDomainError("EVENT_INPUT_INVALID")
     if importance not in {"critical", "high", "normal", "low"}:
@@ -1279,22 +1598,56 @@ def append_customer_event(
         reference_kind=source_ref_type,
         reference_id=source_ref_id,
     )
+    payload_reference_classifications = (
+        _identity_conflict_classifications(
+            db,
+            customer_id=customer_id,
+            payload=payload,
+        )
+        if event_type == "identity.conflict"
+        else ()
+    )
+    occurred = _validate_event_reference_semantics(
+        db,
+        event_type=event_type,
+        event_source=event_source,
+        source_ref_type=source_ref_type,
+        source_ref_id=source_ref_id,
+        payload=payload,
+        actor_user_id=actor_user_id,
+        target_relationship_stage=target_relationship_stage,
+        fallback_occurred_at=occurred,
+    )
+    if event_type == "relationship.stage_changed" and (
+        target_relationship_stage is None
+        or not transition_trigger
+        or payload.get("reason_code") != transition_trigger
+    ):
+        raise CustomerDomainError("RELATIONSHIP_TRANSITION_INVALID")
     if any(type(item) is not int or item <= 0 for item in evidence_fact_ids):
         raise CustomerDomainError("EVENT_REFERENCE_INVALID")
     fact_ids = sorted(set(evidence_fact_ids))
     all_refs = list(evidence_refs)
     all_refs.extend(EventEvidenceRef("fact", item) for item in fact_ids)
     evidence_classifications: list[str] = []
+    evidence_lineage: list[Mapping[str, object]] = []
     for item in all_refs:
         if not isinstance(item, EventEvidenceRef):
             raise CustomerDomainError("EVENT_REFERENCE_INVALID")
-        _lineage, item_classification = _resolved_evidence(db, customer_id, item)
+        item_lineage, item_classification = _resolved_evidence(db, customer_id, item)
+        evidence_lineage.append(item_lineage)
         evidence_classifications.append(item_classification)
+    evidence_lineage.sort(key=_canonical_json)
     classification = _classification_max(
         registration.default_classification,
         data_classification,
         reference_classification,
+        *payload_reference_classifications,
         *evidence_classifications,
+    )
+    effective_classification_reason = (
+        classification_reason
+        or f"event_registry:{registration.registry_version};source:{event_source}"
     )
     fingerprint = _sha256((
         "customer_event_v1",
@@ -1304,6 +1657,17 @@ def append_customer_event(
         source_ref_type or "",
         source_ref_id or "",
         occurred.isoformat(),
+        payload_schema_version,
+        _canonical_json(payload),
+        actor_user_id or "",
+        _canonical_json(fact_ids),
+        _canonical_json(evidence_lineage),
+        target_relationship_stage or "",
+        transition_trigger or "",
+        importance,
+        classification,
+        visibility_scope,
+        effective_classification_reason,
     ))
     existing = db.query(CustomerEvent).filter(
         CustomerEvent.event_fingerprint == fingerprint
@@ -1340,10 +1704,7 @@ def append_customer_event(
         importance=importance,
         data_classification=classification,
         visibility_scope=visibility_scope,
-        classification_reason=(
-            classification_reason
-            or f"event_registry:{registration.registry_version};source:{event_source}"
-        ),
+        classification_reason=effective_classification_reason,
         evidence_fact_ids=fact_ids,
         actor_user_id=actor_user_id,
         occurred_at=occurred,

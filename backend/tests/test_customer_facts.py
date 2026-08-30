@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 import pytest
 
+from app.auth.models import ArkPermission, ArkRole, ArkUser
 from app.core.time import beijing_now
+from app.customer.contracts import FACT_REGISTRY
 from app.customer.fact_service import (
     DirectFactEvidence,
     EventEvidenceRef,
@@ -17,9 +21,15 @@ from app.customer.fact_service import (
     link_fact_evidence,
     open_fact_conflict,
 )
-from app.customer.identity_service import CustomerDomainError, resolve_business_context
+from app.customer.identity_service import (
+    CustomerDomainError,
+    attach_identity_candidate,
+    confirm_identity,
+    resolve_business_context,
+)
 from app.customer.models import (
     CustomerAccount,
+    CustomerAnnotation,
     CustomerContactRelationship,
     CustomerConversation,
     CustomerEvent,
@@ -28,6 +38,7 @@ from app.customer.models import (
     CustomerFactEvidenceLink,
     CustomerMessage,
     CustomerOrder,
+    CustomerResearchTask,
     CustomerSourceRecord,
 )
 
@@ -40,6 +51,34 @@ def _customer(db, suffix: str) -> CustomerAccount:
         source_entity_type="inquiry",
         external_context_id=f"inq-{suffix}",
     ).customer
+
+
+def _human(db, suffix: str) -> ArkUser:
+    permission = ArkPermission(
+        code="customer:write",
+        module="customer",
+        action="write",
+        label="Customer write test permission",
+        kind="action",
+        is_legacy=0,
+        sort=0,
+    )
+    role = ArkRole(
+        name=f"customer_reviewer_{suffix}",
+        label="Test super administrator",
+        is_system=True,
+        permissions=[permission],
+    )
+    row = ArkUser(
+        username=f"customer-reviewer-{suffix}",
+        password_hash="test-only",
+        real_name=f"Reviewer {suffix}",
+        is_active=True,
+        roles=[role],
+    )
+    db.add(row)
+    db.flush()
+    return row
 
 
 def _source(db, customer: CustomerAccount, *, external_id: str, payload=None):
@@ -87,7 +126,9 @@ def _order(
     *,
     external_id: str,
     valid: bool,
+    occurred_at: datetime | None = None,
 ) -> CustomerOrder:
+    business_time = occurred_at or beijing_now()
     source = append_source_record(
         db,
         customer_id=customer.id,
@@ -97,6 +138,7 @@ def _order(
         external_record_id=f"source-{external_id}",
         payload_schema_version="okki_order_v1",
         payload_json={"external_order_id": external_id, "valid": valid},
+        occurred_at=business_time,
     )
     row = CustomerOrder(
         customer_id=customer.id,
@@ -104,6 +146,7 @@ def _order(
         source_account_key="tenant-events",
         external_order_id=external_id,
         order_status="confirmed",
+        account_date=business_time.date(),
         amount_usd=100,
         is_valid_business_order=valid,
         source_record_id=source.id,
@@ -122,6 +165,17 @@ def test_source_record_replay_is_idempotent_and_changed_content_appends_version(
     first_payload = dict(first.payload_json)
     first_seq = customer.profile_input_seq
     replay = _source(db, customer, external_id="about", payload={"industry": "Hair"})
+    same_content_new_external_version = append_source_record(
+        db,
+        customer_id=customer.id,
+        source_system="public_web",
+        source_account_key="global",
+        source_entity_type="company_page",
+        external_record_id="about",
+        source_version="v2",
+        payload_schema_version="public_company_page_v1",
+        payload_json={"industry": "Hair"},
+    )
     changed = append_source_record(
         db,
         customer_id=customer.id,
@@ -139,6 +193,8 @@ def test_source_record_replay_is_idempotent_and_changed_content_appends_version(
     )
 
     assert replay.id == first.id
+    assert same_content_new_external_version.id == first.id
+    assert first.source_version == "v1"
     assert changed.id != first.id
     assert first.payload_json == first_payload
     assert first.content_hash != changed.content_hash
@@ -161,6 +217,49 @@ def test_source_payload_is_copied_and_hash_is_canonical(db):
     assert first.id == replay.id
     assert first.payload_json["a"]["name"] == "莱莎"
     assert len(first.content_hash) == 64
+
+
+def test_source_replay_monotonically_tightens_security_metadata_once(db):
+    customer = _customer(db, "source-security-tightening")
+    arguments = {
+        "customer_id": customer.id,
+        "source_system": "public_web",
+        "source_account_key": "global",
+        "source_entity_type": "company_page",
+        "external_record_id": "source-security-tightening",
+        "payload_schema_version": "public_company_page_v1",
+        "payload_json": {"industry": "Hair"},
+    }
+    first = append_source_record(
+        db,
+        **arguments,
+        data_classification="public_business",
+        visibility_scope="all_authorized",
+        classification_reason="public source",
+    )
+    before_tightening = customer.profile_input_seq
+    tightened = append_source_record(
+        db,
+        **arguments,
+        data_classification="restricted_internal",
+        visibility_scope="management",
+        classification_reason="sensitive review",
+    )
+    after_tightening = customer.profile_input_seq
+    replay = append_source_record(
+        db,
+        **arguments,
+        data_classification="public_business",
+        visibility_scope="all_authorized",
+        classification_reason="attempted downgrade",
+    )
+
+    assert tightened.id == first.id == replay.id
+    assert first.data_classification == "restricted_internal"
+    assert first.visibility_scope == "management"
+    assert first.classification_reason == "sensitive review"
+    assert after_tightening == before_tightening + 1
+    assert customer.profile_input_seq == after_tightening
 
 
 def test_unregistered_source_and_fact_fail_closed(db):
@@ -297,6 +396,41 @@ def test_confirmed_fact_requires_explicit_human_review_evidence(db):
     assert missing.value.error_code == "FACT_REVIEW_EVIDENCE_REQUIRED"
 
 
+def test_confirmed_fact_rejects_missing_or_inactive_reviewer(db):
+    customer = _customer(db, "confirmed-reviewer-auth")
+    source = _source(db, customer, external_id="confirmed-reviewer-auth")
+    supporting = _industry_fact(db, customer, source)
+    inactive = _human(db, "inactive-confirmed")
+    inactive.is_active = False
+    db.flush()
+
+    with pytest.raises(CustomerDomainError) as unauthorized:
+        append_fact(
+            db,
+            customer_id=customer.id,
+            subject_type="customer",
+            fact_key="behavior.confirmed.relationship_note",
+            value_type="string",
+            value="Reviewed note",
+            fact_layer="confirmed",
+            verification_status="verified",
+            confidence=1,
+            confidence_method_version="confidence_v1",
+            confidence_components={"human_confirmation": 1},
+            source_system="manual",
+            source_entity_type="customer",
+            observed_at=beijing_now(),
+            human_review=HumanReviewEvidence(
+                reviewer_id=inactive.id,
+                reviewed_at=beijing_now(),
+                review_reference="inactive-reviewer",
+                supporting_fact_ids=(supporting.id,),
+            ),
+        )
+
+    assert unauthorized.value.error_code == "FACT_REVIEWER_UNAUTHORIZED"
+
+
 def test_public_web_cannot_write_confirmed_fact(db):
     customer = _customer(db, "public-confirmed")
     source = _source(db, customer, external_id="public-confirmed")
@@ -321,25 +455,30 @@ def test_public_web_cannot_write_confirmed_fact(db):
 
 
 @pytest.mark.parametrize(
-    ("value_type", "value"),
+    ("value_type", "value", "error_code"),
     [
-        ("string", 4),
-        ("number", True),
-        ("boolean", "yes"),
-        ("date", "not-a-date"),
-        ("datetime", "2026-08-30"),
-        ("list", {}),
-        ("object", []),
+        ("string", 4, "FACT_VALUE_INVALID"),
+        ("number", True, "FACT_VALUE_TYPE_INVALID"),
+        ("boolean", "yes", "FACT_VALUE_TYPE_INVALID"),
+        ("date", "not-a-date", "FACT_VALUE_TYPE_INVALID"),
+        ("datetime", "2026-08-30", "FACT_VALUE_TYPE_INVALID"),
+        ("list", {}, "FACT_VALUE_TYPE_INVALID"),
+        ("object", [], "FACT_VALUE_TYPE_INVALID"),
     ],
 )
-def test_fact_typed_value_validation_rejects_mismatches(db, value_type, value):
+def test_fact_typed_value_validation_rejects_mismatches(
+    db,
+    value_type,
+    value,
+    error_code,
+):
     customer = _customer(db, f"typed-{value_type}")
     source = _source(db, customer, external_id=f"typed-{value_type}")
 
     with pytest.raises(CustomerDomainError) as invalid:
         _industry_fact(db, customer, source, value_type=value_type, value=value)
 
-    assert invalid.value.error_code == "FACT_VALUE_INVALID"
+    assert invalid.value.error_code == error_code
 
 
 def test_fact_replay_is_idempotent_with_temporal_freshness_and_sequence(db):
@@ -356,6 +495,59 @@ def test_fact_replay_is_idempotent_with_temporal_freshness_and_sequence(db):
     assert first.expires_at == observed_at + timedelta(days=365)
     assert first_seq == initial_seq + 1
     assert customer.profile_input_seq == first_seq
+
+
+def test_fact_material_status_change_appends_instead_of_replaying(db):
+    customer = _customer(db, "fact-status-change")
+    source = append_source_record(
+        db,
+        customer_id=customer.id,
+        source_system="okki",
+        source_account_key="tenant-facts",
+        source_entity_type="customer",
+        external_record_id="fact-status-change",
+        payload_schema_version="okki_customer_v1",
+        payload_json={"industry": "Hair"},
+    )
+    observed = beijing_now()
+    candidate = append_fact(
+        db,
+        customer_id=customer.id,
+        subject_type="customer",
+        fact_key="business.industry",
+        value_type="string",
+        value="Hair",
+        fact_layer="source",
+        verification_status="candidate",
+        confidence=0.8,
+        confidence_method_version="confidence_v1",
+        confidence_components={"source_authority": 0.8},
+        source_system="okki",
+        source_entity_type="customer",
+        source_record_id=source.id,
+        observed_at=observed,
+    )
+    before_verified = customer.profile_input_seq
+    verified = append_fact(
+        db,
+        customer_id=customer.id,
+        subject_type="customer",
+        fact_key="business.industry",
+        value_type="string",
+        value="Hair",
+        fact_layer="source",
+        verification_status="verified",
+        confidence=1,
+        confidence_method_version="confidence_v1",
+        confidence_components={"source_authority": 1},
+        source_system="okki",
+        source_entity_type="customer",
+        source_record_id=source.id,
+        observed_at=observed,
+    )
+
+    assert verified.id != candidate.id
+    assert customer.profile_input_seq == before_verified + 1
 
 
 def test_fact_fingerprint_keeps_independent_source_records_distinct(db):
@@ -450,6 +642,22 @@ def test_fact_requires_versioned_nonempty_confidence_components(db):
             confidence_components={},
         )
     assert empty.value.error_code == "FACT_CONFIDENCE_INVALID"
+
+
+def test_fact_value_type_must_match_registered_key_schema(db):
+    customer = _customer(db, "fact-value-schema")
+    source = _source(db, customer, external_id="fact-value-schema")
+
+    with pytest.raises(CustomerDomainError) as invalid:
+        _industry_fact(
+            db,
+            customer,
+            source,
+            value_type="boolean",
+            value=True,
+        )
+
+    assert invalid.value.error_code == "FACT_VALUE_TYPE_INVALID"
 
 
 def test_expressed_observed_and_inferred_semantics_require_matching_keys(db):
@@ -589,6 +797,42 @@ def test_observed_fact_requires_registered_behavior_or_order_object(db):
     assert missing.value.error_code == "FACT_DIRECT_EVIDENCE_REQUIRED"
 
 
+def test_valid_order_fact_must_match_authoritative_order_state_and_source(db):
+    customer = _customer(db, "authoritative-valid-order-fact")
+    order = _order(
+        db,
+        customer,
+        external_id="ORDER-NOT-VALID",
+        valid=False,
+    )
+    source = db.get(CustomerSourceRecord, order.source_record_id)
+    common = {
+        "customer_id": customer.id,
+        "subject_type": "customer",
+        "fact_key": "commercial.has_valid_order",
+        "value_type": "boolean",
+        "fact_layer": "observed",
+        "verification_status": "verified",
+        "confidence": 1,
+        "confidence_method_version": "confidence_v1",
+        "confidence_components": {"order_state": 1},
+        "source_system": "okki",
+        "source_entity_type": "order",
+        "source_record_id": source.id,
+        "observed_at": source.occurred_at,
+        "direct_evidence": [
+            DirectFactEvidence("order", order.id, {"json_path": "$.valid"})
+        ],
+    }
+
+    fact = append_fact(db, **common, value=False)
+    assert fact.value_json == {"value": False}
+
+    with pytest.raises(CustomerDomainError) as forged:
+        append_fact(db, **common, value=True)
+    assert forged.value.error_code == "FACT_EVIDENCE_INVALID"
+
+
 def test_message_evidence_inherits_underlying_source_classification(db):
     customer = _customer(db, "message-classification")
     source = append_source_record(
@@ -702,6 +946,7 @@ def test_inferred_fact_requires_rule_and_evidence_fact_ids(db):
 
 def test_derived_fact_inherits_highest_evidence_classification(db):
     customer = _customer(db, "inferred-classification")
+    reviewer = _human(db, "inferred-classification")
     source = _source(db, customer, external_id="confirmed-review-source")
     supporting = _industry_fact(db, customer, source)
     reviewed_at = beijing_now()
@@ -721,7 +966,7 @@ def test_derived_fact_inherits_highest_evidence_classification(db):
         source_entity_type="customer",
         observed_at=beijing_now(),
         human_review=HumanReviewEvidence(
-            reviewer_id=1,
+            reviewer_id=reviewer.id,
             reviewed_at=reviewed_at,
             review_reference="manual-review-1",
             supporting_fact_ids=(supporting.id,),
@@ -884,6 +1129,95 @@ def test_evidence_link_requires_exact_hash_and_locator_and_is_append_only_idempo
     assert db.query(CustomerFactEvidenceLink).count() == 1
 
 
+def test_evidence_link_security_and_excerpt_are_immutable_material(db):
+    customer = _customer(db, "evidence-security-material")
+    source = _source(db, customer, external_id="evidence-security-material")
+    fact = _industry_fact(db, customer, source)
+    first = link_fact_evidence(
+        db,
+        fact_id=fact.id,
+        evidence_kind="source_record",
+        source_record_id=source.id,
+        relation_type="supports",
+        evidence_content_hash=source.content_hash,
+        locator={"json_path": "$.industry"},
+        excerpt_text="Hair",
+        data_classification="public_business",
+    )
+    before_changed = customer.profile_input_seq
+    changed = link_fact_evidence(
+        db,
+        fact_id=fact.id,
+        evidence_kind="source_record",
+        source_record_id=source.id,
+        relation_type="supports",
+        evidence_content_hash=source.content_hash,
+        locator={"json_path": "$.industry"},
+        excerpt_text="Sensitive Hair",
+        data_classification="restricted_internal",
+    )
+
+    assert changed.id != first.id
+    assert changed.data_classification == "restricted_internal"
+    assert changed.excerpt_text == "Sensitive Hair"
+    assert customer.profile_input_seq == before_changed + 1
+
+
+def test_message_evidence_link_inherits_underlying_source_classification(db):
+    customer = _customer(db, "evidence-message-classification")
+    fact_source = _source(db, customer, external_id="evidence-message-fact")
+    fact = _industry_fact(db, customer, fact_source)
+    message_source = append_source_record(
+        db,
+        customer_id=customer.id,
+        source_system="alibaba",
+        source_account_key="shop-a",
+        source_entity_type="message",
+        external_record_id="evidence-message-source",
+        payload_schema_version="alibaba_message_v1",
+        payload_json={"text": "evidence"},
+    )
+    conversation = CustomerConversation(
+        customer_id=customer.id,
+        source_system="alibaba",
+        source_account_key="shop-a",
+        external_conversation_id="evidence-message-conversation",
+        channel="alibaba",
+        conversation_status="active",
+        latest_source_record_id=message_source.id,
+    )
+    db.add(conversation)
+    db.flush()
+    message = CustomerMessage(
+        conversation_id=conversation.id,
+        external_message_id="evidence-message-link-1",
+        direction="in",
+        sender_type="customer_contact",
+        content_type="text",
+        content_text="evidence",
+        attachment_meta_json=[],
+        source_record_id=message_source.id,
+        content_hash="e" * 64,
+        sent_at=beijing_now(),
+        captured_at=beijing_now(),
+    )
+    db.add(message)
+    db.flush()
+
+    link = link_fact_evidence(
+        db,
+        fact_id=fact.id,
+        evidence_kind="message",
+        message_id=message.id,
+        relation_type="supports",
+        evidence_content_hash=message.content_hash,
+        locator={"start_char": 0, "end_char": 8},
+        data_classification="public_business",
+    )
+
+    assert link.data_classification == "restricted_internal"
+
+
 def test_fact_conflict_requires_same_key_active_incompatible_facts_and_has_no_winner(db):
     customer = _customer(db, "conflict")
     source = _source(db, customer, external_id="conflict")
@@ -908,6 +1242,51 @@ def test_fact_conflict_requires_same_key_active_incompatible_facts_and_has_no_wi
     assert right.verification_status != "rejected"
     assert seq_after_first == initial_seq + 1
     assert customer.profile_input_seq == seq_after_first
+
+
+def test_fact_conflict_type_and_visibility_are_immutable_material(db):
+    customer = _customer(db, "conflict-material")
+    source = _source(db, customer, external_id="conflict-material")
+    left = _industry_fact(db, customer, source, value="Hair products")
+    right = _industry_fact(
+        db,
+        customer,
+        source,
+        value="Textiles",
+        observed_at=left.observed_at + timedelta(seconds=1),
+    )
+    first = open_fact_conflict(
+        db,
+        left.id,
+        right.id,
+        detection_rule_version="conflict_v1",
+        conflict_type="contradictory",
+        visibility_scope="customer_team",
+    )
+    before_changed = customer.profile_input_seq
+    changed = open_fact_conflict(
+        db,
+        left.id,
+        right.id,
+        detection_rule_version="conflict_v1",
+        conflict_type="identity_collision",
+        visibility_scope="management",
+    )
+
+    assert changed.id != first.id
+    assert changed.conflict_type == "identity_collision"
+    assert changed.visibility_scope == "management"
+    assert customer.profile_input_seq == before_changed + 1
+
+    with pytest.raises(CustomerDomainError) as invalid_visibility:
+        open_fact_conflict(
+            db,
+            left.id,
+            right.id,
+            detection_rule_version="conflict_v1",
+            visibility_scope="public",
+        )
+    assert invalid_visibility.value.error_code == "VISIBILITY_SCOPE_INVALID"
 
 
 def test_fact_conflict_rejects_compatible_or_non_overlapping_facts(db):
@@ -958,7 +1337,7 @@ def test_customer_event_replay_is_idempotent_and_current_order_activates_inactiv
     db.flush()
     order = _order(db, customer, external_id="ORDER-CURRENT", valid=True)
     initial_seq = customer.profile_input_seq
-    order_time = beijing_now()
+    order_time = db.get(CustomerSourceRecord, order.source_record_id).occurred_at
     first = append_customer_event(
         db,
         customer_id=customer.id,
@@ -996,6 +1375,155 @@ def test_customer_event_replay_is_idempotent_and_current_order_activates_inactiv
     assert customer.relationship_stage_changed_at == order_time
     assert seq_after_first == initial_seq + 1
     assert customer.profile_input_seq == seq_after_first
+
+
+def test_event_material_payload_change_appends_new_immutable_event(db):
+    customer = _customer(db, "event-payload-change")
+    order = _order(db, customer, external_id="ORDER-EVENT-PAYLOAD", valid=True)
+    occurred = db.get(CustomerSourceRecord, order.source_record_id).occurred_at
+    first = append_customer_event(
+        db,
+        customer_id=customer.id,
+        event_type="order.placed",
+        event_source="okki",
+        source_ref_type="order",
+        source_ref_id=str(order.id),
+        event_title="订单事件",
+        event_payload={"is_valid_business_order": True},
+        payload_schema_version="customer_event_v1",
+        occurred_at=occurred,
+        evidence_refs=[EventEvidenceRef("order", order.id)],
+    )
+    before_changed = customer.profile_input_seq
+    changed = append_customer_event(
+        db,
+        customer_id=customer.id,
+        event_type="order.placed",
+        event_source="okki",
+        source_ref_type="order",
+        source_ref_id=str(order.id),
+        event_title="订单事件",
+        event_payload={"is_valid_business_order": True, "historical_replay": True},
+        payload_schema_version="customer_event_v1",
+        occurred_at=occurred,
+        evidence_refs=[EventEvidenceRef("order", order.id)],
+    )
+
+    assert changed.id != first.id
+    assert customer.profile_input_seq == before_changed + 1
+
+
+def test_fact_value_type_is_part_of_immutable_material(db, monkeypatch):
+    customer = _customer(db, "fact-value-type")
+    source = _source(db, customer, external_id="fact-value-type")
+    test_registry = dict(FACT_REGISTRY)
+    test_registry["business.industry"] = replace(
+        FACT_REGISTRY["business.industry"],
+        value_types=frozenset({"string", "number"}),
+    )
+    monkeypatch.setattr("app.customer.fact_service.FACT_REGISTRY", test_registry)
+    observed = source.occurred_at
+    string_fact = _industry_fact(
+        db,
+        customer,
+        source,
+        value="1",
+        value_type="string",
+        observed_at=observed,
+    )
+    before_number = customer.profile_input_seq
+    number_fact = _industry_fact(
+        db,
+        customer,
+        source,
+        value=Decimal("1"),
+        value_type="number",
+        observed_at=observed,
+    )
+    number_replay = _industry_fact(
+        db,
+        customer,
+        source,
+        value=1.0,
+        value_type="number",
+        observed_at=observed,
+    )
+
+    assert number_fact.id != string_fact.id
+    assert number_replay.id == number_fact.id
+    assert string_fact.value_type == "string"
+    assert number_fact.value_type == "number"
+    assert type(number_fact.value_json["value"]) in {int, float}
+    assert customer.profile_input_seq == before_number + 1
+
+
+def test_fact_classification_reason_is_part_of_immutable_material(db):
+    customer = _customer(db, "fact-classification-reason")
+    source = _source(db, customer, external_id="fact-classification-reason")
+    observed = source.occurred_at
+    first = _industry_fact(
+        db,
+        customer,
+        source,
+        observed_at=observed,
+        classification_reason="initial source review",
+    )
+    before_changed = customer.profile_input_seq
+    changed = _industry_fact(
+        db,
+        customer,
+        source,
+        observed_at=observed,
+        classification_reason="corrected source review",
+    )
+
+    assert changed.id != first.id
+    assert changed.classification_reason == "corrected source review"
+    assert customer.profile_input_seq == before_changed + 1
+
+
+def test_event_security_and_importance_material_append_new_immutable_event(db):
+    customer = _customer(db, "event-security-material")
+    order = _order(db, customer, external_id="ORDER-EVENT-SECURITY", valid=True)
+    occurred = db.get(CustomerSourceRecord, order.source_record_id).occurred_at
+    first = append_customer_event(
+        db,
+        customer_id=customer.id,
+        event_type="order.placed",
+        event_source="okki",
+        source_ref_type="order",
+        source_ref_id=str(order.id),
+        event_title="订单事件",
+        event_payload={"is_valid_business_order": True},
+        payload_schema_version="customer_event_v1",
+        occurred_at=occurred,
+        evidence_refs=[EventEvidenceRef("order", order.id)],
+        importance="normal",
+        visibility_scope="customer_team",
+    )
+    before_changed = customer.profile_input_seq
+    changed = append_customer_event(
+        db,
+        customer_id=customer.id,
+        event_type="order.placed",
+        event_source="okki",
+        source_ref_type="order",
+        source_ref_id=str(order.id),
+        event_title="订单事件",
+        event_payload={"is_valid_business_order": True},
+        payload_schema_version="customer_event_v1",
+        occurred_at=occurred,
+        evidence_refs=[EventEvidenceRef("order", order.id)],
+        importance="high",
+        data_classification="restricted_internal",
+        visibility_scope="management",
+    )
+
+    assert changed.id != first.id
+    assert changed.importance == "high"
+    assert changed.data_classification == "restricted_internal"
+    assert changed.visibility_scope == "management"
+    assert customer.profile_input_seq == before_changed + 1
 
 
 def test_new_order_on_active_customer_does_not_reset_stage_start_time(db):
@@ -1036,7 +1564,13 @@ def test_historical_order_replay_is_recorded_but_cannot_reactivate_inactive(db):
     customer.relationship_stage_reason = "manual_inactivation"
     db.flush()
 
-    order = _order(db, customer, external_id="ORDER-HISTORY", valid=True)
+    order = _order(
+        db,
+        customer,
+        external_id="ORDER-HISTORY",
+        valid=True,
+        occurred_at=inactive_at - timedelta(days=90),
+    )
     event = append_customer_event(
         db,
         customer_id=customer.id,
@@ -1066,7 +1600,13 @@ def test_old_order_timestamp_cannot_reactivate_inactive_even_with_current_trigge
     customer.relationship_stage_reason = "manual_inactivation"
     db.flush()
 
-    order = _order(db, customer, external_id="ORDER-OLD-WITH-CURRENT-TRIGGER", valid=True)
+    order = _order(
+        db,
+        customer,
+        external_id="ORDER-OLD-WITH-CURRENT-TRIGGER",
+        valid=True,
+        occurred_at=inactive_at - timedelta(seconds=1),
+    )
     append_customer_event(
         db,
         customer_id=customer.id,
@@ -1116,6 +1656,39 @@ def test_forged_transition_boolean_cannot_activate_without_valid_order(db):
     assert customer.relationship_stage == "inactive"
 
 
+def test_old_order_business_time_cannot_be_overridden_by_event_time(db):
+    customer = _customer(db, "event-authoritative-order-time")
+    inactive_at = beijing_now() - timedelta(days=1)
+    customer.relationship_stage = "inactive"
+    customer.relationship_stage_changed_at = inactive_at
+    order = _order(
+        db,
+        customer,
+        external_id="ORDER-OLD-BUSINESS-TIME",
+        valid=True,
+        occurred_at=inactive_at - timedelta(days=90),
+    )
+    db.flush()
+
+    append_customer_event(
+        db,
+        customer_id=customer.id,
+        event_type="order.placed",
+        event_source="okki",
+        source_ref_type="order",
+        source_ref_id=str(order.id),
+        event_title="伪造当前事件时间",
+        event_payload={"is_valid_business_order": True},
+        payload_schema_version="customer_event_v1",
+        occurred_at=beijing_now(),
+        evidence_refs=[EventEvidenceRef("order", order.id)],
+        target_relationship_stage="active_customer",
+        transition_trigger="valid_order",
+    )
+
+    assert customer.relationship_stage == "inactive"
+
+
 def test_event_registry_rejects_unknown_type_and_arbitrary_payload(db):
     customer = _customer(db, "event-registry")
     with pytest.raises(CustomerDomainError) as unknown:
@@ -1148,6 +1721,292 @@ def test_event_registry_rejects_unknown_type_and_arbitrary_payload(db):
             evidence_refs=[EventEvidenceRef("order", order.id)],
         )
     assert payload.value.error_code == "EVENT_PAYLOAD_INVALID"
+
+
+def test_registered_identity_event_accepts_owned_reference_and_active_actor(db):
+    customer = _customer(db, "event-identity-reference")
+    actor = _human(db, "event-identity-reference")
+    identity = attach_identity_candidate(
+        db,
+        customer_id=customer.id,
+        source_system="public_web",
+        source_account_key="global",
+        identifier_type="website_domain",
+        raw_value="event-identity.example",
+        verification_status="verified",
+    )
+
+    event = append_customer_event(
+        db,
+        customer_id=customer.id,
+        event_type="identity.confirmed",
+        event_source="manual",
+        source_ref_type="identity",
+        source_ref_id=str(identity.id),
+        event_title="人工核验身份",
+        event_payload={"identity_id": identity.id},
+        payload_schema_version="customer_event_v1",
+        occurred_at=beijing_now(),
+        actor_user_id=actor.id,
+    )
+
+    assert event.source_ref_id == str(identity.id)
+
+
+def test_registered_research_and_annotation_events_validate_owned_references(db):
+    customer = _customer(db, "event-research-annotation-reference")
+    actor = _human(db, "event-research-annotation-reference")
+    now = beijing_now()
+    research = CustomerResearchTask(
+        customer_id=customer.id,
+        task_type="full_research",
+        source_ref_type="manual",
+        source_ref_id="review-request-1",
+        task_status="completed",
+        gate_status="not_required",
+        result_review_status="accepted",
+        selection_reason=[],
+        research_policy_version="research_v1",
+        task_fingerprint="c" * 64,
+        input_snapshot={},
+        result_schema_version="customer_research_v1",
+        result_json={},
+        data_classification="internal_business",
+        visibility_scope="customer_team",
+        classification_reason="test research",
+        evidence_fact_ids=[],
+        lease_generation=0,
+        attempt_count=1,
+        reviewed_by=actor.id,
+        reviewed_at=now,
+        finished_at=now,
+        created_by=actor.id,
+    )
+    annotation = CustomerAnnotation(
+        customer_id=customer.id,
+        annotation_type="note",
+        content_schema_version="v1",
+        content_json={"text": "Follow up after the show"},
+        visibility="customer_team",
+        data_classification="internal_business",
+        status="active",
+        authored_by=actor.id,
+    )
+    db.add_all([research, annotation])
+    db.flush()
+
+    research_event = append_customer_event(
+        db,
+        customer_id=customer.id,
+        event_type="research.completed",
+        event_source="agent",
+        source_ref_type="research_task",
+        source_ref_id=str(research.id),
+        event_title="背调完成",
+        event_payload={"result_status": "completed"},
+        payload_schema_version="customer_event_v1",
+        occurred_at=now,
+    )
+    annotation_event = append_customer_event(
+        db,
+        customer_id=customer.id,
+        event_type="annotation.created",
+        event_source="annotation",
+        source_ref_type="annotation",
+        source_ref_id=str(annotation.id),
+        event_title="新增人工备注",
+        event_payload={"annotation_type": "note"},
+        payload_schema_version="customer_event_v1",
+        occurred_at=now,
+        actor_user_id=actor.id,
+    )
+
+    assert research_event.source_ref_id == str(research.id)
+    assert annotation_event.source_ref_id == str(annotation.id)
+
+
+def test_registered_reference_events_reject_unfinished_research_and_candidate_identity(db):
+    customer = _customer(db, "event-reference-state")
+    actor = _human(db, "event-reference-state")
+    identity = attach_identity_candidate(
+        db,
+        customer_id=customer.id,
+        source_system="public_web",
+        source_account_key="global",
+        identifier_type="website_domain",
+        raw_value="candidate-event-identity.example",
+    )
+    research = CustomerResearchTask(
+        customer_id=customer.id,
+        task_type="full_research",
+        source_ref_type="manual",
+        source_ref_id="review-request-pending",
+        task_status="pending",
+        gate_status="pending",
+        result_review_status="pending",
+        selection_reason=[],
+        research_policy_version="research_v1",
+        task_fingerprint="d" * 64,
+        input_snapshot={},
+        data_classification="internal_business",
+        visibility_scope="customer_team",
+        classification_reason="test research",
+        evidence_fact_ids=[],
+        lease_generation=0,
+        attempt_count=0,
+        created_by=actor.id,
+    )
+    db.add(research)
+    db.flush()
+
+    with pytest.raises(CustomerDomainError) as unfinished:
+        append_customer_event(
+            db,
+            customer_id=customer.id,
+            event_type="research.completed",
+            event_source="agent",
+            source_ref_type="research_task",
+            source_ref_id=str(research.id),
+            event_title="伪造背调完成",
+            event_payload={"result_status": "completed"},
+            payload_schema_version="customer_event_v1",
+            occurred_at=beijing_now(),
+        )
+    assert unfinished.value.error_code == "EVENT_REFERENCE_INVALID"
+
+    with pytest.raises(CustomerDomainError) as candidate:
+        append_customer_event(
+            db,
+            customer_id=customer.id,
+            event_type="identity.confirmed",
+            event_source="manual",
+            source_ref_type="identity",
+            source_ref_id=str(identity.id),
+            event_title="伪造身份确认",
+            event_payload={"identity_id": identity.id},
+            payload_schema_version="customer_event_v1",
+            occurred_at=beijing_now(),
+            actor_user_id=actor.id,
+        )
+    assert candidate.value.error_code == "EVENT_REFERENCE_INVALID"
+
+
+def test_identity_conflict_event_validates_disputed_owned_identity_ids(db):
+    left = resolve_business_context(
+        db,
+        source_system="alibaba",
+        source_account_key="event-identity-conflict",
+        source_entity_type="inquiry",
+        external_context_id="event-identity-conflict-left",
+    )
+    right = resolve_business_context(
+        db,
+        source_system="alibaba",
+        source_account_key="event-identity-conflict",
+        source_entity_type="inquiry",
+        external_context_id="event-identity-conflict-right",
+    )
+    left_identity = attach_identity_candidate(
+        db,
+        customer_id=left.customer.id,
+        source_system="okki",
+        source_account_key="event-identity-conflict",
+        identifier_type="company_id",
+        raw_value="EVENT-IDENTITY-CONFLICT",
+    )
+    right_identity = attach_identity_candidate(
+        db,
+        customer_id=right.customer.id,
+        source_system="okki",
+        source_account_key="event-identity-conflict",
+        identifier_type="company_id",
+        raw_value="EVENT-IDENTITY-CONFLICT",
+    )
+    confirm_identity(db, left_identity.id)
+    confirm_identity(db, right_identity.id)
+    before_event = left.customer.profile_input_seq
+
+    event = append_customer_event(
+        db,
+        customer_id=left.customer.id,
+        event_type="identity.conflict",
+        event_source="identity",
+        event_title="身份冲突待复核",
+        event_payload={"identity_ids": [left_identity.id]},
+        payload_schema_version="customer_event_v1",
+        occurred_at=beijing_now(),
+    )
+
+    assert event.event_payload == {"identity_ids": [left_identity.id]}
+    assert left.customer.profile_input_seq == before_event + 1
+
+    with pytest.raises(CustomerDomainError) as cross_customer:
+        append_customer_event(
+            db,
+            customer_id=left.customer.id,
+            event_type="identity.conflict",
+            event_source="identity",
+            event_title="跨客户身份冲突",
+            event_payload={"identity_ids": [right_identity.id]},
+            payload_schema_version="customer_event_v1",
+            occurred_at=beijing_now(),
+        )
+    assert cross_customer.value.error_code == "CUSTOMER_REFERENCE_INVALID"
+
+
+def test_identity_conflict_event_rejects_unknown_or_non_disputed_identity(db):
+    customer = _customer(db, "event-forged-identity-conflict")
+    identity = attach_identity_candidate(
+        db,
+        customer_id=customer.id,
+        source_system="public_web",
+        source_account_key="global",
+        identifier_type="website_domain",
+        raw_value="not-disputed.example",
+    )
+    before_event = customer.profile_input_seq
+
+    for identity_ids in ([999999], [identity.id], [], [identity.id, "forged"]):
+        with pytest.raises(CustomerDomainError) as invalid:
+            append_customer_event(
+                db,
+                customer_id=customer.id,
+                event_type="identity.conflict",
+                event_source="identity",
+                event_title="伪造身份冲突",
+                event_payload={"identity_ids": identity_ids},
+                payload_schema_version="customer_event_v1",
+                occurred_at=beijing_now(),
+            )
+        assert invalid.value.error_code in {
+            "CUSTOMER_REFERENCE_INVALID",
+            "EVENT_REFERENCE_INVALID",
+        }
+    assert customer.profile_input_seq == before_event
+
+
+def test_manual_event_rejects_inactive_actor(db):
+    customer = _customer(db, "event-inactive-actor")
+    actor = _human(db, "event-inactive-actor")
+    actor.is_active = False
+    db.flush()
+
+    with pytest.raises(CustomerDomainError) as unauthorized:
+        append_customer_event(
+            db,
+            customer_id=customer.id,
+            event_type="relationship.stage_changed",
+            event_source="manual",
+            source_ref_type="customer",
+            source_ref_id=str(customer.id),
+            event_title="无权限人工事件",
+            event_payload={},
+            payload_schema_version="customer_event_v1",
+            occurred_at=beijing_now(),
+            actor_user_id=actor.id,
+        )
+
+    assert unauthorized.value.error_code == "EVENT_ACTOR_UNAUTHORIZED"
 
 
 def test_event_classification_inherits_message_source(db):
@@ -1209,6 +2068,7 @@ def test_event_classification_inherits_message_source(db):
 
 def test_invalid_relationship_transition_rejects_entire_event_mutation(db):
     customer = _customer(db, "event-invalid")
+    actor = _human(db, "event-invalid")
     before_seq = customer.profile_input_seq
 
     with pytest.raises(CustomerDomainError) as invalid:
@@ -1220,7 +2080,7 @@ def test_invalid_relationship_transition_rejects_entire_event_mutation(db):
             source_ref_type="customer",
             source_ref_id=str(customer.id),
             event_title="非法阶段推进",
-            event_payload={},
+            event_payload={"reason_code": "sales_development_ready"},
             payload_schema_version="customer_event_v1",
             occurred_at=beijing_now(),
             target_relationship_stage="developing",
@@ -1228,8 +2088,51 @@ def test_invalid_relationship_transition_rejects_entire_event_mutation(db):
             transition_condition_met=True,
             has_primary_assignment=False,
             has_open_opportunity=True,
-            actor_user_id=1,
+            actor_user_id=actor.id,
         )
     assert invalid.value.error_code == "RELATIONSHIP_TRANSITION_INVALID"
     assert db.query(CustomerEvent).filter_by(customer_id=customer.id).count() == 0
     assert customer.profile_input_seq == before_seq
+
+
+def test_relationship_stage_event_requires_and_applies_authoritative_transition(db):
+    customer = _customer(db, "event-stage-authority")
+    actor = _human(db, "event-stage-authority")
+    before_event = customer.profile_input_seq
+
+    with pytest.raises(CustomerDomainError) as missing_transition:
+        append_customer_event(
+            db,
+            customer_id=customer.id,
+            event_type="relationship.stage_changed",
+            event_source="manual",
+            source_ref_type="customer",
+            source_ref_id=str(customer.id),
+            event_title="伪造阶段已变更",
+            event_payload={"reason_code": "manual_inactivation"},
+            payload_schema_version="customer_event_v1",
+            occurred_at=beijing_now(),
+            actor_user_id=actor.id,
+        )
+    assert missing_transition.value.error_code == "RELATIONSHIP_TRANSITION_INVALID"
+    assert customer.profile_input_seq == before_event
+
+    event = append_customer_event(
+        db,
+        customer_id=customer.id,
+        event_type="relationship.stage_changed",
+        event_source="manual",
+        source_ref_type="customer",
+        source_ref_id=str(customer.id),
+        event_title="人工转为不活跃",
+        event_payload={"reason_code": "manual_inactivation"},
+        payload_schema_version="customer_event_v1",
+        occurred_at=beijing_now(),
+        actor_user_id=actor.id,
+        target_relationship_stage="inactive",
+        transition_trigger="manual_inactivation",
+    )
+
+    assert event.id is not None
+    assert customer.relationship_stage == "inactive"
+    assert customer.relationship_stage_reason == "manual_inactivation"

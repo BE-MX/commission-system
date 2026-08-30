@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import hashlib
 import re
-import time
 import unicodedata
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -60,6 +59,10 @@ _CLASSIFICATION_COMPONENTS = {
     "conflict_penalty": 0,
 }
 _ALIBABA_ORGANIZATION_SCHEMAS = frozenset({"alibaba_inquiry_v1"})
+_RESOLUTION_SOURCE_ENTITY_MAP = {
+    ("alibaba", "company"): "inquiry",
+    ("okki", "company"): "customer",
+}
 _RESOLUTION_RETRYABLE_MYSQL_CODES = frozenset({1205, 1213})
 
 
@@ -69,6 +72,16 @@ class CustomerDomainError(ValueError):
     def __init__(self, error_code: str, message: str = "Customer domain operation rejected"):
         self.error_code = error_code
         super().__init__(message)
+
+
+class CustomerTransactionRetryRequired(CustomerDomainError):
+    """Signals that MySQL rolled back the transaction and caller must retry."""
+
+    requires_new_transaction = True
+    max_attempts = 3
+
+    def __init__(self):
+        super().__init__("IDENTITY_TRANSACTION_RETRY_REQUIRED")
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,36 +125,30 @@ class ResolutionKeyArbiter:
         worker_id: str,
         now: datetime,
     ) -> CustomerResolutionKey | None:
-        for attempt in range(3):
-            try:
-                with db.begin_nested():
-                    row = CustomerResolutionKey(
-                        resolution_key=resolution_key,
-                        resolution_type=resolution_type,
-                        source_system=source_system,
-                        source_account_key=source_account_key,
-                        source_entity_type=source_entity_type,
-                        source_record_id=source_record_id,
-                        status="claiming",
-                        generation=1,
-                        claimed_by=worker_id,
-                        created_at=now,
-                        updated_at=now,
-                    )
-                    db.add(row)
-                    db.flush()
-                return row
-            except IntegrityError:
-                return None
-            except OperationalError as exc:
-                retryable = bool(
-                    exc.orig.args
-                    and exc.orig.args[0] in _RESOLUTION_RETRYABLE_MYSQL_CODES
+        try:
+            with db.begin_nested():
+                row = CustomerResolutionKey(
+                    resolution_key=resolution_key,
+                    resolution_type=resolution_type,
+                    source_system=source_system,
+                    source_account_key=source_account_key,
+                    source_entity_type=source_entity_type,
+                    source_record_id=source_record_id,
+                    status="claiming",
+                    generation=1,
+                    claimed_by=worker_id,
+                    created_at=now,
+                    updated_at=now,
                 )
-                if not retryable or attempt == 2:
-                    raise
-                time.sleep(0.02 * (attempt + 1))
-        return None
+                db.add(row)
+                db.flush()
+            return row
+        except IntegrityError:
+            return None
+        except OperationalError as exc:
+            if _retryable_mysql_error(exc):
+                raise CustomerTransactionRetryRequired() from exc
+            raise
 
 
 DEFAULT_RESOLUTION_KEY_ARBITER = ResolutionKeyArbiter()
@@ -198,6 +205,8 @@ def _effective_policy(
         declarations = (
             source_record.payload_json.get("provider_identity_declarations", [])
             if source_record is not None
+            and source_record.source_system == "alibaba"
+            and source_record.source_entity_type == "inquiry"
             and source_record.payload_schema_version in _ALIBABA_ORGANIZATION_SCHEMAS
             and isinstance(source_record.payload_json, dict)
             else []
@@ -372,6 +381,7 @@ def _validate_source_record_for_resolution(
     source_record_id: int | None,
     source_system: str,
     source_account_key: str,
+    source_entity_type: str,
 ) -> CustomerSourceRecord | None:
     if source_record_id is None:
         return None
@@ -380,6 +390,10 @@ def _validate_source_record_for_resolution(
         row is None
         or row.source_system != source_system
         or row.source_account_key != source_account_key
+        or row.source_entity_type != _RESOLUTION_SOURCE_ENTITY_MAP.get(
+            (source_system, source_entity_type),
+            source_entity_type,
+        )
     ):
         raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
     return row
@@ -479,6 +493,12 @@ def _attach_identity_candidate(
     if (customer_id is None) == (contact_id is None):
         raise CustomerDomainError("IDENTITY_SUBJECT_INVALID")
     source_record = db.get(CustomerSourceRecord, source_record_id) if source_record_id else None
+    if source_record_id and (
+        source_record is None
+        or source_record.source_system != source_system
+        or source_record.source_account_key != source_account_key
+    ):
+        raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
     policy = _effective_policy(
         source_system,
         identifier_type,
@@ -542,7 +562,30 @@ def _attach_identity_candidate(
         .one_or_none()
     )
     if existing is not None:
-        return existing, False
+        changed = False
+        weaker_replay = (
+            existing.verification_status == "verified"
+            and verification_status == "candidate"
+        )
+        if verification_status == "verified" and existing.verification_status == "candidate":
+            existing.verification_status = "verified"
+            existing.status = "active"
+            existing.verified_at = now
+            changed = True
+        if not weaker_replay and existing.confidence != confidence_value:
+            existing.confidence = confidence_value
+            changed = True
+        if not weaker_replay and is_primary and not existing.is_primary:
+            existing.is_primary = True
+            changed = True
+        if changed:
+            existing.last_seen_at = now
+            existing.updated_by = created_by
+            existing.updated_at = now
+            if bump_profile:
+                _bump_accounts(db, affected_ids)
+            db.flush()
+        return existing, changed
 
     row = CustomerExternalIdentity(
         customer_id=customer_id,
@@ -784,6 +827,16 @@ def _apply_context_material(
             )
         if contact is None:
             raise CustomerDomainError("IDENTITY_SUBJECT_INVALID")
+        if (
+            contact_name
+            and contact.display_name == "待识别联系人"
+            and contact.normalized_name is None
+        ):
+            contact.display_name = contact_name.strip()
+            contact.normalized_name = _normalize_name(contact_name)
+            contact.updated_by = created_by
+            contact.updated_at = now
+            changed = True
         relationship_fingerprint = _sha256((
             "contact_relationship_v1",
             account.id,
@@ -959,24 +1012,38 @@ def _apply_context_material(
 
 
 def _retryable_mysql_error(exc: OperationalError) -> bool:
-    return bool(exc.orig.args and exc.orig.args[0] in _RESOLUTION_RETRYABLE_MYSQL_CODES)
+    pending: list[BaseException] = [exc]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        args = getattr(current, "args", ())
+        if args and args[0] in _RESOLUTION_RETRYABLE_MYSQL_CODES:
+            return True
+        for related in (
+            getattr(current, "orig", None),
+            current.__cause__,
+            current.__context__,
+        ):
+            if isinstance(related, BaseException):
+                pending.append(related)
+    return False
 
 
 def _load_resolution_winner(db: Session, resolution_key: str) -> CustomerResolutionKey:
-    for attempt in range(3):
-        try:
-            row = db.query(CustomerResolutionKey).filter(
-                CustomerResolutionKey.resolution_key == resolution_key,
-            ).with_for_update().one_or_none()
-        except OperationalError as exc:
-            if not _retryable_mysql_error(exc) or attempt == 2:
-                raise
-            time.sleep(0.02 * (attempt + 1))
-            continue
-        if row is not None:
-            return row
-        time.sleep(0.02 * (attempt + 1))
-    raise CustomerDomainError("IDENTITY_RESOLUTION_CONFLICT")
+    try:
+        row = db.query(CustomerResolutionKey).filter(
+            CustomerResolutionKey.resolution_key == resolution_key,
+        ).with_for_update().one_or_none()
+    except OperationalError as exc:
+        if _retryable_mysql_error(exc):
+            raise CustomerTransactionRetryRequired() from exc
+        raise
+    if row is None:
+        raise CustomerDomainError("IDENTITY_RESOLUTION_CONFLICT")
+    return row
 
 
 def resolve_business_context(
@@ -1012,6 +1079,7 @@ def resolve_business_context(
         source_record_id,
         source_system,
         source_account_key,
+        source_entity_type,
     )
     resolution_type, resolution_key = _resolution_material(
         source_system=source_system,
@@ -1045,6 +1113,21 @@ def resolve_business_context(
                 candidates=candidates,
                 source_record=source_record,
             )
+            if matched_customer_id is None and resolution_type == "strong_identity":
+                prior_context_key = _sha256((
+                    "business_context_v1",
+                    source_system,
+                    source_account_key,
+                    source_entity_type,
+                    external_context_id,
+                ))
+                prior_context = db.query(CustomerResolutionKey).filter(
+                    CustomerResolutionKey.resolution_key == prior_context_key,
+                    CustomerResolutionKey.status == "resolved",
+                    CustomerResolutionKey.customer_id.is_not(None),
+                ).with_for_update().one_or_none()
+                if prior_context is not None:
+                    matched_customer_id = prior_context.customer_id
             created = matched_customer_id is None
             account = (
                 _new_account(
@@ -1082,6 +1165,10 @@ def resolve_business_context(
             resolution.updated_at = now
             db.flush()
             return ResolvedBusinessContext(account, contact, resolution, created)
+    except OperationalError as exc:
+        if _retryable_mysql_error(exc):
+            raise CustomerTransactionRetryRequired() from exc
+        raise
     except _ResolutionClaimLost:
         winner = _load_resolution_winner(db, resolution_key)
         context = _load_resolved_context(db, winner)
@@ -1111,11 +1198,102 @@ class _ResolutionClaimLost(Exception):
     pass
 
 
+def _verified_strong_resolution_key(identity: CustomerExternalIdentity) -> str:
+    return _sha256((
+        "strong_identity_v1",
+        identity.source_system,
+        identity.source_account_key,
+        identity.identifier_type,
+        identity.normalized_value,
+    ))
+
+
+def _claim_identity_confirmation(
+    db: Session,
+    *,
+    identity: CustomerExternalIdentity,
+    arbiter: ResolutionKeyArbiter,
+    now: datetime,
+) -> tuple[CustomerResolutionKey, bool]:
+    resolution_key = _verified_strong_resolution_key(identity)
+    try:
+        resolution = arbiter.try_claim(
+            db,
+            resolution_key=resolution_key,
+            resolution_type="strong_identity",
+            source_system=identity.source_system,
+            source_account_key=identity.source_account_key,
+            source_entity_type="company" if identity.customer_id is not None else "buyer",
+            source_record_id=identity.source_record_id,
+            worker_id=f"identity:{identity.id}",
+            now=now,
+        )
+    except OperationalError as exc:
+        if _retryable_mysql_error(exc):
+            raise CustomerTransactionRetryRequired() from exc
+        raise
+    created = resolution is not None
+    if resolution is None:
+        resolution = _load_resolution_winner(db, resolution_key)
+    else:
+        resolution.customer_id = identity.customer_id
+        resolution.contact_id = identity.contact_id
+        resolution.status = "resolved"
+        resolution.updated_at = now
+        db.flush()
+    return resolution, created
+
+
+def _resolution_has_other_subject(
+    resolution: CustomerResolutionKey,
+    identity: CustomerExternalIdentity,
+) -> bool:
+    if identity.customer_id is not None:
+        return resolution.customer_id != identity.customer_id
+    return resolution.contact_id != identity.contact_id
+
+
+def _sync_verified_identity_subject(
+    db: Session,
+    *,
+    identity: CustomerExternalIdentity,
+    now: datetime,
+) -> bool:
+    if identity.auto_match_ceiling not in {"identified", "verified"}:
+        return False
+    target = "verified" if identity.auto_match_ceiling == "verified" else "identified"
+    if identity.customer_id is not None:
+        account = _account_for_update(db, identity.customer_id)
+        if account.identity_status == "disputed":
+            return False
+        if (
+            account.identity_status == target
+            and account.identity_confidence == identity.confidence
+        ):
+            return False
+        account.identity_status = target
+        account.identity_confidence = identity.confidence
+        return True
+    contact = db.query(CustomerContact).filter(
+        CustomerContact.id == identity.contact_id,
+        CustomerContact.record_status == "active",
+    ).with_for_update().one_or_none()
+    if contact is None:
+        raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
+    if contact.identity_status == target and contact.confidence == identity.confidence:
+        return False
+    contact.identity_status = target
+    contact.confidence = identity.confidence
+    contact.updated_at = now
+    return True
+
+
 def confirm_identity(
     db: Session,
     identity_id: int,
     *,
     verified_by: int | None = None,
+    arbiter: ResolutionKeyArbiter | None = None,
     now: datetime | None = None,
 ) -> IdentityConfirmationResult:
     """Verify one identity, surfacing strong-key collisions as review state."""
@@ -1131,8 +1309,6 @@ def confirm_identity(
     affected_ids = set(_identity_customer_ids(db, identity))
     if not affected_ids:
         raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
-    if identity.verification_status == "verified" and identity.status == "active":
-        return IdentityConfirmationResult(identity, False)
     if identity.verification_status == "disputed" or identity.status == "disputed":
         disputed_ids = tuple(
             row[0]
@@ -1146,6 +1322,20 @@ def confirm_identity(
             ).order_by(CustomerExternalIdentity.id).all()
         )
         return IdentityConfirmationResult(identity, True, disputed_ids)
+
+    confirmation_resolution: CustomerResolutionKey | None = None
+    arbitration_conflict = False
+    if identity.identity_strength == "strong" and identity.cardinality == "one_to_one":
+        confirmation_resolution, _created = _claim_identity_confirmation(
+            db,
+            identity=identity,
+            arbiter=arbiter or DEFAULT_RESOLUTION_KEY_ARBITER,
+            now=now,
+        )
+        arbitration_conflict = _resolution_has_other_subject(
+            confirmation_resolution,
+            identity,
+        )
 
     conflicts: list[CustomerExternalIdentity] = []
     if identity.identity_strength == "strong" and identity.cardinality == "one_to_one":
@@ -1170,6 +1360,9 @@ def confirm_identity(
             )
         conflicts = query.with_for_update().order_by(CustomerExternalIdentity.id).all()
 
+    if arbitration_conflict and not conflicts:
+        raise CustomerDomainError("IDENTITY_RESOLUTION_CONFLICT")
+
     if conflicts:
         identity.verification_status = "disputed"
         identity.status = "disputed"
@@ -1181,25 +1374,29 @@ def confirm_identity(
             conflict.status = "disputed"
             conflict.updated_at = now
             affected_ids.update(_identity_customer_ids(db, conflict))
-        if identity.contact_id is not None:
-            contact_ids = {identity.contact_id}
-            contact_ids.update(
-                row.contact_id for row in conflicts if row.contact_id is not None
-            )
-            for contact_id in contact_ids:
-                contact = db.query(CustomerContact).filter(
-                    CustomerContact.id == contact_id,
-                    CustomerContact.record_status == "active",
-                ).with_for_update().one_or_none()
-                if contact is not None:
-                    contact.identity_status = "disputed"
-                    contact.confidence = Decimal("0.0000")
-                    contact.updated_at = now
-        else:
-            for customer_id in affected_ids:
-                account = _account_for_update(db, customer_id)
-                account.identity_status = "disputed"
-                account.identity_confidence = Decimal("0.0000")
+        disputed_identities = [identity, *conflicts]
+        contact_ids = {
+            row.contact_id for row in disputed_identities if row.contact_id is not None
+        }
+        customer_ids = {
+            row.customer_id for row in disputed_identities if row.customer_id is not None
+        }
+        for contact_id in contact_ids:
+            contact = db.query(CustomerContact).filter(
+                CustomerContact.id == contact_id,
+                CustomerContact.record_status == "active",
+            ).with_for_update().one_or_none()
+            if contact is not None:
+                contact.identity_status = "disputed"
+                contact.confidence = Decimal("0.0000")
+                contact.updated_at = now
+        for customer_id in customer_ids:
+            account = _account_for_update(db, customer_id)
+            account.identity_status = "disputed"
+            account.identity_confidence = Decimal("0.0000")
+        if confirmation_resolution is not None:
+            confirmation_resolution.status = "conflict"
+            confirmation_resolution.updated_at = now
         _bump_accounts(db, affected_ids)
         db.flush()
         return IdentityConfirmationResult(
@@ -1208,31 +1405,19 @@ def confirm_identity(
             tuple(row.id for row in conflicts),
         )
 
+    if identity.verification_status == "verified" and identity.status == "active":
+        if _sync_verified_identity_subject(db, identity=identity, now=now):
+            _bump_accounts(db, affected_ids)
+            db.flush()
+        return IdentityConfirmationResult(identity, False)
+
     identity.verification_status = "verified"
     identity.status = "active"
     identity.verified_at = now
     identity.verified_by = verified_by
     identity.updated_by = verified_by
     identity.updated_at = now
-    if identity.customer_id is not None and identity.auto_match_ceiling in {"identified", "verified"}:
-        account = _account_for_update(db, identity.customer_id)
-        target = "verified" if identity.auto_match_ceiling == "verified" else "identified"
-        if account.identity_status != "disputed":
-            account.identity_status = target
-            account.identity_confidence = identity.confidence
-    elif identity.contact_id is not None:
-        contact = db.query(CustomerContact).filter(
-            CustomerContact.id == identity.contact_id,
-            CustomerContact.record_status == "active",
-        ).with_for_update().one_or_none()
-        if contact is None:
-            raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
-        if identity.auto_match_ceiling in {"identified", "verified"}:
-            contact.identity_status = (
-                "verified" if identity.auto_match_ceiling == "verified" else "identified"
-            )
-            contact.confidence = identity.confidence
-            contact.updated_at = now
+    _sync_verified_identity_subject(db, identity=identity, now=now)
     _bump_accounts(db, affected_ids)
     db.flush()
     return IdentityConfirmationResult(identity, False)
@@ -1240,6 +1425,7 @@ def confirm_identity(
 
 __all__ = [
     "CustomerDomainError",
+    "CustomerTransactionRetryRequired",
     "IdentityCandidate",
     "IdentityConfirmationResult",
     "ResolvedBusinessContext",

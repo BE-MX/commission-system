@@ -291,6 +291,7 @@ def test_registered_fact_exposes_governance_metadata_and_classification():
     assert registration.ttl_days == 365
     assert registration.conflict_key == "business.industry"
     assert registration.supports_high_impact is False
+    assert registration.value_types == frozenset({"string"})
     assert validate_registered_fact(
         "business.industry", "public_web", "company_page",
     ) == DataClassification.PUBLIC_BUSINESS
@@ -318,6 +319,26 @@ def test_high_impact_fact_is_explicitly_registered():
     assert registration.ttl_days is None
     assert registration.conflict_key == "commercial.has_valid_order"
     assert registration.supports_high_impact is True
+    assert registration.value_types == frozenset({"boolean"})
+
+
+def test_every_fact_registration_declares_agent_stable_value_types():
+    allowed = {"string", "number", "boolean", "date", "datetime", "list", "object"}
+
+    assert all(
+        registration.value_types
+        and registration.value_types <= allowed
+        for registration in FACT_REGISTRY.values()
+    )
+    assert FACT_REGISTRY["preference.expressed.quantity"].value_types == frozenset({
+        "number",
+    })
+    assert FACT_REGISTRY["preference.expressed.price_range"].value_types == frozenset({
+        "object",
+    })
+    assert FACT_REGISTRY["behavior.observed.active_hours"].value_types == frozenset({
+        "list",
+    })
     assert validate_registered_fact(
         "commercial.has_valid_order", "okki", "order",
     ) == DataClassification.INTERNAL_BUSINESS
