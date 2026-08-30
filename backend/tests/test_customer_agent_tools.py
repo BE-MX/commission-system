@@ -18,6 +18,7 @@ try:
 except ImportError:
     agent_service = None
 from app.customer import agent_tool_contract
+from app.mcp.agent_tools import CustomerEvidenceInput
 from app.customer.models import (
     CustomerAccount,
     CustomerAction,
@@ -530,6 +531,58 @@ def test_cross_customer_evidence_and_source_chunks_are_rejected(db, settings):
             db, user=user, customer_id=customer.id, source_record_id=source.id,
             locator={"start": 0}, max_chars=100,
         )
+
+
+def test_customer_evidence_paginates_large_requested_set_without_loss(db, settings):
+    customer = _customer(db, "Paged evidence")
+    other = _customer(db, "Other paged evidence")
+    _membership(db, customer.id, run_id=201)
+    _membership(db, other.id, run_id=202)
+    source = _source(db, customer.id, suffix=51)
+    created = []
+    for index in range(3):
+        fact = _fact(db, customer.id, source.id, suffix=300 + index)
+        fact.value_json = {f"field_{field:03d}": "x" * 2_000 for field in range(100)}
+        created.append(fact.id)
+    requested = [created[2], created[0], created[1]]
+    db.commit()
+
+    cursor = None
+    seen = []
+    while True:
+        result = agent_service.get_customer_evidence(
+            db, user=_identity(customer.id, run_id=201), customer_id=customer.id,
+            fact_ids=requested, cursor=cursor,
+        )
+        item_ids = [item["fact_id"] for item in result["items"]]
+        assert item_ids
+        seen.extend(item_ids)
+        assert [ref["evidence_ref"] for ref in result["evidence_refs"]] == [
+            f"fact:{fact_id}" for fact_id in item_ids
+        ]
+        if not result["has_more"]:
+            break
+        assert result["cursor"] and result["cursor"] != cursor
+        if cursor is None:
+            with pytest.raises(agent_service.CustomerAgentAccessError):
+                agent_service.get_customer_evidence(
+                    db, user=_identity(customer.id, run_id=201), customer_id=customer.id,
+                    fact_ids=list(reversed(requested)), cursor=result["cursor"],
+                )
+            with pytest.raises(agent_service.CustomerAgentAccessError):
+                agent_service.get_customer_evidence(
+                    db, user=_identity(other.id, run_id=202), customer_id=other.id,
+                    fact_ids=requested, cursor=result["cursor"],
+                )
+        cursor = result["cursor"]
+    assert seen == requested
+
+
+def test_customer_evidence_mcp_input_accepts_signed_cursor():
+    params = CustomerEvidenceInput(customer_id=7, fact_ids=[3, 1], cursor="signed")
+    assert params.model_dump(exclude_none=True) == {
+        "customer_id": 7, "fact_ids": [3, 1], "cursor": "signed",
+    }
 
 
 def test_claim_envelopes_require_exact_current_same_customer_evidence():

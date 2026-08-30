@@ -122,6 +122,7 @@ class CustomerActionsInput(CustomerInput):
 
 class CustomerEvidenceInput(CustomerInput):
     fact_ids: list[int] = Field(..., min_length=1, max_length=50)
+    cursor: str | None = Field(None, max_length=2048)
 
 
 class CustomerSourceChunksInput(CustomerInput):

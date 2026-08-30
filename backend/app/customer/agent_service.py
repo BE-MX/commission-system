@@ -35,17 +35,9 @@ from app.customer.models import (
 from app.customer.logical_customer_service import logical_root_predicate
 from app.customer.agent_freshness import profile_freshness
 from app.customer.agent_tool_contract import (
-    MAX_CURSOR_ROWS,
-    MAX_LIST_BYTES,
-    MAX_LIST_ITEMS,
-    MAX_NESTED_ITEMS,
-    MAX_PROFILE_BYTES,
-    MAX_SECTION_BYTES,
-    MAX_SOURCE_BYTES,
-    MAX_SOURCE_CHARS,
-    MAX_STRING_CHARS,
-    PROFILE_SECTIONS,
-    CustomerAgentAccessError,
+    MAX_CURSOR_ROWS, MAX_LIST_BYTES, MAX_LIST_ITEMS, MAX_NESTED_ITEMS,
+    MAX_PROFILE_BYTES, MAX_SECTION_BYTES, MAX_SOURCE_BYTES, MAX_SOURCE_CHARS,
+    MAX_STRING_CHARS, PROFILE_SECTIONS, CustomerAgentAccessError,
     clip as _clip,
     decode_cursor,
     deny as _deny,
@@ -420,7 +412,7 @@ def get_customer_actions(
 
 
 def get_customer_evidence(
-    db: Session, *, user: dict, customer_id: int, fact_ids: list[int],
+    db: Session, *, user: dict, customer_id: int, fact_ids: list[int], cursor: str | None = None,
 ) -> dict:
     access = _access(db, user, customer_id)
     customer_id = access.customer_id
@@ -430,14 +422,22 @@ def get_customer_evidence(
     rows = apply_record_access(
         db.query(CustomerFact), CustomerFact, access, logical_object_type="fact",
     ).filter(CustomerFact.id.in_(ids)).all()
-    if {row.id for row in rows} != set(ids):
+    rows_by_id = {row.id: row for row in rows}
+    if set(rows_by_id) != set(ids):
         _deny()
+    ordered_rows = [rows_by_id[fact_id] for fact_id in ids]
     customer = db.get(CustomerAccount, customer_id)
     version = _profile_version(db, customer)
     version_no = version.version_no if version else None
+    filters = {"fact_ids_hash": hashlib.sha256(
+        json.dumps(ids, separators=(",", ":")).encode()).hexdigest()}
+    selected, has_more, next_cursor = _page(
+        ordered_rows, user=user, customer_id=customer_id, filters=filters,
+        profile_version=version_no, cursor=cursor, limit=MAX_LIST_ITEMS,
+    )
     current = beijing_now()
     refs, items = [], []
-    for row in sorted(rows, key=lambda item: item.id):
+    for row in selected:
         stale = row.expires_at is not None and row.expires_at <= current
         ref = _fact_ref(
             row, customer_id=customer_id, profile_version=version_no, stale=stale,
@@ -453,8 +453,11 @@ def get_customer_evidence(
         profile_version=version_no, data_as_of=version.data_as_of if version else None,
         items=items, evidence_refs=refs,
     )
-    result["customer_id"] = customer_id
-    return _fit(result, max_bytes=MAX_LIST_BYTES)
+    result.update(customer_id=customer_id, has_more=has_more, cursor=next_cursor)
+    return _fit_page(
+        result, max_bytes=MAX_LIST_BYTES, user=user, customer_id=customer_id,
+        filters=filters, profile_version=version_no, incoming_cursor=cursor,
+    )
 
 
 def get_customer_source_chunks(
