@@ -1980,7 +1980,10 @@ def test_customer_event_replay_is_idempotent_and_current_order_activates_inactiv
 
     assert first.id == replay.id
     assert customer.relationship_stage == "active_customer"
-    assert customer.relationship_stage_changed_at == order_time
+    assert customer.relationship_stage_changed_at == datetime.combine(
+        order.account_date,
+        datetime.min.time(),
+    )
     assert seq_after_first == initial_seq + 1
     assert customer.profile_input_seq == seq_after_first
 
@@ -2890,6 +2893,119 @@ def test_approved_qualification_review_advances_discovered_customer(db):
     assert event.source_ref_type == "qualification_review"
     assert customer.relationship_stage == "qualified"
     assert customer.relationship_stage_reason == "qualification_approved"
+
+
+def test_manual_relationship_reactivation_and_keep_qualified_use_live_workflow_state(db):
+    from app.customer.workflow_service import assign_customer, upsert_opportunity
+
+    customer = _customer(db, "manual-reactivation")
+    actor = _human(db, "manual-reactivation")
+    customer.relationship_stage = "inactive"
+    customer.relationship_stage_changed_at = beijing_now() - timedelta(days=1)
+    assign_customer(
+        db,
+        customer_id=customer.id,
+        user_id=actor.id,
+        assignment_role="primary",
+        assignment_source="manual",
+        operated_by=actor.id,
+    )
+    opportunity = upsert_opportunity(
+        db,
+        customer_id=customer.id,
+        source_system="internal",
+        source_account_key="global",
+        source_key="manual-reactivation",
+        opportunity_type="manual",
+        source="manual",
+        title="Reactivated lead",
+        owner_user_id=actor.id,
+        actor_user_id=actor.id,
+    )
+
+    append_customer_event(
+        db,
+        customer_id=customer.id,
+        event_type="relationship.stage_changed",
+        event_source="manual",
+        source_ref_type="customer",
+        source_ref_id=str(customer.id),
+        event_title="人工重新激活开发",
+        event_payload={"reason_code": "manual_reactivation"},
+        payload_schema_version="customer_event_v1",
+        occurred_at=beijing_now(),
+        actor_user_id=actor.id,
+        target_relationship_stage="developing",
+        transition_trigger="manual_reactivation",
+    )
+    assert customer.relationship_stage == "developing"
+
+    opportunity.status = "lost"
+    db.flush()
+    append_customer_event(
+        db,
+        customer_id=customer.id,
+        event_type="relationship.stage_changed",
+        event_source="manual",
+        source_ref_type="customer",
+        source_ref_id=str(customer.id),
+        event_title="人工确认保留合格客户",
+        event_payload={"reason_code": "manual_keep_qualified"},
+        payload_schema_version="customer_event_v1",
+        occurred_at=beijing_now(),
+        actor_user_id=actor.id,
+        target_relationship_stage="qualified",
+        transition_trigger="manual_keep_qualified",
+    )
+    assert customer.relationship_stage == "qualified"
+
+
+def test_opportunity_fact_subject_must_belong_to_same_customer(db):
+    from app.customer.workflow_service import assign_customer, upsert_opportunity
+
+    customer = _customer(db, "opportunity-fact")
+    other = _customer(db, "opportunity-fact-other")
+    actor = _human(db, "opportunity-fact")
+    source = _source(db, customer, external_id="opportunity-fact")
+    assign_customer(
+        db,
+        customer_id=customer.id,
+        user_id=actor.id,
+        assignment_role="primary",
+        assignment_source="manual",
+        operated_by=actor.id,
+    )
+    opportunity = upsert_opportunity(
+        db,
+        customer_id=customer.id,
+        source_system="internal",
+        source_account_key="global",
+        source_key="opportunity-fact",
+        opportunity_type="manual",
+        source="manual",
+        title="Fact target",
+        owner_user_id=actor.id,
+        actor_user_id=actor.id,
+    )
+
+    fact = _industry_fact(
+        db,
+        customer,
+        source,
+        subject_type="opportunity",
+        subject_id=opportunity.id,
+    )
+    assert fact.subject_type == "opportunity"
+    assert fact.subject_id == opportunity.id
+    with pytest.raises(CustomerDomainError) as cross_customer:
+        _industry_fact(
+            db,
+            other,
+            source,
+            subject_type="opportunity",
+            subject_id=opportunity.id,
+        )
+    assert cross_customer.value.error_code == "CUSTOMER_REFERENCE_INVALID"
 
 
 def test_valid_order_relationship_event_advances_active_customer(db):

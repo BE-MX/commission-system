@@ -14,6 +14,7 @@ from app.agent_runtime.models import AgentArtifact, AgentEvent, AgentProfile, Ag
 from app.agent_runtime.state_machine import require_transition
 from app.auth.models import ArkUser
 from app.core.config import get_settings
+from app.customer.models import CustomerAccount, CustomerAgentRunScope
 
 
 def get_active_profile(db: Session, profile_key: str) -> AgentProfile:
@@ -147,15 +148,15 @@ def create_run(
             raise ForbiddenError("用户入口只能启动交互式 Agent 任务")
         if profile.profile_key == "customer_order_copilot":
             ref_id = str(data.get("business_ref_id") or "")
-            input_profile_id = str(run_input.get("customer_profile_id") or "")
+            input_customer_id = str(run_input.get("customer_id") or "")
             if (
                 session.context_type != "customer"
-                or data.get("business_ref_type") != "customer_profile"
+                or data.get("business_ref_type") != "customer"
                 or not ref_id
                 or ref_id != str(session.context_id)
-                or input_profile_id != ref_id
+                or input_customer_id != ref_id
             ):
-                raise ForbiddenError("客户经营副驾驶必须绑定会话中的同一客户画像")
+                raise ForbiddenError("客户经营副驾驶必须绑定会话中的同一统一客户")
     existing = db.query(AgentRun).filter(
         AgentRun.owner_user_id == user_id,
         AgentRun.idempotency_key == data["idempotency_key"],
@@ -205,6 +206,39 @@ def create_run(
     db.add(row)
     try:
         db.flush()
+        raw_customer_id = run_input.get("customer_id")
+        try:
+            customer_id = int(raw_customer_id) if raw_customer_id is not None else None
+        except (TypeError, ValueError):
+            customer_id = None
+        if (
+            customer_id is not None
+            and db.query(CustomerAccount.id).filter(
+                CustomerAccount.id == customer_id,
+                CustomerAccount.record_status == "active",
+            ).first() is not None
+        ):
+            scope_snapshot_hash = content_hash({
+                "run_id": row.id,
+                "customer_ids": [customer_id],
+                "permissions": context_snapshot["permissions"],
+                "created_at": row.created_at,
+            })
+            db.add(CustomerAgentRunScope(
+                run_id=row.id,
+                customer_id=customer_id,
+                scope_type="single",
+                source_ref_type=row.business_ref_type,
+                source_ref_id=row.business_ref_id,
+                scope_snapshot_hash=scope_snapshot_hash,
+                membership_fingerprint=content_hash({
+                    "run_id": row.id,
+                    "customer_id": customer_id,
+                    "scope_snapshot_hash": scope_snapshot_hash,
+                }),
+                created_at=row.created_at,
+            ))
+            db.flush()
         append_event(
             db, row,
             event_id=f"run-{row.id}-created",

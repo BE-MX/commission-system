@@ -12,7 +12,18 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.agent_runtime.models import AgentRun
 from app.core.database import SessionLocal
-from app.insight.models import CustomerAction, CustomerProfile, CustomerProfileEvent
+from app.customer.access_service import (
+    CustomerAccessDenied,
+    apply_record_access,
+    require_customer_access,
+)
+from app.customer.models import (
+    CustomerAccount,
+    CustomerAction,
+    CustomerEvent,
+    CustomerExternalIdentity,
+    CustomerListProjection,
+)
 from app.mcp.auth import MCPAuthError, require_identity
 from app.order_intelligence import service as order_service
 from app.sales_automation import service as sales_service
@@ -61,22 +72,60 @@ def _require_agent_identity(ctx, db, *, tool_name: str) -> dict:
     return identity
 
 
-def _profile_for_user(db, profile_id: int, user: dict) -> CustomerProfile | None:
-    run_scope = user.get("_agent_run") or {}
-    bound_profile_id = run_scope.get("customer_profile_id")
-    if bound_profile_id is not None and str(bound_profile_id) != str(profile_id):
+def _customer_for_user(
+    db,
+    customer_id: int,
+    user: dict,
+    *,
+    minimum_classification: str = "public_business",
+    minimum_visibility: str = "all_authorized",
+) -> CustomerAccount | None:
+    access = _customer_access_for_user(db, customer_id, user)
+    if (
+        access is None
+        or not access.allows_classification(minimum_classification)
+        or not access.allows_visibility(minimum_visibility)
+    ):
         return None
-    row = db.query(CustomerProfile).filter(CustomerProfile.id == profile_id).one_or_none()
-    if row is None:
+    return db.get(CustomerAccount, customer_id)
+
+
+def _customer_access_for_user(db, customer_id: int, user: dict):
+    try:
+        return require_customer_access(
+            db,
+            customer_id=customer_id,
+            user=user,
+            action_permissions={
+                "customer_radar:read",
+                "customer_radar:write",
+                "customer_radar:manage",
+                "order_intelligence:read",
+                "order_intelligence:read_all",
+            },
+            manage_permissions={
+                "customer_radar:manage",
+                "order_intelligence:read_all",
+            },
+        )
+    except CustomerAccessDenied:
         return None
-    if "super_admin" in set(user.get("roles") or []) or "customer_radar:manage" in set(user.get("permissions") or []):
-        return row
-    return row if row.owner_user_id == int(user["sub"]) else None
+
+
+def _okki_customer_id(db, customer_id: int) -> str | None:
+    identity = db.query(CustomerExternalIdentity).filter(
+        CustomerExternalIdentity.customer_id == customer_id,
+        CustomerExternalIdentity.source_system == "okki",
+        CustomerExternalIdentity.identifier_type.in_(("company_id", "business_id")),
+        CustomerExternalIdentity.verification_status == "verified",
+        CustomerExternalIdentity.status == "active",
+    ).order_by(CustomerExternalIdentity.is_primary.desc(), CustomerExternalIdentity.id).first()
+    return identity.normalized_value if identity is not None else None
 
 
 class CustomerInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    profile_id: int = Field(..., ge=1, description="方舟客户画像 ID")
+    customer_id: int = Field(..., ge=1, description="方舟统一客户 ID")
 
 
 class CustomerOrderInput(CustomerInput):
@@ -112,33 +161,53 @@ def register_agent_tools(mcp) -> None:
                 return _err(str(exc))
             if not _has_perm(user, "customer_radar:read", "customer_radar:write", "customer_radar:manage"):
                 return _err("权限不足：需要客户经营雷达查看权限")
-            row = _profile_for_user(db, params.profile_id, user)
-            if row is None:
+            access = _customer_access_for_user(db, params.customer_id, user)
+            if access is None:
                 return _err("客户画像不存在或不在当前账号数据范围内")
-            events = db.query(CustomerProfileEvent).filter(
-                CustomerProfileEvent.profile_id == row.id,
-            ).order_by(CustomerProfileEvent.occurred_at.desc()).limit(30).all()
-            return _ok({
-                "profile_id": row.id,
-                "customer_external_id": row.customer_external_id,
-                "customer_name": row.customer_name,
-                "customer_company": row.customer_company,
-                "customer_region": row.customer_region,
-                "tags": row.profile_tags or [],
-                "judgement": row.profile_judgement,
-                "signals": row.profile_signals_json or {},
-                "priority_score": row.priority_score,
-                "last_event_at": row.last_event_at,
+            row = db.get(CustomerAccount, params.customer_id)
+            internal_context_allowed = (
+                access.allows_classification("internal_business")
+                and access.allows_visibility("customer_team")
+            )
+            if not internal_context_allowed:
+                return _ok({
+                    "customer_id": row.id,
+                    "schema_version": "customer_profile_redacted_v1",
+                    "redacted": True,
+                    "data_classification": "public_business",
+                })
+            events = apply_record_access(
+                db.query(CustomerEvent),
+                CustomerEvent,
+                access,
+            ).order_by(CustomerEvent.occurred_at.desc()).limit(30).all()
+            projection = db.get(CustomerListProjection, row.id)
+            data = {
+                "customer_id": row.id,
+                "display_name": row.display_name,
+                "canonical_company_name": row.canonical_company_name,
                 "events": [{
                     "event_id": item.id,
                     "source": item.event_source,
                     "type": item.event_type,
                     "title": item.event_title,
                     "summary": item.event_summary,
-                    "score": item.event_score,
                     "occurred_at": item.occurred_at,
                 } for item in events],
+                "data_classification": "internal_business",
+            }
+            data.update({
+                "customer_code": row.customer_code,
+                "identity_status": row.identity_status,
+                "relationship_stage": row.relationship_stage,
+                "commercial_value_score": (
+                    projection.commercial_value_score if projection else 0
+                ),
+                "data_quality_score": (
+                    projection.data_quality_score if projection else 0
+                ),
             })
+            return _ok(data)
 
     @mcp.tool(name="get_customer_order_timeline", annotations={"readOnlyHint": True})
     async def get_customer_order_timeline(params: CustomerOrderInput, ctx: Context) -> str:
@@ -149,14 +218,21 @@ def register_agent_tools(mcp) -> None:
                 return _err(str(exc))
             if not _has_perm(user, "order_intelligence:read", "order_intelligence:read_all"):
                 return _err("权限不足：需要订单经营分析查看权限")
-            profile = _profile_for_user(db, params.profile_id, user)
-            if profile is None or not profile.customer_external_id:
+            customer = _customer_for_user(
+                db,
+                params.customer_id,
+                user,
+                minimum_classification="internal_business",
+                minimum_visibility="customer_team",
+            )
+            external_id = _okki_customer_id(db, customer.id) if customer is not None else None
+            if customer is None or not external_id:
                 return _err("客户画像不存在、越权或尚未绑定 OKKI 客户 ID")
             try:
                 start, end = _window(params.date_from, params.date_to)
                 scope = order_service.resolve_scope(db, user)
                 return _ok(order_service.get_customer_order_timeline(
-                    db, scope, profile.customer_external_id, start, end, limit=params.limit,
+                    db, scope, external_id, start, end, limit=params.limit,
                 ))
             except (ValueError, HTTPException) as exc:
                 return _err(_known_error(exc))
@@ -172,14 +248,21 @@ def register_agent_tools(mcp) -> None:
                 return _err(str(exc))
             if not _has_perm(user, "order_intelligence:read", "order_intelligence:read_all"):
                 return _err("权限不足：需要订单经营分析查看权限")
-            profile = _profile_for_user(db, params.profile_id, user)
-            if profile is None or not profile.customer_external_id:
+            customer = _customer_for_user(
+                db,
+                params.customer_id,
+                user,
+                minimum_classification="internal_business",
+                minimum_visibility="customer_team",
+            )
+            external_id = _okki_customer_id(db, customer.id) if customer is not None else None
+            if customer is None or not external_id:
                 return _err("客户画像不存在、越权或尚未绑定 OKKI 客户 ID")
             try:
                 start, end = _window(params.date_from, params.date_to)
                 scope = order_service.resolve_scope(db, user)
                 return _ok(order_service.get_customer_repurchase_analysis(
-                    db, scope, profile.customer_external_id, start, end,
+                    db, scope, external_id, start, end,
                 ))
             except (ValueError, HTTPException) as exc:
                 return _err(_known_error(exc))
@@ -195,19 +278,26 @@ def register_agent_tools(mcp) -> None:
                 return _err(str(exc))
             if not _has_perm(user, "customer_radar:read", "customer_radar:write", "customer_radar:manage"):
                 return _err("权限不足：需要客户经营雷达查看权限")
-            profile = _profile_for_user(db, params.profile_id, user)
-            if profile is None:
+            customer = _customer_for_user(
+                db,
+                params.customer_id,
+                user,
+                minimum_classification="internal_business",
+                minimum_visibility="customer_team",
+            )
+            if customer is None:
                 return _err("客户画像不存在或不在当前账号数据范围内")
             rows = db.query(CustomerAction).filter(
-                CustomerAction.profile_id == profile.id,
+                CustomerAction.customer_id == customer.id,
+                CustomerAction.owner_user_id == int(user["sub"]),
             ).order_by(CustomerAction.action_date.desc(), CustomerAction.id.desc()).limit(30).all()
             return _ok([{
                 "action_id": row.id,
                 "date": row.action_date,
                 "group": row.thread_group,
-                "reason": row.action_reason,
-                "next_action": row.suggested_next_action,
-                "status": row.action_status,
+                "reason": row.reason,
+                "next_action": row.next_action,
+                "status": row.status,
                 "source_type": row.source_type,
                 "evidence_status": row.evidence_status,
             } for row in rows])

@@ -40,7 +40,7 @@ class FeedbackInput(BaseModel):
 
 
 class CopilotEvaluationRunCreate(BaseModel):
-    customer_profile_id: int = Field(..., ge=1)
+    customer_id: int = Field(..., ge=1)
     idempotency_key: str = Field(..., min_length=8, max_length=128)
 
 

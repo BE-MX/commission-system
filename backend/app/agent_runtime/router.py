@@ -332,7 +332,7 @@ def start_copilot_evaluation_case(
         evaluation_service.start_copilot_evaluation_case,
         db,
         case_id=case_id,
-        customer_profile_id=payload.customer_profile_id,
+        customer_id=payload.customer_id,
         idempotency_key=payload.idempotency_key,
         user_id=_user_id(current_user),
         permissions=_permissions(current_user),

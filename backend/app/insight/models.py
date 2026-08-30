@@ -354,215 +354,23 @@ class InsightScheduleRule(Base):
     )
 
 
-# ── 阿里询盘导入批次 ──────────────────────────────────────
-class InquiryImportBatch(Base):
-    __tablename__ = "ark_inquiry_import_batches"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
-    batch_id = Column(String(100), nullable=False, unique=True, comment="ACCIO 批次ID")
-    source = Column(String(50), nullable=False, default="accio_work", comment="导入来源，默认 accio_work")
-    schema_version = Column(String(50), nullable=False, comment="推送数据 schema 版本")
-    generated_at = Column(DateTime, nullable=True, comment="ACCIO 侧生成时间")
-    time_range_start = Column(DateTime, nullable=True, comment="询盘时间范围起")
-    time_range_end = Column(DateTime, nullable=True, comment="询盘时间范围止")
-    item_count = Column(Integer, nullable=False, default=0, comment="推送条目总数")
-    created_count = Column(Integer, nullable=False, default=0, comment="新建机会数")
-    updated_count = Column(Integer, nullable=False, default=0, comment="更新机会数")
-    unassigned_count = Column(Integer, nullable=False, default=0, comment="未匹配归属数")
-    failed_count = Column(Integer, nullable=False, default=0, comment="失败条数")
-    status = Column(String(20), nullable=False, default="processing", comment="processing/success/partial_failed/failed")
-    raw_payload = Column(JSON, nullable=True, comment="原始推送数据")
-    error_msg = Column(Text, nullable=True, comment="失败错误信息")
-    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
-
-    __table_args__ = {"comment": "阿里询盘导入批次表"}
+from app.customer.models import (
+    CustomerAction,
+    CustomerOpportunity,
+    CustomerOpportunityEvent,
+)
 
 
-# ── 客户机会卡 ──────────────────────────────────────────
-class CustomerOpportunity(Base):
-    __tablename__ = "ark_customer_opportunities"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
-    opportunity_type = Column(String(50), nullable=False, comment="ali_inquiry/public_pool/customer_reactivation")
-    source = Column(String(50), nullable=False, comment="alibaba_international/okki/manual")
-    source_key = Column(String(255), nullable=False, unique=True, comment="外部来源幂等键")
-    source_ref_type = Column(String(50), nullable=True, comment="conversation/inquiry/order/customer")
-    source_ref_id = Column(String(100), nullable=True, comment="外部引用ID")
-    owner_user_id = Column(Integer, ForeignKey("ark_users.id"), nullable=True, comment="方舟归属用户，空=待分配")
-    owner_binding_id = Column(BigInteger, ForeignKey("ark_user_external_bindings.id"), nullable=True, comment="命中的外部账号绑定ID")
-    owner_resolve_status = Column(String(20), nullable=False, default="unassigned", comment="resolved/unassigned/conflict/inactive_user")
-    source_owner_external_json = Column(JSON, nullable=True, comment="原始外部归属信息")
-    customer_name = Column(String(200), nullable=False, default="", comment="客户名称")
-    customer_region = Column(String(100), nullable=True, comment="客户地区")
-    customer_external_id = Column(String(100), nullable=True, comment="客户外部ID")
-    priority_level = Column(String(5), nullable=False, default="C", comment="A/B/C/D")
-    confidence_score = Column(SmallInteger, nullable=False, default=0, comment="置信度分值")
-    urgency = Column(String(20), nullable=False, default="normal", comment="urgent/high/normal/low")
-    title = Column(String(255), nullable=False, default="", comment="机会标题")
-    summary = Column(Text, nullable=True, comment="机会摘要")
-    key_signals_json = Column(JSON, nullable=True, comment="关键信号JSON")
-    conversation_summary_json = Column(JSON, nullable=True, comment="ACCIO 压缩后的询盘历史摘要")
-    background_check_json = Column(JSON, nullable=True, comment="背调结果JSON")
-    background_summary_json = Column(JSON, nullable=True, comment="ACCIO 压缩后的背调摘要")
-    customer_profile_json = Column(JSON, nullable=True, comment="ACCIO 客户档案快照")
-    recommended_strategy = Column(Text, nullable=True, comment="AI推荐跟进策略")
-    opening_message_en = Column(Text, nullable=True, comment="开场话术(英文)")
-    follow_up_message_en = Column(Text, nullable=True, comment="跟进话术(英文)")
-    evidence_json = Column(JSON, nullable=True, comment="证据依据JSON")
-    full_report_html = Column(Text, nullable=True, comment="ACCIO 完整背调报告 HTML")
-    status = Column(String(30), nullable=False, default="pending", comment="pending/contacted/replied/quoted/won/lost/dismissed")
-    feedback = Column(String(50), nullable=True, comment="业务员反馈")
-    due_at = Column(DateTime, nullable=True, comment="处理截止时间(按优先等级计算)")
-    latest_message_at = Column(DateTime, nullable=True, comment="客户最新消息时间")
-    handled_at = Column(DateTime, nullable=True, comment="处理时间")
-    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
-
-    events = relationship(
-        "CustomerOpportunityEvent",
-        back_populates="opportunity",
-        cascade="all, delete-orphan",
-        order_by="CustomerOpportunityEvent.id.desc()",
-    )
-
-    __table_args__ = (
-        Index("idx_opp_owner_status", "owner_user_id", "status"),
-        Index("idx_opp_owner_priority", "owner_user_id", "priority_level", "due_at"),
-        Index("idx_opp_resolve_status", "owner_resolve_status"),
-        Index("idx_opp_latest_message", "latest_message_at"),
-        {"comment": "客户机会卡"},
-    )
-
-
-# ── 客户机会事件 ────────────────────────────────────────
-class CustomerOpportunityEvent(Base):
-    __tablename__ = "ark_customer_opportunity_events"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
-    opportunity_id = Column(BigInteger, ForeignKey("ark_customer_opportunities.id", ondelete="CASCADE"), nullable=False, comment="关联机会ID")
-    event_type = Column(String(50), nullable=False, comment="created/imported/viewed/copied/status_changed/feedback/assigned")
-    actor_user_id = Column(Integer, nullable=True, comment="操作人用户ID")
-    event_payload = Column(JSON, nullable=True, comment="事件附加数据JSON")
-    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
-
-    opportunity = relationship("CustomerOpportunity", back_populates="events")
-
-    __table_args__ = (
-        Index("idx_event_opportunity", "opportunity_id", "event_type"),
-        Index("idx_event_actor_created", "actor_user_id", "created_at"),
-        {"comment": "客户机会事件表"},
-    )
-
-
-# ── 客户经营雷达 ────────────────────────────────────────
-
-
-class CustomerProfile(Base):
-    """活画像主表 — 一个客户一条记录，持续积累信号"""
-    __tablename__ = "ark_customer_profiles"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
-    customer_name = Column(String(200), nullable=False, default="", comment="客户名称")
-    customer_region = Column(String(100), comment="客户地区")
-    customer_company = Column(String(200), comment="客户公司名")
-    customer_external_id = Column(String(100), unique=True, comment="客户外部ID(唯一)")
-    owner_user_id = Column(Integer, ForeignKey("ark_users.id"), comment="归属业务员用户ID")
-    owner_resolve_status = Column(String(20), nullable=False, default="unassigned", comment="归属解析状态 resolved/unassigned/conflict/inactive_user")
-    profile_tags = Column(JSON, comment="画像标签数组")
-    profile_judgement = Column(String(500), comment="AI画像判断结论")
-    profile_signals_json = Column(JSON, comment="画像信号JSON")
-    priority_score = Column(SmallInteger, nullable=False, default=0, comment="优先级分")
-    total_opportunities = Column(Integer, nullable=False, default=0, comment="累计机会数")
-    total_events = Column(Integer, nullable=False, default=0, comment="累计事件数")
-    last_event_at = Column(DateTime, comment="最近事件时间")
-    last_opportunity_at = Column(DateTime, comment="最近机会时间")
-    first_seen_at = Column(DateTime, nullable=False, comment="首次出现时间")
-    source = Column(String(50), nullable=False, default="alibaba_international", comment="来源，默认 alibaba_international")
-    source_json = Column(JSON, comment="来源原始信息JSON")
-    suggested_message = Column(Text, comment="推荐话术")
-    weight_adjustments = Column(JSON, comment="权重调整JSON")
-    status = Column(String(20), nullable=False, default="active", comment="画像状态，默认 active")
-    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
-
-    events = relationship("CustomerProfileEvent", back_populates="profile",
-                          cascade="all, delete-orphan", order_by="CustomerProfileEvent.occurred_at.desc()")
-    actions = relationship("CustomerAction", back_populates="profile",
-                           cascade="all, delete-orphan")
-
-    __table_args__ = (
-        Index("idx_profile_owner", "owner_user_id", "status"),
-        Index("idx_profile_name_region", "customer_name", "customer_region"),
-        Index("idx_profile_priority", "priority_score"),
-        {"comment": "客户经营雷达-客户活画像主表"},
-    )
-
-
-class CustomerProfileEvent(Base):
-    """画像事件流 — 所有信号先成为事件再更新画像"""
-    __tablename__ = "ark_customer_profile_events"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
-    profile_id = Column(BigInteger, ForeignKey("ark_customer_profiles.id", ondelete="CASCADE"), nullable=False, comment="关联画像ID")
-    event_source = Column(String(50), nullable=False, comment="accio_inquiry/okki_order/logistics/manual_note")
-    event_type = Column(String(50), nullable=False, comment="new_inquiry/replied/won/lost/order_placed/manual_note")
-    source_ref_type = Column(String(50), comment="外部引用类型")
-    source_ref_id = Column(String(100), comment="外部引用ID")
-    opportunity_id = Column(BigInteger, ForeignKey("ark_customer_opportunities.id"), comment="关联机会ID")
-    event_title = Column(String(255), nullable=False, default="", comment="事件标题")
-    event_summary = Column(Text, comment="事件摘要")
-    event_payload = Column(JSON, comment="事件附加数据JSON")
-    event_score = Column(SmallInteger, nullable=False, default=0, comment="事件评分(正负分)")
-    actor_user_id = Column(Integer, comment="操作人用户ID")
-    occurred_at = Column(DateTime, nullable=False, comment="事件发生时间")
-    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
-
-    profile = relationship("CustomerProfile", back_populates="events")
-
-    __table_args__ = (
-        Index("idx_cpe_profile_time", "profile_id", "occurred_at"),
-        Index("idx_cpe_source", "event_source", "event_type"),
-        Index("idx_cpe_opportunity", "opportunity_id"),
-        {"comment": "客户经营雷达-画像事件流"},
-    )
-
-
-class CustomerAction(Base):
-    """行动候选池 — 每天为每个客户生成一条推荐行动"""
-    __tablename__ = "ark_customer_actions"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
-    profile_id = Column(BigInteger, ForeignKey("ark_customer_profiles.id", ondelete="CASCADE"), nullable=False, comment="关联画像ID")
-    owner_user_id = Column(Integer, ForeignKey("ark_users.id"), nullable=False, comment="归属业务员用户ID")
-    thread_group = Column(String(30), nullable=False, comment="new_inquiry/sample_delivery/key_account/reorder_window/reactivation/public_pool")
-    thread_priority = Column(String(10), nullable=False, default="normal", comment="线索优先级标签 优先/重点/保持/顺手")
-    action_reason = Column(String(500), nullable=False, default="", comment="推荐理由")
-    suggested_next_action = Column(String(500), comment="建议下一步行动")
-    suggested_message = Column(Text, comment="建议话术")
-    source_evidence = Column(JSON, comment="依据证据JSON")
-    action_status = Column(String(20), nullable=False, default="pending", comment="行动状态 pending/done/dismissed/snoozed")
-    snoozed_until = Column(DateTime, comment="延后截止时间")
-    action_date = Column(Date, nullable=False, comment="行动日期")
-    completed_at = Column(DateTime, comment="完成时间")
-    completed_by = Column(Integer, comment="标记完成的用户ID")
-    user_feedback = Column(String(50), comment="用户反馈")
-    user_note = Column(Text, comment="用户备注")
-    sort_order = Column(Integer, nullable=False, default=0, comment="排序")
-    source_type = Column(String(20), nullable=False, default="rule", comment="rule/dsh/manual")
-    source_run_id = Column(BigInteger, nullable=True, comment="来源Agent Run ID")
-    source_fingerprint = Column(String(64), nullable=True, unique=True, comment="行动生成幂等指纹")
-    policy_version = Column(String(32), nullable=True, comment="行动策略版本")
-    evidence_status = Column(String(20), nullable=False, default="unverified", comment="unverified/valid/invalid")
-    generated_at = Column(DateTime, nullable=False, default=beijing_now, comment="本版本生成时间")
-    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
-
-    profile = relationship("CustomerProfile", back_populates="actions")
-
-    __table_args__ = (
-        Index("idx_action_owner_date", "owner_user_id", "action_date", "thread_group"),
-        Index("idx_action_profile", "profile_id", "action_date"),
-        Index("idx_action_status", "owner_user_id", "action_status", "action_date"),
-        Index("idx_customer_action_run", "source_run_id"),
-        {"comment": "客户经营雷达-行动候选池"},
-    )
+__all__ = [
+    "InsightReport",
+    "InsightSource",
+    "InsightCase",
+    "MeetingMinutes",
+    "InsightTask",
+    "InsightItem",
+    "InsightCollectionLog",
+    "InsightScheduleRule",
+    "CustomerOpportunity",
+    "CustomerOpportunityEvent",
+    "CustomerAction",
+]

@@ -957,7 +957,11 @@ def submit_qualification_review(
         raise service.ConflictError("资格审核来源对象不属于当前客户")
     if review_source == "public_pool_research":
         research = db.get(CustomerResearchTask, int(source_ref_id))
-        if research.task_status != "completed" or research.result_review_status != "accepted":
+        if (
+            research.task_status != "completed"
+            or research.gate_status != "passed"
+            or research.result_review_status != "accepted"
+        ):
             raise service.ConflictError("研究成果尚未完成质量审核")
     normalized_review_after = (
         to_beijing_naive(review_after) if review_after is not None else None
@@ -971,6 +975,12 @@ def submit_qualification_review(
     ).with_for_update().one_or_none()
     if account is None:
         raise service.NotFoundError("客户不存在")
+    if (
+        decision == "approved"
+        and review_source in {"search_result", "public_pool_research"}
+        and account.current_profile_version_id is None
+    ):
+        raise service.ConflictError("PROFILE_NOT_READY")
     request_hash = _qualification_request_hash(
         customer_id=customer_id,
         review_source=review_source,
@@ -1067,6 +1077,16 @@ def submit_qualification_review(
                     SearchResult.result_status == "qualified",
                 ).count()
                 job.qualified_count = qualified
+    if review_source in {"search_result", "public_pool_research"}:
+        from app.customer.workflow_service import (
+            CustomerWorkflowError,
+            orchestrate_qualification_review,
+        )
+
+        try:
+            orchestrate_qualification_review(db, row.id)
+        except CustomerWorkflowError as exc:
+            raise service.ConflictError(str(exc)) from exc
     account.profile_input_seq += 1
     account.updated_by = reviewer.id
     account.updated_at = now

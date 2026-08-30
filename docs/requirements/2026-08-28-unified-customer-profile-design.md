@@ -1658,7 +1658,7 @@ ark_customer_actions清空并重建，profile_id替换为非空customer_id。
 |---|---|---:|---|---|
 | id | BIGINT | 否 | PK | 客户经营行动ID |
 | customer_id | BIGINT | 否 | FK accounts, INDEX | 行动所属统一客户ID |
-| owner_user_id | INT UNSIGNED | 否 | FK ark_users, INDEX | 行动执行人方舟用户ID |
+| owner_user_id | INT UNSIGNED | 是 | FK ark_users, INDEX | 行动执行人方舟用户ID；空表示公海未分配队列，认领时赋值 |
 | opportunity_id | BIGINT | 是 | FK opportunities, INDEX | 可选关联机会ID，必须与customer_id一致 |
 | contact_id | BIGINT | 是 | FK contacts | 可选目标联系人ID |
 | action_type | VARCHAR(24) | 否 | INDEX | 行动类型：call、email、message、meeting、research、review |

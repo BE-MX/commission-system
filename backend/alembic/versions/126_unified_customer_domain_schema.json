@@ -1,6 +1,6 @@
 {
   "customer_domain_physical_contract": {
-    "contract_sha256": "92eafb4a280014e92d64860c964bde2e3627ab4fdfc290a2f89a5a4a4c8a9195",
+    "contract_sha256": "245aca1904cfb113843f0cf18455634b50ccfd0af79e27a7674b6bbf0fcc1b5d",
     "migration_revision": "126",
     "schema_version": 1,
     "tables": {
@@ -1179,11 +1179,11 @@
           },
           {
             "autoincrement": false,
-            "comment": "行动执行人方舟用户ID",
+            "comment": "行动执行人方舟用户ID；空表示公海未分配队列，认领时赋值",
             "computed": null,
             "default": null,
             "name": "owner_user_id",
-            "nullable": false,
+            "nullable": true,
             "primary_key": false,
             "temporal_fsp": null,
             "type": {

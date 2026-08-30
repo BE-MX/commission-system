@@ -1,490 +1,315 @@
-"""客户机会服务 — ACCIO 导入 + 机会 CRUD + 状态管理"""
+"""Customer-id opportunity queries and mutations for the legacy insight surface."""
 
-import logging
-from datetime import datetime, timedelta
-from app.core.time import beijing_now
+from __future__ import annotations
 
-from sqlalchemy import func, or_
+from datetime import datetime
+
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.insight.models import InquiryImportBatch, CustomerOpportunity, CustomerOpportunityEvent
-from app.insight.external_binding_service import resolve_owner, OwnerResult
-
-logger = logging.getLogger("insight.opportunity")
-
-# ── 等级 → due_at 规则 ──────────────────────────────────
-_DUE_RULES = {
-    "A": lambda now: now + timedelta(hours=2),
-    "B": lambda now: now.replace(hour=18, minute=0, second=0, microsecond=0) if now.hour < 18 else (now + timedelta(days=1)).replace(hour=18, minute=0, second=0, microsecond=0),
-    "C": lambda now: (now + timedelta(days=1)).replace(hour=18, minute=0, second=0, microsecond=0),
-}
-_LEAD_GRADE_MAP = {"A": "A", "B": "B", "C": "C", "D": "D"}
-
-
-# ── 导入 ────────────────────────────────────────────────
-
-def import_accio_inquiries(db: Session, payload: dict) -> dict:
-    """
-    处理 ACCIO WORK 推送的询盘 JSON。
-    返回 {batch_id, created_count, updated_count, unassigned_count, failed_count, unassigned_external_accounts}
-    """
-    schema_version = payload.get("schema_version", "")
-    batch_id_str = payload.get("batch_id", "")
-    items = payload.get("items", [])
-    now = beijing_now()
-
-    # 创建或获取批次
-    batch = db.query(InquiryImportBatch).filter(InquiryImportBatch.batch_id == batch_id_str).first()
-    if not batch:
-        batch = InquiryImportBatch(
-            batch_id=batch_id_str,
-            source="accio_work",
-            schema_version=schema_version,
-            generated_at=_parse_dt(payload.get("generated_at")),
-            time_range_start=_parse_dt(payload.get("time_range", {}).get("start")),
-            time_range_end=_parse_dt(payload.get("time_range", {}).get("end")),
-            item_count=len(items),
-            status="processing",
-            raw_payload=payload,
-        )
-        db.add(batch)
-        db.flush()
-
-    created_count = 0
-    updated_count = 0
-    unassigned_count = 0
-    failed_count = 0
-    unassigned_accounts = []
-
-    for item in items:
-        try:
-            conv = item.get("conversation", {})
-            bg = item.get("background_check", {})
-            seed = item.get("opportunity_seed", {})
-            conversation_summary = item.get("conversation_summary")
-            background_summary = item.get("background_summary")
-            customer_profile = item.get("customer_profile") or {}
-            source_key = item.get("source_key", "")
-
-            if not source_key:
-                failed_count += 1
-                continue
-
-            self_ali_id = conv.get("self_ali_id", "")
-            subaccount_name = conv.get("subaccount_name", "")
-            buyer_name = conv.get("buyer_name") or "未知买家"
-            buyer_country = conv.get("buyer_country")
-            buyer_level = conv.get("buyer_level", "")
-            customer_external_id = customer_profile.get("buyer_identifier")
-            latest_content = conv.get("latest_content", "")
-            latest_send_time = _parse_dt(conv.get("latest_send_time"))
-            chat_link = conv.get("chat_link", "")
-            conversation_id = conv.get("conversation_id", "")
-
-            # 归属解析
-            owner_result = resolve_owner(
-                db,
-                provider="alibaba_icbu",
-                external_account_id=str(self_ali_id),
-                external_display_name=subaccount_name,
-                raw_payload=conv,
-            )
-
-            # 优先级
-            lead_grade = bg.get("lead_grade", "")
-            priority_level = _LEAD_GRADE_MAP.get(lead_grade, "C")
-            if not lead_grade:
-                priority_level = seed.get("priority_level", "C")
-
-            # 置信度
-            confidence_score = bg.get("confidence_score", seed.get("confidence_score", 0))
-
-            # 紧急度
-            urgency = "normal"
-            overdue_minutes = payload.get("filters", {}).get("overdue_minutes")
-            if overdue_minutes:
-                urgency = "urgent"
-            elif priority_level == "A":
-                urgency = "high"
-
-            # due_at
-            due_at = None
-            if priority_level in _DUE_RULES:
-                due_at = _DUE_RULES[priority_level](now)
-
-            # 标题
-            title = seed.get("title", "") or f"{buyer_name} 值得跟进"
-
-            # 背调
-            bg_json = None
-            if bg and bg.get("research_status") != "missing":
-                bg_json = bg
-
-            # 策略
-            strategy = bg.get("next_action") or seed.get("recommended_strategy")
-
-            # 话术（ACCIO v1.2+ 直接传，否则后续 AI 生成）
-            opening_msg = bg.get("opening_message", "") or seed.get("opening_message", "")
-            follow_msg = bg.get("follow_up_message", "") or seed.get("follow_up_message", "")
-
-            # 关键信号
-            key_signals = seed.get("key_signals") or bg.get("key_evidence")
-
-            # 完整背调报告 HTML（ACCIO v1.2+）
-            full_report_html = bg.get("full_report_html", "")
-            source_owner_ext = {
-                "provider": "alibaba_icbu",
-                "self_ali_id": str(self_ali_id),
-                "subaccount_name": subaccount_name,
-                "buyer_level": buyer_level,
-            }
-
-            # 幂等 upsert
-            existing = db.query(CustomerOpportunity).filter(
-                CustomerOpportunity.source_key == source_key
-            ).first()
-
-            if existing:
-                # 更新（不覆盖已处理状态）
-                updated_count += 1
-                existing.title = title
-                existing.summary = latest_content
-                if conversation_summary is not None:
-                    existing.conversation_summary_json = conversation_summary
-                if bg_json is not None:
-                    existing.background_check_json = bg_json
-                if background_summary is not None:
-                    existing.background_summary_json = background_summary
-                if customer_profile:
-                    existing.customer_profile_json = customer_profile
-                if customer_external_id and not existing.customer_external_id:
-                    existing.customer_external_id = customer_external_id
-                existing.recommended_strategy = strategy
-                existing.key_signals_json = key_signals
-                existing.confidence_score = confidence_score
-                existing.priority_level = priority_level
-                existing.urgency = urgency
-                existing.latest_message_at = latest_send_time
-                existing.source_owner_external_json = source_owner_ext
-                if full_report_html:
-                    existing.full_report_html = full_report_html
-                if opening_msg:
-                    existing.opening_message_en = opening_msg
-                if follow_msg:
-                    existing.follow_up_message_en = follow_msg
-                if existing.status == "pending":
-                    existing.due_at = due_at
-                existing.updated_at = now
-                if existing.owner_resolve_status != owner_result.status:
-                    existing.owner_resolve_status = owner_result.status
-                    if owner_result.status == "resolved":
-                        existing.owner_user_id = owner_result.user_id
-                        existing.owner_binding_id = owner_result.binding_id
-                # 写事件
-                db.add(CustomerOpportunityEvent(
-                    opportunity_id=existing.id, event_type="imported",
-                    event_payload={"action": "updated"},
-                ))
-            else:
-                # 新建
-                opp = CustomerOpportunity(
-                    opportunity_type="ali_inquiry",
-                    source="alibaba_international",
-                    source_key=source_key,
-                    source_ref_type="conversation",
-                    source_ref_id=conversation_id,
-                    owner_user_id=owner_result.user_id,
-                    owner_binding_id=owner_result.binding_id,
-                    owner_resolve_status=owner_result.status,
-                    source_owner_external_json=source_owner_ext,
-                    customer_name=buyer_name,
-                    customer_region=buyer_country,
-                    customer_external_id=customer_external_id,
-                    priority_level=priority_level,
-                    confidence_score=confidence_score,
-                    urgency=urgency,
-                    title=title,
-                    summary=latest_content,
-                    key_signals_json=key_signals,
-                    conversation_summary_json=conversation_summary,
-                    background_check_json=bg_json,
-                    background_summary_json=background_summary,
-                    customer_profile_json=customer_profile or None,
-                    recommended_strategy=strategy,
-                    opening_message_en=opening_msg,
-                    follow_up_message_en=follow_msg,
-                    full_report_html=full_report_html,
-                    status="pending",
-                    due_at=due_at,
-                    latest_message_at=latest_send_time,
-                )
-                db.add(opp)
-                db.flush()
-                created_count += 1
-                # 写事件
-                db.add(CustomerOpportunityEvent(
-                    opportunity_id=opp.id, event_type="created",
-                    event_payload={"source": "accio_import", "batch_id": batch_id_str},
-                ))
-
-            if owner_result.status in ("unassigned", "conflict", "inactive_user"):
-                unassigned_count += 1
-                if owner_result.status == "unassigned" and str(self_ali_id) not in [a.get("external_account_id") for a in unassigned_accounts]:
-                    unassigned_accounts.append({
-                        "provider": "alibaba_icbu",
-                        "external_account_id": str(self_ali_id),
-                        "external_display_name": subaccount_name,
-                    })
-
-        except Exception as e:
-            logger.error(f"Failed to process item {item.get('source_key', '?')}: {e}")
-            failed_count += 1
-
-    # 更新批次统计
-    batch.created_count = created_count
-    batch.updated_count = updated_count
-    batch.unassigned_count = unassigned_count
-    batch.failed_count = failed_count
-    batch.item_count = len(items)
-    batch.status = "success" if failed_count == 0 else ("partial_failed" if created_count + updated_count > 0 else "failed")
-    db.commit()
-
-    # ── 雷达事件入口：为已创建/更新的机会生成画像事件 ──
-    try:
-        from app.insight.customer_profile_service import ingest_opportunity_event
-        for opp in db.query(CustomerOpportunity).filter(
-            CustomerOpportunity.source_key.in_([item.get("source_key") for item in items if item.get("source_key")])
-        ).all():
-            ingest_opportunity_event(db, opp)
-    except Exception:
-        logger.exception("Radar event ingestion failed after ACCIO import")
-
-    return {
-        "batch_id": batch.id,
-        "batch_source_id": batch_id_str,
-        "item_count": len(items),
-        "created_count": created_count,
-        "updated_count": updated_count,
-        "unassigned_count": unassigned_count,
-        "failed_count": failed_count,
-        "status": batch.status,
-        "unassigned_external_accounts": unassigned_accounts,
-    }
+from app.auth.models import ArkUser
+from app.core.time import beijing_now
+from app.customer.models import (
+    CustomerAccount,
+    CustomerAction,
+    CustomerAssignment,
+    CustomerOpportunity,
+)
+from app.customer.workflow_service import (
+    CustomerWorkflowConflict,
+    CustomerWorkflowNotFound,
+    append_opportunity_event,
+    transition_opportunity,
+)
 
 
-# ── 机会查询 ────────────────────────────────────────────
+def _live_customer_ids(db: Session, user_id: int):
+    return db.query(CustomerAssignment.customer_id).filter(
+        CustomerAssignment.user_id == user_id,
+        CustomerAssignment.assignment_role.in_(("primary", "collaborator")),
+        CustomerAssignment.assignment_status == "active",
+        CustomerAssignment.effective_to.is_(None),
+    )
+
 
 def get_opportunity(db: Session, opp_id: int) -> CustomerOpportunity | None:
-    return db.query(CustomerOpportunity).get(opp_id)
+    return db.get(CustomerOpportunity, opp_id)
+
+
+def _filtered_query(
+    db: Session,
+    *,
+    owner_user_id: int | None = None,
+    status: str | None = None,
+    priority_level: str | None = None,
+    source: str | None = None,
+    keyword: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    live_scope_user_id: int | None = None,
+):
+    query = db.query(CustomerOpportunity)
+    if owner_user_id is not None:
+        query = query.filter(CustomerOpportunity.owner_user_id == owner_user_id)
+    if live_scope_user_id is not None:
+        query = query.filter(
+            CustomerOpportunity.customer_id.in_(
+                _live_customer_ids(db, live_scope_user_id)
+            )
+        )
+    if status:
+        query = query.filter(CustomerOpportunity.status == status)
+    if priority_level:
+        query = query.filter(CustomerOpportunity.priority_level == priority_level)
+    if source:
+        query = query.filter(CustomerOpportunity.source == source)
+    if keyword:
+        pattern = f"%{keyword.strip()}%"
+        query = query.join(
+            CustomerAccount,
+            CustomerAccount.id == CustomerOpportunity.customer_id,
+        ).filter(or_(
+            CustomerAccount.display_name.ilike(pattern),
+            CustomerAccount.canonical_company_name.ilike(pattern),
+            CustomerOpportunity.title.ilike(pattern),
+            CustomerOpportunity.summary.ilike(pattern),
+        ))
+    if date_from:
+        query = query.filter(CustomerOpportunity.created_at >= datetime.fromisoformat(date_from))
+    if date_to:
+        query = query.filter(CustomerOpportunity.created_at <= datetime.fromisoformat(date_to))
+    return query
+
+
+def _order_query(query):
+    return query.order_by(
+        CustomerOpportunity.due_at.is_(None).asc(),
+        CustomerOpportunity.due_at.asc(),
+        CustomerOpportunity.created_at.desc(),
+    )
+
+
+def _page(query, page: int, page_size: int) -> dict:
+    total = query.count()
+    items = (
+        _order_query(query)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 def list_my_opportunities(
-    db: Session, user_id: int,
-    status: str | None = None, priority_level: str | None = None,
-    source: str | None = None, keyword: str | None = None,
-    date_from: str | None = None, date_to: str | None = None,
-    page: int = 1, page_size: int = 20,
+    db: Session,
+    user_id: int,
+    status: str | None = None,
+    priority_level: str | None = None,
+    source: str | None = None,
+    keyword: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
 ) -> dict:
-    q = db.query(CustomerOpportunity).filter(
-        CustomerOpportunity.owner_user_id == user_id,
+    return _page(
+        _filtered_query(
+            db,
+            owner_user_id=user_id,
+            live_scope_user_id=user_id,
+            status=status,
+            priority_level=priority_level,
+            source=source,
+            keyword=keyword,
+            date_from=date_from,
+            date_to=date_to,
+        ),
+        page,
+        page_size,
     )
-    if status:
-        q = q.filter(CustomerOpportunity.status == status)
-    if priority_level:
-        q = q.filter(CustomerOpportunity.priority_level == priority_level)
-    if source:
-        q = q.filter(CustomerOpportunity.source == source)
-    if keyword:
-        kw = f"%{keyword}%"
-        q = q.filter(or_(
-            CustomerOpportunity.customer_name.like(kw),
-            CustomerOpportunity.title.like(kw),
-            CustomerOpportunity.summary.like(kw),
-        ))
-    if date_from:
-        q = q.filter(CustomerOpportunity.created_at >= date_from)
-    if date_to:
-        q = q.filter(CustomerOpportunity.created_at <= date_to)
-
-    total = q.count()
-    items = q.order_by(CustomerOpportunity.due_at.asc().nulls_last(), CustomerOpportunity.created_at.desc()) \
-        .offset((page - 1) * page_size).limit(page_size).all()
-    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 def list_all_opportunities(
     db: Session,
-    status: str | None = None, priority_level: str | None = None,
-    owner_user_id: int | None = None, resolve_status: str | None = None,
+    status: str | None = None,
+    priority_level: str | None = None,
+    owner_user_id: int | None = None,
+    resolve_status: str | None = None,
     keyword: str | None = None,
-    page: int = 1, page_size: int = 20,
+    page: int = 1,
+    page_size: int = 20,
 ) -> dict:
-    q = db.query(CustomerOpportunity)
-    if status:
-        q = q.filter(CustomerOpportunity.status == status)
-    if priority_level:
-        q = q.filter(CustomerOpportunity.priority_level == priority_level)
-    if owner_user_id:
-        q = q.filter(CustomerOpportunity.owner_user_id == owner_user_id)
-    if resolve_status:
-        q = q.filter(CustomerOpportunity.owner_resolve_status == resolve_status)
-    if keyword:
-        kw = f"%{keyword}%"
-        q = q.filter(or_(
-            CustomerOpportunity.customer_name.like(kw),
-            CustomerOpportunity.title.like(kw),
-        ))
-    total = q.count()
-    items = q.order_by(CustomerOpportunity.created_at.desc()) \
-        .offset((page - 1) * page_size).limit(page_size).all()
-    return {"items": items, "total": total, "page": page, "page_size": page_size}
-
-
-def list_unassigned_opportunities(db: Session, page: int = 1, page_size: int = 20) -> dict:
-    q = db.query(CustomerOpportunity).filter(
-        CustomerOpportunity.owner_resolve_status.in_(["unassigned", "conflict", "inactive_user"])
+    query = _filtered_query(
+        db,
+        owner_user_id=owner_user_id,
+        status=status,
+        priority_level=priority_level,
+        keyword=keyword,
     )
-    total = q.count()
-    items = q.order_by(CustomerOpportunity.created_at.desc()) \
-        .offset((page - 1) * page_size).limit(page_size).all()
-    return {"items": items, "total": total, "page": page, "page_size": page_size}
+    if resolve_status in {"unassigned", "conflict", "inactive_user"}:
+        query = query.filter(CustomerOpportunity.owner_user_id.is_(None))
+    return _page(query, page, page_size)
+
+
+def list_unassigned_opportunities(
+    db: Session,
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    return _page(
+        db.query(CustomerOpportunity).filter(CustomerOpportunity.owner_user_id.is_(None)),
+        page,
+        page_size,
+    )
 
 
 def get_opportunity_stats(db: Session, user_id: int) -> dict:
-    """获取当前用户的 KPI 统计"""
     now = beijing_now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-
-    base = db.query(CustomerOpportunity).filter(CustomerOpportunity.owner_user_id == user_id)
-
-    total = base.count()
-    pending = base.filter(CustomerOpportunity.status == "pending").count()
-    contacted = base.filter(CustomerOpportunity.status == "contacted").count()
-    replied = base.filter(CustomerOpportunity.status == "replied").count()
-    quoted = base.filter(CustomerOpportunity.status == "quoted").count()
-    won = base.filter(CustomerOpportunity.status == "won").count()
-    lost = base.filter(CustomerOpportunity.status == "lost").count()
-
-    # A 类
-    a_count = base.filter(CustomerOpportunity.priority_level == "A").count()
-
-    # 超时未处理
-    overdue = base.filter(
-        CustomerOpportunity.status == "pending",
-        CustomerOpportunity.due_at.isnot(None),
-        CustomerOpportunity.due_at < now,
-    ).count()
-
-    # 今日已联系
-    today_contacted = base.filter(
-        CustomerOpportunity.status.in_(["contacted", "replied", "quoted"]),
-        CustomerOpportunity.handled_at >= today_start,
-    ).count()
-
+    base = db.query(CustomerOpportunity).filter(
+        CustomerOpportunity.owner_user_id == user_id,
+        CustomerOpportunity.customer_id.in_(_live_customer_ids(db, user_id)),
+    )
+    status_counts = {
+        status: base.filter(CustomerOpportunity.status == status).count()
+        for status in ("pending", "contacted", "replied", "quoted", "won", "lost")
+    }
     return {
-        "total": total,
-        "pending": pending,
-        "contacted": contacted,
-        "replied": replied,
-        "quoted": quoted,
-        "won": won,
-        "lost": lost,
-        "a_count": a_count,
-        "overdue": overdue,
-        "today_contacted": today_contacted,
+        "total": base.count(),
+        **status_counts,
+        "a_count": base.filter(CustomerOpportunity.priority_level == "A").count(),
+        "overdue": base.filter(
+            CustomerOpportunity.status == "pending",
+            CustomerOpportunity.due_at.isnot(None),
+            CustomerOpportunity.due_at < now,
+        ).count(),
+        "today_contacted": base.filter(
+            CustomerOpportunity.status.in_(("contacted", "replied", "quoted")),
+            CustomerOpportunity.handled_at >= today_start,
+        ).count(),
     }
 
 
-# ── 状态/反馈 ───────────────────────────────────────────
-
-def update_opportunity_status(db: Session, opp_id: int, new_status: str, note: str | None, user_id: int) -> CustomerOpportunity:
-    opp = db.query(CustomerOpportunity).get(opp_id)
-    if not opp:
-        raise ValueError(f"Opportunity {opp_id} not found")
-    old_status = opp.status
-    opp.status = new_status
-    if new_status in ("contacted", "replied", "quoted", "won", "lost", "dismissed"):
-        if not opp.handled_at:
-            opp.handled_at = beijing_now()
-    db.add(CustomerOpportunityEvent(
+def update_opportunity_status(
+    db: Session,
+    opp_id: int,
+    new_status: str,
+    note: str | None,
+    user_id: int,
+    *,
+    evidence_event_ids: tuple[int, ...] = (),
+    evidence_fact_ids: tuple[int, ...] = (),
+    linked_order_id: int | None = None,
+    close_reason_code: str | None = None,
+    close_reason_text: str | None = None,
+    can_manage: bool = False,
+) -> CustomerOpportunity:
+    opportunity = transition_opportunity(
+        db,
         opportunity_id=opp_id,
-        event_type="status_changed",
+        new_status=new_status,
         actor_user_id=user_id,
-        event_payload={"old_status": old_status, "new_status": new_status, "note": note},
-    ))
-    db.commit()
-
-    # ── 雷达事件入口 ──
-    try:
-        from app.insight.customer_profile_service import ingest_opportunity_event
-        ingest_opportunity_event(db, opp)
-    except Exception:
-        logger.exception("Radar event ingestion failed after status change")
-
-    return opp
-
-
-def add_opportunity_feedback(db: Session, opp_id: int, feedback: str, note: str | None, user_id: int) -> CustomerOpportunityEvent:
-    opp = db.query(CustomerOpportunity).get(opp_id)
-    if not opp:
-        raise ValueError(f"Opportunity {opp_id} not found")
-    opp.feedback = feedback
-    event = CustomerOpportunityEvent(
-        opportunity_id=opp_id,
-        event_type="feedback",
-        actor_user_id=user_id,
-        event_payload={"feedback": feedback, "note": note},
+        reason=(note or "manual_stage_change").strip(),
+        close_reason_code=close_reason_code,
+        close_reason_text=close_reason_text,
+        evidence_event_ids=evidence_event_ids,
+        evidence_fact_ids=evidence_fact_ids,
+        linked_order_id=linked_order_id,
+        can_manage=can_manage,
     )
-    db.add(event)
+    if opportunity.handled_at is None:
+        opportunity.handled_at = beijing_now()
     db.commit()
-
-    # ── 雷达事件入口 ──
-    try:
-        from app.insight.customer_profile_service import ingest_opportunity_event
-        ingest_opportunity_event(db, opp)
-    except Exception:
-        logger.exception("Radar event ingestion failed after feedback")
-
-    return event
+    db.refresh(opportunity)
+    return opportunity
 
 
-def assign_opportunity(db: Session, opp_id: int, user_id: int, admin_user_id: int) -> CustomerOpportunity:
-    """管理员手动分配机会给指定用户"""
-    opp = db.query(CustomerOpportunity).get(opp_id)
-    if not opp:
-        raise ValueError(f"Opportunity {opp_id} not found")
-    old_owner = opp.owner_user_id
-    opp.owner_user_id = user_id
-    opp.owner_resolve_status = "resolved"
-    db.add(CustomerOpportunityEvent(
-        opportunity_id=opp_id,
-        event_type="assigned",
-        actor_user_id=admin_user_id,
-        event_payload={"old_owner": old_owner, "new_owner": user_id},
-    ))
+def assign_opportunity(
+    db: Session,
+    opp_id: int,
+    user_id: int,
+    admin_user_id: int,
+) -> CustomerOpportunity:
+    candidate = db.get(CustomerOpportunity, opp_id)
+    if candidate is None:
+        raise CustomerWorkflowNotFound("OPPORTUNITY_NOT_FOUND")
+    account = db.query(CustomerAccount).filter(
+        CustomerAccount.id == candidate.customer_id,
+        CustomerAccount.record_status == "active",
+    ).with_for_update().one_or_none()
+    if account is None:
+        raise CustomerWorkflowNotFound("CUSTOMER_NOT_FOUND")
+    opportunity = (
+        db.query(CustomerOpportunity)
+        .filter(
+            CustomerOpportunity.id == opp_id,
+            CustomerOpportunity.customer_id == account.id,
+        )
+        .with_for_update()
+        .one_or_none()
+    )
+    if opportunity is None:
+        raise CustomerWorkflowNotFound("OPPORTUNITY_NOT_FOUND")
+    user = db.query(ArkUser).filter(
+        ArkUser.id == user_id,
+        ArkUser.is_active.is_(True),
+    ).one_or_none()
+    if user is None:
+        raise CustomerWorkflowConflict("USER_NOT_ACTIVE")
+    assignee_scope = db.query(CustomerAssignment.id).filter(
+        CustomerAssignment.customer_id == opportunity.customer_id,
+        CustomerAssignment.user_id == user_id,
+        CustomerAssignment.assignment_role.in_(("primary", "collaborator")),
+        CustomerAssignment.assignment_status == "active",
+        CustomerAssignment.effective_to.is_(None),
+    ).first()
+    if assignee_scope is None:
+        raise CustomerWorkflowConflict("OPPORTUNITY_ASSIGNEE_SCOPE_REQUIRED")
+    primary = db.query(CustomerAssignment).filter(
+        CustomerAssignment.customer_id == opportunity.customer_id,
+        CustomerAssignment.assignment_role == "primary",
+        CustomerAssignment.assignment_status == "active",
+        CustomerAssignment.effective_to.is_(None),
+    ).one_or_none()
+    if primary is not None and primary.user_id != user_id:
+        raise CustomerWorkflowConflict("OPPORTUNITY_PRIMARY_OWNER_CONFLICT")
+    previous_owner = opportunity.owner_user_id
+    now = beijing_now()
+    linked_actions = db.query(CustomerAction).filter(
+        CustomerAction.customer_id == opportunity.customer_id,
+        CustomerAction.opportunity_id == opportunity.id,
+        CustomerAction.status.in_(("pending", "snoozed")),
+    ).with_for_update().all()
+    actions_changed = False
+    for action in linked_actions:
+        if action.owner_user_id != user_id:
+            action.owner_user_id = user_id
+            action.updated_at = now
+            actions_changed = True
+    if previous_owner != user_id:
+        opportunity.owner_user_id = user_id
+        opportunity.updated_at = now
+        append_opportunity_event(
+            db,
+            opportunity=opportunity,
+            event_type="assigned",
+            actor_user_id=admin_user_id,
+            event_payload={"from_user_id": previous_owner, "to_user_id": user_id},
+        )
+    if previous_owner != user_id or actions_changed:
+        account.profile_input_seq = int(account.profile_input_seq) + 1
+        account.updated_at = now
     db.commit()
-
-    # ── 雷达事件入口 ──
-    try:
-        from app.insight.customer_profile_service import ingest_opportunity_event
-        ingest_opportunity_event(db, opp)
-    except Exception:
-        logger.exception("Radar event ingestion failed after assignment")
-
-    return opp
+    db.refresh(opportunity)
+    return opportunity
 
 
-# ── 辅助 ────────────────────────────────────────────────
-
-def _parse_dt(val) -> datetime | None:
-    if not val:
-        return None
-    if isinstance(val, datetime):
-        return val
-    try:
-        return datetime.strptime(str(val), "%Y-%m-%d %H:%M:%S")
-    except (ValueError, TypeError):
-        try:
-            return datetime.strptime(str(val), "%Y-%m-%dT%H:%M:%S")
-        except (ValueError, TypeError):
-            return None
+__all__ = [
+    "assign_opportunity",
+    "get_opportunity",
+    "get_opportunity_stats",
+    "list_all_opportunities",
+    "list_my_opportunities",
+    "list_unassigned_opportunities",
+    "update_opportunity_status",
+]

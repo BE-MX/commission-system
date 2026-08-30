@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, datetime
 from app.core.time import beijing_today
 from typing import Optional
 
@@ -899,17 +899,6 @@ def _serialize_item_detail(item) -> dict:
 # ── 客户机会台 ───────────────────────────────────────
 # ──────────────────────────────────────────────────────
 
-@router.post("/customer-opportunities/import/accio", summary="ACCIO WORK 导入询盘")
-def import_accio(
-    payload: dict,
-    db: Session = Depends(get_db),
-    _authed: bool = Depends(_verify_import_api_key),
-):
-    from app.insight.customer_opportunity_service import import_accio_inquiries
-    result = import_accio_inquiries(db, payload)
-    return _ok(result, message="导入完成")
-
-
 @router.get("/customer-opportunities/my", summary="我的客户机会")
 def list_my_opportunities(
     status: str = Query(None),
@@ -951,12 +940,27 @@ def get_opportunity_detail(
     _user: dict = Depends(_require_opportunity_read),
 ):
     from app.insight.customer_opportunity_service import get_opportunity
+    from app.customer.access_service import CustomerAccessDenied, require_customer_access
     opp = get_opportunity(db, opp_id)
     if not opp:
-        raise HTTPException(status_code=404, detail="机会不存在")
-    # 非 manage 权限只能看自己的
-    if not _has_perm(_user, "customer_opportunity:manage") and opp.owner_user_id != _user["sub"]:
-        raise HTTPException(status_code=403, detail="无权查看该机会")
+        raise HTTPException(status_code=404, detail="机会不存在或无权访问")
+    try:
+        require_customer_access(
+            db,
+            customer_id=opp.customer_id,
+            user=_user,
+            action_permissions={
+                "customer_opportunity:read",
+                "customer_opportunity:write",
+                "customer_opportunity:manage",
+            },
+            manage_permissions={"customer_opportunity:manage"},
+        )
+    except CustomerAccessDenied as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="机会不存在或无权访问",
+        ) from exc
     return _ok(_serialize_opportunity_detail(opp))
 
 
@@ -965,31 +969,43 @@ def update_opp_status(
     opp_id: int,
     status: str = Query(..., description="新状态"),
     note: str = Query(None),
+    close_reason_code: str = Query(None),
+    close_reason_text: str = Query(None, max_length=1000),
+    evidence_event_ids: list[int] = Query(default=[]),
+    evidence_fact_ids: list[int] = Query(default=[]),
+    linked_order_id: int = Query(None),
     db: Session = Depends(get_db),
     _user: dict = Depends(_require_opportunity_write),
 ):
     from app.insight.customer_opportunity_service import update_opportunity_status
+    from app.customer.workflow_service import CustomerWorkflowNotFound
     try:
-        opp = update_opportunity_status(db, opp_id, status, note, _user["sub"])
+        opp = update_opportunity_status(
+            db,
+            opp_id,
+            status,
+            note,
+            _user["sub"],
+            evidence_event_ids=tuple(evidence_event_ids),
+            evidence_fact_ids=tuple(evidence_fact_ids),
+            linked_order_id=linked_order_id,
+            close_reason_code=close_reason_code,
+            close_reason_text=close_reason_text,
+            can_manage=_has_perm(_user, "customer_opportunity:manage"),
+        )
         return _ok({"id": opp.id, "status": opp.status}, message="状态已更新")
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-@router.post("/customer-opportunities/{opp_id}/feedback", summary="添加反馈")
-def add_opp_feedback(
-    opp_id: int,
-    feedback: str = Query(..., description="useful/not_useful"),
-    note: str = Query(None),
-    db: Session = Depends(get_db),
-    _user: dict = Depends(_require_opportunity_write),
-):
-    from app.insight.customer_opportunity_service import add_opportunity_feedback
-    try:
-        add_opportunity_feedback(db, opp_id, feedback, note, _user["sub"])
-        return _ok(None, message="反馈已记录")
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        if isinstance(e, CustomerWorkflowNotFound) or str(e) == "OPPORTUNITY_ACTOR_FORBIDDEN":
+            raise HTTPException(
+                status_code=404,
+                detail="机会不存在或无权访问",
+            ) from e
+        if str(e) == "MANUAL_WON_PERMISSION_REQUIRED":
+            raise HTTPException(
+                status_code=403,
+                detail="缺少无订单人工确认成交权限",
+            ) from e
+        raise HTTPException(status_code=409, detail=str(e))
 
 
 @router.get("/customer-opportunities/admin/all", summary="管理员: 全部机会")
@@ -1051,20 +1067,21 @@ def admin_assign(
 def _serialize_opportunity(o) -> dict:
     return {
         "id": o.id,
+        "customer_id": o.customer_id,
         "opportunity_type": o.opportunity_type,
         "source": o.source,
+        "source_system": o.source_system,
+        "source_account_key": o.source_account_key,
         "source_key": o.source_key,
         "owner_user_id": o.owner_user_id,
-        "owner_resolve_status": o.owner_resolve_status,
-        "customer_name": o.customer_name,
-        "customer_region": o.customer_region,
         "priority_level": o.priority_level,
         "confidence_score": o.confidence_score,
         "urgency": o.urgency,
         "title": o.title,
         "summary": o.summary,
         "status": o.status,
-        "feedback": o.feedback,
+        "next_step": o.next_step,
+        "next_step_due_at": o.next_step_due_at.isoformat() if o.next_step_due_at else None,
         "due_at": o.due_at.isoformat() if o.due_at else None,
         "latest_message_at": o.latest_message_at.isoformat() if o.latest_message_at else None,
         "handled_at": o.handled_at.isoformat() if o.handled_at else None,
@@ -1078,18 +1095,21 @@ def _serialize_opportunity_detail(o) -> dict:
     base.update({
         "source_ref_type": o.source_ref_type,
         "source_ref_id": o.source_ref_id,
-        "source_owner_external_json": o.source_owner_external_json,
-        "customer_external_id": o.customer_external_id,
-        "key_signals_json": o.key_signals_json,
-        "conversation_summary_json": o.conversation_summary_json,
-        "background_check_json": o.background_check_json,
-        "background_summary_json": o.background_summary_json,
-        "customer_profile_json": o.customer_profile_json,
+        "primary_contact_id": o.primary_contact_id,
+        "expected_amount": str(o.expected_amount) if o.expected_amount is not None else None,
+        "currency": o.currency,
+        "expected_close_date": o.expected_close_date.isoformat() if o.expected_close_date else None,
+        "stage_probability": o.stage_probability,
+        "forecast_category": o.forecast_category,
+        "product_requirement_json": o.product_requirement_json,
+        "competitor_json": o.competitor_json,
         "recommended_strategy": o.recommended_strategy,
         "opening_message_en": o.opening_message_en,
         "follow_up_message_en": o.follow_up_message_en,
-        "full_report_html": o.full_report_html,
-        "evidence_json": o.evidence_json,
+        "evidence_fact_ids": o.evidence_fact_ids,
+        "linked_order_id": o.linked_order_id,
+        "close_reason_code": o.close_reason_code,
+        "close_reason_text": o.close_reason_text,
     })
     return base
 
@@ -1099,6 +1119,53 @@ def _serialize_opportunity_detail(o) -> dict:
 
 def _get_user_id(user: dict) -> int:
     return user["sub"]
+
+
+def _run_radar_action_mutation(operation):
+    from app.customer.workflow_service import CustomerWorkflowNotFound
+
+    try:
+        return operation()
+    except ValueError as exc:
+        if isinstance(exc, CustomerWorkflowNotFound) or str(exc) in {
+            "ACTION_OWNER_REQUIRED",
+            "ACTION_ACTOR_FORBIDDEN",
+        }:
+            raise HTTPException(
+                status_code=404,
+                detail="行动不存在或无权访问",
+            ) from exc
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+def _customer_radar_access(db: Session, customer_id: int, user: dict):
+    from app.customer.access_service import (
+        CustomerAccessDenied,
+        require_customer_access,
+    )
+
+    try:
+        return require_customer_access(
+            db,
+            customer_id=customer_id,
+            user=user,
+            action_permissions={
+                "customer_radar:read",
+                "customer_radar:write",
+                "customer_radar:manage",
+            },
+            manage_permissions={"customer_radar:manage"},
+        )
+    except CustomerAccessDenied as exc:
+        raise HTTPException(status_code=403, detail="无权访问该客户") from exc
+
+
+def _require_customer_radar_scope(
+    db: Session,
+    customer_id: int,
+    user: dict,
+) -> None:
+    _customer_radar_access(db, customer_id, user)
 
 
 @router.get("/customer-radar/focus")
@@ -1158,19 +1225,45 @@ def radar_complete_action(
     action_id: int,
     feedback: Optional[str] = Query(None),
     note: Optional[str] = Query(None),
+    outcome_code: str = Query("other"),
+    channel: Optional[str] = Query(None),
+    occurred_at: Optional[str] = Query(None),
+    summary: Optional[str] = Query(None, max_length=1000),
+    next_step: Optional[str] = Query(None, max_length=1000),
     _user: dict = Depends(_require_radar_write),
     db: Session = Depends(get_db),
 ):
     """完成行动"""
     from app.insight.customer_radar_service import complete_action, _serialize_action
     uid = _get_user_id(_user)
-    action = complete_action(db, action_id, uid, feedback, note)
-    return _ok(_serialize_action(action))
+    occurred = datetime.fromisoformat(occurred_at) if occurred_at else None
+    action = _run_radar_action_mutation(
+        lambda: complete_action(
+            db,
+            action_id,
+            uid,
+            feedback,
+            note,
+            outcome_code=outcome_code,
+            channel=channel,
+            occurred_at=occurred,
+            summary=summary,
+            next_step=next_step,
+        )
+    )
+    data = _serialize_action(action)
+    data["activity_event_id"] = (
+        ((action.feedback_json or {}).get("completion") or {}).get(
+            "activity_event_id"
+        )
+    )
+    return _ok(data)
 
 
 @router.put("/customer-radar/actions/{action_id}/dismiss")
 def radar_dismiss_action(
     action_id: int,
+    reason_code: str = Query("user_dismissed"),
     note: Optional[str] = Query(None),
     _user: dict = Depends(_require_radar_write),
     db: Session = Depends(get_db),
@@ -1178,7 +1271,15 @@ def radar_dismiss_action(
     """忽略行动"""
     from app.insight.customer_radar_service import dismiss_action, _serialize_action
     uid = _get_user_id(_user)
-    action = dismiss_action(db, action_id, uid, note)
+    action = _run_radar_action_mutation(
+        lambda: dismiss_action(
+            db,
+            action_id,
+            uid,
+            reason_code=reason_code,
+            note=note,
+        )
+    )
     return _ok(_serialize_action(action))
 
 
@@ -1194,7 +1295,9 @@ def radar_snooze_action(
     from app.insight.customer_radar_service import snooze_action, _serialize_action
     uid = _get_user_id(_user)
     until_dt = datetime.fromisoformat(until)
-    action = snooze_action(db, action_id, uid, until_dt)
+    action = _run_radar_action_mutation(
+        lambda: snooze_action(db, action_id, uid, until_dt)
+    )
     return _ok(_serialize_action(action))
 
 
@@ -1208,30 +1311,35 @@ def radar_action_feedback(
     """提交反馈（useful/not_useful）"""
     from app.insight.customer_radar_service import submit_feedback, _serialize_action
     uid = _get_user_id(_user)
-    action = submit_feedback(db, action_id, body.get("feedback", ""), body.get("note"), uid)
+    action = _run_radar_action_mutation(
+        lambda: submit_feedback(
+            db,
+            action_id,
+            body.get("feedback", ""),
+            body.get("note"),
+            uid,
+        )
+    )
     return _ok(_serialize_action(action))
 
 
-@router.get("/customer-radar/profiles/{profile_id}")
+@router.get("/customer-radar/customers/{customer_id}")
 def radar_profile_detail(
-    profile_id: int,
+    customer_id: int,
     _user: dict = Depends(_require_radar_read),
     db: Session = Depends(get_db),
 ):
     """画像详情 + 最近事件 + 今日行动"""
     from app.insight.customer_profile_service import get_profile
     from app.insight.customer_radar_service import _serialize_action
-    from app.insight.models import CustomerAction
+    from app.customer.access_service import apply_record_access
+    from app.customer.models import CustomerAction, CustomerEvent
 
-    profile = get_profile(db, profile_id)
+    access = _customer_radar_access(db, customer_id, _user)
+
+    profile = get_profile(db, customer_id, access=access)
     if not profile:
         raise HTTPException(status_code=404, detail="画像不存在")
-
-    # 权限校验：只能看自己的画像（非 manage 权限时）
-    uid = _get_user_id(_user)
-    if not _has_any_perm(_user, ["customer_radar:manage"]):
-        if profile.owner_user_id != uid:
-            raise HTTPException(status_code=403, detail="无权查看此画像")
 
     # 最近事件
     events = [
@@ -1243,66 +1351,68 @@ def radar_profile_detail(
             "event_summary": e.event_summary,
             "occurred_at": e.occurred_at.isoformat() if e.occurred_at else None,
         }
-        for e in (profile.events or [])[:20]
+        for e in apply_record_access(
+            db.query(CustomerEvent),
+            CustomerEvent,
+            access,
+        ).order_by(CustomerEvent.occurred_at.desc()).limit(20).all()
     ]
 
     # 今日行动
     today = beijing_today()
     action = db.query(CustomerAction).filter(
-        CustomerAction.profile_id == profile_id,
+        CustomerAction.customer_id == customer_id,
+        CustomerAction.owner_user_id == access.actor_user_id,
         CustomerAction.action_date == today,
     ).first()
 
     return _ok({
-        "profile": {
-            "id": profile.id,
-            "customer_name": profile.customer_name,
-            "customer_region": profile.customer_region,
-            "customer_company": profile.customer_company,
-            "customer_external_id": profile.customer_external_id,
-            "profile_tags": profile.profile_tags or [],
-            "profile_judgement": profile.profile_judgement or "",
-            "profile_signals_json": profile.profile_signals_json or [],
-            "priority_score": profile.priority_score,
-            "total_opportunities": profile.total_opportunities,
-            "total_events": profile.total_events,
-            "last_event_at": profile.last_event_at.isoformat() if profile.last_event_at else None,
-            "first_seen_at": profile.first_seen_at.isoformat() if profile.first_seen_at else None,
-            "suggested_message": profile.suggested_message or "",
-            "status": profile.status,
-        },
+        "profile": profile,
         "active_action": _serialize_action(action) if action else None,
         "recent_events": events,
     })
 
 
-@router.get("/customer-radar/profiles/{profile_id}/sources")
+@router.get("/customer-radar/customers/{customer_id}/sources")
 def radar_profile_sources(
-    profile_id: int,
+    customer_id: int,
     source_type: Optional[str] = Query(None, description="opportunity/event/note"),
     _user: dict = Depends(_require_radar_read),
     db: Session = Depends(get_db),
 ):
     """原始记录（抽屉用）"""
     from app.insight.customer_source_service import get_source_records
-    return _ok(get_source_records(db, profile_id, source_type))
+    access = _customer_radar_access(db, customer_id, _user)
+    return _ok(get_source_records(
+        db,
+        customer_id,
+        source_type,
+        access=access,
+    ))
 
 
-@router.post("/customer-radar/profiles/{profile_id}/notes")
+@router.post("/customer-radar/customers/{customer_id}/notes")
 def radar_add_note(
-    profile_id: int,
+    customer_id: int,
     body: dict,
     _user: dict = Depends(_require_radar_write),
     db: Session = Depends(get_db),
 ):
     """添加手动备注"""
     from app.insight.customer_source_service import add_manual_note
+    access = _customer_radar_access(db, customer_id, _user)
     uid = _get_user_id(_user)
     note_text = body.get("note", "").strip()
     if not note_text:
         raise HTTPException(status_code=400, detail="备注内容不能为空")
-    evt = add_manual_note(db, profile_id, note_text, uid)
-    return _ok({"id": evt.id, "event_title": evt.event_title}, code=201)
+    annotation = add_manual_note(
+        db,
+        customer_id,
+        note_text,
+        uid,
+        access=access,
+    )
+    return _ok({"id": annotation.id, "annotation_type": annotation.annotation_type}, code=201)
 
 
 @router.post("/customer-radar/actions/refresh")

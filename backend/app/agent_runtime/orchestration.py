@@ -46,10 +46,14 @@ def enqueue_repurchase_runs(db: Session, *, action_date: date | None = None, lim
     batch_size = min(limit or settings.AGENT_RUNTIME_REPURCHASE_BATCH_SIZE, 100)
     actions = db.query(CustomerAction).filter(
         CustomerAction.action_date == target_date,
-        CustomerAction.thread_group == "reorder_window",
-        CustomerAction.action_status == "pending",
-        CustomerAction.source_run_id.is_(None),
-    ).order_by(CustomerAction.sort_order.desc(), CustomerAction.id).limit(batch_size).all()
+        CustomerAction.thread_group == "reorder",
+        CustomerAction.status == "pending",
+        CustomerAction.agent_run_id.is_(None),
+    ).order_by(
+        CustomerAction.due_at.is_(None).asc(),
+        CustomerAction.due_at.asc(),
+        CustomerAction.id,
+    ).limit(batch_size).all()
     created = 0
     for action in actions:
         if db.query(AgentRun).filter(
@@ -66,7 +70,7 @@ def enqueue_repurchase_runs(db: Session, *, action_date: date | None = None, lim
             continue
         permissions, roles = _identity(user)
         if "super_admin" not in roles and not _has_permissions(
-            permissions, "agent_runtime:invoke", "customer_radar:read", "order_intelligence:read",
+            permissions, "agent_runtime:invoke", "customer_radar:write", "order_intelligence:read",
         ):
             continue
         session = None
@@ -75,14 +79,14 @@ def enqueue_repurchase_runs(db: Session, *, action_date: date | None = None, lim
                 "profile_key": "repurchase_risk_analyst",
                 "title": f"复购行动分析 #{action.id}",
                 "context_type": "customer",
-                "context_id": str(action.profile_id),
+                "context_id": str(action.customer_id),
             }, user_id=action.owner_user_id, system_initiated=True)
             service.create_run(db, session.id, {
-                "idempotency_key": f"repurchase-action-{action.id}-{(action.source_fingerprint or 'rule')[:32]}",
+                "idempotency_key": f"repurchase-action-{action.id}-{action.action_fingerprint[:32]}",
                 "input": {
-                    "customer_profile_id": action.profile_id,
+                    "customer_id": action.customer_id,
                     "action_id": action.id,
-                    "rule_reason": action.action_reason,
+                    "rule_reason": action.reason,
                 },
                 "trigger_type": "schedule",
                 "business_ref_type": "customer_action",

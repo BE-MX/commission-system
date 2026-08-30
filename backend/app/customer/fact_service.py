@@ -42,6 +42,8 @@ from app.customer.models import (
     CustomerFactConflict,
     CustomerFactEvidenceLink,
     CustomerMessage,
+    CustomerAction,
+    CustomerOpportunity,
     CustomerOrder,
     CustomerQualificationReview,
     CustomerResearchTask,
@@ -174,6 +176,56 @@ EVENT_REGISTRY: Mapping[str, EventRegistration] = MappingProxyType({
         ("annotation", "manual"), {"annotation_type": str},
         required=("annotation_type",), reference="annotation", human=True,
         classification=DataClassification.RESTRICTED_INTERNAL,
+    ),
+    "opportunity.created": _event_registration(
+        ("opportunity",),
+        {
+            "source_system": str,
+            "source_account_key": str,
+            "source_key": str,
+            "status": str,
+        },
+        required=("source_system", "source_account_key", "source_key", "status"),
+        reference="opportunity",
+    ),
+    "opportunity.stage_changed": _event_registration(
+        ("opportunity", "manual"),
+        {
+            "from_status": str,
+            "to_status": str,
+            "reason": str,
+            "close_reason_code": str,
+            "close_reason_text": str,
+            "manual_won_exception": bool,
+        },
+        required=("from_status", "to_status", "reason"),
+        reference="opportunity",
+        human=True,
+    ),
+    "sales_activity.logged": _event_registration(
+        ("manual",),
+        {
+            "action_id": int,
+            "customer_id": int,
+            "contact_id": int,
+            "opportunity_id": int,
+            "channel": str,
+            "occurred_at": str,
+            "outcome_code": str,
+            "summary": str,
+            "next_step": str,
+        },
+        required=(
+            "action_id",
+            "customer_id",
+            "channel",
+            "occurred_at",
+            "outcome_code",
+            "summary",
+            "next_step",
+        ),
+        reference="action",
+        human=True,
     ),
 })
 
@@ -702,7 +754,11 @@ def _validate_subject(
         if row is None or row.customer_id != customer_id:
             raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
         return
-    # Opportunity ownership is enabled atomically when Task 7 registers its model.
+    if subject_type == "opportunity":
+        row = db.get(CustomerOpportunity, subject_id)
+        if row is None or row.customer_id != customer_id:
+            raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
+        return
     raise CustomerDomainError("FACT_SUBJECT_INVALID")
 
 
@@ -1578,6 +1634,10 @@ def _event_reference(
         row = db.get(CustomerQualificationReview, object_id)
     elif reference_kind == "research_task":
         row = db.get(CustomerResearchTask, object_id)
+    elif reference_kind == "opportunity":
+        row = db.get(CustomerOpportunity, object_id)
+    elif reference_kind == "action":
+        row = db.get(CustomerAction, object_id)
     elif reference_kind == "annotation":
         row = db.get(CustomerAnnotation, object_id)
     elif reference_kind == "identity":
@@ -1740,10 +1800,10 @@ def _validate_event_reference_semantics(
                 if target_relationship_stage is not None
                 else "EVENT_REFERENCE_INVALID"
             )
-        if source.occurred_at is not None:
-            return source.occurred_at
         if row.account_date is not None:
             return datetime.combine(row.account_date, datetime_time.min)
+        if source.occurred_at is not None:
+            return source.occurred_at
         raise CustomerDomainError("EVENT_TIME_INVALID")
     if source_ref_type == "identity":
         row = db.get(CustomerExternalIdentity, object_id)
@@ -1793,6 +1853,42 @@ def _validate_event_reference_semantics(
             row is None
             or payload.get("decision") != row.decision
             or actor_user_id != row.reviewed_by
+        ):
+            raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+    elif source_ref_type == "opportunity":
+        row = db.get(CustomerOpportunity, object_id)
+        if row is None:
+            raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+        if event_type == "opportunity.created" and (
+            payload.get("source_system") != row.source_system
+            or payload.get("source_account_key") != row.source_account_key
+            or payload.get("source_key") != row.source_key
+            or payload.get("status") != row.status
+        ):
+            raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+        if event_type == "opportunity.stage_changed" and (
+            payload.get("to_status") != row.status
+            or actor_user_id is None
+        ):
+            raise CustomerDomainError("EVENT_REFERENCE_INVALID")
+    elif source_ref_type == "action":
+        row = db.get(CustomerAction, object_id)
+        if (
+            row is None
+            or event_type != "sales_activity.logged"
+            or row.status != "done"
+            or row.completed_by != actor_user_id
+            or payload.get("action_id") != row.id
+            or payload.get("customer_id") != row.customer_id
+            or payload.get("outcome_code") != row.outcome_code
+            or (
+                "opportunity_id" in payload
+                and payload.get("opportunity_id") != row.opportunity_id
+            )
+            or (
+                "contact_id" in payload
+                and payload.get("contact_id") != row.contact_id
+            )
         ):
             raise CustomerDomainError("EVENT_REFERENCE_INVALID")
     return fallback_occurred_at
@@ -1853,9 +1949,13 @@ def _relationship_transition_applies(
             raise CustomerDomainError("RELATIONSHIP_TRANSITION_INVALID")
         source = db.get(CustomerSourceRecord, order.source_record_id)
         authoritative_time = (
-            source.occurred_at
-            if source is not None and source.occurred_at is not None
-            else occurred_at
+            datetime.combine(order.account_date, datetime_time.min)
+            if order.account_date is not None
+            else (
+                source.occurred_at
+                if source is not None and source.occurred_at is not None
+                else occurred_at
+            )
         )
         historical = bool(payload.get("historical_replay")) or trigger == "historical_order_replay"
         if historical or (
@@ -1872,17 +1972,46 @@ def _relationship_transition_applies(
             CustomerAssignment.assignment_status == "active",
             CustomerAssignment.effective_to.is_(None),
         ).first() is not None
-        # The phase-one opportunity table has no customer ownership contract;
-        # therefore development cannot be asserted safely yet.
-        if trigger != "sales_development_ready" or not has_primary:
+        has_open_opportunity = db.query(CustomerOpportunity.id).filter(
+            CustomerOpportunity.customer_id == account.id,
+            CustomerOpportunity.status.in_(("pending", "contacted", "replied", "quoted")),
+        ).first() is not None
+        if (
+            trigger != "sales_development_ready"
+            or not has_primary
+            or not has_open_opportunity
+        ):
             raise CustomerDomainError("RELATIONSHIP_TRANSITION_INVALID")
-        raise CustomerDomainError("RELATIONSHIP_TRANSITION_INVALID")
+        return True
     if current == "inactive" and target_stage == "developing":
         if event_source != "manual" or actor_user_id is None or trigger != "manual_reactivation":
             raise CustomerDomainError("RELATIONSHIP_TRANSITION_INVALID")
-        raise CustomerDomainError("RELATIONSHIP_TRANSITION_INVALID")
+        has_primary = db.query(CustomerAssignment.id).filter(
+            CustomerAssignment.customer_id == account.id,
+            CustomerAssignment.assignment_role == "primary",
+            CustomerAssignment.assignment_status == "active",
+            CustomerAssignment.effective_to.is_(None),
+        ).first() is not None
+        has_open_opportunity = db.query(CustomerOpportunity.id).filter(
+            CustomerOpportunity.customer_id == account.id,
+            CustomerOpportunity.status.in_(("pending", "contacted", "replied", "quoted")),
+        ).first() is not None
+        if not has_primary or not has_open_opportunity:
+            raise CustomerDomainError("RELATIONSHIP_TRANSITION_INVALID")
+        return True
     if current == "developing" and target_stage == "qualified":
-        raise CustomerDomainError("RELATIONSHIP_TRANSITION_INVALID")
+        has_open_opportunity = db.query(CustomerOpportunity.id).filter(
+            CustomerOpportunity.customer_id == account.id,
+            CustomerOpportunity.status.in_(("pending", "contacted", "replied", "quoted")),
+        ).first() is not None
+        if (
+            event_source != "manual"
+            or actor_user_id is None
+            or trigger != "manual_keep_qualified"
+            or has_open_opportunity
+        ):
+            raise CustomerDomainError("RELATIONSHIP_TRANSITION_INVALID")
+        return True
     if current == target_stage:
         return False
     raise CustomerDomainError("RELATIONSHIP_TRANSITION_INVALID")

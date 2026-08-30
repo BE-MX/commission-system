@@ -417,6 +417,12 @@ def seed_role_permissions(db: Session):
         ("customer_opportunity:write",  "customer_opportunity", "write",  "更新机会状态/添加反馈"),
         ("customer_opportunity:import", "customer_opportunity", "import", "ACCIO 导入询盘"),
         ("customer_opportunity:manage", "customer_opportunity", "manage", "管理全部机会/分配/管理未分配"),
+        (
+            "customer_opportunity:confirm_without_order",
+            "customer_opportunity",
+            "confirm_without_order",
+            "无订单人工确认机会成交",
+        ),
         # 外部账号绑定
         ("external_binding:read",  "external_binding", "read",  "查看外部账号绑定"),
         ("external_binding:write", "external_binding", "write", "创建/删除绑定/管理候选"),
@@ -523,7 +529,10 @@ def seed_role_permissions(db: Session):
             db.flush()
 
     # 高爆炸半径权限只能人工授予；启动 seed 不得静默扩大既有 admin 的生产控制权。
-    manual_grant_codes = {"operations:admin"}
+    manual_grant_codes = {
+        "operations:admin",
+        "customer_opportunity:confirm_without_order",
+    }
     # 给 admin 角色补齐一般非 legacy 权限（跳过已下架和显式授权项）。
     admin_role = db.query(ArkRole).filter(ArkRole.name == "admin").first()
     if admin_role:

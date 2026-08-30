@@ -300,7 +300,10 @@ def test_mixed_utc_and_beijing_domains_use_matching_clock_contracts():
     assert "run.lease_expires_at <= utc_now_naive()" in agent_gateway
 
     projection = (app_root / "agent_runtime/projection_service.py").read_text(encoding="utf-8")
-    assert "action.generated_at = beijing_now()" in projection
+    assert "now = beijing_now()" in projection
+    assert "action.generated_at = now" in projection
+    assert "action.updated_at = now" in projection
+    assert "account.updated_at = now" in projection
 
     search = (app_root / "sales_automation/service.py").read_text(encoding="utf-8")
     assert "lease_now = beijing_now()" in search

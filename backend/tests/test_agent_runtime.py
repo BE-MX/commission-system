@@ -1,5 +1,7 @@
 """Governed Agent Runtime contracts: ownership, leases, events and artifacts."""
 
+import asyncio
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 import json
@@ -25,7 +27,18 @@ from app.ai import agent_service
 from app.ai.models import AiCallLog, AiPreset, AiProvider
 from app.core.database import Base, get_db
 from app.insight import customer_radar_service
-from app.insight.models import CustomerAction, CustomerOpportunity, CustomerProfile
+from app.customer.models import (
+    CustomerAccount,
+    CustomerAction,
+    CustomerAgentRunScope,
+    CustomerAssignment,
+    CustomerEvent,
+    CustomerExternalIdentity,
+    CustomerListProjection,
+    CustomerOpportunity,
+    CustomerOpportunityEvent,
+    CustomerProfileVersion,
+)
 from app.mcp import agent_tools, auth as mcp_auth
 from app.mcp.models import MCPToken
 from app.mcp.public_web_tools import _validate_peer, _validate_public_url
@@ -53,9 +66,16 @@ def db():
         models.AgentRun.__table__,
         models.AgentEvent.__table__,
         models.AgentArtifact.__table__,
-        CustomerProfile.__table__,
+        CustomerAccount.__table__,
+        CustomerAssignment.__table__,
+        CustomerEvent.__table__,
+        CustomerExternalIdentity.__table__,
+        CustomerListProjection.__table__,
+        CustomerProfileVersion.__table__,
         CustomerOpportunity.__table__,
+        CustomerOpportunityEvent.__table__,
         CustomerAction.__table__,
+        CustomerAgentRunScope.__table__,
     ])
     session = sessionmaker(bind=engine, autoflush=False)()
     session.add_all([
@@ -65,8 +85,8 @@ def db():
     session.commit()
     role = ArkRole(id=1, name="agent_test", label="Agent Test")
     permission_codes = [
-        "agent_runtime:invoke", "customer_radar:read", "order_intelligence:read",
-        "sales_automation:read",
+        "agent_runtime:invoke", "customer_radar:read", "customer_radar:write", "order_intelligence:read",
+        "sales_automation:read", "customer:write",
     ]
     permissions = [
         ArkPermission(id=index + 1, code=code, module=code.split(":")[0], action=code.split(":")[1], label=code)
@@ -86,6 +106,119 @@ def db():
     finally:
         session.close()
         engine.dispose()
+
+
+def _customer(
+    db,
+    *,
+    name: str,
+    company: str | None = None,
+    external_id: str | None = None,
+    owner_user_id: int = 7,
+    priority_score: int = 0,
+    total_events: int = 0,
+):
+    account = CustomerAccount(
+        customer_code=f"C-AGENT-{name}",
+        display_name=name,
+        canonical_company_name=company,
+        entity_type="registered_company",
+        identity_status="verified",
+        relationship_stage="qualified",
+        relationship_stage_changed_at=datetime(2026, 8, 1),
+        relationship_stage_reason="test",
+        record_status="active",
+        identity_confidence=1,
+        profile_completeness=80,
+        profile_input_seq=0,
+    )
+    db.add(account)
+    db.flush()
+    version = CustomerProfileVersion(
+        customer_id=account.id,
+        version_no=1,
+        profile_schema_version="customer_profile_v1",
+        canonicalization_version="jcs_v1",
+        input_seq=0,
+        profile_json={"identity": {"display_name": name}},
+        section_hashes={},
+        section_data_as_of={},
+        evidence_fact_ids=[],
+        change_summary={"changes": []},
+        compiler_version="customer_profile_compiler_v1",
+        profile_fingerprint=f"{account.id:064x}",
+        data_as_of=datetime(2026, 8, 1),
+        compiled_at=datetime(2026, 8, 1),
+    )
+    db.add(version)
+    db.flush()
+    account.current_profile_version_id = version.id
+    db.add(CustomerAssignment(
+        customer_id=account.id,
+        user_id=owner_user_id,
+        assignment_role="primary",
+        assignment_status="active",
+        assignment_source="manual",
+        effective_from=datetime(2026, 8, 1),
+        operated_by=owner_user_id,
+    ))
+    db.add(CustomerListProjection(
+        customer_id=account.id,
+        commercial_value_score=priority_score,
+        has_valid_order=False,
+        valid_order_count=0,
+        valid_order_amount_usd=0,
+        engagement_health="new",
+        open_opportunity_count=0,
+        global_claim_blocked=False,
+        has_active_dnc=False,
+        data_quality_score=80,
+        profile_version_id=version.id,
+        compiled_at=datetime(2026, 8, 1),
+    ))
+    if external_id:
+        db.add(CustomerExternalIdentity(
+            customer_id=account.id,
+            source_system="okki",
+            source_account_key="tenant-test",
+            identifier_type="company_id",
+            raw_value=external_id,
+            normalized_value=external_id,
+            identity_strength="strong",
+            cardinality="one_to_one",
+            auto_match_ceiling="verified",
+            verification_status="verified",
+            confidence=1,
+            confidence_method_version="test-v1",
+            confidence_components_json={},
+            is_primary=True,
+            first_seen_at=datetime(2026, 8, 1),
+            last_seen_at=datetime(2026, 8, 1),
+            verified_at=datetime(2026, 8, 1),
+            status="active",
+            identity_fingerprint=f"{account.id + 1000:064x}",
+        ))
+    for index in range(total_events):
+        db.add(CustomerEvent(
+            customer_id=account.id,
+            event_type="inquiry.received",
+            event_source="alibaba",
+            source_ref_type=None,
+            source_ref_id=None,
+            event_title="Test inquiry",
+            event_summary=None,
+            event_payload={"inquiry_id": f"test-{account.id}-{index}"},
+            importance="normal",
+            data_classification="internal_business",
+            visibility_scope="customer_team",
+            classification_reason="test",
+            evidence_fact_ids=[],
+            occurred_at=datetime(2026, 8, 1),
+            event_fingerprint=f"{account.id * 100 + index:064x}",
+            created_at=datetime(2026, 8, 1),
+        ))
+    db.flush()
+    return account
 
 
 @pytest.fixture(autouse=True)
@@ -138,9 +271,9 @@ def _run(db, session, key="run-key-0001"):
         session.id,
         {
             "idempotency_key": key,
-            "input": {"question": "这个客户为什么需要跟进？", "customer_profile_id": 1},
+            "input": {"question": "这个客户为什么需要跟进？", "customer_id": 1},
             "trigger_type": "user",
-            "business_ref_type": "customer_profile",
+            "business_ref_type": "customer",
             "business_ref_id": "1",
         },
         user_id=session.owner_user_id,
@@ -245,8 +378,8 @@ def test_one_active_run_per_session_and_queued_cancel(db):
     with pytest.raises(ConflictError, match="同一会话"):
         service.create_run(
             db, session.id,
-            {"idempotency_key": "run-key-0002", "input": {"customer_profile_id": 1},
-             "business_ref_type": "customer_profile", "business_ref_id": "1"},
+            {"idempotency_key": "run-key-0002", "input": {"customer_id": 1},
+             "business_ref_type": "customer", "business_ref_id": "1"},
             user_id=7, permissions=["agent_runtime:invoke"], roles=[],
         )
     cancelled = service.cancel_run(db, run.id, user_id=7, can_read_all=False)
@@ -268,8 +401,8 @@ def test_super_admin_run_snapshot_materializes_invoke_capability(db):
     session = _session(db)
     run = service.create_run(
         db, session.id,
-        {"idempotency_key": "super-admin-run", "input": {"customer_profile_id": 1},
-         "business_ref_type": "customer_profile", "business_ref_id": "1"},
+        {"idempotency_key": "super-admin-run", "input": {"customer_id": 1},
+         "business_ref_type": "customer", "business_ref_id": "1"},
         user_id=7, permissions=[], roles=["super_admin"],
     )
     assert run.context_snapshot["permissions"] == ["agent_runtime:invoke"]
@@ -435,12 +568,12 @@ def test_generic_run_cannot_forge_reserved_evaluation_markers(db):
                 "idempotency_key": "forged-evaluation-0001",
                 "input": {
                     "question": COPILOT_EVALUATION_CASES[0]["question"],
-                    "customer_profile_id": 1,
+                    "customer_id": 1,
                     "evaluation_suite": "customer_order_copilot_v1",
                     "evaluation_case_id": "standard-01",
                 },
                 "trigger_type": "user",
-                "business_ref_type": "customer_profile",
+                "business_ref_type": "customer",
                 "business_ref_id": "1",
             },
             user_id=7,
@@ -450,45 +583,31 @@ def test_generic_run_cannot_forge_reserved_evaluation_markers(db):
 
 
 def test_admin_can_start_idempotent_copilot_evaluation_for_scoped_customer(db):
-    customer = CustomerProfile(
-        customer_name="Acme Buyer",
-        customer_company="Acme Hair",
-        customer_external_id="C-EVAL-1",
-        owner_user_id=7,
-        owner_resolve_status="resolved",
-        priority_score=80,
-        total_events=3,
-        first_seen_at=datetime.utcnow(),
-        status="active",
+    customer = _customer(
+        db, name="Acme Buyer", company="Acme Hair", external_id="C-EVAL-1",
+        owner_user_id=7, priority_score=80, total_events=3,
     )
-    other = CustomerProfile(
-        customer_name="Other Buyer",
-        customer_external_id="C-EVAL-2",
-        owner_user_id=8,
-        owner_resolve_status="resolved",
-        priority_score=20,
-        first_seen_at=datetime.utcnow(),
-        status="active",
+    other = _customer(
+        db, name="Other Buyer", external_id="C-EVAL-2",
+        owner_user_id=8, priority_score=20,
     )
-    db.add_all([customer, other])
     db.commit()
     permissions = {"agent_runtime:admin", "agent_runtime:invoke", "customer_radar:read"}
     customers = evaluation_service.search_copilot_evaluation_customers(
         db, user_id=7, permissions=permissions, roles=set(), keyword="Acme", limit=20,
     )
     assert customers == [{
-        "id": customer.id,
-        "customer_name": "Acme Buyer",
-        "customer_company": "Acme Hair",
-        "customer_region": None,
-        "priority_score": 80,
+        "customer_id": customer.id,
+        "display_name": "Acme Buyer",
+        "canonical_company_name": "Acme Hair",
+        "commercial_value_score": 80,
         "has_order_binding": True,
-        "has_profile_events": True,
+        "has_customer_events": True,
     }]
     run = evaluation_service.start_copilot_evaluation_case(
         db,
         case_id="standard-01",
-        customer_profile_id=customer.id,
+        customer_id=customer.id,
         idempotency_key="evaluation-request-0001",
         user_id=7,
         permissions=permissions,
@@ -496,7 +615,7 @@ def test_admin_can_start_idempotent_copilot_evaluation_for_scoped_customer(db):
     )
     assert run.input_json == {
         "question": COPILOT_EVALUATION_CASES[0]["question"],
-        "customer_profile_id": customer.id,
+        "customer_id": customer.id,
         "evaluation_suite": "customer_order_copilot_v1",
         "evaluation_case_id": "standard-01",
         "evaluation_contract_hash": evaluation_service.copilot_contract(db)["hash"],
@@ -504,7 +623,7 @@ def test_admin_can_start_idempotent_copilot_evaluation_for_scoped_customer(db):
     replay = evaluation_service.start_copilot_evaluation_case(
         db,
         case_id="standard-01",
-        customer_profile_id=customer.id,
+        customer_id=customer.id,
         idempotency_key="evaluation-request-0001",
         user_id=7,
         permissions=permissions,
@@ -522,7 +641,7 @@ def test_admin_can_start_idempotent_copilot_evaluation_for_scoped_customer(db):
         evaluation_service.start_copilot_evaluation_case(
             db,
             case_id="standard-02",
-            customer_profile_id=other.id,
+            customer_id=other.id,
             idempotency_key="evaluation-request-0002",
             user_id=7,
             permissions=permissions,
@@ -532,7 +651,7 @@ def test_admin_can_start_idempotent_copilot_evaluation_for_scoped_customer(db):
         evaluation_service.start_copilot_evaluation_case(
             db,
             case_id="standard-02",
-            customer_profile_id=customer.id,
+            customer_id=customer.id,
             idempotency_key="evaluation-request-0001",
             user_id=7,
             permissions=permissions,
@@ -553,23 +672,14 @@ def test_copilot_evaluation_requires_customer_data_permission(db):
 
 
 def test_copilot_evaluation_preflight_rejects_missing_case_permission_and_data(db):
-    customer = CustomerProfile(
-        customer_name="Preflight Buyer",
-        customer_external_id=None,
-        owner_user_id=7,
-        owner_resolve_status="resolved",
-        priority_score=50,
-        first_seen_at=datetime.utcnow(),
-        status="active",
-    )
-    db.add(customer)
+    customer = _customer(db, name="Preflight Buyer", owner_user_id=7, priority_score=50)
     db.commit()
     base = {"agent_runtime:admin", "agent_runtime:invoke", "customer_radar:read"}
     with pytest.raises(ForbiddenError, match="订单经营分析"):
         evaluation_service.start_copilot_evaluation_case(
             db,
             case_id="standard-06",
-            customer_profile_id=customer.id,
+            customer_id=customer.id,
             idempotency_key="evaluation-preflight-0001",
             user_id=7,
             permissions=base,
@@ -579,7 +689,7 @@ def test_copilot_evaluation_preflight_rejects_missing_case_permission_and_data(d
         evaluation_service.start_copilot_evaluation_case(
             db,
             case_id="standard-06",
-            customer_profile_id=customer.id,
+            customer_id=customer.id,
             idempotency_key="evaluation-preflight-0002",
             user_id=7,
             permissions={*base, "order_intelligence:read"},
@@ -588,16 +698,10 @@ def test_copilot_evaluation_preflight_rejects_missing_case_permission_and_data(d
 
 
 def test_copilot_evaluation_preflight_rejects_insufficient_repurchase_cycle(db, monkeypatch):
-    customer = CustomerProfile(
-        customer_name="Short Cycle Buyer",
-        customer_external_id="C-SHORT-CYCLE",
-        owner_user_id=7,
-        owner_resolve_status="resolved",
-        priority_score=50,
-        first_seen_at=datetime.utcnow(),
-        status="active",
+    customer = _customer(
+        db, name="Short Cycle Buyer", external_id="C-SHORT-CYCLE",
+        owner_user_id=7, priority_score=50,
     )
-    db.add(customer)
     db.commit()
     monkeypatch.setattr(evaluation_service.order_service, "resolve_scope", lambda *_args, **_kwargs: object())
     monkeypatch.setattr(evaluation_service.order_service, "get_customer_order_timeline", lambda *_args, **_kwargs: {
@@ -611,7 +715,7 @@ def test_copilot_evaluation_preflight_rejects_insufficient_repurchase_cycle(db, 
         evaluation_service.start_copilot_evaluation_case(
             db,
             case_id="standard-11",
-            customer_profile_id=customer.id,
+            customer_id=customer.id,
             idempotency_key="evaluation-preflight-cycle-0001",
             user_id=7,
             permissions={
@@ -623,16 +727,10 @@ def test_copilot_evaluation_preflight_rejects_insufficient_repurchase_cycle(db, 
 
 
 def test_copilot_evaluation_failure_rolls_back_session_and_run_atomically(db, monkeypatch):
-    customer = CustomerProfile(
-        customer_name="Race Buyer",
-        customer_external_id="C-EVAL-RACE",
-        owner_user_id=7,
-        owner_resolve_status="resolved",
-        priority_score=50,
-        first_seen_at=datetime.utcnow(),
-        status="active",
+    customer = _customer(
+        db, name="Race Buyer", external_id="C-EVAL-RACE",
+        owner_user_id=7, priority_score=50,
     )
-    db.add(customer)
     db.commit()
     permissions = {"agent_runtime:admin", "agent_runtime:invoke", "customer_radar:read"}
     def fail_create_run(*_args, **_kwargs):
@@ -643,7 +741,7 @@ def test_copilot_evaluation_failure_rolls_back_session_and_run_atomically(db, mo
         evaluation_service.start_copilot_evaluation_case(
             db,
             case_id="standard-01",
-            customer_profile_id=customer.id,
+            customer_id=customer.id,
             idempotency_key="evaluation-race-0001",
             user_id=7,
             permissions=permissions,
@@ -654,21 +752,13 @@ def test_copilot_evaluation_failure_rolls_back_session_and_run_atomically(db, mo
 
 
 def test_copilot_evaluation_contract_change_starts_a_new_empty_cohort(db):
-    customer = CustomerProfile(
-        customer_name="Contract Buyer",
-        owner_user_id=7,
-        owner_resolve_status="resolved",
-        priority_score=50,
-        first_seen_at=datetime.utcnow(),
-        status="active",
-    )
-    db.add(customer)
+    customer = _customer(db, name="Contract Buyer", owner_user_id=7, priority_score=50)
     db.commit()
     permissions = {"agent_runtime:admin", "agent_runtime:invoke", "customer_radar:read"}
     run = evaluation_service.start_copilot_evaluation_case(
         db,
         case_id="standard-01",
-        customer_profile_id=customer.id,
+        customer_id=customer.id,
         idempotency_key="evaluation-contract-0001",
         user_id=7,
         permissions=permissions,
@@ -967,25 +1057,31 @@ def test_copilot_quantitative_claims_require_successful_citations(db):
 
 
 def test_customer_radar_refresh_preserves_completed_action(db):
-    profile = CustomerProfile(
-        customer_name="Acme",
-        customer_external_id="C-ACME",
-        owner_user_id=7,
-        owner_resolve_status="resolved",
-        priority_score=50,
-        first_seen_at=datetime.utcnow(),
-        status="active",
+    customer = _customer(
+        db, name="Acme", external_id="C-ACME", owner_user_id=7, priority_score=50,
     )
-    db.add(profile)
+    from app.customer.workflow_service import upsert_opportunity
+    upsert_opportunity(
+        db,
+        customer_id=customer.id,
+        source_system="alibaba",
+        source_account_key="shop-test",
+        source_key="inquiry-acme",
+        opportunity_type="ali_inquiry",
+        source="alibaba",
+        title="Acme inquiry",
+        owner_user_id=7,
+        actor_user_id=7,
+    )
     db.commit()
     first = customer_radar_service.generate_daily_actions(db, 7, date(2026, 8, 20))[0]
-    first.action_status = "done"
-    first.action_reason = "用户已经处理的原始理由"
+    first.status = "done"
+    first.reason = "用户已经处理的原始理由"
     db.commit()
     refreshed = customer_radar_service.generate_daily_actions(db, 7, date(2026, 8, 20))[0]
     assert refreshed.id == first.id
-    assert refreshed.action_status == "done"
-    assert refreshed.action_reason == "用户已经处理的原始理由"
+    assert refreshed.status == "done"
+    assert refreshed.reason == "用户已经处理的原始理由"
     assert db.query(CustomerAction).count() == 1
 
 
@@ -1356,11 +1452,180 @@ def test_agent_business_tools_reject_personal_mcp_identity(db, monkeypatch):
 
 
 def test_customer_tool_scope_is_bound_to_run_customer(db):
+    customer = _customer(db, name="Scoped customer", owner_user_id=7)
+    session = _session(db)
+    run = _run(db, session, key="customer-tool-scope")
     identity = {
         "sub": "7", "roles": [], "permissions": ["customer_radar:read"],
-        "_agent_run": {"customer_profile_id": 12},
+        "_agent_run": {
+            "run_id": run.id,
+            "customer_id": customer.id,
+            "max_data_classification": "internal_business",
+            "max_visibility_scope": "customer_team",
+        },
     }
-    assert agent_tools._profile_for_user(db, 13, identity) is None
+    assert db.query(CustomerAgentRunScope).filter_by(
+        run_id=run.id,
+        customer_id=customer.id,
+    ).count() == 1
+    assert agent_tools._customer_for_user(db, customer.id, identity) is customer
+    assert agent_tools._customer_for_user(db, customer.id + 1, identity) is None
+    assert "customer_profile_id" not in identity["_agent_run"]
+
+    legacy_identity = {
+        "sub": "7",
+        "roles": [],
+        "permissions": ["customer_radar:read"],
+        "_agent_run": {"customer_profile_id": customer.id},
+    }
+    assert agent_tools._customer_for_user(db, customer.id, legacy_identity) is None
+
+    low_visibility_identity = {
+        "sub": "7",
+        "roles": [],
+        "permissions": ["customer_radar:manage", "order_intelligence:read_all"],
+        "_agent_run": {
+            "run_id": run.id,
+            "customer_id": customer.id,
+            "max_data_classification": "restricted_internal",
+            "max_visibility_scope": "all_authorized",
+        },
+    }
+    assert agent_tools._customer_for_user(
+        db,
+        customer.id,
+        low_visibility_identity,
+        minimum_classification="internal_business",
+        minimum_visibility="customer_team",
+    ) is None
+
+
+def test_public_business_run_cannot_read_internal_customer_projection_or_actions(
+    db,
+    monkeypatch,
+):
+    customer = _customer(
+        db,
+        name="Public scoped customer",
+        company="Public Co",
+        owner_user_id=7,
+        priority_score=91,
+        total_events=1,
+    )
+    from app.customer.workflow_service import create_action
+
+    create_action(
+        db,
+        customer_id=customer.id,
+        owner_user_id=7,
+        profile_version_id=customer.current_profile_version_id,
+        action_type="review",
+        thread_group="new_inquiry",
+        priority="high",
+        reason="INTERNAL_ACTION_REASON",
+        next_action="INTERNAL_NEXT_ACTION",
+        policy_version="public-run-test",
+        source_type="manual",
+        source_event_ids=(),
+        evidence_fact_ids=(),
+        action_date=date(2026, 8, 30),
+    )
+    run = _run(db, _session(db), key="public-classification-run")
+    identity = {
+        "sub": "7",
+        "roles": [],
+        "permissions": ["customer_radar:read", "order_intelligence:read"],
+        "_agent_run": {
+            "run_id": run.id,
+            "customer_id": customer.id,
+            "max_data_classification": "public_business",
+            "max_visibility_scope": "customer_team",
+        },
+    }
+
+    class CaptureMcp:
+        def __init__(self):
+            self.tools = {}
+
+        def tool(self, *, name, annotations):
+            del annotations
+
+            def register(function):
+                self.tools[name] = function
+                return function
+
+            return register
+
+    capture = CaptureMcp()
+    agent_tools.register_agent_tools(capture)
+
+    @contextmanager
+    def test_session():
+        yield db
+
+    monkeypatch.setattr(agent_tools, "_session", test_session)
+    monkeypatch.setattr(
+        agent_tools,
+        "_require_agent_identity",
+        lambda *_args, **_kwargs: identity,
+    )
+    profile = json.loads(asyncio.run(capture.tools["get_customer_profile"](
+        agent_tools.CustomerInput(customer_id=customer.id),
+        object(),
+    )))
+    assert profile["ok"] is True
+    assert profile["data"]["data_classification"] == "public_business"
+    assert profile["data"]["redacted"] is True
+    assert set(profile["data"]) == {
+        "customer_id",
+        "schema_version",
+        "redacted",
+        "data_classification",
+    }
+    for field in (
+        "customer_code",
+        "identity_status",
+        "relationship_stage",
+        "commercial_value_score",
+        "data_quality_score",
+    ):
+        assert field not in profile["data"]
+
+    actions = json.loads(asyncio.run(capture.tools["get_customer_actions"](
+        agent_tools.CustomerInput(customer_id=customer.id),
+        object(),
+    )))
+    assert actions["ok"] is False
+    assert "INTERNAL_ACTION_REASON" not in str(actions)
+    assert "INTERNAL_NEXT_ACTION" not in str(actions)
+    for tool_name in (
+        "get_customer_order_timeline",
+        "get_customer_repurchase_analysis",
+    ):
+        result = json.loads(asyncio.run(capture.tools[tool_name](
+            agent_tools.CustomerOrderInput(customer_id=customer.id),
+            object(),
+        )))
+        assert result["ok"] is False
+
+    identity["_agent_run"]["max_data_classification"] = "internal_business"
+    identity["_agent_run"]["max_visibility_scope"] = "all_authorized"
+    low_visibility_profile = json.loads(asyncio.run(
+        capture.tools["get_customer_profile"](
+            agent_tools.CustomerInput(customer_id=customer.id),
+            object(),
+        )
+    ))
+    assert low_visibility_profile["ok"] is True
+    assert low_visibility_profile["data"]["data_classification"] == "public_business"
+    for field in (
+        "customer_code",
+        "identity_status",
+        "relationship_stage",
+        "commercial_value_score",
+        "data_quality_score",
+    ):
+        assert field not in low_visibility_profile["data"]
 
 
 def test_worker_event_rejects_unverified_raw_payload():
@@ -1372,42 +1637,41 @@ def test_worker_event_rejects_unverified_raw_payload():
 
 
 def test_accepted_repurchase_artifact_projects_only_to_pending_action(db):
-    profile = CustomerProfile(
-        customer_name="Repeat Buyer",
-        customer_external_id="C-REPEAT",
-        owner_user_id=7,
-        owner_resolve_status="resolved",
-        priority_score=80,
-        first_seen_at=datetime.utcnow(),
-        status="active",
+    customer = _customer(
+        db, name="Repeat Buyer", external_id="C-REPEAT",
+        owner_user_id=7, priority_score=80,
     )
-    db.add(profile)
-    db.flush()
-    action = CustomerAction(
-        profile_id=profile.id,
+    from app.customer.workflow_service import create_action
+    action = create_action(
+        db,
+        customer_id=customer.id,
         owner_user_id=7,
-        thread_group="reorder_window",
-        thread_priority="重点",
-        action_reason="规则理由",
-        suggested_next_action="规则动作",
+        profile_version_id=customer.current_profile_version_id,
+        action_type="review",
+        thread_group="reorder",
+        priority="high",
+        reason="规则理由",
+        next_action="规则动作",
         suggested_message="rule draft",
-        source_evidence={"source": "rule"},
-        action_status="pending",
-        action_date=date(2026, 8, 20),
+        policy_version="rule-projection-test",
         source_type="rule",
-        source_fingerprint="rule-projection-test",
-        evidence_status="valid",
+        source_event_ids=(),
+        evidence_fact_ids=(),
+        action_date=date(2026, 8, 20),
     )
-    db.add(action)
+    seq_after_rule_action = customer.profile_input_seq
     db.commit()
     session = _session(db, profile_key="repurchase_risk_analyst")
     run = service.create_run(db, session.id, {
         "idempotency_key": "repurchase-projection-run",
-        "input": {"customer_profile_id": profile.id},
+        "input": {"customer_id": customer.id},
         "trigger_type": "schedule",
         "business_ref_type": "customer_action",
         "business_ref_id": str(action.id),
-    }, user_id=7, permissions=["agent_runtime:invoke"], roles=[], system_initiated=True)
+    }, user_id=7, permissions=[
+        "agent_runtime:invoke",
+        "customer_radar:write",
+    ], roles=[], system_initiated=True)
     claim = _claim(db)
     _start(db, run.id, claim)
     _tool_success(db, run, claim, call_id="repurchase-tool")
@@ -1431,45 +1695,174 @@ def test_accepted_repurchase_artifact_projects_only_to_pending_action(db):
         db, artifacts[0].id, user_id=7, decision="accepted", note=None, can_read_all=False,
     )
     db.refresh(action)
-    assert action.source_type == "dsh"
-    assert action.source_run_id == run.id
-    assert action.action_reason == "DSH 有证据理由"
+    db.refresh(customer)
+    assert action.source_type == "agent"
+    assert action.agent_run_id == run.id
+    assert action.reason == "DSH 有证据理由"
+    assert customer.profile_input_seq == seq_after_rule_action + 1
     refreshed = customer_radar_service.generate_daily_actions(db, 7, date(2026, 8, 20))
     assert [item.id for item in refreshed] == [action.id]
     assert db.query(CustomerAction).filter(
-        CustomerAction.profile_id == profile.id,
+        CustomerAction.customer_id == customer.id,
         CustomerAction.action_date == date(2026, 8, 20),
     ).count() == 1
-    assert db.get(CustomerAction, action.id).action_reason == "DSH 有证据理由"
+    assert db.get(CustomerAction, action.id).reason == "DSH 有证据理由"
     assert orchestration.enqueue_repurchase_runs(db, action_date=date(2026, 8, 20)) == 0
 
     # A later replay/decision must never rewrite user-handled action state.
-    action.action_status = "done"
-    action.action_reason = "用户处理后的事实"
+    action.status = "done"
+    action.reason = "用户处理后的事实"
     db.commit()
+    seq_before_late_projection = customer.profile_input_seq
     from app.agent_runtime.projection_service import project_accepted_artifact
-    project_accepted_artifact(db, artifacts[0], run)
+    project_accepted_artifact(db, artifacts[0], run, actor_user_id=7)
     db.commit()
-    assert db.get(CustomerAction, action.id).action_reason == "用户处理后的事实"
+    assert db.get(CustomerAction, action.id).reason == "用户处理后的事实"
+    assert db.get(CustomerAccount, customer.id).profile_input_seq == seq_before_late_projection
+
+
+@pytest.mark.parametrize(
+    "revocation",
+    (
+        "assignment",
+        "run_scope",
+        "opportunity_owner",
+        "inactive_user",
+        "permission",
+        "actor_scope",
+    ),
+)
+def test_repurchase_projection_revalidates_live_customer_and_run_scope(db, revocation):
+    customer = _customer(
+        db,
+        name=f"Projection scope {revocation}",
+        external_id=f"C-PROJECTION-{revocation}",
+        owner_user_id=7,
+    )
+    from app.customer import workflow_service
+
+    opportunity = workflow_service.upsert_opportunity(
+        db,
+        customer_id=customer.id,
+        source_system="internal",
+        source_account_key="global",
+        source_key=f"projection-{revocation}",
+        opportunity_type="manual",
+        source="manual",
+        title="Projection scope",
+        owner_user_id=7,
+        actor_user_id=7,
+    )
+    action = workflow_service.create_action(
+        db,
+        customer_id=customer.id,
+        owner_user_id=7,
+        opportunity_id=opportunity.id,
+        profile_version_id=customer.current_profile_version_id,
+        action_type="review",
+        thread_group="reorder",
+        priority="high",
+        reason="Original governed reason",
+        next_action="Original governed next action",
+        policy_version="rule-projection-scope-test",
+        source_type="rule",
+        source_event_ids=(),
+        evidence_fact_ids=(),
+        action_date=date(2026, 8, 20),
+    )
+    db.commit()
+    session = _session(db, profile_key="repurchase_risk_analyst")
+    run = service.create_run(
+        db,
+        session.id,
+        {
+            "idempotency_key": f"repurchase-projection-{revocation}",
+            "input": {"customer_id": customer.id},
+            "trigger_type": "schedule",
+            "business_ref_type": "customer_action",
+            "business_ref_id": str(action.id),
+        },
+        user_id=7,
+        permissions=["agent_runtime:invoke", "customer_radar:write"],
+        roles=[],
+        system_initiated=True,
+    )
+    if revocation == "assignment":
+        assignment = db.query(CustomerAssignment).filter_by(
+            customer_id=customer.id,
+            user_id=7,
+            assignment_status="active",
+        ).one()
+        assignment.assignment_status = "revoked"
+        assignment.effective_to = datetime(2026, 8, 30, 10, 0)
+    elif revocation == "run_scope":
+        db.query(CustomerAgentRunScope).filter_by(
+            run_id=run.id,
+            customer_id=customer.id,
+        ).delete(synchronize_session=False)
+    elif revocation == "opportunity_owner":
+        workflow_service.assign_customer(
+            db,
+            customer_id=customer.id,
+            user_id=8,
+            assignment_role="collaborator",
+            assignment_source="manual",
+            operated_by=7,
+        )
+        opportunity.owner_user_id = 8
+    elif revocation == "inactive_user":
+        db.get(ArkUser, 7).is_active = False
+    elif revocation == "permission":
+        user = db.get(ArkUser, 7)
+        user.roles.clear()
+    db.commit()
+    original_seq = db.get(CustomerAccount, customer.id).profile_input_seq
+    artifact = SimpleNamespace(
+        id=987,
+        artifact_type="repurchase_action_card",
+        content_json={
+            "action_reason": "Unauthorized replacement",
+            "suggested_next_action": "Unauthorized next action",
+            "suggested_message": "Unauthorized draft",
+        },
+        evidence_json=[],
+    )
+    from app.agent_runtime.projection_service import project_accepted_artifact
+
+    with pytest.raises(ConflictError, match="不存在或归属不匹配"):
+        project_accepted_artifact(
+            db,
+            artifact,
+            run,
+            actor_user_id=8 if revocation == "actor_scope" else 7,
+        )
+    assert db.get(CustomerAction, action.id).reason == "Original governed reason"
+    assert db.get(CustomerAccount, customer.id).profile_input_seq == original_seq
 
 
 def test_repurchase_scheduler_enqueues_once_from_rule_candidate(db):
-    profile = CustomerProfile(
-        customer_name="Scheduled Buyer", customer_external_id="C-SCHEDULED",
-        owner_user_id=7, owner_resolve_status="resolved", priority_score=70,
-        first_seen_at=datetime.utcnow(), status="active",
+    customer = _customer(
+        db, name="Scheduled Buyer", external_id="C-SCHEDULED",
+        owner_user_id=7, priority_score=70,
     )
-    db.add(profile)
-    db.flush()
-    action = CustomerAction(
-        profile_id=profile.id, owner_user_id=7, thread_group="reorder_window",
-        thread_priority="重点", action_reason="进入规则复购窗口",
-        suggested_next_action="确认需求", suggested_message="draft",
-        source_evidence={"source": "rule"}, action_status="pending",
-        action_date=date(2026, 8, 20), source_type="rule",
-        source_fingerprint="rule-scheduled-test", evidence_status="valid",
+    from app.customer.workflow_service import create_action
+    action = create_action(
+        db,
+        customer_id=customer.id,
+        owner_user_id=7,
+        profile_version_id=customer.current_profile_version_id,
+        action_type="review",
+        thread_group="reorder",
+        priority="high",
+        reason="进入规则复购窗口",
+        next_action="确认需求",
+        suggested_message="draft",
+        policy_version="rule-scheduled-test",
+        source_type="rule",
+        source_event_ids=(),
+        evidence_fact_ids=(),
+        action_date=date(2026, 8, 20),
     )
-    db.add(action)
     db.commit()
     assert orchestration.enqueue_repurchase_runs(
         db, action_date=date(2026, 8, 20), limit=10,

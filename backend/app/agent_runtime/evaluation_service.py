@@ -20,7 +20,14 @@ from app.agent_runtime.evaluation_cases import (
 from app.agent_runtime.evaluation_contract import copilot_contract
 from app.agent_runtime.models import AgentArtifact, AgentEvent, AgentProfile, AgentRun
 from app.auth.models import ArkUser
-from app.insight.models import CustomerAction, CustomerProfile, CustomerProfileEvent
+from app.customer.models import (
+    CustomerAccount,
+    CustomerAction,
+    CustomerAssignment,
+    CustomerEvent,
+    CustomerExternalIdentity,
+    CustomerListProjection,
+)
 from app.order_intelligence import service as order_service
 from app.sales_automation.models import SearchJob
 
@@ -94,9 +101,9 @@ def _canonical_case_for_run(run: AgentRun, *, contract_hash: str) -> dict | None
     case = COPILOT_CASES_BY_ID.get(str(run_input.get("evaluation_case_id") or ""))
     if case is None or run_input.get("question") != case["question"]:
         return None
-    customer_id = str(run_input.get("customer_profile_id") or "")
+    customer_id = str(run_input.get("customer_id") or "")
     if (
-        run.business_ref_type != "customer_profile"
+        run.business_ref_type != "customer"
         or not customer_id
         or str(run.business_ref_id or "") != customer_id
     ):
@@ -108,8 +115,8 @@ def _same_evaluation_run(run: AgentRun, *, run_input: dict, profile_ids: set[int
     return bool(
         run.profile_id in profile_ids
         and run.input_json == run_input
-        and run.business_ref_type == "customer_profile"
-        and str(run.business_ref_id or "") == str(run_input["customer_profile_id"])
+        and run.business_ref_type == "customer"
+        and str(run.business_ref_id or "") == str(run_input["customer_id"])
     )
 
 
@@ -131,8 +138,8 @@ def copilot_case_catalog(db: Session) -> dict:
             "completed_run_id": completed.id if completed else None,
             "latest_run_id": latest.id if latest else None,
             "latest_status": latest.status if latest else "not_started",
-            "customer_profile_id": (
-                (latest.input_json or {}).get("customer_profile_id") if latest else None
+            "customer_id": (
+                (latest.input_json or {}).get("customer_id") if latest else None
             ),
         })
     return {
@@ -161,28 +168,47 @@ def _customer_scope(
     )
     if not can_read:
         raise ForbiddenError("启动副驾驶评测需要客户经营雷达查看权限")
-    query = db.query(CustomerProfile).filter(CustomerProfile.status == "active")
+    query = db.query(CustomerAccount).filter(CustomerAccount.record_status == "active")
     if "super_admin" not in roles and "customer_radar:manage" not in permissions:
-        query = query.filter(CustomerProfile.owner_user_id == user_id)
+        query = query.join(
+            CustomerAssignment,
+            CustomerAssignment.customer_id == CustomerAccount.id,
+        ).filter(
+            CustomerAssignment.user_id == user_id,
+            CustomerAssignment.assignment_role.in_(("primary", "collaborator")),
+            CustomerAssignment.assignment_status == "active",
+            CustomerAssignment.effective_to.is_(None),
+        )
     return query
+
+
+def _okki_customer_id(db: Session, customer_id: int) -> str | None:
+    identity = db.query(CustomerExternalIdentity).filter(
+        CustomerExternalIdentity.customer_id == customer_id,
+        CustomerExternalIdentity.source_system == "okki",
+        CustomerExternalIdentity.identifier_type.in_(("company_id", "business_id")),
+        CustomerExternalIdentity.verification_status == "verified",
+        CustomerExternalIdentity.status == "active",
+    ).order_by(CustomerExternalIdentity.is_primary.desc(), CustomerExternalIdentity.id).first()
+    return identity.normalized_value if identity is not None else None
 
 
 def _preflight_case(
     db: Session,
     *,
     case: dict,
-    customer: CustomerProfile,
+    customer: CustomerAccount,
     user_id: int,
     permissions: set[str],
     roles: set[str],
 ) -> None:
     required = set(case["requires"])
-    if "profile_events" in required and not db.query(CustomerProfileEvent.id).filter(
-        CustomerProfileEvent.profile_id == customer.id,
+    if "profile_events" in required and not db.query(CustomerEvent.id).filter(
+        CustomerEvent.customer_id == customer.id,
     ).first():
         raise ConflictError("该标准题需要客户画像事件，请更换有近期事件的客户")
     if "customer_actions" in required and not db.query(CustomerAction.id).filter(
-        CustomerAction.profile_id == customer.id,
+        CustomerAction.customer_id == customer.id,
     ).first():
         raise ConflictError("该标准题需要客户行动记录，请更换有行动记录的客户")
     needs_orders = bool({"order_history", "repurchase_analysis"} & required)
@@ -192,7 +218,8 @@ def _preflight_case(
         "order_intelligence:read", "order_intelligence:read_all",
     } & permissions:
         raise ForbiddenError("该标准题需要订单经营分析查看权限")
-    if not customer.customer_external_id:
+    okki_customer_id = _okki_customer_id(db, customer.id)
+    if not okki_customer_id:
         raise ConflictError("该标准题需要已绑定 OKKI 客户 ID 的客户")
     identity = {
         "sub": str(user_id), "permissions": sorted(permissions), "roles": sorted(roles),
@@ -202,13 +229,13 @@ def _preflight_case(
         end = beijing_today()
         start = end - timedelta(days=1095)
         timeline = order_service.get_customer_order_timeline(
-            db, scope, customer.customer_external_id, start, end, limit=50,
+            db, scope, okki_customer_id, start, end, limit=50,
         )
         if int((timeline.get("summary") or {}).get("orders") or 0) <= 0:
             raise ConflictError("该标准题需要近三年内存在有效订单的客户")
         if "repurchase_analysis" in required:
             result = order_service.get_customer_repurchase_analysis(
-                db, scope, customer.customer_external_id, start, end,
+                db, scope, okki_customer_id, start, end,
             )
             analysis = result.get("analysis") or {}
             typical_cycle = analysis.get("typical_cycle_days")
@@ -242,21 +269,24 @@ def search_copilot_evaluation_customers(
     if cleaned:
         pattern = f"%{cleaned}%"
         query = query.filter(or_(
-            CustomerProfile.customer_name.ilike(pattern),
-            CustomerProfile.customer_company.ilike(pattern),
-            CustomerProfile.customer_external_id.ilike(pattern),
+            CustomerAccount.display_name.ilike(pattern),
+            CustomerAccount.canonical_company_name.ilike(pattern),
+            CustomerAccount.customer_code.ilike(pattern),
         ))
-    rows = query.order_by(
-        CustomerProfile.priority_score.desc(), CustomerProfile.updated_at.desc(),
-    ).limit(limit).all()
+    rows = query.order_by(CustomerAccount.updated_at.desc(), CustomerAccount.id).limit(limit).all()
     return [{
-        "id": row.id,
-        "customer_name": row.customer_name,
-        "customer_company": row.customer_company,
-        "customer_region": row.customer_region,
-        "priority_score": row.priority_score,
-        "has_order_binding": bool(row.customer_external_id),
-        "has_profile_events": bool(row.total_events),
+        "customer_id": row.id,
+        "display_name": row.display_name,
+        "canonical_company_name": row.canonical_company_name,
+        "commercial_value_score": (
+            db.get(CustomerListProjection, row.id).commercial_value_score
+            if db.get(CustomerListProjection, row.id) is not None
+            else 0
+        ),
+        "has_order_binding": bool(_okki_customer_id(db, row.id)),
+        "has_customer_events": bool(db.query(CustomerEvent.id).filter(
+            CustomerEvent.customer_id == row.id,
+        ).first()),
     } for row in rows]
 
 
@@ -264,7 +294,7 @@ def start_copilot_evaluation_case(
     db: Session,
     *,
     case_id: str,
-    customer_profile_id: int,
+    customer_id: int,
     idempotency_key: str,
     user_id: int,
     permissions: set[str],
@@ -275,12 +305,12 @@ def start_copilot_evaluation_case(
         raise NotFoundError("副驾驶标准评测题不存在")
     customer = _customer_scope(
         db, user_id=user_id, permissions=permissions, roles=roles,
-    ).filter(CustomerProfile.id == customer_profile_id).one_or_none()
+    ).filter(CustomerAccount.id == customer_id).one_or_none()
     if customer is None:
         raise NotFoundError("客户画像不存在或不在当前账号数据范围内")
     run_input = {
         "question": case["question"],
-        "customer_profile_id": customer.id,
+        "customer_id": customer.id,
         "evaluation_suite": COPILOT_EVALUATION_SUITE,
         "evaluation_case_id": case_id,
     }
@@ -322,7 +352,7 @@ def start_copilot_evaluation_case(
             raise ConflictError("相同幂等键对应不同标准评测任务")
         return existing
 
-    label = customer.customer_company or customer.customer_name or f"客户 #{customer.id}"
+    label = customer.canonical_company_name or customer.display_name or f"客户 #{customer.id}"
     session = runtime_service.create_session(db, {
         "profile_key": "customer_order_copilot",
         "title": f"标准评测 {case_id} · {label}"[:255],
@@ -337,7 +367,7 @@ def start_copilot_evaluation_case(
                 "idempotency_key": idempotency_key,
                 "input": run_input,
                 "trigger_type": "user",
-                "business_ref_type": "customer_profile",
+                "business_ref_type": "customer",
                 "business_ref_id": str(customer.id),
             },
             user_id=user_id,

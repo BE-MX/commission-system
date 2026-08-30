@@ -47,6 +47,7 @@ from app.core.database import Base
 from app.customer.models import (
     ACQUISITION_WORKFLOW_TABLES as ORM_ACQUISITION_WORKFLOW_TABLES,
     CORE_TABLES as ORM_CORE_TABLES,
+    CUSTOMER_WORKFLOW_TABLES as ORM_CUSTOMER_WORKFLOW_TABLES,
     CustomerAccount,
     CustomerSuppressionRegistry,
 )
@@ -2171,11 +2172,17 @@ def test_verify_after_table_state_requires_all_new_tables_and_no_retired_only_ta
     )
     Base.metadata.create_all(
         engine,
-        tables=list(ORM_ACQUISITION_WORKFLOW_TABLES.values()),
+        tables=[
+            *ORM_ACQUISITION_WORKFLOW_TABLES.values(),
+            *ORM_CUSTOMER_WORKFLOW_TABLES.values(),
+        ],
     )
     with engine.begin() as connection:
         for table_name in REBUILT_CUSTOMER_WORKFLOW_TABLES:
-            if table_name in ORM_ACQUISITION_WORKFLOW_TABLES:
+            if (
+                table_name in ORM_ACQUISITION_WORKFLOW_TABLES
+                or table_name in ORM_CUSTOMER_WORKFLOW_TABLES
+            ):
                 continue
             columns = ["id INTEGER PRIMARY KEY"] + [
                 f"{name} TEXT"

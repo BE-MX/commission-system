@@ -1,147 +1,156 @@
-"""客户原始记录服务 — 证据层
-
-从 opportunities + events 聚合原始记录，
-按类型分 Tab 供前端抽屉展示。
-"""
+"""Customer-id evidence timeline for the insight customer drawer."""
 
 from __future__ import annotations
-
-import logging
-from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
 from app.core.time import beijing_now
-from app.insight.models import (
+from app.customer.access_service import CustomerAccess, apply_record_access
+from app.customer.fact_service import append_customer_event
+from app.customer.models import (
+    CustomerAccount,
+    CustomerAnnotation,
+    CustomerEvent,
     CustomerOpportunity,
-    CustomerProfile,
-    CustomerProfileEvent,
+    CustomerSourceRecord,
 )
-
-logger = logging.getLogger("insight.source")
 
 
 def get_source_records(
     db: Session,
-    profile_id: int,
-    source_type: Optional[str] = None,
-) -> List[dict]:
-    """获取画像的原始记录（统一格式）。
-
-    source_type 过滤：opportunity / event / note / all
-    """
-    profile = db.query(CustomerProfile).filter(CustomerProfile.id == profile_id).first()
-    if not profile:
+    customer_id: int,
+    source_type: str | None = None,
+    *,
+    access: CustomerAccess,
+) -> list[dict]:
+    if access.customer_id != customer_id or db.get(CustomerAccount, customer_id) is None:
         return []
-
-    records = []
-
-    # ── 询盘/机会记录 ──
-    if not source_type or source_type in ("opportunity", "all"):
-        opportunities = db.query(CustomerOpportunity).filter(
-            CustomerOpportunity.customer_name == profile.customer_name,
+    records: list[dict] = []
+    if source_type in {None, "source_record", "all"}:
+        rows = apply_record_access(
+            db.query(CustomerSourceRecord),
+            CustomerSourceRecord,
+            access,
+        ).order_by(CustomerSourceRecord.captured_at.desc()).limit(20).all()
+        records.extend({
+            "type": "信源记录",
+            "type_code": "source_record",
+            "title": f"{row.source_system} · {row.source_entity_type}",
+            "meta": row.external_record_id,
+            "summary": row.processing_status,
+            "source_record_id": row.id,
+            "data_classification": row.data_classification,
+            "visibility_scope": row.visibility_scope,
+            "occurred_at": (row.occurred_at or row.captured_at).isoformat(),
+        } for row in rows)
+    if source_type in {None, "opportunity", "all"}:
+        rows = db.query(CustomerOpportunity).filter(
+            CustomerOpportunity.customer_id == customer_id
         ).order_by(CustomerOpportunity.created_at.desc()).limit(20).all()
-
-        for opp in opportunities:
-            records.append({
-                "type": "询盘记录",
-                "type_code": "opportunity",
-                "color": "blue",
-                "title": opp.title or f"询盘: {opp.customer_name}",
-                "meta": f"{opp.source or 'alibaba'} · {opp.source_ref_id or ''} · {opp.created_at.strftime('%Y-%m-%d') if opp.created_at else ''}",
-                "summary": opp.summary or "",
-                "raw": _format_opportunity_raw(opp),
-                "occurred_at": opp.created_at.isoformat() if opp.created_at else None,
-            })
-
-    # ── 事件记录 ──
-    if not source_type or source_type in ("event", "all"):
-        events = db.query(CustomerProfileEvent).filter(
-            CustomerProfileEvent.profile_id == profile_id,
-        ).order_by(CustomerProfileEvent.occurred_at.desc()).limit(20).all()
-
-        for evt in events:
-            type_label_map = {
-                "new_inquiry": "询盘信号",
-                "replied": "回复信号",
-                "quoted": "报价信号",
-                "won": "成交信号",
-                "lost": "流失信号",
-                "manual_note": "手动备注",
-            }
-            records.append({
-                "type": type_label_map.get(evt.event_type, "事件"),
-                "type_code": "event",
-                "color": "green" if evt.event_score > 0 else ("red" if evt.event_score < 0 else "gray"),
-                "title": evt.event_title,
-                "meta": f"{evt.event_source} · {evt.occurred_at.strftime('%Y-%m-%d %H:%M') if evt.occurred_at else ''}",
-                "summary": evt.event_summary or "",
-                "raw": _format_event_raw(evt),
-                "occurred_at": evt.occurred_at.isoformat() if evt.occurred_at else None,
-            })
-
-    # 按时间倒序
-    records.sort(key=lambda r: r.get("occurred_at") or "", reverse=True)
+        records.extend({
+            "type": "机会记录",
+            "type_code": "opportunity",
+            "title": row.title,
+            "meta": f"{row.source_system} · {row.source_account_key}",
+            "summary": row.summary or "",
+            "opportunity_id": row.id,
+            "occurred_at": row.created_at.isoformat(),
+        } for row in rows)
+    if source_type in {None, "event", "all"}:
+        rows = apply_record_access(
+            db.query(CustomerEvent),
+            CustomerEvent,
+            access,
+        ).order_by(CustomerEvent.occurred_at.desc()).limit(20).all()
+        records.extend({
+            "type": "客户事件",
+            "type_code": "event",
+            "title": row.event_title,
+            "meta": f"{row.event_source} · {row.event_type}",
+            "summary": row.event_summary or "",
+            "event_id": row.id,
+            "data_classification": row.data_classification,
+            "visibility_scope": row.visibility_scope,
+            "occurred_at": row.occurred_at.isoformat(),
+        } for row in rows)
+    if source_type in {None, "note", "all"}:
+        rows = apply_record_access(
+            db.query(CustomerAnnotation),
+            CustomerAnnotation,
+            access,
+            visibility_field="visibility",
+            author_field="authored_by",
+        ).filter(
+            CustomerAnnotation.annotation_type == "note",
+            CustomerAnnotation.status == "active",
+        ).order_by(CustomerAnnotation.created_at.desc()).limit(20).all()
+        records.extend({
+            "type": "业务员备注",
+            "type_code": "note",
+            "title": "业务员备注",
+            "meta": f"author:{row.authored_by}",
+            "summary": str((row.content_json or {}).get("text") or ""),
+            "annotation_id": row.id,
+            "data_classification": row.data_classification,
+            "visibility_scope": row.visibility,
+            "occurred_at": row.created_at.isoformat(),
+        } for row in rows)
+    records.sort(key=lambda row: row.get("occurred_at") or "", reverse=True)
     return records
 
 
 def add_manual_note(
     db: Session,
-    profile_id: int,
+    customer_id: int,
     note_text: str,
     user_id: int,
-) -> CustomerProfileEvent:
-    """添加手动备注（存为事件）。"""
+    *,
+    access: CustomerAccess,
+) -> CustomerAnnotation:
+    if access.customer_id != customer_id or access.actor_user_id != int(user_id):
+        raise ValueError("CUSTOMER_NOT_FOUND_OR_FORBIDDEN")
+    account = db.get(CustomerAccount, customer_id)
+    if account is None:
+        raise ValueError("CUSTOMER_NOT_FOUND")
+    text = note_text.strip()
+    if not text:
+        raise ValueError("ANNOTATION_TEXT_REQUIRED")
     now = beijing_now()
-    evt = CustomerProfileEvent(
-        profile_id=profile_id,
-        event_source="manual_note",
-        event_type="manual_note",
-        event_title=f"业务员备注",
-        event_summary=note_text[:200],
-        event_payload={"note": note_text},
-        event_score=0,
-        actor_user_id=user_id,
-        occurred_at=now,
+    row = CustomerAnnotation(
+        customer_id=customer_id,
+        annotation_type="note",
+        target_fact_id=None,
+        content_schema_version="v1",
+        content_json={"text": text, "source": "insight_customer_drawer"},
+        policy_scope_type=None,
+        policy_scope_ref_id=None,
+        policy_effective_at=None,
+        visibility="customer_team",
+        data_classification="internal_business",
+        status="active",
+        authored_by=user_id,
+        created_at=now,
+        updated_at=now,
     )
-    db.add(evt)
-
-    # 更新画像
-    profile = db.query(CustomerProfile).filter(CustomerProfile.id == profile_id).first()
-    if profile:
-        profile.last_event_at = now
-        profile.total_events = (profile.total_events or 0) + 1
-
+    db.add(row)
+    db.flush()
+    append_customer_event(
+        db,
+        customer_id=customer_id,
+        event_type="annotation.created",
+        event_source="annotation",
+        event_title="业务员添加客户备注",
+        event_summary=text[:200],
+        event_payload={"annotation_type": "note"},
+        payload_schema_version="customer_event_v1",
+        occurred_at=now,
+        source_ref_type="annotation",
+        source_ref_id=str(row.id),
+        actor_user_id=user_id,
+    )
     db.commit()
-    db.refresh(evt)
-    return evt
+    db.refresh(row)
+    return row
 
 
-def _format_opportunity_raw(opp: CustomerOpportunity) -> str:
-    """格式化机会的原始文本。"""
-    lines = []
-    lines.append(f"客户: {opp.customer_name}")
-    if opp.customer_region:
-        lines.append(f"地区: {opp.customer_region}")
-    lines.append(f"等级: {opp.priority_level}")
-    lines.append(f"置信度: {opp.confidence_score}")
-    lines.append(f"紧急度: {opp.urgency}")
-    lines.append(f"状态: {opp.status}")
-    if opp.recommended_strategy:
-        lines.append(f"策略: {opp.recommended_strategy}")
-    if opp.key_signals_json:
-        for sig in (opp.key_signals_json if isinstance(opp.key_signals_json, list) else []):
-            lines.append(f"· {sig}")
-    return "\n".join(lines)
-
-
-def _format_event_raw(evt: CustomerProfileEvent) -> str:
-    """格式化事件的原始文本。"""
-    lines = []
-    lines.append(f"来源: {evt.event_source}")
-    lines.append(f"类型: {evt.event_type}")
-    if evt.event_payload:
-        payload = evt.event_payload if isinstance(evt.event_payload, dict) else {}
-        for k, v in payload.items():
-            lines.append(f"{k}: {v}")
-    return "\n".join(lines)
+__all__ = ["add_manual_note", "get_source_records"]

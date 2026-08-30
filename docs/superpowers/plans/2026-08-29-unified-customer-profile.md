@@ -230,7 +230,7 @@ def test_profile_version_is_unique_per_customer_version():
 
 - [ ] **Step 1: Write failing API tests** for unified envelopes, customer list/detail/timeline, research queues, opportunity/action updates and high-impact proposals. Add the full four data classes by owner/collaborator/public-pool/team-admin/global-admin and Run-scope permission matrix.
 - [ ] **Step 2: Verify RED.**
-- [ ] **Step 3: Implement `/api/customer-hub` endpoints with service-only routers, `require_permission`/`require_any_permission`, `ok()` envelopes, pagination and Beijing-time serializers.**
+- [ ] **Step 3: Implement `/api/customer-hub` endpoints with service-only routers, `require_permission`/`require_any_permission`, `ok()` envelopes, pagination and Beijing-time serializers. The high-impact split executor must first repoint every declared proposal to its payload-declared customer and profile version, recompute `action_hash`, clear any old approval and return it to re-approval, then call `supersede_related_proposals` with the same execution idempotency key in that transaction; the Task 7 handler never guesses a profile rebind.**
 - [ ] **Step 4: Seed `customer:admin` and retain existing acquisition/opportunity/radar action codes only where they control a distinct action; add `customer:read_all` as a data-kind code.**
 - [ ] **Step 5: Register only the new customer router for customer operations and remove retired customer opportunity/radar routes from insight.**
 - [ ] **Step 6: Run API/permission tests.**

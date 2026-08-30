@@ -182,7 +182,12 @@ def decide_artifact(
     artifact.feedback_note = note
     if decision == "accepted":
         from app.agent_runtime.projection_service import project_accepted_artifact
-        project_accepted_artifact(db, artifact, run)
+        project_accepted_artifact(
+            db,
+            artifact,
+            run,
+            actor_user_id=user_id,
+        )
     append_event(
         db, run,
         event_id=f"artifact-{artifact.id}-{decision}",

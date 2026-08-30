@@ -14,6 +14,7 @@ from sqlalchemy import (
     Integer,
     JSON,
     Numeric,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -1187,6 +1188,305 @@ class PublicPoolBatch(Base):
     updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="公海批次最后更新的北京时间")
 
 
+class CustomerOpportunity(Base):
+    __tablename__ = "ark_customer_opportunities"
+    __table_args__ = (
+        CheckConstraint(
+            "confidence_score >= 0 AND confidence_score <= 100",
+            name="ck_customer_opportunity_confidence",
+        ),
+        CheckConstraint(
+            "stage_probability IS NULL OR (stage_probability >= 0 AND stage_probability <= 100)",
+            name="ck_customer_opportunity_probability",
+        ),
+        ForeignKeyConstraint(
+            ["linked_order_id", "customer_id"],
+            ["ark_customer_orders.id", "ark_customer_orders.customer_id"],
+            name="fk_customer_opportunity_order",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        UniqueConstraint(
+            "id", "customer_id", name="uq_customer_opportunity_id_customer"
+        ),
+        UniqueConstraint(
+            "source_system",
+            "source_account_key",
+            "source_key",
+            name="uq_customer_opportunity_source_key",
+        ),
+        Index(
+            "ix_ark_customer_opportunities_linked_order_id_customer_id",
+            "linked_order_id",
+            "customer_id",
+        ),
+        {
+            "comment": "统一客户的单次销售机会当前态表；保存销售过程、预测、下一步和关闭结果，不复制客户完整档案。"
+        },
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="客户销售机会ID")
+    customer_id = Column(
+        BigInteger,
+        ForeignKey(
+            "ark_customer_accounts.id",
+            name="fk_customer_opportunity_customer",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
+        comment="机会所属统一客户ID",
+    )
+    opportunity_type = Column(String(32), nullable=False, index=True, comment="类型：ali_inquiry、public_pool、customer_reactivation、new_product、manual")
+    source = Column(String(32), nullable=False, index=True, comment="来源：alibaba、public_pool、customer_hub、manual")
+    source_system = Column(String(32), nullable=False, index=True, comment="机会幂等来源系统：alibaba、search、public_pool、internal或登记值")
+    source_account_key = Column(String(128), nullable=False, index=True, comment="外部来源账号或租户命名空间；内部和跨账号业务键使用global")
+    source_key = Column(String(255), nullable=False, comment="来源系统账号命名空间内的稳定业务对象键，不含凭证")
+    source_ref_type = Column(String(32), nullable=True, comment="引用类型：source_record、conversation、message、research_task、customer_event")
+    source_ref_id = Column(BigInteger, nullable=True, index=True, comment="对应方舟来源对象ID；由source_ref_type解释")
+    owner_user_id = Column(
+        USER_ID,
+        ForeignKey(
+            "ark_users.id",
+            name="fk_customer_opportunity_owner",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=True,
+        index=True,
+        comment="当前机会负责人；空表示待分配，不替代客户主负责人",
+    )
+    primary_contact_id = Column(
+        BigInteger,
+        ForeignKey(
+            "ark_customer_contacts.id",
+            name="fk_customer_opportunity_contact",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=True,
+        index=True,
+        comment="本机会主要联系人ID",
+    )
+    expected_amount = Column(Numeric(15, 2), nullable=True, comment="机会预计原币种金额")
+    currency = Column(String(8), nullable=True, comment="预计金额ISO币种代码")
+    expected_close_date = Column(Date, nullable=True, index=True, comment="预计成交业务日期")
+    stage_probability = Column(SmallInteger, nullable=True, comment="阶段概率0至100；未知为空")
+    forecast_category = Column(String(16), nullable=True, index=True, comment="预测分类：pipeline、best_case、commit、closed")
+    priority_level = Column(String(4), nullable=False, index=True, comment="机会优先级：A、B、C、D")
+    confidence_score = Column(Numeric(5, 2), nullable=False, comment="机会判断置信度0至100")
+    urgency = Column(String(16), nullable=False, index=True, comment="紧迫度：urgent、high、normal、low")
+    title = Column(String(255), nullable=False, comment="机会标题")
+    summary = Column(Text, nullable=True, comment="机会当前摘要；不复制客户档案")
+    product_requirement_json = Column(JSON, nullable=False, comment="opportunity_requirement_v1：产品、规格、数量、价格、交期及未知项")
+    quote_ref = Column(String(128), nullable=True, comment="方舟报价业务引用；首期不建立报价域外键")
+    competitor_json = Column(JSON, nullable=False, comment="opportunity_competitor_v1：名称、信号、证据事实ID；未知为空数组")
+    recommended_strategy = Column(Text, nullable=True, comment="基于当前证据的机会策略建议")
+    opening_message_en = Column(Text, nullable=True, comment="供人工确认的英文开场草稿，不自动外发")
+    follow_up_message_en = Column(Text, nullable=True, comment="供人工确认的英文跟进草稿，不自动外发")
+    evidence_fact_ids = Column(JSON, nullable=False, comment="Schema v1支撑机会判断的客户事实ID数组")
+    status = Column(String(16), nullable=False, index=True, comment="状态：pending、contacted、replied、quoted、won、lost、dismissed")
+    stage_entered_at = Column(DateTime, nullable=False, index=True, comment="进入当前机会状态的北京时间")
+    due_at = Column(DateTime, nullable=True, index=True, comment="当前机会处理截止时间")
+    latest_message_at = Column(DateTime, nullable=True, index=True, comment="本机会相关最近消息时间")
+    next_step = Column(String(1000), nullable=True, comment="业务员确认的下一步")
+    next_step_due_at = Column(DateTime, nullable=True, index=True, comment="下一步计划完成时间")
+    close_reason_code = Column(String(32), nullable=True, index=True, comment="关闭原因标准码；开放机会为空")
+    close_reason_text = Column(String(1000), nullable=True, comment="关闭原因补充说明")
+    linked_order_id = Column(BigInteger, nullable=True, comment="won机会对应的方舟有效订单ID")
+    handled_at = Column(DateTime, nullable=True, comment="首次被人工处理的北京时间")
+    created_by = Column(
+        USER_ID,
+        ForeignKey(
+            "ark_users.id",
+            name="fk_customer_opportunity_created_by",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=True,
+        index=True,
+        comment="手工创建机会的方舟用户ID；同步创建允许为空",
+    )
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="机会创建的北京时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="机会当前态最后更新的北京时间")
+
+
+class CustomerOpportunityEvent(Base):
+    __tablename__ = "ark_customer_opportunity_events"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["opportunity_id", "customer_id"],
+            ["ark_customer_opportunities.id", "ark_customer_opportunities.customer_id"],
+            name="fk_customer_opp_event_opportunity",
+            ondelete="CASCADE",
+            onupdate="RESTRICT",
+        ),
+        UniqueConstraint(
+            "event_fingerprint",
+            name="uq_ark_customer_opportunity_events_event_fingerprint",
+        ),
+        Index(
+            "ix_ark_customer_opportunity_events_opportunity_id_customer_id",
+            "opportunity_id",
+            "customer_id",
+        ),
+        {
+            "comment": "客户机会分配、阶段、联系人、金额、下一步和关闭变化的追加式事件表。"
+        },
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="机会事件ID")
+    opportunity_id = Column(BigInteger, nullable=False, index=True, comment="所属客户机会ID")
+    customer_id = Column(BigInteger, nullable=False, index=True, comment="冗余校验的统一客户ID，必须与机会一致")
+    event_type = Column(String(32), nullable=False, index=True, comment="事件：created、assigned、stage_changed、contact_changed、amount_changed、next_step_changed、closed、reopened")
+    from_status = Column(String(16), nullable=True, comment="状态变化前值；非阶段事件为空")
+    to_status = Column(String(16), nullable=True, comment="状态变化后值；非阶段事件为空")
+    event_payload = Column(JSON, nullable=False, comment="opportunity_event_v1：变更前后字段、原因和业务引用")
+    evidence_fact_ids = Column(JSON, nullable=False, comment="Schema v1支撑本次机会变化的事实ID数组")
+    actor_user_id = Column(
+        USER_ID,
+        ForeignKey(
+            "ark_users.id",
+            name="fk_customer_opp_event_actor",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=True,
+        index=True,
+        comment="人工操作方舟用户ID；确定性同步允许为空",
+    )
+    occurred_at = Column(DateTime, nullable=False, index=True, comment="机会业务变化发生的北京时间")
+    event_fingerprint = Column(String(64).with_variant(mysql.CHAR(64), "mysql"), nullable=False, comment="机会、事件类型、变更内容、业务时间和来源生成的SHA-256")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="机会事件写入方舟的北京时间")
+
+
+class CustomerAction(Base):
+    __tablename__ = "ark_customer_actions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["opportunity_id", "customer_id"],
+            ["ark_customer_opportunities.id", "ark_customer_opportunities.customer_id"],
+            name="fk_customer_action_opportunity",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["profile_version_id", "customer_id"],
+            ["ark_customer_profile_versions.id", "ark_customer_profile_versions.customer_id"],
+            name="fk_customer_action_profile",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        UniqueConstraint(
+            "action_fingerprint",
+            name="uq_ark_customer_actions_action_fingerprint",
+        ),
+        Index(
+            "ix_ark_customer_actions_opportunity_id_customer_id",
+            "opportunity_id",
+            "customer_id",
+        ),
+        Index(
+            "ix_ark_customer_actions_profile_version_id_customer_id",
+            "profile_version_id",
+            "customer_id",
+        ),
+        {
+            "comment": "客户经营雷达给业务员的待执行、完成、忽略和延后行动表；建议与真实销售活动严格分开。"
+        },
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="客户经营行动ID")
+    customer_id = Column(
+        BigInteger,
+        ForeignKey(
+            "ark_customer_accounts.id",
+            name="fk_customer_action_customer",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
+        comment="行动所属统一客户ID",
+    )
+    owner_user_id = Column(
+        USER_ID,
+        ForeignKey(
+            "ark_users.id",
+            name="fk_customer_action_owner",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=True,
+        index=True,
+        comment="行动执行人方舟用户ID；空表示公海未分配队列，认领时赋值",
+    )
+    opportunity_id = Column(BigInteger, nullable=True, index=True, comment="可选关联机会ID，必须与customer_id一致")
+    contact_id = Column(
+        BigInteger,
+        ForeignKey(
+            "ark_customer_contacts.id",
+            name="fk_customer_action_contact",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=True,
+        index=True,
+        comment="可选目标联系人ID",
+    )
+    action_type = Column(String(24), nullable=False, index=True, comment="行动类型：call、email、message、meeting、research、review")
+    thread_group = Column(String(24), nullable=False, index=True, comment="分组：new_inquiry、sample、key_account、reorder、reactivation、public_pool")
+    channel = Column(String(16), nullable=True, comment="渠道：alibaba、email、whatsapp、phone、linkedin、offline、internal")
+    priority = Column(String(16), nullable=False, index=True, comment="优先级：urgent、high、normal、low")
+    reason = Column(String(1000), nullable=False, comment="有证据的行动推荐原因")
+    next_action = Column(String(1000), nullable=False, comment="建议执行的明确下一步")
+    suggested_message = Column(Text, nullable=True, comment="供人工确认的话术草稿，不自动外发")
+    planned_at = Column(DateTime, nullable=True, index=True, comment="计划开始执行时间")
+    due_at = Column(DateTime, nullable=True, index=True, comment="计划完成截止时间")
+    action_date = Column(Date, nullable=False, index=True, comment="雷达列表业务日期")
+    status = Column(String(16), nullable=False, index=True, comment="状态：pending、done、dismissed、snoozed、cancelled")
+    snoozed_until = Column(DateTime, nullable=True, index=True, comment="延后到期时间")
+    completed_at = Column(DateTime, nullable=True, comment="行动完成的北京时间")
+    completed_by = Column(
+        USER_ID,
+        ForeignKey(
+            "ark_users.id",
+            name="fk_customer_action_completed_by",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=True,
+        index=True,
+        comment="标记行动完成的方舟用户ID",
+    )
+    outcome_code = Column(String(32), nullable=True, index=True, comment="结果：contacted、replied、no_response、meeting_booked、wrong_contact、other")
+    dismissal_reason = Column(String(32), nullable=True, comment="忽略原因稳定码")
+    feedback_json = Column(JSON, nullable=False, comment="action_feedback_v1：评价、备注、结果证据和下一步")
+    source_event_ids = Column(JSON, nullable=False, comment="Schema v1触发行动的客户事件ID数组")
+    evidence_fact_ids = Column(JSON, nullable=False, comment="Schema v1支撑行动原因和建议的事实ID数组")
+    profile_version_id = Column(BigInteger, nullable=False, comment="生成行动时使用的客户档案版本ID")
+    source_type = Column(String(16), nullable=False, index=True, comment="生成来源：rule、agent、manual")
+    agent_run_id = Column(
+        BigInteger,
+        ForeignKey(
+            "ark_agent_runs.id",
+            name="fk_customer_action_agent_run",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=True,
+        index=True,
+        comment="Agent生成行动时的受控Run ID",
+    )
+    policy_version = Column(String(32), nullable=False, comment="行动生成与抑制策略版本")
+    action_fingerprint = Column(String(64).with_variant(mysql.CHAR(64), "mysql"), nullable=False, comment="客户、行动日期、策略、触发事实和目标对象生成的SHA-256")
+    evidence_status = Column(String(16), nullable=False, index=True, comment="证据状态：valid、stale、invalid")
+    generated_at = Column(DateTime, nullable=False, comment="行动建议完成生成的北京时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="行动创建的北京时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="行动当前态最后更新的北京时间")
+
+
 class CustomerAcquisitionAttribution(Base):
     __tablename__ = "ark_customer_acquisition_attributions"
     __table_args__ = (
@@ -1208,6 +1508,11 @@ class CustomerAcquisitionAttribution(Base):
             name="fk_customer_attribution_qualification",
         ),
         ForeignKeyConstraint(
+            ["opportunity_id"],
+            ["ark_customer_opportunities.id"],
+            name="fk_customer_attribution_opportunity",
+        ),
+        ForeignKeyConstraint(
             ["order_id", "customer_id"],
             ["ark_customer_orders.id", "ark_customer_orders.customer_id"],
             name="fk_customer_attribution_order",
@@ -1223,7 +1528,6 @@ class CustomerAcquisitionAttribution(Base):
     search_job_id = Column(BigInteger, nullable=True, index=True, comment="归因关联搜索任务ID")
     research_task_id = Column(BigInteger, nullable=True, comment="归因关联研究任务ID")
     qualification_review_id = Column(BigInteger, nullable=True, comment="归因关联资格审核ID")
-    # Deferred workflow reference: Task 7 adds the FK atomically with its model.
     opportunity_id = Column(BigInteger, nullable=True, index=True, comment="归因关联销售机会ID")
     order_id = Column(BigInteger, nullable=True, index=True, comment="转化后关联的有效订单ID")
     attribution_role = Column(String(16), nullable=False, index=True, comment="归因角色：first_touch、influenced、conversion")
@@ -1282,6 +1586,15 @@ ACQUISITION_WORKFLOW_TABLES = {
     model.__tablename__: model.__table__ for model in ACQUISITION_WORKFLOW_MODELS
 }
 
+CUSTOMER_WORKFLOW_MODELS = (
+    CustomerOpportunity,
+    CustomerOpportunityEvent,
+    CustomerAction,
+)
+CUSTOMER_WORKFLOW_TABLES = {
+    model.__tablename__: model.__table__ for model in CUSTOMER_WORKFLOW_MODELS
+}
+
 
 def _reject_generated_slot_assignment(_target, _value, _oldvalue, initiator):
     raise ValueError(f"{initiator.key} is database-generated and read-only")
@@ -1311,9 +1624,12 @@ _configure_generated_slots()
 __all__ = [
     *(model.__name__ for model in CORE_MODELS),
     *(model.__name__ for model in ACQUISITION_WORKFLOW_MODELS),
+    *(model.__name__ for model in CUSTOMER_WORKFLOW_MODELS),
     "CORE_MODELS",
     "CORE_TABLE_NAMES",
     "CORE_TABLES",
     "ACQUISITION_WORKFLOW_MODELS",
     "ACQUISITION_WORKFLOW_TABLES",
+    "CUSTOMER_WORKFLOW_MODELS",
+    "CUSTOMER_WORKFLOW_TABLES",
 ]

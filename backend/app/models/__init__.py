@@ -74,6 +74,9 @@ from app.customer.models import (
     SearchResultSource,
     PublicPoolBatch,
     CustomerAcquisitionAttribution,
+    CustomerOpportunity,
+    CustomerOpportunityEvent,
+    CustomerAction,
 )
 from app.sales_automation.models import (
     AcquisitionProfile,
@@ -204,6 +207,9 @@ __all__ = [
     "CustomerResolutionKey",
     "CustomerTargetMatch",
     "CustomerAcquisitionAttribution",
+    "CustomerOpportunity",
+    "CustomerOpportunityEvent",
+    "CustomerAction",
     # 智能获客
     "AcquisitionProfile",
     "SearchJob",

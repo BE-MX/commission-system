@@ -15,13 +15,14 @@ import pytest
 from sqlalchemy.orm import Query
 
 from app.agent_runtime.models import AgentEvent, AgentRun
-from app.auth.models import ArkUser
+from app.auth.models import ArkPermission, ArkRole, ArkUser
 from app.customer.models import (
     CustomerAccount,
     CustomerAnnotation,
     CustomerAssignment,
     CustomerExternalIdentity,
     CustomerQualificationReview,
+    CustomerProfileVersion,
     CustomerResearchTask,
     CustomerSourceRecord,
     PublicPoolBatch,
@@ -63,6 +64,25 @@ POLICY = {
 
 
 def _seed_user(db, user_id: int = 1) -> ArkUser:
+    permission = db.query(ArkPermission).filter_by(code="customer:write").one_or_none()
+    if permission is None:
+        permission = ArkPermission(
+            code="customer:write",
+            module="customer",
+            action="write",
+            label="Edit customer workflows",
+        )
+        db.add(permission)
+        db.flush()
+    role = db.query(ArkRole).filter_by(name="acquisition_customer_writer").one_or_none()
+    if role is None:
+        role = ArkRole(
+            name="acquisition_customer_writer",
+            label="Acquisition customer writer",
+        )
+        role.permissions.append(permission)
+        db.add(role)
+        db.flush()
     row = ArkUser(
         id=user_id,
         username=f"acquisition-{user_id}",
@@ -70,6 +90,7 @@ def _seed_user(db, user_id: int = 1) -> ArkUser:
         real_name=f"Reviewer {user_id}",
         is_active=True,
     )
+    row.roles.append(role)
     db.add(row)
     db.flush()
     return row
@@ -174,7 +195,30 @@ def _search_research_task(db) -> CustomerResearchTask:
         agent_id="search-agent",
         lease_token=token,
     )
-    return db.query(CustomerResearchTask).one()
+    task = db.query(CustomerResearchTask).one()
+    account = db.get(CustomerAccount, task.customer_id)
+    if account.current_profile_version_id is None:
+        version = CustomerProfileVersion(
+            customer_id=account.id,
+            version_no=1,
+            profile_schema_version="customer_profile_v1",
+            canonicalization_version="jcs_v1",
+            input_seq=account.profile_input_seq,
+            profile_json={"identity": {"display_name": account.display_name}},
+            section_hashes={},
+            section_data_as_of={},
+            evidence_fact_ids=[],
+            change_summary={"changes": []},
+            compiler_version="customer_profile_compiler_v1",
+            profile_fingerprint=f"{account.id:064x}",
+            data_as_of=datetime(2026, 8, 30, 9, 0),
+            compiled_at=datetime(2026, 8, 30, 9, 0),
+        )
+        db.add(version)
+        db.flush()
+        account.current_profile_version_id = version.id
+        db.flush()
+    return task
 
 
 def _completed_research_material(db, task: CustomerResearchTask) -> tuple[AgentRun, dict]:

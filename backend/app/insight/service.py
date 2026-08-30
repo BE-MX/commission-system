@@ -78,15 +78,14 @@ from app.insight.external_binding_service import (  # noqa: F401
 
 # 客户机会
 from app.insight.customer_opportunity_service import (  # noqa: F401
-    import_accio_inquiries, get_opportunity, list_my_opportunities,
+    get_opportunity, list_my_opportunities,
     list_all_opportunities, list_unassigned_opportunities, get_opportunity_stats,
-    update_opportunity_status, add_opportunity_feedback, assign_opportunity,
+    update_opportunity_status, assign_opportunity,
 )
 
 # 客户经营雷达
 from app.insight.customer_profile_service import (  # noqa: F401
-    get_or_create_profile, get_profile, get_profile_by_opportunity,
-    ingest_opportunity_event, list_profiles,
+    get_profile, get_profile_by_opportunity, list_profiles,
 )
 from app.insight.customer_radar_service import (  # noqa: F401
     generate_daily_actions, get_daily_focus, get_thread_counts,
