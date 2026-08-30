@@ -10,7 +10,9 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import BigInteger, Text, create_engine, event, text
+from sqlalchemy import BigInteger, Integer, Numeric, Text, create_engine, event, text
+from sqlalchemy.dialects import mysql
+from sqlalchemy.dialects.mysql import DECIMAL as MYSQL_DECIMAL
 from sqlalchemy.dialects.mysql import DATETIME as MYSQL_DATETIME
 from sqlalchemy.orm import Session
 
@@ -1409,6 +1411,105 @@ def test_mysql_fence_treats_naive_datetime_as_beijing_wall_time(
     ) is expected
 
 
+def test_fence_bootstrap_rejects_a_spoofed_physical_table_before_activation(
+    monkeypatch,
+):
+    nonce = "cutover-fence-test-0001"
+    contract = {
+        "approved": True,
+        "migration_revision": "126",
+        "nonce": nonce,
+        "expires_at": (READY_CHECKED_AT + timedelta(minutes=3)).isoformat(),
+        "maintenance_fence_artifact": "bound-fence.json",
+        "maintenance_fence_artifact_sha256": "a" * 64,
+        "maintenance_fence_token": "fence-token-20260830",
+        "inventory_sha256": "b" * 64,
+        "preflight_report_sha256": "c" * 64,
+        "instance_inventory_artifact_sha256": "d" * 64,
+    }
+    contract["contract_sha256"] = hashlib.sha256(
+        canonical_json_bytes(contract)
+    ).hexdigest()
+    fence_document = {
+        "token": contract["maintenance_fence_token"],
+        "inventory_sha256": contract["inventory_sha256"],
+        "preflight_report_sha256": contract["preflight_report_sha256"],
+        "instance_inventory_artifact_sha256": contract[
+            "instance_inventory_artifact_sha256"
+        ],
+    }
+    monkeypatch.setattr(
+        cutover_service,
+        "load_bound_customer_physical_schema_contract",
+        lambda _contract: {},
+    )
+    monkeypatch.setattr(
+        cutover_service,
+        "_read_canonical_artifact",
+        lambda _descriptor: (fence_document, "a" * 64, "bound-fence.json"),
+    )
+
+    class _Dialect:
+        name = "mysql"
+
+    class _Bind:
+        dialect = _Dialect()
+
+    class _Rows:
+        def mappings(self):
+            return self
+
+        def __iter__(self):
+            names = {
+                "fence_token": "int",  # deliberately wrong
+                "inventory_sha256": "char(64)",
+                "preflight_report_sha256": "char(64)",
+                "instance_inventory_artifact_sha256": "char(64)",
+                "expires_at": "datetime",
+                "active": "tinyint(1)",
+                "created_at": "datetime",
+            }
+            return iter(
+                {
+                    "COLUMN_NAME": name,
+                    "COLUMN_TYPE": column_type,
+                    "IS_NULLABLE": "NO",
+                    "COLUMN_COMMENT": "comment",
+                    "COLUMN_KEY": "PRI" if name == "fence_token" else "",
+                }
+                for name, column_type in names.items()
+            )
+
+    class _Existing:
+        def scalar_one_or_none(self):
+            return None
+
+    class _FakeDb:
+        def __init__(self):
+            self.statements = []
+
+        def get_bind(self):
+            return _Bind()
+
+        def execute(self, statement, *_args, **_kwargs):
+            sql = str(statement)
+            self.statements.append(sql)
+            if "information_schema.COLUMNS" in sql:
+                return _Rows()
+            if sql.startswith("SELECT fence_token"):
+                return _Existing()
+            return None
+
+    db = _FakeDb()
+    with pytest.raises(CutoverGuardError, match="physical contract"):
+        cutover_service.bootstrap_migration_fence(
+            db,
+            contract,
+            now=READY_CHECKED_AT,
+        )
+    assert not any(statement.startswith("INSERT INTO") for statement in db.statements)
+
+
 def test_verify_after_table_state_requires_all_new_tables_and_no_retired_only_tables():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(
@@ -1514,6 +1615,133 @@ def test_physical_schema_signature_rejects_every_structural_category(category):
     actual = normalize_physical_schema_signature(**changed)
     with pytest.raises(CutoverGuardError, match="physical schema"):
         compare_physical_schema_signature(expected, actual, "synthetic_customer")
+
+
+def test_mysql_physical_signature_normalizes_unique_index_and_type_aliases():
+    generic_numeric = normalize_physical_schema_signature(
+        columns=[
+            {
+                "name": "amount",
+                "type": Numeric(15, 2),
+                "nullable": False,
+                "default": None,
+                "computed": None,
+                "comment": "amount",
+            },
+            {
+                "name": "owner_id",
+                "type": Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql"),
+                "nullable": False,
+                "default": None,
+                "computed": None,
+                "comment": "owner",
+            },
+        ],
+        primary_key={"name": None, "constrained_columns": []},
+        unique_constraints=[
+            {
+                "name": "uq_amount",
+                "column_names": ["amount"],
+                "duplicates_index": "uq_amount",
+            }
+        ],
+        indexes=[
+            {"name": "uq_amount", "unique": True, "column_names": ["amount"]},
+            {"name": "ix_owner", "unique": False, "column_names": ["owner_id"]},
+        ],
+        foreign_keys=[
+            {
+                "name": "fk_owner",
+                "constrained_columns": ["owner_id"],
+                "referred_schema": None,
+                "referred_table": "ark_users",
+                "referred_columns": ["id"],
+                "options": {},
+            }
+        ],
+        checks=[],
+        table_comment="synthetic",
+    )
+    reflected_mysql = normalize_physical_schema_signature(
+        columns=[
+            {
+                "name": "amount",
+                "type": MYSQL_DECIMAL(15, 2),
+                "nullable": False,
+                "default": None,
+                "computed": None,
+                "comment": "amount",
+            },
+            {
+                "name": "owner_id",
+                "type": mysql.INTEGER(unsigned=True),
+                "nullable": False,
+                "default": None,
+                "computed": None,
+                "comment": "owner",
+            },
+        ],
+        primary_key={"name": None, "constrained_columns": []},
+        unique_constraints=[
+            {
+                "name": "uq_amount",
+                "column_names": ["amount"],
+                "duplicates_index": "uq_amount",
+            }
+        ],
+        indexes=[
+            {"name": "uq_amount", "unique": True, "column_names": ["amount"]},
+            {"name": "ix_owner", "unique": False, "column_names": ["owner_id"]},
+        ],
+        foreign_keys=[
+            {
+                "name": "fk_owner",
+                "constrained_columns": ["owner_id"],
+                "referred_schema": None,
+                "referred_table": "ark_users",
+                "referred_columns": ["id"],
+                "options": {"ondelete": "RESTRICT", "onupdate": "NO ACTION"},
+            }
+        ],
+        checks=[],
+        table_comment="synthetic",
+    )
+
+    assert generic_numeric == reflected_mysql
+    assert generic_numeric["indexes"] == (("ix_owner", False, ("owner_id",)),)
+
+
+def test_mysql_physical_signature_normalizes_show_create_generated_sql():
+    def signature(expression):
+        return normalize_physical_schema_signature(
+            columns=[
+                {
+                    "name": "active_slot",
+                    "type": mysql.CHAR(64),
+                    "nullable": True,
+                    "default": None,
+                    "computed": {"sqltext": expression, "persisted": True},
+                    "comment": "slot",
+                }
+            ],
+            primary_key={"name": None, "constrained_columns": []},
+            unique_constraints=[],
+            indexes=[],
+            foreign_keys=[],
+            checks=[],
+            table_comment="synthetic",
+        )
+
+    expected = signature(
+        "CASE WHEN status='active' THEN "
+        "SHA2(CONCAT_WS(CHAR(31), customer_id, source_system), 256) ELSE NULL END"
+    )
+    reflected = signature(
+        "((case when `status` = _utf8mb4'active' then "
+        "sha2(concat_ws(char(31),`customer_id`,`source_system`),256) else null end))"
+    )
+
+    assert expected == reflected
 
 
 def test_customer_account_integer_pk_autoincrement_modes_match_mysql_reflection():

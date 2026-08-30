@@ -18,9 +18,10 @@ from typing import Any, Callable, Iterable, Mapping
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import MetaData, Table, inspect, select, text
+from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Session
 
-from app.core.time import beijing_now
+from app.core.time import beijing_now, to_beijing_naive
 from app.customer.models import CORE_TABLE_NAMES, CORE_TABLES
 
 
@@ -84,7 +85,7 @@ REBUILT_WORKFLOW_COLUMNS = {
     "ark_sales_public_pool_batches": frozenset("id batch_date policy_version status quotas_json selection_snapshot result_counts idempotency_key started_at finished_at error_code error_message created_by created_at updated_at".split()),
     "ark_customer_opportunities": frozenset("id customer_id opportunity_type source source_system source_account_key source_key source_ref_type source_ref_id owner_user_id primary_contact_id expected_amount currency expected_close_date stage_probability forecast_category priority_level confidence_score urgency title summary product_requirement_json quote_ref competitor_json recommended_strategy opening_message_en follow_up_message_en evidence_fact_ids status stage_entered_at due_at latest_message_at next_step next_step_due_at close_reason_code close_reason_text linked_order_id handled_at created_by created_at updated_at".split()),
     "ark_customer_opportunity_events": frozenset("id opportunity_id customer_id event_type from_status to_status event_payload evidence_fact_ids actor_user_id occurred_at event_fingerprint created_at".split()),
-    "ark_customer_actions": frozenset("id customer_id owner_user_id opportunity_id contact_id action_type thread_group channel priority reason next_action suggested_message planned_at due_at action_date status snoozed_until completed_at completed_by outcome_code dismissal_reason feedback_json source_event_ids evidence_fact_ids profile_version_id source_type agent_run_id policy_version action_fingerprint evidence_status created_at updated_at".split()),
+    "ark_customer_actions": frozenset("id customer_id owner_user_id opportunity_id contact_id action_type thread_group channel priority reason next_action suggested_message planned_at due_at action_date status snoozed_until completed_at completed_by outcome_code dismissal_reason feedback_json source_event_ids evidence_fact_ids profile_version_id source_type agent_run_id policy_version action_fingerprint evidence_status generated_at created_at updated_at".split()),
 }
 
 REBUILT_WORKFLOW_COMMENTS = {
@@ -1656,6 +1657,141 @@ def _mysql_maintenance_fence_active(
     )
 
 
+def bootstrap_migration_fence(
+    db: Session,
+    evidence_contract: Mapping[str, Any] | None,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    """Create and activate the DB fence only from the immutable evidence chain.
+
+    This is intentionally narrower than :func:`migration_preflight`: it performs
+    no inventory read and acquires no advisory lock.  The migration invokes it on
+    its Alembic bind immediately before the full preflight, which then owns the
+    lock and revalidates the live inventory on that same connection.
+    """
+    if db.get_bind().dialect.name != "mysql":
+        raise CutoverGuardError("migration fence bootstrap requires a MySQL Alembic bind")
+    if not isinstance(evidence_contract, Mapping):
+        raise CutoverGuardError("migration evidence contract is required for fence bootstrap")
+    nonce = evidence_contract.get("nonce")
+    if (
+        evidence_contract.get("approved") is not True
+        or evidence_contract.get("migration_revision") != "126"
+        or not isinstance(nonce, str)
+        or not _CUTOVER_NONCE.fullmatch(nonce)
+    ):
+        raise CutoverGuardError("migration fence bootstrap contract is not approved")
+    contract_payload = {
+        key: value for key, value in evidence_contract.items() if key != "contract_sha256"
+    }
+    if not hmac.compare_digest(
+        str(evidence_contract.get("contract_sha256")), _sha256(contract_payload)
+    ):
+        raise CutoverGuardError("migration fence bootstrap contract SHA-256 mismatch")
+    load_bound_customer_physical_schema_contract(evidence_contract)
+    current = now or beijing_now().replace(tzinfo=BEIJING_TIMEZONE)
+    _beijing_timestamp(current, "migration fence bootstrap now")
+    expires_at = _parse_writer_timestamp(
+        evidence_contract.get("expires_at"), "migration contract expires_at"
+    )
+    if expires_at <= current or expires_at - current > MIGRATION_CONTRACT_MAX_LIFETIME:
+        raise CutoverGuardError("migration fence bootstrap contract is expired")
+    fence_document, artifact_sha256, _ = _read_canonical_artifact(
+        evidence_contract.get("maintenance_fence_artifact")
+    )
+    bindings = {
+        "token": evidence_contract.get("maintenance_fence_token"),
+        "inventory_sha256": evidence_contract.get("inventory_sha256"),
+        "preflight_report_sha256": evidence_contract.get("preflight_report_sha256"),
+        "instance_inventory_artifact_sha256": evidence_contract.get(
+            "instance_inventory_artifact_sha256"
+        ),
+    }
+    if (
+        artifact_sha256
+        != evidence_contract.get("maintenance_fence_artifact_sha256")
+        or fence_document.get("token") != bindings["token"]
+        or fence_document.get("inventory_sha256") != bindings["inventory_sha256"]
+        or fence_document.get("preflight_report_sha256")
+        != bindings["preflight_report_sha256"]
+        or fence_document.get("instance_inventory_artifact_sha256")
+        != bindings["instance_inventory_artifact_sha256"]
+    ):
+        raise CutoverGuardError("migration fence bootstrap evidence binding is invalid")
+    db.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS ark_customer_cutover_fences ("
+            "fence_token VARCHAR(128) NOT NULL COMMENT '维护窗口围栏令牌；仅由绑定证据激活', "
+            "inventory_sha256 CHAR(64) NOT NULL COMMENT '获批清理清单SHA-256', "
+            "preflight_report_sha256 CHAR(64) NOT NULL COMMENT '获批预检报告SHA-256', "
+            "instance_inventory_artifact_sha256 CHAR(64) NOT NULL COMMENT '停写实例清单证据文件SHA-256', "
+            "expires_at DATETIME NOT NULL COMMENT '围栏失效北京时间', "
+            "active BOOLEAN NOT NULL COMMENT '围栏是否仍处于激活状态', "
+            "created_at DATETIME NOT NULL COMMENT '围栏激活北京时间', "
+            "PRIMARY KEY (fence_token)"
+            ") COMMENT='客户域破坏性切换维护围栏；只保存短期证据绑定，不保存客户数据。'"
+        )
+    )
+    columns = {
+        row["COLUMN_NAME"]: row
+        for row in db.execute(
+            text(
+                "SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_COMMENT, "
+                "COLUMN_KEY "
+                "FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() "
+                "AND TABLE_NAME='ark_customer_cutover_fences' ORDER BY ORDINAL_POSITION"
+            )
+        ).mappings()
+    }
+    expected_columns = {
+        "fence_token": ("varchar(128)", "PRI"),
+        "inventory_sha256": ("char(64)", ""),
+        "preflight_report_sha256": ("char(64)", ""),
+        "instance_inventory_artifact_sha256": ("char(64)", ""),
+        "expires_at": ("datetime", ""),
+        "active": ("tinyint(1)", ""),
+        "created_at": ("datetime", ""),
+    }
+    if set(columns) != set(expected_columns) or any(
+        row.get("IS_NULLABLE") != "NO"
+        or not row.get("COLUMN_COMMENT")
+        or str(row.get("COLUMN_TYPE", "")).lower() != expected_columns[name][0]
+        or str(row.get("COLUMN_KEY", "")) != expected_columns[name][1]
+        for name, row in columns.items()
+    ):
+        raise CutoverGuardError("migration fence table physical contract is invalid")
+    existing = db.execute(
+        text(
+            "SELECT fence_token FROM ark_customer_cutover_fences "
+            "WHERE fence_token=:fence_token FOR UPDATE"
+        ),
+        {"fence_token": bindings["token"]},
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise CutoverGuardError("migration fence token was already activated")
+    db.execute(
+        text(
+            "INSERT INTO ark_customer_cutover_fences "
+            "(fence_token, inventory_sha256, preflight_report_sha256, "
+            "instance_inventory_artifact_sha256, expires_at, active, created_at) "
+            "VALUES (:fence_token, :inventory_sha256, :preflight_report_sha256, "
+            ":instance_inventory_artifact_sha256, :expires_at, 1, :created_at)"
+        ),
+        {
+            "fence_token": bindings["token"],
+            "inventory_sha256": bindings["inventory_sha256"],
+            "preflight_report_sha256": bindings["preflight_report_sha256"],
+            "instance_inventory_artifact_sha256": bindings[
+                "instance_inventory_artifact_sha256"
+            ],
+            "expires_at": to_beijing_naive(expires_at),
+            "created_at": to_beijing_naive(current),
+        },
+    )
+    return True
+
+
 def _read_bound_contract_artifact(
     descriptor: Any, label: str, nonce: str
 ) -> Mapping[str, Any]:
@@ -1693,7 +1829,9 @@ def _read_bound_contract_artifact(
     return document
 
 
-def _validate_bound_contract_evidence(contract: Mapping[str, Any], nonce: str) -> None:
+def _validate_bound_contract_evidence(
+    contract: Mapping[str, Any], nonce: str
+) -> dict[str, Mapping[str, Any]]:
     descriptors = contract.get("evidence_artifacts")
     labels = (
         "preflight_report",
@@ -1769,6 +1907,46 @@ def _validate_bound_contract_evidence(contract: Mapping[str, Any], nonce: str) -
     )
     if physical_contract_sha256 != contract.get("physical_schema_contract_sha256"):
         raise CutoverGuardError("migration physical schema contract binding is invalid")
+    return documents
+
+
+def load_bound_customer_physical_schema_contract(
+    evidence_contract: Mapping[str, Any] | None,
+) -> Mapping[str, Any]:
+    """Read the immutable revision-126 schema artifact bound to a contract.
+
+    The returned document is not a descriptor.  Its canonical bytes, artifact
+    bytes, inner contract hash and outer migration-contract hash have all been
+    checked before a migration may compare it with its frozen DDL.
+    """
+    if not isinstance(evidence_contract, Mapping):
+        raise CutoverGuardError("migration evidence contract is required")
+    nonce = evidence_contract.get("nonce")
+    if (
+        evidence_contract.get("approved") is not True
+        or evidence_contract.get("migration_revision") != "126"
+        or not isinstance(nonce, str)
+        or not _CUTOVER_NONCE.fullmatch(nonce)
+    ):
+        raise CutoverGuardError("migration physical schema contract is not approved")
+    payload = {
+        key: value
+        for key, value in evidence_contract.items()
+        if key != "contract_sha256"
+    }
+    if not hmac.compare_digest(
+        str(evidence_contract.get("contract_sha256")), _sha256(payload)
+    ):
+        raise CutoverGuardError("migration evidence contract SHA-256 mismatch")
+    documents = _validate_bound_contract_evidence(evidence_contract, nonce)
+    physical_contract = documents["physical_schema_contract"]
+    physical_sha256 = validate_customer_physical_schema_contract(physical_contract)
+    if not hmac.compare_digest(
+        physical_sha256,
+        str(evidence_contract.get("physical_schema_contract_sha256")),
+    ):
+        raise CutoverGuardError("migration physical schema contract binding is invalid")
+    return physical_contract
 
 
 def migration_preflight(
@@ -1894,21 +2072,102 @@ def migration_preflight(
 def _sql_expression(value: Any) -> str | None:
     if value is None:
         return None
-    text_value = " ".join(str(value).strip().split())
-    while text_value.startswith("(") and text_value.endswith(")"):
-        text_value = text_value[1:-1].strip()
-    return text_value
+    source = str(value).strip()
+    tokens: list[str] = []
+    index = 0
+    while index < len(source):
+        character = source[index]
+        if character.isspace():
+            index += 1
+            continue
+        if character in {"'", '"'}:
+            quote = character
+            end = index + 1
+            while end < len(source):
+                if source[end] == "\\":
+                    end += 2
+                    continue
+                if source[end] == quote:
+                    if end + 1 < len(source) and source[end + 1] == quote:
+                        end += 2
+                        continue
+                    end += 1
+                    break
+                end += 1
+            tokens.append(source[index:end])
+            index = end
+            continue
+        if character == "`":
+            end = source.find("`", index + 1)
+            if end < 0:
+                tokens.append(source[index:].casefold())
+                break
+            tokens.append(source[index + 1 : end].replace("``", "`").casefold())
+            index = end + 1
+            continue
+        if character.isalnum() or character in {"_", "$"}:
+            end = index + 1
+            while end < len(source) and (
+                source[end].isalnum() or source[end] in {"_", "$"}
+            ):
+                end += 1
+            token = source[index:end]
+            next_nonspace = end
+            while next_nonspace < len(source) and source[next_nonspace].isspace():
+                next_nonspace += 1
+            if token.startswith("_") and next_nonspace < len(source) and source[
+                next_nonspace
+            ] in {"'", '"'}:
+                index = end
+                continue
+            tokens.append(token.casefold())
+            index = end
+            continue
+        operator = source[index : index + 2]
+        if operator in {">=", "<=", "<>", "!=", "||", "&&", "<<", ">>"}:
+            tokens.append(operator)
+            index += 2
+        else:
+            tokens.append(character)
+            index += 1
+
+    def outer_parentheses_cover_all(items: list[str]) -> bool:
+        if len(items) < 2 or items[0] != "(" or items[-1] != ")":
+            return False
+        depth = 0
+        for position, token in enumerate(items):
+            if token == "(":
+                depth += 1
+            elif token == ")":
+                depth -= 1
+                if depth == 0 and position != len(items) - 1:
+                    return False
+            if depth < 0:
+                return False
+        return depth == 0
+
+    while outer_parentheses_cover_all(tokens):
+        tokens = tokens[1:-1]
+    return " ".join(tokens)
 
 
 def _type_signature(value: Any) -> dict[str, Any]:
-    rendered = str(value).upper()
+    mysql_type = value.dialect_impl(mysql.dialect())
+    rendered = str(mysql_type.compile(dialect=mysql.dialect())).upper()
+    type_name = rendered.split("(", 1)[0].strip()
+    if type_name in {"BOOL", "BOOLEAN"} or (
+        type_name == "TINYINT" and getattr(mysql_type, "display_width", None) == 1
+    ):
+        type_name = "BOOLEAN"
+    elif type_name == "NUMERIC":
+        type_name = "DECIMAL"
     return {
-        "name": rendered.split("(", 1)[0].strip(),
-        "length": getattr(value, "length", None),
-        "precision": getattr(value, "precision", None),
-        "scale": getattr(value, "scale", None),
-        "unsigned": bool(getattr(value, "unsigned", False)),
-        "enum_values": tuple(getattr(value, "enums", ()) or ()),
+        "name": type_name,
+        "length": getattr(mysql_type, "length", None),
+        "precision": getattr(mysql_type, "precision", None),
+        "scale": getattr(mysql_type, "scale", None),
+        "unsigned": bool(getattr(mysql_type, "unsigned", False)),
+        "enum_values": tuple(getattr(mysql_type, "enums", ()) or ()),
     }
 
 
@@ -1924,6 +2183,22 @@ def normalize_physical_schema_signature(
 ) -> dict[str, Any]:
     """Normalize SQLAlchemy/MySQL reflection into one comparison-safe contract."""
     pk_columns = tuple(primary_key.get("constrained_columns") or ())
+    unique_items = tuple(unique_constraints)
+    duplicate_unique_index_names = {
+        item.get("duplicates_index")
+        for item in unique_items
+        if item.get("duplicates_index")
+    }
+    index_items = tuple(
+        item
+        for item in indexes
+        if item.get("name") not in duplicate_unique_index_names
+    )
+
+    def referential_action(value: Any) -> str:
+        normalized = str(value).strip().upper() if value is not None else ""
+        return "RESTRICT" if normalized in {"", "NO ACTION", "RESTRICT"} else normalized
+
     normalized_columns = []
     for column in columns:
         computed = column.get("computed")
@@ -1967,7 +2242,7 @@ def normalize_physical_schema_signature(
                 [(
                     item.get("name"),
                     tuple(item.get("column_names") or ()),
-                ) for item in unique_constraints],
+                ) for item in unique_items],
                 key=canonical_json_bytes,
             )
         ),
@@ -1977,7 +2252,7 @@ def normalize_physical_schema_signature(
                     item.get("name"),
                     bool(item.get("unique")),
                     tuple(item.get("column_names") or ()),
-                ) for item in indexes],
+                ) for item in index_items],
                 key=canonical_json_bytes,
             )
         ),
@@ -1989,8 +2264,12 @@ def normalize_physical_schema_signature(
                     item.get("referred_schema"),
                     item.get("referred_table"),
                     tuple(item.get("referred_columns") or ()),
-                    (item.get("options") or {}).get("ondelete"),
-                    (item.get("options") or {}).get("onupdate"),
+                    referential_action(
+                        (item.get("options") or {}).get("ondelete")
+                    ),
+                    referential_action(
+                        (item.get("options") or {}).get("onupdate")
+                    ),
                 ) for item in foreign_keys],
                 key=canonical_json_bytes,
             )
@@ -2168,7 +2447,9 @@ def _model_physical_schema_signature(table: Table) -> dict[str, Any]:
                 "type": column.type,
                 "nullable": column.nullable,
                 "default": (
-                    str(getattr(column.server_default, "arg", column.server_default))
+                    None
+                    if column.computed is not None
+                    else str(getattr(column.server_default, "arg", column.server_default))
                     if column.server_default is not None
                     else None
                 ),
