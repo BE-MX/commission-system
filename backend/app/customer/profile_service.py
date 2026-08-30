@@ -108,6 +108,14 @@ _RISK_FACT_TYPES = {
     "behavior.inferred.supplier_switch_signal": "supplier_switch_signal",
     "behavior.observed.silence_period": "silence_period",
 }
+_DNC_SCOPE_TYPES = frozenset({
+    "global",
+    "target_profile",
+    "product",
+    "market",
+    "source",
+    "channel",
+})
 
 
 class CompileObserver(Protocol):
@@ -148,6 +156,9 @@ class ProfileCompileError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class _Snapshot:
+    evaluated_at: datetime
+    next_time_boundary: datetime | None
+    lineage_times: Mapping[str, tuple[datetime, ...]]
     customer: dict
     names: tuple[dict, ...]
     identities: tuple[dict, ...]
@@ -232,6 +243,34 @@ def _active_at(
     )
 
 
+def _dnc_enforcement(row: CustomerAnnotation) -> dict:
+    scope_type = row.policy_scope_type
+    scope_ref_id = row.policy_scope_ref_id
+    safe_details = bool(
+        row.visibility in _AGENT_VISIBILITIES
+        and row.data_classification in {"public_business", "internal_business"}
+    )
+    if (
+        scope_type not in _DNC_SCOPE_TYPES
+        or (scope_type != "global" and (not scope_ref_id or not safe_details))
+    ):
+        scope_type = "global"
+        scope_ref_id = None
+    elif scope_type == "global":
+        scope_ref_id = None
+    result = {
+        "annotation_type": "do_not_contact",
+        "policy_scope_type": scope_type,
+        "policy_effective_at": row.policy_effective_at,
+        "visibility_scope": "customer_team",
+        "data_classification": "internal_business",
+        "security_transform": "dnc_enforcement_v1",
+    }
+    if scope_ref_id is not None:
+        result["policy_scope_ref_id"] = scope_ref_id
+    return result
+
+
 def _source_security(source: CustomerSourceRecord | None) -> tuple[str, str]:
     if source is None:
         return "internal_business", "customer_team"
@@ -239,12 +278,25 @@ def _source_security(source: CustomerSourceRecord | None) -> tuple[str, str]:
 
 
 def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Snapshot:
+    future_boundaries: list[datetime] = []
+    lineage_times: dict[str, list[datetime]] = defaultdict(list)
+
+    def track_lineage(section: str, *values: datetime | None) -> None:
+        for value in values:
+            if value is not None and value <= now:
+                lineage_times[section].append(value)
+
+    def track_boundary(*values: datetime | None) -> None:
+        future_boundaries.extend(
+            value for value in values
+            if value is not None and value > now
+        )
+
     name_rows = db.query(CustomerName).filter(
         CustomerName.customer_id == customer.id
     ).all()
     identity_rows = db.query(CustomerExternalIdentity).filter(
         CustomerExternalIdentity.customer_id == customer.id,
-        CustomerExternalIdentity.status == "active",
     ).all()
     referenced_source_ids = {
         row.source_record_id
@@ -260,9 +312,11 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
     }
     names = []
     for row in name_rows:
-        if row.verification_status == "rejected" or not _active_at(
-            row.valid_from, row.valid_to, now
-        ):
+        if row.verification_status == "rejected":
+            continue
+        track_lineage("identity", row.last_seen_at, row.valid_from, row.valid_to)
+        track_boundary(row.valid_from, row.valid_to)
+        if not _active_at(row.valid_from, row.valid_to, now):
             continue
         classification, visibility = _source_security(sources.get(row.source_record_id))
         names.append({
@@ -277,8 +331,9 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
 
     identities = []
     for row in identity_rows:
-        if row.verification_status == "rejected":
+        if row.status != "active" or row.verification_status == "rejected":
             continue
+        track_lineage("identity", row.last_seen_at, row.verified_at)
         classification, visibility = _source_security(sources.get(row.source_record_id))
         identities.append({
             "source_system": row.source_system,
@@ -297,6 +352,20 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
     fact_rows = db.query(CustomerFact).filter(CustomerFact.customer_id == customer.id).all()
     fact_by_id = {row.id: row for row in fact_rows}
     for row in fact_rows:
+        fact_section = _section_for_fact_key(row.fact_key)
+        if row.verification_status in {"rejected", "superseded"}:
+            track_lineage(fact_section, row.effective_to, row.reviewed_at)
+            track_lineage("quality", row.effective_to, row.reviewed_at)
+        else:
+            track_lineage(
+                fact_section,
+                row.observed_at,
+                row.effective_from,
+                row.effective_to,
+                row.expires_at,
+            )
+            track_lineage("quality", row.effective_to, row.expires_at, row.reviewed_at)
+            track_boundary(row.effective_from, row.effective_to, row.expires_at)
         facts.append({
             "id": row.id,
             "fact_key": row.fact_key,
@@ -322,10 +391,13 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
     conflicts = []
     for row in db.query(CustomerFactConflict).filter(
         CustomerFactConflict.customer_id == customer.id,
-        CustomerFactConflict.status == "open",
     ):
+        if row.status != "open":
+            track_lineage("quality", row.resolved_at)
+            continue
         left = fact_by_id.get(row.left_fact_id)
         right = fact_by_id.get(row.right_fact_id)
+        track_lineage("quality", row.detected_at)
         if left is None or right is None:
             continue
         conflicts.append({
@@ -346,10 +418,13 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
     for row in db.query(CustomerContactRelationship).filter(
         CustomerContactRelationship.customer_id == customer.id,
     ):
+        if row.verification_status in {"rejected", "disputed"}:
+            continue
+        track_lineage("contacts", row.effective_from, row.effective_to)
+        track_boundary(row.effective_from, row.effective_to)
         contact = contact_rows.get(row.contact_id)
         if (
             contact is None
-            or row.verification_status in {"rejected", "disputed"}
             or not _active_at(row.effective_from, row.effective_to, now)
         ):
             continue
@@ -371,7 +446,7 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
             "visibility_scope": (
                 source_fact.visibility_scope if source_fact else "customer_team"
             ),
-            "data_as_of": row.effective_from or row.created_at,
+            "data_as_of": row.effective_from,
         })
 
     relationships = []
@@ -379,10 +454,11 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
         (CustomerRelationship.from_customer_id == customer.id)
         | (CustomerRelationship.to_customer_id == customer.id),
     ):
-        if (
-            row.verification_status in {"rejected", "disputed"}
-            or not _active_at(row.effective_from, row.effective_to, now)
-        ):
+        if row.verification_status in {"rejected", "disputed"}:
+            continue
+        track_lineage("business", row.effective_from, row.effective_to)
+        track_boundary(row.effective_from, row.effective_to)
+        if not _active_at(row.effective_from, row.effective_to, now):
             continue
         source_fact = fact_by_id.get(row.source_fact_id)
         relationships.append({
@@ -402,18 +478,29 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
             "visibility_scope": (
                 source_fact.visibility_scope if source_fact else "customer_team"
             ),
-            "data_as_of": row.effective_from or row.created_at,
+            "data_as_of": row.effective_from,
         })
 
-    assignments = [{
-        "user_id": row.user_id,
-        "assignment_role": row.assignment_role,
-        "effective_from": row.effective_from,
-    } for row in db.query(CustomerAssignment).filter(
+    assignments = []
+    for row in db.query(CustomerAssignment).filter(
         CustomerAssignment.customer_id == customer.id,
-        CustomerAssignment.assignment_status == "active",
-        CustomerAssignment.effective_to.is_(None),
-    )]
+    ):
+        track_lineage("ownership", row.effective_from, row.effective_to)
+        if row.assignment_status != "active":
+            continue
+        track_boundary(row.effective_from, row.effective_to)
+        if not _active_at(
+            row.effective_from,
+            row.effective_to,
+            now,
+        ):
+            continue
+        assignments.append({
+            "user_id": row.user_id,
+            "assignment_role": row.assignment_role,
+            "effective_from": row.effective_from,
+            "effective_to": row.effective_to,
+        })
 
     item_rows = db.query(CustomerOrderItem).join(
         CustomerOrder, CustomerOrder.id == CustomerOrderItem.order_id
@@ -441,31 +528,40 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
     annotations = []
     for row in db.query(CustomerAnnotation).filter(
         CustomerAnnotation.customer_id == customer.id,
-        CustomerAnnotation.status == "active",
     ):
+        if row.annotation_type == "do_not_contact":
+            track_lineage("risks", row.policy_effective_at, row.revoked_at)
+            if row.status == "active":
+                track_boundary(row.policy_effective_at)
+                if (
+                    row.policy_effective_at is None
+                    or row.policy_effective_at <= now
+                ):
+                    annotations.append(_dnc_enforcement(row))
+            continue
+        if row.annotation_type == "correction":
+            track_lineage("quality", row.revoked_at)
+        if row.status != "active" or row.annotation_type != "correction":
+            continue
         if row.visibility == "private":
             continue
         if row.visibility not in _SHARED_VISIBILITIES:
-            if row.annotation_type == "correction":
-                raise ProfileCompileError(
-                    "CORRECTION_ANNOTATION_INVALID",
-                    "active correction has an invalid shared visibility",
-                )
-            continue
+            raise ProfileCompileError(
+                "CORRECTION_ANNOTATION_INVALID",
+                "active correction has an invalid shared visibility",
+            )
         target_fact = None
-        if row.annotation_type == "correction":
-            target_fact = fact_by_id.get(row.target_fact_id)
-            if target_fact is None:
-                raise ProfileCompileError(
-                    "CORRECTION_ANNOTATION_INVALID",
-                    "active correction target must belong to the same customer",
-                )
+        target_fact = fact_by_id.get(row.target_fact_id)
+        if target_fact is None:
+            raise ProfileCompileError(
+                "CORRECTION_ANNOTATION_INVALID",
+                "active correction target must belong to the same customer",
+            )
         annotations.append({
             "id": row.id,
             "annotation_type": row.annotation_type,
             "target_fact_id": row.target_fact_id,
             "target_fact_key": target_fact.fact_key if target_fact else None,
-            "content": _json_value(row.content_json or {}),
             "policy_scope_type": row.policy_scope_type,
             "policy_scope_ref_id": row.policy_scope_ref_id,
             "policy_effective_at": row.policy_effective_at,
@@ -477,10 +573,15 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
                 row.data_classification,
                 target_fact.data_classification if target_fact else row.data_classification,
             ]),
-            "created_at": row.created_at,
         })
 
     return _Snapshot(
+        evaluated_at=now,
+        next_time_boundary=min(future_boundaries) if future_boundaries else None,
+        lineage_times={
+            section: tuple(values)
+            for section, values in lineage_times.items()
+        },
         customer={
             "id": customer.id,
             "customer_code": customer.customer_code,
@@ -496,8 +597,6 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
             "primary_region": customer.primary_region,
             "default_language": customer.default_language,
             "timezone": customer.timezone,
-            "created_at": customer.created_at,
-            "updated_at": customer.updated_at,
         },
         names=tuple(names),
         identities=tuple(identities),
@@ -799,14 +898,17 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
             "visibility_scope": "customer_team",
         })
     for annotation in active_dnc:
-        risk_items.append({
+        risk_item = {
             "risk_type": "do_not_contact",
             "risk_source": "annotation",
             "scope_type": annotation["policy_scope_type"],
-            "scope_ref_id": annotation["policy_scope_ref_id"],
             "data_classification": annotation["data_classification"],
             "visibility_scope": annotation["visibility_scope"],
-        })
+            "security_transform": annotation["security_transform"],
+        }
+        if annotation.get("policy_scope_ref_id") is not None:
+            risk_item["scope_ref_id"] = annotation["policy_scope_ref_id"]
+        risk_items.append(risk_item)
     for fact_key, risk_type in _RISK_FACT_TYPES.items():
         entry = fact_entries.get(fact_key)
         if entry is None or (
@@ -829,12 +931,18 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
         "items": risk_items,
     }
 
+    safe_industry = industry if industry is not None and _safe_entry(industry) else None
+    safe_contacts = _safe_entries(contacts["items"])
+    safe_expressed = _safe_entries(expressed)
+    safe_behavior = _safe_entries(behavior["observed"]) + _safe_entries(
+        behavior["confirmed"]
+    )
     gaps = []
     if not snapshot.customer["canonical_company_name"]:
         gaps.append("canonical_company_name")
-    if industry is None:
+    if safe_industry is None:
         gaps.append("business.industry")
-    if not contacts["items"]:
+    if not safe_contacts:
         gaps.append("contacts")
     stale_summary = sorted(
         [{
@@ -904,10 +1012,10 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
 
     filled = sum((
         bool(snapshot.customer["canonical_company_name"]),
-        industry is not None,
-        bool(contacts["items"]),
-        bool(expressed),
-        bool(behavior["observed"] or behavior["confirmed"]),
+        safe_industry is not None,
+        bool(safe_contacts),
+        bool(safe_expressed),
+        bool(safe_behavior),
         bool(valid_orders),
         bool(snapshot.assignments),
         snapshot.customer["identity_status"] in {"identified", "verified"},
@@ -951,29 +1059,26 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
     effective_fact_ids = {fact["id"] for fact in current_facts}
     evidence_fact_ids = sorted(_collect_fact_ids(profile) & effective_fact_ids)
 
-    section_times: dict[str, datetime | None] = {section: None for section in _PROFILE_SECTIONS}
-    section_times["identity"] = _latest([
-        snapshot.customer["updated_at"],
-        *[item["last_seen_at"] for item in aliases],
-        *[item["last_seen_at"] for item in strong_identities],
-    ])
-    section_times["business"] = _latest([
+    section_times: dict[str, datetime | None] = {
+        section: _latest(list(snapshot.lineage_times.get(section, ())))
+        for section in _PROFILE_SECTIONS
+    }
+    section_times["engagement"] = _latest([
+        section_times["engagement"],
         *[
             fact["observed_at"] for fact in selected.values()
-            if _section_for_fact_key(fact["fact_key"]) == "business"
+            if fact["fact_key"].startswith(
+                ("preference.expressed.", "behavior.observed.")
+            )
         ],
-        *[item["data_as_of"] for item in snapshot.relationships],
-    ])
-    section_times["contacts"] = _latest([item["data_as_of"] for item in snapshot.contacts])
-    section_times["ownership"] = _latest([item["effective_from"] for item in snapshot.assignments])
-    section_times["engagement"] = _latest([
-        fact["observed_at"] for fact in selected.values()
-        if fact["fact_key"].startswith(("preference.expressed.", "behavior.observed."))
     ])
     for section in ("commercial", "preferences", "behavior"):
         section_times[section] = _latest([
-            fact["observed_at"] for fact in selected.values()
-            if _section_for_fact_key(fact["fact_key"]) == section
+            section_times[section],
+            *[
+                fact["observed_at"] for fact in selected.values()
+                if _section_for_fact_key(fact["fact_key"]) == section
+            ],
         ])
     if order_dates:
         section_times["commercial"] = _latest([
@@ -981,10 +1086,8 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
             datetime.combine(order_dates[-1], time.min),
         ])
     section_times["risks"] = _latest([
-        *[
-            item["policy_effective_at"] or item["created_at"]
-            for item in active_dnc
-        ],
+        section_times["risks"],
+        *[item["policy_effective_at"] for item in active_dnc],
         *[
             fact["observed_at"] for fact in selected.values()
             if fact["fact_key"] in _RISK_FACT_TYPES
@@ -997,7 +1100,6 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
         *section_times.values(),
         *[item["expires_at"] for item in stale_facts],
         *[item["detected_at"] for item in snapshot.conflicts],
-        *[item["created_at"] for item in corrections],
     ])
     serialized_times = {
         section: _json_value(section_times[section])
@@ -1333,7 +1435,7 @@ def _engagement_health(profile: dict) -> str:
         return "dormant"
     if profile["commercial"]["has_valid_order"]:
         return "active"
-    if profile["engagement"]["current_needs"]:
+    if any(_safe_entry(item) for item in profile["engagement"]["current_needs"]):
         return "active"
     return "new" if profile["identity"]["identity_status"] == "provisional" else "unknown"
 
@@ -1537,10 +1639,19 @@ def _replace_target_matches(db: Session, version: CustomerProfileVersion, now: d
     ).all()
     for row in current_rows:
         row.is_current = False
+    fingerprints = [plan["match_fingerprint"] for plan in plans]
+    existing_by_fingerprint = {
+        row.match_fingerprint: row
+        for row in (
+            db.query(CustomerTargetMatch).filter(
+                CustomerTargetMatch.match_fingerprint.in_(fingerprints)
+            ).all()
+            if fingerprints
+            else []
+        )
+    }
     for plan in plans:
-        existing = db.query(CustomerTargetMatch).filter(
-            CustomerTargetMatch.match_fingerprint == plan["match_fingerprint"]
-        ).one_or_none()
+        existing = existing_by_fingerprint.get(plan["match_fingerprint"])
         if existing is None:
             db.add(CustomerTargetMatch(
                 customer_id=version.customer_id,
@@ -1822,10 +1933,24 @@ def compile_customer_profile(
                 locked = publish_db.query(CustomerAccount).filter(
                     CustomerAccount.id == customer_id
                 ).populate_existing().with_for_update().one()
-                if int(locked.profile_input_seq) != base_seq:
+                previous = _current_version_after_account_lock(publish_db, locked)
+                publish_now = beijing_now()
+                crossed_time_boundary = bool(
+                    snapshot.next_time_boundary is not None
+                    and publish_now >= snapshot.next_time_boundary
+                )
+                superseded_evaluation = bool(
+                    previous is not None
+                    and previous.input_seq == base_seq
+                    and previous.compiled_at > snapshot.evaluated_at
+                )
+                if (
+                    int(locked.profile_input_seq) != base_seq
+                    or crossed_time_boundary
+                    or superseded_evaluation
+                ):
                     cas_mismatch = True
                 else:
-                    previous = _current_version_after_account_lock(publish_db, locked)
                     if previous is not None and previous.section_hashes == hashes:
                         states = {
                             name: _projection_state(
@@ -1843,7 +1968,7 @@ def compile_customer_profile(
                         projections = _repair_stale_projections(
                             publish_db,
                             previous,
-                            beijing_now(),
+                            publish_now,
                             observer,
                             states,
                         )
@@ -1861,7 +1986,7 @@ def compile_customer_profile(
                         ).filter(
                             CustomerProfileVersion.customer_id == customer_id
                         ).scalar() or 0
-                        compiled_at = beijing_now()
+                        compiled_at = publish_now
                         version = CustomerProfileVersion(
                             customer_id=customer_id,
                             version_no=int(latest_version_no) + 1,

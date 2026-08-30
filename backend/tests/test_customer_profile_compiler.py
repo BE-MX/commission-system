@@ -8,9 +8,10 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker
 
+import app.customer.profile_service as profile_service
 from app.core.database import Base
 from app.core.time import beijing_now
 from app.customer.fact_service import append_customer_event, append_source_record
@@ -1008,8 +1009,8 @@ def test_private_annotation_and_unknown_visibility_fail_closed_in_projections(db
         target_fact_id=None,
         content_schema_version="v1",
         content_json={"reason": "private reason must stay in the source row"},
-        policy_scope_type="global",
-        policy_scope_ref_id=None,
+        policy_scope_type="unexpected_private_scope",
+        policy_scope_ref_id="secret-private-scope-ref",
         policy_effective_at=beijing_now(),
         visibility="private",
         data_classification="internal_business",
@@ -1043,15 +1044,26 @@ def test_private_annotation_and_unknown_visibility_fail_closed_in_projections(db
     ).one()
     assert profile["quality"]["max_visibility_scope"] == "private"
     assert profile["quality"]["max_data_classification"] == "restricted_internal"
-    assert profile["risks"]["has_active_dnc"] is False
+    assert profile["risks"]["has_active_dnc"] is True
     assert "private reason" not in str(profile)
+    assert "secret-private-scope-ref" not in str(profile)
+    dnc_risk = next(
+        item for item in profile["risks"]["items"]
+        if item["risk_type"] == "do_not_contact"
+    )
+    assert dnc_risk["scope_type"] == "global"
+    assert dnc_risk["security_transform"] == "dnc_enforcement_v1"
+    assert "scope_ref_id" not in dnc_risk
     assert context["business_profile"]["industry"] is None
     assert unknown.id not in {item["fact_id"] for item in context["evidence_refs"]}
     assert all(item["section"] != "business" for item in context["recent_changes"])
     assert all(item["section"] != "quality" for item in context["recent_changes"])
     assert projection.primary_industry is None
-    assert projection.has_active_dnc is False
-    assert projection.global_claim_blocked is False
+    assert context["risks"]["has_active_dnc"] is True
+    assert "secret-private-scope-ref" not in str(context)
+    assert projection.has_active_dnc is True
+    assert projection.global_claim_blocked is True
+    assert projection.global_claim_block_reason == "do_not_contact"
     assert match.evidence_fact_ids == []
 
 
@@ -1368,6 +1380,406 @@ def test_registered_risks_and_evidence_descriptions_are_safe_and_layered(db):
     assert all(item["description"].strip() for item in evidence.values())
     assert all("high secret score" not in item["description"] for item in evidence.values())
     assert all("45" not in item["description"] for item in evidence.values())
+
+
+def test_compile_retries_when_fact_expires_between_snapshot_and_publish(db, monkeypatch):
+    before_expiry = datetime(2026, 1, 1, 9, 0, 0)
+    after_expiry = before_expiry + timedelta(seconds=2)
+    customer = _customer(db, "expiry-boundary")
+    fact = _fact(
+        db,
+        customer,
+        key="behavior.inferred.churn_risk",
+        value="high",
+        layer="inferred",
+        observed_at=before_expiry - timedelta(days=1),
+        expires_at=before_expiry + timedelta(seconds=1),
+    )
+    clock = {"now": before_expiry}
+    monkeypatch.setattr(profile_service, "beijing_now", lambda: clock["now"])
+
+    result = compile_customer_profile(
+        db,
+        customer.id,
+        observer=_OneShotObserver(
+            "before_publish_cas",
+            lambda: clock.update(now=after_expiry),
+        ),
+    )
+
+    version = db.get(CustomerProfileVersion, result.profile_version_id)
+    assert result.retry_count == 1
+    assert version.compiled_at == after_expiry
+    assert version.profile_json["behavior"]["inferred"] == []
+    assert version.profile_json["quality"]["stale_facts"][0]["fact_id"] == fact.id
+
+
+def test_compile_retries_across_business_validity_boundaries(db, monkeypatch):
+    before_boundary = datetime(2026, 1, 1, 10, 0, 0)
+    boundary = before_boundary + timedelta(seconds=1)
+    after_boundary = boundary + timedelta(seconds=1)
+    customer = _customer(db, "business-validity-boundary")
+    related = _customer(db, "business-validity-related")
+    ending_fact = _fact(
+        db,
+        customer,
+        key="behavior.observed.preferred_channel",
+        value="email",
+        layer="observed",
+        observed_at=before_boundary - timedelta(days=2),
+        fingerprint_suffix="ending",
+    )
+    ending_fact.effective_from = before_boundary - timedelta(days=1)
+    ending_fact.effective_to = boundary
+    starting_fact = _fact(
+        db,
+        customer,
+        key="business.industry",
+        value="Hair products",
+        layer="source",
+        observed_at=before_boundary - timedelta(days=2),
+        fingerprint_suffix="starting",
+    )
+    starting_fact.effective_from = boundary
+    db.add_all([
+        CustomerName(
+            customer_id=customer.id,
+            name="Ending Alias",
+            normalized_name="ending alias",
+            name_type="trading",
+            verification_status="verified",
+            confidence=Decimal("0.9000"),
+            confidence_method_version="confidence_v1",
+            confidence_components_json={"source_authority": 0.9},
+            name_fingerprint=_digest("ending-validity-alias"),
+            first_seen_at=before_boundary - timedelta(days=2),
+            last_seen_at=before_boundary - timedelta(days=1),
+            valid_from=before_boundary - timedelta(days=1),
+            valid_to=boundary,
+        ),
+        CustomerName(
+            customer_id=customer.id,
+            name="Starting Alias",
+            normalized_name="starting alias",
+            name_type="trading",
+            verification_status="verified",
+            confidence=Decimal("0.9000"),
+            confidence_method_version="confidence_v1",
+            confidence_components_json={"source_authority": 0.9},
+            name_fingerprint=_digest("starting-validity-alias"),
+            first_seen_at=before_boundary - timedelta(days=1),
+            last_seen_at=before_boundary - timedelta(days=1),
+            valid_from=boundary,
+            valid_to=None,
+        ),
+        CustomerRelationship(
+            from_customer_id=customer.id,
+            to_customer_id=related.id,
+            relationship_type="affiliate",
+            verification_status="verified",
+            confidence=Decimal("0.9000"),
+            confidence_method_version="confidence_v1",
+            confidence_components_json={"source_authority": 0.9},
+            effective_from=before_boundary - timedelta(days=1),
+            effective_to=boundary,
+            relationship_fingerprint=_digest("ending-validity-relationship"),
+        ),
+        CustomerAssignment(
+            customer_id=customer.id,
+            user_id=987654,
+            assignment_role="primary",
+            assignment_status="active",
+            assignment_source="manual",
+            effective_from=before_boundary - timedelta(days=1),
+            effective_to=boundary,
+        ),
+    ])
+    customer.profile_input_seq += 4
+    db.flush()
+    clock = {"now": before_boundary}
+    monkeypatch.setattr(profile_service, "beijing_now", lambda: clock["now"])
+
+    result = compile_customer_profile(
+        db,
+        customer.id,
+        observer=_OneShotObserver(
+            "before_publish_cas",
+            lambda: clock.update(now=after_boundary),
+        ),
+    )
+
+    version = db.get(CustomerProfileVersion, result.profile_version_id)
+    profile = version.profile_json
+    assert result.retry_count == 1
+    assert profile["business"]["industry"]["fact_id"] == starting_fact.id
+    assert profile["behavior"]["observed"] == []
+    assert ending_fact.id not in version.evidence_fact_ids
+    assert [item["name"] for item in profile["identity"]["aliases"]] == [
+        "Starting Alias"
+    ]
+    assert profile["business"]["related_companies"] == []
+    assert profile["ownership"]["is_public_pool"] is True
+    assert version.data_as_of == boundary
+
+
+def test_older_evaluation_retries_after_same_seq_newer_compile(db, monkeypatch):
+    older = datetime(2026, 1, 2, 9, 0, 0)
+    newer = older + timedelta(minutes=1)
+    customer = _customer(db, "newer-compile-wins")
+    customer_id = customer.id
+    db.commit()
+    factory = _session_factory(db)
+    clock = {"now": older}
+    monkeypatch.setattr(profile_service, "beijing_now", lambda: clock["now"])
+    winner = {}
+
+    def publish_newer():
+        clock["now"] = newer
+        winner["result"] = _compile_customer_profile(factory, customer_id)
+
+    result = _compile_customer_profile(
+        factory,
+        customer_id,
+        observer=_OneShotObserver("before_publish_cas", publish_newer),
+    )
+
+    assert winner["result"].created is True
+    assert result.created is False
+    assert result.retry_count == 1
+    assert result.profile_version_id == winner["result"].profile_version_id
+
+
+def test_future_private_dnc_becomes_enforced_when_compile_crosses_boundary(db, monkeypatch):
+    before_policy = datetime(2026, 1, 3, 9, 0, 0)
+    after_policy = before_policy + timedelta(seconds=2)
+    customer = _customer(db, "future-private-dnc")
+    db.add(CustomerAnnotation(
+        customer_id=customer.id,
+        annotation_type="do_not_contact",
+        target_fact_id=None,
+        content_schema_version="v1",
+        content_json={"reason": "private future reason"},
+        policy_scope_type="global",
+        policy_scope_ref_id=None,
+        policy_effective_at=before_policy + timedelta(seconds=1),
+        visibility="private",
+        data_classification="restricted_internal",
+        status="active",
+        authored_by=987654,
+    ))
+    customer.profile_input_seq += 1
+    db.flush()
+    clock = {"now": before_policy}
+    monkeypatch.setattr(profile_service, "beijing_now", lambda: clock["now"])
+
+    result = compile_customer_profile(
+        db,
+        customer.id,
+        observer=_OneShotObserver(
+            "before_publish_cas",
+            lambda: clock.update(now=after_policy),
+        ),
+    )
+
+    profile = db.get(CustomerProfileVersion, result.profile_version_id).profile_json
+    projection = db.get(CustomerListProjection, customer.id)
+    assert result.retry_count == 1
+    assert profile["risks"]["has_active_dnc"] is True
+    assert projection.global_claim_blocked is True
+    assert "private future reason" not in str(profile)
+
+
+def test_restricted_inputs_do_not_change_public_quality_or_engagement_aggregates(db):
+    baseline = _customer(db, "safe-aggregate-baseline")
+    restricted = _customer(db, "safe-aggregate-restricted")
+    _fact(
+        db,
+        restricted,
+        key="business.industry",
+        value="Restricted vertical",
+        layer="source",
+        classification="restricted_internal",
+        visibility="management",
+        fingerprint_suffix="restricted-industry",
+    )
+    _fact(
+        db,
+        restricted,
+        key="preference.expressed.product_family",
+        value="Restricted need",
+        layer="expressed",
+        classification="restricted_internal",
+        visibility="private",
+        fingerprint_suffix="restricted-need",
+    )
+    _fact(
+        db,
+        restricted,
+        key="behavior.observed.preferred_channel",
+        value="Restricted channel",
+        layer="observed",
+        classification="restricted_internal",
+        visibility="management",
+        fingerprint_suffix="restricted-behavior",
+    )
+
+    baseline_result = compile_customer_profile(db, baseline.id)
+    restricted_result = compile_customer_profile(db, restricted.id)
+
+    baseline_profile = db.get(
+        CustomerProfileVersion,
+        baseline_result.profile_version_id,
+    ).profile_json
+    restricted_profile = db.get(
+        CustomerProfileVersion,
+        restricted_result.profile_version_id,
+    ).profile_json
+    baseline_list = db.get(CustomerListProjection, baseline.id)
+    restricted_list = db.get(CustomerListProjection, restricted.id)
+    assert restricted_profile["quality"]["completeness"] == (
+        baseline_profile["quality"]["completeness"]
+    )
+    assert restricted_list.data_quality_score == baseline_list.data_quality_score
+    assert restricted_list.engagement_health == baseline_list.engagement_health
+
+
+def test_target_match_projection_select_count_is_constant_with_target_count(db):
+    def add_target(index: int):
+        db.add(AcquisitionProfile(
+            profile_key=f"query-count-{index}",
+            company_name="LeShine",
+            products=[],
+            advantages=[],
+            target_countries=[],
+            target_industries=[],
+            target_roles=[],
+            exclusions=[],
+            status="active",
+        ))
+
+    add_target(0)
+    one_target_customer = _customer(db, "query-count-one")
+    db.flush()
+    select_counts = []
+
+    def count_target_match_selects(_conn, _cursor, statement, _params, _context, _many):
+        if (
+            statement.lstrip().upper().startswith("SELECT")
+            and "ark_customer_target_matches" in statement
+        ):
+            select_counts[-1] += 1
+
+    event.listen(db.get_bind(), "before_cursor_execute", count_target_match_selects)
+    try:
+        select_counts.append(0)
+        compile_customer_profile(db, one_target_customer.id)
+        for index in range(1, 9):
+            add_target(index)
+        many_target_customer = _customer(db, "query-count-many")
+        db.flush()
+        select_counts.append(0)
+        compile_customer_profile(db, many_target_customer.id)
+    finally:
+        event.remove(db.get_bind(), "before_cursor_execute", count_target_match_selects)
+
+    assert select_counts[1] <= select_counts[0] + 1
+
+
+def test_assignment_end_returns_to_pool_with_new_version_and_business_tombstone(db):
+    customer = _customer(db, "assignment-round-trip")
+    first = compile_customer_profile(db, customer.id)
+    assigned_at = datetime(2024, 1, 1, 9, 0, 0)
+    ended_at = datetime(2025, 1, 1, 9, 0, 0)
+    assignment = CustomerAssignment(
+        customer_id=customer.id,
+        user_id=987654,
+        assignment_role="primary",
+        assignment_status="active",
+        assignment_source="manual",
+        effective_from=assigned_at,
+    )
+    db.add(assignment)
+    customer.profile_input_seq += 1
+    db.flush()
+    second = compile_customer_profile(db, customer.id)
+    assignment = db.get(CustomerAssignment, assignment.id)
+    customer = db.get(CustomerAccount, customer.id)
+    assignment.assignment_status = "ended"
+    assignment.effective_to = ended_at
+    customer.profile_input_seq += 1
+    db.flush()
+
+    third = compile_customer_profile(db, customer.id)
+
+    version = db.get(CustomerProfileVersion, third.profile_version_id)
+    assert first.version_no == 1
+    assert second.version_no == 2
+    assert third.created is True
+    assert third.version_no == 3
+    assert version.profile_json["ownership"]["is_public_pool"] is True
+    assert version.section_data_as_of["ownership"] == ended_at.isoformat()
+    assert any(
+        change["section"] == "ownership"
+        for change in version.change_summary["changes"]
+    )
+
+
+@pytest.mark.parametrize("terminal_status", ["rejected", "superseded"])
+def test_fact_terminal_status_returns_to_prior_state_with_business_tombstone(
+    db,
+    terminal_status,
+):
+    customer = _customer(db, f"fact-round-trip-{terminal_status}")
+    first = compile_customer_profile(db, customer.id)
+    observed_at = datetime(2024, 2, 1, 9, 0, 0)
+    reviewed_at = datetime(2025, 2, 1, 9, 0, 0)
+    fact = _fact(
+        db,
+        customer,
+        key="business.industry",
+        value="Hair products",
+        layer="source",
+        observed_at=observed_at,
+        fingerprint_suffix=terminal_status,
+    )
+    second = compile_customer_profile(db, customer.id)
+    fact = db.get(CustomerFact, fact.id)
+    customer = db.get(CustomerAccount, customer.id)
+    fact.verification_status = terminal_status
+    fact.reviewed_at = reviewed_at
+    customer.profile_input_seq += 1
+    db.flush()
+
+    third = compile_customer_profile(db, customer.id)
+
+    version = db.get(CustomerProfileVersion, third.profile_version_id)
+    assert first.version_no == 1
+    assert second.version_no == 2
+    assert third.created is True
+    assert third.version_no == 3
+    assert version.profile_json["business"]["industry"] is None
+    assert version.section_data_as_of["business"] == reviewed_at.isoformat()
+    assert version.data_as_of == reviewed_at
+
+
+def test_historical_backfill_data_as_of_uses_business_time_not_account_audit_time(db):
+    historical = datetime(2020, 5, 1, 9, 30, 0)
+    customer = _customer(db, "historical-data-as-of")
+    _fact(
+        db,
+        customer,
+        key="business.industry",
+        value="Historical hair business",
+        layer="source",
+        observed_at=historical,
+    )
+
+    result = compile_customer_profile(db, customer.id)
+
+    version = db.get(CustomerProfileVersion, result.profile_version_id)
+    assert version.data_as_of == historical
+    assert version.section_data_as_of["business"] == historical.isoformat()
+    assert version.section_data_as_of["identity"] is None
 
 
 @pytest.mark.skipif(
