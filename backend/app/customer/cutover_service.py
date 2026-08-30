@@ -22,7 +22,47 @@ from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Session
 
 from app.core.time import beijing_now, to_beijing_naive
-from app.customer.models import CORE_TABLE_NAMES, CORE_TABLES
+
+
+CORE_TABLE_NAMES = (
+    "ark_customer_accounts",
+    "ark_customer_names",
+    "ark_customer_external_identities",
+    "ark_customer_relationships",
+    "ark_customer_assignments",
+    "ark_customer_contacts",
+    "ark_customer_contact_points",
+    "ark_customer_contact_relationships",
+    "ark_customer_source_records",
+    "ark_customer_facts",
+    "ark_customer_events",
+    "ark_customer_annotations",
+    "ark_customer_qualification_reviews",
+    "ark_customer_profile_versions",
+    "ark_customer_agent_contexts",
+    "ark_customer_conversations",
+    "ark_customer_messages",
+    "ark_customer_conversation_analyses",
+    "ark_customer_orders",
+    "ark_customer_order_items",
+    "ark_customer_research_tasks",
+    "ark_customer_sync_cursors",
+    "ark_customer_fact_evidence_links",
+    "ark_customer_fact_conflicts",
+    "ark_customer_list_projections",
+    "ark_customer_change_proposals",
+    "ark_customer_agent_run_scopes",
+    "ark_customer_suppression_registry",
+    "ark_customer_resolution_keys",
+    "ark_customer_target_matches",
+    "ark_customer_acquisition_attributions",
+)
+
+
+def _runtime_core_tables() -> Mapping[str, Table]:
+    from app.customer.models import CORE_TABLES
+
+    return CORE_TABLES
 
 
 RETIRED_CUSTOMER_BUSINESS_TABLES = (
@@ -166,6 +206,42 @@ KNOWN_WRITER_CATEGORIES = (
     "profile_compiler",
     "radar",
 )
+MYSQL_WRITER_DANGEROUS_PRIVILEGES = frozenset(
+    {
+        "ALL PRIVILEGES",
+        "ALTER",
+        "ALTER ROUTINE",
+        "CREATE",
+        "CREATE ROUTINE",
+        "CREATE ROLE",
+        "CREATE TABLESPACE",
+        "CREATE TEMPORARY TABLES",
+        "CREATE USER",
+        "CREATE VIEW",
+        "DELETE",
+        "DROP",
+        "DROP ROLE",
+        "EVENT",
+        "EXECUTE",
+        "FILE",
+        "GRANT OPTION",
+        "INDEX",
+        "INSERT",
+        "LOCK TABLES",
+        "PROXY",
+        "REFERENCES",
+        "RELOAD",
+        "SHUTDOWN",
+        "SUPER",
+        "ROLE",
+        "ROLE ADMIN",
+        "SET USER ID",
+        "SYSTEM USER",
+        "SYSTEM VARIABLES ADMIN",
+        "TRIGGER",
+        "UPDATE",
+    }
+)
 
 ALLOWED_SUPPRESSION_REASONS = frozenset(
     {
@@ -194,6 +270,23 @@ _RAW_PHONE = re.compile(r"(?<!\d)(?:\+?\d[\d ().-]{7,}\d)(?!\d)")
 CUTOVER_EVIDENCE_MAX_AGE = timedelta(minutes=5)
 MIGRATION_CONTRACT_MAX_LIFETIME = timedelta(minutes=5)
 MIGRATION_LOCK_NAME = "ark_customer_domain_cutover"
+MIGRATION_DDL_PROOF_BINDING_FIELDS = (
+    "inventory_sha256",
+    "preflight_report_sha256",
+    "suppression_manifest_sha256",
+    "writer_manifest_sha256",
+    "writer_privilege_revocation_artifact_sha256",
+    "approved_marker_sha256",
+    "maintenance_fence_artifact_sha256",
+    "instance_inventory_artifact_sha256",
+    "physical_schema_contract_sha256",
+    "target_profile_physical_contract_sha256",
+    "target_profile_policy_backfill_sha256",
+    "nonce",
+    "contract_path",
+    "ddl_proof_path",
+    "migration_revision",
+)
 CUTOVER_EVIDENCE_ROOT = (
     Path(__file__).resolve().parents[2] / "tmp/customer-domain-cutover"
 ).resolve()
@@ -495,6 +588,18 @@ def canonical_json_bytes(value: Any) -> bytes:
 
 def _sha256(value: Any) -> str:
     return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
+
+
+def _agent_artifact_content_sha256(content: Any, evidence: Any) -> str:
+    """Match agent_runtime.event_service.content_hash without importing runtime models."""
+    payload = json.dumps(
+        {"content": content, "evidence": evidence},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _table_or_none(db: Session, table_name: str) -> Table | None:
@@ -821,6 +926,96 @@ def snapshot_target_profile_rows(db: Session) -> tuple[dict[str, Any], ...]:
         result.close()
 
 
+def snapshot_incoming_retired_foreign_keys(db: Session) -> dict[str, Any]:
+    """Freeze every FK owned by any table and targeting the 17 retired tables."""
+    inspector = inspect(db.connection())
+    retired_tables = tuple(RETIRED_CUSTOMER_BUSINESS_TABLES)
+    retired_set = set(retired_tables)
+    foreign_keys: list[dict[str, Any]] = []
+    try:
+        table_names = inspector.get_table_names()
+        for owning_table in sorted(table_names):
+            for foreign_key in inspector.get_foreign_keys(owning_table):
+                target_table = foreign_key.get("referred_table")
+                if target_table not in retired_set:
+                    continue
+                constraint_name = foreign_key.get("name")
+                local_columns = foreign_key.get("constrained_columns")
+                target_columns = foreign_key.get("referred_columns")
+                if (
+                    not isinstance(constraint_name, str)
+                    or not constraint_name
+                    or not isinstance(local_columns, (list, tuple))
+                    or not local_columns
+                    or not isinstance(target_columns, (list, tuple))
+                    or len(local_columns) != len(target_columns)
+                    or foreign_key.get("referred_schema") not in (None, "")
+                ):
+                    raise CutoverGuardError(
+                        f"incoming retired FK is not safely droppable from {owning_table}"
+                    )
+                options = foreign_key.get("options") or {}
+                onupdate = str(
+                    options.get("onupdate") or foreign_key.get("onupdate") or "RESTRICT"
+                ).upper()
+                ondelete = str(
+                    options.get("ondelete") or foreign_key.get("ondelete") or "RESTRICT"
+                ).upper()
+                foreign_keys.append(
+                    {
+                        "owning_table": owning_table,
+                        "constraint_name": constraint_name,
+                        "local_columns": list(local_columns),
+                        "target_table": target_table,
+                        "target_columns": list(target_columns),
+                        "onupdate": onupdate,
+                        "ondelete": ondelete,
+                    }
+                )
+    except CutoverGuardError:
+        raise
+    except Exception as exc:
+        raise CutoverGuardError(
+            "cannot inspect incoming retired foreign keys; keep writers stopped"
+        ) from exc
+    foreign_keys.sort(key=canonical_json_bytes)
+    payload = {
+        "schema_version": 1,
+        "retired_tables": list(retired_tables),
+        "foreign_keys": foreign_keys,
+    }
+    return {**payload, "snapshot_sha256": _sha256(payload)}
+
+
+def validate_incoming_retired_foreign_keys(
+    db: Session,
+    approved_snapshot: Mapping[str, Any] | None,
+) -> bool:
+    if not isinstance(approved_snapshot, Mapping) or set(approved_snapshot) != {
+        "schema_version",
+        "retired_tables",
+        "foreign_keys",
+        "snapshot_sha256",
+    }:
+        raise CutoverGuardError("approved incoming retired FK snapshot is incomplete")
+    payload = {
+        key: value
+        for key, value in approved_snapshot.items()
+        if key != "snapshot_sha256"
+    }
+    if (
+        approved_snapshot.get("schema_version") != 1
+        or approved_snapshot.get("retired_tables")
+        != list(RETIRED_CUSTOMER_BUSINESS_TABLES)
+        or approved_snapshot.get("snapshot_sha256") != _sha256(payload)
+    ):
+        raise CutoverGuardError("approved incoming retired FK snapshot is invalid")
+    live = snapshot_incoming_retired_foreign_keys(db)
+    if canonical_json_bytes(live) != canonical_json_bytes(approved_snapshot):
+        raise CutoverGuardError("incoming retired FK drift detected before DDL")
+    return True
+
+
 def _validate_policy_number_map(value: Any, field_name: str) -> None:
     if not isinstance(value, Mapping) or not value:
         raise CutoverGuardError(f"target-profile policy {field_name} must be non-empty")
@@ -992,6 +1187,7 @@ def validate_target_profile_policy_backfill_artifact(
             "policy_snapshot_hash",
             "last_improvement_artifact_id",
             "policy_applied_at",
+            "improvement_approval",
         }:
             raise CutoverGuardError("target-profile policy entry is incomplete")
         profile_id = entry.get("profile_id")
@@ -1040,6 +1236,71 @@ def validate_target_profile_policy_backfill_artifact(
             _sha256(_target_profile_policy_snapshot(entry)),
         ):
             raise CutoverGuardError("target-profile complete policy snapshot SHA-256 mismatch")
+        improvement_approval = entry.get("improvement_approval")
+        if improvement_id is None:
+            if improvement_approval is not None:
+                raise CutoverGuardError(
+                    "target-profile improvement approval requires an Artifact ID"
+                )
+            continue
+        if not isinstance(improvement_approval, Mapping) or set(
+            improvement_approval
+        ) != {
+            "decision",
+            "approver_user_id",
+            "approved_at",
+            "approval_request",
+            "approval_request_sha256",
+            "approved_content_sha256",
+        }:
+            raise CutoverGuardError(
+                "target-profile improvement Artifact approval is incomplete"
+            )
+        approver_user_id = improvement_approval.get("approver_user_id")
+        if (
+            improvement_approval.get("decision") != "approved"
+            or not isinstance(approver_user_id, int)
+            or isinstance(approver_user_id, bool)
+            or approver_user_id <= 0
+        ):
+            raise CutoverGuardError(
+                "target-profile improvement Artifact decision is not approved"
+            )
+        decision_at = _parse_writer_timestamp(
+            improvement_approval.get("approved_at"),
+            "target-profile improvement approved_at",
+        )
+        if decision_at > applied_at or approved_at - decision_at > CUTOVER_EVIDENCE_MAX_AGE:
+            raise CutoverGuardError(
+                "target-profile improvement Artifact approval is stale or unordered"
+            )
+        approval_request = improvement_approval.get("approval_request")
+        if not isinstance(approval_request, Mapping) or set(approval_request) != {
+            "artifact_id",
+            "profile_id",
+            "content_sha256",
+            "policy_snapshot_hash",
+        }:
+            raise CutoverGuardError(
+                "target-profile improvement Artifact approval request is incomplete"
+            )
+        approved_content_sha256 = improvement_approval.get(
+            "approved_content_sha256"
+        )
+        if (
+            approval_request.get("artifact_id") != improvement_id
+            or approval_request.get("profile_id") != profile_id
+            or approval_request.get("policy_snapshot_hash")
+            != entry.get("policy_snapshot_hash")
+            or approval_request.get("content_sha256") != approved_content_sha256
+            or not isinstance(approved_content_sha256, str)
+            or not _CANONICAL_SHA256.fullmatch(approved_content_sha256)
+            or improvement_approval.get("approval_request_sha256")
+            != _sha256(approval_request)
+        ):
+            raise CutoverGuardError(
+                "target-profile improvement Artifact approval hash is invalid"
+            )
     return artifact_sha256
 
 
@@ -1070,13 +1331,66 @@ def validate_target_profile_policy_backfill_against_live_rows(
         table = _table_or_none(db, "ark_agent_artifacts")
         if table is None:
             raise CutoverGuardError("target-profile improvement Artifact table is missing")
-        existing = set(
-            db.execute(
-                select(table.c.id).where(table.c.id.in_(referenced_artifacts))
-            ).scalars()
-        )
-        if existing != referenced_artifacts:
+        result = db.execute(
+            select(
+                table.c.id,
+                table.c.artifact_type,
+                table.c.content_json,
+                table.c.evidence_json,
+                table.c.content_sha256,
+                table.c.validation_status,
+                table.c.decision_status,
+                table.c.decided_by,
+                table.c.decided_at,
+                table.c.business_ref_type,
+                table.c.business_ref_id,
+            ).where(table.c.id.in_(referenced_artifacts))
+        ).mappings()
+        try:
+            live_artifacts = {row["id"]: dict(row) for row in result}
+        finally:
+            result.close()
+        if set(live_artifacts) != referenced_artifacts:
             raise CutoverGuardError("target-profile improvement Artifact binding is stale")
+        users = _table_or_none(db, "ark_users")
+        for profile_id, entry in entries.items():
+            improvement_id = entry["last_improvement_artifact_id"]
+            if improvement_id is None:
+                continue
+            approval = entry["improvement_approval"]
+            live = live_artifacts[improvement_id]
+            approved_at = _parse_writer_timestamp(
+                approval["approved_at"], "target-profile improvement approved_at"
+            )
+            expected_decided_at = to_beijing_naive(approved_at)
+            content_sha256 = _agent_artifact_content_sha256(
+                live["content_json"],
+                live["evidence_json"],
+            )
+            if (
+                live["artifact_type"] != "target_profile_improvement_v1"
+                or live["validation_status"] != "valid"
+                or live["decision_status"] != "approved"
+                or live["decided_by"] != approval["approver_user_id"]
+                or live["decided_at"] != expected_decided_at
+                or live["business_ref_type"] != "target_profile"
+                or live["business_ref_id"] != str(profile_id)
+                or live["content_sha256"] != content_sha256
+                or live["content_sha256"] != approval["approved_content_sha256"]
+            ):
+                raise CutoverGuardError(
+                    f"target-profile improvement Artifact {improvement_id} is not trusted"
+                )
+            if users is not None:
+                approver_exists = db.execute(
+                    select(users.c.id).where(
+                        users.c.id == approval["approver_user_id"]
+                    )
+                ).scalar_one_or_none()
+                if approver_exists is None:
+                    raise CutoverGuardError(
+                        "target-profile improvement Artifact approver is missing"
+                    )
     return True
 
 
@@ -1747,6 +2061,7 @@ def verify_ready(
         "approved_at",
         "approved_by",
         "approval_detail",
+        "writer_principals",
         "inventory_sha256",
         "preflight_report_sha256",
     } or approved.get("schema_version") != 1 or approved.get("artifact_kind") != "writer_instance_inventory":
@@ -1771,9 +2086,23 @@ def verify_ready(
         approved.get("approved_at"), now, "instance inventory"
     )
 
+    approved_writer_principals = approved.get("writer_principals")
+    if not isinstance(approved_writer_principals, list):
+        raise CutoverGuardError("approved instance inventory requires writer principals")
+    approved_writer_principals = [
+        _normalize_mysql_principal(value, "approved writer principal")
+        for value in approved_writer_principals
+    ]
+    if approved_writer_principals != sorted(set(approved_writer_principals)):
+        raise CutoverGuardError("approved writer principals must be unique and sorted")
     expected_instances: set[tuple[str, str]] = set()
+    instance_principals: set[str] = set()
     for item in approved_instances:
-        if not isinstance(item, Mapping):
+        if not isinstance(item, Mapping) or set(item) != {
+            "category",
+            "instance_id",
+            "db_principal",
+        }:
             raise CutoverGuardError("approved instance inventory entries must be objects")
         identity = (
             _required_stable_text(item.get("category"), "writer category"),
@@ -1782,6 +2111,15 @@ def verify_ready(
         if identity in expected_instances:
             raise CutoverGuardError(f"duplicate approved writer instance: {identity}")
         expected_instances.add(identity)
+        instance_principals.add(
+            _normalize_mysql_principal(
+                item.get("db_principal"), "approved instance DB principal"
+            )
+        )
+    if instance_principals != set(approved_writer_principals):
+        raise CutoverGuardError(
+            "approved writer principals do not equal instance DB principals"
+        )
     approved_categories = {category for category, _ in expected_instances}
     if approved_categories != set(KNOWN_WRITER_CATEGORIES):
         raise CutoverGuardError("approved instance inventory does not cover exact writer categories")
@@ -1795,6 +2133,7 @@ def verify_ready(
         "checked_at",
         "inventory_sha256",
         "preflight_report_sha256",
+        "instance_inventory_artifact_sha256",
         "evidence_detail",
     }
     for writer_path in writer_artifacts:
@@ -1810,6 +2149,8 @@ def verify_ready(
         if (
             writer.get("inventory_sha256") != inventory.inventory_sha256
             or writer.get("preflight_report_sha256") != preflight_report_sha256
+            or writer.get("instance_inventory_artifact_sha256")
+            != approved_artifact_sha256
         ):
             raise CutoverGuardError(f"writer {category}/{instance_id} has wrong preflight binding")
         _verify_evidence_time(writer.get("checked_at"), now, f"writer {category}/{instance_id}")
@@ -1836,12 +2177,15 @@ def verify_ready(
         "checked_at",
         "inventory_sha256",
         "preflight_report_sha256",
+        "instance_inventory_artifact_sha256",
         "evidence_detail",
     } or transactions.get("schema_version") != 1 or transactions.get("artifact_kind") != "active_transaction_snapshot":
         raise CutoverGuardError("invalid active transaction artifact schema")
     if (
         transactions.get("inventory_sha256") != inventory.inventory_sha256
         or transactions.get("preflight_report_sha256") != preflight_report_sha256
+        or transactions.get("instance_inventory_artifact_sha256")
+        != approved_artifact_sha256
     ):
         raise CutoverGuardError("active transaction evidence has wrong preflight binding")
     _verify_evidence_time(transactions.get("checked_at"), now, "active transaction")
@@ -1852,6 +2196,29 @@ def verify_ready(
     if transactions.get("count") != 0:
         raise CutoverGuardError("relevant active transactions must be zero")
 
+    privilege_evidence, privilege_artifact_sha256, _ = _read_canonical_artifact(
+        stopped_writer_manifest.get("writer_privilege_revocation_artifact")
+    )
+    if (
+        privilege_evidence.get("inventory_sha256") != inventory.inventory_sha256
+        or privilege_evidence.get("preflight_report_sha256")
+        != preflight_report_sha256
+        or privilege_evidence.get("instance_inventory_artifact_sha256")
+        != approved_artifact_sha256
+        or privilege_evidence.get("writer_principals")
+        != approved_writer_principals
+    ):
+        raise CutoverGuardError("writer privilege revocation has wrong readiness binding")
+    validate_mysql_writer_privilege_gate(
+        object(),
+        privilege_evidence,
+        now=now,
+        privilege_reader=lambda _db: {
+            "current_principal": privilege_evidence.get("migration_principal"),
+            "privilege_snapshot": privilege_evidence.get("privilege_snapshot"),
+        },
+    )
+
     fence, _, _ = _read_canonical_artifact(
         stopped_writer_manifest.get("maintenance_fence_artifact")
     )
@@ -1860,6 +2227,7 @@ def verify_ready(
         "artifact_kind",
         "token",
         "instance_inventory_artifact_sha256",
+        "writer_privilege_revocation_artifact_sha256",
         "inventory_sha256",
         "preflight_report_sha256",
         "issued_at",
@@ -1869,6 +2237,8 @@ def verify_ready(
         raise CutoverGuardError("invalid maintenance fence artifact schema")
     if (
         fence.get("instance_inventory_artifact_sha256") != approved_artifact_sha256
+        or fence.get("writer_privilege_revocation_artifact_sha256")
+        != privilege_artifact_sha256
         or fence.get("inventory_sha256") != inventory.inventory_sha256
         or fence.get("preflight_report_sha256") != preflight_report_sha256
     ):
@@ -1898,6 +2268,227 @@ def _acquire_mysql_cutover_lock(db: Session) -> bool:
     return result == 1
 
 
+def _normalize_mysql_principal(value: Any, field_name: str) -> str:
+    principal = _required_stable_text(value, field_name)
+    if (
+        len(principal) > 255
+        or principal.count("@") != 1
+        or any(character.isspace() or character in "'`\"" for character in principal)
+    ):
+        raise CutoverGuardError(f"{field_name} must be normalized user@host")
+    user, host = principal.split("@", 1)
+    if (
+        not re.fullmatch(r"[A-Za-z0-9_$.-]+", user)
+        or not re.fullmatch(r"[A-Za-z0-9_.:%-]+", host)
+    ):
+        raise CutoverGuardError(f"{field_name} must be normalized user@host")
+    return principal
+
+
+def _normalize_mysql_privilege(value: Any, field_name: str) -> str:
+    privilege = _required_stable_text(value, field_name).upper().replace("_", " ")
+    return " ".join(privilege.split())
+
+
+def _read_mysql_principal_privileges(
+    db: Session,
+    writer_principals: Sequence[str],
+) -> dict[str, Any]:
+    """Read every exact writer grant via SHOW GRANTS on this MySQL connection."""
+    if db.get_bind().dialect.name != "mysql":
+        raise CutoverGuardError("writer privilege gate requires a MySQL Alembic bind")
+    try:
+        current = _normalize_mysql_principal(
+            db.execute(text("SELECT CURRENT_USER()")).scalar_one(),
+            "migration principal",
+        )
+        mandatory_roles = db.execute(
+            text("SELECT @@GLOBAL.mandatory_roles")
+        ).scalar_one()
+        if mandatory_roles is not None and str(mandatory_roles).strip().upper() not in {
+            "",
+            "NONE",
+        }:
+            raise CutoverGuardError(
+                "MySQL mandatory_roles must be empty during customer cutover"
+            )
+        privileges: dict[str, set[str]] = {}
+        for principal in writer_principals:
+            normalized = _normalize_mysql_principal(principal, "writer principal")
+            user, host = normalized.split("@", 1)
+            rows = db.execute(text(f"SHOW GRANTS FOR '{user}'@'{host}'"))
+            grants: set[str] = set()
+            try:
+                for row in rows:
+                    values = tuple(row)
+                    if len(values) != 1 or not isinstance(values[0], str):
+                        raise CutoverGuardError("MySQL SHOW GRANTS row is invalid")
+                    statement = values[0].strip()
+                    upper_statement = statement.upper()
+                    if not upper_statement.startswith("GRANT "):
+                        raise CutoverGuardError("MySQL SHOW GRANTS output is invalid")
+                    grant_body = statement[6:]
+                    upper_body = upper_statement[6:]
+                    if " ON " not in upper_body:
+                        grants.add("ROLE")
+                        continue
+                    on_index = upper_body.index(" ON ")
+                    privilege_list = grant_body[:on_index]
+                    for value in privilege_list.split(","):
+                        privilege = _normalize_mysql_privilege(
+                            value.strip().strip("`"), "MySQL SHOW GRANTS privilege"
+                        )
+                        if "(" in privilege:
+                            privilege = privilege.split("(", 1)[0].strip()
+                        grants.add(privilege)
+                    if "WITH GRANT OPTION" in upper_statement:
+                        grants.add("GRANT OPTION")
+            finally:
+                rows.close()
+            role_rows = db.execute(
+                text(
+                    "SELECT FROM_USER AS role_user, FROM_HOST AS role_host "
+                    "FROM mysql.role_edges "
+                    "WHERE TO_USER=:user AND TO_HOST=:host "
+                    "UNION ALL "
+                    "SELECT DEFAULT_ROLE_USER AS role_user, "
+                    "DEFAULT_ROLE_HOST AS role_host "
+                    "FROM mysql.default_roles "
+                    "WHERE USER=:user AND HOST=:host"
+                ),
+                {"user": user, "host": host},
+            ).mappings()
+            try:
+                if next(iter(role_rows), None) is not None:
+                    grants.add("ROLE")
+            finally:
+                role_rows.close()
+            privileges[normalized] = grants
+    except CutoverGuardError:
+        raise
+    except Exception as exc:
+        raise CutoverGuardError(
+            "cannot observe MySQL writer privileges; keep writers stopped"
+        ) from exc
+    return {
+        "current_principal": current,
+        "privilege_snapshot": {
+            principal: sorted(values) for principal, values in privileges.items()
+        },
+    }
+
+
+def validate_mysql_writer_privilege_gate(
+    db: Session,
+    evidence: Mapping[str, Any] | None,
+    *,
+    now: datetime,
+    privilege_reader: Callable[[Session], Mapping[str, Any]] | None = None,
+) -> bool:
+    """Prove every approved writer principal is revoked on the live schema."""
+    if not isinstance(evidence, Mapping) or set(evidence) != {
+        "schema_version",
+        "artifact_kind",
+        "migration_principal",
+        "writer_principals",
+        "privilege_snapshot",
+        "checked_at",
+        "inventory_sha256",
+        "preflight_report_sha256",
+        "instance_inventory_artifact_sha256",
+        "evidence_detail",
+        "evidence_sha256",
+    }:
+        raise CutoverGuardError("writer privilege revocation evidence is incomplete")
+    payload = {key: value for key, value in evidence.items() if key != "evidence_sha256"}
+    if (
+        evidence.get("schema_version") != 1
+        or evidence.get("artifact_kind") != "writer_privilege_revocation"
+        or evidence.get("evidence_sha256") != _sha256(payload)
+    ):
+        raise CutoverGuardError("writer privilege revocation evidence is invalid")
+    _verify_evidence_time(evidence.get("checked_at"), now, "writer privilege revocation")
+    if len(_required_stable_text(
+        evidence.get("evidence_detail"), "writer privilege revocation evidence_detail"
+    )) < 20:
+        raise CutoverGuardError("writer privilege revocation requires structured evidence")
+    migration_principal = _normalize_mysql_principal(
+        evidence.get("migration_principal"), "migration principal"
+    )
+    principal_values = evidence.get("writer_principals")
+    snapshot_values = evidence.get("privilege_snapshot")
+    if not isinstance(principal_values, list) or not isinstance(snapshot_values, Mapping):
+        raise CutoverGuardError("writer privilege principal snapshot is invalid")
+    writer_principals = [
+        _normalize_mysql_principal(value, "writer principal")
+        for value in principal_values
+    ]
+    if writer_principals != sorted(set(writer_principals)):
+        raise CutoverGuardError("writer principals must be unique and sorted")
+    if migration_principal in writer_principals:
+        raise CutoverGuardError("migration principal is also a writer principal")
+    expected_snapshot: dict[str, list[str]] = {}
+    if set(snapshot_values) != set(writer_principals):
+        raise CutoverGuardError("writer privilege evidence is missing a principal")
+    for principal in writer_principals:
+        values = snapshot_values[principal]
+        if not isinstance(values, list):
+            raise CutoverGuardError("writer privilege snapshot values must be lists")
+        normalized = sorted(
+            {
+                _normalize_mysql_privilege(value, "writer privilege")
+                for value in values
+            }
+        )
+        if normalized != values:
+            raise CutoverGuardError("writer privilege snapshot must be unique and sorted")
+        if set(normalized) & MYSQL_WRITER_DANGEROUS_PRIVILEGES:
+            raise CutoverGuardError("writer privilege evidence retains a write privilege")
+        expected_snapshot[principal] = normalized
+
+    live = (
+        privilege_reader(db)
+        if privilege_reader is not None
+        else _read_mysql_principal_privileges(db, writer_principals)
+    )
+    if not isinstance(live, Mapping):
+        raise CutoverGuardError("live writer privilege proof is invalid")
+    current_principal = _normalize_mysql_principal(
+        live.get("current_principal"), "live migration principal"
+    )
+    if current_principal in writer_principals:
+        raise CutoverGuardError("live migration principal is also a writer principal")
+    if current_principal != migration_principal:
+        raise CutoverGuardError("live migration principal does not match approved evidence")
+    live_snapshot = live.get("privilege_snapshot")
+    if not isinstance(live_snapshot, Mapping):
+        raise CutoverGuardError("live writer privilege snapshot is invalid")
+    missing = sorted(set(writer_principals) - set(live_snapshot))
+    if missing:
+        raise CutoverGuardError("live privilege proof is missing principal: " + ", ".join(missing))
+    normalized_live: dict[str, list[str]] = {}
+    for principal in writer_principals:
+        values = live_snapshot[principal]
+        if not isinstance(values, (list, tuple, set, frozenset)):
+            raise CutoverGuardError("live writer privilege values are invalid")
+        privileges = sorted(
+            {
+                _normalize_mysql_privilege(value, "live writer privilege")
+                for value in values
+            }
+        )
+        dangerous = sorted(set(privileges) & MYSQL_WRITER_DANGEROUS_PRIVILEGES)
+        if dangerous:
+            raise CutoverGuardError(
+                f"writer principal {principal} retains write privilege: "
+                + ", ".join(dangerous)
+            )
+        normalized_live[principal] = privileges
+    if normalized_live != expected_snapshot:
+        raise CutoverGuardError("live writer privilege snapshot mismatch")
+    return True
+
+
 def read_maintenance_fence_evidence(
     stopped_writer_manifest: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -1912,7 +2503,54 @@ def read_maintenance_fence_evidence(
         "instance_inventory_artifact_sha256": document.get(
             "instance_inventory_artifact_sha256"
         ),
+        "writer_privilege_revocation_artifact_sha256": document.get(
+            "writer_privilege_revocation_artifact_sha256"
+        ),
+        "writer_privilege_revocation_artifact": stopped_writer_manifest.get(
+            "writer_privilege_revocation_artifact"
+        ),
     }
+
+
+def load_writer_privilege_revocation_evidence(
+    stopped_writer_manifest: Mapping[str, Any],
+) -> tuple[Mapping[str, Any], str, str]:
+    return _read_canonical_artifact(
+        stopped_writer_manifest.get("writer_privilege_revocation_artifact")
+    )
+
+
+def validate_live_customer_cutover_writer_gate(
+    db: Session,
+    evidence_contract: Mapping[str, Any],
+    stopped_writer_manifest: Mapping[str, Any],
+    *,
+    now: datetime,
+) -> bool:
+    """Re-prove the DB fence and revoked writer grants on the current connection."""
+    privilege_evidence, artifact_sha256, artifact_path = (
+        load_writer_privilege_revocation_evidence(stopped_writer_manifest)
+    )
+    if (
+        artifact_path
+        != evidence_contract.get("writer_privilege_revocation_artifact")
+        or artifact_sha256
+        != evidence_contract.get("writer_privilege_revocation_artifact_sha256")
+    ):
+        raise CutoverGuardError("live writer privilege artifact binding is invalid")
+    validate_mysql_writer_privilege_gate(
+        db,
+        privilege_evidence,
+        now=now,
+    )
+    if _mysql_maintenance_fence_active(
+        db,
+        evidence_contract,
+        now=now,
+        locking=False,
+    ) is not True:
+        raise CutoverGuardError("live customer cutover maintenance fence is not active")
+    return True
 
 
 def _mysql_active_write_transaction_count(db: Session) -> int:
@@ -1958,15 +2596,19 @@ def _mysql_maintenance_fence_active(
     contract: Mapping[str, Any],
     *,
     now: datetime | None = None,
+    locking: bool = True,
 ) -> bool:
     """Task 3B contract: bootstrap ark_customer_cutover_fences before reset DDL."""
     try:
+        statement = (
+            "SELECT fence_token, inventory_sha256, preflight_report_sha256, "
+            "expires_at, active FROM ark_customer_cutover_fences "
+            "WHERE fence_token=:token"
+        )
+        if locking:
+            statement += " FOR UPDATE"
         row = db.execute(
-            text(
-                "SELECT fence_token, inventory_sha256, preflight_report_sha256, "
-                "expires_at, active FROM ark_customer_cutover_fences "
-                "WHERE fence_token=:token FOR UPDATE"
-            ),
+            text(statement),
             {"token": contract["maintenance_fence_token"]},
         ).mappings().one_or_none()
     except Exception as exc:
@@ -2028,6 +2670,52 @@ def bootstrap_migration_fence(
         str(evidence_contract.get("contract_sha256")), _sha256(contract_payload)
     ):
         raise CutoverGuardError("migration fence bootstrap contract SHA-256 mismatch")
+    if evidence_contract.get("evidence_root") != str(CUTOVER_EVIDENCE_ROOT):
+        raise CutoverGuardError("migration fence bootstrap evidence root is invalid")
+    for field_name, prefix, relative in (
+        ("contract_path", "migration-contract-", False),
+        ("ddl_proof_path", "migration-ddl-proof-", True),
+        ("receipt_path", "migration-receipt-", True),
+    ):
+        raw_path = evidence_contract.get(field_name)
+        if not isinstance(raw_path, str):
+            raise CutoverGuardError(
+                f"migration fence bootstrap {field_name} is required"
+            )
+        lexical = Path(raw_path)
+        if relative and (lexical.is_absolute() or ".." in lexical.parts):
+            raise CutoverGuardError(
+                f"migration fence bootstrap {field_name} is not fixed"
+            )
+        resolved = (
+            (CUTOVER_EVIDENCE_ROOT / lexical).resolve()
+            if relative
+            else lexical.resolve()
+        )
+        if (
+            resolved.parent != CUTOVER_EVIDENCE_ROOT
+            or resolved.name != f"{prefix}{nonce}.json"
+            or (relative and resolved.exists())
+        ):
+            raise CutoverGuardError(
+                f"migration fence bootstrap {field_name} is not fixed"
+            )
+    try:
+        ddl_proof_binding = {
+            field: evidence_contract[field]
+            for field in MIGRATION_DDL_PROOF_BINDING_FIELDS
+        }
+    except KeyError as exc:
+        raise CutoverGuardError(
+            f"migration fence bootstrap DDL proof binding is missing {exc.args[0]}"
+        ) from exc
+    if not hmac.compare_digest(
+        str(evidence_contract.get("ddl_proof_binding_sha256")),
+        _sha256(ddl_proof_binding),
+    ):
+        raise CutoverGuardError(
+            "migration fence bootstrap DDL proof binding SHA-256 mismatch"
+        )
     current = now or beijing_now().replace(tzinfo=BEIJING_TIMEZONE)
     _beijing_timestamp(current, "migration fence bootstrap now")
     load_bound_customer_physical_schema_contract(
@@ -2060,6 +2748,8 @@ def bootstrap_migration_fence(
         != bindings["preflight_report_sha256"]
         or fence_document.get("instance_inventory_artifact_sha256")
         != bindings["instance_inventory_artifact_sha256"]
+        or fence_document.get("writer_privilege_revocation_artifact_sha256")
+        != evidence_contract.get("writer_privilege_revocation_artifact_sha256")
     ):
         raise CutoverGuardError("migration fence bootstrap evidence binding is invalid")
     db.execute(
@@ -2234,6 +2924,33 @@ def _validate_bound_contract_evidence(
     writer = documents["writer_manifest"]
     if _sha256(writer) != contract.get("writer_manifest_sha256"):
         raise CutoverGuardError("migration writer manifest binding is invalid")
+    privilege_evidence, privilege_artifact_sha256, privilege_path = (
+        load_writer_privilege_revocation_evidence(writer)
+    )
+    if (
+        privilege_path
+        != contract.get("writer_privilege_revocation_artifact")
+        or privilege_artifact_sha256
+        != contract.get("writer_privilege_revocation_artifact_sha256")
+        or privilege_evidence.get("inventory_sha256")
+        != contract.get("inventory_sha256")
+        or privilege_evidence.get("preflight_report_sha256")
+        != contract.get("preflight_report_sha256")
+        or privilege_evidence.get("instance_inventory_artifact_sha256")
+        != contract.get("instance_inventory_artifact_sha256")
+    ):
+        raise CutoverGuardError(
+            "migration writer privilege revocation binding is invalid"
+        )
+    validate_mysql_writer_privilege_gate(
+        object(),
+        privilege_evidence,
+        now=now or beijing_now().replace(tzinfo=BEIJING_TIMEZONE),
+        privilege_reader=lambda _db: {
+            "current_principal": privilege_evidence.get("migration_principal"),
+            "privilege_snapshot": privilege_evidence.get("privilege_snapshot"),
+        },
+    )
     marker = documents["approved_marker"]
     if marker.get("approved") is not True or _sha256(marker) != contract.get(
         "approved_marker_sha256"
@@ -2244,6 +2961,7 @@ def _validate_bound_contract_evidence(
         "preflight_report_sha256",
         "suppression_manifest_sha256",
         "writer_manifest_sha256",
+        "writer_privilege_revocation_artifact_sha256",
         "physical_schema_contract_sha256",
         "target_profile_physical_contract_sha256",
         "target_profile_policy_backfill_sha256",
@@ -2361,6 +3079,7 @@ def migration_preflight(
     target_profile_policy_backfill: Mapping[str, Any] | None = None,
     physical_schema_validator: Callable[[Mapping[str, Any] | None], str]
     | None = None,
+    privilege_reader: Callable[[Session], Mapping[str, Any]] | None = None,
 ) -> CutoverInventory:
     """Migration-facing fail-closed guard; the caller retains this locked bind for DDL."""
     if not isinstance(evidence_contract, Mapping):
@@ -2374,16 +3093,17 @@ def migration_preflight(
         raise CutoverGuardError("migration nonce contains unsafe characters")
     for field_name, prefix in (
         ("contract_path", "migration-contract-"),
+        ("ddl_proof_path", "migration-ddl-proof-"),
         ("receipt_path", "migration-receipt-"),
     ):
         raw_path = evidence_contract.get(field_name)
         if not isinstance(raw_path, str):
             raise CutoverGuardError(f"migration {field_name} is required")
-        if field_name == "receipt_path":
+        if field_name in {"ddl_proof_path", "receipt_path"}:
             relative_path = Path(raw_path)
             if relative_path.is_absolute() or ".." in relative_path.parts:
                 raise CutoverGuardError(
-                    "migration receipt_path must be fixed evidence-relative path"
+                    f"migration {field_name} must be fixed evidence-relative path"
                 )
             resolved_path = (CUTOVER_EVIDENCE_ROOT / relative_path).resolve()
         else:
@@ -2394,8 +3114,11 @@ def migration_preflight(
             or resolved_path.name != f"{prefix}{nonce}.json"
         ):
             raise CutoverGuardError(f"migration {field_name} is not the fixed evidence path")
-        if field_name == "receipt_path" and resolved_path.exists():
-            raise CutoverGuardError("migration receipt path already exists")
+        if (
+            field_name in {"ddl_proof_path", "receipt_path"}
+            and resolved_path.exists()
+        ):
+            raise CutoverGuardError(f"migration {field_name} already exists")
     contract_payload = {
         key: value for key, value in evidence_contract.items() if key != "contract_sha256"
     }
@@ -2405,9 +3128,23 @@ def migration_preflight(
         raise CutoverGuardError("migration evidence contract SHA-256 mismatch")
     if evidence_contract.get("migration_revision") != "126":
         raise CutoverGuardError("migration revision is not the approved cutover revision")
+    try:
+        ddl_proof_binding = {
+            field: evidence_contract[field]
+            for field in MIGRATION_DDL_PROOF_BINDING_FIELDS
+        }
+    except KeyError as exc:
+        raise CutoverGuardError(
+            f"migration DDL proof binding is missing {exc.args[0]}"
+        ) from exc
+    if not hmac.compare_digest(
+        str(evidence_contract.get("ddl_proof_binding_sha256")),
+        _sha256(ddl_proof_binding),
+    ):
+        raise CutoverGuardError("migration DDL proof binding SHA-256 mismatch")
     current = now or beijing_now().replace(tzinfo=BEIJING_TIMEZONE)
     _beijing_timestamp(current, "migration preflight now")
-    _validate_bound_contract_evidence(
+    bound_documents = _validate_bound_contract_evidence(
         evidence_contract,
         nonce,
         now=current,
@@ -2418,6 +3155,7 @@ def migration_preflight(
         "preflight_report_sha256",
         "suppression_manifest_sha256",
         "writer_manifest_sha256",
+        "writer_privilege_revocation_artifact_sha256",
         "approved_marker_sha256",
         "maintenance_fence_artifact_sha256",
         "instance_inventory_artifact_sha256",
@@ -2450,6 +3188,8 @@ def migration_preflight(
         != evidence_contract.get("maintenance_fence_token")
         or fence_document.get("instance_inventory_artifact_sha256")
         != evidence_contract.get("instance_inventory_artifact_sha256")
+        or fence_document.get("writer_privilege_revocation_artifact_sha256")
+        != evidence_contract.get("writer_privilege_revocation_artifact_sha256")
         or fence_document.get("inventory_sha256")
         != evidence_contract.get("inventory_sha256")
         or fence_document.get("preflight_report_sha256")
@@ -2472,6 +3212,15 @@ def migration_preflight(
     inspect_fence = fence_inspector or _mysql_maintenance_fence_active
     if inspect_fence(db, evidence_contract) is not True:
         raise CutoverGuardError("database maintenance fence is not active")
+    privilege_evidence, _, _ = load_writer_privilege_revocation_evidence(
+        bound_documents["writer_manifest"]
+    )
+    validate_mysql_writer_privilege_gate(
+        db,
+        privilege_evidence,
+        now=current,
+        privilege_reader=privilege_reader,
+    )
     if (target_profile_physical_contract is None) is not (
         target_profile_policy_backfill is None
     ):
@@ -2741,6 +3490,7 @@ def validate_customer_physical_schema_contract(
     contract: Mapping[str, Any] | None,
 ) -> str:
     """Validate revision 126's mandatory 38-table expected physical contract."""
+    core_tables = _runtime_core_tables()
     if not isinstance(contract, Mapping):
         raise CutoverGuardError("revision 126 physical schema contract is required")
     if set(contract) != {
@@ -2777,8 +3527,8 @@ def validate_customer_physical_schema_contract(
             raise CutoverGuardError(f"physical columns are invalid for {table_name}")
         actual_column_names = [column.get("name") for column in columns]
         expected_column_names = (
-            list(CORE_TABLES[table_name].c.keys())
-            if table_name in CORE_TABLES
+            list(core_tables[table_name].c.keys())
+            if table_name in core_tables
             else list(REBUILT_WORKFLOW_COLUMNS[table_name])
         )
         if set(actual_column_names) != set(expected_column_names) or len(
@@ -3120,6 +3870,7 @@ def verify_expected_customer_table_state(
     physical_schema_contract: Mapping[str, Any] | None = None,
 ) -> bool:
     """Verify approved table names plus exact model/design schema signatures."""
+    core_tables = _runtime_core_tables()
     connection = db.connection()
     inspector = inspect(connection)
     expected_physical_tables = None
@@ -3145,12 +3896,12 @@ def verify_expected_customer_table_state(
     for table_name in NEW_CUSTOMER_TABLES + REBUILT_CUSTOMER_WORKFLOW_TABLES:
         reflected_columns = inspector.get_columns(table_name)
         actual_names = {column["name"] for column in reflected_columns}
-        if table_name in CORE_TABLES:
-            model_table = CORE_TABLES[table_name]
+        if table_name in core_tables:
+            model_table = core_tables[table_name]
             expected_names = set(model_table.c.keys())
         else:
             expected_names = set(REBUILT_WORKFLOW_COLUMNS[table_name])
-            candidate = next(iter(CORE_TABLES.values())).metadata.tables.get(table_name)
+            candidate = next(iter(core_tables.values())).metadata.tables.get(table_name)
             model_table = (
                 candidate
                 if candidate is not None and set(candidate.c.keys()) == expected_names
@@ -3229,12 +3980,13 @@ def expected_customer_schema_sha256(
     """Return the immutable schema contract hash shared by reset and verification."""
     if physical_schema_contract is not None:
         return validate_customer_physical_schema_contract(physical_schema_contract)
+    core_tables = _runtime_core_tables()
     core = {}
     for table_name in NEW_CUSTOMER_TABLES:
-        table = CORE_TABLES[table_name]
+        table = core_tables[table_name]
         core[table_name] = _model_physical_schema_signature(table)
     rebuilt = {}
-    metadata = next(iter(CORE_TABLES.values())).metadata
+    metadata = next(iter(core_tables.values())).metadata
     for table_name in REBUILT_CUSTOMER_WORKFLOW_TABLES:
         candidate = metadata.tables.get(table_name)
         if candidate is not None and set(candidate.c.keys()) == set(

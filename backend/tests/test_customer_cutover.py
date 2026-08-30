@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 import app.models  # noqa: F401 -- registers string FK targets for Agent DDL
 import app.customer.cutover_service as cutover_service
+from app.agent_runtime.event_service import content_hash as agent_content_hash
 from app.agent_runtime.models import (
     AgentArtifact,
     AgentEvent,
@@ -27,7 +28,11 @@ from app.agent_runtime.models import (
     AgentSession,
 )
 from app.core.database import Base
-from app.customer.models import CustomerAccount, CustomerSuppressionRegistry
+from app.customer.models import (
+    CORE_TABLES as ORM_CORE_TABLES,
+    CustomerAccount,
+    CustomerSuppressionRegistry,
+)
 from app.sales_automation.models import AcquisitionProfile
 from app.customer.cutover_service import (
     AGENT_CONTROL_TABLES,
@@ -120,6 +125,7 @@ def _target_profile_policy_entry(snapshot):
     entry["policy_snapshot_hash"] = hashlib.sha256(
         canonical_json_bytes(complete_snapshot)
     ).hexdigest()
+    entry["improvement_approval"] = None
     return entry
 
 
@@ -422,8 +428,17 @@ def _writer_manifest(
     active_transactions=0,
     inventory_approved_at=READY_CHECKED_AT,
 ):
+    writer_principals = ["ark_api@%", "ark_worker@10.%"]
     instance_inventory = [
-        {"category": category, "instance_id": f"{category}-01"}
+        {
+            "category": category,
+            "instance_id": f"{category}-01",
+            "db_principal": (
+                writer_principals[0]
+                if category == "local_api"
+                else writer_principals[1]
+            ),
+        }
         for category in KNOWN_WRITER_CATEGORIES
     ]
     writers = [
@@ -455,6 +470,7 @@ def _writer_manifest(
         "approved_at": inventory_approved_at.isoformat(),
         "approved_by": "cutover-approver",
         "approval_detail": "approved deployment inventory exported from independent control plane",
+        "writer_principals": writer_principals,
         "inventory_sha256": inventory_sha256,
         "preflight_report_sha256": preflight_report_sha256,
     }
@@ -471,6 +487,19 @@ def _writer_manifest(
     inventory_path, inventory_artifact_sha256 = write_artifact(
         "instance-inventory", approval_payload
     )
+    for writer in writers:
+        writer["instance_inventory_artifact_sha256"] = (
+            inventory_artifact_sha256
+        )
+    privilege_evidence = _writer_privilege_evidence(
+        inventory_sha256=inventory_sha256,
+        preflight_report_sha256=preflight_report_sha256,
+        instance_inventory_artifact_sha256=inventory_artifact_sha256,
+        checked_at=checked_at,
+    )
+    privilege_path, privilege_artifact_sha256 = write_artifact(
+        "writer-privilege-revocation", privilege_evidence
+    )
     writer_paths = [write_artifact("writer-stop", writer)[0] for writer in writers]
     transaction_payload = {
         "schema_version": 1,
@@ -479,6 +508,7 @@ def _writer_manifest(
         "checked_at": checked_at.isoformat(),
         "inventory_sha256": inventory_sha256,
         "preflight_report_sha256": preflight_report_sha256,
+        "instance_inventory_artifact_sha256": inventory_artifact_sha256,
         "evidence_detail": "active relevant customer writer transactions enumerated",
     }
     transaction_path, _ = write_artifact("transactions", transaction_payload)
@@ -487,6 +517,7 @@ def _writer_manifest(
         "artifact_kind": "maintenance_fence",
         "token": f"cutover-fence-{inventory_sha256[:20]}",
         "instance_inventory_artifact_sha256": inventory_artifact_sha256,
+        "writer_privilege_revocation_artifact_sha256": privilege_artifact_sha256,
         "inventory_sha256": inventory_sha256,
         "preflight_report_sha256": preflight_report_sha256,
         "issued_at": checked_at.isoformat(),
@@ -499,7 +530,82 @@ def _writer_manifest(
         "writer_artifacts": writer_paths,
         "active_transaction_artifact": transaction_path,
         "maintenance_fence_artifact": fence_path,
+        "writer_privilege_revocation_artifact": privilege_path,
     }
+
+
+def _writer_privilege_evidence(
+    *,
+    checked_at=READY_CHECKED_AT,
+    inventory_sha256="b" * 64,
+    preflight_report_sha256="c" * 64,
+    instance_inventory_artifact_sha256="d" * 64,
+):
+    snapshot = {
+        "ark_api@%": ["USAGE"],
+        "ark_worker@10.%": ["USAGE"],
+    }
+    payload = {
+        "schema_version": 1,
+        "artifact_kind": "writer_privilege_revocation",
+        "migration_principal": "ark_migration@localhost",
+        "writer_principals": sorted(snapshot),
+        "privilege_snapshot": snapshot,
+        "checked_at": checked_at.isoformat(),
+        "inventory_sha256": inventory_sha256,
+        "preflight_report_sha256": preflight_report_sha256,
+        "instance_inventory_artifact_sha256": (
+            instance_inventory_artifact_sha256
+        ),
+        "evidence_detail": "independent DBA privilege revocation and grant inspection",
+    }
+    return {**payload, "evidence_sha256": hashlib.sha256(
+        canonical_json_bytes(payload)
+    ).hexdigest()}
+
+
+def _ddl_proof_for_contract(
+    contract,
+    *,
+    started_at=READY_CHECKED_AT + timedelta(minutes=1),
+    completed_at=READY_CHECKED_AT + timedelta(minutes=2),
+):
+    proof = {
+        field: contract[field]
+        for field in (
+            "inventory_sha256",
+            "preflight_report_sha256",
+            "suppression_manifest_sha256",
+            "writer_manifest_sha256",
+            "writer_privilege_revocation_artifact_sha256",
+            "approved_marker_sha256",
+            "maintenance_fence_artifact_sha256",
+            "instance_inventory_artifact_sha256",
+            "physical_schema_contract_sha256",
+            "target_profile_physical_contract_sha256",
+            "target_profile_policy_backfill_sha256",
+            "nonce",
+            "contract_sha256",
+            "contract_path",
+            "ddl_proof_path",
+            "ddl_proof_binding_sha256",
+        )
+    }
+    proof.update(
+        {
+            "migration_revision": "126",
+            "schema_signature_sha256": contract[
+                "physical_schema_contract_sha256"
+            ],
+            "started_at": started_at.isoformat(timespec="seconds"),
+            "completed_at": completed_at.isoformat(timespec="seconds"),
+            "status": "ddl_verified",
+        }
+    )
+    proof["ddl_proof_sha256"] = hashlib.sha256(
+        canonical_json_bytes(proof)
+    ).hexdigest()
+    return proof
 
 
 def _physical_schema_contract(*, omit=None):
@@ -508,8 +614,8 @@ def _physical_schema_contract(*, omit=None):
         if table_name == omit:
             continue
         column_names = (
-            list(cutover_service.CORE_TABLES[table_name].c.keys())
-            if table_name in cutover_service.CORE_TABLES
+            list(ORM_CORE_TABLES[table_name].c.keys())
+            if table_name in ORM_CORE_TABLES
             else sorted(REBUILT_WORKFLOW_COLUMNS[table_name])
         )
         tables[table_name] = normalize_physical_schema_signature(
@@ -667,6 +773,59 @@ def test_agent_closure_selects_only_required_reference_columns():
         "evidence_json",
     ):
         assert forbidden_column not in closure_sql
+
+
+def test_incoming_retired_fk_snapshot_rejects_new_or_changed_constraints():
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text("PRAGMA foreign_keys=ON"))
+        connection.execute(
+            text("CREATE TABLE ark_sales_search_jobs (id INTEGER PRIMARY KEY)")
+        )
+        connection.execute(
+            text(
+                "CREATE TABLE approved_integration ("
+                "id INTEGER PRIMARY KEY, job_id INTEGER, "
+                "CONSTRAINT fk_approved_job FOREIGN KEY(job_id) "
+                "REFERENCES ark_sales_search_jobs(id) "
+                "ON UPDATE RESTRICT ON DELETE RESTRICT)"
+            )
+        )
+    with Session(engine) as db:
+        approved = cutover_service.snapshot_incoming_retired_foreign_keys(db)
+        assert approved["foreign_keys"] == [
+            {
+                "owning_table": "approved_integration",
+                "constraint_name": "fk_approved_job",
+                "local_columns": ["job_id"],
+                "target_table": "ark_sales_search_jobs",
+                "target_columns": ["id"],
+                "onupdate": "RESTRICT",
+                "ondelete": "RESTRICT",
+            }
+        ]
+
+        changed = copy.deepcopy(approved)
+        changed["foreign_keys"][0]["ondelete"] = "CASCADE"
+        changed_payload = {
+            key: value for key, value in changed.items() if key != "snapshot_sha256"
+        }
+        changed["snapshot_sha256"] = hashlib.sha256(
+            canonical_json_bytes(changed_payload)
+        ).hexdigest()
+        with pytest.raises(CutoverGuardError, match="incoming.*FK.*drift"):
+            cutover_service.validate_incoming_retired_foreign_keys(db, changed)
+
+        db.execute(
+            text(
+                "CREATE TABLE unexpected_integration ("
+                "id INTEGER PRIMARY KEY, job_id INTEGER, "
+                "CONSTRAINT fk_unexpected_job FOREIGN KEY(job_id) "
+                "REFERENCES ark_sales_search_jobs(id))"
+            )
+        )
+        with pytest.raises(CutoverGuardError, match="incoming.*FK.*drift"):
+            cutover_service.validate_incoming_retired_foreign_keys(db, approved)
 
 
 def test_agent_projected_rows_are_lazy_and_agent_id_queries_are_bounded(monkeypatch):
@@ -1325,6 +1484,9 @@ def test_migration_preflight_requires_short_lived_contract_lock_and_live_invento
         script = _load_cutover_script()
         inventory = build_inventory(db)
         report = script.build_preflight_report(db)
+        assert report["incoming_retired_foreign_keys"] == (
+            cutover_service.snapshot_incoming_retired_foreign_keys(db)
+        )
         report_sha256 = report["report_sha256"]
         suppression = _build_suppression(
             db,
@@ -1337,6 +1499,13 @@ def test_migration_preflight_requires_short_lived_contract_lock_and_live_invento
             preflight_report_sha256=report_sha256,
         )
         fence = read_maintenance_fence_evidence(writer_manifest)
+        privilege_reader = lambda _db: {
+            "current_principal": "ark_migration@localhost",
+            "privilege_snapshot": {
+                "ark_api@%": ["USAGE"],
+                "ark_worker@10.%": ["USAGE"],
+            },
+        }
         nonce = f"cutover-{report_sha256[:24]}"
         writer_sha256 = hashlib.sha256(
             canonical_json_bytes(writer_manifest)
@@ -1351,6 +1520,9 @@ def test_migration_preflight_requires_short_lived_contract_lock_and_live_invento
             "preflight_report_sha256": report_sha256,
             "suppression_manifest_sha256": suppression["manifest_sha256"],
             "writer_manifest_sha256": writer_sha256,
+            "writer_privilege_revocation_artifact_sha256": fence[
+                "writer_privilege_revocation_artifact_sha256"
+            ],
             "physical_schema_contract_sha256": physical_contract[
                 "contract_sha256"
             ],
@@ -1402,9 +1574,16 @@ def test_migration_preflight_requires_short_lived_contract_lock_and_live_invento
             "instance_inventory_artifact_sha256": fence[
                 "instance_inventory_artifact_sha256"
             ],
+            "writer_privilege_revocation_artifact": fence[
+                "writer_privilege_revocation_artifact"
+            ],
+            "writer_privilege_revocation_artifact_sha256": fence[
+                "writer_privilege_revocation_artifact_sha256"
+            ],
             "contract_path": str(
                 CUTOVER_EVIDENCE_ROOT / f"migration-contract-{nonce}.json"
             ),
+            "ddl_proof_path": f"migration-ddl-proof-{nonce}.json",
             "receipt_path": f"migration-receipt-{nonce}.json",
             "migration_revision": "126",
             "evidence_artifacts": evidence_artifacts,
@@ -1418,6 +1597,14 @@ def test_migration_preflight_requires_short_lived_contract_lock_and_live_invento
                 target_profile_policy_backfill["artifact_sha256"]
             ),
         }
+        contract["ddl_proof_binding_sha256"] = hashlib.sha256(
+            canonical_json_bytes(
+                {
+                    field: contract[field]
+                    for field in cutover_service.MIGRATION_DDL_PROOF_BINDING_FIELDS
+                }
+            )
+        ).hexdigest()
         contract["contract_sha256"] = hashlib.sha256(
             canonical_json_bytes(contract)
         ).hexdigest()
@@ -1428,6 +1615,7 @@ def test_migration_preflight_requires_short_lived_contract_lock_and_live_invento
             lock_acquirer=lambda _db: True,
             transaction_inspector=lambda _db: 0,
             fence_inspector=lambda _db, _contract: True,
+            privilege_reader=privilege_reader,
         ).inventory_sha256 == inventory.inventory_sha256
         with pytest.raises(CutoverGuardError, match="lock"):
             migration_preflight(db, contract, now=now, lock_acquirer=lambda _db: False)
@@ -1472,6 +1660,7 @@ def test_migration_preflight_requires_short_lived_contract_lock_and_live_invento
                 lock_acquirer=lambda _db: True,
                 transaction_inspector=lambda _db: 0,
                 fence_inspector=lambda _db, _contract: True,
+                privilege_reader=privilege_reader,
             )
         db.execute(text("UPDATE ark_sales_search_jobs SET name='changed' WHERE id=7"))
         with pytest.raises(CutoverGuardError, match="live inventory"):
@@ -1482,7 +1671,213 @@ def test_migration_preflight_requires_short_lived_contract_lock_and_live_invento
                 lock_acquirer=lambda _db: True,
                 transaction_inspector=lambda _db: 0,
                 fence_inspector=lambda _db, _contract: True,
+                privilege_reader=privilege_reader,
             )
+
+
+@pytest.mark.parametrize(
+    ("live", "error"),
+    (
+        (
+            {
+                "current_principal": "ark_migration@localhost",
+                "privilege_snapshot": {
+                    "ark_api@%": ["INSERT", "USAGE"],
+                    "ark_worker@10.%": ["USAGE"],
+                },
+            },
+            "write privilege",
+        ),
+        (
+            {
+                "current_principal": "ark_migration@localhost",
+                "privilege_snapshot": {"ark_api@%": ["USAGE"]},
+            },
+            "missing.*principal",
+        ),
+        (
+            {
+                "current_principal": "ark_api@%",
+                "privilege_snapshot": {
+                    "ark_api@%": ["USAGE"],
+                    "ark_worker@10.%": ["USAGE"],
+                },
+            },
+            "migration principal.*writer",
+        ),
+        (
+            {
+                "current_principal": "ark_migration@localhost",
+                "privilege_snapshot": {
+                    "ark_api@%": ["USAGE"],
+                    "ark_worker@10.%": ["SELECT", "USAGE"],
+                },
+            },
+            "snapshot.*mismatch",
+        ),
+    ),
+)
+def test_mysql_writer_privilege_gate_fails_closed_for_live_drift(live, error):
+    evidence = _writer_privilege_evidence()
+
+    with pytest.raises(CutoverGuardError, match=error):
+        cutover_service.validate_mysql_writer_privilege_gate(
+            object(),
+            evidence,
+            now=READY_CHECKED_AT,
+            privilege_reader=lambda _db: live,
+        )
+
+
+def test_mysql_writer_privilege_gate_requires_fresh_exact_revocation_proof():
+    evidence = _writer_privilege_evidence()
+    live = {
+        "current_principal": "ark_migration@localhost",
+        "privilege_snapshot": evidence["privilege_snapshot"],
+    }
+    assert cutover_service.validate_mysql_writer_privilege_gate(
+        object(),
+        evidence,
+        now=READY_CHECKED_AT,
+        privilege_reader=lambda _db: live,
+    ) is True
+
+    stale = _writer_privilege_evidence(
+        checked_at=(
+            READY_CHECKED_AT
+            - cutover_service.CUTOVER_EVIDENCE_MAX_AGE
+            - timedelta(seconds=1)
+        )
+    )
+    with pytest.raises(CutoverGuardError, match="stale"):
+        cutover_service.validate_mysql_writer_privilege_gate(
+            object(),
+            stale,
+            now=READY_CHECKED_AT,
+            privilege_reader=lambda _db: live,
+        )
+
+
+def test_mysql_privilege_reader_uses_exact_safe_show_grants_and_sees_dynamic_grants():
+    statements = []
+
+    class _Dialect:
+        name = "mysql"
+
+    class _Bind:
+        dialect = _Dialect()
+
+    class _CurrentUser:
+        def scalar_one(self):
+            return "ark_migration@localhost"
+
+    class _MandatoryRoles:
+        def scalar_one(self):
+            return "NONE"
+
+    class _GrantRows:
+        def __iter__(self):
+            return iter(
+                (
+                    ("GRANT USAGE ON *.* TO 'ark_api'@'%'",),
+                    (
+                        "GRANT INSERT, `SYSTEM_VARIABLES_ADMIN` ON *.* "
+                        "TO 'ark_api'@'%'",
+                    ),
+                    (
+                        "GRANT UPDATE (`company_name`) ON `commission`.`customers` "
+                        "TO 'ark_api'@'%'",
+                    ),
+                    ("GRANT 'customer_writer'@'%' TO 'ark_api'@'%'",),
+                )
+            )
+
+        def close(self):
+            return None
+
+    class _RoleRows:
+        def mappings(self):
+            return self
+
+        def __iter__(self):
+            return iter(())
+
+        def close(self):
+            return None
+
+    class _Db:
+        def get_bind(self):
+            return _Bind()
+
+        def execute(self, statement, params=None):
+            sql = str(statement)
+            statements.append((sql, params))
+            if sql == "SELECT CURRENT_USER()":
+                return _CurrentUser()
+            if sql == "SELECT @@GLOBAL.mandatory_roles":
+                return _MandatoryRoles()
+            if "mysql.role_edges" in sql:
+                return _RoleRows()
+            return _GrantRows()
+
+    live = cutover_service._read_mysql_principal_privileges(
+        _Db(), ["ark_api@%"]
+    )
+
+    assert statements == [
+        ("SELECT CURRENT_USER()", None),
+        ("SELECT @@GLOBAL.mandatory_roles", None),
+        ("SHOW GRANTS FOR 'ark_api'@'%'", None),
+        (
+            "SELECT FROM_USER AS role_user, FROM_HOST AS role_host "
+            "FROM mysql.role_edges WHERE TO_USER=:user AND TO_HOST=:host "
+            "UNION ALL SELECT DEFAULT_ROLE_USER AS role_user, "
+            "DEFAULT_ROLE_HOST AS role_host FROM mysql.default_roles "
+            "WHERE USER=:user AND HOST=:host",
+            {"user": "ark_api", "host": "%"},
+        ),
+    ]
+    assert live == {
+        "current_principal": "ark_migration@localhost",
+        "privilege_snapshot": {
+            "ark_api@%": [
+                "INSERT",
+                "ROLE",
+                "SYSTEM VARIABLES ADMIN",
+                "UPDATE",
+                "USAGE",
+            ]
+        },
+    }
+
+
+def test_mysql_privilege_reader_rejects_unobservable_mandatory_roles():
+    class _Dialect:
+        name = "mysql"
+
+    class _Bind:
+        dialect = _Dialect()
+
+    class _Scalar:
+        def __init__(self, value):
+            self.value = value
+
+        def scalar_one(self):
+            return self.value
+
+    class _Db:
+        def get_bind(self):
+            return _Bind()
+
+        def execute(self, statement, _params=None):
+            if str(statement) == "SELECT CURRENT_USER()":
+                return _Scalar("ark_migration@localhost")
+            return _Scalar("'mandatory_writer'@'%'")
+
+    with pytest.raises(CutoverGuardError, match="mandatory_roles"):
+        cutover_service._read_mysql_principal_privileges(
+            _Db(), ["ark_api@%"]
+        )
 
 
 @pytest.mark.parametrize(
@@ -1524,6 +1919,44 @@ def test_mysql_fence_treats_naive_datetime_as_beijing_wall_time(
     ) is expected
 
 
+def test_read_only_postverify_fence_check_never_uses_for_update():
+    expires_at = READY_CHECKED_AT.replace(tzinfo=None) + timedelta(minutes=3)
+    statements = []
+
+    class _MappingsResult:
+        def mappings(self):
+            return self
+
+        def one_or_none(self):
+            return {
+                "fence_token": "fence-token-20260830",
+                "inventory_sha256": "a" * 64,
+                "preflight_report_sha256": "b" * 64,
+                "expires_at": expires_at,
+                "active": 1,
+            }
+
+    class _FakeDb:
+        def execute(self, statement, *_args, **_kwargs):
+            statements.append(str(statement))
+            return _MappingsResult()
+
+    contract = {
+        "maintenance_fence_token": "fence-token-20260830",
+        "inventory_sha256": "a" * 64,
+        "preflight_report_sha256": "b" * 64,
+        "expires_at": (READY_CHECKED_AT + timedelta(minutes=3)).isoformat(),
+    }
+    assert cutover_service._mysql_maintenance_fence_active(
+        _FakeDb(),
+        contract,
+        now=READY_CHECKED_AT,
+        locking=False,
+    ) is True
+    assert len(statements) == 1
+    assert "FOR UPDATE" not in statements[0]
+
+
 def test_fence_bootstrap_rejects_a_spoofed_physical_table_before_activation(
     monkeypatch,
 ):
@@ -1532,6 +1965,7 @@ def test_fence_bootstrap_rejects_a_spoofed_physical_table_before_activation(
         "approved": True,
         "migration_revision": "126",
         "nonce": nonce,
+        "evidence_root": str(CUTOVER_EVIDENCE_ROOT),
         "expires_at": (READY_CHECKED_AT + timedelta(minutes=3)).isoformat(),
         "maintenance_fence_artifact": "bound-fence.json",
         "maintenance_fence_artifact_sha256": "a" * 64,
@@ -1539,7 +1973,27 @@ def test_fence_bootstrap_rejects_a_spoofed_physical_table_before_activation(
         "inventory_sha256": "b" * 64,
         "preflight_report_sha256": "c" * 64,
         "instance_inventory_artifact_sha256": "d" * 64,
+        "suppression_manifest_sha256": "e" * 64,
+        "writer_manifest_sha256": "f" * 64,
+        "writer_privilege_revocation_artifact_sha256": "1" * 64,
+        "approved_marker_sha256": "2" * 64,
+        "physical_schema_contract_sha256": "3" * 64,
+        "target_profile_physical_contract_sha256": "4" * 64,
+        "target_profile_policy_backfill_sha256": "5" * 64,
+        "contract_path": str(
+            CUTOVER_EVIDENCE_ROOT / f"migration-contract-{nonce}.json"
+        ),
+        "ddl_proof_path": f"migration-ddl-proof-{nonce}.json",
+        "receipt_path": f"migration-receipt-{nonce}.json",
     }
+    contract["ddl_proof_binding_sha256"] = hashlib.sha256(
+        canonical_json_bytes(
+            {
+                field: contract[field]
+                for field in cutover_service.MIGRATION_DDL_PROOF_BINDING_FIELDS
+            }
+        )
+    ).hexdigest()
     contract["contract_sha256"] = hashlib.sha256(
         canonical_json_bytes(contract)
     ).hexdigest()
@@ -1549,6 +2003,9 @@ def test_fence_bootstrap_rejects_a_spoofed_physical_table_before_activation(
         "preflight_report_sha256": contract["preflight_report_sha256"],
         "instance_inventory_artifact_sha256": contract[
             "instance_inventory_artifact_sha256"
+        ],
+        "writer_privilege_revocation_artifact_sha256": contract[
+            "writer_privilege_revocation_artifact_sha256"
         ],
     }
     monkeypatch.setattr(
@@ -2007,6 +2464,95 @@ def test_target_profile_policy_backfill_requires_exact_live_set_and_snapshot():
         ) is True
 
 
+def test_target_profile_improvement_requires_valid_bound_approved_agent_artifact():
+    engine = _create_cutover_db()
+    with Session(engine) as db:
+        db.add(
+            AcquisitionProfile(
+                id=7,
+                profile_key="profile-seven",
+                company_name="Ark Hair",
+                products=["wigs"],
+                advantages=["quality"],
+                target_countries=["US"],
+                target_industries=["beauty"],
+                target_roles=["buyer"],
+                exclusions=[],
+                default_language="en",
+                status="active",
+                created_at=datetime(2026, 8, 1, 9, 0),
+                updated_at=datetime(2026, 8, 2, 9, 0),
+            )
+        )
+        db.flush()
+        snapshot = cutover_service.snapshot_target_profile_rows(db)[0]
+        entry = _target_profile_policy_entry(snapshot)
+        entry["last_improvement_artifact_id"] = 3
+        entry = _rehash_target_profile_policy_entry(entry)
+        content = {
+            "schema_version": "target_profile_improvement_v1",
+            "profile_id": 7,
+            "policy_patch": {"weights": {"industry_fit": 0.6}},
+        }
+        content_sha256 = agent_content_hash({"content": content, "evidence": []})
+        assert content_sha256 == cutover_service._agent_artifact_content_sha256(
+            content, []
+        )
+        approval_request = {
+            "artifact_id": 3,
+            "profile_id": 7,
+            "content_sha256": content_sha256,
+            "policy_snapshot_hash": entry["policy_snapshot_hash"],
+        }
+        entry["improvement_approval"] = {
+            "decision": "approved",
+            "approver_user_id": 99,
+            "approved_at": READY_CHECKED_AT.isoformat(),
+            "approval_request": approval_request,
+            "approval_request_sha256": hashlib.sha256(
+                canonical_json_bytes(approval_request)
+            ).hexdigest(),
+            "approved_content_sha256": content_sha256,
+        }
+        artifact_evidence = _target_profile_policy_artifact((entry,))
+        agent_artifact = db.get(AgentArtifact, 3)
+        agent_artifact.artifact_type = "target_profile_improvement_v1"
+        agent_artifact.content_json = content
+        agent_artifact.content_sha256 = content_sha256
+        agent_artifact.validation_status = "valid"
+        agent_artifact.validation_errors = []
+        agent_artifact.decision_status = "approved"
+        agent_artifact.decided_by = 99
+        agent_artifact.decided_at = READY_CHECKED_AT.replace(tzinfo=None)
+        agent_artifact.business_ref_type = "target_profile"
+        agent_artifact.business_ref_id = "7"
+        db.flush()
+
+        assert cutover_service.validate_target_profile_policy_backfill_against_live_rows(
+            db,
+            artifact_evidence,
+            now=READY_CHECKED_AT,
+        ) is True
+
+        for field_name, invalid_value in (
+            ("validation_status", "invalid"),
+            ("decision_status", "rejected"),
+            ("business_ref_id", "8"),
+            ("content_sha256", "0" * 64),
+        ):
+            original = getattr(agent_artifact, field_name)
+            setattr(agent_artifact, field_name, invalid_value)
+            db.flush()
+            with pytest.raises(CutoverGuardError, match="improvement Artifact"):
+                cutover_service.validate_target_profile_policy_backfill_against_live_rows(
+                    db,
+                    artifact_evidence,
+                    now=READY_CHECKED_AT,
+                )
+            setattr(agent_artifact, field_name, original)
+            db.flush()
+
+
 def test_customer_account_integer_pk_autoincrement_modes_match_mysql_reflection():
     model_id = CustomerAccount.__table__.c.id
 
@@ -2229,7 +2775,9 @@ def test_apply_reset_rejects_tampered_preflight_content_before_runner(tmp_path):
     assert calls == []
 
 
-def test_apply_reset_invokes_only_alembic_upgrade_head_after_both_hashes_bind(tmp_path):
+def test_apply_reset_invokes_only_alembic_upgrade_head_after_both_hashes_bind(
+    tmp_path, monkeypatch
+):
     script = _load_cutover_script()
     engine = _create_cutover_db()
     calls = []
@@ -2243,6 +2791,7 @@ def test_apply_reset_invokes_only_alembic_upgrade_head_after_both_hashes_bind(tm
             inventory.inventory_sha256,
             preflight_report_sha256=report["report_sha256"],
         )
+        fence = read_maintenance_fence_evidence(writer)
         nonce = "successful-cutover-" + hashlib.sha256(str(tmp_path).encode()).hexdigest()[:16]
         marker = tmp_path / "approved.json"
         marker.write_text(
@@ -2255,6 +2804,9 @@ def test_apply_reset_invokes_only_alembic_upgrade_head_after_both_hashes_bind(tm
                     "writer_manifest_sha256": hashlib.sha256(
                         canonical_json_bytes(writer)
                     ).hexdigest(),
+                    "writer_privilege_revocation_artifact_sha256": fence[
+                        "writer_privilege_revocation_artifact_sha256"
+                    ],
                     "physical_schema_contract_sha256": _physical_schema_contract()[
                         "contract_sha256"
                     ],
@@ -2277,38 +2829,14 @@ def test_apply_reset_invokes_only_alembic_upgrade_head_after_both_hashes_bind(tm
             calls.append((args, kwargs))
             contract_path = Path(args[0][-3].split("=", 1)[1])
             contract = json.loads(contract_path.read_text(encoding="utf-8"))
-            receipt = {
-                "status": "succeeded",
-                **{
-                    field: contract[field]
-                    for field in (
-                        "inventory_sha256",
-                        "preflight_report_sha256",
-                        "suppression_manifest_sha256",
-                        "writer_manifest_sha256",
-                        "approved_marker_sha256",
-                        "maintenance_fence_artifact_sha256",
-                        "instance_inventory_artifact_sha256",
-                        "physical_schema_contract_sha256",
-                        "target_profile_physical_contract_sha256",
-                        "target_profile_policy_backfill_sha256",
-                        "nonce",
-                        "contract_sha256",
-                        "contract_path",
-                        "receipt_path",
-                        "migration_revision",
-                    )
-                },
-                "schema_signature_sha256": contract[
-                    "physical_schema_contract_sha256"
-                ],
-                "started_at": (READY_CHECKED_AT + timedelta(minutes=1)).isoformat(),
-                "completed_at": (READY_CHECKED_AT + timedelta(minutes=2)).isoformat(),
-            }
-            receipt["receipt_sha256"] = hashlib.sha256(
-                canonical_json_bytes(receipt)
-            ).hexdigest()
-            script._write_canonical_json(contract["receipt_path"], receipt)
+            proof = _ddl_proof_for_contract(
+                contract,
+                started_at=READY_CHECKED_AT + timedelta(minutes=1),
+                completed_at=READY_CHECKED_AT + timedelta(minutes=1),
+            )
+            script._write_canonical_json(contract["ddl_proof_path"], proof)
+
+        monkeypatch.setattr(script, "_post_migration_verify", lambda *_a, **_k: True)
 
         result = script.apply_reset(
             db=db,
@@ -2334,9 +2862,22 @@ def test_apply_reset_invokes_only_alembic_upgrade_head_after_both_hashes_bind(tm
     assert command[-3].startswith("customer_cutover_contract=")
     assert calls[0][1]["check"] is True
     assert calls[0][1]["cwd"] == REPO_ROOT / "backend"
+    contract_path = Path(command[-3].split("=", 1)[1])
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    proof_path = CUTOVER_EVIDENCE_ROOT / contract["ddl_proof_path"]
+    receipt_path = CUTOVER_EVIDENCE_ROOT / contract["receipt_path"]
+    proof = json.loads(proof_path.read_text(encoding="utf-8"))
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert script.validate_execution_receipt(
+        receipt,
+        evidence_contract=contract,
+        ddl_proof=proof,
+        ddl_proof_resolved_path=proof_path,
+        receipt_resolved_path=receipt_path,
+    ) is True
 
 
-def test_apply_reset_runner_success_without_receipt_keeps_writers_stopped(tmp_path):
+def test_apply_reset_runner_success_without_ddl_proof_keeps_writers_stopped(tmp_path):
     script = _load_cutover_script()
     engine = _create_cutover_db()
     with Session(engine) as db:
@@ -2349,6 +2890,7 @@ def test_apply_reset_runner_success_without_receipt_keeps_writers_stopped(tmp_pa
             inventory.inventory_sha256,
             preflight_report_sha256=report["report_sha256"],
         )
+        fence = read_maintenance_fence_evidence(writer)
         marker = tmp_path / "approved-no-receipt.json"
         marker.write_text(
             json.dumps(
@@ -2360,6 +2902,9 @@ def test_apply_reset_runner_success_without_receipt_keeps_writers_stopped(tmp_pa
                     "writer_manifest_sha256": hashlib.sha256(
                         canonical_json_bytes(writer)
                     ).hexdigest(),
+                    "writer_privilege_revocation_artifact_sha256": fence[
+                        "writer_privilege_revocation_artifact_sha256"
+                    ],
                     "physical_schema_contract_sha256": _physical_schema_contract()[
                         "contract_sha256"
                     ],
@@ -2398,6 +2943,163 @@ def test_apply_reset_runner_success_without_receipt_keeps_writers_stopped(tmp_pa
 
 
 @pytest.mark.parametrize(
+    "failure_mode",
+    (
+        "tampered_ddl_proof",
+        "old_alembic_version",
+        "postverify",
+        "expired_during_postverify",
+        "publication",
+    ),
+)
+def test_apply_reset_never_publishes_success_when_finalization_fails(
+    tmp_path, monkeypatch, failure_mode
+):
+    script = _load_cutover_script()
+    engine = _create_cutover_db()
+    captured = {}
+    with Session(engine) as db:
+        inventory = build_inventory(db)
+        report = script.build_preflight_report(db)
+        suppression = _build_suppression(
+            db, inventory, [], preflight_report_sha256=report["report_sha256"]
+        ).to_dict()
+        writer = _writer_manifest(
+            inventory.inventory_sha256,
+            preflight_report_sha256=report["report_sha256"],
+        )
+        fence = read_maintenance_fence_evidence(writer)
+        nonce = (
+            f"{failure_mode}-"
+            + hashlib.sha256(str(tmp_path).encode()).hexdigest()[:20]
+        )
+        marker = tmp_path / f"{failure_mode}-approved.json"
+        marker.write_text(
+            json.dumps(
+                {
+                    "approved": True,
+                    "inventory_sha256": inventory.inventory_sha256,
+                    "preflight_report_sha256": report["report_sha256"],
+                    "suppression_manifest_sha256": suppression["manifest_sha256"],
+                    "writer_manifest_sha256": hashlib.sha256(
+                        canonical_json_bytes(writer)
+                    ).hexdigest(),
+                    "writer_privilege_revocation_artifact_sha256": fence[
+                        "writer_privilege_revocation_artifact_sha256"
+                    ],
+                    "physical_schema_contract_sha256": _physical_schema_contract()[
+                        "contract_sha256"
+                    ],
+                    "target_profile_physical_contract_sha256": (
+                        _target_profile_physical_contract_sha256()
+                    ),
+                    "target_profile_policy_backfill_sha256": (
+                        _target_profile_policy_artifact(confirmed_empty=True)[
+                            "artifact_sha256"
+                        ]
+                    ),
+                    "nonce": nonce,
+                    "expires_at": (
+                        READY_CHECKED_AT + timedelta(minutes=4)
+                    ).isoformat(),
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        def fake_runner(*args, **_kwargs):
+            contract_path = Path(args[0][-3].split("=", 1)[1])
+            contract = json.loads(contract_path.read_text(encoding="utf-8"))
+            captured["contract"] = contract
+            proof = _ddl_proof_for_contract(
+                contract,
+                started_at=READY_CHECKED_AT + timedelta(minutes=1),
+                completed_at=READY_CHECKED_AT + timedelta(minutes=1),
+            )
+            if failure_mode == "tampered_ddl_proof":
+                proof["status"] = "tampered"
+            script._write_canonical_json(contract["ddl_proof_path"], proof)
+            if failure_mode == "old_alembic_version":
+                with engine.begin() as connection:
+                    connection.execute(
+                        text("CREATE TABLE alembic_version (version_num TEXT)")
+                    )
+                    connection.execute(
+                        text("INSERT INTO alembic_version VALUES ('125')")
+                    )
+
+        if failure_mode == "postverify":
+            monkeypatch.setattr(
+                script,
+                "_post_migration_verify",
+                lambda *_a, **_k: (_ for _ in ()).throw(
+                    CutoverGuardError("synthetic postverify failure")
+                ),
+            )
+        elif failure_mode not in {"old_alembic_version"}:
+            monkeypatch.setattr(
+                script, "_post_migration_verify", lambda *_a, **_k: True
+            )
+        if failure_mode == "publication":
+            original_write = script._write_canonical_json
+
+            def fail_final_receipt(path, value):
+                if Path(path).name.startswith("migration-receipt-"):
+                    raise CutoverGuardError("synthetic final publication crash")
+                return original_write(path, value)
+
+            monkeypatch.setattr(script, "_write_canonical_json", fail_final_receipt)
+
+        with pytest.raises(CutoverGuardError, match="keep all writers stopped"):
+            script.apply_reset(
+                db=db,
+                preflight_report=report,
+                suppression_manifest=suppression,
+                stopped_writer_manifest=writer,
+                expected_inventory_sha256=inventory.inventory_sha256,
+                approved_marker_path=marker,
+                suppression_hmac_key=SUPPRESSION_HMAC_KEY,
+                physical_schema_contract=_physical_schema_contract(),
+                target_profile_policy_backfill=_target_profile_policy_artifact(
+                    confirmed_empty=True
+                ),
+                subprocess_runner=fake_runner,
+                now=READY_CHECKED_AT + timedelta(minutes=1),
+                clock=(
+                    (lambda: READY_CHECKED_AT + timedelta(minutes=5))
+                    if failure_mode == "expired_during_postverify"
+                    else None
+                ),
+            )
+
+    contract = captured["contract"]
+    assert not (CUTOVER_EVIDENCE_ROOT / contract["receipt_path"]).exists()
+
+
+def test_atomic_evidence_publication_crash_never_leaves_partial_target(
+    tmp_path, monkeypatch
+):
+    script = _load_cutover_script()
+    unique = hashlib.sha256(str(tmp_path).encode()).hexdigest()[:20]
+    target = script.resolve_evidence_output_path(
+        f"atomic-crash-{unique}/migration-receipt-{unique}.json"
+    )
+    monkeypatch.setattr(
+        script.os,
+        "link",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            OSError("synthetic publish crash")
+        ),
+    )
+
+    with pytest.raises(CutoverGuardError, match="cannot write cutover evidence"):
+        script._write_canonical_json(target, {"status": "succeeded"})
+
+    assert not target.exists()
+    assert not tuple(target.parent.glob(".cutover-*.tmp"))
+
+
+@pytest.mark.parametrize(
     "marker_update",
     [
         {"approved": False},
@@ -2419,12 +3121,16 @@ def test_apply_reset_marker_failures_are_independent_and_never_run(tmp_path, mar
             inventory.inventory_sha256,
             preflight_report_sha256=report["report_sha256"],
         )
+        fence = read_maintenance_fence_evidence(writer)
         marker_data = {
             "approved": True,
             "inventory_sha256": inventory.inventory_sha256,
             "preflight_report_sha256": report["report_sha256"],
             "suppression_manifest_sha256": suppression["manifest_sha256"],
             "writer_manifest_sha256": hashlib.sha256(canonical_json_bytes(writer)).hexdigest(),
+            "writer_privilege_revocation_artifact_sha256": fence[
+                "writer_privilege_revocation_artifact_sha256"
+            ],
             "physical_schema_contract_sha256": _physical_schema_contract()[
                 "contract_sha256"
             ],
@@ -2470,6 +3176,7 @@ def test_execution_receipt_must_bind_the_exact_approval_marker():
         "preflight_report_sha256": "b" * 64,
         "suppression_manifest_sha256": "c" * 64,
         "writer_manifest_sha256": "d" * 64,
+        "writer_privilege_revocation_artifact_sha256": "9" * 64,
         "approved_marker_sha256": "e" * 64,
         "maintenance_fence_artifact_sha256": "f" * 64,
         "instance_inventory_artifact_sha256": "1" * 64,
@@ -2478,46 +3185,34 @@ def test_execution_receipt_must_bind_the_exact_approval_marker():
         "target_profile_policy_backfill_sha256": "4" * 64,
         "nonce": "receipt-nonce-20260830",
         "contract_path": str(CUTOVER_EVIDENCE_ROOT / "contract.json"),
+        "ddl_proof_path": "migration-ddl-proof-receipt-nonce-20260830.json",
         "receipt_path": "migration-receipt-receipt-nonce-20260830.json",
         "migration_revision": script.CUTOVER_MIGRATION_REVISION,
         "issued_at": "2026-08-30T09:00:00+08:00",
         "expires_at": "2026-08-30T09:04:00+08:00",
     }
+    contract["ddl_proof_binding_sha256"] = script._ddl_proof_binding_sha256(
+        contract
+    )
     contract["contract_sha256"] = hashlib.sha256(
         canonical_json_bytes(contract)
     ).hexdigest()
-    receipt = {
-        "status": "succeeded",
-        **{
-            field: contract[field]
-            for field in (
-                "inventory_sha256",
-                "preflight_report_sha256",
-                "suppression_manifest_sha256",
-                "writer_manifest_sha256",
-                "approved_marker_sha256",
-                "maintenance_fence_artifact_sha256",
-                "instance_inventory_artifact_sha256",
-                "physical_schema_contract_sha256",
-                "target_profile_physical_contract_sha256",
-                "target_profile_policy_backfill_sha256",
-                "nonce",
-                "contract_sha256",
-                "contract_path",
-                "receipt_path",
-                "migration_revision",
-            )
-        },
-        "schema_signature_sha256": contract["physical_schema_contract_sha256"],
-        "started_at": "2026-08-30T09:01:00+08:00",
-        "completed_at": "2026-08-30T09:03:00+08:00",
-    }
-    receipt["receipt_sha256"] = hashlib.sha256(
-        canonical_json_bytes(receipt)
-    ).hexdigest()
+    proof = _ddl_proof_for_contract(
+        contract,
+        started_at=datetime.fromisoformat("2026-08-30T09:01:00+08:00"),
+        completed_at=datetime.fromisoformat("2026-08-30T09:02:00+08:00"),
+    )
+    receipt = script._build_execution_receipt(
+        contract,
+        proof,
+        completed_at=datetime.fromisoformat("2026-08-30T09:03:00+08:00"),
+    )
+    proof_path = CUTOVER_EVIDENCE_ROOT / contract["ddl_proof_path"]
     assert script.validate_execution_receipt(
         receipt,
         evidence_contract=contract,
+        ddl_proof=proof,
+        ddl_proof_resolved_path=proof_path,
         receipt_resolved_path=(
             CUTOVER_EVIDENCE_ROOT / contract["receipt_path"]
         ),
@@ -2525,22 +3220,25 @@ def test_execution_receipt_must_bind_the_exact_approval_marker():
     with pytest.raises(CutoverGuardError, match="approved_marker_sha256"):
         script.validate_execution_receipt(
             receipt,
-            evidence_contract={
-                **contract,
-                "approved_marker_sha256": "2" * 64,
+            evidence_contract=(lambda changed: {
+                **changed,
                 "contract_sha256": hashlib.sha256(
-                    canonical_json_bytes(
-                        {
-                            **{
-                                key: value
-                                for key, value in contract.items()
-                                if key != "contract_sha256"
-                            },
-                            "approved_marker_sha256": "2" * 64,
-                        }
-                    )
+                    canonical_json_bytes(changed)
                 ).hexdigest(),
-            },
+            })({
+                **{
+                    key: value
+                    for key, value in contract.items()
+                    if key != "contract_sha256"
+                },
+                "approved_marker_sha256": "2" * 64,
+                "ddl_proof_binding_sha256": script._ddl_proof_binding_sha256({
+                    **contract,
+                    "approved_marker_sha256": "2" * 64,
+                }),
+            }),
+            ddl_proof=proof,
+            ddl_proof_resolved_path=proof_path,
             receipt_resolved_path=(
                 CUTOVER_EVIDENCE_ROOT / contract["receipt_path"]
             ),
@@ -2551,5 +3249,32 @@ def test_execution_receipt_must_bind_the_exact_approval_marker():
         script.validate_execution_receipt(
             receipt,
             evidence_contract=contract,
+            ddl_proof=proof,
+            ddl_proof_resolved_path=proof_path,
             receipt_resolved_path=alternate,
         )
+
+
+def test_post_migration_finalization_rejects_old_alembic_version():
+    script = _load_cutover_script()
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE alembic_version (version_num TEXT)"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('125')"))
+    with Session(engine) as db, pytest.raises(
+        CutoverGuardError, match="alembic_version.*126"
+    ):
+        script._verify_applied_revision(db)
+
+
+def test_parent_postverify_rechecks_live_writer_gate_before_and_after_data_proof():
+    script = _load_cutover_script()
+    source = inspect.getsource(script._post_migration_verify)
+
+    assert source.count("validate_live_customer_cutover_writer_gate") == 2
+    assert source.count("now=clock()") == 2
+    read_only = source.index("SET TRANSACTION READ ONLY")
+    first_gate = source.index("validate_live_customer_cutover_writer_gate")
+    data_proof = source.index("verify_target_profile_post_state")
+    final_gate = source.rindex("validate_live_customer_cutover_writer_gate")
+    assert read_only < first_gate < data_proof < final_gate

@@ -36,9 +36,12 @@ from app.customer.cutover_service import (
     canonical_json_bytes,
     compare_physical_schema_signature,
     load_bound_customer_cutover_evidence,
+    load_writer_privilege_revocation_evidence,
     migration_preflight,
     resolve_agent_history_closure,
     snapshot_unrelated_agent_rows,
+    validate_incoming_retired_foreign_keys,
+    validate_mysql_writer_privilege_gate,
     validate_target_profile_policy_backfill_against_live_rows,
     validate_target_profile_policy_backfill_artifact,
     verify_agent_history_removed,
@@ -460,20 +463,17 @@ def _delete_agent_history_closure(
                 )
 
 
-def _drop_foreign_keys_into_retired() -> None:
-    bind = op.get_bind()
-    inspector = sa.inspect(bind)
-    retired = set(RETIRED_OR_REBUILT_TABLES)
-    for table_name in sorted(inspector.get_table_names()):
-        for foreign_key in inspector.get_foreign_keys(table_name):
-            if foreign_key.get("referred_table") not in retired:
-                continue
-            constraint_name = foreign_key.get("name")
-            if not constraint_name:
-                raise CutoverGuardError(
-                    f"unnamed foreign key into retired customer table from {table_name}"
-                )
-            op.drop_constraint(constraint_name, table_name, type_="foreignkey")
+def _drop_foreign_keys_into_retired(
+    db: Session,
+    approved_snapshot: Mapping[str, Any],
+) -> None:
+    validate_incoming_retired_foreign_keys(db, approved_snapshot)
+    for foreign_key in approved_snapshot["foreign_keys"]:
+        op.drop_constraint(
+            foreign_key["constraint_name"],
+            foreign_key["owning_table"],
+            type_="foreignkey",
+        )
 
 
 def _drop_retired_tables() -> None:
@@ -688,20 +688,48 @@ def _verify_frozen_customer_table_state(db: Session) -> None:
         )
 
 
-def _write_success_receipt(contract: Mapping[str, Any], started_at: datetime) -> None:
+def _publish_atomic_no_overwrite(path: Path, document: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_name(
+        f".{path.name}.{os.urandom(8).hex()}.tmp"
+    )
+    descriptor = None
+    try:
+        descriptor = os.open(
+            temporary_path,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+        with os.fdopen(descriptor, "wb") as stream:
+            descriptor = None
+            stream.write(canonical_json_bytes(document) + b"\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temporary_path, path)
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        try:
+            temporary_path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _write_ddl_proof(contract: Mapping[str, Any], started_at: datetime) -> None:
     root = CUTOVER_EVIDENCE_ROOT.resolve()
-    receipt_path = (root / str(contract["receipt_path"])).resolve()
-    expected_name = f"migration-receipt-{contract['nonce']}.json"
-    if receipt_path.parent != root or receipt_path.name != expected_name:
-        raise CutoverGuardError("migration receipt path is not fixed")
+    ddl_proof_path = (root / str(contract["ddl_proof_path"])).resolve()
+    expected_name = f"migration-ddl-proof-{contract['nonce']}.json"
+    if ddl_proof_path.parent != root or ddl_proof_path.name != expected_name:
+        raise CutoverGuardError("migration DDL proof path is not fixed")
     completed_at = beijing_now_aware()
-    receipt = {
+    proof = {
         field: contract[field]
         for field in (
             "inventory_sha256",
             "preflight_report_sha256",
             "suppression_manifest_sha256",
             "writer_manifest_sha256",
+            "writer_privilege_revocation_artifact_sha256",
             "approved_marker_sha256",
             "maintenance_fence_artifact_sha256",
             "instance_inventory_artifact_sha256",
@@ -711,35 +739,27 @@ def _write_success_receipt(contract: Mapping[str, Any], started_at: datetime) ->
             "nonce",
             "contract_sha256",
             "contract_path",
-            "receipt_path",
+            "ddl_proof_path",
+            "ddl_proof_binding_sha256",
         )
     }
-    receipt.update(
+    proof.update(
         {
             "migration_revision": revision,
             "schema_signature_sha256": contract["physical_schema_contract_sha256"],
             "started_at": started_at.isoformat(timespec="seconds"),
             "completed_at": completed_at.isoformat(timespec="seconds"),
-            "status": "succeeded",
+            "status": "ddl_verified",
         }
     )
-    receipt["receipt_sha256"] = hashlib.sha256(
-        canonical_json_bytes(receipt)
+    proof["ddl_proof_sha256"] = hashlib.sha256(
+        canonical_json_bytes(proof)
     ).hexdigest()
     try:
-        receipt_path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor = os.open(
-            receipt_path,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-            0o600,
-        )
-        with os.fdopen(descriptor, "wb") as stream:
-            stream.write(canonical_json_bytes(receipt) + b"\n")
-            stream.flush()
-            os.fsync(stream.fileno())
+        _publish_atomic_no_overwrite(ddl_proof_path, proof)
     except OSError as exc:
         raise CutoverGuardError(
-            f"migration DDL succeeded but receipt write failed: {receipt_path}; "
+            f"migration DDL proof publish failed: {ddl_proof_path}; "
             "keep all writers stopped"
         ) from exc
 
@@ -778,6 +798,9 @@ def upgrade() -> None:
     unrelated_agent_snapshot = AgentPreservationSnapshot.from_dict(
         preflight_report["unrelated_agent_snapshot"]
     )
+    writer_privilege_evidence, _, _ = load_writer_privilege_revocation_evidence(
+        bound_evidence["writer_manifest"]
+    )
     referenced_improvement_artifacts = {
         entry["last_improvement_artifact_id"]
         for entry in target_profile_policy_backfill["profiles"]
@@ -803,10 +826,23 @@ def upgrade() -> None:
         target_profile_policy_backfill=target_profile_policy_backfill,
         physical_schema_validator=_validate_frozen_customer_contract,
     )
-    _drop_foreign_keys_into_retired()
     closure = resolve_agent_history_closure(db, inventory)
     if closure != approved_closure:
         raise CutoverGuardError("live Agent deletion closure changed after approval")
+    before_ddl_snapshot = snapshot_unrelated_agent_rows(db, closure)
+    verify_unrelated_unchanged(
+        unrelated_agent_snapshot,
+        before_ddl_snapshot,
+    )
+    validate_mysql_writer_privilege_gate(
+        db,
+        writer_privilege_evidence,
+        now=beijing_now_aware(),
+    )
+    _drop_foreign_keys_into_retired(
+        db,
+        preflight_report["incoming_retired_foreign_keys"],
+    )
     _delete_agent_history_closure(db, closure)
     verify_agent_history_removed(db, closure)
     after_delete_snapshot = snapshot_unrelated_agent_rows(db, closure)
@@ -828,7 +864,7 @@ def upgrade() -> None:
         unrelated_agent_snapshot,
         before_receipt_snapshot,
     )
-    _write_success_receipt(contract, started_at)
+    _write_ddl_proof(contract, started_at)
 
 
 def downgrade() -> None:

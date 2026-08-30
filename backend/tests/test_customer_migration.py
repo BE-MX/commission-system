@@ -24,12 +24,15 @@ from zoneinfo import ZoneInfo
 import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from sqlalchemy import create_engine, text
 from sqlalchemy.dialects import mysql
+from sqlalchemy.orm import Session
 from sqlalchemy.schema import CreateIndex, CreateTable
 
 from app.customer.cutover_service import (
     CutoverGuardError,
     canonical_json_bytes,
+    snapshot_incoming_retired_foreign_keys,
 )
 from app.customer.models import CORE_TABLES as ORM_CORE_TABLES
 
@@ -260,6 +263,35 @@ def test_revision_126_is_independent_from_mutable_runtime_customer_models():
     assert upgrade_source.count(
         "physical_schema_validator=_validate_frozen_customer_contract"
     ) == 3
+
+
+def test_revision_126_import_succeeds_when_runtime_customer_models_are_blocked():
+    program = r"""
+import importlib.abc
+import importlib.util
+import sys
+
+class BlockCustomerModels(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "app.customer.models":
+            raise RuntimeError("runtime customer ORM import is forbidden")
+        return None
+
+sys.meta_path.insert(0, BlockCustomerModels())
+spec = importlib.util.spec_from_file_location("revision_126_import_guard", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+assert len(module.TARGET_METADATA.tables) == 38
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", program, str(MIGRATION_PATH)],
+        cwd=BACKEND_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_revision_owned_schema_resource_is_hash_pinned_and_drives_ddl(
@@ -627,7 +659,7 @@ def test_upgrade_source_fails_closed_before_any_destructive_statement():
         "_verify_frozen_customer_table_state"
     )
     assert source.index("_verify_frozen_customer_table_state") < source.index(
-        "_write_success_receipt"
+        "_write_ddl_proof"
     )
 
 
@@ -707,7 +739,7 @@ def test_upgrade_uses_explicit_beijing_receipt_timestamps():
     assert "beijing_now_aware()" in source
 
 
-def test_success_receipt_exactly_matches_cutover_validator_and_never_overwrites(
+def test_migration_writes_only_atomic_ddl_proof_and_never_final_success_receipt(
     tmp_path,
     monkeypatch,
 ):
@@ -726,12 +758,14 @@ def test_success_receipt_exactly_matches_cutover_validator_and_never_overwrites(
     completed_at = started_at + timedelta(seconds=1)
     monkeypatch.setattr(migration, "beijing_now_aware", lambda: completed_at)
     nonce = "receipt-contract-20260830"
+    ddl_proof_path = evidence_root / f"migration-ddl-proof-{nonce}.json"
     receipt_path = evidence_root / f"migration-receipt-{nonce}.json"
     contract = {
         "inventory_sha256": "1" * 64,
         "preflight_report_sha256": "2" * 64,
         "suppression_manifest_sha256": "3" * 64,
         "writer_manifest_sha256": "4" * 64,
+        "writer_privilege_revocation_artifact_sha256": "9" * 64,
         "approved_marker_sha256": "5" * 64,
         "maintenance_fence_artifact_sha256": "6" * 64,
         "instance_inventory_artifact_sha256": "7" * 64,
@@ -742,25 +776,82 @@ def test_success_receipt_exactly_matches_cutover_validator_and_never_overwrites(
         "target_profile_policy_backfill_sha256": "8" * 64,
         "nonce": nonce,
         "contract_path": str(evidence_root / f"migration-contract-{nonce}.json"),
+        "ddl_proof_path": ddl_proof_path.name,
         "receipt_path": receipt_path.name,
         "migration_revision": "126",
         "issued_at": (started_at - timedelta(seconds=1)).isoformat(),
         "expires_at": (completed_at + timedelta(minutes=2)).isoformat(),
     }
+    binding_fields = (
+        "inventory_sha256",
+        "preflight_report_sha256",
+        "suppression_manifest_sha256",
+        "writer_manifest_sha256",
+        "writer_privilege_revocation_artifact_sha256",
+        "approved_marker_sha256",
+        "maintenance_fence_artifact_sha256",
+        "instance_inventory_artifact_sha256",
+        "physical_schema_contract_sha256",
+        "target_profile_physical_contract_sha256",
+        "target_profile_policy_backfill_sha256",
+        "nonce",
+        "contract_path",
+        "ddl_proof_path",
+        "migration_revision",
+    )
+    contract["ddl_proof_binding_sha256"] = hashlib.sha256(
+        canonical_json_bytes({field: contract[field] for field in binding_fields})
+    ).hexdigest()
     contract["contract_sha256"] = hashlib.sha256(
         canonical_json_bytes(contract)
     ).hexdigest()
 
-    migration._write_success_receipt(contract, started_at)
-    receipt = json.loads(receipt_path.read_bytes())
+    migration._write_ddl_proof(contract, started_at)
+    proof = json.loads(ddl_proof_path.read_bytes())
 
-    assert script.validate_execution_receipt(
-        receipt,
+    assert script.validate_ddl_proof(
+        proof,
         evidence_contract=contract,
-        receipt_resolved_path=receipt_path,
+        ddl_proof_resolved_path=ddl_proof_path,
     ) is True
-    with pytest.raises(CutoverGuardError, match="receipt write failed"):
-        migration._write_success_receipt(contract, started_at)
+    assert proof["status"] == "ddl_verified"
+    assert "applied_revision" not in proof
+    assert not receipt_path.exists()
+    with pytest.raises(CutoverGuardError, match="DDL proof.*publish failed"):
+        migration._write_ddl_proof(contract, started_at)
+
+    crash_nonce = "ddl-proof-crash-20260830"
+    crash_path = evidence_root / f"migration-ddl-proof-{crash_nonce}.json"
+    crash_contract = {
+        **{
+            key: value
+            for key, value in contract.items()
+            if key not in {"contract_sha256", "ddl_proof_binding_sha256"}
+        },
+        "nonce": crash_nonce,
+        "contract_path": str(
+            evidence_root / f"migration-contract-{crash_nonce}.json"
+        ),
+        "ddl_proof_path": crash_path.name,
+        "receipt_path": f"migration-receipt-{crash_nonce}.json",
+    }
+    crash_contract["ddl_proof_binding_sha256"] = script._ddl_proof_binding_sha256(
+        crash_contract
+    )
+    crash_contract["contract_sha256"] = hashlib.sha256(
+        canonical_json_bytes(crash_contract)
+    ).hexdigest()
+    monkeypatch.setattr(
+        migration.os,
+        "link",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            OSError("synthetic stage proof publication crash")
+        ),
+    )
+    with pytest.raises(CutoverGuardError, match="DDL proof.*publish failed"):
+        migration._write_ddl_proof(crash_contract, started_at)
+    assert not crash_path.exists()
+    assert not tuple(evidence_root.glob(f".{crash_path.name}.*.tmp"))
 
 
 def test_target_profile_alterations_require_bound_per_profile_policy_without_placeholder():
@@ -793,8 +884,10 @@ def test_upgrade_binds_target_profile_pre_and_post_contracts_and_agent_proof():
     assert "verify_target_profile_post_state" in source
     assert source.count("snapshot_unrelated_agent_rows") >= 2
     assert source.count("verify_unrelated_unchanged") >= 2
+    assert source.count("validate_mysql_writer_privilege_gate") == 1
 
     preflight = source.index("migration_preflight")
+    privilege_recheck = source.index("validate_mysql_writer_privilege_gate", preflight)
     drop_incoming_fks = source.index("_drop_foreign_keys_into_retired", preflight)
     delete_closure = source.index("_delete_agent_history_closure", drop_incoming_fks)
     verify_closure = source.index("verify_agent_history_removed", delete_closure)
@@ -802,10 +895,11 @@ def test_upgrade_binds_target_profile_pre_and_post_contracts_and_agent_proof():
     alter_profiles = source.index("_alter_target_profiles", drop_tables)
     create_tables = source.index("_create_target_tables", alter_profiles)
     verify_post = source.index("verify_target_profile_post_state", create_tables)
-    receipt = source.index("_write_success_receipt", verify_post)
-    assert preflight < drop_incoming_fks < delete_closure < verify_closure
+    ddl_proof = source.index("_write_ddl_proof", verify_post)
+    assert preflight < privilege_recheck < drop_incoming_fks < delete_closure
+    assert delete_closure < verify_closure
     assert verify_closure < drop_tables < alter_profiles < create_tables
-    assert create_tables < verify_post < receipt
+    assert create_tables < verify_post < ddl_proof
 
 
 def test_drop_scope_is_exact_and_dependency_safe():
@@ -818,6 +912,58 @@ def test_drop_scope_is_exact_and_dependency_safe():
     assert upgrade_source.index("_drop_foreign_keys_into_retired") < (
         upgrade_source.index("_delete_agent_history_closure")
     ) < upgrade_source.index("_drop_retired_tables")
+
+
+@pytest.mark.parametrize("drift_kind", ("new_fk", "changed_action"))
+def test_incoming_fk_drift_fails_before_any_constraint_drop(monkeypatch, drift_kind):
+    migration = _load_migration()
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text("PRAGMA foreign_keys=ON"))
+        connection.execute(
+            text("CREATE TABLE ark_sales_search_jobs (id INTEGER PRIMARY KEY)")
+        )
+        connection.execute(
+            text(
+                "CREATE TABLE approved_integration ("
+                "id INTEGER PRIMARY KEY, job_id INTEGER, "
+                "CONSTRAINT fk_approved_job FOREIGN KEY(job_id) "
+                "REFERENCES ark_sales_search_jobs(id) "
+                "ON UPDATE RESTRICT ON DELETE RESTRICT)"
+            )
+        )
+    calls = []
+    monkeypatch.setattr(
+        migration.op,
+        "drop_constraint",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    with Session(engine) as db:
+        approved = snapshot_incoming_retired_foreign_keys(db)
+        if drift_kind == "new_fk":
+            db.execute(
+                text(
+                    "CREATE TABLE unexpected_integration ("
+                    "id INTEGER PRIMARY KEY, job_id INTEGER, "
+                    "CONSTRAINT fk_unexpected_job FOREIGN KEY(job_id) "
+                    "REFERENCES ark_sales_search_jobs(id))"
+                )
+            )
+        else:
+            approved["foreign_keys"][0]["ondelete"] = "CASCADE"
+            payload = {
+                key: value
+                for key, value in approved.items()
+                if key != "snapshot_sha256"
+            }
+            approved["snapshot_sha256"] = hashlib.sha256(
+                canonical_json_bytes(payload)
+            ).hexdigest()
+
+        with pytest.raises(CutoverGuardError, match="incoming.*FK.*drift"):
+            migration._drop_foreign_keys_into_retired(db, approved)
+
+    assert calls == []
 
 
 def test_agent_deletion_is_exact_ordered_and_chunked():

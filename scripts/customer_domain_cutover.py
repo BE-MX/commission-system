@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import text
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_ROOT = REPO_ROOT / "backend"
@@ -35,13 +37,16 @@ from app.customer.cutover_service import (  # noqa: E402
     canonical_json_bytes,
     expected_customer_schema_sha256,
     load_bound_target_profile_policy_backfill,
+    load_writer_privilege_revocation_evidence,
     read_maintenance_fence_evidence,
     resolve_agent_history_closure,
+    snapshot_incoming_retired_foreign_keys,
     snapshot_unrelated_agent_rows,
     validate_target_profile_physical_state,
     validate_target_profile_policy_backfill_against_live_rows,
     validate_target_profile_policy_backfill_artifact,
     validate_customer_physical_schema_contract,
+    validate_live_customer_cutover_writer_gate,
     validate_suppression_manifest,
     verify_agent_history_removed,
     verify_expected_customer_table_state,
@@ -58,6 +63,24 @@ REVISION_SCHEMA_RESOURCE_PATH = (
     BACKEND_ROOT / "alembic/versions/126_unified_customer_domain_schema.json"
 )
 _CUTOVER_NONCE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
+DDL_PROOF_BINDING_FIELDS = (
+    "inventory_sha256",
+    "preflight_report_sha256",
+    "suppression_manifest_sha256",
+    "writer_manifest_sha256",
+    "writer_privilege_revocation_artifact_sha256",
+    "approved_marker_sha256",
+    "maintenance_fence_artifact_sha256",
+    "instance_inventory_artifact_sha256",
+    "physical_schema_contract_sha256",
+    "target_profile_physical_contract_sha256",
+    "target_profile_policy_backfill_sha256",
+    "nonce",
+    "contract_path",
+    "ddl_proof_path",
+    "migration_revision",
+)
+FINAL_RECEIPT_BINDING_FIELDS = (*DDL_PROOF_BINDING_FIELDS, "receipt_path")
 
 
 def resolve_read_path(value: str | Path) -> Path:
@@ -155,6 +178,16 @@ def _report_hash(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
 
 
+def _ddl_proof_binding_sha256(contract: Mapping[str, Any]) -> str:
+    try:
+        payload = {field: contract[field] for field in DDL_PROOF_BINDING_FIELDS}
+    except KeyError as exc:
+        raise CutoverGuardError(
+            f"DDL proof binding is missing {exc.args[0]}"
+        ) from exc
+    return _report_hash(payload)
+
+
 def _load_revision_target_profile_physical_contract() -> dict[str, Any]:
     try:
         resource = json.loads(REVISION_SCHEMA_RESOURCE_PATH.read_bytes())
@@ -181,12 +214,14 @@ def build_preflight_report(db) -> dict[str, Any]:
     inventory = build_inventory(db)
     closure = resolve_agent_history_closure(db, inventory)
     unrelated = snapshot_unrelated_agent_rows(db, closure)
+    incoming_foreign_keys = snapshot_incoming_retired_foreign_keys(db)
     core = {
         "schema_version": 1,
         "generated_at": _audit_generated_at(),
         "inventory": inventory.to_dict(),
         "agent_history_closure": closure.to_dict(),
         "unrelated_agent_snapshot": unrelated.to_dict(),
+        "incoming_retired_foreign_keys": incoming_foreign_keys,
     }
     return {**core, "report_sha256": _report_hash(core)}
 
@@ -208,6 +243,14 @@ def _validate_preflight_report(raw: Mapping[str, Any]) -> None:
         CutoverInventory.from_dict(raw["inventory"])
         AgentHistoryClosure.from_dict(raw["agent_history_closure"])
         AgentPreservationSnapshot.from_dict(raw["unrelated_agent_snapshot"])
+        incoming = raw["incoming_retired_foreign_keys"]
+        if not isinstance(incoming, Mapping):
+            raise CutoverGuardError("preflight incoming retired FK snapshot is invalid")
+        payload = {
+            key: value for key, value in incoming.items() if key != "snapshot_sha256"
+        }
+        if incoming.get("snapshot_sha256") != _report_hash(payload):
+            raise CutoverGuardError("preflight incoming retired FK snapshot hash mismatch")
     except KeyError as exc:
         raise CutoverGuardError(f"preflight report is missing {exc.args[0]}") from exc
 
@@ -261,12 +304,85 @@ def _validate_suppression_manifest(
         validate_suppression_manifest(db, raw, hmac_key, now=now)
 
 
+def validate_ddl_proof(
+    proof: Mapping[str, Any],
+    *,
+    evidence_contract: Mapping[str, Any],
+    ddl_proof_resolved_path: Path,
+) -> bool:
+    if proof.get("status") != "ddl_verified":
+        raise CutoverGuardError("migration DDL proof is not verified")
+    contract_payload = {
+        key: value for key, value in evidence_contract.items() if key != "contract_sha256"
+    }
+    if evidence_contract.get("contract_sha256") != _report_hash(contract_payload):
+        raise CutoverGuardError("DDL proof contract SHA-256 does not match its content")
+    binding_sha256 = _ddl_proof_binding_sha256(evidence_contract)
+    if evidence_contract.get("ddl_proof_binding_sha256") != binding_sha256:
+        raise CutoverGuardError("DDL proof binding SHA-256 is invalid")
+    bindings = {
+        field: evidence_contract.get(field)
+        for field in DDL_PROOF_BINDING_FIELDS
+        if field != "migration_revision"
+    }
+    bindings.update(
+        {
+            "contract_sha256": evidence_contract.get("contract_sha256"),
+            "ddl_proof_binding_sha256": binding_sha256,
+            "migration_revision": evidence_contract.get("migration_revision"),
+            "schema_signature_sha256": evidence_contract.get(
+                "physical_schema_contract_sha256"
+            ),
+        }
+    )
+    expected_fields = {
+        *bindings,
+        "started_at",
+        "completed_at",
+        "status",
+        "ddl_proof_sha256",
+    }
+    if set(proof) != expected_fields:
+        raise CutoverGuardError("migration DDL proof field set is not exact")
+    for field_name, expected in bindings.items():
+        if proof.get(field_name) != expected:
+            raise CutoverGuardError(f"DDL proof does not bind {field_name}")
+    relative_path = Path(str(evidence_contract.get("ddl_proof_path")))
+    expected_name = f"migration-ddl-proof-{evidence_contract.get('nonce')}.json"
+    if (
+        relative_path.is_absolute()
+        or ".." in relative_path.parts
+        or relative_path.parent != Path(".")
+        or relative_path.name != expected_name
+    ):
+        raise CutoverGuardError("contract DDL proof path is not canonical")
+    if ddl_proof_resolved_path.resolve() != resolve_evidence_output_path(relative_path):
+        raise CutoverGuardError("DDL proof path does not match contract")
+    started_at = _parse_beijing(proof.get("started_at"), "DDL proof started_at")
+    completed_at = _parse_beijing(proof.get("completed_at"), "DDL proof completed_at")
+    issued_at = _parse_beijing(evidence_contract.get("issued_at"), "contract issued_at")
+    expires_at = _parse_beijing(evidence_contract.get("expires_at"), "contract expires_at")
+    if not issued_at <= started_at <= expires_at or completed_at < started_at:
+        raise CutoverGuardError("DDL proof timestamps are outside the approved start window")
+    payload = {key: value for key, value in proof.items() if key != "ddl_proof_sha256"}
+    if proof.get("ddl_proof_sha256") != _report_hash(payload):
+        raise CutoverGuardError("DDL proof SHA-256 does not match its content")
+    return True
+
+
 def validate_execution_receipt(
     receipt: Mapping[str, Any],
     *,
     evidence_contract: Mapping[str, Any],
+    ddl_proof: Mapping[str, Any],
+    ddl_proof_resolved_path: Path,
     receipt_resolved_path: Path,
 ) -> bool:
+    validate_ddl_proof(
+        ddl_proof,
+        evidence_contract=evidence_contract,
+        ddl_proof_resolved_path=ddl_proof_resolved_path,
+    )
     if receipt.get("status") != "succeeded":
         raise CutoverGuardError("cutover execution receipt is not successful")
     contract_payload = {
@@ -276,29 +392,28 @@ def validate_execution_receipt(
         raise CutoverGuardError("execution contract SHA-256 does not match its content")
     bindings = {
         field_name: evidence_contract.get(field_name)
-        for field_name in (
-            "inventory_sha256",
-            "preflight_report_sha256",
-            "suppression_manifest_sha256",
-            "writer_manifest_sha256",
-            "approved_marker_sha256",
-            "maintenance_fence_artifact_sha256",
-            "instance_inventory_artifact_sha256",
-            "physical_schema_contract_sha256",
-            "target_profile_physical_contract_sha256",
-            "target_profile_policy_backfill_sha256",
-            "nonce",
-        )
+        for field_name in FINAL_RECEIPT_BINDING_FIELDS
     }
     bindings.update({
         "contract_sha256": evidence_contract.get("contract_sha256"),
-        "contract_path": evidence_contract.get("contract_path"),
-        "receipt_path": evidence_contract.get("receipt_path"),
-        "migration_revision": evidence_contract.get("migration_revision"),
+        "ddl_proof_binding_sha256": evidence_contract.get(
+            "ddl_proof_binding_sha256"
+        ),
+        "ddl_proof_sha256": ddl_proof.get("ddl_proof_sha256"),
+        "applied_revision": CUTOVER_MIGRATION_REVISION,
         "schema_signature_sha256": evidence_contract.get(
             "physical_schema_contract_sha256"
         ),
     })
+    expected_fields = {
+        *bindings,
+        "status",
+        "started_at",
+        "completed_at",
+        "receipt_sha256",
+    }
+    if set(receipt) != expected_fields:
+        raise CutoverGuardError("execution receipt field set is not exact")
     for field_name, expected in bindings.items():
         if receipt.get(field_name) != expected:
             raise CutoverGuardError(f"execution receipt does not bind {field_name}")
@@ -322,6 +437,8 @@ def validate_execution_receipt(
     expires_at = _parse_beijing(evidence_contract.get("expires_at"), "contract expires_at")
     if not issued_at <= started_at <= completed_at <= expires_at:
         raise CutoverGuardError("execution receipt timestamps exceed approved window")
+    if receipt.get("started_at") != ddl_proof.get("started_at"):
+        raise CutoverGuardError("execution receipt does not bind DDL proof start")
     payload = {key: value for key, value in receipt.items() if key != "receipt_sha256"}
     if receipt.get("receipt_sha256") != _report_hash(payload):
         raise CutoverGuardError("execution receipt SHA-256 does not match its content")
@@ -335,6 +452,8 @@ def verify_after(
     suppression_manifest: Mapping[str, Any],
     writer_manifest: Mapping[str, Any],
     approved_marker: Mapping[str, Any],
+    ddl_proof: Mapping[str, Any],
+    ddl_proof_path: Path,
     execution_receipt: Mapping[str, Any],
     execution_receipt_path: Path,
     physical_schema_contract: Mapping[str, Any],
@@ -356,6 +475,10 @@ def verify_after(
             target_profile_policy_backfill
         )
     )
+    fence = read_maintenance_fence_evidence(writer_manifest)
+    _, privilege_artifact_sha256, privilege_artifact_path = (
+        load_writer_privilege_revocation_evidence(writer_manifest)
+    )
     if (
         suppression_manifest.get("inventory_sha256") != inventory.inventory_sha256
         or suppression_manifest.get("preflight_report_sha256") != report_sha256
@@ -372,6 +495,9 @@ def verify_after(
         ],
         "target_profile_policy_backfill_sha256": (
             target_profile_policy_backfill_sha256
+        ),
+        "writer_privilege_revocation_artifact_sha256": (
+            fence["writer_privilege_revocation_artifact_sha256"]
         ),
     }
     if approved_marker.get("approved") is not True:
@@ -392,9 +518,25 @@ def verify_after(
             raise CutoverGuardError(
                 f"execution contract does not bind original {field_name}"
             )
+    operational_bindings = {
+        "maintenance_fence_artifact": fence["artifact_path"],
+        "maintenance_fence_artifact_sha256": fence["artifact_sha256"],
+        "instance_inventory_artifact_sha256": fence[
+            "instance_inventory_artifact_sha256"
+        ],
+        "writer_privilege_revocation_artifact": privilege_artifact_path,
+        "writer_privilege_revocation_artifact_sha256": privilege_artifact_sha256,
+    }
+    for field_name, expected in operational_bindings.items():
+        if contract.get(field_name) != expected:
+            raise CutoverGuardError(
+                f"execution contract does not bind original {field_name}"
+            )
     validate_execution_receipt(
         execution_receipt,
         evidence_contract=contract,
+        ddl_proof=ddl_proof,
+        ddl_proof_resolved_path=ddl_proof_path,
         receipt_resolved_path=execution_receipt_path,
     )
     bound_policy_backfill = load_bound_target_profile_policy_backfill(contract)
@@ -404,19 +546,15 @@ def verify_after(
         raise CutoverGuardError(
             "execution contract target-profile policy backfill does not match review input"
         )
-    closure = AgentHistoryClosure.from_dict(preflight_report["agent_history_closure"])
-    before = AgentPreservationSnapshot.from_dict(
-        preflight_report["unrelated_agent_snapshot"]
-    )
-    verify_agent_history_removed(db, closure)
-    verify_frozen_business_ids_removed(db, inventory)
-    after = snapshot_unrelated_agent_rows(db, closure)
-    verify_unrelated_unchanged(before, after)
-    verify_expected_customer_table_state(db, physical_schema_contract)
-    verify_target_profile_post_state(
+    _post_migration_verify(
         db,
-        target_profile_contract["after"],
-        target_profile_policy_backfill,
+        preflight_report=preflight_report,
+        physical_schema_contract=physical_schema_contract,
+        target_profile_physical_contract=target_profile_contract,
+        target_profile_policy_backfill=target_profile_policy_backfill,
+        evidence_contract=contract,
+        writer_manifest=writer_manifest,
+        clock=lambda: beijing_now().replace(tzinfo=BEIJING_TIMEZONE),
     )
     return True
 
@@ -441,6 +579,96 @@ def _load_execution_contract(receipt: Mapping[str, Any]) -> dict[str, Any]:
     return raw
 
 
+def _verify_applied_revision(db) -> bool:
+    try:
+        rows = tuple(
+            db.execute(text("SELECT version_num FROM alembic_version")).scalars()
+        )
+    except Exception as exc:
+        raise CutoverGuardError("cannot read alembic_version after migration") from exc
+    if rows != (CUTOVER_MIGRATION_REVISION,):
+        raise CutoverGuardError(
+            "alembic_version must contain exactly revision 126 after migration"
+        )
+    return True
+
+
+def _post_migration_verify(
+    db,
+    *,
+    preflight_report: Mapping[str, Any],
+    physical_schema_contract: Mapping[str, Any],
+    target_profile_physical_contract: Mapping[str, Any],
+    target_profile_policy_backfill: Mapping[str, Any],
+    evidence_contract: Mapping[str, Any],
+    writer_manifest: Mapping[str, Any],
+    clock: Callable[[], datetime],
+) -> bool:
+    """Re-open the database and independently prove the post-cutover state."""
+    if db.get_bind().dialect.name == "mysql":
+        try:
+            db.execute(text("SET TRANSACTION READ ONLY"))
+        except Exception as exc:
+            raise CutoverGuardError(
+                "cannot establish read-only post-migration verification"
+            ) from exc
+        validate_live_customer_cutover_writer_gate(
+            db,
+            evidence_contract,
+            writer_manifest,
+            now=clock(),
+        )
+    _verify_applied_revision(db)
+    inventory = CutoverInventory.from_dict(preflight_report["inventory"])
+    closure = AgentHistoryClosure.from_dict(
+        preflight_report["agent_history_closure"]
+    )
+    before = AgentPreservationSnapshot.from_dict(
+        preflight_report["unrelated_agent_snapshot"]
+    )
+    verify_agent_history_removed(db, closure)
+    verify_frozen_business_ids_removed(db, inventory)
+    after = snapshot_unrelated_agent_rows(db, closure)
+    verify_unrelated_unchanged(before, after)
+    verify_expected_customer_table_state(db, physical_schema_contract)
+    verify_target_profile_post_state(
+        db,
+        target_profile_physical_contract["after"],
+        target_profile_policy_backfill,
+    )
+    if db.get_bind().dialect.name == "mysql":
+        validate_live_customer_cutover_writer_gate(
+            db,
+            evidence_contract,
+            writer_manifest,
+            now=clock(),
+        )
+    return True
+
+
+def _build_execution_receipt(
+    contract: Mapping[str, Any],
+    ddl_proof: Mapping[str, Any],
+    *,
+    completed_at: datetime,
+) -> dict[str, Any]:
+    receipt = {
+        "status": "succeeded",
+        **{
+            field: contract[field]
+            for field in FINAL_RECEIPT_BINDING_FIELDS
+        },
+        "contract_sha256": contract["contract_sha256"],
+        "ddl_proof_binding_sha256": contract["ddl_proof_binding_sha256"],
+        "ddl_proof_sha256": ddl_proof["ddl_proof_sha256"],
+        "applied_revision": CUTOVER_MIGRATION_REVISION,
+        "schema_signature_sha256": contract["physical_schema_contract_sha256"],
+        "started_at": ddl_proof["started_at"],
+        "completed_at": completed_at.isoformat(timespec="seconds"),
+    }
+    return {**receipt, "receipt_sha256": _report_hash(receipt)}
+
+
 def apply_reset(
     *,
     db,
@@ -454,6 +682,7 @@ def apply_reset(
     target_profile_policy_backfill: Mapping[str, Any],
     subprocess_runner: Callable[..., Any] | None = None,
     now: datetime | None = None,
+    clock: Callable[[], datetime] | None = None,
 ) -> CutoverInventory:
     """Validate the complete evidence chain and invoke the fixed Alembic command."""
     _validate_preflight_report(preflight_report)
@@ -501,6 +730,7 @@ def apply_reset(
         report_sha256,
         now=now,
     )
+    fence = read_maintenance_fence_evidence(stopped_writer_manifest)
     marker = _read_json(approved_marker_path)
     if not isinstance(marker, dict) or marker.get("approved") is not True:
         raise CutoverGuardError("approved marker must contain approved=true")
@@ -509,6 +739,9 @@ def apply_reset(
         "preflight_report_sha256": report_sha256,
         "suppression_manifest_sha256": suppression_sha256,
         "writer_manifest_sha256": writer_sha256,
+        "writer_privilege_revocation_artifact_sha256": fence[
+            "writer_privilege_revocation_artifact_sha256"
+        ],
         "physical_schema_contract_sha256": physical_schema_contract_sha256,
         "target_profile_physical_contract_sha256": target_profile_contract[
             "contract_sha256"
@@ -527,12 +760,18 @@ def apply_reset(
     if expires_at <= current or expires_at - current > timedelta(minutes=5):
         raise CutoverGuardError("approved marker is expired or exceeds five-minute lifetime")
     marker_sha256 = _report_hash(marker)
-    fence = read_maintenance_fence_evidence(stopped_writer_manifest)
+    ddl_proof_path = resolve_evidence_output_path(
+        f"migration-ddl-proof-{nonce}.json"
+    )
     receipt_path = resolve_evidence_output_path(f"migration-receipt-{nonce}.json")
     contract_path = resolve_evidence_output_path(f"migration-contract-{nonce}.json")
-    if receipt_path.exists():
+    existing_outputs = [
+        path for path in (ddl_proof_path, receipt_path, contract_path) if path.exists()
+    ]
+    if existing_outputs:
         raise CutoverGuardError(
-            f"receipt path already exists; evidence={receipt_path}; keep all writers stopped"
+            "cutover output path already exists; "
+            f"evidence={existing_outputs[0]}; keep all writers stopped"
         )
     bound_values = {
         "preflight_report": preflight_report,
@@ -573,11 +812,18 @@ def apply_reset(
         "instance_inventory_artifact_sha256": fence[
             "instance_inventory_artifact_sha256"
         ],
+        "writer_privilege_revocation_artifact": fence[
+            "writer_privilege_revocation_artifact"
+        ],
         "contract_path": str(contract_path),
+        "ddl_proof_path": ddl_proof_path.relative_to(
+            EVIDENCE_ROOT.resolve()
+        ).as_posix(),
         "receipt_path": receipt_path.relative_to(EVIDENCE_ROOT.resolve()).as_posix(),
         "migration_revision": CUTOVER_MIGRATION_REVISION,
         "evidence_artifacts": evidence_artifacts,
     }
+    contract["ddl_proof_binding_sha256"] = _ddl_proof_binding_sha256(contract)
     contract["contract_sha256"] = _report_hash(contract)
     try:
         _write_canonical_json(contract_path, contract)
@@ -611,18 +857,62 @@ def apply_reset(
             "keep all writers stopped and inspect the migration receipt"
         ) from exc
     try:
-        receipt = _read_json(receipt_path)
-        if not isinstance(receipt, Mapping):
-            raise CutoverGuardError("migration receipt must be an object")
+        ddl_proof = _read_json(ddl_proof_path)
+        if not isinstance(ddl_proof, Mapping):
+            raise CutoverGuardError("migration DDL proof must be an object")
+        validate_ddl_proof(
+            ddl_proof,
+            evidence_contract=contract,
+            ddl_proof_resolved_path=ddl_proof_path,
+        )
+        postverify_clock = clock or (
+            (lambda: now)
+            if now is not None
+            else (lambda: beijing_now().replace(tzinfo=BEIJING_TIMEZONE))
+        )
+        _post_migration_verify(
+            db,
+            preflight_report=preflight_report,
+            physical_schema_contract=physical_schema_contract,
+            target_profile_physical_contract=target_profile_contract,
+            target_profile_policy_backfill=target_profile_policy_backfill,
+            evidence_contract=contract,
+            writer_manifest=stopped_writer_manifest,
+            clock=postverify_clock,
+        )
+        finalized_at = postverify_clock()
+        proof_completed_at = _parse_beijing(
+            ddl_proof.get("completed_at"), "DDL proof completed_at"
+        )
+        if finalized_at < proof_completed_at:
+            finalized_at = proof_completed_at
+        receipt = _build_execution_receipt(
+            contract,
+            ddl_proof,
+            completed_at=finalized_at,
+        )
         validate_execution_receipt(
             receipt,
             evidence_contract=contract,
+            ddl_proof=ddl_proof,
+            ddl_proof_resolved_path=ddl_proof_path,
+            receipt_resolved_path=receipt_path,
+        )
+        _write_canonical_json(receipt_path, receipt)
+        published_receipt = _read_json(receipt_path)
+        if not isinstance(published_receipt, Mapping):
+            raise CutoverGuardError("published execution receipt is not an object")
+        validate_execution_receipt(
+            published_receipt,
+            evidence_contract=contract,
+            ddl_proof=ddl_proof,
+            ddl_proof_resolved_path=ddl_proof_path,
             receipt_resolved_path=receipt_path,
         )
     except CutoverGuardError as exc:
         raise CutoverGuardError(
-            f"Alembic exited successfully but receipt is invalid; evidence={receipt_path}; "
-            "keep all writers stopped and inspect the migration receipt"
+            "Alembic exited successfully but finalization failed; "
+            f"evidence={contract_path}; keep all writers stopped and inspect the DDL proof"
         ) from exc
     return inventory
 
@@ -716,6 +1006,13 @@ def _command_verify_after(args: argparse.Namespace) -> None:
     marker = _read_json(resolve_read_path(args.approved_marker))
     receipt_path = resolve_read_path(args.execution_receipt)
     receipt = _read_json(receipt_path)
+    if not isinstance(receipt, dict):
+        raise CutoverGuardError("execution receipt must be a JSON object")
+    contract = _load_execution_contract(receipt)
+    ddl_proof_path = resolve_evidence_output_path(
+        str(contract.get("ddl_proof_path"))
+    )
+    ddl_proof = _read_json(ddl_proof_path)
     physical_schema_contract = _read_json(
         resolve_read_path(args.physical_schema_contract)
     )
@@ -727,6 +1024,7 @@ def _command_verify_after(args: argparse.Namespace) -> None:
         for item in (
             writer,
             marker,
+            ddl_proof,
             receipt,
             physical_schema_contract,
             target_profile_policy_backfill,
@@ -740,6 +1038,8 @@ def _command_verify_after(args: argparse.Namespace) -> None:
             suppression_manifest=suppression,
             writer_manifest=writer,
             approved_marker=marker,
+            ddl_proof=ddl_proof,
+            ddl_proof_path=ddl_proof_path,
             execution_receipt=receipt,
             execution_receipt_path=receipt_path,
             physical_schema_contract=physical_schema_contract,
