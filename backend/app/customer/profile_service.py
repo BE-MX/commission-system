@@ -54,7 +54,18 @@ _CLASSIFICATION_ORDER = (
     "personal_contact",
     "restricted_internal",
 )
-_VISIBILITY_ORDER = ("all_authorized", "customer_team", "management")
+_VISIBILITY_ORDER = (
+    "all_authorized",
+    "customer_team",
+    "management",
+    "private",
+)
+_SHARED_VISIBILITIES = frozenset({
+    "all_authorized",
+    "customer_team",
+    "management",
+})
+_AGENT_VISIBILITIES = frozenset({"all_authorized", "customer_team"})
 _PROFILE_SECTIONS = (
     "identity",
     "business",
@@ -69,6 +80,34 @@ _PROFILE_SECTIONS = (
     "recommended_actions",
     "quality",
 )
+_SEMANTIC_SET_ARRAY_PATHS = frozenset({
+    ("identity", "strong_identities"),
+    ("identity", "aliases"),
+    ("business", "channels"),
+    ("business", "scale_signals"),
+    ("business", "related_companies"),
+    ("ownership", "collaborator_user_ids"),
+    ("preferences", "expressed"),
+    ("preferences", "observed"),
+    ("preferences", "inferred"),
+    ("preferences", "confirmed"),
+    ("preferences", "conflicts"),
+    ("behavior", "observed"),
+    ("behavior", "inferred"),
+    ("behavior", "confirmed"),
+    ("risks", "items"),
+    ("quality", "conflicts"),
+    ("quality", "preference_conflicts"),
+    ("quality", "corrections"),
+    ("quality", "stale_facts"),
+    ("quality", "gaps"),
+    ("quality", "open_questions"),
+})
+_RISK_FACT_TYPES = {
+    "behavior.inferred.churn_risk": "churn_risk",
+    "behavior.inferred.supplier_switch_signal": "supplier_switch_signal",
+    "behavior.observed.silence_period": "silence_period",
+}
 
 
 class CompileObserver(Protocol):
@@ -164,7 +203,10 @@ def _hash(value) -> str:
 
 
 def _max_classification(values) -> str:
-    known = [value for value in values if value in _CLASSIFICATION_ORDER]
+    known = [
+        value if value in _CLASSIFICATION_ORDER else "restricted_internal"
+        for value in values
+    ]
     return max(
         known or ["public_business"],
         key=_CLASSIFICATION_ORDER.index,
@@ -172,8 +214,11 @@ def _max_classification(values) -> str:
 
 
 def _max_visibility(values) -> str:
-    known = [value for value in values if value in _VISIBILITY_ORDER]
-    return max(known or ["all_authorized"], key=_VISIBILITY_ORDER.index)
+    normalized = [
+        value if value in _VISIBILITY_ORDER else "private"
+        for value in values
+    ]
+    return max(normalized or ["all_authorized"], key=_VISIBILITY_ORDER.index)
 
 
 def _active_at(
@@ -266,6 +311,7 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
             "confidence": _json_value(row.confidence),
             "data_classification": row.data_classification,
             "visibility_scope": row.visibility_scope,
+            "agent_run_id": row.agent_run_id,
             "fact_fingerprint": row.fact_fingerprint,
             "effective_from": row.effective_from,
             "effective_to": row.effective_to,
@@ -392,20 +438,47 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
         "items": tuple(items_by_order.get(row.id, ())),
     } for row in db.query(CustomerOrder).filter(CustomerOrder.customer_id == customer.id)]
 
-    annotations = [{
-        "id": row.id,
-        "annotation_type": row.annotation_type,
-        "content": _json_value(row.content_json or {}),
-        "policy_scope_type": row.policy_scope_type,
-        "policy_scope_ref_id": row.policy_scope_ref_id,
-        "policy_effective_at": row.policy_effective_at,
-        "visibility_scope": row.visibility,
-        "data_classification": row.data_classification,
-        "created_at": row.created_at,
-    } for row in db.query(CustomerAnnotation).filter(
+    annotations = []
+    for row in db.query(CustomerAnnotation).filter(
         CustomerAnnotation.customer_id == customer.id,
         CustomerAnnotation.status == "active",
-    )]
+    ):
+        if row.visibility == "private":
+            continue
+        if row.visibility not in _SHARED_VISIBILITIES:
+            if row.annotation_type == "correction":
+                raise ProfileCompileError(
+                    "CORRECTION_ANNOTATION_INVALID",
+                    "active correction has an invalid shared visibility",
+                )
+            continue
+        target_fact = None
+        if row.annotation_type == "correction":
+            target_fact = fact_by_id.get(row.target_fact_id)
+            if target_fact is None:
+                raise ProfileCompileError(
+                    "CORRECTION_ANNOTATION_INVALID",
+                    "active correction target must belong to the same customer",
+                )
+        annotations.append({
+            "id": row.id,
+            "annotation_type": row.annotation_type,
+            "target_fact_id": row.target_fact_id,
+            "target_fact_key": target_fact.fact_key if target_fact else None,
+            "content": _json_value(row.content_json or {}),
+            "policy_scope_type": row.policy_scope_type,
+            "policy_scope_ref_id": row.policy_scope_ref_id,
+            "policy_effective_at": row.policy_effective_at,
+            "visibility_scope": _max_visibility([
+                row.visibility,
+                target_fact.visibility_scope if target_fact else row.visibility,
+            ]),
+            "data_classification": _max_classification([
+                row.data_classification,
+                target_fact.data_classification if target_fact else row.data_classification,
+            ]),
+            "created_at": row.created_at,
+        })
 
     return _Snapshot(
         customer={
@@ -494,9 +567,27 @@ def _section_for_fact_key(fact_key: str) -> str:
 
 
 def _build_profile(snapshot: _Snapshot, now: datetime):
+    corrections = [
+        annotation for annotation in snapshot.annotations
+        if annotation["annotation_type"] == "correction"
+    ]
+    corrected_fact_ids = {
+        annotation["target_fact_id"] for annotation in corrections
+    }
+    corrected_fact_keys = {
+        annotation["target_fact_key"] for annotation in corrections
+    }
     current_facts: list[dict] = []
     stale_facts: list[dict] = []
     for fact in snapshot.facts:
+        if fact["id"] in corrected_fact_ids or (
+            fact["fact_key"] in corrected_fact_keys
+            and (
+                fact["fact_layer"] == "inferred"
+                or fact["agent_run_id"] is not None
+            )
+        ):
+            continue
         if (
             fact["verification_status"] in {"rejected", "superseded"}
             or not _active_at(fact["effective_from"], fact["effective_to"], now)
@@ -710,11 +801,29 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
     for annotation in active_dnc:
         risk_items.append({
             "risk_type": "do_not_contact",
+            "risk_source": "annotation",
             "scope_type": annotation["policy_scope_type"],
             "scope_ref_id": annotation["policy_scope_ref_id"],
             "data_classification": annotation["data_classification"],
             "visibility_scope": annotation["visibility_scope"],
         })
+    for fact_key, risk_type in _RISK_FACT_TYPES.items():
+        entry = fact_entries.get(fact_key)
+        if entry is None or (
+            entry["visibility_scope"] not in _SHARED_VISIBILITIES
+            or entry["data_classification"] not in _CLASSIFICATION_ORDER
+        ):
+            continue
+        risk_items.append({
+            **entry,
+            "risk_type": risk_type,
+        })
+    risk_items.sort(key=lambda item: (
+        item["risk_type"],
+        item.get("fact_id", 0),
+        item.get("scope_type") or "",
+        item.get("scope_ref_id") or "",
+    ))
     risks = {
         "has_active_dnc": bool(active_dnc),
         "items": risk_items,
@@ -772,6 +881,27 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
     used_visibilities.extend(item["visibility_scope"] for item in risk_items)
     used_visibilities.extend(item["visibility_scope"] for item in snapshot.conflicts)
 
+    correction_summary = sorted(
+        [{
+            "target_fact_id": item["target_fact_id"],
+            "fact_key": item["target_fact_key"],
+            "status": "active",
+            "data_classification": item["data_classification"],
+            "visibility_scope": item["visibility_scope"],
+            "open_question": f"review_correction:{item['target_fact_key']}",
+        } for item in corrections],
+        key=lambda item: (item["fact_key"], item["target_fact_id"]),
+    )
+    used_classifications.extend(
+        item["data_classification"] for item in correction_summary
+    )
+    used_visibilities.extend(
+        item["visibility_scope"] for item in correction_summary
+    )
+    correction_questions = [
+        item["open_question"] for item in correction_summary
+    ]
+
     filled = sum((
         bool(snapshot.customer["canonical_company_name"]),
         industry is not None,
@@ -787,9 +917,13 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
         "completeness": _json_value(completeness.quantize(Decimal("0.01"))),
         "conflicts": persisted_conflicts,
         "preference_conflicts": preference_conflicts,
+        "corrections": correction_summary,
         "stale_facts": stale_summary,
         "gaps": gaps,
-        "open_questions": [f"confirm:{item}" for item in gaps],
+        "open_questions": [
+            *[f"confirm:{item}" for item in gaps],
+            *correction_questions,
+        ],
         "max_data_classification": _max_classification(used_classifications),
         "max_visibility_scope": _max_visibility(used_visibilities),
     }
@@ -847,7 +981,14 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
             datetime.combine(order_dates[-1], time.min),
         ])
     section_times["risks"] = _latest([
-        item["policy_effective_at"] or item["created_at"] for item in active_dnc
+        *[
+            item["policy_effective_at"] or item["created_at"]
+            for item in active_dnc
+        ],
+        *[
+            fact["observed_at"] for fact in selected.values()
+            if fact["fact_key"] in _RISK_FACT_TYPES
+        ],
     ])
     section_times["recommended_actions"] = _latest([
         section_times["identity"], section_times["risks"]
@@ -856,6 +997,7 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
         *section_times.values(),
         *[item["expires_at"] for item in stale_facts],
         *[item["detected_at"] for item in snapshot.conflicts],
+        *[item["created_at"] for item in corrections],
     ])
     serialized_times = {
         section: _json_value(section_times[section])
@@ -872,7 +1014,11 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
     )
 
 
-def _semantic_value(value, fact_fingerprints: Mapping[int, str]):
+def _semantic_value(
+    value,
+    fact_fingerprints: Mapping[int, str],
+    path: tuple[str, ...] = (),
+):
     if isinstance(value, dict):
         result = {}
         for key, item in value.items():
@@ -885,21 +1031,36 @@ def _semantic_value(value, fact_fingerprints: Mapping[int, str]):
                     item, f"missing:{item}"
                 )
             elif key.endswith("_fact_ids") and isinstance(item, list):
-                result[key.removesuffix("_ids") + "_fingerprints"] = sorted(
+                result[key.removesuffix("_ids") + "_fingerprints"] = sorted({
                     fact_fingerprints.get(fact_id, f"missing:{fact_id}")
                     for fact_id in item
-                )
+                })
             else:
-                result[key] = _semantic_value(item, fact_fingerprints)
+                result[key] = _semantic_value(
+                    item,
+                    fact_fingerprints,
+                    path + (key,),
+                )
         return result
     if isinstance(value, list):
-        return [_semantic_value(item, fact_fingerprints) for item in value]
+        items = [
+            _semantic_value(item, fact_fingerprints, path + ("*",))
+            for item in value
+        ]
+        if path in _SEMANTIC_SET_ARRAY_PATHS:
+            unique = {_canonical_json(item): item for item in items}
+            return [unique[key] for key in sorted(unique)]
+        return items
     return value
 
 
 def _section_hashes(profile: dict, fact_fingerprints: Mapping[int, str]) -> dict[str, str]:
     return {
-        section: _hash(_semantic_value(profile[section], fact_fingerprints))
+        section: _hash(_semantic_value(
+            profile[section],
+            fact_fingerprints,
+            (section,),
+        ))
         for section in _PROFILE_SECTIONS
     }
 
@@ -914,13 +1075,44 @@ def _change_summary(
     for section in _PROFILE_SECTIONS:
         if previous_hashes.get(section) == section_hashes[section]:
             continue
+        classification, visibility = _content_security(profile[section])
         changes.append({
             "section": section,
             "change_type": "created" if previous is None else "updated",
             "summary": f"{section}_changed",
             "evidence_fact_ids": sorted(_collect_fact_ids(profile[section])),
+            "data_classification": classification,
+            "visibility_scope": visibility,
         })
     return {"changes": changes}
+
+
+def _content_security(value) -> tuple[str, str]:
+    classifications: list[str] = []
+    visibilities: list[str] = []
+
+    def collect(item) -> None:
+        if isinstance(item, dict):
+            classification = item.get(
+                "data_classification",
+                item.get("max_data_classification"),
+            )
+            visibility = item.get(
+                "visibility_scope",
+                item.get("max_visibility_scope"),
+            )
+            if isinstance(classification, str):
+                classifications.append(classification)
+            if isinstance(visibility, str):
+                visibilities.append(visibility)
+            for nested in item.values():
+                collect(nested)
+        elif isinstance(item, list):
+            for nested in item:
+                collect(nested)
+
+    collect(value)
+    return _max_classification(classifications), _max_visibility(visibilities)
 
 
 def _collect_fact_ids(value) -> set[int]:
@@ -942,6 +1134,41 @@ def _collect_fact_ids(value) -> set[int]:
     return found
 
 
+def _collect_fact_keys(value) -> dict[int, str]:
+    found: dict[int, str] = {}
+    if isinstance(value, dict):
+        fact_id = value.get("fact_id")
+        fact_key = value.get("fact_key")
+        if isinstance(fact_id, int) and isinstance(fact_key, str):
+            found[fact_id] = fact_key
+        for item in value.values():
+            found.update(_collect_fact_keys(item))
+    elif isinstance(value, list):
+        for item in value:
+            found.update(_collect_fact_keys(item))
+    return found
+
+
+def _evidence_description(fact_key: str) -> str:
+    if fact_key == "business.industry":
+        return "Supports the current business industry conclusion"
+    if fact_key.startswith("preference.expressed."):
+        return "Supports a customer-expressed preference"
+    if fact_key.startswith("preference.observed."):
+        return "Supports an order-observed preference"
+    if fact_key.startswith("preference.inferred."):
+        return "Supports an inferred product preference"
+    if fact_key.startswith("behavior.observed."):
+        return "Supports an observed customer behavior pattern"
+    if fact_key.startswith("behavior.inferred."):
+        return "Supports an inferred customer behavior or risk signal"
+    if fact_key.startswith("behavior.confirmed."):
+        return "Supports a manually confirmed customer behavior conclusion"
+    if fact_key.startswith("commercial."):
+        return "Supports a current commercial profile conclusion"
+    return "Supports a current customer profile conclusion"
+
+
 def _safe_entry(entry: dict) -> bool:
     classification = entry.get("data_classification", "internal_business")
     visibility = entry.get("visibility_scope", "customer_team")
@@ -949,7 +1176,7 @@ def _safe_entry(entry: dict) -> bool:
         classification in _CLASSIFICATION_ORDER
         and _CLASSIFICATION_ORDER.index(classification)
         <= _CLASSIFICATION_ORDER.index("internal_business")
-        and visibility != "management"
+        and visibility in _AGENT_VISIBILITIES
     )
 
 
@@ -990,19 +1217,48 @@ def _build_context(version: CustomerProfileVersion) -> dict:
     safe_fact_ids.update(_collect_fact_ids(behavior))
     safe_fact_ids.update(_collect_fact_ids(commercial))
     safe_fact_ids.update(_collect_fact_ids(safe_contacts))
-    evidence_refs = []
-    for section in (business, preferences, behavior, commercial, safe_contacts):
-        for fact_id in sorted(_collect_fact_ids(section)):
-            evidence_refs.append({"fact_id": fact_id, "reference_type": "customer_fact"})
+    evidence_facts: dict[int, str] = {}
+    for section in (
+        business,
+        preferences,
+        behavior,
+        commercial,
+        safe_contacts,
+        safe_risks,
+    ):
+        fact_keys = _collect_fact_keys(section)
+        evidence_facts.update(fact_keys)
+        for fact_id in _collect_fact_ids(section):
+            evidence_facts.setdefault(fact_id, "")
+    evidence_refs = [{
+        "fact_id": fact_id,
+        "reference_type": "customer_fact",
+        "description": _evidence_description(evidence_facts[fact_id]),
+    } for fact_id in sorted(evidence_facts)]
     recent_changes = []
     for change in version.change_summary["changes"]:
         evidence_ids = change.get("evidence_fact_ids", [])
         visible_ids = sorted(set(evidence_ids) & safe_fact_ids)
         if evidence_ids and not visible_ids:
             continue
-        recent_changes.append({**change, "evidence_fact_ids": visible_ids})
+        if not evidence_ids and not _safe_entry(change):
+            continue
+        recent_changes.append({
+            key: value
+            for key, value in {
+                **change,
+                "evidence_fact_ids": visible_ids,
+            }.items()
+            if key not in {"data_classification", "visibility_scope"}
+        })
     safe_stale_facts = _safe_entries(list(profile["quality"]["stale_facts"]))
     safe_conflicts = _safe_entries(list(profile["quality"]["conflicts"]))
+    corrections = list(profile["quality"].get("corrections", []))
+    safe_corrections = _safe_entries(corrections)
+    hidden_correction_questions = {
+        item["open_question"] for item in corrections
+        if not _safe_entry(item)
+    }
     return {
         "identity": identity,
         "business_profile": business,
@@ -1024,8 +1280,12 @@ def _build_context(version: CustomerProfileVersion) -> dict:
             "section_data_as_of": version.section_data_as_of,
             "stale_facts": safe_stale_facts,
             "conflicts": safe_conflicts,
+            "corrections": safe_corrections,
         },
-        "open_questions": profile["quality"]["open_questions"],
+        "open_questions": [
+            question for question in profile["quality"]["open_questions"]
+            if question not in hidden_correction_questions
+        ],
         "evidence_refs": evidence_refs,
         "profile_version": {
             "version_no": version.version_no,
@@ -1480,37 +1740,57 @@ def _current_version_after_account_lock(
 
 
 def compile_customer_profile(
-    db: Session,
+    session_factory: Callable[[], Session],
     customer_id: int,
     *,
     trigger_event_id: int | None = None,
     agent_run_id: int | None = None,
     observer: CompileObserver | None = None,
 ) -> ProfileCompileResult:
-    """Compile and CAS-publish one customer profile from current Ark truth tables."""
+    """Compile one profile in compiler-owned, retry-isolated transactions."""
     if type(customer_id) is not int or customer_id <= 0:
         raise ProfileCompileError("CUSTOMER_ID_INVALID", "customer_id must be a positive integer")
-    if trigger_event_id is not None:
-        if type(trigger_event_id) is not int or trigger_event_id <= 0:
-            raise ProfileCompileError(
-                "TRIGGER_EVENT_INVALID",
-                "trigger_event_id must be a positive integer",
-            )
-        trigger_event = db.get(CustomerEvent, trigger_event_id)
-        if trigger_event is None or trigger_event.customer_id != customer_id:
-            raise ProfileCompileError(
-                "TRIGGER_EVENT_CUSTOMER_MISMATCH",
-                "trigger event does not belong to customer",
-            )
+    if not callable(session_factory):
+        raise ProfileCompileError(
+            "SESSION_FACTORY_INVALID",
+            "session_factory must create a fresh Session",
+        )
+    if trigger_event_id is not None and (
+        type(trigger_event_id) is not int or trigger_event_id <= 0
+    ):
+        raise ProfileCompileError(
+            "TRIGGER_EVENT_INVALID",
+            "trigger_event_id must be a positive integer",
+        )
 
     for retry_count in range(MAX_CAS_RETRIES):
-        account = db.get(CustomerAccount, customer_id)
-        if account is None:
-            raise ProfileCompileError("CUSTOMER_NOT_FOUND", "customer does not exist")
-        base_seq = int(account.profile_input_seq)
-        now = beijing_now()
-        snapshot = _load_snapshot(db, account, now)
-        _notify(observer, "after_snapshot", db, customer_id, base_seq)
+        with session_factory() as snapshot_db:
+            with snapshot_db.begin():
+                account = snapshot_db.get(CustomerAccount, customer_id)
+                if account is None:
+                    raise ProfileCompileError(
+                        "CUSTOMER_NOT_FOUND",
+                        "customer does not exist",
+                    )
+                if trigger_event_id is not None:
+                    trigger_event = snapshot_db.get(CustomerEvent, trigger_event_id)
+                    if trigger_event is None or trigger_event.customer_id != customer_id:
+                        raise ProfileCompileError(
+                            "TRIGGER_EVENT_CUSTOMER_MISMATCH",
+                            "trigger event does not belong to customer",
+                        )
+                base_seq = int(account.profile_input_seq)
+                now = beijing_now()
+                snapshot = _load_snapshot(snapshot_db, account, now)
+                previous_hashes = None
+                if account.current_profile_version_id is not None:
+                    previous_snapshot = snapshot_db.get(
+                        CustomerProfileVersion,
+                        account.current_profile_version_id,
+                    )
+                    if previous_snapshot is not None:
+                        previous_hashes = dict(previous_snapshot.section_hashes)
+                _notify(observer, "after_snapshot", snapshot_db, customer_id, base_seq)
         (
             profile,
             section_data_as_of,
@@ -1520,75 +1800,6 @@ def compile_customer_profile(
             effective_fact_fingerprints,
         ) = _build_profile(snapshot, now)
         hashes = _section_hashes(profile, fact_fingerprints)
-        previous = (
-            db.get(CustomerProfileVersion, account.current_profile_version_id)
-            if account.current_profile_version_id is not None
-            else None
-        )
-
-        if previous is not None and previous.section_hashes == hashes:
-            _notify(observer, "before_no_change_cas", db, customer_id, base_seq)
-            locked = db.query(CustomerAccount).filter(
-                CustomerAccount.id == customer_id
-            ).populate_existing().with_for_update().one()
-            if int(locked.profile_input_seq) != base_seq:
-                continue
-            locked_previous = _current_version_after_account_lock(db, locked)
-            if locked_previous is not None and locked_previous.section_hashes == hashes:
-                states = {
-                    name: _projection_state(db, name, customer_id, locked_previous.id)
-                    for name in ("agent_context", "list_projection", "target_matches")
-                }
-                projections = _repair_stale_projections(
-                    db,
-                    locked_previous,
-                    beijing_now(),
-                    observer,
-                    states,
-                )
-                return ProfileCompileResult(
-                    customer_id=customer_id,
-                    profile_version_id=locked_previous.id,
-                    version_no=locked_previous.version_no,
-                    created=False,
-                    retry_count=retry_count,
-                    projections=projections,
-                )
-            previous = locked_previous
-
-        _notify(observer, "before_publish_cas", db, customer_id, base_seq)
-        locked = db.query(CustomerAccount).filter(
-            CustomerAccount.id == customer_id
-        ).populate_existing().with_for_update().one()
-        if int(locked.profile_input_seq) != base_seq:
-            continue
-        locked_previous = _current_version_after_account_lock(db, locked)
-        if locked_previous is not None and locked_previous.section_hashes == hashes:
-            states = {
-                name: _projection_state(db, name, customer_id, locked_previous.id)
-                for name in ("agent_context", "list_projection", "target_matches")
-            }
-            projections = _repair_stale_projections(
-                db,
-                locked_previous,
-                beijing_now(),
-                observer,
-                states,
-            )
-            return ProfileCompileResult(
-                customer_id=customer_id,
-                profile_version_id=locked_previous.id,
-                version_no=locked_previous.version_no,
-                created=False,
-                retry_count=retry_count,
-                projections=projections,
-            )
-        previous = locked_previous
-
-        latest_version_no = db.query(func.max(CustomerProfileVersion.version_no)).filter(
-            CustomerProfileVersion.customer_id == customer_id
-        ).scalar() or 0
-        compiled_at = beijing_now()
         semantic_profile = _semantic_value(profile, fact_fingerprints)
         profile_fingerprint = _hash({
             "profile_schema_version": PROFILE_SCHEMA_VERSION,
@@ -1598,43 +1809,106 @@ def compile_customer_profile(
             "section_data_as_of": section_data_as_of,
             "fact_fingerprints": effective_fact_fingerprints,
         })
-        version = CustomerProfileVersion(
-            customer_id=customer_id,
-            version_no=int(latest_version_no) + 1,
-            profile_schema_version=PROFILE_SCHEMA_VERSION,
-            canonicalization_version=CANONICALIZATION_VERSION,
-            input_seq=base_seq,
-            profile_json=profile,
-            section_hashes=hashes,
-            section_data_as_of=section_data_as_of,
-            evidence_fact_ids=evidence_ids,
-            change_summary=_change_summary(previous, hashes, profile),
-            compiler_version=COMPILER_VERSION,
-            profile_fingerprint=profile_fingerprint,
-            data_as_of=data_as_of,
-            trigger_event_id=trigger_event_id,
-            agent_run_id=agent_run_id,
-            compiled_at=compiled_at,
-            created_at=compiled_at,
-        )
-        db.add(version)
-        db.flush()
-        locked.current_profile_version_id = version.id
-        locked.profile_completeness = Decimal(str(profile["quality"]["completeness"]))
-        locked.data_as_of = data_as_of
-        locked.profile_compiled_at = compiled_at
-        locked.updated_at = compiled_at
-        db.flush()
-
-        projections = _project_published_version(db, version, compiled_at, observer)
-        return ProfileCompileResult(
-            customer_id=customer_id,
-            profile_version_id=version.id,
-            version_no=version.version_no,
-            created=True,
-            retry_count=retry_count,
-            projections=projections,
-        )
+        cas_mismatch = False
+        result = None
+        with session_factory() as publish_db:
+            with publish_db.begin():
+                phase = (
+                    "before_no_change_cas"
+                    if previous_hashes == hashes
+                    else "before_publish_cas"
+                )
+                _notify(observer, phase, publish_db, customer_id, base_seq)
+                locked = publish_db.query(CustomerAccount).filter(
+                    CustomerAccount.id == customer_id
+                ).populate_existing().with_for_update().one()
+                if int(locked.profile_input_seq) != base_seq:
+                    cas_mismatch = True
+                else:
+                    previous = _current_version_after_account_lock(publish_db, locked)
+                    if previous is not None and previous.section_hashes == hashes:
+                        states = {
+                            name: _projection_state(
+                                publish_db,
+                                name,
+                                customer_id,
+                                previous.id,
+                            )
+                            for name in (
+                                "agent_context",
+                                "list_projection",
+                                "target_matches",
+                            )
+                        }
+                        projections = _repair_stale_projections(
+                            publish_db,
+                            previous,
+                            beijing_now(),
+                            observer,
+                            states,
+                        )
+                        result = ProfileCompileResult(
+                            customer_id=customer_id,
+                            profile_version_id=previous.id,
+                            version_no=previous.version_no,
+                            created=False,
+                            retry_count=retry_count,
+                            projections=projections,
+                        )
+                    else:
+                        latest_version_no = publish_db.query(
+                            func.max(CustomerProfileVersion.version_no)
+                        ).filter(
+                            CustomerProfileVersion.customer_id == customer_id
+                        ).scalar() or 0
+                        compiled_at = beijing_now()
+                        version = CustomerProfileVersion(
+                            customer_id=customer_id,
+                            version_no=int(latest_version_no) + 1,
+                            profile_schema_version=PROFILE_SCHEMA_VERSION,
+                            canonicalization_version=CANONICALIZATION_VERSION,
+                            input_seq=base_seq,
+                            profile_json=profile,
+                            section_hashes=hashes,
+                            section_data_as_of=section_data_as_of,
+                            evidence_fact_ids=evidence_ids,
+                            change_summary=_change_summary(previous, hashes, profile),
+                            compiler_version=COMPILER_VERSION,
+                            profile_fingerprint=profile_fingerprint,
+                            data_as_of=data_as_of,
+                            trigger_event_id=trigger_event_id,
+                            agent_run_id=agent_run_id,
+                            compiled_at=compiled_at,
+                            created_at=compiled_at,
+                        )
+                        publish_db.add(version)
+                        publish_db.flush()
+                        locked.current_profile_version_id = version.id
+                        locked.profile_completeness = Decimal(
+                            str(profile["quality"]["completeness"])
+                        )
+                        locked.data_as_of = data_as_of
+                        locked.profile_compiled_at = compiled_at
+                        locked.updated_at = compiled_at
+                        publish_db.flush()
+                        projections = _project_published_version(
+                            publish_db,
+                            version,
+                            compiled_at,
+                            observer,
+                        )
+                        result = ProfileCompileResult(
+                            customer_id=customer_id,
+                            profile_version_id=version.id,
+                            version_no=version.version_no,
+                            created=True,
+                            retry_count=retry_count,
+                            projections=projections,
+                        )
+        if cas_mismatch:
+            continue
+        if result is not None:
+            return result
 
     raise ProfileCompileError(
         "PROFILE_INPUT_CHANGED_REPEATEDLY",

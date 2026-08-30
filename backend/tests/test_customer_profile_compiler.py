@@ -3,26 +3,35 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from datetime import datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 
+from app.core.database import Base
 from app.core.time import beijing_now
 from app.customer.fact_service import append_customer_event, append_source_record
 from app.customer.models import (
     CustomerAccount,
     CustomerAgentContext,
+    CustomerAnnotation,
     CustomerAssignment,
+    CustomerExternalIdentity,
     CustomerFact,
     CustomerFactConflict,
     CustomerListProjection,
     CustomerName,
     CustomerProfileVersion,
+    CustomerRelationship,
     CustomerTargetMatch,
 )
-from app.customer.profile_service import ProfileCompileError, compile_customer_profile
+from app.customer.profile_service import (
+    ProfileCompileError,
+    compile_customer_profile as _compile_customer_profile,
+)
 from app.sales_automation.models import AcquisitionProfile
 
 
@@ -112,6 +121,95 @@ class _OneShotObserver:
         if phase == self.phase and not self.fired:
             self.fired = True
             self.callback()
+
+
+def _session_factory(db):
+    return sessionmaker(bind=db.get_bind(), expire_on_commit=False)
+
+
+def compile_customer_profile(db, customer_id: int, **kwargs):
+    """Commit test fixtures, then exercise the compiler's owned transactions."""
+    db.commit()
+    result = _compile_customer_profile(_session_factory(db), customer_id, **kwargs)
+    db.expire_all()
+    return result
+
+
+def test_public_compile_api_owns_fresh_sessions_and_transactions(db):
+    customer = _customer(db, "factory-api")
+    customer_id = customer.id
+    db.commit()
+    caller_pending = AcquisitionProfile(
+        profile_key="caller-pending",
+        company_name="Pending",
+        products=[],
+        advantages=[],
+        target_countries=[],
+        target_industries=[],
+        target_roles=[],
+        exclusions=[],
+        status="inactive",
+    )
+    db.add(caller_pending)
+
+    result = _compile_customer_profile(_session_factory(db), customer_id)
+
+    assert result.created is True
+    assert caller_pending in db.new
+    db.expire_all()
+    assert db.get(CustomerAccount, customer_id).current_profile_version_id == (
+        result.profile_version_id
+    )
+
+
+def test_cas_retry_closes_old_attempt_and_new_snapshot_sees_committed_fact(db):
+    customer = _customer(db, "fresh-cas-attempt")
+    customer_id = customer.id
+    db.commit()
+    factory = _session_factory(db)
+    seen_sessions: list[tuple[str, object]] = []
+    writer_session = None
+
+    def observe(phase, compile_db, _customer_id, _base_seq):
+        nonlocal writer_session
+        seen_sessions.append((phase, compile_db))
+        if phase != "before_publish_cas" or writer_session is not None:
+            return
+        with factory() as writer:
+            writer_session = writer
+            with writer.begin():
+                writer_customer = writer.get(CustomerAccount, customer_id)
+                _fact(
+                    writer,
+                    writer_customer,
+                    key="business.industry",
+                    value="Newly committed wigs",
+                    layer="source",
+                    fingerprint_suffix="fresh-transaction",
+                )
+
+    result = _compile_customer_profile(factory, customer_id, observer=observe)
+
+    snapshot_sessions = [session for phase, session in seen_sessions if phase == "after_snapshot"]
+    publish_sessions = [
+        session for phase, session in seen_sessions
+        if phase in {"before_publish_cas", "before_no_change_cas"}
+    ]
+    assert result.retry_count == 1
+    assert len(snapshot_sessions) == 2
+    assert len({id(session) for session in snapshot_sessions + publish_sessions}) == 4
+    assert writer_session not in snapshot_sessions + publish_sessions
+    assert all(not session.in_transaction() for session in snapshot_sessions + publish_sessions)
+    with factory() as check:
+        version = check.get(CustomerProfileVersion, result.profile_version_id)
+        account = check.get(CustomerAccount, customer_id)
+        assert version.input_seq == account.profile_input_seq
+        assert version.profile_json["business"]["industry"]["value"] == (
+            "Newly committed wigs"
+        )
+        assert check.query(CustomerProfileVersion).filter_by(
+            customer_id=customer_id
+        ).count() == 1
 
 
 def test_first_compile_publishes_immutable_version_and_current_projections(db):
@@ -891,3 +989,427 @@ def test_candidate_fact_can_score_but_cannot_auto_qualify_target_match(db):
     ).one()
     assert match.match_score == Decimal("100.00")
     assert match.match_status == "candidate"
+
+
+def test_private_annotation_and_unknown_visibility_fail_closed_in_projections(db):
+    customer = _customer(db, "private-fail-closed")
+    unknown = _fact(
+        db,
+        customer,
+        key="business.industry",
+        value="Undisclosed private vertical",
+        layer="source",
+        classification="unexpected_classification",
+        visibility="unexpected_scope",
+    )
+    db.add(CustomerAnnotation(
+        customer_id=customer.id,
+        annotation_type="do_not_contact",
+        target_fact_id=None,
+        content_schema_version="v1",
+        content_json={"reason": "private reason must stay in the source row"},
+        policy_scope_type="global",
+        policy_scope_ref_id=None,
+        policy_effective_at=beijing_now(),
+        visibility="private",
+        data_classification="internal_business",
+        status="active",
+        authored_by=987654,
+    ))
+    target = AcquisitionProfile(
+        profile_key="private-fail-closed",
+        company_name="LeShine",
+        products=[],
+        advantages=[],
+        target_countries=[],
+        target_industries=["Undisclosed private vertical"],
+        target_roles=[],
+        exclusions=[],
+        status="active",
+    )
+    db.add(target)
+    customer.profile_input_seq += 2
+    db.flush()
+
+    result = compile_customer_profile(db, customer.id)
+
+    profile = db.get(CustomerProfileVersion, result.profile_version_id).profile_json
+    context = db.get(CustomerAgentContext, customer.id).context_json
+    projection = db.get(CustomerListProjection, customer.id)
+    match = db.query(CustomerTargetMatch).filter_by(
+        customer_id=customer.id,
+        target_profile_id=target.id,
+        is_current=True,
+    ).one()
+    assert profile["quality"]["max_visibility_scope"] == "private"
+    assert profile["quality"]["max_data_classification"] == "restricted_internal"
+    assert profile["risks"]["has_active_dnc"] is False
+    assert "private reason" not in str(profile)
+    assert context["business_profile"]["industry"] is None
+    assert unknown.id not in {item["fact_id"] for item in context["evidence_refs"]}
+    assert all(item["section"] != "business" for item in context["recent_changes"])
+    assert all(item["section"] != "quality" for item in context["recent_changes"])
+    assert projection.primary_industry is None
+    assert projection.has_active_dnc is False
+    assert projection.global_claim_blocked is False
+    assert match.evidence_fact_ids == []
+
+
+def test_active_correction_blocks_target_and_later_agent_fact_for_same_key(db):
+    customer = _customer(db, "active-correction")
+    target = _fact(
+        db,
+        customer,
+        key="business.industry",
+        value="Incorrect industry",
+        layer="inferred",
+        fingerprint_suffix="corrected-target",
+    )
+    target.agent_run_id = 71001
+    db.add(CustomerAnnotation(
+        customer_id=customer.id,
+        annotation_type="correction",
+        target_fact_id=target.id,
+        content_schema_version="v1",
+        content_json={"reason": "Salesperson rejected this conclusion"},
+        visibility="customer_team",
+        data_classification="internal_business",
+        status="active",
+        authored_by=987654,
+    ))
+    later_agent = _fact(
+        db,
+        customer,
+        key="business.industry",
+        value="Later silent agent replacement",
+        layer="inferred",
+        observed_at=beijing_now() + timedelta(seconds=1),
+        fingerprint_suffix="later-agent",
+    )
+    later_agent.agent_run_id = 71002
+    customer.profile_input_seq += 1
+    db.flush()
+
+    result = compile_customer_profile(db, customer.id)
+
+    profile = db.get(CustomerProfileVersion, result.profile_version_id).profile_json
+    context = db.get(CustomerAgentContext, customer.id).context_json
+    assert profile["business"]["industry"] is None
+    assert profile["quality"]["corrections"] == [{
+        "target_fact_id": target.id,
+        "fact_key": "business.industry",
+        "status": "active",
+        "data_classification": "internal_business",
+        "visibility_scope": "customer_team",
+        "open_question": "review_correction:business.industry",
+    }]
+    assert "review_correction:business.industry" in profile["quality"]["open_questions"]
+    assert context["data_quality"]["corrections"] == profile["quality"]["corrections"]
+    assert target.id not in {item["fact_id"] for item in context["evidence_refs"]}
+    assert later_agent.id not in {item["fact_id"] for item in context["evidence_refs"]}
+
+
+def test_correction_rejects_cross_customer_target_fact(db):
+    customer = _customer(db, "correction-owner")
+    other = _customer(db, "correction-other")
+    other_fact = _fact(
+        db,
+        other,
+        key="business.industry",
+        value="Other customer industry",
+        layer="source",
+    )
+    db.add(CustomerAnnotation(
+        customer_id=customer.id,
+        annotation_type="correction",
+        target_fact_id=other_fact.id,
+        content_schema_version="v1",
+        content_json={"reason": "invalid cross-customer reference"},
+        visibility="customer_team",
+        data_classification="internal_business",
+        status="active",
+        authored_by=987654,
+    ))
+    customer.profile_input_seq += 1
+    db.flush()
+
+    with pytest.raises(ProfileCompileError) as blocked:
+        compile_customer_profile(db, customer.id)
+
+    assert blocked.value.error_code == "CORRECTION_ANNOTATION_INVALID"
+
+
+def test_revoked_and_private_corrections_do_not_change_shared_profile(db):
+    customer = _customer(db, "correction-not-shared")
+    fact = _fact(
+        db,
+        customer,
+        key="business.industry",
+        value="Current verified industry",
+        layer="source",
+    )
+    for suffix, status, visibility in (
+        ("revoked", "revoked", "customer_team"),
+        ("private", "active", "private"),
+    ):
+        db.add(CustomerAnnotation(
+            customer_id=customer.id,
+            annotation_type="correction",
+            target_fact_id=fact.id,
+            content_schema_version="v1",
+            content_json={"reason": suffix},
+            visibility=visibility,
+            data_classification="internal_business",
+            status=status,
+            authored_by=987654,
+        ))
+    customer.profile_input_seq += 2
+    db.flush()
+
+    result = compile_customer_profile(db, customer.id)
+
+    profile = db.get(CustomerProfileVersion, result.profile_version_id).profile_json
+    assert profile["business"]["industry"]["fact_id"] == fact.id
+    assert profile["quality"]["corrections"] == []
+
+
+def test_active_shared_correction_rejects_unknown_visibility(db):
+    customer = _customer(db, "correction-unknown-visibility")
+    fact = _fact(
+        db,
+        customer,
+        key="business.industry",
+        value="Industry",
+        layer="source",
+    )
+    db.add(CustomerAnnotation(
+        customer_id=customer.id,
+        annotation_type="correction",
+        target_fact_id=fact.id,
+        content_schema_version="v1",
+        content_json={"reason": "invalid visibility"},
+        visibility="unexpected_scope",
+        data_classification="internal_business",
+        status="active",
+        authored_by=987654,
+    ))
+    customer.profile_input_seq += 1
+    db.flush()
+
+    with pytest.raises(ProfileCompileError) as blocked:
+        compile_customer_profile(db, customer.id)
+
+    assert blocked.value.error_code == "CORRECTION_ANNOTATION_INVALID"
+
+
+def test_jcs_semantic_sets_ignore_duplicate_alias_identity_relationship_and_evidence(db):
+    customer = _customer(db, "semantic-set")
+    related = _customer(db, "semantic-set-related")
+    now = beijing_now().replace(microsecond=0)
+
+    def add_alias(suffix: str):
+        db.add(CustomerName(
+            customer_id=customer.id,
+            name="Semantic Trading",
+            normalized_name="semantic trading",
+            name_type="trading",
+            verification_status="verified",
+            confidence=Decimal("0.9000"),
+            confidence_method_version="confidence_v1",
+            confidence_components_json={"source_authority": 0.9},
+            name_fingerprint=_digest(f"semantic-alias-{suffix}"),
+            first_seen_at=now,
+            last_seen_at=now,
+        ))
+
+    def add_identity(suffix: str):
+        db.add(CustomerExternalIdentity(
+            customer_id=customer.id,
+            contact_id=None,
+            source_system="linkedin",
+            source_account_key="global",
+            identifier_type="company_page_url",
+            raw_value="https://linkedin.example/company/semantic",
+            normalized_value="linkedin.example/company/semantic",
+            identity_strength="strong",
+            cardinality="one_to_one",
+            auto_match_ceiling="verified",
+            verification_status="verified",
+            confidence=Decimal("0.9000"),
+            confidence_method_version="confidence_v1",
+            confidence_components_json={"source_authority": 0.9},
+            is_primary=False,
+            first_seen_at=now,
+            last_seen_at=now,
+            verified_at=now,
+            status="active",
+            identity_fingerprint=_digest(f"semantic-identity-{suffix}"),
+        ))
+
+    def add_relationship(suffix: str):
+        db.add(CustomerRelationship(
+            from_customer_id=customer.id,
+            to_customer_id=related.id,
+            relationship_type="affiliate",
+            verification_status="verified",
+            confidence=Decimal("0.9000"),
+            confidence_method_version="confidence_v1",
+            confidence_components_json={"source_authority": 0.9},
+            source_fact_id=None,
+            effective_from=now,
+            effective_to=None,
+            relationship_fingerprint=_digest(f"semantic-relationship-{suffix}"),
+        ))
+
+    add_alias("one")
+    add_identity("one")
+    add_relationship("one")
+    industry = _fact(
+        db,
+        customer,
+        key="business.industry",
+        value="Hair",
+        layer="source",
+    )
+    industry.value_json = {
+        "value": "Hair",
+        "supporting_fact_ids": [industry.id],
+    }
+    customer.profile_input_seq += 3
+    db.flush()
+    first = compile_customer_profile(db, customer.id)
+
+    add_alias("two")
+    add_identity("two")
+    add_relationship("two")
+    industry = db.get(CustomerFact, industry.id)
+    industry.value_json = {
+        "value": "Hair",
+        "supporting_fact_ids": [industry.id, industry.id],
+    }
+    customer = db.get(CustomerAccount, customer.id)
+    customer.profile_input_seq += 4
+    db.flush()
+
+    replay = compile_customer_profile(db, customer.id)
+
+    assert replay.created is False
+    assert replay.profile_version_id == first.profile_version_id
+    assert db.query(CustomerProfileVersion).filter_by(customer_id=customer.id).count() == 1
+
+
+def test_registered_risks_and_evidence_descriptions_are_safe_and_layered(db):
+    customer = _customer(db, "registered-risks")
+    churn = _fact(
+        db,
+        customer,
+        key="behavior.inferred.churn_risk",
+        value="high secret score",
+        layer="inferred",
+        fingerprint_suffix="churn",
+    )
+    silence = _fact(
+        db,
+        customer,
+        key="behavior.observed.silence_period",
+        value=45,
+        layer="observed",
+        fingerprint_suffix="silence",
+    )
+    supplier = _fact(
+        db,
+        customer,
+        key="behavior.inferred.supplier_switch_signal",
+        value="management-only supplier detail",
+        layer="inferred",
+        visibility="management",
+        fingerprint_suffix="supplier",
+    )
+    db.add(CustomerAnnotation(
+        customer_id=customer.id,
+        annotation_type="do_not_contact",
+        target_fact_id=None,
+        content_schema_version="v1",
+        content_json={"reason": "must not appear in risk summary"},
+        policy_scope_type="global",
+        policy_scope_ref_id=None,
+        policy_effective_at=beijing_now(),
+        visibility="customer_team",
+        data_classification="internal_business",
+        status="active",
+        authored_by=987654,
+    ))
+    customer.profile_input_seq += 1
+    db.flush()
+
+    result = compile_customer_profile(db, customer.id)
+
+    profile = db.get(CustomerProfileVersion, result.profile_version_id).profile_json
+    context = db.get(CustomerAgentContext, customer.id).context_json
+    assert {item["risk_type"] for item in profile["risks"]["items"]} == {
+        "churn_risk",
+        "silence_period",
+        "supplier_switch_signal",
+        "do_not_contact",
+    }
+    profile_risks = {item["risk_type"]: item for item in profile["risks"]["items"]}
+    assert profile_risks["churn_risk"]["fact_id"] == churn.id
+    assert profile_risks["churn_risk"]["fact_layer"] == "inferred"
+    assert profile_risks["do_not_contact"]["risk_source"] == "annotation"
+    assert {item["risk_type"] for item in context["risks"]["items"]} == {
+        "churn_risk",
+        "silence_period",
+        "do_not_contact",
+    }
+    evidence = {item["fact_id"]: item for item in context["evidence_refs"]}
+    assert churn.id in evidence
+    assert silence.id in evidence
+    assert supplier.id not in evidence
+    assert all(item["description"].strip() for item in evidence.values())
+    assert all("high secret score" not in item["description"] for item in evidence.values())
+    assert all("45" not in item["description"] for item in evidence.values())
+
+
+@pytest.mark.skipif(
+    not os.getenv("CUSTOMER_TEST_MYSQL_URL"),
+    reason="set CUSTOMER_TEST_MYSQL_URL only for an explicitly disposable MySQL schema",
+)
+def test_real_mysql_profile_cas_retry_uses_fresh_transactions():
+    engine = create_engine(os.environ["CUSTOMER_TEST_MYSQL_URL"], pool_pre_ping=True)
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    suffix = str(beijing_now().timestamp()).replace(".", "")
+    with factory() as seed:
+        with seed.begin():
+            customer = _customer(seed, f"mysql-profile-{suffix}")
+            customer_id = customer.id
+    writer_fired = False
+
+    def observe(phase, _compile_db, _customer_id, _base_seq):
+        nonlocal writer_fired
+        if phase != "before_publish_cas" or writer_fired:
+            return
+        writer_fired = True
+        with factory() as writer:
+            with writer.begin():
+                writer_customer = writer.get(CustomerAccount, customer_id)
+                _fact(
+                    writer,
+                    writer_customer,
+                    key="business.industry",
+                    value="MySQL fresh fact",
+                    layer="source",
+                    fingerprint_suffix=suffix,
+                )
+
+    result = _compile_customer_profile(factory, customer_id, observer=observe)
+
+    assert writer_fired is True
+    assert result.retry_count == 1
+    with factory() as check:
+        version = check.get(CustomerProfileVersion, result.profile_version_id)
+        account = check.get(CustomerAccount, customer_id)
+        assert version.input_seq == account.profile_input_seq
+        assert version.profile_json["business"]["industry"]["value"] == (
+            "MySQL fresh fact"
+        )
