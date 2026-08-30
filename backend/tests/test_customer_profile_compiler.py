@@ -1762,6 +1762,210 @@ def test_fact_terminal_status_returns_to_prior_state_with_business_tombstone(
     assert version.data_as_of == reviewed_at
 
 
+@pytest.mark.parametrize("terminal_status", ["rejected", "superseded"])
+def test_fact_terminal_tombstone_is_stable_without_terminal_time(
+    db,
+    terminal_status,
+):
+    customer = _customer(db, f"fact-null-tombstone-{terminal_status}")
+    first = compile_customer_profile(db, customer.id)
+    fact = _fact(
+        db,
+        customer,
+        key="business.industry",
+        value="Terminal industry",
+        layer="source",
+        observed_at=datetime(2020, 3, 1, 9, 0, 0),
+        fingerprint_suffix=terminal_status,
+    )
+    second = compile_customer_profile(db, customer.id)
+    fact = db.get(CustomerFact, fact.id)
+    customer = db.get(CustomerAccount, customer.id)
+    fact.verification_status = terminal_status
+    assert fact.reviewed_at is None
+    assert fact.effective_to is None
+    customer.profile_input_seq += 1
+    db.flush()
+
+    third = compile_customer_profile(db, customer.id)
+    version = db.get(CustomerProfileVersion, third.profile_version_id)
+    context = db.get(CustomerAgentContext, customer.id).context_json
+    customer = db.get(CustomerAccount, customer.id)
+    customer.profile_input_seq += 1
+    db.flush()
+    replay = compile_customer_profile(db, customer.id)
+
+    expected = {
+        "object_type": "customer_fact",
+        "fact_key": "business.industry",
+        "fact_fingerprint": fact.fact_fingerprint,
+        "terminal_status": terminal_status,
+        "data_classification": "internal_business",
+        "visibility_scope": "customer_team",
+    }
+    assert first.version_no == 1
+    assert second.version_no == 2
+    assert third.created is True
+    assert third.version_no == 3
+    assert version.profile_json["business"]["industry"] is None
+    assert version.profile_json["quality"]["terminal_tombstones"] == [expected]
+    assert context["data_quality"]["terminal_tombstones"] == [expected]
+    assert any(
+        change["section"] == "quality"
+        for change in version.change_summary["changes"]
+    )
+    assert version.section_data_as_of["business"] is None
+    assert version.data_as_of is None
+    assert replay.created is False
+    assert replay.profile_version_id == third.profile_version_id
+
+
+@pytest.mark.parametrize("terminal_status", ["resolved", "dismissed", "superseded"])
+def test_conflict_terminal_tombstone_is_stable_and_filtered_without_resolved_time(
+    db,
+    terminal_status,
+):
+    observed_at = datetime(2020, 4, 1, 9, 0, 0)
+    customer = _customer(db, f"conflict-null-tombstone-{terminal_status}")
+    left = _fact(
+        db,
+        customer,
+        key="business.industry",
+        value="Hair",
+        layer="source",
+        observed_at=observed_at,
+        fingerprint_suffix=f"{terminal_status}-left",
+    )
+    right = _fact(
+        db,
+        customer,
+        key="business.industry",
+        value="Beauty",
+        layer="source",
+        observed_at=observed_at,
+        fingerprint_suffix=f"{terminal_status}-right",
+    )
+    first = compile_customer_profile(db, customer.id)
+    conflict = CustomerFactConflict(
+        customer_id=customer.id,
+        conflict_key="business.industry",
+        left_fact_id=min(left.id, right.id),
+        right_fact_id=max(left.id, right.id),
+        conflict_type="contradictory",
+        data_classification="restricted_internal",
+        visibility_scope="management",
+        detection_rule_version="test_v1",
+        conflict_fingerprint=_digest(f"null-conflict-{terminal_status}"),
+        status="open",
+        detected_at=datetime(2021, 4, 1, 9, 0, 0),
+    )
+    db.add(conflict)
+    customer.profile_input_seq += 1
+    db.flush()
+    second = compile_customer_profile(db, customer.id)
+    conflict = db.get(CustomerFactConflict, conflict.id)
+    customer = db.get(CustomerAccount, customer.id)
+    conflict.status = terminal_status
+    conflict.resolved_at = None
+    customer.profile_input_seq += 1
+    db.flush()
+
+    third = compile_customer_profile(db, customer.id)
+    version = db.get(CustomerProfileVersion, third.profile_version_id)
+    context = db.get(CustomerAgentContext, customer.id).context_json
+    customer = db.get(CustomerAccount, customer.id)
+    customer.profile_input_seq += 1
+    db.flush()
+    replay = compile_customer_profile(db, customer.id)
+
+    assert first.version_no == 1
+    assert second.version_no == 2
+    assert third.created is True
+    assert third.version_no == 3
+    assert version.profile_json["quality"]["terminal_tombstones"] == [{
+        "object_type": "customer_fact_conflict",
+        "conflict_key": "business.industry",
+        "conflict_fingerprint": conflict.conflict_fingerprint,
+        "terminal_status": terminal_status,
+        "data_classification": "restricted_internal",
+        "visibility_scope": "management",
+    }]
+    assert context["data_quality"]["terminal_tombstones"] == []
+    assert conflict.conflict_fingerprint not in str(context)
+    assert all(
+        change["section"] != "quality"
+        for change in context["recent_changes"]
+    )
+    assert version.data_as_of == observed_at
+    assert replay.created is False
+    assert replay.profile_version_id == third.profile_version_id
+
+
+def test_revoked_correction_uses_stable_tombstone_without_revoked_time(db):
+    observed_at = datetime(2020, 5, 1, 9, 0, 0)
+    customer = _customer(db, "correction-null-tombstone")
+    fact = _fact(
+        db,
+        customer,
+        key="business.industry",
+        value="Current industry",
+        layer="source",
+        observed_at=observed_at,
+    )
+    first = compile_customer_profile(db, customer.id)
+    correction = CustomerAnnotation(
+        customer_id=customer.id,
+        annotation_type="correction",
+        target_fact_id=fact.id,
+        content_schema_version="v1",
+        content_json={"reason": "Reject the source conclusion"},
+        visibility="customer_team",
+        data_classification="internal_business",
+        status="active",
+        authored_by=987654,
+    )
+    db.add(correction)
+    customer.profile_input_seq += 1
+    db.flush()
+    second = compile_customer_profile(db, customer.id)
+    correction = db.get(CustomerAnnotation, correction.id)
+    customer = db.get(CustomerAccount, customer.id)
+    correction.status = "revoked"
+    correction.revoked_at = None
+    customer.profile_input_seq += 1
+    db.flush()
+
+    third = compile_customer_profile(db, customer.id)
+    version = db.get(CustomerProfileVersion, third.profile_version_id)
+    context = db.get(CustomerAgentContext, customer.id).context_json
+    customer = db.get(CustomerAccount, customer.id)
+    customer.profile_input_seq += 1
+    db.flush()
+    replay = compile_customer_profile(db, customer.id)
+
+    tombstone = version.profile_json["quality"]["terminal_tombstones"][0]
+    assert first.version_no == 1
+    assert second.version_no == 2
+    assert third.created is True
+    assert third.version_no == 3
+    assert version.profile_json["business"]["industry"]["fact_id"] == fact.id
+    assert tombstone == {
+        "object_type": "customer_annotation",
+        "annotation_type": "correction",
+        "target_fact_fingerprint": fact.fact_fingerprint,
+        "annotation_fingerprint": tombstone["annotation_fingerprint"],
+        "terminal_status": "revoked",
+        "data_classification": "internal_business",
+        "visibility_scope": "customer_team",
+    }
+    assert len(tombstone["annotation_fingerprint"]) == 64
+    assert "target_fact_id" not in tombstone
+    assert context["data_quality"]["terminal_tombstones"] == [tombstone]
+    assert version.data_as_of == observed_at
+    assert replay.created is False
+    assert replay.profile_version_id == third.profile_version_id
+
+
 def test_historical_backfill_data_as_of_uses_business_time_not_account_audit_time(db):
     historical = datetime(2020, 5, 1, 9, 30, 0)
     customer = _customer(db, "historical-data-as-of")

@@ -97,6 +97,7 @@ _SEMANTIC_SET_ARRAY_PATHS = frozenset({
     ("behavior", "confirmed"),
     ("risks", "items"),
     ("quality", "conflicts"),
+    ("quality", "terminal_tombstones"),
     ("quality", "preference_conflicts"),
     ("quality", "corrections"),
     ("quality", "stale_facts"),
@@ -116,6 +117,8 @@ _DNC_SCOPE_TYPES = frozenset({
     "source",
     "channel",
 })
+_TERMINAL_FACT_STATUSES = frozenset({"rejected", "superseded"})
+_TERMINAL_CONFLICT_STATUSES = frozenset({"resolved", "dismissed", "superseded"})
 
 
 class CompileObserver(Protocol):
@@ -164,6 +167,7 @@ class _Snapshot:
     identities: tuple[dict, ...]
     facts: tuple[dict, ...]
     conflicts: tuple[dict, ...]
+    terminal_tombstones: tuple[dict, ...]
     contacts: tuple[dict, ...]
     relationships: tuple[dict, ...]
     assignments: tuple[dict, ...]
@@ -349,13 +353,22 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
         })
 
     facts = []
+    terminal_tombstones = []
     fact_rows = db.query(CustomerFact).filter(CustomerFact.customer_id == customer.id).all()
     fact_by_id = {row.id: row for row in fact_rows}
     for row in fact_rows:
         fact_section = _section_for_fact_key(row.fact_key)
-        if row.verification_status in {"rejected", "superseded"}:
+        if row.verification_status in _TERMINAL_FACT_STATUSES:
             track_lineage(fact_section, row.effective_to, row.reviewed_at)
             track_lineage("quality", row.effective_to, row.reviewed_at)
+            terminal_tombstones.append({
+                "object_type": "customer_fact",
+                "fact_key": row.fact_key,
+                "fact_fingerprint": row.fact_fingerprint,
+                "terminal_status": row.verification_status,
+                "data_classification": row.data_classification,
+                "visibility_scope": row.visibility_scope,
+            })
         else:
             track_lineage(
                 fact_section,
@@ -392,8 +405,18 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
     for row in db.query(CustomerFactConflict).filter(
         CustomerFactConflict.customer_id == customer.id,
     ):
-        if row.status != "open":
+        if row.status in _TERMINAL_CONFLICT_STATUSES:
             track_lineage("quality", row.resolved_at)
+            terminal_tombstones.append({
+                "object_type": "customer_fact_conflict",
+                "conflict_key": row.conflict_key,
+                "conflict_fingerprint": row.conflict_fingerprint,
+                "terminal_status": row.status,
+                "data_classification": row.data_classification,
+                "visibility_scope": row.visibility_scope,
+            })
+            continue
+        if row.status != "open":
             continue
         left = fact_by_id.get(row.left_fact_id)
         right = fact_by_id.get(row.right_fact_id)
@@ -541,6 +564,34 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
             continue
         if row.annotation_type == "correction":
             track_lineage("quality", row.revoked_at)
+            target_fact = fact_by_id.get(row.target_fact_id)
+            if (
+                row.status == "revoked"
+                and target_fact is not None
+                and row.visibility in _SHARED_VISIBILITIES
+            ):
+                terminal_tombstones.append({
+                    "object_type": "customer_annotation",
+                    "annotation_type": "correction",
+                    "target_fact_fingerprint": target_fact.fact_fingerprint,
+                    "annotation_fingerprint": _hash({
+                        "annotation_type": "correction",
+                        "target_fact_fingerprint": target_fact.fact_fingerprint,
+                        "content_schema_version": row.content_schema_version,
+                        "content": row.content_json or {},
+                        "authored_by": row.authored_by,
+                    }),
+                    "terminal_status": "revoked",
+                    "visibility_scope": _max_visibility([
+                        row.visibility,
+                        target_fact.visibility_scope,
+                    ]),
+                    "data_classification": _max_classification([
+                        row.data_classification,
+                        target_fact.data_classification,
+                    ]),
+                })
+                continue
         if row.status != "active" or row.annotation_type != "correction":
             continue
         if row.visibility == "private":
@@ -550,7 +601,6 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
                 "CORRECTION_ANNOTATION_INVALID",
                 "active correction has an invalid shared visibility",
             )
-        target_fact = None
         target_fact = fact_by_id.get(row.target_fact_id)
         if target_fact is None:
             raise ProfileCompileError(
@@ -602,6 +652,7 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
         identities=tuple(identities),
         facts=tuple(facts),
         conflicts=tuple(conflicts),
+        terminal_tombstones=tuple(terminal_tombstones),
         contacts=tuple(contacts),
         relationships=tuple(relationships),
         assignments=tuple(assignments),
@@ -967,6 +1018,14 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
             item["conflict_key"], item["left_fact_id"], item["right_fact_id"]
         ),
     )
+    unique_tombstones = {
+        _canonical_json(item): item
+        for item in snapshot.terminal_tombstones
+    }
+    terminal_tombstones = [
+        unique_tombstones[key]
+        for key in sorted(unique_tombstones)
+    ]
 
     used_classifications = [item["data_classification"] for item in selected.values()]
     used_classifications.extend(item["data_classification"] for item in stale_facts)
@@ -978,6 +1037,9 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
     used_classifications.extend(
         item["data_classification"] for item in snapshot.conflicts
     )
+    used_classifications.extend(
+        item["data_classification"] for item in terminal_tombstones
+    )
     used_visibilities = [item["visibility_scope"] for item in selected.values()]
     used_visibilities.extend(item["visibility_scope"] for item in stale_facts)
     used_visibilities.extend(item["visibility_scope"] for item in aliases)
@@ -988,6 +1050,9 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
     )
     used_visibilities.extend(item["visibility_scope"] for item in risk_items)
     used_visibilities.extend(item["visibility_scope"] for item in snapshot.conflicts)
+    used_visibilities.extend(
+        item["visibility_scope"] for item in terminal_tombstones
+    )
 
     correction_summary = sorted(
         [{
@@ -1024,6 +1089,7 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
     quality = {
         "completeness": _json_value(completeness.quantize(Decimal("0.01"))),
         "conflicts": persisted_conflicts,
+        "terminal_tombstones": terminal_tombstones,
         "preference_conflicts": preference_conflicts,
         "corrections": correction_summary,
         "stale_facts": stale_summary,
@@ -1355,6 +1421,9 @@ def _build_context(version: CustomerProfileVersion) -> dict:
         })
     safe_stale_facts = _safe_entries(list(profile["quality"]["stale_facts"]))
     safe_conflicts = _safe_entries(list(profile["quality"]["conflicts"]))
+    safe_terminal_tombstones = _safe_entries(
+        list(profile["quality"].get("terminal_tombstones", []))
+    )
     corrections = list(profile["quality"].get("corrections", []))
     safe_corrections = _safe_entries(corrections)
     hidden_correction_questions = {
@@ -1382,6 +1451,7 @@ def _build_context(version: CustomerProfileVersion) -> dict:
             "section_data_as_of": version.section_data_as_of,
             "stale_facts": safe_stale_facts,
             "conflicts": safe_conflicts,
+            "terminal_tombstones": safe_terminal_tombstones,
             "corrections": safe_corrections,
         },
         "open_questions": [
