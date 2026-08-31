@@ -98,11 +98,7 @@ def effective_passage_maps(
         else:
             previous = rows[index - 1]
             if rules.get(previous.process_id, {}).get("rule_type") == route_rule_service.RULE_OPTIONAL:
-                upstream = (
-                    set(active_unit_ids)
-                    if index == 1
-                    else set(passed_by_progress.get(rows[index - 2].id, set()))
-                )
+                upstream = set(upstream_by_progress.get(previous.id, set()))
             else:
                 upstream = set(passed_by_progress.get(previous.id, set()))
         reported = state.reported_by_progress.get(row.id, set()) & upstream

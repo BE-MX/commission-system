@@ -19,6 +19,7 @@ from app.domestic.models import (
     DomesticOrder,
     DomesticOrderItem,
     DomesticReportLog,
+    DomesticSkipLog,
 )
 from app.domestic.product_service import get_route_steps
 from app.production.models import Process
@@ -42,6 +43,11 @@ def init_item_progress(db: Session, item: DomesticOrderItem, route_id: int | Non
     ).scalar() or 0
     if log_count:
         raise ValueError(f"该明细已有 {log_count} 条报工记录，不能重建工序进度")
+    skip_count = db.query(func.count(DomesticSkipLog.id)).filter(
+        DomesticSkipLog.item_id == item.id
+    ).scalar() or 0
+    if skip_count:
+        raise ValueError(f"该明细已有 {skip_count} 条跳过记录，不能重建工序进度")
 
     existing = db.query(DomesticItemProgress).filter(DomesticItemProgress.item_id == item.id).all()
     if any(p.completed_qty > 0 for p in existing):

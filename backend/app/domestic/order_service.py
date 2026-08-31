@@ -813,6 +813,11 @@ def delete_item(db: Session, item_id: int, user_id: int | None = None) -> None:
     ).scalar()
     if reported:
         raise ValueError(f"该明细已有 {reported} 条报工记录，不能删除；如需作废请终止订单")
+    skipped = db.query(func.count(DomesticSkipLog.id)).filter(
+        DomesticSkipLog.item_id == item_id
+    ).scalar()
+    if skipped:
+        raise ValueError(f"该明细已有 {skipped} 条跳过记录，不能删除；如需作废请终止订单")
     order_id = item.order_id
     order = _get_order_or_raise(db, order_id, lock=True)
     if order.status in (C.ORDER_TERMINATED, C.ORDER_SHIPPED):
@@ -849,6 +854,18 @@ def attach_route(db: Session, item_id: int, route_id: int | None = None) -> dict
     order = _get_order_or_raise(db, item.order_id, lock=True)
     if order.status in (C.ORDER_TERMINATED, C.ORDER_SHIPPED):
         raise ValueError("已终止/已发货的订单不能重配工艺路线")
+    if item.route_id is not None:
+        reported = db.query(func.count(DomesticReportLog.id)).filter(
+            DomesticReportLog.item_id == item.id
+        ).scalar()
+        if reported:
+            raise ValueError(f"该明细已有 {reported} 条报工记录，不能重建工序进度")
+        skipped = db.query(func.count(DomesticSkipLog.id)).filter(
+            DomesticSkipLog.item_id == item.id
+        ).scalar()
+        if skipped:
+            raise ValueError(f"该明细已有 {skipped} 条跳过记录，不能重建工序进度")
+        raise ValueError("该明细已配置工艺路线，不能重复补配")
     rid = route_id
     if rid is None:
         product = db.query(DomesticProduct).get(item.product_id)

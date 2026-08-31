@@ -8,7 +8,11 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
 
-class ApiException(val statusCode: Int, override val message: String) : Exception(message)
+class ApiException(
+    val statusCode: Int,
+    override val message: String,
+    val code: String? = null,
+) : Exception(message)
 
 class ApiClient(baseUrl: String) {
     var baseUrl: String = normalizeBaseUrl(baseUrl)
@@ -142,7 +146,7 @@ class ApiClient(baseUrl: String) {
                 output.toByteArray()
             } ?: ByteArray(0)
             if (status !in 200..299) {
-                throw ApiException(status, errorMessage(response, status))
+                throw ApiException(status, errorMessage(response, status), errorCode(response))
             }
             return response
         } finally {
@@ -162,6 +166,16 @@ class ApiClient(baseUrl: String) {
         } catch (_: Exception) {
             "请求失败（$status）"
         }
+    }
+
+    private fun errorCode(bytes: ByteArray): String? {
+        if (bytes.isEmpty()) return null
+        return runCatching {
+            JSONObject(String(bytes, StandardCharsets.UTF_8))
+                .optJSONObject("detail")
+                ?.optString("code")
+                ?.takeIf { it.isNotBlank() }
+        }.getOrNull()
     }
 
     companion object {

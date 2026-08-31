@@ -563,7 +563,7 @@ Android PDA 客户端位于 `pda-reporting/`，不新增报工业务端点：先
 
 - `GET /lookup?code=` — **订单速查**：一个参数吃三种输入（二维码原文 `ARK-D:...` / 系统单号 `DO...` / 客户订单号），服务端自行分辨，直接返回订单详情（含逐明细逐工序进度）。查不到或二维码验签失败返回 404 `{code:"NOT_FOUND", message}`；已软删订单一律查不到。
 - `GET /scan/{item_id}?sign=` — 数量模式扫明细码；`GET /unit-scan/{unit_id}?sign=` — 逐件模式扫单件码。逐件 `POST /scan/submit` 必须再次携带 `unit_id + unit_sign`，写端复验标签签名，不能只枚举 ID。模式不匹配返回 `UNIT_QR_REQUIRED`；草稿订单返回 `ORDER_DRAFT`。
-- `POST /scan/submit` — 数量模式传 `{item_id, progress_id, qty, request_id?, outcomes?}`，服务端按 unit_no 从小到大分配单件；逐件模式额外必须传 `unit_id` 且 `qty=1`。decision 工序的 outcomes 规则与主站相同；普通/optional 工序不得传。结果返回本次 `unit_codes`，`request_id` 幂等重放返回首次结果及原分流。扫描下一道时，尚未报工的直属 optional 工序会按同一批具体单件自动生成跳过审计，不需要工人点击跳过。
+- `POST /scan/submit` — 数量模式传 `{item_id, progress_id, qty, request_id?, outcomes?}`，服务端按 unit_no 从小到大分配单件；逐件模式额外必须传 `unit_id` 且 `qty=1`。decision 工序的 outcomes 规则与主站相同；普通/optional 工序不得传。结果返回本次 `unit_codes`，`request_id` 幂等重放返回首次结果及原分流。扫描下一道时，尚未报工的直属 optional 工序会按同一批具体单件自动生成跳过审计，不需要工人点击跳过。若并发获胜事务尚不可见，返回 `409 + SUBMIT_PENDING`，客户端必须保留原 `request_id` 并同号重试，禁止生成新请求号。
 - `POST /scan/revoke` — `{log_id}`；`GET /history` 今日、`GET /history/all` 分页。
 - `GET /orders` / `GET /orders/{id}` — 车间/跟单看订单进度。
 - `GET /images/{path}` — 参考图（小程序 token 无 RBAC 声明，走不了主站图片端点，故有这个同源版本）。

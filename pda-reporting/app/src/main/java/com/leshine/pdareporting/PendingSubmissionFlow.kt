@@ -7,6 +7,9 @@ sealed interface PendingOutcomes<out T> {
 }
 
 object PendingSubmissionFlow {
+    fun shouldKeepPending(statusCode: Int, errorCode: String?): Boolean =
+        errorCode == "SUBMIT_PENDING" || statusCode !in 400..499
+
     fun <T> parseOutcomes(serialized: String?, decode: (String) -> T): PendingOutcomes<T> {
         if (serialized == null) return PendingOutcomes.None
         return runCatching { PendingOutcomes.Ready(decode(serialized)) }

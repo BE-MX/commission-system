@@ -2,11 +2,19 @@ package com.leshine.pdareporting
 
 import android.content.SharedPreferences
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PendingSubmissionStoreTest {
+    @Test
+    fun retryable_submit_conflict_keeps_the_same_pending_request() {
+        assertTrue(PendingSubmissionFlow.shouldKeepPending(409, "SUBMIT_PENDING"))
+        assertTrue(PendingSubmissionFlow.shouldKeepPending(503, null))
+        assertFalse(PendingSubmissionFlow.shouldKeepPending(422, "SUBMIT_FAILED"))
+    }
+
     @Test
     fun malformed_outcomes_are_classified_as_unsafe_to_retry() {
         val result = PendingSubmissionFlow.parseOutcomes("[") { throw IllegalArgumentException("bad json") }

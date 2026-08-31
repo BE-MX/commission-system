@@ -1,12 +1,13 @@
 """内贸条件路线规则与逐件分流的状态机契约。"""
 
+import asyncio
 from datetime import date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -17,7 +18,7 @@ from app.auth.models import ArkUser
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.domestic import constants as C
-from app.domestic import order_service, progress_service, report_service, unit_service
+from app.domestic import order_service, progress_service, report_service, routing_service, unit_service
 from app.domestic import route_rule_service
 from app.domestic.models import (
     DomesticCustomer,
@@ -1163,6 +1164,90 @@ def test_manual_skip_is_idempotent_and_excluded_from_workload(db, conditional_or
             request_id=request_id,
             user_id=case.worker.id,
         )
+
+
+def test_manual_skip_history_blocks_route_rebuild_and_item_delete(db, conditional_order):
+    case = conditional_order
+    report_service.submit_manual_skip(
+        db,
+        item_id=case.item.id,
+        progress_id=case.rows[0].id,
+        qty=1,
+        unit_id=None,
+        reason="主管确认无需首道工序",
+        request_id=str(uuid4()),
+        user_id=case.worker.id,
+    )
+
+    with pytest.raises(ValueError, match="已有 1 条跳过记录"):
+        progress_service.init_item_progress(db, case.item, route_id=case.route.id)
+
+    with pytest.raises(ValueError, match="已有 1 条跳过记录"):
+        order_service.delete_item(db, case.item.id, case.worker.id)
+
+
+def test_attach_route_only_accepts_items_without_an_existing_route(db, conditional_order):
+    case = conditional_order
+
+    with pytest.raises(ValueError, match="已配置工艺路线"):
+        order_service.attach_route(db, case.item.id, case.route.id)
+
+
+def test_consecutive_optional_steps_keep_their_shared_upstream():
+    rows = [
+        SimpleNamespace(id=1, process_id=11),
+        SimpleNamespace(id=2, process_id=12),
+        SimpleNamespace(id=3, process_id=13),
+        SimpleNamespace(id=4, process_id=14),
+    ]
+    unit_id = 101
+    state = routing_service.PassageState(
+        reported_by_progress={1: {unit_id}, 3: {unit_id}},
+        skipped_by_progress={},
+    )
+    rules = {
+        12: {"rule_type": route_rule_service.RULE_OPTIONAL},
+        13: {"rule_type": route_rule_service.RULE_OPTIONAL},
+    }
+
+    upstream, _skipped, passed = routing_service.effective_passage_maps(
+        rows, state, {unit_id}, rules,
+    )
+
+    assert upstream[4] == {unit_id}
+    assert passed[4] == set()
+
+
+def test_mini_submit_marks_concurrent_idempotency_result_as_retryable(monkeypatch, db):
+    from app.mini import router as mini_router
+    from app.mini.schemas import DomesticSubmitRequest
+
+    worker = ArkUser(username="retryable-worker", password_hash="x", real_name="重试工")
+    db.add(worker)
+    db.flush()
+    monkeypatch.setattr(mini_router, "_domestic_report_mode", lambda _user: "quantity")
+    monkeypatch.setattr(
+        mini_router.domestic_report_service,
+        "submit_report",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            ValueError("该报工请求正在并发处理，请使用同一请求号重试")
+        ),
+    )
+    body = DomesticSubmitRequest(
+        item_id=1,
+        progress_id=1,
+        qty=1,
+        request_id="stable-request-id",
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(mini_router.domestic_submit(body, current_user=worker, db=db))
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == {
+        "code": "SUBMIT_PENDING",
+        "message": "该报工请求正在并发处理，请使用同一请求号重试",
+    }
 
 
 def test_manual_skip_exact_unit_and_revoke_blocked_by_downstream_actual_work(

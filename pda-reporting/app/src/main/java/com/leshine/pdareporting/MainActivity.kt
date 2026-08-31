@@ -319,7 +319,15 @@ class MainActivity : Activity() {
                 }
             } catch (error: Exception) {
                 ui {
-                    if (error is ApiException && error.statusCode in 400..499) {
+                    if (
+                        error is ApiException &&
+                        PendingSubmissionFlow.shouldKeepPending(error.statusCode, error.code)
+                    ) {
+                        showRetryDialog(
+                            error.message,
+                            PendingSubmission(scan.toString(), payload.raw, qty, requestId, outcomes?.toString()),
+                        )
+                    } else if (error is ApiException && error.statusCode in 400..499) {
                         if (error.statusCode != 401) pendingStore.clear(requestId)
                         handleFailure(error, written = true, preferUnitDialog = unitMode)
                     } else {

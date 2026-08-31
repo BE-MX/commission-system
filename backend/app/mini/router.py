@@ -314,7 +314,12 @@ async def domestic_submit(
             outcomes=body.outcomes,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail={"code": "SUBMIT_FAILED", "message": str(exc)})
+        message = str(exc)
+        retryable = message == "该报工请求正在并发处理，请使用同一请求号重试"
+        raise HTTPException(
+            status_code=409 if retryable else 422,
+            detail={"code": "SUBMIT_PENDING" if retryable else "SUBMIT_FAILED", "message": message},
+        )
 
 
 @router.post("/domestic/scan/revoke", summary="内贸撤销报工")
