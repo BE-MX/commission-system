@@ -2377,6 +2377,32 @@ def test_mysql_physical_signature_normalizes_unique_index_and_type_aliases():
     assert generic_numeric["indexes"] == (("ix_owner", False, ("owner_id",)),)
 
 
+def test_mysql_physical_signature_ignores_reflected_text_collation_suffix():
+    def signature(column_type):
+        return normalize_physical_schema_signature(
+            columns=[
+                {
+                    "name": "summary",
+                    "type": column_type,
+                    "nullable": True,
+                    "default": None,
+                    "computed": None,
+                    "comment": "summary",
+                }
+            ],
+            primary_key={"name": None, "constrained_columns": []},
+            unique_constraints=[],
+            indexes=[],
+            foreign_keys=[],
+            checks=[],
+            table_comment="synthetic",
+        )
+
+    assert signature(Text()) == signature(
+        mysql.TEXT(collation="utf8mb4_unicode_ci")
+    )
+
+
 def test_mysql_physical_signature_normalizes_show_create_generated_sql():
     def signature(expression):
         return normalize_physical_schema_signature(
@@ -2405,6 +2431,56 @@ def test_mysql_physical_signature_normalizes_show_create_generated_sql():
     reflected = signature(
         "((case when `status` = _utf8mb4'active' then "
         "sha2(concat_ws(char(31),`customer_id`,`source_system`),256) else null end))"
+    )
+
+    assert expected == reflected
+
+    expected_boolean_condition = signature(
+        "CASE WHEN status='active' AND is_primary=1 THEN source ELSE NULL END"
+    )
+    reflected_boolean_condition = signature(
+        "CASE WHEN (`status`='active' AND `is_primary`=1) THEN `source` ELSE NULL END"
+    )
+
+    assert expected_boolean_condition == reflected_boolean_condition
+
+    expected_in_condition = signature(
+        "CASE WHEN effective_to IS NULL AND verification_status IN ('candidate', 'verified') "
+        "THEN source ELSE NULL END"
+    )
+    reflected_in_condition = signature(
+        "CASE WHEN effective_to IS NULL AND (verification_status IN ('candidate', 'verified')) "
+        "THEN source ELSE NULL END"
+    )
+
+    assert expected_in_condition == reflected_in_condition
+
+
+def test_mysql_physical_signature_normalizes_check_comparison_parentheses():
+    def signature(expression):
+        return normalize_physical_schema_signature(
+            columns=[],
+            primary_key={"name": None, "constrained_columns": []},
+            unique_constraints=[],
+            indexes=[],
+            foreign_keys=[],
+            checks=[
+                {
+                    "name": "ck_confidence",
+                    "sqltext": expression,
+                    "dialect_options": {"mysql_enforced": True},
+                }
+            ],
+            table_comment="synthetic",
+        )
+
+    expected = signature(
+        "(record_status = 'merged' and merged_into_customer_id is not null) "
+        "or (record_status <> 'merged' and merged_into_customer_id is null)"
+    )
+    reflected = signature(
+        "((record_status = 'merged') and (merged_into_customer_id is not null)) "
+        "or ((record_status <> 'merged') and (merged_into_customer_id is null))"
     )
 
     assert expected == reflected

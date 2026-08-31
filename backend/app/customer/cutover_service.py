@@ -3325,13 +3325,44 @@ def _sql_expression(value: Any) -> str | None:
 
     while outer_parentheses_cover_all(tokens):
         tokens = tokens[1:-1]
+
+    comparison_tokens = {
+        "=", ">", "<", ">=", "<=", "<>", "!=", "is", "like", "in", "between"
+    }
+    allowed_predecessors = {None, "(", "and", "or", "when", "then", "else"}
+    changed = True
+    while changed:
+        changed = False
+        stack: list[int] = []
+        for position, token in enumerate(tokens):
+            if token == "(":
+                stack.append(position)
+                continue
+            if token != ")" or not stack:
+                continue
+            start = stack.pop()
+            content = tokens[start + 1 : position]
+            predecessor = tokens[start - 1] if start else None
+            if (
+                predecessor in allowed_predecessors
+                and any(item in comparison_tokens for item in content)
+                and (
+                    predecessor == "when"
+                    or not any(item in {"and", "or"} for item in content)
+                )
+            ):
+                tokens = tokens[:start] + content + tokens[position + 1 :]
+                changed = True
+                break
+    while outer_parentheses_cover_all(tokens):
+        tokens = tokens[1:-1]
     return " ".join(tokens)
 
 
 def _type_signature(value: Any) -> dict[str, Any]:
     mysql_type = value.dialect_impl(mysql.dialect())
     rendered = str(mysql_type.compile(dialect=mysql.dialect())).upper()
-    type_name = rendered.split("(", 1)[0].strip()
+    type_name = rendered.split("(", 1)[0].split(" COLLATE ", 1)[0].strip()
     if type_name in {"BOOL", "BOOLEAN"} or (
         type_name == "TINYINT" and getattr(mysql_type, "display_width", None) == 1
     ):

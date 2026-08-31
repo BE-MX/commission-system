@@ -539,6 +539,25 @@ def test_alembic_operations_compile_the_complete_39_table_mysql_ddl():
     assert sql.count("CHECK (") == expected_checks
 
 
+def test_search_source_rank_check_quotes_mysql_reserved_identifier():
+    migration = _load_migration()
+
+    ddl = str(
+        CreateTable(
+            migration.TARGET_METADATA.tables["ark_sales_search_result_sources"]
+        ).compile(dialect=mysql.dialect())
+    )
+
+    assert "check (`rank` is null or `rank` > 0)" in ddl.casefold()
+    rank_check = next(
+        check
+        for check in migration.PHYSICAL_SCHEMA_CONTRACT["tables"]
+        ["ark_sales_search_result_sources"]["checks"]
+        if check[0] == "ck_customer_search_source_rank"
+    )
+    assert rank_check[1] == "rank is null or rank > 0"
+
+
 def test_generated_columns_are_real_stored_mysql_columns():
     migration = _load_migration()
     actual = {

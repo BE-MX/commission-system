@@ -155,6 +155,9 @@ TARGET_PROFILE_COLUMNS = {
 }
 
 CHAR64 = sa.String(64).with_variant(mysql.CHAR(64), "mysql")
+MYSQL_CHECK_DDL_OVERRIDES = {
+    "ck_customer_search_source_rank": "`rank` is null or `rank` > 0",
+}
 
 # These literals pin the complete 39-table contract and the revision-owned
 # resource bytes; migration replay never reads mutable runtime ORM metadata.
@@ -348,7 +351,10 @@ def _build_target_metadata(resource: Mapping[str, Any]) -> MetaData:
             for name, column_names in signature["unique_constraints"]
         )
         constraints.extend(
-            sa.CheckConstraint(expression, name=name)
+            sa.CheckConstraint(
+                MYSQL_CHECK_DDL_OVERRIDES.get(name, expression),
+                name=name,
+            )
             for name, expression, _enforced in signature["checks"]
         )
         sa.Table(

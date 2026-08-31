@@ -1237,7 +1237,7 @@ class SearchResult(Base):
 class SearchResultSource(Base):
     __tablename__ = "ark_sales_search_result_sources"
     __table_args__ = (
-        CheckConstraint("rank IS NULL OR rank > 0", name="ck_customer_search_source_rank"),
+        CheckConstraint("`rank` IS NULL OR `rank` > 0", name="ck_customer_search_source_rank"),
         CheckConstraint("score >= 0 AND score <= 100", name="ck_customer_search_source_score"),
         CheckConstraint("allocated_cost_usd >= 0", name="ck_customer_search_source_cost"),
         UniqueConstraint(
