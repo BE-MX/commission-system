@@ -41,6 +41,22 @@ logger = logging.getLogger("commission")
 
 _TEXT_FIELDS = ("hairstyle", "color", "style_requirement", "remark")
 _IMAGE_FIELDS = ("hairstyle_images", "color_images", "style_images", "remark_images")
+_PUBLIC_PROGRESS_FIELDS = (
+    "step_order",
+    "process_name",
+    "order_qty",
+    "completed_qty",
+    "skipped_qty",
+    "passed_qty",
+    "required_qty",
+    "reportable_qty",
+    "status",
+)
+
+
+def _public_progress_step(step: dict) -> dict:
+    """Serialize the public tracking contract without exposing shop-floor metadata."""
+    return {field: step[field] for field in _PUBLIC_PROGRESS_FIELDS}
 
 
 def _order_request_hash(payload: OrderCreate) -> str:
@@ -461,13 +477,23 @@ def get_order_detail(
     for item in items:
         unit_service.ensure_item_line_no(db, item)
         full_steps = progress_service.build_progress_view(db, item)
+        visible_steps = [step for step in full_steps if step["show_in_domestic_track"]]
+        progress_steps = visible_steps if public_progress_only else full_steps
+        done = sum(
+            step["passed_qty"] if public_progress_only else step["completed_qty"]
+            for step in progress_steps
+        )
         steps = (
-            [step for step in full_steps if step["show_in_domestic_track"]]
+            [_public_progress_step(step) for step in visible_steps]
             if public_progress_only else full_steps
         )
-        done = sum(s["completed_qty"] for s in steps)
         capacity = item.order_qty * len(steps)
-        current = next((s["process_name"] for s in steps if s["completed_qty"] < item.order_qty), "完成")
+        current_qty_field = "passed_qty" if public_progress_only else "completed_qty"
+        current = next((
+            step["process_name"]
+            for step in steps
+            if step[current_qty_field] < item.order_qty
+        ), "完成")
         progress_hidden = public_progress_only and bool(full_steps) and not steps
         item_views.append({
             "id": item.id,

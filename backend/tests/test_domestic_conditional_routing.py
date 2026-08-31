@@ -17,7 +17,7 @@ from app.auth.models import ArkUser
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.domestic import constants as C
-from app.domestic import progress_service, report_service, unit_service
+from app.domestic import order_service, progress_service, report_service, unit_service
 from app.domestic import route_rule_service
 from app.domestic.models import (
     DomesticCustomer,
@@ -868,6 +868,45 @@ def test_optional_predecessor_is_bypassed_by_downstream_report(db, conditional_o
     assert finished[5]["passed_qty"] == 20
     assert case.item.status == 1
     assert order.status == 2
+
+
+def test_public_tracking_whitelists_steps_and_counts_skips_as_progress(db, conditional_order):
+    case = conditional_order
+    _submit(db, case, 0, 20)
+    _submit(db, case, 1, 20, outcomes={"dandong": 12, "lixiaohong": 8})
+    _submit(db, case, 2, 12)
+    _submit(db, case, 3, 8)
+    _submit(db, case, 5, 20)
+
+    public_item = order_service.get_order_detail(
+        db,
+        case.item.order_id,
+        public_progress_only=True,
+        include_finance=False,
+    )["items"][0]
+    expected_fields = {
+        "step_order",
+        "process_name",
+        "order_qty",
+        "completed_qty",
+        "skipped_qty",
+        "passed_qty",
+        "required_qty",
+        "reportable_qty",
+        "status",
+    }
+    assert public_item["steps"]
+    assert all(set(step) == expected_fields for step in public_item["steps"])
+    assert public_item["steps"][4]["completed_qty"] == 0
+    assert public_item["steps"][4]["passed_qty"] == 20
+    assert public_item["current_process"] == "完成"
+    assert public_item["progress_pct"] == 100.0
+
+    internal_item = order_service.get_order_detail(db, case.item.order_id)["items"][0]
+    assert "progress_id" in internal_item["steps"][0]
+    assert "process_id" in internal_item["steps"][0]
+    assert "last_reported_by" in internal_item["steps"][0]
+    assert "rule_type" in internal_item["steps"][0]
 
 
 def test_optional_bypass_unit_mode_only_uses_scanned_unit(db, conditional_order):
