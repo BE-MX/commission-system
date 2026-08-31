@@ -21,11 +21,12 @@
 
 ```bash
 # 数据库
-DB_HOST=xxx.mysql.rds.tencentcdb.com
-DB_PORT=3306
-DB_USER=root
-DB_PASSWORD=<密码>
-DB_NAME=commission_db
+COMMISSION_DB_HOST=xxx.mysql.rds.tencentcdb.com
+COMMISSION_DB_PORT=3306
+COMMISSION_DB_USER=ark_app
+COMMISSION_DB_PASSWORD=<应用账号密码>
+COMMISSION_DB_NAME=commission_db
+BUSINESS_DB_NAME=lsordertest
 
 # JWT
 JWT_SECRET_KEY=<生产环境必须改>
@@ -103,6 +104,20 @@ OPERATIONS_HEARTBEAT_INSTANCE_RETIRE_HOURS=24
 OPERATIONS_HEARTBEAT_RETENTION_DAYS=7
 OPERATIONS_JOB_RUN_RETENTION_DAYS=90
 OPERATIONS_ALERT_TIMEOUT_SECONDS=10
+```
+
+生产数据库账号边界：
+
+- `ark_app` 是办公室和北京后端的唯一运行账号；对 `commission_db.*` 仅授予 `SELECT, INSERT, UPDATE, DELETE`。
+- 方舟登录、报表、采购节、库存和订单分析会跨库读取 `lsordertest`；`ark_app` 对 `lsordertest.*` 授予 `SELECT`。唯一写例外是管理员回款日期修复，仅授予 `okki_receipts.collection_date` 列级 `UPDATE`；不授予其他业务库写入或 DDL。
+- `root` 只用于受控 Alembic/维护窗口，不能写入生产 `.env` 或用于 NSSM 日常运行。
+
+首次创建或修复运行账号时，用 DBA 账号执行并用 `SHOW GRANTS FOR 'ark_app'@'%';` 核验：
+
+```sql
+GRANT SELECT, INSERT, UPDATE, DELETE ON commission_db.* TO 'ark_app'@'%';
+GRANT SELECT ON lsordertest.* TO 'ark_app'@'%';
+GRANT UPDATE (collection_date) ON lsordertest.okki_receipts TO 'ark_app'@'%';
 ```
 
 后端心跳 claim 示例（值为 SHA-256，不是明文 token）：
@@ -271,6 +286,15 @@ python scripts/customer_domain_cutover.py verify-after `
 后验通过后，按顺序执行：重放 HMAC 抑制映射 → 仅启动新版本后端 → 用四类客户做烟测（已识别公司、个人邮箱 provisional、已有订单客户、DNC 客户）→ 核对客户档案/时间线/公海/机会/行动及 Agent 只读上下文 → 恢复调度器与外部 Worker → 撤维护页。任何一步失败都保持停写，保留 contract、DDL proof、receipt 和日志，不要手工补表或重跑同一个 nonce。
 
 特别说明：`ark_sales_target_profiles` 不清空，迁移会校验原物理结构并强制回填版本化策略；旧客户业务表可清空，抑制登记必须保留。共享数据库不可达或仍有 writer 时，允许完成代码与隔离 MySQL 演练，但不得把它记录为“生产切换完成”。
+
+#### 127 内贸条件路线（schema 维护窗口）
+
+127 只增加条件路线、决策结果和跳过审计结构，不切换工艺映射、存量产品或在制明细。执行顺序：
+
+1. 停止办公室 `CommissionSystem`、北京 `ark-backend`及其他内贸 writer，确认 `ark_app` 活跃连接和在途事务均为 0。
+2. 用 DBA 账号确认 `alembic current` 为 `126`、`alembic heads` 唯一为 `127_domestic_route_rules`，再执行 `python -m alembic upgrade 127_domestic_route_rules`。
+3. 核对 3 张新表、2 个旧表新字段、唯一约束、外键及全部表/字段 COMMENT，再只启动新代码。
+4. 本窗口禁止执行 `domestic_route_cutover.py apply`；业务数据切换必须另开维护窗口并带 `--confirm-writes-stopped DOMESTIC_WRITES_STOPPED`。
 
 ### 6. 配置 NSSM 服务
 
@@ -676,9 +700,11 @@ nssm restart CommissionSystem
 ### Q2：数据库连接失败
 
 检查清单：
-1. `.env` 中 `DB_HOST` / `DB_PASSWORD` 是否正确
-2. 腾讯云 RDS 白名单是否包含服务器公网 IP
-3. `telnet <DB_HOST> 3306` 测试连通性
+1. 执行 `python -m scripts.show_db_config`，确认实际读取的 `COMMISSION_DB_HOST/PORT/USER/NAME`；命令只显示密码长度，不回显密码。
+2. `Test-NetConnection <COMMISSION_DB_HOST> -Port <COMMISSION_DB_PORT>` 检查网络和 RDS 白名单。
+3. 用当前后端配置直连执行 `SELECT version_num FROM alembic_version`；这一步通过只能证明主库可读，不能证明登录所需的跨库权限完整。
+4. 如果日志出现 `SELECT command denied ... user_rel_team`，根因是 `ark_app` 缺少 `lsordertest` 只读权限，用 DBA 账号执行 `GRANT SELECT ON lsordertest.* TO 'ark_app'@'%';`，然后用 `SHOW GRANTS` 和实际 `SELECT COUNT(*) FROM lsordertest.user_rel_team` 双重验证。
+5. 检查 NSSM `AppEnvironmentExtra` 是否覆盖 `.env`；不要为解决权限问题把日常运行账号改成 `root`。
 
 ### Q3：前端 404 或白屏
 

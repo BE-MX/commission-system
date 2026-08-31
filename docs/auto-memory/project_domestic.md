@@ -9,3 +9,6 @@
 - 客户进度页返回完整订单，但工序必须在服务端按 `process.show_in_domestic_track` 过滤，不能只靠前端隐藏。
 - 关键权限：`domestic:recharge`、`domestic_quantity_report:write`、`domestic_unit_report:write`。仅有逐件权限时进逐件模式，两者皆有/皆无保持旧数量模式兼容。
 - PDA Android 客户端在 `pda-reporting/`：用主站 `/api/auth/login` 登录后直接复用 `/api/mini/domestic/*`；`get_current_mini_user` 可读取主站 JWT 的 `sub`，所以不要为 PDA 复制一套报工后端。扫描优先走键盘模拟 + Enter，广播统一 action 为 `com.leshine.pdareporting.SCAN`。键盘逐件模式可自动报 1 件（广播必须确认），数量模式必须确认；写请求失败重试必须沿用同一个、提交前持久化的 `request_id`，仅允许 HTTPS 服务地址。
+- 迁移 `127_domestic_route_rules` 于 2026-08-31 在全部 writer 停机且在途事务为 0 时完成生产 schema 升级；3 张新表、25 个新表字段、2 个旧表新字段、3 个唯一约束、10 个外键和全部数据库 COMMENT 已核验。
+- `required` 不存规则行；`decision` 按结果编码分配具体单件；`optional` 允许下游扫码时自动跳过。跳过只改变路线资格并留审计，不计入工作量。
+- 截至 2026-09-01，`domestic_route_cutover.py apply` 未在真实库执行；工艺映射、存量产品和在制明细仍未切换，业务切换必须另开停写窗口。

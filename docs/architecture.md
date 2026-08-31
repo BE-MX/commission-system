@@ -122,6 +122,7 @@ frontend/src/
 - **提成库 `commission_db`**：读写，存放提成系统自有数据
 - **业务库 `lsordertest`**：只读，跨库查询订单/回款原始数据
 - 两库在同一 RDS 实例，通过库名前缀跨库访问
+- 应用运行账号固定为 `ark_app`：对 `commission_db.*` 仅有 DML，对 `lsordertest.*` 有 `SELECT`；业务镜像唯一写例外是管理员回款日期修复对 `okki_receipts.collection_date` 的受审计列级 `UPDATE`。`root` 只用于受控迁移/维护，不运行后端。登录会读取 `lsordertest.user_rel_team`，因此仅验证 `commission_db.alembic_version` 不能代表运行权限完整。
 
 ### 核心表（commission_db）
 

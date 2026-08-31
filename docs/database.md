@@ -23,6 +23,7 @@
 - 提成库 `commission_db`：读写，存放提成系统自有数据
 - 业务库 `lsordertest`：只读，跨库查询订单/回款原始数据
 - 两库在同一 RDS 实例，通过库名前缀跨库访问
+- 生产后端使用 `ark_app@%`：`commission_db.*` 授予 `SELECT, INSERT, UPDATE, DELETE`，`lsordertest.*` 授予 `SELECT`；唯一跨库写例外是 `lsordertest.okki_receipts.collection_date` 的列级 `UPDATE`，由回款修复服务写入并在 `ark_receipt_repair_log` 审计。迁移与 DDL 由单独 DBA 账号执行。
 
 ## 统一客户经营库（迁移 126，2026-08-31）
 

@@ -37,8 +37,8 @@
 
 ## 上线状态与红线
 
-- 截至 2026-08-31，代码分支已完成，生产切换未执行。
-- 共享数据库 `localhost:3306` 在最后检查时不可连接，因此未生成本次正式 preflight、inventory SHA、writer manifest 或 execution receipt。
-- 未满足“所有 writer 停止 + 数据库写权限撤销 + RDS 快照 + 抑制清单 + 五分钟人工批准”时，不得执行重建。
-- 不直接调用 `alembic upgrade head` 完成迁移 126；唯一入口是 `scripts/customer_domain_cutover.py apply-reset`。
-- 任何失败后都保持停写并保留 contract、DDL proof 和 receipt；不要手工补表、复用 nonce 或恢复旧代码 writer。
+- 2026-08-31 已在 RDS 快照、空抑制名单授权、全部 writer 停止和在途事务排空的维护窗口完成生产切换，并晋级 Alembic `126`。
+- 生产切换库存 SHA-256 为 `74fa675c283fb105c6b113c502495b2b0c5c23605b377e2e00631c2c4fb65df7`；中间态恢复回执 SHA-256 为 `b24b81e8180e80423d6f904f78c81a027bf500e35e6e61d9786c208eeeecfdea`。
+- 执行中暴露的 canonical float 证据反序列化和 MySQL `DATETIME` 秒精度问题已修复；39 表、778 字段、Agent 闭包、目标画像、空抑制名单和 writer 权限恢复已验收。
+- 办公室与北京后端日常使用 `ark_app`：对 `commission_db.*` 仅有 DML，对 `lsordertest.*` 仅有 `SELECT`；`root` 只用于受控迁移/维护。
+- 迁移 126 仍无 downgrade。新环境重建不得绕过 `scripts/customer_domain_cutover.py apply-reset`，失败后必须保留 contract、DDL proof 和 receipt，不得手工补表或复用 nonce。
