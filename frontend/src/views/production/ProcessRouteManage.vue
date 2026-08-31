@@ -43,15 +43,20 @@
             <div class="header-actions">
               <GlassButton v-permission="'domestic:admin'" variant="outline" size="sm" @click="applyConfirmedTemplate">应用头套网帽模板</GlassButton>
               <GlassButton v-permission="'production:admin'" variant="secondary" size="sm" @click="addStep">添加工序</GlassButton>
-              <GlassButton v-permission="'production:admin'" variant="primary" size="sm" :loading="savingSteps" @click="saveSteps">保存路线配置</GlassButton>
+              <GlassButton v-permission="'production:admin'" variant="primary" size="sm" :loading="savingSteps" :disabled="!stepsDirty" @click="saveSteps">
+                {{ rulesDirty && canEditRules ? '保存全部变更' : '保存路线步骤' }}
+              </GlassButton>
+              <GlassButton v-permission="'domestic:admin'" variant="primary" size="sm" :loading="savingRules" :disabled="stepsDirty || !rulesDirty" @click="saveRules">保存条件规则</GlassButton>
             </div>
           </div>
+          <el-alert v-if="ruleSaveError" class="save-error" type="error" :closable="false" show-icon :title="ruleSaveError" />
           <div class="step-list">
-            <draggable v-model="editableSteps" item-key="process_id" handle=".drag-handle" animation="200" @end="handleStepsReordered">
+            <draggable v-model="editableSteps" item-key="process_id" handle=".drag-handle" animation="200"
+              :disabled="!canEditSteps" @end="handleStepsReordered">
               <template #item="{ element, index }">
                 <div class="step-row">
                   <div class="step-main">
-                    <span class="drag-handle">≡</span>
+                    <span v-permission="'production:admin'" class="drag-handle">≡</span>
                     <span class="step-order">{{ index + 1 }}</span>
                     <span class="step-name">{{ element.process_name }}</span>
                     <el-select
@@ -68,11 +73,11 @@
                   <div v-if="element.rule_type === 'decision'" v-permission="'domestic:admin'" class="decision-editor">
                     <div v-for="(option, optionIndex) in element.options" :key="optionIndex" class="decision-option">
                       <div class="option-fields">
-                        <el-input v-model="option.label" placeholder="结果名称" maxlength="64" />
-                        <el-input v-model="option.code" placeholder="编码，如 dandong" maxlength="32" />
+                        <el-input v-model="option.label" placeholder="结果名称" maxlength="64" @input="markRulesDirty" />
+                        <el-input v-model="option.code" placeholder="编码，如 dandong" maxlength="32" @input="markRulesDirty" />
                         <el-button link type="danger" @click="removeDecisionOption(element, optionIndex)">删除</el-button>
                       </div>
-                      <el-checkbox-group v-model="option.skip_process_ids" class="skip-targets">
+                      <el-checkbox-group v-model="option.skip_process_ids" class="skip-targets" @change="markRulesDirty">
                         <span class="skip-label">跳过：</span>
                         <el-checkbox v-for="target in laterSteps(index)" :key="target.process_id" :value="target.process_id">
                           {{ target.process_name }}
@@ -125,22 +130,31 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onMounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import draggable from 'vuedraggable'
 import * as api from '@/api/production'
 import { getDomesticRouteRules, saveDomesticRouteRules } from '@/api/domestic'
+import { useAuthStore } from '@/stores/auth'
 import { buildConfirmedDomesticTemplate, validateRouteRule } from '@/views/domestic/conditionalRouting'
+import { mergeRouteSteps, saveStepsThenRules, snapshotRouteRules } from './routeSaveFlow'
 
+const auth = useAuthStore()
 const routeLoading = ref(false)
 const routes = ref([])
 const selectedRoute = ref(null)
 const editableSteps = ref([])
 const savingSteps = ref(false)
-const hasUnsavedChanges = ref(false)
+const savingRules = ref(false)
+const stepsDirty = ref(false)
+const rulesDirty = ref(false)
 const loadingRoute = ref(false)
 const routeRulesLoaded = ref(false)
+const ruleSaveError = ref('')
+const canEditSteps = computed(() => auth.hasPermission('production:admin'))
+const canEditRules = computed(() => auth.hasPermission('domestic:admin'))
+const hasUnsavedChanges = computed(() => stepsDirty.value || rulesDirty.value)
 
 // 路线表单
 const routeFormVisible = ref(false)
@@ -160,11 +174,6 @@ const availableProcesses = computed(() => {
   const existing = new Set(editableSteps.value.map(s => s.process_id))
   return allProcesses.value.filter(p => !existing.has(p.id))
 })
-
-watch(editableSteps, () => {
-  if (!loadingRoute.value) hasUnsavedChanges.value = true
-}, { deep: true })
-
 async function loadRoutes() {
   routeLoading.value = true
   try {
@@ -182,7 +191,7 @@ async function loadAllProcesses() {
 
 function selectRoute(route) {
   if (hasUnsavedChanges.value) {
-    ElMessageBox.confirm('当前步骤有未保存变更，是否放弃？', '提示', { type: 'warning' })
+    ElMessageBox.confirm('当前路线步骤或条件规则有未保存变更，是否放弃？', '提示', { type: 'warning' })
       .then(() => doSelectRoute(route))
       .catch(() => {})
   } else {
@@ -190,35 +199,26 @@ function selectRoute(route) {
   }
 }
 
-async function doSelectRoute(route) {
+async function doSelectRoute(route, { preserveRuleDrafts = null, keepRuleError = false } = {}) {
   selectedRoute.value = route
   loadingRoute.value = true
-  hasUnsavedChanges.value = false
-  const stepRes = await api.getRouteSteps(route.id)
-  let rules = []
-  routeRulesLoaded.value = false
   try {
-    const ruleRes = await getDomesticRouteRules(route.id)
-    rules = ruleRes.data || []
-    routeRulesLoaded.value = true
-  } catch { /* 生产路线查看者可能没有内贸规则权限，保留原步骤编辑能力 */ }
-  const ruleMap = new Map(rules.map(rule => [rule.process_id, rule]))
-  editableSteps.value = (stepRes.steps || []).map(step => {
-    const rule = ruleMap.get(step.process_id)
-    return {
-      process_id: step.process_id,
-      process_name: step.process_name,
-      rule_type: rule?.rule_type || 'required',
-      options: (rule?.config?.options || []).map(option => ({
-        code: option.code,
-        label: option.label,
-        skip_process_ids: [...option.skip_process_ids],
-      })),
-    }
-  })
-  await nextTick()
-  loadingRoute.value = false
-  hasUnsavedChanges.value = false
+    const stepRes = await api.getRouteSteps(route.id)
+    let rules = []
+    routeRulesLoaded.value = false
+    try {
+      const ruleRes = await getDomesticRouteRules(route.id)
+      rules = ruleRes.data || []
+      routeRulesLoaded.value = true
+    } catch { /* 生产路线查看者可能没有内贸规则权限，保留原步骤编辑能力 */ }
+    editableSteps.value = mergeRouteSteps(stepRes.steps || [], rules, preserveRuleDrafts || [])
+    await nextTick()
+    stepsDirty.value = false
+    rulesDirty.value = Boolean(preserveRuleDrafts)
+    if (!keepRuleError) ruleSaveError.value = ''
+  } finally {
+    loadingRoute.value = false
+  }
 }
 
 function openRouteForm(row) {
@@ -262,6 +262,7 @@ async function deleteRoute(row) {
 }
 
 function addStep() {
+  if (!canEditSteps.value) return
   selectedNewSteps.value = []
   addStepVisible.value = true
 }
@@ -272,10 +273,12 @@ function confirmAddStep() {
     return { process_id: pid, process_name: proc?.name || '', rule_type: 'required', options: [] }
   })
   editableSteps.value.push(...newSteps)
+  stepsDirty.value = true
   addStepVisible.value = false
 }
 
 function removeStep(index) {
+  if (!canEditSteps.value) return
   const removedId = editableSteps.value[index].process_id
   editableSteps.value.splice(index, 1)
   for (const step of editableSteps.value) {
@@ -283,6 +286,8 @@ function removeStep(index) {
       option.skip_process_ids = option.skip_process_ids.filter(id => id !== removedId)
     }
   }
+  stepsDirty.value = true
+  if (canEditRules.value && routeRulesLoaded.value) rulesDirty.value = true
 }
 
 function laterSteps(index) {
@@ -298,25 +303,37 @@ function changeRuleType(step) {
   } else if (step.rule_type !== 'decision') {
     step.options = []
   }
+  markRulesDirty()
 }
 
 function addDecisionOption(step) {
   step.options.push({ code: '', label: '', skip_process_ids: [] })
+  markRulesDirty()
 }
 
 function removeDecisionOption(step, index) {
   step.options.splice(index, 1)
+  markRulesDirty()
 }
 
 function handleStepsReordered() {
+  if (!canEditSteps.value) return
   const orderById = new Map(editableSteps.value.map((step, index) => [step.process_id, index]))
+  let rulesChanged = false
   for (const [index, step] of editableSteps.value.entries()) {
     for (const option of step.options || []) {
-      option.skip_process_ids = option.skip_process_ids.filter(id => orderById.get(id) > index)
+      const nextIds = option.skip_process_ids.filter(id => orderById.get(id) > index)
+      if (nextIds.length !== option.skip_process_ids.length) rulesChanged = true
+      option.skip_process_ids = nextIds
     }
   }
+  stepsDirty.value = true
+  if (rulesChanged && canEditRules.value) rulesDirty.value = true
 }
 
+function markRulesDirty() {
+  if (canEditRules.value && !loadingRoute.value) rulesDirty.value = true
+}
 function pathSummary(option) {
   const names = option.skip_process_ids
     .map(id => editableSteps.value.find(step => step.process_id === id)?.process_name)
@@ -336,20 +353,37 @@ async function applyConfirmedTemplate() {
         options: (rule?.options || []).map(option => ({ ...option, skip_process_ids: [...option.skip_process_ids] })),
       }
     })
-    hasUnsavedChanges.value = true
+    markRulesDirty()
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') ElMessage.error(error.message || '模板应用失败')
   }
 }
 
+function buildRulePayload() {
+  if (!routeRulesLoaded.value) throw new Error('条件规则尚未加载，不能保存')
+  return editableSteps.value.map(step => validateRouteRule(step, editableSteps.value)).filter(Boolean)
+}
+
+async function reloadSelectedRoute(options) {
+  const routeId = selectedRoute.value.id
+  await loadRoutes()
+  const refreshed = routes.value.find(route => route.id === routeId) || selectedRoute.value
+  await doSelectRoute(refreshed, options)
+}
+
+function errorDetail(error) {
+  return error.response?.data?.detail || error.message || '未知错误'
+}
+
 async function saveSteps() {
-  if (!selectedRoute.value) return
+  if (!selectedRoute.value || !canEditSteps.value || !stepsDirty.value) return
+  const saveRulesTogether = canEditRules.value && rulesDirty.value
   let rules = []
-  if (routeRulesLoaded.value) {
+  let drafts = null
+  if (saveRulesTogether) {
     try {
-      rules = editableSteps.value
-        .map(step => validateRouteRule(step, editableSteps.value))
-        .filter(Boolean)
+      rules = buildRulePayload()
+      drafts = snapshotRouteRules(editableSteps.value)
     } catch (error) {
       ElMessage.warning(error.message)
       return
@@ -358,20 +392,50 @@ async function saveSteps() {
   savingSteps.value = true
   try {
     const steps = editableSteps.value.map(s => ({ process_id: s.process_id }))
-    await api.saveRouteSteps(selectedRoute.value.id, steps)
-    if (routeRulesLoaded.value) {
-      await saveDomesticRouteRules(selectedRoute.value.id, rules)
+    const routeId = selectedRoute.value.id
+    const result = await saveStepsThenRules({
+      saveSteps: () => api.saveRouteSteps(routeId, steps),
+      saveRules: saveRulesTogether ? () => saveDomesticRouteRules(routeId, rules) : null,
+      reload: async ({ partial, error }) => {
+        if (partial) {
+          ruleSaveError.value = `路线步骤已保存，但条件规则保存失败：${errorDetail(error)}`
+          await reloadSelectedRoute({ preserveRuleDrafts: drafts, keepRuleError: true })
+        } else {
+          await reloadSelectedRoute()
+        }
+      },
+    })
+    if (result.status === 'saved') {
       ElMessage.success('路线步骤与条件规则已保存')
-    } else {
-      ElMessage.success('路线步骤已保存；条件规则无权加载，未改动')
+    } else if (result.status === 'steps_saved') {
+      ElMessage.success('路线步骤已保存')
     }
-    await loadRoutes()
-    const refreshed = routes.value.find(route => route.id === selectedRoute.value.id) || selectedRoute.value
-    await doSelectRoute(refreshed)
   } catch (e) {
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    ElMessage.error(errorDetail(e) || '路线步骤保存失败')
   } finally {
     savingSteps.value = false
+  }
+}
+
+async function saveRules() {
+  if (!selectedRoute.value || !canEditRules.value || stepsDirty.value || !rulesDirty.value) return
+  let rules
+  try {
+    rules = buildRulePayload()
+  } catch (error) {
+    ElMessage.warning(error.message)
+    return
+  }
+  savingRules.value = true
+  try {
+    await saveDomesticRouteRules(selectedRoute.value.id, rules)
+    ruleSaveError.value = ''
+    await reloadSelectedRoute()
+    ElMessage.success('条件规则已保存')
+  } catch (error) {
+    ruleSaveError.value = `条件规则保存失败：${errorDetail(error)}`
+  } finally {
+    savingRules.value = false
   }
 }
 
@@ -408,6 +472,7 @@ onMounted(() => {
 .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #ebeef5; }
 .panel-title { font-weight: 600; font-size: 15px; }
 .header-actions { display: flex; gap: 8px; }
+.save-error { margin: 12px 16px 0; width: auto; }
 .route-list { flex: 1; overflow-y: auto; padding: 8px; }
 .route-item { padding: 10px 12px; border-radius: 4px; cursor: pointer; margin-bottom: 4px; transition: background 0.2s; position: relative; }
 .route-item:hover { background: #f5f7fa; }

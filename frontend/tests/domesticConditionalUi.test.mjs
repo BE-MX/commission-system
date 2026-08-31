@@ -21,7 +21,7 @@ test('domestic API exposes route-rule and audited skip operations', () => {
 })
 
 
-test('route management configures generic conditional rules after saving steps', () => {
+test('route management separates step and conditional-rule permissions and saves', () => {
   const view = read('../src/views/production/ProcessRouteManage.vue')
 
   assert.match(view, /label="必须扫描" value="required"/)
@@ -32,10 +32,23 @@ test('route management configures generic conditional rules after saving steps',
   assert.match(view, /getDomesticRouteRules/)
   assert.match(view, /saveDomesticRouteRules/)
   assert.match(view, /跳过/)
+  assert.match(view, /useAuthStore/)
+  assert.match(view, /canEditSteps/)
+  assert.match(view, /canEditRules/)
+  assert.match(view, /:disabled="!canEditSteps"/)
+  assert.match(view, /v-permission="'production:admin'"[\s\S]*?@click="saveSteps"/)
+  assert.match(view, /保存全部变更/)
+  assert.match(view, /保存路线步骤/)
+  assert.match(view, /v-permission="'domestic:admin'"[\s\S]*?@click="saveRules"[\s\S]*?>保存条件规则</)
+  assert.match(view, /路线步骤已保存，但条件规则保存失败/)
+  assert.match(view, /stepsDirty/)
+  assert.match(view, /rulesDirty/)
+  assert.match(view, /ruleSaveError/)
+  assert.match(view, /saveStepsThenRules/)
 
-  const saveStepsIndex = view.indexOf('await api.saveRouteSteps')
-  const saveRulesIndex = view.indexOf('await saveDomesticRouteRules')
-  assert.ok(saveStepsIndex >= 0 && saveRulesIndex > saveStepsIndex, '必须先保存路线步骤，再保存条件规则')
+  assert.match(view, /canEditRules\.value && rulesDirty\.value/)
+  assert.match(view, /canEditSteps\.value/)
+  assert.match(view, /:disabled="stepsDirty \|\| !rulesDirty"/)
 })
 
 
