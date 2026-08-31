@@ -32,6 +32,7 @@ export default function AdminPage() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [notice, setNotice] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
   const [adminAccess, setAdminAccess] = useState<"checking" | "allowed" | "denied">("checking");
 
   const load = async () => {
@@ -46,14 +47,18 @@ export default function AdminPage() {
   };
   useEffect(() => {
     fetch("/api/admin-auth").then(async (response) => {
-      if (response.status === 401) {
-        window.location.href = `/signin-with-chatgpt?return_to=${encodeURIComponent("/admin")}`;
-        return;
-      }
       if (!response.ok) { setAdminAccess("denied"); return; }
       setAdminAccess("allowed"); await load();
     });
   }, []);
+
+  const submitAdminLogin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setNotice(""); setSaving(true);
+    const response = await fetch("/api/admin-auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: adminPassword }) });
+    const data = await response.json();
+    if (!response.ok) { setNotice(data.error ?? "登录失败"); setSaving(false); return; }
+    setAdminPassword(""); setAdminAccess("allowed"); await load(); setSaving(false);
+  };
 
   const activeCount = products.filter((item) => item.status === "active").length;
   const stockCount = products.reduce((sum, item) => sum + item.stock, 0);
@@ -144,7 +149,7 @@ export default function AdminPage() {
   };
 
   if (adminAccess === "checking") return <main className="admin-access-state"><div><span>莱</span><h1>正在验证管理员身份</h1><p>请稍候…</p></div></main>;
-  if (adminAccess === "denied") return <main className="admin-access-state"><div><span>锁</span><h1>无后台管理权限</h1><p>请使用网站管理员的ChatGPT账号登录。</p><a href="/">返回前台</a></div></main>;
+  if (adminAccess === "denied") return <main className="admin-access-state"><div><span>锁</span><h1>莱莎经营后台</h1><p>请输入后台管理密码后继续。</p><form onSubmit={submitAdminLogin}><input type="password" value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} placeholder="后台管理密码" autoComplete="current-password" required />{notice && <div className="login-message">{notice}</div>}<button type="submit" disabled={saving}>{saving ? "正在登录…" : "进入管理后台"}</button></form><a href="/">返回前台</a></div></main>;
 
   return (
     <div className="admin-shell">
@@ -292,8 +297,8 @@ export default function AdminPage() {
             <label className="wide">核心卖点<textarea value={form.highlights.join("；")} onChange={(e) => setForm({ ...form, highlights: e.target.value.split(/[；;\n]+/).map((item) => item.trim()).filter(Boolean) })} placeholder="每条卖点用分号隔开" /></label>
             <label className="wide">适用人群<textarea value={form.audience.join("；")} onChange={(e) => setForm({ ...form, audience: e.target.value.split(/[；;\n]+/).map((item) => item.trim()).filter(Boolean) })} placeholder="每类人群用分号隔开" /></label>
             <label className="wide">适用场景<input value={form.scenarios.join("；")} onChange={(e) => setForm({ ...form, scenarios: e.target.value.split(/[；;\n]+/).map((item) => item.trim()).filter(Boolean) })} placeholder="通勤；聚会；旅行" /></label>
-            <div className="wide media-upload-box"><div><strong>产品实拍图片</strong><span>最多8张，第一张作为封面</span></div><label className="upload-button">{uploading ? "上传中…" : "选择图片"}<input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={uploading} onChange={(e) => uploadFiles(e.target.files, "images")} /></label>{form.images.length > 0 && <div className="upload-preview">{form.images.map((url, index) => <span key={url}><img src={url} alt={`产品图${index + 1}`} /><button type="button" onClick={() => setForm({ ...form, images: form.images.filter((item) => item !== url) })}>×</button></span>)}</div>}</div>
-            <div className="wide media-upload-box"><div><strong>产品视频</strong><span>支持MP4或MOV，单个不超过100MB</span></div><label className="upload-button">{uploading ? "上传中…" : "选择视频"}<input type="file" accept="video/mp4,video/quicktime" disabled={uploading} onChange={(e) => uploadFiles(e.target.files, "video")} /></label>{form.videoUrl && <div className="uploaded-video"><span>视频已就绪</span><button type="button" onClick={() => setForm({ ...form, videoUrl: "" })}>移除</button></div>}</div>
+            <div className="wide media-upload-box"><div><strong>产品实拍图片</strong><span>最多8张，第一张作为封面；也可以粘贴已公开的图片网址</span></div><label className="upload-button">{uploading ? "上传中…" : "选择图片"}<input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={uploading} onChange={(e) => uploadFiles(e.target.files, "images")} /></label><input className="media-url-input" placeholder="粘贴图片网址后按回车添加" onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); const url = event.currentTarget.value.trim(); if (url) { setForm({ ...form, images: [...form.images, url].slice(0, 8) }); event.currentTarget.value = ""; } } }} />{form.images.length > 0 && <div className="upload-preview">{form.images.map((url, index) => <span key={url}><img src={url} alt={`产品图${index + 1}`} /><button type="button" onClick={() => setForm({ ...form, images: form.images.filter((item) => item !== url) })}>×</button></span>)}</div>}</div>
+            <div className="wide media-upload-box"><div><strong>产品视频</strong><span>支持MP4或MOV，单个不超过20MB；也可以粘贴已公开的视频网址</span></div><label className="upload-button">{uploading ? "上传中…" : "选择视频"}<input type="file" accept="video/mp4,video/quicktime" disabled={uploading} onChange={(e) => uploadFiles(e.target.files, "video")} /></label><input className="media-url-input" value={form.videoUrl} onChange={(event) => setForm({ ...form, videoUrl: event.target.value })} placeholder="视频网址（https://…）" />{form.videoUrl && <div className="uploaded-video"><span>视频已就绪</span><button type="button" onClick={() => setForm({ ...form, videoUrl: "" })}>移除</button></div>}</div>
             <label className="wide">最低查看等级<select value={form.minLevel} onChange={(e) => updateForm("minLevel", e.target.value)}><option value="retail">所有客户可见</option><option value="a">批发A及以上可见</option><option value="b">仅批发B可见</option></select><small>低于该等级的客户只能看到“批发专属款式”，无法看到名称和价格。</small></label>
           </div>
           {notice && <p className="form-error">{notice}</p>}

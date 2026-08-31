@@ -1,0 +1,23 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "leshine-wig-platform",
+  "pages_build_output_dir": "../client",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "laisha-wig-platform-db",
+      "database_id": "3d46c2a1-f6e1-4b4e-934c-bee706d29c76"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "MEDIA_KV",
+      "id": "7d5746d2026d4cbca7fa02084552e255"
+    }
+  ],
+  "vars": {
+    "ADMIN_EMAIL": "okeahgao@gmail.com"
+  }
+}

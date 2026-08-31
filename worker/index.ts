@@ -6,6 +6,7 @@ interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
   MEDIA: R2Bucket;
+  MEDIA_KV: KVNamespace;
   ADMIN_EMAIL: string;
   IMAGES: {
     input(stream: ReadableStream): {
