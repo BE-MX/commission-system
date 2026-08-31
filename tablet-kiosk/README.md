@@ -71,16 +71,69 @@ export ANDROID_HOME="/c/Users/windb/AppData/Local/Android/Sdk"
 > 已在开发机验证可构建（2026-07-16）：产物 `app/build/outputs/apk/debug/app-debug.apk`（约 2.1MB），
 > compileSdk 35 / AGP 8.5.2 / Gradle 8.7 / JDK 21(JBR)。debug 版可直接装测试；正式展位用签名 release。
 
-**签名**：展位内部使用，用一个自签名 keystore 即可（Android Studio: Build → Generate Signed
-Bundle/APK，一路新建 keystore）。debug 版也能装，但每次重装会清数据（含登录态），正式用签名 release。
+### 正式签名与自动更新（1.9 / code 10 起）
+
+自动更新依赖 Android 的签名连续性。所有平板首次统一换装 1.9 后，后续 APK **必须使用同一个正式 keystore**；
+密钥丢失后无法覆盖升级已安装的平板，只能再次全量卸载/恢复出厂并重装。
+
+首次只做一次：用 JDK `keytool` 在仓库外生成 RSA 4096、SHA256withRSA 的长期证书，别名固定
+`leshine-expo`，DN 不得是 Android Debug。生成时让 `keytool` 交互读取密码，避免密码进入命令历史。
+
+```powershell
+New-Item -ItemType Directory -Force C:\secure
+& 'C:\Program Files\Android\Android Studio\jbr\bin\keytool.exe' -genkeypair `
+  -keystore C:\secure\leshine-expo-release.jks -storetype PKCS12 -alias leshine-expo `
+  -keyalg RSA -keysize 4096 -sigalg SHA256withRSA -validity 10000 `
+  -dname 'CN=LeShine Expo Kiosk, OU=AI Technology Support, O=LeShine, L=Qingdao, ST=Shandong, C=CN'
+Copy-Item .\keystore.properties.example .\keystore.properties
+# 只在本机编辑 keystore.properties 的四个字段；不要把密码粘到命令或聊天中。
+```
+
+`C:\secure\leshine-expo-release.jks` 与 `keystore.properties` 必须做两份离线备份，分开保管并实际验证可恢复。
+这是上线硬门禁；当前开发机生成文件不等于已经完成离线备份。仓库只跟踪示例，真实 properties、`*.jks`、
+`*.keystore` 均被 `.gitignore` 排除。请求任一 Release Gradle task 时，只要配置缺失、字段为空或文件不存在，
+构建会直接失败，绝不回退为 debug/unsigned。
+
+在 `tablet-kiosk` 目录用本机已解压 Gradle 构建并核验：
+
+```powershell
+$gradle = 'C:\Users\windb\.gradle\wrapper\dists\gradle-8.7-bin\f06yd7m8w1d0inql2joytq4az\gradle-8.7\bin\gradle.bat'
+& $gradle assembleRelease --offline --console=plain
+$tools = "$env:LOCALAPPDATA\Android\Sdk\build-tools\37.0.0"
+& "$tools\aapt.exe" dump badging .\app\build\outputs\apk\release\app-release.apk
+& "$tools\apksigner.bat" verify --print-certs .\app\build\outputs\apk\release\app-release.apk
+Get-FileHash .\app\build\outputs\apk\release\app-release.apk -Algorithm SHA256
+```
+
+发布器只接受 `com.leshine.expokiosk`、`versionCode > 9`、非空版本名且不是 Android Debug 证书的有效签名包。
+先离线准备并核对清单，再显式提供 IP 自签 CA 发布；`-PrepareOnly` 不需要 CA，也不会调用 curl/ssh/scp。
+
+```powershell
+.\scripts\publish-update.ps1 -ApkPath .\app\build\outputs\apk\release\app-release.apk -PrepareOnly
+.\scripts\publish-update.ps1 -ApkPath .\app\build\outputs\apk\release\app-release.apk `
+  -CaCertificatePath C:\secure\expo-ip.crt
+```
+
+发布器固定写入同源 `/expo-app/latest.json` 与 `/expo-app/leshine-expo-kiosk.apk`，先原子替换 APK、最后原子
+替换清单，并用受信 CA 回读核验。更新源不能指定其他 URL，也不会进入方舟后台页面；断网、404、校验或安装失败时，
+APP 会放行当前版本继续试戴，下次冷启动重试。APP 自动识别安装模式：设备所有者平板静默安装，普通平板下载完成后
+只打开 Android 系统安装确认，不提供绕过系统确认的开关，也不需要工作人员切换模式。
 
 ## 装到平板 + 首次配置
 
-1. 允许「安装未知来源应用」，把 APK 拷进平板安装（或 `adb install app-release.apk`）。
-2. 打开一次，授予**摄像头**权限（拍照合成要用）。
-3. 用**专用「展会设备」账号**（仅 `expo:write`，见 `docs/expo-kiosk-tablet-setup.md`）登录一次。
-4. 设为默认主屏（可选，软锁）：设置 → 默认应用 → 主屏幕应用 → 选「莱莎AI试戴」。
+1. 首次迁移到稳定签名时，设备所有者先运行
+   `adb shell dpm remove-active-admin com.leshine.expokiosk/.AdminReceiver`；解除失败则恢复出厂。卸载所有旧
+   debug/旧签名版本，再安装 1.9 release（不同签名不能覆盖安装）。
+2. 允许「安装未知来源应用」，把 release APK 拷进平板安装（或 `adb install app-release.apk`）。
+3. 打开一次，授予**摄像头**权限（拍照合成要用）。
+4. 用**专用「展会设备」账号**（仅 `expo:write`，见 `docs/expo-kiosk-tablet-setup.md`）登录一次。
+5. 设为默认主屏（可选，软锁）：设置 → 默认应用 → 主屏幕应用 → 选「莱莎AI试戴」。
    之后在打印 App 里按 Home 键即回 kiosk。
+
+需要真锁定的平板在初始/恢复出厂状态重新设置设备所有者并恢复 kiosk、打印、相机和文档选择器白名单。
+正式铺开前，必须至少用一台设备所有者平板验证静默更新、一台普通平板验证 Android 系统安装确认；同时验证
+离线/404/损坏包会继续进入当前试戴。回滚不能降低 `versionCode`：必须用旧源码构建一个**更高 versionCode** 的新包，
+仍使用同一正式 keystore 后重新发布。
 
 ## 真锁定（Lock Task，可选但展位推荐）
 

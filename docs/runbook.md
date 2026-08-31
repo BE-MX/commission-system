@@ -987,6 +987,59 @@ grep "job completed" logs\service.log | tail -20
     `sudo openssl x509 -in /etc/nginx/ssl/expo-ip.crt -noout -fingerprint -sha256`
   - **分享二维码仍走 http**：客户手机不认自签证书（微信内置浏览器直接白屏），`ResultScreen.vue`
     在 host 为裸 IP 且无显式端口时把分享链接降回 http；备案换正规证书后自动恢复 https
+- **展位平板 APP 自动更新（1.9 / code 10 起）**：更新源固定为当前 kiosk origin 的
+  `/expo-app/latest.json` 与 `/expo-app/leshine-expo-kiosk.apk`，静态目录固定
+  `/var/www/ark-updates/expo-kiosk/`，不得放进会被前端 `rsync --delete` 清理的 `/var/www/ark-dist`。
+  这两个 exact location 不代理方舟后端，也不能把平板导向方舟后台或任意下载地址；更新失败会继续进入当前试戴。
+
+  首次上线先在开发机仓库外生成唯一 RSA 4096/SHA256withRSA keystore，别名 `leshine-expo`；复制
+  `tablet-kiosk/keystore.properties.example` 为被忽略的 `keystore.properties` 并填四个字段。keystore 与 properties
+  必须做**两份离线备份并验证恢复**，否则不得铺机；丢失后无法给已安装平板升级，只能再次全量重装。构建与本地预检：
+
+  ```powershell
+  $gradle = 'C:\Users\windb\.gradle\wrapper\dists\gradle-8.7-bin\f06yd7m8w1d0inql2joytq4az\gradle-8.7\bin\gradle.bat'
+  & $gradle -p tablet-kiosk assembleRelease --offline --console=plain
+  $tools = "$env:LOCALAPPDATA\Android\Sdk\build-tools\37.0.0"
+  & "$tools\aapt.exe" dump badging tablet-kiosk\app\build\outputs\apk\release\app-release.apk
+  & "$tools\apksigner.bat" verify --print-certs tablet-kiosk\app\build\outputs\apk\release\app-release.apk
+  .\tablet-kiosk\scripts\publish-update.ps1 `
+    -ApkPath .\tablet-kiosk\app\build\outputs\apk\release\app-release.apk -PrepareOnly
+  ```
+
+  Nginx 片段在 `deploy/nginx/expo-kiosk-updates.conf`。它应安装为
+  `/etc/nginx/snippets/expo-kiosk-updates.conf`，并在服务 `/expo/kiosk` 的 HTTPS IP `server` 块中 include；只要
+  HTTP 兜底 origin 仍允许配置，也要在对应 80 端口 `server` 块 include。改配置前把完整 Nginx 配置备份到用户 home，
+  **不要把备份留在 `conf.d/` 或 `sites-enabled/`**。以下是操作模板，不代表已经执行：
+
+  ```powershell
+  scp .\deploy\nginx\expo-kiosk-updates.conf ubuntu@154.8.205.162:/tmp/
+  ```
+
+  ```bash
+  backup_dir="$HOME/nginx-backup-$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$backup_dir"
+  sudo cp -a /etc/nginx/. "$backup_dir/"
+  sudo install -m 0644 /tmp/expo-kiosk-updates.conf /etc/nginx/snippets/expo-kiosk-updates.conf
+  # 编辑生效的 443/80 server 块，加入：include /etc/nginx/snippets/expo-kiosk-updates.conf;
+  sudo install -d -m 0755 /var/www/ark-updates/expo-kiosk
+  sudo nginx -t && sudo systemctl reload nginx
+  ```
+
+  发布必须提供已核验的自签 CA，脚本不会使用 `-k/--insecure`。它先读取线上清单拒绝相同版本/降级，上传唯一临时名，
+  在服务器复算摘要，同目录原子替换 APK，最后替换清单，再通过 HTTPS 回读二者核验：
+
+  ```powershell
+  .\tablet-kiosk\scripts\publish-update.ps1 `
+    -ApkPath .\tablet-kiosk\app\build\outputs\apk\release\app-release.apk `
+    -Target ubuntu@154.8.205.162 -CaCertificatePath C:\secure\expo-ip.crt
+  ```
+
+  首次换稳定签名不能覆盖旧 debug 包：设备所有者先执行
+  `adb shell dpm remove-active-admin com.leshine.expokiosk/.AdminReceiver`，解除失败就恢复出厂；随后卸载旧包、安装 1.9
+  release、重新登录专用展会账号。真锁定平板恢复出厂后重新 enroll 设备所有者并恢复打印/相机/文档选择器白名单。
+  批量铺开前必须各取一台验收：设备所有者模式应静默安装，普通模式应自动进入 Android 系统确认；两种模式都要验证
+  断网、404、损坏/错签名/错包名/低版本时继续试戴。Android 拒绝降级，回滚只能用旧源码、同一 keystore、**更高
+  versionCode** 构建并当作新版本发布。
 - **扫码上传照片（2026-08-01）两个部署陷阱，缺一即功能静默失效**：
   1. **`backend/.env` 必须配 `EXPO_UPLOAD_SIGN_SECRET`**（`.env.example` 已列出该项）。留空/留仓库默认字面量时，
      `POST /kiosk/upload-ticket` 故意 fail-closed 返回 503，kiosk 显示「扫码上传未配置，请联系管理员或直接拍照」——
