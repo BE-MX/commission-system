@@ -508,6 +508,8 @@ The script must require `--target-route-name`, print:
 
 Any mutation requires both `--apply` and a generated preflight token. Do not switch mapping automatically from the Alembic migration.
 
+Prefer repeatable `--craft-key product_type::craft` selectors. `--craft-name` is only a convenience for names that resolve to exactly one `(product_type, craft)` mapping; ambiguous, missing, duplicate, malformed, or overlapping selectors must fail before token generation.
+
 - [ ] **Step 3: Implement explicit reviewed cutover**
 
 Apply mode must update selected craft mappings and existing product route bindings in one transaction, rebuild only no-report items, and consume a reviewed JSON reconciliation file for reported items. Abort the entire transaction on any quantity, unit-identity, or workload mismatch. Print an after-state comparison and commit only when every invariant matches.

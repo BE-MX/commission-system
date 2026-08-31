@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.auth.models import ArkUser
 from app.core.database import SessionLocal
 from app.core.time import beijing_now
+from app.domestic import constants as C
 from app.domestic import progress_service, route_rule_service
 from app.domestic.models import (
     DomesticCraftRoute,
@@ -96,10 +97,91 @@ def _normalize_craft_names(craft_names: list[str] | None) -> list[str]:
         name = value.strip()
         if not name:
             raise CutoverError("--craft-name 不能为空")
-        if name not in seen:
-            normalized.append(name)
-            seen.add(name)
+        if name in seen:
+            raise CutoverError(f"--craft-name 重复：{name}")
+        normalized.append(name)
+        seen.add(name)
     return sorted(normalized)
+
+
+def _parse_craft_keys(craft_keys: list[str] | None) -> list[tuple[str, str]]:
+    pairs = []
+    seen = set()
+    for raw_value in craft_keys or []:
+        value = raw_value.strip()
+        if value.count("::") != 1:
+            raise CutoverError(
+                f"--craft-key 格式不正确：{raw_value!r}；必须为 product_type::craft"
+            )
+        product_type, craft = (part.strip() for part in value.split("::", 1))
+        if product_type not in C.PRODUCT_TYPES:
+            allowed = "、".join(sorted(C.PRODUCT_TYPES))
+            raise CutoverError(
+                f"--craft-key 产品类型不支持：{product_type or '<empty>'}；允许 {allowed}"
+            )
+        if not craft:
+            raise CutoverError("--craft-key 的 craft 不能为空")
+        pair = (product_type, craft)
+        if pair in seen:
+            raise CutoverError(f"--craft-key 重复：{product_type}::{craft}")
+        pairs.append(pair)
+        seen.add(pair)
+    return sorted(pairs)
+
+
+def _resolve_craft_pairs(
+    db: Session,
+    *,
+    craft_names: list[str] | None,
+    craft_keys: list[str] | None,
+    lock: bool,
+) -> list[tuple[str, str]]:
+    """Resolve convenience names to the same exact pair contract as craft keys."""
+    names = _normalize_craft_names(craft_names)
+    key_pairs = _parse_craft_keys(craft_keys)
+    overlap = sorted(set(names) & {craft for _product_type, craft in key_pairs})
+    if overlap:
+        raise CutoverError(
+            f"--craft-name 与 --craft-key 重叠：{'、'.join(overlap)}"
+        )
+
+    resolved = set(key_pairs)
+    if names:
+        query = db.query(DomesticCraftRoute).filter(
+            DomesticCraftRoute.craft.in_(names)
+        )
+        if lock:
+            query = query.with_for_update()
+        rows = query.order_by(
+            DomesticCraftRoute.craft.asc(), DomesticCraftRoute.product_type.asc()
+        ).all()
+        by_name: dict[str, list[DomesticCraftRoute]] = {name: [] for name in names}
+        for row in rows:
+            by_name[row.craft].append(row)
+        for name in names:
+            matches = by_name[name]
+            if not matches:
+                raise CutoverError(f"工艺路线映射不存在：{name}")
+            product_types = sorted({row.product_type for row in matches})
+            if len(matches) != 1:
+                raise CutoverError(
+                    f"--craft-name {name} 命中多个映射，product_types="
+                    f"{'、'.join(product_types)}；请改用 --craft-key product_type::craft"
+                )
+            resolved.add((matches[0].product_type, matches[0].craft))
+
+    if key_pairs:
+        query = db.query(DomesticCraftRoute).filter(
+            tuple_(DomesticCraftRoute.product_type, DomesticCraftRoute.craft).in_(key_pairs)
+        )
+        if lock:
+            query = query.with_for_update()
+        found = {(row.product_type, row.craft) for row in query.all()}
+        missing = sorted(set(key_pairs) - found)
+        if missing:
+            labels = [f"{product_type}::{craft}" for product_type, craft in missing]
+            raise CutoverError(f"工艺路线映射不存在：{'、'.join(labels)}")
+    return sorted(resolved)
 
 
 def _load_route_steps(db: Session, route_id: int) -> list[tuple[ProcessRouteStep, Process]]:
@@ -178,22 +260,25 @@ def _worker_coverage(
 
 def _selected_mappings(
     db: Session,
-    craft_names: list[str],
+    craft_pairs: list[tuple[str, str]],
     *,
     lock: bool,
 ) -> list[DomesticCraftRoute]:
-    if not craft_names:
+    if not craft_pairs:
         return []
-    query = db.query(DomesticCraftRoute).filter(DomesticCraftRoute.craft.in_(craft_names))
+    query = db.query(DomesticCraftRoute).filter(
+        tuple_(DomesticCraftRoute.product_type, DomesticCraftRoute.craft).in_(craft_pairs)
+    )
     if lock:
         query = query.with_for_update()
     rows = query.order_by(
         DomesticCraftRoute.product_type.asc(), DomesticCraftRoute.craft.asc(),
     ).all()
-    found = {row.craft for row in rows}
-    missing = sorted(set(craft_names) - found)
+    found = {(row.product_type, row.craft) for row in rows}
+    missing = sorted(set(craft_pairs) - found)
     if missing:
-        raise CutoverError(f"以下工艺没有路线映射：{'、'.join(missing)}")
+        labels = [f"{product_type}::{craft}" for product_type, craft in missing]
+        raise CutoverError(f"以下工艺没有路线映射：{'、'.join(labels)}")
     return rows
 
 
@@ -337,32 +422,23 @@ def _audit_state(db: Session, item_ids: list[int]) -> dict:
     skip_units = db.query(DomesticSkipUnit).filter(
         DomesticSkipUnit.skip_log_id.in_(skip_ids or [0])
     ).order_by(DomesticSkipUnit.id.asc()).all()
+
+    def serialize_all_columns(model, rows: list) -> list[dict]:
+        # Deliberately derive from SQLAlchemy metadata. Cutover evidence must gain
+        # newly-added business columns automatically instead of silently omitting
+        # fields from a hand-maintained allowlist.
+        column_names = [column.name for column in model.__table__.columns]
+        return [
+            {column_name: getattr(row, column_name) for column_name in column_names}
+            for row in rows
+        ]
+
     return {
-        "progress": [{
-            "id": row.id, "item_id": row.item_id, "route_id": row.route_id,
-            "process_id": row.process_id, "step_order": row.step_order,
-            "completed_qty": row.completed_qty, "status": row.status,
-        } for row in progress],
-        "report_logs": [{
-            "id": row.id, "item_id": row.item_id, "progress_id": row.progress_id,
-            "process_id": row.process_id, "step_order": row.step_order,
-            "report_qty": row.report_qty, "outcome_json": row.outcome_json,
-            "request_id": row.request_id, "revoked": row.revoked,
-        } for row in logs],
-        "report_units": [{
-            "id": row.id, "log_id": row.log_id, "unit_id": row.unit_id,
-            "progress_id": row.progress_id, "outcome_code": row.outcome_code,
-        } for row in report_units],
-        "skip_logs": [{
-            "id": row.id, "item_id": row.item_id, "progress_id": row.progress_id,
-            "skip_qty": row.skip_qty, "source": row.source,
-            "trigger_report_log_id": row.trigger_report_log_id,
-            "request_id": row.request_id, "revoked": row.revoked,
-        } for row in skips],
-        "skip_units": [{
-            "id": row.id, "skip_log_id": row.skip_log_id,
-            "unit_id": row.unit_id, "progress_id": row.progress_id,
-        } for row in skip_units],
+        "progress": serialize_all_columns(DomesticItemProgress, progress),
+        "report_logs": serialize_all_columns(DomesticReportLog, logs),
+        "report_units": serialize_all_columns(DomesticReportUnit, report_units),
+        "skip_logs": serialize_all_columns(DomesticSkipLog, skips),
+        "skip_units": serialize_all_columns(DomesticSkipUnit, skip_units),
     }
 
 
@@ -385,12 +461,12 @@ def _build_preflight(
     *,
     target_route_name: str,
     craft_names: list[str] | None,
+    craft_keys: list[str] | None,
     lock: bool,
 ) -> dict:
     if not isinstance(target_route_name, str) or not target_route_name.strip():
         raise CutoverError("必须提供目标路线精确名称")
     target_route_name = target_route_name.strip()
-    normalized_crafts = _normalize_craft_names(craft_names)
     target = _load_target_route(db, target_route_name, lock=lock)
     steps = _load_route_steps(db, target.id)
     raw_rules, display_rules = _validate_target_rules(db, target.id)
@@ -399,7 +475,13 @@ def _build_preflight(
         names = "、".join(row["process_name"] for row in coverage["missing"])
         raise CutoverError(f"目标路线工序未绑定在职人员：{names}")
 
-    mappings = _selected_mappings(db, normalized_crafts, lock=lock)
+    craft_pairs = _resolve_craft_pairs(
+        db,
+        craft_names=craft_names,
+        craft_keys=craft_keys,
+        lock=lock,
+    )
+    mappings = _selected_mappings(db, craft_pairs, lock=lock)
     products = _selected_products(db, mappings, lock=lock)
     items = _selected_items(db, products, lock=lock)
     item_ids = [row.id for row in items]
@@ -449,7 +531,10 @@ def _build_preflight(
             "raw_rules_digest": _digest(raw_rules),
         },
         "worker_coverage": coverage,
-        "selected_craft_names": normalized_crafts,
+        "selected_craft_pairs": [
+            {"product_type": product_type, "craft": craft}
+            for product_type, craft in craft_pairs
+        ],
         "craft_mappings": [
             {
                 "id": row.id,
@@ -499,12 +584,14 @@ def preflight(
     *,
     target_route_name: str,
     craft_names: list[str] | None = None,
+    craft_keys: list[str] | None = None,
 ) -> dict:
     """Read-only preflight. Calling it never commits or mutates ORM rows."""
     return _build_preflight(
         db,
         target_route_name=target_route_name,
         craft_names=craft_names,
+        craft_keys=craft_keys,
         lock=False,
     )
 
@@ -572,14 +659,14 @@ def apply_cutover(
     db: Session,
     *,
     target_route_name: str,
-    craft_names: list[str],
+    craft_names: list[str] | None = None,
+    craft_keys: list[str] | None = None,
     preflight_token: str,
     reconciliation: dict,
 ) -> dict:
     """Apply a reviewed cutover as one transaction, or leave no writes."""
-    normalized_crafts = _normalize_craft_names(craft_names)
-    if not normalized_crafts:
-        raise CutoverError("apply 至少一个 --craft-name")
+    if not craft_names and not craft_keys:
+        raise CutoverError("apply 至少一个工艺选择器（--craft-key 或 --craft-name）")
     if not isinstance(preflight_token, str) or TOKEN_RE.fullmatch(preflight_token) is None:
         raise CutoverError("预检令牌格式不正确")
 
@@ -590,7 +677,8 @@ def apply_cutover(
         locked_plan = _build_preflight(
             db,
             target_route_name=target_route_name,
-            craft_names=normalized_crafts,
+            craft_names=craft_names,
+            craft_keys=craft_keys,
             lock=True,
         )
         _lock_cutover_scope(db, locked_plan)
@@ -599,7 +687,8 @@ def apply_cutover(
         locked_plan = _build_preflight(
             db,
             target_route_name=target_route_name,
-            craft_names=normalized_crafts,
+            craft_names=craft_names,
+            craft_keys=craft_keys,
             lock=True,
         )
         if locked_plan["preflight_token"] != preflight_token:
@@ -658,7 +747,7 @@ def apply_cutover(
         result = {
             "mode": "applied",
             "target_route": locked_plan["target_route"],
-            "selected_craft_names": normalized_crafts,
+            "selected_craft_pairs": locked_plan["selected_craft_pairs"],
             "updated_mapping_ids": mapping_ids,
             "updated_product_ids": product_ids,
             "rebuilt_item_ids": rebuilt_item_ids,
@@ -720,7 +809,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--craft-name", action="append", default=[],
-        help="要切换的工艺精确名称；可重复。apply 时至少一个",
+        help="仅当该名称全库只对应一个 product_type 时可用；可重复",
+    )
+    parser.add_argument(
+        "--craft-key", action="append", default=[],
+        help="推荐的精确选择器 product_type::craft，例如 cap::递针；可重复",
     )
     parser.add_argument("--apply", action="store_true", help="执行受控切换；省略即只读预检")
     parser.add_argument("--preflight-token", help="刚复核的 dry-run 输出 token")
@@ -739,6 +832,7 @@ def main(argv: list[str] | None = None) -> int:
                 db,
                 target_route_name=args.target_route_name,
                 craft_names=args.craft_name,
+                craft_keys=args.craft_key,
                 preflight_token=args.preflight_token,
                 reconciliation=_read_reconciliation(args.reconciliation_file),
             )
@@ -747,6 +841,7 @@ def main(argv: list[str] | None = None) -> int:
                 db,
                 target_route_name=args.target_route_name,
                 craft_names=args.craft_name,
+                craft_keys=args.craft_key,
             )
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
         return 0

@@ -159,6 +159,11 @@ def test_preflight_discovers_by_name_and_reports_scope_without_writes(db, cutove
         target_route_name="头套网帽（递针）",
         craft_names=["needle_cap"],
     )
+    same_exact_pair = cutover.preflight(
+        db,
+        target_route_name="头套网帽（递针）",
+        craft_keys=["cap::needle_cap"],
+    )
 
     assert first["target_route"]["id"] == cutover_case["target_route"].id
     assert first["target_route"]["rule_valid"] is True
@@ -180,6 +185,7 @@ def test_preflight_discovers_by_name_and_reports_scope_without_writes(db, cutove
         "workload_qty": 1,
     }
     assert first["preflight_token"] == second["preflight_token"]
+    assert first["preflight_token"] == same_exact_pair["preflight_token"]
     assert cutover.capture_database_fingerprint(db) == before
 
 
@@ -214,7 +220,7 @@ def test_preflight_rejects_invalid_rules_and_missing_worker_coverage(db, cutover
 
 def test_apply_requires_token_crafts_and_reviewed_reconciliation(db, cutover_case):
     target_name = cutover_case["target_route"].name
-    with pytest.raises(cutover.CutoverError, match="至少一个 --craft-name"):
+    with pytest.raises(cutover.CutoverError, match="至少一个工艺选择器"):
         cutover.apply_cutover(
             db, target_route_name=target_name, craft_names=[],
             preflight_token="x", reconciliation={"reported_items": []},
@@ -349,3 +355,89 @@ def test_skip_audit_history_is_never_rebuilt_as_a_clean_item(db, cutover_case):
     audited = next(row for row in plan["items"]["reported"] if row["id"] == clean_item.id)
     assert audited["report_log_count"] == 0
     assert audited["skip_log_count"] == 1
+
+
+def test_ambiguous_craft_name_refuses_and_exact_key_changes_only_one_mapping(db, cutover_case):
+    piece_mapping = DomesticCraftRoute(
+        product_type="piece", craft="needle_cap",
+        route_id=cutover_case["old_route"].id,
+        updated_by=cutover_case["operator"].id,
+    )
+    db.add(piece_mapping)
+    db.commit()
+
+    with pytest.raises(cutover.CutoverError, match=r"needle_cap.*cap.*piece"):
+        cutover.preflight(
+            db,
+            target_route_name=cutover_case["target_route"].name,
+            craft_names=["needle_cap"],
+        )
+
+    plan = cutover.preflight(
+        db,
+        target_route_name=cutover_case["target_route"].name,
+        craft_keys=["cap::needle_cap"],
+    )
+    assert plan["selected_craft_pairs"] == [
+        {"product_type": "cap", "craft": "needle_cap"},
+    ]
+    assert [row["id"] for row in plan["craft_mappings"]] == [
+        cutover_case["mapping"].id,
+    ]
+
+    cutover.apply_cutover(
+        db,
+        target_route_name=cutover_case["target_route"].name,
+        craft_names=[],
+        craft_keys=["cap::needle_cap"],
+        preflight_token=plan["preflight_token"],
+        reconciliation={"reported_items": [{
+            "item_id": cutover_case["reported_item"].id,
+            "action": "keep_current",
+        }]},
+    )
+    assert db.get(DomesticCraftRoute, cutover_case["mapping"].id).route_id == cutover_case["target_route"].id
+    assert db.get(DomesticCraftRoute, piece_mapping.id).route_id == cutover_case["old_route"].id
+
+
+@pytest.mark.parametrize(
+    ("craft_names", "craft_keys", "message"),
+    [
+        ([], ["bad-key"], "格式"),
+        ([], ["unknown::needle_cap"], "产品类型"),
+        ([], ["cap::needle_cap", "cap::needle_cap"], "重复"),
+        (["needle_cap", "needle_cap"], [], "重复"),
+        ([], ["cap::missing"], "不存在"),
+        (["needle_cap"], ["cap::needle_cap"], "重叠"),
+    ],
+)
+def test_craft_selectors_are_strict(db, cutover_case, craft_names, craft_keys, message):
+    with pytest.raises(cutover.CutoverError, match=message):
+        cutover.preflight(
+            db,
+            target_route_name=cutover_case["target_route"].name,
+            craft_names=craft_names,
+            craft_keys=craft_keys,
+        )
+
+
+def test_preflight_token_covers_worker_and_full_report_audit_fields(db, cutover_case):
+    first = cutover.preflight(
+        db,
+        target_route_name=cutover_case["target_route"].name,
+        craft_keys=["cap::needle_cap"],
+    )
+    log = db.query(DomesticReportLog).filter_by(
+        item_id=cutover_case["reported_item"].id,
+    ).one()
+    log.reported_by_user_id = cutover_case["operator"].id + 1000
+    log.reported_by_name = "审计字段已变化"
+    log.source = "mini"
+    db.commit()
+
+    second = cutover.preflight(
+        db,
+        target_route_name=cutover_case["target_route"].name,
+        craft_keys=["cap::needle_cap"],
+    )
+    assert second["preflight_token"] != first["preflight_token"]

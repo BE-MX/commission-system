@@ -571,13 +571,15 @@ Android PDA 客户端位于 `pda-reporting/`，不新增报工业务端点：先
 
 ### 条件路线生产切换门禁
 
-迁移 127 只建结构，不自动切换任何业务数据。应用三端验证完成后，从 `backend/` 目录执行只读预检；目标用精确名称，工艺用可重复的精确值，不硬编码数据库 ID：
+迁移 127 只建结构，不自动切换任何业务数据。应用三端验证完成后，从 `backend/` 目录执行只读预检；目标用精确名称，工艺推荐用可重复的 `--craft-key "product_type::craft"`，不硬编码数据库 ID。`product_type` 只允许 `cap/piece`，例如：
 
 ```powershell
 python -m scripts.domestic_route_cutover `
   --target-route-name "头套网帽（递针）" `
-  --craft-name "<产品与工艺页显示的精确工艺值>"
+  --craft-key "cap::<产品与工艺页显示的精确工艺值>"
 ```
+
+`--craft-name` 仅是无歧义便利入口：只有全库恰好一个 `(product_type, craft)` 映射时才接受；同名同时存在 cap/piece 会拒绝并列出 product types，要求改用 craft-key。key 格式不合法、缺失/重复选择器，或 craft-name 与 craft-key 选择同一 craft 都会拒绝。预检及 token 最终只认规范化后的精确 pairs。
 
 预检输出目标规则/工人覆盖、工艺映射、存量产品路线、零报工明细、需人工 reconciliation 的有历史明细，以及 item/report log/report unit/completed/workload 守恒基线和 `preflight_token`。review 文件必须逐项且只覆盖 reported items；当前唯一安全动作是保留其历史与原路线：
 
@@ -594,7 +596,7 @@ python -m scripts.domestic_route_cutover `
 ```powershell
 python -m scripts.domestic_route_cutover `
   --target-route-name "头套网帽（递针）" `
-  --craft-name "<产品与工艺页显示的精确工艺值>" `
+  --craft-key "cap::<产品与工艺页显示的精确工艺值>" `
   --apply `
   --preflight-token "<dry-run 输出的 64 位 token>" `
   --reconciliation-file ".\reviewed-domestic-items.json"
