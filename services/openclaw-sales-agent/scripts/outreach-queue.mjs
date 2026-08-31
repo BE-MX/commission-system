@@ -80,7 +80,9 @@ async function loadArkClient() {
       || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
     env[key] = value;
   }
-  env.ARK_AGENT_TOKEN_FILE ||= resolve(stateDir, "secrets", "ark-agent-token");
+  // Confirmation is a trusted operator action. Never reuse the unattended
+  // acquisition Agent credential for customer contact reads.
+  env.ARK_AGENT_TOKEN_FILE = resolve(stateDir, "secrets", "outreach-operator-token");
   return new ArkClient(loadConfig(env));
 }
 

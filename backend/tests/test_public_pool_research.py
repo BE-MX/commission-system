@@ -14,6 +14,7 @@ from app.agent_runtime.models import AgentEvent, AgentRun
 from app.auth.models import ArkUser
 from app.customer.models import (
     CustomerAccount,
+    CustomerAssignment,
     CustomerContact,
     CustomerContactPoint,
     CustomerContactRelationship,
@@ -24,6 +25,7 @@ from app.customer.models import (
     PublicPoolBatch,
 )
 from app.customer import outreach_service
+from app.customer.access_service import CustomerAccess
 from app.core.database import get_db
 from app.knowledge import service as knowledge_service
 from app.knowledge.models import KnowledgeLibrary
@@ -918,7 +920,15 @@ def test_outreach_context_binds_current_customer_profile_contact_and_evidence(db
     ))
     db.flush()
 
-    context = outreach_service.get_outreach_context(db, account.id)
+    access = CustomerAccess(
+        customer_id=account.id,
+        actor_user_id=1,
+        can_manage=False,
+        max_data_classification="personal_contact",
+        max_visibility_scope="customer_team",
+        run_id=None,
+    )
+    context = outreach_service.get_outreach_context(db, access)
 
     assert context["customer_id"] == account.id
     assert context["current_profile_version_id"] == profile.id
@@ -930,3 +940,90 @@ def test_outreach_context_binds_current_customer_profile_contact_and_evidence(db
         "source_record_id": fact.source_record_id,
         "source_url": "https://outreach.example/about",
     }]
+
+
+def test_outreach_context_route_requires_live_customer_access(db):
+    task = _task(db)
+    app = FastAPI()
+    app.include_router(agent_router.router, prefix="/api/sales-automation")
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[require_sales_agent] = lambda: {
+        "sub": "1",
+        "roles": [],
+        "permissions": ["sales_automation:invoke", "customer:read"],
+    }
+
+    with TestClient(app) as client:
+        denied = client.get(
+            f"/api/sales-automation/agent/customers/{task.customer_id}/outreach-context",
+        )
+        db.add(CustomerAssignment(
+            customer_id=task.customer_id,
+            user_id=1,
+            assignment_role="primary",
+            assignment_status="active",
+            assignment_source="manual",
+            effective_from=datetime(2026, 8, 30, 8, 0),
+        ))
+        db.commit()
+        allowed = client.get(
+            f"/api/sales-automation/agent/customers/{task.customer_id}/outreach-context",
+        )
+        app.dependency_overrides[require_sales_agent] = lambda: {
+            "sub": "1",
+            "roles": [],
+            "permissions": ["sales_automation:invoke"],
+        }
+        agent_only = client.get(
+            f"/api/sales-automation/agent/customers/{task.customer_id}/outreach-context",
+        )
+
+    assert denied.status_code == 404
+    assert denied.json()["detail"] == "CUSTOMER_NOT_FOUND_OR_FORBIDDEN"
+    assert allowed.status_code == 200
+    assert allowed.json()["data"]["customer_id"] == task.customer_id
+    assert agent_only.status_code == 404
+    assert agent_only.json()["detail"] == "CUSTOMER_NOT_FOUND_OR_FORBIDDEN"
+
+
+def test_outreach_context_filters_management_evidence(db):
+    task = _task(db)
+    claimed, _lease_token = public_pool_service.claim_task(db, task.id, 1, "research-agent")
+    run = _governed_run(db, claimed)
+    visible = _research_fact(db, claimed, run, suffix="visible-outreach")
+    hidden = _research_fact(db, claimed, run, suffix="hidden-outreach")
+    hidden.data_classification = "restricted_internal"
+    hidden.visibility_scope = "management"
+    hidden_source = db.get(CustomerSourceRecord, hidden.source_record_id)
+    hidden_source.data_classification = "restricted_internal"
+    hidden_source.visibility_scope = "management"
+    profile = CustomerProfileVersion(
+        customer_id=task.customer_id,
+        version_no=1,
+        profile_schema_version="customer_profile_v1",
+        canonicalization_version="jcs_v1",
+        input_seq=0,
+        profile_json={},
+        section_hashes={},
+        section_data_as_of={},
+        evidence_fact_ids=[visible.id, hidden.id],
+        change_summary={"changes": []},
+        compiler_version="test-v1",
+        profile_fingerprint="e" * 64,
+        compiled_at=datetime(2026, 8, 30, 10, 0),
+    )
+    db.add(profile)
+    db.flush()
+    db.get(CustomerAccount, task.customer_id).current_profile_version_id = profile.id
+    access = CustomerAccess(
+        customer_id=task.customer_id,
+        actor_user_id=1,
+        can_manage=False,
+        max_data_classification="restricted_internal",
+        max_visibility_scope="customer_team",
+        run_id=None,
+    )
+
+    context = outreach_service.get_outreach_context(db, access)
+
+    assert [row["fact_id"] for row in context["evidence"]] == [visible.id]

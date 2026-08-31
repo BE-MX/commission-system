@@ -39,7 +39,7 @@
 | `POST /research-tasks/{id}/industry-gate` | 先判断行业相关性；无关即停止，不生成联系方式或成交分 |
 | `POST /research-tasks/{id}/facts` | 追加来源优先的事实，返回 `fact:{id}`、内容哈希、输入哈希和分类组成的证据回执 |
 | `POST /research-tasks/{id}/complete|fail` | 完成或以稳定 `error_code` 失败 |
-| `GET /customers/{customer_id}/outreach-context` | 读取当前联系人触点、档案版本、事实证据和 DNC 状态；邮件发送前必须重新读取 |
+| `GET /agent/customers/{customer_id}/outreach-context` | 仅供独立触达确认 operator 读取当前联系人触点、档案版本、授权范围内事实证据和 DNC 状态；要求 `sales_automation:invoke`、客户读取权限及实时客户归属，普通获客 Agent token 不可调用 |
 | `GET /search-jobs`、`GET /search-jobs/{id}/context` | 获取可领取搜索任务和冻结目标画像 |
 | `POST /search-jobs/{id}/claim|heartbeat|candidates|complete|fail` | 租约执行、幂等提交候选及终结任务 |
 

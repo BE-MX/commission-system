@@ -275,7 +275,8 @@ frontend/src/
   ├── 客户机会（阶段变化写 opportunity_event + customer_event）
   └── 经营雷达行动（完成时写真实 sales_activity 事件）
 
-Agent 消费：MCP / outreach-context → 只读 Ark 当前版本、事实和证据
+Agent 消费：受控 Agent Run MCP → 只读 Ark 当前版本、事实和证据
+触达确认：独立 operator token + 实时客户归属 → outreach-context 最小权限快照
 Agent 生产：claim + lease + input_hash → 仅向所属任务/customer_id 追加来源与事实
 ```
 
@@ -320,7 +321,7 @@ Agent 生产：claim + lease + input_hash → 仅向所属任务/customer_id 追
 
 - 阿里询盘和 OKKI 客户/订单先写不可变来源记录，再解析到 `customer_id`；个人邮箱、个人名称不能直接当公司身份。
 - Google、官网、独立站、LinkedIn 和其他社媒只提供公开商业证据；禁止私人关系调查和无来源联系方式猜测。
-- 外部 Agent 通过 `/api/sales-automation/agent/*` 的任务租约写入；普通消费 Agent 通过客户 MCP 工具或 `outreach-context` 只读方舟。
+- 外部 Agent 通过 `/api/sales-automation/agent/*` 的任务租约写入；普通消费 Agent 只通过受控 Agent Run 的客户 MCP 工具读取方舟。`outreach-context` 仅供 Agent 外的触达确认 operator 使用，并同时校验客户读取权限、实时归属及记录级数据分级。
 - 历史 `POST /api/insight/customer-opportunities/import/accio` 客户写入口已退役；ACCIO 仍可作为通用 AI Provider，但不能维护独立客户副本。
 
 ### WhatsApp Connector（WhatsApp 同步）

@@ -68,7 +68,7 @@ Bootstrap 会固定安装 OpenClaw 官方 `@openclaw/parallel-plugin`、创建�
 - 默认使用当地 `09:05`（上班时间可按有来源的公司营业时间调整），跳过当地周末及公共/银行假日；错过窗口超过 30 分钟时顺延到下一个合格工作日。
 - dispatcher 在发送前把任务标记为 `sending`；只要 Agent Mail 子进程已经启动却没有明确成功，任务就转为 `ambiguous` 且绝不自动重发，需人工核对已发送箱，避免重复开发信。只有 CLI 根本未启动（如二进制不存在或无执行权限）才记为明确失败。
 
-Agent Mail CLI 没有原生定时发送参数，因此此队列把两阶段确认改为：草稿阶段先用只读 `schedule` 确定本地/UTC 窗口；要求发送时再用 `preview` 完整展示收件人、主题、正文、语言依据和时间。用户下一轮明确确认后，Agent 只展示本机 operator 命令 `$HOME/.openclaw-ark-sales/bin/outreach-queue confirm --token oqt_...`，由用户或其他可信操作者在 Agent 之外运行；Agent 内对 `confirm` 是硬拒绝，不会弹出可永久放行的 exec 审批。命令会重新读取 Ark，核对 approved 公司、同一联系人、`valid` 邮箱、研究 revision 和绑定的语言证据 URL。确认只授权该内容哈希和排程，不是立即发送。
+Agent Mail CLI 没有原生定时发送参数，因此此队列把两阶段确认改为：草稿阶段先用只读 `schedule` 确定本地/UTC 窗口；要求发送时再用 `preview` 完整展示收件人、主题、正文、语言依据和时间。用户下一轮明确确认后，Agent 只展示本机 operator 命令 `$HOME/.openclaw-ark-sales/bin/outreach-queue confirm --token oqt_...`，由用户或其他可信操作者在 Agent 之外运行；Agent 内对 `confirm` 是硬拒绝，不会弹出可永久放行的 exec 审批。命令会使用独立的 `outreach-operator-token` 重新读取 Ark，核对 approved 公司、同一联系人、`valid` 邮箱、研究 revision 和绑定的语言证据 URL。该 token 对应账号必须拥有 `sales_automation:invoke`、`customer:read`，且必须是该客户当前负责人或协作人；普通获客 Agent token 无权读取该接口。确认只授权该内容哈希和排程，不是立即发送。
 
 草稿冒烟测试（不会排队或发信）：
 
@@ -111,7 +111,18 @@ install -m 600 /dev/null "$HOME/.openclaw-ark-sales/secrets/ark-agent-token"
 # 用你的密码管理器/安全编辑器写入 token，不要把 token 放在 shell 历史中
 ```
 
-### 2. MiMo API key
+### 2. 触达确认 operator token
+
+另建一个方舟操作员账号，只分配 `sales_automation:invoke` 与 `customer:read`，并仅把需要触达的客户分配给该账号。为它创建独立 MCP token，写入：
+
+```bash
+install -m 600 /dev/null "$HOME/.openclaw-ark-sales/secrets/outreach-operator-token"
+# 用密码管理器/安全编辑器写入；不要复制 ark-agent-token
+```
+
+该 token 只由本机 `outreach-queue confirm` 读取，不暴露给 OpenClaw Agent。客户未分配、权限撤销或管理层证据超出可见范围时，方舟统一返回 `CUSTOMER_NOT_FOUND_OR_FORBIDDEN`。
+
+### 3. MiMo API key
 
 主研究 Agent 的默认模型标识为 `mimo/mimo-v2.5`，并明确固定到内置 `openclaw` runtime：
 
@@ -121,7 +132,7 @@ install -m 600 /dev/null "$HOME/.openclaw-ark-sales/secrets/ark-agent-token"
 $HOME/.openclaw/bin/openclaw --profile ark-sales gateway restart
 ```
 
-### 3. DeepSeek API key
+### 4. DeepSeek API key
 
 邮件 Agent 继续显式使用 `deepseek/deepseek-v4-pro`，因此仍需 DeepSeek API key：
 

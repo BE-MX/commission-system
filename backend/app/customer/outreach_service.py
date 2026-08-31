@@ -2,6 +2,7 @@
 
 from sqlalchemy.orm import Session
 
+from app.customer.access_service import CustomerAccess, apply_record_access
 from app.customer.models import (
     CustomerAccount,
     CustomerContact,
@@ -16,7 +17,8 @@ from app.core.time import beijing_now
 from app.sales_automation import public_pool_service, service
 
 
-def get_outreach_context(db: Session, customer_id: int) -> dict:
+def get_outreach_context(db: Session, access: CustomerAccess) -> dict:
+    customer_id = access.customer_id
     customer = db.query(CustomerAccount).filter(CustomerAccount.id == customer_id).one_or_none()
     if customer is None:
         raise service.NotFoundError("客户不存在")
@@ -42,6 +44,7 @@ def get_outreach_context(db: Session, customer_id: int) -> dict:
     email_points = db.query(CustomerContactPoint).filter(
         CustomerContactPoint.contact_id.in_(contacts),
         CustomerContactPoint.point_type == "email",
+        CustomerContactPoint.data_classification.in_(access.allowed_classifications()),
     ).all() if contacts else []
     email_point_ids = [point.id for point in email_points]
     suppressed_point_ids = {
@@ -53,17 +56,34 @@ def get_outreach_context(db: Session, customer_id: int) -> dict:
     } if email_point_ids else set()
 
     fact_ids = sorted(set(profile.evidence_fact_ids or [])) if profile else []
-    facts = db.query(CustomerFact).filter(
-        CustomerFact.id.in_(fact_ids),
-        CustomerFact.customer_id == customer.id,
-    ).all() if fact_ids else []
-    source_ids = sorted({row.source_record_id for row in facts if row.source_record_id is not None})
+    fact_query = apply_record_access(
+        db.query(CustomerFact).filter(CustomerFact.id.in_(fact_ids)),
+        CustomerFact,
+        access,
+    ) if fact_ids else None
+    facts = fact_query.order_by(CustomerFact.id).all() if fact_query is not None else []
+    source_ids = sorted({
+        source_id for source_id in (
+            [row.source_record_id for row in facts]
+            + [row.source_record_id for row in email_points]
+        ) if source_id is not None
+    })
+    source_query = apply_record_access(
+        db.query(CustomerSourceRecord).filter(CustomerSourceRecord.id.in_(source_ids)),
+        CustomerSourceRecord,
+        access,
+    ) if source_ids else None
     sources = {
-        row.id: row for row in db.query(CustomerSourceRecord).filter(
-            CustomerSourceRecord.id.in_(source_ids),
-            CustomerSourceRecord.customer_id == customer.id,
-        ).all()
-    } if source_ids else {}
+        row.id: row for row in source_query.all()
+    } if source_query is not None else {}
+    facts = [
+        row for row in facts
+        if row.source_record_id is None or row.source_record_id in sources
+    ]
+    email_points = [
+        row for row in email_points
+        if row.source_record_id is None or row.source_record_id in sources
+    ]
 
     return {
         "customer_id": customer.id,

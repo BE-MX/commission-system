@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.response import ok, page_result
 from app.customer import outreach_service
+from app.customer.access_service import CustomerAccessDenied, require_customer_access
 from app.knowledge import service as knowledge_service
 from app.knowledge.models import KnowledgeLibrary
 from app.sales_automation import enrichment_service, public_pool_service, service
@@ -139,9 +140,20 @@ def list_agent_research_tasks(
 def get_agent_customer_outreach_context(
     customer_id: int,
     db: Session = Depends(get_db),
-    _agent=Depends(require_sales_agent),
+    agent=Depends(require_sales_agent),
 ):
-    return ok(_call(outreach_service.get_outreach_context, db, customer_id))
+    try:
+        access = require_customer_access(
+            db,
+            customer_id=customer_id,
+            user=agent,
+            action_permissions={"customer:read", "customer:read_all", "customer:admin"},
+            manage_permissions={"customer:read_all", "customer:admin"},
+            allow_public_pool=False,
+        )
+    except CustomerAccessDenied:
+        raise HTTPException(404, "CUSTOMER_NOT_FOUND_OR_FORBIDDEN") from None
+    return ok(_call(outreach_service.get_outreach_context, db, access))
 
 
 @router.get("/agent/research-tasks/{task_id}/context")
