@@ -141,15 +141,22 @@ function Invoke-TransactionScript {
 function Assert-Success { param($Result, [string]$Stage); if ($Result.ExitCode -ne 0) { throw "$Stage failed: $($Result.Output)" } }
 function Assert-Failure { param($Result, [string]$Stage); if ($Result.ExitCode -eq 0) { throw "$Stage unexpectedly succeeded." } }
 function Assert-Content { param([string]$Path, [string]$Expected); if (-not (Test-Path -LiteralPath $Path) -or [System.IO.File]::ReadAllText($Path) -cne $Expected) { throw "Unexpected content at $Path" } }
+function Assert-Marker { param($Result, [string]$Marker); if ($Result.Output -notmatch "(?m)^$Marker`$") { throw "Missing transaction marker $Marker in: $($Result.Output)" } }
 
 try {
     $normal = New-Scenario -Name 'normal-existing'
     Assert-Success (Invoke-TransactionScript $normal.Scripts.Begin) 'normal begin'
     Assert-Success (Invoke-TransactionScript $normal.Scripts.Switch) 'normal switch'
-    Assert-Success (Invoke-TransactionScript $normal.Scripts.Finalize) 'normal finalize'
+    $normalFinalize = Invoke-TransactionScript $normal.Scripts.Finalize
+    Assert-Success $normalFinalize 'normal finalize'
+    Assert-Marker $normalFinalize 'PUBLISH_TXN_FINALIZED'
+    $normalFinalizeRetry = Invoke-TransactionScript $normal.Scripts.Finalize
+    Assert-Success $normalFinalizeRetry 'normal finalize retry'
+    Assert-Marker $normalFinalizeRetry 'PUBLISH_TXN_FINALIZED'
     Assert-Content (Join-Path $normal.WindowsDirectory 'leshine-expo-kiosk.apk') $normal.NewApkContent
     Assert-Content (Join-Path $normal.WindowsDirectory 'latest.json') $normal.NewManifestContent
     if (Test-Path (Join-Path $normal.WindowsDirectory '.publish-lock')) { throw 'Normal finalize left a lock.' }
+    if (-not (Test-Path (Join-Path $normal.WindowsDirectory ".publish-receipts\$($normal.TransactionId).receipt"))) { throw 'Normal finalize did not persist its receipt.' }
 
     $switchFailure = New-Scenario -Name 'switch-failure'
     Assert-Success (Invoke-TransactionScript $switchFailure.Scripts.Begin) 'switch-failure begin'
@@ -158,6 +165,9 @@ try {
     Assert-Content (Join-Path $switchFailure.WindowsDirectory 'leshine-expo-kiosk.apk') $switchFailure.OldApkContent
     Assert-Content (Join-Path $switchFailure.WindowsDirectory 'latest.json') $switchFailure.OldManifestContent
     if (Test-Path (Join-Path $switchFailure.WindowsDirectory '.publish-lock')) { throw 'Successful rollback left a lock.' }
+    $switchRollbackRetry = Invoke-TransactionScript $switchFailure.Scripts.Rollback
+    Assert-Success $switchRollbackRetry 'switch rollback acknowledgement retry'
+    Assert-Marker $switchRollbackRetry 'PUBLISH_TXN_ROLLED_BACK'
 
     $restoreFailure = New-Scenario -Name 'restore-failure'
     Assert-Success (Invoke-TransactionScript $restoreFailure.Scripts.Begin) 'restore-failure begin'
@@ -201,10 +211,27 @@ try {
     $postVerify = New-Scenario -Name 'postverify-rollback'
     Assert-Success (Invoke-TransactionScript $postVerify.Scripts.Begin) 'postverify begin'
     Assert-Success (Invoke-TransactionScript $postVerify.Scripts.Switch) 'postverify switch'
-    Assert-Success (Invoke-TransactionScript $postVerify.Scripts.Rollback) 'postverify rollback'
+    $postVerifyRollback = Invoke-TransactionScript $postVerify.Scripts.Rollback
+    Assert-Success $postVerifyRollback 'postverify rollback'
+    Assert-Marker $postVerifyRollback 'PUBLISH_TXN_ROLLED_BACK'
+    $postVerifyRollbackRetry = Invoke-TransactionScript $postVerify.Scripts.Rollback
+    Assert-Success $postVerifyRollbackRetry 'postverify rollback retry'
+    Assert-Marker $postVerifyRollbackRetry 'PUBLISH_TXN_ROLLED_BACK'
+    Assert-Failure (Invoke-TransactionScript $postVerify.Scripts.Finalize) 'finalize after rolled-back receipt'
     Assert-Content (Join-Path $postVerify.WindowsDirectory 'leshine-expo-kiosk.apk') $postVerify.OldApkContent
     Assert-Content (Join-Path $postVerify.WindowsDirectory 'latest.json') $postVerify.OldManifestContent
     if (Test-Path (Join-Path $postVerify.WindowsDirectory '.publish-lock')) { throw 'Postverify rollback left a lock.' }
+
+    $lostFinalizeAck = New-Scenario -Name 'lost-finalize-ack'
+    Assert-Success (Invoke-TransactionScript $lostFinalizeAck.Scripts.Begin) 'lost-ack begin'
+    Assert-Success (Invoke-TransactionScript $lostFinalizeAck.Scripts.Switch) 'lost-ack switch'
+    $actualFinalize = Invoke-TransactionScript $lostFinalizeAck.Scripts.Finalize
+    Assert-Success $actualFinalize 'lost-ack actual finalize'
+    $simulatedTransportFailure = [pscustomobject]@{ ExitCode = 255; Output = '' }
+    Assert-Failure $simulatedTransportFailure 'simulated lost finalize acknowledgement'
+    $finalizeAfterLostAck = Invoke-TransactionScript $lostFinalizeAck.Scripts.Finalize
+    Assert-Success $finalizeAfterLostAck 'finalize receipt retry after lost acknowledgement'
+    Assert-Marker $finalizeAfterLostAck 'PUBLISH_TXN_FINALIZED'
 
     Write-Output 'Remote transaction state-machine self-test passed.'
 } finally {

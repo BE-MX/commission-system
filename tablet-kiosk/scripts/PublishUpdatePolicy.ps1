@@ -38,3 +38,27 @@ function Assert-ChannelPolicy {
     }
     return $false
 }
+
+function Read-StrictManifest {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $rawManifest = Get-Content -LiteralPath $Path -Raw
+    $trimmedManifest = $rawManifest.Trim()
+    if (-not ($trimmedManifest.StartsWith('{') -and $trimmedManifest.EndsWith('}'))) {
+        throw 'Published manifest root must be a JSON object.'
+    }
+    try { $manifest = $trimmedManifest | ConvertFrom-Json } catch { throw "Published manifest is invalid JSON: $($_.Exception.Message)" }
+    $propertyMatches = [regex]::Matches($trimmedManifest, '(?<!\\)"([^"\\]*(?:\\.[^"\\]*)*)"\s*:')
+    $names = @($propertyMatches | ForEach-Object { $_.Groups[1].Value })
+    $expected = @('version_code', 'version_name', 'apk_size', 'sha256')
+    if ((($names | Sort-Object) -join ',') -cne (($expected | Sort-Object) -join ',')) {
+        throw 'Published manifest must contain exactly version_code, version_name, apk_size, and sha256.'
+    }
+    if ($manifest.version_code -isnot [long] -and $manifest.version_code -isnot [int]) { throw 'Published version_code must be an integer.' }
+    if ([long]$manifest.version_code -le 0) { throw 'Published version_code must be positive.' }
+    if ($manifest.version_name -isnot [string] -or [string]::IsNullOrWhiteSpace($manifest.version_name)) { throw 'Published version_name must be non-empty.' }
+    if ($manifest.apk_size -isnot [long] -and $manifest.apk_size -isnot [int]) { throw 'Published apk_size must be an integer.' }
+    if ([long]$manifest.apk_size -le 0) { throw 'Published apk_size must be positive.' }
+    if ($manifest.sha256 -isnot [string] -or $manifest.sha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Published sha256 must be lowercase hexadecimal.' }
+    return $manifest
+}

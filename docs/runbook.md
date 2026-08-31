@@ -995,6 +995,8 @@ grep "job completed" logs\service.log | tail -20
   首次上线先在开发机仓库外生成唯一 RSA 4096/SHA256withRSA keystore，别名 `leshine-expo`；复制
   `tablet-kiosk/keystore.properties.example` 为被忽略的 `keystore.properties` 并填四个字段。keystore 与 properties
   必须做**两份离线备份并验证恢复**，否则不得铺机；丢失后无法给已安装平板升级，只能再次全量重装。构建与本地预检：
+  `tablet-kiosk/release-signer-sha256.txt` 是受版本控制的公开证书指纹，不是密码；发布器只接受恰好一个且与其一致的 signer。
+  修改该基线等于更换正式 key，必须再次全量卸载/恢复出厂，不能作为日常轮换配置。
 
   ```powershell
   $gradle = 'C:\Users\windb\.gradle\wrapper\dists\gradle-8.7-bin\f06yd7m8w1d0inql2joytq4az\gradle-8.7\bin\gradle.bat'
@@ -1039,6 +1041,9 @@ grep "job completed" logs\service.log | tail -20
   私有旧配对，先替换 APK、最后替换清单。任何切换或 HTTPS 回读错误会恢复旧 APK+旧清单，首发错误则恢复为空通道；
   回读成功才释放锁和备份。自动恢复先把私有备份复制到同目录临时文件，验证摘要/大小，再原子替换并复核正式旧配对；
   只有复核成功才清事务。恢复命令、复核或清理任一步失败都返回非零，并保留 owner/state/备份/锁，禁止继续发布。
+  每个事务先原子写入 `/var/www/ark-updates/expo-kiosk/.publish-receipts/<事务ID>.receipt`，再清大备份和锁；收据只含
+  owner、模式、结果和公开摘要。SSH 回执丢失时重复 finalize/rollback 会严格复核正式配对并返回同一 machine marker；
+  `finalized` 绝不反向恢复旧包，`rolled_back` 也不能再次 finalize。exact Nginx location 不会暴露该目录。
 
   ```powershell
   .\tablet-kiosk\scripts\publish-update.ps1 `
@@ -1049,8 +1054,8 @@ grep "job completed" logs\service.log | tail -20
   两个固定 URL 仍是两次独立 HTTP 请求，发布瞬间可能短暂出现“新 APK + 旧清单”，**不是跨 HTTP 请求的事务原子性**。
   APP 会因大小/SHA-256 不符拒绝安装、继续旧版并在下次冷启动重试；事务保证的是失败后不会永久留下错配正式文件。
 
-  网络中断可能留下 `.publish-lock`。后续发布看到任何未知锁都会拒绝，不会自动删除或接管。先只读记录 owner/mode/state
-  及精确备份文件，确认没有发布进程后再人工恢复：
+  网络中断可能留下 `.publish-lock`。后续发布看到任何未知锁都会拒绝，不会自动删除或接管。先只读记录 receipt、
+  owner/mode/state 及精确备份文件，确认没有发布进程后再人工恢复：
 
   ```bash
   sudo find /var/www/ark-updates/expo-kiosk/.publish-lock -maxdepth 1 -type f -printf '%f\n'
@@ -1058,6 +1063,7 @@ grep "job completed" logs\service.log | tail -20
   sudo cat /var/www/ark-updates/expo-kiosk/.publish-lock/mode
   sudo cat /var/www/ark-updates/expo-kiosk/.publish-lock/state
   sudo sha256sum /var/www/ark-updates/expo-kiosk/.publish-lock/previous.* 2>/dev/null || true
+  sudo find /var/www/ark-updates/expo-kiosk/.publish-receipts -maxdepth 1 -type f -name '*.receipt' -printf '%f\n'
   ```
 
   `mode=existing` 且 state 为 `backed_up/switching/switched` 时，必须确认 `previous.apk` 与 `previous.json` 都存在；
@@ -1065,9 +1071,9 @@ grep "job completed" logs\service.log | tail -20
   两个正式文件。任一检查失败就保留备份和锁并升级人工处理。`mode=initialize` 的 `switching/switched`
   只允许删除两个精确正式文件以恢复空通道。`state=begun` 表示正式文件尚未切换。完成恢复后，按 owner 中的精确事务 ID
   逐个清理该事务的 `.stage`、home 上传文件、owner/mode/state/previous 文件，最后 `rmdir .publish-lock`；禁止
-  `rm -rf`、通配删除或清理 owner 不匹配的事务。若只有唯一命名的 `.publish-completed-<事务ID>`，表示 HTTPS
-  核验后已经原子释放锁、但清理回执中断；核对其中 owner 与目录事务 ID 一致后，只清理该目录内上述精确文件再
-  `rmdir`，不得因此回滚已核验的正式配对。
+  `rm -rf`、通配删除或清理 owner 不匹配的事务。若存在对应 receipt，必须逐行核对 owner/mode/outcome 与摘要：
+  `finalized` 先复核新正式配对且不得回滚，`rolled_back` 先复核旧配对或空通道；未知、冲突或畸形收据保持现场并升级处理。
+  收据是重试幂等依据，正常完成后也不删除。
 
   首次换稳定签名不能覆盖旧 debug 包：设备所有者先执行
   `adb shell dpm remove-active-admin com.leshine.expokiosk/.AdminReceiver`，解除失败就恢复出厂；随后卸载旧包、安装 1.9

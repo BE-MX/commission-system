@@ -18,8 +18,7 @@ function New-PublishRemoteScripts {
 
     $remoteSegments = $RemoteDirectory.Split('/', [System.StringSplitOptions]::RemoveEmptyEntries)
     if ($RemoteDirectory -cnotmatch '^/[A-Za-z0-9._/-]+$' -or
-        $RemoteDirectory.EndsWith('/') -or
-        $RemoteDirectory.Contains('//') -or
+        $RemoteDirectory.EndsWith('/') -or $RemoteDirectory.Contains('//') -or
         $remoteSegments.Where({ $_ -in @('.', '..') }).Count -ne 0) {
         throw 'RemoteDirectory must be an absolute controlled Unix path.'
     }
@@ -34,8 +33,7 @@ function New-PublishRemoteScripts {
     if ($NewApkSize -le 0 -or $NewManifestSize -le 0) { throw 'New artifact sizes must be positive.' }
     if ($Mode -eq 'existing') {
         if ($BaselineApkSha256 -cnotmatch '^[0-9a-f]{64}$' -or
-            $BaselineManifestSha256 -cnotmatch '^[0-9a-f]{64}$' -or
-            $BaselineApkSize -le 0) {
+            $BaselineManifestSha256 -cnotmatch '^[0-9a-f]{64}$' -or $BaselineApkSize -le 0) {
             throw 'Existing-channel baseline identity is incomplete.'
         }
     } elseif ($BaselineApkSha256 -or $BaselineManifestSha256 -or $BaselineApkSize -ne 0) {
@@ -46,6 +44,9 @@ function New-PublishRemoteScripts {
 set -eu
 work_dir="$RemoteDirectory"
 lock_dir="`$work_dir/.publish-lock"
+receipt_dir="`$work_dir/.publish-receipts"
+receipt_file="`$receipt_dir/$TransactionId.receipt"
+receipt_tmp="`$receipt_dir/.$TransactionId.receipt.tmp"
 owner="$TransactionId"
 mode="$Mode"
 created=0
@@ -65,6 +66,9 @@ cleanup_begin() {
 }
 trap cleanup_begin EXIT
 sudo install -d -m 0755 "`$work_dir"
+sudo install -d -m 0755 "`$receipt_dir"
+test ! -e "`$receipt_file"
+test ! -e "`$receipt_tmp"
 if ! sudo mkdir "`$lock_dir"; then
   echo 'Another publisher transaction or an unresolved recovery lock exists.' >&2
   exit 73
@@ -90,9 +94,12 @@ sudo mv -f -- "`$lock_dir/state.tmp" "`$lock_dir/state"
 trap - EXIT
 "@
 
-    $rollbackFunctions = @"
+    $transactionFunctions = @"
 work_dir="$RemoteDirectory"
 lock_dir="`$work_dir/.publish-lock"
+receipt_dir="`$work_dir/.publish-receipts"
+receipt_file="`$receipt_dir/$TransactionId.receipt"
+receipt_tmp="`$receipt_dir/.$TransactionId.receipt.tmp"
 owner="$TransactionId"
 expected_mode="$Mode"
 apk_upload="`$HOME/$RemoteApkUploadName"
@@ -108,12 +115,55 @@ write_state() {
   printf '%s\n' "`$1" | sudo tee "`$lock_dir/state.tmp" >/dev/null
   sudo mv -f -- "`$lock_dir/state.tmp" "`$state_file"
 }
+verify_new_official() {
+  test "`$(sudo sha256sum "`$work_dir/leshine-expo-kiosk.apk" | awk '{print `$1}')" = "$NewApkSha256"
+  test "`$(sudo stat -c %s "`$work_dir/leshine-expo-kiosk.apk")" = "$NewApkSize"
+  test "`$(sudo sha256sum "`$work_dir/latest.json" | awk '{print `$1}')" = "$NewManifestSha256"
+  test "`$(sudo stat -c %s "`$work_dir/latest.json")" = "$NewManifestSize"
+}
 verify_old_official() {
   test "`$(sudo sha256sum "`$work_dir/leshine-expo-kiosk.apk" | awk '{print `$1}')" = "$BaselineApkSha256"
   test "`$(sudo stat -c %s "`$work_dir/leshine-expo-kiosk.apk")" = "$BaselineApkSize"
   test "`$(sudo sha256sum "`$work_dir/latest.json" | awk '{print `$1}')" = "$BaselineManifestSha256"
 }
-cleanup_owned_transaction() {
+verify_empty_official() {
+  test ! -e "`$work_dir/leshine-expo-kiosk.apk"
+  test ! -e "`$work_dir/latest.json"
+}
+verify_receipt_identity() {
+  test -f "`$receipt_file"
+  test "`$(sudo sed -n '1p' "`$receipt_file")" = "owner=`$owner"
+  test "`$(sudo sed -n '2p' "`$receipt_file")" = "mode=`$expected_mode"
+  test "`$(sudo sed -n '4p' "`$receipt_file")" = "new_apk_sha256=$NewApkSha256"
+  test "`$(sudo sed -n '5p' "`$receipt_file")" = "new_apk_size=$NewApkSize"
+  test "`$(sudo sed -n '6p' "`$receipt_file")" = "new_manifest_sha256=$NewManifestSha256"
+  test "`$(sudo sed -n '7p' "`$receipt_file")" = "new_manifest_size=$NewManifestSize"
+  test "`$(sudo sed -n '8p' "`$receipt_file")" = "old_apk_sha256=$BaselineApkSha256"
+  test "`$(sudo sed -n '9p' "`$receipt_file")" = "old_apk_size=$BaselineApkSize"
+  test "`$(sudo sed -n '10p' "`$receipt_file")" = "old_manifest_sha256=$BaselineManifestSha256"
+  test "`$(sudo wc -l < "`$receipt_file" | tr -d ' ')" = 10
+}
+receipt_outcome() {
+  sudo sed -n '3s/^outcome=//p' "`$receipt_file"
+}
+write_receipt() {
+  outcome="`$1"
+  test ! -e "`$receipt_file"
+  sudo install -d -m 0755 "`$receipt_dir"
+  printf '%s\n' \
+    "owner=`$owner" "mode=`$expected_mode" "outcome=`$outcome" \
+    "new_apk_sha256=$NewApkSha256" "new_apk_size=$NewApkSize" \
+    "new_manifest_sha256=$NewManifestSha256" "new_manifest_size=$NewManifestSize" \
+    "old_apk_sha256=$BaselineApkSha256" "old_apk_size=$BaselineApkSize" \
+    "old_manifest_sha256=$BaselineManifestSha256" | sudo tee "`$receipt_tmp" >/dev/null
+  sudo mv -f -- "`$receipt_tmp" "`$receipt_file"
+  verify_receipt_identity
+  test "`$(receipt_outcome)" = "`$outcome"
+}
+cleanup_owned_lock() {
+  test -d "`$lock_dir"
+  test "`$(sudo cat "`$lock_dir/owner")" = "`$owner"
+  test "`$(sudo cat "`$lock_dir/mode")" = "`$expected_mode"
   rm -f -- "`$apk_upload" "`$manifest_upload"
   sudo rm -f -- "`$apk_stage" "`$manifest_stage" "`$restore_apk" "`$restore_manifest" \
     "`$backup_apk" "`$backup_manifest" "`$lock_dir/old-apk.sha256" "`$lock_dir/old-apk.size" \
@@ -121,7 +171,28 @@ cleanup_owned_transaction() {
   sudo rm -f -- "`$lock_dir/owner"
   sudo rmdir "`$lock_dir"
 }
+cleanup_residual_lock_if_owned() {
+  if [ -d "`$lock_dir" ]; then cleanup_owned_lock; fi
+}
 rollback_owned_transaction() {
+  if [ -f "`$receipt_file" ]; then
+    verify_receipt_identity
+    outcome=`$(receipt_outcome)
+    if [ "`$outcome" = rolled_back ]; then
+      if [ "`$expected_mode" = existing ]; then verify_old_official; else verify_empty_official; fi
+      cleanup_residual_lock_if_owned
+      echo PUBLISH_TXN_ROLLED_BACK
+      return 0
+    fi
+    if [ "`$outcome" = finalized ]; then
+      verify_new_official
+      cleanup_residual_lock_if_owned
+      echo PUBLISH_TXN_FINALIZED
+      return 0
+    fi
+    echo 'Unknown transaction receipt outcome; no files were changed.' >&2
+    return 77
+  fi
   test -d "`$lock_dir"
   test "`$(sudo cat "`$lock_dir/owner")" = "`$owner"
   mode=`$(sudo cat "`$lock_dir/mode")
@@ -129,9 +200,7 @@ rollback_owned_transaction() {
   state=`$(sudo cat "`$state_file")
   if [ "`$mode" = existing ]; then
     case "`$state" in
-      begun)
-        verify_old_official
-        ;;
+      begun) verify_old_official ;;
       backed_up|switching|switched)
         test -f "`$backup_apk"
         test -f "`$backup_manifest"
@@ -147,47 +216,34 @@ rollback_owned_transaction() {
         sudo mv -f -- "`$restore_manifest" "`$work_dir/latest.json"
         verify_old_official
         ;;
-      restored)
-        verify_old_official
-        ;;
-      *)
-        echo 'Unknown existing-channel transaction state; recovery material was preserved.' >&2
-        return 76
-        ;;
+      restored) verify_old_official ;;
+      *) echo 'Unknown existing-channel transaction state; recovery material was preserved.' >&2; return 76 ;;
     esac
   elif [ "`$mode" = initialize ]; then
     case "`$state" in
-      begun)
-        test ! -e "`$work_dir/leshine-expo-kiosk.apk"
-        test ! -e "`$work_dir/latest.json"
-        ;;
+      begun) verify_empty_official ;;
       switching|switched)
         sudo rm -f -- "`$work_dir/leshine-expo-kiosk.apk"
         sudo rm -f -- "`$work_dir/latest.json"
-        test ! -e "`$work_dir/leshine-expo-kiosk.apk"
-        test ! -e "`$work_dir/latest.json"
+        verify_empty_official
         ;;
-      restored)
-        test ! -e "`$work_dir/leshine-expo-kiosk.apk"
-        test ! -e "`$work_dir/latest.json"
-        ;;
-      *)
-        echo 'Unknown initialize transaction state; recovery material was preserved.' >&2
-        return 76
-        ;;
+      restored) verify_empty_official ;;
+      *) echo 'Unknown initialize transaction state; recovery material was preserved.' >&2; return 76 ;;
     esac
   else
     echo 'Unknown transaction mode; recovery material was preserved.' >&2
     return 76
   fi
   write_state restored
-  cleanup_owned_transaction
+  write_receipt rolled_back
+  cleanup_owned_lock
+  echo PUBLISH_TXN_ROLLED_BACK
 }
 "@
 
     $switch = @"
 set -eu
-$rollbackFunctions
+$transactionFunctions
 on_switch_failure() {
   original_rc=`$?
   trap - EXIT
@@ -230,38 +286,39 @@ trap - EXIT
 
     $rollback = @"
 set -eu
-$rollbackFunctions
+$transactionFunctions
 rollback_owned_transaction
 "@
 
     $finalize = @"
 set -eu
-work_dir="$RemoteDirectory"
-lock_dir="`$work_dir/.publish-lock"
-completed_dir="`$work_dir/.publish-completed-$TransactionId"
-owner="$TransactionId"
-expected_mode="$Mode"
+$transactionFunctions
+if [ -f "`$receipt_file" ]; then
+  verify_receipt_identity
+  outcome=`$(receipt_outcome)
+  if [ "`$outcome" = finalized ]; then
+    verify_new_official
+    cleanup_residual_lock_if_owned
+    echo PUBLISH_TXN_FINALIZED
+    exit 0
+  fi
+  if [ "`$outcome" = rolled_back ]; then
+    if [ "`$expected_mode" = existing ]; then verify_old_official; else verify_empty_official; fi
+    echo 'Finalize refused because this transaction was already rolled back.' >&2
+    exit 78
+  fi
+  echo 'Unknown transaction receipt outcome; no files were changed.' >&2
+  exit 77
+fi
 test -d "`$lock_dir"
 test "`$(sudo cat "`$lock_dir/owner")" = "`$owner"
 test "`$(sudo cat "`$lock_dir/mode")" = "`$expected_mode"
 test "`$(sudo cat "`$lock_dir/state")" = switched
-test "`$(sudo sha256sum "`$work_dir/leshine-expo-kiosk.apk" | awk '{print `$1}')" = "$NewApkSha256"
-test "`$(sudo stat -c %s "`$work_dir/leshine-expo-kiosk.apk")" = "$NewApkSize"
-test "`$(sudo sha256sum "`$work_dir/latest.json" | awk '{print `$1}')" = "$NewManifestSha256"
-test "`$(sudo stat -c %s "`$work_dir/latest.json")" = "$NewManifestSize"
-test ! -e "`$completed_dir"
-sudo mv -- "`$lock_dir" "`$completed_dir"
-sudo rm -f -- "`$completed_dir/previous.apk" "`$completed_dir/previous.json" \
-  "`$completed_dir/old-apk.sha256" "`$completed_dir/old-apk.size" "`$completed_dir/old-manifest.sha256" \
-  "`$completed_dir/mode" "`$completed_dir/state" "`$completed_dir/state.tmp"
-sudo rm -f -- "`$completed_dir/owner"
-sudo rmdir "`$completed_dir"
+verify_new_official
+write_receipt finalized
+cleanup_owned_lock
+echo PUBLISH_TXN_FINALIZED
 "@
 
-    return [pscustomobject]@{
-        Begin = $begin
-        Switch = $switch
-        Rollback = $rollback
-        Finalize = $finalize
-    }
+    return [pscustomobject]@{ Begin = $begin; Switch = $switch; Rollback = $rollback; Finalize = $finalize }
 }

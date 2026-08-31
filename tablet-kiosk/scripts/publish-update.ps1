@@ -16,6 +16,9 @@ $ExpectedPackage = 'com.leshine.expokiosk'
 $ManifestUrl = 'https://154.8.205.162/expo-app/latest.json'
 $ApkUrl = 'https://154.8.205.162/expo-app/leshine-expo-kiosk.apk'
 $RemoteDirectory = '/var/www/ark-updates/expo-kiosk'
+$SignerBaselinePath = Join-Path $PSScriptRoot '..\release-signer-sha256.txt'
+$MaximumApkBytes = 100MB
+$MaximumManifestBytes = 16KB
 
 function Invoke-CheckedCommand {
     param(
@@ -35,6 +38,16 @@ function Invoke-CheckedCommand {
         throw "$([System.IO.Path]::GetFileName($FilePath)) failed with exit code $exitCode.`n$($output -join [Environment]::NewLine)"
     }
     return @($output)
+}
+
+function Get-TransactionMarker {
+    param([Parameter(Mandatory = $true)][object[]]$Output)
+
+    $markers = @($Output | ForEach-Object { [string]$_ } | Where-Object {
+        $_ -ceq 'PUBLISH_TXN_FINALIZED' -or $_ -ceq 'PUBLISH_TXN_ROLLED_BACK'
+    })
+    if ($markers.Count -ne 1) { throw 'Remote transaction did not return exactly one controlled outcome marker.' }
+    return $markers[0]
 }
 
 function Find-AndroidBuildTools {
@@ -82,43 +95,39 @@ function Read-ApkMetadata {
     if ($versionCode -le 9) { throw "APK versionCode must be greater than 9; got $versionCode." }
     if ([string]::IsNullOrWhiteSpace($versionName)) { throw 'APK versionName must not be empty.' }
 
+    if (-not (Test-Path -LiteralPath $SignerBaselinePath -PathType Leaf)) {
+        throw 'The approved release signer baseline is missing.'
+    }
+    $baselineText = [System.IO.File]::ReadAllText($SignerBaselinePath)
+    if ($baselineText -cnotmatch '\A[0-9a-f]{64}\r?\n\z') {
+        throw 'The approved release signer baseline must contain exactly one lowercase SHA-256 digest and one newline.'
+    }
+    $approvedSignerSha256 = $baselineText.Substring(0, 64)
+
     $signing = Invoke-CheckedCommand -FilePath $BuildTools.ApkSigner -Arguments @('verify', '--print-certs', $ResolvedApkPath)
     $signingText = $signing -join [Environment]::NewLine
     if ($signingText -match '(?i)certificate DN:\s*.*CN\s*=\s*Android Debug' -or
         $signingText -match '(?i)CN\s*=\s*Android Debug\s*,\s*O\s*=\s*Android\s*,\s*C\s*=\s*US') {
         throw 'debug-signed APK cannot be published'
     }
-    $digestMatch = [regex]::Match($signingText, '(?im)^(?:Signer #\d+|V\d+ Signer): certificate SHA-256 digest:\s*([0-9a-f]{64})\s*$')
-    if (-not $digestMatch.Success) { throw 'apksigner did not report a signer SHA-256 digest.' }
+    $digestMatches = [regex]::Matches(
+        $signingText,
+        '(?im)^(?:(?:Signer #\d+):?\s+|(?:V\d+ Signer):\s+)certificate SHA-256 digest:\s*([0-9a-f]{64})\s*$'
+    )
+    $signerDigests = @($digestMatches | ForEach-Object { $_.Groups[1].Value.ToLowerInvariant() } | Sort-Object -Unique)
+    if ($signerDigests.Count -ne 1) {
+        throw "APK must have exactly one signer; apksigner reported $($signerDigests.Count)."
+    }
+    if ($signerDigests[0] -cne $approvedSignerSha256) {
+        throw 'APK signer does not match the approved release signer baseline.'
+    }
 
     return [pscustomobject]@{
         PackageName = $packageName
         VersionCode = $versionCode
         VersionName = $versionName
-        SignerSha256 = $digestMatch.Groups[1].Value.ToLowerInvariant()
+        SignerSha256 = $signerDigests[0]
     }
-}
-
-function Read-StrictManifest {
-    param([Parameter(Mandatory = $true)][string]$Path)
-
-    $rawManifest = Get-Content -LiteralPath $Path -Raw
-    try { $manifest = $rawManifest | ConvertFrom-Json } catch { throw "Published manifest is invalid JSON: $($_.Exception.Message)" }
-    $propertyMatches = [regex]::Matches($rawManifest, '(?<!\\)"([^"\\]*(?:\\.[^"\\]*)*)"\s*:')
-    $names = @($propertyMatches | ForEach-Object { $_.Groups[1].Value })
-    $expected = @('version_code', 'version_name', 'apk_size', 'sha256')
-    $actualNames = (($names | Sort-Object) -join ',')
-    $expectedNames = (($expected | Sort-Object) -join ',')
-    if ($actualNames -cne $expectedNames) {
-        throw 'Published manifest must contain exactly version_code, version_name, apk_size, and sha256.'
-    }
-    if ($manifest.version_code -isnot [long] -and $manifest.version_code -isnot [int]) { throw 'Published version_code must be an integer.' }
-    if ([long]$manifest.version_code -le 0) { throw 'Published version_code must be positive.' }
-    if ($manifest.version_name -isnot [string] -or [string]::IsNullOrWhiteSpace($manifest.version_name)) { throw 'Published version_name must be non-empty.' }
-    if ($manifest.apk_size -isnot [long] -and $manifest.apk_size -isnot [int]) { throw 'Published apk_size must be an integer.' }
-    if ([long]$manifest.apk_size -le 0) { throw 'Published apk_size must be positive.' }
-    if ($manifest.sha256 -isnot [string] -or $manifest.sha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Published sha256 must be lowercase hexadecimal.' }
-    return $manifest
 }
 
 function Invoke-CurlDownload {
@@ -126,11 +135,16 @@ function Invoke-CurlDownload {
         [Parameter(Mandatory = $true)][string]$Url,
         [Parameter(Mandatory = $true)][string]$OutputPath,
         [Parameter(Mandatory = $true)][string]$CaPath,
+        [Parameter(Mandatory = $true)][long]$MaxBytes,
         [switch]$AllowNotFound
     )
 
-    $statusOutput = & curl.exe --silent --show-error --cacert $CaPath --output $OutputPath --write-out '%{http_code}' --max-redirs 0 $Url 2>&1
+    if ($MaxBytes -le 0 -or $MaxBytes -gt $MaximumApkBytes) { throw 'Download size boundary is invalid.' }
+    $statusOutput = & curl.exe --silent --show-error --cacert $CaPath --connect-timeout 10 --max-time 300 `
+        --max-filesize $MaxBytes --output $OutputPath --write-out '%{http_code}' --max-redirs 0 $Url 2>&1
     if ($LASTEXITCODE -ne 0) { throw "HTTPS verification/download failed for $Url." }
+    if (-not (Test-Path -LiteralPath $OutputPath -PathType Leaf)) { throw "HTTPS download did not create a file for $Url." }
+    if ((Get-Item -LiteralPath $OutputPath).Length -gt $MaxBytes) { throw "HTTPS download exceeded the allowed size for $Url." }
     $status = ($statusOutput -join '').Trim()
     if ($status -eq '404' -and $AllowNotFound) { return 404 }
     if ($status -ne '200') { throw "Unexpected HTTP status $status for $Url." }
@@ -142,10 +156,12 @@ if (-not (Test-Path -LiteralPath $resolvedApk -PathType Leaf)) { throw "APK does
 $buildTools = Find-AndroidBuildTools
 $metadata = Read-ApkMetadata -ResolvedApkPath $resolvedApk -BuildTools $buildTools
 $sourceApk = Get-Item -LiteralPath $resolvedApk
+if ($sourceApk.Length -gt $MaximumApkBytes) { throw 'APK exceeds the 100 MiB publication limit.' }
 $apkHash = (Get-FileHash -LiteralPath $resolvedApk -Algorithm SHA256).Hash.ToLowerInvariant()
 
 $preparedDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ('leshine-expo-update-' + [guid]::NewGuid().ToString('N'))
 [System.IO.Directory]::CreateDirectory($preparedDirectory) | Out-Null
+try {
 $preparedApk = Join-Path $preparedDirectory 'leshine-expo-kiosk.apk'
 $preparedManifest = Join-Path $preparedDirectory 'latest.json'
 Copy-Item -LiteralPath $resolvedApk -Destination $preparedApk
@@ -176,7 +192,7 @@ if ([string]::IsNullOrWhiteSpace($CaCertificatePath) -or -not (Test-Path -Litera
 $resolvedCa = (Resolve-Path -LiteralPath $CaCertificatePath).Path
 
 $onlineManifest = Join-Path $preparedDirectory 'online-latest.json'
-$onlineStatus = Invoke-CurlDownload -Url $ManifestUrl -OutputPath $onlineManifest -CaPath $resolvedCa -AllowNotFound
+$onlineStatus = Invoke-CurlDownload -Url $ManifestUrl -OutputPath $onlineManifest -CaPath $resolvedCa -MaxBytes $MaximumManifestBytes -AllowNotFound
 $onlineVersion = $null
 $onlineManifestHash = ''
 $onlineApkHash = ''
@@ -217,18 +233,21 @@ $switchScript = $remoteScripts.Switch
 $rollbackScript = $remoteScripts.Rollback
 $finalizeScript = $remoteScripts.Finalize
 
-$transactionAttempted = $false
+$transactionStarted = $false
+$httpsVerified = $false
+$finalizeAttempted = $false
+$publicationFinalized = $false
 try {
-    $transactionAttempted = $true
+    $transactionStarted = $true
     Invoke-CheckedCommand -FilePath 'ssh.exe' -Arguments @($Target, $beginScript) | Out-Null
     Invoke-CheckedCommand -FilePath 'scp.exe' -Arguments @($uploadApk, $uploadManifest, "${Target}:~/") | Out-Null
     Invoke-CheckedCommand -FilePath 'ssh.exe' -Arguments @($Target, $switchScript) | Out-Null
 
     $verifiedManifestPath = Join-Path $preparedDirectory 'verified-latest.json'
     $verifiedApkPath = Join-Path $preparedDirectory 'verified-app.apk'
-    Invoke-CurlDownload -Url $ManifestUrl -OutputPath $verifiedManifestPath -CaPath $resolvedCa | Out-Null
+    Invoke-CurlDownload -Url $ManifestUrl -OutputPath $verifiedManifestPath -CaPath $resolvedCa -MaxBytes $MaximumManifestBytes | Out-Null
     $verifiedManifest = Read-StrictManifest -Path $verifiedManifestPath
-    Invoke-CurlDownload -Url $ApkUrl -OutputPath $verifiedApkPath -CaPath $resolvedCa | Out-Null
+    Invoke-CurlDownload -Url $ApkUrl -OutputPath $verifiedApkPath -CaPath $resolvedCa -MaxBytes $sourceApk.Length | Out-Null
     $verifiedFile = Get-Item -LiteralPath $verifiedApkPath
     $verifiedHash = (Get-FileHash -LiteralPath $verifiedApkPath -Algorithm SHA256).Hash.ToLowerInvariant()
     if ([long]$verifiedManifest.version_code -ne [long]$metadata.VersionCode -or
@@ -239,23 +258,53 @@ try {
         $verifiedHash -cne $apkHash) {
         throw 'Post-publication HTTPS verification did not match the prepared release.'
     }
+    $httpsVerified = $true
 
+    $finalizeAttempted = $true
     try {
-        Invoke-CheckedCommand -FilePath 'ssh.exe' -Arguments @($Target, $finalizeScript) | Out-Null
+        $finalizeOutput = Invoke-CheckedCommand -FilePath 'ssh.exe' -Arguments @($Target, $finalizeScript)
     } catch {
-        Invoke-CheckedCommand -FilePath 'ssh.exe' -Arguments @($Target, $finalizeScript) | Out-Null
+        $finalizeOutput = Invoke-CheckedCommand -FilePath 'ssh.exe' -Arguments @($Target, $finalizeScript)
     }
-    $transactionAttempted = $false
+    if ((Get-TransactionMarker -Output $finalizeOutput) -cne 'PUBLISH_TXN_FINALIZED') {
+        throw 'Finalize returned a conflicting transaction outcome.'
+    }
+    $publicationFinalized = $true
 } catch {
     $publishFailure = $_.Exception.Message
-    if ($transactionAttempted) {
+    if ($transactionStarted) {
         try {
-            Invoke-CheckedCommand -FilePath 'ssh.exe' -Arguments @($Target, $rollbackScript) | Out-Null
+            $rollbackOutput = Invoke-CheckedCommand -FilePath 'ssh.exe' -Arguments @($Target, $rollbackScript)
+            $rollbackMarker = Get-TransactionMarker -Output $rollbackOutput
         } catch {
-            throw "Publication failed and automatic rollback could not verify transaction ownership. The recovery lock was preserved; inspect it manually. Publish error: $publishFailure Rollback error: $($_.Exception.Message)"
+            throw "Publication failed and its transaction outcome could not be verified. Recovery material may be preserved; inspect the owner-scoped lock and receipt. Publish error: $publishFailure Recovery error: $($_.Exception.Message)"
+        }
+        if ($rollbackMarker -ceq 'PUBLISH_TXN_FINALIZED') {
+            if ($httpsVerified -and $finalizeAttempted) {
+                $publicationFinalized = $true
+            } else {
+                throw "Publication failed before a valid finalize acknowledgement, but the transaction receipt says finalized. Stop and inspect the channel. $publishFailure"
+            }
+        } elseif ($rollbackMarker -ceq 'PUBLISH_TXN_ROLLED_BACK') {
+            throw "Publication failed; the owned transaction was safely rolled back. $publishFailure"
+        } else {
+            throw "Publication failed with an unknown controlled transaction outcome. $publishFailure"
         }
     }
-    throw "Publication failed; the owned transaction was rolled back or safely finalized. $publishFailure"
+    if (-not $publicationFinalized) { throw "Publication failed before a transaction was established. $publishFailure" }
 }
 
-Write-Output "Publication verified: versionCode $($metadata.VersionCode), SHA-256 $apkHash"
+if ($publicationFinalized) {
+    Write-Output "Publication verified: versionCode $($metadata.VersionCode), SHA-256 $apkHash"
+}
+} finally {
+    if (-not $PrepareOnly -and (Test-Path -LiteralPath $preparedDirectory -PathType Container)) {
+        $resolvedPreparedDirectory = [System.IO.Path]::GetFullPath($preparedDirectory)
+        $resolvedTempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+        if (-not $resolvedPreparedDirectory.StartsWith($resolvedTempRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
+            (Split-Path $resolvedPreparedDirectory -Leaf) -cnotmatch '^leshine-expo-update-[0-9a-f]{32}$') {
+            throw 'Refusing to clean an unexpected prepared directory.'
+        }
+        Remove-Item -LiteralPath $resolvedPreparedDirectory -Recurse -Force
+    }
+}

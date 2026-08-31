@@ -93,6 +93,8 @@ Copy-Item .\keystore.properties.example .\keystore.properties
 这是上线硬门禁；当前开发机生成文件不等于已经完成离线备份。仓库只跟踪示例，真实 properties、`*.jks`、
 `*.keystore` 均被 `.gitignore` 排除。实际 task graph 只要包含 release 工作（包括 `build`、`assemble` 这类聚合任务），
 配置缺失、字段为空或文件不存在时构建会在打包前直接失败，绝不回退为 debug/unsigned；纯 debug/test 不受影响。
+仓库跟踪的 `release-signer-sha256.txt` 只是证书的公开 SHA-256 指纹，不含私钥或密码。发布器要求 APK 恰好一个 signer，
+且必须与该指纹完全一致；修改基线等同于换正式签名，已有平板无法覆盖升级，必须重新走全量卸载/恢复出厂门禁。
 
 在 `tablet-kiosk` 目录用本机已解压 Gradle 构建并核验：
 
@@ -105,7 +107,7 @@ $tools = "$env:LOCALAPPDATA\Android\Sdk\build-tools\37.0.0"
 Get-FileHash .\app\build\outputs\apk\release\app-release.apk -Algorithm SHA256
 ```
 
-发布器只接受 `com.leshine.expokiosk`、`versionCode > 9`、非空版本名且不是 Android Debug 证书的有效签名包。
+发布器只接受 `com.leshine.expokiosk`、`versionCode > 9`、非空版本名、单 signer 且指纹匹配公开基线的有效签名包。
 先离线准备并核对清单，再显式提供 IP 自签 CA 发布；`-PrepareOnly` 不需要 CA，也不会调用 curl/ssh/scp。
 
 ```powershell
@@ -122,6 +124,9 @@ Get-FileHash .\app\build\outputs\apk\release\app-release.apk -Algorithm SHA256
 切换前保存本事务私有旧配对，先替换 APK、最后替换清单；切换或 HTTPS 回读校验失败会恢复旧配对，首发失败则恢复空通道。
 自动恢复会从备份复制到临时文件、复核摘要后再原子替换正式文件；只有正式配对复核成功才清理事务。恢复本身失败时发布器
 返回失败，并保留 `.publish-lock`、owner、state 和私有备份供人工恢复，不能强行清锁或继续发布。
+每个事务会在非公开的 `.publish-receipts/<事务ID>.receipt` 留下小型 `finalized` 或 `rolled_back` 收据；SSH 回执丢失时
+重试会复核正式文件和收据后返回同一结果，不会把已经完成的发布反向回滚。线上 manifest 限 16 KiB，APK 限候选包精确
+大小且不超过 100 MiB；非 `PrepareOnly` 的本地准备目录无论成功失败都会清理。
 两个固定 URL 是两次独立 HTTP 请求，发布瞬间仍可能短暂读到清单/APK不匹配，**不能宣称跨请求事务原子**；APP 会在
 大小或 SHA-256 校验处 fail-closed，继续使用旧版并在下次冷启动重试。更新源不能指定其他 URL，也不会进入方舟后台页面；断网、404、校验或安装失败时，
 APP 会放行当前版本继续试戴，下次冷启动重试。APP 自动识别安装模式：设备所有者平板静默安装，普通平板下载完成后

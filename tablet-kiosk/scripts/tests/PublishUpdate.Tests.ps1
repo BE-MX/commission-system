@@ -10,6 +10,23 @@ $publisher = Join-Path $PSScriptRoot '..\publish-update.ps1'
 $policy = Join-Path $PSScriptRoot '..\PublishUpdatePolicy.ps1'
 . $policy
 
+$tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+$initialPreparedDirectories = @(Get-ChildItem -LiteralPath $tempRoot -Directory -Filter 'leshine-expo-update-*' -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+$ownedPreparedDirectories = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+function Register-PreparedDirectory {
+    param([string]$OutputText)
+    foreach ($match in [regex]::Matches($OutputText, '(?m)^Prepared directory: (.+)$')) {
+        $path = [System.IO.Path]::GetFullPath($match.Groups[1].Value.Trim())
+        if ($path.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase) -and
+            (Split-Path $path -Leaf) -cmatch '^leshine-expo-update-[0-9a-f]{32}$') {
+            [void]$ownedPreparedDirectories.Add($path)
+        } else {
+            throw 'Publisher reported an unsafe prepared directory.'
+        }
+    }
+}
+
 function Assert-Throws {
     param(
         [Parameter(Mandatory = $true)][scriptblock]$Action,
@@ -44,7 +61,9 @@ function Invoke-WithNetworkSentinels {
         $global:PublishNetworkSentinelHits = 0
         try {
             $output = & $publisher @PublisherArguments 2>&1
-            return [pscustomobject]@{ Succeeded = $true; Output = ($output -join [Environment]::NewLine); Error = $null; NetworkHits = $global:PublishNetworkSentinelHits }
+            $text = $output -join [Environment]::NewLine
+            Register-PreparedDirectory $text
+            return [pscustomobject]@{ Succeeded = $true; Output = $text; Error = $null; NetworkHits = $global:PublishNetworkSentinelHits }
         } catch {
             return [pscustomobject]@{ Succeeded = $false; Output = ''; Error = $_.Exception.Message; NetworkHits = $global:PublishNetworkSentinelHits }
         }
@@ -53,6 +72,7 @@ function Invoke-WithNetworkSentinels {
     }
 }
 
+try {
 Assert-Throws -MessagePattern 'InitializeChannel' -Action {
     Assert-ChannelPolicy -HttpStatus 404 -CandidateVersionCode 10 -InitializeChannel:$false
 }
@@ -68,6 +88,23 @@ $existing = Assert-ChannelPolicy -HttpStatus 200 -CandidateVersionCode 10 -Publi
 if ($existing) { throw 'An existing channel must not be treated as initialization.' }
 Assert-Throws -MessagePattern 'published versionCode is 10' -Action {
     Assert-ChannelPolicy -HttpStatus 200 -CandidateVersionCode 10 -PublishedVersionCode 10 -InitializeChannel:$false
+}
+
+$manifestTestRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('leshine-manifest-test-' + [guid]::NewGuid().ToString('N'))
+[System.IO.Directory]::CreateDirectory($manifestTestRoot) | Out-Null
+try {
+    $invalidManifests = @{
+        'array.json' = '[{"version_code":10,"version_name":"1.9","apk_size":1,"sha256":"' + ('a' * 64) + '"}]'
+        'scalar.json' = '42'
+        'duplicate.json' = '{"version_code":10,"version_code":11,"version_name":"1.9","apk_size":1,"sha256":"' + ('a' * 64) + '"}'
+    }
+    foreach ($entry in $invalidManifests.GetEnumerator()) {
+        $path = Join-Path $manifestTestRoot $entry.Key
+        [System.IO.File]::WriteAllText($path, $entry.Value, [System.Text.UTF8Encoding]::new($false))
+        Assert-Throws -MessagePattern 'manifest' -Action { Read-StrictManifest -Path $path | Out-Null }
+    }
+} finally {
+    Remove-Item -LiteralPath $manifestTestRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 function Invoke-Publisher {
@@ -96,6 +133,7 @@ if ($debugResult.Output -notmatch 'debug-signed APK cannot be published') {
 }
 
 $releaseResult = Invoke-Publisher -Path $ReleaseApk
+Register-PreparedDirectory $releaseResult.Output
 if ($releaseResult.ExitCode -ne 0) {
     throw "Expected the signed release APK to pass prepare-only validation: $($releaseResult.Output)"
 }
@@ -151,24 +189,48 @@ if ($missingCa.Succeeded -or $missingCa.Error -notmatch 'CaCertificatePath') { t
 if ($missingCa.NetworkHits -ne 0) { throw 'Missing CA validation attempted a network command.' }
 
 function Invoke-OfflineInitializeTransaction {
-    param([switch]$CorruptPostVerification)
+    param(
+        [switch]$CorruptPostVerification,
+        [switch]$OversizeManifest,
+        [switch]$LoseFirstFinalizeAcknowledgement,
+        [switch]$FailSwitchAcknowledgement
+    )
 
     $global:OfflineReleaseApk = (Resolve-Path -LiteralPath $ReleaseApk).Path
+    $global:OfflineReleaseApkLength = (Get-Item -LiteralPath $global:OfflineReleaseApk).Length
     $global:OfflineDebugApk = (Resolve-Path -LiteralPath $DebugApk).Path
     $global:OfflineCurlCalls = 0
     $global:OfflineScpCalls = 0
     $global:OfflineSshScripts = @()
     $global:OfflineCorruptPostVerification = [bool]$CorruptPostVerification
+    $global:OfflineOversizeManifest = [bool]$OversizeManifest
+    $global:OfflineLoseFirstFinalizeAcknowledgement = [bool]$LoseFirstFinalizeAcknowledgement
+    $global:OfflineFailSwitchAcknowledgement = [bool]$FailSwitchAcknowledgement
+    $global:OfflineFinalizeCalls = 0
+    $global:OfflineCurlArguments = @()
     $global:OfflineBashPath = (Get-Command bash -ErrorAction Stop).Source
     Set-Item -Path Function:global:curl.exe -Value {
         $arguments = @($args)
+        $global:OfflineCurlArguments += ,$arguments
+        foreach ($required in @('--connect-timeout', '--max-time', '--max-filesize', '--max-redirs')) {
+            if ([array]::IndexOf($arguments, $required) -lt 0) { throw "Offline curl sentinel did not receive $required." }
+        }
         $outputIndex = [array]::IndexOf($arguments, '--output')
         if ($outputIndex -lt 0 -or $outputIndex + 1 -ge $arguments.Count) { throw 'Offline curl sentinel did not receive --output.' }
         $outputPath = [string]$arguments[$outputIndex + 1]
         $global:OfflineCurlCalls++
+        $maxSizeIndex = [array]::IndexOf($arguments, '--max-filesize')
+        $actualMaxSize = [long]$arguments[$maxSizeIndex + 1]
+        $expectedMaxSize = if ($global:OfflineCurlCalls -le 2) { 16384L } else { [long]$global:OfflineReleaseApkLength }
+        if ($actualMaxSize -ne $expectedMaxSize) { throw "Unexpected curl max-filesize $actualMaxSize on call $($global:OfflineCurlCalls)." }
         if ($global:OfflineCurlCalls -eq 1) {
-            [System.IO.File]::WriteAllText($outputPath, 'not found')
-            Write-Output '404'
+            if ($global:OfflineOversizeManifest) {
+                [System.IO.File]::WriteAllText($outputPath, ('x' * 16385))
+                Write-Output '200'
+            } else {
+                [System.IO.File]::WriteAllText($outputPath, 'not found')
+                Write-Output '404'
+            }
             return
         }
         if ($global:OfflineCurlCalls -eq 2) {
@@ -196,6 +258,18 @@ function Invoke-OfflineInitializeTransaction {
             if ($LASTEXITCODE -ne 0) { throw "Generated remote transaction script failed bash syntax validation: $($bashOutput -join [Environment]::NewLine)" }
         } finally {
             Remove-Item -LiteralPath $syntaxFile -ErrorAction SilentlyContinue
+        }
+        if ($global:OfflineFailSwitchAcknowledgement -and $remoteScript -match '(?m)^on_switch_failure\(\)') {
+            throw 'simulated switch command transport failure after automatic rollback'
+        }
+        if ($remoteScript -match '(?m)^rollback_owned_transaction\s*$') {
+            Write-Output 'PUBLISH_TXN_ROLLED_BACK'
+        } elseif ($remoteScript -match '(?m)^write_receipt finalized\s*$') {
+            $global:OfflineFinalizeCalls++
+            if ($global:OfflineLoseFirstFinalizeAcknowledgement -and $global:OfflineFinalizeCalls -eq 1) {
+                throw 'simulated lost finalize acknowledgement after remote completion'
+            }
+            Write-Output 'PUBLISH_TXN_FINALIZED'
         }
     }
     try {
@@ -234,8 +308,39 @@ $offlineRollback = Invoke-OfflineInitializeTransaction -CorruptPostVerification
 if ($offlineRollback.Succeeded -or $offlineRollback.Error -notmatch 'rolled back') {
     throw 'Corrupt post-publication verification did not trigger rollback.'
 }
+
+$lostFinalizeAcknowledgement = Invoke-OfflineInitializeTransaction -LoseFirstFinalizeAcknowledgement
+if (-not $lostFinalizeAcknowledgement.Succeeded -or $lostFinalizeAcknowledgement.SshScripts.Count -ne 4) {
+    throw "Finalize acknowledgement loss was not recovered by a receipt-aware retry: $($lostFinalizeAcknowledgement.Error)"
+}
+
+$switchAcknowledgementFailure = Invoke-OfflineInitializeTransaction -FailSwitchAcknowledgement
+if ($switchAcknowledgementFailure.Succeeded -or $switchAcknowledgementFailure.Error -notmatch 'safely rolled back' -or
+    $switchAcknowledgementFailure.SshScripts.Count -ne 3) {
+    throw "Switch failure was not reconciled through the rollback receipt: $($switchAcknowledgementFailure.Error)"
+}
 if ($offlineRollback.SshScripts.Count -ne 3 -or $offlineRollback.SshScripts[-1] -notmatch 'previous\.apk') {
     throw 'Rollback did not use the owner-scoped remote recovery script.'
 }
 
+$oversizeManifest = Invoke-OfflineInitializeTransaction -OversizeManifest
+if ($oversizeManifest.Succeeded -or $oversizeManifest.Error -notmatch 'exceeded the allowed size') {
+    throw "Oversize manifest was not rejected after download: $($oversizeManifest.Error)"
+}
+if ($oversizeManifest.ScpCalls -ne 0 -or $oversizeManifest.SshScripts.Count -ne 0) {
+    throw 'Oversize manifest validation continued into remote publication.'
+}
+
 Write-Output "Publisher self-test passed. Prepared directory: $preparedDirectory"
+} finally {
+    foreach ($directory in $ownedPreparedDirectories) {
+        if (Test-Path -LiteralPath $directory -PathType Container) {
+            Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    $newPreparedDirectories = @(Get-ChildItem -LiteralPath $tempRoot -Directory -Filter 'leshine-expo-update-*' -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.FullName } | Where-Object { $_ -notin $initialPreparedDirectories })
+    if ($newPreparedDirectories.Count -ne 0) {
+        throw "Publisher self-test leaked prepared directories: $($newPreparedDirectories -join ', ')"
+    }
+}
