@@ -949,6 +949,43 @@ def test_order_progress_without_rules_keeps_strict_linear_semantics(db, conditio
     assert order_row["progress_pct"] == 33.3
 
 
+def test_order_list_preserves_legacy_progress_without_unit_identities(db, conditional_order):
+    case = conditional_order
+    db.query(DomesticItemUnit).filter_by(item_id=case.item.id).delete(
+        synchronize_session=False,
+    )
+    case.rows[0].completed_qty = 20
+    case.rows[1].completed_qty = 10
+    db.flush()
+
+    order_rows, _ = order_service.list_orders(db)
+    order_row = next(row for row in order_rows if row["id"] == case.item.order_id)
+    assert order_row["progress_pct"] == 25.0
+
+
+def test_order_list_never_falls_back_when_active_units_exist(db, conditional_order):
+    case = conditional_order
+    case.rows[0].completed_qty = 20
+    case.rows[1].completed_qty = 10
+    db.flush()
+
+    order_rows, _ = order_service.list_orders(db)
+    order_row = next(row for row in order_rows if row["id"] == case.item.order_id)
+    assert order_row["progress_pct"] == 0.0
+
+
+def test_order_list_without_progress_steps_remains_zero(db, conditional_order):
+    case = conditional_order
+    db.query(DomesticItemProgress).filter_by(item_id=case.item.id).delete(
+        synchronize_session=False,
+    )
+    db.flush()
+
+    order_rows, _ = order_service.list_orders(db)
+    order_row = next(row for row in order_rows if row["id"] == case.item.order_id)
+    assert order_row["progress_pct"] == 0.0
+
+
 def test_optional_bypass_unit_mode_only_uses_scanned_unit(db, conditional_order):
     case = conditional_order
     _submit(db, case, 0, 20)

@@ -367,6 +367,13 @@ def _passage_progress_aggregates(db: Session, item_rows: list) -> dict[int, dict
     aggregates: dict[int, dict[str, int]] = {}
     for item in item_rows:
         rows = progress_by_item.get(item.id, [])
+        active_unit_ids = active_by_item.get(item.id, set())
+        if not active_unit_ids:
+            aggregates[item.id] = {
+                "done": sum(row.completed_qty for row in rows),
+                "capacity": item.order_qty * len(rows),
+            }
+            continue
         state = routing_service.PassageState(
             reported_by_progress=reported_by_item.get(item.id, {}),
             skipped_by_progress=skipped_by_item.get(item.id, {}),
@@ -374,7 +381,7 @@ def _passage_progress_aggregates(db: Session, item_rows: list) -> dict[int, dict
         _upstream, _skipped, passed = routing_service.effective_passage_maps(
             rows,
             state,
-            active_by_item.get(item.id, set()),
+            active_unit_ids,
             rules_by_route.get(item.route_id, {}),
         )
         aggregates[item.id] = {
