@@ -7,7 +7,6 @@
 <!-- 预取轮播下一屏资源，减轻 30s 硬跳转白闪 -->
 <link rel="prefetch" href="tuandui.html">
 <link rel="prefetch" href="assets/bg-teams.jpg">
-<link rel="stylesheet" href="assets/festival-popup.css">
 <style>
   /* 设计系统同 xinqian.html（Pixel × Glass × AI 赛事频道）；
      三块玻璃面板与标题已烘焙在 bg-camps.jpg 中，内容按面板坐标对位叠加 */
@@ -225,7 +224,6 @@
   </footer>
 </div>
 
-<script src="assets/festival-popup.js"></script>
 <script>
 (function () {
   "use strict";
@@ -252,9 +250,7 @@
 
   /* 轮播：每屏停留 30s 切下一屏（URL 加 &stay=1 可固定本屏） */
   if (qs.get("stay") !== "1") {
-    window.FestivalPopup
-      ? FestivalPopup.scheduleNavigation("tuandui.html" + location.search, 30000)
-      : setTimeout(() => { location.href = "tuandui.html" + location.search; }, 30000);
+    setTimeout(() => { location.href = "tuandui.html" + location.search; }, 30000);
   }
 
   var WEEK = ["周日","周一","周二","周三","周四","周五","周六"];

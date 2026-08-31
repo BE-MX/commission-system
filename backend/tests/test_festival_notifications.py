@@ -213,7 +213,7 @@ def test_screenshot_command_forces_stable_reduced_motion_frame(tmp_path):
         tmp_path / "edge.exe",
         str(tmp_path / "profile"),
         tmp_path / "board.png",
-        "http://screen.test/festival/xinqian.html?key=secret&stay=1&popup=0",
+        "http://screen.test/festival/xinqian.html?key=secret&stay=1",
     )
 
     assert "--force-prefers-reduced-motion" in command
@@ -353,7 +353,9 @@ def test_screenshot_timeout_does_not_leak_key(tmp_path, monkeypatch):
             return Response()
 
     def timeout(cmd, **_kwargs):
-        assert any("popup=0" in str(part) for part in cmd)
+        url = next(str(part) for part in cmd if str(part).startswith("http://screen.test"))
+        assert "stay=1" in url
+        assert "popup=" not in url
         raise notification_service.subprocess.TimeoutExpired(cmd, 40)
 
     monkeypatch.setattr(notification_service.httpx, "Client", Client)
@@ -366,29 +368,34 @@ def test_screenshot_timeout_does_not_leak_key(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "page",
-    ["zhaiyao.html", "xinqian.html", "fugou.html", "zhenying.html", "tuandui.html"],
+    ("page", "next_page"),
+    [
+        ("zhaiyao.html", "xinqian.html"),
+        ("xinqian.html", "fugou.html"),
+        ("fugou.html", "zhenying.html"),
+        ("zhenying.html", "tuandui.html"),
+        ("tuandui.html", "zhaiyao.html"),
+    ],
 )
-def test_every_festival_board_uses_shared_popup_controller(page):
+def test_every_festival_board_disables_popups_and_keeps_rotation(page, next_page):
     festival_root = Path(__file__).resolve().parents[2] / "frontend" / "public" / "festival"
     html = (festival_root / page).read_text(encoding="utf-8")
 
-    assert 'href="assets/festival-popup.css"' in html
-    assert 'src="assets/festival-popup.js"' in html
-    assert "window.FestivalPopup" in html
-    assert "FestivalPopup.scheduleNavigation" in html
+    assert "festival-popup" not in html
+    assert "FestivalPopup" not in html
+    assert 'qs.get("stay") !== "1"' in html
+    assert f'location.href = "{next_page}" + location.search' in html
 
 
-def test_shared_popup_acknowledges_only_after_playback_and_can_be_disabled():
-    script = (Path(__file__).resolve().parents[2] / "frontend" / "public" / "festival" /
-              "assets" / "festival-popup.js").read_text(encoding="utf-8")
+def test_popup_assets_are_removed_and_summary_event_feed_remains():
+    festival_root = Path(__file__).resolve().parents[2] / "frontend" / "public" / "festival"
 
-    finish_body = script.split("function finish(event)", 1)[1].split("function showLower", 1)[0]
-    enqueue_body = script.split("function enqueue(events)", 1)[1].split("function previewExamples", 1)[0]
-    assert "acknowledge(event.id)" in finish_body
-    assert "acknowledge(" not in enqueue_body
-    assert 'qs.get("popup") === "0"' in script
-    assert "queuedIds" in enqueue_body
+    assert not (festival_root / "assets" / "festival-popup.js").exists()
+    assert not (festival_root / "assets" / "festival-popup.css").exists()
+    summary = (festival_root / "zhaiyao.html").read_text(encoding="utf-8")
+    assert "function renderFeed(events)" in summary
+    assert "renderFeed(d.events || [])" in summary
+    assert 'fetch("/api/public/festival/headline" + apiQuery())' in summary
 
 
 def test_stale_daily_claim_can_be_recovered(engine, monkeypatch):
