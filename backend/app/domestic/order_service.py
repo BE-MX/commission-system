@@ -17,16 +17,22 @@ from app.domestic import (
     customer_service,
     product_service,
     progress_service,
+    routing_service,
     unit_service,
 )
 from app.domestic.models import (
     DomesticCustomer,
     DomesticItemAppendRequest,
     DomesticItemProgress,
+    DomesticItemUnit,
     DomesticOrder,
     DomesticOrderItem,
     DomesticProduct,
     DomesticReportLog,
+    DomesticReportUnit,
+    DomesticRouteRule,
+    DomesticSkipLog,
+    DomesticSkipUnit,
 )
 from app.domestic.schemas import (
     ItemShipRequest,
@@ -284,6 +290,100 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
 # ── 列表与详情 ────────────────────────────────────────
 
 
+def _passage_progress_aggregates(db: Session, item_rows: list) -> dict[int, dict[str, int]]:
+    """批量计算列表页每条明细的通行进度，避免逐明细构建完整工序视图。"""
+    item_ids = [row.id for row in item_rows]
+    if not item_ids:
+        return {}
+
+    progress_rows = (
+        db.query(DomesticItemProgress)
+        .filter(DomesticItemProgress.item_id.in_(item_ids))
+        .order_by(
+            DomesticItemProgress.item_id.asc(),
+            DomesticItemProgress.step_order.asc(),
+        )
+        .all()
+    )
+    active_unit_rows = db.query(
+        DomesticItemUnit.item_id,
+        DomesticItemUnit.id,
+    ).filter(
+        DomesticItemUnit.item_id.in_(item_ids),
+        DomesticItemUnit.status == 1,
+    ).all()
+    reported_rows = (
+        db.query(
+            DomesticReportLog.item_id,
+            DomesticReportUnit.progress_id,
+            DomesticReportUnit.unit_id,
+        )
+        .join(DomesticReportUnit, DomesticReportUnit.log_id == DomesticReportLog.id)
+        .filter(
+            DomesticReportLog.item_id.in_(item_ids),
+            DomesticReportLog.revoked == 0,
+        )
+        .all()
+    )
+    skipped_rows = (
+        db.query(
+            DomesticSkipLog.item_id,
+            DomesticSkipUnit.progress_id,
+            DomesticSkipUnit.unit_id,
+        )
+        .join(DomesticSkipUnit, DomesticSkipUnit.skip_log_id == DomesticSkipLog.id)
+        .filter(
+            DomesticSkipLog.item_id.in_(item_ids),
+            DomesticSkipLog.revoked == 0,
+        )
+        .all()
+    )
+
+    route_ids = {row.route_id for row in item_rows if row.route_id}
+    rule_rows = db.query(DomesticRouteRule).filter(
+        DomesticRouteRule.route_id.in_(route_ids or {0}),
+    ).all()
+
+    progress_by_item: dict[int, list[DomesticItemProgress]] = {}
+    active_by_item: dict[int, set[int]] = {}
+    reported_by_item: dict[int, dict[int, set[int]]] = {}
+    skipped_by_item: dict[int, dict[int, set[int]]] = {}
+    rules_by_route: dict[int, dict[int, dict]] = {}
+    for progress in progress_rows:
+        progress_by_item.setdefault(progress.item_id, []).append(progress)
+    for item_id, unit_id in active_unit_rows:
+        active_by_item.setdefault(item_id, set()).add(unit_id)
+    for item_id, progress_id, unit_id in reported_rows:
+        reported_by_item.setdefault(item_id, {}).setdefault(progress_id, set()).add(unit_id)
+    for item_id, progress_id, unit_id in skipped_rows:
+        skipped_by_item.setdefault(item_id, {}).setdefault(progress_id, set()).add(unit_id)
+    for rule in rule_rows:
+        rules_by_route.setdefault(rule.route_id, {})[rule.process_id] = {
+            "process_id": rule.process_id,
+            "rule_type": rule.rule_type,
+            "config": rule.config_json,
+        }
+
+    aggregates: dict[int, dict[str, int]] = {}
+    for item in item_rows:
+        rows = progress_by_item.get(item.id, [])
+        state = routing_service.PassageState(
+            reported_by_progress=reported_by_item.get(item.id, {}),
+            skipped_by_progress=skipped_by_item.get(item.id, {}),
+        )
+        _upstream, _skipped, passed = routing_service.effective_passage_maps(
+            rows,
+            state,
+            active_by_item.get(item.id, set()),
+            rules_by_route.get(item.route_id, {}),
+        )
+        aggregates[item.id] = {
+            "done": sum(len(passed.get(row.id, set())) for row in rows),
+            "capacity": item.order_qty * len(rows),
+        }
+    return aggregates
+
+
 def list_orders(
     db: Session,
     *,
@@ -342,25 +442,12 @@ def list_orders(
             DomesticOrderItem.order_id,
             DomesticOrderItem.order_qty,
             DomesticOrderItem.unit_price,
+            DomesticOrderItem.route_id,
         )
         .filter(DomesticOrderItem.order_id.in_(order_ids))
         .all()
     )
-    progress_rows = dict(
-        db.query(
-            DomesticItemProgress.item_id,
-            func.sum(DomesticItemProgress.completed_qty),
-        )
-        .filter(DomesticItemProgress.item_id.in_([r.id for r in item_rows] or [0]))
-        .group_by(DomesticItemProgress.item_id)
-        .all()
-    )
-    step_counts = dict(
-        db.query(DomesticItemProgress.item_id, func.count(DomesticItemProgress.id))
-        .filter(DomesticItemProgress.item_id.in_([r.id for r in item_rows] or [0]))
-        .group_by(DomesticItemProgress.item_id)
-        .all()
-    )
+    passage_aggregates = _passage_progress_aggregates(db, item_rows)
 
     agg: dict[int, dict] = {
         oid: {"item_count": 0, "total_qty": 0, "done": 0, "capacity": 0}
@@ -370,8 +457,8 @@ def list_orders(
         bucket = agg[row.order_id]
         bucket["item_count"] += 1
         bucket["total_qty"] += row.order_qty
-        bucket["done"] += int(progress_rows.get(row.id) or 0)
-        bucket["capacity"] += row.order_qty * int(step_counts.get(row.id) or 0)
+        bucket["done"] += passage_aggregates.get(row.id, {}).get("done", 0)
+        bucket["capacity"] += passage_aggregates.get(row.id, {}).get("capacity", 0)
 
     items = []
     for o in orders:
@@ -479,20 +566,16 @@ def get_order_detail(
         full_steps = progress_service.build_progress_view(db, item)
         visible_steps = [step for step in full_steps if step["show_in_domestic_track"]]
         progress_steps = visible_steps if public_progress_only else full_steps
-        done = sum(
-            step["passed_qty"] if public_progress_only else step["completed_qty"]
-            for step in progress_steps
-        )
+        done = sum(step["passed_qty"] for step in progress_steps)
         steps = (
             [_public_progress_step(step) for step in visible_steps]
             if public_progress_only else full_steps
         )
         capacity = item.order_qty * len(steps)
-        current_qty_field = "passed_qty" if public_progress_only else "completed_qty"
         current = next((
             step["process_name"]
             for step in steps
-            if step[current_qty_field] < item.order_qty
+            if step["passed_qty"] < item.order_qty
         ), "完成")
         progress_hidden = public_progress_only and bool(full_steps) and not steps
         item_views.append({

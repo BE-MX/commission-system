@@ -909,6 +909,46 @@ def test_public_tracking_whitelists_steps_and_counts_skips_as_progress(db, condi
     assert "rule_type" in internal_item["steps"][0]
 
 
+def test_internal_detail_and_order_list_count_passed_units_as_progress(db, conditional_order):
+    case = conditional_order
+    _submit(db, case, 0, 20)
+    _submit(db, case, 1, 20, outcomes={"dandong": 12, "lixiaohong": 8})
+    _submit(db, case, 2, 12)
+    _submit(db, case, 3, 8)
+    _submit(db, case, 5, 20)
+
+    internal_item = order_service.get_order_detail(db, case.item.order_id)["items"][0]
+    optional_step = internal_item["steps"][4]
+    assert optional_step["completed_qty"] == 0
+    assert optional_step["passed_qty"] == 20
+    assert internal_item["current_process"] == "完成"
+    assert internal_item["progress_pct"] == 100.0
+
+    order_rows, total = order_service.list_orders(db)
+    order_row = next(row for row in order_rows if row["id"] == case.item.order_id)
+    assert total == 1
+    assert order_row["progress_pct"] == 100.0
+
+
+def test_order_progress_without_rules_keeps_strict_linear_semantics(db, conditional_order):
+    case = conditional_order
+    db.query(DomesticRouteRule).filter_by(route_id=case.route.id).delete(
+        synchronize_session=False,
+    )
+    db.flush()
+
+    _submit(db, case, 0, 20)
+    _submit(db, case, 1, 20)
+
+    internal_item = order_service.get_order_detail(db, case.item.order_id)["items"][0]
+    assert internal_item["current_process"] == case.route.process_names[2]
+    assert internal_item["progress_pct"] == 33.3
+
+    order_rows, _ = order_service.list_orders(db)
+    order_row = next(row for row in order_rows if row["id"] == case.item.order_id)
+    assert order_row["progress_pct"] == 33.3
+
+
 def test_optional_bypass_unit_mode_only_uses_scanned_unit(db, conditional_order):
     case = conditional_order
     _submit(db, case, 0, 20)
