@@ -1,34 +1,27 @@
-"""智能获客 Agent 专用接口：可撤销 token + 短时任务租约。"""
+"""Agent acquisition endpoints scoped to search and unified research tasks."""
+
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.response import ok, page_result
+from app.customer import outreach_service
+from app.customer.access_service import CustomerAccessDenied, require_customer_access
 from app.knowledge import service as knowledge_service
+from app.knowledge.models import KnowledgeLibrary
 from app.sales_automation import enrichment_service, public_pool_service, service
 from app.sales_automation.dependencies import require_sales_agent
-from app.sales_automation.models import LeadContact, ResearchSubject
-from app.sales_automation.router import (
-    _assessment,
-    _call,
-    _company,
-    _contact,
-    _iso,
-    _job,
-    _pool_task,
-    _subject,
-    _user_id,
-)
+from app.sales_automation.router import _call, _iso, _job, _research_task, _user_id
 from app.sales_automation.schemas import (
     AgentClaim,
     AgentFailure,
     AgentLease,
     CandidateBatch,
-    ContactBatch,
-    PublicPoolResearchSubmit,
     PublicPoolIndustryGateSubmit,
-    ResearchUpsert,
+    PublicPoolResearchSubmit,
+    ResearchFactBatch,
 )
 
 
@@ -42,81 +35,62 @@ def _knowledge_call(fn, *args, **kwargs):
         raise HTTPException(exc.status_code, str(exc)) from exc
 
 
-def _validate_knowledge_references(db: Session, agent: dict, references) -> None:
+def _validate_knowledge_references(db: Session, agent: dict, references: list[dict]) -> None:
     for reference in references:
+        try:
+            document_id = int(reference["document_id"])
+            revision_id = int(reference["revision_id"])
+            version_no = int(reference["version_no"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(422, "企业知识库引用格式无效") from exc
         row = _knowledge_call(
             knowledge_service.get_published_document,
             db,
             agent,
-            reference.document_id,
+            document_id,
             audit_action="sales_agent_research_reference",
         )
-        if row["revision_id"] != reference.revision_id or row["version_no"] != reference.version_no:
+        if row["revision_id"] != revision_id or row["version_no"] != version_no:
             raise HTTPException(409, "企业知识库引用版本已变化，请重新读取后提交")
+        library = db.query(KnowledgeLibrary).filter(
+            KnowledgeLibrary.id == row.get("library_id"),
+            KnowledgeLibrary.status == "active",
+            KnowledgeLibrary.deleted_at.is_(None),
+        ).one_or_none()
+        if library is None or library.category != "company":
+            raise HTTPException(409, "共享客户研究只能引用公司级知识库")
 
 
-def _public_pool_context(db: Session, task_id: int) -> dict:
+def _research_context(db: Session, task_id: int) -> dict:
     detail = _call(public_pool_service.get_task_detail, db, task_id)
     task = detail["task"]
-    subject = detail["subject"]
-    assessment = detail["assessment"]
-    source_label = "OKKI公海客户" if subject.source_system == "okki" else "智能获客70分以上候选"
+    customer = detail["customer"]
+    input_snapshot = dict(task.input_snapshot or {})
+    if "customer_id" in input_snapshot:
+        input_snapshot["customer_id"] = task.logical_customer_id
     return {
-        "task": _pool_task(task, subject, assessment),
-        "subject": _subject(subject),
-        "trusted_seed": subject.source_snapshot or {},
-        "research_rules": {
-            "source_type": source_label,
-            "identity_boundary": "先用公司名、企业域名、官网、国家和已有业务线索确认主体；主体不明时标记 unverifiable，禁止拼接同名公司的资料",
-            "knowledge_baseline": "先检索当前账号可访问的已发布企业知识，确认目标行业、产品、优势、排除项与成交经验；知识库仅用于内部匹配判断，不是客户公开事实",
-            "industry_gate": {
-                "order": "先低成本核验实体、主营业务与目标行业相关性，再决定是否深挖",
-                "irrelevant": "有可靠证据确认行业无关时立即停止，不再获取联系人/社会关系、不做供应商与深度风险评估、不生成触达草稿",
-                "uncertain": "证据不足不等于行业无关；保留 uncertain，并沿社媒与弱线索轨做有限核验",
-            },
-            "social_first": "无独立站或官网贫乏时，将 Instagram、Facebook、TikTok、LinkedIn、Pinterest、YouTube、Google Business/预约页作为重点；核验账号互链、地点、业务内容和近期活跃度",
-            "weak_lead_address_crosscheck": "当初步核验仍为弱线索（identity 为 candidate/unverifiable 或行业为 uncertain）且 trusted_seed.address_search_hint 非空时，只能把该后端已最小化的位置提示与公司/业务名称组合检索 2–3 次；禁止添加个人姓名、私人电话/WhatsApp、邮箱、邮箱前缀或从其他字段恢复更精确地址。必须由打开的公开业务来源和另一业务锚点交叉印证，禁止仅凭位置合并同名主体或把内部位置提示直接当作公开事实",
-            "tier_focus": {
-                "T1": "优先核实历史合作、当前经营状态和可触发二次激活的变化",
-                "T2": "围绕官网、企业邮箱或业务社媒核实产品匹配、采购角色和切换供应商诱因；智能获客高分候选还须核验其原始匹配分与公开证据是否一致",
-                "T3": "只有私人邮箱、电话或 WhatsApp 时先做轻量身份确认；缺少锚点时停止深挖",
-            },
-            "required_evidence": ["公开来源URL", "captured_at", "confidence"],
-            "forbidden": ["猜测邮箱", "无来源事实", "跨主体拼接", "发送邮件或消息"],
+        "research_task_id": task.id,
+        "customer_id": task.logical_customer_id,
+        "task_type": task.task_type,
+        "tier": task.tier,
+        "policy_version": task.research_policy_version,
+        "input_hash": public_pool_service.research_input_hash(task),
+        "input_snapshot": input_snapshot,
+        "customer": {
+            "customer_id": customer.id,
+            "customer_code": customer.customer_code,
+            "display_name": customer.display_name,
+            "canonical_company_name": customer.canonical_company_name,
+            "identity_status": customer.identity_status,
+            "relationship_stage": customer.relationship_stage,
         },
-        "output_contract": {
-            "source_system": subject.source_system,
-            "identity_decisions": ["confirmed", "candidate", "unverifiable", "rejected"],
-            "industry_relevance": ["core", "adjacent", "uncertain", "irrelevant"],
-            "research_depth": ["gate_only", "focused", "deep"],
-            "score_components": {
-                "industry_fit": 25,
-                "pain_switch_trigger": 20,
-                "intent_reactivation": 20,
-                "buying_capacity": 15,
-                "reachability": 10,
-                "timing": 10,
-                "risk_penalty": 30,
-            },
-            "note": "成交等级和证据置信度由方舟后端重算；opening_message_en 仅保存为人工审核草稿",
+        "research_rules": {
+            "identity_boundary": "仅围绕商业身份和公开业务证据调查；主体不明时保留待识别，不拼接同名主体资料",
+            "industry_gate": "先验证业务相关性；明确无关时停止，不猜联系方式、不生成触达草稿或正向成交分",
+            "required_evidence": ["source_record", "captured_at", "confidence"],
+            "forbidden": ["猜测邮箱", "个人社会关系调查", "无来源事实", "跨客户读取", "直接触达"],
         },
     }
-
-
-@router.get("/agent/public-pool/tasks")
-def list_agent_public_pool_tasks(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db),
-    _agent=Depends(require_sales_agent),
-):
-    rows, total = public_pool_service.list_claimable_tasks(db, page, page_size)
-    subject_ids = {row.subject_id for row in rows}
-    subjects = {
-        row.id: row for row in db.query(ResearchSubject).filter(ResearchSubject.id.in_(subject_ids)).all()
-    } if subject_ids else {}
-    items = [_pool_task(row, subjects[row.subject_id], None) for row in rows if row.subject_id in subjects]
-    return ok(page_result(items, total, page, page_size))
 
 
 @router.get("/agent/knowledge/search")
@@ -126,14 +100,13 @@ def search_agent_knowledge(
     db: Session = Depends(get_db),
     agent=Depends(require_sales_agent),
 ):
-    """Agent只读检索有ACL权限的已发布企业知识；草稿与待审版本不会返回。"""
     return ok(_knowledge_call(
         knowledge_service.search_published,
         db,
         agent,
         q,
         limit=limit,
-        audit_action="sales_agent_research_search",
+        audit_action="sales_agent_knowledge_search",
     ))
 
 
@@ -143,47 +116,81 @@ def get_agent_knowledge_document(
     db: Session = Depends(get_db),
     agent=Depends(require_sales_agent),
 ):
-    """Agent只读获取单篇有ACL权限的已发布知识正文。"""
-    row = _knowledge_call(
+    return ok(_knowledge_call(
         knowledge_service.get_published_document,
         db,
         agent,
         document_id,
-        audit_action="sales_agent_research_read",
-    )
-    return ok({
-        "document_id": row["document_id"],
-        "revision_id": row["revision_id"],
-        "title": row["title"],
-        "content": row["content_text"],
-        "version_no": row["version_no"],
-    })
+        audit_action="sales_agent_knowledge_read",
+    ))
 
 
-@router.get("/agent/public-pool/tasks/{task_id}/context")
-def get_agent_public_pool_context(
+@router.get("/agent/research-tasks")
+def list_agent_research_tasks(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _agent=Depends(require_sales_agent),
+):
+    rows, total = public_pool_service.list_claimable_tasks(db, page, page_size)
+    return ok(page_result([_research_task(row) for row in rows], total, page, page_size))
+
+
+@router.get("/agent/customers/{customer_id}/outreach-context")
+def get_agent_customer_outreach_context(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    agent=Depends(require_sales_agent),
+):
+    try:
+        access = require_customer_access(
+            db,
+            customer_id=customer_id,
+            user=agent,
+            action_permissions={"customer:read", "customer:read_all", "customer:admin"},
+            manage_permissions={"customer:read_all", "customer:admin"},
+            allow_public_pool=False,
+        )
+    except CustomerAccessDenied:
+        raise HTTPException(404, "CUSTOMER_NOT_FOUND_OR_FORBIDDEN") from None
+    return ok(_call(outreach_service.get_outreach_context, db, access))
+
+
+@router.get("/agent/research-tasks/{task_id}/context")
+def get_agent_research_context(
     task_id: int,
     db: Session = Depends(get_db),
     _agent=Depends(require_sales_agent),
 ):
-    return ok(_public_pool_context(db, task_id))
+    return ok(_research_context(db, task_id))
 
 
-@router.post("/agent/public-pool/tasks/{task_id}/claim")
-def claim_agent_public_pool_task(
+@router.post("/agent/research-tasks/{task_id}/claim")
+def claim_agent_research_task(
     task_id: int,
     payload: AgentClaim,
     db: Session = Depends(get_db),
     agent=Depends(require_sales_agent),
 ):
-    row, lease_token = _call(
-        public_pool_service.claim_task, db, task_id, _user_id(agent), payload.agent_id,
+    row, token = _call(
+        public_pool_service.claim_task,
+        db,
+        task_id,
+        _user_id(agent),
+        payload.agent_id,
     )
-    return ok({"task_id": row.id, "lease_token": lease_token, "lease_expires_at": _iso(row.lease_expires_at)})
+    return ok({
+        "research_task_id": row.id,
+        "customer_id": row.logical_customer_id,
+        "lease_token": token,
+        "lease_generation": row.lease_generation,
+        "lease_expires_at": _iso(row.lease_expires_at),
+        "input_hash": public_pool_service.research_input_hash(row),
+    })
 
 
-@router.post("/agent/public-pool/tasks/{task_id}/heartbeat")
-def heartbeat_agent_public_pool_task(
+@router.post("/agent/research-tasks/{task_id}/heartbeat")
+def heartbeat_agent_research_task(
     task_id: int,
     payload: AgentLease,
     db: Session = Depends(get_db),
@@ -191,52 +198,113 @@ def heartbeat_agent_public_pool_task(
 ):
     row = _call(
         public_pool_service.heartbeat_task,
-        db, task_id, _user_id(agent), payload.agent_id, payload.lease_token,
+        db,
+        task_id,
+        _user_id(agent),
+        payload.agent_id,
+        payload.lease_token,
     )
-    return ok({"lease_expires_at": _iso(row.lease_expires_at)})
+    return ok({"research_task_id": row.id, "lease_expires_at": _iso(row.lease_expires_at)})
 
 
-@router.post("/agent/public-pool/tasks/{task_id}/industry-gate")
-def submit_agent_public_pool_industry_gate(
+@router.post("/agent/research-tasks/{task_id}/industry-gate")
+def submit_agent_industry_gate(
     task_id: int,
     payload: PublicPoolIndustryGateSubmit,
     db: Session = Depends(get_db),
     agent=Depends(require_sales_agent),
 ):
-    """Two-stage stop-loss: only a passed gate authorizes the costly research phase."""
-    _validate_knowledge_references(db, agent, payload.knowledge_references)
-    task, can_deepen = _call(
-        public_pool_service.submit_industry_gate, db, task_id, payload, _user_id(agent),
+    row = _call(
+        public_pool_service.submit_industry_gate,
+        db,
+        task_id,
+        _user_id(agent),
+        payload.agent_id,
+        payload.lease_token,
+        payload.industry_relevance,
+        payload.reason,
     )
     return ok({
-        "task_id": task.id,
-        "gate_status": task.gate_status,
-        "deep_research_authorized": can_deepen,
-        "status": task.status,
+        "research_task_id": row.id,
+        "customer_id": row.logical_customer_id,
+        "task_status": row.task_status,
+        "gate_status": row.gate_status,
     })
 
 
-@router.post("/agent/public-pool/tasks/{task_id}/complete")
-def complete_agent_public_pool_task(
+@router.post("/agent/research-tasks/{task_id}/facts")
+def append_agent_research_facts(
+    task_id: int,
+    payload: ResearchFactBatch,
+    db: Session = Depends(get_db),
+    agent=Depends(require_sales_agent),
+):
+    task, input_hash = _call(
+        public_pool_service.validate_research_fact_write,
+        db,
+        task_id,
+        _user_id(agent),
+        payload.agent_id,
+        payload.lease_token,
+        payload.agent_run_id,
+    )
+    _sources, facts = _call(
+        enrichment_service.append_research_facts,
+        db,
+        task_id,
+        payload.facts,
+        agent_run_id=payload.agent_run_id,
+    )
+    db.commit()
+    return ok({
+        "research_task_id": task.id,
+        "customer_id": task.logical_customer_id,
+        "input_hash": input_hash,
+        "evidence_refs": [{
+            "customer_id": task.logical_customer_id,
+            "evidence_ref": f"fact:{fact.id}",
+            "evidence_content_hash": fact.fact_fingerprint,
+            "input_hash": input_hash,
+            "data_classification": fact.data_classification,
+            "visibility_scope": fact.visibility_scope,
+        } for fact in facts],
+    })
+
+
+@router.post("/agent/research-tasks/{task_id}/complete")
+def complete_agent_research_task(
     task_id: int,
     payload: PublicPoolResearchSubmit,
     db: Session = Depends(get_db),
     agent=Depends(require_sales_agent),
 ):
-    retried = _call(
-        public_pool_service.get_idempotent_completed_research,
-        db, task_id, payload, _user_id(agent),
+    result_json = payload.result_json.model_dump(mode="json")
+    references = result_json.get("knowledge_references") or []
+    if references:
+        _validate_knowledge_references(db, agent, references)
+    row = _call(
+        public_pool_service.complete_task_research,
+        db,
+        task_id,
+        _user_id(agent),
+        payload.agent_id,
+        payload.lease_token,
+        result_json,
+        agent_run_id=payload.agent_run_id,
+        data_classification=payload.data_classification,
+        visibility_scope=payload.visibility_scope,
     )
-    if retried is not None:
-        task, assessment = retried
-        return ok({"task_id": task.id, "status": task.status, "assessment": _assessment(assessment)})
-    _validate_knowledge_references(db, agent, payload.knowledge_references)
-    task, assessment = _call(public_pool_service.complete_task_research, db, task_id, payload, _user_id(agent))
-    return ok({"task_id": task.id, "status": task.status, "assessment": _assessment(assessment)})
+    return ok({
+        "research_task_id": row.id,
+        "customer_id": row.logical_customer_id,
+        "task_status": row.task_status,
+        "result_review_status": row.result_review_status,
+        "evidence_fact_ids": row.evidence_fact_ids or [],
+    })
 
 
-@router.post("/agent/public-pool/tasks/{task_id}/fail")
-def fail_agent_public_pool_task(
+@router.post("/agent/research-tasks/{task_id}/fail")
+def fail_agent_research_task(
     task_id: int,
     payload: AgentFailure,
     db: Session = Depends(get_db),
@@ -244,24 +312,28 @@ def fail_agent_public_pool_task(
 ):
     row = _call(
         public_pool_service.fail_task,
-        db, task_id, payload.error_message, _user_id(agent), payload.agent_id, payload.lease_token,
+        db,
+        task_id,
+        payload.error_code,
+        _user_id(agent),
+        payload.agent_id,
+        payload.lease_token,
     )
-    return ok({"task_id": row.id, "status": row.status, "error_message": row.error_message})
+    return ok({
+        "research_task_id": row.id,
+        "customer_id": row.logical_customer_id,
+        "task_status": row.task_status,
+    })
 
 
 @router.get("/agent/search-jobs")
 def list_agent_jobs(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    job_status: str = Query("claimable", alias="status"),
     db: Session = Depends(get_db),
     _agent=Depends(require_sales_agent),
 ):
-    rows, total = (
-        service.list_claimable_search_jobs(db, page, page_size)
-        if job_status == "claimable"
-        else service.list_search_jobs(db, page, page_size, job_status)
-    )
+    rows, total = service.list_claimable_search_jobs(db, page, page_size)
     return ok(page_result([_job(row) for row in rows], total, page, page_size))
 
 
@@ -273,13 +345,15 @@ def get_agent_context(
 ):
     row = _call(service.get_search_job, db, job_id)
     return ok({
-        "job": _job(row),
-        "profile": row.profile_snapshot,
-        "criteria": row.criteria,
+        "job_id": row.id,
+        "criteria_json": row.criteria_json or {},
+        "profile_snapshot": row.profile_snapshot or {},
+        "policy_version": row.policy_version,
+        "profile_snapshot_hash": row.profile_snapshot_hash,
         "output_contract": {
-            "identity": "normalized company website domain",
-            "required_fields": ["name", "website", "source_url", "captured_at"],
-            "forbidden": ["invented company", "unsourced claim", "personal email guess"],
+            "identifier": "customer_id",
+            "source_record_first": True,
+            "company_name_nullable": True,
         },
     })
 
@@ -291,8 +365,13 @@ def claim_search_job(
     db: Session = Depends(get_db),
     agent=Depends(require_sales_agent),
 ):
-    row, lease_token = _call(service.claim_search_job, db, job_id, _user_id(agent), payload.agent_id)
-    return ok({"job": _job(row), "lease_token": lease_token, "lease_expires_at": _iso(row.lease_expires_at)})
+    row, token = _call(service.claim_search_job, db, job_id, _user_id(agent), payload.agent_id)
+    return ok({
+        "job_id": row.id,
+        "lease_token": token,
+        "lease_expires_at": _iso(row.lease_expires_at),
+        "attempt_count": row.attempt_count,
+    })
 
 
 @router.post("/agent/search-jobs/{job_id}/heartbeat")
@@ -303,9 +382,14 @@ def heartbeat_search_job(
     agent=Depends(require_sales_agent),
 ):
     row = _call(
-        service.heartbeat_search_job, db, job_id, _user_id(agent), payload.agent_id, payload.lease_token,
+        service.heartbeat_search_job,
+        db,
+        job_id,
+        _user_id(agent),
+        payload.agent_id,
+        payload.lease_token,
     )
-    return ok({"lease_expires_at": _iso(row.lease_expires_at)})
+    return ok({"job_id": row.id, "lease_expires_at": _iso(row.lease_expires_at)})
 
 
 @router.post("/agent/search-jobs/{job_id}/candidates")
@@ -315,7 +399,7 @@ def submit_candidates(
     db: Session = Depends(get_db),
     agent=Depends(require_sales_agent),
 ):
-    return ok(_call(
+    summary = _call(
         service.ingest_candidates,
         db,
         job_id,
@@ -324,7 +408,8 @@ def submit_candidates(
         _user_id(agent),
         payload.agent_id,
         payload.lease_token,
-    ))
+    )
+    return ok({"job_id": job_id, **summary})
 
 
 @router.post("/agent/search-jobs/{job_id}/complete")
@@ -335,9 +420,14 @@ def complete_search_job(
     agent=Depends(require_sales_agent),
 ):
     row = _call(
-        service.complete_search_job, db, job_id, _user_id(agent), payload.agent_id, payload.lease_token,
+        service.complete_search_job,
+        db,
+        job_id,
+        _user_id(agent),
+        payload.agent_id,
+        payload.lease_token,
     )
-    return ok(_job(row))
+    return ok({"job_id": row.id, "status": row.status})
 
 
 @router.post("/agent/search-jobs/{job_id}/fail")
@@ -351,66 +441,12 @@ def fail_search_job(
         service.fail_search_job,
         db,
         job_id,
-        payload.error_message,
+        payload.error_code,
         _user_id(agent),
         payload.agent_id,
         payload.lease_token,
     )
-    return ok(_job(row))
+    return ok({"job_id": row.id, "status": row.status})
 
 
-def _agent_lead_detail(db: Session, company_id: int) -> dict:
-    row = _call(service.get_lead, db, company_id)
-    contacts = db.query(LeadContact).filter(
-        LeadContact.company_id == company_id,
-        LeadContact.deleted_at.is_(None),
-    ).order_by(LeadContact.created_at.asc()).all()
-    research, facts = enrichment_service.get_latest_research(db, company_id)
-    data = _company(db, row)
-    data["contacts"] = [_contact(item) for item in contacts]
-    data["research"] = None if research is None else {
-        "id": research.id,
-        "status": research.status,
-        "summary": research.summary,
-        "outreach_angles": research.outreach_angles or [],
-        "risks": research.risks or [],
-        "facts": [{
-            "fact_type": fact.fact_type,
-            "claim": fact.claim,
-            "source_url": fact.source_url,
-            "captured_at": _iso(fact.captured_at),
-            "confidence": fact.confidence,
-        } for fact in facts],
-    }
-    return data
-
-
-@router.get("/agent/leads/{company_id}")
-def get_agent_lead(
-    company_id: int,
-    db: Session = Depends(get_db),
-    _agent=Depends(require_sales_agent),
-):
-    return ok(_agent_lead_detail(db, company_id))
-
-
-@router.post("/agent/leads/{company_id}/contacts")
-def save_contacts(
-    company_id: int,
-    payload: ContactBatch,
-    db: Session = Depends(get_db),
-    agent=Depends(require_sales_agent),
-):
-    rows = _call(enrichment_service.upsert_contacts, db, company_id, payload.contacts, _user_id(agent))
-    return ok([_contact(row) for row in rows])
-
-
-@router.post("/agent/leads/{company_id}/research")
-def save_research(
-    company_id: int,
-    payload: ResearchUpsert,
-    db: Session = Depends(get_db),
-    agent=Depends(require_sales_agent),
-):
-    row = _call(enrichment_service.upsert_research, db, company_id, payload, _user_id(agent))
-    return ok({"id": row.id, "status": row.status, "finished_at": _iso(row.finished_at)})
+__all__ = ["router"]

@@ -1,5 +1,4 @@
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
-const PUBLIC_POOL_REACTIVATION_INACTIVE_DAYS = 60;
 
 export class ArkApiError extends Error {
   constructor(message, status = null) {
@@ -15,29 +14,6 @@ function integerId(value, field) {
     throw new ArkApiError(`${field} 必须是正整数`);
   }
   return parsed;
-}
-
-function publicPoolItems(data) {
-  return Array.isArray(data?.items) ? data.items : [];
-}
-
-function parseDateOnly(value) {
-  const match = String(value || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!match) return null;
-  const timestamp = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-  return Number.isFinite(timestamp) ? timestamp : null;
-}
-
-function localDateOnly(now) {
-  return Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-}
-
-export function isRecentPublicPoolReactivationTask(task, now = new Date()) {
-  if (task?.tier !== "T1") return false;
-  const lastOrderAt = parseDateOnly(task?.subject?.last_order_at);
-  if (lastOrderAt === null) return false;
-  const cutoff = localDateOnly(now) - PUBLIC_POOL_REACTIVATION_INACTIVE_DAYS * 24 * 60 * 60 * 1000;
-  return lastOrderAt >= cutoff;
 }
 
 export class ArkClient {
@@ -147,13 +123,13 @@ export class ArkClient {
     return this.#leaseRequest(jobId, "complete", leaseToken);
   }
 
-  failSearchJob(jobId, leaseToken, errorMessage) {
+  failSearchJob(jobId, leaseToken, errorCode) {
     return this.request(`/api/sales-automation/agent/search-jobs/${integerId(jobId, "job_id")}/fail`, {
       method: "POST",
       body: {
         agent_id: this.#agentId,
         lease_token: leaseToken,
-        error_message: String(errorMessage || "").slice(0, 2000),
+        error_code: String(errorCode || "").slice(0, 64),
       },
     });
   }
@@ -170,24 +146,6 @@ export class ArkClient {
     });
   }
 
-  getLead(companyId) {
-    return this.request(`/api/sales-automation/agent/leads/${integerId(companyId, "company_id")}`);
-  }
-
-  saveContacts(companyId, contacts) {
-    return this.request(`/api/sales-automation/agent/leads/${integerId(companyId, "company_id")}/contacts`, {
-      method: "POST",
-      body: { contacts },
-    });
-  }
-
-  saveResearch(companyId, research) {
-    return this.request(`/api/sales-automation/agent/leads/${integerId(companyId, "company_id")}/research`, {
-      method: "POST",
-      body: research,
-    });
-  }
-
   searchKnowledge(query, limit = 10) {
     const cleanQuery = String(query || "").trim();
     if (!cleanQuery) throw new ArkApiError("知识库检索词不能为空");
@@ -200,77 +158,67 @@ export class ArkClient {
     return this.request(`/api/sales-automation/agent/knowledge/documents/${integerId(documentId, "document_id")}`);
   }
 
-  async listPublicPoolTasks(page = 1, pageSize = 20) {
-    const requestedPage = integerId(page, "page");
-    const requestedPageSize = integerId(pageSize, "page_size");
-    if (requestedPageSize > 100) throw new ArkApiError("page_size 不能超过100");
-
-    // Old production batches can still contain T1 customers who ordered within
-    // the 60-day reactivation exclusion window. Fetch the current claimable
-    // queue before paginating locally so those stale rows never reach the model.
-    const eligible = [];
-    let upstreamPage = 1;
-    let upstreamTotal = null;
-    do {
-      const query = new URLSearchParams({ page: String(upstreamPage), page_size: "100" });
-      const data = await this.request(`/api/sales-automation/agent/public-pool/tasks?${query}`);
-      const items = publicPoolItems(data);
-      if (upstreamTotal === null) upstreamTotal = Number(data?.total ?? items.length);
-      eligible.push(...items.filter((task) => !isRecentPublicPoolReactivationTask(task)));
-      upstreamPage += 1;
-      if (!items.length) break;
-    } while ((upstreamPage - 1) * 100 < upstreamTotal);
-
-    const offset = (requestedPage - 1) * requestedPageSize;
-    return {
-      items: eligible.slice(offset, offset + requestedPageSize),
-      total: eligible.length,
-      page: requestedPage,
-      page_size: requestedPageSize,
-    };
+  listResearchTasks(page = 1, pageSize = 20) {
+    const query = new URLSearchParams({
+      page: String(integerId(page, "page")),
+      page_size: String(integerId(pageSize, "page_size")),
+    });
+    if (Number(query.get("page_size")) > 100) throw new ArkApiError("page_size 不能超过100");
+    return this.request(`/api/sales-automation/agent/research-tasks?${query}`);
   }
 
-  getPublicPoolTaskContext(taskId) {
-    return this.request(`/api/sales-automation/agent/public-pool/tasks/${integerId(taskId, "task_id")}/context`);
+  getResearchTaskContext(taskId) {
+    return this.request(`/api/sales-automation/agent/research-tasks/${integerId(taskId, "research_task_id")}/context`);
   }
 
-  async claimPublicPoolTask(taskId) {
-    const id = integerId(taskId, "task_id");
-    const context = await this.getPublicPoolTaskContext(id);
-    if (isRecentPublicPoolReactivationTask(context?.task)) {
-      throw new ArkApiError("该T1客户最近60天内存在订单，禁止加入再激活任务");
-    }
-    return this.request(`/api/sales-automation/agent/public-pool/tasks/${id}/claim`, {
+  getCustomerOutreachContext(customerId) {
+    return this.request(`/api/sales-automation/agent/customers/${integerId(customerId, "customer_id")}/outreach-context`);
+  }
+
+  claimResearchTask(taskId) {
+    return this.request(`/api/sales-automation/agent/research-tasks/${integerId(taskId, "research_task_id")}/claim`, {
       method: "POST",
       body: { agent_id: this.#agentId },
     });
   }
 
-  heartbeatPublicPoolTask(taskId, leaseToken) {
-    return this.#publicPoolLeaseRequest(taskId, "heartbeat", leaseToken);
+  heartbeatResearchTask(taskId, leaseToken) {
+    return this.#researchLeaseRequest(taskId, "heartbeat", leaseToken);
   }
 
-  submitPublicPoolIndustryGate(taskId, leaseToken, gate) {
-    return this.request(`/api/sales-automation/agent/public-pool/tasks/${integerId(taskId, "task_id")}/industry-gate`, {
+  submitResearchIndustryGate(taskId, leaseToken, gate) {
+    return this.request(`/api/sales-automation/agent/research-tasks/${integerId(taskId, "research_task_id")}/industry-gate`, {
       method: "POST",
       body: { ...gate, agent_id: this.#agentId, lease_token: leaseToken },
     });
   }
 
-  completePublicPoolTask(taskId, leaseToken, research) {
-    return this.request(`/api/sales-automation/agent/public-pool/tasks/${integerId(taskId, "task_id")}/complete`, {
+  appendResearchFacts(taskId, leaseToken, agentRunId, facts) {
+    return this.request(`/api/sales-automation/agent/research-tasks/${integerId(taskId, "research_task_id")}/facts`, {
+      method: "POST",
+      body: {
+        agent_id: this.#agentId,
+        lease_token: leaseToken,
+        agent_run_id: integerId(agentRunId, "agent_run_id"),
+        facts,
+      },
+    });
+  }
+
+  completeResearchTask(taskId, leaseToken, research) {
+    return this.request(`/api/sales-automation/agent/research-tasks/${integerId(taskId, "research_task_id")}/complete`, {
       method: "POST",
       body: { ...research, agent_id: this.#agentId, lease_token: leaseToken },
     });
   }
 
-  failPublicPoolTask(taskId, leaseToken, errorMessage) {
-    return this.request(`/api/sales-automation/agent/public-pool/tasks/${integerId(taskId, "task_id")}/fail`, {
+  failResearchTask(taskId, leaseToken, errorCode) {
+    return this.request(`/api/sales-automation/agent/research-tasks/${integerId(taskId, "research_task_id")}/fail`, {
       method: "POST",
       body: {
         agent_id: this.#agentId,
         lease_token: leaseToken,
-        error_message: String(errorMessage || "").slice(0, 2000),
+        error_code: String(errorCode || "").slice(0, 64),
       },
     });
   }
@@ -282,8 +230,8 @@ export class ArkClient {
     });
   }
 
-  #publicPoolLeaseRequest(taskId, action, leaseToken) {
-    return this.request(`/api/sales-automation/agent/public-pool/tasks/${integerId(taskId, "task_id")}/${action}`, {
+  #researchLeaseRequest(taskId, action, leaseToken) {
+    return this.request(`/api/sales-automation/agent/research-tasks/${integerId(taskId, "research_task_id")}/${action}`, {
       method: "POST",
       body: { agent_id: this.#agentId, lease_token: leaseToken },
     });

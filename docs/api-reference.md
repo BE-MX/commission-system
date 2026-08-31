@@ -5,6 +5,48 @@
 
 ## API 路由前缀
 
+### 统一客户经营（`/api/customer-hub`，迁移 126，2026-08-31）
+
+统一客户 API 以 `customer_id` 为业务主键，统一返回方舟标准响应包；列表使用 `page/page_size`。越权客户与不存在客户统一返回 `404 CUSTOMER_NOT_FOUND_OR_FORBIDDEN`，避免通过状态码枚举客户。旧客户画像、旧公海任务和旧公司/联系人写接口已退役，不提供兼容入口。
+
+| 方法与路径 | 用途 | 权限 |
+|---|---|---|
+| `GET /customers` | 按权限范围分页查询客户主档 | `customer:read` 或 `customer:read_all` |
+| `GET /customers/{customer_id}` | 读取统一档案、当前档案版本及可见事实摘要 | 同上 |
+| `GET /customers/{customer_id}/timeline` | 读取消息、询盘、订单、人工活动等统一时间线 | 同上 |
+| `GET /research-tasks`、`GET /research-tasks/{task_id}` | 背调中心列表与详情 | `sales_automation:read` 或 `customer:read_all` |
+| `POST /research-tasks/{task_id}/result-review` | 接受、退回或拒绝 Agent 背调结果 | `sales_automation:admin` |
+| `GET /qualification-queue`、`POST /qualification-reviews` | 资格审核队列与版本化审核结论 | 读：`sales_automation:read`；写：`sales_automation:write/admin` |
+| `GET/PUT /acquisition-profile` | 读取/保存获客目标与版本化策略 | 读：获客权限；写：`sales_automation:admin` |
+| `GET/POST /search-jobs` | 查询或创建搜索任务 | `sales_automation:read/write/admin` |
+| `POST /search-jobs/{job_id}/requeue`、`GET /search-jobs/{job_id}/results` | 失败任务重排与候选结果 | 获客写/读权限 |
+| `GET /public-pool/audit`、`POST /public-pool/audit/refresh` | 公海质量审计与刷新 | 获客读；刷新需 `sales_automation:admin` |
+| `GET/POST /public-pool/batches` | 公海背调批次查询与创建 | 获客读；创建需 `sales_automation:admin` |
+| `GET /opportunities`、`PUT /opportunities/{id}` | 客户机会列表与证据化阶段更新 | `customer_opportunity:read/write` 或客户管理员 |
+| `GET /actions`、`PUT /actions/{id}` | 经营雷达行动列表、完成、忽略、延后和反馈 | `customer_radar:read/write` 或客户管理员 |
+
+高影响变更均位于相同前缀：`GET/POST /change-proposals`，以及 `POST /change-proposals/{id}/submit|rebase|approve|reject|execute`。创建、提交、审批要求 `customer:admin`；执行时重新读取实时权限，DNC 操作要求 `customer:manage_dnc`，重大风险确认要求 `customer:confirm_material_risk`。`execute` 必须提供幂等键；版本过期先 `rebase`，不能静默套用旧证据。
+
+### 智能获客 Agent 写入面（`/api/sales-automation/agent`）
+
+这些端点使用受控 Sales Agent 身份，不接受普通用户 JWT 代替。搜索与背调都采用 claim → heartbeat → submit → complete/fail 的租约协议；提交必须与当前 Agent、租约、任务、`customer_id` 和输入哈希一致，过期或跨客户写入失败关闭。
+
+| 方法与路径 | 用途 |
+|---|---|
+| `GET /knowledge/search`、`GET /knowledge/documents/{id}` | 只读公司级已发布知识；提交时重新校验版本 |
+| `GET /research-tasks`、`GET /research-tasks/{id}/context` | 获取可领取背调任务及 Ark 冻结上下文 |
+| `POST /research-tasks/{id}/claim|heartbeat` | 获取/续租任务执行权 |
+| `POST /research-tasks/{id}/industry-gate` | 先判断行业相关性；无关即停止，不生成联系方式或成交分 |
+| `POST /research-tasks/{id}/facts` | 追加来源优先的事实，返回 `fact:{id}`、内容哈希、输入哈希和分类组成的证据回执 |
+| `POST /research-tasks/{id}/complete|fail` | 完成或以稳定 `error_code` 失败 |
+| `GET /agent/customers/{customer_id}/outreach-context` | 仅供独立触达确认 operator 读取当前联系人触点、档案版本、授权范围内事实证据和 DNC 状态；要求 `sales_automation:invoke`、客户读取权限及实时客户归属，普通获客 Agent token 不可调用 |
+| `GET /search-jobs`、`GET /search-jobs/{id}/context` | 获取可领取搜索任务和冻结目标画像 |
+| `POST /search-jobs/{id}/claim|heartbeat|candidates|complete|fail` | 租约执行、幂等提交候选及终结任务 |
+
+### 客户 MCP 只读工具
+
+Agent 消费侧只从方舟调用：`resolve_customer`、`search_customers`、`get_customer_profile`、`get_customer_facts`、`get_customer_orders`、`search_customer_messages`、`get_customer_actions`、`get_customer_evidence`、`get_customer_source_chunks`。工具均声明只读，按当前用户的数据范围、分类和可见范围裁剪；返回内容不得作为越权写入凭证。
+
 业务 API 统一前缀 `/api/v1/`（提成相关共享层），认证与领域模块直接挂在 `/api/`：
 
 ### AI Agent 任务中心（`/api/agent-runtime`，迁移 118，2026-08-20）
@@ -931,7 +973,11 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 简报任务持久化到 `ark_order_intelligence_brief_jobs`，活动唯一键防止双击、多标签页或并发请求重复调用 AI；进行中任务超过 30 分钟会转失败并释放锁。AI 调用仍统一经由 `app.ai.service`，preset=`order_intelligence_brief`，AI 不可用时保留规则简报降级。
 
-## 智能获客
+## 已退役：智能获客旧 API（迁移 126 前）
+
+> 本节路径不再注册，只作为历史审计记录。禁止调用 `/leads`、`/agent/leads/*` 或 `/agent/public-pool/tasks/*`；当前人机接口见本文顶部 `/api/customer-hub` 与 `/api/sales-automation/agent`。
+
+<!-- 迁移 126 前的接口表仅保留在源码中用于历史审计，不在渲染文档中展示。
 
 Base path：`/api/sales-automation`。所有接口使用统一 `{code,message,data}` 信封。
 
@@ -987,6 +1033,8 @@ Agent Skill 位于 `.agents/skills/ark-lead-discovery`、`.agents/skills/ark-com
 候选批次入库前按归一化官网域名查询当前 OKKI 公海；企业邮箱域名仅作为无官网时的精确补充键，免费邮箱不参与。命中候选不创建新的开发客户，并通过 `public_pool_deduplicated_count` 单独计数。未命中且画像匹配分 `>=70` 的候选自动进入同一 `/agent/public-pool/tasks` 队列，复用公海行业门控、证据、评分、成交研判和未发送草稿结构。
 
 本地 OpenClaw 运行器、最小权限 MCP 侧车、免密公开检索源、macOS LaunchAgent 初始化与凭证交付步骤见 [`services/openclaw-sales-agent/README.md`](../services/openclaw-sales-agent/README.md)。该侧车把 Ark token 限制在独立 `0600` 文件中，并把任务租约留在进程内存，不暴露给模型。
+
+-->
 
 # 企业知识库（2026-08-09，2026-08-13 图片与 AI 优化）
 

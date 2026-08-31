@@ -52,7 +52,9 @@ test("loadConfig reads a token only from a private regular file", async (t) => {
   assert.equal(config.token, "f".repeat(40));
 });
 
-test("loadConfig rejects permissive token files and symlinks", async (t) => {
+test("loadConfig rejects permissive token files and symlinks", {
+  skip: process.platform === "win32" ? "POSIX mode bits and unprivileged file symlinks are unavailable" : false,
+}, async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "ark-config-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const tokenFile = join(directory, "token");

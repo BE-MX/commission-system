@@ -36,129 +36,63 @@ const candidate = z.object({
   source_provider: z.string().max(64).default("openclaw_web_search"),
   captured_at: timestamp,
 });
-const contact = z.object({
-  name: z.string().max(255).optional(),
-  role: z.string().max(255).optional(),
-  email: z.string().email().max(320).optional(),
-  email_status: z.enum(["unknown", "valid", "risky", "invalid"]).optional(),
-  verified_at: timestamp.optional(),
-  source_provider: z.string().max(64).default("official_website"),
-  source_url: publicUrl,
-  captured_at: timestamp,
-  confidence: z.number().min(0).max(1).optional(),
-}).refine((value) => value.name || value.email, {
-  message: "contact requires name or email",
-});
-const fact = z.object({
-  fact_type: z.string().max(64).default("general"),
-  claim: z.string().min(1).max(5000),
-  source_url: publicUrl,
-  captured_at: timestamp,
-  confidence: z.number().min(0).max(1),
-});
-const scoreComponents = z.object({
-  industry_fit: z.number().min(0).max(25).default(0),
-  pain_switch_trigger: z.number().min(0).max(20).default(0),
-  intent_reactivation: z.number().min(0).max(20).default(0),
-  buying_capacity: z.number().min(0).max(15).default(0),
-  reachability: z.number().min(0).max(10).default(0),
-  timing: z.number().min(0).max(10).default(0),
-  risk_penalty: z.number().min(0).max(30).default(0),
-  reasons: z.record(z.string(), z.string()).default({}),
-}).superRefine((value, ctx) => {
-  for (const field of ["industry_fit", "pain_switch_trigger", "intent_reactivation", "buying_capacity", "reachability", "timing", "risk_penalty"]) {
-    if (value[field] > 0 && !value.reasons[field]?.trim()) {
-      ctx.addIssue({ code: "custom", message: `Non-zero ${field} requires an evidence-backed reason` });
-    }
-  }
-});
-const socialProfile = z.object({
-  platform: z.string().min(1).max(32),
-  profile_url: publicUrl,
-  handle: z.string().max(255).nullish(),
-  account_name: z.string().max(255).nullish(),
-  activity_level: z.enum(["active", "recent", "dormant", "unknown"]).default("unknown"),
-  latest_activity_at: timestamp.nullish(),
-  follower_count: z.number().int().min(0).nullish(),
-  business_signals: z.array(z.string().max(500)).max(10).default([]),
-  captured_at: timestamp,
-  confidence: z.number().min(0).max(1),
-});
 const knowledgeReference = z.object({
   document_id: z.number().int().min(1),
   revision_id: z.number().int().min(1),
   version_no: z.number().int().min(1),
 });
-const publicPoolIndustryGate = z.object({
-  task_id: z.number().int().min(1),
-  summary: z.string().min(1).max(5000),
-  identity_decision: z.enum(["confirmed", "candidate", "unverifiable", "rejected"]),
-  facts: z.array(fact).max(20).default([]),
+const researchIndustryGate = z.object({
+  research_task_id: z.number().int().min(1),
   industry_relevance: z.enum(["core", "adjacent", "uncertain", "irrelevant"]),
-  industry_relevance_reason: z.string().min(1).max(2000),
-  stop_reason: z.string().max(2000).nullish(),
-  knowledge_references: z.array(knowledgeReference).max(10).default([]),
-  provider: z.string().max(64).default("openclaw_public_pool_gate"),
-  model: z.string().max(128).nullish(),
+  reason: z.string().min(1).max(2000),
 });
-const qualificationDimension = z.object({
-  score: z.number().int().min(1).max(5).nullable().optional(),
-  reason: z.string().min(1).max(1000),
+const researchFact = z.object({
+  fact_key: z.string().min(1).max(128),
+  value_type: z.enum(["string", "number", "boolean", "date", "datetime", "list", "object"]),
+  value: z.unknown(),
+  fact_layer: z.enum(["source", "inferred"]),
+  confidence: z.number().min(0).max(1),
+  confidence_method_version: z.string().min(1).max(32).default("research_evidence_v1"),
+  confidence_components: z.record(z.string(), z.unknown()).default({}),
+  source_system: z.enum(["public_web", "agent"]),
+  source_entity_type: z.enum(["company_page", "research_report"]),
+  source_account_key: z.string().min(1).max(128).default("global"),
+  external_record_id: z.string().min(1).max(255),
+  source_url: publicUrl.optional(),
+  source_payload: z.record(z.string(), z.unknown()).default({}),
+  publisher_key: z.string().max(128).optional(),
+  source_family_key: z.string().max(128).optional(),
+  observed_at: timestamp,
+  captured_at: timestamp.optional(),
+  supporting_fact_ids: z.array(z.number().int().min(1)).max(100).default([]),
+  rule_version: z.string().max(32).optional(),
 });
-const qualificationDimensions = z.object({
-  authenticity_maturity: qualificationDimension,
-  purchase_potential: qualificationDimension,
-  demand_readiness: qualificationDimension,
-  industry_professionalism: qualificationDimension,
-  product_market_fit: qualificationDimension,
-  growth_brand_potential: qualificationDimension,
-  decision_authority: qualificationDimension,
-  transaction_compliance: qualificationDimension,
-  engagement_momentum: qualificationDimension,
-  strategic_value: qualificationDimension,
+const researchClaim = z.object({
+  claim_id: z.string().regex(/^claim_[A-Za-z0-9_-]{1,48}$/u),
+  section: z.enum(["identity", "business_quality", "product_fit", "supplier_status", "risk", "strategy"]),
+  statement: z.string().min(1).max(2000),
+  citation_ids: z.array(z.string()).min(1).max(100),
 });
-const commercialProfile = z.object({
-  customer_type: z.enum(["salon", "stylist", "educator", "brand_owner", "ecommerce", "distributor", "wholesaler", "salon_chain", "end_consumer", "other", "unclear"]).default("unclear"),
-  professional_level: z.enum(["beginner", "experienced", "expert", "unclear"]).default("unclear"),
-  purchase_stage: z.enum(["first_purchase", "first_cross_border", "supplier_exploration", "supplier_switching", "supplier_addition", "sample_testing", "regular_buying", "expansion", "dormant_lost", "unclear"]).default("unclear"),
-  volume_band: z.enum(["small_trial", "stable_medium", "high_volume", "unclear"]).default("unclear"),
-  scale_stage: z.enum(["solo_professional", "small_team", "multi_location", "regional_operation", "expansion_stage", "unclear"]).default("unclear"),
-  educator_influence: z.enum(["yes", "no", "unknown"]).default("unknown"),
-  usage_scenarios: z.array(z.enum(["brand_retail", "salon_install", "distribution", "education", "personal_use", "supplier_testing", "unknown"])).max(10).default([]),
-  product_directions: z.array(z.enum(["extension_focused", "excluded_hair_focused", "textured_hair_focused", "mixed_portfolio", "unknown"])).max(10).default([]),
-  exclusion_status: z.enum(["not_excluded", "review_required", "excluded", "unknown"]).default("unknown"),
-  development_difficulty: z.number().int().min(1).max(5).default(3),
-  qualification_dimensions: qualificationDimensions.optional(),
-  positive_signals: z.array(z.string().max(1000)).max(20).default([]),
-  negative_signals: z.array(z.string().max(1000)).max(20).default([]),
-  unknowns: z.array(z.string().max(1000)).max(20).default([]),
-  next_validation_questions: z.array(z.string().max(1000)).max(10).default([]),
+const researchCitation = z.object({
+  citation_id: z.string().regex(/^citation_[A-Za-z0-9_-]{1,48}$/u),
+  claim_id: z.string().regex(/^claim_[A-Za-z0-9_-]{1,48}$/u),
+  tool_call_id: z.string().min(1).max(128),
+  evidence_ref: z.string().regex(/^fact:[1-9][0-9]*$/u),
+  evidence_content_hash: z.string().regex(/^[0-9a-f]{64}$/u),
 });
-const publicPoolResearch = z.object({
-  task_id: z.number().int().min(1),
-  summary: z.string().min(1).max(10000),
-  identity_decision: z.enum(["confirmed", "candidate", "unverifiable", "rejected"]),
-  facts: z.array(fact).max(100).default([]),
-  contacts: z.array(contact).max(100).default([]),
-  outreach_angles: z.array(z.string().max(1000)).max(30).default([]),
-  risks: z.array(z.string().max(1000)).max(30).default([]),
-  score_components: scoreComponents,
-  supplier_status: z.enum(["unknown", "stable", "looking", "switching"]).default("unknown"),
-  pain_points: z.array(z.string().max(1000)).max(20).default([]),
-  product_fit: z.array(z.string().max(1000)).max(20).default([]),
-  industry_relevance: z.enum(["core", "adjacent", "uncertain", "irrelevant"]).default("uncertain"),
-  industry_relevance_reason: z.string().min(1).max(2000),
-  research_depth: z.enum(["gate_only", "focused", "deep"]).default("focused"),
-  stop_reason: z.string().max(2000).nullish(),
-  social_profiles: z.array(socialProfile).max(20).default([]),
-  knowledge_references: z.array(knowledgeReference).max(20).default([]),
-  commercial_profile: commercialProfile.default({}),
-  recommended_strategy: z.string().min(1).max(10000),
-  outreach_type: z.enum(["reactivation", "new_development", "intent_probe", "no_outreach"]),
-  opening_message_en: z.string().max(10000).nullish(),
-  provider: z.string().max(64).default("openclaw_public_pool_research"),
-  model: z.string().max(128).nullish(),
-  idempotency_key: z.string().max(64).optional(),
+const researchCompletion = z.object({
+  research_task_id: z.number().int().min(1),
+  agent_run_id: z.number().int().min(1),
+  data_classification: z.enum(["public_business", "internal_business", "personal_contact", "restricted_internal"]).default("internal_business"),
+  visibility_scope: z.enum(["all_authorized", "customer_team", "management"]).default("customer_team"),
+  result_json: z.object({
+    schema_version: z.literal("customer_research_v1"),
+    input_hash: z.string().regex(/^[0-9a-f]{64}$/u),
+    claims: z.array(researchClaim).min(1).max(100),
+    citations: z.array(researchCitation).min(1).max(500),
+    knowledge_references: z.array(knowledgeReference).max(100).default([]),
+    evidence_fact_ids: z.array(z.number().int().min(1)).max(500).default([]),
+  }),
 });
 
 function result(data) {
@@ -187,7 +121,7 @@ function safe(handler) {
 export function createServer(
   client,
   leases = new LeaseStore(),
-  publicPoolLeases = new LeaseStore(),
+  researchLeases = new LeaseStore(),
   runtimeReporter = null,
 ) {
   const server = new McpServer(
@@ -229,7 +163,8 @@ export function createServer(
     const data = await client.claimSearchJob(jobId);
     leases.remember(jobId, data.lease_token, data.lease_expires_at);
     return {
-      job: data.job,
+      job_id: data.job_id,
+      attempt_count: data.attempt_count,
       lease_expires_at: data.lease_expires_at,
       lease_held: true,
     };
@@ -264,23 +199,19 @@ export function createServer(
   }));
 
   server.registerTool("ark_fail_search_job", {
-    description: "Fail a claimed Ark job with an actionable reason when useful results cannot be produced.",
+    description: "Fail a claimed Ark job with a registered operational error code.",
     inputSchema: z.object({
       job_id: z.number().int().min(1),
-      error_message: z.string().min(1).max(2000),
+      error_code: z.enum([
+        "provider_unavailable", "provider_rate_limited", "invalid_provider_response", "agent_execution_failed",
+      ]),
     }),
     annotations: { readOnlyHint: false, idempotentHint: false },
-  }, safeTracked(async ({ job_id: jobId, error_message: errorMessage }) => {
-    const data = await client.failSearchJob(jobId, leases.require(jobId).token, errorMessage);
+  }, safeTracked(async ({ job_id: jobId, error_code: errorCode }) => {
+    const data = await client.failSearchJob(jobId, leases.require(jobId).token, errorCode);
     leases.forget(jobId);
     return data;
   }));
-
-  server.registerTool("ark_get_lead", {
-    description: "Read one Ark lead, its contacts, and latest evidence-backed research.",
-    inputSchema: z.object({ company_id: z.number().int().min(1) }),
-    annotations: { readOnlyHint: true, idempotentHint: true },
-  }, safeTracked(({ company_id: companyId }) => client.getLead(companyId)));
 
   server.registerTool("ark_search_knowledge", {
     description: "Search ACL-authorized, published Ark enterprise knowledge for product fit, exclusions, and sales criteria. Internal knowledge is not public customer evidence.",
@@ -297,93 +228,89 @@ export function createServer(
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   }, safeTracked(({ document_id: documentId }) => client.getKnowledgeDocument(documentId)));
 
-  server.registerTool("ark_save_contacts", {
-    description: "Upsert public, sourced business contacts for one Ark lead.",
-    inputSchema: z.object({
-      company_id: z.number().int().min(1),
-      contacts: z.array(contact).min(1).max(50),
-    }),
-    annotations: { readOnlyHint: false, idempotentHint: true },
-  }, safeTracked(({ company_id: companyId, contacts }) => client.saveContacts(companyId, contacts)));
-
-  server.registerTool("ark_save_research", {
-    description: "Save an evidence-backed company summary, outreach angles, risks, and atomic sourced facts.",
-    inputSchema: z.object({
-      company_id: z.number().int().min(1),
-      summary: z.string().min(1).max(10000),
-      facts: z.array(fact).min(1).max(100),
-      outreach_angles: z.array(z.string().max(1000)).max(30).default([]),
-      risks: z.array(z.string().max(1000)).max(30).default([]),
-      provider: z.string().max(64).default("openclaw_web_research"),
-      model: z.string().max(128).optional(),
-      idempotency_key: z.string().max(64).optional(),
-    }),
-    annotations: { readOnlyHint: false, idempotentHint: true },
-  }, safeTracked(({ company_id: companyId, ...research }) => client.saveResearch(companyId, research)));
-
-  server.registerTool("ark_list_public_pool_tasks", {
-    description: "List claimable Ark public-pool research tasks from T1/T2/T3 daily batches.",
+  server.registerTool("ark_list_research_tasks", {
+    description: "List claimable unified Ark customer research tasks.",
     inputSchema: z.object({
       page: z.number().int().min(1).default(1),
       page_size: z.number().int().min(1).max(100).default(20),
     }),
     annotations: { readOnlyHint: true, idempotentHint: true },
-  }, safeTracked(({ page, page_size: pageSize }) => client.listPublicPoolTasks(page, pageSize)));
+  }, safeTracked(({ page, page_size: pageSize }) => client.listResearchTasks(page, pageSize)));
 
-  server.registerTool("ark_get_public_pool_task_context", {
-    description: "Read trusted OKKI seed data, tier-specific research rules, and the scoring contract.",
-    inputSchema: z.object({ task_id: z.number().int().min(1) }),
+  server.registerTool("ark_get_research_task_context", {
+    description: "Read the customer-scoped task context and frozen input hash from Ark.",
+    inputSchema: z.object({ research_task_id: z.number().int().min(1) }),
     annotations: { readOnlyHint: true, idempotentHint: true },
-  }, safeTracked(({ task_id: taskId }) => client.getPublicPoolTaskContext(taskId)));
+  }, safeTracked(({ research_task_id: taskId }) => client.getResearchTaskContext(taskId)));
 
-  server.registerTool("ark_claim_public_pool_task", {
-    description: "Claim a public-pool research task while retaining the lease token inside this sidecar.",
-    inputSchema: z.object({ task_id: z.number().int().min(1) }),
+  server.registerTool("ark_claim_research_task", {
+    description: "Claim a unified research task while retaining the lease token inside this sidecar.",
+    inputSchema: z.object({ research_task_id: z.number().int().min(1) }),
     annotations: { readOnlyHint: false, idempotentHint: false },
-  }, safeTracked(async ({ task_id: taskId }) => {
-    const data = await client.claimPublicPoolTask(taskId);
-    publicPoolLeases.remember(taskId, data.lease_token, data.lease_expires_at);
-    return { task_id: data.task_id, lease_expires_at: data.lease_expires_at, lease_held: true };
+  }, safeTracked(async ({ research_task_id: taskId }) => {
+    const data = await client.claimResearchTask(taskId);
+    researchLeases.remember(taskId, data.lease_token, data.lease_expires_at);
+    return {
+      research_task_id: data.research_task_id,
+      customer_id: data.customer_id,
+      input_hash: data.input_hash,
+      lease_expires_at: data.lease_expires_at,
+      lease_held: true,
+    };
   }));
 
-  server.registerTool("ark_heartbeat_public_pool_task", {
-    description: "Renew the in-process lease for a claimed public-pool research task.",
-    inputSchema: z.object({ task_id: z.number().int().min(1) }),
+  server.registerTool("ark_heartbeat_research_task", {
+    description: "Renew the in-process lease for a claimed unified research task.",
+    inputSchema: z.object({ research_task_id: z.number().int().min(1) }),
     annotations: { readOnlyHint: false, idempotentHint: true },
-  }, safeTracked(({ task_id: taskId }) => (
-    client.heartbeatPublicPoolTask(taskId, publicPoolLeases.require(taskId).token)
+  }, safeTracked(({ research_task_id: taskId }) => (
+    client.heartbeatResearchTask(taskId, researchLeases.require(taskId).token)
   )));
 
-  server.registerTool("ark_submit_public_pool_industry_gate", {
-    description: "Submit the low-cost identity and industry gate. Continue only when deep_research_authorized is true.",
-    inputSchema: publicPoolIndustryGate,
+  server.registerTool("ark_submit_research_industry_gate", {
+    description: "Submit the task's industry relevance gate before deeper research.",
+    inputSchema: researchIndustryGate,
     annotations: { readOnlyHint: false, idempotentHint: true },
-  }, safeTracked(({ task_id: taskId, ...gate }) => (
-    client.submitPublicPoolIndustryGate(taskId, publicPoolLeases.require(taskId).token, gate)
+  }, safeTracked(({ research_task_id: taskId, ...gate }) => (
+    client.submitResearchIndustryGate(taskId, researchLeases.require(taskId).token, gate)
   )));
 
-  server.registerTool("ark_complete_public_pool_task", {
-    description: "After a passed industry gate, submit sourced deep research, score factors, sales strategy, and an unsent opening draft.",
-    inputSchema: publicPoolResearch,
+  server.registerTool("ark_append_research_facts", {
+    description: "Append sourced or inferred facts to the claimed task and return canonical evidence references.",
+    inputSchema: z.object({
+      research_task_id: z.number().int().min(1),
+      agent_run_id: z.number().int().min(1),
+      facts: z.array(researchFact).min(1).max(100),
+    }),
+    annotations: { readOnlyHint: false, idempotentHint: false },
+  }, safeTracked(({ research_task_id: taskId, agent_run_id: agentRunId, facts }) => (
+    client.appendResearchFacts(taskId, researchLeases.require(taskId).token, agentRunId, facts)
+  )));
+
+  server.registerTool("ark_complete_research_task", {
+    description: "Complete a claimed task with customer_research_v1 claims and same-Run citations.",
+    inputSchema: researchCompletion,
     annotations: { readOnlyHint: false, idempotentHint: true },
-  }, safeTracked(async ({ task_id: taskId, ...research }) => {
-    const data = await client.completePublicPoolTask(taskId, publicPoolLeases.require(taskId).token, research);
-    publicPoolLeases.forget(taskId);
+  }, safeTracked(async ({ research_task_id: taskId, ...research }) => {
+    const data = await client.completeResearchTask(taskId, researchLeases.require(taskId).token, research);
+    researchLeases.forget(taskId);
     return data;
   }));
 
-  server.registerTool("ark_fail_public_pool_task", {
-    description: "Fail a claimed public-pool task with an actionable reason.",
+  server.registerTool("ark_fail_research_task", {
+    description: "Fail a claimed unified research task with a registered operational error code.",
     inputSchema: z.object({
-      task_id: z.number().int().min(1),
-      error_message: z.string().min(1).max(2000),
+      research_task_id: z.number().int().min(1),
+      error_code: z.enum([
+        "provider_unavailable", "provider_rate_limited", "invalid_provider_response", "agent_execution_failed",
+      ]),
     }),
     annotations: { readOnlyHint: false, idempotentHint: false },
-  }, safeTracked(async ({ task_id: taskId, error_message: errorMessage }) => {
-    const data = await client.failPublicPoolTask(
-      taskId, publicPoolLeases.require(taskId).token, errorMessage,
+  }, safeTracked(async ({ research_task_id: taskId, error_code: errorCode }) => {
+    const data = await client.failResearchTask(
+      taskId, researchLeases.require(taskId).token, errorCode,
     );
-    publicPoolLeases.forget(taskId);
+    researchLeases.forget(taskId);
     return data;
   }));
 

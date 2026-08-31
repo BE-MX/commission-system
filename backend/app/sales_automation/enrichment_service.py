@@ -1,135 +1,94 @@
-"""智能获客联系人完善与企业研究服务。"""
+"""Research evidence ingestion into the unified customer fact ledger."""
 
+from __future__ import annotations
+
+from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.sales_automation.identity import normalize_source_url
-from app.sales_automation.models import LeadContact, ResearchFact, ResearchRun
-from app.sales_automation.service import SalesAutomationError, _data, _datetime, _hash, _now, get_lead
+from app.core.time import beijing_now
+from app.customer.fact_service import DirectFactEvidence, append_fact, append_source_record
+from app.customer.models import CustomerFact, CustomerResearchTask, CustomerSourceRecord
+from app.sales_automation import service
 
 
-def upsert_contacts(db: Session, company_id: int, contacts: list[Any], actor_id: int | None = None) -> list[LeadContact]:
-    get_lead(db, company_id, for_update=True)
-    rows: list[LeadContact] = []
-    for raw in contacts:
+def _data(value: Any) -> dict:
+    if hasattr(value, "model_dump"):
+        return value.model_dump(exclude_unset=True)
+    return dict(value)
+
+
+def append_research_facts(
+    db: Session,
+    task_id: int,
+    facts: list[Any],
+    *,
+    agent_run_id: int | None = None,
+) -> tuple[list[CustomerSourceRecord], list[CustomerFact]]:
+    task = db.query(CustomerResearchTask).filter(
+        CustomerResearchTask.id == task_id,
+        CustomerResearchTask.task_status == "running",
+    ).with_for_update().one_or_none()
+    if task is None:
+        raise service.ConflictError("研究任务不存在或不在执行中")
+    source_rows: list[CustomerSourceRecord] = []
+    fact_rows: list[CustomerFact] = []
+    for position, raw in enumerate(facts, start=1):
         data = _data(raw)
-        email = (data.get("email") or "").strip()
-        email_normalized = email.lower() or None
-        name = (data.get("name") or "").strip() or None
-        role = (data.get("role") or "").strip() or None
-        if not email_normalized and not name:
-            raise SalesAutomationError("联系人至少需要 email 或 name")
-        identity = email_normalized or f"{(name or '').lower()}|{(role or '').lower()}"
-        identity_key = _hash(identity)
-        source_url = normalize_source_url(data.get("source_url"))
-        row = db.query(LeadContact).filter(
-            LeadContact.company_id == company_id,
-            LeadContact.identity_key == identity_key,
-        ).first()
-        is_new = row is None
-        if row is None:
-            row = LeadContact(company_id=company_id, identity_key=identity_key, created_by=actor_id)
-            db.add(row)
-        row.name = name or row.name
-        row.role = role or row.role
-        row.email = email or row.email
-        row.email_normalized = email_normalized or row.email_normalized
-        if "email_status" in data:
-            requested_status = data.get("email_status")
-            if requested_status is None:
-                raise SalesAutomationError("email_status 不能为null")
-            if requested_status != "unknown" and (not email_normalized or not data.get("verified_at")):
-                raise SalesAutomationError("已验证邮箱状态必须同时提供 email 和 verified_at")
-            row.email_status = requested_status
-            row.verified_at = (
-                None if requested_status == "unknown"
-                else _datetime(data["verified_at"], "verified_at")
-            )
-        row.source_provider = data.get("source_provider") or "agent"
-        row.source_url = source_url
-        row.captured_at = _datetime(data.get("captured_at"), "captured_at")
-        row.confidence = data.get("confidence")
-        row.updated_by = actor_id
-        if is_new:
-            db.flush()
-        rows.append(row)
-    db.commit()
-    for row in rows:
-        db.refresh(row)
-    return rows
-
-
-def upsert_research(db: Session, company_id: int, payload: Any, actor_id: int | None = None) -> ResearchRun:
-    get_lead(db, company_id, for_update=True)
-    data = _data(payload)
-    facts = data.get("facts") or []
-    if not facts:
-        raise SalesAutomationError("facts 至少需要一条证据")
-    for fact in facts:
-        fact_data = _data(fact)
-        for field in ("claim", "source_url", "captured_at", "confidence"):
-            if fact_data.get(field) is None or fact_data.get(field) == "":
-                raise SalesAutomationError(f"研究事实 {field} 必填")
-        confidence = float(fact_data["confidence"])
-        if not 0 <= confidence <= 1:
-            raise SalesAutomationError("confidence 必须在0到1之间")
-
-    idem = data.get("idempotency_key")
-    if idem:
-        existing = db.query(ResearchRun).filter(
-            ResearchRun.company_id == company_id,
-            ResearchRun.idempotency_key == idem,
-        ).first()
-        if existing:
-            return existing
-    run = ResearchRun(
-        company_id=company_id,
-        status="completed",
-        summary=data.get("summary") or "",
-        outreach_angles=data.get("outreach_angles") or [],
-        risks=data.get("risks") or [],
-        provider=data.get("provider") or "agent",
-        model=data.get("model"),
-        idempotency_key=idem,
-        started_at=_now(),
-        finished_at=_now(),
-        created_by=actor_id,
-        updated_by=actor_id,
-    )
-    db.add(run)
+        source_system = str(data.get("source_system") or "").strip()
+        source_entity_type = str(data.get("source_entity_type") or "").strip()
+        observed_at = data.get("observed_at") or beijing_now()
+        source = append_source_record(
+            db,
+            customer_id=task.customer_id,
+            source_system=source_system,
+            source_account_key=str(data.get("source_account_key") or "global"),
+            source_entity_type=source_entity_type,
+            external_record_id=str(data.get("external_record_id") or f"task-{task.id}-fact-{position}"),
+            payload_schema_version="research_evidence_v1",
+            payload_json=data.get("source_payload") or {
+                "fact_key": data.get("fact_key"),
+                "value": data.get("value"),
+            },
+            publisher_key=data.get("publisher_key"),
+            source_family_key=data.get("source_family_key"),
+            source_url=data.get("source_url"),
+            occurred_at=observed_at,
+            captured_at=data.get("captured_at") or observed_at,
+            processing_status="processed",
+        )
+        source_rows.append(source)
+        evidence = tuple(
+            DirectFactEvidence("fact", int(fact_id), {"research_task_id": task.id})
+            for fact_id in data.get("supporting_fact_ids") or []
+        )
+        row = append_fact(
+            db,
+            customer_id=task.customer_id,
+            subject_type="customer",
+            fact_key=str(data.get("fact_key") or ""),
+            value_type=str(data.get("value_type") or "string"),
+            value=data.get("value"),
+            fact_layer=str(data.get("fact_layer") or "source"),
+            verification_status="candidate",
+            confidence=Decimal(str(data.get("confidence") or 0)),
+            confidence_method_version=str(data.get("confidence_method_version") or "research_evidence_v1"),
+            confidence_components=data.get("confidence_components") or {
+                "source_authority": format(Decimal(str(data.get("confidence") or 0)), "f"),
+            },
+            source_system=source_system,
+            source_entity_type=source_entity_type,
+            observed_at=observed_at,
+            source_record_id=source.id,
+            direct_evidence=evidence,
+            agent_run_id=agent_run_id,
+            rule_version=data.get("rule_version"),
+        )
+        fact_rows.append(row)
     db.flush()
-    for position, raw_fact in enumerate(facts):
-        fact = _data(raw_fact)
-        claim = fact["claim"].strip()
-        source_url = normalize_source_url(fact["source_url"])
-        db.add(ResearchFact(
-            run_id=run.id,
-            fact_type=fact.get("fact_type") or "general",
-            claim=claim,
-            fact_hash=_hash(claim.lower()),
-            source_url=source_url,
-            source_url_hash=_hash(source_url),
-            captured_at=_datetime(fact["captured_at"], "captured_at"),
-            confidence=float(fact["confidence"]),
-            sort_order=position,
-            created_by=actor_id,
-            updated_by=actor_id,
-        ))
-    db.commit()
-    db.refresh(run)
-    return run
+    return source_rows, fact_rows
 
 
-def get_latest_research(db: Session, company_id: int) -> tuple[ResearchRun | None, list[ResearchFact]]:
-    run = db.query(ResearchRun).filter(
-        ResearchRun.company_id == company_id,
-        ResearchRun.deleted_at.is_(None),
-    ).order_by(ResearchRun.created_at.desc()).first()
-    if run is None:
-        return None, []
-    facts = db.query(ResearchFact).filter(
-        ResearchFact.run_id == run.id,
-        ResearchFact.deleted_at.is_(None),
-    ).order_by(ResearchFact.sort_order.asc()).all()
-    return run, facts
+__all__ = ["append_research_facts"]

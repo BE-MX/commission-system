@@ -89,7 +89,7 @@ function loadPrivateFile(env, key, minLength) {
   if (typeof process.getuid === "function" && stat.uid !== process.getuid()) {
     throw new ArkConfigurationError(`${key} 必须属于当前用户`);
   }
-  if ((stat.mode & 0o777) !== 0o600) {
+  if (process.platform !== "win32" && (stat.mode & 0o777) !== 0o600) {
     throw new ArkConfigurationError(`${key} 权限必须为 0600`);
   }
   let value;

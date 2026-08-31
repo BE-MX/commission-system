@@ -130,7 +130,15 @@ def resolve_run_token(db: Session, raw_token: str) -> dict:
         "tools": list(profile.tool_allowlist or []),
         "business_ref_type": run.business_ref_type,
         "business_ref_id": run.business_ref_id,
-        "customer_profile_id": (run.input_json or {}).get("customer_profile_id"),
+        "customer_id": (run.input_json or {}).get("customer_id"),
+        "max_data_classification": (profile.policy_json or {}).get(
+            "max_data_classification",
+            "internal_business",
+        ),
+        "max_visibility_scope": (profile.policy_json or {}).get(
+            "max_visibility_scope",
+            "customer_team",
+        ),
     }
     if set(claims.get("tools") or []) != set(profile.tool_allowlist or []):
         raise MCPAuthError("Agent Run 工具范围与 Profile 版本不匹配")

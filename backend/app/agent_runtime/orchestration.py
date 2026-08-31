@@ -16,6 +16,8 @@ from app.auth.models import ArkUser
 from app.auth.service import get_user_permissions, get_user_roles
 from app.core.config import get_settings
 from app.core.database import SessionLocal
+from app.customer.access_service import CustomerAccessDenied, require_customer_access
+from app.customer.logical_customer_service import logical_owner_expression
 from app.insight.models import CustomerAction
 from app.sales_automation.models import SearchJob
 
@@ -44,14 +46,22 @@ def enqueue_repurchase_runs(db: Session, *, action_date: date | None = None, lim
         return 0
     target_date = action_date or beijing_today()
     batch_size = min(limit or settings.AGENT_RUNTIME_REPURCHASE_BATCH_SIZE, 100)
-    actions = db.query(CustomerAction).filter(
+    owner_id = logical_owner_expression(CustomerAction, "action")
+    actions = db.query(
+        CustomerAction, owner_id.label("logical_customer_id"),
+    ).filter(
         CustomerAction.action_date == target_date,
-        CustomerAction.thread_group == "reorder_window",
-        CustomerAction.action_status == "pending",
-        CustomerAction.source_run_id.is_(None),
-    ).order_by(CustomerAction.sort_order.desc(), CustomerAction.id).limit(batch_size).all()
+        CustomerAction.thread_group == "reorder",
+        CustomerAction.status == "pending",
+        CustomerAction.agent_run_id.is_(None),
+    ).order_by(
+        CustomerAction.due_at.is_(None).asc(),
+        CustomerAction.due_at.asc(),
+        CustomerAction.id,
+    ).limit(batch_size).all()
     created = 0
-    for action in actions:
+    for action, logical_customer_id in actions:
+        logical_customer_id = int(logical_customer_id)
         if db.query(AgentRun).filter(
             AgentRun.business_ref_type == "customer_action",
             AgentRun.business_ref_id == str(action.id),
@@ -66,8 +76,22 @@ def enqueue_repurchase_runs(db: Session, *, action_date: date | None = None, lim
             continue
         permissions, roles = _identity(user)
         if "super_admin" not in roles and not _has_permissions(
-            permissions, "agent_runtime:invoke", "customer_radar:read", "order_intelligence:read",
+            permissions, "agent_runtime:invoke", "customer:read",
         ):
+            continue
+        try:
+            require_customer_access(
+                db,
+                customer_id=logical_customer_id,
+                user={
+                    "sub": str(user.id),
+                    "permissions": permissions,
+                    "roles": roles,
+                },
+                action_permissions={"customer:read", "customer:admin", "customer:read_all"},
+                manage_permissions={"customer:admin", "customer:read_all"},
+            )
+        except CustomerAccessDenied:
             continue
         session = None
         try:
@@ -75,14 +99,14 @@ def enqueue_repurchase_runs(db: Session, *, action_date: date | None = None, lim
                 "profile_key": "repurchase_risk_analyst",
                 "title": f"复购行动分析 #{action.id}",
                 "context_type": "customer",
-                "context_id": str(action.profile_id),
+                "context_id": str(logical_customer_id),
             }, user_id=action.owner_user_id, system_initiated=True)
             service.create_run(db, session.id, {
-                "idempotency_key": f"repurchase-action-{action.id}-{(action.source_fingerprint or 'rule')[:32]}",
+                "idempotency_key": f"repurchase-action-{action.id}-{action.action_fingerprint[:32]}",
                 "input": {
-                    "customer_profile_id": action.profile_id,
+                    "customer_id": logical_customer_id,
                     "action_id": action.id,
-                    "rule_reason": action.action_reason,
+                    "rule_reason": action.reason,
                 },
                 "trigger_type": "schedule",
                 "business_ref_type": "customer_action",

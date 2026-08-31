@@ -12,6 +12,7 @@ import pytest
 from app.core import database
 from app.core.time import BEIJING_TIMEZONE, beijing_now, beijing_today, to_beijing_naive
 from app.agent_runtime.models import AgentEvent, AgentProfile, AgentRun
+from app.customer.models import CustomerResearchTask
 from app.customer_image.models import CustomerImageGeneration, CustomerImageProduct
 from app.design_image.models import DesignImageJob, DesignImageSession
 from app.invoice.models import Invoice  # noqa: F401 -- registers semifinal allocation FK target
@@ -299,11 +300,26 @@ def test_mixed_utc_and_beijing_domains_use_matching_clock_contracts():
     assert "run.lease_expires_at <= utc_now_naive()" in agent_gateway
 
     projection = (app_root / "agent_runtime/projection_service.py").read_text(encoding="utf-8")
-    assert "action.generated_at = beijing_now()" in projection
+    assert "now = beijing_now()" in projection
+    assert "action.generated_at = now" in projection
+    assert "action.updated_at = now" in projection
+    assert "account.updated_at = now" in projection
 
-    public_pool = (app_root / "sales_automation/public_pool_service.py").read_text(encoding="utf-8")
-    assert "profile_stale_followup_before" in public_pool
-    assert "DATE_SUB(NOW(), INTERVAL" not in public_pool
+    search = (app_root / "sales_automation/service.py").read_text(encoding="utf-8")
+    assert "lease_now = beijing_now()" in search
+    assert "job.lease_expires_at <= lease_now" in search
+    assert "job.lease_expires_at = beijing_now() + timedelta" in search
+
+    research = (app_root / "sales_automation/public_pool_service.py").read_text(
+        encoding="utf-8"
+    )
+    assert "now = beijing_now()" in research
+    assert "task.lease_expires_at <= now" in research
+    assert "task.lease_expires_at = beijing_now() + timedelta" in research
+    assert "DATE_SUB(NOW(), INTERVAL" not in research
+
+    assert "北京时间" in SearchJob.__table__.c.lease_expires_at.comment
+    assert "北京时间" in CustomerResearchTask.__table__.c.lease_expires_at.comment
 
 
 def test_bulk_asset_filename_uses_central_beijing_clock():

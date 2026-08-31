@@ -244,16 +244,6 @@
     "lines_over_500": 246,
     "transition_all": 0
   },
-  "frontend/src/views/insight/CustomerOpportunityView.vue": {
-    "hex_colors": 25,
-    "lines_over_500": 82,
-    "transition_all": 0
-  },
-  "frontend/src/views/insight/CustomerRadarView.vue": {
-    "hex_colors": 41,
-    "lines_over_500": 0,
-    "transition_all": 0
-  },
   "frontend/src/views/insight/DraftField.vue": {
     "hex_colors": 9,
     "lines_over_500": 0,

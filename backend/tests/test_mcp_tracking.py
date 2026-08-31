@@ -228,9 +228,9 @@ EXPECTED_MCP_TOOLS = {
     "list_asset_taxonomy", "search_assets",
     "search_knowledge", "get_knowledge_document",
     "get_standard_price", "find_product",
-    "get_customer_profile", "get_customer_order_timeline",
-    "get_customer_repurchase_analysis", "get_customer_actions",
-    "get_order_intelligence_snapshot", "get_search_job_context",
+    "resolve_customer", "search_customers", "get_customer_profile",
+    "get_customer_facts", "get_customer_orders", "search_customer_messages",
+    "get_customer_actions", "get_customer_evidence", "get_customer_source_chunks",
     "search_web", "fetch_public_page",
 }
 
@@ -245,6 +245,9 @@ async def test_tools_schema_excludes_ctx():
         assert "ctx" not in props, f"{t.name} 的 inputSchema 泄露了 ctx(Context 未被识别注入)"
         assert "ctx" not in required, f"{t.name} 把 ctx 列为必填(客户端无法调用)"
         assert "params" in props
+        if t.name == "get_customer_evidence":
+            evidence_schema = schema["$defs"]["CustomerEvidenceInput"]
+            assert "cursor" in evidence_schema["properties"]
 
 
 # ── 真实 HTTP 端到端(锁 B1 + DNS-rebinding 配置 + 传输链路)──────

@@ -16,15 +16,17 @@ const input = {
   languageSource: "company",
   languageBasis: "The German contact page and recipient profile are in German",
   officeStart: "09:00",
-  companyId: 11,
+  customerId: 11,
   contactId: 22,
-  researchId: 33,
-  leadUpdatedAt: "2026-08-13T12:00:00Z",
+  contactPointId: 23,
+  profileVersionId: 33,
+  factIds: [44],
+  evidenceIds: [55],
   emailStatus: "valid",
   languageEvidenceUrl: "https://example.de/kontakt",
 };
 
-const verifyLead = async () => {};
+const verifyCustomer = async () => {};
 
 async function temporaryQueue(t) {
   const root = await mkdtemp(join(tmpdir(), "outreach-queue-test-"));
@@ -39,11 +41,11 @@ test("preview and confirmation preserve the exact reviewed payload", async (t) =
   assert.match(preview.token, /^oqt_/u);
   assert.equal(preview.schedule.scheduledAtLocal, "2026-08-14T09:05:00+02:00");
 
-  const job = await confirmOutreach(preview.token, { root, now: now.plus({ minutes: 1 }), verifyLead });
+  const job = await confirmOutreach(preview.token, { root, now: now.plus({ minutes: 1 }), verifyCustomer });
   assert.equal(job.status, "queued");
   assert.deepEqual(job.payload, { to: input.to, subject: input.subject, body: input.body });
   await assert.rejects(
-    () => confirmOutreach(preview.token, { root, now, verifyLead }),
+    () => confirmOutreach(preview.token, { root, now, verifyCustomer }),
     /missing, expired, or already/u,
   );
 });
@@ -53,7 +55,7 @@ test("expired preview cannot authorize a queue job", async (t) => {
   const now = DateTime.fromISO("2026-08-14T06:00:00Z");
   const preview = await previewOutreach(input, { root, now });
   await assert.rejects(
-    () => confirmOutreach(preview.token, { root, now: now.plus({ minutes: 6 }), verifyLead }),
+    () => confirmOutreach(preview.token, { root, now: now.plus({ minutes: 6 }), verifyCustomer }),
     /expired/u,
   );
 });
@@ -66,7 +68,7 @@ test("tampering with reviewed content blocks confirmation", async (t) => {
   const stored = JSON.parse(await readFile(path, "utf8"));
   stored.payload.body = "Changed after review";
   await writeFile(path, JSON.stringify(stored));
-  await assert.rejects(() => confirmOutreach(preview.token, { root, now, verifyLead }), /integrity/u);
+  await assert.rejects(() => confirmOutreach(preview.token, { root, now, verifyCustomer }), /integrity/u);
 });
 
 test("a preview file cannot be renamed to authorize a different token", async (t) => {
@@ -76,14 +78,14 @@ test("a preview file cannot be renamed to authorize a different token", async (t
   const forgedToken = "oqt_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
   const stored = await readFile(join(root, "previews", `${preview.token}.json`), "utf8");
   await writeFile(join(root, "previews", `${forgedToken}.json`), stored);
-  await assert.rejects(() => confirmOutreach(forgedToken, { root, now, verifyLead }), /token binding/u);
+  await assert.rejects(() => confirmOutreach(forgedToken, { root, now, verifyCustomer }), /token binding/u);
 });
 
 test("dispatcher sends a due job exactly through the injected sender", async (t) => {
   const root = await temporaryQueue(t);
   const now = DateTime.fromISO("2026-08-14T06:00:00Z");
   const preview = await previewOutreach(input, { root, now });
-  const job = await confirmOutreach(preview.token, { root, now: now.plus({ minutes: 1 }), verifyLead });
+  const job = await confirmOutreach(preview.token, { root, now: now.plus({ minutes: 1 }), verifyCustomer });
   const sent = [];
   const result = await dispatchDue({
     root,
@@ -105,7 +107,7 @@ test("dispatcher reschedules instead of sending late", async (t) => {
   await mkdir(join(root, "jobs"), { recursive: true });
   const now = DateTime.fromISO("2026-08-14T06:00:00Z");
   const preview = await previewOutreach(input, { root, now });
-  const job = await confirmOutreach(preview.token, { root, now: now.plus({ minutes: 1 }), verifyLead });
+  const job = await confirmOutreach(preview.token, { root, now: now.plus({ minutes: 1 }), verifyCustomer });
   let called = false;
   const result = await dispatchDue({
     root,
@@ -123,7 +125,7 @@ test("a nonzero send result is ambiguous and never automatically retried", async
   const root = await temporaryQueue(t);
   const now = DateTime.fromISO("2026-08-14T06:00:00Z");
   const preview = await previewOutreach(input, { root, now });
-  const job = await confirmOutreach(preview.token, { root, now: now.plus({ minutes: 1 }), verifyLead });
+  const job = await confirmOutreach(preview.token, { root, now: now.plus({ minutes: 1 }), verifyCustomer });
   const due = DateTime.fromISO(job.schedule.scheduledAtUtc).plus({ minutes: 1 });
   let calls = 0;
   await dispatchDue({
@@ -151,7 +153,7 @@ test("a dispatcher crash after send begins is marked ambiguous, never auto-retri
   const root = await temporaryQueue(t);
   const now = DateTime.fromISO("2026-08-14T06:00:00Z");
   const preview = await previewOutreach(input, { root, now });
-  const job = await confirmOutreach(preview.token, { root, now: now.plus({ minutes: 1 }), verifyLead });
+  const job = await confirmOutreach(preview.token, { root, now: now.plus({ minutes: 1 }), verifyCustomer });
   const due = DateTime.fromISO(job.schedule.scheduledAtUtc).plus({ minutes: 1 });
   const first = await dispatchDue({
     root,
@@ -178,7 +180,7 @@ test("confirmation requires a trusted out-of-agent Ark recheck", async (t) => {
   const preview = await previewOutreach(input, { root, now });
   await assert.rejects(
     () => confirmOutreach(preview.token, { root, now: now.plus({ minutes: 1 }) }),
-    /trusted Ark lead verification/u,
+    /trusted Ark customer verification/u,
   );
 });
 

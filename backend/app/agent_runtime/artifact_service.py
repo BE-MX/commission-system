@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 from app.agent_runtime.errors import ConflictError, NotFoundError
 from app.agent_runtime.event_service import append_event, content_hash
 from app.agent_runtime.models import AgentArtifact, AgentEvent, AgentProfile, AgentRun
+from app.agent_runtime.evidence_validation import validate_ark_claim_evidence
+from app.customer.models import CustomerAccount, CustomerAgentRunScope, CustomerProfileVersion
 
 
 _ARABIC_QUANTITY_RE = re.compile(r"[0-9０-９]|[%％$￥¥€]")
@@ -22,13 +24,15 @@ def _raw_tool_name(value: str) -> str:
     return value
 
 
-def _successful_tool_calls(db: Session, run_id: int) -> dict[str, str]:
+def successful_tool_evidence(
+    db: Session, run_id: int,
+) -> tuple[dict[str, str], list[dict]]:
     rows = db.query(AgentEvent).filter(
         AgentEvent.run_id == run_id,
         AgentEvent.event_type.in_(["tool.requested", "tool.succeeded"]),
     ).order_by(AgentEvent.sequence_no).all()
     requested: dict[str, str] = {}
-    succeeded: set[str] = set()
+    succeeded: dict[str, dict] = {}
     for row in rows:
         payload = row.payload_json or {}
         call_id = str(payload.get("call_id") or "")
@@ -37,13 +41,42 @@ def _successful_tool_calls(db: Session, run_id: int) -> dict[str, str]:
         if row.event_type == "tool.requested":
             requested[call_id] = _raw_tool_name(str(payload.get("tool_name") or ""))
         else:
-            succeeded.add(call_id)
-    return {call_id: requested[call_id] for call_id in succeeded if call_id in requested}
+            succeeded[call_id] = payload
+    calls = {call_id: requested[call_id] for call_id in succeeded if call_id in requested}
+    evidence: list[dict] = []
+    for call_id, tool_name in calls.items():
+        output = succeeded[call_id].get("output")
+        refs = output.get("evidence_refs") if isinstance(output, dict) else None
+        for ref in refs if isinstance(refs, list) else []:
+            if isinstance(ref, dict):
+                evidence.append({**ref, "tool_call_id": call_id, "source": tool_name})
+    return calls, evidence
+
+
+def customer_evidence_scope(
+    db: Session, run: AgentRun,
+) -> tuple[int | None, int | None]:
+    customer_id = db.query(CustomerAgentRunScope.customer_id).filter(
+        CustomerAgentRunScope.run_id == run.id,
+    ).scalar()
+    if customer_id is None:
+        return None, None
+    profile_id = db.query(CustomerAccount.current_profile_version_id).filter(
+        CustomerAccount.id == customer_id,
+    ).scalar()
+    version = db.query(CustomerProfileVersion.version_no).filter(
+        CustomerProfileVersion.id == profile_id,
+        CustomerProfileVersion.customer_id == customer_id,
+    ).scalar() if profile_id is not None else None
+    return int(customer_id), version
 
 
 def validate_output(
     content: dict[str, Any], evidence: list[dict], profile: AgentProfile,
     *, successful_tool_calls: dict[str, str] | None = None,
+    returned_evidence: list[dict] | None = None,
+    customer_id: int | None = None,
+    profile_version: int | None = None,
 ) -> list[str]:
     errors: list[str] = []
     schema = profile.output_schema or {}
@@ -76,6 +109,15 @@ def validate_output(
             if source and expected_source and _raw_tool_name(source) != expected_source:
                 errors.append(f"{label}第 {index + 1} 条来源与工具调用不匹配")
     if policy.get("claim_evidence_required"):
+        if returned_evidence is not None and customer_id is not None:
+            from app.agent_runtime.evaluation_service import validate_claim_evidence
+            for label, items in evidence_sets:
+                errors.extend(
+                    f"{label}: {message}" for message in validate_claim_evidence(
+                        items, returned_evidence=returned_evidence,
+                        customer_id=customer_id, profile_version=profile_version,
+                    )
+                )
         evidence_ids = {
             str(item.get("tool_call_id"))
             for item in evidence
@@ -106,10 +148,25 @@ def create_artifact(
     content: dict,
     evidence: list[dict],
 ) -> AgentArtifact:
+    successful_calls, returned_evidence = successful_tool_evidence(db, run.id)
+    customer_id, profile_version = customer_evidence_scope(db, run)
     errors = validate_output(
         content, evidence, profile,
-        successful_tool_calls=_successful_tool_calls(db, run.id),
+        successful_tool_calls=successful_calls,
+        returned_evidence=returned_evidence,
+        customer_id=customer_id,
+        profile_version=profile_version,
     )
+    if (profile.policy_json or {}).get("claim_evidence_required"):
+        policy = profile.policy_json or {}
+        if content.get("evidence") != evidence:
+            errors.append("content evidence must exactly match artifact evidence")
+        errors.extend(validate_ark_claim_evidence(
+            db, citations=evidence, customer_id=customer_id,
+            profile_version=profile_version,
+            max_classification=policy.get("max_data_classification", "internal_business"),
+            max_visibility=policy.get("max_visibility_scope", "customer_team"),
+        ))
     if errors:
         raise ConflictError("成果校验失败: " + "; ".join(errors))
     digest = content_hash({"content": content, "evidence": evidence})
@@ -182,7 +239,12 @@ def decide_artifact(
     artifact.feedback_note = note
     if decision == "accepted":
         from app.agent_runtime.projection_service import project_accepted_artifact
-        project_accepted_artifact(db, artifact, run)
+        project_accepted_artifact(
+            db,
+            artifact,
+            run,
+            actor_user_id=user_id,
+        )
     append_event(
         db, run,
         event_id=f"artifact-{artifact.id}-{decision}",

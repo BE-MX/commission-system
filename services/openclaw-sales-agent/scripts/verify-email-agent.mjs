@@ -52,7 +52,9 @@ async function main() {
   assert(mainAgent?.tools?.deny?.includes("exec"), "main research agent must deny exec");
   assert(emailAgent.skills?.includes("ark-email-outreach"), "email agent skill allowlist is missing ark-email-outreach");
   assert(emailAgent.skills?.includes("agently-mail"), "email agent skill allowlist is missing agently-mail");
-  assert(emailAgent.tools?.alsoAllow?.includes("ark-sales__ark_get_lead"), "email agent lacks read-only Ark lead access");
+  for (const tool of ["get_customer_profile", "get_customer_facts", "get_customer_evidence"]) {
+    assert(emailAgent.tools?.alsoAllow?.includes(tool), `email agent lacks unified Ark tool ${tool}`);
+  }
   assert(emailAgent.tools?.deny?.includes("web_search"), "email agent must not conduct fresh web research");
   assert(emailAgent.tools?.deny?.includes("process"), "email agent must not manage background shell sessions");
   assert(emailAgent.tools?.exec?.ask === "off", "email agent must hard-deny commands outside its allowlist");

@@ -42,10 +42,14 @@ export const MENU_GROUPS = {
     icon: OfficeBuilding,
     anyPermission: ['customer:read', 'customer:write'],
   },
-  salesAutomation: {
-    title: '智能获客',
+  customerOperations: {
+    title: '客户经营',
     icon: Aim,
-    anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+    anyPermission: [
+      'customer:read',
+      'sales_automation:read',
+      'customer_opportunity:read', 'customer_radar:read',
+    ],
   },
   invoice: {
     title: '订单管理',
@@ -129,7 +133,6 @@ export const MENU_GROUPS = {
       'insight_library:read', 'insight_daily:read', 'insight_ai_tools:read',
       'insight_case:read', 'insight_case:write',
       'insight_minutes:read', 'insight_minutes:write',
-      'customer_opportunity:read', 'customer_radar:read',
       'training:read', 'training:write', 'training:admin',
     ],
   },
@@ -285,49 +288,60 @@ export const NAV_ENTRIES = [
     },
   },
 
-  // ── 智能获客 ───────────────────────────────────────────
+  // ── 客户经营 ───────────────────────────────────────────
   {
-    path: '/sales-automation/profile',
-    name: 'AcquisitionProfile',
-    component: () => import('@/views/sales_automation/AcquisitionProfile.vue'),
-    title: '获客模型',
-    anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+    path: '/customer-hub/customers',
+    name: 'CustomerHubProfiles',
+    component: () => import('@/views/customer_hub/CustomerProfiles.vue'),
+    title: '客户档案',
+    anyPermission: ['customer:read'],
     menu: {
-      group: 'salesAutomation', title: '获客模型', icon: Aim, order: 10,
-      anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+      group: 'customerOperations', title: '客户档案', icon: OfficeBuilding, order: 10,
+      anyPermission: ['customer:read'],
     },
   },
   {
-    path: '/sales-automation/jobs',
-    name: 'SalesSearchJobs',
-    component: () => import('@/views/sales_automation/SearchJobs.vue'),
-    title: '搜索任务',
-    anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+    path: '/customer-hub/acquisition',
+    name: 'CustomerHubAcquisition',
+    component: () => import('@/views/customer_hub/AcquisitionTasks.vue'),
+    title: '获客任务',
+    anyPermission: ['sales_automation:read'],
     menu: {
-      group: 'salesAutomation', title: '搜索任务', icon: Lightning, order: 20,
-      anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+      group: 'customerOperations', title: '获客任务', icon: Lightning, order: 20,
+      anyPermission: ['sales_automation:read'],
     },
   },
   {
-    path: '/sales-automation/public-pool',
-    name: 'SalesPublicPoolResearch',
-    component: () => import('@/views/sales_automation/PublicPoolResearch.vue'),
-    title: '公海背调',
-    anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+    path: '/customer-hub/research',
+    name: 'CustomerHubResearch',
+    component: () => import('@/views/customer_hub/ResearchCenter.vue'),
+    title: '背调中心',
+    anyPermission: ['sales_automation:read'],
     menu: {
-      group: 'salesAutomation', title: '公海背调', icon: DataBoard, order: 30,
-      anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+      group: 'customerOperations', title: '背调中心', icon: DataBoard, order: 30,
+      anyPermission: ['sales_automation:read'],
     },
   },
   {
-    path: '/sales-automation/leads',
-    name: 'SalesLeadPool',
-    component: () => import('@/views/sales_automation/LeadPool.vue'),
-    title: '客户池',
-    anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+    path: '/customer-hub/opportunities',
+    name: 'CustomerHubOpportunities',
+    component: () => import('@/views/customer_hub/CustomerOpportunities.vue'),
+    title: '客户机会',
+    anyPermission: ['customer_opportunity:read'],
     menu: {
-      group: 'salesAutomation', title: '客户池', icon: OfficeBuilding, order: 40,
-      anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+      group: 'customerOperations', title: '客户机会', icon: Lightning, order: 40,
+      anyPermission: ['customer_opportunity:read'],
+    },
+  },
+  {
+    path: '/customer-hub/radar',
+    name: 'CustomerHubRadar',
+    component: () => import('@/views/customer_hub/CustomerRadar.vue'),
+    title: '经营雷达',
+    anyPermission: ['customer_radar:read'],
+    menu: {
+      group: 'customerOperations', title: '经营雷达', icon: Aim, order: 50,
+      anyPermission: ['customer_radar:read'],
     },
   },
 
@@ -1061,29 +1075,6 @@ export const NAV_ENTRIES = [
       permission: 'insight:admin',
     },
   },
-  {
-    path: '/insight/customer-opportunities',
-    name: 'CustomerOpportunity',
-    component: () => import('@/views/insight/CustomerOpportunityView.vue'),
-    title: '客户机会台',
-    permission: 'customer_opportunity:read',
-    menu: {
-      group: 'insight', title: '客户机会台', icon: Lightning, order: 65,
-      permission: 'customer_opportunity:read',
-    },
-  },
-  {
-    path: '/insight/customer-radar',
-    name: 'CustomerRadar',
-    component: () => import('@/views/insight/CustomerRadarView.vue'),
-    title: '客户经营雷达',
-    permission: 'customer_radar:read',
-    menu: {
-      group: 'insight', title: '客户经营雷达', icon: Aim, order: 66,
-      permission: 'customer_radar:read',
-    },
-  },
-
   // ── 设计中心 ───────────────────────────────────────────
   {
     path: '/design/image-studio',

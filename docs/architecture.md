@@ -70,13 +70,15 @@
 每个领域目录自包含 `router.py` `models.py` `schemas.py` `service.py`（facade，re-export 子模块函数）：
 
 - `app/auth/` — 认证 & RBAC
+- `app/customer/` — 统一客户域（公司/商业账户主档、身份解析、事实证据、档案编译、归属、提案、机会和行动查询）；所有客户消费者以 `customer_id` 读取方舟，不直读 OKKI/阿里/网页来源
+- `app/sales_automation/` — 获客生产端（目标画像、搜索任务、公海背调、资格审核和受控 Agent 租约写入）；只负责把外部信源事实化后写入客户域，不维护第二套客户主档
 - `app/design/` — 设计预约（service.py facade + 子模块：audit_log / request / schedule / stats / import_service + notifications.py 钉钉通知）
 - `app/system/` — 系统字典
 - `app/dingtalk/` — 钉钉集成
 - `app/whatsapp/` — WhatsApp 同步（router/models/schemas/service + connector_client + scheduler）
 - `app/ai/` — AI 接入（service.py facade + provider / preset / call / log_service + keyring / http_client）
 - `app/customer_image/` — 客户产品效果图门户（内部 RBAC 管理 + 邀请令牌公开 API + 产品稳定素材/多 reference + 幂等额度提交 + lease worker + 30 天邀请素材清理）；只复用 `app/ai/image_job_runtime.py` 的 Provider 执行、图片下载和用量/错误分类，不依赖内部 `design_image` 会话模型
-- `app/insight/` — 方舟洞见（service.py facade + sources / reports / item / collector / intelligence / customer_opportunity / customer_radar / customer_profile）
+- `app/insight/` — 方舟洞见（service.py facade + sources / reports / item / collector / intelligence；机会与雷达服务继续承载规则计算，但 ORM 主档统一使用 `app/customer/models.py`）
 - `app/stock/` — 备货管理（service.py facade + constants / sku_query / overview / safety / daily_report_service / production_cart_service / production_order_service）
 - `app/tracking/` — 物流跟踪（router + shipment / upload / ocr / polling / staging / daily_report / push_service + carriers/ + status.py）
 - `app/asset/` — 素材管理（router/models/schemas/service facade + analyze / batch / stats / tag / favorite / asset_service / folder_upload_service；标签体系定义 `taxonomy_def.py` 是唯一真相源，色系派生规则 `color_rules.py`；11 维正交标签体系 2026-07-22 切换，078 迁移，专题见 `docs/module-notes.md`）
@@ -89,7 +91,7 @@
 - `app/mini/` — 微信小程序端（router/service/auth/schemas — 扫码报工/历史/总览/撤销/登录绑定）
 - `app/training/` — 培训速递（router/models/schemas/service + push_service 钉钉推送；参训人自助发布 + AI 提炼草稿（文字/图片/PDF 多模态）+ 发布必填分区校验，075 迁移，2026-07-18 合入）
 - `app/pm/` — PM 项目资料协作站（**独立 HMAC 门牌鉴权，不接平台 RBAC**；材料/版本/版本评论/任务/动态审计 + AI 差异管线，076 迁移；前端为 `frontend-pm/` 独立应用，2026-07-18 合入，版本评论 2026-07-19）
-- `app/mcp/` — MCP 网关（FastMCP streamable HTTP，`mount("/mcp")`；物流 3 工具 + 素材 2 工具 + 已发布知识 2 工具 + 产品/标准价格 2 工具；**个人 opaque token 鉴权**，解析出与登录 JWT 一致的 claims，继续执行领域 service 的权限与数据范围；产品和价格工具只允许精确查询、不提供批量导出。接入说明 `docs/mcp-tracking-integration.md`）
+- `app/mcp/` — MCP 网关（FastMCP streamable HTTP，`mount("/mcp")`；含统一客户 9 个只读工具；**个人 opaque token 鉴权**，解析出与登录 JWT 一致的 claims，继续执行领域 service 的权限、分类和数据范围；客户 Agent 不能借 MCP 绕过方舟或直接写外部来源。接入说明 `docs/mcp-tracking-integration.md`）
 - `app/operations/` — 运行与自动化中心（实例/任务/外部服务状态；任务结果、控制审计和暂停策略落库；跨服务器实例以服务+实例 claim 机器凭证主动心跳；`operations:read/admin` 分权，控制权限仅显式授予，不保存 root 凭证、不提供任意远程命令）
 
 ## 前端结构
@@ -140,9 +142,10 @@ frontend/src/
 | `ark_ai_presets` | AI 预设 | `preset_name` 唯一 |
 | `ark_insight_sources` | 洞见信源 | `source_type`, `keywords` JSON |
 | `ark_insight_items` | 情报条目 | `credibility_score` 1-5 |
-| `ark_customer_opportunities` | 客户机会卡 | `source_key` 唯一幂等键，`full_report_html` TEXT |
-| `ark_customer_profiles` | 客户活画像 | `customer_external_id` 唯一 |
-| `ark_customer_actions` | 行动候选池 | `thread_group` 线索分组 |
+| `ark_customer_accounts` | 统一客户主档 | `customer_code` 唯一；公司名可空，身份状态与关系阶段分离 |
+| `ark_customer_profile_versions` | 可迭代客户档案 | `(customer_id, version_no)` 唯一，保存事实/证据引用和编译策略 |
+| `ark_customer_opportunities` | 客户机会 | 非空 `customer_id`，阶段变化与不可变事件同事务写入 |
+| `ark_customer_actions` | 经营雷达行动 | 非空 `customer_id`、档案版本和事实证据；用户结果不会被规则刷新覆盖 |
 | `ark_production_orders` | 生产订单主表 | `order_no` 唯一，`delete_flag` 软删 |
 | `ark_production_order_items` | 生产订单明细 | `order_id` FK CASCADE |
 | `process` | 工序基础表 | `name` 唯一 |
@@ -197,6 +200,8 @@ frontend/src/
 | `insight:read` / `insight:write` / `insight:admin` | 方舟洞见（查看 / 上传 / 管理） |
 | `customer_opportunity:read` / `customer_opportunity:write` / `customer_opportunity:manage` | 客户机会台（查看本人 / 更新状态 / 管理全部） |
 | `customer_radar:read` / `customer_radar:write` / `customer_radar:manage` | 客户经营雷达（查看 / 完成行动 / 管理档案） |
+| `customer:read` / `customer:write` / `customer:admin` / `customer:read_all` | 统一客户（范围内读取 / 归属写入 / 部门治理 / 全量数据范围） |
+| `customer:manage_dnc` / `customer:confirm_material_risk` | DNC 设置撤销 / 重大风险人工确认；仅在高影响提案执行时检查实时权限 |
 | `external_binding:read` / `external_binding:write` | 外部账号绑定（查看 / 创建删除） |
 | `asset:read` / `asset:write` / `asset:admin` | 素材管理（查看 / 上传 / 标签维度管理） |
 | `production:read` / `production:write` / `production:print` / `production:admin` | 生产订单（查看 / 创建编辑 / 打印 / 删除） |
@@ -256,23 +261,23 @@ frontend/src/
   └── 钉钉推送 + 前端查看
 ```
 
-### 2. 客户机会台数据流
+### 2. 统一客户经营数据流
 
 ```
-ACCIO WORK 询盘推送
-  ├── POST /api/insight/customer-opportunities/import/accio
-  ├── 幂等键：source_key = "ali_inquiry_{self_ali_id}_{buyer_identifier}"
-  ├── 背调信息：lead_grade / opening_message / follow_up_message
-  └── 归属解析：self_ali_id → ark_user_external_bindings → owner_user_id
+阿里 / OKKI / Google / 官网 / LinkedIn / 社媒
+  → source_record（不可变原始版本）
+  → identity resolution（强键自动、弱键候选、冲突人工）
+  → customer_id（公司/商业账户主档；公司名可空）
+  → facts + evidence links + conflicts
+  → profile_versions + agent_contexts
+  ├── 客户池 / 公海（无有效主负责人；领取时实时判定资格）
+  ├── 背调与资格审核（任务租约、行业门控、人工结果审核）
+  ├── 客户机会（阶段变化写 opportunity_event + customer_event）
+  └── 经营雷达行动（完成时写真实 sales_activity 事件）
 
-机会卡状态流转
-  pending → contacted → replied → quoted → won/lost/dismissed
-  └── 每次状态变更写入 ark_customer_opportunity_events
-
-客户经营雷达
-  ├── 客户画像聚合（从机会卡 + 事件流）
-  ├── 行动推荐生成（AI 分析 6 线索分组）
-  └── 行动候选池（pending/completed/dismissed/snoozed）
+Agent 消费：受控 Agent Run MCP → 只读 Ark 当前版本、事实和证据
+触达确认：独立 operator token + 实时客户归属 → outreach-context 最小权限快照
+Agent 生产：claim + lease + input_hash → 仅向所属任务/customer_id 追加来源与事实
 ```
 
 ### 3. 生产订单数据流
@@ -312,12 +317,12 @@ ACCIO WORK 询盘推送
 
 ## 外部集成
 
-### ACCIO WORK（客户机会台）
+### 阿里、OKKI 与外部公开信源（统一客户域）
 
-- **集成方式**：HTTP POST 推送
-- **端点**：`POST /api/insight/customer-opportunities/import/accio`
-- **认证**：`X-Import-API-Key` 头（复用 `INSIGHT_IMPORT_API_KEY`）
-- **详细规范**：[accio-work-integration-spec.md](accio-work-integration-spec.md)
+- 阿里询盘和 OKKI 客户/订单先写不可变来源记录，再解析到 `customer_id`；个人邮箱、个人名称不能直接当公司身份。
+- Google、官网、独立站、LinkedIn 和其他社媒只提供公开商业证据；禁止私人关系调查和无来源联系方式猜测。
+- 外部 Agent 通过 `/api/sales-automation/agent/*` 的任务租约写入；普通消费 Agent 只通过受控 Agent Run 的客户 MCP 工具读取方舟。`outreach-context` 仅供 Agent 外的触达确认 operator 使用，并同时校验客户读取权限、实时归属及记录级数据分级。
+- 历史 `POST /api/insight/customer-opportunities/import/accio` 客户写入口已退役；ACCIO 仍可作为通用 AI Provider，但不能维护独立客户副本。
 
 ### WhatsApp Connector（WhatsApp 同步）
 

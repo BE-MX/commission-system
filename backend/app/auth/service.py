@@ -7,7 +7,10 @@ from app.core.time import beijing_now
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
-from app.auth.models import ArkUser, ArkLoginLog, ArkRefreshToken
+from app.auth.models import (
+    ArkLoginLog, ArkPermission, ArkRefreshToken, ArkRole,
+    ArkRolePermission, ArkUser, ArkUserRole,
+)
 from app.auth.utils import (
     verify_password, create_access_token, generate_refresh_token,
     hash_token,
@@ -36,6 +39,27 @@ def get_user_permissions(user: ArkUser) -> list[str]:
         for perm in role.permissions:
             perms.add(perm.code)
     return sorted(perms)
+
+
+def get_live_user_authorization(db: Session, user_id: int) -> tuple[list[str], list[str]]:
+    """Return active human roles and permissions from the database, never JWT state."""
+    active = db.query(ArkUser.id).filter(
+        ArkUser.id == user_id,
+        ArkUser.is_active.is_(True),
+        ArkUser.deleted_at.is_(None),
+    ).one_or_none()
+    if active is None:
+        return [], []
+    roles = [row[0] for row in db.query(ArkRole.name).join(
+        ArkUserRole, ArkUserRole.role_id == ArkRole.id,
+    ).filter(ArkUserRole.user_id == user_id).all()]
+    permissions = [row[0] for row in db.query(ArkPermission.code).join(
+        ArkRolePermission,
+        ArkRolePermission.permission_id == ArkPermission.id,
+    ).join(
+        ArkUserRole, ArkUserRole.role_id == ArkRolePermission.role_id,
+    ).filter(ArkUserRole.user_id == user_id).distinct().all()]
+    return sorted(roles), sorted(permissions)
 
 
 def check_account_lockout(db: Session, username: str) -> None:
@@ -197,7 +221,7 @@ def list_okki_department_options(db: Session) -> list[dict]:
 
 
 # kind 派生规则（权限重设计方案）：data=数据范围，read/日报=页面可见，其余=操作级
-_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all", "agent_runtime:read_all"}
+_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all", "agent_runtime:read_all", "customer:read_all"}
 _PAGE_KIND_EXTRA = {"tracking:daily_report"}
 
 
@@ -247,7 +271,7 @@ def seed_role_permissions(db: Session):
         ("supervisor:read",  "supervisor", "read",  "查看主管关系"),
         ("supervisor:write", "supervisor", "write", "设置/变更/导入主管关系"),
         # 客户管理
-        ("customer:read",  "customer", "read",   "查看客户归属"),
+        ("customer:read",  "customer", "read",   "查看本人、协作和公海摘要范围内的统一客户档案"),
         ("customer:write", "customer", "write",  "编辑客户归属"),
         # 提成管理（2026-07-12 我的提成页拆独立页面码 064；self_read 退回纯数据范围码）
         ("commission:read",      "commission", "read",       "查看提成批次"),
@@ -413,10 +437,20 @@ def seed_role_permissions(db: Session):
         ("training:write",        "training",   "write",      "发布/编辑自己的培训速递 / AI 提炼 / 上传资料 / 钉钉推送"),
         ("training:admin",        "training",   "admin",      "管理全部培训速递（编辑/下架/删除）"),
         # 客户机会台
+        ("customer:admin", "customer", "admin", "管理本部门范围内的客户、归属和高影响提案"),
+        ("customer:manage_dnc", "customer", "manage_dnc", "执行客户禁止联系政策的设置与撤销"),
+        ("customer:confirm_material_risk", "customer", "confirm_material_risk", "执行客户重大风险人工确认"),
+        ("customer:read_all", "customer", "read_all", "读取全部统一客户档案数据范围"),
         ("customer_opportunity:read",   "customer_opportunity", "read",   "查看客户机会（本人）"),
         ("customer_opportunity:write",  "customer_opportunity", "write",  "更新机会状态/添加反馈"),
         ("customer_opportunity:import", "customer_opportunity", "import", "ACCIO 导入询盘"),
         ("customer_opportunity:manage", "customer_opportunity", "manage", "管理全部机会/分配/管理未分配"),
+        (
+            "customer_opportunity:confirm_without_order",
+            "customer_opportunity",
+            "confirm_without_order",
+            "无订单人工确认机会成交",
+        ),
         # 外部账号绑定
         ("external_binding:read",  "external_binding", "read",  "查看外部账号绑定"),
         ("external_binding:write", "external_binding", "write", "创建/删除绑定/管理候选"),
@@ -523,7 +557,13 @@ def seed_role_permissions(db: Session):
             db.flush()
 
     # 高爆炸半径权限只能人工授予；启动 seed 不得静默扩大既有 admin 的生产控制权。
-    manual_grant_codes = {"operations:admin"}
+    manual_grant_codes = {
+        "operations:admin",
+        "customer_opportunity:confirm_without_order",
+        "customer:manage_dnc",
+        "customer:confirm_material_risk",
+        "customer:read_all",
+    }
     # 给 admin 角色补齐一般非 legacy 权限（跳过已下架和显式授权项）。
     admin_role = db.query(ArkRole).filter(ArkRole.name == "admin").first()
     if admin_role:

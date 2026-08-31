@@ -1,474 +1,408 @@
-"""客户经营雷达引擎 — 经营线索分组 + 行动推荐
-
-MVP 策略：纯规则引擎，无 AI 调用。
-行动推荐在查询时懒生成，首访触发、后续缓存。
-"""
+"""Customer-id radar action queries and evidence-bound recommendation refresh."""
 
 from __future__ import annotations
 
-import logging
-import hashlib
-from datetime import date, datetime, timedelta
-from app.core.time import beijing_today
-from app.core.time import beijing_now
-from typing import Any, Dict, List, Optional
+from datetime import date, datetime
+from typing import Any
 
-from sqlalchemy import and_, func
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.insight.models import (
+from app.core.time import beijing_now, beijing_today, to_beijing_naive
+from app.customer.models import (
+    CustomerAccount,
     CustomerAction,
+    CustomerAssignment,
     CustomerOpportunity,
-    CustomerProfile,
-    CustomerProfileEvent,
+)
+from app.customer.logical_customer_service import logical_owner_expression, logical_root_predicate
+from app.customer.workflow_service import (
+    CustomerWorkflowConflict,
+    CustomerWorkflowNotFound,
+    complete_action as complete_workflow_action,
+    create_action,
 )
 
-logger = logging.getLogger("insight.radar")
 
-
-# ── 经营线索分组定义 ─────────────────────────────────────
-
-THREAD_GROUPS: Dict[str, Dict[str, Any]] = {
+THREAD_GROUPS: dict[str, dict[str, Any]] = {
     "new_inquiry": {
-        "label": "新询盘响应",
-        "priority_label": "优先",
-        "color": "blue",
-        "sort": 10,
-        "icon": "MailPlus",
+        "label": "新询盘响应", "priority_label": "优先", "color": "blue", "sort": 10,
         "desc": "需要快速判断和首回",
     },
-    "sample_delivery": {
-        "label": "样单/交付反馈",
-        "priority_label": "优先",
-        "color": "green",
-        "sort": 20,
-        "icon": "PackageCheck",
-        "desc": "最容易被漏掉，但可能更接近成交",
+    "sample": {
+        "label": "样单反馈", "priority_label": "优先", "color": "green", "sort": 20,
+        "desc": "仅在真实样单证据存在时生成",
     },
     "key_account": {
         "label": "大客户维护",
         "priority_label": "保持",
         "color": "purple",
         "sort": 30,
-        "icon": "Gem",
-        "desc": "不紧急但不能长期忽略",
+        "desc": "仅由订单价值或人工确认触发",
     },
-    "reorder_window": {
+    "reorder": {
         "label": "复购窗口",
         "priority_label": "重点",
         "color": "teal",
         "sort": 40,
-        "icon": "Repeat",
-        "desc": "补货和新品推荐机会",
+        "desc": "仅由真实采购周期触发",
     },
     "reactivation": {
         "label": "老客唤醒",
         "priority_label": "重点",
         "color": "red",
         "sort": 50,
-        "icon": "BellRing",
-        "desc": "用历史订单重新切入",
+        "desc": "由明确的沉睡客户证据触发",
     },
     "public_pool": {
-        "label": "公海验证",
-        "priority_label": "顺手",
-        "color": "gray",
-        "sort": 60,
-        "icon": "Database",
-        "desc": "低成本验证新增客户",
+        "label": "公海验证", "priority_label": "顺手", "color": "gray", "sort": 60,
+        "desc": "资格审核通过后的首轮人工复核",
     },
 }
 
-
-# ── 行动模板（按 thread_group）─────────────────────────
-
-_ACTION_TEMPLATES = {
-    "new_inquiry": {
-        "next_action": "回复询盘，确认需求后推荐热销品",
-        "reason_template": "新询盘待响应：{name} 对你的产品感兴趣",
-        "message_template": (
-            "Hi {name}, thanks for your inquiry. "
-            "Could you share your target products, quantity and delivery timeline "
-            "so I can recommend the best options for you?"
-        ),
-    },
-    "sample_delivery": {
-        "next_action": "追样单使用反馈，推进批量",
-        "reason_template": "{name} 已收到样单/报价，正处于反馈窗口",
-        "message_template": (
-            "Hi {name}, I hope everything is going well. "
-            "Have you had a chance to evaluate the samples? "
-            "I'd love to hear your feedback and help with your bulk order plan."
-        ),
-    },
-    "key_account": {
-        "next_action": "发送新品信息或补货提醒",
-        "reason_template": "大客户 {name} 需要周期性维护，避免被新询盘挤掉",
-        "message_template": (
-            "Hi {name}, I wanted to share some new product updates "
-            "that match your previous preferences. "
-            "Would you like me to send some details?"
-        ),
-    },
-    "reorder_window": {
-        "next_action": "用补货窗口唤醒",
-        "reason_template": "{name} 进入复购周期，适合补货提醒",
-        "message_template": (
-            "Hi {name}, many customers are preparing restock plans "
-            "for the next sales cycle. "
-            "Would you like updated pricing or new product recommendations?"
-        ),
-    },
-    "reactivation": {
-        "next_action": "用历史订单和新品重新切入",
-        "reason_template": "{name} 超过90天未互动，适合低成本唤醒",
-        "message_template": (
-            "Hi {name}, it's been a while since our last conversation. "
-            "We have some exciting new products that might interest you. "
-            "Would you like me to share a quick overview?"
-        ),
-    },
-    "public_pool": {
-        "next_action": "发送低风险开发信",
-        "reason_template": "公海客户 {name} 画像匹配，适合低成本验证",
-        "message_template": (
-            "Hi {name}, I noticed your business focus aligns well with our products. "
-            "Would you be open to receiving some samples to compare quality?"
-        ),
-    },
+ACTION_DISMISSAL_REASON_CODES = {
+    "user_dismissed",
+    "duplicate",
+    "no_longer_relevant",
+    "wrong_customer",
+    "completed_elsewhere",
+    "policy_suppressed",
+    "other",
 }
 
 
-# ── 规则引擎：经营线索分类 ───────────────────────────────
+def _live_customer_ids(db: Session, user_id: int):
+    return db.query(CustomerAssignment.customer_id).filter(
+        CustomerAssignment.user_id == user_id,
+        CustomerAssignment.assignment_role.in_(("primary", "collaborator")),
+        CustomerAssignment.assignment_status == "active",
+        CustomerAssignment.effective_to.is_(None),
+    )
 
 
-def compute_thread_group(
-    profile: CustomerProfile,
-    latest_opportunities: List[CustomerOpportunity],
-) -> str:
-    """根据画像和最近机会数据，返回经营线索分组（首匹配规则链）。"""
-    now = beijing_now()
-    seven_days_ago = now - timedelta(days=7)
-    thirty_days_ago = now - timedelta(days=30)
-    ninety_days_ago = now - timedelta(days=90)
-
-    # 分离不同状态的机会
-    pending_opps = [o for o in latest_opportunities if o.status in ("pending", "contacted")]
-    recent_pending = [o for o in pending_opps if o.created_at and o.created_at >= seven_days_ago]
-    quoted_won = [o for o in latest_opportunities if o.status in ("quoted", "won")]
-    recent_quoted_won = [o for o in quoted_won if o.updated_at and o.updated_at >= thirty_days_ago]
-    old_quoted_won = [o for o in quoted_won if o.updated_at and thirty_days_ago >= o.updated_at >= ninety_days_ago]
-
-    # 规则链（优先级从高到低）
-    # 0. 公海研究投影必须保留其业务线程，不能被 pending 误判成新询盘。
-    if pending_opps:
-        latest_pending = max(pending_opps, key=lambda item: item.created_at or datetime.min)
-        if latest_pending.opportunity_type == "customer_reactivation":
-            return "reactivation"
-        if latest_pending.opportunity_type == "public_pool":
-            return "public_pool"
-
-    # 1. 有近期 pending/contacted 机会 → 新询盘
-    if recent_pending:
-        return "new_inquiry"
-
-    # 2. 有近期 quoted/won → 样单反馈
-    if recent_quoted_won:
-        return "sample_delivery"
-
-    # 3. A 级 + ≥3 个机会 → 大客户维护
-    if profile.total_opportunities >= 3:
-        has_a = any(o.priority_level == "A" for o in latest_opportunities)
-        if has_a:
-            return "key_account"
-
-    # 4. 30-90 天内有 won/quoted → 复购窗口
-    if old_quoted_won:
-        return "reorder_window"
-
-    # 5. 最后活跃 > 90 天 → 老客唤醒
-    if profile.last_event_at and profile.last_event_at < ninety_days_ago:
-        return "reactivation"
-
-    # 6. 无归属 → 公海
-    if profile.owner_resolve_status != "resolved":
-        return "public_pool"
-
-    # 7. 兜底 → 大客户
-    return "key_account"
+def _attach_logical_customer(action: CustomerAction, customer_id: int) -> CustomerAction:
+    action.logical_customer_id = int(customer_id)
+    return action
 
 
-# ── 行动生成 ─────────────────────────────────────────────
+def _opportunity_recommendation(opportunity: CustomerOpportunity) -> dict | None:
+    if opportunity.status not in {"pending", "contacted", "replied", "quoted"}:
+        return None
+    if opportunity.opportunity_type == "public_pool":
+        return {
+            "thread_group": "public_pool",
+            "reason": "客户已通过资格审核，需要确认首轮开发策略。",
+            "next_action": "复核档案证据并准备首次人工联系。",
+            "action_type": "review",
+            "channel": "internal",
+        }
+    if opportunity.opportunity_type == "ali_inquiry":
+        return {
+            "thread_group": "new_inquiry",
+            "reason": "客户有待处理的真实阿里询盘。",
+            "next_action": "复核询盘内容并进行人工回复。",
+            "action_type": "message",
+            "channel": "alibaba",
+        }
+    if opportunity.opportunity_type == "customer_reactivation":
+        return {
+            "thread_group": "reactivation",
+            "reason": "客户存在经证据确认的唤醒机会。",
+            "next_action": "复核历史互动后决定是否人工联系。",
+            "action_type": "review",
+            "channel": "internal",
+        }
+    return None
 
 
 def generate_daily_actions(
     db: Session,
     owner_user_id: int,
-    action_date: Optional[date] = None,
-) -> List[CustomerAction]:
-    """为指定业务员生成今日行动（懒生成：首访触发）。
-
-    1. 查询该用户的所有活跃画像
-    2. 对每个画像查最近的机会数据
-    3. 规则分类 + 生成行动
-    4. 按客户+日期+策略幂等更新 ark_customer_actions
-
-    已完成、已忽略和已延后的行动属于用户事实，刷新不得覆盖。
-    """
-    if not action_date:
-        action_date = beijing_today()
-
-    policy_version = "rule-v2-idempotent"
-    # 锁住画像行，串行化同一业务员的并发刷新；唯一指纹是第二道防线。
-    profiles = db.query(CustomerProfile).filter(
-        CustomerProfile.owner_user_id == owner_user_id,
-        CustomerProfile.status == "active",
-    ).with_for_update().all()
-    existing_rows = db.query(CustomerAction).filter(
-        CustomerAction.owner_user_id == owner_user_id,
-        CustomerAction.action_date == action_date,
-    ).order_by(CustomerAction.id.desc()).all()
-    existing_by_profile = {}
-    for existing in existing_rows:
-        existing_by_profile.setdefault(existing.profile_id, existing)
-
-    now = beijing_now()
-    actions = []
-
-    for profile in profiles:
-        # 查询该画像关联的机会（通过 customer_name 匹配）
-        opportunities = db.query(CustomerOpportunity).filter(
-            CustomerOpportunity.owner_user_id == owner_user_id,
-            CustomerOpportunity.customer_name == profile.customer_name,
-        ).order_by(CustomerOpportunity.created_at.desc()).limit(10).all()
-
-        if not opportunities and not profile.customer_external_id:
-            # 无任何机会且无外部ID的画像跳过（极端情况）
+    action_date: date | None = None,
+) -> list[CustomerAction]:
+    target_date = action_date or beijing_today()
+    assignments = db.query(CustomerAssignment).filter(
+        CustomerAssignment.user_id == owner_user_id,
+        CustomerAssignment.assignment_role == "primary",
+        CustomerAssignment.assignment_status == "active",
+        CustomerAssignment.effective_to.is_(None),
+    ).all()
+    customer_ids = [assignment.customer_id for assignment in assignments]
+    if not customer_ids:
+        return []
+    accounts = {
+        account.id: account
+        for account in db.query(CustomerAccount).filter(
+            CustomerAccount.id.in_(customer_ids),
+            CustomerAccount.record_status == "active",
+            CustomerAccount.current_profile_version_id.isnot(None),
+        ).all()
+    }
+    opportunity_owner = logical_owner_expression(CustomerOpportunity, "opportunity")
+    opportunities = db.query(CustomerOpportunity, opportunity_owner.label(
+        "logical_customer_id",
+    )).filter(
+        opportunity_owner.in_(accounts),
+        CustomerOpportunity.owner_user_id == owner_user_id,
+        CustomerOpportunity.status.in_(("pending", "contacted", "replied", "quoted")),
+    ).order_by(CustomerOpportunity.created_at.desc()).all()
+    seen_customers: set[int] = set()
+    for opportunity, logical_customer_id in opportunities:
+        logical_customer_id = int(logical_customer_id)
+        if logical_customer_id in seen_customers:
             continue
-
-        # 分类
-        thread = compute_thread_group(profile, opportunities)
-        template = _ACTION_TEMPLATES[thread]
-        thread_info = THREAD_GROUPS[thread]
-
-        # 构建推荐原因
-        name = profile.customer_name or "客户"
-        reason = template["reason_template"].format(name=name)
-
-        # 构建推荐话术（优先用已有话术）
-        message = profile.suggested_message
-        if not message and opportunities:
-            opp = opportunities[0]
-            message = opp.opening_message_en
-        if not message:
-            message = template["message_template"].format(name=name)
-
-        # 构建下一步
-        next_action = template["next_action"]
-
-        # 依据数据
-        opp_ids = [o.id for o in opportunities[:3]]
-        latest_status = opportunities[0].status if opportunities else "unknown"
-        evidence = {
-            "opportunity_ids": opp_ids,
-            "latest_status": latest_status,
-            "thread_group_reason": thread,
-        }
-
-        # 排序权重：priority_score + thread 排序加分
-        sort_order = profile.priority_score * 10 + (100 - thread_info["sort"])
-
-        fingerprint = hashlib.sha256(
-            f"rule|{policy_version}|{profile.id}|{action_date.isoformat()}".encode("utf-8")
-        ).hexdigest()
-        action = existing_by_profile.get(profile.id)
-        if action is None:
-            action = CustomerAction(
-                profile_id=profile.id,
-                owner_user_id=owner_user_id,
-                thread_group=thread,
-                thread_priority=thread_info["priority_label"],
-                action_reason=reason,
-                suggested_next_action=next_action,
-                suggested_message=message,
-                source_evidence=evidence,
-                action_status="pending",
-                action_date=action_date,
-                sort_order=sort_order,
-                source_type="rule",
-                source_fingerprint=fingerprint,
-                policy_version=policy_version,
-                evidence_status="valid",
-                generated_at=now,
-            )
-            db.add(action)
-            existing_by_profile[profile.id] = action
-        elif action.action_status == "pending" and action.source_type == "rule":
-            action.thread_group = thread
-            action.thread_priority = thread_info["priority_label"]
-            action.action_reason = reason
-            action.suggested_next_action = next_action
-            action.suggested_message = message
-            action.source_evidence = evidence
-            action.sort_order = sort_order
-            action.source_fingerprint = fingerprint
-            action.policy_version = policy_version
-            action.evidence_status = "valid"
-            action.generated_at = now
-        elif not action.source_fingerprint:
-            # 只为历史行补齐幂等元数据，不触碰用户处理结果和建议正文。
-            action.source_fingerprint = fingerprint
-            action.policy_version = policy_version
-        actions.append(action)
-
+        recommendation = _opportunity_recommendation(opportunity)
+        if recommendation is None:
+            continue
+        account = accounts[logical_customer_id]
+        action = create_action(
+            db,
+            customer_id=account.id,
+            owner_user_id=owner_user_id,
+            opportunity_id=opportunity.id,
+            profile_version_id=account.current_profile_version_id,
+            action_type=recommendation["action_type"],
+            thread_group=recommendation["thread_group"],
+            channel=recommendation["channel"],
+            priority="high" if opportunity.priority_level == "A" else "normal",
+            reason=recommendation["reason"],
+            next_action=recommendation["next_action"],
+            suggested_message=opportunity.opening_message_en,
+            due_at=opportunity.due_at,
+            policy_version="customer_radar_v1",
+            source_type="rule",
+            source_event_ids=(),
+            evidence_fact_ids=tuple(opportunity.evidence_fact_ids or ()),
+            action_date=target_date,
+        )
+        seen_customers.add(logical_customer_id)
     db.commit()
-    # refresh to get IDs
-    for a in actions:
-        db.refresh(a)
-
-    logger.info("Generated %d actions for user=%s date=%s", len(actions), owner_user_id, action_date)
-    return actions
+    action_owner = logical_owner_expression(CustomerAction, "action")
+    rows = db.query(CustomerAction, action_owner.label("logical_customer_id")).filter(
+        CustomerAction.owner_user_id == owner_user_id,
+        action_owner.in_(_live_customer_ids(db, owner_user_id)),
+        CustomerAction.action_date == target_date,
+    ).order_by(
+        CustomerAction.due_at.is_(None).asc(),
+        CustomerAction.due_at.asc(),
+        CustomerAction.id,
+    ).all()
+    return [_attach_logical_customer(row, owner) for row, owner in rows]
 
 
 def get_daily_focus(
     db: Session,
     owner_user_id: int,
-    action_date: Optional[date] = None,
-    thread_group: Optional[str] = None,
+    action_date: date | None = None,
+    thread_group: str | None = None,
 ) -> dict:
-    """获取今日经营重点（懒生成）。"""
-    if not action_date:
-        action_date = beijing_today()
-
-    # 检查是否已有今日行动
-    existing = db.query(CustomerAction).filter(
-        CustomerAction.owner_user_id == owner_user_id,
-        CustomerAction.action_date == action_date,
-    ).count()
-
-    if existing == 0:
-        generate_daily_actions(db, owner_user_id, action_date)
-
-    # 查询行动
+    target_date = action_date or beijing_today()
+    action_owner = logical_owner_expression(CustomerAction, "action")
     query = db.query(CustomerAction).filter(
         CustomerAction.owner_user_id == owner_user_id,
-        CustomerAction.action_date == action_date,
+        action_owner.in_(_live_customer_ids(db, owner_user_id)),
+        CustomerAction.action_date == target_date,
+    )
+    if query.count() == 0:
+        generate_daily_actions(db, owner_user_id, target_date)
+    query = db.query(CustomerAction).filter(
+        CustomerAction.owner_user_id == owner_user_id,
+        action_owner.in_(_live_customer_ids(db, owner_user_id)),
+        CustomerAction.action_date == target_date,
     )
     if thread_group:
         query = query.filter(CustomerAction.thread_group == thread_group)
-
-    all_actions = query.order_by(CustomerAction.sort_order.desc()).all()
-
-    # 按线索分组
-    grouped: Dict[str, List] = {}
-    for action in all_actions:
-        grouped.setdefault(action.thread_group, []).append(action)
-
-    # 构建分组列表（按 THREAD_GROUPS 的 sort 排序）
+    rows = query.with_entities(CustomerAction, action_owner.label(
+        "logical_customer_id",
+    )).order_by(
+        CustomerAction.due_at.is_(None).asc(),
+        CustomerAction.due_at.asc(),
+        CustomerAction.created_at,
+    ).all()
+    grouped: dict[str, list[CustomerAction]] = {}
+    rows = [_attach_logical_customer(row, owner) for row, owner in rows]
+    for row in rows:
+        grouped.setdefault(row.thread_group, []).append(row)
     threads = []
-    for group_key in sorted(THREAD_GROUPS.keys(), key=lambda k: THREAD_GROUPS[k]["sort"]):
-        group_actions = grouped.get(group_key, [])
-        if not group_actions:
+    for group in sorted(THREAD_GROUPS, key=lambda key: THREAD_GROUPS[key]["sort"]):
+        group_rows = grouped.get(group, [])
+        if not group_rows:
             continue
-        info = THREAD_GROUPS[group_key]
-        # 序列化行动
-        serialized = [_serialize_action(a) for a in group_actions]
+        info = THREAD_GROUPS[group]
         threads.append({
-            "group": group_key,
+            "group": group,
             "label": info["label"],
             "priority_label": info["priority_label"],
             "color": info["color"],
             "desc": info["desc"],
-            "count": len(group_actions),
-            "actions": serialized,
+            "count": len(group_rows),
+            "actions": [_serialize_action(row) for row in group_rows],
         })
-
-    # 统计
-    pending = sum(1 for a in all_actions if a.action_status == "pending")
-    done = sum(1 for a in all_actions if a.action_status == "done")
-    dismissed = sum(1 for a in all_actions if a.action_status == "dismissed")
-    snoozed = sum(1 for a in all_actions if a.action_status == "snoozed")
-
     return {
-        "action_date": str(action_date),
+        "action_date": str(target_date),
         "threads": threads,
         "summary": {
-            "total": len(all_actions),
-            "pending": pending,
-            "done": done,
-            "dismissed": dismissed,
-            "snoozed": snoozed,
+            "total": len(rows),
+            **{
+                status: sum(row.status == status for row in rows)
+                for status in ("pending", "done", "dismissed", "snoozed")
+            },
         },
     }
 
 
-def get_thread_counts(db: Session, owner_user_id: int, action_date: Optional[date] = None) -> dict:
-    """各线索数量（侧边栏角标用）。"""
-    if not action_date:
-        action_date = beijing_today()
-
-    # 确保行动已生成
-    existing = db.query(CustomerAction).filter(
+def get_thread_counts(
+    db: Session,
+    owner_user_id: int,
+    action_date: date | None = None,
+) -> dict:
+    target_date = action_date or beijing_today()
+    action_owner = logical_owner_expression(CustomerAction, "action")
+    if db.query(CustomerAction.id).filter(
         CustomerAction.owner_user_id == owner_user_id,
-        CustomerAction.action_date == action_date,
-    ).count()
-    if existing == 0:
-        generate_daily_actions(db, owner_user_id, action_date)
-
-    rows = db.query(
-        CustomerAction.thread_group,
-        func.count(CustomerAction.id),
-    ).filter(
+        action_owner.in_(_live_customer_ids(db, owner_user_id)),
+        CustomerAction.action_date == target_date,
+    ).first() is None:
+        generate_daily_actions(db, owner_user_id, target_date)
+    rows = db.query(CustomerAction.thread_group, func.count(CustomerAction.id)).filter(
         CustomerAction.owner_user_id == owner_user_id,
-        CustomerAction.action_date == action_date,
+        action_owner.in_(_live_customer_ids(db, owner_user_id)),
+        CustomerAction.action_date == target_date,
     ).group_by(CustomerAction.thread_group).all()
-
-    counts = {group_key: 0 for group_key in THREAD_GROUPS}
-    for group, cnt in rows:
-        counts[group] = cnt
-
+    counts = {group: 0 for group in THREAD_GROUPS}
+    counts.update({group: count for group, count in rows})
     return counts
-
-
-# ── 行动操作 ─────────────────────────────────────────────
 
 
 def complete_action(
     db: Session,
     action_id: int,
     user_id: int,
-    feedback: Optional[str] = None,
-    note: Optional[str] = None,
+    feedback: str | None = None,
+    note: str | None = None,
+    *,
+    outcome_code: str = "other",
+    channel: str | None = None,
+    occurred_at: datetime | None = None,
+    summary: str | None = None,
+    next_step: str | None = None,
+    can_manage: bool = False,
 ) -> CustomerAction:
-    action = db.query(CustomerAction).filter(CustomerAction.id == action_id).first()
-    if not action:
-        raise ValueError(f"行动不存在: id={action_id}")
-    action.action_status = "done"
-    action.completed_at = beijing_now()
-    action.completed_by = user_id
+    action = db.get(CustomerAction, action_id)
+    if action is None:
+        raise CustomerWorkflowNotFound("ACTION_NOT_FOUND")
+    logical_customer_id = db.query(
+        logical_owner_expression(CustomerAction, "action"),
+    ).filter(CustomerAction.id == action_id).scalar()
+    row = complete_workflow_action(
+        db,
+        action_id=action_id,
+        completed_by=user_id,
+        occurred_at=occurred_at or beijing_now(),
+        channel=channel or action.channel or "internal",
+        outcome_code=outcome_code,
+        summary=(summary or note or "行动已由业务员完成").strip(),
+        next_step=(next_step if next_step is not None else action.next_action),
+        can_manage=can_manage,
+    )
     if feedback:
-        action.user_feedback = feedback
-    if note:
-        action.user_note = note
+        row.feedback_json = {
+            **dict(row.feedback_json or {}),
+            "user_feedback": feedback.strip(),
+        }
     db.commit()
-    db.refresh(action)
-    return action
+    db.refresh(row)
+    return _attach_logical_customer(row, logical_customer_id)
+
+
+def _action_and_account_for_update(
+    db: Session,
+    action_id: int,
+) -> tuple[CustomerAction, CustomerAccount]:
+    candidate = db.get(CustomerAction, action_id)
+    if candidate is None:
+        raise CustomerWorkflowNotFound("ACTION_NOT_FOUND")
+    owner_id = db.query(logical_owner_expression(CustomerAction, "action")).filter(
+        CustomerAction.id == action_id,
+    ).scalar()
+    account = db.query(CustomerAccount).filter(
+        CustomerAccount.id == owner_id,
+        CustomerAccount.record_status == "active",
+    ).with_for_update().one_or_none()
+    if account is None:
+        raise CustomerWorkflowNotFound("CUSTOMER_NOT_FOUND")
+    action = db.query(CustomerAction).filter(
+        CustomerAction.id == action_id,
+        logical_root_predicate(CustomerAction, "action", account.id),
+    ).with_for_update().one_or_none()
+    if action is None:
+        raise CustomerWorkflowNotFound("ACTION_NOT_FOUND")
+    return _attach_logical_customer(action, account.id), account
+
+
+def _mark_action_changed(account: CustomerAccount, *, changed_at: datetime) -> None:
+    account.profile_input_seq = int(account.profile_input_seq) + 1
+    account.updated_at = changed_at
+
+
+def _require_action_actor_scope(
+    db: Session,
+    action: CustomerAction,
+    user_id: int,
+    *,
+    can_manage: bool = False,
+) -> None:
+    if can_manage:
+        return
+    assignment = db.query(CustomerAssignment.id).filter(
+        CustomerAssignment.customer_id == action.logical_customer_id,
+        CustomerAssignment.user_id == user_id,
+        CustomerAssignment.assignment_role.in_(("primary", "collaborator")),
+        CustomerAssignment.assignment_status == "active",
+        CustomerAssignment.effective_to.is_(None),
+    ).first()
+    if assignment is None:
+        raise CustomerWorkflowConflict("ACTION_ACTOR_FORBIDDEN")
+    if action.opportunity_id is not None:
+        opportunity = db.query(CustomerOpportunity).filter(
+            CustomerOpportunity.id == action.opportunity_id,
+            logical_root_predicate(
+                CustomerOpportunity, "opportunity", action.logical_customer_id,
+            ),
+        ).one_or_none()
+        if opportunity is None or opportunity.owner_user_id != user_id:
+            raise CustomerWorkflowConflict("ACTION_ACTOR_FORBIDDEN")
 
 
 def dismiss_action(
     db: Session,
     action_id: int,
     user_id: int,
-    note: Optional[str] = None,
+    *,
+    reason_code: str = "user_dismissed",
+    note: str | None = None,
+    can_manage: bool = False,
 ) -> CustomerAction:
-    action = db.query(CustomerAction).filter(CustomerAction.id == action_id).first()
-    if not action:
-        raise ValueError(f"行动不存在: id={action_id}")
-    action.action_status = "dismissed"
-    action.completed_at = beijing_now()
-    action.completed_by = user_id
-    if note:
-        action.user_note = note
+    if reason_code not in ACTION_DISMISSAL_REASON_CODES:
+        raise CustomerWorkflowConflict("ACTION_DISMISSAL_INVALID")
+    normalized_note = note.strip() if note is not None else None
+    if normalized_note is not None and len(normalized_note) > 1000:
+        raise CustomerWorkflowConflict("ACTION_DISMISSAL_INVALID")
+    action, account = _action_and_account_for_update(db, action_id)
+    if not can_manage and action.owner_user_id != user_id:
+        raise CustomerWorkflowConflict("ACTION_OWNER_REQUIRED")
+    _require_action_actor_scope(db, action, user_id, can_manage=can_manage)
+    if action.status != "pending":
+        raise CustomerWorkflowConflict("ACTION_NOT_PENDING")
+    action.status = "dismissed"
+    action.dismissal_reason = reason_code
+    action.feedback_json = {
+        **dict(action.feedback_json or {}),
+        "user_note": normalized_note,
+    }
+    now = beijing_now()
+    action.updated_at = now
+    _mark_action_changed(account, changed_at=now)
     db.commit()
     db.refresh(action)
     return action
@@ -479,12 +413,23 @@ def snooze_action(
     action_id: int,
     user_id: int,
     until: datetime,
+    *,
+    can_manage: bool = False,
 ) -> CustomerAction:
-    action = db.query(CustomerAction).filter(CustomerAction.id == action_id).first()
-    if not action:
-        raise ValueError(f"行动不存在: id={action_id}")
-    action.action_status = "snoozed"
-    action.snoozed_until = until
+    action, account = _action_and_account_for_update(db, action_id)
+    if not can_manage and action.owner_user_id != user_id:
+        raise CustomerWorkflowConflict("ACTION_OWNER_REQUIRED")
+    _require_action_actor_scope(db, action, user_id, can_manage=can_manage)
+    if action.status != "pending":
+        raise CustomerWorkflowConflict("ACTION_NOT_PENDING")
+    normalized_until = to_beijing_naive(until)
+    if normalized_until <= beijing_now():
+        raise CustomerWorkflowConflict("SNOOZE_TIME_INVALID")
+    action.status = "snoozed"
+    action.snoozed_until = normalized_until
+    now = beijing_now()
+    action.updated_at = now
+    _mark_action_changed(account, changed_at=now)
     db.commit()
     db.refresh(action)
     return action
@@ -494,62 +439,60 @@ def submit_feedback(
     db: Session,
     action_id: int,
     feedback: str,
-    note: Optional[str],
+    note: str | None,
     user_id: int,
+    *,
+    can_manage: bool = False,
 ) -> CustomerAction:
-    """提交反馈并更新画像权重。"""
-    action = db.query(CustomerAction).filter(CustomerAction.id == action_id).first()
-    if not action:
-        raise ValueError(f"行动不存在: id={action_id}")
-
-    action.user_feedback = feedback
-    if note:
-        action.user_note = note
-    db.flush()
-
-    # 更新画像权重调整
-    profile = db.query(CustomerProfile).filter(CustomerProfile.id == action.profile_id).first()
-    if profile:
-        adj = profile.weight_adjustments or {}
-        if feedback == "not_useful":
-            adj["score_offset"] = adj.get("score_offset", 0) - 5
-        elif feedback == "useful":
-            adj["score_offset"] = adj.get("score_offset", 0) + 3
-        profile.weight_adjustments = adj
-        # 重算分数
-        from app.insight.customer_profile_service import _recompute_profile_score
-        _recompute_profile_score(db, profile)
-
+    action, account = _action_and_account_for_update(db, action_id)
+    if not can_manage and action.owner_user_id != user_id:
+        raise CustomerWorkflowConflict("ACTION_OWNER_REQUIRED")
+    _require_action_actor_scope(db, action, user_id, can_manage=can_manage)
+    action.feedback_json = {
+        **dict(action.feedback_json or {}),
+        "user_feedback": feedback,
+        "user_note": note,
+        "submitted_by": user_id,
+        "submitted_at": beijing_now().isoformat(),
+    }
+    now = beijing_now()
+    action.updated_at = now
+    _mark_action_changed(account, changed_at=now)
     db.commit()
     db.refresh(action)
     return action
 
 
-# ── 序列化 ───────────────────────────────────────────────
-
-
 def _serialize_action(action: CustomerAction) -> dict:
-    profile = action.profile
     return {
         "id": action.id,
-        "profile_id": action.profile_id,
-        "customer_name": profile.customer_name if profile else "",
-        "customer_region": profile.customer_region if profile else "",
-        "customer_company": profile.customer_company if profile else "",
+        "customer_id": getattr(action, "logical_customer_id", action.customer_id),
+        "opportunity_id": action.opportunity_id,
+        "owner_user_id": action.owner_user_id,
         "thread_group": action.thread_group,
-        "thread_priority": action.thread_priority,
-        "action_reason": action.action_reason,
-        "suggested_next_action": action.suggested_next_action,
+        "priority": action.priority,
+        "reason": action.reason,
+        "next_action": action.next_action,
         "suggested_message": action.suggested_message,
-        "source_evidence": action.source_evidence,
-        "action_status": action.action_status,
+        "status": action.status,
+        "action_status": action.status,
         "action_date": str(action.action_date),
-        "user_feedback": action.user_feedback,
-        "user_note": action.user_note,
-        "sort_order": action.sort_order,
-        "profile_tags": profile.profile_tags if profile else [],
-        "profile_judgement": profile.profile_judgement if profile else "",
-        "profile_priority_score": profile.priority_score if profile else 0,
-        "profile_signals_json": profile.profile_signals_json if profile else [],
-        "snoozed_until": action.snoozed_until.isoformat() if action.snoozed_until else None,
+        "feedback_json": action.feedback_json or {},
+        "evidence_fact_ids": action.evidence_fact_ids or [],
+        "profile_version_id": action.profile_version_id,
+        "snoozed_until": (
+            action.snoozed_until.isoformat() if action.snoozed_until else None
+        ),
     }
+
+
+__all__ = [
+    "THREAD_GROUPS",
+    "complete_action",
+    "dismiss_action",
+    "generate_daily_actions",
+    "get_daily_focus",
+    "get_thread_counts",
+    "snooze_action",
+    "submit_feedback",
+]
