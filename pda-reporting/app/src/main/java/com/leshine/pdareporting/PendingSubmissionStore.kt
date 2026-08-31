@@ -29,11 +29,9 @@ class PendingSubmissionStore(private val prefs: SharedPreferences) {
             clear(requestId)
             return null
         }
+        // Outcomes are part of the idempotent transaction. Keep even malformed bytes so
+        // the UI can block unsafe retry and preserve the request ID for reconciliation.
         val outcomes = prefs.getString(KEY_OUTCOMES, null)
-        if (outcomes != null && runCatching { JSONObject(outcomes) }.isFailure) {
-            clear(requestId)
-            return null
-        }
         return PendingSubmission(scan, raw, qty, requestId, outcomes)
     }
 

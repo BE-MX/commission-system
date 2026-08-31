@@ -343,6 +343,12 @@ class MainActivity : Activity() {
             handleFailure(IllegalStateException("待确认提交数据损坏，请重新扫码"), written = true)
             return
         }
+        val parsedOutcomes = PendingSubmissionFlow.parseOutcomes(pending.outcomes) { JSONObject(it) }
+        if (parsedOutcomes is PendingOutcomes.Corrupt) {
+            showCorruptPendingOutcomes()
+            return
+        }
+        val outcomes = (parsedOutcomes as? PendingOutcomes.Ready)?.value
         feedback.error()
         if (reportingScreen?.showUnitResultUnknown() != true) {
             reportingScreen?.showError("网络中断，提交结果未知")
@@ -358,8 +364,23 @@ class MainActivity : Activity() {
                 loadHistory()
             }
             .setPositiveButton("重试同一笔") { _, _ ->
-                val outcomes = pending.outcomes?.let { JSONObject(it) }
                 submit(scan, payload, pending.qty, pending.requestId, outcomes)
+            }
+            .show()
+    }
+
+    private fun showCorruptPendingOutcomes() {
+        val warning = "待确认分流数据损坏，无法安全重试，请核对今日记录或联系管理员"
+        feedback.error()
+        reportingScreen?.showError(warning)
+        AlertDialog.Builder(this)
+            .setTitle("待确认提交需人工核对")
+            .setMessage("$warning\n\n为避免重复报工，APP 会保留原 request_id 和待确认数据，不会自动清除或重试。")
+            .setCancelable(false)
+            .setPositiveButton("核对今日记录") { _, _ ->
+                busy = false
+                reportingScreen?.showError(warning)
+                loadHistory()
             }
             .show()
     }
