@@ -4,8 +4,10 @@ import android.annotation.SuppressLint
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.ContentValues
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.net.http.SslCertificate
@@ -58,8 +60,27 @@ class MainActivity : ComponentActivity() {
     private lateinit var webView: WebView
     private lateinit var errorView: View
     private lateinit var errorDetail: TextView
+    private lateinit var updateOverlay: UpdateOverlay
     private val io = Executors.newSingleThreadExecutor()
     private var pendingFileCallback: ValueCallback<Array<Uri>>? = null
+    private var updateReceiverRegistered = false
+    private var startupUpdateRequested = false
+    private var startupUpdateReleased = false
+    private var activityDestroyed = false
+    private var updateFailureNoticeShown = false
+
+    private val updateStateObserver: (UpdateState) -> Unit = { state ->
+        runOnUiThread {
+            if (!activityDestroyed && !startupUpdateReleased) renderUpdateState(state)
+        }
+    }
+    private val updateAwaitingReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == UpdateInstallReceiver.ACTION_UPDATE_AWAITING_USER) {
+                StartupUpdateSession.publish(UpdateState.AwaitingUserAction)
+            }
+        }
+    }
 
     /** 本次加载是否失败——onPageFinished 靠它决定收不收兜底页 */
     private var loadFailed = false
@@ -94,10 +115,13 @@ class MainActivity : ComponentActivity() {
 
         webView = WebView(this)
         errorView = buildErrorView().apply { visibility = View.GONE }
+        updateOverlay = UpdateOverlay(this)
         setContentView(FrameLayout(this).apply {
             addView(webView, FrameLayout.LayoutParams(MATCH, MATCH))
             addView(errorView, FrameLayout.LayoutParams(MATCH, MATCH))
+            addView(updateOverlay, FrameLayout.LayoutParams(MATCH, MATCH))
         })
+        registerUpdateReceiver()
 
         with(webView.settings) {
             javaScriptEnabled = true
@@ -232,6 +256,98 @@ class MainActivity : ComponentActivity() {
         webView.addJavascriptInterface(WebBridge(), "Android")
         Log.i(TAG, "loadUrl ${KioskUrl.get(this)}")
         webView.loadUrl(KioskUrl.get(this))
+
+        if (intent?.action == UpdateInstallReceiver.ACTION_UPDATE_FAILED) {
+            releaseAfterInstallFailure()
+        } else {
+            startStartupUpdateOnce()
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun startStartupUpdateOnce() {
+        if (startupUpdateRequested || startupUpdateReleased) return
+        startupUpdateRequested = true
+
+        val latest = StartupUpdateSession.attach(updateStateObserver)
+        renderUpdateState(latest ?: UpdateState.Checking)
+        val appContext = applicationContext
+        StartupUpdateSession.start(
+            execute = { task -> io.execute(task) },
+            createEngine = {
+                val packageInfo = appContext.packageManager.getPackageInfo(
+                    appContext.packageName,
+                    0,
+                )
+                val currentVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    packageInfo.longVersionCode
+                } else {
+                    packageInfo.versionCode.toLong()
+                }
+                UpdateEngine(
+                    currentVersionCode = currentVersionCode,
+                    source = HttpUpdateSource(appContext, KioskUrl.origin(appContext)),
+                    verifier = AndroidApkVerifier(appContext),
+                    installer = AndroidUpdateInstaller(appContext),
+                    downloadTarget = appContext.cacheDir.resolve(UPDATE_APK_NAME),
+                    diagnostics = AndroidUpdateDiagnostics(),
+                )
+            },
+        )
+    }
+
+    private fun renderUpdateState(state: UpdateState) {
+        val presentation = UpdatePresentation.from(state)
+        if (presentation.blocksKiosk) {
+            updateOverlay.render(presentation)
+        } else {
+            updateOverlay.hide()
+            if (presentation.message == UpdateMessage.FAILURE && !updateFailureNoticeShown) {
+                updateFailureNoticeShown = true
+                Toast.makeText(this, R.string.update_failed_safe, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun releaseAfterInstallFailure() {
+        StartupUpdateSession.failInstall()
+        startupUpdateReleased = true
+        StartupUpdateSession.detach(updateStateObserver)
+        updateOverlay.hide()
+        if (!updateFailureNoticeShown) {
+            updateFailureNoticeShown = true
+            Toast.makeText(this, R.string.update_failed_safe, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun registerUpdateReceiver() {
+        if (updateReceiverRegistered) return
+        val filter = IntentFilter(UpdateInstallReceiver.ACTION_UPDATE_AWAITING_USER)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(updateAwaitingReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            ContextCompat.registerReceiver(
+                this,
+                updateAwaitingReceiver,
+                filter,
+                ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+        }
+        updateReceiverRegistered = true
+    }
+
+    private fun unregisterUpdateReceiver() {
+        if (!updateReceiverRegistered) return
+        unregisterReceiver(updateAwaitingReceiver)
+        updateReceiverRegistered = false
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.action == UpdateInstallReceiver.ACTION_UPDATE_FAILED) {
+            releaseAfterInstallFailure()
+        }
     }
 
     /**
@@ -621,6 +737,9 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        activityDestroyed = true
+        StartupUpdateSession.detach(updateStateObserver)
+        unregisterUpdateReceiver()
         ui.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
@@ -634,7 +753,67 @@ class MainActivity : ComponentActivity() {
         private const val CHOOSER_GUARD_MS = 2500L
         private const val RETRY_MIN_MS = 5000L
         private const val RETRY_MAX_MS = 60000L
+        private const val UPDATE_APK_NAME = "kiosk-update.part.apk"
         private val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         private val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
+    }
+}
+
+private object StartupUpdateSession {
+    private val lock = Any()
+    private var attempted = false
+    private var engine: UpdateEngine? = null
+    private var latestState: UpdateState? = null
+    private var observer: ((UpdateState) -> Unit)? = null
+
+    fun attach(newObserver: (UpdateState) -> Unit): UpdateState? = synchronized(lock) {
+        observer = newObserver
+        latestState
+    }
+
+    fun detach(currentObserver: (UpdateState) -> Unit) {
+        synchronized(lock) {
+            if (observer === currentObserver) observer = null
+        }
+    }
+
+    fun start(
+        execute: ((() -> Unit) -> Unit),
+        createEngine: () -> UpdateEngine,
+    ) {
+        val shouldStart = synchronized(lock) {
+            if (attempted) false else {
+                attempted = true
+                true
+            }
+        }
+        if (!shouldStart) return
+
+        execute {
+            try {
+                val created = createEngine()
+                synchronized(lock) { engine = created }
+                created.run(::publish)
+            } catch (exception: Exception) {
+                Log.w(
+                    "ExpoKioskUpdate",
+                    "Update startup failed type=${exception.javaClass.simpleName}",
+                )
+                publish(UpdateState.Failed("Update runtime unavailable"))
+            }
+        }
+    }
+
+    fun publish(state: UpdateState) {
+        val currentObserver = synchronized(lock) {
+            latestState = state
+            observer
+        }
+        currentObserver?.invoke(state)
+    }
+
+    fun failInstall() {
+        synchronized(lock) { attempted = true }
+        publish(UpdateState.Failed("Package installer failed"))
     }
 }

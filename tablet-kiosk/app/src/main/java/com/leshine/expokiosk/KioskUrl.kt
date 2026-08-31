@@ -25,10 +25,12 @@ object KioskUrl {
     private const val KEY_ORIGIN = "server_origin"
     private const val KIOSK_PATH = "/expo/kiosk"
 
-    fun get(ctx: Context): String {
-        val origin = savedOrigin(ctx)
-        return if (origin != null) origin + KIOSK_PATH else ctx.getString(R.string.start_url)
-    }
+    fun origin(ctx: Context): String =
+        savedOrigin(ctx)
+            ?: normalizeOrigin(ctx.getString(R.string.start_url))
+            ?: error("The configured kiosk URL is invalid")
+
+    fun get(ctx: Context): String = origin(ctx) + KIOSK_PATH
 
     /**
      * 弹地址设置框。保存/恢复默认后回调新地址，由调用方决定何时 reload；
@@ -80,8 +82,7 @@ object KioskUrl {
         prefs(ctx).getString(KEY_ORIGIN, null)?.takeIf { it.isNotBlank() }
 
     /** 回填输入框用：存过就用存的，没存过就从 strings.xml 的默认地址里剥出 origin */
-    private fun currentOrigin(ctx: Context): String =
-        savedOrigin(ctx) ?: normalizeOrigin(ctx.getString(R.string.start_url)).orEmpty()
+    private fun currentOrigin(ctx: Context): String = origin(ctx)
 
     /**
      * 把工作人员输入的任意写法归一成 `scheme://host[:port]`：补协议（默认 http，现场基本是 IP 直连）、
