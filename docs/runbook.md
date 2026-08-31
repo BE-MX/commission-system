@@ -216,6 +216,62 @@ alembic upgrade head
 4. 核对 `ark_platform_time_backup_123` 行数、`alembic current`，并抽查 `ark_production_orders.created_at` 等于备份原值加 8 小时；迁移失败时保持停服，修复后可重跑，备份表会复用原值而不是二次累加。
 5. 清除维护变量，只启动新代码实例，再撤维护页；旧版本实例不得恢复写入。历史 `updated_at` 等混合来源列不在 123 中猜测平移。
 
+#### 126 统一客户域重建（一次性破坏性维护窗口）
+
+迁移 126 会清空并重建历史客户、智能获客、公海、机会台和经营雷达表，且没有 downgrade。禁止沿用上面的裸 `alembic upgrade head`；必须使用仓库根目录的 `scripts/customer_domain_cutover.py`，所有证据只允许写入已忽略的 `backend/tmp/customer-domain-cutover/`。抑制名单只导出 HMAC，不把明文邮箱/电话写入证据目录。
+
+上线前置：
+
+1. 创建可恢复的 RDS 快照，并记录快照 ID。
+2. 部署包、办公室后端、云端后端、调度器、OpenClaw、临时脚本、队列 Worker 和所有持有数据库写权限的主体全部纳入实例清单。
+3. 准备权威抑制源清单、目标画像策略回填、冻结物理契约、维护围栏、数据库写权限撤销证明、停止写入清单和五分钟内有效的人工批准标记。格式必须遵循切换服务的校验器和设计文档，禁止照抄示例后改几个字段。
+4. 仅在所有写入者已停止且数据库层写权限已撤销后进入 `apply-reset`；任何哈希、实例、权限、时间窗或实时库存漂移都会失败关闭。
+
+维护窗命令顺序（PowerShell；文件名仅示意，实际文件必须是本次新生成且互相绑定的不可变证据）：
+
+```powershell
+# 1. 停写前可做只读盘点；正式维护窗停写后必须重新生成一次
+python scripts/customer_domain_cutover.py preflight `
+  --output preflight-<nonce>.json
+
+# 2. 从权威明文抑制源生成 HMAC-only 清单；密钥通过隐藏提示输入
+python scripts/customer_domain_cutover.py export-suppressions `
+  --input ops/customer-suppressions-source.json `
+  --preflight-report backend/tmp/customer-domain-cutover/preflight-<nonce>.json `
+  --output suppressions-<nonce>.json `
+  --key-version <key-version>
+
+# 3. 校验库存哈希、停止写入清单、维护围栏和数据库权限撤销证明
+python scripts/customer_domain_cutover.py verify-ready `
+  --inventory-report backend/tmp/customer-domain-cutover/preflight-<nonce>.json `
+  --stopped-writer-manifest ops/stopped-writers-<nonce>.json `
+  --expected-inventory-sha256 <inventory_sha256>
+
+# 4. 执行唯一允许的重建入口；内部会生成绑定 contract、DDL proof 和 receipt
+python scripts/customer_domain_cutover.py apply-reset `
+  --preflight-report backend/tmp/customer-domain-cutover/preflight-<nonce>.json `
+  --suppression-manifest backend/tmp/customer-domain-cutover/suppressions-<nonce>.json `
+  --stopped-writer-manifest ops/stopped-writers-<nonce>.json `
+  --expected-inventory-sha256 <inventory_sha256> `
+  --approved-marker ops/customer-cutover-approval-<nonce>.json `
+  --physical-schema-contract ops/customer-physical-contract-126.json `
+  --target-profile-policy-backfill ops/target-profile-policy-<nonce>.json
+
+# 5. 在恢复任何 writer 前完成后验；receipt 路径由 apply-reset 输出证据确定
+python scripts/customer_domain_cutover.py verify-after `
+  --preflight-report backend/tmp/customer-domain-cutover/preflight-<nonce>.json `
+  --suppression-manifest backend/tmp/customer-domain-cutover/suppressions-<nonce>.json `
+  --stopped-writer-manifest ops/stopped-writers-<nonce>.json `
+  --approved-marker ops/customer-cutover-approval-<nonce>.json `
+  --execution-receipt backend/tmp/customer-domain-cutover/migration-receipt-<nonce>.json `
+  --physical-schema-contract ops/customer-physical-contract-126.json `
+  --target-profile-policy-backfill ops/target-profile-policy-<nonce>.json
+```
+
+后验通过后，按顺序执行：重放 HMAC 抑制映射 → 仅启动新版本后端 → 用四类客户做烟测（已识别公司、个人邮箱 provisional、已有订单客户、DNC 客户）→ 核对客户档案/时间线/公海/机会/行动及 Agent 只读上下文 → 恢复调度器与外部 Worker → 撤维护页。任何一步失败都保持停写，保留 contract、DDL proof、receipt 和日志，不要手工补表或重跑同一个 nonce。
+
+特别说明：`ark_sales_target_profiles` 不清空，迁移会校验原物理结构并强制回填版本化策略；旧客户业务表可清空，抑制登记必须保留。共享数据库不可达或仍有 writer 时，允许完成代码与隔离 MySQL 演练，但不得把它记录为“生产切换完成”。
+
 ### 6. 配置 NSSM 服务
 
 ```bash

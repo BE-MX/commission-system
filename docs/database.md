@@ -24,6 +24,33 @@
 - 业务库 `lsordertest`：只读，跨库查询订单/回款原始数据
 - 两库在同一 RDS 实例，通过库名前缀跨库访问
 
+## 统一客户经营库（迁移 126，2026-08-31）
+
+迁移 126 将公海背调、智能搜索、客户池、客户机会台和经营雷达统一到一个客户域。`ark_customer_accounts.id` 是唯一客户主键；主档代表公司或商业账户，`canonical_company_name` 可以为空，不能用公司名、个人邮箱或联系人姓名作为身份键。阿里、OKKI、Google、官网、LinkedIn 等只作为来源，经过身份解析、事实化和证据绑定后进入方舟；下游 Agent 只读方舟。
+
+迁移冻结了 **39 张表、778 个字段**的 MySQL 物理契约。每张表都有数据库 `TABLE_COMMENT`，每个字段都有 `COLUMN_COMMENT`；完整逐字段类型、约束和备注保存在 `backend/alembic/versions/126_unified_customer_domain_schema.json`，并由 SHA-256 固定。2026-08-31 在 MySQL 8.4.11 严格模式下通过 `information_schema` 核验：空表备注 0、空字段备注 0。
+
+| 分层 | 表 | 职责 |
+|---|---|---|
+| 客户身份 | `ark_customer_accounts`、`ark_customer_names`、`ark_customer_external_identities`、`ark_customer_resolution_keys`、`ark_customer_relationships` | 公司/商业账户主档、名称别名、外部身份、解析键和公司关系；弱身份只能形成候选，不能自动合并 |
+| 联系人与触点 | `ark_customer_contacts`、`ark_customer_contact_points`、`ark_customer_contact_relationships` | 联系人、邮箱/电话/社媒触点和联系人—公司任职关系；个人邮箱归联系人，不等于公司身份 |
+| 来源、事实与证据 | `ark_customer_source_records`、`ark_customer_facts`、`ark_customer_fact_evidence_links`、`ark_customer_fact_conflicts`、`ark_customer_events`、`ark_customer_annotations` | 不可变来源版本、可计算事实、证据链接、冲突、业务事件和人工标记；推断与原始事实分开保存 |
+| 档案与 Agent 上下文 | `ark_customer_profile_versions`、`ark_customer_agent_contexts`、`ark_customer_list_projections` | 可迭代档案版本、面向 Agent 的受控上下文和列表投影；Agent 必须携带所读档案版本及事实/证据 ID |
+| 归属与治理 | `ark_customer_assignments`、`ark_customer_object_ownerships`、`ark_customer_change_proposals`、`ark_customer_agent_run_scopes`、`ark_customer_suppression_registry` | 唯一主负责人、合并后逻辑归属、高影响变更提案、Agent Run 数据范围和禁止联系/抑制登记 |
+| 沟通与订单 | `ark_customer_conversations`、`ark_customer_messages`、`ark_customer_conversation_analyses`、`ark_customer_orders`、`ark_customer_order_items` | 阿里/邮件/社媒等会话消息及分析、OKKI 订单与明细；订单决定真实成交与采购周期，不由机会状态替代 |
+| 获客与公海 | `ark_sales_search_jobs`、`ark_sales_search_results`、`ark_sales_search_result_sources`、`ark_sales_public_pool_batches`、`ark_customer_target_matches`、`ark_customer_acquisition_attributions`、`ark_customer_research_tasks`、`ark_customer_qualification_reviews`、`ark_customer_sync_cursors` | 目标画像快照、搜索候选及逐来源证据、公海批次、目标匹配、归因、背调、资格审核和同步游标 |
+| 机会与行动 | `ark_customer_opportunities`、`ark_customer_opportunity_events`、`ark_customer_actions` | 客户机会当前态、不可变机会事件和经营雷达行动；完成行动必须落真实销售活动事件，不能把建议当成已触达 |
+
+`ark_sales_target_profiles` 保留原表，并由迁移增加版本化策略字段；`ark_inquiry_import_batches`、旧 `ark_sales_companies/contacts/research_*`、旧 `ark_customer_profiles/profile_events` 等重复主档在切换时删除。回款、物流、售后、展会数据不在本期客户档案范围内。
+
+关键数据库不变量：
+
+- 公司名是可验证属性，不是必填身份键。仅有个人名/个人邮箱时创建 provisional 客户与联系人，再通过公开商业证据反查公司；禁止调查私人社会关系。
+- 一个客户同一时刻最多一个有效主负责人；无有效主负责人表示进入公海，是否“可领取”必须结合资格、DNC、冷却期、团队和额度实时计算。
+- 来源记录不可变；事实必须保存置信度、方法版本、分类、可见范围和证据。冲突不静默覆盖。
+- 合并、拆分、主负责人转交、DNC 设置/撤销和重大风险确认走 `ark_customer_change_proposals`，审批与执行分离并校验档案版本。
+- 迁移 126 无 downgrade，必须通过 `scripts/customer_domain_cutover.py` 的维护窗证据链执行；禁止直接运行裸 `alembic upgrade head` 完成这次重建。
+
 **业务库常用表口径（lsordertest，OKKI 同步投影，只读）**：
 - `customer_info` — 客户主表（company_id bigint 主键，company_name，country_name，**owner_user_ids JSON 数组**=归属 OKKI user_id 列表、空数组=公海；私海过滤用 `JSON_CONTAINS`）
 - `customer_contacts` — 客户联系人（company_id→customer_info，name/email/tel/is_main；发票录入「按联系人搜客户」数据源，2026-07-14 起）
@@ -84,14 +111,7 @@
 - **外部账号绑定（2 张表，031 迁移，auth/models.py）**：
   - `ark_user_external_bindings` — 用户外部账号绑定（provider + external_account_id 唯一，ark_user_id FK ark_users，binding_status active/inactive/conflict/pending，软删 deleted_at）
   - `ark_external_binding_candidates` — 外部账号绑定候选（provider + external_account_id 唯一，suggested_user_id 自动匹配，candidate_status pending/bound/ignored）
-- **客户机会台（3 张表，031 迁移，insight/models.py）**：
-  - `ark_inquiry_import_batches` — 阿里询盘导入批次（batch_id 唯一，source/schema_version，统计 created/updated/unassigned/failed，status processing/success/partial_failed/failed）
-  - `ark_customer_opportunities` — 客户机会卡（source_key 唯一幂等键，owner_user_id FK ark_users，owner_binding_id FK ark_user_external_bindings，priority_level A/B/C/D，urgency urgent/high/normal/low，due_at 按等级计算，status pending/contacted/replied/quoted/won/lost/dismissed，含背调/AI策略/话术字段，**full_report_html TEXT** ACCIO 完整背调报告 HTML）
-  - `ark_customer_opportunity_events` — 机会事件（opportunity_id FK CASCADE，event_type created/imported/viewed/status_changed/feedback/assigned）
-- **客户经营雷达（3 张表，034 迁移，insight/models.py）**：
-  - `ark_customer_profiles` — 客户活画像（customer_external_id UNIQUE，customer_name + customer_region 组合查重，owner_user_id FK ark_users，priority_score 优先级分，total_opportunities/total_events 统计，profile_tags/profile_signals_json/profile_judgement 画像数据，suggested_message 推荐话术，status active）
-  - `ark_customer_profile_events` — 客户事件流（profile_id FK CASCADE，event_source/event_type 分类，event_score 正负评分，opportunity_id FK ark_customer_opportunities，actor_user_id 操作人）
-  - `ark_customer_actions` — 行动候选池（profile_id FK CASCADE，owner_user_id FK ark_users，thread_group 线索分组，thread_priority 优先级，action_status pending/completed/dismissed/snoozed，snoozed_until 延后截止，action_date 行动日期）
+- **统一客户经营（迁移 126）**：客户机会、机会事件和经营行动均以非空 `customer_id` 关联本文顶部的统一客户主档；迁移 031/034 的导入批次、活画像和 `profile_id` 关联已退役。
 - **素材管理（7 张表，020 迁移；078 标签体系 v2 加列）**：
   - `ark_tag_dimensions` — 标签维度（078 加 `is_visible` 可见开关=新旧体系并存/退役机制、`is_managed` 系统托管标记——色系维度由派生脚本独占写入禁人工编辑）
   - `ark_tag_values` — 标签值（078 加 `name_en` 英文名、`aliases` JSON 别名数组（agent 检索匹配用）、`parent_value_id` 自引用 FK unsigned——内容子类挂内容大类/产品型号挂产品族）
@@ -321,7 +341,11 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 - `ark_runtime_instances`：按 `(service_id, instance_id)` 保存实例最新状态、版本、启动/活动/心跳时间与能力依赖。心跳凭证绑定服务和实例；超过失联阈值降级，长期失联自动退役，恢复上报可重新激活。
 - `ark_runtime_heartbeats`：采样保存实例心跳历史，默认保留 7 天，避免高频上报无限增长。
 
-## 智能获客（迁移 099，2026-08-09）
+## 已退役：智能获客旧表（迁移 099，迁移 126 删除）
+
+> 以下仅保留迁移 126 之前的历史口径用于审计，不得用于新代码或运维。`ark_sales_companies`、`ark_sales_contacts`、`ark_sales_research_runs`、`ark_sales_research_facts` 已删除；当前结构见本文顶部“统一客户经营库”。
+
+<!-- 迁移 126 前的旧智能获客表仅保留在源码中用于历史审计。
 
 主动获客是独立领域，不写入只读 OKKI `lsordertest.customer_info/customer_contacts`，也不复用入站询盘 `ark_customer_opportunities`。候选被人工确认后，后续阶段才允许投影成销售机会。
 
@@ -335,6 +359,8 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 
 所有表具备 `created_by/updated_by/created_at/updated_at/deleted_at` 审计字段。M1 只覆盖搜索、联系人和研究，不建邮件发送、回复或 WhatsApp 外发表。
 
+-->
+
 ## AI Agent 控制面（迁移 118，2026-08-20）
 
 - `ark_agent_profiles`：不可变 Profile 版本，冻结 Runtime、模型 Preset、系统提示词与哈希、Skill 清单、工具白名单、预算/策略和输出 Schema；`(profile_key,version)` 唯一。
@@ -346,7 +372,11 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 迁移同时给 `ark_customer_actions` 增加 `source_type/source_run_id/source_fingerprint/policy_version/evidence_status/generated_at`。
 规则刷新沿用稳定 fingerprint 幂等，禁止覆盖 `done/dismissed/snoozed` 用户事实；DSH 复购成果仅在人工接受、归属匹配且原行动仍为 `pending` 时投影。`downgrade()` 会删除控制面五表及以上行动来源列，因此生产回滚应优先关闭 Feature Flag 并保留 118 结构，不执行破坏性 downgrade。
 
-### 公海背调与成交研判（迁移 106/113，2026-08-11 至 2026-08-13）
+### 已退役：公海背调旧表（迁移 106/113，迁移 126 删除）
+
+> 以下为历史设计记录。`ark_sales_research_subjects`、`ark_sales_public_pool_tasks`、`ark_sales_deal_assessments` 等旧表和双主档逻辑已删除；当前公海、研究任务、资格审核及机会统一使用 `customer_id`。
+
+<!-- 迁移 126 前的旧公海表仅保留在源码中用于历史审计。
 
 迁移 106 只在方舟库建表；`lsordertest` 仍由 `BusinessPoolGateway` 用只读 SQL 查询，不建立跨库外键，也不回写 OKKI。
 
@@ -364,6 +394,8 @@ T1 = 当前公海且有历史订单；T2 = 无历史订单但有企业邮箱、�
 2026-08-25 已对 `lsordertest` 做只读列检查并以 `LIMIT 1` 执行完整画像 SQL，确认 `customer_info.update_time`、`okki_order_items.product_cn_name` 及画像查询链路可用；该检查不写入同步业务库。
 
 智能获客候选在创建 `ark_sales_companies` 前，以归一化官网域名（无官网时可用非免费企业邮箱域名）精确查询当前 OKKI 公海，命中即拦截；未命中且画像匹配分 `>=70` 时创建 `lead_company` 研究主体和 T2 形态任务，继续复用 `ark_sales_deal_assessments` 的结构化背调结果。
+
+-->
 
 ## 企业知识库（迁移 101/105/112，2026-08-09 至 2026-08-13）
 
