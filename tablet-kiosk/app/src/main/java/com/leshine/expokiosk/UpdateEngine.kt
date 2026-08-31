@@ -1,5 +1,6 @@
 package com.leshine.expokiosk
 
+import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
 interface UpdateSource {
@@ -7,6 +8,7 @@ interface UpdateSource {
 
     fun download(
         manifest: UpdateManifest,
+        target: File,
         onProgress: (Int) -> Unit,
     ): DownloadedArtifact
 }
@@ -27,6 +29,8 @@ class UpdateEngine(
     private val source: UpdateSource,
     private val verifier: UpdateVerifier,
     private val installer: UpdateInstaller,
+    private val downloadTarget: File,
+    private val diagnostics: UpdateDiagnostics = UpdateDiagnostics.NONE,
 ) {
     private val hasRun = AtomicBoolean(false)
 
@@ -35,47 +39,86 @@ class UpdateEngine(
 
         var artifact: DownloadedArtifact? = null
         try {
-            onState(UpdateState.Checking)
+            emitState(UpdateState.Checking, onState)
             val manifest = source.fetchManifest()
             if (manifest.versionCode <= currentVersionCode) {
-                onState(UpdateState.NoUpdate)
+                emitState(UpdateState.NoUpdate, onState)
                 return
             }
 
-            artifact = source.download(manifest) { progress ->
-                onState(
+            deleteDownloadFiles()
+            artifact = source.download(manifest, downloadTarget) { progress ->
+                emitState(
                     UpdateState.Downloading(
                         versionName = manifest.versionName,
                         progress = progress.coerceIn(0, 100),
                     ),
+                    onState,
                 )
             }
             when (val decision = verifier.verify(manifest, artifact)) {
                 DownloadedApkDecision.Accept -> {
                     installer.install(artifact)
-                    onState(UpdateState.Installing)
+                    emitState(UpdateState.Installing, onState)
                 }
 
                 is DownloadedApkDecision.Reject -> {
-                    deleteArtifact(artifact)
-                    onState(UpdateState.Failed(decision.reason))
+                    deleteDownloadFiles(artifact)
+                    emitState(UpdateState.Failed(decision.reason), onState)
                 }
             }
         } catch (exception: Exception) {
-            deleteArtifact(artifact)
-            try {
-                onState(UpdateState.Failed(exception.message?.takeIf(String::isNotBlank) ?: "升级失败"))
-            } catch (_: Exception) {
-                // State observers must not make the synchronous update run throw.
-            }
+            reportWarning("update.run", exception)
+            deleteDownloadFiles(artifact)
+            emitState(
+                UpdateState.Failed(exception.message?.takeIf(String::isNotBlank) ?: "升级失败"),
+                onState,
+            )
         }
     }
 
-    private fun deleteArtifact(artifact: DownloadedArtifact?) {
+    private fun emitState(
+        state: UpdateState,
+        onState: (UpdateState) -> Unit,
+    ) {
         try {
-            artifact?.file?.delete()
-        } catch (_: Exception) {
-            // Cleanup is best effort; update failure must still be reported.
+            onState(state)
+        } catch (exception: Exception) {
+            reportWarning(state.diagnosticStage(), exception)
         }
+    }
+
+    private fun deleteDownloadFiles(artifact: DownloadedArtifact? = null) {
+        if (artifact != null && artifact.file != downloadTarget) {
+            deleteFile(artifact.file, "cleanup.artifact")
+        }
+        deleteFile(downloadTarget, "cleanup.download_target")
+    }
+
+    private fun deleteFile(file: File, stage: String) {
+        try {
+            if (file.exists() && !file.delete()) {
+                reportWarning(stage, null)
+            }
+        } catch (exception: Exception) {
+            reportWarning(stage, exception)
+        }
+    }
+
+    private fun reportWarning(stage: String, error: Exception?) {
+        try {
+            diagnostics.warning(stage, error)
+        } catch (_: Exception) {
+            // Diagnostics must never change the update lifecycle.
+        }
+    }
+
+    private fun UpdateState.diagnosticStage(): String = when (this) {
+        UpdateState.Checking -> "state.checking"
+        is UpdateState.Downloading -> "state.downloading"
+        UpdateState.AwaitingUserAction -> "state.awaiting_user_action"
+        UpdateState.Installing -> "state.installing"
+        UpdateState.NoUpdate -> "state.no_update"
+        is UpdateState.Failed -> "state.failed"
     }
 }

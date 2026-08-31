@@ -27,11 +27,28 @@ data class DownloadedArtifact(
     val sha256: String,
 )
 
+/**
+ * Receives internal update warnings. Implementations must avoid recording credentials, signers,
+ * digests, or other sensitive adapter inputs.
+ */
+fun interface UpdateDiagnostics {
+    fun warning(stage: String, error: Exception?)
+
+    companion object {
+        val NONE = UpdateDiagnostics { _, _ -> }
+    }
+}
+
 sealed interface UpdateState {
     data object Checking : UpdateState
     data class Downloading(val versionName: String, val progress: Int) : UpdateState
     data object AwaitingUserAction : UpdateState
     data object Installing : UpdateState
     data object NoUpdate : UpdateState
+
+    /**
+     * Internal diagnostic detail only. Task 4 UI must not display [message] verbatim to users;
+     * the original exception is sent to [UpdateDiagnostics].
+     */
     data class Failed(val message: String) : UpdateState
 }
