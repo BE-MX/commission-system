@@ -4,12 +4,19 @@ import android.content.SharedPreferences
 import org.json.JSONObject
 
 class PendingSubmissionStore(private val prefs: SharedPreferences) {
-    fun persist(scan: JSONObject, payload: ScanPayload, qty: Int, requestId: String): Boolean =
+    fun persist(
+        scan: JSONObject,
+        payload: ScanPayload,
+        qty: Int,
+        requestId: String,
+        outcomes: JSONObject?,
+    ): Boolean =
         prefs.edit()
             .putString(KEY_SCAN, scan.toString())
             .putString(KEY_RAW, payload.raw)
             .putInt(KEY_QTY, qty)
             .putString(KEY_REQUEST_ID, requestId)
+            .putString(KEY_OUTCOMES, outcomes?.toString())
             .commit()
 
     fun get(): PendingSubmission? {
@@ -22,7 +29,12 @@ class PendingSubmissionStore(private val prefs: SharedPreferences) {
             clear(requestId)
             return null
         }
-        return PendingSubmission(scan, raw, qty, requestId)
+        val outcomes = prefs.getString(KEY_OUTCOMES, null)
+        if (outcomes != null && runCatching { JSONObject(outcomes) }.isFailure) {
+            clear(requestId)
+            return null
+        }
+        return PendingSubmission(scan, raw, qty, requestId, outcomes)
     }
 
     fun clear(requestId: String) {
@@ -32,6 +44,7 @@ class PendingSubmissionStore(private val prefs: SharedPreferences) {
             .remove(KEY_RAW)
             .remove(KEY_QTY)
             .remove(KEY_REQUEST_ID)
+            .remove(KEY_OUTCOMES)
             .apply()
     }
 
@@ -40,5 +53,6 @@ class PendingSubmissionStore(private val prefs: SharedPreferences) {
         const val KEY_RAW = "pending_raw"
         const val KEY_QTY = "pending_qty"
         const val KEY_REQUEST_ID = "pending_request_id"
+        const val KEY_OUTCOMES = "pending_outcomes"
     }
 }

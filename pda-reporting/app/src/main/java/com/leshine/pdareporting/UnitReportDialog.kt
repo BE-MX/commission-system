@@ -200,10 +200,18 @@ class UnitReportDialog(
         details.addView(Ui.text(context, "工序进度", 15f, Ui.ink, true), Ui.margin(top = 16, bottom = 5, context = context))
         for (index in 0 until steps.length()) {
             val step = steps.optJSONObject(index) ?: continue
+            val actual = step.optInt("completed_qty")
+            val skipped = step.optInt("skipped_qty")
+            val passed = step.optInt("passed_qty")
+            val detail = buildString {
+                append("${step.optString("process_name")}  已报 $actual")
+                if (skipped > 0) append(" / 跳过 $skipped")
+                append(" / 通过 $passed 件")
+            }
             details.addView(
                 secondaryRow(
                     "第 ${step.optInt("step_order")} 道",
-                    "${step.optString("process_name")}  ${step.optInt("completed_qty")} / ${step.optInt("order_qty")} 件",
+                    detail,
                 ),
             )
         }

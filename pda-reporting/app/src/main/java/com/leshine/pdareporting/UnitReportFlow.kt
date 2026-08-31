@@ -17,7 +17,8 @@ data class UnitReportPresentation(
 object UnitReportFlow {
     const val SUCCESS_VISIBLE_MS = 3_000L
 
-    fun shouldAutoSubmit(reportMode: String): Boolean = reportMode == "unit"
+    fun shouldAutoSubmit(reportMode: String, requiresOutcome: Boolean): Boolean =
+        reportMode == "unit" && !requiresOutcome
 
     fun scanning(): UnitReportPresentation = UnitReportPresentation(
         tone = UnitReportTone.PROGRESS,

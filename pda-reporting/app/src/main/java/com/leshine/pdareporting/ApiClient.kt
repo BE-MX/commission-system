@@ -45,12 +45,19 @@ class ApiClient(baseUrl: String) {
         return requestJson("GET", "/api/mini/domestic/$route/${payload.id}?sign=$sign")
     }
 
-    fun submit(scan: JSONObject, payload: ScanPayload, qty: Int, requestId: String): JSONObject {
+    fun submit(
+        scan: JSONObject,
+        payload: ScanPayload,
+        qty: Int,
+        requestId: String,
+        outcomes: JSONObject? = null,
+    ): JSONObject {
         val body = JSONObject()
             .put("item_id", scan.getLong("item_id"))
             .put("progress_id", scan.getJSONObject("next_step").getLong("progress_id"))
             .put("qty", qty)
             .put("request_id", requestId)
+        if (outcomes != null) body.put("outcomes", outcomes)
         if (scan.optString("report_mode") == "unit") {
             body.put("unit_id", scan.getLong("unit_id"))
             body.put("unit_sign", payload.sign)

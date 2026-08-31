@@ -55,7 +55,8 @@
           <text class="detail-current">当前：{{item.current_process}}</text>
           <view class="detail-step" wx:for="{{item.steps}}" wx:for-item="step" wx:key="progress_id">
             <text class="detail-step-name">{{step.step_order}}. {{step.process_name}}</text>
-            <text class="detail-step-qty">{{step.completed_qty}} / {{step.order_qty}}</text>
+            <text class="detail-step-qty">已报 {{step.completed_qty}} / 应做 {{step.required_qty}}</text>
+            <text class="detail-step-wait" wx:if="{{step.skipped_qty > 0}}">自动跳过 {{step.skipped_qty}}</text>
             <text class="detail-step-wait" wx:if="{{step.reportable_qty > 0}}">可报 {{step.reportable_qty}}</text>
           </view>
         </view>

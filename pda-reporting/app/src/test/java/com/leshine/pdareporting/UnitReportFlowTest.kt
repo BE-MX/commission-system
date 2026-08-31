@@ -8,10 +8,11 @@ import org.junit.Test
 
 class UnitReportFlowTest {
     @Test
-    fun unit_mode_always_auto_submits() {
-        assertTrue(UnitReportFlow.shouldAutoSubmit("unit"))
-        assertFalse(UnitReportFlow.shouldAutoSubmit("quantity"))
-        assertFalse(UnitReportFlow.shouldAutoSubmit(""))
+    fun only_normal_unit_mode_auto_submits() {
+        assertTrue(UnitReportFlow.shouldAutoSubmit("unit", requiresOutcome = false))
+        assertFalse(UnitReportFlow.shouldAutoSubmit("unit", requiresOutcome = true))
+        assertFalse(UnitReportFlow.shouldAutoSubmit("quantity", requiresOutcome = false))
+        assertFalse(UnitReportFlow.shouldAutoSubmit("", requiresOutcome = false))
     }
 
     @Test
