@@ -30,6 +30,7 @@ from app.domestic.models import (
     DomesticItemUnit,
     DomesticReportUnit,
     DomesticSkipLog,
+    DomesticSkipUnit,
 )
 from app.production.models import Process, UserProcessBinding
 
@@ -1120,6 +1121,78 @@ def list_today_reports(db: Session, user_id: int) -> list[dict]:
         .all()
     )
     return _log_rows_to_view(db, logs)
+
+
+def list_manual_skip_audits(db: Session, *, item_id: int) -> list[dict]:
+    """返回某明细的人工跳过审计，自动分流/可选跳过不属于人工审计。"""
+    item = db.get(DomesticOrderItem, item_id)
+    if not item:
+        raise ValueError("订单明细不存在")
+
+    rows = (
+        db.query(
+            DomesticSkipLog,
+            DomesticItemProgress.process_id,
+            Process.name,
+            ArkUser.real_name,
+        )
+        .join(
+            DomesticItemProgress,
+            DomesticItemProgress.id == DomesticSkipLog.progress_id,
+        )
+        .join(Process, Process.id == DomesticItemProgress.process_id)
+        .join(ArkUser, ArkUser.id == DomesticSkipLog.created_by_user_id)
+        .filter(
+            DomesticSkipLog.item_id == item_id,
+            DomesticSkipLog.source == "manual",
+        )
+        .order_by(DomesticSkipLog.created_at.desc(), DomesticSkipLog.id.desc())
+        .all()
+    )
+    if not rows:
+        return []
+
+    log_ids = [log.id for log, _process_id, _process_name, _operator_name in rows]
+    unit_rows = (
+        db.query(
+            DomesticSkipUnit.skip_log_id,
+            DomesticItemUnit.id,
+            DomesticItemUnit.unit_no,
+        )
+        .join(DomesticItemUnit, DomesticItemUnit.id == DomesticSkipUnit.unit_id)
+        .filter(DomesticSkipUnit.skip_log_id.in_(log_ids))
+        .order_by(DomesticSkipUnit.skip_log_id.asc(), DomesticItemUnit.unit_no.asc())
+        .all()
+    )
+    units_by_log: dict[int, list[tuple[int, int]]] = {}
+    for skip_log_id, unit_id, unit_no in unit_rows:
+        units_by_log.setdefault(skip_log_id, []).append((unit_id, unit_no))
+
+    result = []
+    for log, process_id, process_name, operator_name in rows:
+        units = units_by_log.get(log.id, [])
+        result.append({
+            "skip_log_id": log.id,
+            "item_id": log.item_id,
+            "progress_id": log.progress_id,
+            "process_id": process_id,
+            "process_name": process_name,
+            "skip_mode": log.skip_mode,
+            "skipped_qty": log.skip_qty,
+            "reason": log.reason,
+            "request_id": log.request_id,
+            "operator_id": log.created_by_user_id,
+            "operator_name": operator_name,
+            "unit_ids": [unit_id for unit_id, _unit_no in units],
+            "unit_codes": [
+                unit_service.unit_display_code(item, unit_no)
+                for _unit_id, unit_no in units
+            ],
+            "created_at": log.created_at,
+            "revoked": bool(log.revoked),
+            "revoked_at": log.revoked_at,
+        })
+    return result
 
 
 def list_reports(

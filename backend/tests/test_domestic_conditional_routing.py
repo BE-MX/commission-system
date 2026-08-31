@@ -1,17 +1,21 @@
 """内贸条件路线规则与逐件分流的状态机契约。"""
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import sessionmaker
 from pydantic import ValidationError
 
 from app.auth.models import ArkUser
+from app.auth.dependencies import get_current_user
+from app.core.database import get_db
 from app.domestic import constants as C
 from app.domestic import progress_service, report_service, unit_service
 from app.domestic import route_rule_service
@@ -947,6 +951,134 @@ def test_manual_skip_can_be_revoked_without_downstream_actual_work(
     audit = db.query(DomesticSkipLog).get(skipped["skip_log_id"])
     assert audit.revoked == 1
     assert progress_service.build_progress_view(db, case.item)[0]["passed_qty"] == 0
+
+
+def test_manual_skip_audit_api_lists_active_and_revoked_only_for_admin(
+    db, conditional_order
+):
+    case = conditional_order
+    active = report_service.submit_manual_skip(
+        db,
+        item_id=case.item.id,
+        progress_id=case.rows[0].id,
+        qty=2,
+        unit_id=None,
+        reason="主管确认两件无需首道工序",
+        request_id="manual-audit-active",
+        user_id=case.worker.id,
+    )
+    revoked = report_service.submit_manual_skip(
+        db,
+        item_id=case.item.id,
+        progress_id=case.rows[0].id,
+        qty=1,
+        unit_id=None,
+        reason="主管确认一件无需首道工序",
+        request_id="manual-audit-revoked",
+        user_id=case.worker.id,
+    )
+    report_service.revoke_manual_skip(db, revoked["skip_log_id"], case.worker.id)
+
+    automatic = DomesticSkipLog(
+        item_id=case.item.id,
+        progress_id=case.rows[1].id,
+        skip_qty=1,
+        source="decision",
+        reason="分流自动跳过",
+        trigger_report_log_id=None,
+        created_by_user_id=case.worker.id,
+    )
+    optional = DomesticSkipLog(
+        item_id=case.item.id,
+        progress_id=case.rows[2].id,
+        skip_qty=1,
+        source="optional_bypass",
+        reason="可选工序自动跳过",
+        trigger_report_log_id=None,
+        created_by_user_id=case.worker.id,
+    )
+    db.add_all([automatic, optional])
+    db.commit()
+
+    # 钉死 created_at 相同情况下仍按 id 倒序，避免翻页/审计顺序漂移。
+    same_time = datetime(2026, 8, 31, 10, 0, 0)
+    db.query(DomesticSkipLog).filter(
+        DomesticSkipLog.id.in_([active["skip_log_id"], revoked["skip_log_id"]])
+    ).update({DomesticSkipLog.created_at: same_time}, synchronize_session=False)
+    db.commit()
+
+    from app.domestic.router import router
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api/domestic")
+    app.dependency_overrides[get_db] = lambda: db
+
+    def claims(permission):
+        return {
+            "sub": str(case.worker.id),
+            "roles": [],
+            "permissions": [permission],
+        }
+
+    app.dependency_overrides[get_current_user] = lambda: claims("domestic:read")
+    client = TestClient(app)
+    denied = client.get(
+        "/api/domestic/reports/skips", params={"item_id": case.item.id}
+    )
+    assert denied.status_code == 403
+
+    app.dependency_overrides[get_current_user] = lambda: claims("domestic:admin")
+    response = client.get(
+        "/api/domestic/reports/skips", params={"item_id": case.item.id}
+    )
+    assert response.status_code == 200
+    assert response.json()["code"] == 200
+    rows = response.json()["data"]
+    assert [row["skip_log_id"] for row in rows] == [
+        revoked["skip_log_id"], active["skip_log_id"],
+    ]
+    assert {row["skip_log_id"] for row in rows}.isdisjoint({automatic.id, optional.id})
+    assert rows[0] == {
+        "skip_log_id": revoked["skip_log_id"],
+        "item_id": case.item.id,
+        "progress_id": case.rows[0].id,
+        "process_id": case.route.process_ids[0],
+        "process_name": case.route.process_names[0],
+        "skip_mode": "quantity",
+        "skipped_qty": 1,
+        "reason": "主管确认一件无需首道工序",
+        "request_id": "manual-audit-revoked",
+        "operator_id": case.worker.id,
+        "operator_name": "分流工",
+        "unit_ids": revoked["unit_ids"],
+        "unit_codes": revoked["unit_codes"],
+        "created_at": "2026-08-31T10:00:00",
+        "revoked": True,
+        "revoked_at": rows[0]["revoked_at"],
+    }
+    assert rows[0]["revoked_at"] is not None
+    assert rows[1]["revoked"] is False
+    assert rows[1]["revoked_at"] is None
+
+
+def test_manual_skip_audit_api_returns_stable_error_for_missing_item(
+    db, conditional_order
+):
+    from app.domestic.router import router
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api/domestic")
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": str(conditional_order.worker.id),
+        "roles": [],
+        "permissions": ["domestic:admin"],
+    }
+    response = TestClient(app).get(
+        "/api/domestic/reports/skips", params={"item_id": 999999}
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "订单明细不存在"
 
 
 @pytest.mark.parametrize("reason", ["abcd", " " * 8, "x" * 501])

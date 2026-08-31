@@ -714,6 +714,19 @@ def list_reports(
     return ok(page_result(items, total, page, page_size))
 
 
+@router.get("/reports/skips", summary="人工跳过审计查询")
+def list_manual_skip_audits(
+    item_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:admin")),
+):
+    try:
+        data = report_service.list_manual_skip_audits(db, item_id=item_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return ok(data)
+
+
 @router.post("/reports", summary="主站代报工")
 def submit_report(
     payload: ReportSubmit,
