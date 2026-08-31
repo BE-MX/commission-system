@@ -6,10 +6,13 @@
     <el-drawer v-model="detailVisible" title="背调任务详情" size="640px">
       <div v-loading="detailLoading" class="detail-body">
         <el-alert v-if="detailError" type="error" title="任务详情加载失败；列表信息不能替代复核依据。" :closable="false" show-icon><template #default><el-button link type="primary" @click="retryTaskDetail">重试</el-button></template></el-alert>
+        <template v-else-if="detail?.content_redacted">
+          <el-alert type="warning" title="该任务内容已脱敏，不能作为复核依据。" :closable="false" show-icon />
+        </template>
         <template v-else-if="detail">
           <DetailField label="选择原因" :value="detail.selection_reason" /><DetailField label="输入快照" :value="detail.input_snapshot" /><DetailField label="研究结果" :value="detail.result_json" /><DetailField label="研究摘要" :value="detail.research_summary" /><DetailField label="证据事实 ID" :value="detail.evidence_fact_ids" />
           <p class="timestamp">最近更新：{{ formatDate(detail.updated_at) }}</p>
-          <div v-if="reviewReady" class="review-actions"><el-button v-permission="'sales_automation:admin'" type="success" :loading="workflowLoading" @click="review('accepted')">通过复核</el-button><el-button v-permission="'sales_automation:admin'" type="warning" :loading="workflowLoading" @click="review('revision_requested')">要求修订</el-button><el-button v-permission="'sales_automation:admin'" type="danger" :loading="workflowLoading" @click="review('rejected')">驳回结果</el-button></div>
+          <div v-if="reviewReady" class="review-actions"><el-button v-permission="'sales_automation:admin'" type="success" :loading="workflowLoading" :disabled="workflowLoading" @click="review('accepted')">通过复核</el-button><el-button v-permission="'sales_automation:admin'" type="warning" :loading="workflowLoading" :disabled="workflowLoading" @click="review('revision_requested')">要求修订</el-button><el-button v-permission="'sales_automation:admin'" type="danger" :loading="workflowLoading" :disabled="workflowLoading" @click="review('rejected')">驳回结果</el-button></div>
           <el-alert v-else type="info" title="仅已完成的背调任务可进行结果复核。" :closable="false" show-icon />
         </template>
       </div>
@@ -22,7 +25,7 @@ import { computed, defineComponent, h, reactive, ref } from 'vue'
 import { msgError, msgSuccess } from '@/utils/feedback'
 import { formatBeijingDateTime } from '@/utils/datetime'
 import CustomerHubWorkspace from './CustomerHubWorkspace.vue'
-import { canReviewResearchDetail } from './customerHubController'
+import { canReviewResearchDetail, getResearchReviewSuccessMessage } from './customerHubController'
 import { useResearchWorkflows } from './composables/useCustomerHub'
 const { workflowLoading, workflowError, createBatch, reviewTask, detail, detailLoading, detailError, detailTaskId, loadTaskDetail, retryTaskDetail } = useResearchWorkflows()
 const refreshKey = ref(0), batchDialog = ref(false), detailVisible = ref(false)
@@ -31,7 +34,7 @@ const batch = reactive({ policy_version: '', quotasText: '{}' })
 const formatDate = value => value ? formatBeijingDateTime(value) : '未提供'
 async function inspectTask(row) { detailVisible.value = true; await loadTaskDetail(row.research_task_id) }
 async function submitBatch() { let quotas; try { quotas = JSON.parse(batch.quotasText) } catch { msgError('配额 JSON 格式错误'); return } if (await createBatch({ policy_version: batch.policy_version, quotas_json: quotas, profile_conditions: {} })) { batchDialog.value = false; refreshKey.value++; msgSuccess('创建公海批次') } }
-async function review(status) { if (!detail.value || detail.value.research_task_id !== detailTaskId.value) return; if (await reviewTask(detailTaskId.value, status)) { detailVisible.value = false; refreshKey.value++; msgSuccess(status === 'accepted' ? '通过复核' : '要求修订') } }
+async function review(status) { if (!reviewReady.value || workflowLoading.value) return; if (await reviewTask(detailTaskId.value, status)) { detailVisible.value = false; refreshKey.value++; msgSuccess(getResearchReviewSuccessMessage(status)) } }
 const DetailField = defineComponent({ props: { label: String, value: null }, setup(props) { return () => h('section', { class: 'detail-field' }, [h('h3', props.label), h('pre', props.value == null || (Array.isArray(props.value) && !props.value.length) ? '该任务未提供' : typeof props.value === 'string' ? props.value : JSON.stringify(props.value, null, 2))]) } })
 </script>
 <style scoped>

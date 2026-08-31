@@ -206,6 +206,70 @@ def test_merged_alias_reauthorizes_against_canonical_customer(db):
     assert detail["display_name"] == "TARGET"
 
 
+def test_customer_detail_exposes_current_profile_version_metadata(db):
+    owner = _user(db, 1251)
+    account = _account(db, 1252, "PROFILE")
+    _assignment(db, account.id, owner.id)
+    version = models.CustomerProfileVersion(
+        id=1253,
+        customer_id=account.id,
+        version_no=3,
+        profile_schema_version="customer_profile_v1",
+        canonicalization_version="jcs_v1",
+        input_seq=1,
+        profile_json={"identity": {"legal_name": "Profile LLC"}},
+        section_hashes={"identity": "a" * 64},
+        section_data_as_of={"identity": "2026-08-30T12:00:00+08:00"},
+        evidence_fact_ids=[41, 42],
+        change_summary={"changes": []},
+        compiler_version="test_v1",
+        profile_fingerprint="b" * 64,
+        data_as_of=NOW - timedelta(days=1),
+        compiled_at=NOW,
+        created_at=NOW,
+    )
+    db.add(version)
+    db.flush()
+    account.current_profile_version_id = version.id
+    db.add(models.CustomerAgentContext(
+        customer_id=account.id,
+        profile_version_id=version.id,
+        context_schema_version="customer_context_v1",
+        context_json={"identity": {"legal_name": "Profile context"}},
+        max_data_classification="internal_business",
+        context_hash="c" * 64,
+        data_as_of=NOW - timedelta(days=1),
+        built_at=NOW,
+        updated_at=NOW,
+    ))
+    db.flush()
+
+    detail = get_customer(db, _identity(owner.id), account.id)
+
+    assert detail["profile_projection"] == "customer_context_v1"
+    assert detail["profile"] == {"identity": {"legal_name": "Profile context"}}
+    assert detail["profile_metadata"] == {
+        "profile_version_id": version.id,
+        "version_no": 3,
+        "profile_schema_version": "customer_profile_v1",
+        "compiled_at": "2026-08-31T10:00:00+08:00",
+        "data_as_of": "2026-08-30T10:00:00+08:00",
+        "section_data_as_of": {"identity": "2026-08-30T12:00:00+08:00"},
+        "evidence_fact_ids": [41, 42],
+        "evidence_refs": [
+            {"fact_id": 41, "reference_type": "customer_fact"},
+            {"fact_id": 42, "reference_type": "customer_fact"},
+        ],
+    }
+    admin_detail = get_customer(db, {
+        "sub": str(owner.id), "roles": [],
+        "permissions": ["customer:read", "customer:read_all", "customer:admin"],
+    }, account.id)
+    assert admin_detail["profile_projection"] == "customer_profile_v1"
+    assert admin_detail["profile"] == {"identity": {"legal_name": "Profile LLC"}}
+    assert admin_detail["profile_metadata"] == detail["profile_metadata"]
+
+
 def test_profile_snapshot_uses_effective_root_owner_and_split_isolation(db):
     left = _account(db, 1301, "LEFT")
     right = _account(db, 1302, "RIGHT")

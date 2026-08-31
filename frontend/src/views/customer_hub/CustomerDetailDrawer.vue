@@ -33,6 +33,7 @@
             <article><span>主要行业</span><strong>{{ customer.primary_industry || '待补充' }}</strong></article>
             <article><span>互动健康度</span><strong>{{ customer.engagement_health || '待评估' }}</strong></article>
           </div>
+          <SectionBlock title="Overview · 档案概览" section-key="overview" :value="sections.overview" />
           <SectionBlock title="当前需求" section-key="current needs" :value="sections.currentNeeds" />
           <SectionBlock title="下一步行动" section-key="actions" :value="sections.actions" />
         </el-tab-pane>
@@ -76,7 +77,11 @@
             <h3>Version quality · 版本质量</h3>
             <dl>
               <div><dt>档案质量</dt><dd><pre>{{ printable(sections.versionQuality) }}</pre></dd></div>
-              <div><dt>最近更新</dt><dd>{{ formatDate(customer.updated_at) }}</dd></div>
+              <div><dt>档案版本</dt><dd>{{ sections.profileMetadata?.version_no ?? '该档案版本未提供' }}</dd></div>
+              <div><dt>档案契约</dt><dd>{{ sections.profileMetadata?.profile_schema_version || '该档案版本未提供' }}</dd></div>
+              <div><dt>编译时间</dt><dd>{{ formatDate(sections.profileMetadata?.compiled_at) }}</dd></div>
+              <div><dt>数据截至</dt><dd>{{ formatDate(sections.profileMetadata?.data_as_of) }}</dd></div>
+              <div><dt>章节数据截至</dt><dd><pre>{{ printable(sections.profileMetadata?.section_data_as_of) }}</pre></dd></div>
             </dl>
           </section>
         </el-tab-pane>
@@ -112,7 +117,7 @@ const customerTitle = computed(() => props.customer ? `客户档案 · ${props.c
 const identityExplanation = computed(() => props.customer?.identity_status === 'verified'
   ? '身份已核验；customer_id 是唯一业务主键。'
   : '临时客户：名称可为空，系统仍以 customer_id 持续归集证据，待身份核验后再确认主体。')
-const sections = computed(() => mapCustomerProfileSections(props.customer?.profile || {}, props.timeline))
+const sections = computed(() => mapCustomerProfileSections(props.customer || {}, props.timeline))
 const formatDate = value => value ? formatBeijingDateTime(value) : '该档案版本未提供'
 const printable = value => value == null ? '该档案版本未提供' : JSON.stringify(value, null, 2)
 

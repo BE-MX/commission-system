@@ -80,10 +80,13 @@ def _profile_row(db: Session, account: CustomerAccount, *, access=None) -> dict:
         "primary_owner_user_id": primary.user_id if primary is not None else None,
         "profile_version_id": version.id if version is not None else None,
         "profile_version_no": version.version_no if version is not None else None,
+        "profile_schema_version": version.profile_schema_version if version is not None else None,
         "profile_json": profile_json,
         "profile_projection": profile_projection,
         "profile_compiled_at": version.compiled_at if version is not None else None,
         "profile_data_as_of": version.data_as_of if version is not None else None,
+        "profile_section_data_as_of": dict(version.section_data_as_of or {}) if version is not None else None,
+        "profile_evidence_fact_ids": list(version.evidence_fact_ids or []) if version is not None else None,
         "commercial_value_score": (
             projection.commercial_value_score if projection is not None else 0
         ),

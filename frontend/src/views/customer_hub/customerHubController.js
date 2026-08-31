@@ -1,58 +1,7 @@
-export function createPagedResource(fetcher) {
-  let requestId = 0
-  return {
-    items: [], total: 0, page: 1, pageSize: 20, loading: false, error: null, staleGuidance: '',
-    async load(params) {
-      const current = ++requestId
-      this.loading = true
-      this.error = null
-      try {
-        const response = await fetcher(params)
-        if (current !== requestId) return
-        const data = response?.data || {}
-        this.items = data.items || []
-        this.total = data.total ?? this.items.length
-        this.page = data.page ?? params.page
-        this.pageSize = data.page_size ?? params.page_size
-        this.staleGuidance = ''
-      } catch (error) {
-        if (current !== requestId) return
-        this.error = error
-        this.staleGuidance = this.items.length ? '当前保留上次成功结果，数据可能已过期。' : ''
-      } finally {
-        if (current === requestId) this.loading = false
-      }
-    },
-  }
-}
-
-export function createLatestResource(fetcher) {
-  let requestId = 0
-  return {
-    data: null, loading: false, error: null, key: null,
-    async load(key) {
-      const current = ++requestId
-      this.key = key
-      this.data = null
-      this.error = null
-      this.loading = true
-      try {
-        const response = await fetcher(key)
-        if (current === requestId) this.data = response?.data ?? null
-      } catch (error) {
-        if (current === requestId) this.error = error
-      } finally {
-        if (current === requestId) this.loading = false
-      }
-      return this.data
-    },
-    retry() { return this.load(this.key) },
-    invalidate() { requestId += 1; this.loading = false },
-  }
-}
-
-export function mapCustomerProfileSections(profile = {}, timeline = []) {
-  const evidence = profile.evidence_refs ?? profile.facts ?? null
+export function mapCustomerProfileSections(customer = {}, timeline = []) {
+  const profile = customer.profile || {}
+  const metadata = customer.profile_metadata || null
+  const evidence = metadata?.evidence_refs ?? null
   const business = profile.business_profile ?? profile.business
   const contacts = profile.key_contacts ?? profile.contacts?.items ?? profile.contacts
   const commercial = profile.commercial_summary ?? profile.commercial
@@ -80,14 +29,21 @@ export function mapCustomerProfileSections(profile = {}, timeline = []) {
     openQuestions: profile.open_questions ?? quality?.open_questions,
     annotations: profile.annotations,
     versionQuality: quality,
+    profileMetadata: metadata,
   }
 }
 
 export const canOpenCustomerDetail = permissions => permissions.includes('customer:read')
 export const canReviewResearchDetail = (resource, taskId) => !resource.loading && !resource.error
   && resource.data?.research_task_id === taskId && resource.data?.task_status === 'completed'
+  && resource.data?.content_redacted !== true
 export const canRequeueJob = job => job?.status === 'failed'
-export const shouldOpenProfileEditor = profile => Boolean(profile?.data ?? profile)
+export const shouldOpenProfileEditor = result => result?.ok === true
+export const getResearchReviewSuccessMessage = status => ({
+  accepted: '已通过复核',
+  revision_requested: '已要求修订',
+  rejected: '已驳回',
+})[status]
 
 const OPPORTUNITY_TRANSITIONS = {
   pending: ['contacted', 'dismissed'],
@@ -109,7 +65,7 @@ export const getOpportunityCloseReasonOptions = status => OPPORTUNITY_CLOSE_REAS
 
 export function getRadarOperationOptions(status) {
   if (status === 'pending') return ['complete', 'snooze', 'dismiss', 'feedback']
-  if (status === 'snoozed') return ['complete', 'feedback']
+  if (status === 'snoozed') return ['feedback']
   if (['done', 'dismissed', 'cancelled'].includes(status)) return ['feedback']
   return []
 }

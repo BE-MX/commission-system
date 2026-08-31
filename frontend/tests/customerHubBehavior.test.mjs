@@ -7,14 +7,18 @@ import {
   buildOpportunityUpdate,
   getOpportunityTransitionOptions,
   getRadarOperationOptions,
+  getResearchReviewSuccessMessage,
   canReviewResearchDetail,
   canOpenCustomerDetail,
   canRequeueJob,
-  createLatestResource,
-  createPagedResource,
   mapCustomerProfileSections,
   shouldOpenProfileEditor,
 } from '../src/views/customer_hub/customerHubController.js'
+import {
+  createLatestResource,
+  createMutationController,
+  createPagedResource,
+} from '../src/views/customer_hub/customerHubResources.js'
 
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b }); return { promise, resolve, reject } }
 
@@ -40,6 +44,7 @@ test('API maps params and mutation payloads through injected customer hub client
 
 test('research review is gated by the loaded matching detail', () => {
   assert.equal(canReviewResearchDetail({ loading: false, error: null, data: { research_task_id: 7, task_status: 'completed' } }, 7), true)
+  assert.equal(canReviewResearchDetail({ loading: false, error: null, data: { research_task_id: 7, task_status: 'completed', content_redacted: true } }, 7), false)
   assert.equal(canReviewResearchDetail({ loading: true, error: null, data: { research_task_id: 7, task_status: 'completed' } }, 7), false)
   assert.equal(canReviewResearchDetail({ loading: false, error: null, data: { research_task_id: 8, task_status: 'completed' } }, 7), false)
   assert.equal(canReviewResearchDetail({ loading: false, error: null, data: { research_task_id: 7, task_status: 'running' } }, 7), false)
@@ -74,7 +79,7 @@ test('opportunity and radar action payloads follow backend schemas', () => {
   assert.deepEqual(getOpportunityTransitionOptions('pending'), ['contacted', 'dismissed'])
   assert.deepEqual(getOpportunityTransitionOptions('won'), [])
   assert.deepEqual(getRadarOperationOptions('pending'), ['complete', 'snooze', 'dismiss', 'feedback'])
-  assert.deepEqual(getRadarOperationOptions('snoozed'), ['complete', 'feedback'])
+  assert.deepEqual(getRadarOperationOptions('snoozed'), ['feedback'])
   assert.deepEqual(getRadarOperationOptions('done'), ['feedback'])
 })
 
@@ -122,21 +127,93 @@ test('latest detail resource separates error retry and stale responses', async (
   b.resolve = null
 })
 
-test('profile sections map real compiler fields and timeline conversations', () => {
+test('timeline resource ignores a late response for the previously selected customer', async () => {
+  const first = deferred(), second = deferred()
+  const timeline = createLatestResource(customerId => customerId === 1 ? first.promise : second.promise)
+  const old = timeline.load(1)
+  const current = timeline.load(2)
+  second.resolve({ data: { items: [{ event_id: 22 }] } })
+  await current
+  first.resolve({ data: { items: [{ event_id: 11 }] } })
+  await old
+  assert.equal(timeline.key, 2)
+  assert.deepEqual(timeline.data.items, [{ event_id: 22 }])
+})
+
+test('latest resource retries the same research detail after an error', async () => {
+  let attempts = 0
+  const resource = createLatestResource(async taskId => {
+    attempts += 1
+    if (attempts === 1) throw new Error('offline')
+    return { data: { research_task_id: taskId, task_status: 'completed' } }
+  })
+  await resource.load(7)
+  assert.equal(resource.error.message, 'offline')
+  await resource.retry()
+  assert.equal(resource.error, null)
+  assert.equal(resource.data.research_task_id, 7)
+})
+
+test('mutation controller rejects concurrent research reviews and recovers after errors', async () => {
+  const pending = deferred()
+  let calls = 0
+  const mutation = createMutationController(async value => { calls += 1; if (value === 'fail') throw new Error('denied'); return pending.promise })
+  const first = mutation.submit('accepted')
+  assert.equal(await mutation.submit('rejected'), false)
+  assert.equal(calls, 1)
+  pending.resolve({ data: {} })
+  assert.equal(await first, true)
+
+  const failed = createMutationController(async () => { throw new Error('denied') })
+  assert.equal(await failed.submit('fail'), false)
+  assert.equal(failed.loading, false)
+  assert.equal(failed.error.message, 'denied')
+})
+
+test('research review success messages match each accepted backend state', () => {
+  assert.equal(getResearchReviewSuccessMessage('accepted'), '已通过复核')
+  assert.equal(getResearchReviewSuccessMessage('revision_requested'), '已要求修订')
+  assert.equal(getResearchReviewSuccessMessage('rejected'), '已驳回')
+})
+
+test('successful null acquisition profile remains distinct from a load failure', async () => {
+  const unconfigured = createLatestResource(async () => ({ data: null }))
+  await unconfigured.load('profile')
+  assert.equal(unconfigured.data, null)
+  assert.equal(unconfigured.error, null)
+
+  const failed = createLatestResource(async () => { throw new Error('offline') })
+  await failed.load('profile')
+  assert.equal(failed.data, null)
+  assert.equal(failed.error.message, 'offline')
+})
+
+test('full profile sections map overview and explicit version evidence metadata', () => {
   const profile = {
     identity: { legal_name: 'Ark' }, contacts: [{ name: 'A' }], commercial: { order_summary: { count: 2 } },
     recommended_actions: [{ action: 'call' }], opportunities: [{ title: 'renewal' }], quality: { completeness: 80 },
     preferences: { color: '1B' }, behavior: { cadence: 'monthly' }, risks: [{ type: 'dnc' }],
   }
-  const mapped = mapCustomerProfileSections(profile, [{ event_id: 4, title: 'WhatsApp', summary: 'asked price' }])
+  const metadata = {
+    profile_version_id: 31, version_no: 4, profile_schema_version: 'customer_profile_v1',
+    compiled_at: '2026-08-31T18:00:00+08:00', data_as_of: '2026-08-30T12:00:00+08:00',
+    section_data_as_of: { identity: '2026-08-30T12:00:00+08:00' }, evidence_fact_ids: [11],
+    evidence_refs: [{ fact_id: 11, reference_type: 'customer_fact' }],
+  }
+  const customer = { profile, profile_metadata: metadata }
+  const mapped = mapCustomerProfileSections(customer, [{ event_id: 4, title: 'WhatsApp', summary: 'asked price' }])
+  assert.deepEqual(mapped.overview, { identity: profile.identity, business: undefined, engagement: undefined, risks: profile.risks })
   assert.deepEqual(mapped.identity, profile.identity)
   assert.deepEqual(mapped.orders, profile.commercial)
   assert.deepEqual(mapped.actions, profile.recommended_actions)
   assert.deepEqual(mapped.opportunities, profile.opportunities)
   assert.deepEqual(mapped.versionQuality, profile.quality)
   assert.deepEqual(mapped.conversations, [{ event_id: 4, title: 'WhatsApp', summary: 'asked price' }])
-  assert.equal(mapped.evidence.available, false)
+  assert.deepEqual(mapped.evidence, { available: true, value: metadata.evidence_refs })
+  assert.deepEqual(mapped.profileMetadata, metadata)
+})
 
+test('context profile uses the same explicit version metadata contract', () => {
   const context = {
     identity: { legal_name: 'Ark Context' }, business_profile: { industry: 'hair' }, key_contacts: [{ name: 'B' }],
     current_needs: [{ fact_id: 1 }], commercial_summary: { order_count: 3 },
@@ -144,7 +221,8 @@ test('profile sections map real compiler fields and timeline conversations', () 
     recommended_actions: [{ id: 10 }], recent_changes: [{ path: 'identity' }], open_questions: ['confirm:name'],
     data_quality: { completeness: 90 }, evidence_refs: [{ fact_id: 1 }],
   }
-  const contextMapped = mapCustomerProfileSections(context)
+  const metadata = { profile_version_id: 8, version_no: 2, evidence_refs: [{ fact_id: 1, reference_type: 'customer_fact' }] }
+  const contextMapped = mapCustomerProfileSections({ profile: context, profile_metadata: metadata })
   assert.deepEqual(contextMapped.contacts, context.key_contacts)
   assert.deepEqual(contextMapped.currentNeeds, context.current_needs)
   assert.deepEqual(contextMapped.behaviorPatterns, context.behavior_patterns)
@@ -153,7 +231,8 @@ test('profile sections map real compiler fields and timeline conversations', () 
   assert.deepEqual(contextMapped.recentChanges, context.recent_changes)
   assert.deepEqual(contextMapped.openQuestions, context.open_questions)
   assert.deepEqual(contextMapped.versionQuality, context.data_quality)
-  assert.deepEqual(contextMapped.evidence, { available: true, value: context.evidence_refs })
+  assert.deepEqual(contextMapped.evidence, { available: true, value: metadata.evidence_refs })
+  assert.deepEqual(contextMapped.profileMetadata, metadata)
 })
 
 test('customer detail requires customer feature read and ignores read_all alone', () => {
@@ -177,8 +256,9 @@ test('acquisition payload preserves every editable schema field', () => {
 })
 
 test('profile editor and requeue guard destructive invalid states', () => {
-  assert.equal(shouldOpenProfileEditor(null), false)
-  assert.equal(shouldOpenProfileEditor({ data: { company_name: 'Ark' } }), true)
+  assert.equal(shouldOpenProfileEditor({ ok: true, data: null }), true)
+  assert.equal(shouldOpenProfileEditor({ ok: true, data: { company_name: 'Ark' } }), true)
+  assert.equal(shouldOpenProfileEditor({ ok: false, error: new Error('offline') }), false)
   assert.equal(canRequeueJob({ status: 'failed' }), true)
   assert.equal(canRequeueJob({ status: 'completed' }), false)
   assert.equal(canRequeueJob({ status: 'running' }), false)

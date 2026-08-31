@@ -153,6 +153,23 @@ def get_customer(db: Session, user: dict, customer_id: int) -> dict:
     projection = get_profile(db, row.id, access=access)
     data["profile"] = projection["profile_json"] if projection else None
     data["profile_projection"] = projection["profile_projection"] if projection else "unavailable"
+    if projection and projection["profile_version_id"] is not None:
+        evidence_fact_ids = projection["profile_evidence_fact_ids"]
+        data["profile_metadata"] = {
+            "profile_version_id": projection["profile_version_id"],
+            "version_no": projection["profile_version_no"],
+            "profile_schema_version": projection["profile_schema_version"],
+            "compiled_at": iso_beijing(projection["profile_compiled_at"]),
+            "data_as_of": iso_beijing(projection["profile_data_as_of"]),
+            "section_data_as_of": projection["profile_section_data_as_of"],
+            "evidence_fact_ids": evidence_fact_ids,
+            "evidence_refs": [
+                {"fact_id": fact_id, "reference_type": "customer_fact"}
+                for fact_id in evidence_fact_ids
+            ],
+        }
+    else:
+        data["profile_metadata"] = None
     annotations = apply_record_access(
         db.query(CustomerAnnotation),
         CustomerAnnotation,

@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { useListPage } from '@/composables/useListPage'
+import { createLatestResource, createMutationController, createPagedResource } from '../customerHubResources'
 import {
   createPublicPoolBatch,
   createSearchJob,
@@ -29,38 +30,65 @@ const LISTERS = {
 
 export function useAcquisitionWorkflows() {
   const workflowLoading = ref(false), workflowError = ref(null), profile = ref(null)
-  async function run(request) { workflowLoading.value = true; workflowError.value = null; try { return await request() } catch (error) { workflowError.value = error; return null } finally { workflowLoading.value = false } }
-  async function loadProfile() { const response = await run(getAcquisitionProfile); profile.value = response?.data || null; return profile.value }
-  async function saveProfile(payload) { const response = await run(() => saveAcquisitionProfile(payload)); return Boolean(response) }
-  async function createJob(payload) { return Boolean(await run(() => createSearchJob(payload))) }
+  const mutation = createMutationController(request => request())
+  const profileResource = createLatestResource(getAcquisitionProfile)
+  async function run(request) {
+    workflowLoading.value = true
+    workflowError.value = null
+    const result = await mutation.submit(request)
+    workflowLoading.value = mutation.loading
+    workflowError.value = mutation.error
+    return result
+  }
+  async function loadProfile() {
+    workflowLoading.value = true
+    await profileResource.load('acquisition-profile')
+    workflowLoading.value = profileResource.loading
+    workflowError.value = profileResource.error
+    profile.value = profileResource.data
+    return { ok: !profileResource.error, data: profileResource.data, error: profileResource.error }
+  }
+  async function saveProfile(payload) { return run(() => saveAcquisitionProfile(payload)) }
+  async function createJob(payload) { return run(() => createSearchJob(payload)) }
   return { workflowLoading, workflowError, profile, loadProfile, saveProfile, createJob }
 }
 
 export function useResearchWorkflows() {
   const workflowLoading = ref(false), workflowError = ref(null)
   const detail = ref(null), detailLoading = ref(false), detailError = ref(null), detailTaskId = ref(null)
-  let detailRequest = 0
-  async function run(request) { workflowLoading.value = true; workflowError.value = null; try { return Boolean(await request()) } catch (error) { workflowError.value = error; return false } finally { workflowLoading.value = false } }
+  const mutation = createMutationController(request => request())
+  const detailResource = createLatestResource(getResearchTask)
+  async function run(request) {
+    workflowLoading.value = true
+    workflowError.value = null
+    const result = await mutation.submit(request)
+    workflowLoading.value = mutation.loading
+    workflowError.value = mutation.error
+    return result
+  }
   const createBatch = payload => run(() => createPublicPoolBatch(payload))
   const reviewTask = (taskId, status) => run(() => reviewResearchTask(taskId, status))
   async function loadTaskDetail(taskId) {
-    const requestId = ++detailRequest
     detailTaskId.value = taskId
     detail.value = null
     detailError.value = null
     detailLoading.value = true
-    try {
-      const response = await getResearchTask(taskId)
-      if (requestId === detailRequest && detailTaskId.value === taskId) detail.value = response.data
-      return detail.value
-    } catch (error) {
-      if (requestId === detailRequest) detailError.value = error
-      return null
-    } finally {
-      if (requestId === detailRequest) detailLoading.value = false
-    }
+    await detailResource.load(taskId)
+    detail.value = detailResource.data
+    detailError.value = detailResource.error
+    detailLoading.value = detailResource.loading
+    return detail.value
   }
-  const retryTaskDetail = () => detailTaskId.value ? loadTaskDetail(detailTaskId.value) : null
+  async function retryTaskDetail() {
+    if (!detailTaskId.value) return null
+    detailError.value = null
+    detailLoading.value = true
+    await detailResource.retry()
+    detail.value = detailResource.data
+    detailError.value = detailResource.error
+    detailLoading.value = detailResource.loading
+    return detail.value
+  }
   return { workflowLoading, workflowError, createBatch, reviewTask, detail, detailLoading, detailError, detailTaskId, loadTaskDetail, retryTaskDetail }
 }
 
@@ -101,26 +129,20 @@ export function useCustomerHub(kind) {
   const timelineError = ref(null)
   const currentCustomerId = ref(null)
   const loading = ref(false)
-  let listRequest = 0
-  let detailRequest = 0
-  let timelineRequest = 0
+  const listResource = createPagedResource(params => LISTERS[kind](params))
+  const detailResource = createLatestResource(getCustomer)
+  const timelineResource = createLatestResource(customerId => listCustomerTimeline(customerId, { page: 1, page_size: 50 }))
 
   const state = useListPage(async params => {
-    const requestId = ++listRequest
     loading.value = true
-    error.value = null
-    try {
-      const clean = Object.fromEntries(Object.entries(params).filter(([, value]) => value !== '' && value != null))
-      const response = await LISTERS[kind](clean)
-      if (requestId !== listRequest) return { items: state.list.value, total: state.total.value }
+    const clean = Object.fromEntries(Object.entries(params).filter(([, value]) => value !== '' && value != null))
+    await listResource.load(clean)
+    loading.value = listResource.loading
+    error.value = listResource.error
+    if (!listResource.error) {
       lastSuccessfulAt.value = new Date()
-      return response.data || {}
-    } catch (caught) {
-      if (requestId === listRequest) error.value = caught
-      return { items: state.list.value, total: state.total.value }
-    } finally {
-      if (requestId === listRequest) loading.value = false
     }
+    return { items: listResource.items, total: listResource.total }
   }, {
     searchForm: kind === 'customers' ? { keyword: '' } : kind === 'acquisition' ? { status: '' } : {},
   })
@@ -133,43 +155,31 @@ export function useCustomerHub(kind) {
   })
 
   async function loadDetail(id) {
-    const requestId = ++detailRequest
     currentCustomerId.value = id
-    timelineRequest += 1
+    timelineResource.invalidate()
     timelineLoading.value = false
     detailError.value = null
     detailLoading.value = true
     detail.value = null
     timeline.value = []
     timelineLoadedFor.value = null
-    try {
-      const response = await getCustomer(id)
-      if (requestId !== detailRequest || currentCustomerId.value !== id) return null
-      detail.value = response.data
-      return detail.value
-    } catch (caught) {
-      if (requestId === detailRequest) detailError.value = caught
-      return null
-    } finally {
-      if (requestId === detailRequest) detailLoading.value = false
-    }
+    await detailResource.load(id)
+    detail.value = detailResource.data
+    detailError.value = detailResource.error
+    detailLoading.value = detailResource.loading
+    return detail.value
   }
 
   async function loadTimeline(customerId) {
     if (!customerId || timelineLoadedFor.value === customerId) return
-    const requestId = ++timelineRequest
     timelineError.value = null
     timelineLoading.value = true
-    try {
-      const response = await listCustomerTimeline(customerId, { page: 1, page_size: 50 })
-      if (requestId === timelineRequest && currentCustomerId.value === customerId) {
-        timeline.value = response.data?.items || []
-        timelineLoadedFor.value = customerId
-      }
-    } catch (caught) {
-      if (requestId === timelineRequest && currentCustomerId.value === customerId) timelineError.value = caught
-    } finally {
-      if (requestId === timelineRequest && currentCustomerId.value === customerId) timelineLoading.value = false
+    await timelineResource.load(customerId)
+    if (timelineResource.key === customerId && currentCustomerId.value === customerId) {
+      timeline.value = timelineResource.data?.items || []
+      timelineError.value = timelineResource.error
+      timelineLoading.value = timelineResource.loading
+      if (!timelineResource.error) timelineLoadedFor.value = customerId
     }
   }
 
