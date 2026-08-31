@@ -52,11 +52,18 @@ class UpdateInstallReceiver : BroadcastReceiver() {
     }
 
     private fun launchFailure(context: Context, status: Int) {
+        val token = try {
+            InstallFailureSignal.issue(context)
+        } catch (exception: Exception) {
+            Log.w(TAG, "Install failure signal could not persist type=${exception.javaClass.simpleName}")
+            return
+        }
         try {
             context.startActivity(
                 Intent(context, MainActivity::class.java)
                     .setAction(ACTION_UPDATE_FAILED)
                     .putExtra(EXTRA_SAFE_STATUS_CODE, status)
+                    .putExtra(EXTRA_FAILURE_TOKEN, token)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             )
         } catch (exception: Exception) {
@@ -71,5 +78,6 @@ class UpdateInstallReceiver : BroadcastReceiver() {
             "com.leshine.expokiosk.action.UPDATE_AWAITING_USER"
         const val ACTION_UPDATE_FAILED = "com.leshine.expokiosk.action.UPDATE_FAILED"
         const val EXTRA_SAFE_STATUS_CODE = "update_status_code"
+        const val EXTRA_FAILURE_TOKEN = "install_failure_token"
     }
 }

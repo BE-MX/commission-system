@@ -48,6 +48,10 @@ import java.net.URL
 import java.util.concurrent.Executors
 import kotlin.math.abs
 
+private val startupUpdateSession = StartupUpdateCoordinator { exception ->
+    Log.w("ExpoKioskUpdate", "Update startup failed type=${exception.javaClass.simpleName}")
+}
+
 /**
  * 莱莎展会 AI 试戴 — 平板 kiosk 壳。
  *
@@ -78,7 +82,7 @@ class MainActivity : ComponentActivity() {
     private val updateAwaitingReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == UpdateInstallReceiver.ACTION_UPDATE_AWAITING_USER) {
-                StartupUpdateSession.publish(UpdateState.AwaitingUserAction)
+                startupUpdateSession.publish(UpdateState.AwaitingUserAction)
             }
         }
     }
@@ -258,7 +262,7 @@ class MainActivity : ComponentActivity() {
         Log.i(TAG, "loadUrl ${KioskUrl.get(this)}")
         webView.loadUrl(KioskUrl.get(this))
 
-        if (intent?.action == UpdateInstallReceiver.ACTION_UPDATE_FAILED) {
+        if (consumeInstallFailure(intent)) {
             releaseAfterInstallFailure()
         } else {
             startStartupUpdateOnce()
@@ -270,12 +274,12 @@ class MainActivity : ComponentActivity() {
         if (startupUpdateRequested || startupUpdateReleased) return
         startupUpdateRequested = true
 
-        val latest = StartupUpdateSession.attach(updateStateObserver)
+        val latest = startupUpdateSession.attach(updateStateObserver)
         renderUpdateState(latest ?: UpdateState.Checking)
         val appContext = applicationContext
-        StartupUpdateSession.start(
+        startupUpdateSession.start(
             execute = { task -> io.execute(task) },
-            createEngine = {
+            createRunner = {
                 val packageInfo = appContext.packageManager.getPackageInfo(
                     appContext.packageName,
                     0,
@@ -285,7 +289,7 @@ class MainActivity : ComponentActivity() {
                 } else {
                     packageInfo.versionCode.toLong()
                 }
-                UpdateEngine(
+                val engine = UpdateEngine(
                     currentVersionCode = currentVersionCode,
                     source = HttpUpdateSource(appContext, KioskUrl.origin(appContext)),
                     verifier = AndroidApkVerifier(appContext),
@@ -293,6 +297,7 @@ class MainActivity : ComponentActivity() {
                     downloadTarget = appContext.cacheDir.resolve(UPDATE_APK_NAME),
                     diagnostics = AndroidUpdateDiagnostics(),
                 )
+                StartupUpdateRun(engine::run)
             },
         )
     }
@@ -313,9 +318,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun releaseAfterInstallFailure() {
-        StartupUpdateSession.failInstall()
+        startupUpdateSession.failInstall()
         startupUpdateReleased = true
-        StartupUpdateSession.detach(updateStateObserver)
+        startupUpdateSession.detach(updateStateObserver)
         updateBlocksKiosk = false
         updateOverlay.hide()
         if (!updateFailureNoticeShown) {
@@ -349,9 +354,16 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.action == UpdateInstallReceiver.ACTION_UPDATE_FAILED) {
+        if (consumeInstallFailure(intent)) {
             releaseAfterInstallFailure()
         }
+    }
+
+    private fun consumeInstallFailure(intent: Intent?): Boolean {
+        if (intent?.action != UpdateInstallReceiver.ACTION_UPDATE_FAILED) return false
+        val token = intent.getStringExtra(UpdateInstallReceiver.EXTRA_FAILURE_TOKEN)
+        intent.removeExtra(UpdateInstallReceiver.EXTRA_FAILURE_TOKEN)
+        return InstallFailureSignal.consume(applicationContext, token)
     }
 
     /**
@@ -746,7 +758,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         activityDestroyed = true
-        StartupUpdateSession.detach(updateStateObserver)
+        startupUpdateSession.detach(updateStateObserver)
         unregisterUpdateReceiver()
         ui.removeCallbacksAndMessages(null)
         super.onDestroy()
@@ -764,63 +776,5 @@ class MainActivity : ComponentActivity() {
         private const val UPDATE_APK_NAME = "kiosk-update.part.apk"
         private val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         private val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
-    }
-}
-
-private object StartupUpdateSession {
-    private val lock = Any()
-    private val state = UpdateSessionState()
-    private var attempted = false
-    private var engine: UpdateEngine? = null
-    private var observer: ((UpdateState) -> Unit)? = null
-
-    fun attach(newObserver: (UpdateState) -> Unit): UpdateState? = synchronized(lock) {
-        observer = newObserver
-        state.current()
-    }
-
-    fun detach(currentObserver: (UpdateState) -> Unit) {
-        synchronized(lock) {
-            if (observer === currentObserver) observer = null
-        }
-    }
-
-    fun start(
-        execute: ((() -> Unit) -> Unit),
-        createEngine: () -> UpdateEngine,
-    ) {
-        val shouldStart = synchronized(lock) {
-            if (attempted) false else {
-                attempted = true
-                true
-            }
-        }
-        if (!shouldStart) return
-
-        execute {
-            try {
-                val created = createEngine()
-                synchronized(lock) { engine = created }
-                created.run(::publish)
-            } catch (exception: Exception) {
-                Log.w(
-                    "ExpoKioskUpdate",
-                    "Update startup failed type=${exception.javaClass.simpleName}",
-                )
-                publish(UpdateState.Failed("Update runtime unavailable"))
-            }
-        }
-    }
-
-    fun publish(state: UpdateState) {
-        synchronized(lock) {
-            val publishedState = this.state.transition(state)
-            observer?.invoke(publishedState)
-        }
-    }
-
-    fun failInstall() {
-        synchronized(lock) { attempted = true }
-        publish(UpdateState.Failed("Package installer failed"))
     }
 }
