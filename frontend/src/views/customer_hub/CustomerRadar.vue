@@ -2,7 +2,7 @@
   <div class="workflow">
     <el-alert v-if="workflowError" type="error" title="经营动作更新失败，当前状态未改变，请检查字段或权限后重试。" :closable="false" show-icon />
     <CustomerHubWorkspace :key="refreshKey" kind="radar" @operate-action="open" />
-    <el-dialog v-model="visible" title="处理经营动作" width="620">
+    <el-dialog v-model="visible" title="处理经营动作" width="min(620px, calc(100vw - 32px))">
       <el-form label-position="top" class="radar-form">
         <el-form-item label="操作"><el-radio-group v-model="operation"><el-radio-button v-for="item in operationOptions" :key="item" :value="item">{{ operationLabel(item) }}</el-radio-button></el-radio-group></el-form-item>
         <template v-if="operation === 'complete'">
@@ -16,7 +16,7 @@
         <el-form-item v-else-if="operation === 'snooze'" label="延后至（北京时间）"><el-date-picker v-model="form.snoozedUntil" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" /></el-form-item>
         <template v-else-if="operation === 'dismiss'"><el-form-item label="忽略原因"><el-select v-model="form.reasonCode"><el-option v-for="item in dismissReasonOptions" :key="item" :label="item" :value="item" /></el-select></el-form-item><el-form-item label="备注"><el-input v-model="form.note" type="textarea" /></el-form-item></template>
       </el-form>
-      <template #footer><el-button @click="visible = false">取消</el-button><el-button v-any-permission="['customer_radar:write','customer:admin']" type="primary" :loading="workflowLoading" :disabled="!canSubmit" @click="save">确认</el-button></template>
+      <template #footer><GlassButton variant="ghost" @click="visible = false">取消</GlassButton><GlassButton v-any-permission="['customer_radar:write','customer:admin']" variant="primary" :loading="workflowLoading" :disabled="!canSubmit" @click="save">确认</GlassButton></template>
     </el-dialog>
   </div>
 </template>

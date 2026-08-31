@@ -2,7 +2,7 @@
   <DetailDrawer
     :model-value="modelValue"
     :title="customerTitle"
-    :width="820"
+    width="min(820px, 100vw)"
     :loading="loading"
     @update:model-value="$emit('update:modelValue', $event)"
   >

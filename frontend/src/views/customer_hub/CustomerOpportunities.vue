@@ -2,7 +2,7 @@
   <div class="workflow">
     <el-alert v-if="workflowError" type="error" title="机会更新失败，请检查状态、证据、原因或权限后重试。" :closable="false" show-icon />
     <CustomerHubWorkspace :key="refreshKey" kind="opportunities" @edit-opportunity="open" />
-    <el-dialog v-model="visible" title="更新客户机会" width="620">
+    <el-dialog v-model="visible" title="更新客户机会" width="min(620px, calc(100vw - 32px))">
       <el-form label-position="top" class="opportunity-form">
         <el-form-item label="目标状态"><el-select v-model="form.status" @change="resetCloseReason"><el-option v-for="status in transitionOptions" :key="status" :label="status" :value="status" /></el-select></el-form-item>
         <el-form-item label="更新原因（必填）"><el-input v-model="form.reason" type="textarea" :rows="3" /></el-form-item>
@@ -12,7 +12,7 @@
         <el-form-item v-if="form.status === 'won' && form.closeReasonCode === 'order_confirmed'" label="有效订单 ID（必填）"><el-input-number v-model="form.linkedOrderId" :min="1" :controls="false" /></el-form-item>
         <el-form-item v-if="closeReasonOptions.length" :label="form.closeReasonCode === 'manual_confirmed' ? '人工确认说明（必填）' : '关闭原因说明'"><el-input v-model="form.closeReasonText" type="textarea" :rows="2" /></el-form-item>
       </el-form>
-      <template #footer><el-button @click="visible = false">取消</el-button><el-button v-any-permission="['customer_opportunity:write','customer:admin']" type="primary" :loading="workflowLoading" :disabled="!canSubmit" @click="save">更新</el-button></template>
+      <template #footer><GlassButton variant="ghost" @click="visible = false">取消</GlassButton><GlassButton v-any-permission="['customer_opportunity:write','customer:admin']" variant="primary" :loading="workflowLoading" :disabled="!canSubmit" @click="save">更新</GlassButton></template>
     </el-dialog>
   </div>
 </template>
