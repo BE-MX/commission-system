@@ -13,8 +13,8 @@ object KioskNavigationPolicy {
     fun shouldBlockSubframe(isForMainFrame: Boolean?): Boolean = isForMainFrame != true
 
     fun decide(kioskUrl: String, requestedUrl: String?): NavigationDecision {
-        val kiosk = parseHttpUrl(kioskUrl) ?: return NavigationDecision.Redirect(kioskUrl)
-        val requested = parseHttpUrl(requestedUrl) ?: return NavigationDecision.Redirect(kioskUrl)
+        val kiosk = parseHttpsUrl(kioskUrl) ?: return NavigationDecision.Redirect(kioskUrl)
+        val requested = parseHttpsUrl(requestedUrl) ?: return NavigationDecision.Redirect(kioskUrl)
         if (!sameOrigin(kiosk, requested)) return NavigationDecision.Redirect(kioskUrl)
 
         val kioskPath = normalizePath(kiosk.path)
@@ -32,10 +32,11 @@ object KioskNavigationPolicy {
         }
     }
 
-    private fun parseHttpUrl(raw: String?): URI? = try {
+    private fun parseHttpsUrl(raw: String?): URI? = try {
         URI(raw?.trim().orEmpty()).takeIf {
-            (it.scheme.equals("http", true) || it.scheme.equals("https", true)) &&
-                !it.host.isNullOrBlank()
+            it.scheme.equals("https", true) &&
+                !it.host.isNullOrBlank() &&
+                it.rawUserInfo == null
         }
     } catch (_: Exception) {
         null

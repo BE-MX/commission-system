@@ -1,7 +1,7 @@
 # 展会 AI 试戴 APP 自动更新设计
 
-日期：2026-08-31  
-状态：已确认，待实施
+日期：2026-08-31
+状态：代码与自动验证已完成，尚未部署，尚未完成平板实机验收
 
 ## 目标
 
@@ -24,7 +24,7 @@
 - 清单：`/expo-app/latest.json`
 - APK：`/expo-app/leshine-expo-kiosk.apk`
 
-APP 从 `KioskUrl` 当前保存的服务器 origin 推导这两个地址。工作人员通过三指长按切换服务器后，页面和更新源一起切换，不增加第二套地址配置。
+APP 只从编译期 `R.string.start_url` 读取唯一 HTTPS kiosk 地址，并由该地址推导固定 origin。运行时没有 SharedPreferences 切源、三指配置、URL 输入、HTTP 兜底或第二套更新地址；资源非法时直接 fail closed。更换服务器必须重新构建并全量安装。
 
 `latest.json` 使用固定结构：
 
@@ -47,18 +47,20 @@ APP 冷启动后显示原生黑金启动层，WebView 可以在其下初始化�
 
 检查流程如下：
 
-1. 用当前版本号请求同源 `latest.json`，连接超时 3 秒、读取超时 5 秒。
+1. 进入 APP 立即用原生启动层阻断试戴并请求同源 `latest.json`；连接超时 3 秒、读取超时 5 秒、单调总时限 10 秒。
 2. 清单不可用、远端版本等于或低于本地版本：移除启动层，进入当前试戴页。
 3. 远端版本更高：启动层切换为“发现新版本，正在升级”，展示版本号和下载进度，暂停进入试戴。
-4. APK 下载到 APP 私有缓存的 `.part` 临时文件。连接超时 5 秒、读取超时 60 秒，最大允许 100 MiB。
+4. APK 下载到 APP 私有缓存的 `.part` 临时文件。连接超时 5 秒、读取超时 60 秒、单调总时限 120 秒，最大允许 100 MiB。
 5. 校验全部通过后创建 `PackageInstaller` 会话并提交安装。
 6. 安装成功后 Android 会替换并终止旧进程。`ACTION_MY_PACKAGE_REPLACED` 接收器尽力重新打开 APP；设备所有者/默认主屏场景应自动回到 kiosk，普通模式受 Android 后台拉起限制时允许停留在系统安装完成页，由系统提供“打开”入口。
 
 启动层不提供取消按钮。更新已经开始但失败时，提示“升级未完成，继续使用当前版本，下次启动重试”，删除临时文件并立即进入旧版。
 
+APP 的外部边界同时固定：WebView 摄像头只允许唯一 origin 的 `/expo/kiosk` 当前主框架申请单一 `VIDEO_CAPTURE`；登录页、后台页、音频或混合资源全部拒绝。通用选图和系统相机 fallback 不存在。设备所有者的 Lock Task allowlist 严格只有 APP 自身与编译期 `printer_package`，打印包为空或未安装时只提示，不启动隐式 Intent 或选择器。
+
 ## 下载与安全校验
 
-清单和 APK 均使用当前 origin 的固定相对路径，禁止重定向到其他 origin。HTTPS 连接复用现有 `PinnedTls`：自签 IP 证书必须命中内置指纹，正规证书走系统信任链；HTTP 现场兜底地址仍可用，但最终 APK 还必须通过下列本地校验。
+清单和 APK 均使用唯一编译期 HTTPS origin 的固定相对路径，禁止重定向。HTTPS 连接复用现有 `PinnedTls`：自签 IP 证书必须命中内置指纹，正规证书走系统信任链。检查与下载除连接/读取超时外还有独立总时限；到期主动关闭输入流和连接，更新失败后放行旧版。
 
 下载完成后按顺序检查：
 
@@ -95,7 +97,9 @@ APP 声明 `REQUEST_INSTALL_PACKAGES`。提交会话后若收到 `STATUS_PENDING
 - `MainActivity`：只负责显示启动/升级状态和在失败时放行 WebView，不直接实现网络或安装细节。
 - `publish-update.ps1`：只接受已签名 release APK，提取元数据、计算摘要并按原子顺序发布。
 
-这些组件通过小型状态回调通信：`Checking`、`Downloading(version, progress)`、`AwaitingUserAction`、`Installing`、`NoUpdate`、`Failed(message)`。只有 `Downloading`、`AwaitingUserAction` 和 `Installing` 阻挡试戴；`NoUpdate` 与 `Failed` 都立即放行。
+这些组件通过小型状态回调通信：`Checking`、`Downloading(version, progress)`、`AwaitingUserAction`、`Installing`、`NoUpdate`、`Failed(message)`。`Checking`、`Downloading`、`AwaitingUserAction` 和 `Installing` 都阻挡试戴；`NoUpdate` 与 `Failed` 立即放行。
+
+每个 `PackageInstaller` 会话在提交前把 `sessionId + 256-bit token` 同步写入 APP 私有存储，回调必须同时匹配 action、status、sessionId 和 token。等待用户确认只校验，成功/失败才一次性消费；旧会话、错 token 和重放回调全部忽略。下一次冷启动先失效旧 marker，再仅清理本包遗留会话，清理异常则本次检查 fail open 且不创建新会话。
 
 ## 签名与首装
 
@@ -121,7 +125,7 @@ Gradle release 签名从未提交的 `keystore.properties` 或等价环境变量
 5. 最后上传并原子替换 `latest.json`。
 6. 用 HTTPS 自签证书指纹验证线上清单和 APK 摘要一致后才报告发布成功。
 
-清单必须最后发布，确保设备永远只会看到“旧清单 + 旧 APK”或“新清单 + 新 APK”，不会拿到尚未上传完整的新版本。
+清单最后发布可以缩短错配窗口，但清单与 APK 是两次独立 HTTP 请求，发布瞬间仍可能读到不同代文件，不能宣称跨请求原子。APP 会用精确大小和 SHA-256 拒绝错配并 fail open；服务器事务保证切换失败后不会永久留下错误正式配对。
 
 ## 测试与验收
 
@@ -160,4 +164,4 @@ python scripts/check_conventions.py --base main
 - 更新服务或安装失败时旧版仍可用，下次冷启动重试。
 - 更新文件只能来自当前 kiosk origin 的固定路径，并通过大小、摘要、包名、版本和签名五重校验。
 - 发布流程可重复、原子、不会把 keystore 或密码写入仓库。
-- 自动测试、Android 构建、前端构建、项目约定检查和两种实机模式验收均通过。
+- 自动测试、Android 构建、前端构建和项目约定检查通过；两种实机模式、失败矩阵和正式部署仍是上线门禁，完成前不得宣称已铺开。

@@ -36,18 +36,13 @@ class UpdatePolicyTest {
     }
 
     @Test
-    fun `preserves explicit HTTP and default ports`() {
-        assertEquals(
-            "http://10.0.0.8:8080/expo-app/latest.json",
-            UpdatePolicy.manifestUrl("http://10.0.0.8:8080/expo/kiosk"),
-        )
+    fun `rejects HTTP while preserving explicit HTTPS ports`() {
+        assertThrowsIllegalArgument("HTTP kiosk") {
+            UpdatePolicy.manifestUrl("http://10.0.0.8:8080/expo/kiosk")
+        }
         assertEquals(
             "https://example.com:443/expo-app/leshine-expo-kiosk.apk",
             UpdatePolicy.apkUrl("https://example.com:443/expo/kiosk"),
-        )
-        assertEquals(
-            "http://example.com/expo-app/latest.json",
-            UpdatePolicy.manifestUrl("http://example.com/expo/kiosk"),
         )
     }
 

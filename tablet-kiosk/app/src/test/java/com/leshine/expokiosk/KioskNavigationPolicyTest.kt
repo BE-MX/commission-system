@@ -55,6 +55,7 @@ class KioskNavigationPolicyTest {
         for (url in listOf(
             "https://leshine.work/dashboard",
             "http://154.8.205.162/expo/kiosk",
+            "https://user@154.8.205.162/expo/kiosk",
             "intent://dashboard",
             "javascript:location='/dashboard'",
             "not a url",
@@ -74,12 +75,7 @@ class KioskNavigationPolicyTest {
     }
 
     @Test
-    fun `supports production http and equivalent explicit default ports`() {
-        val httpKiosk = "http://154.8.205.162/expo/kiosk"
-        assertEquals(
-            NavigationDecision.Allow,
-            KioskNavigationPolicy.decide(httpKiosk, "http://154.8.205.162:80/expo/kiosk"),
-        )
+    fun `supports equivalent explicit default HTTPS ports`() {
         assertEquals(
             NavigationDecision.Allow,
             KioskNavigationPolicy.decide(kioskUrl, "https://154.8.205.162:443/expo/kiosk"),

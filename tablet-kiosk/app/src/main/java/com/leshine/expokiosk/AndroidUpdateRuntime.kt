@@ -20,6 +20,8 @@ import java.security.MessageDigest
 
 private const val MANIFEST_MAX_BYTES = 16 * 1024
 private const val COPY_BUFFER_BYTES = 32 * 1024
+private const val MANIFEST_TOTAL_TIMEOUT_MS = 10_000L
+private const val APK_TOTAL_TIMEOUT_MS = 120_000L
 
 enum class InstallUserActionPolicy {
     SYSTEM_CONFIRMATION,
@@ -115,15 +117,19 @@ class HttpUpdateSource(
 ) : UpdateSource {
     override fun fetchManifest(): UpdateManifest {
         val connection = open(UpdatePolicy.manifestUrl(kioskUrl), 3_000, 5_000)
+        val deadline = deadline(connection, MANIFEST_TOTAL_TIMEOUT_MS)
         try {
             UpdateRuntimePolicy.requireSuccessfulHttpStatus(connection.responseCode)
             val declaredSize = connection.contentLengthLong
             require(declaredSize <= MANIFEST_MAX_BYTES) { "Update manifest is too large" }
-            val raw = connection.inputStream.use { input ->
+            val input = connection.inputStream
+            deadline.attach(input)
+            val raw = input.use {
                 readManifest(input)
             }
             return UpdateManifestParser.parse(raw).getOrThrow()
         } finally {
+            deadline.close()
             connection.disconnect()
         }
     }
@@ -137,6 +143,7 @@ class HttpUpdateSource(
             "Manifest APK size is outside the allowed range"
         }
         val connection = open(UpdatePolicy.apkUrl(kioskUrl), 5_000, 60_000)
+        val deadline = deadline(connection, APK_TOTAL_TIMEOUT_MS)
         try {
             UpdateRuntimePolicy.requireSuccessfulHttpStatus(connection.responseCode)
             val declaredSize = connection.contentLengthLong
@@ -144,14 +151,17 @@ class HttpUpdateSource(
             require(declaredSize < 0 || declaredSize == manifest.apkSize) {
                 "APK response size does not match the manifest"
             }
+            val input = connection.inputStream
+            deadline.attach(input)
             return streamApkToTarget(
-                input = connection.inputStream,
+                input = input,
                 target = target,
                 expectedSize = manifest.apkSize,
                 hardLimit = UpdatePolicy.MAX_APK_BYTES,
                 onProgress = onProgress,
             )
         } finally {
+            deadline.close()
             connection.disconnect()
         }
     }
@@ -167,6 +177,16 @@ class HttpUpdateSource(
         return connection
     }
 
+    private fun deadline(connection: HttpURLConnection, timeoutMillis: Long) =
+        UpdateDeadlineGuard(
+            scheduler = DaemonUpdateDeadlineScheduler,
+            timeoutMillis = timeoutMillis,
+            disconnect = connection::disconnect,
+            onException = { exception ->
+                Log.w(TAG, "Update deadline cleanup failed type=${exception.javaClass.simpleName}")
+            },
+        )
+
     private fun readManifest(input: InputStream): String {
         val output = java.io.ByteArrayOutputStream()
         val buffer = ByteArray(4 * 1024)
@@ -178,6 +198,10 @@ class HttpUpdateSource(
             output.write(buffer, 0, count)
         }
         return output.toString(Charsets.UTF_8.name())
+    }
+
+    private companion object {
+        const val TAG = "ExpoKioskUpdate"
     }
 }
 
@@ -267,8 +291,11 @@ class AndroidUpdateInstaller(private val context: Context) : UpdateInstaller {
             }
 
         val sessionId = packageInstaller.createSession(params)
+        val activeSession = activeInstallSession(context)
+        var marker: ActiveInstallSessionMarker? = null
         var committed = false
         try {
+            marker = activeSession.issue(sessionId)
             packageInstaller.openSession(sessionId).use { session ->
                 FileInputStream(artifact.file).use { input ->
                     session.openWrite("base.apk", 0, artifact.size).use { output ->
@@ -276,11 +303,12 @@ class AndroidUpdateInstaller(private val context: Context) : UpdateInstaller {
                         session.fsync(output)
                     }
                 }
-                session.commit(installStatusIntent(sessionId).intentSender)
+                session.commit(installStatusIntent(marker).intentSender)
                 committed = true
             }
         } finally {
             if (!committed) {
+                marker?.let { activeSession.consume(it.sessionId, it.token) }
                 abandonInstallSession(
                     sessionId = sessionId,
                     abandon = packageInstaller::abandonSession,
@@ -297,14 +325,16 @@ class AndroidUpdateInstaller(private val context: Context) : UpdateInstaller {
         }
     }
 
-    private fun installStatusIntent(sessionId: Int): PendingIntent {
+    private fun installStatusIntent(marker: ActiveInstallSessionMarker): PendingIntent {
         val intent = Intent(context, UpdateInstallReceiver::class.java)
             .setAction(UpdateInstallReceiver.ACTION_INSTALL_STATUS)
+            .putExtra(PackageInstaller.EXTRA_SESSION_ID, marker.sessionId)
+            .putExtra(UpdateInstallReceiver.EXTRA_INSTALL_SESSION_TOKEN, marker.token)
         var flags = PendingIntent.FLAG_UPDATE_CURRENT
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             flags = flags or PendingIntent.FLAG_MUTABLE
         }
-        return PendingIntent.getBroadcast(context, sessionId, intent, flags)
+        return PendingIntent.getBroadcast(context, marker.sessionId, intent, flags)
     }
 
     companion object {

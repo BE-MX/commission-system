@@ -90,10 +90,9 @@ function Read-ApkMetadata {
 
     $packageName = $match.Groups[1].Value
     $versionCode = [long]$match.Groups[2].Value
-    $versionName = $match.Groups[3].Value
+    $versionName = Assert-VersionName -VersionName $match.Groups[3].Value -Source 'APK metadata'
     if ($packageName -cne $ExpectedPackage) { throw "Unexpected APK package: $packageName" }
     if ($versionCode -le 9) { throw "APK versionCode must be greater than 9; got $versionCode." }
-    if ([string]::IsNullOrWhiteSpace($versionName)) { throw 'APK versionName must not be empty.' }
 
     if (-not (Test-Path -LiteralPath $SignerBaselinePath -PathType Leaf)) {
         throw 'The approved release signer baseline is missing.'

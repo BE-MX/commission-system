@@ -1,5 +1,19 @@
 Set-StrictMode -Version Latest
 
+function Assert-VersionName {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][AllowNull()][string]$VersionName,
+        [Parameter(Mandatory = $true)][string]$Source
+    )
+
+    if ([string]::IsNullOrWhiteSpace($VersionName) -or
+        $VersionName -cne $VersionName.Trim() -or
+        $VersionName -cmatch '[\x00-\x1f\x7f]') {
+        throw "$Source version_name must be non-empty, already trimmed, and contain no control characters."
+    }
+    return $VersionName
+}
+
 function Assert-PublishTarget {
     param([Parameter(Mandatory = $true)][string]$Target)
 
@@ -56,7 +70,8 @@ function Read-StrictManifest {
     }
     if ($manifest.version_code -isnot [long] -and $manifest.version_code -isnot [int]) { throw 'Published version_code must be an integer.' }
     if ([long]$manifest.version_code -le 0) { throw 'Published version_code must be positive.' }
-    if ($manifest.version_name -isnot [string] -or [string]::IsNullOrWhiteSpace($manifest.version_name)) { throw 'Published version_name must be non-empty.' }
+    if ($manifest.version_name -isnot [string]) { throw 'Published version_name must be a string.' }
+    $manifest.version_name = Assert-VersionName -VersionName ([string]$manifest.version_name) -Source 'Published manifest'
     if ($manifest.apk_size -isnot [long] -and $manifest.apk_size -isnot [int]) { throw 'Published apk_size must be an integer.' }
     if ([long]$manifest.apk_size -le 0) { throw 'Published apk_size must be positive.' }
     if ($manifest.sha256 -isnot [string] -or $manifest.sha256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Published sha256 must be lowercase hexadecimal.' }

@@ -60,13 +60,14 @@ object UpdatePolicy {
     }
 
     private fun endpointUrl(kioskUrl: String, path: String): String {
+        require(kioskUrl == kioskUrl.trim()) { "Kiosk URL must already be normalized" }
         val kiosk = try {
-            URI(kioskUrl.trim())
+            URI(kioskUrl)
         } catch (exception: Exception) {
             throw IllegalArgumentException("Kiosk URL is invalid", exception)
         }
         val scheme = kiosk.scheme?.lowercase()
-        require(scheme == "http" || scheme == "https") { "Kiosk URL must use HTTP or HTTPS" }
+        require(scheme == "https") { "Kiosk URL must use HTTPS" }
         require(!kiosk.host.isNullOrBlank()) { "Kiosk URL must include a valid host" }
         require(kiosk.userInfo == null) { "Kiosk URL must not include user information" }
         require(kiosk.port == -1 || kiosk.port in 1..65535) { "Kiosk URL port is invalid" }

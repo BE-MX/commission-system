@@ -90,6 +90,15 @@ Assert-Throws -MessagePattern 'published versionCode is 10' -Action {
     Assert-ChannelPolicy -HttpStatus 200 -CandidateVersionCode 10 -PublishedVersionCode 10 -InitializeChannel:$false
 }
 
+foreach ($invalidVersionName in @('', ' ', ' 1.9', '1.9 ', "1.9`n", "1.9`tstable")) {
+    Assert-Throws -MessagePattern 'version_name' -Action {
+        Assert-VersionName -VersionName $invalidVersionName -Source 'test' | Out-Null
+    }
+}
+if ((Assert-VersionName -VersionName '1.9' -Source 'test') -cne '1.9') {
+    throw 'A valid version_name was changed by the shared policy.'
+}
+
 $manifestTestRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('leshine-manifest-test-' + [guid]::NewGuid().ToString('N'))
 [System.IO.Directory]::CreateDirectory($manifestTestRoot) | Out-Null
 try {
@@ -97,6 +106,8 @@ try {
         'array.json' = '[{"version_code":10,"version_name":"1.9","apk_size":1,"sha256":"' + ('a' * 64) + '"}]'
         'scalar.json' = '42'
         'duplicate.json' = '{"version_code":10,"version_code":11,"version_name":"1.9","apk_size":1,"sha256":"' + ('a' * 64) + '"}'
+        'leading-space-version.json' = '{"version_code":10,"version_name":" 1.9","apk_size":1,"sha256":"' + ('a' * 64) + '"}'
+        'control-version.json' = '{"version_code":10,"version_name":"1.9\tstable","apk_size":1,"sha256":"' + ('a' * 64) + '"}'
     }
     foreach ($entry in $invalidManifests.GetEnumerator()) {
         $path = Join-Path $manifestTestRoot $entry.Key
