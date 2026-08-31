@@ -29,6 +29,7 @@ from app.domestic import (
     product_service,
     progress_service,
     report_service,
+    route_rule_service,
     unit_service,
 )
 from app.domestic.models import DomesticOrder, DomesticOrderItem
@@ -46,6 +47,7 @@ from app.domestic.schemas import (
     ProductRouteRebind,
     ReportRevoke,
     ReportSubmit,
+    RouteRuleSaveRequest,
 )
 from app.auth.models import ArkUser
 from app.production.models import Process, ProcessRoute, ProcessRouteStep, UserProcessBinding
@@ -115,6 +117,41 @@ def list_process_routes(
         "step_count": len(by_route.get(r.id, [])),
         "steps": [n for _, n in sorted(by_route.get(r.id, []))],
     } for r in routes])
+
+
+@router.get("/process-routes/{route_id}/rules", summary="查询内贸条件路线规则")
+def get_process_route_rules(
+    route_id: int,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission(*_READ)),
+):
+    try:
+        return ok(route_rule_service.list_rules(db, route_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/process-routes/{route_id}/rules", summary="全量保存内贸条件路线规则")
+def put_process_route_rules(
+    route_id: int,
+    payload: RouteRuleSaveRequest,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:admin")),
+):
+    try:
+        data = route_rule_service.save_rules(
+            db,
+            route_id,
+            [rule.model_dump() for rule in payload.rules],
+        )
+        db.commit()
+        return ok(data)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        raise
 
 
 # ── 客户 ──────────────────────────────────────────────

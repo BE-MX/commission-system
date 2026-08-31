@@ -2,9 +2,9 @@
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 # ── 客户 ──────────────────────────────────────────────
@@ -95,6 +95,50 @@ class CraftRouteUpsert(BaseModel):
 
 class ProductRouteRebind(BaseModel):
     route_id: int | None = Field(None, description="null = 解绑")
+
+
+class RouteRuleOptionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(..., pattern=r"^[a-z][a-z0-9_]{0,31}$")
+    label: str = Field(..., min_length=1, max_length=64)
+    skip_process_ids: list[Annotated[int, Field(gt=0)]] = Field(default_factory=list)
+
+    @field_validator("label")
+    @classmethod
+    def _strip_label(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("结果名称不能为空")
+        return value
+
+
+class RouteRuleConfigInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    options: list[RouteRuleOptionInput] = Field(..., min_length=2, max_length=20)
+
+
+class RouteRuleInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    process_id: int = Field(..., gt=0)
+    rule_type: Literal["decision", "optional"]
+    config: RouteRuleConfigInput | None = None
+
+    @model_validator(mode="after")
+    def _config_matches_type(self):
+        if self.rule_type == "decision" and self.config is None:
+            raise ValueError("分流判定必须配置结果选项")
+        if self.rule_type == "optional" and self.config is not None:
+            raise ValueError("可选工序不能配置结果选项")
+        return self
+
+
+class RouteRuleSaveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rules: list[RouteRuleInput] = Field(default_factory=list, max_length=100)
 
 
 # ── 订单 ──────────────────────────────────────────────
