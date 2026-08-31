@@ -73,6 +73,26 @@ class UpdatePolicyTest {
     }
 
     @Test
+    fun `rejects credentials in kiosk URLs`() {
+        for (url in listOf(
+            "https://admin@154.8.205.162/expo/kiosk",
+            "https://admin:secret@154.8.205.162/expo/kiosk",
+        )) {
+            assertThrowsIllegalArgument(url) { UpdatePolicy.manifestUrl(url) }
+            assertThrowsIllegalArgument(url) { UpdatePolicy.apkUrl(url) }
+        }
+    }
+
+    @Test
+    fun `rejects kiosk URLs with invalid ports`() {
+        for (port in listOf(0, 65536, 99999)) {
+            val url = "https://154.8.205.162:$port/expo/kiosk"
+            assertThrowsIllegalArgument(url) { UpdatePolicy.manifestUrl(url) }
+            assertThrowsIllegalArgument(url) { UpdatePolicy.apkUrl(url) }
+        }
+    }
+
+    @Test
     fun `accepts a newer package with exact identity and integrity`() {
         assertEquals(
             DownloadedApkDecision.Accept,
@@ -87,6 +107,37 @@ class UpdatePolicyTest {
             manifest.copy(versionCode = 9),
             candidate.copy(versionCode = 9),
         )
+    }
+
+    @Test
+    fun `rejects manifests whose own fields violate the public contract`() {
+        val invalid = listOf(
+            manifest.copy(versionCode = 0) to candidate.copy(versionCode = 0),
+            manifest.copy(versionCode = -1) to candidate.copy(versionCode = -1),
+            manifest.copy(versionName = "") to candidate.copy(versionName = ""),
+            manifest.copy(versionName = "   ") to candidate.copy(versionName = "   "),
+            manifest.copy(versionName = " 1.9 ") to candidate.copy(versionName = " 1.9 "),
+            manifest.copy(apkSize = 0) to candidate,
+            manifest.copy(apkSize = UpdatePolicy.MAX_APK_BYTES + 1) to candidate,
+            manifest.copy(sha256 = "a".repeat(63)) to candidate,
+            manifest.copy(sha256 = "A".repeat(64)) to candidate,
+            manifest.copy(sha256 = "g".repeat(64)) to candidate,
+        )
+
+        invalid.forEach { (invalidManifest, matchingCandidate) ->
+            val decision = UpdatePolicy.validateDownloaded(
+                invalidManifest,
+                current,
+                matchingCandidate,
+                invalidManifest.apkSize,
+                invalidManifest.sha256,
+            )
+            assertTrue(decision is DownloadedApkDecision.Reject)
+            assertTrue(
+                decision.toString(),
+                (decision as DownloadedApkDecision.Reject).reason.contains("manifest", ignoreCase = true),
+            )
+        }
     }
 
     @Test

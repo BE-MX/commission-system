@@ -8,6 +8,7 @@ object UpdatePolicy {
     private const val PACKAGE_NAME = "com.leshine.expokiosk"
     private const val MANIFEST_PATH = "/expo-app/latest.json"
     private const val APK_PATH = "/expo-app/leshine-expo-kiosk.apk"
+    private val sha256Pattern = Regex("^[0-9a-f]{64}$")
 
     fun manifestUrl(kioskUrl: String): String = endpointUrl(kioskUrl, MANIFEST_PATH)
 
@@ -20,6 +21,18 @@ object UpdatePolicy {
         size: Long,
         sha256: String,
     ): DownloadedApkDecision {
+        val manifestProblem = when {
+            manifest.versionCode <= 0 -> "version code must be positive"
+            manifest.versionName.isBlank() || manifest.versionName != manifest.versionName.trim() ->
+                "version name must be non-blank and trimmed"
+            manifest.apkSize !in 1..MAX_APK_BYTES -> "APK size is outside the allowed range"
+            !sha256Pattern.matches(manifest.sha256) ->
+                "sha256 must be 64 lowercase hexadecimal characters"
+            else -> null
+        }
+        if (manifestProblem != null) {
+            return DownloadedApkDecision.Reject("Invalid manifest: $manifestProblem")
+        }
         if (manifest.versionCode <= current.versionCode) {
             return DownloadedApkDecision.Reject("Manifest version must be newer than the installed app")
         }
@@ -55,6 +68,8 @@ object UpdatePolicy {
         val scheme = kiosk.scheme?.lowercase()
         require(scheme == "http" || scheme == "https") { "Kiosk URL must use HTTP or HTTPS" }
         require(!kiosk.host.isNullOrBlank()) { "Kiosk URL must include a valid host" }
+        require(kiosk.userInfo == null) { "Kiosk URL must not include user information" }
+        require(kiosk.port == -1 || kiosk.port in 1..65535) { "Kiosk URL port is invalid" }
 
         return URI(scheme, null, kiosk.host, kiosk.port, path, null, null).toString()
     }

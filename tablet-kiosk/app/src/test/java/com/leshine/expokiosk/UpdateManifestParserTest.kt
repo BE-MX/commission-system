@@ -39,6 +39,26 @@ class UpdateManifestParserTest {
     }
 
     @Test
+    fun `rejects duplicate manifest keys`() {
+        val invalid = listOf(
+            """{"version_code":10,"version_code":11,"version_name":"1.9","apk_size":4,"sha256":"$digest"}""",
+            """{"version_code":10,"version_name":"1.9","apk_size":4,"apk_size":5,"sha256":"$digest"}""",
+            """{"version_code":10,"version_name":"1.9","apk_size":4,"sha256":"$digest","sha256":"${"b".repeat(64)}"}""",
+        )
+
+        invalid.forEach { raw ->
+            assertTrue(raw, UpdateManifestParser.parse(raw).isFailure)
+        }
+    }
+
+    @Test
+    fun `rejects content after the manifest object`() {
+        val raw = manifest() + " true"
+
+        assertTrue(raw, UpdateManifestParser.parse(raw).isFailure)
+    }
+
+    @Test
     fun `rejects non-positive version codes`() {
         val invalid = listOf(
             manifest(versionCode = 0),
@@ -51,10 +71,11 @@ class UpdateManifestParserTest {
     }
 
     @Test
-    fun `rejects empty and whitespace-only version names`() {
+    fun `rejects blank and untrimmed version names`() {
         val invalid = listOf(
             manifest(versionName = ""),
             manifest(versionName = "   "),
+            manifest(versionName = " 1.9 "),
         )
 
         invalid.forEach { raw ->
