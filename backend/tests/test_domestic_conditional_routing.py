@@ -7,9 +7,12 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.orm import sessionmaker
 from pydantic import ValidationError
 
 from app.auth.models import ArkUser
+from app.domestic import constants as C
 from app.domestic import progress_service, report_service, unit_service
 from app.domestic import route_rule_service
 from app.domestic.models import (
@@ -25,7 +28,7 @@ from app.domestic.models import (
     DomesticSkipLog,
     DomesticSkipUnit,
 )
-from app.domestic.schemas import RouteRuleSaveRequest
+from app.domestic.schemas import ManualSkipSubmit, RouteRuleSaveRequest
 from app.production.models import (
     Process,
     ProcessRoute,
@@ -711,3 +714,490 @@ def test_decision_request_replay_compares_normalized_outcomes(db, conditional_or
             outcomes={"dandong": 11, "lixiaohong": 9},
             request_id=request_id,
         )
+
+
+def _finish_parallel_branches(db, case):
+    _submit(db, case, 0, 20)
+    _submit(db, case, 1, 20, outcomes={"dandong": 12, "lixiaohong": 8})
+    _submit(db, case, 2, 12)
+    _submit(db, case, 3, 8)
+
+
+def test_revoke_decision_removes_its_generated_skips(db, conditional_order):
+    case = conditional_order
+    _submit(db, case, 0, 20)
+    decision = _submit(
+        db, case, 1, 20, outcomes={"dandong": 12, "lixiaohong": 8},
+    )
+
+    result = report_service.revoke_report(
+        db, decision["log_id"], case.worker.id,
+    )
+
+    assert result["revoked_qty"] == 20
+    assert db.query(DomesticSkipLog).filter_by(
+        trigger_report_log_id=decision["log_id"], revoked=0,
+    ).count() == 0
+    assert db.query(DomesticSkipLog).filter_by(
+        trigger_report_log_id=decision["log_id"], revoked=1,
+    ).count() == 2
+    steps = progress_service.build_progress_view(db, case.item)
+    assert steps[1]["completed_qty"] == 0
+    assert steps[2]["skipped_qty"] == 0
+    assert steps[3]["skipped_qty"] == 0
+
+
+def test_revoke_decision_lists_earliest_downstream_process_and_units(
+    db, conditional_order
+):
+    case = conditional_order
+    _submit(db, case, 0, 20)
+    decision = _submit(
+        db, case, 1, 20, outcomes={"dandong": 12, "lixiaohong": 8},
+    )
+    _submit(db, case, 2, 1)
+
+    with pytest.raises(ValueError) as exc_info:
+        report_service.revoke_report(db, decision["log_id"], case.worker.id)
+
+    message = str(exc_info.value)
+    assert "A1-01" in message
+    assert case.route.process_names[2] in message
+
+
+def test_revoke_intake_removes_its_optional_bypass(db, conditional_order):
+    case = conditional_order
+    _finish_parallel_branches(db, case)
+    intake = _submit(db, case, 5, 7)
+    bypass = db.query(DomesticSkipLog).filter_by(
+        source="optional_bypass",
+        trigger_report_log_id=intake["log_id"],
+    ).one()
+
+    report_service.revoke_report(db, intake["log_id"], case.worker.id)
+
+    db.refresh(bypass)
+    assert bypass.revoked == 1
+    steps = progress_service.build_progress_view(db, case.item)
+    assert steps[4]["skipped_qty"] == 0
+    assert steps[5]["completed_qty"] == 0
+
+
+def test_manual_skip_is_idempotent_and_excluded_from_workload(db, conditional_order):
+    case = conditional_order
+    request_id = str(uuid4())
+    first = report_service.submit_manual_skip(
+        db,
+        item_id=case.item.id,
+        progress_id=case.rows[0].id,
+        qty=3,
+        unit_id=None,
+        reason="现场主管确认该批无需此工序",
+        request_id=request_id,
+        user_id=case.worker.id,
+    )
+    replay = report_service.submit_manual_skip(
+        db,
+        item_id=case.item.id,
+        progress_id=case.rows[0].id,
+        qty=3,
+        unit_id=None,
+        reason=" 现场主管确认该批无需此工序 ",
+        request_id=request_id,
+        user_id=case.worker.id,
+    )
+
+    assert replay["skip_log_id"] == first["skip_log_id"]
+    assert replay["replayed"] is True
+    assert first["unit_codes"] == ["A1-01", "A1-02", "A1-03"]
+    assert db.query(func.sum(DomesticReportLog.report_qty)).scalar() is None
+    assert case.rows[0].completed_qty == 0
+    step = progress_service.build_progress_view(db, case.item)[0]
+    assert (step["completed_qty"], step["skipped_qty"], step["passed_qty"]) == (0, 3, 3)
+
+    with pytest.raises(ValueError, match="请求号已用于另一笔跳过"):
+        report_service.submit_manual_skip(
+            db,
+            item_id=case.item.id,
+            progress_id=case.rows[0].id,
+            qty=4,
+            unit_id=None,
+            reason="现场主管确认该批无需此工序",
+            request_id=request_id,
+            user_id=case.worker.id,
+        )
+
+
+def test_manual_skip_exact_unit_and_revoke_blocked_by_downstream_actual_work(
+    db, conditional_order
+):
+    case = conditional_order
+    unit = db.query(DomesticItemUnit).filter_by(item_id=case.item.id, unit_no=7).one()
+    skipped = report_service.submit_manual_skip(
+        db,
+        item_id=case.item.id,
+        progress_id=case.rows[0].id,
+        qty=None,
+        unit_id=unit.id,
+        reason="现场主管确认该件无需此工序",
+        request_id=str(uuid4()),
+        user_id=case.worker.id,
+    )
+    _submit(
+        db,
+        case,
+        1,
+        1,
+        unit_id=unit.id,
+        outcomes={"dandong": 1},
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        report_service.revoke_manual_skip(
+            db, skipped["skip_log_id"], case.worker.id,
+        )
+    message = str(exc_info.value)
+    assert "A1-07" in message
+    assert case.route.process_names[1] in message
+
+
+def test_two_sessions_cannot_double_allocate_same_item_manual_skip(
+    db, engine, conditional_order
+):
+    case = conditional_order
+    db.commit()
+    Session = sessionmaker(bind=engine)
+    first_db = Session()
+    second_db = Session()
+    try:
+        first = report_service.submit_manual_skip(
+            first_db,
+            item_id=case.item.id,
+            progress_id=case.rows[0].id,
+            qty=12,
+            unit_id=None,
+            reason="第一位主管放行十二件产品",
+            request_id=str(uuid4()),
+            user_id=case.worker.id,
+        )
+        with pytest.raises(ValueError, match="最多只能跳过 8 件"):
+            report_service.submit_manual_skip(
+                second_db,
+                item_id=case.item.id,
+                progress_id=case.rows[0].id,
+                qty=12,
+                unit_id=None,
+                reason="第二位主管尝试重复放行产品",
+                request_id=str(uuid4()),
+                user_id=case.worker.id,
+            )
+        assert len(first["unit_ids"]) == 12
+        assert second_db.query(DomesticSkipUnit.unit_id).distinct().count() == 12
+    finally:
+        first_db.close()
+        second_db.close()
+
+
+def test_revoke_searches_all_later_steps_and_ignores_intermediate_skips(
+    db, conditional_order
+):
+    case = conditional_order
+    first = _submit(db, case, 0, 1)
+    unit_id = first["unit_ids"][0]
+    for step_index in (1, 2):
+        report_service.submit_manual_skip(
+            db,
+            item_id=case.item.id,
+            progress_id=case.rows[step_index].id,
+            qty=None,
+            unit_id=unit_id,
+            reason="主管确认该件跨过中间工序",
+            request_id=str(uuid4()),
+            user_id=case.worker.id,
+        )
+    _submit(db, case, 3, 1, unit_id=unit_id)
+
+    with pytest.raises(ValueError) as exc_info:
+        report_service.revoke_report(db, first["log_id"], case.worker.id)
+    message = str(exc_info.value)
+    assert case.route.process_names[3] in message
+    assert "A1-01" in message
+
+
+def test_manual_skip_can_be_revoked_without_downstream_actual_work(
+    db, conditional_order
+):
+    case = conditional_order
+    skipped = report_service.submit_manual_skip(
+        db,
+        item_id=case.item.id,
+        progress_id=case.rows[0].id,
+        qty=2,
+        unit_id=None,
+        reason="主管确认两件无需首道工序",
+        request_id=str(uuid4()),
+        user_id=case.worker.id,
+    )
+
+    result = report_service.revoke_manual_skip(
+        db, skipped["skip_log_id"], case.worker.id,
+    )
+
+    assert result["revoked_qty"] == 2
+    audit = db.query(DomesticSkipLog).get(skipped["skip_log_id"])
+    assert audit.revoked == 1
+    assert progress_service.build_progress_view(db, case.item)[0]["passed_qty"] == 0
+
+
+@pytest.mark.parametrize("reason", ["abcd", " " * 8, "x" * 501])
+def test_manual_skip_schema_rejects_reason_after_stripping(reason):
+    with pytest.raises(ValidationError):
+        ManualSkipSubmit.model_validate({
+            "item_id": 1,
+            "progress_id": 1,
+            "qty": 1,
+            "reason": reason,
+            "request_id": "stable-request-id",
+        })
+
+
+def test_manual_skip_schema_requires_exactly_one_selection_mode():
+    base = {
+        "item_id": 1,
+        "progress_id": 1,
+        "reason": "主管确认无需此工序",
+        "request_id": "stable-request-id",
+    }
+    for selection in ({}, {"qty": 1, "unit_id": 2}):
+        with pytest.raises(ValidationError):
+            ManualSkipSubmit.model_validate({**base, **selection})
+
+
+def test_manual_skip_request_id_distinguishes_quantity_and_unit_modes(
+    db, conditional_order
+):
+    case = conditional_order
+    request_id = str(uuid4())
+    first = report_service.submit_manual_skip(
+        db,
+        item_id=case.item.id,
+        progress_id=case.rows[0].id,
+        qty=1,
+        unit_id=None,
+        reason="主管确认该件无需首道工序",
+        request_id=request_id,
+        user_id=case.worker.id,
+    )
+
+    with pytest.raises(ValueError, match="请求号已用于另一笔跳过"):
+        report_service.submit_manual_skip(
+            db,
+            item_id=case.item.id,
+            progress_id=case.rows[0].id,
+            qty=None,
+            unit_id=first["unit_ids"][0],
+            reason="主管确认该件无需首道工序",
+            request_id=request_id,
+            user_id=case.worker.id,
+        )
+
+
+def test_manual_skip_replay_survives_item_shipping(db, conditional_order):
+    case = conditional_order
+    request_id = str(uuid4())
+    first = report_service.submit_manual_skip(
+        db,
+        item_id=case.item.id,
+        progress_id=case.rows[0].id,
+        qty=2,
+        unit_id=None,
+        reason="主管确认两件无需首道工序",
+        request_id=request_id,
+        user_id=case.worker.id,
+    )
+    item = db.query(DomesticOrderItem).get(case.item.id)
+    item.status = C.ITEM_SHIPPED
+    db.commit()
+
+    replay = report_service.submit_manual_skip(
+        db,
+        item_id=case.item.id,
+        progress_id=case.rows[0].id,
+        qty=2,
+        unit_id=None,
+        reason="主管确认两件无需首道工序",
+        request_id=request_id,
+        user_id=case.worker.id,
+    )
+
+    assert replay["skip_log_id"] == first["skip_log_id"]
+    assert replay["replayed"] is True
+
+
+def test_report_request_unique_race_recovers_as_idempotent_replay(
+    db, conditional_order, monkeypatch
+):
+    case = conditional_order
+    request_id = str(uuid4())
+    first = _submit(db, case, 0, 1, request_id=request_id)
+    original = report_service._report_replay_if_exists
+    calls = 0
+
+    def hide_winner_until_recovery(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls <= 2:
+            return None
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        report_service, "_report_replay_if_exists", hide_winner_until_recovery,
+    )
+    replay = _submit(db, case, 0, 1, request_id=request_id)
+
+    assert replay["log_id"] == first["log_id"]
+    assert replay["replayed"] is True
+
+
+def test_manual_skip_request_unique_race_recovers_as_idempotent_replay(
+    db, conditional_order, monkeypatch
+):
+    case = conditional_order
+    request_id = str(uuid4())
+    first = report_service.submit_manual_skip(
+        db,
+        item_id=case.item.id,
+        progress_id=case.rows[0].id,
+        qty=1,
+        unit_id=None,
+        reason="主管确认该件无需首道工序",
+        request_id=request_id,
+        user_id=case.worker.id,
+    )
+    original = report_service._manual_skip_replay_if_exists
+    calls = 0
+
+    def hide_winner_until_recovery(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return None
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        report_service, "_manual_skip_replay_if_exists", hide_winner_until_recovery,
+    )
+    replay = report_service.submit_manual_skip(
+        db,
+        item_id=case.item.id,
+        progress_id=case.rows[0].id,
+        qty=1,
+        unit_id=None,
+        reason="主管确认该件无需首道工序",
+        request_id=request_id,
+        user_id=case.worker.id,
+    )
+
+    assert replay["skip_log_id"] == first["skip_log_id"]
+    assert replay["replayed"] is True
+
+
+def test_request_unique_race_with_different_payload_returns_stable_error(
+    db, conditional_order, monkeypatch
+):
+    case = conditional_order
+    request_id = str(uuid4())
+    _submit(db, case, 0, 1, request_id=request_id)
+    original = report_service._report_replay_if_exists
+    calls = 0
+
+    def hide_winner_until_recovery(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls <= 2:
+            return None
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        report_service, "_report_replay_if_exists", hide_winner_until_recovery,
+    )
+    with pytest.raises(ValueError, match="请求号已用于另一笔报工"):
+        _submit(db, case, 0, 2, request_id=request_id)
+
+
+def test_request_deadlock_recovers_or_returns_retryable_business_error(
+    db, conditional_order, monkeypatch
+):
+    case = conditional_order
+    request_id = str(uuid4())
+    first = _submit(db, case, 0, 1, request_id=request_id)
+
+    def deadlock_once(*args, **kwargs):
+        raise OperationalError("UPDATE", {}, Exception(1213, "deadlock"))
+
+    monkeypatch.setattr(report_service, "_submit_report_once", deadlock_once)
+    replay = _submit(db, case, 0, 1, request_id=request_id)
+    assert replay["log_id"] == first["log_id"]
+    assert replay["replayed"] is True
+
+
+def test_non_request_unique_integrity_error_is_not_swallowed(
+    db, conditional_order, monkeypatch
+):
+    case = conditional_order
+
+    def unrelated_unique(*args, **kwargs):
+        raise IntegrityError(
+            "INSERT", {}, Exception("UNIQUE constraint failed: some_other_table.code"),
+        )
+
+    monkeypatch.setattr(report_service, "_submit_report_once", unrelated_unique)
+    with pytest.raises(IntegrityError):
+        _submit(db, case, 0, 1, request_id=str(uuid4()))
+
+
+def test_deadlock_without_visible_winner_returns_retryable_business_error(
+    db, conditional_order, monkeypatch
+):
+    case = conditional_order
+
+    def deadlock_once(*args, **kwargs):
+        raise OperationalError("INSERT", {}, Exception(1213, "deadlock"))
+
+    monkeypatch.setattr(report_service, "_submit_report_once", deadlock_once)
+    with pytest.raises(ValueError, match="正在并发处理.*同一请求号重试"):
+        _submit(db, case, 0, 1, request_id=str(uuid4()))
+
+
+def test_manual_skip_deadlock_recovers_existing_winner(
+    db, conditional_order, monkeypatch
+):
+    case = conditional_order
+    request_id = str(uuid4())
+    first = report_service.submit_manual_skip(
+        db,
+        item_id=case.item.id,
+        progress_id=case.rows[0].id,
+        qty=1,
+        unit_id=None,
+        reason="主管确认该件无需首道工序",
+        request_id=request_id,
+        user_id=case.worker.id,
+    )
+
+    def deadlock_once(*args, **kwargs):
+        raise OperationalError("UPDATE", {}, Exception(1213, "deadlock"))
+
+    monkeypatch.setattr(report_service, "_submit_manual_skip_once", deadlock_once)
+    replay = report_service.submit_manual_skip(
+        db,
+        item_id=case.item.id,
+        progress_id=case.rows[0].id,
+        qty=1,
+        unit_id=None,
+        reason="主管确认该件无需首道工序",
+        request_id=request_id,
+        user_id=case.worker.id,
+    )
+    assert replay["skip_log_id"] == first["skip_log_id"]
+    assert replay["replayed"] is True

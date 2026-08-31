@@ -15,6 +15,7 @@ from app.domestic.models import (
     DomesticSkipLog,
     DomesticSkipUnit,
 )
+from app.production.models import Process
 
 
 @dataclass(frozen=True)
@@ -243,8 +244,10 @@ def create_skip_log(
     units: list[DomesticItemUnit],
     source: str,
     reason: str,
-    trigger_report_log_id: int,
+    trigger_report_log_id: int | None,
     user_id: int,
+    skip_mode: str | None = None,
+    request_id: str | None = None,
 ) -> DomesticSkipLog | None:
     if not units:
         return None
@@ -253,8 +256,10 @@ def create_skip_log(
         progress_id=progress.id,
         skip_qty=len(units),
         source=source,
+        skip_mode=skip_mode,
         reason=reason,
         trigger_report_log_id=trigger_report_log_id,
+        request_id=request_id,
         created_by_user_id=user_id,
         revoked=0,
     )
@@ -270,6 +275,99 @@ def create_skip_log(
     ])
     db.flush()
     return skip_log
+
+
+def skip_units(db: Session, skip_log_id: int) -> list[DomesticItemUnit]:
+    return (
+        db.query(DomesticItemUnit)
+        .join(DomesticSkipUnit, DomesticSkipUnit.unit_id == DomesticItemUnit.id)
+        .filter(DomesticSkipUnit.skip_log_id == skip_log_id)
+        .order_by(DomesticItemUnit.unit_no.asc())
+        .all()
+    )
+
+
+def assert_no_downstream_actual_work(
+    db: Session,
+    *,
+    item: DomesticOrderItem,
+    step_order: int,
+    unit_ids: set[int],
+) -> None:
+    """阻断撤销时只看实际报工；自动/人工跳过本身不算下游工作。"""
+    if not unit_ids:
+        return
+    rows = (
+        db.query(
+            DomesticItemProgress.step_order,
+            Process.name,
+            DomesticItemUnit.unit_no,
+        )
+        .join(
+            DomesticReportUnit,
+            DomesticReportUnit.progress_id == DomesticItemProgress.id,
+        )
+        .join(DomesticReportLog, DomesticReportLog.id == DomesticReportUnit.log_id)
+        .join(DomesticItemUnit, DomesticItemUnit.id == DomesticReportUnit.unit_id)
+        .join(Process, Process.id == DomesticItemProgress.process_id)
+        .filter(
+            DomesticItemProgress.item_id == item.id,
+            DomesticItemProgress.step_order > step_order,
+            DomesticReportUnit.unit_id.in_(unit_ids),
+            DomesticReportLog.revoked == 0,
+        )
+        .order_by(
+            DomesticItemProgress.step_order.asc(),
+            DomesticItemUnit.unit_no.asc(),
+        )
+        .all()
+    )
+    if not rows:
+        return
+    earliest_order, process_name, _unit_no = rows[0]
+    earliest_units = []
+    seen = set()
+    for row_order, _name, unit_no in rows:
+        if row_order != earliest_order:
+            break
+        if unit_no not in seen:
+            earliest_units.append(unit_no)
+            seen.add(unit_no)
+    codes = "、".join(
+        _unit_display_code(item, unit_no) for unit_no in earliest_units[:5]
+    )
+    raise ValueError(
+        f"下游工序“{process_name}”已有实际报工单件 {codes}，"
+        "请先撤销下一道的报工（即上述最早下游工序）"
+    )
+
+
+def _unit_display_code(item: DomesticOrderItem, unit_no: int) -> str:
+    """避免 routing_service 与 unit_service 形成模块级循环导入。"""
+    return f"A{item.line_no or 1}-{unit_no:02d}"
+
+
+def lock_triggered_skips(
+    db: Session,
+    *,
+    trigger_report_log_id: int,
+) -> list[DomesticSkipLog]:
+    return (
+        db.query(DomesticSkipLog)
+        .filter(
+            DomesticSkipLog.trigger_report_log_id == trigger_report_log_id,
+            DomesticSkipLog.revoked == 0,
+        )
+        .with_for_update()
+        .all()
+    )
+
+
+def revoke_locked_skips(rows: list[DomesticSkipLog], *, revoked_at) -> list[int]:
+    for row in rows:
+        row.revoked = 1
+        row.revoked_at = revoked_at
+    return [row.id for row in rows]
 
 
 def create_decision_skips(

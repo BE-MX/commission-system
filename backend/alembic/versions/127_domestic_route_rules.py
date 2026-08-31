@@ -68,6 +68,7 @@ def upgrade() -> None:
         sa.Column("progress_id", sa.Integer(), nullable=False),
         sa.Column("skip_qty", sa.Integer(), nullable=False),
         sa.Column("source", sa.String(24), nullable=False),
+        sa.Column("skip_mode", sa.String(16), nullable=True),
         sa.Column("reason", sa.String(500), nullable=True),
         sa.Column("trigger_report_log_id", sa.BigInteger(), nullable=True),
         sa.Column("request_id", sa.String(64), nullable=True),

@@ -258,3 +258,23 @@ class ReportSubmit(BaseModel):
 
 class ReportRevoke(BaseModel):
     log_id: int = Field(..., gt=0, description="要撤销的报工流水 ID")
+
+
+class ManualSkipSubmit(BaseModel):
+    item_id: int = Field(..., gt=0)
+    progress_id: int = Field(..., gt=0, description="要人工跳过的工序进度行")
+    qty: int | None = Field(None, gt=0, description="数量模式跳过数量")
+    unit_id: int | None = Field(None, gt=0, description="逐件模式单件 ID")
+    reason: str = Field(..., min_length=5, max_length=500)
+    request_id: str = Field(..., min_length=8, max_length=64, description="稳定幂等键")
+
+    @field_validator("reason", "request_id", mode="before")
+    @classmethod
+    def _strip_manual_skip_text(cls, value: str) -> str:
+        return (value or "").strip()
+
+    @model_validator(mode="after")
+    def _validate_skip_mode(self):
+        if (self.qty is None) == (self.unit_id is None):
+            raise ValueError("qty 与 unit_id 必须且只能填写一个")
+        return self

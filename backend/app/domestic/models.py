@@ -385,6 +385,7 @@ class DomesticSkipLog(Base):
     )
     skip_qty = Column(Integer, nullable=False, comment="跳过数量")
     source = Column(String(24), nullable=False, comment="decision/optional_bypass/manual")
+    skip_mode = Column(String(16), comment="人工跳过模式：quantity/unit；自动跳过为空")
     reason = Column(String(500), comment="跳过原因；人工放行必填")
     trigger_report_log_id = Column(
         BigInteger,
