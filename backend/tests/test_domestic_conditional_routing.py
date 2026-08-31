@@ -1,6 +1,7 @@
 """内贸条件路线规则与逐件分流的状态机契约。"""
 
 import asyncio
+import importlib.util
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -12,7 +13,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from sqlalchemy import func
+from sqlalchemy import Column, func
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import sessionmaker
 from pydantic import ValidationError
@@ -54,6 +55,39 @@ def test_domestic_route_migration_is_the_only_head_after_customer_126():
 
     assert revisions.get_heads() == ["127_domestic_route_rules"]
     assert revisions.get_revision("127_domestic_route_rules").down_revision == "126"
+
+
+def test_domestic_route_migration_documents_every_new_table_and_column(monkeypatch):
+    backend_root = Path(__file__).resolve().parents[1]
+    migration_path = backend_root / "alembic" / "versions" / "127_domestic_route_rules.py"
+    spec = importlib.util.spec_from_file_location("migration_127_domestic_route_rules", migration_path)
+    migration = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(migration)
+
+    created_tables = []
+    added_columns = []
+    monkeypatch.setattr(
+        migration.op,
+        "create_table",
+        lambda name, *elements, **kwargs: created_tables.append((name, elements, kwargs)),
+    )
+    monkeypatch.setattr(
+        migration.op,
+        "add_column",
+        lambda table_name, column: added_columns.append((table_name, column)),
+    )
+
+    migration.upgrade()
+
+    assert created_tables
+    for table_name, elements, kwargs in created_tables:
+        assert kwargs.get("comment"), table_name
+        columns = [element for element in elements if isinstance(element, Column)]
+        assert columns
+        assert all(column.comment for column in columns), table_name
+    assert added_columns
+    assert all(column.comment for _, column in added_columns)
 
 
 @pytest.fixture
