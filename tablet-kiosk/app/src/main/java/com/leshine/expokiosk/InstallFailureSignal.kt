@@ -29,6 +29,37 @@ internal class OneTimeTokenGate(
     }
 }
 
+/** Orders fail-open process recovery before optional cross-activity signaling. */
+internal class InstallFailureRecovery(
+    private val failProcess: () -> Unit,
+    private val issueToken: () -> String,
+    private val launch: (String) -> Unit,
+    private val diagnostics: (String, Exception) -> Unit = { _, _ -> },
+) {
+    fun run() {
+        failProcess()
+        val token = try {
+            issueToken()
+        } catch (exception: Exception) {
+            report("issue", exception)
+            return
+        }
+        try {
+            launch(token)
+        } catch (exception: Exception) {
+            report("launch", exception)
+        }
+    }
+
+    private fun report(stage: String, exception: Exception) {
+        try {
+            diagnostics(stage, exception)
+        } catch (_: Exception) {
+            // Diagnostics must never change the recovery lifecycle.
+        }
+    }
+}
+
 /** Process-atomic access to the app-private, one-time install failure token. */
 internal object InstallFailureSignal {
     private const val PREFS = "install_failure_signal"

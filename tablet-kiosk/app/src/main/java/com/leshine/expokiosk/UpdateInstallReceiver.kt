@@ -52,23 +52,22 @@ class UpdateInstallReceiver : BroadcastReceiver() {
     }
 
     private fun launchFailure(context: Context, status: Int) {
-        val token = try {
-            InstallFailureSignal.issue(context)
-        } catch (exception: Exception) {
-            Log.w(TAG, "Install failure signal could not persist type=${exception.javaClass.simpleName}")
-            return
-        }
-        try {
-            context.startActivity(
-                Intent(context, MainActivity::class.java)
-                    .setAction(ACTION_UPDATE_FAILED)
-                    .putExtra(EXTRA_SAFE_STATUS_CODE, status)
-                    .putExtra(EXTRA_FAILURE_TOKEN, token)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-            )
-        } catch (exception: Exception) {
-            Log.w(TAG, "Kiosk recovery could not start type=${exception.javaClass.simpleName}")
-        }
+        InstallFailureRecovery(
+            failProcess = { StartupUpdateProcess.coordinator.failInstall() },
+            issueToken = { InstallFailureSignal.issue(context) },
+            launch = { token ->
+                context.startActivity(
+                    Intent(context, MainActivity::class.java)
+                        .setAction(ACTION_UPDATE_FAILED)
+                        .putExtra(EXTRA_SAFE_STATUS_CODE, status)
+                        .putExtra(EXTRA_FAILURE_TOKEN, token)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                )
+            },
+            diagnostics = { stage, exception ->
+                Log.w(TAG, "Kiosk recovery failed stage=$stage type=${exception.javaClass.simpleName}")
+            },
+        ).run()
     }
 
     companion object {

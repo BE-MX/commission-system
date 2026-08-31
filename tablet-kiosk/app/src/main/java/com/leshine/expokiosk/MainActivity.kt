@@ -48,10 +48,6 @@ import java.net.URL
 import java.util.concurrent.Executors
 import kotlin.math.abs
 
-private val startupUpdateSession = StartupUpdateCoordinator { exception ->
-    Log.w("ExpoKioskUpdate", "Update startup failed type=${exception.javaClass.simpleName}")
-}
-
 /**
  * 莱莎展会 AI 试戴 — 平板 kiosk 壳。
  *
@@ -82,7 +78,7 @@ class MainActivity : ComponentActivity() {
     private val updateAwaitingReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == UpdateInstallReceiver.ACTION_UPDATE_AWAITING_USER) {
-                startupUpdateSession.publish(UpdateState.AwaitingUserAction)
+                StartupUpdateProcess.coordinator.publish(UpdateState.AwaitingUserAction)
             }
         }
     }
@@ -274,10 +270,10 @@ class MainActivity : ComponentActivity() {
         if (startupUpdateRequested || startupUpdateReleased) return
         startupUpdateRequested = true
 
-        val latest = startupUpdateSession.attach(updateStateObserver)
+        val latest = StartupUpdateProcess.coordinator.attach(updateStateObserver)
         renderUpdateState(latest ?: UpdateState.Checking)
         val appContext = applicationContext
-        startupUpdateSession.start(
+        StartupUpdateProcess.coordinator.start(
             execute = { task -> io.execute(task) },
             createRunner = {
                 val packageInfo = appContext.packageManager.getPackageInfo(
@@ -318,9 +314,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun releaseAfterInstallFailure() {
-        startupUpdateSession.failInstall()
+        StartupUpdateProcess.coordinator.failInstall()
         startupUpdateReleased = true
-        startupUpdateSession.detach(updateStateObserver)
+        StartupUpdateProcess.coordinator.detach(updateStateObserver)
         updateBlocksKiosk = false
         updateOverlay.hide()
         if (!updateFailureNoticeShown) {
@@ -758,7 +754,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         activityDestroyed = true
-        startupUpdateSession.detach(updateStateObserver)
+        StartupUpdateProcess.coordinator.detach(updateStateObserver)
         unregisterUpdateReceiver()
         ui.removeCallbacksAndMessages(null)
         super.onDestroy()
