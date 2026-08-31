@@ -150,6 +150,18 @@ class UpdateEngineTest {
     }
 
     @Test
+    fun `uses a stable failure message when an exception message is null`() {
+        val source = FakeSource(updateManifest).apply {
+            fetchFailure = IllegalStateException(null as String?)
+        }
+        val states = mutableListOf<UpdateState>()
+
+        engine(source).run(states::add)
+
+        assertEquals(UpdateState.Failed("升级失败"), states.last())
+    }
+
+    @Test
     fun `allows only the first concurrent or later run to perform IO`() {
         val fetchEntered = CountDownLatch(1)
         val allowFetchToFinish = CountDownLatch(1)
