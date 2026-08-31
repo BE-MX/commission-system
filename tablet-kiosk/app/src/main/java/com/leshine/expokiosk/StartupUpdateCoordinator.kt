@@ -81,6 +81,8 @@ internal class StartupUpdateCoordinator(
 
     fun currentState(): UpdateState? = state.current()
 
+    fun hasAttempted(): Boolean = synchronized(lock) { attempted }
+
     fun isReleased(): Boolean = synchronized(lock) { state.current().isReleaseTerminal() }
 
     private fun report(exception: Exception) {

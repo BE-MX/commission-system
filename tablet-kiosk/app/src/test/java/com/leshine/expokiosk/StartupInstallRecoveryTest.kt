@@ -150,6 +150,7 @@ class StartupInstallRecoveryTest {
         val coordinator = StartupUpdateCoordinator()
         var originalTask: (() -> Unit)? = null
         coordinator.start(execute = { originalTask = it }) { StartupUpdateRun {} }
+        assertNull(coordinator.currentState())
         var cleanups = 0
         var creates = 0
 
@@ -169,6 +170,42 @@ class StartupInstallRecoveryTest {
         assertEquals(0, creates)
         assertTrue(originalTask != null)
         assertFalse(coordinator.currentState() is UpdateState.Failed)
+    }
+
+    @Test
+    fun `recreated activity preserves active install marker and original runner`() {
+        val coordinator = StartupUpdateCoordinator()
+        var originalRuns = 0
+        coordinator.start(execute = ::runNow) {
+            StartupUpdateRun { publish ->
+                originalRuns += 1
+                publish(UpdateState.Installing)
+            }
+        }
+        val gate = ActiveInstallSessionGate(BlockingInstallSessionStorage()) { "active-token" }
+        val active = gate.issue(42)
+        var cleanups = 0
+        var creates = 0
+        var replacementRuns = 0
+
+        val remainsActive = startUpdateAfterInstallRecovery(
+            activeSession = gate,
+            coordinator = coordinator,
+            execute = ::runNow,
+            cleanupSessions = { cleanups += 1 },
+            createRunner = {
+                creates += 1
+                StartupUpdateRun { replacementRuns += 1 }
+            },
+        )
+
+        assertTrue(remainsActive)
+        assertTrue(gate.matches(active.sessionId, active.token))
+        assertEquals(0, cleanups)
+        assertEquals(0, creates)
+        assertEquals(0, replacementRuns)
+        assertEquals(1, originalRuns)
+        assertEquals(UpdateState.Installing, coordinator.currentState())
     }
 
     @Test

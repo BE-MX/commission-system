@@ -134,6 +134,8 @@ internal fun startUpdateAfterInstallRecovery(
     createRunner: () -> StartupUpdateRun,
     diagnostics: (Exception) -> Unit = {},
 ): Boolean {
+    if (coordinator.hasAttempted()) return !coordinator.isReleased()
+
     val hadStaleActive = try {
         activeSession.beginStartup()
     } catch (exception: Exception) {
