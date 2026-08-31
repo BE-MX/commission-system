@@ -26,6 +26,23 @@ class UpdateManifestParserTest {
     }
 
     @Test
+    fun `parses any field order and standard JSON string escapes`() {
+        val raw = """
+            {
+              "sha256": "$digest",
+              "apk_size": 4,
+              "version_name": "1.9-\"stable\"-\u0021",
+              "version_code": 10
+            }
+        """.trimIndent()
+
+        assertEquals(
+            UpdateManifest(10, "1.9-\"stable\"-!", 4, digest),
+            UpdateManifestParser.parse(raw).getOrThrow(),
+        )
+    }
+
+    @Test
     fun `rejects missing fields and unknown fields`() {
         val invalid = listOf(
             "{}",
@@ -56,6 +73,48 @@ class UpdateManifestParserTest {
         val raw = manifest() + " true"
 
         assertTrue(raw, UpdateManifestParser.parse(raw).isFailure)
+    }
+
+    @Test
+    fun `rejects single-quoted and bare JSON strings`() {
+        val invalid = listOf(
+            """{'version_code':10,"version_name":"1.9","apk_size":4,"sha256":"$digest"}""",
+            """{"version_code":10,"version_name":'1.9',"apk_size":4,"sha256":"$digest"}""",
+            """{"version_code":10,"version_name":"1.9","apk_size":4,"sha256":'$digest'}""",
+            """{"version_code":10,"version_name":release-1.9,"apk_size":4,"sha256":"$digest"}""",
+            """{"version_code":10,"version_name":"1.9","apk_size":4,"sha256":$digest}""",
+        )
+
+        invalid.forEach { raw ->
+            assertTrue(raw, UpdateManifestParser.parse(raw).isFailure)
+        }
+    }
+
+    @Test
+    fun `rejects JavaScript comments and trailing commas`() {
+        val invalid = listOf(
+            """{/* comment */"version_code":10,"version_name":"1.9","apk_size":4,"sha256":"$digest"}""",
+            """{"version_code":10,"version_name":"1.9","apk_size":4,"sha256":"$digest",}""",
+        )
+
+        invalid.forEach { raw ->
+            assertTrue(raw, UpdateManifestParser.parse(raw).isFailure)
+        }
+    }
+
+    @Test
+    fun `rejects nonstandard and non-integer JSON numbers`() {
+        val invalidTokens = listOf("+10", "0xA", "NaN", "Infinity", "10.0", "1e1", "01")
+        val invalid = invalidTokens.flatMap { token ->
+            listOf(
+                manifestWithNumbers(versionCode = token),
+                manifestWithNumbers(apkSize = token),
+            )
+        }
+
+        invalid.forEach { raw ->
+            assertTrue(raw, UpdateManifestParser.parse(raw).isFailure)
+        }
     }
 
     @Test
@@ -146,4 +205,10 @@ class UpdateManifestParserTest {
         .put("apk_size", apkSize)
         .put("sha256", sha256)
         .toString()
+
+    private fun manifestWithNumbers(
+        versionCode: String = "10",
+        apkSize: String = "4",
+    ): String =
+        """{"version_code":$versionCode,"version_name":"1.9","apk_size":$apkSize,"sha256":"$digest"}"""
 }
