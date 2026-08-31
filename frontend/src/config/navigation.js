@@ -46,8 +46,8 @@ export const MENU_GROUPS = {
     title: '客户经营',
     icon: Aim,
     anyPermission: [
-      'customer:read', 'customer:read_all',
-      'sales_automation:read', 'sales_automation:write', 'sales_automation:admin',
+      'customer:read',
+      'sales_automation:read',
       'customer_opportunity:read', 'customer_radar:read',
     ],
   },
@@ -294,10 +294,10 @@ export const NAV_ENTRIES = [
     name: 'CustomerHubProfiles',
     component: () => import('@/views/customer_hub/CustomerProfiles.vue'),
     title: '客户档案',
-    anyPermission: ['customer:read', 'customer:read_all'],
+    anyPermission: ['customer:read'],
     menu: {
       group: 'customerOperations', title: '客户档案', icon: OfficeBuilding, order: 10,
-      anyPermission: ['customer:read', 'customer:read_all'],
+      anyPermission: ['customer:read'],
     },
   },
   {
@@ -305,10 +305,10 @@ export const NAV_ENTRIES = [
     name: 'CustomerHubAcquisition',
     component: () => import('@/views/customer_hub/AcquisitionTasks.vue'),
     title: '获客任务',
-    anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+    anyPermission: ['sales_automation:read'],
     menu: {
       group: 'customerOperations', title: '获客任务', icon: Lightning, order: 20,
-      anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+      anyPermission: ['sales_automation:read'],
     },
   },
   {
@@ -316,10 +316,10 @@ export const NAV_ENTRIES = [
     name: 'CustomerHubResearch',
     component: () => import('@/views/customer_hub/ResearchCenter.vue'),
     title: '背调中心',
-    anyPermission: ['sales_automation:read', 'customer:read_all'],
+    anyPermission: ['sales_automation:read'],
     menu: {
       group: 'customerOperations', title: '背调中心', icon: DataBoard, order: 30,
-      anyPermission: ['sales_automation:read', 'customer:read_all'],
+      anyPermission: ['sales_automation:read'],
     },
   },
   {
@@ -327,10 +327,10 @@ export const NAV_ENTRIES = [
     name: 'CustomerHubOpportunities',
     component: () => import('@/views/customer_hub/CustomerOpportunities.vue'),
     title: '客户机会',
-    anyPermission: ['customer_opportunity:read', 'customer:read_all'],
+    anyPermission: ['customer_opportunity:read'],
     menu: {
       group: 'customerOperations', title: '客户机会', icon: Lightning, order: 40,
-      anyPermission: ['customer_opportunity:read', 'customer:read_all'],
+      anyPermission: ['customer_opportunity:read'],
     },
   },
   {
@@ -338,10 +338,10 @@ export const NAV_ENTRIES = [
     name: 'CustomerHubRadar',
     component: () => import('@/views/customer_hub/CustomerRadar.vue'),
     title: '经营雷达',
-    anyPermission: ['customer_radar:read', 'customer:read_all'],
+    anyPermission: ['customer_radar:read'],
     menu: {
       group: 'customerOperations', title: '经营雷达', icon: Aim, order: 50,
-      anyPermission: ['customer_radar:read', 'customer:read_all'],
+      anyPermission: ['customer_radar:read'],
     },
   },
 

@@ -33,45 +33,50 @@
             <article><span>主要行业</span><strong>{{ customer.primary_industry || '待补充' }}</strong></article>
             <article><span>互动健康度</span><strong>{{ customer.engagement_health || '待评估' }}</strong></article>
           </div>
-          <SectionBlock title="下一步行动" section-key="actions" :value="profileSection('actions', 'next_actions')" />
+          <SectionBlock title="当前需求" section-key="current needs" :value="sections.currentNeeds" />
+          <SectionBlock title="下一步行动" section-key="actions" :value="sections.actions" />
         </el-tab-pane>
 
         <el-tab-pane label="身份与联系人" name="identity">
-          <SectionBlock title="Identity · 身份" section-key="identity" :value="profileSection('identity', 'company')" />
-          <SectionBlock title="Contacts · 联系人" section-key="contacts" :value="profileSection('contacts', 'people')" />
+          <SectionBlock title="Identity · 身份" section-key="identity" :value="sections.identity" />
+          <SectionBlock title="Contacts · 联系人" section-key="contacts" :value="sections.contacts" />
+          <SectionBlock title="Preferences · 偏好" section-key="preferences" :value="sections.preferences" />
+          <SectionBlock title="Behavior · 行为模式" section-key="behavior patterns" :value="sections.behaviorPatterns" />
         </el-tab-pane>
 
         <el-tab-pane label="往来与订单" name="relationships" lazy>
-          <SectionBlock title="Conversations · 沟通记录" section-key="conversations" :value="profileSection('conversations')" />
+          <SectionBlock title="Conversations · 沟通记录" section-key="conversations" :value="sections.conversations" />
           <div v-loading="timelineLoading" class="timeline-block">
             <el-alert v-if="timelineError" type="error" title="时间线加载失败，当前内容不是空数据。" :closable="false" show-icon>
               <template #default><el-button link type="primary" @click="loadTimeline(customer.customer_id)">重试</el-button></template>
             </el-alert>
             <el-timeline v-else-if="timeline.length">
-              <el-timeline-item v-for="event in timeline" :key="event.event_id" :timestamp="event.occurred_at">
+              <el-timeline-item v-for="event in timeline" :key="event.event_id" :timestamp="formatDate(event.occurred_at)">
                 <strong>{{ event.title || event.event_type }}</strong>
                 <p>{{ event.summary || '无补充摘要' }}</p>
               </el-timeline-item>
             </el-timeline>
             <el-empty v-else-if="!timelineLoading" description="暂无可见时间线记录" :image-size="72" />
           </div>
-          <SectionBlock title="Orders · 订单线索" section-key="orders" :value="profileSection('orders')" />
+          <SectionBlock title="Orders · 商业摘要" section-key="orders" :value="sections.orders" />
         </el-tab-pane>
 
         <el-tab-pane label="证据与机会" name="intelligence" lazy>
-          <SectionBlock title="Evidence · 证据" section-key="evidence" :value="profileSection('evidence', 'sources')" />
-          <SectionBlock title="Opportunities · 客户机会" section-key="opportunities" :value="profileSection('opportunities')" />
-          <SectionBlock title="Actions · 经营动作" section-key="actions" :value="profileSection('actions', 'next_actions')" />
+          <SectionBlock title="Evidence · 证据" section-key="evidence" :value="sections.evidence" />
+          <SectionBlock title="Opportunities · 客户机会" section-key="opportunities" :value="sections.opportunities" />
+          <SectionBlock title="Actions · 经营动作" section-key="actions" :value="sections.actions" />
+          <SectionBlock title="Risks · 风险" section-key="risks" :value="sections.risks" />
+          <SectionBlock title="Recent changes · 最近变化" section-key="recent changes" :value="sections.recentChanges" />
+          <SectionBlock title="Open questions · 待确认问题" section-key="open questions" :value="sections.openQuestions" />
         </el-tab-pane>
 
         <el-tab-pane label="治理信息" name="governance" lazy>
-          <SectionBlock title="Annotations · 人工批注" section-key="annotations" :value="customer.annotations" />
+          <SectionBlock title="Annotations · 人工批注" section-key="annotations" :value="customer.annotations ?? sections.annotations" />
           <section class="section-block" data-section="version quality">
             <h3>Version quality · 版本质量</h3>
             <dl>
-              <div><dt>投影状态</dt><dd>{{ customer.profile_projection || 'unavailable' }}</dd></div>
-              <div><dt>资料完整度</dt><dd>{{ customer.profile_completeness ?? 0 }}%</dd></div>
-              <div><dt>最近更新</dt><dd>{{ customer.updated_at || '未知' }}</dd></div>
+              <div><dt>档案质量</dt><dd><pre>{{ printable(sections.versionQuality) }}</pre></dd></div>
+              <div><dt>最近更新</dt><dd>{{ formatDate(customer.updated_at) }}</dd></div>
             </dl>
           </section>
         </el-tab-pane>
@@ -83,6 +88,8 @@
 <script setup>
 import { computed, defineComponent, h, ref, watch } from 'vue'
 import DetailDrawer from '@/components/DetailDrawer.vue'
+import { formatBeijingDateTime } from '@/utils/datetime'
+import { mapCustomerProfileSections } from './customerHubController'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -105,12 +112,9 @@ const customerTitle = computed(() => props.customer ? `客户档案 · ${props.c
 const identityExplanation = computed(() => props.customer?.identity_status === 'verified'
   ? '身份已核验；customer_id 是唯一业务主键。'
   : '临时客户：名称可为空，系统仍以 customer_id 持续归集证据，待身份核验后再确认主体。')
-
-function profileSection(...keys) {
-  const profile = props.customer?.profile || {}
-  for (const key of keys) if (profile[key] != null) return profile[key]
-  return null
-}
+const sections = computed(() => mapCustomerProfileSections(props.customer?.profile || {}, props.timeline))
+const formatDate = value => value ? formatBeijingDateTime(value) : '该档案版本未提供'
+const printable = value => value == null ? '该档案版本未提供' : JSON.stringify(value, null, 2)
 
 function handleTabChange(name) {
   if (name === 'relationships') props.loadTimeline(props.customer?.customer_id)
@@ -122,7 +126,7 @@ const SectionBlock = defineComponent({
     return () => h('section', { class: 'section-block', 'data-section': blockProps.sectionKey }, [
       h('h3', blockProps.title),
       blockProps.value == null || (Array.isArray(blockProps.value) && blockProps.value.length === 0)
-        ? h('p', { class: 'empty-copy' }, '当前档案尚无此类信息')
+        ? h('p', { class: 'empty-copy' }, '该档案版本未提供此部分')
         : h('pre', JSON.stringify(blockProps.value, null, 2)),
     ])
   },

@@ -4,6 +4,7 @@ import {
   createPublicPoolBatch,
   createSearchJob,
   getCustomer,
+  getResearchTask,
   getAcquisitionProfile,
   listActions,
   listCustomerTimeline,
@@ -15,6 +16,7 @@ import {
   reviewResearchTask,
   saveAcquisitionProfile,
   updateAction,
+  updateOpportunity,
 } from '@/api/customerHub'
 
 const LISTERS = {
@@ -36,10 +38,54 @@ export function useAcquisitionWorkflows() {
 
 export function useResearchWorkflows() {
   const workflowLoading = ref(false), workflowError = ref(null)
+  const detail = ref(null), detailLoading = ref(false), detailError = ref(null), detailTaskId = ref(null)
+  let detailRequest = 0
   async function run(request) { workflowLoading.value = true; workflowError.value = null; try { return Boolean(await request()) } catch (error) { workflowError.value = error; return false } finally { workflowLoading.value = false } }
   const createBatch = payload => run(() => createPublicPoolBatch(payload))
   const reviewTask = (taskId, status) => run(() => reviewResearchTask(taskId, status))
-  return { workflowLoading, workflowError, createBatch, reviewTask }
+  async function loadTaskDetail(taskId) {
+    const requestId = ++detailRequest
+    detailTaskId.value = taskId
+    detail.value = null
+    detailError.value = null
+    detailLoading.value = true
+    try {
+      const response = await getResearchTask(taskId)
+      if (requestId === detailRequest && detailTaskId.value === taskId) detail.value = response.data
+      return detail.value
+    } catch (error) {
+      if (requestId === detailRequest) detailError.value = error
+      return null
+    } finally {
+      if (requestId === detailRequest) detailLoading.value = false
+    }
+  }
+  const retryTaskDetail = () => detailTaskId.value ? loadTaskDetail(detailTaskId.value) : null
+  return { workflowLoading, workflowError, createBatch, reviewTask, detail, detailLoading, detailError, detailTaskId, loadTaskDetail, retryTaskDetail }
+}
+
+export function useOpportunityWorkflow() {
+  const workflowLoading = ref(false), workflowError = ref(null)
+  async function submit(opportunityId, payload) {
+    if (workflowLoading.value) return false
+    workflowLoading.value = true; workflowError.value = null
+    try { await updateOpportunity(opportunityId, payload); return true }
+    catch (error) { workflowError.value = error; return false }
+    finally { workflowLoading.value = false }
+  }
+  return { workflowLoading, workflowError, submit }
+}
+
+export function useRadarWorkflow() {
+  const workflowLoading = ref(false), workflowError = ref(null)
+  async function submit(actionId, payload) {
+    if (workflowLoading.value) return false
+    workflowLoading.value = true; workflowError.value = null
+    try { await updateAction(actionId, payload); return true }
+    catch (error) { workflowError.value = error; return false }
+    finally { workflowLoading.value = false }
+  }
+  return { workflowLoading, workflowError, submit }
 }
 
 export function useCustomerHub(kind) {
@@ -140,19 +186,6 @@ export function useCustomerHub(kind) {
     }
   }
 
-  async function completeAction(actionId) {
-    mutatingId.value = actionId
-    try {
-      await updateAction(actionId, { operation: 'complete', outcome_code: 'other' })
-      await state.fetchList()
-    } catch (caught) {
-      error.value = caught
-      throw caught
-    } finally {
-      mutatingId.value = null
-    }
-  }
-
   return {
     ...state,
     loading,
@@ -171,6 +204,5 @@ export function useCustomerHub(kind) {
     loadDetail,
     loadTimeline,
     requeueJob,
-    completeAction,
   }
 }

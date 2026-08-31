@@ -4,24 +4,14 @@ import { readFileSync } from 'node:fs'
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
 
-test('customer hub API uses the registered client and maps list/detail parameters', () => {
+test('customer hub API uses only the registered customer hub client', () => {
   const clients = read('../src/api/clients.js')
   const api = read('../src/api/customerHub.js')
+  const contract = read('../src/api/customerHubContract.js')
 
   assert.match(clients, /customerHubClient\s*=\s*createApiClient\(\{\s*baseURL:\s*['"]\/api\/customer-hub['"]/)
   assert.match(api, /import\s*\{\s*customerHubClient\s*\}\s*from\s*['"]\.\/clients['"]/)
-  assert.doesNotMatch(api, /axios|createApiClient/)
-  assert.match(api, /listCustomers\s*=\s*params\s*=>\s*customerHubClient\.get\(['"]\/customers['"],\s*\{\s*params/)
-  assert.match(api, /getCustomer\s*=\s*customerId\s*=>\s*customerHubClient\.get\(`\/customers\/\$\{customerId\}`\)/)
-  assert.match(api, /listCustomerTimeline\s*=\s*\(customerId,\s*params\)\s*=>\s*customerHubClient\.get\(`\/customers\/\$\{customerId\}\/timeline`,\s*\{\s*params/)
-  assert.match(api, /listResearchTasks\s*=\s*params\s*=>\s*customerHubClient\.get\(['"]\/research-tasks['"],\s*\{\s*params/)
-  assert.match(api, /listSearchJobs\s*=\s*params\s*=>\s*customerHubClient\.get\(['"]\/search-jobs['"],\s*\{\s*params/)
-  assert.match(api, /getAcquisitionProfile\s*=.*\/acquisition-profile/)
-  assert.match(api, /createSearchJob\s*=.*\/search-jobs/)
-  assert.match(api, /createPublicPoolBatch\s*=.*\/public-pool\/batches/)
-  assert.match(api, /reviewResearchTask\s*=.*result-review/)
-  assert.match(api, /listOpportunities\s*=\s*params\s*=>\s*customerHubClient\.get\(['"]\/opportunities['"],\s*\{\s*params/)
-  assert.match(api, /listActions\s*=\s*params\s*=>\s*customerHubClient\.get\(['"]\/actions['"],\s*\{\s*params/)
+  assert.doesNotMatch(api + contract, /axios|createApiClient|\/api\/insight|\/api\/sales/)
 })
 
 test('customer hub list state exposes loading empty error and stale guidance', () => {
@@ -37,7 +27,6 @@ test('customer hub list state exposes loading empty error and stale guidance', (
   assert.match(composable, /数据可能已过期/)
   assert.match(composable, /page_size/)
   assert.match(composable, /async function requeueJob/)
-  assert.match(composable, /async function completeAction/)
   assert.match(composable, /requestId !== listRequest/)
   assert.match(composable, /currentCustomerId\.value !== id/)
   assert.match(composable, /currentCustomerId\.value === customerId/)

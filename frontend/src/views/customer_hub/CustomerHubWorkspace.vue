@@ -57,38 +57,39 @@
           <el-table-column label="归档客户" min-width="110"><template #default="{ row }">{{ row.created_customer_count ?? 0 }}</template></el-table-column>
           <el-table-column prop="policy_version" label="策略版本" min-width="130" />
           <el-table-column label="反馈" min-width="190"><template #default="{ row }"><span :class="{ danger: row.error_message }">{{ row.error_message || `已去重 ${row.deduplicated_count ?? 0} 条` }}</span></template></el-table-column>
-          <el-table-column label="操作" min-width="110" fixed="right"><template #default="{ row }"><el-button v-any-permission="['sales_automation:write', 'sales_automation:admin']" link type="primary" :loading="mutatingId === row.job_id" :disabled="!['failed', 'completed'].includes(row.status)" @click="retryJob(row)">重新入队</el-button></template></el-table-column>
+          <el-table-column label="操作" min-width="110" fixed="right"><template #default="{ row }"><el-button v-if="canRequeueJob(row)" v-any-permission="['sales_automation:write', 'sales_automation:admin']" link type="primary" :loading="mutatingId === row.job_id" @click="retryJob(row)">重新入队</el-button><span v-else>—</span></template></el-table-column>
         </template>
 
         <template v-else-if="kind === 'research'">
-          <el-table-column label="客户" min-width="130"><template #default="{ row }"><button class="customer-link compact" type="button" @click="openCustomer(row.customer_id)">#{{ row.customer_id }}</button></template></el-table-column>
+          <el-table-column label="客户" min-width="130"><template #default="{ row }"><button v-if="canOpenDetail" class="customer-link compact" type="button" @click="openCustomer(row.customer_id)">#{{ row.customer_id }}</button><span v-else>#{{ row.customer_id }}</span></template></el-table-column>
           <el-table-column prop="task_type" label="背调类型" min-width="150" />
           <el-table-column prop="tier" label="层级" min-width="90" />
           <el-table-column label="执行状态" min-width="110"><template #default="{ row }"><el-tag :type="tagType(row.task_status)" size="small">{{ statusLabel(row.task_status) }}</el-tag></template></el-table-column>
           <el-table-column prop="result_review_status" label="结果复核" min-width="120" />
           <el-table-column prop="data_classification" label="数据级别" min-width="150" />
-          <el-table-column label="复核" min-width="160" fixed="right"><template #default="{ row }"><el-button v-permission="'sales_automation:admin'" link type="success" @click="$emit('review-task', row, 'accepted')">通过复核</el-button><el-button v-permission="'sales_automation:admin'" link type="warning" @click="$emit('review-task', row, 'revision_requested')">要求修订</el-button></template></el-table-column>
+          <el-table-column label="操作" min-width="110" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="$emit('inspect-task', row)">查看详情</el-button></template></el-table-column>
         </template>
 
         <template v-else-if="kind === 'opportunities'">
           <el-table-column prop="title" label="机会" min-width="240" />
-          <el-table-column label="客户" min-width="120"><template #default="{ row }"><button class="customer-link compact" type="button" @click="openCustomer(row.customer_id)">#{{ row.customer_id }}</button></template></el-table-column>
+          <el-table-column label="客户" min-width="120"><template #default="{ row }"><button v-if="canOpenDetail" class="customer-link compact" type="button" @click="openCustomer(row.customer_id)">#{{ row.customer_id }}</button><span v-else>#{{ row.customer_id }}</span></template></el-table-column>
           <el-table-column label="状态" min-width="110"><template #default="{ row }"><el-tag :type="tagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
           <el-table-column prop="priority_level" label="优先级" min-width="100" />
           <el-table-column prop="owner_user_id" label="负责人" min-width="100" />
-          <el-table-column prop="due_at" label="截止时间" min-width="170" />
+          <el-table-column label="截止时间" min-width="170"><template #default="{ row }">{{ formatDate(row.due_at) }}</template></el-table-column>
+          <el-table-column label="操作" min-width="90" fixed="right"><template #default="{ row }"><el-button v-any-permission="['customer_opportunity:write', 'customer:admin']" link type="primary" :disabled="getOpportunityTransitionOptions(row.status).length === 0" @click="$emit('edit-opportunity', row)">更新</el-button></template></el-table-column>
         </template>
 
         <template v-else>
           <el-table-column prop="action_type" label="建议动作" min-width="200" />
-          <el-table-column label="客户" min-width="120"><template #default="{ row }"><button class="customer-link compact" type="button" @click="openCustomer(row.customer_id)">#{{ row.customer_id }}</button></template></el-table-column>
+          <el-table-column label="客户" min-width="120"><template #default="{ row }"><button v-if="canOpenDetail" class="customer-link compact" type="button" @click="openCustomer(row.customer_id)">#{{ row.customer_id }}</button><span v-else>#{{ row.customer_id }}</span></template></el-table-column>
           <el-table-column label="状态" min-width="105"><template #default="{ row }"><el-tag :type="tagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
           <el-table-column prop="priority" label="优先级" min-width="100" />
-          <el-table-column prop="due_at" label="建议完成时间" min-width="170" />
-          <el-table-column label="操作" min-width="110" fixed="right"><template #default="{ row }"><el-button v-any-permission="['customer_radar:write', 'customer:admin']" link type="primary" :loading="mutatingId === row.action_id" :disabled="row.status === 'completed'" @click="complete(row)">已跟进</el-button></template></el-table-column>
+          <el-table-column label="建议完成时间" min-width="170"><template #default="{ row }">{{ formatDate(row.due_at) }}</template></el-table-column>
+          <el-table-column label="操作" min-width="110" fixed="right"><template #default="{ row }"><el-button v-any-permission="['customer_radar:write', 'customer:admin']" link type="primary" :disabled="getRadarOperationOptions(row.status).length === 0" @click="$emit('operate-action', row)">处理</el-button></template></el-table-column>
         </template>
 
-        <el-table-column prop="updated_at" label="最近更新" min-width="176" />
+        <el-table-column label="最近更新" min-width="176"><template #default="{ row }">{{ formatDate(row.updated_at) }}</template></el-table-column>
       </el-table>
       <el-empty v-else :description="config.emptyText" />
       <el-pagination
@@ -117,13 +118,19 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { msgSuccess } from '@/utils/feedback'
+import { formatBeijingDateTime } from '@/utils/datetime'
+import { useAuthStore } from '@/stores/auth'
+import { canRequeueJob, getOpportunityTransitionOptions, getRadarOperationOptions } from './customerHubController'
 import CustomerDetailDrawer from './CustomerDetailDrawer.vue'
 import { useCustomerHub } from './composables/useCustomerHub'
 
 const props = defineProps({ kind: { type: String, required: true } })
-defineEmits(['review-task'])
+defineEmits(['inspect-task', 'edit-opportunity', 'operate-action'])
+const auth = useAuthStore()
+const canOpenDetail = computed(() => props.kind === 'customers' || auth.hasPermission('customer:read'))
+const formatDate = value => value ? formatBeijingDateTime(value) : '—'
 const CONFIG = {
   customers: { title: '客户档案', description: '方舟唯一客户主档：先识别主体，再组织证据与经营动作。', countLabel: '可见客户', emptyText: '暂无可见客户；无主负责人客户会进入公海。' },
   acquisition: { title: '获客任务', description: '追踪搜索任务、策略版本与进入方舟主档的结果。', countLabel: '搜索任务', emptyText: '暂无搜索任务。' },
@@ -137,7 +144,7 @@ const {
   loading, list, total, page, pageSize, searchForm, empty, errorGuidance, staleGuidance,
   handleSearch, handlePageChange, handleSizeChange,
   detail, detailLoading, detailError, timeline, timelineLoading, timelineError, currentCustomerId, loadDetail, loadTimeline,
-  mutatingId, requeueJob, completeAction,
+  mutatingId, requeueJob,
 } = useCustomerHub(props.kind)
 
 const rowKey = row => row.job_id || row.research_task_id || row.opportunity_id || row.action_id || row.customer_id
@@ -147,11 +154,6 @@ const tagType = status => ({ completed: 'success', failed: 'danger', running: 'w
 async function openCustomer(customerId) {
   drawerVisible.value = true
   await loadDetail(customerId)
-}
-
-async function complete(row) {
-  await completeAction(row.action_id)
-  msgSuccess('更新经营动作')
 }
 
 async function retryJob(row) {
