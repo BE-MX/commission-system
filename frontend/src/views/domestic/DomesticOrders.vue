@@ -131,7 +131,7 @@
             <el-table-column label="报工进度" min-width="135">
               <template #default="{ row }">
                 <div>已报 {{ row.completed_qty }} / 应做 {{ row.required_qty }}</div>
-                <div v-if="row.skipped_qty" class="skip-progress">自动跳过 {{ row.skipped_qty }}（不计工资）</div>
+                <div v-if="row.skipped_qty" class="skip-progress">已跳过 {{ row.skipped_qty }}（不计工资）</div>
               </template>
             </el-table-column>
             <el-table-column label="可报数量" min-width="90">

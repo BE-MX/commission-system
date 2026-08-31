@@ -139,6 +139,7 @@ import { getDomesticRouteRules, saveDomesticRouteConfiguration, saveDomesticRout
 import { useAuthStore } from '@/stores/auth'
 import { buildConfirmedDomesticTemplate, validateRouteRule } from '@/views/domestic/conditionalRouting'
 import { saveRouteConfiguration } from './routeSaveFlow'
+import { useRouteDraftGuard } from './useRouteDraftGuard'
 
 const auth = useAuthStore()
 const routeLoading = ref(false)
@@ -155,6 +156,9 @@ const ruleSaveError = ref('')
 const canEditSteps = computed(() => auth.hasPermission('production:admin'))
 const canEditRules = computed(() => auth.hasPermission('domestic:admin'))
 const hasUnsavedChanges = computed(() => stepsDirty.value || rulesDirty.value)
+const confirmDraftLeave = useRouteDraftGuard(hasUnsavedChanges, () => ElMessageBox.confirm(
+  '当前路线步骤或条件规则有未保存变更，是否放弃？', '提示', { type: 'warning' },
+))
 
 // 路线表单
 const routeFormVisible = ref(false)
@@ -189,14 +193,8 @@ async function loadAllProcesses() {
   allProcesses.value = res || []
 }
 
-function selectRoute(route) {
-  if (hasUnsavedChanges.value) {
-    ElMessageBox.confirm('当前路线步骤或条件规则有未保存变更，是否放弃？', '提示', { type: 'warning' })
-      .then(() => doSelectRoute(route))
-      .catch(() => {})
-  } else {
-    doSelectRoute(route)
-  }
+async function selectRoute(route) {
+  if (await confirmDraftLeave()) doSelectRoute(route)
 }
 
 async function doSelectRoute(route) {

@@ -50,6 +50,8 @@ test('route management separates step and conditional-rule permissions and saves
   assert.match(view, /rulesDirty/)
   assert.match(view, /ruleSaveError/)
   assert.match(view, /saveRouteConfiguration/)
+  assert.match(view, /useRouteDraftGuard/)
+  assert.match(view, /confirmDraftLeave/)
 
   assert.match(view, /if \(canEditRules\.value\)[\s\S]*?saveDomesticRouteConfiguration/)
   assert.match(view, /else \{[\s\S]*?api\.saveRouteSteps/)
@@ -64,7 +66,8 @@ test('web proxy reporting separates completed work from skipped quantities', () 
 
   assert.match(view, /已报/)
   assert.match(view, /应做/)
-  assert.match(view, /自动跳过/)
+  assert.match(view, /已跳过/)
+  assert.doesNotMatch(view, /自动跳过/)
   assert.match(view, /outcome_options/)
   assert.match(view, /异常跳过/)
   assert.match(view, /不计工资/)
