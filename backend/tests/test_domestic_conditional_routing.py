@@ -33,6 +33,7 @@ from app.domestic.models import (
     DomesticSkipUnit,
 )
 from app.domestic.schemas import ManualSkipSubmit, RouteRuleSaveRequest
+from app.production import route_service as production_route_service
 from app.production.models import (
     Process,
     ProcessRoute,
@@ -256,7 +257,7 @@ def test_list_rules_filters_skip_target_step_that_was_removed(db, conditional_ro
     assert option["skip_processes"] == []
 
 
-def test_route_rule_model_cascades_with_route_step_identity():
+def test_route_rule_model_restricts_deleting_a_configured_route_step():
     composite_fks = {
         (
             tuple(column.name for column in constraint.columns),
@@ -268,8 +269,224 @@ def test_route_rule_model_cascades_with_route_step_identity():
     assert (
         ("route_id", "process_id"),
         ("process_route_step.route_id", "process_route_step.process_id"),
-        "CASCADE",
+        "RESTRICT",
     ) in composite_fks
+
+
+def _route_config_payload(process_ids, rules):
+    return {
+        "steps": [{"process_id": process_id} for process_id in process_ids],
+        "rules": rules,
+    }
+
+
+def _route_config_client(db, user_id, permissions):
+    from app.domestic.router import router
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api/domestic")
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": str(user_id),
+        "roles": [],
+        "permissions": permissions,
+    }
+    return TestClient(app)
+
+
+def test_production_only_step_save_blocks_changed_conditional_route_atomically(
+    db, conditional_route,
+):
+    initial_rule = {
+        "process_id": conditional_route.process_ids[1],
+        "rule_type": "optional",
+        "config": None,
+    }
+    route_rule_service.save_rules(db, conditional_route.id, [initial_rule])
+    original_ids = list(conditional_route.process_ids)
+
+    with pytest.raises(ValueError, match="需同时具备生产和内贸权限"):
+        production_route_service.save_route_steps(
+            db,
+            conditional_route.id,
+            [{"process_id": process_id} for process_id in reversed(original_ids)],
+        )
+
+    assert [row["process_id"] for row in production_route_service.get_route_steps(
+        db, conditional_route.id,
+    )] == original_ids
+    assert [row["process_id"] for row in route_rule_service.list_rules(
+        db, conditional_route.id,
+    )] == [conditional_route.process_ids[1]]
+
+
+def test_production_only_step_save_allows_routes_without_domestic_rules(
+    db, conditional_route,
+):
+    reordered = list(reversed(conditional_route.process_ids))
+
+    saved = production_route_service.save_route_steps(
+        db,
+        conditional_route.id,
+        [{"process_id": process_id} for process_id in reordered],
+    )
+
+    assert [row["process_id"] for row in saved] == reordered
+
+
+def test_production_only_same_steps_are_noop_for_conditional_route(
+    db, conditional_route,
+):
+    rule = {
+        "process_id": conditional_route.process_ids[1],
+        "rule_type": "optional",
+        "config": None,
+    }
+    route_rule_service.save_rules(db, conditional_route.id, [rule])
+    original_step_ids = [row.id for row in db.query(ProcessRouteStep).filter_by(
+        route_id=conditional_route.id,
+    ).order_by(ProcessRouteStep.step_order).all()]
+
+    saved = production_route_service.save_route_steps(
+        db,
+        conditional_route.id,
+        [{"process_id": process_id} for process_id in conditional_route.process_ids],
+    )
+
+    assert [row["id"] for row in saved] == original_step_ids
+    assert route_rule_service.list_rules(db, conditional_route.id)[0]["rule_type"] == "optional"
+
+
+def test_atomic_route_configuration_requires_both_admin_permissions(
+    db, conditional_route,
+):
+    admin = ArkUser(
+        username="route-config-admin", password_hash="x", real_name="路线管理员",
+    )
+    db.add(admin)
+    db.commit()
+    payload = _route_config_payload(conditional_route.process_ids, [])
+
+    for permissions in (["production:admin"], ["domestic:admin"]):
+        response = _route_config_client(db, admin.id, permissions).put(
+            f"/api/domestic/process-routes/{conditional_route.id}/configuration",
+            json=payload,
+        )
+        assert response.status_code == 403
+
+
+def test_atomic_route_configuration_updates_steps_and_rules_together(
+    db, conditional_route,
+):
+    admin = ArkUser(
+        username="route-config-success", password_hash="x", real_name="路线管理员",
+    )
+    db.add(admin)
+    db.commit()
+    reordered = [
+        conditional_route.process_ids[0],
+        conditional_route.process_ids[2],
+        conditional_route.process_ids[1],
+        *conditional_route.process_ids[3:],
+    ]
+    rule = {
+        "process_id": conditional_route.process_ids[2],
+        "rule_type": "optional",
+        "config": None,
+    }
+
+    response = _route_config_client(
+        db, admin.id, ["production:admin", "domestic:admin"],
+    ).put(
+        f"/api/domestic/process-routes/{conditional_route.id}/configuration",
+        json=_route_config_payload(reordered, [rule]),
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert [step["process_id"] for step in data["steps"]] == reordered
+    assert [saved["process_id"] for saved in data["rules"]] == [
+        conditional_route.process_ids[2],
+    ]
+
+
+def test_atomic_route_configuration_invalid_rules_rolls_back_steps_and_rules(
+    db, conditional_route,
+):
+    admin = ArkUser(
+        username="route-config-rollback", password_hash="x", real_name="路线管理员",
+    )
+    db.add(admin)
+    original_rule = {
+        "process_id": conditional_route.process_ids[1],
+        "rule_type": "optional",
+        "config": None,
+    }
+    route_rule_service.save_rules(db, conditional_route.id, [original_rule])
+    db.commit()
+
+    response = _route_config_client(
+        db, admin.id, ["production:admin", "domestic:admin"],
+    ).put(
+        f"/api/domestic/process-routes/{conditional_route.id}/configuration",
+        json=_route_config_payload(
+            list(reversed(conditional_route.process_ids)),
+            [{"process_id": 999999, "rule_type": "optional", "config": None}],
+        ),
+    )
+
+    assert response.status_code == 400
+    db.expire_all()
+    assert [row["process_id"] for row in production_route_service.get_route_steps(
+        db, conditional_route.id,
+    )] == conditional_route.process_ids
+    saved_rules = route_rule_service.list_rules(db, conditional_route.id)
+    assert [(rule["process_id"], rule["rule_type"]) for rule in saved_rules] == [
+        (conditional_route.process_ids[1], "optional"),
+    ]
+
+
+def test_atomic_route_configuration_reorder_cannot_move_skip_target_before_trigger(
+    db, conditional_route,
+):
+    admin = ArkUser(
+        username="route-config-order", password_hash="x", real_name="路线管理员",
+    )
+    db.add(admin)
+    decision = _decision(conditional_route.process_ids[1], [
+        {
+            "code": "skip_later",
+            "label": "跳过后续",
+            "skip_process_ids": [conditional_route.process_ids[3]],
+        },
+        {"code": "normal", "label": "正常", "skip_process_ids": []},
+    ])
+    route_rule_service.save_rules(db, conditional_route.id, [decision])
+    db.commit()
+    invalid_order = [
+        conditional_route.process_ids[0],
+        conditional_route.process_ids[3],
+        conditional_route.process_ids[1],
+        conditional_route.process_ids[2],
+        *conditional_route.process_ids[4:],
+    ]
+
+    response = _route_config_client(
+        db, admin.id, ["production:admin", "domestic:admin"],
+    ).put(
+        f"/api/domestic/process-routes/{conditional_route.id}/configuration",
+        json=_route_config_payload(invalid_order, [decision]),
+    )
+
+    assert response.status_code == 400
+    assert "必须位于触发工序之后" in response.json()["detail"]
+    db.expire_all()
+    assert [row["process_id"] for row in production_route_service.get_route_steps(
+        db, conditional_route.id,
+    )] == conditional_route.process_ids
+    assert route_rule_service.list_rules(db, conditional_route.id)[0]["config"][
+        "options"
+    ][0]["skip_process_ids"] == [conditional_route.process_ids[3]]
 
 
 def test_route_rules_reject_unknown_and_disabled_routes(db, conditional_route):

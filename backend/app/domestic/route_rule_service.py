@@ -5,6 +5,7 @@ import re
 from sqlalchemy.orm import Session
 
 from app.domestic.models import DomesticRouteRule
+from app.production import route_service as production_route_service
 from app.production.models import Process, ProcessRoute, ProcessRouteStep
 
 
@@ -167,3 +168,47 @@ def save_rules(db: Session, route_id: int, rules: list[dict]) -> list[dict]:
         ))
     db.flush()
     return list_rules(db, route_id)
+
+
+def save_route_configuration(
+    db: Session,
+    route_id: int,
+    steps: list[dict],
+    rules: list[dict],
+) -> dict:
+    """在调用方事务中原子保存路线步骤与内贸规则；本函数不提交事务。"""
+
+    route = (
+        db.query(ProcessRoute)
+        .filter(ProcessRoute.id == route_id, ProcessRoute.status == 1)
+        .with_for_update()
+        .first()
+    )
+    if route is None:
+        raise ValueError("路线不存在或已停用")
+
+    current_process_ids = [
+        step["process_id"]
+        for step in production_route_service.get_route_steps(db, route_id)
+    ]
+    next_process_ids = [step["process_id"] for step in steps]
+
+    if next_process_ids != current_process_ids:
+        # RESTRICT 保护生产入口不会误删；原子入口需先显式清除旧规则再换步骤。
+        db.query(DomesticRouteRule).filter(
+            DomesticRouteRule.route_id == route_id,
+        ).delete(synchronize_session=False)
+        db.flush()
+
+    saved_steps = production_route_service.save_route_steps(
+        db,
+        route_id,
+        steps,
+        allow_conditional_rules=True,
+    )
+    saved_rules = save_rules(db, route_id, rules)
+    return {
+        "route_id": route_id,
+        "steps": saved_steps,
+        "rules": saved_rules,
+    }

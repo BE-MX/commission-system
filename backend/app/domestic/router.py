@@ -49,6 +49,7 @@ from app.domestic.schemas import (
     ReportRevoke,
     ReportSubmit,
     RouteRuleSaveRequest,
+    RouteConfigurationSaveRequest,
 )
 from app.auth.models import ArkUser
 from app.production.models import Process, ProcessRoute, ProcessRouteStep, UserProcessBinding
@@ -143,6 +144,33 @@ def put_process_route_rules(
         data = route_rule_service.save_rules(
             db,
             route_id,
+            [rule.model_dump() for rule in payload.rules],
+        )
+        db.commit()
+        return ok(data)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.put(
+    "/process-routes/{route_id}/configuration",
+    summary="原子保存路线步骤与内贸条件规则",
+)
+def put_process_route_configuration(
+    route_id: int,
+    payload: RouteConfigurationSaveRequest,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("production:admin", "domestic:admin")),
+):
+    try:
+        data = route_rule_service.save_route_configuration(
+            db,
+            route_id,
+            [step.model_dump() for step in payload.steps],
             [rule.model_dump() for rule in payload.rules],
         )
         db.commit()

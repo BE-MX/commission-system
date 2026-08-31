@@ -141,6 +141,21 @@ class RouteRuleSaveRequest(BaseModel):
     rules: list[RouteRuleInput] = Field(default_factory=list, max_length=100)
 
 
+class RouteConfigurationStepInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    process_id: int = Field(..., gt=0)
+
+
+class RouteConfigurationSaveRequest(BaseModel):
+    """同时保存共享路线步骤与内贸条件规则，避免两个全量接口互相冲掉数据。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    steps: list[RouteConfigurationStepInput] = Field(default_factory=list, max_length=100)
+    rules: list[RouteRuleInput] = Field(default_factory=list, max_length=100)
+
+
 # ── 订单 ──────────────────────────────────────────────
 
 _IMG_FIELD = Field(default_factory=list, description="图片相对路径列表")

@@ -53,7 +53,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["route_id", "process_id"],
             ["process_route_step.route_id", "process_route_step.process_id"],
-            ondelete="CASCADE",
+            ondelete="RESTRICT",
             name="fk_dom_route_rule_step",
         ),
         sa.PrimaryKeyConstraint("id"),
