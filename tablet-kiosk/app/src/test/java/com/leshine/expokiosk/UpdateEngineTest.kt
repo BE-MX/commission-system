@@ -395,7 +395,7 @@ class UpdateEngineTest {
         source: UpdateSource,
         verifier: UpdateVerifier = FakeVerifier(),
         installer: UpdateInstaller = FakeInstaller(),
-        diagnostics: UpdateDiagnostics = RecordingDiagnostics(),
+        diagnostics: UpdateDiagnostics = UpdateDiagnostics.NONE,
     ) = UpdateEngine(
         currentVersionCode = currentVersionCode,
         source = source,

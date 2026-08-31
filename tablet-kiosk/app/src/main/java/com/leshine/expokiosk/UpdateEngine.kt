@@ -30,7 +30,7 @@ class UpdateEngine(
     private val verifier: UpdateVerifier,
     private val installer: UpdateInstaller,
     private val downloadTarget: File,
-    private val diagnostics: UpdateDiagnostics = UpdateDiagnostics.NONE,
+    private val diagnostics: UpdateDiagnostics,
 ) {
     private val hasRun = AtomicBoolean(false)
 

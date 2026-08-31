@@ -47,8 +47,9 @@ sealed interface UpdateState {
     data object NoUpdate : UpdateState
 
     /**
-     * Internal diagnostic detail only. Task 4 UI must not display [message] verbatim to users;
-     * the original exception is sent to [UpdateDiagnostics].
+     * Internal diagnostics only. Task 4 must always render fixed user-facing copy and must never
+     * display or interpolate [message] verbatim; the original exception is sent to
+     * [UpdateDiagnostics].
      */
     data class Failed(val message: String) : UpdateState
 }
