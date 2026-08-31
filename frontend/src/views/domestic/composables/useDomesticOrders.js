@@ -7,12 +7,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   attachItemRoute, deleteOrder, exportOrder, getItemWxacode, getOrder, getProcessRoutes,
   listOrders, listProcessWorkers, listReports, newRequestId, revokeReport,
-  shipItem, submitDraftOrder, submitReport, terminateOrder,
+  shipItem, skipDomesticStep, submitDraftOrder, submitReport, terminateOrder,
 } from '@/api/domestic'
 import { useListPage } from '@/composables/useListPage'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import { downloadBlob } from '@/utils/download'
 import { currentBeijingDateTime } from '@/utils/datetime'
+import { normalizeOutcomeAllocation } from '@/views/domestic/conditionalRouting'
 
 export function useDomesticOrders() {
   const route = useRoute()
@@ -103,12 +104,14 @@ export function useDomesticOrders() {
   // ── 主站代报工（车间没带手机时的兜底口子）──
   // 必须选实际做活的工人：件数记错人 = 计件工资算错人
   const reportDialog = reactive({
-    visible: false, item: null, step: null, qty: 1, workerId: null, workers: [], loading: false,
+    visible: false, item: null, step: null, qty: 1, outcomes: {},
+    workerId: null, workers: [], loading: false,
   })
 
   async function openReport(item, step) {
     Object.assign(reportDialog, {
       visible: true, item, step, qty: step.reportable_qty,
+      outcomes: Object.fromEntries((step.outcome_options || []).map(option => [option.code, 0])),
       workerId: null, workers: [], loading: true,
     })
     try {
@@ -121,13 +124,27 @@ export function useDomesticOrders() {
   }
 
   async function confirmReport() {
-    if (!(reportDialog.qty > 0)) return ElMessage.warning('请填报工数量')
     if (!reportDialog.workerId) return ElMessage.warning('请选择实际做活的工人')
+    let allocation = { qty: reportDialog.qty, outcomes: undefined }
+    if (reportDialog.step.rule_type === 'decision') {
+      try {
+        allocation = normalizeOutcomeAllocation(
+          reportDialog.step.outcome_options,
+          reportDialog.outcomes,
+          reportDialog.step.reportable_qty,
+        )
+      } catch (error) {
+        return ElMessage.warning(error.message)
+      }
+    } else if (!(reportDialog.qty > 0)) {
+      return ElMessage.warning('请填报工数量')
+    }
     try {
       await submitReport({
         item_id: reportDialog.item.id,
         progress_id: reportDialog.step.progress_id,
-        qty: reportDialog.qty,
+        qty: allocation.qty,
+        outcomes: allocation.outcomes,
         on_behalf_user_id: reportDialog.workerId,
         request_id: newRequestId(),
       })
@@ -135,6 +152,42 @@ export function useDomesticOrders() {
     reportDialog.visible = false
     msgSuccess('报工')
     await refreshAll()
+  }
+
+  // 主管例外跳过：只改变路由通行状态，不生成报工或工资数据
+  const skipDialog = reactive({
+    visible: false, item: null, step: null, qty: 1, reason: '', submitting: false,
+  })
+
+  function openSkip(item, step) {
+    Object.assign(skipDialog, {
+      visible: true, item, step, qty: step.reportable_qty, reason: '', submitting: false,
+    })
+  }
+
+  async function confirmSkip() {
+    const reason = skipDialog.reason.trim()
+    if (!(skipDialog.qty > 0)) return ElMessage.warning('请填跳过数量')
+    if (reason.length < 5) return ElMessage.warning('请填写至少 5 个字的异常原因')
+    const item = skipDialog.item
+    skipDialog.submitting = true
+    try {
+      await skipDomesticStep({
+        item_id: item.id,
+        progress_id: skipDialog.step.progress_id,
+        qty: skipDialog.qty,
+        reason,
+        request_id: newRequestId(),
+      })
+    } catch {
+      return
+    } finally {
+      skipDialog.submitting = false
+    }
+    skipDialog.visible = false
+    msgSuccess('异常跳过')
+    await refreshAll()
+    if (logDialog.visible && logDialog.item?.id === item.id) await openLogs(item)
   }
 
   // ── 报工流水与撤销 ──
@@ -276,6 +329,7 @@ export function useDomesticOrders() {
     openDetail, refreshAll,
     shipDialog, openShip, confirmShip,
     reportDialog, openReport, confirmReport,
+    skipDialog, openSkip, confirmSkip,
     logDialog, openLogs, handleRevokeReport,
     attachDialog, openAttachRoute, confirmAttachRoute,
     printDialog, openPrintCard, openQrLabel, openWxacodeLabel,

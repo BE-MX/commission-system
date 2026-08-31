@@ -40,19 +40,48 @@
         <template v-if="selectedRoute">
           <div class="panel-header">
             <span class="panel-title">{{ selectedRoute.name }}</span>
-            <div>
+            <div class="header-actions">
+              <GlassButton v-permission="'domestic:admin'" variant="outline" size="sm" @click="applyConfirmedTemplate">应用头套网帽模板</GlassButton>
               <GlassButton v-permission="'production:admin'" variant="secondary" size="sm" @click="addStep">添加工序</GlassButton>
-              <GlassButton v-permission="'production:admin'" variant="primary" size="sm" :loading="savingSteps" @click="saveSteps">保存顺序</GlassButton>
+              <GlassButton v-permission="'production:admin'" variant="primary" size="sm" :loading="savingSteps" @click="saveSteps">保存路线配置</GlassButton>
             </div>
           </div>
           <div class="step-list">
-            <draggable v-model="editableSteps" item-key="process_id" handle=".drag-handle" animation="200">
+            <draggable v-model="editableSteps" item-key="process_id" handle=".drag-handle" animation="200" @end="handleStepsReordered">
               <template #item="{ element, index }">
                 <div class="step-row">
-                  <span class="drag-handle">≡</span>
-                  <span class="step-order">{{ index + 1 }}</span>
-                  <span class="step-name">{{ element.process_name }}</span>
-                  <el-button v-permission="'production:admin'" link type="danger" @click="removeStep(index)">×</el-button>
+                  <div class="step-main">
+                    <span class="drag-handle">≡</span>
+                    <span class="step-order">{{ index + 1 }}</span>
+                    <span class="step-name">{{ element.process_name }}</span>
+                    <el-select
+                      v-permission="'domestic:admin'" v-model="element.rule_type" class="rule-type-select"
+                      @change="changeRuleType(element)"
+                    >
+                      <el-option label="必须扫描" value="required" />
+                      <el-option label="分流判定" value="decision" />
+                      <el-option label="非阻塞可选" value="optional" />
+                    </el-select>
+                    <el-button v-permission="'production:admin'" link type="danger" @click="removeStep(index)">×</el-button>
+                  </div>
+
+                  <div v-if="element.rule_type === 'decision'" v-permission="'domestic:admin'" class="decision-editor">
+                    <div v-for="(option, optionIndex) in element.options" :key="optionIndex" class="decision-option">
+                      <div class="option-fields">
+                        <el-input v-model="option.label" placeholder="结果名称" maxlength="64" />
+                        <el-input v-model="option.code" placeholder="编码，如 dandong" maxlength="32" />
+                        <el-button link type="danger" @click="removeDecisionOption(element, optionIndex)">删除</el-button>
+                      </div>
+                      <el-checkbox-group v-model="option.skip_process_ids" class="skip-targets">
+                        <span class="skip-label">跳过：</span>
+                        <el-checkbox v-for="target in laterSteps(index)" :key="target.process_id" :value="target.process_id">
+                          {{ target.process_name }}
+                        </el-checkbox>
+                      </el-checkbox-group>
+                      <div class="path-summary">{{ option.label || '未命名结果' }} → {{ pathSummary(option) }}</div>
+                    </div>
+                    <el-button link type="primary" @click="addDecisionOption(element)">+添加结果</el-button>
+                  </div>
                 </div>
               </template>
             </draggable>
@@ -96,11 +125,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import draggable from 'vuedraggable'
 import * as api from '@/api/production'
+import { getDomesticRouteRules, saveDomesticRouteRules } from '@/api/domestic'
+import { buildConfirmedDomesticTemplate, validateRouteRule } from '@/views/domestic/conditionalRouting'
 
 const routeLoading = ref(false)
 const routes = ref([])
@@ -108,6 +139,8 @@ const selectedRoute = ref(null)
 const editableSteps = ref([])
 const savingSteps = ref(false)
 const hasUnsavedChanges = ref(false)
+const loadingRoute = ref(false)
+const routeRulesLoaded = ref(false)
 
 // 路线表单
 const routeFormVisible = ref(false)
@@ -128,7 +161,9 @@ const availableProcesses = computed(() => {
   return allProcesses.value.filter(p => !existing.has(p.id))
 })
 
-watch(editableSteps, () => { hasUnsavedChanges.value = true }, { deep: true })
+watch(editableSteps, () => {
+  if (!loadingRoute.value) hasUnsavedChanges.value = true
+}, { deep: true })
 
 async function loadRoutes() {
   routeLoading.value = true
@@ -157,9 +192,33 @@ function selectRoute(route) {
 
 async function doSelectRoute(route) {
   selectedRoute.value = route
+  loadingRoute.value = true
   hasUnsavedChanges.value = false
-  const res = await api.getRouteSteps(route.id)
-  editableSteps.value = (res.steps || []).map(s => ({ process_id: s.process_id, process_name: s.process_name }))
+  const stepRes = await api.getRouteSteps(route.id)
+  let rules = []
+  routeRulesLoaded.value = false
+  try {
+    const ruleRes = await getDomesticRouteRules(route.id)
+    rules = ruleRes.data || []
+    routeRulesLoaded.value = true
+  } catch { /* 生产路线查看者可能没有内贸规则权限，保留原步骤编辑能力 */ }
+  const ruleMap = new Map(rules.map(rule => [rule.process_id, rule]))
+  editableSteps.value = (stepRes.steps || []).map(step => {
+    const rule = ruleMap.get(step.process_id)
+    return {
+      process_id: step.process_id,
+      process_name: step.process_name,
+      rule_type: rule?.rule_type || 'required',
+      options: (rule?.config?.options || []).map(option => ({
+        code: option.code,
+        label: option.label,
+        skip_process_ids: [...option.skip_process_ids],
+      })),
+    }
+  })
+  await nextTick()
+  loadingRoute.value = false
+  hasUnsavedChanges.value = false
 }
 
 function openRouteForm(row) {
@@ -210,26 +269,105 @@ function addStep() {
 function confirmAddStep() {
   const newSteps = selectedNewSteps.value.map(pid => {
     const proc = allProcesses.value.find(p => p.id === pid)
-    return { process_id: pid, process_name: proc?.name || '' }
+    return { process_id: pid, process_name: proc?.name || '', rule_type: 'required', options: [] }
   })
   editableSteps.value.push(...newSteps)
   addStepVisible.value = false
 }
 
 function removeStep(index) {
+  const removedId = editableSteps.value[index].process_id
   editableSteps.value.splice(index, 1)
+  for (const step of editableSteps.value) {
+    for (const option of step.options || []) {
+      option.skip_process_ids = option.skip_process_ids.filter(id => id !== removedId)
+    }
+  }
+}
+
+function laterSteps(index) {
+  return editableSteps.value.slice(index + 1)
+}
+
+function changeRuleType(step) {
+  if (step.rule_type === 'decision' && step.options.length < 2) {
+    step.options = [
+      { code: 'result_a', label: '结果A', skip_process_ids: [] },
+      { code: 'result_b', label: '结果B', skip_process_ids: [] },
+    ]
+  } else if (step.rule_type !== 'decision') {
+    step.options = []
+  }
+}
+
+function addDecisionOption(step) {
+  step.options.push({ code: '', label: '', skip_process_ids: [] })
+}
+
+function removeDecisionOption(step, index) {
+  step.options.splice(index, 1)
+}
+
+function handleStepsReordered() {
+  const orderById = new Map(editableSteps.value.map((step, index) => [step.process_id, index]))
+  for (const [index, step] of editableSteps.value.entries()) {
+    for (const option of step.options || []) {
+      option.skip_process_ids = option.skip_process_ids.filter(id => orderById.get(id) > index)
+    }
+  }
+}
+
+function pathSummary(option) {
+  const names = option.skip_process_ids
+    .map(id => editableSteps.value.find(step => step.process_id === id)?.process_name)
+    .filter(Boolean)
+  return names.length ? `跳过 ${names.join('、')}` : '继续后续工序'
+}
+
+async function applyConfirmedTemplate() {
+  try {
+    await ElMessageBox.confirm('模板会覆盖当前条件规则，但不会立即保存。', '应用头套网帽模板', { type: 'warning' })
+    const templateMap = new Map(buildConfirmedDomesticTemplate(editableSteps.value).map(rule => [rule.process_id, rule]))
+    editableSteps.value = editableSteps.value.map(step => {
+      const rule = templateMap.get(step.process_id)
+      return {
+        ...step,
+        rule_type: rule?.rule_type || 'required',
+        options: (rule?.options || []).map(option => ({ ...option, skip_process_ids: [...option.skip_process_ids] })),
+      }
+    })
+    hasUnsavedChanges.value = true
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(error.message || '模板应用失败')
+  }
 }
 
 async function saveSteps() {
   if (!selectedRoute.value) return
+  let rules = []
+  if (routeRulesLoaded.value) {
+    try {
+      rules = editableSteps.value
+        .map(step => validateRouteRule(step, editableSteps.value))
+        .filter(Boolean)
+    } catch (error) {
+      ElMessage.warning(error.message)
+      return
+    }
+  }
   savingSteps.value = true
   try {
     const steps = editableSteps.value.map(s => ({ process_id: s.process_id }))
     await api.saveRouteSteps(selectedRoute.value.id, steps)
-    ElMessage.success('步骤已保存')
-    hasUnsavedChanges.value = false
-    loadRoutes()
-    doSelectRoute({ ...selectedRoute.value })
+    if (routeRulesLoaded.value) {
+      await saveDomesticRouteRules(selectedRoute.value.id, rules)
+      ElMessage.success('路线步骤与条件规则已保存')
+    } else {
+      ElMessage.success('路线步骤已保存；条件规则无权加载，未改动')
+    }
+    await loadRoutes()
+    const refreshed = routes.value.find(route => route.id === selectedRoute.value.id) || selectedRoute.value
+    await doSelectRoute(refreshed)
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '保存失败')
   } finally {
@@ -269,6 +407,7 @@ onMounted(() => {
 .route-detail-panel { flex: 1; display: flex; flex-direction: column; }
 .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #ebeef5; }
 .panel-title { font-weight: 600; font-size: 15px; }
+.header-actions { display: flex; gap: 8px; }
 .route-list { flex: 1; overflow-y: auto; padding: 8px; }
 .route-item { padding: 10px 12px; border-radius: 4px; cursor: pointer; margin-bottom: 4px; transition: background 0.2s; position: relative; }
 .route-item:hover { background: #f5f7fa; }
@@ -279,7 +418,17 @@ onMounted(() => {
 .route-item:hover .route-item-actions { display: flex; gap: 4px; }
 .step-list { flex: 1; overflow-y: auto; padding: 12px 16px; }
 .step-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+.step-row { flex-direction: column; align-items: stretch; gap: 0; }
+.step-main { display: flex; align-items: center; gap: 10px; }
 .drag-handle { cursor: grab; color: #c0c4cc; font-size: 18px; }
 .step-order { width: 24px; height: 24px; background: #409eff; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; }
 .step-name { flex: 1; font-weight: 500; }
+.rule-type-select { width: 150px; }
+.decision-editor { margin: 8px 34px 4px; padding: 10px 12px; border-radius: 8px; background: var(--el-fill-color-lighter); }
+.decision-option { padding: 8px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
+.decision-option:last-of-type { border-bottom: none; }
+.option-fields { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(150px, 1fr) auto; gap: 8px; }
+.skip-targets { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 8px; }
+.skip-label { font-size: 13px; color: var(--el-text-color-secondary); }
+.path-summary { margin-top: 6px; font-size: 12px; color: var(--el-text-color-secondary); }
 </style>

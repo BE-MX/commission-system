@@ -32,6 +32,14 @@ export function getProcessRoutes() {
   return domesticClient.get('/process-routes')
 }
 
+export function getDomesticRouteRules(routeId) {
+  return domesticClient.get(`/process-routes/${routeId}/rules`)
+}
+
+export function saveDomesticRouteRules(routeId, rules) {
+  return domesticClient.put(`/process-routes/${routeId}/rules`, { rules })
+}
+
 export function listProcessWorkers(processId) {
   return domesticClient.get('/process-workers', { params: { process_id: processId } })
 }
@@ -154,6 +162,14 @@ export function submitReport(data) {
 
 export function revokeReport(logId) {
   return domesticClient.post('/reports/revoke', { log_id: logId })
+}
+
+export function skipDomesticStep(data) {
+  return domesticClient.post('/reports/skip', data)
+}
+
+export function revokeDomesticSkip(id) {
+  return domesticClient.post(`/reports/skip/${id}/revoke`)
 }
 
 // ── 参考图 ──
