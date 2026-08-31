@@ -6,7 +6,6 @@
 <title>莱莎采购节 · 团队积分榜</title>
 <!-- 预取轮播下一屏资源，减轻 30s 硬跳转白闪 -->
 <link rel="prefetch" href="zhaiyao.html">
-<link rel="stylesheet" href="assets/festival-popup.css">
 <style>
   /* 设计系统同前两屏；七块玻璃面板与 1/2/3 徽章已烘焙在 bg-teams.jpg，
      排名即位置：上排左→右 = 第 1~4 名，下排 = 第 5~7 名 */
@@ -213,7 +212,6 @@
   </footer>
 </div>
 
-<script src="assets/festival-popup.js"></script>
 <script>
 (function () {
   "use strict";
@@ -246,9 +244,7 @@
 
   /* 轮播：每屏停留 30s 切下一屏（URL 加 &stay=1 可固定本屏） */
   if (qs.get("stay") !== "1") {
-    window.FestivalPopup
-      ? FestivalPopup.scheduleNavigation("zhaiyao.html" + location.search, 30000)
-      : setTimeout(() => { location.href = "zhaiyao.html" + location.search; }, 30000);
+    setTimeout(() => { location.href = "zhaiyao.html" + location.search; }, 30000);
   }
 
   var WEEK = ["周日","周一","周二","周三","周四","周五","周六"];
