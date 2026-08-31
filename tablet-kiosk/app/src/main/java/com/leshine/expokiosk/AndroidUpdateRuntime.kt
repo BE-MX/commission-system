@@ -256,7 +256,8 @@ class AndroidUpdateInstaller(private val context: Context) : UpdateInstaller {
                     if (deviceOwner) PackageManager.INSTALL_REASON_POLICY
                     else PackageManager.INSTALL_REASON_USER,
                 )
-                if (UpdateRuntimePolicy.installUserActionPolicy(
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    UpdateRuntimePolicy.installUserActionPolicy(
                         deviceOwner = deviceOwner,
                         sdkInt = Build.VERSION.SDK_INT,
                     ) == InstallUserActionPolicy.SILENT_ALLOWED
