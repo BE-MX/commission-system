@@ -6,7 +6,9 @@ import {
   buildSearchJobPayload,
   buildActionUpdate,
   buildOpportunityUpdate,
+  createSearchJobIdempotencyKey,
   createSearchJobDraft,
+  createSearchJobPollingController,
   getInvalidIdTokens,
   getOpportunityTransitionOptions,
   getRadarOperationOptions,
@@ -286,6 +288,11 @@ test('search job drafts keep one request key for retries and rotate for a new dr
   assert.equal(createSearchJobDraft(() => 'request-2').idempotency_key, 'request-2')
 })
 
+test('production search job idempotency keys satisfy the backend 64-hex contract', () => {
+  assert.match(createSearchJobIdempotencyKey(), /^[0-9a-f]{64}$/)
+  assert.notEqual(createSearchJobIdempotencyKey(), createSearchJobIdempotencyKey())
+})
+
 test('mixed valid and invalid evidence IDs are rejected instead of silently filtered', () => {
   assert.deepEqual(getInvalidIdTokens('1024, 10a5, -3, 2048'), ['10a5', '-3'])
   assert.deepEqual(getInvalidIdTokens('1024, 2048'), [])
@@ -302,6 +309,43 @@ test('search job polling runs only while active tasks are visible', () => {
   assert.equal(shouldPollSearchJobs([{ status: 'completed' }, { status: 'failed' }]), false)
   assert.equal(shouldPollSearchJobs([{ status: 'completed' }, { status: 'running' }]), true)
   assert.equal(shouldPollSearchJobs([{ status: 'pending' }]), true)
+})
+
+test('search job polling preserves page, stays serial, and stops after disposal', async () => {
+  const pending = deferred()
+  const timers = []
+  const cleared = []
+  let page = 3
+  let active = true
+  let refreshCalls = 0
+  const poller = createSearchJobPollingController({
+    shouldPoll: () => active,
+    refresh: async () => {
+      refreshCalls += 1
+      assert.equal(page, 3)
+      await pending.promise
+    },
+    setTimer: callback => { timers.push(callback); return callback },
+    clearTimer: handle => cleared.push(handle),
+    delay: 10,
+  })
+
+  poller.sync()
+  assert.equal(timers.length, 1)
+  const run = timers.shift()()
+  await Promise.resolve()
+  poller.sync()
+  assert.equal(timers.length, 0)
+  assert.equal(refreshCalls, 1)
+  pending.resolve()
+  await run
+  assert.equal(timers.length, 1)
+
+  poller.dispose()
+  assert.equal(cleared.length, 1)
+  active = false
+  poller.sync()
+  assert.equal(timers.length, 1)
 })
 
 test('customer profile presentation uses business labels and structured value kinds', () => {

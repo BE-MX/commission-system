@@ -134,7 +134,13 @@ export function buildAcquisitionProfilePayload(form) {
   }
 }
 
-export function createSearchJobDraft(keyFactory = () => globalThis.crypto.randomUUID()) {
+export function createSearchJobIdempotencyKey(cryptoApi = globalThis.crypto) {
+  const bytes = new Uint8Array(32)
+  cryptoApi.getRandomValues(bytes)
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+export function createSearchJobDraft(keyFactory = createSearchJobIdempotencyKey) {
   return { name: '', target_count: 20, countries: '', idempotency_key: keyFactory() }
 }
 
@@ -146,4 +152,52 @@ export function buildSearchJobPayload(job) {
     criteria_json: { countries: String(job.countries || '').split(',').map(item => item.trim()).filter(Boolean) },
     idempotency_key: job.idempotency_key,
   }
+}
+
+export function createSearchJobPollingController({
+  shouldPoll,
+  refresh,
+  setTimer = globalThis.setTimeout,
+  clearTimer = globalThis.clearTimeout,
+  delay = 10000,
+}) {
+  let timer = null
+  let running = false
+  let disposed = false
+
+  function cancelTimer() {
+    if (timer !== null) clearTimer(timer)
+    timer = null
+  }
+
+  function sync() {
+    if (disposed) return
+    if (!shouldPoll()) {
+      cancelTimer()
+      return
+    }
+    if (running || timer !== null) return
+    timer = setTimer(run, delay)
+  }
+
+  async function run() {
+    timer = null
+    if (disposed || !shouldPoll()) return
+    running = true
+    try {
+      await refresh()
+    } catch {
+      // The list resource owns user-visible stale/error guidance.
+    } finally {
+      running = false
+      sync()
+    }
+  }
+
+  function dispose() {
+    disposed = true
+    cancelTimer()
+  }
+
+  return { sync, dispose }
 }
