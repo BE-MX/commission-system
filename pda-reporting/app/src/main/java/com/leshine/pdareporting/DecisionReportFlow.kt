@@ -23,7 +23,7 @@ object DecisionReportFlow {
         values.forEach { (code, qty) ->
             require(code.isNotBlank()) { "结果编码不能为空" }
             require(qty >= 0) { "分配数量不能为负数" }
-            if (qty > 0) normalized[code] = qty
+            normalized[code] = qty
             total += qty
         }
         require(total > 0) { "至少一个结果需要分配数量" }

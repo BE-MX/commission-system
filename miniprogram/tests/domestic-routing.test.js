@@ -15,6 +15,13 @@ test('quantity decision emits ordered positive outcomes and derived qty', functi
   )
 })
 
+test('quantity decision preserves every configured option including zero', function () {
+  assert.deepEqual(
+    routing.buildDecisionSubmission(options, { dandong: '20', lixiaohong: '0' }, 20, 'quantity'),
+    { qty: 20, outcomes: { dandong: 20, lixiaohong: 0 } }
+  )
+})
+
 test('quantity decision rejects empty, negative, fractional, and oversized allocations', function () {
   assert.throws(function () { routing.buildDecisionSubmission(options, {}, 20, 'quantity') })
   assert.throws(function () { routing.buildDecisionSubmission(options, { dandong: -1 }, 20, 'quantity') })
@@ -48,6 +55,8 @@ test('public progress labels skipped work without exposing audit fields', functi
       passed_qty: 4,
       order_qty: 4,
       reportable_qty: 0,
+      step_order: 13,
+      process_name: '毛坯维修',
       last_reported_by: '内部员工',
       skip_reason: '内部原因'
     }),
@@ -57,6 +66,8 @@ test('public progress labels skipped work without exposing audit fields', functi
       passed_qty: 4,
       order_qty: 4,
       reportable_qty: 0,
+      step_order: 13,
+      process_name: '毛坯维修',
       skip_label: '无需此工序'
     }
   )

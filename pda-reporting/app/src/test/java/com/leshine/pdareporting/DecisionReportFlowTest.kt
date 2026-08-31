@@ -30,7 +30,7 @@ class DecisionReportFlowTest {
         )
 
         assertEquals(20, result.qty)
-        assertEquals(linkedMapOf("dandong" to 12, "lixiaohong" to 8), result.outcomes)
+        assertEquals(linkedMapOf("dandong" to 12, "unused" to 0, "lixiaohong" to 8), result.outcomes)
     }
 
     @Test

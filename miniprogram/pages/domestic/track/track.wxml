@@ -72,7 +72,7 @@
 
       <view class="lk-steps">
         <!-- wx:for 与 wx:if 不放同一元素：block 负责循环，view 负责显隐 -->
-        <block wx:for="{{it.stepView}}" wx:key="progress_id" wx:for-item="step">
+        <block wx:for="{{it.stepView}}" wx:key="step_order" wx:for-item="step">
         <view
           class="lk-step lk-step--{{step.state}} {{index > 2 ? 'lk-step--extra' : ''}}"
           wx:if="{{index < 3 || it.expanded}}"

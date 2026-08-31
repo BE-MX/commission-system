@@ -95,15 +95,14 @@ Page({
         var progress = routing.decorateProgress(publicData)
         var st = stateOf(publicData)
         view.push({
-          progress_id: s.progress_id,
-          step_order: s.step_order,
-          process_name: s.process_name,
+          step_order: publicData.step_order,
+          process_name: publicData.process_name,
           completed_qty: progress.completedQty,
           skipped_qty: progress.skippedQty,
           passed_qty: progress.passedQty,
           order_qty: publicData.order_qty,
           skip_label: publicData.skip_label || '',
-          reportable_qty: s.reportable_qty,
+          reportable_qty: publicData.reportable_qty,
           pct: progress.percent,
           state: st[0],
           stateText: st[1]

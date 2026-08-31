@@ -25,7 +25,7 @@ function buildDecisionSubmission(options, values, maxQty, reportMode) {
     var raw = values[code]
     var qty = raw === '' || raw === undefined || raw === null ? 0 : Number(raw)
     if (!Number.isInteger(qty) || qty < 0) throw new Error('分配数量必须是非负整数')
-    if (qty > 0) outcomes[code] = qty
+    outcomes[code] = qty
     total += qty
   }
   if (total < 1) throw new Error('至少一个结果需要分配数量')
@@ -53,7 +53,9 @@ function publicStep(step) {
     skipped_qty: Number(step.skipped_qty || 0),
     passed_qty: Number(step.passed_qty || 0),
     order_qty: Number(step.order_qty || 0),
-    reportable_qty: Number(step.reportable_qty || 0)
+    reportable_qty: Number(step.reportable_qty || 0),
+    step_order: Number(step.step_order || 0),
+    process_name: String(step.process_name || '')
   }
   if (result.skipped_qty > 0) result.skip_label = '无需此工序'
   return result
