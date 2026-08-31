@@ -77,12 +77,12 @@
           <section class="section-block" data-section="version quality">
             <h3>Version quality · 版本质量</h3>
             <dl>
-              <div><dt>档案质量</dt><dd><pre>{{ printable(sections.versionQuality) }}</pre></dd></div>
+              <div><dt>档案质量</dt><dd><StructuredValue :value="sections.versionQuality" /></dd></div>
               <div><dt>档案版本</dt><dd>{{ sections.profileMetadata?.version_no ?? '该档案版本未提供' }}</dd></div>
               <div><dt>档案契约</dt><dd>{{ sections.profileMetadata?.profile_schema_version || '该档案版本未提供' }}</dd></div>
               <div><dt>编译时间</dt><dd>{{ formatDate(sections.profileMetadata?.compiled_at) }}</dd></div>
               <div><dt>数据截至</dt><dd>{{ formatDate(sections.profileMetadata?.data_as_of) }}</dd></div>
-              <div><dt>章节数据截至</dt><dd><pre>{{ printable(sections.profileMetadata?.section_data_as_of) }}</pre></dd></div>
+              <div><dt>章节数据截至</dt><dd><StructuredValue :value="sections.profileMetadata?.section_data_as_of" /></dd></div>
             </dl>
           </section>
         </el-tab-pane>
@@ -96,6 +96,7 @@ import { computed, defineComponent, h, ref, watch } from 'vue'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import { formatBeijingDateTime } from '@/utils/datetime'
 import { getTimelineLimitNotice, mapCustomerProfileSections } from './customerHubController'
+import { getProfileValueKind, profileFieldLabel } from './customerHubPresentation'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -122,11 +123,37 @@ const identityExplanation = computed(() => props.customer?.identity_status === '
 const sections = computed(() => mapCustomerProfileSections(props.customer || {}, props.timeline))
 const timelineLimitNotice = computed(() => getTimelineLimitNotice(props.timeline.length, props.timelineTotal))
 const formatDate = value => value ? formatBeijingDateTime(value) : '该档案版本未提供'
-const printable = value => value == null ? '该档案版本未提供' : JSON.stringify(value, null, 2)
 
 function handleTabChange(name) {
   if (name === 'relationships') props.loadTimeline(props.customer?.customer_id)
 }
+
+const StructuredValue = defineComponent({
+  name: 'StructuredValue',
+  props: { value: null },
+  setup(valueProps) {
+    return () => {
+      const kind = getProfileValueKind(valueProps.value)
+      if (kind === 'empty') return h('span', { class: 'structured-empty' }, '该档案版本未提供')
+      if (kind === 'scalar') {
+        const text = typeof valueProps.value === 'boolean' ? (valueProps.value ? '是' : '否') : String(valueProps.value)
+        return h('span', { class: 'structured-scalar' }, text)
+      }
+      if (kind === 'list') {
+        if (valueProps.value.length === 0) return h('span', { class: 'structured-empty' }, '暂无记录')
+        return h('ul', { class: 'structured-list' }, valueProps.value.map((item, index) =>
+          h('li', { key: index }, [h(StructuredValue, { value: item })])))
+      }
+      const entries = Object.entries(valueProps.value)
+      if (entries.length === 0) return h('span', { class: 'structured-empty' }, '暂无记录')
+      return h('dl', { class: 'structured-record' }, entries.map(([key, value]) =>
+        h('div', { key }, [
+          h('dt', profileFieldLabel(key)),
+          h('dd', [h(StructuredValue, { value })]),
+        ])))
+    }
+  },
+})
 
 const SectionBlock = defineComponent({
   props: { title: String, sectionKey: String, value: null },
@@ -135,7 +162,7 @@ const SectionBlock = defineComponent({
       h('h3', blockProps.title),
       blockProps.value == null || (Array.isArray(blockProps.value) && blockProps.value.length === 0)
         ? h('p', { class: 'empty-copy' }, '该档案版本未提供此部分')
-        : h('pre', JSON.stringify(blockProps.value, null, 2)),
+        : h(StructuredValue, { value: blockProps.value }),
     ])
   },
 })
@@ -154,8 +181,17 @@ h2 { margin: 4px 0; color: var(--text-primary); font-size: 22px; }
 .fact-grid strong { color: var(--text-primary); }
 .section-block { margin-bottom: 12px; padding: 14px; border: 1px solid var(--border-color); border-radius: 8px; }
 .section-block h3 { margin: 0 0 10px; color: var(--text-primary); font-size: 14px; }
-.section-block pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-secondary); font: inherit; line-height: 1.65; }
 .empty-copy { margin: 0; color: var(--text-muted); }
+.structured-scalar { color: var(--text-primary); overflow-wrap: anywhere; }
+.structured-empty { color: var(--text-muted); font-weight: 400; }
+.structured-list { display: grid; gap: 8px; margin: 0; padding-left: 20px; color: var(--text-secondary); }
+.structured-list > li { padding-left: 2px; }
+.structured-record { margin: 0; }
+.structured-record > div { display: grid; grid-template-columns: minmax(96px, 28%) 1fr; gap: 14px; padding: 8px 0; border-bottom: 1px solid var(--border-color); }
+.structured-record > div:last-child { border-bottom: 0; }
+.structured-record dt { color: var(--text-muted); font-size: 13px; }
+.structured-record dd { min-width: 0; margin: 0; color: var(--text-primary); font-weight: 500; }
+.structured-record .structured-record { padding-left: 0; }
 .timeline-block { min-height: 80px; padding: 8px 4px; }
 .timeline-block p { margin: 5px 0 0; color: var(--text-secondary); }
 .timeline-limit { padding: 8px 12px; border-radius: 8px; background: var(--toolbar-bg); }
@@ -163,5 +199,5 @@ dl { margin: 0; }
 dl div { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--border-color); }
 dl div:last-child { border-bottom: 0; }
 dt { color: var(--text-secondary); } dd { margin: 0; color: var(--text-primary); font-weight: 600; }
-@media (max-width: 760px) { .identity-strip { flex-direction: column; } .identity-metrics { justify-items: start; } .fact-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 768px) { .identity-strip { flex-direction: column; } .identity-metrics { justify-items: start; } .fact-grid { grid-template-columns: repeat(2, 1fr); } .structured-record > div { grid-template-columns: 1fr; gap: 4px; } }
 </style>

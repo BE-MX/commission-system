@@ -24,6 +24,7 @@ import {
   createMutationController,
   createPagedResource,
 } from '../src/views/customer_hub/customerHubResources.js'
+import { getProfileValueKind, profileFieldLabel } from '../src/views/customer_hub/customerHubPresentation.js'
 
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b }); return { promise, resolve, reject } }
 
@@ -301,4 +302,14 @@ test('search job polling runs only while active tasks are visible', () => {
   assert.equal(shouldPollSearchJobs([{ status: 'completed' }, { status: 'failed' }]), false)
   assert.equal(shouldPollSearchJobs([{ status: 'completed' }, { status: 'running' }]), true)
   assert.equal(shouldPollSearchJobs([{ status: 'pending' }]), true)
+})
+
+test('customer profile presentation uses business labels and structured value kinds', () => {
+  assert.equal(profileFieldLabel('legal_name'), '法定名称')
+  assert.equal(profileFieldLabel('order_summary'), '订单摘要')
+  assert.equal(profileFieldLabel('custom_field_name'), 'Custom field name')
+  assert.equal(getProfileValueKind([{ name: 'Mia' }]), 'list')
+  assert.equal(getProfileValueKind({ country: 'US' }), 'record')
+  assert.equal(getProfileValueKind('US'), 'scalar')
+  assert.equal(getProfileValueKind(null), 'empty')
 })

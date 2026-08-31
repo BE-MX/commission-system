@@ -102,4 +102,6 @@ test('customer detail drawer progressively loads timeline and names all profile 
   assert.match(drawer, /时间线加载失败/)
   assert.match(drawer, /timelineTotal/)
   assert.match(drawer, /getTimelineLimitNotice/)
+  assert.match(drawer, /StructuredValue/)
+  assert.doesNotMatch(drawer, /JSON\.stringify\(blockProps\.value/)
 })
