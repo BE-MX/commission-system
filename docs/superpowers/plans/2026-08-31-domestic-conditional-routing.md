@@ -12,7 +12,7 @@
 
 ## File Structure
 
-- Create `backend/alembic/versions/126_domestic_route_rules.py`: schema for route rules, report outcomes, and skip audit tables.
+- Create `backend/alembic/versions/127_domestic_route_rules.py`: schema for route rules, report outcomes, and skip audit tables.
 - Modify `backend/app/domestic/models.py`: ORM models for route rules and skip logs/units; outcome columns on report mappings.
 - Create `backend/app/domestic/route_rule_service.py`: rule validation, bulk save, serialization, and route-step metadata.
 - Create `backend/app/domestic/routing_service.py`: unit-set eligibility, outcome allocation, skip creation, optional bypass, and downstream guards.
@@ -26,6 +26,7 @@
 - Modify `backend/app/production/schemas.py`: route-step domestic rule response shape where needed by management UI.
 - Create `backend/scripts/domestic_route_cutover.py`: read-only preflight by default and explicit reviewed cutover mode.
 - Create `backend/tests/test_domestic_conditional_routing.py`: state-machine, concurrency, idempotency, revoke, and cutover regression tests.
+- Create `backend/tests/test_domestic_route_cutover.py`: isolated preflight/token/reconciliation/atomicity tests without duplicating the state-machine factory.
 - Modify `backend/tests/test_domestic_reporting.py`: existing linear-route assertions remain valid with no rules.
 - Modify `backend/tests/test_domestic_optimizations.py`: exact-unit optional bypass and workload assertions.
 - Modify `frontend/src/api/domestic.js`: route-rule and skip API functions.
@@ -47,7 +48,7 @@
 ### Task 1: Define schema and route-rule contract
 
 **Files:**
-- Create: `backend/alembic/versions/126_domestic_route_rules.py`
+- Create: `backend/alembic/versions/127_domestic_route_rules.py`
 - Modify: `backend/app/domestic/models.py`
 - Create: `backend/app/domestic/route_rule_service.py`
 - Modify: `backend/app/domestic/schemas.py`
@@ -63,7 +64,7 @@ git log --all --oneline -- backend/alembic/versions/
 & 'D:\MyProgram\commission-system\backend\.venv\Scripts\python.exe' -m alembic heads
 ```
 
-Expected: one head. At plan creation it is `125_invoice_integration`; if it changed, choose the next free revision and update this plan before writing the migration.
+Expected: one head. At plan creation it was `125_invoice_integration`; revision 126 was reserved by parallel work, so this branch selected 127. The committed migration currently revises 125 because 126 is not present in this branch. If the parallel 126 migration is merged first, re-chain `127_domestic_route_rules.down_revision` to that actual 126 revision and re-run `alembic heads/history` before integration; never ship two heads.
 
 - [ ] **Step 2: Write failing route-rule tests**
 
@@ -109,10 +110,10 @@ Expected: import/attribute failure because route-rule models and service do not 
 
 - [ ] **Step 4: Add the migration and ORM models**
 
-Migration `126_domestic_route_rules` must:
+Migration `127_domestic_route_rules` must:
 
 ```python
-revision = "126_domestic_route_rules"
+revision = "127_domestic_route_rules"
 down_revision = "125_invoice_integration"
 ```
 
@@ -179,7 +180,7 @@ Expected: route-rule tests pass and exactly one head is reported.
 - [ ] **Step 8: Commit schema and rule contract**
 
 ```powershell
-git add backend/alembic/versions/126_domestic_route_rules.py backend/app/domestic/models.py backend/app/domestic/route_rule_service.py backend/app/domestic/schemas.py backend/app/domestic/router.py backend/tests/test_domestic_conditional_routing.py
+git add backend/alembic/versions/127_domestic_route_rules.py backend/app/domestic/models.py backend/app/domestic/route_rule_service.py backend/app/domestic/schemas.py backend/app/domestic/router.py backend/tests/test_domestic_conditional_routing.py
 git commit -m "feat(domestic): define conditional route rules"
 ```
 
@@ -486,7 +487,7 @@ git commit -m "feat(domestic-scan): capture routing outcomes"
 
 **Files:**
 - Create: `backend/scripts/domestic_route_cutover.py`
-- Modify: `backend/tests/test_domestic_conditional_routing.py`
+- Create: `backend/tests/test_domestic_route_cutover.py`
 - Modify: `docs/database.md`
 - Modify: `docs/api-reference.md`
 - Modify: `docs/handoff.md`
@@ -519,6 +520,8 @@ Document the three rule types, outcome payload, progress fields, skip APIs/table
 
 Per `CLAUDE.md`, stop old write instances before applying the migration because old code does not understand conditional routing outcomes/skips. Run `alembic upgrade head`, verify one head, then start only the new version. Do not execute business cutover until application verification is complete.
 
+This remains an operator maintenance-window step. It was deliberately not executed while preparing the code and cutover documentation.
+
 - [ ] **Step 6: Run full verification**
 
 Run:
@@ -541,7 +544,7 @@ This change spans more than three files and changes a quantity state machine. Di
 - [ ] **Step 8: Commit tooling and documentation**
 
 ```powershell
-git add backend/scripts/domestic_route_cutover.py backend/tests/test_domestic_conditional_routing.py docs/database.md docs/api-reference.md docs/handoff.md
+git add backend/scripts/domestic_route_cutover.py backend/tests/test_domestic_route_cutover.py docs/database.md docs/api-reference.md docs/handoff.md docs/superpowers/plans/2026-08-31-domestic-conditional-routing.md
 git commit -m "docs(domestic): prepare conditional route cutover"
 ```
 

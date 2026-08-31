@@ -537,17 +537,18 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 - 鉴权：三端点均 `get_current_user`（个人域数据，user_id 取 JWT sub 行级隔离，同 `/api/auth/me` 模式，不挂 require_permission——工作台是全员落地页无页面权限码）。
 - `POST /greeting` — 工作台每日 AI 问候（2026-08-13）。body `{refresh?, context:{date,weekday,period,user_name,holidays_today[],upcoming_holidays[],pending{}}}`，上下文由前端聚合（节假日是前端纯计算引擎 `views/dashboard/holidays.js`，口径唯一）。返回 `{text, source: ai|fallback, date}`；preset 解析优先专用 `dashboard_greeting`，缺省退任一直连可用预设，模型未配置/调用失败走规则模板兜底，进程内按 (user, date) 缓存（`refresh=true` 绕过）。同 `get_current_user` 个人域口径。
 
-## 内贸订单（`/api/domestic`，081/082/116 迁移，2026-07-27、2026-08-17）
+## 内贸订单（`/api/domestic`，081/082/116/127 迁移，2026-07-27、2026-08-17、2026-08-31）
 
 内贸生产的下单 + 按数量拆批报工。与外贸「生产订单（`/api/stock/production`）+ 生产报工（`/api/production`）」是**平行的两套**：外贸报工整行 0/1 流转，内贸带数量。只共用工序/工艺路线/工人工序绑定三类全局资产。
 
-- 值域与路线：`GET /options`（下单表单全部下拉：产品类型、订单类型 + 各属性字典值，属性值域存 `sys_dict` 的 `domestic_*` type，内贸主管在「数据字典」页自助增删）、`GET /process-routes`（可选工艺路线含工序链）、`GET /process-workers?process_id=`（该工序绑定的工人，代报工选人用）。
+- 值域与路线：`GET /options`（下单表单全部下拉：产品类型、订单类型 + 各属性字典值，属性值域存 `sys_dict` 的 `domestic_*` type，内贸主管在「数据字典」页自助增删）、`GET /process-routes`（可选工艺路线含工序链）、`GET /process-workers?process_id=`（该工序绑定的工人，代报工选人用）。`GET /process-routes/{route_id}/rules` 查询内贸条件规则；步骤和规则需要一起调整时，必须使用 `PUT /process-routes/{route_id}/configuration` 一次提交 `steps + rules`，服务端在同一事务校验并保存。三种规则为默认 `required`、`decision` 和 `optional`；有条件规则的路线会拒绝生产域单独改步骤，避免暂时形成无效配置。
 - 客户：`GET /customers`（分页 keyword/status，keyword 同时搜店名/自定义编码/联系人/电话）、`POST /customers`、`PUT /customers/{id}`、`DELETE /customers/{id}`；字段含 `custom_code / membership_level / province / city / balance`。`POST /customers/{id}/recharges` 充值（body `amount/remark/request_id?`，`request_id` 幂等）、`GET /customers/{id}/balance-ledger` 查余额流水，两者需 `domestic:recharge` 或 `domestic:admin`。
 - 产品与工艺映射：`GET /products`（分页 keyword/product_type/route_bound）、`PUT /products/{id}/route`（人工改绑，`domestic:admin`，只影响之后的新明细）、`GET /craft-routes`、`POST /craft-routes`（配「产品类型+工艺 → 路线」映射，`domestic:admin`；保存时自动回填此前因缺映射而未绑路线的同工艺产品）、`DELETE /craft-routes/{id}`。
 - 订单：`POST /orders` 的明细必须传 `unit_price`，前端传稳定的 `request_id` 防止网络重试重复建单/扣款，可传 `is_draft=true` 仅保存不扣款；非草稿创建和 `POST /orders/{id}/submit` 都会原子扣减客户余额，余额不足整单失败。每单最多 50 行、合计 5000 件，单明细最多 2000 件。`GET /orders`、`GET /orders/{id}` 返回 `total_amount/charged_amount`；`GET /orders/{id}/export` 按当前订单字段生成横向打印的内贸领货单 `.xlsx`，超长制作要求自动附加「完整要求」工作表；在制单改数量/单价结算差额，终止或允许删除时退回已扣额。
 - 明细：`POST /orders/{id}/items` 必须传稳定的 `request_id`，同订单内幂等重放不会重复加行或重复扣款；`PUT /items/{id}`（改数量不得低于任一工序已完成数，也不得删掉已报工的高序号单件码）、`DELETE /items/{id}`、`POST /items/{id}/attach-route`、`POST /items/{id}/ship`、`GET /items/{id}/progress`、`GET /items/{id}/print-card`。`GET /items/{id}/unit-qrcodes?start_no=&end_no=` 返回每件唯一的 `ARK-DU:{unit_id}:{sign}` 和 `A1-01` 显示码，单次最多 200 个供标签打印。
-- 逐工序进度对象（订单详情 / `items/{id}/progress` / 速查共用同一形状）：`progress_id / step_order / process_name / order_qty / upstream_qty / completed_qty / reportable_qty / status / first_reported_at / last_reported_at`，外加 **`last_reported_by` + `last_report_qty`**（该工序最近一次**未撤销**报工的人与数量；无有效报工时为 null）。
-- 报工：`GET /reports`（流水查询）、`POST /reports`（主站代报工，**必须传 `on_behalf_user_id` 指明实际做活的工人**——件数记错人等于工资算错人；支持 `request_id` 幂等键）、`POST /reports/revoke`（撤销；只能撤自己的，`domestic:admin` 可撤他人；数量报工只能从最新批次倒序撤销，避免 A1-04 有效而累计却只剩 1 的身份错位）、`GET /reports/workload`（按人×工序汇总有效件数，计件统计基础，已撤销不计）。
+- 逐工序进度对象（订单详情 / `items/{id}/progress` / 速查共用同一形状）：`progress_id / step_order / process_name / order_qty / upstream_qty / completed_qty / skipped_qty / passed_qty / required_qty / reportable_qty / rule_type / outcome_options / status / first_reported_at / last_reported_at`，外加 `last_reported_by + last_report_qty`。`completed_qty` 只是真实工作，`skipped_qty` 是无需做，`passed_qty` 才是下游资格；客户端不得把跳过显示成已完成。
+- 报工：`GET /reports`（流水查询）、`POST /reports`（主站代报工，**必须传 `on_behalf_user_id` 指明实际做活的工人**；支持 `request_id` 幂等键）。`decision` 数量模式额外传 `outcomes`，例如 `{"qty":20,"outcomes":{"dandong":12,"lixiaohong":8}}`，键必须恰好覆盖配置结果且合计等于 `qty`；逐件模式只允许一个结果值为 1。非 decision 工序禁止夹带 outcomes。`POST /reports/revoke` 会按具体单件检查全部后续工序；错误返回最早的下游实际工序与单件码，不能被中间跳过记录绕过。`GET /reports/workload` 仍只汇总未撤销真实报工。
+- 主管异常放行（`domestic:admin`）：`POST /reports/skip` 支持 quantity 或 exact unit，必须传稳定 `request_id` 与 5～500 字原因；`POST /reports/skip/{skip_log_id}/revoke` 恢复放行。`GET /reports/skips?item_id=` 查询指定明细的审计列表。manual skip 只改通行资格、不进入工作量；有任何更后面的真实报工就拒绝撤销。
 - 参考图：`POST /images`（只收 jpg/png/webp ≤20MB，落 `DOMESTIC_STORAGE_ROOT` 私有目录）、`GET /images/{path}`（鉴权 FileResponse，前端 axios blob 取图）。
 - 进度小程序码：`GET /items/{id}/wxacode`（2026-07-28；**明细级**，与流转卡同粒度）——生成指向小程序免登录进度页的微信小程序码（`wxacode.getUnlimited`，scene=`i:<item_id>:<hmac16>`，永久有效），返回 `{scene, image_base64, domestic_no, order_no, product_name, order_qty, env_version}`（image 的 MIME 按微信实际返回，是 jpeg；env_version 非 release 时前端警示「勿发客户」），可下载/打印 30×20mm 标签发客户。微信侧失败（正式版未发布 41030 / IP 白名单 40164）返回 502 并透传原因；`QR_SIGN_SECRET` 还是仓库默认值时 503 拒绝出码。依赖 `.env` 的 `WX_MINI_APPID/SECRET` + `WX_MINI_ENV_VERSION`（默认 release，体验期设 trial）。
 - 权限：`domestic:read` 查看 / `domestic:write` 下单编辑发货代报工 / `domestic:recharge` 进入客户管理并操作充值与余额流水 / `domestic_quantity_report:write` 小程序数量报工 / `domestic_unit_report:write` 小程序一码一件报工 / `domestic:admin` 管理。普通工人角色只配两种报工权限之一；仅有逐件权限时进入逐件模式，两者皆有或皆无时为兼容旧角进入数量模式。
@@ -558,15 +559,48 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 
 Android PDA 客户端位于 `pda-reporting/`，不新增报工业务端点：先用方舟 `POST /api/auth/login`
 取得 access token（`get_current_mini_user` 兼容同一 JWT 的 `sub`），之后完整复用本节接口。客户端只负责
-扫描头键盘/广播输入与手持设备交互；数量校验、逐件身份、工序权限、幂等和撤销均以服务端为准。
+扫描头键盘/广播输入与手持设备交互；数量校验、逐件身份、工序权限、幂等和撤销均以服务端为准。Web、小程序和 PDA 共用同一 outcomes 契约；PDA 的 decision 逐件码不自动提交，必须先由现场人员选择结果，弱网重试持久化原 `request_id + outcomes`。
 
 - `GET /lookup?code=` — **订单速查**：一个参数吃三种输入（二维码原文 `ARK-D:...` / 系统单号 `DO...` / 客户订单号），服务端自行分辨，直接返回订单详情（含逐明细逐工序进度）。查不到或二维码验签失败返回 404 `{code:"NOT_FOUND", message}`；已软删订单一律查不到。
 - `GET /scan/{item_id}?sign=` — 数量模式扫明细码；`GET /unit-scan/{unit_id}?sign=` — 逐件模式扫单件码。逐件 `POST /scan/submit` 必须再次携带 `unit_id + unit_sign`，写端复验标签签名，不能只枚举 ID。模式不匹配返回 `UNIT_QR_REQUIRED`；草稿订单返回 `ORDER_DRAFT`。
-- `POST /scan/submit` — 数量模式传 `{item_id, progress_id, qty, request_id?}`，服务端按 unit_no 从小到大分配单件；逐件模式额外必须传 `unit_id` 且 `qty=1`。结果返回本次 `unit_codes`，`request_id` 幂等重放返回首次结果。
+- `POST /scan/submit` — 数量模式传 `{item_id, progress_id, qty, request_id?, outcomes?}`，服务端按 unit_no 从小到大分配单件；逐件模式额外必须传 `unit_id` 且 `qty=1`。decision 工序的 outcomes 规则与主站相同；普通/optional 工序不得传。结果返回本次 `unit_codes`，`request_id` 幂等重放返回首次结果及原分流。扫描下一道时，尚未报工的直属 optional 工序会按同一批具体单件自动生成跳过审计，不需要工人点击跳过。
 - `POST /scan/revoke` — `{log_id}`；`GET /history` 今日、`GET /history/all` 分页。
 - `GET /orders` / `GET /orders/{id}` — 车间/跟单看订单进度。
 - `GET /images/{path}` — 参考图（小程序 token 无 RBAC 声明，走不了主站图片端点，故有这个同源版本）。
 - `GET /track?scene=` — **免登录**订单进度：scene（`i:<item_id>:<hmac16>`）验签后返回完整订单、客户、金额、全部产品明细、图文要求、发货和进度信息。工序由 `process.show_in_domestic_track` 服务端过滤，隐藏工序不出现在响应中；`GET /track-image?scene=&rel_path=` 只允许读取该订单明细真实引用的图片。验签不过 403，软删单/明细不存在 404，默认签名密钥下 503 fail-closed。
+
+### 条件路线生产切换门禁
+
+迁移 127 只建结构，不自动切换任何业务数据。应用三端验证完成后，从 `backend/` 目录执行只读预检；目标用精确名称，工艺用可重复的精确值，不硬编码数据库 ID：
+
+```powershell
+python -m scripts.domestic_route_cutover `
+  --target-route-name "头套网帽（递针）" `
+  --craft-name "<产品与工艺页显示的精确工艺值>"
+```
+
+预检输出目标规则/工人覆盖、工艺映射、存量产品路线、零报工明细、需人工 reconciliation 的有历史明细，以及 item/report log/report unit/completed/workload 守恒基线和 `preflight_token`。review 文件必须逐项且只覆盖 reported items；当前唯一安全动作是保留其历史与原路线：
+
+```json
+{
+  "reported_items": [
+    {"item_id": 1234, "action": "keep_current"}
+  ]
+}
+```
+
+复核后才允许同一维护窗口执行：
+
+```powershell
+python -m scripts.domestic_route_cutover `
+  --target-route-name "头套网帽（递针）" `
+  --craft-name "<产品与工艺页显示的精确工艺值>" `
+  --apply `
+  --preflight-token "<dry-run 输出的 64 位 token>" `
+  --reconciliation-file ".\reviewed-domestic-items.json"
+```
+
+apply 会锁定并重新计算 canonical snapshot；预检后任一规则、工人、映射、产品、明细、单件或报工事实变化都会拒绝。映射、对应存量产品以及零报工历史明细在一个事务内切换；有历史明细保持原路线。单件身份、报工流水/映射、累计完成量或工作量任一不守恒即整笔回滚。禁止把 reconciliation/token 当长期配置复用，也禁止在 Alembic migration 中调用此脚本。
 
 ## 名片管家（`/api/card`，086 迁移，2026-08-01）
 
