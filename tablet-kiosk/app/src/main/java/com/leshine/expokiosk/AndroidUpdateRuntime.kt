@@ -97,6 +97,18 @@ fun streamApkToTarget(
     )
 }
 
+fun abandonInstallSession(
+    sessionId: Int,
+    abandon: (Int) -> Unit,
+    onException: (Exception) -> Unit,
+) {
+    try {
+        abandon(sessionId)
+    } catch (exception: Exception) {
+        onException(exception)
+    }
+}
+
 class HttpUpdateSource(
     private val context: Context,
     private val kioskUrl: String,
@@ -268,7 +280,16 @@ class AndroidUpdateInstaller(private val context: Context) : UpdateInstaller {
             }
         } finally {
             if (!committed) {
-                runCatching { packageInstaller.abandonSession(sessionId) }
+                abandonInstallSession(
+                    sessionId = sessionId,
+                    abandon = packageInstaller::abandonSession,
+                    onException = { exception ->
+                        Log.w(
+                            TAG,
+                            "Install session cleanup failed type=${exception.javaClass.simpleName}",
+                        )
+                    },
+                )
             } else if (!artifact.file.delete()) {
                 Log.w(TAG, "Committed update cache cleanup failed")
             }

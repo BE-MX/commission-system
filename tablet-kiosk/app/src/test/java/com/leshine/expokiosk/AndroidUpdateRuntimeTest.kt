@@ -13,10 +13,40 @@ class AndroidUpdateRuntimeTest {
     fun `accepts only HTTP 200`() {
         UpdateRuntimePolicy.requireSuccessfulHttpStatus(200)
 
-        for (status in listOf(199, 201, 301, 302, 307, 308, 400, 500)) {
+        for (status in listOf(199, 201, 400, 500) + (300..399)) {
             assertThrows("status $status") {
                 UpdateRuntimePolicy.requireSuccessfulHttpStatus(status)
             }
+        }
+    }
+
+    @Test
+    fun `session cleanup reports ordinary exceptions`() {
+        val failure = IllegalStateException("cleanup failed")
+        val reported = mutableListOf<Exception>()
+
+        abandonInstallSession(
+            sessionId = 42,
+            abandon = { throw failure },
+            onException = reported::add,
+        )
+
+        assertEquals(listOf(failure), reported)
+    }
+
+    @Test
+    fun `session cleanup does not swallow fatal errors`() {
+        val fatal = AssertionError("fatal")
+
+        try {
+            abandonInstallSession(
+                sessionId = 42,
+                abandon = { throw fatal },
+                onException = {},
+            )
+            throw AssertionError("Expected the fatal error to propagate")
+        } catch (error: AssertionError) {
+            assertTrue(error === fatal)
         }
     }
 
