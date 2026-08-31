@@ -2,11 +2,12 @@
 // 一个输入框吃三种：系统单号 / 客户订单号 / 扫码，交给服务端分辨。
 // 零 import，纯回调（与其余页面同一套风格）
 var app = getApp()
+var routing = require('../../../utils/domestic-routing')
 
 // 工序三态 → 颜色与文案（车间抬眼要能立刻分辨）
 function stateOf(step) {
-  if (step.completed_qty >= step.order_qty && step.order_qty > 0) return ['done', '已完成']
-  if (step.completed_qty > 0) return ['doing', '进行中']
+  if (step.passed_qty >= step.order_qty && step.order_qty > 0) return ['done', '已完成']
+  if (step.passed_qty > 0) return ['doing', '进行中']
   if (step.reportable_qty > 0) return ['ready', '可开工']
   return ['wait', '等上道']
 }
@@ -90,18 +91,21 @@ Page({
       var view = []
       for (var j = 0; j < steps.length; j++) {
         var s = steps[j]
+        var progress = routing.decorateProgress(s)
         var st = stateOf(s)
         view.push({
           progress_id: s.progress_id,
           step_order: s.step_order,
           process_name: s.process_name,
-          completed_qty: s.completed_qty,
+          completed_qty: progress.completedQty,
+          skipped_qty: progress.skippedQty,
+          passed_qty: progress.passedQty,
           order_qty: s.order_qty,
           reportable_qty: s.reportable_qty,
           last_reported_by: s.last_reported_by,
           last_report_qty: s.last_report_qty,
           last_reported_at: (s.last_reported_at || '').replace('T', ' ').slice(0, 16),
-          pct: s.order_qty ? Math.round(s.completed_qty / s.order_qty * 100) : 0,
+          pct: progress.percent,
           state: st[0],
           stateText: st[1]
         })

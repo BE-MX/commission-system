@@ -57,14 +57,14 @@
         <text class="sheet-sec-label">逐件扫码模式</text>
         <view class="unit-mode-main">
           <text class="unit-mode-code">{{item.unit_code}}</text>
-          <text class="unit-mode-qty">本次固定报工 1 件</text>
+          <text class="unit-mode-qty">{{isDecision ? '本次选择 1 个结果' : '本次固定报工 1 件'}}</text>
         </view>
         <text class="unit-mode-tip">当前工序：{{nextStep.process_name || '-'}}</text>
         <text class="unit-mode-tip">每个二维码只对应这一件产品；同一道工序重复扫描会被系统拦截</text>
       </view>
 
       <!-- 报工数量（内贸独有：整批一键、拆批调小） -->
-      <view class="sheet-section" wx:if="{{item.report_mode !== 'unit'}}">
+      <view class="sheet-section" wx:if="{{item.report_mode !== 'unit' && !isDecision}}">
         <view class="qty-head">
           <text class="sheet-sec-label" style="margin:0">报工数量</text>
           <text class="qty-max">最多 {{maxQty}} 件 · 下单 {{item.order_qty}} 件</text>
@@ -81,6 +81,35 @@
           <text class="qty-tip-dot"></text>
           <text>拆批：剩下 {{maxQty - qty}} 件留在上一道，之后扫同一张卡继续报</text>
         </view>
+      </view>
+
+      <!-- 分流判定：数量模式按结果拆数，逐件模式必须单选 -->
+      <view class="sheet-section decision-section" wx:if="{{isDecision}}">
+        <view class="qty-head">
+          <text class="sheet-sec-label" style="margin:0">选择处理结果</text>
+          <text class="qty-max" wx:if="{{item.report_mode !== 'unit'}}">已分配 {{decisionTotal}} / {{maxQty}} 件</text>
+        </view>
+        <view wx:if="{{item.report_mode === 'unit'}}" class="decision-unit-list">
+          <view
+            wx:for="{{decisionOptions}}" wx:key="code"
+            class="decision-choice {{selectedOutcomeCode === item.code ? 'is-selected' : ''}}"
+            data-code="{{item.code}}" bindtap="onDecisionSelect"
+          >
+            <view class="decision-radio"><view class="decision-radio-dot"></view></view>
+            <text>{{item.label}}</text>
+          </view>
+        </view>
+        <view wx:else class="decision-qty-list">
+          <view class="decision-qty-row" wx:for="{{decisionOptions}}" wx:key="code">
+            <text class="decision-label">{{item.label}}</text>
+            <input
+              class="decision-input" type="number" confirm-type="done" value="{{item.value}}"
+              placeholder="0" data-code="{{item.code}}" data-index="{{index}}" bindinput="onDecisionInput" catchtap="noop"
+            />
+            <text class="decision-unit">件</text>
+          </view>
+        </view>
+        <text class="decision-tip" wx:if="{{decisionOptions.length === 0}}">当前工序未配置可选结果，请联系管理员</text>
       </view>
 
       <!-- 图文要求：车间照着做活的依据，默认折叠 -->
@@ -114,7 +143,7 @@
       <button class="btn-cancel" bindtap="onCancel">取消</button>
       <button class="btn-confirm" bindtap="onConfirm" disabled="{{submitting}}">
         <text wx:if="{{submitting}}">提交中...</text>
-        <block wx:else>✓ 确认报 {{item.report_mode === 'unit' ? 1 : qty}} 件</block>
+        <block wx:else>✓ 确认报 {{isDecision ? decisionTotal : (item.report_mode === 'unit' ? 1 : qty)}} 件</block>
       </button>
     </view>
   </view>
@@ -145,8 +174,9 @@
             <!-- 内贸按数量流转，时间轴上直接给数量条 -->
             <view class="tl-qty">
               <view class="tl-qty-bar"><view class="tl-qty-fill" style="width:{{item.pct}}%"></view></view>
-              <text class="tl-qty-text">{{item.completed_qty}} / {{item.order_qty}} 件</text>
+              <text class="tl-qty-text">已报 {{item.completed_qty}} / {{item.order_qty}} 件</text>
             </view>
+            <text class="tl-skip" wx:if="{{item.skipped_qty > 0}}">自动跳过 {{item.skipped_qty}} 件</text>
             <view class="tl-detail" wx:if="{{item.last_reported_at}}">
               <text class="tl-time">{{item.last_reported_at}}</text>
             </view>

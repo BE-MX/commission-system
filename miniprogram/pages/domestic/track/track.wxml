@@ -72,7 +72,7 @@
 
       <view class="lk-steps">
         <!-- wx:for 与 wx:if 不放同一元素：block 负责循环，view 负责显隐 -->
-        <block wx:for="{{it.stepView}}" wx:key="progress_id" wx:for-item="step">
+        <block wx:for="{{it.stepView}}" wx:key="step_order" wx:for-item="step">
         <view
           class="lk-step lk-step--{{step.state}} {{index > 2 ? 'lk-step--extra' : ''}}"
           wx:if="{{index < 3 || it.expanded}}"
@@ -90,17 +90,11 @@
 
             <view class="lk-bar"><view class="lk-bar-fill" style="width:{{step.pct}}%"></view></view>
             <view class="lk-step-nums">
-              <text class="lk-done">{{step.completed_qty}}</text>
-              <text class="lk-slash">/ {{step.order_qty}} 件</text>
+              <text class="lk-done">已报 {{step.completed_qty}}</text>
+              <text class="lk-slash">/ 共 {{step.order_qty}} 件</text>
+              <text class="lk-wait" wx:if="{{step.skipped_qty > 0}}">{{step.skip_label}} {{step.skipped_qty}}</text>
               <text class="lk-wait" wx:if="{{step.reportable_qty > 0}}">待做 {{step.reportable_qty}}</text>
             </view>
-
-            <view class="lk-last" wx:if="{{step.last_reported_by}}">
-              <text class="lk-last-who">{{step.last_reported_by}}</text>
-              <text class="lk-last-qty">报 {{step.last_report_qty}} 件</text>
-              <text class="lk-last-at">{{step.last_reported_at}}</text>
-            </view>
-            <text class="lk-last lk-last--none" wx:else>还没有人报这道工序</text>
           </view>
         </view>
         </block>

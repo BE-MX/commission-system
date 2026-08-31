@@ -36,6 +36,7 @@ data class PendingSubmission(
     val rawPayload: String,
     val qty: Int,
     val requestId: String,
+    val outcomes: String?,
 )
 
 data class HistoryRecord(

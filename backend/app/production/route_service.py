@@ -104,7 +104,13 @@ def get_route_steps(db: Session, route_id: int) -> list[dict]:
     ]
 
 
-def save_route_steps(db: Session, route_id: int, steps: list[dict]) -> list[dict]:
+def save_route_steps(
+    db: Session,
+    route_id: int,
+    steps: list[dict],
+    *,
+    allow_conditional_rules: bool = False,
+) -> list[dict]:
     """全量覆盖保存路线步骤"""
     route = db.query(ProcessRoute).get(route_id)
     if not route:
@@ -119,6 +125,24 @@ def save_route_steps(db: Session, route_id: int, steps: list[dict]) -> list[dict
         proc = db.query(Process).get(pid)
         if not proc or proc.status != 1:
             raise ValueError(f"工序ID {pid} 不存在或已禁用")
+
+    current_steps = get_route_steps(db, route_id)
+    current_process_ids = [step["process_id"] for step in current_steps]
+    if process_ids == current_process_ids:
+        return current_steps
+
+    if not allow_conditional_rules:
+        # 局部导入避免生产模块在加载期依赖整个内贸领域。
+        from app.domestic.models import DomesticRouteRule
+
+        has_rules = db.query(DomesticRouteRule.id).filter(
+            DomesticRouteRule.route_id == route_id,
+        ).first()
+        if has_rules is not None:
+            raise ValueError(
+                "该路线已配置内贸条件规则，修改步骤需同时具备生产和内贸权限，"
+                "请通过条件路线配置保存"
+            )
 
     # 删除原有明细
     db.query(ProcessRouteStep).filter(ProcessRouteStep.route_id == route_id).delete()

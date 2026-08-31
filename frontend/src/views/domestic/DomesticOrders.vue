@@ -116,6 +116,10 @@
               <GlassButton variant="link" left-icon="Grid" @click="openQrLabel(item)">逐件码</GlassButton>
               <GlassButton v-if="detail.status !== 0" variant="link" left-icon="Share" @click="openWxacode(item)">进度码</GlassButton>
               <GlassButton v-if="detail.status !== 0" variant="link" left-icon="Tickets" @click="openLogs(item)">报工流水</GlassButton>
+              <GlassButton
+                v-if="item.route_id" v-permission="'domestic:admin'"
+                variant="link" left-icon="Warning" @click="openSkipAudits(item)"
+              >异常跳过记录</GlassButton>
               <GlassButton v-if="!item.route_id" v-permission="'domestic:write'" variant="link" left-icon="Connection" @click="openAttachRoute(item)">配工艺路线</GlassButton>
               <GlassButton v-if="item.status === 1" v-permission="'domestic:write'" variant="link" left-icon="Van" @click="openShip(item)">登记发货</GlassButton>
             </div>
@@ -124,8 +128,11 @@
           <el-table v-if="item.steps.length" :data="item.steps" size="small" border class="step-table list-table">
             <el-table-column prop="step_order" label="#" min-width="46" />
             <el-table-column prop="process_name" label="工序" min-width="100" />
-            <el-table-column label="已完成" min-width="90">
-              <template #default="{ row }">{{ row.completed_qty }} / {{ row.order_qty }}</template>
+            <el-table-column label="报工进度" min-width="135">
+              <template #default="{ row }">
+                <div>已报 {{ row.completed_qty }} / 应做 {{ row.required_qty }}</div>
+                <div v-if="row.skipped_qty" class="skip-progress">已跳过 {{ row.skipped_qty }}（不计工资）</div>
+              </template>
             </el-table-column>
             <el-table-column label="可报数量" min-width="90">
               <template #default="{ row }">
@@ -133,12 +140,16 @@
               </template>
             </el-table-column>
             <el-table-column prop="last_reported_at" label="最后报工" min-width="150" show-overflow-tooltip />
-            <el-table-column label="操作" min-width="100">
+            <el-table-column label="操作" min-width="170">
               <template #default="{ row }">
                 <GlassButton
                   v-if="row.reportable_qty > 0 && item.status === 0" v-permission="'domestic:write'"
                   variant="link" left-icon="EditPen" @click="openReport(item, row)"
                 >代报工</GlassButton>
+                <GlassButton
+                  v-if="row.reportable_qty > 0 && item.status === 0" v-permission="'domestic:admin'"
+                  variant="link" link-tone="danger" left-icon="Warning" @click="openSkip(item, row)"
+                >异常跳过</GlassButton>
               </template>
             </el-table-column>
           </el-table>
@@ -191,7 +202,16 @@
             这道工序还没有绑定工人，请先去用户管理里绑
           </span>
         </el-form-item>
-        <el-form-item label="报工数量">
+        <template v-if="reportDialog.step?.rule_type === 'decision'">
+          <el-form-item v-for="option in reportDialog.step.outcome_options" :key="option.code" :label="option.label">
+            <el-input-number
+              v-model="reportDialog.outcomes[option.code]" :min="0"
+              :max="reportDialog.step?.reportable_qty || 0" style="width: 100%"
+            />
+          </el-form-item>
+          <div class="unit-hint">分流判定可按数量拆分，合计最多 {{ reportDialog.step?.reportable_qty }} 件</div>
+        </template>
+        <el-form-item v-else label="报工数量">
           <el-input-number v-model="reportDialog.qty" :min="1" :max="reportDialog.step?.reportable_qty || 1" style="width: 100%" />
           <span class="unit-hint">最多 {{ reportDialog.step?.reportable_qty }} 件；拆批就把数量改小</span>
         </el-form-item>
@@ -199,6 +219,23 @@
       <template #footer>
         <GlassButton variant="ghost" @click="reportDialog.visible = false">取消</GlassButton>
         <GlassButton variant="primary" @click="confirmReport">确定</GlassButton>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="skipDialog.visible" title="异常跳过工序" width="460px">
+      <el-alert type="warning" :closable="false" show-icon title="跳过只放行生产路线，不会记报工数量，也不计工资。" />
+      <el-form label-width="90px" class="skip-form">
+        <el-form-item label="工序">{{ skipDialog.step?.process_name }}</el-form-item>
+        <el-form-item label="跳过数量" required>
+          <el-input-number v-model="skipDialog.qty" :min="1" :max="skipDialog.step?.reportable_qty || 1" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="异常原因" required>
+          <el-input v-model="skipDialog.reason" type="textarea" :rows="3" maxlength="500" show-word-limit placeholder="至少 5 个字，例如：客户要求不做定型" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <GlassButton variant="ghost" @click="skipDialog.visible = false">取消</GlassButton>
+        <GlassButton variant="danger" :loading="skipDialog.submitting" @click="confirmSkip">确认异常跳过</GlassButton>
       </template>
     </el-dialog>
 
@@ -231,6 +268,12 @@
         <GlassButton variant="ghost" @click="logDialog.visible = false">关闭</GlassButton>
       </template>
     </el-dialog>
+
+    <DomesticSkipAuditDialog
+      v-model="skipAuditDialog.visible" :audits="skipAuditDialog.audits"
+      :loading="skipAuditDialog.loading" :revoking-id="skipAuditDialog.revokingId"
+      @refresh="loadSkipAudits" @revoke="handleRevokeSkip"
+    />
 
     <DomesticPrintDialog
       v-model:visible="printDialog.visible"
@@ -281,6 +324,7 @@ import { DETAIL_SECTIONS, ORDER_STATUS, ORDER_STATUS_TAGS } from '@/api/domestic
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import DomesticImages from '@/components/domestic/DomesticImages.vue'
+import DomesticSkipAuditDialog from './components/DomesticSkipAuditDialog.vue'
 import DomesticPrintDialog from './print/DomesticPrintDialog.vue'
 import { useDomesticOrders } from './composables/useDomesticOrders'
 
@@ -290,6 +334,8 @@ const {
   detailVisible, detailLoading, detail, routes, hasUnrouted, openDetail,
   shipDialog, openShip, confirmShip,
   reportDialog, openReport, confirmReport,
+  skipDialog, openSkip, confirmSkip,
+  skipAuditDialog, openSkipAudits, loadSkipAudits, handleRevokeSkip,
   logDialog, openLogs, handleRevokeReport,
   attachDialog, openAttachRoute, confirmAttachRoute,
   printDialog, openPrintCard, openQrLabel, openWxacodeLabel,
@@ -373,6 +419,8 @@ const {
 .step-table { margin-bottom: 10px; }
 
 .qty-ready { color: var(--el-color-success); font-weight: 600; }
+.skip-progress { margin-top: 2px; font-size: 12px; color: var(--el-text-color-secondary); }
+.skip-form { margin-top: 16px; }
 
 .no-route {
   font-size: 13px;

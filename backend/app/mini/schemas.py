@@ -103,6 +103,7 @@ class DomesticSubmitRequest(BaseModel):
     request_id: Optional[str] = Field(
         None, max_length=64, description="幂等键：弱网重试用同一个值，不会重复累加",
     )
+    outcomes: Optional[dict[str, int]] = Field(None, description="分流判定结果数量；普通工序不传")
 
 
 class DomesticRevokeRequest(BaseModel):

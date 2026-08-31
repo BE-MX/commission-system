@@ -252,22 +252,36 @@ class MainActivity : Activity() {
     }
 
     private fun handleScanResult(payload: ScanPayload, scan: JSONObject) {
-        if (UnitReportFlow.shouldAutoSubmit(scan.optString("report_mode"))) {
+        val next = scan.optJSONObject("next_step") ?: JSONObject()
+        val requiresOutcome = next.optString("rule_type") == "decision"
+        if (UnitReportFlow.shouldAutoSubmit(scan.optString("report_mode"), requiresOutcome)) {
             reportingScreen?.showUnitReport(scan, ::loadImage)
-            submit(scan, payload, 1, UUID.randomUUID().toString())
+            submit(scan, payload, 1, UUID.randomUUID().toString(), null)
             return
         }
         reportingScreen?.showQuantityConfirmation(
             scan = scan,
-            onConfirm = { qty -> submit(scan, payload, qty, UUID.randomUUID().toString()) },
+            onConfirm = { decision ->
+                val outcomes = decision.outcomes.takeIf { it.isNotEmpty() }?.let { values ->
+                    JSONObject().apply { values.forEach { (code, qty) -> put(code, qty) } }
+                }
+                submit(scan, payload, decision.qty, UUID.randomUUID().toString(), outcomes)
+            },
             onCancel = { busy = false; reportingScreen?.showReady() },
             loadImage = ::loadImage,
         )
     }
 
-    private fun submit(scan: JSONObject, payload: ScanPayload, qty: Int, requestId: String) {
-        val unitMode = UnitReportFlow.shouldAutoSubmit(scan.optString("report_mode"))
-        if (!pendingStore.persist(scan, payload, qty, requestId)) {
+    private fun submit(
+        scan: JSONObject,
+        payload: ScanPayload,
+        qty: Int,
+        requestId: String,
+        outcomes: JSONObject?,
+    ) {
+        val requiresOutcome = scan.optJSONObject("next_step")?.optString("rule_type") == "decision"
+        val unitMode = UnitReportFlow.shouldAutoSubmit(scan.optString("report_mode"), requiresOutcome)
+        if (!pendingStore.persist(scan, payload, qty, requestId, outcomes)) {
             handleFailure(
                 IllegalStateException("无法保存待提交事务，请检查设备存储"),
                 written = true,
@@ -283,7 +297,7 @@ class MainActivity : Activity() {
         }
         executor.execute {
             try {
-                val result = api.submit(scan, payload, qty, requestId)
+                val result = api.submit(scan, payload, qty, requestId, outcomes)
                 ui {
                     pendingStore.clear(requestId)
                     val codes = result.optJSONArray("unit_codes")?.let { array ->
@@ -305,7 +319,15 @@ class MainActivity : Activity() {
                 }
             } catch (error: Exception) {
                 ui {
-                    if (error is ApiException && error.statusCode in 400..499) {
+                    if (
+                        error is ApiException &&
+                        PendingSubmissionFlow.shouldKeepPending(error.statusCode, error.code)
+                    ) {
+                        showRetryDialog(
+                            error.message,
+                            PendingSubmission(scan.toString(), payload.raw, qty, requestId, outcomes?.toString()),
+                        )
+                    } else if (error is ApiException && error.statusCode in 400..499) {
                         if (error.statusCode != 401) pendingStore.clear(requestId)
                         handleFailure(error, written = true, preferUnitDialog = unitMode)
                     } else {
@@ -313,7 +335,7 @@ class MainActivity : Activity() {
                         // the server committed. Keep the transaction and retry its ID.
                         showRetryDialog(
                             error.message ?: "网络异常",
-                            PendingSubmission(scan.toString(), payload.raw, qty, requestId),
+                            PendingSubmission(scan.toString(), payload.raw, qty, requestId, outcomes?.toString()),
                         )
                     }
                 }
@@ -329,6 +351,12 @@ class MainActivity : Activity() {
             handleFailure(IllegalStateException("待确认提交数据损坏，请重新扫码"), written = true)
             return
         }
+        val parsedOutcomes = PendingSubmissionFlow.parseOutcomes(pending.outcomes) { JSONObject(it) }
+        if (parsedOutcomes is PendingOutcomes.Corrupt) {
+            showCorruptPendingOutcomes()
+            return
+        }
+        val outcomes = (parsedOutcomes as? PendingOutcomes.Ready)?.value
         feedback.error()
         if (reportingScreen?.showUnitResultUnknown() != true) {
             reportingScreen?.showError("网络中断，提交结果未知")
@@ -343,7 +371,25 @@ class MainActivity : Activity() {
                 reportingScreen?.showError("请先核对今日记录；下一次扫码会再次提示处理待确认提交")
                 loadHistory()
             }
-            .setPositiveButton("重试同一笔") { _, _ -> submit(scan, payload, pending.qty, pending.requestId) }
+            .setPositiveButton("重试同一笔") { _, _ ->
+                submit(scan, payload, pending.qty, pending.requestId, outcomes)
+            }
+            .show()
+    }
+
+    private fun showCorruptPendingOutcomes() {
+        val warning = "待确认分流数据损坏，无法安全重试，请核对今日记录或联系管理员"
+        feedback.error()
+        reportingScreen?.showError(warning)
+        AlertDialog.Builder(this)
+            .setTitle("待确认提交需人工核对")
+            .setMessage("$warning\n\n为避免重复报工，APP 会保留原 request_id 和待确认数据，不会自动清除或重试。")
+            .setCancelable(false)
+            .setPositiveButton("核对今日记录") { _, _ ->
+                busy = false
+                reportingScreen?.showError(warning)
+                loadHistory()
+            }
             .show()
     }
 

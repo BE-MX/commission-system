@@ -29,6 +29,7 @@ from app.domestic import (
     product_service,
     progress_service,
     report_service,
+    route_rule_service,
     unit_service,
 )
 from app.domestic.models import DomesticOrder, DomesticOrderItem
@@ -44,8 +45,11 @@ from app.domestic.schemas import (
     OrderStatusUpdate,
     OrderUpdate,
     ProductRouteRebind,
+    ManualSkipSubmit,
     ReportRevoke,
     ReportSubmit,
+    RouteRuleSaveRequest,
+    RouteConfigurationSaveRequest,
 )
 from app.auth.models import ArkUser
 from app.production.models import Process, ProcessRoute, ProcessRouteStep, UserProcessBinding
@@ -115,6 +119,68 @@ def list_process_routes(
         "step_count": len(by_route.get(r.id, [])),
         "steps": [n for _, n in sorted(by_route.get(r.id, []))],
     } for r in routes])
+
+
+@router.get("/process-routes/{route_id}/rules", summary="查询内贸条件路线规则")
+def get_process_route_rules(
+    route_id: int,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission(*_READ)),
+):
+    try:
+        return ok(route_rule_service.list_rules(db, route_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/process-routes/{route_id}/rules", summary="全量保存内贸条件路线规则")
+def put_process_route_rules(
+    route_id: int,
+    payload: RouteRuleSaveRequest,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:admin")),
+):
+    try:
+        data = route_rule_service.save_rules(
+            db,
+            route_id,
+            [rule.model_dump() for rule in payload.rules],
+        )
+        db.commit()
+        return ok(data)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.put(
+    "/process-routes/{route_id}/configuration",
+    summary="原子保存路线步骤与内贸条件规则",
+)
+def put_process_route_configuration(
+    route_id: int,
+    payload: RouteConfigurationSaveRequest,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("production:admin", "domestic:admin")),
+):
+    try:
+        data = route_rule_service.save_route_configuration(
+            db,
+            route_id,
+            [step.model_dump() for step in payload.steps],
+            [rule.model_dump() for rule in payload.rules],
+        )
+        db.commit()
+        return ok(data)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        raise
 
 
 # ── 客户 ──────────────────────────────────────────────
@@ -676,6 +742,19 @@ def list_reports(
     return ok(page_result(items, total, page, page_size))
 
 
+@router.get("/reports/skips", summary="人工跳过审计查询")
+def list_manual_skip_audits(
+    item_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:admin")),
+):
+    try:
+        data = report_service.list_manual_skip_audits(db, item_id=item_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return ok(data)
+
+
 @router.post("/reports", summary="主站代报工")
 def submit_report(
     payload: ReportSubmit,
@@ -689,6 +768,7 @@ def submit_report(
             qty=payload.qty, user_id=_uid(current_user), source="web",
             request_id=payload.request_id,
             on_behalf_user_id=payload.on_behalf_user_id,
+            outcomes=payload.outcomes,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -724,6 +804,43 @@ def revoke_report(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(data, message="已撤销")
+
+
+@router.post("/reports/skip", summary="主管人工跳过工序")
+def submit_manual_skip(
+    payload: ManualSkipSubmit,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("domestic:admin")),
+):
+    try:
+        data = report_service.submit_manual_skip(
+            db,
+            item_id=payload.item_id,
+            progress_id=payload.progress_id,
+            qty=payload.qty,
+            unit_id=payload.unit_id,
+            reason=payload.reason,
+            request_id=payload.request_id,
+            user_id=_uid(current_user),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(data, message=f"已跳过 {data['skipped_qty']} 件")
+
+
+@router.post("/reports/skip/{skip_log_id}/revoke", summary="撤销人工工序跳过")
+def revoke_manual_skip(
+    skip_log_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("domestic:admin")),
+):
+    try:
+        data = report_service.revoke_manual_skip(
+            db, skip_log_id, _uid(current_user),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(data, message="已撤销跳过")
 
 
 @router.get("/reports/workload", summary="按人×工序的报工量汇总")

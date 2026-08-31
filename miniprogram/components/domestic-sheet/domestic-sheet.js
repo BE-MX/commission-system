@@ -1,5 +1,6 @@
 // components/domestic-sheet/domestic-sheet.js
 // 内贸报工确认弹层。结构照 confirm-sheet（外贸），多了数量与图文要求。
+var routing = require('../../utils/domestic-routing')
 Component({
   properties: {
     visible: { type: Boolean, value: false },
@@ -20,7 +21,12 @@ Component({
     showTimeline: false,
     stepList: [],
     reqOpen: false,
-    hasRequirement: false
+    hasRequirement: false,
+    isDecision: false,
+    decisionOptions: [],
+    outcomeValues: {},
+    decisionTotal: 0,
+    selectedOutcomeCode: ''
   },
 
   observers: {
@@ -28,19 +34,31 @@ Component({
       if (!s) return
       var max = s.reportable_qty || 0
       var q = max > 0 ? max : 1
-      this.setData({ maxQty: max, qty: q, qtyText: String(q) })   // 默认整批，改小即拆批
+      var options = s.rule_type === 'decision' ? (s.outcome_options || []).map(function (option) {
+        return { code: option.code, label: option.label, value: '' }
+      }) : []
+      var values = {}
+      for (var i = 0; i < options.length; i++) values[options[i].code] = ''
+      this.setData({
+        maxQty: max, qty: q, qtyText: String(q),
+        isDecision: s.rule_type === 'decision',
+        decisionOptions: options,
+        outcomeValues: values,
+        decisionTotal: 0,
+        selectedOutcomeCode: ''
+      })   // 普通工序默认整批；分流工序必须现场选结果
     },
     'steps': function (list) {
       list = list || []
       var done = 0
       var view = list.map(function (s) {
-        var pct = s.order_qty ? Math.round(s.completed_qty / s.order_qty * 100) : 0
-        var finished = s.completed_qty >= s.order_qty && s.order_qty > 0
-        if (finished) done += 1
+        var progress = routing.decorateProgress(s)
+        if (progress.done) done += 1
         return {
           progress_id: s.progress_id, step_order: s.step_order, process_name: s.process_name,
-          completed_qty: s.completed_qty, order_qty: s.order_qty,
-          last_reported_at: s.last_reported_at, pct: pct, done: finished
+          completed_qty: progress.completedQty, skipped_qty: progress.skippedQty,
+          passed_qty: progress.passedQty, order_qty: s.order_qty,
+          last_reported_at: s.last_reported_at, pct: progress.percent, done: progress.done
         }
       })
       this.setData({
@@ -78,12 +96,52 @@ Component({
     },
     onConfirm: function () {
       if (this.data.submitting) return
+      if (this.data.isDecision) {
+        var values = this.data.item && this.data.item.report_mode === 'unit'
+          ? (this.data.selectedOutcomeCode ? this._unitOutcome(this.data.selectedOutcomeCode) : {})
+          : this.data.outcomeValues
+        try {
+          var submission = routing.buildDecisionSubmission(
+            this.data.decisionOptions, values, this.data.maxQty,
+            this.data.item && this.data.item.report_mode
+          )
+          this.triggerEvent('confirm', submission)
+        } catch (err) {
+          this.triggerEvent('invalidqty', { maxQty: this.data.maxQty, message: err.message })
+        }
+        return
+      }
       var q = this.data.item && this.data.item.report_mode === 'unit' ? 1 : this.data.qty
       if (!(q > 0) || q > this.data.maxQty) {
         this.triggerEvent('invalidqty', { maxQty: this.data.maxQty })
         return
       }
       this.triggerEvent('confirm', { qty: q })
+    },
+    _unitOutcome: function (code) {
+      var values = {}
+      values[code] = true
+      return values
+    },
+    onDecisionInput: function (e) {
+      var code = e.currentTarget.dataset.code
+      var index = e.currentTarget.dataset.index
+      var value = e.detail.value
+      var key = 'outcomeValues.' + code
+      var change = {}
+      change[key] = value
+      change['decisionOptions[' + index + '].value'] = value
+      var total = 0
+      var values = this.data.outcomeValues || {}
+      for (var i = 0; i < this.data.decisionOptions.length; i++) {
+        var optionCode = this.data.decisionOptions[i].code
+        total += Number(optionCode === code ? value : values[optionCode]) || 0
+      }
+      change.decisionTotal = total
+      this.setData(change)
+    },
+    onDecisionSelect: function (e) {
+      this.setData({ selectedOutcomeCode: e.currentTarget.dataset.code, decisionTotal: 1 })
     },
 
     // ── 数量 ──

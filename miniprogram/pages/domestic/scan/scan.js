@@ -241,31 +241,34 @@ Page({
   },
 
   onInvalidQty: function (e) {
-    this._error('数量不对', '本次最多能报 ' + (e.detail.maxQty || 0) + ' 件')
+    this._error('数量不对', e.detail.message || ('本次最多能报 ' + (e.detail.maxQty || 0) + ' 件'))
   },
 
   onConfirmSubmit: function (e) {
     var self = this
     var qty = e.detail.qty
+    var outcomes = e.detail.outcomes || null
     // 幂等键在同一次确认里复用：弱网下"已提交但响应丢了"时再点一次不会报两次
     if (!this._requestId) {
       this._requestId = Date.now() + '-' + Math.random().toString(36).slice(2, 12)
     }
     this.setData({ submitting: true })
     this._syncTabBar()
+    var submitData = {
+      item_id: this.data.scanned.item_id,
+      progress_id: this.data.nextStep.progress_id,
+      qty: qty,
+      unit_id: this.data.scanned.report_mode === 'unit' ? this.data.scanned.unit_id : null,
+      unit_sign: this.data.scanned.report_mode === 'unit' ? this.data.scanned.unit_sign : null,
+      request_id: this._requestId
+    }
+    if (outcomes) submitData.outcomes = outcomes
     wx.request({
       url: app.globalData.baseUrl + '/api/mini/domestic/scan/submit',
       method: 'POST',
       header: this._header(),
       timeout: 30000,
-      data: {
-        item_id: this.data.scanned.item_id,
-        progress_id: this.data.nextStep.progress_id,
-        qty: qty,
-        unit_id: this.data.scanned.report_mode === 'unit' ? this.data.scanned.unit_id : null,
-        unit_sign: this.data.scanned.report_mode === 'unit' ? this.data.scanned.unit_sign : null,
-        request_id: this._requestId
-      },
+      data: submitData,
       success: function (res) {
         self.setData({ submitting: false })
         self._syncTabBar()

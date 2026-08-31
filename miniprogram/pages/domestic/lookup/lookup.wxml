@@ -84,8 +84,9 @@
 
             <view class="lk-bar"><view class="lk-bar-fill" style="width:{{step.pct}}%"></view></view>
             <view class="lk-step-nums">
-              <text class="lk-done">{{step.completed_qty}}</text>
-              <text class="lk-slash">/ {{step.order_qty}} 件</text>
+              <text class="lk-done">已报 {{step.completed_qty}}</text>
+              <text class="lk-slash">/ 共 {{step.order_qty}} 件</text>
+              <text class="lk-wait" wx:if="{{step.skipped_qty > 0}}">跳过 {{step.skipped_qty}}</text>
               <text class="lk-wait" wx:if="{{step.reportable_qty > 0}}">待做 {{step.reportable_qty}}</text>
             </view>
 

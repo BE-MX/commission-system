@@ -2,11 +2,12 @@
 // 客户/员工微信扫「订单进度码」直达本页：不要求登录，凭码里的签名看这一单。
 // 页面上没有搜索、没有扫码入口——没有码就查不了别的订单。
 var app = getApp()
+var routing = require('../../../utils/domestic-routing')
 
 // 工序三态 → 颜色与文案（与订单速查同一套判定）
 function stateOf(step) {
-  if (step.completed_qty >= step.order_qty && step.order_qty > 0) return ['done', '已完成']
-  if (step.completed_qty > 0) return ['doing', '进行中']
+  if (step.passed_qty >= step.order_qty && step.order_qty > 0) return ['done', '已完成']
+  if (step.passed_qty > 0) return ['doing', '进行中']
   if (step.reportable_qty > 0) return ['ready', '可开工']
   return ['wait', '等上道']
 }
@@ -90,18 +91,19 @@ Page({
       var view = []
       for (var j = 0; j < steps.length; j++) {
         var s = steps[j]
-        var st = stateOf(s)
+        var publicData = routing.publicStep(s)
+        var progress = routing.decorateProgress(publicData)
+        var st = stateOf(publicData)
         view.push({
-          progress_id: s.progress_id,
-          step_order: s.step_order,
-          process_name: s.process_name,
-          completed_qty: s.completed_qty,
-          order_qty: s.order_qty,
-          reportable_qty: s.reportable_qty,
-          last_reported_by: s.last_reported_by,
-          last_report_qty: s.last_report_qty,
-          last_reported_at: (s.last_reported_at || '').replace('T', ' ').slice(0, 16),
-          pct: s.order_qty ? Math.round(s.completed_qty / s.order_qty * 100) : 0,
+          step_order: publicData.step_order,
+          process_name: publicData.process_name,
+          completed_qty: progress.completedQty,
+          skipped_qty: progress.skippedQty,
+          passed_qty: progress.passedQty,
+          order_qty: publicData.order_qty,
+          skip_label: publicData.skip_label || '',
+          reportable_qty: publicData.reportable_qty,
+          pct: progress.percent,
           state: st[0],
           stateText: st[1]
         })

@@ -5,6 +5,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.text.InputType
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -12,6 +14,8 @@ import android.widget.EditText
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import org.json.JSONObject
@@ -219,46 +223,110 @@ class ReportingScreen(
 
     fun showQuantityConfirmation(
         scan: JSONObject,
-        onConfirm: (Int) -> Unit,
+        onConfirm: (DecisionSubmission) -> Unit,
         onCancel: () -> Unit,
         loadImage: (String, ImageView) -> Unit,
     ) {
         val next = scan.getJSONObject("next_step")
         val maxQty = next.optInt("reportable_qty", 1).coerceAtLeast(1)
+        val reportMode = scan.optString("report_mode", "quantity")
+        val requiresOutcome = next.optString("rule_type") == "decision"
+        val optionsJson = next.optJSONArray("outcome_options")
+        val rawOptions = buildList {
+            if (optionsJson != null) {
+                for (index in 0 until optionsJson.length()) {
+                    val option = optionsJson.optJSONObject(index) ?: continue
+                    val code = option.optString("code").trim()
+                    val label = option.optString("label").trim()
+                    add(DecisionOption(code, label))
+                }
+            }
+        }
+        val options = if (requiresOutcome) {
+            runCatching { DecisionReportFlow.normalizeOptions(rawOptions) }.getOrElse { emptyList() }
+        } else {
+            emptyList()
+        }
         val content = Ui.vertical(context, 18)
         content.addView(infoBlock("产品", scan.optString("product_name", "-"), true))
         content.addView(infoBlock("客户", scan.optString("customer_name", "-")))
         val orderLabel = listOf(scan.optString("domestic_no"), scan.optString("order_no"))
             .filter { it.isNotBlank() && it != "null" }.joinToString(" · ").ifBlank { "-" }
         content.addView(infoBlock("订单", orderLabel))
+        if (reportMode == "unit") {
+            content.addView(infoBlock("单件编号", scan.optString("unit_code", "-"), true))
+        }
         content.addView(infoBlock("当前工序", next.optString("process_name", "-"), true))
 
-        val qtyLabel = Ui.text(
-            context,
-            "报工数量（最多 $maxQty 件）",
-            14f,
-            Ui.ink,
-            true,
-        )
-        content.addView(qtyLabel, Ui.margin(top = 16, context = context))
-        val qtyInput = EditText(context).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER
-            setText(maxQty.toString())
-            selectAll()
-            textSize = 24f
-            gravity = Gravity.CENTER
-            background = Ui.rounded(Color.WHITE, 10, context, Ui.greenBright)
+        var qtyInput: EditText? = null
+        val decisionInputs = linkedMapOf<String, EditText>()
+        var selectedCode: String? = null
+        var decisionError: TextView? = null
+
+        if (!requiresOutcome) {
+            content.addView(Ui.text(context, "报工数量（最多 $maxQty 件）", 14f, Ui.ink, true), Ui.margin(top = 16, context = context))
+            qtyInput = EditText(context).apply {
+                inputType = InputType.TYPE_CLASS_NUMBER
+                setText(maxQty.toString())
+                selectAll()
+                textSize = 24f
+                gravity = Gravity.CENTER
+                background = Ui.rounded(Color.WHITE, 10, context, Ui.greenBright)
+            }
+            content.addView(qtyInput, Ui.margin(height = Ui.dp(context, 56), top = 8, context = context))
+            content.addView(
+                Ui.text(context, "默认报当前全部可报数量；改小即拆批，剩余数量之后继续扫同一张卡。", 12f, Ui.secondary),
+                Ui.margin(top = 7, context = context),
+            )
+        } else if (reportMode == "unit") {
+            content.addView(Ui.text(context, "选择这一件的处理结果", 15f, Ui.ink, true), Ui.margin(top = 16, context = context))
+            val group = RadioGroup(context).apply { orientation = VERTICAL }
+            options.forEach { option ->
+                group.addView(RadioButton(context).apply {
+                    text = option.label
+                    textSize = 19f
+                    tag = option.code
+                    minHeight = Ui.dp(context, 58)
+                    setPadding(Ui.dp(context, 12), 0, Ui.dp(context, 12), 0)
+                })
+            }
+            group.setOnCheckedChangeListener { radioGroup, checkedId ->
+                selectedCode = radioGroup.findViewById<RadioButton>(checkedId)?.tag as? String
+                decisionError?.text = ""
+            }
+            content.addView(group, Ui.margin(top = 8, context = context))
+            decisionError = Ui.text(context, "", 12f, Ui.danger)
+            content.addView(decisionError, Ui.margin(top = 6, context = context))
+        } else {
+            content.addView(Ui.text(context, "按处理结果分配数量（最多 $maxQty 件）", 15f, Ui.ink, true), Ui.margin(top = 16, context = context))
+            val totalText = Ui.text(context, "已分配 0 / $maxQty 件", 14f, Ui.secondary, true)
+            val watcher = object : TextWatcher {
+                override fun beforeTextChanged(value: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                override fun onTextChanged(value: CharSequence?, start: Int, before: Int, count: Int) {
+                    val total = decisionInputs.values.sumOf { it.text.toString().toIntOrNull() ?: 0 }
+                    totalText.text = "已分配 $total / $maxQty 件"
+                    totalText.setTextColor(if (total in 1..maxQty) Ui.green else Ui.danger)
+                }
+                override fun afterTextChanged(value: Editable?) = Unit
+            }
+            options.forEach { option ->
+                val row = LinearLayout(context).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+                row.addView(Ui.text(context, option.label, 16f, Ui.ink, true), LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                val input = EditText(context).apply {
+                    inputType = InputType.TYPE_CLASS_NUMBER
+                    setText("0")
+                    textSize = 20f
+                    gravity = Gravity.CENTER
+                    background = Ui.rounded(Color.WHITE, 10, context, Ui.greenBright)
+                    addTextChangedListener(watcher)
+                }
+                decisionInputs[option.code] = input
+                row.addView(input, Ui.margin(Ui.dp(context, 100), Ui.dp(context, 52), left = 10, context = context))
+                content.addView(row, Ui.margin(top = 8, context = context))
+            }
+            decisionError = totalText
+            content.addView(totalText, Ui.margin(top = 8, context = context))
         }
-        content.addView(qtyInput, Ui.margin(height = Ui.dp(context, 56), top = 8, context = context))
-        content.addView(
-            Ui.text(
-                context,
-                "默认报当前全部可报数量；改小即拆批，剩余数量之后继续扫同一张卡。",
-                12f,
-                Ui.secondary,
-            ),
-            Ui.margin(top = 7, context = context),
-        )
 
         addRequirements(content, scan, loadImage)
         addProgress(content, scan)
@@ -276,13 +344,30 @@ class ReportingScreen(
         var confirmed = false
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val qty = qtyInput.text.toString().toIntOrNull() ?: 0
-                if (qty !in 1..maxQty) {
-                    qtyInput.error = "请输入 1 到 $maxQty"
-                } else {
+                val result = runCatching {
+                    when {
+                        !requiresOutcome -> {
+                            val qty = qtyInput?.text.toString().toIntOrNull() ?: 0
+                            require(qty in 1..maxQty) { "请输入 1 到 $maxQty" }
+                            DecisionSubmission(qty, linkedMapOf())
+                        }
+                        reportMode == "unit" -> DecisionReportFlow.validateUnit(options.map { it.code }, selectedCode)
+                        else -> DecisionReportFlow.validate(
+                            maxQty,
+                            decisionInputs.mapValues { (_, input) ->
+                                input.text.toString().ifBlank { "0" }.toIntOrNull()
+                                    ?: throw IllegalArgumentException("分配数量必须是整数")
+                            },
+                        )
+                    }
+                }
+                result.onSuccess { submission ->
                     confirmed = true
                     dialog.dismiss()
-                    onConfirm(qty)
+                    onConfirm(submission)
+                }.onFailure { error ->
+                    if (!requiresOutcome) qtyInput?.error = error.message
+                    else decisionError?.text = error.message
                 }
             }
         }
@@ -371,9 +456,17 @@ class ReportingScreen(
         content.addView(Ui.text(context, "工序进度", 15f, Ui.ink, true), Ui.margin(top = 18, bottom = 5, context = context))
         for (i in 0 until steps.length()) {
             val step = steps.getJSONObject(i)
+            val actual = step.optInt("completed_qty")
+            val skipped = step.optInt("skipped_qty")
+            val passed = step.optInt("passed_qty")
+            val detail = buildString {
+                append("${step.optString("process_name")}  已报 $actual")
+                if (skipped > 0) append(" / 跳过 $skipped")
+                append(" / 通过 $passed 件")
+            }
             content.addView(infoBlock(
                 "第 ${step.optInt("step_order")} 道",
-                "${step.optString("process_name")}  ${step.optInt("completed_qty")} / ${step.optInt("order_qty")} 件",
+                detail,
             ))
         }
     }

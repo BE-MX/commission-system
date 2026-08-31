@@ -13,6 +13,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     Numeric,
@@ -250,6 +251,7 @@ class DomesticReportLog(Base):
     reported_by_name = Column(String(60), comment="报工人姓名快照")
     source = Column(String(16), nullable=False, default="mini", comment="mini=小程序,web=主站")
     report_mode = Column(String(16), nullable=False, default="quantity", comment="quantity=数量报工,unit=逐件扫码")
+    outcome_json = Column(JSON, comment="决策工序的结果数量分配")
     request_id = Column(String(64), unique=True,
                         comment="客户端幂等键：弱网重试同一个 id 不重复累加数量")
     reported_at = Column(DateTime, nullable=False, comment="报工时间（北京时）")
@@ -313,10 +315,121 @@ class DomesticReportUnit(Base):
     log_id = Column(BigInteger, ForeignKey("ark_domestic_report_logs.id", ondelete="CASCADE"), nullable=False, comment="报工流水 ID")
     unit_id = Column(BigInteger, ForeignKey("ark_domestic_item_units.id", ondelete="RESTRICT"), nullable=False, comment="单件 ID")
     progress_id = Column(Integer, ForeignKey("ark_domestic_item_progress.id", ondelete="CASCADE"), nullable=False)
+    outcome_code = Column(String(32), comment="该单件在决策工序选择的结果编码")
     completed_at = Column(DateTime, nullable=False, comment="该单件在本工序完成时间")
 
     __table_args__ = (
         UniqueConstraint("log_id", "unit_id", name="uq_dom_report_log_unit"),
         Index("idx_dom_report_unit_progress", "progress_id", "unit_id"),
         Index("idx_dom_report_unit_unit", "unit_id", "progress_id"),
+    )
+
+
+class DomesticRouteRule(Base):
+    """内贸专用的路线步骤规则；共享生产路线本身保持线性。"""
+
+    __tablename__ = "ark_domestic_route_rules"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    route_id = Column(
+        Integer,
+        ForeignKey("process_route.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="共享工艺路线 ID",
+    )
+    process_id = Column(
+        Integer,
+        ForeignKey("process.id", ondelete="RESTRICT"),
+        nullable=False,
+        comment="触发规则的工序 ID",
+    )
+    rule_type = Column(String(16), nullable=False, comment="decision/optional")
+    config_json = Column(JSON, comment="服务端校验后的规则配置")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=beijing_now,
+        onupdate=beijing_now,
+        comment="更新时间",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("route_id", "process_id", name="uq_dom_route_rule_process"),
+        ForeignKeyConstraint(
+            ["route_id", "process_id"],
+            ["process_route_step.route_id", "process_route_step.process_id"],
+            ondelete="RESTRICT",
+            name="fk_dom_route_rule_step",
+        ),
+    )
+
+
+class DomesticSkipLog(Base):
+    """内贸工序跳过审计流水；跳过只改变路线资格，不计入工作量。"""
+
+    __tablename__ = "ark_domestic_skip_logs"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    item_id = Column(
+        Integer,
+        ForeignKey("ark_domestic_order_items.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="所属订单明细",
+    )
+    progress_id = Column(
+        Integer,
+        ForeignKey("ark_domestic_item_progress.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="被跳过的进度行",
+    )
+    skip_qty = Column(Integer, nullable=False, comment="跳过数量")
+    source = Column(String(24), nullable=False, comment="decision/optional_bypass/manual")
+    skip_mode = Column(String(16), comment="人工跳过模式：quantity/unit；自动跳过为空")
+    reason = Column(String(500), comment="跳过原因；人工放行必填")
+    trigger_report_log_id = Column(
+        BigInteger,
+        ForeignKey("ark_domestic_report_logs.id", ondelete="SET NULL"),
+        comment="触发本次跳过的报工流水",
+    )
+    request_id = Column(String(64), unique=True, comment="人工放行等入口的幂等键")
+    created_by_user_id = Column(
+        _UINT,
+        ForeignKey("ark_users.id", ondelete="RESTRICT"),
+        nullable=False,
+        comment="操作人",
+    )
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    revoked = Column(SmallInteger, nullable=False, default=0, comment="0=有效,1=已撤销")
+    revoked_at = Column(DateTime, comment="撤销时间")
+
+
+class DomesticSkipUnit(Base):
+    """一条跳过流水实际覆盖的单件清单。"""
+
+    __tablename__ = "ark_domestic_skip_units"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    skip_log_id = Column(
+        BigInteger,
+        ForeignKey("ark_domestic_skip_logs.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="跳过流水 ID",
+    )
+    unit_id = Column(
+        BigInteger,
+        ForeignKey("ark_domestic_item_units.id", ondelete="RESTRICT"),
+        nullable=False,
+        comment="被跳过的单件 ID",
+    )
+    progress_id = Column(
+        Integer,
+        ForeignKey("ark_domestic_item_progress.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="被跳过的进度行",
+    )
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+
+    __table_args__ = (
+        UniqueConstraint("skip_log_id", "unit_id", name="uq_dom_skip_log_unit"),
     )

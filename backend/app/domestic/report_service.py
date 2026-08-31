@@ -13,13 +13,14 @@ import re
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
 from app.core.config import get_settings
 from app.core.time import beijing_now
 from app.domestic import constants as C
-from app.domestic import progress_service, unit_service
+from app.domestic import progress_service, route_rule_service, routing_service, unit_service
 from app.domestic.models import (
     DomesticCustomer,
     DomesticItemProgress,
@@ -28,6 +29,8 @@ from app.domestic.models import (
     DomesticReportLog,
     DomesticItemUnit,
     DomesticReportUnit,
+    DomesticSkipLog,
+    DomesticSkipUnit,
 )
 from app.production.models import Process, UserProcessBinding
 
@@ -194,6 +197,10 @@ def _replay_result(db: Session, log: DomesticReportLog, *, lock: bool = False) -
     item = db.query(DomesticOrderItem).get(log.item_id)
     process_name = db.query(Process.name).filter(Process.id == log.process_id).scalar()
     units = unit_service.units_for_log(db, log.id, lock=lock)
+    outcome_by_unit = dict(db.query(
+        DomesticReportUnit.unit_id,
+        DomesticReportUnit.outcome_code,
+    ).filter(DomesticReportUnit.log_id == log.id).all())
     return {
         "log_id": log.id,
         "item_id": log.item_id,
@@ -207,6 +214,11 @@ def _replay_result(db: Session, log: DomesticReportLog, *, lock: bool = False) -
         "reported_at": log.reported_at,
         "unit_ids": [unit.id for unit in units],
         "unit_codes": [unit_service.unit_display_code(item, unit.unit_no) for unit in units] if item else [],
+        "outcomes": log.outcome_json,
+        "unit_outcomes": [
+            {"unit_id": unit.id, "outcome_code": outcome_by_unit.get(unit.id)}
+            for unit in units
+        ],
         "replayed": True,
     }
 
@@ -220,6 +232,7 @@ def _report_replay_if_exists(
     qty: int,
     worker_id: int,
     unit_id: int | None,
+    outcomes: dict[str, int] | None,
     lock: bool = False,
 ) -> dict | None:
     if not request_id:
@@ -238,6 +251,7 @@ def _report_replay_if_exists(
         and existing.report_qty == qty
         and existing.reported_by_user_id == worker_id
         and existing.report_mode == ("unit" if unit_id is not None else "quantity")
+        and (existing.outcome_json or None) == outcomes
     )
     if unit_id is not None:
         same_request = same_request and any(
@@ -248,6 +262,34 @@ def _report_replay_if_exists(
     if not same_request:
         raise ValueError("该报工请求号已用于另一笔报工，请重新扫码")
     return _replay_result(db, existing, lock=lock)
+
+
+def _is_target_request_unique_error(exc: IntegrityError, *, target: str) -> bool:
+    """只识别本次幂等键唯一约束，不能把其它数据完整性错误伪装成重放。"""
+    message = f"{exc.orig or exc} {exc.statement or ''}".lower()
+    if target == "report":
+        return (
+            "ark_domestic_report_logs.request_id" in message
+            or (
+                "duplicate entry" in message
+                and "request_id" in message
+                and "ark_domestic_report_logs" in message
+            )
+        )
+    return (
+        "ark_domestic_skip_logs.request_id" in message
+        or "uq_dom_skip_request_id" in message
+        or (
+            "duplicate entry" in message
+            and "request_id" in message
+            and "ark_domestic_skip_logs" in message
+        )
+    )
+
+
+def _is_mysql_deadlock(exc: OperationalError) -> bool:
+    args = getattr(exc.orig, "args", ())
+    return bool(args) and args[0] == 1213
 
 
 def scan_item(db: Session, item_id: int, user_id: int) -> dict:
@@ -300,7 +342,7 @@ def scan_item(db: Session, item_id: int, user_id: int) -> dict:
         return blocked(BLOCK_ORDER_DRAFT)
     if not steps:
         return blocked(BLOCK_NO_ROUTE)
-    if all(s["completed_qty"] >= item.order_qty for s in steps):
+    if steps[-1]["passed_qty"] >= item.order_qty:
         return blocked(BLOCK_ALL_DONE)
 
     my_processes = _user_process_ids(db, user_id)
@@ -370,7 +412,7 @@ def scan_unit(db: Session, unit_id: int, user_id: int) -> dict:
 # ── 报工提交 ──────────────────────────────────────────
 
 
-def submit_report(
+def _submit_report_once(
     db: Session,
     *,
     item_id: int,
@@ -381,6 +423,7 @@ def submit_report(
     request_id: str | None = None,
     on_behalf_user_id: int | None = None,
     unit_id: int | None = None,
+    outcomes: dict[str, int] | None = None,
 ) -> dict:
     """提交一次报工。数量守恒由「上游累计 − 本道累计」当场校验。
 
@@ -394,17 +437,42 @@ def submit_report(
         raise ValueError("报工数量必须大于 0")
 
     worker_id = on_behalf_user_id or user_id
+    replay_outcomes = routing_service.normalize_replay_outcomes(outcomes)
     replay = _report_replay_if_exists(
         db, request_id=request_id, item_id=item_id, progress_id=progress_id,
-        qty=qty, worker_id=worker_id, unit_id=unit_id,
+        qty=qty, worker_id=worker_id, unit_id=unit_id, outcomes=replay_outcomes,
     )
     if replay:
         return replay
 
+    preview_item = db.query(DomesticOrderItem).get(item_id)
+    preview_progress = db.query(DomesticItemProgress).get(progress_id)
+    preview_rule = None
+    if preview_item and preview_progress and preview_item.route_id:
+        preview_rule = routing_service.runtime_rule_map(db, preview_item.route_id).get(
+            preview_progress.process_id
+        )
+    normalized_outcomes = routing_service.normalize_outcomes(
+        preview_rule,
+        outcomes,
+        qty=qty,
+        unit_mode=unit_id is not None,
+    )
     # 明细行锁放最前：同一明细的所有报工/撤销在这里排队，锁顺序统一避免死锁
     item = db.query(DomesticOrderItem).filter(DomesticOrderItem.id == item_id).with_for_update().first()
     if not item:
         raise ValueError("订单明细不存在")
+
+    # 首次快查可能在 MySQL RR 快照里看不到刚提交的并发请求。同一明细已由
+    # item 行锁串行化，此处 locking read 必须重查一次再动累计数。
+    replay = _report_replay_if_exists(
+        db, request_id=request_id, item_id=item_id, progress_id=progress_id,
+        qty=qty, worker_id=worker_id, unit_id=unit_id,
+        outcomes=replay_outcomes, lock=True,
+    )
+    if replay:
+        db.rollback()
+        return replay
 
     progress = (
         db.query(DomesticItemProgress)
@@ -417,32 +485,51 @@ def submit_report(
 
     _assert_order_reportable(db, item.order_id)
 
-    # 首次快查可能在 MySQL RR 快照里看不到刚提交的并发请求。同一明细已由
-    # item 行锁串行化，此处 locking read 必须重查一次再动累计数。
-    replay = _report_replay_if_exists(
-        db, request_id=request_id, item_id=item_id, progress_id=progress_id,
-        qty=qty, worker_id=worker_id, unit_id=unit_id, lock=True,
-    )
-    if replay:
-        db.rollback()
-        return replay
-
     # 代报工：件数记到实际做活的人头上，不是记到操作电脑的人头上（计件工资口径）
     if progress.process_id not in _user_process_ids(db, worker_id):
         who = "该工人" if on_behalf_user_id else "你"
         raise ValueError(f"{who}没有被分配到这道工序")
 
-    available = progress_service.reportable_qty(db, progress, item, lock=True)
+    rows = (
+        db.query(DomesticItemProgress)
+        .filter(DomesticItemProgress.item_id == item.id)
+        .order_by(DomesticItemProgress.step_order.asc())
+        .with_for_update()
+        .all()
+    )
+    unit_service.ensure_item_units(db, item)
+    units = routing_service.active_units(db, item)
+    state = routing_service.load_passage_state(db, item)
+    rules = routing_service.runtime_rule_map(db, item.route_id)
+    rule = rules.get(progress.process_id)
+    normalized_outcomes = routing_service.normalize_outcomes(
+        rule, outcomes, qty=qty, unit_mode=unit_id is not None,
+    )
+    candidates, bypassable = routing_service.ordered_report_candidates(
+        item, progress, rows, state, units, rules,
+    )
+    available = len(candidates)
     if available <= 0:
         raise ValueError("上一道工序还没做出可接的数量")
     if qty > available:
         raise ValueError(f"最多还能报 {available} 件，本次填了 {qty} 件")
-    selected_units = unit_service.select_units_for_report(
-        db,
-        item=item,
-        progress=progress,
-        qty=qty,
-        unit_id=unit_id,
+    if unit_id is not None:
+        if qty != 1:
+            raise ValueError("逐件扫码模式每次只能报 1 件")
+        selected = next((unit for unit in candidates if unit.id == unit_id), None)
+        if selected is None:
+            unit = db.query(DomesticItemUnit).get(unit_id)
+            if not unit or unit.item_id != item.id or unit.status != 1:
+                raise ValueError("这个单件二维码不属于当前订单明细或已失效")
+            if unit.id in state.passed(progress.id):
+                raise ValueError(f"单件 {unit_service.unit_display_code(item, unit.unit_no)} 的这道工序已经报过")
+            raise ValueError(f"单件 {unit_service.unit_display_code(item, unit.unit_no)} 的上一道工序还没完成")
+        selected_units = [selected]
+    else:
+        selected_units = candidates[:qty]
+
+    outcome_by_unit, assigned_by_code = routing_service.allocate_outcomes(
+        selected_units, normalized_outcomes,
     )
 
     now = _bj_now()
@@ -463,14 +550,41 @@ def submit_report(
         reported_by_name=getattr(worker, "real_name", None) or getattr(worker, "username", None),
         source=source,
         report_mode="unit" if unit_id is not None else "quantity",
+        outcome_json=normalized_outcomes,
         request_id=request_id,
         reported_at=now,
         revoked=0,
     )
     db.add(log)
     db.flush()
-    unit_service.add_report_units(db, log=log, units=selected_units)
+    unit_service.add_report_units(
+        db, log=log, units=selected_units, outcome_by_unit=outcome_by_unit,
+    )
+    if rule and rule["rule_type"] == route_rule_service.RULE_DECISION:
+        routing_service.create_decision_skips(
+            db,
+            item=item,
+            rows=rows,
+            rule=rule,
+            assigned_by_code=assigned_by_code,
+            trigger_log=log,
+            user_id=worker_id,
+        )
+    bypass_units = [unit for unit in selected_units if unit.id in bypassable]
+    if bypass_units:
+        previous = rows[rows.index(progress) - 1]
+        routing_service.create_skip_log(
+            db,
+            item=item,
+            progress=previous,
+            units=bypass_units,
+            source="optional_bypass",
+            reason="下一道报工自动绕过可选工序",
+            trigger_report_log_id=log.id,
+            user_id=worker_id,
+        )
 
+    progress_service.sync_progress_statuses(db, item)
     progress_service.recalc_item_status(db, item)
     progress_service.sync_order_status(db, item.order_id)
     db.commit()
@@ -489,29 +603,410 @@ def submit_report(
         "reported_at": now,
         "unit_ids": [unit.id for unit in selected_units],
         "unit_codes": [unit_service.unit_display_code(item, unit.unit_no) for unit in selected_units],
+        "outcomes": normalized_outcomes,
+        "unit_outcomes": [
+            {"unit_id": unit.id, "outcome_code": outcome_by_unit.get(unit.id)}
+            for unit in selected_units
+        ],
+    }
+
+
+def submit_report(
+    db: Session,
+    *,
+    item_id: int,
+    progress_id: int,
+    qty: int,
+    user_id: int,
+    source: str = "mini",
+    request_id: str | None = None,
+    on_behalf_user_id: int | None = None,
+    unit_id: int | None = None,
+    outcomes: dict[str, int] | None = None,
+) -> dict:
+    try:
+        return _submit_report_once(
+            db,
+            item_id=item_id,
+            progress_id=progress_id,
+            qty=qty,
+            user_id=user_id,
+            source=source,
+            request_id=request_id,
+            on_behalf_user_id=on_behalf_user_id,
+            unit_id=unit_id,
+            outcomes=outcomes,
+        )
+    except (IntegrityError, OperationalError) as exc:
+        recoverable = (
+            isinstance(exc, IntegrityError)
+            and _is_target_request_unique_error(exc, target="report")
+        ) or (
+            isinstance(exc, OperationalError) and _is_mysql_deadlock(exc)
+        )
+        if not request_id or not recoverable:
+            raise
+        db.rollback()
+        replay = _report_replay_if_exists(
+            db,
+            request_id=request_id,
+            item_id=item_id,
+            progress_id=progress_id,
+            qty=qty,
+            worker_id=on_behalf_user_id or user_id,
+            unit_id=unit_id,
+            outcomes=routing_service.normalize_replay_outcomes(outcomes),
+        )
+        if replay:
+            return replay
+        raise ValueError("该报工请求正在并发处理，请使用同一请求号重试") from None
+
+
+def _manual_skip_result(
+    db: Session,
+    skip_log: DomesticSkipLog,
+    item: DomesticOrderItem,
+    *,
+    replayed: bool = False,
+) -> dict:
+    units = routing_service.skip_units(db, skip_log.id)
+    process_name = db.query(Process.name).join(
+        DomesticItemProgress,
+        DomesticItemProgress.process_id == Process.id,
+    ).filter(DomesticItemProgress.id == skip_log.progress_id).scalar()
+    return {
+        "skip_log_id": skip_log.id,
+        "item_id": skip_log.item_id,
+        "progress_id": skip_log.progress_id,
+        "process_name": process_name,
+        "skipped_qty": skip_log.skip_qty,
+        "skip_mode": skip_log.skip_mode,
+        "reason": skip_log.reason,
+        "unit_ids": [unit.id for unit in units],
+        "unit_codes": [unit_service.unit_display_code(item, unit.unit_no) for unit in units],
+        "created_at": skip_log.created_at,
+        "revoked": bool(skip_log.revoked),
+        "revoked_at": skip_log.revoked_at,
+        "replayed": replayed,
+    }
+
+
+def _validate_manual_skip_input(
+    *,
+    qty: int | None,
+    unit_id: int | None,
+    reason: str,
+    request_id: str,
+) -> tuple[int, str, str]:
+    clean_reason = (reason or "").strip()
+    clean_request_id = (request_id or "").strip()
+    if not 5 <= len(clean_reason) <= 500:
+        raise ValueError("跳过原因去除首尾空格后必须为 5 到 500 个字符")
+    if not 8 <= len(clean_request_id) <= 64:
+        raise ValueError("人工跳过必须提供 8 到 64 个字符的请求号")
+    if unit_id is None:
+        if isinstance(qty, bool) or not isinstance(qty, int) or qty <= 0:
+            raise ValueError("数量跳过必须填写大于 0 的数量")
+        normalized_qty = qty
+    else:
+        if isinstance(unit_id, bool) or not isinstance(unit_id, int) or unit_id <= 0:
+            raise ValueError("单件 ID 不合法")
+        if qty is not None:
+            raise ValueError("数量和单件二维码只能选择一种跳过方式")
+        normalized_qty = 1
+    return normalized_qty, clean_reason, clean_request_id
+
+
+def _manual_skip_replay_if_exists(
+    db: Session,
+    *,
+    request_id: str,
+    item_id: int,
+    progress_id: int,
+    normalized_qty: int,
+    skip_mode: str,
+    reason: str,
+    user_id: int,
+    unit_id: int | None,
+    item: DomesticOrderItem | None = None,
+    lock: bool = False,
+) -> dict | None:
+    query = db.query(DomesticSkipLog).filter(
+        DomesticSkipLog.request_id == request_id,
+    )
+    if lock:
+        query = query.with_for_update()
+    existing = query.first()
+    if not existing:
+        return None
+    existing_units = routing_service.skip_units(db, existing.id)
+    same_request = (
+        existing.source == "manual"
+        and existing.item_id == item_id
+        and existing.progress_id == progress_id
+        and existing.skip_qty == normalized_qty
+        and existing.skip_mode == skip_mode
+        and existing.reason == reason
+        and existing.created_by_user_id == user_id
+        and (
+            (unit_id is None and len(existing_units) == normalized_qty)
+            or (
+                unit_id is not None
+                and len(existing_units) == 1
+                and existing_units[0].id == unit_id
+            )
+        )
+    )
+    if not same_request:
+        raise ValueError("该请求号已用于另一笔跳过，请重新操作")
+    replay_item = item if item and item.id == existing.item_id else db.get(
+        DomesticOrderItem, existing.item_id,
+    )
+    if not replay_item:
+        raise ValueError("订单明细不存在")
+    return _manual_skip_result(db, existing, replay_item, replayed=True)
+
+
+def _submit_manual_skip_once(
+    db: Session,
+    *,
+    item_id: int,
+    progress_id: int,
+    qty: int | None,
+    unit_id: int | None,
+    reason: str,
+    request_id: str,
+    user_id: int,
+) -> dict:
+    """主管人工放行；只写跳过审计，不生成报工和计件工作量。"""
+    normalized_qty, clean_reason, clean_request_id = _validate_manual_skip_input(
+        qty=qty, unit_id=unit_id, reason=reason, request_id=request_id,
+    )
+    skip_mode = "unit" if unit_id is not None else "quantity"
+
+    # 同一明细所有状态变更统一先锁 item，再锁业务流水、progress、order。
+    item = db.query(DomesticOrderItem).filter(
+        DomesticOrderItem.id == item_id,
+    ).with_for_update().first()
+    if not item:
+        raise ValueError("订单明细不存在")
+
+    replay = _manual_skip_replay_if_exists(
+        db,
+        request_id=clean_request_id,
+        item_id=item_id,
+        progress_id=progress_id,
+        normalized_qty=normalized_qty,
+        skip_mode=skip_mode,
+        reason=clean_reason,
+        user_id=user_id,
+        unit_id=unit_id,
+        item=item,
+        lock=True,
+    )
+    if replay:
+        db.rollback()
+        return replay
+
+    if item.status == C.ITEM_SHIPPED:
+        raise ValueError("该明细已发货，不能跳过工序")
+
+    progress = db.query(DomesticItemProgress).filter(
+        DomesticItemProgress.id == progress_id,
+    ).with_for_update().first()
+    if not progress or progress.item_id != item.id:
+        raise ValueError("工序进度不存在或与该订单明细不匹配")
+
+    rows = db.query(DomesticItemProgress).filter(
+        DomesticItemProgress.item_id == item.id,
+    ).order_by(DomesticItemProgress.step_order.asc()).with_for_update().all()
+    _assert_order_reportable(db, item.order_id)
+    unit_service.ensure_item_units(db, item)
+    units = routing_service.active_units(db, item)
+    state = routing_service.load_passage_state(db, item)
+    rules = routing_service.runtime_rule_map(db, item.route_id)
+    eligible_ids = routing_service.eligible_unit_ids(
+        item, progress, rows, state, {unit.id for unit in units}, rules,
+    )
+    eligible_units = [unit for unit in units if unit.id in eligible_ids]
+
+    if unit_id is not None:
+        selected = next((unit for unit in eligible_units if unit.id == unit_id), None)
+        if selected is None:
+            unit = db.query(DomesticItemUnit).filter(
+                DomesticItemUnit.id == unit_id,
+            ).first()
+            if not unit or unit.item_id != item.id or unit.status != 1:
+                raise ValueError("这个单件二维码不属于当前订单明细或已失效")
+            raise ValueError(
+                f"单件 {unit_service.unit_display_code(item, unit.unit_no)} 当前不能跳过这道工序"
+            )
+        selected_units = [selected]
+    else:
+        if normalized_qty > len(eligible_units):
+            raise ValueError(
+                f"当前最多只能跳过 {len(eligible_units)} 件，本次填了 {normalized_qty} 件"
+            )
+        selected_units = eligible_units[:normalized_qty]
+
+    skip_log = routing_service.create_skip_log(
+        db,
+        item=item,
+        progress=progress,
+        units=selected_units,
+        source="manual",
+        reason=clean_reason,
+        trigger_report_log_id=None,
+        user_id=user_id,
+        skip_mode=skip_mode,
+        request_id=clean_request_id,
+    )
+    if not skip_log:
+        raise ValueError("当前没有可跳过的单件")
+    progress_service.sync_progress_statuses(db, item)
+    progress_service.recalc_item_status(db, item)
+    progress_service.sync_order_status(db, item.order_id)
+    db.commit()
+    return _manual_skip_result(db, skip_log, item)
+
+
+def submit_manual_skip(
+    db: Session,
+    *,
+    item_id: int,
+    progress_id: int,
+    qty: int | None,
+    unit_id: int | None,
+    reason: str,
+    request_id: str,
+    user_id: int,
+) -> dict:
+    try:
+        return _submit_manual_skip_once(
+            db,
+            item_id=item_id,
+            progress_id=progress_id,
+            qty=qty,
+            unit_id=unit_id,
+            reason=reason,
+            request_id=request_id,
+            user_id=user_id,
+        )
+    except (IntegrityError, OperationalError) as exc:
+        recoverable = (
+            isinstance(exc, IntegrityError)
+            and _is_target_request_unique_error(exc, target="skip")
+        ) or (
+            isinstance(exc, OperationalError) and _is_mysql_deadlock(exc)
+        )
+        if not recoverable:
+            raise
+        db.rollback()
+        normalized_qty, clean_reason, clean_request_id = _validate_manual_skip_input(
+            qty=qty, unit_id=unit_id, reason=reason, request_id=request_id,
+        )
+        replay = _manual_skip_replay_if_exists(
+            db,
+            request_id=clean_request_id,
+            item_id=item_id,
+            progress_id=progress_id,
+            normalized_qty=normalized_qty,
+            skip_mode="unit" if unit_id is not None else "quantity",
+            reason=clean_reason,
+            user_id=user_id,
+            unit_id=unit_id,
+        )
+        if replay:
+            return replay
+        raise ValueError("该跳过请求正在并发处理，请使用同一请求号重试") from None
+
+
+def revoke_manual_skip(db: Session, skip_log_id: int, user_id: int) -> dict:
+    """撤销人工放行；路由层仅向 domestic:admin 暴露。"""
+    preview = db.query(DomesticSkipLog.item_id).filter(
+        DomesticSkipLog.id == skip_log_id,
+    ).first()
+    if not preview:
+        raise ValueError("跳过记录不存在")
+    item = db.query(DomesticOrderItem).filter(
+        DomesticOrderItem.id == preview[0],
+    ).with_for_update().first()
+    if not item:
+        raise ValueError("订单明细不存在")
+    if item.status == C.ITEM_SHIPPED:
+        raise ValueError("该明细已发货，不能撤销跳过")
+
+    skip_log = db.query(DomesticSkipLog).filter(
+        DomesticSkipLog.id == skip_log_id,
+    ).populate_existing().with_for_update().first()
+    if not skip_log or skip_log.item_id != item.id:
+        raise ValueError("跳过记录不存在")
+    if skip_log.source != "manual":
+        raise ValueError("只有人工跳过记录可以单独撤销")
+    if skip_log.revoked:
+        raise ValueError("这条跳过记录已经撤销过了")
+
+    progress = db.query(DomesticItemProgress).filter(
+        DomesticItemProgress.id == skip_log.progress_id,
+    ).with_for_update().first()
+    if not progress:
+        raise ValueError("工序进度不存在")
+    order = db.query(DomesticOrder).filter(
+        DomesticOrder.id == item.order_id,
+    ).with_for_update().first()
+    if not order:
+        raise ValueError("订单不存在")
+
+    units = routing_service.skip_units(db, skip_log.id)
+    routing_service.assert_no_downstream_actual_work(
+        db,
+        item=item,
+        step_order=progress.step_order,
+        unit_ids={unit.id for unit in units},
+    )
+    skip_log.revoked = 1
+    skip_log.revoked_at = _bj_now()
+    progress_service.sync_progress_statuses(db, item)
+    progress_service.recalc_item_status(db, item)
+    progress_service.sync_order_status(db, item.order_id)
+    db.commit()
+    return {
+        "skip_log_id": skip_log.id,
+        "item_id": item.id,
+        "revoked_qty": skip_log.skip_qty,
     }
 
 
 def revoke_report(db: Session, log_id: int, user_id: int, is_admin: bool = False) -> dict:
     """撤销一条报工流水。
 
-    只能撤自己的（管理员例外）；撤销后本道累计不能低于下一道已完成的数量——
-    否则下游就凭空多出了上游没交付的货。
+    只能撤自己的（管理员例外）；任一具体单件已有更后工序的实际报工时阻断。
     """
-    log = db.query(DomesticReportLog).filter(DomesticReportLog.id == log_id).with_for_update().first()
-    if not log:
+    preview = db.query(DomesticReportLog.item_id).filter(
+        DomesticReportLog.id == log_id,
+    ).first()
+    if not preview:
+        raise ValueError("报工记录不存在")
+    item = db.query(DomesticOrderItem).filter(
+        DomesticOrderItem.id == preview[0],
+    ).with_for_update().first()
+    if not item:
+        raise ValueError("订单明细不存在")
+    if item.status == C.ITEM_SHIPPED:
+        raise ValueError("该明细已发货，不能撤销报工")
+
+    log = db.query(DomesticReportLog).filter(
+        DomesticReportLog.id == log_id,
+    ).populate_existing().with_for_update().first()
+    if not log or log.item_id != item.id:
         raise ValueError("报工记录不存在")
     if log.revoked:
         raise ValueError("这条记录已经撤销过了")
     if log.reported_by_user_id != user_id and not is_admin:
         raise ValueError("只能撤销自己的报工记录")
-
-    # 与 submit_report 保持同一把锁、同一个顺序（先明细后进度），避免死锁
-    item = db.query(DomesticOrderItem).filter(DomesticOrderItem.id == log.item_id).with_for_update().first()
-    if not item:
-        raise ValueError("订单明细不存在")
-    if item.status == C.ITEM_SHIPPED:
-        raise ValueError("该明细已发货，不能撤销报工")
+    triggered_skips = routing_service.lock_triggered_skips(
+        db, trigger_report_log_id=log.id,
+    )
 
     progress = (
         db.query(DomesticItemProgress)
@@ -530,24 +1025,24 @@ def revoke_report(db: Session, log_id: int, user_id: int, is_admin: bool = False
     if not order:
         raise ValueError("订单不存在")
 
-    # Aggregate conservation alone is not enough once exact unit identities exist:
-    # never revoke A1-01 upstream while A1-01 itself is already completed downstream.
-    unit_service.assert_log_units_not_consumed_downstream(db, log=log, item=item)
+    units = unit_service.units_for_log(db, log.id)
+    routing_service.assert_no_downstream_actual_work(
+        db,
+        item=item,
+        step_order=progress.step_order,
+        unit_ids={unit.id for unit in units},
+    )
     unit_service.assert_quantity_log_is_current_tail(db, log=log, item=item)
 
     remaining = progress.completed_qty - log.report_qty
-    downstream = progress_service.downstream_completed_qty(db, item.id, progress.step_order, lock=True)
-    if remaining < downstream:
-        raise ValueError(
-            f"下一道工序已经做了 {downstream} 件，撤销后本道只剩 {remaining} 件，数量对不上；"
-            "请先撤销下一道的报工"
-        )
-
+    now = _bj_now()
     log.revoked = 1
-    log.revoked_at = _bj_now()
+    log.revoked_at = now
+    revoked_skip_ids = routing_service.revoke_locked_skips(
+        triggered_skips, revoked_at=now,
+    )
     progress.completed_qty = remaining
-    progress_service.sync_progress_row_status(progress, item.order_qty)
-
+    progress_service.sync_progress_statuses(db, item)
     progress_service.recalc_item_status(db, item)
     progress_service.sync_order_status(db, item.order_id)
     db.commit()
@@ -556,6 +1051,7 @@ def revoke_report(db: Session, log_id: int, user_id: int, is_admin: bool = False
         "item_id": item.id,
         "step_completed_qty": progress.completed_qty,
         "revoked_qty": log.report_qty,
+        "revoked_skip_log_ids": revoked_skip_ids,
     }
 
 
@@ -625,6 +1121,78 @@ def list_today_reports(db: Session, user_id: int) -> list[dict]:
         .all()
     )
     return _log_rows_to_view(db, logs)
+
+
+def list_manual_skip_audits(db: Session, *, item_id: int) -> list[dict]:
+    """返回某明细的人工跳过审计，自动分流/可选跳过不属于人工审计。"""
+    item = db.get(DomesticOrderItem, item_id)
+    if not item:
+        raise ValueError("订单明细不存在")
+
+    rows = (
+        db.query(
+            DomesticSkipLog,
+            DomesticItemProgress.process_id,
+            Process.name,
+            ArkUser.real_name,
+        )
+        .join(
+            DomesticItemProgress,
+            DomesticItemProgress.id == DomesticSkipLog.progress_id,
+        )
+        .join(Process, Process.id == DomesticItemProgress.process_id)
+        .join(ArkUser, ArkUser.id == DomesticSkipLog.created_by_user_id)
+        .filter(
+            DomesticSkipLog.item_id == item_id,
+            DomesticSkipLog.source == "manual",
+        )
+        .order_by(DomesticSkipLog.created_at.desc(), DomesticSkipLog.id.desc())
+        .all()
+    )
+    if not rows:
+        return []
+
+    log_ids = [log.id for log, _process_id, _process_name, _operator_name in rows]
+    unit_rows = (
+        db.query(
+            DomesticSkipUnit.skip_log_id,
+            DomesticItemUnit.id,
+            DomesticItemUnit.unit_no,
+        )
+        .join(DomesticItemUnit, DomesticItemUnit.id == DomesticSkipUnit.unit_id)
+        .filter(DomesticSkipUnit.skip_log_id.in_(log_ids))
+        .order_by(DomesticSkipUnit.skip_log_id.asc(), DomesticItemUnit.unit_no.asc())
+        .all()
+    )
+    units_by_log: dict[int, list[tuple[int, int]]] = {}
+    for skip_log_id, unit_id, unit_no in unit_rows:
+        units_by_log.setdefault(skip_log_id, []).append((unit_id, unit_no))
+
+    result = []
+    for log, process_id, process_name, operator_name in rows:
+        units = units_by_log.get(log.id, [])
+        result.append({
+            "skip_log_id": log.id,
+            "item_id": log.item_id,
+            "progress_id": log.progress_id,
+            "process_id": process_id,
+            "process_name": process_name,
+            "skip_mode": log.skip_mode,
+            "skipped_qty": log.skip_qty,
+            "reason": log.reason,
+            "request_id": log.request_id,
+            "operator_id": log.created_by_user_id,
+            "operator_name": operator_name,
+            "unit_ids": [unit_id for unit_id, _unit_no in units],
+            "unit_codes": [
+                unit_service.unit_display_code(item, unit_no)
+                for _unit_id, unit_no in units
+            ],
+            "created_at": log.created_at,
+            "revoked": bool(log.revoked),
+            "revoked_at": log.revoked_at,
+        })
+    return result
 
 
 def list_reports(

@@ -2,9 +2,9 @@
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 # ── 客户 ──────────────────────────────────────────────
@@ -95,6 +95,65 @@ class CraftRouteUpsert(BaseModel):
 
 class ProductRouteRebind(BaseModel):
     route_id: int | None = Field(None, description="null = 解绑")
+
+
+class RouteRuleOptionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(..., pattern=r"^[a-z][a-z0-9_]{0,31}$")
+    label: str = Field(..., min_length=1, max_length=64)
+    skip_process_ids: list[Annotated[int, Field(gt=0)]] = Field(default_factory=list)
+
+    @field_validator("label")
+    @classmethod
+    def _strip_label(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("结果名称不能为空")
+        return value
+
+
+class RouteRuleConfigInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    options: list[RouteRuleOptionInput] = Field(..., min_length=2, max_length=20)
+
+
+class RouteRuleInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    process_id: int = Field(..., gt=0)
+    rule_type: Literal["decision", "optional"]
+    config: RouteRuleConfigInput | None = None
+
+    @model_validator(mode="after")
+    def _config_matches_type(self):
+        if self.rule_type == "decision" and self.config is None:
+            raise ValueError("分流判定必须配置结果选项")
+        if self.rule_type == "optional" and self.config is not None:
+            raise ValueError("可选工序不能配置结果选项")
+        return self
+
+
+class RouteRuleSaveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rules: list[RouteRuleInput] = Field(default_factory=list, max_length=100)
+
+
+class RouteConfigurationStepInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    process_id: int = Field(..., gt=0)
+
+
+class RouteConfigurationSaveRequest(BaseModel):
+    """同时保存共享路线步骤与内贸条件规则，避免两个全量接口互相冲掉数据。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    steps: list[RouteConfigurationStepInput] = Field(default_factory=list, max_length=100)
+    rules: list[RouteRuleInput] = Field(default_factory=list, max_length=100)
 
 
 # ── 订单 ──────────────────────────────────────────────
@@ -206,6 +265,7 @@ class ReportSubmit(BaseModel):
     progress_id: int = Field(..., gt=0, description="要报的工序进度行，扫码接口回传")
     qty: int = Field(..., gt=0, description="本次报工数量")
     request_id: str | None = Field(None, max_length=64, description="幂等键，重试用同一个值")
+    outcomes: dict[str, int] | None = Field(None, description="分流判定结果数量；普通工序不传")
     on_behalf_user_id: int | None = Field(
         None, gt=0, description="代报工：实际做活的工人，件数记他名下（计件口径）",
     )
@@ -213,3 +273,23 @@ class ReportSubmit(BaseModel):
 
 class ReportRevoke(BaseModel):
     log_id: int = Field(..., gt=0, description="要撤销的报工流水 ID")
+
+
+class ManualSkipSubmit(BaseModel):
+    item_id: int = Field(..., gt=0)
+    progress_id: int = Field(..., gt=0, description="要人工跳过的工序进度行")
+    qty: int | None = Field(None, gt=0, description="数量模式跳过数量")
+    unit_id: int | None = Field(None, gt=0, description="逐件模式单件 ID")
+    reason: str = Field(..., min_length=5, max_length=500)
+    request_id: str = Field(..., min_length=8, max_length=64, description="稳定幂等键")
+
+    @field_validator("reason", "request_id", mode="before")
+    @classmethod
+    def _strip_manual_skip_text(cls, value: str) -> str:
+        return (value or "").strip()
+
+    @model_validator(mode="after")
+    def _validate_skip_mode(self):
+        if (self.qty is None) == (self.unit_id is None):
+            raise ValueError("qty 与 unit_id 必须且只能填写一个")
+        return self

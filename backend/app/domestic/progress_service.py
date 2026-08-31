@@ -13,11 +13,13 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.domestic import constants as C
+from app.domestic import route_rule_service, routing_service
 from app.domestic.models import (
     DomesticItemProgress,
     DomesticOrder,
     DomesticOrderItem,
     DomesticReportLog,
+    DomesticSkipLog,
 )
 from app.domestic.product_service import get_route_steps
 from app.production.models import Process
@@ -41,6 +43,11 @@ def init_item_progress(db: Session, item: DomesticOrderItem, route_id: int | Non
     ).scalar() or 0
     if log_count:
         raise ValueError(f"该明细已有 {log_count} 条报工记录，不能重建工序进度")
+    skip_count = db.query(func.count(DomesticSkipLog.id)).filter(
+        DomesticSkipLog.item_id == item.id
+    ).scalar() or 0
+    if skip_count:
+        raise ValueError(f"该明细已有 {skip_count} 条跳过记录，不能重建工序进度")
 
     existing = db.query(DomesticItemProgress).filter(DomesticItemProgress.item_id == item.id).all()
     if any(p.completed_qty > 0 for p in existing):
@@ -91,14 +98,31 @@ def build_progress_view(
         .all()
     }
     last_by = _last_reporter_map(db, item.id)
+    units = routing_service.active_units(db, item)
+    active_unit_ids = {unit.id for unit in units}
+    state = routing_service.load_passage_state(db, item)
+    rules = routing_service.runtime_rule_map(db, item.route_id)
+    upstream_by_progress, effective_skipped, effective_passed = (
+        routing_service.effective_passage_maps(rows, state, active_unit_ids, rules)
+    )
 
     view = []
-    upstream = item.order_qty
     for r in rows:
         last = last_by.get(r.step_order) or {}
         process_name, show_in_track = process_meta.get(
             r.process_id, (f"工序{r.process_id}", True)
         )
+        upstream_ids = upstream_by_progress[r.id]
+        reported = state.reported_by_progress.get(r.id, set())
+        skipped = effective_skipped[r.id]
+        passed = effective_passed[r.id]
+        rule = rules.get(r.process_id)
+        outcome_options = []
+        if rule and rule["rule_type"] == route_rule_service.RULE_DECISION:
+            outcome_options = [
+                {"code": option["code"], "label": option["label"]}
+                for option in rule["config"]["options"]
+            ]
         view.append({
             "progress_id": r.id,
             "step_order": r.step_order,
@@ -106,9 +130,14 @@ def build_progress_view(
             "process_name": process_name,
             "show_in_domestic_track": show_in_track,
             "order_qty": item.order_qty,
-            "upstream_qty": upstream,
-            "completed_qty": r.completed_qty,
-            "reportable_qty": max(0, upstream - r.completed_qty),
+            "upstream_qty": len(upstream_ids),
+            "completed_qty": len(reported),
+            "skipped_qty": len(skipped),
+            "passed_qty": len(passed),
+            "required_qty": max(0, len(upstream_ids) - len(skipped)),
+            "reportable_qty": len(upstream_ids - reported - skipped),
+            "rule_type": rule["rule_type"] if rule else route_rule_service.RULE_REQUIRED,
+            "outcome_options": outcome_options,
             "status": r.status,
             "first_reported_at": r.first_reported_at,
             "last_reported_at": r.last_reported_at,
@@ -116,7 +145,6 @@ def build_progress_view(
             "last_reported_by": last.get("name"),
             "last_report_qty": last.get("qty"),
         })
-        upstream = r.completed_qty
     return [row for row in view if row["show_in_domestic_track"]] if public_only else view
 
 
@@ -159,13 +187,19 @@ def _get_step(db: Session, item_id: int, step_order: int, lock: bool = False):
 def reportable_qty(
     db: Session, progress: DomesticItemProgress, item: DomesticOrderItem, lock: bool = False
 ) -> int:
-    """单道工序的可报数量。上游是上一道的累计完成数，首道是下单数量。"""
-    if progress.step_order <= 1:
-        upstream = item.order_qty
-    else:
-        prev = _get_step(db, item.id, progress.step_order - 1, lock=lock)
-        upstream = prev.completed_qty if prev else 0
-    return max(0, upstream - progress.completed_qty)
+    """按具体单件通行事实计算可报数量。"""
+    rows_query = db.query(DomesticItemProgress).filter(
+        DomesticItemProgress.item_id == item.id,
+    ).order_by(DomesticItemProgress.step_order.asc())
+    if lock:
+        rows_query = rows_query.with_for_update()
+    rows = rows_query.all()
+    units = routing_service.active_units(db, item)
+    state = routing_service.load_passage_state(db, item)
+    rules = routing_service.runtime_rule_map(db, item.route_id)
+    return len(routing_service.eligible_unit_ids(
+        item, progress, rows, state, {unit.id for unit in units}, rules,
+    ))
 
 
 def downstream_completed_qty(db: Session, item_id: int, step_order: int, lock: bool = False) -> int:
@@ -184,8 +218,33 @@ def recalc_item_status(db: Session, item: DomesticOrderItem) -> None:
         .order_by(DomesticItemProgress.step_order.desc())
         .first()
     )
-    done = bool(last) and last.completed_qty >= item.order_qty
+    state = routing_service.load_passage_state(db, item)
+    rows = db.query(DomesticItemProgress).filter(
+        DomesticItemProgress.item_id == item.id,
+    ).order_by(DomesticItemProgress.step_order.asc()).all()
+    units = routing_service.active_units(db, item)
+    rules = routing_service.runtime_rule_map(db, item.route_id)
+    _upstream, _skipped, passed = routing_service.effective_passage_maps(
+        rows, state, {unit.id for unit in units}, rules,
+    )
+    done = bool(last) and len(passed.get(last.id, set())) >= item.order_qty
     item.status = C.ITEM_DONE if done else C.ITEM_PRODUCING
+
+
+def sync_progress_statuses(db: Session, item: DomesticOrderItem) -> None:
+    """缓存实际工作数量，并以有效通过身份同步各进度状态。"""
+    rows = db.query(DomesticItemProgress).filter(
+        DomesticItemProgress.item_id == item.id,
+    ).order_by(DomesticItemProgress.step_order.asc()).all()
+    state = routing_service.load_passage_state(db, item)
+    units = routing_service.active_units(db, item)
+    rules = routing_service.runtime_rule_map(db, item.route_id)
+    _upstream, _skipped, passed = routing_service.effective_passage_maps(
+        rows, state, {unit.id for unit in units}, rules,
+    )
+    for row in rows:
+        row.completed_qty = len(state.reported_by_progress.get(row.id, set()))
+        row.status = 1 if len(passed.get(row.id, set())) >= item.order_qty else 0
 
 
 def sync_order_status(db: Session, order_id: int) -> None:

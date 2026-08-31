@@ -8,7 +8,11 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
 
-class ApiException(val statusCode: Int, override val message: String) : Exception(message)
+class ApiException(
+    val statusCode: Int,
+    override val message: String,
+    val code: String? = null,
+) : Exception(message)
 
 class ApiClient(baseUrl: String) {
     var baseUrl: String = normalizeBaseUrl(baseUrl)
@@ -45,12 +49,19 @@ class ApiClient(baseUrl: String) {
         return requestJson("GET", "/api/mini/domestic/$route/${payload.id}?sign=$sign")
     }
 
-    fun submit(scan: JSONObject, payload: ScanPayload, qty: Int, requestId: String): JSONObject {
+    fun submit(
+        scan: JSONObject,
+        payload: ScanPayload,
+        qty: Int,
+        requestId: String,
+        outcomes: JSONObject? = null,
+    ): JSONObject {
         val body = JSONObject()
             .put("item_id", scan.getLong("item_id"))
             .put("progress_id", scan.getJSONObject("next_step").getLong("progress_id"))
             .put("qty", qty)
             .put("request_id", requestId)
+        if (outcomes != null) body.put("outcomes", outcomes)
         if (scan.optString("report_mode") == "unit") {
             body.put("unit_id", scan.getLong("unit_id"))
             body.put("unit_sign", payload.sign)
@@ -135,7 +146,7 @@ class ApiClient(baseUrl: String) {
                 output.toByteArray()
             } ?: ByteArray(0)
             if (status !in 200..299) {
-                throw ApiException(status, errorMessage(response, status))
+                throw ApiException(status, errorMessage(response, status), errorCode(response))
             }
             return response
         } finally {
@@ -155,6 +166,16 @@ class ApiClient(baseUrl: String) {
         } catch (_: Exception) {
             "请求失败（$status）"
         }
+    }
+
+    private fun errorCode(bytes: ByteArray): String? {
+        if (bytes.isEmpty()) return null
+        return runCatching {
+            JSONObject(String(bytes, StandardCharsets.UTF_8))
+                .optJSONObject("detail")
+                ?.optString("code")
+                ?.takeIf { it.isNotBlank() }
+        }.getOrNull()
     }
 
     companion object {

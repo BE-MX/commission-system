@@ -118,6 +118,59 @@
   flex-shrink: 0;
 }
 
+/* ── 分流结果 ── */
+.decision-qty-list,
+.decision-unit-list { margin-top: 12rpx; }
+
+.decision-qty-row {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  padding: 12rpx 0;
+  border-bottom: 1rpx solid var(--border);
+}
+
+.decision-label { flex: 1; font-size: 30rpx; font-weight: 600; color: var(--text-main); }
+.decision-input {
+  width: 150rpx;
+  height: 76rpx;
+  text-align: center;
+  font-size: 36rpx;
+  font-weight: 700;
+  border: 2rpx solid var(--border);
+  border-radius: 14rpx;
+  background: #FFFFFF;
+}
+.decision-unit { font-size: 26rpx; color: var(--text-sub); }
+.decision-choice {
+  min-height: 100rpx;
+  padding: 0 24rpx;
+  margin-bottom: 16rpx;
+  display: flex;
+  align-items: center;
+  gap: 22rpx;
+  border: 2rpx solid var(--border);
+  border-radius: 16rpx;
+  background: #FFFFFF;
+  color: var(--text-main);
+  font-size: 32rpx;
+  font-weight: 700;
+}
+.decision-choice.is-selected { border-color: var(--m-accent); background: var(--m-accent-bg); color: var(--m-accent-d); }
+.decision-radio {
+  width: 36rpx;
+  height: 36rpx;
+  border: 3rpx solid var(--border);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.decision-choice.is-selected .decision-radio { border-color: var(--m-accent); }
+.decision-radio-dot { width: 20rpx; height: 20rpx; border-radius: 50%; }
+.decision-choice.is-selected .decision-radio-dot { background: var(--m-accent); }
+.decision-tip { display: block; margin-top: 12rpx; color: var(--warning); font-size: 24rpx; }
+
 .unit-code { color: var(--m-accent-d); font-weight: 700; }
 
 .unit-mode-card { background: var(--m-accent-bg); }
@@ -186,3 +239,5 @@
   color: var(--text-sub);
   flex-shrink: 0;
 }
+
+.tl-skip { display: block; margin-top: 6rpx; font-size: 22rpx; color: var(--text-sub); }
