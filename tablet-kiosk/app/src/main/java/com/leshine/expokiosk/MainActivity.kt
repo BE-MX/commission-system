@@ -68,9 +68,10 @@ class MainActivity : ComponentActivity() {
     private var startupUpdateReleased = false
     private var activityDestroyed = false
     private var updateFailureNoticeShown = false
+    private var updateBlocksKiosk = false
 
     private val updateStateObserver: (UpdateState) -> Unit = { state ->
-        runOnUiThread {
+        ui.post {
             if (!activityDestroyed && !startupUpdateReleased) renderUpdateState(state)
         }
     }
@@ -298,7 +299,9 @@ class MainActivity : ComponentActivity() {
 
     private fun renderUpdateState(state: UpdateState) {
         val presentation = UpdatePresentation.from(state)
+        updateBlocksKiosk = presentation.blocksKiosk
         if (presentation.blocksKiosk) {
+            cancelHotspot()
             updateOverlay.render(presentation)
         } else {
             updateOverlay.hide()
@@ -313,6 +316,7 @@ class MainActivity : ComponentActivity() {
         StartupUpdateSession.failInstall()
         startupUpdateReleased = true
         StartupUpdateSession.detach(updateStateObserver)
+        updateBlocksKiosk = false
         updateOverlay.hide()
         if (!updateFailureNoticeShown) {
             updateFailureNoticeShown = true
@@ -408,6 +412,10 @@ class MainActivity : ComponentActivity() {
      * 换成与页面布局无关的三指手势，客户不可能误触，工作人员一说就会。
      */
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (!UpdateInteractionPolicy.allowMaintenanceGestures(updateBlocksKiosk)) {
+            cancelHotspot()
+            return super.dispatchTouchEvent(ev)
+        }
         when (ev.actionMasked) {
             MotionEvent.ACTION_POINTER_DOWN -> {
                 if (ev.pointerCount >= CONFIG_FINGERS) {
@@ -761,14 +769,14 @@ class MainActivity : ComponentActivity() {
 
 private object StartupUpdateSession {
     private val lock = Any()
+    private val state = UpdateSessionState()
     private var attempted = false
     private var engine: UpdateEngine? = null
-    private var latestState: UpdateState? = null
     private var observer: ((UpdateState) -> Unit)? = null
 
     fun attach(newObserver: (UpdateState) -> Unit): UpdateState? = synchronized(lock) {
         observer = newObserver
-        latestState
+        state.current()
     }
 
     fun detach(currentObserver: (UpdateState) -> Unit) {
@@ -805,11 +813,10 @@ private object StartupUpdateSession {
     }
 
     fun publish(state: UpdateState) {
-        val currentObserver = synchronized(lock) {
-            latestState = state
-            observer
+        synchronized(lock) {
+            val publishedState = this.state.transition(state)
+            observer?.invoke(publishedState)
         }
-        currentObserver?.invoke(state)
     }
 
     fun failInstall() {

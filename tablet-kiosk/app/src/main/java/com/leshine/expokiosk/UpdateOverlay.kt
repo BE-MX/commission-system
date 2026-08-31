@@ -18,6 +18,42 @@ enum class UpdateMessage {
     FAILURE,
 }
 
+/** Thread-safe update state that never regresses from a released terminal state to blocking. */
+internal class UpdateSessionState {
+    private val lock = Any()
+    private var value: UpdateState? = null
+
+    fun transition(next: UpdateState): UpdateState = synchronized(lock) {
+        val current = value
+        if (current != null && current.isReleaseTerminal() && next.isBlockingActive()) {
+            current
+        } else {
+            value = next
+            next
+        }
+    }
+
+    fun current(): UpdateState? = synchronized(lock) { value }
+
+    private fun UpdateState.isReleaseTerminal(): Boolean =
+        this == UpdateState.NoUpdate || this is UpdateState.Failed
+
+    private fun UpdateState.isBlockingActive(): Boolean = when (this) {
+        UpdateState.Checking,
+        is UpdateState.Downloading,
+        UpdateState.AwaitingUserAction,
+        UpdateState.Installing,
+        -> true
+        UpdateState.NoUpdate,
+        is UpdateState.Failed,
+        -> false
+    }
+}
+
+internal object UpdateInteractionPolicy {
+    fun allowMaintenanceGestures(blocksKiosk: Boolean): Boolean = !blocksKiosk
+}
+
 data class UpdatePresentation(
     val blocksKiosk: Boolean,
     val message: UpdateMessage?,

@@ -8,6 +8,44 @@ import org.junit.Test
 
 class UpdatePresentationTest {
     @Test
+    fun `failed terminal state rejects a late installing state`() {
+        val state = UpdateSessionState()
+        val failure = UpdateState.Failed("https://secret.example token=abc")
+
+        assertEquals(failure, state.transition(failure))
+        assertEquals(failure, state.transition(UpdateState.Installing))
+        assertFalse(UpdatePresentation.from(state.current()!!).blocksKiosk)
+    }
+
+    @Test
+    fun `no update terminal state rejects a late download state`() {
+        val state = UpdateSessionState()
+
+        assertEquals(UpdateState.NoUpdate, state.transition(UpdateState.NoUpdate))
+        assertEquals(
+            UpdateState.NoUpdate,
+            state.transition(UpdateState.Downloading("1.9", 50)),
+        )
+        assertFalse(UpdatePresentation.from(state.current()!!).blocksKiosk)
+    }
+
+    @Test
+    fun `failure can release an installing state`() {
+        val state = UpdateSessionState()
+        val failure = UpdateState.Failed("installer failed")
+
+        assertEquals(UpdateState.Installing, state.transition(UpdateState.Installing))
+        assertEquals(failure, state.transition(failure))
+        assertFalse(UpdatePresentation.from(state.current()!!).blocksKiosk)
+    }
+
+    @Test
+    fun `maintenance gesture handling is disabled only while update blocks kiosk`() {
+        assertFalse(UpdateInteractionPolicy.allowMaintenanceGestures(blocksKiosk = true))
+        assertTrue(UpdateInteractionPolicy.allowMaintenanceGestures(blocksKiosk = false))
+    }
+
+    @Test
     fun `checking blocks kiosk with fixed message`() {
         val presentation = UpdatePresentation.from(UpdateState.Checking)
 
