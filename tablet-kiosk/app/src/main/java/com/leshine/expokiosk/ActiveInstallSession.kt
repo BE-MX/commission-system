@@ -36,23 +36,37 @@ internal class ActiveInstallSessionGate(
         token != null && storage.read() == ActiveInstallSessionMarker(sessionId, token)
     }
 
-    fun consume(sessionId: Int, token: String?): Boolean = synchronized(lock) {
+    fun consume(
+        sessionId: Int,
+        token: String?,
+        onConsumed: () -> Unit = {},
+    ): Boolean = synchronized(lock) {
         if (token == null || storage.read() != ActiveInstallSessionMarker(sessionId, token)) {
             return@synchronized false
         }
-        storage.clear()
+        if (!storage.clear()) return@synchronized false
+        onConsumed()
+        true
     }
 
-    fun invalidate() = synchronized(lock) {
+    fun beginStartup(): Boolean = synchronized(lock) {
+        if (storage.read() == null) return@synchronized false
         check(storage.clear()) { "Install session marker could not be invalidated" }
+        true
     }
 
-    fun accept(status: Int, sessionId: Int, token: String?): InstallStatusDecision? =
+    fun accept(
+        status: Int,
+        sessionId: Int,
+        token: String?,
+        onFailureAccepted: () -> Unit = {},
+    ): InstallStatusDecision? =
         when (val decision = UpdateRuntimePolicy.installStatusDecision(status)) {
             InstallStatusDecision.AWAIT_USER -> decision.takeIf { matches(sessionId, token) }
-            InstallStatusDecision.SUCCESS,
-            InstallStatusDecision.FAILURE,
-            -> decision.takeIf { consume(sessionId, token) }
+            InstallStatusDecision.SUCCESS -> decision.takeIf { consume(sessionId, token) }
+            InstallStatusDecision.FAILURE -> decision.takeIf {
+                consume(sessionId, token, onFailureAccepted)
+            }
         }
 }
 
@@ -102,19 +116,60 @@ internal data class InstallSessionRecord(
     val appPackageName: String?,
 )
 
-internal fun cleanupStaleInstallSessions(
-    activeSession: ActiveInstallSessionGate,
+internal fun cleanupOwnedInstallSessions(
     sessions: () -> List<InstallSessionRecord>,
     ownPackage: String,
     abandon: (Int) -> Unit,
 ) {
-    activeSession.invalidate()
     sessions().asSequence()
         .filter { it.appPackageName == ownPackage }
         .forEach { abandon(it.sessionId) }
 }
 
-internal fun <T> prepareUpdateRunner(cleanup: () -> Unit, createRunner: () -> T): T {
-    cleanup()
-    return createRunner()
+internal fun startUpdateAfterInstallRecovery(
+    activeSession: ActiveInstallSessionGate,
+    coordinator: StartupUpdateCoordinator,
+    execute: ((() -> Unit) -> Unit),
+    cleanupSessions: () -> Unit,
+    createRunner: () -> StartupUpdateRun,
+    diagnostics: (Exception) -> Unit = {},
+): Boolean {
+    val hadStaleActive = try {
+        activeSession.beginStartup()
+    } catch (exception: Exception) {
+        reportStartupRecoveryFailure(diagnostics, exception)
+        coordinator.failInstall()
+        return false
+    }
+    if (hadStaleActive) {
+        coordinator.failInstall()
+        try {
+            execute {
+                try {
+                    cleanupSessions()
+                } catch (exception: Exception) {
+                    reportStartupRecoveryFailure(diagnostics, exception)
+                }
+            }
+        } catch (exception: Exception) {
+            reportStartupRecoveryFailure(diagnostics, exception)
+        }
+        return false
+    }
+    val started = coordinator.start(execute) {
+        cleanupSessions()
+        createRunner()
+    }
+    return started || !coordinator.isReleased()
+}
+
+private fun reportStartupRecoveryFailure(
+    diagnostics: (Exception) -> Unit,
+    exception: Exception,
+) {
+    try {
+        diagnostics(exception)
+    } catch (_: Exception) {
+        // Diagnostics must not change fail-open recovery.
+    }
 }

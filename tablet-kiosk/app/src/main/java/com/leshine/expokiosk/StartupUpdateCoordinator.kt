@@ -28,25 +28,43 @@ internal class StartupUpdateCoordinator(
     fun start(
         execute: ((() -> Unit) -> Unit),
         createRunner: () -> StartupUpdateRun,
-    ) {
+    ): Boolean {
         val shouldStart = synchronized(lock) {
-            if (attempted) false else {
+            if (attempted || state.current().isReleaseTerminal()) false else {
                 attempted = true
                 true
             }
         }
-        if (!shouldStart) return
+        if (!shouldStart) return false
 
-        execute {
-            try {
-                val created = createRunner()
-                synchronized(lock) { runner = created }
-                created.run(::publish)
-            } catch (exception: Exception) {
-                report(exception)
-                publish(UpdateState.Failed(SAFE_FAILURE_MESSAGE))
+        try {
+            execute {
+                val mayCreate = synchronized(lock) {
+                    attempted && !state.current().isReleaseTerminal()
+                }
+                if (!mayCreate) return@execute
+                try {
+                    val created = createRunner()
+                    val mayRun = synchronized(lock) {
+                        if (state.current().isReleaseTerminal()) {
+                            false
+                        } else {
+                            runner = created
+                            true
+                        }
+                    }
+                    if (mayRun) created.run(::publish)
+                } catch (exception: Exception) {
+                    report(exception)
+                    publish(UpdateState.Failed(SAFE_FAILURE_MESSAGE))
+                }
             }
+        } catch (exception: Exception) {
+            report(exception)
+            publish(UpdateState.Failed(SAFE_FAILURE_MESSAGE))
+            return false
         }
+        return true
     }
 
     fun publish(next: UpdateState) {
@@ -63,6 +81,8 @@ internal class StartupUpdateCoordinator(
 
     fun currentState(): UpdateState? = state.current()
 
+    fun isReleased(): Boolean = synchronized(lock) { state.current().isReleaseTerminal() }
+
     private fun report(exception: Exception) {
         try {
             diagnostics(exception)
@@ -70,6 +90,9 @@ internal class StartupUpdateCoordinator(
             // Diagnostics must never change the update lifecycle.
         }
     }
+
+    private fun UpdateState?.isReleaseTerminal(): Boolean =
+        this == UpdateState.NoUpdate || this is UpdateState.Failed
 
     companion object {
         const val SAFE_FAILURE_MESSAGE = "Update runtime unavailable"

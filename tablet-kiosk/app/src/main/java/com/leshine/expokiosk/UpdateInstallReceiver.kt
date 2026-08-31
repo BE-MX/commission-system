@@ -24,7 +24,12 @@ class UpdateInstallReceiver : BroadcastReceiver() {
         val token = intent.getStringExtra(EXTRA_INSTALL_SESSION_TOKEN)
         val activeSession = activeInstallSession(context)
         val decision = try {
-            activeSession.accept(status, sessionId, token)
+            activeSession.accept(
+                status = status,
+                sessionId = sessionId,
+                token = token,
+                onFailureAccepted = StartupUpdateProcess.coordinator::failInstall,
+            )
         } catch (exception: Exception) {
             Log.w(TAG, "Install callback validation failed type=${exception.javaClass.simpleName}")
             null
@@ -105,7 +110,11 @@ class UpdateInstallReceiver : BroadcastReceiver() {
         status: Int,
     ) {
         val consumed = try {
-            activeSession.consume(sessionId, token)
+            activeSession.consume(
+                sessionId = sessionId,
+                token = token,
+                onConsumed = StartupUpdateProcess.coordinator::failInstall,
+            )
         } catch (exception: Exception) {
             Log.w(TAG, "Install callback cleanup failed type=${exception.javaClass.simpleName}")
             false

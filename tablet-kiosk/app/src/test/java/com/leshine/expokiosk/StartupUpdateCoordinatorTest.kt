@@ -89,6 +89,25 @@ class StartupUpdateCoordinatorTest {
     }
 
     @Test
+    fun `queued updater does not create or run after install failure releases it`() {
+        val coordinator = StartupUpdateCoordinator()
+        var queued: (() -> Unit)? = null
+        var creates = 0
+        var runs = 0
+
+        coordinator.start(execute = { queued = it }) {
+            creates += 1
+            StartupUpdateRun { runs += 1 }
+        }
+        coordinator.failInstall()
+        queued!!.invoke()
+
+        assertEquals(0, creates)
+        assertEquals(0, runs)
+        assertTrue(coordinator.currentState() is UpdateState.Failed)
+    }
+
+    @Test
     fun `fatal errors are not captured`() {
         val coordinator = StartupUpdateCoordinator()
         val fatal = AssertionError("fatal")

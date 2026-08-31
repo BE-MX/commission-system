@@ -224,11 +224,8 @@ class MainActivity : ComponentActivity() {
         Log.i(TAG, "loadUrl ${KioskUrl.get(this)}")
         webView.loadUrl(KioskUrl.get(this))
 
-        if (consumeInstallFailure(intent)) {
-            releaseAfterInstallFailure()
-        } else {
-            startStartupUpdateOnce()
-        }
+        if (consumeInstallFailure(intent)) StartupUpdateProcess.coordinator.failInstall()
+        startStartupUpdateOnce()
     }
 
     @Suppress("DEPRECATION")
@@ -239,46 +236,47 @@ class MainActivity : ComponentActivity() {
         val latest = StartupUpdateProcess.coordinator.attach(updateStateObserver)
         renderUpdateState(latest ?: UpdateState.Checking)
         val appContext = applicationContext
-        StartupUpdateProcess.coordinator.start(
+        val keepUpdateAttempt = startUpdateAfterInstallRecovery(
+            activeSession = activeInstallSession(appContext),
+            coordinator = StartupUpdateProcess.coordinator,
             execute = { task -> io.execute(task) },
-            createRunner = {
-                prepareUpdateRunner(
-                    cleanup = {
-                        val packageInstaller = appContext.packageManager.packageInstaller
-                        cleanupStaleInstallSessions(
-                            activeSession = activeInstallSession(appContext),
-                            sessions = {
-                                packageInstaller.mySessions.map {
-                                    InstallSessionRecord(it.sessionId, it.appPackageName)
-                                }
-                            },
-                            ownPackage = appContext.packageName,
-                            abandon = packageInstaller::abandonSession,
-                        )
-                    },
-                    createRunner = {
-                        val packageInfo = appContext.packageManager.getPackageInfo(
-                            appContext.packageName,
-                            0,
-                        )
-                        val currentVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                            packageInfo.longVersionCode
-                        } else {
-                            packageInfo.versionCode.toLong()
+            cleanupSessions = {
+                val packageInstaller = appContext.packageManager.packageInstaller
+                cleanupOwnedInstallSessions(
+                    sessions = {
+                        packageInstaller.mySessions.map {
+                            InstallSessionRecord(it.sessionId, it.appPackageName)
                         }
-                        val engine = UpdateEngine(
-                            currentVersionCode = currentVersionCode,
-                            source = HttpUpdateSource(appContext, KioskUrl.origin(appContext)),
-                            verifier = AndroidApkVerifier(appContext),
-                            installer = AndroidUpdateInstaller(appContext),
-                            downloadTarget = appContext.cacheDir.resolve(UPDATE_APK_NAME),
-                            diagnostics = AndroidUpdateDiagnostics(),
-                        )
-                        StartupUpdateRun(engine::run)
                     },
+                    ownPackage = appContext.packageName,
+                    abandon = packageInstaller::abandonSession,
                 )
             },
+            createRunner = {
+                val packageInfo = appContext.packageManager.getPackageInfo(
+                    appContext.packageName,
+                    0,
+                )
+                val currentVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    packageInfo.longVersionCode
+                } else {
+                    packageInfo.versionCode.toLong()
+                }
+                val engine = UpdateEngine(
+                    currentVersionCode = currentVersionCode,
+                    source = HttpUpdateSource(appContext, KioskUrl.origin(appContext)),
+                    verifier = AndroidApkVerifier(appContext),
+                    installer = AndroidUpdateInstaller(appContext),
+                    downloadTarget = appContext.cacheDir.resolve(UPDATE_APK_NAME),
+                    diagnostics = AndroidUpdateDiagnostics(),
+                )
+                StartupUpdateRun(engine::run)
+            },
+            diagnostics = { exception ->
+                Log.w(TAG, "Install session recovery failed type=${exception.javaClass.simpleName}")
+            },
         )
+        if (!keepUpdateAttempt) releaseAfterInstallFailure()
     }
 
     private fun renderUpdateState(state: UpdateState) {

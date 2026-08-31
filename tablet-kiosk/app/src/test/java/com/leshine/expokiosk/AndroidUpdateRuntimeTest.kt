@@ -273,15 +273,14 @@ class AndroidUpdateRuntimeTest {
     }
 
     @Test
-    fun `startup cleanup invalidates marker and abandons only this app sessions`() {
+    fun `session cleanup abandons only this app without invalidating a new marker`() {
         val events = mutableListOf<String>()
         val storage = MemoryInstallSessionStorage(onClear = { events += "invalidate" })
         val gate = ActiveInstallSessionGate(storage) { "token" }
-        gate.issue(1)
+        val marker = gate.issue(1)
         val abandoned = mutableListOf<Int>()
 
-        cleanupStaleInstallSessions(
-            activeSession = gate,
+        cleanupOwnedInstallSessions(
             sessions = {
                 events += "enumerate"
                 listOf(
@@ -294,29 +293,35 @@ class AndroidUpdateRuntimeTest {
             abandon = abandoned::add,
         )
 
-        assertFalse(gate.matches(1, "token"))
-        assertEquals(listOf("invalidate", "enumerate"), events)
+        assertTrue(gate.matches(marker.sessionId, marker.token))
+        assertEquals(listOf("enumerate"), events)
         assertEquals(listOf(1, 3), abandoned)
     }
 
     @Test
     fun `cleanup exception prevents a replacement runner while fatal errors propagate`() {
         var runnerCreated = false
+        val coordinator = StartupUpdateCoordinator()
         val ordinary = IllegalStateException("cleanup failed")
-        try {
-            prepareUpdateRunner(
-                cleanup = { throw ordinary },
-                createRunner = { runnerCreated = true; "runner" },
-            )
-            throw AssertionError("Expected cleanup exception")
-        } catch (error: IllegalStateException) {
-            assertSame(ordinary, error)
-        }
+        startUpdateAfterInstallRecovery(
+            activeSession = ActiveInstallSessionGate(MemoryInstallSessionStorage()),
+            coordinator = coordinator,
+            execute = { it() },
+            cleanupSessions = { throw ordinary },
+            createRunner = { runnerCreated = true; StartupUpdateRun {} },
+        )
         assertFalse(runnerCreated)
+        assertTrue(coordinator.currentState() is UpdateState.Failed)
 
         val fatal = AssertionError("fatal")
         try {
-            prepareUpdateRunner(cleanup = { throw fatal }, createRunner = { "runner" })
+            startUpdateAfterInstallRecovery(
+                activeSession = ActiveInstallSessionGate(MemoryInstallSessionStorage()),
+                coordinator = StartupUpdateCoordinator(),
+                execute = { it() },
+                cleanupSessions = { throw fatal },
+                createRunner = { StartupUpdateRun {} },
+            )
             throw AssertionError("Expected fatal error")
         } catch (error: AssertionError) {
             assertSame(fatal, error)
