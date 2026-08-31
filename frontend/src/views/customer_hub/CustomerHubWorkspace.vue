@@ -207,5 +207,5 @@ h1 { margin: 4px 0; font-size: 17px; }
 .customer-link.compact { display: inline-flex; align-items: center; color: var(--color-primary); }
 .danger { color: var(--color-danger-text); }
 .el-pagination { justify-content: flex-end; padding: 12px 16px; }
-@media (max-width: 768px) { .hub-header { align-items: start; } .header-context { display: none; } .hub-toolbar { align-items: stretch; flex-direction: column; } .hub-toolbar :deep(.el-input), .hub-toolbar :deep(.el-select) { max-width: none; width: 100%; } }
+@media (max-width: 768px) { .hub-header { align-items: start; } .header-context { display: none; } .hub-toolbar { align-items: stretch; flex-direction: column; } .hub-toolbar :deep(.el-input), .hub-toolbar :deep(.el-select) { max-width: none; width: 100%; } .el-pagination { justify-content: flex-start; overflow-x: auto; } }
 </style>
