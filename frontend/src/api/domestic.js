@@ -40,6 +40,10 @@ export function saveDomesticRouteRules(routeId, rules) {
   return domesticClient.put(`/process-routes/${routeId}/rules`, { rules })
 }
 
+export function saveDomesticRouteConfiguration(routeId, steps, rules) {
+  return domesticClient.put(`/process-routes/${routeId}/configuration`, { steps, rules })
+}
+
 export function listProcessWorkers(processId) {
   return domesticClient.get('/process-workers', { params: { process_id: processId } })
 }
