@@ -512,7 +512,7 @@ Prefer repeatable `--craft-key product_type::craft` selectors. `--craft-name` is
 
 - [ ] **Step 3: Implement explicit reviewed cutover**
 
-Apply mode must update selected craft mappings and existing product route bindings in one transaction, rebuild only no-report items, and consume a reviewed JSON reconciliation file for reported items. Abort the entire transaction on any quantity, unit-identity, or workload mismatch. Print an after-state comparison and commit only when every invariant matches.
+Apply mode must first require proof that every domestic writer/background write task is stopped and in-flight write transactions are drained; row locks do not replace this gate. The CLI confirmation is the exact constant `--confirm-writes-stopped DOMESTIC_WRITES_STOPPED`. Only then may it update selected craft mappings and existing product route bindings in one transaction, rebuild only no-report items, and consume a reviewed JSON reconciliation file for reported items. Abort the entire transaction on any quantity, unit-identity, or workload mismatch. Print an after-state comparison and commit only when every invariant matches; restore new-version write traffic only after success is verified.
 
 - [ ] **Step 4: Update documentation**
 

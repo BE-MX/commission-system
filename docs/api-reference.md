@@ -571,7 +571,7 @@ Android PDA 客户端位于 `pda-reporting/`，不新增报工业务端点：先
 
 ### 条件路线生产切换门禁
 
-迁移 127 只建结构，不自动切换任何业务数据。应用三端验证完成后，从 `backend/` 目录执行只读预检；目标用精确名称，工艺推荐用可重复的 `--craft-key "product_type::craft"`，不硬编码数据库 ID。`product_type` 只允许 `cap/piece`，例如：
+迁移 127 只建结构，不自动切换任何业务数据。应用三端验证完成后，业务切换必须安排第二个维护窗口：先停止**所有内贸写实例和后台写任务**，覆盖建单、追加明细、产品/映射维护、扫码报工、撤销和跳过，并确认所有在途写事务已经排空；只读订单/进度访问可以保留。停写完成后才能从 `backend/` 目录生成 dry-run token。目标用精确名称，工艺推荐用可重复的 `--craft-key "product_type::craft"`，不硬编码数据库 ID。`product_type` 只允许 `cap/piece`，例如：
 
 ```powershell
 python -m scripts.domestic_route_cutover `
@@ -598,11 +598,12 @@ python -m scripts.domestic_route_cutover `
   --target-route-name "头套网帽（递针）" `
   --craft-key "cap::<产品与工艺页显示的精确工艺值>" `
   --apply `
+  --confirm-writes-stopped DOMESTIC_WRITES_STOPPED `
   --preflight-token "<dry-run 输出的 64 位 token>" `
   --reconciliation-file ".\reviewed-domestic-items.json"
 ```
 
-apply 会锁定并重新计算 canonical snapshot；预检后任一规则、工人、映射、产品、明细、单件或报工事实变化都会拒绝。映射、对应存量产品以及零报工历史明细在一个事务内切换；有历史明细保持原路线。单件身份、报工流水/映射、累计完成量或工作量任一不守恒即整笔回滚。禁止把 reconciliation/token 当长期配置复用，也禁止在 Alembic migration 中调用此脚本。
+apply 只接受精确停写确认值 `DOMESTIC_WRITES_STOPPED`，并在结果中记录该确认，但它不进入 preflight token。随后脚本锁定并重新计算 canonical snapshot；预检后任一规则、工人、映射、产品、明细、单件或报工事实变化都会拒绝。映射、对应存量产品以及零报工历史明细在一个事务内切换；有历史明细保持原路线。单件身份、报工流水/映射、累计完成量或工作量任一不守恒即整笔回滚。apply 成功并完成核对后才能恢复新版本写流量。禁止以行锁替代停写门禁，禁止把 reconciliation/token 当长期配置复用，也禁止在 Alembic migration 中调用此脚本。
 
 ## 名片管家（`/api/card`，086 迁移，2026-08-01）
 

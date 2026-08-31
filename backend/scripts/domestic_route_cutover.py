@@ -41,10 +41,20 @@ from app.production.models import Process, ProcessRoute, ProcessRouteStep, UserP
 
 
 TOKEN_RE = re.compile(r"^[0-9a-f]{64}$")
+WRITE_FREEZE_CONFIRMATION = "DOMESTIC_WRITES_STOPPED"
 
 
 class CutoverError(ValueError):
     """A reviewed cutover precondition was not satisfied."""
+
+
+def confirm_writes_stopped(value: str | None) -> bool:
+    if value != WRITE_FREEZE_CONFIRMATION:
+        raise CutoverError(
+            "--apply 前必须停止内贸写入并等待在途事务排空，然后精确传入 "
+            f"--confirm-writes-stopped {WRITE_FREEZE_CONFIRMATION}"
+        )
+    return True
 
 
 def _canonical_json(value: Any) -> str:
@@ -661,10 +671,15 @@ def apply_cutover(
     target_route_name: str,
     craft_names: list[str] | None = None,
     craft_keys: list[str] | None = None,
+    writes_stopped: bool = False,
     preflight_token: str,
     reconciliation: dict,
 ) -> dict:
     """Apply a reviewed cutover as one transaction, or leave no writes."""
+    # This must be the first executable guard. Row locks cannot stop a writer
+    # that read an old product route before our lock and inserts its item later.
+    if writes_stopped is not True:
+        raise CutoverError("apply 前必须停止内贸写入并等待在途事务排空")
     if not craft_names and not craft_keys:
         raise CutoverError("apply 至少一个工艺选择器（--craft-key 或 --craft-name）")
     if not isinstance(preflight_token, str) or TOKEN_RE.fullmatch(preflight_token) is None:
@@ -746,6 +761,7 @@ def apply_cutover(
 
         result = {
             "mode": "applied",
+            "write_freeze_confirmation": WRITE_FREEZE_CONFIRMATION,
             "target_route": locked_plan["target_route"],
             "selected_craft_pairs": locked_plan["selected_craft_pairs"],
             "updated_mapping_ids": mapping_ids,
@@ -816,6 +832,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="推荐的精确选择器 product_type::craft，例如 cap::递针；可重复",
     )
     parser.add_argument("--apply", action="store_true", help="执行受控切换；省略即只读预检")
+    parser.add_argument(
+        "--confirm-writes-stopped",
+        help=f"apply 强制停写确认；必须精确输入 {WRITE_FREEZE_CONFIRMATION}",
+    )
     parser.add_argument("--preflight-token", help="刚复核的 dry-run 输出 token")
     parser.add_argument("--reconciliation-file", help="reported item 的逐项复核 JSON 文件")
     return parser
@@ -828,11 +848,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.apply:
             if not args.preflight_token:
                 raise CutoverError("--apply 必须提供 --preflight-token")
+            writes_stopped = confirm_writes_stopped(args.confirm_writes_stopped)
             result = apply_cutover(
                 db,
                 target_route_name=args.target_route_name,
                 craft_names=args.craft_name,
                 craft_keys=args.craft_key,
+                writes_stopped=writes_stopped,
                 preflight_token=args.preflight_token,
                 reconciliation=_read_reconciliation(args.reconciliation_file),
             )

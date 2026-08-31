@@ -223,11 +223,13 @@ def test_apply_requires_token_crafts_and_reviewed_reconciliation(db, cutover_cas
     with pytest.raises(cutover.CutoverError, match="至少一个工艺选择器"):
         cutover.apply_cutover(
             db, target_route_name=target_name, craft_names=[],
+            writes_stopped=True,
             preflight_token="x", reconciliation={"reported_items": []},
         )
     with pytest.raises(cutover.CutoverError, match="预检令牌"):
         cutover.apply_cutover(
             db, target_route_name=target_name, craft_names=["needle_cap"],
+            writes_stopped=True,
             preflight_token="wrong", reconciliation={"reported_items": []},
         )
 
@@ -237,6 +239,7 @@ def test_apply_requires_token_crafts_and_reviewed_reconciliation(db, cutover_cas
     with pytest.raises(cutover.CutoverError, match="逐项覆盖"):
         cutover.apply_cutover(
             db, target_route_name=target_name, craft_names=["needle_cap"],
+            writes_stopped=True,
             preflight_token=plan["preflight_token"],
             reconciliation={"reported_items": []},
         )
@@ -258,6 +261,7 @@ def test_apply_is_atomic_rebuilds_only_clean_items_and_conserves_history(db, cut
         db,
         target_route_name=target.name,
         craft_names=["needle_cap"],
+        writes_stopped=True,
         preflight_token=plan["preflight_token"],
         reconciliation={
             "reported_items": [
@@ -279,6 +283,7 @@ def test_apply_is_atomic_rebuilds_only_clean_items_and_conserves_history(db, cut
         item_id=clean_item.id,
     ).order_by(DomesticItemUnit.id).all()] == old_unit_ids
     assert result["before_totals"] == result["after_totals"]
+    assert result["write_freeze_confirmation"] == "DOMESTIC_WRITES_STOPPED"
 
 
 def test_apply_rolls_back_every_write_on_unsupported_reconciliation(db, cutover_case):
@@ -293,6 +298,7 @@ def test_apply_rolls_back_every_write_on_unsupported_reconciliation(db, cutover_
             db,
             target_route_name=cutover_case["target_route"].name,
             craft_names=["needle_cap"],
+            writes_stopped=True,
             preflight_token=plan["preflight_token"],
             reconciliation={"reported_items": [{
                 "item_id": cutover_case["reported_item"].id,
@@ -316,6 +322,7 @@ def test_preflight_token_detects_change_after_review(db, cutover_case):
             db,
             target_route_name=cutover_case["target_route"].name,
             craft_names=["needle_cap"],
+            writes_stopped=True,
             preflight_token=plan["preflight_token"],
             reconciliation={"reported_items": [{
                 "item_id": cutover_case["reported_item"].id,
@@ -390,6 +397,7 @@ def test_ambiguous_craft_name_refuses_and_exact_key_changes_only_one_mapping(db,
         target_route_name=cutover_case["target_route"].name,
         craft_names=[],
         craft_keys=["cap::needle_cap"],
+        writes_stopped=True,
         preflight_token=plan["preflight_token"],
         reconciliation={"reported_items": [{
             "item_id": cutover_case["reported_item"].id,
@@ -441,3 +449,33 @@ def test_preflight_token_covers_worker_and_full_report_audit_fields(db, cutover_
         craft_keys=["cap::needle_cap"],
     )
     assert second["preflight_token"] != first["preflight_token"]
+
+
+def test_apply_requires_write_freeze_before_rollback_or_any_write(
+    db, cutover_case, monkeypatch,
+):
+    product = cutover_case["product"]
+    db.refresh(product)
+    product.name = "尚未提交的调用方改动"
+    assert product in db.dirty
+    rollback_calls = []
+    monkeypatch.setattr(db, "rollback", lambda: rollback_calls.append(True))
+
+    with pytest.raises(cutover.CutoverError, match="停止内贸写入"):
+        cutover.apply_cutover(
+            db,
+            target_route_name=cutover_case["target_route"].name,
+            craft_keys=["cap::needle_cap"],
+            preflight_token="0" * 64,
+            reconciliation={"reported_items": []},
+        )
+
+    assert product.name == "尚未提交的调用方改动"
+    assert rollback_calls == []
+
+
+@pytest.mark.parametrize("value", [None, "", "yes", "domestic_writes_stopped"])
+def test_cli_write_freeze_confirmation_must_match_exact_constant(value):
+    with pytest.raises(cutover.CutoverError, match="DOMESTIC_WRITES_STOPPED"):
+        cutover.confirm_writes_stopped(value)
+    assert cutover.confirm_writes_stopped("DOMESTIC_WRITES_STOPPED") is True
