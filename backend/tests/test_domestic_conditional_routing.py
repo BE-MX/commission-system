@@ -3,10 +3,13 @@
 import asyncio
 from datetime import date, datetime
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy import func
@@ -41,6 +44,16 @@ from app.production.models import (
     ProcessRouteStep,
     UserProcessBinding,
 )
+
+
+def test_domestic_route_migration_is_the_only_head_after_customer_126():
+    backend_root = Path(__file__).resolve().parents[1]
+    config = Config(str(backend_root / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_root / "alembic"))
+    revisions = ScriptDirectory.from_config(config)
+
+    assert revisions.get_heads() == ["127_domestic_route_rules"]
+    assert revisions.get_revision("127_domestic_route_rules").down_revision == "126"
 
 
 @pytest.fixture

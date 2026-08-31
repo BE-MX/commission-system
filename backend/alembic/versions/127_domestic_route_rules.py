@@ -1,7 +1,7 @@
 """Add domestic conditional route rules and audited skips.
 
 Revision ID: 127_domestic_route_rules
-Revises: 125_invoice_integration
+Revises: 126
 Create Date: 2026-08-31
 """
 
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import mysql
 
 
 revision = "127_domestic_route_rules"
-down_revision = "125_invoice_integration"
+down_revision = "126"
 branch_labels = None
 depends_on = None
 
