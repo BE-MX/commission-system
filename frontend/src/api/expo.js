@@ -8,7 +8,12 @@ import { expoClient } from './clients'
 // kiosk 是客户共享屏：所有流程端点必须 suppressToast，禁止拦截器把 axios 原始
 // 报错（英文 "Network Error"）弹到客户面前——错误反馈统一走 useTryOnFlow.errorText
 // 的中文文案与重试路径（2026-07-14 展会现场实case）
-const KIOSK = { showLoading: false, suppressToast: true }
+const KIOSK = {
+  showLoading: false,
+  suppressToast: true,
+  // 展会共享屏的认证异常由 kiosk 自己显示；绝不允许共用拦截器跳进方舟登录/后台。
+  redirectOnUnauthorized: false,
+}
 
 export function registerCustomer(data) {
   return expoClient.post('/register', data, { ...KIOSK })

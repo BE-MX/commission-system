@@ -3,6 +3,18 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+def releaseSigningKeys = ['storeFile', 'storePassword', 'keyAlias', 'keyPassword']
+def releaseSigningFile = rootProject.file('keystore.properties')
+def releaseSigning = new Properties()
+if (releaseSigningFile.isFile()) {
+    releaseSigningFile.withInputStream { releaseSigning.load(it) }
+}
+def releaseSigningValuesPresent = releaseSigningKeys.every {
+    releaseSigning.getProperty(it)?.trim()
+}
+def releaseStoreFile = releaseSigningValuesPresent ? rootProject.file(releaseSigning.getProperty('storeFile').trim()) : null
+def releaseSigningReady = releaseSigningValuesPresent && releaseStoreFile.isFile()
+
 android {
     namespace 'com.leshine.expokiosk'
     compileSdk 35
@@ -11,12 +23,26 @@ android {
         applicationId "com.leshine.expokiosk"
         minSdk 26            // Android 8.0+，适配自适应图标，覆盖现代展会平板
         targetSdk 35
-        versionCode 8
-        versionName "1.7"
+        versionCode 10
+        versionName "1.9"
+    }
+
+    signingConfigs {
+        if (releaseSigningReady) {
+            release {
+                storeFile releaseStoreFile
+                storePassword releaseSigning.getProperty('storePassword')
+                keyAlias releaseSigning.getProperty('keyAlias')
+                keyPassword releaseSigning.getProperty('keyPassword')
+            }
+        }
     }
 
     buildTypes {
         release {
+            if (releaseSigningReady) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
@@ -33,4 +59,18 @@ android {
 dependencies {
     implementation 'androidx.core:core-ktx:1.13.1'
     implementation 'androidx.activity:activity-ktx:1.9.2'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
+}
+
+gradle.taskGraph.whenReady { graph ->
+    def schedulesReleaseWork = graph.allTasks.any { task ->
+        task.project == project && task.name.toLowerCase(Locale.ROOT).contains('release')
+    }
+    if (schedulesReleaseWork && !releaseSigningReady) {
+        throw new GradleException(
+            'Release signing is not configured. Copy keystore.properties.example to keystore.properties, ' +
+            'fill storeFile/storePassword/keyAlias/keyPassword, and make sure storeFile exists.'
+        )
+    }
 }

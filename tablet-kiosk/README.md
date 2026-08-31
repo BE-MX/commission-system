@@ -5,26 +5,18 @@
 
 > 页面逻辑全在网站里，这个壳只是容器：网站更新后 APK 无需重打，重启即加载最新页面。
 
-## 上机前只改两处（`app/src/main/res/values/strings.xml`）
+## 上机前固定两项
 
-1. `start_url`：**默认值**，当前 `https://154.8.205.162/expo/kiosk`（北京云端展会实例，自签证书见下）。
-   平板上可长按右上角现改（见下「现场改地址」），改完存本地、优先于此默认值——换服务器不必重打包。
-2. `printer_package`：**你打印机 App 的包名**。留空则「打印」按钮会弹系统「打开方式」让工作人员选 App。
+1. `app/src/main/res/values/strings.xml` 的 `start_url` 是唯一入口，当前为
+   `https://154.8.205.162/expo/kiosk`。它必须是 HTTPS、无账号信息/查询/片段，且路径精确为
+   `/expo/kiosk`；APP 没有运行时切源、地址输入或 HTTP 兜底。更换入口必须改资源、同步证书 pin、重新构建并全量安装。
+2. `printer_package` 是唯一允许离开 Lock Task 的打印 App。当前固定为 `com.hannto.jiyin`，并在
+   `AndroidManifest.xml` 的 `<queries>` 精确声明；改包名时两处必须同步。留空、非法或未安装只提示工作人员，
+   不打开系统选择器或其他 App。
    - 查包名：平板 设置 → 应用 → 打开打印 App → 详情里的包名；或电脑连平板
      `adb shell pm list packages | grep <打印机品牌关键词>`。
 
-## 现场改地址（不用重装）
-
-- **三根手指同时按住屏幕 2.5 秒** → 弹「服务器地址」输入框 → 保存并重载。
-  只填 IP 或域名即可（可带 `:端口`），**路径固定 `/expo/kiosk` 由代码拼**；「恢复默认」回到 strings.xml 的值。
-- 页面打不开时（IP 写错 / 服务器没起 / 断网）自动显示黑底兜底页，带「重试」「改地址」按钮，
-  并按 5s→10s→…→60s 退避**自动重连**（展位无人值守时网络抖动能自愈）。
-- 换了 host 等于换了浏览器源，**登录态不跟着走**，需重新用展会账号登录一次。
-
-> **为什么是三指而不是长按某个角**：1.2 版用的「长按右上角 3 秒」与 kiosk 自己的「⌂ 主页」
-> 「✕ 关闭」按钮完全重叠（`.xk-head` 高 52px、右边距 22px），客户长按主页键就能拿到 URL 输入框。
-> 三指手势与页面布局无关，客户不可能误触。配合"只收 origin"，就算被摸到也只能换服务器、
-> 不能把展位平板变成自由浏览器。
+页面打不开时显示黑底兜底页，只提供「重试」，并按 5s→10s→…→60s 退避自动重连；任何触摸手势都不能修改入口。
 
 ## HTTPS 与相机（1.4 起）
 
@@ -37,13 +29,8 @@ IP 又申请不到 CA 证书，所以服务器挂了一张 10 年自签证书，
 - 指纹不匹配时**回落系统信任链**，两边都不过才拒绝 → 备案后换正规证书，这里自动走系统校验，代码不用改
 - **换服务器证书必须同步更新指纹并重打 APK**，否则平板打不开（会显示「证书校验未通过」兜底页）
 
-`usesCleartextTraffic` 仍保持 `true`：现场局域网兜底可能还要用 http 直连。
-
-> **http 回退路径也还在**（万一现场只能用 http）：非 secure context 下 `CaptureScreen.vue` 会降级到
-> 系统相机，而这条降级链在原生侧要自己接——`FileChooserParams.createIntent()` 只给
-> `ACTION_GET_CONTENT`、完全忽略 `<input capture>`，所以 `onShowFileChooser` 手动把
-> `ACTION_IMAGE_CAPTURE` 塞进 `EXTRA_INITIAL_INTENTS`，并在 `onActivityResult` 回退到自己占的
-> `EXTRA_OUTPUT` Uri（相机成功时返回的 `data` 是 null，`parseResult` 什么也拿不到）。
+`usesCleartextTraffic=false`。试戴只使用 HTTPS 页内 `getUserMedia`；WebView 只授予固定 kiosk 主框架
+`VIDEO_CAPTURE`，拒绝音频、混合资源、登录页和后台页请求。通用文件选择器、系统相机 fallback 与外部相册均关闭。
 
 > **分享二维码故意留在 http**：客户手机不认这张自签证书（微信内置浏览器多半白屏），
 > `ResultScreen.vue` 在 host 为裸 IP 且无显式端口时把分享链接降回 http。
@@ -71,16 +58,82 @@ export ANDROID_HOME="/c/Users/windb/AppData/Local/Android/Sdk"
 > 已在开发机验证可构建（2026-07-16）：产物 `app/build/outputs/apk/debug/app-debug.apk`（约 2.1MB），
 > compileSdk 35 / AGP 8.5.2 / Gradle 8.7 / JDK 21(JBR)。debug 版可直接装测试；正式展位用签名 release。
 
-**签名**：展位内部使用，用一个自签名 keystore 即可（Android Studio: Build → Generate Signed
-Bundle/APK，一路新建 keystore）。debug 版也能装，但每次重装会清数据（含登录态），正式用签名 release。
+### 正式签名与自动更新（1.9 / code 10 起）
+
+自动更新依赖 Android 的签名连续性。所有平板首次统一换装 1.9 后，后续 APK **必须使用同一个正式 keystore**；
+密钥丢失后无法覆盖升级已安装的平板，只能再次全量卸载/恢复出厂并重装。
+
+首次只做一次：用 JDK `keytool` 在仓库外生成 RSA 4096、SHA256withRSA 的长期证书，别名固定
+`leshine-expo`，DN 不得是 Android Debug。生成时让 `keytool` 交互读取密码，避免密码进入命令历史。
+
+```powershell
+New-Item -ItemType Directory -Force C:\secure
+& 'C:\Program Files\Android\Android Studio\jbr\bin\keytool.exe' -genkeypair `
+  -keystore C:\secure\leshine-expo-release.jks -storetype PKCS12 -alias leshine-expo `
+  -keyalg RSA -keysize 4096 -sigalg SHA256withRSA -validity 10000 `
+  -dname 'CN=LeShine Expo Kiosk, OU=AI Technology Support, O=LeShine, L=Qingdao, ST=Shandong, C=CN'
+Copy-Item .\keystore.properties.example .\keystore.properties
+# 只在本机编辑 keystore.properties 的四个字段；不要把密码粘到命令或聊天中。
+```
+
+`C:\secure\leshine-expo-release.jks` 与 `keystore.properties` 必须做两份离线备份，分开保管并实际验证可恢复。
+这是上线硬门禁；当前开发机生成文件不等于已经完成离线备份。仓库只跟踪示例，真实 properties、`*.jks`、
+`*.keystore` 均被 `.gitignore` 排除。实际 task graph 只要包含 release 工作（包括 `build`、`assemble` 这类聚合任务），
+配置缺失、字段为空或文件不存在时构建会在打包前直接失败，绝不回退为 debug/unsigned；纯 debug/test 不受影响。
+仓库跟踪的 `release-signer-sha256.txt` 只是证书的公开 SHA-256 指纹，不含私钥或密码。发布器要求 APK 恰好一个 signer，
+且必须与该指纹完全一致；修改基线等同于换正式签名，已有平板无法覆盖升级，必须重新走全量卸载/恢复出厂门禁。
+
+在 `tablet-kiosk` 目录用本机已解压 Gradle 构建并核验：
+
+```powershell
+$gradle = 'C:\Users\windb\.gradle\wrapper\dists\gradle-8.7-bin\f06yd7m8w1d0inql2joytq4az\gradle-8.7\bin\gradle.bat'
+& $gradle assembleRelease --offline --console=plain
+$tools = "$env:LOCALAPPDATA\Android\Sdk\build-tools\37.0.0"
+& "$tools\aapt.exe" dump badging .\app\build\outputs\apk\release\app-release.apk
+& "$tools\apksigner.bat" verify --print-certs .\app\build\outputs\apk\release\app-release.apk
+Get-FileHash .\app\build\outputs\apk\release\app-release.apk -Algorithm SHA256
+```
+
+发布器只接受 `com.leshine.expokiosk`、`versionCode > 9`、非空版本名、单 signer 且指纹匹配公开基线的有效签名包。
+先离线准备并核对清单，再显式提供 IP 自签 CA 发布；`-PrepareOnly` 不需要 CA，也不会调用 curl/ssh/scp。
+
+```powershell
+.\scripts\publish-update.ps1 -ApkPath .\app\build\outputs\apk\release\app-release.apk -PrepareOnly
+# 仅首次创建空通道：线上清单必须 404、APK/清单必须都不存在，而且包必须是 code 10。
+.\scripts\publish-update.ps1 -ApkPath .\app\build\outputs\apk\release\app-release.apk `
+  -InitializeChannel -CaCertificatePath C:\secure\expo-ip.crt
+# 以后发布禁止再带 -InitializeChannel。
+.\scripts\publish-update.ps1 -ApkPath .\app\build\outputs\apk\release\app-release.apk `
+  -CaCertificatePath C:\secure\expo-ip.crt
+```
+
+发布器固定写入同源 `/expo-app/latest.json` 与 `/expo-app/leshine-expo-kiosk.apk`。远端 owner token 锁会阻止并发发布，
+切换前保存本事务私有旧配对，先替换 APK、最后替换清单；切换或 HTTPS 回读校验失败会恢复旧配对，首发失败则恢复空通道。
+自动恢复会从备份复制到临时文件、复核摘要后再原子替换正式文件；只有正式配对复核成功才清理事务。恢复本身失败时发布器
+返回失败，并保留 `.publish-lock`、owner、state 和私有备份供人工恢复，不能强行清锁或继续发布。
+每个事务会在非公开的 `.publish-receipts/<事务ID>.receipt` 留下小型 `finalized` 或 `rolled_back` 收据；SSH 回执丢失时
+重试会复核正式文件和收据后返回同一结果，不会把已经完成的发布反向回滚。线上 manifest 限 16 KiB，APK 限候选包精确
+大小且不超过 100 MiB；非 `PrepareOnly` 的本地准备目录无论成功失败都会清理。
+两个固定 URL 是两次独立 HTTP 请求，发布瞬间仍可能短暂读到清单/APK不匹配，**不能宣称跨请求事务原子**；APP 会在
+大小或 SHA-256 校验处 fail-closed，继续使用旧版并在下次冷启动重试。更新源不能指定其他 URL，也不会进入方舟后台页面；断网、404、校验或安装失败时，
+APP 会放行当前版本继续试戴，下次冷启动重试。APP 自动识别安装模式：设备所有者平板静默安装，普通平板下载完成后
+只打开 Android 系统安装确认，不提供绕过系统确认的开关，也不需要工作人员切换模式。
 
 ## 装到平板 + 首次配置
 
-1. 允许「安装未知来源应用」，把 APK 拷进平板安装（或 `adb install app-release.apk`）。
-2. 打开一次，授予**摄像头**权限（拍照合成要用）。
-3. 用**专用「展会设备」账号**（仅 `expo:write`，见 `docs/expo-kiosk-tablet-setup.md`）登录一次。
-4. 设为默认主屏（可选，软锁）：设置 → 默认应用 → 主屏幕应用 → 选「莱莎AI试戴」。
+1. 首次迁移到稳定签名时，设备所有者先运行
+   `adb shell dpm remove-active-admin com.leshine.expokiosk/.AdminReceiver`；解除失败则恢复出厂。卸载所有旧
+   debug/旧签名版本，再安装 1.9 release（不同签名不能覆盖安装）。
+2. 允许「安装未知来源应用」，把 release APK 拷进平板安装（或 `adb install app-release.apk`）。
+3. 打开一次，授予**摄像头**权限（拍照合成要用）。
+4. 用**专用「展会设备」账号**（仅 `expo:write`，见 `docs/expo-kiosk-tablet-setup.md`）登录一次。
+5. 设为默认主屏（可选，软锁）：设置 → 默认应用 → 主屏幕应用 → 选「莱莎AI试戴」。
    之后在打印 App 里按 Home 键即回 kiosk。
+
+需要真锁定的平板在初始/恢复出厂状态重新设置设备所有者，并恢复 **自身 + 固定打印 App** 两个精确白名单项。
+正式铺开前，必须至少用一台设备所有者平板验证静默更新、一台普通平板验证 Android 系统安装确认；同时验证
+离线/404/损坏包会继续进入当前试戴。回滚不能降低 `versionCode`：必须用旧源码构建一个**更高 versionCode** 的新包，
+仍使用同一正式 keystore 后重新发布。
 
 ## 真锁定（Lock Task，可选但展位推荐）
 
@@ -91,10 +144,9 @@ Bundle/APK，一路新建 keystore）。debug 版也能装，但每次重装会�
 adb shell dpm set-device-owner com.leshine.expokiosk/.AdminReceiver
 ```
 
-设成功后 App 会自动 `startLockTask()`，白名单 = **自身 + 打印 App + 系统相机 + 文档选择器**
-（后两个 1.3 起才加：漏掉的话锁定状态下 `startActivityForResult` 会被系统静默拒绝——不抛异常也不回
-result——客户点「拍照/选图」毫无反应，且此后所有 file input 永久哑掉，直到重启 App）。
-其余一律锁死。撤销：`adb shell dpm remove-active-admin com.leshine.expokiosk/.AdminReceiver`。
+设成功后 App 会自动 `startLockTask()`，白名单严格等于 **自身 + `printer_package`**；相机、文档选择器、
+浏览器和其他动态解析到的包均不加入。撤销：
+`adb shell dpm remove-active-admin com.leshine.expokiosk/.AdminReceiver`。
 
 > **本机 adb 连不上荣耀平板**（2026-07-24 查明）：荣耀的 ADB 接口在注册表里注册的是自家
 > `DeviceInterfaceGUID {8a4d20a8-a2fa-4495-bee2-e87ece4a5356}`，而 adb 只认 Google 的
@@ -109,7 +161,8 @@ result——客户点「拍照/选图」毫无反应，且此后所有 file inpu
 ## 行为要点
 
 - 全屏沉浸（隐藏状态栏/导航栏）、屏幕常亮、吞掉返回键。
-- 摄像头/麦克风权限自动授给网页；文件选择兜底可用。
+- 原生 WebView 只放行 `/expo/kiosk` 与强制回到 kiosk 的 `/login`；方舟首页、后台路由、公开页、跨域和非 HTTP 主框架导航一律拦截并送回 kiosk。网页路由守卫同时锁定当前标签页，认证异常也不会使用方舟后台的通用跳转。
+- 仅固定 kiosk 页的摄像头视频权限可自动授予；麦克风、混合权限和通用文件选择全部拒绝。
 - 登录态（access token + refresh cookie）持久在 WebView 存储，配合每日重载续期（见 setup 文档）。
 - 「打印这张」严格顺序：**存相册成功并查回确认后**才启动打印 App；失败弹「保存到相册失败，请重试」。
 - 打印用的是合成**原图**（1024×1536 原清晰度），非压缩展示版。

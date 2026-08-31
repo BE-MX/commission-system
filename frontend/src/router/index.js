@@ -5,6 +5,13 @@ import {
   bypassCustomerImageRoute,
   captureCustomerImageRouteToken,
 } from './customerImageRoute'
+import {
+  EXPO_KIOSK_PATH,
+  expoKioskLoginLocation,
+  guardExpoKioskBoundary,
+  isExpoKioskTarget,
+} from './expoKioskRoute'
+import { readSessionItem } from '@/utils/safeSessionStorage'
 
 // NAV_ENTRIES 中每条记录映射成 vue-router 的 children 路由
 // path 去掉前导 '/' 因为父路由是 '/'
@@ -66,10 +73,15 @@ const router = createRouter({
 
 // ── 路由守卫 ──────────────────────────────────────────
 router.beforeEach(async (to, from, next) => {
+  // 展会设备标签页与方舟后台硬隔离：先于所有公开页/移动端分流执行，
+  // 因此浏览器后退、内部误跳、401 后重新登录都不能落进 MainLayout。
+  const kioskBoundary = guardExpoKioskBoundary(to)
+  if (kioskBoundary) return next(kioskBoundary)
+
   if (bypassCustomerImageRoute(to, next, title => { document.title = title })) return
 
   const isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
-  const desktopMode = sessionStorage.getItem('ark_desktop_mode') === '1'
+  const desktopMode = readSessionItem('ark_desktop_mode') === '1'
 
   // 移动端访问登录页：直接走移动端独立登录页
   // 例外：目标是展会 kiosk（展位 iPad 用主站登录，不进移动端素材页）
@@ -107,6 +119,11 @@ router.beforeEach(async (to, from, next) => {
   if (to.meta.permission && !auth.hasPermission(to.meta.permission)) {
     const { ElMessage } = await import('element-plus')
     ElMessage.error('权限不足')
+    // 首次打开 kiosk 时 from.fullPath 是 '/'；沿用通用兜底会把展会设备送进后台。
+    // kiosk 只允许回专用登录页，重新认证后仍固定回 kiosk。
+    if (isExpoKioskTarget(to)) {
+      return next(expoKioskLoginLocation({ reason: 'permission' }))
+    }
     return next(from.fullPath || '/dashboard')
   }
   if (to.meta.anyPermission && !auth.hasAnyPermission(to.meta.anyPermission)) {

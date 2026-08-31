@@ -80,3 +80,8 @@ expo-sales/server/expo.db
 
 # Git worktrees
 .worktrees/
+
+# 展会平板正式签名（本机唯一副本，禁止提交）
+/tablet-kiosk/keystore.properties
+/tablet-kiosk/*.jks
+/tablet-kiosk/*.keystore

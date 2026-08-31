@@ -144,6 +144,8 @@ import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
 import WorldMapCanvas from '@/components/WorldMapCanvas.vue'
 import logoGold from '@/assets/leshine-logo-gold.png'
+import { EXPO_KIOSK_PATH } from '@/router/expoKioskRoute'
+import { readSessionItem } from '@/utils/safeSessionStorage'
 
 const router = useRouter()
 const route = useRoute()
@@ -171,9 +173,13 @@ const handleSubmit = async () => {
     // 移动 UA 默认进移动端，除非用户主动选了「切换到完整版」（ark_desktop_mode=1）
     // 或目标是展会 kiosk（展位 iPad 不进移动端素材页）
     const isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
-    const desktopMode = sessionStorage.getItem('ark_desktop_mode') === '1'
+    const desktopMode = readSessionItem('ark_desktop_mode') === '1'
     if (isMobileUA && !desktopMode && !redirect.startsWith('/expo')) {
       window.location.href = '/m/'
+      return
+    }
+    if (redirect === EXPO_KIOSK_PATH && !authStore.hasPermission('expo:write')) {
+      ElMessage.error('当前账号没有展会试戴权限，请更换展会设备账号')
       return
     }
     router.push(redirect.startsWith('/') ? redirect : '/')

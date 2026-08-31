@@ -14,6 +14,7 @@
     "test:invoice-settlement": "node --test tests/invoiceSettlement.test.mjs",
     "test:expo-publicurl": "node --test tests/expoPublicUrl.test.mjs",
     "test:expo-variants": "node --test tests/expoPromptVariants.test.mjs",
+    "test:expo-kiosk": "node --test tests/expoKioskIsolationRegression.test.mjs tests/expoKioskRouting.test.mjs tests/expoKioskLogout.test.mjs tests/customerImageInvite.test.mjs",
     "test:navigation-layout": "node --test tests/navigationLayout.test.mjs",
     "test:holidays": "node --test tests/holidays.test.mjs",
     "test:customer-media-portal": "node --test tests/customerMediaPortalState.test.mjs"
