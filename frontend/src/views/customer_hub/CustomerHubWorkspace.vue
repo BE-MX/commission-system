@@ -1,5 +1,10 @@
 <template>
   <main class="hub-page">
+    <div class="hub-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
     <header class="hub-header">
       <div>
         <span class="hub-kicker">CUSTOMER OPERATIONS</span>
@@ -12,30 +17,29 @@
       </div>
     </header>
 
-    <section class="hub-toolbar" aria-label="列表筛选">
-      <el-input
-        v-if="kind === 'customers'"
-        v-model="searchForm.keyword"
-        clearable
-        placeholder="按客户编号或名称搜索"
-        aria-label="搜索客户"
-        @keyup.enter="handleSearch"
-        @clear="handleSearch"
-      />
-      <el-select v-else-if="kind === 'acquisition'" v-model="searchForm.status" clearable placeholder="全部任务状态" @change="handleSearch">
-        <el-option v-for="status in ['pending', 'running', 'completed', 'failed']" :key="status" :label="statusLabel(status)" :value="status" />
-      </el-select>
-      <div v-else class="toolbar-note">按最近更新时间排序 · 权限范围由方舟统一控制</div>
-      <el-button type="primary" :loading="loading" @click="handleSearch">重新加载</el-button>
-    </section>
-
     <el-alert v-if="errorGuidance" type="error" :title="errorGuidance" show-icon :closable="false" class="state-alert" />
     <el-alert v-if="staleGuidance" type="warning" :title="staleGuidance" show-icon :closable="false" class="state-alert" />
 
-    <section class="hub-table" :aria-busy="loading">
+    <section class="hub-table table-card lg-card is-static" :aria-busy="loading">
+      <div class="hub-toolbar" aria-label="列表筛选">
+        <el-input
+          v-if="kind === 'customers'"
+          v-model="searchForm.keyword"
+          clearable
+          placeholder="按客户编号或名称搜索"
+          aria-label="搜索客户"
+          @keyup.enter="handleSearch"
+          @clear="handleSearch"
+        />
+        <el-select v-else-if="kind === 'acquisition'" v-model="searchForm.status" clearable placeholder="全部任务状态" aria-label="筛选任务状态" @change="handleSearch">
+          <el-option v-for="status in ['pending', 'running', 'completed', 'failed']" :key="status" :label="statusLabel(status)" :value="status" />
+        </el-select>
+        <div v-else class="toolbar-note">按最近更新时间排序 · 权限范围由方舟统一控制</div>
+        <GlassButton variant="secondary" left-icon="Refresh" :loading="loading" @click="handleSearch">刷新</GlassButton>
+      </div>
       <el-table v-if="!empty || loading" v-loading="loading" :data="list" border class="list-table" :row-key="rowKey">
         <template v-if="kind === 'customers'">
-          <el-table-column label="客户" min-width="220">
+          <el-table-column label="客户" min-width="220" max-width="360">
             <template #default="{ row }">
               <button class="customer-link" type="button" @click="openCustomer(row.customer_id)">
                 <strong>{{ row.display_name || row.canonical_company_name || `临时客户 #${row.customer_id}` }}</strong>
@@ -44,49 +48,49 @@
             </template>
           </el-table-column>
           <el-table-column label="身份" min-width="116"><template #default="{ row }"><el-tag :type="row.identity_status === 'verified' ? 'success' : 'warning'" size="small">{{ row.identity_status || 'provisional' }}</el-tag></template></el-table-column>
-          <el-table-column prop="primary_industry" label="行业" min-width="130"><template #default="{ row }">{{ row.primary_industry || '待补充' }}</template></el-table-column>
-          <el-table-column prop="relationship_stage" label="关系阶段" min-width="120" />
+          <el-table-column prop="primary_industry" label="行业" min-width="130" max-width="220" show-overflow-tooltip><template #default="{ row }">{{ row.primary_industry || '待补充' }}</template></el-table-column>
+          <el-table-column prop="relationship_stage" label="关系阶段" min-width="120" max-width="180" show-overflow-tooltip />
           <el-table-column label="归属" min-width="118"><template #default="{ row }">{{ row.is_public_pool ? '公海' : '已分配' }}</template></el-table-column>
           <el-table-column label="完整度" min-width="105"><template #default="{ row }">{{ row.profile_completeness }}%</template></el-table-column>
         </template>
 
         <template v-else-if="kind === 'acquisition'">
-          <el-table-column prop="name" label="任务" min-width="220" />
+          <el-table-column prop="name" label="任务" min-width="220" max-width="360" show-overflow-tooltip />
           <el-table-column label="状态" min-width="110"><template #default="{ row }"><el-tag :type="tagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
           <el-table-column label="目标 / 结果" min-width="130"><template #default="{ row }">{{ row.target_count ?? 0 }} / {{ row.result_count ?? 0 }}</template></el-table-column>
           <el-table-column label="归档客户" min-width="110"><template #default="{ row }">{{ row.created_customer_count ?? 0 }}</template></el-table-column>
-          <el-table-column prop="policy_version" label="策略版本" min-width="130" />
-          <el-table-column label="反馈" min-width="190"><template #default="{ row }"><span :class="{ danger: row.error_message }">{{ row.error_message || `已去重 ${row.deduplicated_count ?? 0} 条` }}</span></template></el-table-column>
-          <el-table-column label="操作" min-width="110" fixed="right"><template #default="{ row }"><el-button v-if="canRequeueJob(row)" v-any-permission="['sales_automation:write', 'sales_automation:admin']" link type="primary" :loading="mutatingId === row.job_id" @click="retryJob(row)">重新入队</el-button><span v-else>—</span></template></el-table-column>
+          <el-table-column prop="policy_version" label="策略版本" min-width="130" max-width="180" show-overflow-tooltip />
+          <el-table-column label="反馈" min-width="190" max-width="320" show-overflow-tooltip><template #default="{ row }"><span :class="{ danger: row.error_message }">{{ row.error_message || `已去重 ${row.deduplicated_count ?? 0} 条` }}</span></template></el-table-column>
+          <el-table-column label="操作" min-width="110" max-width="150" fixed="right"><template #default="{ row }"><GlassButton v-if="canRequeueJob(row)" v-any-permission="['sales_automation:write', 'sales_automation:admin']" variant="link" left-icon="RefreshRight" :loading="mutatingId === row.job_id" @click="retryJob(row)">重新入队</GlassButton><span v-else>—</span></template></el-table-column>
         </template>
 
         <template v-else-if="kind === 'research'">
           <el-table-column label="客户" min-width="130"><template #default="{ row }"><button v-if="canOpenDetail" class="customer-link compact" type="button" @click="openCustomer(row.customer_id)">#{{ row.customer_id }}</button><span v-else>#{{ row.customer_id }}</span></template></el-table-column>
-          <el-table-column prop="task_type" label="背调类型" min-width="150" />
+          <el-table-column prop="task_type" label="背调类型" min-width="150" max-width="240" show-overflow-tooltip />
           <el-table-column prop="tier" label="层级" min-width="90" />
           <el-table-column label="执行状态" min-width="110"><template #default="{ row }"><el-tag :type="tagType(row.task_status)" size="small">{{ statusLabel(row.task_status) }}</el-tag></template></el-table-column>
           <el-table-column prop="result_review_status" label="结果复核" min-width="120" />
-          <el-table-column prop="data_classification" label="数据级别" min-width="150" />
-          <el-table-column label="操作" min-width="110" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="$emit('inspect-task', row)">查看详情</el-button></template></el-table-column>
+          <el-table-column prop="data_classification" label="数据级别" min-width="150" max-width="220" show-overflow-tooltip />
+          <el-table-column label="操作" min-width="110" max-width="150" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="$emit('inspect-task', row)">查看详情</GlassButton></template></el-table-column>
         </template>
 
         <template v-else-if="kind === 'opportunities'">
-          <el-table-column prop="title" label="机会" min-width="240" />
+          <el-table-column prop="title" label="机会" min-width="240" max-width="380" show-overflow-tooltip />
           <el-table-column label="客户" min-width="120"><template #default="{ row }"><button v-if="canOpenDetail" class="customer-link compact" type="button" @click="openCustomer(row.customer_id)">#{{ row.customer_id }}</button><span v-else>#{{ row.customer_id }}</span></template></el-table-column>
           <el-table-column label="状态" min-width="110"><template #default="{ row }"><el-tag :type="tagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
           <el-table-column prop="priority_level" label="优先级" min-width="100" />
           <el-table-column prop="owner_user_id" label="负责人" min-width="100" />
           <el-table-column label="截止时间" min-width="170"><template #default="{ row }">{{ formatDate(row.due_at) }}</template></el-table-column>
-          <el-table-column label="操作" min-width="90" fixed="right"><template #default="{ row }"><el-button v-any-permission="['customer_opportunity:write', 'customer:admin']" link type="primary" :disabled="getOpportunityTransitionOptions(row.status).length === 0" @click="$emit('edit-opportunity', row)">更新</el-button></template></el-table-column>
+          <el-table-column label="操作" min-width="100" max-width="140" fixed="right"><template #default="{ row }"><GlassButton v-any-permission="['customer_opportunity:write', 'customer:admin']" variant="link" left-icon="Edit" :disabled="getOpportunityTransitionOptions(row.status).length === 0" @click="$emit('edit-opportunity', row)">更新</GlassButton></template></el-table-column>
         </template>
 
         <template v-else>
-          <el-table-column prop="action_type" label="建议动作" min-width="200" />
+          <el-table-column prop="action_type" label="建议动作" min-width="200" max-width="360" show-overflow-tooltip />
           <el-table-column label="客户" min-width="120"><template #default="{ row }"><button v-if="canOpenDetail" class="customer-link compact" type="button" @click="openCustomer(row.customer_id)">#{{ row.customer_id }}</button><span v-else>#{{ row.customer_id }}</span></template></el-table-column>
           <el-table-column label="状态" min-width="105"><template #default="{ row }"><el-tag :type="tagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
           <el-table-column prop="priority" label="优先级" min-width="100" />
           <el-table-column label="建议完成时间" min-width="170"><template #default="{ row }">{{ formatDate(row.due_at) }}</template></el-table-column>
-          <el-table-column label="操作" min-width="110" fixed="right"><template #default="{ row }"><el-button v-any-permission="['customer_radar:write', 'customer:admin']" link type="primary" :disabled="getRadarOperationOptions(row.status).length === 0" @click="$emit('operate-action', row)">处理</el-button></template></el-table-column>
+          <el-table-column label="操作" min-width="110" max-width="150" fixed="right"><template #default="{ row }"><GlassButton v-any-permission="['customer_radar:write', 'customer:admin']" variant="link" left-icon="Operation" :disabled="getRadarOperationOptions(row.status).length === 0" @click="$emit('operate-action', row)">处理</GlassButton></template></el-table-column>
         </template>
 
         <el-table-column label="最近更新" min-width="176"><template #default="{ row }">{{ formatDate(row.updated_at) }}</template></el-table-column>
@@ -179,26 +183,29 @@ async function retryJob(row) {
 </script>
 
 <style scoped>
-.hub-page { display: grid; gap: 14px; color: var(--text-primary); }
-.hub-header { display: flex; justify-content: space-between; align-items: end; gap: 24px; padding: 18px 20px; border-left: 4px solid var(--color-primary); background: var(--card-bg); box-shadow: var(--card-shadow); }
+.hub-page { position: relative; display: grid; align-content: start; gap: 16px; min-height: calc(100vh - 148px); color: var(--text-primary); }
+.hub-aurora { inset: -24px -28px; }
+.hub-header,.state-alert,.hub-table { position: relative; z-index: 1; }
+.hub-header { display: flex; justify-content: space-between; align-items: end; gap: 24px; padding: 8px 4px 0; }
 .hub-kicker { color: var(--color-primary); font-size: 11px; font-weight: 700; letter-spacing: .14em; }
-h1 { margin: 4px 0 5px; font-size: 24px; letter-spacing: -.02em; }
+h1 { margin: 4px 0; font-size: 17px; }
 .hub-header p { margin: 0; color: var(--text-secondary); }
 .header-context { min-width: 100px; text-align: right; }
 .header-context strong { display: block; font-size: 28px; } .header-context span { color: var(--text-muted); font-size: 12px; }
-.hub-toolbar { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--border-color); border-radius: var(--card-radius); background: var(--toolbar-bg); }
+.hub-toolbar { display: flex; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border-color); background: rgba(255, 255, 255, .4); }
 .hub-toolbar :deep(.el-input), .hub-toolbar :deep(.el-select) { max-width: 360px; }
 .toolbar-note { flex: 1; color: var(--text-secondary); font-size: 13px; }
 .hub-toolbar > :first-child { flex: 1; }
 .state-alert { margin: 0; }
-.hub-table { padding: 12px; border: 1px solid var(--border-color); border-radius: var(--card-radius); background: var(--card-bg); box-shadow: var(--card-shadow); }
+.hub-table { overflow: hidden; padding: 0; }
+.hub-table :deep(.el-table) { --el-table-bg-color: transparent; --el-table-tr-bg-color: transparent; --el-table-header-bg-color: rgba(255, 255, 255, .5); --el-table-row-hover-bg-color: rgba(255, 255, 255, .7); background: transparent; }
 .hub-table :deep(.el-table__header th) { background: var(--toolbar-bg); color: var(--text-secondary); }
-.customer-link { display: grid; gap: 3px; padding: 0; border: 0; background: transparent; color: var(--text-primary); text-align: left; cursor: pointer; }
+.customer-link { display: grid; gap: 4px; min-height: 44px; padding: 4px 0; border: 0; background: transparent; color: var(--text-primary); text-align: left; cursor: pointer; }
 .customer-link:hover strong, .customer-link:focus-visible strong { color: var(--color-primary); text-decoration: underline; }
 .customer-link:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; }
 .customer-link span { color: var(--text-muted); font-size: 12px; }
-.customer-link.compact { display: inline; color: var(--color-primary); }
+.customer-link.compact { display: inline-flex; align-items: center; color: var(--color-primary); }
 .danger { color: var(--color-danger-text); }
-.el-pagination { justify-content: flex-end; margin-top: 14px; }
-@media (max-width: 760px) { .hub-header { align-items: start; } .header-context { display: none; } .hub-toolbar { align-items: stretch; flex-direction: column; } .hub-toolbar :deep(.el-input), .hub-toolbar :deep(.el-select) { max-width: none; width: 100%; } }
+.el-pagination { justify-content: flex-end; padding: 12px 16px; }
+@media (max-width: 768px) { .hub-header { align-items: start; } .header-context { display: none; } .hub-toolbar { align-items: stretch; flex-direction: column; } .hub-toolbar :deep(.el-input), .hub-toolbar :deep(.el-select) { max-width: none; width: 100%; } }
 </style>
