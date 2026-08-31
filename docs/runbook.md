@@ -1037,7 +1037,8 @@ grep "job completed" logs\service.log | tail -20
   后续版本禁止再带 `-InitializeChannel`。发布器读取线上清单拒绝相同版本/降级，取得 owner token 事务锁后再次核对远端
   旧清单和 APK 摘要，防止两个发布器基于同一旧版本并发覆盖。新文件在目标目录 staging 并复算摘要；切换前保存本事务
   私有旧配对，先替换 APK、最后替换清单。任何切换或 HTTPS 回读错误会恢复旧 APK+旧清单，首发错误则恢复为空通道；
-  回读成功才释放锁和备份。
+  回读成功才释放锁和备份。自动恢复先把私有备份复制到同目录临时文件，验证摘要/大小，再原子替换并复核正式旧配对；
+  只有复核成功才清事务。恢复命令、复核或清理任一步失败都返回非零，并保留 owner/state/备份/锁，禁止继续发布。
 
   ```powershell
   .\tablet-kiosk\scripts\publish-update.ps1 `
@@ -1059,8 +1060,9 @@ grep "job completed" logs\service.log | tail -20
   sudo sha256sum /var/www/ark-updates/expo-kiosk/.publish-lock/previous.* 2>/dev/null || true
   ```
 
-  `mode=existing` 且 state 为 `backed_up/switching/switched` 时，必须确认 `previous.apk` 与 `previous.json` 都存在，
-  再先恢复 APK、最后恢复 manifest；缺任一备份就保持锁并升级人工处理。`mode=initialize` 的 `switching/switched`
+  `mode=existing` 且 state 为 `backed_up/switching/switched` 时，必须确认 `previous.apk` 与 `previous.json` 都存在；
+  不要用裸 `mv` 消耗唯一备份，应复制到同目录唯一临时名，核对旧摘要/大小后先原子替换 APK、最后替换 manifest，再复核
+  两个正式文件。任一检查失败就保留备份和锁并升级人工处理。`mode=initialize` 的 `switching/switched`
   只允许删除两个精确正式文件以恢复空通道。`state=begun` 表示正式文件尚未切换。完成恢复后，按 owner 中的精确事务 ID
   逐个清理该事务的 `.stage`、home 上传文件、owner/mode/state/previous 文件，最后 `rmdir .publish-lock`；禁止
   `rm -rf`、通配删除或清理 owner 不匹配的事务。若只有唯一命名的 `.publish-completed-<事务ID>`，表示 HTTPS

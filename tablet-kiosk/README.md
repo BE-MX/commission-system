@@ -120,6 +120,8 @@ Get-FileHash .\app\build\outputs\apk\release\app-release.apk -Algorithm SHA256
 
 发布器固定写入同源 `/expo-app/latest.json` 与 `/expo-app/leshine-expo-kiosk.apk`。远端 owner token 锁会阻止并发发布，
 切换前保存本事务私有旧配对，先替换 APK、最后替换清单；切换或 HTTPS 回读校验失败会恢复旧配对，首发失败则恢复空通道。
+自动恢复会从备份复制到临时文件、复核摘要后再原子替换正式文件；只有正式配对复核成功才清理事务。恢复本身失败时发布器
+返回失败，并保留 `.publish-lock`、owner、state 和私有备份供人工恢复，不能强行清锁或继续发布。
 两个固定 URL 是两次独立 HTTP 请求，发布瞬间仍可能短暂读到清单/APK不匹配，**不能宣称跨请求事务原子**；APP 会在
 大小或 SHA-256 校验处 fail-closed，继续使用旧版并在下次冷启动重试。更新源不能指定其他 URL，也不会进入方舟后台页面；断网、404、校验或安装失败时，
 APP 会放行当前版本继续试戴，下次冷启动重试。APP 自动识别安装模式：设备所有者平板静默安装，普通平板下载完成后

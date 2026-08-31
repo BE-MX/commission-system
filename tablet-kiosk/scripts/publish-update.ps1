@@ -10,6 +10,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'PublishUpdatePolicy.ps1')
+. (Join-Path $PSScriptRoot 'PublishRemoteTransaction.ps1')
 
 $ExpectedPackage = 'com.leshine.expokiosk'
 $ManifestUrl = 'https://154.8.205.162/expo-app/latest.json'
@@ -198,191 +199,23 @@ $uploadManifest = Join-Path $preparedDirectory $remoteManifestUpload
 Copy-Item -LiteralPath $preparedApk -Destination $uploadApk
 Copy-Item -LiteralPath $preparedManifest -Destination $uploadManifest
 
-$beginScript = @"
-set -eu
-work_dir="$RemoteDirectory"
-lock_dir="`$work_dir/.publish-lock"
-owner="$transactionId"
-mode="$transactionMode"
-created=0
-cleanup_begin() {
-  rc=`$?
-  trap - EXIT
-  set +e
-  if [ "`$created" = 1 ]; then
-    current_owner=`$(sudo cat "`$lock_dir/owner" 2>/dev/null || true)
-    if [ -z "`$current_owner" ] || [ "`$current_owner" = "`$owner" ]; then
-      sudo rm -f -- "`$lock_dir/owner" "`$lock_dir/mode" "`$lock_dir/state" "`$lock_dir/state.tmp"
-      sudo rmdir "`$lock_dir" 2>/dev/null || true
-    fi
-  fi
-  exit "`$rc"
-}
-trap cleanup_begin EXIT
-sudo install -d -m 0755 "`$work_dir"
-if ! sudo mkdir "`$lock_dir"; then
-  echo 'Another publisher transaction or an unresolved recovery lock exists.' >&2
-  exit 73
-fi
-created=1
-printf '%s\n' "`$owner" | sudo tee "`$lock_dir/owner" >/dev/null
-printf '%s\n' "`$mode" | sudo tee "`$lock_dir/mode" >/dev/null
-if [ "`$mode" = initialize ]; then
-  if [ -e "`$work_dir/leshine-expo-kiosk.apk" ] || [ -e "`$work_dir/latest.json" ]; then
-    echo 'InitializeChannel refused: one or both official files already exist.' >&2
-    exit 74
-  fi
-else
-  if [ ! -f "`$work_dir/leshine-expo-kiosk.apk" ] || [ ! -f "`$work_dir/latest.json" ]; then
-    echo 'Existing channel is incomplete; refusing to overwrite it.' >&2
-    exit 74
-  fi
-  test "`$(sudo sha256sum "`$work_dir/latest.json" | awk '{print `$1}')" = "$onlineManifestHash"
-  test "`$(sudo sha256sum "`$work_dir/leshine-expo-kiosk.apk" | awk '{print `$1}')" = "$onlineApkHash"
-  test "`$(sudo stat -c %s "`$work_dir/leshine-expo-kiosk.apk")" = "$onlineApkSize"
-fi
-printf '%s\n' begun | sudo tee "`$lock_dir/state.tmp" >/dev/null
-sudo mv -f -- "`$lock_dir/state.tmp" "`$lock_dir/state"
-trap - EXIT
-"@
-
-$switchScript = @"
-set -eu
-work_dir="$RemoteDirectory"
-lock_dir="`$work_dir/.publish-lock"
-owner="$transactionId"
-apk_upload="`$HOME/$remoteApkUpload"
-manifest_upload="`$HOME/$remoteManifestUpload"
-apk_stage="`$work_dir/.leshine-expo-kiosk.$transactionId.apk.stage"
-manifest_stage="`$work_dir/.latest.$transactionId.json.stage"
-backup_apk="`$lock_dir/previous.apk"
-backup_manifest="`$lock_dir/previous.json"
-state_file="`$lock_dir/state"
-write_state() {
-  printf '%s\n' "`$1" | sudo tee "`$lock_dir/state.tmp" >/dev/null
-  sudo mv -f -- "`$lock_dir/state.tmp" "`$state_file"
-}
-rollback_switch() {
-  rc=`$?
-  trap - EXIT
-  set +e
-  current_owner=`$(sudo cat "`$lock_dir/owner" 2>/dev/null || true)
-  if [ "`$current_owner" != "`$owner" ]; then
-    echo 'Transaction owner mismatch; recovery lock was preserved.' >&2
-    exit "`$rc"
-  fi
-  mode=`$(sudo cat "`$lock_dir/mode" 2>/dev/null || true)
-  state=`$(sudo cat "`$state_file" 2>/dev/null || true)
-  safe_cleanup=1
-  if [ "`$mode" = existing ] && { [ "`$state" = backed_up ] || [ "`$state" = switching ] || [ "`$state" = switched ]; }; then
-    if [ -f "`$backup_apk" ] && [ -f "`$backup_manifest" ]; then
-      sudo mv -f -- "`$backup_apk" "`$work_dir/leshine-expo-kiosk.apk"
-      sudo mv -f -- "`$backup_manifest" "`$work_dir/latest.json"
-    else
-      echo 'Previous pair is incomplete; recovery lock was preserved for manual repair.' >&2
-      safe_cleanup=0
-    fi
-  elif [ "`$mode" = initialize ] && { [ "`$state" = switching ] || [ "`$state" = switched ]; }; then
-    sudo rm -f -- "`$work_dir/leshine-expo-kiosk.apk" "`$work_dir/latest.json"
-  fi
-  if [ "`$safe_cleanup" = 1 ]; then
-    rm -f -- "`$apk_upload" "`$manifest_upload"
-    sudo rm -f -- "`$apk_stage" "`$manifest_stage" "`$backup_apk" "`$backup_manifest" \
-      "`$lock_dir/owner" "`$lock_dir/mode" "`$state_file" "`$lock_dir/state.tmp"
-    sudo rmdir "`$lock_dir" 2>/dev/null || true
-  fi
-  exit "`$rc"
-}
-trap rollback_switch EXIT
-test "`$(sudo cat "`$lock_dir/owner")" = "`$owner"
-test "`$(sudo cat "`$state_file")" = begun
-mode=`$(sudo cat "`$lock_dir/mode")
-sudo install -m 0644 "`$apk_upload" "`$apk_stage"
-sudo install -m 0644 "`$manifest_upload" "`$manifest_stage"
-actual_sha=`$(sudo sha256sum "`$apk_stage" | awk '{print `$1}')
-actual_size=`$(sudo stat -c %s "`$apk_stage")
-actual_manifest_sha=`$(sudo sha256sum "`$manifest_stage" | awk '{print `$1}')
-actual_manifest_size=`$(sudo stat -c %s "`$manifest_stage")
-test "`$actual_sha" = "$apkHash"
-test "`$actual_size" = "$($sourceApk.Length)"
-test "`$actual_manifest_sha" = "$preparedManifestHash"
-test "`$actual_manifest_size" = "$($preparedManifestFile.Length)"
-if [ "`$mode" = existing ]; then
-  sudo cp -p -- "`$work_dir/leshine-expo-kiosk.apk" "`$backup_apk"
-  sudo cp -p -- "`$work_dir/latest.json" "`$backup_manifest"
-  write_state backed_up
-fi
-write_state switching
-sudo mv -f -- "`$apk_stage" "`$work_dir/leshine-expo-kiosk.apk"
-sudo mv -f -- "`$manifest_stage" "`$work_dir/latest.json"
-write_state switched
-rm -f -- "`$apk_upload" "`$manifest_upload"
-trap - EXIT
-"@
-
-$rollbackScript = @"
-set -eu
-work_dir="$RemoteDirectory"
-lock_dir="`$work_dir/.publish-lock"
-completed_dir="`$work_dir/.publish-completed-$transactionId"
-owner="$transactionId"
-apk_upload="`$HOME/$remoteApkUpload"
-manifest_upload="`$HOME/$remoteManifestUpload"
-apk_stage="`$work_dir/.leshine-expo-kiosk.$transactionId.apk.stage"
-manifest_stage="`$work_dir/.latest.$transactionId.json.stage"
-if [ -d "`$completed_dir" ]; then
-  test "`$(sudo cat "`$completed_dir/owner")" = "`$owner"
-  sudo rm -f -- "`$completed_dir/previous.apk" "`$completed_dir/previous.json" \
-    "`$completed_dir/mode" "`$completed_dir/state" "`$completed_dir/state.tmp"
-  sudo rm -f -- "`$completed_dir/owner"
-  sudo rmdir "`$completed_dir"
-  exit 0
-fi
-if [ ! -d "`$lock_dir" ]; then
-  rm -f -- "`$apk_upload" "`$manifest_upload"
-  sudo rm -f -- "`$apk_stage" "`$manifest_stage"
-  exit 0
-fi
-test "`$(sudo cat "`$lock_dir/owner")" = "`$owner"
-mode=`$(sudo cat "`$lock_dir/mode")
-state=`$(sudo cat "`$lock_dir/state")
-if [ "`$mode" = existing ] && { [ "`$state" = backed_up ] || [ "`$state" = switching ] || [ "`$state" = switched ]; }; then
-  test -f "`$lock_dir/previous.apk"
-  test -f "`$lock_dir/previous.json"
-  sudo mv -f -- "`$lock_dir/previous.apk" "`$work_dir/leshine-expo-kiosk.apk"
-  sudo mv -f -- "`$lock_dir/previous.json" "`$work_dir/latest.json"
-elif [ "`$mode" = initialize ] && { [ "`$state" = switching ] || [ "`$state" = switched ]; }; then
-  sudo rm -f -- "`$work_dir/leshine-expo-kiosk.apk" "`$work_dir/latest.json"
-elif [ "`$state" != begun ]; then
-  echo 'Unknown transaction state; recovery lock was preserved.' >&2
-  exit 76
-fi
-rm -f -- "`$apk_upload" "`$manifest_upload"
-sudo rm -f -- "`$apk_stage" "`$manifest_stage" "`$lock_dir/previous.apk" "`$lock_dir/previous.json" \
-  "`$lock_dir/owner" "`$lock_dir/mode" "`$lock_dir/state" "`$lock_dir/state.tmp"
-sudo rmdir "`$lock_dir"
-"@
-
-$finalizeScript = @"
-set -eu
-work_dir="$RemoteDirectory"
-lock_dir="`$work_dir/.publish-lock"
-completed_dir="`$work_dir/.publish-completed-$transactionId"
-owner="$transactionId"
-if [ -d "`$completed_dir" ]; then
-  test "`$(sudo cat "`$completed_dir/owner")" = "`$owner"
-elif [ -d "`$lock_dir" ]; then
-  test "`$(sudo cat "`$lock_dir/owner")" = "`$owner"
-  test "`$(sudo cat "`$lock_dir/state")" = switched
-  sudo mv -- "`$lock_dir" "`$completed_dir"
-else
-  exit 0
-fi
-sudo rm -f -- "`$completed_dir/previous.apk" "`$completed_dir/previous.json" \
-  "`$completed_dir/mode" "`$completed_dir/state" "`$completed_dir/state.tmp"
-sudo rm -f -- "`$completed_dir/owner"
-sudo rmdir "`$completed_dir"
-"@
+$remoteScripts = New-PublishRemoteScripts `
+    -RemoteDirectory $RemoteDirectory `
+    -TransactionId $transactionId `
+    -Mode $transactionMode `
+    -RemoteApkUploadName $remoteApkUpload `
+    -RemoteManifestUploadName $remoteManifestUpload `
+    -NewApkSha256 $apkHash `
+    -NewApkSize $sourceApk.Length `
+    -NewManifestSha256 $preparedManifestHash `
+    -NewManifestSize $preparedManifestFile.Length `
+    -BaselineApkSha256 $onlineApkHash `
+    -BaselineApkSize $onlineApkSize `
+    -BaselineManifestSha256 $onlineManifestHash
+$beginScript = $remoteScripts.Begin
+$switchScript = $remoteScripts.Switch
+$rollbackScript = $remoteScripts.Rollback
+$finalizeScript = $remoteScripts.Finalize
 
 $transactionAttempted = $false
 try {
