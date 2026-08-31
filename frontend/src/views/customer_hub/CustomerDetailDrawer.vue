@@ -58,6 +58,7 @@
               </el-timeline-item>
             </el-timeline>
             <el-empty v-else-if="!timelineLoading" description="暂无可见时间线记录" :image-size="72" />
+            <p v-if="timelineLimitNotice" class="timeline-limit">{{ timelineLimitNotice }}</p>
           </div>
           <SectionBlock title="Orders · 商业摘要" section-key="orders" :value="sections.orders" />
         </el-tab-pane>
@@ -94,13 +95,14 @@
 import { computed, defineComponent, h, ref, watch } from 'vue'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import { formatBeijingDateTime } from '@/utils/datetime'
-import { mapCustomerProfileSections } from './customerHubController'
+import { getTimelineLimitNotice, mapCustomerProfileSections } from './customerHubController'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   customer: { type: Object, default: null },
   loading: { type: Boolean, default: false },
   timeline: { type: Array, default: () => [] },
+  timelineTotal: { type: Number, default: 0 },
   timelineLoading: { type: Boolean, default: false },
   detailError: { type: Object, default: null },
   timelineError: { type: Object, default: null },
@@ -118,6 +120,7 @@ const identityExplanation = computed(() => props.customer?.identity_status === '
   ? '身份已核验；customer_id 是唯一业务主键。'
   : '临时客户：名称可为空，系统仍以 customer_id 持续归集证据，待身份核验后再确认主体。')
 const sections = computed(() => mapCustomerProfileSections(props.customer || {}, props.timeline))
+const timelineLimitNotice = computed(() => getTimelineLimitNotice(props.timeline.length, props.timelineTotal))
 const formatDate = value => value ? formatBeijingDateTime(value) : '该档案版本未提供'
 const printable = value => value == null ? '该档案版本未提供' : JSON.stringify(value, null, 2)
 
@@ -155,6 +158,7 @@ h2 { margin: 4px 0; color: var(--text-primary); font-size: 22px; }
 .empty-copy { margin: 0; color: var(--text-muted); }
 .timeline-block { min-height: 80px; padding: 8px 4px; }
 .timeline-block p { margin: 5px 0 0; color: var(--text-secondary); }
+.timeline-limit { padding: 8px 12px; border-radius: 8px; background: var(--toolbar-bg); }
 dl { margin: 0; }
 dl div { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--border-color); }
 dl div:last-child { border-bottom: 0; }

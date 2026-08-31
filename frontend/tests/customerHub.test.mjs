@@ -44,6 +44,8 @@ test('new acquisition and research entries retain create configure and review wo
   assert.match(acquisition, /创建获客任务/)
   assert.match(acquisition, /saveProfile/)
   assert.match(acquisition, /createJob/)
+  assert.match(acquisition, /buildSearchJobPayload\(job\)/)
+  assert.match(acquisition, /Object\.assign\(job, createSearchJobDraft\(\)\)/)
   assert.match(acquisition, /v-permission="'sales_automation:admin'"/)
   assert.match(acquisition, /v-any-permission="\['sales_automation:write','sales_automation:admin'\]"/)
   assert.match(acquisition, /策略 JSON 格式错误/)
@@ -52,6 +54,16 @@ test('new acquisition and research entries retain create configure and review wo
   assert.match(research, /要求修订/)
   assert.match(research, /reviewTask/)
   assert.match(research, /配额 JSON 格式错误/)
+})
+
+test('customer hub production views expose live task refresh and strict evidence validation', () => {
+  const workspace = read('../src/views/customer_hub/CustomerHubWorkspace.vue')
+  const opportunities = read('../src/views/customer_hub/CustomerOpportunities.vue')
+  assert.match(workspace, /shouldPollSearchJobs\(list\.value\)/)
+  assert.match(workspace, /setInterval/)
+  assert.match(workspace, /clearInterval/)
+  assert.match(opportunities, /getInvalidIdTokens/)
+  assert.match(opportunities, /证据 ID 格式错误/)
 })
 
 test('navigation consolidates five customer operations entries under existing permissions', () => {
@@ -88,4 +100,6 @@ test('customer detail drawer progressively loads timeline and names all profile 
   assert.match(drawer, /activeTab\.value = 'overview'/)
   assert.match(drawer, /客户详情加载失败/)
   assert.match(drawer, /时间线加载失败/)
+  assert.match(drawer, /timelineTotal/)
+  assert.match(drawer, /getTimelineLimitNotice/)
 })

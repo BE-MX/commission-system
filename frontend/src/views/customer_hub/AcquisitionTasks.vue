@@ -1,6 +1,6 @@
 <template>
   <div class="workflow">
-    <div class="actions"><el-button v-permission="'sales_automation:admin'" :loading="profileLoading" @click="openProfile">配置获客模型</el-button><el-button v-any-permission="['sales_automation:write','sales_automation:admin']" type="primary" @click="jobDialog = true">创建获客任务</el-button></div>
+    <div class="actions"><el-button v-permission="'sales_automation:admin'" :loading="profileLoading" @click="openProfile">配置获客模型</el-button><el-button v-any-permission="['sales_automation:write','sales_automation:admin']" type="primary" @click="openJobDialog">创建获客任务</el-button></div>
     <el-alert v-if="profileLoadError" type="error" title="获客模型加载失败，未打开编辑器，避免覆盖现有配置。" :closable="false" show-icon><template #default><el-button link type="primary" @click="openProfile">重试</el-button></template></el-alert>
     <el-alert v-else-if="workflowError" type="error" title="操作失败，请检查字段或权限后重试。" :closable="false" show-icon />
     <CustomerHubWorkspace :key="refreshKey" kind="acquisition" />
@@ -14,14 +14,15 @@ import { ElFormItem, ElInput } from 'element-plus'
 import { msgError, msgSuccess } from '@/utils/feedback'
 import CustomerHubWorkspace from './CustomerHubWorkspace.vue'
 import { useAcquisitionWorkflows } from './composables/useCustomerHub'
-import { buildAcquisitionProfilePayload, shouldOpenProfileEditor } from './customerHubController'
+import { buildAcquisitionProfilePayload, buildSearchJobPayload, createSearchJobDraft, shouldOpenProfileEditor } from './customerHubController'
 const { workflowLoading, workflowError, loadProfile, saveProfile, createJob } = useAcquisitionWorkflows()
 const refreshKey = ref(0), jobDialog = ref(false), profileDialog = ref(false), profileLoading = ref(false), profileLoadError = ref(false)
-const job = reactive({ name: '', target_count: 20, countries: '' })
+const job = reactive(createSearchJobDraft())
 const form = reactive({ company_name: '', company_website: '', products: [], competitive_advantages: [], target_countries: [], target_industries: [], target_roles: [], exclusions: [], default_outreach_language: 'en', policy_version: '', policyText: '{}' })
 const split = value => value.split(',').map(item => item.trim()).filter(Boolean)
 async function openProfile() { profileLoading.value = true; profileLoadError.value = false; const result = await loadProfile(); profileLoading.value = false; if (!shouldOpenProfileEditor(result)) { profileLoadError.value = true; return } const p = result.data || {}; Object.assign(form, { company_name: p.company_name || '', company_website: p.company_website || '', products: p.products || [], competitive_advantages: p.advantages || [], target_countries: p.target_countries || [], target_industries: p.target_industries || [], target_roles: p.target_roles || [], exclusions: p.exclusions || [], default_outreach_language: p.default_language || 'en', policy_version: p.policy_version || '', policyText: JSON.stringify(p.policy_json || {}, null, 2) }); profileDialog.value = true }
-async function submitJob() { if (await createJob({ name: job.name, target_count: job.target_count, adapter: 'agent', criteria_json: { countries: split(job.countries) } })) { jobDialog.value = false; refreshKey.value++; msgSuccess('创建获客任务') } }
+function openJobDialog() { Object.assign(job, createSearchJobDraft()); jobDialog.value = true }
+async function submitJob() { if (await createJob(buildSearchJobPayload(job))) { jobDialog.value = false; Object.assign(job, createSearchJobDraft()); refreshKey.value++; msgSuccess('创建获客任务') } }
 async function submitProfile() { let policy_json; try { policy_json = JSON.parse(form.policyText) } catch { msgError('策略 JSON 格式错误'); return } if (await saveProfile(buildAcquisitionProfilePayload({ ...form, policy_json }))) { profileDialog.value = false; msgSuccess('保存获客模型') } }
 const ListField = defineComponent({ props: { modelValue: Array, label: String }, emits: ['update:modelValue'], setup(props, { emit }) { const text = computed({ get: () => (props.modelValue || []).join(', '), set: value => emit('update:modelValue', split(value)) }); return () => h(ElFormItem, { label: props.label }, () => h(ElInput, { modelValue: text.value, 'onUpdate:modelValue': value => { text.value = value } })) } })
 </script>

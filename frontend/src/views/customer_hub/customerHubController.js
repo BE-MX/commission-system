@@ -42,6 +42,7 @@ export const canReviewResearchDetail = (resource, taskId) => !resource.loading &
   && resource.data?.research_task_id === taskId && resource.data?.task_status === 'completed'
   && resource.data?.content_redacted !== true
 export const canRequeueJob = job => job?.status === 'failed'
+export const shouldPollSearchJobs = jobs => jobs.some(job => ['pending', 'running'].includes(job?.status))
 export const shouldOpenProfileEditor = result => result?.ok === true
 export const getResearchReviewSuccessMessage = status => ({
   accepted: '已通过复核',
@@ -77,6 +78,15 @@ export function getRadarOperationOptions(status) {
 function parseIdList(value) {
   if (Array.isArray(value)) return value.map(Number).filter(item => Number.isInteger(item) && item > 0)
   return String(value || '').split(',').map(item => item.trim()).filter(item => /^\d+$/.test(item)).map(Number).filter(item => item > 0)
+}
+
+export function getInvalidIdTokens(value) {
+  if (Array.isArray(value)) return value.map(String).filter(item => !/^[1-9]\d*$/.test(item))
+  return String(value || '').split(',').map(item => item.trim()).filter(item => item && !/^[1-9]\d*$/.test(item))
+}
+
+export function getTimelineLimitNotice(visibleCount, total) {
+  return visibleCount > 0 && total > visibleCount ? `当前展示最近 ${visibleCount} / ${total} 条记录` : ''
 }
 
 function beijingDateTime(value) {
@@ -121,5 +131,19 @@ export function buildAcquisitionProfilePayload(form) {
     default_language: form.default_outreach_language || 'en',
     policy_version: form.policy_version,
     policy_json: form.policy_json || {},
+  }
+}
+
+export function createSearchJobDraft(keyFactory = () => globalThis.crypto.randomUUID()) {
+  return { name: '', target_count: 20, countries: '', idempotency_key: keyFactory() }
+}
+
+export function buildSearchJobPayload(job) {
+  return {
+    name: job.name,
+    target_count: job.target_count,
+    adapter: 'agent',
+    criteria_json: { countries: String(job.countries || '').split(',').map(item => item.trim()).filter(Boolean) },
+    idempotency_key: job.idempotency_key,
   }
 }

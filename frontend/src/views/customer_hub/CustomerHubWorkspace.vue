@@ -108,6 +108,7 @@
       :customer="detail"
       :loading="detailLoading"
       :timeline="timeline"
+      :timeline-total="timelineTotal"
       :timeline-loading="timelineLoading"
       :detail-error="detailError"
       :timeline-error="timelineError"
@@ -118,11 +119,11 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { msgSuccess } from '@/utils/feedback'
 import { formatBeijingDateTime } from '@/utils/datetime'
 import { useAuthStore } from '@/stores/auth'
-import { canRequeueJob, getOpportunityTransitionOptions, getRadarOperationOptions } from './customerHubController'
+import { canRequeueJob, getOpportunityTransitionOptions, getRadarOperationOptions, shouldPollSearchJobs } from './customerHubController'
 import CustomerDetailDrawer from './CustomerDetailDrawer.vue'
 import { useCustomerHub } from './composables/useCustomerHub'
 
@@ -143,9 +144,24 @@ const drawerVisible = ref(false)
 const {
   loading, list, total, page, pageSize, searchForm, empty, errorGuidance, staleGuidance,
   handleSearch, handlePageChange, handleSizeChange,
-  detail, detailLoading, detailError, timeline, timelineLoading, timelineError, currentCustomerId, loadDetail, loadTimeline,
+  detail, detailLoading, detailError, timeline, timelineTotal, timelineLoading, timelineError, currentCustomerId, loadDetail, loadTimeline,
   mutatingId, requeueJob,
 } = useCustomerHub(props.kind)
+
+let jobPollingTimer = null
+function stopJobPolling() {
+  if (jobPollingTimer) clearInterval(jobPollingTimer)
+  jobPollingTimer = null
+}
+function syncJobPolling() {
+  if (props.kind !== 'acquisition' || !shouldPollSearchJobs(list.value)) {
+    stopJobPolling()
+    return
+  }
+  if (!jobPollingTimer) jobPollingTimer = setInterval(handleSearch, 10000)
+}
+watch(list, syncJobPolling, { immediate: true })
+onBeforeUnmount(stopJobPolling)
 
 const rowKey = row => row.job_id || row.research_task_id || row.opportunity_id || row.action_id || row.customer_id
 const statusLabel = status => ({ pending: '待处理', running: '执行中', completed: '已完成', failed: '失败', open: '进行中', dismissed: '已忽略', snoozed: '已延后' }[status] || status || '未知')

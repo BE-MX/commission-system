@@ -3,15 +3,20 @@ import assert from 'node:assert/strict'
 import { createCustomerHubApi } from '../src/api/customerHubContract.js'
 import {
   buildAcquisitionProfilePayload,
+  buildSearchJobPayload,
   buildActionUpdate,
   buildOpportunityUpdate,
+  createSearchJobDraft,
+  getInvalidIdTokens,
   getOpportunityTransitionOptions,
   getRadarOperationOptions,
   getResearchReviewSuccessMessage,
+  getTimelineLimitNotice,
   canReviewResearchDetail,
   canOpenCustomerDetail,
   canRequeueJob,
   mapCustomerProfileSections,
+  shouldPollSearchJobs,
   shouldOpenProfileEditor,
 } from '../src/views/customer_hub/customerHubController.js'
 import {
@@ -265,4 +270,35 @@ test('profile editor and requeue guard destructive invalid states', () => {
   assert.equal(canRequeueJob({ status: 'failed' }), true)
   assert.equal(canRequeueJob({ status: 'completed' }), false)
   assert.equal(canRequeueJob({ status: 'running' }), false)
+})
+
+test('search job drafts keep one request key for retries and rotate for a new draft', () => {
+  const first = createSearchJobDraft(() => 'request-1')
+  first.name = 'US salon buyers'
+  first.target_count = 25
+  first.countries = 'US, CA'
+  assert.deepEqual(buildSearchJobPayload(first), {
+    name: 'US salon buyers', target_count: 25, adapter: 'agent',
+    criteria_json: { countries: ['US', 'CA'] }, idempotency_key: 'request-1',
+  })
+  assert.equal(buildSearchJobPayload(first).idempotency_key, 'request-1')
+  assert.equal(createSearchJobDraft(() => 'request-2').idempotency_key, 'request-2')
+})
+
+test('mixed valid and invalid evidence IDs are rejected instead of silently filtered', () => {
+  assert.deepEqual(getInvalidIdTokens('1024, 10a5, -3, 2048'), ['10a5', '-3'])
+  assert.deepEqual(getInvalidIdTokens('1024, 2048'), [])
+  assert.deepEqual(getInvalidIdTokens(''), [])
+})
+
+test('timeline limit notice makes truncated history explicit', () => {
+  assert.equal(getTimelineLimitNotice(50, 75), '当前展示最近 50 / 75 条记录')
+  assert.equal(getTimelineLimitNotice(50, 50), '')
+  assert.equal(getTimelineLimitNotice(0, 75), '')
+})
+
+test('search job polling runs only while active tasks are visible', () => {
+  assert.equal(shouldPollSearchJobs([{ status: 'completed' }, { status: 'failed' }]), false)
+  assert.equal(shouldPollSearchJobs([{ status: 'completed' }, { status: 'running' }]), true)
+  assert.equal(shouldPollSearchJobs([{ status: 'pending' }]), true)
 })

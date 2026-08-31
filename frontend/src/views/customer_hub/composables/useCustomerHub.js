@@ -122,6 +122,7 @@ export function useCustomerHub(kind) {
   const detail = ref(null)
   const detailLoading = ref(false)
   const timeline = ref([])
+  const timelineTotal = ref(0)
   const timelineLoading = ref(false)
   const timelineLoadedFor = ref(null)
   const mutatingId = ref(null)
@@ -162,6 +163,7 @@ export function useCustomerHub(kind) {
     detailLoading.value = true
     detail.value = null
     timeline.value = []
+    timelineTotal.value = 0
     timelineLoadedFor.value = null
     await detailResource.load(id)
     detail.value = detailResource.data
@@ -177,6 +179,7 @@ export function useCustomerHub(kind) {
     await timelineResource.load(customerId)
     if (timelineResource.key === customerId && currentCustomerId.value === customerId) {
       timeline.value = timelineResource.data?.items || []
+      timelineTotal.value = timelineResource.data?.total ?? timeline.value.length
       timelineError.value = timelineResource.error
       timelineLoading.value = timelineResource.loading
       if (!timelineResource.error) timelineLoadedFor.value = customerId
@@ -206,6 +209,7 @@ export function useCustomerHub(kind) {
     detail,
     detailLoading,
     timeline,
+    timelineTotal,
     timelineLoading,
     detailError,
     timelineError,
