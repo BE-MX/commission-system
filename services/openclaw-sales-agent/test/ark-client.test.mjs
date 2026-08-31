@@ -6,7 +6,6 @@ import {
   ArkApiError,
   ArkClient,
   LeaseStore,
-  isRecentPublicPoolReactivationTask,
 } from "../src/ark-client.mjs";
 
 async function withServer(handler, run) {
@@ -41,7 +40,7 @@ test("ArkClient refuses redirects and never forwards authorization", async () =>
     response.writeHead(302, { location: "https://attacker.example/capture" });
     response.end();
   }, async (baseUrl) => {
-    await assert.rejects(() => client(baseUrl).getLead(1), /redirect|重定向/);
+    await assert.rejects(() => client(baseUrl).getResearchTaskContext(1), /redirect|重定向/);
   });
   assert.equal(redirectedRequests, 1);
 });
@@ -53,7 +52,7 @@ test("ArkClient errors do not include the bearer token", async () => {
     response.end(JSON.stringify({ detail: `debug echoed ${secret}` }));
   }, async (baseUrl) => {
     try {
-      await client(baseUrl, secret).getLead(1);
+      await client(baseUrl, secret).getResearchTaskContext(1);
       assert.fail("request should fail");
     } catch (error) {
       assert.ok(error instanceof ArkApiError);
@@ -92,69 +91,24 @@ test("LeaseStore retains lease secrets in memory and requires an explicit claim"
   assert.throws(() => leases.require(9), /claim|租约/);
 });
 
-test("public-pool recent-order guard excludes stale T1 rows before local pagination", async () => {
-  const seenPages = [];
+test("ArkClient uses the unified research-task endpoints", async () => {
+  const requests = [];
   await withServer((request, response) => {
-    const url = new URL(request.url, "http://127.0.0.1");
-    seenPages.push(url.searchParams.get("page"));
+    requests.push(request.url);
     response.setHeader("content-type", "application/json");
     response.end(JSON.stringify({
       code: 200,
       message: "ok",
-      data: {
-        total: 4,
-        page: 1,
-        page_size: 100,
-        items: [
-          { id: 1, tier: "T1", subject: { last_order_at: "2026-07-28T00:00:00" } },
-          { id: 2, tier: "T1", subject: { last_order_at: "2026-06-13T00:00:00" } },
-          { id: 3, tier: "T2", subject: { last_order_at: "2026-08-01T00:00:00" } },
-          { id: 4, tier: "T3", subject: { last_order_at: null } },
-        ],
-      },
+      data: { total: 1, page: 2, page_size: 10, items: [{ research_task_id: 7, customer_id: 101 }] },
     }));
   }, async (baseUrl) => {
-    const result = await client(baseUrl).listPublicPoolTasks(1, 2);
-    assert.deepEqual(result.items.map(({ id }) => id), [2, 3]);
-    assert.equal(result.total, 3);
-    assert.equal(result.page, 1);
-    assert.equal(result.page_size, 2);
+    const result = await client(baseUrl).listResearchTasks(2, 10);
+    assert.equal(result.items[0].customer_id, 101);
   });
-  assert.deepEqual(seenPages, ["1"]);
+  assert.deepEqual(requests, ["/api/sales-automation/agent/research-tasks?page=2&page_size=10"]);
 });
 
-test("public-pool recent-order guard treats the 60-day cutoff as excluded", () => {
-  const now = new Date("2026-08-13T10:00:00+08:00");
-  assert.equal(isRecentPublicPoolReactivationTask(
-    { tier: "T1", subject: { last_order_at: "2026-06-14T23:59:59" } }, now,
-  ), true);
-  assert.equal(isRecentPublicPoolReactivationTask(
-    { tier: "T1", subject: { last_order_at: "2026-06-13T23:59:59" } }, now,
-  ), false);
-  assert.equal(isRecentPublicPoolReactivationTask(
-    { tier: "T2", subject: { last_order_at: "2026-08-12T00:00:00" } }, now,
-  ), false);
-});
-
-test("public-pool claim guard blocks recent T1 before sending a claim", async () => {
-  const methods = [];
-  await withServer((request, response) => {
-    methods.push(request.method);
-    response.setHeader("content-type", "application/json");
-    response.end(JSON.stringify({
-      code: 200,
-      message: "ok",
-      data: {
-        task: { id: 9, tier: "T1", subject: { last_order_at: new Date().toISOString() } },
-      },
-    }));
-  }, async (baseUrl) => {
-    await assert.rejects(() => client(baseUrl).claimPublicPoolTask(9), /最近60天/);
-  });
-  assert.deepEqual(methods, ["GET"]);
-});
-
-test("ArkClient submits the staged public-pool industry gate with the in-memory lease", async () => {
+test("ArkClient submits a unified research industry gate with the in-memory lease", async () => {
   let received = null;
   await withServer(async (request, response) => {
     received = { url: request.url, body: JSON.parse(await new Promise((resolve) => {
@@ -165,12 +119,11 @@ test("ArkClient submits the staged public-pool industry gate with the in-memory 
     response.setHeader("content-type", "application/json");
     response.end(JSON.stringify({ code: 200, message: "ok", data: { deep_research_authorized: true } }));
   }, async (baseUrl) => {
-    await client(baseUrl).submitPublicPoolIndustryGate(7, "l".repeat(32), {
-      summary: "Matched", identity_decision: "confirmed", facts: [],
-      industry_relevance: "core", industry_relevance_reason: "Catalog match",
+    await client(baseUrl).submitResearchIndustryGate(7, "l".repeat(32), {
+      industry_relevance: "core", reason: "Catalog match",
     });
   });
-  assert.equal(received.url, "/api/sales-automation/agent/public-pool/tasks/7/industry-gate");
+  assert.equal(received.url, "/api/sales-automation/agent/research-tasks/7/industry-gate");
   assert.equal(received.body.agent_id, "test-agent");
   assert.equal(received.body.lease_token, "l".repeat(32));
 });

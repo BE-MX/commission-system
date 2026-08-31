@@ -59,6 +59,13 @@ function validatePositiveId(value, field) {
   return parsed;
 }
 
+function validateIdList(value, field) {
+  if (!Array.isArray(value) || value.length === 0) throw new Error(`${field} must contain positive integers`);
+  const ids = value.map((item) => validatePositiveId(item, field));
+  if (new Set(ids).size !== ids.length) throw new Error(`${field} must not contain duplicates`);
+  return ids.sort((left, right) => left - right);
+}
+
 function validateEvidenceUrl(value) {
   const url = new URL(value);
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
@@ -83,7 +90,7 @@ function validateBodyScript(body, language) {
 }
 
 function validateEmailPayload({
-  to, subject, body, companyId, contactId, researchId, leadUpdatedAt,
+  to, subject, body, customerId, contactId, contactPointId, profileVersionId, factIds, evidenceIds,
   emailStatus, languageEvidenceUrl, language,
 }) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(to || "") || to.length > 320) {
@@ -97,19 +104,19 @@ function validateEmailPayload({
   }
   validateBodyScript(body, language);
   if (emailStatus !== "valid") throw new Error("sending requires a currently valid email status");
-  const leadRevision = DateTime.fromISO(String(leadUpdatedAt || ""));
-  if (!leadRevision.isValid) throw new Error("lead-updated-at must be a valid ISO timestamp");
   return {
-    companyId: validatePositiveId(companyId, "company-id"),
+    customerId: validatePositiveId(customerId, "customer-id"),
     contactId: validatePositiveId(contactId, "contact-id"),
-    researchId: validatePositiveId(researchId, "research-id"),
-    leadUpdatedAt: String(leadUpdatedAt),
+    contactPointId: validatePositiveId(contactPointId, "contact-point-id"),
+    profileVersionId: validatePositiveId(profileVersionId, "profile-version-id"),
+    factIds: validateIdList(factIds, "fact-ids"),
+    evidenceIds: validateIdList(evidenceIds, "evidence-ids"),
     languageEvidenceUrl: validateEvidenceUrl(languageEvidenceUrl),
   };
 }
 
 export async function previewOutreach(input, { root = queueRoot(), now = DateTime.utc() } = {}) {
-  const leadBinding = validateEmailPayload(input);
+  const customerBinding = validateEmailPayload(input);
   const schedule = nextEligibleSend({ ...input, now });
   await ensureDirectories(root);
   const createdAt = now.toUTC();
@@ -135,8 +142,8 @@ export async function previewOutreach(input, { root = queueRoot(), now = DateTim
       languageBasis: schedule.languageBasis,
       countryLanguages: schedule.countryLanguages,
     },
-    leadBinding: {
-      ...leadBinding,
+    customerBinding: {
+      ...customerBinding,
       emailStatus: input.emailStatus,
     },
   };
@@ -144,14 +151,14 @@ export async function previewOutreach(input, { root = queueRoot(), now = DateTim
     payload: preview.payload,
     schedule: preview.schedule,
     localization: preview.localization,
-    leadBinding: preview.leadBinding,
+    customerBinding: preview.customerBinding,
   });
   await atomicJson(join(root, "previews", `${preview.token}.json`), preview);
   return preview;
 }
 
 export async function confirmOutreach(token, {
-  root = queueRoot(), now = DateTime.utc(), verifyLead,
+  root = queueRoot(), now = DateTime.utc(), verifyCustomer,
 } = {}) {
   if (!/^oqt_[A-Za-z0-9_-]{20,}$/u.test(token || "")) throw new Error("invalid preview token");
   await ensureDirectories(root);
@@ -176,18 +183,18 @@ export async function confirmOutreach(token, {
       payload: preview.payload,
       schedule: preview.schedule,
       localization: preview.localization,
-      leadBinding: preview.leadBinding,
+      customerBinding: preview.customerBinding,
     });
     if (preview.payloadHash !== expectedHash) throw new Error("preview integrity check failed");
     if (now >= DateTime.fromISO(preview.expiresAt)) throw new Error("preview token expired; create a new preview");
     if (now >= DateTime.fromISO(preview.schedule.scheduledAtUtc)) {
       throw new Error("reviewed send window has passed; create a new preview");
     }
-    if (typeof verifyLead !== "function") {
-      throw new Error("confirmation requires trusted Ark lead verification outside the email Agent");
+    if (typeof verifyCustomer !== "function") {
+      throw new Error("confirmation requires trusted Ark customer verification outside the email Agent");
     }
-    await verifyLead({
-      ...preview.leadBinding,
+    await verifyCustomer({
+      ...preview.customerBinding,
       to: preview.payload.to,
     });
 
@@ -197,7 +204,7 @@ export async function confirmOutreach(token, {
       status: "queued",
       confirmedAt: now.toUTC().toISO({ suppressMilliseconds: true }),
       attempts: 0,
-      ...Object.fromEntries(["payload", "schedule", "localization", "leadBinding", "payloadHash"].map((key) => [key, preview[key]])),
+      ...Object.fromEntries(["payload", "schedule", "localization", "customerBinding", "payloadHash"].map((key) => [key, preview[key]])),
     };
     const jobPath = join(root, "jobs", `${job.id}.json`);
     try {
@@ -295,7 +302,7 @@ export async function dispatchDue({
         payload: job.payload,
         schedule: job.schedule,
         localization: job.localization,
-        leadBinding: job.leadBinding,
+        customerBinding: job.customerBinding,
       });
       if (job.payloadHash !== expectedHash) {
         job.status = "blocked";
@@ -328,7 +335,7 @@ export async function dispatchDue({
           payload: job.payload,
           schedule: job.schedule,
           localization: job.localization,
-          leadBinding: job.leadBinding,
+          customerBinding: job.customerBinding,
         });
         job.rescheduledAt = now.toUTC().toISO({ suppressMilliseconds: true });
         job.nextAttemptAt = null;

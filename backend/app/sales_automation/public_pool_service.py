@@ -764,6 +764,23 @@ def _validate_research_run_and_citations(
     return run
 
 
+def validate_research_fact_write(
+    db: Session,
+    task_id: int,
+    actor_id: int,
+    agent_id: str,
+    lease_token: str,
+    agent_run_id: int,
+) -> tuple[CustomerResearchTask, str]:
+    """Validate that a fact batch belongs to the active task lease and Agent Run."""
+    task = _leased_task(db, task_id, actor_id, agent_id, lease_token)
+    input_hash = research_input_hash(task)
+    _validate_research_run_and_citations(
+        db, task, actor_id, agent_run_id, input_hash, {}, [],
+    )
+    return task, input_hash
+
+
 def complete_task_research(
     db: Session,
     task_id: int,

@@ -15,7 +15,7 @@ OpenClaw Agent
        └─ HTTPS + Bearer → https://leshine.work/api/sales-automation/agent/*
 ```
 
-独立的 `email-outreach` Agent 在同一 profile 内使用单独工作区。它只能读取一个已背调 lead、生成按收件人国家/语言习惯本地化的开发信，并把人工确认后的邮件排入收件人当地工作日上班后的首个窗口；它不能重新搜索网页、修改方舟研究、读取收件箱或直接执行 Agent Mail CLI。
+独立的 `email-outreach` Agent 在同一 profile 内使用单独工作区。它只能按 `customer_id` 读取方舟统一客户档案、生成按收件人国家/语言习惯本地化的开发信，并把人工确认后的邮件排入收件人当地工作日上班后的首个窗口；它不能重新搜索网页、修改方舟研究、读取收件箱或直接执行 Agent Mail CLI。
 
 MCP 侧车只暴露任务、候选公司、联系人、企业研究、公海背调与 ACL 约束的已发布知识库读取工具。`ARK_AGENT_TOKEN` 保存在独立 `0600` 文件中，只由 MCP 子进程读取；任务租约只存在 MCP 进程内存中，不返回给模型。主研究 Agent 固定使用 `mimo/mimo-v2.5`，邮件 Agent 固定使用 `deepseek/deepseek-v4-pro`，二者都显式使用内置 `openclaw` runtime。主 Agent 禁用 shell 和文件写入，只可读取自己的工作区；邮件 Agent 只能执行固定队列与 Skill reader 白名单。Codex App Server 配置另保留 guardian + `workspace-write` 与凭证环境清理，作为有人日后主动切回 Codex runtime 时的纵深防护；令牌文件始终位于 Agent 工作区之外。
 
@@ -74,7 +74,7 @@ Agent Mail CLI 没有原生定时发送参数，因此此队列把两阶段确�
 
 ```bash
 $HOME/.openclaw/bin/openclaw --profile ark-sales agent --agent email-outreach \
-  --message 'Use $ark-email-outreach for company_id 123. Draft only; do not preview or queue.' --json
+  --message 'Use $ark-email-outreach for customer_id 123. Draft only; do not preview or queue.' --json
 ```
 
 运行状态与待发列表：

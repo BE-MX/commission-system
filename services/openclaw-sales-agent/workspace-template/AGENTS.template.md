@@ -17,7 +17,7 @@
 
 - 有可靠官网时，以规范化企业域名和其他身份锚点共同核验；没有官网时，Instagram、Facebook、TikTok、LinkedIn、Google Business 和预约页可以作为主要经营线索，但必须交叉核验账号身份。
 - 企业知识库只用于理解我方产品、目标行业、排除项与销售边界，不得冒充客户公开事实。
-- 公海背调先调用 `ark_submit_public_pool_industry_gate`；只有响应 `deep_research_authorized=true` 才继续。可靠证据确认行业无关后立即停止联系人、社会关系、供应商和深度风险调研。
+- 所有客户背调先调用 `ark_submit_research_industry_gate`；只有门控状态为 `passed` 才继续。可靠证据确认行业无关后立即停止联系人、社会关系、供应商和深度风险调研。
 - 弱线索且后端生成的 `trusted_seed.address_search_hint` 非空时，只能把该粗粒度位置提示与公司名组合做有限交叉验证；禁止拼接个人姓名、私人电话/WhatsApp、邮箱、邮箱前缀或恢复精确地址。位置提示不是公开事实，不能单独用于合并同名主体。
 - 每条公司、联系人和事实都要有可打开的公开 URL 和带时区的采集时间。
 - 优先精度，不为凑数量降低标准。结束时报告方舟 API 真实返回的 created/updated/deduplicated 数量。

@@ -5,7 +5,8 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy.orm import Query
 
@@ -13,11 +14,17 @@ from app.agent_runtime.models import AgentEvent, AgentRun
 from app.auth.models import ArkUser
 from app.customer.models import (
     CustomerAccount,
+    CustomerContact,
+    CustomerContactPoint,
+    CustomerContactRelationship,
     CustomerFact,
+    CustomerProfileVersion,
     CustomerResearchTask,
     CustomerSourceRecord,
     PublicPoolBatch,
 )
+from app.customer import outreach_service
+from app.core.database import get_db
 from app.knowledge import service as knowledge_service
 from app.knowledge.models import KnowledgeLibrary
 from app.sales_automation import (
@@ -33,6 +40,7 @@ from app.sales_automation.schemas import (
     PublicPoolResearchSubmit,
     ResearchFactInput,
 )
+from app.sales_automation.dependencies import require_sales_agent
 
 
 def _seed_user(db, user_id: int = 1) -> ArkUser:
@@ -796,3 +804,129 @@ def test_agent_research_context_is_customer_scoped_and_contains_no_credentials(d
     assert "password" not in serialized
     assert "lease_token" not in serialized
     assert "api_key" not in serialized
+
+
+def test_agent_appends_task_scoped_research_facts_with_canonical_evidence(db):
+    task = _task(db)
+    claimed, lease_token = public_pool_service.claim_task(db, task.id, 1, "research-agent")
+    run = _governed_run(db, claimed)
+    db.commit()
+    app = FastAPI()
+    app.include_router(agent_router.router, prefix="/api/sales-automation")
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[require_sales_agent] = lambda: {
+        "sub": "1",
+        "permissions": ["sales_automation:invoke"],
+    }
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/sales-automation/agent/research-tasks/{task.id}/facts",
+            json={
+                "agent_id": "research-agent",
+                "lease_token": lease_token,
+                "agent_run_id": run.id,
+                "facts": [{
+                    "fact_key": "business.industry",
+                    "value_type": "string",
+                    "value": "hair extensions",
+                    "fact_layer": "source",
+                    "confidence": "0.9000",
+                    "source_system": "public_web",
+                    "source_entity_type": "company_page",
+                    "external_record_id": "official-about",
+                    "source_url": "https://example.test/about",
+                    "observed_at": "2026-08-30T09:00:00+08:00",
+                }],
+            },
+        )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["research_task_id"] == task.id
+    assert data["customer_id"] == task.customer_id
+    assert data["input_hash"] == public_pool_service.research_input_hash(task)
+    assert len(data["evidence_refs"]) == 1
+    evidence = data["evidence_refs"][0]
+    assert evidence["customer_id"] == task.customer_id
+    assert evidence["evidence_ref"].startswith("fact:")
+    assert len(evidence["evidence_content_hash"]) == 64
+    assert evidence["input_hash"] == data["input_hash"]
+
+
+def test_outreach_context_binds_current_customer_profile_contact_and_evidence(db):
+    task = _task(db)
+    claimed, _lease_token = public_pool_service.claim_task(db, task.id, 1, "research-agent")
+    run = _governed_run(db, claimed)
+    fact = _research_fact(db, claimed, run, suffix="outreach")
+    profile = CustomerProfileVersion(
+        customer_id=task.customer_id,
+        version_no=1,
+        profile_schema_version="customer_profile_v1",
+        canonicalization_version="jcs_v1",
+        input_seq=0,
+        profile_json={},
+        section_hashes={},
+        section_data_as_of={},
+        evidence_fact_ids=[fact.id],
+        change_summary={"changes": []},
+        compiler_version="test-v1",
+        profile_fingerprint="f" * 64,
+        compiled_at=datetime(2026, 8, 30, 10, 0),
+    )
+    contact = CustomerContact(
+        display_name="Buyer",
+        canonical_name="Buyer",
+        normalized_name="buyer",
+        identity_status="verified",
+        confidence=1,
+        confidence_method_version="test-v1",
+        confidence_components_json={},
+        record_status="active",
+    )
+    db.add_all([profile, contact])
+    db.flush()
+    account = db.get(CustomerAccount, task.customer_id)
+    account.current_profile_version_id = profile.id
+    db.add(CustomerContactRelationship(
+        customer_id=account.id,
+        contact_id=contact.id,
+        relationship_type="buyer",
+        buying_role="buyer",
+        verification_status="verified",
+        confidence=1,
+        confidence_method_version="test-v1",
+        confidence_components_json={},
+        relationship_fingerprint="r" * 64,
+    ))
+    db.add(CustomerContactPoint(
+        contact_id=contact.id,
+        point_type="email",
+        raw_value="Buyer@Example.test",
+        normalized_value="buyer@example.test",
+        email_domain_type="corporate",
+        verification_status="valid",
+        contactability_status="allowed",
+        contactability_reason_code="verified",
+        is_primary=True,
+        data_classification="public_business",
+        source_record_id=fact.source_record_id,
+        point_fingerprint="p" * 64,
+        first_seen_at=datetime(2026, 8, 30, 9, 0),
+        last_seen_at=datetime(2026, 8, 30, 9, 0),
+        verified_at=datetime(2026, 8, 30, 9, 0),
+    ))
+    db.flush()
+
+    context = outreach_service.get_outreach_context(db, account.id)
+
+    assert context["customer_id"] == account.id
+    assert context["current_profile_version_id"] == profile.id
+    assert context["suppressed"] is False
+    assert context["contacts"][0]["email"] == "buyer@example.test"
+    assert context["evidence"] == [{
+        "fact_id": fact.id,
+        "fact_fingerprint": fact.fact_fingerprint,
+        "source_record_id": fact.source_record_id,
+        "source_url": "https://outreach.example/about",
+    }]

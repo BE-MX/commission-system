@@ -15,13 +15,14 @@ from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import sessionmaker
 
 from app.core.database import Base
+from app.core.time import beijing_now
 
 from app.auth.models import ArkPermission, ArkRole, ArkUser
 from app.customer import models as customer_models
 from app.insight import models as insight_models
 
 
-NOW = datetime(2026, 8, 30, 9, 0)
+NOW = beijing_now().replace(microsecond=0)
 
 
 def _workflow():
@@ -1365,7 +1366,7 @@ def test_action_completion_logs_sales_activity_without_fabricating_opportunity_s
         db,
         action_id=action.id,
         completed_by=1,
-        occurred_at=NOW + timedelta(hours=1),
+        occurred_at=NOW,
         channel="email",
         outcome_code="contacted",
         summary="Sent a short introduction",

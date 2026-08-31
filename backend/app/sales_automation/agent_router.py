@@ -7,9 +7,10 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.response import ok, page_result
+from app.customer import outreach_service
 from app.knowledge import service as knowledge_service
 from app.knowledge.models import KnowledgeLibrary
-from app.sales_automation import public_pool_service, service
+from app.sales_automation import enrichment_service, public_pool_service, service
 from app.sales_automation.dependencies import require_sales_agent
 from app.sales_automation.router import _call, _iso, _job, _research_task, _user_id
 from app.sales_automation.schemas import (
@@ -19,6 +20,7 @@ from app.sales_automation.schemas import (
     CandidateBatch,
     PublicPoolIndustryGateSubmit,
     PublicPoolResearchSubmit,
+    ResearchFactBatch,
 )
 
 
@@ -133,6 +135,15 @@ def list_agent_research_tasks(
     return ok(page_result([_research_task(row) for row in rows], total, page, page_size))
 
 
+@router.get("/agent/customers/{customer_id}/outreach-context")
+def get_agent_customer_outreach_context(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    _agent=Depends(require_sales_agent),
+):
+    return ok(_call(outreach_service.get_outreach_context, db, customer_id))
+
+
 @router.get("/agent/research-tasks/{task_id}/context")
 def get_agent_research_context(
     task_id: int,
@@ -161,6 +172,7 @@ def claim_agent_research_task(
         "customer_id": row.logical_customer_id,
         "lease_token": token,
         "lease_generation": row.lease_generation,
+        "lease_expires_at": _iso(row.lease_expires_at),
         "input_hash": public_pool_service.research_input_hash(row),
     })
 
@@ -205,6 +217,45 @@ def submit_agent_industry_gate(
         "customer_id": row.logical_customer_id,
         "task_status": row.task_status,
         "gate_status": row.gate_status,
+    })
+
+
+@router.post("/agent/research-tasks/{task_id}/facts")
+def append_agent_research_facts(
+    task_id: int,
+    payload: ResearchFactBatch,
+    db: Session = Depends(get_db),
+    agent=Depends(require_sales_agent),
+):
+    task, input_hash = _call(
+        public_pool_service.validate_research_fact_write,
+        db,
+        task_id,
+        _user_id(agent),
+        payload.agent_id,
+        payload.lease_token,
+        payload.agent_run_id,
+    )
+    _sources, facts = _call(
+        enrichment_service.append_research_facts,
+        db,
+        task_id,
+        payload.facts,
+        agent_run_id=payload.agent_run_id,
+    )
+    db.commit()
+    return ok({
+        "research_task_id": task.id,
+        "customer_id": task.logical_customer_id,
+        "input_hash": input_hash,
+        "evidence_refs": [{
+            "customer_id": task.logical_customer_id,
+            "evidence_ref": f"fact:{fact.id}",
+            "evidence_content_hash": fact.fact_fingerprint,
+            "input_hash": input_hash,
+            "data_classification": fact.data_classification,
+            "visibility_scope": fact.visibility_scope,
+        } for fact in facts],
     })
 
 
@@ -303,7 +354,12 @@ def claim_search_job(
     agent=Depends(require_sales_agent),
 ):
     row, token = _call(service.claim_search_job, db, job_id, _user_id(agent), payload.agent_id)
-    return ok({"job_id": row.id, "lease_token": token})
+    return ok({
+        "job_id": row.id,
+        "lease_token": token,
+        "lease_expires_at": _iso(row.lease_expires_at),
+        "attempt_count": row.attempt_count,
+    })
 
 
 @router.post("/agent/search-jobs/{job_id}/heartbeat")

@@ -145,6 +145,13 @@ class ResearchFactInput(BaseModel):
         return self
 
 
+class ResearchFactBatch(AgentLease):
+    model_config = ConfigDict(extra="forbid")
+
+    agent_run_id: int = Field(..., gt=0)
+    facts: list[ResearchFactInput] = Field(..., min_length=1, max_length=100)
+
+
 class ResearchKnowledgeReference(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -285,6 +292,7 @@ __all__ = [
     "PublicPoolIndustryGateSubmit",
     "PublicPoolResearchSubmit",
     "ResearchFactInput",
+    "ResearchFactBatch",
     "QualificationReviewSubmit",
     "ResearchResultReview",
     "SearchJobCreate",

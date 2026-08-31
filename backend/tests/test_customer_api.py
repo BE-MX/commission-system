@@ -6,8 +6,6 @@ from app.routers import register_routers
 
 
 def test_customer_http_envelope_pagination_beijing_time_and_uniform_404(db):
-    from datetime import datetime
-
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
@@ -16,7 +14,9 @@ def test_customer_http_envelope_pagination_beijing_time_and_uniform_404(db):
     from app.core.database import get_db
     from app.customer.models import CustomerAccount, CustomerAssignment
 
-    now = datetime(2026, 8, 30, 9, 0)
+    from app.core.time import beijing_now
+
+    now = beijing_now().replace(microsecond=0)
     db.add_all([
         ArkUser(id=1, username="hub-http-1", password_hash="x", real_name="Reader", is_active=True),
         ArkUser(id=2, username="hub-http-2", password_hash="x", real_name="Other", is_active=True),
@@ -60,7 +60,7 @@ def test_customer_http_envelope_pagination_beijing_time_and_uniform_404(db):
 
 
 def test_proposal_hash_is_canonical_and_invalid_actions_never_enter_approval(db, monkeypatch):
-    from datetime import datetime, timedelta
+    from datetime import timedelta
 
     import pytest
 
@@ -75,7 +75,9 @@ def test_proposal_hash_is_canonical_and_invalid_actions_never_enter_approval(db,
         submit_proposal,
     )
 
-    now = datetime(2026, 8, 30, 9, 0)
+    from app.core.time import beijing_now
+
+    now = beijing_now().replace(microsecond=0)
     permission = ArkPermission(code="customer:write", module="customer", action="write", label="Write customer")
     role = ArkRole(name="proposal-writer", label="Proposal writer")
     role.permissions.append(permission)

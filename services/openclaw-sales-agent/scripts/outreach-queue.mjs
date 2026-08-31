@@ -13,7 +13,7 @@ import { loadConfig } from "../src/config.mjs";
 const VALUE_FLAGS = new Set([
   "--to", "--subject", "--body", "--country", "--state", "--timezone",
   "--language", "--language-source", "--language-basis", "--office-start", "--token",
-  "--company-id", "--contact-id", "--research-id", "--lead-updated-at",
+  "--customer-id", "--contact-id", "--contact-point-id", "--profile-version-id", "--fact-ids", "--evidence-ids",
   "--email-status", "--language-evidence-url",
 ]);
 
@@ -35,6 +35,7 @@ function print(data) {
 }
 
 export function previewInputFromFlags(flags) {
+  const idList = (flag) => String(flags[flag] || "").split(",").filter(Boolean);
   return {
     to: flags["--to"],
     subject: flags["--subject"],
@@ -45,10 +46,12 @@ export function previewInputFromFlags(flags) {
     language: flags["--language"],
     languageSource: flags["--language-source"],
     languageBasis: flags["--language-basis"],
-    companyId: flags["--company-id"],
+    customerId: flags["--customer-id"],
     contactId: flags["--contact-id"],
-    researchId: flags["--research-id"],
-    leadUpdatedAt: flags["--lead-updated-at"],
+    contactPointId: flags["--contact-point-id"],
+    profileVersionId: flags["--profile-version-id"],
+    factIds: idList("--fact-ids"),
+    evidenceIds: idList("--evidence-ids"),
     emailStatus: flags["--email-status"],
     languageEvidenceUrl: flags["--language-evidence-url"],
     officeStart: flags["--office-start"] || "09:00",
@@ -92,29 +95,31 @@ function comparableUrl(value) {
   }
 }
 
-async function verifyLead(binding) {
-  const lead = await (await loadArkClient()).getLead(binding.companyId);
-  if (lead?.id !== binding.companyId || lead.status !== "approved" || !lead.country
-    || lead.updated_at !== binding.leadUpdatedAt) {
-    throw new Error("Ark lead is no longer an approved, country-resolved company");
+async function verifyCustomer(binding) {
+  const snapshot = await (await loadArkClient()).getCustomerOutreachContext(binding.customerId);
+  if (snapshot?.customer_id !== binding.customerId
+    || snapshot.record_status !== "active"
+    || snapshot.current_profile_version_id !== binding.profileVersionId) {
+    throw new Error("Ark customer or profile version changed; create a new preview");
   }
-  const contact = lead.contacts?.find((item) => item.id === binding.contactId);
+  const contact = snapshot.contacts?.find((item) => (
+    item.contact_id === binding.contactId && item.contact_point_id === binding.contactPointId
+  ));
   if (!contact || contact.email?.toLowerCase() !== binding.to.toLowerCase()
-    || contact.email_status !== "valid" || !contact.verified_at) {
-    throw new Error("Ark contact no longer has the same verified valid email");
+    || contact.email_status !== "valid" || contact.contactability_status !== "allowed"
+    || contact.suppressed || !contact.verified_at) {
+    throw new Error("Ark contact no longer has the same verified and contactable email");
   }
-  const research = lead.research;
-  if (!research || research.id !== binding.researchId || research.status !== "completed"
-    || !Array.isArray(research.facts) || research.facts.length === 0) {
-    throw new Error("Ark research changed or is no longer completed and evidence-backed");
+  if (snapshot.suppressed) throw new Error("Ark suppression now blocks this recipient");
+  const availableFacts = new Set(snapshot.evidence?.map((item) => item.fact_id));
+  const availableEvidence = new Set(snapshot.evidence?.map((item) => item.source_record_id));
+  if (!binding.factIds.every((id) => availableFacts.has(id))
+    || !binding.evidenceIds.every((id) => availableEvidence.has(id))) {
+    throw new Error("Ark fact or evidence binding changed; create a new preview");
   }
-  const allowedEvidence = new Set([
-    lead.website,
-    contact.source_url,
-    ...research.facts.map((fact) => fact.source_url),
-  ].map(comparableUrl).filter(Boolean));
-  if (!allowedEvidence.has(comparableUrl(binding.languageEvidenceUrl))) {
-    throw new Error("language evidence URL is not bound to the current Ark lead snapshot");
+  const allowedUrls = new Set(snapshot.evidence?.map((item) => comparableUrl(item.source_url)).filter(Boolean));
+  if (!allowedUrls.has(comparableUrl(binding.languageEvidenceUrl))) {
+    throw new Error("language evidence URL is not bound to the current Ark customer snapshot");
   }
 }
 
@@ -129,10 +134,12 @@ export async function main(argv = process.argv.slice(2)) {
       language: flags["--language"],
       languageSource: flags["--language-source"],
       languageBasis: flags["--language-basis"],
-      companyId: flags["--company-id"],
+      customerId: flags["--customer-id"],
       contactId: flags["--contact-id"],
-      researchId: flags["--research-id"],
-      leadUpdatedAt: flags["--lead-updated-at"],
+      contactPointId: flags["--contact-point-id"],
+      profileVersionId: flags["--profile-version-id"],
+      factIds: String(flags["--fact-ids"] || "").split(",").filter(Boolean),
+      evidenceIds: String(flags["--evidence-ids"] || "").split(",").filter(Boolean),
       emailStatus: flags["--email-status"],
       languageEvidenceUrl: flags["--language-evidence-url"],
       officeStart: flags["--office-start"] || "09:00",
@@ -148,7 +155,7 @@ export async function main(argv = process.argv.slice(2)) {
   }
   if (command === "confirm") {
     const flags = parseFlags(rest);
-    print(await confirmOutreach(flags["--token"], { now: DateTime.utc(), verifyLead }));
+    print(await confirmOutreach(flags["--token"], { now: DateTime.utc(), verifyCustomer }));
     return;
   }
   if (command === "list" && rest.length === 0) {

@@ -163,7 +163,16 @@ function configureAgents() {
     skills: ["ark-email-outreach", "agently-mail"],
     tools: {
       profile: "minimal",
-      alsoAllow: ["exec", "ark-sales__ark_get_lead"],
+      alsoAllow: [
+        "exec",
+        "resolve_customer",
+        "get_customer_profile",
+        "get_customer_facts",
+        "get_customer_orders",
+        "search_customer_messages",
+        "get_customer_actions",
+        "get_customer_evidence",
+      ],
       deny: ["process", "group:fs", "browser", "group:messaging", "group:sessions", "cron", "web_search", "web_fetch"],
       exec: { host: "gateway", security: "allowlist", ask: "off", strictInlineEval: true },
     },
