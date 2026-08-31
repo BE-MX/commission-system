@@ -112,8 +112,27 @@ class MainActivity : ComponentActivity() {
         }
 
         webView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: WebResourceRequest?,
+            ): Boolean {
+                // kiosk 不使用 iframe/object；拒绝所有子框架导航，避免把同源后台嵌进共享屏。
+                // 普通脚本、图片、XHR 资源不会走 shouldOverrideUrlLoading，不受影响。
+                if (KioskNavigationPolicy.shouldBlockSubframe(request?.isForMainFrame)) return true
+                return enforceKioskNavigation(view, request?.url?.toString())
+            }
+
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                // shouldOverrideUrlLoading 不覆盖所有 ROM/应用主动 loadUrl 的差异；页面开始加载时再验一次，
+                // 防止任何漏网主框架导航短暂显示方舟后台。
+                if (enforceKioskNavigation(view, url)) return
                 loadFailed = false
+            }
+
+            override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+                // Vue 的 history.pushState 不一定触发网络导航回调；历史记录一变化仍由原生层复核，
+                // 因而网页路由守卫失效时也不能在 APP 内切到 MainLayout。
+                enforceKioskNavigation(view, url)
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
@@ -214,6 +233,21 @@ class MainActivity : ComponentActivity() {
         Log.i(TAG, "loadUrl ${KioskUrl.get(this)}")
         webView.loadUrl(KioskUrl.get(this))
     }
+
+    /**
+     * APP 原生层的最终边界：只放行同源 kiosk，以及明确回到 kiosk 的登录页。
+     * Vue 路由与请求拦截器负责正常体验；这里负责即使网页层失效也绝不展示方舟后台。
+     */
+    private fun enforceKioskNavigation(view: WebView?, requestedUrl: String?): Boolean =
+        when (val decision = KioskNavigationPolicy.decide(KioskUrl.get(this), requestedUrl)) {
+            NavigationDecision.Allow -> false
+            is NavigationDecision.Redirect -> {
+                Log.w(TAG, "blocked non-kiosk navigation $requestedUrl -> ${decision.url}")
+                view?.stopLoading()
+                if (view?.url != decision.url) view?.loadUrl(decision.url)
+                true
+            }
+        }
 
     // ---------------- 文件选择 / 系统相机 ----------------
 
