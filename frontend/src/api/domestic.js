@@ -172,6 +172,10 @@ export function revokeDomesticSkip(id) {
   return domesticClient.post(`/reports/skip/${id}/revoke`)
 }
 
+export function listDomesticSkips(itemId) {
+  return domesticClient.get('/reports/skips', { params: { item_id: itemId } })
+}
+
 // ── 参考图 ──
 export function uploadImage(file) {
   const form = new FormData()

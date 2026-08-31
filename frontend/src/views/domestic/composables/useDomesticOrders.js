@@ -6,8 +6,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   attachItemRoute, deleteOrder, exportOrder, getItemWxacode, getOrder, getProcessRoutes,
-  listOrders, listProcessWorkers, listReports, newRequestId, revokeReport,
-  shipItem, skipDomesticStep, submitDraftOrder, submitReport, terminateOrder,
+  listDomesticSkips, listOrders, listProcessWorkers, listReports, newRequestId,
+  revokeDomesticSkip, revokeReport, shipItem, skipDomesticStep,
+  submitDraftOrder, submitReport, terminateOrder,
 } from '@/api/domestic'
 import { useListPage } from '@/composables/useListPage'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
@@ -165,6 +166,26 @@ export function useDomesticOrders() {
     })
   }
 
+  const skipAuditDialog = reactive({
+    visible: false, item: null, audits: [], loading: false, revokingId: null,
+  })
+
+  async function loadSkipAudits() {
+    if (!skipAuditDialog.item) return
+    skipAuditDialog.loading = true
+    try {
+      const res = await listDomesticSkips(skipAuditDialog.item.id)
+      skipAuditDialog.audits = res.data || []
+    } catch { /* 拦截器保留服务端原始错误 */ } finally {
+      skipAuditDialog.loading = false
+    }
+  }
+
+  async function openSkipAudits(item) {
+    Object.assign(skipAuditDialog, { visible: true, item, audits: [], revokingId: null })
+    await loadSkipAudits()
+  }
+
   async function confirmSkip() {
     const reason = skipDialog.reason.trim()
     if (!(skipDialog.qty > 0)) return ElMessage.warning('请填跳过数量')
@@ -188,6 +209,30 @@ export function useDomesticOrders() {
     msgSuccess('异常跳过')
     await refreshAll()
     if (logDialog.visible && logDialog.item?.id === item.id) await openLogs(item)
+    if (skipAuditDialog.visible && skipAuditDialog.item?.id === item.id) await loadSkipAudits()
+  }
+
+  async function handleRevokeSkip(audit) {
+    try {
+      await confirmDanger(
+        '撤销', `“${audit.process_name}”的异常跳过`,
+        '如果这些件已有后续实际报工，系统会阻止撤销并说明原因。',
+      )
+    } catch { return }
+    skipAuditDialog.revokingId = audit.skip_log_id
+    try {
+      await revokeDomesticSkip(audit.skip_log_id)
+    } catch {
+      return
+    } finally {
+      skipAuditDialog.revokingId = null
+    }
+    msgSuccess('撤销异常跳过')
+    await refreshAll()
+    if (logDialog.visible && logDialog.item?.id === skipAuditDialog.item?.id) {
+      await openLogs(skipAuditDialog.item)
+    }
+    await loadSkipAudits()
   }
 
   // ── 报工流水与撤销 ──
@@ -330,6 +375,7 @@ export function useDomesticOrders() {
     shipDialog, openShip, confirmShip,
     reportDialog, openReport, confirmReport,
     skipDialog, openSkip, confirmSkip,
+    skipAuditDialog, openSkipAudits, loadSkipAudits, handleRevokeSkip,
     logDialog, openLogs, handleRevokeReport,
     attachDialog, openAttachRoute, confirmAttachRoute,
     printDialog, openPrintCard, openQrLabel, openWxacodeLabel,

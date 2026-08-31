@@ -116,6 +116,10 @@
               <GlassButton variant="link" left-icon="Grid" @click="openQrLabel(item)">逐件码</GlassButton>
               <GlassButton v-if="detail.status !== 0" variant="link" left-icon="Share" @click="openWxacode(item)">进度码</GlassButton>
               <GlassButton v-if="detail.status !== 0" variant="link" left-icon="Tickets" @click="openLogs(item)">报工流水</GlassButton>
+              <GlassButton
+                v-if="item.route_id" v-permission="'domestic:admin'"
+                variant="link" left-icon="Warning" @click="openSkipAudits(item)"
+              >异常跳过记录</GlassButton>
               <GlassButton v-if="!item.route_id" v-permission="'domestic:write'" variant="link" left-icon="Connection" @click="openAttachRoute(item)">配工艺路线</GlassButton>
               <GlassButton v-if="item.status === 1" v-permission="'domestic:write'" variant="link" left-icon="Van" @click="openShip(item)">登记发货</GlassButton>
             </div>
@@ -265,6 +269,12 @@
       </template>
     </el-dialog>
 
+    <DomesticSkipAuditDialog
+      v-model="skipAuditDialog.visible" :audits="skipAuditDialog.audits"
+      :loading="skipAuditDialog.loading" :revoking-id="skipAuditDialog.revokingId"
+      @refresh="loadSkipAudits" @revoke="handleRevokeSkip"
+    />
+
     <DomesticPrintDialog
       v-model:visible="printDialog.visible"
       :mode="printDialog.mode" :item-id="printDialog.itemId"
@@ -314,6 +324,7 @@ import { DETAIL_SECTIONS, ORDER_STATUS, ORDER_STATUS_TAGS } from '@/api/domestic
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import DomesticImages from '@/components/domestic/DomesticImages.vue'
+import DomesticSkipAuditDialog from './components/DomesticSkipAuditDialog.vue'
 import DomesticPrintDialog from './print/DomesticPrintDialog.vue'
 import { useDomesticOrders } from './composables/useDomesticOrders'
 
@@ -324,6 +335,7 @@ const {
   shipDialog, openShip, confirmShip,
   reportDialog, openReport, confirmReport,
   skipDialog, openSkip, confirmSkip,
+  skipAuditDialog, openSkipAudits, loadSkipAudits, handleRevokeSkip,
   logDialog, openLogs, handleRevokeReport,
   attachDialog, openAttachRoute, confirmAttachRoute,
   printDialog, openPrintCard, openQrLabel, openWxacodeLabel,

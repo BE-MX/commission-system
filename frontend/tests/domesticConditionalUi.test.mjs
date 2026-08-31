@@ -16,6 +16,8 @@ test('domestic API exposes route-rule and audited skip operations', () => {
   assert.match(api, /post\('\/reports\/skip', data\)/)
   assert.match(api, /export function revokeDomesticSkip\(id\)/)
   assert.match(api, /`\/reports\/skip\/\$\{id\}\/revoke`/)
+  assert.match(api, /export function listDomesticSkips\(itemId\)/)
+  assert.match(api, /get\('\/reports\/skips', \{ params: \{ item_id: itemId \} \}\)/)
 })
 
 
@@ -46,6 +48,8 @@ test('web proxy reporting separates completed work from skipped quantities', () 
   assert.match(view, /outcome_options/)
   assert.match(view, /异常跳过/)
   assert.match(view, /不计工资/)
+  assert.match(view, /DomesticSkipAuditDialog/)
+  assert.match(view, /v-permission="'domestic:admin'"[\s\S]*?>异常跳过记录</)
 })
 
 
@@ -56,5 +60,21 @@ test('web proxy submits decision allocations and reloads after manual skip', () 
   assert.match(composable, /outcomes:/)
   assert.match(composable, /skipDomesticStep/)
   assert.match(composable, /async function confirmSkip/)
+  assert.match(composable, /listDomesticSkips/)
+  assert.match(composable, /revokeDomesticSkip/)
+  assert.match(composable, /async function openSkipAudits/)
+  assert.match(composable, /async function handleRevokeSkip/)
   assert.match(composable, /await refreshAll\(\)/)
+})
+
+
+test('manual skip audit dialog exposes only real manual records and keeps revoked rows read-only', () => {
+  const dialog = read('../src/views/domestic/components/DomesticSkipAuditDialog.vue')
+
+  assert.match(dialog, /audit\.reason/)
+  assert.match(dialog, /audit\.operator_name/)
+  assert.match(dialog, /audit\.unit_codes/)
+  assert.match(dialog, /audit\.revoked/)
+  assert.match(dialog, /v-if="!audit\.revoked"[\s\S]*?v-permission="'domestic:admin'"/)
+  assert.match(dialog, /emit\('revoke', audit\)/)
 })
