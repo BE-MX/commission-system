@@ -1255,6 +1255,10 @@ def validate_target_profile_policy_backfill_artifact(
         applied_at = _parse_writer_timestamp(
             entry.get("policy_applied_at"), "target-profile policy_applied_at"
         )
+        if applied_at.microsecond != 0:
+            raise CutoverGuardError(
+                "target-profile policy_applied_at requires whole-second precision"
+            )
         if applied_at > approved_at:
             raise CutoverGuardError("target-profile policy_applied_at exceeds approval")
         if not hmac.compare_digest(

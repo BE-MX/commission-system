@@ -2607,6 +2607,34 @@ def test_target_profile_policy_backfill_rejects_stale_approval():
         )
 
 
+def test_target_profile_policy_backfill_rejects_subsecond_applied_at():
+    engine = create_engine("sqlite:///:memory:")
+    _create_legacy_target_profile_table(engine)
+    with Session(engine) as db:
+        _insert_legacy_target_profile(db)
+        db.flush()
+        snapshot = cutover_service.snapshot_target_profile_rows(db)[0]
+    entry = _target_profile_policy_entry(snapshot)
+    entry["policy_applied_at"] = (
+        READY_CHECKED_AT + timedelta(microseconds=1)
+    ).isoformat()
+    entry = _rehash_target_profile_policy_entry(entry)
+    artifact = _target_profile_policy_artifact((entry,))
+    artifact["approved_at"] = (READY_CHECKED_AT + timedelta(seconds=1)).isoformat()
+    artifact_payload = {
+        key: value for key, value in artifact.items() if key != "artifact_sha256"
+    }
+    artifact["artifact_sha256"] = hashlib.sha256(
+        canonical_json_bytes(artifact_payload)
+    ).hexdigest()
+
+    with pytest.raises(CutoverGuardError, match="whole-second precision"):
+        cutover_service.validate_target_profile_policy_backfill_artifact(
+            artifact,
+            now=READY_CHECKED_AT + timedelta(seconds=1),
+        )
+
+
 def test_target_profile_policy_backfill_requires_exact_live_set_and_snapshot():
     engine = create_engine("sqlite:///:memory:")
     _create_legacy_target_profile_table(engine)
