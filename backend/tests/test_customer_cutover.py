@@ -814,6 +814,34 @@ def test_canonical_json_normalizes_decimal_and_aware_datetime_and_rejects_unknow
         canonical_json_bytes(object())
 
 
+def test_canonical_evidence_readers_restore_float_policy_values(tmp_path):
+    policy = {
+        "weights": {"industry_fit": 0.6, "country_fit": 0.4},
+    }
+    raw = canonical_json_bytes(policy) + b"\n"
+    ordinary_path = tmp_path / "policy.json"
+    ordinary_path.write_bytes(raw)
+
+    script = _load_cutover_script()
+    assert script._read_json(ordinary_path) == policy
+
+    artifact_sha256 = hashlib.sha256(raw).hexdigest()
+    relative_path = Path("pytest-canonical") / f"policy-{artifact_sha256}.json"
+    artifact_path = CUTOVER_EVIDENCE_ROOT / relative_path
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_bytes(raw)
+    try:
+        restored, restored_sha256, restored_path = (
+            cutover_service._read_canonical_artifact(relative_path.as_posix())
+        )
+    finally:
+        artifact_path.unlink(missing_ok=True)
+
+    assert restored == policy
+    assert restored_sha256 == artifact_sha256
+    assert restored_path == relative_path.as_posix()
+
+
 def test_agent_closure_is_binary_exact_and_expands_artifact_to_sibling_run():
     engine = _create_cutover_db()
     with Session(engine) as db:

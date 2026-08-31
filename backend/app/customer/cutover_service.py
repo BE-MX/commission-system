@@ -587,6 +587,31 @@ def canonical_json_bytes(value: Any) -> bytes:
     ).encode("utf-8")
 
 
+def canonical_json_loads(value: bytes | str) -> Any:
+    """Read persisted canonical evidence while restoring JSON-native floats."""
+    try:
+        parsed = json.loads(value)
+    except (TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CutoverGuardError("cannot parse canonical cutover JSON") from exc
+
+    def restore(item: Any) -> Any:
+        if isinstance(item, list):
+            return [restore(value) for value in item]
+        if not isinstance(item, Mapping):
+            return item
+        if set(item) == {"$float"} and isinstance(item["$float"], str):
+            try:
+                number = float(item["$float"])
+            except ValueError as exc:
+                raise CutoverGuardError("canonical float tag is invalid") from exc
+            if not math.isfinite(number) or repr(number) != item["$float"]:
+                raise CutoverGuardError("canonical float tag is not normalized")
+            return number
+        return {key: restore(member) for key, member in item.items()}
+
+    return restore(parsed)
+
+
 def _sha256(value: Any) -> str:
     return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
 
@@ -1536,7 +1561,7 @@ def _read_canonical_artifact(value: Any) -> tuple[dict[str, Any], str, str]:
     path, relative = _resolved_evidence_artifact(value)
     try:
         raw = path.read_bytes()
-        document = json.loads(raw)
+        document = canonical_json_loads(raw)
     except (OSError, json.JSONDecodeError) as exc:
         raise CutoverGuardError(f"cannot parse evidence artifact: {relative}") from exc
     if not isinstance(document, dict):
@@ -2852,7 +2877,7 @@ def _read_bound_contract_artifact(
         raise CutoverGuardError(f"migration {label} evidence is missing from fixed root")
     try:
         raw = path.read_bytes()
-        document = json.loads(raw)
+        document = canonical_json_loads(raw)
     except (OSError, json.JSONDecodeError) as exc:
         raise CutoverGuardError(f"cannot read migration {label} evidence") from exc
     if not isinstance(document, Mapping) or raw != canonical_json_bytes(document) + b"\n":

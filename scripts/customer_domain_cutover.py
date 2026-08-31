@@ -35,6 +35,7 @@ from app.customer.cutover_service import (  # noqa: E402
     build_inventory,
     build_suppression_manifest,
     canonical_json_bytes,
+    canonical_json_loads,
     expected_customer_schema_sha256,
     load_bound_target_profile_policy_backfill,
     load_writer_privilege_revocation_evidence,
@@ -135,8 +136,8 @@ def resolve_evidence_output_path(value: str | Path) -> Path:
 
 def _read_json(path: Path) -> Any:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        return canonical_json_loads(path.read_bytes())
+    except (OSError, CutoverGuardError) as exc:
         raise CutoverGuardError(f"cannot read canonical JSON file: {path}") from exc
 
 
