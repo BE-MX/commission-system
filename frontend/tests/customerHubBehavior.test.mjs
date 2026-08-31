@@ -200,7 +200,7 @@ test('full profile sections map overview and explicit version evidence metadata'
     section_data_as_of: { identity: '2026-08-30T12:00:00+08:00' }, evidence_fact_ids: [11],
     evidence_refs: [{ fact_id: 11, reference_type: 'customer_fact' }],
   }
-  const customer = { profile, profile_metadata: metadata }
+  const customer = { profile_projection: 'customer_profile_v1', profile, profile_metadata: metadata }
   const mapped = mapCustomerProfileSections(customer, [{ event_id: 4, title: 'WhatsApp', summary: 'asked price' }])
   assert.deepEqual(mapped.overview, { identity: profile.identity, business: undefined, engagement: undefined, risks: profile.risks })
   assert.deepEqual(mapped.identity, profile.identity)
@@ -219,10 +219,13 @@ test('context profile uses the same explicit version metadata contract', () => {
     current_needs: [{ fact_id: 1 }], commercial_summary: { order_count: 3 },
     behavior_patterns: { observed: [{ fact_id: 2 }] }, open_opportunities: [{ id: 9 }],
     recommended_actions: [{ id: 10 }], recent_changes: [{ path: 'identity' }], open_questions: ['confirm:name'],
-    data_quality: { completeness: 90 }, evidence_refs: [{ fact_id: 1 }],
+    data_quality: { completeness: 90 },
+    evidence_refs: [{ fact_id: 1, reference_type: 'customer_fact', description: 'safe evidence' }],
   }
-  const metadata = { profile_version_id: 8, version_no: 2, evidence_refs: [{ fact_id: 1, reference_type: 'customer_fact' }] }
-  const contextMapped = mapCustomerProfileSections({ profile: context, profile_metadata: metadata })
+  const metadata = { profile_version_id: 8, version_no: 2, evidence_refs: [{ fact_id: 2, reference_type: 'customer_fact' }] }
+  const contextMapped = mapCustomerProfileSections({
+    profile_projection: 'customer_context_v1', profile: context, profile_metadata: metadata,
+  })
   assert.deepEqual(contextMapped.contacts, context.key_contacts)
   assert.deepEqual(contextMapped.currentNeeds, context.current_needs)
   assert.deepEqual(contextMapped.behaviorPatterns, context.behavior_patterns)
@@ -231,7 +234,7 @@ test('context profile uses the same explicit version metadata contract', () => {
   assert.deepEqual(contextMapped.recentChanges, context.recent_changes)
   assert.deepEqual(contextMapped.openQuestions, context.open_questions)
   assert.deepEqual(contextMapped.versionQuality, context.data_quality)
-  assert.deepEqual(contextMapped.evidence, { available: true, value: metadata.evidence_refs })
+  assert.deepEqual(contextMapped.evidence, { available: true, value: context.evidence_refs })
   assert.deepEqual(contextMapped.profileMetadata, metadata)
 })
 

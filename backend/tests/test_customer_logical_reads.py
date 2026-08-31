@@ -101,7 +101,10 @@ def _name(db, customer_id: int, row_id: int, value: str):
     return row
 
 
-def _fact(db, customer_id: int, row_id: int, value: str):
+def _fact(
+    db, customer_id: int, row_id: int, value: str, *,
+    data_classification="internal_business", visibility_scope="customer_team",
+):
     row = models.CustomerFact(
         id=row_id,
         customer_id=customer_id,
@@ -114,8 +117,8 @@ def _fact(db, customer_id: int, row_id: int, value: str):
         confidence=Decimal("1"),
         confidence_method_version="test_v1",
         confidence_components_json={},
-        data_classification="internal_business",
-        visibility_scope="customer_team",
+        data_classification=data_classification,
+        visibility_scope=visibility_scope,
         classification_reason="test",
         evidence_json={},
         fact_fingerprint=f"{row_id:064x}",
@@ -206,10 +209,20 @@ def test_merged_alias_reauthorizes_against_canonical_customer(db):
     assert detail["display_name"] == "TARGET"
 
 
-def test_customer_detail_exposes_current_profile_version_metadata(db):
+def test_customer_detail_evidence_respects_profile_projection_visibility(db):
     owner = _user(db, 1251)
     account = _account(db, 1252, "PROFILE")
     _assignment(db, account.id, owner.id)
+    visible_fact = _fact(db, account.id, 1254, "visible")
+    restricted_fact = _fact(
+        db, account.id, 1255, "restricted",
+        data_classification="restricted_internal", visibility_scope="management",
+    )
+    context_ref = {
+        "fact_id": visible_fact.id,
+        "reference_type": "customer_fact",
+        "description": "business.industry",
+    }
     version = models.CustomerProfileVersion(
         id=1253,
         customer_id=account.id,
@@ -220,7 +233,7 @@ def test_customer_detail_exposes_current_profile_version_metadata(db):
         profile_json={"identity": {"legal_name": "Profile LLC"}},
         section_hashes={"identity": "a" * 64},
         section_data_as_of={"identity": "2026-08-30T12:00:00+08:00"},
-        evidence_fact_ids=[41, 42],
+        evidence_fact_ids=[visible_fact.id, restricted_fact.id],
         change_summary={"changes": []},
         compiler_version="test_v1",
         profile_fingerprint="b" * 64,
@@ -235,7 +248,10 @@ def test_customer_detail_exposes_current_profile_version_metadata(db):
         customer_id=account.id,
         profile_version_id=version.id,
         context_schema_version="customer_context_v1",
-        context_json={"identity": {"legal_name": "Profile context"}},
+        context_json={
+            "identity": {"legal_name": "Profile context"},
+            "evidence_refs": [context_ref],
+        },
         max_data_classification="internal_business",
         context_hash="c" * 64,
         data_as_of=NOW - timedelta(days=1),
@@ -247,7 +263,10 @@ def test_customer_detail_exposes_current_profile_version_metadata(db):
     detail = get_customer(db, _identity(owner.id), account.id)
 
     assert detail["profile_projection"] == "customer_context_v1"
-    assert detail["profile"] == {"identity": {"legal_name": "Profile context"}}
+    assert detail["profile"] == {
+        "identity": {"legal_name": "Profile context"},
+        "evidence_refs": [context_ref],
+    }
     assert detail["profile_metadata"] == {
         "profile_version_id": version.id,
         "version_no": 3,
@@ -255,11 +274,8 @@ def test_customer_detail_exposes_current_profile_version_metadata(db):
         "compiled_at": "2026-08-31T10:00:00+08:00",
         "data_as_of": "2026-08-30T10:00:00+08:00",
         "section_data_as_of": {"identity": "2026-08-30T12:00:00+08:00"},
-        "evidence_fact_ids": [41, 42],
-        "evidence_refs": [
-            {"fact_id": 41, "reference_type": "customer_fact"},
-            {"fact_id": 42, "reference_type": "customer_fact"},
-        ],
+        "evidence_fact_ids": [visible_fact.id],
+        "evidence_refs": [context_ref],
     }
     admin_detail = get_customer(db, {
         "sub": str(owner.id), "roles": [],
@@ -267,7 +283,14 @@ def test_customer_detail_exposes_current_profile_version_metadata(db):
     }, account.id)
     assert admin_detail["profile_projection"] == "customer_profile_v1"
     assert admin_detail["profile"] == {"identity": {"legal_name": "Profile LLC"}}
-    assert admin_detail["profile_metadata"] == detail["profile_metadata"]
+    assert admin_detail["profile_metadata"]["evidence_fact_ids"] == [
+        visible_fact.id, restricted_fact.id,
+    ]
+    assert admin_detail["profile_metadata"]["evidence_refs"] == [
+        {"fact_id": visible_fact.id, "reference_type": "customer_fact"},
+        {"fact_id": restricted_fact.id, "reference_type": "customer_fact"},
+    ]
+    assert restricted_fact.id not in detail["profile_metadata"]["evidence_fact_ids"]
 
 
 def test_profile_snapshot_uses_effective_root_owner_and_split_isolation(db):

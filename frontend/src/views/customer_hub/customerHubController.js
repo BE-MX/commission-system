@@ -1,7 +1,11 @@
 export function mapCustomerProfileSections(customer = {}, timeline = []) {
   const profile = customer.profile || {}
   const metadata = customer.profile_metadata || null
-  const evidence = metadata?.evidence_refs ?? null
+  const evidence = customer.profile_projection === 'customer_profile_v1'
+    ? metadata?.evidence_refs ?? null
+    : customer.profile_projection === 'customer_context_v1'
+      ? profile.evidence_refs ?? null
+      : null
   const business = profile.business_profile ?? profile.business
   const contacts = profile.key_contacts ?? profile.contacts?.items ?? profile.contacts
   const commercial = profile.commercial_summary ?? profile.commercial

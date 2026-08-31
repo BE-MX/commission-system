@@ -154,7 +154,18 @@ def get_customer(db: Session, user: dict, customer_id: int) -> dict:
     data["profile"] = projection["profile_json"] if projection else None
     data["profile_projection"] = projection["profile_projection"] if projection else "unavailable"
     if projection and projection["profile_version_id"] is not None:
-        evidence_fact_ids = projection["profile_evidence_fact_ids"]
+        if projection["profile_projection"] == "customer_profile_v1":
+            evidence_fact_ids = projection["profile_evidence_fact_ids"]
+            evidence_refs = [
+                {"fact_id": fact_id, "reference_type": "customer_fact"}
+                for fact_id in evidence_fact_ids
+            ]
+        elif projection["profile_projection"] == "customer_context_v1":
+            evidence_refs = list(projection["profile_json"].get("evidence_refs") or [])
+            evidence_fact_ids = [item["fact_id"] for item in evidence_refs]
+        else:
+            evidence_fact_ids = []
+            evidence_refs = []
         data["profile_metadata"] = {
             "profile_version_id": projection["profile_version_id"],
             "version_no": projection["profile_version_no"],
@@ -163,10 +174,7 @@ def get_customer(db: Session, user: dict, customer_id: int) -> dict:
             "data_as_of": iso_beijing(projection["profile_data_as_of"]),
             "section_data_as_of": projection["profile_section_data_as_of"],
             "evidence_fact_ids": evidence_fact_ids,
-            "evidence_refs": [
-                {"fact_id": fact_id, "reference_type": "customer_fact"}
-                for fact_id in evidence_fact_ids
-            ],
+            "evidence_refs": evidence_refs,
         }
     else:
         data["profile_metadata"] = None
