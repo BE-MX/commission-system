@@ -12,7 +12,7 @@ All requests use `Authorization: Bearer <ARK_AGENT_TOKEN>` and JSON. `ARK_BASE_U
 
 `GET {ARK_BASE_URL}/api/sales-automation/agent/search-jobs/{job_id}/context`
 
-The response contains the frozen profile, criteria, counts, status, and output contract.
+The response contains the frozen acquisition profile, criteria, counts, status, and output contract. Require `output_contract.identifier == "customer_id"`; the acquisition profile is not customer identity.
 
 ## Claim and heartbeat
 
@@ -57,6 +57,8 @@ The response contains a one-time `lease_token`. Keep it only in process memory. 
 Required per candidate: `name`, `website`, `source_url`, `captured_at`.
 
 Build `request_key` from the job ID, the `attempt_count` returned by the current claim, and the batch number. A retry within the same claim must resend the identical payload under the same key; a reclaim uses its new attempt number so it cannot conflict with a prior attempt's receipt.
+
+The acknowledgement is authoritative and includes `received`, `unique_customers`, `created_customers`, `appended_sources`, `quarantined_sources`, `result_ids`, `customer_ids`, and `research_task_ids`. Only `customer_ids` identify customers. Candidate domains and names remain source evidence. Do not translate the response into retired lead, company, subject, or profile identifiers.
 
 ## Finish
 

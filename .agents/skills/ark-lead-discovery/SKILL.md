@@ -16,18 +16,18 @@ The only exception is trusted automatic queue mode: the configured local `HEARTB
 
 ## Workflow
 
-1. GET the Agent context. Stop if the job does not exist.
+1. GET the Agent context. Stop if the job does not exist or its output contract does not name `customer_id` as the identifier. The frozen acquisition profile is job input, not a customer identity.
 2. Claim a `pending` job. In OpenClaw, let the MCP sidecar retain the lease; never ask it to reveal the token. In a direct API runner, keep the returned lease token only in process memory. Heartbeat before the 15-minute expiry. A crashed run must wait for expiry and reclaim; never guess or reuse another run's lease.
 3. Build queries from the frozen profile and job criteria. Treat exclusions as hard filters.
 4. Search multiple public sources. Prefer the company website for identity and business claims; use directories only as discovery evidence.
-5. Verify each candidate:
+5. Verify each source record:
    - Require a real public company website with a registrable domain.
    - Open the official website or another authoritative source with `web_fetch` before submission. A `web_search` snippet alone is discovery evidence and is never sufficient for a candidate claim.
    - Require a source URL and current capture timestamp.
    - Do not invent a company, website, country, industry, or source.
    - Do not submit social profiles, marketplace listings, or directory pages as the company website.
-6. Submit candidates in batches of at most 20 with the current `agent_id` and lease token. Use the claim response's `attempt_count` in a stable request key such as `job-{job_id}-attempt-{attempt_count}-batch-{n}`. Retry the exact same payload with the same key after a lost response; a later reclaim has a new attempt number and must not reuse a prior attempt's key.
-7. Treat `public_pool_deduplicated` candidates as blocked duplicates, not accepted new leads. Do not research or develop them again; use the returned domains only to avoid resubmission and continue searching until Ark's accepted `result_count` reaches the target or credible sources are exhausted. Ark automatically queues accepted leads with a profile match score of 70 or above for `$ark-public-pool-research`; do not create a competing company-research run for those leads.
+6. Submit source records in batches of at most 20 with the current `agent_id` and lease token. This task-scoped endpoint is the only allowed write path. Use the claim response's `attempt_count` in a stable request key such as `job-{job_id}-attempt-{attempt_count}-batch-{n}`. Retry the exact same payload with the same key after a lost response; a later reclaim has a new attempt number and must not reuse a prior attempt's key.
+7. Treat Ark's returned `customer_ids` as the only customer identities. A domain is external identity evidence and a deduplication signal, never the business master key. Ark may create a customer, append the source to an existing customer, or quarantine a conflicting source; preserve its `created_customers`, `appended_sources`, `quarantined_sources`, `customer_ids`, and `research_task_ids` result instead of inventing legacy lead/company/profile IDs. Never create a competing research run for a returned `research_task_id`.
 8. Continue until the target count is met or credible sources are exhausted.
 9. Mark the job complete only after every accepted batch is acknowledged. Mark it failed with an actionable reason while the lease is still valid if browsing or API access prevents useful results.
 
@@ -35,12 +35,13 @@ In trusted automatic queue mode, begin a controlled finish before the 30-minute 
 
 ## Quality rules
 
-- Company identity is the normalized website domain, never the display name.
+- Customer identity is Ark `customer_id`. A normalized registrable domain is source identity evidence, never the customer master key.
 - Prefer precision over filling the requested count.
 - Separate evidence from inference. Put only observed text in candidate fields.
 - Do not guess email addresses or personal contact details in this skill.
-- Report received, accepted, created, updated, total deduplicated, public-pool deduplicated, and queued-research counts from Ark, not locally estimated counts.
+- Never read customer state from retired lead/company/profile endpoints. Public pages supply evidence; all business state and downstream IDs come back from Ark.
+- Report received, unique customers, created customers, appended sources, quarantined sources, `customer_ids`, and `research_task_ids` from Ark, not locally estimated counts.
 
 ## Handoff
 
-Return the job ID, final status, submitted count, accepted count, newly created count, total/public-pool deduplicated counts, queued-research count, and unresolved gaps. Recommend `$ark-company-research` only for approved sub-70 leads that still lack contacts or sourced research; score-70+ leads use the automatically queued public-pool research task.
+Return the job ID, final status, submitted count, Ark's ingestion counts, `customer_ids`, `research_task_ids`, and unresolved gaps. Recommend `$ark-company-research` only for a returned `customer_id` that still lacks sourced research and has no returned research task; never hand off a domain, name, lead ID, company ID, or profile ID as customer identity.
