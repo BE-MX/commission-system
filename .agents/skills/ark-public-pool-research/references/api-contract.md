@@ -1,21 +1,17 @@
-# Ark public-pool MCP contract
+# Ark unified research MCP contract
 
-Use only these tools for public-pool research:
+Use only these `ark-sales` tools for public-pool-style research:
 
-- `ark_search_knowledge(query, limit)` searches ACL-authorized published enterprise knowledge.
-- `ark_get_knowledge_document(document_id)` reads one published knowledge document returned by search.
-- `ark_list_public_pool_tasks(page, page_size)` lists claimable tasks.
-- `ark_get_public_pool_task_context(task_id)` returns the trusted OKKI seed, tier rules, and component limits.
-- `ark_claim_public_pool_task(task_id)` acquires a 15-minute in-process lease.
-- `ark_heartbeat_public_pool_task(task_id)` renews a live lease during longer research.
-- `ark_submit_public_pool_industry_gate(...)` submits the cheap identity/industry gate and returns whether deep research is authorized.
-- `ark_complete_public_pool_task(...)` is allowed only after a passed gate; it submits evidence, contacts, score inputs, strategy, and an unsent opening draft.
-- `ark_fail_public_pool_task(task_id, error_message)` records an operational failure.
+- `ark_search_knowledge(query, limit)` and `ark_get_knowledge_document(document_id)` read ACL-authorized published company knowledge.
+- `ark_list_research_tasks(page, page_size)` lists claimable unified tasks.
+- `ark_get_research_task_context(research_task_id)` returns the Ark `customer_id`, frozen input hash, task type, tier, policy, and research rules.
+- `ark_claim_research_task(research_task_id)` acquires an in-process lease.
+- `ark_heartbeat_research_task(research_task_id)` renews it.
+- `ark_submit_research_industry_gate(research_task_id, industry_relevance, reason)` submits the gate. `gate_status=stopped` is terminal; `passed` permits bounded research.
+- `ark_append_research_facts(research_task_id, agent_run_id, facts)` writes atomic evidence inside the task/Run/customer scope and returns canonical evidence references.
+- `ark_complete_research_task(...)` submits `customer_research_v1` for review.
+- `ark_fail_research_task(research_task_id, error_code)` records an operational failure.
 
-Every contact and fact needs a public `source_url` and ISO-8601 `captured_at`. Each fact also requires confidence from 0 to 1. Social profiles need platform, public profile URL, activity level, capture time, confidence, and only observed business signals. `confirmed` and `candidate` submissions require at least one sourced fact; `unverifiable` and `rejected` may have none.
+The sidecar injects Agent identity and holds the lease. Never request, include, log, or disclose either secret. Task completion returns `research_task_id`, `customer_id`, task status, result review status, and evidence fact IDs. It does not qualify the customer or send a message.
 
-Submit `industry_relevance` and its reason through the gate first. `irrelevant` is finalized by that endpoint as `gate_only`; never call the full completion tool afterward. Enterprise knowledge references contain only `document_id`, immutable `revision_id`, and `version_no`; they are not public evidence and never go in `facts`.
-
-Score component maxima are controlled by Ark: industry fit 25, pain/switch trigger 20, intent/reactivation 20, buying capacity 15, reachability 10, timing 10, and risk penalty 30. Ark recomputes grade, likelihood band, evidence confidence, and priority. Do not submit a probability percentage.
-
-The sidecar automatically injects `agent_id` and the lease token. Do not include, request, log, or disclose either secret. A task completion writes research for human review only; it does not send an email or message.
+Every final claim must cite a same-Run evidence envelope returned for the task's `customer_id` and frozen `input_hash`. Published company-knowledge references contain only document, immutable revision, and version IDs; they do not become customer facts.
