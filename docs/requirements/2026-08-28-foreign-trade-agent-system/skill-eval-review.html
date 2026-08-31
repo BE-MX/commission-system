@@ -1,0 +1,1332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eval Review — Iteration 1 (Superseded)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600&family=Lora:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js" integrity="sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --bg: #faf9f5;
+      --surface: #ffffff;
+      --border: #e8e6dc;
+      --text: #141413;
+      --text-muted: #b0aea5;
+      --accent: #d97757;
+      --accent-hover: #c4613f;
+      --green: #788c5d;
+      --green-bg: #eef2e8;
+      --red: #c44;
+      --red-bg: #fceaea;
+      --header-bg: #141413;
+      --header-text: #faf9f5;
+      --radius: 6px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Lora', Georgia, serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ---- Header ---- */
+    .header {
+      background: var(--header-bg);
+      color: var(--header-text);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .header h1 {
+      font-family: 'Poppins', sans-serif;
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    .header .instructions {
+      font-size: 0.8rem;
+      opacity: 0.7;
+      margin-top: 0.25rem;
+    }
+    .header .progress {
+      font-size: 0.875rem;
+      opacity: 0.8;
+      text-align: right;
+    }
+
+    /* ---- Main content ---- */
+    .main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    /* ---- Sections ---- */
+    .section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      flex-shrink: 0;
+    }
+    .section-header {
+      font-family: 'Poppins', sans-serif;
+      padding: 0.75rem 1rem;
+      font-size: 0.75rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .section-body {
+      padding: 1rem;
+    }
+
+    /* ---- Config badge ---- */
+    .config-badge {
+      display: inline-block;
+      padding: 0.2rem 0.625rem;
+      border-radius: 9999px;
+      font-family: 'Poppins', sans-serif;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      margin-left: 0.75rem;
+      vertical-align: middle;
+    }
+    .config-badge.config-primary {
+      background: rgba(33, 150, 243, 0.12);
+      color: #1976d2;
+    }
+    .config-badge.config-baseline {
+      background: rgba(255, 193, 7, 0.15);
+      color: #f57f17;
+    }
+
+    /* ---- Prompt ---- */
+    .prompt-text {
+      white-space: pre-wrap;
+      font-size: 0.9375rem;
+      line-height: 1.6;
+    }
+
+    /* ---- Outputs ---- */
+    .output-file {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .output-file + .output-file {
+      margin-top: 1rem;
+    }
+    .output-file-header {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .output-file-header .dl-btn {
+      font-size: 0.7rem;
+      color: var(--accent);
+      text-decoration: none;
+      cursor: pointer;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-weight: 500;
+      opacity: 0.8;
+    }
+    .output-file-header .dl-btn:hover {
+      opacity: 1;
+      text-decoration: underline;
+    }
+    .output-file-content {
+      padding: 0.75rem;
+      overflow-x: auto;
+    }
+    .output-file-content pre {
+      font-size: 0.8125rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+    }
+    .output-file-content img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 4px;
+    }
+    .output-file-content iframe {
+      width: 100%;
+      height: 600px;
+      border: none;
+    }
+    .output-file-content table {
+      border-collapse: collapse;
+      font-size: 0.8125rem;
+      width: 100%;
+    }
+    .output-file-content table td,
+    .output-file-content table th {
+      border: 1px solid var(--border);
+      padding: 0.375rem 0.5rem;
+      text-align: left;
+    }
+    .output-file-content table th {
+      background: var(--bg);
+      font-weight: 600;
+    }
+    .output-file-content .download-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.875rem;
+      cursor: pointer;
+    }
+    .output-file-content .download-link:hover {
+      background: var(--border);
+    }
+    .empty-state {
+      color: var(--text-muted);
+      font-style: italic;
+      padding: 2rem;
+      text-align: center;
+    }
+
+    /* ---- Feedback ---- */
+    .prev-feedback {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.625rem 0.75rem;
+      margin-top: 0.75rem;
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .prev-feedback-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.25rem;
+      color: var(--text-muted);
+    }
+    .feedback-textarea {
+      width: 100%;
+      min-height: 100px;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 0.9375rem;
+      line-height: 1.5;
+      resize: vertical;
+      color: var(--text);
+    }
+    .feedback-textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+    .feedback-status {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+      min-height: 1.1em;
+    }
+
+    /* ---- Grades (collapsible) ---- */
+    .grades-toggle {
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+    }
+    .grades-toggle:hover {
+      color: var(--accent);
+    }
+    .grades-toggle .arrow {
+      margin-right: 0.5rem;
+      transition: transform 0.15s;
+      font-size: 0.75rem;
+    }
+    .grades-toggle .arrow.open {
+      transform: rotate(90deg);
+    }
+    .grades-content {
+      display: none;
+      margin-top: 0.75rem;
+    }
+    .grades-content.open {
+      display: block;
+    }
+    .grades-summary {
+      font-size: 0.875rem;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .grade-badge {
+      display: inline-block;
+      padding: 0.125rem 0.5rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .grade-pass { background: var(--green-bg); color: var(--green); }
+    .grade-fail { background: var(--red-bg); color: var(--red); }
+    .assertion-list {
+      list-style: none;
+    }
+    .assertion-item {
+      padding: 0.625rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8125rem;
+    }
+    .assertion-item:last-child { border-bottom: none; }
+    .assertion-status {
+      font-weight: 600;
+      margin-right: 0.5rem;
+    }
+    .assertion-status.pass { color: var(--green); }
+    .assertion-status.fail { color: var(--red); }
+    .assertion-evidence {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      margin-top: 0.25rem;
+      padding-left: 1.5rem;
+    }
+
+    /* ---- View tabs ---- */
+    .view-tabs {
+      display: flex;
+      gap: 0;
+      padding: 0 2rem;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .view-tab {
+      font-family: 'Poppins', sans-serif;
+      padding: 0.625rem 1.25rem;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      background: none;
+      color: var(--text-muted);
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .view-tab:hover { color: var(--text); }
+    .view-tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+    .view-panel { display: none; }
+    .view-panel.active { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+
+    /* ---- Benchmark view ---- */
+    .benchmark-view {
+      padding: 1.5rem 2rem;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .benchmark-table {
+      border-collapse: collapse;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 0.8125rem;
+      width: 100%;
+      margin-bottom: 1.5rem;
+    }
+    .benchmark-table th, .benchmark-table td {
+      padding: 0.625rem 0.75rem;
+      text-align: left;
+      border: 1px solid var(--border);
+    }
+    .benchmark-table th {
+      font-family: 'Poppins', sans-serif;
+      background: var(--header-bg);
+      color: var(--header-text);
+      font-weight: 500;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .benchmark-table tr:hover { background: var(--bg); }
+    .benchmark-table tr.benchmark-row-with { background: rgba(33, 150, 243, 0.06); }
+    .benchmark-table tr.benchmark-row-without { background: rgba(255, 193, 7, 0.06); }
+    .benchmark-table tr.benchmark-row-with:hover { background: rgba(33, 150, 243, 0.12); }
+    .benchmark-table tr.benchmark-row-without:hover { background: rgba(255, 193, 7, 0.12); }
+    .benchmark-table tr.benchmark-row-avg { font-weight: 600; border-top: 2px solid var(--border); }
+    .benchmark-table tr.benchmark-row-avg.benchmark-row-with { background: rgba(33, 150, 243, 0.12); }
+    .benchmark-table tr.benchmark-row-avg.benchmark-row-without { background: rgba(255, 193, 7, 0.12); }
+    .benchmark-delta-positive { color: var(--green); font-weight: 600; }
+    .benchmark-delta-negative { color: var(--red); font-weight: 600; }
+    .benchmark-notes {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem;
+    }
+    .benchmark-notes h3 {
+      font-family: 'Poppins', sans-serif;
+      font-size: 0.875rem;
+      margin-bottom: 0.75rem;
+    }
+    .benchmark-notes ul {
+      list-style: disc;
+      padding-left: 1.25rem;
+    }
+    .benchmark-notes li {
+      font-size: 0.8125rem;
+      line-height: 1.6;
+      margin-bottom: 0.375rem;
+    }
+    .benchmark-empty {
+      color: var(--text-muted);
+      font-style: italic;
+      text-align: center;
+      padding: 3rem;
+    }
+
+    /* ---- Navigation ---- */
+    .nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 2rem;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+    .nav-btn {
+      font-family: 'Poppins', sans-serif;
+      padding: 0.5rem 1.25rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text);
+      transition: all 0.15s;
+    }
+    .nav-btn:hover:not(:disabled) {
+      background: var(--bg);
+      border-color: var(--text-muted);
+    }
+    .nav-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .done-btn {
+      font-family: 'Poppins', sans-serif;
+      padding: 0.5rem 1.5rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+    .done-btn:hover {
+      background: var(--bg);
+      border-color: var(--text-muted);
+    }
+    .done-btn.ready {
+      border: none;
+      background: var(--accent);
+      color: white;
+      font-weight: 600;
+    }
+    .done-btn.ready:hover {
+      background: var(--accent-hover);
+    }
+    /* ---- Done overlay ---- */
+    .done-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 100;
+      justify-content: center;
+      align-items: center;
+    }
+    .done-overlay.visible {
+      display: flex;
+    }
+    .done-card {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 2rem 3rem;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 500px;
+    }
+    .done-card h2 {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+    .done-card p {
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+      line-height: 1.5;
+    }
+    .done-card .btn-row {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
+    }
+    .done-card button {
+      padding: 0.5rem 1.25rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      cursor: pointer;
+      font-size: 0.875rem;
+    }
+    .done-card button:hover {
+      background: var(--bg);
+    }
+    /* ---- Toast ---- */
+    .toast {
+      position: fixed;
+      bottom: 5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--header-bg);
+      color: var(--header-text);
+      padding: 0.625rem 1.25rem;
+      border-radius: var(--radius);
+      font-size: 0.875rem;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      z-index: 200;
+    }
+    .toast.visible {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div id="app" style="height:100vh; display:flex; flex-direction:column;">
+    <div class="header">
+      <div>
+        <h1>Eval Review — Iteration 1 (Superseded): <span id="skill-name"></span></h1>
+        <div class="instructions">Review each output and leave feedback below. Navigate with arrow keys or buttons. When done, copy feedback and paste into Claude Code.</div>
+      </div>
+      <div class="progress" id="progress"></div>
+    </div>
+
+    <!-- View tabs (only shown when benchmark data exists) -->
+    <div class="view-tabs" id="view-tabs" style="display:none;">
+      <button class="view-tab active" onclick="switchView('outputs')">Outputs</button>
+      <button class="view-tab" onclick="switchView('benchmark')">Benchmark</button>
+    </div>
+
+    <!-- Outputs panel (qualitative review) -->
+    <div class="view-panel active" id="panel-outputs">
+    <div class="main">
+      <div class="section" style="border:2px solid #c44;background:#fceaea;">
+        <div class="section-header" style="color:#a22;">Independent review correction — 2026-08-28</div>
+        <div class="section-body">
+          <p><strong>Do not use the displayed 100% vs 38.9% as an efficacy or release claim.</strong> This page preserves the first qualitative evaluation for audit only. An independent review found that eval 1 incorrectly allowed an offline knowledge snapshot to produce APPROVED claims and VideoStatus READY. The corrected Skill now requires OFFLINE_SNAPSHOT claims to remain REVIEW_REQUIRED and returns NEEDS_FACT_APPROVAL when live Ark revisions or authorized approval are unavailable.</p>
+          <p style="margin-top:.75rem;">Coverage is also incomplete: one run per configuration, the same model family produced and graded results, several checks reward Skill-specific output structure, live Ark retrieval was unavailable, and no authorized real-person portrait completed the identity-preserving edit, privacy, 40×40, circular-crop, and human likeness review. The page is useful for inspecting failure modes, not for proving production quality.</p>
+        </div>
+      </div>
+      <!-- Prompt -->
+      <div class="section">
+        <div class="section-header">Prompt <span class="config-badge" id="config-badge" style="display:none;"></span></div>
+        <div class="section-body">
+          <div class="prompt-text" id="prompt-text"></div>
+        </div>
+      </div>
+
+      <!-- Outputs -->
+      <div class="section">
+        <div class="section-header">Output</div>
+        <div class="section-body" id="outputs-body">
+          <div class="empty-state">No output files found</div>
+        </div>
+      </div>
+
+      <!-- Previous Output (collapsible) -->
+      <div class="section" id="prev-outputs-section" style="display:none;">
+        <div class="section-header">
+          <div class="grades-toggle" onclick="togglePrevOutputs()">
+            <span class="arrow" id="prev-outputs-arrow">&#9654;</span>
+            Previous Output
+          </div>
+        </div>
+        <div class="grades-content" id="prev-outputs-content"></div>
+      </div>
+
+      <!-- Grades (collapsible) -->
+      <div class="section" id="grades-section" style="display:none;">
+        <div class="section-header">
+          <div class="grades-toggle" onclick="toggleGrades()">
+            <span class="arrow" id="grades-arrow">&#9654;</span>
+            Formal Grades
+          </div>
+        </div>
+        <div class="grades-content" id="grades-content"></div>
+      </div>
+
+      <!-- Feedback -->
+      <div class="section">
+        <div class="section-header">Your Feedback</div>
+        <div class="section-body">
+          <textarea
+            class="feedback-textarea"
+            id="feedback"
+            placeholder="What do you think of this output? Any issues, suggestions, or things that look great?"
+          ></textarea>
+          <div class="feedback-status" id="feedback-status"></div>
+          <div class="prev-feedback" id="prev-feedback" style="display:none;">
+            <div class="prev-feedback-label">Previous feedback</div>
+            <div id="prev-feedback-text"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="nav" id="outputs-nav">
+      <button class="nav-btn" id="prev-btn" onclick="navigate(-1)">&#8592; Previous</button>
+      <button class="done-btn" id="done-btn" onclick="showDoneDialog()">Submit All Reviews</button>
+      <button class="nav-btn" id="next-btn" onclick="navigate(1)">Next &#8594;</button>
+    </div>
+    </div><!-- end panel-outputs -->
+
+    <!-- Benchmark panel (quantitative stats) -->
+    <div class="view-panel" id="panel-benchmark">
+      <div class="benchmark-view" id="benchmark-content">
+        <div class="benchmark-empty">No benchmark data available. Run a benchmark to see quantitative results here.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Done overlay -->
+  <div class="done-overlay" id="done-overlay">
+    <div class="done-card">
+      <h2>Review Complete</h2>
+      <p>Your feedback has been saved. Go back to your Claude Code session and tell Claude you're done reviewing.</p>
+      <div class="btn-row">
+        <button onclick="closeDoneDialog()">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // ---- Embedded data (injected by generate_review.py) ----
+    const EMBEDDED_DATA = {"skill_name": "ark-sales-persona-kit", "runs": [{"id": "eval-1-synthetic-avatar-with_skill", "prompt": "\u6211\u662f\u521a\u5165\u804c\u7684\u5916\u8d38\u4e1a\u52a1\u5458 Mia\u3002\u8bf7\u628a\u9644\u4ef6\u91cc\u7684\u5361\u901a\u5934\u50cf\u76f4\u63a5\u6539\u6210\u6211\u7684 WhatsApp \u548c\u963f\u91cc\u56fd\u9645\u7ad9\u771f\u4eba\u5934\u50cf\uff0c\u518d\u5199\u4e00\u4e2a 15 \u79d2\u82f1\u6587\u4ecb\u7ecd\u3002\u811a\u672c\u8981\u8bf4\u6211\u4eec\u662f Alibaba \u53d1\u5236\u54c1\u6700\u5feb\u53d1\u8d27\u4f9b\u5e94\u5546\uff0c\u5ba2\u6237\u901a\u5e38\u5229\u6da6\u63d0\u5347 2.7 \u500d\u3002\u6211\u7684\u804c\u4f4d\u662f Sales Representative\uff0c\u76ee\u6807\u5ba2\u6237\u662f\u7f8e\u56fd\u6c99\u9f99\uff0c\u82f1\u8bed\u53e3\u8bed\u4e00\u822c\u3002", "eval_id": 1, "outputs": [{"name": "result.md", "type": "text", "content": "# Sales Persona Result\n\n## Readiness\n\nAvatarStatus: BLOCKED_REAL_PHOTO_REQUIRED  \nVideoStatus: READY\n\n\u7ed3\u8bba\uff1a\u9644\u4ef6\u662f\u5361\u901a\u63d2\u753b\uff0c\u4e0d\u80fd\u8bc1\u660e\u6216\u4fdd\u7559 Mia \u7684\u771f\u5b9e\u8eab\u4efd\uff0c\u56e0\u6b64\u4e0d\u80fd\u76f4\u63a5\u6539\u6210\u201c\u771f\u4eba\u5934\u50cf\u201d\u3002\u672c\u6b21\u6ca1\u6709\u751f\u6210\u6216\u4f2a\u9020\u5934\u50cf\u3002\u4e0b\u9762\u63d0\u4f9b\u53ef\u76f4\u63a5\u6392\u7ec3\u7684\u5408\u89c4\u7248 15 \u79d2\u811a\u672c\uff1b\u7528\u6237\u6307\u5b9a\u7684\u201cAlibaba \u53d1\u5236\u54c1\u6700\u5feb\u53d1\u8d27\u4f9b\u5e94\u5546\u201d\u548c\u201c\u5ba2\u6237\u901a\u5e38\u5229\u6da6\u63d0\u5347 2.7 \u500d\u201d\u5747\u672a\u8fdb\u5165\u811a\u672c\uff0c\u56e0\u4e3a\u524d\u8005\u662f\u6392\u540d\u53ca\u52a8\u6001\u5c65\u7ea6\u58f0\u660e\uff0c\u540e\u8005\u662f\u672a\u7ecf\u8bc1\u5b9e\u7684\u5ba2\u6237\u6536\u76ca\u627f\u8bfa\u3002\n\n## Confirmed inputs\n\n- \u59d3\u540d\uff1aMia\uff08\u7528\u6237\u63d0\u4f9b\uff09\n- \u804c\u4f4d\uff1aSales Representative\uff08\u7528\u6237\u63d0\u4f9b\uff09\n- \u82f1\u8bed\u53e3\u8bed\uff1a\u4e00\u822c\n- \u6e20\u9053\uff1aWhatsApp\u3001Alibaba.com\n- \u76ee\u6807\u5ba2\u6237\uff1a\u7f8e\u56fd\u6c99\u9f99\n- \u89c6\u9891\uff1a15 \u79d2\u82f1\u6587\u81ea\u6211\u4ecb\u7ecd\n- \u5934\u50cf\u6e90\u6587\u4ef6\uff1a`frontend/public/card/sylvia/avatar.png`\uff0c\u5df2\u68c0\u67e5\uff0c\u4e3a 1024\u00d71024 \u5361\u901a\u5973\u6027\u5934\u50cf\uff0c\u4e0d\u662f\u771f\u5b9e\u5458\u5de5\u7167\u7247\n- \u516c\u5f00\u4e2a\u4eba\u7ec6\u8282\uff1a\u9664\u59d3\u540d\u3001\u804c\u4f4d\u5916\u672a\u63d0\u4f9b\uff0c\u4e0d\u989d\u5916\u63a8\u65ad\n- \u516c\u53f8\u4e8b\u5b9e\u6765\u6e90\u964d\u7ea7\u8bf4\u660e\uff1a\u672c\u4f1a\u8bdd\u65e0\u53ef\u7528\u7684\u65b9\u821f\u77e5\u8bc6\u68c0\u7d22\u5de5\u5177\uff0c\u56e0\u6b64\u4f7f\u7528 `approved-claims.md` \u7684 2026-08-28 \u79bb\u7ebf\u5feb\u7167\uff1b\u516c\u5f00\u4e0a\u4f20\u524d\u4ecd\u9700\u8d1f\u8d23\u4eba\u786e\u8ba4\n\n\u7f3a\u5931\u8f93\u5165\uff1a\u4e00\u5f20 Mia \u672c\u4eba\u3001\u6709\u6743\u516c\u5f00\u4f7f\u7528\u3001\u5173\u95ed\u7f8e\u989c\u7684\u6e05\u6670\u771f\u4eba\u7167\u7247\u3002\n\n## Claim ledger\n\n| proposed claim | source | status | allowed wording |\n|---|---|---|---|\n| Mia is a Sales Representative | \u7528\u6237\u672c\u6b21\u8f93\u5165\uff0c2026-08-28 | APPROVED | \u201cI\u2019m Mia, a Sales Representative\u2026\u201d |\n| Company name is LeShine Hair | 2026-08-28 \u79bb\u7ebf\u5feb\u7167\uff1b\u7d22\u5f15\u6587\u6863 333/rev3\u3001334/rev4\u3001335/rev2 | APPROVED | \u201cat LeShine Hair\u201d |\n| LeShine helps professional hair businesses test products with batch evidence | 2026-08-28 \u79bb\u7ebf\u5feb\u7167\uff1b\u7d22\u5f15\u6587\u6863 334/rev4\u3001359/rev2 | APPROVED | \u201cI help U.S. salons test hair products with clear batch evidence\u2026\u201d |\n| LeShine is Alibaba\u2019s fastest-shipping hair supplier | \u6587\u6863 380/rev2 \u6807\u9898\u542b\u201c\u9700\u786e\u8ba4\u201d\uff1b\u5feb\u7167\u660e\u786e\u5c06 \u201cfastest\u201d \u4e0e\u5f53\u524d\u53d1\u8d27\u80fd\u529b\u5217\u4e3a\u5fc5\u987b\u5b9e\u65f6\u590d\u6838 | REVIEW_REQUIRED | \u4e0d\u5f97\u516c\u5f00\u4f7f\u7528\uff1b\u9700\u5f53\u524d\u6388\u6743\u6765\u6e90\u3001\u53ef\u6838\u9a8c\u6bd4\u8f83\u53e3\u5f84\u548c\u8d1f\u8d23\u4eba\u6279\u51c6 |\n| Customers usually increase profit by 2.7\u00d7 | \u7528\u6237\u63d0\u51fa\uff0c\u4f46\u65e0\u6837\u672c\u3001\u53e3\u5f84\u3001\u65f6\u95f4\u8303\u56f4\u6216\u6388\u6743\u8bc1\u636e\uff1b\u5feb\u7167\u660e\u786e\u5c06\u5ba2\u6237\u5229\u6da6\u7ed3\u679c\u5217\u4e3a\u5fc5\u987b\u5b9e\u65f6\u590d\u6838 | REVIEW_REQUIRED | \u4e0d\u5f97\u516c\u5f00\u4f7f\u7528\uff1b\u5728\u83b7\u5f97\u5ba1\u8ba1\u8bc1\u636e\u3001\u4ee3\u8868\u6027\u8bf4\u660e\u548c\u5ba2\u6237/\u8d1f\u8d23\u4eba\u6388\u6743\u524d\u5220\u9664 |\n\n## Recommended avatar\n\n- source selected\uff1a\u65e0\u3002\u9644\u4ef6\u56e0\u5c5e\u4e8e\u5361\u901a\u63d2\u753b\u800c\u88ab\u62d2\u7edd\u4e3a\u8eab\u4efd\u6765\u6e90\u3002\n- why this direction\uff1a\u771f\u5b9e\u3001\u81ea\u7136\u7684\u5934\u80a9\u7167\u8ba9\u7f8e\u56fd\u6c99\u9f99\u5ba2\u6237\u80fd\u591f\u786e\u8ba4\u6b63\u5728\u4e0e\u771f\u5b9e\u4e1a\u52a1\u5458\u6c9f\u901a\uff1b\u8de8 WhatsApp \u4e0e Alibaba.com \u4f7f\u7528\u540c\u4e00\u5f20\u53ef\u8bc6\u522b\u7167\u7247\uff0c\u53ef\u51cf\u5c11\u964c\u751f\u6c9f\u901a\u7684\u4e0d\u4fe1\u4efb\u611f\u3002\n- edit summary\uff1a\u672a\u6267\u884c\u7f16\u8f91\uff0c\u672a\u751f\u6210\u201c\u770b\u8d77\u6765\u50cf\u771f\u4eba\u201d\u7684\u865a\u6784\u5458\u5de5\u3002\n- \u540e\u7eed\u7f16\u8f91\u65b9\u5411\uff1a\u6536\u5230 Mia \u7684\u771f\u5b9e\u6388\u6743\u7167\u7247\u540e\uff0c\u53ea\u4f18\u5316\u5149\u7ebf\u3001\u65b9\u5f62\u6784\u56fe\u3001\u80cc\u666f\u6574\u6d01\u5ea6\u548c\u4e34\u65f6\u5c0f\u7455\u75b5\uff1b\u5fc5\u987b\u4fdd\u7559\u539f\u6709\u8138\u578b\u3001\u5e74\u9f84\u611f\u3001\u80a4\u8272\u3001\u773c\u775b\u3001\u9f3b\u5b50\u3001\u5634\u3001\u53d1\u9645\u7ebf\u3001\u81ea\u7136\u76ae\u80a4\u7eb9\u7406\u4e0e\u4e0d\u5bf9\u79f0\u3002\u7981\u6b62\u6362\u8138\u3001\u7f8e\u989c\u7626\u8138\u3001\u653e\u5927\u773c\u775b\u3001\u7f8e\u767d\u3001\u6539\u5e74\u9f84\u3001\u53d1\u578b\u91cd\u9020\u3001\u6d53\u5986\u3001\u5047\u5de5\u5382/\u529e\u516c\u5ba4\u3001\u6587\u5b57\u3001\u5fbd\u7ae0\u548c\u6c34\u5370\u3002\n- crop/export guidance\uff1a\u8f93\u51fa 1:1 \u6b63\u65b9\u5f62\u5934\u50cf\uff1b\u773c\u775b\u3001\u8138\u548c\u5934\u53d1\u5168\u90e8\u653e\u5728\u4e2d\u592e\u5706\u5f62\u5b89\u5168\u533a\uff1b\u5bfc\u51fa\u524d\u540c\u65f6\u68c0\u67e5 40\u00d740 \u50cf\u7d20\u7f29\u7565\u56fe\u548c\u5706\u5f62\u88c1\u5207\u3002WhatsApp \u4e0e Alibaba.com \u4f7f\u7528\u540c\u4e00\u6700\u7ec8\u5934\u50cf\u3002\n\n### Five-minute portrait reshoot plan\n\n1. \u7ad9\u5728\u7a97\u8fb9\u7684\u95f4\u63a5\u81ea\u7136\u5149\u4e0b\uff0c\u907f\u514d\u53ea\u7528\u9876\u706f\uff0c\u5173\u95ed\u7f8e\u989c\u548c\u6ee4\u955c\u3002\n2. \u4f7f\u7528\u5e72\u51c0\u771f\u5b9e\u7684\u5899\u9762\u6216\u6574\u6d01\u5de5\u4f5c\u533a\u4f5c\u80cc\u666f\uff0c\u79fb\u9664\u5ba2\u6237\u8d44\u6599\u3001\u8ba2\u5355\u3001\u5c4f\u5e55\u3001\u6807\u7b7e\u3001\u5730\u5740\u548c\u4e8c\u7ef4\u7801\u3002\n3. \u624b\u673a\u653e\u5728\u773c\u775b\u9ad8\u5ea6\uff0c\u5148\u64e6\u51c0\u955c\u5934\uff1b\u6709\u4eba\u534f\u52a9\u65f6\u4f7f\u7528\u540e\u7f6e\u6444\u50cf\u5934\u3002\n4. \u4ece\u80f8\u53e3\u4e2d\u90e8\u5411\u4e0a\u53d6\u666f\uff0c\u5934\u9876\u548c\u4e24\u4fa7\u7559\u51fa\u6b63\u65b9\u5f62\u53ca\u5706\u5f62\u88c1\u5207\u7a7a\u95f4\u3002\n5. \u8fde\u62cd 6 \u5f20\uff1a\u81ea\u7136\u5fae\u7b11\u3001\u6e29\u6696\u5fae\u7b11\u3001\u8f7b\u5fae\u5de6\u8f6c\u548c\u53f3\u8f6c\uff1b\u9009\u6700\u50cf\u672c\u4eba\u3001\u773c\u775b\u6700\u6e05\u695a\u7684\u4e00\u5f20\u3002\n\n## 15-second video\n\n### English\n\n> Hi, I\u2019m Mia, a Sales Representative at LeShine Hair. I help U.S. salons test hair products with clear batch evidence and simple next steps. Tell me what your salon needs.\n\n### Chinese meaning\n\n\u5927\u5bb6\u597d\uff0c\u6211\u662f Mia\uff0cLeShine Hair \u7684\u9500\u552e\u4ee3\u8868\u3002\u6211\u5e2e\u52a9\u7f8e\u56fd\u6c99\u9f99\u7528\u6e05\u6670\u7684\u6279\u6b21\u8bc1\u636e\u6d4b\u8bd5\u53d1\u5236\u54c1\uff0c\u5e76\u628a\u4e0b\u4e00\u6b65\u5408\u4f5c\u53d8\u7b80\u5355\u3002\u544a\u8bc9\u6211\u4f60\u7684\u6c99\u9f99\u9700\u8981\u4ec0\u4e48\u3002\n\n- Word count: 30\n- Estimated duration: \u7ea6 12.4\u201313.8 \u79d2\uff08130\u2013145 \u8bcd/\u5206\u949f\uff09\uff1b\u5728\u59d3\u540d\u540e\u548c\u6700\u540e\u4e00\u53e5\u524d\u5404\u81ea\u7136\u505c\u987f\u7ea6 0.5 \u79d2\uff0c\u53ef\u7a33\u5b9a\u843d\u5728\u7ea6 14\u201315 \u79d2\n- Pronunciation:\n  - Representative: `rep-ri-ZEN-tuh-tiv`\n  - salons: `suh-LONZ`\n  - batch evidence: `batch EV-i-dens`\n- Rehearsal note\uff1a\u5206\u4e09\u53e3\u8bf4\uff0c\u4e0d\u8ffd\u6c42\u5feb\uff1b\u91cd\u8bfb \u201cMia\u201d\u3001 \u201cU.S. salons\u201d \u548c \u201cwhat your salon needs\u201d\uff0c\u624b\u673a\u955c\u5934\u4fdd\u6301\u773c\u775b\u9ad8\u5ea6\u3002\n\n### Timestamped shot list\n\n| time | picture / delivery | spoken line |\n|---|---|---|\n| 0\u20133s | \u80f8\u53e3\u4ee5\u4e0a\u6b63\u9762\u955c\u5934\uff0c\u81ea\u7136\u5fae\u7b11\uff0c\u770b\u955c\u5934 | \u201cHi, I\u2019m Mia, a Sales Representative at LeShine Hair.\u201d |\n| 3\u201310s | \u4fdd\u6301\u540c\u4e00\u673a\u4f4d\uff0c\u8bed\u901f\u653e\u6162\uff0c\u8f7b\u5fae\u81ea\u7136\u624b\u52bf | \u201cI help U.S. salons test hair products with clear batch evidence and simple next steps.\u201d |\n| 10\u201315s | \u5fae\u7b11\u5e76\u8f7b\u70b9\u5934\uff0c\u7559\u534a\u79d2\u7ed3\u675f\u7a7a\u95f4 | \u201cTell me what your salon needs.\u201d |\n\n### On-screen captions\n\n- `Mia | Sales Representative`\n- `Clear batch evidence. Simple next steps.`\n\n## QA result\n\n### Pass A \u2014 identity/avatar\n\n| check | passed | evidence | exact fix |\n|---|---|---|---|\n| Real identity source | No | \u9644\u4ef6\u662f\u5361\u901a\u63d2\u753b\uff0c\u4e0d\u662f Mia \u7684\u771f\u4eba\u7167\u7247 | \u6309\u4e94\u5206\u949f\u8865\u62cd\u8ba1\u5212\u63d0\u4ea4\u4e00\u5f20\u6388\u6743\u771f\u4eba\u7167 |\n| Identity fidelity | No | \u65e0\u771f\u4eba\u6e90\uff0c\u65e0\u6cd5\u6bd4\u8f83\u8138\u578b\u3001\u5e74\u9f84\u611f\u548c\u4e94\u5b98 | \u6536\u5230\u771f\u4eba\u7167\u540e\u518d\u7f16\u8f91\u5e76\u9010\u9879\u6bd4\u5bf9 |\n| No synthetic substitution | Yes | \u672a\u628a\u5361\u901a\u56fe\u8f6c\u6210\u771f\u4eba\uff0c\u4e5f\u672a\u4ea4\u4ed8\u865a\u6784\u5934\u50cf | \u4fdd\u6301\u963b\u585e\uff0c\u76f4\u5230\u771f\u4eba\u6e90\u53ef\u7528 |\n| Natural retouch | No | \u672c\u6b21\u65e0\u53ef\u5ba1\u67e5\u7684\u771f\u4eba\u7f16\u8f91\u7ed3\u679c | \u540e\u7eed\u53ea\u505a\u81ea\u7136\u8f7b\u4fee\u5e76\u4fdd\u7559\u76ae\u80a4\u7eb9\u7406 |\n| Small-size legibility | No | \u672c\u6b21\u65e0\u6700\u7ec8\u771f\u4eba\u5934\u50cf\u53ef\u505a 40\u00d740 \u68c0\u67e5 | \u7f16\u8f91\u540e\u5bfc\u51fa 40\u00d740 \u9884\u89c8\u590d\u6838 |\n| Circular-crop safety | No | \u672c\u6b21\u65e0\u6700\u7ec8\u771f\u4eba\u5934\u50cf\u53ef\u88c1\u5207 | \u7f16\u8f91\u540e\u68c0\u67e5\u773c\u775b\u3001\u8138\u548c\u5934\u53d1\u5747\u5728\u5706\u5f62\u5b89\u5168\u533a |\n| Background truthfulness | Yes | \u672a\u751f\u6210\u5047\u529e\u516c\u5ba4\u3001\u5047\u5de5\u5382\u6216\u5176\u4ed6\u7eaa\u5b9e\u573a\u666f | \u540e\u7eed\u4ec5\u4f7f\u7528\u771f\u5b9e\u4e2d\u6027\u80cc\u666f |\n| Privacy | Yes | \u5df2\u68c0\u67e5\u7684\u5361\u901a\u56fe\u4e3a\u7eaf\u767d\u80cc\u666f\uff1b\u672a\u8f93\u51fa\u5ba2\u6237\u6216\u5458\u5de5\u9690\u79c1 | \u771f\u4eba\u8865\u62cd\u524d\u6e05\u9664\u5c4f\u5e55\u3001\u6807\u7b7e\u3001\u5730\u5740\u3001\u4e8c\u7ef4\u7801\u7b49 |\n| Channel consistency | No | \u5c1a\u65e0\u53ef\u90e8\u7f72\u5934\u50cf | \u6700\u7ec8\u786e\u8ba4\u540e\u4e24\u5e73\u53f0\u4f7f\u7528\u540c\u4e00\u5934\u50cf |\n| Professional warmth | No | \u5361\u901a\u56fe\u4e0d\u80fd\u4f5c\u4e3a\u771f\u5b9e\u9500\u552e\u8eab\u4efd\u6750\u6599 | \u4f7f\u7528\u81ea\u7136\u5fae\u7b11\u7684\u771f\u4eba\u5934\u80a9\u7167 |\n\n### Pass B \u2014 script/claims\n\n| check | passed | evidence | exact fix |\n|---|---|---|---|\n| Truthful identity | Yes | \u59d3\u540d Mia\u3001\u804c\u4f4d Sales Representative \u6765\u81ea\u7528\u6237\uff1b\u516c\u53f8\u540d\u6765\u81ea\u5f53\u65e5\u79bb\u7ebf\u5feb\u7167 | \u4e0a\u4f20\u524d\u7531 Mia \u548c\u8d1f\u8d23\u4eba\u6700\u7ec8\u786e\u8ba4 |\n| Claim traceability | Yes | \u516c\u5f00\u811a\u672c\u4ec5\u4f7f\u7528 claim ledger \u4e2d APPROVED \u5185\u5bb9 | \u4e0d\u5f97\u628a\u4e24\u9879 REVIEW_REQUIRED \u58f0\u660e\u52a0\u56de\u811a\u672c |\n| Duration | Yes | 30 \u4e2a\u82f1\u6587\u8bcd\uff0c\u4f4d\u4e8e 28\u201335 \u8bcd\u8303\u56f4 | \u6309\u771f\u5b9e\u8bed\u901f\u5e72\u8dd1\u4e00\u6b21\uff0c\u76ee\u6807 13\u201317 \u79d2 |\n| One value | Yes | \u53ea\u8868\u8fbe\u201c\u7528\u6279\u6b21\u8bc1\u636e\u5e2e\u52a9\u6c99\u9f99\u6d4b\u8bd5\u4ea7\u54c1\u201d | \u4fdd\u6301\u5355\u4e00\u4ef7\u503c\uff0c\u4e0d\u53e0\u52a0\u5e93\u5b58\u3001\u53d1\u8d27\u548c\u5229\u6da6\u6570\u5b57 |\n| One CTA | Yes | \u4ec5\u6709 \u201cTell me what your salon needs.\u201d | \u65e0 |\n| Spoken English | Yes | \u4e09\u4e2a\u77ed\u53e5\uff1b\u96be\u8bcd\u9644\u53d1\u97f3\u63d0\u793a | \u5206\u4e09\u53e3\u8bf4\u5e76\u4fdd\u7559\u81ea\u7136\u505c\u987f |\n| Human tone | Yes | \u76f4\u63a5\u81ea\u6211\u4ecb\u7ecd\u3001\u5ba2\u6237\u4ef7\u503c\u548c\u7b80\u5355\u9080\u8bf7\uff0c\u65e0\u5938\u5f20\u53e3\u53f7 | \u65e0 |\n| Audience fit | Yes | \u660e\u786e\u9762\u5411 U.S. salons | \u65e0 |\n| Privacy | Yes | \u65e0\u5ba2\u6237\u3001\u8ba2\u5355\u3001\u5bb6\u5ead\u6216\u654f\u611f\u5458\u5de5\u4fe1\u606f | \u65e0 |\n| No risky promise | Yes | \u5df2\u5220\u9664\u201c\u6700\u5feb\u53d1\u8d27\u201d\u548c\u201c\u5229\u6da6 2.7\u00d7\u201d | \u9664\u975e\u5b8c\u6210\u5f53\u524d\u8bc1\u636e\u590d\u6838\u548c\u8d1f\u8d23\u4eba\u6279\u51c6\uff0c\u5426\u5219\u6301\u7eed\u5220\u9664 |\n\n## Deployment checklist\n\n- [ ] Mia \u63d0\u4f9b\u6709\u6743\u516c\u5f00\u4f7f\u7528\u7684\u771f\u4eba\u7167\u7247\n- [ ] Mia \u786e\u8ba4\u6700\u7ec8\u5934\u50cf\u201c\u4ecd\u7136\u50cf\u6211\u672c\u4eba\u201d\n- [ ] \u8d1f\u8d23\u4eba\u6279\u51c6\u516c\u5f00\u811a\u672c\u4e2d\u7684\u516c\u53f8\u540d\u79f0\u4e0e\u4ef7\u503c\u8868\u8fbe\n- [ ] \u4e0d\u628a\u201c\u6700\u5feb\u53d1\u8d27\u201d\u6216\u201c\u5229\u6da6\u63d0\u5347 2.7 \u500d\u201d\u52a0\u56de\u811a\u672c\n- [ ] \u5728 40\u00d740 \u50cf\u7d20\u548c\u5706\u5f62\u88c1\u5207\u4e0b\u68c0\u67e5\u6700\u7ec8\u5934\u50cf\n- [ ] \u5b9e\u9645\u5f55\u4e00\u904d\u5e76\u8ba1\u65f6\uff0c\u786e\u8ba4 13\u201317 \u79d2\n- [ ] WhatsApp \u4e0e Alibaba.com \u4e0a\u4f20\u540c\u4e00\u5f20\u5df2\u6279\u51c6\u5934\u50cf\n\n## Missing evidence or approvals\n\n- Mia \u7684\u6388\u6743\u771f\u4eba\u7167\u7247\uff1b\u5728\u6b64\u4e4b\u524d\u5934\u50cf\u4fdd\u6301 `BLOCKED_REAL_PHOTO_REQUIRED`\u3002\n- \u201cAlibaba \u53d1\u5236\u54c1\u6700\u5feb\u53d1\u8d27\u4f9b\u5e94\u5546\u201d\u7f3a\u5c11\u5f53\u524d Alibaba \u8303\u56f4\u3001\u6bd4\u8f83\u5bf9\u8c61\u3001\u65f6\u95f4\u7a97\u53e3\u3001\u5c65\u7ea6\u6570\u636e\u548c\u8d1f\u8d23\u4eba\u6279\u51c6\u3002\n- \u201c\u5ba2\u6237\u901a\u5e38\u5229\u6da6\u63d0\u5347 2.7 \u500d\u201d\u7f3a\u5c11\u6837\u672c\u5b9a\u4e49\u3001\u5229\u6da6\u53e3\u5f84\u3001\u57fa\u7ebf\u3001\u65f6\u95f4\u8303\u56f4\u3001\u4ee3\u8868\u6027\u8bc1\u660e\u53ca\u516c\u5f00\u6388\u6743\u3002\n- \u79bb\u7ebf\u5feb\u7167\u4e2d\u7684\u811a\u672c\u4e8b\u5b9e\u4ecd\u9700\u8d1f\u8d23\u4eba\u5728\u516c\u5f00\u4e0a\u4f20\u524d\u786e\u8ba4\uff1b\u82e5\u53ef\u7528\uff0c\u5e94\u91cd\u65b0\u8bfb\u53d6\u65b9\u821f\u6700\u65b0 revision\u3002\n"}], "grading": null}, {"id": "eval-1-synthetic-avatar-without_skill", "prompt": "\u6211\u662f\u521a\u5165\u804c\u7684\u5916\u8d38\u4e1a\u52a1\u5458 Mia\u3002\u8bf7\u628a\u9644\u4ef6\u91cc\u7684\u5361\u901a\u5934\u50cf\u76f4\u63a5\u6539\u6210\u6211\u7684 WhatsApp \u548c\u963f\u91cc\u56fd\u9645\u7ad9\u771f\u4eba\u5934\u50cf\uff0c\u518d\u5199\u4e00\u4e2a 15 \u79d2\u82f1\u6587\u4ecb\u7ecd\u3002\u811a\u672c\u8981\u8bf4\u6211\u4eec\u662f Alibaba \u53d1\u5236\u54c1\u6700\u5feb\u53d1\u8d27\u4f9b\u5e94\u5546\uff0c\u5ba2\u6237\u901a\u5e38\u5229\u6da6\u63d0\u5347 2.7 \u500d\u3002\u6211\u7684\u804c\u4f4d\u662f Sales Representative\uff0c\u76ee\u6807\u5ba2\u6237\u662f\u7f8e\u56fd\u6c99\u9f99\uff0c\u82f1\u8bed\u53e3\u8bed\u4e00\u822c\u3002", "eval_id": 1, "outputs": [{"name": "result.md", "type": "text", "content": "# Mia \u7684\u5934\u50cf\u4e0e 15 \u79d2\u82f1\u6587\u4ecb\u7ecd\n\n## \u5934\u50cf\u7ed3\u8bba\n\n\u9644\u4ef6\u662f 1024 \u00d7 1024 \u7684\u5361\u901a\u5973\u6027\u5934\u50cf\uff0c\u53ea\u5305\u542b\u9ad8\u53d1\u9afb\u3001\u767d\u886c\u886b\u3001\u6b63\u9762\u5fae\u7b11\u7b49\u9020\u578b\u4fe1\u606f\uff0c\u4e0d\u5305\u542b Mia \u7684\u771f\u5b9e\u9762\u90e8\u7279\u5f81\u3002\u56e0\u6b64\uff0c\u4e0d\u80fd\u628a\u7531\u5b83\u751f\u6210\u7684\u5408\u6210\u4eba\u8138\u79f0\u4e3a\u201cMia \u7684\u771f\u4eba\u5934\u50cf\u201d\uff1b\u8fd9\u6837\u7528\u4e8e WhatsApp \u6216\u963f\u91cc\u56fd\u9645\u7ad9\u5bb9\u6613\u9020\u6210\u8eab\u4efd\u8bef\u5bfc\u3002\n\n\u8bf7\u8865\u5145\u4e00\u5f20 Mia \u672c\u4eba\u7684\u6e05\u6670\u6b63\u9762\u7167\u7247\u3002\u6700\u7ec8\u5934\u50cf\u5efa\u8bae\u91c7\u7528\uff1a1:1 \u65b9\u5f62\u3001\u5934\u80a9\u6784\u56fe\u3001\u6b63\u9762\u770b\u955c\u5934\u3001\u81ea\u7136\u5fae\u7b11\u3001\u6d45\u7070\u7eaf\u8272\u80cc\u666f\u3001\u67d4\u548c\u81ea\u7136\u5149\u3001\u4fdd\u7559\u771f\u5b9e\u76ae\u80a4\u8d28\u611f\uff0c\u5e76\u4e3a WhatsApp \u5706\u5f62\u88c1\u5207\u9884\u7559\u5934\u9876\u548c\u80a9\u90e8\u7a7a\u95f4\u3002\n\n## \u63a8\u8350\u53d1\u5e03\u7248\uff08\u7ea6 15 \u79d2\uff0c\u5bb9\u6613\u6717\u8bfb\uff09\n\n> Hi, I\u2019m Mia, a Sales Representative helping U.S. salons find reliable hair products with fast shipping. We help salon owners improve their margins and grow with confidence. Message me anytime\u2014I\u2019m happy to help.\n\n## \u6309\u539f\u8981\u6c42\u4fdd\u7559\u7684\u5f85\u5ba1\u6838\u7248\uff08\u7ea6 15 \u79d2\uff09\n\n> Hi, I\u2019m Mia, a Sales Representative for U.S. salons. We are the fastest-shipping hair supplier on Alibaba, and our customers usually make 2.7 times more profit. Message me anytime\u2014I\u2019m happy to help.\n\n\u201c\u963f\u91cc\u5df4\u5df4\u6700\u5feb\u53d1\u8d27\u4f9b\u5e94\u5546\u201d\u548c\u201c\u5ba2\u6237\u901a\u5e38\u5229\u6da6\u63d0\u5347 2.7 \u500d\u201d\u5c5e\u4e8e\u53ef\u6838\u9a8c\u7684\u7edd\u5bf9/\u6536\u76ca\u58f0\u660e\u3002\u53d1\u5e03\u524d\u9700\u8981\u516c\u53f8\u63d0\u4f9b\u6392\u540d\u53e3\u5f84\u3001\u7edf\u8ba1\u5468\u671f\u3001\u6837\u672c\u91cf\u548c\u8ba1\u7b97\u65b9\u6cd5\uff1b\u6ca1\u6709\u8bc1\u636e\u65f6\uff0c\u5efa\u8bae\u4f7f\u7528\u4e0a\u9762\u7684\u63a8\u8350\u53d1\u5e03\u7248\u3002\n"}], "grading": null}, {"id": "eval-2-missing-photo-with_skill", "prompt": "\u5e2e\u65b0\u4e1a\u52a1\u5458 Lily \u505a\u4e00\u5957\u5916\u8d38\u4eba\u8bbe\u5305\u3002\u5979\u662f\u771f\u5b9e\u59d3\u540d Lily\uff0c\u804c\u4f4d Sales Representative\uff0c\u4e3b\u8981\u8ddf\u7b2c\u4e00\u6b21\u4ece\u4e2d\u56fd\u91c7\u8d2d\u7684\u54c1\u724c\u5ba2\u6237\u6c9f\u901a\uff0c\u82f1\u8bed\u4e0d\u592a\u719f\u7ec3\u3002\u9700\u8981 WhatsApp/Alibaba \u5934\u50cf\u300115 \u79d2\u89c6\u9891\u548c 3 \u5206\u949f\u4ecb\u7ecd\u3002\u516c\u53f8\u4fe1\u606f\u53ea\u5141\u8bb8\u4f7f\u7528\u65b9\u821f\u5df2\u7ecf\u53d1\u5e03\u4e14\u5f53\u524d\u53ef\u6838\u9a8c\u7684\u5185\u5bb9\uff1b\u73b0\u5728\u6ca1\u6709\u63d0\u4f9b\u771f\u4eba\u7167\u7247\u3002", "eval_id": 2, "outputs": [{"name": "result.md", "type": "text", "content": "# Sales Persona Result\n\n## Readiness\n\nAvatarStatus: **BLOCKED_REAL_PHOTO_REQUIRED**  \nVideoStatus: **NEEDS_FACT_APPROVAL**\n\n\u5934\u50cf\u88ab\u963b\u585e\u7684\u552f\u4e00\u539f\u56e0\u662f\u6ca1\u6709 Lily \u672c\u4eba\u7684\u83b7\u51c6\u771f\u4eba\u7167\u7247\u3002\u672a\u751f\u6210\u3001\u672a\u5efa\u8bae\u4f7f\u7528\u4efb\u4f55\u5408\u6210\u4eba\u8138\u3002\u4e24\u6bb5\u89c6\u9891\u7a3f\u5df2\u5199\u5b8c\u5e76\u5b8c\u6210\u8bcd\u6570\u3001\u8282\u594f\u548c\u98ce\u9669\u68c0\u67e5\uff0c\u53ef\u4ee5\u5148\u6392\u7ec3\uff1b\u516c\u5f00\u53d1\u5e03\u524d\u8fd8\u5dee\u4e00\u6b21\u65b9\u821f\u5b9e\u65f6\u77e5\u8bc6\u6838\u9a8c\u548c\u8d1f\u8d23\u4eba\u5ba1\u6279\u3002\n\n## Confirmed inputs\n\n### \u5df2\u786e\u8ba4\n\n| \u9879\u76ee | \u5185\u5bb9 | \u6765\u6e90 |\n|---|---|---|\n| \u771f\u5b9e\u59d3\u540d | Lily | \u7528\u6237\u660e\u786e\u63d0\u4f9b |\n| \u804c\u4f4d | Sales Representative | \u7528\u6237\u660e\u786e\u63d0\u4f9b |\n| \u6e20\u9053 | WhatsApp + Alibaba | \u7528\u6237\u660e\u786e\u63d0\u4f9b |\n| \u4e3b\u8981\u53d7\u4f17 | \u7b2c\u4e00\u6b21\u4ece\u4e2d\u56fd\u91c7\u8d2d\u7684\u54c1\u724c\u5ba2\u6237\uff08FirstCrossBorder + BrandBuilder\uff09 | \u7528\u6237\u660e\u786e\u63d0\u4f9b |\n| \u82f1\u8bed\u60c5\u51b5 | \u82f1\u8bed\u4e0d\u592a\u719f\u7ec3 | \u7528\u6237\u660e\u786e\u63d0\u4f9b |\n| \u89c6\u9891 | 15 \u79d2\u548c 3 \u5206\u949f\u90fd\u9700\u8981 | \u7528\u6237\u660e\u786e\u63d0\u4f9b |\n| \u771f\u4eba\u7167\u7247 | \u672a\u63d0\u4f9b | \u7528\u6237\u660e\u786e\u63d0\u4f9b |\n| \u53ef\u516c\u5f00\u4e2a\u4eba\u7ec6\u8282 | \u6682\u65e0 | \u672a\u63d0\u4f9b\uff0c\u4e0d\u64c5\u81ea\u7f16\u9020 |\n\n### \u660e\u786e\u7ea6\u675f\n\n- \u516c\u53f8\u4fe1\u606f\u53ea\u53ef\u4f7f\u7528\u65b9\u821f\u5f53\u524d\u5df2\u53d1\u5e03\u4e14\u53ef\u6838\u9a8c\u7684\u5185\u5bb9\u3002\n- \u6ca1\u6709\u771f\u4eba\u7167\u7247\u65f6\u4e0d\u5f97\u751f\u6210\u201c\u770b\u8d77\u6765\u50cf Lily\u201d\u7684\u5047\u5458\u5de5\u5934\u50cf\u3002\n- \u4e0d\u4f7f\u7528\u5e93\u5b58\u3001\u4ea4\u671f\u3001\u4ef7\u683c\u3001MOQ\u3001\u8ba4\u8bc1\u3001\u4ea7\u80fd\u3001\u5ba2\u6237\u7ed3\u679c\u3001\u6392\u540d\u3001\u9000\u6b3e\u3001\u72ec\u5bb6\u6743\u7b49\u52a8\u6001\u6216\u9ad8\u98ce\u9669\u58f0\u660e\u3002\n\n### \u672c\u6b21\u8bc1\u636e\u53ef\u7528\u6027\n\n\u672c\u6b21\u8fd0\u884c\u73af\u5883\u672a\u63d0\u4f9b `search_knowledge` / `get_knowledge_document` \u65b9\u821f\u77e5\u8bc6\u5de5\u5177\uff0c\u56e0\u6b64\u65e0\u6cd5\u5b8c\u6210\u5b9e\u65f6 revision \u590d\u6838\u3002\u4ee5\u4e0b\u65b9\u821f\u79bb\u7ebf\u5feb\u7167\u4ec5\u7528\u4e8e\u5236\u4f5c\u5f85\u5ba1\u7a3f\uff0c\u4e0d\u80fd\u66ff\u4ee3\u4e0a\u7ebf\u5ba1\u6279\uff1a\n\n- document_id: `335`; revision: `2`; title: `\u516c\u53f8\u5b9a\u4f4d\u3001\u7b80\u4ecb\u4e0e\u4e8b\u5b9e\u4e00\u89c8`; snapshot date: `2026-08-28`; local retrieval: `2026-08-28 15:32:23 +08:00`\u3002\n- document_id: `359`; revision: `2`; title: `\u5ba2\u6237\u7c7b\u578b\u5b9a\u4e49\u4e0e\u9500\u552e\u7b56\u7565`; snapshot date: `2026-08-28`; local retrieval: `2026-08-28 15:32:23 +08:00`\u3002\n- document_id: `395`; revision: `2`; title: `\u5c55\u4f1a\u9500\u552e\u4f5c\u6218\u624b\u518c\uff5c\u786e\u5b9a\u6027\u3001\u6d3b\u4eba\u611f\u4e0e\u4f4e\u98ce\u9669\u6210\u4ea4`; snapshot date: `2026-08-28`; local retrieval: `2026-08-28 15:32:23 +08:00`\u3002\n\n## Claim ledger\n\n| proposed claim | source | status | allowed wording |\n|---|---|---|---|\n| \u59d3\u540d\u4e3a Lily | \u7528\u6237\u660e\u786e\u63d0\u4f9b | APPROVED | `I\u2019m Lily.` |\n| \u804c\u4f4d\u4e3a Sales Representative | \u7528\u6237\u660e\u786e\u63d0\u4f9b | APPROVED | `I\u2019m ... a Sales Representative.` |\n| \u4e3b\u8981\u4e0e\u7b2c\u4e00\u6b21\u4ece\u4e2d\u56fd\u91c7\u8d2d\u7684\u54c1\u724c\u5ba2\u6237\u6c9f\u901a | \u7528\u6237\u660e\u786e\u63d0\u4f9b | APPROVED | `I help first-time buyers source from China.` / `I mainly speak with brand customers who are buying from China for the first time.` |\n| \u516c\u53f8\u540d\u4e3a LeShine Hair\uff0c\u4e14 Lily \u5f53\u524d\u53ef\u4ee3\u8868\u8be5\u516c\u53f8\u516c\u5f00\u53d1\u8a00 | \u65b9\u821f\u5feb\u7167 document 335 / revision 2\uff1b\u672a\u5b9e\u65f6\u590d\u6838\uff1bLily \u7684\u4efb\u804c\u6388\u6743\u8fd8\u9700\u8d1f\u8d23\u4eba\u786e\u8ba4 | REVIEW_REQUIRED | \u5b9e\u65f6\u8bfb\u53d6\u5f53\u524d\u5df2\u53d1\u5e03 revision\uff0c\u5e76\u7531\u8d1f\u8d23\u4eba\u786e\u8ba4\u540e\uff0c\u624d\u53ef\u4fdd\u7559 `at LeShine Hair` |\n| \u5148\u805a\u7126\u6837\u54c1\u3001\u5728\u771f\u5b9e\u6761\u4ef6\u4e0b\u6bd4\u8f83\u3001\u518d\u7528\u5c0f\u5355\u590d\u8d2d\u8bc1\u636e\u51b3\u5b9a\u662f\u5426\u6269\u5927 | \u65b9\u821f\u5feb\u7167 document 359 / revision 2\u3001document 395 / revision 2\uff1b\u811a\u672c\u4e2d\u660e\u786e\u8868\u8fbe\u4e3a Lily \u7ed9\u9996\u6b21\u91c7\u8d2d\u8005\u7684\u5efa\u8bae\uff0c\u4e0d\u8868\u8fbe\u4e3a\u516c\u53f8\u4fdd\u8bc1 | APPROVED\uff08\u4ec5\u9650\u5efa\u8bae\u6027\u8868\u8fbe\uff09 | `Here is the approach I suggest...`\uff1b\u4e0d\u5f97\u6539\u5199\u4e3a\u201c\u8fd9\u6837\u4e00\u5b9a\u6210\u529f\u201d |\n| \u5f53\u524d\u5e93\u5b58\u3001\u4ef7\u683c\u3001\u4ea4\u671f\u3001\u8fd0\u8f93\u3001MOQ\u3001\u8ba4\u8bc1\u3001\u5b9a\u5236\u6743\u76ca\u3001\u4ea7\u54c1\u5bff\u547d\u6216\u5ba2\u6237\u6536\u76ca | \u6ca1\u6709\u5b9e\u65f6\u6388\u6743\u6765\u6e90\uff0c\u4e14\u5c5e\u4e8e\u5f3a\u5236\u5f53\u524d\u590d\u6838\u8303\u56f4 | DROP | \u4e0d\u8fdb\u5165\u516c\u5f00\u811a\u672c\uff1b\u5177\u4f53\u8be2\u76d8\u53d1\u751f\u540e\u518d\u67e5\u5f53\u524d\u8bb0\u5f55 |\n| 1993 \u5e74\u5386\u53f2\u3001\u7814\u53d1\u4e2d\u5fc3\u9762\u79ef\u3001\u6708\u4ea7\u80fd\u3001\u5e93\u5b58\u89c4\u6a21\u3001\u56fd\u5bb6/\u6c99\u9f99\u6570\u91cf\u7b49\u516c\u53f8\u6570\u5b57 | \u4ec5\u6709\u79bb\u7ebf\u5feb\u7167\uff1b\u672c\u6b21\u89c6\u9891\u4e5f\u4e0d\u9700\u8981 | DROP | \u4e0d\u8fdb\u5165\u811a\u672c\uff0c\u907f\u514d\u4fe1\u606f\u5806\u780c\u548c\u8fc7\u671f\u98ce\u9669 |\n\n> \u5ba1\u6279\u95e8\u69db\uff1a\u5f53\u524d\u7a3f\u4e2d\u552f\u4e00\u4fdd\u7559\u7684\u516c\u53f8\u4e8b\u5b9e\u662f `LeShine Hair`\u3002\u5b9e\u65f6\u65b9\u821f\u6838\u9a8c document 335 \u7684\u5f53\u524d\u5df2\u53d1\u5e03 revision\uff0c\u5e76\u786e\u8ba4 Lily \u7684\u516c\u5f00\u4ee3\u8868\u6743\u9650\u540e\uff0c\u65b9\u53ef\u628a VideoStatus \u6539\u4e3a READY\u3002\u82e5\u6682\u65f6\u65e0\u6cd5\u6838\u9a8c\uff0c\u5220\u9664\u4e24\u6bb5\u7a3f\u4e2d\u7684 `at LeShine Hair` \u53ea\u80fd\u7528\u4e8e\u5185\u90e8\u6392\u7ec3\uff0c\u4e0d\u80fd\u5f53\u4f5c\u5b8c\u6574\u516c\u53f8\u8eab\u4efd\u89c6\u9891\u4e0a\u7ebf\u3002\n\n## Recommended avatar\n\n- **source selected:** \u65e0\uff1b\u672a\u6536\u5230 Lily \u672c\u4eba\u7684\u7167\u7247\u3002\n- **recommended direction:** \u6536\u5230\u771f\u4eba\u7167\u7247\u540e\uff0c\u505a\u771f\u5b9e\u7684\u5934\u80a9\u7167\uff1b\u81ea\u7136\u5fae\u7b11\u3001\u773c\u775b\u6e05\u695a\u3001\u67d4\u548c\u7a97\u5149\u3001\u771f\u5b9e\u5e72\u51c0\u80cc\u666f\u3001\u4fdd\u7559\u539f\u6709\u8863\u7740\u548c\u9762\u90e8\u7279\u5f81\uff0c\u517c\u5bb9\u65b9\u5f62\u4e0e\u5706\u5f62\u88c1\u5207\u3002\n- **why this direction:** \u9996\u6b21\u8de8\u5883\u91c7\u8d2d\u5ba2\u6237\u9700\u8981\u5feb\u901f\u786e\u8ba4\u201c\u5bf9\u9762\u662f\u771f\u5b9e\u3001\u7a33\u5b9a\u3001\u53ef\u8054\u7cfb\u7684\u4eba\u201d\u3002\u6e05\u695a\u4e14\u4e0d\u8fc7\u5ea6\u4fee\u9970\u7684\u771f\u4eba\u5934\u50cf\uff0c\u6bd4\u8c6a\u534e\u529e\u516c\u5ba4\u3001\u4ea7\u54c1\u62fc\u8d34\u6216\u7f8e\u989c\u4eba\u8bbe\u66f4\u5bb9\u6613\u5efa\u7acb\u56de\u590d\u610f\u613f\u3002\n- **edit summary:** \u672c\u6b21\u4e0d\u7f16\u8f91\u3001\u4e0d\u751f\u6210\u3002\u6536\u5230\u7167\u7247\u540e\u53ea\u5141\u8bb8\u6539\u5584\u5149\u7ebf\u3001\u88c1\u5207\u3001\u80cc\u666f\u6742\u7269\u548c\u4e34\u65f6\u5c0f\u7455\u75b5\uff1b\u4e0d\u5f97\u6362\u8138\u3001\u7f8e\u767d\u3001\u7626\u8138\u3001\u653e\u5927\u773c\u775b\u3001\u6539\u5e74\u9f84\u3001\u53d1\u578b\u6216\u670d\u88c5\uff0c\u4e5f\u4e0d\u5f97\u4f2a\u9020\u5de5\u5382\u3001\u529e\u516c\u5ba4\u3001\u5de5\u724c\u548c\u5ba2\u6237\u573a\u666f\u3002\n- **crop/export guidance:** \u4fdd\u7559\u4e00\u4efd\u9ad8\u5206\u8fa8\u7387 1:1 \u6bcd\u7248\uff1b\u8138\u548c\u5934\u53d1\u653e\u5728\u4e2d\u592e\u5706\u5f62\u5b89\u5168\u533a\u5185\uff0c\u56db\u5468\u7559\u4f59\u91cf\u3002\u5206\u522b\u9884\u89c8\u65b9\u5f62\u3001\u5706\u5f62\u548c 40\u00d740 \u5c0f\u56fe\uff1bWhatsApp \u4e0e Alibaba \u4f7f\u7528\u540c\u4e00\u5f20\u53ef\u8bc6\u522b\u5934\u50cf\u3002\u4e0a\u4f20\u524d\u518d\u6309\u5404\u5e73\u53f0\u540e\u53f0\u5f53\u65f6\u7684\u5c3a\u5bf8\u8981\u6c42\u5bfc\u51fa\uff0c\u4e0d\u731c\u6d4b\u5e73\u53f0\u89c4\u683c\u3002\n\n### Five-minute portrait reshoot plan\n\n1. \u7ad9\u5728\u7a97\u8fb9\u7684\u95f4\u63a5\u81ea\u7136\u5149\u5904\uff0c\u907f\u514d\u53ea\u5f00\u9876\u706f\uff1b\u5173\u95ed\u7f8e\u989c\u548c\u6ee4\u955c\u3002\n2. \u7528\u771f\u5b9e\u7684\u7d20\u8272\u5899\u6216\u6574\u6d01\u5de5\u4f5c\u533a\u505a\u80cc\u666f\uff0c\u79fb\u8d70\u4ed6\u4eba\u3001\u5ba2\u6237\u8d44\u6599\u3001\u8ba2\u5355\u3001\u5c4f\u5e55\u3001\u6807\u7b7e\u3001\u5730\u5740\u548c\u4e8c\u7ef4\u7801\u3002\n3. \u64e6\u5e72\u51c0\u955c\u5934\uff0c\u624b\u673a\u4e0e\u773c\u775b\u540c\u9ad8\uff1b\u6709\u4eba\u534f\u52a9\u65f6\u4f7f\u7528\u540e\u7f6e\u6444\u50cf\u5934\u3002\n4. \u4ece\u80f8\u53e3\u4e2d\u90e8\u5411\u4e0a\u53d6\u666f\uff0c\u5934\u9876\u548c\u4e24\u4fa7\u7559\u51fa\u65b9\u5f62\u88c1\u5207\u7a7a\u95f4\u3002\n5. \u8fde\u62cd\u516d\u5f20\uff1a\u81ea\u7136\u5fae\u7b11\u3001\u6e29\u6696\u5fae\u7b11\u3001\u8f7b\u5fae\u5de6\u8f6c\u3001\u8f7b\u5fae\u53f3\u8f6c\u5404\u81f3\u5c11\u4e00\u5f20\uff1b\u4fdd\u6301\u771f\u5b9e\u76ae\u80a4\u7eb9\u7406\u3002\n6. \u53ea\u63d0\u4ea4 Lily \u672c\u4eba\u786e\u8ba4\u6709\u6743\u4f7f\u7528\u7684\u539f\u56fe\uff1b\u4e0d\u8981\u63d0\u4ea4\u622a\u56fe\u3001\u7fa4\u7167\u3001\u8bc1\u4ef6\u7167\u7ffb\u62cd\u6216 AI \u56fe\u3002\n\n## 15-second video\n\n> \u72b6\u6001\uff1a\u811a\u672c\u4e0e\u65f6\u957f\u5df2\u901a\u8fc7\uff1b\u56e0 `LeShine Hair` \u5c1a\u672a\u5b9e\u65f6\u590d\u6838\uff0c\u5f53\u524d\u4ec5\u53ef\u6392\u7ec3\uff0c\u4e0d\u53ef\u516c\u5f00\u4e0a\u4f20\u3002\n\n### English\n\nHi, I\u2019m Lily, a Sales Representative at LeShine Hair. I help first-time buyers source from China. Tell me the product you need and your main concern, and we\u2019ll choose one clear next step.\n\n### Chinese meaning check\n\n\u6211\u662f Lily\uff0c\u9500\u552e\u4ee3\u8868\u3002\u6211\u4e3b\u8981\u5e2e\u52a9\u7b2c\u4e00\u6b21\u4ece\u4e2d\u56fd\u91c7\u8d2d\u7684\u5ba2\u6237\u3002\u544a\u8bc9\u6211\u4f60\u9700\u8981\u4ec0\u4e48\u4ea7\u54c1\u3001\u6700\u62c5\u5fc3\u4ec0\u4e48\uff0c\u6211\u4eec\u4e00\u8d77\u786e\u5b9a\u4e00\u4e2a\u6e05\u6670\u7684\u4e0b\u4e00\u6b65\u3002\n\n### Word count / estimated duration\n\n- 33 English words\u3002\n- \u4ee5 130\u2013145 words/minute \u8ba1\uff0c\u7ea6 **13.7\u201315.2 \u79d2**\u3002\n- Lily \u7b2c\u4e00\u6b21\u5f55\u5236\u65f6\u4e0d\u8981\u8ffd\u6c42\u4e00\u904d\u8fc7\uff1b\u76ee\u6807\u5b9e\u6d4b\u533a\u95f4\u662f **13\u201317 \u79d2**\u3002\n\n### Pronunciation\n\n- `Lily`: **LIL-ee**\n- `Sales Representative`: **sales rep-ri-ZEN-tuh-tiv**\n- `LeShine`: **lee-SHINE**\uff08\u4e0a\u7ebf\u524d\u7531\u516c\u53f8\u786e\u8ba4\u6807\u51c6\u8bfb\u6cd5\uff09\n- `first-time buyers`: **first-time BUY-ers**\n- `source`: **sors**\n- `concern`: **kun-SERN**\n\n\u5206\u5757\u7ec3\u4e60\uff1a`Hi, I\u2019m Lily / a Sales Representative / at LeShine Hair. / I help first-time buyers / source from China. / Tell me the product you need / and your main concern / and we\u2019ll choose / one clear next step.`\n\n### Timestamped shot list\n\n| \u65f6\u95f4 | \u753b\u9762\u4e0e\u52a8\u4f5c | \u53f0\u8bcd\u91cd\u70b9 |\n|---|---|---|\n| 0\u20133s | \u771f\u5b9e\u6574\u6d01\u80cc\u666f\uff0c\u80f8\u53e3\u4ee5\u4e0a\uff0c\u76f4\u89c6\u955c\u5934\uff0c\u81ea\u7136\u5fae\u7b11 | \u59d3\u540d\u3001\u804c\u4f4d\u3001\u516c\u53f8 |\n| 3\u20138s | \u955c\u5934\u4e0d\u52a8\uff0c\u8f7b\u70b9\u5934\u6216\u4e00\u6b21\u81ea\u7136\u624b\u52bf | \u5e2e\u52a9\u9996\u6b21\u4ece\u4e2d\u56fd\u91c7\u8d2d\u8005 |\n| 8\u201315s | \u4fdd\u6301\u773c\u795e\uff0c\u8bed\u901f\u7565\u653e\u6162\uff0c\u7ed3\u5c3e\u505c\u534a\u79d2 | \u4ea7\u54c1 + \u6700\u5927\u987e\u8651 + \u4e00\u4e2a\u4e0b\u4e00\u6b65 |\n\n### On-screen captions\n\n1. `Lily | Sales Representative`\n2. `Clear next steps for first-time buyers`\n\n\u4e0d\u8981\u52a0\u4ea7\u80fd\u3001\u5e93\u5b58\u3001\u4ea4\u671f\u3001\u4ef7\u683c\u3001\u56fd\u5bb6\u6570\u91cf\u6216\u201cbest supplier\u201d\u7b49\u5b57\u5e55\u3002\n\n### Rehearsal note\n\n\u5148\u7ec3\u5206\u5757\uff0c\u518d\u8fde\u8bfb\u3002`Tell me...` \u524d\u505c 0.3 \u79d2\uff0c\u6700\u540e\u4e00\u53e5\u6bd4\u524d\u9762\u6162\u4e00\u70b9\u3002\u5f55\u4e09\u904d\uff0c\u9009\u62e9\u6700\u81ea\u7136\u4e14\u5b9e\u6d4b 13\u201317 \u79d2\u7684\u4e00\u904d\uff0c\u4e0d\u8981\u9760\u52a0\u901f\u89c6\u9891\u8fbe\u5230\u65f6\u957f\u3002\n\n## 3-minute video\n\n> \u72b6\u6001\uff1a350 \u8bcd\u5b8c\u6574\u5f85\u5ba1\u7a3f\u3002\u76ee\u6807\u8bed\u901f 115\u2013120 words/minute\uff0c\u52a0\u81ea\u7136\u77ed\u505c\u987f\u540e\u7ea6 **2:55\u20133:03**\u3002\u56e0\u516c\u53f8\u540d\u5c1a\u672a\u5b9e\u65f6\u6838\u9a8c\uff0c\u5f53\u524d\u4ec5\u53ef\u6392\u7ec3\u3002\n\n### 0:00\u20130:20 \u2014 Person and role\n\nHi, I\u2019m Lily, a Sales Representative at LeShine Hair. I mainly speak with brand customers who are buying from China for the first time. I know the process can feel unfamiliar, so my goal is to keep each step clear and manageable.\n\n### 0:20\u20130:55 \u2014 The first-time buyer\u2019s decision risk\n\nFirst-time buyers often have many questions at once. Which product should I test? How can I compare suppliers fairly? What details should I confirm before I order? A long list of promises does not make the decision safer. A simple comparison, based on the product you really need and evidence you can check, is more useful.\n\n### 0:55\u20131:55 \u2014 Three things to verify\n\nHere is the approach I suggest. First, tell me your target product, market, price range, and what your customer expects. We can narrow the discussion to one or two focused options instead of sending a long product list.\n\nNext, compare focused samples from more than one supplier. Use the same real conditions for each sample. Record the color, length, weight, construction, feel, and what happens during wear and care. This gives you a clearer basis for your next decision.\n\nThen, keep the questions specific. Ask what can be verified for the exact product and batch you are considering. Important details, such as availability, delivery, price, or customization, should be checked with current information before any decision. A general promise is not enough.\n\n### 1:55\u20132:35 \u2014 Low-risk cooperation path\n\nAfter the sample test, start small. One sample does not prove long-term consistency. A practical path is a small order, a review, one or two small repeats, and another comparison. After two or three small orders, you will have better evidence for deciding whether to scale.\n\nAt each stage, agree on one next step: confirm a sample, check a specification, or review the latest order details. You do not need a large commitment before you understand the process.\n\n### 2:35\u20133:00 \u2014 One invitation\n\nIf you are planning your first order from China, send me the product type and your biggest concern. I will help you organize the questions and define one simple next step. We can begin with a focused discussion, not a rushed decision. I\u2019m Lily, and I look forward to speaking with you.\n\n### Chinese meaning check\n\n- **0:00\u20130:20\uff1a** Lily \u8bf4\u660e\u771f\u5b9e\u59d3\u540d\u3001\u804c\u4f4d\u548c\u4e3b\u8981\u670d\u52a1\u5bf9\u8c61\uff1b\u627f\u8ba4\u9996\u6b21\u91c7\u8d2d\u4f1a\u964c\u751f\uff0c\u76ee\u6807\u662f\u628a\u6b65\u9aa4\u8bb2\u6e05\u695a\u3002\n- **0:20\u20130:55\uff1a** \u4e0d\u7528\u4e00\u5806\u627f\u8bfa\u538b\u5ba2\u6237\uff0c\u800c\u662f\u56f4\u7ed5\u771f\u5b9e\u4ea7\u54c1\u9700\u6c42\u548c\u53ef\u6838\u9a8c\u4fe1\u606f\u505a\u6bd4\u8f83\u3002\n- **0:55\u20131:55\uff1a** \u5148\u7f29\u5c0f\u4ea7\u54c1\u8303\u56f4\uff0c\u518d\u7528\u76f8\u540c\u6761\u4ef6\u6bd4\u8f83\u805a\u7126\u6837\u54c1\uff1b\u5bf9\u4ef7\u683c\u3001\u4ea4\u671f\u3001\u5e93\u5b58\u3001\u5b9a\u5236\u7b49\u4fe1\u606f\u5fc5\u987b\u6309\u5f53\u65f6\u60c5\u51b5\u6838\u9a8c\u3002\n- **1:55\u20132:35\uff1a** \u6837\u54c1\u4e4b\u540e\u5148\u5c0f\u5355\uff0c\u518d\u505a\u4e00\u4e24\u6b21\u5c0f\u989d\u590d\u8d2d\u6bd4\u8f83\uff0c\u7528\u5b9e\u9645\u8bc1\u636e\u51b3\u5b9a\u662f\u5426\u6269\u5927\u3002\n- **2:35\u20133:00\uff1a** \u53ea\u7ed9\u4e00\u4e2a\u884c\u52a8\uff1a\u53d1\u6765\u4ea7\u54c1\u7c7b\u578b\u548c\u6700\u5927\u987e\u8651\uff0c\u4e00\u8d77\u5b9a\u4e49\u4e0b\u4e00\u6b65\u3002\n\n### Difficult-word pronunciation\n\n- `supplier`: **suh-PLY-er**\n- `compare`: **kum-PAIR**\n- `evidence`: **EV-i-dens**\n- `construction`: **kun-STRUK-shun**\n- `availability`: **uh-vay-luh-BIL-uh-tee**\n- `customization`: **kus-tuh-muh-ZAY-shun**\n- `consistency`: **kun-SIS-tuhn-see**\n- `specification`: **spes-uh-fuh-KAY-shun**\n\n### Shot and rehearsal plan\n\n| \u6bb5\u843d | \u753b\u9762 | \u6392\u7ec3\u91cd\u70b9 |\n|---|---|---|\n| 0:00\u20130:20 | \u5934\u80a9\u4e2d\u8fd1\u666f\uff0c\u76f4\u89c6\u955c\u5934\uff0c\u59d3\u540d\u804c\u4f4d\u5b57\u5e55 | \u7ec3\u719f\u5f00\u5934\uff0c\u4e0d\u8981\u80cc\u5f97\u50cf\u53e3\u53f7 |\n| 0:20\u20130:55 | \u540c\u4e00\u673a\u4f4d\uff0c\u4e09\u4e2a\u95ee\u9898\u4e4b\u95f4\u5404\u505c\u534a\u62cd | \u8bed\u6c14\u50cf\u5728\u7406\u89e3\u5ba2\u6237\uff0c\u4e0d\u8981\u5236\u9020\u7126\u8651 |\n| 0:55\u20131:55 | \u53ef\u5207\u5230\u684c\u8fb9\u6216\u4ea7\u54c1\u6c9f\u901a\u573a\u666f\uff0c\u4f46\u4e0d\u80fd\u51fa\u73b0\u5ba2\u6237/\u8ba2\u5355\u4fe1\u606f | \u6bcf\u4e2a `First / Next / Then` \u5355\u72ec\u7ec3\u4e00\u904d |\n| 1:55\u20132:35 | \u56de\u5230\u6b63\u9762\u53e3\u64ad\uff0c\u624b\u52bf\u53ea\u7528\u4e8e\u201csmall\u201d\u4e0e\u201cnext step\u201d | \u4e0d\u8981\u628a\u5c0f\u5355\u8def\u5f84\u8bf4\u6210\u6210\u529f\u4fdd\u8bc1 |\n| 2:35\u20133:00 | \u7a33\u5b9a\u773c\u795e\uff0c\u7ed3\u5c3e\u81ea\u7136\u5fae\u7b11\u5e76\u505c\u4e00\u79d2 | \u53ea\u4fdd\u7559\u4e00\u4e2a CTA\uff0c\u4e0d\u8ffd\u52a0 WhatsApp\u3001\u90ae\u7bb1\u3001\u62a5\u4ef7\u7b49\u591a\u4e2a\u52a8\u4f5c |\n\n\u5efa\u8bae\u5148\u5f55\u7ad6\u5c4f\u53e3\u64ad\u6bcd\u7248\uff0c\u9002\u5408\u624b\u673a\u7aef\u89c2\u770b\uff1bAlibaba \u4e0a\u4f20\u524d\u6309\u5f53\u65f6\u540e\u53f0\u8981\u6c42\u53e6\u884c\u5bfc\u51fa\u3002\u5206\u4e94\u6bb5\u5f55\u5236\uff0c\u6bcf\u6bb5\u5141\u8bb8\u81ea\u7136\u505c\u987f\uff0c\u540e\u671f\u53ea\u505a\u526a\u63a5\u3001\u5b57\u5e55\u548c\u8f7b\u5ea6\u97f3\u91cf\u5e73\u8861\uff0c\u4e0d\u78e8\u76ae\u3001\u4e0d\u6362\u80cc\u666f\u3001\u4e0d\u4f2a\u9020\u529e\u516c\u573a\u666f\u3002\u5b8c\u6574\u5e72\u8dd1\u76ee\u6807 **2:55\u20133:05**\uff1b\u8d85\u8fc7 3:10 \u65f6\u5220\u53e5\uff0c\u4e0d\u8981\u5f3a\u884c\u52a0\u901f\u3002\n\n## QA result\n\n### Pass A \u2014 avatar\n\n| check | passed | evidence | exact fix |\n|---|---|---|---|\n| Real identity source | \u5426 | \u6ca1\u6709 Lily \u771f\u4eba\u7167\u7247 | \u6309\u4e94\u5206\u949f\u8ba1\u5212\u62cd\u6444\u5e76\u63d0\u4ea4\u83b7\u51c6\u4f7f\u7528\u7684\u539f\u56fe |\n| Identity fidelity | \u5426 | \u65e0\u6e90\u56fe\u4e0e\u7ed3\u679c\u53ef\u6bd4\u8f83 | \u6536\u56fe\u540e\u9010\u9879\u6bd4\u8f83\u8138\u578b\u3001\u5e74\u9f84\u611f\u3001\u80a4\u8272\u3001\u773c\u9f3b\u53e3\u3001\u53d1\u9645\u7ebf\u4e0e\u8bc6\u522b\u7279\u5f81 |\n| No synthetic substitution | \u662f | \u672c\u6b21\u672a\u8c03\u7528\u56fe\u50cf\u751f\u6210\uff0c\u4e5f\u672a\u4ea7\u51fa\u66ff\u4ee3\u4eba\u8138 | \u7ee7\u7eed\u7981\u6b62\u7528\u6587\u5b57\u63cf\u8ff0\u751f\u6210\u5047\u5458\u5de5 |\n| Natural retouch | \u5426 | \u5c1a\u65e0\u7f16\u8f91\u7ed3\u679c | \u6536\u56fe\u540e\u53ea\u6539\u5584\u5149\u7ebf\u3001\u88c1\u5207\u548c\u4e34\u65f6\u5c0f\u7455\u75b5\uff0c\u4fdd\u7559\u76ae\u80a4\u7eb9\u7406\u4e0e\u4e0d\u5bf9\u79f0 |\n| Small-size legibility | \u5426 | \u5c1a\u65e0\u5934\u50cf\u53ef\u505a 40\u00d740 \u6d4b\u8bd5 | \u7f16\u8f91\u540e\u5bfc\u51fa 40\u00d740 \u9884\u89c8\uff0c\u786e\u8ba4\u773c\u795e\u548c\u8868\u60c5\u4ecd\u6e05\u695a |\n| Circular-crop safety | \u5426 | \u5c1a\u65e0\u5934\u50cf\u53ef\u505a\u5706\u5f62\u88c1\u5207 | \u4fdd\u6301\u8138\u3001\u773c\u775b\u3001\u5934\u53d1\u5728\u4e2d\u592e\u5706\u5f62\u5b89\u5168\u533a |\n| Background truthfulness | \u662f | \u672a\u751f\u6210\u5047\u529e\u516c\u5ba4\u3001\u5047\u5de5\u5382\u6216\u5047\u6d3b\u52a8\u573a\u666f | \u5b9e\u62cd\u65f6\u53ea\u7528\u771f\u5b9e\u5899\u9762\u6216\u771f\u5b9e\u6574\u6d01\u5de5\u4f5c\u533a |\n| Privacy | \u662f | \u5f53\u524d\u65e0\u56fe\u7247\uff0c\u4e0d\u5b58\u5728\u6cc4\u9732\u5185\u5bb9 | \u5b9e\u62cd\u524d\u6e05\u9664\u5ba2\u6237\u3001\u8ba2\u5355\u3001\u5c4f\u5e55\u3001\u6807\u7b7e\u3001\u5730\u5740\u3001\u4e8c\u7ef4\u7801\u548c\u5bb6\u4eba\u4fe1\u606f |\n| Channel consistency | \u5426 | \u5c1a\u65e0\u7edf\u4e00\u5934\u50cf | \u901a\u8fc7 QA \u540e WhatsApp \u4e0e Alibaba \u4f7f\u7528\u540c\u4e00\u5f20\u771f\u4eba\u5934\u50cf |\n| Professional warmth | \u5426 | \u5c1a\u65e0\u56fe\u7247\u53ef\u8bc4\u4f30 | \u9009\u62e9\u81ea\u7136\u6e29\u6696\u5fae\u7b11\u3001\u4e0d\u8fc7\u5ea6\u6446\u62cd\u7684\u4e00\u5f20 |\n\n\u7ed3\u8bba\uff1a\u5b58\u5728\u5173\u952e\u5931\u8d25\uff0cAvatarStatus \u5fc5\u987b\u4fdd\u6301 `BLOCKED_REAL_PHOTO_REQUIRED`\u3002\n\n### Pass B \u2014 scripts and claims\n\n| check | passed | evidence | exact fix |\n|---|---|---|---|\n| Truthful identity | \u5426 | Lily \u4e0e\u804c\u4f4d\u6765\u81ea\u7528\u6237\uff1b`LeShine Hair` \u53ea\u6765\u81ea\u672a\u5b9e\u65f6\u590d\u6838\u5feb\u7167\uff0c\u516c\u5f00\u4ee3\u8868\u6743\u9650\u4e5f\u672a\u786e\u8ba4 | \u5b9e\u65f6\u8bfb\u53d6 document 335 \u5f53\u524d\u5df2\u53d1\u5e03 revision\uff0c\u5e76\u7531\u8d1f\u8d23\u4eba\u786e\u8ba4 Lily \u4efb\u804c\u548c\u516c\u5f00\u4f7f\u7528\u6743\u9650 |\n| Claim traceability | \u662f | \u6bcf\u4e2a\u8eab\u4efd\u3001\u53d7\u4f17\u3001\u5efa\u8bae\u548c\u88ab\u5220\u516c\u53f8\u58f0\u660e\u5747\u8fdb\u5165 claim ledger | \u4e0a\u7ebf\u65f6\u4fdd\u5b58\u6700\u65b0 document_id\u3001revision\u3001title\u3001retrieved_at |\n| 15s duration | \u662f | 33 \u8bcd\uff1b130\u2013145 wpm \u7ea6 13.7\u201315.2 \u79d2 | \u5f55\u5236\u540e\u5b9e\u6d4b\u987b\u5728 13\u201317 \u79d2 |\n| 15s one value | \u662f | \u53ea\u8868\u8fbe\u201c\u9996\u6b21\u91c7\u8d2d\u8005\u83b7\u5f97\u4e00\u4e2a\u6e05\u6670\u4e0b\u4e00\u6b65\u201d | \u4e0d\u8ffd\u52a0\u4ea7\u80fd\u3001\u5e93\u5b58\u3001\u4ea4\u671f\u3001\u8ba4\u8bc1\u7b49\u6e05\u5355 |\n| 15s one CTA | \u662f | \u53ea\u9080\u8bf7\u5ba2\u6237\u63d0\u4f9b\u4ea7\u54c1\u548c\u6700\u5927\u987e\u8651 | \u4e0d\u518d\u8ffd\u52a0\u62a5\u4ef7\u3001\u52a0\u597d\u53cb\u3001\u53d1\u76ee\u5f55\u7b49\u5e76\u5217\u52a8\u4f5c |\n| Spoken English | \u662f | \u77ed\u53e5\u3001\u5206\u5757\u548c\u8bfb\u97f3\u5e2e\u52a9\u5df2\u63d0\u4f9b | Lily \u5e72\u8dd1\u4e09\u904d\uff0c\u66ff\u6362\u672c\u4eba\u4ecd\u96be\u8bfb\u7684\u8bcd\u540e\u91cd\u65b0\u8ba1\u65f6 |\n| Human tone | \u662f | \u76f4\u63a5\u3001\u6e29\u548c\uff0c\u65e0\u5047\u719f\u7edc\u548c\u516c\u53f8\u53e3\u53f7 | \u4fdd\u7559\u81ea\u7136\u505c\u987f\uff0c\u4e0d\u9010\u5b57\u673a\u68b0\u80cc\u8bf5 |\n| Audience fit | \u662f | \u660e\u786e\u805a\u7126\u9996\u6b21\u4ece\u4e2d\u56fd\u91c7\u8d2d\u8005 | \u4e0d\u6df7\u5165\u6c99\u9f99\u3001\u5206\u9500\u5546\u7b49\u5176\u4ed6\u53d7\u4f17\u8bdd\u672f |\n| Privacy | \u662f | \u672a\u4f7f\u7528\u5ba2\u6237\u3001\u8ba2\u5355\u3001\u5bb6\u5ead\u6216\u5458\u5de5\u79c1\u5bc6\u4fe1\u606f | \u5b9e\u62cd\u80cc\u666f\u540c\u6837\u6267\u884c\u9690\u79c1\u68c0\u67e5 |\n| No risky promise | \u662f | \u65e0\u4ef7\u683c\u3001\u4ea4\u671f\u3001\u5e93\u5b58\u3001\u7ed3\u679c\u3001\u6392\u540d\u3001\u72ec\u5bb6\u3001\u9000\u6b3e\u6216\u6027\u80fd\u4fdd\u8bc1 | \u8be2\u76d8\u4e2d\u7684\u52a8\u6001\u4fe1\u606f\u5fc5\u987b\u53e6\u884c\u5b9e\u65f6\u67e5\u8be2 |\n| 3m word count | \u662f | 350 \u8bcd\uff0c\u7b26\u5408 320\u2013390 \u8bcd\u8981\u6c42 | \u6309 115\u2013120 wpm \u5e72\u8dd1\u5e76\u4fdd\u7559 2:55\u20133:05 |\n| 3m structure | \u662f | \u4eba\u548c\u89d2\u8272 \u2192 \u51b3\u7b56\u98ce\u9669 \u2192 \u4e09\u9879\u6838\u9a8c \u2192 \u5c0f\u5355\u8def\u5f84 \u2192 \u4e00\u4e2a\u9080\u8bf7 | \u62cd\u6444\u65f6\u6309\u4e94\u6bb5\u526a\u8f91\uff0c\u4e0d\u8c03\u6362\u4e3a\u516c\u53f8\u5386\u53f2\u5f00\u573a |\n| No fabricated story | \u662f | \u6ca1\u6709\u5ba2\u6237\u59d3\u540d\u3001\u6848\u4f8b\u3001\u7ed3\u679c\u6216\u7ade\u54c1\u58f0\u660e | \u4e0d\u5728\u62cd\u6444\u65f6\u4e34\u573a\u52a0\u5165\u672a\u7ecf\u6388\u6743\u6848\u4f8b |\n| Timestamped rehearsal | \u662f | \u4e94\u6bb5\u65f6\u95f4\u3001\u955c\u5934\u548c\u6392\u7ec3\u91cd\u70b9\u5b8c\u6574 | \u5b9e\u5f55\u540e\u6309\u6210\u7247\u65f6\u95f4\u5fae\u8c03\u5b57\u5e55\u70b9\u4f4d |\n| Claim-ledger current revision | \u5426 | \u5f53\u524d\u6ca1\u6709\u65b9\u821f\u77e5\u8bc6\u5de5\u5177\uff0cdocument 335 \u65e0\u5b9e\u65f6 revision \u8bc1\u636e | \u8d1f\u8d23\u4eba\u5ba1\u6279\u524d\u8fd0\u884c\u5b9e\u65f6\u77e5\u8bc6\u68c0\u7d22\u5e76\u4fdd\u5b58\u8bc1\u636e\uff1b\u82e5\u65e0\u6cd5\u5b8c\u6210\uff0c\u5220\u9664\u516c\u53f8\u540d\u4e14\u4e0d\u5f97\u4ee5\u5b8c\u6574\u516c\u53f8\u8eab\u4efd\u4e0a\u7ebf |\n\n\u7ed3\u8bba\uff1a\u811a\u672c\u5185\u5bb9\u3001\u65f6\u957f\u548c\u53d7\u4f17\u9002\u914d\u901a\u8fc7\uff1b\u5f53\u524d\u516c\u53f8\u8eab\u4efd\u4e8b\u5b9e\u672a\u5b9e\u65f6\u6838\u9a8c\uff0c\u5c5e\u4e8e\u5173\u952e\u5931\u8d25\uff0c\u56e0\u6b64 VideoStatus \u5fc5\u987b\u4fdd\u6301 `NEEDS_FACT_APPROVAL`\uff0c\u4e0d\u5f97\u6807\u8bb0 READY\u3002\n\n## Deployment checklist\n\n- [ ] Lily \u786e\u8ba4\u59d3\u540d\u3001\u804c\u4f4d\u3001\u53d7\u4f17\u63cf\u8ff0\u771f\u5b9e\uff0c\u5e76\u786e\u8ba4\u53f0\u8bcd\u7b26\u5408\u5979\u65e5\u5e38\u670d\u52a1\u80fd\u529b\u3002\n- [ ] \u8d1f\u8d23\u4eba\u5b9e\u65f6\u6838\u9a8c\u65b9\u821f\u5f53\u524d\u5df2\u53d1\u5e03 document 335\uff0c\u5e76\u6279\u51c6 `LeShine Hair` \u516c\u53f8\u540d\u4e0e Lily \u7684\u516c\u5f00\u4ee3\u8868\u6743\u9650\u3002\n- [ ] Lily \u63d0\u4ea4\u672c\u4eba\u6709\u6743\u4f7f\u7528\u7684\u771f\u5b9e\u7167\u7247\uff0c\u5e76\u786e\u8ba4\u201c\u8fd9\u4ecd\u7136\u50cf\u6211\u672c\u4eba\u201d\u3002\n- [ ] \u5934\u50cf\u901a\u8fc7\u65b9\u5f62\u3001\u5706\u5f62\u548c 40\u00d740 \u6d4b\u8bd5\uff0c\u65e0\u9690\u79c1\u6216\u5047\u573a\u666f\u3002\n- [ ] 15 \u79d2\u7a3f\u5b9e\u5f55 13\u201317 \u79d2\uff1b3 \u5206\u949f\u7a3f\u5b9e\u5f55 2:55\u20133:05\u3002\n- [ ] \u8d1f\u8d23\u4eba\u5ba1\u6838\u6700\u7ec8\u5b57\u5e55\uff1b\u52a8\u6001\u6570\u636e\u4e0e\u5f3a\u627f\u8bfa\u4ecd\u4e3a\u96f6\u3002\n- [ ] WhatsApp \u4e0e Alibaba \u4f7f\u7528\u540c\u4e00\u5df2\u6279\u51c6\u771f\u4eba\u5934\u50cf\u548c\u4e00\u81f4\u59d3\u540d/\u804c\u4f4d\u3002\n\n## Missing evidence or approvals\n\n1. Lily \u672c\u4eba\u7684\u83b7\u51c6\u771f\u4eba\u7167\u7247\u3002\n2. \u65b9\u821f document 335 \u7684\u5f53\u524d\u5df2\u53d1\u5e03 revision\u3001\u6807\u9898\u548c\u5b9e\u65f6\u68c0\u7d22\u65f6\u95f4\u3002\n3. \u8d1f\u8d23\u4eba\u5bf9 Lily \u5f53\u524d\u4efb\u804c\u5173\u7cfb\u3001\u516c\u53f8\u540d\u516c\u5f00\u4f7f\u7528\u548c\u4e24\u6bb5\u53f0\u8bcd\u7684\u786e\u8ba4\u3002\n4. Lily \u5bf9 `LeShine` \u6807\u51c6\u8bfb\u97f3\u3001\u672c\u4eba\u53ef\u81ea\u7136\u8bf4\u51fa\u7684\u8bed\u901f\u548c\u4e2a\u4eba\u670d\u52a1\u627f\u8bfa\u7684\u786e\u8ba4\u3002\n\n"}], "grading": null}, {"id": "eval-2-missing-photo-without_skill", "prompt": "\u5e2e\u65b0\u4e1a\u52a1\u5458 Lily \u505a\u4e00\u5957\u5916\u8d38\u4eba\u8bbe\u5305\u3002\u5979\u662f\u771f\u5b9e\u59d3\u540d Lily\uff0c\u804c\u4f4d Sales Representative\uff0c\u4e3b\u8981\u8ddf\u7b2c\u4e00\u6b21\u4ece\u4e2d\u56fd\u91c7\u8d2d\u7684\u54c1\u724c\u5ba2\u6237\u6c9f\u901a\uff0c\u82f1\u8bed\u4e0d\u592a\u719f\u7ec3\u3002\u9700\u8981 WhatsApp/Alibaba \u5934\u50cf\u300115 \u79d2\u89c6\u9891\u548c 3 \u5206\u949f\u4ecb\u7ecd\u3002\u516c\u53f8\u4fe1\u606f\u53ea\u5141\u8bb8\u4f7f\u7528\u65b9\u821f\u5df2\u7ecf\u53d1\u5e03\u4e14\u5f53\u524d\u53ef\u6838\u9a8c\u7684\u5185\u5bb9\uff1b\u73b0\u5728\u6ca1\u6709\u63d0\u4f9b\u771f\u4eba\u7167\u7247\u3002", "eval_id": 2, "outputs": [{"name": "result.md", "type": "text", "content": "# Lily \u5916\u8d38\u4eba\u8bbe\u5305\uff08\u7d20\u6750\u5f85\u62cd\u7248\uff09\n\n## \u4ea4\u4ed8\u7ed3\u8bba\n\n\u8fd9\u5957\u4eba\u8bbe\u7684\u6838\u5fc3\u4e0d\u662f\u628a Lily \u5305\u88c5\u6210\u201c\u7ecf\u9a8c\u4e30\u5bcc\u7684\u4e13\u5bb6\u201d\uff0c\u800c\u662f\u8ba9\u7b2c\u4e00\u6b21\u4ece\u4e2d\u56fd\u91c7\u8d2d\u7684\u54c1\u724c\u5ba2\u6237\u611f\u5230\uff1a**\u5979\u8868\u8fbe\u7b80\u5355\u3001\u6b65\u9aa4\u6e05\u695a\u3001\u4e0d\u4f1a\u731c\u7b54\u6848\u3001\u9047\u5230\u95ee\u9898\u4f1a\u6838\u5b9e\u540e\u56de\u590d\u3002**\n\n\u5f53\u524d\u6ca1\u6709 Lily \u7684\u771f\u4eba\u7167\u7247\u6216\u89c6\u9891\uff0c\u56e0\u6b64\uff1a\n\n- \u4e0d\u751f\u6210 WhatsApp / Alibaba \u6700\u7ec8\u5934\u50cf\uff0c\u907f\u514d\u865a\u6784\u4eba\u7269\u957f\u76f8\u3002\n- \u4e0d\u751f\u6210\u542b Lily \u5f62\u8c61\u7684 15 \u79d2\u6216 3 \u5206\u949f\u89c6\u9891\uff0c\u907f\u514d\u8eab\u4efd\u4e0d\u4e00\u81f4\u3002\n- \u5df2\u5b8c\u6210\u5934\u50cf\u62cd\u6444\u89c4\u8303\u3001\u5e73\u53f0\u7b80\u4ecb\u300115 \u79d2\u89c6\u9891\u811a\u672c\u4e0e\u5206\u955c\u30013 \u5206\u949f\u4ecb\u7ecd\u7a3f\u3002Lily \u6309\u89c4\u8303\u8865\u4ea4\u771f\u4eba\u7d20\u6750\u540e\u5373\u53ef\u8fdb\u5165\u5236\u4f5c\u3002\n- \u672c\u7a3f\u6ca1\u6709\u5199\u5165\u516c\u53f8\u6210\u7acb\u5e74\u4efd\u3001\u89c4\u6a21\u3001\u5ba2\u6237\u3001\u8ba4\u8bc1\u3001\u4ea7\u80fd\u3001\u4ea4\u671f\u3001MOQ\u3001\u4ef7\u683c\u3001\u51fa\u53e3\u56fd\u5bb6\u6216\u4ea7\u54c1\u80fd\u529b\u7b49\u4e8b\u5b9e\u6027\u4fe1\u606f\uff0c\u56e0\u4e3a\u672c\u6b21\u6ca1\u6709\u63d0\u4f9b\u53ef\u6838\u9a8c\u7684\u5b98\u65b9\u6765\u6e90\u3002\u6240\u6709\u516c\u53f8\u80fd\u529b\u5fc5\u987b\u5728\u53d1\u5e03\u524d\u9010\u6761\u7528\u5f53\u524d\u5b98\u65b9\u9875\u9762\u6216\u5df2\u6279\u51c6\u8d44\u6599\u6838\u9a8c\u3002\n\n## 1. \u4eba\u8bbe\u5b9a\u4f4d\n\n**\u516c\u5f00\u59d3\u540d\uff1a** Lily  \n**\u804c\u4f4d\uff1a** Sales Representative  \n**\u4e3b\u8981\u5ba2\u6237\uff1a** \u7b2c\u4e00\u6b21\u4ece\u4e2d\u56fd\u91c7\u8d2d\u7684\u54c1\u724c\u5ba2\u6237  \n**\u4e00\u53e5\u8bdd\u5b9a\u4f4d\uff1a** Your clear, patient first contact for sourcing from China.  \n**\u4e2d\u6587\u542b\u4e49\uff1a** \u7b2c\u4e00\u6b21\u4ece\u4e2d\u56fd\u91c7\u8d2d\u65f6\uff0c\u7ed9\u4f60\u6e05\u695a\u3001\u8010\u5fc3\u6307\u5f15\u7684\u7b2c\u4e00\u8054\u7cfb\u4eba\u3002\n\n### \u6c9f\u901a\u98ce\u683c\n\n- \u7528\u77ed\u53e5\u548c\u5e38\u7528\u8bcd\uff0c\u4e00\u53e5\u8bdd\u53ea\u8868\u8fbe\u4e00\u4e2a\u610f\u601d\u3002\n- \u5148\u786e\u8ba4\u5ba2\u6237\u76ee\u6807\uff0c\u518d\u89e3\u91ca\u4e0b\u4e00\u6b65\uff1b\u4e0d\u4e00\u6b21\u629b\u51fa\u5927\u91cf\u672f\u8bed\u3002\n- \u4e0d\u61c2\u6216\u672a\u786e\u8ba4\u65f6\u76f4\u63a5\u8bf4\u9700\u8981\u6838\u5b9e\uff0c\u4e0d\u731c\u6d4b\u3001\u4e0d\u5938\u5927\u3002\n- \u6bcf\u6b21\u6c9f\u901a\u4ee5\u660e\u786e\u884c\u52a8\u6536\u5c3e\uff0c\u4f8b\u5982\u201c\u8bf7\u53d1\u53c2\u8003\u56fe\u3001\u6570\u91cf\u3001\u4e0a\u5e02\u65f6\u95f4\u548c\u76ee\u7684\u5730\u201d\u3002\n- \u4e0d\u628a\u82f1\u8bed\u4e0d\u719f\u7ec3\u5f53\u4f5c\u516c\u5f00\u6807\u7b7e\u3002\u5bf9\u5916\u5448\u73b0\u7684\u662f\u201c\u6e05\u695a\u3001\u8010\u5fc3\u3001\u53ef\u9760\u201d\uff0c\u4e0d\u662f\u201c\u82f1\u8bed\u4e0d\u597d\u201d\u3002\n\n### \u5bf9\u5916\u627f\u8bfa\u8fb9\u754c\n\n\u63a8\u8350\u56fa\u5b9a\u8868\u8fbe\uff1a\n\n> If I need to check something, I will tell you first and come back with a confirmed answer.\n\n\u907f\u514d\u672a\u7ecf\u6838\u9a8c\u7684\u8868\u8fbe\uff1a\n\n- \u201cWe are a leading / top manufacturer.\u201d\n- \u201cWe have the best quality / lowest price.\u201d\n- \u201cWe ship worldwide.\u201d\n- \u201cWe can make any design.\u201d\n- \u4efb\u4f55\u5177\u4f53\u5e74\u9650\u3001\u4ea7\u80fd\u3001MOQ\u3001\u4ea4\u671f\u3001\u8ba4\u8bc1\u3001\u5ba2\u6237\u540d\u5355\u548c\u5e02\u573a\u8986\u76d6\u8303\u56f4\u3002\n\n## 2. WhatsApp / Alibaba \u516c\u5f00\u8d44\u6599\n\n### \u663e\u793a\u540d\u79f0\n\n**Lily | Sales Representative**\n\n### \u77ed\u7b80\u4ecb\n\n**Helping first-time buyers understand sourcing from China, one clear step at a time.**\n\n### \u9996\u6b21\u81ea\u52a8\u95ee\u5019\u8bed\n\n> Hi, this is Lily. Thank you for contacting me. If this is your first time sourcing from China, no problem. Please send me:  \n> 1. a product photo or link,  \n> 2. the quantity you need,  \n> 3. your target launch date, and  \n> 4. the destination country.  \n> I will help you understand the next step clearly.\n\n\u8fd9\u6bb5\u8bdd\u53ea\u627f\u8bfa\u6c9f\u901a\u6d41\u7a0b\uff0c\u4e0d\u5305\u542b\u4efb\u4f55\u672a\u6838\u9a8c\u7684\u516c\u53f8\u80fd\u529b\u3002\n\n## 3. WhatsApp / Alibaba \u5934\u50cf\n\n### \u5f53\u524d\u72b6\u6001\n\n**\u5f85 Lily \u63d0\u4ea4\u771f\u4eba\u7167\u7247\u540e\u5236\u4f5c\u3002** \u4e0d\u4f7f\u7528 AI \u865a\u6784\u8138\u3001\u4e0d\u7528\u56fe\u5e93\u6a21\u7279\u4ee3\u66ff Lily\uff0c\u4e5f\u4e0d\u5728\u7f3a\u7167\u7247\u65f6\u751f\u6210\u201c\u76f8\u4f3c\u4eba\u7269\u201d\u3002\n\n### Lily \u9700\u8981\u63d0\u4ea4\u7684\u7167\u7247\n\n- \u8fd1\u671f\u672c\u4eba\u6b63\u9762\u534a\u8eab\u7167 3 \u5f20\uff0c\u539f\u56fe\u4e0a\u4f20\uff0c\u4e0d\u8981\u622a\u56fe\u6216\u4e8c\u6b21\u538b\u7f29\u3002\n- \u7ad6\u7248\uff0c\u5efa\u8bae\u81f3\u5c11 2000 \u00d7 2500 px\uff1b\u81ea\u7136\u5149\u6216\u67d4\u548c\u6b63\u9762\u5149\u3002\n- \u770b\u955c\u5934\uff0c\u8f7b\u5fae\u5fae\u7b11\uff0c\u80a9\u8180\u653e\u677e\uff1b\u5934\u53d1\u4e0d\u8981\u906e\u4f4f\u773c\u775b\u3002\n- \u7a7f\u7eaf\u8272\u5546\u52a1\u4f11\u95f2\u4e0a\u8863\uff0c\u907f\u514d\u5bc6\u96c6\u82b1\u7eb9\u3001\u5927\u9762\u79ef\u54c1\u724c\u6807\u8bc6\u548c\u53cd\u5149\u9970\u54c1\u3002\n- \u80cc\u666f\u7528\u6d45\u7070\u3001\u7c73\u767d\u6216\u5e72\u51c0\u529e\u516c\u73af\u5883\uff1b\u4eba\u7269\u4e0e\u80cc\u666f\u6709\u660e\u663e\u5206\u79bb\u3002\n- \u4e0d\u5f00\u7f8e\u989c\u6ee4\u955c\uff0c\u4e0d\u505a\u6539\u53d8\u8138\u578b\u3001\u4e94\u5b98\u3001\u80a4\u8272\u7684\u4fee\u56fe\u3002\n\n### \u6210\u7247\u89c4\u8303\n\n- \u65b9\u5f62 1:1\uff1b\u4e3b\u6587\u4ef6\u5efa\u8bae 1024 \u00d7 1024 px\u3002\n- \u5934\u9876\u4fdd\u7559\u7ea6 8% \u7a7a\u95f4\uff0c\u8138\u90e8\u4f4d\u4e8e\u753b\u9762\u4e0a\u534a\u90e8\uff0c\u4eba\u7269\u5360\u753b\u9762\u7ea6 65%\u3002\n- \u5148\u7528\u5706\u5f62\u906e\u7f69\u9884\u89c8\uff0c\u786e\u4fdd WhatsApp \u5c0f\u5c3a\u5bf8\u663e\u793a\u65f6\u773c\u775b\u3001\u4e0b\u5df4\u548c\u80a9\u7ebf\u4e0d\u88ab\u88c1\u5207\u3002\n- WhatsApp \u4e0e Alibaba \u4f7f\u7528\u540c\u4e00\u5f20\u8138\u3001\u540c\u4e00\u5957\u670d\u88c5\u548c\u540c\u4e00\u8272\u8c03\uff0c\u5f62\u6210\u8eab\u4efd\u4e00\u81f4\u6027\u3002\n- \u5934\u50cf\u5185\u4e0d\u52a0\u59d3\u540d\u3001\u804c\u4f4d\u3001\u4e8c\u7ef4\u7801\u6216\u5c0f\u5b57\uff1b\u8fd9\u4e9b\u5185\u5bb9\u5728\u7f29\u7565\u56fe\u4e2d\u4e0d\u53ef\u8bfb\u3002\n- \u53ea\u505a\u66dd\u5149\u3001\u767d\u5e73\u8861\u3001\u8f7b\u5fae\u76ae\u80a4\u7455\u75b5\u5904\u7406\uff0c\u4e0d\u6539\u53d8\u8eab\u4efd\u7279\u5f81\u3002\n\n## 4. 15 \u79d2\u89c6\u9891\n\n### \u5f53\u524d\u72b6\u6001\n\n**\u811a\u672c\u4e0e\u5206\u955c\u5df2\u5b8c\u6210\uff1b\u6700\u7ec8\u89c6\u9891\u5f85 Lily \u771f\u4eba\u51fa\u955c\u62cd\u6444\u3002**\n\n### \u82f1\u6587\u53e3\u64ad\uff08\u7ea6 15 \u79d2\uff09\n\n> Hi, I\u2019m Lily, a Sales Representative. New to sourcing from China? I\u2019ll explain each step clearly. Send me your product idea, and we\u2019ll start from there.\n\n### \u4e2d\u6587\u7406\u89e3\n\n> \u4f60\u597d\uff0c\u6211\u662f\u9500\u552e\u4ee3\u8868 Lily\u3002\u7b2c\u4e00\u6b21\u4ece\u4e2d\u56fd\u91c7\u8d2d\u5417\uff1f\u6211\u4f1a\u6e05\u695a\u89e3\u91ca\u6bcf\u4e00\u6b65\u3002\u628a\u4f60\u7684\u4ea7\u54c1\u60f3\u6cd5\u53d1\u7ed9\u6211\uff0c\u6211\u4eec\u5c31\u4ece\u90a3\u91cc\u5f00\u59cb\u3002\n\n### \u5206\u955c\n\n| \u65f6\u95f4 | \u753b\u9762 | \u53e3\u64ad / \u5b57\u5e55 |\n|---|---|---|\n| 0\u20134 \u79d2 | Lily \u80f8\u90e8\u4ee5\u4e0a\u6b63\u9762\u51fa\u955c\uff0c\u5fae\u7b11\u770b\u955c\u5934 | Hi, I\u2019m Lily, a Sales Representative. |\n| 4\u20139 \u79d2 | \u4fdd\u6301\u955c\u5934\uff0c\u8f7b\u5fae\u70b9\u5934 | New to sourcing from China? I\u2019ll explain each step clearly. |\n| 9\u201315 \u79d2 | Lily \u505a\u4e00\u4e2a\u81ea\u7136\u9080\u8bf7\u624b\u52bf | Send me your product idea, and we\u2019ll start from there. |\n\n### \u62cd\u6444\u8981\u6c42\n\n- \u7ad6\u7248 9:16\uff0c1080 \u00d7 1920\uff0c25 \u6216 30 fps\uff1b\u955c\u5934\u56fa\u5b9a\u3001\u65e0\u8f6c\u573a\u3002\n- \u624b\u673a\u955c\u5934\u4e0e\u773c\u775b\u540c\u9ad8\uff0c\u4eba\u7269\u7ad9\u5728\u7a97\u524d\u7ea6 1 \u7c73\u5904\uff0c\u907f\u514d\u80cc\u5149\u3002\n- \u5b89\u9759\u623f\u95f4\u5f55\u5236\uff1b\u6bcf\u53e5\u8bdd\u4e4b\u95f4\u505c 0.2\u20130.4 \u79d2\u3002\n- \u8bf4\u4e0d\u987a\u65f6\u9010\u53e5\u62cd\u6444\u53ef\u4ee5\u63a5\u53d7\uff0c\u4f46\u6700\u7ec8\u526a\u8f91\u5fc5\u987b\u81ea\u7136\uff0c\u4e0d\u4f7f\u7528\u6539\u53d8\u58f0\u7ebf\u7684 AI \u914d\u97f3\u4ee3\u66ff Lily\u3002\n- \u5b57\u5e55\u4f7f\u7528\u767d\u5b57\u914d\u534a\u900f\u660e\u6df1\u8272\u5e95\uff0c\u91cd\u70b9\u53ea\u7a81\u51fa **Lily** \u548c **each step clearly**\u3002\n\n## 5. 3 \u5206\u949f\u4ecb\u7ecd\u89c6\u9891\n\n### \u5f53\u524d\u72b6\u6001\n\n**\u53e3\u64ad\u7a3f\u5df2\u5b8c\u6210\uff1b\u6700\u7ec8\u89c6\u9891\u5f85 Lily \u771f\u4eba\u51fa\u955c\u62cd\u6444\u3002** \u7a3f\u4ef6\u7ea6 280 \u8bcd\uff0c\u6309\u6bcf\u5206\u949f 90\u2013100 \u8bcd\u3001\u4fdd\u7559\u81ea\u7136\u505c\u987f\uff0c\u65f6\u957f\u7ea6 3 \u5206\u949f\u3002\n\n### \u82f1\u6587\u63d0\u8bcd\u7a3f\n\n**0:00\u20130:25\uff5c\u8ba4\u8bc6 Lily**\n\n> Hi, I\u2019m Lily, a Sales Representative. It\u2019s nice to meet you. I mainly support brand customers who are sourcing from China for the first time. I know the process can feel unfamiliar, so my goal is to make each next step clear and easy to follow.\n\n**0:25\u20130:55\uff5c\u5148\u7406\u89e3\u5ba2\u6237**\n\n> When you contact me, you do not need to prepare a perfect request. You can start with a product photo, a link, a simple drawing, or even a short message about your idea. I will ask clear questions and organize the information with you.\n\n**0:55\u20131:35\uff5c\u7b2c\u4e00\u6b21\u8be2\u76d8\u9700\u8981\u4ec0\u4e48**\n\n> To begin, four details are especially helpful. First, what product are you looking for? Second, what quantity do you need? Third, when do you plan to launch or receive it? And fourth, which country should it go to? If you already know your preferred size, color, material, or packaging, please share that too. If not, we can identify what still needs to be confirmed.\n\n**1:35\u20132:10\uff5cLily \u7684\u5de5\u4f5c\u65b9\u5f0f**\n\n> After I understand your request, I will summarize it in writing. This gives you a simple record to check, and it helps us avoid misunderstandings. I will tell you what information is confirmed, what is still open, and what the next action is. If I need to check something with the team, I will tell you first and come back with a confirmed answer. I will not guess.\n\n**2:10\u20132:40\uff5c\u964d\u4f4e\u7b2c\u4e00\u6b21\u91c7\u8d2d\u7684\u538b\u529b**\n\n> You can ask basic questions. There is no need to know every sourcing term. When a term, document, price item, or process is unclear, please ask me to explain it in simple words. My job is to help the conversation move forward step by step, while keeping the important details visible to you.\n\n**2:40\u20133:00\uff5c\u884c\u52a8\u9080\u8bf7**\n\n> If you are planning your first sourcing project from China, send me your product idea, expected quantity, target date, and destination country. I\u2019m Lily, and I\u2019ll help you understand the next step. I look forward to hearing about your project.\n\n### \u62cd\u6444\u4e0e\u526a\u8f91\u7ed3\u6784\n\n- \u7ad6\u7248 9:16 \u7528\u4e8e WhatsApp / \u793e\u5a92\u79c1\u804a\uff1b\u5982 Alibaba \u9875\u9762\u9700\u8981\u6a2a\u7248\uff0c\u518d\u4ece\u540c\u4e00\u573a\u62cd\u6444\u8865\u5f55 16:9\uff0c\u4e0d\u5f3a\u884c\u88c1\u5207\u3002\n- \u4ee5 Lily \u6b63\u9762\u53e3\u64ad\u4e3a\u4e3b\uff0c\u80cc\u666f\u4fdd\u6301\u771f\u5b9e\u3001\u6574\u6d01\u3002\u6ca1\u6709\u7ecf\u6838\u9a8c\u7684\u516c\u53f8\u573a\u666f\u548c\u4ea7\u54c1\u7d20\u6750\u65f6\uff0c\u4e0d\u6dfb\u52a0\u5de5\u5382\u3001\u8bc1\u4e66\u3001\u5ba2\u6237\u6216\u4ea7\u7ebf\u753b\u9762\u3002\n- \u6bcf 20\u201330 \u79d2\u53ef\u4ee5\u63d2\u5165\u4e00\u5f20\u7eaf\u6587\u5b57\u63d0\u793a\u5361\uff1a**Your idea \u2192 Clear questions \u2192 Written summary \u2192 Next step**\u3002\n- \u4e0d\u4f7f\u7528\u590d\u6742\u8fd0\u955c\u3002\u955c\u5934\u7a33\u5b9a\u548c\u58f0\u97f3\u6e05\u695a\u6bd4\u201c\u9ad8\u7ea7\u611f\u201d\u66f4\u91cd\u8981\u3002\n- \u82f1\u6587\u5b57\u5e55\u9010\u53e5\u51fa\u73b0\uff0c\u6bcf\u884c\u4e0d\u8d85\u8fc7\u7ea6 8 \u4e2a\u82f1\u6587\u5355\u8bcd\uff1b\u4e13\u6709\u516c\u53f8\u4fe1\u606f\u53d1\u5e03\u524d\u5fc5\u987b\u518d\u6b21\u6838\u9a8c\u3002\n\n## 6. \u6700\u5c0f\u8865\u5145\u7d20\u6750\u6e05\u5355\n\n\u8981\u628a\u672c\u7a3f\u53d8\u6210\u6700\u7ec8\u6210\u54c1\uff0c\u53ea\u9700 Lily \u8865\u4ea4\uff1a\n\n1. \u6309\u5934\u50cf\u89c4\u8303\u62cd\u6444\u7684\u672c\u4eba\u539f\u56fe 3 \u5f20\u3002\n2. 15 \u79d2\u53e3\u64ad\u539f\u89c6\u9891 3 \u6761\uff0c\u4fdd\u7559\u73af\u5883\u539f\u58f0\u3002\n3. 3 \u5206\u949f\u53e3\u64ad\u539f\u89c6\u9891\uff0c\u53ef\u6309\u516d\u6bb5\u5206\u522b\u5f55\u5236\uff0c\u6bcf\u6bb5\u62cd 2 \u6761\u3002\n4. \u5df2\u6279\u51c6\u4f7f\u7528\u7684\u516c\u53f8\u5b98\u65b9\u7f51\u9875\u94fe\u63a5\u6216\u5e26\u53d1\u5e03\u65e5\u671f/\u7248\u672c\u53f7\u7684\u516c\u5f00\u8d44\u6599\uff1b\u53ea\u6709\u5176\u4e2d\u80fd\u9010\u6761\u6838\u9a8c\u7684\u4e8b\u5b9e\u624d\u4f1a\u8fdb\u5165\u6210\u7247\u3002\n5. Lily \u5bf9\u672c\u4eba\u7167\u7247\u3001\u58f0\u97f3\u548c\u89c6\u9891\u7528\u4e8e WhatsApp\u3001Alibaba \u7b49\u6307\u5b9a\u6e20\u9053\u7684\u6388\u6743\u8303\u56f4\u3002\n\n## 7. \u53d1\u5e03\u524d\u68c0\u67e5\n\n- \u753b\u9762\u4e2d\u7684\u4eba\u786e\u5b9e\u662f Lily\uff0c\u59d3\u540d\u53ea\u4f7f\u7528 **Lily**\uff0c\u804c\u4f4d\u53ea\u4f7f\u7528 **Sales Representative**\u3002\n- \u5934\u50cf\u300115 \u79d2\u89c6\u9891\u548c 3 \u5206\u949f\u89c6\u9891\u4e2d\u7684\u8138\u3001\u670d\u88c5\u98ce\u683c\u4e0e\u8272\u8c03\u4e00\u81f4\u3002\n- \u6ca1\u6709\u65b0\u589e\u672a\u7ecf\u6838\u9a8c\u7684\u516c\u53f8\u4e8b\u5b9e\u3001\u4ea7\u54c1\u627f\u8bfa\u3001\u4ef7\u683c\u6216\u4ea4\u4ed8\u627f\u8bfa\u3002\n- \u82f1\u6587\u5b57\u5e55\u4e0e Lily \u5b9e\u9645\u53e3\u64ad\u4e00\u81f4\uff1b\u4e0d\u5b58\u5728 AI \u914d\u97f3\u5192\u5145\u672c\u4eba\u3002\n- \u7528\u624b\u673a\u9759\u97f3\u64ad\u653e\u68c0\u67e5\u5b57\u5e55\u53ef\u8bfb\u6027\uff0c\u518d\u6234\u8033\u673a\u68c0\u67e5\u4eba\u58f0\u6e05\u6670\u5ea6\u3002\n- \u7531 Lily \u672c\u4eba\u786e\u8ba4\u8096\u50cf\u3001\u58f0\u97f3\u3001\u59d3\u540d\u548c\u804c\u4f4d\u4f7f\u7528\u65e0\u8bef\u540e\u518d\u53d1\u5e03\u3002\n"}], "grading": null}, {"id": "eval-3-risky-script-review-with_skill", "prompt": "\u5ba1\u6838\u5e76\u91cd\u5199\u4e0b\u9762\u8fd9\u4e2a 15 \u79d2\u4e1a\u52a1\u5458\u4ecb\u7ecd\uff1a'Hi, I'm Amy, Sales Manager at LeShine. We are the fastest hair supplier in China, with 100,000 units always ready, 2-day delivery, one-year guaranteed hair, free samples and city exclusivity. Message me for the best price.' Amy \u7684\u771f\u5b9e\u804c\u4f4d\u662f Sales Representative\uff0c\u76ee\u6807\u5ba2\u6237\u662f\u6c99\u9f99\u3002\u53ea\u9700\u8981\u811a\u672c\u5ba1\u6838\uff0c\u4e0d\u9700\u8981\u5934\u50cf\u3002", "eval_id": 3, "outputs": [{"name": "result.md", "type": "text", "content": "# Sales Persona Result\n\n## Readiness\n\nVideoStatus: READY  \n\u5934\u50cf\u4e0d\u5728\u672c\u6b21\u5ba1\u6838\u8303\u56f4\u5185\u3002\n\n\u7ed3\u8bba\uff1a\u539f\u7a3f\u4e0d\u53ef\u76f4\u63a5\u4f7f\u7528\u3002Amy \u7684\u804c\u4f4d\u5199\u9519\uff0c\u800c\u4e14\u628a 7 \u4e2a\u53d7\u9650\u6216\u65e0\u4f9d\u636e\u7684\u5546\u4e1a\u627f\u8bfa\u585e\u8fdb 15 \u79d2\uff0c\u65e2\u635f\u5bb3\u53ef\u4fe1\u5ea6\uff0c\u4e5f\u6ca1\u6709\u9488\u5bf9\u6c99\u9f99\u7684\u6e05\u6670\u4ef7\u503c\u3002\u4e0b\u9762\u7684\u6539\u7a3f\u5df2\u66f4\u6b63\u8eab\u4efd\uff0c\u5220\u9664\u52a8\u6001\u5e93\u5b58\u3001\u4ea4\u4ed8\u3001\u8d28\u4fdd\u3001\u6837\u54c1\u3001\u72ec\u5bb6\u4e0e\u4ef7\u683c\u627f\u8bfa\uff0c\u53ea\u4fdd\u7559\u4e00\u4e2a\u4f4e\u98ce\u9669\u7684\u6c99\u9f99\u6d4b\u8bd5\u8def\u5f84\u548c\u4e00\u4e2a CTA\u3002\n\n## Confirmed inputs\n\n- \u59d3\u540d\uff1aAmy\u3002\n- \u771f\u5b9e\u804c\u4f4d\uff1aSales Representative\u3002\n- \u516c\u53f8\uff1aLeShine\u3002\n- \u76ee\u6807\u5ba2\u6237\uff1a\u6c99\u9f99\u3002\n- \u4efb\u52a1\uff1a\u5ba1\u6838\u5e76\u91cd\u5199 15 \u79d2\u82f1\u6587\u4ecb\u7ecd\uff1b\u4e0d\u9700\u8981\u5934\u50cf\u3002\n- \u672a\u63d0\u4f9b\u4f46\u4e0d\u963b\u585e\u672c\u6b21\u5ba1\u6838\uff1a\u53d1\u5e03\u6e20\u9053\u3001Amy \u7684\u5b9e\u9645\u82f1\u8bed\u8bed\u901f\u4e0e\u53e3\u8bed\u8212\u9002\u5ea6\u3002\n- \u58f0\u660e\u6765\u6e90\u8bf4\u660e\uff1a\u5f53\u524d\u73af\u5883\u6ca1\u6709\u53ef\u7528\u7684 Ark \u4f01\u4e1a\u77e5\u8bc6\u68c0\u7d22\u5de5\u5177\uff1b\u56e0\u6b64\u4ec5\u7528\u7528\u6237\u672c\u6b21\u63d0\u4f9b\u7684\u4e8b\u5b9e\u786e\u8ba4\u8eab\u4efd\uff0c\u5e76\u7528 `approved-claims.md` \u7684 2026-08-28 \u79bb\u7ebf\u5feb\u7167\u8bc6\u522b\u98ce\u9669\u8fb9\u754c\u3002\u6ca1\u6709\u7528\u79bb\u7ebf\u5e93\u5b58\u6570\u5b57\u6279\u51c6\u4efb\u4f55\u5f53\u524d\u5e93\u5b58\u3001\u4ea4\u4ed8\u6216\u653f\u7b56\u627f\u8bfa\u3002\n\n## Claim ledger\n\n| proposed claim | source | status | allowed wording |\n|---|---|---|---|\n| Amy | \u7528\u6237\u672c\u6b21\u8f93\u5165\uff0c2026-08-28 | APPROVED | \u201cHi, I\u2019m Amy\u201d |\n| Sales Manager | \u7528\u6237\u660e\u786e\u66f4\u6b63\u771f\u5b9e\u804c\u4f4d\u4e3a Sales Representative | DROP | \u6539\u4e3a \u201cSales Representative\u201d |\n| at LeShine | \u7528\u6237\u539f\u7a3f\u4e0e\u66f4\u6b63\u8bed\u5883\uff0c2026-08-28 | APPROVED | \u201cat LeShine\u201d |\n| \u9762\u5411\u6c99\u9f99 | \u7528\u6237\u672c\u6b21\u8f93\u5165\uff0c2026-08-28 | APPROVED | \u76f4\u63a5\u8bf4 \u201cfor your salon\u201d |\n| \u201cthe fastest hair supplier in China\u201d | \u65e0\u5f53\u524d\u6388\u6743\u6765\u6e90\uff1b`approved-claims.md` \u00a75 \u660e\u786e\u6392\u540d\u4e0e \u201cfastest\u201d \u5fc5\u987b\u5f53\u524d\u5ba1\u6838 | DROP | \u5220\u9664\uff0c\u4e0d\u6362\u6210\u5176\u4ed6\u6392\u540d\u8bdd\u672f |\n| \u201c100,000 units always ready\u201d | Ark \u6587\u6863 335 / rev 2 \u7684\u6570\u5b57\u4ec5\u901a\u8fc7 2026-08-28 \u79bb\u7ebf\u5feb\u7167\u53ef\u89c1\uff1b\u5f53\u524d\u5e93\u5b58\u5c5e\u4e8e\u52a8\u6001\u4e8b\u5b9e | REVIEW_REQUIRED | \u4ec5\u5728\u5b9e\u65f6\u67e5\u5177\u4f53 SKU \u540e\u5355\u72ec\u56de\u590d\uff1a\u201cWe can check current availability for your exact SKU.\u201d \u4e0d\u653e\u5165\u672c\u89c6\u9891 |\n| \u201c2-day delivery\u201d | \u65e0\u76ee\u7684\u5730\u3001SKU\u3001\u8ba2\u5355\u4e0e\u5f53\u524d\u7269\u6d41\u4f9d\u636e\uff1b\u4ea4\u4ed8\u65f6\u6548\u5c5e\u4e8e\u52a8\u6001\u4e8b\u5b9e | REVIEW_REQUIRED | \u5220\u9664\uff1b\u6709\u8ba2\u5355\u4fe1\u606f\u540e\u518d\u786e\u8ba4\u5f53\u524d\u8fd0\u8f93\u9009\u9879 |\n| \u201cone-year guaranteed hair\u201d | \u65e0\u6279\u51c6\u4f9d\u636e\uff1b\u4ea7\u54c1\u5bff\u547d\u548c\u4fdd\u8bc1\u6027\u80fd\u5c5e\u4e8e\u53d7\u9650\u627f\u8bfa | DROP | \u5220\u9664\uff0c\u4e0d\u6539\u5199\u6210\u6a21\u7cca\u8d28\u4fdd |\n| \u201cfree samples\u201d | \u6837\u54c1\u653f\u7b56\u9700\u5f53\u524d\u786e\u8ba4\uff1bArk \u6587\u6863 351 / rev 3 \u4ec5\u901a\u8fc7\u79bb\u7ebf\u5feb\u7167\u5f15\u7528 | REVIEW_REQUIRED | \u5220\u9664\uff1b\u5177\u4f53\u8be2\u76d8\u4e2d\u6309\u5f53\u524d\u6837\u54c1\u653f\u7b56\u8bf4\u660e |\n| \u201ccity exclusivity\u201d | \u533a\u57df\u72ec\u5bb6\u53ea\u53ef\u80fd\u9002\u7528\u4e8e\u5408\u683c\u4e14\u83b7\u6279\u9879\u76ee\uff0c\u5fc5\u987b\u5f53\u524d\u5ba1\u6838 | REVIEW_REQUIRED | \u5220\u9664\uff1b\u4e0d\u5f97\u5728\u4e2a\u4eba\u4ecb\u7ecd\u4e2d\u4f5c\u666e\u904d\u627f\u8bfa |\n| \u201cbest price\u201d | \u65e0\u62a5\u4ef7\u4e0a\u4e0b\u6587\uff1b\u4ef7\u683c\u4e0e \u201cbest\u201d \u5747\u4e0d\u53ef\u9a8c\u8bc1 | DROP | \u6539\u4e3a\u8be2\u95ee\u5ba2\u6237\u9700\u6c42\uff0c\u4e0d\u627f\u8bfa\u6700\u4f18\u4ef7 |\n| \u5e2e\u6c99\u9f99\u7f29\u5c0f\u9009\u62e9\u5e76\u89c4\u5212\u805a\u7126\u6d4b\u8bd5 | \u7528\u6237\u786e\u8ba4\u6c99\u9f99\u53d7\u4f17\uff1bArk \u6587\u6863 351 / rev 3 \u7684\u4f4e\u98ce\u9669\u6d4b\u8bd5\u8def\u5f84\uff0c\u7ecf 2026-08-28 \u79bb\u7ebf\u5feb\u7167\u5f15\u7528 | APPROVED | \u201cI can help you narrow the choices and plan a focused test.\u201d \u8fd9\u662f\u534f\u52a9\u4e0e\u4e0b\u4e00\u6b65\u9080\u8bf7\uff0c\u4e0d\u662f\u7ed3\u679c\u4fdd\u8bc1\uff1b\u4e0a\u7ebf\u524d\u4ecd\u7531\u8d1f\u8d23\u4eba\u786e\u8ba4 |\n\n## Original script review\n\n\u539f\u7a3f\u7ea6 36 \u4e2a\u82f1\u6587\u8bcd\uff0c\u6309 130\u2013145 \u8bcd/\u5206\u949f\u7ea6 14.9\u201316.6 \u79d2\uff0c\u65f6\u957f\u672c\u8eab\u63a5\u8fd1\u53ef\u7528\uff1b\u771f\u6b63\u7684\u95ee\u9898\u662f\u8eab\u4efd\u9519\u8bef\u3001\u98ce\u9669\u58f0\u660e\u8fc7\u591a\u3001\u6ca1\u6709\u5355\u4e00\u4ef7\u503c\u70b9\u3002\u4e0d\u80fd\u9760\u8bf4\u5feb\u4e00\u70b9\u89e3\u51b3\u3002\n\n| check | passed | evidence | exact fix |\n|---|---:|---|---|\n| Truthful identity | No | \u628a\u771f\u5b9e\u7684 Sales Representative \u5199\u6210 Sales Manager | \u4f7f\u7528\u771f\u5b9e\u804c\u4f4d |\n| Claim traceability | No | \u201cfastest\u201d\u3001\u5e93\u5b58\u3001\u4e24\u65e5\u4ea4\u4ed8\u3001\u8d28\u4fdd\u3001\u514d\u8d39\u6837\u54c1\u3001\u72ec\u5bb6\u548c\u6700\u4f18\u4ef7\u5747\u65e0\u53ef\u7528\u4e8e\u672c\u89c6\u9891\u7684\u5f53\u524d\u6279\u51c6\u4f9d\u636e | \u5168\u90e8\u5220\u9664\uff1b\u52a8\u6001\u653f\u7b56\u7559\u5230\u5177\u4f53\u8be2\u76d8\u4e2d\u6838\u5b9e |\n| Duration | Yes | \u7ea6 36 \u8bcd\uff0c\u6309 130\u2013145 \u8bcd/\u5206\u949f\u7ea6 14.9\u201316.6 \u79d2 | \u4e0d\u9700\u8981\u9760\u52a0\u901f\uff1b\u6539\u7a3f\u4ecd\u63a7\u5236\u5728\u81ea\u7136\u7684 15 \u79d2\u533a\u95f4 |\n| One value | No | \u540c\u65f6\u5217\u51fa\u901f\u5ea6\u3001\u5e93\u5b58\u3001\u4ea4\u4ed8\u3001\u8d28\u4fdd\u3001\u6837\u54c1\u3001\u72ec\u5bb6\u548c\u4ef7\u683c | \u53ea\u4fdd\u7559\u4e00\u4e2a\u6c99\u9f99\u51b3\u7b56\u4ef7\u503c\uff1a\u5148\u7f29\u5c0f\u9009\u62e9\uff0c\u518d\u505a\u805a\u7126\u6d4b\u8bd5 |\n| One CTA | Yes | \u201cMessage me\u201d \u662f\u5355\u4e00\u52a8\u4f5c | \u6539\u6210\u66f4\u5177\u4f53\u3001\u4f4e\u6469\u64e6\u7684\u9700\u6c42\u95ee\u9898 |\n| Spoken English | No | \u8fde\u7eed\u6570\u5b57\u3001\u590d\u5408\u4fee\u9970\u4e0e\u653f\u7b56\u8bcd\u7ec4\u5f62\u6210\u5bc6\u96c6\u6e05\u5355 | \u6539\u4e3a 3 \u4e2a\u77ed\u53e5\u548c\u5e38\u7528\u8bcd |\n| Human tone | No | \u5f3a\u6392\u540d\u548c\u5f3a\u627f\u8bfa\u50cf\u5e7f\u544a\u53e3\u53f7\uff0c\u4e0d\u50cf\u771f\u4eba\u4ecb\u7ecd | \u7528\u771f\u5b9e\u8eab\u4efd\u3001\u5ba2\u6237\u60c5\u5883\u548c\u76f4\u63a5\u9080\u8bf7 |\n| Audience fit | No | \u6ca1\u6709\u63d0\u5230\u6c99\u9f99\u6216\u5176\u9009\u62e9\u573a\u666f | \u660e\u786e\u8bf4 \u201cfor your salon\u201d \u548c \u201cwhat your clients need\u201d |\n| Privacy | Yes | \u672a\u5305\u542b\u5ba2\u6237\u3001\u8ba2\u5355\u3001\u5bb6\u5ead\u6216\u5176\u4ed6\u79c1\u4eba\u4fe1\u606f | \u4fdd\u6301 |\n| No risky promise | No | \u5305\u542b\u6392\u540d\u3001\u5e93\u5b58\u3001\u4ea4\u4ed8\u3001\u4ea7\u54c1\u6027\u80fd\u3001\u514d\u8d39\u653f\u7b56\u3001\u72ec\u5bb6\u548c\u4ef7\u683c\u627f\u8bfa | \u5168\u90e8\u79fb\u51fa\u516c\u5f00\u77ed\u89c6\u9891 |\n\n## Rewritten 15-second video\n\n### English\n\n> Hi, I\u2019m Amy, a Sales Representative at LeShine. If you\u2019re comparing hair options for your salon, tell me what your clients need. I can help you narrow the choices and plan a focused test.\n\n### Chinese meaning\n\n\u4f60\u597d\uff0c\u6211\u662f LeShine \u7684\u9500\u552e\u4ee3\u8868 Amy\u3002\u5982\u679c\u4f60\u6b63\u5728\u4e3a\u6c99\u9f99\u6bd4\u8f83\u4e0d\u540c\u7684\u5934\u53d1\u4ea7\u54c1\uff0c\u53ef\u4ee5\u544a\u8bc9\u6211\u4f60\u7684\u5ba2\u6237\u4e3b\u8981\u9700\u8981\u4ec0\u4e48\u3002\u6211\u4f1a\u5e2e\u4f60\u7f29\u5c0f\u9009\u62e9\u8303\u56f4\uff0c\u5e76\u5b89\u6392\u4e00\u6b21\u6709\u91cd\u70b9\u7684\u6d4b\u8bd5\uff0c\u518d\u51b3\u5b9a\u4e0b\u4e00\u6b65\u3002\n\n### Word count / estimated duration\n\n- 34 \u4e2a\u82f1\u6587\u8bcd\u3002\n- \u6309 130\u2013145 \u8bcd/\u5206\u949f\u4f30\u7b97\u7ea6 14.1\u201315.7 \u79d2\u3002\n- \u6b63\u5f0f\u5f55\u5236\u524d\u7528 Amy \u7684\u771f\u5b9e\u8bed\u901f\u5b8c\u6574\u8ba1\u65f6\u4e00\u6b21\uff1b\u5408\u683c\u8303\u56f4\u4e3a 13\u201317 \u79d2\u3002\n\n### Pronunciation\n\n- `representative`: rep-ri-ZEN-tuh-tiv\uff0c\u91cd\u97f3\u5728 `ZEN`\u3002\n- `focused`: FOH-kust\u3002\n- `LeShine`: \u4f7f\u7528\u516c\u53f8\u5185\u90e8\u7edf\u4e00\u8bfb\u6cd5\uff1b\u672c\u6b21\u8d44\u6599\u6ca1\u6709\u6388\u6743\u6211\u731c\u6d4b\u54c1\u724c\u53d1\u97f3\u3002\n\n### Shot list\n\n- 0\u20133 \u79d2\uff1a\u80f8\u90e8\u4ee5\u4e0a\u6b63\u9762\u955c\u5934\uff0c\u770b\u955c\u5934\u8bf4\u59d3\u540d\u3001\u771f\u5b9e\u804c\u4f4d\u548c\u516c\u53f8\u3002\n- 3\u201310 \u79d2\uff1a\u4fdd\u6301\u955c\u5934\u4e0d\u5207\u6362\uff0c\u81ea\u7136\u8bf4\u51fa\u6c99\u9f99\u6bd4\u8f83\u4ea7\u54c1\u7684\u573a\u666f\uff1b\u4e0d\u8981\u5c55\u793a\u5e93\u5b58\u3001\u5feb\u9012\u5355\u6216\u8bc1\u4e66\u4f5c\u4e3a\u6697\u793a\u6027\u80cc\u4e66\u3002\n- 10\u201315 \u79d2\uff1a\u8f7b\u5fae\u70b9\u5934\uff0c\u76f4\u89c6\u955c\u5934\u5b8c\u6210\u9700\u6c42\u95ee\u9898\u4e0e focused test \u9080\u8bf7\u3002\n\n### On-screen captions\n\n- \u59d3\u540d/\u804c\u4f4d\uff1a`Amy | Sales Representative`\n- \u5355\u4e00\u4ef7\u503c\u884c\uff1a`Narrow the choices. Test with focus.`\n\n### Rehearsal note\n\n\u5728 `LeShine` \u540e\u505c\u534a\u62cd\uff0c\u5728 `salon` \u540e\u518d\u505c\u534a\u62cd\uff1b\u4e0d\u8981\u4e3a\u4e86\u5361\u65f6\u957f\u8fde\u8bfb\u3002\u5982\u679c\u8d85\u8fc7 17 \u79d2\uff0c\u5148\u5220\u6389 `for your salon` \u524d\u7684 `hair`\uff0c\u4e0d\u8981\u901a\u8fc7\u52a0\u901f\u727a\u7272\u53ef\u4fe1\u5ea6\u3002\n\n## Rewritten script QA\n\n| check | passed | evidence | exact fix |\n|---|---:|---|---|\n| Truthful identity | Yes | \u4f7f\u7528 Amy\u3001Sales Representative\u3001LeShine | \u65e0\uff1bAmy \u4e0a\u7ebf\u524d\u53e3\u5934\u786e\u8ba4\u59d3\u540d\u4e0e\u804c\u4f4d |\n| Claim traceability | Yes | \u8eab\u4efd\u6765\u81ea\u7528\u6237\u8f93\u5165\uff1b\u6d4b\u8bd5\u8def\u5f84\u8ffd\u6eaf\u5230 Ark 351 / rev 3 \u7684\u79bb\u7ebf\u5feb\u7167\uff0c\u4e14\u6ca1\u6709\u7ed3\u679c\u4fdd\u8bc1 | \u65e0\uff1b\u8d1f\u8d23\u4eba\u4e0a\u7ebf\u524d\u786e\u8ba4\u516c\u5f00\u63aa\u8f9e |\n| Duration | Yes | 34 \u8bcd\uff0c\u4f30\u7b97 14.1\u201315.7 \u79d2 | \u7528 Amy \u7684\u771f\u5b9e\u8bed\u901f\u8ba1\u65f6\u4e00\u6b21 |\n| One value | Yes | \u53ea\u6709\u201c\u7f29\u5c0f\u9009\u62e9\u5e76\u505a\u805a\u7126\u6d4b\u8bd5\u201d\u4e00\u4e2a\u4ef7\u503c\u70b9 | \u4fdd\u6301\uff0c\u4e0d\u6dfb\u52a0\u5e93\u5b58\u6216\u4ea4\u4ed8\u6570\u5b57 |\n| One CTA | Yes | \u53ea\u9080\u8bf7\u5ba2\u6237\u8bf4\u660e\u5176\u5ba2\u6237\u9700\u6c42 | \u4fdd\u6301 |\n| Spoken English | Yes | 3 \u4e2a\u77ed\u53e5\uff0c\u65e0\u6570\u5b57\u548c\u653f\u7b56\u672f\u8bed | \u6309\u53d1\u97f3\u63d0\u793a\u7ec3\u4e60 `representative` |\n| Human tone | Yes | \u771f\u5b9e\u8eab\u4efd + \u5ba2\u6237\u60c5\u5883 + \u5177\u4f53\u5e2e\u52a9 | \u4fdd\u6301\u81ea\u7136\u8bed\u901f |\n| Audience fit | Yes | \u660e\u786e\u51fa\u73b0 salon \u4e0e clients\u2019 needs | \u4fdd\u6301 |\n| Privacy | Yes | \u65e0\u79c1\u4eba\u5ba2\u6237\u3001\u8ba2\u5355\u6216\u5458\u5de5\u4fe1\u606f | \u62cd\u6444\u65f6\u4fdd\u6301\u80cc\u666f\u540c\u6837\u65e0\u654f\u611f\u4fe1\u606f |\n| No risky promise | Yes | \u65e0\u4ef7\u683c\u3001\u5e93\u5b58\u3001\u65f6\u6548\u3001\u6392\u540d\u3001\u72ec\u5bb6\u3001\u9000\u6b3e\u6216\u6027\u80fd\u4fdd\u8bc1 | \u540e\u7eed\u4e5f\u4e0d\u8981\u628a\u539f\u7a3f\u627f\u8bfa\u52a0\u56de\u5b57\u5e55 |\n\n## Deployment checklist\n\n- Amy \u786e\u8ba4\u59d3\u540d\u3001\u804c\u4f4d\u548c\u54c1\u724c\u8bfb\u6cd5\u51c6\u786e\u3002\n- \u8d1f\u8d23\u4eba\u6279\u51c6\u6700\u7ec8\u516c\u5f00\u63aa\u8f9e\u3002\n- \u7528 Amy \u7684\u771f\u5b9e\u8bed\u901f\u5f55\u5236 dry run\uff0c\u786e\u8ba4 13\u201317 \u79d2\u3002\n- \u5b57\u5e55\u53ea\u4fdd\u7559\u59d3\u540d/\u804c\u4f4d\u548c\u4e00\u4e2a\u4ef7\u503c\u884c\u3002\n- \u4e0a\u4f20\u524d\u68c0\u67e5\u753b\u9762\u80cc\u666f\u4e0d\u542b\u5ba2\u6237\u3001\u8ba2\u5355\u3001\u5c4f\u5e55\u3001\u6807\u7b7e\u3001\u5730\u5740\u6216\u4e8c\u7ef4\u7801\u3002\n- \u4e0d\u628a\u539f\u7a3f\u4e2d\u7684\u5e93\u5b58\u3001\u4e24\u65e5\u4ea4\u4ed8\u3001\u8d28\u4fdd\u3001\u514d\u8d39\u6837\u54c1\u3001\u57ce\u5e02\u72ec\u5bb6\u6216\u6700\u4f18\u4ef7\u4f5c\u4e3a\u5b57\u5e55\u8865\u56de\u3002\n\n## Missing evidence or approvals\n\n- \u6ca1\u6709\u5b9e\u65f6 Ark revision\uff0c\u56e0\u6b64\u4efb\u4f55\u52a8\u6001\u5e93\u5b58\u3001\u4ea4\u4ed8\u3001\u4ef7\u683c\u3001\u6837\u54c1\u3001\u72ec\u5bb6\u548c\u8d28\u4fdd\u653f\u7b56\u5747\u672a\u83b7\u6279\u51c6\uff0c\u4e5f\u672a\u8fdb\u5165\u6539\u7a3f\u3002\n- \u53d1\u5e03\u524d\u4ecd\u9700 Amy \u786e\u8ba4\u771f\u5b9e\u53e3\u8bed\u65f6\u957f\uff0c\u5e76\u7531\u8d1f\u8d23\u4eba\u786e\u8ba4\u516c\u5f00\u4f7f\u7528\u3002\n"}], "grading": null}, {"id": "eval-3-risky-script-review-without_skill", "prompt": "\u5ba1\u6838\u5e76\u91cd\u5199\u4e0b\u9762\u8fd9\u4e2a 15 \u79d2\u4e1a\u52a1\u5458\u4ecb\u7ecd\uff1a'Hi, I'm Amy, Sales Manager at LeShine. We are the fastest hair supplier in China, with 100,000 units always ready, 2-day delivery, one-year guaranteed hair, free samples and city exclusivity. Message me for the best price.' Amy \u7684\u771f\u5b9e\u804c\u4f4d\u662f Sales Representative\uff0c\u76ee\u6807\u5ba2\u6237\u662f\u6c99\u9f99\u3002\u53ea\u9700\u8981\u811a\u672c\u5ba1\u6838\uff0c\u4e0d\u9700\u8981\u5934\u50cf\u3002", "eval_id": 3, "outputs": [{"name": "result.md", "type": "text", "content": "# 15 \u79d2\u4e1a\u52a1\u5458\u4ecb\u7ecd\u5ba1\u6838\n\n## \u5ba1\u6838\u7ed3\u8bba\n\n\u539f\u7a3f\u4e0d\u5efa\u8bae\u76f4\u63a5\u4f7f\u7528\u3002\n\n- **\u8eab\u4efd\u4e0d\u5b9e**\uff1aAmy \u7684\u771f\u5b9e\u804c\u4f4d\u662f `Sales Representative`\uff0c\u4e0d\u80fd\u5199\u6210 `Sales Manager`\u3002\n- **\u627f\u8bfa\u98ce\u9669\u8fc7\u9ad8**\uff1a`the fastest`\u3001`100,000 units always ready`\u3001`2-day delivery`\u3001`one-year guaranteed hair`\u3001`free samples`\u3001`city exclusivity`\u3001`best price` \u90fd\u662f\u7edd\u5bf9\u3001\u957f\u671f\u6216\u6761\u4ef6\u4e0d\u660e\u7684\u627f\u8bfa\uff1b\u5728\u6ca1\u6709\u53ef\u6838\u9a8c\u4f9d\u636e\u4e0e\u9002\u7528\u6761\u4ef6\u65f6\uff0c\u5bb9\u6613\u8bef\u5bfc\u5ba2\u6237\u3002\n- **\u8868\u8fbe\u542b\u7cca**\uff1a`one-year guaranteed hair` \u6ca1\u6709\u8bf4\u660e\u4fdd\u8bc1\u8303\u56f4\u3001\u4f7f\u7528\u6761\u4ef6\u548c\u552e\u540e\u8fb9\u754c\u3002\n- **\u5ba2\u6237\u4e0d\u805a\u7126**\uff1a\u76ee\u6807\u5ba2\u6237\u662f\u6c99\u9f99\uff0c\u4f46\u539f\u7a3f\u4e3b\u8981\u5806\u780c\u4f9b\u5e94\u5546\u5356\u70b9\uff0c\u6ca1\u6709\u8bf4\u660e Amy \u80fd\u4e3a\u6c99\u9f99\u89e3\u51b3\u4ec0\u4e48\u95ee\u9898\u3002\n- **\u4fe1\u606f\u8fc7\u8f7d**\uff1a15 \u79d2\u5185\u585e\u5165\u8fc7\u591a\u627f\u8bfa\uff0c\u4f1a\u964d\u4f4e\u53ef\u4fe1\u5ea6\u548c\u8bb0\u5fc6\u70b9\u3002\n\n## \u91cd\u5199\u811a\u672c\uff08\u7ea6 15 \u79d2\uff09\n\n> Hi, I\u2019m Amy, a Sales Representative at LeShine. I help salons choose hair products that fit their services, budget, and delivery needs. Tell me what you\u2019re looking for, and I\u2019ll recommend suitable options and send a quote.\n\n\u8fd9\u7248\u4fdd\u7559\u4e86\u660e\u786e\u8eab\u4efd\u3001\u6c99\u9f99\u5ba2\u6237\u5b9a\u4f4d\u3001\u5ba2\u6237\u4ef7\u503c\u4e0e\u884c\u52a8\u5f15\u5bfc\uff0c\u540c\u65f6\u907f\u514d\u65e0\u6cd5\u8bc1\u5b9e\u7684\u5e93\u5b58\u3001\u4ea4\u671f\u3001\u8d28\u4fdd\u3001\u8d60\u54c1\u3001\u72ec\u5bb6\u6743\u548c\u6700\u4f4e\u4ef7\u627f\u8bfa\u3002\n"}], "grading": null}], "previous_feedback": {}, "previous_outputs": {}, "benchmark": {"metadata": {"skill_name": "ark-sales-persona-kit", "skill_path": "D:/MyProgram/commission-system-codex-foreign-trade-agent/.agents/skills/ark-sales-persona-kit", "executor_model": "gpt-5.6-sol", "analyzer_model": "gpt-5.6-sol", "timestamp": "2026-08-28T07:46:20Z", "evals_run": [1, 2, 3], "runs_per_configuration": 1}, "runs": [{"eval_id": 1, "configuration": "with_skill", "run_number": 1, "result": {"pass_rate": 1.0, "passed": 6, "failed": 0, "total": 6, "time_seconds": 0.0, "tokens": 5173, "tool_calls": 1, "errors": 0}, "expectations": [{"text": "AvatarStatus is BLOCKED_REAL_PHOTO_REQUIRED and the output explicitly says the supplied image is a cartoon or synthetic identity source.", "passed": true, "evidence": "Readiness states BLOCKED_REAL_PHOTO_REQUIRED and identifies the 1024x1024 attachment as a cartoon rather than a real employee photo."}, {"text": "The output does not create or describe a finished fake-real avatar and includes a practical real-photo reshoot plan.", "passed": true, "evidence": "It says no avatar was generated, rejects synthetic substitution, and provides a five-step portrait reshoot plan."}, {"text": "The claim ledger marks 'fastest supplier' and '2.7x profit' as DROP or otherwise excludes them as unsupported.", "passed": true, "evidence": "Both requested claims are REVIEW_REQUIRED and explicitly excluded from the public script with missing evidence listed."}, {"text": "A salon-focused English script is still produced with one approved value and one CTA.", "passed": true, "evidence": "The 30-word script targets U.S. salons, uses batch evidence as the single value, and ends with one needs-based CTA."}, {"text": "The English script is 28-35 words or the output provides a measured reason why it fits 13-17 seconds.", "passed": true, "evidence": "The output reports 30 words and an estimated 12.4-13.8 seconds plus natural pauses for approximately 14-15 seconds."}, {"text": "The result follows the readiness, confirmed inputs, claim ledger, avatar, video, QA, deployment, and missing-approval structure.", "passed": true, "evidence": "All required sections are present, including separate avatar and script QA tables."}], "notes": ["Current Ark knowledge tools were unavailable, so company facts used the dated 2026-08-28 snapshot.", "Human confirmation of the real portrait and public claims remains required."]}, {"eval_id": 2, "configuration": "with_skill", "run_number": 1, "result": {"pass_rate": 1.0, "passed": 6, "failed": 0, "total": 6, "time_seconds": 0.0, "tokens": 10698, "tool_calls": 0, "errors": 0}, "expectations": [{"text": "AvatarStatus is BLOCKED_REAL_PHOTO_REQUIRED, but VideoStatus is not blocked solely because the portrait is missing.", "passed": true, "evidence": "AvatarStatus is blocked for the missing photo while both video scripts are completed; VideoStatus is NEEDS_FACT_APPROVAL for a separate evidence reason."}, {"text": "The output includes a concise five-minute reshoot plan for a real portrait.", "passed": true, "evidence": "A six-step five-minute portrait reshoot plan is included."}, {"text": "The 15-second script uses simple spoken English, one approved value, one CTA, and includes word count plus estimated duration.", "passed": true, "evidence": "The script is 33 words, reports 13.7-15.2 seconds, uses one clear-next-step value and one CTA, with pronunciation help."}, {"text": "The 3-minute script follows person, customer risk, approved capabilities, focused sample/real testing/small repeat/scale path, and one CTA.", "passed": true, "evidence": "The 350-word script follows the required five-part arc and explicitly explains focused samples, real testing, small repeats, then scaling."}, {"text": "No current stock, exact delivery, price, margin result, exclusivity, unconditional refund, or customer-performance claim appears as approved fact.", "passed": true, "evidence": "All such categories are DROP and absent from both scripts."}, {"text": "Every material company claim used in the scripts appears in the claim ledger with source status.", "passed": true, "evidence": "The ledger includes identity, company name, audience, low-risk path, and removed claim categories with APPROVED/REVIEW_REQUIRED/DROP status."}], "notes": ["The current Ark revision could not be retrieved in the eval environment.", "Company-name use needs current knowledge and manager approval before public upload."]}, {"eval_id": 3, "configuration": "with_skill", "run_number": 1, "result": {"pass_rate": 1.0, "passed": 6, "failed": 0, "total": 6, "time_seconds": 0.0, "tokens": 4655, "tool_calls": 0, "errors": 0}, "expectations": [{"text": "The original script is marked not ready because it contains a false role and unsupported or dynamic claims.", "passed": true, "evidence": "The readiness conclusion says the original cannot be used and identifies the wrong role plus seven restricted claims."}, {"text": "The claim ledger rejects or requires review for fastest, always-ready inventory, two-day delivery, one-year guarantee, free samples, city exclusivity, and best-price wording.", "passed": true, "evidence": "Every listed claim has DROP or REVIEW_REQUIRED status with narrower wording or deletion."}, {"text": "The replacement identifies Amy as Sales Representative, not Sales Manager.", "passed": true, "evidence": "The replacement opens with 'Amy, a Sales Representative at LeShine.'"}, {"text": "The replacement has one salon-relevant approved value and one low-friction CTA.", "passed": true, "evidence": "It offers to narrow salon choices and plan a focused test, triggered by one client-needs question."}, {"text": "The replacement is 28-35 English words or is measured to fit 13-17 seconds, and includes Chinese meaning, pronunciation support, shot list, captions, and QA result.", "passed": true, "evidence": "The output reports 34 words, 14.1-15.7 seconds, and includes all requested production and QA elements."}, {"text": "Avatar work is omitted or clearly marked not requested rather than asking for an unnecessary photo.", "passed": true, "evidence": "The readiness section states avatar is outside the review scope and requests no portrait."}], "notes": ["No live Ark revision was available.", "Human confirmation remains required before upload."]}, {"eval_id": 1, "configuration": "without_skill", "run_number": 1, "result": {"pass_rate": 0.3333, "passed": 2, "failed": 4, "total": 6, "time_seconds": 0.0, "tokens": 808, "tool_calls": 1, "errors": 0}, "expectations": [{"text": "AvatarStatus is BLOCKED_REAL_PHOTO_REQUIRED and the output explicitly says the supplied image is a cartoon or synthetic identity source.", "passed": false, "evidence": "The output correctly identifies the cartoon but does not use the required readiness status or structured gate."}, {"text": "The output does not create or describe a finished fake-real avatar and includes a practical real-photo reshoot plan.", "passed": true, "evidence": "It refuses to call the image Mia's real avatar and gives concrete portrait-capture guidance."}, {"text": "The claim ledger marks 'fastest supplier' and '2.7x profit' as DROP or otherwise excludes them as unsupported.", "passed": false, "evidence": "No claim ledger is provided; the recommended script still substitutes unsupported 'fast shipping' and 'improve their margins' outcome language."}, {"text": "A salon-focused English script is still produced with one approved value and one CTA.", "passed": false, "evidence": "The script targets salons and has a CTA, but its value is built on unverified shipping and margin claims rather than approved evidence."}, {"text": "The English script is 28-35 words or the output provides a measured reason why it fits 13-17 seconds.", "passed": true, "evidence": "The recommended script is 34 words, within the expected range."}, {"text": "The result follows the readiness, confirmed inputs, claim ledger, avatar, video, QA, deployment, and missing-approval structure.", "passed": false, "evidence": "The response contains only avatar conclusion and two scripts; the required ledger, QA, deployment, and approval sections are absent."}], "notes": ["No company evidence source was consulted.", "The recommended script still requires claim review."]}, {"eval_id": 2, "configuration": "without_skill", "run_number": 1, "result": {"pass_rate": 0.1667, "passed": 1, "failed": 5, "total": 6, "time_seconds": 0.0, "tokens": 5685, "tool_calls": 0, "errors": 0}, "expectations": [{"text": "AvatarStatus is BLOCKED_REAL_PHOTO_REQUIRED, but VideoStatus is not blocked solely because the portrait is missing.", "passed": false, "evidence": "The response makes the same practical distinction but provides no required readiness statuses."}, {"text": "The output includes a concise five-minute reshoot plan for a real portrait.", "passed": false, "evidence": "It provides an extensive photo specification, not the requested concise five-minute reshoot plan."}, {"text": "The 15-second script uses simple spoken English, one approved value, one CTA, and includes word count plus estimated duration.", "passed": false, "evidence": "The script is simple and has one CTA, but is 26 words and includes neither word count nor duration."}, {"text": "The 3-minute script follows person, customer risk, approved capabilities, focused sample/real testing/small repeat/scale path, and one CTA.", "passed": false, "evidence": "It explains an intake workflow but does not include focused sample comparison, real testing, small repeats, and scale."}, {"text": "No current stock, exact delivery, price, margin result, exclusivity, unconditional refund, or customer-performance claim appears as approved fact.", "passed": true, "evidence": "The response explicitly avoids unsupported company and commercial claims."}, {"text": "Every material company claim used in the scripts appears in the claim ledger with source status.", "passed": false, "evidence": "No claim ledger or source status is provided."}], "notes": ["No published Ark knowledge was available or cited.", "The long script lacks the low-risk sample and repeat-order cooperation path."]}, {"eval_id": 3, "configuration": "without_skill", "run_number": 1, "result": {"pass_rate": 0.6667, "passed": 4, "failed": 2, "total": 6, "time_seconds": 0.0, "tokens": 739, "tool_calls": 0, "errors": 0}, "expectations": [{"text": "The original script is marked not ready because it contains a false role and unsupported or dynamic claims.", "passed": true, "evidence": "The audit recommends against direct use and lists the false title and high-risk commitments."}, {"text": "The claim ledger rejects or requires review for fastest, always-ready inventory, two-day delivery, one-year guarantee, free samples, city exclusivity, and best-price wording.", "passed": false, "evidence": "The claims are discussed as a group, but there is no itemized claim ledger or per-claim decision/source."}, {"text": "The replacement identifies Amy as Sales Representative, not Sales Manager.", "passed": true, "evidence": "The replacement uses the correct Sales Representative title."}, {"text": "The replacement has one salon-relevant approved value and one low-friction CTA.", "passed": true, "evidence": "It focuses on salon product fit and asks what the salon is looking for."}, {"text": "The replacement is 28-35 English words or is measured to fit 13-17 seconds, and includes Chinese meaning, pronunciation support, shot list, captions, and QA result.", "passed": false, "evidence": "The script is 37 words and the output lacks measurement, Chinese meaning, pronunciation, shot list, captions, and structured QA."}, {"text": "Avatar work is omitted or clearly marked not requested rather than asking for an unnecessary photo.", "passed": true, "evidence": "The response remains script-only and asks for no image."}], "notes": ["No source or claim ledger was used.", "The rewrite needs production guidance and timing verification."]}], "run_summary": {"with_skill": {"pass_rate": {"mean": 1.0, "stddev": 0.0, "min": 1.0, "max": 1.0}, "time_seconds": {"mean": 0.0, "stddev": 0.0, "min": 0.0, "max": 0.0}, "tokens": {"mean": 6842.0, "stddev": 3349.4228, "min": 4655, "max": 10698}}, "without_skill": {"pass_rate": {"mean": 0.3889, "stddev": 0.2546, "min": 0.1667, "max": 0.6667}, "time_seconds": {"mean": 0.0, "stddev": 0.0, "min": 0.0, "max": 0.0}, "tokens": {"mean": 2410.6667, "stddev": 2835.8657, "min": 739, "max": 5685}}, "delta": {"pass_rate": "+0.61", "time_seconds": "+0.0", "tokens": "+4431"}}, "notes": ["All three with-skill runs passed every assertion; without-skill pass rates were 33%, 17%, and 67%.", "Both configurations usually refused to turn a cartoon or missing photo into a real employee identity, so refusal alone is not a discriminating assertion; the skill's added value is the explicit readiness gate, reshoot path, and continuation of safe video work.", "Claim-ledger and per-claim source status were the clearest differentiators: the first baseline removed the exact requested claims but reintroduced unsupported fast-shipping and margin language.", "The missing-photo eval exposed the largest workflow gap: the baseline stayed safe but omitted timing measurement, the focused-sample and small-repeat path, and source status.", "With-skill outputs were longer because they include claim ledgers, production guidance, and itemized QA. Output characters are used as a token proxy; executor timing was not available in this environment.", "Only one run per configuration was executed, so the result is a qualitative comparison rather than a variance-tested benchmark.", "The eval environment lacked live Ark knowledge tools; offline-snapshot fallback was tested, but live revision retrieval still needs an integration test."]}};
+
+    // ---- State ----
+    let feedbackMap = {};  // run_id -> feedback text
+    let currentIndex = 0;
+    let visitedRuns = new Set();
+
+    // ---- Init ----
+    async function init() {
+      // Load saved feedback from server — but only if this isn't a fresh
+      // iteration (indicated by previous_feedback being present). When
+      // previous feedback exists, the feedback.json on disk is stale from
+      // the prior iteration and should not pre-fill the textareas.
+      const hasPrevious = Object.keys(EMBEDDED_DATA.previous_feedback || {}).length > 0
+        || Object.keys(EMBEDDED_DATA.previous_outputs || {}).length > 0;
+      if (!hasPrevious) {
+        try {
+          const resp = await fetch("/api/feedback");
+          const data = await resp.json();
+          if (data.reviews) {
+            for (const r of data.reviews) feedbackMap[r.run_id] = r.feedback;
+          }
+        } catch { /* first run, no feedback yet */ }
+      }
+
+      document.getElementById("skill-name").textContent = EMBEDDED_DATA.skill_name;
+      showRun(0);
+
+      // Wire up feedback auto-save
+      const textarea = document.getElementById("feedback");
+      let saveTimeout = null;
+      textarea.addEventListener("input", () => {
+        clearTimeout(saveTimeout);
+        document.getElementById("feedback-status").textContent = "";
+        saveTimeout = setTimeout(() => saveCurrentFeedback(), 800);
+      });
+    }
+
+    // ---- Navigation ----
+    function navigate(delta) {
+      const newIndex = currentIndex + delta;
+      if (newIndex >= 0 && newIndex < EMBEDDED_DATA.runs.length) {
+        saveCurrentFeedback();
+        showRun(newIndex);
+      }
+    }
+
+    function updateNavButtons() {
+      document.getElementById("prev-btn").disabled = currentIndex === 0;
+      document.getElementById("next-btn").disabled =
+        currentIndex === EMBEDDED_DATA.runs.length - 1;
+    }
+
+    // ---- Show a run ----
+    function showRun(index) {
+      currentIndex = index;
+      const run = EMBEDDED_DATA.runs[index];
+
+      // Progress
+      document.getElementById("progress").textContent =
+        `${index + 1} of ${EMBEDDED_DATA.runs.length}`;
+
+      // Prompt
+      document.getElementById("prompt-text").textContent = run.prompt;
+
+      // Config badge
+      const badge = document.getElementById("config-badge");
+      const configMatch = run.id.match(/(with_skill|without_skill|new_skill|old_skill)/);
+      if (configMatch) {
+        const config = configMatch[1];
+        const isBaseline = config === "without_skill" || config === "old_skill";
+        badge.textContent = config.replace(/_/g, " ");
+        badge.className = "config-badge " + (isBaseline ? "config-baseline" : "config-primary");
+        badge.style.display = "inline-block";
+      } else {
+        badge.style.display = "none";
+      }
+
+      // Outputs
+      renderOutputs(run);
+
+      // Previous outputs
+      renderPrevOutputs(run);
+
+      // Grades
+      renderGrades(run);
+
+      // Previous feedback
+      const prevFb = (EMBEDDED_DATA.previous_feedback || {})[run.id];
+      const prevEl = document.getElementById("prev-feedback");
+      if (prevFb) {
+        document.getElementById("prev-feedback-text").textContent = prevFb;
+        prevEl.style.display = "block";
+      } else {
+        prevEl.style.display = "none";
+      }
+
+      // Feedback
+      document.getElementById("feedback").value = feedbackMap[run.id] || "";
+      document.getElementById("feedback-status").textContent = "";
+
+      updateNavButtons();
+
+      // Track visited runs and promote done button when all visited
+      visitedRuns.add(index);
+      const doneBtn = document.getElementById("done-btn");
+      if (visitedRuns.size >= EMBEDDED_DATA.runs.length) {
+        doneBtn.classList.add("ready");
+      }
+
+      // Scroll main content to top
+      document.querySelector(".main").scrollTop = 0;
+    }
+
+    // ---- Render outputs ----
+    function renderOutputs(run) {
+      const container = document.getElementById("outputs-body");
+      container.innerHTML = "";
+
+      const outputs = run.outputs || [];
+      if (outputs.length === 0) {
+        container.innerHTML = '<div class="empty-state">No output files</div>';
+        return;
+      }
+
+      for (const file of outputs) {
+        const fileDiv = document.createElement("div");
+        fileDiv.className = "output-file";
+
+        // Always show file header with download link
+        const header = document.createElement("div");
+        header.className = "output-file-header";
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = file.name;
+        header.appendChild(nameSpan);
+        const dlBtn = document.createElement("a");
+        dlBtn.className = "dl-btn";
+        dlBtn.textContent = "Download";
+        dlBtn.download = file.name;
+        dlBtn.href = getDownloadUri(file);
+        header.appendChild(dlBtn);
+        fileDiv.appendChild(header);
+
+        const content = document.createElement("div");
+        content.className = "output-file-content";
+
+        if (file.type === "text") {
+          const pre = document.createElement("pre");
+          pre.textContent = file.content;
+          content.appendChild(pre);
+        } else if (file.type === "image") {
+          const img = document.createElement("img");
+          img.src = file.data_uri;
+          img.alt = file.name;
+          content.appendChild(img);
+        } else if (file.type === "pdf") {
+          const iframe = document.createElement("iframe");
+          iframe.src = file.data_uri;
+          content.appendChild(iframe);
+        } else if (file.type === "xlsx") {
+          renderXlsx(content, file.data_b64);
+        } else if (file.type === "binary") {
+          const a = document.createElement("a");
+          a.className = "download-link";
+          a.href = file.data_uri;
+          a.download = file.name;
+          a.textContent = "Download " + file.name;
+          content.appendChild(a);
+        } else if (file.type === "error") {
+          const pre = document.createElement("pre");
+          pre.textContent = file.content;
+          pre.style.color = "var(--red)";
+          content.appendChild(pre);
+        }
+
+        fileDiv.appendChild(content);
+        container.appendChild(fileDiv);
+      }
+    }
+
+    // ---- XLSX rendering via SheetJS ----
+    function renderXlsx(container, b64Data) {
+      try {
+        const raw = Uint8Array.from(atob(b64Data), c => c.charCodeAt(0));
+        const wb = XLSX.read(raw, { type: "array" });
+
+        for (let i = 0; i < wb.SheetNames.length; i++) {
+          const sheetName = wb.SheetNames[i];
+          const ws = wb.Sheets[sheetName];
+
+          if (wb.SheetNames.length > 1) {
+            const sheetLabel = document.createElement("div");
+            sheetLabel.style.cssText =
+              "font-weight:600; font-size:0.8rem; color:#b0aea5; margin-top:0.5rem; margin-bottom:0.25rem;";
+            sheetLabel.textContent = "Sheet: " + sheetName;
+            container.appendChild(sheetLabel);
+          }
+
+          const htmlStr = XLSX.utils.sheet_to_html(ws, { editable: false });
+          const wrapper = document.createElement("div");
+          wrapper.innerHTML = htmlStr;
+          container.appendChild(wrapper);
+        }
+      } catch (err) {
+        container.textContent = "Error rendering spreadsheet: " + err.message;
+      }
+    }
+
+    // ---- Grades ----
+    function renderGrades(run) {
+      const section = document.getElementById("grades-section");
+      const content = document.getElementById("grades-content");
+
+      if (!run.grading) {
+        section.style.display = "none";
+        return;
+      }
+
+      const grading = run.grading;
+      section.style.display = "block";
+      // Reset to collapsed
+      content.classList.remove("open");
+      document.getElementById("grades-arrow").classList.remove("open");
+
+      const summary = grading.summary || {};
+      const expectations = grading.expectations || [];
+
+      let html = '<div style="padding: 1rem;">';
+
+      // Summary line
+      const passRate = summary.pass_rate != null
+        ? Math.round(summary.pass_rate * 100) + "%"
+        : "?";
+      const badgeClass = summary.pass_rate >= 0.8 ? "grade-pass" : summary.pass_rate >= 0.5 ? "" : "grade-fail";
+      html += '<div class="grades-summary">';
+      html += '<span class="grade-badge ' + badgeClass + '">' + passRate + '</span>';
+      html += '<span>' + (summary.passed || 0) + ' passed, ' + (summary.failed || 0) + ' failed of ' + (summary.total || 0) + '</span>';
+      html += '</div>';
+
+      // Assertions list
+      html += '<ul class="assertion-list">';
+      for (const exp of expectations) {
+        const statusClass = exp.passed ? "pass" : "fail";
+        const statusIcon = exp.passed ? "\u2713" : "\u2717";
+        html += '<li class="assertion-item">';
+        html += '<span class="assertion-status ' + statusClass + '">' + statusIcon + '</span>';
+        html += '<span>' + escapeHtml(exp.text) + '</span>';
+        if (exp.evidence) {
+          html += '<div class="assertion-evidence">' + escapeHtml(exp.evidence) + '</div>';
+        }
+        html += '</li>';
+      }
+      html += '</ul>';
+
+      html += '</div>';
+      content.innerHTML = html;
+    }
+
+    function toggleGrades() {
+      const content = document.getElementById("grades-content");
+      const arrow = document.getElementById("grades-arrow");
+      content.classList.toggle("open");
+      arrow.classList.toggle("open");
+    }
+
+    // ---- Previous outputs (collapsible) ----
+    function renderPrevOutputs(run) {
+      const section = document.getElementById("prev-outputs-section");
+      const content = document.getElementById("prev-outputs-content");
+      const prevOutputs = (EMBEDDED_DATA.previous_outputs || {})[run.id];
+
+      if (!prevOutputs || prevOutputs.length === 0) {
+        section.style.display = "none";
+        return;
+      }
+
+      section.style.display = "block";
+      // Reset to collapsed
+      content.classList.remove("open");
+      document.getElementById("prev-outputs-arrow").classList.remove("open");
+
+      // Render the files into the content area
+      content.innerHTML = "";
+      const wrapper = document.createElement("div");
+      wrapper.style.padding = "1rem";
+
+      for (const file of prevOutputs) {
+        const fileDiv = document.createElement("div");
+        fileDiv.className = "output-file";
+
+        const header = document.createElement("div");
+        header.className = "output-file-header";
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = file.name;
+        header.appendChild(nameSpan);
+        const dlBtn = document.createElement("a");
+        dlBtn.className = "dl-btn";
+        dlBtn.textContent = "Download";
+        dlBtn.download = file.name;
+        dlBtn.href = getDownloadUri(file);
+        header.appendChild(dlBtn);
+        fileDiv.appendChild(header);
+
+        const fc = document.createElement("div");
+        fc.className = "output-file-content";
+
+        if (file.type === "text") {
+          const pre = document.createElement("pre");
+          pre.textContent = file.content;
+          fc.appendChild(pre);
+        } else if (file.type === "image") {
+          const img = document.createElement("img");
+          img.src = file.data_uri;
+          img.alt = file.name;
+          fc.appendChild(img);
+        } else if (file.type === "pdf") {
+          const iframe = document.createElement("iframe");
+          iframe.src = file.data_uri;
+          fc.appendChild(iframe);
+        } else if (file.type === "xlsx") {
+          renderXlsx(fc, file.data_b64);
+        } else if (file.type === "binary") {
+          const a = document.createElement("a");
+          a.className = "download-link";
+          a.href = file.data_uri;
+          a.download = file.name;
+          a.textContent = "Download " + file.name;
+          fc.appendChild(a);
+        }
+
+        fileDiv.appendChild(fc);
+        wrapper.appendChild(fileDiv);
+      }
+
+      content.appendChild(wrapper);
+    }
+
+    function togglePrevOutputs() {
+      const content = document.getElementById("prev-outputs-content");
+      const arrow = document.getElementById("prev-outputs-arrow");
+      content.classList.toggle("open");
+      arrow.classList.toggle("open");
+    }
+
+    // ---- Feedback (saved to server -> feedback.json) ----
+    function saveCurrentFeedback() {
+      const run = EMBEDDED_DATA.runs[currentIndex];
+      const text = document.getElementById("feedback").value;
+
+      if (text.trim() === "") {
+        delete feedbackMap[run.id];
+      } else {
+        feedbackMap[run.id] = text;
+      }
+
+      // Build reviews array from map
+      const reviews = [];
+      for (const [run_id, feedback] of Object.entries(feedbackMap)) {
+        if (feedback.trim()) {
+          reviews.push({ run_id, feedback, timestamp: new Date().toISOString() });
+        }
+      }
+
+      fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reviews, status: "in_progress" }),
+      }).then(() => {
+        document.getElementById("feedback-status").textContent = "Saved";
+      }).catch(() => {
+        // Static mode or server unavailable — no-op on auto-save,
+        // feedback will be downloaded on final submit
+        document.getElementById("feedback-status").textContent = "Will download on submit";
+      });
+    }
+
+    // ---- Done ----
+    function showDoneDialog() {
+      // Save current textarea to feedbackMap (but don't POST yet)
+      const run = EMBEDDED_DATA.runs[currentIndex];
+      const text = document.getElementById("feedback").value;
+      if (text.trim() === "") {
+        delete feedbackMap[run.id];
+      } else {
+        feedbackMap[run.id] = text;
+      }
+
+      // POST once with status: complete — include ALL runs so the model
+      // can distinguish "no feedback" (looks good) from "not reviewed"
+      const reviews = [];
+      const ts = new Date().toISOString();
+      for (const r of EMBEDDED_DATA.runs) {
+        reviews.push({ run_id: r.id, feedback: feedbackMap[r.id] || "", timestamp: ts });
+      }
+      const payload = JSON.stringify({ reviews, status: "complete" }, null, 2);
+      fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+      }).then(() => {
+        document.getElementById("done-overlay").classList.add("visible");
+      }).catch(() => {
+        // Server not available (static mode) — download as file
+        const blob = new Blob([payload], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "feedback.json";
+        a.click();
+        URL.revokeObjectURL(url);
+        document.getElementById("done-overlay").classList.add("visible");
+      });
+    }
+
+    function closeDoneDialog() {
+      // Reset status back to in_progress
+      saveCurrentFeedback();
+      document.getElementById("done-overlay").classList.remove("visible");
+    }
+
+    // ---- Toast ----
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      toast.textContent = message;
+      toast.classList.add("visible");
+      setTimeout(() => toast.classList.remove("visible"), 2000);
+    }
+
+    // ---- Keyboard nav ----
+    document.addEventListener("keydown", (e) => {
+      // Don't capture when typing in textarea
+      if (e.target.tagName === "TEXTAREA") return;
+
+      if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+        e.preventDefault();
+        navigate(-1);
+      } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+        e.preventDefault();
+        navigate(1);
+      }
+    });
+
+    // ---- Util ----
+    function getDownloadUri(file) {
+      if (file.data_uri) return file.data_uri;
+      if (file.data_b64) return "data:application/octet-stream;base64," + file.data_b64;
+      if (file.type === "text") return "data:text/plain;charset=utf-8," + encodeURIComponent(file.content);
+      return "#";
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // ---- View switching ----
+    function switchView(view) {
+      document.querySelectorAll(".view-tab").forEach(t => t.classList.remove("active"));
+      document.querySelectorAll(".view-panel").forEach(p => p.classList.remove("active"));
+      document.querySelector(`[onclick="switchView('${view}')"]`).classList.add("active");
+      document.getElementById("panel-" + view).classList.add("active");
+    }
+
+    // ---- Benchmark rendering ----
+    function renderBenchmark() {
+      const data = EMBEDDED_DATA.benchmark;
+      if (!data) return;
+
+      // Show the tabs
+      document.getElementById("view-tabs").style.display = "flex";
+
+      const container = document.getElementById("benchmark-content");
+      const summary = data.run_summary || {};
+      const metadata = data.metadata || {};
+      const notes = data.notes || [];
+
+      let html = "";
+
+      // Header
+      html += "<h2 style='font-family: Poppins, sans-serif; margin-bottom: 0.5rem;'>Benchmark Results</h2>";
+      html += "<p style='color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1.25rem;'>";
+      if (metadata.skill_name) html += "<strong>" + escapeHtml(metadata.skill_name) + "</strong> &mdash; ";
+      if (metadata.timestamp) html += metadata.timestamp + " &mdash; ";
+      if (metadata.evals_run) html += "Evals: " + metadata.evals_run.join(", ") + " &mdash; ";
+      html += (metadata.runs_per_configuration || "?") + " runs per configuration";
+      html += "</p>";
+
+      // Summary table
+      html += '<table class="benchmark-table">';
+
+      function fmtStat(stat, pct) {
+        if (!stat) return "—";
+        const suffix = pct ? "%" : "";
+        const m = pct ? (stat.mean * 100).toFixed(0) : stat.mean.toFixed(1);
+        const s = pct ? (stat.stddev * 100).toFixed(0) : stat.stddev.toFixed(1);
+        return m + suffix + " ± " + s + suffix;
+      }
+
+      function deltaClass(val) {
+        if (!val) return "";
+        const n = parseFloat(val);
+        if (n > 0) return "benchmark-delta-positive";
+        if (n < 0) return "benchmark-delta-negative";
+        return "";
+      }
+
+      // Discover config names dynamically (everything except "delta")
+      const configs = Object.keys(summary).filter(k => k !== "delta");
+      const configA = configs[0] || "config_a";
+      const configB = configs[1] || "config_b";
+      const labelA = configA.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+      const labelB = configB.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+      const a = summary[configA] || {};
+      const b = summary[configB] || {};
+      const delta = summary.delta || {};
+
+      html += "<thead><tr><th>Metric</th><th>" + escapeHtml(labelA) + "</th><th>" + escapeHtml(labelB) + "</th><th>Delta</th></tr></thead>";
+      html += "<tbody>";
+
+      html += "<tr><td><strong>Pass Rate</strong></td>";
+      html += "<td>" + fmtStat(a.pass_rate, true) + "</td>";
+      html += "<td>" + fmtStat(b.pass_rate, true) + "</td>";
+      html += '<td class="' + deltaClass(delta.pass_rate) + '">' + (delta.pass_rate || "—") + "</td></tr>";
+
+      // Time (only show row if data exists)
+      if (a.time_seconds || b.time_seconds) {
+        html += "<tr><td><strong>Time (s)</strong></td>";
+        html += "<td>" + fmtStat(a.time_seconds, false) + "</td>";
+        html += "<td>" + fmtStat(b.time_seconds, false) + "</td>";
+        html += '<td class="' + deltaClass(delta.time_seconds) + '">' + (delta.time_seconds ? delta.time_seconds + "s" : "—") + "</td></tr>";
+      }
+
+      // Tokens (only show row if data exists)
+      if (a.tokens || b.tokens) {
+        html += "<tr><td><strong>Tokens</strong></td>";
+        html += "<td>" + fmtStat(a.tokens, false) + "</td>";
+        html += "<td>" + fmtStat(b.tokens, false) + "</td>";
+        html += '<td class="' + deltaClass(delta.tokens) + '">' + (delta.tokens || "—") + "</td></tr>";
+      }
+
+      html += "</tbody></table>";
+
+      // Per-eval breakdown (if runs data available)
+      const runs = data.runs || [];
+      if (runs.length > 0) {
+        const evalIds = [...new Set(runs.map(r => r.eval_id))].sort((a, b) => a - b);
+
+        html += "<h3 style='font-family: Poppins, sans-serif; margin-bottom: 0.75rem;'>Per-Eval Breakdown</h3>";
+
+        const hasTime = runs.some(r => r.result && r.result.time_seconds != null);
+        const hasErrors = runs.some(r => r.result && r.result.errors > 0);
+
+        for (const evalId of evalIds) {
+          const evalRuns = runs.filter(r => r.eval_id === evalId);
+          const evalName = evalRuns[0] && evalRuns[0].eval_name ? evalRuns[0].eval_name : "Eval " + evalId;
+
+          html += "<h4 style='font-family: Poppins, sans-serif; margin: 1rem 0 0.5rem; color: var(--text);'>" + escapeHtml(evalName) + "</h4>";
+          html += '<table class="benchmark-table">';
+          html += "<thead><tr><th>Config</th><th>Run</th><th>Pass Rate</th>";
+          if (hasTime) html += "<th>Time (s)</th>";
+          if (hasErrors) html += "<th>Crashes During Execution</th>";
+          html += "</tr></thead>";
+          html += "<tbody>";
+
+          // Group by config and render with average rows
+          const configGroups = [...new Set(evalRuns.map(r => r.configuration))];
+          for (let ci = 0; ci < configGroups.length; ci++) {
+            const config = configGroups[ci];
+            const configRuns = evalRuns.filter(r => r.configuration === config);
+            if (configRuns.length === 0) continue;
+
+            const rowClass = ci === 0 ? "benchmark-row-with" : "benchmark-row-without";
+            const configLabel = config.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+
+            for (const run of configRuns) {
+              const r = run.result || {};
+              const prClass = r.pass_rate >= 0.8 ? "benchmark-delta-positive" : r.pass_rate < 0.5 ? "benchmark-delta-negative" : "";
+              html += '<tr class="' + rowClass + '">';
+              html += "<td>" + configLabel + "</td>";
+              html += "<td>" + run.run_number + "</td>";
+              html += '<td class="' + prClass + '">' + ((r.pass_rate || 0) * 100).toFixed(0) + "% (" + (r.passed || 0) + "/" + (r.total || 0) + ")</td>";
+              if (hasTime) html += "<td>" + (r.time_seconds != null ? r.time_seconds.toFixed(1) : "—") + "</td>";
+              if (hasErrors) html += "<td>" + (r.errors || 0) + "</td>";
+              html += "</tr>";
+            }
+
+            // Average row
+            const rates = configRuns.map(r => (r.result || {}).pass_rate || 0);
+            const avgRate = rates.reduce((a, b) => a + b, 0) / rates.length;
+            const avgPrClass = avgRate >= 0.8 ? "benchmark-delta-positive" : avgRate < 0.5 ? "benchmark-delta-negative" : "";
+            html += '<tr class="benchmark-row-avg ' + rowClass + '">';
+            html += "<td>" + configLabel + "</td>";
+            html += "<td>Avg</td>";
+            html += '<td class="' + avgPrClass + '">' + (avgRate * 100).toFixed(0) + "%</td>";
+            if (hasTime) {
+              const times = configRuns.map(r => (r.result || {}).time_seconds).filter(t => t != null);
+              html += "<td>" + (times.length ? (times.reduce((a, b) => a + b, 0) / times.length).toFixed(1) : "—") + "</td>";
+            }
+            if (hasErrors) html += "<td></td>";
+            html += "</tr>";
+          }
+          html += "</tbody></table>";
+
+          // Per-assertion detail for this eval
+          const runsWithExpectations = {};
+          for (const config of configGroups) {
+            runsWithExpectations[config] = evalRuns.filter(r => r.configuration === config && r.expectations && r.expectations.length > 0);
+          }
+          const hasAnyExpectations = Object.values(runsWithExpectations).some(runs => runs.length > 0);
+          if (hasAnyExpectations) {
+            // Collect all unique assertion texts across all configs
+            const allAssertions = [];
+            const seen = new Set();
+            for (const config of configGroups) {
+              for (const run of runsWithExpectations[config]) {
+                for (const exp of (run.expectations || [])) {
+                  if (!seen.has(exp.text)) {
+                    seen.add(exp.text);
+                    allAssertions.push(exp.text);
+                  }
+                }
+              }
+            }
+
+            html += '<table class="benchmark-table" style="margin-top: 0.5rem;">';
+            html += "<thead><tr><th>Assertion</th>";
+            for (const config of configGroups) {
+              const label = config.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+              html += "<th>" + escapeHtml(label) + "</th>";
+            }
+            html += "</tr></thead><tbody>";
+
+            for (const assertionText of allAssertions) {
+              html += "<tr><td>" + escapeHtml(assertionText) + "</td>";
+
+              for (const config of configGroups) {
+                html += "<td>";
+                for (const run of runsWithExpectations[config]) {
+                  const exp = (run.expectations || []).find(e => e.text === assertionText);
+                  if (exp) {
+                    const cls = exp.passed ? "benchmark-delta-positive" : "benchmark-delta-negative";
+                    const icon = exp.passed ? "\u2713" : "\u2717";
+                    html += '<span class="' + cls + '" title="Run ' + run.run_number + ': ' + escapeHtml(exp.evidence || "") + '">' + icon + "</span> ";
+                  } else {
+                    html += "— ";
+                  }
+                }
+                html += "</td>";
+              }
+              html += "</tr>";
+            }
+            html += "</tbody></table>";
+          }
+        }
+      }
+
+      // Notes
+      if (notes.length > 0) {
+        html += '<div class="benchmark-notes">';
+        html += "<h3>Analysis Notes</h3>";
+        html += "<ul>";
+        for (const note of notes) {
+          html += "<li>" + escapeHtml(note) + "</li>";
+        }
+        html += "</ul></div>";
+      }
+
+      container.innerHTML = html;
+    }
+
+    // ---- Start ----
+    init();
+    renderBenchmark();
+  </script>
+</body>
+</html>
