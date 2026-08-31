@@ -19,7 +19,7 @@ from app.auth.models import ArkUser
 from app.core.config import get_settings
 from app.core.time import beijing_now
 from app.domestic import constants as C
-from app.domestic import progress_service, unit_service
+from app.domestic import progress_service, route_rule_service, routing_service, unit_service
 from app.domestic.models import (
     DomesticCustomer,
     DomesticItemProgress,
@@ -194,6 +194,10 @@ def _replay_result(db: Session, log: DomesticReportLog, *, lock: bool = False) -
     item = db.query(DomesticOrderItem).get(log.item_id)
     process_name = db.query(Process.name).filter(Process.id == log.process_id).scalar()
     units = unit_service.units_for_log(db, log.id, lock=lock)
+    outcome_by_unit = dict(db.query(
+        DomesticReportUnit.unit_id,
+        DomesticReportUnit.outcome_code,
+    ).filter(DomesticReportUnit.log_id == log.id).all())
     return {
         "log_id": log.id,
         "item_id": log.item_id,
@@ -207,6 +211,11 @@ def _replay_result(db: Session, log: DomesticReportLog, *, lock: bool = False) -
         "reported_at": log.reported_at,
         "unit_ids": [unit.id for unit in units],
         "unit_codes": [unit_service.unit_display_code(item, unit.unit_no) for unit in units] if item else [],
+        "outcomes": log.outcome_json,
+        "unit_outcomes": [
+            {"unit_id": unit.id, "outcome_code": outcome_by_unit.get(unit.id)}
+            for unit in units
+        ],
         "replayed": True,
     }
 
@@ -220,6 +229,7 @@ def _report_replay_if_exists(
     qty: int,
     worker_id: int,
     unit_id: int | None,
+    outcomes: dict[str, int] | None,
     lock: bool = False,
 ) -> dict | None:
     if not request_id:
@@ -238,6 +248,7 @@ def _report_replay_if_exists(
         and existing.report_qty == qty
         and existing.reported_by_user_id == worker_id
         and existing.report_mode == ("unit" if unit_id is not None else "quantity")
+        and (existing.outcome_json or None) == outcomes
     )
     if unit_id is not None:
         same_request = same_request and any(
@@ -300,7 +311,7 @@ def scan_item(db: Session, item_id: int, user_id: int) -> dict:
         return blocked(BLOCK_ORDER_DRAFT)
     if not steps:
         return blocked(BLOCK_NO_ROUTE)
-    if all(s["completed_qty"] >= item.order_qty for s in steps):
+    if steps[-1]["passed_qty"] >= item.order_qty:
         return blocked(BLOCK_ALL_DONE)
 
     my_processes = _user_process_ids(db, user_id)
@@ -381,6 +392,7 @@ def submit_report(
     request_id: str | None = None,
     on_behalf_user_id: int | None = None,
     unit_id: int | None = None,
+    outcomes: dict[str, int] | None = None,
 ) -> dict:
     """提交一次报工。数量守恒由「上游累计 − 本道累计」当场校验。
 
@@ -394,13 +406,27 @@ def submit_report(
         raise ValueError("报工数量必须大于 0")
 
     worker_id = on_behalf_user_id or user_id
+    replay_outcomes = routing_service.normalize_replay_outcomes(outcomes)
     replay = _report_replay_if_exists(
         db, request_id=request_id, item_id=item_id, progress_id=progress_id,
-        qty=qty, worker_id=worker_id, unit_id=unit_id,
+        qty=qty, worker_id=worker_id, unit_id=unit_id, outcomes=replay_outcomes,
     )
     if replay:
         return replay
 
+    preview_item = db.query(DomesticOrderItem).get(item_id)
+    preview_progress = db.query(DomesticItemProgress).get(progress_id)
+    preview_rule = None
+    if preview_item and preview_progress and preview_item.route_id:
+        preview_rule = routing_service.runtime_rule_map(db, preview_item.route_id).get(
+            preview_progress.process_id
+        )
+    normalized_outcomes = routing_service.normalize_outcomes(
+        preview_rule,
+        outcomes,
+        qty=qty,
+        unit_mode=unit_id is not None,
+    )
     # 明细行锁放最前：同一明细的所有报工/撤销在这里排队，锁顺序统一避免死锁
     item = db.query(DomesticOrderItem).filter(DomesticOrderItem.id == item_id).with_for_update().first()
     if not item:
@@ -421,7 +447,8 @@ def submit_report(
     # item 行锁串行化，此处 locking read 必须重查一次再动累计数。
     replay = _report_replay_if_exists(
         db, request_id=request_id, item_id=item_id, progress_id=progress_id,
-        qty=qty, worker_id=worker_id, unit_id=unit_id, lock=True,
+        qty=qty, worker_id=worker_id, unit_id=unit_id,
+        outcomes=replay_outcomes, lock=True,
     )
     if replay:
         db.rollback()
@@ -432,17 +459,46 @@ def submit_report(
         who = "该工人" if on_behalf_user_id else "你"
         raise ValueError(f"{who}没有被分配到这道工序")
 
-    available = progress_service.reportable_qty(db, progress, item, lock=True)
+    rows = (
+        db.query(DomesticItemProgress)
+        .filter(DomesticItemProgress.item_id == item.id)
+        .order_by(DomesticItemProgress.step_order.asc())
+        .with_for_update()
+        .all()
+    )
+    unit_service.ensure_item_units(db, item)
+    units = routing_service.active_units(db, item)
+    state = routing_service.load_passage_state(db, item)
+    rules = routing_service.runtime_rule_map(db, item.route_id)
+    rule = rules.get(progress.process_id)
+    normalized_outcomes = routing_service.normalize_outcomes(
+        rule, outcomes, qty=qty, unit_mode=unit_id is not None,
+    )
+    candidates, bypassable = routing_service.ordered_report_candidates(
+        item, progress, rows, state, units, rules,
+    )
+    available = len(candidates)
     if available <= 0:
         raise ValueError("上一道工序还没做出可接的数量")
     if qty > available:
         raise ValueError(f"最多还能报 {available} 件，本次填了 {qty} 件")
-    selected_units = unit_service.select_units_for_report(
-        db,
-        item=item,
-        progress=progress,
-        qty=qty,
-        unit_id=unit_id,
+    if unit_id is not None:
+        if qty != 1:
+            raise ValueError("逐件扫码模式每次只能报 1 件")
+        selected = next((unit for unit in candidates if unit.id == unit_id), None)
+        if selected is None:
+            unit = db.query(DomesticItemUnit).get(unit_id)
+            if not unit or unit.item_id != item.id or unit.status != 1:
+                raise ValueError("这个单件二维码不属于当前订单明细或已失效")
+            if unit.id in state.passed(progress.id):
+                raise ValueError(f"单件 {unit_service.unit_display_code(item, unit.unit_no)} 的这道工序已经报过")
+            raise ValueError(f"单件 {unit_service.unit_display_code(item, unit.unit_no)} 的上一道工序还没完成")
+        selected_units = [selected]
+    else:
+        selected_units = candidates[:qty]
+
+    outcome_by_unit, assigned_by_code = routing_service.allocate_outcomes(
+        selected_units, normalized_outcomes,
     )
 
     now = _bj_now()
@@ -463,14 +519,41 @@ def submit_report(
         reported_by_name=getattr(worker, "real_name", None) or getattr(worker, "username", None),
         source=source,
         report_mode="unit" if unit_id is not None else "quantity",
+        outcome_json=normalized_outcomes,
         request_id=request_id,
         reported_at=now,
         revoked=0,
     )
     db.add(log)
     db.flush()
-    unit_service.add_report_units(db, log=log, units=selected_units)
+    unit_service.add_report_units(
+        db, log=log, units=selected_units, outcome_by_unit=outcome_by_unit,
+    )
+    if rule and rule["rule_type"] == route_rule_service.RULE_DECISION:
+        routing_service.create_decision_skips(
+            db,
+            item=item,
+            rows=rows,
+            rule=rule,
+            assigned_by_code=assigned_by_code,
+            trigger_log=log,
+            user_id=worker_id,
+        )
+    bypass_units = [unit for unit in selected_units if unit.id in bypassable]
+    if bypass_units:
+        previous = rows[rows.index(progress) - 1]
+        routing_service.create_skip_log(
+            db,
+            item=item,
+            progress=previous,
+            units=bypass_units,
+            source="optional_bypass",
+            reason="下一道报工自动绕过可选工序",
+            trigger_report_log_id=log.id,
+            user_id=worker_id,
+        )
 
+    progress_service.sync_progress_statuses(db, item)
     progress_service.recalc_item_status(db, item)
     progress_service.sync_order_status(db, item.order_id)
     db.commit()
@@ -489,6 +572,11 @@ def submit_report(
         "reported_at": now,
         "unit_ids": [unit.id for unit in selected_units],
         "unit_codes": [unit_service.unit_display_code(item, unit.unit_no) for unit in selected_units],
+        "outcomes": normalized_outcomes,
+        "unit_outcomes": [
+            {"unit_id": unit.id, "outcome_code": outcome_by_unit.get(unit.id)}
+            for unit in selected_units
+        ],
     }
 
 

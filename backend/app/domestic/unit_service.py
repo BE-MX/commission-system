@@ -4,7 +4,7 @@
 批量报工永远按 unit_no 从小到大挑选可流转单件，逐件扫码则只挑码指向的那一件。
 """
 
-from sqlalchemy import func, select
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.domestic.models import (
@@ -119,31 +119,22 @@ def eligible_units(
     unit_id: int | None = None,
 ) -> list[DomesticItemUnit]:
     _ensure_units_materialized(db, item)
-    current_done = select(DomesticReportUnit.unit_id).join(
-        DomesticReportLog, DomesticReportLog.id == DomesticReportUnit.log_id
-    ).where(
-        DomesticReportUnit.progress_id == progress.id,
-        DomesticReportLog.revoked == 0,
-    )
-    query = db.query(DomesticItemUnit).filter(
+    from app.domestic import routing_service
+
+    rows = db.query(DomesticItemProgress).filter(
+        DomesticItemProgress.item_id == item.id,
+    ).order_by(DomesticItemProgress.step_order.asc()).all()
+    active = db.query(DomesticItemUnit).filter(
         DomesticItemUnit.item_id == item.id,
         DomesticItemUnit.status == 1,
-        DomesticItemUnit.id.not_in(current_done),
+    ).order_by(DomesticItemUnit.unit_no.asc()).all()
+    state = routing_service.load_passage_state(db, item)
+    rules = routing_service.runtime_rule_map(db, item.route_id)
+    ordered, _bypassable = routing_service.ordered_report_candidates(
+        item, progress, rows, state, active, rules,
     )
-    if progress.step_order > 1:
-        previous = db.query(DomesticItemProgress).filter(
-            DomesticItemProgress.item_id == item.id,
-            DomesticItemProgress.step_order == progress.step_order - 1,
-        ).first()
-        if not previous:
-            return []
-        upstream_done = select(DomesticReportUnit.unit_id).join(
-            DomesticReportLog, DomesticReportLog.id == DomesticReportUnit.log_id
-        ).where(
-            DomesticReportUnit.progress_id == previous.id,
-            DomesticReportLog.revoked == 0,
-        )
-        query = query.filter(DomesticItemUnit.id.in_(upstream_done))
+    eligible_ids = {unit.id for unit in ordered}
+    query = db.query(DomesticItemUnit).filter(DomesticItemUnit.id.in_(eligible_ids or {0}))
     if unit_id is not None:
         query = query.filter(DomesticItemUnit.id == unit_id)
     query = query.order_by(DomesticItemUnit.unit_no.asc())
@@ -188,12 +179,15 @@ def add_report_units(
     *,
     log: DomesticReportLog,
     units: list[DomesticItemUnit],
+    outcome_by_unit: dict[int, str] | None = None,
 ) -> None:
+    outcome_by_unit = outcome_by_unit or {}
     for unit in units:
         db.add(DomesticReportUnit(
             log_id=log.id,
             unit_id=unit.id,
             progress_id=log.progress_id,
+            outcome_code=outcome_by_unit.get(unit.id),
             completed_at=log.reported_at,
         ))
     db.flush()

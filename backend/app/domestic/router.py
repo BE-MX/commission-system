@@ -726,6 +726,7 @@ def submit_report(
             qty=payload.qty, user_id=_uid(current_user), source="web",
             request_id=payload.request_id,
             on_behalf_user_id=payload.on_behalf_user_id,
+            outcomes=payload.outcomes,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

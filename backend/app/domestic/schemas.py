@@ -250,6 +250,7 @@ class ReportSubmit(BaseModel):
     progress_id: int = Field(..., gt=0, description="要报的工序进度行，扫码接口回传")
     qty: int = Field(..., gt=0, description="本次报工数量")
     request_id: str | None = Field(None, max_length=64, description="幂等键，重试用同一个值")
+    outcomes: dict[str, int] | None = Field(None, description="分流判定结果数量；普通工序不传")
     on_behalf_user_id: int | None = Field(
         None, gt=0, description="代报工：实际做活的工人，件数记他名下（计件口径）",
     )

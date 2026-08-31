@@ -311,6 +311,7 @@ async def domestic_submit(
             unit_id=body.unit_id if mode == "unit" else None,
             user_id=current_user.id, source="mini",
             request_id=body.request_id,
+            outcomes=body.outcomes,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": "SUBMIT_FAILED", "message": str(exc)})
