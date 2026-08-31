@@ -91,8 +91,8 @@ Copy-Item .\keystore.properties.example .\keystore.properties
 
 `C:\secure\leshine-expo-release.jks` 与 `keystore.properties` 必须做两份离线备份，分开保管并实际验证可恢复。
 这是上线硬门禁；当前开发机生成文件不等于已经完成离线备份。仓库只跟踪示例，真实 properties、`*.jks`、
-`*.keystore` 均被 `.gitignore` 排除。请求任一 Release Gradle task 时，只要配置缺失、字段为空或文件不存在，
-构建会直接失败，绝不回退为 debug/unsigned。
+`*.keystore` 均被 `.gitignore` 排除。实际 task graph 只要包含 release 工作（包括 `build`、`assemble` 这类聚合任务），
+配置缺失、字段为空或文件不存在时构建会在打包前直接失败，绝不回退为 debug/unsigned；纯 debug/test 不受影响。
 
 在 `tablet-kiosk` 目录用本机已解压 Gradle 构建并核验：
 
@@ -110,12 +110,18 @@ Get-FileHash .\app\build\outputs\apk\release\app-release.apk -Algorithm SHA256
 
 ```powershell
 .\scripts\publish-update.ps1 -ApkPath .\app\build\outputs\apk\release\app-release.apk -PrepareOnly
+# 仅首次创建空通道：线上清单必须 404、APK/清单必须都不存在，而且包必须是 code 10。
+.\scripts\publish-update.ps1 -ApkPath .\app\build\outputs\apk\release\app-release.apk `
+  -InitializeChannel -CaCertificatePath C:\secure\expo-ip.crt
+# 以后发布禁止再带 -InitializeChannel。
 .\scripts\publish-update.ps1 -ApkPath .\app\build\outputs\apk\release\app-release.apk `
   -CaCertificatePath C:\secure\expo-ip.crt
 ```
 
-发布器固定写入同源 `/expo-app/latest.json` 与 `/expo-app/leshine-expo-kiosk.apk`，先原子替换 APK、最后原子
-替换清单，并用受信 CA 回读核验。更新源不能指定其他 URL，也不会进入方舟后台页面；断网、404、校验或安装失败时，
+发布器固定写入同源 `/expo-app/latest.json` 与 `/expo-app/leshine-expo-kiosk.apk`。远端 owner token 锁会阻止并发发布，
+切换前保存本事务私有旧配对，先替换 APK、最后替换清单；切换或 HTTPS 回读校验失败会恢复旧配对，首发失败则恢复空通道。
+两个固定 URL 是两次独立 HTTP 请求，发布瞬间仍可能短暂读到清单/APK不匹配，**不能宣称跨请求事务原子**；APP 会在
+大小或 SHA-256 校验处 fail-closed，继续使用旧版并在下次冷启动重试。更新源不能指定其他 URL，也不会进入方舟后台页面；断网、404、校验或安装失败时，
 APP 会放行当前版本继续试戴，下次冷启动重试。APP 自动识别安装模式：设备所有者平板静默安装，普通平板下载完成后
 只打开 Android 系统安装确认，不提供绕过系统确认的开关，也不需要工作人员切换模式。
 

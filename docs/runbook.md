@@ -1025,14 +1025,47 @@ grep "job completed" logs\service.log | tail -20
   sudo nginx -t && sudo systemctl reload nginx
   ```
 
-  发布必须提供已核验的自签 CA，脚本不会使用 `-k/--insecure`。它先读取线上清单拒绝相同版本/降级，上传唯一临时名，
-  在服务器复算摘要，同目录原子替换 APK，最后替换清单，再通过 HTTPS 回读二者核验：
+  发布必须提供已核验的自签 CA，脚本不会使用 `-k/--insecure`。线上 404 默认是错误；只有首次创建空通道时允许
+  `-InitializeChannel`，且候选必须正好是 code 10，远端事务准备还会确认正式 APK/清单均不存在。首发命令：
+
+  ```powershell
+  .\tablet-kiosk\scripts\publish-update.ps1 `
+    -ApkPath .\tablet-kiosk\app\build\outputs\apk\release\app-release.apk `
+    -InitializeChannel -Target ubuntu@154.8.205.162 -CaCertificatePath C:\secure\expo-ip.crt
+  ```
+
+  后续版本禁止再带 `-InitializeChannel`。发布器读取线上清单拒绝相同版本/降级，取得 owner token 事务锁后再次核对远端
+  旧清单和 APK 摘要，防止两个发布器基于同一旧版本并发覆盖。新文件在目标目录 staging 并复算摘要；切换前保存本事务
+  私有旧配对，先替换 APK、最后替换清单。任何切换或 HTTPS 回读错误会恢复旧 APK+旧清单，首发错误则恢复为空通道；
+  回读成功才释放锁和备份。
 
   ```powershell
   .\tablet-kiosk\scripts\publish-update.ps1 `
     -ApkPath .\tablet-kiosk\app\build\outputs\apk\release\app-release.apk `
     -Target ubuntu@154.8.205.162 -CaCertificatePath C:\secure\expo-ip.crt
   ```
+
+  两个固定 URL 仍是两次独立 HTTP 请求，发布瞬间可能短暂出现“新 APK + 旧清单”，**不是跨 HTTP 请求的事务原子性**。
+  APP 会因大小/SHA-256 不符拒绝安装、继续旧版并在下次冷启动重试；事务保证的是失败后不会永久留下错配正式文件。
+
+  网络中断可能留下 `.publish-lock`。后续发布看到任何未知锁都会拒绝，不会自动删除或接管。先只读记录 owner/mode/state
+  及精确备份文件，确认没有发布进程后再人工恢复：
+
+  ```bash
+  sudo find /var/www/ark-updates/expo-kiosk/.publish-lock -maxdepth 1 -type f -printf '%f\n'
+  sudo cat /var/www/ark-updates/expo-kiosk/.publish-lock/owner
+  sudo cat /var/www/ark-updates/expo-kiosk/.publish-lock/mode
+  sudo cat /var/www/ark-updates/expo-kiosk/.publish-lock/state
+  sudo sha256sum /var/www/ark-updates/expo-kiosk/.publish-lock/previous.* 2>/dev/null || true
+  ```
+
+  `mode=existing` 且 state 为 `backed_up/switching/switched` 时，必须确认 `previous.apk` 与 `previous.json` 都存在，
+  再先恢复 APK、最后恢复 manifest；缺任一备份就保持锁并升级人工处理。`mode=initialize` 的 `switching/switched`
+  只允许删除两个精确正式文件以恢复空通道。`state=begun` 表示正式文件尚未切换。完成恢复后，按 owner 中的精确事务 ID
+  逐个清理该事务的 `.stage`、home 上传文件、owner/mode/state/previous 文件，最后 `rmdir .publish-lock`；禁止
+  `rm -rf`、通配删除或清理 owner 不匹配的事务。若只有唯一命名的 `.publish-completed-<事务ID>`，表示 HTTPS
+  核验后已经原子释放锁、但清理回执中断；核对其中 owner 与目录事务 ID 一致后，只清理该目录内上述精确文件再
+  `rmdir`，不得因此回滚已核验的正式配对。
 
   首次换稳定签名不能覆盖旧 debug 包：设备所有者先执行
   `adb shell dpm remove-active-admin com.leshine.expokiosk/.AdminReceiver`，解除失败就恢复出厂；随后卸载旧包、安装 1.9
