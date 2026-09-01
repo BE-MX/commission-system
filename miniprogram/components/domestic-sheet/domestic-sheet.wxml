@@ -20,7 +20,7 @@
           <text class="info-lbl">产品</text>
           <view class="info-val-wrap">
             <text class="info-val lg">{{item.product_name || '-'}}</text>
-            <text class="tag-urgent" wx:if="{{item.order_type_label === '特单'}}">特单</text>
+            <text class="tag-urgent" wx:if="{{item.order_category === 'special'}}">特单</text>
           </view>
         </view>
         <view class="info-row">
@@ -30,6 +30,18 @@
         <view class="info-row">
           <text class="info-lbl">所属订单</text>
           <text class="info-val" style="color:var(--text-sub)">{{item.order_no || '-'}}</text>
+        </view>
+        <view class="info-row">
+          <text class="info-lbl">订单类别</text>
+          <text class="info-val">{{item.order_category_label}}</text>
+        </view>
+        <view class="info-row">
+          <text class="info-lbl">订单类型</text>
+          <text class="info-val">{{item.order_type_label}}</text>
+        </view>
+        <view class="info-row">
+          <text class="info-lbl">订单渠道</text>
+          <text class="info-val">{{item.order_channel_label}}</text>
         </view>
         <view class="info-row" wx:if="{{item.unit_code}}">
           <text class="info-lbl">单件编号</text>

@@ -13,6 +13,12 @@ def _order_detail():
         "order_no": "322-3",
         "order_date": "2026-08-19",
         "customer_name": "尚都",
+        "order_category": "special",
+        "order_category_label": "特单",
+        "order_type": "first_order",
+        "order_type_label": "首单",
+        "order_channel": "wechat",
+        "order_channel_label": "微信",
         "customer_balance": 4506,
         "total_amount": 1698,
         "remark": "整单备注",
@@ -27,6 +33,7 @@ def _order_detail():
                     "size": "L",
                     "length": "20厘米",
                     "density": "中",
+                    "hair_style_series": "直发",
                 },
                 "order_qty": 2,
                 "unit_price": 849,
@@ -74,22 +81,30 @@ def test_build_order_workbook_matches_requisition_layout_and_fields():
     assert "系统单号：DO20260819-001" in sheet["A2"].value
     assert "申请人：Rice" in sheet["A2"].value
     assert "客户：尚都" in sheet["A2"].value
+    assert "订单类别：特单" in sheet["A3"].value
+    assert "订单类型：首单" in sheet["A3"].value
+    assert "订单渠道：微信" in sheet["A3"].value
     assert "订单金额：¥1,698.00" in sheet["A3"].value
     assert "客户余额：¥4,506.00" in sheet["A3"].value
 
-    assert [sheet.cell(4, col).value for col in range(1, 16)] == [
-        "明细号", "产品类型", "产品名称", "工艺", "网底颜色", "尺寸", "长度",
-        "发量", "数量", "单价", "小计", "发型", "颜色", "发型要求", "备注",
+    assert [sheet.cell(4, col).value for col in range(1, 17)] == [
+        "明细号", "产品类型", "产品名称", "工艺/尺寸", "发长", "网帽颜色",
+        "头套尺寸", "发量", "发型系列", "数量", "单价", "小计", "发型", "颜色",
+        "发型要求", "备注",
     ]
-    assert [sheet.cell(5, col).value for col in range(1, 16)] == [
-        "A1", "头套", "头套 / 递顶 / L / 20厘米", "递顶", "浅棕", "L", "20厘米",
-        "中", 2, 849, 1698, "短直发", "自然色", "前额和鬓角缝粘胶点", "明细备注",
+    assert [sheet.cell(5, col).value for col in range(1, 17)] == [
+        "A1", "头套", "头套 / 递顶 / L / 20厘米", "递顶", "20厘米", "浅棕", "L",
+        "中", "直发", 2, 849, 1698, "短直发", "自然色", "前额和鬓角缝粘胶点", "明细备注",
     ]
     assert sheet["B6"].value == "发片"
-    assert sheet["E6"].value == "—"
+    assert sheet["D6"].value == "机制"
+    assert sheet["F6"].value is None
+    assert sheet["G6"].value is None
+    assert sheet["H6"].value is None
+    assert sheet["I6"].value is None
     assert sheet.row_dimensions[5].height >= 75
     assert sheet.page_setup.orientation == "landscape"
-    assert sheet.print_area == "'内贸订单领货单'!$A$1:$O$8"
+    assert sheet.print_area == "'内贸订单领货单'!$A$1:$P$8"
     assert "整单备注" in sheet["A8"].value
 
 
@@ -100,7 +115,7 @@ def test_build_order_workbook_uses_safe_excel_text_for_user_content():
     workbook = load_workbook(build_order_workbook(detail, "+SUM(1,1)"), data_only=False)
     sheet = workbook.active
 
-    assert sheet["O5"].value == "'=HYPERLINK(\"https://example.com\")"
+    assert sheet["P5"].value == "'=HYPERLINK(\"https://example.com\")"
     assert "申请人：'+SUM(1,1)" in sheet["A2"].value
     assert sheet["A2"].data_type != "f"
 
@@ -154,7 +169,7 @@ def test_build_order_workbook_preserves_long_requirements_for_printing():
     requirement_sheet = workbook["完整要求"]
 
     assert order_sheet.row_dimensions[5].height > 75
-    assert order_sheet.print_area == "'内贸订单领货单'!$A$1:$O$56"
+    assert order_sheet.print_area == "'内贸订单领货单'!$A$1:$P$56"
     assert order_sheet.print_title_rows == "$1:$4"
     assert requirement_sheet["A2"].value == "A1"
     assert requirement_sheet["B2"].value == "发型要求"

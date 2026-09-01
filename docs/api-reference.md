@@ -579,14 +579,17 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 - 鉴权：三端点均 `get_current_user`（个人域数据，user_id 取 JWT sub 行级隔离，同 `/api/auth/me` 模式，不挂 require_permission——工作台是全员落地页无页面权限码）。
 - `POST /greeting` — 工作台每日 AI 问候（2026-08-13）。body `{refresh?, context:{date,weekday,period,user_name,holidays_today[],upcoming_holidays[],pending{}}}`，上下文由前端聚合（节假日是前端纯计算引擎 `views/dashboard/holidays.js`，口径唯一）。返回 `{text, source: ai|fallback, date}`；preset 解析优先专用 `dashboard_greeting`，缺省退任一直连可用预设，模型未配置/调用失败走规则模板兜底，进程内按 (user, date) 缓存（`refresh=true` 绕过）。同 `get_current_user` 个人域口径。
 
-## 内贸订单（`/api/domestic`，081/082/116/127 迁移，2026-07-27、2026-08-17、2026-08-31）
+## 内贸订单（`/api/domestic`，081/082/116/127/129 迁移，2026-07-27、2026-08-17、2026-08-31、2026-09-01）
 
 内贸生产的下单 + 按数量拆批报工。与外贸「生产订单（`/api/stock/production`）+ 生产报工（`/api/production`）」是**平行的两套**：外贸报工整行 0/1 流转，内贸带数量。只共用工序/工艺路线/工人工序绑定三类全局资产。
 
-- 值域与路线：`GET /options`（下单表单全部下拉：产品类型、订单类型 + 各属性字典值，属性值域存 `sys_dict` 的 `domestic_*` type，内贸主管在「数据字典」页自助增删）、`GET /process-routes`（可选工艺路线含工序链）、`GET /process-workers?process_id=`（该工序绑定的工人，代报工选人用）。`GET /process-routes/{route_id}/rules` 查询内贸条件规则；步骤和规则需要一起调整时，必须使用 `PUT /process-routes/{route_id}/configuration` 一次提交 `steps + rules`，服务端在同一事务校验并保存。三种规则为默认 `required`、`decision` 和 `optional`；有条件规则的路线会拒绝生产域单独改步骤，避免暂时形成无效配置。
+- 值域与路线：`GET /options` 返回 `product_types`、`order_categories`、`order_types`、`order_channels`、`attr_dicts`、`special_attr_dicts`、`standard_values`、`special_values` 和 `default_routes`。其中订单类别是结构枚举 `normal=普货 / special=特单`；订单类型是 `first_order=首单 / repurchase=复购 / return_order=返单 / supplementary=补单 / after_sales_remake=售后重做`；订单渠道是 `wechat=微信 / phone=电话 / exhibition=展会 / offline_visit=线下拜访 / other=其他`。`attr_dicts` 把产品类型和可见属性映射到标准字典，`special_attr_dicts` 是对应的 `_special` 字典；标准值和特单专属值分别放在 `standard_values`、`special_values`。`default_routes` 只返回存在、启用且至少有一道工序的“头套网帽（递针）”和“发片网底（递针）”。实际已保存的工艺映射由独立的 `GET /craft-routes` 返回，不嵌入 `/options`；下单页同时读取两者预览路线。另有 `GET /process-routes`（可选工艺路线含工序链）、`GET /process-workers?process_id=`（该工序绑定的工人，代报工选人用）。`GET /process-routes/{route_id}/rules` 查询内贸条件规则；步骤和规则需要一起调整时，必须使用 `PUT /process-routes/{route_id}/configuration` 一次提交 `steps + rules`，服务端在同一事务校验并保存。三种规则为默认 `required`、`decision` 和 `optional`；有条件规则的路线会拒绝生产域单独改步骤，避免暂时形成无效配置。
 - 客户：`GET /customers`（分页 keyword/status，keyword 同时搜店名/自定义编码/联系人/电话）、`POST /customers`、`PUT /customers/{id}`、`DELETE /customers/{id}`；字段含 `custom_code / membership_level / province / city / balance`。`POST /customers/{id}/recharges` 充值（body `amount/remark/request_id?`，`request_id` 幂等）、`GET /customers/{id}/balance-ledger` 查余额流水，两者需 `domestic:recharge` 或 `domestic:admin`。
-- 产品与工艺映射：`GET /products`（分页 keyword/product_type/route_bound）、`PUT /products/{id}/route`（人工改绑，`domestic:admin`，只影响之后的新明细）、`GET /craft-routes`、`POST /craft-routes`（配「产品类型+工艺 → 路线」映射，`domestic:admin`；保存时自动回填此前因缺映射而未绑路线的同工艺产品）、`DELETE /craft-routes/{id}`。
-- 订单：`POST /orders` 的明细必须传 `unit_price`，前端传稳定的 `request_id` 防止网络重试重复建单/扣款，可传 `is_draft=true` 仅保存不扣款；非草稿创建和 `POST /orders/{id}/submit` 都会原子扣减客户余额，余额不足整单失败。每单最多 50 行、合计 5000 件，单明细最多 2000 件。`GET /orders`、`GET /orders/{id}` 返回 `total_amount/charged_amount`；`GET /orders/{id}/export` 按当前订单字段生成横向打印的内贸领货单 `.xlsx`，超长制作要求自动附加「完整要求」工作表；在制单改数量/单价结算差额，终止或允许删除时退回已扣额。
+- 产品与工艺映射：`GET /products`（分页 keyword/product_type/route_bound）、`PUT /products/{id}/route`（人工改绑，`domestic:admin`，只影响之后的新明细）、`GET /craft-routes`、`POST /craft-routes`（配「产品类型+工艺 → 路线」映射，`domestic:admin`；保存时自动回填此前因缺映射而未绑路线的同工艺产品）、`DELETE /craft-routes/{id}`。头套的结构化属性为工艺、发长、网帽颜色（选填）、头套尺码、发型系列；仅 `15厘米` 显示并要求发量，其他发长会清空且不保存发量。发片只使用合并后的 `craft`（界面名“发片工艺/尺寸”）和发长，不接受独立 `size/net_color/density/hair_style_series`。现有发型文字和参考图继续保留。
+- 头套标准值：工艺为递旋/中分界/左分界/大U型/递顶；发长为 15～60厘米、每 5厘米一档；发量为 65%/80%/90%；网帽颜色为紫网全头套/绿网全头套/红网全头套/绿网九分头/黑网九分头/特单网帽；尺码为 SS/S/M/L/XL/51/53/57/59/取模定制；发型系列为直发/纹理/卷发/毛坯/来图直发/来图纹理/来图卷发。
+- 发片标准值：“发片工艺/尺寸”为 U型13*15/U型14*16/U型16*18/全递针9*14/全递针12*14/全递针13*15/全递针14*16/全递针15*17/特单发片；发长为 20/25/30/35/40厘米。乘号按业务值存半角 `*`。
+- 订单：迁移 129 是破坏性字段改名：旧 `order_type=normal/special` 改为 `order_category`，不保留旧请求/响应兼容；新 `order_type` 和 `order_channel` 对新建订单必填且必须大小写精确命中启用字典项。`PUT /orders/{id}` 虽是 PATCH 语义，但服务端每次都以传入值或订单现存值合成最终类型/渠道并重新校验两者非空、启用；历史两列均为 `NULL` 时，只改备注或只补一列都会拒绝，必须一次补齐。`POST /orders` 的明细必须传 `unit_price`，前端传稳定的 `request_id` 防止网络重试重复建单/扣款，可传 `is_draft=true` 仅保存不扣款；非草稿创建和 `POST /orders/{id}/submit` 都会原子扣减客户余额，余额不足整单失败。每单最多 50 行、合计 5000 件，单明细最多 2000 件。`GET /orders` 支持 `order_category/order_type/order_channel` 筛选；列表、详情、扫码、流转卡与导出返回或展示三组值和标签，小程序订单列表/详情、速查、客户进度和报工确认弹层也同步展示。历史订单的新字段保持 `NULL`，读取时标签显示“未填写”，不推断也不回填。`GET /orders/{id}` 返回 `total_amount/charged_amount`；`GET /orders/{id}/export` 按当前订单字段生成横向打印的内贸领货单 `.xlsx`，超长制作要求自动附加「完整要求」工作表；在制单改数量/单价结算差额，终止或允许删除时退回已扣额。
+- 特单自定义属性：只有 `order_category=special` 时，当前产品类型和条件下**可见**的属性下拉允许直接输入新值；普货下拉不展示特单值，后端对普货属性及订单类型/渠道始终大小写精确校验，因此普货 `SS/ss` 与订单类型 `first_order/FIRST_ORDER` 不可混用。特单输入若仅大小写不同，会先统一为启用标准项的 canonical `code`，否则统一为已有启用 `_special` 项的 canonical `code`，不存在时才创建 `_special` 项；唯一键竞争的启用胜方也按其 canonical 值复用，停用胜方明确拒绝。canonical 值会写回订单属性，再参与工艺路线和产品身份计算。MySQL 对字典 `code`、工艺映射 `craft` 和产品 `attrs_key` 使用二进制精确查询并在取行后再次核对原始字符串，下游大小写碰撞绝不复用错误行。自定义项仅在草稿或订单保存事务内创建，订单失败会一并回滚，不提供脱离订单的即时创建端点。自定义工艺首次出现且尚无映射时，自动映射到该产品类型默认路线（头套“头套网帽（递针）”、发片“发片网底（递针）”）；只有此时才校验默认路线，缺失、停用或无工序则拒绝保存。已存在的自定义工艺映射是管理员配置的真相源，后续特单直接沿用，不因默认路线状态而校验或覆盖；唯一键竞争后也读取并保留胜方映射。特单切回普货只清空非标准值，产品类型或发长变化会清空已不适用的条件属性。下单页客户远程搜索只允许最后发出的请求更新候选列表和 loading，防止旧响应覆盖新关键词结果。
 - 明细：`POST /orders/{id}/items` 必须传稳定的 `request_id`，同订单内幂等重放不会重复加行或重复扣款；`PUT /items/{id}`（改数量不得低于任一工序已完成数，也不得删掉已报工的高序号单件码）、`DELETE /items/{id}`、`POST /items/{id}/attach-route`、`POST /items/{id}/ship`、`GET /items/{id}/progress`、`GET /items/{id}/print-card`。`GET /items/{id}/unit-qrcodes?start_no=&end_no=` 返回每件唯一的 `ARK-DU:{unit_id}:{sign}` 和 `A1-01` 显示码，单次最多 200 个供标签打印。
 - 逐工序进度对象（订单详情 / `items/{id}/progress` / 速查共用同一形状）：`progress_id / step_order / process_name / order_qty / upstream_qty / completed_qty / skipped_qty / passed_qty / required_qty / reportable_qty / rule_type / outcome_options / status / first_reported_at / last_reported_at`，外加 `last_reported_by + last_report_qty`。`completed_qty` 只是真实工作，`skipped_qty` 是无需做，`passed_qty` 才是下游资格；客户端不得把跳过显示成已完成。
 - 报工：`GET /reports`（流水查询）、`POST /reports`（主站代报工，**必须传 `on_behalf_user_id` 指明实际做活的工人**；支持 `request_id` 幂等键）。`decision` 数量模式额外传 `outcomes`，例如 `{"qty":20,"outcomes":{"dandong":12,"lixiaohong":8}}`，键必须恰好覆盖配置结果且合计等于 `qty`；逐件模式只允许一个结果值为 1。非 decision 工序禁止夹带 outcomes。`POST /reports/revoke` 会按具体单件检查全部后续工序；错误返回最早的下游实际工序与单件码，不能被中间跳过记录绕过。`GET /reports/workload` 仍只汇总未撤销真实报工。
@@ -610,6 +613,26 @@ Android PDA 客户端位于 `pda-reporting/`，不新增报工业务端点：先
 - `GET /orders` / `GET /orders/{id}` — 车间/跟单看订单进度。
 - `GET /images/{path}` — 参考图（小程序 token 无 RBAC 声明，走不了主站图片端点，故有这个同源版本）。
 - `GET /track?scene=` — **免登录**订单进度：scene（`i:<item_id>:<hmac16>`）验签后返回完整订单、客户、金额、全部产品明细、图文要求、发货和进度信息。工序由 `process.show_in_domestic_track` 服务端过滤，隐藏工序不出现在响应中；`GET /track-image?scene=&rel_path=` 只允许读取该订单明细真实引用的图片。验签不过 403，软删单/明细不存在 404，默认签名密钥下 503 fail-closed。
+
+### 129 属性字典切换门禁
+
+迁移 129 只改数据库结构，不自动替换生产字典和工艺映射。结构升级、新版后端/前端部署与属性切换必须安排在同一个停写维护窗口，避免旧代码继续把 `normal/special` 写进已经改义的 `order_type`，或新表单短暂读取旧字典。
+
+从 `backend/` 目录运行默认只读预检；它校验两条默认路线存在、启用且有启用工序，并以 JSON 列出标准字典、废弃字典、标准工艺映射的增删计划及保持不变的产品/订单/明细数量：
+
+```powershell
+python -m scripts.domestic_attribute_cutover
+```
+
+确认预检结果后，停止所有内贸订单、字典和路线映射写入并等待在途事务排空，再在同一维护窗口显式执行：
+
+```powershell
+python -m scripts.domestic_attribute_cutover `
+  --apply `
+  --confirm-writes-stopped DOMESTIC_WRITES_STOPPED
+```
+
+`--apply` 缺少精确的 `--confirm-writes-stopped DOMESTIC_WRITES_STOPPED` 会直接拒绝；该 token 只证明操作者已完成外部停写和在途事务排空，脚本不会代替运维停流量。通过门禁后，命令在一个事务内重新校验路线和变更计划、完整替换受管标准字典及标准工艺映射、保留 `_special` 字典和非标准特单映射，并在提交前验证计划已收敛。命令不会删除或改写历史产品、订单、订单明细、属性快照和路线快照；失败整笔回滚，重复执行应无新增变化。历史订单数据本次不清理；如后续确需全部清空，必须另行取得明确授权并使用独立的破坏性操作。
 
 ### 条件路线生产切换门禁
 

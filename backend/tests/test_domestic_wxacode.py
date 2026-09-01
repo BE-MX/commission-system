@@ -22,6 +22,8 @@ from app.core.database import get_db
 from app.domestic import order_service, report_service
 from app.domestic.models import DomesticOrder, DomesticOrderItem
 from app.domestic.schemas import OrderCreate, OrderItemInput, ProductAttrs
+from app.domestic import constants as C
+from app.system.models import SysDict
 
 _DEFAULT_SECRET = Settings.model_fields["QR_SIGN_SECRET"].default
 
@@ -47,19 +49,36 @@ def _attrs(craft="递针旋全头套"):
     return ProductAttrs(
         product_type="cap", craft=craft, net_color="呼吸红",
         size="s", length="15厘米", density="65%",
+        hair_style_series="直发",
     )
 
 
 def _create_order(db, user, item_count=1):
+    attrs_list = [_attrs(f"递针旋全头套{i or ''}") for i in range(item_count)]
+    values = {
+        (C.ORDER_TYPE_DICT, "first_order"),
+        (C.ORDER_CHANNEL_DICT, "wechat"),
+    }
+    for attrs in attrs_list:
+        for field, dict_type in C.ATTR_DICTS[attrs.product_type].items():
+            value = getattr(attrs, field)
+            if value is not None:
+                values.add((dict_type, value))
+    for dict_type, code in values:
+        if not db.query(SysDict.id).filter_by(type=dict_type, code=code).first():
+            db.add(SysDict(type=dict_type, code=code, label=code, sort=1, is_active=True))
+    db.flush()
     payload = OrderCreate(
         request_id=str(uuid4()),
         order_no="710",
         order_date=date(2026, 7, 28),
         customer_shop_name="马姐假发",
-        order_type="normal",
+        order_category="normal",
+        order_type="first_order",
+        order_channel="wechat",
         items=[
-            OrderItemInput(attrs=_attrs(f"递针旋全头套{i or ''}"), order_qty=10 + i)
-            for i in range(item_count)
+            OrderItemInput(attrs=attrs, order_qty=10 + i)
+            for i, attrs in enumerate(attrs_list)
         ],
     )
     return order_service.create_order(db, payload, user.id)

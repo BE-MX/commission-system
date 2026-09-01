@@ -1,11 +1,11 @@
 /**
  * 内贸订单列表 + 详情抽屉逻辑（宪法 12/14：useListPage + feedback + DetailDrawer）。
  */
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  attachItemRoute, deleteOrder, exportOrder, getItemWxacode, getOrder, getProcessRoutes,
+  attachItemRoute, deleteOrder, exportOrder, getItemWxacode, getOptions, getOrder, getProcessRoutes,
   listDomesticSkips, listOrders, listProcessWorkers, listReports, newRequestId,
   revokeDomesticSkip, revokeReport, shipItem, skipDomesticStep,
   submitDraftOrder, submitReport, terminateOrder,
@@ -19,11 +19,12 @@ import { normalizeOutcomeAllocation } from '@/views/domestic/conditionalRouting'
 export function useDomesticOrders() {
   const route = useRoute()
   const router = useRouter()
+  const filterOptions = ref({ order_categories: [], order_types: [], order_channels: [] })
 
   const listApi = useListPage(
     async ({ page, page_size, ...form }) => {
       const params = { page, page_size }
-      for (const key of ['keyword', 'order_type']) {
+      for (const key of ['keyword', 'order_category', 'order_type', 'order_channel']) {
         if (form[key]) params[key] = form[key]
       }
       if (form.status !== '' && form.status !== null) params.status = form.status
@@ -38,7 +39,9 @@ export function useDomesticOrders() {
       searchForm: {
         keyword: route.query.keyword || '',
         status: '',
+        order_category: '',
         order_type: '',
+        order_channel: '',
         dateRange: [],
       },
     },
@@ -368,8 +371,16 @@ export function useDomesticOrders() {
     () => (detail.value?.items || []).some(i => !i.route_id),
   )
 
+  onMounted(async () => {
+    try {
+      const res = await getOptions()
+      filterOptions.value = res.data || filterOptions.value
+    } catch { /* 拦截器已提示 */ }
+  })
+
   return {
     ...listApi,
+    filterOptions,
     detailVisible, detailLoading, detail, routes, hasUnrouted,
     openDetail, refreshAll,
     shipDialog, openShip, confirmShip,

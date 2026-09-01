@@ -7,27 +7,36 @@
     </div>
 
     <el-row :gutter="16" class="toolbar">
-      <el-col :span="5">
+      <el-col :span="4">
         <el-input v-model="searchForm.keyword" placeholder="搜索系统单号 / 客户订单号" clearable prefix-icon="Search" @keyup.enter="handleSearch" @clear="handleSearch" />
       </el-col>
-      <el-col :span="4">
+      <el-col :span="3">
         <el-select v-model="searchForm.status" placeholder="订单状态" clearable style="width: 100%" @change="handleSearch">
           <el-option v-for="s in ORDER_STATUS" :key="s.value" :label="s.label" :value="s.value" />
         </el-select>
       </el-col>
       <el-col :span="3">
-        <el-select v-model="searchForm.order_type" placeholder="普货/特单" clearable style="width: 100%" @change="handleSearch">
-          <el-option label="普货" value="normal" />
-          <el-option label="特单" value="special" />
+        <el-select v-model="searchForm.order_category" placeholder="订单类别" clearable style="width: 100%" @change="handleSearch">
+          <el-option v-for="v in filterOptions.order_categories" :key="v.value" :label="v.label" :value="v.value" />
         </el-select>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="3">
+        <el-select v-model="searchForm.order_type" placeholder="订单类型" clearable style="width: 100%" @change="handleSearch">
+          <el-option v-for="v in filterOptions.order_types" :key="v.value" :label="v.label" :value="v.value" />
+        </el-select>
+      </el-col>
+      <el-col :span="3">
+        <el-select v-model="searchForm.order_channel" placeholder="订单渠道" clearable style="width: 100%" @change="handleSearch">
+          <el-option v-for="v in filterOptions.order_channels" :key="v.value" :label="v.label" :value="v.value" />
+        </el-select>
+      </el-col>
+      <el-col :span="4">
         <el-date-picker
           v-model="searchForm.dateRange" type="daterange" value-format="YYYY-MM-DD"
           start-placeholder="下单起" end-placeholder="下单止" style="width: 100%" @change="handleSearch"
         />
       </el-col>
-      <el-col :span="6">
+      <el-col :span="4">
         <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
         <GlassButton v-permission="'domestic:write'" variant="ghost" left-icon="Plus" @click="goCreate">新建订单</GlassButton>
       </el-col>
@@ -39,11 +48,13 @@
         <el-table-column prop="order_no" label="客户订单号" min-width="110" show-overflow-tooltip />
         <el-table-column prop="customer_name" label="客户店名" min-width="130" show-overflow-tooltip />
         <el-table-column prop="order_date" label="下单日期" min-width="105" />
-        <el-table-column label="类型" min-width="80">
+        <el-table-column label="订单类别" min-width="90">
           <template #default="{ row }">
-            <el-tag size="small" effect="plain" :type="row.order_type === 'special' ? 'warning' : ''">{{ row.order_type_label }}</el-tag>
+            <el-tag size="small" effect="plain" :type="row.order_category === 'special' ? 'warning' : ''">{{ row.order_category_label }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column prop="order_type_label" label="订单类型" min-width="95" />
+        <el-table-column prop="order_channel_label" label="订单渠道" min-width="95" />
         <el-table-column label="明细 / 数量" min-width="110">
           <template #default="{ row }">{{ row.item_count }} 行 / {{ row.total_qty }} 件</template>
         </el-table-column>
@@ -84,7 +95,9 @@
           <div class="info-grid">
             <span>客户订单号：{{ detail.order_no }}</span>
             <span>下单日期：{{ detail.order_date }}</span>
-            <span>类型：{{ detail.order_type_label }}</span>
+            <span>订单类别：{{ detail.order_category_label }}</span>
+            <span>订单类型：{{ detail.order_type_label }}</span>
+            <span>订单渠道：{{ detail.order_channel_label }}</span>
             <span>状态：{{ detail.status_label }}</span>
             <span>订单总价：¥{{ Number(detail.total_amount || 0).toFixed(2) }}</span>
             <span>已扣余额：¥{{ Number(detail.charged_amount || 0).toFixed(2) }}</span>
@@ -329,7 +342,7 @@ import DomesticPrintDialog from './print/DomesticPrintDialog.vue'
 import { useDomesticOrders } from './composables/useDomesticOrders'
 
 const {
-  loading, list, total, page, pageSize, searchForm,
+  loading, list, total, page, pageSize, searchForm, filterOptions,
   handleSearch, handlePageChange, handleSizeChange,
   detailVisible, detailLoading, detail, routes, hasUnrouted, openDetail,
   shipDialog, openShip, confirmShip,

@@ -178,7 +178,7 @@ export function buildCardDoc({ card, imageMap = {} }) {
       <h1>内贸流转卡</h1>
       <div class="order-no">${esc(card.domestic_no)} · 客户订单号 ${esc(card.order_no)}</div>
     </div>
-    ${card.order_type_label === '特单' ? '<div class="special-badge">特单</div>' : ''}
+    ${card.order_category === 'special' ? '<div class="special-badge">特单</div>' : ''}
   </div>
 
   <div class="body-row">
@@ -188,6 +188,9 @@ export function buildCardDoc({ card, imageMap = {} }) {
         <tr><td>产品</td><td><strong>${esc(item.product_name)}</strong></td></tr>
         <tr><td>生产数量</td><td><span class="qty-value">${esc(item.order_qty)}</span> 件</td></tr>
         <tr><td>下单日期</td><td>${esc(card.order_date)}</td></tr>
+        <tr><td>订单类别</td><td>${esc(card.order_category_label)}</td></tr>
+        <tr><td>订单类型</td><td>${esc(card.order_type_label)}</td></tr>
+        <tr><td>订单渠道</td><td>${esc(card.order_channel_label)}</td></tr>
       </table>
     </div>
     <div class="qr-section">${qr}<div class="qr-hint">扫码报工<br>可按数量拆批</div></div>

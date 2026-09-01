@@ -43,17 +43,35 @@
             </el-form-item>
           </el-col>
           <el-col :span="6">
-            <el-form-item label="订单类型">
-              <el-radio-group v-model="form.order_type">
-                <el-radio-button v-for="t in options.order_types" :key="t.value" :value="t.value">{{ t.label }}</el-radio-button>
+            <el-form-item label="订单类别" required>
+              <el-radio-group v-model="form.order_category" @change="onOrderCategoryChange">
+                <el-radio-button v-for="t in options.order_categories" :key="t.value" :value="t.value">{{ t.label }}</el-radio-button>
               </el-radio-group>
             </el-form-item>
           </el-col>
         </el-row>
 
-        <el-form-item label="订单备注">
-          <el-input v-model="form.remark" type="textarea" :rows="1" placeholder="整单说明，选填" />
-        </el-form-item>
+        <el-row :gutter="16">
+          <el-col :span="8">
+            <el-form-item label="订单类型" required>
+              <el-select v-model="form.order_type" placeholder="选择订单类型" style="width: 100%">
+                <el-option v-for="t in options.order_types" :key="t.value" :label="t.label" :value="t.value" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="订单渠道" required>
+              <el-select v-model="form.order_channel" placeholder="选择订单渠道" style="width: 100%">
+                <el-option v-for="t in options.order_channels" :key="t.value" :label="t.label" :value="t.value" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="订单备注">
+              <el-input v-model="form.remark" placeholder="整单说明，选填" />
+            </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
     </div>
 
@@ -66,6 +84,11 @@
         </div>
       </div>
 
+      <el-alert
+        v-if="form.order_category === 'special'" class="special-hint" type="info"
+        :closable="false" show-icon title="特单属性可直接输入新选项，保存订单时自动创建"
+      />
+
       <el-form :model="item" label-width="92px">
         <el-row :gutter="16">
           <el-col :span="6">
@@ -76,15 +99,23 @@
             </el-form-item>
           </el-col>
           <el-col :span="6">
-            <el-form-item :label="item.attrs.product_type === 'cap' ? '头套工艺' : '发片工艺'" required>
-              <el-select v-model="item.attrs.craft" placeholder="选择工艺" filterable style="width: 100%">
+            <el-form-item :label="item.attrs.product_type === 'cap' ? '头套工艺' : '发片工艺/尺寸'" required>
+              <el-select
+                v-model="item.attrs.craft" :placeholder="attributePlaceholder(item.attrs.product_type, 'craft')" filterable
+                :allow-create="form.order_category === 'special'"
+                :default-first-option="form.order_category === 'special'" style="width: 100%"
+              >
                 <el-option v-for="v in attrOptions(item.attrs.product_type, 'craft')" :key="v" :label="v" :value="v" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col v-if="hasField(item.attrs.product_type, 'net_color')" :span="6">
-            <el-form-item label="网底颜色">
-              <el-select v-model="item.attrs.net_color" placeholder="选择网底颜色" clearable filterable style="width: 100%">
+            <el-form-item label="网帽颜色">
+              <el-select
+                v-model="item.attrs.net_color" :placeholder="attributePlaceholder(item.attrs.product_type, 'net_color')" clearable filterable
+                :allow-create="form.order_category === 'special'"
+                :default-first-option="form.order_category === 'special'" style="width: 100%"
+              >
                 <el-option v-for="v in attrOptions(item.attrs.product_type, 'net_color')" :key="v" :label="v" :value="v" />
               </el-select>
             </el-form-item>
@@ -110,31 +141,57 @@
         </el-row>
 
         <el-row :gutter="16">
-          <el-col :span="6">
-            <el-form-item :label="item.attrs.product_type === 'cap' ? '头套尺寸' : '发片尺寸'" required>
-              <el-select v-model="item.attrs.size" placeholder="选择尺寸" filterable style="width: 100%">
+          <el-col v-if="hasField(item.attrs.product_type, 'size')" :span="6">
+            <el-form-item label="头套尺码" required>
+              <el-select
+                v-model="item.attrs.size" :placeholder="attributePlaceholder(item.attrs.product_type, 'size')" filterable
+                :allow-create="form.order_category === 'special'"
+                :default-first-option="form.order_category === 'special'" style="width: 100%"
+              >
                 <el-option v-for="v in attrOptions(item.attrs.product_type, 'size')" :key="v" :label="v" :value="v" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="6">
-            <el-form-item label="长度" required>
-              <el-select v-model="item.attrs.length" placeholder="选择长度" filterable style="width: 100%">
+            <el-form-item label="发长" required>
+              <el-select
+                v-model="item.attrs.length" :placeholder="attributePlaceholder(item.attrs.product_type, 'length')" filterable
+                :allow-create="form.order_category === 'special'"
+                :default-first-option="form.order_category === 'special'" style="width: 100%"
+                @change="onLengthChange(item)"
+              >
                 <el-option v-for="v in attrOptions(item.attrs.product_type, 'length')" :key="v" :label="v" :value="v" />
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="6">
+          <el-col v-if="visibleFields(item).includes('density')" :span="6">
             <el-form-item label="发量" required>
-              <el-select v-model="item.attrs.density" placeholder="选择发量" filterable style="width: 100%">
+              <el-select
+                v-model="item.attrs.density" :placeholder="attributePlaceholder(item.attrs.product_type, 'density')" filterable
+                :allow-create="form.order_category === 'special'"
+                :default-first-option="form.order_category === 'special'" style="width: 100%"
+              >
                 <el-option v-for="v in attrOptions(item.attrs.product_type, 'density')" :key="v" :label="v" :value="v" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col v-if="hasField(item.attrs.product_type, 'hair_style_series')" :span="6">
+            <el-form-item label="发型系列" required>
+              <el-select
+                v-model="item.attrs.hair_style_series" :placeholder="attributePlaceholder(item.attrs.product_type, 'hair_style_series')" filterable
+                :allow-create="form.order_category === 'special'"
+                :default-first-option="form.order_category === 'special'" style="width: 100%"
+              >
+                <el-option v-for="v in attrOptions(item.attrs.product_type, 'hair_style_series')" :key="v" :label="v" :value="v" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="6">
             <el-form-item label="工艺路线">
               <!-- 路线不让下单人选：选完工艺就地显示会走哪条，没配的当场提示 -->
-              <el-tag v-if="routeOf(item)" type="success" effect="plain">{{ routeOf(item).route_name }}</el-tag>
+              <el-tag v-if="routeOf(item)" type="success" effect="plain">
+                {{ routeOf(item).route_name }}{{ routeOf(item).is_default ? '（默认）' : '' }}
+              </el-tag>
               <el-tag v-else-if="item.attrs.craft" type="warning" effect="plain">未配路线，下单后不能开工</el-tag>
               <span v-else class="muted">选完工艺后自动匹配</span>
             </el-form-item>
@@ -191,8 +248,9 @@ import { useDomesticOrderCreate } from './composables/useDomesticOrderCreate'
 
 const {
   loading, submitting, options, customers, customerLoading, form,
-  attrOptions, hasField, routeOf, unroutedCount, orderTotal, selectedCustomer,
-  onProductTypeChange, addItem, copyItem, removeItem,
+  attrOptions, attributePlaceholder, hasField, visibleFields,
+  routeOf, unroutedCount, orderTotal, selectedCustomer,
+  onProductTypeChange, onLengthChange, onOrderCategoryChange, addItem, copyItem, removeItem,
   makeUploadFn, removeImage, searchCustomers, submit,
 } = useDomesticOrderCreate()
 </script>
@@ -225,6 +283,7 @@ const {
 
 .item-head .panel-title { margin-bottom: 12px; }
 .item-actions { display: flex; gap: 4px; }
+.special-hint { margin-bottom: 12px; }
 
 .new-customer { margin-top: 8px; }
 .balance-hint { margin-top: 6px; color: var(--el-color-success); font-size: 12px; }

@@ -20,15 +20,18 @@ export function useListPage(fetchFn, options = {}) {
   const pageSize = ref(initialPageSize)
   const searchForm = reactive({ ...initialForm })
   const initialSnapshot = JSON.parse(JSON.stringify(initialForm))
+  let latestRequest = 0
 
   async function fetchList() {
+    const requestId = ++latestRequest
     loading.value = true
     try {
       const result = await fetchFn({ page: page.value, page_size: pageSize.value, ...searchForm })
+      if (requestId !== latestRequest) return
       list.value = result?.items ?? []
       total.value = result?.total ?? list.value.length
     } finally {
-      loading.value = false
+      if (requestId === latestRequest) loading.value = false
     }
   }
 

@@ -3,7 +3,6 @@ import { domesticClient } from './clients'
 
 // 与后端 constants.py 同一套口径
 export const PRODUCT_TYPE_LABELS = { cap: '头套', piece: '发片' }
-export const ORDER_TYPE_LABELS = { normal: '普货', special: '特单' }
 export const ORDER_STATUS = [
   { value: 0, label: '草稿', tag: 'warning' },
   { value: 1, label: '生产中', tag: '' },
