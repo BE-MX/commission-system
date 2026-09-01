@@ -135,7 +135,7 @@ Expected: current manual membership and absent endpoints fail assertions.
 
 - [ ] **Step 3: Implement services and routes**
 
-Remove membership from customer create/update writes. Update membership only after a non-replayed recharge ledger. Add `POST /pricing/quote` plus admin base-price PUT/DELETE. Keep `domestic:admin` for price mutations and existing recharge permissions.
+Remove membership from customer create/update writes. Update membership only after a non-replayed recharge ledger. Add `POST /pricing/quote` plus admin base-price PUT/DELETE. Confirmed poster rows are migration seeds only: every persisted standard or special SKU can form an exact `(product_type, craft, length)` key, remains missing until an admin maintains it, and then uses the normal member reduction unless it matches a fixed-price rule. Keep `domestic:admin` for price mutations and existing recharge permissions.
 
 - [ ] **Step 4: Run GREEN and regressions**
 
