@@ -24,7 +24,7 @@ from sqlalchemy import (
     select,
     text,
 )
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.auth.models import ArkUser
 from app.auth.dependencies import get_current_user
@@ -1774,16 +1774,27 @@ def _configured_product(db, attrs, price, version=1):
 
 
 @pytest.mark.parametrize(
-    ("membership_level", "last_recharge", "expected_price", "expected_rule"),
+    (
+        "membership_level",
+        "last_recharge",
+        "expected_price",
+        "expected_rule",
+        "expected_rule_label",
+    ),
     [
-        (None, None, "1198.00", "base_price"),
-        ("silver", "10000.00", "1048.00", "member_fixed"),
-        ("black", "30000.00", "998.00", "member_fixed"),
-        ("supreme", "100000.00", "960.00", "member_fixed"),
+        (None, None, "1198.00", "base_price", "非会员原价"),
+        ("silver", "10000.00", "1048.00", "member_fixed", "银卡固定会员价"),
+        ("black", "30000.00", "998.00", "member_fixed", "黑卡固定会员价"),
+        ("supreme", "100000.00", "960.00", "member_fixed", "至尊固定会员价"),
     ],
 )
 def test_quote_returns_non_member_and_current_member_contracts(
-    db, membership_level, last_recharge, expected_price, expected_rule
+    db,
+    membership_level,
+    last_recharge,
+    expected_price,
+    expected_rule,
+    expected_rule_label,
 ):
     from app.domestic import pricing_service as service
     from app.domestic.schemas import PricingQuoteRequest
@@ -1839,7 +1850,7 @@ def test_quote_returns_non_member_and_current_member_contracts(
         "pricing_rule": expected_rule,
         "pricing_version": "domestic-member-v1",
     }
-    assert "会员" in priced["pricing_rule_label"] or membership_level is None
+    assert priced["pricing_rule_label"] == expected_rule_label
     assert product.use_count == original_use_count
     if customer:
         assert customer.balance == D("76543.21")
@@ -1881,16 +1892,153 @@ def test_quote_batch_labels_reduction_fixed_and_fixed_price_cap(db):
     )
     by_key = {item["client_key"]: item for item in result["items"]}
 
-    assert by_key["fixed"]["pricing_rule_label"] == "银卡会员固定会员价"
+    assert by_key["fixed"]["pricing_rule_label"] == "银卡固定会员价"
     assert by_key["reduced"]["discount_price"] == D("770.00")
     assert by_key["reduced"]["discount_amount"] == D("70.00")
-    assert by_key["reduced"]["pricing_rule_label"] == "银卡会员立减70.00元"
+    assert by_key["reduced"]["pricing_rule_label"] == "银卡立减 ¥70.00"
     assert by_key["capped"]["discount_price"] == D("1600.00")
     assert by_key["capped"]["pricing_rule"] == "member_fixed_capped"
     assert (
         by_key["capped"]["pricing_rule_label"]
-        == "银卡会员固定价高于原价，按原价封顶"
+        == "命中固定会员价，但原价更低，已按原价"
     )
+
+
+class _TransactionTestSession:
+    def __init__(self, dialect_name):
+        self.dialect_name = dialect_name
+        self.commit_count = 0
+        self.rollback_count = 0
+
+    def get_bind(self):
+        return type(
+            "Bind", (), {"dialect": type("Dialect", (), {"name": self.dialect_name})()}
+        )()
+
+    def commit(self):
+        self.commit_count += 1
+
+    def rollback(self):
+        self.rollback_count += 1
+
+
+def _db_operational_error(code):
+    return OperationalError("UPDATE base price", {}, Exception(code, "lock error"))
+
+
+@pytest.mark.parametrize(
+    ("dialect_name", "error_code"),
+    [("mysql", 1213), ("mariadb", 1205)],
+)
+def test_mysql_deadlock_retries_whole_base_price_transaction_once(
+    dialect_name, error_code
+):
+    from app.domestic import router as domestic_router
+
+    session = _TransactionTestSession(dialect_name)
+    outcomes = iter([_db_operational_error(error_code), {"version": 1}])
+    call_count = 0
+
+    def operation():
+        nonlocal call_count
+        call_count += 1
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    result = domestic_router._run_base_price_transaction(session, operation)
+
+    assert result == {"version": 1}
+    assert call_count == 2
+    assert session.rollback_count == 1
+    assert session.commit_count == 1
+
+
+@pytest.mark.parametrize(
+    ("dialect_name", "codes", "expected_calls", "expected_rollbacks"),
+    [
+        ("mysql", [1205, 1213], 2, 2),
+        ("mysql", [2006], 1, 1),
+        ("sqlite", [1213], 1, 1),
+    ],
+)
+def test_base_price_transaction_does_not_over_retry_operational_errors(
+    dialect_name, codes, expected_calls, expected_rollbacks
+):
+    from app.domestic import router as domestic_router
+
+    session = _TransactionTestSession(dialect_name)
+    errors = iter(_db_operational_error(code) for code in codes)
+    call_count = 0
+
+    def operation():
+        nonlocal call_count
+        call_count += 1
+        raise next(errors)
+
+    with pytest.raises(OperationalError):
+        domestic_router._run_base_price_transaction(session, operation)
+
+    assert call_count == expected_calls
+    assert session.rollback_count == expected_rollbacks
+    assert session.commit_count == 0
+
+
+def test_quote_api_returns_priced_and_missing_json_contract_with_exact_labels(db):
+    user = _operator(db, "quote-mixed-json")
+    customer = domestic_models.DomesticCustomer(
+        shop_name="黑卡混合报价客户",
+        membership_level="black",
+        last_recharge_amount=D("30000.00"),
+        created_by=user.id,
+    )
+    db.add(customer)
+    priced_product = _configured_product(db, _piece_attrs(), "840.00", version=7)
+    client = _pricing_api_client(db, user.id, "domestic:write")
+
+    response = client.post(
+        "/api/domestic/pricing/quote",
+        json={
+            "customer_id": customer.id,
+            "items": [
+                {"client_key": "priced", "product_id": priced_product.id},
+                {
+                    "client_key": "missing",
+                    "attrs": _cap_attrs(craft="大U型", length="40厘米"),
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["customer"]["membership_level"] == "black"
+    priced, missing = payload["items"]
+    assert priced == {
+        "client_key": "priced",
+        "status": "priced",
+        "product_id": priced_product.id,
+        "original_price": 840.0,
+        "base_price_version": 7,
+        "discount_price": 720.0,
+        "discount_amount": 120.0,
+        "pricing_rule": "member_reduction",
+        "pricing_rule_label": "黑卡立减 ¥120.00",
+        "pricing_version": "domestic-member-v1",
+        "expected_quote": {
+            "original_price": 840.0,
+            "base_price_version": 7,
+            "discount_price": 720.0,
+            "membership_level": "black",
+            "pricing_rule": "member_reduction",
+            "pricing_version": "domestic-member-v1",
+        },
+    }
+    assert missing["client_key"] == "missing"
+    assert missing["status"] == "missing_base_price"
+    assert isinstance(missing["product_id"], int)
+    assert "expected_quote" not in missing
 
 
 def test_quote_api_commits_new_missing_sku_without_incrementing_use_count(db):

@@ -14,6 +14,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_any_permission, require_permission
@@ -74,6 +75,42 @@ def _has_admin(current_user: dict) -> bool:
     if "super_admin" in (current_user.get("roles") or []):
         return True
     return "domestic:admin" in (current_user.get("permissions") or [])
+
+
+def _is_mysql_lock_operational_error(db: Session, exc: OperationalError) -> bool:
+    dialect_name = db.get_bind().dialect.name
+    error_args = getattr(exc.orig, "args", ())
+    return (
+        dialect_name in {"mysql", "mariadb"}
+        and bool(error_args)
+        and error_args[0] in {1205, 1213}
+    )
+
+
+def _run_base_price_transaction(db: Session, operation):
+    """执行 PUT 原价事务；仅 MySQL/MariaDB 锁超时/死锁完整重试一次。"""
+
+    for attempt in range(2):
+        try:
+            data = operation()
+            db.commit()
+            return data
+        except OperationalError as exc:
+            db.rollback()
+            if attempt == 0 and _is_mysql_lock_operational_error(db, exc):
+                logger.warning(
+                    "domestic base price lock conflict; retry transaction once"
+                )
+                print(
+                    "[domestic] base price lock conflict; retry transaction once",
+                    flush=True,
+                )
+                continue
+            raise
+        except Exception:
+            db.rollback()
+            raise
+    raise RuntimeError("原价事务重试状态异常")
 
 
 # ── 下拉值域 ──────────────────────────────────────────
@@ -310,20 +347,18 @@ def put_product_base_price(
     current_user: dict = Depends(require_permission("domestic:admin")),
 ):
     try:
-        data = pricing_service.upsert_base_price(
+        data = _run_base_price_transaction(
             db,
-            product_id=product_id,
-            original_price=payload.original_price,
-            user_id=_uid(current_user),
+            lambda: pricing_service.upsert_base_price(
+                db,
+                product_id=product_id,
+                original_price=payload.original_price,
+                user_id=_uid(current_user),
+            ),
         )
-        db.commit()
         return ok(data, message="原始价格已保存")
     except ValueError as exc:
-        db.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception:
-        db.rollback()
-        raise
 
 
 @router.delete("/products/{product_id}/base-price", summary="删除产品共享原始价格")

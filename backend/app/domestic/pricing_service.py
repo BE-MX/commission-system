@@ -31,6 +31,12 @@ MEMBERSHIP_LABELS = {
     "supreme": "至尊会员",
 }
 
+MEMBERSHIP_SHORT_LABELS = {
+    "silver": "银卡",
+    "black": "黑卡",
+    "supreme": "至尊",
+}
+
 MEMBER_FIXED_PRICES = {
     ("递旋", "15厘米", "silver"): Decimal("1048.00"),
     ("递旋", "15厘米", "black"): Decimal("998.00"),
@@ -460,15 +466,20 @@ PRICING_VERSION = "domestic-member-v1"
 def pricing_rule_label(
     result: DiscountResult, membership_level: str | None
 ) -> str:
-    label = membership_label(membership_level)
     if result.pricing_rule == "base_price":
         return "非会员原价"
+    try:
+        label = MEMBERSHIP_SHORT_LABELS[membership_level]
+    except KeyError as exc:
+        raise PricingConfigurationError(
+            f"未知会员等级：{membership_level!r}"
+        ) from exc
     if result.pricing_rule == "member_reduction":
-        return f"{label}立减{result.discount_amount:.2f}元"
+        return f"{label}立减 ¥{result.discount_amount:.2f}"
     if result.pricing_rule == "member_fixed":
         return f"{label}固定会员价"
     if result.pricing_rule == "member_fixed_capped":
-        return f"{label}固定价高于原价，按原价封顶"
+        return "命中固定会员价，但原价更低，已按原价"
     raise PricingConfigurationError(f"未知定价规则：{result.pricing_rule!r}")
 
 
