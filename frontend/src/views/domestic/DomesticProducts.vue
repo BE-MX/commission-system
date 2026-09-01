@@ -65,7 +65,20 @@
           <el-table :data="list" v-loading="loading" border class="list-table" style="width: 100%">
             <el-table-column prop="name" label="产品" min-width="240" show-overflow-tooltip />
             <el-table-column prop="product_type_label" label="类型" min-width="80" />
-            <el-table-column prop="craft" label="工艺" min-width="130" show-overflow-tooltip />
+            <el-table-column prop="craft" label="工艺/尺寸" min-width="130" show-overflow-tooltip />
+            <el-table-column prop="length" label="发长" min-width="90" />
+            <el-table-column prop="net_color" label="网帽颜色" min-width="120" show-overflow-tooltip>
+              <template #default="{ row }"><span v-if="row.product_type === 'cap'">{{ row.net_color || '' }}</span></template>
+            </el-table-column>
+            <el-table-column prop="size" label="头套尺码" min-width="95">
+              <template #default="{ row }"><span v-if="row.product_type === 'cap'">{{ row.size }}</span></template>
+            </el-table-column>
+            <el-table-column prop="density" label="发量" min-width="80">
+              <template #default="{ row }"><span v-if="row.product_type === 'cap'">{{ row.density || '' }}</span></template>
+            </el-table-column>
+            <el-table-column prop="hair_style_series" label="发型系列" min-width="110" show-overflow-tooltip>
+              <template #default="{ row }"><span v-if="row.product_type === 'cap'">{{ row.hair_style_series }}</span></template>
+            </el-table-column>
             <el-table-column label="工艺路线" min-width="150">
               <template #default="{ row }">
                 <span v-if="row.route_name">{{ row.route_name }}</span>
@@ -154,7 +167,7 @@ const saving = ref(false)
 const routes = ref([])
 const craftRoutes = ref([])
 const mappingLoading = ref(false)
-const options = ref({ attr_dicts: {}, values: {} })
+const options = ref({ attr_dicts: {}, standard_values: {} })
 
 const {
   loading, list, total, page, pageSize, searchForm,
@@ -176,7 +189,7 @@ const rebindDialog = reactive({ visible: false, product: null, route_id: null })
 
 const craftOptions = computed(() => {
   const dictType = options.value.attr_dicts?.[mappingDialog.product_type]?.craft
-  return dictType ? (options.value.values?.[dictType] || []) : []
+  return dictType ? (options.value.standard_values?.[dictType] || []) : []
 })
 
 async function loadMappings() {
