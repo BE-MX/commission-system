@@ -34,6 +34,7 @@ from app.domestic.models import (
 from app.domestic.schemas import (
     CustomerCreate,
     CustomerUpdate,
+    DraftSubmitRequest,
     OrderCreate,
     OrderItemAppend,
     OrderItemInput,
@@ -292,14 +293,39 @@ def test_draft_does_not_charge_until_submit(db):
     assert order.charged_amount == Decimal("0.00")
     assert customer.balance == Decimal("100.00")
 
-    order_service.submit_draft(db, order.id, creator.id)
+    item = db.query(DomesticOrderItem).filter_by(order_id=order.id).one()
+    quote = {
+        "item_id": item.id,
+        "original_price": item.original_price,
+        "base_price_version": item.base_price_version_snapshot,
+        "discount_price": item.unit_price,
+        "membership_level": item.membership_level_snapshot,
+        "pricing_rule": item.pricing_rule,
+        "pricing_version": item.pricing_version,
+    }
+    payload = DraftSubmitRequest(
+        request_id="draft-submit-optimization",
+        expected_quotes=[quote],
+    )
+    order_service.submit_draft(db, order.id, payload, creator.id)
     db.refresh(customer)
     db.refresh(order)
     assert order.status == C.ORDER_PRODUCING
     assert order.charged_amount == Decimal("45.00")
     assert customer.balance == Decimal("55.00")
+    assert order_service.submit_draft(
+        db, order.id, payload, creator.id
+    )["replayed"] is True
     with pytest.raises(ValueError, match="只有草稿"):
-        order_service.submit_draft(db, order.id, creator.id)
+        order_service.submit_draft(
+            db,
+            order.id,
+            DraftSubmitRequest(
+                request_id="draft-submit-optimization-new",
+                expected_quotes=[quote],
+            ),
+            creator.id,
+        )
 
 
 def test_insufficient_balance_rolls_back_whole_order(db):

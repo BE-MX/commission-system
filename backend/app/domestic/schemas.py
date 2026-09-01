@@ -257,6 +257,32 @@ class ExpectedQuote(BaseModel):
         return value.strip() if isinstance(value, str) else value
 
 
+class ItemExpectedQuote(ExpectedQuote):
+    client_key: None = None
+    item_id: int = Field(..., gt=0)
+
+
+class DraftSubmitRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str = Field(..., min_length=8, max_length=64)
+    expected_quotes: list[ItemExpectedQuote] = Field(
+        ..., min_length=1, max_length=50
+    )
+
+    @field_validator("request_id", mode="before")
+    @classmethod
+    def _strip_request_id(cls, value: str) -> str:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def _unique_item_ids(self):
+        item_ids = [quote.item_id for quote in self.expected_quotes]
+        if len(item_ids) != len(set(item_ids)):
+            raise ValueError("expected_quotes 的 item_id 不能重复")
+        return self
+
+
 class OrderItemInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -336,13 +362,19 @@ class OrderCreate(BaseModel):
 class OrderUpdate(BaseModel):
     """订单头编辑。明细的增删改走各自端点，避免整单覆盖冲掉在制进度。"""
 
+    model_config = ConfigDict(extra="forbid")
+
     order_no: str | None = Field(None, min_length=1, max_length=64)
     order_date: date | None = None
-    customer_id: int | None = None
+    customer_id: int | None = Field(None, gt=0)
     order_category: Literal["normal", "special"] | None = None
     order_type: str | None = Field(None, min_length=1, max_length=32)
     order_channel: str | None = Field(None, min_length=1, max_length=32)
     remark: str | None = Field(None, max_length=1000)
+    request_id: str | None = Field(None, min_length=8, max_length=64)
+    expected_quotes: list[ItemExpectedQuote] | None = Field(
+        None, min_length=1, max_length=50
+    )
 
     @field_validator("order_category", mode="before")
     @classmethod
@@ -357,6 +389,28 @@ class OrderUpdate(BaseModel):
         if value is None:
             raise ValueError("订单类型和订单渠道传入时不能为空")
         return value.strip() if isinstance(value, str) else value
+
+    @field_validator("request_id", mode="before")
+    @classmethod
+    def _strip_request_id(cls, value: str | None) -> str | None:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def _require_customer_repricing_contract(self):
+        changes_customer = "customer_id" in self.model_fields_set
+        has_request = "request_id" in self.model_fields_set
+        has_quotes = "expected_quotes" in self.model_fields_set
+        if changes_customer:
+            if self.customer_id is None:
+                raise ValueError("订单必须有客户")
+            if self.request_id is None or self.expected_quotes is None:
+                raise ValueError("更换客户时 request_id 和 expected_quotes 必填")
+            item_ids = [quote.item_id for quote in self.expected_quotes]
+            if len(item_ids) != len(set(item_ids)):
+                raise ValueError("expected_quotes 的 item_id 不能重复")
+        elif has_request or has_quotes:
+            raise ValueError("request_id 和 expected_quotes 只有更换客户时才能传")
+        return self
 
 
 class OrderItemUpdate(BaseModel):

@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 from datetime import date
+from types import SimpleNamespace
 from app.core.time import beijing_today
 
 from sqlalchemy import func
@@ -29,6 +30,7 @@ from app.domestic.models import (
     DomesticItemUnit,
     DomesticOrder,
     DomesticOrderItem,
+    DomesticOrderPricingRequest,
     DomesticProduct,
     DomesticReportLog,
     DomesticReportUnit,
@@ -37,6 +39,7 @@ from app.domestic.models import (
     DomesticSkipUnit,
 )
 from app.domestic.schemas import (
+    DraftSubmitRequest,
     ItemShipRequest,
     OrderCreate,
     OrderItemAppend,
@@ -88,6 +91,141 @@ def _item_append_request_hash(payload: OrderItemAppend) -> str:
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _pricing_request_hash(
+    *,
+    operation: str,
+    target_customer_id: int,
+    expected_quotes: list,
+    update_fields: dict | None = None,
+) -> str:
+    canonical_quotes = sorted(
+        (quote.model_dump(mode="json") for quote in expected_quotes),
+        key=lambda quote: quote["item_id"],
+    )
+    encoded = json.dumps(
+        {
+            "operation": operation,
+            "target_customer_id": target_customer_id,
+            "expected_quotes": canonical_quotes,
+            "update_fields": update_fields or {},
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _pricing_replay_or_none(
+    db: Session,
+    *,
+    order_id: int,
+    request_id: str,
+    request_hash: str,
+) -> dict | None:
+    existing = db.query(DomesticOrderPricingRequest).filter(
+        DomesticOrderPricingRequest.order_id == order_id,
+        DomesticOrderPricingRequest.request_id == request_id,
+    ).first()
+    if existing is None:
+        return None
+    if existing.request_hash != request_hash:
+        raise ValueError("该定价请求号已用于不同内容，请使用新的请求号后重试")
+    result = dict(existing.result_json)
+    result["replayed"] = True
+    return result
+
+
+def _store_pricing_result(
+    db: Session,
+    *,
+    order_id: int,
+    request_id: str,
+    operation: str,
+    request_hash: str,
+    result: dict,
+) -> None:
+    db.add(DomesticOrderPricingRequest(
+        order_id=order_id,
+        request_id=request_id,
+        operation=operation,
+        request_hash=request_hash,
+        result_json=result,
+    ))
+    db.flush()
+
+
+def _lock_draft_items(db: Session, order_id: int) -> list[DomesticOrderItem]:
+    return (
+        db.query(DomesticOrderItem)
+        .filter(DomesticOrderItem.order_id == order_id)
+        .order_by(DomesticOrderItem.id.asc())
+        .populate_existing()
+        .with_for_update()
+        .all()
+    )
+
+
+def _validate_expected_item_set(
+    items: list[DomesticOrderItem], expected_quotes: list
+) -> None:
+    current_ids = {item.id for item in items}
+    expected_ids = {quote.item_id for quote in expected_quotes}
+    if current_ids != expected_ids:
+        raise ValueError("草稿明细已变化，请刷新订单后重新确认价格")
+
+
+def _lock_and_validate_saved_item_quotes(
+    db: Session,
+    *,
+    customer: DomesticCustomer,
+    items: list[DomesticOrderItem],
+    expected_quotes: list,
+) -> list[pricing_service.LockedOrderQuote]:
+    expected_by_id = {quote.item_id: quote for quote in expected_quotes}
+    product_ids = {item.product_id for item in items}
+    products = {
+        product.id: product
+        for product in db.query(DomesticProduct).filter(
+            DomesticProduct.id.in_(product_ids or {0})
+        ).all()
+    }
+    item_products = []
+    for item in items:
+        product = products.get(item.product_id)
+        if product is None:
+            raise ValueError(f"订单明细 {item.id} 的产品不存在")
+        item_products.append((
+            SimpleNamespace(
+                item_id=item.id,
+                client_key=None,
+                expected_quote=expected_by_id[item.id],
+            ),
+            product,
+        ))
+    _customer, quotes = pricing_service.lock_and_validate_order_quotes(
+        db,
+        customer_id=customer.id,
+        item_products=item_products,
+        locked_customer=customer,
+    )
+    return quotes
+
+
+def _apply_saved_item_quotes(
+    items: list[DomesticOrderItem],
+    quotes: list[pricing_service.LockedOrderQuote],
+) -> None:
+    for item, quote in zip(items, quotes):
+        item.original_price = quote.discount.original_price
+        item.unit_price = quote.discount.final_price
+        item.discount_amount = quote.discount.discount_amount
+        item.membership_level_snapshot = quote.membership_level
+        item.pricing_rule = quote.discount.pricing_rule
+        item.pricing_version = pricing_service.PRICING_VERSION
+        item.base_price_version_snapshot = quote.base_row.version
 
 
 def _order_create_result(
@@ -843,44 +981,140 @@ def _get_item_or_raise(db: Session, item_id: int, lock: bool = False) -> Domesti
     return item
 
 
-def update_order(db: Session, order_id: int, payload: OrderUpdate) -> DomesticOrder:
+def _lock_order_then_item(
+    db: Session, item_id: int
+) -> tuple[DomesticOrder, DomesticOrderItem]:
+    """Resolve the parent without a lock, then acquire every mutation lock order-first."""
+    _ensure_sqlite_outer_transaction(db)
+    order_id = db.query(DomesticOrderItem.order_id).filter(
+        DomesticOrderItem.id == item_id
+    ).scalar()
+    if order_id is None:
+        raise ValueError("订单明细不存在")
     order = _get_order_or_raise(db, order_id, lock=True)
-    if order.status == C.ORDER_TERMINATED:
-        raise ValueError("已终止的订单不能编辑")
-    data = payload.model_dump(exclude_unset=True)
-    attribute_service.validate_order_dimensions(
-        db,
-        data.get("order_type", order.order_type),
-        data.get("order_channel", order.order_channel),
-    )
-    if data.get("order_category") == "normal" and order.order_category != "normal":
-        item_rows = db.query(
-            DomesticOrderItem.line_no,
-            DomesticOrderItem.attrs_snapshot,
-        ).filter(DomesticOrderItem.order_id == order.id).all()
-        for line_no, snapshot in item_rows:
-            if not snapshot:
-                raise ValueError(
-                    f"第 {line_no} 行缺少属性快照，不能切换为普货；请终止后重新下单"
-                )
-            attribute_service.prepare_item_attrs(
-                db,
-                order_category="normal",
-                attrs=ProductAttrs.model_validate(snapshot),
-                user_id=order.created_by,
-                line_no=line_no,
+    item = _get_item_or_raise(db, item_id, lock=True)
+    if item.order_id != order.id:
+        raise ValueError("订单明细所属订单已变化，请刷新后重试")
+    return order, item
+
+
+def update_order(
+    db: Session, order_id: int, payload: OrderUpdate
+) -> DomesticOrder | dict:
+    try:
+        if "customer_id" in payload.model_fields_set:
+            _ensure_sqlite_outer_transaction(db)
+        order = _get_order_or_raise(db, order_id, lock=True)
+        data = payload.model_dump(exclude_unset=True)
+        changes_customer = "customer_id" in data
+
+        if changes_customer:
+            update_fields = payload.model_dump(
+                mode="json",
+                exclude_unset=True,
+                exclude={"request_id", "expected_quotes"},
             )
-    if "customer_id" in data:
-        if not data["customer_id"]:
-            raise ValueError("订单必须有客户")
-        if not db.query(DomesticCustomer).get(data["customer_id"]):
-            raise ValueError("客户不存在")
-        if order.status != C.ORDER_DRAFT and data["customer_id"] != order.customer_id:
-            raise ValueError("已提交订单不能更换客户；请终止后重新下单")
-    for field, value in data.items():
-        setattr(order, field, value)
-    db.commit()
-    return order
+            request_hash = _pricing_request_hash(
+                operation="reprice_customer",
+                target_customer_id=payload.customer_id,
+                expected_quotes=payload.expected_quotes,
+                update_fields=update_fields,
+            )
+            replay = _pricing_replay_or_none(
+                db,
+                order_id=order.id,
+                request_id=payload.request_id,
+                request_hash=request_hash,
+            )
+            if replay is not None:
+                db.commit()
+                return replay
+            if order.status != C.ORDER_DRAFT:
+                raise ValueError("只有草稿订单可以更换客户并重新报价")
+
+            customer = _lock_customer(db, payload.customer_id)
+            items = _lock_draft_items(db, order.id)
+            _validate_expected_item_set(items, payload.expected_quotes)
+            quotes = _lock_and_validate_saved_item_quotes(
+                db,
+                customer=customer,
+                items=items,
+                expected_quotes=payload.expected_quotes,
+            )
+        else:
+            if order.status == C.ORDER_TERMINATED:
+                raise ValueError("已终止的订单不能编辑")
+            items = None
+            quotes = None
+
+        attribute_service.validate_order_dimensions(
+            db,
+            data.get("order_type", order.order_type),
+            data.get("order_channel", order.order_channel),
+        )
+        if data.get("order_category") == "normal" and order.order_category != "normal":
+            item_rows = (
+                [(item.line_no, item.attrs_snapshot) for item in items]
+                if items is not None
+                else db.query(
+                    DomesticOrderItem.line_no,
+                    DomesticOrderItem.attrs_snapshot,
+                ).filter(DomesticOrderItem.order_id == order.id).all()
+            )
+            for line_no, snapshot in item_rows:
+                if not snapshot:
+                    raise ValueError(
+                        f"第 {line_no} 行缺少属性快照，不能切换为普货；请终止后重新下单"
+                    )
+                attribute_service.prepare_item_attrs(
+                    db,
+                    order_category="normal",
+                    attrs=ProductAttrs.model_validate(snapshot),
+                    user_id=order.created_by,
+                    line_no=line_no,
+                )
+
+        persisted_data = {
+            key: value
+            for key, value in data.items()
+            if key not in {"request_id", "expected_quotes"}
+        }
+        if changes_customer:
+            _apply_saved_item_quotes(items, quotes)
+        for field, value in persisted_data.items():
+            setattr(order, field, value)
+
+        if changes_customer:
+            balance_service.sync_order_finance(
+                db,
+                order,
+                user_id=order.created_by,
+                reason=f"草稿订单 {order.domestic_no} 更换客户重报价",
+            )
+            result = {
+                "id": order.id,
+                "customer_id": order.customer_id,
+                "status": order.status,
+                "total_amount": float(order.total_amount or 0),
+                "charged_amount": float(order.charged_amount or 0),
+                "replayed": False,
+            }
+            _store_pricing_result(
+                db,
+                order_id=order.id,
+                request_id=payload.request_id,
+                operation="reprice_customer",
+                request_hash=request_hash,
+                result=result,
+            )
+            db.commit()
+            return result
+
+        db.commit()
+        return order
+    except Exception:
+        db.rollback()
+        raise
 
 
 def add_item(
@@ -966,8 +1200,7 @@ def update_item(
     user_id: int | None = None,
 ) -> DomesticOrderItem:
     """改明细。数量不能改到低于任一工序已完成的数量 —— 那会让守恒关系失真。"""
-    item = _get_item_or_raise(db, item_id, lock=True)
-    order = _get_order_or_raise(db, item.order_id, lock=True)
+    order, item = _lock_order_then_item(db, item_id)
     if order.status in (C.ORDER_TERMINATED, C.ORDER_SHIPPED):
         raise ValueError("已终止/已发货的订单不能修改明细")
     if item.status == C.ITEM_SHIPPED:
@@ -1019,7 +1252,7 @@ def update_item(
 
 def delete_item(db: Session, item_id: int, user_id: int | None = None) -> None:
     """有报工记录的明细不能删 —— 删了车间的工时就凭空消失了。"""
-    item = _get_item_or_raise(db, item_id, lock=True)
+    order, item = _lock_order_then_item(db, item_id)
     reported = db.query(func.count(DomesticReportLog.id)).filter(
         DomesticReportLog.item_id == item_id
     ).scalar()
@@ -1030,8 +1263,7 @@ def delete_item(db: Session, item_id: int, user_id: int | None = None) -> None:
     ).scalar()
     if skipped:
         raise ValueError(f"该明细已有 {skipped} 条跳过记录，不能删除；如需作废请终止订单")
-    order_id = item.order_id
-    order = _get_order_or_raise(db, order_id, lock=True)
+    order_id = order.id
     if order.status in (C.ORDER_TERMINATED, C.ORDER_SHIPPED):
         raise ValueError("已终止/已发货的订单不能删除明细")
     remaining = db.query(func.count(DomesticOrderItem.id)).filter(
@@ -1062,8 +1294,7 @@ def delete_item(db: Session, item_id: int, user_id: int | None = None) -> None:
 
 def attach_route(db: Session, item_id: int, route_id: int | None = None) -> dict:
     """给缺路线的在制明细补配工艺路线（漏配映射后的补救路径）。"""
-    item = _get_item_or_raise(db, item_id, lock=True)
-    order = _get_order_or_raise(db, item.order_id, lock=True)
+    order, item = _lock_order_then_item(db, item_id)
     if order.status in (C.ORDER_TERMINATED, C.ORDER_SHIPPED):
         raise ValueError("已终止/已发货的订单不能重配工艺路线")
     if item.route_id is not None:
@@ -1099,19 +1330,76 @@ def attach_route(db: Session, item_id: int, route_id: int | None = None) -> dict
 # ── 发货与终止 ────────────────────────────────────────
 
 
-def submit_draft(db: Session, order_id: int, user_id: int) -> DomesticOrder:
-    """Submit a saved draft and deduct its full amount exactly once."""
+def submit_draft(
+    db: Session,
+    order_id: int,
+    payload: DraftSubmitRequest,
+    user_id: int,
+) -> dict:
+    """Reprice a saved draft and deduct the confirmed amount exactly once."""
     try:
+        _ensure_sqlite_outer_transaction(db)
         order = _get_order_or_raise(db, order_id, lock=True)
+        request_hash = _pricing_request_hash(
+            operation="submit",
+            target_customer_id=order.customer_id,
+            expected_quotes=payload.expected_quotes,
+        )
+        replay = _pricing_replay_or_none(
+            db,
+            order_id=order.id,
+            request_id=payload.request_id,
+            request_hash=request_hash,
+        )
+        if replay is not None:
+            db.commit()
+            return replay
         if order.status != C.ORDER_DRAFT:
             raise ValueError("只有草稿订单可以提交")
+
+        customer = _lock_customer(db, order.customer_id)
+        items = _lock_draft_items(db, order.id)
+        _validate_expected_item_set(items, payload.expected_quotes)
+        quotes = _lock_and_validate_saved_item_quotes(
+            db,
+            customer=customer,
+            items=items,
+            expected_quotes=payload.expected_quotes,
+        )
+        total = balance_service.money(sum(
+            quote.discount.final_price * item.order_qty
+            for item, quote in zip(items, quotes)
+        ))
+        available = balance_service.money(customer.balance)
+        if available < total:
+            raise ValueError(
+                f"客户「{customer.shop_name}」余额不足：当前 ¥{available:.2f}，"
+                f"本次需扣 ¥{total:.2f}"
+            )
+        _apply_saved_item_quotes(items, quotes)
         order.status = C.ORDER_PRODUCING
         balance_service.sync_order_finance(
             db, order, user_id=user_id,
             reason=f"草稿订单 {order.domestic_no} 提交扣款",
         )
+        result = {
+            "id": order.id,
+            "customer_id": order.customer_id,
+            "status": order.status,
+            "total_amount": float(order.total_amount or 0),
+            "charged_amount": float(order.charged_amount or 0),
+            "replayed": False,
+        }
+        _store_pricing_result(
+            db,
+            order_id=order.id,
+            request_id=payload.request_id,
+            operation="submit",
+            request_hash=request_hash,
+            result=result,
+        )
         db.commit()
-        return order
+        return result
     except Exception:
         db.rollback()
         raise
@@ -1119,10 +1407,9 @@ def submit_draft(db: Session, order_id: int, user_id: int) -> DomesticOrder:
 
 def ship_item(db: Session, item_id: int, payload: ItemShipRequest) -> DomesticOrderItem:
     """登记发货。首版要求全工序做齐才允许发货。"""
-    item = _get_item_or_raise(db, item_id, lock=True)
+    order, item = _lock_order_then_item(db, item_id)
     if item.status == C.ITEM_SHIPPED:
         raise ValueError("该明细已发货")
-    order = _get_order_or_raise(db, item.order_id, lock=True)
     if order.status == C.ORDER_TERMINATED:
         # 否则会出现「订单已终止但货已发出」的自相矛盾状态，且此后撤销被永久锁死
         raise ValueError("订单已终止，不能登记发货")

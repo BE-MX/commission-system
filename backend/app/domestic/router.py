@@ -42,6 +42,7 @@ from app.domestic.schemas import (
     CustomerCreate,
     CustomerRechargeCreate,
     CustomerUpdate,
+    DraftSubmitRequest,
     ItemShipRequest,
     OrderCreate,
     OrderItemAppend,
@@ -541,27 +542,30 @@ def update_order(
     _user: dict = Depends(require_permission("domestic:write")),
 ):
     try:
-        order_service.update_order(db, order_id, payload)
+        result = order_service.update_order(db, order_id, payload)
+    except pricing_service.DomesticQuoteChangedError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    return ok(message="已保存")
+    return ok(result if isinstance(result, dict) else None, message="已保存")
 
 
 @router.post("/orders/{order_id}/submit", summary="提交草稿并从客户余额扣款")
 def submit_draft_order(
     order_id: int,
+    payload: DraftSubmitRequest,
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_permission("domestic:write")),
 ):
     try:
-        order = order_service.submit_draft(db, order_id, _uid(current_user))
+        result = order_service.submit_draft(
+            db, order_id, payload, _uid(current_user)
+        )
+    except pricing_service.DomesticQuoteChangedError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    return ok({
-        "id": order.id,
-        "status": order.status,
-        "charged_amount": float(order.charged_amount or 0),
-    }, message="订单已提交，余额扣款成功")
+    return ok(result, message="订单已提交，余额扣款成功")
 
 
 @router.post("/orders/{order_id}/status", summary="终止订单")

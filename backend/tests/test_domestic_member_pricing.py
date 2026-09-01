@@ -46,11 +46,14 @@ from app.domestic.schemas import (
     CustomerCreate,
     CustomerRechargeCreate,
     CustomerUpdate,
+    DraftSubmitRequest,
     ExpectedQuote,
+    ItemExpectedQuote,
     OrderCreate,
     OrderItemAppend,
     OrderItemInput,
     OrderItemUpdate,
+    OrderUpdate,
 )
 from app.production.models import Process, ProcessRoute, ProcessRouteStep
 from app.system.models import SysDict
@@ -138,6 +141,62 @@ def test_order_item_schema_requires_expected_quote_and_forbids_manual_price():
         )
     with pytest.raises(ValidationError, match="unit_price"):
         OrderItemUpdate.model_validate({"unit_price": "1.00"})
+
+
+def test_draft_submit_schema_requires_unique_item_quotes_and_strips_request_id():
+    quote = {"client_key": None, "item_id": 7, **_expected_quote_payload()}
+
+    payload = DraftSubmitRequest.model_validate({
+        "request_id": "  submit-request-7  ",
+        "expected_quotes": [quote],
+    })
+
+    assert payload.request_id == "submit-request-7"
+    assert payload.expected_quotes == [ItemExpectedQuote.model_validate(quote)]
+    with pytest.raises(ValidationError, match="item_id"):
+        DraftSubmitRequest.model_validate({
+            "request_id": "submit-request-8",
+            "expected_quotes": [{**quote, "item_id": 0}],
+        })
+    with pytest.raises(ValidationError, match="不能重复"):
+        DraftSubmitRequest.model_validate({
+            "request_id": "submit-request-9",
+            "expected_quotes": [quote, quote],
+        })
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        DraftSubmitRequest.model_validate({
+            "request_id": "submit-request-10",
+            "expected_quotes": [quote],
+            "ignored": True,
+        })
+    with pytest.raises(ValidationError, match="client_key"):
+        DraftSubmitRequest.model_validate({
+            "request_id": "submit-request-11",
+            "expected_quotes": [{**quote, "client_key": "create-only-key"}],
+        })
+
+
+def test_order_update_requires_repricing_contract_only_when_customer_is_explicit():
+    quote = {"item_id": 7, **_expected_quote_payload()}
+
+    payload = OrderUpdate.model_validate({
+        "customer_id": 9,
+        "request_id": "  change-customer-9  ",
+        "expected_quotes": [quote],
+        "remark": "原子更新",
+    })
+
+    assert payload.request_id == "change-customer-9"
+    with pytest.raises(ValidationError, match="request_id.*expected_quotes"):
+        OrderUpdate.model_validate({"customer_id": 9})
+    with pytest.raises(ValidationError, match="只有更换客户"):
+        OrderUpdate.model_validate({
+            "remark": "普通编辑",
+            "request_id": "change-customer-10",
+            "expected_quotes": [quote],
+        })
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        OrderUpdate.model_validate({"remark": "普通编辑", "ignored": True})
 
 
 def test_order_item_client_key_is_trimmed_bounded_and_append_keeps_request_id():
@@ -2591,6 +2650,629 @@ def _priced_order_payload(
             ],
         }
     )
+
+
+def _saved_item_expected(item):
+    return {
+        "item_id": item.id,
+        "original_price": item.original_price,
+        "base_price_version": item.base_price_version_snapshot,
+        "discount_price": item.unit_price,
+        "membership_level": item.membership_level_snapshot,
+        "pricing_rule": item.pricing_rule,
+        "pricing_version": item.pricing_version,
+    }
+
+
+def _current_item_expected(db, item, customer):
+    product = db.get(domestic_models.DomesticProduct, item.product_id)
+    key = pricing_service.price_key_for_product(product)
+    base = db.query(domestic_models.DomesticBasePrice).filter_by(
+        product_type=key[0], craft=key[1], length=key[2]
+    ).one()
+    discount = pricing_service.resolve_discount(
+        product_type=product.product_type,
+        craft=product.craft,
+        length=product.length,
+        size=product.size if product.product_type == "piece" else None,
+        original_price=base.original_price,
+        membership_level=customer.membership_level,
+    )
+    return {
+        "item_id": item.id,
+        "original_price": discount.original_price,
+        "base_price_version": base.version,
+        "discount_price": discount.final_price,
+        "membership_level": customer.membership_level,
+        "pricing_rule": discount.pricing_rule,
+        "pricing_version": pricing_service.PRICING_VERSION,
+    }
+
+
+def _draft_submit_payload(request_id, *items):
+    return DraftSubmitRequest.model_validate({
+        "request_id": request_id,
+        "expected_quotes": [_saved_item_expected(item) for item in items],
+    })
+
+
+def _created_priced_draft(
+    db,
+    suffix,
+    *,
+    membership_level=None,
+    balance="5000.00",
+    original_price="1000.00",
+    qty=1,
+    attrs=None,
+):
+    user, customer, product, base, expected, attrs = _order_pricing_context(
+        db,
+        suffix,
+        original_price=original_price,
+        membership_level=membership_level,
+        balance=balance,
+        attrs=attrs,
+    )
+    created = order_service.create_order(
+        db,
+        _priced_order_payload(
+            customer,
+            attrs,
+            expected,
+            request_id=f"{suffix}-create-draft",
+            is_draft=True,
+            qty=qty,
+        ),
+        user.id,
+    )
+    order = db.get(domestic_models.DomesticOrder, created["id"])
+    item = db.query(domestic_models.DomesticOrderItem).filter_by(
+        order_id=order.id
+    ).one()
+    return user, customer, product, base, order, item
+
+
+def test_submit_draft_reprices_membership_atomically_then_charges_confirmed_quote(db):
+    user, customer, _product, _base, expected, attrs = _order_pricing_context(
+        db,
+        "draft-submit-membership",
+        original_price="1000.00",
+        membership_level="silver",
+        balance="1000.00",
+    )
+    created = order_service.create_order(
+        db,
+        _priced_order_payload(
+            customer,
+            attrs,
+            expected,
+            request_id="draft-submit-membership-create",
+            is_draft=True,
+        ),
+        user.id,
+    )
+    order = db.get(domestic_models.DomesticOrder, created["id"])
+    item = db.query(domestic_models.DomesticOrderItem).filter_by(
+        order_id=order.id
+    ).one()
+    stale = _draft_submit_payload("draft-submit-membership-stale", item)
+    original_snapshot = _saved_item_expected(item)
+    balance_service.recharge_customer(
+        db,
+        customer_id=customer.id,
+        amount=D("30000.00"),
+        user_id=user.id,
+        request_id="draft-submit-black-recharge",
+    )
+    balance_before = customer.balance
+
+    with pytest.raises(pricing_service.DomesticQuoteChangedError) as caught:
+        order_service.submit_draft(db, order.id, stale, user.id)
+
+    detail = caught.value.detail
+    assert detail["changes"] == [{
+        "client_key": None,
+        "item_id": item.id,
+        "reasons": ["membership_changed"],
+        "previous_quote": {key: float(value) if isinstance(value, D) else value for key, value in original_snapshot.items() if key != "item_id"},
+        "current_quote": detail["changes"][0]["current_quote"],
+    }]
+    assert detail["current_expected_quotes"][0]["item_id"] == item.id
+    assert detail["current_expected_quotes"][0]["client_key"] is None
+    assert detail["retry_requires_new_request_id"] is True
+    db.refresh(order)
+    db.refresh(item)
+    db.refresh(customer)
+    assert order.status == domestic_constants.ORDER_DRAFT
+    assert order.total_amount == original_snapshot["discount_price"]
+    assert order.charged_amount == D("0.00")
+    assert _saved_item_expected(item) == original_snapshot
+    assert customer.balance == balance_before
+    assert db.query(domestic_models.DomesticOrderPricingRequest).count() == 0
+
+    current = DraftSubmitRequest.model_validate({
+        "request_id": "draft-submit-membership-confirm",
+        "expected_quotes": detail["current_expected_quotes"],
+    })
+    result = order_service.submit_draft(db, order.id, current, user.id)
+
+    db.refresh(order)
+    db.refresh(item)
+    db.refresh(customer)
+    assert result["replayed"] is False
+    assert order.status == domestic_constants.ORDER_PRODUCING
+    assert order.total_amount == D("880.00")
+    assert order.charged_amount == D("880.00")
+    assert item.membership_level_snapshot == "black"
+    assert item.unit_price == D("880.00")
+    assert customer.balance == balance_before - D("880.00")
+
+
+def test_submit_draft_price_change_is_all_or_nothing_and_missing_price_is_409(db):
+    user, customer, _product, base, expected, attrs = _order_pricing_context(
+        db, "draft-submit-base", original_price="1000.00", membership_level=None
+    )
+    attrs_b = _cap_attrs(craft="草稿第二行工艺", length="21厘米")
+    _seed_order_dicts(db, attrs_b)
+    product_b = _persist_product(db, attrs_b)
+    db.add(domestic_models.DomesticBasePrice(
+        product_type="cap", craft=attrs_b["craft"], length=attrs_b["length"],
+        original_price=D("1100.00"), version=1, updated_by=user.id,
+    ))
+    db.commit()
+    expected_b = _expected_quote_payload(
+        original_price="1100.00", discount_price="1100.00"
+    )
+    created = order_service.create_order(
+        db,
+        _priced_order_payload(
+            customer,
+            attrs,
+            expected,
+            request_id="draft-submit-base-create",
+            is_draft=True,
+            items=[
+                {"client_key": "a", "attrs": attrs, "order_qty": 1, "expected_quote": expected},
+                {"client_key": "b", "attrs": attrs_b, "order_qty": 1, "expected_quote": expected_b},
+            ],
+        ),
+        user.id,
+    )
+    order = db.get(domestic_models.DomesticOrder, created["id"])
+    items = db.query(domestic_models.DomesticOrderItem).filter_by(
+        order_id=order.id
+    ).order_by(domestic_models.DomesticOrderItem.id).all()
+    snapshots = [_saved_item_expected(item) for item in items]
+    payload = _draft_submit_payload("draft-submit-base-stale", *items)
+    base.original_price = D("1200.00")
+    base.version = 2
+    db.commit()
+
+    with pytest.raises(pricing_service.DomesticQuoteChangedError) as caught:
+        order_service.submit_draft(db, order.id, payload, user.id)
+
+    assert caught.value.detail["changes"][0]["item_id"] == items[0].id
+    assert caught.value.detail["changes"][0]["reasons"] == ["base_price_changed"]
+    assert [_saved_item_expected(item) for item in items] == snapshots
+    assert order.total_amount == D("2100.00")
+    assert db.query(domestic_models.DomesticOrderPricingRequest).count() == 0
+
+    db.delete(base)
+    db.commit()
+    with pytest.raises(pricing_service.DomesticQuoteChangedError) as missing:
+        order_service.submit_draft(
+            db,
+            order.id,
+            _draft_submit_payload("draft-submit-base-missing", *items),
+            user.id,
+        )
+    change = missing.value.detail["changes"][0]
+    assert change["item_id"] == items[0].id
+    assert change["client_key"] is None
+    assert change["reasons"] == ["price_missing"]
+    assert change["current_quote"] is None
+    assert change["current_status"] == "missing_base_price"
+    assert db.query(domestic_models.DomesticOrderPricingRequest).count() == 0
+
+
+def test_submit_draft_insufficient_balance_rolls_back_prices_status_and_request(db):
+    user, customer, _product, _base, order, item = _created_priced_draft(
+        db,
+        "draft-submit-insufficient",
+        balance="100.00",
+        original_price="1000.00",
+    )
+    snapshot = _saved_item_expected(item)
+    payload = _draft_submit_payload("draft-submit-insufficient-request", item)
+
+    with pytest.raises(ValueError, match="余额不足"):
+        order_service.submit_draft(db, order.id, payload, user.id)
+
+    db.refresh(order)
+    db.refresh(item)
+    db.refresh(customer)
+    assert order.status == domestic_constants.ORDER_DRAFT
+    assert order.charged_amount == D("0.00")
+    assert _saved_item_expected(item) == snapshot
+    assert customer.balance == D("100.00")
+    assert db.query(domestic_models.DomesticCustomerLedger).count() == 0
+    assert db.query(domestic_models.DomesticOrderPricingRequest).count() == 0
+
+
+def test_submit_draft_success_replays_after_price_change_without_second_charge(db):
+    user, customer, _product, base, order, item = _created_priced_draft(
+        db, "draft-submit-replay", balance="5000.00"
+    )
+    payload = _draft_submit_payload("draft-submit-replay-request", item)
+
+    first = order_service.submit_draft(db, order.id, payload, user.id)
+    balance_after_first = db.get(
+        domestic_models.DomesticCustomer, customer.id
+    ).balance
+    ledger_count = db.query(domestic_models.DomesticCustomerLedger).count()
+    base.original_price = D("1500.00")
+    base.version = 2
+    customer.membership_level = "supreme"
+    db.commit()
+
+    replay = order_service.submit_draft(db, order.id, payload, user.id)
+
+    assert replay == {**first, "replayed": True}
+    assert db.get(domestic_models.DomesticCustomer, customer.id).balance == balance_after_first
+    assert db.query(domestic_models.DomesticCustomerLedger).count() == ledger_count
+    assert db.query(domestic_models.DomesticOrderPricingRequest).count() == 1
+
+
+def test_submit_draft_same_request_with_different_hash_is_rejected_before_status(db):
+    user, _customer, _product, _base, order, item = _created_priced_draft(
+        db, "draft-submit-diff-hash"
+    )
+    payload = _draft_submit_payload("draft-submit-diff-hash-request", item)
+    order_service.submit_draft(db, order.id, payload, user.id)
+    changed = payload.model_copy(deep=True)
+    changed.expected_quotes[0].pricing_version = "domestic-member-v0"
+
+    with pytest.raises(ValueError, match="不同内容"):
+        order_service.submit_draft(db, order.id, changed, user.id)
+
+    assert db.query(domestic_models.DomesticOrderPricingRequest).count() == 1
+
+
+def test_submit_draft_rejects_changed_item_set_without_pricing_request(db):
+    user, _customer, _product, _base, order, item = _created_priced_draft(
+        db, "draft-submit-item-set"
+    )
+    quote = _saved_item_expected(item)
+    quote["item_id"] = item.id + 999
+    payload = DraftSubmitRequest.model_validate({
+        "request_id": "draft-submit-item-set-request",
+        "expected_quotes": [quote],
+    })
+
+    with pytest.raises(ValueError, match="明细已变化.*刷新"):
+        order_service.submit_draft(db, order.id, payload, user.id)
+
+    assert order.status == domestic_constants.ORDER_DRAFT
+    assert db.query(domestic_models.DomesticOrderPricingRequest).count() == 0
+
+
+def _customer_reprice_payload(request_id, customer_id, quotes, **fields):
+    return OrderUpdate.model_validate({
+        "customer_id": customer_id,
+        "request_id": request_id,
+        "expected_quotes": quotes,
+        **fields,
+    })
+
+
+def test_update_draft_customer_409_is_atomic_then_confirm_updates_all_fields(db):
+    user, source, _product, _base, order, item = _created_priced_draft(
+        db,
+        "draft-customer-atomic",
+        membership_level=None,
+        original_price="1000.00",
+    )
+    target = domestic_models.DomesticCustomer(
+        shop_name="至尊换客目标",
+        membership_level="supreme",
+        balance=D("9000.00"),
+        created_by=user.id,
+    )
+    db.add(target)
+    db.commit()
+    stale = _customer_reprice_payload(
+        "draft-customer-atomic-stale",
+        target.id,
+        [_saved_item_expected(item)],
+        order_no="换客后订单号",
+        remark="换客后备注",
+    )
+    original = {
+        "customer_id": order.customer_id,
+        "order_no": order.order_no,
+        "remark": order.remark,
+        "total_amount": order.total_amount,
+        "snapshot": _saved_item_expected(item),
+    }
+
+    with pytest.raises(pricing_service.DomesticQuoteChangedError) as caught:
+        order_service.update_order(db, order.id, stale)
+
+    detail = caught.value.detail
+    assert detail["changes"][0]["item_id"] == item.id
+    assert detail["changes"][0]["client_key"] is None
+    assert detail["changes"][0]["reasons"] == ["membership_changed"]
+    db.refresh(order)
+    db.refresh(item)
+    assert {
+        "customer_id": order.customer_id,
+        "order_no": order.order_no,
+        "remark": order.remark,
+        "total_amount": order.total_amount,
+        "snapshot": _saved_item_expected(item),
+    } == original
+    assert db.query(domestic_models.DomesticOrderPricingRequest).count() == 0
+
+    confirmed = _customer_reprice_payload(
+        "draft-customer-atomic-confirm",
+        target.id,
+        detail["current_expected_quotes"],
+        order_no="换客后订单号",
+        remark="换客后备注",
+    )
+    result = order_service.update_order(db, order.id, confirmed)
+
+    db.refresh(order)
+    db.refresh(item)
+    db.refresh(source)
+    db.refresh(target)
+    assert result["replayed"] is False
+    assert order.customer_id == target.id
+    assert order.order_no == "换客后订单号"
+    assert order.remark == "换客后备注"
+    assert item.membership_level_snapshot == "supreme"
+    assert order.total_amount == item.unit_price
+    assert order.charged_amount == D("0.00")
+    assert source.balance == D("5000.00")
+    assert target.balance == D("9000.00")
+    request = db.query(domestic_models.DomesticOrderPricingRequest).one()
+    assert request.operation == "reprice_customer"
+
+
+def test_update_draft_customer_replay_and_hash_cover_other_header_fields(db):
+    user, _source, _product, base, order, item = _created_priced_draft(
+        db, "draft-customer-replay", membership_level=None
+    )
+    payload = _customer_reprice_payload(
+        "draft-customer-replay-request",
+        order.customer_id,
+        [_saved_item_expected(item)],
+        remark="第一次成功结果",
+    )
+
+    first = order_service.update_order(db, order.id, payload)
+    base.original_price = D("1300.00")
+    base.version = 2
+    db.commit()
+    replay = order_service.update_order(db, order.id, payload)
+
+    assert replay == {**first, "replayed": True}
+    assert db.query(domestic_models.DomesticOrderPricingRequest).count() == 1
+    changed = payload.model_copy(deep=True)
+    changed.remark = "同键不同头字段"
+    with pytest.raises(ValueError, match="不同内容"):
+        order_service.update_order(db, order.id, changed)
+    assert order.remark == "第一次成功结果"
+
+
+def test_update_customer_rejects_formal_order_and_missing_price_without_record(db):
+    user, customer, _product, base, order, item = _created_priced_draft(
+        db, "draft-customer-formal-missing"
+    )
+    submit = _draft_submit_payload("draft-customer-formal-submit", item)
+    order_service.submit_draft(db, order.id, submit, user.id)
+    formal_payload = _customer_reprice_payload(
+        "draft-customer-formal-request",
+        customer.id,
+        [_saved_item_expected(item)],
+    )
+    with pytest.raises(ValueError, match="草稿.*更换客户"):
+        order_service.update_order(db, order.id, formal_payload)
+    assert db.query(domestic_models.DomesticOrderPricingRequest).count() == 1
+
+    user2, customer2, _product2, base2, order2, item2 = _created_priced_draft(
+        db,
+        "draft-customer-missing",
+        attrs=_cap_attrs(craft="换客缺价工艺", length="22厘米"),
+    )
+    before = _saved_item_expected(item2)
+    db.delete(base2)
+    db.commit()
+    missing_payload = _customer_reprice_payload(
+        "draft-customer-missing-request",
+        customer2.id,
+        [before],
+        remark="不应写入",
+    )
+    with pytest.raises(pricing_service.DomesticQuoteChangedError) as caught:
+        order_service.update_order(db, order2.id, missing_payload)
+    assert caught.value.detail["changes"][0]["current_status"] == "missing_base_price"
+    db.refresh(order2)
+    db.refresh(item2)
+    assert order2.remark is None
+    assert _saved_item_expected(item2) == before
+    assert db.query(domestic_models.DomesticOrderPricingRequest).filter_by(
+        order_id=order2.id
+    ).count() == 0
+
+
+def test_draft_repricing_routes_require_submit_body_and_return_unified_409(db):
+    user, customer, _product, _base, order, item = _created_priced_draft(
+        db, "draft-repricing-routes", membership_level=None
+    )
+    stale = _draft_submit_payload("draft-repricing-route-submit", item)
+    customer.membership_level = "black"
+    db.commit()
+    client = _pricing_api_client(
+        db,
+        user.id,
+        "domestic:write",
+        raise_server_exceptions=False,
+    )
+
+    missing_body = client.post(f"/api/domestic/orders/{order.id}/submit")
+    submit_changed = client.post(
+        f"/api/domestic/orders/{order.id}/submit",
+        json=stale.model_dump(mode="json"),
+    )
+    update_changed = client.put(
+        f"/api/domestic/orders/{order.id}",
+        json={
+            "customer_id": customer.id,
+            "request_id": "draft-repricing-route-update",
+            "expected_quotes": [
+                quote.model_dump(mode="json") for quote in stale.expected_quotes
+            ],
+        },
+    )
+
+    assert missing_body.status_code == 422
+    assert submit_changed.status_code == 409
+    assert update_changed.status_code == 409
+    for response in (submit_changed, update_changed):
+        assert response.json()["detail"]["error_code"] == "DOMESTIC_QUOTE_CHANGED"
+        assert response.json()["detail"]["changes"][0]["item_id"] == item.id
+
+
+def test_submit_draft_mysql_sql_shape_locks_order_customer_items_then_base_prices(db):
+    user, _customer, _product, _base, order, item = _created_priced_draft(
+        db, "draft-submit-lock-shape"
+    )
+    statements = []
+
+    def capture(execute_state):
+        compiled = str(
+            execute_state.statement.compile(dialect=mysql.dialect())
+        ).lower()
+        if any(table in compiled for table in (
+            "ark_domestic_orders",
+            "ark_domestic_customers",
+            "ark_domestic_order_items",
+            "ark_domestic_base_prices",
+        )):
+            statements.append(compiled)
+
+    event.listen(db, "do_orm_execute", capture)
+    try:
+        order_service.submit_draft(
+            db,
+            order.id,
+            _draft_submit_payload("draft-submit-lock-shape-request", item),
+            user.id,
+        )
+    finally:
+        event.remove(db, "do_orm_execute", capture)
+
+    order_lock = next(i for i, sql in enumerate(statements) if (
+        "ark_domestic_orders" in sql and "for update" in sql
+    ))
+    customer_lock = next(i for i, sql in enumerate(statements) if (
+        "ark_domestic_customers" in sql and "for update" in sql
+    ))
+    item_lock = next(i for i, sql in enumerate(statements) if (
+        "ark_domestic_order_items" in sql
+        and "for update" in sql
+        and "order by ark_domestic_order_items.id asc" in sql
+    ))
+    base_lock = next(i for i, sql in enumerate(statements) if (
+        "ark_domestic_base_prices" in sql
+        and "for update" in sql
+        and "order by ark_domestic_base_prices.id asc" in sql
+    ))
+    assert order_lock < customer_lock < item_lock < base_lock
+
+
+def test_item_update_mysql_sql_shape_locks_order_before_item(db):
+    _user, _customer, _product, _base, order, item = _created_priced_draft(
+        db, "item-update-lock-shape"
+    )
+    statements = []
+
+    def capture(execute_state):
+        compiled = str(
+            execute_state.statement.compile(dialect=mysql.dialect())
+        ).lower()
+        if "for update" in compiled and any(table in compiled for table in (
+            "ark_domestic_orders", "ark_domestic_order_items"
+        )):
+            statements.append(compiled)
+
+    event.listen(db, "do_orm_execute", capture)
+    try:
+        order_service.update_item(
+            db,
+            item.id,
+            OrderItemUpdate(remark="锁序测试"),
+        )
+    finally:
+        event.remove(db, "do_orm_execute", capture)
+
+    order_lock = next(i for i, sql in enumerate(statements) if (
+        "ark_domestic_orders" in sql
+    ))
+    item_lock = next(i for i, sql in enumerate(statements) if (
+        "ark_domestic_order_items" in sql
+    ))
+    assert order_lock < item_lock
+
+
+def test_concurrent_sqlite_duplicate_submit_charges_exactly_once(tmp_path):
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'draft-submit-race.db'}",
+        connect_args={"check_same_thread": False, "timeout": 10},
+    )
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, expire_on_commit=False)
+    try:
+        with Session() as seed:
+            user, customer, _product, _base, order, item = _created_priced_draft(
+                seed, "draft-submit-race", balance="5000.00"
+            )
+            order_id = order.id
+            user_id = user.id
+            customer_id = customer.id
+            payload_json = _draft_submit_payload(
+                "draft-submit-race-request", item
+            ).model_dump(mode="json")
+
+        start = threading.Barrier(2, timeout=10)
+
+        def submit_once():
+            with Session() as session:
+                start.wait()
+                return order_service.submit_draft(
+                    session,
+                    order_id,
+                    DraftSubmitRequest.model_validate(payload_json),
+                    user_id,
+                )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = [future.result(timeout=20) for future in (
+                executor.submit(submit_once), executor.submit(submit_once)
+            )]
+
+        assert {result["replayed"] for result in results} == {False, True}
+        with Session() as verify:
+            order_row = verify.get(domestic_models.DomesticOrder, order_id)
+            customer_row = verify.get(domestic_models.DomesticCustomer, customer_id)
+            assert order_row.status == domestic_constants.ORDER_PRODUCING
+            assert customer_row.balance == D("4000.00")
+            assert verify.query(domestic_models.DomesticCustomerLedger).count() == 1
+            assert verify.query(domestic_models.DomesticOrderPricingRequest).count() == 1
+    finally:
+        engine.dispose()
 
 
 def test_formal_black_order_charges_discount_and_persists_pricing_snapshot(db):

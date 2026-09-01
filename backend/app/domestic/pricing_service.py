@@ -548,16 +548,21 @@ def lock_and_validate_order_quotes(
     *,
     customer_id: int,
     item_products: list[tuple[object, DomesticProduct]],
+    locked_customer: DomesticCustomer | None = None,
 ) -> tuple[DomesticCustomer, list[LockedOrderQuote]]:
     """Lock customer first, then every distinct price row in stable id order."""
 
-    customer = (
-        db.query(DomesticCustomer)
-        .filter(DomesticCustomer.id == customer_id)
-        .populate_existing()
-        .with_for_update()
-        .first()
-    )
+    customer = locked_customer
+    if customer is not None and customer.id != customer_id:
+        raise ValueError("锁定客户与报价客户不一致")
+    if customer is None:
+        customer = (
+            db.query(DomesticCustomer)
+            .filter(DomesticCustomer.id == customer_id)
+            .populate_existing()
+            .with_for_update()
+            .first()
+        )
     if customer is None:
         raise ValueError("客户不存在")
 
@@ -602,12 +607,16 @@ def lock_and_validate_order_quotes(
     quotes = []
     for item, product, key in keyed_items:
         previous = item.expected_quote
-        previous_json = _quote_json(previous.model_dump())
+        previous_json = _quote_json(
+            previous.model_dump(exclude={"client_key", "item_id"})
+        )
+        client_key = getattr(item, "client_key", None)
+        item_id = getattr(item, "item_id", None)
         base_row = rows_by_key.get(key)
         if base_row is None:
             changes.append({
-                "client_key": item.client_key,
-                "item_id": None,
+                "client_key": client_key,
+                "item_id": item_id,
                 "reasons": ["price_missing"],
                 "previous_quote": previous_json,
                 "current_quote": None,
@@ -631,15 +640,15 @@ def lock_and_validate_order_quotes(
         current = quote.expected_quote()
         current_json = _quote_json(current)
         current_expected_quotes.append({
-            "client_key": item.client_key,
-            "item_id": None,
+            "client_key": client_key,
+            "item_id": item_id,
             **current_json,
         })
         reasons = _quote_change_reasons(previous, current)
         if reasons:
             changes.append({
-                "client_key": item.client_key,
-                "item_id": None,
+                "client_key": client_key,
+                "item_id": item_id,
                 "reasons": reasons,
                 "previous_quote": previous_json,
                 "current_quote": current_json,
