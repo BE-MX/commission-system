@@ -212,11 +212,11 @@
 
 > **127 同样必须在停写维护窗口升级，禁止新旧写实例混部。** 旧代码不认识分流结果与跳过事实；先停止主站、小程序和 PDA 的旧版写流量，再执行 `alembic upgrade head` 并确认唯一 head，最后只启动新版本。127 只加结构，不修改任何工艺映射、产品路线或在制明细；业务切换必须在应用验证后单独走受控 cutover。
 
-> **128 是破坏性字段改名，也必须停写切换。** `ark_domestic_orders.order_type` 原本表示 `normal/special`，迁移中直接重命名为 `order_category`，再新增另一个语义不同的可空 `order_type` 和可空 `order_channel`；没有旧接口兼容层。结构升级、新版应用部署与 `domestic_attribute_cutover` 必须在同一维护窗口完成，旧写实例不得与新结构混用。
+> **129 是破坏性字段改名，也必须停写切换。** `ark_domestic_orders.order_type` 原本表示 `normal/special`，迁移中直接重命名为 `order_category`，再新增另一个语义不同的可空 `order_type` 和可空 `order_channel`；没有旧接口兼容层。结构升级、新版应用部署与 `domestic_attribute_cutover` 必须在同一维护窗口完成，旧写实例不得与新结构混用。
 
 - `ark_domestic_customers`：内贸客户，`shop_name` UNIQUE，`custom_code` 可选且 UNIQUE，另存会员等级、省/市和 `balance` 充值余额。有订单的客户禁删只停用。
 - `ark_domestic_customer_ledger`：客户充值/订单扣款/差额补扣/退款流水。`amount` 是有符号变动额，`balance_after` 是变动后快照，`business_key` 唯一；充值时将客户端 `request_id` 编码为业务键实现幂等。所有余额变动在客户行锁下完成，不允许透支。
-- `ark_domestic_products`：下单选属性后 find-or-create 沉淀，`attrs_key` 使用稳定 JSON 数组编码 `product_type/craft/net_color/size/length/density/hair_style_series`，UNIQUE 即产品身份，避免属性值含分隔符时碰撞；`route_id` 按工艺映射自动绑定，可人工改绑。128 新增可空 `hair_style_series`，并将 `size/density` 放宽为可空：头套使用工艺、发长、可选网帽颜色、必填尺码和发型系列，只有 `15厘米` 头套有必填发量；发片将工艺和尺寸合并存入 `craft`，只再保存发长，其余头套专属字段均为 `NULL`。标准属性值存 `domestic_cap_*` 与 `domestic_piece_*` 字典，特单自定义值存对应 `_special` 字典。
+- `ark_domestic_products`：下单选属性后 find-or-create 沉淀，`attrs_key` 使用稳定 JSON 数组编码 `product_type/craft/net_color/size/length/density/hair_style_series`，UNIQUE 即产品身份，避免属性值含分隔符时碰撞；`route_id` 按工艺映射自动绑定，可人工改绑。129 新增可空 `hair_style_series`，并将 `size/density` 放宽为可空：头套使用工艺、发长、可选网帽颜色、必填尺码和发型系列，只有 `15厘米` 头套有必填发量；发片将工艺和尺寸合并存入 `craft`，只再保存发长，其余头套专属字段均为 `NULL`。标准属性值存 `domestic_cap_*` 与 `domestic_piece_*` 字典，特单自定义值存对应 `_special` 字典。
 - `ark_domestic_craft_routes`：`(product_type, craft)` UNIQUE → `route_id`。这张表是「下单人零操作」的支点：配一次，之后同工艺的新产品自动带路线。
 - `ark_domestic_orders`：`domestic_no`（系统号 `DO{YYYYMMDD}-{NNN}` UNIQUE）+ `order_no`（客户订单号）+ 客户 + `order_category`（`normal=普货 / special=特单`）+ `order_type`（`sys_dict: domestic_order_type`）+ `order_channel`（`sys_dict: domestic_order_channel`）+ `status`（0草稿/1生产中/2已完工/3已发货/4已终止）+ `total_amount` + `charged_amount` + 软删。应用层要求新建订单的类型和渠道必填；数据库列暂时可空是为了保留历史行，读取历史 `NULL` 时展示“未填写”，不做猜测或回填。`request_id` UNIQUE 与 `request_hash` 防止弱网重试重复建单/扣款；`next_line_no` 在订单行锁下分配 A1/A2/…，避免追加明细与改单/报工发生反向锁序；`item_count` / `total_unit_qty` 在同一订单锁下维护当前行数和合计件数。草稿不扣款，提交时一次性扣款；在制单改数量/单价只结算差额，终止或可删除时退回已扣金额。
 - `ark_domestic_order_items`：一单多品，`line_no` 是订单内稳定非空序号（展示 A1/A2/…），`unit_price` 与 `order_qty` 推导明细金额。逐件码需同步物化，API 限制每单最多 50 行、合计 5000 件、单明细 2000 件。其余含四组图文要求、路线快照和明细级发货信息。
@@ -229,12 +229,12 @@
 - `ark_domestic_skip_logs` / `ark_domestic_skip_units`：127 新增的稀疏跳过审计。来源为 `decision / optional_bypass / manual`，按具体单件记录；`manual` 还保存数量/逐件模式、稳定请求号、操作人和 5～500 字原因。跳过不写 `ark_domestic_report_logs`，所以不产生工资。撤销触发报工时会在同一事务撤销它生成的跳过；只要任一对应单件已有更后面的真实报工，就必须先撤最早的下游实际报工。
 - 共用 `process.show_in_domestic_track`：控制该工序是否出现在客户免登录进度页；内部订单页和报工不受影响。
 
-### 迁移 128 的字典与切换口径
+### 迁移 129 的字典与切换口径
 
 - `domestic_order_type` 的稳定编码为 `first_order/repurchase/return_order/supplementary/after_sales_remake`，标签分别为首单/复购/返单/补单/售后重做；`domestic_order_channel` 为 `wechat/phone/exhibition/offline_visit/other`，标签分别为微信/电话/展会/线下拜访/其他。
 - 头套标准字典为 `domestic_cap_craft`、`domestic_cap_net_color`、`domestic_cap_size`、`domestic_cap_length`、`domestic_cap_density`、`domestic_cap_hair_style_series`；发片标准字典为 `domestic_piece_craft_size`、`domestic_piece_length`。特单值使用相同 type 加 `_special`，只允许在特单保存事务中按当前可见属性创建和复用；普货只接受启用的标准字典项。
 - 特单自定义属性与订单/草稿同事务保存，失败不残留字典项；自定义工艺还在同一事务建立默认路线映射，头套固定“头套网帽（递针）”、发片固定“发片网底（递针）”。默认路线缺失、停用或没有工序时拒绝写入。
-- `python -m scripts.domestic_attribute_cutover` 默认只读预检；只有显式 `--apply` 才完整替换受管标准字典与标准工艺映射。它保留所有 `_special` 字典与特单映射，不更新/删除 `ark_domestic_products`、`ark_domestic_orders`、`ark_domestic_order_items` 或属性/路线快照；必须与 128 结构升级和新版应用部署处于同一停写维护窗口。
+- `python -m scripts.domestic_attribute_cutover` 默认只读预检；只有显式 `--apply` 才完整替换受管标准字典与标准工艺映射。它保留所有 `_special` 字典与特单映射，不更新/删除 `ark_domestic_products`、`ark_domestic_orders`、`ark_domestic_order_items` 或属性/路线快照；必须与 129 结构升级和新版应用部署处于同一停写维护窗口。
 - 本次迁移和切换不清理历史订单。即使业务确认未来可以全部清空，也必须作为后续单独授权的破坏性操作执行，不能夹带在 Alembic 或属性切换命令中。
 
 ## 采购节大屏（迁移 084/087，2026-07-30、2026-08-04）

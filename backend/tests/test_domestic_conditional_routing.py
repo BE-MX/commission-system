@@ -47,13 +47,14 @@ from app.production.models import (
 )
 
 
-def test_domestic_route_migration_is_the_only_head_after_customer_126():
+def test_domestic_attribute_migration_is_the_only_head_after_shipping_inspection():
     backend_root = Path(__file__).resolve().parents[1]
     config = Config(str(backend_root / "alembic.ini"))
     config.set_main_option("script_location", str(backend_root / "alembic"))
     revisions = ScriptDirectory.from_config(config)
 
-    assert revisions.get_heads() == ["128_domestic_order_attributes"]
+    assert revisions.get_heads() == ["129_domestic_order_attributes"]
+    assert revisions.get_revision("129_domestic_order_attributes").down_revision == "128_shipping_inspection"
     assert revisions.get_revision("127_domestic_route_rules").down_revision == "126"
 
 

@@ -579,7 +579,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 - 鉴权：三端点均 `get_current_user`（个人域数据，user_id 取 JWT sub 行级隔离，同 `/api/auth/me` 模式，不挂 require_permission——工作台是全员落地页无页面权限码）。
 - `POST /greeting` — 工作台每日 AI 问候（2026-08-13）。body `{refresh?, context:{date,weekday,period,user_name,holidays_today[],upcoming_holidays[],pending{}}}`，上下文由前端聚合（节假日是前端纯计算引擎 `views/dashboard/holidays.js`，口径唯一）。返回 `{text, source: ai|fallback, date}`；preset 解析优先专用 `dashboard_greeting`，缺省退任一直连可用预设，模型未配置/调用失败走规则模板兜底，进程内按 (user, date) 缓存（`refresh=true` 绕过）。同 `get_current_user` 个人域口径。
 
-## 内贸订单（`/api/domestic`，081/082/116/127/128 迁移，2026-07-27、2026-08-17、2026-08-31、2026-09-01）
+## 内贸订单（`/api/domestic`，081/082/116/127/129 迁移，2026-07-27、2026-08-17、2026-08-31、2026-09-01）
 
 内贸生产的下单 + 按数量拆批报工。与外贸「生产订单（`/api/stock/production`）+ 生产报工（`/api/production`）」是**平行的两套**：外贸报工整行 0/1 流转，内贸带数量。只共用工序/工艺路线/工人工序绑定三类全局资产。
 
@@ -588,7 +588,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 - 产品与工艺映射：`GET /products`（分页 keyword/product_type/route_bound）、`PUT /products/{id}/route`（人工改绑，`domestic:admin`，只影响之后的新明细）、`GET /craft-routes`、`POST /craft-routes`（配「产品类型+工艺 → 路线」映射，`domestic:admin`；保存时自动回填此前因缺映射而未绑路线的同工艺产品）、`DELETE /craft-routes/{id}`。头套的结构化属性为工艺、发长、网帽颜色（选填）、头套尺码、发型系列；仅 `15厘米` 显示并要求发量，其他发长会清空且不保存发量。发片只使用合并后的 `craft`（界面名“发片工艺/尺寸”）和发长，不接受独立 `size/net_color/density/hair_style_series`。现有发型文字和参考图继续保留。
 - 头套标准值：工艺为递旋/中分界/左分界/大U型/递顶；发长为 15～60厘米、每 5厘米一档；发量为 65%/80%/90%；网帽颜色为紫网全头套/绿网全头套/红网全头套/绿网九分头/黑网九分头/特单网帽；尺码为 SS/S/M/L/XL/51/53/57/59/取模定制；发型系列为直发/纹理/卷发/毛坯/来图直发/来图纹理/来图卷发。
 - 发片标准值：“发片工艺/尺寸”为 U型13*15/U型14*16/U型16*18/全递针9*14/全递针12*14/全递针13*15/全递针14*16/全递针15*17/特单发片；发长为 20/25/30/35/40厘米。乘号按业务值存半角 `*`。
-- 订单：迁移 128 是破坏性字段改名：旧 `order_type=normal/special` 改为 `order_category`，不保留旧请求/响应兼容；新 `order_type` 和 `order_channel` 对新建订单必填且必须命中启用字典项。`POST /orders` 的明细必须传 `unit_price`，前端传稳定的 `request_id` 防止网络重试重复建单/扣款，可传 `is_draft=true` 仅保存不扣款；非草稿创建和 `POST /orders/{id}/submit` 都会原子扣减客户余额，余额不足整单失败。每单最多 50 行、合计 5000 件，单明细最多 2000 件。`GET /orders` 支持 `order_category/order_type/order_channel` 筛选；列表、详情、扫码、流转卡与导出返回或展示三组值和标签。历史订单的新字段保持 `NULL`，读取时标签显示“未填写”，不推断也不回填。`GET /orders/{id}` 返回 `total_amount/charged_amount`；`GET /orders/{id}/export` 按当前订单字段生成横向打印的内贸领货单 `.xlsx`，超长制作要求自动附加「完整要求」工作表；在制单改数量/单价结算差额，终止或允许删除时退回已扣额。
+- 订单：迁移 129 是破坏性字段改名：旧 `order_type=normal/special` 改为 `order_category`，不保留旧请求/响应兼容；新 `order_type` 和 `order_channel` 对新建订单必填且必须命中启用字典项。`POST /orders` 的明细必须传 `unit_price`，前端传稳定的 `request_id` 防止网络重试重复建单/扣款，可传 `is_draft=true` 仅保存不扣款；非草稿创建和 `POST /orders/{id}/submit` 都会原子扣减客户余额，余额不足整单失败。每单最多 50 行、合计 5000 件，单明细最多 2000 件。`GET /orders` 支持 `order_category/order_type/order_channel` 筛选；列表、详情、扫码、流转卡与导出返回或展示三组值和标签。历史订单的新字段保持 `NULL`，读取时标签显示“未填写”，不推断也不回填。`GET /orders/{id}` 返回 `total_amount/charged_amount`；`GET /orders/{id}/export` 按当前订单字段生成横向打印的内贸领货单 `.xlsx`，超长制作要求自动附加「完整要求」工作表；在制单改数量/单价结算差额，终止或允许删除时退回已扣额。
 - 特单自定义属性：只有 `order_category=special` 时，当前产品类型和条件下**可见**的属性下拉允许直接输入新值；新值保存到对应 `_special` 字典，只在后续特单中复用，普货下拉不展示且后端拒绝非标准值。自定义项仅在草稿或订单保存事务内创建，订单失败会一并回滚，不提供脱离订单的即时创建端点。自定义工艺同时自动映射到该产品类型默认路线（头套“头套网帽（递针）”、发片“发片网底（递针）”）；目标路线缺失、停用或无工序时拒绝保存。特单切回普货只清空非标准值，产品类型或发长变化会清空已不适用的条件属性。
 - 明细：`POST /orders/{id}/items` 必须传稳定的 `request_id`，同订单内幂等重放不会重复加行或重复扣款；`PUT /items/{id}`（改数量不得低于任一工序已完成数，也不得删掉已报工的高序号单件码）、`DELETE /items/{id}`、`POST /items/{id}/attach-route`、`POST /items/{id}/ship`、`GET /items/{id}/progress`、`GET /items/{id}/print-card`。`GET /items/{id}/unit-qrcodes?start_no=&end_no=` 返回每件唯一的 `ARK-DU:{unit_id}:{sign}` 和 `A1-01` 显示码，单次最多 200 个供标签打印。
 - 逐工序进度对象（订单详情 / `items/{id}/progress` / 速查共用同一形状）：`progress_id / step_order / process_name / order_qty / upstream_qty / completed_qty / skipped_qty / passed_qty / required_qty / reportable_qty / rule_type / outcome_options / status / first_reported_at / last_reported_at`，外加 `last_reported_by + last_report_qty`。`completed_qty` 只是真实工作，`skipped_qty` 是无需做，`passed_qty` 才是下游资格；客户端不得把跳过显示成已完成。
@@ -614,9 +614,9 @@ Android PDA 客户端位于 `pda-reporting/`，不新增报工业务端点：先
 - `GET /images/{path}` — 参考图（小程序 token 无 RBAC 声明，走不了主站图片端点，故有这个同源版本）。
 - `GET /track?scene=` — **免登录**订单进度：scene（`i:<item_id>:<hmac16>`）验签后返回完整订单、客户、金额、全部产品明细、图文要求、发货和进度信息。工序由 `process.show_in_domestic_track` 服务端过滤，隐藏工序不出现在响应中；`GET /track-image?scene=&rel_path=` 只允许读取该订单明细真实引用的图片。验签不过 403，软删单/明细不存在 404，默认签名密钥下 503 fail-closed。
 
-### 128 属性字典切换门禁
+### 129 属性字典切换门禁
 
-迁移 128 只改数据库结构，不自动替换生产字典和工艺映射。结构升级、新版后端/前端部署与属性切换必须安排在同一个停写维护窗口，避免旧代码继续把 `normal/special` 写进已经改义的 `order_type`，或新表单短暂读取旧字典。
+迁移 129 只改数据库结构，不自动替换生产字典和工艺映射。结构升级、新版后端/前端部署与属性切换必须安排在同一个停写维护窗口，避免旧代码继续把 `normal/special` 写进已经改义的 `order_type`，或新表单短暂读取旧字典。
 
 从 `backend/` 目录运行默认只读预检；它校验两条默认路线存在、启用且有启用工序，并以 JSON 列出标准字典、废弃字典、标准工艺映射的增删计划及保持不变的产品/订单/明细数量：
 

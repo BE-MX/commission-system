@@ -4,8 +4,8 @@ When downgrading, nullable size/density values created under the new contract
 are converted to empty strings before restoring the old NOT NULL constraints.
 Product rows are preserved, but the old schema cannot represent nullability.
 
-Revision ID: 128_domestic_order_attributes
-Revises: 127_domestic_route_rules
+Revision ID: 129_domestic_order_attributes
+Revises: 128_shipping_inspection
 Create Date: 2026-09-01
 """
 
@@ -13,8 +13,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "128_domestic_order_attributes"
-down_revision = "127_domestic_route_rules"
+revision = "129_domestic_order_attributes"
+down_revision = "128_shipping_inspection"
 branch_labels = None
 depends_on = None
 

@@ -12,7 +12,7 @@
 
 ## File map
 
-- Create `backend/alembic/versions/128_domestic_order_attributes.py`: rename order category column, add order metadata and product attribute schema.
+- Create `backend/alembic/versions/129_domestic_order_attributes.py`: rename order category column, add order metadata and product attribute schema.
 - Create `backend/app/domestic/attribute_service.py`: option reads, validation, special-value creation, and default-route mapping.
 - Create `backend/scripts/domestic_attribute_cutover.py`: guarded standard dictionary and standard route replacement.
 - Create `backend/tests/test_domestic_attributes.py`: domain validation, transaction, route, and API contract tests.
@@ -40,7 +40,7 @@
 ### Task 1: Schema and order-field contract
 
 **Files:**
-- Create: `backend/alembic/versions/128_domestic_order_attributes.py`
+- Create: `backend/alembic/versions/129_domestic_order_attributes.py`
 - Modify: `backend/app/domestic/constants.py`
 - Modify: `backend/app/domestic/models.py`
 - Modify: `backend/app/domestic/schemas.py`
@@ -75,7 +75,7 @@ Expected: failures because `order_category`, `order_channel`, `hair_style_series
 
 - [ ] **Step 3: Add migration and minimal model/schema implementation**
 
-Use revision `128_domestic_order_attributes`, down revision `127_domestic_route_rules`. Rename `ark_domestic_orders.order_type` to `order_category`; add nullable `order_type` and `order_channel`; add nullable `ark_domestic_products.hair_style_series`; make product `size` and `density` nullable. Keep the new order columns nullable only for existing rows, while Pydantic requires them for all new/updated orders.
+Use revision `129_domestic_order_attributes`, down revision `128_shipping_inspection`. Rename `ark_domestic_orders.order_type` to `order_category`; add nullable `order_type` and `order_channel`; add nullable `ark_domestic_products.hair_style_series`; make product `size` and `density` nullable. Keep the new order columns nullable only for existing rows, while Pydantic requires them for all new/updated orders.
 
 Define:
 
@@ -100,7 +100,7 @@ Expected: all Task 1 tests pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/alembic/versions/128_domestic_order_attributes.py backend/app/domestic/constants.py backend/app/domestic/models.py backend/app/domestic/schemas.py backend/tests/test_domestic_attributes.py
+git add backend/alembic/versions/129_domestic_order_attributes.py backend/app/domestic/constants.py backend/app/domestic/models.py backend/app/domestic/schemas.py backend/tests/test_domestic_attributes.py
 git commit -m "feat: define domestic order attribute schema"
 ```
 
@@ -355,7 +355,7 @@ Expected: Vite exits 0.
 
 Run: `cd backend && alembic heads`
 
-Expected: one head, `128_domestic_order_attributes`.
+Expected: one head, `129_domestic_order_attributes`.
 
 Run: `python scripts/git_sweep.py`
 

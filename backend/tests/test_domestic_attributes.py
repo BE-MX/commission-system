@@ -177,9 +177,9 @@ def test_downgrade_normalizes_null_product_attrs_before_not_null(monkeypatch):
         Path(__file__).parents[1]
         / "alembic"
         / "versions"
-        / "128_domestic_order_attributes.py"
+        / "129_domestic_order_attributes.py"
     )
-    spec = importlib.util.spec_from_file_location("domestic_attributes_128", migration_path)
+    spec = importlib.util.spec_from_file_location("domestic_attributes_129", migration_path)
     migration = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(migration)
