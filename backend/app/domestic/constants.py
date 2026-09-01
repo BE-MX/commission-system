@@ -1,6 +1,6 @@
 """内贸域常量。
 
-产品类型与订单类型是**结构性枚举**，刻意不进 sys_dict：
+产品类型与订单类别是**结构性枚举**，刻意不进 sys_dict：
 它们驱动前端条件渲染和路线映射结构，加一个值必须改代码，
 放进字典是假灵活。属性值域（工艺/网底色/尺寸/长度/发量）才走字典。
 """
@@ -8,33 +8,42 @@
 # 产品类型 → 展示名
 PRODUCT_TYPES = {"cap": "头套", "piece": "发片"}
 
-# 订单类型 → 展示名
-ORDER_TYPES = {"normal": "普货", "special": "特单"}
+# 订单类别 → 展示名
+ORDER_CATEGORIES = {"normal": "普货", "special": "特单"}
 
-# 属性值域字典 type（前端下拉的数据源，初值见 081 迁移）
+# 订单类型/渠道是描述性值域，由 sys_dict 维护
+ORDER_TYPE_DICT = "domestic_order_type"
+ORDER_CHANNEL_DICT = "domestic_order_channel"
+
+# 属性值域字典 type（前端下拉的数据源，由内贸属性切换命令维护）
 DICT_CAP_CRAFT = "domestic_cap_craft"
-DICT_NET_COLOR = "domestic_net_color"
-DICT_PIECE_CRAFT = "domestic_piece_craft"
+DICT_CAP_NET_COLOR = "domestic_cap_net_color"
 DICT_CAP_SIZE = "domestic_cap_size"
-DICT_PIECE_SIZE = "domestic_piece_size"
-DICT_LENGTH = "domestic_length"
-DICT_DENSITY = "domestic_density"
+DICT_CAP_LENGTH = "domestic_cap_length"
+DICT_CAP_DENSITY = "domestic_cap_density"
+DICT_CAP_HAIR_STYLE_SERIES = "domestic_cap_hair_style_series"
+DICT_PIECE_CRAFT_SIZE = "domestic_piece_craft_size"
+DICT_PIECE_LENGTH = "domestic_piece_length"
 
 # 按产品类型给出该类型用到的字典 type，前端据此条件渲染
 ATTR_DICTS = {
     "cap": {
         "craft": DICT_CAP_CRAFT,
-        "net_color": DICT_NET_COLOR,
+        "net_color": DICT_CAP_NET_COLOR,
         "size": DICT_CAP_SIZE,
-        "length": DICT_LENGTH,
-        "density": DICT_DENSITY,
+        "length": DICT_CAP_LENGTH,
+        "density": DICT_CAP_DENSITY,
+        "hair_style_series": DICT_CAP_HAIR_STYLE_SERIES,
     },
     "piece": {
-        "craft": DICT_PIECE_CRAFT,
-        "size": DICT_PIECE_SIZE,
-        "length": DICT_LENGTH,
-        "density": DICT_DENSITY,
+        "craft": DICT_PIECE_CRAFT_SIZE,
+        "length": DICT_PIECE_LENGTH,
     },
+}
+
+DEFAULT_ROUTE_NAMES = {
+    "cap": "头套网帽（递针）",
+    "piece": "发片网底（递针）",
 }
 
 # 订单状态

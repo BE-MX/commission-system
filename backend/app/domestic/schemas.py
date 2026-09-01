@@ -68,22 +68,39 @@ class ProductAttrs(BaseModel):
     """产品属性组合 —— 这组值唯一决定一个内贸产品"""
 
     product_type: Literal["cap", "piece"] = Field(..., description="cap=头套,piece=发片")
-    craft: str = Field(..., min_length=1, max_length=64, description="工艺")
+    craft: str = Field(..., min_length=1, max_length=64, description="头套工艺 / 发片工艺尺寸")
     net_color: str | None = Field(None, max_length=64, description="网底颜色（仅头套）")
-    size: str = Field(..., min_length=1, max_length=64, description="尺寸")
+    size: str | None = Field(None, max_length=64, description="尺寸（仅头套）")
     length: str = Field(..., min_length=1, max_length=32, description="长度")
-    density: str = Field(..., min_length=1, max_length=32, description="发量")
+    density: str | None = Field(None, max_length=32, description="发量（仅 15 厘米头套）")
+    hair_style_series: str | None = Field(None, max_length=64, description="发型系列（仅头套）")
 
-    @field_validator("craft", "net_color", "size", "length", "density")
+    @field_validator("craft", "net_color", "size", "length", "density", "hair_style_series")
     @classmethod
     def _strip(cls, v):
-        return v.strip() if isinstance(v, str) else v
+        value = v.strip() if isinstance(v, str) else v
+        return value or None
 
     @model_validator(mode="after")
-    def _net_color_only_for_cap(self):
-        # 发片没有网底，带值会污染 attrs_key 让同一产品分裂成两个
-        if self.product_type == "piece" and self.net_color:
+    def _normalize_conditional_attrs(self):
+        if not self.craft or not self.length:
+            raise ValueError("工艺和发长不能为空")
+        if self.product_type == "piece":
+            # 发片的 craft 已合并工艺/尺寸，其他头套属性不参与产品身份。
             self.net_color = None
+            self.size = None
+            self.density = None
+            self.hair_style_series = None
+            return self
+        if not self.size:
+            raise ValueError("头套尺码不能为空")
+        if not self.hair_style_series:
+            raise ValueError("头套发型系列不能为空")
+        if self.length == "15厘米":
+            if not self.density:
+                raise ValueError("15厘米头套必须填写发量")
+        else:
+            self.density = None
         return self
 
 
@@ -193,7 +210,11 @@ class OrderCreate(BaseModel):
     order_date: date
     customer_id: int | None = Field(None, description="已有客户 ID")
     customer_shop_name: str | None = Field(None, max_length=120, description="就地新建客户的店名")
-    order_type: Literal["normal", "special"] = "normal"
+    order_category: Literal["normal", "special"] = "normal"
+    order_type: Literal[
+        "first_order", "repurchase", "return_order", "supplementary", "after_sales_remake"
+    ]
+    order_channel: Literal["wechat", "phone", "exhibition", "offline_visit", "other"]
     is_draft: bool = Field(False, description="true=只存草稿，不扣客户余额")
     remark: str | None = Field(None, max_length=1000)
     items: list[OrderItemInput] = Field(..., min_length=1, max_length=50)
@@ -226,7 +247,11 @@ class OrderUpdate(BaseModel):
     order_no: str | None = Field(None, min_length=1, max_length=64)
     order_date: date | None = None
     customer_id: int | None = None
-    order_type: Literal["normal", "special"] | None = None
+    order_category: Literal["normal", "special"] | None = None
+    order_type: Literal[
+        "first_order", "repurchase", "return_order", "supplementary", "after_sales_remake"
+    ] | None = None
+    order_channel: Literal["wechat", "phone", "exhibition", "offline_visit", "other"] | None = None
     remark: str | None = Field(None, max_length=1000)
 
 
