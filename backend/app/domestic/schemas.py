@@ -255,6 +255,13 @@ class OrderUpdate(BaseModel):
     order_channel: str | None = Field(None, min_length=1, max_length=32)
     remark: str | None = Field(None, max_length=1000)
 
+    @field_validator("order_category", mode="before")
+    @classmethod
+    def _reject_null_order_category(cls, value: str | None) -> str:
+        if value is None:
+            raise ValueError("订单类别传入时不能为空")
+        return value
+
     @field_validator("order_type", "order_channel", mode="before")
     @classmethod
     def _strip_order_dimensions(cls, value: str | None) -> str | None:

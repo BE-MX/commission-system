@@ -11,6 +11,7 @@ import {
   validateItemAttributes,
   visibleAttributeFields,
 } from '../src/views/domestic/domesticAttributeRules.js'
+import { createLatestRequestRunner } from '../src/views/domestic/composables/latestRequest.js'
 
 const options = {
   attr_dicts: {
@@ -198,4 +199,40 @@ test('下单、列表和产品页保持新属性合约', () => {
   assert.match(productsView, /label="工艺\/尺寸"/)
   assert.match(productsView, /prop="hair_style_series"/)
   assert.match(productsView, /row\.product_type === 'cap'/)
+})
+
+test('客户远程搜索只允许最新请求更新结果和 loading', async () => {
+  const deferred = () => {
+    let resolve
+    const promise = new Promise(done => { resolve = done })
+    return { promise, resolve }
+  }
+  const first = deferred()
+  const second = deferred()
+  const runLatest = createLatestRequestRunner()
+  let customers = []
+  let loading = false
+  const search = request => {
+    loading = true
+    return runLatest(
+      () => request,
+      value => { customers = value },
+      () => { loading = false },
+    )
+  }
+
+  const firstRun = search(first.promise)
+  const secondRun = search(second.promise)
+  second.resolve(['新结果'])
+  await secondRun
+  assert.deepEqual(customers, ['新结果'])
+  assert.equal(loading, false)
+
+  first.resolve(['过期结果'])
+  await firstRun
+  assert.deepEqual(customers, ['新结果'])
+  assert.equal(loading, false)
+
+  const createLogic = read('../src/views/domestic/composables/useDomesticOrderCreate.js')
+  assert.match(createLogic, /createLatestRequestRunner/)
 })

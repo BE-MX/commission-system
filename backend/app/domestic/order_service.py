@@ -774,12 +774,11 @@ def update_order(db: Session, order_id: int, payload: OrderUpdate) -> DomesticOr
     if order.status == C.ORDER_TERMINATED:
         raise ValueError("已终止的订单不能编辑")
     data = payload.model_dump(exclude_unset=True)
-    if "order_type" in data or "order_channel" in data:
-        attribute_service.validate_order_dimensions(
-            db,
-            data.get("order_type"),
-            data.get("order_channel"),
-        )
+    attribute_service.validate_order_dimensions(
+        db,
+        data.get("order_type", order.order_type),
+        data.get("order_channel", order.order_channel),
+    )
     if data.get("order_category") == "normal" and order.order_category != "normal":
         item_rows = db.query(
             DomesticOrderItem.line_no,

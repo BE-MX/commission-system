@@ -22,6 +22,7 @@ import {
   validateItemAttributes,
   visibleAttributeFields,
 } from '@/views/domestic/domesticAttributeRules'
+import { createLatestRequestRunner } from '@/views/domestic/composables/latestRequest'
 
 function todayStr() {
   return currentBeijingDate()
@@ -61,6 +62,7 @@ export function useDomesticOrderCreate() {
   const craftRoutes = ref([])
   const customers = ref([])
   const customerLoading = ref(false)
+  const runLatestCustomerSearch = createLatestRequestRunner()
   const orderRequestId = ref(makeRequestId())
 
   const form = reactive({
@@ -190,12 +192,11 @@ export function useDomesticOrderCreate() {
 
   async function searchCustomers(keyword) {
     customerLoading.value = true
-    try {
-      const res = await listCustomers({ page: 1, page_size: 50, keyword, status: 1 })
-      customers.value = res.data?.items || []
-    } finally {
-      customerLoading.value = false
-    }
+    await runLatestCustomerSearch(
+      () => listCustomers({ page: 1, page_size: 50, keyword, status: 1 }),
+      res => { customers.value = res.data?.items || [] },
+      () => { customerLoading.value = false },
+    )
   }
 
   function validate() {

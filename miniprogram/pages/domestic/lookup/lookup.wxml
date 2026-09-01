@@ -46,7 +46,7 @@
       </view>
       <text class="lk-order-cust">{{order.customer_name}} · 客户单号 {{order.order_no}}</text>
       <view class="lk-order-meta">
-        <text>{{order.order_type_label}}</text>
+        <text>{{order.order_category_label}} · {{order.order_type_label}} · {{order.order_channel_label}}</text>
         <text>下单 {{order.order_date}}</text>
       </view>
     </view>

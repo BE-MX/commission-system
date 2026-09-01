@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, select
+from sqlalchemy.dialects import mysql
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
@@ -110,6 +111,103 @@ def test_order_update_keeps_patch_semantics():
     for field_name in ("order_type", "order_channel"):
         with pytest.raises(ValidationError):
             OrderUpdate(**{field_name: None})
+    with pytest.raises(ValidationError):
+        OrderUpdate(order_category=None)
+
+
+def test_mysql_dictionary_code_comparison_is_binary_exact():
+    statement = select(SysDict.id).where(
+        attribute_service._exact_code_predicate("mysql", "FIRST_ORDER")
+    )
+
+    sql = str(statement.compile(
+        dialect=mysql.dialect(),
+        compile_kwargs={"literal_binds": True},
+    ))
+
+    assert "CAST(sys_dict.code AS BINARY) = 'FIRST_ORDER'" in sql
+
+
+class _FakeDictQuery:
+    def __init__(self, row):
+        self.row = row
+
+    def filter(self, *_conditions):
+        return self
+
+    def populate_existing(self):
+        return self
+
+    def with_for_update(self):
+        return self
+
+    def first(self):
+        return self.row
+
+
+class _FakeSavepoint:
+    def rollback(self):
+        return None
+
+
+class _FakeMySQLDictDb:
+    def __init__(self, rows, *, conflict="unique conflict"):
+        self.queries = iter(_FakeDictQuery(row) for row in rows)
+        self.conflict = conflict
+
+    def query(self, _model):
+        return next(self.queries)
+
+    def get_bind(self):
+        return type("Bind", (), {"dialect": type("Dialect", (), {"name": "mysql"})()})()
+
+    def begin_nested(self):
+        return _FakeSavepoint()
+
+    def add(self, _row):
+        return None
+
+    def flush(self):
+        raise IntegrityError("INSERT", {}, Exception(self.conflict))
+
+
+def test_active_value_rejects_case_different_row_even_if_database_returns_it():
+    wrong_case = _dict_row(C.ORDER_TYPE_DICT, "FIRST_ORDER")
+
+    assert attribute_service._active_value(
+        _FakeMySQLDictDb([wrong_case]), C.ORDER_TYPE_DICT, "first_order"
+    ) is None
+
+
+def test_special_value_unique_race_never_reuses_case_different_row():
+    inactive_wrong_case = _dict_row(
+        f"{C.DICT_CAP_SIZE}_special", "SS", active=False
+    )
+    active_wrong_case = _dict_row(f"{C.DICT_CAP_SIZE}_special", "SS")
+    db = _FakeMySQLDictDb([
+        inactive_wrong_case,
+        active_wrong_case,
+        inactive_wrong_case,
+    ])
+
+    with pytest.raises(ValueError, match="大小写不同"):
+        attribute_service._create_special_value(
+            db, f"{C.DICT_CAP_SIZE}_special", "ss"
+        )
+
+
+def test_special_value_unique_race_reports_exact_inactive_winner():
+    exact_inactive = _dict_row(
+        f"{C.DICT_CAP_SIZE}_special", "ss", active=False
+    )
+    db = _FakeMySQLDictDb(
+        [None, None, exact_inactive], conflict="inactive unique race"
+    )
+
+    with pytest.raises(ValueError, match="已停用"):
+        attribute_service._create_special_value(
+            db, f"{C.DICT_CAP_SIZE}_special", "ss"
+        )
 
 
 def test_piece_has_one_combined_craft_size_attribute():
@@ -569,6 +667,60 @@ def test_order_dimensions_use_active_dictionary_values(db):
             order_service.create_order(db, payload, context["user"].id)
 
 
+def test_normal_order_rejects_case_different_order_type_and_size(db):
+    context = _seed_attribute_context(db)
+    db.add_all([
+        _dict_row(C.ORDER_TYPE_DICT, "FIRST_ORDER"),
+        _dict_row(C.DICT_CAP_SIZE, "SS"),
+    ])
+    db.commit()
+
+    wrong_type = _service_order(
+        context,
+        request_id="case-sensitive-type",
+        order_category="normal",
+        order_type="first_order",
+    )
+    with pytest.raises(ValueError, match="订单类型.*数据字典"):
+        order_service.create_order(db, wrong_type, context["user"].id)
+
+    wrong_size = _service_order(
+        context,
+        request_id="case-sensitive-size",
+        order_category="normal",
+        items=[OrderItemInput(
+            attrs=ProductAttrs(**_cap_attrs(size="ss")),
+            order_qty=1,
+        )],
+    )
+    with pytest.raises(ValueError, match="尺码.*切换为特单"):
+        order_service.create_order(db, wrong_size, context["user"].id)
+
+
+def test_special_order_treats_case_different_standard_value_as_custom(db):
+    context = _seed_attribute_context(db)
+    db.add(_dict_row(C.DICT_CAP_SIZE, "SS"))
+    db.commit()
+
+    result = order_service.create_order(
+        db,
+        _service_order(
+            context,
+            request_id="case-sensitive-special-size",
+            items=[OrderItemInput(
+                attrs=ProductAttrs(**_cap_attrs(size="ss")),
+                order_qty=1,
+            )],
+        ),
+        context["user"].id,
+    )
+
+    assert result["id"]
+    assert db.query(SysDict).filter_by(
+        type=f"{C.DICT_CAP_SIZE}_special", code="ss", is_active=True
+    ).count() == 1
+
+
 def test_order_read_contract_uses_dynamic_labels_and_keeps_missing_history_blank(db):
     context = _seed_attribute_context(db)
     db.query(SysDict).filter_by(type=C.ORDER_TYPE_DICT, code="future_order").update(
@@ -782,6 +934,68 @@ def test_special_order_with_custom_attrs_cannot_be_changed_to_normal(db):
             db,
             created["id"],
             OrderUpdate(order_category="normal"),
+        )
+
+
+def test_update_order_requires_complete_active_final_dimensions(db):
+    context = _seed_attribute_context(db)
+    historical = DomesticOrder(
+        domestic_no="DO20260901-998",
+        order_no="HISTORY-EDIT-NULL",
+        order_date=date(2026, 9, 1),
+        customer_id=context["customer"].id,
+        order_category="normal",
+        order_type=None,
+        order_channel=None,
+        status=C.ORDER_DRAFT,
+        total_amount=0,
+        charged_amount=0,
+        next_line_no=1,
+        item_count=0,
+        total_unit_qty=0,
+        created_by=context["user"].id,
+        deleted_flag=0,
+    )
+    db.add(historical)
+    db.commit()
+
+    with pytest.raises(ValueError, match="订单类型.*必填"):
+        order_service.update_order(db, historical.id, OrderUpdate(remark="只改备注"))
+    with pytest.raises(ValueError, match="订单渠道.*必填"):
+        order_service.update_order(
+            db,
+            historical.id,
+            OrderUpdate(order_type="future_order"),
+        )
+
+    updated = order_service.update_order(
+        db,
+        historical.id,
+        OrderUpdate(order_type="future_order", order_channel="live_stream"),
+    )
+    assert (updated.order_type, updated.order_channel) == (
+        "future_order", "live_stream"
+    )
+
+
+def test_update_order_revalidates_unchanged_dimension_is_still_active(db):
+    context = _seed_attribute_context(db)
+    created = order_service.create_order(
+        db,
+        _service_order(context, request_id="update-disabled-final-dimension", is_draft=True),
+        context["user"].id,
+    )
+    row = db.query(SysDict).filter_by(
+        type=C.ORDER_CHANNEL_DICT, code="live_stream"
+    ).one()
+    row.is_active = False
+    db.commit()
+
+    with pytest.raises(ValueError, match="订单渠道.*启用选项"):
+        order_service.update_order(
+            db,
+            created["id"],
+            OrderUpdate(remark="仍需校验已有值"),
         )
 
 

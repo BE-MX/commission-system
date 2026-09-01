@@ -23,7 +23,7 @@
       <text class="order-customer">{{item.customer_name}} · 单号 {{item.order_no}}</text>
       <view class="order-meta">
         <text>{{item.item_count}} 行 / {{item.total_qty}} 件</text>
-        <text>{{item.order_type_label}}</text>
+        <text>{{item.order_category_label}} · {{item.order_type_label}} · {{item.order_channel_label}}</text>
         <text>{{item.order_date}}</text>
       </view>
       <view class="progress-track">
@@ -45,6 +45,7 @@
         <text class="detail-close" bindtap="onDetailClose">关闭</text>
       </view>
       <text class="detail-sub">{{detail.customer_name}} · {{detail.status_label}}</text>
+      <text class="detail-sub">{{detail.order_category_label}} · {{detail.order_type_label}} · {{detail.order_channel_label}}</text>
 
       <scroll-view class="detail-body" scroll-y>
         <view class="detail-item" wx:for="{{detail.items}}" wx:key="id">

@@ -2,7 +2,8 @@
 
 import logging
 
-from sqlalchemy import func
+from sqlalchemy import String, cast, func, literal
+from sqlalchemy.dialects.mysql import BINARY
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -110,6 +111,34 @@ def get_order_options(db: Session) -> dict:
     }
 
 
+def _exact_code_predicate(dialect_name: str, code: str):
+    """Build a case-sensitive code predicate on every supported database."""
+    if dialect_name in {"mysql", "mariadb"}:
+        return cast(SysDict.code, BINARY) == literal(code, type_=String())
+    return SysDict.code == code
+
+
+def _dict_value(
+    db: Session,
+    dict_type: str,
+    code: str,
+    *,
+    is_active: bool,
+    lock: bool = False,
+) -> SysDict | None:
+    query = db.query(SysDict).filter(
+        SysDict.type == dict_type,
+        _exact_code_predicate(db.get_bind().dialect.name, code),
+        SysDict.is_active.is_(is_active),
+    )
+    if lock:
+        query = query.populate_existing().with_for_update()
+    row = query.first()
+    # Keep this guard even with the binary SQL predicate: it protects the
+    # contract from a collation/driver quirk and from a stale identity-map row.
+    return row if row is not None and row.code == code else None
+
+
 def _active_value(
     db: Session,
     dict_type: str,
@@ -117,14 +146,7 @@ def _active_value(
     *,
     lock: bool = False,
 ) -> SysDict | None:
-    query = db.query(SysDict).filter(
-        SysDict.type == dict_type,
-        SysDict.code == code,
-        SysDict.is_active.is_(True),
-    )
-    if lock:
-        query = query.populate_existing().with_for_update()
-    return query.first()
+    return _dict_value(db, dict_type, code, is_active=True, lock=lock)
 
 
 def validate_order_dimensions(
@@ -138,7 +160,7 @@ def validate_order_dimensions(
         ("订单渠道", C.ORDER_CHANNEL_DICT, order_channel),
     ):
         if value is None:
-            continue
+            raise ValueError(f"{label}为必填项，请选择启用选项")
         if not _active_value(db, dict_type, value):
             raise ValueError(
                 f"{label}「{value}」不是启用选项，请先在数据字典中启用或改选其他值"
@@ -146,11 +168,7 @@ def validate_order_dimensions(
 
 
 def _create_special_value(db: Session, dict_type: str, value: str) -> SysDict:
-    inactive = db.query(SysDict).filter(
-        SysDict.type == dict_type,
-        SysDict.code == value,
-        SysDict.is_active.is_(False),
-    ).first()
+    inactive = _dict_value(db, dict_type, value, is_active=False)
     if inactive:
         raise ValueError(f"特单选项「{value}」已停用，请先在数据字典中启用")
 
@@ -167,13 +185,23 @@ def _create_special_value(db: Session, dict_type: str, value: str) -> SysDict:
         db.flush()
         savepoint.commit()
         return row
-    except IntegrityError:
+    except IntegrityError as exc:
         savepoint.rollback()
         logger.warning("domestic special attribute race type=%s code=%s", dict_type, value)
         print(f"[domestic] special attribute race type={dict_type} code={value}", flush=True)
         row = _active_value(db, dict_type, value, lock=True)
         if row is None:
-            raise
+            inactive = _dict_value(
+                db, dict_type, value, is_active=False, lock=True
+            )
+            if inactive is not None:
+                raise ValueError(
+                    f"特单选项「{value}」已停用，请先在数据字典中启用"
+                ) from exc
+            raise ValueError(
+                f"特单选项「{value}」与已有选项仅大小写不同，无法自动创建；"
+                "请换一个名称或调整已有字典项"
+            ) from exc
         return row
 
 
