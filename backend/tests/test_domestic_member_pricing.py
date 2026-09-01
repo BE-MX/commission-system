@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import (
+    and_,
     CheckConstraint,
     Column,
     DateTime,
@@ -24,6 +25,7 @@ from sqlalchemy import (
     select,
     text,
 )
+from sqlalchemy.dialects import mysql
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.auth.models import ArkUser
@@ -1640,6 +1642,126 @@ def test_base_price_lookup_is_byte_exact_and_custom_keys_do_not_gain_seed(db):
     assert service.get_base_price(
         product_type="cap", craft="未确认工艺", length="20厘米"
     ) is None
+
+
+def test_mysql_price_queries_compile_craft_and_length_as_binary_exact():
+    from app.domestic import product_service
+    from app.domestic import pricing_service as service
+
+    row_predicate = and_(
+        *service._base_price_key_predicates(
+            "mysql",
+            domestic_models.DomesticBasePrice,
+            ("cap", "CaseCraft", "20CM"),
+        )
+    )
+    row_sql = str(
+        row_predicate.compile(
+            dialect=mysql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+    join_sql = str(
+        product_service._base_price_join_predicate("mysql").compile(
+            dialect=mysql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+
+    assert "CAST(ark_domestic_base_prices.craft AS BINARY)" in row_sql
+    assert "CAST(ark_domestic_base_prices.length AS BINARY)" in row_sql
+    assert join_sql.count("CAST(ark_domestic_base_prices.craft AS BINARY)") == 1
+    assert join_sql.count("CAST(ark_domestic_products.craft AS BINARY)") == 1
+    assert join_sql.count("CAST(ark_domestic_base_prices.length AS BINARY)") == 1
+    assert join_sql.count("CAST(ark_domestic_products.length AS BINARY)") == 1
+
+
+def test_length_case_variants_never_share_price_or_affected_count(db):
+    from app.domestic import product_service
+    from app.domestic import pricing_service as service
+    from app.domestic.schemas import PricingQuoteRequest
+
+    user = _operator(db, "base-price-length-case")
+    lower = _persist_product(
+        db, _cap_attrs(craft="CaseCraft", length="20cm")
+    )
+    upper = _persist_product(
+        db, _cap_attrs(craft="CaseCraft", length="20CM")
+    )
+    db.add(
+        domestic_models.DomesticBasePrice(
+            product_type="cap",
+            craft="CaseCraft",
+            length="20cm",
+            original_price=D("1000.00"),
+            version=1,
+            updated_by=user.id,
+        )
+    )
+    db.flush()
+
+    configured, configured_total = product_service.list_products(
+        db, price_status="configured", page_size=20
+    )
+    missing, missing_total = product_service.list_products(
+        db, price_status="missing", page_size=20
+    )
+    quote = service.quote_prices(
+        db,
+        PricingQuoteRequest.model_validate(
+            {
+                "items": [
+                    {"client_key": "lower", "product_id": lower.id},
+                    {"client_key": "upper", "product_id": upper.id},
+                ]
+            }
+        ),
+    )
+
+    assert configured_total == 1
+    assert configured[0]["id"] == lower.id
+    assert missing_total == 1
+    assert missing[0]["id"] == upper.id
+    assert [item["status"] for item in quote["items"]] == [
+        "priced",
+        "missing_base_price",
+    ]
+    assert service.affected_sku_count(
+        db, ("cap", "CaseCraft", "20cm")
+    ) == 1
+    assert service.affected_sku_count(
+        db, ("cap", "CaseCraft", "20CM")
+    ) == 1
+    updated = service.upsert_base_price(
+        db,
+        product_id=lower.id,
+        original_price=D("1100.00"),
+        user_id=user.id,
+    )
+    assert updated["affected_sku_count"] == 1
+
+    db.execute(
+        text(
+            "CREATE UNIQUE INDEX uq_test_dom_base_price_full_nocase "
+            "ON ark_domestic_base_prices "
+            "(product_type, craft COLLATE NOCASE, length COLLATE NOCASE)"
+        )
+    )
+    db.commit()
+    with pytest.raises(ValueError, match="大小写"):
+        service.upsert_base_price(
+            db,
+            product_id=upper.id,
+            original_price=D("1200.00"),
+            user_id=user.id,
+        )
+    db.rollback()
+    deleted = service.delete_base_price(db, product_id=lower.id)
+    assert deleted["affected_sku_count"] == 1
+    db.commit()
+    all_missing, total_missing = product_service.list_products(
+        db, price_status="missing", page_size=20
+    )
+    assert total_missing == 2
+    assert {item["id"] for item in all_missing} == {lower.id, upper.id}
 
 
 def test_base_price_upsert_rejects_case_insensitive_unique_conflict(db):

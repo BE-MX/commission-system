@@ -271,19 +271,29 @@ def _exact_text_predicate(dialect_name: str, column, value: str):
     return column == value
 
 
+def _base_price_key_predicates(
+    dialect_name: str,
+    model,
+    price_key: tuple[str, str, str],
+):
+    product_type, craft, length = price_key
+    return (
+        model.product_type == product_type,
+        _exact_text_predicate(dialect_name, model.craft, craft),
+        _exact_text_predicate(dialect_name, model.length, length),
+    )
+
+
 def get_base_price_row(
     db: Session,
     price_key: tuple[str, str, str],
     *,
     for_update: bool = False,
 ) -> DomesticBasePrice | None:
-    product_type, craft, length = price_key
     query = db.query(DomesticBasePrice).filter(
-        DomesticBasePrice.product_type == product_type,
-        _exact_text_predicate(
-            db.get_bind().dialect.name, DomesticBasePrice.craft, craft
-        ),
-        DomesticBasePrice.length == length,
+        *_base_price_key_predicates(
+            db.get_bind().dialect.name, DomesticBasePrice, price_key
+        )
     )
     if for_update:
         query = query.with_for_update()
@@ -312,15 +322,12 @@ def _load_priced_product(
 def affected_sku_count(
     db: Session, price_key: tuple[str, str, str]
 ) -> int:
-    product_type, craft, length = price_key
     return int(
         db.query(func.count(DomesticProduct.id))
         .filter(
-            DomesticProduct.product_type == product_type,
-            _exact_text_predicate(
-                db.get_bind().dialect.name, DomesticProduct.craft, craft
-            ),
-            DomesticProduct.length == length,
+            *_base_price_key_predicates(
+                db.get_bind().dialect.name, DomesticProduct, price_key
+            )
         )
         .scalar()
         or 0
@@ -360,7 +367,7 @@ def upsert_base_price(
             row = get_base_price_row(db, price_key, for_update=True)
             if row is None:
                 raise ValueError(
-                    "价格工艺与已有记录仅大小写不同，不能复用错误价格"
+                    "价格键与已有记录仅大小写不同，不能复用错误价格"
                 ) from exc
             row.original_price = original_price
             row.version += 1

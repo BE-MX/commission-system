@@ -43,6 +43,22 @@ def _exact_text_columns_predicate(dialect_name: str, left, right):
     return left == right
 
 
+def _base_price_join_predicate(dialect_name: str):
+    return and_(
+        DomesticBasePrice.product_type == DomesticProduct.product_type,
+        _exact_text_columns_predicate(
+            dialect_name,
+            DomesticBasePrice.craft,
+            DomesticProduct.craft,
+        ),
+        _exact_text_columns_predicate(
+            dialect_name,
+            DomesticBasePrice.length,
+            DomesticProduct.length,
+        ),
+    )
+
+
 def build_attrs_key(attrs: ProductAttrs) -> str:
     """属性组合唯一键。中文直接入 key —— 可读性在排查时比紧凑更值钱。"""
     key = json.dumps([
@@ -170,17 +186,9 @@ def list_products(
     sort_field: str = "",
     sort_order: str = "",
 ) -> tuple[list[dict], int]:
-    price_join = and_(
-        DomesticBasePrice.product_type == DomesticProduct.product_type,
-        _exact_text_columns_predicate(
-            db.get_bind().dialect.name,
-            DomesticBasePrice.craft,
-            DomesticProduct.craft,
-        ),
-        DomesticBasePrice.length == DomesticProduct.length,
-    )
     q = db.query(DomesticProduct, DomesticBasePrice).outerjoin(
-        DomesticBasePrice, price_join
+        DomesticBasePrice,
+        _base_price_join_predicate(db.get_bind().dialect.name),
     )
     if keyword:
         q = q.filter(DomesticProduct.name.like(f"%{keyword}%"))
