@@ -485,6 +485,8 @@ git commit -m "feat(domestic-scan): capture routing outcomes"
 
 ### Task 6: Cutover tooling, documentation, and final verification
 
+> **2026-09-01 决策变更**：下列 token/reconciliation 方案是原始实施记录，已被最终业务口径取代，不再作为生产操作说明。现行切换按产品类型全量直接绑定：`cap → 头套网帽`、`piece → 发片网底`；只更新工艺映射和已有产品，存量订单路线快照保持不变。实际命令以 `docs/api-reference.md` 为准。
+
 **Files:**
 - Create: `backend/scripts/domestic_route_cutover.py`
 - Create: `backend/tests/test_domestic_route_cutover.py`
