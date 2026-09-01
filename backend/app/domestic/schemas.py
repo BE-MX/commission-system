@@ -257,9 +257,45 @@ class ExpectedQuote(BaseModel):
         return value.strip() if isinstance(value, str) else value
 
 
-class ItemExpectedQuote(ExpectedQuote):
+class ItemExpectedQuote(BaseModel):
+    """草稿行报价；兼容迁移回填的 legacy_manual 快照以触发重新报价。"""
+
+    model_config = ConfigDict(extra="forbid")
+
     client_key: None = None
     item_id: int = Field(..., gt=0)
+    original_price: Decimal = Field(..., ge=0, max_digits=14, decimal_places=2)
+    base_price_version: int = Field(..., ge=0)
+    discount_price: Decimal = Field(..., ge=0, max_digits=14, decimal_places=2)
+    membership_level: Literal["silver", "black", "supreme"] | None
+    pricing_rule: Literal[
+        "base_price",
+        "member_fixed",
+        "member_fixed_capped",
+        "member_reduction",
+        "legacy_manual",
+    ]
+    pricing_version: str = Field(..., min_length=1, max_length=32)
+
+    @field_validator("pricing_version", mode="before")
+    @classmethod
+    def _strip_pricing_version(cls, value: str) -> str:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def _validate_legacy_or_current_contract(self):
+        if self.pricing_rule == "legacy_manual":
+            if (
+                self.membership_level is not None
+                or self.base_price_version != 0
+                or self.pricing_version != "legacy"
+                or self.original_price != self.discount_price
+            ):
+                raise ValueError("legacy_manual 报价快照不一致")
+            return self
+        if self.original_price <= 0 or self.base_price_version < 1:
+            raise ValueError("当前报价必须有正原价和有效原价版本")
+        return self
 
 
 class DraftSubmitRequest(BaseModel):

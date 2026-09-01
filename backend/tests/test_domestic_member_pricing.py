@@ -179,6 +179,37 @@ def test_draft_submit_schema_requires_unique_item_quotes_and_strips_request_id()
         })
 
 
+def test_draft_submit_accepts_only_a_consistent_legacy_snapshot_for_migrated_drafts():
+    legacy = {
+        "client_key": None,
+        "item_id": 7,
+        "original_price": "0.00",
+        "base_price_version": 0,
+        "discount_price": "0.00",
+        "membership_level": None,
+        "pricing_rule": "legacy_manual",
+        "pricing_version": "legacy",
+    }
+
+    payload = DraftSubmitRequest.model_validate({
+        "request_id": "legacy-draft-submit",
+        "expected_quotes": [legacy],
+    })
+
+    assert payload.expected_quotes[0].pricing_rule == "legacy_manual"
+    for field, value in (
+        ("membership_level", "silver"),
+        ("base_price_version", 1),
+        ("pricing_version", "domestic-member-v1"),
+        ("discount_price", "1.00"),
+    ):
+        with pytest.raises(ValidationError):
+            DraftSubmitRequest.model_validate({
+                "request_id": f"legacy-invalid-{field}",
+                "expected_quotes": [{**legacy, field: value}],
+            })
+
+
 def test_order_update_requires_repricing_contract_only_when_customer_is_explicit():
     quote = {"item_id": 7, **_expected_quote_payload()}
 
@@ -3016,6 +3047,36 @@ def _created_priced_draft(
     return user, customer, product, base, order, item
 
 
+def test_migrated_legacy_draft_detail_can_be_submitted_to_receive_current_quote_409(db):
+    user, _customer, _product, _base, order, item = _created_priced_draft(
+        db, "migrated-legacy-draft", membership_level="black"
+    )
+    item.original_price = D("0.00")
+    item.unit_price = D("0.00")
+    item.discount_amount = D("0.00")
+    item.membership_level_snapshot = None
+    item.pricing_rule = "legacy_manual"
+    item.pricing_version = "legacy"
+    item.base_price_version_snapshot = 0
+    order.total_amount = D("0.00")
+    db.commit()
+
+    detail = order_service.get_order_detail(db, order.id)
+    payload = DraftSubmitRequest.model_validate({
+        "request_id": "migrated-legacy-submit",
+        "expected_quotes": detail["current_expected_quotes"],
+    })
+
+    with pytest.raises(pricing_service.DomesticQuoteChangedError) as caught:
+        order_service.submit_draft(db, order.id, payload, user.id)
+
+    assert caught.value.detail["changes"][0]["item_id"] == item.id
+    assert caught.value.detail["current_expected_quotes"][0]["pricing_rule"] == "member_reduction"
+    db.refresh(order)
+    assert order.status == domestic_constants.ORDER_DRAFT
+    assert order.total_amount == D("0.00")
+
+
 def test_submit_draft_reprices_membership_atomically_then_charges_confirmed_quote(db):
     user, customer, _product, _base, expected, attrs = _order_pricing_context(
         db,
@@ -3661,7 +3722,8 @@ def test_formal_black_order_charges_discount_and_persists_pricing_snapshot(db):
     order = db.get(domestic_models.DomesticOrder, created["id"])
     db.refresh(customer)
     db.refresh(product)
-    detail_item = order_service.get_order_detail(db, order.id)["items"][0]
+    detail = order_service.get_order_detail(db, order.id)
+    detail_item = detail["items"][0]
 
     assert customer.balance == D("8240.00")
     assert order.total_amount == D("1760.00")
@@ -3682,6 +3744,16 @@ def test_formal_black_order_charges_discount_and_persists_pricing_snapshot(db):
     assert detail_item["pricing_rule_label"] == "黑卡立减 ¥120.00"
     assert detail_item["pricing_version"] == "domestic-member-v1"
     assert detail_item["base_price_version"] == 1
+    assert detail["current_expected_quotes"] == [{
+        "client_key": None,
+        "item_id": item.id,
+        "original_price": 1000.0,
+        "base_price_version": 1,
+        "discount_price": 880.0,
+        "membership_level": "black",
+        "pricing_rule": "member_reduction",
+        "pricing_version": "domestic-member-v1",
+    }]
 
 
 @pytest.mark.parametrize(

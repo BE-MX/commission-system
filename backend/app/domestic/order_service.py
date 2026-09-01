@@ -952,6 +952,16 @@ def get_order_detail(
         ).scalar()
         detail["charged_amount"] = float(order.charged_amount or 0)
         detail["customer_balance"] = float(customer.balance or 0) if customer else None
+        detail["current_expected_quotes"] = [{
+            "client_key": None,
+            "item_id": item.id,
+            "original_price": float(item.original_price),
+            "base_price_version": item.base_price_version_snapshot,
+            "discount_price": float(item.unit_price),
+            "membership_level": item.membership_level_snapshot,
+            "pricing_rule": item.pricing_rule,
+            "pricing_version": item.pricing_version,
+        } for item in items]
     return detail
 
 
