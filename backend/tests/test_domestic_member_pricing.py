@@ -5,6 +5,9 @@ import inspect
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy import (
     CheckConstraint,
     Column,
@@ -20,8 +23,11 @@ from sqlalchemy import (
 from sqlalchemy.exc import IntegrityError
 
 from app.auth.models import ArkUser
-from app.domestic import pricing_service
+from app.auth.dependencies import get_current_user
+from app.core.database import get_db
+from app.domestic import balance_service, customer_service, pricing_service
 from app.domestic import models as domestic_models
+from app.domestic.schemas import CustomerCreate, CustomerRechargeCreate, CustomerUpdate
 
 
 D = Decimal
@@ -45,6 +51,356 @@ def test_membership_uses_only_latest_successful_recharge(
     last_successful_recharge, expected
 ):
     assert pricing_service.resolve_membership(last_successful_recharge) == expected
+
+
+@pytest.mark.parametrize(
+    ("membership_level", "expected"),
+    [
+        (None, "非会员"),
+        ("silver", "银卡会员"),
+        ("black", "黑卡会员"),
+        ("supreme", "至尊会员"),
+    ],
+)
+def test_membership_label_is_centralized_and_explicit(membership_level, expected):
+    assert pricing_service.membership_label(membership_level) == expected
+
+
+def test_membership_label_rejects_unknown_values():
+    with pytest.raises(pricing_service.PricingConfigurationError, match="会员等级"):
+        pricing_service.membership_label("gold")
+
+
+@pytest.mark.parametrize("schema", [CustomerCreate, CustomerUpdate])
+def test_customer_write_schemas_forbid_membership_level(schema):
+    payload = {"membership_level": "supreme"}
+    if schema is CustomerCreate:
+        payload["shop_name"] = "禁止手改会员"
+    with pytest.raises(ValidationError, match="membership_level"):
+        schema.model_validate(payload)
+
+
+@pytest.mark.parametrize("request_id", [None, "", "        ", " short "])
+def test_recharge_schema_requires_trimmed_request_id(request_id):
+    payload = {"amount": "10000.00"}
+    if request_id is not None:
+        payload["request_id"] = request_id
+    with pytest.raises(ValidationError, match="request_id"):
+        CustomerRechargeCreate.model_validate(payload)
+
+
+def test_recharge_schema_strips_request_id():
+    payload = CustomerRechargeCreate(
+        amount=D("10000.00"), request_id="  recharge-request-001  "
+    )
+    assert payload.request_id == "recharge-request-001"
+
+
+def test_recharge_schema_accepts_full_database_money_limit():
+    payload = CustomerRechargeCreate(
+        amount=D("999999999999.99"), request_id="max-money-request"
+    )
+    assert payload.amount == D("999999999999.99")
+
+
+def _membership_customer(db, user, suffix, **overrides):
+    values = {
+        "shop_name": f"充值会员客户-{suffix}",
+        "created_by": user.id,
+    }
+    values.update(overrides)
+    customer = domestic_models.DomesticCustomer(**values)
+    db.add(customer)
+    db.flush()
+    return customer
+
+
+def _recharge(db, customer, user, amount, request_id):
+    return balance_service.recharge_customer(
+        db,
+        customer_id=customer.id,
+        amount=D(amount),
+        user_id=user.id,
+        request_id=request_id,
+    )
+
+
+@pytest.mark.parametrize(
+    ("amount", "expected_level", "expected_label"),
+    [
+        ("9999.99", None, "非会员"),
+        ("10000.00", "silver", "银卡会员"),
+        ("29999.99", "silver", "银卡会员"),
+        ("30000.00", "black", "黑卡会员"),
+        ("99999.99", "black", "黑卡会员"),
+        ("100000.00", "supreme", "至尊会员"),
+    ],
+)
+def test_new_recharge_derives_membership_from_that_single_amount(
+    db, amount, expected_level, expected_label
+):
+    user = _operator(db, f"threshold-{amount}")
+    customer = _membership_customer(db, user, amount)
+
+    result = _recharge(
+        db, customer, user, amount, f"threshold-{amount}-request"
+    )
+    db.refresh(customer)
+    ledger = db.get(domestic_models.DomesticCustomerLedger, result["ledger_id"])
+
+    assert customer.membership_level == expected_level
+    assert customer.last_recharge_amount == D(amount)
+    assert customer.last_recharged_at == ledger.created_at
+    assert result == {
+        "ledger_id": ledger.id,
+        "amount": float(D(amount)),
+        "ledger_balance_after": float(D(amount)),
+        "current_balance": float(D(amount)),
+        "membership_level": expected_level,
+        "membership_label": expected_label,
+        "last_recharge_amount": float(D(amount)),
+        "last_recharged_at": ledger.created_at,
+        "membership_change": (
+            {"from": None, "to": expected_level} if expected_level else None
+        ),
+        "replayed": False,
+    }
+    assert "balance" not in result
+
+
+def test_recharge_can_upgrade_downgrade_and_remove_membership(db):
+    user = _operator(db, "membership-transitions")
+    customer = _membership_customer(db, user, "transitions")
+
+    silver = _recharge(db, customer, user, "10000", "transition-silver")
+    supreme = _recharge(db, customer, user, "100000", "transition-supreme")
+    black = _recharge(db, customer, user, "30000", "transition-black")
+    non_member = _recharge(db, customer, user, "9999.99", "transition-none")
+
+    assert silver["membership_change"] == {"from": None, "to": "silver"}
+    assert supreme["membership_change"] == {"from": "silver", "to": "supreme"}
+    assert black["membership_change"] == {"from": "supreme", "to": "black"}
+    assert non_member["membership_change"] == {"from": "black", "to": None}
+    assert non_member["membership_level"] is None
+    assert non_member["membership_label"] == "非会员"
+
+
+def test_membership_ignores_current_balance_and_recharge_history(db):
+    user = _operator(db, "single-recharge-only")
+    rich_customer = _membership_customer(
+        db,
+        user,
+        "rich",
+        balance=D("500000.00"),
+        membership_level="supreme",
+        last_recharge_amount=D("100000.00"),
+    )
+    rich_result = _recharge(
+        db, rich_customer, user, "9999.99", "rich-small-recharge"
+    )
+    assert rich_result["current_balance"] == 509999.99
+    assert rich_result["membership_level"] is None
+
+    cumulative_customer = _membership_customer(db, user, "cumulative")
+    _recharge(db, cumulative_customer, user, "6000", "cumulative-first")
+    cumulative_result = _recharge(
+        db, cumulative_customer, user, "5000", "cumulative-second"
+    )
+    assert cumulative_result["current_balance"] == 11000.0
+    assert cumulative_result["membership_level"] is None
+    assert cumulative_result["last_recharge_amount"] == 5000.0
+
+
+def test_old_recharge_replay_preserves_current_membership_snapshot(db):
+    user = _operator(db, "old-replay")
+    customer = _membership_customer(db, user, "old-replay")
+    old = _recharge(db, customer, user, "30000", "old-recharge-request")
+    latest = _recharge(db, customer, user, "100000", "latest-recharge-request")
+
+    replay = _recharge(db, customer, user, "30000", "old-recharge-request")
+
+    assert replay["ledger_id"] == old["ledger_id"]
+    assert replay["amount"] == 30000.0
+    assert replay["ledger_balance_after"] == 30000.0
+    assert replay["current_balance"] == 130000.0
+    assert replay["membership_level"] == "supreme"
+    assert replay["membership_label"] == "至尊会员"
+    assert replay["last_recharge_amount"] == 100000.0
+    assert replay["last_recharged_at"] == latest["last_recharged_at"]
+    assert replay["membership_change"] is None
+    assert replay["replayed"] is True
+
+    db.refresh(customer)
+    assert customer.membership_level == "supreme"
+    assert customer.last_recharge_amount == D("100000.00")
+    assert customer.last_recharged_at == latest["last_recharged_at"]
+    assert db.query(domestic_models.DomesticCustomerLedger).count() == 2
+
+
+def test_recharge_replay_rejects_same_request_with_different_amount(db):
+    user = _operator(db, "replay-mismatch")
+    customer = _membership_customer(db, user, "replay-mismatch")
+    _recharge(db, customer, user, "10000", "same-request-amount")
+
+    with pytest.raises(ValueError, match="不同金额"):
+        _recharge(db, customer, user, "30000", "same-request-amount")
+
+
+@pytest.mark.parametrize("request_id", [None, "", "       "])
+def test_recharge_service_defensively_requires_request_id(db, request_id):
+    user = _operator(db, f"missing-request-{request_id!r}")
+    customer = _membership_customer(db, user, f"missing-{request_id!r}")
+    with pytest.raises(ValueError, match="幂等键"):
+        balance_service.recharge_customer(
+            db,
+            customer_id=customer.id,
+            amount=D("10000"),
+            user_id=user.id,
+            request_id=request_id,
+        )
+
+
+def test_customer_service_never_writes_membership_level(db):
+    user = _operator(db, "customer-service-membership")
+    created = customer_service.create_customer(
+        db,
+        CustomerCreate(shop_name="服务层新客户", province="山东省"),
+        user.id,
+    )
+    assert created.membership_level is None
+
+    created.membership_level = "black"
+    created.last_recharge_amount = D("30000.00")
+    db.commit()
+    customer_service.update_customer(
+        db, created.id, CustomerUpdate(province="河南省")
+    )
+    db.refresh(created)
+    assert created.membership_level == "black"
+    assert created.last_recharge_amount == D("30000.00")
+
+
+def _customer_api_client(db, user_id, *, raise_server_exceptions=True):
+    from app.domestic.router import router
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api/domestic")
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": str(user_id),
+        "roles": [],
+        "permissions": [
+            "domestic:read",
+            "domestic:write",
+            "domestic:recharge",
+        ],
+    }
+    return TestClient(app, raise_server_exceptions=raise_server_exceptions)
+
+
+def test_customer_api_rejects_manual_membership_and_missing_request_id(db):
+    user = _operator(db, "customer-api-validation")
+    customer = _membership_customer(db, user, "api-validation")
+    client = _customer_api_client(db, user.id)
+
+    create_response = client.post(
+        "/api/domestic/customers",
+        json={"shop_name": "接口手改会员", "membership_level": "supreme"},
+    )
+    update_response = client.put(
+        f"/api/domestic/customers/{customer.id}",
+        json={"membership_level": "supreme"},
+    )
+    missing_response = client.post(
+        f"/api/domestic/customers/{customer.id}/recharges",
+        json={"amount": 10000},
+    )
+    blank_response = client.post(
+        f"/api/domestic/customers/{customer.id}/recharges",
+        json={"amount": 10000, "request_id": "        "},
+    )
+
+    assert create_response.status_code == 422
+    assert update_response.status_code == 422
+    assert missing_response.status_code == 422
+    assert blank_response.status_code == 422
+
+
+def test_customer_api_returns_recharge_and_list_membership_contract(db):
+    user = _operator(db, "customer-api-contract")
+    customer = _membership_customer(db, user, "api-contract")
+    client = _customer_api_client(db, user.id)
+
+    recharge_response = client.post(
+        f"/api/domestic/customers/{customer.id}/recharges",
+        json={"amount": 30000, "request_id": "api-contract-recharge"},
+    )
+    replay_response = client.post(
+        f"/api/domestic/customers/{customer.id}/recharges",
+        json={"amount": 30000, "request_id": "api-contract-recharge"},
+    )
+    list_response = client.get("/api/domestic/customers")
+
+    assert recharge_response.status_code == 200
+    assert recharge_response.json()["message"] == "充值成功"
+    assert "balance" not in recharge_response.json()["data"]
+    assert replay_response.status_code == 200
+    assert replay_response.json()["message"] == "该笔充值已经处理过，当前会员状态以返回结果为准"
+    item = list_response.json()["data"]["items"][0]
+    assert item["membership_level"] == "black"
+    assert item["membership_label"] == "黑卡会员"
+    assert item["last_recharge_amount"] == 30000.0
+    assert item["last_recharged_at"] == recharge_response.json()["data"]["last_recharged_at"]
+
+
+def test_recharge_api_rolls_back_before_returning_business_error(db, monkeypatch):
+    user = _operator(db, "customer-api-rollback")
+    customer = _membership_customer(db, user, "api-rollback", remark="原备注")
+    db.commit()
+    client = _customer_api_client(db, user.id)
+
+    def fail_after_write(session, **_kwargs):
+        stored = session.get(domestic_models.DomesticCustomer, customer.id)
+        stored.remark = "不应提交"
+        session.flush()
+        raise ValueError("模拟充值失败")
+
+    monkeypatch.setattr(balance_service, "recharge_customer", fail_after_write)
+    response = client.post(
+        f"/api/domestic/customers/{customer.id}/recharges",
+        json={"amount": 30000, "request_id": "api-rollback-request"},
+    )
+
+    assert response.status_code == 400
+    db.refresh(customer)
+    assert customer.remark == "原备注"
+
+
+def test_recharge_api_rolls_back_unexpected_errors(db, monkeypatch):
+    user = _operator(db, "customer-api-unexpected-rollback")
+    customer = _membership_customer(
+        db, user, "api-unexpected-rollback", remark="原备注"
+    )
+    db.commit()
+    client = _customer_api_client(
+        db, user.id, raise_server_exceptions=False
+    )
+
+    def fail_after_write(session, **_kwargs):
+        stored = session.get(domestic_models.DomesticCustomer, customer.id)
+        stored.remark = "不应提交"
+        session.flush()
+        raise RuntimeError("模拟数据库提交失败")
+
+    monkeypatch.setattr(balance_service, "recharge_customer", fail_after_write)
+    response = client.post(
+        f"/api/domestic/customers/{customer.id}/recharges",
+        json={"amount": 30000, "request_id": "unexpected-rollback-request"},
+    )
+
+    assert response.status_code == 500
+    db.refresh(customer)
+    assert customer.remark == "原备注"
 
 
 def test_member_reductions_are_explicit():

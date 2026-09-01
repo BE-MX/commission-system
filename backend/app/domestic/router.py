@@ -242,8 +242,19 @@ def recharge_customer(
             request_id=payload.request_id,
         )
     except ValueError as exc:
+        db.rollback()
         raise HTTPException(status_code=400, detail=str(exc))
-    return ok(data, message="该笔充值已经处理过" if data["replayed"] else "充值成功")
+    except Exception:
+        db.rollback()
+        raise
+    return ok(
+        data,
+        message=(
+            "该笔充值已经处理过，当前会员状态以返回结果为准"
+            if data["replayed"]
+            else "充值成功"
+        ),
+    )
 
 
 @router.get("/customers/{customer_id}/balance-ledger", summary="客户余额流水")

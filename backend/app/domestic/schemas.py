@@ -11,9 +11,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 class CustomerCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     shop_name: str = Field(..., min_length=1, max_length=120, description="客户店名")
     custom_code: str | None = Field(None, max_length=64, description="客户自定义编码")
-    membership_level: str | None = Field(None, max_length=32, description="会员等级")
     province: str | None = Field(None, max_length=64)
     city: str | None = Field(None, max_length=64)
     contact: str | None = Field(None, max_length=60)
@@ -29,7 +30,7 @@ class CustomerCreate(BaseModel):
             raise ValueError("客户店名不能为空")
         return v
 
-    @field_validator("custom_code", "membership_level", "province", "city", "contact", "phone", "address", "remark")
+    @field_validator("custom_code", "province", "city", "contact", "phone", "address", "remark")
     @classmethod
     def _strip_optional(cls, v: str | None) -> str | None:
         value = v.strip() if isinstance(v, str) else v
@@ -37,9 +38,10 @@ class CustomerCreate(BaseModel):
 
 
 class CustomerUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     shop_name: str | None = Field(None, min_length=1, max_length=120)
     custom_code: str | None = Field(None, max_length=64)
-    membership_level: str | None = Field(None, max_length=32)
     province: str | None = Field(None, max_length=64)
     city: str | None = Field(None, max_length=64)
     contact: str | None = Field(None, max_length=60)
@@ -48,7 +50,7 @@ class CustomerUpdate(BaseModel):
     remark: str | None = Field(None, max_length=500)
     status: int | None = Field(None, ge=0, le=1)
 
-    @field_validator("custom_code", "membership_level", "province", "city", "contact", "phone", "address", "remark")
+    @field_validator("custom_code", "province", "city", "contact", "phone", "address", "remark")
     @classmethod
     def _strip_optional(cls, v: str | None) -> str | None:
         value = v.strip() if isinstance(v, str) else v
@@ -56,9 +58,20 @@ class CustomerUpdate(BaseModel):
 
 
 class CustomerRechargeCreate(BaseModel):
-    amount: Decimal = Field(..., gt=0, le=999999999999, max_digits=14, decimal_places=2)
+    amount: Decimal = Field(
+        ...,
+        gt=0,
+        le=Decimal("999999999999.99"),
+        max_digits=14,
+        decimal_places=2,
+    )
     remark: str | None = Field(None, max_length=500)
-    request_id: str | None = Field(None, max_length=64, description="客户端幂等键")
+    request_id: str = Field(..., min_length=8, max_length=64, description="客户端幂等键")
+
+    @field_validator("request_id", mode="before")
+    @classmethod
+    def _strip_request_id(cls, v: str) -> str:
+        return v.strip() if isinstance(v, str) else v
 
 
 # ── 产品属性 ──────────────────────────────────────────

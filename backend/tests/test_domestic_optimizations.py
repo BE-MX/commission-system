@@ -55,7 +55,6 @@ def _customer(db, user, name="余额客户"):
         CustomerCreate(
             shop_name=name,
             custom_code=f"C-{name}",
-            membership_level=None,
             province="山东省",
             city="青岛市",
         ),
@@ -174,6 +173,7 @@ def test_balance_lock_refreshes_preloaded_customer_identity(db, engine):
     customer = _customer(db, operator, "并发余额客户")
     balance_service.recharge_customer(
         db, customer_id=customer.id, amount=Decimal("100.00"), user_id=operator.id,
+        request_id="identity-balance-recharge",
     )
     Session = sessionmaker(bind=engine)
     stale = Session()
@@ -221,6 +221,7 @@ def test_recharged_customer_cannot_be_deleted(db):
     customer = _customer(db, operator, "已充值客户")
     balance_service.recharge_customer(
         db, customer_id=customer.id, amount=Decimal("20.00"), user_id=operator.id,
+        request_id="delete-ledger-recharge",
     )
 
     with pytest.raises(ValueError, match="资金流水"):
@@ -234,6 +235,7 @@ def test_draft_does_not_charge_until_submit(db):
     customer = _customer(db, creator, "草稿客户")
     balance_service.recharge_customer(
         db, customer_id=customer.id, amount=Decimal("100.00"), user_id=creator.id,
+        request_id="draft-order-recharge",
     )
 
     created = _create_order(db, creator, customer, qty=3, price="15.00", is_draft=True)
@@ -260,6 +262,7 @@ def test_insufficient_balance_rolls_back_whole_order(db):
     customer = _customer(db, creator, "余额不足客户")
     balance_service.recharge_customer(
         db, customer_id=customer.id, amount=Decimal("10.00"), user_id=creator.id,
+        request_id="insufficient-balance-recharge",
     )
 
     with pytest.raises(ValueError, match="余额不足"):
@@ -276,6 +279,7 @@ def test_formal_order_request_id_prevents_double_charge(db):
     customer = _customer(db, creator, "重试客户")
     balance_service.recharge_customer(
         db, customer_id=customer.id, amount=Decimal("100.00"), user_id=creator.id,
+        request_id="formal-retry-recharge",
     )
     payload = OrderCreate(
         request_id="order-network-retry",
@@ -309,6 +313,7 @@ def test_append_item_request_id_prevents_duplicate_item_and_charge(db):
     customer = _customer(db, creator, "追加重试客户")
     balance_service.recharge_customer(
         db, customer_id=customer.id, amount=Decimal("100.00"), user_id=creator.id,
+        request_id="append-retry-recharge",
     )
     created = _create_order(db, creator, customer, qty=1, price="0")
     payload = OrderItemAppend(
@@ -396,6 +401,7 @@ def test_item_amount_edits_settle_difference_and_termination_refunds(db):
     customer = _customer(db, creator, "差额客户")
     balance_service.recharge_customer(
         db, customer_id=customer.id, amount=Decimal("100.00"), user_id=creator.id,
+        request_id="order-delta-recharge",
     )
     created = _create_order(db, creator, customer, qty=2, price="10.00")
     item = _item(db, created["id"])

@@ -16,6 +16,7 @@ from app.domestic.models import (
     DomesticOrder,
     DomesticOrderItem,
 )
+from app.domestic.pricing_service import membership_label, resolve_membership
 
 
 _CENT = Decimal("0.01")
@@ -105,10 +106,15 @@ def recharge_customer(
     remark: str | None = None,
     request_id: str | None = None,
 ) -> dict:
+    request_id = request_id.strip() if isinstance(request_id, str) else ""
+    if not request_id:
+        raise ValueError("充值幂等键不能为空")
+    if not 8 <= len(request_id) <= 64:
+        raise ValueError("充值幂等键长度必须为 8 到 64 个字符")
     amount = money(amount)
     if amount <= 0:
         raise ValueError("充值金额必须大于 0")
-    business_key = f"recharge:{customer_id}:{request_id}" if request_id else None
+    business_key = f"recharge:{customer_id}:{request_id}"
     ledger = apply_balance_change(
         db,
         customer_id=customer_id,
@@ -118,12 +124,35 @@ def recharge_customer(
         remark=remark,
         business_key=business_key,
     )
+    replayed = bool(getattr(ledger, "_balance_replayed", False))
+    customer = db.query(DomesticCustomer).filter(
+        DomesticCustomer.id == customer_id
+    ).one()
+    membership_change = None
+    if not replayed:
+        previous_level = customer.membership_level
+        current_level = resolve_membership(amount)
+        if current_level != previous_level:
+            membership_change = {"from": previous_level, "to": current_level}
+        customer.membership_level = current_level
+        customer.last_recharge_amount = amount
+        customer.last_recharged_at = ledger.created_at
     db.commit()
     return {
         "ledger_id": ledger.id,
         "amount": float(ledger.amount),
-        "balance": float(ledger.balance_after),
-        "replayed": bool(getattr(ledger, "_balance_replayed", False)),
+        "ledger_balance_after": float(ledger.balance_after),
+        "current_balance": float(customer.balance),
+        "membership_level": customer.membership_level,
+        "membership_label": membership_label(customer.membership_level),
+        "last_recharge_amount": (
+            float(customer.last_recharge_amount)
+            if customer.last_recharge_amount is not None
+            else None
+        ),
+        "last_recharged_at": customer.last_recharged_at,
+        "membership_change": membership_change,
+        "replayed": replayed,
     }
 
 

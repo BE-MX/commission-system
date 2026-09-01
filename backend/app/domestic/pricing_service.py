@@ -13,6 +13,13 @@ MEMBERSHIP_REDUCTIONS = {
     "supreme": Decimal("130.00"),
 }
 
+MEMBERSHIP_LABELS = {
+    None: "非会员",
+    "silver": "银卡会员",
+    "black": "黑卡会员",
+    "supreme": "至尊会员",
+}
+
 MEMBER_FIXED_PRICES = {
     ("递旋", "15厘米", "silver"): Decimal("1048.00"),
     ("递旋", "15厘米", "black"): Decimal("998.00"),
@@ -112,6 +119,17 @@ _COMBINED_PIECE_BY_DIMENSIONS = {
 
 class PricingConfigurationError(ValueError):
     """定价配置无法生成合法成交价。"""
+
+
+def membership_label(membership_level: str | None) -> str:
+    """返回会员展示文案；未知等级视为配置错误。"""
+
+    try:
+        return MEMBERSHIP_LABELS[membership_level]
+    except KeyError as exc:
+        raise PricingConfigurationError(
+            f"未知会员等级：{membership_level!r}"
+        ) from exc
 
 
 @dataclass(frozen=True)

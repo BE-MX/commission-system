@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domestic.models import DomesticCustomer, DomesticCustomerLedger, DomesticOrder
+from app.domestic.pricing_service import membership_label
 from app.domestic.schemas import CustomerCreate, CustomerUpdate
 
 logger = logging.getLogger("commission")
@@ -52,6 +53,13 @@ def list_customers(
         "shop_name": r.shop_name,
         "custom_code": r.custom_code,
         "membership_level": r.membership_level,
+        "membership_label": membership_label(r.membership_level),
+        "last_recharge_amount": (
+            float(r.last_recharge_amount)
+            if r.last_recharge_amount is not None
+            else None
+        ),
+        "last_recharged_at": r.last_recharged_at,
         "province": r.province,
         "city": r.city,
         "contact": r.contact,
@@ -105,7 +113,6 @@ def create_customer(db: Session, payload: CustomerCreate, user_id: int) -> Domes
     customer = DomesticCustomer(
         shop_name=payload.shop_name,
         custom_code=payload.custom_code,
-        membership_level=payload.membership_level,
         province=payload.province,
         city=payload.city,
         contact=payload.contact,
@@ -146,8 +153,7 @@ def update_customer(db: Session, customer_id: int, payload: CustomerUpdate) -> D
             raise ValueError(f"客户编码「{data['custom_code']}」已存在")
         customer.custom_code = data["custom_code"]
     for field in (
-        "membership_level", "province", "city", "contact", "phone",
-        "address", "remark", "status",
+        "province", "city", "contact", "phone", "address", "remark", "status",
     ):
         if field in data:
             setattr(customer, field, data[field])
