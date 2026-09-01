@@ -55,6 +55,7 @@ export function useDomesticOrders() {
   const detailLoading = ref(false)
   const detail = ref(null)
   const routes = ref([])
+  const draftSubmitRequestIds = new Map()
 
   async function loadDetail(orderId) {
     detailLoading.value = true
@@ -298,7 +299,8 @@ export function useDomesticOrders() {
     } catch { return }
     const res = await getOrder(row.id)
     const current = res.data || {}
-    const payload = buildDraftSubmitPayload(current, newRequestId)
+    if (!draftSubmitRequestIds.has(row.id)) draftSubmitRequestIds.set(row.id, newRequestId())
+    const payload = buildDraftSubmitPayload(current, () => draftSubmitRequestIds.get(row.id))
     try {
       await submitDraftOrder(row.id, payload)
     } catch (error) {
@@ -326,11 +328,14 @@ export function useDomesticOrders() {
           { type: 'warning', confirmButtonText: '使用新价提交', cancelButtonText: '暂不提交' },
         )
       } catch { return }
+      const retryRequestId = newRequestId()
+      draftSubmitRequestIds.set(row.id, retryRequestId)
       await submitDraftOrder(row.id, {
-        request_id: newRequestId(),
+        request_id: retryRequestId,
         expected_quotes: changed.current_expected_quotes,
       })
     }
+    draftSubmitRequestIds.delete(row.id)
     msgSuccess('提交订单')
     await refreshAll()
   }
