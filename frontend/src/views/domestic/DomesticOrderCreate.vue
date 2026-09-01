@@ -19,7 +19,7 @@
               >
                 <el-option
                   v-for="c in customers" :key="c.id"
-                  :label="`${c.shop_name}（余额 ¥${Number(c.balance || 0).toFixed(2)}）`"
+                  :label="`${c.shop_name}（${c.membership_label || '普通客户'} · 余额 ¥${Number(c.balance || 0).toFixed(2)}）`"
                   :value="c.id"
                 />
               </el-select>
@@ -28,7 +28,7 @@
                 placeholder="新客户：直接输入店名，下单时自动建档" class="new-customer"
               />
               <div v-if="selectedCustomer" class="balance-hint">
-                当前余额 ¥{{ Number(selectedCustomer.balance || 0).toFixed(2) }}
+                {{ selectedCustomer.membership_label || '普通客户' }} · 当前余额 ¥{{ Number(selectedCustomer.balance || 0).toFixed(2) }}
               </div>
             </el-form-item>
           </el-col>
@@ -128,14 +128,38 @@
         </el-row>
 
         <el-row :gutter="16" class="price-row">
-          <el-col :span="6">
-            <el-form-item label="产品单价" required>
-              <el-input-number v-model="item.unit_price" :min="0" :precision="2" :step="10" style="width: 100%" />
+          <el-col :span="4">
+            <el-form-item label="报价状态">
+              <el-tag :type="item.quoteStatus === 'missing_base_price' ? 'danger' : (item.quoteStatus === 'priced' ? 'success' : 'warning')" effect="plain">
+                {{ quoteStatusLabel(item.quoteStatus) }}
+              </el-tag>
             </el-form-item>
           </el-col>
-          <el-col :span="6">
+          <el-col :span="4">
+            <el-form-item label="原始价">
+              <span>{{ item.quoteStatus === 'priced' ? `¥${Number(item.quote.original_price).toFixed(2)}` : '-' }}</span>
+            </el-form-item>
+          </el-col>
+          <el-col :span="4">
+            <el-form-item label="优惠金额">
+              <span class="discount-value">{{ item.quoteStatus === 'priced' ? `-¥${Number(item.quote.discount_amount).toFixed(2)}` : '-' }}</span>
+            </el-form-item>
+          </el-col>
+          <el-col :span="4">
+            <el-form-item label="优惠价">
+              <strong>{{ item.quoteStatus === 'priced' ? `¥${Number(item.quote.discount_price).toFixed(2)}` : '-' }}</strong>
+            </el-form-item>
+          </el-col>
+          <el-col :span="4">
             <el-form-item label="明细总价">
-              <span class="amount-value">¥{{ (Number(item.order_qty || 0) * Number(item.unit_price || 0)).toFixed(2) }}</span>
+              <span class="amount-value">¥{{ (Number(item.order_qty || 0) * Number(item.quote?.discount_price || 0)).toFixed(2) }}</span>
+            </el-form-item>
+          </el-col>
+          <el-col :span="4">
+            <el-form-item label="优惠说明">
+              <span v-if="item.quoteStatus === 'priced'" class="rule-text">{{ item.quote.pricing_rule_label }}</span>
+              <GlassButton v-else-if="item.quoteStatus === 'pending'" variant="link" :loading="quoteLoading" @click="refreshQuotes">重新报价</GlassButton>
+              <span v-else-if="item.quoteStatus === 'missing_base_price'" class="danger-text">请先在产品清单维护原始价</span>
             </el-form-item>
           </el-col>
         </el-row>
@@ -245,13 +269,14 @@ import { DETAIL_SECTIONS } from '@/api/domestic'
 import AppUpload from '@/components/AppUpload.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import { useDomesticOrderCreate } from './composables/useDomesticOrderCreate'
+import { quoteStatusLabel } from './composables/domesticMemberPricing'
 
 const {
-  loading, submitting, options, customers, customerLoading, form,
+  loading, submitting, quoteLoading, options, customers, customerLoading, form,
   attrOptions, attributePlaceholder, hasField, visibleFields,
   routeOf, unroutedCount, orderTotal, selectedCustomer,
   onProductTypeChange, onLengthChange, onOrderCategoryChange, addItem, copyItem, removeItem,
-  makeUploadFn, removeImage, searchCustomers, submit,
+  makeUploadFn, removeImage, searchCustomers, refreshQuotes, submit,
 } = useDomesticOrderCreate()
 </script>
 
@@ -289,6 +314,9 @@ const {
 .balance-hint { margin-top: 6px; color: var(--el-color-success); font-size: 12px; }
 .price-row { margin-top: 2px; }
 .amount-value, .order-total { font-weight: 600; color: var(--el-text-color-primary); }
+.discount-value { color: var(--el-color-success); }
+.danger-text { color: var(--el-color-danger); font-size: 12px; }
+.rule-text { color: var(--el-text-color-secondary); font-size: 12px; }
 .section-upload { margin-top: 8px; }
 
 .thumb-row {

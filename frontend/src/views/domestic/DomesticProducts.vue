@@ -58,6 +58,12 @@
               </el-select>
             </el-col>
             <el-col :span="4">
+              <el-select v-model="searchForm.price_status" placeholder="原始价状态" clearable style="width: 100%" @change="handleSearch">
+                <el-option label="已配置" value="configured" />
+                <el-option label="缺原价" value="missing" />
+              </el-select>
+            </el-col>
+            <el-col :span="4">
               <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
             </el-col>
           </el-row>
@@ -79,6 +85,18 @@
             <el-table-column prop="hair_style_series" label="发型系列" min-width="110" show-overflow-tooltip>
               <template #default="{ row }"><span v-if="row.product_type === 'cap'">{{ row.hair_style_series }}</span></template>
             </el-table-column>
+            <el-table-column label="原始价" min-width="110" align="right">
+              <template #default="{ row }">
+                <strong v-if="row.price_status === 'configured'">¥{{ Number(row.original_price).toFixed(2) }}</strong>
+                <el-tag v-else size="small" type="danger" effect="plain">缺原价</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="价格状态" min-width="100">
+              <template #default="{ row }">
+                <span v-if="row.price_status === 'configured'">已配置 · v{{ row.base_price_version }}</span>
+                <span v-else class="danger-text">待维护</span>
+              </template>
+            </el-table-column>
             <el-table-column label="工艺路线" min-width="150">
               <template #default="{ row }">
                 <span v-if="row.route_name">{{ row.route_name }}</span>
@@ -86,8 +104,10 @@
               </template>
             </el-table-column>
             <el-table-column prop="use_count" label="下单次数" min-width="100" sortable />
-            <el-table-column label="操作" min-width="110" fixed="right">
+            <el-table-column label="操作" min-width="230" fixed="right">
               <template #default="{ row }">
+                <GlassButton v-permission="'domestic:admin'" variant="link" left-icon="Money" @click="openPrice(row)">{{ row.price_status === 'configured' ? '改原始价' : '配原始价' }}</GlassButton>
+                <GlassButton v-if="row.price_status === 'configured'" v-permission="'domestic:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="removePrice(row)">删除原始价</GlassButton>
                 <GlassButton v-permission="'domestic:admin'" variant="link" left-icon="Connection" @click="openRebind(row)">改绑路线</GlassButton>
               </template>
             </el-table-column>
@@ -144,6 +164,20 @@
         <GlassButton variant="primary" :loading="saving" @click="saveRebind">确定</GlassButton>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="priceDialog.visible" title="维护共享原始价" width="460px">
+      <el-alert type="warning" show-icon :closable="false" class="tips" title="相同价格键的 SKU 共用这个价格" description="保存后同产品类型、工艺/尺寸、发长的所有 SKU 一起生效。" />
+      <el-form label-width="90px">
+        <el-form-item label="产品">{{ priceDialog.product?.name }}</el-form-item>
+        <el-form-item label="原始价" required>
+          <el-input-number v-model="priceDialog.originalPrice" :min="0.01" :precision="2" :step="10" style="width: 100%" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <GlassButton variant="ghost" @click="priceDialog.visible = false">取消</GlassButton>
+        <GlassButton variant="primary" :loading="saving" @click="savePrice">保存并使共享 SKU 生效</GlassButton>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -155,8 +189,8 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
-  deleteCraftRoute, getOptions, getProcessRoutes, listCraftRoutes,
-  listProducts, rebindProductRoute, upsertCraftRoute,
+  deleteCraftRoute, deleteProductBasePrice, getOptions, getProcessRoutes, listCraftRoutes,
+  listProducts, rebindProductRoute, updateProductBasePrice, upsertCraftRoute,
 } from '@/api/domestic'
 import { useListPage } from '@/composables/useListPage'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
@@ -175,17 +209,18 @@ const {
 } = useListPage(
   async ({ page, page_size, ...form }) => {
     const params = { page, page_size }
-    for (const key of ['keyword', 'product_type', 'route_bound']) {
+    for (const key of ['keyword', 'product_type', 'route_bound', 'price_status']) {
       if (form[key]) params[key] = form[key]
     }
     const res = await listProducts(params)
     return res.data || {}
   },
-  { searchForm: { keyword: '', product_type: '', route_bound: '' } },
+  { searchForm: { keyword: '', product_type: '', route_bound: '', price_status: '' } },
 )
 
 const mappingDialog = reactive({ visible: false, isEdit: false, id: null, product_type: 'cap', craft: '', route_id: null })
 const rebindDialog = reactive({ visible: false, product: null, route_id: null })
+const priceDialog = reactive({ visible: false, product: null, originalPrice: null })
 
 const craftOptions = computed(() => {
   const dictType = options.value.attr_dicts?.[mappingDialog.product_type]?.craft
@@ -254,6 +289,36 @@ async function saveRebind() {
   }
 }
 
+function openPrice(row) {
+  Object.assign(priceDialog, {
+    visible: true, product: row,
+    originalPrice: row.original_price == null ? null : Number(row.original_price),
+  })
+}
+
+async function savePrice() {
+  if (!(priceDialog.originalPrice > 0)) return ElMessage.warning('请填写大于 0 的原始价')
+  saving.value = true
+  try {
+    const res = await updateProductBasePrice(priceDialog.product.id, priceDialog.originalPrice)
+    const count = Number(res.data?.affected_sku_count || 0)
+    priceDialog.visible = false
+    ElMessage.success(`原始价已保存，同价格键的 ${count} 个 SKU 已一起生效`)
+    await fetchList()
+  } catch { /* 拦截器已提示 */ } finally {
+    saving.value = false
+  }
+}
+
+async function removePrice(row) {
+  try {
+    await confirmDanger('删除', `「${row.name}」共享的原始价`, '删除后，相同产品类型、工艺/尺寸、发长的所有 SKU 都将缺价，无法下单。')
+  } catch { return }
+  const res = await deleteProductBasePrice(row.id)
+  ElMessage.success(`原始价已删除，同价格键的 ${Number(res.data?.affected_sku_count || 0)} 个 SKU 现为缺价`)
+  await fetchList()
+}
+
 onMounted(async () => {
   const [optRes, routeRes] = await Promise.all([getOptions(), getProcessRoutes()])
   options.value = optRes.data || options.value
@@ -266,6 +331,7 @@ onMounted(async () => {
 .products-page { position: relative; }
 .products-aurora { inset: -24px -28px; }
 .products-page .products-tabs { position: relative; z-index: 1; }
+.danger-text { color: var(--el-color-danger); }
 
 .panel {
   padding: 16px;

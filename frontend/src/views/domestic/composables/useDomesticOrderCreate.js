@@ -4,11 +4,11 @@
  * 关键交互决策：工艺路线不让下单人选。选完属性后前端就地查「工艺→路线」映射，
  * 当场显示会走哪条路线；没配映射的当场标红提示，而不是等下单成功后才在列表里发现开不了工。
  */
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  createOrder, getOptions, listCraftRoutes, listCustomers, uploadImage,
+  createOrder, getOptions, listCraftRoutes, listCustomers, quoteDomesticPrices, uploadImage,
 } from '@/api/domestic'
 import { msgError } from '@/utils/feedback'
 import { currentBeijingDate } from '@/utils/datetime'
@@ -23,6 +23,10 @@ import {
   visibleAttributeFields,
 } from '@/views/domestic/domesticAttributeRules'
 import { createLatestRequestRunner } from '@/views/domestic/composables/latestRequest'
+import {
+  applyQuoteChange, applyQuoteResult, buildCreateItems, buildQuoteRequest,
+  hasBlockingPrice, invalidateItemQuote, quoteChangedDetail, quoteChangeReasonLabel,
+} from './domesticMemberPricing'
 
 function todayStr() {
   return currentBeijingDate()
@@ -41,7 +45,7 @@ function emptyItem() {
       hair_style_series: '',
     },
     order_qty: 1,
-    unit_price: 0,
+    quoteStatus: 'pending', quote: null, expectedQuote: null,
     hairstyle: '', hairstyle_images: [],
     color: '', color_images: [],
     style_requirement: '', style_images: [],
@@ -64,6 +68,9 @@ export function useDomesticOrderCreate() {
   const customerLoading = ref(false)
   const runLatestCustomerSearch = createLatestRequestRunner()
   const orderRequestId = ref(makeRequestId())
+  const quoteLoading = ref(false)
+  let quoteTimer = null
+  let quoteSequence = 0
 
   const form = reactive({
     order_no: '',
@@ -105,7 +112,7 @@ export function useDomesticOrderCreate() {
   )
 
   const orderTotal = computed(() => form.items.reduce(
-    (sum, item) => sum + Number(item.order_qty || 0) * Number(item.unit_price || 0),
+    (sum, item) => sum + Number(item.order_qty || 0) * Number(item.quote?.discount_price || 0),
     0,
   ))
 
@@ -119,10 +126,12 @@ export function useDomesticOrderCreate() {
       item.attrs[field] = ''
     }
     clearInapplicableAttributes(item.attrs)
+    invalidateItemQuote(item)
   }
 
   function onLengthChange(item) {
     clearInapplicableAttributes(item.attrs)
+    invalidateItemQuote(item)
   }
 
   function onOrderCategoryChange(category) {
@@ -136,6 +145,7 @@ export function useDomesticOrderCreate() {
     if (removedLabels.size) {
       ElMessage.info(`已清除非普货标准选项：${[...removedLabels].join('、')}；其余标准值已保留`)
     }
+    form.items.forEach(invalidateItemQuote)
   }
 
   function visibleFields(item) {
@@ -148,10 +158,12 @@ export function useDomesticOrderCreate() {
 
   function copyItem(index) {
     const source = form.items[index]
-    form.items.splice(index + 1, 0, {
+    const copied = {
       ...JSON.parse(JSON.stringify(source)),
       key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    })
+    }
+    invalidateItemQuote(copied)
+    form.items.splice(index + 1, 0, copied)
   }
 
   function removeItem(index) {
@@ -199,6 +211,35 @@ export function useDomesticOrderCreate() {
     )
   }
 
+  function allItemsQuotable() {
+    return form.items.length > 0 && form.items.every(item => !validateItemAttributes(item.attrs))
+  }
+
+  async function refreshQuotes() {
+    if (!allItemsQuotable()) return
+    const sequence = ++quoteSequence
+    form.items.forEach(item => { item.quoteStatus = 'quoting' })
+    quoteLoading.value = true
+    try {
+      const res = await quoteDomesticPrices(buildQuoteRequest(form, normalizeItemAttrs))
+      if (sequence !== quoteSequence) return
+      applyQuoteResult(form.items, res.data || {})
+    } catch {
+      if (sequence !== quoteSequence) return
+      form.items.forEach(item => { if (item.quoteStatus === 'quoting') item.quoteStatus = 'pending' })
+    } finally {
+      if (sequence === quoteSequence) quoteLoading.value = false
+    }
+  }
+
+  function scheduleQuote() {
+    quoteSequence += 1
+    form.items.forEach(invalidateItemQuote)
+    clearTimeout(quoteTimer)
+    if (!allItemsQuotable()) return
+    quoteTimer = setTimeout(refreshQuotes, 280)
+  }
+
   function validate() {
     if (!form.order_no.trim()) return '请填写客户订单号'
     if (!form.order_date) return '请选择下单日期'
@@ -211,7 +252,8 @@ export function useDomesticOrderCreate() {
       const attrError = validateItemAttributes(item.attrs)
       if (attrError) return `${label}：${attrError}`
       if (!(item.order_qty > 0)) return `${label}的数量要大于 0`
-      if (!(Number(item.unit_price) >= 0)) return `${label}的单价不能小于 0`
+      if (item.quoteStatus === 'missing_base_price') return `${label}缺少原始价，请先让管理员在产品清单维护`
+      if (item.quoteStatus !== 'priced' || !item.expectedQuote) return `${label}尚未完成报价`
     }
     return ''
   }
@@ -227,19 +269,54 @@ export function useDomesticOrderCreate() {
       order_type: form.order_type,
       order_channel: form.order_channel,
       remark: form.remark || null,
-      items: form.items.map(item => ({
-        attrs: normalizeItemAttrs(item.attrs),
-        order_qty: item.order_qty,
-        unit_price: Number(item.unit_price || 0),
-        hairstyle: item.hairstyle || null,
-        hairstyle_images: item.hairstyle_images.map(f => f.path),
-        color: item.color || null,
-        color_images: item.color_images.map(f => f.path),
-        style_requirement: item.style_requirement || null,
-        style_images: item.style_images.map(f => f.path),
-        remark: item.remark || null,
-        remark_images: item.remark_images.map(f => f.path),
-      })),
+      items: buildCreateItems(form.items, normalizeItemAttrs),
+    }
+  }
+
+  function quoteChangeMessage(detail) {
+    return (detail.changes || []).map((change, index) => {
+      const before = Number(change.previous_quote?.discount_price || 0).toFixed(2)
+      const after = Number(change.current_quote?.discount_price || 0).toFixed(2)
+      const reasons = (change.reasons || []).map(quoteChangeReasonLabel).join('、')
+      const formIndex = form.items.findIndex(item => item.key === change.client_key)
+      return `第 ${formIndex >= 0 ? formIndex + 1 : index + 1} 行：¥${before} → ¥${after}（${reasons || '报价已变化'}）`
+    }).join('\n')
+  }
+
+  async function createWithQuoteConfirmation(isDraft) {
+    try {
+      return await createOrder({ ...buildPayload(), is_draft: isDraft })
+    } catch (error) {
+      const changed = quoteChangedDetail(error)
+      if (!changed) throw error
+      const missingChanges = (changed.changes || []).filter(change => change.current_status === 'missing_base_price')
+      if (missingChanges.length) {
+        const missingKeys = new Set(missingChanges.map(change => change.client_key))
+        form.items.forEach(item => {
+          if (missingKeys.has(item.key)) {
+            item.quoteStatus = 'missing_base_price'
+            item.expectedQuote = null
+            item.quote = { status: 'missing_base_price', message: '原始价已删除' }
+          }
+        })
+        await ElMessageBox.alert(
+          '有明细的原始价已删除，本次未提交。请先在产品清单重新维护原始价，再回来重新报价。',
+          '缺少原始价',
+          { type: 'error', confirmButtonText: '知道了' },
+        )
+        return null
+      }
+      try {
+        await ElMessageBox.confirm(
+          `${changed.message || '价格已更新'}\n\n${quoteChangeMessage(changed)}\n\n确认使用新价格重新提交吗？`,
+          '价格变动确认',
+          { type: 'warning', confirmButtonText: '使用新价重新提交', cancelButtonText: '返回检查' },
+        )
+      } catch { return null }
+      orderRequestId.value = applyQuoteChange(
+        form.items, changed.current_expected_quotes, makeRequestId,
+      )
+      return createOrder({ ...buildPayload(), is_draft: isDraft })
     }
   }
 
@@ -249,7 +326,11 @@ export function useDomesticOrderCreate() {
       msgError(error)
       return
     }
-    if (!isDraft && !form.customer_id && orderTotal.value > 0) {
+    if (hasBlockingPrice(form.items)) {
+      msgError('所有明细必须完成报价；缺原价的产品需先去产品清单维护')
+      return
+    }
+    if (!isDraft && !form.customer_id) {
       msgError('新客户还没有充值账户：请先保存草稿，到客户管理充值后再提交')
       return
     }
@@ -274,7 +355,8 @@ export function useDomesticOrderCreate() {
 
     submitting.value = true
     try {
-      const res = await createOrder({ ...buildPayload(), is_draft: isDraft })
+      const res = await createWithQuoteConfirmation(isDraft)
+      if (!res) return
       const data = res.data || {}
       ElMessage.success(`${isDraft ? '草稿已保存' : '下单成功'}：${data.domestic_no}`)
       router.push({ name: 'DomesticOrders', query: { keyword: data.domestic_no } })
@@ -295,11 +377,19 @@ export function useDomesticOrderCreate() {
     }
   })
 
+  watch(
+    () => [form.customer_id, form.order_category, form.items.map(item => ({ key: item.key, attrs: item.attrs }))],
+    scheduleQuote,
+    { deep: true },
+  )
+
+  onBeforeUnmount(() => clearTimeout(quoteTimer))
+
   return {
-    loading, submitting, options, customers, customerLoading, form,
+    loading, submitting, quoteLoading, options, customers, customerLoading, form,
     attrOptions, attributePlaceholder, hasField, visibleFields,
     routeOf, unroutedCount, orderTotal, selectedCustomer,
     onProductTypeChange, onLengthChange, onOrderCategoryChange, addItem, copyItem, removeItem,
-    makeUploadFn, removeImage, searchCustomers, submit,
+    makeUploadFn, removeImage, searchCustomers, refreshQuotes, submit,
   }
 }

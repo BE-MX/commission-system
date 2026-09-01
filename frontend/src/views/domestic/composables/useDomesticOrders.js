@@ -15,6 +15,9 @@ import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import { downloadBlob } from '@/utils/download'
 import { currentBeijingDateTime } from '@/utils/datetime'
 import { normalizeOutcomeAllocation } from '@/views/domestic/conditionalRouting'
+import {
+  buildDraftSubmitPayload, quoteChangedDetail, quoteChangeReasonLabel,
+} from './domesticMemberPricing'
 
 export function useDomesticOrders() {
   const route = useRoute()
@@ -293,7 +296,41 @@ export function useDomesticOrders() {
         { type: 'warning', confirmButtonText: '提交并扣款' },
       )
     } catch { return }
-    await submitDraftOrder(row.id)
+    const res = await getOrder(row.id)
+    const current = res.data || {}
+    const payload = buildDraftSubmitPayload(current, newRequestId)
+    try {
+      await submitDraftOrder(row.id, payload)
+    } catch (error) {
+      const changed = quoteChangedDetail(error)
+      if (!changed) throw error
+      if ((changed.changes || []).some(change => change.current_status === 'missing_base_price')) {
+        await ElMessageBox.alert(
+          '有明细的原始价已删除，本次未提交。请先在产品清单重新维护原始价。',
+          '缺少原始价',
+          { type: 'error', confirmButtonText: '知道了' },
+        )
+        return
+      }
+      const lineCodeById = new Map((current.items || []).map(item => [item.id, item.line_code]))
+      const lines = (changed.changes || []).map(change => {
+        const before = Number(change.previous_quote?.discount_price || 0).toFixed(2)
+        const after = Number(change.current_quote?.discount_price || 0).toFixed(2)
+        const reasons = (change.reasons || []).map(quoteChangeReasonLabel).join('、')
+        return `明细 ${lineCodeById.get(change.item_id) || change.item_id}：¥${before} → ¥${after}（${reasons || '报价已变化'}）`
+      }).join('\n')
+      try {
+        await ElMessageBox.confirm(
+          `${changed.message || '价格已更新'}\n\n${lines}\n\n确认使用新价格提交并扣款吗？`,
+          '价格变动确认',
+          { type: 'warning', confirmButtonText: '使用新价提交', cancelButtonText: '暂不提交' },
+        )
+      } catch { return }
+      await submitDraftOrder(row.id, {
+        request_id: newRequestId(),
+        expected_quotes: changed.current_expected_quotes,
+      })
+    }
     msgSuccess('提交订单')
     await refreshAll()
   }
