@@ -532,14 +532,32 @@ def test_unseeded_current_cap_craft_builds_persistence_key():
     "attrs",
     [
         {"product_type": "unknown", "craft": "递旋", "size": None, "length": "15厘米"},
-        {"product_type": "cap", "craft": "递针旋全头套", "size": None, "length": "15厘米"},
-        {"product_type": "piece", "craft": "全递针", "size": None, "length": "25厘米"},
-        {"product_type": "piece", "craft": "全递针未知", "size": None, "length": "25厘米"},
+        {"product_type": "cap", "craft": "", "size": None, "length": "15厘米"},
+        {"product_type": "cap", "craft": "   ", "size": None, "length": "15厘米"},
+        {"product_type": "piece", "craft": "自定义发片", "size": None, "length": ""},
         {"product_type": "piece", "craft": "全递针", "size": "99*99", "length": "25厘米"},
     ],
 )
-def test_unknown_persistence_price_dimensions_return_none(attrs):
+def test_invalid_persistence_price_dimensions_return_none(attrs):
     assert pricing_service.build_persistence_price_key(**attrs) is None
+
+
+@pytest.mark.parametrize(
+    ("attrs", "expected"),
+    [
+        (
+            {"product_type": "cap", "craft": "特单手织工艺", "length": "47厘米"},
+            ("cap", "特单手织工艺", "47厘米"),
+        ),
+        (
+            {"product_type": "piece", "craft": "海报外发片Code", "length": "47厘米"},
+            ("piece", "海报外发片Code", "47厘米"),
+        ),
+    ],
+)
+def test_custom_persisted_sku_codes_build_exact_price_keys(attrs, expected):
+    assert pricing_service.build_persistence_price_key(**attrs) == expected
+    assert pricing_service.get_base_price(**attrs) is None
 
 
 def test_all_seed_rows_round_trip_through_public_persistence_builder():
@@ -1586,7 +1604,7 @@ def test_base_price_upsert_versions_shared_skus_and_delete_returns_to_missing(db
     assert {row["id"] for row in rows} == {first.id, second.id}
 
 
-def test_base_price_lookup_is_byte_exact_and_invalid_matrix_keys_stay_missing(db):
+def test_base_price_lookup_is_byte_exact_and_custom_keys_do_not_gain_seed(db):
     from app.domestic import pricing_service as service
 
     db.add_all(
@@ -1617,6 +1635,9 @@ def test_base_price_lookup_is_byte_exact_and_invalid_matrix_keys_stay_missing(db
     assert upper.original_price == D("100.00")
     assert lower.original_price == D("200.00")
     assert service.price_key_for_attrs(
+        product_type="cap", craft="未确认工艺", length="20厘米"
+    ) == ("cap", "未确认工艺", "20厘米")
+    assert service.get_base_price(
         product_type="cap", craft="未确认工艺", length="20厘米"
     ) is None
 
@@ -2039,6 +2060,80 @@ def test_quote_api_returns_priced_and_missing_json_contract_with_exact_labels(db
     assert missing["status"] == "missing_base_price"
     assert isinstance(missing["product_id"], int)
     assert "expected_quote" not in missing
+
+
+@pytest.mark.parametrize(
+    "attrs",
+    [
+        _cap_attrs(craft="特单手织工艺", length="47厘米"),
+        _piece_attrs(craft="海报外发片Code", length="47厘米"),
+    ],
+    ids=["custom-cap", "custom-piece"],
+)
+def test_custom_sku_can_move_from_missing_to_priced_and_back(db, attrs):
+    user = _operator(db, f"custom-price-{attrs['product_type']}")
+    customer = domestic_models.DomesticCustomer(
+        shop_name=f"特单报价客户-{attrs['product_type']}",
+        membership_level="black",
+        last_recharge_amount=D("30000.00"),
+        created_by=user.id,
+    )
+    db.add(customer)
+    product = _persist_product(db, attrs)
+    db.commit()
+    writer = _pricing_api_client(db, user.id, "domestic:write")
+    admin = _pricing_api_client(db, user.id, "domestic:admin")
+    quote_payload = {
+        "customer_id": customer.id,
+        "items": [{"client_key": "custom", "product_id": product.id}],
+    }
+
+    assert pricing_service.get_base_price(
+        product_type=product.product_type,
+        craft=product.craft,
+        length=product.length,
+        size=product.size if product.product_type == "piece" else None,
+    ) is None
+    missing_list = admin.get(
+        "/api/domestic/products", params={"price_status": "missing"}
+    ).json()["data"]
+    assert missing_list["total"] == 1
+    assert missing_list["items"][0]["price_key"] == {
+        "product_type": product.product_type,
+        "craft": product.craft,
+        "length": product.length,
+    }
+    missing_quote = writer.post(
+        "/api/domestic/pricing/quote", json=quote_payload
+    ).json()["data"]["items"][0]
+    assert missing_quote["status"] == "missing_base_price"
+
+    saved = admin.put(
+        f"/api/domestic/products/{product.id}/base-price",
+        json={"original_price": "1000.00"},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["data"]["affected_sku_count"] == 1
+    configured_list = admin.get(
+        "/api/domestic/products", params={"price_status": "configured"}
+    ).json()["data"]
+    assert configured_list["total"] == 1
+    priced = writer.post(
+        "/api/domestic/pricing/quote", json=quote_payload
+    ).json()["data"]["items"][0]
+    assert priced["status"] == "priced"
+    assert priced["original_price"] == 1000.0
+    assert priced["discount_price"] == 880.0
+    assert priced["discount_amount"] == 120.0
+    assert priced["pricing_rule"] == "member_reduction"
+    assert priced["pricing_rule_label"] == "黑卡立减 ¥120.00"
+
+    deleted = admin.delete(f"/api/domestic/products/{product.id}/base-price")
+    assert deleted.status_code == 200
+    missing_again = writer.post(
+        "/api/domestic/pricing/quote", json=quote_payload
+    ).json()["data"]["items"][0]
+    assert missing_again["status"] == "missing_base_price"
 
 
 def test_quote_api_commits_new_missing_sku_without_incrementing_use_count(db):

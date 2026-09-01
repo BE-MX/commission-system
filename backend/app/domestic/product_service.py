@@ -8,7 +8,7 @@ attrs_key（属性组合）就是产品身份。路线按「工艺→路线」�
 import json
 import logging
 
-from sqlalchemy import String, and_, cast, func, literal, or_
+from sqlalchemy import String, and_, cast, func, literal
 from sqlalchemy.dialects.mysql import BINARY
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -170,22 +170,7 @@ def list_products(
     sort_field: str = "",
     sort_order: str = "",
 ) -> tuple[list[dict], int]:
-    eligible_price_key = or_(
-        and_(
-            DomesticProduct.product_type == "cap",
-            DomesticProduct.craft.in_(
-                pricing_service.CAP_PERSISTENCE_CRAFT_CODES
-            ),
-        ),
-        and_(
-            DomesticProduct.product_type == "piece",
-            DomesticProduct.craft.in_(
-                pricing_service.PIECE_PERSISTENCE_CRAFT_CODES
-            ),
-        ),
-    )
     price_join = and_(
-        eligible_price_key,
         DomesticBasePrice.product_type == DomesticProduct.product_type,
         _exact_text_columns_predicate(
             db.get_bind().dialect.name,

@@ -89,11 +89,6 @@ _CAP_PRICE_ROWS = {
     "中分界": _CAP_PART_PRICES,
     "左分界": _CAP_PART_PRICES,
 }
-CAP_PERSISTENCE_CRAFT_CODES = frozenset(
-    {"递旋", "中分界", "左分界", "大U型", "递顶"}
-)
-
-
 def _build_base_price_seed_matrix():
     matrix = {}
     piece_lengths = ("25厘米", "30厘米", "35厘米", "40厘米")
@@ -130,7 +125,6 @@ COMBINED_PIECE_CRAFT_SIZE = {
     for craft, size_rows in _PIECE_PRICE_ROWS.items()
     for size in size_rows
 }
-PIECE_PERSISTENCE_CRAFT_CODES = frozenset(COMBINED_PIECE_CRAFT_SIZE)
 _COMBINED_PIECE_BY_DIMENSIONS = {
     dimensions: combined
     for combined, dimensions in COMBINED_PIECE_CRAFT_SIZE.items()
@@ -222,22 +216,22 @@ def get_base_price(
 def build_persistence_price_key(
     *, product_type: str, craft: str, length: str, size: str | None = None
 ) -> tuple[str, str, str] | None:
-    """把产品属性转换为数据库使用的合并价格键。"""
+    """把已持久化 SKU 转成价格键；seed 的独立工艺/尺寸只显式合并。"""
 
-    if product_type == "cap":
-        if craft not in CAP_PERSISTENCE_CRAFT_CODES:
-            return None
-        return product_type, craft, length
-    if product_type != "piece":
+    if (
+        product_type not in {"cap", "piece"}
+        or not isinstance(craft, str)
+        or not craft.strip()
+        or not isinstance(length, str)
+        or not length.strip()
+    ):
         return None
-
-    if size:
+    if product_type == "piece" and size is not None:
         combined_craft = _COMBINED_PIECE_BY_DIMENSIONS.get((craft, size))
-    else:
-        combined_craft = craft if craft in COMBINED_PIECE_CRAFT_SIZE else None
-    if combined_craft is None:
-        return None
-    return product_type, combined_craft, length
+        if combined_craft is None:
+            return None
+        craft = combined_craft
+    return product_type, craft, length
 
 
 def price_key_for_attrs(
@@ -311,7 +305,7 @@ def _load_priced_product(
         raise ValueError("产品不存在")
     price_key = price_key_for_product(product)
     if price_key is None:
-        raise ValueError("该产品属性不属于已确认的价格矩阵")
+        raise ValueError("该产品属性不完整，无法生成价格键")
     return product, price_key
 
 
