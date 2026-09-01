@@ -1,8 +1,16 @@
+from datetime import date
 from decimal import Decimal
+import importlib.util
+import inspect
+from pathlib import Path
 
 import pytest
+from sqlalchemy import CheckConstraint
+from sqlalchemy.exc import IntegrityError
 
+from app.auth.models import ArkUser
 from app.domestic import pricing_service
+from app.domestic import models as domestic_models
 
 
 D = Decimal
@@ -487,3 +495,333 @@ def test_fixed_price_above_original_is_capped_and_marked():
     assert result.final_price == D("900.00")
     assert result.discount_amount == D("0.00")
     assert result.pricing_rule == "member_fixed_capped"
+
+
+MIGRATION_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "alembic"
+    / "versions"
+    / "130_domestic_member_pricing_a.py"
+)
+
+
+def _migration_module():
+    spec = importlib.util.spec_from_file_location(
+        "migration_130_domestic_member_pricing_a", MIGRATION_PATH
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _operator(db, suffix):
+    user = ArkUser(
+        username=f"member-pricing-{suffix}",
+        password_hash="x",
+        real_name=f"member-pricing-{suffix}",
+    )
+    db.add(user)
+    db.flush()
+    return user
+
+
+def _customer_and_order(db, suffix):
+    user = _operator(db, suffix)
+    customer = domestic_models.DomesticCustomer(
+        shop_name=f"会员定价客户-{suffix}",
+        membership_level=None,
+        created_by=user.id,
+    )
+    db.add(customer)
+    db.flush()
+    order = domestic_models.DomesticOrder(
+        domestic_no=f"DOP-{suffix}",
+        order_no=f"CUSTOMER-{suffix}",
+        order_date=date(2026, 9, 1),
+        customer_id=customer.id,
+        created_by=user.id,
+    )
+    db.add(order)
+    db.flush()
+    return user, customer, order
+
+
+def test_base_price_model_persists_without_size_and_rejects_duplicate_key(db):
+    model = getattr(domestic_models, "DomesticBasePrice")
+    assert "size" not in model.__table__.columns
+
+    db.add(
+        model(
+            product_type="piece",
+            craft="全递针9*14",
+            length="25厘米",
+            original_price=D("840.00"),
+            version=1,
+        )
+    )
+    db.flush()
+    db.add(
+        model(
+            product_type="piece",
+            craft="全递针9*14",
+            length="25厘米",
+            original_price=D("999.00"),
+            version=2,
+        )
+    )
+    with pytest.raises(IntegrityError):
+        db.flush()
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"product_type": "unknown"},
+        {"original_price": D("0.00")},
+        {"original_price": D("-0.01")},
+        {"version": 0},
+    ],
+)
+def test_base_price_database_checks_reject_invalid_rows(db, overrides):
+    model = getattr(domestic_models, "DomesticBasePrice")
+    values = {
+        "product_type": "cap",
+        "craft": "递旋",
+        "length": "15厘米",
+        "original_price": D("1198.00"),
+        "version": 1,
+    }
+    values.update(overrides)
+    db.add(model(**values))
+    with pytest.raises(IntegrityError):
+        db.flush()
+
+
+@pytest.mark.parametrize("membership_level", [None, "silver", "black", "supreme"])
+def test_customer_membership_snapshot_accepts_only_current_levels(
+    db, membership_level
+):
+    user = _operator(db, membership_level or "none")
+    customer = domestic_models.DomesticCustomer(
+        shop_name=f"会员等级-{membership_level}",
+        membership_level=membership_level,
+        last_recharge_amount=D("10000.00") if membership_level else None,
+        created_by=user.id,
+    )
+    db.add(customer)
+    db.flush()
+    assert customer.last_recharged_at is None
+
+
+def test_customer_membership_database_check_rejects_unknown_level(db):
+    user = _operator(db, "invalid-level")
+    db.add(
+        domestic_models.DomesticCustomer(
+            shop_name="无效会员等级",
+            membership_level="gold",
+            created_by=user.id,
+        )
+    )
+    with pytest.raises(IntegrityError):
+        db.flush()
+
+
+def test_customer_and_order_item_pricing_columns_match_compatibility_contract():
+    customer_columns = domestic_models.DomesticCustomer.__table__.columns
+    assert customer_columns.membership_level.type.length == 16
+    assert customer_columns.membership_level.nullable is True
+    assert customer_columns.last_recharge_amount.nullable is True
+    assert customer_columns.last_recharged_at.nullable is True
+
+    item_columns = domestic_models.DomesticOrderItem.__table__.columns
+    expected = {
+        "original_price": 14,
+        "discount_amount": 14,
+        "membership_level_snapshot": 16,
+        "pricing_rule": 24,
+        "pricing_version": 32,
+        "base_price_version_snapshot": None,
+    }
+    for name, length_or_precision in expected.items():
+        column = item_columns[name]
+        assert column.nullable is True
+        assert column.default is None
+        assert column.server_default is None
+        if length_or_precision is not None:
+            assert (
+                getattr(column.type, "length", None) or column.type.precision
+            ) == length_or_precision
+
+    legacy_item = domestic_models.DomesticOrderItem(
+        order_id=1,
+        line_no=1,
+        product_id=1,
+        product_name="旧写路径",
+        order_qty=1,
+        unit_price=D("100.00"),
+    )
+    assert legacy_item.original_price is None
+    assert legacy_item.pricing_rule is None
+
+
+def test_pricing_request_persists_and_rejects_duplicate_order_request(db):
+    model = getattr(domestic_models, "DomesticOrderPricingRequest")
+    _, _, order = _customer_and_order(db, "request-unique")
+    payload = {
+        "order_id": order.id,
+        "request_id": "same-request",
+        "operation": "submit",
+        "request_hash": "a" * 64,
+        "result_json": {"total": "840.00"},
+    }
+    db.add(model(**payload))
+    db.flush()
+    db.add(model(**payload))
+    with pytest.raises(IntegrityError):
+        db.flush()
+
+
+def test_pricing_request_operation_database_check(db):
+    model = getattr(domestic_models, "DomesticOrderPricingRequest")
+    _, _, order = _customer_and_order(db, "request-operation")
+    db.add(
+        model(
+            order_id=order.id,
+            request_id="bad-operation",
+            operation="edit",
+            request_hash="b" * 64,
+            result_json={},
+        )
+    )
+    with pytest.raises(IntegrityError):
+        db.flush()
+
+
+def test_member_pricing_tables_expose_named_database_constraints():
+    base_price = getattr(domestic_models, "DomesticBasePrice").__table__
+    pricing_request = getattr(
+        domestic_models, "DomesticOrderPricingRequest"
+    ).__table__
+    customer = domestic_models.DomesticCustomer.__table__
+
+    assert {
+        constraint.name
+        for constraint in base_price.constraints
+        if isinstance(constraint, CheckConstraint)
+    } == {
+        "ck_dom_base_price_product_type",
+        "ck_dom_base_price_positive",
+        "ck_dom_base_price_version",
+    }
+    assert {
+        constraint.name
+        for constraint in pricing_request.constraints
+        if isinstance(constraint, CheckConstraint)
+    } == {"ck_dom_pricing_request_operation"}
+    assert {
+        constraint.name
+        for constraint in customer.constraints
+        if isinstance(constraint, CheckConstraint)
+    } >= {"ck_dom_customer_membership_level"}
+
+
+def test_member_pricing_migration_revision_and_frozen_seed_contract():
+    migration = _migration_module()
+    expected = tuple(pricing_service.iter_base_price_seeds())
+
+    assert migration.revision == "130_domestic_member_pricing_a"
+    assert migration.down_revision == "129_domestic_order_attributes"
+    assert len(migration.revision) <= 32
+    assert migration.BASE_PRICE_SEEDS == expected
+    assert len(migration.BASE_PRICE_SEEDS) == 131
+    assert len({row[:3] for row in migration.BASE_PRICE_SEEDS}) == 131
+    assert (
+        "piece",
+        "递针中分界13*15",
+        "35厘米",
+        D("1040.00"),
+    ) in migration.BASE_PRICE_SEEDS
+
+    full_needle = {
+        (craft.removeprefix("全递针"), length): price
+        for product_type, craft, length, price in migration.BASE_PRICE_SEEDS
+        if product_type == "piece" and craft.startswith("全递针")
+    }
+    needle_spin = {
+        (craft.removeprefix("递针旋"), length): price
+        for product_type, craft, length, price in migration.BASE_PRICE_SEEDS
+        if product_type == "piece" and craft.startswith("递针旋")
+    }
+    assert needle_spin == full_needle
+
+
+def test_member_pricing_migration_is_self_contained_and_backfills_compatibly(
+    monkeypatch,
+):
+    migration = _migration_module()
+    module_source = MIGRATION_PATH.read_text(encoding="utf-8")
+    upgrade_source = inspect.getsource(migration.upgrade)
+    downgrade_source = inspect.getsource(migration.downgrade)
+
+    added_columns = []
+    monkeypatch.setattr(migration.op, "create_table", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        migration.op,
+        "add_column",
+        lambda table_name, column: added_columns.append((table_name, column)),
+    )
+    monkeypatch.setattr(migration.op, "execute", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(migration.op, "alter_column", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        migration.op, "create_check_constraint", lambda *_args, **_kwargs: None
+    )
+    monkeypatch.setattr(migration.op, "bulk_insert", lambda *_args, **_kwargs: None)
+    migration.upgrade()
+
+    assert "app.domestic.pricing_service" not in module_source
+    for table_name in (
+        "ark_domestic_base_prices",
+        "ark_domestic_order_pricing_requests",
+    ):
+        assert table_name in upgrade_source
+        assert table_name in downgrade_source
+    for column_name in (
+        "last_recharge_amount",
+        "last_recharged_at",
+        "original_price",
+        "discount_amount",
+        "membership_level_snapshot",
+        "pricing_rule",
+        "pricing_version",
+        "base_price_version_snapshot",
+    ):
+        assert column_name in upgrade_source
+        assert column_name in downgrade_source
+
+    assert "transaction_type = 'recharge'" in module_source
+    assert "MAX(id)" in module_source
+    assert "last_recharge_amount = latest.amount" in module_source
+    assert "last_recharged_at = latest.created_at" in module_source
+    assert "original_price = unit_price" in module_source
+    assert "discount_amount = 0" in module_source
+    assert "membership_level_snapshot = NULL" in module_source
+    assert "pricing_rule = 'legacy_manual'" in module_source
+    assert "pricing_version = 'legacy'" in module_source
+    assert "base_price_version_snapshot = 0" in module_source
+    compatibility_column_names = {
+        "original_price",
+        "discount_amount",
+        "membership_level_snapshot",
+        "pricing_rule",
+        "pricing_version",
+        "base_price_version_snapshot",
+    }
+    compatibility_columns = {
+        column.name: column
+        for table_name, column in added_columns
+        if table_name == "ark_domestic_order_items"
+    }
+    assert set(compatibility_columns) == compatibility_column_names
+    for column in compatibility_columns.values():
+        assert column.nullable is True
+        assert column.server_default is None

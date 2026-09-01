@@ -55,7 +55,7 @@ def _customer(db, user, name="余额客户"):
         CustomerCreate(
             shop_name=name,
             custom_code=f"C-{name}",
-            membership_level="金卡",
+            membership_level=None,
             province="山东省",
             city="青岛市",
         ),
@@ -156,7 +156,7 @@ def test_customer_profile_and_recharge_idempotency(db):
 
     db.refresh(customer)
     assert customer.custom_code == "C-余额客户"
-    assert customer.membership_level == "金卡"
+    assert customer.membership_level is None
     assert (customer.province, customer.city) == ("山东省", "青岛市")
     assert customer.balance == Decimal("500.00")
     assert replay["ledger_id"] == first["ledger_id"]
