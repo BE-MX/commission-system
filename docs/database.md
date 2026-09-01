@@ -204,7 +204,7 @@
 
 - `ark_dashboard_preference`：每用户一行的工作台布局配置。`user_id`（INT UNSIGNED FK→ark_users.id ON DELETE CASCADE，UNIQUE）+ `prefs`（JSON：`{version, metrics:{hidden,order}, actions:{hidden,order}}`）+ 时间戳。卡片 key 的合法性不在库层校验——真相源是前端 `views/dashboard/cards.js` 注册表，未知 key 前端忽略（注册表增删卡片对存量配置向前兼容）。
 
-## 内贸订单（迁移 081/082/116/127/128，2026-07-27、2026-08-17、2026-08-31、2026-09-01）
+## 内贸订单（迁移 081/082/116/127/129，2026-07-27、2026-08-17、2026-08-31、2026-09-01）
 
 与外贸生产订单/报工**平行**的一套表。不复用 `order_product_process_progress`：那张表 FK 硬绑 `ark_production_order_items` 且是整行 0/1 流转，内贸要按数量拆批，结构不同；平行建表换取外贸链路零改动。共用的是 `process` / `process_route` / `process_route_step` / `user_process_binding`（工序、路线、工人分工内外贸同一套）。
 

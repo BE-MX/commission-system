@@ -327,7 +327,7 @@ git commit -m "feat: expose domestic order classifications"
 
 - [ ] **Step 1: Update authoritative docs**
 
-Document the breaking `order_category` rename, new required type/channel fields and dictionary codes, options response, conditional product attributes, special-only creation transaction, migration 128, and cutover maintenance-window command. Explicitly state that historical deletion is not part of this change.
+Document the breaking `order_category` rename, new required type/channel fields and dictionary codes, options response, conditional product attributes, special-only creation transaction, migration 129, and cutover maintenance-window command. Explicitly state that historical deletion is not part of this change.
 
 - [ ] **Step 2: Run convention checks**
 
