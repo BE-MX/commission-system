@@ -183,27 +183,120 @@ def _seed_base_prices() -> None:
     )
 
 
+def _backfill_customer_membership(connection) -> None:
+    customers = sa.table(
+        "ark_domestic_customers",
+        sa.column("id", sa.Integer()),
+        sa.column("membership_level", sa.String(16)),
+        sa.column("last_recharge_amount", MONEY),
+        sa.column("last_recharged_at", sa.DateTime()),
+    )
+    ledger = sa.table(
+        "ark_domestic_customer_ledger",
+        sa.column("id", sa.BigInteger()),
+        sa.column("customer_id", sa.Integer()),
+        sa.column("transaction_type", sa.String(32)),
+        sa.column("amount", MONEY),
+        sa.column("created_at", sa.DateTime()),
+    )
+    candidate = ledger.alias("candidate_recharge")
+    latest = ledger.alias("latest_recharge")
+    latest_id = (
+        sa.select(sa.func.max(candidate.c.id))
+        .where(
+            candidate.c.customer_id == customers.c.id,
+            candidate.c.transaction_type == "recharge",
+        )
+        .correlate(customers)
+        .scalar_subquery()
+    )
+    latest_amount = (
+        sa.select(latest.c.amount)
+        .where(latest.c.id == latest_id)
+        .scalar_subquery()
+    )
+    latest_created_at = (
+        sa.select(latest.c.created_at)
+        .where(latest.c.id == latest_id)
+        .scalar_subquery()
+    )
+
+    # Clear all historical hand-maintained values before rebuilding snapshots from
+    # the authoritative recharge ledger. Customers without recharge remain NULL.
+    connection.execute(
+        customers.update().values(
+            membership_level=None,
+            last_recharge_amount=None,
+            last_recharged_at=None,
+        )
+    )
+    connection.execute(
+        customers.update()
+        .where(latest_id.is_not(None))
+        .values(
+            membership_level=sa.case(
+                (latest_amount >= Decimal("100000.00"), "supreme"),
+                (latest_amount >= Decimal("30000.00"), "black"),
+                (latest_amount >= Decimal("10000.00"), "silver"),
+                else_=None,
+            ),
+            last_recharge_amount=latest_amount,
+            last_recharged_at=latest_created_at,
+        )
+    )
+
+
+def _backfill_legacy_order_pricing(connection) -> None:
+    items = sa.table(
+        "ark_domestic_order_items",
+        sa.column("unit_price", MONEY),
+        sa.column("original_price", MONEY),
+        sa.column("discount_amount", MONEY),
+        sa.column("membership_level_snapshot", sa.String(16)),
+        sa.column("pricing_rule", sa.String(24)),
+        sa.column("pricing_version", sa.String(32)),
+        sa.column("base_price_version_snapshot", sa.Integer()),
+    )
+    connection.execute(
+        items.update().values(
+            original_price=items.c.unit_price,
+            discount_amount=Decimal("0.00"),
+            membership_level_snapshot=None,
+            pricing_rule="legacy_manual",
+            pricing_version="legacy",
+            base_price_version_snapshot=0,
+        )
+    )
+
+
 def upgrade() -> None:
     op.create_table(
         "ark_domestic_base_prices",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("product_type", sa.String(16), nullable=False),
-        sa.Column("craft", sa.String(64), nullable=False),
-        sa.Column("length", sa.String(32), nullable=False),
-        sa.Column("original_price", MONEY, nullable=False),
-        sa.Column("version", sa.Integer(), nullable=False),
-        sa.Column("updated_by", USER_ID, nullable=True),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False, comment="主键"),
+        sa.Column(
+            "product_type",
+            sa.String(16),
+            nullable=False,
+            comment="产品类型 cap=头套,piece=发片",
+        ),
+        sa.Column("craft", sa.String(64), nullable=False, comment="头套工艺 / 发片合并工艺尺寸"),
+        sa.Column("length", sa.String(32), nullable=False, comment="长度"),
+        sa.Column("original_price", MONEY, nullable=False, comment="原价（人民币）"),
+        sa.Column("version", sa.Integer(), nullable=False, comment="价格版本，从1开始"),
+        sa.Column("updated_by", USER_ID, nullable=True, comment="最后维护人"),
         sa.Column(
             "created_at",
             sa.DateTime(),
             nullable=False,
             server_default=sa.text("CURRENT_TIMESTAMP"),
+            comment="创建时间（北京时）",
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(),
             nullable=False,
             server_default=sa.text("CURRENT_TIMESTAMP"),
+            comment="更新时间（北京时）",
         ),
         sa.CheckConstraint(
             "product_type IN ('cap', 'piece')",
@@ -229,17 +322,23 @@ def upgrade() -> None:
     )
     op.create_table(
         "ark_domestic_order_pricing_requests",
-        sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
-        sa.Column("order_id", sa.Integer(), nullable=False),
-        sa.Column("request_id", sa.String(64), nullable=False),
-        sa.Column("operation", sa.String(24), nullable=False),
-        sa.Column("request_hash", sa.String(64), nullable=False),
-        sa.Column("result_json", sa.JSON(), nullable=False),
+        sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False, comment="主键"),
+        sa.Column("order_id", sa.Integer(), nullable=False, comment="所属内贸订单"),
+        sa.Column("request_id", sa.String(64), nullable=False, comment="客户端幂等键"),
+        sa.Column(
+            "operation",
+            sa.String(24),
+            nullable=False,
+            comment="操作类型 submit/reprice_customer",
+        ),
+        sa.Column("request_hash", sa.String(64), nullable=False, comment="请求载荷 SHA-256"),
+        sa.Column("result_json", sa.JSON(), nullable=False, comment="首次定价结果"),
         sa.Column(
             "created_at",
             sa.DateTime(),
             nullable=False,
             server_default=sa.text("CURRENT_TIMESTAMP"),
+            comment="创建时间（北京时）",
         ),
         sa.CheckConstraint(
             "operation IN ('submit', 'reprice_customer')",
@@ -261,51 +360,44 @@ def upgrade() -> None:
 
     op.add_column(
         "ark_domestic_customers",
-        sa.Column("last_recharge_amount", MONEY, nullable=True),
+        sa.Column(
+            "last_recharge_amount",
+            MONEY,
+            nullable=True,
+            comment="最近一次成功充值金额（人民币）",
+        ),
     )
     op.add_column(
         "ark_domestic_customers",
-        sa.Column("last_recharged_at", sa.DateTime(), nullable=True),
+        sa.Column(
+            "last_recharged_at",
+            sa.DateTime(),
+            nullable=True,
+            comment="最近一次成功充值时间（北京时）",
+        ),
     )
     for column in (
-        sa.Column("original_price", MONEY, nullable=True),
-        sa.Column("discount_amount", MONEY, nullable=True),
-        sa.Column("membership_level_snapshot", sa.String(16), nullable=True),
-        sa.Column("pricing_rule", sa.String(24), nullable=True),
-        sa.Column("pricing_version", sa.String(32), nullable=True),
-        sa.Column("base_price_version_snapshot", sa.Integer(), nullable=True),
+        sa.Column("original_price", MONEY, nullable=True, comment="原价快照（人民币）"),
+        sa.Column("discount_amount", MONEY, nullable=True, comment="优惠金额快照（人民币）"),
+        sa.Column(
+            "membership_level_snapshot",
+            sa.String(16),
+            nullable=True,
+            comment="会员等级快照 silver/black/supreme",
+        ),
+        sa.Column("pricing_rule", sa.String(24), nullable=True, comment="定价规则"),
+        sa.Column("pricing_version", sa.String(32), nullable=True, comment="定价算法版本"),
+        sa.Column(
+            "base_price_version_snapshot",
+            sa.Integer(),
+            nullable=True,
+            comment="基础价格版本快照",
+        ),
     ):
         op.add_column("ark_domestic_order_items", column)
 
-    # A persisted recharge ledger row is successful: recharge_customer commits only
-    # after balance mutation and ledger insertion, and the ledger has no status column.
-    # Highest id is the authoritative latest successful recharge for each customer.
-    op.execute(
-        sa.text(
-            """
-            UPDATE ark_domestic_customers AS customer
-            LEFT JOIN (
-                SELECT ledger.id, ledger.customer_id, ledger.amount, ledger.created_at
-                FROM ark_domestic_customer_ledger AS ledger
-                INNER JOIN (
-                    SELECT customer_id, MAX(id) AS latest_id
-                    FROM ark_domestic_customer_ledger
-                    WHERE transaction_type = 'recharge'
-                    GROUP BY customer_id
-                ) AS latest_ids ON latest_ids.latest_id = ledger.id
-            ) AS latest ON latest.customer_id = customer.id
-            SET customer.last_recharge_amount = latest.amount,
-                customer.last_recharged_at = latest.created_at,
-                customer.membership_level = CASE
-                    WHEN latest.id IS NULL THEN NULL
-                    WHEN latest.amount >= 100000 THEN 'supreme'
-                    WHEN latest.amount >= 30000 THEN 'black'
-                    WHEN latest.amount >= 10000 THEN 'silver'
-                    ELSE NULL
-                END
-            """
-        )
-    )
+    connection = op.get_bind()
+    _backfill_customer_membership(connection)
     op.alter_column(
         "ark_domestic_customers",
         "membership_level",
@@ -322,19 +414,7 @@ def upgrade() -> None:
         "('silver', 'black', 'supreme')",
     )
 
-    op.execute(
-        sa.text(
-            """
-            UPDATE ark_domestic_order_items
-            SET original_price = unit_price,
-                discount_amount = 0,
-                membership_level_snapshot = NULL,
-                pricing_rule = 'legacy_manual',
-                pricing_version = 'legacy',
-                base_price_version_snapshot = 0
-            """
-        )
-    )
+    _backfill_legacy_order_pricing(connection)
     _seed_base_prices()
 
 
@@ -367,4 +447,3 @@ def downgrade() -> None:
     op.drop_column("ark_domestic_customers", "last_recharge_amount")
     op.drop_table("ark_domestic_order_pricing_requests")
     op.drop_table("ark_domestic_base_prices")
-

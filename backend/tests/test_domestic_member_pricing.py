@@ -1,11 +1,22 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 import importlib.util
 import inspect
 from pathlib import Path
 
 import pytest
-from sqlalchemy import CheckConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    DateTime,
+    Integer,
+    MetaData,
+    Numeric,
+    String,
+    Table,
+    create_engine,
+    select,
+)
 from sqlalchemy.exc import IntegrityError
 
 from app.auth.models import ArkUser
@@ -755,6 +766,140 @@ def test_member_pricing_migration_revision_and_frozen_seed_contract():
     assert needle_spin == full_needle
 
 
+def test_customer_migration_backfill_uses_latest_recharge_id_and_preserves_money():
+    migration = _migration_module()
+    backfill = getattr(migration, "_backfill_customer_membership")
+    metadata = MetaData()
+    customers = Table(
+        "ark_domestic_customers",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("membership_level", String(16)),
+        Column("last_recharge_amount", Numeric(14, 2)),
+        Column("last_recharged_at", DateTime),
+        Column("balance", Numeric(14, 2), nullable=False),
+    )
+    ledger = Table(
+        "ark_domestic_customer_ledger",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("customer_id", Integer, nullable=False),
+        Column("transaction_type", String(32), nullable=False),
+        Column("amount", Numeric(14, 2), nullable=False),
+        Column("balance_after", Numeric(14, 2), nullable=False),
+        Column("created_at", DateTime, nullable=False),
+    )
+    engine = create_engine("sqlite:///:memory:")
+    metadata.create_all(engine)
+    same_second = datetime(2026, 9, 1, 10, 0, 0)
+    later = datetime(2026, 9, 1, 10, 1, 0)
+    customer_rows = [
+        {
+            "id": customer_id,
+            "membership_level": "silver",
+            "last_recharge_amount": D("1.00"),
+            "last_recharged_at": later,
+            "balance": D(f"{customer_id}00.00"),
+        }
+        for customer_id in range(1, 7)
+    ]
+    ledger_rows = [
+        # Same timestamp: id=2 must win, not created_at or accumulated amount.
+        {"id": 1, "customer_id": 1, "transaction_type": "recharge", "amount": D("10000.00"), "balance_after": D("10100.00"), "created_at": same_second},
+        {"id": 2, "customer_id": 1, "transaction_type": "recharge", "amount": D("30000.00"), "balance_after": D("40100.00"), "created_at": same_second},
+        # A later non-recharge ledger entry must never become the membership source.
+        {"id": 20, "customer_id": 1, "transaction_type": "order_refund", "amount": D("500.00"), "balance_after": D("40600.00"), "created_at": later},
+        {"id": 21, "customer_id": 2, "transaction_type": "order_charge", "amount": D("-10.00"), "balance_after": D("190.00"), "created_at": later},
+        {"id": 3, "customer_id": 3, "transaction_type": "recharge", "amount": D("9999.99"), "balance_after": D("10299.99"), "created_at": same_second},
+        {"id": 4, "customer_id": 4, "transaction_type": "recharge", "amount": D("10000.00"), "balance_after": D("10400.00"), "created_at": same_second},
+        {"id": 5, "customer_id": 5, "transaction_type": "recharge", "amount": D("30000.00"), "balance_after": D("30500.00"), "created_at": same_second},
+        {"id": 6, "customer_id": 6, "transaction_type": "recharge", "amount": D("100000.00"), "balance_after": D("100600.00"), "created_at": same_second},
+    ]
+
+    with engine.begin() as connection:
+        connection.execute(customers.insert(), customer_rows)
+        connection.execute(ledger.insert(), ledger_rows)
+        balances_before = {
+            row.id: row.balance
+            for row in connection.execute(
+                select(customers.c.id, customers.c.balance)
+            )
+        }
+        ledger_before = connection.execute(select(ledger).order_by(ledger.c.id)).all()
+
+        backfill(connection)
+
+        actual = {
+            row.id: row
+            for row in connection.execute(select(customers).order_by(customers.c.id))
+        }
+        assert actual[1].membership_level == "black"
+        assert actual[1].last_recharge_amount == D("30000.00")
+        assert actual[1].last_recharged_at == same_second
+        assert (
+            actual[2].membership_level,
+            actual[2].last_recharge_amount,
+            actual[2].last_recharged_at,
+        ) == (None, None, None)
+        assert actual[3].membership_level is None
+        assert actual[3].last_recharge_amount == D("9999.99")
+        assert actual[4].membership_level == "silver"
+        assert actual[5].membership_level == "black"
+        assert actual[6].membership_level == "supreme"
+        assert {row.id: row.balance for row in actual.values()} == balances_before
+        assert connection.execute(select(ledger).order_by(ledger.c.id)).all() == ledger_before
+
+
+def test_order_item_migration_backfill_only_populates_legacy_pricing_snapshots():
+    migration = _migration_module()
+    backfill = getattr(migration, "_backfill_legacy_order_pricing")
+    metadata = MetaData()
+    orders = Table(
+        "ark_domestic_orders",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("total_amount", Numeric(14, 2), nullable=False),
+    )
+    items = Table(
+        "ark_domestic_order_items",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("order_id", Integer, nullable=False),
+        Column("unit_price", Numeric(14, 2), nullable=False),
+        Column("original_price", Numeric(14, 2)),
+        Column("discount_amount", Numeric(14, 2)),
+        Column("membership_level_snapshot", String(16)),
+        Column("pricing_rule", String(24)),
+        Column("pricing_version", String(32)),
+        Column("base_price_version_snapshot", Integer),
+    )
+    engine = create_engine("sqlite:///:memory:")
+    metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(orders.insert(), [{"id": 1, "total_amount": D("24.68")}])
+        connection.execute(
+            items.insert(),
+            [
+                {"id": 1, "order_id": 1, "unit_price": D("0.00")},
+                {"id": 2, "order_id": 1, "unit_price": D("12.34")},
+            ],
+        )
+
+        backfill(connection)
+
+        actual = connection.execute(select(items).order_by(items.c.id)).all()
+        assert [row.unit_price for row in actual] == [D("0.00"), D("12.34")]
+        assert [row.original_price for row in actual] == [D("0.00"), D("12.34")]
+        for row in actual:
+            assert row.discount_amount == D("0.00")
+            assert row.membership_level_snapshot is None
+            assert row.pricing_rule == "legacy_manual"
+            assert row.pricing_version == "legacy"
+            assert row.base_price_version_snapshot == 0
+        assert connection.execute(select(orders.c.total_amount)).scalar_one() == D("24.68")
+
+
 def test_member_pricing_migration_is_self_contained_and_backfills_compatibly(
     monkeypatch,
 ):
@@ -764,7 +909,14 @@ def test_member_pricing_migration_is_self_contained_and_backfills_compatibly(
     downgrade_source = inspect.getsource(migration.downgrade)
 
     added_columns = []
-    monkeypatch.setattr(migration.op, "create_table", lambda *_args, **_kwargs: None)
+    created_tables = {}
+    monkeypatch.setattr(
+        migration.op,
+        "create_table",
+        lambda name, *columns, **kwargs: created_tables.update(
+            {name: (columns, kwargs)}
+        ),
+    )
     monkeypatch.setattr(
         migration.op,
         "add_column",
@@ -776,6 +928,17 @@ def test_member_pricing_migration_is_self_contained_and_backfills_compatibly(
         migration.op, "create_check_constraint", lambda *_args, **_kwargs: None
     )
     monkeypatch.setattr(migration.op, "bulk_insert", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(migration.op, "get_bind", lambda: object())
+    monkeypatch.setattr(
+        migration,
+        "_backfill_customer_membership",
+        lambda _connection: None,
+    )
+    monkeypatch.setattr(
+        migration,
+        "_backfill_legacy_order_pricing",
+        lambda _connection: None,
+    )
     migration.upgrade()
 
     assert "app.domestic.pricing_service" not in module_source
@@ -798,16 +961,8 @@ def test_member_pricing_migration_is_self_contained_and_backfills_compatibly(
         assert column_name in upgrade_source
         assert column_name in downgrade_source
 
-    assert "transaction_type = 'recharge'" in module_source
-    assert "MAX(id)" in module_source
-    assert "last_recharge_amount = latest.amount" in module_source
-    assert "last_recharged_at = latest.created_at" in module_source
-    assert "original_price = unit_price" in module_source
-    assert "discount_amount = 0" in module_source
-    assert "membership_level_snapshot = NULL" in module_source
-    assert "pricing_rule = 'legacy_manual'" in module_source
-    assert "pricing_version = 'legacy'" in module_source
-    assert "base_price_version_snapshot = 0" in module_source
+    assert "_backfill_customer_membership(connection)" in upgrade_source
+    assert "_backfill_legacy_order_pricing(connection)" in upgrade_source
     compatibility_column_names = {
         "original_price",
         "discount_amount",
@@ -825,3 +980,18 @@ def test_member_pricing_migration_is_self_contained_and_backfills_compatibly(
     for column in compatibility_columns.values():
         assert column.nullable is True
         assert column.server_default is None
+        assert column.comment
+    customer_columns = {
+        column.name: column
+        for table_name, column in added_columns
+        if table_name == "ark_domestic_customers"
+    }
+    assert customer_columns["last_recharge_amount"].comment == "最近一次成功充值金额（人民币）"
+    assert customer_columns["last_recharged_at"].comment == "最近一次成功充值时间（北京时）"
+    for table_name in (
+        "ark_domestic_base_prices",
+        "ark_domestic_order_pricing_requests",
+    ):
+        columns, table_kwargs = created_tables[table_name]
+        assert table_kwargs["comment"]
+        assert all(column.comment for column in columns if isinstance(column, Column))
