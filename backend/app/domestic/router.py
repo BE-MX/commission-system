@@ -21,6 +21,7 @@ from app.core.database import get_db
 from app.core.response import ok, page_result
 from app.domestic import constants as C
 from app.domestic import (
+    attribute_service,
     balance_service,
     customer_service,
     export_service,
@@ -53,7 +54,6 @@ from app.domestic.schemas import (
 )
 from app.auth.models import ArkUser
 from app.production.models import Process, ProcessRoute, ProcessRouteStep, UserProcessBinding
-from app.system.models import SysDict
 
 logger = logging.getLogger("commission")
 
@@ -82,23 +82,7 @@ def get_options(
     _user: dict = Depends(require_any_permission(*_READ)),
 ):
     """一次给全：产品类型、订单类型 + 各属性字典。前端按 product_type 条件渲染。"""
-    dict_types = sorted({t for mapping in C.ATTR_DICTS.values() for t in mapping.values()})
-    rows = (
-        db.query(SysDict)
-        .filter(SysDict.type.in_(dict_types), SysDict.is_active.is_(True))
-        .order_by(SysDict.type.asc(), SysDict.sort.asc(), SysDict.id.asc())
-        .all()
-    )
-    values: dict[str, list[str]] = {t: [] for t in dict_types}
-    for row in rows:
-        values[row.type].append(row.code)
-
-    return ok({
-        "product_types": [{"value": k, "label": v} for k, v in C.PRODUCT_TYPES.items()],
-        "order_types": [{"value": k, "label": v} for k, v in C.ORDER_TYPES.items()],
-        "attr_dicts": C.ATTR_DICTS,
-        "values": values,
-    })
+    return ok(attribute_service.get_order_options(db))
 
 
 @router.get("/process-routes", summary="可选工艺路线（配映射/改绑用）")

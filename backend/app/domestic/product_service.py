@@ -5,6 +5,7 @@ attrs_key（属性组合）就是产品身份。路线按「工艺→路线」�
 下单人零操作；个别产品可在产品管理页人工改绑。
 """
 
+import json
 import logging
 
 from sqlalchemy import func
@@ -24,14 +25,15 @@ ATTRS_KEY_MAX = 255  # 与 ark_domestic_products.attrs_key 列宽一致
 
 def build_attrs_key(attrs: ProductAttrs) -> str:
     """属性组合唯一键。中文直接入 key —— 可读性在排查时比紧凑更值钱。"""
-    key = "|".join([
+    key = json.dumps([
         attrs.product_type,
         attrs.craft,
         attrs.net_color or "",
-        attrs.size,
+        attrs.size or "",
         attrs.length,
-        attrs.density,
-    ])
+        attrs.density or "",
+        attrs.hair_style_series or "",
+    ], ensure_ascii=False, separators=(",", ":"))
     # 各字段单独都在列宽内，拼起来可能超 —— 这里挡住换成 400 提示，别到 DB 报 500
     if len(key) > ATTRS_KEY_MAX:
         raise ValueError("属性值太长了，请检查工艺/尺寸等选项是否填了超长内容")
@@ -43,7 +45,7 @@ def build_display_name(attrs: ProductAttrs) -> str:
     parts = [PRODUCT_TYPES.get(attrs.product_type, attrs.product_type), attrs.craft]
     if attrs.net_color:
         parts.append(attrs.net_color)
-    parts += [attrs.size, attrs.length, attrs.density]
+    parts += [attrs.size, attrs.length, attrs.density, attrs.hair_style_series]
     return "/".join(p for p in parts if p)
 
 
@@ -82,6 +84,7 @@ def find_or_create_product(db: Session, attrs: ProductAttrs) -> DomesticProduct:
         size=attrs.size,
         length=attrs.length,
         density=attrs.density,
+        hair_style_series=attrs.hair_style_series,
         route_id=resolve_route_id(db, attrs.product_type, attrs.craft),
         status=1,
         use_count=0,
@@ -161,6 +164,7 @@ def list_products(
         "size": r.size,
         "length": r.length,
         "density": r.density,
+        "hair_style_series": r.hair_style_series,
         "route_id": r.route_id,
         "route_name": route_names.get(r.route_id),
         "status": r.status,

@@ -1,15 +1,31 @@
 """内贸订单头与产品属性的结构契约。"""
 
 import importlib.util
+import json
 from datetime import date
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
+from app.auth.models import ArkUser
+from app.domestic import attribute_service, order_service, product_service
 from app.domestic import constants as C
-from app.domestic.models import DomesticOrder, DomesticProduct
-from app.domestic.schemas import OrderCreate, OrderItemInput, OrderUpdate, ProductAttrs
+from app.domestic.models import (
+    DomesticCraftRoute,
+    DomesticCustomer,
+    DomesticOrder,
+    DomesticProduct,
+)
+from app.domestic.schemas import (
+    OrderCreate,
+    OrderItemAppend,
+    OrderItemInput,
+    OrderUpdate,
+    ProductAttrs,
+)
+from app.production.models import Process, ProcessRoute, ProcessRouteStep
+from app.system.models import SysDict
 
 
 def _cap_attrs(**overrides):
@@ -59,25 +75,33 @@ def test_new_order_fields_are_required():
             OrderCreate(**payload)
 
 
-def test_order_type_no_longer_accepts_category_values():
-    with pytest.raises(ValidationError):
-        OrderCreate(**_order_payload(order_type="normal"))
+def test_order_type_and_channel_are_extensible_non_blank_strings():
+    order = OrderCreate(**_order_payload(order_type="  future_order  ", order_channel="  live_stream  "))
+    assert order.order_type == "future_order"
+    assert order.order_channel == "live_stream"
 
     assert C.ORDER_CATEGORIES == {"normal": "普货", "special": "特单"}
     assert C.ORDER_TYPE_DICT == "domestic_order_type"
     assert C.ORDER_CHANNEL_DICT == "domestic_order_channel"
+
+    for field_name in ("order_type", "order_channel"):
+        with pytest.raises(ValidationError):
+            OrderCreate(**_order_payload(**{field_name: "   "}))
 
 
 def test_order_update_keeps_patch_semantics():
     partial = OrderUpdate(remark="只改备注")
     assert partial.model_dump(exclude_unset=True) == {"remark": "只改备注"}
 
-    update = OrderUpdate(order_type="repurchase", order_channel="phone")
+    update = OrderUpdate(order_type="  repurchase  ", order_channel="  phone  ")
     assert update.order_type == "repurchase"
     assert update.order_channel == "phone"
 
     with pytest.raises(ValidationError):
-        OrderUpdate(order_type="normal")
+        OrderUpdate(order_type="   ")
+    for field_name in ("order_type", "order_channel"):
+        with pytest.raises(ValidationError):
+            OrderUpdate(**{field_name: None})
 
 
 def test_piece_has_one_combined_craft_size_attribute():
@@ -192,3 +216,346 @@ def test_downgrade_normalizes_null_product_attrs_before_not_null(monkeypatch):
             and kwargs.get("nullable") is False
         )
         assert update_indexes[0] < alter_index
+
+
+def _dict_row(dict_type: str, code: str, *, label: str | None = None, active: bool = True):
+    return SysDict(
+        type=dict_type,
+        code=code,
+        label=label or code,
+        sort=1,
+        is_active=active,
+    )
+
+
+def _seed_attribute_context(db, *, piece_route: bool = True):
+    user = ArkUser(
+        username=f"domestic-attrs-{id(db)}",
+        password_hash="x",
+        real_name="属性测试员",
+        is_active=True,
+    )
+    db.add(user)
+    db.flush()
+    customer = DomesticCustomer(
+        shop_name=f"属性测试客户-{id(db)}",
+        balance=0,
+        status=1,
+        created_by=user.id,
+    )
+    db.add(customer)
+
+    process = Process(name=f"属性测试工序-{id(db)}", status=1)
+    cap_route = ProcessRoute(name=C.DEFAULT_ROUTE_NAMES["cap"], status=1)
+    db.add_all([process, cap_route])
+    db.flush()
+    db.add(ProcessRouteStep(route_id=cap_route.id, process_id=process.id, step_order=1))
+
+    routes = {"cap": cap_route}
+    if piece_route:
+        piece = ProcessRoute(name=C.DEFAULT_ROUTE_NAMES["piece"], status=1)
+        db.add(piece)
+        db.flush()
+        db.add(ProcessRouteStep(route_id=piece.id, process_id=process.id, step_order=1))
+        routes["piece"] = piece
+
+    standard_codes = {
+        C.DICT_CAP_CRAFT: "递旋",
+        C.DICT_CAP_NET_COLOR: "紫网全头套",
+        C.DICT_CAP_SIZE: "M",
+        C.DICT_CAP_LENGTH: "15厘米",
+        C.DICT_CAP_DENSITY: "80%",
+        C.DICT_CAP_HAIR_STYLE_SERIES: "直发",
+        C.DICT_PIECE_CRAFT_SIZE: "U型13*15",
+        C.DICT_PIECE_LENGTH: "20厘米",
+        C.ORDER_TYPE_DICT: "future_order",
+        C.ORDER_CHANNEL_DICT: "live_stream",
+    }
+    db.add_all([_dict_row(dict_type, code) for dict_type, code in standard_codes.items()])
+    db.commit()
+    return {"user": user, "customer": customer, "routes": routes}
+
+
+def _service_order(context, *, request_id: str, order_category="special", items=None, **overrides):
+    payload = _order_payload(
+        request_id=request_id,
+        order_no=request_id,
+        customer_id=context["customer"].id,
+        order_category=order_category,
+        order_type="future_order",
+        order_channel="live_stream",
+    )
+    if items is not None:
+        payload["items"] = items
+    payload.update(overrides)
+    return OrderCreate(**payload)
+
+
+def test_normal_order_rejects_custom_attribute(db):
+    context = _seed_attribute_context(db)
+    payload = _service_order(
+        context,
+        request_id="normal-custom-attrs",
+        order_category="normal",
+        items=[OrderItemInput(
+            attrs=ProductAttrs(**_cap_attrs(craft="自定义工艺")),
+            order_qty=1,
+        )],
+    )
+
+    with pytest.raises(ValueError, match="第 1 行.*工艺.*切换为特单"):
+        order_service.create_order(db, payload, context["user"].id)
+
+
+def test_special_order_creates_and_reuses_only_special_option_and_route(db):
+    context = _seed_attribute_context(db)
+    attrs = ProductAttrs(**_cap_attrs(craft="自定义工艺"))
+
+    first = order_service.create_order(
+        db,
+        _service_order(
+            context,
+            request_id="special-custom-first",
+            items=[OrderItemInput(attrs=attrs, order_qty=1)],
+        ),
+        context["user"].id,
+    )
+    second = order_service.create_order(
+        db,
+        _service_order(
+            context,
+            request_id="special-custom-second",
+            items=[OrderItemInput(attrs=attrs, order_qty=1)],
+        ),
+        context["user"].id,
+    )
+
+    assert first["id"] != second["id"]
+    assert db.query(SysDict).filter_by(
+        type=f"{C.DICT_CAP_CRAFT}_special", code="自定义工艺", is_active=True
+    ).count() == 1
+    assert db.query(SysDict).filter_by(
+        type=C.DICT_CAP_CRAFT, code="自定义工艺"
+    ).count() == 0
+    mapping = db.query(DomesticCraftRoute).filter_by(
+        product_type="cap", craft="自定义工艺"
+    ).one()
+    assert mapping.route_id == context["routes"]["cap"].id
+
+
+def test_order_dimensions_use_active_dictionary_values(db):
+    context = _seed_attribute_context(db)
+    result = order_service.create_order(
+        db,
+        _service_order(context, request_id="dynamic-order-dimensions"),
+        context["user"].id,
+    )
+    order = db.get(DomesticOrder, result["id"])
+    assert (order.order_type, order.order_channel) == ("future_order", "live_stream")
+
+    db.add(_dict_row(C.ORDER_TYPE_DICT, "disabled_type", active=False))
+    db.commit()
+    for field_name, value, expected in (
+        ("order_type", "missing_type", "订单类型"),
+        ("order_type", "disabled_type", "订单类型"),
+        ("order_channel", "missing_channel", "订单渠道"),
+    ):
+        payload = _service_order(
+            context,
+            request_id=f"invalid-{field_name}-{value}",
+            **{field_name: value},
+        )
+        with pytest.raises(ValueError, match=f"{expected}.*数据字典"):
+            order_service.create_order(db, payload, context["user"].id)
+
+
+def test_create_order_replay_uses_saved_hash_after_dimension_is_disabled(db):
+    context = _seed_attribute_context(db)
+    payload = _service_order(context, request_id="dimension-replay")
+    first = order_service.create_order(db, payload, context["user"].id)
+    order_type = db.query(SysDict).filter_by(
+        type=C.ORDER_TYPE_DICT,
+        code="future_order",
+    ).one()
+    order_type.is_active = False
+    db.commit()
+
+    replay = order_service.create_order(db, payload, context["user"].id)
+
+    assert replay["id"] == first["id"]
+    assert replay["replayed"] is True
+
+
+def test_failed_later_item_rolls_back_special_options_and_mapping(db):
+    context = _seed_attribute_context(db, piece_route=False)
+    payload = _service_order(
+        context,
+        request_id="special-attrs-rollback",
+        items=[
+            OrderItemInput(
+                attrs=ProductAttrs(**_cap_attrs(craft="事务头套工艺")),
+                order_qty=1,
+            ),
+            OrderItemInput(
+                attrs=ProductAttrs(
+                    product_type="piece",
+                    craft="事务发片工艺",
+                    length="20厘米",
+                ),
+                order_qty=1,
+            ),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="发片网底.*不存在"):
+        order_service.create_order(db, payload, context["user"].id)
+
+    assert db.query(SysDict).filter(SysDict.code.in_(["事务头套工艺", "事务发片工艺"])).count() == 0
+    assert db.query(DomesticCraftRoute).filter(
+        DomesticCraftRoute.craft.in_(["事务头套工艺", "事务发片工艺"])
+    ).count() == 0
+    assert db.query(DomesticOrder).filter_by(request_id="special-attrs-rollback").count() == 0
+
+
+def test_failed_order_rolls_back_inline_customer(db):
+    context = _seed_attribute_context(db, piece_route=False)
+    payload = _service_order(
+        context,
+        request_id="inline-customer-rollback",
+        customer_id=None,
+        customer_shop_name="不应残留的客户",
+        items=[OrderItemInput(
+            attrs=ProductAttrs(
+                product_type="piece",
+                craft="无路线发片工艺",
+                length="20厘米",
+            ),
+            order_qty=1,
+        )],
+    )
+
+    with pytest.raises(ValueError, match="发片网底.*不存在"):
+        order_service.create_order(db, payload, context["user"].id)
+
+    assert db.query(DomesticCustomer).filter_by(shop_name="不应残留的客户").count() == 0
+
+
+def test_failed_append_rolls_back_special_option(db):
+    context = _seed_attribute_context(db, piece_route=False)
+    created = order_service.create_order(
+        db,
+        _service_order(context, request_id="append-rollback-base"),
+        context["user"].id,
+    )
+    payload = OrderItemAppend(
+        request_id="append-special-rollback",
+        attrs=ProductAttrs(
+            product_type="piece",
+            craft="追加无路线工艺",
+            length="20厘米",
+        ),
+        order_qty=1,
+    )
+
+    with pytest.raises(ValueError, match="发片网底.*不存在"):
+        order_service.add_item(db, created["id"], payload, context["user"].id)
+
+    assert db.query(SysDict).filter_by(code="追加无路线工艺").count() == 0
+
+
+def test_special_order_with_custom_attrs_cannot_be_changed_to_normal(db):
+    context = _seed_attribute_context(db)
+    created = order_service.create_order(
+        db,
+        _service_order(
+            context,
+            request_id="category-downgrade",
+            items=[OrderItemInput(
+                attrs=ProductAttrs(**_cap_attrs(craft="不能降级的工艺")),
+                order_qty=1,
+            )],
+        ),
+        context["user"].id,
+    )
+
+    with pytest.raises(ValueError, match="第 1 行.*切换为特单"):
+        order_service.update_order(
+            db,
+            created["id"],
+            OrderUpdate(order_category="normal"),
+        )
+
+
+def test_options_separate_standard_and_special_values_and_only_valid_routes(db):
+    context = _seed_attribute_context(db, piece_route=False)
+    db.add(_dict_row(f"{C.DICT_CAP_CRAFT}_special", "特单工艺"))
+    disabled_piece_route = ProcessRoute(name=C.DEFAULT_ROUTE_NAMES["piece"], status=0)
+    db.add(disabled_piece_route)
+    db.commit()
+
+    options = attribute_service.get_order_options(db)
+
+    assert options["order_categories"] == [
+        {"value": "normal", "label": "普货"},
+        {"value": "special", "label": "特单"},
+    ]
+    assert options["attr_dicts"] == C.ATTR_DICTS
+    assert options["special_attr_dicts"]["cap"]["craft"] == f"{C.DICT_CAP_CRAFT}_special"
+    assert options["standard_values"][C.DICT_CAP_CRAFT] == ["递旋"]
+    assert options["special_values"][f"{C.DICT_CAP_CRAFT}_special"] == ["特单工艺"]
+    assert "特单工艺" not in options["standard_values"][C.DICT_CAP_CRAFT]
+    assert options["default_routes"]["cap"] == {
+        "id": context["routes"]["cap"].id,
+        "name": C.DEFAULT_ROUTE_NAMES["cap"],
+        "step_count": 1,
+    }
+    assert "piece" not in options["default_routes"]
+
+
+def test_product_identity_and_list_include_hair_series_without_piece_placeholders(db):
+    cap_attrs = ProductAttrs(**_cap_attrs())
+    piece_attrs = ProductAttrs(
+        product_type="piece",
+        craft="U型13*15",
+        length="20厘米",
+    )
+
+    assert json.loads(product_service.build_attrs_key(cap_attrs))[-1] == "直发"
+    assert product_service.build_display_name(cap_attrs).endswith("/直发")
+    assert product_service.build_attrs_key(piece_attrs) == '["piece","U型13*15","","","20厘米","",""]'
+    assert product_service.build_display_name(piece_attrs) == "发片/U型13*15/20厘米"
+
+    cap = product_service.find_or_create_product(db, cap_attrs)
+    piece = product_service.find_or_create_product(db, piece_attrs)
+    db.flush()
+    assert cap.hair_style_series == "直发"
+    assert piece.hair_style_series is None
+
+    rows, total = product_service.list_products(db, page_size=10)
+    assert total == 2
+    by_id = {row["id"]: row for row in rows}
+    assert by_id[cap.id]["hair_style_series"] == "直发"
+    assert by_id[piece.id]["size"] is None
+    assert by_id[piece.id]["density"] is None
+    assert by_id[piece.id]["hair_style_series"] is None
+
+
+def test_product_key_cannot_collide_when_special_values_contain_separator():
+    first = ProductAttrs(
+        product_type="cap",
+        craft="a|b",
+        net_color="c",
+        size="M",
+        length="20厘米",
+        hair_style_series="直发",
+    )
+    second = ProductAttrs(
+        product_type="cap",
+        craft="a",
+        net_color="b|c",
+        size="M",
+        length="20厘米",
+        hair_style_series="直发",
+    )
+
+    assert product_service.build_attrs_key(first) != product_service.build_attrs_key(second)

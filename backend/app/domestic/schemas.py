@@ -211,10 +211,8 @@ class OrderCreate(BaseModel):
     customer_id: int | None = Field(None, description="已有客户 ID")
     customer_shop_name: str | None = Field(None, max_length=120, description="就地新建客户的店名")
     order_category: Literal["normal", "special"] = "normal"
-    order_type: Literal[
-        "first_order", "repurchase", "return_order", "supplementary", "after_sales_remake"
-    ]
-    order_channel: Literal["wechat", "phone", "exhibition", "offline_visit", "other"]
+    order_type: str = Field(..., min_length=1, max_length=32)
+    order_channel: str = Field(..., min_length=1, max_length=32)
     is_draft: bool = Field(False, description="true=只存草稿，不扣客户余额")
     remark: str | None = Field(None, max_length=1000)
     items: list[OrderItemInput] = Field(..., min_length=1, max_length=50)
@@ -232,6 +230,11 @@ class OrderCreate(BaseModel):
     def _strip_request_id(cls, v: str) -> str:
         return v.strip()
 
+    @field_validator("order_type", "order_channel", mode="before")
+    @classmethod
+    def _strip_order_dimensions(cls, value: str) -> str:
+        return value.strip() if isinstance(value, str) else value
+
     @model_validator(mode="after")
     def _need_customer(self):
         if not self.customer_id and not (self.customer_shop_name or "").strip():
@@ -248,11 +251,16 @@ class OrderUpdate(BaseModel):
     order_date: date | None = None
     customer_id: int | None = None
     order_category: Literal["normal", "special"] | None = None
-    order_type: Literal[
-        "first_order", "repurchase", "return_order", "supplementary", "after_sales_remake"
-    ] | None = None
-    order_channel: Literal["wechat", "phone", "exhibition", "offline_visit", "other"] | None = None
+    order_type: str | None = Field(None, min_length=1, max_length=32)
+    order_channel: str | None = Field(None, min_length=1, max_length=32)
     remark: str | None = Field(None, max_length=1000)
+
+    @field_validator("order_type", "order_channel", mode="before")
+    @classmethod
+    def _strip_order_dimensions(cls, value: str | None) -> str | None:
+        if value is None:
+            raise ValueError("订单类型和订单渠道传入时不能为空")
+        return value.strip() if isinstance(value, str) else value
 
 
 class OrderItemUpdate(BaseModel):

@@ -41,6 +41,12 @@ ATTR_DICTS = {
     },
 }
 
+# 特单自定义工艺只能继承这两条固定路线，不能让下单人临时选择路线。
+DEFAULT_ROUTE_NAMES = {
+    "cap": "头套网帽（递针）",
+    "piece": "发片网底（递针）",
+}
+
 # 订单状态
 ORDER_DRAFT = 0
 ORDER_PRODUCING = 1

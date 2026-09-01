@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.auth.models import ArkUser
 from app.domestic import constants as C
 from app.domestic import (
+    attribute_service,
     balance_service,
     customer_service,
     product_service,
@@ -41,6 +42,7 @@ from app.domestic.schemas import (
     OrderItemInput,
     OrderItemUpdate,
     OrderUpdate,
+    ProductAttrs,
 )
 
 logger = logging.getLogger("commission")
@@ -142,13 +144,33 @@ def _generate_domestic_no(db: Session) -> str:
     return f"{prefix}{seq:03d}"
 
 
+def _ensure_sqlite_outer_transaction(db: Session) -> None:
+    """SQLite legacy mode does not BEGIN on SELECT, so a first SAVEPOINT can self-commit."""
+    if db.get_bind().dialect.name != "sqlite":
+        return
+    connection = db.connection()
+    driver_connection = connection.connection.driver_connection
+    if not driver_connection.in_transaction:
+        connection.exec_driver_sql("BEGIN")
+
+
 def _build_item(
     db: Session,
     order_id: int,
     line_no: int,
     payload: OrderItemInput,
+    *,
+    order_category: str,
+    user_id: int,
 ) -> tuple[DomesticOrderItem, str | None]:
     """建明细行：产品 find-or-create + 路线快照 + 进度展开。返回 (明细, 警告)。"""
+    attribute_service.prepare_item_attrs(
+        db,
+        order_category=order_category,
+        attrs=payload.attrs,
+        user_id=user_id,
+        line_no=line_no,
+    )
     product = product_service.find_or_create_product(db, payload.attrs)
     product.use_count = (product.use_count or 0) + 1
 
@@ -193,8 +215,16 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
                 _validate_order_replay(existing, request_hash)
                 return _order_create_result(db, existing, replayed=True)
 
+        # 后续客户、单号、特单字典与产品都会使用 savepoint；先建立真实外层事务，
+        # 避免 SQLite legacy transaction mode 把第一个 RELEASE 当成提交。
+        _ensure_sqlite_outer_transaction(db)
+        attribute_service.validate_order_dimensions(
+            db,
+            payload.order_type,
+            payload.order_channel,
+        )
         if payload.customer_id:
-            customer = db.query(DomesticCustomer).get(payload.customer_id)
+            customer = db.get(DomesticCustomer, payload.customer_id)
             if not customer:
                 raise ValueError("客户不存在")
         else:
@@ -224,7 +254,9 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
                 order_no=payload.order_no,
                 order_date=payload.order_date,
                 customer_id=customer.id,
+                order_category=payload.order_category,
                 order_type=payload.order_type,
+                order_channel=payload.order_channel,
                 status=C.ORDER_DRAFT if payload.is_draft else C.ORDER_PRODUCING,
                 total_amount=0,
                 charged_amount=0,
@@ -267,7 +299,14 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
 
         warnings = []
         for line_no, item_payload in enumerate(payload.items, start=1):
-            _, warning = _build_item(db, order.id, line_no, item_payload)
+            _, warning = _build_item(
+                db,
+                order.id,
+                line_no,
+                item_payload,
+                order_category=payload.order_category,
+                user_id=user_id,
+            )
             if warning:
                 warnings.append(warning)
         order.next_line_no = len(payload.items) + 1
@@ -681,6 +720,29 @@ def update_order(db: Session, order_id: int, payload: OrderUpdate) -> DomesticOr
     if order.status == C.ORDER_TERMINATED:
         raise ValueError("已终止的订单不能编辑")
     data = payload.model_dump(exclude_unset=True)
+    if "order_type" in data or "order_channel" in data:
+        attribute_service.validate_order_dimensions(
+            db,
+            data.get("order_type"),
+            data.get("order_channel"),
+        )
+    if data.get("order_category") == "normal" and order.order_category != "normal":
+        item_rows = db.query(
+            DomesticOrderItem.line_no,
+            DomesticOrderItem.attrs_snapshot,
+        ).filter(DomesticOrderItem.order_id == order.id).all()
+        for line_no, snapshot in item_rows:
+            if not snapshot:
+                raise ValueError(
+                    f"第 {line_no} 行缺少属性快照，不能切换为普货；请终止后重新下单"
+                )
+            attribute_service.prepare_item_attrs(
+                db,
+                order_category="normal",
+                attrs=ProductAttrs.model_validate(snapshot),
+                user_id=order.created_by,
+                line_no=line_no,
+            )
     if "customer_id" in data:
         if not data["customer_id"]:
             raise ValueError("订单必须有客户")
@@ -722,8 +784,16 @@ def add_item(
         if new_total_qty > C.MAX_ORDER_UNITS:
             raise ValueError(f"单张订单合计数量不能超过 {C.MAX_ORDER_UNITS} 件")
 
+        _ensure_sqlite_outer_transaction(db)
         line_no = order.next_line_no or 1
-        item, warning = _build_item(db, order.id, line_no, payload)
+        item, warning = _build_item(
+            db,
+            order.id,
+            line_no,
+            payload,
+            order_category=order.order_category,
+            user_id=user_id or order.created_by,
+        )
         order.next_line_no = line_no + 1
         order.item_count = int(order.item_count or 0) + 1
         order.total_unit_qty = new_total_qty
