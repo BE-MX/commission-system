@@ -360,6 +360,19 @@ def affected_sku_count(
     )
 
 
+def base_price_impact(db: Session, *, product_id: int) -> dict:
+    """返回共享价格键的当前影响范围；供破坏性改价前确认。"""
+
+    _product, price_key = _load_priced_product(db, product_id)
+    row = get_base_price_row(db, price_key)
+    return {
+        "price_key": price_key_dict(price_key),
+        "affected_sku_count": affected_sku_count(db, price_key),
+        "original_price": row.original_price if row is not None else None,
+        "version": row.version if row is not None else None,
+    }
+
+
 def upsert_base_price(
     db: Session,
     *,

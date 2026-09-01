@@ -2428,6 +2428,33 @@ def _configured_product(db, attrs, price, version=1):
     return product
 
 
+def test_base_price_impact_endpoint_previews_shared_key_before_mutation(db):
+    user = _operator(db, "base-price-impact")
+    attrs = _cap_attrs(craft="递旋", length="20厘米")
+    first = _configured_product(db, attrs, "1498.00", version=3)
+    sibling_attrs = {**attrs, "net_color": "绿网九分头", "size": "L"}
+    _seed_order_dicts(db, sibling_attrs)
+    _persist_product(db, sibling_attrs)
+    db.commit()
+    client = _pricing_api_client(db, user.id, "domestic:admin")
+
+    response = client.get(
+        f"/api/domestic/products/{first.id}/base-price-impact"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "price_key": {
+            "product_type": "cap",
+            "craft": "递旋",
+            "length": "20厘米",
+        },
+        "affected_sku_count": 2,
+        "original_price": 1498.0,
+        "version": 3,
+    }
+
+
 @pytest.mark.parametrize(
     (
         "membership_level",

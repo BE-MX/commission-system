@@ -362,6 +362,21 @@ def put_product_base_price(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get(
+    "/products/{product_id}/base-price-impact",
+    summary="预览产品共享原始价格影响范围",
+)
+def get_product_base_price_impact(
+    product_id: int,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:admin")),
+):
+    try:
+        return ok(pricing_service.base_price_impact(db, product_id=product_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.delete("/products/{product_id}/base-price", summary="删除产品共享原始价格")
 def delete_product_base_price(
     product_id: int,
