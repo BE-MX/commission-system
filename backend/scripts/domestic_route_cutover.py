@@ -1,7 +1,8 @@
 """Directly switch domestic products to their product-type routes.
 
-Every cap craft/product is bound to ``头套网帽`` and every piece craft/product
-to ``发片网底``. Existing order items keep their route snapshots unchanged.
+Every cap craft/product is bound to ``头套网帽（递针）`` and every piece
+craft/product to ``发片网底（递针）``. Both routes use the same conditional
+branch contract. Existing order items keep their route snapshots unchanged.
 Dry-run is the default; apply requires a domestic-write maintenance window.
 """
 
@@ -27,12 +28,15 @@ from app.production.models import Process, ProcessRoute, ProcessRouteStep, UserP
 from app.system.models import SysDict
 
 
-ROUTE_BY_PRODUCT_TYPE = {"cap": "头套网帽", "piece": "发片网底"}
+ROUTE_BY_PRODUCT_TYPE = {
+    "cap": "头套网帽（递针）",
+    "piece": "发片网底（递针）",
+}
 CRAFT_DICT_BY_PRODUCT_TYPE = {
     "cap": C.DICT_CAP_CRAFT,
     "piece": C.DICT_PIECE_CRAFT,
 }
-REQUIRED_CAP_RULES = {
+REQUIRED_CONDITIONAL_RULES = {
     "发加工点": {
         "rule_type": "decision",
         "options": {
@@ -155,7 +159,7 @@ def _route_details(
         except (TypeError, KeyError, ValueError) as exc:
             raise CutoverError(f"目标路线“{route.name}”规则校验失败：{exc}") from exc
 
-    if product_type == "cap":
+    if product_type in ROUTE_BY_PRODUCT_TYPE:
         process_ids_by_name: dict[str, list[int]] = {}
         process_name_by_id = {}
         for step, process in steps:
@@ -164,7 +168,7 @@ def _route_details(
         rules_by_process_id = {rule.process_id: rule for rule in rules}
         errors = []
         required_rule_process_ids = set()
-        for process_name, required in REQUIRED_CAP_RULES.items():
+        for process_name, required in REQUIRED_CONDITIONAL_RULES.items():
             process_ids_for_name = process_ids_by_name.get(process_name, [])
             if len(process_ids_for_name) != 1:
                 errors.append(f"{process_name}=缺少或重名")
@@ -201,7 +205,7 @@ def _route_details(
                 errors.append(f"存在未批准的额外条件规则：{'、'.join(extra_names)}")
         if errors:
             raise CutoverError(
-                f"目标路线“{route.name}”缺少头套必需条件规则：{'；'.join(errors)}"
+                f"目标路线“{route.name}”条件规则不符合业务契约：{'；'.join(errors)}"
             )
 
     return {

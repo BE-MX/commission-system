@@ -33,8 +33,8 @@ def direct_switch_case(db):
     db.flush()
 
     old_route = ProcessRoute(name="旧内贸通用路线", status=1)
-    cap_route = ProcessRoute(name="头套网帽", status=1)
-    piece_route = ProcessRoute(name="发片网底", status=1)
+    cap_route = ProcessRoute(name="头套网帽（递针）", status=1)
+    piece_route = ProcessRoute(name="发片网底（递针）", status=1)
     db.add_all([old_route, cap_route, piece_route])
     db.flush()
 
@@ -53,13 +53,13 @@ def direct_switch_case(db):
     db.add_all(processes)
     db.flush()
     db.add(ProcessRouteStep(route_id=old_route.id, process_id=processes[0].id, step_order=1))
-    for step_order, process in enumerate(processes[1:9], start=1):
-        db.add(ProcessRouteStep(
-            route_id=cap_route.id,
-            process_id=process.id,
-            step_order=step_order,
-        ))
-    db.add(ProcessRouteStep(route_id=piece_route.id, process_id=processes[9].id, step_order=1))
+    for route in (cap_route, piece_route):
+        for step_order, process in enumerate(processes[1:9], start=1):
+            db.add(ProcessRouteStep(
+                route_id=route.id,
+                process_id=process.id,
+                step_order=step_order,
+            ))
     for process in processes:
         db.add(UserProcessBinding(user_id=operator.id, process_id=process.id))
     decisions = {
@@ -76,19 +76,20 @@ def direct_switch_case(db):
             {"code": "repair", "label": "需要维修", "skip_process_ids": []},
         ],
     }
-    for process_id, options in decisions.items():
+    for route in (cap_route, piece_route):
+        for process_id, options in decisions.items():
+            db.add(DomesticRouteRule(
+                route_id=route.id,
+                process_id=process_id,
+                rule_type="decision",
+                config_json={"options": options},
+            ))
         db.add(DomesticRouteRule(
-            route_id=cap_route.id,
-            process_id=process_id,
-            rule_type="decision",
-            config_json={"options": options},
+            route_id=route.id,
+            process_id=processes[8].id,
+            rule_type="optional",
+            config_json=None,
         ))
-    db.add(DomesticRouteRule(
-        route_id=cap_route.id,
-        process_id=processes[8].id,
-        rule_type="optional",
-        config_json=None,
-    ))
     db.add_all([
         SysDict(
             type="domestic_cap_craft",
@@ -210,8 +211,8 @@ def test_dry_run_reports_two_routes_without_writes(db, direct_switch_case):
     plan = cutover.build_plan(db)
 
     assert plan["mode"] == "dry-run"
-    assert plan["routes"]["cap"]["name"] == "头套网帽"
-    assert plan["routes"]["piece"]["name"] == "发片网底"
+    assert plan["routes"]["cap"]["name"] == "头套网帽（递针）"
+    assert plan["routes"]["piece"]["name"] == "发片网底（递针）"
     assert plan["mapping_counts"] == {"cap": 1, "piece": 1}
     assert plan["missing_mappings_to_create"] == {
         "cap": ["lace_tied"],
@@ -274,7 +275,17 @@ def test_cap_route_without_required_rules_refuses_switch(db, direct_switch_case)
     ).delete(synchronize_session=False)
     db.commit()
 
-    with pytest.raises(cutover.CutoverError, match="缺少头套必需条件规则"):
+    with pytest.raises(cutover.CutoverError, match="条件规则不符合业务契约"):
+        cutover.build_plan(db)
+
+
+def test_piece_route_without_required_rules_refuses_switch(db, direct_switch_case):
+    db.query(DomesticRouteRule).filter_by(
+        route_id=direct_switch_case["piece_route"].id,
+    ).delete(synchronize_session=False)
+    db.commit()
+
+    with pytest.raises(cutover.CutoverError, match="条件规则不符合业务契约"):
         cutover.build_plan(db)
 
 
