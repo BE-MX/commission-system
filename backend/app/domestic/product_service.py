@@ -8,13 +8,19 @@ attrs_key（属性组合）就是产品身份。路线按「工艺→路线」�
 import json
 import logging
 
-from sqlalchemy import String, cast, func, literal
+from sqlalchemy import String, and_, cast, func, literal, or_
 from sqlalchemy.dialects.mysql import BINARY
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domestic.constants import PRODUCT_TYPES
-from app.domestic.models import DomesticCraftRoute, DomesticOrderItem, DomesticProduct
+from app.domestic import pricing_service
+from app.domestic.models import (
+    DomesticBasePrice,
+    DomesticCraftRoute,
+    DomesticOrderItem,
+    DomesticProduct,
+)
 from app.domestic.schemas import ProductAttrs
 from app.production.models import ProcessRoute, ProcessRouteStep
 
@@ -29,6 +35,12 @@ def _exact_text_predicate(dialect_name: str, column, value: str):
     if dialect_name in {"mysql", "mariadb"}:
         return cast(column, BINARY) == literal(value, type_=String())
     return column == value
+
+
+def _exact_text_columns_predicate(dialect_name: str, left, right):
+    if dialect_name in {"mysql", "mariadb"}:
+        return cast(left, BINARY) == cast(right, BINARY)
+    return left == right
 
 
 def build_attrs_key(attrs: ProductAttrs) -> str:
@@ -154,10 +166,37 @@ def list_products(
     keyword: str = "",
     product_type: str = "",
     route_bound: str = "",
+    price_status: str = "",
     sort_field: str = "",
     sort_order: str = "",
 ) -> tuple[list[dict], int]:
-    q = db.query(DomesticProduct)
+    eligible_price_key = or_(
+        and_(
+            DomesticProduct.product_type == "cap",
+            DomesticProduct.craft.in_(
+                pricing_service.CAP_PERSISTENCE_CRAFT_CODES
+            ),
+        ),
+        and_(
+            DomesticProduct.product_type == "piece",
+            DomesticProduct.craft.in_(
+                pricing_service.PIECE_PERSISTENCE_CRAFT_CODES
+            ),
+        ),
+    )
+    price_join = and_(
+        eligible_price_key,
+        DomesticBasePrice.product_type == DomesticProduct.product_type,
+        _exact_text_columns_predicate(
+            db.get_bind().dialect.name,
+            DomesticBasePrice.craft,
+            DomesticProduct.craft,
+        ),
+        DomesticBasePrice.length == DomesticProduct.length,
+    )
+    q = db.query(DomesticProduct, DomesticBasePrice).outerjoin(
+        DomesticBasePrice, price_join
+    )
     if keyword:
         q = q.filter(DomesticProduct.name.like(f"%{keyword}%"))
     if product_type:
@@ -166,6 +205,10 @@ def list_products(
         q = q.filter(DomesticProduct.route_id.isnot(None))
     elif route_bound == "unbound":
         q = q.filter(DomesticProduct.route_id.is_(None))
+    if price_status == "configured":
+        q = q.filter(DomesticBasePrice.id.isnot(None))
+    elif price_status == "missing":
+        q = q.filter(DomesticBasePrice.id.is_(None))
 
     total = q.count()
 
@@ -178,7 +221,9 @@ def list_products(
     q = q.order_by(col.asc() if sort_order == "asc" else col.desc())
 
     rows = q.offset((page - 1) * page_size).limit(page_size).all()
-    route_names = _route_name_map(db, [r.route_id for r in rows if r.route_id])
+    route_names = _route_name_map(
+        db, [product.route_id for product, _price in rows if product.route_id]
+    )
 
     items = [{
         "id": r.id,
@@ -196,7 +241,13 @@ def list_products(
         "status": r.status,
         "use_count": r.use_count,
         "created_at": r.created_at,
-    } for r in rows]
+        "original_price": price.original_price if price is not None else None,
+        "base_price_version": price.version if price is not None else None,
+        "price_status": "configured" if price is not None else "missing",
+        "price_key": pricing_service.price_key_dict(
+            pricing_service.price_key_for_product(r)
+        ),
+    } for r, price in rows]
     return items, total
 
 

@@ -117,6 +117,51 @@ class ProductAttrs(BaseModel):
         return self
 
 
+class BasePriceUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    original_price: Decimal = Field(
+        ...,
+        gt=0,
+        le=Decimal("999999999999.99"),
+        max_digits=14,
+        decimal_places=2,
+    )
+
+
+class PricingQuoteItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    client_key: str = Field(..., min_length=1, max_length=64)
+    product_id: int | None = Field(None, gt=0)
+    attrs: ProductAttrs | None = None
+
+    @field_validator("client_key", mode="before")
+    @classmethod
+    def _strip_client_key(cls, value: str) -> str:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def _validate_product_identity(self):
+        if (self.product_id is None) == (self.attrs is None):
+            raise ValueError("product_id 与 attrs 必须且只能填写一个")
+        return self
+
+
+class PricingQuoteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    customer_id: int | None = Field(None, gt=0)
+    items: list[PricingQuoteItem] = Field(..., min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def _validate_unique_client_keys(self):
+        client_keys = [item.client_key for item in self.items]
+        if len(client_keys) != len(set(client_keys)):
+            raise ValueError("client_key 不能重复")
+        return self
+
+
 class CraftRouteUpsert(BaseModel):
     product_type: Literal["cap", "piece"]
     craft: str = Field(..., min_length=1, max_length=64)

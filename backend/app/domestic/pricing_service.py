@@ -1,9 +1,20 @@
-"""内贸会员等级、原始价格种子与优惠计算纯领域规则。"""
+"""内贸会员等级、原始价格与优惠计算。"""
 
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
+import logging
 from typing import Iterator
 
+from sqlalchemy import String, cast, func, literal
+from sqlalchemy.dialects.mysql import BINARY
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.domestic.models import DomesticBasePrice, DomesticCustomer, DomesticProduct
+from app.domestic.schemas import PricingQuoteRequest
+
+
+logger = logging.getLogger("commission")
 
 MONEY_QUANTUM = Decimal("0.01")
 
@@ -72,7 +83,9 @@ _CAP_PRICE_ROWS = {
     "中分界": _CAP_PART_PRICES,
     "左分界": _CAP_PART_PRICES,
 }
-_CAP_CRAFT_CODES = frozenset({"递旋", "中分界", "左分界", "大U型", "递顶"})
+CAP_PERSISTENCE_CRAFT_CODES = frozenset(
+    {"递旋", "中分界", "左分界", "大U型", "递顶"}
+)
 
 
 def _build_base_price_seed_matrix():
@@ -111,6 +124,7 @@ COMBINED_PIECE_CRAFT_SIZE = {
     for craft, size_rows in _PIECE_PRICE_ROWS.items()
     for size in size_rows
 }
+PIECE_PERSISTENCE_CRAFT_CODES = frozenset(COMBINED_PIECE_CRAFT_SIZE)
 _COMBINED_PIECE_BY_DIMENSIONS = {
     dimensions: combined
     for combined, dimensions in COMBINED_PIECE_CRAFT_SIZE.items()
@@ -205,7 +219,7 @@ def build_persistence_price_key(
     """把产品属性转换为数据库使用的合并价格键。"""
 
     if product_type == "cap":
-        if craft not in _CAP_CRAFT_CODES:
+        if craft not in CAP_PERSISTENCE_CRAFT_CODES:
             return None
         return product_type, craft, length
     if product_type != "piece":
@@ -218,6 +232,165 @@ def build_persistence_price_key(
     if combined_craft is None:
         return None
     return product_type, combined_craft, length
+
+
+def price_key_for_attrs(
+    *, product_type: str, craft: str, length: str, size: str | None = None
+) -> tuple[str, str, str] | None:
+    """领域属性到价格表三维键的命名边界。"""
+
+    return build_persistence_price_key(
+        product_type=product_type,
+        craft=craft,
+        length=length,
+        size=size,
+    )
+
+
+def price_key_for_product(product: DomesticProduct) -> tuple[str, str, str] | None:
+    return price_key_for_attrs(
+        product_type=product.product_type,
+        craft=product.craft,
+        length=product.length,
+        size=product.size if product.product_type == "piece" else None,
+    )
+
+
+def price_key_dict(price_key: tuple[str, str, str] | None) -> dict | None:
+    if price_key is None:
+        return None
+    product_type, craft, length = price_key
+    return {"product_type": product_type, "craft": craft, "length": length}
+
+
+def _exact_text_predicate(dialect_name: str, column, value: str):
+    """MySQL/MariaDB 默认 CI，价格工艺必须按字节精确匹配。"""
+
+    if dialect_name in {"mysql", "mariadb"}:
+        return cast(column, BINARY) == literal(value, type_=String())
+    return column == value
+
+
+def get_base_price_row(
+    db: Session,
+    price_key: tuple[str, str, str],
+    *,
+    for_update: bool = False,
+) -> DomesticBasePrice | None:
+    product_type, craft, length = price_key
+    query = db.query(DomesticBasePrice).filter(
+        DomesticBasePrice.product_type == product_type,
+        _exact_text_predicate(
+            db.get_bind().dialect.name, DomesticBasePrice.craft, craft
+        ),
+        DomesticBasePrice.length == length,
+    )
+    if for_update:
+        query = query.with_for_update()
+    row = query.first()
+    if row is not None and (
+        row.product_type,
+        row.craft,
+        row.length,
+    ) != price_key:
+        return None
+    return row
+
+
+def _load_priced_product(
+    db: Session, product_id: int
+) -> tuple[DomesticProduct, tuple[str, str, str]]:
+    product = db.get(DomesticProduct, product_id)
+    if product is None:
+        raise ValueError("产品不存在")
+    price_key = price_key_for_product(product)
+    if price_key is None:
+        raise ValueError("该产品属性不属于已确认的价格矩阵")
+    return product, price_key
+
+
+def affected_sku_count(
+    db: Session, price_key: tuple[str, str, str]
+) -> int:
+    product_type, craft, length = price_key
+    return int(
+        db.query(func.count(DomesticProduct.id))
+        .filter(
+            DomesticProduct.product_type == product_type,
+            _exact_text_predicate(
+                db.get_bind().dialect.name, DomesticProduct.craft, craft
+            ),
+            DomesticProduct.length == length,
+        )
+        .scalar()
+        or 0
+    )
+
+
+def upsert_base_price(
+    db: Session,
+    *,
+    product_id: int,
+    original_price: Decimal,
+    user_id: int,
+) -> dict:
+    """锁定共享价格键；每次保存都产生一个新版本。事务由路由提交。"""
+
+    _product, price_key = _load_priced_product(db, product_id)
+    row = get_base_price_row(db, price_key, for_update=True)
+    if row is None:
+        product_type, craft, length = price_key
+        row = DomesticBasePrice(
+            product_type=product_type,
+            craft=craft,
+            length=length,
+            original_price=original_price,
+            version=1,
+            updated_by=user_id,
+        )
+        savepoint = db.begin_nested()
+        db.add(row)
+        try:
+            db.flush()
+            savepoint.commit()
+        except IntegrityError as exc:
+            savepoint.rollback()
+            logger.warning("domestic base price race on key=%s, refetch", price_key)
+            print(f"[domestic] base price race key={price_key}, refetch", flush=True)
+            row = get_base_price_row(db, price_key, for_update=True)
+            if row is None:
+                raise ValueError(
+                    "价格工艺与已有记录仅大小写不同，不能复用错误价格"
+                ) from exc
+            row.original_price = original_price
+            row.version += 1
+            row.updated_by = user_id
+            db.flush()
+    else:
+        row.original_price = original_price
+        row.version += 1
+        row.updated_by = user_id
+        db.flush()
+    return {
+        "original_price": row.original_price,
+        "version": row.version,
+        "price_key": price_key_dict(price_key),
+        "affected_sku_count": affected_sku_count(db, price_key),
+    }
+
+
+def delete_base_price(db: Session, *, product_id: int) -> dict:
+    _product, price_key = _load_priced_product(db, product_id)
+    row = get_base_price_row(db, price_key, for_update=True)
+    if row is None:
+        raise ValueError("该产品尚未配置原始价格")
+    count = affected_sku_count(db, price_key)
+    db.delete(row)
+    db.flush()
+    return {
+        "price_key": price_key_dict(price_key),
+        "affected_sku_count": count,
+    }
 
 
 def iter_base_price_seeds(
@@ -279,3 +452,117 @@ def resolve_discount(
         _money(original - final_price),
         "member_reduction",
     )
+
+
+PRICING_VERSION = "domestic-member-v1"
+
+
+def pricing_rule_label(
+    result: DiscountResult, membership_level: str | None
+) -> str:
+    label = membership_label(membership_level)
+    if result.pricing_rule == "base_price":
+        return "非会员原价"
+    if result.pricing_rule == "member_reduction":
+        return f"{label}立减{result.discount_amount:.2f}元"
+    if result.pricing_rule == "member_fixed":
+        return f"{label}固定会员价"
+    if result.pricing_rule == "member_fixed_capped":
+        return f"{label}固定价高于原价，按原价封顶"
+    raise PricingConfigurationError(f"未知定价规则：{result.pricing_rule!r}")
+
+
+def quote_prices(db: Session, payload: PricingQuoteRequest) -> dict:
+    """批量预览成交价；只创建 attrs 指向的新 SKU，不动下单计数。"""
+
+    customer = None
+    if payload.customer_id is not None:
+        customer = db.get(DomesticCustomer, payload.customer_id)
+        if customer is None:
+            raise ValueError("客户不存在")
+    membership_level = customer.membership_level if customer else None
+    customer_data = {
+        "id": customer.id if customer else None,
+        "membership_level": membership_level,
+        "membership_label": membership_label(membership_level),
+        "last_recharge_amount": (
+            customer.last_recharge_amount if customer else None
+        ),
+    }
+
+    from app.domestic import product_service
+
+    # 先完成所有客户、产品和价格配置校验，再沉淀 attrs 新产品。这样批次中任一
+    # 配置错误都不会留下半批产品（SQLite 的嵌套 savepoint 也遵守这条边界）。
+    prepared = []
+    for item in payload.items:
+        if item.product_id is not None:
+            product = db.get(DomesticProduct, item.product_id)
+            if product is None:
+                raise ValueError(f"产品不存在：{item.product_id}")
+        else:
+            product = None
+
+        attrs = product if product is not None else item.attrs
+        price_key = price_key_for_attrs(
+            product_type=attrs.product_type,
+            craft=attrs.craft,
+            length=attrs.length,
+            size=attrs.size if attrs.product_type == "piece" else None,
+        )
+        base_row = get_base_price_row(db, price_key) if price_key else None
+        discount = None
+        if base_row is not None:
+            discount = resolve_discount(
+                product_type=attrs.product_type,
+                craft=attrs.craft,
+                length=attrs.length,
+                size=attrs.size if attrs.product_type == "piece" else None,
+                original_price=base_row.original_price,
+                membership_level=membership_level,
+            )
+        prepared.append((item, product, base_row, discount))
+
+    quoted_items = []
+    for item, product, base_row, discount in prepared:
+        if product is None:
+            product = product_service.find_or_create_product(db, item.attrs)
+        if base_row is None:
+            quoted_items.append(
+                {
+                    "client_key": item.client_key,
+                    "product_id": product.id,
+                    "status": "missing_base_price",
+                    "message": "该产品尚未配置原始价格",
+                }
+            )
+            continue
+
+        if discount is None:
+            raise PricingConfigurationError("已配置价格未能生成报价")
+        expected_quote = {
+            "original_price": discount.original_price,
+            "base_price_version": base_row.version,
+            "discount_price": discount.final_price,
+            "membership_level": membership_level,
+            "pricing_rule": discount.pricing_rule,
+            "pricing_version": PRICING_VERSION,
+        }
+        quoted_items.append(
+            {
+                "client_key": item.client_key,
+                "status": "priced",
+                "product_id": product.id,
+                "original_price": discount.original_price,
+                "base_price_version": base_row.version,
+                "discount_price": discount.final_price,
+                "discount_amount": discount.discount_amount,
+                "pricing_rule": discount.pricing_rule,
+                "pricing_rule_label": pricing_rule_label(
+                    discount, membership_level
+                ),
+                "pricing_version": PRICING_VERSION,
+                "expected_quote": expected_quote,
+            }
+        )
+    return {"customer": customer_data, "items": quoted_items}

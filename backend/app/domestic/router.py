@@ -27,6 +27,7 @@ from app.domestic import (
     export_service,
     file_service,
     order_service,
+    pricing_service,
     product_service,
     progress_service,
     report_service,
@@ -35,6 +36,7 @@ from app.domestic import (
 )
 from app.domestic.models import DomesticOrder, DomesticOrderItem
 from app.domestic.schemas import (
+    BasePriceUpdate,
     CraftRouteUpsert,
     CustomerCreate,
     CustomerRechargeCreate,
@@ -46,6 +48,7 @@ from app.domestic.schemas import (
     OrderStatusUpdate,
     OrderUpdate,
     ProductRouteRebind,
+    PricingQuoteRequest,
     ManualSkipSubmit,
     ReportRevoke,
     ReportSubmit,
@@ -284,6 +287,7 @@ def list_products(
     keyword: str = Query(""),
     product_type: str = Query(""),
     route_bound: str = Query("", pattern="^(bound|unbound)?$"),
+    price_status: str = Query("", pattern="^(configured|missing)?$"),
     sort_field: str = Query(""),
     sort_order: str = Query(""),
     db: Session = Depends(get_db),
@@ -292,9 +296,71 @@ def list_products(
     items, total = product_service.list_products(
         db, page=page, page_size=page_size, keyword=keyword,
         product_type=product_type, route_bound=route_bound,
+        price_status=price_status,
         sort_field=sort_field, sort_order=sort_order,
     )
     return ok(page_result(items, total, page, page_size))
+
+
+@router.put("/products/{product_id}/base-price", summary="维护产品共享原始价格")
+def put_product_base_price(
+    product_id: int,
+    payload: BasePriceUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("domestic:admin")),
+):
+    try:
+        data = pricing_service.upsert_base_price(
+            db,
+            product_id=product_id,
+            original_price=payload.original_price,
+            user_id=_uid(current_user),
+        )
+        db.commit()
+        return ok(data, message="原始价格已保存")
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.delete("/products/{product_id}/base-price", summary="删除产品共享原始价格")
+def delete_product_base_price(
+    product_id: int,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:admin")),
+):
+    try:
+        data = pricing_service.delete_base_price(db, product_id=product_id)
+        db.commit()
+        return ok(data, message="原始价格已删除")
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.post("/pricing/quote", summary="批量预览内贸会员报价")
+def quote_product_prices(
+    payload: PricingQuoteRequest,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:write")),
+):
+    try:
+        data = pricing_service.quote_prices(db, payload)
+        # attrs 报价会沉淀产品；即使缺价也必须让产品进入产品清单。
+        db.commit()
+        return ok(data)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.put("/products/{product_id}/route", summary="人工改绑产品工艺路线")

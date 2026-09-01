@@ -19,6 +19,7 @@ from sqlalchemy import (
     Table,
     create_engine,
     select,
+    text,
 )
 from sqlalchemy.exc import IntegrityError
 
@@ -1351,3 +1352,620 @@ def test_member_pricing_migration_is_self_contained_and_backfills_compatibly(
         columns, table_kwargs = created_tables[table_name]
         assert table_kwargs["comment"]
         assert all(column.comment for column in columns if isinstance(column, Column))
+
+
+# ── 原价维护与批量会员报价 API ─────────────────────────
+
+
+def _cap_attrs(**overrides):
+    values = {
+        "product_type": "cap",
+        "craft": "递旋",
+        "net_color": "自然色",
+        "size": "12*14",
+        "length": "20厘米",
+        "hair_style_series": "标准款",
+    }
+    values.update(overrides)
+    return values
+
+
+def _piece_attrs(**overrides):
+    values = {
+        "product_type": "piece",
+        "craft": "全递针9*14",
+        "length": "25厘米",
+    }
+    values.update(overrides)
+    return values
+
+
+def test_pricing_write_schemas_enforce_money_item_identity_and_unique_keys():
+    from app.domestic import schemas
+
+    BasePriceUpdate = getattr(schemas, "BasePriceUpdate")
+    PricingQuoteRequest = getattr(schemas, "PricingQuoteRequest")
+
+    assert BasePriceUpdate(original_price="999999999999.99").original_price == D(
+        "999999999999.99"
+    )
+    for invalid in ("0", "1000000000000", "1.001"):
+        with pytest.raises(ValidationError):
+            BasePriceUpdate(original_price=invalid)
+    with pytest.raises(ValidationError, match="extra"):
+        BasePriceUpdate(original_price="1.00", extra="forbidden")
+
+    valid = PricingQuoteRequest.model_validate(
+        {
+            "customer_id": None,
+            "items": [
+                {"client_key": "  first  ", "product_id": 1},
+                {"client_key": "second", "attrs": _cap_attrs()},
+            ],
+        }
+    )
+    assert [item.client_key for item in valid.items] == ["first", "second"]
+
+    invalid_items = [
+        {"client_key": "x"},
+        {"client_key": "x", "product_id": 1, "attrs": _cap_attrs()},
+    ]
+    for item in invalid_items:
+        with pytest.raises(ValidationError, match="product_id|attrs"):
+            PricingQuoteRequest(customer_id=None, items=[item])
+    with pytest.raises(ValidationError, match="client_key"):
+        PricingQuoteRequest(
+            customer_id=None,
+            items=[
+                {"client_key": " duplicate ", "product_id": 1},
+                {"client_key": "duplicate", "product_id": 2},
+            ],
+        )
+    with pytest.raises(ValidationError):
+        PricingQuoteRequest(customer_id=None, items=[])
+    with pytest.raises(ValidationError):
+        PricingQuoteRequest(
+            customer_id=None,
+            items=[{"client_key": str(i), "product_id": i + 1} for i in range(51)],
+        )
+    with pytest.raises(ValidationError, match="extra"):
+        PricingQuoteRequest(
+            customer_id=None,
+            items=[{"client_key": "x", "product_id": 1}],
+            extra="forbidden",
+        )
+
+
+def _persist_product(db, attrs):
+    from app.domestic.product_service import find_or_create_product
+    from app.domestic.schemas import ProductAttrs
+
+    return find_or_create_product(db, ProductAttrs.model_validate(attrs))
+
+
+def test_product_price_join_shares_cap_key_and_filters_before_pagination(db):
+    from app.domestic import product_service
+
+    configured_a = _persist_product(db, _cap_attrs(net_color="自然色", size="12*14"))
+    configured_b = _persist_product(
+        db,
+        _cap_attrs(
+            net_color="深棕色", size="14*16", hair_style_series="蓬松款"
+        ),
+    )
+    missing_cap = _persist_product(
+        db, _cap_attrs(craft="递顶", length="20厘米")
+    )
+    missing_piece = _persist_product(db, _piece_attrs(craft="全递针12*14"))
+    db.add(
+        domestic_models.DomesticBasePrice(
+            product_type="cap",
+            craft="递旋",
+            length="20厘米",
+            original_price=D("1498.00"),
+            version=3,
+        )
+    )
+    db.flush()
+
+    first_page, configured_total = product_service.list_products(
+        db,
+        price_status="configured",
+        page=1,
+        page_size=1,
+        sort_field="name",
+        sort_order="asc",
+    )
+    missing_rows, missing_total = product_service.list_products(
+        db, price_status="missing", page=1, page_size=20
+    )
+
+    assert configured_total == 2
+    assert len(first_page) == 1
+    assert first_page[0]["id"] in {configured_a.id, configured_b.id}
+    assert first_page[0]["original_price"] == D("1498.00")
+    assert first_page[0]["base_price_version"] == 3
+    assert first_page[0]["price_status"] == "configured"
+    assert first_page[0]["price_key"] == {
+        "product_type": "cap",
+        "craft": "递旋",
+        "length": "20厘米",
+    }
+    assert missing_total == 2
+    assert {row["id"] for row in missing_rows} == {
+        missing_cap.id,
+        missing_piece.id,
+    }
+    assert all(row["price_status"] == "missing" for row in missing_rows)
+    assert all(row["original_price"] is None for row in missing_rows)
+
+
+def test_piece_prices_are_isolated_by_combined_craft_and_length(db):
+    from app.domestic import product_service
+
+    priced = _persist_product(db, _piece_attrs(craft="全递针9*14"))
+    missing = _persist_product(db, _piece_attrs(craft="全递针12*14"))
+    db.add(
+        domestic_models.DomesticBasePrice(
+            product_type="piece",
+            craft="全递针9*14",
+            length="25厘米",
+            original_price=D("840.00"),
+            version=1,
+        )
+    )
+    db.flush()
+
+    rows, total = product_service.list_products(db, page_size=20)
+    by_id = {row["id"]: row for row in rows}
+
+    assert total == 2
+    assert by_id[priced.id]["price_status"] == "configured"
+    assert by_id[missing.id]["price_status"] == "missing"
+    assert by_id[priced.id]["price_key"] == {
+        "product_type": "piece",
+        "craft": "全递针9*14",
+        "length": "25厘米",
+    }
+
+
+def test_base_price_upsert_versions_shared_skus_and_delete_returns_to_missing(db):
+    from app.domestic import pricing_service as service
+    from app.domestic import product_service
+
+    user = _operator(db, "base-price-admin")
+    first = _persist_product(db, _cap_attrs(net_color="自然色", size="12*14"))
+    second = _persist_product(
+        db,
+        _cap_attrs(
+            net_color="深棕色", size="14*16", hair_style_series="蓬松款"
+        ),
+    )
+
+    created = service.upsert_base_price(
+        db,
+        product_id=first.id,
+        original_price=D("1498.00"),
+        user_id=user.id,
+    )
+    updated = service.upsert_base_price(
+        db,
+        product_id=first.id,
+        original_price=D("1598.00"),
+        user_id=user.id,
+    )
+
+    assert created == {
+        "original_price": D("1498.00"),
+        "version": 1,
+        "price_key": {
+            "product_type": "cap",
+            "craft": "递旋",
+            "length": "20厘米",
+        },
+        "affected_sku_count": 2,
+    }
+    assert updated["version"] == 2
+    assert updated["original_price"] == D("1598.00")
+    assert updated["affected_sku_count"] == 2
+    assert db.query(domestic_models.DomesticBasePrice).count() == 1
+    stored = db.query(domestic_models.DomesticBasePrice).one()
+    assert stored.updated_by == user.id
+
+    deleted = service.delete_base_price(db, product_id=first.id)
+    assert deleted["affected_sku_count"] == 2
+    assert deleted["price_key"] == created["price_key"]
+    assert db.query(domestic_models.DomesticBasePrice).count() == 0
+    rows, total = product_service.list_products(
+        db, price_status="missing", page_size=20
+    )
+    assert total == 2
+    assert {row["id"] for row in rows} == {first.id, second.id}
+
+
+def test_base_price_lookup_is_byte_exact_and_invalid_matrix_keys_stay_missing(db):
+    from app.domestic import pricing_service as service
+
+    db.add_all(
+        [
+            domestic_models.DomesticBasePrice(
+                product_type="cap",
+                craft="CaseCraft",
+                length="20cm",
+                original_price=D("100.00"),
+                version=1,
+            ),
+            domestic_models.DomesticBasePrice(
+                product_type="cap",
+                craft="casecraft",
+                length="20cm",
+                original_price=D("200.00"),
+                version=1,
+            ),
+        ]
+    )
+    db.flush()
+
+    upper = service.get_base_price_row(
+        db, ("cap", "CaseCraft", "20cm"), for_update=True
+    )
+    lower = service.get_base_price_row(db, ("cap", "casecraft", "20cm"))
+
+    assert upper.original_price == D("100.00")
+    assert lower.original_price == D("200.00")
+    assert service.price_key_for_attrs(
+        product_type="cap", craft="未确认工艺", length="20厘米"
+    ) is None
+
+
+def test_base_price_upsert_rejects_case_insensitive_unique_conflict(db):
+    """SQLite NOCASE 唯一索引复现 MySQL CI 唯一键，不能复用错大小写行。"""
+    from app.domestic import pricing_service as service
+
+    user = _operator(db, "base-price-case-conflict")
+    product = _persist_product(
+        db, _piece_attrs(craft="U型13*15", length="25厘米")
+    )
+    db.add(
+        domestic_models.DomesticBasePrice(
+            product_type="piece",
+            craft="u型13*15",
+            length="25厘米",
+            original_price=D("1060.00"),
+            version=1,
+            updated_by=user.id,
+        )
+    )
+    db.flush()
+    db.execute(
+        text(
+            "CREATE UNIQUE INDEX uq_test_dom_base_price_nocase "
+            "ON ark_domestic_base_prices "
+            "(product_type, craft COLLATE NOCASE, length)"
+        )
+    )
+    db.commit()
+
+    with pytest.raises(ValueError, match="大小写"):
+        service.upsert_base_price(
+            db,
+            product_id=product.id,
+            original_price=D("1200.00"),
+            user_id=user.id,
+        )
+
+
+def test_serialized_sqlite_admin_sessions_keep_one_base_price_row(db, engine):
+    """SQLite 写事务串行化：用两个真实 Session 验证同键保存不产生重复行。"""
+    from sqlalchemy.orm import sessionmaker
+
+    from app.domestic import pricing_service as service
+
+    user = _operator(db, "base-price-two-sessions")
+    product = _persist_product(db, _cap_attrs())
+    db.commit()
+    Session = sessionmaker(bind=engine)
+    first_session = Session()
+    second_session = Session()
+    try:
+        first = service.upsert_base_price(
+            first_session,
+            product_id=product.id,
+            original_price=D("1498.00"),
+            user_id=user.id,
+        )
+        first_session.commit()
+        second = service.upsert_base_price(
+            second_session,
+            product_id=product.id,
+            original_price=D("1598.00"),
+            user_id=user.id,
+        )
+        second_session.commit()
+        assert first["version"] == 1
+        assert second["version"] == 2
+        assert second_session.query(domestic_models.DomesticBasePrice).count() == 1
+    finally:
+        first_session.close()
+        second_session.close()
+
+
+def _pricing_api_client(db, user_id, *permissions, raise_server_exceptions=True):
+    from app.domestic.router import router
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api/domestic")
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": str(user_id),
+        "roles": [],
+        "permissions": list(permissions),
+    }
+    return TestClient(app, raise_server_exceptions=raise_server_exceptions)
+
+
+def _configured_product(db, attrs, price, version=1):
+    product = _persist_product(db, attrs)
+    from app.domestic import pricing_service as service
+
+    key = service.price_key_for_product(product)
+    assert key is not None
+    db.add(
+        domestic_models.DomesticBasePrice(
+            product_type=key[0],
+            craft=key[1],
+            length=key[2],
+            original_price=D(price),
+            version=version,
+        )
+    )
+    db.flush()
+    return product
+
+
+@pytest.mark.parametrize(
+    ("membership_level", "last_recharge", "expected_price", "expected_rule"),
+    [
+        (None, None, "1198.00", "base_price"),
+        ("silver", "10000.00", "1048.00", "member_fixed"),
+        ("black", "30000.00", "998.00", "member_fixed"),
+        ("supreme", "100000.00", "960.00", "member_fixed"),
+    ],
+)
+def test_quote_returns_non_member_and_current_member_contracts(
+    db, membership_level, last_recharge, expected_price, expected_rule
+):
+    from app.domestic import pricing_service as service
+    from app.domestic.schemas import PricingQuoteRequest
+
+    user = _operator(db, f"quote-{membership_level or 'none'}")
+    customer = None
+    if membership_level:
+        customer = domestic_models.DomesticCustomer(
+            shop_name=f"报价客户-{membership_level}",
+            membership_level=membership_level,
+            last_recharge_amount=D(last_recharge),
+            balance=D("76543.21"),
+            created_by=user.id,
+        )
+        db.add(customer)
+        db.flush()
+    product = _configured_product(
+        db, _cap_attrs(length="15厘米", density="100%"), "1198.00", version=4
+    )
+    original_use_count = product.use_count
+
+    result = service.quote_prices(
+        db,
+        PricingQuoteRequest.model_validate(
+            {
+                "customer_id": customer.id if customer else None,
+                "items": [{"client_key": "line-1", "product_id": product.id}],
+            }
+        ),
+    )
+
+    priced = result["items"][0]
+    assert result["customer"] == {
+        "id": customer.id if customer else None,
+        "membership_level": membership_level,
+        "membership_label": {
+            None: "非会员",
+            "silver": "银卡会员",
+            "black": "黑卡会员",
+            "supreme": "至尊会员",
+        }[membership_level],
+        "last_recharge_amount": D(last_recharge) if last_recharge else None,
+    }
+    assert priced["status"] == "priced"
+    assert priced["discount_price"] == D(expected_price)
+    assert priced["pricing_rule"] == expected_rule
+    assert priced["pricing_version"] == "domestic-member-v1"
+    assert priced["expected_quote"] == {
+        "original_price": D("1198.00"),
+        "base_price_version": 4,
+        "discount_price": D(expected_price),
+        "membership_level": membership_level,
+        "pricing_rule": expected_rule,
+        "pricing_version": "domestic-member-v1",
+    }
+    assert "会员" in priced["pricing_rule_label"] or membership_level is None
+    assert product.use_count == original_use_count
+    if customer:
+        assert customer.balance == D("76543.21")
+        assert customer.membership_level == membership_level
+
+
+def test_quote_batch_labels_reduction_fixed_and_fixed_price_cap(db):
+    from app.domestic import pricing_service as service
+    from app.domestic.schemas import PricingQuoteRequest
+
+    user = _operator(db, "quote-rule-labels")
+    customer = domestic_models.DomesticCustomer(
+        shop_name="银卡报价客户",
+        membership_level="silver",
+        last_recharge_amount=D("10000.00"),
+        created_by=user.id,
+    )
+    db.add(customer)
+    fixed = _configured_product(
+        db, _cap_attrs(length="15厘米", density="100%"), "1198.00"
+    )
+    reduced = _configured_product(db, _piece_attrs(), "840.00")
+    capped = _configured_product(
+        db, _cap_attrs(craft="递顶", length="20厘米"), "1600.00"
+    )
+
+    result = service.quote_prices(
+        db,
+        PricingQuoteRequest.model_validate(
+            {
+                "customer_id": customer.id,
+                "items": [
+                    {"client_key": "fixed", "product_id": fixed.id},
+                    {"client_key": "reduced", "product_id": reduced.id},
+                    {"client_key": "capped", "product_id": capped.id},
+                ],
+            }
+        ),
+    )
+    by_key = {item["client_key"]: item for item in result["items"]}
+
+    assert by_key["fixed"]["pricing_rule_label"] == "银卡会员固定会员价"
+    assert by_key["reduced"]["discount_price"] == D("770.00")
+    assert by_key["reduced"]["discount_amount"] == D("70.00")
+    assert by_key["reduced"]["pricing_rule_label"] == "银卡会员立减70.00元"
+    assert by_key["capped"]["discount_price"] == D("1600.00")
+    assert by_key["capped"]["pricing_rule"] == "member_fixed_capped"
+    assert (
+        by_key["capped"]["pricing_rule_label"]
+        == "银卡会员固定价高于原价，按原价封顶"
+    )
+
+
+def test_quote_api_commits_new_missing_sku_without_incrementing_use_count(db):
+    user = _operator(db, "quote-new-missing")
+    client = _pricing_api_client(db, user.id, "domestic:write")
+
+    response = client.post(
+        "/api/domestic/pricing/quote",
+        json={
+            "customer_id": None,
+            "items": [
+                {
+                    "client_key": "new-missing",
+                    "attrs": _cap_attrs(craft="大U型", length="40厘米"),
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    item = response.json()["data"]["items"][0]
+    assert item["client_key"] == "new-missing"
+    assert item["status"] == "missing_base_price"
+    assert item["message"] == "该产品尚未配置原始价格"
+    assert "expected_quote" not in item
+    stored = db.get(domestic_models.DomesticProduct, item["product_id"])
+    assert stored is not None
+    assert stored.use_count == 0
+
+
+def test_quote_invalid_customer_does_not_persist_attrs_product(db):
+    user = _operator(db, "quote-invalid-customer")
+    client = _pricing_api_client(db, user.id, "domestic:write")
+
+    response = client.post(
+        "/api/domestic/pricing/quote",
+        json={
+            "customer_id": 999999,
+            "items": [
+                {"client_key": "must-not-create", "attrs": _piece_attrs()}
+            ],
+        },
+    )
+
+    assert response.status_code == 400
+    assert "客户不存在" in response.json()["detail"]
+    assert db.query(domestic_models.DomesticProduct).count() == 0
+
+
+def test_quote_configuration_error_rolls_back_products_created_earlier_in_batch(db):
+    user = _operator(db, "quote-config-error")
+    customer = domestic_models.DomesticCustomer(
+        shop_name="异常配置报价客户",
+        membership_level="silver",
+        last_recharge_amount=D("10000.00"),
+        created_by=user.id,
+    )
+    db.add(customer)
+    db.flush()
+    bad_product = _configured_product(db, _piece_attrs(), "50.00")
+    db.commit()
+    initial_count = db.query(domestic_models.DomesticProduct).count()
+    client = _pricing_api_client(db, user.id, "domestic:write")
+
+    response = client.post(
+        "/api/domestic/pricing/quote",
+        json={
+            "customer_id": customer.id,
+            "items": [
+                {
+                    "client_key": "new-first",
+                    "attrs": _cap_attrs(craft="大U型", length="40厘米"),
+                },
+                {"client_key": "bad-price", "product_id": bad_product.id},
+            ],
+        },
+    )
+
+    assert response.status_code == 400
+    assert "价格" in response.json()["detail"]
+    assert db.query(domestic_models.DomesticProduct).count() == initial_count
+
+
+def test_pricing_routes_enforce_write_and_admin_permissions_and_admin_contract(db):
+    user = _operator(db, "pricing-route-permissions")
+    product = _persist_product(db, _cap_attrs())
+    db.commit()
+    read_client = _pricing_api_client(db, user.id, "domestic:read")
+    admin_client = _pricing_api_client(db, user.id, "domestic:admin")
+
+    denied_quote = read_client.post(
+        "/api/domestic/pricing/quote",
+        json={"items": [{"client_key": "x", "product_id": product.id}]},
+    )
+    denied_price = read_client.put(
+        f"/api/domestic/products/{product.id}/base-price",
+        json={"original_price": "1498.00"},
+    )
+    saved = admin_client.put(
+        f"/api/domestic/products/{product.id}/base-price",
+        json={"original_price": "1498.00"},
+    )
+    configured = admin_client.get(
+        "/api/domestic/products", params={"price_status": "configured"}
+    )
+    deleted = admin_client.delete(
+        f"/api/domestic/products/{product.id}/base-price"
+    )
+    missing = admin_client.get(
+        "/api/domestic/products", params={"price_status": "missing"}
+    )
+    deleted_again = admin_client.delete(
+        f"/api/domestic/products/{product.id}/base-price"
+    )
+
+    assert denied_quote.status_code == 403
+    assert denied_price.status_code == 403
+    assert saved.status_code == 200
+    assert saved.json()["data"]["version"] == 1
+    assert saved.json()["data"]["affected_sku_count"] == 1
+    assert configured.json()["data"]["total"] == 1
+    assert configured.json()["data"]["items"][0]["price_status"] == "configured"
+    assert deleted.status_code == 200
+    assert deleted.json()["data"]["affected_sku_count"] == 1
+    assert missing.json()["data"]["total"] == 1
+    assert missing.json()["data"]["items"][0]["price_status"] == "missing"
+    assert deleted_again.status_code == 400
+    assert "尚未配置" in deleted_again.json()["detail"]
