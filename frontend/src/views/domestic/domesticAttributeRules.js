@@ -2,9 +2,9 @@ const CAP_FIELDS = ['craft', 'length', 'net_color', 'size', 'hair_style_series']
 const PIECE_FIELDS = ['craft', 'length']
 const ATTRIBUTE_FIELDS = ['craft', 'length', 'net_color', 'size', 'density', 'hair_style_series']
 const ATTRIBUTE_MAX_LENGTHS = {
-  craft: 32,
-  net_color: 32,
-  size: 32,
+  craft: 64,
+  net_color: 64,
+  size: 64,
   length: 32,
   density: 32,
   hair_style_series: 64,

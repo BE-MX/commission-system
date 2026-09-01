@@ -114,9 +114,9 @@ test('属性校验会 trim，把空白视为空并报告长度上限', () => {
   assert.equal(validateItemAttributes(blank), '工艺/尺寸不能为空')
 
   const overlongCraft = {
-    product_type: 'piece', craft: '工'.repeat(33), length: '20厘米',
+    product_type: 'piece', craft: '工'.repeat(65), length: '20厘米',
   }
-  assert.equal(validateItemAttributes(overlongCraft), '工艺/尺寸最多输入32个字符')
+  assert.equal(validateItemAttributes(overlongCraft), '工艺/尺寸最多输入64个字符')
 
   const overlong = {
     product_type: 'cap', craft: '递旋', length: '20厘米', size: 'M',
