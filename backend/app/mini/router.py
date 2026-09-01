@@ -1,7 +1,7 @@
 """微信小程序端路由 — /api/mini/*"""
 
 import logging
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,11 @@ from app.domestic import file_service as domestic_file_service
 from app.domestic import order_service as domestic_order_service
 from app.domestic import report_service as domestic_report_service
 from app.domestic import constants as domestic_constants
+from app.shipping_inspection import file_service as shipping_file_service
+from app.shipping_inspection import outbound_service as shipping_outbound_service
+from app.shipping_inspection import qr_service as shipping_qr_service
+from app.shipping_inspection import service as shipping_service
+from app.shipping_inspection.schemas import ShippingScanRequest, ShippingSubmitRequest
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -495,3 +500,132 @@ async def domestic_order_detail(
         return data
     except ValueError as exc:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": str(exc)})
+
+
+# ── 发货检验 ──────────────────────────────────────────────
+# 业务逻辑全在 app/shipping_inspection，这里只做薄路由。
+# mini token 无 RBAC，登录绑定即可用（与上面 mini 页面同一口径）。
+
+@router.post("/shipping-inspection/scan", summary="发货检验：扫出库单二维码")
+async def shipping_scan(
+    body: ShippingScanRequest,
+    current_user: ArkUser = Depends(get_current_mini_user),
+    db: Session = Depends(get_db),
+):
+    _ = current_user
+    valid, record_id = shipping_qr_service.verify_qr_data(body.qr_raw)
+    if not valid:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "SIGN_INVALID", "message": "二维码无效，请扫描系统打印的出库单二维码"},
+        )
+    try:
+        return shipping_service.scan_payload(db, record_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "RECORD_NOT_FOUND", "message": str(exc)})
+    except shipping_outbound_service.OutboundTableError:
+        logger.exception("shipping-inspection scan: 业务库出库表结构异常")
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "OUTBOUND_SOURCE_ERROR", "message": "出库单数据源异常，请联系管理员"},
+        )
+
+
+@router.post("/shipping-inspection/photos", summary="发货检验：上传验货照片（逐张）")
+async def shipping_upload_photo(
+    file: UploadFile = File(...),
+    outbound_record_id: str = Form(...),
+    item_id: str | None = Form(None),
+    current_user: ArkUser = Depends(get_current_mini_user),
+    db: Session = Depends(get_db),
+):
+    # 先拿声明大小挡一刀超大请求体，避免全量读进内存后才校验（M3）
+    declared = getattr(file, "size", None)
+    if declared is not None and declared > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail={"code": "BAD_FILE", "message": "图片不能超过 20MB"})
+    content = await file.read()
+    try:
+        shipping_file_service.validate_upload(file.filename, file.content_type or "", len(content))
+    except shipping_file_service.FileValidationError as exc:
+        raise HTTPException(status_code=400, detail={"code": "BAD_FILE", "message": str(exc)})
+    rel_path = shipping_file_service.store_bytes(file.filename, content)
+    try:
+        photo = shipping_service.add_photo(
+            db,
+            outbound_record_id=outbound_record_id,
+            item_id=item_id or None,
+            file_path=rel_path,
+            user_id=current_user.id,
+        )
+    except ValueError as exc:
+        # 业务校验失败（已提交/明细不存在等）：清掉刚落盘的文件，不留孤儿
+        try:
+            shipping_file_service.resolve_path(rel_path).unlink(missing_ok=True)
+        except Exception:  # noqa: BLE001 - 清理失败只记日志
+            logger.warning("清理被拒的验货照片失败 path=%s", rel_path)
+        raise HTTPException(status_code=400, detail={"code": "UPLOAD_REJECTED", "message": str(exc)})
+    except shipping_outbound_service.OutboundTableError:
+        try:
+            shipping_file_service.resolve_path(rel_path).unlink(missing_ok=True)
+        except Exception:  # noqa: BLE001
+            logger.warning("清理被拒的验货照片失败 path=%s", rel_path)
+        logger.exception("shipping-inspection upload: 业务库出库表结构异常")
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "OUTBOUND_SOURCE_ERROR", "message": "出库单数据源异常，请联系管理员"},
+        )
+    return {"id": photo.id, "file_path": photo.file_path}
+
+
+@router.delete("/shipping-inspection/photos/{photo_id}", summary="发货检验：删除照片（仅提交前）")
+async def shipping_delete_photo(
+    photo_id: int,
+    current_user: ArkUser = Depends(get_current_mini_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        shipping_service.delete_photo(db, photo_id, current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "DELETE_REJECTED", "message": str(exc)})
+    return {"deleted": True}
+
+
+@router.post("/shipping-inspection/submit", summary="发货检验：提交验货单")
+async def shipping_submit(
+    body: ShippingSubmitRequest,
+    current_user: ArkUser = Depends(get_current_mini_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        inspection = shipping_service.submit(
+            db,
+            outbound_record_id=body.outbound_record_id,
+            user_id=current_user.id,
+            remark=body.remark,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": "SUBMIT_REJECTED", "message": str(exc)})
+    return {
+        "id": inspection.id,
+        "outbound_record_id": inspection.outbound_record_id,
+        "status": inspection.status,
+        "photo_count": inspection.photo_count,
+        "submitted_at": inspection.submitted_at.isoformat() if inspection.submitted_at else None,
+    }
+
+
+@router.get("/shipping-inspection/images/{rel_path:path}", summary="验货照片（小程序）")
+async def shipping_image(
+    rel_path: str,
+    current_user: ArkUser = Depends(get_current_mini_user),
+):
+    """小程序 token 里没有 RBAC 声明，走不了主站那个 shipping_inspection:read 图片端点，
+    所以这里给一个同源的 mini 版本——小程序显示缩略图用。"""
+    _ = current_user
+    try:
+        abs_path = shipping_file_service.resolve_path(rel_path)
+    except shipping_file_service.FileValidationError as exc:
+        raise HTTPException(status_code=400, detail={"code": "BAD_PATH", "message": str(exc)})
+    if not abs_path.is_file():
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "图片不存在"})
+    return FileResponse(abs_path)

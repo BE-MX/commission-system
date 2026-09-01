@@ -1,0 +1,109 @@
+<!-- pages/shipping/check/check.wxml — 发货检验 -->
+<view class="si-page">
+  <nav-bar title="发货检验" showBack="{{true}}" />
+
+  <!-- nav-bar 是 fixed 定位，内容区手动让出状态栏 + 44px 导航高度 -->
+  <view class="si-body" style="padding-top: {{statusBarHeight + 44}}px">
+
+    <!-- idle：大扫码按钮 -->
+    <view class="si-idle" wx:if="{{state === 'idle'}}">
+      <view class="si-scan-btn" bindtap="onScanTap" hover-class="si-press" hover-stay-time="80">
+        <view class="si-scan-icon">
+          <view class="si-c si-tl"></view><view class="si-c si-tr"></view>
+          <view class="si-c si-bl"></view><view class="si-c si-br"></view>
+        </view>
+        <text class="si-scan-text">扫出库单二维码</text>
+      </view>
+      <text class="si-idle-hint">扫描出库单上的二维码，拍照留档后提交检验</text>
+    </view>
+
+    <!-- loading -->
+    <view class="si-hint" wx:if="{{state === 'loading'}}">
+      <view class="si-spin"></view>
+      <text class="si-hint-text">验签出库单…</text>
+    </view>
+
+    <!-- ready / submitting -->
+    <block wx:if="{{state === 'ready' || state === 'submitting'}}">
+      <!-- 单头卡片 -->
+      <view class="si-record">
+        <view class="si-record-head">
+          <text class="si-record-no">{{record.outbound_no}}</text>
+          <text class="si-badge {{submitted ? 'si-badge--done' : ''}}">{{statusText}}</text>
+        </view>
+        <text class="si-record-cust">{{record.customer_name}}</text>
+        <text class="si-record-date">出库日期 {{record.outbound_date}}</text>
+      </view>
+
+      <view class="si-readonly" wx:if="{{submitted}}">本单已提交检验，照片只读不可更改</view>
+
+      <!-- 整单照片 -->
+      <view class="si-section">
+        <view class="si-section-head">
+          <text class="si-section-title">整单照片</text>
+          <text class="si-section-count">{{wholePhotos.length}} 张</text>
+        </view>
+        <scroll-view scroll-x class="si-photos" wx:if="{{wholePhotos.length > 0}}">
+          <view class="si-thumb-wrap" wx:for="{{wholePhotos}}" wx:key="id"
+                data-group="whole" data-index="{{index}}" data-photo-id="{{item.id}}"
+                bindtap="onPreviewPhoto" bindlongpress="onDeletePhoto">
+            <image wx:if="{{item.url}}" class="si-thumb" src="{{item.url}}" mode="aspectFill" />
+            <view wx:else class="si-thumb si-thumb--loading"></view>
+          </view>
+        </scroll-view>
+        <view class="si-camera-btn" wx:if="{{!submitted}}" bindtap="onWholeCameraTap"
+              hover-class="si-press" hover-stay-time="80">拍整单照</view>
+        <text class="si-tip" wx:if="{{!submitted && wholePhotos.length > 0}}">点照片放大预览，长按可删除</text>
+      </view>
+
+      <!-- 出库明细：每行产品 + 数量 + 该行照片 -->
+      <view class="si-item" wx:for="{{items}}" wx:key="item_id" wx:for-item="it">
+        <view class="si-item-head">
+          <text class="si-item-name">{{it.product_name}}</text>
+          <view class="si-item-qty">
+            <text class="si-qty-num">{{it.qty}}</text>
+            <text class="si-qty-unit">{{it.unit}}</text>
+          </view>
+        </view>
+        <text class="si-item-spec" wx:if="{{it.specText}}">{{it.specText}}</text>
+        <scroll-view scroll-x class="si-photos" wx:if="{{it.photoCount > 0}}">
+          <view class="si-thumb-wrap" wx:for="{{it.photos}}" wx:key="id" wx:for-item="ph"
+                data-group="{{it.item_id}}" data-index="{{index}}" data-photo-id="{{ph.id}}"
+                bindtap="onPreviewPhoto" bindlongpress="onDeletePhoto">
+            <image wx:if="{{ph.url}}" class="si-thumb" src="{{ph.url}}" mode="aspectFill" />
+            <view wx:else class="si-thumb si-thumb--loading"></view>
+          </view>
+        </scroll-view>
+        <view class="si-camera-btn si-camera-btn--row" wx:if="{{!submitted}}"
+              data-item-id="{{it.item_id}}" bindtap="onItemCameraTap"
+              hover-class="si-press" hover-stay-time="80">拍照（已传 {{it.photoCount}} 张）</view>
+      </view>
+
+      <!-- 备注（选填） -->
+      <view class="si-remark" wx:if="{{!submitted}}">
+        <input class="si-remark-input" placeholder="备注（选填）" placeholder-class="si-remark-ph"
+               value="{{remark}}" bindinput="onRemarkInput" />
+      </view>
+
+      <!-- 提交：显示已传照片总数，至少 1 张由后端校验兜底 -->
+      <view class="si-footer" wx:if="{{!submitted}}">
+        <view class="si-submit {{(state === 'submitting' || uploading) ? 'si-submit--disabled' : ''}}"
+              bindtap="onSubmitTap" hover-class="si-press" hover-stay-time="80">
+          {{state === 'submitting' ? '提交中…' : '提交检验（已传 ' + totalPhotos + ' 张）'}}
+        </view>
+      </view>
+    </block>
+  </view>
+
+  <!-- 错误弹层 -->
+  <view class="si-mask" wx:if="{{errorVisible}}" bindtap="onErrorTap">
+    <view class="si-dialog" catchtap="noop">
+      <text class="si-dialog-title">{{errorTitle}}</text>
+      <text class="si-dialog-msg">{{errorMessage}}</text>
+      <view class="si-dialog-btn" bindtap="onErrorTap">知道了</view>
+    </view>
+  </view>
+
+  <result-toast visible="{{successVisible}}" type="success" title="{{successTitle}}"
+                desc="{{successDesc}}" bind:close="onSuccessClose" />
+</view>

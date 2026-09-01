@@ -957,6 +957,25 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 简报任务持久化到 `ark_order_intelligence_brief_jobs`，活动唯一键防止双击、多标签页或并发请求重复调用 AI；进行中任务超过 30 分钟会转失败并释放锁。AI 调用仍统一经由 `app.ai.service`，preset=`order_intelligence_brief`，AI 不可用时保留规则简报降级。
 
+## 发货检验（`/api/shipping-inspection`，128 迁移，2026-09-01）
+
+基于 `lsordertest.okki_outbound_records / okki_outbound_record_items`（OKKI 只读镜像，跨库只读、运行时列内省自适应字段名）的发货检验闭环：PC 打印带二维码出库单 → 小程序扫码拍照上传 → PC 打印验货单。检验数据落 `ark_shipping_inspections / ark_shipping_inspection_photos`。PC 端点要求 `shipping_inspection:read/write/admin`（require_any_permission）；小程序端点挂 `/api/mini/shipping-inspection`，`get_current_mini_user` 鉴权、无 RBAC。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/outbound-records?keyword=&date_from=&date_to=&page=&page_size=` | 出库单分页列表，含检验状态 none/draft/submitted 与照片数 |
+| GET | `/outbound-records/{record_id}/print-data` | 出库单打印数据：单头+明细+`qr_code_base64`（二维码内容 `ARK-I:{record_id}:{hmac8}`） |
+| GET | `/records?keyword=&date_from=&date_to=&page=&page_size=` | 已提交验货单分页列表（按提交时间过滤） |
+| GET | `/records/{id}` | 验货单详情：单头+实时明细+照片相对路径数组 |
+| GET | `/images/{rel_path:path}` | 鉴权读图（FileResponse，私有存储不挂静态目录） |
+| POST | `/api/mini/shipping-inspection/scan` | 验签二维码原文 → 单头+明细+已有照片+状态；前缀/签名错 400 |
+| POST | `/api/mini/shipping-inspection/photos` | multipart 上传一张照片（file + outbound_record_id + item_id?）；draft 懒创建；已提交拒绝 |
+| DELETE | `/api/mini/shipping-inspection/photos/{photo_id}` | 仅 draft 可删，删行同时清文件 |
+| POST | `/api/mini/shipping-inspection/submit` | 提交验货单：照片总数 ≥1 否则 400；重复提交幂等返回原单 |
+| GET | `/api/mini/shipping-inspection/images/{rel_path:path}` | 小程序鉴权读图 |
+
+字段口径已于 2026-09-01 实库摸底校准（`scripts/show_okki_outbound_columns.py`），明细经 `outbound_invoice_id` 桥接关联单头，见 `docs/database.md` 发货检验一节。
+
 ## 已退役：智能获客旧 API（迁移 126 前）
 
 > 本节路径不再注册，只作为历史审计记录。禁止调用 `/leads`、`/agent/leads/*` 或 `/agent/public-pool/tasks/*`；当前人机接口见本文顶部 `/api/customer-hub` 与 `/api/sales-automation/agent`。

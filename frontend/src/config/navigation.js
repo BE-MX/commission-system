@@ -109,6 +109,11 @@ export const MENU_GROUPS = {
     icon: Tickets,
     anyPermission: ['domestic:read', 'domestic:write', 'domestic:recharge', 'domestic:admin'],
   },
+  shipping: {
+    title: '发货检验',
+    icon: Van,
+    anyPermission: ['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin'],
+  },
   asset: {
     title: '素材管理',
     icon: Picture,
@@ -845,6 +850,33 @@ export const NAV_ENTRIES = [
   // 流转卡 / 二维码标签没有独立路由：它们是订单详情里的打印弹框
   // （views/domestic/print/DomesticPrintDialog.vue），内容渲染在 iframe 的
   // 独立文档里——打印只出那份文档，用户也不用离开订单页。
+
+  // ── 发货检验 ───────────────────────────────────────────
+  {
+    path: '/shipping/outbound',
+    name: 'ShippingOutbound',
+    component: () => import('@/views/shipping/OutboundRecords.vue'),
+    title: '出库单打印',
+    anyPermission: ['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin'],
+    menu: {
+      group: 'shipping', title: '出库单打印', icon: Printer, order: 10,
+      anyPermission: ['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin'],
+    },
+  },
+  {
+    path: '/shipping/inspections',
+    name: 'ShippingInspections',
+    component: () => import('@/views/shipping/InspectionRecords.vue'),
+    title: '验货单列表',
+    anyPermission: ['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin'],
+    menu: {
+      group: 'shipping', title: '验货单列表', icon: List, order: 20,
+      anyPermission: ['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin'],
+    },
+  },
+  // 出库单 / 验货单打印没有独立路由：打印弹框
+  // （views/shipping/print/ShippingPrintDialog.vue）把完整文档渲进 iframe 的
+  // 独立文档里——打印只出那份文档，用户也不用离开列表页。
 
   // ── 素材管理 ───────────────────────────────────────────
   {

@@ -35,6 +35,9 @@ from app.insight import models as _insight_models  # noqa: F401
 from app.customer_media import models as _customer_media_models  # noqa: F401
 from app.agent_runtime import models as _agent_runtime_models  # noqa: F401
 from app.semifinished import models as _semifinished_models  # noqa: F401
+# 发货检验表 FK 只在模块内（photos→inspections），但 submitted_by/created_by 逻辑上
+# 指向 ark_users（无 FK 约束），显式导入保证单跑测试文件时 create_all 覆盖到
+from app.shipping_inspection import models as _shipping_inspection_models  # noqa: F401
 
 
 # SQLite 不支持 BIGINT 自增，编译时替换为 INTEGER
@@ -147,6 +150,42 @@ def engine():
                 order_no TEXT,
                 company_name TEXT
             )
+        """))
+        # 发货检验：OKKI 出库单只读镜像（字段用 outbound_service 候选映射的首选名）
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS lsordertest.okki_outbound_records (
+                id TEXT PRIMARY KEY,
+                outbound_no TEXT,
+                outbound_date TEXT,
+                customer_name TEXT,
+                owner_name TEXT
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS lsordertest.okki_outbound_record_items (
+                id TEXT PRIMARY KEY,
+                outbound_record_id TEXT,
+                product_name TEXT,
+                quantity REAL,
+                unit TEXT,
+                spec TEXT,
+                sku TEXT
+            )
+        """))
+        conn.execute(text("""
+            INSERT OR IGNORE INTO lsordertest.okki_outbound_records
+            (id, outbound_no, outbound_date, customer_name, owner_name)
+            VALUES
+            ('OB001', 'CK2026001', '2026-08-20', '客户甲', '王小二'),
+            ('OB002', 'CK2026002', '2026-08-25', '客户乙', '李小三')
+        """))
+        conn.execute(text("""
+            INSERT OR IGNORE INTO lsordertest.okki_outbound_record_items
+            (id, outbound_record_id, product_name, quantity, unit, spec, sku)
+            VALUES
+            ('IT001', 'OB001', '假发头套A', 10, '件', '20inch', 'SKU-A'),
+            ('IT002', 'OB001', '发片B', 5, '件', '14inch', 'SKU-B'),
+            ('IT003', 'OB002', '假发头套C', 2, '件', '22inch', 'SKU-C')
         """))
         conn.commit()
 

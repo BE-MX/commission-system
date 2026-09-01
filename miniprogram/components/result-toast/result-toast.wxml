@@ -6,7 +6,8 @@
       <text class="icon-check">✓</text>
     </view>
     <text class="toast-title">{{title}}</text>
-    <text class="toast-desc">报工成功</text>
+    <!-- desc 留给调用方写场景文案（发货检验是"已上传 N 张照片"），缺省回落报工 -->
+    <text class="toast-desc">{{desc || '报工成功'}}</text>
     <text class="toast-time">{{time}}</text>
   </block>
   <!-- 失败 -->

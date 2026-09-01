@@ -15,7 +15,7 @@
   </view>
 
   <view class="cards">
-    <!-- 三张卡同一套骨架：LOGO 区 / 标题+箭头 / 副标题，只有配色不同 -->
+    <!-- 四张卡同一套骨架：LOGO/图标 区 / 标题+箭头 / 副标题，只有配色不同 -->
     <view class="card card--export {{entered ? 'is-in' : ''}}" hover-class="card--press" hover-stay-time="80" bindtap="onExportTap">
       <view class="card-glow"></view>
       <image class="card-logo" src="/assets/logo-gold.png" mode="aspectFit" />
@@ -48,6 +48,22 @@
         <view class="lookup-text">
           <text class="card-title">订单速查</text>
           <text class="card-sub">输入单号或扫码 · 看每道工序进度</text>
+        </view>
+        <text class="card-arrow">→</text>
+      </view>
+    </view>
+
+    <!-- 发货检验与速查同属浅色工具档，accent 换品牌黄，与报工模块的黑金呼应 -->
+    <view class="card card--shipping {{entered ? 'is-in' : ''}}" hover-class="card--press" hover-stay-time="80" bindtap="onShippingTap">
+      <view class="card-glow"></view>
+      <view class="lookup-row">
+        <view class="shipping-icon">
+          <view class="sp-box"></view>
+          <view class="sp-lens"></view>
+        </view>
+        <view class="lookup-text">
+          <text class="card-title">发货检验</text>
+          <text class="card-sub">扫出库单 · 拍照留档后提交</text>
         </view>
         <text class="card-arrow">→</text>
       </view>
