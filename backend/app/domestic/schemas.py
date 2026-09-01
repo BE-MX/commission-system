@@ -236,13 +236,29 @@ class RouteConfigurationSaveRequest(BaseModel):
 _IMG_FIELD = Field(default_factory=list, description="图片相对路径列表")
 
 
+class ExpectedQuote(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    original_price: Decimal = Field(..., gt=0, max_digits=14, decimal_places=2)
+    base_price_version: int = Field(..., ge=1)
+    discount_price: Decimal = Field(..., ge=0, max_digits=14, decimal_places=2)
+    membership_level: Literal["silver", "black", "supreme"] | None
+    pricing_rule: Literal[
+        "base_price",
+        "member_fixed",
+        "member_fixed_capped",
+        "member_reduction",
+    ]
+    pricing_version: Literal["domestic-member-v1"]
+
+
 class OrderItemInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    client_key: str = Field(..., min_length=1, max_length=64)
     attrs: ProductAttrs
     order_qty: int = Field(..., gt=0, le=2000, description="下单数量（逐件码物化，单明细最多2000件）")
-    unit_price: Decimal = Field(
-        Decimal("0.00"), ge=0, le=999999999999,
-        max_digits=14, decimal_places=2, description="产品单价",
-    )
+    expected_quote: ExpectedQuote
     hairstyle: str | None = Field(None, max_length=1000)
     hairstyle_images: list[str] = _IMG_FIELD
     color: str | None = Field(None, max_length=1000)
@@ -251,6 +267,11 @@ class OrderItemInput(BaseModel):
     style_images: list[str] = _IMG_FIELD
     remark: str | None = Field(None, max_length=2000)
     remark_images: list[str] = _IMG_FIELD
+
+    @field_validator("client_key", mode="before")
+    @classmethod
+    def _strip_client_key(cls, value: str) -> str:
+        return value.strip() if isinstance(value, str) else value
 
 
 class OrderItemAppend(OrderItemInput):
@@ -263,6 +284,8 @@ class OrderItemAppend(OrderItemInput):
 
 
 class OrderCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     request_id: str = Field(..., min_length=8, max_length=64, description="客户端建单幂等键")
     order_no: str = Field(..., min_length=1, max_length=64, description="客户订单号")
     order_date: date
@@ -299,6 +322,9 @@ class OrderCreate(BaseModel):
             raise ValueError("请选择客户或填写客户店名")
         if sum(item.order_qty for item in self.items) > 5000:
             raise ValueError("单张订单合计数量不能超过 5000 件")
+        client_keys = [item.client_key for item in self.items]
+        if len(client_keys) != len(set(client_keys)):
+            raise ValueError("同一订单的 client_key 不能重复")
         return self
 
 
@@ -331,10 +357,9 @@ class OrderUpdate(BaseModel):
 class OrderItemUpdate(BaseModel):
     """明细编辑。order_qty 已开始报工后不允许改小到低于已完成数（service 校验）。"""
 
+    model_config = ConfigDict(extra="forbid")
+
     order_qty: int | None = Field(None, gt=0, le=2000)
-    unit_price: Decimal | None = Field(
-        None, ge=0, le=999999999999, max_digits=14, decimal_places=2,
-    )
     hairstyle: str | None = Field(None, max_length=1000)
     hairstyle_images: list[str] | None = None
     color: str | None = Field(None, max_length=1000)

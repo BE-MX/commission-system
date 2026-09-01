@@ -460,6 +460,8 @@ def create_order(
 ):
     try:
         data = order_service.create_order(db, payload, _uid(current_user))
+    except pricing_service.DomesticQuoteChangedError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     message = "草稿已保存" if data["is_draft"] else "下单成功"
@@ -601,6 +603,8 @@ def add_item(
 ):
     try:
         data = order_service.add_item(db, order_id, payload, _uid(_user))
+    except pricing_service.DomesticQuoteChangedError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(data, message=data.get("warning") or "明细已添加")

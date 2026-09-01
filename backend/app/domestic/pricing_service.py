@@ -5,13 +5,13 @@ from decimal import Decimal, ROUND_HALF_UP
 import logging
 from typing import Iterator
 
-from sqlalchemy import String, cast, func, literal
+from sqlalchemy import String, and_, cast, func, literal, or_
 from sqlalchemy.dialects.mysql import BINARY
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domestic.models import DomesticBasePrice, DomesticCustomer, DomesticProduct
-from app.domestic.schemas import PricingQuoteRequest
+from app.domestic.schemas import ExpectedQuote, PricingQuoteRequest
 
 
 logger = logging.getLogger("commission")
@@ -135,6 +135,14 @@ class PricingConfigurationError(ValueError):
     """定价配置无法生成合法成交价。"""
 
 
+class DomesticQuoteChangedError(Exception):
+    """客户端确认的报价已不是当前可成交报价。"""
+
+    def __init__(self, detail: dict):
+        super().__init__(detail["message"])
+        self.detail = detail
+
+
 def membership_label(membership_level: str | None) -> str:
     """返回会员展示文案；未知等级视为配置错误。"""
 
@@ -152,6 +160,24 @@ class DiscountResult:
     final_price: Decimal
     discount_amount: Decimal
     pricing_rule: str
+
+
+@dataclass(frozen=True)
+class LockedOrderQuote:
+    product: DomesticProduct
+    base_row: DomesticBasePrice
+    discount: DiscountResult
+    membership_level: str | None
+
+    def expected_quote(self) -> dict:
+        return {
+            "original_price": self.discount.original_price,
+            "base_price_version": self.base_row.version,
+            "discount_price": self.discount.final_price,
+            "membership_level": self.membership_level,
+            "pricing_rule": self.discount.pricing_rule,
+            "pricing_version": PRICING_VERSION,
+        }
 
 
 def _money(value: Decimal | int) -> Decimal:
@@ -482,6 +508,153 @@ def pricing_rule_label(
     if result.pricing_rule == "member_fixed_capped":
         return "命中固定会员价，但原价更低，已按原价"
     raise PricingConfigurationError(f"未知定价规则：{result.pricing_rule!r}")
+
+
+def _quote_change_reasons(previous: ExpectedQuote, current: dict) -> list[str]:
+    reasons = []
+    base_changed = (
+        previous.original_price != current["original_price"]
+        or previous.base_price_version != current["base_price_version"]
+    )
+    membership_changed = previous.membership_level != current["membership_level"]
+    if base_changed:
+        reasons.append("base_price_changed")
+    if membership_changed:
+        reasons.append("membership_changed")
+    if (
+        previous.pricing_version != current["pricing_version"]
+        or (
+            not base_changed
+            and not membership_changed
+            and (
+                previous.pricing_rule != current["pricing_rule"]
+                or previous.discount_price != current["discount_price"]
+            )
+        )
+    ):
+        reasons.append("rule_changed")
+    return reasons
+
+
+def _quote_json(values: dict) -> dict:
+    return {
+        key: float(value) if isinstance(value, Decimal) else value
+        for key, value in values.items()
+    }
+
+
+def lock_and_validate_order_quotes(
+    db: Session,
+    *,
+    customer_id: int,
+    item_products: list[tuple[object, DomesticProduct]],
+) -> tuple[DomesticCustomer, list[LockedOrderQuote]]:
+    """Lock customer first, then every distinct price row in stable id order."""
+
+    customer = (
+        db.query(DomesticCustomer)
+        .filter(DomesticCustomer.id == customer_id)
+        .populate_existing()
+        .with_for_update()
+        .first()
+    )
+    if customer is None:
+        raise ValueError("客户不存在")
+
+    keyed_items = []
+    unique_keys = set()
+    for item, product in item_products:
+        key = price_key_for_product(product)
+        keyed_items.append((item, product, key))
+        if key is not None:
+            unique_keys.add(key)
+
+    rows = []
+    if unique_keys:
+        dialect_name = db.get_bind().dialect.name
+        predicates = [
+            and_(*_base_price_key_predicates(
+                dialect_name, DomesticBasePrice, key
+            ))
+            for key in sorted(unique_keys)
+        ]
+        candidate_rows = (
+            db.query(DomesticBasePrice)
+            .filter(or_(*predicates))
+            .all()
+        )
+        candidate_ids = sorted(row.id for row in candidate_rows)
+        if candidate_ids:
+            rows = (
+                db.query(DomesticBasePrice)
+                .filter(DomesticBasePrice.id.in_(candidate_ids))
+                .order_by(DomesticBasePrice.id.asc())
+                .populate_existing()
+                .with_for_update()
+                .all()
+            )
+    rows_by_key = {
+        (row.product_type, row.craft, row.length): row for row in rows
+    }
+
+    changes = []
+    current_expected_quotes = []
+    quotes = []
+    for item, product, key in keyed_items:
+        previous = item.expected_quote
+        previous_json = _quote_json(previous.model_dump())
+        base_row = rows_by_key.get(key)
+        if base_row is None:
+            changes.append({
+                "client_key": item.client_key,
+                "item_id": None,
+                "reasons": ["price_missing"],
+                "previous_quote": previous_json,
+                "current_quote": None,
+                "current_status": "missing_base_price",
+            })
+            continue
+        discount = resolve_discount(
+            product_type=product.product_type,
+            craft=product.craft,
+            length=product.length,
+            size=product.size if product.product_type == "piece" else None,
+            original_price=base_row.original_price,
+            membership_level=customer.membership_level,
+        )
+        quote = LockedOrderQuote(
+            product=product,
+            base_row=base_row,
+            discount=discount,
+            membership_level=customer.membership_level,
+        )
+        current = quote.expected_quote()
+        current_json = _quote_json(current)
+        current_expected_quotes.append({
+            "client_key": item.client_key,
+            "item_id": None,
+            **current_json,
+        })
+        reasons = _quote_change_reasons(previous, current)
+        if reasons:
+            changes.append({
+                "client_key": item.client_key,
+                "item_id": None,
+                "reasons": reasons,
+                "previous_quote": previous_json,
+                "current_quote": current_json,
+            })
+        quotes.append(quote)
+
+    if changes:
+        raise DomesticQuoteChangedError({
+            "error_code": "DOMESTIC_QUOTE_CHANGED",
+            "message": "价格已更新，请确认后重新提交",
+            "changes": changes,
+            "current_expected_quotes": current_expected_quotes,
+            "retry_requires_new_request_id": True,
+        })
+    return customer, quotes
 
 
 def quote_prices(db: Session, payload: PricingQuoteRequest) -> dict:

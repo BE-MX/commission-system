@@ -16,6 +16,7 @@ from app.domestic import (
     attribute_service,
     balance_service,
     customer_service,
+    pricing_service,
     product_service,
     progress_service,
     routing_service,
@@ -160,19 +161,10 @@ def _build_item(
     order_id: int,
     line_no: int,
     payload: OrderItemInput,
-    *,
-    order_category: str,
-    user_id: int,
+    product: DomesticProduct,
+    quote: pricing_service.LockedOrderQuote,
 ) -> tuple[DomesticOrderItem, str | None]:
-    """建明细行：产品 find-or-create + 路线快照 + 进度展开。返回 (明细, 警告)。"""
-    attribute_service.prepare_item_attrs(
-        db,
-        order_category=order_category,
-        attrs=payload.attrs,
-        user_id=user_id,
-        line_no=line_no,
-    )
-    product = product_service.find_or_create_product(db, payload.attrs)
+    """Persist one item from a server-validated, locked quote."""
     product.use_count = (product.use_count or 0) + 1
 
     item = DomesticOrderItem(
@@ -183,7 +175,13 @@ def _build_item(
         attrs_snapshot=payload.attrs.model_dump(),
         route_id=product.route_id,
         order_qty=payload.order_qty,
-        unit_price=balance_service.money(payload.unit_price),
+        original_price=quote.discount.original_price,
+        unit_price=quote.discount.final_price,
+        discount_amount=quote.discount.discount_amount,
+        membership_level_snapshot=quote.membership_level,
+        pricing_rule=quote.discount.pricing_rule,
+        pricing_version=pricing_service.PRICING_VERSION,
+        base_price_version_snapshot=quote.base_row.version,
         status=C.ITEM_PRODUCING,
     )
     for field in _TEXT_FIELDS:
@@ -202,6 +200,41 @@ def _build_item(
     else:
         warning = f"「{product.name}」的工艺「{product.craft}」还没配工艺路线，暂时不能开工"
     return item, warning
+
+
+def _prepare_order_products(
+    db: Session,
+    payloads: list[OrderItemInput],
+    *,
+    order_category: str,
+    user_id: int,
+) -> list[tuple[OrderItemInput, DomesticProduct]]:
+    prepared = []
+    for line_no, payload in enumerate(payloads, start=1):
+        attribute_service.prepare_item_attrs(
+            db,
+            order_category=order_category,
+            attrs=payload.attrs,
+            user_id=user_id,
+            line_no=line_no,
+        )
+        prepared.append(
+            (payload, product_service.find_or_create_product(db, payload.attrs))
+        )
+    return prepared
+
+
+def _lock_customer(db: Session, customer_id: int) -> DomesticCustomer:
+    customer = (
+        db.query(DomesticCustomer)
+        .filter(DomesticCustomer.id == customer_id)
+        .populate_existing()
+        .with_for_update()
+        .first()
+    )
+    if customer is None:
+        raise ValueError("客户不存在")
+    return customer
 
 
 def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
@@ -225,20 +258,31 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
             payload.order_channel,
         )
         if payload.customer_id:
-            customer = db.get(DomesticCustomer, payload.customer_id)
-            if not customer:
-                raise ValueError("客户不存在")
+            customer = _lock_customer(db, payload.customer_id)
         else:
             customer = customer_service.find_or_create_by_shop_name(
                 db, payload.customer_shop_name, user_id
             )
+            customer = _lock_customer(db, customer.id)
 
-        # Fast non-locking precheck before the order-number savepoint. The definitive
-        # check still happens under the customer lock in sync_order_finance; doing this
-        # early also keeps SQLite from retaining a released savepoint after insufficiency.
+        prepared = _prepare_order_products(
+            db,
+            payload.items,
+            order_category=payload.order_category,
+            user_id=user_id,
+        )
+        customer, quotes = pricing_service.lock_and_validate_order_quotes(
+            db,
+            customer_id=customer.id,
+            item_products=prepared,
+        )
+
+        # Check the discounted total before the order-number savepoint. The definitive
+        # finance sync still runs after items are built; this early check also keeps
+        # SQLite from retaining a released savepoint after insufficiency.
         estimated_total = balance_service.money(sum(
-            balance_service.money(item.unit_price) * item.order_qty
-            for item in payload.items
+            quote.discount.final_price * item.order_qty
+            for (item, _product), quote in zip(prepared, quotes)
         ))
         available = balance_service.money(customer.balance)
         if not payload.is_draft and available < estimated_total:
@@ -299,14 +343,16 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
             raise ValueError("订单号生成冲突，请重试")
 
         warnings = []
-        for line_no, item_payload in enumerate(payload.items, start=1):
+        for line_no, ((item_payload, product), quote) in enumerate(
+            zip(prepared, quotes), start=1
+        ):
             _, warning = _build_item(
                 db,
                 order.id,
                 line_no,
                 item_payload,
-                order_category=payload.order_category,
-                user_id=user_id,
+                product,
+                quote,
             )
             if warning:
                 warnings.append(warning)
@@ -679,6 +725,23 @@ def get_order_detail(
             if step["passed_qty"] < item.order_qty
         ), "完成")
         progress_hidden = public_progress_only and bool(full_steps) and not steps
+        if item.pricing_rule in {
+            "base_price",
+            "member_fixed",
+            "member_fixed_capped",
+            "member_reduction",
+        }:
+            pricing_label = pricing_service.pricing_rule_label(
+                pricing_service.DiscountResult(
+                    original_price=balance_service.money(item.original_price),
+                    final_price=balance_service.money(item.unit_price),
+                    discount_amount=balance_service.money(item.discount_amount),
+                    pricing_rule=item.pricing_rule,
+                ),
+                item.membership_level_snapshot,
+            )
+        else:
+            pricing_label = "历史手工价"
         item_views.append({
             "id": item.id,
             "line_no": item.line_no,
@@ -689,6 +752,17 @@ def get_order_detail(
             "route_id": item.route_id,
             "order_qty": item.order_qty,
             "unit_price": float(item.unit_price or 0),
+            "original_price": (
+                float(item.original_price) if item.original_price is not None else None
+            ),
+            "discount_amount": (
+                float(item.discount_amount) if item.discount_amount is not None else None
+            ),
+            "membership_level_snapshot": item.membership_level_snapshot,
+            "pricing_rule": item.pricing_rule,
+            "pricing_rule_label": pricing_label,
+            "pricing_version": item.pricing_version,
+            "base_price_version": item.base_price_version_snapshot,
             "line_amount": float(balance_service.money(item.unit_price) * item.order_qty),
             "status": item.status,
             "status_label": C.ITEM_STATUS_LABELS.get(item.status, str(item.status)),
@@ -841,14 +915,28 @@ def add_item(
         if new_total_qty > C.MAX_ORDER_UNITS:
             raise ValueError(f"单张订单合计数量不能超过 {C.MAX_ORDER_UNITS} 件")
 
+        customer = _lock_customer(db, order.customer_id)
+        prepared = _prepare_order_products(
+            db,
+            [payload],
+            order_category=order.order_category,
+            user_id=user_id or order.created_by,
+        )
+        _customer, quotes = pricing_service.lock_and_validate_order_quotes(
+            db,
+            customer_id=customer.id,
+            item_products=prepared,
+        )
+        product = prepared[0][1]
+
         line_no = order.next_line_no or 1
         item, warning = _build_item(
             db,
             order.id,
             line_no,
             payload,
-            order_category=order.order_category,
-            user_id=user_id or order.created_by,
+            product,
+            quotes[0],
         )
         order.next_line_no = line_no + 1
         order.item_count = int(order.item_count or 0) + 1
@@ -911,8 +999,6 @@ def update_item(
     for field in _TEXT_FIELDS:
         if field in data:
             setattr(item, field, data[field])
-    if "unit_price" in data and data["unit_price"] is not None:
-        item.unit_price = balance_service.money(data["unit_price"])
     for field in _IMAGE_FIELDS:
         if field in data and data[field] is not None:
             setattr(item, field, data[field])
