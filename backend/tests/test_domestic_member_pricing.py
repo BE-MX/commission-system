@@ -1,8 +1,10 @@
 from datetime import date, datetime
 from decimal import Decimal
+from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 import inspect
 from pathlib import Path
+import threading
 
 import pytest
 from fastapi import FastAPI
@@ -18,6 +20,7 @@ from sqlalchemy import (
     String,
     Table,
     create_engine,
+    event,
     select,
     text,
 )
@@ -1655,39 +1658,86 @@ def test_base_price_upsert_rejects_case_insensitive_unique_conflict(db):
         )
 
 
-def test_serialized_sqlite_admin_sessions_keep_one_base_price_row(db, engine):
-    """SQLite 写事务串行化：用两个真实 Session 验证同键保存不产生重复行。"""
+def test_concurrent_sqlite_admin_sessions_recover_exact_unique_conflict(tmp_path):
+    """两个线程均先读到缺价，再由真实唯一约束裁决同键插入。"""
     from sqlalchemy.orm import sessionmaker
 
     from app.domestic import pricing_service as service
 
-    user = _operator(db, "base-price-two-sessions")
-    product = _persist_product(db, _cap_attrs())
-    db.commit()
-    Session = sessionmaker(bind=engine)
-    first_session = Session()
-    second_session = Session()
-    try:
-        first = service.upsert_base_price(
-            first_session,
-            product_id=product.id,
-            original_price=D("1498.00"),
-            user_id=user.id,
+    race_engine = create_engine(
+        f"sqlite:///{tmp_path / 'base-price-race.db'}",
+        connect_args={"check_same_thread": False, "timeout": 10},
+    )
+    domestic_models.DomesticProduct.__table__.create(race_engine)
+    domestic_models.DomesticBasePrice.__table__.create(race_engine)
+    Session = sessionmaker(bind=race_engine)
+    with Session() as seed_session:
+        product = domestic_models.DomesticProduct(
+            attrs_key='["cap","递旋","自然色","12*14","20厘米","","标准款"]',
+            name="头套/递旋/自然色/12*14/20厘米/标准款",
+            product_type="cap",
+            craft="递旋",
+            net_color="自然色",
+            size="12*14",
+            length="20厘米",
+            hair_style_series="标准款",
+            status=1,
+            use_count=0,
         )
-        first_session.commit()
-        second = service.upsert_base_price(
-            second_session,
-            product_id=product.id,
-            original_price=D("1598.00"),
-            user_id=user.id,
-        )
-        second_session.commit()
-        assert first["version"] == 1
-        assert second["version"] == 2
-        assert second_session.query(domestic_models.DomesticBasePrice).count() == 1
-    finally:
-        first_session.close()
-        second_session.close()
+        seed_session.add(product)
+        seed_session.commit()
+        product_id = product.id
+
+    first_flush_barrier = threading.Barrier(2, timeout=10)
+
+    def save_price(price, user_id):
+        session = Session()
+        transaction_open = None
+
+        def align_first_base_price_flush(current_session, _context, _instances):
+            if any(
+                isinstance(row, domestic_models.DomesticBasePrice)
+                for row in current_session.new
+            ):
+                first_flush_barrier.wait()
+
+        event.listen(session, "before_flush", align_first_base_price_flush)
+        try:
+            result = service.upsert_base_price(
+                session,
+                product_id=product_id,
+                original_price=D(price),
+                user_id=user_id,
+            )
+            session.commit()
+            transaction_open = session.in_transaction()
+            return result, transaction_open
+        except Exception:
+            session.rollback()
+            transaction_open = session.in_transaction()
+            raise
+        finally:
+            event.remove(session, "before_flush", align_first_base_price_flush)
+            assert transaction_open is False
+            session.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(save_price, "1498.00", 101),
+            executor.submit(save_price, "1598.00", 102),
+        ]
+        results = [future.result(timeout=20)[0] for future in futures]
+
+    assert {result["version"] for result in results} == {1, 2}
+    winner = next(result for result in results if result["version"] == 2)
+    with Session() as verify_session:
+        rows = verify_session.query(domestic_models.DomesticBasePrice).all()
+        assert len(rows) == 1
+        assert rows[0].version == winner["version"]
+        assert rows[0].original_price == winner["original_price"]
+        assert verify_session.in_transaction() is True
+        verify_session.rollback()
+        assert verify_session.in_transaction() is False
 
 
 def _pricing_api_client(db, user_id, *permissions, raise_server_exceptions=True):
