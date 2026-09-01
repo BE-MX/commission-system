@@ -269,7 +269,7 @@ V1 只有 3 个等级、3 行固定价规则和一条“其余已有原始价 SK
 | `unit_price` | `NUMERIC(14,2)` | 保留现有列，语义明确为最终优惠/成交单价 |
 | `discount_amount` | `NUMERIC(14,2)` | `original_price - unit_price`，非负快照 |
 | `membership_level_snapshot` | `VARCHAR(16) NULL` | 本明细报价时的会员等级 |
-| `pricing_rule` | `VARCHAR(24)` | `base/member_fixed/member_fixed_capped/member_reduction/legacy_manual` |
+| `pricing_rule` | `VARCHAR(24)` | `base_price/member_fixed/member_fixed_capped/member_reduction/legacy_manual` |
 | `pricing_version` | `VARCHAR(32)` | 例如 `domestic-member-v1` |
 | `base_price_version_snapshot` | `INT` | 本次使用的原始价格行版本；历史旧单为 0 |
 
