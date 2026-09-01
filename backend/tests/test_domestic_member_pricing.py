@@ -3,8 +3,10 @@ from decimal import Decimal
 from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 import inspect
+import os
 from pathlib import Path
 import threading
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -27,11 +29,11 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects import mysql
 from sqlalchemy.exc import IntegrityError, OperationalError
-from sqlalchemy.dialects import mysql
+from sqlalchemy.orm import sessionmaker
 
 from app.auth.models import ArkUser
 from app.auth.dependencies import get_current_user
-from app.core.database import get_db
+from app.core.database import Base, get_db
 from app.domestic import (
     balance_service,
     constants as domestic_constants,
@@ -50,6 +52,8 @@ from app.domestic.schemas import (
     OrderItemInput,
     OrderItemUpdate,
 )
+from app.production.models import Process, ProcessRoute, ProcessRouteStep
+from app.system.models import SysDict
 
 
 D = Decimal
@@ -102,12 +106,24 @@ def test_order_quote_schemas_require_complete_forbidden_extra_contract():
         ("discount_price", "-0.01"),
         ("membership_level", "gold"),
         ("pricing_rule", "manual"),
-        ("pricing_version", "domestic-member-v2"),
     ],
 )
 def test_expected_quote_rejects_values_outside_versioned_contract(field, value):
     with pytest.raises(ValidationError, match=field):
         ExpectedQuote.model_validate(_expected_quote_payload(**{field: value}))
+
+
+def test_expected_quote_accepts_and_strips_a_noncurrent_version_for_stale_check():
+    quote = ExpectedQuote.model_validate(
+        _expected_quote_payload(pricing_version="  domestic-member-v0  ")
+    )
+    assert quote.pricing_version == "domestic-member-v0"
+
+    for value in ("", "   ", "v" * 33):
+        with pytest.raises(ValidationError, match="pricing_version"):
+            ExpectedQuote.model_validate(
+                _expected_quote_payload(pricing_version=value)
+            )
 
 
 def test_order_item_schema_requires_expected_quote_and_forbids_manual_price():
@@ -2722,41 +2738,45 @@ def test_discount_balance_threshold_and_draft_charge_contract(db):
 
 
 @pytest.mark.parametrize(
-    ("expected_change", "reason"),
+    ("field", "stale_value", "reason"),
     [
-        ({"discount_price": D("879.99")}, "rule_changed"),
-        ({"membership_level": "silver"}, "membership_changed"),
-        ({"base_price_version": 99}, "base_price_changed"),
-        ({"pricing_rule": "member_fixed"}, "rule_changed"),
-        ({"pricing_version": "domestic-member-v1"}, None),
+        ("original_price", D("999.99"), "base_price_changed"),
+        ("base_price_version", 99, "base_price_changed"),
+        ("discount_price", D("879.99"), "rule_changed"),
+        ("membership_level", "silver", "membership_changed"),
+        ("pricing_rule", "member_fixed", "rule_changed"),
+        ("pricing_version", "domestic-member-v0", "rule_changed"),
     ],
 )
-def test_create_rejects_any_stale_or_tampered_expected_quote(
-    db, expected_change, reason
+def test_create_returns_409_for_each_stale_or_tampered_quote_field(
+    db, field, stale_value, reason
 ):
-    user, customer, product, base, expected, attrs = _order_pricing_context(
-        db, f"quote-change-{reason}-{expected_change}", original_price="1000"
+    user, customer, product, _base, expected, attrs = _order_pricing_context(
+        db, f"quote-change-{field}", original_price="1000"
     )
-    if reason is None:
-        base.version += 1
-        db.commit()
-        reason = "base_price_changed"
-    else:
-        expected = {**expected, **expected_change}
+    expected = {**expected, field: stale_value}
     payload = _priced_order_payload(
-        customer, attrs, expected, request_id=f"quote-change-{base.id}-{reason}"
+        customer, attrs, expected, request_id=f"quote-change-{field}-request"
+    )
+    client = _pricing_api_client(db, user.id, "domestic:write")
+
+    response = client.post(
+        "/api/domestic/orders", json=payload.model_dump(mode="json")
     )
 
-    with pytest.raises(pricing_service.DomesticQuoteChangedError) as caught:
-        order_service.create_order(db, payload, user.id)
-
-    detail = caught.value.detail
+    assert response.status_code == 409
+    detail = response.json()["detail"]
     assert detail["error_code"] == "DOMESTIC_QUOTE_CHANGED"
     assert detail["retry_requires_new_request_id"] is True
     assert detail["changes"][0]["client_key"] == "line-1"
     assert detail["changes"][0]["item_id"] is None
-    assert reason in detail["changes"][0]["reasons"]
+    assert detail["changes"][0]["reasons"] == [reason]
+    assert field in detail["changes"][0]["previous_quote"]
     assert len(detail["current_expected_quotes"]) == 1
+    assert (
+        detail["current_expected_quotes"][0]["pricing_version"]
+        == "domestic-member-v1"
+    )
     assert db.query(domestic_models.DomesticOrder).count() == 0
     db.refresh(product)
     assert product.use_count == 0
@@ -3163,6 +3183,98 @@ def test_inline_customer_draft_is_quoted_as_nonmember_in_same_transaction(db):
     assert result["is_draft"] is True
 
 
+def test_inline_customer_special_order_quote_409_rolls_back_entire_graph(db):
+    attrs = _cap_attrs(craft="回滚特单工艺", length="47厘米")
+    user = _operator(db, "inline-special-409-rollback")
+    process = Process(name="回滚测试工序", status=1)
+    route = ProcessRoute(
+        name=domestic_constants.DEFAULT_ROUTE_NAMES["cap"], status=1
+    )
+    db.add_all([process, route])
+    db.flush()
+    db.add(
+        ProcessRouteStep(
+            route_id=route.id,
+            process_id=process.id,
+            step_order=1,
+        )
+    )
+    seeded_values = {
+        domestic_constants.ORDER_TYPE_DICT: "first_order",
+        domestic_constants.ORDER_CHANNEL_DICT: "wechat",
+        domestic_constants.DICT_CAP_NET_COLOR: attrs["net_color"],
+        domestic_constants.DICT_CAP_SIZE: attrs["size"],
+        domestic_constants.DICT_CAP_LENGTH: attrs["length"],
+        domestic_constants.DICT_CAP_HAIR_STYLE_SERIES: attrs["hair_style_series"],
+    }
+    db.add_all([
+        SysDict(
+            type=dict_type,
+            code=code,
+            label=code,
+            sort=1,
+            is_active=True,
+        )
+        for dict_type, code in seeded_values.items()
+    ])
+    db.add(
+        domestic_models.DomesticBasePrice(
+            product_type="cap",
+            craft=attrs["craft"],
+            length=attrs["length"],
+            original_price=D("500.00"),
+            version=1,
+            updated_by=user.id,
+        )
+    )
+    db.commit()
+    request_id = "inline-special-stale-quote-request"
+    shop_name = "就地特单回滚客户"
+    payload = OrderCreate.model_validate({
+        "request_id": request_id,
+        "order_no": "INLINE-SPECIAL-409",
+        "order_date": "2026-09-02",
+        "customer_shop_name": shop_name,
+        "order_category": "special",
+        "order_type": "first_order",
+        "order_channel": "wechat",
+        "items": [{
+            "client_key": "inline-special-line",
+            "attrs": attrs,
+            "order_qty": 1,
+            "expected_quote": _expected_quote_payload(
+                original_price="500.00",
+                base_price_version=1,
+                discount_price="500.00",
+                pricing_version="domestic-member-v0",
+            ),
+        }],
+    })
+
+    with pytest.raises(pricing_service.DomesticQuoteChangedError) as caught:
+        order_service.create_order(db, payload, user.id)
+
+    assert caught.value.detail["changes"][0]["reasons"] == ["rule_changed"]
+    assert db.query(domestic_models.DomesticCustomer).filter_by(
+        shop_name=shop_name
+    ).count() == 0
+    assert db.query(domestic_models.DomesticProduct).count() == 0
+    assert db.query(SysDict).filter_by(
+        type=f"{domestic_constants.DICT_CAP_CRAFT}_special",
+        code=attrs["craft"],
+    ).count() == 0
+    assert db.query(domestic_models.DomesticCraftRoute).filter_by(
+        product_type="cap", craft=attrs["craft"]
+    ).count() == 0
+    assert db.query(domestic_models.DomesticOrder).filter_by(
+        request_id=request_id
+    ).count() == 0
+    assert db.query(domestic_models.DomesticOrderItem).count() == 0
+    assert db.query(domestic_models.DomesticCustomerLedger).count() == 0
+    assert db.query(domestic_models.DomesticOrderPricingRequest).count() == 0
+    assert db.query(domestic_models.DomesticItemAppendRequest).count() == 0
+
+
 def test_order_pricing_configuration_error_rolls_back_new_product_and_order(db):
     attrs = _cap_attrs(craft="异常低价工艺", length="27厘米")
     user = _operator(db, "order-config-rollback")
@@ -3236,12 +3348,43 @@ def test_order_price_locks_customer_before_sorted_unique_base_rows(db):
         "pricing_version": "domestic-member-v1",
     }
     db.commit()
+    payload = _priced_order_payload(
+        customer,
+        attrs,
+        expected,
+        request_id="sorted-price-lock-order",
+        items=[
+            {
+                "client_key": "b",
+                "attrs": attrs_b,
+                "order_qty": 1,
+                "expected_quote": expected_b,
+            },
+            {
+                "client_key": "a1",
+                "attrs": attrs,
+                "order_qty": 1,
+                "expected_quote": expected,
+            },
+            {
+                "client_key": "a2",
+                "attrs": attrs,
+                "order_qty": 1,
+                "expected_quote": expected,
+            },
+        ],
+    )
     statements = []
     orm_statements = []
+    customer_orm_statements = []
 
     def capture(_conn, _cursor, statement, _parameters, _context, _many):
         lowered = statement.lower()
-        if "ark_domestic_customers" in lowered or "ark_domestic_base_prices" in lowered:
+        if any(table in lowered for table in (
+            "ark_domestic_customers",
+            "ark_domestic_products",
+            "ark_domestic_base_prices",
+        )):
             statements.append(lowered)
 
     def capture_orm(execute_state):
@@ -3250,38 +3393,15 @@ def test_order_price_locks_customer_before_sorted_unique_base_rows(db):
         ).lower()
         if "ark_domestic_base_prices" in compiled:
             orm_statements.append(compiled)
+        if "ark_domestic_customers" in compiled:
+            customer_orm_statements.append(compiled)
 
     event.listen(db.get_bind(), "before_cursor_execute", capture)
     event.listen(db, "do_orm_execute", capture_orm)
     try:
         order_service.create_order(
             db,
-            _priced_order_payload(
-                customer,
-                attrs,
-                expected,
-                request_id="sorted-price-lock-order",
-                items=[
-                    {
-                        "client_key": "b",
-                        "attrs": attrs_b,
-                        "order_qty": 1,
-                        "expected_quote": expected_b,
-                    },
-                    {
-                        "client_key": "a1",
-                        "attrs": attrs,
-                        "order_qty": 1,
-                        "expected_quote": expected,
-                    },
-                    {
-                        "client_key": "a2",
-                        "attrs": attrs,
-                        "order_qty": 1,
-                        "expected_quote": expected,
-                    },
-                ],
-            ),
+            payload,
             user.id,
         )
     finally:
@@ -3289,12 +3409,15 @@ def test_order_price_locks_customer_before_sorted_unique_base_rows(db):
         event.remove(db, "do_orm_execute", capture_orm)
 
     customer_select = next(i for i, sql in enumerate(statements) if "select" in sql and "ark_domestic_customers" in sql)
+    product_select = next(i for i, sql in enumerate(statements) if "select" in sql and "ark_domestic_products" in sql)
     base_selects = [
         (i, sql)
         for i, sql in enumerate(statements)
         if "select" in sql and "ark_domestic_base_prices" in sql
     ]
     assert len(base_selects) == 2
+    assert "for update" in customer_orm_statements[0]
+    assert customer_select < product_select
     assert customer_select < base_selects[0][0]
     lookup, locked = orm_statements
     assert "for update" not in lookup
@@ -3337,6 +3460,169 @@ def test_missing_order_price_does_not_issue_a_key_range_for_update(db):
 
     assert len(orm_statements) == 1
     assert "for update" not in orm_statements[0]
+
+
+@pytest.mark.skipif(
+    not os.getenv("DOMESTIC_TEST_MYSQL_URL"),
+    reason=(
+        "set DOMESTIC_TEST_MYSQL_URL only for an explicitly disposable "
+        "MySQL schema"
+    ),
+)
+def test_real_mysql_order_quote_locks_avoid_reverse_order_deadlock_and_gap_lock():
+    """Optional destructive two-session proof for the production lock contract."""
+
+    engine = create_engine(
+        os.environ["DOMESTIC_TEST_MYSQL_URL"], pool_pre_ping=True
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    suffix = str(datetime.now().timestamp()).replace(".", "")
+    crafts = [f"mysql-lock-a-{suffix}", f"mysql-lock-b-{suffix}"]
+    missing_craft = f"mysql-missing-{suffix}"
+    length = "20厘米"
+
+    try:
+        with factory() as session:
+            user = ArkUser(
+                username=f"mysql-order-lock-{suffix}",
+                password_hash="x",
+                real_name="MySQL订单锁测试",
+            )
+            session.add(user)
+            session.flush()
+            customers = [
+                domestic_models.DomesticCustomer(
+                    shop_name=f"MySQL锁价客户-{index}-{suffix}",
+                    membership_level="black",
+                    balance=D("10000.00"),
+                    created_by=user.id,
+                )
+                for index in range(3)
+            ]
+            products = [
+                domestic_models.DomesticProduct(
+                    attrs_key=f"mysql-lock-product-{index}-{suffix}",
+                    name=craft,
+                    product_type="cap",
+                    craft=craft,
+                    length=length,
+                    status=1,
+                    use_count=0,
+                )
+                for index, craft in enumerate([*crafts, missing_craft])
+            ]
+            prices = [
+                domestic_models.DomesticBasePrice(
+                    product_type="cap",
+                    craft=craft,
+                    length=length,
+                    original_price=D(original),
+                    version=1,
+                    updated_by=user.id,
+                )
+                for craft, original in zip(crafts, ("1000.00", "1100.00"))
+            ]
+            session.add_all([*customers, *products, *prices])
+            session.commit()
+            customer_ids = [customer.id for customer in customers]
+            product_ids = [product.id for product in products]
+
+        expected_quotes = [
+            ExpectedQuote.model_validate(_expected_quote_payload(
+                original_price=original,
+                discount_price=discount,
+                membership_level="black",
+                pricing_rule="member_reduction",
+            ))
+            for original, discount in (
+                ("1000.00", "880.00"),
+                ("1100.00", "980.00"),
+            )
+        ]
+        start = threading.Barrier(2)
+
+        def lock_in_order(customer_id, indexes):
+            with factory() as session:
+                item_products = [
+                    (
+                        SimpleNamespace(
+                            client_key=f"mysql-line-{index}",
+                            expected_quote=expected_quotes[index],
+                        ),
+                        session.get(
+                            domestic_models.DomesticProduct,
+                            product_ids[index],
+                        ),
+                    )
+                    for index in indexes
+                ]
+                start.wait(timeout=10)
+                pricing_service.lock_and_validate_order_quotes(
+                    session,
+                    customer_id=customer_id,
+                    item_products=item_products,
+                )
+                session.commit()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(lock_in_order, customer_ids[0], (0, 1)),
+                executor.submit(lock_in_order, customer_ids[1], (1, 0)),
+            ]
+            for future in futures:
+                future.result(timeout=20)
+
+        missing_checked = threading.Event()
+        missing_inserted = threading.Event()
+
+        def hold_missing_quote_transaction():
+            with factory() as session:
+                product = session.get(
+                    domestic_models.DomesticProduct, product_ids[2]
+                )
+                item = SimpleNamespace(
+                    client_key="mysql-missing-line",
+                    expected_quote=ExpectedQuote.model_validate(
+                        _expected_quote_payload(
+                            original_price="500.00",
+                            discount_price="500.00",
+                            membership_level="black",
+                        )
+                    ),
+                )
+                with pytest.raises(pricing_service.DomesticQuoteChangedError):
+                    pricing_service.lock_and_validate_order_quotes(
+                        session,
+                        customer_id=customer_ids[2],
+                        item_products=[(item, product)],
+                    )
+                missing_checked.set()
+                assert missing_inserted.wait(timeout=10), (
+                    "missing price lookup held a MySQL gap lock"
+                )
+                session.rollback()
+
+        def insert_missing_price_while_reader_is_open():
+            assert missing_checked.wait(timeout=10)
+            with factory() as session:
+                session.add(domestic_models.DomesticBasePrice(
+                    product_type="cap",
+                    craft=missing_craft,
+                    length=length,
+                    original_price=D("500.00"),
+                    version=1,
+                ))
+                session.commit()
+            missing_inserted.set()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            holder = executor.submit(hold_missing_quote_transaction)
+            inserter = executor.submit(insert_missing_price_while_reader_is_open)
+            inserter.result(timeout=20)
+            holder.result(timeout=20)
+    finally:
+        engine.dispose()
 
 
 def test_pricing_routes_enforce_write_and_admin_permissions_and_admin_contract(db):

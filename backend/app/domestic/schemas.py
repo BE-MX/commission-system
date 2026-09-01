@@ -249,7 +249,12 @@ class ExpectedQuote(BaseModel):
         "member_fixed_capped",
         "member_reduction",
     ]
-    pricing_version: Literal["domestic-member-v1"]
+    pricing_version: str = Field(..., min_length=1, max_length=32)
+
+    @field_validator("pricing_version", mode="before")
+    @classmethod
+    def _strip_pricing_version(cls, value: str) -> str:
+        return value.strip() if isinstance(value, str) else value
 
 
 class OrderItemInput(BaseModel):
