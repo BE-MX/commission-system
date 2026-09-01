@@ -346,6 +346,12 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 - `ark_runtime_instances`：按 `(service_id, instance_id)` 保存实例最新状态、版本、启动/活动/心跳时间与能力依赖。心跳凭证绑定服务和实例；超过失联阈值降级，长期失联自动退役，恢复上报可重新激活。
 - `ark_runtime_heartbeats`：采样保存实例心跳历史，默认保留 7 天，避免高频上报无限增长。
 
+## 发货检验（迁移 128，2026-09-01）
+
+- `ark_shipping_inspections`：每个 OKKI 出库单一行，`outbound_record_id` 唯一键（存业务库出库单 id 字符串，不建跨库外键）；冗余 `outbound_no / customer_name` 便于检索；`status` 为 `draft/submitted`，提交时落 `photo_count / submitted_at / submitted_by`（BigInteger 存 ark_users.id，未建 FK——ark_users.id 为 INT UNSIGNED，类型不匹配）。
+- `ark_shipping_inspection_photos`：`inspection_id → ark_shipping_inspections.id CASCADE`；`item_id` 为出库明细 id 字符串、NULL 表示整单照片；`file_path` 存相对路径（私有存储根 `SHIPPING_INSPECTION_STORAGE_ROOT`，鉴权端点读图，不挂静态目录）。
+- 数据源 `lsordertest.okki_outbound_records / okki_outbound_record_items` 为 OKKI 同步只读镜像（2026-09-01 已实库摸底，3966 单 / 14125 明细）：单头单号 `serial_id`、出库时间 `warehouse_invoice_time`、客户 `company_name`、制单人 `create_user_name`；明细数量 `outbound_count`、单位 `product_unit`、规格 `product_model`、SKU `sku_code`。**明细关联单头走 `outbound_invoice_id` 桥**（两表都有此列，全量命中）；`items.outbound_record_id` 是 OKKI 侧另一实体 id，与 `records.id` 完全不相交，不能 join。自适应候选映射见 `app/shipping_inspection/outbound_service.py`。
+
 ## 已退役：智能获客旧表（迁移 099，迁移 126 删除）
 
 > 以下仅保留迁移 126 之前的历史口径用于审计，不得用于新代码或运维。`ark_sales_companies`、`ark_sales_contacts`、`ark_sales_research_runs`、`ark_sales_research_facts` 已删除；当前结构见本文顶部“统一客户经营库”。

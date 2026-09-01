@@ -492,6 +492,10 @@ def seed_role_permissions(db: Session):
         ("salary:read",  "salary", "read",  "查看员工档案/规则参数/工资批次"),
         ("salary:write", "salary", "write", "维护员工档案与部门映射 / 导入考勤社保 / 试算与人工调整"),
         ("salary:admin", "salary", "admin", "改职级表与规则参数 / 锁定解锁工资批次 / 查看解密银行卡"),
+        # 发货检验（2026-09-01）：OKKI 出库单打印 → 小程序扫码拍照验货 → 验货单归档
+        ("shipping_inspection:read",  "shipping_inspection", "read",  "查看出库单与验货单"),
+        ("shipping_inspection:write", "shipping_inspection", "write", "打印出库单 / 维护验货照片"),
+        ("shipping_inspection:admin", "shipping_inspection", "admin", "发货检验模块管理"),
     ]
     # upsert：活跃权限 + 已下架权限统一处理，元数据每次启动刷新
     existing_map = {p.code: p for p in db.query(ArkPermission).all()}

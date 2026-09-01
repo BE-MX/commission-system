@@ -1,7 +1,7 @@
 /* pages/entry/entry.wxss — 模块选择
-   三张卡共用一套骨架（LOGO 区 / 标题+箭头 / 副标题）、一套动效，
-   靠配色区分：外贸=品牌黑金，内贸=品牌绿，速查=浅色工具档。
-   背景把金与绿揉进同一块画布，三张卡才像一家人而不是三个贴纸。 */
+   四张卡共用一套骨架（LOGO/图标 区 / 标题+箭头 / 副标题）、一套动效，
+   靠配色区分：外贸=品牌黑金，内贸=品牌绿，速查/发货检验=浅色工具档。
+   背景把金与绿揉进同一块画布，四张卡才像一家人而不是四个贴纸。 */
 
 .entry-page {
   position: relative;
@@ -96,9 +96,10 @@
 
 .card.is-in { opacity: 1; transform: translateY(0); }
 
-/* 三张卡依次错开 70ms 入场，形成级联而不是同时砸下来 */
+/* 四张卡依次错开 70ms 入场，形成级联而不是同时砸下来 */
 .card--domestic { transition-delay: 70ms; }
 .card--lookup { transition-delay: 140ms; }
+.card--shipping { transition-delay: 210ms; }
 
 /* 按压反馈：只动 transform，140ms 回弹 */
 .card--press {
@@ -225,6 +226,59 @@
   margin: -13rpx 0 0 -13rpx;
   border-radius: 50%;
   border: 4rpx solid var(--brand-green-d);
+  box-sizing: border-box;
+}
+
+/* ── 发货检验：浅色工具档，与速查同骨架同层级，accent 换品牌黄 ── */
+.card--shipping {
+  min-height: 168rpx;
+  padding: 28rpx 36rpx;
+  background: rgba(255, 255, 255, 0.92);
+  border: 2rpx solid rgba(212, 182, 32, 0.35);
+  box-shadow: 0 8rpx 24rpx rgba(26, 26, 26, 0.08);
+}
+
+.card--shipping .card-glow {
+  background: radial-gradient(circle, rgba(245, 213, 71, 0.22) 0%, rgba(245, 213, 71, 0) 70%);
+}
+
+.card--shipping .card-title {
+  font-size: 38rpx;
+  color: var(--brand-black);
+}
+
+.card--shipping .card-arrow { color: var(--brand-yellow-d); }
+.card--shipping .card-sub { color: var(--text-sub); margin-top: 6rpx; }
+
+/* 相机图标：机身 + 镜头，线条粗细与速查的取景框图标一致 */
+.shipping-icon {
+  width: 76rpx;
+  height: 76rpx;
+  flex-shrink: 0;
+  position: relative;
+  border-radius: 18rpx;
+  background: var(--brand-yellow-bg);
+}
+
+.sp-box {
+  position: absolute;
+  left: 14rpx;
+  right: 14rpx;
+  top: 22rpx;
+  bottom: 16rpx;
+  border: 4rpx solid var(--brand-yellow-d);
+  border-radius: 10rpx;
+}
+
+.sp-lens {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 22rpx;
+  height: 22rpx;
+  margin: -5rpx 0 0 -11rpx;
+  border-radius: 50%;
+  border: 4rpx solid var(--brand-yellow-d);
   box-sizing: border-box;
 }
 

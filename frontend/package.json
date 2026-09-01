@@ -17,7 +17,8 @@
     "test:expo-kiosk": "node --test tests/expoKioskIsolationRegression.test.mjs tests/expoKioskRouting.test.mjs tests/expoKioskLogout.test.mjs tests/customerImageInvite.test.mjs",
     "test:navigation-layout": "node --test tests/navigationLayout.test.mjs",
     "test:holidays": "node --test tests/holidays.test.mjs",
-    "test:customer-media-portal": "node --test tests/customerMediaPortalState.test.mjs"
+    "test:customer-media-portal": "node --test tests/customerMediaPortalState.test.mjs",
+    "test:shipping-print": "node --test tests/shippingPrintDocs.test.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.0",

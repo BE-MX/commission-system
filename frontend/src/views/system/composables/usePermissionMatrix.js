@@ -70,6 +70,7 @@ export const PREFIX_LABELS = {
   domestic: '内贸订单',
   domestic_quantity_report: '内贸数量报工模式',
   domestic_unit_report: '内贸逐件扫码模式',
+  shipping_inspection: '发货检验',
   user: '用户管理',
   role: '角色权限',
   dict: '基础字典',
@@ -136,7 +137,7 @@ const ROW_GROUPS = [
   { label: '单据 · 订单与物流', prefixes: [
     'invoice', 'invoice_price', 'invoice_okki', 'invoice_repair', 'invoice_private_filter', 'festival', 'festival_order', 'order_intelligence', 'domestic',
     'domestic_quantity_report', 'domestic_unit_report',
-    'aftersales', 'aftersales_analytics', 'tracking',
+    'aftersales', 'aftersales_analytics', 'tracking', 'shipping_inspection',
     'stock', 'stock_daily',
     'production', 'production_product', 'production_dashboard', 'production_route',
   ] },

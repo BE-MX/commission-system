@@ -178,6 +178,9 @@ class Settings(BaseSettings):
     # ── 内贸订单（明细图文要求的参考图）────────────────────
     DOMESTIC_STORAGE_ROOT: str = "D:\\WORKSOURCE\\domestic"
 
+    # ── 发货检验（验货照片）────────────────────────────────
+    SHIPPING_INSPECTION_STORAGE_ROOT: str = str(_BACKEND_DIR.parent / "uploads" / "shipping-inspection")
+
     # ── 客户拍摄素材门户 ──────────────────────────────────
     CUSTOMER_MEDIA_STORAGE_ROOT: str = "D:\\WORKSOURCE\\customer-media"
     CUSTOMER_MEDIA_PORTAL_ORIGIN: str = "https://media.leshine.cloud"

@@ -53,7 +53,9 @@ def test_domestic_route_migration_is_the_only_head_after_customer_126():
     config.set_main_option("script_location", str(backend_root / "alembic"))
     revisions = ScriptDirectory.from_config(config)
 
-    assert revisions.get_heads() == ["127_domestic_route_rules"]
+    # 唯一 head 哨兵：新增迁移时把头断言推进到最新编号（128 发货检验），链式校验保留
+    assert revisions.get_heads() == ["128_shipping_inspection"]
+    assert revisions.get_revision("128_shipping_inspection").down_revision == "127_domestic_route_rules"
     assert revisions.get_revision("127_domestic_route_rules").down_revision == "126"
 
 

@@ -49,6 +49,10 @@ Page({
     wx.navigateTo({ url: '/pages/domestic/lookup/lookup' })
   },
 
+  onShippingTap: function () {
+    wx.navigateTo({ url: '/pages/shipping/check/check' })
+  },
+
   onLogoutTap: function () {
     wx.showModal({
       title: '退出登录',
