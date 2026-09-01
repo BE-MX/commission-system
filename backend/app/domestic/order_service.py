@@ -1085,6 +1085,7 @@ def update_order(
             setattr(order, field, value)
 
         if changes_customer:
+            db.flush()
             balance_service.sync_order_finance(
                 db,
                 order,
@@ -1378,6 +1379,7 @@ def submit_draft(
             )
         _apply_saved_item_quotes(items, quotes)
         order.status = C.ORDER_PRODUCING
+        db.flush()
         balance_service.sync_order_finance(
             db, order, user_id=user_id,
             reason=f"草稿订单 {order.domestic_no} 提交扣款",

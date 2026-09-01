@@ -2900,6 +2900,93 @@ def test_submit_draft_insufficient_balance_rolls_back_prices_status_and_request(
     assert db.query(domestic_models.DomesticOrderPricingRequest).count() == 0
 
 
+def test_submit_draft_flushes_repriced_items_with_autoflush_disabled(db):
+    user, customer, _product, _base, order, item = _created_priced_draft(
+        db,
+        "draft-submit-no-autoflush",
+        membership_level=None,
+        balance="5000.00",
+        original_price="1000.00",
+    )
+    customer.membership_level = "black"
+    db.commit()
+    current = _current_item_expected(db, item, customer)
+    NoAutoflushSession = sessionmaker(
+        bind=db.get_bind(), autoflush=False, expire_on_commit=False
+    )
+
+    with NoAutoflushSession() as session:
+        result = order_service.submit_draft(
+            session,
+            order.id,
+            DraftSubmitRequest.model_validate({
+                "request_id": "draft-submit-no-autoflush-request",
+                "expected_quotes": [current],
+            }),
+            user.id,
+        )
+
+        saved_order = session.get(domestic_models.DomesticOrder, order.id)
+        saved_item = session.get(domestic_models.DomesticOrderItem, item.id)
+        saved_customer = session.get(domestic_models.DomesticCustomer, customer.id)
+        ledger = session.query(domestic_models.DomesticCustomerLedger).filter_by(
+            order_id=order.id
+        ).one()
+        assert result["total_amount"] == 880.0
+        assert result["charged_amount"] == 880.0
+        assert saved_item.unit_price == D("880.00")
+        assert saved_order.total_amount == D("880.00")
+        assert saved_order.charged_amount == D("880.00")
+        assert ledger.amount == D("-880.00")
+        assert saved_customer.balance == D("4120.00")
+
+
+def test_reprice_customer_flushes_items_with_autoflush_disabled_without_charge(db):
+    user, source, _product, _base, order, item = _created_priced_draft(
+        db,
+        "draft-customer-no-autoflush",
+        membership_level=None,
+        balance="5000.00",
+        original_price="1000.00",
+    )
+    target = domestic_models.DomesticCustomer(
+        shop_name="关闭自动刷新换客目标",
+        membership_level="black",
+        balance=D("7000.00"),
+        created_by=user.id,
+    )
+    db.add(target)
+    db.commit()
+    current = _current_item_expected(db, item, target)
+    NoAutoflushSession = sessionmaker(
+        bind=db.get_bind(), autoflush=False, expire_on_commit=False
+    )
+
+    with NoAutoflushSession() as session:
+        result = order_service.update_order(
+            session,
+            order.id,
+            _customer_reprice_payload(
+                "draft-customer-no-autoflush-request",
+                target.id,
+                [current],
+            ),
+        )
+
+        saved_order = session.get(domestic_models.DomesticOrder, order.id)
+        saved_item = session.get(domestic_models.DomesticOrderItem, item.id)
+        saved_source = session.get(domestic_models.DomesticCustomer, source.id)
+        saved_target = session.get(domestic_models.DomesticCustomer, target.id)
+        assert result["total_amount"] == 880.0
+        assert result["charged_amount"] == 0.0
+        assert saved_item.unit_price == D("880.00")
+        assert saved_order.total_amount == D("880.00")
+        assert saved_order.charged_amount == D("0.00")
+        assert saved_source.balance == D("5000.00")
+        assert saved_target.balance == D("7000.00")
+        assert session.query(domestic_models.DomesticCustomerLedger).count() == 0
+
+
 def test_submit_draft_success_replays_after_price_change_without_second_charge(db):
     user, customer, _product, base, order, item = _created_priced_draft(
         db, "draft-submit-replay", balance="5000.00"
