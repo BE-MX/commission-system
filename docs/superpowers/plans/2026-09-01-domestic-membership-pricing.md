@@ -13,7 +13,8 @@
 ## File map
 
 - Create `backend/app/domestic/pricing_service.py`: membership thresholds, fixed-price rules, normalized price lookup, quote comparison.
-- Create `backend/alembic/versions/130_domestic_member_pricing.py`: base-price/pricing-request tables, customer and order-item snapshots, confirmed seed prices and backfill.
+- Create `backend/alembic/versions/130_domestic_member_pricing_a.py`: base-price/pricing-request tables, customer and nullable order-item snapshots, confirmed seed prices and historical backfill.
+- Create `backend/alembic/versions/131_domestic_member_pricing_b.py`: final order-item NOT NULL and pricing CHECK constraints after all write paths fill snapshots.
 - Create `backend/tests/test_domestic_member_pricing.py`: money boundaries, mappings, stale quotes, recharge, order charging, API contracts.
 - Modify `backend/app/domestic/models.py`: `DomesticBasePrice`, `DomesticOrderPricingRequest`, customer/order-item pricing fields.
 - Modify `backend/app/domestic/schemas.py`: required recharge request ID, quote/base-price/order payloads.
@@ -89,7 +90,7 @@ git commit -m "feat: add domestic membership pricing rules"
 
 - [ ] **Step 1: Add failing persistence tests**
 
-Test the unique pricing dimensions, cap size normalization, snapshot fields, confirmed `1040`, nine-part copies, and piece-spin/full copies through real SQLAlchemy models.
+Test the `(product_type, craft, length)` unique pricing dimensions, merged piece craft-size codes, snapshot fields, confirmed `1040`, nine-part semantics, and piece-spin/full copies through real SQLAlchemy models.
 
 - [ ] **Step 2: Run RED**
 
@@ -99,7 +100,7 @@ Expected: missing `DomesticBasePrice` and snapshot columns.
 
 - [ ] **Step 3: Add models and migration**
 
-Create revision `130_domestic_member_pricing` on top of `129_domestic_order_attributes` after verifying all branches. Add `ark_domestic_base_prices`, `ark_domestic_order_pricing_requests`, customer recharge snapshots, and order-item price snapshots. Seed exact system dictionary codes; duplicate confirmed mapping rows explicitly rather than fuzzy runtime aliases.
+Create revision `130_domestic_member_pricing_a` on top of `129_domestic_order_attributes` after verifying all branches. Add `ark_domestic_base_prices` with unique key `(product_type, craft, length)`, `ark_domestic_order_pricing_requests`, customer recharge snapshots, and nullable order-item price snapshots without server defaults. Seed exact confirmed merged piece codes and current cap codes; backfill legacy order snapshots. Leave final NOT NULL/CHECK constraints for revision 131 after Task 4 updates every write path.
 
 - [ ] **Step 4: Verify migration and GREEN**
 
@@ -116,7 +117,7 @@ Expected: one Alembic head; all tests pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add backend/alembic/versions/130_domestic_member_pricing.py backend/app/domestic/models.py backend/tests/test_domestic_member_pricing.py
+git add backend/alembic/versions/130_domestic_member_pricing_a.py backend/app/domestic/models.py backend/tests/test_domestic_member_pricing.py
 git commit -m "feat: persist domestic member pricing"
 ```
 
@@ -163,7 +164,7 @@ Expected: order still trusts incoming `unit_price` and lacks snapshots.
 
 - [ ] **Step 3: Implement transaction changes**
 
-Replace incoming manual price with `expected_quote`; lock customer then matching base-price rows ordered by ID; recompute; raise a typed quote-conflict exception; persist snapshots; charge existing balance ledger with discounted totals. Draft submit reprices current membership and stores a persistent pricing-request idempotency record.
+Replace incoming manual price with `expected_quote`; lock customer then matching base-price rows ordered by ID; recompute; raise a typed quote-conflict exception; persist snapshots; charge existing balance ledger with discounted totals. Draft submit reprices current membership and stores a persistent pricing-request idempotency record. Add revision `131_domestic_member_pricing_b` only after all write paths fill snapshots; it enforces final NOT NULL/CHECK constraints and remains chained after revision 130.
 
 - [ ] **Step 4: Update export/detail and run GREEN**
 
