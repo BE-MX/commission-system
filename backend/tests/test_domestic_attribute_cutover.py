@@ -1,8 +1,11 @@
 """Guarded domestic attribute dictionary and route cutover tests."""
 
+import subprocess
+import sys
 from copy import deepcopy
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -68,6 +71,27 @@ EXPECTED_STANDARD_VALUES = {
         ("other", "其他"),
     ],
 }
+
+
+def test_standalone_cli_import_registers_foreign_key_targets():
+    backend_dir = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from scripts import domestic_attribute_cutover; "
+                "from app.core.database import Base; "
+                "assert 'ark_users' in Base.metadata.tables"
+            ),
+        ],
+        cwd=backend_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def _dict_rows(db, dict_type):

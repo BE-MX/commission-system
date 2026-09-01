@@ -13,6 +13,7 @@ import sys
 
 from sqlalchemy.orm import Session
 
+from app.auth.models import ArkUser  # noqa: F401 -- registers ark_users FK target
 from app.core.database import SessionLocal
 from app.domestic import constants as C
 from app.domestic.models import (
