@@ -223,6 +223,12 @@ def cutover_case(db):
         route_id=old_route.id,
         order_qty=1,
         unit_price=0,
+        original_price=0,
+        discount_amount=0,
+        membership_level_snapshot=None,
+        pricing_rule="legacy_manual",
+        pricing_version="legacy",
+        base_price_version_snapshot=0,
         status=0,
     )
     db.add(item)

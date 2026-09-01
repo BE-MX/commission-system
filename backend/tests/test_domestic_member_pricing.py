@@ -3,12 +3,15 @@ from decimal import Decimal
 from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 import inspect
+from io import StringIO
 import os
 from pathlib import Path
 import threading
 from types import SimpleNamespace
 
 import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -1092,6 +1095,12 @@ MIGRATION_PATH = (
     / "versions"
     / "130_domestic_member_pricing_a.py"
 )
+FINAL_MIGRATION_PATH = (
+    Path(__file__).parents[1]
+    / "alembic"
+    / "versions"
+    / "131_domestic_member_pricing_b.py"
+)
 
 
 def _migration_module():
@@ -1099,6 +1108,16 @@ def _migration_module():
         "migration_130_domestic_member_pricing_a", MIGRATION_PATH
     )
     module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _final_migration_module():
+    spec = importlib.util.spec_from_file_location(
+        "migration_131_domestic_member_pricing_b", FINAL_MIGRATION_PATH
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
 
@@ -1215,7 +1234,7 @@ def test_customer_membership_database_check_rejects_unknown_level(db):
         db.flush()
 
 
-def test_customer_and_order_item_pricing_columns_match_compatibility_contract():
+def test_customer_and_order_item_pricing_columns_match_final_contract():
     customer_columns = domestic_models.DomesticCustomer.__table__.columns
     assert customer_columns.membership_level.type.length == 16
     assert customer_columns.membership_level.nullable is True
@@ -1223,6 +1242,9 @@ def test_customer_and_order_item_pricing_columns_match_compatibility_contract():
     assert customer_columns.last_recharged_at.nullable is True
 
     item_columns = domestic_models.DomesticOrderItem.__table__.columns
+    assert item_columns.unit_price.nullable is False
+    assert item_columns.unit_price.default is None
+    assert item_columns.unit_price.server_default is None
     expected = {
         "original_price": 14,
         "discount_amount": 14,
@@ -1233,7 +1255,7 @@ def test_customer_and_order_item_pricing_columns_match_compatibility_contract():
     }
     for name, length_or_precision in expected.items():
         column = item_columns[name]
-        assert column.nullable is True
+        assert column.nullable is (name == "membership_level_snapshot")
         assert column.default is None
         assert column.server_default is None
         if length_or_precision is not None:
@@ -1248,9 +1270,113 @@ def test_customer_and_order_item_pricing_columns_match_compatibility_contract():
         product_name="旧写路径",
         order_qty=1,
         unit_price=D("100.00"),
+        original_price=D("100.00"),
+        discount_amount=D("0.00"),
+        membership_level_snapshot=None,
+        pricing_rule="legacy_manual",
+        pricing_version="legacy",
+        base_price_version_snapshot=0,
     )
-    assert legacy_item.original_price is None
-    assert legacy_item.pricing_rule is None
+    assert legacy_item.unit_price == D("100.00")
+    assert legacy_item.pricing_rule == "legacy_manual"
+
+
+def test_order_item_model_exposes_final_pricing_checks():
+    table = domestic_models.DomesticOrderItem.__table__
+    assert {
+        constraint.name
+        for constraint in table.constraints
+        if isinstance(constraint, CheckConstraint)
+    } >= {
+        "ck_dom_item_unit_price_nonnegative",
+        "ck_dom_item_discount_nonnegative",
+        "ck_dom_item_unit_not_above_original",
+        "ck_dom_item_original_price_valid",
+        "ck_dom_item_base_price_version_nonnegative",
+        "ck_dom_item_membership_snapshot",
+        "ck_dom_item_pricing_rule",
+    }
+
+
+def _constraint_product(db, suffix):
+    product = domestic_models.DomesticProduct(
+        attrs_key=f"constraint-{suffix}",
+        name=f"约束产品-{suffix}",
+        product_type="cap",
+        craft="递旋",
+        length="20厘米",
+    )
+    db.add(product)
+    db.flush()
+    return product
+
+
+@pytest.mark.parametrize(
+    ("overrides", "constraint_name"),
+    [
+        ({"unit_price": D("-0.01")}, "ck_dom_item_unit_price_nonnegative"),
+        ({"discount_amount": D("-0.01")}, "ck_dom_item_discount_nonnegative"),
+        ({"unit_price": D("101.00")}, "ck_dom_item_unit_not_above_original"),
+        (
+            {"original_price": D("0.00"), "pricing_rule": "base_price"},
+            "ck_dom_item_original_price_valid",
+        ),
+        (
+            {"base_price_version_snapshot": -1},
+            "ck_dom_item_base_price_version_nonnegative",
+        ),
+        (
+            {"membership_level_snapshot": "gold"},
+            "ck_dom_item_membership_snapshot",
+        ),
+        ({"pricing_rule": "manual"}, "ck_dom_item_pricing_rule"),
+    ],
+)
+def test_order_item_database_rejects_invalid_final_price_snapshot(
+    db, overrides, constraint_name
+):
+    _, _, order = _customer_and_order(db, f"final-check-{constraint_name}")
+    product = _constraint_product(db, f"final-check-{constraint_name}")
+    values = {
+        "order_id": order.id,
+        "line_no": 1,
+        "product_id": product.id,
+        "product_name": product.name,
+        "order_qty": 1,
+        "unit_price": D("100.00"),
+        "original_price": D("100.00"),
+        "discount_amount": D("0.00"),
+        "membership_level_snapshot": None,
+        "pricing_rule": "base_price",
+        "pricing_version": "domestic-member-v1",
+        "base_price_version_snapshot": 1,
+    }
+    values.update(overrides)
+    db.add(domestic_models.DomesticOrderItem(**values))
+    with pytest.raises(IntegrityError, match=constraint_name):
+        db.flush()
+
+
+def test_order_item_database_accepts_zero_price_only_for_legacy_snapshot(db):
+    _, _, order = _customer_and_order(db, "legacy-zero-final-check")
+    product = _constraint_product(db, "legacy-zero-final-check")
+    db.add(
+        domestic_models.DomesticOrderItem(
+            order_id=order.id,
+            line_no=1,
+            product_id=product.id,
+            product_name=product.name,
+            order_qty=1,
+            unit_price=D("0.00"),
+            original_price=D("0.00"),
+            discount_amount=D("0.00"),
+            membership_level_snapshot=None,
+            pricing_rule="legacy_manual",
+            pricing_version="legacy",
+            base_price_version_snapshot=0,
+        )
+    )
+    db.flush()
 
 
 def test_pricing_request_persists_and_rejects_duplicate_order_request(db):
@@ -1573,6 +1699,147 @@ def test_member_pricing_migration_is_self_contained_and_backfills_compatibly(
         columns, table_kwargs = created_tables[table_name]
         assert table_kwargs["comment"]
         assert all(column.comment for column in columns if isinstance(column, Column))
+
+
+def _snapshot_validation_table(metadata):
+    return Table(
+        "ark_domestic_order_items",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("unit_price", Numeric(14, 2), nullable=False),
+        Column("original_price", Numeric(14, 2)),
+        Column("discount_amount", Numeric(14, 2)),
+        Column("membership_level_snapshot", String(16)),
+        Column("pricing_rule", String(24)),
+        Column("pricing_version", String(32)),
+        Column("base_price_version_snapshot", Integer),
+    )
+
+
+def _valid_snapshot_row(**overrides):
+    row = {
+        "id": 1,
+        "unit_price": D("880.00"),
+        "original_price": D("1000.00"),
+        "discount_amount": D("120.00"),
+        "membership_level_snapshot": "black",
+        "pricing_rule": "member_reduction",
+        "pricing_version": "domestic-member-v1",
+        "base_price_version_snapshot": 1,
+    }
+    row.update(overrides)
+    return row
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"original_price": None},
+        {"discount_amount": None},
+        {"pricing_rule": None},
+        {"pricing_version": None},
+        {"base_price_version_snapshot": None},
+        {"unit_price": D("-0.01")},
+        {"discount_amount": D("-0.01")},
+        {"unit_price": D("1000.01")},
+        {"original_price": D("0.00")},
+        {"base_price_version_snapshot": -1},
+        {"membership_level_snapshot": "gold"},
+        {"pricing_rule": "manual"},
+    ],
+)
+def test_final_migration_blocks_every_invalid_existing_snapshot(overrides):
+    migration = _final_migration_module()
+    metadata = MetaData()
+    items = _snapshot_validation_table(metadata)
+    engine = create_engine("sqlite:///:memory:")
+    metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.execute(items.insert(), _valid_snapshot_row(**overrides))
+        with pytest.raises(RuntimeError, match="ark_domestic_order_items.*id=1"):
+            migration._validate_existing_snapshots(connection)
+
+
+def test_final_migration_accepts_zero_legacy_snapshot():
+    migration = _final_migration_module()
+    metadata = MetaData()
+    items = _snapshot_validation_table(metadata)
+    engine = create_engine("sqlite:///:memory:")
+    metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.execute(
+            items.insert(),
+            _valid_snapshot_row(
+                unit_price=D("0.00"),
+                original_price=D("0.00"),
+                discount_amount=D("0.00"),
+                membership_level_snapshot=None,
+                pricing_rule="legacy_manual",
+                pricing_version="legacy",
+                base_price_version_snapshot=0,
+            ),
+        )
+        migration._validate_existing_snapshots(connection)
+
+
+def test_final_migration_revision_contract_and_mysql_offline_sql():
+    migration = _final_migration_module()
+    upgrade_source = inspect.getsource(migration.upgrade)
+    downgrade_source = inspect.getsource(migration.downgrade)
+    assert migration.revision == "131_domestic_member_pricing_b"
+    assert migration.down_revision == "130_domestic_member_pricing_a"
+    assert len(migration.revision) <= 32
+    assert upgrade_source.index("_validate_existing_snapshots") < upgrade_source.index(
+        "alter_column"
+    )
+    assert downgrade_source.index("drop_constraint") < downgrade_source.index(
+        "alter_column"
+    )
+
+    upgrade_output = StringIO()
+    migration.op = Operations(
+        MigrationContext.configure(
+            dialect_name="mysql",
+            opts={
+                "as_sql": True,
+                "literal_binds": True,
+                "output_buffer": upgrade_output,
+            },
+        )
+    )
+    migration.upgrade()
+    upgrade_sql = upgrade_output.getvalue()
+    for column_name in (
+        "original_price",
+        "discount_amount",
+        "pricing_rule",
+        "pricing_version",
+        "base_price_version_snapshot",
+    ):
+        assert f"MODIFY {column_name}" in upgrade_sql
+    assert upgrade_sql.count("NOT NULL") >= 5
+    for constraint_name in (
+        "ck_dom_item_unit_price_nonnegative",
+        "ck_dom_item_discount_nonnegative",
+        "ck_dom_item_unit_not_above_original",
+        "ck_dom_item_original_price_valid",
+        "ck_dom_item_base_price_version_nonnegative",
+        "ck_dom_item_membership_snapshot",
+        "ck_dom_item_pricing_rule",
+    ):
+        assert constraint_name in upgrade_sql
+
+    downgrade_output = StringIO()
+    migration.op = Operations(
+        MigrationContext.configure(
+            dialect_name="mysql",
+            opts={"as_sql": True, "output_buffer": downgrade_output},
+        )
+    )
+    migration.downgrade()
+    downgrade_sql = downgrade_output.getvalue()
+    assert downgrade_sql.index("DROP CHECK") < downgrade_sql.index(" NULL")
+    assert "MODIFY original_price NUMERIC(14, 2) NULL" in downgrade_sql
 
 
 # ── 原价维护与批量会员报价 API ─────────────────────────

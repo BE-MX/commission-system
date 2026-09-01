@@ -199,13 +199,17 @@ class DomesticOrderItem(Base):
     route_id = Column(Integer, ForeignKey("process_route.id", ondelete="RESTRICT"),
                       comment="下单时锁定的路线快照，后改映射不影响在制单")
     order_qty = Column(Integer, nullable=False, comment="下单数量")
-    unit_price = Column(Numeric(14, 2), nullable=False, default=0, comment="产品单价")
-    original_price = Column(Numeric(14, 2), comment="原价快照")
-    discount_amount = Column(Numeric(14, 2), comment="优惠金额快照")
-    membership_level_snapshot = Column(String(16), comment="会员等级快照")
-    pricing_rule = Column(String(24), comment="定价规则")
-    pricing_version = Column(String(32), comment="定价算法版本")
-    base_price_version_snapshot = Column(Integer, comment="基础价格版本快照")
+    unit_price = Column(Numeric(14, 2), nullable=False, comment="产品优惠价")
+    original_price = Column(Numeric(14, 2), nullable=False, comment="原价快照")
+    discount_amount = Column(Numeric(14, 2), nullable=False, comment="优惠金额快照")
+    membership_level_snapshot = Column(
+        String(16), nullable=True, comment="会员等级快照"
+    )
+    pricing_rule = Column(String(24), nullable=False, comment="定价规则")
+    pricing_version = Column(String(32), nullable=False, comment="定价算法版本")
+    base_price_version_snapshot = Column(
+        Integer, nullable=False, comment="基础价格版本快照"
+    )
     hairstyle = Column(String(1000), comment="发型（文字）")
     hairstyle_images = Column(JSON, comment="发型参考图 [相对路径]")
     color = Column(String(1000), comment="颜色（文字）")
@@ -228,6 +232,34 @@ class DomesticOrderItem(Base):
 
     __table_args__ = (
         UniqueConstraint("order_id", "line_no", name="uq_dom_item_order_line"),
+        CheckConstraint(
+            "unit_price >= 0", name="ck_dom_item_unit_price_nonnegative"
+        ),
+        CheckConstraint(
+            "discount_amount >= 0", name="ck_dom_item_discount_nonnegative"
+        ),
+        CheckConstraint(
+            "unit_price <= original_price",
+            name="ck_dom_item_unit_not_above_original",
+        ),
+        CheckConstraint(
+            "original_price > 0 OR pricing_rule = 'legacy_manual'",
+            name="ck_dom_item_original_price_valid",
+        ),
+        CheckConstraint(
+            "base_price_version_snapshot >= 0",
+            name="ck_dom_item_base_price_version_nonnegative",
+        ),
+        CheckConstraint(
+            "membership_level_snapshot IS NULL OR "
+            "membership_level_snapshot IN ('silver', 'black', 'supreme')",
+            name="ck_dom_item_membership_snapshot",
+        ),
+        CheckConstraint(
+            "pricing_rule IN ('base_price', 'member_fixed', "
+            "'member_fixed_capped', 'member_reduction', 'legacy_manual')",
+            name="ck_dom_item_pricing_rule",
+        ),
         Index("idx_dom_item_order", "order_id"),
         Index("idx_dom_item_status", "status"),
         Index("idx_dom_item_product", "product_id"),

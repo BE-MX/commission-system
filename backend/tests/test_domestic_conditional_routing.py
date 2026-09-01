@@ -54,7 +54,7 @@ def test_domestic_attribute_migration_is_the_only_head_after_shipping_inspection
     config.set_main_option("script_location", str(backend_root / "alembic"))
     revisions = ScriptDirectory.from_config(config)
 
-    assert revisions.get_heads() == ["130_domestic_member_pricing_a"]
+    assert revisions.get_heads() == ["131_domestic_member_pricing_b"]
     assert revisions.get_revision("129_domestic_order_attributes").down_revision == "128_shipping_inspection"
     assert revisions.get_revision("127_domestic_route_rules").down_revision == "126"
 
@@ -163,6 +163,12 @@ def conditional_order(db, conditional_route):
         route_id=conditional_route.id,
         order_qty=20,
         unit_price=Decimal("0"),
+        original_price=Decimal("0"),
+        discount_amount=Decimal("0"),
+        membership_level_snapshot=None,
+        pricing_rule="legacy_manual",
+        pricing_version="legacy",
+        base_price_version_snapshot=0,
         status=0,
     )
     db.add(item)
