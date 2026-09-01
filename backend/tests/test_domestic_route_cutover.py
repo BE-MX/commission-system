@@ -93,22 +93,22 @@ def direct_switch_case(db):
     db.add_all([
         SysDict(
             type="domestic_cap_craft",
-            code="hand_tied",
-            label="手钩",
+            code="递旋",
+            label="递旋",
             sort=1,
             is_active=True,
         ),
         SysDict(
             type="domestic_cap_craft",
-            code="lace_tied",
-            label="蕾丝",
+            code="中分界",
+            label="中分界",
             sort=2,
             is_active=True,
         ),
         SysDict(
-            type="domestic_piece_craft",
-            code="machine_tied",
-            label="机制",
+            type="domestic_piece_craft_size",
+            code="U型13*15",
+            label="U型13*15",
             sort=1,
             is_active=True,
         ),
@@ -116,13 +116,13 @@ def direct_switch_case(db):
 
     cap_mapping = DomesticCraftRoute(
         product_type="cap",
-        craft="hand_tied",
+        craft="递旋",
         route_id=old_route.id,
         updated_by=operator.id,
     )
     piece_mapping = DomesticCraftRoute(
         product_type="piece",
-        craft="machine_tied",
+        craft="U型13*15",
         route_id=old_route.id,
         updated_by=operator.id,
     )
@@ -130,10 +130,11 @@ def direct_switch_case(db):
         attrs_key="direct-cap",
         name="头套产品",
         product_type="cap",
-        craft="hand_tied",
+        craft="递旋",
         size="M",
-        length="16",
-        density="120",
+        length="15厘米",
+        density="65%",
+        hair_style_series="直发",
         route_id=old_route.id,
         status=1,
     )
@@ -141,10 +142,10 @@ def direct_switch_case(db):
         attrs_key="direct-piece",
         name="发片产品",
         product_type="piece",
-        craft="machine_tied",
-        size="M",
-        length="18",
-        density="100",
+        craft="U型13*15",
+        size=None,
+        length="20厘米",
+        density=None,
         route_id=None,
         status=1,
     )
@@ -215,7 +216,7 @@ def test_dry_run_reports_two_routes_without_writes(db, direct_switch_case):
     assert plan["routes"]["piece"]["name"] == "发片网底（递针）"
     assert plan["mapping_counts"] == {"cap": 1, "piece": 1}
     assert plan["missing_mappings_to_create"] == {
-        "cap": ["lace_tied"],
+        "cap": ["中分界"],
         "piece": [],
     }
     assert plan["product_counts"] == {"cap": 1, "piece": 1}
@@ -241,7 +242,7 @@ def test_apply_switches_mappings_and_products_but_not_existing_items(db, direct_
     assert direct_switch_case["old_progress"].route_id == direct_switch_case["old_route"].id
     created_mapping = db.query(DomesticCraftRoute).filter_by(
         product_type="cap",
-        craft="lace_tied",
+        craft="中分界",
     ).one()
     assert created_mapping.route_id == direct_switch_case["cap_route"].id
     assert created_mapping.updated_by is None
@@ -334,7 +335,7 @@ def test_second_phase_failure_rolls_back_first_phase(db, direct_switch_case, mon
     assert direct_switch_case["cap_mapping"].route_id == direct_switch_case["old_route"].id
     assert db.query(DomesticCraftRoute).filter_by(
         product_type="cap",
-        craft="lace_tied",
+        craft="中分界",
     ).count() == 0
 
 
