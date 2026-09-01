@@ -78,11 +78,22 @@ PIECE_SOURCE_ROWS = {
 }
 
 CAP_SOURCE_ROWS = {
-    "递针旋全头套": (1198, 1498, 1798, 1998, 2050, 2700),
-    "递针旋九分头": (1198, 1498, 1798, 1998, 2050, 2700),
-    "递针顶": (None, 1798, 2198, 2498, 2650, 3300),
-    "递针中分界": (None, 1598, 1898, 2198, 2298, 2900),
-    "递针左分界": (None, 1598, 1898, 2198, 2298, 2900),
+    "递旋": (1198, 1498, 1798, 1998, 2050, 2700),
+    "递顶": (None, 1798, 2198, 2498, 2650, 3300),
+    "中分界": (None, 1598, 1898, 2198, 2298, 2900),
+    "左分界": (None, 1598, 1898, 2198, 2298, 2900),
+}
+
+EXPECTED_COMBINED_PIECE_CODES = {
+    f"{prefix}{size}": (craft, size)
+    for craft, prefix in {
+        "全递针": "全递针",
+        "递针旋": "递针旋",
+        "U型递针": "U型",
+        "递针中分界": "递针中分界",
+        "递针左分界": "递针左分界",
+    }.items()
+    for size in PIECE_SOURCE_ROWS[craft]
 }
 
 
@@ -108,11 +119,24 @@ def _expected_seed_matrix():
 def test_base_price_seed_matrix_matches_all_confirmed_source_values_only():
     expected = _expected_seed_matrix()
     assert pricing_service.BASE_PRICE_SEED_MATRIX == expected
-    assert dict(
-        ((product_type, craft, size, length), price)
-        for product_type, craft, size, length, price
-        in pricing_service.iter_base_price_seeds()
-    ) == expected
+
+
+def test_persistence_seed_rows_use_unique_product_keys_without_none():
+    rows = list(pricing_service.iter_base_price_seeds())
+    keys = [(product_type, craft, size, length) for product_type, craft, size, length, _ in rows]
+    expected = {}
+    combined_by_pair = {
+        pair: combined for combined, pair in EXPECTED_COMBINED_PIECE_CODES.items()
+    }
+    for (product_type, craft, size, length), price in _expected_seed_matrix().items():
+        persisted_craft = (
+            combined_by_pair[(craft, size)] if product_type == "piece" else craft
+        )
+        expected[(product_type, persisted_craft, "", length)] = price
+
+    assert len(keys) == len(set(keys))
+    assert all(size == "" for _, _, size, _ in keys)
+    assert dict((key, row[-1]) for key, row in zip(keys, rows)) == expected
 
 
 @pytest.mark.parametrize(
@@ -151,14 +175,21 @@ def test_piece_middle_and_left_part_have_identical_matrices(size, length):
 
 
 @pytest.mark.parametrize(
-    "length", ("15厘米", "20厘米", "25厘米", "30厘米", "35厘米", "40厘米")
+    ("craft", "length", "expected"),
+    [
+        (craft, length, price)
+        for craft, prices in CAP_SOURCE_ROWS.items()
+        for length, price in zip(
+            ("15厘米", "20厘米", "25厘米", "30厘米", "35厘米", "40厘米"),
+            prices,
+        )
+        if price is not None
+    ],
 )
-def test_cap_full_and_nine_part_have_identical_six_length_matrices(length):
+def test_current_cap_craft_codes_resolve_confirmed_prices(craft, length, expected):
     assert pricing_service.get_base_price(
-        product_type="cap", craft="递针旋全头套", size="S", length=length
-    ) == pricing_service.get_base_price(
-        product_type="cap", craft="递针旋九分头", size="XL", length=length
-    )
+        product_type="cap", craft=craft, size="59", length=length
+    ) == D(f"{expected}.00")
 
 
 def test_confirmed_boundary_price_is_not_smoothed():
@@ -172,20 +203,49 @@ def test_confirmed_boundary_price_is_not_smoothed():
     [
         {"product_type": "piece", "craft": "全递针", "size": "18*20", "length": "40厘米"},
         {"product_type": "piece", "craft": "U型递针", "size": "9*14", "length": "25厘米"},
-        {"product_type": "cap", "craft": "递针顶", "size": None, "length": "15厘米"},
+        {"product_type": "cap", "craft": "递顶", "size": None, "length": "15厘米"},
+        {"product_type": "cap", "craft": "大U型", "size": None, "length": "25厘米"},
     ],
 )
 def test_unconfirmed_combinations_remain_without_price(attrs):
     assert pricing_service.get_base_price(**attrs) is None
 
 
-def test_current_combined_piece_craft_value_is_resolved_exactly():
+@pytest.mark.parametrize(
+    ("craft", "length", "expected"),
+    [
+        ("全递针18*20", "25厘米", "1760.00"),
+        ("递针旋9*14", "25厘米", "840.00"),
+        ("U型15*17", "35厘米", "1680.00"),
+        ("递针中分界13*15", "35厘米", "1040.00"),
+        ("递针左分界13*15", "35厘米", "1040.00"),
+    ],
+)
+def test_all_confirmed_piece_craft_families_accept_exact_combined_codes(
+    craft, length, expected
+):
     assert pricing_service.get_base_price(
-        product_type="piece", craft="全递针9*14", size=None, length="25厘米"
-    ) == D("840.00")
-    assert pricing_service.get_base_price(
-        product_type="piece", craft="U型13*15", size=None, length="35厘米"
-    ) == D("1320.00")
+        product_type="piece", craft=craft, size=None, length=length
+    ) == D(expected)
+
+
+def test_all_confirmed_combined_piece_codes_map_one_to_one_to_internal_matrix():
+    assert pricing_service.COMBINED_PIECE_CRAFT_SIZE == EXPECTED_COMBINED_PIECE_CODES
+    assert len(set(pricing_service.COMBINED_PIECE_CRAFT_SIZE.values())) == len(
+        EXPECTED_COMBINED_PIECE_CODES
+    )
+    combined_by_pair = {
+        pair: combined for combined, pair in EXPECTED_COMBINED_PIECE_CODES.items()
+    }
+    for (product_type, craft, size, length), expected in _expected_seed_matrix().items():
+        if product_type != "piece":
+            continue
+        assert pricing_service.get_base_price(
+            product_type="piece",
+            craft=combined_by_pair[(craft, size)],
+            size=None,
+            length=length,
+        ) == expected
 
 
 @pytest.mark.parametrize("craft", ["全递针", "全递针未知尺寸", "U型", "特单发片"])
@@ -197,17 +257,25 @@ def test_unknown_or_incomplete_combined_piece_craft_has_no_price(craft):
 
 def test_cap_price_ignores_size():
     assert pricing_service.get_base_price(
-        product_type="cap", craft="递针顶", size=None, length="35厘米"
+        product_type="cap", craft="递顶", size=None, length="35厘米"
     ) == pricing_service.get_base_price(
-        product_type="cap", craft="递针顶", size="59", length="35厘米"
+        product_type="cap", craft="递顶", size="59", length="35厘米"
     ) == D("2650.00")
+
+
+@pytest.mark.parametrize(
+    "craft", ["递针旋全头套", "递针旋九分头", "递针顶", "递针中分界", "递针左分界"]
+)
+def test_legacy_cap_craft_codes_are_not_supported(craft):
+    assert pricing_service.get_base_price(
+        product_type="cap", craft=craft, size=None, length="25厘米"
+    ) is None
 
 
 @pytest.mark.parametrize(
     ("craft", "length", "level", "expected"),
     [
-        (craft, "15厘米", level, expected)
-        for craft in ("递针旋全头套", "递针旋九分头")
+        ("递旋", "15厘米", level, expected)
         for level, expected in (
             ("silver", "1048.00"),
             ("black", "998.00"),
@@ -215,7 +283,7 @@ def test_cap_price_ignores_size():
         )
     ]
     + [
-        ("递针顶", length, level, expected)
+        ("递顶", length, level, expected)
         for length, prices in (
             ("20厘米", ("1698.00", "1598.00", "1548.00")),
             ("25厘米", ("2098.00", "1998.00", "1948.00")),
@@ -254,18 +322,18 @@ def test_fixed_member_prices_take_priority(craft, length, level, expected):
         for level, expected in zip(("silver", "black", "supreme"), prices)
     ],
 )
-def test_nine_part_non_fixed_lengths_use_member_reductions(
+def test_cap_spin_non_fixed_lengths_use_member_reductions(
     length, original, level, expected
 ):
     base_price = pricing_service.get_base_price(
         product_type="cap",
-        craft="递针旋九分头",
+        craft="递旋",
         size=None,
         length=length,
     )
     result = pricing_service.resolve_discount(
         product_type="cap",
-        craft="递针旋九分头",
+        craft="递旋",
         size=None,
         length=length,
         original_price=base_price,
@@ -298,7 +366,7 @@ def test_non_fixed_member_price_uses_reduction(level, expected):
 def test_non_member_uses_quantized_base_price():
     result = pricing_service.resolve_discount(
         product_type="cap",
-        craft="递针顶",
+        craft="递顶",
         size=None,
         length="35厘米",
         original_price=D("2650.005"),
@@ -309,24 +377,48 @@ def test_non_member_uses_quantized_base_price():
     assert result.pricing_rule == "base_price"
 
 
-def test_reduction_never_produces_a_negative_price():
-    result = pricing_service.resolve_discount(
-        product_type="piece",
-        craft="全递针",
-        size="9*14",
-        length="25厘米",
-        original_price=D("50"),
-        membership_level="silver",
-    )
-    assert result.final_price == D("0.00")
-    assert result.discount_amount == D("50.00")
-    assert result.pricing_rule == "member_reduction"
+def test_reduction_below_zero_raises_configuration_error():
+    with pytest.raises(pricing_service.PricingConfigurationError, match="立减"):
+        pricing_service.resolve_discount(
+            product_type="piece",
+            craft="全递针",
+            size="9*14",
+            length="25厘米",
+            original_price=D("50"),
+            membership_level="silver",
+        )
+
+
+@pytest.mark.parametrize("original", [D("0"), D("-1"), D("NaN"), D("Infinity"), D("-Infinity")])
+def test_original_price_must_be_finite_and_positive(original):
+    with pytest.raises(pricing_service.PricingConfigurationError, match="原始价"):
+        pricing_service.resolve_discount(
+            product_type="cap",
+            craft="递旋",
+            size=None,
+            length="20厘米",
+            original_price=original,
+            membership_level=None,
+        )
+
+
+@pytest.mark.parametrize("membership_level", ["gold", "", "SILVER"])
+def test_unknown_membership_level_raises_configuration_error(membership_level):
+    with pytest.raises(pricing_service.PricingConfigurationError, match="会员等级"):
+        pricing_service.resolve_discount(
+            product_type="cap",
+            craft="递旋",
+            size=None,
+            length="20厘米",
+            original_price=D("1498"),
+            membership_level=membership_level,
+        )
 
 
 def test_fixed_price_above_original_is_capped_and_marked():
     result = pricing_service.resolve_discount(
         product_type="cap",
-        craft="递针旋全头套",
+        craft="递旋",
         size=None,
         length="15厘米",
         original_price=D("900"),

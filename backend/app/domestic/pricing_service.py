@@ -14,18 +14,15 @@ MEMBERSHIP_REDUCTIONS = {
 }
 
 MEMBER_FIXED_PRICES = {
-    ("递针旋全头套", "15厘米", "silver"): Decimal("1048.00"),
-    ("递针旋全头套", "15厘米", "black"): Decimal("998.00"),
-    ("递针旋全头套", "15厘米", "supreme"): Decimal("960.00"),
-    ("递针旋九分头", "15厘米", "silver"): Decimal("1048.00"),
-    ("递针旋九分头", "15厘米", "black"): Decimal("998.00"),
-    ("递针旋九分头", "15厘米", "supreme"): Decimal("960.00"),
-    ("递针顶", "20厘米", "silver"): Decimal("1698.00"),
-    ("递针顶", "20厘米", "black"): Decimal("1598.00"),
-    ("递针顶", "20厘米", "supreme"): Decimal("1548.00"),
-    ("递针顶", "25厘米", "silver"): Decimal("2098.00"),
-    ("递针顶", "25厘米", "black"): Decimal("1998.00"),
-    ("递针顶", "25厘米", "supreme"): Decimal("1948.00"),
+    ("递旋", "15厘米", "silver"): Decimal("1048.00"),
+    ("递旋", "15厘米", "black"): Decimal("998.00"),
+    ("递旋", "15厘米", "supreme"): Decimal("960.00"),
+    ("递顶", "20厘米", "silver"): Decimal("1698.00"),
+    ("递顶", "20厘米", "black"): Decimal("1598.00"),
+    ("递顶", "20厘米", "supreme"): Decimal("1548.00"),
+    ("递顶", "25厘米", "silver"): Decimal("2098.00"),
+    ("递顶", "25厘米", "black"): Decimal("1998.00"),
+    ("递顶", "25厘米", "supreme"): Decimal("1948.00"),
 }
 
 
@@ -63,11 +60,10 @@ _PIECE_PRICE_ROWS = {
 _CAP_SPIN_PRICES = (1198, 1498, 1798, 1998, 2050, 2700)
 _CAP_PART_PRICES = (None, 1598, 1898, 2198, 2298, 2900)
 _CAP_PRICE_ROWS = {
-    "递针旋全头套": _CAP_SPIN_PRICES,
-    "递针旋九分头": _CAP_SPIN_PRICES,
-    "递针顶": (None, 1798, 2198, 2498, 2650, 3300),
-    "递针中分界": _CAP_PART_PRICES,
-    "递针左分界": _CAP_PART_PRICES,
+    "递旋": _CAP_SPIN_PRICES,
+    "递顶": (None, 1798, 2198, 2498, 2650, 3300),
+    "中分界": _CAP_PART_PRICES,
+    "左分界": _CAP_PART_PRICES,
 }
 
 
@@ -93,18 +89,28 @@ def _build_base_price_seed_matrix():
 BASE_PRICE_SEED_MATRIX = _build_base_price_seed_matrix()
 
 
-# 现行发片属性字典将工艺和尺寸存成一个 code。这里仅列出已确认的标准
-# code，不做前缀、后缀或正则猜测；特单和不完整值继续保持缺价。
-COMBINED_PIECE_CRAFT_SIZE = {
-    "U型13*15": ("U型递针", "13*15"),
-    "U型14*16": ("U型递针", "14*16"),
-    "U型16*18": ("U型递针", "16*18"),
-    "全递针9*14": ("全递针", "9*14"),
-    "全递针12*14": ("全递针", "12*14"),
-    "全递针13*15": ("全递针", "13*15"),
-    "全递针14*16": ("全递针", "14*16"),
-    "全递针15*17": ("全递针", "15*17"),
+# 发片产品把工艺和尺寸存成一个 code。只从已确认原价矩阵生成精确 code，
+# 查询仍是字典精确匹配，不做前缀、后缀或正则解析。
+_PIECE_COMBINED_PREFIXES = {
+    "全递针": "全递针",
+    "递针旋": "递针旋",
+    "U型递针": "U型",
+    "递针中分界": "递针中分界",
+    "递针左分界": "递针左分界",
 }
+COMBINED_PIECE_CRAFT_SIZE = {
+    f"{_PIECE_COMBINED_PREFIXES[craft]}{size}": (craft, size)
+    for craft, size_rows in _PIECE_PRICE_ROWS.items()
+    for size in size_rows
+}
+_COMBINED_PIECE_BY_DIMENSIONS = {
+    dimensions: combined
+    for combined, dimensions in COMBINED_PIECE_CRAFT_SIZE.items()
+}
+
+
+class PricingConfigurationError(ValueError):
+    """定价配置无法生成合法成交价。"""
 
 
 @dataclass(frozen=True)
@@ -117,6 +123,16 @@ class DiscountResult:
 
 def _money(value: Decimal | int) -> Decimal:
     return Decimal(value).quantize(MONEY_QUANTUM, rounding=ROUND_HALF_UP)
+
+
+def _validated_original_price(value: Decimal | int) -> Decimal:
+    original = Decimal(value)
+    if not original.is_finite() or original <= 0:
+        raise PricingConfigurationError("原始价必须是大于 0 的有限金额")
+    original = _money(original)
+    if original <= 0:
+        raise PricingConfigurationError("原始价量化后必须大于 0")
+    return original
 
 
 def resolve_membership(
@@ -145,7 +161,7 @@ def build_price_key(
         return product_type, craft, None, length
     if product_type != "piece":
         return None
-    if size is None:
+    if not size:
         combined = COMBINED_PIECE_CRAFT_SIZE.get(craft)
         if combined is None:
             return None
@@ -165,11 +181,13 @@ def get_base_price(
 
 
 def iter_base_price_seeds(
-) -> Iterator[tuple[str, str, str | None, str, Decimal]]:
-    """逐行暴露已确认原始价格，供后续迁移直接使用。"""
+) -> Iterator[tuple[str, str, str, str, Decimal]]:
+    """按实际产品键逐行输出可直接持久化的已确认原始价格。"""
 
     for (product_type, craft, size, length), price in BASE_PRICE_SEED_MATRIX.items():
-        yield product_type, craft, size, length, price
+        if product_type == "piece":
+            craft = _COMBINED_PIECE_BY_DIMENSIONS[(craft, size)]
+        yield product_type, craft, "", length, price
 
 
 def resolve_discount(
@@ -183,7 +201,9 @@ def resolve_discount(
 ) -> DiscountResult:
     """按固定会员价优先、普通立减其次的顺序计算成交价。"""
 
-    original = _money(original_price)
+    if membership_level is not None and membership_level not in MEMBERSHIP_REDUCTIONS:
+        raise PricingConfigurationError(f"未知会员等级：{membership_level!r}")
+    original = _validated_original_price(original_price)
     reduction = MEMBERSHIP_REDUCTIONS.get(membership_level)
     if reduction is None:
         return DiscountResult(original, original, Decimal("0.00"), "base_price")
@@ -204,7 +224,9 @@ def resolve_discount(
             "member_fixed",
         )
 
-    final_price = max(Decimal("0.00"), _money(original - reduction))
+    final_price = _money(original - reduction)
+    if final_price < 0:
+        raise PricingConfigurationError("会员立减后价格低于 0，请检查原始价或优惠配置")
     return DiscountResult(
         original,
         final_price,
