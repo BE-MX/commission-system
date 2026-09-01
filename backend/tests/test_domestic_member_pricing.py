@@ -241,6 +241,44 @@ def test_fixed_member_prices_take_priority(craft, length, level, expected):
 
 
 @pytest.mark.parametrize(
+    ("length", "original", "level", "expected"),
+    [
+        (length, original, level, expected)
+        for length, original, prices in (
+            ("20厘米", "1498.00", ("1428.00", "1378.00", "1368.00")),
+            ("25厘米", "1798.00", ("1728.00", "1678.00", "1668.00")),
+            ("30厘米", "1998.00", ("1928.00", "1878.00", "1868.00")),
+            ("35厘米", "2050.00", ("1980.00", "1930.00", "1920.00")),
+            ("40厘米", "2700.00", ("2630.00", "2580.00", "2570.00")),
+        )
+        for level, expected in zip(("silver", "black", "supreme"), prices)
+    ],
+)
+def test_nine_part_non_fixed_lengths_use_member_reductions(
+    length, original, level, expected
+):
+    base_price = pricing_service.get_base_price(
+        product_type="cap",
+        craft="递针旋九分头",
+        size=None,
+        length=length,
+    )
+    result = pricing_service.resolve_discount(
+        product_type="cap",
+        craft="递针旋九分头",
+        size=None,
+        length=length,
+        original_price=base_price,
+        membership_level=level,
+    )
+
+    assert base_price == D(original)
+    assert result.final_price == D(expected)
+    assert result.discount_amount == pricing_service.MEMBERSHIP_REDUCTIONS[level]
+    assert result.pricing_rule == "member_reduction"
+
+
+@pytest.mark.parametrize(
     ("level", "expected"),
     [("silver", "930.00"), ("black", "880.00"), ("supreme", "870.00")],
 )
