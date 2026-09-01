@@ -106,6 +106,24 @@ def test_non_15cm_cap_clears_residual_density():
     assert attrs.density is None
 
 
+@pytest.mark.parametrize("net_color", [None, "   "])
+def test_cap_net_color_is_optional_and_blank_normalizes_to_none(net_color):
+    values = _cap_attrs()
+    if net_color is None:
+        values.pop("net_color")
+    else:
+        values["net_color"] = net_color
+
+    attrs = ProductAttrs(**values)
+    assert attrs.net_color is None
+
+
+@pytest.mark.parametrize("field_name", ["craft", "length", "size", "hair_style_series"])
+def test_cap_rejects_blank_required_strings(field_name):
+    with pytest.raises(ValidationError):
+        ProductAttrs(**_cap_attrs(**{field_name: "   "}))
+
+
 @pytest.mark.parametrize("missing_field", ["size", "hair_style_series"])
 def test_cap_requires_size_and_hair_style_series(missing_field):
     values = _cap_attrs()

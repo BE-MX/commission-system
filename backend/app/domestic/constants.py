@@ -41,11 +41,6 @@ ATTR_DICTS = {
     },
 }
 
-DEFAULT_ROUTE_NAMES = {
-    "cap": "头套网帽（递针）",
-    "piece": "发片网底（递针）",
-}
-
 # 订单状态
 ORDER_DRAFT = 0
 ORDER_PRODUCING = 1
