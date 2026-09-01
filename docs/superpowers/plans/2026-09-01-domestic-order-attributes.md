@@ -137,7 +137,7 @@ def test_special_order_creates_reusable_special_option_and_route(db, default_rou
     assert mapping.route_id == default_routes["cap"].id
 ```
 
-Also test duplicate reuse, order-type/channel dictionary validation, rollback with an invalid later item, and options response separation between `standard_values` and `special_values`.
+Also test duplicate reuse, order-type/channel dictionary validation, rollback with an invalid later item, options response separation between `standard_values` and `special_values`, preservation of an existing non-default custom mapping while the default route is disabled, winner preservation after a mapping unique-key race, and a real file-backed SQLite two-connection/two-thread append race that converges to one special option and mapping while both requests succeed.
 
 - [ ] **Step 2: Run tests and verify RED**
 
@@ -157,7 +157,7 @@ def prepare_item_attrs(
 ) -> ProductAttrs: ...
 ```
 
-`prepare_item_attrs` validates every visible field against its standard type. For special orders it creates missing values in `<standard_type>_special` using a nested transaction. If the field is craft, it validates the fixed product-type route and creates/reuses `DomesticCraftRoute` in the same outer order transaction. It must call `flush`, never `commit`.
+`prepare_item_attrs` validates every visible field against its standard type. For special orders it creates missing values in `<standard_type>_special` using a nested transaction. If the field is craft and no mapping exists, it validates the fixed product-type route and creates `DomesticCraftRoute` in the same outer order transaction. Existing mappings are authoritative and must not be validated against or overwritten by the default route; a unique-key loser refetches and preserves the winning mapping. It must call `flush`, never `commit`. SQLite create/append flows start `BEGIN IMMEDIATE` before their first read that influences a write so concurrent writers serialize; MySQL behavior remains unchanged.
 
 Call the service before product find-or-create. Update product key/display/name and list output to include `hair_style_series` and omit empty piece fields.
 
@@ -182,7 +182,7 @@ git commit -m "feat: support domestic special attribute options"
 
 - [ ] **Step 1: Write failing cutover tests**
 
-Test that preflight reports exact Excel values, missing/disabled/empty routes block apply, apply replaces standard dictionaries and mappings, a second apply is idempotent, and existing products/order snapshots are unchanged.
+Test that preflight reports exact Excel values, missing/disabled/empty routes block apply, apply replaces standard dictionaries and mappings, a second apply is idempotent, existing products/order snapshots are unchanged, and both direct/CLI apply reject execution unless writes-stopped confirmation is explicit.
 
 ```python
 def test_apply_replaces_standard_options_without_touching_history(db, history, routes):
@@ -201,7 +201,7 @@ Expected: import failure because the cutover command does not exist.
 
 - [ ] **Step 3: Implement preflight/apply**
 
-Hard-code only the approved business data in the command: exact standard option lists, the two fixed route names, and obsolete domestic dictionary types. Preflight returns deterministic JSON. Apply requires an explicit `--apply` flag, revalidates inside the transaction, deletes/replaces only managed standard dictionary rows and standard craft mappings, and does not modify products or order items.
+Hard-code only the approved business data in the command: exact standard option lists, the two fixed route names, and obsolete domestic dictionary types. Preflight returns deterministic JSON. Apply requires both `--apply` and the exact `--confirm-writes-stopped DOMESTIC_WRITES_STOPPED` token (direct calls require `writes_stopped=True`), revalidates inside the transaction, deletes/replaces only managed standard dictionary rows and standard craft mappings, and does not modify products or order items. The token records an operator assertion; it does not stop traffic, so the maintenance runbook must stop all writers and drain in-flight transactions first.
 
 - [ ] **Step 4: Run tests and verify GREEN**
 

@@ -2,14 +2,20 @@
 
 import importlib.util
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import create_engine, event
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.auth.models import ArkUser
+from app.core.database import Base
 from app.domestic import attribute_service, order_service, product_service, report_service
 from app.domestic import constants as C
 from app.domestic.models import (
@@ -343,6 +349,198 @@ def test_special_order_creates_and_reuses_only_special_option_and_route(db):
         product_type="cap", craft="自定义工艺"
     ).one()
     assert mapping.route_id == context["routes"]["cap"].id
+
+
+def test_existing_special_craft_mapping_survives_disabled_default_route(db):
+    context = _seed_attribute_context(db)
+    custom_craft = "已配置非默认路线的工艺"
+    db.add(_dict_row(f"{C.DICT_CAP_CRAFT}_special", custom_craft))
+    process = Process(name=f"特单专属工序-{id(db)}", status=1)
+    custom_route = ProcessRoute(name=f"特单专属路线-{id(db)}", status=1)
+    db.add_all([process, custom_route])
+    db.flush()
+    db.add_all([
+        ProcessRouteStep(route_id=custom_route.id, process_id=process.id, step_order=1),
+        DomesticCraftRoute(
+            product_type="cap",
+            craft=custom_craft,
+            route_id=custom_route.id,
+            updated_by=context["user"].id,
+        ),
+    ])
+    context["routes"]["cap"].status = 0
+    db.commit()
+
+    result = order_service.create_order(
+        db,
+        _service_order(
+            context,
+            request_id="existing-custom-route",
+            items=[OrderItemInput(
+                attrs=ProductAttrs(**_cap_attrs(craft=custom_craft)),
+                order_qty=1,
+            )],
+        ),
+        context["user"].id,
+    )
+
+    mapping = db.query(DomesticCraftRoute).filter_by(
+        product_type="cap", craft=custom_craft
+    ).one()
+    item = db.query(DomesticOrderItem).filter_by(order_id=result["id"]).one()
+    assert mapping.route_id == custom_route.id
+    assert item.route_id == custom_route.id
+
+
+def test_special_craft_mapping_race_keeps_winning_route(monkeypatch):
+    default_route = ProcessRoute(id=11, name="默认路线", status=1)
+    winning_mapping = DomesticCraftRoute(
+        id=22,
+        product_type="cap",
+        craft="竞争工艺",
+        route_id=99,
+        updated_by=7,
+    )
+
+    class FakeSavepoint:
+        def commit(self):
+            raise AssertionError("flush 冲突后不应提交 savepoint")
+
+        def rollback(self):
+            return None
+
+    class FakeQuery:
+        def __init__(self, result):
+            self.result = result
+            self.populate_existing_called = False
+            self.with_for_update_called = False
+
+        def filter(self, *_args):
+            return self
+
+        def populate_existing(self):
+            self.populate_existing_called = True
+            return self
+
+        def with_for_update(self):
+            self.with_for_update_called = True
+            return self
+
+        def first(self):
+            return self.result
+
+    class FakeDb:
+        def __init__(self):
+            self.queries = [FakeQuery(None), FakeQuery(winning_mapping)]
+            self.query_index = 0
+
+        def query(self, _model):
+            query = self.queries[self.query_index]
+            self.query_index += 1
+            return query
+
+        def begin_nested(self):
+            return FakeSavepoint()
+
+        def add(self, _row):
+            return None
+
+        def flush(self):
+            raise IntegrityError("INSERT", {}, Exception("duplicate mapping"))
+
+    fake_db = FakeDb()
+    monkeypatch.setattr(attribute_service, "_default_route", lambda *_args: default_route)
+
+    attribute_service._ensure_special_craft_route(
+        fake_db,
+        product_type="cap",
+        craft="竞争工艺",
+        user_id=8,
+    )
+
+    refetch = fake_db.queries[1]
+    assert refetch.populate_existing_called is True
+    assert refetch.with_for_update_called is True
+    assert winning_mapping.route_id == 99
+    assert winning_mapping.updated_by == 7
+
+
+def test_sqlite_concurrent_append_converges_on_one_special_option(tmp_path):
+    database_path = tmp_path / "domestic-special-race.sqlite3"
+    engine = create_engine(
+        f"sqlite:///{database_path}",
+        connect_args={"check_same_thread": False, "timeout": 5},
+        poolclass=NullPool,
+    )
+
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_concurrency(dbapi_connection, _record):
+        dbapi_connection.execute("PRAGMA busy_timeout = 5000")
+
+    seen_index_names: set[str] = set()
+    for table in Base.metadata.tables.values():
+        for index in list(table.indexes):
+            if index.name in seen_index_names:
+                table.indexes.discard(index)
+            else:
+                seen_index_names.add(index.name)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    setup_db = Session()
+    try:
+        context = _seed_attribute_context(setup_db)
+        created = order_service.create_order(
+            setup_db,
+            _service_order(
+                context,
+                request_id="concurrent-append-base",
+                is_draft=True,
+            ),
+            context["user"].id,
+        )
+        order_id = created["id"]
+        user_id = context["user"].id
+    finally:
+        setup_db.close()
+
+    start = threading.Barrier(2)
+
+    def append(request_id: str) -> dict:
+        thread_db = Session()
+        try:
+            start.wait(timeout=5)
+            return order_service.add_item(
+                thread_db,
+                order_id,
+                OrderItemAppend(
+                    request_id=request_id,
+                    attrs=ProductAttrs(**_cap_attrs(craft="并发特单工艺")),
+                    order_qty=1,
+                ),
+                user_id,
+            )
+        finally:
+            thread_db.close()
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(append, ("concurrent-a", "concurrent-b")))
+
+        verify_db = Session()
+        try:
+            assert len({result["id"] for result in results}) == 2
+            assert verify_db.query(SysDict).filter_by(
+                type=f"{C.DICT_CAP_CRAFT}_special",
+                code="并发特单工艺",
+                is_active=True,
+            ).count() == 1
+            assert verify_db.query(DomesticCraftRoute).filter_by(
+                product_type="cap", craft="并发特单工艺"
+            ).count() == 1
+        finally:
+            verify_db.close()
+    finally:
+        engine.dispose()
 
 
 def test_order_dimensions_use_active_dictionary_values(db):

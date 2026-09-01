@@ -233,8 +233,8 @@
 
 - `domestic_order_type` 的稳定编码为 `first_order/repurchase/return_order/supplementary/after_sales_remake`，标签分别为首单/复购/返单/补单/售后重做；`domestic_order_channel` 为 `wechat/phone/exhibition/offline_visit/other`，标签分别为微信/电话/展会/线下拜访/其他。
 - 头套标准字典为 `domestic_cap_craft`、`domestic_cap_net_color`、`domestic_cap_size`、`domestic_cap_length`、`domestic_cap_density`、`domestic_cap_hair_style_series`；发片标准字典为 `domestic_piece_craft_size`、`domestic_piece_length`。特单值使用相同 type 加 `_special`，只允许在特单保存事务中按当前可见属性创建和复用；普货只接受启用的标准字典项。
-- 特单自定义属性与订单/草稿同事务保存，失败不残留字典项；自定义工艺还在同一事务建立默认路线映射，头套固定“头套网帽（递针）”、发片固定“发片网底（递针）”。默认路线缺失、停用或没有工序时拒绝写入。
-- `python -m scripts.domestic_attribute_cutover` 默认只读预检；只有显式 `--apply` 才完整替换受管标准字典与标准工艺映射。它保留所有 `_special` 字典与特单映射，不更新/删除 `ark_domestic_products`、`ark_domestic_orders`、`ark_domestic_order_items` 或属性/路线快照；必须与 129 结构升级和新版应用部署处于同一停写维护窗口。
+- 特单自定义属性与订单/草稿同事务保存，失败不残留字典项；自定义工艺没有映射时才在同一事务建立默认路线映射，头套使用“头套网帽（递针）”、发片使用“发片网底（递针）”。仅新建映射时校验默认路线；已有映射直接沿用且不被默认路线覆盖，唯一键竞争后读取并保留数据库中的胜方映射。SQLite 下单和追加明细在任何读后写判断前使用 `BEGIN IMMEDIATE` 取得写者槽位，避免双连接同时创建特单字典、映射或重复明细序号；MySQL 继续使用行锁和唯一键收敛逻辑。
+- `python -m scripts.domestic_attribute_cutover` 默认只读预检；执行必须同时显式传入 `--apply --confirm-writes-stopped DOMESTIC_WRITES_STOPPED`，否则拒绝。它保留所有 `_special` 字典与特单映射，不更新/删除 `ark_domestic_products`、`ark_domestic_orders`、`ark_domestic_order_items` 或属性/路线快照；必须与 129 结构升级和新版应用部署处于同一停写维护窗口，并先由运维真实停止所有内贸写入、等待在途事务排空。
 - 本次迁移和切换不清理历史订单。即使业务确认未来可以全部清空，也必须作为后续单独授权的破坏性操作执行，不能夹带在 Alembic 或属性切换命令中。
 
 ## 采购节大屏（迁移 084/087，2026-07-30、2026-08-04）

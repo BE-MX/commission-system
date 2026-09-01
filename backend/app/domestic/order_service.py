@@ -146,13 +146,13 @@ def _generate_domestic_no(db: Session) -> str:
 
 
 def _ensure_sqlite_outer_transaction(db: Session) -> None:
-    """SQLite legacy mode does not BEGIN on SELECT, so a first SAVEPOINT can self-commit."""
+    """Start a real SQLite writer transaction before read-then-create workflows."""
     if db.get_bind().dialect.name != "sqlite":
         return
     connection = db.connection()
     driver_connection = connection.connection.driver_connection
     if not driver_connection.in_transaction:
-        connection.exec_driver_sql("BEGIN")
+        connection.exec_driver_sql("BEGIN IMMEDIATE")
 
 
 def _build_item(
@@ -817,6 +817,10 @@ def add_item(
     user_id: int | None = None,
 ) -> dict:
     try:
+        # SQLite must reserve the writer slot before reading next_line_no or
+        # checking read-then-create attribute rows; otherwise two connections
+        # can both act on the same stale state.
+        _ensure_sqlite_outer_transaction(db)
         order = _get_order_or_raise(db, order_id, lock=True)
         if order.status in (C.ORDER_TERMINATED, C.ORDER_SHIPPED):
             raise ValueError("已终止/已发货的订单不能加明细")
@@ -838,7 +842,6 @@ def add_item(
         if new_total_qty > C.MAX_ORDER_UNITS:
             raise ValueError(f"单张订单合计数量不能超过 {C.MAX_ORDER_UNITS} 件")
 
-        _ensure_sqlite_outer_transaction(db)
         line_no = order.next_line_no or 1
         item, warning = _build_item(
             db,

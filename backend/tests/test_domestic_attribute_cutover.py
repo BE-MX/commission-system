@@ -307,7 +307,7 @@ def test_invalid_target_route_blocks_preflight_and_apply(db, cutover_case, failu
     with pytest.raises(cutover.CutoverError, match=match):
         cutover.build_plan(db)
     with pytest.raises(cutover.CutoverError, match=match):
-        cutover.apply_cutover(db)
+        cutover.apply_cutover(db, writes_stopped=True)
     assert _codes_and_labels(db, "domestic_cap_craft") == [("旧头套工艺", "旧头套工艺")]
 
 
@@ -323,7 +323,7 @@ def test_apply_replaces_standard_data_and_preserves_special_and_history(db, cuto
         "attrs": deepcopy(cutover_case["item"].attrs_snapshot),
     }
 
-    result = cutover.apply_cutover(db)
+    result = cutover.apply_cutover(db, writes_stopped=True)
 
     assert result["mode"] == "applied"
     for dict_type, values in EXPECTED_STANDARD_VALUES.items():
@@ -360,7 +360,7 @@ def test_apply_replaces_standard_data_and_preserves_special_and_history(db, cuto
 
 
 def test_second_apply_is_idempotent(db, cutover_case):
-    cutover.apply_cutover(db)
+    cutover.apply_cutover(db, writes_stopped=True)
     first_dict_rows = [
         (row.id, row.type, row.code, row.label, row.sort, row.is_active)
         for row in db.query(SysDict).order_by(SysDict.id.asc()).all()
@@ -370,7 +370,7 @@ def test_second_apply_is_idempotent(db, cutover_case):
         for row in db.query(DomesticCraftRoute).order_by(DomesticCraftRoute.id.asc()).all()
     ]
 
-    result = cutover.apply_cutover(db)
+    result = cutover.apply_cutover(db, writes_stopped=True)
 
     second_dict_rows = [
         (row.id, row.type, row.code, row.label, row.sort, row.is_active)
@@ -393,15 +393,23 @@ def test_apply_rolls_back_if_mapping_replacement_fails(db, cutover_case, monkeyp
 
     monkeypatch.setattr(cutover, "_replace_standard_mappings", fail_mapping_replacement)
     with pytest.raises(RuntimeError, match="injected mapping failure"):
-        cutover.apply_cutover(db)
+        cutover.apply_cutover(db, writes_stopped=True)
 
     assert _codes_and_labels(db, "domestic_cap_craft") == before
+
+
+def test_apply_requires_explicit_writes_stopped_confirmation(db, cutover_case):
+    with pytest.raises(cutover.CutoverError, match="DOMESTIC_WRITES_STOPPED"):
+        cutover.apply_cutover(db, writes_stopped=False)
 
 
 def test_cli_defaults_to_preflight_and_apply_requires_explicit_flag(monkeypatch, capsys):
     calls = []
 
     class FakeSession:
+        def rollback(self):
+            calls.append("rollback")
+
         def close(self):
             calls.append("close")
 
@@ -410,12 +418,25 @@ def test_cli_defaults_to_preflight_and_apply_requires_explicit_flag(monkeypatch,
     monkeypatch.setattr(
         cutover,
         "apply_cutover",
-        lambda _db: calls.append("apply") or {"mode": "applied"},
+        lambda _db, *, writes_stopped: calls.append(("apply", writes_stopped))
+        or {"mode": "applied"},
     )
 
     assert cutover.main([]) == 0
     assert '"mode": "preflight"' in capsys.readouterr().out
     assert "apply" not in calls
-    assert cutover.main(["--apply"]) == 0
+    assert cutover.main(["--apply"]) == 2
+    assert "DOMESTIC_WRITES_STOPPED" in capsys.readouterr().err
+    assert cutover.main([
+        "--apply",
+        "--confirm-writes-stopped",
+        "WRITES_NOT_ACTUALLY_STOPPED",
+    ]) == 2
+    assert "DOMESTIC_WRITES_STOPPED" in capsys.readouterr().err
+    assert cutover.main([
+        "--apply",
+        "--confirm-writes-stopped",
+        "DOMESTIC_WRITES_STOPPED",
+    ]) == 0
     assert '"mode": "applied"' in capsys.readouterr().out
-    assert calls.count("apply") == 1
+    assert calls.count(("apply", True)) == 1

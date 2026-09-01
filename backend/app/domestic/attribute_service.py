@@ -198,18 +198,14 @@ def _ensure_special_craft_route(
     craft: str,
     user_id: int,
 ) -> None:
-    route = _default_route(db, product_type)
     mapping = db.query(DomesticCraftRoute).filter(
         DomesticCraftRoute.product_type == product_type,
         DomesticCraftRoute.craft == craft,
     ).first()
     if mapping:
-        if mapping.route_id != route.id:
-            mapping.route_id = route.id
-            mapping.updated_by = user_id
-            db.flush()
         return
 
+    route = _default_route(db, product_type)
     savepoint = db.begin_nested()
     mapping = DomesticCraftRoute(
         product_type=product_type,
@@ -238,10 +234,6 @@ def _ensure_special_craft_route(
         ).populate_existing().with_for_update().first()
         if mapping is None:
             raise
-        if mapping.route_id != route.id:
-            mapping.route_id = route.id
-            mapping.updated_by = user_id
-            db.flush()
 
 
 def prepare_item_attrs(

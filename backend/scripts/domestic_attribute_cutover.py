@@ -26,6 +26,7 @@ from app.system.models import SysDict
 
 
 logger = logging.getLogger("commission")
+WRITE_FREEZE_CONFIRMATION = "DOMESTIC_WRITES_STOPPED"
 
 STANDARD_DICTIONARIES = {
     C.DICT_CAP_CRAFT: ["递旋", "中分界", "左分界", "大U型", "递顶"],
@@ -106,6 +107,14 @@ SPECIAL_CRAFT_DICTS = {
 
 class CutoverError(ValueError):
     """The domestic attribute cutover preconditions were not satisfied."""
+
+
+def confirm_writes_stopped(value: str | None) -> None:
+    if value != WRITE_FREEZE_CONFIRMATION:
+        raise CutoverError(
+            "--apply 前必须停止内贸写入并等待在途事务排空，然后精确传入 "
+            f"--confirm-writes-stopped {WRITE_FREEZE_CONFIRMATION}"
+        )
 
 
 def _standard_rows() -> list[dict]:
@@ -325,7 +334,11 @@ def _replace_standard_mappings(db: Session, changes: dict) -> None:
     db.flush()
 
 
-def apply_cutover(db: Session) -> dict:
+def apply_cutover(db: Session, *, writes_stopped: bool) -> dict:
+    if writes_stopped is not True:
+        raise CutoverError(
+            f"apply 前必须停止内贸写入并确认 {WRITE_FREEZE_CONFIRMATION}"
+        )
     db.rollback()
     try:
         plan = build_plan(db, lock=True)
@@ -363,6 +376,10 @@ def apply_cutover(db: Session) -> dict:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="内贸标准属性与工艺路线切换（默认只读预检）")
     parser.add_argument("--apply", action="store_true", help="执行切换；省略即只打印预检计划")
+    parser.add_argument(
+        "--confirm-writes-stopped",
+        help=f"apply 强制停写确认；必须精确输入 {WRITE_FREEZE_CONFIRMATION}",
+    )
     return parser
 
 
@@ -370,7 +387,11 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     db = SessionLocal()
     try:
-        result = apply_cutover(db) if args.apply else build_plan(db)
+        if args.apply:
+            confirm_writes_stopped(args.confirm_writes_stopped)
+            result = apply_cutover(db, writes_stopped=True)
+        else:
+            result = build_plan(db)
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
         return 0
     except Exception as exc:
