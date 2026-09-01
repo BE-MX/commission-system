@@ -183,13 +183,13 @@ def get_base_price(
 
 def build_persistence_price_key(
     *, product_type: str, craft: str, length: str, size: str | None = None
-) -> tuple[str, str, str, str] | None:
+) -> tuple[str, str, str] | None:
     """把产品属性转换为数据库使用的合并价格键。"""
 
     if product_type == "cap":
         if craft not in _CAP_CRAFT_CODES:
             return None
-        return product_type, craft, "", length
+        return product_type, craft, length
     if product_type != "piece":
         return None
 
@@ -199,11 +199,11 @@ def build_persistence_price_key(
         combined_craft = craft if craft in COMBINED_PIECE_CRAFT_SIZE else None
     if combined_craft is None:
         return None
-    return product_type, combined_craft, "", length
+    return product_type, combined_craft, length
 
 
 def iter_base_price_seeds(
-) -> Iterator[tuple[str, str, str, str, Decimal]]:
+) -> Iterator[tuple[str, str, str, Decimal]]:
     """按实际产品键逐行输出可直接持久化的已确认原始价格。"""
 
     for (product_type, craft, size, length), price in BASE_PRICE_SEED_MATRIX.items():

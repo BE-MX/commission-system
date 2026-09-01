@@ -121,9 +121,9 @@ def test_base_price_seed_matrix_matches_all_confirmed_source_values_only():
     assert pricing_service.BASE_PRICE_SEED_MATRIX == expected
 
 
-def test_persistence_seed_rows_use_unique_product_keys_without_none():
+def test_persistence_seed_rows_use_unique_three_column_product_keys():
     rows = list(pricing_service.iter_base_price_seeds())
-    keys = [(product_type, craft, size, length) for product_type, craft, size, length, _ in rows]
+    keys = [(product_type, craft, length) for product_type, craft, length, _ in rows]
     expected = {}
     combined_by_pair = {
         pair: combined for combined, pair in EXPECTED_COMBINED_PIECE_CODES.items()
@@ -132,10 +132,9 @@ def test_persistence_seed_rows_use_unique_product_keys_without_none():
         persisted_craft = (
             combined_by_pair[(craft, size)] if product_type == "piece" else craft
         )
-        expected[(product_type, persisted_craft, "", length)] = price
+        expected[(product_type, persisted_craft, length)] = price
 
     assert len(keys) == len(set(keys))
-    assert all(size == "" for _, _, size, _ in keys)
     assert dict((key, row[-1]) for key, row in zip(keys, rows)) == expected
 
 
@@ -147,7 +146,7 @@ def test_matrix_key_builder_is_private_and_persistence_builder_is_public():
 def test_unseeded_current_cap_craft_builds_persistence_key():
     assert pricing_service.build_persistence_price_key(
         product_type="cap", craft="大U型", size="59", length="25厘米"
-    ) == ("cap", "大U型", "", "25厘米")
+    ) == ("cap", "大U型", "25厘米")
 
 
 @pytest.mark.parametrize(
@@ -167,20 +166,20 @@ def test_unknown_persistence_price_dimensions_return_none(attrs):
 def test_all_seed_rows_round_trip_through_public_persistence_builder():
     persisted_rows = list(pricing_service.iter_base_price_seeds())
     persisted_by_key = {
-        (product_type, craft, size, length): price
-        for product_type, craft, size, length, price in persisted_rows
+        (product_type, craft, length): price
+        for product_type, craft, length, price in persisted_rows
     }
     combined_by_pair = {
         pair: combined for combined, pair in EXPECTED_COMBINED_PIECE_CODES.items()
     }
 
-    for product_type, craft, size, length, price in persisted_rows:
+    for product_type, craft, length, price in persisted_rows:
         assert pricing_service.build_persistence_price_key(
             product_type=product_type,
             craft=craft,
             size=None,
             length=length,
-        ) == (product_type, craft, size, length)
+        ) == (product_type, craft, length)
 
     for (product_type, craft, size, length), price in _expected_seed_matrix().items():
         canonical_key = pricing_service.build_persistence_price_key(
