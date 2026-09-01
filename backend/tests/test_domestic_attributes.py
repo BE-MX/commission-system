@@ -10,12 +10,13 @@ from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
 from app.auth.models import ArkUser
-from app.domestic import attribute_service, order_service, product_service
+from app.domestic import attribute_service, order_service, product_service, report_service
 from app.domestic import constants as C
 from app.domestic.models import (
     DomesticCraftRoute,
     DomesticCustomer,
     DomesticOrder,
+    DomesticOrderItem,
     DomesticProduct,
 )
 from app.domestic.schemas import (
@@ -368,6 +369,105 @@ def test_order_dimensions_use_active_dictionary_values(db):
         )
         with pytest.raises(ValueError, match=f"{expected}.*数据字典"):
             order_service.create_order(db, payload, context["user"].id)
+
+
+def test_order_read_contract_uses_dynamic_labels_and_keeps_missing_history_blank(db):
+    context = _seed_attribute_context(db)
+    db.query(SysDict).filter_by(type=C.ORDER_TYPE_DICT, code="future_order").update(
+        {"label": "未来订单"}
+    )
+    db.query(SysDict).filter_by(type=C.ORDER_CHANNEL_DICT, code="live_stream").update(
+        {"label": "直播"}
+    )
+    created = order_service.create_order(
+        db,
+        _service_order(context, request_id="read-contract"),
+        context["user"].id,
+    )
+    historical = DomesticOrder(
+        domestic_no="DO20260901-999",
+        order_no="HISTORY-NULL",
+        order_date=date(2026, 9, 1),
+        customer_id=context["customer"].id,
+        order_category="normal",
+        order_type=None,
+        order_channel=None,
+        status=C.ORDER_PRODUCING,
+        total_amount=0,
+        charged_amount=0,
+        next_line_no=1,
+        item_count=0,
+        total_unit_qty=0,
+        created_by=context["user"].id,
+        deleted_flag=0,
+    )
+    db.add(historical)
+    db.commit()
+
+    rows, total = order_service.list_orders(
+        db,
+        page_size=10,
+        order_category="special",
+        order_type="future_order",
+        order_channel="live_stream",
+    )
+    assert total == 1
+    assert {
+        key: rows[0][key]
+        for key in (
+            "order_category",
+            "order_category_label",
+            "order_type",
+            "order_type_label",
+            "order_channel",
+            "order_channel_label",
+        )
+    } == {
+        "order_category": "special",
+        "order_category_label": "特单",
+        "order_type": "future_order",
+        "order_type_label": "未来订单",
+        "order_channel": "live_stream",
+        "order_channel_label": "直播",
+    }
+
+    detail = order_service.get_order_detail(db, created["id"])
+    assert (
+        detail["order_category_label"],
+        detail["order_type_label"],
+        detail["order_channel_label"],
+    ) == ("特单", "未来订单", "直播")
+
+    history = order_service.get_order_detail(db, historical.id)
+    assert history["order_type"] is None
+    assert history["order_channel"] is None
+    assert history["order_type_label"] == "未填写"
+    assert history["order_channel_label"] == "未填写"
+
+
+def test_scan_result_returns_all_three_order_dimensions(db):
+    context = _seed_attribute_context(db)
+    db.query(SysDict).filter_by(type=C.ORDER_TYPE_DICT, code="future_order").update(
+        {"label": "未来订单"}
+    )
+    db.query(SysDict).filter_by(type=C.ORDER_CHANNEL_DICT, code="live_stream").update(
+        {"label": "直播"}
+    )
+    created = order_service.create_order(
+        db,
+        _service_order(context, request_id="scan-dimensions"),
+        context["user"].id,
+    )
+    item = db.query(DomesticOrderItem).filter_by(order_id=created["id"]).one()
+
+    result = report_service.scan_item(db, item.id, context["user"].id)
+
+    assert result["order_category"] == "special"
+    assert result["order_category_label"] == "特单"
+    assert result["order_type"] == "future_order"
+    assert result["order_type_label"] == "未来订单"
+    assert result["order_channel"] == "live_stream"
+    assert result["order_channel_label"] == "直播"
 
 
 def test_create_order_replay_uses_saved_hash_after_dimension_is_disabled(db):

@@ -363,7 +363,9 @@ def list_orders(
     keyword: str = Query(""),
     status: int | None = Query(None),
     customer_id: int | None = Query(None),
-    order_type: str = Query("", pattern="^(normal|special)?$"),
+    order_category: str = Query("", pattern="^(normal|special)?$"),
+    order_type: str = Query(""),
+    order_channel: str = Query(""),
     date_start: date | None = Query(None),
     date_end: date | None = Query(None),
     sort_field: str = Query(""),
@@ -373,7 +375,8 @@ def list_orders(
 ):
     items, total = order_service.list_orders(
         db, page=page, page_size=page_size, keyword=keyword, status=status,
-        customer_id=customer_id, order_type=order_type,
+        customer_id=customer_id, order_category=order_category,
+        order_type=order_type, order_channel=order_channel,
         date_start=date_start, date_end=date_end,
         sort_field=sort_field, sort_order=sort_order,
     )
@@ -588,7 +591,12 @@ def get_print_card(
         "order_no": order.order_no,
         "order_date": order.order_date,
         "customer_name": detail["customer_name"],
+        "order_category": detail["order_category"],
+        "order_category_label": detail["order_category_label"],
+        "order_type": detail["order_type"],
         "order_type_label": detail["order_type_label"],
+        "order_channel": detail["order_channel"],
+        "order_channel_label": detail["order_channel_label"],
         "qr_data": qr_data,
         "qr_code_base64": _qr_png_base64(qr_data),
         "printed_at": beijing_now(),

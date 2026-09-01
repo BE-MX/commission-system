@@ -306,13 +306,26 @@ def scan_item(db: Session, item_id: int, user_id: int) -> dict:
     order = db.query(DomesticOrder).get(item.order_id)
     customer = db.query(DomesticCustomer).get(order.customer_id) if order else None
     steps = progress_service.build_progress_view(db, item)
+    if order:
+        from app.domestic.order_service import order_dimension_view
+
+        dimensions = order_dimension_view(db, order)
+    else:
+        dimensions = {
+            "order_category": None,
+            "order_category_label": "未填写",
+            "order_type": None,
+            "order_type_label": "未填写",
+            "order_channel": None,
+            "order_channel_label": "未填写",
+        }
 
     base = {
         "item_id": item.id,
         "order_id": item.order_id,
         "domestic_no": order.domestic_no if order else None,
         "order_no": order.order_no if order else None,
-        "order_type_label": C.ORDER_TYPES.get(order.order_type) if order else None,
+        **dimensions,
         "customer_name": customer.shop_name if customer else None,
         "product_name": item.product_name,
         "line_no": item.line_no,
@@ -1069,6 +1082,9 @@ def _log_rows_to_view(db: Session, logs: list[DomesticReportLog]) -> list[dict]:
     orders = {
         o.id: o for o in db.query(DomesticOrder).filter(DomesticOrder.id.in_(order_ids or {0})).all()
     }
+    from app.domestic.order_service import dimension_label_maps, order_dimension_view
+
+    resolved_dimension_labels = dimension_label_maps(db, list(orders.values()))
     process_names = dict(
         db.query(Process.id, Process.name).filter(Process.id.in_({log.process_id for log in logs})).all()
     )
@@ -1094,6 +1110,17 @@ def _log_rows_to_view(db: Session, logs: list[DomesticReportLog]) -> list[dict]:
             "product_name": item.product_name if item else None,
             "domestic_no": order.domestic_no if order else None,
             "order_no": order.order_no if order else None,
+            **(
+                order_dimension_view(db, order, resolved_dimension_labels)
+                if order else {
+                    "order_category": None,
+                    "order_category_label": "未填写",
+                    "order_type": None,
+                    "order_type_label": "未填写",
+                    "order_channel": None,
+                    "order_channel_label": "未填写",
+                }
+            ),
             "process_id": log.process_id,
             "process_name": process_names.get(log.process_id),
             "step_order": log.step_order,

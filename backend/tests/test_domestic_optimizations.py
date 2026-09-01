@@ -39,6 +39,7 @@ from app.domestic.schemas import (
 )
 from app.mini.schemas import DomesticSubmitRequest
 from app.production.models import Process, ProcessRoute, ProcessRouteStep, UserProcessBinding
+from app.system.models import SysDict
 
 
 def _user(db, username):
@@ -70,10 +71,28 @@ def _attrs():
         size="S",
         length="15厘米",
         density="65%",
+        hair_style_series="直发",
     )
 
 
+def _seed_order_values(db):
+    attrs = _attrs()
+    values = {
+        C.ORDER_TYPE_DICT: "first_order",
+        C.ORDER_CHANNEL_DICT: "wechat",
+    }
+    for field, dict_type in C.ATTR_DICTS[attrs.product_type].items():
+        value = getattr(attrs, field)
+        if value is not None:
+            values[dict_type] = value
+    for dict_type, code in values.items():
+        if not db.query(SysDict.id).filter_by(type=dict_type, code=code).first():
+            db.add(SysDict(type=dict_type, code=code, label=code, sort=1, is_active=True))
+    db.flush()
+
+
 def _route_and_workers(db):
+    _seed_order_values(db)
     route = ProcessRoute(name="逐件路线", status=1)
     db.add(route)
     db.flush()
@@ -102,6 +121,9 @@ def _create_order(db, creator, customer, *, qty=5, price="10.00", is_draft=False
             order_no="OPT-001",
             order_date=date(2026, 8, 17),
             customer_id=customer.id,
+            order_category="normal",
+            order_type="first_order",
+            order_channel="wechat",
             is_draft=is_draft,
             items=[OrderItemInput(
                 attrs=_attrs(), order_qty=qty, unit_price=Decimal(price),
@@ -260,6 +282,9 @@ def test_formal_order_request_id_prevents_double_charge(db):
         order_no="RETRY-001",
         order_date=date(2026, 8, 17),
         customer_id=customer.id,
+        order_category="normal",
+        order_type="first_order",
+        order_channel="wechat",
         items=[OrderItemInput(attrs=_attrs(), order_qty=2, unit_price=Decimal("10.00"))],
     )
 
@@ -328,6 +353,9 @@ def test_order_scale_limits_creation_and_append(db):
         "order_no": "TOO-LARGE",
         "order_date": date(2026, 8, 17),
         "customer_id": 1,
+        "order_category": "normal",
+        "order_type": "first_order",
+        "order_channel": "wechat",
     }
     with pytest.raises(ValueError, match="50"):
         OrderCreate(**base, items=[item] * 51)

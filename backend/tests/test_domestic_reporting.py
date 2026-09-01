@@ -27,6 +27,7 @@ from app.domestic.schemas import (
     ProductAttrs,
 )
 from app.production.models import Process, ProcessRoute, ProcessRouteStep, UserProcessBinding
+from app.system.models import SysDict
 
 PROCESS_NAMES = ["制网", "钩织", "定型"]
 
@@ -72,6 +73,7 @@ def workers(db, route):
 @pytest.fixture
 def craft_mapping(db, route):
     db.add(DomesticCraftRoute(product_type="cap", craft="递针旋全头套", route_id=route.id))
+    _seed_order_values(db, _attrs())
     db.flush()
     return route
 
@@ -80,17 +82,37 @@ def _attrs(craft="递针旋全头套"):
     return ProductAttrs(
         product_type="cap", craft=craft, net_color="呼吸红",
         size="s", length="15厘米", density="65%",
+        hair_style_series="直发",
     )
 
 
+def _seed_order_values(db, attrs):
+    values = {
+        C.ORDER_TYPE_DICT: "first_order",
+        C.ORDER_CHANNEL_DICT: "wechat",
+    }
+    for field, dict_type in C.ATTR_DICTS[attrs.product_type].items():
+        value = getattr(attrs, field)
+        if value is not None:
+            values[dict_type] = value
+    for dict_type, code in values.items():
+        if not db.query(SysDict.id).filter_by(type=dict_type, code=code).first():
+            db.add(SysDict(type=dict_type, code=code, label=code, sort=1, is_active=True))
+    db.flush()
+
+
 def _create_order(db, user, qty=20, craft="递针旋全头套"):
+    attrs = _attrs(craft)
+    _seed_order_values(db, attrs)
     payload = OrderCreate(
         request_id=str(uuid4()),
         order_no="710",
         order_date=date(2026, 7, 27),
         customer_shop_name="马姐假发",
-        order_type="normal",
-        items=[OrderItemInput(attrs=_attrs(craft), order_qty=qty)],
+        order_category="normal",
+        order_type="first_order",
+        order_channel="wechat",
+        items=[OrderItemInput(attrs=attrs, order_qty=qty)],
     )
     return order_service.create_order(db, payload, user.id)
 
@@ -481,7 +503,22 @@ def test_same_attrs_reuse_one_product(db, craft_mapping, workers):
     assert first.product_id == second.product_id
     product = db.query(product_service.DomesticProduct).get(first.product_id)
     assert product.use_count == 2
-    assert product.name == "头套/递针旋全头套/呼吸红/s/15厘米/65%"
+    assert product.name == "头套/递针旋全头套/呼吸红/s/15厘米/65%/直发"
+
+
+def test_report_history_returns_all_order_dimensions(db, craft_mapping, workers):
+    creator = _user(db, "report-dimension-planner")
+    item = _item_of(db, _create_order(db, creator, qty=2)["id"])
+    _report(db, item, 0, workers[0], 1)
+
+    rows = report_service.list_today_reports(db, workers[0].id)
+
+    assert rows[0]["order_category"] == "normal"
+    assert rows[0]["order_category_label"] == "普货"
+    assert rows[0]["order_type"] == "first_order"
+    assert rows[0]["order_type_label"] == "first_order"
+    assert rows[0]["order_channel"] == "wechat"
+    assert rows[0]["order_channel_label"] == "wechat"
 
 
 def test_piece_ignores_net_color_in_identity(db):
@@ -645,6 +682,7 @@ def test_multi_item_order_status_rolls_up_partially(db, craft_mapping, workers):
     payload = OrderCreate(
         request_id=str(uuid4()),
         order_no="712", order_date=date(2026, 7, 27), customer_shop_name="马姐假发",
+        order_category="normal", order_type="first_order", order_channel="wechat",
         items=[
             OrderItemInput(attrs=_attrs(), order_qty=3),
             OrderItemInput(attrs=_attrs(), order_qty=5),
@@ -703,6 +741,7 @@ def test_oversized_attrs_rejected_as_validation_error(db):
     attrs = ProductAttrs(
         product_type="cap", craft="工" * 64, net_color="色" * 64,
         size="码" * 64, length="长" * 32, density="量" * 32,
+        hair_style_series="发" * 64,
     )
     with pytest.raises(ValueError, match="属性值太长"):
         product_service.build_attrs_key(attrs)

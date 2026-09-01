@@ -44,6 +44,7 @@ from app.domestic.schemas import (
     OrderUpdate,
     ProductAttrs,
 )
+from app.system.models import SysDict
 
 logger = logging.getLogger("commission")
 
@@ -329,6 +330,54 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
 # ── 列表与详情 ────────────────────────────────────────
 
 
+def dimension_label_maps(
+    db: Session,
+    orders: list[DomesticOrder],
+) -> tuple[dict[str, str], dict[str, str]]:
+    """一次解析一批订单的动态类型/渠道标签，历史停用项仍保留原标签。"""
+    type_codes = {order.order_type for order in orders if order.order_type}
+    channel_codes = {order.order_channel for order in orders if order.order_channel}
+    codes = type_codes | channel_codes
+    if not codes:
+        return {}, {}
+    rows = db.query(SysDict.type, SysDict.code, SysDict.label).filter(
+        SysDict.type.in_((C.ORDER_TYPE_DICT, C.ORDER_CHANNEL_DICT)),
+        SysDict.code.in_(codes),
+    ).all()
+    type_labels = {
+        code: label for dict_type, code, label in rows if dict_type == C.ORDER_TYPE_DICT
+    }
+    channel_labels = {
+        code: label for dict_type, code, label in rows if dict_type == C.ORDER_CHANNEL_DICT
+    }
+    return type_labels, channel_labels
+
+
+def order_dimension_view(
+    db: Session,
+    order: DomesticOrder,
+    label_maps: tuple[dict[str, str], dict[str, str]] | None = None,
+) -> dict:
+    """统一输出订单类别、类型、渠道；NULL 历史值不猜测。"""
+    type_labels, channel_labels = label_maps or dimension_label_maps(db, [order])
+    return {
+        "order_category": order.order_category,
+        "order_category_label": C.ORDER_CATEGORIES.get(
+            order.order_category, order.order_category or "未填写"
+        ),
+        "order_type": order.order_type,
+        "order_type_label": (
+            type_labels.get(order.order_type, order.order_type)
+            if order.order_type else "未填写"
+        ),
+        "order_channel": order.order_channel,
+        "order_channel_label": (
+            channel_labels.get(order.order_channel, order.order_channel)
+            if order.order_channel else "未填写"
+        ),
+    }
+
+
 def _passage_progress_aggregates(db: Session, item_rows: list) -> dict[int, dict[str, int]]:
     """批量计算列表页每条明细的通行进度，避免逐明细构建完整工序视图。"""
     item_ids = [row.id for row in item_rows]
@@ -438,7 +487,9 @@ def list_orders(
     keyword: str = "",
     status: int | None = None,
     customer_id: int | None = None,
+    order_category: str = "",
     order_type: str = "",
+    order_channel: str = "",
     date_start: date | None = None,
     date_end: date | None = None,
     sort_field: str = "",
@@ -453,8 +504,12 @@ def list_orders(
         q = q.filter(DomesticOrder.status == status)
     if customer_id:
         q = q.filter(DomesticOrder.customer_id == customer_id)
+    if order_category:
+        q = q.filter(DomesticOrder.order_category == order_category)
     if order_type:
         q = q.filter(DomesticOrder.order_type == order_type)
+    if order_channel:
+        q = q.filter(DomesticOrder.order_channel == order_channel)
     if date_start:
         q = q.filter(DomesticOrder.order_date >= date_start)
     if date_end:
@@ -480,6 +535,7 @@ def list_orders(
         .filter(DomesticCustomer.id.in_({o.customer_id for o in orders}))
         .all()
     )
+    resolved_dimension_labels = dimension_label_maps(db, orders)
 
     # 明细聚合与进度聚合各一条批量 SQL，避免逐单查询
     item_rows = (
@@ -517,8 +573,7 @@ def list_orders(
             "order_date": o.order_date,
             "customer_id": o.customer_id,
             "customer_name": customer_names.get(o.customer_id),
-            "order_type": o.order_type,
-            "order_type_label": C.ORDER_TYPES.get(o.order_type, o.order_type),
+            **order_dimension_view(db, o, resolved_dimension_labels),
             "status": o.status,
             "status_label": C.ORDER_STATUS_LABELS.get(o.status, str(o.status)),
             "item_count": bucket["item_count"],
@@ -669,8 +724,7 @@ def get_order_detail(
         "customer_contact": customer.contact if customer else None,
         "customer_phone": customer.phone if customer else None,
         "customer_address": customer.address if customer else None,
-        "order_type": order.order_type,
-        "order_type_label": C.ORDER_TYPES.get(order.order_type, order.order_type),
+        **order_dimension_view(db, order),
         "status": order.status,
         "status_label": C.ORDER_STATUS_LABELS.get(order.status, str(order.status)),
         "total_amount": float(order.total_amount or 0),

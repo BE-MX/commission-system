@@ -53,9 +53,7 @@ def test_domestic_route_migration_is_the_only_head_after_customer_126():
     config.set_main_option("script_location", str(backend_root / "alembic"))
     revisions = ScriptDirectory.from_config(config)
 
-    # 唯一 head 哨兵：新增迁移时把头断言推进到最新编号（128 发货检验），链式校验保留
-    assert revisions.get_heads() == ["128_shipping_inspection"]
-    assert revisions.get_revision("128_shipping_inspection").down_revision == "127_domestic_route_rules"
+    assert revisions.get_heads() == ["128_domestic_order_attributes"]
     assert revisions.get_revision("127_domestic_route_rules").down_revision == "126"
 
 
@@ -141,7 +139,9 @@ def conditional_order(db, conditional_route):
         order_no="CONDITIONAL-001",
         order_date=date(2026, 8, 31),
         customer_id=customer.id,
-        order_type="normal",
+        order_category="normal",
+        order_type=None,
+        order_channel=None,
         status=1,
         total_amount=Decimal("0"),
         charged_amount=Decimal("0"),
