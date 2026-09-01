@@ -101,7 +101,13 @@ def find_or_create_product(db: Session, attrs: ProductAttrs) -> DomesticProduct:
         savepoint.rollback()
         logger.warning("domestic product race on attrs_key=%s, refetch", key)
         print(f"[domestic] product race attrs_key={key}, refetch", flush=True)
-        product = db.query(DomesticProduct).filter(DomesticProduct.attrs_key == key).first()
+        product = (
+            db.query(DomesticProduct)
+            .filter(DomesticProduct.attrs_key == key)
+            .populate_existing()
+            .with_for_update()
+            .first()
+        )
         if product is None:  # 理论不可达：撞 unique 说明行已存在
             raise
     return product

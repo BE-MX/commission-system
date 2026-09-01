@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy.exc import IntegrityError
 
 from app.auth.models import ArkUser
 from app.domestic import attribute_service, order_service, product_service
@@ -559,3 +560,75 @@ def test_product_key_cannot_collide_when_special_values_contain_separator():
     )
 
     assert product_service.build_attrs_key(first) != product_service.build_attrs_key(second)
+
+
+def test_product_race_refetch_uses_locking_current_read(monkeypatch):
+    attrs = ProductAttrs(**_cap_attrs())
+    winner = DomesticProduct(
+        id=99,
+        attrs_key=product_service.build_attrs_key(attrs),
+        name="并发胜方产品",
+        product_type="cap",
+        craft=attrs.craft,
+        size=attrs.size,
+        length=attrs.length,
+        hair_style_series=attrs.hair_style_series,
+        status=1,
+        use_count=0,
+    )
+
+    class FakeSavepoint:
+        def commit(self):
+            raise AssertionError("flush 冲突后不应提交 savepoint")
+
+        def rollback(self):
+            return None
+
+    class FakeQuery:
+        def __init__(self, result):
+            self.result = result
+            self.populate_existing_called = False
+            self.with_for_update_called = False
+
+        def filter(self, *_args):
+            return self
+
+        def populate_existing(self):
+            self.populate_existing_called = True
+            return self
+
+        def with_for_update(self):
+            self.with_for_update_called = True
+            return self
+
+        def first(self):
+            return self.result
+
+    class FakeDb:
+        def __init__(self):
+            self.queries = [FakeQuery(None), FakeQuery(winner)]
+            self.query_index = 0
+
+        def query(self, _model):
+            query = self.queries[self.query_index]
+            self.query_index += 1
+            return query
+
+        def begin_nested(self):
+            return FakeSavepoint()
+
+        def add(self, _row):
+            return None
+
+        def flush(self):
+            raise IntegrityError("INSERT", {}, Exception("duplicate attrs_key"))
+
+    fake_db = FakeDb()
+    monkeypatch.setattr(product_service, "resolve_route_id", lambda *_args: None)
+
+    product = product_service.find_or_create_product(fake_db, attrs)
+
+    refetch = fake_db.queries[1]
+    assert product is winner
+    assert refetch.populate_existing_called is True
+    assert refetch.with_for_update_called is True
