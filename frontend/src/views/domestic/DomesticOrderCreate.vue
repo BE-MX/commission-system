@@ -84,6 +84,11 @@
         </div>
       </div>
 
+      <el-alert
+        v-if="form.order_category === 'special'" class="special-hint" type="info"
+        :closable="false" show-icon title="特单属性可直接输入新选项，保存订单时自动创建"
+      />
+
       <el-form :model="item" label-width="92px">
         <el-row :gutter="16">
           <el-col :span="6">
@@ -96,7 +101,7 @@
           <el-col :span="6">
             <el-form-item :label="item.attrs.product_type === 'cap' ? '头套工艺' : '发片工艺/尺寸'" required>
               <el-select
-                v-model="item.attrs.craft" placeholder="选择工艺" filterable
+                v-model="item.attrs.craft" :placeholder="attributePlaceholder(item.attrs.product_type, 'craft')" filterable
                 :allow-create="form.order_category === 'special'"
                 :default-first-option="form.order_category === 'special'" style="width: 100%"
               >
@@ -107,7 +112,7 @@
           <el-col v-if="hasField(item.attrs.product_type, 'net_color')" :span="6">
             <el-form-item label="网帽颜色">
               <el-select
-                v-model="item.attrs.net_color" placeholder="选择网帽颜色（选填）" clearable filterable
+                v-model="item.attrs.net_color" :placeholder="attributePlaceholder(item.attrs.product_type, 'net_color')" clearable filterable
                 :allow-create="form.order_category === 'special'"
                 :default-first-option="form.order_category === 'special'" style="width: 100%"
               >
@@ -139,7 +144,7 @@
           <el-col v-if="hasField(item.attrs.product_type, 'size')" :span="6">
             <el-form-item label="头套尺码" required>
               <el-select
-                v-model="item.attrs.size" placeholder="选择尺码" filterable
+                v-model="item.attrs.size" :placeholder="attributePlaceholder(item.attrs.product_type, 'size')" filterable
                 :allow-create="form.order_category === 'special'"
                 :default-first-option="form.order_category === 'special'" style="width: 100%"
               >
@@ -150,7 +155,7 @@
           <el-col :span="6">
             <el-form-item label="发长" required>
               <el-select
-                v-model="item.attrs.length" placeholder="选择发长" filterable
+                v-model="item.attrs.length" :placeholder="attributePlaceholder(item.attrs.product_type, 'length')" filterable
                 :allow-create="form.order_category === 'special'"
                 :default-first-option="form.order_category === 'special'" style="width: 100%"
                 @change="onLengthChange(item)"
@@ -162,7 +167,7 @@
           <el-col v-if="visibleFields(item).includes('density')" :span="6">
             <el-form-item label="发量" required>
               <el-select
-                v-model="item.attrs.density" placeholder="选择发量" filterable
+                v-model="item.attrs.density" :placeholder="attributePlaceholder(item.attrs.product_type, 'density')" filterable
                 :allow-create="form.order_category === 'special'"
                 :default-first-option="form.order_category === 'special'" style="width: 100%"
               >
@@ -173,7 +178,7 @@
           <el-col v-if="hasField(item.attrs.product_type, 'hair_style_series')" :span="6">
             <el-form-item label="发型系列" required>
               <el-select
-                v-model="item.attrs.hair_style_series" placeholder="选择发型系列" filterable
+                v-model="item.attrs.hair_style_series" :placeholder="attributePlaceholder(item.attrs.product_type, 'hair_style_series')" filterable
                 :allow-create="form.order_category === 'special'"
                 :default-first-option="form.order_category === 'special'" style="width: 100%"
               >
@@ -243,7 +248,8 @@ import { useDomesticOrderCreate } from './composables/useDomesticOrderCreate'
 
 const {
   loading, submitting, options, customers, customerLoading, form,
-  attrOptions, hasField, visibleFields, routeOf, unroutedCount, orderTotal, selectedCustomer,
+  attrOptions, attributePlaceholder, hasField, visibleFields,
+  routeOf, unroutedCount, orderTotal, selectedCustomer,
   onProductTypeChange, onLengthChange, onOrderCategoryChange, addItem, copyItem, removeItem,
   makeUploadFn, removeImage, searchCustomers, submit,
 } = useDomesticOrderCreate()
@@ -277,6 +283,7 @@ const {
 
 .item-head .panel-title { margin-bottom: 12px; }
 .item-actions { display: flex; gap: 4px; }
+.special-hint { margin-bottom: 12px; }
 
 .new-customer { margin-top: 8px; }
 .balance-hint { margin-top: 6px; color: var(--el-color-success); font-size: 12px; }

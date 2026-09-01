@@ -8,6 +8,7 @@ import {
   normalizeItemAttrs,
   requiredAttributeFields,
   routeForItem,
+  validateItemAttributes,
   visibleAttributeFields,
 } from '../src/views/domestic/domesticAttributeRules.js'
 
@@ -97,12 +98,31 @@ test('特单切回普货只清除非标准值并保留标准值', () => {
     size: 'M', density: '65%', hair_style_series: '直发',
   }
 
-  clearNonstandardAttributes(attrs, options)
+  const removedFields = clearNonstandardAttributes(attrs, options)
 
   assert.deepEqual(attrs, {
     product_type: 'cap', craft: '', length: '15厘米', net_color: '紫网全头套',
     size: 'M', density: '65%', hair_style_series: '直发',
   })
+  assert.deepEqual(removedFields, ['craft'])
+})
+
+test('属性校验会 trim，把空白视为空并报告长度上限', () => {
+  const blank = {
+    product_type: 'piece', craft: '   ', length: ' 20厘米 ',
+  }
+  assert.equal(validateItemAttributes(blank), '工艺/尺寸不能为空')
+
+  const overlongCraft = {
+    product_type: 'piece', craft: '工'.repeat(33), length: '20厘米',
+  }
+  assert.equal(validateItemAttributes(overlongCraft), '工艺/尺寸最多输入32个字符')
+
+  const overlong = {
+    product_type: 'cap', craft: '递旋', length: '20厘米', size: 'M',
+    net_color: '', density: '', hair_style_series: ` ${'直'.repeat(65)} `,
+  }
+  assert.equal(validateItemAttributes(overlong), '发型系列最多输入64个字符')
 })
 
 test('载荷不发送非当前产品字段或非 15cm 发量', () => {
@@ -121,6 +141,16 @@ test('载荷不发送非当前产品字段或非 15cm 发量', () => {
   })
 })
 
+test('载荷统一 trim 可见属性并丢弃空白选填值', () => {
+  assert.deepEqual(normalizeItemAttrs({
+    product_type: 'cap', craft: ' 递旋 ', length: ' 20厘米 ', net_color: '   ',
+    size: ' M ', density: '65%', hair_style_series: ' 直发 ',
+  }), {
+    product_type: 'cap', craft: '递旋', length: '20厘米', size: 'M',
+    hair_style_series: '直发',
+  })
+})
+
 test('特单自定义工艺没有精确映射时预览产品默认路线', () => {
   const item = { attrs: { product_type: 'cap', craft: '手工递针' } }
   assert.deepEqual(routeForItem(item, 'special', [], options.default_routes), {
@@ -130,7 +160,7 @@ test('特单自定义工艺没有精确映射时预览产品默认路线', () =>
 })
 
 test('精确工艺映射优先于特单默认路线', () => {
-  const item = { attrs: { product_type: 'cap', craft: '递旋' } }
+  const item = { attrs: { product_type: 'cap', craft: ' 递旋 ' } }
   const mappings = [{ product_type: 'cap', craft: '递旋', route_id: 3, route_name: '递旋路线' }]
   assert.deepEqual(routeForItem(item, 'special', mappings, options.default_routes), mappings[0])
 })
@@ -151,9 +181,12 @@ test('下单、列表和产品页保持新属性合约', () => {
   assert.match(createView, /v-model="form\.order_type"/)
   assert.match(createView, /v-model="form\.order_channel"/)
   assert.match(createView, /:allow-create="form\.order_category === 'special'"/)
+  assert.match(createView, /可直接输入新选项/)
+  assert.doesNotMatch(createView, /v-model="form\.order_(?:type|channel)"[\s\S]{0,160}allow-create/)
   assert.match(createView, /发片工艺\/尺寸/)
   assert.match(createView, /visibleFields\(item\)\.includes\('density'\)/)
   assert.match(createLogic, /normalizeItemAttrs\(item\.attrs\)/)
+  assert.match(createLogic, /ElMessage\.info/)
   assert.match(createLogic, /order_type: ''/)
   assert.match(createLogic, /order_channel: ''/)
   assert.doesNotMatch(createLogic, /form\.order_(?:type|channel) \|\|=/)

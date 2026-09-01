@@ -13,12 +13,13 @@ import {
 import { msgError } from '@/utils/feedback'
 import { currentBeijingDate } from '@/utils/datetime'
 import {
+  attributeFieldLabel,
   attributeOptions,
   clearInapplicableAttributes,
   clearNonstandardAttributes,
   normalizeItemAttrs,
-  requiredAttributeFields,
   routeForItem,
+  validateItemAttributes,
   visibleAttributeFields,
 } from '@/views/domestic/domesticAttributeRules'
 
@@ -78,6 +79,13 @@ export function useDomesticOrderCreate() {
     return attributeOptions(options.value, form.order_category, productType, field)
   }
 
+  function attributePlaceholder(productType, field) {
+    const label = attributeFieldLabel(productType, field)
+    return form.order_category === 'special'
+      ? `${label}：可选择或直接输入新选项`
+      : `选择${label}`
+  }
+
   function hasField(productType, field) {
     return Boolean(options.value.attr_dicts?.[productType]?.[field])
   }
@@ -117,15 +125,19 @@ export function useDomesticOrderCreate() {
 
   function onOrderCategoryChange(category) {
     if (category !== 'normal') return
-    form.items.forEach(item => clearNonstandardAttributes(item.attrs, options.value))
+    const removedLabels = new Set()
+    form.items.forEach(item => {
+      for (const field of clearNonstandardAttributes(item.attrs, options.value)) {
+        removedLabels.add(attributeFieldLabel(item.attrs.product_type, field))
+      }
+    })
+    if (removedLabels.size) {
+      ElMessage.info(`已清除非普货标准选项：${[...removedLabels].join('、')}；其余标准值已保留`)
+    }
   }
 
   function visibleFields(item) {
     return visibleAttributeFields(item.attrs)
-  }
-
-  function requiredFields(item) {
-    return requiredAttributeFields(item.attrs)
   }
 
   function addItem() {
@@ -195,11 +207,8 @@ export function useDomesticOrderCreate() {
     if (!form.order_channel) return '请选择订单渠道'
     for (const [idx, item] of form.items.entries()) {
       const label = `第 ${idx + 1} 行明细`
-      for (const field of requiredFields(item)) {
-        if (!item.attrs[field]) {
-          return `${label}的属性没选全`
-        }
-      }
+      const attrError = validateItemAttributes(item.attrs)
+      if (attrError) return `${label}：${attrError}`
       if (!(item.order_qty > 0)) return `${label}的数量要大于 0`
       if (!(Number(item.unit_price) >= 0)) return `${label}的单价不能小于 0`
     }
@@ -287,7 +296,8 @@ export function useDomesticOrderCreate() {
 
   return {
     loading, submitting, options, customers, customerLoading, form,
-    attrOptions, hasField, visibleFields, routeOf, unroutedCount, orderTotal, selectedCustomer,
+    attrOptions, attributePlaceholder, hasField, visibleFields,
+    routeOf, unroutedCount, orderTotal, selectedCustomer,
     onProductTypeChange, onLengthChange, onOrderCategoryChange, addItem, copyItem, removeItem,
     makeUploadFn, removeImage, searchCustomers, submit,
   }
