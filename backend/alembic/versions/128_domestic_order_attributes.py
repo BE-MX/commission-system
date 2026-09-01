@@ -1,8 +1,8 @@
 """Rename domestic order category and add order/product attributes.
 
-Downgrade cannot restore the old NOT NULL product constraints after new rows
-with nullable size/density have been created; production rollback is a schema
-cutover operation, not a data-compatibility path.
+When downgrading, nullable size/density values created under the new contract
+are converted to empty strings before restoring the old NOT NULL constraints.
+Product rows are preserved, but the old schema cannot represent nullability.
 
 Revision ID: 128_domestic_order_attributes
 Revises: 127_domestic_route_rules
@@ -78,6 +78,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute(
+        sa.text(
+            "UPDATE ark_domestic_products "
+            "SET density = '' WHERE density IS NULL"
+        )
+    )
     op.alter_column(
         "ark_domestic_products",
         "density",
@@ -86,6 +92,12 @@ def downgrade() -> None:
         nullable=False,
         existing_comment="发量（仅 15 厘米头套）",
         comment="发量",
+    )
+    op.execute(
+        sa.text(
+            "UPDATE ark_domestic_products "
+            "SET size = '' WHERE size IS NULL"
+        )
     )
     op.alter_column(
         "ark_domestic_products",

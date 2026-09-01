@@ -1,6 +1,8 @@
 """内贸订单头与产品属性的结构契约。"""
 
+import importlib.util
 from datetime import date
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -142,3 +144,51 @@ def test_models_expose_new_nullable_database_contract():
     assert product_columns.size.nullable is True
     assert product_columns.density.nullable is True
     assert product_columns.hair_style_series.nullable is True
+
+
+def test_downgrade_normalizes_null_product_attrs_before_not_null(monkeypatch):
+    migration_path = (
+        Path(__file__).parents[1]
+        / "alembic"
+        / "versions"
+        / "128_domestic_order_attributes.py"
+    )
+    spec = importlib.util.spec_from_file_location("domestic_attributes_128", migration_path)
+    migration = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(migration)
+
+    calls = []
+    monkeypatch.setattr(
+        migration.op,
+        "execute",
+        lambda statement: calls.append(("execute", str(statement), {})),
+    )
+    monkeypatch.setattr(
+        migration.op,
+        "alter_column",
+        lambda table, column, **kwargs: calls.append(
+            ("alter_column", f"{table}.{column}", kwargs)
+        ),
+    )
+    monkeypatch.setattr(migration.op, "drop_column", lambda *args, **kwargs: None)
+
+    migration.downgrade()
+
+    for column in ("density", "size"):
+        update_indexes = [
+            index
+            for index, (operation, statement, _) in enumerate(calls)
+            if operation == "execute"
+            and f"SET {column} = ''" in statement
+            and f"WHERE {column} IS NULL" in statement
+        ]
+        assert update_indexes, f"downgrade must normalize NULL {column} values"
+        alter_index = next(
+            index
+            for index, (operation, target, kwargs) in enumerate(calls)
+            if operation == "alter_column"
+            and target == f"ark_domestic_products.{column}"
+            and kwargs.get("nullable") is False
+        )
+        assert update_indexes[0] < alter_index
