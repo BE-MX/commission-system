@@ -78,7 +78,7 @@
 
 `/api/domestic/options` 同时返回订单类别、订单类型、订单渠道、标准属性值和特单属性值。前端按订单类别决定是否合并属性值；普货订单的后端校验只接受标准属性字典，特单可接受标准值或特单值。
 
-所有字典 `code` 按大小写精确匹配，不能受 MySQL `utf8mb4_unicode_ci` 影响：`FIRST_ORDER` 不等于 `first_order`，尺码 `SS` 不等于 `ss`。特单输入与标准值仅大小写不同时按自定义值处理；对应 `_special` 字典也只复用大小写完全一致的项，唯一键竞争后不得误拿仅大小写不同的行。
+订单类型、订单渠道和普货属性的字典 `code` 按大小写精确匹配，不能受 MySQL `utf8mb4_unicode_ci` 影响：`FIRST_ORDER` 不等于 `first_order`，普货尺码 `SS` 不接受 `ss`。特单输入若与启用标准项仅大小写不同，统一为标准项 canonical `code`；否则若与启用 `_special` 项仅大小写不同，统一为该特单项 canonical `code`，不存在时才创建。唯一键竞争的启用胜方同样 canonicalize，停用胜方明确拒绝。canonical 值必须写回明细属性，再进入工艺路线解析和产品 find-or-create。MySQL 对字典 `code`、工艺映射 `craft` 与产品 `attrs_key` 使用二进制精确查询并做 Python 字符串二次核对，下游大小写碰撞不得误复用。
 
 ## 特单自动创建
 

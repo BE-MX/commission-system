@@ -116,16 +116,30 @@ def test_order_update_keeps_patch_semantics():
 
 
 def test_mysql_dictionary_code_comparison_is_binary_exact():
-    statement = select(SysDict.id).where(
-        attribute_service._exact_code_predicate("mysql", "FIRST_ORDER")
-    )
+    statements = [
+        select(SysDict.id).where(
+            attribute_service._exact_code_predicate("mysql", "FIRST_ORDER")
+        ),
+        select(DomesticProduct.id).where(
+            product_service._exact_text_predicate(
+                "mysql", DomesticProduct.attrs_key, '["cap","ABC"]'
+            )
+        ),
+        select(DomesticCraftRoute.id).where(
+            product_service._exact_text_predicate(
+                "mysql", DomesticCraftRoute.craft, "ABC"
+            )
+        ),
+    ]
 
-    sql = str(statement.compile(
+    sql = [str(statement.compile(
         dialect=mysql.dialect(),
         compile_kwargs={"literal_binds": True},
-    ))
+    )) for statement in statements]
 
-    assert "CAST(sys_dict.code AS BINARY) = 'FIRST_ORDER'" in sql
+    assert "CAST(sys_dict.code AS BINARY) = 'FIRST_ORDER'" in sql[0]
+    assert "CAST(ark_domestic_products.attrs_key AS BINARY)" in sql[1]
+    assert "CAST(ark_domestic_craft_routes.craft AS BINARY) = 'ABC'" in sql[2]
 
 
 class _FakeDictQuery:
@@ -141,8 +155,14 @@ class _FakeDictQuery:
     def with_for_update(self):
         return self
 
+    def order_by(self, *_columns):
+        return self
+
     def first(self):
         return self.row
+
+    def all(self):
+        return [] if self.row is None else [self.row]
 
 
 class _FakeSavepoint:
@@ -179,21 +199,21 @@ def test_active_value_rejects_case_different_row_even_if_database_returns_it():
     ) is None
 
 
-def test_special_value_unique_race_never_reuses_case_different_row():
-    inactive_wrong_case = _dict_row(
-        f"{C.DICT_CAP_SIZE}_special", "SS", active=False
-    )
+def test_special_value_unique_race_reuses_case_different_canonical_row():
     active_wrong_case = _dict_row(f"{C.DICT_CAP_SIZE}_special", "SS")
     db = _FakeMySQLDictDb([
-        inactive_wrong_case,
+        None,
+        None,
         active_wrong_case,
-        inactive_wrong_case,
+        active_wrong_case,
     ])
 
-    with pytest.raises(ValueError, match="大小写不同"):
-        attribute_service._create_special_value(
-            db, f"{C.DICT_CAP_SIZE}_special", "ss"
-        )
+    row = attribute_service._create_special_value(
+        db, f"{C.DICT_CAP_SIZE}_special", "ss"
+    )
+
+    assert row is active_wrong_case
+    assert row.code == "SS"
 
 
 def test_special_value_unique_race_reports_exact_inactive_winner():
@@ -201,7 +221,7 @@ def test_special_value_unique_race_reports_exact_inactive_winner():
         f"{C.DICT_CAP_SIZE}_special", "ss", active=False
     )
     db = _FakeMySQLDictDb(
-        [None, None, exact_inactive], conflict="inactive unique race"
+        [None, None, None, None, exact_inactive], conflict="inactive unique race"
     )
 
     with pytest.raises(ValueError, match="已停用"):
@@ -537,6 +557,9 @@ def test_special_craft_mapping_race_keeps_winning_route(monkeypatch):
             self.query_index += 1
             return query
 
+        def get_bind(self):
+            return type("Bind", (), {"dialect": type("Dialect", (), {"name": "mysql"})()})()
+
         def begin_nested(self):
             return FakeSavepoint()
 
@@ -561,6 +584,32 @@ def test_special_craft_mapping_race_keeps_winning_route(monkeypatch):
     assert refetch.with_for_update_called is True
     assert winning_mapping.route_id == 99
     assert winning_mapping.updated_by == 7
+
+
+def test_route_lookup_and_race_never_reuse_case_different_mapping(monkeypatch):
+    wrong_case = DomesticCraftRoute(
+        id=23,
+        product_type="cap",
+        craft="CustomCraft",
+        route_id=99,
+        updated_by=7,
+    )
+    lookup_db = _FakeMySQLDictDb([wrong_case])
+    assert product_service.resolve_route_id(lookup_db, "cap", "customcraft") is None
+
+    race_db = _FakeMySQLDictDb([wrong_case, wrong_case])
+    monkeypatch.setattr(
+        attribute_service,
+        "_default_route",
+        lambda *_args: ProcessRoute(id=11, name="默认路线", status=1),
+    )
+    with pytest.raises(ValueError, match="工艺映射.*大小写"):
+        attribute_service._ensure_special_craft_route(
+            race_db,
+            product_type="cap",
+            craft="customcraft",
+            user_id=8,
+        )
 
 
 def test_sqlite_concurrent_append_converges_on_one_special_option(tmp_path):
@@ -697,7 +746,7 @@ def test_normal_order_rejects_case_different_order_type_and_size(db):
         order_service.create_order(db, wrong_size, context["user"].id)
 
 
-def test_special_order_treats_case_different_standard_value_as_custom(db):
+def test_special_order_canonicalizes_case_different_standard_value(db):
     context = _seed_attribute_context(db)
     db.add(_dict_row(C.DICT_CAP_SIZE, "SS"))
     db.commit()
@@ -716,8 +765,77 @@ def test_special_order_treats_case_different_standard_value_as_custom(db):
     )
 
     assert result["id"]
+    order = db.get(DomesticOrder, result["id"])
+    item = db.query(DomesticOrderItem).filter_by(order_id=order.id).one()
+    product = db.get(DomesticProduct, item.product_id)
+    assert item.attrs_snapshot["size"] == "SS"
+    assert product.size == "SS"
     assert db.query(SysDict).filter_by(
-        type=f"{C.DICT_CAP_SIZE}_special", code="ss", is_active=True
+        type=f"{C.DICT_CAP_SIZE}_special", is_active=True
+    ).count() == 0
+
+
+def test_special_piece_canonicalizes_standard_craft_before_route_and_product(db):
+    context = _seed_attribute_context(db)
+    db.add(DomesticCraftRoute(
+        product_type="piece",
+        craft="U型13*15",
+        route_id=context["routes"]["piece"].id,
+        updated_by=context["user"].id,
+    ))
+    db.commit()
+
+    result = order_service.create_order(
+        db,
+        _service_order(
+            context,
+            request_id="case-sensitive-piece-craft",
+            items=[OrderItemInput(
+                attrs=ProductAttrs(
+                    product_type="piece",
+                    craft="u型13*15",
+                    length="20厘米",
+                ),
+                order_qty=1,
+            )],
+        ),
+        context["user"].id,
+    )
+
+    item = db.query(DomesticOrderItem).filter_by(order_id=result["id"]).one()
+    product = db.get(DomesticProduct, item.product_id)
+    assert item.attrs_snapshot["craft"] == "U型13*15"
+    assert product.craft == "U型13*15"
+    assert product.route_id == context["routes"]["piece"].id
+    assert db.query(SysDict).filter_by(
+        type=f"{C.DICT_PIECE_CRAFT_SIZE}_special", is_active=True
+    ).count() == 0
+
+
+def test_special_order_reuses_case_different_custom_canonical_value(db):
+    context = _seed_attribute_context(db)
+    db.add(_dict_row(f"{C.DICT_CAP_SIZE}_special", "CustomSize"))
+    db.commit()
+
+    result = order_service.create_order(
+        db,
+        _service_order(
+            context,
+            request_id="case-sensitive-custom-size",
+            items=[OrderItemInput(
+                attrs=ProductAttrs(**_cap_attrs(size="customsize")),
+                order_qty=1,
+            )],
+        ),
+        context["user"].id,
+    )
+
+    item = db.query(DomesticOrderItem).filter_by(order_id=result["id"]).one()
+    product = db.get(DomesticProduct, item.product_id)
+    assert item.attrs_snapshot["size"] == "CustomSize"
+    assert product.size == "CustomSize"
+    assert db.query(SysDict).filter_by(
+        type=f"{C.DICT_CAP_SIZE}_special", is_active=True
     ).count() == 1
 
 
@@ -1126,6 +1244,9 @@ def test_product_race_refetch_uses_locking_current_read(monkeypatch):
             self.query_index += 1
             return query
 
+        def get_bind(self):
+            return type("Bind", (), {"dialect": type("Dialect", (), {"name": "mysql"})()})()
+
         def begin_nested(self):
             return FakeSavepoint()
 
@@ -1144,3 +1265,27 @@ def test_product_race_refetch_uses_locking_current_read(monkeypatch):
     assert product is winner
     assert refetch.populate_existing_called is True
     assert refetch.with_for_update_called is True
+
+
+def test_product_case_collision_never_reuses_wrong_product(monkeypatch):
+    attrs = ProductAttrs(**_cap_attrs(craft="customcraft"))
+    wrong_key = product_service.build_attrs_key(
+        ProductAttrs(**_cap_attrs(craft="CustomCraft"))
+    )
+    wrong_case = DomesticProduct(
+        id=100,
+        attrs_key=wrong_key,
+        name="大小写不同的产品",
+        product_type="cap",
+        craft="CustomCraft",
+        size=attrs.size,
+        length=attrs.length,
+        hair_style_series=attrs.hair_style_series,
+        status=1,
+        use_count=0,
+    )
+    db = _FakeMySQLDictDb([wrong_case, wrong_case])
+    monkeypatch.setattr(product_service, "resolve_route_id", lambda *_args: None)
+
+    with pytest.raises(ValueError, match="产品属性组合.*大小写"):
+        product_service.find_or_create_product(db, attrs)

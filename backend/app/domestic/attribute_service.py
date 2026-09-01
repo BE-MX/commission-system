@@ -118,6 +118,14 @@ def _exact_code_predicate(dialect_name: str, code: str):
     return SysDict.code == code
 
 
+def _exact_craft_predicate(dialect_name: str, craft: str):
+    if dialect_name in {"mysql", "mariadb"}:
+        return cast(DomesticCraftRoute.craft, BINARY) == literal(
+            craft, type_=String()
+        )
+    return DomesticCraftRoute.craft == craft
+
+
 def _dict_value(
     db: Session,
     dict_type: str,
@@ -149,6 +157,32 @@ def _active_value(
     return _dict_value(db, dict_type, code, is_active=True, lock=lock)
 
 
+def _canonical_value(
+    db: Session,
+    dict_type: str,
+    code: str,
+    *,
+    is_active: bool,
+    lock: bool = False,
+) -> SysDict | None:
+    """Find a case-only variant and return the stored canonical row."""
+    query = db.query(SysDict).filter(
+        SysDict.type == dict_type,
+        SysDict.is_active.is_(is_active),
+    ).order_by(SysDict.id.asc())
+    if lock:
+        query = query.populate_existing().with_for_update()
+    expected = code.casefold()
+    for row in query.all():
+        if (
+            row.type == dict_type
+            and bool(row.is_active) is is_active
+            and row.code.casefold() == expected
+        ):
+            return row
+    return None
+
+
 def validate_order_dimensions(
     db: Session,
     order_type: str | None = None,
@@ -169,6 +203,8 @@ def validate_order_dimensions(
 
 def _create_special_value(db: Session, dict_type: str, value: str) -> SysDict:
     inactive = _dict_value(db, dict_type, value, is_active=False)
+    if inactive is None:
+        inactive = _canonical_value(db, dict_type, value, is_active=False)
     if inactive:
         raise ValueError(f"特单选项「{value}」已停用，请先在数据字典中启用")
 
@@ -191,17 +227,22 @@ def _create_special_value(db: Session, dict_type: str, value: str) -> SysDict:
         print(f"[domestic] special attribute race type={dict_type} code={value}", flush=True)
         row = _active_value(db, dict_type, value, lock=True)
         if row is None:
+            row = _canonical_value(
+                db, dict_type, value, is_active=True, lock=True
+            )
+        if row is None:
             inactive = _dict_value(
                 db, dict_type, value, is_active=False, lock=True
             )
+            if inactive is None:
+                inactive = _canonical_value(
+                    db, dict_type, value, is_active=False, lock=True
+                )
             if inactive is not None:
                 raise ValueError(
                     f"特单选项「{value}」已停用，请先在数据字典中启用"
                 ) from exc
-            raise ValueError(
-                f"特单选项「{value}」与已有选项仅大小写不同，无法自动创建；"
-                "请换一个名称或调整已有字典项"
-            ) from exc
+            raise ValueError(f"特单选项「{value}」创建冲突，请刷新后重试") from exc
         return row
 
 
@@ -228,9 +269,9 @@ def _ensure_special_craft_route(
 ) -> None:
     mapping = db.query(DomesticCraftRoute).filter(
         DomesticCraftRoute.product_type == product_type,
-        DomesticCraftRoute.craft == craft,
+        _exact_craft_predicate(db.get_bind().dialect.name, craft),
     ).first()
-    if mapping:
+    if mapping is not None and mapping.craft == craft:
         return
 
     route = _default_route(db, product_type)
@@ -245,7 +286,7 @@ def _ensure_special_craft_route(
     try:
         db.flush()
         savepoint.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         savepoint.rollback()
         logger.warning(
             "domestic special craft route race product_type=%s craft=%s",
@@ -258,10 +299,12 @@ def _ensure_special_craft_route(
         )
         mapping = db.query(DomesticCraftRoute).filter(
             DomesticCraftRoute.product_type == product_type,
-            DomesticCraftRoute.craft == craft,
+            _exact_craft_predicate(db.get_bind().dialect.name, craft),
         ).populate_existing().with_for_update().first()
-        if mapping is None:
-            raise
+        if mapping is None or mapping.craft != craft:
+            raise ValueError(
+                f"工艺映射「{craft}」与已有映射仅大小写不同，无法创建"
+            ) from exc
 
 
 def prepare_item_attrs(
@@ -279,7 +322,9 @@ def prepare_item_attrs(
         value = getattr(attrs, field)
         if value is None:
             continue
-        if _active_value(db, standard_type, value):
+        standard_row = _active_value(db, standard_type, value)
+        if standard_row is not None:
+            setattr(attrs, field, standard_row.code)
             continue
         label = _ATTR_LABELS[field]
         if order_category == "normal":
@@ -287,14 +332,27 @@ def prepare_item_attrs(
                 f"{line_prefix}{label}「{value}」不是启用的标准选项，请改选标准值或切换为特单"
             )
 
+        standard_row = _canonical_value(
+            db, standard_type, value, is_active=True
+        )
+        if standard_row is not None:
+            setattr(attrs, field, standard_row.code)
+            continue
+
         special_type = f"{standard_type}_special"
-        if not _active_value(db, special_type, value):
-            _create_special_value(db, special_type, value)
+        special_row = _active_value(db, special_type, value)
+        if special_row is None:
+            special_row = _canonical_value(
+                db, special_type, value, is_active=True
+            )
+        if special_row is None:
+            special_row = _create_special_value(db, special_type, value)
+        setattr(attrs, field, special_row.code)
         if field == "craft":
             _ensure_special_craft_route(
                 db,
                 product_type=attrs.product_type,
-                craft=value,
+                craft=special_row.code,
                 user_id=user_id,
             )
     return attrs

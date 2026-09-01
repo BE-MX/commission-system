@@ -8,7 +8,8 @@ attrs_key（属性组合）就是产品身份。路线按「工艺→路线」�
 import json
 import logging
 
-from sqlalchemy import func
+from sqlalchemy import String, cast, func, literal
+from sqlalchemy.dialects.mysql import BINARY
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -21,6 +22,13 @@ logger = logging.getLogger("commission")
 
 
 ATTRS_KEY_MAX = 255  # 与 ark_domestic_products.attrs_key 列宽一致
+
+
+def _exact_text_predicate(dialect_name: str, column, value: str):
+    """Use byte-exact comparison where MySQL's default collation is CI."""
+    if dialect_name in {"mysql", "mariadb"}:
+        return cast(column, BINARY) == literal(value, type_=String())
+    return column == value
 
 
 def build_attrs_key(attrs: ProductAttrs) -> str:
@@ -55,18 +63,26 @@ def resolve_route_id(db: Session, product_type: str, craft: str) -> int | None:
         db.query(DomesticCraftRoute)
         .filter(
             DomesticCraftRoute.product_type == product_type,
-            DomesticCraftRoute.craft == craft,
+            _exact_text_predicate(
+                db.get_bind().dialect.name, DomesticCraftRoute.craft, craft
+            ),
         )
         .first()
     )
-    return row.route_id if row else None
+    return row.route_id if row is not None and row.craft == craft else None
 
 
 def find_or_create_product(db: Session, attrs: ProductAttrs) -> DomesticProduct:
     """按属性组合取产品，没有就建。并发下单同一新组合时靠 unique(attrs_key) 兜底。"""
     key = build_attrs_key(attrs)
-    product = db.query(DomesticProduct).filter(DomesticProduct.attrs_key == key).first()
-    if product:
+    product = db.query(DomesticProduct).filter(
+        _exact_text_predicate(
+            db.get_bind().dialect.name, DomesticProduct.attrs_key, key
+        )
+    ).first()
+    if product is not None and product.attrs_key != key:
+        product = None
+    if product is not None:
         # 已存在但当初没配上路线 —— 现在配好了就补上，免得老产品永远开不了工
         if product.route_id is None:
             route_id = resolve_route_id(db, attrs.product_type, attrs.craft)
@@ -96,20 +112,24 @@ def find_or_create_product(db: Session, attrs: ProductAttrs) -> DomesticProduct:
     try:
         db.flush()
         savepoint.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         # 并发：另一笔下单刚建了同一组合，改取已存在的行
         savepoint.rollback()
         logger.warning("domestic product race on attrs_key=%s, refetch", key)
         print(f"[domestic] product race attrs_key={key}, refetch", flush=True)
         product = (
             db.query(DomesticProduct)
-            .filter(DomesticProduct.attrs_key == key)
+            .filter(_exact_text_predicate(
+                db.get_bind().dialect.name, DomesticProduct.attrs_key, key
+            ))
             .populate_existing()
             .with_for_update()
             .first()
         )
-        if product is None:  # 理论不可达：撞 unique 说明行已存在
-            raise
+        if product is None or product.attrs_key != key:
+            raise ValueError(
+                "产品属性组合与已有产品仅大小写不同，无法创建新产品"
+            ) from exc
     return product
 
 
@@ -240,21 +260,54 @@ def upsert_craft_route(db: Session, *, product_type: str, craft: str, route_id: 
 
     row = (
         db.query(DomesticCraftRoute)
-        .filter(DomesticCraftRoute.product_type == product_type, DomesticCraftRoute.craft == craft)
+        .filter(
+            DomesticCraftRoute.product_type == product_type,
+            _exact_text_predicate(
+                db.get_bind().dialect.name, DomesticCraftRoute.craft, craft
+            ),
+        )
         .first()
     )
-    if row:
+    if row is not None and row.craft == craft:
         row.route_id = route_id
         row.updated_by = user_id
     else:
         row = DomesticCraftRoute(product_type=product_type, craft=craft, route_id=route_id, updated_by=user_id)
+        savepoint = db.begin_nested()
         db.add(row)
+        try:
+            db.flush()
+            savepoint.commit()
+        except IntegrityError as exc:
+            savepoint.rollback()
+            row = (
+                db.query(DomesticCraftRoute)
+                .filter(
+                    DomesticCraftRoute.product_type == product_type,
+                    _exact_text_predicate(
+                        db.get_bind().dialect.name,
+                        DomesticCraftRoute.craft,
+                        craft,
+                    ),
+                )
+                .populate_existing()
+                .with_for_update()
+                .first()
+            )
+            if row is None or row.craft != craft:
+                raise ValueError(
+                    f"工艺映射「{craft}」与已有映射仅大小写不同，无法创建"
+                ) from exc
+            row.route_id = route_id
+            row.updated_by = user_id
 
     backfilled = (
         db.query(DomesticProduct)
         .filter(
             DomesticProduct.product_type == product_type,
-            DomesticProduct.craft == craft,
+            _exact_text_predicate(
+                db.get_bind().dialect.name, DomesticProduct.craft, craft
+            ),
             DomesticProduct.route_id.is_(None),
         )
         .update({DomesticProduct.route_id: route_id}, synchronize_session=False)

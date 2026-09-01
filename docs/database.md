@@ -232,7 +232,7 @@
 ### 迁移 129 的字典与切换口径
 
 - `domestic_order_type` 的稳定编码为 `first_order/repurchase/return_order/supplementary/after_sales_remake`，标签分别为首单/复购/返单/补单/售后重做；`domestic_order_channel` 为 `wechat/phone/exhibition/offline_visit/other`，标签分别为微信/电话/展会/线下拜访/其他。
-- 应用层对所有内贸属性、订单类型和渠道的字典 `code` 做大小写精确匹配；MySQL 查询显式转二进制比较，并在取行后再次核对原始字符串，不能依赖 `sys_dict.code` 的 `utf8mb4_unicode_ci`。特单输入与标准值仅大小写不同时仍按自定义值处理；唯一索引竞争不得回收仅大小写不同的行。
+- 订单类型、订单渠道和普货属性的字典 `code` 必须大小写精确匹配。特单属性输入若与启用标准项仅大小写不同，保存为标准项的 canonical `code`；否则若与启用 `_special` 项仅大小写不同，保存为该特单项的 canonical `code`，不存在时才创建。唯一索引竞争若出现启用的大小写变体胜方，同样统一为胜方 canonical `code`；停用胜方明确拒绝。MySQL 对 `sys_dict.code`、工艺映射 `craft` 和产品 `attrs_key` 显式使用二进制精确查询并在取行后再次核对原始字符串，不能依赖 `utf8mb4_unicode_ci`，下游冲突不得误复用仅大小写不同的行。
 - 头套标准字典为 `domestic_cap_craft`、`domestic_cap_net_color`、`domestic_cap_size`、`domestic_cap_length`、`domestic_cap_density`、`domestic_cap_hair_style_series`；发片标准字典为 `domestic_piece_craft_size`、`domestic_piece_length`。特单值使用相同 type 加 `_special`，只允许在特单保存事务中按当前可见属性创建和复用；普货只接受启用的标准字典项。
 - 特单自定义属性与订单/草稿同事务保存，失败不残留字典项；自定义工艺没有映射时才在同一事务建立默认路线映射，头套使用“头套网帽（递针）”、发片使用“发片网底（递针）”。仅新建映射时校验默认路线；已有映射直接沿用且不被默认路线覆盖，唯一键竞争后读取并保留数据库中的胜方映射。SQLite 下单和追加明细在任何读后写判断前使用 `BEGIN IMMEDIATE` 取得写者槽位，避免双连接同时创建特单字典、映射或重复明细序号；MySQL 继续使用行锁和唯一键收敛逻辑。
 - `python -m scripts.domestic_attribute_cutover` 默认只读预检；执行必须同时显式传入 `--apply --confirm-writes-stopped DOMESTIC_WRITES_STOPPED`，否则拒绝。它保留所有 `_special` 字典与特单映射，不更新/删除 `ark_domestic_products`、`ark_domestic_orders`、`ark_domestic_order_items` 或属性/路线快照；必须与 129 结构升级和新版应用部署处于同一停写维护窗口，并先由运维真实停止所有内贸写入、等待在途事务排空。
