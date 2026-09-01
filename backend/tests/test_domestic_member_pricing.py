@@ -139,6 +139,67 @@ def test_persistence_seed_rows_use_unique_product_keys_without_none():
     assert dict((key, row[-1]) for key, row in zip(keys, rows)) == expected
 
 
+def test_matrix_key_builder_is_private_and_persistence_builder_is_public():
+    assert not hasattr(pricing_service, "build_price_key")
+    assert callable(pricing_service.build_persistence_price_key)
+
+
+def test_unseeded_current_cap_craft_builds_persistence_key():
+    assert pricing_service.build_persistence_price_key(
+        product_type="cap", craft="大U型", size="59", length="25厘米"
+    ) == ("cap", "大U型", "", "25厘米")
+
+
+@pytest.mark.parametrize(
+    "attrs",
+    [
+        {"product_type": "unknown", "craft": "递旋", "size": None, "length": "15厘米"},
+        {"product_type": "cap", "craft": "递针旋全头套", "size": None, "length": "15厘米"},
+        {"product_type": "piece", "craft": "全递针", "size": None, "length": "25厘米"},
+        {"product_type": "piece", "craft": "全递针未知", "size": None, "length": "25厘米"},
+        {"product_type": "piece", "craft": "全递针", "size": "99*99", "length": "25厘米"},
+    ],
+)
+def test_unknown_persistence_price_dimensions_return_none(attrs):
+    assert pricing_service.build_persistence_price_key(**attrs) is None
+
+
+def test_all_seed_rows_round_trip_through_public_persistence_builder():
+    persisted_rows = list(pricing_service.iter_base_price_seeds())
+    persisted_by_key = {
+        (product_type, craft, size, length): price
+        for product_type, craft, size, length, price in persisted_rows
+    }
+    combined_by_pair = {
+        pair: combined for combined, pair in EXPECTED_COMBINED_PIECE_CODES.items()
+    }
+
+    for product_type, craft, size, length, price in persisted_rows:
+        assert pricing_service.build_persistence_price_key(
+            product_type=product_type,
+            craft=craft,
+            size=None,
+            length=length,
+        ) == (product_type, craft, size, length)
+
+    for (product_type, craft, size, length), price in _expected_seed_matrix().items():
+        canonical_key = pricing_service.build_persistence_price_key(
+            product_type=product_type,
+            craft=craft,
+            size=size,
+            length=length,
+        )
+        assert persisted_by_key[canonical_key] == price
+        if product_type == "piece":
+            combined_key = pricing_service.build_persistence_price_key(
+                product_type="piece",
+                craft=combined_by_pair[(craft, size)],
+                size=None,
+                length=length,
+            )
+            assert combined_key == canonical_key
+
+
 @pytest.mark.parametrize(
     ("size", "length"),
     [

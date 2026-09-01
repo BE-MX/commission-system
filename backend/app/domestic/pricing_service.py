@@ -65,6 +65,7 @@ _CAP_PRICE_ROWS = {
     "中分界": _CAP_PART_PRICES,
     "左分界": _CAP_PART_PRICES,
 }
+_CAP_CRAFT_CODES = frozenset({"递旋", "中分界", "左分界", "大U型", "递顶"})
 
 
 def _build_base_price_seed_matrix():
@@ -152,7 +153,7 @@ def resolve_membership(
     return None
 
 
-def build_price_key(
+def _build_matrix_key(
     *, product_type: str, craft: str, length: str, size: str | None = None
 ) -> tuple[str, str, str | None, str] | None:
     """提取真实定价维度；头套忽略尺码，发片支持独立或合并工艺尺码。"""
@@ -174,10 +175,31 @@ def get_base_price(
 ) -> Decimal | None:
     """从已确认种子矩阵按产品定价维度取原始价格。"""
 
-    key = build_price_key(
+    key = _build_matrix_key(
         product_type=product_type, craft=craft, size=size, length=length
     )
     return BASE_PRICE_SEED_MATRIX.get(key) if key is not None else None
+
+
+def build_persistence_price_key(
+    *, product_type: str, craft: str, length: str, size: str | None = None
+) -> tuple[str, str, str, str] | None:
+    """把产品属性转换为数据库使用的合并价格键。"""
+
+    if product_type == "cap":
+        if craft not in _CAP_CRAFT_CODES:
+            return None
+        return product_type, craft, "", length
+    if product_type != "piece":
+        return None
+
+    if size:
+        combined_craft = _COMBINED_PIECE_BY_DIMENSIONS.get((craft, size))
+    else:
+        combined_craft = craft if craft in COMBINED_PIECE_CRAFT_SIZE else None
+    if combined_craft is None:
+        return None
+    return product_type, combined_craft, "", length
 
 
 def iter_base_price_seeds(
@@ -185,9 +207,15 @@ def iter_base_price_seeds(
     """按实际产品键逐行输出可直接持久化的已确认原始价格。"""
 
     for (product_type, craft, size, length), price in BASE_PRICE_SEED_MATRIX.items():
-        if product_type == "piece":
-            craft = _COMBINED_PIECE_BY_DIMENSIONS[(craft, size)]
-        yield product_type, craft, "", length, price
+        persistence_key = build_persistence_price_key(
+            product_type=product_type,
+            craft=craft,
+            size=size,
+            length=length,
+        )
+        if persistence_key is None:
+            raise PricingConfigurationError("原始价格种子无法映射到持久化产品键")
+        yield *persistence_key, price
 
 
 def resolve_discount(
