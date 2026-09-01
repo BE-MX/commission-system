@@ -1809,6 +1809,14 @@ def test_final_migration_revision_contract_and_mysql_offline_sql():
     )
     migration.upgrade()
     upgrade_sql = upgrade_output.getvalue()
+    upgrade_statements = [statement.strip() for statement in upgrade_sql.split(";")]
+    unit_price_upgrade = next(
+        statement
+        for statement in upgrade_statements
+        if "MODIFY unit_price" in statement
+    )
+    assert "NOT NULL" in unit_price_upgrade
+    assert "DEFAULT" not in unit_price_upgrade.upper()
     for column_name in (
         "original_price",
         "discount_amount",
@@ -1838,6 +1846,14 @@ def test_final_migration_revision_contract_and_mysql_offline_sql():
     )
     migration.downgrade()
     downgrade_sql = downgrade_output.getvalue()
+    downgrade_statements = [statement.strip() for statement in downgrade_sql.split(";")]
+    unit_price_downgrade = next(
+        statement
+        for statement in downgrade_statements
+        if "MODIFY unit_price" in statement
+    )
+    assert "NOT NULL" in unit_price_downgrade
+    assert "DEFAULT 0.00" in unit_price_downgrade
     assert downgrade_sql.index("DROP CHECK") < downgrade_sql.index(" NULL")
     assert "MODIFY original_price NUMERIC(14, 2) NULL" in downgrade_sql
 

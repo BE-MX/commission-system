@@ -85,6 +85,16 @@ def upgrade() -> None:
     if not op.get_context().as_sql:
         _validate_existing_snapshots(op.get_bind())
 
+    op.alter_column(
+        TABLE_NAME,
+        "unit_price",
+        existing_type=MONEY,
+        nullable=False,
+        existing_server_default=sa.text("0.00"),
+        server_default=None,
+        existing_comment="产品单价",
+    )
+
     for column_name, column_type, comment in REQUIRED_COLUMNS:
         op.alter_column(
             TABLE_NAME,
@@ -114,3 +124,13 @@ def downgrade() -> None:
             nullable=True,
             existing_comment=comment,
         )
+
+    op.alter_column(
+        TABLE_NAME,
+        "unit_price",
+        existing_type=MONEY,
+        nullable=False,
+        existing_server_default=None,
+        server_default=sa.text("0.00"),
+        existing_comment="产品单价",
+    )
