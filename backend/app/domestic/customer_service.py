@@ -6,12 +6,55 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.auth.models import ArkUser
 from app.domestic import balance_service
+from app.domestic import constants as C
 from app.domestic.models import DomesticCustomer, DomesticCustomerLedger, DomesticOrder
 from app.domestic.pricing_service import membership_label
 from app.domestic.schemas import CustomerCreate, CustomerUpdate
+from app.system.models import SysDict
 
 logger = logging.getLogger("commission")
+
+
+# 客户档案可写字段（create/update 共用，财务与启用状态不在内）
+CUSTOMER_PROFILE_FIELDS = (
+    "province", "city", "contact", "phone", "address",
+    "customer_source", "store_type", "customer_level", "lifecycle_status",
+    "owner_user_id", "first_contact_date", "first_order_date", "last_order_date",
+    "total_order_count", "total_sales_amount", "remark",
+)
+
+
+def get_customer_options(db: Session) -> dict:
+    """客户表单下拉值域：来源/门店类型/等级/客户状态（sys_dict）+ 归属销售（在职用户）。"""
+    dict_types = [
+        C.CUSTOMER_SOURCE_DICT, C.CUSTOMER_STORE_TYPE_DICT,
+        C.CUSTOMER_LEVEL_DICT, C.CUSTOMER_LIFECYCLE_DICT,
+    ]
+    rows = (
+        db.query(SysDict)
+        .filter(SysDict.type.in_(dict_types), SysDict.is_active.is_(True))
+        .order_by(SysDict.type.asc(), SysDict.sort.asc(), SysDict.id.asc())
+        .all()
+    )
+    by_type: dict[str, list[dict]] = {t: [] for t in dict_types}
+    for row in rows:
+        by_type[row.type].append({"value": row.code, "label": row.label})
+
+    owners = (
+        db.query(ArkUser.id, ArkUser.real_name)
+        .filter(ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None))
+        .order_by(ArkUser.real_name.asc())
+        .all()
+    )
+    return {
+        "customer_source": by_type[C.CUSTOMER_SOURCE_DICT],
+        "store_type": by_type[C.CUSTOMER_STORE_TYPE_DICT],
+        "customer_level": by_type[C.CUSTOMER_LEVEL_DICT],
+        "lifecycle_status": by_type[C.CUSTOMER_LIFECYCLE_DICT],
+        "owners": [{"value": uid, "label": name} for uid, name in owners],
+    }
 
 
 def list_customers(
@@ -39,6 +82,7 @@ def list_customers(
 
     order_counts = {}
     initialized_ids = set()
+    owner_names: dict[int, str] = {}
     if rows:
         row_ids = [r.id for r in rows]
         order_counts = dict(
@@ -55,6 +99,13 @@ def list_customers(
             .filter(DomesticCustomerLedger.customer_id.in_(row_ids))
             .distinct()
         }
+        owner_ids = {r.owner_user_id for r in rows if r.owner_user_id}
+        if owner_ids:
+            owner_names = dict(
+                db.query(ArkUser.id, ArkUser.real_name)
+                .filter(ArkUser.id.in_(owner_ids))
+                .all()
+            )
 
     items = [{
         "id": r.id,
@@ -73,6 +124,19 @@ def list_customers(
         "contact": r.contact,
         "phone": r.phone,
         "address": r.address,
+        "customer_source": r.customer_source,
+        "store_type": r.store_type,
+        "customer_level": r.customer_level,
+        "lifecycle_status": r.lifecycle_status,
+        "owner_user_id": r.owner_user_id,
+        "owner_name": owner_names.get(r.owner_user_id),
+        "first_contact_date": r.first_contact_date.isoformat() if r.first_contact_date else None,
+        "first_order_date": r.first_order_date.isoformat() if r.first_order_date else None,
+        "last_order_date": r.last_order_date.isoformat() if r.last_order_date else None,
+        "total_order_count": r.total_order_count,
+        "total_sales_amount": (
+            float(r.total_sales_amount) if r.total_sales_amount is not None else None
+        ),
         "remark": r.remark,
         "status": r.status,
         "balance": float(r.balance or 0),
@@ -112,6 +176,13 @@ def find_or_create_by_shop_name(db: Session, shop_name: str, user_id: int) -> Do
     return customer
 
 
+def _validate_owner(db: Session, owner_user_id: int | None) -> None:
+    if owner_user_id is None:
+        return
+    if not db.query(ArkUser.id).filter(ArkUser.id == owner_user_id).first():
+        raise ValueError("归属销售用户不存在")
+
+
 def create_customer(db: Session, payload: CustomerCreate, user_id: int) -> DomesticCustomer:
     if db.query(DomesticCustomer).filter(DomesticCustomer.shop_name == payload.shop_name).first():
         raise ValueError(f"客户「{payload.shop_name}」已存在")
@@ -119,15 +190,11 @@ def create_customer(db: Session, payload: CustomerCreate, user_id: int) -> Domes
         DomesticCustomer.custom_code == payload.custom_code
     ).first():
         raise ValueError(f"客户编码「{payload.custom_code}」已存在")
+    _validate_owner(db, payload.owner_user_id)
     customer = DomesticCustomer(
         shop_name=payload.shop_name,
         custom_code=payload.custom_code,
-        province=payload.province,
-        city=payload.city,
-        contact=payload.contact,
-        phone=payload.phone,
-        address=payload.address,
-        remark=payload.remark,
+        **{f: getattr(payload, f) for f in CUSTOMER_PROFILE_FIELDS},
         balance=0,
         status=1,
         created_by=user_id,
@@ -161,9 +228,9 @@ def update_customer(db: Session, customer_id: int, payload: CustomerUpdate) -> D
         ).first():
             raise ValueError(f"客户编码「{data['custom_code']}」已存在")
         customer.custom_code = data["custom_code"]
-    for field in (
-        "province", "city", "contact", "phone", "address", "remark", "status",
-    ):
+    if "owner_user_id" in data:
+        _validate_owner(db, data["owner_user_id"])
+    for field in (*CUSTOMER_PROFILE_FIELDS, "status"):
         if field in data:
             setattr(customer, field, data[field])
     try:

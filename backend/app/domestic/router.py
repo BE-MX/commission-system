@@ -213,6 +213,14 @@ def put_process_route_configuration(
 # ── 客户 ──────────────────────────────────────────────
 
 
+@router.get("/customers/options", summary="客户表单下拉值域（字典 + 归属销售用户）")
+def get_customer_options(
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission(*_CUSTOMER_READ)),
+):
+    return ok(customer_service.get_customer_options(db))
+
+
 @router.get("/customers", summary="内贸客户列表")
 def list_customers(
     page: int = Query(1, ge=1),
@@ -253,6 +261,34 @@ def update_customer(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(message="已保存")
+
+
+@router.post("/customers/import", summary="导入《莱莎客户信息录入表》Excel")
+def import_customers(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("domestic:admin")),
+):
+    from app.domestic import customer_import_service
+
+    file_bytes = file.file.read()
+    if len(file_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="文件不能超过 10MB")
+    try:
+        rows, skipped, warnings = customer_import_service.parse_workbook(file_bytes)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Excel 解析失败：{exc}") from exc
+    if not rows:
+        return ok({"created": 0, "updated": 0, "merged": 0, "skipped": skipped,
+                   "warnings": warnings, "errors": [], "collisions": []},
+                  message="没有可导入的有效行")
+    result = customer_import_service.import_customers(db, rows, _uid(current_user))
+    result["skipped"] = skipped
+    result["warnings"] = warnings
+    return ok(result, message=(
+        f"导入完成：新建 {result['created']}，更新 {result['updated']}，"
+        f"合并同名 {result['merged']}，失败 {len(result['errors'])}，跳过 {len(skipped)}"
+    ))
 
 
 @router.delete("/customers/{customer_id}", summary="删除客户")

@@ -15,6 +15,12 @@ ORDER_CATEGORIES = {"normal": "普货", "special": "特单"}
 ORDER_TYPE_DICT = "domestic_order_type"
 ORDER_CHANNEL_DICT = "domestic_order_channel"
 
+# 客户档案值域（客户表单下拉数据源，由 sys_dict 维护）
+CUSTOMER_SOURCE_DICT = "domestic_customer_source"
+CUSTOMER_STORE_TYPE_DICT = "domestic_store_type"
+CUSTOMER_LEVEL_DICT = "domestic_customer_level"
+CUSTOMER_LIFECYCLE_DICT = "domestic_customer_lifecycle"
+
 # 属性值域字典 type（前端下拉的数据源，由内贸属性切换命令维护）
 DICT_CAP_CRAFT = "domestic_cap_craft"
 DICT_CAP_NET_COLOR = "domestic_cap_net_color"

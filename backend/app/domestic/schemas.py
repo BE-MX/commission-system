@@ -20,6 +20,19 @@ class CustomerCreate(BaseModel):
     contact: str | None = Field(None, max_length=60)
     phone: str | None = Field(None, max_length=40)
     address: str | None = Field(None, max_length=255)
+    customer_source: str | None = Field(None, max_length=32, description="客户来源（字典 domestic_customer_source）")
+    store_type: str | None = Field(None, max_length=32, description="门店类型（字典 domestic_store_type）")
+    customer_level: str | None = Field(None, max_length=8, description="客户等级（字典 domestic_customer_level）")
+    lifecycle_status: str | None = Field(None, max_length=16, description="客户状态（字典 domestic_customer_lifecycle）")
+    owner_user_id: int | None = Field(None, gt=0, description="归属销售（ark_users.id）")
+    first_contact_date: date | None = None
+    first_order_date: date | None = None
+    last_order_date: date | None = None
+    total_order_count: int | None = Field(None, ge=0, description="累计订单数（历史档案口径）")
+    total_sales_amount: Decimal | None = Field(
+        None, ge=0, le=Decimal("999999999999.99"), max_digits=14, decimal_places=2,
+        description="累计销售额（历史档案口径）",
+    )
     remark: str | None = Field(None, max_length=500)
 
     @field_validator("shop_name")
@@ -30,7 +43,10 @@ class CustomerCreate(BaseModel):
             raise ValueError("客户店名不能为空")
         return v
 
-    @field_validator("custom_code", "province", "city", "contact", "phone", "address", "remark")
+    @field_validator(
+        "custom_code", "province", "city", "contact", "phone", "address",
+        "customer_source", "store_type", "customer_level", "lifecycle_status", "remark",
+    )
     @classmethod
     def _strip_optional(cls, v: str | None) -> str | None:
         value = v.strip() if isinstance(v, str) else v
@@ -47,10 +63,25 @@ class CustomerUpdate(BaseModel):
     contact: str | None = Field(None, max_length=60)
     phone: str | None = Field(None, max_length=40)
     address: str | None = Field(None, max_length=255)
+    customer_source: str | None = Field(None, max_length=32)
+    store_type: str | None = Field(None, max_length=32)
+    customer_level: str | None = Field(None, max_length=8)
+    lifecycle_status: str | None = Field(None, max_length=16)
+    owner_user_id: int | None = Field(None, gt=0, description="归属销售；null=暂不归属")
+    first_contact_date: date | None = None
+    first_order_date: date | None = None
+    last_order_date: date | None = None
+    total_order_count: int | None = Field(None, ge=0)
+    total_sales_amount: Decimal | None = Field(
+        None, ge=0, le=Decimal("999999999999.99"), max_digits=14, decimal_places=2,
+    )
     remark: str | None = Field(None, max_length=500)
     status: int | None = Field(None, ge=0, le=1)
 
-    @field_validator("custom_code", "province", "city", "contact", "phone", "address", "remark")
+    @field_validator(
+        "custom_code", "province", "city", "contact", "phone", "address",
+        "customer_source", "store_type", "customer_level", "lifecycle_status", "remark",
+    )
     @classmethod
     def _strip_optional(cls, v: str | None) -> str | None:
         value = v.strip() if isinstance(v, str) else v
