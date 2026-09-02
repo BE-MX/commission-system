@@ -305,7 +305,7 @@ def initialize_customer(
     customer_id: int,
     payload: CustomerInitialize,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_permission("domestic:admin")),
+    current_user: dict = Depends(require_any_permission("domestic:recharge", "domestic:admin")),
 ):
     try:
         data = customer_service.initialize_customer(
@@ -328,7 +328,7 @@ def adjust_customer(
     customer_id: int,
     payload: CustomerAdjust,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_permission("domestic:admin")),
+    current_user: dict = Depends(require_any_permission("domestic:recharge", "domestic:admin")),
 ):
     try:
         data = customer_service.adjust_customer(

@@ -62,8 +62,8 @@
               {{ row.status ? '停用' : '启用' }}
             </GlassButton>
             <GlassButton v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Wallet" @click="openRecharge(row)">充值</GlassButton>
-            <GlassButton v-if="!row.initialized" v-permission="'domestic:admin'" variant="link" left-icon="CirclePlus" @click="openInit(row)">初始化</GlassButton>
-            <GlassButton v-permission="'domestic:admin'" variant="link" left-icon="EditPen" @click="openAdjust(row)">调整</GlassButton>
+            <GlassButton v-if="!row.initialized" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="CirclePlus" @click="openInit(row)">初始化</GlassButton>
+            <GlassButton v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="EditPen" @click="openAdjust(row)">调整</GlassButton>
             <GlassButton v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Tickets" @click="openLedger(row)">流水</GlassButton>
             <GlassButton v-permission="'domestic:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
           </template>

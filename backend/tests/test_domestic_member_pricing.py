@@ -5571,32 +5571,36 @@ def test_adjust_customer_requires_content(db):
         CustomerAdjust(amount=D("1.00"), remark="x" * 2)
 
 
-def test_initialize_and_adjust_api_require_admin(db):
+def test_initialize_and_adjust_api_require_recharge_or_admin(db):
     user = _operator(db, "init-adjust-api")
     customer = _membership_customer(db, user, "api")
-    client = _customer_api_client(db, user.id)  # read/write/recharge，无 admin
 
-    init_denied = client.post(
+    def _client(permissions):
+        from app.domestic.router import router
+        app = FastAPI()
+        app.include_router(router, prefix="/api/domestic")
+        app.dependency_overrides[get_db] = lambda: db
+        app.dependency_overrides[get_current_user] = lambda: {
+            "sub": str(user.id), "roles": [], "permissions": permissions,
+        }
+        return TestClient(app)
+
+    # 只有读/写、没有 recharge 或 admin：两个入口都拒绝
+    plain = _client(["domestic:read", "domestic:write"])
+    init_denied = plain.post(
         f"/api/domestic/customers/{customer.id}/initialize",
         json={"balance": "100.00"},
     )
-    adjust_denied = client.post(
+    adjust_denied = plain.post(
         f"/api/domestic/customers/{customer.id}/adjust",
         json={"amount": "1.00", "remark": "越权", "request_id": "deny-adjust-1"},
     )
     assert init_denied.status_code == 403
     assert adjust_denied.status_code == 403
 
-    from app.domestic.router import router
-    app = FastAPI()
-    app.include_router(router, prefix="/api/domestic")
-    app.dependency_overrides[get_db] = lambda: db
-    app.dependency_overrides[get_current_user] = lambda: {
-        "sub": str(user.id), "roles": [], "permissions": ["domestic:admin"],
-    }
-    admin_client = TestClient(app)
-
-    created = admin_client.post(
+    # 内贸业务员持有 recharge 即可初始化与调整
+    finance = _client(["domestic:recharge"])
+    created = finance.post(
         f"/api/domestic/customers/{customer.id}/initialize",
         json={"balance": "300.00", "membership_level": "silver"},
     )
@@ -5604,7 +5608,7 @@ def test_initialize_and_adjust_api_require_admin(db):
     assert created.json()["data"]["current_balance"] == 300.00
     assert created.json()["data"]["membership_label"] == "银卡会员"
 
-    adjusted = admin_client.post(
+    adjusted = finance.post(
         f"/api/domestic/customers/{customer.id}/adjust",
         json={
             "amount": "-50.00", "membership_level": None,
