@@ -508,6 +508,10 @@ def pricing_rule_label(
 ) -> str:
     if result.pricing_rule == "base_price":
         return "非会员原价"
+    if result.pricing_rule == "manual_override":
+        return "手工改价"
+    if result.pricing_rule == "legacy_manual":
+        return "历史手工价"
     try:
         label = MEMBERSHIP_SHORT_LABELS[membership_level]
     except KeyError as exc:
@@ -644,14 +648,45 @@ def lock_and_validate_order_quotes(
             original_price=base_row.original_price,
             membership_level=customer.membership_level,
         )
-        quote = LockedOrderQuote(
+        current = LockedOrderQuote(
             product=product,
             base_row=base_row,
             discount=discount,
             membership_level=customer.membership_level,
-        )
-        current = quote.expected_quote()
+        ).expected_quote()
         current_json = _quote_json(current)
+
+        # 手工改价：建单时由 manual_discount_price 显式传入；草稿/在制单提交时
+        # 通过报价快照里的 manual_override 规则回显。手工价是用户逐行确认过的
+        # 绝对金额，不随会员等级或原价漂移——既不参与 409 漂移比较，也不在
+        # current_expected_quotes 里被系统报价覆盖，避免确认后重试时丢价。
+        manual = getattr(item, "manual_discount_price", None)
+        echo_manual = manual is None and previous.pricing_rule == "manual_override"
+        if echo_manual:
+            manual = previous.discount_price
+        if manual is not None:
+            manual = _money(manual)
+            if manual <= 0 or manual > base_row.original_price:
+                raise ValueError(
+                    f"手工优惠价必须大于 0 且不高于当前原价 ¥{base_row.original_price:.2f}"
+                )
+        if echo_manual:
+            current_expected_quotes.append({
+                "client_key": client_key, "item_id": item_id, **previous_json,
+            })
+            quotes.append(LockedOrderQuote(
+                product=product,
+                base_row=base_row,
+                discount=DiscountResult(
+                    base_row.original_price,
+                    manual,
+                    _money(base_row.original_price - manual),
+                    "manual_override",
+                ),
+                membership_level=previous.membership_level,
+            ))
+            continue
+
         current_expected_quotes.append({
             "client_key": client_key,
             "item_id": item_id,
@@ -666,7 +701,19 @@ def lock_and_validate_order_quotes(
                 "previous_quote": previous_json,
                 "current_quote": current_json,
             })
-        quotes.append(quote)
+        if manual is not None:
+            discount = DiscountResult(
+                base_row.original_price,
+                manual,
+                _money(base_row.original_price - manual),
+                "manual_override",
+            )
+        quotes.append(LockedOrderQuote(
+            product=product,
+            base_row=base_row,
+            discount=discount,
+            membership_level=customer.membership_level,
+        ))
 
     if changes:
         raise DomesticQuoteChangedError({

@@ -22,7 +22,7 @@
       </el-col>
     </el-row>
 
-    <el-alert class="membership-tip" type="info" :closable="false" show-icon title="会员等级只看最近一次充值金额，与账户余额、历史充值合计无关。" />
+    <el-alert class="membership-tip" type="info" :closable="false" show-icon title="会员等级默认按最近一次充值金额核定；管理员可「初始化」期初或「调整」临时覆盖，下一次充值会重新按金额核定。" />
 
     <div class="table-card customers-panel">
       <el-table :data="list" v-loading="loading" border class="list-table" style="width: 100%">
@@ -62,6 +62,8 @@
               {{ row.status ? '停用' : '启用' }}
             </GlassButton>
             <GlassButton v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Wallet" @click="openRecharge(row)">充值</GlassButton>
+            <GlassButton v-if="!row.initialized" v-permission="'domestic:admin'" variant="link" left-icon="CirclePlus" @click="openInit(row)">初始化</GlassButton>
+            <GlassButton v-permission="'domestic:admin'" variant="link" left-icon="EditPen" @click="openAdjust(row)">调整</GlassButton>
             <GlassButton v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Tickets" @click="openLedger(row)">流水</GlassButton>
             <GlassButton v-permission="'domestic:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
           </template>
@@ -126,6 +128,55 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="initDialog.visible" title="期初初始化（仅一次）" width="440px">
+      <el-alert type="warning" show-icon :closable="false" class="tips" title="只适用于还没有任何资金流水的新建档客户；已有流水请用「调整」。" />
+      <el-form label-width="90px">
+        <el-form-item label="客户"><strong>{{ initDialog.customer?.shop_name }}</strong></el-form-item>
+        <el-form-item label="期初余额">
+          <el-input-number v-model="initDialog.balance" :min="0" :precision="2" :step="100" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="会员等级">
+          <el-select v-model="initDialog.membership_level" style="width: 100%">
+            <el-option v-for="opt in membershipOptions" :key="opt.label" :label="opt.label" :value="opt.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input v-model="initDialog.remark" type="textarea" :rows="2" maxlength="500" placeholder="如：老客户线下余额迁入" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <GlassButton variant="ghost" @click="initDialog.visible = false">取消</GlassButton>
+        <GlassButton variant="primary" :loading="initDialog.saving" @click="confirmInit">确认初始化</GlassButton>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="adjustDialog.visible" title="临时调整余额 / 等级" width="460px">
+      <el-alert type="warning" show-icon :closable="false" class="tips" title="余额正数加、负数减；等级覆盖是临时的，下一次充值会按金额重新核定。" />
+      <el-form label-width="90px">
+        <el-form-item label="客户"><strong>{{ adjustDialog.customer?.shop_name }}</strong></el-form-item>
+        <el-form-item label="当前状态">
+          <span>{{ adjustDialog.customer?.membership_label }} · 余额 ¥{{ Number(adjustDialog.customer?.balance || 0).toFixed(2) }}</span>
+        </el-form-item>
+        <el-form-item label="余额调整">
+          <el-input-number v-model="adjustDialog.amount" :precision="2" :step="50" style="width: 100%" />
+          <span class="preview-hint">0 表示不动余额</span>
+        </el-form-item>
+        <el-form-item label="会员等级">
+          <el-select v-model="adjustDialog.membership_level" style="width: 100%">
+            <el-option label="不修改" value="__keep__" />
+            <el-option v-for="opt in membershipOptions" :key="opt.label" :label="opt.label" :value="opt.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="调整原因" required>
+          <el-input v-model="adjustDialog.remark" type="textarea" :rows="2" maxlength="500" placeholder="必填：为什么调，如「多扣退回」「老板特批至尊」" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <GlassButton variant="ghost" @click="adjustDialog.visible = false">取消</GlassButton>
+        <GlassButton variant="primary" :loading="adjustDialog.saving" @click="confirmAdjust">确认调整</GlassButton>
+      </template>
+    </el-dialog>
+
     <el-drawer v-model="ledgerDrawer.visible" :title="`${ledgerDrawer.customer?.shop_name || ''} · 余额流水`" size="720px">
       <el-table :data="ledgerDrawer.items" v-loading="ledgerDrawer.loading" border size="small" class="list-table">
         <el-table-column prop="created_at" label="时间" min-width="150" />
@@ -155,13 +206,21 @@
 import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
-  createCustomer, deleteCustomer, listCustomerBalanceLedger, listCustomers,
+  adjustCustomer, createCustomer, deleteCustomer, initializeCustomer,
+  listCustomerBalanceLedger, listCustomers,
   newRequestId, rechargeCustomer, updateCustomer,
 } from '@/api/domestic'
 import { useListPage } from '@/composables/useListPage'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import GlassButton from '@/components/GlassButton.vue'
 import { membershipChangeLabel, membershipPreview } from './composables/domesticMemberPricing'
+
+const membershipOptions = [
+  { label: '普通客户', value: null },
+  { label: '银卡会员', value: 'silver' },
+  { label: '黑卡会员', value: 'black' },
+  { label: '至尊会员', value: 'supreme' },
+]
 
 const saving = ref(false)
 
@@ -192,6 +251,75 @@ const ledgerDrawer = reactive({
 })
 const ledgerTypeLabel = {
   recharge: '充值', order_charge: '订单扣款', order_adjustment: '订单差额', order_refund: '订单退款',
+  init: '期初初始化', adjust: '手工调整', level_adjust: '等级调整',
+}
+
+const initDialog = reactive({
+  visible: false, customer: null, balance: 0, membership_level: null, remark: '', saving: false,
+})
+const adjustDialog = reactive({
+  visible: false, customer: null, amount: 0, membership_level: '__keep__',
+  remark: '', requestId: '', saving: false,
+})
+
+function openInit(customer) {
+  Object.assign(initDialog, {
+    visible: true, customer, balance: 0, membership_level: null, remark: '', saving: false,
+  })
+}
+
+async function confirmInit() {
+  if (!(initDialog.balance >= 0)) return ElMessage.warning('期初余额不能为负')
+  initDialog.saving = true
+  try {
+    const res = await initializeCustomer(initDialog.customer.id, {
+      balance: initDialog.balance,
+      membership_level: initDialog.membership_level,
+      remark: initDialog.remark || null,
+    })
+    const data = res.data || {}
+    initDialog.visible = false
+    ElMessage.success(data.replayed
+      ? `该客户已初始化过；当前${data.membership_label}，余额 ¥${Number(data.current_balance || 0).toFixed(2)}`
+      : `初始化完成；当前${data.membership_label}，余额 ¥${Number(data.current_balance || 0).toFixed(2)}`)
+    await fetchList()
+  } catch { /* 拦截器已提示 */ } finally {
+    initDialog.saving = false
+  }
+}
+
+function openAdjust(customer) {
+  Object.assign(adjustDialog, {
+    visible: true, customer, amount: 0, membership_level: '__keep__',
+    remark: '', requestId: newRequestId(), saving: false,
+  })
+}
+
+async function confirmAdjust() {
+  const changeLevel = adjustDialog.membership_level !== '__keep__'
+  if (!adjustDialog.amount && !changeLevel) return ElMessage.warning('请填余额调整额或选择会员等级')
+  if (!adjustDialog.remark.trim() || adjustDialog.remark.trim().length < 2) {
+    return ElMessage.warning('请填写调整原因（至少 2 个字）')
+  }
+  adjustDialog.saving = true
+  try {
+    const payload = {
+      amount: adjustDialog.amount || 0,
+      remark: adjustDialog.remark.trim(),
+      // 弹窗打开时生成一次：响应丢失后用户重点仍是同一笔调整
+      request_id: adjustDialog.requestId,
+    }
+    if (changeLevel) payload.membership_level = adjustDialog.membership_level
+    const res = await adjustCustomer(adjustDialog.customer.id, payload)
+    const data = res.data || {}
+    adjustDialog.visible = false
+    ElMessage.success(data.replayed
+      ? `本次调整已入账过，未重复执行；当前${data.membership_label}，余额 ¥${Number(data.current_balance || 0).toFixed(2)}`
+      : `调整完成；当前${data.membership_label}，余额 ¥${Number(data.current_balance || 0).toFixed(2)}`)
+    await fetchList()
+  } catch { /* 拦截器已提示 */ } finally {
+    adjustDialog.saving = false
+  }
 }
 
 function openDialog(row) {
@@ -327,4 +455,5 @@ async function handleDelete(row) {
 .amount-out { color: var(--el-color-danger); font-weight: 600; }
 .muted, .preview-hint { color: var(--el-text-color-secondary); font-size: 12px; }
 .preview-hint { margin-left: 8px; }
+.tips { margin-bottom: 12px; }
 </style>

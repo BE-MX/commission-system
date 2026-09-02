@@ -142,22 +142,36 @@
           </el-col>
           <el-col :span="4">
             <el-form-item label="优惠金额">
-              <span class="discount-value">{{ item.quoteStatus === 'priced' ? `-¥${Number(item.quote.discount_amount).toFixed(2)}` : '-' }}</span>
+              <span class="discount-value">{{ item.quoteStatus === 'priced' ? `-¥${(Number(item.quote.original_price) - effectiveDiscountPrice(item)).toFixed(2)}` : '-' }}</span>
             </el-form-item>
           </el-col>
           <el-col :span="4">
             <el-form-item label="优惠价">
-              <strong>{{ item.quoteStatus === 'priced' ? `¥${Number(item.quote.discount_price).toFixed(2)}` : '-' }}</strong>
+              <div v-if="item.quoteStatus === 'priced'" class="price-edit">
+                <el-input-number
+                  :model-value="effectiveDiscountPrice(item)"
+                  :min="0.01" :max="Number(item.quote.original_price)" :precision="2"
+                  :controls="false" class="price-input"
+                  @change="value => onManualPrice(item, value)"
+                />
+                <GlassButton
+                  v-if="item.manualDiscountPrice" variant="link" link-tone="danger"
+                  @click="onManualPrice(item, null)"
+                >恢复报价</GlassButton>
+              </div>
+              <strong v-else>-</strong>
             </el-form-item>
           </el-col>
           <el-col :span="4">
             <el-form-item label="明细总价">
-              <span class="amount-value">¥{{ (Number(item.order_qty || 0) * Number(item.quote?.discount_price || 0)).toFixed(2) }}</span>
+              <span class="amount-value">¥{{ (Number(item.order_qty || 0) * effectiveDiscountPrice(item)).toFixed(2) }}</span>
             </el-form-item>
           </el-col>
           <el-col :span="4">
             <el-form-item label="优惠说明">
-              <span v-if="item.quoteStatus === 'priced'" class="rule-text">{{ item.quote.pricing_rule_label }}</span>
+              <span v-if="item.quoteStatus === 'priced'" class="rule-text">
+                {{ item.manualDiscountPrice ? '手工改价' : item.quote.pricing_rule_label }}
+              </span>
               <GlassButton v-else-if="item.quoteStatus === 'pending'" variant="link" :loading="quoteLoading" @click="refreshQuotes">重新报价</GlassButton>
               <span v-else-if="item.quoteStatus === 'missing_base_price'" class="danger-text">
                 缺原始价，无法报价<GlassButton variant="link" link-tone="danger" @click="goProducts">去产品清单维护</GlassButton>
@@ -279,6 +293,7 @@ const {
   routeOf, unroutedCount, orderTotal, selectedCustomer,
   onProductTypeChange, onLengthChange, onOrderCategoryChange, addItem, copyItem, removeItem,
   makeUploadFn, removeImage, searchCustomers, refreshQuotes, goProducts, submit,
+  effectiveDiscountPrice, onManualPrice,
 } = useDomesticOrderCreate()
 </script>
 
@@ -315,6 +330,8 @@ const {
 .new-customer { margin-top: 8px; }
 .balance-hint { margin-top: 6px; color: var(--el-color-success); font-size: 12px; }
 .price-row { margin-top: 2px; }
+.price-edit { display: flex; align-items: center; gap: 6px; }
+.price-input { width: 110px; }
 .amount-value, .order-total { font-weight: 600; color: var(--el-text-color-primary); }
 .discount-value { color: var(--el-color-success); }
 .danger-text { color: var(--el-color-danger); font-size: 12px; }

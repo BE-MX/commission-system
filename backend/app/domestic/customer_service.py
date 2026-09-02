@@ -6,6 +6,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.domestic import balance_service
 from app.domestic.models import DomesticCustomer, DomesticCustomerLedger, DomesticOrder
 from app.domestic.pricing_service import membership_label
 from app.domestic.schemas import CustomerCreate, CustomerUpdate
@@ -37,16 +38,23 @@ def list_customers(
     rows = q.order_by(DomesticCustomer.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
     order_counts = {}
+    initialized_ids = set()
     if rows:
+        row_ids = [r.id for r in rows]
         order_counts = dict(
             db.query(DomesticOrder.customer_id, func.count(DomesticOrder.id))
             .filter(
-                DomesticOrder.customer_id.in_([r.id for r in rows]),
+                DomesticOrder.customer_id.in_(row_ids),
                 DomesticOrder.deleted_flag == 0,
             )
             .group_by(DomesticOrder.customer_id)
             .all()
         )
+        initialized_ids = {
+            cid for (cid,) in db.query(DomesticCustomerLedger.customer_id)
+            .filter(DomesticCustomerLedger.customer_id.in_(row_ids))
+            .distinct()
+        }
 
     items = [{
         "id": r.id,
@@ -69,6 +77,7 @@ def list_customers(
         "status": r.status,
         "balance": float(r.balance or 0),
         "order_count": order_counts.get(r.id, 0),
+        "initialized": r.id in initialized_ids,
         "created_at": r.created_at,
     } for r in rows]
     return items, total
@@ -188,3 +197,123 @@ def delete_customer(db: Session, customer_id: int) -> None:
     except IntegrityError as exc:
         db.rollback()
         raise ValueError("客户已有业务记录，不能删除；可改为停用") from exc
+
+
+# ── 等级与余额的初始化 / 临时调整（仅 domestic:admin）──────────────
+
+
+def _customer_snapshot(customer: DomesticCustomer, *, replayed: bool = False) -> dict:
+    return {
+        "id": customer.id,
+        "current_balance": float(customer.balance or 0),
+        "membership_level": customer.membership_level,
+        "membership_label": membership_label(customer.membership_level),
+        "replayed": replayed,
+    }
+
+
+def _lock_customer_row(db: Session, customer_id: int) -> DomesticCustomer:
+    customer = db.query(DomesticCustomer).filter(
+        DomesticCustomer.id == customer_id
+    ).populate_existing().with_for_update().first()
+    if customer is None:
+        raise ValueError("客户不存在")
+    return customer
+
+
+def initialize_customer(
+    db: Session, customer_id: int, payload, user_id: int
+) -> dict:
+    """期初初始化：只在客户还没有任何资金流水时允许，幂等键固定在客户上。
+
+    等级在这里是显式指定而非充值派生——老客户线下已有余额/约定等级，
+    建档时一次写入；之后的充值仍按金额重新核定等级。
+    """
+    customer = _lock_customer_row(db, customer_id)
+    amount = balance_service.money(payload.balance)
+    business_key = f"init:{customer.id}"
+    existing = db.query(DomesticCustomerLedger).filter(
+        DomesticCustomerLedger.business_key == business_key
+    ).first()
+    if existing is not None:
+        if balance_service.money(existing.amount) != amount:
+            raise ValueError("该客户已初始化过不同金额，不能重复初始化；请用「临时调整」")
+        return _customer_snapshot(customer, replayed=True)
+    ledger_count = db.query(func.count(DomesticCustomerLedger.id)).filter(
+        DomesticCustomerLedger.customer_id == customer.id
+    ).scalar() or 0
+    if ledger_count:
+        raise ValueError("该客户已有余额流水，不能初始化；请用「临时调整」")
+
+    if amount > 0:
+        balance_service.apply_balance_change(
+            db,
+            customer_id=customer.id,
+            amount=amount,
+            transaction_type="init",
+            user_id=user_id,
+            remark=payload.remark or "期初余额初始化",
+            business_key=business_key,
+        )
+        db.refresh(customer)
+    if "membership_level" in payload.model_fields_set:
+        customer.membership_level = payload.membership_level
+    db.commit()
+    return _customer_snapshot(customer)
+
+
+def adjust_customer(
+    db: Session, customer_id: int, payload, user_id: int
+) -> dict:
+    """临时调整：余额可有符号增减，会员等级可显式覆盖或取消。
+
+    等级覆盖是临时的——下一次成功充值仍按当次金额重新核定等级。
+    幂等：同一 request_id 重放返回首个结果，不重复入账、不重复写审计行。
+    """
+    customer = _lock_customer_row(db, customer_id)
+    amount = balance_service.money(payload.amount)
+    change_level = "membership_level" in payload.model_fields_set
+    if amount == 0 and not change_level:
+        raise ValueError("没有需要调整的内容：请填余额调整额或选择会员等级")
+
+    business_key = f"adjust:{customer.id}:{payload.request_id}"
+    existing = db.query(DomesticCustomerLedger).filter(
+        DomesticCustomerLedger.business_key == business_key
+    ).first()
+    if existing is not None:
+        if balance_service.money(existing.amount) != amount:
+            raise ValueError("该调整请求号已用于不同金额，请刷新后重新操作")
+        return _customer_snapshot(customer, replayed=True)
+
+    if amount != 0:
+        balance_service.apply_balance_change(
+            db,
+            customer_id=customer.id,
+            amount=amount,
+            transaction_type="adjust",
+            user_id=user_id,
+            remark=payload.remark,
+            business_key=business_key,
+        )
+        db.refresh(customer)
+    if change_level and customer.membership_level != payload.membership_level:
+        # 等级变化落一条零金额审计行，和资金流水在同一条时间线上可查。
+        # 只调等级时它同时充当幂等行（占住 business_key）。
+        db.add(DomesticCustomerLedger(
+            customer_id=customer.id,
+            transaction_type="level_adjust",
+            amount=0,
+            balance_before=customer.balance,
+            balance_after=customer.balance,
+            business_key=(
+                None if amount != 0 else business_key
+            ),
+            remark=(
+                f"会员等级临时调整：{membership_label(customer.membership_level)}"
+                f" → {membership_label(payload.membership_level)}；{payload.remark}"
+            ),
+            created_by=user_id,
+        ))
+        customer.membership_level = payload.membership_level
+    db.commit()
+    return _customer_snapshot(customer)

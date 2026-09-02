@@ -137,6 +137,10 @@
                 variant="link" left-icon="Warning" @click="openSkipAudits(item)"
               >异常跳过记录</GlassButton>
               <GlassButton v-if="!item.route_id" v-permission="'domestic:write'" variant="link" left-icon="Connection" @click="openAttachRoute(item)">配工艺路线</GlassButton>
+              <GlassButton
+                v-if="detail.status <= 2 && item.status !== 2" v-permission="'domestic:write'"
+                variant="link" left-icon="EditPen" @click="openPriceEdit(item)"
+              >改价</GlassButton>
               <GlassButton v-if="item.status === 1" v-permission="'domestic:write'" variant="link" left-icon="Van" @click="openShip(item)">登记发货</GlassButton>
             </div>
           </div>
@@ -187,6 +191,32 @@
         </div>
       </template>
     </DetailDrawer>
+
+    <el-dialog v-model="priceEditDialog.visible" title="手工改价" width="420px">
+      <el-form label-width="90px" v-loading="priceEditDialog.saving">
+        <el-form-item label="明细">
+          <span>{{ priceEditDialog.item?.line_code }} · {{ priceEditDialog.item?.product_name }} × {{ priceEditDialog.item?.order_qty }}</span>
+        </el-form-item>
+        <el-form-item label="原始价">
+          <span>¥{{ Number(priceEditDialog.item?.original_price || 0).toFixed(2) }}</span>
+        </el-form-item>
+        <el-form-item label="当前优惠价">
+          <span>¥{{ Number(priceEditDialog.item?.unit_price || 0).toFixed(2) }}（{{ priceEditDialog.item?.pricing_rule_label || '历史人工价' }}）</span>
+        </el-form-item>
+        <el-form-item label="新优惠价" required>
+          <el-input-number
+            v-model="priceEditDialog.price" :min="0.01"
+            :max="Number(priceEditDialog.item?.original_price || 0) || undefined"
+            :precision="2" style="width: 100%"
+          />
+          <span class="unit-hint">不能超过原价；已提交订单的差额立即与客户余额结算</span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <GlassButton variant="ghost" @click="priceEditDialog.visible = false">取消</GlassButton>
+        <GlassButton variant="primary" :loading="priceEditDialog.saving" @click="confirmPriceEdit">确认改价</GlassButton>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="shipDialog.visible" title="登记发货" width="420px">
       <el-form label-width="90px">
@@ -358,6 +388,7 @@ const {
   printDialog, openPrintCard, openQrLabel, openWxacodeLabel,
   wxacodeDialog, openWxacode, downloadWxacode,
   handleExport, handleSubmitDraft, submittingOrderIds, handleTerminate, handleDelete, goCreate,
+  priceEditDialog, openPriceEdit, confirmPriceEdit,
 } = useDomesticOrders()
 </script>
 

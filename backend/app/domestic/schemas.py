@@ -74,6 +74,47 @@ class CustomerRechargeCreate(BaseModel):
         return v.strip() if isinstance(v, str) else v
 
 
+class CustomerInitialize(BaseModel):
+    """老客户建档时一次性写入期初余额与会员等级；已有流水后一律走临时调整。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    balance: Decimal = Field(
+        Decimal("0"), ge=0, le=Decimal("999999999999.99"),
+        max_digits=14, decimal_places=2,
+    )
+    membership_level: Literal["silver", "black", "supreme"] | None = None
+    remark: str | None = Field(None, max_length=500)
+
+    @field_validator("remark")
+    @classmethod
+    def _strip_remark(cls, v: str | None) -> str | None:
+        value = v.strip() if isinstance(v, str) else v
+        return value or None
+
+
+class CustomerAdjust(BaseModel):
+    """临时调整余额（有符号）与/或会员等级。等级是临时覆盖，下次充值仍按金额重新核定。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(
+        Decimal("0"), ge=Decimal("-999999999999.99"), le=Decimal("999999999999.99"),
+        max_digits=14, decimal_places=2,
+        description="余额调整额：正加负减，0 表示不动余额",
+    )
+    membership_level: Literal["silver", "black", "supreme"] | None = Field(
+        None, description="传入才修改；null=取消会员",
+    )
+    remark: str = Field(..., min_length=2, max_length=500)
+    request_id: str = Field(..., min_length=8, max_length=64, description="客户端幂等键")
+
+    @field_validator("remark", "request_id", mode="before")
+    @classmethod
+    def _strip_text(cls, v: str) -> str:
+        return v.strip() if isinstance(v, str) else v
+
+
 # ── 产品属性 ──────────────────────────────────────────
 
 
@@ -273,6 +314,7 @@ class ItemExpectedQuote(BaseModel):
         "member_fixed",
         "member_fixed_capped",
         "member_reduction",
+        "manual_override",
         "legacy_manual",
     ]
     pricing_version: str = Field(..., min_length=1, max_length=32)
@@ -326,6 +368,10 @@ class OrderItemInput(BaseModel):
     attrs: ProductAttrs
     order_qty: int = Field(..., gt=0, le=2000, description="下单数量（逐件码物化，单明细最多2000件）")
     expected_quote: ExpectedQuote
+    manual_discount_price: Decimal | None = Field(
+        None, gt=0, le=Decimal("999999999999.99"), max_digits=14, decimal_places=2,
+        description="手工改价后的优惠价；不传则按系统报价成交，传入也不得高于原价",
+    )
     hairstyle: str | None = Field(None, max_length=1000)
     hairstyle_images: list[str] = _IMG_FIELD
     color: str | None = Field(None, max_length=1000)
@@ -455,6 +501,10 @@ class OrderItemUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     order_qty: int | None = Field(None, gt=0, le=2000)
+    unit_price: Decimal | None = Field(
+        None, gt=0, le=Decimal("999999999999.99"), max_digits=14, decimal_places=2,
+        description="手工改价后的优惠价；不得高于原价快照，改后该明细记为 manual_override",
+    )
     hairstyle: str | None = Field(None, max_length=1000)
     hairstyle_images: list[str] | None = None
     color: str | None = Field(None, max_length=1000)

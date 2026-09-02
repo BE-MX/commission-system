@@ -8,6 +8,7 @@ import {
   buildCreateItems,
   buildDraftSubmitPayload,
   buildQuoteRequest,
+  effectiveDiscountPrice,
   hasBlockingPrice,
   invalidateItemQuote,
   membershipPreview,
@@ -120,7 +121,45 @@ test('草稿提交 body 直接回传 item_id 报价快照', () => {
   })
 })
 
-test('页面契约：不手改会员/单价，报价与草稿 API 都传 body', async () => {
+test('手工改价进入建单 payload，失效与恢复都回到系统报价', () => {
+  const item = {
+    key: 'line-a', attrs, order_qty: 2, expectedQuote: expected,
+    quoteStatus: 'priced', manualDiscountPrice: 950,
+    quote: { status: 'priced', original_price: '1198.00', discount_price: '998.00' },
+    hairstyle_images: [], color_images: [], style_images: [], remark_images: [],
+  }
+  assert.equal(effectiveDiscountPrice(item), 950)
+  const [payload] = buildCreateItems([item], value => value)
+  assert.equal(payload.manual_discount_price, 950)
+  assert.equal('unit_price' in payload, false)
+
+  // 等于系统报价或清空都不发手工价
+  item.manualDiscountPrice = null
+  assert.equal(effectiveDiscountPrice(item), 998)
+  assert.equal(buildCreateItems([item], value => value)[0].manual_discount_price, null)
+
+  // 属性变化让报价失效时手工价一并清掉
+  item.manualDiscountPrice = 950
+  invalidateItemQuote(item)
+  assert.equal(item.manualDiscountPrice, null)
+
+  // 重新报价后原价下调到手工价之下：恢复系统报价并报告清掉的行
+  item.quoteStatus = 'pending'
+  item.manualDiscountPrice = 950
+  const cleared = applyQuoteResult([item], { items: [{
+    client_key: 'line-a', status: 'priced',
+    original_price: '900.00', discount_price: '880.00',
+    expected_quote: { ...expected, original_price: '900.00', discount_price: '880.00' },
+  }] })
+  assert.deepEqual(cleared, ['line-a'])
+  assert.equal(item.manualDiscountPrice, null)
+  assert.equal(effectiveDiscountPrice(item), 880)
+
+  assert.equal(pricingRuleLabelForQuote({ pricing_rule: 'manual_override' }), '手工改价')
+  assert.equal(pricingRuleLabelForQuote({ pricing_rule: 'legacy_manual' }), '历史手工价')
+})
+
+test('页面契约：不手改会员，优惠价只能走手工改价契约', async () => {
   const [customers, createPage, createLogic, orders, products, api] = await Promise.all([
     readFile(new URL('../src/views/domestic/DomesticCustomers.vue', import.meta.url), 'utf8'),
     readFile(new URL('../src/views/domestic/DomesticOrderCreate.vue', import.meta.url), 'utf8'),
@@ -130,13 +169,21 @@ test('页面契约：不手改会员/单价，报价与草稿 API 都传 body', 
     readFile(new URL('../src/api/domestic.js', import.meta.url), 'utf8'),
   ])
   assert.doesNotMatch(customers, /v-model="dialog\.membership_level"/)
+  assert.match(customers, /openInit/)
+  assert.match(customers, /openAdjust/)
+  assert.match(customers, /__keep__/)
+  assert.match(api, /post\(`\/customers\/\$\{id\}\/initialize`, data\)/)
+  assert.match(api, /post\(`\/customers\/\$\{id\}\/adjust`, data\)/)
   assert.doesNotMatch(createPage, /v-model="item\.unit_price"/)
   assert.match(api, /post\('\/pricing\/quote', data\)/)
   assert.match(api, /post\(`\/orders\/\$\{id\}\/submit`, data/)
   assert.match(api, /base-price-impact/)
+  assert.match(api, /put\(`\/items\/\$\{itemId\}`, data\)/)
   assert.match(createLogic, /quoteLoading\.value = false/)
   assert.match(createLogic, /name: 'DomesticProducts'/)
   assert.match(createPage, /goProducts/)
+  assert.match(createPage, /onManualPrice/)
   assert.match(orders, /submittingOrderIds\.has\(row\.id\)/)
+  assert.match(orders, /openPriceEdit/)
   assert.match(products, /affected_sku_count/)
 })

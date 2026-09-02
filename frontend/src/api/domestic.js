@@ -74,6 +74,15 @@ export function rechargeCustomer(id, data) {
   return domesticClient.post(`/customers/${id}/recharges`, data)
 }
 
+// 期初初始化（仅 admin，且无流水时才可用）与临时调整（余额增减/等级覆盖）
+export function initializeCustomer(id, data) {
+  return domesticClient.post(`/customers/${id}/initialize`, data)
+}
+
+export function adjustCustomer(id, data) {
+  return domesticClient.post(`/customers/${id}/adjust`, data)
+}
+
 export function listCustomerBalanceLedger(id, params) {
   return domesticClient.get(`/customers/${id}/balance-ledger`, { params })
 }
@@ -154,6 +163,10 @@ export function getItemWxacode(itemId) {
 }
 
 // ── 明细 ──
+export function updateOrderItem(itemId, data) {
+  return domesticClient.put(`/items/${itemId}`, data)
+}
+
 export function attachItemRoute(itemId, routeId) {
   return domesticClient.post(`/items/${itemId}/attach-route`, { route_id: routeId })
 }

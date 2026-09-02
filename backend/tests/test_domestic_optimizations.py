@@ -496,8 +496,13 @@ def test_item_amount_edits_settle_difference_and_termination_refunds(db):
     order_service.update_item(db, item.id, OrderItemUpdate(order_qty=3), creator.id)
     db.refresh(customer)
     assert customer.balance == Decimal("70.00")
-    with pytest.raises(ValidationError, match="unit_price"):
-        OrderItemUpdate(unit_price=Decimal("5.00"))
+
+    # 手工改价（不高于原价快照）同样走差额结算：3 件 × 10 降到 3 件 × 5，退 15
+    order_service.update_item(db, item.id, OrderItemUpdate(unit_price=Decimal("5.00")), creator.id)
+    db.refresh(customer)
+    assert customer.balance == Decimal("85.00")
+    with pytest.raises(ValidationError):
+        OrderItemUpdate(unit_price=Decimal("0"))
 
     order_service.terminate_order(db, created["id"], "客户取消", creator.id)
     db.refresh(customer)
