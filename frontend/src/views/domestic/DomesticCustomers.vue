@@ -19,6 +19,7 @@
       <el-col :span="8">
         <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
         <GlassButton v-permission="'domestic:write'" variant="ghost" left-icon="Plus" @click="openDialog()">新增客户</GlassButton>
+        <GlassButton v-permission="'domestic:admin'" variant="ghost" left-icon="Upload" @click="openImport">导入客户</GlassButton>
       </el-col>
     </el-row>
 
@@ -28,6 +29,30 @@
       <el-table :data="list" v-loading="loading" border class="list-table" style="width: 100%">
         <el-table-column prop="custom_code" label="客户编码" min-width="110" show-overflow-tooltip />
         <el-table-column prop="shop_name" label="客户店名" min-width="160" show-overflow-tooltip />
+        <el-table-column label="客户等级" min-width="90">
+          <template #default="{ row }">
+            <el-tag v-if="row.customer_level" size="small" effect="plain" type="warning">{{ row.customer_level }}</el-tag>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="客户状态" min-width="90">
+          <template #default="{ row }">
+            <el-tag v-if="row.lifecycle_status" size="small" effect="plain"
+              :type="{ 活跃: 'success', 潜在: 'warning', 沉默: 'info', 流失: 'danger' }[row.lifecycle_status] || 'info'">
+              {{ row.lifecycle_status }}
+            </el-tag>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="owner_name" label="归属销售" min-width="100" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.owner_name || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="customer_source" label="客户来源" min-width="110" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.customer_source || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="store_type" label="门店类型" min-width="130" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.store_type || '-' }}</template>
+        </el-table-column>
         <el-table-column label="会员等级" min-width="110">
           <template #default="{ row }"><el-tag size="small" effect="plain">{{ row.membership_label }}</el-tag></template>
         </el-table-column>
@@ -45,7 +70,14 @@
         </el-table-column>
         <el-table-column prop="contact" label="联系人" min-width="100" show-overflow-tooltip />
         <el-table-column prop="phone" label="电话" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="address" label="收货地址" min-width="200" show-overflow-tooltip />
+        <el-table-column label="累计订单 / 销售额" min-width="150">
+          <template #default="{ row }">
+            <template v-if="row.total_order_count != null || row.total_sales_amount != null">
+              {{ row.total_order_count ?? '-' }} 单 / ¥{{ Number(row.total_sales_amount || 0).toFixed(2) }}
+            </template>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="order_count" label="订单数" min-width="90" />
         <el-table-column label="充值余额" min-width="110" align="right">
           <template #default="{ row }"><span class="balance-value">¥{{ Number(row.balance || 0).toFixed(2) }}</span></template>
@@ -76,23 +108,97 @@
       />
     </div>
 
-    <el-dialog v-model="dialog.visible" :title="dialog.id ? '编辑客户' : '新增客户'" width="480px">
-      <el-form :model="dialog" label-width="90px">
-        <el-form-item label="客户编码">
-          <el-input v-model="dialog.custom_code" maxlength="64" placeholder="自定义，可不填" />
-        </el-form-item>
-        <el-form-item label="客户店名" required>
-          <el-input v-model="dialog.shop_name" placeholder="如：马姐假发" />
-        </el-form-item>
-        <el-form-item label="联系人">
-          <el-input v-model="dialog.contact" />
-        </el-form-item>
-        <el-form-item label="电话">
-          <el-input v-model="dialog.phone" />
+    <el-dialog v-model="dialog.visible" :title="dialog.id ? '编辑客户' : '新增客户'" width="640px">
+      <el-form :model="dialog" label-width="100px">
+        <el-row :gutter="12">
+          <el-col :span="12">
+            <el-form-item label="客户编码">
+              <el-input v-model="dialog.custom_code" maxlength="64" placeholder="自定义，可不填" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="客户店名" required>
+              <el-input v-model="dialog.shop_name" placeholder="如：马姐假发" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="12">
+          <el-col :span="12"><el-form-item label="联系人"><el-input v-model="dialog.contact" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="手机号"><el-input v-model="dialog.phone" /></el-form-item></el-col>
+        </el-row>
+        <el-form-item label="省份 / 城市">
+          <el-cascader
+            v-model="dialog.region" :options="chinaRegions" :props="{ expandTrigger: 'hover' }"
+            filterable clearable placeholder="选择省份 / 城市" style="width: 100%"
+          />
         </el-form-item>
         <el-row :gutter="12">
-          <el-col :span="12"><el-form-item label="省份"><el-input v-model="dialog.province" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="城市"><el-input v-model="dialog.city" /></el-form-item></el-col>
+          <el-col :span="12">
+            <el-form-item label="归属销售">
+              <el-select v-model="dialog.owner_user_id" filterable clearable style="width: 100%">
+                <el-option v-for="opt in options.owners" :key="opt.value" :label="opt.label" :value="opt.value" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="客户来源">
+              <el-select v-model="dialog.customer_source" clearable style="width: 100%">
+                <el-option v-for="opt in options.customer_source" :key="opt.value" :label="opt.label" :value="opt.value" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="12">
+          <el-col :span="8">
+            <el-form-item label="客户等级">
+              <el-select v-model="dialog.customer_level" clearable style="width: 100%">
+                <el-option v-for="opt in options.customer_level" :key="opt.value" :label="opt.label" :value="opt.value" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="客户状态">
+              <el-select v-model="dialog.lifecycle_status" clearable style="width: 100%">
+                <el-option v-for="opt in options.lifecycle_status" :key="opt.value" :label="opt.label" :value="opt.value" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="门店类型">
+              <el-select v-model="dialog.store_type" clearable style="width: 100%">
+                <el-option v-for="opt in options.store_type" :key="opt.value" :label="opt.label" :value="opt.value" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="12">
+          <el-col :span="8">
+            <el-form-item label="首次联系">
+              <el-date-picker v-model="dialog.first_contact_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="首次下单">
+              <el-date-picker v-model="dialog.first_order_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="最近下单">
+              <el-date-picker v-model="dialog.last_order_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="12">
+          <el-col :span="12">
+            <el-form-item label="累计订单数">
+              <el-input-number v-model="dialog.total_order_count" :min="0" :precision="0" style="width: 100%" placeholder="历史档案口径" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="累计销售额">
+              <el-input-number v-model="dialog.total_sales_amount" :min="0" :precision="2" :step="1000" style="width: 100%" placeholder="历史档案口径" />
+            </el-form-item>
+          </el-col>
         </el-row>
         <el-form-item label="收货地址">
           <el-input v-model="dialog.address" type="textarea" :rows="2" />
@@ -104,6 +210,33 @@
       <template #footer>
         <GlassButton variant="ghost" @click="dialog.visible = false">取消</GlassButton>
         <GlassButton variant="primary" :loading="saving" @click="save">确定</GlassButton>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="importDialog.visible" title="导入客户（莱莎客户信息录入表）" width="560px">
+      <el-alert type="info" show-icon :closable="false" class="tips"
+        title="按客户编码更新已有客户；同店名不同编码的只补空档并保留先导入的归属。财务字段（余额/会员等级）导入不改动。" />
+      <AppUpload
+        v-model="importDialog.files" :upload-fn="doImport" accept=".xlsx"
+        :show-list="false" :limit="1" button-text="选择 xlsx 文件导入"
+      />
+      <template v-if="importDialog.result">
+        <el-result
+          icon="success" class="import-result"
+          :title="`新建 ${importDialog.result.created}，更新 ${importDialog.result.updated}，合并同名 ${importDialog.result.merged}`"
+          :sub-title="`失败 ${importDialog.result.errors?.length || 0} 条，解析跳过 ${importDialog.result.skipped?.length || 0} 条`"
+        />
+        <el-scrollbar v-if="(importDialog.result.errors?.length || 0) + (importDialog.result.collisions?.length || 0) > 0" max-height="220px">
+          <div v-for="(item, i) in importDialog.result.errors" :key="`e${i}`" class="import-line error">
+            {{ item.row }}：{{ item.reason }}
+          </div>
+          <div v-for="(item, i) in importDialog.result.collisions" :key="`c${i}`" class="import-line">
+            {{ item.row }}：{{ item.reason }}
+          </div>
+        </el-scrollbar>
+      </template>
+      <template #footer>
+        <GlassButton variant="ghost" @click="importDialog.visible = false">关闭</GlassButton>
       </template>
     </el-dialog>
 
@@ -202,224 +335,26 @@
 </template>
 
 <script setup>
-/** 内贸客户管理。下单页可就地新建客户，这里做集中维护。 */
-import { reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import {
-  adjustCustomer, createCustomer, deleteCustomer, initializeCustomer,
-  listCustomerBalanceLedger, listCustomers,
-  newRequestId, rechargeCustomer, updateCustomer,
-} from '@/api/domestic'
-import { useListPage } from '@/composables/useListPage'
-import { confirmDanger, msgSuccess } from '@/utils/feedback'
+/** 内贸客户管理。下单页可就地新建客户，这里做集中维护；逻辑在 composables/useDomesticCustomers.js。 */
+import { CHINA_REGIONS } from '@/data/chinaRegions'
+import AppUpload from '@/components/AppUpload.vue'
 import GlassButton from '@/components/GlassButton.vue'
-import { membershipChangeLabel, membershipPreview } from './composables/domesticMemberPricing'
+import { useDomesticCustomers } from './composables/useDomesticCustomers'
 
-const membershipOptions = [
-  { label: '普通客户', value: null },
-  { label: '银卡会员', value: 'silver' },
-  { label: '黑卡会员', value: 'black' },
-  { label: '至尊会员', value: 'supreme' },
-]
-
-const saving = ref(false)
+const chinaRegions = CHINA_REGIONS
 
 const {
   loading, list, total, page, pageSize, searchForm,
-  fetchList, handleSearch, handlePageChange, handleSizeChange,
-} = useListPage(
-  async ({ page, page_size, ...form }) => {
-    const params = { page, page_size }
-    if (form.keyword) params.keyword = form.keyword
-    if (form.status !== '' && form.status !== null) params.status = form.status
-    const res = await listCustomers(params)
-    return res.data || {}
-  },
-  { searchForm: { keyword: '', status: '' } },
-)
-
-const dialog = reactive({
-  visible: false, id: null, custom_code: '', shop_name: '',
-  province: '', city: '', contact: '', phone: '', address: '', remark: '',
-})
-
-const rechargeDialog = reactive({
-  visible: false, customer: null, amount: 0, remark: '', requestId: '', saving: false,
-})
-const ledgerDrawer = reactive({
-  visible: false, customer: null, items: [], loading: false, page: 1, total: 0,
-})
-const ledgerTypeLabel = {
-  recharge: '充值', order_charge: '订单扣款', order_adjustment: '订单差额', order_refund: '订单退款',
-  init: '期初初始化', adjust: '手工调整', level_adjust: '等级调整',
-}
-
-const initDialog = reactive({
-  visible: false, customer: null, balance: 0, membership_level: null, remark: '', saving: false,
-})
-const adjustDialog = reactive({
-  visible: false, customer: null, amount: 0, membership_level: '__keep__',
-  remark: '', requestId: '', saving: false,
-})
-
-function openInit(customer) {
-  Object.assign(initDialog, {
-    visible: true, customer, balance: 0, membership_level: null, remark: '', saving: false,
-  })
-}
-
-async function confirmInit() {
-  if (!(initDialog.balance >= 0)) return ElMessage.warning('期初余额不能为负')
-  initDialog.saving = true
-  try {
-    const res = await initializeCustomer(initDialog.customer.id, {
-      balance: initDialog.balance,
-      membership_level: initDialog.membership_level,
-      remark: initDialog.remark || null,
-    })
-    const data = res.data || {}
-    initDialog.visible = false
-    ElMessage.success(data.replayed
-      ? `该客户已初始化过；当前${data.membership_label}，余额 ¥${Number(data.current_balance || 0).toFixed(2)}`
-      : `初始化完成；当前${data.membership_label}，余额 ¥${Number(data.current_balance || 0).toFixed(2)}`)
-    await fetchList()
-  } catch { /* 拦截器已提示 */ } finally {
-    initDialog.saving = false
-  }
-}
-
-function openAdjust(customer) {
-  Object.assign(adjustDialog, {
-    visible: true, customer, amount: 0, membership_level: '__keep__',
-    remark: '', requestId: newRequestId(), saving: false,
-  })
-}
-
-async function confirmAdjust() {
-  const changeLevel = adjustDialog.membership_level !== '__keep__'
-  if (!adjustDialog.amount && !changeLevel) return ElMessage.warning('请填余额调整额或选择会员等级')
-  if (!adjustDialog.remark.trim() || adjustDialog.remark.trim().length < 2) {
-    return ElMessage.warning('请填写调整原因（至少 2 个字）')
-  }
-  adjustDialog.saving = true
-  try {
-    const payload = {
-      amount: adjustDialog.amount || 0,
-      remark: adjustDialog.remark.trim(),
-      // 弹窗打开时生成一次：响应丢失后用户重点仍是同一笔调整
-      request_id: adjustDialog.requestId,
-    }
-    if (changeLevel) payload.membership_level = adjustDialog.membership_level
-    const res = await adjustCustomer(adjustDialog.customer.id, payload)
-    const data = res.data || {}
-    adjustDialog.visible = false
-    ElMessage.success(data.replayed
-      ? `本次调整已入账过，未重复执行；当前${data.membership_label}，余额 ¥${Number(data.current_balance || 0).toFixed(2)}`
-      : `调整完成；当前${data.membership_label}，余额 ¥${Number(data.current_balance || 0).toFixed(2)}`)
-    await fetchList()
-  } catch { /* 拦截器已提示 */ } finally {
-    adjustDialog.saving = false
-  }
-}
-
-function openDialog(row) {
-  Object.assign(dialog, {
-    visible: true,
-    id: row?.id || null,
-    custom_code: row?.custom_code || '',
-    shop_name: row?.shop_name || '',
-    province: row?.province || '',
-    city: row?.city || '',
-    contact: row?.contact || '',
-    phone: row?.phone || '',
-    address: row?.address || '',
-    remark: row?.remark || '',
-  })
-}
-
-async function save() {
-  if (!dialog.shop_name.trim()) return ElMessage.warning('请填写客户店名')
-  const payload = {
-    custom_code: dialog.custom_code.trim() || null,
-    shop_name: dialog.shop_name.trim(),
-    province: dialog.province.trim() || null,
-    city: dialog.city.trim() || null,
-    contact: dialog.contact || null,
-    phone: dialog.phone || null,
-    address: dialog.address || null,
-    remark: dialog.remark || null,
-  }
-  saving.value = true
-  try {
-    if (dialog.id) await updateCustomer(dialog.id, payload)
-    else await createCustomer(payload)
-    dialog.visible = false
-    msgSuccess('保存')
-    await fetchList()
-  } catch { /* 拦截器已提示 */ } finally {
-    saving.value = false
-  }
-}
-
-function openRecharge(customer) {
-  Object.assign(rechargeDialog, {
-    visible: true, customer, amount: 0, remark: '', requestId: newRequestId(), saving: false,
-  })
-}
-
-async function confirmRecharge() {
-  if (!(rechargeDialog.amount > 0)) return ElMessage.warning('请输入充值金额')
-  rechargeDialog.saving = true
-  try {
-    const res = await rechargeCustomer(rechargeDialog.customer.id, {
-      amount: rechargeDialog.amount,
-      remark: rechargeDialog.remark || null,
-      // 弹窗打开时生成一次：服务端已入账但响应丢失后，用户重点仍是同一笔。
-      request_id: rechargeDialog.requestId,
-    })
-    const data = res.data || {}
-    rechargeDialog.visible = false
-    const membershipChange = membershipChangeLabel(data.membership_change)
-    ElMessage.success(data.replayed
-      ? `已入账，本次未重复充值；当前${data.membership_label}，余额 ¥${Number(data.current_balance || 0).toFixed(2)}`
-      : `充值成功；会员等级${membershipChange || `保持${data.membership_label}`}；余额 ¥${Number(data.current_balance || 0).toFixed(2)}`)
-    await fetchList()
-  } catch { /* 拦截器已提示 */ } finally {
-    rechargeDialog.saving = false
-  }
-}
-
-async function openLedger(customer) {
-  Object.assign(ledgerDrawer, { visible: true, customer, items: [], page: 1, total: 0 })
-  await loadLedger(1)
-}
-
-async function loadLedger(page = ledgerDrawer.page) {
-  ledgerDrawer.page = page
-  ledgerDrawer.loading = true
-  try {
-    const res = await listCustomerBalanceLedger(
-      ledgerDrawer.customer.id, { page: ledgerDrawer.page, page_size: 20 },
-    )
-    ledgerDrawer.items = res.data?.items || []
-    ledgerDrawer.total = res.data?.total || 0
-  } catch { /* 拦截器已提示 */ } finally {
-    ledgerDrawer.loading = false
-  }
-}
-
-async function toggleStatus(row) {
-  await updateCustomer(row.id, { status: row.status ? 0 : 1 })
-  msgSuccess(row.status ? '停用' : '启用')
-  await fetchList()
-}
-
-async function handleDelete(row) {
-  await confirmDanger('删除', `客户「${row.shop_name}」`)
-  await deleteCustomer(row.id)
-  msgSuccess('删除')
-  await fetchList()
-}
+  handleSearch, handlePageChange, handleSizeChange,
+  saving, dialog, options, openDialog, save,
+  rechargeDialog, openRecharge, confirmRecharge,
+  initDialog, openInit, confirmInit,
+  adjustDialog, openAdjust, confirmAdjust,
+  ledgerDrawer, ledgerTypeLabel, openLedger, loadLedger,
+  importDialog, openImport, doImport,
+  toggleStatus, handleDelete, membershipOptions,
+  membershipPreview,
+} = useDomesticCustomers()
 </script>
 
 <style scoped>
@@ -456,4 +391,7 @@ async function handleDelete(row) {
 .muted, .preview-hint { color: var(--el-text-color-secondary); font-size: 12px; }
 .preview-hint { margin-left: 8px; }
 .tips { margin-bottom: 12px; }
+.import-result { padding: 8px 0; }
+.import-line { font-size: 12px; color: var(--el-text-color-secondary); padding: 3px 0; }
+.import-line.error { color: var(--el-color-danger); }
 </style>

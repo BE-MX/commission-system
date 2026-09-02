@@ -58,6 +58,18 @@ export function listCustomers(params) {
   return domesticClient.get('/customers', { params })
 }
 
+// 客户表单下拉值域（来源/门店类型/等级/客户状态字典 + 归属销售用户）
+export function getCustomerOptions() {
+  return domesticClient.get('/customers/options')
+}
+
+// 《莱莎客户信息录入表》批量导入（仅 domestic:admin）
+export function importCustomers(file) {
+  const form = new FormData()
+  form.append('file', file)
+  return domesticClient.post('/customers/import', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+}
+
 export function createCustomer(data) {
   return domesticClient.post('/customers', data)
 }
