@@ -813,7 +813,7 @@ def list_leads(
     keyword: str | None = None,
     store_ids: list[int] | None = None,
 ) -> tuple[list[dict], int]:
-    # store_ids：None=不限门店（read_all/超管/kiosk 共享屏）；[]=无门店绑定，直接空集
+    # store_ids：None=不限门店（read_all/超管）；[]=无门店绑定，直接空集
     if store_ids is not None and not store_ids:
         return [], 0
     q = db.query(ExpoCustomer)
@@ -944,15 +944,20 @@ def serialize_kiosk_lead(row: dict) -> dict:
     }
 
 
-def get_kiosk_strategy(db: Session, customer_id: int) -> dict | None:
+def get_kiosk_strategy(
+    db: Session, customer_id: int, store_ids: list[int] | None = None,
+) -> dict | None:
     """kiosk 销售面板线索详情：话术 + 试戴款 + 原图/效果图（2026-07-13 亮哥指令加图）。
 
     照片随载荷下发（客户建会话前已签拍照同意）；internal 发况仍不出 kiosk。
+    store_ids 与列表同一数据范围（None=不限）；跨店返回 None→404，不暴露存在性。
     返回 None=客户不存在；strategy=None 且 strategy_pending=True 表示话术
     正在随合成并行生成（前端 5s 静默轮询），两者都 False 则该客户不会有话术。
     """
     customer = db.get(ExpoCustomer, customer_id)
     if not customer:
+        return None
+    if store_ids is not None and customer.store_id not in store_ids:
         return None
     sessions = (
         db.query(ExpoSession)

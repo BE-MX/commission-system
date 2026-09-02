@@ -613,41 +613,13 @@ bind('fromCamera');
 
 
 # ---------------- kiosk 销售面板（展位设备 expo:write，2026-07-13） ----------------
-# 与 /leads（expo_lead:*，线索台全量数据）刻意分离：共享屏最小暴露面，
-# 手机号服务端脱敏、话术载荷不含 internal 发况与客户照片
-
-@router.get("/kiosk/leads", summary="kiosk 销售面板线索列表（手机号脱敏，姓名/手机关键词检索）")
-def kiosk_leads(
-    keyword: str | None = Query(None, max_length=64),
-    expo_code: str | None = Query(None),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=100),
-    db: Session = Depends(get_db),
-    _user=Depends(require_permission("expo:write")),
-):
-    items, total = service.list_leads(
-        db, page=page, page_size=page_size, expo_code=expo_code, keyword=keyword,
-    )
-    return ok(page_result([service.serialize_kiosk_lead(r) for r in items], total, page, page_size))
-
-
-@router.get("/kiosk/leads/{customer_id}/strategy", summary="kiosk 销售面板话术（只出话术与试戴款，无 internal 发况）")
-def kiosk_lead_strategy(
-    customer_id: int,
-    db: Session = Depends(get_db),
-    _user=Depends(require_permission("expo:write")),
-):
-    payload = service.get_kiosk_strategy(db, customer_id)
-    if payload is None:
-        raise HTTPException(404, "客户不存在")
-    return ok(payload)
-
-
-# ---------------- 线索台（PC，expo_lead:*，2026-07-12 从 expo:read 拆出） ----------------
+# 与 /leads（expo_lead:*，线索台含 internal 发况）刻意分离：共享屏最小暴露面，
+# 手机号服务端脱敏、话术载荷不含 internal 发况。数据范围与线索台一致：
+# 按操作账号绑定门店过滤，expo_lead:read_all / 超管不限（2026-09-02 补，此前未隔离）
 
 def _lead_store_scope(db: Session, current_user) -> list[int] | None:
     """线索数据范围：None=不限（expo_lead:read_all / 超管）；否则为本账号绑定的
-    启用门店 id 列表（空列表=无门店绑定，查不到任何线索）。"""
+    启用门店 id 列表（空列表=无门店绑定，查不到任何线索）。kiosk 与 PC 线索台共用。"""
     roles = current_user.get("roles", [])
     perms = current_user.get("permissions", [])
     if "super_admin" in roles or "expo_lead:read_all" in perms:
@@ -657,6 +629,40 @@ def _lead_store_scope(db: Session, current_user) -> list[int] | None:
         return []
     return store_service.list_store_ids_by_user(db, uid)
 
+
+@router.get("/kiosk/leads", summary="kiosk 销售面板线索列表（手机号脱敏，姓名/手机关键词检索，按绑定门店过滤）")
+def kiosk_leads(
+    keyword: str | None = Query(None, max_length=64),
+    expo_code: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("expo:write")),
+):
+    store_ids = _lead_store_scope(db, current_user)
+    items, total = service.list_leads(
+        db, page=page, page_size=page_size, expo_code=expo_code, keyword=keyword,
+        store_ids=store_ids,
+    )
+    return ok(page_result([service.serialize_kiosk_lead(r) for r in items], total, page, page_size))
+
+
+@router.get("/kiosk/leads/{customer_id}/strategy", summary="kiosk 销售面板话术（只出话术与试戴款，无 internal 发况）")
+def kiosk_lead_strategy(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("expo:write")),
+):
+    # 与列表同一数据范围，跨店一律 404，不暴露存在性
+    payload = service.get_kiosk_strategy(
+        db, customer_id, store_ids=_lead_store_scope(db, current_user),
+    )
+    if payload is None:
+        raise HTTPException(404, "客户不存在")
+    return ok(payload)
+
+
+# ---------------- 线索台（PC，expo_lead:*，2026-07-12 从 expo:read 拆出） ----------------
 
 @router.get("/leads", summary="展会线索列表")
 def list_leads(

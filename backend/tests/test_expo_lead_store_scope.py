@@ -213,3 +213,68 @@ class TestLeadDetailScope:
             resp = c.get(f"/api/expo/leads/{cust_b.id}")
         assert resp.status_code == 200
         assert resp.json()["data"]["customer"]["id"] == cust_b.id
+
+
+class TestKioskLeadScope:
+    """kiosk 销售面板数据范围（2026-09-02 与线索台拉齐，此前未隔离）。"""
+
+    PERMS_KIOSK = ("expo:write",)
+
+    def _seed(self, db):
+        store_a = _make_store(db, "门店A", "KA001")
+        store_b = _make_store(db, "门店B", "KB001")
+        cust_a = ExpoCustomer(name="甲客", phone="13800000001", store_id=store_a.id)
+        cust_b = ExpoCustomer(name="乙客", phone="13800000002", store_id=store_b.id)
+        db.add_all([cust_a, cust_b])
+        db.commit()
+        return store_a, cust_a, cust_b
+
+    def test_bound_user_sees_only_own_store(self, db):
+        store_a, cust_a, _ = self._seed(db)
+        user = _make_user(db, "kiosk_guide")
+        store_service.bind_user_to_store(db, store_a.id, user.id, is_primary=True)
+        db.commit()
+
+        with _client(db, user, self.PERMS_KIOSK) as c:
+            resp = c.get("/api/expo/kiosk/leads")
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["total"] == 1
+        assert data["items"][0]["customer_id"] == cust_a.id
+
+    def test_unbound_user_sees_nothing(self, db):
+        self._seed(db)
+        user = _make_user(db, "kiosk_nobind")
+        with _client(db, user, self.PERMS_KIOSK) as c:
+            resp = c.get("/api/expo/kiosk/leads")
+        assert resp.status_code == 200
+        assert resp.json()["data"]["total"] == 0
+
+    def test_read_all_sees_everything(self, db):
+        self._seed(db)
+        user = _make_user(db, "kiosk_super")
+        with _client(db, user, ("expo:write", "expo_lead:read_all")) as c:
+            resp = c.get("/api/expo/kiosk/leads")
+        assert resp.status_code == 200
+        assert resp.json()["data"]["total"] == 2
+
+    def test_strategy_cross_store_returns_404(self, db):
+        store_a, _, cust_b = self._seed(db)
+        user = _make_user(db, "kiosk_guide2")
+        store_service.bind_user_to_store(db, store_a.id, user.id, is_primary=True)
+        db.commit()
+
+        with _client(db, user, self.PERMS_KIOSK) as c:
+            resp = c.get(f"/api/expo/kiosk/leads/{cust_b.id}/strategy")
+        assert resp.status_code == 404
+
+    def test_strategy_own_store_ok(self, db):
+        store_a, cust_a, _ = self._seed(db)
+        user = _make_user(db, "kiosk_guide3")
+        store_service.bind_user_to_store(db, store_a.id, user.id, is_primary=True)
+        db.commit()
+
+        with _client(db, user, self.PERMS_KIOSK) as c:
+            resp = c.get(f"/api/expo/kiosk/leads/{cust_a.id}/strategy")
+        assert resp.status_code == 200
+        assert resp.json()["data"]["customer"]["customer_id"] == cust_a.id
