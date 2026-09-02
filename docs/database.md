@@ -216,7 +216,7 @@
 
 > **130/131 是会员定价两阶段停写迁移，禁止滚动混部。** 130 建原价表和定价请求表、回填客户最近充值会员快照及历史订单 `legacy_manual` 价格快照；131 先拒绝任何空或非法快照，再移除旧 `unit_price DEFAULT 0.00`、收紧非空并建立金额/枚举 CHECK。MySQL DDL 不可事务回滚，必须停止全部内贸写入并等待在途事务排空，在隔离 MySQL 先演练 upgrade/downgrade，再执行生产迁移和数据复核；开发验证不得直接应用生产库。
 
-- `ark_domestic_customers`：内贸客户，`shop_name` UNIQUE，`custom_code` 可选且 UNIQUE，另存派生会员等级、`last_recharge_amount/last_recharged_at` 和 `balance`。会员只看最近一次成功充值金额，与余额和历史合计无关；充值事务在客户行锁下同时更新余额、会员快照和流水。有订单的客户禁删只停用。
+- `ark_domestic_customers`：内贸客户，`shop_name` UNIQUE，`custom_code` 可选且 UNIQUE，另存派生会员等级、`last_recharge_amount/last_recharged_at` 和 `balance`。会员只看最近一次成功充值金额，与余额和历史合计无关；充值事务在客户行锁下同时更新余额、会员快照和流水。有订单的客户禁删只停用。133 迁移补客户档案列：`customer_source`（来源）、`store_type`（门店类型）、`customer_level`（S/A/B/C）、`lifecycle_status`（活跃/潜在/沉默/流失，四个值域均为 sys_dict，与 `status` 停用开关不同）、`owner_user_id`（归属销售 FK ark_users）、`first_contact_date/first_order_date/last_order_date`、`total_order_count/total_sales_amount`（历史档案口径，不随系统订单联动）。
 - `ark_domestic_customer_ledger`：客户充值/订单扣款/差额补扣/退款流水。`amount` 是有符号变动额，`balance_after` 是变动后快照，`business_key` 唯一；充值时将客户端 `request_id` 编码为业务键实现幂等。所有余额变动在客户行锁下完成，不允许透支。
 - `ark_domestic_products`：下单选属性后 find-or-create 沉淀，`attrs_key` 使用稳定 JSON 数组编码 `product_type/craft/net_color/size/length/density/hair_style_series`，UNIQUE 即产品身份，避免属性值含分隔符时碰撞；`route_id` 按工艺映射自动绑定，可人工改绑。129 新增可空 `hair_style_series`，并将 `size/density` 放宽为可空：头套使用工艺、发长、可选网帽颜色、必填尺码和发型系列，只有 `15厘米` 头套有必填发量；发片将工艺和尺寸合并存入 `craft`，只再保存发长，其余头套专属字段均为 `NULL`。标准属性值存 `domestic_cap_*` 与 `domestic_piece_*` 字典，特单自定义值存对应 `_special` 字典。
 - `ark_domestic_base_prices`：共享原价表，唯一键为 `(product_type, craft, length)`；发片的尺寸已合并进 `craft`，因此不另设 size 列。`original_price > 0`，`version >= 1`，每次维护递增版本并记录操作人。130 内置截图确认的 131 条种子；标准和特单 SKU 都可由管理员补充精确价格，缺价时只能进入产品清单，不能报价或建单。
