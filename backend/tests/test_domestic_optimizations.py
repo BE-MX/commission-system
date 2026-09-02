@@ -32,6 +32,7 @@ from app.domestic.models import (
     DomesticReportLog,
 )
 from app.domestic.schemas import (
+    CustomerAdjust,
     CustomerCreate,
     CustomerUpdate,
     DraftSubmitRequest,
@@ -168,6 +169,7 @@ def _create_order(db, creator, customer, *, qty=5, price="10.00", is_draft=False
             request_id=str(uuid4()),
             order_no="OPT-001",
             order_date=date(2026, 8, 17),
+            required_ship_date=date(2026, 8, 24),
             customer_id=customer.id,
             order_category="normal",
             order_type="first_order",
@@ -357,6 +359,7 @@ def test_formal_order_request_id_prevents_double_charge(db):
         request_id="order-network-retry",
         order_no="RETRY-001",
         order_date=date(2026, 8, 17),
+        required_ship_date=date(2026, 8, 24),
         customer_id=customer.id,
         order_category="normal",
         order_type="first_order",
@@ -441,6 +444,7 @@ def test_order_scale_limits_creation_and_append(db):
         "request_id": "oversized-order",
         "order_no": "TOO-LARGE",
         "order_date": date(2026, 8, 17),
+        "required_ship_date": date(2026, 8, 24),
         "customer_id": 1,
         "order_category": "normal",
         "order_type": "first_order",
@@ -746,3 +750,139 @@ def test_unit_submit_requires_qr_signature_again_at_write_time(db):
     valid = invalid.model_copy(update={"unit_sign": sign})
     result = asyncio.run(domestic_submit(valid, current_user=worker, db=db))
     assert result["unit_codes"] == ["A1-01"]
+
+
+def test_credit_customer_orders_without_balance(db):
+    _route_and_workers(db)
+    creator = _user(db, "credit-planner")
+    customer = _customer(db, creator, "赊账下单客户")
+    customer.settle_mode = "credit"
+    db.commit()
+
+    created = _create_order(db, creator, customer, qty=2, price="10.00")
+
+    db.refresh(customer)
+    order = db.query(DomesticOrder).get(created["id"])
+    assert order.status == C.ORDER_PRODUCING
+    assert customer.balance == Decimal("-20.00")
+    charge = db.query(DomesticCustomerLedger).filter_by(
+        customer_id=customer.id, transaction_type="order_charge",
+    ).one()
+    assert charge.amount == Decimal("-20.00")
+
+    balance_service.recharge_customer(
+        db, customer_id=customer.id, amount=Decimal("50.00"), user_id=creator.id,
+        remark="欠款冲抵", request_id="credit-order-recharge",
+    )
+    db.refresh(customer)
+    assert customer.balance == Decimal("30.00")
+
+
+def test_credit_customer_draft_submit_without_balance(db):
+    _route_and_workers(db)
+    creator = _user(db, "credit-draft-planner")
+    customer = _customer(db, creator, "赊账草稿客户")
+    customer.settle_mode = "credit"
+    db.commit()
+
+    created = _create_order(db, creator, customer, qty=3, price="15.00", is_draft=True)
+    db.refresh(customer)
+    order = db.query(DomesticOrder).get(created["id"])
+    assert order.status == C.ORDER_DRAFT
+    assert customer.balance == Decimal("0.00")
+
+    item = db.query(DomesticOrderItem).filter_by(order_id=order.id).one()
+    quote = {
+        "item_id": item.id,
+        "original_price": item.original_price,
+        "base_price_version": item.base_price_version_snapshot,
+        "discount_price": item.unit_price,
+        "membership_level": item.membership_level_snapshot,
+        "pricing_rule": item.pricing_rule,
+        "pricing_version": item.pricing_version,
+    }
+    payload = DraftSubmitRequest(
+        request_id="credit-draft-submit",
+        expected_quotes=[quote],
+    )
+    order_service.submit_draft(db, order.id, payload, creator.id)
+
+    db.refresh(customer)
+    db.refresh(order)
+    assert order.status == C.ORDER_PRODUCING
+    assert customer.balance == Decimal("-45.00")
+
+
+def test_prepay_customer_negative_adjust_rejected(db):
+    operator = _user(db, "settle-adjust-operator")
+    customer = _customer(db, operator, "负调整客户")
+    balance_service.recharge_customer(
+        db, customer_id=customer.id, amount=Decimal("10.00"), user_id=operator.id,
+        request_id="neg-adjust-recharge",
+    )
+
+    with pytest.raises(ValueError, match="余额不足"):
+        customer_service.adjust_customer(
+            db,
+            customer.id,
+            CustomerAdjust(
+                amount=Decimal("-20.00"), remark="超额调减", request_id="neg-adjust-prepay",
+            ),
+            operator.id,
+        )
+    db.refresh(customer)
+    assert customer.balance == Decimal("10.00")
+
+    customer_service.update_customer(db, customer.id, CustomerUpdate(settle_mode="credit"))
+    snapshot = customer_service.adjust_customer(
+        db,
+        customer.id,
+        CustomerAdjust(
+            amount=Decimal("-20.00"), remark="赊账调减", request_id="neg-adjust-credit",
+        ),
+        operator.id,
+    )
+    db.refresh(customer)
+    assert customer.balance == Decimal("-10.00")
+    assert snapshot["settle_mode"] == "credit"
+
+
+def test_required_ship_date_required_and_returned(db):
+    _route_and_workers(db)
+    creator = _user(db, "ship-date-planner")
+    customer = _customer(db, creator, "发货日期客户")
+
+    with pytest.raises(ValidationError, match="required_ship_date"):
+        OrderCreate(
+            request_id="ship-date-missing",
+            order_no="SHIP-DATE-001",
+            order_date=date(2026, 8, 17),
+            customer_id=customer.id,
+            order_category="normal",
+            order_type="first_order",
+            order_channel="wechat",
+            items=[_priced_item(db, customer, qty=1, price="0")],
+        )
+
+    created = _create_order(db, creator, customer, qty=1, price="0")
+    detail = order_service.get_order_detail(db, created["id"])
+    assert detail["required_ship_date"] == date(2026, 8, 24)
+    rows, _ = order_service.list_orders(db)
+    row = next(r for r in rows if r["id"] == created["id"])
+    assert row["required_ship_date"] == date(2026, 8, 24)
+
+
+def test_update_customer_settle_mode(db):
+    operator = _user(db, "settle-mode-admin")
+    customer = _customer(db, operator, "结算方式客户")
+    assert customer.settle_mode == "prepay"
+
+    updated = customer_service.update_customer(
+        db, customer.id, CustomerUpdate(settle_mode="credit")
+    )
+    assert updated.settle_mode == "credit"
+
+    rows, total = customer_service.list_customers(db, keyword="结算方式客户")
+    assert total == 1
+    assert rows[0]["settle_mode"] == "credit"
+    assert rows[0]["settle_mode_label"] == "先下单后付款"

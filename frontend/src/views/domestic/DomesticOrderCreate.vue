@@ -19,7 +19,7 @@
               >
                 <el-option
                   v-for="c in customers" :key="c.id"
-                  :label="`${c.shop_name}（${c.membership_label || '普通客户'} · 余额 ¥${Number(c.balance || 0).toFixed(2)}）`"
+                  :label="`${c.shop_name}（${c.settle_mode === 'credit' ? '先下单后付款 · ' : ''}${c.membership_label || '普通客户'} · 余额 ¥${Number(c.balance || 0).toFixed(2)}）`"
                   :value="c.id"
                 />
               </el-select>
@@ -28,7 +28,12 @@
                 placeholder="新客户：直接输入店名，下单时自动建档" class="new-customer"
               />
               <div v-if="selectedCustomer" class="balance-hint">
-                {{ selectedCustomer.membership_label || '普通客户' }} · 当前余额 ¥{{ Number(selectedCustomer.balance || 0).toFixed(2) }}
+                <template v-if="selectedCustomer.settle_mode === 'credit'">
+                  先下单后付款 · 不校验余额，欠款记负余额（当前 ¥{{ Number(selectedCustomer.balance || 0).toFixed(2) }}）
+                </template>
+                <template v-else>
+                  {{ selectedCustomer.membership_label || '普通客户' }} · 当前余额 ¥{{ Number(selectedCustomer.balance || 0).toFixed(2) }}
+                </template>
               </div>
             </el-form-item>
           </el-col>
@@ -52,21 +57,26 @@
         </el-row>
 
         <el-row :gutter="16">
-          <el-col :span="8">
+          <el-col :span="6">
             <el-form-item label="订单类型" required>
               <el-select v-model="form.order_type" placeholder="选择订单类型" style="width: 100%">
                 <el-option v-for="t in options.order_types" :key="t.value" :label="t.label" :value="t.value" />
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="8">
+          <el-col :span="6">
             <el-form-item label="订单渠道" required>
               <el-select v-model="form.order_channel" placeholder="选择订单渠道" style="width: 100%">
                 <el-option v-for="t in options.order_channels" :key="t.value" :label="t.label" :value="t.value" />
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="8">
+          <el-col :span="6">
+            <el-form-item label="要求发货" required>
+              <el-date-picker v-model="form.required_ship_date" type="date" value-format="YYYY-MM-DD" placeholder="要求发货日期" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6">
             <el-form-item label="订单备注">
               <el-input v-model="form.remark" placeholder="整单说明，选填" />
             </el-form-item>

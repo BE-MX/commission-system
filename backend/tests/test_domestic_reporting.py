@@ -158,6 +158,7 @@ def _create_order(db, user, qty=20, craft="递针旋全头套"):
         request_id=str(uuid4()),
         order_no="710",
         order_date=date(2026, 7, 27),
+        required_ship_date=date(2026, 8, 3),
         customer_id=customer.id,
         order_category="normal",
         order_type="first_order",
@@ -733,7 +734,8 @@ def test_multi_item_order_status_rolls_up_partially(db, craft_mapping, workers):
     attrs = _attrs()
     payload = OrderCreate(
         request_id=str(uuid4()),
-        order_no="712", order_date=date(2026, 7, 27), customer_id=customer.id,
+        order_no="712", order_date=date(2026, 7, 27), required_ship_date=date(2026, 8, 3),
+        customer_id=customer.id,
         order_category="normal", order_type="first_order", order_channel="wechat",
         items=[
             _zero_price_item(db, attrs, 3, "multi-line-1"),

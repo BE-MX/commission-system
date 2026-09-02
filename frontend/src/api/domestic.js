@@ -14,6 +14,9 @@ export const ORDER_STATUS_LABELS = Object.fromEntries(ORDER_STATUS.map(s => [s.v
 export const ORDER_STATUS_TAGS = Object.fromEntries(ORDER_STATUS.map(s => [s.value, s.tag]))
 export const ITEM_STATUS_LABELS = { 0: '生产中', 1: '已完工', 2: '已发货' }
 
+// 与后端 constants.SETTLE_MODES 同口径：credit 客户先下单后付款，余额可为负（欠款）
+export const SETTLE_MODE_LABELS = { prepay: '先充值后下单', credit: '先下单后付款' }
+
 // 明细图文四区：文字字段 + 对应图片字段，下单表单与详情抽屉共用这份定义
 export const DETAIL_SECTIONS = [
   { key: 'hairstyle', imageKey: 'hairstyle_images', label: '发型', placeholder: '如：马姐旗袍直发' },

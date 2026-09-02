@@ -171,6 +171,7 @@ def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
     ws.merge_cells("A2:R2")
     ws["A2"] = (
         f"下单日期：{_date_text(detail.get('order_date'))}     "
+        f"要求发货日期：{_date_text(detail.get('required_ship_date'))}     "
         f"客户订单号：{_safe_text(detail.get('order_no'))}     "
         f"系统单号：{_safe_text(detail.get('domestic_no'))}     "
         f"申请人：{_safe_text(applicant_name)}     "

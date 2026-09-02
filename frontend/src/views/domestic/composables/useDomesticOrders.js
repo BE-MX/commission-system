@@ -13,7 +13,7 @@ import {
 import { useListPage } from '@/composables/useListPage'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import { downloadBlob } from '@/utils/download'
-import { currentBeijingDateTime } from '@/utils/datetime'
+import { currentBeijingDate, currentBeijingDateTime } from '@/utils/datetime'
 import { normalizeOutcomeAllocation } from '@/views/domestic/conditionalRouting'
 import {
   buildDraftSubmitPayload, quoteChangedDetail, quoteChangeReasonLabel,
@@ -333,6 +333,14 @@ export function useDomesticOrders() {
     }
   }
 
+  // 已发货/已终止的单不再亮红；字符串日期可直接按字典序比较（YYYY-MM-DD）
+  function isShipDateOverdue(row) {
+    return Boolean(
+      row.required_ship_date && row.status !== 3 && row.status !== 4
+      && row.required_ship_date < currentBeijingDate(),
+    )
+  }
+
   async function handleSubmitDraft(row) {
     if (submittingOrderIds.has(row.id)) return
     try {
@@ -485,5 +493,6 @@ export function useDomesticOrders() {
     wxacodeDialog, openWxacode, downloadWxacode,
     handleExport, handleSubmitDraft, submittingOrderIds, handleTerminate, handleDelete, goCreate,
     priceEditDialog, openPriceEdit, confirmPriceEdit,
+    isShipDateOverdue,
   }
 }
