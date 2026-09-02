@@ -219,3 +219,83 @@ def test_get_customer_options(db):
     assert options["owners"] == [{"value": o["value"], "label": o["label"]} for o in options["owners"]]
     assert any(o["label"] == "王语涵" for o in options["owners"])
     assert options["customer_source"] == []
+
+
+def _base_row(**overrides):
+    row = {
+        "sheet": "王语涵", "row_no": 3, "custom_code": "ls-yh-001", "shop_name": "于姐假发",
+        "contact": None, "phone": None, "province": None, "city": None,
+        "customer_source": None, "owner_name": "王语涵", "customer_level": None,
+        "first_contact_date": None, "first_order_date": None, "last_order_date": None,
+        "total_order_count": None, "total_sales_amount": None,
+        "lifecycle_status": None, "store_type": None, "remark": None,
+    }
+    row.update(overrides)
+    return row
+
+
+def test_import_rejects_ambiguous_owner_names(db):
+    _user(db, "wangyh-1", "王语涵")
+    _user(db, "wangyh-2", "王语涵")  # 同名在职用户
+    operator = _user(db, "admin-op", "牟亮亮")
+    result = customer_import_service.import_customers(db, [_base_row()], operator.id)
+    assert result["created"] == 0
+    assert any("同名" in e["reason"] for e in result["errors"])
+    assert db.query(DomesticCustomer).count() == 0
+
+
+def test_parse_overlong_fields_blank_with_warning_and_oversize_name_skips():
+    data = _workbook({"王语涵": [
+        HEADER,
+        _row(code="ls-yh-001", contact="长" * 61, remark="长" * 600),
+        _row(code="ls-yh-002", shop_name="长" * 121),
+    ]})
+    rows, skipped, warnings = customer_import_service.parse_workbook(data)
+    assert [r["custom_code"] for r in rows] == ["ls-yh-001"]
+    assert rows[0]["contact"] is None
+    assert len(rows[0]["remark"]) == 500  # 备注截断不置空
+    assert len(skipped) == 1 and "120" in skipped[0]["reason"]
+    assert len(warnings) == 2
+
+
+def _import_api_client(db, user_id, *permissions):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.auth.dependencies import get_current_user
+    from app.core.database import get_db
+    from app.domestic.router import router
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api/domestic")
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": str(user_id), "roles": [], "permissions": list(permissions),
+    }
+    return TestClient(app)
+
+
+def test_import_endpoint_requires_admin_and_accepts_workbook(db):
+    owner = _user(db, "wangyh", "王语涵")
+    operator = _user(db, "admin-op", "牟亮亮")
+    data = _workbook({"王语涵": [HEADER, _row()]})
+
+    forbidden = _import_api_client(db, operator.id, "domestic:write")
+    res = forbidden.post(
+        "/api/domestic/customers/import",
+        files={"file": ("customers.xlsx", data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert res.status_code == 403
+
+    client = _import_api_client(db, operator.id, "domestic:admin")
+    res = client.post(
+        "/api/domestic/customers/import",
+        files={"file": ("customers.xlsx", data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["data"]["created"] == 1
+    assert body["data"]["warnings"] == []
+    customer = db.query(DomesticCustomer).filter_by(custom_code="ls-yh-001").one()
+    assert customer.owner_user_id == owner.id
+    assert customer.shop_name == "于姐假发"

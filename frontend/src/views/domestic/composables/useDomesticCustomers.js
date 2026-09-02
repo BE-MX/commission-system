@@ -236,26 +236,24 @@ export function useDomesticCustomers() {
   }
 
   const importDialog = reactive({
-    visible: false, files: [], importing: false, result: null,
+    visible: false, files: [], result: null,
   })
 
   function openImport() {
-    Object.assign(importDialog, { visible: true, files: [], importing: false, result: null })
+    Object.assign(importDialog, { visible: true, files: [], result: null })
   }
 
   // AppUpload 只管选择与进度；导入结果不是文件路径，在 uploadFn 闭包里自写状态
   async function doImport(file) {
-    importDialog.importing = true
     try {
       const res = await importCustomers(file)
       importDialog.result = res.data || {}
+      importDialog.files = [] // 清掉占用 limit 的记录，允许不关闭弹窗继续导入
       ElMessage.success(res.message || '导入完成')
       await fetchList()
     } catch (err) {
       importDialog.result = null
       throw err // AppUpload 需要 reject 来收尾 inflight；拦截器已提示
-    } finally {
-      importDialog.importing = false
     }
     return { path: file.name, url: '' }
   }

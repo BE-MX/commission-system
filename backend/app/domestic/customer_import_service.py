@@ -9,11 +9,12 @@ upsert 口径：先按客户编码(custom_code)命中→整档覆盖；否则按
 import io
 import logging
 import re
+from collections import Counter
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 import openpyxl
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
@@ -35,6 +36,13 @@ PROVINCE_ALIASES = {
     "新疆": "新疆维吾尔自治区", "宁夏": "宁夏回族自治区", "西藏": "西藏自治区",
 }
 MUNICIPALITIES = {"北京市", "天津市", "上海市", "重庆市"}
+# 与 ark_domestic_customers 列宽一致；超长按字段级脏数据处理，不拖到 MySQL 严格模式报错
+FIELD_LIMITS = {
+    "shop_name": 120, "contact": 60, "phone": 40, "province": 64, "city": 64,
+    "customer_source": 32, "customer_level": 8, "lifecycle_status": 16,
+    "store_type": 32, "remark": 500,
+}
+MAX_MONEY = Decimal("999999999999.99")
 # 只收板上钉钉的笔误/别名；(省份,城市) 键优先于纯城市键
 CITY_FIXES = {
     "深棕市": "深圳市", "绍通市": "昭通市",
@@ -131,6 +139,25 @@ def parse_workbook(file_bytes: bytes) -> tuple[list[dict], list[dict], list[dict
             })
             return None
 
+    def _bounded(value: str | None, field: str, sheet_name: str, row_no: int, code: str):
+        """超过列宽的字段：备注截断保留信息，其余置空，都记 warning。"""
+        if value is None:
+            return None
+        limit = FIELD_LIMITS[field]
+        if len(value) <= limit:
+            return value
+        if field == "remark":
+            warnings.append({
+                "sheet": sheet_name, "row_no": row_no, "code": code,
+                "reason": f"备注超过 {limit} 字，已截断",
+            })
+            return value[:limit]
+        warnings.append({
+            "sheet": sheet_name, "row_no": row_no, "code": code,
+            "reason": f"{field}超过 {limit} 字（{value!r}），已置空",
+        })
+        return None
+
     for sheet_name in wb.sheetnames:
         if sheet_name.strip() == TEMPLATE_SHEET:
             continue
@@ -160,29 +187,43 @@ def parse_workbook(file_bytes: bytes) -> tuple[list[dict], list[dict], list[dict
                     "reason": "客户编号不合规或未填客户正式名称",
                 })
                 continue
+            if len(shop_name) > FIELD_LIMITS["shop_name"]:
+                skipped.append({
+                    "sheet": sheet_name, "row_no": row_no,
+                    "code": code, "shop_name": shop_name,
+                    "reason": f"客户店名超过 {FIELD_LIMITS['shop_name']} 字",
+                })
+                continue
             province, city = _normalize_region(
                 _text(record.get("省份")), _text(record.get("城市")),
             )
+            sales_amount = _lenient(_money, record.get("累计销售额"), sheet_name, row_no, code, "累计销售额")
+            if sales_amount is not None and sales_amount > MAX_MONEY:
+                warnings.append({
+                    "sheet": sheet_name, "row_no": row_no, "code": code,
+                    "reason": "累计销售额超出金额量程，已置空",
+                })
+                sales_amount = None
             rows.append({
                 "sheet": sheet_name,
                 "row_no": row_no,
                 "custom_code": code.lower(),
                 "shop_name": shop_name,
-                "contact": _text(record.get("联系人")),
-                "phone": _phone(record.get("手机号")),
-                "province": province,
-                "city": city,
-                "customer_source": _text(record.get("客户来源")),
+                "contact": _bounded(_text(record.get("联系人")), "contact", sheet_name, row_no, code),
+                "phone": _bounded(_phone(record.get("手机号")), "phone", sheet_name, row_no, code),
+                "province": _bounded(province, "province", sheet_name, row_no, code),
+                "city": _bounded(city, "city", sheet_name, row_no, code),
+                "customer_source": _bounded(_text(record.get("客户来源")), "customer_source", sheet_name, row_no, code),
                 "owner_name": _text(record.get("归属销售")) or sheet_name.strip(),
-                "customer_level": _text(record.get("客户等级")),
+                "customer_level": _bounded(_text(record.get("客户等级")), "customer_level", sheet_name, row_no, code),
                 "first_contact_date": _lenient(_date, record.get("首次联系日期"), sheet_name, row_no, code, "首次联系日期"),
                 "first_order_date": _lenient(_date, record.get("首次下单日期"), sheet_name, row_no, code, "首次下单日期"),
                 "last_order_date": _lenient(_date, record.get("最近下单日期"), sheet_name, row_no, code, "最近下单日期"),
                 "total_order_count": _lenient(_int, record.get("累计订单数"), sheet_name, row_no, code, "累计订单数"),
-                "total_sales_amount": _lenient(_money, record.get("累计销售额"), sheet_name, row_no, code, "累计销售额"),
-                "lifecycle_status": _text(record.get("客户状态")),
-                "store_type": _text(record.get("门店类型")),
-                "remark": _text(record.get("备注")),
+                "total_sales_amount": sales_amount,
+                "lifecycle_status": _bounded(_text(record.get("客户状态")), "lifecycle_status", sheet_name, row_no, code),
+                "store_type": _bounded(_text(record.get("门店类型")), "store_type", sheet_name, row_no, code),
+                "remark": _bounded(_text(record.get("备注")), "remark", sheet_name, row_no, code),
             })
     wb.close()
     return rows, skipped, warnings
@@ -209,16 +250,27 @@ def import_customers(
     db: Session, rows: list[dict], operator_id: int
 ) -> dict:
     """upsert 客户档案。每行独立 savepoint，单行失败不拖垮整批。"""
-    owner_ids = {
-        name: uid
-        for uid, name in db.query(ArkUser.id, ArkUser.real_name)
+    owner_rows = (
+        db.query(ArkUser.id, ArkUser.real_name)
         .filter(ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None))
         .all()
-    }
+    )
+    # real_name 无唯一约束：同名在职用户静默 last-wins 会把客户错挂到人，宁可整行拒绝
+    name_counts = Counter(name for _, name in owner_rows)
+    ambiguous_names = {name for name, count in name_counts.items() if count > 1}
+    owner_ids = {name: uid for uid, name in owner_rows if name not in ambiguous_names}
     owner_names = {uid: name for name, uid in owner_ids.items()}
     result = {"created": 0, "updated": 0, "merged": 0, "errors": [], "collisions": []}
+    if ambiguous_names:
+        result["errors"].append({
+            "row": "-",
+            "reason": f"系统存在同名在职用户：{'、'.join(sorted(ambiguous_names))}，相关行已全部拒绝导入",
+        })
     for row in rows:
         label = f"{row['sheet']}第{row['row_no']}行[{row['custom_code']}]{row['shop_name']}"
+        if row["owner_name"] in ambiguous_names:
+            result["errors"].append({"row": label, "reason": f"归属销售「{row['owner_name']}」存在同名在职用户，拒绝自动归属"})
+            continue
         owner_id = owner_ids.get(row["owner_name"]) if row["owner_name"] else None
         if row["owner_name"] and owner_id is None:
             result["errors"].append({"row": label, "reason": f"归属销售「{row['owner_name']}」不是系统在职用户"})
@@ -274,5 +326,11 @@ def import_customers(
             logger.warning("domestic customer import integrity error on %s: %s", label, exc)
             print(f"[domestic] customer import integrity error {label}: {exc}", flush=True)
             result["errors"].append({"row": label, "reason": "店名或编码与已有客户冲突"})
+        except SQLAlchemyError as exc:
+            # DataError(超长/超量程)等也按行隔离，不拖垮整批
+            savepoint.rollback()
+            logger.warning("domestic customer import db error on %s: %s", label, exc)
+            print(f"[domestic] customer import db error {label}: {exc}", flush=True)
+            result["errors"].append({"row": label, "reason": f"数据库写入失败：{type(exc).__name__}"})
     db.commit()
     return result

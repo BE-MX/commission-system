@@ -42,15 +42,19 @@ def main() -> None:
     db = SessionLocal()
     try:
         if args.dry_run:
+            from collections import Counter
+
             from app.auth.models import ArkUser
 
-            known = {
+            active_names = [
                 name for (name,) in db.query(ArkUser.real_name).filter(
                     ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None)
                 )
-            }
+            ]
+            known = set(active_names)
+            ambiguous = sorted(n for n, c in Counter(active_names).items() if c > 1)
             unknown = sorted({r["owner_name"] for r in rows if r["owner_name"] and r["owner_name"] not in known})
-            print(f"[dry-run] 未识别归属销售: {unknown or '无'}")
+            print(f"[dry-run] 未识别归属销售: {unknown or '无'}；同名在职用户: {ambiguous or '无'}")
             return
         result = customer_import_service.import_customers(db, rows, args.operator_id)
     finally:

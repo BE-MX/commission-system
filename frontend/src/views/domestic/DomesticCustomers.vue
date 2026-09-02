@@ -224,11 +224,14 @@
         <el-result
           icon="success" class="import-result"
           :title="`新建 ${importDialog.result.created}，更新 ${importDialog.result.updated}，合并同名 ${importDialog.result.merged}`"
-          :sub-title="`失败 ${importDialog.result.errors?.length || 0} 条，解析跳过 ${importDialog.result.skipped?.length || 0} 条`"
+          :sub-title="`失败 ${importDialog.result.errors?.length || 0} 条，解析跳过 ${importDialog.result.skipped?.length || 0} 条，数据警告 ${importDialog.result.warnings?.length || 0} 条`"
         />
-        <el-scrollbar v-if="(importDialog.result.errors?.length || 0) + (importDialog.result.collisions?.length || 0) > 0" max-height="220px">
+        <el-scrollbar v-if="(importDialog.result.errors?.length || 0) + (importDialog.result.collisions?.length || 0) + (importDialog.result.warnings?.length || 0) > 0" max-height="220px">
           <div v-for="(item, i) in importDialog.result.errors" :key="`e${i}`" class="import-line error">
             {{ item.row }}：{{ item.reason }}
+          </div>
+          <div v-for="(item, i) in importDialog.result.warnings" :key="`w${i}`" class="import-line warning">
+            {{ item.sheet }}第{{ item.row_no }}行[{{ item.code }}]：{{ item.reason }}
           </div>
           <div v-for="(item, i) in importDialog.result.collisions" :key="`c${i}`" class="import-line">
             {{ item.row }}：{{ item.reason }}
@@ -394,4 +397,5 @@ const {
 .import-result { padding: 8px 0; }
 .import-line { font-size: 12px; color: var(--el-text-color-secondary); padding: 3px 0; }
 .import-line.error { color: var(--el-color-danger); }
+.import-line.warning { color: var(--el-color-warning); }
 </style>

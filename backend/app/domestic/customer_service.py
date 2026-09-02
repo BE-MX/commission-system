@@ -177,6 +177,7 @@ def find_or_create_by_shop_name(db: Session, shop_name: str, user_id: int) -> Do
 
 
 def _validate_owner(db: Session, owner_user_id: int | None) -> None:
+    # 刻意只校验存在性、不卡 is_active：停用用户名下仍可能有历史归属客户需要保留/转移
     if owner_user_id is None:
         return
     if not db.query(ArkUser.id).filter(ArkUser.id == owner_user_id).first():
