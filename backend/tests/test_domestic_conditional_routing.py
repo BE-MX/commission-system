@@ -54,7 +54,8 @@ def test_domestic_attribute_migration_is_the_only_head_after_shipping_inspection
     config.set_main_option("script_location", str(backend_root / "alembic"))
     revisions = ScriptDirectory.from_config(config)
 
-    assert revisions.get_heads() == ["131_domestic_member_pricing_b"]
+    assert revisions.get_heads() == ["132_domestic_manual_price"]
+    assert revisions.get_revision("132_domestic_manual_price").down_revision == "131_domestic_member_pricing_b"
     assert revisions.get_revision("129_domestic_order_attributes").down_revision == "128_shipping_inspection"
     assert revisions.get_revision("127_domestic_route_rules").down_revision == "126"
 

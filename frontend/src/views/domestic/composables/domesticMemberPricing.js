@@ -31,11 +31,20 @@ export function pricingRuleLabelForQuote(quote) {
   if (quote.pricing_rule === 'base_price') return '非会员原价'
   if (quote.pricing_rule === 'member_fixed') return `${member}固定会员价`
   if (quote.pricing_rule === 'member_fixed_capped') return '命中固定会员价，但原价更低，已按原价'
+  if (quote.pricing_rule === 'manual_override') return '手工改价'
+  if (quote.pricing_rule === 'legacy_manual') return '历史手工价'
   if (quote.pricing_rule === 'member_reduction') {
     const reduction = Number(quote.original_price || 0) - Number(quote.discount_price || 0)
     return `${member}立减 ¥${reduction.toFixed(2)}`
   }
   return '报价已更新'
+}
+
+// 用户手改后的实际成交优惠价；null/未改时回落系统报价
+export function effectiveDiscountPrice(item) {
+  const manual = Number(item?.manualDiscountPrice)
+  if (manual > 0) return manual
+  return Number(item?.quote?.discount_price || 0)
 }
 
 export function quoteChangeRows(detail, itemLabel = key => key || '明细') {
@@ -94,6 +103,7 @@ export function invalidateItemQuote(item) {
   item.quoteStatus = 'pending'
   item.expectedQuote = null
   item.quote = null
+  item.manualDiscountPrice = null
 }
 
 export function buildQuoteRequest(form, normalizeAttrs) {
@@ -108,13 +118,24 @@ export function buildQuoteRequest(form, normalizeAttrs) {
 
 export function applyQuoteResult(items, response) {
   const byKey = new Map((response?.items || []).map(row => [row.client_key, row]))
+  const clearedManualKeys = []
   for (const item of items) {
     const quote = byKey.get(item.key)
     if (!quote) continue
     item.quoteStatus = quote.status
     item.quote = quote
     item.expectedQuote = quote.status === 'priced' ? quote.expected_quote : null
+    // 重新报价后原价可能下调：手工价不得高于原价，失效就回到系统报价
+    if (
+      quote.status === 'priced'
+      && Number(item.manualDiscountPrice) > Number(quote.original_price)
+    ) {
+      item.manualDiscountPrice = null
+      clearedManualKeys.push(item.key)
+    }
+    if (quote.status !== 'priced') item.manualDiscountPrice = null
   }
+  return clearedManualKeys
 }
 
 export function hasBlockingPrice(items) {
@@ -131,6 +152,7 @@ export function buildCreateItems(items, normalizeAttrs) {
     attrs: normalizeAttrs(item.attrs),
     order_qty: item.order_qty,
     expected_quote: item.expectedQuote,
+    manual_discount_price: item.manualDiscountPrice > 0 ? item.manualDiscountPrice : null,
     hairstyle: item.hairstyle || null,
     hairstyle_images: imagePaths(item.hairstyle_images),
     color: item.color || null,

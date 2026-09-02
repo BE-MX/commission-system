@@ -138,12 +138,12 @@ def test_order_item_schema_requires_expected_quote_and_forbids_manual_price():
     without_quote.pop("expected_quote")
     with pytest.raises(ValidationError, match="expected_quote"):
         OrderItemInput.model_validate(without_quote)
+    # 建单成交价只能走 expected_quote + manual_discount_price 显式契约，
+    # 旧版自由 unit_price 字段依然禁止混入
     with pytest.raises(ValidationError, match="unit_price"):
         OrderItemInput.model_validate(
             _order_item_payload(unit_price="1.00")
         )
-    with pytest.raises(ValidationError, match="unit_price"):
-        OrderItemUpdate.model_validate({"unit_price": "1.00"})
 
 
 def test_draft_submit_schema_requires_unique_item_quotes_and_strips_request_id():
@@ -4821,3 +4821,599 @@ def test_pricing_routes_enforce_write_and_admin_permissions_and_admin_contract(d
     assert missing.json()["data"]["items"][0]["price_status"] == "missing"
     assert deleted_again.status_code == 400
     assert "尚未配置" in deleted_again.json()["detail"]
+
+
+# ── 手工改价（manual_override）──────────────────────────
+
+MANUAL_PRICE_MIGRATION_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "alembic"
+    / "versions"
+    / "132_domestic_manual_price.py"
+)
+
+
+def _manual_price_migration_module():
+    spec = importlib.util.spec_from_file_location(
+        "migration_132_domestic_manual_price", MANUAL_PRICE_MIGRATION_PATH
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_manual_price_migration_revision_contract_and_mysql_offline_sql():
+    migration = _manual_price_migration_module()
+    assert migration.revision == "132_domestic_manual_price"
+    assert migration.down_revision == "131_domestic_member_pricing_b"
+    assert len(migration.revision) <= 32
+
+    upgrade_output = StringIO()
+    migration.op = Operations(
+        MigrationContext.configure(
+            dialect_name="mysql",
+            opts={
+                "as_sql": True,
+                "literal_binds": True,
+                "output_buffer": upgrade_output,
+            },
+        )
+    )
+    migration.upgrade()
+    upgrade_sql = upgrade_output.getvalue()
+    assert "DROP CHECK" in upgrade_sql.upper()
+    assert "ck_dom_item_pricing_rule" in upgrade_sql
+    assert "manual_override" in upgrade_sql
+
+    downgrade_output = StringIO()
+    migration.op = Operations(
+        MigrationContext.configure(
+            dialect_name="mysql",
+            opts={
+                "as_sql": True,
+                "literal_binds": True,
+                "output_buffer": downgrade_output,
+            },
+        )
+    )
+    migration.downgrade()
+    downgrade_sql = downgrade_output.getvalue()
+    assert "DROP CHECK" in downgrade_sql.upper()
+    assert "manual_override" not in downgrade_sql
+
+
+def test_manual_price_migration_downgrade_blocks_on_manual_rows(db):
+    migration = _manual_price_migration_module()
+    _, _, order = _customer_and_order(db, "manual-downgrade-guard")
+    product = _constraint_product(db, "manual-downgrade-guard")
+    db.add(domestic_models.DomesticOrderItem(
+        order_id=order.id,
+        line_no=1,
+        product_id=product.id,
+        product_name=product.name,
+        order_qty=1,
+        unit_price=D("950.00"),
+        original_price=D("1000.00"),
+        discount_amount=D("50.00"),
+        membership_level_snapshot="black",
+        pricing_rule="manual_override",
+        pricing_version="domestic-member-v1",
+        base_price_version_snapshot=1,
+    ))
+    db.flush()
+
+    def _context():
+        return MigrationContext.configure(
+            db.get_bind().connect(),
+            opts={"as_sql": False},
+        )
+
+    migration.op = Operations(_context())
+    with pytest.raises(RuntimeError, match="手工改价"):
+        migration.downgrade()
+    db.rollback()
+
+
+def test_manual_price_schema_contract():
+    item = OrderItemInput.model_validate(_order_item_payload())
+    assert item.manual_discount_price is None
+    manual = OrderItemInput.model_validate(
+        _order_item_payload(manual_discount_price="950.00")
+    )
+    assert manual.manual_discount_price == D("950.00")
+    with pytest.raises(ValidationError):
+        OrderItemInput.model_validate(_order_item_payload(manual_discount_price="0"))
+    with pytest.raises(ValidationError):
+        OrderItemInput.model_validate(_order_item_payload(manual_discount_price="-1"))
+
+    assert OrderItemUpdate.model_validate({"unit_price": "950.00"}).unit_price == D("950.00")
+    with pytest.raises(ValidationError):
+        OrderItemUpdate.model_validate({"unit_price": "0"})
+    with pytest.raises(ValidationError):
+        OrderItemUpdate.model_validate({"discount_price": "1.00"})
+
+    quote = {"client_key": None, "item_id": 7, **_expected_quote_payload(
+        pricing_rule="manual_override", discount_price="950.00",
+    )}
+    assert ItemExpectedQuote.model_validate(quote).pricing_rule == "manual_override"
+
+
+def test_manual_override_pricing_rule_label():
+    result = pricing_service.DiscountResult(
+        D("1000.00"), D("950.00"), D("50.00"), "manual_override"
+    )
+    assert pricing_service.pricing_rule_label(result, "black") == "手工改价"
+    assert pricing_service.pricing_rule_label(result, None) == "手工改价"
+
+
+def test_create_order_with_manual_discount_price_charges_manual_amount(db):
+    user, customer, _product, _base, expected, attrs = _order_pricing_context(
+        db, "manual-create", balance="10000.00"
+    )
+    server_price = expected["discount_price"]  # 黑卡 1000 - 120 = 880
+    assert server_price == D("880.00")
+    payload = _priced_order_payload(
+        customer, attrs, expected, request_id="manual-create-1", qty=2,
+        items=[{
+            "client_key": "line-1",
+            "attrs": attrs,
+            "order_qty": 2,
+            "expected_quote": expected,
+            "manual_discount_price": "950.00",
+        }],
+    )
+    created = order_service.create_order(db, payload, user.id)
+    assert created["total_amount"] == 1900.00
+
+    item = db.query(domestic_models.DomesticOrderItem).filter_by(
+        order_id=created["id"]
+    ).one()
+    assert item.unit_price == D("950.00")
+    assert item.original_price == D("1000.00")
+    assert item.discount_amount == D("50.00")
+    assert item.pricing_rule == "manual_override"
+    assert item.membership_level_snapshot == "black"
+    assert item.base_price_version_snapshot == 1
+
+    db.refresh(customer)
+    assert customer.balance == D("8100.00")
+    order = db.get(domestic_models.DomesticOrder, created["id"])
+    assert order.charged_amount == D("1900.00")
+
+    detail = order_service.get_order_detail(db, order.id, include_finance=True)
+    view = detail["items"][0]
+    assert view["pricing_rule"] == "manual_override"
+    assert view["pricing_rule_label"] == "手工改价"
+    assert detail["current_expected_quotes"][0]["pricing_rule"] == "manual_override"
+    assert detail["current_expected_quotes"][0]["discount_price"] == 950.00
+
+
+def test_create_order_manual_price_above_original_rejected(db):
+    user, customer, _product, _base, expected, attrs = _order_pricing_context(
+        db, "manual-above", balance="10000.00"
+    )
+    payload = _priced_order_payload(
+        customer, attrs, expected, request_id="manual-above-1",
+        items=[{
+            "client_key": "line-1",
+            "attrs": attrs,
+            "order_qty": 1,
+            "expected_quote": expected,
+            "manual_discount_price": "1000.01",
+        }],
+    )
+    with pytest.raises(ValueError, match="手工优惠价"):
+        order_service.create_order(db, payload, user.id)
+    assert db.query(domestic_models.DomesticOrder).filter_by(
+        request_id="manual-above-1"
+    ).first() is None
+
+
+def test_create_order_manual_price_still_409_on_stale_quote(db):
+    user, customer, _product, base, expected, attrs = _order_pricing_context(
+        db, "manual-stale", balance="10000.00"
+    )
+
+    def _payload(request_id):
+        return _priced_order_payload(
+            customer, attrs, expected, request_id=request_id,
+            items=[{
+                "client_key": "line-1",
+                "attrs": attrs,
+                "order_qty": 1,
+                "expected_quote": expected,
+                "manual_discount_price": "950.00",
+            }],
+        )
+
+    base.original_price = D("1100.00")
+    base.version += 1
+    db.commit()
+
+    with pytest.raises(pricing_service.DomesticQuoteChangedError) as caught:
+        order_service.create_order(db, _payload("manual-stale-1"), user.id)
+    assert caught.value.detail["changes"][0]["reasons"] == ["base_price_changed"]
+
+    fresh = {
+        key: caught.value.detail["current_expected_quotes"][0][key]
+        for key in (
+            "original_price", "base_price_version", "discount_price",
+            "membership_level", "pricing_rule", "pricing_version",
+        )
+    }
+    retry = _priced_order_payload(
+        customer, attrs, fresh, request_id="manual-stale-2",
+        items=[{
+            "client_key": "line-1",
+            "attrs": attrs,
+            "order_qty": 1,
+            "expected_quote": fresh,
+            "manual_discount_price": "950.00",
+        }],
+    )
+    created = order_service.create_order(db, retry, user.id)
+    item = db.query(domestic_models.DomesticOrderItem).filter_by(
+        order_id=created["id"]
+    ).one()
+    assert item.unit_price == D("950.00")
+    assert item.original_price == D("1100.00")
+    assert item.pricing_rule == "manual_override"
+
+
+def test_manual_price_is_part_of_create_replay_hash(db):
+    user, customer, _product, _base, expected, attrs = _order_pricing_context(
+        db, "manual-replay", balance="10000.00"
+    )
+
+    def _payload(manual):
+        return _priced_order_payload(
+            customer, attrs, expected, request_id="manual-replay-1",
+            items=[{
+                "client_key": "line-1",
+                "attrs": attrs,
+                "order_qty": 1,
+                "expected_quote": expected,
+                "manual_discount_price": manual,
+            }],
+        )
+
+    created = order_service.create_order(db, _payload("950.00"), user.id)
+    replayed = order_service.create_order(db, _payload("950.00"), user.id)
+    assert replayed["replayed"] is True
+    assert replayed["id"] == created["id"]
+    with pytest.raises(ValueError, match="已用于不同订单内容"):
+        order_service.create_order(db, _payload("900.00"), user.id)
+    db.refresh(customer)
+    assert customer.balance == D("9050.00")
+
+
+def test_draft_with_manual_price_submits_without_409_and_charges_manual(db):
+    user, customer, _product, _base, expected, attrs = _order_pricing_context(
+        db, "manual-draft", balance="10000.00"
+    )
+    created = order_service.create_order(
+        db,
+        _priced_order_payload(
+            customer, attrs, expected, request_id="manual-draft-create",
+            is_draft=True, qty=2,
+            items=[{
+                "client_key": "line-1",
+                "attrs": attrs,
+                "order_qty": 2,
+                "expected_quote": expected,
+                "manual_discount_price": "950.00",
+            }],
+        ),
+        user.id,
+    )
+    order = db.get(domestic_models.DomesticOrder, created["id"])
+    item = db.query(domestic_models.DomesticOrderItem).filter_by(
+        order_id=order.id
+    ).one()
+    assert item.pricing_rule == "manual_override"
+    assert order.charged_amount == D("0.00")
+
+    result = order_service.submit_draft(
+        db, order.id, _draft_submit_payload("manual-draft-submit", item), user.id
+    )
+    assert result["charged_amount"] == 1900.00
+    db.refresh(order)
+    db.refresh(item)
+    db.refresh(customer)
+    assert order.status == domestic_constants.ORDER_PRODUCING
+    assert item.unit_price == D("950.00")
+    assert item.pricing_rule == "manual_override"
+    assert customer.balance == D("8100.00")
+
+    replayed = order_service.submit_draft(
+        db, order.id, _draft_submit_payload("manual-draft-submit", item), user.id
+    )
+    assert replayed["replayed"] is True
+    db.refresh(customer)
+    assert customer.balance == D("8100.00")
+
+
+def test_manual_draft_survives_base_price_and_membership_drift(db):
+    user, customer, _product, base, expected, attrs = _order_pricing_context(
+        db, "manual-drift", membership_level="black", balance="10000.00"
+    )
+    created = order_service.create_order(
+        db,
+        _priced_order_payload(
+            customer, attrs, expected, request_id="manual-drift-create",
+            is_draft=True,
+            items=[{
+                "client_key": "line-1",
+                "attrs": attrs,
+                "order_qty": 1,
+                "expected_quote": expected,
+                "manual_discount_price": "950.00",
+            }],
+        ),
+        user.id,
+    )
+    order = db.get(domestic_models.DomesticOrder, created["id"])
+    item = db.query(domestic_models.DomesticOrderItem).filter_by(
+        order_id=order.id
+    ).one()
+
+    # 原价上调、会员降级：手工价是用户确认过的绝对金额，不漂移也不 409
+    base.original_price = D("1200.00")
+    base.version += 1
+    balance_service.recharge_customer(
+        db, customer_id=customer.id, amount=D("100.00"),
+        user_id=user.id, request_id="manual-drift-recharge",
+    )
+    db.refresh(customer)
+    assert customer.membership_level is None
+
+    result = order_service.submit_draft(
+        db, order.id, _draft_submit_payload("manual-drift-submit", item), user.id
+    )
+    assert result["charged_amount"] == 950.00
+    db.refresh(item)
+    assert item.unit_price == D("950.00")
+    assert item.pricing_rule == "manual_override"
+    assert item.original_price == D("1200.00")
+    assert item.discount_amount == D("250.00")
+
+
+def test_manual_echo_above_current_original_is_rejected(db):
+    user, customer, _product, base, expected, attrs = _order_pricing_context(
+        db, "manual-over-Original", balance="10000.00"
+    )
+    created = order_service.create_order(
+        db,
+        _priced_order_payload(
+            customer, attrs, expected, request_id="manual-over-create",
+            is_draft=True,
+            items=[{
+                "client_key": "line-1",
+                "attrs": attrs,
+                "order_qty": 1,
+                "expected_quote": expected,
+                "manual_discount_price": "950.00",
+            }],
+        ),
+        user.id,
+    )
+    order = db.get(domestic_models.DomesticOrder, created["id"])
+    item = db.query(domestic_models.DomesticOrderItem).filter_by(
+        order_id=order.id
+    ).one()
+
+    # 管理员把原价调到手工价之下：绝不许成交价高于原价，提交被拦下
+    base.original_price = D("900.00")
+    base.version += 1
+    db.commit()
+
+    with pytest.raises(ValueError, match="手工优惠价"):
+        order_service.submit_draft(
+            db, order.id, _draft_submit_payload("manual-over-submit", item), user.id
+        )
+    db.refresh(order)
+    db.refresh(customer)
+    assert order.status == domestic_constants.ORDER_DRAFT
+    assert order.charged_amount == D("0.00")
+    assert customer.balance == D("10000.00")
+
+
+def test_mixed_draft_quote_change_retry_preserves_manual_line(db):
+    user, customer, product_a, base_a, expected_a, attrs_a = _order_pricing_context(
+        db, "manual-mixed", balance="10000.00"
+    )
+    attrs_b = _cap_attrs(length="25厘米")
+    _seed_order_dicts(db, attrs_b)
+    product_b = _persist_product(db, attrs_b)
+    key_b = pricing_service.price_key_for_product(product_b)
+    base_b = domestic_models.DomesticBasePrice(
+        product_type=key_b[0], craft=key_b[1], length=key_b[2],
+        original_price=D("2000.00"), version=1, updated_by=user.id,
+    )
+    db.add(base_b)
+    db.flush()
+    discount_b = pricing_service.resolve_discount(
+        product_type="piece" if product_b.product_type == "piece" else "cap",
+        craft=product_b.craft,
+        length=product_b.length,
+        size=product_b.size if product_b.product_type == "piece" else None,
+        original_price=base_b.original_price,
+        membership_level="black",
+    )
+    expected_b = {
+        "original_price": discount_b.original_price,
+        "base_price_version": base_b.version,
+        "discount_price": discount_b.final_price,
+        "membership_level": "black",
+        "pricing_rule": discount_b.pricing_rule,
+        "pricing_version": pricing_service.PRICING_VERSION,
+    }
+    db.commit()
+
+    created = order_service.create_order(
+        db,
+        _priced_order_payload(
+            customer, attrs_a, expected_a, request_id="manual-mixed-create",
+            is_draft=True,
+            items=[
+                {
+                    "client_key": "line-a",
+                    "attrs": attrs_a,
+                    "order_qty": 1,
+                    "expected_quote": expected_a,
+                    "manual_discount_price": "950.00",
+                },
+                {
+                    "client_key": "line-b",
+                    "attrs": attrs_b,
+                    "order_qty": 1,
+                    "expected_quote": expected_b,
+                },
+            ],
+        ),
+        user.id,
+    )
+    order = db.get(domestic_models.DomesticOrder, created["id"])
+    items = {
+        item.product_id: item
+        for item in db.query(domestic_models.DomesticOrderItem).filter_by(
+            order_id=order.id
+        ).all()
+    }
+    item_a = items[product_a.id]
+    item_b = items[product_b.id]
+
+    base_b.original_price = D("2100.00")
+    base_b.version += 1
+    db.commit()
+
+    with pytest.raises(pricing_service.DomesticQuoteChangedError) as caught:
+        order_service.submit_draft(
+            db, order.id,
+            _draft_submit_payload("manual-mixed-submit", item_a, item_b),
+            user.id,
+        )
+    detail = caught.value.detail
+    assert [change["item_id"] for change in detail["changes"]] == [item_b.id]
+    # 手工行在重试快照里保持手工价，不被系统报价覆盖
+    quotes_by_item = {
+        quote["item_id"]: quote for quote in detail["current_expected_quotes"]
+    }
+    assert quotes_by_item[item_a.id]["pricing_rule"] == "manual_override"
+    assert quotes_by_item[item_a.id]["discount_price"] == 950.00
+    assert quotes_by_item[item_b.id]["original_price"] == 2100.00
+
+    retry = DraftSubmitRequest.model_validate({
+        "request_id": "manual-mixed-retry",
+        "expected_quotes": detail["current_expected_quotes"],
+    })
+    result = order_service.submit_draft(db, order.id, retry, user.id)
+    assert result["total_amount"] == pytest.approx(950.00 + 1980.00)
+    db.refresh(item_a)
+    db.refresh(item_b)
+    assert item_a.unit_price == D("950.00")
+    assert item_a.pricing_rule == "manual_override"
+    assert item_b.unit_price == D("1980.00")
+    assert item_b.pricing_rule == "member_reduction"
+
+
+def test_update_item_unit_price_settles_balance_delta(db):
+    user, customer, _product, _base, expected, attrs = _order_pricing_context(
+        db, "manual-edit", balance="10000.00"
+    )
+    created = order_service.create_order(
+        db,
+        _priced_order_payload(
+            customer, attrs, expected, request_id="manual-edit-create", qty=2,
+        ),
+        user.id,
+    )
+    order = db.get(domestic_models.DomesticOrder, created["id"])
+    item = db.query(domestic_models.DomesticOrderItem).filter_by(
+        order_id=order.id
+    ).one()
+    assert item.unit_price == D("880.00")
+    db.refresh(customer)
+    assert customer.balance == D("8240.00")
+
+    # 往低改：差额退回客户余额
+    order_service.update_item(
+        db, item.id, OrderItemUpdate(unit_price=D("800.00")), user.id
+    )
+    db.refresh(item)
+    db.refresh(order)
+    db.refresh(customer)
+    assert item.unit_price == D("800.00")
+    assert item.pricing_rule == "manual_override"
+    assert item.discount_amount == D("200.00")
+    assert order.total_amount == D("1600.00")
+    assert order.charged_amount == D("1600.00")
+    assert customer.balance == D("8400.00")
+
+    # 往高改（不超过原价）：从余额补扣差额
+    order_service.update_item(
+        db, item.id, OrderItemUpdate(unit_price=D("1000.00")), user.id
+    )
+    db.refresh(item)
+    db.refresh(customer)
+    assert item.unit_price == D("1000.00")
+    assert customer.balance == D("8000.00")
+
+    with pytest.raises(ValueError, match="不能高于原价"):
+        order_service.update_item(
+            db, item.id, OrderItemUpdate(unit_price=D("1000.01")), user.id
+        )
+    db.refresh(customer)
+    assert customer.balance == D("8000.00")
+
+    ledgers = balance_service.list_customer_ledger(
+        db, customer_id=customer.id
+    )[0]
+    adjustments = [
+        row for row in ledgers if row["transaction_type"] == "order_adjustment"
+    ]
+    assert [row["amount"] for row in adjustments] == [-400.00, 160.00]
+
+
+def test_update_item_unit_price_on_draft_moves_no_money(db):
+    user, customer, _product, _base, order, item = _created_priced_draft(
+        db, "manual-edit-draft", membership_level="black", balance="5000.00"
+    )
+    order_service.update_item(
+        db, item.id, OrderItemUpdate(unit_price=D("700.00")), user.id
+    )
+    db.refresh(item)
+    db.refresh(order)
+    db.refresh(customer)
+    assert item.unit_price == D("700.00")
+    assert item.pricing_rule == "manual_override"
+    assert order.total_amount == D("700.00")
+    assert order.charged_amount == D("0.00")
+    assert customer.balance == D("5000.00")
+
+
+def test_update_item_unit_price_rejects_shipped_and_terminated(db):
+    user, customer, _product, _base, expected, attrs = _order_pricing_context(
+        db, "manual-edit-closed", balance="10000.00"
+    )
+    created = order_service.create_order(
+        db,
+        _priced_order_payload(
+            customer, attrs, expected, request_id="manual-edit-closed-1",
+        ),
+        user.id,
+    )
+    order = db.get(domestic_models.DomesticOrder, created["id"])
+    item = db.query(domestic_models.DomesticOrderItem).filter_by(
+        order_id=order.id
+    ).one()
+
+    order.status = domestic_constants.ORDER_TERMINATED
+    db.commit()
+    with pytest.raises(ValueError, match="不能修改明细"):
+        order_service.update_item(
+            db, item.id, OrderItemUpdate(unit_price=D("800.00")), user.id
+        )
+    db.refresh(item)
+    assert item.unit_price == D("880.00")

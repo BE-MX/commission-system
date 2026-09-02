@@ -868,6 +868,7 @@ def get_order_detail(
             "member_fixed",
             "member_fixed_capped",
             "member_reduction",
+            "manual_override",
         }:
             pricing_label = pricing_service.pricing_rule_label(
                 pricing_service.DiscountResult(
@@ -1239,6 +1240,21 @@ def update_item(
         order.total_unit_qty = new_total_qty
         for row in rows:
             progress_service.sync_progress_row_status(row, new_qty)
+
+    new_price = data.get("unit_price")
+    if new_price is not None:
+        # 手工改价：优惠价只允许往低改（不超过原价快照），差额由下方
+        # sync_order_finance 与客户余额多退少补；改后该明细脱离会员规则。
+        price = balance_service.money(new_price)
+        original = balance_service.money(item.original_price)
+        if price <= 0:
+            raise ValueError("优惠价必须大于 0")
+        if price > original:
+            raise ValueError(f"优惠价不能高于原价 ¥{original:.2f}")
+        if price != balance_service.money(item.unit_price):
+            item.unit_price = price
+            item.discount_amount = balance_service.money(original - price)
+            item.pricing_rule = "manual_override"
 
     for field in _TEXT_FIELDS:
         if field in data:

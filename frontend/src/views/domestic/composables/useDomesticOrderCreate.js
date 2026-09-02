@@ -25,8 +25,8 @@ import {
 import { createLatestRequestRunner } from '@/views/domestic/composables/latestRequest'
 import {
   applyQuoteChange, applyQuoteResult, buildCreateItems, buildQuoteRequest,
-  ensureRequestIdentity, hasBlockingPrice, invalidateItemQuote, payloadFingerprint,
-  quoteChangedDetail, quoteChangeRows,
+  effectiveDiscountPrice, ensureRequestIdentity, hasBlockingPrice, invalidateItemQuote,
+  payloadFingerprint, quoteChangedDetail, quoteChangeRows,
 } from './domesticMemberPricing'
 
 function todayStr() {
@@ -46,7 +46,7 @@ function emptyItem() {
       hair_style_series: '',
     },
     order_qty: 1,
-    quoteStatus: 'pending', quote: null, expectedQuote: null,
+    quoteStatus: 'pending', quote: null, expectedQuote: null, manualDiscountPrice: null,
     hairstyle: '', hairstyle_images: [],
     color: '', color_images: [],
     style_requirement: '', style_images: [],
@@ -113,7 +113,7 @@ export function useDomesticOrderCreate() {
   )
 
   const orderTotal = computed(() => form.items.reduce(
-    (sum, item) => sum + Number(item.order_qty || 0) * Number(item.quote?.discount_price || 0),
+    (sum, item) => sum + Number(item.order_qty || 0) * effectiveDiscountPrice(item),
     0,
   ))
 
@@ -216,6 +216,24 @@ export function useDomesticOrderCreate() {
     return form.items.length > 0 && form.items.every(item => !validateItemAttributes(item.attrs))
   }
 
+  // 手工改价：null/等于系统报价都视为未改；改动不影响报价有效性，
+  // 但金额必须大于 0 且不高于原价（服务端建单时还会再校验一次）
+  function onManualPrice(item, value) {
+    const system = Number(item.quote?.discount_price || 0)
+    const manual = Number(value)
+    if (!value || !(manual > 0) || manual === system) {
+      item.manualDiscountPrice = null
+      return
+    }
+    const original = Number(item.quote?.original_price || 0)
+    if (manual > original) {
+      ElMessage.warning(`手工优惠价不能高于原价 ¥${original.toFixed(2)}`)
+      item.manualDiscountPrice = null
+      return
+    }
+    item.manualDiscountPrice = manual
+  }
+
   async function refreshQuotes() {
     if (!allItemsQuotable()) return
     const sequence = ++quoteSequence
@@ -224,7 +242,10 @@ export function useDomesticOrderCreate() {
     try {
       const res = await quoteDomesticPrices(buildQuoteRequest(form, normalizeItemAttrs))
       if (sequence !== quoteSequence) return
-      applyQuoteResult(form.items, res.data || {})
+      const cleared = applyQuoteResult(form.items, res.data || {})
+      if (cleared?.length) {
+        ElMessage.warning(`第 ${cleared.map(key => form.items.findIndex(item => item.key === key) + 1).join('、')} 行的手工价已高于新原价，恢复为系统报价`)
+      }
     } catch {
       if (sequence !== quoteSequence) return
       form.items.forEach(item => { if (item.quoteStatus === 'quoting') item.quoteStatus = 'pending' })
@@ -411,5 +432,6 @@ export function useDomesticOrderCreate() {
     routeOf, unroutedCount, orderTotal, selectedCustomer,
     onProductTypeChange, onLengthChange, onOrderCategoryChange, addItem, copyItem, removeItem,
     makeUploadFn, removeImage, searchCustomers, refreshQuotes, goProducts, submit,
+    effectiveDiscountPrice, onManualPrice,
   }
 }

@@ -154,6 +154,10 @@ export function getItemWxacode(itemId) {
 }
 
 // ── 明细 ──
+export function updateOrderItem(itemId, data) {
+  return domesticClient.put(`/items/${itemId}`, data)
+}
+
 export function attachItemRoute(itemId, routeId) {
   return domesticClient.post(`/items/${itemId}/attach-route`, { route_id: routeId })
 }

@@ -257,7 +257,8 @@ class DomesticOrderItem(Base):
         ),
         CheckConstraint(
             "pricing_rule IN ('base_price', 'member_fixed', "
-            "'member_fixed_capped', 'member_reduction', 'legacy_manual')",
+            "'member_fixed_capped', 'member_reduction', 'manual_override', "
+            "'legacy_manual')",
             name="ck_dom_item_pricing_rule",
         ),
         Index("idx_dom_item_order", "order_id"),
