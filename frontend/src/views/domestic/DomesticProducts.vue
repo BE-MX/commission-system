@@ -167,15 +167,19 @@
 
     <el-dialog v-model="priceDialog.visible" title="维护共享原始价" width="460px">
       <el-alert type="warning" show-icon :closable="false" class="tips" title="相同价格键的 SKU 共用这个价格" description="保存后同产品类型、工艺/尺寸、发长的所有 SKU 一起生效。" />
-      <el-form label-width="90px">
+      <el-form v-loading="priceDialog.loading" label-width="90px">
         <el-form-item label="产品">{{ priceDialog.product?.name }}</el-form-item>
+        <el-form-item label="影响范围">
+          <strong v-if="priceDialog.impact">{{ priceImpactLabel(priceDialog.impact) }}</strong>
+          <span v-else class="danger-text">未取得预检结果，不能保存</span>
+        </el-form-item>
         <el-form-item label="原始价" required>
           <el-input-number v-model="priceDialog.originalPrice" :min="0.01" :precision="2" :step="10" style="width: 100%" />
         </el-form-item>
       </el-form>
       <template #footer>
         <GlassButton variant="ghost" @click="priceDialog.visible = false">取消</GlassButton>
-        <GlassButton variant="primary" :loading="saving" @click="savePrice">保存并使共享 SKU 生效</GlassButton>
+        <GlassButton variant="primary" :loading="saving" :disabled="priceDialog.loading || !priceDialog.impact" @click="savePrice">保存并使共享 SKU 生效</GlassButton>
       </template>
     </el-dialog>
   </div>
@@ -187,14 +191,16 @@
  * 配好一次，之后所有同工艺的新产品都自动带路线。
  */
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { useRoute } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  deleteCraftRoute, deleteProductBasePrice, getOptions, getProcessRoutes, listCraftRoutes,
+  deleteCraftRoute, deleteProductBasePrice, getOptions, getProcessRoutes, getProductBasePriceImpact, listCraftRoutes,
   listProducts, rebindProductRoute, updateProductBasePrice, upsertCraftRoute,
 } from '@/api/domestic'
 import { useListPage } from '@/composables/useListPage'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import GlassButton from '@/components/GlassButton.vue'
+import { priceImpactLabel } from './composables/domesticMemberPricing'
 
 const activeTab = ref('mapping')
 const saving = ref(false)
@@ -202,6 +208,10 @@ const routes = ref([])
 const craftRoutes = ref([])
 const mappingLoading = ref(false)
 const options = ref({ attr_dicts: {}, standard_values: {} })
+
+const route = useRoute()
+// 下单页「去产品清单维护」带 price_status=missing 直达缺价列表
+const initialPriceStatus = ['configured', 'missing'].includes(route.query.price_status) ? route.query.price_status : ''
 
 const {
   loading, list, total, page, pageSize, searchForm,
@@ -215,12 +225,12 @@ const {
     const res = await listProducts(params)
     return res.data || {}
   },
-  { searchForm: { keyword: '', product_type: '', route_bound: '', price_status: '' } },
+  { searchForm: { keyword: '', product_type: '', route_bound: '', price_status: initialPriceStatus } },
 )
 
 const mappingDialog = reactive({ visible: false, isEdit: false, id: null, product_type: 'cap', craft: '', route_id: null })
 const rebindDialog = reactive({ visible: false, product: null, route_id: null })
-const priceDialog = reactive({ visible: false, product: null, originalPrice: null })
+const priceDialog = reactive({ visible: false, product: null, originalPrice: null, impact: null, loading: false })
 
 const craftOptions = computed(() => {
   const dictType = options.value.attr_dicts?.[mappingDialog.product_type]?.craft
@@ -289,15 +299,34 @@ async function saveRebind() {
   }
 }
 
-function openPrice(row) {
+async function fetchPriceImpact(row) {
+  const res = await getProductBasePriceImpact(row.id)
+  return res.data
+}
+
+async function openPrice(row) {
   Object.assign(priceDialog, {
     visible: true, product: row,
     originalPrice: row.original_price == null ? null : Number(row.original_price),
+    impact: null, loading: true,
   })
+  try {
+    priceDialog.impact = await fetchPriceImpact(row)
+  } catch { /* 拦截器已提示，无预检不允许保存 */ } finally {
+    priceDialog.loading = false
+  }
 }
 
 async function savePrice() {
   if (!(priceDialog.originalPrice > 0)) return ElMessage.warning('请填写大于 0 的原始价')
+  if (!priceDialog.impact) return ElMessage.warning('价格影响范围预检失败，请重新打开后再试')
+  try {
+    await ElMessageBox.confirm(
+      `确认保存？${priceImpactLabel(priceDialog.impact)} 将一起生效。`,
+      '确认共享原始价',
+      { type: 'warning', confirmButtonText: '确认保存', cancelButtonText: '返回检查' },
+    )
+  } catch { return }
   saving.value = true
   try {
     const res = await updateProductBasePrice(priceDialog.product.id, priceDialog.originalPrice)
@@ -311,8 +340,12 @@ async function savePrice() {
 }
 
 async function removePrice(row) {
+  let impact
   try {
-    await confirmDanger('删除', `「${row.name}」共享的原始价`, '删除后，相同产品类型、工艺/尺寸、发长的所有 SKU 都将缺价，无法下单。')
+    impact = await fetchPriceImpact(row)
+  } catch { return }
+  try {
+    await confirmDanger('删除', `「${row.name}」共享的原始价`, `实际影响：${priceImpactLabel(impact)}。删除后这些 SKU 都将缺价，无法下单。`)
   } catch { return }
   const res = await deleteProductBasePrice(row.id)
   ElMessage.success(`原始价已删除，同价格键的 ${Number(res.data?.affected_sku_count || 0)} 个 SKU 现为缺价`)

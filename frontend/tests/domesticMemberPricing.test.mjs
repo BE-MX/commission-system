@@ -12,7 +12,12 @@ import {
   invalidateItemQuote,
   membershipPreview,
   membershipLevelLabel,
+  membershipChangeLabel,
+  ensureRequestIdentity,
+  priceImpactLabel,
+  quoteChangeRows,
   quoteChangeReasonLabel,
+  pricingRuleLabelForQuote,
 } from '../src/views/domestic/composables/domesticMemberPricing.js'
 
 const attrs = { product_type: 'cap', craft: '递旋', net_color: '', size: '', length: '15厘米', density: '', hair_style_series: '' }
@@ -58,13 +63,48 @@ test('缺原价阻断，建单 payload 不再发 unit_price', () => {
 })
 
 test('409 必须替换报价并生成新幂等键', () => {
-  const item = { key: 'line-a', expectedQuote: expected, quoteStatus: 'priced' }
+  const item = { key: 'line-a', expectedQuote: expected, quoteStatus: 'priced', quote: { pricing_rule_label: '旧规则文案' } }
   const current = { ...expected, discount_price: '960.00', membership_level: 'supreme' }
   const newId = applyQuoteChange([item], [{ client_key: 'line-a', item_id: null, ...current }], () => 'new-request')
   assert.equal(newId, 'new-request')
   assert.equal(item.expectedQuote.discount_price, '960.00')
   assert.equal(item.quoteStatus, 'priced')
+  assert.equal(item.quote.pricing_rule_label, '至尊会员固定会员价')
+  assert.notEqual(item.quote.pricing_rule_label, '旧规则文案')
   assert.equal(quoteChangeReasonLabel('membership_changed'), '客户会员等级已变化')
+})
+
+test('409 变化摘要同时展示原价、优惠价和规则，价格相同也不隐藏', () => {
+  const rows = quoteChangeRows({ changes: [{
+    client_key: 'line-a', reasons: ['membership_changed'],
+    previous_quote: expected,
+    current_quote: { ...expected, membership_level: 'supreme', pricing_rule: 'member_fixed_capped' },
+  }] }, key => key === 'line-a' ? '第 2 行' : key)
+  assert.equal(rows.length, 1)
+  assert.match(rows[0], /原价 ¥1198\.00 → ¥1198\.00/)
+  assert.match(rows[0], /优惠价 ¥998\.00 → ¥998\.00/)
+  assert.match(rows[0], /规则 黑卡会员固定会员价 → 命中固定会员价，但原价更低，已按原价/)
+  assert.equal(pricingRuleLabelForQuote({ ...expected, pricing_rule: 'member_reduction', discount_price: '1078.00' }), '黑卡会员立减 ¥120.00')
+})
+
+test('建单幂等键按 payload 指纹管理', () => {
+  let serial = 0
+  const factory = () => `request-${++serial}`
+  const payload = { customer_id: 7, order_no: 'A1', items: [{ attrs, order_qty: 1 }] }
+  const first = ensureRequestIdentity(null, payload, factory)
+  const retry = ensureRequestIdentity(first, structuredClone(payload), factory)
+  const changed = ensureRequestIdentity(retry, { ...payload, customer_id: 8 }, factory)
+  assert.equal(first.requestId, 'request-1')
+  assert.equal(retry.requestId, 'request-1')
+  assert.equal(changed.requestId, 'request-2')
+})
+
+test('会员变化和共享原价预检文案是业务可读的', () => {
+  assert.equal(membershipChangeLabel({ from: 'silver', to: 'black' }), '银卡会员 → 黑卡会员')
+  assert.equal(membershipChangeLabel(null), '')
+  assert.equal(priceImpactLabel({
+    price_key: { product_type: 'piece', craft: '全递针13*15', length: '35cm' }, affected_sku_count: 4,
+  }), '发片 / 全递针13*15 / 35cm，共影响 4 个 SKU')
 })
 
 test('草稿提交 body 直接回传 item_id 报价快照', () => {
@@ -81,13 +121,22 @@ test('草稿提交 body 直接回传 item_id 报价快照', () => {
 })
 
 test('页面契约：不手改会员/单价，报价与草稿 API 都传 body', async () => {
-  const [customers, createPage, api] = await Promise.all([
+  const [customers, createPage, createLogic, orders, products, api] = await Promise.all([
     readFile(new URL('../src/views/domestic/DomesticCustomers.vue', import.meta.url), 'utf8'),
     readFile(new URL('../src/views/domestic/DomesticOrderCreate.vue', import.meta.url), 'utf8'),
+    readFile(new URL('../src/views/domestic/composables/useDomesticOrderCreate.js', import.meta.url), 'utf8'),
+    readFile(new URL('../src/views/domestic/DomesticOrders.vue', import.meta.url), 'utf8'),
+    readFile(new URL('../src/views/domestic/DomesticProducts.vue', import.meta.url), 'utf8'),
     readFile(new URL('../src/api/domestic.js', import.meta.url), 'utf8'),
   ])
   assert.doesNotMatch(customers, /v-model="dialog\.membership_level"/)
   assert.doesNotMatch(createPage, /v-model="item\.unit_price"/)
   assert.match(api, /post\('\/pricing\/quote', data\)/)
-  assert.match(api, /post\(`\/orders\/\$\{id\}\/submit`, data\)/)
+  assert.match(api, /post\(`\/orders\/\$\{id\}\/submit`, data/)
+  assert.match(api, /base-price-impact/)
+  assert.match(createLogic, /quoteLoading\.value = false/)
+  assert.match(createLogic, /name: 'DomesticProducts'/)
+  assert.match(createPage, /goProducts/)
+  assert.match(orders, /submittingOrderIds\.has\(row\.id\)/)
+  assert.match(products, /affected_sku_count/)
 })

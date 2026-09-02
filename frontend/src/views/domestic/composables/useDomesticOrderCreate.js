@@ -25,7 +25,8 @@ import {
 import { createLatestRequestRunner } from '@/views/domestic/composables/latestRequest'
 import {
   applyQuoteChange, applyQuoteResult, buildCreateItems, buildQuoteRequest,
-  hasBlockingPrice, invalidateItemQuote, quoteChangedDetail, quoteChangeReasonLabel,
+  ensureRequestIdentity, hasBlockingPrice, invalidateItemQuote, payloadFingerprint,
+  quoteChangedDetail, quoteChangeRows,
 } from './domesticMemberPricing'
 
 function todayStr() {
@@ -67,7 +68,7 @@ export function useDomesticOrderCreate() {
   const customers = ref([])
   const customerLoading = ref(false)
   const runLatestCustomerSearch = createLatestRequestRunner()
-  const orderRequestId = ref(makeRequestId())
+  let orderRequestIdentity = null
   const quoteLoading = ref(false)
   let quoteTimer = null
   let quoteSequence = 0
@@ -234,6 +235,7 @@ export function useDomesticOrderCreate() {
 
   function scheduleQuote() {
     quoteSequence += 1
+    quoteLoading.value = false
     form.items.forEach(invalidateItemQuote)
     clearTimeout(quoteTimer)
     if (!allItemsQuotable()) return
@@ -260,7 +262,6 @@ export function useDomesticOrderCreate() {
 
   function buildPayload() {
     return {
-      request_id: orderRequestId.value,
       order_no: form.order_no.trim(),
       order_date: form.order_date,
       customer_id: form.customer_id || null,
@@ -274,21 +275,29 @@ export function useDomesticOrderCreate() {
   }
 
   function quoteChangeMessage(detail) {
-    return (detail.changes || []).map((change, index) => {
-      const before = Number(change.previous_quote?.discount_price || 0).toFixed(2)
-      const after = Number(change.current_quote?.discount_price || 0).toFixed(2)
-      const reasons = (change.reasons || []).map(quoteChangeReasonLabel).join('、')
-      const formIndex = form.items.findIndex(item => item.key === change.client_key)
-      return `第 ${formIndex >= 0 ? formIndex + 1 : index + 1} 行：¥${before} → ¥${after}（${reasons || '报价已变化'}）`
+    return quoteChangeRows(detail, (clientKey) => {
+      const formIndex = form.items.findIndex(item => item.key === clientKey)
+      return formIndex >= 0 ? `第 ${formIndex + 1} 行` : '明细'
     }).join('\n')
   }
 
   async function createWithQuoteConfirmation(isDraft) {
+    const basePayload = { ...buildPayload(), is_draft: isDraft }
+    orderRequestIdentity = ensureRequestIdentity(
+      orderRequestIdentity, basePayload, makeRequestId,
+    )
     try {
-      return await createOrder({ ...buildPayload(), is_draft: isDraft })
+      return await createOrder(
+        { ...basePayload, request_id: orderRequestIdentity.requestId },
+        { suppressToast: true },
+      )
     } catch (error) {
       const changed = quoteChangedDetail(error)
-      if (!changed) throw error
+      if (!changed) {
+        const detail = error?.response?.data?.detail
+        msgError(typeof detail === 'string' ? detail : (detail?.message || error.message || '下单失败，请重试'))
+        return null
+      }
       const missingChanges = (changed.changes || []).filter(change => change.current_status === 'missing_base_price')
       if (missingChanges.length) {
         const missingKeys = new Set(missingChanges.map(change => change.client_key))
@@ -313,11 +322,22 @@ export function useDomesticOrderCreate() {
           { type: 'warning', confirmButtonText: '使用新价重新提交', cancelButtonText: '返回检查' },
         )
       } catch { return null }
-      orderRequestId.value = applyQuoteChange(
+      const newRequestId = applyQuoteChange(
         form.items, changed.current_expected_quotes, makeRequestId,
       )
-      return createOrder({ ...buildPayload(), is_draft: isDraft })
+      const retryBasePayload = { ...buildPayload(), is_draft: isDraft }
+      orderRequestIdentity = {
+        fingerprint: payloadFingerprint(retryBasePayload), requestId: newRequestId,
+      }
+      return createOrder(
+        { ...retryBasePayload, request_id: newRequestId },
+        { suppressToast: true },
+      )
     }
+  }
+
+  function goProducts() {
+    router.push({ name: 'DomesticProducts', query: { price_status: 'missing' } })
   }
 
   async function submit(isDraft = false) {
@@ -390,6 +410,6 @@ export function useDomesticOrderCreate() {
     attrOptions, attributePlaceholder, hasField, visibleFields,
     routeOf, unroutedCount, orderTotal, selectedCustomer,
     onProductTypeChange, onLengthChange, onOrderCategoryChange, addItem, copyItem, removeItem,
-    makeUploadFn, removeImage, searchCustomers, refreshQuotes, submit,
+    makeUploadFn, removeImage, searchCustomers, refreshQuotes, goProducts, submit,
   }
 }

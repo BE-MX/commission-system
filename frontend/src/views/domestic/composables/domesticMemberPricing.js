@@ -20,6 +20,68 @@ export function membershipLevelLabel(level) {
   return ({ silver: '银卡会员', black: '黑卡会员', supreme: '至尊会员' })[level] || '非会员'
 }
 
+export function membershipChangeLabel(change) {
+  if (!change) return ''
+  return `${membershipLevelLabel(change.from)} → ${membershipLevelLabel(change.to)}`
+}
+
+export function pricingRuleLabelForQuote(quote) {
+  if (!quote) return '报价已更新'
+  const member = membershipLevelLabel(quote.membership_level)
+  if (quote.pricing_rule === 'base_price') return '非会员原价'
+  if (quote.pricing_rule === 'member_fixed') return `${member}固定会员价`
+  if (quote.pricing_rule === 'member_fixed_capped') return '命中固定会员价，但原价更低，已按原价'
+  if (quote.pricing_rule === 'member_reduction') {
+    const reduction = Number(quote.original_price || 0) - Number(quote.discount_price || 0)
+    return `${member}立减 ¥${reduction.toFixed(2)}`
+  }
+  return '报价已更新'
+}
+
+export function quoteChangeRows(detail, itemLabel = key => key || '明细') {
+  return (detail?.changes || []).map(change => {
+    const before = change.previous_quote
+    const after = change.current_quote
+    const reasons = (change.reasons || []).map(quoteChangeReasonLabel).join('、') || '报价内容已变化'
+    if (!after) return `${itemLabel(change.client_key, change.item_id)}：${reasons}`
+    return [
+      `${itemLabel(change.client_key, change.item_id)}：`,
+      `原价 ¥${Number(before?.original_price || 0).toFixed(2)} → ¥${Number(after.original_price || 0).toFixed(2)}`,
+      `优惠价 ¥${Number(before?.discount_price || 0).toFixed(2)} → ¥${Number(after.discount_price || 0).toFixed(2)}`,
+      `规则 ${pricingRuleLabelForQuote(before)} → ${pricingRuleLabelForQuote(after)}`,
+      `原因 ${reasons}`,
+    ].join('；')
+  })
+}
+
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value).sort().filter(key => key !== 'request_id')
+        .map(key => [key, canonicalize(value[key])]),
+    )
+  }
+  return value
+}
+
+export function payloadFingerprint(payload) {
+  return JSON.stringify(canonicalize(payload))
+}
+
+export function ensureRequestIdentity(current, payload, requestIdFactory) {
+  const fingerprint = payloadFingerprint(payload)
+  if (current?.fingerprint === fingerprint && current.requestId) return current
+  return { fingerprint, requestId: requestIdFactory() }
+}
+
+export function priceImpactLabel(impact) {
+  if (!impact?.price_key) return '未取得共享价格影响范围'
+  const key = impact.price_key
+  const type = key.product_type === 'cap' ? '头套' : (key.product_type === 'piece' ? '发片' : key.product_type)
+  return `${type} / ${key.craft} / ${key.length}，共影响 ${Number(impact.affected_sku_count || 0)} 个 SKU`
+}
+
 export function quoteChangeReasonLabel(reason) {
   return CHANGE_REASON_LABELS[reason] || '报价内容已变化'
 }
@@ -97,11 +159,12 @@ export function applyQuoteChange(items, currentExpectedQuotes, requestIdFactory)
     item.expectedQuote = expectedQuoteFromCurrent(current)
     item.quoteStatus = 'priced'
     item.quote = {
-      ...(item.quote || {}), status: 'priced', client_key: item.key,
+      status: 'priced', client_key: item.key,
       original_price: current.original_price,
       discount_price: current.discount_price,
       discount_amount: Number(current.original_price) - Number(current.discount_price),
       pricing_rule: current.pricing_rule,
+      pricing_rule_label: pricingRuleLabelForQuote(current),
       expected_quote: item.expectedQuote,
     }
   }

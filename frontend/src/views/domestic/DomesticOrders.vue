@@ -75,7 +75,7 @@
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
             <GlassButton variant="link" left-icon="Download" @click="handleExport(row)">导出</GlassButton>
-            <GlassButton v-if="row.status === 0" v-permission="'domestic:write'" variant="link" left-icon="Promotion" @click="handleSubmitDraft(row)">提交</GlassButton>
+            <GlassButton v-if="row.status === 0" v-permission="'domestic:write'" variant="link" left-icon="Promotion" :loading="submittingOrderIds.has(row.id)" :disabled="submittingOrderIds.has(row.id)" @click="handleSubmitDraft(row)">提交</GlassButton>
             <GlassButton v-else v-permission="'domestic:write'" variant="link" left-icon="CircleClose" :disabled="row.status >= 3" @click="handleTerminate(row)">终止</GlassButton>
             <GlassButton v-permission="'domestic:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
           </template>
@@ -357,7 +357,7 @@ const {
   attachDialog, openAttachRoute, confirmAttachRoute,
   printDialog, openPrintCard, openQrLabel, openWxacodeLabel,
   wxacodeDialog, openWxacode, downloadWxacode,
-  handleExport, handleSubmitDraft, handleTerminate, handleDelete, goCreate,
+  handleExport, handleSubmitDraft, submittingOrderIds, handleTerminate, handleDelete, goCreate,
 } = useDomesticOrders()
 </script>
 

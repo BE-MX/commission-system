@@ -159,7 +159,9 @@
             <el-form-item label="优惠说明">
               <span v-if="item.quoteStatus === 'priced'" class="rule-text">{{ item.quote.pricing_rule_label }}</span>
               <GlassButton v-else-if="item.quoteStatus === 'pending'" variant="link" :loading="quoteLoading" @click="refreshQuotes">重新报价</GlassButton>
-              <span v-else-if="item.quoteStatus === 'missing_base_price'" class="danger-text">请先在产品清单维护原始价</span>
+              <span v-else-if="item.quoteStatus === 'missing_base_price'" class="danger-text">
+                缺原始价，无法报价<GlassButton variant="link" link-tone="danger" @click="goProducts">去产品清单维护</GlassButton>
+              </span>
             </el-form-item>
           </el-col>
         </el-row>
@@ -276,7 +278,7 @@ const {
   attrOptions, attributePlaceholder, hasField, visibleFields,
   routeOf, unroutedCount, orderTotal, selectedCustomer,
   onProductTypeChange, onLengthChange, onOrderCategoryChange, addItem, copyItem, removeItem,
-  makeUploadFn, removeImage, searchCustomers, refreshQuotes, submit,
+  makeUploadFn, removeImage, searchCustomers, refreshQuotes, goProducts, submit,
 } = useDomesticOrderCreate()
 </script>
 

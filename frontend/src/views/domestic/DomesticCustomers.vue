@@ -22,11 +22,15 @@
       </el-col>
     </el-row>
 
+    <el-alert class="membership-tip" type="info" :closable="false" show-icon title="会员等级只看最近一次充值金额，与账户余额、历史充值合计无关。" />
+
     <div class="table-card customers-panel">
       <el-table :data="list" v-loading="loading" border class="list-table" style="width: 100%">
         <el-table-column prop="custom_code" label="客户编码" min-width="110" show-overflow-tooltip />
         <el-table-column prop="shop_name" label="客户店名" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="membership_label" label="会员等级" min-width="100" show-overflow-tooltip />
+        <el-table-column label="会员等级" min-width="110">
+          <template #default="{ row }"><el-tag size="small" effect="plain">{{ row.membership_label }}</el-tag></template>
+        </el-table-column>
         <el-table-column label="最近充值" min-width="170">
           <template #default="{ row }">
             <template v-if="row.last_recharge_amount != null">
@@ -157,7 +161,7 @@ import {
 import { useListPage } from '@/composables/useListPage'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import GlassButton from '@/components/GlassButton.vue'
-import { membershipPreview } from './composables/domesticMemberPricing'
+import { membershipChangeLabel, membershipPreview } from './composables/domesticMemberPricing'
 
 const saving = ref(false)
 
@@ -247,9 +251,10 @@ async function confirmRecharge() {
     })
     const data = res.data || {}
     rechargeDialog.visible = false
+    const membershipChange = membershipChangeLabel(data.membership_change)
     ElMessage.success(data.replayed
       ? `已入账，本次未重复充值；当前${data.membership_label}，余额 ¥${Number(data.current_balance || 0).toFixed(2)}`
-      : `充值成功；当前${data.membership_label}，余额 ¥${Number(data.current_balance || 0).toFixed(2)}`)
+      : `充值成功；会员等级${membershipChange || `保持${data.membership_label}`}；余额 ¥${Number(data.current_balance || 0).toFixed(2)}`)
     await fetchList()
   } catch { /* 拦截器已提示 */ } finally {
     rechargeDialog.saving = false
@@ -296,6 +301,7 @@ async function handleDelete(row) {
 .customers-page .customers-panel { position: relative; z-index: 1; }
 
 .toolbar { margin-bottom: 16px; }
+.membership-tip { margin-bottom: 12px; position: relative; z-index: 1; }
 
 .customers-panel {
   border: 1px solid var(--dash-glass-border);
