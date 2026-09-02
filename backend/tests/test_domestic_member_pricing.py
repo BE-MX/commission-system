@@ -46,7 +46,9 @@ from app.domestic import (
 )
 from app.domestic import models as domestic_models
 from app.domestic.schemas import (
+    CustomerAdjust,
     CustomerCreate,
+    CustomerInitialize,
     CustomerRechargeCreate,
     CustomerUpdate,
     DraftSubmitRequest,
@@ -5417,3 +5419,198 @@ def test_update_item_unit_price_rejects_shipped_and_terminated(db):
         )
     db.refresh(item)
     assert item.unit_price == D("880.00")
+
+
+# ── 客户余额/等级的初始化与临时调整 ──────────────────────
+
+
+def test_initialize_customer_sets_opening_balance_and_level_once(db):
+    user = _operator(db, "init-customer")
+    customer = _membership_customer(db, user, "init")
+    payload = CustomerInitialize(
+        balance=D("5000.00"), membership_level="black", remark="老客户期初",
+    )
+    result = customer_service.initialize_customer(db, customer.id, payload, user.id)
+    assert result["replayed"] is False
+    assert result["current_balance"] == 5000.00
+    assert result["membership_level"] == "black"
+    assert result["membership_label"] == "黑卡会员"
+
+    db.refresh(customer)
+    assert customer.balance == D("5000.00")
+    # 初始化不是充值：派生依据保持为空，等级是显式约定
+    assert customer.last_recharge_amount is None
+    rows = db.query(domestic_models.DomesticCustomerLedger).filter_by(
+        customer_id=customer.id
+    ).all()
+    assert len(rows) == 1
+    assert rows[0].transaction_type == "init"
+    assert rows[0].business_key == f"init:{customer.id}"
+
+    replayed = customer_service.initialize_customer(db, customer.id, payload, user.id)
+    assert replayed["replayed"] is True
+    db.refresh(customer)
+    assert customer.balance == D("5000.00")
+
+    with pytest.raises(ValueError, match="不能重复初始化"):
+        customer_service.initialize_customer(
+            db, customer.id,
+            CustomerInitialize(balance=D("6000.00")), user.id,
+        )
+    db.rollback()
+
+
+def test_initialize_rejected_once_customer_has_any_ledger(db):
+    user = _operator(db, "init-late")
+    customer = _membership_customer(db, user, "late")
+    balance_service.recharge_customer(
+        db, customer_id=customer.id, amount=D("10000.00"),
+        user_id=user.id, request_id="init-late-recharge",
+    )
+    with pytest.raises(ValueError, match="临时调整"):
+        customer_service.initialize_customer(
+            db, customer.id, CustomerInitialize(balance=D("5000.00")), user.id,
+        )
+    db.refresh(customer)
+    assert customer.balance == D("10000.00")
+
+
+def test_adjust_customer_balance_signed_and_idempotent(db):
+    user = _operator(db, "adjust-money")
+    customer = _membership_customer(db, user, "money", balance=D("1000.00"))
+    db.commit()
+
+    payload = CustomerAdjust(
+        amount=D("200.00"), remark="补录线下收款", request_id="adjust-money-1",
+    )
+    result = customer_service.adjust_customer(db, customer.id, payload, user.id)
+    assert result["current_balance"] == 1200.00
+    replayed = customer_service.adjust_customer(db, customer.id, payload, user.id)
+    assert replayed["replayed"] is True
+    assert replayed["current_balance"] == 1200.00
+
+    down = CustomerAdjust(
+        amount=D("-1200.00"), remark="多录退回", request_id="adjust-money-2",
+    )
+    result = customer_service.adjust_customer(db, customer.id, down, user.id)
+    assert result["current_balance"] == 0.00
+
+    with pytest.raises(ValueError, match="不同金额"):
+        customer_service.adjust_customer(
+            db, customer.id,
+            CustomerAdjust(amount=D("5.00"), remark="改内容", request_id="adjust-money-2"),
+            user.id,
+        )
+    db.rollback()
+    with pytest.raises(ValueError, match="余额不足"):
+        customer_service.adjust_customer(
+            db, customer.id,
+            CustomerAdjust(amount=D("-0.01"), remark="扣穿", request_id="adjust-money-3"),
+            user.id,
+        )
+    db.rollback()
+
+
+def test_adjust_customer_level_only_is_temporary_and_audited(db):
+    user = _operator(db, "adjust-level")
+    customer = _membership_customer(db, user, "level", balance=D("100.00"))
+    db.commit()
+
+    payload = CustomerAdjust(
+        membership_level="supreme", remark="大客临时升舱", request_id="adjust-level-1",
+    )
+    result = customer_service.adjust_customer(db, customer.id, payload, user.id)
+    assert result["membership_level"] == "supreme"
+    db.refresh(customer)
+    assert customer.balance == D("100.00")
+    assert customer.last_recharge_amount is None
+
+    rows = db.query(domestic_models.DomesticCustomerLedger).filter_by(
+        customer_id=customer.id, transaction_type="level_adjust"
+    ).all()
+    assert len(rows) == 1
+    assert rows[0].amount == D("0")
+    assert "非会员 → 至尊会员" in rows[0].remark
+
+    replayed = customer_service.adjust_customer(db, customer.id, payload, user.id)
+    assert replayed["replayed"] is True
+    assert db.query(domestic_models.DomesticCustomerLedger).filter_by(
+        customer_id=customer.id, transaction_type="level_adjust"
+    ).count() == 1
+
+    # 临时等级不碰派生依据：下一次充值仍按当次金额重新核定
+    balance_service.recharge_customer(
+        db, customer_id=customer.id, amount=D("10000.00"),
+        user_id=user.id, request_id="adjust-level-recharge",
+    )
+    db.refresh(customer)
+    assert customer.membership_level == "silver"
+
+    # 取消会员：显式传 null
+    result = customer_service.adjust_customer(
+        db, customer.id,
+        CustomerAdjust(membership_level=None, remark="取消资格", request_id="adjust-level-2"),
+        user.id,
+    )
+    assert result["membership_level"] is None
+    assert result["membership_label"] == "非会员"
+
+
+def test_adjust_customer_requires_content(db):
+    user = _operator(db, "adjust-empty")
+    customer = _membership_customer(db, user, "empty")
+    with pytest.raises(ValueError, match="没有需要调整的内容"):
+        customer_service.adjust_customer(
+            db, customer.id,
+            CustomerAdjust(amount=D("0"), remark="空调用", request_id="adjust-empty-1"),
+            user.id,
+        )
+    with pytest.raises(ValidationError):
+        CustomerAdjust(amount=D("1.00"), remark=" ", request_id="adjust-empty-2")
+    with pytest.raises(ValidationError):
+        CustomerAdjust(amount=D("1.00"), remark="x" * 2)
+
+
+def test_initialize_and_adjust_api_require_admin(db):
+    user = _operator(db, "init-adjust-api")
+    customer = _membership_customer(db, user, "api")
+    client = _customer_api_client(db, user.id)  # read/write/recharge，无 admin
+
+    init_denied = client.post(
+        f"/api/domestic/customers/{customer.id}/initialize",
+        json={"balance": "100.00"},
+    )
+    adjust_denied = client.post(
+        f"/api/domestic/customers/{customer.id}/adjust",
+        json={"amount": "1.00", "remark": "越权", "request_id": "deny-adjust-1"},
+    )
+    assert init_denied.status_code == 403
+    assert adjust_denied.status_code == 403
+
+    from app.domestic.router import router
+    app = FastAPI()
+    app.include_router(router, prefix="/api/domestic")
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": str(user.id), "roles": [], "permissions": ["domestic:admin"],
+    }
+    admin_client = TestClient(app)
+
+    created = admin_client.post(
+        f"/api/domestic/customers/{customer.id}/initialize",
+        json={"balance": "300.00", "membership_level": "silver"},
+    )
+    assert created.status_code == 200
+    assert created.json()["data"]["current_balance"] == 300.00
+    assert created.json()["data"]["membership_label"] == "银卡会员"
+
+    adjusted = admin_client.post(
+        f"/api/domestic/customers/{customer.id}/adjust",
+        json={
+            "amount": "-50.00", "membership_level": None,
+            "remark": "扣错退回", "request_id": "api-adjust-1",
+        },
+    )
+    assert adjusted.status_code == 200
+    assert adjusted.json()["data"]["current_balance"] == 250.00
+    assert adjusted.json()["data"]["membership_level"] is None

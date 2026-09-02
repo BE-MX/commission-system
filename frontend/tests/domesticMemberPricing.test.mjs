@@ -169,6 +169,11 @@ test('页面契约：不手改会员，优惠价只能走手工改价契约', as
     readFile(new URL('../src/api/domestic.js', import.meta.url), 'utf8'),
   ])
   assert.doesNotMatch(customers, /v-model="dialog\.membership_level"/)
+  assert.match(customers, /openInit/)
+  assert.match(customers, /openAdjust/)
+  assert.match(customers, /__keep__/)
+  assert.match(api, /post\(`\/customers\/\$\{id\}\/initialize`, data\)/)
+  assert.match(api, /post\(`\/customers\/\$\{id\}\/adjust`, data\)/)
   assert.doesNotMatch(createPage, /v-model="item\.unit_price"/)
   assert.match(api, /post\('\/pricing\/quote', data\)/)
   assert.match(api, /post\(`\/orders\/\$\{id\}\/submit`, data/)

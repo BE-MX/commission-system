@@ -74,6 +74,15 @@ export function rechargeCustomer(id, data) {
   return domesticClient.post(`/customers/${id}/recharges`, data)
 }
 
+// 期初初始化（仅 admin，且无流水时才可用）与临时调整（余额增减/等级覆盖）
+export function initializeCustomer(id, data) {
+  return domesticClient.post(`/customers/${id}/initialize`, data)
+}
+
+export function adjustCustomer(id, data) {
+  return domesticClient.post(`/customers/${id}/adjust`, data)
+}
+
 export function listCustomerBalanceLedger(id, params) {
   return domesticClient.get(`/customers/${id}/balance-ledger`, { params })
 }

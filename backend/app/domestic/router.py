@@ -39,7 +39,9 @@ from app.domestic.models import DomesticOrder, DomesticOrderItem
 from app.domestic.schemas import (
     BasePriceUpdate,
     CraftRouteUpsert,
+    CustomerAdjust,
     CustomerCreate,
+    CustomerInitialize,
     CustomerRechargeCreate,
     CustomerUpdate,
     DraftSubmitRequest,
@@ -295,6 +297,52 @@ def recharge_customer(
             if data["replayed"]
             else "充值成功"
         ),
+    )
+
+
+@router.post("/customers/{customer_id}/initialize", summary="期初初始化客户余额与会员等级")
+def initialize_customer(
+    customer_id: int,
+    payload: CustomerInitialize,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("domestic:admin")),
+):
+    try:
+        data = customer_service.initialize_customer(
+            db, customer_id, payload, _uid(current_user),
+        )
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception:
+        db.rollback()
+        raise
+    return ok(
+        data,
+        message="该客户已初始化过，当前状态以返回结果为准" if data["replayed"] else "初始化完成",
+    )
+
+
+@router.post("/customers/{customer_id}/adjust", summary="临时调整客户余额与会员等级")
+def adjust_customer(
+    customer_id: int,
+    payload: CustomerAdjust,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("domestic:admin")),
+):
+    try:
+        data = customer_service.adjust_customer(
+            db, customer_id, payload, _uid(current_user),
+        )
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception:
+        db.rollback()
+        raise
+    return ok(
+        data,
+        message="该调整已经处理过，当前状态以返回结果为准" if data["replayed"] else "调整完成",
     )
 
 

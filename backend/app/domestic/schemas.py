@@ -74,6 +74,47 @@ class CustomerRechargeCreate(BaseModel):
         return v.strip() if isinstance(v, str) else v
 
 
+class CustomerInitialize(BaseModel):
+    """老客户建档时一次性写入期初余额与会员等级；已有流水后一律走临时调整。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    balance: Decimal = Field(
+        Decimal("0"), ge=0, le=Decimal("999999999999.99"),
+        max_digits=14, decimal_places=2,
+    )
+    membership_level: Literal["silver", "black", "supreme"] | None = None
+    remark: str | None = Field(None, max_length=500)
+
+    @field_validator("remark")
+    @classmethod
+    def _strip_remark(cls, v: str | None) -> str | None:
+        value = v.strip() if isinstance(v, str) else v
+        return value or None
+
+
+class CustomerAdjust(BaseModel):
+    """临时调整余额（有符号）与/或会员等级。等级是临时覆盖，下次充值仍按金额重新核定。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(
+        Decimal("0"), ge=Decimal("-999999999999.99"), le=Decimal("999999999999.99"),
+        max_digits=14, decimal_places=2,
+        description="余额调整额：正加负减，0 表示不动余额",
+    )
+    membership_level: Literal["silver", "black", "supreme"] | None = Field(
+        None, description="传入才修改；null=取消会员",
+    )
+    remark: str = Field(..., min_length=2, max_length=500)
+    request_id: str = Field(..., min_length=8, max_length=64, description="客户端幂等键")
+
+    @field_validator("remark", "request_id", mode="before")
+    @classmethod
+    def _strip_text(cls, v: str) -> str:
+        return v.strip() if isinstance(v, str) else v
+
+
 # ── 产品属性 ──────────────────────────────────────────
 
 
