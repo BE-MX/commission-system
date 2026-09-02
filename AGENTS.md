@@ -1,6 +1,6 @@
 # AGENTS.md — 多智能体 Git 协作约定（codex / kimi / claude 通用）
 
-本仓库由多个 AI 编码代理并行开发（Claude Code / Codex / Kimi Code），各自工作在独立 git worktree。完整项目规范见同目录 `CLAUDE.md`（宪法）与 `.claude/rules/checklists.md`；本文件只放跨代理必须共同遵守的 Git 约定，与 CLAUDE.md「多智能体并行 Git」条目同步维护。
+本仓库由多个 AI 编码代理并行开发（Claude Code / Codex / Kimi Code），各自工作在独立 git worktree。完整项目规范见同目录 `CLAUDE.md`（宪法）与 `.claude/skills/completion-checklist/SKILL.md`（完工 DoD 与新模块 checklist）；本文件只放跨代理必须共同遵守的 Git 约定，与 CLAUDE.md「多智能体并行 Git」条目同步维护。
 
 ## Worktree 与分支
 

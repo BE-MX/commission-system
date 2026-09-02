@@ -85,3 +85,6 @@ expo-sales/server/expo.db
 /tablet-kiosk/keystore.properties
 /tablet-kiosk/*.jks
 /tablet-kiosk/*.keystore
+
+# 站点接入凭证明文（本机手工留存，含 live token，禁止提交；见 docs/integrations/invoice-api.md 凭证规则）
+/docs/integrations/COEDEX站点接入方舟参数.md

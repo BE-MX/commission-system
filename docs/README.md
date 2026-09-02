@@ -28,7 +28,7 @@
 | [2026-07-03-architecture-assessment.md](2026-07-03-architecture-assessment.md) | 平台架构评估与治理路线图 | 技术负责人 |
 | [2026-07-08-db-naming-assessment.md](2026-07-08-db-naming-assessment.md) | 数据库命名评估（命名宪法依据） | 后端开发、DBA |
 | [requirements/](requirements/) | 需求文档归档 | 产品经理、历史追溯 |
-| [superpowers/](superpowers/) | 设计稿（`specs/`）与实施计划（`plans/`）各 10 份，2026-07~08；skill 默认路径遗留，未并入 requirements——查近期模块设计时记得也翻这里 | 开发、历史追溯 |
+| [superpowers/](superpowers/) | 设计稿（`specs/`）与实施计划（`plans/`），2026-07 起持续新增；skill 默认路径遗留，未并入 requirements——查近期模块设计时记得也翻这里 | 开发、历史追溯 |
 | [../DESIGN.md](../DESIGN.md) | 设计系统（颜色/字体/间距/组件），UI 决策以此为准 | 前端开发、设计 |
 
 ## 外部集成
@@ -49,4 +49,4 @@
 - **项目负责人**：亮哥（莱莎发制品 AI 技术支持部）
 - **代码仓库**：内部 Git 仓库
 - **生产环境**：https://leshine.work（腾讯云 Nginx 119.28.107.92 → 本地 Windows Server 8002）
-  - ⚠️ 线上代码不等于仓库当前代码：2026-08-11 核实本地 `main` 领先 `origin/main` 80+ 个提交且生产未部署这批改动，2026-08 新增模块线上均不可用。最新发布状态见 [handoff.md](handoff.md) 顶部提醒
+  - ⚠️ 线上代码不等于仓库当前代码：「已合入 main」不等于「已部署」，部署只走办公室服务器的 `deploy\deploy.bat`。最新发布状态与探测结果见 [handoff.md](handoff.md) 顶部提醒
