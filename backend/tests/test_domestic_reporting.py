@@ -15,6 +15,8 @@ from app.domestic import order_service, product_service, progress_service, repor
 from app.domestic import constants as C
 from app.domestic.models import (
     DomesticCraftRoute,
+    DomesticBasePrice,
+    DomesticCustomer,
     DomesticItemProgress,
     DomesticOrderItem,
     DomesticReportLog,
@@ -101,18 +103,66 @@ def _seed_order_values(db, attrs):
     db.flush()
 
 
+def _pricing_customer(db, user):
+    customer = db.query(DomesticCustomer).filter_by(shop_name="马姐假发").first()
+    if customer is None:
+        customer = DomesticCustomer(
+            shop_name="马姐假发",
+            membership_level="black",
+            balance=Decimal("0.00"),
+            created_by=user.id,
+        )
+        db.add(customer)
+    else:
+        customer.membership_level = "black"
+    db.flush()
+    return customer
+
+
+def _zero_price_item(db, attrs, qty, client_key):
+    row = db.query(DomesticBasePrice).filter_by(
+        product_type=attrs.product_type,
+        craft=attrs.craft,
+        length=attrs.length,
+    ).first()
+    if row is None:
+        row = DomesticBasePrice(
+            product_type=attrs.product_type,
+            craft=attrs.craft,
+            length=attrs.length,
+            original_price=Decimal("120.00"),
+            version=1,
+        )
+        db.add(row)
+        db.flush()
+    return OrderItemInput(
+        client_key=client_key,
+        attrs=attrs,
+        order_qty=qty,
+        expected_quote={
+            "original_price": "120.00",
+            "base_price_version": row.version,
+            "discount_price": "0.00",
+            "membership_level": "black",
+            "pricing_rule": "member_reduction",
+            "pricing_version": "domestic-member-v1",
+        },
+    )
+
+
 def _create_order(db, user, qty=20, craft="递针旋全头套"):
     attrs = _attrs(craft)
     _seed_order_values(db, attrs)
+    customer = _pricing_customer(db, user)
     payload = OrderCreate(
         request_id=str(uuid4()),
         order_no="710",
         order_date=date(2026, 7, 27),
-        customer_shop_name="马姐假发",
+        customer_id=customer.id,
         order_category="normal",
         order_type="first_order",
         order_channel="wechat",
-        items=[OrderItemInput(attrs=attrs, order_qty=qty)],
+        items=[_zero_price_item(db, attrs, qty, "reporting-line-1")],
     )
     return order_service.create_order(db, payload, user.id)
 
@@ -679,13 +729,15 @@ def test_workload_summary_excludes_revoked(db, craft_mapping, workers):
 def test_multi_item_order_status_rolls_up_partially(db, craft_mapping, workers):
     """一单多品：一行做完不等于整单做完，一行发货不等于整单发货。"""
     creator = _user(db, "planner")
+    customer = _pricing_customer(db, creator)
+    attrs = _attrs()
     payload = OrderCreate(
         request_id=str(uuid4()),
-        order_no="712", order_date=date(2026, 7, 27), customer_shop_name="马姐假发",
+        order_no="712", order_date=date(2026, 7, 27), customer_id=customer.id,
         order_category="normal", order_type="first_order", order_channel="wechat",
         items=[
-            OrderItemInput(attrs=_attrs(), order_qty=3),
-            OrderItemInput(attrs=_attrs(), order_qty=5),
+            _zero_price_item(db, attrs, 3, "multi-line-1"),
+            _zero_price_item(db, attrs, 5, "multi-line-2"),
         ],
     )
     order_id = order_service.create_order(db, payload, creator.id)["id"]

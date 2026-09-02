@@ -1,10 +1,12 @@
 """内贸订单头与产品属性的结构契约。"""
 
 import importlib.util
+import itertools
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -21,6 +23,7 @@ from app.domestic import attribute_service, order_service, product_service, repo
 from app.domestic import constants as C
 from app.domestic.models import (
     DomesticCraftRoute,
+    DomesticBasePrice,
     DomesticCustomer,
     DomesticOrder,
     DomesticOrderItem,
@@ -35,6 +38,71 @@ from app.domestic.schemas import (
 )
 from app.production.models import Process, ProcessRoute, ProcessRouteStep
 from app.system.models import SysDict
+
+
+_ITEM_KEYS = itertools.count(1)
+
+
+def _expected_quote():
+    return {
+        "original_price": Decimal("1000.00"),
+        "base_price_version": 1,
+        "discount_price": Decimal("1000.00"),
+        "membership_level": None,
+        "pricing_rule": "base_price",
+        "pricing_version": "domestic-member-v1",
+    }
+
+
+def _order_item(*, attrs, order_qty, **kwargs):
+    return OrderItemInput(
+        client_key=f"attributes-line-{next(_ITEM_KEYS)}",
+        attrs=attrs,
+        order_qty=order_qty,
+        expected_quote=_expected_quote(),
+        **kwargs,
+    )
+
+
+def _append_item(db, *, attrs, order_qty, **kwargs):
+    _ensure_base_price(db, attrs)
+    return OrderItemAppend(
+        client_key=f"attributes-line-{next(_ITEM_KEYS)}",
+        attrs=attrs,
+        order_qty=order_qty,
+        expected_quote=_expected_quote(),
+        **kwargs,
+    )
+
+
+def _canonical_price_code(db, dict_type, value):
+    rows = db.query(SysDict).filter(
+        SysDict.type.in_((dict_type, f"{dict_type}_special")),
+        SysDict.is_active.is_(True),
+    ).all()
+    return next((row.code for row in rows if row.code.casefold() == value.casefold()), value)
+
+
+def _ensure_base_price(db, attrs):
+    attrs = attrs if isinstance(attrs, ProductAttrs) else ProductAttrs.model_validate(attrs)
+    craft = _canonical_price_code(
+        db, C.ATTR_DICTS[attrs.product_type]["craft"], attrs.craft
+    )
+    length = _canonical_price_code(
+        db, C.ATTR_DICTS[attrs.product_type]["length"], attrs.length
+    )
+    row = db.query(DomesticBasePrice).filter_by(
+        product_type=attrs.product_type, craft=craft, length=length
+    ).first()
+    if row is None:
+        db.add(DomesticBasePrice(
+            product_type=attrs.product_type,
+            craft=craft,
+            length=length,
+            original_price=Decimal("1000.00"),
+            version=1,
+        ))
+        db.flush()
 
 
 def _cap_attrs(**overrides):
@@ -61,7 +129,7 @@ def _order_payload(**overrides):
         "order_type": "first_order",
         "order_channel": "wechat",
         "items": [
-            OrderItemInput(
+            _order_item(
                 attrs=ProductAttrs(**_cap_attrs()),
                 order_qty=1,
             )
@@ -365,7 +433,7 @@ def _seed_attribute_context(db, *, piece_route: bool = True):
     db.flush()
     customer = DomesticCustomer(
         shop_name=f"属性测试客户-{id(db)}",
-        balance=0,
+        balance=Decimal("999999.00"),
         status=1,
         created_by=user.id,
     )
@@ -399,7 +467,7 @@ def _seed_attribute_context(db, *, piece_route: bool = True):
     }
     db.add_all([_dict_row(dict_type, code) for dict_type, code in standard_codes.items()])
     db.commit()
-    return {"user": user, "customer": customer, "routes": routes}
+    return {"db": db, "user": user, "customer": customer, "routes": routes}
 
 
 def _service_order(context, *, request_id: str, order_category="special", items=None, **overrides):
@@ -413,6 +481,8 @@ def _service_order(context, *, request_id: str, order_category="special", items=
     )
     if items is not None:
         payload["items"] = items
+    for item in payload["items"]:
+        _ensure_base_price(context["db"], item.attrs)
     payload.update(overrides)
     return OrderCreate(**payload)
 
@@ -423,7 +493,7 @@ def test_normal_order_rejects_custom_attribute(db):
         context,
         request_id="normal-custom-attrs",
         order_category="normal",
-        items=[OrderItemInput(
+        items=[_order_item(
             attrs=ProductAttrs(**_cap_attrs(craft="自定义工艺")),
             order_qty=1,
         )],
@@ -442,7 +512,7 @@ def test_special_order_creates_and_reuses_only_special_option_and_route(db):
         _service_order(
             context,
             request_id="special-custom-first",
-            items=[OrderItemInput(attrs=attrs, order_qty=1)],
+            items=[_order_item(attrs=attrs, order_qty=1)],
         ),
         context["user"].id,
     )
@@ -451,7 +521,7 @@ def test_special_order_creates_and_reuses_only_special_option_and_route(db):
         _service_order(
             context,
             request_id="special-custom-second",
-            items=[OrderItemInput(attrs=attrs, order_qty=1)],
+            items=[_order_item(attrs=attrs, order_qty=1)],
         ),
         context["user"].id,
     )
@@ -494,7 +564,7 @@ def test_existing_special_craft_mapping_survives_disabled_default_route(db):
         _service_order(
             context,
             request_id="existing-custom-route",
-            items=[OrderItemInput(
+            items=[_order_item(
                 attrs=ProductAttrs(**_cap_attrs(craft=custom_craft)),
                 order_qty=1,
             )],
@@ -647,6 +717,11 @@ def test_sqlite_concurrent_append_converges_on_one_special_option(tmp_path):
         )
         order_id = created["id"]
         user_id = context["user"].id
+        _ensure_base_price(
+            setup_db,
+            ProductAttrs(**_cap_attrs(craft="并发特单工艺")),
+        )
+        setup_db.commit()
     finally:
         setup_db.close()
 
@@ -659,7 +734,7 @@ def test_sqlite_concurrent_append_converges_on_one_special_option(tmp_path):
             return order_service.add_item(
                 thread_db,
                 order_id,
-                OrderItemAppend(
+                _append_item(thread_db,
                     request_id=request_id,
                     attrs=ProductAttrs(**_cap_attrs(craft="并发特单工艺")),
                     order_qty=1,
@@ -737,7 +812,7 @@ def test_normal_order_rejects_case_different_order_type_and_size(db):
         context,
         request_id="case-sensitive-size",
         order_category="normal",
-        items=[OrderItemInput(
+        items=[_order_item(
             attrs=ProductAttrs(**_cap_attrs(size="ss")),
             order_qty=1,
         )],
@@ -756,7 +831,7 @@ def test_special_order_canonicalizes_case_different_standard_value(db):
         _service_order(
             context,
             request_id="case-sensitive-special-size",
-            items=[OrderItemInput(
+            items=[_order_item(
                 attrs=ProductAttrs(**_cap_attrs(size="ss")),
                 order_qty=1,
             )],
@@ -790,7 +865,7 @@ def test_special_piece_canonicalizes_standard_craft_before_route_and_product(db)
         _service_order(
             context,
             request_id="case-sensitive-piece-craft",
-            items=[OrderItemInput(
+            items=[_order_item(
                 attrs=ProductAttrs(
                     product_type="piece",
                     craft="u型13*15",
@@ -822,7 +897,7 @@ def test_special_order_reuses_case_different_custom_canonical_value(db):
         _service_order(
             context,
             request_id="case-sensitive-custom-size",
-            items=[OrderItemInput(
+            items=[_order_item(
                 attrs=ProductAttrs(**_cap_attrs(size="customsize")),
                 order_qty=1,
             )],
@@ -961,11 +1036,11 @@ def test_failed_later_item_rolls_back_special_options_and_mapping(db):
         context,
         request_id="special-attrs-rollback",
         items=[
-            OrderItemInput(
+            _order_item(
                 attrs=ProductAttrs(**_cap_attrs(craft="事务头套工艺")),
                 order_qty=1,
             ),
-            OrderItemInput(
+            _order_item(
                 attrs=ProductAttrs(
                     product_type="piece",
                     craft="事务发片工艺",
@@ -993,7 +1068,7 @@ def test_failed_order_rolls_back_inline_customer(db):
         request_id="inline-customer-rollback",
         customer_id=None,
         customer_shop_name="不应残留的客户",
-        items=[OrderItemInput(
+        items=[_order_item(
             attrs=ProductAttrs(
                 product_type="piece",
                 craft="无路线发片工艺",
@@ -1016,7 +1091,7 @@ def test_failed_append_rolls_back_special_option(db):
         _service_order(context, request_id="append-rollback-base"),
         context["user"].id,
     )
-    payload = OrderItemAppend(
+    payload = _append_item(db,
         request_id="append-special-rollback",
         attrs=ProductAttrs(
             product_type="piece",
@@ -1039,7 +1114,7 @@ def test_special_order_with_custom_attrs_cannot_be_changed_to_normal(db):
         _service_order(
             context,
             request_id="category-downgrade",
-            items=[OrderItemInput(
+            items=[_order_item(
                 attrs=ProductAttrs(**_cap_attrs(craft="不能降级的工艺")),
                 order_qty=1,
             )],

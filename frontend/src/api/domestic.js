@@ -83,6 +83,22 @@ export function listProducts(params) {
   return domesticClient.get('/products', { params })
 }
 
+export function updateProductBasePrice(productId, originalPrice) {
+  return domesticClient.put(`/products/${productId}/base-price`, { original_price: originalPrice })
+}
+
+export function getProductBasePriceImpact(productId) {
+  return domesticClient.get(`/products/${productId}/base-price-impact`)
+}
+
+export function deleteProductBasePrice(productId) {
+  return domesticClient.delete(`/products/${productId}/base-price`)
+}
+
+export function quoteDomesticPrices(data) {
+  return domesticClient.post('/pricing/quote', data)
+}
+
 export function rebindProductRoute(productId, routeId) {
   return domesticClient.put(`/products/${productId}/route`, { route_id: routeId })
 }
@@ -100,8 +116,8 @@ export function deleteCraftRoute(id) {
 }
 
 // ── 订单 ──
-export function createOrder(data) {
-  return domesticClient.post('/orders', data)
+export function createOrder(data, config) {
+  return domesticClient.post('/orders', data, config)
 }
 
 export function listOrders(params) {
@@ -120,8 +136,8 @@ export function updateOrder(id, data) {
   return domesticClient.put(`/orders/${id}`, data)
 }
 
-export function submitDraftOrder(id) {
-  return domesticClient.post(`/orders/${id}/submit`)
+export function submitDraftOrder(id, data, config) {
+  return domesticClient.post(`/orders/${id}/submit`, data, config)
 }
 
 export function terminateOrder(id, reason) {

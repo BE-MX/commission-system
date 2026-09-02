@@ -75,7 +75,7 @@
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
             <GlassButton variant="link" left-icon="Download" @click="handleExport(row)">导出</GlassButton>
-            <GlassButton v-if="row.status === 0" v-permission="'domestic:write'" variant="link" left-icon="Promotion" @click="handleSubmitDraft(row)">提交</GlassButton>
+            <GlassButton v-if="row.status === 0" v-permission="'domestic:write'" variant="link" left-icon="Promotion" :loading="submittingOrderIds.has(row.id)" :disabled="submittingOrderIds.has(row.id)" @click="handleSubmitDraft(row)">提交</GlassButton>
             <GlassButton v-else v-permission="'domestic:write'" variant="link" left-icon="CircleClose" :disabled="row.status >= 3" @click="handleTerminate(row)">终止</GlassButton>
             <GlassButton v-permission="'domestic:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
           </template>
@@ -102,7 +102,7 @@
             <span>订单总价：¥{{ Number(detail.total_amount || 0).toFixed(2) }}</span>
             <span>已扣余额：¥{{ Number(detail.charged_amount || 0).toFixed(2) }}</span>
             <span v-if="detail.customer_custom_code">客户编码：{{ detail.customer_custom_code }}</span>
-            <span v-if="detail.customer_membership_level">会员等级：{{ detail.customer_membership_level }}</span>
+            <span>当前会员：{{ membershipLevelLabel(detail.customer_membership_level) }}</span>
             <span v-if="detail.customer_province || detail.customer_city">地区：{{ [detail.customer_province, detail.customer_city].filter(Boolean).join(' / ') }}</span>
             <span v-if="detail.customer_contact">联系人：{{ detail.customer_contact }}</span>
             <span v-if="detail.customer_phone">电话：{{ detail.customer_phone }}</span>
@@ -120,7 +120,10 @@
           <div class="item-title">
             <span class="item-name">{{ item.line_code }} · {{ item.product_name }}</span>
             <el-tag size="small" effect="plain">{{ item.order_qty }} 件</el-tag>
-            <el-tag size="small" effect="plain">¥{{ Number(item.unit_price || 0).toFixed(2) }} / 件</el-tag>
+            <el-tag size="small" effect="plain">优惠价 ¥{{ Number(item.unit_price || 0).toFixed(2) }} / 件</el-tag>
+            <el-tag size="small" type="info" effect="plain">原始价 ¥{{ Number(item.original_price || 0).toFixed(2) }}</el-tag>
+            <el-tag v-if="Number(item.discount_amount || 0) > 0" size="small" type="success" effect="plain">已优惠 ¥{{ Number(item.discount_amount).toFixed(2) }}</el-tag>
+            <el-tag size="small" type="warning" effect="plain">{{ membershipLevelLabel(item.membership_level_snapshot) }} · {{ item.pricing_rule_label || '历史人工价' }}</el-tag>
             <span class="item-amount">小计 ¥{{ Number(item.line_amount || 0).toFixed(2) }}</span>
             <el-tag size="small" :type="item.status === 2 ? 'info' : (item.status === 1 ? 'success' : '')">{{ item.status_label }}</el-tag>
             <span class="item-current">当前：{{ item.current_process }}</span>
@@ -340,6 +343,7 @@ import DomesticImages from '@/components/domestic/DomesticImages.vue'
 import DomesticSkipAuditDialog from './components/DomesticSkipAuditDialog.vue'
 import DomesticPrintDialog from './print/DomesticPrintDialog.vue'
 import { useDomesticOrders } from './composables/useDomesticOrders'
+import { membershipLevelLabel } from './composables/domesticMemberPricing'
 
 const {
   loading, list, total, page, pageSize, searchForm, filterOptions,
@@ -353,7 +357,7 @@ const {
   attachDialog, openAttachRoute, confirmAttachRoute,
   printDialog, openPrintCard, openQrLabel, openWxacodeLabel,
   wxacodeDialog, openWxacode, downloadWxacode,
-  handleExport, handleSubmitDraft, handleTerminate, handleDelete, goCreate,
+  handleExport, handleSubmitDraft, submittingOrderIds, handleTerminate, handleDelete, goCreate,
 } = useDomesticOrders()
 </script>
 

@@ -14,6 +14,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_any_permission, require_permission
@@ -27,6 +28,7 @@ from app.domestic import (
     export_service,
     file_service,
     order_service,
+    pricing_service,
     product_service,
     progress_service,
     report_service,
@@ -35,10 +37,12 @@ from app.domestic import (
 )
 from app.domestic.models import DomesticOrder, DomesticOrderItem
 from app.domestic.schemas import (
+    BasePriceUpdate,
     CraftRouteUpsert,
     CustomerCreate,
     CustomerRechargeCreate,
     CustomerUpdate,
+    DraftSubmitRequest,
     ItemShipRequest,
     OrderCreate,
     OrderItemAppend,
@@ -46,6 +50,7 @@ from app.domestic.schemas import (
     OrderStatusUpdate,
     OrderUpdate,
     ProductRouteRebind,
+    PricingQuoteRequest,
     ManualSkipSubmit,
     ReportRevoke,
     ReportSubmit,
@@ -71,6 +76,42 @@ def _has_admin(current_user: dict) -> bool:
     if "super_admin" in (current_user.get("roles") or []):
         return True
     return "domestic:admin" in (current_user.get("permissions") or [])
+
+
+def _is_mysql_lock_operational_error(db: Session, exc: OperationalError) -> bool:
+    dialect_name = db.get_bind().dialect.name
+    error_args = getattr(exc.orig, "args", ())
+    return (
+        dialect_name in {"mysql", "mariadb"}
+        and bool(error_args)
+        and error_args[0] in {1205, 1213}
+    )
+
+
+def _run_base_price_transaction(db: Session, operation):
+    """执行 PUT 原价事务；仅 MySQL/MariaDB 锁超时/死锁完整重试一次。"""
+
+    for attempt in range(2):
+        try:
+            data = operation()
+            db.commit()
+            return data
+        except OperationalError as exc:
+            db.rollback()
+            if attempt == 0 and _is_mysql_lock_operational_error(db, exc):
+                logger.warning(
+                    "domestic base price lock conflict; retry transaction once"
+                )
+                print(
+                    "[domestic] base price lock conflict; retry transaction once",
+                    flush=True,
+                )
+                continue
+            raise
+        except Exception:
+            db.rollback()
+            raise
+    raise RuntimeError("原价事务重试状态异常")
 
 
 # ── 下拉值域 ──────────────────────────────────────────
@@ -242,8 +283,19 @@ def recharge_customer(
             request_id=payload.request_id,
         )
     except ValueError as exc:
+        db.rollback()
         raise HTTPException(status_code=400, detail=str(exc))
-    return ok(data, message="该笔充值已经处理过" if data["replayed"] else "充值成功")
+    except Exception:
+        db.rollback()
+        raise
+    return ok(
+        data,
+        message=(
+            "该笔充值已经处理过，当前会员状态以返回结果为准"
+            if data["replayed"]
+            else "充值成功"
+        ),
+    )
 
 
 @router.get("/customers/{customer_id}/balance-ledger", summary="客户余额流水")
@@ -273,6 +325,7 @@ def list_products(
     keyword: str = Query(""),
     product_type: str = Query(""),
     route_bound: str = Query("", pattern="^(bound|unbound)?$"),
+    price_status: str = Query("", pattern="^(configured|missing)?$"),
     sort_field: str = Query(""),
     sort_order: str = Query(""),
     db: Session = Depends(get_db),
@@ -281,9 +334,84 @@ def list_products(
     items, total = product_service.list_products(
         db, page=page, page_size=page_size, keyword=keyword,
         product_type=product_type, route_bound=route_bound,
+        price_status=price_status,
         sort_field=sort_field, sort_order=sort_order,
     )
     return ok(page_result(items, total, page, page_size))
+
+
+@router.put("/products/{product_id}/base-price", summary="维护产品共享原始价格")
+def put_product_base_price(
+    product_id: int,
+    payload: BasePriceUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("domestic:admin")),
+):
+    try:
+        data = _run_base_price_transaction(
+            db,
+            lambda: pricing_service.upsert_base_price(
+                db,
+                product_id=product_id,
+                original_price=payload.original_price,
+                user_id=_uid(current_user),
+            ),
+        )
+        return ok(data, message="原始价格已保存")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/products/{product_id}/base-price-impact",
+    summary="预览产品共享原始价格影响范围",
+)
+def get_product_base_price_impact(
+    product_id: int,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:admin")),
+):
+    try:
+        return ok(pricing_service.base_price_impact(db, product_id=product_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/products/{product_id}/base-price", summary="删除产品共享原始价格")
+def delete_product_base_price(
+    product_id: int,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:admin")),
+):
+    try:
+        data = pricing_service.delete_base_price(db, product_id=product_id)
+        db.commit()
+        return ok(data, message="原始价格已删除")
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.post("/pricing/quote", summary="批量预览内贸会员报价")
+def quote_product_prices(
+    payload: PricingQuoteRequest,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:write")),
+):
+    try:
+        data = pricing_service.quote_prices(db, payload)
+        # attrs 报价会沉淀产品；即使缺价也必须让产品进入产品清单。
+        db.commit()
+        return ok(data)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.put("/products/{product_id}/route", summary="人工改绑产品工艺路线")
@@ -348,6 +476,8 @@ def create_order(
 ):
     try:
         data = order_service.create_order(db, payload, _uid(current_user))
+    except pricing_service.DomesticQuoteChangedError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     message = "草稿已保存" if data["is_draft"] else "下单成功"
@@ -427,27 +557,30 @@ def update_order(
     _user: dict = Depends(require_permission("domestic:write")),
 ):
     try:
-        order_service.update_order(db, order_id, payload)
+        result = order_service.update_order(db, order_id, payload)
+    except pricing_service.DomesticQuoteChangedError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    return ok(message="已保存")
+    return ok(result if isinstance(result, dict) else None, message="已保存")
 
 
 @router.post("/orders/{order_id}/submit", summary="提交草稿并从客户余额扣款")
 def submit_draft_order(
     order_id: int,
+    payload: DraftSubmitRequest,
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_permission("domestic:write")),
 ):
     try:
-        order = order_service.submit_draft(db, order_id, _uid(current_user))
+        result = order_service.submit_draft(
+            db, order_id, payload, _uid(current_user)
+        )
+    except pricing_service.DomesticQuoteChangedError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    return ok({
-        "id": order.id,
-        "status": order.status,
-        "charged_amount": float(order.charged_amount or 0),
-    }, message="订单已提交，余额扣款成功")
+    return ok(result, message="订单已提交，余额扣款成功")
 
 
 @router.post("/orders/{order_id}/status", summary="终止订单")
@@ -489,6 +622,8 @@ def add_item(
 ):
     try:
         data = order_service.add_item(db, order_id, payload, _uid(_user))
+    except pricing_service.DomesticQuoteChangedError as exc:
+        raise HTTPException(status_code=409, detail=exc.detail)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(data, message=data.get("warning") or "明细已添加")

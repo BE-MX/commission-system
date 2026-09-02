@@ -170,25 +170,42 @@ def _user_process_ids(db: Session, user_id: int) -> set[int]:
     }
 
 
-def _assert_order_reportable(db: Session, order_id: int) -> None:
+def _assert_order_reportable(order: DomesticOrder) -> None:
     """终止或已软删的订单一律不能再报工。
 
     软删这条容易漏：卡片还贴在车间墙上，二维码不含时效也不含订单状态，
     删单之后工人照样扫得动——工时就会挂在一张查不到的订单上。
     """
-    # 与终止/删单/草稿提交争用同一订单行锁：先抢到终止锁的
-    # 请求提交后，排队中的报工必须读到最新状态并被拦截。
-    order = db.query(DomesticOrder).filter(
-        DomesticOrder.id == order_id
-    ).with_for_update().first()
-    if not order:
-        raise ValueError("订单不存在")
     if order.deleted_flag:
         raise ValueError("订单已删除，不能报工")
     if order.status == C.ORDER_DRAFT:
         raise ValueError("订单还是草稿，不能报工")
     if order.status == C.ORDER_TERMINATED:
         raise ValueError("订单已终止，不能报工")
+
+
+def _lock_order_then_item(
+    db: Session, item_id: int
+) -> tuple[DomesticOrder, DomesticOrderItem]:
+    """Locate the parent, then acquire report mutation locks order-first."""
+    order_id = db.query(DomesticOrderItem.order_id).filter(
+        DomesticOrderItem.id == item_id
+    ).scalar()
+    if order_id is None:
+        raise ValueError("订单明细不存在")
+    order = db.query(DomesticOrder).filter(
+        DomesticOrder.id == order_id
+    ).populate_existing().with_for_update().first()
+    if order is None:
+        raise ValueError("订单不存在")
+    item = db.query(DomesticOrderItem).filter(
+        DomesticOrderItem.id == item_id
+    ).populate_existing().with_for_update().first()
+    if item is None:
+        raise ValueError("订单明细不存在")
+    if item.order_id != order.id:
+        raise ValueError("订单明细所属订单已变化，请刷新后重试")
+    return order, item
 
 
 def _replay_result(db: Session, log: DomesticReportLog, *, lock: bool = False) -> dict:
@@ -471,10 +488,7 @@ def _submit_report_once(
         qty=qty,
         unit_mode=unit_id is not None,
     )
-    # 明细行锁放最前：同一明细的所有报工/撤销在这里排队，锁顺序统一避免死锁
-    item = db.query(DomesticOrderItem).filter(DomesticOrderItem.id == item_id).with_for_update().first()
-    if not item:
-        raise ValueError("订单明细不存在")
+    order, item = _lock_order_then_item(db, item_id)
 
     # 首次快查可能在 MySQL RR 快照里看不到刚提交的并发请求。同一明细已由
     # item 行锁串行化，此处 locking read 必须重查一次再动累计数。
@@ -487,6 +501,8 @@ def _submit_report_once(
         db.rollback()
         return replay
 
+    _assert_order_reportable(order)
+
     progress = (
         db.query(DomesticItemProgress)
         .filter(DomesticItemProgress.id == progress_id)
@@ -495,8 +511,6 @@ def _submit_report_once(
     )
     if not progress or progress.item_id != item_id:
         raise ValueError("工序进度不存在或与这张卡不匹配")
-
-    _assert_order_reportable(db, item.order_id)
 
     # 代报工：件数记到实际做活的人头上，不是记到操作电脑的人头上（计件工资口径）
     if progress.process_id not in _user_process_ids(db, worker_id):
@@ -797,12 +811,7 @@ def _submit_manual_skip_once(
     )
     skip_mode = "unit" if unit_id is not None else "quantity"
 
-    # 同一明细所有状态变更统一先锁 item，再锁业务流水、progress、order。
-    item = db.query(DomesticOrderItem).filter(
-        DomesticOrderItem.id == item_id,
-    ).with_for_update().first()
-    if not item:
-        raise ValueError("订单明细不存在")
+    order, item = _lock_order_then_item(db, item_id)
 
     replay = _manual_skip_replay_if_exists(
         db,
@@ -823,6 +832,7 @@ def _submit_manual_skip_once(
 
     if item.status == C.ITEM_SHIPPED:
         raise ValueError("该明细已发货，不能跳过工序")
+    _assert_order_reportable(order)
 
     progress = db.query(DomesticItemProgress).filter(
         DomesticItemProgress.id == progress_id,
@@ -833,7 +843,6 @@ def _submit_manual_skip_once(
     rows = db.query(DomesticItemProgress).filter(
         DomesticItemProgress.item_id == item.id,
     ).order_by(DomesticItemProgress.step_order.asc()).with_for_update().all()
-    _assert_order_reportable(db, item.order_id)
     unit_service.ensure_item_units(db, item)
     units = routing_service.active_units(db, item)
     state = routing_service.load_passage_state(db, item)
@@ -941,11 +950,7 @@ def revoke_manual_skip(db: Session, skip_log_id: int, user_id: int) -> dict:
     ).first()
     if not preview:
         raise ValueError("跳过记录不存在")
-    item = db.query(DomesticOrderItem).filter(
-        DomesticOrderItem.id == preview[0],
-    ).with_for_update().first()
-    if not item:
-        raise ValueError("订单明细不存在")
+    order, item = _lock_order_then_item(db, preview[0])
     if item.status == C.ITEM_SHIPPED:
         raise ValueError("该明细已发货，不能撤销跳过")
 
@@ -964,12 +969,6 @@ def revoke_manual_skip(db: Session, skip_log_id: int, user_id: int) -> dict:
     ).with_for_update().first()
     if not progress:
         raise ValueError("工序进度不存在")
-    order = db.query(DomesticOrder).filter(
-        DomesticOrder.id == item.order_id,
-    ).with_for_update().first()
-    if not order:
-        raise ValueError("订单不存在")
-
     units = routing_service.skip_units(db, skip_log.id)
     routing_service.assert_no_downstream_actual_work(
         db,
@@ -1000,11 +999,7 @@ def revoke_report(db: Session, log_id: int, user_id: int, is_admin: bool = False
     ).first()
     if not preview:
         raise ValueError("报工记录不存在")
-    item = db.query(DomesticOrderItem).filter(
-        DomesticOrderItem.id == preview[0],
-    ).with_for_update().first()
-    if not item:
-        raise ValueError("订单明细不存在")
+    order, item = _lock_order_then_item(db, preview[0])
     if item.status == C.ITEM_SHIPPED:
         raise ValueError("该明细已发货，不能撤销报工")
 
@@ -1029,14 +1024,6 @@ def revoke_report(db: Session, log_id: int, user_id: int, is_admin: bool = False
     )
     if not progress:
         raise ValueError("工序进度不存在")
-
-    # 终止单与撤销必须争用同一订单行锁。否则 MySQL RR 下撤销事务
-    # 可以在退款后仍读到旧的「生产中」快照，再把终止状态覆盖掉。
-    order = db.query(DomesticOrder).filter(
-        DomesticOrder.id == item.order_id
-    ).with_for_update().first()
-    if not order:
-        raise ValueError("订单不存在")
 
     units = unit_service.units_for_log(db, log.id)
     routing_service.assert_no_downstream_actual_work(

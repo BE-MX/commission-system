@@ -9,6 +9,7 @@ from datetime import datetime
 from sqlalchemy import (
     JSON,
     BigInteger,
+    CheckConstraint,
     Column,
     Date,
     DateTime,
@@ -39,7 +40,9 @@ class DomesticCustomer(Base):
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     shop_name = Column(String(120), nullable=False, unique=True, comment="客户店名（业务主标识）")
     custom_code = Column(String(64), unique=True, comment="客户自定义编码")
-    membership_level = Column(String(32), comment="会员等级")
+    membership_level = Column(String(16), comment="会员等级 silver/black/supreme")
+    last_recharge_amount = Column(Numeric(14, 2), comment="最近一次成功充值金额")
+    last_recharged_at = Column(DateTime, comment="最近一次成功充值时间（北京时）")
     province = Column(String(64), comment="省份")
     city = Column(String(64), comment="城市")
     contact = Column(String(60), comment="联系人")
@@ -51,6 +54,13 @@ class DomesticCustomer(Base):
     created_by = Column(_UINT, ForeignKey("ark_users.id"), nullable=False, comment="创建人")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
+
+    __table_args__ = (
+        CheckConstraint(
+            "membership_level IS NULL OR membership_level IN ('silver', 'black', 'supreme')",
+            name="ck_dom_customer_membership_level",
+        ),
+    )
 
 
 class DomesticProduct(Base):
@@ -96,6 +106,42 @@ class DomesticCraftRoute(Base):
 
     __table_args__ = (
         UniqueConstraint("product_type", "craft", name="uk_dom_craft_route"),
+    )
+
+
+class DomesticBasePrice(Base):
+    """内贸产品原价；发片尺寸已精确合并进 craft。"""
+
+    __tablename__ = "ark_domestic_base_prices"
+
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
+    product_type = Column(String(16), nullable=False, comment="cap=头套,piece=发片")
+    craft = Column(String(64), nullable=False, comment="头套工艺 / 发片合并工艺尺寸")
+    length = Column(String(32), nullable=False, comment="长度")
+    original_price = Column(Numeric(14, 2), nullable=False, comment="原价")
+    version = Column(Integer, nullable=False, comment="价格版本，从1开始")
+    updated_by = Column(_UINT, ForeignKey("ark_users.id"), comment="最后维护人")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=beijing_now,
+        onupdate=beijing_now,
+        comment="更新时间",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "product_type", "craft", "length", name="uq_dom_base_price_product"
+        ),
+        CheckConstraint(
+            "product_type IN ('cap', 'piece')",
+            name="ck_dom_base_price_product_type",
+        ),
+        CheckConstraint(
+            "original_price > 0", name="ck_dom_base_price_positive"
+        ),
+        CheckConstraint("version >= 1", name="ck_dom_base_price_version"),
     )
 
 
@@ -153,7 +199,17 @@ class DomesticOrderItem(Base):
     route_id = Column(Integer, ForeignKey("process_route.id", ondelete="RESTRICT"),
                       comment="下单时锁定的路线快照，后改映射不影响在制单")
     order_qty = Column(Integer, nullable=False, comment="下单数量")
-    unit_price = Column(Numeric(14, 2), nullable=False, default=0, comment="产品单价")
+    unit_price = Column(Numeric(14, 2), nullable=False, comment="产品优惠价")
+    original_price = Column(Numeric(14, 2), nullable=False, comment="原价快照")
+    discount_amount = Column(Numeric(14, 2), nullable=False, comment="优惠金额快照")
+    membership_level_snapshot = Column(
+        String(16), nullable=True, comment="会员等级快照"
+    )
+    pricing_rule = Column(String(24), nullable=False, comment="定价规则")
+    pricing_version = Column(String(32), nullable=False, comment="定价算法版本")
+    base_price_version_snapshot = Column(
+        Integer, nullable=False, comment="基础价格版本快照"
+    )
     hairstyle = Column(String(1000), comment="发型（文字）")
     hairstyle_images = Column(JSON, comment="发型参考图 [相对路径]")
     color = Column(String(1000), comment="颜色（文字）")
@@ -176,9 +232,68 @@ class DomesticOrderItem(Base):
 
     __table_args__ = (
         UniqueConstraint("order_id", "line_no", name="uq_dom_item_order_line"),
+        CheckConstraint(
+            "unit_price >= 0", name="ck_dom_item_unit_price_nonnegative"
+        ),
+        CheckConstraint(
+            "discount_amount >= 0", name="ck_dom_item_discount_nonnegative"
+        ),
+        CheckConstraint(
+            "unit_price <= original_price",
+            name="ck_dom_item_unit_not_above_original",
+        ),
+        CheckConstraint(
+            "original_price > 0 OR pricing_rule = 'legacy_manual'",
+            name="ck_dom_item_original_price_valid",
+        ),
+        CheckConstraint(
+            "base_price_version_snapshot >= 0",
+            name="ck_dom_item_base_price_version_nonnegative",
+        ),
+        CheckConstraint(
+            "membership_level_snapshot IS NULL OR "
+            "membership_level_snapshot IN ('silver', 'black', 'supreme')",
+            name="ck_dom_item_membership_snapshot",
+        ),
+        CheckConstraint(
+            "pricing_rule IN ('base_price', 'member_fixed', "
+            "'member_fixed_capped', 'member_reduction', 'legacy_manual')",
+            name="ck_dom_item_pricing_rule",
+        ),
         Index("idx_dom_item_order", "order_id"),
         Index("idx_dom_item_status", "status"),
         Index("idx_dom_item_product", "product_id"),
+    )
+
+
+class DomesticOrderPricingRequest(Base):
+    """订单定价请求幂等记录。"""
+
+    __tablename__ = "ark_domestic_order_pricing_requests"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    order_id = Column(
+        Integer,
+        ForeignKey("ark_domestic_orders.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="所属订单",
+    )
+    request_id = Column(String(64), nullable=False, comment="客户端幂等键")
+    operation = Column(
+        String(24), nullable=False, comment="submit/reprice_customer"
+    )
+    request_hash = Column(String(64), nullable=False, comment="请求载荷 SHA-256")
+    result_json = Column(JSON, nullable=False, comment="首次定价结果")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+
+    order = relationship("DomesticOrder", lazy="noload")
+
+    __table_args__ = (
+        UniqueConstraint("order_id", "request_id", name="uq_dom_pricing_order_request"),
+        CheckConstraint(
+            "operation IN ('submit', 'reprice_customer')",
+            name="ck_dom_pricing_request_operation",
+        ),
     )
 
 

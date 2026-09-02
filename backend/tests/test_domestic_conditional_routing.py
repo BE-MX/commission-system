@@ -13,7 +13,8 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from sqlalchemy import Column, func
+from sqlalchemy import Column, event, func
+from sqlalchemy.dialects import mysql
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import sessionmaker
 from pydantic import ValidationError
@@ -53,7 +54,7 @@ def test_domestic_attribute_migration_is_the_only_head_after_shipping_inspection
     config.set_main_option("script_location", str(backend_root / "alembic"))
     revisions = ScriptDirectory.from_config(config)
 
-    assert revisions.get_heads() == ["129_domestic_order_attributes"]
+    assert revisions.get_heads() == ["131_domestic_member_pricing_b"]
     assert revisions.get_revision("129_domestic_order_attributes").down_revision == "128_shipping_inspection"
     assert revisions.get_revision("127_domestic_route_rules").down_revision == "126"
 
@@ -162,6 +163,12 @@ def conditional_order(db, conditional_route):
         route_id=conditional_route.id,
         order_qty=20,
         unit_price=Decimal("0"),
+        original_price=Decimal("0"),
+        discount_amount=Decimal("0"),
+        membership_level_snapshot=None,
+        pricing_rule="legacy_manual",
+        pricing_version="legacy",
+        base_price_version_snapshot=0,
         status=0,
     )
     db.add(item)
@@ -747,6 +754,59 @@ def _submit(db, case, step_index, qty, *, outcomes=None, unit_id=None, request_i
         unit_id=unit_id,
         request_id=request_id,
     )
+
+
+def test_report_mutations_lock_order_before_item(db, conditional_order):
+    case = conditional_order
+    statements = []
+
+    def capture(execute_state):
+        compiled = str(
+            execute_state.statement.compile(dialect=mysql.dialect())
+        ).lower()
+        if "for update" in compiled and any(table in compiled for table in (
+            "ark_domestic_orders", "ark_domestic_order_items"
+        )):
+            statements.append(compiled)
+
+    def assert_order_then_item(operation):
+        statements.clear()
+        operation()
+        order_lock = next(i for i, sql in enumerate(statements) if (
+            "ark_domestic_orders" in sql
+        ))
+        item_lock = next(i for i, sql in enumerate(statements) if (
+            "ark_domestic_order_items" in sql
+        ))
+        assert order_lock < item_lock
+
+    event.listen(db, "do_orm_execute", capture)
+    try:
+        report = {}
+        assert_order_then_item(lambda: report.update(
+            _submit(db, case, 0, 1, request_id="lock-order-report-request")
+        ))
+        assert_order_then_item(lambda: report_service.revoke_report(
+            db, report["log_id"], case.worker.id
+        ))
+        skipped = {}
+        assert_order_then_item(lambda: skipped.update(
+            report_service.submit_manual_skip(
+                db,
+                item_id=case.item.id,
+                progress_id=case.rows[0].id,
+                qty=1,
+                unit_id=None,
+                reason="锁序测试人工跳过",
+                request_id="lock-order-skip-request",
+                user_id=case.worker.id,
+            )
+        ))
+        assert_order_then_item(lambda: report_service.revoke_manual_skip(
+            db, skipped["skip_log_id"], case.worker.id
+        ))
+    finally:
+        event.remove(db, "do_orm_execute", capture)
 
 
 def test_decision_split_routes_exact_units_and_excludes_skips_from_workload(

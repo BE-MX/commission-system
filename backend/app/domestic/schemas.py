@@ -11,9 +11,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 class CustomerCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     shop_name: str = Field(..., min_length=1, max_length=120, description="客户店名")
     custom_code: str | None = Field(None, max_length=64, description="客户自定义编码")
-    membership_level: str | None = Field(None, max_length=32, description="会员等级")
     province: str | None = Field(None, max_length=64)
     city: str | None = Field(None, max_length=64)
     contact: str | None = Field(None, max_length=60)
@@ -29,7 +30,7 @@ class CustomerCreate(BaseModel):
             raise ValueError("客户店名不能为空")
         return v
 
-    @field_validator("custom_code", "membership_level", "province", "city", "contact", "phone", "address", "remark")
+    @field_validator("custom_code", "province", "city", "contact", "phone", "address", "remark")
     @classmethod
     def _strip_optional(cls, v: str | None) -> str | None:
         value = v.strip() if isinstance(v, str) else v
@@ -37,9 +38,10 @@ class CustomerCreate(BaseModel):
 
 
 class CustomerUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     shop_name: str | None = Field(None, min_length=1, max_length=120)
     custom_code: str | None = Field(None, max_length=64)
-    membership_level: str | None = Field(None, max_length=32)
     province: str | None = Field(None, max_length=64)
     city: str | None = Field(None, max_length=64)
     contact: str | None = Field(None, max_length=60)
@@ -48,7 +50,7 @@ class CustomerUpdate(BaseModel):
     remark: str | None = Field(None, max_length=500)
     status: int | None = Field(None, ge=0, le=1)
 
-    @field_validator("custom_code", "membership_level", "province", "city", "contact", "phone", "address", "remark")
+    @field_validator("custom_code", "province", "city", "contact", "phone", "address", "remark")
     @classmethod
     def _strip_optional(cls, v: str | None) -> str | None:
         value = v.strip() if isinstance(v, str) else v
@@ -56,9 +58,20 @@ class CustomerUpdate(BaseModel):
 
 
 class CustomerRechargeCreate(BaseModel):
-    amount: Decimal = Field(..., gt=0, le=999999999999, max_digits=14, decimal_places=2)
+    amount: Decimal = Field(
+        ...,
+        gt=0,
+        le=Decimal("999999999999.99"),
+        max_digits=14,
+        decimal_places=2,
+    )
     remark: str | None = Field(None, max_length=500)
-    request_id: str | None = Field(None, max_length=64, description="客户端幂等键")
+    request_id: str = Field(..., min_length=8, max_length=64, description="客户端幂等键")
+
+    @field_validator("request_id", mode="before")
+    @classmethod
+    def _strip_request_id(cls, v: str) -> str:
+        return v.strip() if isinstance(v, str) else v
 
 
 # ── 产品属性 ──────────────────────────────────────────
@@ -101,6 +114,51 @@ class ProductAttrs(BaseModel):
                 raise ValueError("15厘米头套必须填写发量")
         else:
             self.density = None
+        return self
+
+
+class BasePriceUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    original_price: Decimal = Field(
+        ...,
+        gt=0,
+        le=Decimal("999999999999.99"),
+        max_digits=14,
+        decimal_places=2,
+    )
+
+
+class PricingQuoteItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    client_key: str = Field(..., min_length=1, max_length=64)
+    product_id: int | None = Field(None, gt=0)
+    attrs: ProductAttrs | None = None
+
+    @field_validator("client_key", mode="before")
+    @classmethod
+    def _strip_client_key(cls, value: str) -> str:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def _validate_product_identity(self):
+        if (self.product_id is None) == (self.attrs is None):
+            raise ValueError("product_id 与 attrs 必须且只能填写一个")
+        return self
+
+
+class PricingQuoteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    customer_id: int | None = Field(None, gt=0)
+    items: list[PricingQuoteItem] = Field(..., min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def _validate_unique_client_keys(self):
+        client_keys = [item.client_key for item in self.items]
+        if len(client_keys) != len(set(client_keys)):
+            raise ValueError("client_key 不能重复")
         return self
 
 
@@ -178,13 +236,96 @@ class RouteConfigurationSaveRequest(BaseModel):
 _IMG_FIELD = Field(default_factory=list, description="图片相对路径列表")
 
 
+class ExpectedQuote(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    original_price: Decimal = Field(..., gt=0, max_digits=14, decimal_places=2)
+    base_price_version: int = Field(..., ge=1)
+    discount_price: Decimal = Field(..., ge=0, max_digits=14, decimal_places=2)
+    membership_level: Literal["silver", "black", "supreme"] | None
+    pricing_rule: Literal[
+        "base_price",
+        "member_fixed",
+        "member_fixed_capped",
+        "member_reduction",
+    ]
+    pricing_version: str = Field(..., min_length=1, max_length=32)
+
+    @field_validator("pricing_version", mode="before")
+    @classmethod
+    def _strip_pricing_version(cls, value: str) -> str:
+        return value.strip() if isinstance(value, str) else value
+
+
+class ItemExpectedQuote(BaseModel):
+    """草稿行报价；兼容迁移回填的 legacy_manual 快照以触发重新报价。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    client_key: None = None
+    item_id: int = Field(..., gt=0)
+    original_price: Decimal = Field(..., ge=0, max_digits=14, decimal_places=2)
+    base_price_version: int = Field(..., ge=0)
+    discount_price: Decimal = Field(..., ge=0, max_digits=14, decimal_places=2)
+    membership_level: Literal["silver", "black", "supreme"] | None
+    pricing_rule: Literal[
+        "base_price",
+        "member_fixed",
+        "member_fixed_capped",
+        "member_reduction",
+        "legacy_manual",
+    ]
+    pricing_version: str = Field(..., min_length=1, max_length=32)
+
+    @field_validator("pricing_version", mode="before")
+    @classmethod
+    def _strip_pricing_version(cls, value: str) -> str:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def _validate_legacy_or_current_contract(self):
+        if self.pricing_rule == "legacy_manual":
+            if (
+                self.membership_level is not None
+                or self.base_price_version != 0
+                or self.pricing_version != "legacy"
+                or self.original_price != self.discount_price
+            ):
+                raise ValueError("legacy_manual 报价快照不一致")
+            return self
+        if self.original_price <= 0 or self.base_price_version < 1:
+            raise ValueError("当前报价必须有正原价和有效原价版本")
+        return self
+
+
+class DraftSubmitRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str = Field(..., min_length=8, max_length=64)
+    expected_quotes: list[ItemExpectedQuote] = Field(
+        ..., min_length=1, max_length=50
+    )
+
+    @field_validator("request_id", mode="before")
+    @classmethod
+    def _strip_request_id(cls, value: str) -> str:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def _unique_item_ids(self):
+        item_ids = [quote.item_id for quote in self.expected_quotes]
+        if len(item_ids) != len(set(item_ids)):
+            raise ValueError("expected_quotes 的 item_id 不能重复")
+        return self
+
+
 class OrderItemInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    client_key: str = Field(..., min_length=1, max_length=64)
     attrs: ProductAttrs
     order_qty: int = Field(..., gt=0, le=2000, description="下单数量（逐件码物化，单明细最多2000件）")
-    unit_price: Decimal = Field(
-        Decimal("0.00"), ge=0, le=999999999999,
-        max_digits=14, decimal_places=2, description="产品单价",
-    )
+    expected_quote: ExpectedQuote
     hairstyle: str | None = Field(None, max_length=1000)
     hairstyle_images: list[str] = _IMG_FIELD
     color: str | None = Field(None, max_length=1000)
@@ -193,6 +334,11 @@ class OrderItemInput(BaseModel):
     style_images: list[str] = _IMG_FIELD
     remark: str | None = Field(None, max_length=2000)
     remark_images: list[str] = _IMG_FIELD
+
+    @field_validator("client_key", mode="before")
+    @classmethod
+    def _strip_client_key(cls, value: str) -> str:
+        return value.strip() if isinstance(value, str) else value
 
 
 class OrderItemAppend(OrderItemInput):
@@ -205,6 +351,8 @@ class OrderItemAppend(OrderItemInput):
 
 
 class OrderCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     request_id: str = Field(..., min_length=8, max_length=64, description="客户端建单幂等键")
     order_no: str = Field(..., min_length=1, max_length=64, description="客户订单号")
     order_date: date
@@ -241,19 +389,28 @@ class OrderCreate(BaseModel):
             raise ValueError("请选择客户或填写客户店名")
         if sum(item.order_qty for item in self.items) > 5000:
             raise ValueError("单张订单合计数量不能超过 5000 件")
+        client_keys = [item.client_key for item in self.items]
+        if len(client_keys) != len(set(client_keys)):
+            raise ValueError("同一订单的 client_key 不能重复")
         return self
 
 
 class OrderUpdate(BaseModel):
     """订单头编辑。明细的增删改走各自端点，避免整单覆盖冲掉在制进度。"""
 
+    model_config = ConfigDict(extra="forbid")
+
     order_no: str | None = Field(None, min_length=1, max_length=64)
     order_date: date | None = None
-    customer_id: int | None = None
+    customer_id: int | None = Field(None, gt=0)
     order_category: Literal["normal", "special"] | None = None
     order_type: str | None = Field(None, min_length=1, max_length=32)
     order_channel: str | None = Field(None, min_length=1, max_length=32)
     remark: str | None = Field(None, max_length=1000)
+    request_id: str | None = Field(None, min_length=8, max_length=64)
+    expected_quotes: list[ItemExpectedQuote] | None = Field(
+        None, min_length=1, max_length=50
+    )
 
     @field_validator("order_category", mode="before")
     @classmethod
@@ -269,14 +426,35 @@ class OrderUpdate(BaseModel):
             raise ValueError("订单类型和订单渠道传入时不能为空")
         return value.strip() if isinstance(value, str) else value
 
+    @field_validator("request_id", mode="before")
+    @classmethod
+    def _strip_request_id(cls, value: str | None) -> str | None:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def _require_customer_repricing_contract(self):
+        changes_customer = "customer_id" in self.model_fields_set
+        has_request = "request_id" in self.model_fields_set
+        has_quotes = "expected_quotes" in self.model_fields_set
+        if changes_customer:
+            if self.customer_id is None:
+                raise ValueError("订单必须有客户")
+            if self.request_id is None or self.expected_quotes is None:
+                raise ValueError("更换客户时 request_id 和 expected_quotes 必填")
+            item_ids = [quote.item_id for quote in self.expected_quotes]
+            if len(item_ids) != len(set(item_ids)):
+                raise ValueError("expected_quotes 的 item_id 不能重复")
+        elif has_request or has_quotes:
+            raise ValueError("request_id 和 expected_quotes 只有更换客户时才能传")
+        return self
+
 
 class OrderItemUpdate(BaseModel):
     """明细编辑。order_qty 已开始报工后不允许改小到低于已完成数（service 校验）。"""
 
+    model_config = ConfigDict(extra="forbid")
+
     order_qty: int | None = Field(None, gt=0, le=2000)
-    unit_price: Decimal | None = Field(
-        None, ge=0, le=999999999999, max_digits=14, decimal_places=2,
-    )
     hairstyle: str | None = Field(None, max_length=1000)
     hairstyle_images: list[str] | None = None
     color: str | None = Field(None, max_length=1000)

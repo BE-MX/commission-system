@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy.orm import sessionmaker
 
 from app.auth.models import ArkPermission, ArkRole, ArkUser
@@ -14,6 +15,7 @@ from app.domestic import (
     balance_service,
     customer_service,
     order_service,
+    pricing_service,
     progress_service,
     report_service,
     unit_service,
@@ -21,6 +23,7 @@ from app.domestic import (
 from app.domestic import constants as C
 from app.domestic.models import (
     DomesticCraftRoute,
+    DomesticBasePrice,
     DomesticCustomer,
     DomesticCustomerLedger,
     DomesticItemUnit,
@@ -31,6 +34,7 @@ from app.domestic.models import (
 from app.domestic.schemas import (
     CustomerCreate,
     CustomerUpdate,
+    DraftSubmitRequest,
     OrderCreate,
     OrderItemAppend,
     OrderItemInput,
@@ -55,7 +59,6 @@ def _customer(db, user, name="余额客户"):
         CustomerCreate(
             shop_name=name,
             custom_code=f"C-{name}",
-            membership_level="金卡",
             province="山东省",
             city="青岛市",
         ),
@@ -113,6 +116,51 @@ def _route_and_workers(db):
     return route, workers
 
 
+def _expected_for_price(db, customer, attrs, price):
+    price = Decimal(price)
+    customer.membership_level = "black"
+    original = price + Decimal("120.00")
+    row = db.query(DomesticBasePrice).filter_by(
+        product_type=attrs.product_type,
+        craft=attrs.craft,
+        length=attrs.length,
+    ).first()
+    if row is None:
+        row = DomesticBasePrice(
+            product_type=attrs.product_type,
+            craft=attrs.craft,
+            length=attrs.length,
+            original_price=original,
+            version=1,
+        )
+        db.add(row)
+    elif row.original_price != original:
+        row.original_price = original
+        row.version += 1
+    db.flush()
+    return {
+        "original_price": original,
+        "base_price_version": row.version,
+        "discount_price": price,
+        "membership_level": "black",
+        "pricing_rule": "member_reduction",
+        "pricing_version": pricing_service.PRICING_VERSION,
+    }
+
+
+def _priced_item(db, customer, *, qty, price, request_id=None):
+    attrs = _attrs()
+    values = {
+        "client_key": f"line-{request_id or qty}-{price}",
+        "attrs": attrs,
+        "order_qty": qty,
+        "expected_quote": _expected_for_price(db, customer, attrs, price),
+    }
+    if request_id is None:
+        return OrderItemInput(**values)
+    return OrderItemAppend(request_id=request_id, **values)
+
+
 def _create_order(db, creator, customer, *, qty=5, price="10.00", is_draft=False):
     return order_service.create_order(
         db,
@@ -125,9 +173,7 @@ def _create_order(db, creator, customer, *, qty=5, price="10.00", is_draft=False
             order_type="first_order",
             order_channel="wechat",
             is_draft=is_draft,
-            items=[OrderItemInput(
-                attrs=_attrs(), order_qty=qty, unit_price=Decimal(price),
-            )],
+            items=[_priced_item(db, customer, qty=qty, price=price)],
         ),
         creator.id,
     )
@@ -156,7 +202,7 @@ def test_customer_profile_and_recharge_idempotency(db):
 
     db.refresh(customer)
     assert customer.custom_code == "C-余额客户"
-    assert customer.membership_level == "金卡"
+    assert customer.membership_level is None
     assert (customer.province, customer.city) == ("山东省", "青岛市")
     assert customer.balance == Decimal("500.00")
     assert replay["ledger_id"] == first["ledger_id"]
@@ -174,6 +220,7 @@ def test_balance_lock_refreshes_preloaded_customer_identity(db, engine):
     customer = _customer(db, operator, "并发余额客户")
     balance_service.recharge_customer(
         db, customer_id=customer.id, amount=Decimal("100.00"), user_id=operator.id,
+        request_id="identity-balance-recharge",
     )
     Session = sessionmaker(bind=engine)
     stale = Session()
@@ -221,6 +268,7 @@ def test_recharged_customer_cannot_be_deleted(db):
     customer = _customer(db, operator, "已充值客户")
     balance_service.recharge_customer(
         db, customer_id=customer.id, amount=Decimal("20.00"), user_id=operator.id,
+        request_id="delete-ledger-recharge",
     )
 
     with pytest.raises(ValueError, match="资金流水"):
@@ -234,6 +282,7 @@ def test_draft_does_not_charge_until_submit(db):
     customer = _customer(db, creator, "草稿客户")
     balance_service.recharge_customer(
         db, customer_id=customer.id, amount=Decimal("100.00"), user_id=creator.id,
+        request_id="draft-order-recharge",
     )
 
     created = _create_order(db, creator, customer, qty=3, price="15.00", is_draft=True)
@@ -244,14 +293,39 @@ def test_draft_does_not_charge_until_submit(db):
     assert order.charged_amount == Decimal("0.00")
     assert customer.balance == Decimal("100.00")
 
-    order_service.submit_draft(db, order.id, creator.id)
+    item = db.query(DomesticOrderItem).filter_by(order_id=order.id).one()
+    quote = {
+        "item_id": item.id,
+        "original_price": item.original_price,
+        "base_price_version": item.base_price_version_snapshot,
+        "discount_price": item.unit_price,
+        "membership_level": item.membership_level_snapshot,
+        "pricing_rule": item.pricing_rule,
+        "pricing_version": item.pricing_version,
+    }
+    payload = DraftSubmitRequest(
+        request_id="draft-submit-optimization",
+        expected_quotes=[quote],
+    )
+    order_service.submit_draft(db, order.id, payload, creator.id)
     db.refresh(customer)
     db.refresh(order)
     assert order.status == C.ORDER_PRODUCING
     assert order.charged_amount == Decimal("45.00")
     assert customer.balance == Decimal("55.00")
+    assert order_service.submit_draft(
+        db, order.id, payload, creator.id
+    )["replayed"] is True
     with pytest.raises(ValueError, match="只有草稿"):
-        order_service.submit_draft(db, order.id, creator.id)
+        order_service.submit_draft(
+            db,
+            order.id,
+            DraftSubmitRequest(
+                request_id="draft-submit-optimization-new",
+                expected_quotes=[quote],
+            ),
+            creator.id,
+        )
 
 
 def test_insufficient_balance_rolls_back_whole_order(db):
@@ -260,6 +334,7 @@ def test_insufficient_balance_rolls_back_whole_order(db):
     customer = _customer(db, creator, "余额不足客户")
     balance_service.recharge_customer(
         db, customer_id=customer.id, amount=Decimal("10.00"), user_id=creator.id,
+        request_id="insufficient-balance-recharge",
     )
 
     with pytest.raises(ValueError, match="余额不足"):
@@ -276,6 +351,7 @@ def test_formal_order_request_id_prevents_double_charge(db):
     customer = _customer(db, creator, "重试客户")
     balance_service.recharge_customer(
         db, customer_id=customer.id, amount=Decimal("100.00"), user_id=creator.id,
+        request_id="formal-retry-recharge",
     )
     payload = OrderCreate(
         request_id="order-network-retry",
@@ -285,7 +361,7 @@ def test_formal_order_request_id_prevents_double_charge(db):
         order_category="normal",
         order_type="first_order",
         order_channel="wechat",
-        items=[OrderItemInput(attrs=_attrs(), order_qty=2, unit_price=Decimal("10.00"))],
+        items=[_priced_item(db, customer, qty=2, price="10.00")],
     )
 
     first = order_service.create_order(db, payload, creator.id)
@@ -309,13 +385,14 @@ def test_append_item_request_id_prevents_duplicate_item_and_charge(db):
     customer = _customer(db, creator, "追加重试客户")
     balance_service.recharge_customer(
         db, customer_id=customer.id, amount=Decimal("100.00"), user_id=creator.id,
+        request_id="append-retry-recharge",
     )
     created = _create_order(db, creator, customer, qty=1, price="0")
-    payload = OrderItemAppend(
+    payload = _priced_item(
+        db, customer,
         request_id="append-network-retry",
-        attrs=_attrs(),
-        order_qty=2,
-        unit_price=Decimal("5.00"),
+        qty=2,
+        price="5.00",
     )
 
     first = order_service.add_item(db, created["id"], payload, creator.id)
@@ -347,7 +424,19 @@ def test_append_item_request_id_prevents_duplicate_item_and_charge(db):
 
 
 def test_order_scale_limits_creation_and_append(db):
-    item = OrderItemInput(attrs=_attrs(), order_qty=1, unit_price=Decimal("0"))
+    item = OrderItemInput(
+        client_key="scale-line",
+        attrs=_attrs(),
+        order_qty=1,
+        expected_quote={
+            "original_price": "120.00",
+            "base_price_version": 1,
+            "discount_price": "0.00",
+            "membership_level": "black",
+            "pricing_rule": "member_reduction",
+            "pricing_version": "domestic-member-v1",
+        },
+    )
     base = {
         "request_id": "oversized-order",
         "order_no": "TOO-LARGE",
@@ -382,9 +471,10 @@ def test_order_scale_limits_creation_and_append(db):
             order.id,
             OrderItemAppend(
                 request_id="append-over-limit",
+                client_key="append-over-limit-line",
                 attrs=_attrs(),
                 order_qty=2,
-                unit_price=Decimal("0"),
+                expected_quote=item.expected_quote,
             ),
             creator.id,
         )
@@ -396,6 +486,7 @@ def test_item_amount_edits_settle_difference_and_termination_refunds(db):
     customer = _customer(db, creator, "差额客户")
     balance_service.recharge_customer(
         db, customer_id=customer.id, amount=Decimal("100.00"), user_id=creator.id,
+        request_id="order-delta-recharge",
     )
     created = _create_order(db, creator, customer, qty=2, price="10.00")
     item = _item(db, created["id"])
@@ -405,17 +496,14 @@ def test_item_amount_edits_settle_difference_and_termination_refunds(db):
     order_service.update_item(db, item.id, OrderItemUpdate(order_qty=3), creator.id)
     db.refresh(customer)
     assert customer.balance == Decimal("70.00")
-    order_service.update_item(db, item.id, OrderItemUpdate(unit_price=Decimal("5.00")), creator.id)
-    db.refresh(customer)
-    assert customer.balance == Decimal("85.00")
+    with pytest.raises(ValidationError, match="unit_price"):
+        OrderItemUpdate(unit_price=Decimal("5.00"))
 
     order_service.terminate_order(db, created["id"], "客户取消", creator.id)
     db.refresh(customer)
     assert customer.balance == Decimal("100.00")
     with pytest.raises(ValueError, match="已终止"):
-        order_service.update_item(
-            db, item.id, OrderItemUpdate(unit_price=Decimal("99.00")), creator.id,
-        )
+        order_service.update_item(db, item.id, OrderItemUpdate(order_qty=4), creator.id)
     db.refresh(customer)
     assert customer.balance == Decimal("100.00")
 
@@ -488,11 +576,8 @@ def test_revoked_report_history_still_blocks_item_delete(db):
     original = _item(db, created["id"])
     order_service.add_item(
         db, created["id"],
-        OrderItemAppend(
-            request_id="audit-delete-append",
-            attrs=_attrs(),
-            order_qty=1,
-            unit_price=Decimal("0"),
+        _priced_item(
+            db, customer, request_id="audit-delete-append", qty=1, price="0"
         ),
         creator.id,
     )

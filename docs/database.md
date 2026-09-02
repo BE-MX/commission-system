@@ -204,7 +204,7 @@
 
 - `ark_dashboard_preference`：每用户一行的工作台布局配置。`user_id`（INT UNSIGNED FK→ark_users.id ON DELETE CASCADE，UNIQUE）+ `prefs`（JSON：`{version, metrics:{hidden,order}, actions:{hidden,order}}`）+ 时间戳。卡片 key 的合法性不在库层校验——真相源是前端 `views/dashboard/cards.js` 注册表，未知 key 前端忽略（注册表增删卡片对存量配置向前兼容）。
 
-## 内贸订单（迁移 081/082/116/127/129，2026-07-27、2026-08-17、2026-08-31、2026-09-01）
+## 内贸订单（迁移 081/082/116/127/129/130/131，2026-07-27 至 2026-09-02）
 
 与外贸生产订单/报工**平行**的一套表。不复用 `order_product_process_progress`：那张表 FK 硬绑 `ark_production_order_items` 且是整行 0/1 流转，内贸要按数量拆批，结构不同；平行建表换取外贸链路零改动。共用的是 `process` / `process_route` / `process_route_step` / `user_process_binding`（工序、路线、工人分工内外贸同一套）。
 
@@ -214,12 +214,16 @@
 
 > **129 是破坏性字段改名，也必须停写切换。** `ark_domestic_orders.order_type` 原本表示 `normal/special`，迁移中直接重命名为 `order_category`，再新增另一个语义不同的可空 `order_type` 和可空 `order_channel`；没有旧接口兼容层。结构升级、新版应用部署与 `domestic_attribute_cutover` 必须在同一维护窗口完成，旧写实例不得与新结构混用。
 
-- `ark_domestic_customers`：内贸客户，`shop_name` UNIQUE，`custom_code` 可选且 UNIQUE，另存会员等级、省/市和 `balance` 充值余额。有订单的客户禁删只停用。
+> **130/131 是会员定价两阶段停写迁移，禁止滚动混部。** 130 建原价表和定价请求表、回填客户最近充值会员快照及历史订单 `legacy_manual` 价格快照；131 先拒绝任何空或非法快照，再移除旧 `unit_price DEFAULT 0.00`、收紧非空并建立金额/枚举 CHECK。MySQL DDL 不可事务回滚，必须停止全部内贸写入并等待在途事务排空，在隔离 MySQL 先演练 upgrade/downgrade，再执行生产迁移和数据复核；开发验证不得直接应用生产库。
+
+- `ark_domestic_customers`：内贸客户，`shop_name` UNIQUE，`custom_code` 可选且 UNIQUE，另存派生会员等级、`last_recharge_amount/last_recharged_at` 和 `balance`。会员只看最近一次成功充值金额，与余额和历史合计无关；充值事务在客户行锁下同时更新余额、会员快照和流水。有订单的客户禁删只停用。
 - `ark_domestic_customer_ledger`：客户充值/订单扣款/差额补扣/退款流水。`amount` 是有符号变动额，`balance_after` 是变动后快照，`business_key` 唯一；充值时将客户端 `request_id` 编码为业务键实现幂等。所有余额变动在客户行锁下完成，不允许透支。
 - `ark_domestic_products`：下单选属性后 find-or-create 沉淀，`attrs_key` 使用稳定 JSON 数组编码 `product_type/craft/net_color/size/length/density/hair_style_series`，UNIQUE 即产品身份，避免属性值含分隔符时碰撞；`route_id` 按工艺映射自动绑定，可人工改绑。129 新增可空 `hair_style_series`，并将 `size/density` 放宽为可空：头套使用工艺、发长、可选网帽颜色、必填尺码和发型系列，只有 `15厘米` 头套有必填发量；发片将工艺和尺寸合并存入 `craft`，只再保存发长，其余头套专属字段均为 `NULL`。标准属性值存 `domestic_cap_*` 与 `domestic_piece_*` 字典，特单自定义值存对应 `_special` 字典。
+- `ark_domestic_base_prices`：共享原价表，唯一键为 `(product_type, craft, length)`；发片的尺寸已合并进 `craft`，因此不另设 size 列。`original_price > 0`，`version >= 1`，每次维护递增版本并记录操作人。130 内置截图确认的 131 条种子；标准和特单 SKU 都可由管理员补充精确价格，缺价时只能进入产品清单，不能报价或建单。
 - `ark_domestic_craft_routes`：`(product_type, craft)` UNIQUE → `route_id`。这张表是「下单人零操作」的支点：配一次，之后同工艺的新产品自动带路线。
 - `ark_domestic_orders`：`domestic_no`（系统号 `DO{YYYYMMDD}-{NNN}` UNIQUE）+ `order_no`（客户订单号）+ 客户 + `order_category`（`normal=普货 / special=特单`）+ `order_type`（`sys_dict: domestic_order_type`）+ `order_channel`（`sys_dict: domestic_order_channel`）+ `status`（0草稿/1生产中/2已完工/3已发货/4已终止）+ `total_amount` + `charged_amount` + 软删。应用层要求新建和每次编辑后的最终订单类型/渠道都非空且命中启用字典；数据库列暂时可空是为了保留历史行，读取历史 `NULL` 时展示“未填写”，不做猜测或回填，编辑时必须一次补齐两项。`request_id` UNIQUE 与 `request_hash` 防止弱网重试重复建单/扣款；`next_line_no` 在订单行锁下分配 A1/A2/…，避免追加明细与改单/报工发生反向锁序；`item_count` / `total_unit_qty` 在同一订单锁下维护当前行数和合计件数。草稿不扣款，提交时一次性扣款；在制单改数量/单价只结算差额，终止或可删除时退回已扣金额。
-- `ark_domestic_order_items`：一单多品，`line_no` 是订单内稳定非空序号（展示 A1/A2/…），`unit_price` 与 `order_qty` 推导明细金额。逐件码需同步物化，API 限制每单最多 50 行、合计 5000 件、单明细 2000 件。其余含四组图文要求、路线快照和明细级发货信息。
+- `ark_domestic_order_items`：一单多品，`line_no` 是订单内稳定非空序号（展示 A1/A2/…）。`original_price / unit_price / discount_amount / membership_level_snapshot / pricing_rule / pricing_version / base_price_version_snapshot` 冻结下单时定价事实；除会员快照可空外均非空且无应用或数据库兜底默认。CHECK 保证金额非负、优惠价不高于原价、会员/规则枚举有效；只有历史 `legacy_manual` 行允许原价为 0。`unit_price × order_qty` 推导明细金额，后续充值或原价变化不追改正式订单。逐件码需同步物化，API 限制每单最多 50 行、合计 5000 件、单明细 2000 件。其余含四组图文要求、路线快照和明细级发货信息。
+- `ark_domestic_order_pricing_requests`：草稿提交和草稿换客户的持久化定价幂等记录，`(order_id, request_id)` UNIQUE，保存操作类型、请求 SHA-256 与首次成功结果。同键同内容只重放结果，不重复扣款；同键改内容拒绝；报价已变化的 409 不写成功记录。
 - `ark_domestic_item_append_requests`：追加明细的持久化幂等占位，`(order_id, request_id)` UNIQUE 并保存请求指纹与首次创建的 `item_id`；明细后来删除也保留占位，避免弱网旧请求再次创建和扣款。
 - `ark_domestic_item_units`：每个明细数量物化为一行，`(item_id, unit_no)` UNIQUE；显示码如 `A1-01`。数量报工始终选取当前工序最小可报 `unit_no`，保证 01/02/03 后续从 04 开始。
 - `ark_domestic_report_units`：报工流水到具体单件的映射，`(log_id, unit_id)` UNIQUE；127 新增 `outcome_code`，冻结该单件在 `decision` 工序选择的结果。撤销保留映射供审计，因此同一单件+工序历史上可有多条映射；「当前只有一条有效映射」由明细行锁下的服务校验保证，有效性由关联流水的 `revoked` 决定。

@@ -20,7 +20,12 @@ from app.auth.utils import create_access_token
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.domestic import order_service, report_service
-from app.domestic.models import DomesticOrder, DomesticOrderItem
+from app.domestic.models import (
+    DomesticBasePrice,
+    DomesticCustomer,
+    DomesticOrder,
+    DomesticOrderItem,
+)
 from app.domestic.schemas import OrderCreate, OrderItemInput, ProductAttrs
 from app.domestic import constants as C
 from app.system.models import SysDict
@@ -68,18 +73,47 @@ def _create_order(db, user, item_count=1):
         if not db.query(SysDict.id).filter_by(type=dict_type, code=code).first():
             db.add(SysDict(type=dict_type, code=code, label=code, sort=1, is_active=True))
     db.flush()
+    customer = DomesticCustomer(
+        shop_name=f"马姐假发-{uuid4()}",
+        membership_level="black",
+        balance=0,
+        created_by=user.id,
+    )
+    db.add(customer)
+    db.flush()
+    items = []
+    for i, attrs in enumerate(attrs_list):
+        base = DomesticBasePrice(
+            product_type=attrs.product_type,
+            craft=attrs.craft,
+            length=attrs.length,
+            original_price=120,
+            version=1,
+        )
+        db.add(base)
+        db.flush()
+        items.append(OrderItemInput(
+            client_key=f"wx-line-{i + 1}",
+            attrs=attrs,
+            order_qty=10 + i,
+            expected_quote={
+                "original_price": "120.00",
+                "base_price_version": base.version,
+                "discount_price": "0.00",
+                "membership_level": "black",
+                "pricing_rule": "member_reduction",
+                "pricing_version": "domestic-member-v1",
+            },
+        ))
     payload = OrderCreate(
         request_id=str(uuid4()),
         order_no="710",
         order_date=date(2026, 7, 28),
-        customer_shop_name="马姐假发",
+        customer_id=customer.id,
         order_category="normal",
         order_type="first_order",
         order_channel="wechat",
-        items=[
-            OrderItemInput(attrs=attrs, order_qty=10 + i)
-            for i, attrs in enumerate(attrs_list)
-        ],
+        items=items,
     )
     return order_service.create_order(db, payload, user.id)
 
