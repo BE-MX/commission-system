@@ -75,10 +75,10 @@ GitHub 上相关项目主要证明“网页增强”和“非官方账号自动�
 3. 扩展打开方舟授权页。配对码放在 URL fragment 中，不进入服务器访问日志和 Referer。
 4. 未登录员工先完成方舟登录，再看到设备名称、浏览器版本、扩展版本和授权说明。
 5. 员工点击“允许此设备使用 WhatsApp 翻译”。
-6. 扩展用一次性配对码换取设备 token，弹窗显示当前员工、授权有效期和默认语言。
+6. 扩展确认配对已批准，把安装时生成的本机设备 token 从 pending 状态提升为 active，弹窗显示当前员工、授权有效期和默认语言。
 7. 配对码只能消费一次；授权页成功后明确提示可以关闭。
 
-员工无需复制 token、填写服务器地址或配置 AI 密钥。设备 token 默认有效 180 天，一个员工最多 5 台有效设备。
+员工无需复制 token、填写服务器地址或配置 AI 密钥。设备 token 由扩展后台生成 256-bit 随机值，明文只留在本机 trusted storage；方舟从配对开始就只接收 SHA-256。设备 token 默认有效 180 天，一个员工最多 5 台有效设备。
 
 ### 接收消息翻译
 
@@ -184,6 +184,7 @@ backend/app/whatsapp_translation/
 ├── __init__.py
 ├── auth.py
 ├── constants.py
+├── errors.py
 ├── models.py
 ├── pairing_service.py
 ├── quota_service.py
@@ -198,6 +199,7 @@ backend/app/whatsapp_translation/
 - `router.py`：HTTP 边界、权限依赖、统一响应和错误映射。
 - `schemas.py`：请求与响应的 Pydantic 合同，限制长度、枚举和格式。
 - `auth.py`：设备 Bearer token 解析、哈希查询、用户实时权限检查。
+- `errors.py`：稳定错误码和方舟统一错误信封，不携带输入正文或供应商原始响应。
 - `pairing_service.py`：配对码生命周期、一次性消费、设备数量限制。
 - `translation_service.py`：构建翻译提示、调用 `app.ai.service.chat`、解析严格 JSON。
 - `quota_service.py`：分钟限流、北京时间日额度、用量聚合。
@@ -215,7 +217,7 @@ backend/app/whatsapp_translation/
 - `frontend/src/views/system/WhatsAppTranslation.vue`
 - `frontend/src/views/system/WhatsAppTranslationAuthorize.vue`
 
-授权页允许已登录员工访问，但从导航隐藏；管理页放在“系统”菜单，仅管理员权限可见。API 客户端在现有 `frontend/src/api/clients.js` 注册为独立 `whatsappTranslationClient`，不与已有 WhatsApp 客户端混用。
+授权页是从主导航隐藏的独立公开壳路由：它先把 fragment 中的配对码放入当前标签页 `sessionStorage` 并立即清空地址栏，再让未登录员工进入不含配对码的方舟登录路径；查询、批准和拒绝 API 仍要求员工 JWT 与权限。这样通用登录守卫不会把配对码复制进 `redirect` 查询参数或 Referer。管理页放在“系统”菜单，仅管理员权限可见。API 客户端在现有 `frontend/src/api/clients.js` 注册为独立 `whatsappTranslationClient`，不与已有 WhatsApp 客户端混用。
 
 ## WhatsApp DOM 适配器
 
@@ -252,7 +254,7 @@ interface WhatsAppAdapter {
 `manifest.json` 只申请：
 
 - `storage`：保存设备 token、员工显示信息、总开关和语言偏好。
-- `host_permissions`：`https://web.whatsapp.com/*` 与方舟生产 API 的精确 origin。
+- `host_permissions`：只包含方舟生产 origin `https://leshine.work/*`；Chrome 的 host permission 只能限制到 origin，不能真正限制到 API path，因此后台 API client 还必须硬编码 `/api/whatsapp-translation`，且不得提供通用 URL/fetch 消息。
 - `content_scripts.matches`：仅 `https://web.whatsapp.com/*`。
 
 不申请 `all_urls`、`tabs`、`cookies`、`history`、`webRequest`、`declarativeNetRequest`、剪贴板或下载权限。
@@ -269,14 +271,14 @@ interface WhatsAppAdapter {
 
 ### 配对流程
 
-1. `POST /api/whatsapp-translation/pairings` 创建随机 device code 和有效期。
+1. 扩展后台生成随机设备 token，向 `POST /api/whatsapp-translation/pairings` 提交 token SHA-256 和设备信息；方舟创建随机 device code 和有效期。
 2. 扩展打开 `/whatsapp-translation/authorize#device_code=...`。
 3. 方舟页面从 fragment 读取 device code，调用登录态接口查询并批准。
 4. 扩展轮询或主动调用 `POST /pairings/exchange`。
-5. 批准后服务端只返回一次明文设备 token，并把配对标记为 `consumed`。
-6. 扩展把 token 存入 `chrome.storage.local`；服务端只存 SHA-256。
+5. 批准后 exchange 原子创建使用该 token SHA-256 的设备并把配对标记为 `consumed`，返回设备状态但不返回明文 token。
+6. 扩展把本地 pending token 提升为 active；exchange 响应丢失时可用同一 device code 幂等重试，服务端返回同一设备状态而不重复创建设备。
 
-配对状态为 `pending | approved | consumed | expired | rejected`。配对码短时有效、只能消费一次，批准动作绑定当前方舟用户。设备 token 为至少 256-bit 随机值，默认 180 天过期。配对码只放在请求体中，不出现在 API 路径、查询参数或服务器访问日志。
+配对状态为 `pending | approved | consumed | expired | rejected`。配对码短时有效，批准动作绑定当前方舟用户；消费操作可安全重试但只创建一台设备。设备 token 为至少 256-bit 随机值，默认 180 天过期。配对码只放在请求体中，不出现在 API 路径、查询参数或服务器访问日志。
 
 ### 每次请求实时检查
 
@@ -296,15 +298,17 @@ interface WhatsAppAdapter {
 | --- | --- |
 | `id` | 主键 |
 | `device_code_hash` | 设备码 SHA-256，唯一索引 |
+| `proposed_token_hash` | 扩展本地设备 token 的 SHA-256，不含明文 |
 | `device_name` | 员工可识别的设备名称 |
 | `browser_name` / `browser_version` | 授权页展示与排障 |
 | `extension_version` | 最低版本治理 |
 | `status` | 配对状态 |
 | `user_id` | 批准人，批准前为空 |
+| `device_id` | 消费后创建的设备，用于 exchange 幂等重试 |
 | `expires_at` | 配对过期时间 |
 | `approved_at` / `consumed_at` / `created_at` | 生命周期时间 |
 
-明文 device code 不入库。状态转换通过带当前状态条件的原子更新完成，避免并发重复消费。
+明文 device code 和设备 token 都不入库。状态转换通过带当前状态条件的原子更新完成，`consumed` 配对保存创建出的 `device_id`，让网络重试返回同一结果而不重复消费。
 
 ### `ark_whatsapp_translation_devices`
 
@@ -335,9 +339,13 @@ interface WhatsAppAdapter {
 | `success_count` / `failure_count` | 成功与失败数 |
 | `input_tokens` / `output_tokens` | AI token 用量 |
 | `duration_ms_total` | 总耗时 |
+| `duration_buckets` | 固定区间延迟计数，用于估算 P95，不含单次请求记录 |
+| `direction_counts` | incoming / outgoing 聚合计数 |
+| `language_pair_counts` | 语言对聚合计数，例如 `en→zh-CN`，不含正文 |
+| `error_counts` | 标准错误码聚合计数，不含原始异常 |
 | `created_at` / `updated_at` | 记录时间 |
 
-该表没有原文、译文、联系人、语言检测原句、错误堆栈正文或 prompt 快照。错误只记录标准错误码。
+该表没有原文、译文、联系人、语言检测原句、错误堆栈正文或 prompt 快照。错误只记录标准错误码。P95 由固定延迟桶计算为区间上界，不新增逐请求明细表。
 
 ## API 合同
 
@@ -382,7 +390,7 @@ interface WhatsAppAdapter {
 
 ```json
 {
-  "request_id": "01J...",
+  "request_id": "4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de63",
   "direction": "incoming",
   "text": "Can you ship this week?",
   "source_language": "auto",
@@ -394,7 +402,7 @@ interface WhatsAppAdapter {
 
 ```json
 {
-  "request_id": "01J...",
+  "request_id": "4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de63",
   "translated_text": "这周可以发货吗？",
   "detected_source_language": "en",
   "duration_ms": 842
@@ -411,7 +419,7 @@ interface WhatsAppAdapter {
 
 新增 AI 预设 `whatsapp_text_translation`，通过现有 `app.ai.service.chat` 调用，禁止直接调用供应商 SDK。运行时必须显式传入 `snapshot_mode="metadata"`，因为默认 full 模式会把 prompt 和译文写入 `AiCallLog`。
 
-metadata 模式只允许保留请求与响应哈希、长度、token、模型、耗时和标准错误码。新增测试必须证明数据库、应用日志和异常日志中都没有原文或译文。
+metadata 模式只允许保留请求与响应哈希、长度、token、模型、耗时和标准错误码。现有 `call_service.chat` 的失败分支会保存 `str(exception)`，实施时必须一并收紧：metadata 模式只保存异常类型，不保存供应商原始异常字符串；full 模式保持现有诊断行为。新增测试必须证明数据库、应用日志和异常日志中都没有原文或译文。
 
 ### 提示词约束
 
@@ -480,7 +488,7 @@ metadata 模式只允许保留请求与响应哈希、长度、token、模型、
 | 威胁 | 控制 |
 | --- | --- |
 | 安装包中的密钥被提取 | 扩展无 AI 密钥，仅持有可撤销设备 token |
-| 设备 token 数据库泄露 | 服务端只存 SHA-256；明文仅签发一次 |
+| 设备 token 数据库泄露 | 扩展本地生成 token，服务端从配对开始只接收 SHA-256 |
 | 离职员工继续调用 | 每次请求实时检查用户状态和权限 |
 | 配对链接进入访问日志 | device code 放 URL fragment，页面再发受控 API |
 | 恶意消息提示注入 | 系统提示将正文标记为数据，严格 JSON 校验 |
