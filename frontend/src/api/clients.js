@@ -24,6 +24,10 @@ export const reportClient = createApiClient({ baseURL: '/api/report', timeout: 3
 export const productionClient = createApiClient({ baseURL: '/api/production', timeout: 60000 })
 export const governanceClient = createApiClient({ baseURL: '/api/governance', timeout: 30000 })
 export const whatsappClient = createApiClient({ baseURL: '/api/whatsapp', timeout: 60000 })
+export const whatsappTranslationClient = createApiClient({
+  baseURL: '/api/whatsapp-translation',
+  timeout: 30000,
+})
 export const expoClient = createApiClient({ baseURL: '/api/expo', timeout: 300000 })
 export const aftersalesClient = createApiClient({ baseURL: '/api/aftersales', timeout: 300000 })
 export const adminClient = createApiClient({ baseURL: '/api/auth', timeout: 30000 }) // 用户/角色/绑定等管理端点（登录语义仍走 auth.js）

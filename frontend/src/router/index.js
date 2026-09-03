@@ -50,6 +50,12 @@ const routes = [
     meta: { title: 'Stock Availability', public: true },
   },
   {
+    path: '/whatsapp-translation/authorize',
+    name: 'WhatsAppTranslationAuthorize',
+    component: () => import('@/views/system/WhatsAppTranslationAuthorize.vue'),
+    meta: { title: 'WhatsApp 翻译设备授权', public: true },
+  },
+  {
     path: '/create/:token?',
     name: 'CustomerImagePortal',
     component: () => import('@/views/customer-image/CustomerImagePortal.vue'),

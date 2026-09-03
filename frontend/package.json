@@ -19,6 +19,7 @@
     "test:holidays": "node --test tests/holidays.test.mjs",
     "test:customer-media-portal": "node --test tests/customerMediaPortalState.test.mjs",
     "test:shipping-print": "node --test tests/shippingPrintDocs.test.mjs"
+    , "test:whatsapp-translation": "node --test tests/whatsappTranslationAuthorize.test.mjs tests/whatsappTranslationAdmin.test.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.0",

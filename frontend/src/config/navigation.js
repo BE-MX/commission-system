@@ -176,6 +176,7 @@ export const MENU_GROUPS = {
       'dingtalk:admin',
       'external_binding:read', 'external_binding:write',
       'whatsapp:read', 'whatsapp:write',
+      'whatsapp_translation:admin',
     ],
   },
   governance: {
@@ -1402,6 +1403,17 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'system', title: 'WhatsApp 同步', icon: Connection, order: 60,
       permission: 'whatsapp:read',
+    },
+  },
+  {
+    path: '/system/whatsapp-translation',
+    name: 'WhatsAppTranslation',
+    component: () => import('@/views/system/WhatsAppTranslation.vue'),
+    title: 'WhatsApp 翻译',
+    permission: 'whatsapp_translation:admin',
+    menu: {
+      group: 'system', title: 'WhatsApp 翻译', icon: Connection, order: 61,
+      permission: 'whatsapp_translation:admin',
     },
   },
 
