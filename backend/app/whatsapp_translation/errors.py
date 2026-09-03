@@ -25,7 +25,9 @@ def register_whatsapp_translation_error_handler(app: FastAPI) -> None:
         request: Request,
         exc: WhatsAppTranslationError,
     ) -> JSONResponse:
-        headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after is not None else None
+        headers = {"Cache-Control": "no-store"}
+        if exc.retry_after is not None:
+            headers["Retry-After"] = str(exc.retry_after)
         return JSONResponse(
             status_code=exc.status_code,
             content={

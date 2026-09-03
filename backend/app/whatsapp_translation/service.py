@@ -2,12 +2,11 @@
 
 from datetime import timedelta
 
-from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.time import beijing_now
-from app.whatsapp_translation.auth import DeviceIdentity, require_translation_device
+from app.whatsapp_translation.auth import DeviceIdentity
 from app.whatsapp_translation.constants import (
     SUPPORTED_TARGET_LANGUAGES,
     TRANSLATION_DIRECTIONS,
@@ -16,8 +15,7 @@ from app.whatsapp_translation.constants import (
 from app.whatsapp_translation.models import TranslationDevice, TranslationUsageDaily
 
 
-def get_session(db: Session, http_credentials: HTTPAuthorizationCredentials | None, extension_version: str | None) -> dict:
-    identity = require_translation_device(db, http_credentials, extension_version)
+def get_session(identity: DeviceIdentity) -> dict:
     return {
         "device_id": identity.device_id,
         "expires_at": identity.expires_at,
@@ -150,4 +148,3 @@ def get_admin_health(db: Session) -> dict:
         "preset_enabled": True,
         "window_days": 1,
     }
-
