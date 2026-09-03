@@ -13,11 +13,14 @@ import {
   getOpportunityTransitionOptions,
   getRadarOperationOptions,
   getResearchReviewSuccessMessage,
+  getSearchJobFeedback,
   getTimelineLimitNotice,
+  isEmptyCompletedSearchJob,
   canReviewResearchDetail,
   canOpenCustomerDetail,
   canRequeueJob,
   mapCustomerProfileSections,
+  searchResultStatusLabel,
   shouldPollSearchJobs,
   shouldOpenProfileEditor,
 } from '../src/views/customer_hub/customerHubController.js'
@@ -356,4 +359,38 @@ test('customer profile presentation uses business labels and structured value ki
   assert.equal(getProfileValueKind({ country: 'US' }), 'record')
   assert.equal(getProfileValueKind('US'), 'scalar')
   assert.equal(getProfileValueKind(null), 'empty')
+})
+
+test('search job results contract maps to the paged backend endpoint', async () => {
+  const calls = []
+  const client = { get: async (...args) => { calls.push(args); return { data: { items: [], total: 0 } } } }
+  const api = createCustomerHubApi(client)
+  await api.listSearchJobResults(7, { page: 2, page_size: 50 })
+  assert.deepEqual(calls, [['/search-jobs/7/results', { params: { page: 2, page_size: 50 }, showLoading: false }]])
+})
+
+test('empty completed search job is flagged as abnormal instead of silently passing', () => {
+  assert.equal(isEmptyCompletedSearchJob({ status: 'completed', result_count: 0 }), true)
+  assert.equal(isEmptyCompletedSearchJob({ status: 'completed', result_count: 3 }), false)
+  assert.equal(isEmptyCompletedSearchJob({ status: 'failed', result_count: 0 }), false)
+  assert.equal(isEmptyCompletedSearchJob({ status: 'running' }), false)
+  assert.equal(isEmptyCompletedSearchJob(null), false)
+})
+
+test('search job feedback surfaces errors and empty results ahead of dedup count', () => {
+  assert.deepEqual(getSearchJobFeedback({ status: 'failed', error_message: 'provider rate limited' }), { text: 'provider rate limited', tone: 'danger' })
+  const empty = getSearchJobFeedback({ status: 'completed', result_count: 0, deduplicated_count: 0 })
+  assert.equal(empty.tone, 'danger')
+  assert.match(empty.text, /未产出候选客户/)
+  assert.deepEqual(getSearchJobFeedback({ status: 'completed', result_count: 5, deduplicated_count: 2 }), { text: '已去重 2 条', tone: 'normal' })
+  assert.deepEqual(getSearchJobFeedback({ status: 'running' }), { text: '已去重 0 条', tone: 'normal' })
+})
+
+test('search result status labels cover every backend result_status', () => {
+  assert.equal(searchResultStatusLabel('active'), '待跟进')
+  assert.equal(searchResultStatusLabel('ignored'), '已忽略')
+  assert.equal(searchResultStatusLabel('qualified'), '审核通过')
+  assert.equal(searchResultStatusLabel('rejected'), '已驳回')
+  assert.equal(searchResultStatusLabel('unexpected'), 'unexpected')
+  assert.equal(searchResultStatusLabel(null), '未知')
 })

@@ -42,6 +42,14 @@ export const canReviewResearchDetail = (resource, taskId) => !resource.loading &
   && resource.data?.research_task_id === taskId && resource.data?.task_status === 'completed'
   && resource.data?.content_redacted !== true
 export const canRequeueJob = job => job?.status === 'failed'
+export const isEmptyCompletedSearchJob = job => job?.status === 'completed' && Number(job?.result_count ?? 0) === 0
+export function getSearchJobFeedback(job) {
+  if (job?.error_message) return { text: job.error_message, tone: 'danger' }
+  if (isEmptyCompletedSearchJob(job)) return { text: '任务完成但未产出候选客户，请检查执行端或调整后重新创建任务', tone: 'danger' }
+  return { text: `已去重 ${job?.deduplicated_count ?? 0} 条`, tone: 'normal' }
+}
+const SEARCH_RESULT_STATUS_LABELS = { active: '待跟进', ignored: '已忽略', qualified: '审核通过', rejected: '已驳回' }
+export const searchResultStatusLabel = status => SEARCH_RESULT_STATUS_LABELS[status] || status || '未知'
 export const shouldPollSearchJobs = jobs => jobs.some(job => ['pending', 'running'].includes(job?.status))
 export const shouldOpenProfileEditor = result => result?.ok === true
 export const getResearchReviewSuccessMessage = status => ({
