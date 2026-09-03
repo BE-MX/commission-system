@@ -8,6 +8,7 @@ export function createCustomerHubApi(client) {
     listSearchJobs: params => client.get('/search-jobs', { params, showLoading: false }),
     createSearchJob: payload => client.post('/search-jobs', payload),
     requeueSearchJob: jobId => client.post(`/search-jobs/${jobId}/requeue`),
+    listSearchJobResults: (jobId, params) => client.get(`/search-jobs/${jobId}/results`, { params, showLoading: false }),
     createPublicPoolBatch: payload => client.post('/public-pool/batches', payload),
     listResearchTasks: params => client.get('/research-tasks', { params, showLoading: false }),
     getResearchTask: taskId => client.get(`/research-tasks/${taskId}`),

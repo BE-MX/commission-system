@@ -60,8 +60,8 @@
           <el-table-column label="目标 / 结果" min-width="130"><template #default="{ row }">{{ row.target_count ?? 0 }} / {{ row.result_count ?? 0 }}</template></el-table-column>
           <el-table-column label="归档客户" min-width="110"><template #default="{ row }">{{ row.created_customer_count ?? 0 }}</template></el-table-column>
           <el-table-column prop="policy_version" label="策略版本" min-width="130" max-width="180" show-overflow-tooltip />
-          <el-table-column label="反馈" min-width="190" max-width="320" show-overflow-tooltip><template #default="{ row }"><span :class="{ danger: row.error_message }">{{ row.error_message || `已去重 ${row.deduplicated_count ?? 0} 条` }}</span></template></el-table-column>
-          <el-table-column label="操作" min-width="110" max-width="150" fixed="right"><template #default="{ row }"><GlassButton v-if="canRequeueJob(row)" v-any-permission="['sales_automation:write', 'sales_automation:admin']" variant="link" left-icon="RefreshRight" :loading="mutatingId === row.job_id" @click="retryJob(row)">重新入队</GlassButton><span v-else>—</span></template></el-table-column>
+          <el-table-column label="反馈" min-width="190" max-width="320" show-overflow-tooltip><template #default="{ row }"><span :class="{ danger: getSearchJobFeedback(row).tone === 'danger' }">{{ getSearchJobFeedback(row).text }}</span></template></el-table-column>
+          <el-table-column label="操作" min-width="150" max-width="200" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="$emit('view-results', row)">查看结果</GlassButton><GlassButton v-if="canRequeueJob(row)" v-any-permission="['sales_automation:write', 'sales_automation:admin']" variant="link" left-icon="RefreshRight" :loading="mutatingId === row.job_id" @click="retryJob(row)">重新入队</GlassButton></template></el-table-column>
         </template>
 
         <template v-else-if="kind === 'research'">
@@ -127,12 +127,12 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { msgSuccess } from '@/utils/feedback'
 import { formatBeijingDateTime } from '@/utils/datetime'
 import { useAuthStore } from '@/stores/auth'
-import { canRequeueJob, createSearchJobPollingController, getOpportunityTransitionOptions, getRadarOperationOptions, shouldPollSearchJobs } from './customerHubController'
+import { canRequeueJob, createSearchJobPollingController, getOpportunityTransitionOptions, getRadarOperationOptions, getSearchJobFeedback, shouldPollSearchJobs } from './customerHubController'
 import CustomerDetailDrawer from './CustomerDetailDrawer.vue'
 import { useCustomerHub } from './composables/useCustomerHub'
 
 const props = defineProps({ kind: { type: String, required: true } })
-defineEmits(['inspect-task', 'edit-opportunity', 'operate-action'])
+defineEmits(['inspect-task', 'edit-opportunity', 'operate-action', 'view-results'])
 const auth = useAuthStore()
 const canOpenDetail = computed(() => props.kind === 'customers' || auth.hasPermission('customer:read'))
 const formatDate = value => value ? formatBeijingDateTime(value) : '—'
