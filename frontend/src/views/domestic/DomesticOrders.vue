@@ -44,37 +44,41 @@
 
     <div class="table-card orders-panel">
       <el-table :data="list" v-loading="loading" border class="list-table" style="width: 100%">
-        <el-table-column prop="domestic_no" label="系统单号" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="order_no" label="客户订单号" min-width="110" show-overflow-tooltip />
-        <el-table-column prop="customer_name" label="客户店名" min-width="130" show-overflow-tooltip />
+        <!-- 列顺序按内贸销售台账：编号 → 日期 → 客户 → 归属销售 → 类型 → 渠道 → 状态 → 交付日期 → 客户复购节奏，与线下台账一致 -->
+        <el-table-column prop="domestic_no" label="订单编号" min-width="130" show-overflow-tooltip>
+          <template #default="{ row }">
+            <div>{{ row.domestic_no }}</div>
+            <div v-if="row.order_no" class="muted">{{ row.order_no }}</div>
+          </template>
+        </el-table-column>
         <el-table-column prop="order_date" label="下单日期" min-width="105" />
-        <el-table-column label="要求发货" min-width="105">
+        <el-table-column prop="customer_name" label="客户名称" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="owner_name" label="归属销售" min-width="95" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.owner_name || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="order_type_label" label="订单类型" min-width="95" />
+        <el-table-column prop="order_channel_label" label="订单渠道" min-width="95" />
+        <el-table-column label="订单状态" min-width="95">
+          <template #default="{ row }">
+            <el-tag size="small" :type="ORDER_STATUS_TAGS[row.status]">{{ row.status_label }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="要求交付日期" min-width="110">
           <template #default="{ row }">
             <span :class="{ 'ship-date-overdue': isShipDateOverdue(row) }">{{ row.required_ship_date || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="订单类别" min-width="90">
-          <template #default="{ row }">
-            <el-tag size="small" effect="plain" :type="row.order_category === 'special' ? 'warning' : ''">{{ row.order_category_label }}</el-tag>
-          </template>
+        <el-table-column label="实际交付日期" min-width="110">
+          <template #default="{ row }">{{ row.actual_ship_date || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="order_type_label" label="订单类型" min-width="95" />
-        <el-table-column prop="order_channel_label" label="订单渠道" min-width="95" />
-        <el-table-column label="明细 / 数量" min-width="110">
-          <template #default="{ row }">{{ row.item_count }} 行 / {{ row.total_qty }} 件</template>
+        <el-table-column label="上次下单日期" min-width="110">
+          <template #default="{ row }">{{ row.last_order_date || '-' }}</template>
         </el-table-column>
-        <el-table-column label="订单总价" min-width="110" align="right">
-          <template #default="{ row }">¥{{ Number(row.total_amount || 0).toFixed(2) }}</template>
+        <el-table-column label="复购周期/天" min-width="100" align="right">
+          <template #default="{ row }">{{ row.repurchase_cycle_days != null ? row.repurchase_cycle_days : '-' }}</template>
         </el-table-column>
-        <el-table-column label="生产进度" min-width="150">
-          <template #default="{ row }">
-            <el-progress :percentage="row.progress_pct" :stroke-width="10" />
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" min-width="90">
-          <template #default="{ row }">
-            <el-tag size="small" :type="ORDER_STATUS_TAGS[row.status]">{{ row.status_label }}</el-tag>
-          </template>
+        <el-table-column prop="remark" label="订单备注" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.remark || '-' }}</template>
         </el-table-column>
         <el-table-column label="操作" min-width="220" fixed="right">
           <template #default="{ row }">
@@ -470,6 +474,8 @@ const {
 }
 
 .item-actions { margin-left: auto; display: flex; gap: 4px; }
+
+.muted { font-size: 12px; color: var(--el-text-color-secondary); }
 
 .step-table { margin-bottom: 10px; }
 
