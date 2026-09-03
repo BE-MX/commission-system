@@ -1,6 +1,7 @@
 """内贸客户 service —— 店名是业务主标识，下单时可就地新建"""
 
 import logging
+from datetime import timedelta
 
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -13,6 +14,7 @@ from app.domestic.models import DomesticCustomer, DomesticCustomerLedger, Domest
 from app.domestic.pricing_service import membership_label
 from app.domestic.schemas import CustomerCreate, CustomerUpdate
 from app.system.models import SysDict
+from app.core.time import beijing_today
 
 logger = logging.getLogger("commission")
 
@@ -24,6 +26,18 @@ CUSTOMER_PROFILE_FIELDS = (
     "owner_user_id", "first_contact_date", "first_order_date", "last_order_date",
     "total_order_count", "total_sales_amount", "remark",
 )
+
+PUBLIC_SEA_MONTHS = 3
+
+
+def _months_ago(today, months: int):
+    month_index = today.month - 1 - months
+    year = today.year + month_index // 12
+    month = month_index % 12 + 1
+    try:
+        return today.replace(year=year, month=month)
+    except ValueError:
+        return today.replace(year=year, month=month, day=1) - timedelta(days=1)
 
 
 def get_customer_options(db: Session) -> dict:
@@ -54,7 +68,86 @@ def get_customer_options(db: Session) -> dict:
         "customer_level": by_type[C.CUSTOMER_LEVEL_DICT],
         "lifecycle_status": by_type[C.CUSTOMER_LIFECYCLE_DICT],
         "owners": [{"value": uid, "label": name} for uid, name in owners],
+        "provinces": [
+            row[0] for row in db.query(DomesticCustomer.province)
+            .filter(DomesticCustomer.province.isnot(None), DomesticCustomer.province != "")
+            .distinct().order_by(DomesticCustomer.province.asc())
+        ],
+        "cities": [
+            row[0] for row in db.query(DomesticCustomer.city)
+            .filter(DomesticCustomer.city.isnot(None), DomesticCustomer.city != "")
+            .distinct().order_by(DomesticCustomer.city.asc())
+        ],
     }
+
+
+def release_stale_private_customers(db: Session) -> int:
+    """超过 3 个月未下单的私海客户释放进公海，并把归属清空。"""
+    cutoff = _months_ago(beijing_today(), PUBLIC_SEA_MONTHS)
+    latest_order_dates = dict(
+        db.query(DomesticOrder.customer_id, func.max(DomesticOrder.order_date))
+        .filter(DomesticOrder.deleted_flag == 0, DomesticOrder.status != C.ORDER_DRAFT)
+        .group_by(DomesticOrder.customer_id)
+        .all()
+    )
+    rows = (
+        db.query(
+            DomesticCustomer.id,
+            DomesticCustomer.last_order_date,
+            DomesticCustomer.first_contact_date,
+            DomesticCustomer.created_at,
+        )
+        .filter(DomesticCustomer.owner_user_id.isnot(None))
+        .all()
+    )
+    candidate_ids = [row[0] for row in rows]
+    locked_rows = (
+        db.query(DomesticCustomer)
+        .filter(
+            DomesticCustomer.id.in_(candidate_ids or {0}),
+            DomesticCustomer.owner_user_id.isnot(None),
+        )
+        .populate_existing()
+        .with_for_update()
+        .all()
+    )
+    locked_ids = {row.id for row in locked_rows}
+    latest_order_dates = dict(
+        db.query(DomesticOrder.customer_id, func.max(DomesticOrder.order_date))
+        .filter(
+            DomesticOrder.customer_id.in_(locked_ids or {0}),
+            DomesticOrder.deleted_flag == 0,
+            DomesticOrder.status != C.ORDER_DRAFT,
+        )
+        .group_by(DomesticOrder.customer_id)
+        .all()
+    )
+    stale_ids = []
+    for customer in locked_rows:
+        customer_id = customer.id
+        order_dates = [
+            value for value in (
+                latest_order_dates.get(customer_id),
+                customer.last_order_date,
+                customer.first_contact_date,
+                customer.created_at.date() if customer.created_at else None,
+            )
+            if value is not None
+        ]
+        if not order_dates:
+            continue
+        effective_date = min(max(order_dates), beijing_today())
+        if effective_date <= cutoff:
+            stale_ids.append(customer_id)
+    if not stale_ids:
+        return 0
+
+    released = db.query(DomesticCustomer).filter(
+        DomesticCustomer.id.in_(stale_ids),
+        DomesticCustomer.owner_user_id.isnot(None),
+    ).update({"owner_user_id": None}, synchronize_session=False)
+    db.commit()
+    return released
 
 
 def list_customers(
@@ -64,6 +157,9 @@ def list_customers(
     page_size: int = 20,
     keyword: str = "",
     status: int | None = None,
+    owner_scope: str = "",
+    province: str = "",
+    city: str = "",
 ) -> tuple[list[dict], int]:
     q = db.query(DomesticCustomer)
     if keyword:
@@ -76,6 +172,14 @@ def list_customers(
         )
     if status is not None:
         q = q.filter(DomesticCustomer.status == status)
+    if owner_scope == "private":
+        q = q.filter(DomesticCustomer.owner_user_id.isnot(None))
+    elif owner_scope == "public":
+        q = q.filter(DomesticCustomer.owner_user_id.is_(None))
+    if province:
+        q = q.filter(DomesticCustomer.province == province)
+    if city:
+        q = q.filter(DomesticCustomer.city == city)
 
     total = q.count()
     rows = q.order_by(DomesticCustomer.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
@@ -159,7 +263,12 @@ def find_or_create_by_shop_name(db: Session, shop_name: str, user_id: int) -> Do
     if existing:
         return existing
 
-    customer = DomesticCustomer(shop_name=name, status=1, created_by=user_id)
+    customer = DomesticCustomer(
+        shop_name=name,
+        owner_user_id=user_id,
+        status=1,
+        created_by=user_id,
+    )
     # savepoint 而非 db.rollback()：下单链路上全事务回滚会牵连已落库的其他行
     savepoint = db.begin_nested()
     db.add(customer)
@@ -193,11 +302,15 @@ def create_customer(db: Session, payload: CustomerCreate, user_id: int) -> Domes
         DomesticCustomer.custom_code == payload.custom_code
     ).first():
         raise ValueError(f"客户编码「{payload.custom_code}」已存在")
-    _validate_owner(db, payload.owner_user_id)
+    owner_user_id = payload.owner_user_id or user_id
+    _validate_owner(db, owner_user_id)
     customer = DomesticCustomer(
         shop_name=payload.shop_name,
         custom_code=payload.custom_code,
-        **{f: getattr(payload, f) for f in CUSTOMER_PROFILE_FIELDS},
+        **{
+            f: (owner_user_id if f == "owner_user_id" else getattr(payload, f))
+            for f in CUSTOMER_PROFILE_FIELDS
+        },
         settle_mode=payload.settle_mode,
         balance=0,
         status=1,
@@ -212,12 +325,18 @@ def create_customer(db: Session, payload: CustomerCreate, user_id: int) -> Domes
     return customer
 
 
-def update_customer(db: Session, customer_id: int, payload: CustomerUpdate) -> DomesticCustomer:
+def update_customer(
+    db: Session,
+    customer_id: int,
+    payload: CustomerUpdate,
+    operator_id: int | None = None,
+) -> DomesticCustomer:
     customer = db.query(DomesticCustomer).filter(
         DomesticCustomer.id == customer_id
     ).with_for_update().first()
     if not customer:
         raise ValueError("客户不存在")
+    _ensure_customer_operator(customer, operator_id)
 
     data = payload.model_dump(exclude_unset=True)
     new_name = (data.get("shop_name") or "").strip()
@@ -245,13 +364,14 @@ def update_customer(db: Session, customer_id: int, payload: CustomerUpdate) -> D
     return customer
 
 
-def delete_customer(db: Session, customer_id: int) -> None:
+def delete_customer(db: Session, customer_id: int, operator_id: int | None = None) -> None:
     """有订单的客户不删只停用 —— 删了历史订单就查不到客户名了。"""
     customer = db.query(DomesticCustomer).filter(
         DomesticCustomer.id == customer_id
     ).with_for_update().first()
     if not customer:
         raise ValueError("客户不存在")
+    _ensure_customer_operator(customer, operator_id)
     used = db.query(func.count(DomesticOrder.id)).filter(
         DomesticOrder.customer_id == customer_id
     ).scalar()
@@ -294,6 +414,11 @@ def _lock_customer_row(db: Session, customer_id: int) -> DomesticCustomer:
     return customer
 
 
+def _ensure_customer_operator(customer: DomesticCustomer, user_id: int) -> None:
+    if user_id is not None and customer.owner_user_id != user_id:
+        raise ValueError("客户不存在")
+
+
 def initialize_customer(
     db: Session, customer_id: int, payload, user_id: int
 ) -> dict:
@@ -303,6 +428,7 @@ def initialize_customer(
     建档时一次写入；之后的充值仍按金额重新核定等级。
     """
     customer = _lock_customer_row(db, customer_id)
+    _ensure_customer_operator(customer, user_id)
     amount = balance_service.money(payload.balance)
     business_key = f"init:{customer.id}"
     existing = db.query(DomesticCustomerLedger).filter(
@@ -344,6 +470,7 @@ def adjust_customer(
     幂等：同一 request_id 重放返回首个结果，不重复入账、不重复写审计行。
     """
     customer = _lock_customer_row(db, customer_id)
+    _ensure_customer_operator(customer, user_id)
     amount = balance_service.money(payload.amount)
     change_level = "membership_level" in payload.model_fields_set
     if amount == 0 and not change_level:

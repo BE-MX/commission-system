@@ -348,6 +348,7 @@ def _membership_customer(db, user, suffix, **overrides):
     values = {
         "shop_name": f"充值会员客户-{suffix}",
         "created_by": user.id,
+        "owner_user_id": user.id,
     }
     values.update(overrides)
     customer = domestic_models.DomesticCustomer(**values)
@@ -2925,6 +2926,7 @@ def _order_pricing_context(
         shop_name=f"订单锁价客户-{suffix}",
         membership_level=membership_level,
         balance=D(balance),
+        owner_user_id=user.id,
         created_by=user.id,
     )
     db.add(customer)
@@ -4439,6 +4441,7 @@ def test_order_pricing_configuration_error_rolls_back_new_product_and_order(db):
         shop_name="异常低价客户",
         membership_level="black",
         balance=D("1000.00"),
+        owner_user_id=user.id,
         created_by=user.id,
     )
     db.add(customer)

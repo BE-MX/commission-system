@@ -119,6 +119,13 @@ def recharge_customer(
     if amount <= 0:
         raise ValueError("充值金额必须大于 0")
     business_key = f"recharge:{customer_id}:{request_id}"
+    customer = db.query(DomesticCustomer).filter(
+        DomesticCustomer.id == customer_id,
+    ).populate_existing().with_for_update().first()
+    if not customer:
+        raise ValueError("客户不存在")
+    if customer.owner_user_id != user_id:
+        raise ValueError("客户不存在")
     ledger = apply_balance_change(
         db,
         customer_id=customer_id,

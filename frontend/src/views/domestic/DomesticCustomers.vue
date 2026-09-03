@@ -7,7 +7,7 @@
     </div>
 
     <el-row :gutter="16" class="toolbar">
-      <el-col :span="6">
+      <el-col :span="4">
         <el-input v-model="searchForm.keyword" placeholder="搜索编码 / 店名 / 联系人 / 电话" clearable prefix-icon="Search" @keyup.enter="handleSearch" @clear="handleSearch" />
       </el-col>
       <el-col :span="4">
@@ -16,7 +16,23 @@
           <el-option label="停用" :value="0" />
         </el-select>
       </el-col>
-      <el-col :span="8">
+      <el-col :span="4">
+        <el-radio-group v-model="searchForm.owner_scope" @change="handleSearch">
+          <el-radio-button label="private">私海客户</el-radio-button>
+          <el-radio-button label="public">公海客户</el-radio-button>
+        </el-radio-group>
+      </el-col>
+      <el-col :span="3">
+        <el-select v-model="searchForm.province" placeholder="省份" filterable clearable style="width: 100%" @change="handleProvinceChange">
+          <el-option v-for="province in options.provinces" :key="province" :label="province" :value="province" />
+        </el-select>
+      </el-col>
+      <el-col :span="3">
+        <el-select v-model="searchForm.city" placeholder="城市" filterable clearable style="width: 100%" @change="handleSearch">
+          <el-option v-for="city in options.cities" :key="city" :label="city" :value="city" />
+        </el-select>
+      </el-col>
+      <el-col :span="6">
         <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
         <GlassButton v-permission="'domestic:write'" variant="ghost" left-icon="Plus" @click="openDialog()">新增客户</GlassButton>
         <GlassButton v-permission="'domestic:admin'" variant="ghost" left-icon="Upload" @click="openImport">导入客户</GlassButton>
@@ -99,15 +115,15 @@
         </el-table-column>
         <el-table-column label="操作" min-width="270" fixed="right">
           <template #default="{ row }">
-            <GlassButton v-permission="'domestic:write'" variant="link" left-icon="Edit" @click="openDialog(row)">编辑</GlassButton>
-            <GlassButton v-permission="'domestic:write'" variant="link" :link-tone="row.status ? '' : 'success'" left-icon="SwitchButton" @click="toggleStatus(row)">
+            <GlassButton v-if="canOperateCustomer(row)" v-permission="'domestic:write'" variant="link" left-icon="Edit" @click="openDialog(row)">编辑</GlassButton>
+            <GlassButton v-if="canOperateCustomer(row)" v-permission="'domestic:write'" variant="link" :link-tone="row.status ? '' : 'success'" left-icon="SwitchButton" @click="toggleStatus(row)">
               {{ row.status ? '停用' : '启用' }}
             </GlassButton>
-            <GlassButton v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Wallet" @click="openRecharge(row)">充值</GlassButton>
-            <GlassButton v-if="!row.initialized" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="CirclePlus" @click="openInit(row)">初始化</GlassButton>
-            <GlassButton v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="EditPen" @click="openAdjust(row)">调整</GlassButton>
-            <GlassButton v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Tickets" @click="openLedger(row)">流水</GlassButton>
-            <GlassButton v-permission="'domestic:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
+            <GlassButton v-if="canOperateCustomer(row)" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Wallet" @click="openRecharge(row)">充值</GlassButton>
+            <GlassButton v-if="canOperateCustomer(row) && !row.initialized" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="CirclePlus" @click="openInit(row)">初始化</GlassButton>
+            <GlassButton v-if="canOperateCustomer(row)" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="EditPen" @click="openAdjust(row)">调整</GlassButton>
+            <GlassButton v-if="canOperateCustomer(row)" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Tickets" @click="openLedger(row)">流水</GlassButton>
+            <GlassButton v-if="canOperateCustomer(row)" v-permission="'domestic:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
           </template>
         </el-table-column>
       </el-table>
@@ -366,6 +382,7 @@ const chinaRegions = CHINA_REGIONS
 const {
   loading, list, total, page, pageSize, searchForm,
   handleSearch, handlePageChange, handleSizeChange,
+  canOperateCustomer, handleProvinceChange,
   saving, dialog, options, openDialog, save,
   rechargeDialog, openRecharge, confirmRecharge,
   initDialog, openInit, confirmInit,

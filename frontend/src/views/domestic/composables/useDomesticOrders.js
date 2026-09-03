@@ -4,6 +4,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useAuthStore } from '@/stores/auth'
 import {
   attachItemRoute, deleteOrder, exportOrder, getItemWxacode, getOptions, getOrder, getProcessRoutes,
   listDomesticSkips, listOrders, listProcessWorkers, listReports, newRequestId,
@@ -20,6 +21,7 @@ import {
 } from './domesticMemberPricing'
 
 export function useDomesticOrders() {
+  const auth = useAuthStore()
   const route = useRoute()
   const router = useRouter()
   const filterOptions = ref({ order_categories: [], order_types: [], order_channels: [] })
@@ -58,6 +60,10 @@ export function useDomesticOrders() {
   const draftSubmitRequestIds = new Map()
   // 提交草稿是多步确认流程，行级 loading 防止连点导致重复扣款
   const submittingOrderIds = reactive(new Set())
+
+  function canOperateOrder(row) {
+    return auth.user?.id === row.created_by
+  }
 
   async function loadDetail(orderId) {
     detailLoading.value = true
@@ -492,6 +498,7 @@ export function useDomesticOrders() {
     printDialog, openPrintCard, openQrLabel, openWxacodeLabel,
     wxacodeDialog, openWxacode, downloadWxacode,
     handleExport, handleSubmitDraft, submittingOrderIds, handleTerminate, handleDelete, goCreate,
+    canOperateOrder,
     priceEditDialog, openPriceEdit, confirmPriceEdit,
     isShipDateOverdue,
   }

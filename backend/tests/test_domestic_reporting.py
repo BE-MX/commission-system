@@ -108,12 +108,14 @@ def _pricing_customer(db, user):
     if customer is None:
         customer = DomesticCustomer(
             shop_name="马姐假发",
+            owner_user_id=user.id,
             membership_level="black",
             balance=Decimal("0.00"),
             created_by=user.id,
         )
         db.add(customer)
     else:
+        customer.owner_user_id = user.id
         customer.membership_level = "black"
     db.flush()
     return customer

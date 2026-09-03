@@ -434,6 +434,7 @@ def _seed_attribute_context(db, *, piece_route: bool = True):
     db.flush()
     customer = DomesticCustomer(
         shop_name=f"属性测试客户-{id(db)}",
+        owner_user_id=user.id,
         balance=Decimal("999999.00"),
         status=1,
         created_by=user.id,

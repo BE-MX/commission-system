@@ -75,6 +75,7 @@ def _create_order(db, user, item_count=1):
     db.flush()
     customer = DomesticCustomer(
         shop_name=f"马姐假发-{uuid4()}",
+        owner_user_id=user.id,
         membership_level="black",
         balance=0,
         created_by=user.id,

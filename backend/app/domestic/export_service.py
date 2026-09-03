@@ -14,11 +14,10 @@ from app.domestic.constants import PRODUCT_TYPES
 
 _HEADERS = (
     "明细号", "产品类型", "产品名称", "工艺/尺寸", "发长", "网帽颜色",
-    "头套尺寸", "发量", "发型系列", "数量", "原价", "优惠价", "单件优惠",
-    "小计", "发型", "颜色", "发型要求", "备注",
+    "头套尺寸", "发量", "发型系列", "数量", "发型", "颜色", "发型要求", "备注",
 )
 _WIDTHS = (
-    9, 11, 22, 14, 11, 13, 11, 10, 12, 9, 12, 12, 12, 13, 16, 16, 24, 20,
+    9, 11, 24, 15, 12, 14, 12, 11, 13, 10, 18, 18, 26, 22,
 )
 _FONT_NAME = "宋体"
 _THIN = Side(style="thin", color="000000")
@@ -65,10 +64,6 @@ def _date_text(value) -> str:
     return _safe_text(value)
 
 
-def _money(value) -> str:
-    return f"¥{float(value or 0):,.2f}"
-
-
 def _wrapped_lines(value, width: int) -> int:
     text = str(value or "")
     chars_per_line = max(6, int(width * 1.4))
@@ -76,7 +71,7 @@ def _wrapped_lines(value, width: int) -> int:
 
 
 def _item_row_height(values: tuple) -> float:
-    text_columns = ((2, 22), (14, 16), (15, 16), (16, 24), (17, 20))
+    text_columns = ((1, 11), (2, 24), (10, 18), (11, 18), (12, 26), (13, 22))
     lines = max(_wrapped_lines(values[index], width) for index, width in text_columns)
     return min(300, max(75, lines * 15 + 15))
 
@@ -151,6 +146,7 @@ def _add_full_requirements_sheet(wb: Workbook, detail: dict) -> None:
     ws.print_title_rows = "1:1"
     ws.print_area = f"A1:C{len(rows) + 1}"
     ws.page_setup.orientation = "portrait"
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
@@ -163,12 +159,12 @@ def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
     ws = wb.active
     ws.title = "内贸订单领货单"
 
-    ws.merge_cells("B1:Q1")
+    ws.merge_cells("B1:N1")
     ws["B1"] = "内贸订单领货单"
     ws["B1"].font = Font(name=_FONT_NAME, size=18, bold=True)
     ws["B1"].alignment = Alignment(horizontal="center", vertical="center")
 
-    ws.merge_cells("A2:R2")
+    ws.merge_cells("A2:N2")
     ws["A2"] = (
         f"下单日期：{_date_text(detail.get('order_date'))}     "
         f"要求发货日期：{_date_text(detail.get('required_ship_date'))}     "
@@ -177,14 +173,12 @@ def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
         f"申请人：{_safe_text(applicant_name)}     "
         f"客户：{_safe_text(detail.get('customer_name'))}"
     )
-    ws.merge_cells("A3:R3")
+    ws.merge_cells("A3:N3")
     ws["A3"] = (
         "审批人签字：____________________     "
         f"订单类别：{_safe_text(detail.get('order_category_label'))}     "
         f"订单类型：{_safe_text(detail.get('order_type_label'))}     "
-        f"订单渠道：{_safe_text(detail.get('order_channel_label'))}     "
-        f"订单金额：{_money(detail.get('total_amount'))}     "
-        f"客户余额：{_money(detail.get('customer_balance'))}"
+        f"订单渠道：{_safe_text(detail.get('order_channel_label'))}"
     )
     for cell in (ws["A2"], ws["A3"]):
         cell.font = Font(name=_FONT_NAME, size=12, bold=True)
@@ -212,10 +206,6 @@ def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
             "" if is_piece else _display(attrs.get("density")),
             "" if is_piece else _display(attrs.get("hair_style_series")),
             item.get("order_qty") or 0,
-            float(item.get("original_price") or 0),
-            float(item.get("unit_price") or 0),
-            float(item.get("discount_amount") or 0),
-            float(item.get("line_amount") or 0),
             _display(item.get("hairstyle")),
             _display(item.get("color")),
             _display(item.get("style_requirement")),
@@ -226,12 +216,10 @@ def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
             cell.font = Font(name=_FONT_NAME, size=11)
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             cell.border = _BORDER
-        for column in range(11, 15):
-            ws.cell(row_idx, column).number_format = '¥#,##0.00'
         ws.row_dimensions[row_idx].height = _item_row_height(values)
 
     notes_row = 5 + len(items) + 1
-    ws.merge_cells(start_row=notes_row, start_column=1, end_row=notes_row, end_column=18)
+    ws.merge_cells(start_row=notes_row, start_column=1, end_row=notes_row, end_column=14)
     notes = "注意事项：\n！导出内容以方舟内贸订单记录为准。\n！领货与签字流程按内贸部门现行规定执行。"
     if detail.get("remark"):
         notes += f"\n订单备注：{_safe_text(detail['remark'])}"
@@ -251,13 +239,13 @@ def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
     )
 
     ws.page_setup.orientation = "landscape"
-    ws.page_setup.paperSize = ws.PAPERSIZE_LETTER
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_margins = PageMargins(left=0.24, right=0.24, top=0.35, bottom=0.35)
     ws.print_title_rows = "1:4"
-    ws.print_area = f"A1:R{notes_row}"
+    ws.print_area = f"A1:N{notes_row}"
     _add_full_requirements_sheet(wb, detail)
 
     stream = BytesIO()

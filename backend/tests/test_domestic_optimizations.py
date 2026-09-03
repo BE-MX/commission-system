@@ -892,12 +892,10 @@ def test_order_list_shows_owner_and_repurchase_fields(db):
     """列表补台账字段：归属销售、上次下单日期、复购周期、实际交付日期。"""
     _route_and_workers(db)
     owner = _user(db, "owner-sales")
-    creator = _user(db, "order-list-creator")
-    customer = _customer(db, creator, "台账客户")
-    customer.owner_user_id = owner.id
+    customer = _customer(db, owner, "台账客户")
     db.flush()
 
-    _create_order(db, creator, customer, qty=1, price="0")
+    _create_order(db, owner, customer, qty=1, price="0")
 
     # 第二张单：同一客户的复购
     second = order_service.create_order(
@@ -913,7 +911,7 @@ def test_order_list_shows_owner_and_repurchase_fields(db):
             order_channel="wechat",
             items=[_priced_item(db, customer, qty=2, price="0")],
         ),
-        creator.id,
+        owner.id,
     )
 
     rows, _ = order_service.list_orders(db)
