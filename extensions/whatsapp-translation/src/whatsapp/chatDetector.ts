@@ -12,7 +12,7 @@ export function detectChatKind(root: Document | HTMLElement): ChatState {
   const directCount = root.querySelectorAll(WHATSAPP_SELECTORS.directIdentity).length
   const groupCount = root.querySelectorAll(WHATSAPP_SELECTORS.groupIdentity).length
 
-  if (directCount === 1 && groupCount === 0) return { kind: 'direct' }
-  if (groupCount === 1 && directCount === 0) return { kind: 'group' }
+  if (directCount > 0 && groupCount === 0) return { kind: 'direct' }
+  if (groupCount > 0 && directCount === 0) return { kind: 'group' }
   return { kind: 'unknown' }
 }
