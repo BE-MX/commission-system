@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { zipSync } from 'fflate'
 
 const EXTENSION_ID = 'bnkecbkoidckffckbefjjcbchmngjobi'
 const FIXED_TIME = new Date('1980-01-01T00:00:00Z')
+const REPOSITORY_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const REQUIRED_DIST_ENTRIES = ['background.js', 'content.js', 'manifest.json', 'src/popup/index.html']
 const ALLOWED_DIST_ROOTS = new Set(['assets', 'background.js', 'content.js', 'manifest.json', 'popup.js', 'src'])
 
@@ -22,7 +23,10 @@ function collect(directory, prefix = '', output = {}) {
   return output
 }
 
-export function assertSafeOutputPath(outputDir, repositoryRoot = resolve(import.meta.dirname, '../..')) {
+export function assertSafeOutputPath(
+  outputDir,
+  repositoryRoot = REPOSITORY_ROOT,
+) {
   const resolvedOutput = resolve(outputDir)
   const resolvedRoot = resolve(repositoryRoot)
   const relativePath = relative(resolvedRoot, resolvedOutput)
@@ -35,7 +39,7 @@ export function packageRelease({
   distDir = 'dist',
   outputDir = 'release',
   manifestPath = 'manifest.json',
-  repositoryRoot = resolve(import.meta.dirname, '../..'),
+  repositoryRoot = REPOSITORY_ROOT,
 } = {}) {
   assertSafeOutputPath(outputDir, repositoryRoot)
 

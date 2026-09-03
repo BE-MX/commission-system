@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { packageRelease } from '../scripts/package.mjs'
@@ -56,6 +56,9 @@ describe('release packaging', () => {
   })
 
   it('rejects a missing dist and unsafe output paths', () => {
+    const frontendDownloadDir = resolve('../..', 'frontend/public/downloads/whatsapp-translation')
+    expect(() => packageRelease({ distDir: 'missing-dist', outputDir: frontendDownloadDir }))
+      .toThrow('invalid_dist')
     expect(() => packageRelease({ distDir: 'missing-dist', outputDir: mkdtempSync(join(tmpdir(), 'bad-')) }))
       .toThrow('invalid_dist')
     expect(() => packageRelease({

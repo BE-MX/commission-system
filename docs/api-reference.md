@@ -1126,6 +1126,7 @@ MCP `/mcp` 新增 `search_knowledge` 与 `get_knowledge_document`。二者使用
 
 | Method | Path | Identity | 说明 |
 | --- | --- | --- | --- |
+| GET | `/health` | 公网 | 返回 `status=ok` 和 `min_extension_version`，响应不缓存。 |
 | POST | `/pairings` | 公网（按 IP 限流） | body `proposed_token_hash`（64 hex）、`device_name`、`browser_name`、`browser_version`、`extension_version`；返回 `device_code`、`expires_at`、`authorize_url`。明文 token 只留在扩展本地。 |
 | POST | `/pairings/exchange` | 公网（按 device code hash 限流） | body `device_code`；pending 返回 `status=pending`，approved 且设备容量充足时原子创建设备并返回 `status=ready/device_id/expires_at`。可安全重试。 |
 | POST | `/pairings/inspect` / `/approve` / `/reject` | Ark JWT + `whatsapp_translation:write` | 授权页查询、批准和拒绝；body `device_code`。批准前实时校验员工状态和权限。 |

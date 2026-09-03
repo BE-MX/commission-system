@@ -47,7 +47,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { approvePairing, getMyDevices, inspectPairing, rejectPairing, revokeMyDevice } from '@/api/whatsappTranslation'
 import { useAuthStore } from '@/stores/auth'
-import { captureDeviceCode, cleanAuthorizeUrl, clearDeviceCode, readDeviceCode } from './whatsappTranslationAuthorize'
+import { captureDeviceCode, clearDeviceCode, readDeviceCode, waitForAuthorizeUser } from './whatsappTranslationAuthorize'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -113,8 +113,7 @@ function readSessionCode() {
 
 onMounted(async () => {
   captureDeviceCode(window.location, window.history, window.sessionStorage)
-  if (!auth.user) {
-    router.replace(`/login?redirect=${encodeURIComponent(cleanAuthorizeUrl(window.location))}`)
+  if (!(await waitForAuthorizeUser(auth, router, window.location))) {
     return
   }
   try {

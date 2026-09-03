@@ -6,6 +6,7 @@ from fastapi.security import HTTPBearer
 from app.auth.dependencies import get_current_user
 from app.auth.models import ArkUser
 from app.auth.service import get_live_user_authorization
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.response import ok
 from app.whatsapp_translation.auth import require_translation_device
@@ -57,6 +58,15 @@ def translation_permission(permission: str):
         return _live_translation_actor(db, current_user, permission)
 
     return checker
+
+
+@router.get("/health", dependencies=[Depends(no_store)])
+def health_route():
+    settings = get_settings()
+    return ok({
+        "status": "ok",
+        "min_extension_version": settings.WHATSAPP_TRANSLATION_MIN_EXTENSION_VERSION,
+    })
 
 
 @router.post("/pairings", dependencies=[Depends(no_store)])
