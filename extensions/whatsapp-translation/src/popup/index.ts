@@ -38,7 +38,11 @@ async function loadSession(): Promise<boolean> {
 
 async function resumePairing(): Promise<void> {
   const response = await runtimeRequest({ type: 'pairing/resume' })
-  if (response?.type !== 'pairing/resume' || !response.state) {
+  if (response?.type !== 'pairing/resume') {
+    setState('error')
+    return
+  }
+  if (!response.state) {
     setState('unpaired')
     return
   }

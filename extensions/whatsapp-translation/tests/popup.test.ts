@@ -86,4 +86,24 @@ describe('popup pairing recovery', () => {
     })
     expect(document.getElementById('check-pairing')?.hidden).toBe(false)
   })
+
+  it('shows an error without discarding a pending pairing when recovery fails', async () => {
+    const sendMessage = vi.fn(async (request: { type: string }) => {
+      if (request.type === 'session/refresh') {
+        return { type: 'error', message: 'device_token_missing' }
+      }
+      if (request.type === 'pairing/resume') {
+        return { type: 'error', message: 'network_error' }
+      }
+      return { type: 'error', message: 'unexpected_request' }
+    })
+    vi.stubGlobal('chrome', { runtime: { sendMessage } })
+
+    await import('@/popup/index')
+
+    await vi.waitFor(() => {
+      expect(document.getElementById('popup')?.dataset.state).toBe('error')
+    })
+    expect(document.getElementById('unpaired')?.hidden).toBe(true)
+  })
 })
