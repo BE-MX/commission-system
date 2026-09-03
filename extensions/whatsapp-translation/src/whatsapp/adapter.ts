@@ -44,6 +44,30 @@ export class WhatsAppAdapter {
     composer.dispatchEvent(new inputEventConstructor('input', eventInit))
     return true
   }
+
+  attachOutgoingControl(onTranslate: () => void): HTMLElement | null {
+    if (this.inspectChat().kind !== 'direct') return null
+    const composer = this.root.querySelector(WHATSAPP_SELECTORS.composer)
+    if (composer?.parentElement == null) return null
+
+    const existing = composer.parentElement.querySelector(':scope > [data-ark-outgoing-control="1"]')
+    existing?.remove()
+    const host = document.createElement('div')
+    host.dataset.arkOutgoingControl = '1'
+    const shadow = host.attachShadow({ mode: 'closed' })
+    const style = document.createElement('style')
+    style.textContent = `
+      :host { all: initial; }
+      button { background: transparent; border: none; color: #2563eb; cursor: pointer; font: inherit; padding: 0; }
+    `
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.textContent = '翻译'
+    button.addEventListener('click', onTranslate)
+    shadow.append(style, button)
+    composer.parentElement.insertBefore(host, composer)
+    return host
+  }
 }
 
 export function adapterFor(root: Document | HTMLElement): WhatsAppAdapter {

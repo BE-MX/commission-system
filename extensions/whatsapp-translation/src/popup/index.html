@@ -4,9 +4,38 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>莱莎 WhatsApp 实时翻译</title>
+    <link rel="stylesheet" href="./popup.css" />
   </head>
   <body>
-    <main>内部翻译扩展</main>
+    <main id="popup" data-state="loading">
+      <h1>WhatsApp 实时翻译</h1>
+      <section id="loading" aria-live="polite">正在检查授权状态…</section>
+      <section id="unpaired" hidden>
+        <p>使用方舟账号授权后开始翻译。</p>
+        <button id="start-pairing" type="button">登录方舟并授权</button>
+      </section>
+      <section id="pairing" hidden>
+        <p>请在方舟授权页确认配对。</p>
+        <button id="check-pairing" type="button">我已完成授权</button>
+      </section>
+      <section id="ready" hidden>
+        <p id="employee"></p>
+        <p id="expiry"></p>
+        <label><input id="enabled" type="checkbox" /> 启用翻译</label>
+        <label>目标语言 <select id="language">
+          <option value="zh-CN">中文</option>
+          <option value="en">English</option>
+          <option value="es">Español</option>
+          <option value="fr">Français</option>
+          <option value="ar">العربية</option>
+          <option value="ja">日本語</option>
+        </select></label>
+        <p>快捷键：Alt + T</p>
+        <button id="reauthorize" type="button">重新授权</button>
+      </section>
+      <section id="blocked" hidden>翻译已被停用，请联系管理员。</section>
+      <section id="error" hidden>操作失败，请重试。</section>
+    </main>
     <script type="module" src="./index.ts"></script>
   </body>
 </html>
