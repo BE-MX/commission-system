@@ -100,6 +100,9 @@
       />
 
       <el-form :model="item" label-width="92px">
+
+        <div class="item-sec__title">产品规格</div>
+
         <el-row :gutter="16">
           <el-col :span="6">
             <el-form-item label="产品类型" required>
@@ -133,59 +136,6 @@
           <el-col :span="6">
             <el-form-item label="数量" required>
               <el-input-number v-model="item.order_qty" :min="1" :max="2000" style="width: 100%" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-
-        <el-row :gutter="16" class="price-row">
-          <el-col :span="4">
-            <el-form-item label="报价状态">
-              <el-tag :type="item.quoteStatus === 'missing_base_price' ? 'danger' : (item.quoteStatus === 'priced' ? 'success' : 'warning')" effect="plain">
-                {{ quoteStatusLabel(item.quoteStatus) }}
-              </el-tag>
-            </el-form-item>
-          </el-col>
-          <el-col :span="4">
-            <el-form-item label="原始价">
-              <span>{{ item.quoteStatus === 'priced' ? `¥${Number(item.quote.original_price).toFixed(2)}` : '-' }}</span>
-            </el-form-item>
-          </el-col>
-          <el-col :span="4">
-            <el-form-item label="优惠金额">
-              <span class="discount-value">{{ item.quoteStatus === 'priced' ? `-¥${(Number(item.quote.original_price) - effectiveDiscountPrice(item)).toFixed(2)}` : '-' }}</span>
-            </el-form-item>
-          </el-col>
-          <el-col :span="4">
-            <el-form-item label="优惠价">
-              <div v-if="item.quoteStatus === 'priced'" class="price-edit">
-                <el-input-number
-                  :model-value="effectiveDiscountPrice(item)"
-                  :min="0.01" :max="Number(item.quote.original_price)" :precision="2"
-                  :controls="false" class="price-input"
-                  @change="value => onManualPrice(item, value)"
-                />
-                <GlassButton
-                  v-if="item.manualDiscountPrice" variant="link" link-tone="danger"
-                  @click="onManualPrice(item, null)"
-                >恢复报价</GlassButton>
-              </div>
-              <strong v-else>-</strong>
-            </el-form-item>
-          </el-col>
-          <el-col :span="4">
-            <el-form-item label="明细总价">
-              <span class="amount-value">¥{{ (Number(item.order_qty || 0) * effectiveDiscountPrice(item)).toFixed(2) }}</span>
-            </el-form-item>
-          </el-col>
-          <el-col :span="4">
-            <el-form-item label="优惠说明">
-              <span v-if="item.quoteStatus === 'priced'" class="rule-text">
-                {{ item.manualDiscountPrice ? '手工改价' : item.quote.pricing_rule_label }}
-              </span>
-              <GlassButton v-else-if="item.quoteStatus === 'pending'" variant="link" :loading="quoteLoading" @click="refreshQuotes">重新报价</GlassButton>
-              <span v-else-if="item.quoteStatus === 'missing_base_price'" class="danger-text">
-                缺原始价，无法报价<GlassButton variant="link" link-tone="danger" @click="goProducts">去产品清单维护</GlassButton>
-              </span>
             </el-form-item>
           </el-col>
         </el-row>
@@ -247,6 +197,63 @@
             </el-form-item>
           </el-col>
         </el-row>
+
+        <div class="item-sec__title item-sec__title--gap">报价信息</div>
+
+        <el-row :gutter="16" class="price-row">
+          <el-col :span="4">
+            <el-form-item label="报价状态">
+              <el-tag :type="item.quoteStatus === 'missing_base_price' ? 'danger' : (item.quoteStatus === 'priced' ? 'success' : 'warning')" effect="plain">
+                {{ quoteStatusLabel(item.quoteStatus) }}
+              </el-tag>
+            </el-form-item>
+          </el-col>
+          <el-col :span="4">
+            <el-form-item label="原始价">
+              <span>{{ item.quoteStatus === 'priced' ? `¥${Number(item.quote.original_price).toFixed(2)}` : '-' }}</span>
+            </el-form-item>
+          </el-col>
+          <el-col :span="4">
+            <el-form-item label="优惠金额">
+              <span class="discount-value">{{ item.quoteStatus === 'priced' ? `-¥${(Number(item.quote.original_price) - effectiveDiscountPrice(item)).toFixed(2)}` : '-' }}</span>
+            </el-form-item>
+          </el-col>
+          <el-col :span="4">
+            <el-form-item label="优惠价">
+              <div v-if="item.quoteStatus === 'priced'" class="price-edit">
+                <el-input-number
+                  :model-value="effectiveDiscountPrice(item)"
+                  :min="0.01" :max="Number(item.quote.original_price)" :precision="2"
+                  :controls="false" class="price-input"
+                  @change="value => onManualPrice(item, value)"
+                />
+                <GlassButton
+                  v-if="item.manualDiscountPrice" variant="link" link-tone="danger"
+                  @click="onManualPrice(item, null)"
+                >恢复报价</GlassButton>
+              </div>
+              <strong v-else>-</strong>
+            </el-form-item>
+          </el-col>
+          <el-col :span="4">
+            <el-form-item label="明细总价">
+              <span class="amount-value">¥{{ (Number(item.order_qty || 0) * effectiveDiscountPrice(item)).toFixed(2) }}</span>
+            </el-form-item>
+          </el-col>
+          <el-col :span="4">
+            <el-form-item label="优惠说明">
+              <span v-if="item.quoteStatus === 'priced'" class="rule-text">
+                {{ item.manualDiscountPrice ? '手工改价' : item.quote.pricing_rule_label }}
+              </span>
+              <GlassButton v-else-if="item.quoteStatus === 'pending'" variant="link" :loading="quoteLoading" @click="refreshQuotes">重新报价</GlassButton>
+              <span v-else-if="item.quoteStatus === 'missing_base_price'" class="danger-text">
+                缺原始价，无法报价<GlassButton variant="link" link-tone="danger" @click="goProducts">去产品清单维护</GlassButton>
+              </span>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <div class="item-sec__title item-sec__title--gap">要求与备注</div>
 
         <el-row :gutter="16">
           <el-col v-for="section in DETAIL_SECTIONS" :key="section.key" :span="12">
@@ -336,6 +343,26 @@ const {
 .item-head .panel-title { margin-bottom: 12px; }
 .item-actions { display: flex; gap: 4px; }
 .special-hint { margin-bottom: 12px; }
+
+/* 明细内分区标题：产品规格 / 报价信息 / 要求与备注，把一行明细的录入流程切成「选规格 → 看报价 → 填备注」三步，视觉上隔开 */
+.item-sec__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.item-sec__title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--el-border-color-lighter);
+}
+
+.item-sec__title--gap { margin-top: 14px; }
 
 .new-customer { margin-top: 8px; }
 .balance-hint { margin-top: 6px; color: var(--el-color-success); font-size: 12px; }
