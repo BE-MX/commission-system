@@ -402,6 +402,11 @@ def _build_special_order_quotes(
         ))
     return quotes
 
+def _ensure_order_creator(order: DomesticOrder, user_id: int | None) -> None:
+    if user_id is not None and order.created_by != user_id:
+        raise ValueError("只有订单创建人可以执行该操作")
+
+
 
 def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
     """保存草稿或正式下单；正式单与余额扣款在同一事务完成。"""
@@ -412,6 +417,8 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
                 DomesticOrder.request_id == payload.request_id
             ).first()
             if existing:
+                if existing.created_by != user_id:
+                    raise ValueError("只有订单创建人可以重放该下单请求")
                 _validate_order_replay(existing, request_hash)
                 return _order_create_result(db, existing, replayed=True)
 
@@ -430,6 +437,8 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
                 db, payload.customer_shop_name, user_id
             )
             customer = _lock_customer(db, customer.id)
+        if customer.owner_user_id != user_id:
+            raise ValueError("只有客户归属销售可以对该客户下单")
 
         prepared = _prepare_order_products(
             db,
@@ -723,9 +732,13 @@ def list_orders(
     date_end: date | None = None,
     sort_field: str = "",
     sort_order: str = "",
+    creator_id: int | None = None,
+    include_all: bool = True,
     include_finance: bool = True,
 ) -> tuple[list[dict], int]:
     q = db.query(DomesticOrder).filter(DomesticOrder.deleted_flag == 0)
+    if not include_all:
+        q = q.filter(DomesticOrder.created_by == creator_id)
     if keyword:
         kw = f"%{keyword}%"
         q = q.filter((DomesticOrder.order_no.like(kw)) | (DomesticOrder.domestic_no.like(kw)))
@@ -864,6 +877,7 @@ def list_orders(
                 if prev_order_date.get(o.id) and o.order_date else None
             ),
             "remark": o.remark,
+            "created_by": o.created_by,
             "created_at": o.created_at,
         }
         if include_finance:
@@ -1115,12 +1129,16 @@ def _lock_order_then_item(
 
 
 def update_order(
-    db: Session, order_id: int, payload: OrderUpdate
+    db: Session,
+    order_id: int,
+    payload: OrderUpdate,
+    user_id: int | None = None,
 ) -> DomesticOrder | dict:
     try:
         if "customer_id" in payload.model_fields_set:
             _ensure_sqlite_outer_transaction(db)
         order = _get_order_or_raise(db, order_id, lock=True)
+        _ensure_order_creator(order, user_id)
         data = payload.model_dump(exclude_unset=True)
         changes_customer = "customer_id" in data
 
@@ -1246,6 +1264,7 @@ def add_item(
         # can both act on the same stale state.
         _ensure_sqlite_outer_transaction(db)
         order = _get_order_or_raise(db, order_id, lock=True)
+        _ensure_order_creator(order, user_id)
         if order.status in (C.ORDER_TERMINATED, C.ORDER_SHIPPED):
             raise ValueError("已终止/已发货的订单不能加明细")
         request_hash = _item_append_request_hash(payload)
@@ -1322,6 +1341,7 @@ def update_item(
 ) -> DomesticOrderItem:
     """改明细。数量不能改到低于任一工序已完成的数量 —— 那会让守恒关系失真。"""
     order, item = _lock_order_then_item(db, item_id)
+    _ensure_order_creator(order, user_id)
     if order.status in (C.ORDER_TERMINATED, C.ORDER_SHIPPED):
         raise ValueError("已终止/已发货的订单不能修改明细")
     if item.status == C.ITEM_SHIPPED:
@@ -1389,6 +1409,7 @@ def update_item(
 def delete_item(db: Session, item_id: int, user_id: int | None = None) -> None:
     """有报工记录的明细不能删 —— 删了车间的工时就凭空消失了。"""
     order, item = _lock_order_then_item(db, item_id)
+    _ensure_order_creator(order, user_id)
     reported = db.query(func.count(DomesticReportLog.id)).filter(
         DomesticReportLog.item_id == item_id
     ).scalar()
@@ -1428,9 +1449,15 @@ def delete_item(db: Session, item_id: int, user_id: int | None = None) -> None:
         raise
 
 
-def attach_route(db: Session, item_id: int, route_id: int | None = None) -> dict:
+def attach_route(
+    db: Session,
+    item_id: int,
+    route_id: int | None = None,
+    user_id: int | None = None,
+) -> dict:
     """给缺路线的在制明细补配工艺路线（漏配映射后的补救路径）。"""
     order, item = _lock_order_then_item(db, item_id)
+    _ensure_order_creator(order, user_id)
     if order.status in (C.ORDER_TERMINATED, C.ORDER_SHIPPED):
         raise ValueError("已终止/已发货的订单不能重配工艺路线")
     if item.route_id is not None:
@@ -1476,6 +1503,7 @@ def submit_draft(
     try:
         _ensure_sqlite_outer_transaction(db)
         order = _get_order_or_raise(db, order_id, lock=True)
+        _ensure_order_creator(order, user_id)
         request_hash = _pricing_request_hash(
             operation="submit",
             target_customer_id=order.customer_id,
@@ -1527,6 +1555,10 @@ def submit_draft(
                 )
             _apply_saved_item_quotes(items, quotes)
         order.status = C.ORDER_PRODUCING
+        customer.last_order_date = max(
+            value for value in (customer.last_order_date, order.order_date)
+            if value is not None
+        )
         db.flush()
         balance_service.sync_order_finance(
             db, order, user_id=user_id,
@@ -1555,9 +1587,15 @@ def submit_draft(
         raise
 
 
-def ship_item(db: Session, item_id: int, payload: ItemShipRequest) -> DomesticOrderItem:
+def ship_item(
+    db: Session,
+    item_id: int,
+    payload: ItemShipRequest,
+    user_id: int | None = None,
+) -> DomesticOrderItem:
     """登记发货。首版要求全工序做齐才允许发货。"""
     order, item = _lock_order_then_item(db, item_id)
+    _ensure_order_creator(order, user_id)
     if item.status == C.ITEM_SHIPPED:
         raise ValueError("该明细已发货")
     if order.status == C.ORDER_TERMINATED:
@@ -1583,6 +1621,7 @@ def terminate_order(
 ) -> DomesticOrder:
     try:
         order = _get_order_or_raise(db, order_id, lock=True)
+        _ensure_order_creator(order, user_id)
         if order.status == C.ORDER_TERMINATED:
             raise ValueError("订单已终止")
         if order.status == C.ORDER_SHIPPED:
@@ -1605,6 +1644,7 @@ def terminate_order(
 def delete_order(db: Session, order_id: int, user_id: int | None = None) -> None:
     """软删。已有报工记录的订单只能终止，不能删。"""
     order = _get_order_or_raise(db, order_id, lock=True)
+    _ensure_order_creator(order, user_id)
     reported = (
         db.query(func.count(DomesticReportLog.id))
         .join(DomesticOrderItem, DomesticOrderItem.id == DomesticReportLog.item_id)

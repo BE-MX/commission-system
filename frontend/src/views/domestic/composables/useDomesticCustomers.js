@@ -1,6 +1,7 @@
 /** 内贸客户管理页逻辑：列表/档案表单/充值/初始化/调整/流水/Excel 导入。 */
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useAuthStore } from '@/stores/auth'
 import {
   adjustCustomer, createCustomer, deleteCustomer, getCustomerOptions,
   importCustomers, initializeCustomer, listCustomerBalanceLedger, listCustomers,
@@ -28,9 +29,11 @@ const DIALOG_DEFAULTS = {
 }
 
 export function useDomesticCustomers() {
+  const auth = useAuthStore()
   const saving = ref(false)
   const options = reactive({
-    customer_source: [], store_type: [], customer_level: [], lifecycle_status: [], owners: [],
+    customer_source: [], store_type: [], customer_level: [], lifecycle_status: [],
+    owners: [], provinces: [], cities: [],
   })
 
   const {
@@ -41,11 +44,27 @@ export function useDomesticCustomers() {
       const params = { page, page_size }
       if (form.keyword) params.keyword = form.keyword
       if (form.status !== '' && form.status !== null) params.status = form.status
+      params.owner_scope = form.owner_scope || 'private'
+      if (form.province) params.province = form.province
+      if (form.city) params.city = form.city
       const res = await listCustomers(params)
       return res.data || {}
     },
-    { searchForm: { keyword: '', status: '' } },
+    {
+      searchForm: {
+        keyword: '', status: '', owner_scope: 'private', province: '', city: '',
+      },
+    },
   )
+
+  function canOperateCustomer(row) {
+    return auth.user?.id === row.owner_user_id
+  }
+
+  function handleProvinceChange() {
+    searchForm.city = ''
+    handleSearch()
+  }
 
   const dialog = reactive({ ...DIALOG_DEFAULTS })
 
@@ -286,6 +305,7 @@ export function useDomesticCustomers() {
   return {
     loading, list, total, page, pageSize, searchForm,
     fetchList, handleSearch, handlePageChange, handleSizeChange,
+    canOperateCustomer, handleProvinceChange,
     saving, dialog, options, openDialog, save,
     rechargeDialog, openRecharge, confirmRecharge,
     initDialog, openInit, confirmInit,

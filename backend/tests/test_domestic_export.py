@@ -88,21 +88,17 @@ def test_build_order_workbook_matches_requisition_layout_and_fields():
     assert "订单类别：特单" in sheet["A3"].value
     assert "订单类型：首单" in sheet["A3"].value
     assert "订单渠道：微信" in sheet["A3"].value
-    assert "订单金额：¥1,698.00" in sheet["A3"].value
-    assert "客户余额：¥4,506.00" in sheet["A3"].value
+    assert "订单金额" not in sheet["A3"].value
+    assert "客户余额" not in sheet["A3"].value
 
-    assert [sheet.cell(4, col).value for col in range(1, 19)] == [
+    assert [sheet.cell(4, col).value for col in range(1, 15)] == [
         "明细号", "产品类型", "产品名称", "工艺/尺寸", "发长", "网帽颜色",
-        "头套尺寸", "发量", "发型系列", "数量", "原价", "优惠价", "单件优惠",
-        "小计", "发型", "颜色", "发型要求", "备注",
+        "头套尺寸", "发量", "发型系列", "数量", "发型", "颜色", "发型要求", "备注",
     ]
-    assert [sheet.cell(5, col).value for col in range(1, 19)] == [
+    assert [sheet.cell(5, col).value for col in range(1, 15)] == [
         "A1", "头套", "头套 / 递顶 / L / 20厘米", "递顶", "20厘米", "浅棕", "L",
-        "中", "直发", 2, 998, 849, 149, 1698, "短直发", "自然色",
-        "前额和鬓角缝粘胶点", "明细备注",
+        "中", "直发", 2, "短直发", "自然色", "前额和鬓角缝粘胶点", "明细备注",
     ]
-    for coordinate in ("K5", "L5", "M5", "N5"):
-        assert sheet[coordinate].number_format == '¥#,##0.00'
     assert sheet["B6"].value == "发片"
     assert sheet["D6"].value == "机制"
     assert sheet["F6"].value is None
@@ -111,7 +107,8 @@ def test_build_order_workbook_matches_requisition_layout_and_fields():
     assert sheet["I6"].value is None
     assert sheet.row_dimensions[5].height >= 75
     assert sheet.page_setup.orientation == "landscape"
-    assert sheet.print_area == "'内贸订单领货单'!$A$1:$R$8"
+    assert sheet.print_area == "'内贸订单领货单'!$A$1:$N$8"
+    assert sheet.page_setup.paperSize == 9
     assert "整单备注" in sheet["A8"].value
 
 
@@ -122,7 +119,7 @@ def test_build_order_workbook_uses_safe_excel_text_for_user_content():
     workbook = load_workbook(build_order_workbook(detail, "+SUM(1,1)"), data_only=False)
     sheet = workbook.active
 
-    assert sheet["R5"].value == "'=HYPERLINK(\"https://example.com\")"
+    assert sheet["N5"].value == "'=HYPERLINK(\"https://example.com\")"
     assert "申请人：'+SUM(1,1)" in sheet["A2"].value
     assert sheet["A2"].data_type != "f"
 
@@ -145,7 +142,9 @@ def test_export_order_returns_named_xlsx(monkeypatch):
             self.committed = True
 
     db = FakeDb()
-    response = domestic_router.export_order(7, db=db, _user={"sub": "9"})
+    response = domestic_router.export_order(
+        7, db=db, current_user={"sub": "9", "roles": ["super_admin"], "permissions": []},
+    )
 
     assert captured["args"] == (detail, "下单员")
     assert db.committed is True
@@ -176,7 +175,9 @@ def test_build_order_workbook_preserves_long_requirements_for_printing():
     requirement_sheet = workbook["完整要求"]
 
     assert order_sheet.row_dimensions[5].height > 75
-    assert order_sheet.print_area == "'内贸订单领货单'!$A$1:$R$56"
+    assert order_sheet.print_area == "'内贸订单领货单'!$A$1:$N$56"
+    assert order_sheet.page_setup.paperSize == 9
+    assert requirement_sheet.page_setup.paperSize == 9
     assert order_sheet.print_title_rows == "$1:$4"
     assert requirement_sheet["A2"].value == "A1"
     assert requirement_sheet["B2"].value == "发型要求"

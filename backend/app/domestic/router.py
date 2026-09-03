@@ -35,7 +35,7 @@ from app.domestic import (
     route_rule_service,
     unit_service,
 )
-from app.domestic.models import DomesticOrder, DomesticOrderItem
+from app.domestic.models import DomesticCustomer, DomesticOrder, DomesticOrderItem
 from app.domestic.schemas import (
     BasePriceUpdate,
     CraftRouteUpsert,
@@ -78,6 +78,39 @@ def _has_admin(current_user: dict) -> bool:
     if "super_admin" in (current_user.get("roles") or []):
         return True
     return "domestic:admin" in (current_user.get("permissions") or [])
+
+
+def _can_read_all_orders(current_user: dict) -> bool:
+    if "super_admin" in (current_user.get("roles") or []):
+        return True
+    return "domestic:read_all" in (current_user.get("permissions") or [])
+
+
+def _ensure_customer_owner(db: Session, customer_id: int, current_user: dict) -> None:
+    owner_user_id = db.query(DomesticCustomer.owner_user_id).filter(
+        DomesticCustomer.id == customer_id,
+    ).scalar()
+    if owner_user_id != _uid(current_user):
+        raise HTTPException(status_code=404, detail="客户不存在")
+
+
+def _ensure_order_visible(db: Session, order_id: int, current_user: dict) -> None:
+    if _can_read_all_orders(current_user):
+        return
+    created_by = db.query(DomesticOrder.created_by).filter(
+        DomesticOrder.id == order_id,
+    ).scalar()
+    if created_by != _uid(current_user):
+        raise HTTPException(status_code=404, detail="订单不存在")
+
+
+def _ensure_item_order_visible(db: Session, item_id: int, current_user: dict) -> None:
+    order_id = db.query(DomesticOrderItem.order_id).filter(
+        DomesticOrderItem.id == item_id,
+    ).scalar()
+    if order_id is None:
+        raise HTTPException(status_code=404, detail="订单明细不存在")
+    _ensure_order_visible(db, order_id, current_user)
 
 
 def _is_mysql_lock_operational_error(db: Session, exc: OperationalError) -> bool:
@@ -227,11 +260,16 @@ def list_customers(
     page_size: int = Query(20, ge=1, le=200),
     keyword: str = Query(""),
     status: int | None = Query(None),
+    owner_scope: str = Query("", pattern="^(private|public)?$"),
+    province: str = Query(""),
+    city: str = Query(""),
     db: Session = Depends(get_db),
     _user: dict = Depends(require_any_permission(*_CUSTOMER_READ)),
 ):
+    customer_service.release_stale_private_customers(db)
     items, total = customer_service.list_customers(
-        db, page=page, page_size=page_size, keyword=keyword, status=status
+        db, page=page, page_size=page_size, keyword=keyword, status=status,
+        owner_scope=owner_scope, province=province, city=city,
     )
     return ok(page_result(items, total, page, page_size))
 
@@ -256,8 +294,11 @@ def update_customer(
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("domestic:write")),
 ):
+    _ensure_customer_owner(db, customer_id, _user)
     try:
-        customer_service.update_customer(db, customer_id, payload)
+        customer_service.update_customer(
+            db, customer_id, payload, operator_id=_uid(_user),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(message="已保存")
@@ -297,8 +338,9 @@ def delete_customer(
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("domestic:admin")),
 ):
+    _ensure_customer_owner(db, customer_id, _user)
     try:
-        customer_service.delete_customer(db, customer_id)
+        customer_service.delete_customer(db, customer_id, operator_id=_uid(_user))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(message="已删除")
@@ -311,6 +353,7 @@ def recharge_customer(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_any_permission("domestic:recharge", "domestic:admin")),
 ):
+    _ensure_customer_owner(db, customer_id, current_user)
     try:
         data = balance_service.recharge_customer(
             db,
@@ -343,6 +386,7 @@ def initialize_customer(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_any_permission("domestic:recharge", "domestic:admin")),
 ):
+    _ensure_customer_owner(db, customer_id, current_user)
     try:
         data = customer_service.initialize_customer(
             db, customer_id, payload, _uid(current_user),
@@ -366,6 +410,7 @@ def adjust_customer(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_any_permission("domestic:recharge", "domestic:admin")),
 ):
+    _ensure_customer_owner(db, customer_id, current_user)
     try:
         data = customer_service.adjust_customer(
             db, customer_id, payload, _uid(current_user),
@@ -390,6 +435,7 @@ def list_customer_balance_ledger(
     db: Session = Depends(get_db),
     _user: dict = Depends(require_any_permission("domestic:recharge", "domestic:admin")),
 ):
+    _ensure_customer_owner(db, customer_id, _user)
     try:
         items, total = balance_service.list_customer_ledger(
             db, customer_id=customer_id, page=page, page_size=page_size,
@@ -585,14 +631,17 @@ def list_orders(
     sort_field: str = Query(""),
     sort_order: str = Query(""),
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_any_permission(*_READ)),
+    current_user: dict = Depends(require_any_permission(*_READ)),
 ):
+    can_read_all = _can_read_all_orders(current_user)
     items, total = order_service.list_orders(
         db, page=page, page_size=page_size, keyword=keyword, status=status,
         customer_id=customer_id, order_category=order_category,
         order_type=order_type, order_channel=order_channel,
         date_start=date_start, date_end=date_end,
         sort_field=sort_field, sort_order=sort_order,
+        creator_id=None if can_read_all else _uid(current_user),
+        include_all=can_read_all,
     )
     return ok(page_result(items, total, page, page_size))
 
@@ -601,8 +650,9 @@ def list_orders(
 def export_order(
     order_id: int,
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_any_permission(*_READ)),
+    current_user: dict = Depends(require_any_permission(*_READ)),
 ):
+    _ensure_order_visible(db, order_id, current_user)
     try:
         data = order_service.get_order_detail(db, order_id)
         db.commit()
@@ -621,8 +671,9 @@ def export_order(
 def get_order(
     order_id: int,
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_any_permission(*_READ)),
+    current_user: dict = Depends(require_any_permission(*_READ)),
 ):
+    _ensure_order_visible(db, order_id, current_user)
     try:
         data = order_service.get_order_detail(db, order_id)
         # 滚动发布期间旧实例可能写入 line_no=NULL；详情读取会在订单锁内补号，
@@ -641,7 +692,9 @@ def update_order(
     _user: dict = Depends(require_permission("domestic:write")),
 ):
     try:
-        result = order_service.update_order(db, order_id, payload)
+        result = order_service.update_order(
+            db, order_id, payload, user_id=_uid(_user),
+        )
     except pricing_service.DomesticQuoteChangedError as exc:
         raise HTTPException(status_code=409, detail=exc.detail)
     except ValueError as exc:
@@ -748,7 +801,9 @@ def attach_route(
     _user: dict = Depends(require_permission("domestic:write")),
 ):
     try:
-        data = order_service.attach_route(db, item_id, payload.route_id)
+        data = order_service.attach_route(
+            db, item_id, payload.route_id, user_id=_uid(_user),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(data, message=f"已展开 {data['step_count']} 道工序，可以开工了")
@@ -762,7 +817,7 @@ def ship_item(
     _user: dict = Depends(require_permission("domestic:write")),
 ):
     try:
-        order_service.ship_item(db, item_id, payload)
+        order_service.ship_item(db, item_id, payload, user_id=_uid(_user))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(message="发货已登记")
@@ -774,6 +829,7 @@ def get_item_progress(
     db: Session = Depends(get_db),
     _user: dict = Depends(require_any_permission(*_READ)),
 ):
+    _ensure_item_order_visible(db, item_id, _user)
     item = db.query(DomesticOrderItem).get(item_id)
     if not item:
         raise HTTPException(status_code=404, detail="订单明细不存在")
@@ -792,6 +848,7 @@ def get_print_card(
     db: Session = Depends(get_db),
     _user: dict = Depends(require_any_permission(*_READ)),
 ):
+    _ensure_item_order_visible(db, item_id, _user)
     item = db.query(DomesticOrderItem).get(item_id)
     if not item:
         raise HTTPException(status_code=404, detail="订单明细不存在")
@@ -830,6 +887,7 @@ def get_item_unit_qrcodes(
     db: Session = Depends(get_db),
     _user: dict = Depends(require_any_permission(*_READ)),
 ):
+    _ensure_item_order_visible(db, item_id, _user)
     item = db.query(DomesticOrderItem).get(item_id)
     if not item:
         raise HTTPException(status_code=404, detail="订单明细不存在")
@@ -890,6 +948,7 @@ def get_item_wxacode(
     item = db.query(DomesticOrderItem).get(item_id)
     if not item:
         raise HTTPException(status_code=404, detail="订单明细不存在")
+    _ensure_item_order_visible(db, item_id, _user)
     order = db.query(DomesticOrder).filter(
         DomesticOrder.id == item.order_id, DomesticOrder.deleted_flag == 0
     ).first()

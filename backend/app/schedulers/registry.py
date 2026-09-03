@@ -63,6 +63,7 @@ JOB_AGENT_LEASE_RECONCILE = "agent_lease_reconcile"
 JOB_AGENT_RAW_EVENT_REDACTION = "agent_raw_event_redaction"
 JOB_DINGTALK_GMV_DAILY = "dingtalk_gmv_daily"
 JOB_WHATSAPP_TRANSLATION_PAIRING_CLEANUP = "whatsapp_translation_pairing_cleanup"
+JOB_DOMESTIC_PUBLIC_SEA_DAILY = "domestic_public_sea_daily"
 
 
 def _console_safe(value: object, encoding: str | None = None) -> str:
@@ -105,6 +106,7 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     from app.agent_runtime.worker_service import reconcile_expired_runs_job
     from app.dingtalk.gmv_daily_scheduler import send_gmv_daily_report_job
     from app.whatsapp_translation.pairing_service import prune_unconsumed_pairings
+    from app.domestic.customer_service import release_stale_private_customers
 
     settings = get_settings()
 
@@ -129,6 +131,10 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     def _whatsapp_translation_pairing_cleanup_job():
         with SessionLocal() as db:
             prune_unconsumed_pairings(db)
+
+    def _domestic_public_sea_daily_job():
+        with SessionLocal() as db:
+            release_stale_private_customers(db)
 
     scheduler.add_job(
         check_today_shoot_reminders,
@@ -196,6 +202,12 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         max_instances=1,
         coalesce=True,
         misfire_grace_time=3600,
+    )
+    scheduler.add_job(
+        _domestic_public_sea_daily_job,
+        trigger="cron", hour=0, minute=10,
+        id=JOB_DOMESTIC_PUBLIC_SEA_DAILY, replace_existing=True,
+        max_instances=1, coalesce=True, misfire_grace_time=3600,
     )
     scheduler.add_job(
         process_customer_image_queue,

@@ -221,7 +221,7 @@ def list_okki_department_options(db: Session) -> list[dict]:
 
 
 # kind 派生规则（权限重设计方案）：data=数据范围，read/日报=页面可见，其余=操作级
-_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all", "agent_runtime:read_all", "customer:read_all"}
+_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all", "agent_runtime:read_all", "customer:read_all", "domestic:read_all"}
 _PAGE_KIND_EXTRA = {"tracking:daily_report"}
 
 
@@ -357,6 +357,7 @@ def seed_role_permissions(db: Session):
         ("domestic:read",         "domestic", "read",         "查看内贸订单/产品/客户"),
         ("domestic:write",        "domestic", "write",        "内贸下单/编辑/发货登记/报工"),
         ("domestic:admin",        "domestic", "admin",        "工艺路线映射 / 产品改绑 / 删单 / 撤销他人报工"),
+        ("domestic:read_all",     "domestic", "read_all",     "查看全部内贸订单（数据范围）"),
         ("domestic:recharge",     "domestic", "recharge",     "内贸客户充值 / 余额与等级初始化 / 临时调整 / 余额流水"),
         ("domestic_quantity_report:write", "domestic", "write", "内贸小程序：输入数量报工模式"),
         ("domestic_unit_report:write",     "domestic", "write", "内贸小程序：逐件二维码报工模式"),
