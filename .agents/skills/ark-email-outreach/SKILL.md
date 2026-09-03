@@ -13,14 +13,7 @@ Read [references/course-methods.md](references/course-methods.md) before draftin
 
 Require `customer_id`. Never accept `company_id`, a legacy lead/profile ID, a domain, an email address, or a company name as the customer master identifier.
 
-Run only inside a controlled Ark Agent Run scoped to that customer. Read the current Ark record through the unified read-only customer tools:
-
-- `get_customer_profile` for the effective version, company identity, contacts, location, risks, and Agent summary;
-- `get_customer_facts` for sourced claims, validation state, capture time, and effective/contradicted status;
-- `get_customer_evidence` for the exact supporting source excerpts;
-- `search_customer_messages`, `get_customer_orders`, and `get_customer_actions` only when the requested draft needs those facts.
-
-Use `resolve_customer` only to help a human find the `customer_id`; after resolution, all reads and writes remain scoped to the returned `customer_id`. Do not read OKKI, Alibaba, a search engine, social media, a pasted research bundle, or any retired lead/company/profile store directly. User input may define intent, tone, and desired next step, but it cannot establish customer facts or override Ark suppression and validation state.
+Run only inside a controlled Ark Agent Run scoped to that customer. Read the current Ark record with the unified read-only `ark-sales__ark_get_customer_outreach_context` tool. Its snapshot contains the effective profile version, company identity, contacts, location, contactability, suppression state, sourced facts, and evidence bindings. Do not read OKKI, Alibaba, a search engine, social media, a pasted research bundle, or any retired lead/company/profile store directly. User input may define intent, tone, and desired next step, but it cannot establish customer facts or override Ark suppression and validation state.
 
 Do not conduct or save new research in this skill. If required facts are missing, stale, or contradictory, create no preview and report the exact missing fact or conflict. The customer workflow must create a unified research task; then hand off its Ark-issued `research_task_id` together with the same `customer_id` to `$ark-company-research`. Resume only after the new facts and evidence are effective in Ark.
 

@@ -128,14 +128,14 @@ async function installWorkspace() {
 }
 
 function configureAgents() {
-  const agents = getConfig("agents.list") || [];
-  const byId = new Map(agents.map((agent) => [agent.id, agent]));
+  const agentEntries = getConfig("agents.entries") || {};
+  const byId = new Map(Object.entries(agentEntries));
   const unexpected = [...byId.keys()].filter((id) => !["main", emailAgentId].includes(id));
   if (unexpected.length) {
     throw new Error(`Dedicated ${profile} profile has unexpected agents: ${unexpected.join(", ")}`);
   }
   const main = byId.get("main") || { id: "main" };
-  byId.set("main", {
+  const mainAgent = {
     ...main,
     tools: {
       profile: "minimal",
@@ -146,9 +146,9 @@ function configureAgents() {
       ],
       fs: { ...(main.tools?.fs || {}), workspaceOnly: true },
     },
-  });
+  };
   const model = "deepseek/deepseek-v4-pro";
-  byId.set(emailAgentId, {
+  const emailAgent = {
     ...(byId.get(emailAgentId) || {}),
     id: emailAgentId,
     name: "方舟邮件外联专员",
@@ -165,19 +165,14 @@ function configureAgents() {
       profile: "minimal",
       alsoAllow: [
         "exec",
-        "resolve_customer",
-        "get_customer_profile",
-        "get_customer_facts",
-        "get_customer_orders",
-        "search_customer_messages",
-        "get_customer_actions",
-        "get_customer_evidence",
+        "ark-sales__ark_get_customer_outreach_context",
       ],
       deny: ["process", "group:fs", "browser", "group:messaging", "group:sessions", "cron", "web_search", "web_fetch"],
       exec: { host: "gateway", security: "allowlist", ask: "off", strictInlineEval: true },
     },
-  });
-  setConfig("agents.list", [...byId.values()]);
+  };
+  setConfig("agents.entries.main", mainAgent);
+  setConfig(`agents.entries.${emailAgentId}`, emailAgent);
   setConfig("tools.profile", "minimal");
   setConfig("tools.alsoAllow", ["read", "web_search", "web_fetch", "ark-sales__*"]);
   setConfig("tools.deny", [

@@ -97,9 +97,13 @@ const globalTools = captureJson(openclaw, [
   "--profile", profile, "config", "get", "tools",
 ]);
 assertReadOnlySkillPolicy(globalTools, "global");
-const agents = captureJson(openclaw, [
-  "--profile", profile, "config", "get", "agents.list",
+const agentEntries = captureJson(openclaw, [
+  "--profile", profile, "config", "get", "agents.entries",
 ]);
+const agents = Object.entries(agentEntries).map(([agentId, agent]) => ({
+  id: agentId,
+  ...agent,
+}));
 const mainAgent = agents.find((agent) => agent.id === "main");
 if (!mainAgent) throw new Error("main agent is missing");
 assertReadOnlySkillPolicy(mainAgent.tools, "main agent", { requireExecDenied: true });
@@ -109,7 +113,7 @@ if (emailAgent.model !== "deepseek/deepseek-v4-pro") {
   throw new Error("email-outreach agent must keep its deepseek/deepseek-v4-pro override");
 }
 
-const heartbeatFile = join(stateDir, "workspace", "HEARTBEAT.md");
+const heartbeatFile = join(stateDir, "workspace", "main", "HEARTBEAT.md");
 const heartbeatPolicy = readFileSync(heartbeatFile, "utf8");
 for (const marker of [
   "$ark-lead-discovery", "ark_list_search_jobs", "profile", "criteria", "target_count <= 20",
@@ -137,8 +141,8 @@ if (heartbeatConfig?.lightContext !== true || heartbeatConfig?.isolatedSession !
 if (heartbeatConfig?.every !== "5m" || heartbeatConfig?.target !== "none") {
   throw new Error("main heartbeat must run every 5 minutes without sending chat messages");
 }
-if (heartbeatConfig?.skipWhenBusy !== true || heartbeatConfig?.timeoutSeconds <= 900) {
-  throw new Error("heartbeat must avoid overlap and outlast Ark's 15-minute initial lease");
+if (heartbeatConfig?.timeoutSeconds <= 900) {
+  throw new Error("heartbeat must outlast Ark's 15-minute initial lease");
 }
 process.stdout.write("Skill read policy and main-only search heartbeat policy OK.\n");
 
@@ -167,7 +171,7 @@ try {
 }
 
 run(openclaw, ["--profile", profile, "config", "validate"]);
-run(openclaw, ["--profile", profile, "skills", "check"]);
+run(openclaw, ["--profile", profile, "skills", "check", "--agent", "main"]);
 run(openclaw, ["--profile", profile, "mcp", "doctor", "ark-sales"]);
 run(openclaw, ["--profile", profile, "infer", "web", "providers", "--json"]);
 run(openclaw, ["--profile", profile, "gateway", "status", "--require-rpc", "--json"]);

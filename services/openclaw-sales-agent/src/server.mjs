@@ -243,6 +243,12 @@ export function createServer(
     annotations: { readOnlyHint: true, idempotentHint: true },
   }, safeTracked(({ research_task_id: taskId }) => client.getResearchTaskContext(taskId)));
 
+  server.registerTool("ark_get_customer_outreach_context", {
+    description: "Read one ACL-authorized Ark customer's current outreach profile, contactability, facts, and evidence.",
+    inputSchema: z.object({ customer_id: z.number().int().min(1) }),
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  }, safeTracked(({ customer_id: customerId }) => client.getCustomerOutreachContext(customerId)));
+
   server.registerTool("ark_claim_research_task", {
     description: "Claim a unified research task while retaining the lease token inside this sidecar.",
     inputSchema: z.object({ research_task_id: z.number().int().min(1) }),

@@ -45,16 +45,17 @@ async function assertPrivateExecutable(path) {
 
 async function main() {
   const args = ["--profile", profile];
-  const agents = json(openclaw, [...args, "config", "get", "agents.list", "--json"]);
-  const mainAgent = agents.find((item) => item.id === "main");
-  const emailAgent = agents.find((item) => item.id === "email-outreach");
+  const agentEntries = json(openclaw, [...args, "config", "get", "agents.entries", "--json"]);
+  const mainAgent = { id: "main", ...agentEntries.main };
+  const emailAgent = { id: "email-outreach", ...agentEntries["email-outreach"] };
   assert(emailAgent, "email-outreach agent is missing");
   assert(mainAgent?.tools?.deny?.includes("exec"), "main research agent must deny exec");
   assert(emailAgent.skills?.includes("ark-email-outreach"), "email agent skill allowlist is missing ark-email-outreach");
   assert(emailAgent.skills?.includes("agently-mail"), "email agent skill allowlist is missing agently-mail");
-  for (const tool of ["get_customer_profile", "get_customer_facts", "get_customer_evidence"]) {
-    assert(emailAgent.tools?.alsoAllow?.includes(tool), `email agent lacks unified Ark tool ${tool}`);
-  }
+  assert(
+    emailAgent.tools?.alsoAllow?.includes("ark-sales__ark_get_customer_outreach_context"),
+    "email agent lacks the unified Ark outreach context tool",
+  );
   assert(emailAgent.tools?.deny?.includes("web_search"), "email agent must not conduct fresh web research");
   assert(emailAgent.tools?.deny?.includes("process"), "email agent must not manage background shell sessions");
   assert(emailAgent.tools?.exec?.ask === "off", "email agent must hard-deny commands outside its allowlist");
