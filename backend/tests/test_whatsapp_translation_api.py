@@ -9,6 +9,7 @@ from app.whatsapp_translation import router as translation_router
 
 
 PUBLIC = {
+    ("GET", "/api/whatsapp-translation/health"),
     ("POST", "/api/whatsapp-translation/pairings"),
     ("POST", "/api/whatsapp-translation/pairings/exchange"),
 }
@@ -117,6 +118,17 @@ def test_public_exchange_is_rate_limited_before_db(monkeypatch):
     assert limited.status_code == 429
     assert limited.json()["data"]["error_code"] == "rate_limited"
     assert reached["database"] is False
+
+
+def test_public_health_is_available_without_authentication():
+    response = client_get("/api/whatsapp-translation/health")
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.json()["data"] == {
+        "status": "ok",
+        "min_extension_version": "1.0.0",
+    }
 
 
 def test_device_route_rejects_ark_jwt_like_unauthenticated_request():

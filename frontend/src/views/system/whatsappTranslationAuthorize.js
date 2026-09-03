@@ -19,6 +19,16 @@ export function captureDeviceCode(location, history = globalThis.history, storag
   return code
 }
 
+export async function waitForAuthorizeUser(auth, router, location = { pathname: '/whatsapp-translation/authorize' }) {
+  await auth.initPromise
+  if (!auth.user && auth.accessToken) await auth.fetchMe()
+  if (!auth.user) {
+    router.replace(`/login?redirect=${encodeURIComponent(cleanAuthorizeUrl(location))}`)
+    return null
+  }
+  return auth.user
+}
+
 export function clearDeviceCode(storage = globalThis.sessionStorage) {
   removeCode(storage)
 }

@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { captureDeviceCode, cleanAuthorizeUrl, clearDeviceCode, readDeviceCode } from '../src/views/system/whatsappTranslationAuthorize.js'
+import {
+  captureDeviceCode,
+  cleanAuthorizeUrl,
+  clearDeviceCode,
+  readDeviceCode,
+  waitForAuthorizeUser,
+} from '../src/views/system/whatsappTranslationAuthorize.js'
 
 test('设备码只从 fragment 读取并立即清理地址栏', () => {
   const location = { hash: '#device_code=secret-code', pathname: '/whatsapp-translation/authorize', search: '' }
@@ -37,4 +43,38 @@ test('clear removes the only authorized session key', () => {
   const removed = []
   clearDeviceCode({ removeItem: key => removed.push(key) })
   assert.deepEqual(removed, ['ark_whatsapp_translation_device_code'])
+})
+
+test('authorization waits for restored login state before redirecting', async () => {
+  const calls = []
+  const auth = {
+    accessToken: 'token',
+    initPromise: Promise.resolve(),
+    user: null,
+    fetchMe() {
+      calls.push('me')
+      this.user = { id: 1 }
+    },
+  }
+  const router = { replace: () => calls.push('redirect') }
+
+  const user = await waitForAuthorizeUser(auth, router)
+
+  assert.deepEqual(calls, ['me'])
+  assert.deepEqual(user, { id: 1 })
+})
+
+test('authorization redirects only after login state is unavailable', async () => {
+  const calls = []
+  const auth = { accessToken: null, initPromise: Promise.resolve(), user: null }
+  const router = { replace: target => calls.push(target) }
+
+  const user = await waitForAuthorizeUser(
+    auth,
+    router,
+    { pathname: '/whatsapp-translation/authorize' },
+  )
+
+  assert.equal(user, null)
+  assert.deepEqual(calls, ['/login?redirect=%2Fwhatsapp-translation%2Fauthorize'])
 })
