@@ -1,6 +1,7 @@
 """环境变量配置（Pydantic Settings）"""
 
 import json
+import re
 from pathlib import Path
 import string
 from typing import Annotated
@@ -231,6 +232,17 @@ class Settings(BaseSettings):
     WHATSAPP_AUTO_SYNC_BATCH_SIZE: int = 100
     WHATSAPP_SYNC_MESSAGES_PER_CHAT: int = 100
 
+    # ── WhatsApp 实时翻译扩展（与 WhatsApp connector 完全隔离）──
+    WHATSAPP_TRANSLATION_EXTENSION_ORIGIN: str = "chrome-extension://bnkecbkoidckffckbefjjcbchmngjobi"
+    WHATSAPP_TRANSLATION_PRESET_NAME: str = "whatsapp_text_translation"
+    WHATSAPP_TRANSLATION_PAIRING_TTL_MINUTES: _PositiveInt = 10
+    WHATSAPP_TRANSLATION_DEVICE_TTL_DAYS: _PositiveInt = 180
+    WHATSAPP_TRANSLATION_MAX_DEVICES_PER_USER: _PositiveInt = 5
+    WHATSAPP_TRANSLATION_RATE_PER_MINUTE: _PositiveInt = 30
+    WHATSAPP_TRANSLATION_DAILY_INPUT_CHARS: _PositiveInt = 200_000
+    WHATSAPP_TRANSLATION_MAX_TEXT_CHARS: _PositiveInt = 4_000
+    WHATSAPP_TRANSLATION_AI_TIMEOUT_SECONDS: _PositiveInt = 15
+    WHATSAPP_TRANSLATION_MIN_EXTENSION_VERSION: str = "1.0.0"
     # ── 运行与自动化中心（健康检查仅允许由部署环境配置，不接受网页输入）────
     OPERATIONS_PROBE_TIMEOUT_SECONDS: float = 3.0
     OPERATIONS_CACHE_TTL_SECONDS: float = 20.0
@@ -297,6 +309,21 @@ class Settings(BaseSettings):
     # 发票 PDF 中文字体：部署/启动时强制预检，避免用户导出时才失败。
     PDF_CJK_FONT_PATH: str = "C:\\Windows\\Fonts\\msyh.ttc"
 
+
+    @field_validator("WHATSAPP_TRANSLATION_EXTENSION_ORIGIN")
+    @classmethod
+    def _validate_whatsapp_translation_origin(cls, value: str) -> str:
+        if not re.fullmatch(r"chrome-extension://[a-p]{32}", value):
+            raise ValueError("WHATSAPP_TRANSLATION_EXTENSION_ORIGIN 必须是稳定的 32 位扩展 ID")
+        return value
+
+    @field_validator("WHATSAPP_TRANSLATION_MIN_EXTENSION_VERSION")
+    @classmethod
+    def _validate_whatsapp_translation_version(cls, value: str) -> str:
+        segments = value.split(".")
+        if len(segments) != 3 or any(not segment.isdigit() for segment in segments):
+            raise ValueError("WHATSAPP_TRANSLATION_MIN_EXTENSION_VERSION 必须是三段数字版本号")
+        return value
     @field_validator("CORS_ALLOW_ORIGINS", mode="before")
     @classmethod
     def _split_origins(cls, v):

@@ -1,0 +1,16 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+}
+
+body { margin: 0; }
+main { padding: 16px; width: 280px; }
+h1 { font-size: 16px; margin: 0 0 12px; }
+section { display: grid; gap: 10px; }
+section[hidden] { display: none; }
+button, select { font: inherit; min-height: 32px; }
+button { border: 0; border-radius: 6px; cursor: pointer; padding: 0 12px; }
+#start-pairing, #check-pairing { background: #2563eb; color: white; }
+#reauthorize { background: transparent; border: 1px solid #d1d5db; }
+label { display: flex; align-items: center; gap: 8px; }

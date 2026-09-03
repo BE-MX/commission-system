@@ -388,3 +388,9 @@ Worker 每轮先恢复 stale running、清理未引用过期 draft，再按 `DES
 Phase 0 已验证当前 TeamRouter 的 `gpt-image-2` generation、两图 edit、三种尺寸和 low/medium/high 均可调用，成功响应是 `b64_json` PNG，usage 含文本/图像细分；实测耗时约 16～119 秒。无效模型与 moderation 阻断返回 400。未观察到 429、502、503、504 或 ReadTimeout，也未核验供应商价格和视觉盲评，因此不能据此承诺错误体、官方价格或质量档位的视觉收益。原始脱敏记录见 [Provider 探针](requirements/evidence/2026-08-05-design-image-provider-probe.json)。
 
 目标生产拓扑（**尚未部署、尚未验证**）：`office-primary` 单实例同时承接 `/api/design-image`、`design_image_queue` worker 与 `D:\WORKSOURCE\design-image` 私有根；云/展会实例不得启用该 worker。若将来多 API 实例，必须先切共享私有存储，否则数据库共享但本地文件不共享会随机 404。实际主机、调度开关、两账号跨入口读取仍须写入 [Phase 5 证据](requirements/evidence/2026-08-05-design-image-phase5-pilot.json)。
+
+## WhatsApp 实时翻译（2026-09-03）
+
+WhatsApp Web → Chrome/Edge MV3 extension → `leshine.work`（Ark 前端与 API）→ Nginx → FRP 8002 → FastAPI → `app.ai.service.chat`。扩展只访问当前 WhatsApp Web 页面 DOM，收译结果用 closed Shadow DOM 展示；发译先显示预览，由员工执行 WhatsApp 原生发送动作。
+
+`backend/app/whatsapp_translation` 是独立域，不复用、不导入、不连接 `backend/app/whatsapp` 和 `services/whatsapp-connector`。它只拥有设备配对、授权、用量、配额、管理和 AI metadata 调用；数据库不保存聊天文本、译文、联系人、电话、消息/聊天 ID 或页面 HTML。

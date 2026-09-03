@@ -1,0 +1,1 @@
+"""WhatsApp translation extension domain."""

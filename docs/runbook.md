@@ -1625,3 +1625,24 @@ journalctl -u leshine-ark-dsh-worker -n 200 --no-pager
 4. 保留迁移 118、Run/Event/Artifact 与客户行动来源字段。代码回滚只回应用和前端；除非已完成数据导出与影响审计，不执行 118 downgrade。
 
 恢复时先修复根因并轮换 Worker token/Run secret（若疑似泄露），再按上线顺序逐层开启。标准化事件与用户反馈保留；方舟可选原始事件密文与 Worker 本地 `session.jsonl` 默认保留 90 天，Worker 每日只清理根目录下过期的常规 Session 日志，不跟随符号链接。
+
+## WhatsApp 实时翻译运维（whatsapp_translation）
+
+### 故障速查
+
+| 现象 | 稳定错误码 | 处理 |
+| --- | --- | --- |
+| 配对失败 | `pairing_not_found` / `pairing_expired` / `pairing_state` | 让员工在扩展里重新生成配对码；管理员在 Ark 授权页确认员工状态、权限和 5 台设备上限。 |
+| 扩展调用被拒 | `invalid_bearer` / `device_revoked` | 不要打印 token；确认设备是否被撤销，必要时让员工重新配对。 |
+| 浏览器控制台出现 CORS | 不适用 | 核对前端必须从 `https://leshine.work` 访问 API；禁止在扩展或后台临时放宽 origin。 |
+| 翻译被限流 | `rate_limited` / `daily_quota_exceeded` | 按 30 请求/分钟/设备与 200,000 输入字符/北京时间日解释；不做临时改库解锁。 |
+| 翻译不可用 | `ai_unavailable` | 先检查 AI Preset 是否启用，再检查 Provider 健康；`ai_timeout` 可重试。 |
+| 版本阻断 | `extension_outdated` | 让用户从 Ark 管理页下载最新 ZIP；禁止用旧包替代。 |
+| DOM 不支持 | 扩展本地 `blocked` | 先更新扩展；若新版仍阻断，停止使用该场景并记录 WhatsApp 页面结构版本，不提交页面样本。 |
+
+### 发布与回滚
+
+1. 发布前核对 `frontend/public/downloads/whatsapp-translation/latest.json` 的版本、文件名、SHA-256、大小和扩展 ID，并确认实际 ZIP 哈希一致。
+2. 紧急止损按顺序执行：在 Ark 中禁用 AI Preset 阻止模型调用；撤销设备阻止旧扩展继续翻译；提高最低扩展版本阻断过期客户端；必要时把上一版源码打包为更高版本号发布。
+3. 后端/前端代码回滚不得 downgrade Alembic 迁移。迁移 135 的三张表只保存设备哈希、状态和聚合用量，保留不影响旧版本运行。
+4. 回滚后检查 `/api/whatsapp-translation/health`、`/capabilities`、管理页设备数量、当日请求数和成功率；确认数据库、日志和管理页没有聊天明文。

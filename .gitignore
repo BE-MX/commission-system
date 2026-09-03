@@ -86,3 +86,7 @@ expo-sales/server/expo.db
 /tablet-kiosk/*.jks
 /tablet-kiosk/*.keystore
 
+# Browser extension generated output and internal release artifacts
+/extensions/*/dist/
+/extensions/*/release/
+/frontend/public/downloads/whatsapp-translation/

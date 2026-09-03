@@ -94,6 +94,11 @@
     "lines_over_500": 0,
     "transition_all": 0
   },
+  "frontend/src/views/domestic/DomesticOrders.vue": {
+    "hex_colors": 0,
+    "lines_over_500": 46,
+    "transition_all": 0
+  },
   "frontend/src/views/color/PaletteView.vue": {
     "hex_colors": 3,
     "lines_over_500": 0,

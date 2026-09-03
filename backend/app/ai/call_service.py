@@ -70,6 +70,7 @@ def chat(
     caller_module: str,
     caller_user_id: Optional[int] = None,
     snapshot_mode: str = "full",
+    timeout_sec: Optional[int] = None,
 ) -> dict:
     """同步调用直连大模型。"""
     preset = (
@@ -140,20 +141,27 @@ def chat(
 
         url = build_chat_url(provider.api_base, api_type)
         has_image = _has_image_message(full_messages)
-        timeout_sec = _effective_chat_timeout(provider, has_image)
+        if has_image:
+            request_timeout_sec = _effective_chat_timeout(provider, has_image)
+        elif timeout_sec is not None:
+            if timeout_sec <= 0:
+                raise ValueError("timeout_sec must be positive")
+            request_timeout_sec = timeout_sec
+        else:
+            request_timeout_sec = _effective_chat_timeout(provider, has_image)
         logger.info(
             "AI request: provider=%s model=%s api_type=%s url=%s msg_count=%d has_image=%s",
             provider.name, preset.model, api_type, url, len(full_messages), has_image,
         )
         if has_image:
             print(f"[AI-DIAG] request with image | provider={provider.name} model={preset.model} "
-                  f"api_type={api_type} url={url} msg_count={len(full_messages)} timeout={timeout_sec}s", flush=True)
+                  f"api_type={api_type} url={url} msg_count={len(full_messages)} timeout={request_timeout_sec}s", flush=True)
 
         result = post_json(
             url,
             headers=headers,
             body=params,
-            timeout_sec=timeout_sec,
+            timeout_sec=request_timeout_sec,
         )
 
         # 按协议类型解析响应
@@ -186,12 +194,20 @@ def chat(
         # 诊断: content 为空时记录完整响应结构
         if not content and result:
             diag = json.dumps(result, ensure_ascii=False)[:2000]
-            logger.warning(
-                "AI response has empty content. provider=%s model=%s result_keys=%s full_result=%s",
-                provider.name, preset.model, list(result.keys()), diag,
-            )
-            print(f"[AI-DIAG] empty content | provider={provider.name} model={preset.model} "
-                  f"result_keys={list(result.keys())} full_result={diag}", flush=True)
+            if snapshot_mode == "metadata":
+                logger.warning(
+                    "AI response has empty content. provider=%s model=%s result_keys=%s",
+                    provider.name, preset.model, list(result.keys()),
+                )
+                print(f"[AI-DIAG] empty content | provider={provider.name} model={preset.model} "
+                      f"result_keys={list(result.keys())}", flush=True)
+            else:
+                logger.warning(
+                    "AI response has empty content. provider=%s model=%s result_keys=%s full_result=%s",
+                    provider.name, preset.model, list(result.keys()), diag,
+                )
+                print(f"[AI-DIAG] empty content | provider={provider.name} model={preset.model} "
+                      f"result_keys={list(result.keys())} full_result={diag}", flush=True)
         duration_ms = int((time.time() - start) * 1000)
 
         log.status = "success"
@@ -212,6 +228,8 @@ def chat(
 
         return {
             "content": content,
+            "tokens_prompt": usage.get("prompt_tokens"),
+            "tokens_completion": usage.get("completion_tokens"),
             "tokens_used": usage.get("total_tokens"),
             "duration_ms": duration_ms,
             "log_id": log.id,
@@ -221,7 +239,7 @@ def chat(
         try:
             log.status = "error"
             log.error_code = "unknown_error"
-            log.error_message = str(e)[:500]
+            log.error_message = type(e).__name__ if snapshot_mode == "metadata" else str(e)[:500]
             log.duration_ms = int((time.time() - start) * 1000)
             db.commit()
         except Exception:

@@ -19,6 +19,7 @@ from app.bootstrap import (
     check_pdf_export_resources, check_expo_watermark,
 )
 from app.routers import register_routers
+from app.whatsapp_translation.errors import register_whatsapp_translation_error_handler
 from app.mcp.server import mount_mcp, mcp_session_lifespan
 from app.schedulers import start_scheduler, shutdown_scheduler
 
@@ -67,12 +68,14 @@ app = FastAPI(
 # CORS 中间件
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ALLOW_ORIGINS,
+    allow_origins=list(dict.fromkeys([*settings.CORS_ALLOW_ORIGINS, settings.WHATSAPP_TRANSLATION_EXTENSION_ORIGIN])),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
+register_whatsapp_translation_error_handler(app)
 
 # 全局异常处理
 @app.exception_handler(ValueError)

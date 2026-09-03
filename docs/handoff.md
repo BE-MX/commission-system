@@ -1,5 +1,11 @@
 # 莱莎方舟平台 项目交接清单
 
+### WhatsApp 实时翻译（2026-09-03）
+
+开发代码已完成：后端独立域和迁移 136、扩展、Ark 授权/管理页、确定性打包和运行文档均已落地。自动化验证已完成：后端全量 4425 通过、4 跳过；扩展 43/43 通过，前端授权/管理 helper 8/8、导航布局 8/8 通过。已知全量套件存在 1 个与本功能无关的历史失败：`test_agent_runtime.py::test_artifact_rejects_not_yet_effective_or_unavailable_ark_evidence[future_fact]`。发布 ZIP SHA-256 与实际文件一致，包内容仅含构建产物。
+
+未完成的是实机验收和上线：Windows Chrome、Windows Edge、macOS Chrome 的三平台人工验收尚未执行，未做生产部署，也未向员工推广。上线前必须按 Task 16 完成语言、内容和安全矩阵，并核对 ZIP SHA-256 与扩展 ID。
+
 > **版本**：v1.9
 > **最后更新**：2026-09-02（工作区与发布状态核对）
 > **项目状态**：运行中，持续迭代
