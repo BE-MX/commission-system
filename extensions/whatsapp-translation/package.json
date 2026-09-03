@@ -6,7 +6,7 @@
   "scripts": {
     "test": "vitest run",
     "build": "tsc --noEmit && node scripts/build.mjs",
-    "package": "npm run test && npm run build && node scripts/package.mjs",
+    "package": "npm run build && npm run test && node scripts/package.mjs",
     "check": "npm run test && npm run build"
   },
   "devDependencies": {
