@@ -1117,3 +1117,23 @@ MCP `/mcp` 新增 `search_knowledge` 与 `get_knowledge_document`。二者使用
 | POST | `/ai-jobs/{id}/apply` | 同上 | 将 completed 结果应用为新草稿；基准草稿已变化时返回 409，重复应用幂等回放 |
 
 `format` 的服务端门禁要求标题、全部文本字符流、代码块、表格、图片和链接完全不变；`enhance` 只使用创建任务时冻结的已发布来源，引用须携带来源中逐字存在的 `source_quote`。两种模式的结果均只形成草稿，仍须走原审批发布流程。
+
+## WhatsApp 实时翻译
+
+基座为 `/api/whatsapp-translation`。响应仍用方ark数字信封：`code`、`message`、`data`；错误码在 `data.error_code`，稳定值包括 `rate_limited`、`pairing_not_found`、`pairing_expired`、`pairing_state`、`device_limit`、`device_revoked`、`invalid_bearer`、`quota_daily`、`quota_minute`、`preset_disabled`、`provider_failed`、`invalid_model_output`、`version_too_low`。所有设备路由和配对交换都返回 `Cache-Control: no-store`。
+
+### 配对与设备
+
+| Method | Path | Identity | 说明 |
+| --- | --- | --- | --- |
+| POST | `/pairings` | 公网（按 IP 限流） | body `proposed_token_hash`（64 hex）、`device_name`、`browser_name`、`browser_version`、`extension_version`；返回 `device_code`、`expires_at`、`authorize_url`。明文 token 只留在扩展本地。 |
+| POST | `/pairings/exchange` | 公网（按 device code hash 限流） | body `device_code`；pending 返回 `status=pending`，approved 且设备容量充足时原子创建设备并返回 `status=ready/device_id/expires_at`。可安全重试。 |
+| POST | `/pairings/inspect` / `/approve` / `/reject` | Ark JWT + `whatsapp_translation:write` | 授权页查询、批准和拒绝；body `device_code`。批准前实时校验员工状态和权限。 |
+| GET/DELETE | `/devices/me`, `/devices/me/{device_id}` | Ark JWT + `whatsapp_translation:write` | 查询本人设备并自撤销；只返回设备元数据。 |
+| GET | `/usage/me` | Ark JWT + `whatsapp_translation:write` | 本人聚合用量，不含文本。 |
+| GET | `/session`、`/capabilities` | 设备 Bearer + `X-Ark-Extension-Version` | 会话、能力、最低扩展版本和额度元数据。 |
+| POST | `/translate` | 设备 Bearer | body `request_id`(UUID)、`direction`、`source_language`、`target_language`、`text`；返回译文、检测语言、`model_log_id`。服务端只记录长度、方向、语言、token 用量、耗时和错误码。 |
+| GET/DELETE | `/admin/devices`, `/admin/devices/{device_id}` | Ark JWT + `whatsapp_translation:admin` | 管理设备与撤销。 |
+| GET | `/admin/usage`, `/admin/health` | Ark JWT + `whatsapp_translation:admin` | 聚合用量、健康、成功率与窗口。 |
+
+`request_id + device_id` 做 5 分钟幂等；相同请求在窗口内回放同一结果，不重复消耗额度。明文请求/译文只存在于处理过程，不进入数据库、日志或前端接口响应。

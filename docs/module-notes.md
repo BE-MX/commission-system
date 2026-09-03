@@ -989,3 +989,13 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 **TeamRouter 配置红线**：方案对话必须新建或复用一个独立的 `provider_type=direct`、`api_type=anthropic` TeamRouter Provider。**绝不能把现有生图使用的 TeamRouter OpenAI Provider 改成 Anthropic**，否则 `/v1/images/*` 生图协议会被切成 `/v1/messages`，直接破坏生图链路。创建并启用 Preset `customer_ai_chat`，model 固定 `claude-fable-5`，绑定上述 Anthropic Provider，并写入前述附件安全 system prompt。Preset/Provider 缺失、禁用、协议/模型不匹配时返回“方案对话服务尚未配置，请联系管理员”，不回退其他 Provider 或模型。
 
 **部署顺序**：① 在目标环境为 `AI_CHAT_STORAGE_ROOT` 建私有目录并授予后端服务账号读写权限；② `cd backend && alembic upgrade head` 应用迁移 100；③ 重启后端完成 `ai_chat:read/write/admin` 权限 seed，并在角色管理中分配 read/write；④ 在“系统管理 → AI 接入管理”配置独立 TeamRouter Anthropic Provider 与 `customer_ai_chat` Preset（API Key 只存后台配置，不进 git）；⑤ 用 `GET /api/ai-chat/config` 确认 `configured=true` 后再开放入口。用户点击停止只会关闭本次流、保存部分内容并标记 `stopped`；供应商可能已接收请求，界面和运维说明都不得承诺取消计费。
+
+## WhatsApp 实时翻译（whatsapp_translation，2026-09-03）
+
+**DOM 边界**：WhatsApp 结构识别只允许放在 `extensions/whatsapp-translation/src/whatsapp/`，只读取当前一对一文字会话；群组、社区、媒体、语音、文件、贴纸和未知 DOM 一律 fail-closed。测试只能使用自建合成 fixture，禁止真实 WhatsApp 截图、HTML、文本、联系人、电话或消息 ID 进入仓库。
+
+**发送边界**：扩展可以翻译可见收件消息，也可以把译文写入发件框；但永远不模拟 WhatsApp 发送按钮或提交事件。发译必须先展示预览，员工仍执行原生发送。
+
+**AI 与数据边界**：模型调用只通过 `app.ai.service.chat` 的 metadata-only 模式；AI 日志仅保留方向、语言、字符数、token、耗时、成功/错误码和 `model_log_id`。数据库、日志、fixture、截图和 commit 不得出现 WhatsApp 明文/译文、联系人、电话、message ID 或页面 HTML。
+
+**身份与范围**：Manifest 使用固定 public key，扩展 ID 为 `bnkecbkoidckffckbefjjcbchmngjobi`；生产 API 只允许 `https://leshine.work`，host 权限不含 WhatsApp。支持范围仅限 WhatsApp Web 一对一文字，收译和发译均要求 `whatsapp_translation:write`，管理端要求 `whatsapp_translation:admin`。
