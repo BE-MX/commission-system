@@ -2,8 +2,9 @@
 
 PAIRING_STATUSES = ("pending", "approved", "consumed", "expired", "rejected")
 TRANSLATION_DIRECTIONS = ("incoming", "outgoing")
-SUPPORTED_SOURCE_LANGUAGES = ("auto", "en", "es", "fr", "ar", "ja", "zh-CN")
-SUPPORTED_TARGET_LANGUAGES = ("en", "es", "fr", "ar", "ja", "zh-CN")
+TRANSLATION_LANGUAGES = ("zh-CN", "en", "es", "fr", "ar", "ja")
+SUPPORTED_SOURCE_LANGUAGES = ("auto",) + TRANSLATION_LANGUAGES
+SUPPORTED_TARGET_LANGUAGES = TRANSLATION_LANGUAGES
 WHATSAPP_TRANSLATION_WRITE_PERMISSION = "whatsapp_translation:write"
 
 ERROR_PAIRING_NOT_FOUND = "pairing_not_found"
