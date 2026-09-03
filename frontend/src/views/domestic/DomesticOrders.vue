@@ -127,32 +127,39 @@
         />
 
         <div v-for="item in detail.items" :key="item.id" class="item-block">
-          <div class="item-title">
+          <!-- 明细头分三行：名称与状态 / 价格信息 / 操作按钮，避免一行里塞满标签和按钮 -->
+          <div class="item-head">
             <span class="item-name">{{ item.line_code }} · {{ item.product_name }}</span>
-            <el-tag size="small" effect="plain">{{ item.order_qty }} 件</el-tag>
-            <el-tag size="small" effect="plain">优惠价 ¥{{ Number(item.unit_price || 0).toFixed(2) }} / 件</el-tag>
-            <el-tag size="small" type="info" effect="plain">原始价 ¥{{ Number(item.original_price || 0).toFixed(2) }}</el-tag>
-            <el-tag v-if="Number(item.discount_amount || 0) > 0" size="small" type="success" effect="plain">已优惠 ¥{{ Number(item.discount_amount).toFixed(2) }}</el-tag>
-            <el-tag size="small" type="warning" effect="plain">{{ membershipLevelLabel(item.membership_level_snapshot) }} · {{ item.pricing_rule_label || '历史人工价' }}</el-tag>
-            <span class="item-amount">小计 ¥{{ Number(item.line_amount || 0).toFixed(2) }}</span>
-            <el-tag size="small" :type="item.status === 2 ? 'info' : (item.status === 1 ? 'success' : '')">{{ item.status_label }}</el-tag>
-            <span class="item-current">当前：{{ item.current_process }}</span>
-            <div class="item-actions">
-              <GlassButton v-if="detail.status !== 0" variant="link" left-icon="Printer" @click="openPrintCard(item)">流转卡</GlassButton>
-              <GlassButton variant="link" left-icon="Grid" @click="openQrLabel(item)">逐件码</GlassButton>
-              <GlassButton v-if="detail.status !== 0" variant="link" left-icon="Share" @click="openWxacode(item)">进度码</GlassButton>
-              <GlassButton v-if="detail.status !== 0" variant="link" left-icon="Tickets" @click="openLogs(item)">报工流水</GlassButton>
-              <GlassButton
-                v-if="item.route_id" v-permission="'domestic:admin'"
-                variant="link" left-icon="Warning" @click="openSkipAudits(item)"
-              >异常跳过记录</GlassButton>
-              <GlassButton v-if="!item.route_id" v-permission="'domestic:write'" variant="link" left-icon="Connection" @click="openAttachRoute(item)">配工艺路线</GlassButton>
-              <GlassButton
-                v-if="detail.status <= 2 && item.status !== 2" v-permission="'domestic:write'"
-                variant="link" left-icon="EditPen" @click="openPriceEdit(item)"
-              >改价</GlassButton>
-              <GlassButton v-if="item.status === 1" v-permission="'domestic:write'" variant="link" left-icon="Van" @click="openShip(item)">登记发货</GlassButton>
-            </div>
+            <span class="item-head-right">
+              <el-tag size="small" :type="item.status === 2 ? 'info' : (item.status === 1 ? 'success' : '')">{{ item.status_label }}</el-tag>
+              <span class="item-current">当前：{{ item.current_process }}</span>
+            </span>
+          </div>
+
+          <div class="item-meta">
+            <span class="meta-item">数量 <b>{{ item.order_qty }} 件</b></span>
+            <span class="meta-item">优惠价 <b>¥{{ Number(item.unit_price || 0).toFixed(2) }}</b> / 件</span>
+            <span class="meta-item muted">原始价 ¥{{ Number(item.original_price || 0).toFixed(2) }}</span>
+            <span v-if="Number(item.discount_amount || 0) > 0" class="meta-item meta-discount">优惠 -¥{{ Number(item.discount_amount).toFixed(2) }}</span>
+            <span class="meta-item muted">{{ membershipLevelLabel(item.membership_level_snapshot) }} · {{ item.pricing_rule_label || '历史人工价' }}</span>
+            <span class="meta-item meta-amount">小计 ¥{{ Number(item.line_amount || 0).toFixed(2) }}</span>
+          </div>
+
+          <div class="item-actions">
+            <GlassButton v-if="detail.status !== 0" variant="link" left-icon="Printer" @click="openPrintCard(item)">流转卡</GlassButton>
+            <GlassButton variant="link" left-icon="Grid" @click="openQrLabel(item)">逐件码</GlassButton>
+            <GlassButton v-if="detail.status !== 0" variant="link" left-icon="Share" @click="openWxacode(item)">进度码</GlassButton>
+            <GlassButton v-if="detail.status !== 0" variant="link" left-icon="Tickets" @click="openLogs(item)">报工流水</GlassButton>
+            <GlassButton
+              v-if="item.route_id" v-permission="'domestic:admin'"
+              variant="link" left-icon="Warning" @click="openSkipAudits(item)"
+            >异常跳过记录</GlassButton>
+            <GlassButton v-if="!item.route_id" v-permission="'domestic:write'" variant="link" left-icon="Connection" @click="openAttachRoute(item)">配工艺路线</GlassButton>
+            <GlassButton
+              v-if="detail.status <= 2 && item.status !== 2" v-permission="'domestic:write'"
+              variant="link" left-icon="EditPen" @click="openPriceEdit(item)"
+            >改价</GlassButton>
+            <GlassButton v-if="item.status === 1" v-permission="'domestic:write'" variant="link" left-icon="Van" @click="openShip(item)">登记发货</GlassButton>
           </div>
 
           <el-table v-if="item.steps.length" :data="item.steps" size="small" border class="step-table list-table">
@@ -458,22 +465,53 @@ const {
   margin-bottom: 12px;
 }
 
-.item-title {
+.item-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.item-head-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 .item-name { font-weight: 600; }
-.item-amount { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); }
+
+.item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 20px;
+  padding: 8px 10px;
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.meta-item b { font-weight: 600; color: var(--el-text-color-primary); }
+.meta-item.muted { color: var(--el-text-color-secondary); }
+.meta-discount { color: var(--el-color-success); }
+.meta-amount { font-weight: 600; color: var(--el-text-color-primary); }
 
 .item-current {
   font-size: 13px;
   color: var(--el-text-color-secondary);
 }
 
-.item-actions { margin-left: auto; display: flex; gap: 4px; }
+.item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--el-border-color-lighter);
+  margin-bottom: 10px;
+}
 
 .muted { font-size: 12px; color: var(--el-text-color-secondary); }
 
