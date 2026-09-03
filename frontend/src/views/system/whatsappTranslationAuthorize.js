@@ -29,6 +29,14 @@ export async function waitForAuthorizeUser(auth, router, location = { pathname: 
   return auth.user
 }
 
+export function pairingInspectionState(status) {
+  return status === 'ready' ? 'completed' : 'ready'
+}
+
+export function pairingDecisionState(action) {
+  return action === 'approve' ? 'completed' : 'rejected'
+}
+
 export function clearDeviceCode(storage = globalThis.sessionStorage) {
   removeCode(storage)
 }

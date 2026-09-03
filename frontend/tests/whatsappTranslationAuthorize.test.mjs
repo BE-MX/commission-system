@@ -5,6 +5,8 @@ import {
   captureDeviceCode,
   cleanAuthorizeUrl,
   clearDeviceCode,
+  pairingDecisionState,
+  pairingInspectionState,
   readDeviceCode,
   waitForAuthorizeUser,
 } from '../src/views/system/whatsappTranslationAuthorize.js'
@@ -77,4 +79,11 @@ test('authorization redirects only after login state is unavailable', async () =
 
   assert.equal(user, null)
   assert.deepEqual(calls, ['/login?redirect=%2Fwhatsapp-translation%2Fauthorize'])
+})
+
+test('pairing success and repeat visits do not use the invalid state', () => {
+  assert.equal(pairingInspectionState('pending'), 'ready')
+  assert.equal(pairingInspectionState('ready'), 'completed')
+  assert.equal(pairingDecisionState('approve'), 'completed')
+  assert.equal(pairingDecisionState('reject'), 'rejected')
 })
