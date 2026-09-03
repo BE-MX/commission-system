@@ -1,7 +1,7 @@
 """内贸优化：草稿/余额/金额/逐件二维码/客户进度工序显隐。"""
 
 import asyncio
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -886,3 +886,58 @@ def test_update_customer_settle_mode(db):
     assert total == 1
     assert rows[0]["settle_mode"] == "credit"
     assert rows[0]["settle_mode_label"] == "先下单后付款"
+
+
+def test_order_list_shows_owner_and_repurchase_fields(db):
+    """列表补台账字段：归属销售、上次下单日期、复购周期、实际交付日期。"""
+    _route_and_workers(db)
+    owner = _user(db, "owner-sales")
+    creator = _user(db, "order-list-creator")
+    customer = _customer(db, creator, "台账客户")
+    customer.owner_user_id = owner.id
+    db.flush()
+
+    _create_order(db, creator, customer, qty=1, price="0")
+
+    # 第二张单：同一客户的复购
+    second = order_service.create_order(
+        db,
+        OrderCreate(
+            request_id=str(uuid4()),
+            order_no="OPT-002",
+            order_date=date(2026, 8, 25),
+            required_ship_date=date(2026, 8, 30),
+            customer_id=customer.id,
+            order_category="normal",
+            order_type="first_order",
+            order_channel="wechat",
+            items=[_priced_item(db, customer, qty=2, price="0")],
+        ),
+        creator.id,
+    )
+
+    rows, _ = order_service.list_orders(db)
+    by_no = {r["order_no"]: r for r in rows}
+    first_row = by_no["OPT-001"]
+    second_row = by_no["OPT-002"]
+
+    assert first_row["owner_name"] == "owner-sales"
+    assert second_row["owner_name"] == "owner-sales"
+
+    # 首张单没有上次下单；第二张单的上次下单是首张，复购周期 = 8 天
+    assert first_row["last_order_date"] is None
+    assert first_row["repurchase_cycle_days"] is None
+    assert second_row["last_order_date"] == "2026-08-17"
+    assert second_row["repurchase_cycle_days"] == 8
+
+    # 未发货时实际交付日期为空
+    assert second_row["actual_ship_date"] is None
+
+    # 发货后实际交付日期出现
+    item = _item(db, second["id"])
+    item.status = C.ITEM_SHIPPED
+    item.ship_time = datetime(2026, 8, 29, 10, 0, 0)
+    db.flush()
+    rows, _ = order_service.list_orders(db)
+    second_row = next(r for r in rows if r["id"] == second["id"])
+    assert second_row["actual_ship_date"] == "2026-08-29"

@@ -720,9 +720,46 @@ def list_orders(
         return [], total
 
     order_ids = [o.id for o in orders]
-    customer_names = dict(
-        db.query(DomesticCustomer.id, DomesticCustomer.shop_name)
-        .filter(DomesticCustomer.id.in_({o.customer_id for o in orders}))
+    customer_ids = {o.customer_id for o in orders}
+    customer_rows = {
+        row.id: row
+        for row in db.query(DomesticCustomer.id, DomesticCustomer.shop_name, DomesticCustomer.owner_user_id)
+        .filter(DomesticCustomer.id.in_(customer_ids))
+        .all()
+    }
+    customer_names = {cid: row.shop_name for cid, row in customer_rows.items()}
+    owner_ids = {row.owner_user_id for row in customer_rows.values() if row.owner_user_id}
+    owner_names = dict(
+        db.query(ArkUser.id, ArkUser.real_name)
+        .filter(ArkUser.id.in_(owner_ids or {0}))
+        .all()
+    )
+
+    # 上次下单日期 / 复购周期：同一客户上一张非草稿单的下单日期，以及两次下单的间隔天数。
+    # 草稿不算一次「下单」——还没提交的占位单不该出现在客户的下单节奏里。
+    prev_rows = (
+        db.query(DomesticOrder.customer_id, DomesticOrder.id, DomesticOrder.order_date)
+        .filter(
+            DomesticOrder.customer_id.in_(customer_ids),
+            DomesticOrder.deleted_flag == 0,
+            DomesticOrder.status != C.ORDER_DRAFT,
+        )
+        .order_by(DomesticOrder.customer_id, DomesticOrder.order_date, DomesticOrder.id)
+        .all()
+    )
+    orders_by_customer: dict[int, list] = {}
+    for row in prev_rows:
+        orders_by_customer.setdefault(row.customer_id, []).append(row)
+    prev_order_date: dict[int, date] = {}
+    for rows in orders_by_customer.values():
+        for i in range(1, len(rows)):
+            prev_order_date[rows[i].id] = rows[i - 1].order_date
+
+    # 实际交付日期：订单全部明细发货后的最后一次发货日期（已发货订单取 max ship_time）
+    shipped_dates = dict(
+        db.query(DomesticOrderItem.order_id, func.max(DomesticOrderItem.ship_time))
+        .filter(DomesticOrderItem.order_id.in_(order_ids))
+        .group_by(DomesticOrderItem.order_id)
         .all()
     )
     resolved_dimension_labels = dimension_label_maps(db, orders)
@@ -764,6 +801,10 @@ def list_orders(
             "required_ship_date": o.required_ship_date,
             "customer_id": o.customer_id,
             "customer_name": customer_names.get(o.customer_id),
+            "owner_name": (
+                owner_names.get(customer_rows[o.customer_id].owner_user_id)
+                if o.customer_id in customer_rows else None
+            ),
             **order_dimension_view(db, o, resolved_dimension_labels),
             "status": o.status,
             "status_label": C.ORDER_STATUS_LABELS.get(o.status, str(o.status)),
@@ -772,6 +813,16 @@ def list_orders(
             "total_amount": float(o.total_amount or 0),
             # 进度 = 已完成工序数量 / (数量 × 工序数)，未展开工序的明细计 0
             "progress_pct": round(bucket["done"] / capacity * 100, 1) if capacity else 0.0,
+            "actual_ship_date": (
+                shipped_dates[o.id].date().isoformat() if shipped_dates.get(o.id) else None
+            ),
+            "last_order_date": (
+                prev_order_date[o.id].isoformat() if prev_order_date.get(o.id) else None
+            ),
+            "repurchase_cycle_days": (
+                (o.order_date - prev_order_date[o.id]).days
+                if prev_order_date.get(o.id) and o.order_date else None
+            ),
             "remark": o.remark,
             "created_at": o.created_at,
         }
