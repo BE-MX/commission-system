@@ -9,14 +9,16 @@ function loadFixture(name: string): Document {
 }
 
 const directFixture = loadFixture('direct')
+const directEmptyFixture = loadFixture('direct-empty')
 const groupFixture = loadFixture('group')
 const unknownFixture = loadFixture('unknown')
 const noChatFixture = loadFixture('no-chat')
 
 describe('WhatsApp adapter', () => {
-  it('classifies direct, group, unknown and no-chat states', () => {
+  it('classifies current direct, unsupported and no-chat structures', () => {
     expect(adapterFor(directFixture).inspectChat().kind).toBe('direct')
-    expect(adapterFor(groupFixture).inspectChat().kind).toBe('group')
+    expect(adapterFor(directEmptyFixture).inspectChat().kind).toBe('direct')
+    expect(adapterFor(groupFixture).inspectChat().kind).toBe('unknown')
     expect(adapterFor(unknownFixture).inspectChat().kind).toBe('unknown')
     expect(adapterFor(noChatFixture).inspectChat().kind).toBe('no_chat')
   })
@@ -29,10 +31,10 @@ describe('WhatsApp adapter', () => {
     expect(adapterFor(unknownFixture).readComposer()).toBe('')
   })
 
-  it('returns only eligible incoming direct messages without identifiers', async () => {
+  it('parses current WhatsApp incoming text messages and excludes outgoing messages', async () => {
     const messages = await adapterFor(directFixture).listUntranslatedIncomingMessages()
 
-    expect(messages.map(message => message.text)).toEqual(['Can you ship this week?'])
+    expect(messages.map(message => message.text)).toEqual(['Can you ship this week?', 'Thanks'])
     expect(messages[0].localKey).toMatch(/^[0-9a-f]{64}$/)
     expect(JSON.stringify(messages)).not.toMatch(/@c\.us|data-id|phone|contact/)
   })
@@ -40,12 +42,19 @@ describe('WhatsApp adapter', () => {
   it('creates distinct local keys for repeated incoming text', async () => {
     const document = loadFixture('direct')
     const root = document.getElementById('main') as HTMLElement
-    const source = root.querySelector('.message-in') as HTMLElement
+    const source = root.querySelector('[data-testid="msg-container"]')?.parentElement as HTMLElement
     for (let index = 0; index < 2; index += 1) {
       const duplicate = document.createElement('div')
-      duplicate.className = 'message-in'
-      duplicate.innerHTML = '<div class="copyable-text"><span class="selectable-text">Repeated text</span></div>'
-      root.insertBefore(duplicate, source)
+      duplicate.style.alignItems = 'flex-start'
+      duplicate.style.display = 'flex'
+      duplicate.innerHTML = `
+        <div data-testid="msg-container">
+          <div class="copyable-text" data-pre-plain-text="[18:45, 2026-09-03] Customer: ">
+            <span data-testid="selectable-text">Repeated text</span>
+          </div>
+        </div>
+      `
+      source.parentElement?.insertBefore(duplicate, source)
     }
 
     const messages = await adapterFor(document).listUntranslatedIncomingMessages()
@@ -73,6 +82,12 @@ describe('WhatsApp adapter', () => {
     expect(eventTypes).toEqual(['beforeinput', 'input'])
     expect(prohibitedTypes).toEqual([])
     expect(adapterFor(directFixture)).not.toHaveProperty('send')
+  })
+
+  it('keeps same-name group messages out of the translation boundary', async () => {
+    expect(adapterFor(groupFixture).inspectChat().kind).toBe('unknown')
+    await expect(adapterFor(groupFixture).listUntranslatedIncomingMessages()).resolves.toEqual([])
+    expect(adapterFor(groupFixture).attachOutgoingControl(() => {})).toBeNull()
   })
 
   it('removes outgoing controls when the active chat becomes unsupported', () => {

@@ -1,8 +1,18 @@
-<main id="main" data-id="internal-team@g.us">
-  <div class="message-in">
-    <div class="copyable-text"><span class="selectable-text">Group text</span></div>
+<main id="main" data-testid="conversation-panel-wrapper">
+  <header data-testid="conversation-header">
+    <div role="button" aria-label="群组信息"></div>
+    <span data-testid="conversation-info-header-chat-title">Alice</span>
+  </header>
+  <div data-testid="conversation-panel-messages">
+    <div style="display: flex; align-items: flex-start">
+      <div data-testid="msg-container">
+        <div class="copyable-text" data-pre-plain-text="[18:46, 2026-09-03] Alice: ">
+          <span data-testid="selectable-text">Group text</span>
+        </div>
+      </div>
+    </div>
   </div>
   <footer>
-    <div contenteditable="true" data-tab="10">Group draft</div>
+    <div contenteditable="true" data-tab="10" data-testid="conversation-compose-box-input">Group draft</div>
   </footer>
 </main>

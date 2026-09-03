@@ -6,6 +6,16 @@ export type ParsedMessage = {
   text: string
 }
 
+const TEXT_MESSAGE_TEST_IDS = new Set([
+  'addon-bubble-container',
+  'msg-meta',
+  'reaction-bubble',
+  'reaction-bubble-item',
+  'selectable-text',
+  'tail-in',
+  'tail-out',
+])
+
 async function localMessageKey(direction: string, text: string, ordinal: number): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${direction}:${text}:${ordinal}`))
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
@@ -15,22 +25,28 @@ function normalizeText(element: Element): string {
   return element.textContent?.replace(/\s+/gu, ' ').trim() ?? ''
 }
 
-function isEligibleMessage(message: Element): boolean {
-  const hasSelector = (selector: string): boolean =>
-    message.matches(selector) || message.querySelector(selector) !== null
+function hasOnlyTextMessageStructure(message: Element): boolean {
+  return [...message.querySelectorAll('[data-testid]')].every((element) => {
+    const testId = element.getAttribute('data-testid')
+    return testId !== null && TEXT_MESSAGE_TEST_IDS.has(testId)
+  })
+}
 
-  return !hasSelector(WHATSAPP_SELECTORS.mediaMessage)
-    && !hasSelector(WHATSAPP_SELECTORS.systemMessage)
-    && !hasSelector(WHATSAPP_SELECTORS.revokedMessage)
+function isIncomingMessage(message: Element): boolean {
+  const row = message.parentElement
+  const view = message.ownerDocument.defaultView
+  return row !== null && view?.getComputedStyle(row).alignItems === 'flex-start'
 }
 
 export async function parseIncomingMessages(root: Document | HTMLElement): Promise<ParsedMessage[]> {
-  const messages = root.querySelectorAll(WHATSAPP_SELECTORS.incomingMessage)
+  const messages = root.querySelectorAll(WHATSAPP_SELECTORS.message)
   const parsed: ParsedMessage[] = []
 
   for (let ordinal = 0; ordinal < messages.length; ordinal += 1) {
     const element = messages[ordinal]
-    if (!isEligibleMessage(element)) continue
+    if (!isIncomingMessage(element)) continue
+    if (!element.querySelector(WHATSAPP_SELECTORS.messageMetadata)) continue
+    if (!hasOnlyTextMessageStructure(element)) continue
 
     const textElements = element.querySelectorAll(WHATSAPP_SELECTORS.messageText)
     if (textElements.length !== 1) continue
