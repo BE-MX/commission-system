@@ -1,5 +1,6 @@
 """带图 chat 的超时下限逻辑（2026-07-08 expo 面容分析超时→kiosk 弹回首页修复）。"""
 
+import pytest
 from types import SimpleNamespace
 
 from app.ai.call_service import (
@@ -65,3 +66,81 @@ def test_full_snapshot_remains_backward_compatible():
     assert "旧调用正文" in _snapshot_messages(
         [{"role": "user", "content": "旧调用正文"}], "full"
     )
+
+def test_metadata_mode_never_logs_plaintext_on_provider_exception(db, monkeypatch):
+    from app.ai.call_service import chat
+    from app.ai.models import AiCallLog, AiPreset, AiProvider
+
+    provider = AiProvider(
+        name="translation-test-provider",
+        provider_type="direct",
+        api_base="https://example.invalid",
+        api_type="openai",
+        is_enabled=True,
+        timeout_sec=15,
+    )
+    db.add(provider)
+    db.flush()
+    db.add(AiPreset(
+        preset_name="test",
+        provider_id=provider.id,
+        model="test-model",
+        is_enabled=True,
+    ))
+    db.commit()
+
+    def raise_sensitive(*args, **kwargs):
+        raise RuntimeError("PRIVATE-WHATSAPP-TEXT")
+
+    monkeypatch.setattr("app.ai.call_service.post_json", raise_sensitive)
+    with pytest.raises(RuntimeError, match="PRIVATE-WHATSAPP-TEXT"):
+        chat(
+            db,
+            preset_name="test",
+            messages=[{"role": "user", "content": "PRIVATE-WHATSAPP-TEXT"}],
+            caller_module="whatsapp_translation",
+            snapshot_mode="metadata",
+            timeout_sec=15,
+        )
+
+    log = db.query(AiCallLog).order_by(AiCallLog.id.desc()).first()
+    assert log.error_message == "RuntimeError"
+    assert "PRIVATE-WHATSAPP-TEXT" not in log.prompt_snapshot
+    assert "PRIVATE-WHATSAPP-TEXT" not in log.error_message
+
+
+def test_chat_returns_prompt_and_completion_tokens(db, monkeypatch):
+    from app.ai.call_service import chat
+    from app.ai.models import AiPreset, AiProvider
+
+    provider = AiProvider(
+        name="token-test-provider",
+        provider_type="direct",
+        api_base="https://example.invalid",
+        api_type="openai",
+        is_enabled=True,
+        timeout_sec=15,
+    )
+    db.add(provider)
+    db.flush()
+    db.add(AiPreset(
+        preset_name="token-test",
+        provider_id=provider.id,
+        model="test-model",
+        is_enabled=True,
+    ))
+    db.commit()
+    monkeypatch.setattr("app.ai.call_service.post_json", lambda *args, **kwargs: {
+        "choices": [{"message": {"content": "ok"}}],
+        "usage": {"prompt_tokens": 3, "completion_tokens": 5, "total_tokens": 8},
+    })
+    result = chat(
+        db,
+        preset_name="token-test",
+        messages=[{"role": "user", "content": "text"}],
+        caller_module="test",
+        timeout_sec=15,
+    )
+    assert result["tokens_prompt"] == 3
+    assert result["tokens_completion"] == 5
+    assert result["tokens_used"] == 8

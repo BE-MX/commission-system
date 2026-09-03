@@ -78,3 +78,17 @@ class PairingExchangeResult(BaseModel):
     status: Literal["pending", "ready"]
     device_id: int | None = None
     expires_at: datetime | None = None
+
+
+class TranslationModelOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    translated_text: str = Field(min_length=1, max_length=4_000)
+    detected_source_language: Literal["zh-CN", "en", "es", "fr", "ar", "ja"]
+
+
+class TranslateResponse(BaseModel):
+    request_id: UUID
+    translated_text: str
+    detected_source_language: Literal["zh-CN", "en", "es", "fr", "ar", "ja"]
+    model_log_id: int
