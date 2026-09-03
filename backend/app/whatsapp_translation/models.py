@@ -76,7 +76,7 @@ class TranslationPairing(Base):
         {"comment": "WhatsApp 翻译扩展配对"},
     )
 
-    user = relationship("ArkUser", lazy="noload")
+    user = relationship("ArkUser", lazy="noload", foreign_keys=[user_id])
     device = relationship("TranslationDevice", lazy="noload")
 
 
@@ -122,7 +122,7 @@ class TranslationDevice(Base):
         {"comment": "WhatsApp 翻译扩展设备"},
     )
 
-    user = relationship("ArkUser", lazy="noload")
+    user = relationship("ArkUser", lazy="noload", foreign_keys=[user_id])
 
 
 class TranslationUsageDaily(Base):
@@ -177,5 +177,5 @@ class TranslationUsageDaily(Base):
         {"comment": "WhatsApp 翻译扩展日用量"},
     )
 
-    user = relationship("ArkUser", lazy="noload")
+    user = relationship("ArkUser", lazy="noload", foreign_keys=[user_id])
     device = relationship("TranslationDevice", lazy="noload")
