@@ -1,23 +1,57 @@
-<main id="main" data-id="true_desktop-chat@c.us_message">
-  <div class="message-in">
-    <div class="media-panel">
-      <div class="copyable-text"><span class="selectable-text">Media caption</span></div>
+<main id="main" data-testid="conversation-panel-wrapper">
+  <header data-testid="conversation-header">
+    <div role="button" aria-label="个人主页详情"></div>
+    <span data-testid="conversation-info-header-chat-title">Customer</span>
+  </header>
+  <div data-testid="conversation-panel-messages">
+    <div data-testid="msg-notification-container"><span data-testid="system_message">System notice</span></div>
+    <div data-testid="conv-msg-incoming-1" style="display: flex; align-items: flex-start">
+      <div data-testid="msg-container">
+        <div class="copyable-text" data-pre-plain-text="[18:46, 2026-09-03] Customer: ">
+          <span data-testid="selectable-text">Can you ship this week?</span>
+        </div>
+      </div>
+    </div>
+    <div data-testid="conv-msg-incoming-2" style="display: flex; align-items: flex-start">
+      <div data-testid="msg-container">
+        <div class="copyable-text" data-pre-plain-text="[18:47, 2026-09-03] Customer: ">
+          <span data-testid="selectable-text">Thanks</span>
+          <img data-testid="selectable-text" alt="🥰">
+        </div>
+      </div>
+    </div>
+    <div data-testid="conv-msg-empty" style="display: flex; align-items: flex-start">
+      <div data-testid="msg-container">
+        <div class="copyable-text" data-pre-plain-text="[18:48, 2026-09-03] Customer: ">
+          <span data-testid="selectable-text"></span>
+        </div>
+      </div>
+    </div>
+    <div data-testid="conv-msg-media" style="display: flex; align-items: flex-start">
+      <div data-testid="msg-container">
+        <div data-testid="image-thumb"></div>
+        <div class="copyable-text" data-pre-plain-text="[18:48, 2026-09-03] Customer: ">
+          <span data-testid="selectable-text">Media caption</span>
+        </div>
+      </div>
+    </div>
+    <div data-testid="conv-msg-revoked" style="display: flex; align-items: flex-start">
+      <div data-testid="msg-container">
+        <div data-testid="revoked-message"></div>
+        <div class="copyable-text" data-pre-plain-text="[18:48, 2026-09-03] Customer: ">
+          <span data-testid="selectable-text">Removed notice</span>
+        </div>
+      </div>
+    </div>
+    <div data-testid="conv-msg-outgoing" style="display: flex; align-items: flex-end">
+      <div data-testid="msg-container">
+        <div class="copyable-text" data-pre-plain-text="[18:49, 2026-09-03] Customer: ">
+          <span data-testid="selectable-text">Already sent</span>
+        </div>
+      </div>
     </div>
   </div>
-  <div class="message-system"><span>System notice</span></div>
-  <div class="message-in">
-    <div class="copyable-text"><span class="selectable-text">Can you ship this week?</span></div>
-  </div>
-  <div class="message-in">
-    <div class="copyable-text"><span class="selectable-text"></span></div>
-  </div>
-  <div class="message-in message-revoked">
-    <div class="copyable-text"><span class="selectable-text">Removed notice</span></div>
-  </div>
-  <div class="message-out">
-    <div class="copyable-text"><span class="selectable-text">Already sent</span></div>
-  </div>
   <footer>
-    <div contenteditable="true" data-tab="10">Current draft</div>
+    <div contenteditable="true" data-tab="10" data-testid="conversation-compose-box-input">Current draft</div>
   </footer>
 </main>

@@ -1,12 +1,9 @@
 export const WHATSAPP_SELECTORS = {
   chatRoot: '#main',
   composer: '#main footer div[contenteditable="true"][data-tab]',
-  directIdentity: '#main[data-id*="@c.us"], #main [data-id*="@c.us"]',
-  groupIdentity: '#main[data-id*="@g.us"], #main [data-id*="@g.us"]',
-  incomingMessage: '#main .message-in',
-  mediaMessage: '.media-panel',
-  messageText: '.copyable-text .selectable-text',
-  outgoingMessage: '#main .message-out',
-  revokedMessage: '.message-revoked',
-  systemMessage: '.message-system',
+  conversationTitle: '#main [data-testid="conversation-info-header-chat-title"]',
+  directChat: '#main [data-testid="conversation-header"] [aria-label="个人主页详情"][role="button"]',
+  message: '#main [data-testid="msg-container"]',
+  messageMetadata: '.copyable-text[data-pre-plain-text]',
+  messageText: 'span[data-testid="selectable-text"]',
 } as const
