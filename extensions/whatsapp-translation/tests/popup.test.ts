@@ -106,4 +106,21 @@ describe('popup pairing recovery', () => {
     })
     expect(document.getElementById('unpaired')?.hidden).toBe(true)
   })
+
+  it('does not start pairing recovery when an active session check temporarily fails', async () => {
+    const sendMessage = vi.fn(async (request: { type: string }) => {
+      if (request.type === 'session/refresh') {
+        return { type: 'error', message: 'network_error' }
+      }
+      return { type: 'error', message: 'unexpected_request' }
+    })
+    vi.stubGlobal('chrome', { runtime: { sendMessage } })
+
+    await import('@/popup/index')
+
+    await vi.waitFor(() => {
+      expect(document.getElementById('popup')?.dataset.state).toBe('error')
+    })
+    expect(sendMessage).not.toHaveBeenCalledWith({ type: 'pairing/resume' })
+  })
 })

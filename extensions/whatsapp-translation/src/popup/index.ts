@@ -1,4 +1,5 @@
 type PopupState = 'loading' | 'unpaired' | 'pairing' | 'ready' | 'blocked' | 'error'
+type SessionLoadState = 'ready' | 'missing' | 'error'
 
 const root = document.getElementById('popup') as HTMLElement
 const sections = ['loading', 'unpaired', 'pairing', 'ready', 'blocked', 'error']
@@ -17,12 +18,12 @@ async function loadPreferences(): Promise<{ enabled: boolean; targetLanguage: st
   return await runtimeRequest({ type: 'preferences/get' })
 }
 
-async function loadSession(): Promise<boolean> {
+async function loadSession(): Promise<SessionLoadState> {
   const response = await runtimeRequest({ type: 'session/refresh' })
   if (response?.type === 'session/refresh') {
     const employee = document.getElementById('employee')
     const expiry = document.getElementById('expiry')
-    if (!employee || !expiry) return false
+    if (!employee || !expiry) return 'error'
     employee.textContent = `已授权设备 #${response.session.deviceId}`
     expiry.textContent = `有效期至 ${response.session.expiresAt}`
     const preferences = await loadPreferences()
@@ -31,9 +32,9 @@ async function loadSession(): Promise<boolean> {
     enabled.checked = preferences.enabled
     language.value = preferences.targetLanguage
     setState('ready')
-    return true
+    return 'ready'
   }
-  return false
+  return response?.type === 'error' && response.message === 'device_token_missing' ? 'missing' : 'error'
 }
 
 async function resumePairing(): Promise<void> {
@@ -47,14 +48,19 @@ async function resumePairing(): Promise<void> {
     return
   }
   if (response.state.status === 'ready') {
-    if (!await loadSession()) setState('error')
+    if (await loadSession() !== 'ready') setState('error')
     return
   }
   setState('pairing')
 }
 
 async function restoreState(): Promise<void> {
-  if (await loadSession()) return
+  const sessionState = await loadSession()
+  if (sessionState === 'ready') return
+  if (sessionState === 'error') {
+    setState('error')
+    return
+  }
   await resumePairing()
 }
 
