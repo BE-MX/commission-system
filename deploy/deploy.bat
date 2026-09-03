@@ -256,10 +256,6 @@ if errorlevel 1 (
 )
 echo      OK
 echo.
-if "%EXTENSION_CHANGED%"=="1" (
-    for /f "delims=" %%H in ('git -C "%INSTALL_DIR%" rev-parse HEAD') do echo %%H>"%EXTENSION_MARKER%"
-)
-
 REM ---------- [6/7] Sync dist to cloud ----------
 echo [6/7] Sync frontend to cloud server...
 cd /d "%INSTALL_DIR%\frontend"
@@ -299,6 +295,9 @@ if not "!SYNC_OK!"=="1" (
 REM Advance the frontend build marker only after a confirmed successful sync
 if not exist "%INSTALL_DIR%\.deploy_state" mkdir "%INSTALL_DIR%\.deploy_state"
 for /f "delims=" %%H in ('git -C "%INSTALL_DIR%" rev-parse HEAD') do set "CURRENT_HEAD=%%H"
+if "%EXTENSION_CHANGED%"=="1" (
+    echo !CURRENT_HEAD!>"%EXTENSION_MARKER%"
+)
 echo !CURRENT_HEAD!>"%FRONTEND_MARKER%"
 goto :pm_hub_sync
 

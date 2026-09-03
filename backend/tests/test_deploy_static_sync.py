@@ -93,3 +93,16 @@ def test_deploy_restarts_backend_only_after_migration_validation() -> None:
 
     assert validation_index < restart_index
     assert 'set "BACKEND_RESTARTED_AFTER_MIGRATION=1"' in migration[restart_index:]
+
+
+def test_extension_build_marker_advances_only_after_cloud_sync() -> None:
+    """A failed cloud sync must retry extension packaging on the next deploy."""
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    frontend_section = script.split('set "FRONTEND_CHANGED=1"', 1)[1]
+
+    extension_marker_index = frontend_section.index('echo !CURRENT_HEAD!>"%EXTENSION_MARKER%"')
+    sync_failure_index = frontend_section.index("Frontend sync to cloud FAILED")
+    frontend_marker_index = frontend_section.index('echo !CURRENT_HEAD!>"%FRONTEND_MARKER%"')
+
+    assert sync_failure_index < extension_marker_index
+    assert extension_marker_index < frontend_marker_index
