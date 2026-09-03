@@ -200,7 +200,30 @@
 
         <div class="item-sec__title item-sec__title--gap">报价信息</div>
 
-        <el-row :gutter="16" class="price-row">
+        <!-- 特单：不调原始价，直接录入销售价 -->
+        <el-row v-if="form.order_category === 'special'" :gutter="16" class="price-row">
+          <el-col :span="6">
+            <el-form-item label="销售价" required>
+              <el-input-number
+                v-model="item.specialPrice" :min="0.01" :precision="2"
+                :controls="false" class="price-input" placeholder="直接录入销售价"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6">
+            <el-form-item label="明细总价">
+              <span class="amount-value">¥{{ (Number(item.order_qty || 0) * Number(item.specialPrice || 0)).toFixed(2) }}</span>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="说明">
+              <span class="rule-text">特单不调用原始价格，直接按销售价成交</span>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <!-- 普单：系统报价 + 手工费，成交单价 = 优惠价 + 手工费 -->
+        <el-row v-else :gutter="16" class="price-row">
           <el-col :span="4">
             <el-form-item label="报价状态">
               <el-tag :type="item.quoteStatus === 'missing_base_price' ? 'danger' : (item.quoteStatus === 'priced' ? 'success' : 'warning')" effect="plain">
@@ -211,11 +234,6 @@
           <el-col :span="4">
             <el-form-item label="原始价">
               <span>{{ item.quoteStatus === 'priced' ? `¥${Number(item.quote.original_price).toFixed(2)}` : '-' }}</span>
-            </el-form-item>
-          </el-col>
-          <el-col :span="4">
-            <el-form-item label="优惠金额">
-              <span class="discount-value">{{ item.quoteStatus === 'priced' ? `-¥${(Number(item.quote.original_price) - effectiveDiscountPrice(item)).toFixed(2)}` : '-' }}</span>
             </el-form-item>
           </el-col>
           <el-col :span="4">
@@ -236,20 +254,34 @@
             </el-form-item>
           </el-col>
           <el-col :span="4">
-            <el-form-item label="明细总价">
-              <span class="amount-value">¥{{ (Number(item.order_qty || 0) * effectiveDiscountPrice(item)).toFixed(2) }}</span>
+            <el-form-item label="手工费">
+              <el-input-number
+                v-model="item.laborFee" :min="0" :precision="2"
+                :controls="false" class="price-input" placeholder="0.00"
+              />
             </el-form-item>
           </el-col>
           <el-col :span="4">
-            <el-form-item label="优惠说明">
-              <span v-if="item.quoteStatus === 'priced'" class="rule-text">
-                {{ item.manualDiscountPrice ? '手工改价' : item.quote.pricing_rule_label }}
-              </span>
-              <GlassButton v-else-if="item.quoteStatus === 'pending'" variant="link" :loading="quoteLoading" @click="refreshQuotes">重新报价</GlassButton>
-              <span v-else-if="item.quoteStatus === 'missing_base_price'" class="danger-text">
-                缺原始价，无法报价<GlassButton variant="link" link-tone="danger" @click="goProducts">去产品清单维护</GlassButton>
-              </span>
+            <el-form-item label="明细单价">
+              <span>{{ item.quoteStatus === 'priced' ? `¥${(effectiveDiscountPrice(item) + Number(item.laborFee || 0)).toFixed(2)}` : '-' }}</span>
             </el-form-item>
+          </el-col>
+          <el-col :span="4">
+            <el-form-item label="明细总价">
+              <span class="amount-value">¥{{ (Number(item.order_qty || 0) * (effectiveDiscountPrice(item) + Number(item.laborFee || 0))).toFixed(2) }}</span>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row v-if="form.order_category !== 'special'" :gutter="16" class="price-note-row">
+          <el-col :span="24">
+            <span v-if="item.quoteStatus === 'priced'" class="rule-text">
+              {{ item.manualDiscountPrice ? '手工改价' : item.quote.pricing_rule_label }}
+            </span>
+            <GlassButton v-else-if="item.quoteStatus === 'pending'" variant="link" :loading="quoteLoading" @click="refreshQuotes">重新报价</GlassButton>
+            <span v-else-if="item.quoteStatus === 'missing_base_price'" class="danger-text">
+              缺原始价，无法报价<GlassButton variant="link" link-tone="danger" @click="goProducts">去产品清单维护</GlassButton>
+            </span>
           </el-col>
         </el-row>
 

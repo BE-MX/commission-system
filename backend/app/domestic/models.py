@@ -217,9 +217,10 @@ class DomesticOrderItem(Base):
     route_id = Column(Integer, ForeignKey("process_route.id", ondelete="RESTRICT"),
                       comment="下单时锁定的路线快照，后改映射不影响在制单")
     order_qty = Column(Integer, nullable=False, comment="下单数量")
-    unit_price = Column(Numeric(14, 2), nullable=False, comment="产品优惠价")
+    unit_price = Column(Numeric(14, 2), nullable=False, comment="产品成交价 = 优惠价 + 手工费")
     original_price = Column(Numeric(14, 2), nullable=False, comment="原价快照")
     discount_amount = Column(Numeric(14, 2), nullable=False, comment="优惠金额快照")
+    labor_fee = Column(Numeric(14, 2), nullable=False, default=0, comment="手工费（仅普单）")
     membership_level_snapshot = Column(
         String(16), nullable=True, comment="会员等级快照"
     )
@@ -257,7 +258,7 @@ class DomesticOrderItem(Base):
             "discount_amount >= 0", name="ck_dom_item_discount_nonnegative"
         ),
         CheckConstraint(
-            "unit_price <= original_price",
+            "unit_price <= original_price + labor_fee",
             name="ck_dom_item_unit_not_above_original",
         ),
         CheckConstraint(

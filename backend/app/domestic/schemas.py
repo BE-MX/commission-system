@@ -402,10 +402,21 @@ class OrderItemInput(BaseModel):
     client_key: str = Field(..., min_length=1, max_length=64)
     attrs: ProductAttrs
     order_qty: int = Field(..., gt=0, le=2000, description="下单数量（逐件码物化，单明细最多2000件）")
-    expected_quote: ExpectedQuote
+    expected_quote: ExpectedQuote | None = Field(
+        None, description="报价快照；特单不报价，传 None"
+    )
     manual_discount_price: Decimal | None = Field(
         None, gt=0, le=Decimal("999999999999.99"), max_digits=14, decimal_places=2,
         description="手工改价后的优惠价；不传则按系统报价成交，传入也不得高于原价",
+    )
+    labor_fee: Decimal = Field(
+        default=Decimal("0"), ge=0, le=Decimal("999999999999.99"),
+        max_digits=14, decimal_places=2,
+        description="手工费（仅普单）；成交单价 = 优惠价 + 手工费",
+    )
+    special_price: Decimal | None = Field(
+        None, gt=0, le=Decimal("999999999999.99"), max_digits=14, decimal_places=2,
+        description="特单销售价（不报价直接录入）；仅特单必填",
     )
     hairstyle: str | None = Field(None, max_length=1000)
     hairstyle_images: list[str] = _IMG_FIELD
@@ -420,6 +431,13 @@ class OrderItemInput(BaseModel):
     @classmethod
     def _strip_client_key(cls, value: str) -> str:
         return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def _require_quote_or_special_price(self):
+        # 普单必须带 expected_quote 走系统报价；特单不报价，直接给销售价
+        if self.expected_quote is None and self.special_price is None:
+            raise ValueError("expected_quote 或 special_price 至少填写一个")
+        return self
 
 
 class OrderItemAppend(OrderItemInput):

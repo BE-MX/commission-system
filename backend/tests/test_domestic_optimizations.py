@@ -941,3 +941,111 @@ def test_order_list_shows_owner_and_repurchase_fields(db):
     rows, _ = order_service.list_orders(db)
     second_row = next(r for r in rows if r["id"] == second["id"])
     assert second_row["actual_ship_date"] == "2026-08-29"
+
+
+def _special_item(db, attrs, price):
+    """特单明细：不走报价，直接给销售价。"""
+    return OrderItemInput(
+        client_key=f"special-{price}-{uuid4().hex[:8]}",
+        attrs=attrs,
+        order_qty=1,
+        expected_quote=None,
+        special_price=Decimal(price),
+    )
+
+
+def test_special_order_uses_manual_sales_price(db):
+    """特单不调用原始价格，直接按录入的销售价成交。"""
+    _route_and_workers(db)
+    creator = _user(db, "special-creator")
+    customer = _customer(db, creator, "特单客户")
+    customer.settle_mode = "credit"
+    db.flush()
+
+    created = order_service.create_order(
+        db,
+        OrderCreate(
+            request_id=str(uuid4()),
+            order_no="SP-001",
+            order_date=date(2026, 8, 17),
+            required_ship_date=date(2026, 8, 24),
+            customer_id=customer.id,
+            order_category="special",
+            order_type="first_order",
+            order_channel="wechat",
+            items=[_special_item(db, _attrs(), "88.00")],
+        ),
+        creator.id,
+    )
+
+    item = _item(db, created["id"])
+    assert item.unit_price == Decimal("88.00")
+    assert item.original_price == Decimal("88.00")
+    assert item.discount_amount == Decimal("0.00")
+    assert item.labor_fee == Decimal("0.00")
+    assert item.pricing_rule == "manual_override"
+    # 总价 = 销售价 × 数量
+    assert created["total_amount"] == 88.00
+
+
+def test_special_order_without_price_falls_back_to_quote(db):
+    """特单未带销售价时回退报价路径（兼容旧数据/测试）。"""
+    _route_and_workers(db)
+    creator = _user(db, "special-fallback-creator")
+    customer = _customer(db, creator, "特单回退客户")
+    customer.settle_mode = "credit"
+    db.flush()
+
+    item = _priced_item(db, customer, qty=1, price="10.00")
+    item.labor_fee = Decimal("0")
+    created = order_service.create_order(
+        db,
+        OrderCreate(
+            request_id=str(uuid4()),
+            order_no="SP-FALLBACK-001",
+            order_date=date(2026, 8, 17),
+            required_ship_date=date(2026, 8, 24),
+            customer_id=customer.id,
+            order_category="special",
+            order_type="first_order",
+            order_channel="wechat",
+            items=[item],
+        ),
+        creator.id,
+    )
+    db_item = _item(db, created["id"])
+    assert db_item.unit_price == Decimal("10.00")
+
+
+def test_normal_order_labor_fee_adds_to_unit_price(db):
+    """普单明细单价 = 优惠价 + 手工费，总价含手工费。"""
+    _route_and_workers(db)
+    creator = _user(db, "labor-creator")
+    customer = _customer(db, creator, "手工费客户")
+    customer.settle_mode = "credit"
+    db.flush()
+
+    item = _priced_item(db, customer, qty=2, price="50.00")
+    item.labor_fee = Decimal("5.00")
+    created = order_service.create_order(
+        db,
+        OrderCreate(
+            request_id=str(uuid4()),
+            order_no="LABOR-001",
+            order_date=date(2026, 8, 17),
+            required_ship_date=date(2026, 8, 24),
+            customer_id=customer.id,
+            order_category="normal",
+            order_type="first_order",
+            order_channel="wechat",
+            items=[item],
+        ),
+        creator.id,
+    )
+
+    db_item = _item(db, created["id"])
+    # unit_price = 优惠价50 + 手工费5 = 55
+    assert db_item.unit_price == Decimal("55.00")
+    assert db_item.labor_fee == Decimal("5.00")
+    # 总价 = 55 × 2 = 110
+    assert created["total_amount"] == 110.00
