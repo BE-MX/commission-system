@@ -103,9 +103,9 @@ def inspect_pairing(db: Session, payload: PairingCodeRequest) -> PairingExchange
         raise WhatsAppTranslationError(404, ERROR_PAIRING_NOT_FOUND, "WhatsApp translation request failed")
     if pairing.status == "consumed":
         return _ready_result(db.get(TranslationDevice, pairing.device_id))
+    _require_unexpired(pairing)
     if pairing.status == "pending":
         return _pairing_result(pairing)
-    _require_unexpired(pairing)
     raise WhatsAppTranslationError(409, ERROR_PAIRING_STATE, "WhatsApp translation request failed")
 
 
@@ -179,9 +179,9 @@ def exchange_pairing(db: Session, device_code: str) -> PairingExchangeResult:
         raise WhatsAppTranslationError(404, ERROR_PAIRING_NOT_FOUND, "WhatsApp translation request failed")
     if pairing.status == "consumed":
         return _ready_result(db.get(TranslationDevice, pairing.device_id))
+    _require_unexpired(pairing)
     if pairing.status == "pending":
         return _pairing_result(pairing)
-    _require_unexpired(pairing)
     _require_active_authorized_user(db, pairing.user_id)
     _lock_pairing_owner(db, pairing.user_id)
     _require_device_capacity(db, pairing.user_id)

@@ -6,7 +6,7 @@ from sqlalchemy import select, update
 
 from app.auth.models import ArkPermission, ArkRole, ArkRolePermission, ArkUser
 from app.core.time import beijing_now
-from app.whatsapp_translation.constants import ERROR_DEVICE_REVOKED, ERROR_PAIRING_STATE
+from app.whatsapp_translation.constants import ERROR_DEVICE_REVOKED, ERROR_PAIRING_EXPIRED, ERROR_PAIRING_STATE
 from app.whatsapp_translation.errors import WhatsAppTranslationError
 from app.whatsapp_translation.models import TranslationDevice, TranslationPairing
 import app.whatsapp_translation.pairing_service as pairing_service
@@ -14,11 +14,12 @@ from app.whatsapp_translation.pairing_service import (
     approve_pairing,
     create_pairing,
     exchange_pairing,
+    inspect_pairing,
     prune_unconsumed_pairings,
     hash_secret,
     reject_pairing,
 )
-from app.whatsapp_translation.schemas import PairingCreate
+from app.whatsapp_translation.schemas import PairingCodeRequest, PairingCreate
 
 
 def make_user(db, *, username="worker", is_active=True):
@@ -160,6 +161,21 @@ def test_pairing_states_fail_closed(db):
     with pytest.raises(WhatsAppTranslationError) as invalid:
         approve_pairing(db, "not-a-real-code", user.id)
     assert invalid.value.error_code == "pairing_not_found"
+
+
+def test_expired_pending_pairing_cannot_be_inspected_or_exchanged(db):
+    created = make_pairing(db, token_hash="9" * 64)
+    pairing = get_pairing_model(db, created)
+    pairing.expires_at = datetime(2000, 1, 1)
+    db.commit()
+
+    with pytest.raises(WhatsAppTranslationError) as inspect_error:
+        inspect_pairing(db, PairingCodeRequest(device_code=created.device_code))
+    with pytest.raises(WhatsAppTranslationError) as exchange_error:
+        exchange_pairing(db, created.device_code)
+
+    assert inspect_error.value.error_code == ERROR_PAIRING_EXPIRED
+    assert exchange_error.value.error_code == ERROR_PAIRING_EXPIRED
 
 
 def test_duplicate_approval_is_rejected(db):

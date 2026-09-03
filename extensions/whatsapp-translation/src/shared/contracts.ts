@@ -84,7 +84,7 @@ export type Session = {
 
 export type RuntimeRequest =
   | { type: 'pairing/start' }
-  | { type: 'pairing/check'; deviceCode: string }
+  | { type: 'pairing/resume' }
   | { type: 'session/refresh' }
   | { type: 'preferences/get' }
   | { type: 'preferences/set'; enabled: boolean; targetLanguage: string }
@@ -96,7 +96,7 @@ export type RuntimeRequest =
 
 export type RuntimeResponse =
   | { type: 'pairing/start'; state: PairingState }
-  | { type: 'pairing/check'; state: PairingState }
+  | { type: 'pairing/resume'; state: PairingState | null }
   | { type: 'session/refresh'; session: Session }
   | { type: 'preferences/get'; enabled: boolean; targetLanguage: string }
   | { type: 'preferences/set' }

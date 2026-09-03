@@ -40,7 +40,7 @@ export function packageRelease({
   assertSafeOutputPath(outputDir, repositoryRoot)
 
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-  if (manifest.version !== '1.0.0' || manifest.manifest_version !== 3) throw new Error('invalid_manifest')
+  if (!/^\d+\.\d+\.\d+$/.test(manifest.version) || manifest.manifest_version !== 3) throw new Error('invalid_manifest')
   if (!existsSync(distDir)) throw new Error('invalid_dist')
 
   const distEntries = readdirSync(distDir)

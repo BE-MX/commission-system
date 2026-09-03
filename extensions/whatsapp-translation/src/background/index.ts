@@ -1,11 +1,11 @@
 import { apiClient, ArkApiError } from '@/background/apiClient'
 import { TranslationCache } from '@/background/cache'
-import { finishPairing, refreshSession, startPairing } from '@/background/auth'
+import { refreshSession, resumePairing, startPairing } from '@/background/auth'
 import type { Capabilities, PairingState, RuntimeRequest, RuntimeResponse, Session } from '@/shared/contracts'
 import { chatKey, ensureTrustedStorageAccess, storage } from '@/shared/storage'
 
 const TARGET_LANGUAGES = new Set(['ar', 'en', 'es', 'fr', 'ja', 'zh-CN'])
-const POPUP_REQUEST_TYPES = new Set(['pairing/check', 'pairing/start', 'preferences/get', 'preferences/set', 'session/refresh'])
+const POPUP_REQUEST_TYPES = new Set(['pairing/resume', 'pairing/start', 'preferences/get', 'preferences/set', 'session/refresh'])
 const translationCache = new TranslationCache<string>()
 
 async function sha256Hex(value: string): Promise<string> {
@@ -80,10 +80,9 @@ async function handleMessage(request: RuntimeRequest): Promise<RuntimeResponse> 
       })
       return { type: 'pairing/start', state }
     }
-    case 'pairing/check': {
-      const result = await finishPairing(request.deviceCode)
-      const state: PairingState = { authorizeUrl: '', deviceCode: request.deviceCode, status: result.status }
-      return { type: 'pairing/check', state }
+    case 'pairing/resume': {
+      const state = await resumePairing({ attempts: 1 })
+      return { type: 'pairing/resume', state }
     }
     case 'session/refresh': {
       const response = await refreshSession(chrome.runtime.getManifest().version)
