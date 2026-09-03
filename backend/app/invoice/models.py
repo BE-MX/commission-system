@@ -321,3 +321,29 @@ class XiaomanSettings(Base):
     updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="最后修改时间")
 
     __table_args__ = ({"comment": "OKKI 推单设置（单行表，后台管理页维护）"},)
+
+
+class InvoiceCustomerOverlay(Base):
+    """手动从 OKKI 同步的客户资料 overlay：补 lsordertest.customer_info 的同步延迟。
+
+    业务库镜像是只读红线（ark_app 对 lsordertest 仅 SELECT），手动同步结果落
+    方舟自有表；product_service.search_customers 合并两源——镜像 update_time
+    不新于 overlay 的 source_update_time 时以 overlay 为准（手动同步即最新），
+    镜像追上后自动让位。
+    """
+
+    __tablename__ = "ark_invoice_customer_overlays"
+
+    company_id = Column(String(64), primary_key=True, comment="OKKI company_id")
+    company_name = Column(String(256), nullable=False, comment="公司名称")
+    country_name = Column(String(128), nullable=True, comment="国家/地区")
+    origin_name = Column(String(128), nullable=True, comment="客户来源")
+    archive_type = Column(String(64), nullable=True, comment="建档类型")
+    trail_status_name = Column(String(64), nullable=True, comment="客户阶段名称")
+    owner_user_ids = Column(JSON, nullable=True, comment="归属 OKKI 用户 ID 数组（空=公海）")
+    source_update_time = Column(String(32), nullable=True, comment="OKKI 侧 update_time（与镜像比新旧用）")
+    synced_by = Column(Integer, nullable=True, comment="最近一次手动同步操作人 user_id")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="首次同步时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="最近同步时间")
+
+    __table_args__ = ({"comment": "发票客户手动同步 overlay（补只读镜像延迟，镜像追上后自动让位）"},)

@@ -744,7 +744,7 @@ frontend/src/
 ### 鉴权与域名
 - **`https://api-sandbox.xiaoman.cn` 就是正式域名**——名字带 sandbox 但官方文档（open.xiaoman.cn/doc-338269）确认为唯一正式地址，**OKKI 没有沙箱环境，联调推单会产生真实订单**
 - 鉴权走 **client_credentials**（`POST /v1/oauth2/access_token`，JSON body：grant_type/client_id/client_secret/scope）：不需要 OKKI 账号密码、无 refresh_token；文档称此模式不返回 expires_in，**实测返回 28799（≈8h）**，代码两头兜住（缺省按 8h）
-- 凭证：`backend/.env` 的 `OKKI_CLIENT_ID` / `OKKI_CLIENT_SECRET`（来源：OKKI 企业管理 → 外部对接 → API对接）；scope 固定 `invoices`
+- 凭证：`backend/.env` 的 `OKKI_CLIENT_ID` / `OKKI_CLIENT_SECRET`（来源：OKKI 企业管理 → 外部对接 → API对接）；scope 半角空格分隔，当前为 `invoices company`（invoices=订单推送；company=客户查重/详情，2026-09-03 客户手动同步引入——OKKI 后台需给应用开通「客户」模块权限，否则 401/access_denied，自愈重试后仍拒绝先查这里）
 - HTTP 边界 `app/invoice/okki_client.py`：token 缓存在 `ark_xiaoman_settings`（5 分钟过期缓冲自动续期）；**所有 OKKI 调用必须走 ensure→调用→401 强刷重试一次 的模式**（token 可能被服务端提前吊销，见文件头注释）
 
 ### 推单人员字段口径（api-3478252 官方文档核实）
@@ -764,6 +764,14 @@ frontend/src/
 - **合并行 uid 所有权规则**（防两行同 uid 被 OKKI 互相覆盖）：合并推送成功后 uid 写到每个成员上（共享）；成员回填转正后**放弃共享 uid 按新行推**，合并行优先锚定；uid 独占才允许独立行携带；无人认领的 uid（合并取代/全员转正）统一发 remove:1 收掉；payload 内出现重复 uid 直接前置拦截
 - **幂等编辑闭环**：已存 xiaoman_order_id → 带 order_id 编辑推送；明细 unique_id 跨编辑传承（前端回传行 id，`_replace_items` 按 id 承接——多条 custom 行共用通用产品 ID，无 unique_id 会被 OKKI 按 product+sku 去重塌行）；本地删掉的已推行进 `ark_invoices.xiaoman_removed_lines` 快照，下次推单发 remove:1，成功后清空；编辑已同步发票**保留** xiaoman_order_id（清掉会重推出重复订单）
 - 推单前自动跑 `reconcile_custom_products` 对账回填（失败不阻断，custom 行走通用产品兜底）；每次推送落 `ark_invoice_sync_logs`（请求摘要无凭证，可直接查 OKKI 响应原文）
+
+### 客户手动同步 overlay（2026-09-03，`customer_sync_service`）
+- 问题：发票录入客户搜索读 `lsordertest.customer_info` 只读镜像（外部同步管道维护），OKKI 新客户/负责人变更有延迟，私海过滤下查不到
+- 入口：录入抽屉客户选择框下「搜索不到客户？点击这里同步最新客户信息」→ 弹框输入公司名 → `POST /api/invoice/customers/sync-from-okki`
+- 链路：`GET /v1/company/query`（search_field=name 模糊查重，归一化精确命中优先，多候选报错让用户补全）→ `GET /v1/company/info`（详情含 owner 跟进人列表）→ upsert `ark_invoice_customer_overlays`（方舟自有表，**不写 lsordertest 只读红线**；`source_update_time` 记 OKKI 侧 update_time）
+- 搜索合并（`product_service.search_customers`）：镜像没有的客户直接补入；两源都有时镜像 `update_time >= overlay.source_update_time` 才让位回镜像（已追上），否则 overlay 为准；overlay 胜出时私海归属按 overlay 重判（修 owner 过期）。**比新旧必须对全部 overlay 客户查镜像 update_time，不能用私海过滤后的结果集交集**（owner 过期的镜像行已被 SQL 滤掉，交集为空会误判 overlay 最新）；两侧时间戳先解析成 datetime 再比（兼容 `YYYY-MM-DD HH:MM:SS`/ISO/epoch），任一侧不可解析时以 overlay 为准并打 warning 日志
+- 并发/幂等：同一 company_id 并发同步走 savepoint 兜底 PK 冲突回退更新（不抛 500）；OKKI 响应字段形状 isinstance 设防（owner/trail_status/country_region 漂移不崩）
+- 选用语义：同步成功只保证客户进候选，前端「选用该客户」仍走当前私海筛选重新搜索——同步不改变 OKKI 归属，归属他人时明确提示不可选用
 
 ### 数据范围权限（2026-07-13，invoice:read_all）
 - 2026-08-12 代创建后，`sales_user_id` 是客户私海、业务可见性和 OKKI 业绩归属，`created_by` 只记录实际录入人。普通用户始终可访问归属自己的订单；代办人只可访问自己创建且授权仍有效的代办订单，不能借授权查看归属人的其他订单；授权撤销后立即失去代办访问。

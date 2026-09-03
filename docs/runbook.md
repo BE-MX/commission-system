@@ -70,10 +70,12 @@ WHATSAPP_AUTO_SYNC_ENABLED=true
 TFT_SERVICE_ENABLED=false
 TFT_SERVICE_URL=http://192.168.101.47:8003/predict
 
-# OKKI 开放平台（订单推送；deploy.bat 不同步 .env，生产服务器需手动配置后重启）
+# OKKI 开放平台（订单推送 + 客户手动同步；deploy.bat 不同步 .env，生产服务器需手动配置后重启）
 OKKI_CLIENT_ID=<OKKI 企业管理→外部对接→API对接>
 OKKI_CLIENT_SECRET=<同上>
 # OKKI_API_BASE 默认 https://api-sandbox.xiaoman.cn（即正式域名），一般不用配
+# scope 现为 "invoices company"：company=客户查重/详情（发票录入页「同步最新客户信息」用）。
+# 需在 OKKI 后台 API 对接里给应用开通「客户」模块权限，否则该功能报 401/access_denied（token 自愈重试后仍拒绝先查这里）。
 
 # 发票 PDF 中文字体（部署与应用启动都会预检；默认值适用于 Windows Server）
 PDF_CJK_FONT_PATH=C:\Windows\Fonts\msyh.ttc

@@ -158,6 +158,7 @@
   - `ark_invoice_delegate_grants`（107）— 订单代创建授权（delegate_user_id 代办人、sales_user_id 归属业务员、created_by 授权操作人；代办人+归属业务员唯一，三列均关联 ark_users，用户删除时授权级联清理/操作人置空）
   - `ark_invoice_time_backup_108` / `ark_invoice_item_time_backup_108` / `ark_invoice_sync_log_time_backup_108` — 108 历史 UTC→北京时间迁移前逐行时间备份，仅用于核对与可逆回滚，不参与业务查询
   - `ark_xiaoman_settings`（049）— OKKI 推送配置单行表（generic_product_no/id/sku_id 通用产品, default_order_status, default_currency, access_token）
+  - `ark_invoice_customer_overlays`（135）— 发票客户手动同步 overlay（company_id PK, company_name, country_name, origin_name, archive_type, trail_status_name, owner_user_ids JSON, source_update_time=OKKI 侧 update_time, synced_by）。补 `lsordertest.customer_info` 只读镜像的同步延迟；`search_customers` 合并两源，镜像 update_time 追上后自动让位；不写业务库，「唯一写例外」口径不变
   - `ark_receipt_repair_log`（052）— 回款日期修复审计表（batch_id 分组一次执行, cash_collection_id, order_no, company_name, old_date→new_date, source_file, operator_id, created_at）；**唯一写 `lsordertest.okki_receipts.collection_date` 的入口，每条改动留回滚记录**
 - **外部站点发票接入（2 张表，125 迁移）**：
   - `ark_integration_apps` — 站点机器凭证（`public_id` UNIQUE、name、`owner_user_id` FK→`ark_users` CASCADE、`token_hash` CHAR(64) UNIQUE、仅展示用 `token_suffix`、scopes JSON、is_active、expires_at、last_used_at、`created_by` FK→`ark_users` SET NULL、北京时间审计字段）。明文 Token 不落库；当前固定 scope 为 `invoice:write`。

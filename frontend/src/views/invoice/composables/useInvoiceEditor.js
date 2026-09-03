@@ -264,6 +264,21 @@ export function useInvoiceEditor({ onSaved } = {}) {
   watch(privateOnlyCompany, () => { searchCustomers('') })
   watch(privateOnlyContact, () => { searchContacts('') })
 
+  // 选用刚从 OKKI 同步的客户（InvoiceCustomerSyncEntry 回调）：必须过当前私海
+  // 筛选——同步成功≠归属当前业务员（归属他人时同步结果里已展示负责人，这里
+  // 明确提示，不静默绕过私海限制）。返回是否选用成功（成功才关弹框）。
+  async function selectSyncedCustomer(res) {
+    await searchCustomers(res.company_name)
+    const found = customerOptions.value.find(c => String(c.company_id) === String(res.company_id))
+    if (!found) {
+      ElMessage.warning('该客户已同步，但不在当前私海范围内（负责人见同步结果），无法选用')
+      return false
+    }
+    selectedCustomer.value = found
+    await onCustomerChange(found)
+    return true
+  }
+
   async function loadCustomerRule() {
     const seq = ++customerRuleSeq
     try {
@@ -579,6 +594,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     isProduction,
     searchCustomers,
     searchContacts,
+    selectSyncedCustomer,
     onCustomerChange,
     onSalesUserChange,
     onCurrencyChange,

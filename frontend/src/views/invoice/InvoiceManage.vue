@@ -226,9 +226,8 @@
                   </el-select>
                   <el-checkbox v-permission="'invoice_private_filter:read'" v-model="privateOnlyCompany" class="customer-filter-check">仅私海</el-checkbox>
                 </div>
-                <div v-if="customerRule" class="rule-badge">
-                  该客户价格规则：{{ describeCustomerRule(customerRule) }}
-                </div>
+                <InvoiceCustomerSyncEntry :on-select="selectSyncedCustomer" />
+                <div v-if="customerRule" class="rule-badge">该客户价格规则：{{ describeCustomerRule(customerRule) }}</div>
               </el-form-item>
               <el-form-item label="按联系人" class="span-3">
                 <div class="customer-filter-row">
@@ -444,6 +443,7 @@ import { EXPRESS_CHANNEL_OPTIONS, PAYMENT_METHOD_OPTIONS } from './composables/i
 import { contactLabel, customerLabel, describeCustomerRule, useInvoiceEditor } from './composables/useInvoiceEditor'
 import { useInvoiceManagePage } from './composables/useInvoiceManagePage'
 import InvoicePasteImport from './components/InvoicePasteImport.vue'
+import InvoiceCustomerSyncEntry from './components/InvoiceCustomerSyncEntry.vue'
 import InvoiceScreenshotImport from './components/InvoiceScreenshotImport.vue'
 import InvoiceSyncLogsDialog from './components/InvoiceSyncLogsDialog.vue'
 import InvoiceAccessoryTable from './components/InvoiceAccessoryTable.vue'
@@ -465,7 +465,7 @@ const {
   saveAndSyncSubmitting,
   accessoryOptions, accessoryLoading, formHairPrice, formLineDiscountTotal, formAccessoryAmount,
   formAccessoryDiscount, formBaseAmount, formTotal, lastOrderDate, settlementError, isProduction,
-  searchCustomers, searchContacts,
+  searchCustomers, searchContacts, selectSyncedCustomer,
   onCustomerChange, onSalesUserChange, onCurrencyChange, onContactChange, onInvoiceNoInput, onInvoiceNoBlur, openCreate, openEdit,
   applyScreenshotPreview,
   addLine, addAccessory, selectAccessory, removeAccessory, searchAccessoryOptions,

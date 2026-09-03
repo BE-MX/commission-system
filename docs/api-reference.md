@@ -186,7 +186,8 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 - `/api/invoice` — 订单发票管理（`invoice/router.py`，需 `invoice:read/write/sync/admin`；049 起全部端点走 `ok()` 信封；**数据范围**：业务归属看 `sales_user_id`，实际录入审计看 `created_by`；普通用户可操作归属自己的订单，或自己创建且当前仍获授权代办的订单；`invoice:read_all` 或 super_admin 放开为全部）
   - `GET /delegations/assignees` — 当前用户新建订单时可选择的归属业务员（本人 + 管理员授权的有效用户，invoice:write）
   - `GET|PUT /delegations/users/{delegate_user_id}` — 用户管理读取/整组替换“可代创建订单的业务员”（user:read/user:write）；禁止自授权、重复授权和无效/停用用户
-  - `GET /customers/search?keyword=&private_only=&sales_user_id=` — 客户搜索（invoice:read/write）；`private_only=true` 时先验证当前用户可替 `sales_user_id` 录单，再过滤其 OKKI 绑定对应的 `customer_info.owner_user_ids`；未绑定返回 `{items:[], okki_bound:false}`
+  - `GET /customers/search?keyword=&private_only=&sales_user_id=` — 客户搜索（invoice:read/write）；`private_only=true` 时先验证当前用户可替 `sales_user_id` 录单，再过滤其 OKKI 绑定对应的 `customer_info.owner_user_ids`；未绑定返回 `{items:[], okki_bound:false}`；结果合并手动同步 overlay（`ark_invoice_customer_overlays`，镜像 update_time 追上后自动让位）
+  - `POST /customers/sync-from-okki` — 按公司名从 OKKI 同步单个客户最新资料（invoice:write）：body `{company_name}`；走 OKKI 客户查重 `/v1/company/query`（search_field=name，名称/简称归一化精确命中优先，多候选 400 报候选名单）+ 详情 `/v1/company/info` 两个只读接口（需 company scope），upsert 进方舟自有 overlay 表（**不写 lsordertest 只读镜像**）；返回客户信息、负责人姓名、是否新客户与变更字段，前端弹框展示并可一键选用（选用仍过当前私海筛选，不绕过归属限制）
   - `GET /customers/contacts?keyword=&company_id=&private_only=&sales_user_id=` — 按联系人名搜客户（invoice:write）；私海口径同客户搜索，company_id 给定时收敛到该客户名下
   - `GET /invoices/suggest-no?order_type=` — 新建单默认发票号（invoice:write，2026-07-14 版）：库存单 `{用户名}-KC-{MM}{NN}`（NN=该用户本月第几张，两位零填充）、生产单 `SC-{MM}{NN}`（全公司本月序列，不含用户名）；跨年撞号自动顺延，用户可改
   - `GET /invoices/check-no?invoice_no=&exclude_id=` — 发票号占用检查（invoice:write；exclude_id 编辑时排除自身）

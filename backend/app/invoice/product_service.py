@@ -6,6 +6,7 @@ side, keyed by a normalized attribute tuple so re-entry reuses the same row.
 """
 
 import logging
+from datetime import datetime
 from decimal import Decimal
 from typing import Iterable
 
@@ -13,7 +14,7 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.invoice.models import CustomProduct
+from app.invoice.models import CustomProduct, InvoiceCustomerOverlay
 from app.invoice.price_service import make_match_key, normalize_color, normalize_length, normalize_text
 
 logger = logging.getLogger(__name__)
@@ -68,8 +69,9 @@ def search_customers(
     limit: int = 20,
     owner_okki_id: int | None = None,
 ) -> list[dict]:
+    limit = min(max(limit, 1), 50)
     schema = _schema()
-    params: dict[str, object] = {"limit": min(max(limit, 1), 50)}
+    params: dict[str, object] = {"limit": limit}
     clauses: list[str] = []
     if keyword:
         clauses.append("(ci.company_id LIKE :kw OR ci.company_name LIKE :kw)")
@@ -79,14 +81,116 @@ def search_customers(
         clauses.append(clause)
         params.update(extra)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    rows = db.execute(text(f"""
+    rows = [dict(row) for row in db.execute(text(f"""
         SELECT ci.company_id, ci.company_name, ci.country_name
         FROM `{schema}`.customer_info ci
         {where}
         ORDER BY ci.company_name
         LIMIT :limit
-    """), params).mappings().all()
-    return [dict(row) for row in rows]
+    """), params).mappings().all()]
+    return _merge_customer_overlays(db, rows, keyword=keyword, limit=limit, owner_okki_id=owner_okki_id)
+
+
+def _merge_customer_overlays(
+    db: Session,
+    rows: list[dict],
+    *,
+    keyword: str | None,
+    limit: int,
+    owner_okki_id: int | None,
+) -> list[dict]:
+    """合并手动同步 overlay（ark_invoice_customer_overlays，customer_sync_service 写入）。
+
+    规则：镜像没有的客户直接补入；两源都有时，镜像 update_time 新于 overlay 的
+    source_update_time 才让位给镜像（镜像已追上），否则以 overlay 为准——手动
+    同步修的就是镜像过期/缺失。overlay 胜出时私海归属也按 overlay 重判
+    （owner 已改走的客户不得再凭镜像的过期归属出现）。
+    """
+    query = db.query(InvoiceCustomerOverlay)
+    if keyword:
+        like = f"%{keyword}%"
+        query = query.filter(
+            (InvoiceCustomerOverlay.company_id.like(like))
+            | (InvoiceCustomerOverlay.company_name.like(like))
+        )
+    overlays = query.order_by(InvoiceCustomerOverlay.company_name).limit(limit).all()
+    if not overlays:
+        return rows
+
+    merged = {str(r["company_id"]): r for r in rows}
+    # 比新旧必须对全部 overlay 客户查镜像 update_time，不能用结果集交集：
+    # 私海 SQL 会把 owner 过期的镜像行提前滤掉，交集里根本看不到它
+    mirror_ts = _mirror_update_times(db, [o.company_id for o in overlays])
+
+    for overlay in overlays:
+        key = str(overlay.company_id)
+        mirror_row = merged.get(key)
+        mirror_dt = _parse_ts(mirror_ts.get(key))
+        overlay_dt = _parse_ts(overlay.source_update_time)
+        if mirror_dt is not None and overlay_dt is not None:
+            mirror_fresh = mirror_dt >= overlay_dt  # 镜像已追上 → 让位回镜像
+        else:
+            # 任一侧时间戳缺失/不可解析 → 无法证明镜像更新，以手动同步为准
+            mirror_fresh = False
+            if mirror_ts.get(key) or overlay.source_update_time:
+                logger.warning(
+                    "customer overlay 时间戳不可比：mirror=%r overlay=%r，本次以 overlay 为准",
+                    mirror_ts.get(key), overlay.source_update_time,
+                )
+        if mirror_fresh:
+            continue
+        if owner_okki_id is not None and str(owner_okki_id) not in {
+            str(v) for v in (overlay.owner_user_ids or [])
+        }:
+            merged.pop(key, None)
+            continue
+        if mirror_row is None:
+            merged[key] = {
+                "company_id": overlay.company_id,
+                "company_name": overlay.company_name,
+                "country_name": overlay.country_name,
+            }
+        else:
+            mirror_row["company_name"] = overlay.company_name or mirror_row["company_name"]
+            mirror_row["country_name"] = overlay.country_name or mirror_row["country_name"]
+    return sorted(merged.values(), key=lambda r: str(r["company_name"] or ""))[:limit]
+
+
+def _parse_ts(value) -> datetime | None:
+    """解析 OKKI/镜像时间戳：'YYYY-MM-DD HH:MM:SS'、ISO 或 epoch 秒；失败返回 None。"""
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value
+    text = str(value).strip()
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        pass
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    if text.isdigit():
+        try:
+            return datetime.fromtimestamp(int(text))
+        except (OverflowError, OSError, ValueError):
+            return None
+    return None
+
+
+def _mirror_update_times(db: Session, company_ids: list[str]) -> dict[str, str]:
+    """镜像行的 update_time（老镜像/测试夹具无此列时返回空，合并退化为 overlay 优先）。"""
+    if not company_ids or "update_time" not in _table_columns(db, "customer_info"):
+        return {}
+    schema = _schema()
+    rows = db.execute(
+        text(f"SELECT company_id, update_time FROM `{schema}`.customer_info WHERE company_id IN :ids")
+        .bindparams(bindparam("ids", expanding=True)),
+        {"ids": [str(c) for c in company_ids]},
+    ).mappings().all()
+    return {str(r["company_id"]): str(r["update_time"] or "") for r in rows}
 
 
 def search_customer_contacts(

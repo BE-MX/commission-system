@@ -17,6 +17,7 @@ from app.core.database import get_db
 from app.core.response import ok
 from app.invoice import (
     accessory_price_service,
+    customer_sync_service,
     delegation_service,
     export_service,
     import_service,
@@ -208,6 +209,28 @@ def get_customer_contact_defaults(
     _user=Depends(require_permission("invoice:write")),
 ):
     return ok(service.get_customer_contact_defaults(db, customer_id))
+
+
+class CustomerSyncPayload(BaseModel):
+    company_name: str = Field(min_length=1, max_length=256)
+
+
+@router.post("/customers/sync-from-okki", summary="按公司名从 OKKI 同步单个客户最新资料")
+def sync_customer_from_okki(
+    body: CustomerSyncPayload,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("invoice:write")),
+):
+    """镜像同步延迟时的自助入口：OKKI 只读接口拉取，写方舟 overlay 表（不写业务库）。"""
+    try:
+        result = customer_sync_service.sync_customer_from_okki(
+            db, company_name=body.company_name, operator_id=_user_id(current_user),
+        )
+        db.commit()  # 覆盖 overlay upsert + 可能的惰性 token 刷新
+    except customer_sync_service.CustomerSyncError as exc:
+        db.rollback()
+        raise HTTPException(400, str(exc)) from exc
+    return ok(result)
 
 
 @router.get("/products/filter-options", summary="Cascading product filter options")

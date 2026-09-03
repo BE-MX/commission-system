@@ -24,7 +24,10 @@ from app.invoice import xiaoman_service
 
 logger = logging.getLogger(__name__)
 
-TOKEN_SCOPE = "invoices"
+# scope 半角空格分隔（官方鉴权文档 api-3473041）：
+# invoices=订单推送；company=客户查询/详情（发票录入页手动同步客户用）。
+# OKKI 后台「企业管理 → 外部对接 → API对接」需给应用开通对应模块，否则 401/access_denied
+TOKEN_SCOPE = "invoices company"
 REQUEST_TIMEOUT = 60  # 官方文档：连接/响应超时均 60s
 # 距过期小于该缓冲即视为失效，提前换新，避免推单途中过期
 EXPIRY_BUFFER = timedelta(minutes=5)
@@ -136,6 +139,37 @@ def push_order(db: Session, payload: dict) -> dict:
     return data
 
 
+def query_companies_by_name(db: Session, word: str, *, count: int = 20) -> list[dict]:
+    """GET /v1/company/query — 客户查重（search_field=name：公司名/简称模糊）。
+
+    只读接口（company scope），手动同步客户用。
+    返回 [{company_id, name, short_name, serial_id, is_public}, ...]。
+    """
+    params = {"word": word, "search_field": "name", "count": count}
+    token = ensure_access_token(db)
+    data = _get_json("/v1/company/query", token, context="客户查询", params=params)
+    if data is None:  # auth failure → one forced refresh
+        token = ensure_access_token(db, force=True)
+        data = _get_json("/v1/company/query", token, context="客户查询", params=params)
+        if data is None:
+            raise OkkiApiError("OKKI 客户查询失败：token 刷新后仍被拒绝，请检查凭证与 scope（客户接口需开通 company 模块）")
+    items = (data or {}).get("list") or []
+    return items if isinstance(items, list) else []
+
+
+def get_company_info(db: Session, company_id: int) -> dict:
+    """GET /v1/company/info — 客户详情（含 owner 跟进人列表）。只读接口（company scope）。"""
+    params = {"company_id": company_id}
+    token = ensure_access_token(db)
+    data = _get_json("/v1/company/info", token, context="客户详情", params=params)
+    if data is None:  # auth failure → one forced refresh
+        token = ensure_access_token(db, force=True)
+        data = _get_json("/v1/company/info", token, context="客户详情", params=params)
+        if data is None:
+            raise OkkiApiError("OKKI 客户详情拉取失败：token 刷新后仍被拒绝，请检查凭证与 scope（客户接口需开通 company 模块）")
+    return data or {}
+
+
 def _post_json(path: str, token: str, payload: dict, *, context: str) -> dict | None:
     """POST with Bearer auth. Returns payload data; None means auth failure
     (caller may retry with a fresh token); other failures raise.
@@ -177,6 +211,7 @@ def _post_json(path: str, token: str, payload: dict, *, context: str) -> dict | 
         )
     if body.get("error") == "access_denied":
         return None
+    # 推单成功码保持严格（None/200）：push 是关键路径，未实测过 code=0 形态，不放宽
     if resp.status_code != 200 or (body.get("code") not in (None, 200)):
         detail = body.get("message") or body.get("error_description") or resp.text[:500]
         logger.warning("OKKI POST %s error %s: %s", path, resp.status_code, detail)
@@ -185,15 +220,18 @@ def _post_json(path: str, token: str, payload: dict, *, context: str) -> dict | 
     return body.get("data") if isinstance(body.get("data"), dict) else body
 
 
-def _get_json(path: str, token: str, *, context: str) -> dict | None:
+def _get_json(path: str, token: str, *, context: str, params: dict | None = None) -> dict | None:
     """GET with Bearer auth. Returns payload data; None means auth failure
     (caller may retry with a fresh token); other failures raise.
     """
     try:
+        # params 仅在显式传入时下发：既有测试桩/调用方按 (url, headers, timeout) 签名 mock
+        extra = {"params": params} if params is not None else {}
         resp = httpx.get(
             f"{_base_url()}{path}",
             headers={"Authorization": f"Bearer {token}"},
             timeout=REQUEST_TIMEOUT,
+            **extra,
         )
     except httpx.HTTPError as exc:
         logger.warning("OKKI GET %s failed: %s", path, exc)
@@ -205,7 +243,7 @@ def _get_json(path: str, token: str, *, context: str) -> dict | None:
     body = _parse_json(resp, context=context)
     if body.get("error") == "access_denied":
         return None
-    if resp.status_code != 200 or (body.get("code") not in (None, 200)):
+    if resp.status_code != 200 or (body.get("code") not in (None, 0, 200)):
         detail = body.get("message") or body.get("error_description") or resp.text[:200]
         logger.warning("OKKI GET %s error %s: %s", path, resp.status_code, detail)
         print(f"[okki_client] GET {path} error {resp.status_code}: {detail}", flush=True)
