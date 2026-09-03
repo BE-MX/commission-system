@@ -153,6 +153,8 @@ export function buildCreateItems(items, normalizeAttrs) {
     order_qty: item.order_qty,
     expected_quote: item.expectedQuote,
     manual_discount_price: item.manualDiscountPrice > 0 ? item.manualDiscountPrice : null,
+    labor_fee: item.laborFee > 0 ? Number(item.laborFee) : 0,
+    special_price: item.specialPrice > 0 ? Number(item.specialPrice) : null,
     hairstyle: item.hairstyle || null,
     hairstyle_images: imagePaths(item.hairstyle_images),
     color: item.color || null,

@@ -54,7 +54,8 @@ def test_domestic_attribute_migration_is_the_only_head_after_shipping_inspection
     config.set_main_option("script_location", str(backend_root / "alembic"))
     revisions = ScriptDirectory.from_config(config)
 
-    assert revisions.get_heads() == ["136_whatsapp_translation"]
+    assert revisions.get_heads() == ["137_domestic_labor_fee"]
+    assert revisions.get_revision("137_domestic_labor_fee").down_revision == "136_whatsapp_translation"
     assert revisions.get_revision("136_whatsapp_translation").down_revision == "135_invoice_customer_overlays"
     assert revisions.get_revision("134_domestic_credit_shipdate").down_revision == "133_domestic_customer_profile"
     assert revisions.get_revision("133_domestic_customer_profile").down_revision == "132_domestic_manual_price"

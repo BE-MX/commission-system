@@ -138,10 +138,16 @@
 
           <div class="item-meta">
             <span class="meta-item">数量 <b>{{ item.order_qty }} 件</b></span>
-            <span class="meta-item">优惠价 <b>¥{{ Number(item.unit_price || 0).toFixed(2) }}</b> / 件</span>
-            <span class="meta-item muted">原始价 ¥{{ Number(item.original_price || 0).toFixed(2) }}</span>
-            <span v-if="Number(item.discount_amount || 0) > 0" class="meta-item meta-discount">优惠 -¥{{ Number(item.discount_amount).toFixed(2) }}</span>
-            <span class="meta-item muted">{{ membershipLevelLabel(item.membership_level_snapshot) }} · {{ item.pricing_rule_label || '历史人工价' }}</span>
+            <template v-if="detail.order_category === 'special'">
+              <span class="meta-item">销售价 <b>¥{{ Number(item.unit_price || 0).toFixed(2) }}</b> / 件</span>
+            </template>
+            <template v-else>
+              <span class="meta-item">明细单价 <b>¥{{ Number(item.unit_price || 0).toFixed(2) }}</b> / 件</span>
+              <span class="meta-item muted">优惠价 ¥{{ (Number(item.unit_price || 0) - Number(item.labor_fee || 0)).toFixed(2) }}<template v-if="Number(item.labor_fee || 0) > 0"> + 手工费 ¥{{ Number(item.labor_fee).toFixed(2) }}</template></span>
+              <span class="meta-item muted">原始价 ¥{{ Number(item.original_price || 0).toFixed(2) }}</span>
+              <span v-if="Number(item.discount_amount || 0) > 0" class="meta-item meta-discount">优惠 -¥{{ Number(item.discount_amount).toFixed(2) }}</span>
+              <span class="meta-item muted">{{ membershipLevelLabel(item.membership_level_snapshot) }} · {{ item.pricing_rule_label || '历史人工价' }}</span>
+            </template>
             <span class="meta-item meta-amount">小计 ¥{{ Number(item.line_amount || 0).toFixed(2) }}</span>
           </div>
 

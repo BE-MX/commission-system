@@ -302,9 +302,14 @@ def _build_item(
     product: DomesticProduct,
     quote: pricing_service.LockedOrderQuote,
 ) -> tuple[DomesticOrderItem, str | None]:
-    """Persist one item from a server-validated, locked quote."""
+    """Persist one item from a server-validated, locked quote.
+
+    普单成交单价 = 优惠价 + 手工费；特单直接以销售价为成交价（quote 为手工构造）。
+    """
     product.use_count = (product.use_count or 0) + 1
 
+    labor_fee = balance_service.money(payload.labor_fee)
+    unit_price = balance_service.money(quote.discount.final_price) + labor_fee
     item = DomesticOrderItem(
         order_id=order_id,
         line_no=line_no,
@@ -314,8 +319,9 @@ def _build_item(
         route_id=product.route_id,
         order_qty=payload.order_qty,
         original_price=quote.discount.original_price,
-        unit_price=quote.discount.final_price,
+        unit_price=unit_price,
         discount_amount=quote.discount.discount_amount,
+        labor_fee=labor_fee,
         membership_level_snapshot=quote.membership_level,
         pricing_rule=quote.discount.pricing_rule,
         pricing_version=pricing_service.PRICING_VERSION,
@@ -375,6 +381,28 @@ def _lock_customer(db: Session, customer_id: int) -> DomesticCustomer:
     return customer
 
 
+def _build_special_order_quotes(
+    items: list[OrderItemInput],
+    products: list[DomesticProduct],
+) -> list[pricing_service.LockedOrderQuote]:
+    """特单不调用原始价格，直接以录入的销售价为成交价；原价快照等于销售价。"""
+    quotes = []
+    for payload, product in zip(items, products):
+        price = balance_service.money(payload.special_price)
+        quotes.append(pricing_service.LockedOrderQuote(
+            product=product,
+            base_row=SimpleNamespace(version=0),
+            discount=pricing_service.DiscountResult(
+                original_price=price,
+                final_price=price,
+                discount_amount=balance_service.money(0),
+                pricing_rule="manual_override",
+            ),
+            membership_level=None,
+        ))
+    return quotes
+
+
 def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
     """保存草稿或正式下单；正式单与余额扣款在同一事务完成。"""
     try:
@@ -409,17 +437,29 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
             order_category=payload.order_category,
             user_id=user_id,
         )
-        customer, quotes = pricing_service.lock_and_validate_order_quotes(
-            db,
-            customer_id=customer.id,
-            item_products=prepared,
+        # 特单：明细带销售价时直接按销售价成交，跳过报价与 409 变动确认；
+        # 未带销售价的特单（存量/草稿回填）仍走报价路径兼容旧数据。
+        use_special_price = (
+            payload.order_category == "special"
+            and all(item.special_price is not None for item in payload.items)
         )
+        if use_special_price:
+            quotes = _build_special_order_quotes(
+                payload.items, [product for _item, product in prepared]
+            )
+        else:
+            customer, quotes = pricing_service.lock_and_validate_order_quotes(
+                db,
+                customer_id=customer.id,
+                item_products=prepared,
+            )
 
         # Check the discounted total before the order-number savepoint. The definitive
         # finance sync still runs after items are built; this early check also keeps
         # SQLite from retaining a released savepoint after insufficiency.
         estimated_total = balance_service.money(sum(
-            quote.discount.final_price * item.order_qty
+            (balance_service.money(quote.discount.final_price) + balance_service.money(item.labor_fee))
+            * item.order_qty
             for (item, _product), quote in zip(prepared, quotes)
         ))
         available = balance_service.money(customer.balance)
@@ -955,6 +995,7 @@ def get_order_detail(
             "discount_amount": (
                 float(item.discount_amount) if item.discount_amount is not None else None
             ),
+            "labor_fee": float(item.labor_fee or 0),
             "membership_level_snapshot": item.membership_level_snapshot,
             "pricing_rule": item.pricing_rule,
             "pricing_rule_label": pricing_label,
@@ -1232,11 +1273,15 @@ def add_item(
             order_category=order.order_category,
             user_id=user_id or order.created_by,
         )
-        _customer, quotes = pricing_service.lock_and_validate_order_quotes(
-            db,
-            customer_id=customer.id,
-            item_products=prepared,
-        )
+        # 特单追加明细：带销售价则直录，否则回退报价兼容旧数据
+        if order.order_category == "special" and payload.special_price is not None:
+            quotes = _build_special_order_quotes([payload], [prepared[0][1]])
+        else:
+            _customer, quotes = pricing_service.lock_and_validate_order_quotes(
+                db,
+                customer_id=customer.id,
+                item_products=prepared,
+            )
         product = prepared[0][1]
 
         line_no = order.next_line_no or 1
@@ -1450,24 +1495,37 @@ def submit_draft(
 
         customer = _lock_customer(db, order.customer_id)
         items = _lock_draft_items(db, order.id)
-        _validate_expected_item_set(items, payload.expected_quotes)
-        quotes = _lock_and_validate_saved_item_quotes(
-            db,
-            customer=customer,
-            items=items,
-            expected_quotes=payload.expected_quotes,
-        )
-        total = balance_service.money(sum(
-            quote.discount.final_price * item.order_qty
-            for item, quote in zip(items, quotes)
-        ))
-        available = balance_service.money(customer.balance)
-        if customer.settle_mode != "credit" and available < total:
-            raise ValueError(
-                f"客户「{customer.shop_name}」余额不足：当前 ¥{available:.2f}，"
-                f"本次需扣 ¥{total:.2f}"
+        # 特单没有原始价格，草稿提交时不重新报价，直接按录入的销售价结算
+        if order.order_category == "special":
+            total = balance_service.money(sum(
+                balance_service.money(item.unit_price) * item.order_qty for item in items
+            ))
+            available = balance_service.money(customer.balance)
+            if customer.settle_mode != "credit" and available < total:
+                raise ValueError(
+                    f"客户「{customer.shop_name}」余额不足：当前 ¥{available:.2f}，"
+                    f"本次需扣 ¥{total:.2f}"
+                )
+        else:
+            _validate_expected_item_set(items, payload.expected_quotes)
+            quotes = _lock_and_validate_saved_item_quotes(
+                db,
+                customer=customer,
+                items=items,
+                expected_quotes=payload.expected_quotes,
             )
-        _apply_saved_item_quotes(items, quotes)
+            total = balance_service.money(sum(
+                (balance_service.money(quote.discount.final_price) + balance_service.money(item.labor_fee))
+                * item.order_qty
+                for item, quote in zip(items, quotes)
+            ))
+            available = balance_service.money(customer.balance)
+            if customer.settle_mode != "credit" and available < total:
+                raise ValueError(
+                    f"客户「{customer.shop_name}」余额不足：当前 ¥{available:.2f}，"
+                    f"本次需扣 ¥{total:.2f}"
+                )
+            _apply_saved_item_quotes(items, quotes)
         order.status = C.ORDER_PRODUCING
         db.flush()
         balance_service.sync_order_finance(

@@ -47,6 +47,7 @@ function emptyItem() {
     },
     order_qty: 1,
     quoteStatus: 'pending', quote: null, expectedQuote: null, manualDiscountPrice: null,
+    specialPrice: null, laborFee: null,
     hairstyle: '', hairstyle_images: [],
     color: '', color_images: [],
     style_requirement: '', style_images: [],
@@ -113,8 +114,14 @@ export function useDomesticOrderCreate() {
     () => form.items.filter(i => i.attrs.craft && !routeOf(i)).length,
   )
 
+  // 明细成交单价：特单=销售价；普单=优惠价+手工费
+  function effectiveUnitPrice(item) {
+    if (form.order_category === 'special') return Number(item.specialPrice || 0)
+    return effectiveDiscountPrice(item) + Number(item.laborFee || 0)
+  }
+
   const orderTotal = computed(() => form.items.reduce(
-    (sum, item) => sum + Number(item.order_qty || 0) * effectiveDiscountPrice(item),
+    (sum, item) => sum + Number(item.order_qty || 0) * effectiveUnitPrice(item),
     0,
   ))
 
@@ -236,6 +243,7 @@ export function useDomesticOrderCreate() {
   }
 
   async function refreshQuotes() {
+    if (form.order_category === 'special') return
     if (!allItemsQuotable()) return
     const sequence = ++quoteSequence
     form.items.forEach(item => { item.quoteStatus = 'quoting' })
@@ -260,6 +268,7 @@ export function useDomesticOrderCreate() {
     quoteLoading.value = false
     form.items.forEach(invalidateItemQuote)
     clearTimeout(quoteTimer)
+    if (form.order_category === 'special') return  // 特单不报价
     if (!allItemsQuotable()) return
     quoteTimer = setTimeout(refreshQuotes, 280)
   }
@@ -272,11 +281,16 @@ export function useDomesticOrderCreate() {
     if (!form.order_category) return '请选择订单类别'
     if (!form.order_type) return '请选择订单类型'
     if (!form.order_channel) return '请选择订单渠道'
+    const isSpecial = form.order_category === 'special'
     for (const [idx, item] of form.items.entries()) {
       const label = `第 ${idx + 1} 行明细`
       const attrError = validateItemAttributes(item.attrs)
       if (attrError) return `${label}：${attrError}`
       if (!(item.order_qty > 0)) return `${label}的数量要大于 0`
+      if (isSpecial) {
+        if (!(Number(item.specialPrice) > 0)) return `${label}请填写销售价`
+        continue
+      }
       if (item.quoteStatus === 'missing_base_price') return `${label}缺少原始价，请先让管理员在产品清单维护`
       if (item.quoteStatus !== 'priced' || !item.expectedQuote) return `${label}尚未完成报价`
     }
@@ -370,7 +384,7 @@ export function useDomesticOrderCreate() {
       msgError(error)
       return
     }
-    if (hasBlockingPrice(form.items)) {
+    if (hasBlockingPrice(form.items) && form.order_category !== 'special') {
       msgError('所有明细必须完成报价；缺原价的产品需先去产品清单维护')
       return
     }
