@@ -5,7 +5,7 @@ import {
   getSession,
 } from '@/background/apiClient'
 import type { PairingState, PairingStatusResponse, SessionResponse, StartPairingRequest } from '@/shared/contracts'
-import { storage } from '@/shared/storage'
+import { clearDeviceTokens, storage } from '@/shared/storage'
 
 export type PairingResult = {
   device_id?: number
@@ -71,6 +71,7 @@ export async function startPairing(input: StartPairingInput): Promise<PairingSta
   const response = await createPairing(request)
   const authorizeUrl = assertApprovedAuthorizeUrl(response.authorize_url)
 
+  await clearDeviceTokens()
   await storage.set({
     chatKeySalt: bytesToHex(saltBytes),
     pendingDeviceCode: response.device_code,

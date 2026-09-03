@@ -6,9 +6,11 @@
       </template>
 
       <el-alert v-if="state === 'invalid'" type="warning" :closable="false" title="配对码无效或已过期" description="请回到扩展重新发起授权。" />
+      <el-alert v-else-if="state === 'completed'" type="success" :closable="false" title="设备已授权" description="请回到扩展点击「我已完成授权」。" />
+      <el-alert v-else-if="state === 'rejected'" type="info" :closable="false" title="已拒绝该设备" description="如需授权，请回到扩展重新发起。" />
       <el-alert v-else-if="state === 'error'" type="error" :closable="false" title="授权失败" description="请稍后重试或联系管理员。" />
 
-      <template v-else-if="inspection">
+      <template v-else-if="state === 'ready' && inspection">
         <el-descriptions :column="1" border>
           <el-descriptions-item label="状态">{{ inspection.status }}</el-descriptions-item>
           <el-descriptions-item v-if="inspection.expires_at" label="有效期至">{{ inspection.expires_at }}</el-descriptions-item>
@@ -47,7 +49,14 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { approvePairing, getMyDevices, inspectPairing, rejectPairing, revokeMyDevice } from '@/api/whatsappTranslation'
 import { useAuthStore } from '@/stores/auth'
-import { captureDeviceCode, clearDeviceCode, readDeviceCode, waitForAuthorizeUser } from './whatsappTranslationAuthorize'
+import {
+  captureDeviceCode,
+  clearDeviceCode,
+  pairingDecisionState,
+  pairingInspectionState,
+  readDeviceCode,
+  waitForAuthorizeUser,
+} from './whatsappTranslationAuthorize'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -80,7 +89,7 @@ async function inspect() {
   }
   const response = await inspectPairing(code)
   inspection.value = response.data
-  state.value = 'ready'
+  state.value = pairingInspectionState(response.data.status)
 }
 
 async function decide(action) {
@@ -93,7 +102,7 @@ async function decide(action) {
     clearDeviceCode(window.sessionStorage)
     ElMessage.success(action === 'approve' ? '授权成功，请回到扩展继续' : '已拒绝该设备')
     inspection.value = null
-    state.value = 'invalid'
+    state.value = pairingDecisionState(action)
     await loadDevices()
   } catch (error) {
     handleError(error)

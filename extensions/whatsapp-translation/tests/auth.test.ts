@@ -57,6 +57,26 @@ describe('extension pairing', () => {
     expect(await storage.get('chatKeySalt')).toMatch(/^[0-9a-f]{32}$/)
   })
 
+  it('clears stale local credentials before a new pairing is created', async () => {
+    await storage.set({
+      deviceToken: 'stale-token',
+      pendingDeviceCode: 'old-device-code',
+      pendingDeviceToken: 'old-pending-token',
+    })
+    const createPairing = vi.spyOn(apiClient, 'createPairing').mockResolvedValue({
+      authorize_url: 'https://leshine.work/whatsapp-translation/authorize#new-code',
+      device_code: 'new-device-code',
+      expires_at: '2027-03-02T10:00:00',
+    })
+
+    await startPairing(deviceInfo)
+
+    expect(createPairing).toHaveBeenCalledTimes(1)
+    expect(await storage.get('deviceToken')).toBeUndefined()
+    expect(await storage.get('pendingDeviceCode')).toBe('new-device-code')
+    expect(await storage.get('pendingDeviceToken')).toMatch(/^[A-Za-z0-9_-]{43}$/)
+  })
+
   it('rejects authorize URLs outside the approved route', async () => {
     vi.spyOn(apiClient, 'createPairing').mockResolvedValue({
       authorize_url: 'https://example.com/whatsapp-translation/authorize#code',

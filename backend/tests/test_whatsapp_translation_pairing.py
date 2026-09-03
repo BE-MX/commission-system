@@ -226,6 +226,24 @@ def test_revoked_device_retry_fails(db):
     assert error.value.error_code == ERROR_DEVICE_REVOKED
 
 
+def test_revoked_device_can_be_replaced_by_new_pairing(db):
+    user = make_user(db)
+    first_created = make_pairing(db, token_hash="e" * 64)
+    approve_pairing(db, first_created.device_code, user.id)
+    first = exchange_pairing(db, first_created.device_code)
+    device = db.get(TranslationDevice, first.device_id)
+    device.is_active = False
+    device.revoked_at = beijing_now()
+    db.commit()
+
+    second_created = make_pairing(db, token_hash="7" * 64)
+    approve_pairing(db, second_created.device_code, user.id)
+    second = exchange_pairing(db, second_created.device_code)
+
+    assert second.status == "ready"
+    assert second.device_id != first.device_id
+
+
 def test_inactive_user_exchange_fails(db):
     user = make_user(db)
     created = make_pairing(db, token_hash="1" * 64)
