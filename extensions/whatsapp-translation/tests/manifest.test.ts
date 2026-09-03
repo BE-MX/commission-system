@@ -1,6 +1,10 @@
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+
+import { packageRelease } from '../scripts/package.mjs'
 
 const manifest = JSON.parse(readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'))
 const alphabet = 'abcdefghijklmnop'
@@ -23,5 +27,40 @@ describe('manifest privacy boundary', () => {
 
   it('does not request surveillance or sending capabilities', () => {
     expect(JSON.stringify(manifest)).not.toMatch(/all_urls|cookies|history|webRequest|declarativeNetRequest|clipboard|tabs/)
+  })
+})
+
+describe('release packaging', () => {
+  it('creates a deterministic release with the exact manifest shape', () => {
+    const outputDir = mkdtempSync(join(tmpdir(), 'whatsapp-release-'))
+    const secondDir = mkdtempSync(join(tmpdir(), 'whatsapp-release-'))
+    try {
+      const release = packageRelease({ distDir: 'dist', outputDir })
+      const second = packageRelease({ distDir: 'dist', outputDir: secondDir })
+
+      expect(release).toEqual({
+        extension_id: 'bnkecbkoidckffckbefjjcbchmngjobi',
+        filename: 'whatsapp-translation-1.0.0.zip',
+        sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+        size: expect.any(Number),
+        version: '1.0.0',
+      })
+      expect(release.size).toBeGreaterThan(0)
+      expect(release.sha256).toBe(second.sha256)
+      expect(readdirSync(outputDir).sort()).toEqual(['latest.json', release.filename])
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true })
+      rmSync(secondDir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a missing dist and unsafe output paths', () => {
+    expect(() => packageRelease({ distDir: 'missing-dist', outputDir: mkdtempSync(join(tmpdir(), 'bad-')) }))
+      .toThrow('invalid_dist')
+    expect(() => packageRelease({
+      distDir: 'dist',
+      outputDir: 'dist',
+      repositoryRoot: new URL('../..', import.meta.url).pathname,
+    })).toThrow('unsafe_output_path')
   })
 })

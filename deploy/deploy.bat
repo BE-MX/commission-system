@@ -185,6 +185,30 @@ echo      OK
 echo.
 
 REM ---------- Detect frontend changes ----------
+set "EXTENSION_CHANGED=0"
+set "EXTENSION_MARKER=%INSTALL_DIR%\.deploy_state\extension_build_commit.txt"
+set "EXTENSION_BASE="
+cd /d "%INSTALL_DIR%"
+if exist "%EXTENSION_MARKER%" (
+    set /p EXTENSION_BASE=<"%EXTENSION_MARKER%"
+)
+if not defined EXTENSION_BASE (
+    set "EXTENSION_CHANGED=1"
+) else (
+    git diff --name-only %EXTENSION_BASE% HEAD -- extensions/whatsapp-translation/ 2>nul | findstr /R "." >nul 2>&1
+    if not errorlevel 1 set "EXTENSION_CHANGED=1"
+)
+git diff --name-only -- extensions/whatsapp-translation/ 2>nul | findstr /R "." >nul 2>&1
+if not errorlevel 1 set "EXTENSION_CHANGED=1"
+if "%EXTENSION_CHANGED%"=="1" (
+    echo [5/7] Package WhatsApp translation extension...
+    cd /d "%INSTALL_DIR%\extensions\whatsapp-translation"
+    call npm ci --silent
+    if errorlevel 1 goto :error
+    call npm run package -- --output "%INSTALL_DIR%\frontend\public\downloads\whatsapp-translation"
+    if errorlevel 1 goto :error
+    set "FRONTEND_CHANGED=1"
+)
 set "FRONTEND_CHANGED=0"
 set "FRONTEND_MARKER=%INSTALL_DIR%\.deploy_state\frontend_build_commit.txt"
 set "FRONTEND_BASE="
@@ -232,6 +256,9 @@ if errorlevel 1 (
 )
 echo      OK
 echo.
+if "%EXTENSION_CHANGED%"=="1" (
+    for /f "delims=" %%H in ('git -C "%INSTALL_DIR%" rev-parse HEAD') do echo %%H>"%EXTENSION_MARKER%"
+)
 
 REM ---------- [6/7] Sync dist to cloud ----------
 echo [6/7] Sync frontend to cloud server...
