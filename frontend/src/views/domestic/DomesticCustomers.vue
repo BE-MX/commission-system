@@ -79,8 +79,18 @@
           </template>
         </el-table-column>
         <el-table-column prop="order_count" label="订单数" min-width="90" />
+        <el-table-column label="结算方式" min-width="120">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.settle_mode === 'credit' ? 'warning' : 'info'" effect="plain">
+              {{ row.settle_mode_label || '先充值后下单' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="充值余额" min-width="110" align="right">
-          <template #default="{ row }"><span class="balance-value">¥{{ Number(row.balance || 0).toFixed(2) }}</span></template>
+          <template #default="{ row }">
+            <span v-if="Number(row.balance || 0) < 0" class="debt-value">欠款 ¥{{ Math.abs(Number(row.balance)).toFixed(2) }}</span>
+            <span v-else class="balance-value">¥{{ Number(row.balance || 0).toFixed(2) }}</span>
+          </template>
         </el-table-column>
         <el-table-column label="状态" min-width="80">
           <template #default="{ row }">
@@ -202,6 +212,13 @@
         </el-row>
         <el-form-item label="收货地址">
           <el-input v-model="dialog.address" type="textarea" :rows="2" />
+        </el-form-item>
+        <el-form-item label="结算方式" required>
+          <el-radio-group v-model="dialog.settle_mode">
+            <el-radio-button value="prepay">先充值后下单</el-radio-button>
+            <el-radio-button value="credit">先下单后付款</el-radio-button>
+          </el-radio-group>
+          <div class="preview-hint" style="margin-left: 0">先下单后付款：下单不校验余额，欠款记为负余额，充值后自动冲抵</div>
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="dialog.remark" type="textarea" :rows="2" />
@@ -389,6 +406,7 @@ const {
 
 .pager { margin: 12px; justify-content: flex-end; }
 .balance-value { color: var(--el-color-success); font-weight: 600; }
+.debt-value { color: var(--el-color-danger); font-weight: 600; }
 .amount-in { color: var(--el-color-success); font-weight: 600; }
 .amount-out { color: var(--el-color-danger); font-weight: 600; }
 .muted, .preview-hint { color: var(--el-text-color-secondary); font-size: 12px; }

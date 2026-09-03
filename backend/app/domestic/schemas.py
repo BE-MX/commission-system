@@ -34,6 +34,9 @@ class CustomerCreate(BaseModel):
         description="累计销售额（历史档案口径）",
     )
     remark: str | None = Field(None, max_length=500)
+    settle_mode: Literal["prepay", "credit"] = Field(
+        "prepay", description="prepay=先充值后下单,credit=先下单后付款"
+    )
 
     @field_validator("shop_name")
     @classmethod
@@ -77,6 +80,7 @@ class CustomerUpdate(BaseModel):
     )
     remark: str | None = Field(None, max_length=500)
     status: int | None = Field(None, ge=0, le=1)
+    settle_mode: Literal["prepay", "credit"] | None = None
 
     @field_validator(
         "custom_code", "province", "city", "contact", "phone", "address",
@@ -433,6 +437,7 @@ class OrderCreate(BaseModel):
     request_id: str = Field(..., min_length=8, max_length=64, description="客户端建单幂等键")
     order_no: str = Field(..., min_length=1, max_length=64, description="客户订单号")
     order_date: date
+    required_ship_date: date = Field(..., description="要求发货日期（必填）")
     customer_id: int | None = Field(None, description="已有客户 ID")
     customer_shop_name: str | None = Field(None, max_length=120, description="就地新建客户的店名")
     order_category: Literal["normal", "special"] = "normal"
@@ -479,6 +484,7 @@ class OrderUpdate(BaseModel):
 
     order_no: str | None = Field(None, min_length=1, max_length=64)
     order_date: date | None = None
+    required_ship_date: date | None = None
     customer_id: int | None = Field(None, gt=0)
     order_category: Literal["normal", "special"] | None = None
     order_type: str | None = Field(None, min_length=1, max_length=32)
@@ -494,6 +500,13 @@ class OrderUpdate(BaseModel):
     def _reject_null_order_category(cls, value: str | None) -> str:
         if value is None:
             raise ValueError("订单类别传入时不能为空")
+        return value
+
+    @field_validator("required_ship_date", mode="before")
+    @classmethod
+    def _reject_null_required_ship_date(cls, value: date | None) -> date:
+        if value is None:
+            raise ValueError("要求发货日期传入时不能为空")
         return value
 
     @field_validator("order_type", "order_channel", mode="before")

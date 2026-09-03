@@ -59,7 +59,9 @@ class DomesticCustomer(Base):
     total_order_count = Column(Integer, comment="累计订单数（历史档案口径，NULL=未录入）")
     total_sales_amount = Column(Numeric(14, 2), comment="累计销售额（历史档案口径，NULL=未录入）")
     remark = Column(String(500), comment="备注")
-    balance = Column(Numeric(14, 2), nullable=False, default=0, comment="充值可用余额")
+    balance = Column(Numeric(14, 2), nullable=False, default=0, comment="充值可用余额；credit 客户可为负（欠款）")
+    settle_mode = Column(String(16), nullable=False, default="prepay",
+                         comment="结算方式：prepay=先充值后下单,credit=先下单后付款")
     status = Column(SmallInteger, nullable=False, default=1, comment="0=停用,1=启用")
     created_by = Column(_UINT, ForeignKey("ark_users.id"), nullable=False, comment="创建人")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
@@ -69,6 +71,10 @@ class DomesticCustomer(Base):
         CheckConstraint(
             "membership_level IS NULL OR membership_level IN ('silver', 'black', 'supreme')",
             name="ck_dom_customer_membership_level",
+        ),
+        CheckConstraint(
+            "settle_mode IN ('prepay', 'credit')",
+            name="ck_dom_customer_settle_mode",
         ),
     )
 
@@ -164,6 +170,7 @@ class DomesticOrder(Base):
     domestic_no = Column(String(32), nullable=False, unique=True, comment="系统单号 DO{YYYYMMDD}-{NNN}")
     order_no = Column(String(64), nullable=False, comment="客户订单号（原样文本）")
     order_date = Column(Date, nullable=False, comment="下单日期")
+    required_ship_date = Column(Date, comment="要求发货日期（新单必填；存量单为 NULL）")
     customer_id = Column(Integer, ForeignKey("ark_domestic_customers.id", ondelete="RESTRICT"), nullable=False, comment="客户")
     order_category = Column(String(16), nullable=False, default="normal", comment="normal=普货,special=特单")
     order_type = Column(String(32), comment="订单类型（sys_dict: domestic_order_type）")
@@ -190,6 +197,7 @@ class DomesticOrder(Base):
         Index("idx_dom_order_status", "status", "deleted_flag"),
         Index("idx_dom_order_customer", "customer_id"),
         Index("idx_dom_order_date", "order_date"),
+        Index("idx_dom_order_required_ship_date", "required_ship_date"),
         Index("idx_dom_order_no", "order_no"),
         Index("uq_dom_order_request_id", "request_id", unique=True),
     )

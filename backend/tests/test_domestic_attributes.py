@@ -124,6 +124,7 @@ def _order_payload(**overrides):
         "request_id": "attributes-test-1",
         "order_no": "DOM-ATTR-001",
         "order_date": date(2026, 9, 1),
+        "required_ship_date": date(2026, 9, 10),
         "customer_id": 1,
         "order_category": "special",
         "order_type": "first_order",

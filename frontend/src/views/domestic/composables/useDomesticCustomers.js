@@ -24,6 +24,7 @@ const DIALOG_DEFAULTS = {
   lifecycle_status: null, owner_user_id: null,
   first_contact_date: null, first_order_date: null, last_order_date: null,
   total_order_count: null, total_sales_amount: null, remark: '',
+  settle_mode: 'prepay',
 }
 
 export function useDomesticCustomers() {
@@ -70,6 +71,7 @@ export function useDomesticCustomers() {
       total_order_count: row?.total_order_count ?? null,
       total_sales_amount: row?.total_sales_amount ?? null,
       remark: row?.remark || '',
+      settle_mode: row?.settle_mode || 'prepay',
     })
   }
 
@@ -95,6 +97,7 @@ export function useDomesticCustomers() {
       total_order_count: dialog.total_order_count ?? null,
       total_sales_amount: dialog.total_sales_amount ?? null,
       remark: dialog.remark || null,
+      settle_mode: dialog.settle_mode,
     }
     saving.value = true
     try {

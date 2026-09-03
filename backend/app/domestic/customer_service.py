@@ -113,6 +113,8 @@ def list_customers(
         "custom_code": r.custom_code,
         "membership_level": r.membership_level,
         "membership_label": membership_label(r.membership_level),
+        "settle_mode": r.settle_mode,
+        "settle_mode_label": C.SETTLE_MODES.get(r.settle_mode, r.settle_mode),
         "last_recharge_amount": (
             float(r.last_recharge_amount)
             if r.last_recharge_amount is not None
@@ -196,6 +198,7 @@ def create_customer(db: Session, payload: CustomerCreate, user_id: int) -> Domes
         shop_name=payload.shop_name,
         custom_code=payload.custom_code,
         **{f: getattr(payload, f) for f in CUSTOMER_PROFILE_FIELDS},
+        settle_mode=payload.settle_mode,
         balance=0,
         status=1,
         created_by=user_id,
@@ -231,7 +234,7 @@ def update_customer(db: Session, customer_id: int, payload: CustomerUpdate) -> D
         customer.custom_code = data["custom_code"]
     if "owner_user_id" in data:
         _validate_owner(db, data["owner_user_id"])
-    for field in (*CUSTOMER_PROFILE_FIELDS, "status"):
+    for field in (*CUSTOMER_PROFILE_FIELDS, "status", "settle_mode"):
         if field in data:
             setattr(customer, field, data[field])
     try:
@@ -276,6 +279,8 @@ def _customer_snapshot(customer: DomesticCustomer, *, replayed: bool = False) ->
         "current_balance": float(customer.balance or 0),
         "membership_level": customer.membership_level,
         "membership_label": membership_label(customer.membership_level),
+        "settle_mode": customer.settle_mode,
+        "settle_mode_label": C.SETTLE_MODES.get(customer.settle_mode, customer.settle_mode),
         "replayed": replayed,
     }
 

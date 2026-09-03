@@ -48,6 +48,11 @@
         <el-table-column prop="order_no" label="客户订单号" min-width="110" show-overflow-tooltip />
         <el-table-column prop="customer_name" label="客户店名" min-width="130" show-overflow-tooltip />
         <el-table-column prop="order_date" label="下单日期" min-width="105" />
+        <el-table-column label="要求发货" min-width="105">
+          <template #default="{ row }">
+            <span :class="{ 'ship-date-overdue': isShipDateOverdue(row) }">{{ row.required_ship_date || '-' }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="订单类别" min-width="90">
           <template #default="{ row }">
             <el-tag size="small" effect="plain" :type="row.order_category === 'special' ? 'warning' : ''">{{ row.order_category_label }}</el-tag>
@@ -95,6 +100,7 @@
           <div class="info-grid">
             <span>客户订单号：{{ detail.order_no }}</span>
             <span>下单日期：{{ detail.order_date }}</span>
+            <span>要求发货：{{ detail.required_ship_date || '-' }}</span>
             <span>订单类别：{{ detail.order_category_label }}</span>
             <span>订单类型：{{ detail.order_type_label }}</span>
             <span>订单渠道：{{ detail.order_channel_label }}</span>
@@ -389,6 +395,7 @@ const {
   wxacodeDialog, openWxacode, downloadWxacode,
   handleExport, handleSubmitDraft, submittingOrderIds, handleTerminate, handleDelete, goCreate,
   priceEditDialog, openPriceEdit, confirmPriceEdit,
+  isShipDateOverdue,
 } = useDomesticOrders()
 </script>
 
@@ -500,6 +507,8 @@ const {
   font-size: 13px;
   color: var(--el-color-info);
 }
+
+.ship-date-overdue { color: var(--el-color-danger); font-weight: 600; }
 
 .unit-hint {
   margin-left: 8px;

@@ -11,6 +11,9 @@ PRODUCT_TYPES = {"cap": "头套", "piece": "发片"}
 # 订单类别 → 展示名
 ORDER_CATEGORIES = {"normal": "普货", "special": "特单"}
 
+# 客户结算方式：prepay 下单硬校验余额；credit 允许负余额（负余额即欠款，充值自动冲抵）
+SETTLE_MODES = {"prepay": "先充值后下单", "credit": "先下单后付款"}
+
 # 订单类型/渠道是描述性值域，由 sys_dict 维护
 ORDER_TYPE_DICT = "domestic_order_type"
 ORDER_CHANNEL_DICT = "domestic_order_channel"

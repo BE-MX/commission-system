@@ -109,6 +109,7 @@ def _create_order(db, user, item_count=1):
         request_id=str(uuid4()),
         order_no="710",
         order_date=date(2026, 7, 28),
+        required_ship_date=date(2026, 8, 4),
         customer_id=customer.id,
         order_category="normal",
         order_type="first_order",

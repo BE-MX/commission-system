@@ -2,6 +2,8 @@
 
 所有余额变化都先锁客户行，再同时写余额与账本；调用方负责最终 commit。
 订单金额变化走差额补扣/退回，避免编辑数量或单价后余额与订单脱节。
+先下单后付款（settle_mode='credit'）的客户允许负余额——负余额即欠款，
+后续充值自动冲抵；先充值后下单（prepay，默认）的客户余额不得为负。
 """
 
 from decimal import Decimal, ROUND_HALF_UP
@@ -73,7 +75,9 @@ def apply_balance_change(
 
     before = money(customer.balance)
     after = money(before + amount)
-    if after < 0:
+    # 先下单后付款（credit）客户允许负余额：负数即欠款，之后充值自动冲抵；
+    # prepay 客户维持「余额不得为负」的硬校验。
+    if after < 0 and customer.settle_mode != "credit":
         raise ValueError(
             f"客户「{customer.shop_name}」余额不足：当前 ¥{before:.2f}，本次需扣 ¥{-amount:.2f}"
         )

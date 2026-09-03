@@ -76,6 +76,7 @@ export function useDomesticOrderCreate() {
   const form = reactive({
     order_no: '',
     order_date: todayStr(),
+    required_ship_date: '',
     customer_id: null,
     customer_shop_name: '',
     order_category: 'normal',
@@ -266,6 +267,7 @@ export function useDomesticOrderCreate() {
   function validate() {
     if (!form.order_no.trim()) return '请填写客户订单号'
     if (!form.order_date) return '请选择下单日期'
+    if (!form.required_ship_date) return '请选择要求发货日期'
     if (!form.customer_id && !form.customer_shop_name.trim()) return '请选择或填写客户店名'
     if (!form.order_category) return '请选择订单类别'
     if (!form.order_type) return '请选择订单类型'
@@ -285,6 +287,7 @@ export function useDomesticOrderCreate() {
     return {
       order_no: form.order_no.trim(),
       order_date: form.order_date,
+      required_ship_date: form.required_ship_date,
       customer_id: form.customer_id || null,
       customer_shop_name: form.customer_id ? null : form.customer_shop_name.trim(),
       order_category: form.order_category,
@@ -372,11 +375,13 @@ export function useDomesticOrderCreate() {
       return
     }
     if (!isDraft && !form.customer_id) {
-      msgError('新客户还没有充值账户：请先保存草稿，到客户管理充值后再提交')
+      msgError('新客户还没有充值账户：请先保存草稿，充值后再提交；或在客户管理把结算方式改为「先下单后付款」')
       return
     }
+    // 先下单后付款的客户不校验余额：允许欠款下单，欠款记为负余额
+    const isCreditCustomer = selectedCustomer.value?.settle_mode === 'credit'
     if (
-      !isDraft && selectedCustomer.value
+      !isDraft && selectedCustomer.value && !isCreditCustomer
       && Number(selectedCustomer.value.balance || 0) < orderTotal.value
     ) {
       msgError(`客户余额不足：当前 ¥${Number(selectedCustomer.value.balance || 0).toFixed(2)}，订单需 ¥${orderTotal.value.toFixed(2)}`)

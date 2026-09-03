@@ -423,7 +423,11 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
             for (item, _product), quote in zip(prepared, quotes)
         ))
         available = balance_service.money(customer.balance)
-        if not payload.is_draft and available < estimated_total:
+        if (
+            not payload.is_draft
+            and customer.settle_mode != "credit"
+            and available < estimated_total
+        ):
             raise ValueError(
                 f"客户「{customer.shop_name}」余额不足：当前 ¥{available:.2f}，"
                 f"本次需扣 ¥{estimated_total:.2f}"
@@ -436,6 +440,7 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
                 domestic_no=_generate_domestic_no(db),
                 order_no=payload.order_no,
                 order_date=payload.order_date,
+                required_ship_date=payload.required_ship_date,
                 customer_id=customer.id,
                 order_category=payload.order_category,
                 order_type=payload.order_type,
@@ -703,6 +708,7 @@ def list_orders(
 
     sortable = {
         "order_date": DomesticOrder.order_date,
+        "required_ship_date": DomesticOrder.required_ship_date,
         "domestic_no": DomesticOrder.domestic_no,
         "status": DomesticOrder.status,
         "created_at": DomesticOrder.created_at,
@@ -755,6 +761,7 @@ def list_orders(
             "domestic_no": o.domestic_no,
             "order_no": o.order_no,
             "order_date": o.order_date,
+            "required_ship_date": o.required_ship_date,
             "customer_id": o.customer_id,
             "customer_name": customer_names.get(o.customer_id),
             **order_dimension_view(db, o, resolved_dimension_labels),
@@ -928,10 +935,16 @@ def get_order_detail(
         "domestic_no": order.domestic_no,
         "order_no": order.order_no,
         "order_date": order.order_date,
+        "required_ship_date": order.required_ship_date,
         "customer_id": order.customer_id,
         "customer_name": customer.shop_name if customer else None,
         "customer_custom_code": customer.custom_code if customer else None,
         "customer_membership_level": customer.membership_level if customer else None,
+        "customer_settle_mode": customer.settle_mode if customer else None,
+        "customer_settle_mode_label": (
+            C.SETTLE_MODES.get(customer.settle_mode, customer.settle_mode)
+            if customer else None
+        ),
         "customer_province": customer.province if customer else None,
         "customer_city": customer.city if customer else None,
         "customer_contact": customer.contact if customer else None,
@@ -1398,7 +1411,7 @@ def submit_draft(
             for item, quote in zip(items, quotes)
         ))
         available = balance_service.money(customer.balance)
-        if available < total:
+        if customer.settle_mode != "credit" and available < total:
             raise ValueError(
                 f"客户「{customer.shop_name}」余额不足：当前 ¥{available:.2f}，"
                 f"本次需扣 ¥{total:.2f}"
