@@ -124,6 +124,11 @@ from app.semifinished.models import (
     SemifinishedOrderItem,
 )
 from app.integration.models import IntegrationApp, InvoiceIngestRequest
+from app.whatsapp_translation.models import (
+    TranslationDevice,
+    TranslationPairing,
+    TranslationUsageDaily,
+)
 
 __all__ = [
     # 提成系统自有表
