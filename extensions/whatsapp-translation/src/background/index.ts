@@ -39,6 +39,7 @@ async function translateText(
   text: string,
   sourceLanguage: string,
   targetLanguage: string,
+  requestId?: string,
 ): Promise<string> {
   const cacheKey = await sha256Hex(`${direction}:${sourceLanguage}:${targetLanguage}:${text}`)
   const cached = translationCache.get(cacheKey)
@@ -48,7 +49,7 @@ async function translateText(
   if (!token) throw new Error('device_token_missing')
   const response = await apiClient.translate(token, chrome.runtime.getManifest().version, {
     direction,
-    request_id: crypto.randomUUID(),
+    request_id: requestId ?? crypto.randomUUID(),
     source_language: sourceLanguage,
     target_language: targetLanguage,
     text,
@@ -125,8 +126,8 @@ async function handleMessage(request: RuntimeRequest): Promise<RuntimeResponse> 
       return { type: 'chat-language/set', targetLanguage: request.targetLanguage }
     }
     case 'translation/incoming': {
-      if (!TARGET_LANGUAGES.has(request.targetLanguage)) throw new Error('unsupported_language')
-      const translation = await translateText('incoming', request.text, 'auto', request.targetLanguage)
+      if (!TARGET_LANGUAGES.has(request.target_language)) throw new Error('unsupported_language')
+      const translation = await translateText('incoming', request.text, 'auto', request.target_language, request.request_id)
       return { type: 'translation/incoming', translation }
     }
     case 'translation/outgoing': {

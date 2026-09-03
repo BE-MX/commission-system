@@ -9,6 +9,10 @@ export class WhatsAppAdapter {
     return detectChatKind(this.root)
   }
 
+  chatRootElement(): Element | null {
+    return this.root.querySelector(WHATSAPP_SELECTORS.chatRoot)
+  }
+
   async listUntranslatedIncomingMessages() {
     if (this.inspectChat().kind !== 'direct') return []
     return parseIncomingMessages(this.root)

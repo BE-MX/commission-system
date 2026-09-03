@@ -91,7 +91,7 @@ export type RuntimeRequest =
   | { type: 'capabilities/get' }
   | { type: 'chat-language/get'; chatTitle: string }
   | { type: 'chat-language/set'; chatTitle: string; targetLanguage: string }
-  | { type: 'translation/incoming'; targetLanguage: string; text: string }
+  | { type: 'translation/incoming'; request_id: string; source_language: 'auto'; target_language: string; text: string }
   | { type: 'translation/outgoing'; sourceLanguage: string; targetLanguage: string; text: string }
 
 export type RuntimeResponse =
