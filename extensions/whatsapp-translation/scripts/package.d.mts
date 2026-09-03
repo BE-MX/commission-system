@@ -12,3 +12,5 @@ export function packageRelease(options?: {
   outputDir?: string
   repositoryRoot?: string
 }): Release
+
+export function assertSafeOutputPath(outputDir: string, repositoryRoot?: string): void

@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto'
 import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import { packageRelease } from '../scripts/package.mjs'
+import { assertSafeOutputPath, packageRelease } from '../scripts/package.mjs'
 
 const manifest = JSON.parse(readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'))
+const repositoryRoot = resolve(import.meta.dirname, '../../..')
 const alphabet = 'abcdefghijklmnop'
 
 function extensionId(publicKey: string): string {
@@ -36,8 +37,8 @@ describe('release packaging', () => {
     const secondDir = mkdtempSync(join(tmpdir(), 'whatsapp-release-'))
     try {
       writeFileSync(join(outputDir, 'whatsapp-translation-stale.zip'), 'stale')
-      const release = packageRelease({ distDir: 'dist', outputDir })
-      const second = packageRelease({ distDir: 'dist', outputDir: secondDir })
+      const release = packageRelease({ distDir: 'dist', outputDir, repositoryRoot: tmpdir() })
+      const second = packageRelease({ distDir: 'dist', outputDir: secondDir, repositoryRoot: tmpdir() })
 
       expect(release).toEqual({
         extension_id: 'bnkecbkoidckffckbefjjcbchmngjobi',
@@ -56,12 +57,15 @@ describe('release packaging', () => {
   })
 
   it('rejects a missing dist and unsafe output paths', () => {
-    expect(() => packageRelease({ distDir: 'missing-dist', outputDir: mkdtempSync(join(tmpdir(), 'bad-')) }))
+    assertSafeOutputPath(resolve(repositoryRoot, 'frontend/public/downloads/whatsapp-translation'))
+    expect(() => assertSafeOutputPath(resolve(repositoryRoot, '..', 'unsafe-output'))).toThrow('unsafe_output_path')
+    expect(() => assertSafeOutputPath(tmpdir())).toThrow('unsafe_output_path')
+    expect(() => packageRelease({ distDir: 'missing-dist', outputDir: tmpdir(), repositoryRoot: tmpdir() }))
       .toThrow('invalid_dist')
     expect(() => packageRelease({
       distDir: 'dist',
-      outputDir: 'dist',
-      repositoryRoot: new URL('../..', import.meta.url).pathname,
+      outputDir: resolve(repositoryRoot, '..', 'unsafe-output'),
+      repositoryRoot,
     })).toThrow('unsafe_output_path')
   })
 
@@ -72,7 +76,7 @@ describe('release packaging', () => {
       cpSync('dist', taintedDist, { recursive: true })
       writeFileSync(join(taintedDist, 'package-lock.json'), '{}')
 
-      expect(() => packageRelease({ distDir: taintedDist, outputDir })).toThrow(
+      expect(() => packageRelease({ distDir: taintedDist, outputDir, repositoryRoot: tmpdir() })).toThrow(
         'forbidden_package_file:package-lock.json',
       )
     } finally {

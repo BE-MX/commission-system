@@ -22,11 +22,11 @@ function collect(directory, prefix = '', output = {}) {
   return output
 }
 
-export function assertSafeOutputPath(outputDir, repositoryRoot = resolve(import.meta.dirname, '../..')) {
+export function assertSafeOutputPath(outputDir, repositoryRoot = resolve(import.meta.dirname, '../../..')) {
   const resolvedOutput = resolve(outputDir)
   const resolvedRoot = resolve(repositoryRoot)
   const relativePath = relative(resolvedRoot, resolvedOutput)
-  if (!isAbsolute(resolvedOutput) || relativePath.startsWith('..') || resolve(resolvedRoot, relativePath) !== resolvedOutput) {
+  if (!isAbsolute(resolvedOutput) || isAbsolute(relativePath) || relativePath.startsWith('..') || resolve(resolvedRoot, relativePath) !== resolvedOutput) {
     throw new Error('unsafe_output_path')
   }
 }
@@ -35,7 +35,7 @@ export function packageRelease({
   distDir = 'dist',
   outputDir = 'release',
   manifestPath = 'manifest.json',
-  repositoryRoot = resolve(import.meta.dirname, '../..'),
+  repositoryRoot = resolve(import.meta.dirname, '../../..'),
 } = {}) {
   assertSafeOutputPath(outputDir, repositoryRoot)
 
