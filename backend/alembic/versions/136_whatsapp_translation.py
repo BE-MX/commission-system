@@ -3,8 +3,8 @@
 Creates device pairing, device identity, and aggregate usage tables without any
 chat plaintext columns.
 
-Revision ID: 135_whatsapp_translation
-Revises: 134_domestic_credit_shipdate
+Revision ID: 136_whatsapp_translation
+Revises: 135_invoice_customer_overlays
 Create Date: 2026-09-03
 """
 
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import mysql
 
 
-revision = "135_whatsapp_translation"
-down_revision = "134_domestic_credit_shipdate"
+revision = "136_whatsapp_translation"
+down_revision = "135_invoice_customer_overlays"
 branch_labels = None
 depends_on = None
 

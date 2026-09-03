@@ -433,12 +433,12 @@ T1 = 当前公海且有历史订单；T2 = 无历史订单但有企业邮箱、�
 - `ark_knowledge_approval_requests`：审批绑定不可变 revision；`(document_id,pending_slot)` 唯一，pending 时 slot=1，approved/rejected/cancelled 终态置 NULL，数据库层阻止并发双待审。知识库或节点软删除时关联待审批进入 cancelled。
 - `ark_knowledge_audit_logs`：成员、编辑、审批和 MCP 读取的追加式安全审计。
 
-## WhatsApp 实时翻译（迁移 135，2026-09-03）
+## WhatsApp 实时翻译（迁移 136，2026-09-03）
 
 - `translation_pairings`：一次性配对。存 `device_code_hash`、`proposed_token_hash`、设备/浏览器/扩展元数据、状态、审批人、时间；`(device_code_hash)` 唯一。明文 token/device code 不入库。
 - `translation_devices`：已授权设备。存 `token_hash`（唯一）、员工、设备元数据、过期时间、启用状态和撤销原因；employee/device 查询建索引。设备撤销保留原因与审计时间，不保存聊天密钥。
 - `translation_usage_daily`：北京时间日聚合，键为 `(user_id,device_id,usage_date)`。只保存请求数、成功率、字符数、token、方向/语言对与错误码计数。
-- 三张表均不含 WhatsApp 文本、译文、联系人、电话、消息/聊天 ID、页面 HTML、prompt 或 response。模型层测试会拒绝含明文字段的迁移；迁移 135 是当前唯一 head。
+- 三张表均不含 WhatsApp 文本、译文、联系人、电话、消息/聊天 ID、页面 HTML、prompt 或 response。模型层测试会拒绝含明文字段的迁移；迁移 136 是当前唯一 head。
 - `ark_knowledge_assets`：私有图片元数据和相对存储路径；状态为 temporary/attached，临时图带过期时间。
 - `ark_knowledge_revision_assets`：修订与图片的不可变有序引用，`(revision_id,asset_id)` 唯一；图片不能跨库附着。
 - `ark_knowledge_ai_profiles`：AI Preset、两类业务提示词、安全与配额配置；每次更新递增 `config_version`。
