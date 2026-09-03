@@ -194,12 +194,20 @@ def chat(
         # 诊断: content 为空时记录完整响应结构
         if not content and result:
             diag = json.dumps(result, ensure_ascii=False)[:2000]
-            logger.warning(
-                "AI response has empty content. provider=%s model=%s result_keys=%s full_result=%s",
-                provider.name, preset.model, list(result.keys()), diag,
-            )
-            print(f"[AI-DIAG] empty content | provider={provider.name} model={preset.model} "
-                  f"result_keys={list(result.keys())} full_result={diag}", flush=True)
+            if snapshot_mode == "metadata":
+                logger.warning(
+                    "AI response has empty content. provider=%s model=%s result_keys=%s",
+                    provider.name, preset.model, list(result.keys()),
+                )
+                print(f"[AI-DIAG] empty content | provider={provider.name} model={preset.model} "
+                      f"result_keys={list(result.keys())}", flush=True)
+            else:
+                logger.warning(
+                    "AI response has empty content. provider=%s model=%s result_keys=%s full_result=%s",
+                    provider.name, preset.model, list(result.keys()), diag,
+                )
+                print(f"[AI-DIAG] empty content | provider={provider.name} model={preset.model} "
+                      f"result_keys={list(result.keys())} full_result={diag}", flush=True)
         duration_ms = int((time.time() - start) * 1000)
 
         log.status = "success"

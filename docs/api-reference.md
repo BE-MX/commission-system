@@ -1120,7 +1120,7 @@ MCP `/mcp` 新增 `search_knowledge` 与 `get_knowledge_document`。二者使用
 
 ## WhatsApp 实时翻译
 
-基座为 `/api/whatsapp-translation`。响应仍用方ark数字信封：`code`、`message`、`data`；错误码在 `data.error_code`，稳定值包括 `rate_limited`、`pairing_not_found`、`pairing_expired`、`pairing_state`、`device_limit`、`device_revoked`、`invalid_bearer`、`quota_daily`、`quota_minute`、`preset_disabled`、`provider_failed`、`invalid_model_output`、`version_too_low`。所有设备路由和配对交换都返回 `Cache-Control: no-store`。
+基座为 `/api/whatsapp-translation`。响应仍用方ark数字信封：`code`、`message`、`data`；错误码在 `data.error_code`，稳定值包括 `rate_limited`、`pairing_not_found`、`pairing_expired`、`pairing_state`、`pairing_conflict`、`user_inactive`、`user_forbidden`、`device_limit`、`device_revoked`、`device_not_found`、`invalid_bearer`、`extension_version_invalid`、`permission_denied`、`daily_quota_exceeded`、`extension_outdated`、`ai_timeout`、`ai_unavailable`、`translation_invalid_response`。所有设备路由和配对交换都返回 `Cache-Control: no-store`。
 
 ### 配对与设备
 

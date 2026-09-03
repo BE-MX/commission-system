@@ -163,4 +163,3 @@ chrome.runtime.onMessage.addListener((request: unknown, sender, sendResponse) =>
   handleMessage(typedRequest).then(sendResponse).catch((error: unknown) => sendResponse(errorResponse(error)))
   return true
 })
-

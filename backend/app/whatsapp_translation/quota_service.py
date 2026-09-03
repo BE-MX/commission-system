@@ -206,4 +206,3 @@ def estimate_p95(duration_buckets: dict) -> int:
         if cumulative >= target:
             return upper_bound
     return 10000
-

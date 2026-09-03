@@ -229,5 +229,3 @@ def test_extension_origin_preflight_only():
         },
     )
     assert "access-control-allow-origin" not in unrelated.headers
-
-

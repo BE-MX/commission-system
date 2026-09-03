@@ -224,7 +224,3 @@ def prune_unconsumed_pairings(db: Session) -> int:
         db.delete(pairing)
     db.commit()
     return len(pairings)
-
-
-
-

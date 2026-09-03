@@ -95,7 +95,7 @@ def session_route(identity=Depends(device_identity)):
     return ok(service.get_session(identity))
 
 
-@router.get("/capabilities")
+@router.get("/capabilities", dependencies=[Depends(no_store)])
 def capabilities_route(identity=Depends(device_identity)):
     return ok(service.get_capabilities())
 
@@ -123,4 +123,3 @@ def get_admin_usage_route(db=Depends(get_db)):
 @router.get("/admin/health", dependencies=[Depends(require_permission("whatsapp_translation:admin"))])
 def get_admin_health_route(db=Depends(get_db)):
     return ok(service.get_admin_health(db))
-

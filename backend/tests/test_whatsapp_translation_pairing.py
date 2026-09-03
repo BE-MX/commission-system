@@ -225,10 +225,3 @@ def test_prune_unconsumed_pairings_older_than_seven_days(db):
     removed = prune_unconsumed_pairings(db)
     assert removed == 1
     assert db.scalar(select(TranslationPairing)) is None
-
-
-
-
-
-
-

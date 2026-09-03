@@ -89,12 +89,8 @@ def require_supported_extension(identity: DeviceIdentity) -> DeviceIdentity:
     if current < minimum:
         raise _error(426, "extension_outdated", retry_after=300)
     return identity
-
-
 def require_admin_device(identity: DeviceIdentity, db: Session) -> DeviceIdentity:
     roles, permissions = get_live_user_authorization(db, identity.user_id)
     if not ("super_admin" in roles or "whatsapp_translation:admin" in permissions):
         raise _error(403, "admin_required")
     return identity
-
-

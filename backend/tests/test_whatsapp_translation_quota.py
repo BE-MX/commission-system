@@ -168,8 +168,6 @@ def test_translation_coordinator_runs_request_id_once(db, device):
     assert first == second == "result"
     assert calls == ["run"]
     coordinator.clear()
-
-
 def test_translation_coordinator_waiter_timeout_returns_ai_unavailable():
     import threading
 
@@ -195,5 +193,3 @@ def test_translation_coordinator_waiter_timeout_returns_ai_unavailable():
     thread.join()
     assert outcome["value"] == "late"
     coordinator.clear()
-
-

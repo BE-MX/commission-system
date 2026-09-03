@@ -149,12 +149,29 @@ def test_session_and_translate_set_no_store(monkeypatch):
         app.dependency_overrides.clear()
 
 
+def test_device_capabilities_set_no_store(monkeypatch):
+    from app.whatsapp_translation.auth import DeviceIdentity
+
+    identity = DeviceIdentity(
+        user_id=1,
+        device_id=1,
+        real_name="worker",
+        extension_version="1.0.0",
+        expires_at="2099-01-01T00:00:00",
+        is_admin=False,
+    )
+    app.dependency_overrides[translation_router.device_identity] = lambda: identity
+    try:
+        response = client_get("/api/whatsapp-translation/capabilities")
+        assert response.status_code == 200
+        assert response.headers["Cache-Control"] == "no-store"
+    finally:
+        app.dependency_overrides.clear()
+
+
 def client_get(path, **kwargs):
     return TestClient(app).get(path, **kwargs)
 
 
 def client_post(path, **kwargs):
     return TestClient(app).post(path, **kwargs)
-
-
-

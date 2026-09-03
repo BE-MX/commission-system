@@ -109,6 +109,51 @@ def test_metadata_mode_never_logs_plaintext_on_provider_exception(db, monkeypatc
     assert "PRIVATE-WHATSAPP-TEXT" not in log.error_message
 
 
+def test_metadata_mode_never_logs_full_provider_response(db, monkeypatch, caplog):
+    from app.ai.call_service import chat
+    from app.ai.models import AiCallLog, AiPreset, AiProvider
+
+    provider = AiProvider(
+        name="metadata-diagnostic-provider",
+        provider_type="direct",
+        api_base="https://example.invalid",
+        api_type="openai",
+        is_enabled=True,
+        timeout_sec=15,
+    )
+    db.add(provider)
+    db.flush()
+    db.add(AiPreset(
+        preset_name="metadata-diagnostic",
+        provider_id=provider.id,
+        model="test-model",
+        is_enabled=True,
+    ))
+    db.commit()
+    monkeypatch.setattr("app.ai.call_service.post_json", lambda *args, **kwargs: {
+        "choices": [{"message": {"content": ""}}],
+        "diagnostic": "PRIVATE-WHATSAPP-TEXT",
+        "usage": {"prompt_tokens": 1, "completion_tokens": 0, "total_tokens": 1},
+    })
+    caplog.clear()
+
+    with caplog.at_level("WARNING"):
+        chat(
+            db,
+            preset_name="metadata-diagnostic",
+            messages=[{"role": "user", "content": "PRIVATE-WHATSAPP-TEXT"}],
+            caller_module="whatsapp_translation",
+            snapshot_mode="metadata",
+            timeout_sec=15,
+        )
+
+    assert "PRIVATE-WHATSAPP-TEXT" not in caplog.text
+    assert "full_result=" not in caplog.text
+    log = db.query(AiCallLog).order_by(AiCallLog.id.desc()).first()
+    assert log.response_snapshot.startswith('{"snapshot_mode": "metadata"')
+    assert "PRIVATE-WHATSAPP-TEXT" not in log.response_snapshot
+
+
 def test_chat_returns_prompt_and_completion_tokens(db, monkeypatch):
     from app.ai.call_service import chat
     from app.ai.models import AiPreset, AiProvider

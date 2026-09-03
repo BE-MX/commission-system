@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -35,6 +35,7 @@ describe('release packaging', () => {
     const outputDir = mkdtempSync(join(tmpdir(), 'whatsapp-release-'))
     const secondDir = mkdtempSync(join(tmpdir(), 'whatsapp-release-'))
     try {
+      writeFileSync(join(outputDir, 'whatsapp-translation-stale.zip'), 'stale')
       const release = packageRelease({ distDir: 'dist', outputDir })
       const second = packageRelease({ distDir: 'dist', outputDir: secondDir })
 

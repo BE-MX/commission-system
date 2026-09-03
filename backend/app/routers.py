@@ -129,4 +129,3 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(integration_router, prefix="/api/integrations", tags=["外部站点发票接入"])
     app.include_router(shipping_inspection_router, prefix="/api/shipping-inspection", tags=["发货检验"])
     app.include_router(whatsapp_translation_router, prefix="/api/whatsapp-translation", tags=["WhatsApp 实时翻译"])
-

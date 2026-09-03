@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { zipSync } from 'fflate'
@@ -65,6 +65,7 @@ export function packageRelease({
     version: manifest.version,
   }
 
+  rmSync(outputDir, { recursive: true, force: true })
   mkdirSync(outputDir, { recursive: true })
   writeFileSync(join(outputDir, filename), zip)
   writeFileSync(join(outputDir, 'latest.json'), `${JSON.stringify(release)}\n`)
