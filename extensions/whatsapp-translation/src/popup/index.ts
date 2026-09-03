@@ -3,7 +3,6 @@ type PopupState = 'loading' | 'unpaired' | 'pairing' | 'ready' | 'blocked' | 'er
 const root = document.getElementById('popup') as HTMLElement
 const sections = ['loading', 'unpaired', 'pairing', 'ready', 'blocked', 'error']
   .map(id => [id, document.getElementById(id) as HTMLElement] as const)
-let deviceCode = ''
 
 function setState(state: PopupState): void {
   root.dataset.state = state
@@ -18,12 +17,12 @@ async function loadPreferences(): Promise<{ enabled: boolean; targetLanguage: st
   return await runtimeRequest({ type: 'preferences/get' })
 }
 
-async function loadSession(): Promise<void> {
+async function loadSession(): Promise<boolean> {
   const response = await runtimeRequest({ type: 'session/refresh' })
   if (response?.type === 'session/refresh') {
     const employee = document.getElementById('employee')
     const expiry = document.getElementById('expiry')
-    if (!employee || !expiry) return
+    if (!employee || !expiry) return false
     employee.textContent = `已授权设备 #${response.session.deviceId}`
     expiry.textContent = `有效期至 ${response.session.expiresAt}`
     const preferences = await loadPreferences()
@@ -32,15 +31,32 @@ async function loadSession(): Promise<void> {
     enabled.checked = preferences.enabled
     language.value = preferences.targetLanguage
     setState('ready')
+    return true
+  }
+  return false
+}
+
+async function resumePairing(): Promise<void> {
+  const response = await runtimeRequest({ type: 'pairing/resume' })
+  if (response?.type !== 'pairing/resume' || !response.state) {
+    setState('unpaired')
     return
   }
-  setState('unpaired')
+  if (response.state.status === 'ready') {
+    if (!await loadSession()) setState('error')
+    return
+  }
+  setState('pairing')
+}
+
+async function restoreState(): Promise<void> {
+  if (await loadSession()) return
+  await resumePairing()
 }
 
 document.getElementById('start-pairing')?.addEventListener('click', async () => {
   const response = await runtimeRequest({ type: 'pairing/start' })
   if (response?.type === 'pairing/start') {
-    deviceCode = response.state.deviceCode
     setState('pairing')
     return
   }
@@ -48,12 +64,7 @@ document.getElementById('start-pairing')?.addEventListener('click', async () => 
 })
 
 document.getElementById('check-pairing')?.addEventListener('click', async () => {
-  const response = await runtimeRequest({ type: 'pairing/check', deviceCode })
-  if (response?.type === 'pairing/check' && response.state.status === 'ready') {
-    await loadSession()
-    return
-  }
-  setState('pairing')
+  await resumePairing()
 })
 
 document.getElementById('reauthorize')?.addEventListener('click', async () => {
@@ -74,4 +85,6 @@ document.getElementById('language')?.addEventListener('change', async event => {
 })
 
 setState('loading')
-loadSession().catch(() => setState('error'))
+restoreState().catch(() => setState('error'))
+
+export {}

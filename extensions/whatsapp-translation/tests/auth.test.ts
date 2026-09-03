@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as apiClient from '@/background/apiClient'
-import { finishPairing, refreshSession, startPairing } from '@/background/auth'
+import { finishPairing, refreshSession, resumePairing, startPairing } from '@/background/auth'
 import { storage } from '@/shared/storage'
 
 const deviceInfo = {
@@ -97,6 +97,31 @@ describe('extension pairing', () => {
 
     expect(exchangePairing).toHaveBeenCalledTimes(2)
     expect(await storage.get('deviceToken')).toBe('pending-token')
+    expect(await storage.get('pendingDeviceToken')).toBeUndefined()
+  })
+
+  it('resumes a stored pairing without relying on popup memory', async () => {
+    await storage.set({ pendingDeviceToken: 'pending-token', pendingDeviceCode: 'device-code' })
+    vi.spyOn(apiClient, 'exchangePairing').mockResolvedValue({
+      device_id: 7,
+      expires_at: '2027-03-02T10:00:00',
+      status: 'ready',
+    })
+
+    const state = await resumePairing({ attempts: 1 })
+
+    expect(state).toEqual({ authorizeUrl: '', deviceCode: 'device-code', status: 'ready' })
+    expect(await storage.get('deviceToken')).toBe('pending-token')
+  })
+
+  it('clears an expired stored pairing so authorization can restart', async () => {
+    await storage.set({ pendingDeviceToken: 'pending-token', pendingDeviceCode: 'expired-code' })
+    vi.spyOn(apiClient, 'exchangePairing').mockRejectedValue(
+      new apiClient.ArkApiError('pairing_expired', 'expired'),
+    )
+
+    await expect(resumePairing({ attempts: 1 })).resolves.toBeNull()
+    expect(await storage.get('pendingDeviceCode')).toBeUndefined()
     expect(await storage.get('pendingDeviceToken')).toBeUndefined()
   })
 

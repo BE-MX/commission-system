@@ -53,6 +53,10 @@ function isRevokedErrorCode(code: string): boolean {
   return ['device_revoked', 'device_expired', 'invalid_bearer'].includes(code)
 }
 
+function isExpiredPairingErrorCode(code: string): boolean {
+  return ['pairing_expired', 'pairing_not_found'].includes(code)
+}
+
 export async function startPairing(input: StartPairingInput): Promise<PairingState> {
   const tokenBytes = new Uint8Array(32)
   crypto.getRandomValues(tokenBytes)
@@ -116,6 +120,24 @@ export async function finishPairing(
     if (attempt + 1 < attempts) await wait(intervalMs)
   }
   return { status: 'pending' }
+}
+
+export async function resumePairing(
+  options: { attempts?: number; intervalMs?: number; wait?: (ms: number) => Promise<void> } = {},
+): Promise<PairingState | null> {
+  const deviceCode = await storage.get('pendingDeviceCode')
+  if (!deviceCode) return null
+
+  try {
+    const result = await finishPairing(deviceCode, options)
+    return { authorizeUrl: '', deviceCode, status: result.status }
+  } catch (error) {
+    if (error instanceof ArkApiError && isExpiredPairingErrorCode(error.code)) {
+      await storage.remove(['pendingDeviceCode', 'pendingDeviceToken'])
+      return null
+    }
+    throw error
+  }
 }
 
 export async function refreshSession(extensionVersion: string): Promise<SessionResponse | null> {
