@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -63,5 +63,21 @@ describe('release packaging', () => {
       outputDir: 'dist',
       repositoryRoot: new URL('../..', import.meta.url).pathname,
     })).toThrow('unsafe_output_path')
+  })
+
+  it('allows only reviewed production files in the ZIP', () => {
+    const taintedDist = mkdtempSync(join(tmpdir(), 'tainted-dist-'))
+    const outputDir = mkdtempSync(join(tmpdir(), 'whatsapp-release-'))
+    try {
+      cpSync('dist', taintedDist, { recursive: true })
+      writeFileSync(join(taintedDist, 'package-lock.json'), '{}')
+
+      expect(() => packageRelease({ distDir: taintedDist, outputDir })).toThrow(
+        'forbidden_package_file:package-lock.json',
+      )
+    } finally {
+      rmSync(taintedDist, { recursive: true, force: true })
+      rmSync(outputDir, { recursive: true, force: true })
+    }
   })
 })

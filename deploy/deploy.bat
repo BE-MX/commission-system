@@ -209,7 +209,6 @@ if "%EXTENSION_CHANGED%"=="1" (
     if errorlevel 1 goto :error
     set "FRONTEND_CHANGED=1"
 )
-set "FRONTEND_CHANGED=0"
 set "FRONTEND_MARKER=%INSTALL_DIR%\.deploy_state\frontend_build_commit.txt"
 set "FRONTEND_BASE="
 cd /d "%INSTALL_DIR%"

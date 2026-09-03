@@ -3,7 +3,9 @@
 from fastapi import APIRouter, Depends, Header, Request, Response
 from fastapi.security import HTTPBearer
 
-from app.auth.dependencies import require_permission
+from app.auth.dependencies import get_current_user
+from app.auth.models import ArkUser
+from app.auth.service import get_live_user_authorization
 from app.core.database import get_db
 from app.core.response import ok
 from app.whatsapp_translation.auth import require_translation_device
@@ -40,6 +42,23 @@ def device_identity(
     return require_translation_device(db, credentials, extension_version)
 
 
+def _live_translation_actor(db, current_user: dict, permission: str) -> dict:
+    user = db.get(ArkUser, int(current_user["sub"]))
+    if user is None or not user.is_active or user.deleted_at is not None:
+        raise WhatsAppTranslationError(403, "user_inactive", "WhatsApp translation authorization failed")
+    roles, permissions = get_live_user_authorization(db, user.id)
+    if "super_admin" not in roles and permission not in permissions:
+        raise WhatsAppTranslationError(403, "permission_denied", "WhatsApp translation authorization failed")
+    return current_user
+
+
+def translation_permission(permission: str):
+    def checker(current_user=Depends(get_current_user), db=Depends(get_db)):
+        return _live_translation_actor(db, current_user, permission)
+
+    return checker
+
+
 @router.post("/pairings", dependencies=[Depends(no_store)])
 def create_pairing_route(payload: PairingCreate, request: Request, db=Depends(get_db)):
     # Machine-to-machine public endpoint: the raw extension token never reaches Ark.
@@ -58,35 +77,35 @@ def exchange_pairing_route(payload: PairingCodeRequest, request: Request, db=Dep
     return ok(exchange_pairing(db, payload.device_code).model_dump(mode="json"))
 
 
-@router.post("/pairings/inspect", dependencies=[Depends(require_permission("whatsapp_translation:write")), Depends(no_store)])
-def inspect_pairing_route(payload: PairingCodeRequest, db=Depends(get_db)):
+@router.post("/pairings/inspect", dependencies=[Depends(no_store)])
+def inspect_pairing_route(payload: PairingCodeRequest, current_user=Depends(translation_permission("whatsapp_translation:write")), db=Depends(get_db)):
     return ok(inspect_pairing(db, payload).model_dump(mode="json"))
 
 
-@router.post("/pairings/approve", dependencies=[Depends(require_permission("whatsapp_translation:write")), Depends(no_store)])
-def approve_pairing_route(payload: PairingCodeRequest, current_user=Depends(require_permission("whatsapp_translation:write")), db=Depends(get_db)):
+@router.post("/pairings/approve", dependencies=[Depends(no_store)])
+def approve_pairing_route(payload: PairingCodeRequest, current_user=Depends(translation_permission("whatsapp_translation:write")), db=Depends(get_db)):
     approve_pairing(db, payload.device_code, int(current_user["sub"]))
     return ok()
 
 
-@router.post("/pairings/reject", dependencies=[Depends(require_permission("whatsapp_translation:write")), Depends(no_store)])
-def reject_pairing_route(payload: PairingCodeRequest, current_user=Depends(require_permission("whatsapp_translation:write")), db=Depends(get_db)):
+@router.post("/pairings/reject", dependencies=[Depends(no_store)])
+def reject_pairing_route(payload: PairingCodeRequest, current_user=Depends(translation_permission("whatsapp_translation:write")), db=Depends(get_db)):
     reject_pairing(db, payload.device_code, int(current_user["sub"]))
     return ok()
 
 
-@router.get("/devices/me", dependencies=[Depends(require_permission("whatsapp_translation:write"))])
-def list_my_devices_route(current_user=Depends(require_permission("whatsapp_translation:write")), db=Depends(get_db)):
+@router.get("/devices/me")
+def list_my_devices_route(current_user=Depends(translation_permission("whatsapp_translation:write")), db=Depends(get_db)):
     return ok(service.list_my_devices(db, int(current_user["sub"])))
 
 
-@router.delete("/devices/me/{device_id}", dependencies=[Depends(require_permission("whatsapp_translation:write"))])
-def revoke_my_device_route(device_id: int, current_user=Depends(require_permission("whatsapp_translation:write")), db=Depends(get_db)):
+@router.delete("/devices/me/{device_id}")
+def revoke_my_device_route(device_id: int, current_user=Depends(translation_permission("whatsapp_translation:write")), db=Depends(get_db)):
     return ok(service.revoke_my_device(db, int(current_user["sub"]), device_id))
 
 
-@router.get("/usage/me", dependencies=[Depends(require_permission("whatsapp_translation:write"))])
-def get_my_usage_route(current_user=Depends(require_permission("whatsapp_translation:write")), db=Depends(get_db)):
+@router.get("/usage/me")
+def get_my_usage_route(current_user=Depends(translation_permission("whatsapp_translation:write")), db=Depends(get_db)):
     return ok(service.get_my_usage(db, int(current_user["sub"])))
 
 
@@ -105,21 +124,21 @@ def translate_route(payload: translation_service.TranslateRequest, identity=Depe
     return ok(translation_service.translate_text(db, identity, payload).model_dump(mode="json"))
 
 
-@router.get("/admin/devices", dependencies=[Depends(require_permission("whatsapp_translation:admin"))])
-def list_admin_devices_route(db=Depends(get_db)):
+@router.get("/admin/devices")
+def list_admin_devices_route(current_user=Depends(translation_permission("whatsapp_translation:admin")), db=Depends(get_db)):
     return ok(service.list_admin_devices(db))
 
 
-@router.delete("/admin/devices/{device_id}", dependencies=[Depends(require_permission("whatsapp_translation:admin"))])
-def revoke_admin_device_route(device_id: int, current_user=Depends(require_permission("whatsapp_translation:admin")), db=Depends(get_db)):
+@router.delete("/admin/devices/{device_id}")
+def revoke_admin_device_route(device_id: int, current_user=Depends(translation_permission("whatsapp_translation:admin")), db=Depends(get_db)):
     return ok(service.revoke_admin_device(db, int(current_user["sub"]), device_id, "admin_revoked"))
 
 
-@router.get("/admin/usage", dependencies=[Depends(require_permission("whatsapp_translation:admin"))])
-def get_admin_usage_route(db=Depends(get_db)):
+@router.get("/admin/usage")
+def get_admin_usage_route(current_user=Depends(translation_permission("whatsapp_translation:admin")), db=Depends(get_db)):
     return ok(service.get_admin_usage(db))
 
 
-@router.get("/admin/health", dependencies=[Depends(require_permission("whatsapp_translation:admin"))])
-def get_admin_health_route(db=Depends(get_db)):
+@router.get("/admin/health")
+def get_admin_health_route(current_user=Depends(translation_permission("whatsapp_translation:admin")), db=Depends(get_db)):
     return ok(service.get_admin_health(db))

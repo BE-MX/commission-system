@@ -204,4 +204,6 @@ def translate_text(db, identity, request: TranslateRequest) -> TranslateResponse
     result = translation_coordinator.execute(identity.device_id, str(request.request_id), execute)
     if result == "ai_unavailable":
         raise WhatsAppTranslationError(503, "ai_unavailable", "Translation AI unavailable")
+    if isinstance(result, Exception):
+        raise result
     return result

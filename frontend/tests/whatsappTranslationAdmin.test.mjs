@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFileSync } from 'node:fs'
 
 import { healthLabel, parseReleaseManifest, sanitizeDeviceRows } from '../src/views/system/whatsappTranslationAdmin.js'
 
@@ -37,4 +38,10 @@ test('serialized device rows never contain private message or credential keys', 
   for (const forbidden of ['token', 'token_hash', 'text', 'translation', 'contact', 'phone']) {
     assert.equal(keys.includes(forbidden), false)
   }
+})
+
+test('admin view imports the revoke action', () => {
+  const view = readFileSync(new URL('../src/views/system/WhatsAppTranslation.vue', import.meta.url), 'utf8')
+
+  assert.match(view, /import \{[^}]*revokeAdminDevice/)
 })

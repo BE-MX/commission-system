@@ -43,7 +43,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getAdminDevices, getAdminHealth } from '@/api/whatsappTranslation'
+import { getAdminDevices, getAdminHealth, revokeAdminDevice } from '@/api/whatsappTranslation'
 import { deviceStatusLabel, healthLabel, parseReleaseManifest, releaseDownloadUrl, sanitizeDeviceRows } from './whatsappTranslationAdmin'
 
 const loading = ref(false)

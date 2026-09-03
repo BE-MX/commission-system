@@ -999,3 +999,5 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 **AI 与数据边界**：模型调用只通过 `app.ai.service.chat` 的 metadata-only 模式；AI 日志仅保留方向、语言、字符数、token、耗时、成功/错误码和 `model_log_id`。数据库、日志、fixture、截图和 commit 不得出现 WhatsApp 明文/译文、联系人、电话、message ID 或页面 HTML。
 
 **身份与范围**：Manifest 使用固定 public key，扩展 ID 为 `bnkecbkoidckffckbefjjcbchmngjobi`；生产 API 只允许 `https://leshine.work`，host 权限不含 WhatsApp。支持范围仅限 WhatsApp Web 一对一文字，收译和发译均要求 `whatsapp_translation:write`，管理端要求 `whatsapp_translation:admin`。
+
+**发布边界**：ZIP 和 `latest.json` 可从 Ark 前端静态路径公开下载，但包内只有编译后的扩展代码，不含 API key、设备 token、聊天数据或服务端配置。翻译能力仍由设备配对、设备 token、员工权限、配额和版本门禁控制。

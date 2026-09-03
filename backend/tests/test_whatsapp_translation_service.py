@@ -140,6 +140,19 @@ def test_provider_timeout_maps_to_stable_error(db, identity, monkeypatch):
     assert "provider details" not in str(error.value)
 
 
+def test_waiter_replays_cached_failure_as_stable_error(db, identity, monkeypatch):
+    fake_chat, _ = mock_chat(response_content="not-json")
+    monkeypatch.setattr(translation_service, "chat", fake_chat)
+
+    with pytest.raises(WhatsAppTranslationError) as first:
+        translation_service.translate_text(db, identity, make_request())
+    assert first.value.error_code == "translation_invalid_response"
+
+    with pytest.raises(WhatsAppTranslationError) as replay:
+        translation_service.translate_text(db, identity, make_request())
+    assert replay.value.error_code == "translation_invalid_response"
+
+
 def test_same_language_response_returns_original(db, identity, monkeypatch):
     fake_chat, _ = mock_chat(response_content=model_content(translated="changed", detected="zh-CN"))
     monkeypatch.setattr(translation_service, "chat", fake_chat)

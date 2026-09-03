@@ -9,6 +9,7 @@ from app.core.time import beijing_now
 from app.whatsapp_translation.constants import ERROR_DEVICE_REVOKED, ERROR_PAIRING_STATE
 from app.whatsapp_translation.errors import WhatsAppTranslationError
 from app.whatsapp_translation.models import TranslationDevice, TranslationPairing
+import app.whatsapp_translation.pairing_service as pairing_service
 from app.whatsapp_translation.pairing_service import (
     approve_pairing,
     create_pairing,
@@ -188,6 +189,27 @@ def test_exchange_enforces_device_limit(db):
     with pytest.raises(WhatsAppTranslationError) as error:
         exchange_pairing(db, created.device_code)
     assert error.value.error_code == "device_limit"
+
+
+def test_exchange_locks_pairing_owner_before_capacity_check(db, monkeypatch):
+    user = make_user(db)
+    created = make_pairing(db, token_hash="6" * 64)
+    approve_pairing(db, created.device_code, user.id)
+    order = []
+    monkeypatch.setattr(
+        pairing_service,
+        "_lock_pairing_owner",
+        lambda _db, owner_id: order.append(("lock", owner_id)),
+    )
+    monkeypatch.setattr(
+        pairing_service,
+        "_require_device_capacity",
+        lambda _db, owner_id: order.append(("capacity", owner_id)),
+    )
+
+    exchange_pairing(db, created.device_code)
+
+    assert order == [("lock", user.id), ("capacity", user.id)]
 
 
 def test_revoked_device_retry_fails(db):

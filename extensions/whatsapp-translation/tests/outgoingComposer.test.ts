@@ -80,6 +80,16 @@ describe('outgoing composer', () => {
     expect(adapter.readComposer()).toBe('Edited draft')
   })
 
+  it('does not replace a different chat after an in-flight translation', async () => {
+    const racingComposer = createOutgoingComposer(adapter, bridge)
+    await racingComposer.translateForPreview()
+    racingComposer.invalidateChat()
+    await adapter.replaceComposer('Other chat draft')
+
+    expect(await racingComposer.replaceWithPreview()).toBe(false)
+    expect(adapter.readComposer()).toBe('Other chat draft')
+  })
+
   it('invalidates a preview when the selected chat language changes', async () => {
     const languageComposer = createOutgoingComposer(adapter, bridge)
     await languageComposer.translateForPreview()

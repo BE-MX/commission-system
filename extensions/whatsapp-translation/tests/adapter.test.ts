@@ -74,4 +74,12 @@ describe('WhatsApp adapter', () => {
     expect(prohibitedTypes).toEqual([])
     expect(adapterFor(directFixture)).not.toHaveProperty('send')
   })
+
+  it('removes outgoing controls when the active chat becomes unsupported', () => {
+    adapterFor(directFixture).attachOutgoingControl(() => {})
+    expect(directFixture.querySelector('[data-ark-outgoing-control="1"]')).not.toBeNull()
+
+    adapterFor(groupFixture).attachOutgoingControl(() => {})
+    expect(groupFixture.querySelector('[data-ark-outgoing-control="1"]')).toBeNull()
+  })
 })

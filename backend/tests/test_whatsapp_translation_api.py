@@ -2,6 +2,8 @@ import pytest
 from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
+from app.auth.models import ArkUser
+
 from app.main import app
 from app.whatsapp_translation import router as translation_router
 
@@ -147,6 +149,25 @@ def test_session_and_translate_set_no_store(monkeypatch):
         assert "token" not in response.text.lower()
     finally:
         app.dependency_overrides.clear()
+
+
+def test_management_permission_is_rechecked_from_database(db, monkeypatch):
+    from app.whatsapp_translation.errors import WhatsAppTranslationError
+
+    user = ArkUser(username="stale_jwt_worker", password_hash="test", real_name="stale_jwt_worker")
+    db.add(user)
+    db.commit()
+    current_user = {"sub": str(user.id)}
+    monkeypatch.setattr(translation_router, "get_live_user_authorization", lambda _db, _user_id: ([], []))
+
+    with pytest.raises(WhatsAppTranslationError) as denied:
+        translation_router._live_translation_actor(
+            db,
+            current_user,
+            "whatsapp_translation:write",
+        )
+
+    assert denied.value.error_code == "permission_denied"
 
 
 def test_device_capabilities_set_no_store(monkeypatch):

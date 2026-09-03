@@ -32,8 +32,11 @@ export function createOutgoingComposer(
 ) {
   let preview: OutgoingPreview | undefined
   let targetLanguage = 'zh-CN'
+  let chatGeneration = 0
+  let previewGeneration = 0
 
   async function translateForPreview(): Promise<OutgoingPreview> {
+    const requestedGeneration = chatGeneration
     if (adapter.inspectChat().kind !== 'direct') throw new Error('chat_unsupported')
     const original = adapter.readComposer()
     if (!original) throw new Error('empty_composer')
@@ -51,11 +54,12 @@ export function createOutgoingComposer(
       original,
       translated: response.translation,
     }
+    previewGeneration = requestedGeneration
     return preview
   }
 
   async function replaceWithPreview(): Promise<boolean> {
-    if (!preview || adapter.readComposer() !== preview.composerVersion) return false
+    if (!preview || previewGeneration !== chatGeneration || adapter.readComposer() !== preview.composerVersion) return false
     return adapter.replaceComposer(preview.translated)
   }
 
@@ -69,6 +73,10 @@ export function createOutgoingComposer(
       }
       ownerDocument.addEventListener('keydown', listener)
       return () => ownerDocument.removeEventListener('keydown', listener)
+    },
+    invalidateChat(): void {
+      chatGeneration += 1
+      preview = undefined
     },
     getPreview: () => preview,
     replaceWithPreview,

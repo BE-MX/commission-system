@@ -7,6 +7,7 @@ import { zipSync } from 'fflate'
 const EXTENSION_ID = 'bnkecbkoidckffckbefjjcbchmngjobi'
 const FIXED_TIME = new Date('1980-01-01T00:00:00Z')
 const REQUIRED_DIST_ENTRIES = ['background.js', 'content.js', 'manifest.json', 'src/popup/index.html']
+const ALLOWED_DIST_ROOTS = new Set(['assets', 'background.js', 'content.js', 'manifest.json', 'popup.js', 'src'])
 
 function collect(directory, prefix = '', output = {}) {
   for (const entry of readdirSync(directory)) {
@@ -49,7 +50,11 @@ export function packageRelease({
 
   const files = collect(distDir)
   for (const file of Object.keys(files)) {
-    if (/\.(map|ts)$/.test(file) || file.includes('tests/') || file.includes('.env')) {
+    const root = file.split('/', 1)[0]
+    const reviewed = (
+      root === 'assets' && file.endsWith('.css')
+    ) || root === 'background.js' || root === 'content.js' || root === 'manifest.json' || root === 'popup.js' || file === 'src/popup/index.html'
+    if (!ALLOWED_DIST_ROOTS.has(root) || !reviewed) {
       throw new Error(`forbidden_package_file:${file}`)
     }
   }

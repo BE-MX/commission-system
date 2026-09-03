@@ -156,6 +156,12 @@ def _require_active_authorized_user(db: Session, user_id: int | None) -> None:
         raise WhatsAppTranslationError(403, ERROR_USER_FORBIDDEN, "WhatsApp translation request failed")
 
 
+def _lock_pairing_owner(db: Session, user_id: int | None) -> None:
+    if user_id is None:
+        return
+    db.execute(select(ArkUser).where(ArkUser.id == user_id).with_for_update())
+
+
 def _require_device_capacity(db: Session, user_id: int) -> None:
     settings = get_settings()
     active_devices = db.query(TranslationDevice).filter(
@@ -177,6 +183,7 @@ def exchange_pairing(db: Session, device_code: str) -> PairingExchangeResult:
         return _pairing_result(pairing)
     _require_unexpired(pairing)
     _require_active_authorized_user(db, pairing.user_id)
+    _lock_pairing_owner(db, pairing.user_id)
     _require_device_capacity(db, pairing.user_id)
 
     settings = get_settings()

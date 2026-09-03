@@ -105,6 +105,7 @@ class TestSchedulerRegistration:
                 "operations_history_cleanup",
                 "agent_raw_event_redaction",
                 "dingtalk_gmv_daily",
+                "whatsapp_translation_pairing_cleanup",
             }
             design_image = scheduler.get_job("design_image_queue")
             assert design_image.max_instances == 1
@@ -118,6 +119,14 @@ class TestSchedulerRegistration:
             assert customer_cleanup.max_instances == 1
             assert customer_cleanup.coalesce is True
             cleanup_fields = {field.name: str(field) for field in customer_cleanup.trigger.fields}
+            pairing_cleanup = scheduler.get_job("whatsapp_translation_pairing_cleanup")
+            assert pairing_cleanup.max_instances == 1
+            assert pairing_cleanup.coalesce is True
+            pairing_cleanup_fields = {
+                field.name: str(field) for field in pairing_cleanup.trigger.fields
+            }
+            assert pairing_cleanup_fields["hour"] == "3"
+            assert pairing_cleanup_fields["minute"] == "15"
             assert cleanup_fields["hour"] == "3"
             assert cleanup_fields["minute"] == "30"
             agent_cleanup = scheduler.get_job("agent_raw_event_redaction")

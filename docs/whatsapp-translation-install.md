@@ -10,6 +10,8 @@
 - Windows Chrome、Windows Edge 或 macOS Chrome。
 - 设备总数不超过 5 台。
 
+ZIP 是公开下载的编译代码包，不含密钥或聊天数据；没有 Ark 授权时它不能翻译。
+
 ## 安装
 
 1. 登录 Ark，进入「系统管理 → WhatsApp 实时翻译」。

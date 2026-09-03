@@ -106,3 +106,13 @@ def test_extension_build_marker_advances_only_after_cloud_sync() -> None:
 
     assert sync_failure_index < extension_marker_index
     assert extension_marker_index < frontend_marker_index
+
+
+def test_extension_packaging_forces_frontend_cloud_publish() -> None:
+    """Generated extension artifacts are ignored, so packaging must publish frontend."""
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    extension_section = script.split("Package WhatsApp translation extension", 1)[1].split(
+        "REM ---------- [5/7] Build frontend ----------", 1
+    )[0]
+
+    assert 'set "FRONTEND_CHANGED=0"' not in extension_section

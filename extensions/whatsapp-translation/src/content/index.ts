@@ -63,6 +63,7 @@ function startContentScript(): void {
     if (currentChatRoot !== chatRoot) {
       chatRoot = currentChatRoot
       translator.chatChanged()
+      outgoingComposer.invalidateChat()
       mountOutgoingControl()
     }
     translator.notifyMutation()
