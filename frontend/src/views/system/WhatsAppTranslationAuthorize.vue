@@ -25,12 +25,12 @@
 
       <div v-if="devices.length" class="devices">
         <h2>我的设备</h2>
-        <el-table :data="devices" size="small">
+        <el-table :data="devices" size="small" border class="list-table">
           <el-table-column prop="device_name" label="设备" min-width="120" />
           <el-table-column prop="browser_name" label="浏览器" min-width="100" />
           <el-table-column prop="extension_version" label="扩展版本" min-width="90" />
           <el-table-column prop="expires_at" label="有效期" min-width="130" />
-          <el-table-column label="操作" width="90">
+          <el-table-column label="操作" min-width="90">
             <template #default="{ row }">
               <el-button link type="danger" @click="revoke(row.device_id)">撤销</el-button>
             </template>

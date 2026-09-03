@@ -22,15 +22,15 @@
           <el-input v-model="keyword" clearable placeholder="搜索设备名" />
         </div>
       </template>
-      <el-table :data="visibleDevices" v-loading="loading">
+      <el-table :data="visibleDevices" v-loading="loading" border class="list-table">
         <el-table-column prop="device_name" label="设备" min-width="140" show-overflow-tooltip />
         <el-table-column prop="browser_name" label="浏览器" min-width="100" />
-        <el-table-column prop="extension_version" label="版本" width="90" />
+        <el-table-column prop="extension_version" label="版本" min-width="90" />
         <el-table-column prop="last_used_at" label="最近使用" min-width="140" />
-        <el-table-column label="状态" width="90">
+        <el-table-column label="状态" min-width="90">
           <template #default="{ row }">{{ deviceStatusLabel(row) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="100" fixed="right">
+        <el-table-column label="操作" min-width="100" fixed="right">
           <template #default="{ row }">
             <el-button v-permission="'whatsapp_translation:admin'" link type="danger" @click="revoke(row.device_id)">撤销</el-button>
           </template>
