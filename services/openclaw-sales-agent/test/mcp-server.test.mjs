@@ -31,6 +31,7 @@ test("MCP exposes only the Ark workflow and never returns the lease token", asyn
     getKnowledgeDocument: async (documentId) => ({ document_id: documentId, title: "Target buyers", version_no: 2, content: "Salons" }),
     listResearchTasks: async () => ({ items: [] }),
     getResearchTaskContext: async (taskId) => ({ research_task_id: taskId, customer_id: 101 }),
+    getCustomerOutreachContext: async (customerId) => ({ customer_id: customerId, current_profile_version_id: 33 }),
     claimResearchTask: async (taskId) => ({
       research_task_id: taskId,
       customer_id: 101,
@@ -74,6 +75,7 @@ test("MCP exposes only the Ark workflow and never returns the lease token", asyn
       "ark_complete_search_job",
       "ark_fail_research_task",
       "ark_fail_search_job",
+      "ark_get_customer_outreach_context",
       "ark_get_knowledge_document",
       "ark_get_research_task_context",
       "ark_get_search_job_context",
@@ -121,6 +123,10 @@ test("MCP exposes only the Ark workflow and never returns the lease token", asyn
     },
   });
   assert.equal(gate.structuredContent.gate_status, "passed");
+  const outreachContext = await client.callTool({
+    name: "ark_get_customer_outreach_context", arguments: { customer_id: 101 },
+  });
+  assert.equal(outreachContext.structuredContent.current_profile_version_id, 33);
   await client.callTool({
     name: "ark_append_research_facts",
     arguments: {

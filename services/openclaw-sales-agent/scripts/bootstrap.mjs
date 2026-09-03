@@ -14,6 +14,7 @@ const home = homedir();
 const profile = process.env.OPENCLAW_PROFILE || "ark-sales";
 const stateDir = join(home, `.openclaw-${profile}`);
 const workspace = join(stateDir, "workspace");
+const mainWorkspace = join(workspace, "main");
 const secretsDir = join(stateDir, "secrets");
 const arkTokenFile = join(secretsDir, "ark-agent-token");
 const heartbeatTokenFile = join(secretsDir, "runtime-heartbeat-token");
@@ -22,14 +23,13 @@ const deepseekTokenFile = join(secretsDir, "deepseek-api-key");
 const openclaw = process.env.OPENCLAW_BIN || join(home, ".openclaw/bin/openclaw");
 const node = process.env.OPENCLAW_NODE || join(home, ".openclaw/tools/node/bin/node");
 const parallelPlugin = process.env.OPENCLAW_PARALLEL_PLUGIN
-  || "@openclaw/parallel-plugin@2026.7.1";
+  || "@openclaw/parallel-plugin@2026.8.1";
 const envFile = join(stateDir, ".env");
 const mainHeartbeat = {
   every: "5m",
   target: "none",
   lightContext: true,
   isolatedSession: true,
-  skipWhenBusy: true,
   timeoutSeconds: 1800,
 };
 
@@ -45,6 +45,10 @@ function run(command, args, options = {}) {
     throw new Error(`${command} exited with status ${result.status}`);
   }
   return result.stdout || "";
+}
+
+function getConfig(path) {
+  return JSON.parse(run(openclaw, ["--profile", profile, "config", "get", path, "--json"], { capture: true }));
 }
 
 async function ensureEnvFile() {
@@ -136,7 +140,7 @@ async function migrateModelKeyToSecretFile(envName, tokenFile, providerLabel) {
 }
 
 async function installWorkspaceTemplates() {
-  await mkdir(workspace, { recursive: true, mode: 0o700 });
+  await mkdir(mainWorkspace, { recursive: true, mode: 0o700 });
   const mappings = [
     ["AGENTS.template.md", "AGENTS.md", false],
     ["SOUL.template.md", "SOUL.md", false],
@@ -146,14 +150,14 @@ async function installWorkspaceTemplates() {
   ];
   for (const [source, target, managed] of mappings) {
     if (managed) {
-      await copyFile(join(serviceDir, "workspace-template", source), join(workspace, target));
+      await copyFile(join(serviceDir, "workspace-template", source), join(mainWorkspace, target));
       continue;
     }
     try {
-      await readFile(join(workspace, target));
+      await readFile(join(mainWorkspace, target));
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
-      await copyFile(join(serviceDir, "workspace-template", source), join(workspace, target));
+      await copyFile(join(serviceDir, "workspace-template", source), join(mainWorkspace, target));
     }
   }
 }
@@ -230,11 +234,11 @@ function clearDefaultHeartbeat() {
 }
 
 function configureMainAgentTools() {
-  const agents = JSON.parse(run(openclaw, [
-    "--profile", profile, "config", "get", "agents.list",
+  const main = JSON.parse(run(openclaw, [
+    "--profile", profile, "config", "get", "agents.entries.main",
   ], { capture: true }));
-  const main = agents.find((agent) => agent.id === "main");
   if (!main) throw new Error("OpenClaw baseline did not create the main agent");
+  main.workspace = mainWorkspace;
   main.tools = {
     ...(main.tools || {}),
     profile: "minimal",
@@ -248,7 +252,7 @@ function configureMainAgentTools() {
   // Keep queue automation scoped to the sales agent. A defaults-level
   // heartbeat would silently schedule unrelated agents such as email outreach.
   main.heartbeat = mainHeartbeat;
-  setConfig("agents.list", agents);
+  setConfig("agents.entries.main", main);
 }
 
 async function main() {
@@ -258,7 +262,9 @@ async function main() {
   await installWorkspaceTemplates();
   const arkRuntimeSettings = await loadArkRuntimeSettings();
 
-  run(openclaw, ["--profile", profile, "setup", "--baseline", "--workspace", workspace, "--skip-ui"]);
+  if (Object.keys(getConfig("agents.entries") || {}).length === 0) {
+    run(openclaw, ["--profile", profile, "setup", "--baseline", "--workspace", workspace]);
+  }
   run(openclaw, [
     "--profile", profile, "plugins", "install", parallelPlugin, "--pin", "--force",
   ]);
@@ -307,25 +313,6 @@ async function main() {
   setConfig("agents.defaults.skills", [
     "ark-lead-discovery", "ark-company-research", "ark-public-pool-research",
   ]);
-  setConfig("plugins.entries.codex.config.appServer", {
-    mode: "guardian",
-    approvalPolicy: "on-request",
-    approvalsReviewer: "auto_review",
-    sandbox: "workspace-write",
-    clearEnv: [
-      "OPENCLAW_GATEWAY_TOKEN",
-      "MIMO_API_KEY",
-      "DEEPSEEK_API_KEY",
-      "OPENAI_API_KEY",
-      "ARK_AGENT_TOKEN",
-      "ARK_AGENT_TOKEN_FILE",
-      "ARK_BASE_URL",
-      "ARK_ALLOWED_ORIGIN",
-      "ARK_AGENT_ID",
-      "ARK_HEARTBEAT_TOKEN",
-      "ARK_HEARTBEAT_TOKEN_FILE",
-    ],
-  });
   setConfig("tools.profile", "minimal");
   setConfig("tools.alsoAllow", ["read", "web_search", "web_fetch", "ark-sales__*"]);
   setConfig("tools.deny", [
@@ -367,7 +354,7 @@ async function main() {
     run(openclaw, [
       "--profile", profile,
       "skills", "install", join(repoRoot, ".agents/skills", skill),
-      "--as", skill, "--force",
+      "--agent", "main", "--as", skill, "--force",
     ]);
   }
 

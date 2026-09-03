@@ -15,7 +15,7 @@ test("bootstrap grants workspace-only skill reads and denies file mutation", () 
   assert.doesNotMatch(source, /"group:fs"/u);
   assert.match(source, /lightContext: true/u);
   assert.match(source, /isolatedSession: true/u);
-  assert.match(source, /skipWhenBusy: true/u);
+  assert.doesNotMatch(source, /skipWhenBusy/u);
 });
 
 test("managed heartbeat prioritizes one search job and merges frozen profile with criteria", () => {

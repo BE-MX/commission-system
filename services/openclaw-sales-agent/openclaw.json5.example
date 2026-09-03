@@ -59,17 +59,17 @@
       },
       skills: ["ark-lead-discovery", "ark-company-research", "ark-public-pool-research"],
     },
-    list: [{
-      id: "main",
-      heartbeat: {
-        every: "5m",
-        target: "none",
-        lightContext: true,
-        isolatedSession: true,
-        skipWhenBusy: true,
-        timeoutSeconds: 1800,
+    entries: {
+      main: {
+        heartbeat: {
+          every: "5m",
+          target: "none",
+          lightContext: true,
+          isolatedSession: true,
+          timeoutSeconds: 1800,
+        },
       },
-    }],
+    },
   },
   tools: {
     profile: "minimal",
