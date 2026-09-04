@@ -6,6 +6,10 @@ export const WHATSAPP_SELECTORS = {
   directChat: '#main [data-testid="conversation-header"] [aria-label="个人主页详情"][role="button"]',
   footer: '#main footer',
   message: '#main [data-testid="msg-container"]',
+  messageDecoration: '[data-testid="forwarded"], [data-testid="msg-meta"], [data-testid="reaction-bubble"], [data-testid="reaction-bubble-item"], [data-testid="tail-in"], [data-testid="tail-out"]',
+  messageEmoji: 'img[data-testid="selectable-text"][data-plain-text][alt]',
+  messageHiddenTime: 'span[aria-hidden="true"]',
   messageMetadata: '.copyable-text[data-pre-plain-text]',
   messageText: 'span[data-testid="selectable-text"]',
+  messageTime: '[data-testid="msg-meta"]',
 } as const

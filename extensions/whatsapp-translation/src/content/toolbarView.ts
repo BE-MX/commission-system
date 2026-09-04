@@ -142,6 +142,11 @@ export function createToolbarView(shadow: ShadowRoot, handlers: ToolbarHandlers)
   style.textContent = STYLES
   const root = doc.createElement('div')
   root.className = 'ark'
+  root.addEventListener('mousedown', event => {
+    // Keep WhatsApp's editor selection alive until the action runs. Refocusing
+    // after a button steals focus can restore a stale caret over our selection.
+    if (event.button === 0 && (event.target as Element).closest('button')) event.preventDefault()
+  })
   shadow.replaceChildren(style, root)
 
   function el<TKey extends keyof HTMLElementTagNameMap>(tag: TKey, className?: string, text?: string) {

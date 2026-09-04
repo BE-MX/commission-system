@@ -55,11 +55,11 @@ export class WhatsAppAdapter {
     const chatRoot = this.chatRootElement()
     const chatTitle = this.chatTitle()
     const composerVersion = this.readComposer()
+    const belongsToComposer = (node: Node | null) => node === composer || (node !== null && composer.contains(node))
 
     const collapseFullSelection = () => {
       const anchor = selection.anchorNode
       const focus = selection.focusNode
-      const belongsToComposer = (node: Node | null) => node === composer || (node !== null && composer.contains(node))
       if (selection.isCollapsed || !composer.isConnected || !belongsToComposer(anchor) || !belongsToComposer(focus)) return
       const caret = doc.createRange()
       caret.selectNodeContents(composer)
@@ -77,14 +77,25 @@ export class WhatsAppAdapter {
         && this.chatTitle() === chatTitle
     }
 
-    composer.focus()
+    if (doc.activeElement !== composer) {
+      composer.focus()
+      // WhatsApp restores its saved caret after focus. Let that finish before
+      // establishing the replacement selection, including keyboard activation.
+      await new Promise<void>(resolve => view.requestAnimationFrame(() => resolve()))
+      if (!composerContextIsCurrent() || this.readComposer() !== composerVersion || !isCurrent() || doc.activeElement !== composer) return false
+    }
     const range = doc.createRange()
     range.selectNodeContents(composer)
     selection.removeAllRanges()
     selection.addRange(range)
     doc.dispatchEvent(new view.Event('selectionchange'))
     await new Promise<void>(resolve => view.requestAnimationFrame(() => resolve()))
-    if (!composerContextIsCurrent() || this.readComposer() !== composerVersion || !isCurrent()) {
+    if (
+      !composerContextIsCurrent() || this.readComposer() !== composerVersion || !isCurrent()
+      || doc.activeElement !== composer || selection.rangeCount !== 1
+      || !belongsToComposer(selection.anchorNode) || !belongsToComposer(selection.focusNode)
+      || normalizeComposerText(selection.toString()) !== composerVersion
+    ) {
       collapseFullSelection()
       return false
     }
