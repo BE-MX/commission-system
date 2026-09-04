@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { JSDOM } from 'jsdom'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-import { adapterFor, runOutgoingTranslation } from '@/whatsapp/adapter'
+import { adapterFor } from '@/whatsapp/adapter'
 
 function loadFixture(name: string): Document {
   return new JSDOM(readFileSync(new URL(`./fixtures/${name}.html`, import.meta.url), 'utf8')).window.document
@@ -84,37 +84,26 @@ describe('WhatsApp adapter', () => {
     expect(adapterFor(directFixture)).not.toHaveProperty('send')
   })
 
-  it('keeps same-name group messages out of the translation boundary', async () => {
-    expect(adapterFor(groupFixture).inspectChat().kind).toBe('unknown')
-    await expect(adapterFor(groupFixture).listUntranslatedIncomingMessages()).resolves.toEqual([])
-    expect(adapterFor(groupFixture).attachOutgoingControl(() => {})).toBeNull()
-  })
+  it('mounts the toolbar as the first child of the footer in a closed shadow and cleans on unsupported chat', () => {
+    const root = adapterFor(directFixture)
+    const footer = directFixture.querySelector('footer') as HTMLElement
+    const shadow = root.mountComposerToolbar()
+    expect(footer.firstElementChild?.getAttribute('data-ark-outgoing-control')).toBe('1')
+    expect(shadow).not.toBeNull()
+    expect(shadow?.host).toBe(footer.firstElementChild)
 
-  it('removes outgoing controls when the active chat becomes unsupported', () => {
-    adapterFor(directFixture).attachOutgoingControl(() => {})
-    expect(directFixture.querySelector('[data-ark-outgoing-control="1"]')).not.toBeNull()
-
-    adapterFor(groupFixture).attachOutgoingControl(() => {})
+    adapterFor(groupFixture).mountComposerToolbar()
     expect(groupFixture.querySelector('[data-ark-outgoing-control="1"]')).toBeNull()
   })
 
-  it('shows progress and a retryable failure on the outgoing translation button', async () => {
-    const document = loadFixture('direct')
-    let rejectTranslation: ((error: Error) => void) | undefined
-    const translation = new Promise<void>((_resolve, reject) => {
-      rejectTranslation = reject
-    })
-    const button = document.createElement('button')
-    const task = runOutgoingTranslation(button, vi.fn(() => translation))
+  it('returns the trimmed current chat title only for direct chats', () => {
+    expect(adapterFor(directFixture).chatTitle()).toBe('Customer')
+    expect(adapterFor(groupFixture).chatTitle()).toBe('')
+  })
 
-    expect(button.disabled).toBe(true)
-    expect(button.textContent).toBe('翻译中…')
-
-    rejectTranslation?.(new Error('translation_invalid_response'))
-    await task
-
-    expect(button.disabled).toBe(false)
-    expect(button.textContent).toBe('翻译失败，重试')
-    expect(adapterFor(document).attachOutgoingControl(() => {})?.shadowRoot).toBeNull()
+  it('exposes the dark theme decision from the body class', () => {
+    const doc = loadFixture('direct')
+    doc.body.classList.add('dark')
+    expect(adapterFor(doc).isDarkTheme()).toBe(true)
   })
 })

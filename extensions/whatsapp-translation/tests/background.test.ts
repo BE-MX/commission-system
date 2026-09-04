@@ -54,6 +54,47 @@ describe('background message dispatcher', () => {
     expect(sendResponse).toHaveBeenCalledWith({ type: 'error', message: 'unsupported_request' })
   })
 
+  it('defaults the outgoing language to English', async () => {
+    await import('@/background/index')
+    const sendResponse = vi.fn()
+
+    messageListener?.(
+      { type: 'preferences/get' },
+      { id: 'extension-id', url: 'chrome-extension://extension-id/src/popup/index.html' },
+      sendResponse,
+    )
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        enabled: true,
+        targetLanguage: 'en',
+        type: 'preferences/get',
+      })
+    })
+  })
+
+  it('fails closed incoming translation when the popup disabled it', async () => {
+    store.set('enabled', false)
+    await import('@/background/index')
+    const sendResponse = vi.fn()
+
+    messageListener?.(
+      {
+        type: 'translation/incoming',
+        request_id: '4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de63',
+        source_language: 'auto',
+        target_language: 'zh-CN',
+        text: 'hello',
+      },
+      { id: 'extension-id' },
+      sendResponse,
+    )
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({ type: 'error', message: 'translation_disabled' })
+    })
+  })
+
   it('handles popup preferences from the trusted popup URL', async () => {
     await import('@/background/index')
     const sendResponse = vi.fn()
@@ -67,7 +108,7 @@ describe('background message dispatcher', () => {
     await vi.waitFor(() => {
       expect(sendResponse).toHaveBeenCalledWith({
         enabled: true,
-        targetLanguage: 'zh-CN',
+        targetLanguage: 'en',
         type: 'preferences/get',
       })
     })

@@ -113,7 +113,7 @@ describe('incoming translator', () => {
 
     controller.notifyMutation()
     await vi.advanceTimersByTimeAsync(300)
-    expect(renderer.mountTranslation).toHaveBeenCalledWith(expect.anything(), { kind: 'blocked' }, undefined)
+    expect(renderer.mountTranslation).toHaveBeenCalledWith(expect.anything(), { code: 'device_revoked', kind: 'blocked' }, undefined)
 
     controller.notifyMutation()
     await vi.advanceTimersByTimeAsync(1_000)
@@ -139,7 +139,7 @@ describe('incoming translator', () => {
     expect(bridge.translate).toHaveBeenCalledTimes(2)
   })
 
-  it('shows a blocked state after a 20-second timeout', async () => {
+  it('shows a retryable state after a 20-second timeout', async () => {
     adapter.listUntranslatedIncomingMessages.mockResolvedValue([incomingMessage('Hello', 'key-1')])
     bridge.translate.mockImplementation(() => new Promise(() => {}))
     const controller = createIncomingTranslator(adapter, bridge, renderer)
@@ -147,7 +147,9 @@ describe('incoming translator', () => {
     controller.notifyMutation()
     await vi.advanceTimersByTimeAsync(300)
     await vi.advanceTimersByTimeAsync(20_000)
-    expect(renderer.mountTranslation).toHaveBeenCalledWith(expect.anything(), { kind: 'blocked' }, undefined)
+    const [, state, onRetry] = renderer.mountTranslation.mock.calls.at(-1)!
+    expect(state).toEqual({ code: 'request_timeout', kind: 'retryable_error' })
+    expect(onRetry).toBeTypeOf('function')
   })
 
   it('supports click-to-retry after a retryable network error', async () => {

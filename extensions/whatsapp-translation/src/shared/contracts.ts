@@ -58,6 +58,7 @@ export type TranslationRequest = {
 }
 
 export type TranslationResponse = {
+  back_translation?: string | null
   detected_source_language: string
   model_log_id: number
   request_id: string
@@ -80,6 +81,33 @@ export type Session = {
   deviceId: number
   expiresAt: string
   minExtensionVersion: string
+  realName: string
+}
+
+export type TranslationResult = {
+  backTranslation?: string
+  sourceLanguage: string
+  translation: string
+}
+
+export const TARGET_LANGUAGES = ['zh-CN', 'en', 'es', 'fr', 'ar', 'ja'] as const
+export type TargetLanguage = (typeof TARGET_LANGUAGES)[number]
+export const DEFAULT_OUTGOING_LANGUAGE: TargetLanguage = 'en'
+
+export const LANGUAGE_LABELS: Record<string, string> = {
+  ar: 'العربية',
+  de: 'Deutsch',
+  en: 'English',
+  es: 'Español',
+  fr: 'Français',
+  ja: '日本語',
+  nl: 'Nederlands',
+  sv: 'Svenska',
+  'zh-CN': '中文',
+}
+
+export function languageLabel(code: string): string {
+  return LANGUAGE_LABELS[code] ?? code
 }
 
 export type RuntimeRequest =
@@ -103,8 +131,8 @@ export type RuntimeResponse =
   | { type: 'capabilities/get'; capabilities: Capabilities }
   | { type: 'chat-language/get'; targetLanguage: string }
   | { type: 'chat-language/set'; targetLanguage: string }
-  | { type: 'translation/incoming'; translation: string }
-  | { type: 'translation/outgoing'; translation: string }
+  | { type: 'translation/incoming'; translation: string; sourceLanguage: string }
+  | { type: 'translation/outgoing'; translation: string; sourceLanguage: string; backTranslation?: string }
   | { type: 'error'; message: string }
 
 export function mapStartPairing(response: StartPairingResponse): PairingState {

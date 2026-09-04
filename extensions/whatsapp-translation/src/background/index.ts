@@ -1,12 +1,12 @@
 import { apiClient, ArkApiError } from '@/background/apiClient'
 import { TranslationCache } from '@/background/cache'
 import { refreshSession, resumePairing, startPairing } from '@/background/auth'
-import type { Capabilities, PairingState, RuntimeRequest, RuntimeResponse, Session } from '@/shared/contracts'
+import type { Capabilities, PairingState, RuntimeRequest, RuntimeResponse, Session, TranslationResult } from '@/shared/contracts'
+import { DEFAULT_OUTGOING_LANGUAGE, TARGET_LANGUAGES } from '@/shared/contracts'
 import { chatKey, ensureTrustedStorageAccess, storage } from '@/shared/storage'
 
-const TARGET_LANGUAGES = new Set(['ar', 'en', 'es', 'fr', 'ja', 'zh-CN'])
-const POPUP_REQUEST_TYPES = new Set(['pairing/resume', 'pairing/start', 'preferences/get', 'preferences/set', 'session/refresh'])
-const translationCache = new TranslationCache<string>()
+const POPUP_REQUEST_TYPES = new Set(['pairing/resume', 'pairing/start', 'preferences/set', 'session/refresh'])
+const translationCache = new TranslationCache<TranslationResult>()
 
 async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
@@ -22,6 +22,7 @@ function mapSession(response: NonNullable<Awaited<ReturnType<typeof refreshSessi
     deviceId: response.device_id,
     expiresAt: response.expires_at,
     minExtensionVersion: '1.0.0',
+    realName: response.real_name,
   }
 }
 
@@ -40,7 +41,7 @@ async function translateText(
   sourceLanguage: string,
   targetLanguage: string,
   requestId?: string,
-): Promise<string> {
+): Promise<TranslationResult> {
   const cacheKey = await sha256Hex(`${direction}:${sourceLanguage}:${targetLanguage}:${text}`)
   const cached = translationCache.get(cacheKey)
   if (cached) return cached
@@ -54,8 +55,13 @@ async function translateText(
     target_language: targetLanguage,
     text,
   })
-  translationCache.set(cacheKey, response.translated_text)
-  return response.translated_text
+  const result: TranslationResult = {
+    backTranslation: response.back_translation ?? undefined,
+    sourceLanguage: response.detected_source_language,
+    translation: response.translated_text,
+  }
+  translationCache.set(cacheKey, result)
+  return result
 }
 
 function browserInfo(): { browserName: string; browserVersion: string } {
@@ -94,10 +100,10 @@ async function handleMessage(request: RuntimeRequest): Promise<RuntimeResponse> 
         storage.get('enabled'),
         storage.get('defaultTargetLanguage'),
       ])
-      return { type: 'preferences/get', enabled: enabled ?? true, targetLanguage: targetLanguage ?? 'zh-CN' }
+      return { type: 'preferences/get', enabled: enabled ?? true, targetLanguage: targetLanguage ?? DEFAULT_OUTGOING_LANGUAGE }
     }
     case 'preferences/set': {
-      if (!TARGET_LANGUAGES.has(request.targetLanguage)) throw new Error('unsupported_language')
+      if (!(TARGET_LANGUAGES as readonly string[]).includes(request.targetLanguage)) throw new Error('unsupported_language')
       await storage.set({ defaultTargetLanguage: request.targetLanguage, enabled: request.enabled })
       return { type: 'preferences/set' }
     }
@@ -112,10 +118,11 @@ async function handleMessage(request: RuntimeRequest): Promise<RuntimeResponse> 
       if (!salt) throw new Error('device_token_missing')
       const key = await chatKey(request.chatTitle, salt)
       const languages = (await storage.get('chatLanguages')) ?? {}
-      return { type: 'chat-language/get', targetLanguage: languages[key] ?? 'zh-CN' }
+      const fallback = (await storage.get('defaultTargetLanguage')) ?? DEFAULT_OUTGOING_LANGUAGE
+      return { type: 'chat-language/get', targetLanguage: languages[key] ?? fallback }
     }
     case 'chat-language/set': {
-      if (!TARGET_LANGUAGES.has(request.targetLanguage)) throw new Error('unsupported_language')
+      if (!(TARGET_LANGUAGES as readonly string[]).includes(request.targetLanguage)) throw new Error('unsupported_language')
       const salt = await storage.get('chatKeySalt')
       if (!salt) throw new Error('device_token_missing')
       const key = await chatKey(request.chatTitle, salt)
@@ -125,21 +132,28 @@ async function handleMessage(request: RuntimeRequest): Promise<RuntimeResponse> 
       return { type: 'chat-language/set', targetLanguage: request.targetLanguage }
     }
     case 'translation/incoming': {
-      if (!TARGET_LANGUAGES.has(request.target_language)) throw new Error('unsupported_language')
-      const translation = await translateText('incoming', request.text, 'auto', request.target_language, request.request_id)
-      return { type: 'translation/incoming', translation }
+      if (!(TARGET_LANGUAGES as readonly string[]).includes(request.target_language)) throw new Error('unsupported_language')
+      const enabled = await storage.get('enabled')
+      if (enabled === false) throw new Error('translation_disabled')
+      const result = await translateText('incoming', request.text, 'auto', request.target_language, request.request_id)
+      return { type: 'translation/incoming', sourceLanguage: result.sourceLanguage, translation: result.translation }
     }
     case 'translation/outgoing': {
-      if (!TARGET_LANGUAGES.has(request.targetLanguage)) throw new Error('unsupported_language')
-      const translation = await translateText('outgoing', request.text, request.sourceLanguage, request.targetLanguage)
-      return { type: 'translation/outgoing', translation }
+      if (!(TARGET_LANGUAGES as readonly string[]).includes(request.targetLanguage)) throw new Error('unsupported_language')
+      const result = await translateText('outgoing', request.text, request.sourceLanguage, request.targetLanguage)
+      return {
+        type: 'translation/outgoing',
+        backTranslation: result.backTranslation,
+        sourceLanguage: result.sourceLanguage,
+        translation: result.translation,
+      }
     }
   }
 }
 
 function errorResponse(error: unknown): RuntimeResponse {
   if (error instanceof ArkApiError) return { type: 'error', message: error.code }
-  if (error instanceof Error && ['device_token_missing', 'unsupported_language'].includes(error.message)) {
+  if (error instanceof Error && ['device_token_missing', 'unsupported_language', 'translation_disabled'].includes(error.message)) {
     return { type: 'error', message: error.message }
   }
   return { type: 'error', message: 'unexpected_error' }

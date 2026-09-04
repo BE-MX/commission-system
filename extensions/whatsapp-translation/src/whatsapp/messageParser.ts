@@ -1,3 +1,4 @@
+import { ARK_MARKS } from '@/shared/marks'
 import { WHATSAPP_SELECTORS } from '@/whatsapp/selectors'
 
 export type ParsedMessage = {
@@ -15,6 +16,9 @@ const TEXT_MESSAGE_TEST_IDS = new Set([
   'tail-in',
   'tail-out',
 ])
+
+/** Hosts in these states are settled; only errors get rescanned. */
+const SETTLED_STATES = new Set(['loading', 'success'])
 
 async function localMessageKey(direction: string, text: string, ordinal: number): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${direction}:${text}:${ordinal}`))
@@ -38,6 +42,12 @@ function isIncomingMessage(message: Element): boolean {
   return row !== null && view?.getComputedStyle(row).alignItems === 'flex-start'
 }
 
+function isAlreadyHandled(message: Element): boolean {
+  const host = message.querySelector(`:scope > [${ARK_MARKS.translationHost}="1"]`)
+  if (!host) return false
+  return SETTLED_STATES.has(host.getAttribute(ARK_MARKS.translationState) ?? '')
+}
+
 export async function parseIncomingMessages(root: Document | HTMLElement): Promise<ParsedMessage[]> {
   const messages = root.querySelectorAll(WHATSAPP_SELECTORS.message)
   const parsed: ParsedMessage[] = []
@@ -45,6 +55,7 @@ export async function parseIncomingMessages(root: Document | HTMLElement): Promi
   for (let ordinal = 0; ordinal < messages.length; ordinal += 1) {
     const element = messages[ordinal]
     if (!isIncomingMessage(element)) continue
+    if (isAlreadyHandled(element)) continue
     if (!element.querySelector(WHATSAPP_SELECTORS.messageMetadata)) continue
     if (!hasOnlyTextMessageStructure(element)) continue
 

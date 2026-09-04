@@ -18,14 +18,30 @@ async function loadPreferences(): Promise<{ enabled: boolean; targetLanguage: st
   return await runtimeRequest({ type: 'preferences/get' })
 }
 
+function initials(name: string): string {
+  const trimmed = name.trim()
+  if (!trimmed) return '·'
+  const parts = trimmed.split(/\s+/u)
+  if (parts.length > 1) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+  return trimmed[0].toUpperCase()
+}
+
+function formatExpiry(value: string | undefined): string {
+  if (!value || Number.isNaN(Date.parse(value))) return ''
+  const date = new Date(value)
+  return `有效期至 ${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
 async function loadSession(): Promise<SessionLoadState> {
   const response = await runtimeRequest({ type: 'session/refresh' })
   if (response?.type === 'session/refresh') {
     const employee = document.getElementById('employee')
     const expiry = document.getElementById('expiry')
-    if (!employee || !expiry) return 'error'
-    employee.textContent = `已授权设备 #${response.session.deviceId}`
-    expiry.textContent = `有效期至 ${response.session.expiresAt}`
+    const avatar = document.getElementById('avatar')
+    if (!employee || !expiry || !avatar) return 'error'
+    employee.textContent = response.session.realName || `已授权`
+    expiry.textContent = formatExpiry(response.session.expiresAt)
+    avatar.textContent = initials(response.session.realName || '')
     const preferences = await loadPreferences()
     const enabled = document.getElementById('enabled') as HTMLInputElement
     const language = document.getElementById('language') as HTMLSelectElement

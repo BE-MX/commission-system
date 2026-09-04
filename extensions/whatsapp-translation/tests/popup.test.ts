@@ -7,10 +7,9 @@ const popupHtml = `
     <section id="unpaired" hidden><button id="start-pairing"></button></section>
     <section id="pairing" hidden><button id="check-pairing"></button></section>
     <section id="ready" hidden>
-      <p id="employee"></p>
-      <p id="expiry"></p>
+      <div class="identity"><div class="avatar" id="avatar"></div><div class="who"><strong id="employee"></strong><span id="expiry"></span></div></div>
       <input id="enabled" type="checkbox" />
-      <select id="language"><option value="zh-CN">中文</option></select>
+      <select id="language"><option value="zh-CN">中文</option><option value="en">English</option></select>
       <button id="reauthorize"></button>
     </section>
     <section id="blocked" hidden></section>
@@ -39,6 +38,9 @@ describe('popup pairing recovery', () => {
           session: {
             deviceId: 7,
             expiresAt: '2027-03-02T10:00:00',
+            realName: '张伟',
+            user_id: 12,
+            is_admin: false,
           },
         }
       }
@@ -61,7 +63,8 @@ describe('popup pairing recovery', () => {
       expect(document.getElementById('popup')?.dataset.state).toBe('ready')
     })
     expect(sendMessage).toHaveBeenCalledWith({ type: 'pairing/resume' })
-    expect(document.getElementById('employee')?.textContent).toBe('已授权设备 #7')
+    expect(document.getElementById('employee')?.textContent).toBe('张伟')
+    expect(document.getElementById('avatar')?.textContent).toBe('张')
   })
 
   it('restores the completion button while server approval is still pending', async () => {

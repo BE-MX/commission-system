@@ -42,10 +42,10 @@ describe('release packaging', () => {
 
       expect(release).toEqual({
         extension_id: 'bnkecbkoidckffckbefjjcbchmngjobi',
-        filename: 'whatsapp-translation-1.0.3.zip',
+        filename: 'whatsapp-translation-1.1.0.zip',
         sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
         size: expect.any(Number),
-        version: '1.0.3',
+        version: '1.1.0',
       })
       expect(release.size).toBeGreaterThan(0)
       expect(release.sha256).toBe(second.sha256)

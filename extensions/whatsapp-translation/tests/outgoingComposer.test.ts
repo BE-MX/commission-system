@@ -5,7 +5,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { adapterFor } from '@/whatsapp/adapter'
 import { createOutgoingComposer } from '@/content/outgoingComposer'
-import { resolveTargetLanguage, updateTargetLanguage } from '@/content/chatLanguage'
 
 const document = new JSDOM(readFileSync('tests/fixtures/direct.html', 'utf8')).window.document
 const adapter = adapterFor(document)
@@ -28,6 +27,7 @@ describe('outgoing composer', () => {
     expect(preview).toEqual({
       composerVersion: 'Current draft',
       original: 'Current draft',
+      targetLanguage: 'zh-CN',
       translated: 'Please confirm the lead time.',
     })
 
@@ -125,16 +125,61 @@ describe('outgoing composer', () => {
   })
 })
 
-describe('per-chat language', () => {
-  it('reads and writes language through background without a readable title', async () => {
-    const background = {
-      getLanguage: vi.fn().mockResolvedValue('zh-CN'),
-      setLanguage: vi.fn().mockResolvedValue('en'),
-    }
+describe('preview restore', () => {
+  it('replaces the composer and lets the user restore the Chinese original', async () => {
+    await adapter.replaceComposer('请确认交期')
+    const composer = createOutgoingComposer(adapter, bridge)
+    bridge.translate.mockResolvedValue({ translation: 'Please confirm the lead time.', backTranslation: '请确认交期。', sourceLanguage: 'zh-CN' })
 
-    await expect(resolveTargetLanguage(background, 'conversation title')).resolves.toBe('zh-CN')
-    await expect(updateTargetLanguage(background, 'conversation title', 'en')).resolves.toBe('en')
-    expect(background.getLanguage).toHaveBeenCalledWith('conversation title')
-    expect(background.setLanguage).toHaveBeenCalledWith('conversation title', 'en')
+    const preview = await composer.translateForPreview()
+    expect(preview).toEqual({
+      backTranslation: '请确认交期。',
+      composerVersion: '请确认交期',
+      original: '请确认交期',
+      targetLanguage: 'zh-CN',
+      translated: 'Please confirm the lead time.',
+    })
+    expect(composer.canRestore()).toBe(false)
+
+    await composer.replaceWithPreview()
+    expect(adapter.readComposer()).toBe('Please confirm the lead time.')
+    expect(composer.canRestore()).toBe(true)
+
+    await composer.restoreOriginal()
+    expect(adapter.readComposer()).toBe('请确认交期')
+    expect(composer.canRestore()).toBe(false)
+  })
+
+  it('revokes the restore once the user edits the replaced text', async () => {
+    await adapter.replaceComposer('请确认交期')
+    const composer = createOutgoingComposer(adapter, bridge)
+    await composer.translateForPreview()
+    await composer.replaceWithPreview()
+
+    await adapter.replaceComposer('Please confirm the lead time. Actually,')
+    expect(composer.canRestore()).toBe(false)
+    await expect(composer.restoreOriginal()).resolves.toBe(false)
+    expect(adapter.readComposer()).toBe('Please confirm the lead time. Actually,')
+  })
+
+  it('returns undefined preview once the composer text diverges', async () => {
+    await adapter.replaceComposer('请确认交期')
+    const composer = createOutgoingComposer(adapter, bridge)
+    await composer.translateForPreview()
+    expect(composer.getPreview()).toEqual(expect.objectContaining({ original: '请确认交期' }))
+
+    await adapter.replaceComposer('请确认交期和数量')
+    expect(composer.getPreview()).toBeUndefined()
+  })
+
+  it('does not replace in a different chat after the language changed', async () => {
+    await adapter.replaceComposer('请确认交期')
+    const composer = createOutgoingComposer(adapter, bridge)
+    await composer.translateForPreview()
+    composer.setTargetLanguage('en')
+    composer.invalidateChat()
+    await adapter.replaceComposer('Other draft')
+
+    expect(await composer.replaceWithPreview()).toBe(false)
   })
 })

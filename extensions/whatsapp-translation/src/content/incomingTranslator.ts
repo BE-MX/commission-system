@@ -1,8 +1,10 @@
 import type { ParsedMessage } from '@/whatsapp/messageParser'
 
 export type IncomingRenderState = {
+  code?: string
   kind: 'loading' | 'success' | 'retryable_error' | 'blocked'
   retryAfterMs?: number
+  sourceLanguage?: string
   translation?: string
 }
 
@@ -23,7 +25,7 @@ export type IncomingBridgeRequest = {
 }
 
 export type IncomingBridge = {
-  translate: (request: IncomingBridgeRequest) => Promise<{ translation: string }>
+  translate: (request: IncomingBridgeRequest) => Promise<{ translation: string; sourceLanguage?: string }>
 }
 
 export class IncomingBridgeError extends Error {
@@ -40,7 +42,9 @@ export class IncomingBridgeError extends Error {
 const DEBOUNCE_MS = 300
 const DEFAULT_RATE_LIMIT_MS = 60_000
 const REQUEST_TIMEOUT_MS = 20_000
-const REVOKED_CODES = new Set(['device_expired', 'device_revoked', 'invalid_bearer'])
+const REVOKED_CODES = new Set(['device_expired', 'device_revoked', 'invalid_bearer', 'device_not_found', 'permission_denied', 'user_inactive', 'extension_outdated'])
+/** The user turned translation off in the popup: stop quietly, no bubble noise. */
+const SILENT_CODES = new Set(['translation_disabled', 'device_token_missing'])
 
 function withTimeout<TValue>(promise: Promise<TValue>): Promise<TValue> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -96,19 +100,29 @@ export function createIncomingTranslator(
         if (stopped || batchGeneration !== chatGeneration) return
         renderer.mountTranslation(message.element, {
           kind: 'success',
+          sourceLanguage: response.sourceLanguage,
           translation: response.translation,
         }, retry)
       } catch (error) {
         if (stopped || batchGeneration !== chatGeneration) return
         const code = error instanceof IncomingBridgeError ? error.code : 'unexpected_error'
 
+        if (SILENT_CODES.has(code)) {
+          removeMount(message.element)
+          return
+        }
         if (code === 'request_timeout') {
-          renderer.mountTranslation(message.element, { kind: 'blocked' }, undefined)
+          renderer.mountTranslation(message.element, { code, kind: 'retryable_error' }, retry)
           continue
         }
         if (REVOKED_CODES.has(code)) {
           stopped = true
-          renderer.mountTranslation(message.element, { kind: 'blocked' }, undefined)
+          renderer.mountTranslation(message.element, { code, kind: 'blocked' }, undefined)
+          return
+        }
+        if (code === 'daily_quota_exceeded') {
+          stopped = true
+          renderer.mountTranslation(message.element, { code, kind: 'blocked' }, undefined)
           return
         }
         if (code === 'rate_limited') {
@@ -117,15 +131,20 @@ export function createIncomingTranslator(
             : DEFAULT_RATE_LIMIT_MS
           pausedUntil = Date.now() + retryAfterMs
           renderer.mountTranslation(message.element, {
+            code,
             kind: 'retryable_error',
             retryAfterMs,
           }, retry)
           continue
         }
 
-        renderer.mountTranslation(message.element, { kind: 'retryable_error' }, retry)
+        renderer.mountTranslation(message.element, { code, kind: 'retryable_error' }, retry)
       }
     }
+  }
+
+  function removeMount(element: Element): void {
+    element.querySelector(':scope > [data-ark-translation-host="1"]')?.remove()
   }
 
   function retry(): void {
@@ -143,6 +162,11 @@ export function createIncomingTranslator(
       if (stopped) return
       const now = Date.now()
       schedule(pausedUntil > now ? pausedUntil - now : DEBOUNCE_MS)
+    },
+    /** Re-arm after the popup turns translation back on or the user re-authorizes. */
+    resume(): void {
+      stopped = false
+      pausedUntil = 0
     },
   }
 }
