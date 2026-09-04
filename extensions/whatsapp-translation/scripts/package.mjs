@@ -18,9 +18,13 @@ function collect(directory, prefix = '', output = {}) {
       collect(path, key, output)
     } else {
       const content = readFileSync(path)
-      output[key] = TEXT_PACKAGE_FILE.test(key)
-        ? Buffer.from(content.toString('utf8').replace(/\r\n?/g, '\n'), 'utf8')
-        : content
+      if (TEXT_PACKAGE_FILE.test(key)) {
+        let normalized = content.toString('utf8').replace(/\r\n?/g, '\n')
+        if (key.endsWith('.html')) normalized = normalized.replace(/^[\t ]*\n/gm, '')
+        output[key] = Buffer.from(normalized, 'utf8')
+      } else {
+        output[key] = content
+      }
     }
   }
   return output
