@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 
 import pytest
+import httpx
 from fastapi.security import HTTPAuthorizationCredentials
 
 from app.auth.models import ArkRole, ArkUser
@@ -11,6 +12,7 @@ from app.whatsapp_translation.auth import DeviceIdentity
 from app.whatsapp_translation.constants import WHATSAPP_TRANSLATION_WRITE_PERMISSION
 from app.whatsapp_translation.errors import WhatsAppTranslationError
 from app.whatsapp_translation.models import TranslationDevice
+from app.whatsapp_translation.models import TranslationUsageDaily
 from app.whatsapp_translation.schemas import TranslateRequest
 
 
@@ -191,6 +193,48 @@ def test_provider_timeout_maps_to_stable_error(db, identity, monkeypatch):
         translation_service.translate_text(db, identity, make_request())
     assert error.value.error_code == "ai_timeout"
     assert "provider details" not in str(error.value)
+
+
+def test_transient_provider_failure_retries_once_inside_one_quota_reservation(db, identity, monkeypatch):
+    calls = 0
+    success, _ = mock_chat()
+
+    def flaky_chat(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            request = httpx.Request("POST", "https://provider.invalid/v1/chat/completions")
+            raise httpx.ConnectError("temporary connection failure", request=request)
+        return success(*args, **kwargs)
+
+    monkeypatch.setattr(translation_service, "chat", flaky_chat)
+    request = make_request(text="Synthetic retry text")
+    result = translation_service.translate_text(db, identity, request)
+
+    usage = db.query(TranslationUsageDaily).filter_by(device_id=identity.device_id).one()
+    assert result.translated_text
+    assert calls == 2
+    assert usage.input_chars == len(request.text)
+    assert usage.request_count == 1
+    assert usage.success_count == 1
+
+
+def test_non_transient_provider_error_is_not_retried(db, identity, monkeypatch):
+    calls = 0
+
+    def rejected_chat(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        request = httpx.Request("POST", "https://provider.invalid/v1/chat/completions")
+        response = httpx.Response(400, request=request)
+        raise httpx.HTTPStatusError("bad request", request=request, response=response)
+
+    monkeypatch.setattr(translation_service, "chat", rejected_chat)
+    with pytest.raises(WhatsAppTranslationError) as error:
+        translation_service.translate_text(db, identity, make_request())
+
+    assert calls == 1
+    assert error.value.error_code == "ai_unavailable"
 
 
 def test_waiter_replays_cached_failure_as_stable_error(db, identity, monkeypatch):

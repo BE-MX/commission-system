@@ -14,7 +14,7 @@ export class ArkApiError extends Error {
   }
 }
 
-async function request<TData>(path: string, init: RequestInit = {}): Promise<TData> {
+async function requestOnce<TData>(path: string, init: RequestInit = {}): Promise<TData> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   try {
@@ -22,7 +22,13 @@ async function request<TData>(path: string, init: RequestInit = {}): Promise<TDa
       ...init,
       signal: controller.signal,
     })
-    const payload = (await response.json()) as Partial<ApiEnvelope<TData> & { data?: { error_code?: string } }>
+    let payload: Partial<ApiEnvelope<TData> & { data?: { error_code?: string } }>
+    try {
+      payload = (await response.json()) as Partial<ApiEnvelope<TData> & { data?: { error_code?: string } }>
+    } catch {
+      const gatewayFailure = [502, 503, 504].includes(response.status)
+      throw new ArkApiError(gatewayFailure ? 'backend_unavailable' : 'request_failed', 'request failed', response.status)
+    }
     if (!response.ok || payload.code !== 200 || payload.data === undefined) {
       const errorCode = payload.data && 'error_code' in payload.data && payload.data.error_code
         ? payload.data.error_code
@@ -38,6 +44,20 @@ async function request<TData>(path: string, init: RequestInit = {}): Promise<TDa
     throw new ArkApiError('network_error', 'request failed')
   } finally {
     clearTimeout(timer)
+  }
+}
+
+function isTransientTransportError(error: unknown): boolean {
+  return error instanceof ArkApiError
+    && (error.code === 'network_error' || error.code === 'backend_unavailable')
+}
+
+async function request<TData>(path: string, init: RequestInit = {}, retryTransport = false): Promise<TData> {
+  try {
+    return await requestOnce<TData>(path, init)
+  } catch (error) {
+    if (!retryTransport || !isTransientTransportError(error)) throw error
+    return await requestOnce<TData>(path, init)
   }
 }
 
@@ -78,7 +98,7 @@ export function translate(
     body: JSON.stringify(payload),
     headers: headers(token, extensionVersion),
     method: 'POST',
-  })
+  }, true)
 }
 
 export const apiClient = {

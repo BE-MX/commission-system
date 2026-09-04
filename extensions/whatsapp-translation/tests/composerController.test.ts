@@ -86,7 +86,7 @@ describe('composer controller + toolbar', () => {
     controller.reset()
     controller.onTranslate()
     await vi.waitFor(() => {
-      expect(shadow.textContent).toContain('连接方舟失败')
+      expect(shadow.textContent).toContain('网络暂时中断，请检查网络后重试')
     })
     expect(shadow.textContent).toContain('重试')
   })

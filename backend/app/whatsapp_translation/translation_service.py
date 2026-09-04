@@ -6,6 +6,8 @@ import threading
 import time
 from collections import OrderedDict
 
+import httpx
+
 from app.ai.call_service import chat
 from app.core.config import get_settings
 from app.whatsapp_translation.auth import require_supported_extension
@@ -148,6 +150,27 @@ def _preset_name_for(direction: str) -> str:
     return settings.WHATSAPP_TRANSLATION_PRESET_NAME
 
 
+def _is_transient_provider_error(error: Exception) -> bool:
+    if isinstance(error, httpx.HTTPStatusError):
+        return error.response.status_code in {502, 503, 504}
+    return isinstance(error, httpx.TransportError) and not isinstance(error, httpx.TimeoutException)
+
+
+def _chat_with_transient_retry(db, **kwargs):
+    for attempt in range(2):
+        try:
+            return chat(db, **kwargs)
+        except Exception as error:
+            if attempt == 0 and _is_transient_provider_error(error):
+                logger.warning(
+                    "translation provider transient failure, retrying once error_type=%s",
+                    type(error).__name__,
+                )
+                continue
+            raise
+    raise RuntimeError("unreachable")
+
+
 def translate_text(db, identity, request: TranslateRequest) -> TranslateResponse:
     require_supported_extension(identity)
     allowed, retry_after = translation_limiter.allow(str(identity.device_id))
@@ -173,7 +196,7 @@ def translate_text(db, identity, request: TranslateRequest) -> TranslateResponse
             "text": request.text,
         }, ensure_ascii=False)
         try:
-            ai_result = chat(
+            ai_result = _chat_with_transient_retry(
                 db,
                 preset_name=_preset_name_for(request.direction),
                 messages=[{"role": "user", "content": input_payload}],
@@ -220,8 +243,18 @@ def translate_text(db, identity, request: TranslateRequest) -> TranslateResponse
                 int((time.monotonic() - start) * 1000), exc.error_code,
             )
             raise
-        except TimeoutError:
+        except (TimeoutError, httpx.TimeoutException):
             error = WhatsAppTranslationError(503, "ai_timeout", "Translation AI timed out")
+            record_failure(db, row, direction=request.direction, error_code=error.error_code)
+            logger.info(
+                "translation failed request_id=%s user_id=%s device_id=%s chars=%d direction=%s source=%s target=%s duration_ms=%d error_code=%s",
+                str(request.request_id), identity.user_id, identity.device_id, len(request.text),
+                request.direction, request.source_language, request.target_language,
+                int((time.monotonic() - start) * 1000), error.error_code,
+            )
+            raise error
+        except Exception:
+            error = WhatsAppTranslationError(503, "ai_unavailable", "Translation AI unavailable")
             record_failure(db, row, direction=request.direction, error_code=error.error_code)
             logger.info(
                 "translation failed request_id=%s user_id=%s device_id=%s chars=%d direction=%s source=%s target=%s duration_ms=%d error_code=%s",
