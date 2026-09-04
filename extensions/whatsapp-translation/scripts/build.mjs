@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, rmSync } from 'node:fs'
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { build } from 'vite'
 import { aliases, buildTarget } from '../vite.config.ts'
 
@@ -30,6 +30,14 @@ await build({
     },
   },
 })
+
+const popupOutput = 'dist/src/popup/index.html'
+writeFileSync(
+  popupOutput,
+  readFileSync(popupOutput, 'utf8')
+    .replace(/\r\n?/g, '\n')
+    .replace(/^[\t ]*\n/gm, ''),
+)
 
 await build({
   configFile: false,

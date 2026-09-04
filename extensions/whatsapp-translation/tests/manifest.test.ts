@@ -71,7 +71,12 @@ describe('release packaging', () => {
       mkdirSync(secondDir, { recursive: true })
       cpSync('dist', crlfDist, { recursive: true })
       const popupHtml = join(crlfDist, 'src', 'popup', 'index.html')
-      writeFileSync(popupHtml, readFileSync(popupHtml, 'utf8').replace(/\r?\n/g, '\r\n'))
+      writeFileSync(
+        popupHtml,
+        readFileSync(popupHtml, 'utf8')
+          .replace('</title>', '</title>\n\n')
+          .replace(/\r?\n/g, '\r\n'),
+      )
       writeFileSync(join(outputDir, 'whatsapp-translation-stale.zip'), 'stale')
       const release = packageRelease({ distDir: 'dist', outputDir, repositoryRoot: firstRoot })
       const second = packageRelease({ distDir: crlfDist, outputDir: secondDir, repositoryRoot: secondRoot })
