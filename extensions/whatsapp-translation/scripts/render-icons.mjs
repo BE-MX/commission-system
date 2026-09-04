@@ -22,6 +22,8 @@ function compactSvg(source) {
   return source
     .replace(/\s*<g id="wordmark">[\s\S]*?<\/g>\s*/, '\n')
     .replace('<g id="icon-mark">', '<g id="icon-mark" transform="translate(-34 28) scale(1.14)">')
+    .replace('y="324"', 'y="350"')
+    .replace('font-size="113"', 'font-size="190"')
 }
 
 function renderDocument(svg, browserSize) {
