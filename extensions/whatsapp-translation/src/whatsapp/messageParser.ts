@@ -31,9 +31,14 @@ function normalizeText(element: Element): string {
 }
 
 function hasOnlyTextMessageStructure(message: Element): boolean {
-  return [...message.querySelectorAll('[data-testid]')].every((element) => {
+  return [...message.querySelectorAll('*')].every((element) => {
+    const translationHost = element.closest(`[${ARK_MARKS.translationHost}="1"]`)
+    if (translationHost && message.contains(translationHost)) return true
     const testId = element.getAttribute('data-testid')
-    return testId !== null && TEXT_MESSAGE_TEST_IDS.has(testId)
+    if (testId !== null) return TEXT_MESSAGE_TEST_IDS.has(testId)
+    if (element.matches('.copyable-text[data-pre-plain-text]')) return true
+    const textRoot = element.closest(WHATSAPP_SELECTORS.messageText)
+    return textRoot !== null && ['A', 'B', 'BR', 'CODE', 'EM', 'I', 'S', 'SPAN', 'STRONG'].includes(element.tagName)
   })
 }
 
@@ -68,7 +73,7 @@ export async function parseIncomingMessages(root: Document | HTMLElement): Promi
 
     parsed.push({
       element,
-      localKey: await localMessageKey('incoming', text, parsed.length),
+      localKey: await localMessageKey('incoming', text, ordinal),
       text,
     })
   }

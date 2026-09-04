@@ -147,6 +147,26 @@ def test_super_admin_identity_is_admin(db, auth_data):
     assert require_device_identity_for_test(db, token).is_admin is True
 
 
+def test_super_admin_does_not_require_explicit_translation_write_permission(db):
+    token = "synthetic-super-admin-token"
+    user = add_user_with_role(db, username="translation_super_admin", role_name="super_admin")
+    device = TranslationDevice(
+        user_id=user.id,
+        token_hash=_hash(token),
+        device_name="Synthetic Admin Device",
+        browser_name="Chrome",
+        browser_version="140.0.0.0",
+        extension_version="1.2.0",
+        expires_at=beijing_now().replace(year=2099),
+    )
+    db.add(device)
+    db.commit()
+
+    identity = require_device_identity_for_test(db, token, extension_version="1.2.0")
+
+    assert identity.is_admin is True
+
+
 def test_extension_version_is_validated_and_updated(db, auth_data):
     user, device, token = auth_data
     with pytest.raises(WhatsAppTranslationError) as missing:

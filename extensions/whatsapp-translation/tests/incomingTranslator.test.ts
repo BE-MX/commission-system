@@ -188,6 +188,44 @@ describe('incoming translator', () => {
     expect(bridge.translate).toHaveBeenCalledTimes(1)
   })
 
+  it('settles every in-flight task on a global stop and retries them after resume', async () => {
+    const messages = Array.from({ length: 3 }, (_, index) => incomingMessage(`Text ${index + 1}`, `key-${index + 1}`))
+    const resolveCalls: Array<(value: { translation: string }) => void> = []
+    const rejectCalls: Array<(error: unknown) => void> = []
+    adapter.listUntranslatedIncomingMessages.mockResolvedValue(messages)
+    bridge.translate.mockImplementation(() => new Promise((resolve, reject) => {
+      resolveCalls.push(resolve)
+      rejectCalls.push(reject)
+    }))
+    const controller = createIncomingTranslator(adapter, bridge, renderer)
+
+    controller.notifyMutation()
+    await vi.advanceTimersByTimeAsync(300)
+    rejectCalls[0](new IncomingBridgeError('device_revoked', 'revoked'))
+    await vi.advanceTimersByTimeAsync(0)
+
+    for (const message of messages) {
+      expect(renderer.mountTranslation).toHaveBeenCalledWith(
+        message.element,
+        { code: 'device_revoked', kind: 'blocked' },
+        undefined,
+      )
+    }
+
+    resolveCalls[1]({ translation: 'Stale translation' })
+    resolveCalls[2]({ translation: 'Stale translation' })
+    await vi.advanceTimersByTimeAsync(0)
+    controller.resume()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(bridge.translate).toHaveBeenCalledTimes(6)
+    for (const resolve of resolveCalls.slice(3)) resolve({ translation: 'Recovered translation' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(renderer.mountTranslation.mock.calls.filter(([, state]) => (
+      state.kind === 'success' && state.translation === 'Recovered translation'
+    ))).toHaveLength(3)
+  })
+
   it('pauses after a rate limit response and retries after the window', async () => {
     adapter.listUntranslatedIncomingMessages.mockResolvedValue([incomingMessage('Hello', 'key-1')])
     bridge.translate
@@ -271,6 +309,40 @@ describe('translation renderer', () => {
 
     expect(onDetectedLanguage).toHaveBeenCalledTimes(1)
     expect(onDetectedLanguage).toHaveBeenCalledWith(latest, 'de')
+  })
+
+  it('never rolls the reply language back when an older failed message is rescanned', async () => {
+    const first = incomingMessage('First synthetic message', 'key-1')
+    const latest = incomingMessage('Letzte synthetische Nachricht', 'key-2')
+    const onDetectedLanguage = vi.fn()
+    adapter.listUntranslatedIncomingMessages
+      .mockResolvedValueOnce([first, latest])
+      .mockResolvedValueOnce([first])
+    let firstAttempts = 0
+    bridge.translate.mockImplementation(async request => {
+      if (request.text.startsWith('First')) {
+        firstAttempts += 1
+        if (firstAttempts === 1) throw new IncomingBridgeError('network_error', 'network')
+        return { sourceLanguage: 'en', translation: 'First translation' }
+      }
+      return { sourceLanguage: 'de', translation: 'Latest translation' }
+    })
+    const controller = createIncomingTranslator(adapter, bridge, renderer, { onDetectedLanguage })
+
+    controller.notifyMutation()
+    await vi.advanceTimersByTimeAsync(300)
+    const retry = renderer.mountTranslation.mock.calls.find(([element, state]) => (
+      element === first.element && state.kind === 'retryable_error'
+    ))?.[2]
+    expect(onDetectedLanguage).toHaveBeenCalledOnce()
+    expect(onDetectedLanguage).toHaveBeenLastCalledWith(latest, 'de')
+
+    controller.notifyMutation()
+    await vi.advanceTimersByTimeAsync(300)
+    retry?.()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onDetectedLanguage).toHaveBeenCalledOnce()
   })
 
   it('does not change reply language from ambiguous short messages', async () => {

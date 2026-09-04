@@ -19,6 +19,8 @@ from typing import Iterable, Sequence
 
 import httpx
 
+from app.whatsapp_translation.schemas import TranslationModelOutput
+
 
 LANGUAGES = ("en", "de", "nl", "es", "sv")
 LENGTHS = ("short", "medium", "long")
@@ -149,15 +151,11 @@ def _parse_contract(content: str) -> str | None:
         payload = json.loads(content)
     except (TypeError, json.JSONDecodeError):
         return None
-    if not isinstance(payload, dict):
+    try:
+        output = TranslationModelOutput.model_validate(payload)
+    except Exception:
         return None
-    translated = payload.get("translated_text")
-    detected = payload.get("detected_source_language")
-    if not isinstance(translated, str) or not translated.strip() or len(translated) > 4000:
-        return None
-    if detected not in ("auto", "zh-CN", "en", "es", "fr", "ar", "ja", "de", "nl", "sv"):
-        return None
-    return translated
+    return output.translated_text
 
 
 def _request_body(target: BenchmarkTarget, system_prompt: str, case: BenchmarkCase) -> tuple[str, dict, dict]:

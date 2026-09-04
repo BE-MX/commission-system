@@ -3,6 +3,7 @@ import { createIncomingTranslator, IncomingBridgeError } from '@/content/incomin
 import { createOutgoingComposer } from '@/content/outgoingComposer'
 import { mountTranslation } from '@/content/render'
 import { createToolbarView } from '@/content/toolbarView'
+import { createLatestMountGuard } from '@/content/latestMountGuard'
 import { adapterFor } from '@/whatsapp/adapter'
 import { DEFAULT_OUTGOING_LANGUAGE, TARGET_LANGUAGES } from '@/shared/contracts'
 import type { TargetLanguage } from '@/shared/contracts'
@@ -68,6 +69,7 @@ function startContentScript(): void {
   let currentTitle = ''
   let controller: ReturnType<typeof createComposerController> | undefined
   let composerElement: Element | null = null
+  const mountGuard = createLatestMountGuard()
   const translator = createIncomingTranslator(adapter, backgroundBridge, {
     mountTranslation: (target, state, onRetry) => mountTranslation(target, state, onRetry, { dark: adapter.isDarkTheme() }),
   }, {
@@ -88,6 +90,7 @@ function startContentScript(): void {
   }
 
   async function mountToolbar(): Promise<void> {
+    const mountGeneration = mountGuard.begin()
     const shadow = adapter.mountComposerToolbar()
     if (!shadow) {
       controller = undefined
@@ -95,7 +98,13 @@ function startContentScript(): void {
     }
     const title = adapter.chatTitle()
     currentTitle = title
-    outgoingComposer.setTargetLanguage(await resolveChatLanguage(title))
+    const language = await resolveChatLanguage(title)
+    if (
+      !mountGuard.isCurrent(mountGeneration)
+      || !shadow.host.isConnected
+      || adapter.chatTitle() !== title
+    ) return
+    outgoingComposer.setTargetLanguage(language)
     if (adapter.isDarkTheme()) (shadow.host as HTMLElement).setAttribute('data-ark-theme', 'dark')
     const view = createToolbarView(shadow, {
       onCancelPreview: () => controller?.onCancelPreview(),

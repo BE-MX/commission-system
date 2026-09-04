@@ -46,6 +46,7 @@ const STYLES = `
     --brand-fg: #080303;
     --accent: #25D366;
     --accent-fg: #080303;
+    --link: #147A3D;
     --danger: #b3261e;
     --border: rgba(17, 27, 33, 0.08);
     --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -64,6 +65,7 @@ const STYLES = `
     --brand-fg: #080303;
     --accent: #25D366;
     --accent-fg: #111b21;
+    --link: #25D366;
     --danger: #f28b82;
     --border: rgba(233, 237, 239, 0.1);
   }
@@ -94,7 +96,7 @@ const STYLES = `
   .chip::after { color: var(--muted); content: "▾"; font-size: 11px; margin-left: -12px; pointer-events: none; }
   .btn { background: var(--brand); border-color: transparent; color: var(--brand-fg); font-weight: 600; }
   .btn[disabled] { cursor: progress; opacity: 0.7; }
-  .link { background: transparent; border-color: transparent; color: var(--accent); padding: 0 4px; }
+  .link { background: transparent; border-color: transparent; color: var(--link); padding: 0 4px; }
   .link.danger { color: var(--danger); }
   @media (hover: hover) and (pointer: fine) {
     .chip:hover { background: var(--border); }

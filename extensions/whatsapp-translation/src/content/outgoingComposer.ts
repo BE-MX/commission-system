@@ -46,6 +46,7 @@ export function createOutgoingComposer(
 
   async function translateForPreview(): Promise<OutgoingPreview> {
     const requestedGeneration = chatGeneration
+    const requestedLanguage = targetLanguage
     if (adapter.inspectChat().kind !== 'direct') throw new Error('chat_unsupported')
     const original = adapter.readComposer()
     if (!original) throw new Error('empty_composer')
@@ -53,15 +54,15 @@ export function createOutgoingComposer(
       direction: 'outgoing',
       request_id: crypto.randomUUID(),
       source_language: 'auto',
-      target_language: targetLanguage,
+      target_language: requestedLanguage,
       text: original,
     })
-    if (requestedGeneration !== chatGeneration) throw new Error('composer_changed')
+    if (requestedGeneration !== chatGeneration || requestedLanguage !== targetLanguage) throw new Error('composer_changed')
     preview = {
       backTranslation: response.backTranslation,
       composerVersion: original,
       original,
-      targetLanguage,
+      targetLanguage: requestedLanguage,
       translated: response.translation,
     }
     previewGeneration = requestedGeneration

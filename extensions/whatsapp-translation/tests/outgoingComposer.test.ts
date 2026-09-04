@@ -130,6 +130,24 @@ describe('outgoing composer', () => {
     expect(languageComposer.getPreview()).toBeUndefined()
   })
 
+  it('rejects an in-flight response after the target language changes', async () => {
+    let resolveTranslation: ((value: { translation: string }) => void) | undefined
+    bridge.translate.mockImplementationOnce(() => new Promise(resolve => {
+      resolveTranslation = resolve
+    }))
+    const languageComposer = createOutgoingComposer(adapter, bridge)
+    languageComposer.setTargetLanguage('en')
+
+    const task = languageComposer.translateForPreview()
+    await Promise.resolve()
+    languageComposer.setTargetLanguage('de')
+    resolveTranslation?.({ translation: 'English response' })
+
+    await expect(task).rejects.toThrow('composer_changed')
+    expect(languageComposer.getPreview()).toBeUndefined()
+    expect(bridge.translate).toHaveBeenCalledWith(expect.objectContaining({ target_language: 'en' }))
+  })
+
   it('supports Alt+T as the preview shortcut', async () => {
     const shortcutComposer = createOutgoingComposer(adapter, bridge)
     const handler = vi.fn()

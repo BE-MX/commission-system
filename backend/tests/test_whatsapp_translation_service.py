@@ -219,6 +219,46 @@ def test_transient_provider_failure_retries_once_inside_one_quota_reservation(db
     assert usage.success_count == 1
 
 
+def test_transient_retry_uses_only_the_remaining_timeout_budget(db, identity, monkeypatch):
+    timeouts = []
+    success, _ = mock_chat()
+
+    def flaky_chat(*args, **kwargs):
+        timeouts.append(kwargs["timeout_sec"])
+        if len(timeouts) == 1:
+            request = httpx.Request("POST", "https://provider.invalid/v1/chat/completions")
+            raise httpx.ConnectError("temporary connection failure", request=request)
+        return success(*args, **kwargs)
+
+    ticks = iter([100.0, 104.0])
+    monkeypatch.setattr(translation_service, "chat", flaky_chat)
+    monkeypatch.setattr(translation_service.time, "monotonic", lambda: next(ticks))
+
+    result = translation_service._chat_with_transient_retry(db, timeout_sec=15)
+
+    assert result["content"]
+    assert timeouts == [15, 11.0]
+
+
+def test_transient_failure_is_not_retried_without_a_meaningful_timeout_budget(db, identity, monkeypatch):
+    calls = 0
+
+    def failing_chat(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        request = httpx.Request("POST", "https://provider.invalid/v1/chat/completions")
+        raise httpx.ConnectError("temporary connection failure", request=request)
+
+    ticks = iter([100.0, 114.5])
+    monkeypatch.setattr(translation_service, "chat", failing_chat)
+    monkeypatch.setattr(translation_service.time, "monotonic", lambda: next(ticks))
+
+    with pytest.raises(httpx.ConnectError):
+        translation_service._chat_with_transient_retry(db, timeout_sec=15)
+
+    assert calls == 1
+
+
 def test_non_transient_provider_error_is_not_retried(db, identity, monkeypatch):
     calls = 0
 
@@ -237,17 +277,47 @@ def test_non_transient_provider_error_is_not_retried(db, identity, monkeypatch):
     assert error.value.error_code == "ai_unavailable"
 
 
-def test_waiter_replays_cached_failure_as_stable_error(db, identity, monkeypatch):
-    fake_chat, _ = mock_chat(response_content="not-json")
-    monkeypatch.setattr(translation_service, "chat", fake_chat)
+def test_manual_retry_reruns_after_failure_instead_of_caching_it(db, identity, monkeypatch):
+    calls = 0
+
+    def recover_on_retry(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return {"content": "not-json", "log_id": 1}
+        return {
+            "content": model_content(),
+            "tokens_prompt": 1,
+            "tokens_completion": 1,
+            "duration_ms": 1,
+            "log_id": 2,
+        }
+
+    monkeypatch.setattr(translation_service, "chat", recover_on_retry)
 
     with pytest.raises(WhatsAppTranslationError) as first:
         translation_service.translate_text(db, identity, make_request())
     assert first.value.error_code == "translation_invalid_response"
 
-    with pytest.raises(WhatsAppTranslationError) as replay:
-        translation_service.translate_text(db, identity, make_request())
-    assert replay.value.error_code == "translation_invalid_response"
+    replay = translation_service.translate_text(db, identity, make_request())
+    assert replay.model_log_id == 2
+    assert calls == 2
+
+
+def test_cached_success_bypasses_rate_limit_for_same_request_id(db, identity, monkeypatch):
+    fake_chat, calls = mock_chat()
+    monkeypatch.setattr(translation_service, "chat", fake_chat)
+    monkeypatch.setattr(
+        translation_service,
+        "translation_limiter",
+        translation_service.BoundedSlidingWindowLimiter(limit=1),
+    )
+
+    first = translation_service.translate_text(db, identity, make_request())
+    replay = translation_service.translate_text(db, identity, make_request())
+
+    assert replay == first
+    assert len(calls) == 1
 
 
 def test_same_language_response_returns_original(db, identity, monkeypatch):

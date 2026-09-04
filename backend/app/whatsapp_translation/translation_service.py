@@ -32,7 +32,7 @@ class TranslationCoordinator:
         self.max_keys = max_keys
         self.cache_seconds = cache_seconds
         self.lock = threading.Lock()
-        self.events: OrderedDict[tuple[int, str], threading.Event] = OrderedDict()
+        self.events: OrderedDict[tuple[int, str], dict[str, object]] = OrderedDict()
         self.outcomes: OrderedDict[tuple[int, str], tuple[float, object]] = OrderedDict()
 
     def _cached_outcome(self, key: tuple[int, str]):
@@ -60,10 +60,10 @@ class TranslationCoordinator:
             return cached
 
         with self.lock:
-            event = self.events.get(key)
-            if event is None:
-                event = threading.Event()
-                self.events[key] = event
+            in_flight = self.events.get(key)
+            if in_flight is None:
+                in_flight = {"event": threading.Event(), "outcome": None}
+                self.events[key] = in_flight
                 if len(self.events) > self.max_keys:
                     self.events.popitem(last=False)
                 owner = True
@@ -71,10 +71,15 @@ class TranslationCoordinator:
                 owner = False
 
         if not owner:
+            event = in_flight["event"]
+            assert isinstance(event, threading.Event)
             completed = event.wait(timeout=timeout_seconds)
             if not completed:
                 return "ai_unavailable"
-            return self._cached_outcome(key)
+            outcome = in_flight["outcome"]
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
 
         try:
             result = callback()
@@ -85,7 +90,11 @@ class TranslationCoordinator:
         except Exception:
             result = WhatsAppTranslationError(503, "ai_unavailable", "Translation AI unavailable")
         finally:
-            self._store_outcome(key, result)
+            in_flight["outcome"] = result
+            if not isinstance(result, Exception):
+                self._store_outcome(key, result)
+            event = in_flight["event"]
+            assert isinstance(event, threading.Event)
             event.set()
             with self.lock:
                 self.events.pop(key, None)
@@ -157,15 +166,21 @@ def _is_transient_provider_error(error: Exception) -> bool:
 
 
 def _chat_with_transient_retry(db, **kwargs):
+    timeout_seconds = float(kwargs.get("timeout_sec") or 0)
+    started_at = time.monotonic()
     for attempt in range(2):
         try:
             return chat(db, **kwargs)
         except Exception as error:
             if attempt == 0 and _is_transient_provider_error(error):
+                remaining_seconds = timeout_seconds - (time.monotonic() - started_at)
+                if remaining_seconds < 1.0:
+                    raise
                 logger.warning(
                     "translation provider transient failure, retrying once error_type=%s",
                     type(error).__name__,
                 )
+                kwargs["timeout_sec"] = remaining_seconds
                 continue
             raise
     raise RuntimeError("unreachable")
@@ -173,13 +188,13 @@ def _chat_with_transient_retry(db, **kwargs):
 
 def translate_text(db, identity, request: TranslateRequest) -> TranslateResponse:
     require_supported_extension(identity)
-    allowed, retry_after = translation_limiter.allow(str(identity.device_id))
-    if not allowed:
-        raise WhatsAppTranslationError(429, "rate_limited", "Translation rate limit exceeded", retry_after)
-
-    start = time.monotonic()
 
     def execute():
+        allowed, retry_after = translation_limiter.allow(str(identity.device_id))
+        if not allowed:
+            raise WhatsAppTranslationError(429, "rate_limited", "Translation rate limit exceeded", retry_after)
+
+        start = time.monotonic()
         row = reserve_daily_input(db, identity, len(request.text))
         glossary = glossary_for(
             db,

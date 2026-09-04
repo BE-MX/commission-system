@@ -10,7 +10,7 @@ const REQUIRED_DIST_ENTRIES = ['assets', 'background.js', 'content.js', 'manifes
 const ALLOWED_DIST_ROOTS = new Set(['assets', 'background.js', 'content.js', 'manifest.json', 'popup.js', 'src'])
 
 function collect(directory, prefix = '', output = {}) {
-  for (const entry of readdirSync(directory)) {
+  for (const entry of readdirSync(directory).sort()) {
     const path = join(directory, entry)
     const key = prefix ? `${prefix}/${entry}` : entry
     if (statSync(path).isDirectory()) {
@@ -26,7 +26,10 @@ export function assertSafeOutputPath(outputDir, repositoryRoot = resolve(import.
   const resolvedOutput = resolve(outputDir)
   const resolvedRoot = resolve(repositoryRoot)
   const relativePath = relative(resolvedRoot, resolvedOutput)
-  if (!isAbsolute(resolvedOutput) || isAbsolute(relativePath) || relativePath.startsWith('..') || resolve(resolvedRoot, relativePath) !== resolvedOutput) {
+  const normalizedRelativePath = relativePath.replaceAll('\\', '/')
+  const allowed = normalizedRelativePath === 'extensions/whatsapp-translation/release'
+    || normalizedRelativePath === 'frontend/public/downloads/whatsapp-translation'
+  if (!isAbsolute(resolvedOutput) || !allowed || isAbsolute(relativePath) || relativePath.startsWith('..') || resolve(resolvedRoot, relativePath) !== resolvedOutput) {
     throw new Error('unsafe_output_path')
   }
 }

@@ -46,6 +46,7 @@ export class IncomingBridgeError extends Error {
 type TaskStatus = 'pending' | 'running' | 'success' | 'retryable_error' | 'blocked'
 
 type IncomingTask = {
+  attempt: number
   generation: number
   message: ParsedMessage
   pendingTimer?: ReturnType<typeof setTimeout>
@@ -86,6 +87,7 @@ export function createIncomingTranslator(
   options: IncomingTranslatorOptions = {},
 ) {
   let chatGeneration = 0
+  let newestLanguageElement: Element | undefined
   let newestLanguageKey: string | undefined
   let pausedUntil = 0
   let pauseTimer: ReturnType<typeof setTimeout> | undefined
@@ -99,6 +101,10 @@ export function createIncomingTranslator(
 
   function active(task: IncomingTask): boolean {
     return !stopped && task.generation === chatGeneration
+  }
+
+  function activeAttempt(task: IncomingTask, attempt: number): boolean {
+    return active(task) && task.attempt === attempt && task.status === 'running'
   }
 
   function clearPendingTimer(task: IncomingTask): void {
@@ -143,20 +149,32 @@ export function createIncomingTranslator(
     }, retryAfterMs ? undefined : () => retry(task.message.localKey))
   }
 
-  function handleError(task: IncomingTask, error: unknown): void {
-    if (!active(task)) return
+  function stopAll(code: string, silent: boolean): void {
+    stopped = true
+    queue.length = 0
+    for (const candidate of tasks.values()) {
+      if (candidate.status === 'success') continue
+      clearPendingTimer(candidate)
+      candidate.attempt += 1
+      candidate.status = 'blocked'
+      if (silent) {
+        removeMount(candidate.message.element)
+      } else {
+        renderer.mountTranslation(candidate.message.element, { code, kind: 'blocked' }, undefined)
+      }
+    }
+  }
+
+  function handleError(task: IncomingTask, attempt: number, error: unknown): void {
+    if (!activeAttempt(task, attempt)) return
     const code = error instanceof IncomingBridgeError ? error.code : 'unexpected_error'
 
     if (SILENT_CODES.has(code)) {
-      stopped = true
-      tasks.delete(task.message.localKey)
-      removeMount(task.message.element)
+      stopAll(code, true)
       return
     }
     if (REVOKED_CODES.has(code) || code === 'daily_quota_exceeded') {
-      stopped = true
-      task.status = 'blocked'
-      renderer.mountTranslation(task.message.element, { code, kind: 'blocked' }, undefined)
+      stopAll(code, false)
       return
     }
     if (code === 'rate_limited') {
@@ -179,9 +197,11 @@ export function createIncomingTranslator(
 
   function start(task: IncomingTask): void {
     task.status = 'running'
+    task.attempt += 1
     clearPendingTimer(task)
     runningCount += 1
     renderer.mountTranslation(task.message.element, { kind: 'loading' })
+    const attempt = task.attempt
     const generation = task.generation
 
     void withTimeout(bridge.translate({
@@ -191,7 +211,7 @@ export function createIncomingTranslator(
       target_language: 'zh-CN',
       text: task.message.text,
     })).then((response) => {
-      if (!active(task)) return
+      if (!activeAttempt(task, attempt)) return
       task.status = 'success'
       renderer.mountTranslation(task.message.element, {
         kind: 'success',
@@ -201,7 +221,7 @@ export function createIncomingTranslator(
       if (task.message.localKey === newestLanguageKey && response.sourceLanguage) {
         options.onDetectedLanguage?.(task.message, response.sourceLanguage)
       }
-    }).catch(error => handleError(task, error)).finally(() => {
+    }).catch(error => handleError(task, attempt, error)).finally(() => {
       if (generation !== chatGeneration) return
       runningCount = Math.max(0, runningCount - 1)
       pump()
@@ -261,13 +281,22 @@ export function createIncomingTranslator(
       const messages = await adapter.listUntranslatedIncomingMessages()
       if (stopped || generation !== chatGeneration) return
       for (const message of messages) {
-        if (isLanguageSignal(message.text)) newestLanguageKey = message.localKey
         const existing = tasks.get(message.localKey)
         if (existing) {
           existing.message = message
+          if (message.localKey === newestLanguageKey) newestLanguageElement = message.element
           continue
         }
+        if (isLanguageSignal(message.text)) {
+          const following = newestLanguageElement?.compareDocumentPosition(message.element) ?? 0
+          const followingFlag = message.element.ownerDocument.defaultView?.Node.DOCUMENT_POSITION_FOLLOWING ?? 4
+          if (!newestLanguageKey || !newestLanguageElement?.isConnected || (following & followingFlag) !== 0) {
+            newestLanguageKey = message.localKey
+            newestLanguageElement = message.element
+          }
+        }
         const task: IncomingTask = {
+          attempt: 0,
           generation,
           message,
           requestId: crypto.randomUUID(),
@@ -290,6 +319,7 @@ export function createIncomingTranslator(
       if (scanTimer) clearTimeout(scanTimer)
       if (pauseTimer) clearTimeout(pauseTimer)
       for (const task of tasks.values()) clearPendingTimer(task)
+      newestLanguageElement = undefined
       newestLanguageKey = undefined
       pausedUntil = 0
       pauseTimer = undefined
@@ -311,6 +341,15 @@ export function createIncomingTranslator(
       pausedUntil = 0
       if (pauseTimer) clearTimeout(pauseTimer)
       pauseTimer = undefined
+      for (const task of tasks.values()) {
+        if (task.status !== 'blocked') continue
+        task.status = 'pending'
+        removeQueuedKey(task.message.localKey)
+        queue.push(task.message.localKey)
+        renderPendingAction(task)
+      }
+      pump()
+      scheduleScan(0)
     },
   }
 }

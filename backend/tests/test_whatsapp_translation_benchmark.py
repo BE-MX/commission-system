@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from scripts.benchmark_whatsapp_translation_models import (
+    _parse_contract,
     BenchmarkResult,
     deduplicate_targets,
     generate_cases,
@@ -51,6 +52,14 @@ def test_deduplicate_targets_uses_provider_and_model_and_skips_image_models():
     targets = deduplicate_targets(rows)
 
     assert [(target.provider.id, target.model) for target in targets] == [(7, "model-fast")]
+
+
+def test_benchmark_contract_matches_production_output_schema():
+    valid = '{"translated_text":"合成译文","detected_source_language":"de"}'
+
+    assert _parse_contract(valid) == "合成译文"
+    assert _parse_contract('{"translated_text":"x","detected_source_language":"auto"}') is None
+    assert _parse_contract('{"translated_text":"x","detected_source_language":"de","extra":1}') is None
 
 
 def test_report_contains_only_aggregate_results():

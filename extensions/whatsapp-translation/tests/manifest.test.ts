@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -51,6 +51,7 @@ describe('manifest privacy boundary', () => {
     expect(styles).toContain('#FDD956')
     expect(styles).toContain('#080303')
     expect(styles).toContain('#25D366')
+    expect(styles).toContain('#147A3D')
   })
 
   it('does not request surveillance or sending capabilities', () => {
@@ -60,12 +61,16 @@ describe('manifest privacy boundary', () => {
 
 describe('release packaging', () => {
   it('creates a deterministic release with the exact manifest shape', () => {
-    const outputDir = mkdtempSync(join(tmpdir(), 'whatsapp-release-'))
-    const secondDir = mkdtempSync(join(tmpdir(), 'whatsapp-release-'))
+    const firstRoot = mkdtempSync(join(tmpdir(), 'whatsapp-release-'))
+    const secondRoot = mkdtempSync(join(tmpdir(), 'whatsapp-release-'))
+    const outputDir = join(firstRoot, 'extensions', 'whatsapp-translation', 'release')
+    const secondDir = join(secondRoot, 'extensions', 'whatsapp-translation', 'release')
     try {
+      mkdirSync(outputDir, { recursive: true })
+      mkdirSync(secondDir, { recursive: true })
       writeFileSync(join(outputDir, 'whatsapp-translation-stale.zip'), 'stale')
-      const release = packageRelease({ distDir: 'dist', outputDir, repositoryRoot: tmpdir() })
-      const second = packageRelease({ distDir: 'dist', outputDir: secondDir, repositoryRoot: tmpdir() })
+      const release = packageRelease({ distDir: 'dist', outputDir, repositoryRoot: firstRoot })
+      const second = packageRelease({ distDir: 'dist', outputDir: secondDir, repositoryRoot: secondRoot })
 
       expect(release).toEqual({
         extension_id: 'bnkecbkoidckffckbefjjcbchmngjobi',
@@ -78,17 +83,25 @@ describe('release packaging', () => {
       expect(release.sha256).toBe(second.sha256)
       expect(readdirSync(outputDir).sort()).toEqual(['latest.json', release.filename])
     } finally {
-      rmSync(outputDir, { recursive: true, force: true })
-      rmSync(secondDir, { recursive: true, force: true })
+      rmSync(firstRoot, { recursive: true, force: true })
+      rmSync(secondRoot, { recursive: true, force: true })
     }
   })
 
   it('rejects a missing dist and unsafe output paths', () => {
     assertSafeOutputPath(resolve(repositoryRoot, 'frontend/public/downloads/whatsapp-translation'))
+    expect(() => assertSafeOutputPath(repositoryRoot, repositoryRoot)).toThrow('unsafe_output_path')
+    expect(() => assertSafeOutputPath(resolve(repositoryRoot, 'backend'), repositoryRoot)).toThrow('unsafe_output_path')
     expect(() => assertSafeOutputPath(resolve(repositoryRoot, '..', 'unsafe-output'))).toThrow('unsafe_output_path')
     expect(() => assertSafeOutputPath(tmpdir())).toThrow('unsafe_output_path')
-    expect(() => packageRelease({ distDir: 'missing-dist', outputDir: tmpdir(), repositoryRoot: tmpdir() }))
+    const missingRoot = mkdtempSync(join(tmpdir(), 'whatsapp-missing-'))
+    expect(() => packageRelease({
+      distDir: 'missing-dist',
+      outputDir: join(missingRoot, 'extensions', 'whatsapp-translation', 'release'),
+      repositoryRoot: missingRoot,
+    }))
       .toThrow('invalid_dist')
+    rmSync(missingRoot, { recursive: true, force: true })
     expect(() => packageRelease({
       distDir: 'dist',
       outputDir: resolve(repositoryRoot, '..', 'unsafe-output'),
@@ -98,17 +111,18 @@ describe('release packaging', () => {
 
   it('allows only reviewed production files in the ZIP', () => {
     const taintedDist = mkdtempSync(join(tmpdir(), 'tainted-dist-'))
-    const outputDir = mkdtempSync(join(tmpdir(), 'whatsapp-release-'))
+    const outputRoot = mkdtempSync(join(tmpdir(), 'whatsapp-release-'))
+    const outputDir = join(outputRoot, 'extensions', 'whatsapp-translation', 'release')
     try {
       cpSync('dist', taintedDist, { recursive: true })
       writeFileSync(join(taintedDist, 'package-lock.json'), '{}')
 
-      expect(() => packageRelease({ distDir: taintedDist, outputDir, repositoryRoot: tmpdir() })).toThrow(
+      expect(() => packageRelease({ distDir: taintedDist, outputDir, repositoryRoot: outputRoot })).toThrow(
         'forbidden_package_file:package-lock.json',
       )
     } finally {
       rmSync(taintedDist, { recursive: true, force: true })
-      rmSync(outputDir, { recursive: true, force: true })
+      rmSync(outputRoot, { recursive: true, force: true })
     }
   })
 })

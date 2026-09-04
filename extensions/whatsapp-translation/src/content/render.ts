@@ -14,6 +14,7 @@ const TRANSLATION_STYLES = `
     --fg: #111b21;
     --muted: #667781;
     --accent: #25D366;
+    --link: #147A3D;
     --danger: #b3261e;
     background: var(--bg);
     border-left: 2px solid var(--accent);
@@ -33,6 +34,7 @@ const TRANSLATION_STYLES = `
     --fg: #e9edef;
     --muted: #8696a0;
     --accent: #25D366;
+    --link: #25D366;
     --danger: #f28b82;
   }
   .ark-translation__meta {
@@ -47,7 +49,7 @@ const TRANSLATION_STYLES = `
   .ark-translation__retry {
     background: transparent;
     border: none;
-    color: var(--accent);
+    color: var(--link);
     cursor: pointer;
     font: inherit;
     font-size: 12.5px;

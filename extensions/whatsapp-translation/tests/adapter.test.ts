@@ -5,7 +5,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { adapterFor } from '@/whatsapp/adapter'
 
 function loadFixture(name: string): Document {
-  return new JSDOM(readFileSync(new URL(`./fixtures/${name}.html`, import.meta.url), 'utf8')).window.document
+  return new JSDOM(readFileSync(new URL(`./fixtures/${name}.html`, import.meta.url), 'utf8'), {
+    url: 'https://web.whatsapp.com/',
+  }).window.document
 }
 
 const directFixture = loadFixture('direct')
@@ -48,6 +50,16 @@ describe('WhatsApp adapter', () => {
     await expect(adapterFor(unknownFixture).listUntranslatedIncomingMessages()).resolves.toEqual([])
   })
 
+  it('fails closed when an otherwise valid text bubble contains an unknown unmarked node', async () => {
+    const document = loadFixture('direct-forwarded')
+    const message = document.querySelector('[data-testid="msg-container"]') as HTMLElement
+    const unknown = document.createElement('div')
+    unknown.className = 'synthetic-unknown-node'
+    message.prepend(unknown)
+
+    await expect(adapterFor(document).listUntranslatedIncomingMessages()).resolves.toEqual([])
+  })
+
   it('creates distinct local keys for repeated incoming text', async () => {
     const document = loadFixture('direct')
     const root = document.getElementById('main') as HTMLElement
@@ -70,6 +82,72 @@ describe('WhatsApp adapter', () => {
 
     expect(messages.map(message => message.text).slice(0, 2)).toEqual(['Repeated text', 'Repeated text'])
     expect(messages[0].localKey).not.toBe(messages[1].localKey)
+  })
+
+  it('keeps a queued message key stable after earlier messages enter loading state', async () => {
+    const document = loadFixture('direct')
+    const messagePanel = document.querySelector('[data-testid="conversation-panel-messages"]') as HTMLElement
+    const unsupportedRows = [...messagePanel.children]
+    messagePanel.replaceChildren()
+
+    for (let index = 0; index < 4; index += 1) {
+      const row = document.createElement('div')
+      row.style.alignItems = 'flex-start'
+      row.style.display = 'flex'
+      row.innerHTML = `
+        <div data-testid="msg-container">
+          <div class="copyable-text" data-pre-plain-text="[18:4${index}, 2026-09-03] Synthetic: ">
+            <span data-testid="selectable-text">Synthetic text ${index + 1}</span>
+          </div>
+        </div>
+      `
+      messagePanel.append(row)
+    }
+
+    const firstScan = await adapterFor(document).listUntranslatedIncomingMessages()
+    for (const message of firstScan.slice(0, 3)) {
+      const host = document.createElement('div')
+      host.setAttribute('data-ark-translation-host', '1')
+      host.setAttribute('data-ark-translation-state', 'loading')
+      message.element.append(host)
+    }
+    const secondScan = await adapterFor(document).listUntranslatedIncomingMessages()
+
+    expect(firstScan).toHaveLength(4)
+    expect(secondScan).toHaveLength(1)
+    expect(secondScan[0].text).toBe('Synthetic text 4')
+    expect(secondScan[0].localKey).toBe(firstScan[3].localKey)
+
+    messagePanel.replaceChildren(...unsupportedRows)
+  })
+
+  it('does not reuse a settled message key for a later identical message', async () => {
+    const document = loadFixture('direct')
+    const messagePanel = document.querySelector('[data-testid="conversation-panel-messages"]') as HTMLElement
+    messagePanel.replaceChildren()
+    for (let index = 0; index < 2; index += 1) {
+      const row = document.createElement('div')
+      row.style.alignItems = 'flex-start'
+      row.innerHTML = `
+        <div data-testid="msg-container">
+          <div class="copyable-text" data-pre-plain-text="[18:4${index}, 2026-09-03] Synthetic: ">
+            <span data-testid="selectable-text">OK again</span>
+          </div>
+        </div>
+      `
+      messagePanel.append(row)
+    }
+
+    const firstScan = await adapterFor(document).listUntranslatedIncomingMessages()
+    const host = document.createElement('div')
+    host.setAttribute('data-ark-translation-host', '1')
+    host.setAttribute('data-ark-translation-state', 'success')
+    firstScan[0].element.append(host)
+    const secondScan = await adapterFor(document).listUntranslatedIncomingMessages()
+
+    expect(secondScan).toHaveLength(1)
+    expect(secondScan[0].localKey).toBe(firstScan[1].localKey)
+    expect(secondScan[0].localKey).not.toBe(firstScan[0].localKey)
   })
 
   it('replaces only the confirmed composer and never dispatches send controls', async () => {

@@ -105,4 +105,57 @@ describe('Ark API client', () => {
     await expect(apiClient.translate('token', '1.2.0', payload)).rejects.toMatchObject({ code: 'daily_quota_exceeded' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
+
+  it('retries a structured transient gateway response', async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        code: 503,
+        data: { error_code: 'ai_unavailable' },
+        message: 'temporarily unavailable',
+      }), { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        code: 200,
+        data: {
+          detected_source_language: 'de',
+          model_log_id: 9,
+          request_id: '4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de63',
+          translated_text: '合成译文',
+        },
+        message: 'ok',
+      }), { status: 200 }))
+
+    await expect(apiClient.translate('token', '1.2.0', {
+      direction: 'incoming',
+      request_id: '4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de63',
+      source_language: 'auto',
+      target_language: 'zh-CN',
+      text: 'Synthetic text',
+    })).resolves.toMatchObject({ translated_text: '合成译文' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('bounds both browser transport attempts to one 20-second budget', async () => {
+    vi.useFakeTimers()
+    fetchMock
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => {
+        setTimeout(() => reject(new TypeError('connection reset')), 5_000)
+      }))
+      .mockImplementationOnce((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      }))
+
+    const request = apiClient.translate('token', '1.2.0', {
+      direction: 'incoming',
+      request_id: '4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de63',
+      source_language: 'auto',
+      target_language: 'zh-CN',
+      text: 'Synthetic text',
+    })
+    const expectation = expect(request).rejects.toThrow('request_timeout')
+    await vi.advanceTimersByTimeAsync(19_999)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1)
+    await expectation
+    vi.useRealTimers()
+  })
 })
