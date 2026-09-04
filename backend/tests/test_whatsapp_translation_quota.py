@@ -6,7 +6,7 @@ import pytest
 from fastapi import Request
 
 from app.auth.models import ArkRole, ArkUser
-from app.core.time import beijing_now
+from app.core.time import beijing_now, beijing_today
 from app.whatsapp_translation.auth import DeviceIdentity
 from app.whatsapp_translation.quota_service import (
     BoundedSlidingWindowLimiter,
@@ -139,7 +139,7 @@ def test_accepted_success_and_failure_are_counted(db, device):
     )
     failed_row = reserve_daily_input(db, identity, 5)
     record_failure(db, failed_row, direction="outgoing", error_code="ai_timeout")
-    row = usage_for(db, date(2026, 9, 3), identity.device_id)
+    row = usage_for(db, beijing_today(), identity.device_id)
     assert row.request_count == 2
     assert row.success_count == 1
     assert row.failure_count == 1
@@ -152,7 +152,7 @@ def test_accepted_success_and_failure_are_counted(db, device):
 
 def test_rejected_requests_do_not_reserve(db, device):
     _, identity = device
-    assert usage_for(db, date(2026, 9, 3), identity.device_id) is None
+    assert usage_for(db, beijing_today(), identity.device_id) is None
 
 
 def test_translation_coordinator_runs_request_id_once(db, device):
