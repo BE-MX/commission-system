@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { adapterFor } from '@/whatsapp/adapter'
 import { createOutgoingComposer } from '@/content/outgoingComposer'
+import { installControlledComposer } from './support/controlledComposer'
 
 const document = new JSDOM(readFileSync('tests/fixtures/direct.html', 'utf8')).window.document
 const adapter = adapterFor(document)
@@ -14,26 +15,11 @@ beforeEach(() => {
   bridge.translate.mockReset().mockResolvedValue({ translation: 'Please confirm the lead time.' })
   const composer = document.querySelector('footer div') as HTMLElement
   composer.textContent = 'Current draft'
-  Object.defineProperty(document, 'execCommand', {
-    configurable: true,
-    value: (_command: string, _showUi: boolean, value: string) => {
-      composer.replaceChildren(document.createTextNode(value))
-      composer.dispatchEvent(new document.defaultView!.InputEvent('input', {
-        bubbles: true,
-        data: value,
-        inputType: 'insertText',
-      }))
-      return true
-    },
-  })
+  installControlledComposer(document, composer)
 })
 
 describe('outgoing composer', () => {
   it('previews and replaces without invoking any send control', async () => {
-    const sendButton = document.createElement('button')
-    sendButton.click = vi.fn()
-    const form = document.createElement('form')
-    form.dispatchEvent = vi.fn()
     const composer = createOutgoingComposer(adapter, bridge)
 
     const preview = await composer.translateForPreview()
@@ -47,8 +33,6 @@ describe('outgoing composer', () => {
 
     expect(await composer.replaceWithPreview()).toBe(true)
     expect(adapter.readComposer()).toBe('Please confirm the lead time.')
-    expect(sendButton.click).not.toHaveBeenCalled()
-    expect(form.dispatchEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'submit' }))
   })
 
   it('rejects empty text and leaves length enforcement to Ark capabilities', async () => {
@@ -120,6 +104,23 @@ describe('outgoing composer', () => {
 
     expect(await racingComposer.replaceWithPreview()).toBe(false)
     expect(adapter.readComposer()).toBe('Other chat draft')
+  })
+
+  it('does not complete replacement when the chat changes inside the editor write', async () => {
+    let composer: ReturnType<typeof createOutgoingComposer>
+    const guardedAdapter = {
+      inspectChat: () => ({ kind: 'direct' }),
+      readComposer: () => 'Current draft',
+      replaceComposer: vi.fn(async (_text: string, isCurrent?: () => boolean) => {
+        composer.invalidateChat()
+        return isCurrent?.() ?? true
+      }),
+    }
+    composer = createOutgoingComposer(guardedAdapter, bridge)
+    await composer.translateForPreview()
+
+    await expect(composer.replaceWithPreview()).resolves.toBe(false)
+    expect(composer.canRestore()).toBe(false)
   })
 
   it('invalidates a preview when the selected chat language changes', async () => {

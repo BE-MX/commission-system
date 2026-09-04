@@ -7,6 +7,7 @@ import { createToolbarView } from '@/content/toolbarView'
 import { adapterFor } from '@/whatsapp/adapter'
 import { readFileSync } from 'node:fs'
 import { JSDOM } from 'jsdom'
+import { installControlledComposer } from './support/controlledComposer'
 
 const document = new JSDOM(readFileSync('tests/fixtures/direct.html', 'utf8')).window.document
 const adapter = adapterFor(document)
@@ -40,18 +41,7 @@ beforeEach(async () => {
     sourceLanguage: 'zh-CN',
   })
   const composer = document.querySelector('footer div') as HTMLElement
-  Object.defineProperty(document, 'execCommand', {
-    configurable: true,
-    value: (_command: string, _showUi: boolean, value: string) => {
-      composer.replaceChildren(document.createTextNode(value))
-      composer.dispatchEvent(new document.defaultView!.InputEvent('input', {
-        bubbles: true,
-        data: value,
-        inputType: 'insertText',
-      }))
-      return true
-    },
-  })
+  installControlledComposer(document, composer)
   await adapter.replaceComposer('请确认交期')
 })
 
@@ -126,5 +116,47 @@ describe('composer controller + toolbar', () => {
 
     expect(view.render.mock.calls.at(-1)?.[0].status).toEqual({ kind: 'error', code: 'composer_write_failed' })
     expect(view.render.mock.calls.at(-1)?.[0].preview?.translated).toBe('Translated')
+  })
+
+  it('keeps the restore action available when the editor rejects restoration', async () => {
+    let canRestore = true
+    const composer = {
+      canRestore: () => canRestore,
+      clearPreview: vi.fn(),
+      getPreview: () => undefined,
+      getTargetLanguage: () => 'en',
+      previewIsFresh: () => false,
+      replaceWithPreview: vi.fn(),
+      restoreOriginal: vi.fn().mockResolvedValue(false),
+      setTargetLanguage: vi.fn(),
+      translateForPreview: vi.fn(),
+    }
+    const view = { render: vi.fn() }
+    const controller = createComposerController(composer, view, { save: vi.fn() })
+
+    await controller.onRestore()
+
+    expect(view.render.mock.calls.at(-1)?.[0]).toMatchObject({
+      canRestore: true,
+      status: { kind: 'restore_failed' },
+    })
+
+    const host = document.createElement('div')
+    const shadow = host.attachShadow({ mode: 'open' })
+    const toolbar = createToolbarView(shadow, {
+      onCancelPreview: vi.fn(),
+      onLanguageChange: vi.fn(),
+      onReplace: vi.fn(),
+      onRestore: vi.fn(),
+      onRetry: vi.fn(),
+      onTranslate: vi.fn(),
+    })
+    toolbar.render(view.render.mock.calls.at(-1)![0])
+    expect(shadow.textContent).toContain('未能恢复中文，请重试')
+    expect(shadow.textContent).toContain('重试恢复')
+
+    canRestore = false
+    controller.onComposerInput()
+    expect(view.render.mock.calls.at(-1)?.[0].status).toEqual({ kind: 'idle' })
   })
 })

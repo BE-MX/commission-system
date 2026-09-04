@@ -42,28 +42,70 @@ export class WhatsAppAdapter {
     return normalizeComposerText(composers[0].textContent ?? '')
   }
 
-  async replaceComposer(text: string): Promise<boolean> {
+  async replaceComposer(text: string, isCurrent: () => boolean = () => true): Promise<boolean> {
     if (this.inspectChat().kind !== 'direct') return false
     const composers = this.root.querySelectorAll(WHATSAPP_SELECTORS.composer)
     if (composers.length !== 1) return false
 
     const composer = composers[0] as HTMLElement
     const doc = composer.ownerDocument
-    const selection = doc.defaultView?.getSelection()
-    if (!selection || typeof doc.execCommand !== 'function') return false
+    const view = doc.defaultView
+    const selection = view?.getSelection()
+    if (!view || !selection || !view.InputEvent) return false
+    const chatRoot = this.chatRootElement()
+    const chatTitle = this.chatTitle()
+    const composerVersion = this.readComposer()
+
+    const collapseFullSelection = () => {
+      const anchor = selection.anchorNode
+      const focus = selection.focusNode
+      const belongsToComposer = (node: Node | null) => node === composer || (node !== null && composer.contains(node))
+      if (selection.isCollapsed || !composer.isConnected || !belongsToComposer(anchor) || !belongsToComposer(focus)) return
+      const caret = doc.createRange()
+      caret.selectNodeContents(composer)
+      caret.collapse(false)
+      selection.removeAllRanges()
+      selection.addRange(caret)
+    }
+
+    const composerContextIsCurrent = () => {
+      const current = this.root.querySelectorAll(WHATSAPP_SELECTORS.composer)
+      return current.length === 1
+        && current[0] === composer
+        && composer.isConnected
+        && this.chatRootElement() === chatRoot
+        && this.chatTitle() === chatTitle
+    }
 
     composer.focus()
     const range = doc.createRange()
     range.selectNodeContents(composer)
     selection.removeAllRanges()
     selection.addRange(range)
+    doc.dispatchEvent(new view.Event('selectionchange'))
+    await new Promise<void>(resolve => view.requestAnimationFrame(() => resolve()))
+    if (!composerContextIsCurrent() || this.readComposer() !== composerVersion || !isCurrent()) {
+      collapseFullSelection()
+      return false
+    }
+
     try {
-      if (!doc.execCommand('insertText', false, text)) return false
-    } finally {
-      selection.removeAllRanges()
+      composer.dispatchEvent(new view.InputEvent('beforeinput', {
+        bubbles: true,
+        cancelable: true,
+        data: text,
+        inputType: 'insertText',
+      }))
+    } catch {
+      collapseFullSelection()
+      return false
     }
     await Promise.resolve()
-    return this.readComposer() === normalizeComposerText(text)
+    const replaced = composerContextIsCurrent()
+      && isCurrent()
+      && this.readComposer() === normalizeComposerText(text)
+    if (!replaced) collapseFullSelection()
+    return replaced
   }
 
   /**
