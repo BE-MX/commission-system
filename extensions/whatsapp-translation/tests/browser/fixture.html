@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <style>
+      body { margin: 32px; font-family: sans-serif; }
+      main { max-width: 900px; }
+      header { padding: 16px; }
+      footer { border: 1px solid; padding: 8px; }
+      [contenteditable] { min-height: 50px; padding: 16px; outline: none; }
+    </style>
+  </head>
+  <body>
+    <input id="external-search" type="search" aria-label="Synthetic chat search">
+    <main id="main">
+      <header data-testid="conversation-header">
+        <div role="button" aria-label="个人主页详情">Synthetic contact</div>
+        <span data-testid="conversation-info-header-chat-title">Synthetic customer</span>
+      </header>
+      <footer>
+        <div id="editor" role="textbox" aria-label="Synthetic composer" contenteditable="true" data-tab="10"></div>
+        <button id="send" type="button">Synthetic send</button>
+      </footer>
+    </main>
+  </body>
+</html>

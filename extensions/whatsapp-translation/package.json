@@ -1,21 +1,25 @@
 {
   "name": "@leshine/whatsapp-translation",
   "private": true,
-  "version": "1.2.1",
+  "version": "1.2.2",
   "type": "module",
   "scripts": {
     "test": "vitest run",
+    "test:browser": "playwright test",
     "icons": "node scripts/render-icons.mjs",
     "build": "tsc --noEmit && node scripts/build.mjs",
     "package": "npm run build && npm run test && node scripts/package.mjs",
     "check": "npm run test && npm run build"
   },
   "devDependencies": {
+    "@lexical/plain-text": "^0.50.0",
+    "@playwright/test": "^1.62.1",
     "@types/chrome": "^0.0.300",
     "@types/jsdom": "^30.0.0",
     "@types/node": "^22.10.2",
     "fflate": "^0.8.2",
     "jsdom": "^25.0.1",
+    "lexical": "^0.50.0",
     "typescript": "^5.7.2",
     "vite": "^5.4.14",
     "vitest": "^2.1.8"

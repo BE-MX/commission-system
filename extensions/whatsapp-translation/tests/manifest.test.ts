@@ -19,8 +19,8 @@ function extensionId(publicKey: string): string {
 describe('manifest privacy boundary', () => {
   it('has the approved stable identity and minimum permissions', () => {
     expect(manifest.manifest_version).toBe(3)
-    expect(manifest.version).toBe('1.2.1')
-    expect(packageJson.version).toBe('1.2.1')
+    expect(manifest.version).toBe('1.2.2')
+    expect(packageJson.version).toBe('1.2.2')
     expect(extensionId(manifest.key)).toBe('bnkecbkoidckffckbefjjcbchmngjobi')
     expect(manifest.permissions).toEqual(['storage'])
     expect(manifest.host_permissions).toEqual([
@@ -83,10 +83,10 @@ describe('release packaging', () => {
 
       expect(release).toEqual({
         extension_id: 'bnkecbkoidckffckbefjjcbchmngjobi',
-        filename: 'whatsapp-translation-1.2.1.zip',
+        filename: 'whatsapp-translation-1.2.2.zip',
         sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
         size: expect.any(Number),
-        version: '1.2.1',
+        version: '1.2.2',
       })
       expect(release.size).toBeGreaterThan(0)
       expect(release.sha256).toBe(second.sha256)
