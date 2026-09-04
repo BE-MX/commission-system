@@ -8,6 +8,7 @@ const EXTENSION_ID = 'bnkecbkoidckffckbefjjcbchmngjobi'
 const FIXED_TIME = new Date('1980-01-01T00:00:00Z')
 const REQUIRED_DIST_ENTRIES = ['assets', 'background.js', 'content.js', 'manifest.json', 'src/popup/index.html']
 const ALLOWED_DIST_ROOTS = new Set(['assets', 'background.js', 'content.js', 'manifest.json', 'popup.js', 'src'])
+const TEXT_PACKAGE_FILE = /\.(?:css|html|js|json)$/i
 
 function collect(directory, prefix = '', output = {}) {
   for (const entry of readdirSync(directory).sort()) {
@@ -16,7 +17,10 @@ function collect(directory, prefix = '', output = {}) {
     if (statSync(path).isDirectory()) {
       collect(path, key, output)
     } else {
-      output[key] = readFileSync(path)
+      const content = readFileSync(path)
+      output[key] = TEXT_PACKAGE_FILE.test(key)
+        ? Buffer.from(content.toString('utf8').replace(/\r\n?/g, '\n'), 'utf8')
+        : content
     }
   }
   return output
