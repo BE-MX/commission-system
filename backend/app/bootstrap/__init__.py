@@ -6,6 +6,7 @@ from app.bootstrap.seed_ai import auto_init_ai_presets
 from app.bootstrap.seed_asset import seed_asset_dimensions
 from app.bootstrap.seed_salary import seed_salary_rules
 from app.bootstrap.seed_agent_runtime import seed_agent_runtime_profiles
+from app.bootstrap.seed_whatsapp_translation import seed_whatsapp_translation_glossary
 from app.bootstrap.static_files import mount_uploads, mount_frontend
 from app.bootstrap.resources import check_pdf_export_resources, check_expo_watermark
 
@@ -18,6 +19,7 @@ __all__ = [
     "seed_asset_dimensions",
     "seed_salary_rules",
     "seed_agent_runtime_profiles",
+    "seed_whatsapp_translation_glossary",
     "mount_uploads",
     "mount_frontend",
     "check_pdf_export_resources",

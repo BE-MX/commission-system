@@ -206,3 +206,111 @@ def test_preserves_newlines_sku_url_emoji(db, identity, monkeypatch):
     monkeypatch.setattr(translation_service, "chat", fake_chat)
     result = translation_service.translate_text(db, identity, make_request(text=source))
     assert result.translated_text == source
+
+
+def add_glossary(db, lang, rows):
+    from app.system.models import SysDict
+    for sort, (code, label) in enumerate(rows):
+        db.add(SysDict(
+            type=f"whatsapp_glossary_{lang}",
+            code=code,
+            label=label,
+            sort=sort,
+            is_active=True,
+            remark=None,
+        ))
+    db.flush()
+
+
+def test_glossary_terms_injected_when_matched(db, identity, monkeypatch):
+    add_glossary(db, "en", [("交期", "lead time"), ("形式发票", "proforma invoice"), ("顺发", "remy")])
+    db.commit()
+
+    fake_chat, calls = mock_chat(response_content=json.dumps({
+        "translated_text": "Our lead time is two weeks.",
+        "back_translation": "我们的交期是两周。",
+        "detected_source_language": "zh-CN",
+    }, ensure_ascii=False))
+    monkeypatch.setattr(translation_service, "chat", fake_chat)
+    req = TranslateRequest(
+        request_id="4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de63",
+        direction="outgoing", text="我们的交期是两周", source_language="auto", target_language="en",
+    )
+    result = translation_service.translate_text(db, identity, req)
+    assert result.translated_text == "Our lead time is two weeks."
+    payload = json.loads(calls[-1]["messages"][0]["content"])
+    assert payload["glossary"] == [{"code": "交期", "label": "lead time"}]
+    assert payload["allowed_source_languages"]  # 值域注入而非写死在 prompt
+
+def test_outgoing_uses_dedicated_preset_and_requires_back_translation(db, identity, monkeypatch):
+    add_glossary(db, "en", [("最小起订量", "MOQ"), ("样品费", "sample fee")])
+    db.commit()
+
+    fake_chat, calls = mock_chat(response_content=json.dumps({
+        "translated_text": "MOQ is 100 g, sample fee charged.",
+        "back_translation": "最小起订量 100 克，样品费另收。",
+        "detected_source_language": "zh-CN",
+    }, ensure_ascii=False))
+    monkeypatch.setattr(translation_service, "chat", fake_chat)
+
+    req = TranslateRequest(
+        request_id="4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de63",
+        direction="outgoing",
+        text="最小起订量 100 克，样品费另收。",
+        source_language="auto",
+        target_language="en",
+    )
+    result = translation_service.translate_text(db, identity, req)
+    assert result.translated_text == "MOQ is 100 g, sample fee charged."
+    assert result.back_translation == "最小起订量 100 克，样品费另收。"
+    assert calls[-1]["preset_name"] == "whatsapp_outgoing_translation"
+    payload = json.loads(calls[-1]["messages"][0]["content"])
+    assert {"code": "最小起订量", "label": "MOQ"} in payload["glossary"]
+
+
+def test_outgoing_missing_back_translation_fails_closed(db, identity, monkeypatch):
+    # detected zh-CN (source) != target en，未进入 same-language 分支，缺 back_translation 应判失败
+    fake_chat, _ = mock_chat(response_content=model_content(translated="MOQ is 100 g.", detected="zh-CN"))
+    monkeypatch.setattr(translation_service, "chat", fake_chat)
+    req = TranslateRequest(
+        request_id="4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de63",
+        direction="outgoing",
+        text="最小起订量 100 克。",
+        source_language="auto",
+        target_language="en",
+    )
+    with pytest.raises(WhatsAppTranslationError) as error:
+        translation_service.translate_text(db, identity, req)
+    assert error.value.error_code == "translation_invalid_response"
+
+
+def test_incoming_ignores_back_translation_field(db, identity, monkeypatch):
+    back = json.dumps({
+        "translated_text": "这周可以发货。",
+        "back_translation": "无关内容",
+        "detected_source_language": "en",
+    }, ensure_ascii=False)
+    fake_chat, _ = mock_chat(response_content=back)
+    monkeypatch.setattr(translation_service, "chat", fake_chat)
+    result = translation_service.translate_text(db, identity, make_request(text="Can you ship this week?"))
+    assert result.translated_text == "这周可以发货。"
+    assert result.back_translation is None
+
+
+def test_glossary_outgoing_matches_chinese_term_only_in_target_table(db, identity, monkeypatch):
+    # en 表有“交期”，fr 表没有；中文源文字按 en 命中
+    add_glossary(db, "en", [("交期", "lead time")])
+    db.commit()
+    fake_chat, calls = mock_chat(response_content=json.dumps({
+        "translated_text": "lead time is 2 weeks.",
+        "back_translation": "交期两周。",
+        "detected_source_language": "zh-CN",
+    }, ensure_ascii=False))
+    monkeypatch.setattr(translation_service, "chat", fake_chat)
+    req = TranslateRequest(
+        request_id="4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de63",
+        direction="outgoing", text="交期两周。", source_language="auto", target_language="es",
+    )
+    translation_service.translate_text(db, identity, req)
+    payload = json.loads(calls[-1]["messages"][0]["content"])
+    assert payload["glossary"] == []

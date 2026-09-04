@@ -85,10 +85,12 @@ class TranslationModelOutput(BaseModel):
 
     translated_text: str = Field(min_length=1, max_length=4_000)
     detected_source_language: Literal["zh-CN", "en", "es", "fr", "ar", "ja", "de", "nl", "sv"]
+    back_translation: str | None = Field(default=None, max_length=4_000)
 
 
 class TranslateResponse(BaseModel):
     request_id: UUID
     translated_text: str
     detected_source_language: Literal["zh-CN", "en", "es", "fr", "ar", "ja", "de", "nl", "sv"]
+    back_translation: str | None = None
     model_log_id: int

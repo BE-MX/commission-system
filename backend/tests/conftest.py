@@ -39,6 +39,8 @@ from app.semifinished import models as _semifinished_models  # noqa: F401
 # 指向 ark_users（无 FK 约束），显式导入保证单跑测试文件时 create_all 覆盖到
 from app.shipping_inspection import models as _shipping_inspection_models  # noqa: F401
 from app.whatsapp_translation import models as _whatsapp_translation_models  # noqa: F401
+# sys_dict 供术语表（whatsapp_glossary_*）检索使用
+from app.system import models as _system_models  # noqa: F401
 
 
 # SQLite 不支持 BIGINT 自增，编译时替换为 INTEGER

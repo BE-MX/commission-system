@@ -235,6 +235,7 @@ class Settings(BaseSettings):
     # ── WhatsApp 实时翻译扩展（与 WhatsApp connector 完全隔离）──
     WHATSAPP_TRANSLATION_EXTENSION_ORIGIN: str = "chrome-extension://bnkecbkoidckffckbefjjcbchmngjobi"
     WHATSAPP_TRANSLATION_PRESET_NAME: str = "whatsapp_text_translation"
+    WHATSAPP_TRANSLATION_OUTGOING_PRESET_NAME: str = "whatsapp_outgoing_translation"
     WHATSAPP_TRANSLATION_PAIRING_TTL_MINUTES: _PositiveInt = 10
     WHATSAPP_TRANSLATION_DEVICE_TTL_DAYS: _PositiveInt = 180
     WHATSAPP_TRANSLATION_MAX_DEVICES_PER_USER: _PositiveInt = 5

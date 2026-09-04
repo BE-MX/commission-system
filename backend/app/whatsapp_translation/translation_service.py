@@ -11,6 +11,7 @@ from app.core.config import get_settings
 from app.whatsapp_translation.auth import require_supported_extension
 from app.whatsapp_translation.constants import DETECTED_SOURCE_LANGUAGES
 from app.whatsapp_translation.errors import WhatsAppTranslationError
+from app.whatsapp_translation.glossary_service import glossary_for
 from app.whatsapp_translation.quota_service import (
     BoundedSlidingWindowLimiter,
     record_failure,
@@ -104,7 +105,12 @@ def _response_error(error_code: str) -> WhatsAppTranslationError:
     return WhatsAppTranslationError(502, error_code, "Translation AI returned an invalid response")
 
 
-def _parse_model_output(content: str, source_language: str, target_language: str, original_text: str) -> TranslationModelOutput:
+def _parse_model_output(
+    content: str,
+    direction: str,
+    target_language: str,
+    original_text: str,
+) -> TranslationModelOutput:
     try:
         payload = json.loads(content)
     except (TypeError, json.JSONDecodeError):
@@ -118,11 +124,28 @@ def _parse_model_output(content: str, source_language: str, target_language: str
     if output.detected_source_language not in DETECTED_SOURCE_LANGUAGES:
         raise _response_error("translation_invalid_response")
     if output.detected_source_language == target_language:
-        output = TranslationModelOutput(
+        return TranslationModelOutput(
             translated_text=original_text,
+            detected_source_language=output.detected_source_language,
+            back_translation=original_text if direction == "outgoing" else None,
+        )
+    if direction == "outgoing":
+        if not (output.back_translation or "").strip():
+            raise _response_error("translation_invalid_response")
+        return output
+    if output.back_translation is not None:
+        return TranslationModelOutput(
+            translated_text=output.translated_text,
             detected_source_language=output.detected_source_language,
         )
     return output
+
+
+def _preset_name_for(direction: str) -> str:
+    settings = get_settings()
+    if direction == "outgoing":
+        return settings.WHATSAPP_TRANSLATION_OUTGOING_PRESET_NAME
+    return settings.WHATSAPP_TRANSLATION_PRESET_NAME
 
 
 def translate_text(db, identity, request: TranslateRequest) -> TranslateResponse:
@@ -135,16 +158,24 @@ def translate_text(db, identity, request: TranslateRequest) -> TranslateResponse
 
     def execute():
         row = reserve_daily_input(db, identity, len(request.text))
+        glossary = glossary_for(
+            db,
+            direction=request.direction,
+            text=request.text,
+            target_language=request.target_language,
+        )
         input_payload = json.dumps({
             "direction": request.direction,
             "source_language": request.source_language,
             "target_language": request.target_language,
+            "allowed_source_languages": list(DETECTED_SOURCE_LANGUAGES),
+            "glossary": glossary,
             "text": request.text,
         }, ensure_ascii=False)
         try:
             ai_result = chat(
                 db,
-                preset_name="whatsapp_text_translation",
+                preset_name=_preset_name_for(request.direction),
                 messages=[{"role": "user", "content": input_payload}],
                 caller_module="whatsapp_translation",
                 caller_user_id=identity.user_id,
@@ -153,7 +184,7 @@ def translate_text(db, identity, request: TranslateRequest) -> TranslateResponse
             )
             output = _parse_model_output(
                 ai_result["content"],
-                request.source_language,
+                request.direction,
                 request.target_language,
                 request.text,
             )
@@ -177,6 +208,7 @@ def translate_text(db, identity, request: TranslateRequest) -> TranslateResponse
                 request_id=request.request_id,
                 translated_text=output.translated_text,
                 detected_source_language=output.detected_source_language,
+                back_translation=output.back_translation,
                 model_log_id=int(ai_result["log_id"]),
             )
         except WhatsAppTranslationError as exc:
