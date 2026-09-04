@@ -114,6 +114,26 @@ def test_auto_detected_german_is_accepted(db, identity, monkeypatch):
     assert result.detected_source_language == "de"
 
 
+def test_auto_detected_dutch_is_accepted(db, identity, monkeypatch):
+    fake_chat, _ = mock_chat(response_content=model_content(translated="感谢您的来信。", detected="nl"))
+    monkeypatch.setattr(translation_service, "chat", fake_chat)
+
+    result = translation_service.translate_text(db, identity, make_request(text="Bedankt voor uw bericht."))
+
+    assert result.translated_text == "感谢您的来信。"
+    assert result.detected_source_language == "nl"
+
+
+def test_auto_detected_spanish_remains_accepted(db, identity, monkeypatch):
+    fake_chat, _ = mock_chat(response_content=model_content(translated="感谢您的来信。", detected="es"))
+    monkeypatch.setattr(translation_service, "chat", fake_chat)
+
+    result = translation_service.translate_text(db, identity, make_request(text="Gracias por su mensaje."))
+
+    assert result.translated_text == "感谢您的来信。"
+    assert result.detected_source_language == "es"
+
+
 def test_duplicate_request_id_calls_ai_once(db, identity, monkeypatch):
     fake_chat, calls = mock_chat()
     monkeypatch.setattr(translation_service, "chat", fake_chat)
