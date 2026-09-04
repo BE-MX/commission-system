@@ -14,6 +14,7 @@ import { TARGET_LANGUAGES, languageLabel } from '@/shared/contracts'
 export type ToolbarStatus =
   | { kind: 'idle' }
   | { kind: 'busy' }
+  | { kind: 'replacing' }
   | { kind: 'error'; code: string }
   | { kind: 'replaced' }
 
@@ -143,7 +144,7 @@ export function createToolbarView(shadow: ShadowRoot, handlers: ToolbarHandlers)
     return node
   }
 
-  function renderPreview(preview: OutgoingPreview, animate: boolean): HTMLElement {
+  function renderPreview(preview: OutgoingPreview, animate: boolean, replacing: boolean): HTMLElement {
     const card = el('div', 'card')
     if (animate) card.dataset.animate = '1'
 
@@ -159,8 +160,9 @@ export function createToolbarView(shadow: ShadowRoot, handlers: ToolbarHandlers)
     }
 
     const actions = el('div', 'actions')
-    const replace = el('button', 'btn', '替换到输入框')
+    const replace = el('button', 'btn', replacing ? '替换中…' : '替换到输入框')
     replace.type = 'button'
+    replace.disabled = replacing
     replace.addEventListener('click', handlers.onReplace)
     const cancel = el('button', 'link', '取消')
     cancel.type = 'button'
@@ -218,7 +220,7 @@ export function createToolbarView(shadow: ShadowRoot, handlers: ToolbarHandlers)
   return {
     render(model, options = {}) {
       root.replaceChildren()
-      if (model.preview) root.append(renderPreview(model.preview, options.animatePreview ?? false))
+      if (model.preview) root.append(renderPreview(model.preview, options.animatePreview ?? false, model.status.kind === 'replacing'))
       root.append(renderBar(model))
     },
   }

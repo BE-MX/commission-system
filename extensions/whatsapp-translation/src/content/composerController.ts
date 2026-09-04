@@ -57,9 +57,19 @@ export function createComposerController(
   }
 
   async function replace(): Promise<void> {
-    const replaced = await composer.replaceWithPreview()
-    status = replaced ? { kind: 'replaced' } : { kind: 'error', code: 'composer_changed' }
+    if (busy) return
+    busy = true
+    status = { kind: 'replacing' }
     paint()
+    try {
+      const replaced = await composer.replaceWithPreview()
+      status = replaced ? { kind: 'replaced' } : { kind: 'error', code: 'composer_write_failed' }
+    } catch (error) {
+      status = { kind: 'error', code: codeFromError(error) }
+    } finally {
+      busy = false
+      paint()
+    }
   }
 
   async function restore(): Promise<void> {

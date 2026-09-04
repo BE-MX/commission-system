@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { JSDOM } from 'jsdom'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { adapterFor } from '@/whatsapp/adapter'
 
@@ -73,7 +73,8 @@ describe('WhatsApp adapter', () => {
   })
 
   it('replaces only the confirmed composer and never dispatches send controls', async () => {
-    const composer = directFixture.querySelector('footer div') as HTMLElement
+    const document = loadFixture('direct')
+    const composer = document.querySelector('footer div') as HTMLElement
     const eventTypes: string[] = []
     const prohibitedTypes: string[] = []
     const record = (event: Event) => {
@@ -84,13 +85,43 @@ describe('WhatsApp adapter', () => {
     composer.addEventListener('input', record)
     composer.addEventListener('click', record)
     composer.addEventListener('submit', record)
+    const nativeInsert = vi.fn((command: string, _showUi: boolean, value: string) => {
+      if (command !== 'insertText') return false
+      composer.replaceChildren(document.createTextNode(value))
+      composer.dispatchEvent(new document.defaultView!.InputEvent('input', {
+        bubbles: true,
+        data: value,
+        inputType: 'insertText',
+      }))
+      return true
+    })
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: nativeInsert })
 
-    await adapterFor(directFixture).replaceComposer('Translated preview')
+    const replaced = await adapterFor(document).replaceComposer('Translated preview')
 
+    expect(replaced).toBe(true)
     expect(composer.textContent).toBe('Translated preview')
-    expect(eventTypes).toEqual(['beforeinput', 'input'])
+    expect(nativeInsert).toHaveBeenCalledWith('insertText', false, 'Translated preview')
+    expect(eventTypes).toEqual(['input'])
     expect(prohibitedTypes).toEqual([])
-    expect(adapterFor(directFixture)).not.toHaveProperty('send')
+    expect(adapterFor(document)).not.toHaveProperty('send')
+  })
+
+  it('reports failure when the controlled composer rejects or rewrites the native edit', async () => {
+    const rejectedDocument = loadFixture('direct')
+    Object.defineProperty(rejectedDocument, 'execCommand', { configurable: true, value: () => false })
+    await expect(adapterFor(rejectedDocument).replaceComposer('Translated preview')).resolves.toBe(false)
+
+    const rewrittenDocument = loadFixture('direct')
+    const composer = rewrittenDocument.querySelector('footer div') as HTMLElement
+    Object.defineProperty(rewrittenDocument, 'execCommand', {
+      configurable: true,
+      value: (_command: string, _showUi: boolean, _value: string) => {
+        composer.textContent = 'Editor-owned value'
+        return true
+      },
+    })
+    await expect(adapterFor(rewrittenDocument).replaceComposer('Translated preview')).resolves.toBe(false)
   })
 
   it('mounts the toolbar as the first child of the footer in a closed shadow and cleans on unsupported chat', () => {

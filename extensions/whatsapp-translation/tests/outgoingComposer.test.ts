@@ -12,6 +12,20 @@ const bridge = { translate: vi.fn() }
 
 beforeEach(() => {
   bridge.translate.mockReset().mockResolvedValue({ translation: 'Please confirm the lead time.' })
+  const composer = document.querySelector('footer div') as HTMLElement
+  composer.textContent = 'Current draft'
+  Object.defineProperty(document, 'execCommand', {
+    configurable: true,
+    value: (_command: string, _showUi: boolean, value: string) => {
+      composer.replaceChildren(document.createTextNode(value))
+      composer.dispatchEvent(new document.defaultView!.InputEvent('input', {
+        bubbles: true,
+        data: value,
+        inputType: 'insertText',
+      }))
+      return true
+    },
+  })
 })
 
 describe('outgoing composer', () => {

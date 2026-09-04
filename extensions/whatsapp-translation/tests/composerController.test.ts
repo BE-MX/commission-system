@@ -39,6 +39,19 @@ beforeEach(async () => {
     backTranslation: '请确认交期。',
     sourceLanguage: 'zh-CN',
   })
+  const composer = document.querySelector('footer div') as HTMLElement
+  Object.defineProperty(document, 'execCommand', {
+    configurable: true,
+    value: (_command: string, _showUi: boolean, value: string) => {
+      composer.replaceChildren(document.createTextNode(value))
+      composer.dispatchEvent(new document.defaultView!.InputEvent('input', {
+        bubbles: true,
+        data: value,
+        inputType: 'insertText',
+      }))
+      return true
+    },
+  })
   await adapter.replaceComposer('请确认交期')
 })
 
@@ -83,5 +96,35 @@ describe('composer controller + toolbar', () => {
     composer.setTargetLanguage('es')
     controller.reset()
     expect(shadow.textContent).toContain('Español')
+  })
+
+  it('shows replacement progress and preserves the preview when the editor rejects the write', async () => {
+    let resolveReplace: ((value: boolean) => void) | undefined
+    const composer = {
+      canRestore: () => false,
+      clearPreview: vi.fn(),
+      getPreview: () => ({
+        composerVersion: 'Original',
+        original: 'Original',
+        targetLanguage: 'en',
+        translated: 'Translated',
+      }),
+      getTargetLanguage: () => 'en',
+      previewIsFresh: () => true,
+      replaceWithPreview: () => new Promise<boolean>(resolve => { resolveReplace = resolve }),
+      restoreOriginal: vi.fn(),
+      setTargetLanguage: vi.fn(),
+      translateForPreview: vi.fn(),
+    }
+    const view = { render: vi.fn() }
+    const controller = createComposerController(composer, view, { save: vi.fn() })
+
+    const replacing = controller.onReplace()
+    expect(view.render.mock.calls.at(-1)?.[0].status).toEqual({ kind: 'replacing' })
+    resolveReplace?.(false)
+    await replacing
+
+    expect(view.render.mock.calls.at(-1)?.[0].status).toEqual({ kind: 'error', code: 'composer_write_failed' })
+    expect(view.render.mock.calls.at(-1)?.[0].preview?.translated).toBe('Translated')
   })
 })

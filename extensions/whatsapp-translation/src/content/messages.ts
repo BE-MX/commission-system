@@ -10,6 +10,7 @@ const MESSAGES: Record<string, UserMessage> = {
   ai_unavailable: { retryable: true, text: '翻译服务暂时不可用，点击重试' },
   chat_unsupported: { retryable: false, text: '仅支持一对一聊天' },
   composer_changed: { retryable: true, text: '输入内容已变化，请重新翻译' },
+  composer_write_failed: { retryable: true, text: '未能写入输入框，请点击重试' },
   daily_quota_exceeded: { retryable: false, text: '今日翻译额度已用完，明日恢复' },
   device_expired: { retryable: false, text: '授权已过期，请在扩展弹窗重新授权' },
   device_not_found: { retryable: false, text: '授权已失效，请在扩展弹窗重新授权' },
