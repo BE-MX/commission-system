@@ -63,14 +63,18 @@ describe('release packaging', () => {
   it('creates a deterministic release with the exact manifest shape', () => {
     const firstRoot = mkdtempSync(join(tmpdir(), 'whatsapp-release-'))
     const secondRoot = mkdtempSync(join(tmpdir(), 'whatsapp-release-'))
+    const crlfDist = join(secondRoot, 'dist-crlf')
     const outputDir = join(firstRoot, 'extensions', 'whatsapp-translation', 'release')
     const secondDir = join(secondRoot, 'extensions', 'whatsapp-translation', 'release')
     try {
       mkdirSync(outputDir, { recursive: true })
       mkdirSync(secondDir, { recursive: true })
+      cpSync('dist', crlfDist, { recursive: true })
+      const popupHtml = join(crlfDist, 'src', 'popup', 'index.html')
+      writeFileSync(popupHtml, readFileSync(popupHtml, 'utf8').replace(/\r?\n/g, '\r\n'))
       writeFileSync(join(outputDir, 'whatsapp-translation-stale.zip'), 'stale')
       const release = packageRelease({ distDir: 'dist', outputDir, repositoryRoot: firstRoot })
-      const second = packageRelease({ distDir: 'dist', outputDir: secondDir, repositoryRoot: secondRoot })
+      const second = packageRelease({ distDir: crlfDist, outputDir: secondDir, repositoryRoot: secondRoot })
 
       expect(release).toEqual({
         extension_id: 'bnkecbkoidckffckbefjjcbchmngjobi',
