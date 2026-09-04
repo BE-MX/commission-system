@@ -38,7 +38,7 @@ describe('WhatsApp adapter', () => {
   it('parses current WhatsApp incoming text messages and excludes outgoing messages', async () => {
     const messages = await adapterFor(directFixture).listUntranslatedIncomingMessages()
 
-    expect(messages.map(message => message.text)).toEqual(['Can you ship this week?', 'Thanks'])
+    expect(messages.map(message => message.text)).toEqual(['Can you ship this week?', 'Thanks 🥰'])
     expect(messages[0].localKey).toMatch(/^[0-9a-f]{64}$/)
     expect(JSON.stringify(messages)).not.toMatch(/@c\.us|data-id|phone|contact/)
   })
@@ -51,11 +51,12 @@ describe('WhatsApp adapter', () => {
     await expect(adapterFor(unknownFixture).listUntranslatedIncomingMessages()).resolves.toEqual([])
   })
 
-  it('fails closed when an otherwise valid text bubble contains an unknown unmarked node', async () => {
+  it('fails closed when an otherwise valid text bubble contains unknown unmarked content', async () => {
     const document = loadFixture('direct-forwarded')
     const message = document.querySelector('[data-testid="msg-container"]') as HTMLElement
     const unknown = document.createElement('div')
     unknown.className = 'synthetic-unknown-node'
+    unknown.textContent = 'Unsupported content'
     message.prepend(unknown)
 
     await expect(adapterFor(document).listUntranslatedIncomingMessages()).resolves.toEqual([])
@@ -227,6 +228,38 @@ describe('WhatsApp adapter', () => {
     await expect(replacement).resolves.toBe(false)
     expect(composer.textContent).toBe('User edit during selection sync')
     expect(editor.commandCount()).toBe(0)
+  })
+
+  it('waits for a refocused editor to restore its old caret before selecting the draft', async () => {
+    const document = loadFixture('direct')
+    const composer = document.querySelector('footer div') as HTMLElement
+    const editor = installControlledComposer(document, composer)
+    // The public focus event schedules the editor-owned caret restoration seen
+    // on WhatsApp. It must finish before the adapter establishes its selection.
+    composer.addEventListener('focus', () => {
+      void Promise.resolve().then(() => {
+        document.defaultView!.getSelection()!.collapse(composer.firstChild, 0)
+      })
+    }, { once: true })
+
+    await expect(adapterFor(document).replaceComposer('Translated preview')).resolves.toBe(true)
+    expect(composer.textContent).toBe('Translated preview')
+    expect(editor.commandCount()).toBe(1)
+  })
+
+  it('does not dispatch an edit if the selected draft collapses before beforeinput', async () => {
+    const document = loadFixture('direct')
+    const composer = document.querySelector('footer div') as HTMLElement
+    const editor = installControlledComposer(document, composer, { manualFrames: true })
+    composer.focus()
+
+    const replacement = adapterFor(document).replaceComposer('Translated preview')
+    document.defaultView!.getSelection()!.collapse(composer.firstChild, 0)
+    editor.flushFrame()
+
+    await expect(replacement).resolves.toBe(false)
+    expect(editor.commandCount()).toBe(0)
+    expect(composer.textContent).toBe('Current draft')
   })
 
   it('does not write after the owning chat generation becomes stale', async () => {

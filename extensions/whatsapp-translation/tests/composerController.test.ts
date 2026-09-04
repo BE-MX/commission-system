@@ -46,6 +46,38 @@ beforeEach(async () => {
 })
 
 describe('composer controller + toolbar', () => {
+  it('keeps the draft editor focused when a mouse activates a toolbar action', () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const shadow = host.attachShadow({ mode: 'closed' })
+    const onReplace = vi.fn()
+    const view = createToolbarView(shadow, {
+      onCancelPreview: vi.fn(),
+      onLanguageChange: vi.fn(),
+      onReplace,
+      onRestore: vi.fn(),
+      onRetry: vi.fn(),
+      onTranslate: vi.fn(),
+    })
+    view.render({
+      canRestore: false,
+      preview: { original: 'Draft', composerVersion: 'Draft', translated: 'Translation', targetLanguage: 'en' },
+      status: { kind: 'idle' },
+      targetLanguage: 'en',
+    })
+    const editor = document.querySelector('footer div') as HTMLElement
+    editor.focus()
+    const replace = [...shadow.querySelectorAll('button')].find(button => button.textContent === '替换到输入框')!
+    const mouseDown = new document.defaultView!.MouseEvent('mousedown', { button: 0, bubbles: true, cancelable: true })
+    // Model the browser default: an uncancelled mouse-down focuses the button.
+    if (replace.dispatchEvent(mouseDown)) replace.focus()
+    replace.click()
+
+    expect(document.activeElement === editor).toBe(true)
+    expect(onReplace).toHaveBeenCalledOnce()
+    host.remove()
+  })
+
   it('shows a busy state then a preview card with back-translation', async () => {
     const { controller, shadow } = makeController()
     controller.reset()

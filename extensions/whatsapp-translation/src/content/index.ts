@@ -150,6 +150,7 @@ function startContentScript(): void {
     childList: true,
     subtree: true,
   })
+  translator.notifyMutation()
 
   // Popup toggles / re-authorization happen out of band; re-arm on focus.
   window.addEventListener('focus', () => {
