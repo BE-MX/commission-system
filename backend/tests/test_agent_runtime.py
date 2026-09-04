@@ -30,6 +30,7 @@ from app.customer import agent_service as customer_agent_service
 from app.customer.evidence_contract import fact_evidence_content_hash
 from app.ai.models import AiCallLog, AiPreset, AiProvider
 from app.core.database import Base, get_db
+from app.core.time import beijing_now
 from app.insight import customer_radar_service
 from app.customer.models import (
     CustomerAccount,
@@ -743,7 +744,7 @@ def test_artifact_rejects_not_yet_effective_or_unavailable_ark_evidence(db, case
     run = _run(db, _session(db), key=f"unavailable-evidence-{case}")
     fact, digest = _ark_evidence_fact(db)
     if case == "future_fact":
-        fact.effective_from = datetime(2026, 9, 1)
+        fact.effective_from = beijing_now() + timedelta(days=1)
     else:
         source = CustomerSourceRecord(
             customer_id=1, source_system="alibaba", source_account_key="tenant",
