@@ -16,6 +16,7 @@ export type ToolbarStatus =
   | { kind: 'busy' }
   | { kind: 'replacing' }
   | { kind: 'error'; code: string }
+  | { kind: 'restore_failed' }
   | { kind: 'replaced' }
 
 export type ToolbarModel = {
@@ -212,9 +213,10 @@ export function createToolbarView(shadow: ShadowRoot, handlers: ToolbarHandlers)
         status.append(retry)
       }
       bar.append(status)
-    } else if (model.status.kind === 'replaced' && model.canRestore) {
-      const status = el('span', 'status', '已替换为译文')
-      const restore = el('button', 'link', '恢复中文')
+    } else if ((model.status.kind === 'replaced' || model.status.kind === 'restore_failed') && model.canRestore) {
+      const failed = model.status.kind === 'restore_failed'
+      const status = el('span', failed ? 'status error' : 'status', failed ? '未能恢复中文，请重试' : '已替换为译文')
+      const restore = el('button', 'link', failed ? '重试恢复' : '恢复中文')
       restore.type = 'button'
       restore.addEventListener('click', handlers.onRestore)
       status.append(restore)

@@ -3,6 +3,7 @@ import { JSDOM } from 'jsdom'
 import { describe, expect, it, vi } from 'vitest'
 
 import { adapterFor } from '@/whatsapp/adapter'
+import { installControlledComposer } from './support/controlledComposer'
 
 function loadFixture(name: string): Document {
   return new JSDOM(readFileSync(new URL(`./fixtures/${name}.html`, import.meta.url), 'utf8'), {
@@ -153,6 +154,17 @@ describe('WhatsApp adapter', () => {
   it('replaces only the confirmed composer and never dispatches send controls', async () => {
     const document = loadFixture('direct')
     const composer = document.querySelector('footer div') as HTMLElement
+    const footer = document.querySelector('footer') as HTMLElement
+    const send = document.createElement('button')
+    send.type = 'button'
+    send.dataset.testid = 'compose-btn-send'
+    send.click = vi.fn()
+    footer.append(send)
+    const form = document.createElement('form')
+    form.submit = vi.fn()
+    form.requestSubmit = vi.fn()
+    document.body.append(form)
+    const editor = installControlledComposer(document, composer)
     const eventTypes: string[] = []
     const prohibitedTypes: string[] = []
     const record = (event: Event) => {
@@ -161,45 +173,90 @@ describe('WhatsApp adapter', () => {
     }
     composer.addEventListener('beforeinput', record)
     composer.addEventListener('input', record)
-    composer.addEventListener('click', record)
-    composer.addEventListener('submit', record)
-    const nativeInsert = vi.fn((command: string, _showUi: boolean, value: string) => {
-      if (command !== 'insertText') return false
-      composer.replaceChildren(document.createTextNode(value))
-      composer.dispatchEvent(new document.defaultView!.InputEvent('input', {
-        bubbles: true,
-        data: value,
-        inputType: 'insertText',
-      }))
-      return true
-    })
-    Object.defineProperty(document, 'execCommand', { configurable: true, value: nativeInsert })
-
+    document.addEventListener('click', record, true)
+    document.addEventListener('submit', record, true)
     const replaced = await adapterFor(document).replaceComposer('Translated preview')
 
     expect(replaced).toBe(true)
     expect(composer.textContent).toBe('Translated preview')
-    expect(nativeInsert).toHaveBeenCalledWith('insertText', false, 'Translated preview')
-    expect(eventTypes).toEqual(['input'])
+    expect(editor.commandCount()).toBe(1)
+    expect(eventTypes).toEqual(['beforeinput'])
     expect(prohibitedTypes).toEqual([])
+    expect(send.click).not.toHaveBeenCalled()
+    expect(form.submit).not.toHaveBeenCalled()
+    expect(form.requestSubmit).not.toHaveBeenCalled()
     expect(adapterFor(document)).not.toHaveProperty('send')
   })
 
   it('reports failure when the controlled composer rejects or rewrites the native edit', async () => {
     const rejectedDocument = loadFixture('direct')
-    Object.defineProperty(rejectedDocument, 'execCommand', { configurable: true, value: () => false })
+    const rejectedComposer = rejectedDocument.querySelector('footer div') as HTMLElement
+    const rejectedEditor = installControlledComposer(rejectedDocument, rejectedComposer, { mode: 'reject' })
     await expect(adapterFor(rejectedDocument).replaceComposer('Translated preview')).resolves.toBe(false)
+    expect(rejectedEditor.commandCount()).toBe(1)
+    expect(rejectedComposer.textContent).toBe('Current draft')
 
     const rewrittenDocument = loadFixture('direct')
     const composer = rewrittenDocument.querySelector('footer div') as HTMLElement
-    Object.defineProperty(rewrittenDocument, 'execCommand', {
-      configurable: true,
-      value: (_command: string, _showUi: boolean, _value: string) => {
-        composer.textContent = 'Editor-owned value'
-        return true
-      },
-    })
+    installControlledComposer(rewrittenDocument, composer, { mode: 'rewrite' })
     await expect(adapterFor(rewrittenDocument).replaceComposer('Translated preview')).resolves.toBe(false)
+  })
+
+  it('replaces text through the beforeinput command accepted by a Lexical-controlled composer', async () => {
+    const document = loadFixture('direct')
+    const composer = document.querySelector('footer div') as HTMLElement
+    const editor = installControlledComposer(document, composer)
+    composer.setAttribute('data-lexical-editor', 'true')
+
+    await expect(adapterFor(document).replaceComposer('Translated preview')).resolves.toBe(true)
+    expect(composer.textContent).toBe('Translated preview')
+    expect(editor.commandCount()).toBe(1)
+  })
+
+  it('does not overwrite a draft that changes while the editor selection is synchronizing', async () => {
+    const document = loadFixture('direct')
+    const composer = document.querySelector('footer div') as HTMLElement
+    const editor = installControlledComposer(document, composer, { manualFrames: true })
+
+    const replacement = adapterFor(document).replaceComposer('Translated preview')
+    composer.textContent = 'User edit during selection sync'
+    editor.flushFrame()
+    await Promise.resolve()
+    editor.flushFrame()
+
+    await expect(replacement).resolves.toBe(false)
+    expect(composer.textContent).toBe('User edit during selection sync')
+    expect(editor.commandCount()).toBe(0)
+  })
+
+  it('does not write after the owning chat generation becomes stale', async () => {
+    const document = loadFixture('direct')
+    const composer = document.querySelector('footer div') as HTMLElement
+    const editor = installControlledComposer(document, composer, { manualFrames: true })
+    let currentGeneration = true
+
+    const replacement = adapterFor(document).replaceComposer('Translated preview', () => currentGeneration)
+    currentGeneration = false
+    editor.flushFrame()
+    await Promise.resolve()
+    editor.flushFrame()
+
+    await expect(replacement).resolves.toBe(false)
+    expect(composer.textContent).toBe('Current draft')
+    expect(editor.commandCount()).toBe(0)
+  })
+
+  it('collapses a rejected full selection so the next keystroke cannot erase the draft', async () => {
+    const document = loadFixture('direct')
+    const composer = document.querySelector('footer div') as HTMLElement
+    installControlledComposer(document, composer, { mode: 'reject' })
+
+    await expect(adapterFor(document).replaceComposer('Translated preview')).resolves.toBe(false)
+
+    const selection = document.defaultView!.getSelection()!
+    expect(selection.rangeCount).toBe(1)
+    expect(selection.isCollapsed).toBe(true)
+    expect(selection.anchorNode === composer || composer.contains(selection.anchorNode)).toBe(true)
   })
 
   it('mounts the toolbar as the first child of the footer in a closed shadow and cleans on unsupported chat', () => {

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "莱莎 WhatsApp 实时翻译",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "莱莎内部 WhatsApp Web 一对一文字翻译",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvcUgPSoLHADFyyGdYxnBXNbvl+5AZPqbhfVmqlyOPH60thYh1BSnH8rJxnpaJiNolm1XKXARu3CCFQgxkuoHjkusAVY+YguiGx2y9rV7Qyad1k+PDrkegf7rldlxv/GsaDFtwj2WuMG0OxT2voO4TKsvKJT6oyO6taIFOJsy8jDx8h1R/WbK/Cf7rGveChthoBGqfETffcAruk4Z/ORNpAGSqmsYHRIjIye8GPa4cNn/LwIqHm6HYWMsmhqTpQ5bXi+g/fDkxVNYqemU4d9i9e/DS9LBFmSfUrisATIX3l49ZkNDKCl40oyFxQh4808+7MSlPuS0OP8nlMwHMc8xpQIDAQAB",
   "permissions": ["storage"],

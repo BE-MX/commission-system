@@ -73,8 +73,12 @@ export function createComposerController(
   }
 
   async function restore(): Promise<void> {
-    await composer.restoreOriginal()
-    status = { kind: 'idle' }
+    try {
+      const restored = await composer.restoreOriginal()
+      status = restored ? { kind: 'idle' } : { kind: 'restore_failed' }
+    } catch {
+      status = { kind: 'restore_failed' }
+    }
     paint()
   }
 
@@ -87,9 +91,10 @@ export function createComposerController(
     },
     /** Composer text changed by the user: the "replaced" status is stale once they edit. */
     onComposerInput(): void {
-      if (status.kind === 'replaced' && !composer.canRestore()) {
+      if ((status.kind === 'replaced' || status.kind === 'restore_failed') && !composer.canRestore()) {
         status = { kind: 'idle' }
         paint()
+        return
       }
       if (status.kind === 'idle' && composer.getPreview() === undefined) paint()
     },

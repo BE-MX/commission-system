@@ -34,7 +34,7 @@ export function createOutgoingComposer(
   adapter: {
     inspectChat: () => { kind: string }
     readComposer: () => string
-    replaceComposer: (text: string) => Promise<boolean>
+    replaceComposer: (text: string, isCurrent?: () => boolean) => Promise<boolean>
   },
   bridge: OutgoingBridge,
 ) {
@@ -76,24 +76,32 @@ export function createOutgoingComposer(
   }
 
   async function replaceWithPreview(): Promise<boolean> {
-    if (!preview || !previewIsFresh()) return false
-    const replaced = await adapter.replaceComposer(preview.translated)
-    if (replaced) {
-      restorePoint = { original: preview.original, translated: preview.translated }
+    const candidate = preview
+    if (!candidate || !previewIsFresh()) return false
+    const candidateGeneration = previewGeneration
+    const candidateIsCurrent = () => preview === candidate
+      && previewGeneration === candidateGeneration
+      && chatGeneration === candidateGeneration
+    const replaced = await adapter.replaceComposer(candidate.translated, candidateIsCurrent)
+    if (replaced && candidateIsCurrent()) {
+      restorePoint = { original: candidate.original, translated: candidate.translated }
       preview = undefined
+      return true
     }
-    return replaced
+    return false
   }
 
   /** Put the Chinese draft back. Only valid while the composer still holds the translated text untouched. */
   async function restoreOriginal(): Promise<boolean> {
-    if (!restorePoint) return false
-    if (adapter.readComposer() !== restorePoint.translated) {
+    const candidate = restorePoint
+    if (!candidate) return false
+    if (adapter.readComposer() !== candidate.translated) {
       restorePoint = undefined
       return false
     }
-    const restored = await adapter.replaceComposer(restorePoint.original)
-    if (restored) restorePoint = undefined
+    const candidateIsCurrent = () => restorePoint === candidate
+    const restored = await adapter.replaceComposer(candidate.original, candidateIsCurrent)
+    if (restored && candidateIsCurrent()) restorePoint = undefined
     return restored
   }
 
