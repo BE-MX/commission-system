@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { JSDOM } from 'jsdom'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { adapterFor } from '@/whatsapp/adapter'
+import { adapterFor, runOutgoingTranslation } from '@/whatsapp/adapter'
 
 function loadFixture(name: string): Document {
   return new JSDOM(readFileSync(new URL(`./fixtures/${name}.html`, import.meta.url), 'utf8')).window.document
@@ -96,5 +96,25 @@ describe('WhatsApp adapter', () => {
 
     adapterFor(groupFixture).attachOutgoingControl(() => {})
     expect(groupFixture.querySelector('[data-ark-outgoing-control="1"]')).toBeNull()
+  })
+
+  it('shows progress and a retryable failure on the outgoing translation button', async () => {
+    const document = loadFixture('direct')
+    let rejectTranslation: ((error: Error) => void) | undefined
+    const translation = new Promise<void>((_resolve, reject) => {
+      rejectTranslation = reject
+    })
+    const button = document.createElement('button')
+    const task = runOutgoingTranslation(button, vi.fn(() => translation))
+
+    expect(button.disabled).toBe(true)
+    expect(button.textContent).toBe('翻译中…')
+
+    rejectTranslation?.(new Error('translation_invalid_response'))
+    await task
+
+    expect(button.disabled).toBe(false)
+    expect(button.textContent).toBe('翻译失败，重试')
+    expect(adapterFor(document).attachOutgoingControl(() => {})?.shadowRoot).toBeNull()
   })
 })

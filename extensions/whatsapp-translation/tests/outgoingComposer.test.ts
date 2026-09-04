@@ -80,6 +80,23 @@ describe('outgoing composer', () => {
     expect(adapter.readComposer()).toBe('Edited draft')
   })
 
+  it('reports failure when the draft changes before translation replacement', async () => {
+    await adapter.replaceComposer('Original draft')
+    let resolveTranslation: ((value: { translation: string }) => void) | undefined
+    bridge.translate.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveTranslation = resolve
+    }))
+    const composer = createOutgoingComposer(adapter, bridge)
+
+    const task = composer.translateAndReplace()
+    await Promise.resolve()
+    await adapter.replaceComposer('Edited draft')
+    resolveTranslation?.({ translation: 'Translated draft' })
+
+    await expect(task).rejects.toThrow('composer_changed')
+    expect(adapter.readComposer()).toBe('Edited draft')
+  })
+
   it('does not replace a different chat after an in-flight translation', async () => {
     const racingComposer = createOutgoingComposer(adapter, bridge)
     await racingComposer.translateForPreview()

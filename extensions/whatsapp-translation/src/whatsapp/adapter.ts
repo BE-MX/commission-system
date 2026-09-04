@@ -2,6 +2,22 @@ import { detectChatKind } from '@/whatsapp/chatDetector'
 import { parseIncomingMessages } from '@/whatsapp/messageParser'
 import { WHATSAPP_SELECTORS } from '@/whatsapp/selectors'
 
+export async function runOutgoingTranslation(
+  button: HTMLButtonElement,
+  onTranslate: () => void | Promise<void>,
+): Promise<void> {
+  button.disabled = true
+  button.textContent = '翻译中…'
+  try {
+    await onTranslate()
+    button.textContent = '翻译'
+  } catch {
+    button.textContent = '翻译失败，重试'
+  } finally {
+    button.disabled = false
+  }
+}
+
 export class WhatsAppAdapter {
   constructor(private readonly root: Document | HTMLElement) {}
 
@@ -45,7 +61,7 @@ export class WhatsAppAdapter {
     return true
   }
 
-  attachOutgoingControl(onTranslate: () => void): HTMLElement | null {
+  attachOutgoingControl(onTranslate: () => void | Promise<void>): HTMLElement | null {
     for (const existing of [...this.root.querySelectorAll('[data-ark-outgoing-control="1"]')]) existing.remove()
     if (this.inspectChat().kind !== 'direct') return null
     const composer = this.root.querySelector(WHATSAPP_SELECTORS.composer)
@@ -57,11 +73,14 @@ export class WhatsAppAdapter {
     style.textContent = `
       :host { all: initial; }
       button { background: transparent; border: none; color: #2563eb; cursor: pointer; font: inherit; padding: 0; }
+      button:disabled { cursor: wait; opacity: 0.75; }
     `
     const button = composer.ownerDocument.createElement('button')
     button.type = 'button'
     button.textContent = '翻译'
-    button.addEventListener('click', onTranslate)
+    button.addEventListener('click', () => {
+      void runOutgoingTranslation(button, onTranslate)
+    })
     shadow.append(style, button)
     composer.parentElement.insertBefore(host, composer)
     return host

@@ -8,9 +8,9 @@ from app.core.config import get_settings
 from app.core.time import beijing_now
 from app.whatsapp_translation.auth import DeviceIdentity
 from app.whatsapp_translation.constants import (
+    DETECTED_SOURCE_LANGUAGES,
     SUPPORTED_TARGET_LANGUAGES,
     TRANSLATION_DIRECTIONS,
-    TRANSLATION_LANGUAGES,
 )
 from app.whatsapp_translation.models import TranslationDevice, TranslationUsageDaily
 
@@ -34,7 +34,7 @@ def get_capabilities() -> dict:
         "max_text_chars": settings.WHATSAPP_TRANSLATION_MAX_TEXT_CHARS,
         "min_extension_version": settings.WHATSAPP_TRANSLATION_MIN_EXTENSION_VERSION,
         "rate_per_minute": settings.WHATSAPP_TRANSLATION_RATE_PER_MINUTE,
-        "source_languages": list(TRANSLATION_LANGUAGES),
+        "source_languages": list(DETECTED_SOURCE_LANGUAGES),
         "target_languages": list(SUPPORTED_TARGET_LANGUAGES),
     }
 

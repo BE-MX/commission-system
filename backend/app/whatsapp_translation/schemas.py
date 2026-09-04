@@ -34,7 +34,7 @@ class TranslateRequest(BaseModel):
 
     request_id: UUID
     direction: Literal["incoming", "outgoing"]
-    source_language: Literal["auto", "en", "es", "fr", "ar", "ja", "zh-CN"]
+    source_language: Literal["auto", "en", "es", "fr", "ar", "ja", "de", "zh-CN"]
     target_language: Literal["en", "es", "fr", "ar", "ja", "zh-CN"]
     text: str
 
@@ -84,11 +84,11 @@ class TranslationModelOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     translated_text: str = Field(min_length=1, max_length=4_000)
-    detected_source_language: Literal["zh-CN", "en", "es", "fr", "ar", "ja"]
+    detected_source_language: Literal["zh-CN", "en", "es", "fr", "ar", "ja", "de"]
 
 
 class TranslateResponse(BaseModel):
     request_id: UUID
     translated_text: str
-    detected_source_language: Literal["zh-CN", "en", "es", "fr", "ar", "ja"]
+    detected_source_language: Literal["zh-CN", "en", "es", "fr", "ar", "ja", "de"]
     model_log_id: int

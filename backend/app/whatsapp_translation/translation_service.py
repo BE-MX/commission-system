@@ -9,9 +9,7 @@ from collections import OrderedDict
 from app.ai.call_service import chat
 from app.core.config import get_settings
 from app.whatsapp_translation.auth import require_supported_extension
-from app.whatsapp_translation.constants import (
-    TRANSLATION_LANGUAGES,
-)
+from app.whatsapp_translation.constants import DETECTED_SOURCE_LANGUAGES
 from app.whatsapp_translation.errors import WhatsAppTranslationError
 from app.whatsapp_translation.quota_service import (
     BoundedSlidingWindowLimiter,
@@ -117,7 +115,7 @@ def _parse_model_output(content: str, source_language: str, target_language: str
         output = TranslationModelOutput.model_validate(payload)
     except Exception:
         raise _response_error("translation_invalid_response")
-    if output.detected_source_language not in TRANSLATION_LANGUAGES:
+    if output.detected_source_language not in DETECTED_SOURCE_LANGUAGES:
         raise _response_error("translation_invalid_response")
     if output.detected_source_language == target_language:
         output = TranslationModelOutput(
