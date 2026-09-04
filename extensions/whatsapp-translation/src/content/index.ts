@@ -45,17 +45,11 @@ function startContentScript(): void {
   let chatRoot = adapter.chatRootElement()
   const outgoingComposer = createOutgoingComposer(adapter, outgoingBridge)
   const mountOutgoingControl = () => {
-    adapter.attachOutgoingControl(() => {
-      void outgoingComposer.translateForPreview().then(async () => {
-        await outgoingComposer.replaceWithPreview()
-      })
-    })
+    adapter.attachOutgoingControl(() => outgoingComposer.translateAndReplace())
   }
   mountOutgoingControl()
   outgoingComposer.bindShortcut(document, () => {
-    void outgoingComposer.translateForPreview().then(async () => {
-      await outgoingComposer.replaceWithPreview()
-    })
+    void outgoingComposer.translateAndReplace().catch(() => undefined)
   })
 
   const observer = new MutationObserver(() => {

@@ -63,6 +63,11 @@ export function createOutgoingComposer(
     return adapter.replaceComposer(preview.translated)
   }
 
+  async function translateAndReplace(): Promise<void> {
+    await translateForPreview()
+    if (!await replaceWithPreview()) throw new Error('composer_changed')
+  }
+
   return {
     bindShortcut(ownerDocument: Document, handler: () => void): () => void {
       const listener = (event: KeyboardEvent) => {
@@ -84,6 +89,7 @@ export function createOutgoingComposer(
       targetLanguage = language
       preview = undefined
     },
+    translateAndReplace,
     translateForPreview,
   }
 }

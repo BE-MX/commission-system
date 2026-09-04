@@ -190,7 +190,7 @@ def test_last_used_at_is_updated(db, auth_data):
 def test_capabilities_are_exact_and_session_has_no_secrets(db, auth_data):
     identity = require_device_identity_for_test(db, auth_data[2])
     capabilities = get_capabilities()
-    assert capabilities["source_languages"] == ["zh-CN", "en", "es", "fr", "ar", "ja"]
+    assert capabilities["source_languages"] == ["zh-CN", "en", "es", "fr", "ar", "ja", "de"]
     assert capabilities["target_languages"] == ["zh-CN", "en", "es", "fr", "ar", "ja"]
     assert capabilities["max_text_chars"] == 4_000
     assert capabilities["rate_per_minute"] == 30
