@@ -42,8 +42,10 @@ const STYLES = `
     --surface: #f0f2f5;
     --fg: #111b21;
     --muted: #667781;
-    --accent: #008069;
-    --accent-fg: #ffffff;
+    --brand: #FDD956;
+    --brand-fg: #080303;
+    --accent: #25D366;
+    --accent-fg: #080303;
     --danger: #b3261e;
     --border: rgba(17, 27, 33, 0.08);
     --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -58,7 +60,9 @@ const STYLES = `
     --surface: #2a3942;
     --fg: #e9edef;
     --muted: #8696a0;
-    --accent: #00a884;
+    --brand: #FDD956;
+    --brand-fg: #080303;
+    --accent: #25D366;
     --accent-fg: #111b21;
     --danger: #f28b82;
     --border: rgba(233, 237, 239, 0.1);
@@ -88,7 +92,7 @@ const STYLES = `
     padding-right: 12px;
   }
   .chip::after { color: var(--muted); content: "▾"; font-size: 11px; margin-left: -12px; pointer-events: none; }
-  .btn { background: var(--accent); border-color: transparent; color: var(--accent-fg); font-weight: 600; }
+  .btn { background: var(--brand); border-color: transparent; color: var(--brand-fg); font-weight: 600; }
   .btn[disabled] { cursor: progress; opacity: 0.7; }
   .link { background: transparent; border-color: transparent; color: var(--accent); padding: 0 4px; }
   .link.danger { color: var(--danger); }

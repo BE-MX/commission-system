@@ -41,3 +41,7 @@ await build({
 })
 
 cpSync('manifest.json', 'dist/manifest.json')
+mkdirSync('dist/assets', { recursive: true })
+for (const size of [16, 32, 48, 128]) {
+  cpSync(`assets/icon-${size}.png`, `dist/assets/icon-${size}.png`)
+}

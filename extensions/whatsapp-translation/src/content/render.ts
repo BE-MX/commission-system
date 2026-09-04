@@ -13,7 +13,7 @@ const TRANSLATION_STYLES = `
     --bg: rgba(0, 0, 0, 0.04);
     --fg: #111b21;
     --muted: #667781;
-    --accent: #008069;
+    --accent: #25D366;
     --danger: #b3261e;
     background: var(--bg);
     border-left: 2px solid var(--accent);
@@ -32,7 +32,7 @@ const TRANSLATION_STYLES = `
     --bg: rgba(255, 255, 255, 0.06);
     --fg: #e9edef;
     --muted: #8696a0;
-    --accent: #00a884;
+    --accent: #25D366;
     --danger: #f28b82;
   }
   .ark-translation__meta {

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">LeShine WhatsApp translation</title>
+  <rect x="8" y="8" width="496" height="496" rx="94" fill="#FDD956"/>
+  <g id="icon-mark">
+    <path fill="#080303" d="M96 62C163 31 269 37 323 90c24 23 38 52 43 85-39-23-86-27-128-13-42 14-68 41-63 69 4 24 27 37 66 52 48 18 79 42 79 80 0 48-47 82-111 82-45 0-83-13-109-38l-39 27c-14 9-25 11-31 5-5-6-1-16 10-32l24-37c-23-36-34-79-34-124 0-83 24-147 66-184Z"/>
+    <path fill="#25D366" d="M255 147c75-28 166 5 199 73 31 65 10 137-48 175l21 44c5 11 7 20 1 25-7 5-18 1-30-6l-54-34c-65 15-134-4-171-51-37-47-39-108-5-157 20-29 50-53 87-69Z"/>
+    <text x="323" y="324" fill="#FFFFFF" font-family="Microsoft YaHei, PingFang SC, Noto Sans CJK SC, sans-serif" font-size="113" font-weight="800" text-anchor="middle">译</text>
+  </g>
+  <g id="wordmark">
+    <text x="256" y="469" fill="#080303" font-family="Segoe Script, Brush Script MT, cursive" font-size="72" font-style="italic" font-weight="700" letter-spacing="-5" text-anchor="middle">LeShine</text>
+  </g>
+</svg>

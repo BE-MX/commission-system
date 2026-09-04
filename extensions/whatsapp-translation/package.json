@@ -1,11 +1,12 @@
 {
   "name": "@leshine/whatsapp-translation",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "build": "tsc --noEmit && node scripts/build.mjs",
+    "icons": "node scripts/render-icons.mjs",
+    "build": "npm run icons && tsc --noEmit && node scripts/build.mjs",
     "package": "npm run build && npm run test && node scripts/package.mjs",
     "check": "npm run test && npm run build"
   },

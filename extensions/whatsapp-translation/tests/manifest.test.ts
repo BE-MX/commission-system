@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { assertSafeOutputPath, packageRelease } from '../scripts/package.mjs'
 
 const manifest = JSON.parse(readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'))
+const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 const repositoryRoot = resolve(import.meta.dirname, '../../..')
 const alphabet = 'abcdefghijklmnop'
 
@@ -18,12 +19,38 @@ function extensionId(publicKey: string): string {
 describe('manifest privacy boundary', () => {
   it('has the approved stable identity and minimum permissions', () => {
     expect(manifest.manifest_version).toBe(3)
+    expect(manifest.version).toBe('1.2.0')
+    expect(packageJson.version).toBe('1.2.0')
     expect(extensionId(manifest.key)).toBe('bnkecbkoidckffckbefjjcbchmngjobi')
     expect(manifest.permissions).toEqual(['storage'])
     expect(manifest.host_permissions).toEqual([
       'https://leshine.work/*',
     ])
     expect(manifest.content_scripts[0].matches).toEqual(['https://web.whatsapp.com/*'])
+    expect(manifest.icons).toEqual({
+      16: 'assets/icon-16.png',
+      32: 'assets/icon-32.png',
+      48: 'assets/icon-48.png',
+      128: 'assets/icon-128.png',
+    })
+    expect(manifest.action.default_icon).toEqual(manifest.icons)
+  })
+
+  it('ships exact PNG icon sizes and LeShine theme colors', () => {
+    for (const size of [16, 32, 48, 128]) {
+      const image = readFileSync(new URL(`../assets/icon-${size}.png`, import.meta.url))
+      expect(image.subarray(1, 4).toString()).toBe('PNG')
+      expect(image.readUInt32BE(16)).toBe(size)
+      expect(image.readUInt32BE(20)).toBe(size)
+    }
+    const styles = [
+      readFileSync(new URL('../src/popup/popup.css', import.meta.url), 'utf8'),
+      readFileSync(new URL('../src/content/render.ts', import.meta.url), 'utf8'),
+      readFileSync(new URL('../src/content/toolbarView.ts', import.meta.url), 'utf8'),
+    ].join('\n').toUpperCase()
+    expect(styles).toContain('#FDD956')
+    expect(styles).toContain('#080303')
+    expect(styles).toContain('#25D366')
   })
 
   it('does not request surveillance or sending capabilities', () => {
@@ -42,10 +69,10 @@ describe('release packaging', () => {
 
       expect(release).toEqual({
         extension_id: 'bnkecbkoidckffckbefjjcbchmngjobi',
-        filename: 'whatsapp-translation-1.1.0.zip',
+        filename: 'whatsapp-translation-1.2.0.zip',
         sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
         size: expect.any(Number),
-        version: '1.1.0',
+        version: '1.2.0',
       })
       expect(release.size).toBeGreaterThan(0)
       expect(release.sha256).toBe(second.sha256)

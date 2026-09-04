@@ -3,8 +3,10 @@
   --bg: #ffffff;
   --fg: #111b21;
   --muted: #667781;
-  --accent: #008069;
-  --accent-fg: #ffffff;
+  --brand: #FDD956;
+  --brand-fg: #080303;
+  --accent: #25D366;
+  --accent-fg: #080303;
   --surface: #f0f2f5;
   --border: rgba(17, 27, 33, 0.1);
   --danger: #b3261e;
@@ -16,7 +18,9 @@
     --bg: #202c33;
     --fg: #e9edef;
     --muted: #8696a0;
-    --accent: #00a884;
+    --brand: #FDD956;
+    --brand-fg: #080303;
+    --accent: #25D366;
     --accent-fg: #111b21;
     --surface: #2a3942;
     --border: rgba(233, 237, 239, 0.1);
@@ -33,11 +37,11 @@ section[hidden] { display: none; }
 p { margin: 0; }
 button, select, input { font: inherit; }
 button { min-height: 34px; }
-button.primary { background: var(--accent); border: 0; border-radius: 8px; color: var(--accent-fg); cursor: pointer; font-weight: 600; transition: transform 120ms var(--ease-out); }
+button.primary { background: var(--brand); border: 0; border-radius: 8px; color: var(--brand-fg); cursor: pointer; font-weight: 600; transition: transform 120ms var(--ease-out); }
 button.ghost { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--fg); cursor: pointer; }
 button.primary:active, button.ghost:active { transform: scale(0.97); }
 .identity { align-items: center; display: flex; gap: 10px; }
-.avatar { align-items: center; background: var(--accent); border-radius: 50%; color: var(--accent-fg); display: flex; font-size: 15px; font-weight: 600; height: 36px; justify-content: center; width: 36px; }
+.avatar { align-items: center; background: var(--brand); border: 2px solid var(--accent); border-radius: 50%; color: var(--brand-fg); display: flex; font-size: 15px; font-weight: 700; height: 36px; justify-content: center; width: 36px; }
 .who { display: grid; gap: 1px; }
 .who strong { font-size: 14px; }
 .who span { color: var(--muted); font-size: 12px; }
