@@ -4,7 +4,8 @@ import { createOutgoingComposer } from '@/content/outgoingComposer'
 import { mountTranslation } from '@/content/render'
 import { createToolbarView } from '@/content/toolbarView'
 import { adapterFor } from '@/whatsapp/adapter'
-import { DEFAULT_OUTGOING_LANGUAGE } from '@/shared/contracts'
+import { DEFAULT_OUTGOING_LANGUAGE, TARGET_LANGUAGES } from '@/shared/contracts'
+import type { TargetLanguage } from '@/shared/contracts'
 import type { RuntimeRequest, RuntimeResponse } from '@/shared/contracts'
 import type { IncomingBridge, IncomingBridgeRequest } from '@/content/incomingTranslator'
 import type { OutgoingBridge, OutgoingBridgeRequest } from '@/content/outgoingComposer'
@@ -62,15 +63,19 @@ async function resolveChatLanguage(chatTitle: string): Promise<string> {
 
 function startContentScript(): void {
   const adapter = adapterFor(document)
-  const translator = createIncomingTranslator(adapter, backgroundBridge, {
-    mountTranslation: (target, state, onRetry) => mountTranslation(target, state, onRetry, { dark: adapter.isDarkTheme() }),
-  })
   const outgoingComposer = createOutgoingComposer(adapter, outgoingBridge)
-
   let chatRoot = adapter.chatRootElement()
   let currentTitle = ''
   let controller: ReturnType<typeof createComposerController> | undefined
   let composerElement: Element | null = null
+  const translator = createIncomingTranslator(adapter, backgroundBridge, {
+    mountTranslation: (target, state, onRetry) => mountTranslation(target, state, onRetry, { dark: adapter.isDarkTheme() }),
+  }, {
+    onDetectedLanguage: (_message, language) => {
+      if (!TARGET_LANGUAGES.includes(language as TargetLanguage)) return
+      void controller?.onLanguageChange(language)
+    },
+  })
 
   const onComposerInput = () => controller?.onComposerInput()
 

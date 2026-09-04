@@ -1,4 +1,5 @@
 import { JSDOM } from 'jsdom'
+import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const popupHtml = `
@@ -27,6 +28,14 @@ beforeEach(() => {
 })
 
 describe('popup pairing recovery', () => {
+  it('offers the complete outgoing language set', () => {
+    const source = readFileSync(new URL('../src/popup/index.html', import.meta.url), 'utf8')
+    const page = new JSDOM(source).window.document
+    const values = [...page.querySelectorAll<HTMLSelectElement>('#language option')].map(option => option.value)
+
+    expect(values).toEqual(['zh-CN', 'en', 'es', 'fr', 'ar', 'ja', 'de', 'nl', 'sv'])
+  })
+
   it('finishes a stored pairing automatically after the popup is reopened', async () => {
     const sendMessage = vi.fn(async (request: { type: string }) => {
       if (request.type === 'session/refresh') {

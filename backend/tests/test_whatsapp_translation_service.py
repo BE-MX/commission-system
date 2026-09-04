@@ -144,6 +144,19 @@ def test_auto_detected_swedish_is_accepted(db, identity, monkeypatch):
     assert result.detected_source_language == "sv"
 
 
+@pytest.mark.parametrize("target_language", ["de", "nl", "sv"])
+def test_outgoing_accepts_detected_customer_languages_as_targets(target_language):
+    request = TranslateRequest(
+        request_id="4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de63",
+        direction="outgoing",
+        text="交期两周",
+        source_language="auto",
+        target_language=target_language,
+    )
+
+    assert request.target_language == target_language
+
+
 def test_duplicate_request_id_calls_ai_once(db, identity, monkeypatch):
     fake_chat, calls = mock_chat()
     monkeypatch.setattr(translation_service, "chat", fake_chat)

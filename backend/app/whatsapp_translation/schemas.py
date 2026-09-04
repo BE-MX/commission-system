@@ -35,7 +35,7 @@ class TranslateRequest(BaseModel):
     request_id: UUID
     direction: Literal["incoming", "outgoing"]
     source_language: Literal["auto", "en", "es", "fr", "ar", "ja", "de", "nl", "sv", "zh-CN"]
-    target_language: Literal["en", "es", "fr", "ar", "ja", "zh-CN"]
+    target_language: Literal["en", "es", "fr", "ar", "ja", "de", "nl", "sv", "zh-CN"]
     text: str
 
     @field_validator("text")

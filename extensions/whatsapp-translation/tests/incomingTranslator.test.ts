@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IncomingBridgeError, createIncomingTranslator } from '@/content/incomingTranslator'
 import type { IncomingBridge, IncomingRenderer } from '@/content/incomingTranslator'
 import { mountTranslation } from '@/content/render'
+import { TARGET_LANGUAGES } from '@/shared/contracts'
 
 const adapter = {
   inspectChat: vi.fn(),
@@ -35,6 +36,10 @@ afterEach(() => {
 })
 
 describe('incoming translator', () => {
+  it('offers every detected customer language as an outgoing target', () => {
+    expect(TARGET_LANGUAGES).toEqual(['zh-CN', 'en', 'es', 'fr', 'ar', 'ja', 'de', 'nl', 'sv'])
+  })
+
   it('debounces mutations and translates one batch', async () => {
     const controller = createIncomingTranslator(adapter, bridge, renderer)
     adapter.listUntranslatedIncomingMessages.mockResolvedValue([incomingMessage('Hello', 'key-1')])
@@ -248,6 +253,39 @@ describe('translation renderer', () => {
     expect(host?.shadowRoot).toBeNull()
     expect(shadow.textContent).toContain('Translated preview')
     expect(source.innerHTML).not.toContain('Translated preview')
+  })
+
+  it('reports only the newest eligible incoming language', async () => {
+    const first = incomingMessage('First synthetic message', 'key-1')
+    const latest = incomingMessage('Letzte synthetische Nachricht', 'key-2')
+    const onDetectedLanguage = vi.fn()
+    adapter.listUntranslatedIncomingMessages.mockResolvedValue([first, latest])
+    bridge.translate.mockImplementation(async request => ({
+      sourceLanguage: request.text.startsWith('First') ? 'en' : 'de',
+      translation: 'Synthetic translation',
+    }))
+    const controller = createIncomingTranslator(adapter, bridge, renderer, { onDetectedLanguage })
+
+    controller.notifyMutation()
+    await vi.advanceTimersByTimeAsync(300)
+
+    expect(onDetectedLanguage).toHaveBeenCalledTimes(1)
+    expect(onDetectedLanguage).toHaveBeenCalledWith(latest, 'de')
+  })
+
+  it('does not change reply language from ambiguous short messages', async () => {
+    const onDetectedLanguage = vi.fn()
+    adapter.listUntranslatedIncomingMessages.mockResolvedValue([
+      incomingMessage('OK', 'key-1'),
+      incomingMessage('👍 100', 'key-2'),
+    ])
+    bridge.translate.mockResolvedValue({ sourceLanguage: 'en', translation: 'Synthetic translation' })
+    const controller = createIncomingTranslator(adapter, bridge, renderer, { onDetectedLanguage })
+
+    controller.notifyMutation()
+    await vi.advanceTimersByTimeAsync(300)
+
+    expect(onDetectedLanguage).not.toHaveBeenCalled()
   })
 
   it('renders a manual translate action for a pending message', () => {

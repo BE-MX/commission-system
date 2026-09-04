@@ -90,7 +90,7 @@ export type TranslationResult = {
   translation: string
 }
 
-export const TARGET_LANGUAGES = ['zh-CN', 'en', 'es', 'fr', 'ar', 'ja'] as const
+export const TARGET_LANGUAGES = ['zh-CN', 'en', 'es', 'fr', 'ar', 'ja', 'de', 'nl', 'sv'] as const
 export type TargetLanguage = (typeof TARGET_LANGUAGES)[number]
 export const DEFAULT_OUTGOING_LANGUAGE: TargetLanguage = 'en'
 
