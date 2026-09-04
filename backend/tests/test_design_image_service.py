@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from app.ai.models import AiCallLog, AiPreset, AiProvider
 from app.ai import service as ai_service
 from app.auth.models import ArkUser
+from app.core.time import beijing_now
 from app.design_image import service
 from app.design_image.file_service import NormalizedImage, StoredImage
 from app.design_image.models import (
@@ -155,7 +156,7 @@ def _job(
         preset_name="design_image_generation",
         model="gpt-image-2",
         idempotency_key=key,
-        created_at=created_at or datetime.now(timezone.utc).replace(tzinfo=None),
+        created_at=created_at or beijing_now(),
         **values,
     )
     db.add(row)

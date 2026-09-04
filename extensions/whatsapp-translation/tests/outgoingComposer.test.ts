@@ -12,6 +12,20 @@ const bridge = { translate: vi.fn() }
 
 beforeEach(() => {
   bridge.translate.mockReset().mockResolvedValue({ translation: 'Please confirm the lead time.' })
+  const composer = document.querySelector('footer div') as HTMLElement
+  composer.textContent = 'Current draft'
+  Object.defineProperty(document, 'execCommand', {
+    configurable: true,
+    value: (_command: string, _showUi: boolean, value: string) => {
+      composer.replaceChildren(document.createTextNode(value))
+      composer.dispatchEvent(new document.defaultView!.InputEvent('input', {
+        bubbles: true,
+        data: value,
+        inputType: 'insertText',
+      }))
+      return true
+    },
+  })
 })
 
 describe('outgoing composer', () => {
@@ -37,14 +51,15 @@ describe('outgoing composer', () => {
     expect(form.dispatchEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'submit' }))
   })
 
-  it('rejects empty and over-limit text without calling Ark', async () => {
+  it('rejects empty text and leaves length enforcement to Ark capabilities', async () => {
     const emptyComposer = createOutgoingComposer(adapter, bridge)
     await adapter.replaceComposer('')
     await expect(emptyComposer.translateForPreview()).rejects.toThrow('empty_composer')
 
-    await adapter.replaceComposer('a'.repeat(4_001))
-    await expect(emptyComposer.translateForPreview()).rejects.toThrow('text_too_long')
-    expect(bridge.translate).not.toHaveBeenCalled()
+    const longText = 'a'.repeat(4_001)
+    await adapter.replaceComposer(longText)
+    await expect(emptyComposer.translateForPreview()).resolves.toBeDefined()
+    expect(bridge.translate).toHaveBeenCalledWith(expect.objectContaining({ text: longText }))
   })
 
   it('is disabled for unsupported chats', async () => {
@@ -113,6 +128,24 @@ describe('outgoing composer', () => {
     languageComposer.setTargetLanguage('en')
 
     expect(languageComposer.getPreview()).toBeUndefined()
+  })
+
+  it('rejects an in-flight response after the target language changes', async () => {
+    let resolveTranslation: ((value: { translation: string }) => void) | undefined
+    bridge.translate.mockImplementationOnce(() => new Promise(resolve => {
+      resolveTranslation = resolve
+    }))
+    const languageComposer = createOutgoingComposer(adapter, bridge)
+    languageComposer.setTargetLanguage('en')
+
+    const task = languageComposer.translateForPreview()
+    await Promise.resolve()
+    languageComposer.setTargetLanguage('de')
+    resolveTranslation?.({ translation: 'English response' })
+
+    await expect(task).rejects.toThrow('composer_changed')
+    expect(languageComposer.getPreview()).toBeUndefined()
+    expect(bridge.translate).toHaveBeenCalledWith(expect.objectContaining({ target_language: 'en' }))
   })
 
   it('supports Alt+T as the preview shortcut', async () => {

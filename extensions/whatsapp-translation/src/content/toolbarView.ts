@@ -14,6 +14,7 @@ import { TARGET_LANGUAGES, languageLabel } from '@/shared/contracts'
 export type ToolbarStatus =
   | { kind: 'idle' }
   | { kind: 'busy' }
+  | { kind: 'replacing' }
   | { kind: 'error'; code: string }
   | { kind: 'replaced' }
 
@@ -41,8 +42,11 @@ const STYLES = `
     --surface: #f0f2f5;
     --fg: #111b21;
     --muted: #667781;
-    --accent: #008069;
-    --accent-fg: #ffffff;
+    --brand: #FDD956;
+    --brand-fg: #080303;
+    --accent: #25D366;
+    --accent-fg: #080303;
+    --link: #147A3D;
     --danger: #b3261e;
     --border: rgba(17, 27, 33, 0.08);
     --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -57,8 +61,11 @@ const STYLES = `
     --surface: #2a3942;
     --fg: #e9edef;
     --muted: #8696a0;
-    --accent: #00a884;
+    --brand: #FDD956;
+    --brand-fg: #080303;
+    --accent: #25D366;
     --accent-fg: #111b21;
+    --link: #25D366;
     --danger: #f28b82;
     --border: rgba(233, 237, 239, 0.1);
   }
@@ -87,9 +94,9 @@ const STYLES = `
     padding-right: 12px;
   }
   .chip::after { color: var(--muted); content: "▾"; font-size: 11px; margin-left: -12px; pointer-events: none; }
-  .btn { background: var(--accent); border-color: transparent; color: var(--accent-fg); font-weight: 600; }
+  .btn { background: var(--brand); border-color: transparent; color: var(--brand-fg); font-weight: 600; }
   .btn[disabled] { cursor: progress; opacity: 0.7; }
-  .link { background: transparent; border-color: transparent; color: var(--accent); padding: 0 4px; }
+  .link { background: transparent; border-color: transparent; color: var(--link); padding: 0 4px; }
   .link.danger { color: var(--danger); }
   @media (hover: hover) and (pointer: fine) {
     .chip:hover { background: var(--border); }
@@ -143,7 +150,7 @@ export function createToolbarView(shadow: ShadowRoot, handlers: ToolbarHandlers)
     return node
   }
 
-  function renderPreview(preview: OutgoingPreview, animate: boolean): HTMLElement {
+  function renderPreview(preview: OutgoingPreview, animate: boolean, replacing: boolean): HTMLElement {
     const card = el('div', 'card')
     if (animate) card.dataset.animate = '1'
 
@@ -159,8 +166,9 @@ export function createToolbarView(shadow: ShadowRoot, handlers: ToolbarHandlers)
     }
 
     const actions = el('div', 'actions')
-    const replace = el('button', 'btn', '替换到输入框')
+    const replace = el('button', 'btn', replacing ? '替换中…' : '替换到输入框')
     replace.type = 'button'
+    replace.disabled = replacing
     replace.addEventListener('click', handlers.onReplace)
     const cancel = el('button', 'link', '取消')
     cancel.type = 'button'
@@ -218,7 +226,7 @@ export function createToolbarView(shadow: ShadowRoot, handlers: ToolbarHandlers)
   return {
     render(model, options = {}) {
       root.replaceChildren()
-      if (model.preview) root.append(renderPreview(model.preview, options.animatePreview ?? false))
+      if (model.preview) root.append(renderPreview(model.preview, options.animatePreview ?? false, model.status.kind === 'replacing'))
       root.append(renderBar(model))
     },
   }

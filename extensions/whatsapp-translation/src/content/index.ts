@@ -3,8 +3,10 @@ import { createIncomingTranslator, IncomingBridgeError } from '@/content/incomin
 import { createOutgoingComposer } from '@/content/outgoingComposer'
 import { mountTranslation } from '@/content/render'
 import { createToolbarView } from '@/content/toolbarView'
+import { createLatestMountGuard } from '@/content/latestMountGuard'
 import { adapterFor } from '@/whatsapp/adapter'
-import { DEFAULT_OUTGOING_LANGUAGE } from '@/shared/contracts'
+import { DEFAULT_OUTGOING_LANGUAGE, TARGET_LANGUAGES } from '@/shared/contracts'
+import type { TargetLanguage } from '@/shared/contracts'
 import type { RuntimeRequest, RuntimeResponse } from '@/shared/contracts'
 import type { IncomingBridge, IncomingBridgeRequest } from '@/content/incomingTranslator'
 import type { OutgoingBridge, OutgoingBridgeRequest } from '@/content/outgoingComposer'
@@ -62,15 +64,20 @@ async function resolveChatLanguage(chatTitle: string): Promise<string> {
 
 function startContentScript(): void {
   const adapter = adapterFor(document)
-  const translator = createIncomingTranslator(adapter, backgroundBridge, {
-    mountTranslation: (target, state, onRetry) => mountTranslation(target, state, onRetry, { dark: adapter.isDarkTheme() }),
-  })
   const outgoingComposer = createOutgoingComposer(adapter, outgoingBridge)
-
   let chatRoot = adapter.chatRootElement()
   let currentTitle = ''
   let controller: ReturnType<typeof createComposerController> | undefined
   let composerElement: Element | null = null
+  const mountGuard = createLatestMountGuard()
+  const translator = createIncomingTranslator(adapter, backgroundBridge, {
+    mountTranslation: (target, state, onRetry) => mountTranslation(target, state, onRetry, { dark: adapter.isDarkTheme() }),
+  }, {
+    onDetectedLanguage: (_message, language) => {
+      if (!TARGET_LANGUAGES.includes(language as TargetLanguage)) return
+      void controller?.onLanguageChange(language)
+    },
+  })
 
   const onComposerInput = () => controller?.onComposerInput()
 
@@ -83,6 +90,7 @@ function startContentScript(): void {
   }
 
   async function mountToolbar(): Promise<void> {
+    const mountGeneration = mountGuard.begin()
     const shadow = adapter.mountComposerToolbar()
     if (!shadow) {
       controller = undefined
@@ -90,7 +98,13 @@ function startContentScript(): void {
     }
     const title = adapter.chatTitle()
     currentTitle = title
-    outgoingComposer.setTargetLanguage(await resolveChatLanguage(title))
+    const language = await resolveChatLanguage(title)
+    if (
+      !mountGuard.isCurrent(mountGeneration)
+      || !shadow.host.isConnected
+      || adapter.chatTitle() !== title
+    ) return
+    outgoingComposer.setTargetLanguage(language)
     if (adapter.isDarkTheme()) (shadow.host as HTMLElement).setAttribute('data-ark-theme', 'dark')
     const view = createToolbarView(shadow, {
       onCancelPreview: () => controller?.onCancelPreview(),

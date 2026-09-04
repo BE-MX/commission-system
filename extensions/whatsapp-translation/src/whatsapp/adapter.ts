@@ -3,6 +3,10 @@ import { parseIncomingMessages } from '@/whatsapp/messageParser'
 import { WHATSAPP_SELECTORS } from '@/whatsapp/selectors'
 import { ARK_MARKS } from '@/shared/marks'
 
+function normalizeComposerText(value: string): string {
+  return value.replace(/\s+/gu, ' ').trim()
+}
+
 export class WhatsAppAdapter {
   constructor(private readonly root: Document | HTMLElement) {}
 
@@ -35,7 +39,7 @@ export class WhatsAppAdapter {
     if (this.inspectChat().kind !== 'direct') return ''
     const composers = this.root.querySelectorAll(WHATSAPP_SELECTORS.composer)
     if (composers.length !== 1) return ''
-    return composers[0].textContent?.replace(/\s+/gu, ' ').trim() ?? ''
+    return normalizeComposerText(composers[0].textContent ?? '')
   }
 
   async replaceComposer(text: string): Promise<boolean> {
@@ -43,19 +47,23 @@ export class WhatsAppAdapter {
     const composers = this.root.querySelectorAll(WHATSAPP_SELECTORS.composer)
     if (composers.length !== 1) return false
 
-    const composer = composers[0]
-    const eventInit = {
-      bubbles: true,
-      cancelable: true,
-      data: text,
-      inputType: 'insertText',
+    const composer = composers[0] as HTMLElement
+    const doc = composer.ownerDocument
+    const selection = doc.defaultView?.getSelection()
+    if (!selection || typeof doc.execCommand !== 'function') return false
+
+    composer.focus()
+    const range = doc.createRange()
+    range.selectNodeContents(composer)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    try {
+      if (!doc.execCommand('insertText', false, text)) return false
+    } finally {
+      selection.removeAllRanges()
     }
-    const inputEventConstructor = composer.ownerDocument.defaultView?.InputEvent ?? composer.ownerDocument.defaultView?.Event
-    if (!inputEventConstructor) return false
-    composer.dispatchEvent(new inputEventConstructor('beforeinput', eventInit))
-    composer.textContent = text
-    composer.dispatchEvent(new inputEventConstructor('input', eventInit))
-    return true
+    await Promise.resolve()
+    return this.readComposer() === normalizeComposerText(text)
   }
 
   /**

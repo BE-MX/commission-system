@@ -59,10 +59,10 @@ def require_translation_device(
     if user is None or not user.is_active or user.deleted_at is not None:
         raise _error(403, "user_inactive")
     roles, permissions = get_live_user_authorization(db, user.id)
-    if WHATSAPP_TRANSLATION_WRITE_PERMISSION not in permissions:
+    is_admin = "super_admin" in roles or "whatsapp_translation:admin" in permissions
+    if not is_admin and WHATSAPP_TRANSLATION_WRITE_PERMISSION not in permissions:
         raise _error(403, "permission_denied")
 
-    is_admin = "super_admin" in roles or "whatsapp_translation:admin" in permissions
     device.extension_version = extension_version
     device.last_used_at = beijing_now()
     db.commit()

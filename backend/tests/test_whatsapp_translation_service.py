@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 
 import pytest
+import httpx
 from fastapi.security import HTTPAuthorizationCredentials
 
 from app.auth.models import ArkRole, ArkUser
@@ -11,6 +12,7 @@ from app.whatsapp_translation.auth import DeviceIdentity
 from app.whatsapp_translation.constants import WHATSAPP_TRANSLATION_WRITE_PERMISSION
 from app.whatsapp_translation.errors import WhatsAppTranslationError
 from app.whatsapp_translation.models import TranslationDevice
+from app.whatsapp_translation.models import TranslationUsageDaily
 from app.whatsapp_translation.schemas import TranslateRequest
 
 
@@ -144,6 +146,19 @@ def test_auto_detected_swedish_is_accepted(db, identity, monkeypatch):
     assert result.detected_source_language == "sv"
 
 
+@pytest.mark.parametrize("target_language", ["de", "nl", "sv"])
+def test_outgoing_accepts_detected_customer_languages_as_targets(target_language):
+    request = TranslateRequest(
+        request_id="4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de63",
+        direction="outgoing",
+        text="交期两周",
+        source_language="auto",
+        target_language=target_language,
+    )
+
+    assert request.target_language == target_language
+
+
 def test_duplicate_request_id_calls_ai_once(db, identity, monkeypatch):
     fake_chat, calls = mock_chat()
     monkeypatch.setattr(translation_service, "chat", fake_chat)
@@ -180,17 +195,129 @@ def test_provider_timeout_maps_to_stable_error(db, identity, monkeypatch):
     assert "provider details" not in str(error.value)
 
 
-def test_waiter_replays_cached_failure_as_stable_error(db, identity, monkeypatch):
-    fake_chat, _ = mock_chat(response_content="not-json")
-    monkeypatch.setattr(translation_service, "chat", fake_chat)
+def test_transient_provider_failure_retries_once_inside_one_quota_reservation(db, identity, monkeypatch):
+    calls = 0
+    success, _ = mock_chat()
+
+    def flaky_chat(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            request = httpx.Request("POST", "https://provider.invalid/v1/chat/completions")
+            raise httpx.ConnectError("temporary connection failure", request=request)
+        return success(*args, **kwargs)
+
+    monkeypatch.setattr(translation_service, "chat", flaky_chat)
+    request = make_request(text="Synthetic retry text")
+    result = translation_service.translate_text(db, identity, request)
+
+    usage = db.query(TranslationUsageDaily).filter_by(device_id=identity.device_id).one()
+    assert result.translated_text
+    assert calls == 2
+    assert usage.input_chars == len(request.text)
+    assert usage.request_count == 1
+    assert usage.success_count == 1
+
+
+def test_transient_retry_uses_only_the_remaining_timeout_budget(db, identity, monkeypatch):
+    timeouts = []
+    success, _ = mock_chat()
+
+    def flaky_chat(*args, **kwargs):
+        timeouts.append(kwargs["timeout_sec"])
+        if len(timeouts) == 1:
+            request = httpx.Request("POST", "https://provider.invalid/v1/chat/completions")
+            raise httpx.ConnectError("temporary connection failure", request=request)
+        return success(*args, **kwargs)
+
+    ticks = iter([100.0, 104.0])
+    monkeypatch.setattr(translation_service, "chat", flaky_chat)
+    monkeypatch.setattr(translation_service.time, "monotonic", lambda: next(ticks))
+
+    result = translation_service._chat_with_transient_retry(db, timeout_sec=15)
+
+    assert result["content"]
+    assert timeouts == [15, 11.0]
+
+
+def test_transient_failure_is_not_retried_without_a_meaningful_timeout_budget(db, identity, monkeypatch):
+    calls = 0
+
+    def failing_chat(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        request = httpx.Request("POST", "https://provider.invalid/v1/chat/completions")
+        raise httpx.ConnectError("temporary connection failure", request=request)
+
+    ticks = iter([100.0, 114.5])
+    monkeypatch.setattr(translation_service, "chat", failing_chat)
+    monkeypatch.setattr(translation_service.time, "monotonic", lambda: next(ticks))
+
+    with pytest.raises(httpx.ConnectError):
+        translation_service._chat_with_transient_retry(db, timeout_sec=15)
+
+    assert calls == 1
+
+
+def test_non_transient_provider_error_is_not_retried(db, identity, monkeypatch):
+    calls = 0
+
+    def rejected_chat(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        request = httpx.Request("POST", "https://provider.invalid/v1/chat/completions")
+        response = httpx.Response(400, request=request)
+        raise httpx.HTTPStatusError("bad request", request=request, response=response)
+
+    monkeypatch.setattr(translation_service, "chat", rejected_chat)
+    with pytest.raises(WhatsAppTranslationError) as error:
+        translation_service.translate_text(db, identity, make_request())
+
+    assert calls == 1
+    assert error.value.error_code == "ai_unavailable"
+
+
+def test_manual_retry_reruns_after_failure_instead_of_caching_it(db, identity, monkeypatch):
+    calls = 0
+
+    def recover_on_retry(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return {"content": "not-json", "log_id": 1}
+        return {
+            "content": model_content(),
+            "tokens_prompt": 1,
+            "tokens_completion": 1,
+            "duration_ms": 1,
+            "log_id": 2,
+        }
+
+    monkeypatch.setattr(translation_service, "chat", recover_on_retry)
 
     with pytest.raises(WhatsAppTranslationError) as first:
         translation_service.translate_text(db, identity, make_request())
     assert first.value.error_code == "translation_invalid_response"
 
-    with pytest.raises(WhatsAppTranslationError) as replay:
-        translation_service.translate_text(db, identity, make_request())
-    assert replay.value.error_code == "translation_invalid_response"
+    replay = translation_service.translate_text(db, identity, make_request())
+    assert replay.model_log_id == 2
+    assert calls == 2
+
+
+def test_cached_success_bypasses_rate_limit_for_same_request_id(db, identity, monkeypatch):
+    fake_chat, calls = mock_chat()
+    monkeypatch.setattr(translation_service, "chat", fake_chat)
+    monkeypatch.setattr(
+        translation_service,
+        "translation_limiter",
+        translation_service.BoundedSlidingWindowLimiter(limit=1),
+    )
+
+    first = translation_service.translate_text(db, identity, make_request())
+    replay = translation_service.translate_text(db, identity, make_request())
+
+    assert replay == first
+    assert len(calls) == 1
 
 
 def test_same_language_response_returns_original(db, identity, monkeypatch):

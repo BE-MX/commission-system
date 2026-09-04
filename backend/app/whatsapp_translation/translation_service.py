@@ -6,6 +6,8 @@ import threading
 import time
 from collections import OrderedDict
 
+import httpx
+
 from app.ai.call_service import chat
 from app.core.config import get_settings
 from app.whatsapp_translation.auth import require_supported_extension
@@ -30,7 +32,7 @@ class TranslationCoordinator:
         self.max_keys = max_keys
         self.cache_seconds = cache_seconds
         self.lock = threading.Lock()
-        self.events: OrderedDict[tuple[int, str], threading.Event] = OrderedDict()
+        self.events: OrderedDict[tuple[int, str], dict[str, object]] = OrderedDict()
         self.outcomes: OrderedDict[tuple[int, str], tuple[float, object]] = OrderedDict()
 
     def _cached_outcome(self, key: tuple[int, str]):
@@ -58,10 +60,10 @@ class TranslationCoordinator:
             return cached
 
         with self.lock:
-            event = self.events.get(key)
-            if event is None:
-                event = threading.Event()
-                self.events[key] = event
+            in_flight = self.events.get(key)
+            if in_flight is None:
+                in_flight = {"event": threading.Event(), "outcome": None}
+                self.events[key] = in_flight
                 if len(self.events) > self.max_keys:
                     self.events.popitem(last=False)
                 owner = True
@@ -69,10 +71,15 @@ class TranslationCoordinator:
                 owner = False
 
         if not owner:
+            event = in_flight["event"]
+            assert isinstance(event, threading.Event)
             completed = event.wait(timeout=timeout_seconds)
             if not completed:
                 return "ai_unavailable"
-            return self._cached_outcome(key)
+            outcome = in_flight["outcome"]
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
 
         try:
             result = callback()
@@ -83,7 +90,11 @@ class TranslationCoordinator:
         except Exception:
             result = WhatsAppTranslationError(503, "ai_unavailable", "Translation AI unavailable")
         finally:
-            self._store_outcome(key, result)
+            in_flight["outcome"] = result
+            if not isinstance(result, Exception):
+                self._store_outcome(key, result)
+            event = in_flight["event"]
+            assert isinstance(event, threading.Event)
             event.set()
             with self.lock:
                 self.events.pop(key, None)
@@ -148,15 +159,42 @@ def _preset_name_for(direction: str) -> str:
     return settings.WHATSAPP_TRANSLATION_PRESET_NAME
 
 
+def _is_transient_provider_error(error: Exception) -> bool:
+    if isinstance(error, httpx.HTTPStatusError):
+        return error.response.status_code in {502, 503, 504}
+    return isinstance(error, httpx.TransportError) and not isinstance(error, httpx.TimeoutException)
+
+
+def _chat_with_transient_retry(db, **kwargs):
+    timeout_seconds = float(kwargs.get("timeout_sec") or 0)
+    started_at = time.monotonic()
+    for attempt in range(2):
+        try:
+            return chat(db, **kwargs)
+        except Exception as error:
+            if attempt == 0 and _is_transient_provider_error(error):
+                remaining_seconds = timeout_seconds - (time.monotonic() - started_at)
+                if remaining_seconds < 1.0:
+                    raise
+                logger.warning(
+                    "translation provider transient failure, retrying once error_type=%s",
+                    type(error).__name__,
+                )
+                kwargs["timeout_sec"] = remaining_seconds
+                continue
+            raise
+    raise RuntimeError("unreachable")
+
+
 def translate_text(db, identity, request: TranslateRequest) -> TranslateResponse:
     require_supported_extension(identity)
-    allowed, retry_after = translation_limiter.allow(str(identity.device_id))
-    if not allowed:
-        raise WhatsAppTranslationError(429, "rate_limited", "Translation rate limit exceeded", retry_after)
-
-    start = time.monotonic()
 
     def execute():
+        allowed, retry_after = translation_limiter.allow(str(identity.device_id))
+        if not allowed:
+            raise WhatsAppTranslationError(429, "rate_limited", "Translation rate limit exceeded", retry_after)
+
+        start = time.monotonic()
         row = reserve_daily_input(db, identity, len(request.text))
         glossary = glossary_for(
             db,
@@ -173,7 +211,7 @@ def translate_text(db, identity, request: TranslateRequest) -> TranslateResponse
             "text": request.text,
         }, ensure_ascii=False)
         try:
-            ai_result = chat(
+            ai_result = _chat_with_transient_retry(
                 db,
                 preset_name=_preset_name_for(request.direction),
                 messages=[{"role": "user", "content": input_payload}],
@@ -220,8 +258,18 @@ def translate_text(db, identity, request: TranslateRequest) -> TranslateResponse
                 int((time.monotonic() - start) * 1000), exc.error_code,
             )
             raise
-        except TimeoutError:
+        except (TimeoutError, httpx.TimeoutException):
             error = WhatsAppTranslationError(503, "ai_timeout", "Translation AI timed out")
+            record_failure(db, row, direction=request.direction, error_code=error.error_code)
+            logger.info(
+                "translation failed request_id=%s user_id=%s device_id=%s chars=%d direction=%s source=%s target=%s duration_ms=%d error_code=%s",
+                str(request.request_id), identity.user_id, identity.device_id, len(request.text),
+                request.direction, request.source_language, request.target_language,
+                int((time.monotonic() - start) * 1000), error.error_code,
+            )
+            raise error
+        except Exception:
+            error = WhatsAppTranslationError(503, "ai_unavailable", "Translation AI unavailable")
             record_failure(db, row, direction=request.direction, error_code=error.error_code)
             logger.info(
                 "translation failed request_id=%s user_id=%s device_id=%s chars=%d direction=%s source=%s target=%s duration_ms=%d error_code=%s",

@@ -1,0 +1,19 @@
+<main id="main" data-testid="conversation-panel-wrapper">
+  <header data-testid="conversation-header">
+    <div role="button" aria-label="个人主页详情"></div>
+    <span data-testid="conversation-info-header-chat-title">Synthetic Contact</span>
+  </header>
+  <div data-testid="conversation-panel-messages">
+    <div data-testid="conv-msg-forwarded" style="display: flex; align-items: flex-start">
+      <div data-testid="msg-container">
+        <div data-testid="forwarded">已转发</div>
+        <div class="copyable-text" data-pre-plain-text="[10:00, 2026-09-04] Synthetic Contact: ">
+          <span data-testid="selectable-text">Forwarded synthetic text</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <footer>
+    <div contenteditable="true" data-tab="10" data-testid="conversation-compose-box-input"></div>
+  </footer>
+</main>

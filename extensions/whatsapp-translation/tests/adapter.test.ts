@@ -1,14 +1,17 @@
 import { readFileSync } from 'node:fs'
 import { JSDOM } from 'jsdom'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { adapterFor } from '@/whatsapp/adapter'
 
 function loadFixture(name: string): Document {
-  return new JSDOM(readFileSync(new URL(`./fixtures/${name}.html`, import.meta.url), 'utf8')).window.document
+  return new JSDOM(readFileSync(new URL(`./fixtures/${name}.html`, import.meta.url), 'utf8'), {
+    url: 'https://web.whatsapp.com/',
+  }).window.document
 }
 
 const directFixture = loadFixture('direct')
+const directForwardedFixture = loadFixture('direct-forwarded')
 const directEmptyFixture = loadFixture('direct-empty')
 const groupFixture = loadFixture('group')
 const unknownFixture = loadFixture('unknown')
@@ -39,6 +42,24 @@ describe('WhatsApp adapter', () => {
     expect(JSON.stringify(messages)).not.toMatch(/@c\.us|data-id|phone|contact/)
   })
 
+  it('parses forwarded pure text without widening unsupported chat structures', async () => {
+    const messages = await adapterFor(directForwardedFixture).listUntranslatedIncomingMessages()
+
+    expect(messages.map(message => message.text)).toEqual(['Forwarded synthetic text'])
+    await expect(adapterFor(groupFixture).listUntranslatedIncomingMessages()).resolves.toEqual([])
+    await expect(adapterFor(unknownFixture).listUntranslatedIncomingMessages()).resolves.toEqual([])
+  })
+
+  it('fails closed when an otherwise valid text bubble contains an unknown unmarked node', async () => {
+    const document = loadFixture('direct-forwarded')
+    const message = document.querySelector('[data-testid="msg-container"]') as HTMLElement
+    const unknown = document.createElement('div')
+    unknown.className = 'synthetic-unknown-node'
+    message.prepend(unknown)
+
+    await expect(adapterFor(document).listUntranslatedIncomingMessages()).resolves.toEqual([])
+  })
+
   it('creates distinct local keys for repeated incoming text', async () => {
     const document = loadFixture('direct')
     const root = document.getElementById('main') as HTMLElement
@@ -63,8 +84,75 @@ describe('WhatsApp adapter', () => {
     expect(messages[0].localKey).not.toBe(messages[1].localKey)
   })
 
+  it('keeps a queued message key stable after earlier messages enter loading state', async () => {
+    const document = loadFixture('direct')
+    const messagePanel = document.querySelector('[data-testid="conversation-panel-messages"]') as HTMLElement
+    const unsupportedRows = [...messagePanel.children]
+    messagePanel.replaceChildren()
+
+    for (let index = 0; index < 4; index += 1) {
+      const row = document.createElement('div')
+      row.style.alignItems = 'flex-start'
+      row.style.display = 'flex'
+      row.innerHTML = `
+        <div data-testid="msg-container">
+          <div class="copyable-text" data-pre-plain-text="[18:4${index}, 2026-09-03] Synthetic: ">
+            <span data-testid="selectable-text">Synthetic text ${index + 1}</span>
+          </div>
+        </div>
+      `
+      messagePanel.append(row)
+    }
+
+    const firstScan = await adapterFor(document).listUntranslatedIncomingMessages()
+    for (const message of firstScan.slice(0, 3)) {
+      const host = document.createElement('div')
+      host.setAttribute('data-ark-translation-host', '1')
+      host.setAttribute('data-ark-translation-state', 'loading')
+      message.element.append(host)
+    }
+    const secondScan = await adapterFor(document).listUntranslatedIncomingMessages()
+
+    expect(firstScan).toHaveLength(4)
+    expect(secondScan).toHaveLength(1)
+    expect(secondScan[0].text).toBe('Synthetic text 4')
+    expect(secondScan[0].localKey).toBe(firstScan[3].localKey)
+
+    messagePanel.replaceChildren(...unsupportedRows)
+  })
+
+  it('does not reuse a settled message key for a later identical message', async () => {
+    const document = loadFixture('direct')
+    const messagePanel = document.querySelector('[data-testid="conversation-panel-messages"]') as HTMLElement
+    messagePanel.replaceChildren()
+    for (let index = 0; index < 2; index += 1) {
+      const row = document.createElement('div')
+      row.style.alignItems = 'flex-start'
+      row.innerHTML = `
+        <div data-testid="msg-container">
+          <div class="copyable-text" data-pre-plain-text="[18:4${index}, 2026-09-03] Synthetic: ">
+            <span data-testid="selectable-text">OK again</span>
+          </div>
+        </div>
+      `
+      messagePanel.append(row)
+    }
+
+    const firstScan = await adapterFor(document).listUntranslatedIncomingMessages()
+    const host = document.createElement('div')
+    host.setAttribute('data-ark-translation-host', '1')
+    host.setAttribute('data-ark-translation-state', 'success')
+    firstScan[0].element.append(host)
+    const secondScan = await adapterFor(document).listUntranslatedIncomingMessages()
+
+    expect(secondScan).toHaveLength(1)
+    expect(secondScan[0].localKey).toBe(firstScan[1].localKey)
+    expect(secondScan[0].localKey).not.toBe(firstScan[0].localKey)
+  })
+
   it('replaces only the confirmed composer and never dispatches send controls', async () => {
-    const composer = directFixture.querySelector('footer div') as HTMLElement
+    const document = loadFixture('direct')
+    const composer = document.querySelector('footer div') as HTMLElement
     const eventTypes: string[] = []
     const prohibitedTypes: string[] = []
     const record = (event: Event) => {
@@ -75,13 +163,43 @@ describe('WhatsApp adapter', () => {
     composer.addEventListener('input', record)
     composer.addEventListener('click', record)
     composer.addEventListener('submit', record)
+    const nativeInsert = vi.fn((command: string, _showUi: boolean, value: string) => {
+      if (command !== 'insertText') return false
+      composer.replaceChildren(document.createTextNode(value))
+      composer.dispatchEvent(new document.defaultView!.InputEvent('input', {
+        bubbles: true,
+        data: value,
+        inputType: 'insertText',
+      }))
+      return true
+    })
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: nativeInsert })
 
-    await adapterFor(directFixture).replaceComposer('Translated preview')
+    const replaced = await adapterFor(document).replaceComposer('Translated preview')
 
+    expect(replaced).toBe(true)
     expect(composer.textContent).toBe('Translated preview')
-    expect(eventTypes).toEqual(['beforeinput', 'input'])
+    expect(nativeInsert).toHaveBeenCalledWith('insertText', false, 'Translated preview')
+    expect(eventTypes).toEqual(['input'])
     expect(prohibitedTypes).toEqual([])
-    expect(adapterFor(directFixture)).not.toHaveProperty('send')
+    expect(adapterFor(document)).not.toHaveProperty('send')
+  })
+
+  it('reports failure when the controlled composer rejects or rewrites the native edit', async () => {
+    const rejectedDocument = loadFixture('direct')
+    Object.defineProperty(rejectedDocument, 'execCommand', { configurable: true, value: () => false })
+    await expect(adapterFor(rejectedDocument).replaceComposer('Translated preview')).resolves.toBe(false)
+
+    const rewrittenDocument = loadFixture('direct')
+    const composer = rewrittenDocument.querySelector('footer div') as HTMLElement
+    Object.defineProperty(rewrittenDocument, 'execCommand', {
+      configurable: true,
+      value: (_command: string, _showUi: boolean, _value: string) => {
+        composer.textContent = 'Editor-owned value'
+        return true
+      },
+    })
+    await expect(adapterFor(rewrittenDocument).replaceComposer('Translated preview')).resolves.toBe(false)
   })
 
   it('mounts the toolbar as the first child of the footer in a closed shadow and cleans on unsupported chat', () => {

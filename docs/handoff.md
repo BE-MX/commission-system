@@ -1,5 +1,15 @@
 # 莱莎方舟平台 项目交接清单
 
+### WhatsApp 实时翻译 v1.2（2026-09-05，发布候选完成）
+
+扩展 `1.2.0` 已完成：连续消息采用稳定本地键与最多 3 路并发队列，每段消息都有独立“译此消息/重试”入口；德语、荷兰语、西班牙语、瑞典语可识别并自动切换该聊天的发送语言；输入框预览替换会回读确认，聊天或目标语言变化会废弃旧异步结果；图标使用黄色 LeShine 品牌底、WhatsApp 绿色气泡、`LeShine` 与“译”，插件主题同步品牌色。
+
+稳定性收口：浏览器与 Provider 的瞬时错误只在同一 20/15 秒总预算内重试，结构化 502/503/504 也能进入补偿；相同请求成功结果先走幂等缓存再限流，失败结果不缓存，手动重试会真实重跑；授权/额度触发全局暂停时所有并发任务都会结束 loading 并可在恢复后重新入队。输入上限、每日字符与每分钟次数只读取 `WHATSAPP_TRANSLATION_MAX_TEXT_CHARS`、`WHATSAPP_TRANSLATION_DAILY_INPUT_CHARS`、`WHATSAPP_TRANSLATION_RATE_PER_MINUTE`，修改生产 `.env` 后必须重启服务。
+
+验证：扩展 86/86（含类型检查、Vite 构建、确定性打包）通过；后端全量 4468 通过、4 跳过、0 失败；独立对抗审查发现的消息键漂移、打包目录误删、失败缓存、限流/幂等顺序、语言/聊天异步串台、unknown DOM 放宽及浅色对比度问题均已加回归测试。发布包 `whatsapp-translation-1.2.0.zip` SHA-256 为 `f91057e26c2004eb6a6ef6536c0e479ea19b4fa0f23dbbeac5a8e4446c532093`，大小 26,914 字节，扩展 ID 保持 `bnkecbkoidckffckbefjjcbchmngjobi`。全局约定检查仅被未修改的 `DomesticOrders.vue` 既有 UI 基线失配拦截，干净 main 同样复现。
+
+生产仍待办公室 Windows Server 执行 `D:\commission-system\deploy\deploy.bat`；当前开发机没有该部署目录/服务，也没有 SSH、SMB 或 WinRM 通道，不能把合并推送视为已上线。部署后需验证 `/api/whatsapp-translation/health`、授权恢复、长德语文本、逐条重试、输入框替换，以及 Chrome/Edge 实机；员工推广前仍需完成 macOS Chrome 验收。
+
 ### WhatsApp 实时翻译（2026-09-03）
 
 开发代码已完成：后端独立域和迁移 136、扩展、Ark 授权/管理页、确定性打包和运行文档均已落地。自动化验证已完成：后端全量 4425 通过、4 跳过；扩展 43/43 通过，前端授权/管理 helper 8/8、导航布局 8/8 通过。已知全量套件存在 1 个与本功能无关的历史失败：`test_agent_runtime.py::test_artifact_rejects_not_yet_effective_or_unavailable_ark_evidence[future_fact]`。发布 ZIP SHA-256 与实际文件一致，包内容仅含构建产物。

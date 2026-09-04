@@ -14,19 +14,28 @@ export class ArkApiError extends Error {
   }
 }
 
-async function request<TData>(path: string, init: RequestInit = {}): Promise<TData> {
+async function requestOnce<TData>(path: string, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS): Promise<TData> {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const response = await fetch(`${BASE_URL}${path}`, {
       ...init,
       signal: controller.signal,
     })
-    const payload = (await response.json()) as Partial<ApiEnvelope<TData> & { data?: { error_code?: string } }>
+    let payload: Partial<ApiEnvelope<TData> & { data?: { error_code?: string } }>
+    try {
+      payload = (await response.json()) as Partial<ApiEnvelope<TData> & { data?: { error_code?: string } }>
+    } catch {
+      const gatewayFailure = [502, 503, 504].includes(response.status)
+      throw new ArkApiError(gatewayFailure ? 'backend_unavailable' : 'request_failed', 'request failed', response.status)
+    }
     if (!response.ok || payload.code !== 200 || payload.data === undefined) {
-      const errorCode = payload.data && 'error_code' in payload.data && payload.data.error_code
+      const reportedCode = payload.data && 'error_code' in payload.data && payload.data.error_code
         ? payload.data.error_code
         : 'request_failed'
+      const errorCode = [502, 503, 504].includes(response.status) && reportedCode === 'request_failed'
+        ? 'backend_unavailable'
+        : reportedCode
       throw new ArkApiError(errorCode, 'request failed', response.status)
     }
     return payload.data
@@ -38,6 +47,23 @@ async function request<TData>(path: string, init: RequestInit = {}): Promise<TDa
     throw new ArkApiError('network_error', 'request failed')
   } finally {
     clearTimeout(timer)
+  }
+}
+
+function isTransientTransportError(error: unknown): boolean {
+  return error instanceof ArkApiError
+    && (error.code === 'network_error' || error.code === 'backend_unavailable' || error.code === 'ai_unavailable')
+}
+
+async function request<TData>(path: string, init: RequestInit = {}, retryTransport = false): Promise<TData> {
+  const startedAt = Date.now()
+  try {
+    return await requestOnce<TData>(path, init)
+  } catch (error) {
+    if (!retryTransport || !isTransientTransportError(error)) throw error
+    const remainingMs = REQUEST_TIMEOUT_MS - (Date.now() - startedAt)
+    if (remainingMs <= 0) throw error
+    return await requestOnce<TData>(path, init, remainingMs)
   }
 }
 
@@ -78,7 +104,7 @@ export function translate(
     body: JSON.stringify(payload),
     headers: headers(token, extensionVersion),
     method: 'POST',
-  })
+  }, true)
 }
 
 export const apiClient = {

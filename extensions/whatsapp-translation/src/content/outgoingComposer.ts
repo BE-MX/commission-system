@@ -30,12 +30,6 @@ export type OutgoingRestorePoint = {
   translated: string
 }
 
-const MAX_TEXT_CODE_POINTS = 4_000
-
-function codePointLength(value: string): number {
-  return [...value].length
-}
-
 export function createOutgoingComposer(
   adapter: {
     inspectChat: () => { kind: string }
@@ -52,24 +46,23 @@ export function createOutgoingComposer(
 
   async function translateForPreview(): Promise<OutgoingPreview> {
     const requestedGeneration = chatGeneration
+    const requestedLanguage = targetLanguage
     if (adapter.inspectChat().kind !== 'direct') throw new Error('chat_unsupported')
     const original = adapter.readComposer()
     if (!original) throw new Error('empty_composer')
-    if (codePointLength(original) > MAX_TEXT_CODE_POINTS) throw new Error('text_too_long')
-
     const response = await bridge.translate({
       direction: 'outgoing',
       request_id: crypto.randomUUID(),
       source_language: 'auto',
-      target_language: targetLanguage,
+      target_language: requestedLanguage,
       text: original,
     })
-    if (requestedGeneration !== chatGeneration) throw new Error('composer_changed')
+    if (requestedGeneration !== chatGeneration || requestedLanguage !== targetLanguage) throw new Error('composer_changed')
     preview = {
       backTranslation: response.backTranslation,
       composerVersion: original,
       original,
-      targetLanguage,
+      targetLanguage: requestedLanguage,
       translated: response.translation,
     }
     previewGeneration = requestedGeneration
