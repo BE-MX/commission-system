@@ -2,11 +2,20 @@ import { cpSync, mkdirSync, rmSync } from 'node:fs'
 import { build } from 'vite'
 import { aliases, buildTarget } from '../vite.config.ts'
 
+const normalizeHtmlPlugin = {
+  enforce: 'pre',
+  name: 'normalize-extension-html-line-endings',
+  transformIndexHtml(html) {
+    return html.replace(/\r\n?/g, '\n')
+  },
+}
+
 rmSync('dist', { recursive: true, force: true })
 mkdirSync('dist', { recursive: true })
 
 await build({
   configFile: false,
+  plugins: [normalizeHtmlPlugin],
   resolve: { alias: aliases },
   build: {
     target: buildTarget,
