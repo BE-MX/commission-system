@@ -9,6 +9,7 @@ function loadFixture(name: string): Document {
 }
 
 const directFixture = loadFixture('direct')
+const directForwardedFixture = loadFixture('direct-forwarded')
 const directEmptyFixture = loadFixture('direct-empty')
 const groupFixture = loadFixture('group')
 const unknownFixture = loadFixture('unknown')
@@ -37,6 +38,14 @@ describe('WhatsApp adapter', () => {
     expect(messages.map(message => message.text)).toEqual(['Can you ship this week?', 'Thanks'])
     expect(messages[0].localKey).toMatch(/^[0-9a-f]{64}$/)
     expect(JSON.stringify(messages)).not.toMatch(/@c\.us|data-id|phone|contact/)
+  })
+
+  it('parses forwarded pure text without widening unsupported chat structures', async () => {
+    const messages = await adapterFor(directForwardedFixture).listUntranslatedIncomingMessages()
+
+    expect(messages.map(message => message.text)).toEqual(['Forwarded synthetic text'])
+    await expect(adapterFor(groupFixture).listUntranslatedIncomingMessages()).resolves.toEqual([])
+    await expect(adapterFor(unknownFixture).listUntranslatedIncomingMessages()).resolves.toEqual([])
   })
 
   it('creates distinct local keys for repeated incoming text', async () => {

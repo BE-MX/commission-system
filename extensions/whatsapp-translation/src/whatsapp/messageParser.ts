@@ -9,6 +9,7 @@ export type ParsedMessage = {
 
 const TEXT_MESSAGE_TEST_IDS = new Set([
   'addon-bubble-container',
+  'forwarded',
   'msg-meta',
   'reaction-bubble',
   'reaction-bubble-item',
