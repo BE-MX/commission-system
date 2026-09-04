@@ -42,7 +42,7 @@ const TRANSLATION_STYLES = `
     margin-right: 6px;
     user-select: none;
   }
-  .ark-translation--loading, .ark-translation--error, .ark-translation--blocked { color: var(--muted); }
+  .ark-translation--pending, .ark-translation--loading, .ark-translation--error, .ark-translation--blocked { color: var(--muted); }
   .ark-translation--error { border-left-color: var(--danger); }
   .ark-translation__retry {
     background: transparent;
@@ -88,7 +88,15 @@ export function mountTranslation(
   const body = target.ownerDocument.createElement('div')
   body.className = 'ark-translation'
 
-  if (state.kind === 'loading') {
+  if (state.kind === 'pending') {
+    body.classList.add('ark-translation--pending')
+    const button = target.ownerDocument.createElement('button')
+    button.className = 'ark-translation__retry'
+    button.type = 'button'
+    button.textContent = '译此消息'
+    if (onRetry) button.addEventListener('click', onRetry)
+    body.append(button)
+  } else if (state.kind === 'loading') {
     body.classList.add('ark-translation--loading')
     body.textContent = '翻译中…'
   } else if (state.kind === 'success') {

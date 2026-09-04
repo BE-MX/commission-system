@@ -60,6 +60,69 @@ describe('incoming translator', () => {
     }, expect.anything())
   })
 
+  it('does not postpone a scheduled scan while mutations continue', async () => {
+    const controller = createIncomingTranslator(adapter, bridge, renderer)
+
+    controller.notifyMutation()
+    await vi.advanceTimersByTimeAsync(100)
+    controller.notifyMutation()
+    await vi.advanceTimersByTimeAsync(199)
+    expect(adapter.listUntranslatedIncomingMessages).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(adapter.listUntranslatedIncomingMessages).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs at most three translations and exposes a manual action for queued messages', async () => {
+    const messages = Array.from({ length: 4 }, (_, index) => incomingMessage(`Text ${index + 1}`, `key-${index + 1}`))
+    adapter.listUntranslatedIncomingMessages.mockResolvedValue(messages)
+    bridge.translate.mockImplementation(() => new Promise(() => {}))
+    const controller = createIncomingTranslator(adapter, bridge, renderer)
+
+    controller.notifyMutation()
+    await vi.advanceTimersByTimeAsync(300)
+    expect(bridge.translate).toHaveBeenCalledTimes(3)
+
+    await vi.advanceTimersByTimeAsync(1_000)
+    const pendingCall = renderer.mountTranslation.mock.calls.find(([, state]) => state.kind === 'pending')
+    expect(pendingCall?.[0]).toBe(messages[3].element)
+    expect(pendingCall?.[2]).toBeTypeOf('function')
+  })
+
+  it('promotes the manually requested message to the next free worker slot', async () => {
+    const messages = Array.from({ length: 5 }, (_, index) => incomingMessage(`Text ${index + 1}`, `key-${index + 1}`))
+    const pendingResolvers: Array<(value: { translation: string }) => void> = []
+    adapter.listUntranslatedIncomingMessages.mockResolvedValue(messages)
+    bridge.translate.mockImplementation(() => new Promise(resolve => pendingResolvers.push(resolve)))
+    const controller = createIncomingTranslator(adapter, bridge, renderer)
+
+    controller.notifyMutation()
+    await vi.advanceTimersByTimeAsync(300)
+    await vi.advanceTimersByTimeAsync(1_000)
+    const fifthPending = renderer.mountTranslation.mock.calls.find(([element, state]) => (
+      element === messages[4].element && state.kind === 'pending'
+    ))
+    fifthPending?.[2]?.()
+    pendingResolvers[0]({ translation: 'Done' })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(bridge.translate).toHaveBeenCalledTimes(4)
+    expect(bridge.translate.mock.calls[3][0].text).toBe('Text 5')
+  })
+
+  it('coalesces duplicate scans for the same local message key', async () => {
+    adapter.listUntranslatedIncomingMessages.mockResolvedValue([incomingMessage('Hello', 'key-1')])
+    bridge.translate.mockImplementation(() => new Promise(() => {}))
+    const controller = createIncomingTranslator(adapter, bridge, renderer)
+
+    controller.notifyMutation()
+    await vi.advanceTimersByTimeAsync(300)
+    controller.notifyMutation()
+    await vi.advanceTimersByTimeAsync(300)
+
+    expect(bridge.translate).toHaveBeenCalledTimes(1)
+  })
+
   it('ignores a response from the previous chat generation', async () => {
     let resolveOld: ((value: { translation: string }) => void) | undefined
     adapter.listUntranslatedIncomingMessages.mockResolvedValue([incomingMessage('Old chat', 'old-key')])
@@ -167,6 +230,7 @@ describe('incoming translator', () => {
     await vi.advanceTimersByTimeAsync(300)
 
     expect(bridge.translate).toHaveBeenCalledTimes(2)
+    expect(bridge.translate.mock.calls[1][0].request_id).toBe(bridge.translate.mock.calls[0][0].request_id)
     expect(renderer.mountTranslation).toHaveBeenLastCalledWith(expect.anything(), {
       kind: 'success',
       translation: 'Translated',
@@ -184,5 +248,16 @@ describe('translation renderer', () => {
     expect(host?.shadowRoot).toBeNull()
     expect(shadow.textContent).toContain('Translated preview')
     expect(source.innerHTML).not.toContain('Translated preview')
+  })
+
+  it('renders a manual translate action for a pending message', () => {
+    const source = document.createElement('div')
+    const onTranslate = vi.fn()
+    const shadow = mountTranslation(source, { kind: 'pending' }, onTranslate)
+
+    const button = shadow.querySelector('button') as HTMLButtonElement
+    expect(button.textContent).toBe('译此消息')
+    button.click()
+    expect(onTranslate).toHaveBeenCalledTimes(1)
   })
 })
