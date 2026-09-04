@@ -42,7 +42,7 @@
       </div>
 
       <!-- Right Panel - Login Form -->
-      <div class="form-side flex-1 flex items-center justify-center p-6">
+      <div class="form-side relative flex-1 flex items-center justify-center p-6">
         <div class="glass-card gold-glow login-card w-full will-animate animate-fade-in-right delay-300">
           <!-- Form Header (brand logo serves all viewports) -->
           <div class="mb-8">
@@ -132,6 +132,18 @@
             </button>
           </form>
         </div>
+        <footer
+          class="site-filing will-animate animate-fade-in delay-650"
+          aria-label="网站备案信息"
+        >
+          <a
+            href="https://beian.miit.gov.cn/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >鲁ICP备2023012060号-3</a>
+          <span class="site-filing__divider" aria-hidden="true"></span>
+          <span>鄄城莱莎发制品有限公司</span>
+        </footer>
       </div>
     </div>
   </div>
@@ -327,4 +339,31 @@ const handleSubmit = async () => {
   margin: 0; font-size: 12px; letter-spacing: 0.05em; color: rgba(255, 255, 255, 0.28);
 }
 .brand-footer span { color: rgba(212, 175, 110, 0.5); margin-left: 8px; }
+
+.form-side { padding-bottom: 76px; }
+
+.site-filing {
+  position: absolute; right: 24px; bottom: 18px; left: 24px;
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  font-size: 12px; line-height: 1.5; letter-spacing: 0.03em;
+  color: rgba(255, 255, 255, 0.34);
+}
+.site-filing a {
+  color: rgba(212, 175, 110, 0.68); text-decoration: none;
+  transition: color 180ms ease;
+}
+.site-filing a:hover { color: rgba(249, 236, 198, 0.92); }
+.site-filing a:focus-visible {
+  outline: 1px solid currentColor; outline-offset: 4px; border-radius: 2px;
+}
+.site-filing__divider {
+  width: 1px; height: 12px; flex: none;
+  background: rgba(255, 255, 255, 0.16);
+}
+@media (max-width: 640px) {
+  .form-side { padding-bottom: 88px; }
+  .site-filing { bottom: 18px; flex-wrap: wrap; gap: 4px 10px; }
+  .site-filing__divider { display: none; }
+  .site-filing span:last-child { flex-basis: 100%; text-align: center; }
+}
 </style>
