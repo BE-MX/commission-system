@@ -1635,7 +1635,7 @@ journalctl -u leshine-ark-dsh-worker -n 200 --no-pager
 | 配对失败 | `pairing_not_found` / `pairing_expired` / `pairing_state` | 让员工在扩展里重新生成配对码；管理员在 Ark 授权页确认员工状态、权限和 5 台设备上限。 |
 | 扩展调用被拒 | `invalid_bearer` / `device_revoked` | 不要打印 token；确认设备是否被撤销，必要时让员工重新配对。 |
 | 浏览器控制台出现 CORS | 不适用 | 核对前端必须从 `https://leshine.work` 访问 API；禁止在扩展或后台临时放宽 origin。 |
-| 翻译被限流 | `rate_limited` / `daily_quota_exceeded` | 按 30 请求/分钟/设备与 200,000 输入字符/北京时间日解释；不做临时改库解锁。 |
+| 翻译被限流 | `rate_limited` / `daily_quota_exceeded` | 核对生产 `.env` 的 `WHATSAPP_TRANSLATION_RATE_PER_MINUTE` 与 `WHATSAPP_TRANSLATION_DAILY_INPUT_CHARS`，修改后重启后端；`RATE_PER_MINUTE` / `DAILY_INPUT_CHARS` 这类无前缀短名不会被读取。不做临时改库解锁。 |
 | 翻译不可用 | `ai_unavailable` | 先检查 AI Preset 是否启用，再检查 Provider 健康；`ai_timeout` 可重试。 |
 | 版本阻断 | `extension_outdated` | 让用户从 Ark 管理页下载最新 ZIP；禁止用旧包替代。 |
 | DOM 不支持 | 扩展本地 `blocked` | 先更新扩展；若新版仍阻断，停止使用该场景并记录 WhatsApp 页面结构版本，不提交页面样本。 |

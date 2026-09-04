@@ -30,12 +30,6 @@ export type OutgoingRestorePoint = {
   translated: string
 }
 
-const MAX_TEXT_CODE_POINTS = 4_000
-
-function codePointLength(value: string): number {
-  return [...value].length
-}
-
 export function createOutgoingComposer(
   adapter: {
     inspectChat: () => { kind: string }
@@ -55,8 +49,6 @@ export function createOutgoingComposer(
     if (adapter.inspectChat().kind !== 'direct') throw new Error('chat_unsupported')
     const original = adapter.readComposer()
     if (!original) throw new Error('empty_composer')
-    if (codePointLength(original) > MAX_TEXT_CODE_POINTS) throw new Error('text_too_long')
-
     const response = await bridge.translate({
       direction: 'outgoing',
       request_id: crypto.randomUUID(),

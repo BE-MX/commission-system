@@ -51,14 +51,15 @@ describe('outgoing composer', () => {
     expect(form.dispatchEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'submit' }))
   })
 
-  it('rejects empty and over-limit text without calling Ark', async () => {
+  it('rejects empty text and leaves length enforcement to Ark capabilities', async () => {
     const emptyComposer = createOutgoingComposer(adapter, bridge)
     await adapter.replaceComposer('')
     await expect(emptyComposer.translateForPreview()).rejects.toThrow('empty_composer')
 
-    await adapter.replaceComposer('a'.repeat(4_001))
-    await expect(emptyComposer.translateForPreview()).rejects.toThrow('text_too_long')
-    expect(bridge.translate).not.toHaveBeenCalled()
+    const longText = 'a'.repeat(4_001)
+    await adapter.replaceComposer(longText)
+    await expect(emptyComposer.translateForPreview()).resolves.toBeDefined()
+    expect(bridge.translate).toHaveBeenCalledWith(expect.objectContaining({ text: longText }))
   })
 
   it('is disabled for unsupported chats', async () => {

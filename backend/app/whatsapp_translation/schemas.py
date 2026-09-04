@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.config import get_settings
 from app.whatsapp_translation.constants import (
     SUPPORTED_SOURCE_LANGUAGES,
     SUPPORTED_TARGET_LANGUAGES,
@@ -42,8 +43,9 @@ class TranslateRequest(BaseModel):
     @classmethod
     def validate_text_code_points(cls, value: str) -> str:
         value = value.strip()
-        if not 1 <= len(value) <= 4_000:
-            raise ValueError("text must contain 1-4000 Unicode code points")
+        limit = get_settings().WHATSAPP_TRANSLATION_MAX_TEXT_CHARS
+        if not 1 <= len(value) <= limit:
+            raise ValueError(f"text must contain 1-{limit} Unicode code points")
         return value
 
     @field_validator("direction")
@@ -83,9 +85,19 @@ class PairingExchangeResult(BaseModel):
 class TranslationModelOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    translated_text: str = Field(min_length=1, max_length=4_000)
+    translated_text: str = Field(min_length=1)
     detected_source_language: Literal["zh-CN", "en", "es", "fr", "ar", "ja", "de", "nl", "sv"]
-    back_translation: str | None = Field(default=None, max_length=4_000)
+    back_translation: str | None = None
+
+    @field_validator("translated_text", "back_translation")
+    @classmethod
+    def validate_output_code_points(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        limit = get_settings().WHATSAPP_TRANSLATION_MAX_TEXT_CHARS
+        if len(value) > limit:
+            raise ValueError(f"translation must contain at most {limit} Unicode code points")
+        return value
 
 
 class TranslateResponse(BaseModel):

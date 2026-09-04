@@ -24,7 +24,7 @@ const MESSAGES: Record<string, UserMessage> = {
   permission_denied: { retryable: false, text: '账号暂无 WhatsApp 翻译权限' },
   rate_limited: { retryable: true, text: '请求较快，稍后自动恢复' },
   request_timeout: { retryable: true, text: '翻译服务响应超时，请重试' },
-  text_too_long: { retryable: false, text: '单条超过 4000 字，请拆开发送' },
+  text_too_long: { retryable: false, text: '单条内容过长，请拆开发送' },
   translation_disabled: { retryable: false, text: '翻译已在扩展弹窗中关闭' },
   translation_invalid_response: { retryable: true, text: '翻译结果无效，点击重试' },
   unsupported_language: { retryable: false, text: '不支持的目标语言' },
