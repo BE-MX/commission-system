@@ -29,6 +29,12 @@
 > ✅ **功能分支完成（2026-08-25）**：`codex/semifinished-inventory` 已实现迁移 120/121 的半成品列表、产品解析关联与人工组成修正、按 g 下单/分批入库、实存/占用/可用/在制库存、生产购物车同步下单及生产发票的 OKKI 同步预占—出库—补偿恢复。线上迁移已到 121，产品同步结果为 794 个关联、233 个半成品、429 个待审核关联；待审核项不会自动下单或领料。详细规则见 `docs/requirements/2026-08-25-semifinished-orders-inventory.md`；已合入 main（merge `712b3882`），2026-09-02 复核 leshine.work `GET /api/semifinished/orders` 返回 403（需登录），后端已部署。
 
 > 🧹 **工作区与发布核对（2026-09-02）**：本地只剩 `main`（与 `origin/main` 一致）且单一 worktree；6 个已等价合入 main 的 codex 分支（含 `ai-chat-modes-20260826`、`expo-kiosk-lead-scope`，后者的 superpowers 设计/计划稿已补进 main）与 4 个远端孤儿分支中的 2 个已删除。远端 `codex/fix-sales-candidate-submit-500`（修的 `identity_candidates` UNION 已在 2026-08-31 统一客户重构中退役）与 `codex/mobile-web-reporting`（内贸手机浏览器扫码报工，未合入，被 PDA 原生 + 小程序路线取代）已按亮哥指令于 2026-09-02 删除，origin 只剩 `main`；`cloud` 远端残留的 `codex/unified-customer-profile`（内容已全在 main）也已于 2026-09-02 删除，北京仓库 HEAD 仍在 main `82dd4f3d`（cherry-pick 分叉状态未变）。stash `codex-pre-merge-knowledge-20260810` 按亮哥指令保留。线上探测口径：leshine.work 后端返回 403/401 = 路由已部署；GET 探测到 404 不能下结论，要用真实 HTTP 方法；前端以首页 `index-*.js` 引用的全部 chunk 为准 grep 特征字符串。本机无法直连办公室 8001 与服务器 SSH，未核对 deploy marker 与服务重启日志。
+### WhatsApp 实时翻译 v1.1（2026-09-04，开发完成）
+
+分支 `claude/whatsapp-translation-v2`。交互修复：发出方向目标语言接通（原先恒为 zh-CN 原样返回）、恢复预览-替换-恢复原文流程、工具条挂到 footer 首子节点、全中文文案并按错误码给下一步、弹窗显示员工姓名与默认发送语言（默认 English）、发送语言按聊天记忆（沿用哈希键）、「启用翻译」开关在后台 fail-closed。译文质量：收发拆两个 preset（收件端忠实/发件端商务聊天语域，发件带回译 `back_translation`）、外贸术语表复用 `sys_dict` 类型 `whatsapp_glossary_<lang>`（启动幂等种子 + 运行时只注入命中项，管理端在数据字典维护）、可识别源语言从 constants 运行时注入不写死在 prompt。扩展 1.0.3 → 1.1.0，后端最低扩展版本保持 1.0.0。
+
+验证：后端翻译专项 33 通过；扩展 62 通过（typecheck + vitest + Vite 构建通过）。未做：对抗性审查、检查约定脚本、实机三平台验收、合并推送。第 3 部分（知识库回复建议）未启动。
+
 ## 2026-08-26 AI 方案对话 · 四种对话方式
 
 - **实现分支**：`codex/ai-chat-modes-20260826`。将旧四入口替换为深度思考、天赋挖掘、未知领域引导、寓言讲概念；规则文件化，点击不覆盖草稿、不自动发送。Skill 显示服务端确认的加载状态并可折叠预览；内置规则不占附件名额。历史方式固定，另开会话换方式；草稿、刷新、停止/重试与只读模式均保留对应边界。

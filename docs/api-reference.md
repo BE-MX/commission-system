@@ -1135,7 +1135,7 @@ MCP `/mcp` 新增 `search_knowledge` 与 `get_knowledge_document`。二者使用
 | GET/DELETE | `/devices/me`, `/devices/me/{device_id}` | Ark JWT + `whatsapp_translation:write` | 查询本人设备并自撤销；只返回设备元数据。 |
 | GET | `/usage/me` | Ark JWT + `whatsapp_translation:write` | 本人聚合用量，不含文本。 |
 | GET | `/session`、`/capabilities` | 设备 Bearer + `X-Ark-Extension-Version` | 会话、能力、最低扩展版本和额度元数据。 |
-| POST | `/translate` | 设备 Bearer | body `request_id`(UUID)、`direction`、`source_language`、`target_language`、`text`；返回译文、检测语言、`model_log_id`。服务端只记录长度、方向、语言、token 用量、耗时和错误码。 |
+| POST | `/translate` | 设备 Bearer | body `request_id`(UUID)、`direction`、`source_language`、`target_language`、`text`；返回译文、检测语言、`model_log_id`，发出方向额外返回 `back_translation`（中文回译）。服务端只记录长度、方向、语言、token 用量、耗时和错误码。 |
 | GET/DELETE | `/admin/devices`, `/admin/devices/{device_id}` | Ark JWT + `whatsapp_translation:admin` | 管理设备与撤销。 |
 | GET | `/admin/usage`, `/admin/health` | Ark JWT + `whatsapp_translation:admin` | 聚合用量、健康、成功率与窗口。 |
 

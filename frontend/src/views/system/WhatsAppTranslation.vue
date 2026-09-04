@@ -16,6 +16,11 @@
     </el-card>
 
     <el-card class="section-card" shadow="never">
+      <template #header>翻译术语表</template>
+      <p>外贸术语由「系统管理 → 数据字典」维护，按目标语言分类型：<code>whatsapp_glossary_en</code>、<code>whatsapp_glossary_es</code>、<code>whatsapp_glossary_fr</code>、<code>whatsapp_glossary_ar</code>、<code>whatsapp_glossary_ja</code>。code 填中文术语，label 填对应语言术语，翻译时只注入命中的条目。</p>
+    </el-card>
+
+    <el-card class="section-card" shadow="never">
       <template #header>
         <div class="card-header">
           <span>设备</span>
