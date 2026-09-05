@@ -1008,7 +1008,7 @@ grep "job completed" logs\service.log | tail -20
 
 ## 云端展会实例（http://154.8.205.162，2026-07-22 搭建；leshine.cloud 当天被未备案拦截已弃用）
 
-北京轻量服务器（4C8G/12M，Ubuntu 24.04）跑方舟完整后端 + 前端静态，**专门服务展会场景**。三入口：`https://leshine.cloud` 主站（相机可用）、http 域名 301 跳 https、`http://154.8.205.162` IP 兜底。**证书 TrustAsia 90 天期，2026-10-19 到期需续**（/etc/nginx/ssl/，主域与 hair 子域两张同批到期）。发型静态展示站曾挂本机 hair.leshine.cloud——**2026-07-22 当天 leshine.cloud 全域被未备案拦截**（80 跳 dnspod webblock 页、443 TLS RST，灰度铺开「部分手机能开」），当日迁至新加坡机 `hair.leshine.work`（/var/www/hair-styles，conf.d/hair.leshine.conf，certbot webroot 证书 2026-10-20 到期**自动续期**）；展会二维码指向 `https://hair.leshine.work/#/p/<产品编号>`，16 张码图在亮哥 Downloads\莱莎16款明星发型静态网页\qrcodes\（.cloud 旧码已覆盖作废）。本机保留 IP 兜底入口：主站 `http://154.8.205.162`、发型站 `http://154.8.205.162/hair/`（子路径挂站注意 `^~` 防 .html 正则截胡，见 cerebrum 2026-07-22）。⚠️ leshine.cloud 未备案（.cloud 后缀疑似不可备案，待腾讯云备案控制台核实）——机房对未备案域名周期扫描拦截，**随时可能失效**，被拦即退 IP 入口，正式方案等 leshine.work 备案。与办公室生产实例共用北京 RDS（同区延迟 2.1ms）；`.env` 三处差异：`SCHEDULER_ENABLED=false`（定时任务只在办公室跑，expo 看门狗是读取时自愈不受影响）、`WHATSAPP_AUTO_SYNC_ENABLED=false`、`TFT_SERVICE_ENABLED=false`（内网服务不可达），另加 `PDF_CJK_FONT_PATH` 指向 Noto CJK。
+北京轻量服务器（文档规格 4C8G/12M，Ubuntu 24.04）运行方舟后端及静态站。2026-09-05 用户确认 `leshine.cloud` 备案通过，已验证 `leshine.cloud`、`www.leshine.cloud`、`hair.leshine.cloud`、`media.leshine.cloud` 标准 HTTPS 正常。主域、发型站及素材站已改为 Let's Encrypt 自动续期，当前证书到期日 2026-12-04；证书位于 `/etc/letsencrypt/live/<域名>/`，续期后执行 Nginx 配置检查与 reload。旧 IP 入口仍服务已有终端，但新入口优先使用正式域名。新加坡 `.work` 保留既有二维码与海外入口。数据库继续共享北京 RDS，业务原件尚未迁移：办公室文件仍归办公室，北京客户素材仍在 `/data/customer-media`。北京 `.env` 中 `SCHEDULER_ENABLED=false`、`WHATSAPP_AUTO_SYNC_ENABLED=false`、`TFT_SERVICE_ENABLED=false`；不得随此发布把后台任务迁成双活。具体已上线与待办见 [本次实施记录](requirements/2026-09-05-deployment-adjustment-implementation.md)。
 
 - **发型静态站改内容要同步两份副本（2026-07-24 踩）**：这个站有**两处线上部署**，只更一处会让兜底入口继续发旧版——
   ①新加坡 `root@119.28.107.92:/var/www/hair-styles`（正式域名 hair.leshine.work，二维码指向这里）；
@@ -1048,11 +1048,7 @@ grep "job completed" logs\service.log | tail -20
   nginx 默认就压 text/html）；`video.leshine.conf:15` 对 `0.0.0.0:443` 重定义 protocol options——同一 listen
   地址只有第一个 server block 的 `ssl_protocols` 生效，video 站那份被忽略，需要时统一到一处再改。
 
-- **北京机 nginx 已摘掉 hair.leshine.cloud 的 server block（2026-07-27）**：`sites-enabled/hair-styles.conf` 软链删除、
-  `sites-available/hair-styles.conf` 移到 `~/nginx-retired-20260727/`（带 README 说明恢复步骤），reload 后
-  `/hair/` 兜底、方舟主站、kiosk 443 四条入口复验全 200。摘它是因为 .cloud 域名 2026-07-22 起再无流量，
-  留着会让人误以为该域名还在服务。**443 的 `default_server` 由 `ark-ip-ssl.conf` 显式持有，与本次摘除无关**；
-  改前全量备份在 `~/nginx-backup-20260727/`。证书 `hair.leshine.cloud_bundle.crt` 2026-10-19 到期不再续。
+- **发型 `.cloud` 入口已恢复（2026-09-05）**：生效配置为 `/etc/nginx/conf.d/hair.leshine.cloud.conf`，根目录 `/var/www/hair-styles`，自动续期证书覆盖 `hair.leshine.cloud`。保留 `.work` 二维码和 `/hair/` 既有入口。2026-07-27 退役记录仅作历史参考，不能据此再次摘除新域名。
 
 - **素材缓存（2026-08-01 加，`ark-ip-ssl.conf`）**：`/uploads/expo/` 配 `expires 30d` + `Cache-Control: public`，`/uploads/expo/results/` 单列一个 location **刻意不缓存**。
   - **改之前的症状**：该 location 只有裸 `proxy_pass`，响应只带 `etag`/`last-modified` 而**没有任何 Cache-Control**——WebView 拿不到有效期，只能每次加载都发条件请求换一个 304。图片本体没重传，但一次完整往返跑不掉，发型库一屏 16 张缩略图就是 16 次往返。平板 APK 的 `cacheMode = LOAD_DEFAULT`（`MainActivity.kt:106`）是正确设置，**锅在服务端不在 APK**。

@@ -47,6 +47,20 @@ class SourceReleaseTests(unittest.TestCase):
                 self.assertEqual(git(live, "symbolic-ref", "--short", "HEAD"), "main")
                 self.assertEqual(git(live, "rev-parse", "--abbrev-ref", "@{upstream}"), "origin/main")
 
+            git(live, "config", "user.name", "Deployment Test")
+            git(live, "config", "user.email", "deployment-test@example.invalid")
+            (live / "code.txt").write_text("reviewed local change")
+            git(live, "commit", "-am", "Unpushed reviewed change")
+            source, revision, previous = source_release.prepare(live, live / ".deploy_state", True)
+            self.assertEqual(revision, previous)
+            self.assertEqual((source / "code.txt").read_text(), "reviewed local change")
+            (author / "code.txt").write_text("divergent change")
+            git(author, "commit", "-am", "Divergent change")
+            git(author, "push")
+            with self.assertRaisesRegex(RuntimeError, "not a fast-forward"):
+                source_release.prepare(live, live / ".deploy_state", True)
+            self.assertEqual(git(live, "rev-parse", "HEAD"), previous)
+
     def test_unverified_database_writers_block_before_any_stop(self):
         with patch.object(schema_release, "control") as control:
             with self.assertRaisesRegex(RuntimeError, "no services stopped"):

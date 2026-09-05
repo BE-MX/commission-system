@@ -19,7 +19,8 @@
 | [module-notes.md](module-notes.md) | 模块专题笔记 + 各模块已踩坑 | 改对应模块前必读 |
 | [integration-guide.md](integration-guide.md) | API 接入指南、认证方式、错误码、示例代码 | 下游系统开发者、外部集成 |
 | [runbook.md](runbook.md) | 部署步骤、运维命令、故障排查、环境变量清单 | 运维人员、项目交接 |
-| [全平台部署调整方案（2026-09-05）](requirements/2026-09-05-deployment-adjustment-plan.md) | 本地/北京/新加坡/COS 盘点、海外实测、域名规划与全平台增量发布方案（待实施） | 技术负责人、运维 |
+| [全平台部署调整方案（2026-09-05）](requirements/2026-09-05-deployment-adjustment-plan.md) | 本地/北京/新加坡/COS 盘点、海外实测、域名规划与全平台增量发布方案（部分已实施，见实施记录） | 技术负责人、运维 |
+| [部署调整实施记录（2026-09-05）](requirements/2026-09-05-deployment-adjustment-implementation.md) | 实际上线、增量发布验证、暂缓 COS 与办公室/DNS 待办 | 技术负责人、运维 |
 | [handoff.md](handoff.md) | 项目状态、已完成功能、待办清单、技术债务 | 项目交接、管理层 |
 | [accio-work-integration-spec.md](accio-work-integration-spec.md) | ACCIO WORK → 方舟 客户机会台集成规范 | ACCIO WORK 开发团队 |
 | [mcp-tracking-integration.md](mcp-tracking-integration.md) | 方舟 MCP 网关接入说明：物流、素材、企业知识、产品目录与标准参考价共 9 个工具（个人 token） | AI 客户端接入者 |

@@ -15,8 +15,11 @@ def prepare(live, state, pull):
     revision = previous
     if pull:
         git("fetch", "--prune")
-        revision = git("rev-parse", "@{upstream}")
-        if git("merge-base", previous, revision) != previous:
+        upstream = git("rev-parse", "@{upstream}")
+        base = git("merge-base", previous, upstream)
+        if base == previous:
+            revision = upstream
+        elif base != upstream:
             raise RuntimeError("Deployment source is not a fast-forward; reconcile Git first")
     source = state / "sources" / revision
     if not source.exists():

@@ -1,7 +1,7 @@
 # 莱莎方舟平台 架构说明
 
 > **版本**：v1.0  
-> **最后更新**：2026-08-10
+> **最后更新**：2026-09-05
 > **目标读者**：技术接手人、新后端开发
 
 ## 系统概览
@@ -12,31 +12,27 @@
 
 ### 部署架构
 
-```
-外网用户 → 腾讯云 Nginx (119.28.107.92:443, 新加坡)
-  ├── 静态文件 (/assets/, /index.html) → Nginx 直接返回 (/var/www/ark/dist/)
-  ├── API (/api/, /uploads/, /s/, /health) → frp 内网穿透（云端 frps :7000 / 本地 frpc NSSM 服务）→ 本地 Windows Server (:8002)
-  ├── /uploads/expo/ → 代理缓存直出（2026-07-22 起，30d TTL + use_stale，素材二次访问不走隧道）
-  ├── hair.leshine.work → 静态直出 /var/www/hair-styles（发型展示站，展会二维码落地页；**正式入口**）
-  │     ├── /            → 单文件 SPA，16 款产品内联 window.PRODUCTS，hash 路由 #/p/<slug>
-  │     └── /<slug>/     → 子路径独立页（整份外部静态站原样放子目录，nginx 零改动；首例 /yidaoqie/）
-  └── 社媒客户 MCP (/mcp/social-customer/) → 云端 systemd Python (:8100 loopback) → RDS lsordertest（只读账号）
+以下是 2026-09-05 已验证现状；办公室直连北京隧道、内网 DNS 和 PM `.cloud` 入口尚待完成，不能按目标方案当作已经上线。
 
-展会流量 → 北京云展会实例 (154.8.205.162, 腾讯云北京轻量 4C8G, Ubuntu 24.04)
-  ├── nginx :80 → 前端静态 /var/www/ark-dist + uvicorn :8001（方舟完整后端，
-  │   SCHEDULER_ENABLED=false 防定时任务双跑；与办公室实例共用北京 RDS，同区 ~2ms）
-  ├── nginx :443 → 自签证书（CN=IP，2036 到期）仅接管 IP 直连，为平板 kiosk 拿回相机所需 secure context
-  └── /hair/ → 发型站**兜底副本**（^~ 前缀挂载，root /var/www，/var/www/hair 软链至 /var/www/hair-styles）
-
-局域网用户 → 本地 IP:8002 直连
+```text
+公司内网 → 办公室 Windows / CommissionSystem :8002
+leshine.work / pm.leshine.work → 新加坡 Nginx 静态 + frps → 办公室 :8002
+leshine.cloud / www → 北京 Nginx 静态 + ark-backend :8001
+media.leshine.cloud → 北京客户素材门户 + /data/customer-media
+leshine.work/api/customer-media/ → 经过证书验证的 HTTPS → 北京素材服务
+hair.leshine.cloud → 北京发型静态站
+hair.leshine.work / video.leshine.work → 新加坡现有静态站
+所有方舟后端 → 同一北京 RDS commission_db / lsordertest
 ```
 
-- **云端 Nginx**（新加坡）：静态资源直出 + gzip + SSL（证书 `/etc/nginx/ssl/`；hair 子域 certbot 自动续期）
-- **本地后端**：NSSM 托管 `CommissionSystem` 服务（uvicorn）
-- **WhatsApp Connector**：独立 Node.js 服务，NSSM 托管 `WhatsAppConnector`
-- **社媒客户 MCP**：独立 Python/FastMCP 云端服务，systemd 托管 `social-customer-mcp`；不经过 frp，Bearer 鉴权，端口仅监听 loopback
-- **北京云展会实例**（2026-07-22 搭建，展会专用）：systemd 托管 `ark-backend`；部署走开发机 `git push cloud`（服务器本地 bare 仓库，不经 GitHub）；leshine.cloud 域名当天遭未备案拦截弃用，现用 IP 入口，终局等 leshine.work 备案；运维细节见 runbook「云端展会实例」节；展会后计划以此机为基础全量迁移上云
-- **发型展示站（hair）有两份线上副本，改内容必须同步**：新加坡 `/var/www/hair-styles`（正式域名，二维码指向这里）与北京 `/var/www/hair-styles`（IP 兜底 `/hair/`）。两机同结构、同内容（以 md5 校验为准），只更一处会让兜底入口继续发旧版。站点与方舟主站完全解耦——不进 `frontend/`、不走 deploy.bat、不受前端重建影响，源码回存在亮哥 `Downloads\00_Inbox\莱莎16款明星发型静态网页\`。更新步骤、子路径页三个约束（资源须相对路径 / 返回链接用 `../` / 卡片图竖构图）与展会二维码复刻规格见 runbook 同节
+- 北京后端、主站和素材门户已通过统一入口更新；新加坡 PM 页面与制品一致，已接入受管静态目录。新加坡主站新版前端等待办公室后端一起发布。
+- 代码发布入口为 `deploy/deploy.bat`，先在候选 worktree 构建，再按 SHA-256 只传变化文件。共享数据库每轮核对一次目标版本，云节点不单独重复迁移。运行细节见 [部署说明](../deploy/README.md)。
+- COS 文件迁移暂缓；办公室素材、PM、知识库等文件仍归原实例，北京客户素材仍在 `/data/customer-media`。在文件依赖与登录契约验证前，不能把全部业务 API 无差别切到北京。
+- 办公室 NSSM 管理 `CommissionSystem`、`WhatsAppConnector`；新加坡保留 frps、中继、MCP、同步器等既有独立服务。完整登记与未纳管项见 [platforms.json](../deploy/platforms.json)。
+- 已有主域、发型 `.cloud`、素材 `.cloud`、中继 `.work` 的证书已修复并接入自动续期；新加坡 PM/hair/video 沿用既有自动续期。
+- hair 的历史源码位置是亮哥 Downloads 下「莱莎16款明星发型静态网页」，本机两个历史路径均未找到。两机已上线副本仍保留，内容变更前需找回并确认权威源码。video 同样尚未纳入本仓库源码发布；不以任一临时副本冒充权威源。
+
+完整功能盘点、地域测速和目标部署结构见 [部署调整方案](requirements/2026-09-05-deployment-adjustment-plan.md)，实际落地与阻断见 [实施记录](requirements/2026-09-05-deployment-adjustment-implementation.md)。
 
 ## 技术栈
 
