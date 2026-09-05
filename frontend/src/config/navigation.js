@@ -343,10 +343,10 @@ export const NAV_ENTRIES = [
     path: '/customer-hub/radar',
     name: 'CustomerHubRadar',
     component: () => import('@/views/customer_hub/CustomerRadar.vue'),
-    title: '经营雷达',
+    title: '今日工作台',
     anyPermission: ['customer_radar:read'],
     menu: {
-      group: 'customerOperations', title: '经营雷达', icon: Aim, order: 50,
+      group: 'customerOperations', title: '今日工作台', icon: Aim, order: 0,
       anyPermission: ['customer_radar:read'],
     },
   },

@@ -34,6 +34,7 @@
         <el-select v-else-if="kind === 'acquisition'" v-model="searchForm.status" clearable placeholder="全部任务状态" aria-label="筛选任务状态" @change="handleSearch">
           <el-option v-for="status in ['pending', 'running', 'completed', 'failed']" :key="status" :label="statusLabel(status)" :value="status" />
         </el-select>
+        <el-select v-else-if="kind === 'research'" v-model="searchForm.review_status" clearable placeholder="全部研究任务" aria-label="筛选研究质量" @change="handleSearch"><el-option label="已完成 · 待质量复核" value="pending" /><el-option label="质量已通过" value="accepted" /><el-option label="待修订" value="revision_requested" /><el-option label="已驳回" value="rejected" /></el-select>
         <div v-else class="toolbar-note">按最近更新时间排序 · 权限范围由方舟统一控制</div>
         <GlassButton variant="secondary" left-icon="Refresh" :loading="loading" @click="handleSearch">刷新</GlassButton>
       </div>
@@ -47,7 +48,7 @@
               </button>
             </template>
           </el-table-column>
-          <el-table-column label="身份" min-width="116"><template #default="{ row }"><el-tag :type="row.identity_status === 'verified' ? 'success' : 'warning'" size="small">{{ row.identity_status || 'provisional' }}</el-tag></template></el-table-column>
+          <el-table-column label="身份" min-width="116"><template #default="{ row }"><el-tag :type="row.identity_status === 'verified' ? 'success' : 'warning'" size="small">{{ identityLabel(row.identity_status) }}</el-tag></template></el-table-column>
           <el-table-column prop="primary_industry" label="行业" min-width="130" max-width="220" show-overflow-tooltip><template #default="{ row }">{{ row.primary_industry || '待补充' }}</template></el-table-column>
           <el-table-column prop="relationship_stage" label="关系阶段" min-width="120" max-width="180" show-overflow-tooltip />
           <el-table-column label="归属" min-width="118"><template #default="{ row }">{{ row.is_public_pool ? '公海' : '已分配' }}</template></el-table-column>
@@ -65,28 +66,28 @@
         </template>
 
         <template v-else-if="kind === 'research'">
-          <el-table-column label="客户" min-width="130"><template #default="{ row }"><button v-if="canOpenDetail" class="customer-link compact" type="button" @click="openCustomer(row.customer_id)">#{{ row.customer_id }}</button><span v-else>#{{ row.customer_id }}</span></template></el-table-column>
-          <el-table-column prop="task_type" label="背调类型" min-width="150" max-width="240" show-overflow-tooltip />
+          <el-table-column label="客户" min-width="130"><template #default="{ row }"><button v-if="canOpenDetail" class="customer-link compact" type="button" @click="openCustomer(row.customer_id)">{{ row.customer_name || `临时客户 #${row.customer_id}` }}</button><span v-else>{{ row.customer_name || `临时客户 #${row.customer_id}` }}</span></template></el-table-column>
+          <el-table-column label="背调类型" min-width="150" max-width="240" show-overflow-tooltip><template #default="{ row }">{{ researchTypeLabels[row.task_type] || '客户研究' }}</template></el-table-column>
           <el-table-column prop="tier" label="层级" min-width="90" />
           <el-table-column label="执行状态" min-width="110"><template #default="{ row }"><el-tag :type="tagType(row.task_status)" size="small">{{ statusLabel(row.task_status) }}</el-tag></template></el-table-column>
-          <el-table-column prop="result_review_status" label="结果复核" min-width="120" />
-          <el-table-column prop="data_classification" label="数据级别" min-width="150" max-width="220" show-overflow-tooltip />
+          <el-table-column label="研究质量" min-width="120"><template #default="{ row }">{{ operationStatusLabel(row.result_review_status) }}</template></el-table-column>
+          <el-table-column label="数据级别" min-width="150" max-width="220" show-overflow-tooltip><template #default="{ row }">{{ classificationLabels[row.data_classification] || '待确认' }}</template></el-table-column>
           <el-table-column label="操作" min-width="110" max-width="150" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="$emit('inspect-task', row)">查看详情</GlassButton></template></el-table-column>
         </template>
 
         <template v-else-if="kind === 'opportunities'">
           <el-table-column prop="title" label="机会" min-width="240" max-width="380" show-overflow-tooltip />
-          <el-table-column label="客户" min-width="120"><template #default="{ row }"><button v-if="canOpenDetail" class="customer-link compact" type="button" @click="openCustomer(row.customer_id)">#{{ row.customer_id }}</button><span v-else>#{{ row.customer_id }}</span></template></el-table-column>
+          <el-table-column label="客户" min-width="120"><template #default="{ row }"><button v-if="canOpenDetail" class="customer-link compact" type="button" @click="openCustomer(row.customer_id)">{{ row.customer_name || `临时客户 #${row.customer_id}` }}</button><span v-else>{{ row.customer_name || `临时客户 #${row.customer_id}` }}</span></template></el-table-column>
           <el-table-column label="状态" min-width="110"><template #default="{ row }"><el-tag :type="tagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
           <el-table-column prop="priority_level" label="优先级" min-width="100" />
-          <el-table-column prop="owner_user_id" label="负责人" min-width="100" />
+          <el-table-column prop="owner_name" label="负责人" min-width="100" />
           <el-table-column label="截止时间" min-width="170"><template #default="{ row }">{{ formatDate(row.due_at) }}</template></el-table-column>
-          <el-table-column label="操作" min-width="100" max-width="140" fixed="right"><template #default="{ row }"><GlassButton v-any-permission="['customer_opportunity:write', 'customer:admin']" variant="link" left-icon="Edit" :disabled="getOpportunityTransitionOptions(row.status).length === 0" @click="$emit('edit-opportunity', row)">更新</GlassButton></template></el-table-column>
+          <el-table-column label="操作" min-width="100" max-width="140" fixed="right"><template #default="{ row }"><GlassButton v-any-permission="['customer_opportunity:write', 'customer:admin']" variant="link" left-icon="Edit" :disabled="!row.can_operate || getOpportunityTransitionOptions(row.status).length === 0" @click="$emit('edit-opportunity', row)">更新</GlassButton></template></el-table-column>
         </template>
 
         <template v-else>
           <el-table-column prop="action_type" label="建议动作" min-width="200" max-width="360" show-overflow-tooltip />
-          <el-table-column label="客户" min-width="120"><template #default="{ row }"><button v-if="canOpenDetail" class="customer-link compact" type="button" @click="openCustomer(row.customer_id)">#{{ row.customer_id }}</button><span v-else>#{{ row.customer_id }}</span></template></el-table-column>
+          <el-table-column label="客户" min-width="120"><template #default="{ row }"><button v-if="canOpenDetail" class="customer-link compact" type="button" @click="openCustomer(row.customer_id)">{{ row.customer_name || `临时客户 #${row.customer_id}` }}</button><span v-else>{{ row.customer_name || `临时客户 #${row.customer_id}` }}</span></template></el-table-column>
           <el-table-column label="状态" min-width="105"><template #default="{ row }"><el-tag :type="tagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
           <el-table-column prop="priority" label="优先级" min-width="100" />
           <el-table-column label="建议完成时间" min-width="170"><template #default="{ row }">{{ formatDate(row.due_at) }}</template></el-table-column>
@@ -129,6 +130,7 @@ import { formatBeijingDateTime } from '@/utils/datetime'
 import { useAuthStore } from '@/stores/auth'
 import { canRequeueJob, createSearchJobPollingController, getOpportunityTransitionOptions, getRadarOperationOptions, getSearchJobFeedback, shouldPollSearchJobs } from './customerHubController'
 import CustomerDetailDrawer from './CustomerDetailDrawer.vue'
+import { classificationLabels, identityLabel, researchTypeLabels, statusLabel as operationStatusLabel } from './operationsPresentation'
 import { useCustomerHub } from './composables/useCustomerHub'
 
 const props = defineProps({ kind: { type: String, required: true } })
@@ -140,7 +142,7 @@ const CONFIG = {
   customers: { title: '客户档案', description: '方舟唯一客户主档：先识别主体，再组织证据与经营动作。', countLabel: '可见客户', emptyText: '暂无可见客户；无主负责人客户会进入公海。' },
   acquisition: { title: '获客任务', description: '追踪搜索任务、策略版本与进入方舟主档的结果。', countLabel: '搜索任务', emptyText: '暂无搜索任务。' },
   research: { title: '背调中心', description: '查看客户证据采集进度与人工复核状态。', countLabel: '背调任务', emptyText: '暂无待处理背调任务。' },
-  opportunities: { title: '客户机会', description: '以 customer_id 串联机会、负责人和截止时间。', countLabel: '经营机会', emptyText: '当前没有可见客户机会。' },
+  opportunities: { title: '客户机会', description: '跟进客户机会，结合沟通证据更新进展。', countLabel: '经营机会', emptyText: '当前没有可见客户机会。' },
   radar: { title: '经营雷达', description: '把高优先级信号转成清晰、可反馈的下一步行动。', countLabel: '建议动作', emptyText: '当前没有待处理经营动作。' },
 }
 const config = CONFIG[props.kind]
@@ -160,7 +162,7 @@ watch(list, jobPolling.sync, { immediate: true })
 onBeforeUnmount(jobPolling.dispose)
 
 const rowKey = row => row.job_id || row.research_task_id || row.opportunity_id || row.action_id || row.customer_id
-const statusLabel = status => ({ pending: '待处理', running: '执行中', completed: '已完成', failed: '失败', open: '进行中', dismissed: '已忽略', snoozed: '已延后' }[status] || status || '未知')
+const statusLabel = status => ({ running: '执行中', failed: '失败', open: '进行中' }[status] || operationStatusLabel(status))
 const tagType = status => ({ completed: 'success', failed: 'danger', running: 'warning', open: 'warning', dismissed: 'info' }[status] || 'info')
 
 async function openCustomer(customerId) {
@@ -172,6 +174,7 @@ async function retryJob(row) {
   await requeueJob(row.job_id)
   msgSuccess('重新入队')
 }
+defineExpose({ refresh: fetchList })
 </script>
 
 <style scoped>

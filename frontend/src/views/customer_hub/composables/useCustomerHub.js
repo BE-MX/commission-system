@@ -116,7 +116,7 @@ export function useRadarWorkflow() {
   return { workflowLoading, workflowError, submit }
 }
 
-export function useCustomerHub(kind) {
+export function useCustomerHub(kind, options = {}) {
   const error = ref(null)
   const lastSuccessfulAt = ref(null)
   const detail = ref(null)
@@ -145,7 +145,8 @@ export function useCustomerHub(kind) {
     }
     return { items: listResource.items, total: listResource.total }
   }, {
-    searchForm: kind === 'customers' ? { keyword: '' } : kind === 'acquisition' ? { status: '' } : {},
+    searchForm: kind === 'customers' ? { keyword: '' } : kind === 'acquisition' ? { status: '' } : kind === 'research' ? { review_status: '' } : {},
+    ...options,
   })
 
   const empty = computed(() => !loading.value && !error.value && state.list.value.length === 0)

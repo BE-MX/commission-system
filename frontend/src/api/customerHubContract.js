@@ -1,5 +1,10 @@
 export function createCustomerHubApi(client) {
   return {
+    listWorkbench: params => client.get('/workbench', { params, showLoading: false }),
+    listQualificationQueue: params => client.get('/qualification-queue', { params, showLoading: false }),
+    getQualificationContext: taskId => client.get(`/qualification-queue/${taskId}`, { showLoading: false }),
+    submitQualificationDecision: (taskId, payload) => client.post(`/qualification-queue/${taskId}/decision`, payload),
+    listCustomerEvidence: (customerId, params) => client.get(`/customers/${customerId}/evidence`, { params, showLoading: false }),
     listCustomers: params => client.get('/customers', { params, showLoading: false }),
     getCustomer: customerId => client.get(`/customers/${customerId}`),
     listCustomerTimeline: (customerId, params) => client.get(`/customers/${customerId}/timeline`, { params, showLoading: false }),

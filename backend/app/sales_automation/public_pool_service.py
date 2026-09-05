@@ -918,7 +918,7 @@ def _qualification_reference_customer(
             raise service.ConflictError("资格审核来源对象无效")
         row = db.query(CustomerResearchTask).filter(
             CustomerResearchTask.id == int(source_ref_id),
-        ).with_for_update().one_or_none()
+        ).populate_existing().with_for_update().one_or_none()
         if row is None:
             raise service.ConflictError("资格审核来源对象不存在")
         return require_effective_owner(db, "research_task", row.id)

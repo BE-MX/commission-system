@@ -83,16 +83,6 @@ export function getRadarOperationOptions(status) {
   return []
 }
 
-function parseIdList(value) {
-  if (Array.isArray(value)) return value.map(Number).filter(item => Number.isInteger(item) && item > 0)
-  return String(value || '').split(',').map(item => item.trim()).filter(item => /^\d+$/.test(item)).map(Number).filter(item => item > 0)
-}
-
-export function getInvalidIdTokens(value) {
-  if (Array.isArray(value)) return value.map(String).filter(item => !/^[1-9]\d*$/.test(item))
-  return String(value || '').split(',').map(item => item.trim()).filter(item => item && !/^[1-9]\d*$/.test(item))
-}
-
 export function getTimelineLimitNotice(visibleCount, total) {
   return visibleCount > 0 && total > visibleCount ? `当前展示最近 ${visibleCount} / ${total} 条记录` : ''
 }
@@ -110,8 +100,8 @@ export function buildOpportunityUpdate(form) {
     close_reason_code: form.closeReasonCode || null,
     close_reason_text: form.closeReasonText || null,
     linked_order_id: form.linkedOrderId ? Number(form.linkedOrderId) : null,
-    evidence_event_ids: parseIdList(form.evidenceEventIdsText ?? form.evidenceEventIds),
-    evidence_fact_ids: parseIdList(form.evidenceFactIdsText ?? form.evidenceFactIds),
+    evidence_event_ids: [...new Set(form.evidenceEventIds || [])],
+    evidence_fact_ids: [...new Set(form.evidenceFactIds || [])],
   }
 }
 
@@ -123,6 +113,11 @@ export function buildActionUpdate(operation, form = {}) {
     operation: 'complete', outcome_code: form.outcomeCode || 'other', channel: form.channel || null,
     occurred_at: beijingDateTime(form.occurredAt), summary: form.summary || null, next_step: form.nextStep || null,
     feedback: form.feedback || null, note: form.note || null,
+    ...(form.scheduleNext ? {
+      next_step_due_at: beijingDateTime(form.nextStepDueAt),
+      followup_action_type: form.followupActionType || 'email',
+      followup_channel: form.followupChannel || 'email',
+    } : {}),
   }
 }
 

@@ -369,7 +369,7 @@ def test_split_overlay_routes_use_logical_customer_for_review_and_updates(db, mo
         "permissions": ["sales_automation:admin", "sales_automation:read",
                         "customer_opportunity:write", "customer_radar:write"],
     }
-    queue = customer_router.qualification_queue(page=1, page_size=20, db=db, user=identity)
+    queue = customer_router.qualification_queue(page=1, page_size=20, keyword=None, db=db, user=identity)
     assert queue["data"]["items"][0]["customer_id"] == logical.id
     public_pool_service.get_task(db, task.id)
     detailed_task = sales_router._research_task(task, include_content=True)

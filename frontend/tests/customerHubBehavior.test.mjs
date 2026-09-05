@@ -9,7 +9,6 @@ import {
   createSearchJobIdempotencyKey,
   createSearchJobDraft,
   createSearchJobPollingController,
-  getInvalidIdTokens,
   getOpportunityTransitionOptions,
   getRadarOperationOptions,
   getResearchReviewSuccessMessage,
@@ -68,7 +67,7 @@ test('opportunity and radar action payloads follow backend schemas', () => {
   })
   assert.deepEqual(buildOpportunityUpdate({
     status: 'won', reason: 'order received', closeReasonCode: 'order_confirmed', linkedOrderId: '12',
-    evidenceEventIdsText: '4, 5', evidenceFactIdsText: '2, 3',
+    evidenceEventIds: [4, 5], evidenceFactIds: [2, 3],
   }), {
     status: 'won', reason: 'order received', close_reason_code: 'order_confirmed', close_reason_text: null,
     linked_order_id: 12, evidence_event_ids: [4, 5], evidence_fact_ids: [2, 3],
@@ -92,6 +91,39 @@ test('opportunity and radar action payloads follow backend schemas', () => {
   assert.deepEqual(getRadarOperationOptions('pending'), ['complete', 'snooze', 'dismiss', 'feedback'])
   assert.deepEqual(getRadarOperationOptions('snoozed'), ['feedback'])
   assert.deepEqual(getRadarOperationOptions('done'), ['feedback'])
+})
+
+test('dated followup is opt-in and always uses explicit Beijing time', () => {
+  const form = { nextStep: 'Send sample list', nextStepDueAt: '2026-09-07T09:30:00', followupActionType: 'email', followupChannel: 'email' }
+  assert.equal(buildActionUpdate('complete', form).next_step_due_at, undefined)
+  const payload = buildActionUpdate('complete', { ...form, scheduleNext: true })
+  assert.equal(payload.next_step_due_at, '2026-09-07T09:30:00+08:00')
+  assert.equal(payload.followup_action_type, 'email')
+  assert.equal(payload.followup_channel, 'email')
+  assert.deepEqual(buildActionUpdate('feedback', { ...form, scheduleNext: true, feedback: 'useful' }), { operation: 'feedback', feedback: 'useful', note: null })
+})
+
+test('daily operations API preserves scope, evidence stage and qualification retry payload', async () => {
+  const calls = []
+  const client = { get: (...args) => calls.push(['get', ...args]), post: (...args) => calls.push(['post', ...args]) }
+  const api = createCustomerHubApi(client)
+  const scope = { page: 2, page_size: 20, scope: 'mine', view: 'overdue', keyword: 'Aurora' }
+  api.listWorkbench(scope)
+  api.listQualificationQueue({ page: 1 })
+  api.getQualificationContext(10)
+  const payload = { decision: 'defer', reason: 'contract renewal', review_after: '2026-09-10T10:00:00+08:00', context_hash: 'a'.repeat(64), expected_current_review_id: null, request_key: 'b'.repeat(64) }
+  api.submitQualificationDecision(10, payload)
+  api.submitQualificationDecision(10, payload)
+  const evidence = { kind: 'event', opportunity_id: 20, target_status: 'contacted', page: 2 }
+  api.listCustomerEvidence(7, evidence)
+  assert.deepEqual(calls, [
+    ['get', '/workbench', { params: scope, showLoading: false }],
+    ['get', '/qualification-queue', { params: { page: 1 }, showLoading: false }],
+    ['get', '/qualification-queue/10', { showLoading: false }],
+    ['post', '/qualification-queue/10/decision', payload],
+    ['post', '/qualification-queue/10/decision', payload],
+    ['get', '/customers/7/evidence', { params: evidence, showLoading: false }],
+  ])
 })
 
 test('paged resource preserves page_result and ignores out-of-order responses', async () => {
@@ -294,12 +326,6 @@ test('search job drafts keep one request key for retries and rotate for a new dr
 test('production search job idempotency keys satisfy the backend 64-hex contract', () => {
   assert.match(createSearchJobIdempotencyKey(), /^[0-9a-f]{64}$/)
   assert.notEqual(createSearchJobIdempotencyKey(), createSearchJobIdempotencyKey())
-})
-
-test('mixed valid and invalid evidence IDs are rejected instead of silently filtered', () => {
-  assert.deepEqual(getInvalidIdTokens('1024, 10a5, -3, 2048'), ['10a5', '-3'])
-  assert.deepEqual(getInvalidIdTokens('1024, 2048'), [])
-  assert.deepEqual(getInvalidIdTokens(''), [])
 })
 
 test('timeline limit notice makes truncated history explicit', () => {

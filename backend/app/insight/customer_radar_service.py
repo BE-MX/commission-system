@@ -287,6 +287,9 @@ def complete_action(
     summary: str | None = None,
     next_step: str | None = None,
     can_manage: bool = False,
+    next_step_due_at: datetime | None = None,
+    followup_action_type: str = "call",
+    followup_channel: str = "phone",
 ) -> CustomerAction:
     action = db.get(CustomerAction, action_id)
     if action is None:
@@ -304,6 +307,9 @@ def complete_action(
         summary=(summary or note or "行动已由业务员完成").strip(),
         next_step=(next_step if next_step is not None else action.next_action),
         can_manage=can_manage,
+        next_step_due_at=next_step_due_at,
+        followup_action_type=followup_action_type,
+        followup_channel=followup_channel,
     )
     if feedback:
         row.feedback_json = {
@@ -334,7 +340,7 @@ def _action_and_account_for_update(
     action = db.query(CustomerAction).filter(
         CustomerAction.id == action_id,
         logical_root_predicate(CustomerAction, "action", account.id),
-    ).with_for_update().one_or_none()
+    ).populate_existing().with_for_update().one_or_none()
     if action is None:
         raise CustomerWorkflowNotFound("ACTION_NOT_FOUND")
     return _attach_logical_customer(action, account.id), account
@@ -343,6 +349,14 @@ def _action_and_account_for_update(
 def _mark_action_changed(account: CustomerAccount, *, changed_at: datetime) -> None:
     account.profile_input_seq = int(account.profile_input_seq) + 1
     account.updated_at = changed_at
+
+
+def _require_actionable(action: CustomerAction) -> None:
+    if (action.status == "snoozed" and action.snoozed_until is not None
+            and action.snoozed_until <= beijing_now()):
+        return
+    if action.status != "pending":
+        raise CustomerWorkflowConflict("ACTION_NOT_PENDING")
 
 
 def _require_action_actor_scope(
@@ -392,8 +406,7 @@ def dismiss_action(
     if not can_manage and action.owner_user_id != user_id:
         raise CustomerWorkflowConflict("ACTION_OWNER_REQUIRED")
     _require_action_actor_scope(db, action, user_id, can_manage=can_manage)
-    if action.status != "pending":
-        raise CustomerWorkflowConflict("ACTION_NOT_PENDING")
+    _require_actionable(action)
     action.status = "dismissed"
     action.dismissal_reason = reason_code
     action.feedback_json = {
@@ -420,8 +433,7 @@ def snooze_action(
     if not can_manage and action.owner_user_id != user_id:
         raise CustomerWorkflowConflict("ACTION_OWNER_REQUIRED")
     _require_action_actor_scope(db, action, user_id, can_manage=can_manage)
-    if action.status != "pending":
-        raise CustomerWorkflowConflict("ACTION_NOT_PENDING")
+    _require_actionable(action)
     normalized_until = to_beijing_naive(until)
     if normalized_until <= beijing_now():
         raise CustomerWorkflowConflict("SNOOZE_TIME_INVALID")

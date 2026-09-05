@@ -21,6 +21,7 @@ from app.customer.models import (
     CustomerAnnotation,
     CustomerAssignment,
     CustomerEvent,
+    CustomerFact,
     CustomerListProjection,
     CustomerOpportunity,
     CustomerProfileVersion,
@@ -366,8 +367,13 @@ def _batch_research_access(
     }
 
 
-def list_research_tasks(db: Session, user: dict, *, page, page_size):
+def list_research_tasks(db: Session, user: dict, *, page, page_size, review_status=None):
+    from app.customer.workbench_service import customer_labels
+
     query = scoped_research_query(db, user)
+    if review_status:
+        query = query.filter(CustomerResearchTask.result_review_status == review_status,
+                             CustomerResearchTask.task_status == "completed")
     total = query.count()
     owner_id = logical_owner_expression(CustomerResearchTask, "research_task")
     rows = query.with_entities(
@@ -378,13 +384,17 @@ def list_research_tasks(db: Session, user: dict, *, page, page_size):
     accesses = _batch_research_access(
         db, user, {int(owner) for _row, owner in rows},
     )
-    return [serialize_research_task(
+    labels = customer_labels(db, {int(owner) for _row, owner in rows})
+    return [{**serialize_research_task(
         row, accesses[int(owner)],
         customer_id=int(owner),
-    ) for row, owner in rows], total
+    ), **labels.get(int(owner), {})} for row, owner in rows], total
 
 
 def get_research_task(db: Session, user: dict, task_id: int):
+    from app.customer import evidence_service
+    from app.customer.workbench_service import customer_labels
+
     owner_id = logical_owner_expression(CustomerResearchTask, "research_task")
     result = scoped_research_query(db, user).with_entities(
         CustomerResearchTask, owner_id.label("logical_customer_id"),
@@ -397,12 +407,19 @@ def get_research_task(db: Session, user: dict, task_id: int):
     access = _access(
         db, int(logical_customer_id), user, read_permissions=RESEARCH_READ,
     )
-    return serialize_research_task(
+    detail = serialize_research_task(
         row, access, include_content=True, customer_id=int(logical_customer_id),
     )
+    detail.update(customer_labels(db, [int(logical_customer_id)]).get(int(logical_customer_id), {}))
+    if not detail["content_redacted"]:
+        facts = evidence_service.visible_facts(db, access).filter(CustomerFact.id.in_(row.evidence_fact_ids or [])).all()
+        detail["evidence"] = evidence_service.serialize_facts(db, facts)
+    return detail
 
 
 def list_opportunities(db: Session, user: dict, *, page, page_size):
+    from app.customer.workbench_service import enrich_rows
+
     owner_id = logical_owner_expression(CustomerOpportunity, "opportunity")
     query = db.query(CustomerOpportunity).filter(
         owner_id.in_(_scoped_ids(
@@ -416,7 +433,8 @@ def list_opportunities(db: Session, user: dict, *, page, page_size):
     ).order_by(CustomerOpportunity.updated_at.desc()).offset(
         (page - 1) * page_size,
     ).limit(page_size).all()
-    return [serialize_opportunity(row, customer_id=int(owner)) for row, owner in rows], total
+    items = [serialize_opportunity(row, customer_id=int(owner)) for row, owner in rows]
+    return enrich_rows(db, items, user, kind="opportunity"), total
 
 
 def serialize_opportunity(row, *, customer_id=None) -> dict:
@@ -458,6 +476,14 @@ def serialize_action(row, *, customer_id=None) -> dict:
         "status": row.status,
         "priority": row.priority,
         "owner_user_id": row.owner_user_id,
+        "reason": row.reason,
+        "next_action": row.next_action,
+        "channel": row.channel,
+        "thread_group": row.thread_group,
+        "snoozed_until": iso_beijing(row.snoozed_until),
+        "completed_at": iso_beijing(row.completed_at),
+        "evidence_status": row.evidence_status,
+        "followup_action_id": (row.feedback_json or {}).get("completion", {}).get("followup_action_id"),
         "due_at": iso_beijing(row.due_at),
         "updated_at": iso_beijing(row.updated_at),
     }

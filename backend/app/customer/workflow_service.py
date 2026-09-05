@@ -593,10 +593,12 @@ def create_action(
             owner_user_id=owner_user_id,
             error_code="ACTION_OWNER_SCOPE_REQUIRED",
         )
+    # Use a current read: the selected version may have been published after
+    # this request's REPEATABLE READ snapshot was established.
     profile = db.query(CustomerProfileVersion).filter(
         CustomerProfileVersion.id == profile_version_id,
         CustomerProfileVersion.customer_id == customer_id,
-    ).one_or_none()
+    ).with_for_update(read=True).one_or_none()
     if profile is None:
         raise CustomerWorkflowConflict("PROFILE_CUSTOMER_MISMATCH")
     if opportunity_id is not None:
@@ -745,7 +747,8 @@ def _qualification_source_key(
         if (
             result is None
             or job is None
-            or result.customer_id != review.customer_id
+            or db.query(logical_owner_expression(SearchResult, "search_result")).filter(
+                SearchResult.id == result.id).scalar() != review.customer_id
             or result.result_status != "qualified"
         ):
             raise CustomerWorkflowConflict("QUALIFICATION_SOURCE_INVALID")
@@ -762,7 +765,8 @@ def _qualification_source_key(
         task = db.get(CustomerResearchTask, int(review.source_ref_id))
         if (
             task is None
-            or task.customer_id != review.customer_id
+            or db.query(logical_owner_expression(CustomerResearchTask, "research_task")).filter(
+                CustomerResearchTask.id == task.id).scalar() != review.customer_id
             or task.task_status != "completed"
             or task.gate_status != "passed"
             or task.result_review_status != "accepted"
@@ -1304,10 +1308,15 @@ def _event_binds_opportunity(
     if payload_opportunity_id is not None:
         bindings.append(str(payload_opportunity_id) == str(opportunity.id))
     if event.source_ref_type == "action" and str(event.source_ref_id or "").isdigit():
-        action = db.get(CustomerAction, int(event.source_ref_id))
+        opportunity_customer_id = db.query(logical_owner_expression(
+            CustomerOpportunity, "opportunity",
+        )).filter(CustomerOpportunity.id == opportunity.id).scalar()
+        action = db.query(CustomerAction).filter(
+            CustomerAction.id == int(event.source_ref_id),
+            logical_root_predicate(CustomerAction, "action", opportunity_customer_id),
+        ).one_or_none() if opportunity_customer_id is not None else None
         bindings.append(
             action is not None
-            and action.customer_id == opportunity.customer_id
             and action.opportunity_id == opportunity.id
         )
     if event.source_ref_type == "message" and str(event.source_ref_id or "").isdigit():
@@ -1563,7 +1572,12 @@ def complete_action(
     summary: str,
     next_step: str,
     can_manage: bool = False,
+    next_step_due_at: datetime | None = None,
+    followup_action_type: str = "call",
+    followup_channel: str = "phone",
 ) -> CustomerAction:
+    from app.customer.followup_service import create_followup, followup_request, validate_followup
+
     if outcome_code not in ACTION_OUTCOME_CODES:
         raise CustomerWorkflowError("ACTION_OUTCOME_INVALID")
     if channel not in ACTION_CHANNELS:
@@ -1589,7 +1603,7 @@ def complete_action(
     action = db.query(CustomerAction).filter(
         CustomerAction.id == action_id,
         logical_root_predicate(CustomerAction, "action", logical_customer_id),
-    ).with_for_update().one_or_none()
+    ).populate_existing().with_for_update().one_or_none()
     if action is None:
         raise CustomerWorkflowNotFound("ACTION_NOT_FOUND")
     _active_user(db, completed_by)
@@ -1623,8 +1637,16 @@ def complete_action(
         )
     ):
         raise CustomerWorkflowConflict("ACTION_ACTOR_FORBIDDEN")
+    followup = followup_request(next_step=normalized_next_step, due_at=next_step_due_at,
+                                action_type=followup_action_type, channel=followup_channel)
     if action.status == "done":
+        if (action.feedback_json or {}).get("completion", {}).get("followup_request") != followup:
+            raise CustomerWorkflowConflict("ACTION_COMPLETION_CHANGED")
         return action
+    validate_followup(followup)
+    if (action.status == "snoozed" and action.snoozed_until is not None
+            and action.snoozed_until <= beijing_now()):
+        action.status = "pending"
     if action.status != "pending":
         raise CustomerWorkflowConflict("ACTION_NOT_PENDING")
     action.status = "done"
@@ -1671,6 +1693,10 @@ def complete_action(
     )
     completion = dict((action.feedback_json or {}).get("completion") or {})
     completion["activity_event_id"] = activity.id
+    if followup is not None:
+        next_action = create_followup(db, action, activity, logical_customer_id, followup)
+        completion["followup_action_id"] = next_action.id
+        completion["followup_request"] = followup
     action.feedback_json = {
         **dict(action.feedback_json or {}),
         "completion": completion,

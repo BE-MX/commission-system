@@ -63,8 +63,10 @@ test('customer hub production views expose live task refresh and strict evidence
   assert.match(workspace, /createSearchJobPollingController/)
   assert.match(workspace, /refresh:\s*fetchList/)
   assert.doesNotMatch(workspace, /setInterval|handleSearch,\s*10000/)
-  assert.match(opportunities, /getInvalidIdTokens/)
-  assert.match(opportunities, /证据 ID 格式错误/)
+  assert.match(opportunities, /EvidencePicker/)
+  assert.match(opportunities, /:opportunity-id="currentId"/)
+  assert.match(opportunities, /:target-status="form.status"/)
+  assert.doesNotMatch(opportunities, /证据.*ID.*逗号/)
 })
 
 test('navigation consolidates five customer operations entries under existing permissions', () => {
@@ -98,7 +100,7 @@ test('customer detail drawer progressively loads timeline and names all profile 
   assert.match(drawer, /@tab-change="handleTabChange"/)
   assert.match(drawer, /loadTimeline/)
   assert.match(drawer, /watch\(\(\) => props\.customer\?\.customer_id/)
-  assert.match(drawer, /activeTab\.value = 'overview'/)
+  assert.match(drawer, /activeTab\.value = canViewActions\.value \? 'workbench' : 'overview'/)
   assert.match(drawer, /客户详情加载失败/)
   assert.match(drawer, /时间线加载失败/)
   assert.match(drawer, /timelineTotal/)

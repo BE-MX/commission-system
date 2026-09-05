@@ -24,6 +24,18 @@
 | `GET/POST /public-pool/batches` | 公海背调批次查询与创建 | 获客读；创建需 `sales_automation:admin` |
 | `GET /opportunities`、`PUT /opportunities/{id}` | 客户机会列表与证据化阶段更新 | `customer_opportunity:read/write` 或客户管理员 |
 | `GET /actions`、`PUT /actions/{id}` | 经营雷达行动列表、完成、忽略、延后和反馈 | `customer_radar:read/write` 或客户管理员 |
+| `GET /workbench` | 今日工作台：服务端完整范围统计、分页待办、客户与负责人名称、可操作状态 | `customer_radar:read` 或 `customer:read_all` |
+| `GET /qualification-queue/{task_id}` | 当前研究对应的开发资格依据、可用证据及上下文版本 | `sales_automation:read` 或 `customer:read_all` |
+| `POST /qualification-queue/{task_id}/decision` | 人工开发决定，自动记录来源、范围及证据快照 | `sales_automation:write/admin`，同时满足研究读取范围 |
+| `GET /customers/{customer_id}/evidence` | 按可见性和有效期展示事实/事件，可为机会阶段标明适用性 | 客户读取、研究或机会相关权限；仍受客户与记录范围限制 |
+
+第一期每日工作流（2026-09-06，无新增表）：
+
+- `/workbench` 参数：`scope=mine|visible`（默认 mine），`view=focus|first_contact|today|overdue|high_priority|completed|unscheduled|upcoming|snoozed|all`（默认 focus）、`keyword`、`customer_id`、`page/page_size`。`data.summary` 在当前归属/客户搜索范围完整聚合，以行动计数，卡片可能重叠；`total` 是当前 view 数量。返回 `effective_status/effective_due_at`、`can_operate`、`owner_name/customer_name` 和 `data_as_of`。到期延后行动等效待处理，GET 不改存储状态。所有时间口径固定北京时间。
+- `/research-tasks?review_status=pending|accepted|revision_requested|rejected` 只筛选已完成任务；留空列出全部任务。详情增补当前可见证据的标题、内容、来源链接、有效性与分层，质量复核与开发资格判断分开。
+- `/qualification-queue` 支持客户 `keyword`；按逻辑客户和目标作用范围选最新完成、门控通过、质量通过的研究。排除当前有效结论和未到期暂缓，到重评时间重新出现。详情提供 `context_hash/current_review_id/can_review/blocked_reason`。提交字段为 `decision=approve|defer|supplement|reject`、必填 `reason`、`context_hash`、`expected_current_review_id`、`request_key`；defer/supplement 必须提供未来 `review_after`。来源、策略和范围不接收用户手填。冲突返回 409，重试沿用同一请求键；公海脱敏研究不可决定，决定不授予客户归属。
+- `/evidence` 支持 `kind=fact|event`、`keyword` 和分页。事件可传 `opportunity_id/target_status=contacted|replied|quoted`，复用机会状态机标明记录是否能支持本次推进；不可见证据不返回，失效或不适用记录 `selectable=false`。事实同时检查直接来源记录权限，链接仅允许无凭据的 HTTP(S)。机会提交仍重新校验可见性、归属和阶段支撑，选择器不代替服务端校验。
+- 完成行动 `PUT /actions/{id}` 可增加 `next_step_due_at`、`followup_action_type=call|email|message|meeting|research|review`、`followup_channel`。只有 complete 可安排后续，要求非空 `next_step` 和未来北京时间；负责人沿用原行动。完成记录、销售活动和新行动同事务；响应包含 `followup_action_id`。相同完成请求不重复生成，改变既有后续参数返回 409。
 
 高影响变更均位于相同前缀：`GET/POST /change-proposals`，以及 `POST /change-proposals/{id}/submit|rebase|approve|reject|execute`。创建、提交、审批要求 `customer:admin`；执行时重新读取实时权限，DNC 操作要求 `customer:manage_dnc`，重大风险确认要求 `customer:confirm_material_risk`。`execute` 必须提供幂等键；版本过期先 `rebase`，不能静默套用旧证据。
 

@@ -18,7 +18,7 @@
         </div>
         <div class="identity-metrics">
           <el-tag :type="customer.identity_status === 'verified' ? 'success' : 'warning'">
-            {{ customer.identity_status || 'provisional' }}
+            {{ identityLabel(customer.identity_status) }}
           </el-tag>
           <span>完整度 {{ customer.profile_completeness ?? 0 }}%</span>
           <span>{{ customer.is_public_pool ? '公海 · 暂无主负责人' : '已有主负责人' }}</span>
@@ -26,6 +26,9 @@
       </section>
 
       <el-tabs v-model="activeTab" class="detail-tabs" @tab-change="handleTabChange">
+        <el-tab-pane v-if="canViewActions" label="待办" name="workbench" lazy>
+          <WorkbenchList v-if="modelValue" :customer-id="customer.customer_id" @saved="$emit('action-saved')" />
+        </el-tab-pane>
         <el-tab-pane label="概览" name="overview">
           <div class="fact-grid">
             <article><span>关系阶段</span><strong>{{ customer.relationship_stage || '未评估' }}</strong></article>
@@ -64,7 +67,7 @@
         </el-tab-pane>
 
         <el-tab-pane label="证据与机会" name="intelligence" lazy>
-          <SectionBlock title="Evidence · 证据" section-key="evidence" :value="sections.evidence" />
+          <EvidencePicker :customer-id="customer.customer_id" readonly />
           <SectionBlock title="Opportunities · 客户机会" section-key="opportunities" :value="sections.opportunities" />
           <SectionBlock title="Actions · 经营动作" section-key="actions" :value="sections.actions" />
           <SectionBlock title="Risks · 风险" section-key="risks" :value="sections.risks" />
@@ -93,10 +96,14 @@
 
 <script setup>
 import { computed, defineComponent, h, ref, watch } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 import DetailDrawer from '@/components/DetailDrawer.vue'
+import WorkbenchList from './WorkbenchList.vue'
+import EvidencePicker from './EvidencePicker.vue'
 import { formatBeijingDateTime } from '@/utils/datetime'
 import { getTimelineLimitNotice, mapCustomerProfileSections } from './customerHubController'
 import { getProfileValueKind, profileFieldLabel } from './customerHubPresentation'
+import { identityLabel } from './operationsPresentation'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -110,16 +117,18 @@ const props = defineProps({
   loadTimeline: { type: Function, required: true },
   retryDetail: { type: Function, required: true },
 })
-defineEmits(['update:modelValue'])
+defineEmits(['update:modelValue', 'action-saved'])
 
-const activeTab = ref('overview')
+const auth = useAuthStore()
+const canViewActions = computed(() => auth.hasAnyPermission(['customer_radar:read', 'customer:read_all']))
+const activeTab = ref(canViewActions.value ? 'workbench' : 'overview')
 watch(() => props.customer?.customer_id, customerId => {
-  if (customerId) activeTab.value = 'overview'
+  if (customerId) activeTab.value = canViewActions.value ? 'workbench' : 'overview'
 })
 const customerTitle = computed(() => props.customer ? `客户档案 · ${props.customer.display_name || props.customer.customer_code || props.customer.customer_id}` : '客户档案')
 const identityExplanation = computed(() => props.customer?.identity_status === 'verified'
-  ? '身份已核验；customer_id 是唯一业务主键。'
-  : '临时客户：名称可为空，系统仍以 customer_id 持续归集证据，待身份核验后再确认主体。')
+  ? '身份已核验，沟通记录和研究证据归集于此。'
+  : '客户主体待核验，请结合联系人和研究证据确认。')
 const sections = computed(() => mapCustomerProfileSections(props.customer || {}, props.timeline))
 const timelineLimitNotice = computed(() => getTimelineLimitNotice(props.timeline.length, props.timelineTotal))
 const formatDate = value => value ? formatBeijingDateTime(value) : '该档案版本未提供'

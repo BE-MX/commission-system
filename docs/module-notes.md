@@ -73,6 +73,12 @@
 
 **前端入口**：`frontend/src/views/customer_hub/` 提供统一客户档案、背调中心、搜索任务、客户机会和经营雷达五个入口，共用 `frontend/src/api/customerHub.js`。列表默认先展示身份状态、负责人、阶段、下一行动和关键证据；原始来源、冲突和完整时间线按需展开。
 
+**每日工作流第一期（2026-09-06）**：保留 `/customer-hub/radar` URL，将菜单前置为“今日工作台”。`workbench_service` 负责 SQL 范围统计和有效截止时间，首触排除历史已互动阶段、已登记对外行动和外发消息；领取后的 developing 客户仍可能待首触。`ActionEditor` 在工作台与客户详情复用，保存刷新列表而不重新挂载页面。`followup_service` 在完成原行动的锁事务中创建带日期的下一行动，继承负责人及逻辑客户当前档案版本，重复请求以已保存的 completion 参数回放。
+
+`qualification_service` 将研究质量与开发判断分开，队列按逻辑客户及目标范围去重，后端生成快照，防止浏览器手填来源/JSON。仅资格决定请求通过 `qualification_transaction.qualification_db` 在首次 SQL 前将原请求 Session 设为 MySQL SERIALIZABLE；研究、客户和事实显式锁定后重算上下文，窗口查询限定到该客户。这样避免 REPEATABLE READ 的旧 read view 与 ORM 缓存混用；1205/1213 整笔 rollback 并返回可重试 409，不在中途重启事务。连接隔离由 SQLAlchemy 归还连接时恢复，其他请求沿用默认值。[MySQL 隔离语义](https://dev.mysql.com/doc/refman/8.0/en/innodb-transaction-isolation-levels.html)、[SQLAlchemy 事务配置](https://docs.sqlalchemy.org/en/20/orm/session_transaction.html)。
+
+`evidence_service` 统一事实与其直接来源的实时可见边界；机会选择器复用既有 `_event_supports_stage`，不能用不属于本机会的活动推进阶段。研究摘要按六个中文章节展示，并把结论关联到可见证据；推断、信源原值、人工确认和核验状态保持区分。OpenClaw、自动写信/发送、完整策略编辑器和主管分析不在本期范围。
+
 **本期边界**：订单及明细纳入客户画像；回款、物流、售后和展会不接入本期档案。不要为了“信息完整”越过此边界新增同步或推断。
 
 ## 设计系统（System）

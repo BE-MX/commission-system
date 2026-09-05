@@ -4,7 +4,7 @@ from datetime import datetime
 from collections.abc import Mapping
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class OpportunityUpdate(BaseModel):
@@ -26,10 +26,40 @@ class ActionUpdate(BaseModel):
     occurred_at: datetime | None = None
     summary: str | None = Field(None, max_length=1000)
     next_step: str | None = Field(None, max_length=1000)
+    next_step_due_at: datetime | None = None
+    followup_action_type: Literal["call", "email", "message", "meeting", "research", "review"] = "call"
+    followup_channel: Literal["alibaba", "email", "whatsapp", "phone", "linkedin", "offline", "internal"] = "phone"
     reason_code: str | None = Field(None, max_length=32)
     note: str | None = Field(None, max_length=1000)
     snoozed_until: datetime | None = None
     feedback: str | None = Field(None, max_length=32)
+
+    @model_validator(mode="after")
+    def validate_followup(self):
+        if self.next_step_due_at is not None:
+            if self.operation != "complete" or not (self.next_step or "").strip():
+                raise ValueError("安排后续跟进需要完成当前行动并填写具体下一步")
+        return self
+
+
+class QualificationDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    decision: Literal["approve", "defer", "supplement", "reject"]
+    reason: str = Field(..., min_length=1, max_length=2000)
+    review_after: datetime | None = None
+    context_hash: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+    expected_current_review_id: int | None = Field(None, gt=0)
+    request_key: str = Field(..., min_length=16, max_length=128)
+
+    @model_validator(mode="after")
+    def validate_review_schedule(self):
+        if not self.reason.strip():
+            raise ValueError("请填写审核依据")
+        if self.decision in ("defer", "supplement") and self.review_after is None:
+            raise ValueError("暂缓或补资料需要设置重新评估时间")
+        if self.decision in ("approve", "reject") and self.review_after is not None:
+            raise ValueError("此结论不需要重新评估时间")
+        return self
 
 
 class ProposalCreate(BaseModel):

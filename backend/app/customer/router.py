@@ -6,14 +6,15 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_user, require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok, page_result
-from app.customer import proposal_router, query_service
+from app.customer import evidence_service, proposal_router, qualification_service, query_service, workbench_service
 from app.customer.access_service import CustomerAccessDenied, require_customer_access
 from app.customer.logical_customer_service import logical_owner_expression
 from app.customer.models import CustomerAction, CustomerOpportunity, CustomerResearchTask
-from app.customer.schemas import ActionUpdate, OpportunityUpdate
+from app.customer.schemas import ActionUpdate, OpportunityUpdate, QualificationDecision
+from app.customer.qualification_transaction import qualification_db
 from app.customer.workflow_service import CustomerWorkflowConflict, CustomerWorkflowError, CustomerWorkflowNotFound
 from app.sales_automation import router as acquisition_views
-from app.sales_automation import public_pool_service
+from app.sales_automation import public_pool_service, service as acquisition_service
 from app.sales_automation.schemas import (
     ProfileUpsert, PublicPoolBatchCreate, QualificationReviewSubmit,
     ResearchResultReview, SearchJobCreate,
@@ -65,12 +66,18 @@ def _access(
 def _service_call(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
-    except CustomerWorkflowNotFound:
+    except (CustomerWorkflowNotFound, CustomerAccessDenied, acquisition_service.NotFoundError):
+        args[0].rollback()
         _not_found()
-    except CustomerWorkflowConflict as exc:
+    except (CustomerWorkflowConflict, acquisition_service.ConflictError) as exc:
+        args[0].rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     except (CustomerWorkflowError, ValueError) as exc:
+        args[0].rollback()
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    except Exception:
+        args[0].rollback()
+        raise
 
 
 def _logical_record(db, model, object_type, object_id, user, permissions):
@@ -126,10 +133,11 @@ def customer_timeline(
 @router.get("/research-tasks")
 def research_tasks(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+    review_status: str | None = Query(None, pattern="^(pending|accepted|revision_requested|rejected)$"),
     db: Session = Depends(get_db), user=Depends(require_any_permission(*RESEARCH_READ)),
 ):
     try:
-        items, total = query_service.list_research_tasks(db, user, page=page, page_size=page_size)
+        items, total = query_service.list_research_tasks(db, user, page=page, page_size=page_size, review_status=review_status)
     except CustomerAccessDenied:
         _not_found()
     return ok(page_result(items, total, page, page_size))
@@ -209,25 +217,44 @@ def review_research_task(task_id: int, payload: ResearchResultReview, db: Sessio
 @router.get("/qualification-queue")
 def qualification_queue(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+    keyword: str | None = Query(None, max_length=255),
     db: Session = Depends(get_db), user=Depends(require_any_permission(*RESEARCH_READ)),
 ):
-    query = query_service.scoped_research_query(db, user).filter(
-        CustomerResearchTask.task_status == "completed",
-        CustomerResearchTask.result_review_status == "accepted",
-    )
-    total = query.count()
-    owner = logical_owner_expression(CustomerResearchTask, "research_task")
-    rows = query.with_entities(
-        CustomerResearchTask, owner.label("logical_customer_id"),
-    ).order_by(CustomerResearchTask.updated_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    return ok(page_result([
-        query_service.serialize_research_task(
-            row,
-            _access(db, int(logical_id), user, action_permissions=RESEARCH_READ),
-            customer_id=int(logical_id),
-        )
-        for row, logical_id in rows
-    ], total, page, page_size))
+    return ok(qualification_service.list_queue(db, user, page=page, page_size=page_size, keyword=keyword))
+
+
+@router.get("/qualification-queue/{task_id}")
+def qualification_context(task_id: int, db: Session = Depends(get_db), user=Depends(require_any_permission(*RESEARCH_READ))):
+    try:
+        return ok(_service_call(qualification_service.get_context, db, user, task_id))
+    except CustomerAccessDenied:
+        _not_found()
+
+
+@router.post("/qualification-queue/{task_id}/decision")
+def qualification_decision(task_id: int, payload: QualificationDecision, db: Session = Depends(qualification_db),
+                           user=Depends(require_any_permission(*ACQUISITION_WRITE))):
+    try:
+        return ok(_service_call(qualification_service.submit_decision, db, user, task_id, payload))
+    except CustomerAccessDenied:
+        db.rollback()
+        _not_found()
+
+
+@router.get("/customers/{customer_id}/evidence")
+def customer_evidence(customer_id: int, kind: str = Query("fact", pattern="^(fact|event)$"),
+    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+    keyword: str | None = Query(None, max_length=255), db: Session = Depends(get_db),
+    opportunity_id: int | None = Query(None, gt=0),
+    target_status: str | None = Query(None, pattern="^(contacted|replied|quoted)$"),
+    user=Depends(require_any_permission(*evidence_service.READ_PERMISSIONS)),
+):
+    try:
+        return ok(evidence_service.list_evidence(db, user, customer_id, kind=kind, page=page,
+                                               page_size=page_size, keyword=keyword,
+                                               opportunity_id=opportunity_id, target_status=target_status))
+    except CustomerAccessDenied:
+        _not_found()
 
 @router.post("/qualification-reviews", status_code=status.HTTP_201_CREATED)
 def submit_qualification_review(payload: QualificationReviewSubmit, db: Session = Depends(get_db), user=Depends(require_any_permission(*ACQUISITION_WRITE))):
@@ -276,6 +303,8 @@ def update_opportunity(
     uid = _user_id(user)
     if not access.can_manage and scoped.owner_user_id != uid:
         raise HTTPException(status.HTTP_409_CONFLICT, "OPPORTUNITY_ACTOR_FORBIDDEN")
+    _service_call(evidence_service.require_visible_selection, db, access,
+                  fact_ids=payload.evidence_fact_ids, event_ids=payload.evidence_event_ids)
     row = _service_call(
         update_opportunity_status, db, opportunity_id, payload.status, payload.reason,
         uid, evidence_event_ids=tuple(payload.evidence_event_ids),
@@ -295,6 +324,21 @@ def actions(
     except CustomerAccessDenied:
         _not_found()
     return ok(page_result(items, total, page, page_size))
+
+
+@router.get("/workbench")
+def workbench(
+    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+    view: str = Query("focus", pattern="^(focus|first_contact|today|overdue|high_priority|completed|unscheduled|upcoming|snoozed|all)$"),
+    scope: str = Query("mine", pattern="^(mine|visible)$"),
+    keyword: str | None = Query(None, max_length=255), customer_id: int | None = Query(None, gt=0),
+    db: Session = Depends(get_db), user=Depends(require_any_permission(*ACTION_READ)),
+):
+    try:
+        return ok(workbench_service.list_workbench(db, user, page=page, page_size=page_size,
+                  view=view, scope=scope, keyword=keyword, customer_id=customer_id))
+    except CustomerAccessDenied:
+        _not_found()
 
 
 @router.put("/actions/{action_id}")
@@ -319,6 +363,8 @@ def update_action(
             service.complete_action, db, action_id, uid, payload.feedback, payload.note,
             outcome_code=payload.outcome_code or "other", channel=payload.channel,
             occurred_at=payload.occurred_at, summary=payload.summary, next_step=payload.next_step,
+            next_step_due_at=payload.next_step_due_at, followup_action_type=payload.followup_action_type,
+            followup_channel=payload.followup_channel,
             can_manage=can_manage,
         )
     elif payload.operation == "dismiss":

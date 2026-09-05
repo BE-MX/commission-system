@@ -38,6 +38,7 @@ const FIELD_LABELS = {
 
 export function profileFieldLabel(key) {
   if (FIELD_LABELS[key]) return FIELD_LABELS[key]
+  if (String(key).includes('.')) return String(key).split('.').map(profileFieldLabel).join(' · ')
   const normalized = String(key).replaceAll('_', ' ')
   return normalized.charAt(0).toUpperCase() + normalized.slice(1)
 }
