@@ -40,8 +40,8 @@ def execute(request):
         ddl_started = False
         try:
             for writer in request["writers"]:
-                control(writer, "stop", request["nssm"])
-                stopped.append(writer)
+                if control(writer, "stop", request["nssm"]):
+                    stopped.append(writer)
             # Alembic imports Settings in this isolated process after the override.
             config.get_settings = lambda: settings
             from alembic import command

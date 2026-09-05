@@ -7,6 +7,7 @@ import subprocess
 
 from publish import ROOT, STATE, atomic_json, run
 from static_sync import SSH_OPTIONS
+from remote_backend import database_lock, schema_check
 
 
 def validate(inventory, pending):
@@ -20,6 +21,8 @@ def validate(inventory, pending):
             raise ValueError("Invalid registered database writer")
         if writer["kind"] == "systemd" and writer.get("host") not in {"ubuntu@154.8.205.162", "root@119.28.107.92"}:
             raise ValueError("Unregistered writer host")
+        if writer["kind"] == "nssm" and writer.get("host") != "office":
+            raise ValueError("NSSM writer must belong to the office host")
     required = {("nssm", "office", "CommissionSystem"), ("nssm", "office", "WhatsAppConnector"), ("systemd", "ubuntu@154.8.205.162", "ark-backend")}
     if not required.issubset({(w["kind"],w.get("host"),w["service"]) for w in writers}):
         raise ValueError("Required application writers missing from migration inventory")
@@ -30,10 +33,19 @@ def control(writer, operation, nssm):
     if writer["kind"] == "nssm":
         state = run([nssm, "status", writer["service"]], capture=True)
         if (operation == "stop" and state == "SERVICE_STOPPED") or (operation == "start" and state == "SERVICE_RUNNING"):
-            return
+            return False
         run([nssm, operation, writer["service"]])
     else:
+        output = run(["ssh", *SSH_OPTIONS, writer["host"], "systemctl show -p LoadState -p ActiveState " + writer["service"]], capture=True)
+        state = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
+        if state.get("LoadState") != "loaded":
+            raise RuntimeError("Registered writer service is missing")
+        if operation == "stop" and state.get("ActiveState") in {"inactive", "failed"}:
+            return False
+        if operation == "start" and state.get("ActiveState") == "active":
+            return False
         run(["ssh", *SSH_OPTIONS, writer["host"], "sudo -n systemctl " + operation + " " + writer["service"]])
+    return True
 
 
 def invoke(prepared, writers, credential_file, action):
@@ -70,6 +82,8 @@ def migrate(prepared, inventory, credential_file=None):
 
 def resume_external(writers, prepared):
     owned = {("nssm", "office", "CommissionSystem"), ("nssm", "office", "WhatsAppConnector"), ("systemd", "ubuntu@154.8.205.162", "ark-backend")}
-    for writer in writers:
-        if (writer["kind"], writer.get("host"), writer["service"]) not in owned:
-            control(writer, "start", prepared["nssm"])
+    with database_lock(ROOT, prepared["python"]):
+        schema_check(ROOT, prepared["python"])
+        for writer in writers:
+            if (writer["kind"], writer.get("host"), writer["service"]) not in owned:
+                control(writer, "start", prepared["nssm"])

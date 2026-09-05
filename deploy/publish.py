@@ -179,8 +179,10 @@ def publish(args):
         if stopped:
             schema_release.resume_external(stopped, office)
         if office:
-            run([office["python"], "scripts/seed_pm.py"], cwd=ROOT / "backend")
-            run([office["python"], "scripts/import_pantone.py"], cwd=ROOT / "backend")
+            with schema_release.database_lock(ROOT, office["python"]):
+                schema_release.schema_check(ROOT, office["python"])
+                run([office["python"], "scripts/seed_pm.py"], cwd=ROOT / "backend")
+                run([office["python"], "scripts/import_pantone.py"], cwd=ROOT / "backend")
         for item in prepared:
             print(json.dumps(static_sync.activate(item)), flush=True)
             journal["completed"].append(item["target"] + ":" + item["request"]["root"])

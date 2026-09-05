@@ -10,6 +10,8 @@ import uuid
 REGIONS = {
     "beijing": {"files": ["/etc/nginx/sites-enabled/ark-cloud.conf"],
                 "domains": ["leshine.cloud", "www.leshine.cloud"], "certificate": "leshine.cloud"},
+    "beijing_media": {"files": ["/etc/nginx/conf.d/customer-media.leshine.cloud.conf"],
+                      "domains": ["media.leshine.cloud"], "certificate": "media.leshine.cloud"},
     "singapore": {"files": ["/etc/nginx/conf.d/leshine.conf", "/etc/nginx/sites-enabled/deputy-relay.conf"],
                   "domains": ["leshine.work", "www.leshine.work", "relay.leshine.work"], "certificate": "leshine.work"},
 }
@@ -52,6 +54,8 @@ def setup(region, phase):
         if phase == "challenge":
             content, count = re.subn(r"(server_name [^;]+;\s*)return 301 https://\$host\$request_uri;",
                 r"\1location ^~ /.well-known/acme-challenge/ { root /var/www/letsencrypt; }\n    location / { return 301 https://$host$request_uri; }", content)
+            if region == "beijing_media" and "/.well-known/acme-challenge/" not in content:
+                content = content.replace("server_name media.leshine.cloud;", "server_name media.leshine.cloud;\n    location ^~ /.well-known/acme-challenge/ { root /var/www/letsencrypt; }", 1)
             if count != 1 and "/.well-known/acme-challenge/" not in content:
                 raise RuntimeError("Expected one HTTP redirect block: " + path.name)
         elif phase == "activate":
