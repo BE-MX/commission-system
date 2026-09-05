@@ -359,6 +359,7 @@ def seed_role_permissions(db: Session):
         ("domestic:admin",        "domestic", "admin",        "工艺路线映射 / 产品改绑 / 删单 / 撤销他人报工"),
         ("domestic:read_all",     "domestic", "read_all",     "查看全部内贸订单（数据范围）"),
         ("domestic:recharge",     "domestic", "recharge",     "内贸客户充值 / 余额与等级初始化 / 临时调整 / 余额流水"),
+        ("domestic_customer:admin", "domestic", "admin", "管理员可以显示所有客户的操作按钮"),
         ("domestic_quantity_report:write", "domestic", "write", "内贸小程序：输入数量报工模式"),
         ("domestic_unit_report:write",     "domestic", "write", "内贸小程序：逐件二维码报工模式"),
         ("production_product:read",   "production", "read",   "查看产品管理"),
@@ -564,6 +565,7 @@ def seed_role_permissions(db: Session):
 
     # 高爆炸半径权限只能人工授予；启动 seed 不得静默扩大既有 admin 的生产控制权。
     manual_grant_codes = {
+        "domestic_customer:admin",
         "operations:admin",
         "customer_opportunity:confirm_without_order",
         "customer:manage_dnc",

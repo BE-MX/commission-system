@@ -330,13 +330,15 @@ def update_customer(
     customer_id: int,
     payload: CustomerUpdate,
     operator_id: int | None = None,
+    *,
+    can_operate_all: bool = False,
 ) -> DomesticCustomer:
     customer = db.query(DomesticCustomer).filter(
         DomesticCustomer.id == customer_id
     ).with_for_update().first()
     if not customer:
         raise ValueError("客户不存在")
-    _ensure_customer_operator(customer, operator_id)
+    _ensure_customer_operator(customer, operator_id, can_operate_all=can_operate_all)
 
     data = payload.model_dump(exclude_unset=True)
     new_name = (data.get("shop_name") or "").strip()
@@ -364,14 +366,17 @@ def update_customer(
     return customer
 
 
-def delete_customer(db: Session, customer_id: int, operator_id: int | None = None) -> None:
+def delete_customer(
+    db: Session, customer_id: int, operator_id: int | None = None,
+    *, can_operate_all: bool = False,
+) -> None:
     """有订单的客户不删只停用 —— 删了历史订单就查不到客户名了。"""
     customer = db.query(DomesticCustomer).filter(
         DomesticCustomer.id == customer_id
     ).with_for_update().first()
     if not customer:
         raise ValueError("客户不存在")
-    _ensure_customer_operator(customer, operator_id)
+    _ensure_customer_operator(customer, operator_id, can_operate_all=can_operate_all)
     used = db.query(func.count(DomesticOrder.id)).filter(
         DomesticOrder.customer_id == customer_id
     ).scalar()
@@ -414,13 +419,16 @@ def _lock_customer_row(db: Session, customer_id: int) -> DomesticCustomer:
     return customer
 
 
-def _ensure_customer_operator(customer: DomesticCustomer, user_id: int) -> None:
-    if user_id is not None and customer.owner_user_id != user_id:
+def _ensure_customer_operator(
+    customer: DomesticCustomer, user_id: int | None, *, can_operate_all: bool = False,
+) -> None:
+    if not can_operate_all and user_id is not None and customer.owner_user_id != user_id:
         raise ValueError("客户不存在")
 
 
 def initialize_customer(
-    db: Session, customer_id: int, payload, user_id: int
+    db: Session, customer_id: int, payload, user_id: int,
+    *, can_operate_all: bool = False,
 ) -> dict:
     """期初初始化：只在客户还没有任何资金流水时允许，幂等键固定在客户上。
 
@@ -428,7 +436,7 @@ def initialize_customer(
     建档时一次写入；之后的充值仍按金额重新核定等级。
     """
     customer = _lock_customer_row(db, customer_id)
-    _ensure_customer_operator(customer, user_id)
+    _ensure_customer_operator(customer, user_id, can_operate_all=can_operate_all)
     amount = balance_service.money(payload.balance)
     business_key = f"init:{customer.id}"
     existing = db.query(DomesticCustomerLedger).filter(
@@ -462,7 +470,8 @@ def initialize_customer(
 
 
 def adjust_customer(
-    db: Session, customer_id: int, payload, user_id: int
+    db: Session, customer_id: int, payload, user_id: int,
+    *, can_operate_all: bool = False,
 ) -> dict:
     """临时调整：余额可有符号增减，会员等级可显式覆盖或取消。
 
@@ -470,7 +479,7 @@ def adjust_customer(
     幂等：同一 request_id 重放返回首个结果，不重复入账、不重复写审计行。
     """
     customer = _lock_customer_row(db, customer_id)
-    _ensure_customer_operator(customer, user_id)
+    _ensure_customer_operator(customer, user_id, can_operate_all=can_operate_all)
     amount = balance_service.money(payload.amount)
     change_level = "membership_level" in payload.model_fields_set
     if amount == 0 and not change_level:

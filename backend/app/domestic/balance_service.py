@@ -109,6 +109,7 @@ def recharge_customer(
     user_id: int,
     remark: str | None = None,
     request_id: str | None = None,
+    can_operate_all: bool = False,
 ) -> dict:
     request_id = request_id.strip() if isinstance(request_id, str) else ""
     if not request_id:
@@ -124,7 +125,7 @@ def recharge_customer(
     ).populate_existing().with_for_update().first()
     if not customer:
         raise ValueError("客户不存在")
-    if customer.owner_user_id != user_id:
+    if not can_operate_all and customer.owner_user_id != user_id:
         raise ValueError("客户不存在")
     ledger = apply_balance_change(
         db,

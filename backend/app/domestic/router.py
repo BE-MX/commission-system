@@ -86,11 +86,21 @@ def _can_read_all_orders(current_user: dict) -> bool:
     return "domestic:read_all" in (current_user.get("permissions") or [])
 
 
+def _can_operate_all_customers(current_user: dict) -> bool:
+    return (
+        "super_admin" in (current_user.get("roles") or [])
+        or "domestic_customer:admin" in (current_user.get("permissions") or [])
+    )
+
+
 def _ensure_customer_owner(db: Session, customer_id: int, current_user: dict) -> None:
-    owner_user_id = db.query(DomesticCustomer.owner_user_id).filter(
+    customer = db.query(DomesticCustomer).filter(
         DomesticCustomer.id == customer_id,
-    ).scalar()
-    if owner_user_id != _uid(current_user):
+    ).populate_existing().with_for_update().first()
+    if customer is None or (
+        not _can_operate_all_customers(current_user)
+        and customer.owner_user_id != _uid(current_user)
+    ):
         raise HTTPException(status_code=404, detail="客户不存在")
 
 
@@ -298,6 +308,7 @@ def update_customer(
     try:
         customer_service.update_customer(
             db, customer_id, payload, operator_id=_uid(_user),
+            can_operate_all=_can_operate_all_customers(_user),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -340,7 +351,10 @@ def delete_customer(
 ):
     _ensure_customer_owner(db, customer_id, _user)
     try:
-        customer_service.delete_customer(db, customer_id, operator_id=_uid(_user))
+        customer_service.delete_customer(
+            db, customer_id, operator_id=_uid(_user),
+            can_operate_all=_can_operate_all_customers(_user),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(message="已删除")
@@ -362,6 +376,7 @@ def recharge_customer(
             user_id=_uid(current_user),
             remark=payload.remark,
             request_id=payload.request_id,
+            can_operate_all=_can_operate_all_customers(current_user),
         )
     except ValueError as exc:
         db.rollback()
@@ -390,6 +405,7 @@ def initialize_customer(
     try:
         data = customer_service.initialize_customer(
             db, customer_id, payload, _uid(current_user),
+            can_operate_all=_can_operate_all_customers(current_user),
         )
     except ValueError as exc:
         db.rollback()
@@ -414,6 +430,7 @@ def adjust_customer(
     try:
         data = customer_service.adjust_customer(
             db, customer_id, payload, _uid(current_user),
+            can_operate_all=_can_operate_all_customers(current_user),
         )
     except ValueError as exc:
         db.rollback()

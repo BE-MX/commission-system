@@ -7,12 +7,13 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.auth.dependencies import get_current_user
-from app.auth.models import ArkUser
+from app.auth.models import ArkPermission, ArkRole, ArkRolePermission, ArkUser
+from app.auth.service import seed_role_permissions
 from app.core.database import get_db
 from app.core.time import beijing_now, beijing_today
 from app.domestic import customer_service
 from app.domestic import order_service
-from app.domestic.models import DomesticCustomer, DomesticOrder
+from app.domestic.models import DomesticCustomer, DomesticCustomerLedger, DomesticOrder
 from app.domestic.router import router
 from app.domestic.schemas import CustomerCreate
 from app.domestic.schemas import OrderUpdate
@@ -101,13 +102,13 @@ def test_create_customer_defaults_owner_to_current_user(db):
     assert customer.owner_user_id == owner.id
 
 
-def _api_client(db, user, *permissions):
+def _api_client(db, user, *permissions, roles=()):
     app = FastAPI()
     app.include_router(router, prefix="/api/domestic")
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[get_current_user] = lambda: {
         "sub": str(user.id),
-        "roles": [],
+        "roles": list(roles),
         "permissions": list(permissions),
     }
     return TestClient(app)
@@ -124,6 +125,94 @@ def test_customer_operations_require_current_owner(db):
     )
     assert response.status_code == 404
     assert customer.remark is None
+
+
+CUSTOMER_OPERATIONS = [
+    ("PUT", "", {"remark": "管理操作"}),
+    ("PUT", "", {"status": 0}),
+    ("DELETE", "", None),
+    ("POST", "/recharges", {"amount": 100, "request_id": "admin-recharge-001"}),
+    ("POST", "/initialize", {"balance": 100}),
+    ("POST", "/adjust", {"amount": 100, "remark": "管理调整", "request_id": "admin-adjust-001"}),
+    ("GET", "/balance-ledger", None),
+]
+
+
+@pytest.mark.parametrize("method,suffix,payload", CUSTOMER_OPERATIONS)
+@pytest.mark.parametrize("scope", ["owner", "other", "public", "super_admin"])
+def test_customer_operations_with_explicit_admin_permission(db, method, suffix, payload, scope):
+    owner = _user(db, "operation-owner")
+    operator = owner if scope == "owner" else _user(db, "operation-admin")
+    customer = _customer(db, owner, "操作权限客户")
+    if scope == "public":
+        customer.owner_user_id = None
+        db.flush()
+    roles = ("super_admin",) if scope == "super_admin" else ()
+    permissions = ["domestic:write", "domestic:admin"] if scope != "super_admin" else []
+    if scope in ("other", "public"):
+        permissions.append("domestic_customer:admin")
+    client = _api_client(db, operator, *permissions, roles=roles)
+    response = client.request(method, f"/api/domestic/customers/{customer.id}{suffix}", json=payload)
+    assert response.status_code == 200, response.text
+    if method == "DELETE":
+        assert db.get(DomesticCustomer, customer.id) is None
+    elif method == "PUT":
+        db.refresh(customer)
+        for field, value in payload.items():
+            assert getattr(customer, field) == value
+    elif method == "POST":
+        db.refresh(customer)
+        assert customer.balance == 100
+        ledger = db.query(DomesticCustomerLedger).filter_by(customer_id=customer.id).one()
+        assert ledger.created_by == operator.id
+        replay = client.request(method, f"/api/domestic/customers/{customer.id}{suffix}", json=payload)
+        assert replay.status_code == 200, replay.text
+        assert replay.json()["data"]["replayed"] is True
+        db.refresh(customer)
+        assert customer.balance == 100
+
+
+@pytest.mark.parametrize("method,suffix,payload", CUSTOMER_OPERATIONS)
+@pytest.mark.parametrize("public", [False, True])
+def test_existing_admin_and_read_all_do_not_grant_cross_owner_operations(db, method, suffix, payload, public):
+    owner = _user(db, "restricted-owner")
+    operator = _user(db, "restricted-admin")
+    customer = _customer(db, owner, "未授权客户")
+    if public:
+        customer.owner_user_id = None
+        db.flush()
+    client = _api_client(db, operator, "domestic:write", "domestic:admin", "domestic:read_all")
+    response = client.request(method, f"/api/domestic/customers/{customer.id}{suffix}", json=payload)
+    assert response.status_code == 404
+    db.refresh(customer)
+    assert customer.balance == 0
+    assert customer.remark is None
+    assert customer.status == 1
+
+
+@pytest.mark.parametrize("method,suffix,payload", CUSTOMER_OPERATIONS)
+def test_customer_admin_permission_does_not_replace_action_permissions(db, method, suffix, payload):
+    owner = _user(db, "action-owner")
+    operator = _user(db, "action-admin")
+    customer = _customer(db, owner, "动作权限客户")
+    client = _api_client(db, operator, "domestic:read", "domestic_customer:admin")
+    response = client.request(method, f"/api/domestic/customers/{customer.id}{suffix}", json=payload)
+    assert response.status_code == 403
+
+
+def test_customer_admin_permission_is_seeded_as_independent_button(db):
+    role = ArkRole(name="admin", label="管理员")
+    db.add(role)
+    db.flush()
+    seed_role_permissions(db)
+    seed_role_permissions(db)
+    permission = db.query(ArkPermission).filter_by(code="domestic_customer:admin").one()
+    assert permission.kind == "action"
+    assert permission.module == "domestic"
+    assert permission.label == "管理员可以显示所有客户的操作按钮"
+    assert db.query(ArkRolePermission).filter_by(
+        role_id=role.id, permission_id=permission.id,
+    ).count() == 0
 
 
 def test_order_list_and_detail_are_scoped_until_read_all_granted(db):
