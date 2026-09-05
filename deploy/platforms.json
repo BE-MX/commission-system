@@ -1,0 +1,121 @@
+{
+  "static_targets": [
+    {
+      "component": "frontend",
+      "host": "root@119.28.107.92",
+      "root": "/var/www/ark/dist",
+      "domain": "leshine.work",
+      "backend_owner": "office"
+    },
+    {
+      "component": "frontend",
+      "host": "ubuntu@154.8.205.162",
+      "root": "/var/www/ark-dist",
+      "domain": "leshine.cloud",
+      "backend_owner": "beijing"
+    },
+    {
+      "component": "frontend-pm",
+      "host": "root@119.28.107.92",
+      "root": "/var/www/pm/dist",
+      "domain": "pm.leshine.work",
+      "backend_owner": "office"
+    },
+    {
+      "component": "customer-media",
+      "host": "ubuntu@154.8.205.162",
+      "root": "/var/www/ark-static/customer-media",
+      "domain": "media.leshine.cloud",
+      "backend_owner": "beijing"
+    }
+  ],
+  "pending_targets": [
+    {
+      "component": "frontend-pm",
+      "host": "ubuntu@154.8.205.162",
+      "root": "/var/www/pm-dist",
+      "domain": "pm.leshine.cloud",
+      "reason": "DNS and TLS not configured; office file service must remain the API owner"
+    },
+    {
+      "component": "hair",
+      "reason": "Authoritative source outside repository; normalize before automatic updates"
+    },
+    {
+      "component": "video",
+      "reason": "Authoritative source outside repository; COS migration deferred"
+    }
+  ],
+  "external_services": [
+    {
+      "host": "singapore",
+      "name": "deputy-relay",
+      "manager": "systemd",
+      "source": "/opt/deputy-relay"
+    },
+    {
+      "host": "singapore",
+      "name": "dingtalk-monitor",
+      "manager": "systemd"
+    },
+    {
+      "host": "singapore",
+      "name": "okki-sync",
+      "manager": "systemd"
+    },
+    {
+      "host": "singapore",
+      "name": "social-customer-mcp",
+      "manager": "systemd",
+      "source": "services/social-customer-mcp"
+    },
+    {
+      "host": "singapore",
+      "name": "leshine-customer-mcp",
+      "manager": "pm2"
+    },
+    {
+      "host": "singapore",
+      "name": "okki-index",
+      "manager": "pm2"
+    },
+    {
+      "host": "singapore",
+      "name": "okki-inventory",
+      "manager": "pm2"
+    },
+    {
+      "host": "singapore",
+      "name": "shipment-tracking-mcp",
+      "manager": "pm2"
+    },
+    {
+      "host": "singapore",
+      "name": "frps",
+      "manager": "systemd"
+    },
+    {
+      "host": "singapore",
+      "name": "openclaw",
+      "manager": "unconfirmed"
+    },
+    {
+      "host": "office",
+      "name": "n8n",
+      "manager": "unconfirmed"
+    },
+    {
+      "host": "beijing",
+      "name": "wlai-tunnel",
+      "manager": "systemd"
+    }
+  ],
+  "terminals": [
+    "tablet-kiosk (APK install)",
+    "miniprogram (WeChat review/publish)",
+    "WhatsApp translation extension (package updated; browser installation separate)"
+  ],
+  "migration_writers_verified": false,
+  "migration_note": "Office service access and independent writer ownership must be verified before running pending shared-DB DDL. Current schema 137 needs no DDL.",
+  "cos_file_migration": "deferred by owner"
+}
