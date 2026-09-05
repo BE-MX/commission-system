@@ -255,10 +255,11 @@ def test_public_pool_batch_executes_only_the_frozen_customer_watermark(db):
     }
     batch, created = public_pool_service.prepare_batch(db, payload, actor_id=1)
     assert created
+    batch_id = batch.id
     late = _account(db, "CUS-AFTER-WATERMARK")
     db.commit()
 
-    completed = public_pool_service.execute_batch(db, batch.id)
+    completed = public_pool_service.execute_batch(db, batch_id)
 
     assert completed.selection_snapshot["input_watermark"] == frozen.id
     assert completed.selection_snapshot["selected_customer_ids"] == [frozen.id]

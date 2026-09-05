@@ -1,5 +1,14 @@
 # 莱莎方舟平台 项目交接清单
 
+### 公海规则：可视化配置与JSON双向编辑完成（2026-09-06，待合并部署）
+
+继续使用 `codex/customer-operations-phase1` / `D:/MyProgram/commission-system-codex-customer-operations`，本轮基于客户经营一期 `a887df05`。背调中心新增「公海筛选规则与批次」抽屉：成交三路OR、13国家、IG优先/FB/电话、Genius Weft/Flat Tip/贴发、180天无下单与30天无跟进、配额均可在表单编辑；高级JSON双向同步，预览分原因统计，保存CAS版本后创建批次。调度使用已保存规则，历史批次保持快照。迁移138新增单例配置表，无客户数据回填；生产尚未执行迁移、未合并/push/部署。
+
+验证：13个相关后端模块204通过（17条既有警告），最后规则专项28通过；前端52通过（默认时区及America/Los_Angeles），构建3062模块通过（既有分包警告）。隔离内存SQLite+真实Vue页面验证4客户→2入选、日期缺失与近期订单分别排除、JSON错误保留/有效回填、保存/刷新恢复、重复创建只生成2任务；最终事务修复后再次保存与建批次成功。桌面与390×844手机布局、底部配额操作通过，页面控制台无error。迁移独立SQLite上下行与MySQL离线DDL通过。日志保留在 `tmp/public-pool-rules/`。
+
+独立审查发现并修复：归一化为空的产品词、筛选后被领取窗口、转属任务被错误复用、已flush修改被错误回滚。执行入口现在拒绝既有事务，编排明确结束prepare读视图，v2根客户按ID加锁至提交；预览无写锁。MySQL真实锁等待/大公海吞吐尚未实测，勿拿SQLite结果替代引擎验证。全量约定检查仍由未改动的DomesticOrders.vue既有UI基线失配拦截，本轮增量检查无违规；git_sweep --no-fetch已执行，仅本地快照。
+
+
 ### 客户经营第一期：本地实现与隔离验收完成（2026-09-06）
 
 分支 `codex/customer-operations-phase1`，worktree `D:/MyProgram/commission-system-codex-customer-operations`，基于 `59b2ff1f`。今日工作台、独立开发资格待审、中文研究摘要及来源证据、客户详情就地处理、机会证据选择、带日期且同负责人的后续待办已完成。复用现有表，无迁移；不包含 OpenClaw、邮件发送或完整策略编辑器。API 和模块说明已同步，完整范围及验收证据见 [客户经营第一期](requirements/2026-09-05-customer-operations-phase1.md)。

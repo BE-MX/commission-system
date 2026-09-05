@@ -42,3 +42,7 @@
 - 执行中暴露的 canonical float 证据反序列化和 MySQL `DATETIME` 秒精度问题已修复；39 表、778 字段、Agent 闭包、目标画像、空抑制名单和 writer 权限恢复已验收。
 - 办公室与北京后端日常使用 `ark_app`：对 `commission_db.*` 仅有 DML，对 `lsordertest.*` 仅有 `SELECT`；`root` 只用于受控迁移/维护。
 - 迁移 126 仍无 downgrade。新环境重建不得绕过 `scripts/customer_domain_cutover.py apply-reset`，失败后必须保留 contract、DDL proof 和 receipt，不得手工补表或复用 nonce。
+
+## 公海配置事实（2026-09-06）
+
+公海筛选采用可视化表单与严格JSON双向编辑，schema为public_pool_selection_v2；固定身份/未分配/DNC边界不能由JSON关闭。有效订单的金额三路OR与国家、渠道、产品、沉默周期AND，Instagram仅排序优先。样品必须明确全样品明细，不能由金额低推断。保存版本只影响后续批次，已有批次保存配置快照；预览与实际执行共用筛选器。当前订单、联系方式、会话、DNC和任务复用均须解析逻辑客户归属，不能只看不可变customer_id。

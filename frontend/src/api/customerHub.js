@@ -6,5 +6,6 @@ export const {
   listCustomers, getCustomer, listCustomerTimeline,
   getAcquisitionProfile, saveAcquisitionProfile, listSearchJobs, createSearchJob, requeueSearchJob, listSearchJobResults,
   createPublicPoolBatch, listResearchTasks, getResearchTask, reviewResearchTask,
+  getPublicPoolRules, savePublicPoolRules, previewPublicPoolRules, createConfiguredPublicPoolBatch,
   listOpportunities, updateOpportunity, listActions, updateAction,
 } = createCustomerHubApi(customerHubClient)

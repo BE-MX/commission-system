@@ -2,10 +2,10 @@
 
 Physical search/public-pool workflow tables are owned by ``app.customer`` so
 SQLAlchemy registers every table exactly once. This module owns only the
-preserved target-profile configuration table.
+target-profile and public-pool rule configuration tables.
 """
 
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Index, Integer, JSON, String
+from sqlalchemy import BigInteger, CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, JSON, String
 from sqlalchemy.dialects import mysql
 
 from app.core.database import Base
@@ -14,6 +14,21 @@ from app.customer.models import PublicPoolBatch, SearchJob, SearchResult, Search
 
 
 USER_ID = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
+
+
+class PublicPoolRuleConfig(Base):
+    __tablename__ = "ark_public_pool_rule_configs"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_public_pool_rule_singleton"),
+        {"comment": "公海可视化筛选配置；每批次另存不可变规则快照"},
+    )
+
+    id = Column(Integer, primary_key=True, comment="固定为1的全局配置ID")
+    version = Column(Integer, nullable=False, comment="保存时递增的规则版本")
+    rules_json = Column(JSON, nullable=False, comment="公海筛选条件的规范快照")
+    quotas_json = Column(JSON, nullable=False, comment="公海各档及总量配额")
+    updated_by = Column(USER_ID, ForeignKey("ark_users.id"), nullable=True, comment="最后修改用户")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, comment="最后修改的北京时间")
 
 
 class AcquisitionProfile(Base):
@@ -55,6 +70,7 @@ class AcquisitionProfile(Base):
 
 __all__ = [
     "AcquisitionProfile",
+    "PublicPoolRuleConfig",
     "SearchJob",
     "SearchResult",
     "SearchResultSource",

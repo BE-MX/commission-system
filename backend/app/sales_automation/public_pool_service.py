@@ -124,7 +124,7 @@ def is_development_denied(
 ) -> bool:
     now = beijing_now()
     annotation = db.query(CustomerAnnotation.id).filter(
-        CustomerAnnotation.customer_id == customer_id,
+        logical_root_predicate(CustomerAnnotation, "annotation", customer_id),
         CustomerAnnotation.annotation_type == "do_not_contact",
         CustomerAnnotation.status == "active",
         CustomerAnnotation.policy_effective_at <= now,
@@ -189,9 +189,11 @@ def ensure_research_task(
         CustomerResearchTask.task_fingerprint == fingerprint,
     ).one_or_none()
     if exact is not None:
+        if not db.query(CustomerResearchTask.id).filter(CustomerResearchTask.id == exact.id, logical_root_predicate(CustomerResearchTask, "research_task", customer_id)).first():
+            raise service.ConflictError("研究任务已转属其他客户，不能复用原任务")
         return exact, False
     active = db.query(CustomerResearchTask).filter(
-        CustomerResearchTask.customer_id == customer_id,
+        logical_root_predicate(CustomerResearchTask, "research_task", customer_id),
         CustomerResearchTask.task_type == task_type,
         CustomerResearchTask.research_policy_version == research_policy_version,
         or_(
@@ -241,6 +243,8 @@ def ensure_research_task(
         ).one_or_none()
         if exact is None:
             raise
+        if not db.query(CustomerResearchTask.id).filter(CustomerResearchTask.id == exact.id, logical_root_predicate(CustomerResearchTask, "research_task", customer_id)).first():
+            raise service.ConflictError("研究任务已转属其他客户，不能复用原任务")
         return exact, False
     return row, True
 
@@ -262,6 +266,12 @@ def prepare_batch(db: Session, payload: Any, actor_id: int | None) -> tuple[Publ
             "total_limit": quota * 3,
         }
     selection_policy = _json_value(data.get("profile_conditions") or default_profile_conditions())
+    if selection_policy.get("schema_version") == "public_pool_selection_v2":
+        from app.sales_automation.pool_rule_schema import PoolRules, PoolQuotas
+        selection_policy = PoolRules.model_validate(selection_policy).model_dump(mode="json")
+        quotas = PoolQuotas.model_validate(quotas).model_dump(mode="json")
+    elif selection_policy.get("schema_version") != "public_pool_selection_v1" or set(selection_policy) - {"schema_version", "identity_statuses", "record_status", "require_unassigned"}:
+        raise ValueError("不支持的公海规则字段或版本")
     watermark = db.query(CustomerAccount.id).order_by(CustomerAccount.id.desc()).limit(1).scalar() or 0
     idem = _hash({
         "batch_date": batch_date.isoformat(),
@@ -284,6 +294,7 @@ def prepare_batch(db: Session, payload: Any, actor_id: int | None) -> tuple[Publ
             "policy": selection_policy,
             "candidate_count": None,
             "filter_counts": {},
+            "evaluated_at": beijing_now().isoformat(),
         },
         result_counts={
             "schema_version": "public_pool_counts_v1",
@@ -331,7 +342,11 @@ def _tier_for_customer(db: Session, customer_id: int) -> str:
 
 
 def execute_batch(db: Session, batch_id: int) -> PublicPoolBatch:
-    batch = db.query(PublicPoolBatch).filter(PublicPoolBatch.id == batch_id).with_for_update().one_or_none()
+    # Never discard a caller's transaction: flushed writes are invisible to
+    # Session.dirty. The orchestration boundary closes preparation explicitly.
+    if db.in_transaction():
+        raise service.ConflictError("批次执行须使用独立事务，请先提交当前事务")
+    batch = db.query(PublicPoolBatch).filter(PublicPoolBatch.id == batch_id).populate_existing().with_for_update().one_or_none()
     if batch is None:
         raise service.NotFoundError("公海批次不存在")
     if batch.status == "completed":
@@ -341,6 +356,8 @@ def execute_batch(db: Session, batch_id: int) -> PublicPoolBatch:
     batch.status = "running"
     batch.started_at = beijing_now()
     db.flush()
+    if (batch.selection_snapshot or {}).get("policy", {}).get("schema_version") == "public_pool_selection_v2":
+        return _execute_configured_batch(db, batch)
     active_primary_ids = {
         customer_id
         for (customer_id,) in db.query(CustomerAssignment.customer_id).filter(
@@ -435,9 +452,46 @@ def execute_batch(db: Session, batch_id: int) -> PublicPoolBatch:
     return batch
 
 
+def _execute_configured_batch(db, batch):
+    from app.sales_automation.pool_selection import evaluate
+    snapshot = dict(batch.selection_snapshot)
+    selected, summary = evaluate(
+        db, snapshot["policy"], batch.quotas_json,
+        watermark=snapshot["input_watermark"], now=datetime.fromisoformat(snapshot["evaluated_at"]),
+        lock_accounts=True,
+    )
+    created, reused = {"T1": 0, "T2": 0, "T3": 0}, {"T1": 0, "T2": 0, "T3": 0}
+    task_ids = []
+    for item in selected:
+        account, tier = item["account"], item["tier"]
+        task, was_created = ensure_research_task(
+            db, customer_id=account.id, task_type="public_pool", source_ref_type="public_pool_batch",
+            source_ref_id=str(batch.id), research_policy_version=batch.policy_version,
+            input_snapshot={"schema_version": "research_input_v1", "public_pool_batch_id": batch.id, "customer_id": account.id, "profile_input_seq": account.profile_input_seq},
+            selection_reason=[{"reason": "configured_public_pool", "tier": tier, "commerce_path": item["commerce_path"], "instagram": item["instagram"], "policy_version": batch.policy_version}],
+            tier=tier, created_by=batch.created_by,
+        )
+        task_ids.append(task.id)
+        created[tier] += int(was_created)
+        reused[tier] += int(not was_created)
+    batch.selection_snapshot = {**snapshot, **summary, "filter_counts": {r["code"]: r["count"] for r in summary["exclusions"]}, "selected_customer_ids": [i["account"].id for i in selected], "research_task_ids": task_ids}
+    batch.result_counts = {"schema_version": "public_pool_counts_v1", "selected": summary["selected_by_tier"], "created": created, "reused": reused, "skipped": {}, "failed": {}}
+    batch.status, batch.finished_at = "completed", beijing_now()
+    batch.error_code = batch.error_message = None
+    db.commit()
+    db.refresh(batch)
+    return batch
+
+
 def generate_batch(db: Session, payload: Any, actor_id: int | None) -> PublicPoolBatch:
     batch, should_execute = prepare_batch(db, payload, actor_id)
-    return execute_batch(db, batch.id) if should_execute or batch.status in {"pending", "failed"} else batch
+    if should_execute or batch.status in {"pending", "failed"}:
+        batch_id = batch.id
+        # This orchestrator already owns preparation's commit. Close the read
+        # view opened by refresh before execution, preserving any flushed work.
+        db.commit()
+        return execute_batch(db, batch_id)
+    return batch
 
 
 def run_batch_in_background(batch_id: int) -> None:

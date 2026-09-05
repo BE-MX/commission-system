@@ -49,11 +49,11 @@ test('new acquisition and research entries retain create configure and review wo
   assert.match(acquisition, /v-permission="'sales_automation:admin'"/)
   assert.match(acquisition, /v-any-permission="\['sales_automation:write','sales_automation:admin'\]"/)
   assert.match(acquisition, /策略 JSON 格式错误/)
-  assert.match(research, /创建公海批次/)
+  assert.match(research, /公海筛选规则与批次/)
   assert.match(research, /通过复核/)
   assert.match(research, /要求修订/)
   assert.match(research, /reviewTask/)
-  assert.match(research, /配额 JSON 格式错误/)
+  assert.match(research, /PublicPoolRules/)
 })
 
 test('customer hub production views expose live task refresh and strict evidence validation', () => {

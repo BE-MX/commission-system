@@ -22,6 +22,9 @@
 | `POST /search-jobs/{job_id}/requeue`、`GET /search-jobs/{job_id}/results` | 失败任务重排与候选结果 | 获客写/读权限 |
 | `GET /public-pool/audit`、`POST /public-pool/audit/refresh` | 公海质量审计与刷新 | 获客读；刷新需 `sales_automation:admin` |
 | `GET/POST /public-pool/batches` | 公海背调批次查询与创建 | 获客读；创建需 `sales_automation:admin` |
+| `GET/PUT /public-pool/rules` | 读取/保存公海筛选规则与配额；保存需 expected_version | `sales_automation:admin` |
+| `POST /public-pool/rules/preview` | 按草稿统计合格数、配额内入选数及互斥排除原因，不写任务 | `sales_automation:admin` |
+| `POST /public-pool/rules/batches` | 按已保存版本创建/复用批次，传 expected_version | `sales_automation:admin` |
 | `GET /opportunities`、`PUT /opportunities/{id}` | 客户机会列表与证据化阶段更新 | `customer_opportunity:read/write` 或客户管理员 |
 | `GET /actions`、`PUT /actions/{id}` | 经营雷达行动列表、完成、忽略、延后和反馈 | `customer_radar:read/write` 或客户管理员 |
 | `GET /workbench` | 今日工作台：服务端完整范围统计、分页待办、客户与负责人名称、可操作状态 | `customer_radar:read` 或 `customer:read_all` |
@@ -38,6 +41,12 @@
 - 完成行动 `PUT /actions/{id}` 可增加 `next_step_due_at`、`followup_action_type=call|email|message|meeting|research|review`、`followup_channel`。只有 complete 可安排后续，要求非空 `next_step` 和未来北京时间；负责人沿用原行动。完成记录、销售活动和新行动同事务；响应包含 `followup_action_id`。相同完成请求不重复生成，改变既有后续参数返回 409。
 
 高影响变更均位于相同前缀：`GET/POST /change-proposals`，以及 `POST /change-proposals/{id}/submit|rebase|approve|reject|execute`。创建、提交、审批要求 `customer:admin`；执行时重新读取实时权限，DNC 操作要求 `customer:manage_dnc`，重大风险确认要求 `customer:confirm_material_risk`。`execute` 必须提供幂等键；版本过期先 `rebase`，不能静默套用旧证据。
+
+**公海可视化规则（迁移138）**：GET rules 无配置时返回 version=0、active=false 与推荐草稿，不改变现有定时行为。PUT 接收 `{rules, quotas, expected_version}`，保存后版本递增；冲突409，未知字段/无效规则422。preview只接受 `{rules, quotas}`，返回 `candidate_count/eligible_count/selected_count/selected_by_tier/instagram_selected/exclusions/evaluated_at`；每个客户只计入首个排除原因。新建批次使用已保存版本，过期版本409；同日同规则、配额和客户ID水位幂等。
+
+`rules.schema_version=public_pool_selection_v2`；`commerce` 配置 `min_orders/total_usd_gt/single_usd_gt/allow_sample_only/sample_requires_product`。其余字段：`countries`（两位国家代码）、`contact_channels`（instagram/facebook/phone 任一）、`prefer_instagram`、`product_terms/product_exclusions`、`no_order_days/no_followup_days`、`missing_followup=exclude|include`。产品词忽略大小写、空格、下划线和连字符后匹配产品族/型号/名称的子串；归一化空词拒绝。`quotas` 使用 `public_pool_quotas_v1`，固定 `team_scope=all`，包含 T1/T2/T3 各档0–500及 total_limit 1–1500。身份确认、活跃、未分配和允许开发是固定前置条件，JSON不能关闭。
+
+金额只统计有效订单且严格大于阈值；样品分支要求至少一笔有效订单且每笔都有明细、全部类型为sample。其余国家/渠道/日期条件始终同时满足；可单独关闭样品分支的产品限制。近N天包含北京时间临界日期，跟进须严格早于临界时刻；跟进取会话最新消息或对外销售活动实际发生时间。缺订单日期始终排除，缺跟进日期默认排除。历史v1批次按原快照执行；新UI与保存后的调度使用v2。
 
 ### 智能获客 Agent 写入面（`/api/sales-automation/agent`）
 

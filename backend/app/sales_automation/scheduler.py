@@ -7,6 +7,7 @@ from app.core.time import beijing_today
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.sales_automation.public_pool_service import default_profile_conditions, generate_batch
+from app.sales_automation.pool_rule_service import get_config, batch_payload
 
 
 logger = logging.getLogger("commission.sales_public_pool.scheduler")
@@ -17,13 +18,15 @@ def generate_public_pool_daily_batch() -> None:
     settings = get_settings()
     with SessionLocal() as db:
         try:
+            payload = batch_payload(db) if get_config(db)["active"] else {
+                "quota_per_tier": settings.SALES_PUBLIC_POOL_QUOTA_PER_TIER,
+                "policy_version": "v3", "profile_conditions": default_profile_conditions(),
+            }
             batch = generate_batch(
                 db,
                 {
                     "batch_date": beijing_today(),
-                    "quota_per_tier": settings.SALES_PUBLIC_POOL_QUOTA_PER_TIER,
-                    "policy_version": "v3",
-                    "profile_conditions": default_profile_conditions(),
+                    **payload,
                 },
                 actor_id=None,
             )

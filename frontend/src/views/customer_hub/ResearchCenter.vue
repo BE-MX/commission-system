@@ -1,6 +1,6 @@
 <template>
   <div class="workflow">
-    <div class="actions"><GlassButton v-permission="'sales_automation:admin'" variant="primary" left-icon="Plus" @click="batchDialog = true">创建公海批次</GlassButton></div>
+    <div class="actions"><GlassButton v-permission="'sales_automation:admin'" variant="primary" left-icon="Plus" @click="batchDialog = true">公海筛选规则与批次</GlassButton></div>
     <el-alert v-if="workflowError" type="error" title="操作失败，请检查策略版本、配额或权限后重试。" :closable="false" show-icon />
     <el-tabs v-model="activeTab">
       <el-tab-pane label="研究任务与质量审核" name="research"><CustomerHubWorkspace ref="workspace" kind="research" @inspect-task="inspectTask" /></el-tab-pane>
@@ -20,25 +20,24 @@
         </template>
       </div>
     </el-drawer>
-    <el-dialog v-model="batchDialog" title="创建公海批次" width="min(520px, calc(100vw - 32px))"><el-form label-position="top"><el-form-item label="策略版本"><el-input v-model="batch.policy_version" /></el-form-item><el-form-item label="配额 JSON"><el-input v-model="batch.quotasText" type="textarea" :rows="6" /></el-form-item></el-form><template #footer><GlassButton variant="ghost" @click="batchDialog = false">取消</GlassButton><GlassButton variant="primary" :loading="workflowLoading" @click="submitBatch">创建</GlassButton></template></el-dialog>
+    <PublicPoolRules v-model="batchDialog" @created="workspace?.refresh()" />
   </div>
 </template>
 <script setup>
-import { computed, reactive, ref } from 'vue'
-import { msgError, msgSuccess } from '@/utils/feedback'
+import { computed, ref } from 'vue'
+import { msgSuccess } from '@/utils/feedback'
 import { formatBeijingDateTime } from '@/utils/datetime'
 import CustomerHubWorkspace from './CustomerHubWorkspace.vue'
 import ResearchSummary from './ResearchSummary.vue'
 import QualificationPanel from './QualificationPanel.vue'
+import PublicPoolRules from './PublicPoolRules.vue'
 import { canReviewResearchDetail, getResearchReviewSuccessMessage } from './customerHubController'
 import { useResearchWorkflows } from './composables/useCustomerHub'
-const { workflowLoading, workflowError, createBatch, reviewTask, detail, detailLoading, detailError, detailTaskId, loadTaskDetail, retryTaskDetail } = useResearchWorkflows()
+const { workflowLoading, workflowError, reviewTask, detail, detailLoading, detailError, detailTaskId, loadTaskDetail, retryTaskDetail } = useResearchWorkflows()
 const workspace = ref(null), qualification = ref(null), activeTab = ref('research'), batchDialog = ref(false), detailVisible = ref(false)
 const reviewReady = computed(() => canReviewResearchDetail({ loading: detailLoading.value, error: detailError.value, data: detail.value }, detailTaskId.value))
-const batch = reactive({ policy_version: '', quotasText: '{}' })
 const formatDate = value => value ? formatBeijingDateTime(value) : '未提供'
 async function inspectTask(row) { detailVisible.value = true; await loadTaskDetail(row.research_task_id) }
-async function submitBatch() { let quotas; try { quotas = JSON.parse(batch.quotasText) } catch { msgError('配额 JSON 格式错误'); return } if (await createBatch({ policy_version: batch.policy_version, quotas_json: quotas, profile_conditions: {} })) { batchDialog.value = false; workspace.value.refresh(); msgSuccess('创建公海批次') } }
 async function review(status) { if (!reviewReady.value || workflowLoading.value) return; if (await reviewTask(detailTaskId.value, status)) { detailVisible.value = false; workspace.value.refresh(); qualification.value?.refresh(); msgSuccess(getResearchReviewSuccessMessage(status)) } }
 </script>
 <style scoped>

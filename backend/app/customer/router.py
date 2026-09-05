@@ -15,6 +15,8 @@ from app.customer.qualification_transaction import qualification_db
 from app.customer.workflow_service import CustomerWorkflowConflict, CustomerWorkflowError, CustomerWorkflowNotFound
 from app.sales_automation import router as acquisition_views
 from app.sales_automation import public_pool_service, service as acquisition_service
+from app.sales_automation import pool_rule_service
+from app.sales_automation.pool_rule_schema import PoolRuleInput, PoolRuleSave, PoolConfiguredBatch
 from app.sales_automation.schemas import (
     ProfileUpsert, PublicPoolBatchCreate, QualificationReviewSubmit,
     ResearchResultReview, SearchJobCreate,
@@ -187,6 +189,27 @@ def public_pool_batches(
     db: Session = Depends(get_db), user=Depends(require_any_permission(*ACQUISITION_READ)),
 ):
     return acquisition_views.list_public_pool_batches(page, page_size, db, user)
+
+
+@router.get("/public-pool/rules")
+def public_pool_rules(db: Session = Depends(get_db), user=Depends(require_permission("sales_automation:admin"))):
+    return ok(pool_rule_service.get_config(db))
+
+
+@router.put("/public-pool/rules")
+def save_public_pool_rules(payload: PoolRuleSave, db: Session = Depends(get_db), user=Depends(require_permission("sales_automation:admin"))):
+    return ok(_service_call(pool_rule_service.save_config, db, payload, _user_id(user)))
+
+
+@router.post("/public-pool/rules/preview")
+def preview_public_pool_rules(payload: PoolRuleInput, db: Session = Depends(get_db), user=Depends(require_permission("sales_automation:admin"))):
+    return ok(_service_call(pool_rule_service.preview, db, payload))
+
+
+@router.post("/public-pool/rules/batches", status_code=status.HTTP_201_CREATED)
+def create_configured_public_pool_batch(payload: PoolConfiguredBatch, db: Session = Depends(get_db), user=Depends(require_permission("sales_automation:admin"))):
+    row = _service_call(pool_rule_service.create_configured_batch, db, payload, _user_id(user))
+    return ok(acquisition_views._batch(row))
 
 @router.post("/public-pool/batches", status_code=status.HTTP_201_CREATED)
 def create_public_pool_batch(payload: PublicPoolBatchCreate, db: Session = Depends(get_db), user=Depends(require_permission("sales_automation:admin"))):

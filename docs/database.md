@@ -3,6 +3,11 @@
 > 本文档由 CLAUDE.md 瘦身治理（2026-07-03，见 docs/2026-07-03-architecture-assessment.md G-1）拆出。
 > 变更 API/表结构/模块行为时**同步更新本文件**。
 
+## 公海规则配置（迁移 138_public_pool_rules）
+
+新增 `ark_public_pool_rule_configs`：固定主键 `id=1`（CHECK）、递增 `version`、`rules_json`、`quotas_json`、`updated_by`（unsigned用户外键）、`updated_at`（北京时间）。不重写任何客户/订单数据，不预置生效规则。管理员首次保存后启用；新批次把配置与评估时间冻结到既有 `ark_sales_public_pool_batches.selection_snapshot`，修改全局配置不会改变已创建批次。
+
+
 ## 命名宪法（2026-07-08 起对增量强制，评估见 docs/2026-07-08-db-naming-assessment.md；check_conventions.py 机器检查）
 
 **表名**
