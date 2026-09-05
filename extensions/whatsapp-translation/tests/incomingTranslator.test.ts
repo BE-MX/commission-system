@@ -245,17 +245,34 @@ describe('incoming translator', () => {
     expect(bridge.translate).toHaveBeenCalledTimes(2)
   })
 
-  it('shows a retryable state after a 20-second timeout', async () => {
+  it('shows a retryable state only after a 50-second bridge timeout', async () => {
     adapter.listUntranslatedIncomingMessages.mockResolvedValue([incomingMessage('Hello', 'key-1')])
     bridge.translate.mockImplementation(() => new Promise(() => {}))
     const controller = createIncomingTranslator(adapter, bridge, renderer)
 
     controller.notifyMutation()
     await vi.advanceTimersByTimeAsync(300)
-    await vi.advanceTimersByTimeAsync(20_000)
+    await vi.advanceTimersByTimeAsync(49_999)
+    expect(renderer.mountTranslation.mock.calls.at(-1)?.[1].kind).toBe('loading')
+    await vi.advanceTimersByTimeAsync(1)
     const [, state, onRetry] = renderer.mountTranslation.mock.calls.at(-1)!
     expect(state).toEqual({ code: 'request_timeout', kind: 'retryable_error' })
     expect(onRetry).toBeTypeOf('function')
+  })
+
+  it('renders a slow response after the model has used its 40-second budget', async () => {
+    adapter.listUntranslatedIncomingMessages.mockResolvedValue([incomingMessage('Synthetic slow text', 'slow-key')])
+    bridge.translate.mockImplementation(() => new Promise(resolve => {
+      setTimeout(() => resolve({ translation: 'Synthetic translation' }), 41_000)
+    }))
+    const controller = createIncomingTranslator(adapter, bridge, renderer)
+
+    controller.notifyMutation()
+    await vi.advanceTimersByTimeAsync(41_300)
+    expect(renderer.mountTranslation).toHaveBeenLastCalledWith(expect.anything(), {
+      kind: 'success', translation: 'Synthetic translation',
+    }, expect.anything())
+    controller.chatChanged()
   })
 
   it('supports click-to-retry after a retryable network error', async () => {

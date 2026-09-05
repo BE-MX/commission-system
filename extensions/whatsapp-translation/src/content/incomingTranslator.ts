@@ -58,7 +58,8 @@ const DEBOUNCE_MS = 300
 const DEFAULT_RATE_LIMIT_MS = 60_000
 const MANUAL_ACTION_DELAY_MS = 1_000
 const MAX_CONCURRENCY = 3
-const REQUEST_TIMEOUT_MS = 20_000
+// Background translation gets 45 seconds; allow time for the runtime reply.
+const REQUEST_TIMEOUT_MS = 50_000
 const REVOKED_CODES = new Set(['device_expired', 'device_revoked', 'invalid_bearer', 'device_not_found', 'permission_denied', 'user_inactive', 'extension_outdated'])
 /** The user turned translation off in the popup: stop quietly, no bubble noise. */
 const SILENT_CODES = new Set(['translation_disabled', 'device_token_missing'])

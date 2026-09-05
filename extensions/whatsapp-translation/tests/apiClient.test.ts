@@ -1,13 +1,18 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiClient } from '@/background/apiClient'
 
 const fetchMock = vi.fn()
+const getPlatformInfo = vi.fn()
 
 beforeEach(() => {
   fetchMock.mockReset()
+  getPlatformInfo.mockReset().mockImplementation(callback => callback({ os: 'win', arch: 'x86-64', nacl_arch: 'x86-64' }))
   vi.stubGlobal('fetch', fetchMock)
+  vi.stubGlobal('chrome', { runtime: { getPlatformInfo } })
 })
+
+afterEach(() => { vi.useRealTimers() })
 
 describe('Ark API client', () => {
   it('unwraps the numeric Ark envelope and sends device credentials only on device routes', async () => {
@@ -44,6 +49,7 @@ describe('Ark API client', () => {
     const expectation = expect(request).rejects.toThrow('request_timeout')
     await vi.advanceTimersByTimeAsync(20_000)
     await expectation
+    expect(getPlatformInfo).not.toHaveBeenCalled()
     vi.useRealTimers()
   })
 
@@ -134,7 +140,7 @@ describe('Ark API client', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
-  it('bounds both browser transport attempts to one 20-second budget', async () => {
+  it('bounds both translation transport attempts to one 45-second budget', async () => {
     vi.useFakeTimers()
     fetchMock
       .mockImplementationOnce(() => new Promise((_resolve, reject) => {
@@ -151,11 +157,37 @@ describe('Ark API client', () => {
       target_language: 'zh-CN',
       text: 'Synthetic text',
     })
-    const expectation = expect(request).rejects.toThrow('request_timeout')
-    await vi.advanceTimersByTimeAsync(19_999)
+    const outcome = request.catch(error => error)
+    await vi.advanceTimersByTimeAsync(44_999)
     expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[1][1].signal.aborted).toBe(false)
     await vi.advanceTimersByTimeAsync(1)
-    await expectation
+    expect(await outcome).toMatchObject({ code: 'request_timeout' })
+    expect(getPlatformInfo).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBe(0)
+    vi.useRealTimers()
+  })
+
+  it.each(['incoming', 'outgoing'] as const)('waits for a 41-second %s translation response', async direction => {
+    vi.useFakeTimers()
+    fetchMock.mockImplementation((_url: string, init: RequestInit) => new Promise((resolve, reject) => {
+      init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      setTimeout(() => resolve(new Response(JSON.stringify({
+        code: 200, message: 'ok', data: {
+          detected_source_language: 'en', model_log_id: 10,
+          request_id: '4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de63', translated_text: 'Synthetic translation',
+        },
+      }), { status: 200 })), 41_000)
+    }))
+    const result = apiClient.translate('token', '1.2.2', {
+      direction, request_id: '4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de63',
+      source_language: 'auto', target_language: 'zh-CN', text: 'Synthetic text',
+    })
+    const outcome = result.then(data => ({ data }), error => ({ error }))
+    await vi.advanceTimersByTimeAsync(41_000)
+    expect(await outcome).toMatchObject({ data: { translated_text: 'Synthetic translation' } })
+    expect(getPlatformInfo).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBe(0)
     vi.useRealTimers()
   })
 })

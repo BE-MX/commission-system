@@ -2,6 +2,8 @@ import type { ApiEnvelope, CapabilitiesResponse, PairingStatusResponse, SessionR
 
 const BASE_URL = 'https://leshine.work/api/whatsapp-translation'
 const REQUEST_TIMEOUT_MS = 20_000
+// Allow the model's 40-second timeout plus response/network overhead.
+const TRANSLATION_TIMEOUT_MS = 45_000
 
 export class ArkApiError extends Error {
   constructor(
@@ -55,13 +57,13 @@ function isTransientTransportError(error: unknown): boolean {
     && (error.code === 'network_error' || error.code === 'backend_unavailable' || error.code === 'ai_unavailable')
 }
 
-async function request<TData>(path: string, init: RequestInit = {}, retryTransport = false): Promise<TData> {
+async function request<TData>(path: string, init: RequestInit = {}, retryTransport = false, timeoutMs = REQUEST_TIMEOUT_MS): Promise<TData> {
   const startedAt = Date.now()
   try {
-    return await requestOnce<TData>(path, init)
+    return await requestOnce<TData>(path, init, timeoutMs)
   } catch (error) {
     if (!retryTransport || !isTransientTransportError(error)) throw error
-    const remainingMs = REQUEST_TIMEOUT_MS - (Date.now() - startedAt)
+    const remainingMs = timeoutMs - (Date.now() - startedAt)
     if (remainingMs <= 0) throw error
     return await requestOnce<TData>(path, init, remainingMs)
   }
@@ -95,16 +97,25 @@ export function getCapabilities(token: string, extensionVersion: string): Promis
   return request('/capabilities', { headers: headers(token, extensionVersion) })
 }
 
-export function translate(
+export async function translate(
   token: string,
   extensionVersion: string,
   payload: TranslationRequest,
 ): Promise<TranslationResponse> {
-  return request('/translate', {
-    body: JSON.stringify(payload),
-    headers: headers(token, extensionVersion),
-    method: 'POST',
-  }, true)
+  // Chrome's documented bounded long-operation keepalive, not a persistent worker.
+  // https://developer.chrome.com/docs/extensions/develop/migrate/to-service-workers#keep-a-service-worker-alive
+  const keepAlive = setInterval(() => {
+    chrome.runtime.getPlatformInfo(() => { void chrome.runtime.lastError })
+  }, 25_000)
+  try {
+    return await request('/translate', {
+      body: JSON.stringify(payload),
+      headers: headers(token, extensionVersion),
+      method: 'POST',
+    }, true, TRANSLATION_TIMEOUT_MS)
+  } finally {
+    clearInterval(keepAlive)
+  }
 }
 
 export const apiClient = {
