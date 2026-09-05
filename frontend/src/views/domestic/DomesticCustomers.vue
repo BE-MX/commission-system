@@ -16,12 +16,6 @@
           <el-option label="停用" :value="0" />
         </el-select>
       </el-col>
-      <el-col :span="4">
-        <el-radio-group v-model="searchForm.owner_scope" @change="handleSearch">
-          <el-radio-button label="private">私海客户</el-radio-button>
-          <el-radio-button label="public">公海客户</el-radio-button>
-        </el-radio-group>
-      </el-col>
       <el-col :span="3">
         <el-select v-model="searchForm.province" placeholder="省份" filterable clearable style="width: 100%" @change="handleProvinceChange">
           <el-option v-for="province in options.provinces" :key="province" :label="province" :value="province" />
@@ -32,7 +26,7 @@
           <el-option v-for="city in options.cities" :key="city" :label="city" :value="city" />
         </el-select>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="10">
         <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
         <GlassButton v-permission="'domestic:write'" variant="ghost" left-icon="Plus" @click="openDialog()">新增客户</GlassButton>
         <GlassButton v-permission="'domestic:admin'" variant="ghost" left-icon="Upload" @click="openImport">导入客户</GlassButton>
@@ -42,6 +36,10 @@
     <el-alert class="membership-tip" type="info" :closable="false" show-icon title="会员等级默认按最近一次充值金额核定；管理员可「初始化」期初或「调整」临时覆盖，下一次充值会重新按金额核定。" />
 
     <div class="table-card customers-panel">
+      <el-tabs v-model="searchForm.owner_scope" class="customer-tabs" @tab-change="handleSearch">
+        <el-tab-pane label="私海客户" name="private" />
+        <el-tab-pane label="公海客户" name="public" />
+      </el-tabs>
       <el-table :data="list" v-loading="loading" border class="list-table" style="width: 100%">
         <el-table-column prop="custom_code" label="客户编码" min-width="110" show-overflow-tooltip />
         <el-table-column prop="shop_name" label="客户店名" min-width="160" show-overflow-tooltip />
@@ -417,6 +415,9 @@ const {
   --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
   background: transparent;
 }
+
+.customer-tabs { padding: 0 16px; --el-color-primary: var(--color-primary); }
+.customer-tabs :deep(.el-tabs__header) { margin-bottom: 0; }
 
 .customers-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
 .customers-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }

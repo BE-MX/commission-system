@@ -68,6 +68,7 @@ export const PREFIX_LABELS = {
   ai_chat: 'AI 方案对话',
   customer_image: '客户产品效果图',
   domestic: '内贸订单',
+  domestic_customer: '内贸客户管理',
   domestic_quantity_report: '内贸数量报工模式',
   domestic_unit_report: '内贸逐件扫码模式',
   shipping_inspection: '发货检验',
@@ -99,6 +100,7 @@ export const PREFIX_LABELS = {
  * 新增页面码时同步维护，漏登记只影响缩进层级、不影响功能。
  */
 export const PAGE_PARENTS = {
+  domestic_customer: 'domestic',
   domestic_quantity_report: 'domestic',
   domestic_unit_report: 'domestic',
   commission_my: 'commission',
@@ -136,7 +138,7 @@ const ROW_GROUPS = [
   { label: '经营 · 提成与客户', prefixes: ['commission', 'commission_my', 'payment', 'customer', 'sales_automation', 'customer_opportunity', 'customer_radar', 'employee', 'supervisor'] },
   { label: '单据 · 订单与物流', prefixes: [
     'invoice', 'invoice_price', 'invoice_okki', 'invoice_repair', 'invoice_private_filter', 'festival', 'festival_order', 'order_intelligence', 'domestic',
-    'domestic_quantity_report', 'domestic_unit_report',
+    'domestic_customer', 'domestic_quantity_report', 'domestic_unit_report',
     'aftersales', 'aftersales_analytics', 'tracking', 'shipping_inspection',
     'stock', 'stock_daily',
     'production', 'production_product', 'production_dashboard', 'production_route',

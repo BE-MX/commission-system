@@ -58,7 +58,7 @@ export function useDomesticCustomers() {
   )
 
   function canOperateCustomer(row) {
-    return auth.user?.id === row.owner_user_id
+    return auth.hasPermission('domestic_customer:admin') || auth.user?.id === row.owner_user_id
   }
 
   function handleProvinceChange() {
