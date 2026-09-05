@@ -41,7 +41,7 @@ def test_whatsapp_translation_settings_defaults():
     assert settings.WHATSAPP_TRANSLATION_RATE_PER_MINUTE == 30
     assert settings.WHATSAPP_TRANSLATION_DAILY_INPUT_CHARS == 200_000
     assert settings.WHATSAPP_TRANSLATION_MAX_TEXT_CHARS == 4_000
-    assert settings.WHATSAPP_TRANSLATION_AI_TIMEOUT_SECONDS == 15
+    assert settings.WHATSAPP_TRANSLATION_AI_TIMEOUT_SECONDS == 40
     assert settings.WHATSAPP_TRANSLATION_MIN_EXTENSION_VERSION == "1.0.0"
 
 
