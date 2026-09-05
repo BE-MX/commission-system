@@ -8,7 +8,7 @@
 
 - 后端：Python 3.12 + FastAPI + SQLAlchemy 2.0 + Alembic + APScheduler
 - 前端：Vue 3 + Element Plus + Vite 5；微信小程序（生产报工）
-- 数据库：腾讯云 RDS MySQL 双库——`commission_db`（读写）+ `lsordertest`（业务镜像默认只读跨查；唯一写例外是管理员回款日期修复对 `okki_receipts.collection_date` 的受审计单列 UPDATE）；**开发/生产共用同一套库，迁移创建并验证后在开发机直接 `alembic upgrade head`，不等生产部署**（2026-07-12 亮哥指令；迁移必须兼容"老代码 + 新 schema"过渡期）
+- 数据库：腾讯云 RDS MySQL 双库——`commission_db`（读写）+ `lsordertest`（业务镜像默认只读跨查；唯一写例外是管理员回款日期修复对 `okki_receipts.collection_date` 的受审计单列 UPDATE）。**生产迁移由部署入口统一检查并只执行一次，禁止开发机自行升级共享生产库**（2026-09-05 部署调整）。数据库未知 revision、领先于发布代码或多 head 必须阻断；不能 stamp/downgrade 掩盖差异。涉及破坏性 schema 的迁移必须先冻结全部相关写实例；普通发布不复制或覆盖数据库。开发验证使用隔离库，现存开发配置尚未隔离前不得执行迁移或写入型测试。
 - 部署：Windows Server + NSSM；生产 = 腾讯云 Nginx 静态直出 + frp 内网穿透反代本地 8002（云端 frps，本地 frpc 挂 NSSM——不是 SSH 隧道，2026-07-10 核实）；2026-07-22 起另有**北京云展会实例**（154.8.205.162，方舟全量、SCHEDULER 关闭防定时任务双跑、开发机 `git push cloud` 部署，运维见 runbook「云端展会实例」节）
 - 环境变量：`backend/.env`（不进 git）；配置一律走 `app/core/config.py` 的 Settings，**禁止直读 os.environ**
 
@@ -23,7 +23,7 @@ cd frontend && npm run build                # 构建
 cd frontend-pm && npm run dev               # PM 站前端 dev :3100（代理 /api → 8001；start.bat 不含它）
 python scripts/check_conventions.py        # 完工前跑约定检查（见 DoD）
 python scripts/git_sweep.py --open         # git 欠账巡检 + 可视化看板（tmp/git-sweep.html）
-deploy\deploy.bat                           # 服务器部署（拉码→依赖→迁移→构建→SCP→重启双服务）
+deploy\deploy.bat                           # 统一候选发布、一次 schema 检查、增量传输；范围与恢复见 deploy/README.md
 ```
 
 后端 API :8001 / 前端 dev :3000 / 生产 :443（云 Nginx）+ 本地 :8002。服务器上**只能用 deploy.bat**，手动 uvicorn 会抢端口。
