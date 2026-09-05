@@ -1,6 +1,7 @@
 """Backend readiness and restart decisions, with no live service/database access."""
 
 import io
+from contextlib import nullcontext
 import json
 from pathlib import Path
 import sys
@@ -36,7 +37,7 @@ class BackendReleaseTests(unittest.TestCase):
             (state / ("backend-prepared-" + revision + ".json")).write_text(json.dumps(info))
             def run(args, **kwargs):
                 return revision if args[:2] == ["git", "rev-parse"] else ""
-            with patch.object(remote_backend, "ROOT", root), patch.object(remote_backend, "STATE", state), patch.object(remote_backend, "run", side_effect=run) as command, patch.object(remote_backend, "schema_check"), patch.object(remote_backend, "healthy"):
+            with patch.object(remote_backend, "ROOT", root), patch.object(remote_backend, "STATE", state), patch.object(remote_backend, "run", side_effect=run) as command, patch.object(remote_backend, "schema_check"), patch.object(remote_backend, "healthy"), patch.object(remote_backend, "database_lock", return_value=nullcontext()):
                 result = remote_backend.activate(revision)
             self.assertEqual(result["status"], "updated")
             self.assertTrue(any(call.args[0] == ["sudo","-n","systemctl","start","ark-backend"] for call in command.call_args_list))

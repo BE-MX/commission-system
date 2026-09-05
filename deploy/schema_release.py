@@ -20,8 +20,8 @@ def validate(inventory, pending):
             raise ValueError("Invalid registered database writer")
         if writer["kind"] == "systemd" and writer.get("host") not in {"ubuntu@154.8.205.162", "root@119.28.107.92"}:
             raise ValueError("Unregistered writer host")
-    required = {("nssm", "CommissionSystem"), ("nssm", "WhatsAppConnector"), ("systemd", "ark-backend")}
-    if not required.issubset({(w["kind"],w["service"]) for w in writers}):
+    required = {("nssm", "office", "CommissionSystem"), ("nssm", "office", "WhatsAppConnector"), ("systemd", "ubuntu@154.8.205.162", "ark-backend")}
+    if not required.issubset({(w["kind"],w.get("host"),w["service"]) for w in writers}):
         raise ValueError("Required application writers missing from migration inventory")
     return writers
 
@@ -69,7 +69,7 @@ def migrate(prepared, inventory, credential_file=None):
 
 
 def resume_external(writers, prepared):
-    owned = {("nssm", "CommissionSystem"), ("nssm", "WhatsAppConnector"), ("systemd", "ark-backend")}
+    owned = {("nssm", "office", "CommissionSystem"), ("nssm", "office", "WhatsAppConnector"), ("systemd", "ubuntu@154.8.205.162", "ark-backend")}
     for writer in writers:
-        if (writer["kind"], writer["service"]) not in owned:
+        if (writer["kind"], writer.get("host"), writer["service"]) not in owned:
             control(writer, "start", prepared["nssm"])

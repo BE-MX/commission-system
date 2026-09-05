@@ -46,7 +46,7 @@ def prepare(source, target, root, state, host):
     common = {"root": root, "manifest": files, "host": host}
     result = remote(target, {**common, "action": "plan"})
     transferred = 0
-    if result["missing"] or not result["initialized"] or result["active_artifact"] != result["artifact"]:
+    if not result.get("staged") and (result["missing"] or not result["initialized"] or result["active_artifact"] != result["artifact"]):
         archive = state / (result["artifact"] + ".tar.gz")
         archive.parent.mkdir(parents=True, exist_ok=True)
         with tarfile.open(archive, "w:gz") as bundle:
@@ -56,7 +56,7 @@ def prepare(source, target, root, state, host):
         remote_archive = "/tmp/ark-static-" + result["artifact"] + ".tar.gz"
         run(["scp", *SSH_OPTIONS, str(archive), target + ":" + remote_archive], timeout=300)
         remote(target, {**common, "action": "stage", "archive": remote_archive})
-    print(f"  {target}:{root}: {len(result['missing'])} changed files, {transferred} transfer bytes", flush=True)
+    print(f"  {target}:{root}: {len(result['missing'])} changed files, {transferred} transfer bytes, staged={result.get('staged', False)}", flush=True)
     common["expected"] = result["active_artifact"]
     return {"target": target, "request": common, "bytes": transferred}
 

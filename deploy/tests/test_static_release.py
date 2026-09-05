@@ -86,6 +86,13 @@ class StaticReleaseTests(unittest.TestCase):
             release.stage(self.root, new, self.bundle({"index.html": b"corrupt"}))
         self.assertEqual(release.plan(self.root, old)["active_artifact"], release.artifact_id(old))
 
+    def test_prepared_candidate_is_reused_before_activation(self):
+        files = {"index.html": digest(b"prepared")}
+        release.stage(self.root, files, self.bundle({"index.html": b"prepared"}))
+        result = release.plan(self.root, files)
+        self.assertTrue(result["staged"])
+        self.assertFalse(result["initialized"])
+
     def test_symlinked_asset_directory_is_rejected(self):
         self.root.mkdir()
         external = self.directory / "external"

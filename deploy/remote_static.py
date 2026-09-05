@@ -85,11 +85,16 @@ def layout(root):
 
 def plan(root, manifest):
     validate_manifest(manifest)
-    _, current, base = layout(root)
+    state, current, base = layout(root)
     active = current.resolve().name if current.exists() else None
+    candidate = state / "versions" / artifact_id(manifest)
+    no_links(candidate)
+    staged = candidate.is_dir() and all(matching(candidate, n, h) for n, h in manifest.items())
+    if candidate.exists() and not staged:
+        raise ValueError("Existing release is corrupt")
     return {"missing": [n for n, h in manifest.items() if not matching(base, n, h)],
             "artifact": artifact_id(manifest), "active_artifact": active,
-            "initialized": root.is_symlink()}
+            "initialized": root.is_symlink(), "staged": staged}
 
 
 def retain_assets(base, candidate):

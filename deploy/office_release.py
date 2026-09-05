@@ -9,7 +9,7 @@ import time
 import urllib.request
 
 from publish import ROOT, STATE, atomic_json, input_digest, marker, npm_command, run
-from remote_backend import schema_check
+from remote_backend import schema_check, database_lock
 from static_sync import manifest
 from remote_static import retain_assets
 
@@ -95,6 +95,12 @@ def stage_static(outputs, prepared):
 
 
 def activate(prepared):
+    with database_lock(ROOT, prepared["python"]):
+        schema_check(ROOT, prepared["python"])
+        return activate_locked(prepared)
+
+
+def activate_locked(prepared):
     nssm, live = prepared["nssm"], prepared["live"]
     revision, previous = prepared["revision"], prepared["previous"]
     if run(["git", "rev-parse", "HEAD"], cwd=live, capture=True) != previous:

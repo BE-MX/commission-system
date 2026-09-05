@@ -1,6 +1,7 @@
 """Run as ubuntu on the registered Beijing server. No secrets in responses."""
 
 import hashlib
+from contextlib import contextmanager
 import json
 from pathlib import Path
 import re
@@ -24,6 +25,22 @@ def run(args, cwd=ROOT, capture=False):
 
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+@contextmanager
+def database_lock(source, python):
+    process = subprocess.Popen([str(python), "-u", str(source / "deploy/database_lock.py")],
+        cwd=source / "backend", stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        if process.stdout.readline().strip() != "READY":
+            raise RuntimeError("Shared database release lock unavailable; no service activation attempted")
+        yield
+    finally:
+        try:
+            process.communicate(input="release\n", timeout=20)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate()
 
 
 def schema_check(source, python, allow_pending=False):
@@ -102,6 +119,14 @@ def healthy():
 
 
 def activate(revision):
+    info = json.loads((STATE / ("backend-prepared-" + revision + ".json")).read_text())
+    source = STATE / "checkouts" / revision
+    python = Path(info["environment"]) / "bin/python" if info["environment"] else ROOT / "backend/.venv/bin/python"
+    with database_lock(source, python):
+        return activate_locked(revision)
+
+
+def activate_locked(revision):
     record = STATE / ("backend-prepared-" + revision + ".json")
     info = json.loads(record.read_text())
     if run(["git", "rev-parse", "HEAD"], capture=True) not in {info["previous"], revision}:
