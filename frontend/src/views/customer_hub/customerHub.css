@@ -1,0 +1,116 @@
+/* Shared only by customer operations pages and their teleported overlays. */
+:is(.customer-hub, .customer-hub-dialog, .customer-hub-drawer) {
+  min-width: 0;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+:is(.customer-hub, .customer-hub-dialog, .customer-hub-drawer) :is(h1, h2, h3) {
+  font-family: var(--font-display);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+:is(.customer-hub, .customer-hub-dialog, .customer-hub-drawer) .glass-button {
+  flex-shrink: 0;
+}
+:is(.customer-hub, .customer-hub-dialog, .customer-hub-drawer) .glass-button.gb-variant--link {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+:is(.customer-hub, .customer-hub-dialog, .customer-hub-drawer) :is(button, a):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+}
+:is(.customer-hub, .customer-hub-dialog, .customer-hub-drawer) .list-table {
+  --el-table-bg-color: var(--card-bg);
+  --el-table-tr-bg-color: var(--card-bg);
+  --el-table-header-bg-color: var(--table-header-bg);
+  --el-table-row-hover-bg-color: var(--table-row-hover);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 400;
+}
+:is(.customer-hub, .customer-hub-dialog, .customer-hub-drawer) .list-table th.el-table__cell {
+  background: var(--table-header-bg);
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+:is(.customer-hub, .customer-hub-dialog, .customer-hub-drawer) .list-table td.el-table-fixed-column--right {
+  background: var(--card-bg);
+}
+:is(.customer-hub, .customer-hub-dialog, .customer-hub-drawer) .list-table tr.hover-row > td.el-table-fixed-column--right {
+  background: var(--table-row-hover);
+}
+.customer-hub .hub-operation-cell .cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+}
+:is(.customer-hub, .customer-hub-dialog, .customer-hub-drawer) .el-pagination {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.customer-hub-dialog.el-dialog {
+  display: flex;
+  flex-direction: column;
+  margin: 24px auto;
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+}
+.customer-hub-dialog .el-dialog__header,
+.customer-hub-dialog .el-dialog__footer,
+.customer-hub-drawer .el-drawer__header,
+.customer-hub-drawer .el-drawer__footer {
+  flex-shrink: 0;
+}
+.customer-hub-dialog .el-dialog__body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.customer-hub-dialog .el-dialog__title,
+.customer-hub-drawer .el-drawer__title {
+  font: 700 17px/1.5 var(--font-display);
+  overflow-wrap: anywhere;
+}
+.customer-hub-dialog .el-dialog__footer,
+.customer-hub-drawer .el-drawer__footer {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.customer-hub-drawer .el-drawer__body {
+  min-width: 0;
+  overscroll-behavior: contain;
+}
+:is(.customer-hub-dialog, .customer-hub-drawer) .el-radio-group {
+  gap: 4px 0;
+}
+.customer-hub-dialog .el-dialog__body > p {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 768px) {
+  /* Keep the customer/task readable when the operation column is wider than half the screen. */
+  :is(.customer-hub, .customer-hub-dialog, .customer-hub-drawer) .list-table .el-table-fixed-column--right {
+    position: static !important;
+  }
+  :is(.customer-hub, .customer-hub-dialog, .customer-hub-drawer) .list-table .el-table-fixed-column--right::before {
+    display: none;
+  }
+  .customer-hub-dialog.el-dialog {
+    margin: 12px auto;
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+  :is(.customer-hub, .customer-hub-dialog, .customer-hub-drawer) .glass-button {
+    min-height: 44px;
+  }
+  .customer-hub-dialog .el-dialog__footer,
+  .customer-hub-drawer .el-drawer__footer {
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+}

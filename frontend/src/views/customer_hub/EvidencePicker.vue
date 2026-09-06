@@ -1,6 +1,6 @@
 <template>
   <section class="evidence-picker" :aria-label="kind === 'fact' ? '事实证据' : '事件证据'">
-    <div class="picker-toolbar"><el-input v-model="searchForm.keyword" clearable :placeholder="kind === 'fact' ? '搜索证据主题' : '搜索沟通事件'" @keyup.enter="handleSearch" @clear="handleSearch" /><GlassButton variant="secondary" :loading="loading" @click="handleSearch">查询</GlassButton></div>
+    <div class="picker-toolbar"><el-input v-model="searchForm.keyword" clearable :placeholder="kind === 'fact' ? '搜索证据主题' : '搜索沟通事件'" @keyup.enter="handleSearch" @clear="handleSearch" /><GlassButton variant="secondary" left-icon="Search" :loading="loading" @click="handleSearch">查询</GlassButton></div>
     <p v-if="!readonly" class="hint">已选 {{ modelValue.length }} 条；切换分页会保留选择。<el-button v-if="modelValue.length" link @click="$emit('update:modelValue', [])">清空</el-button></p>
     <p v-if="opportunityId && kind === 'event'" class="hint">仅可选择与本机会及目标阶段匹配的沟通记录；如没有可选项，请先处理该机会关联的客户待办并登记结果。</p>
     <el-alert v-if="error" type="error" title="证据加载失败，请重试。" :closable="false" />

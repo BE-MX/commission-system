@@ -1,5 +1,5 @@
 <template>
-  <DetailDrawer
+  <DetailDrawer class="customer-hub-drawer" append-to-body
     :model-value="modelValue"
     :title="customerTitle"
     width="min(820px, 100vw)"
@@ -180,7 +180,7 @@ const SectionBlock = defineComponent({
 <style scoped>
 .identity-strip { display: flex; justify-content: space-between; gap: 24px; padding: 18px; border: 1px solid var(--border-color); border-radius: var(--card-radius); background: var(--toolbar-bg); }
 .eyebrow { color: var(--text-muted); font-size: 12px; letter-spacing: .08em; }
-h2 { margin: 4px 0; color: var(--text-primary); font-size: 22px; }
+h2 { margin: 4px 0; color: var(--text-primary); font-size: 17px; }
 .identity-strip p { margin: 0; color: var(--text-secondary); line-height: 1.6; }
 .identity-metrics { min-width: 180px; display: grid; align-content: start; justify-items: end; gap: 8px; color: var(--text-secondary); font-size: 13px; }
 .detail-tabs { margin-top: 16px; }
@@ -189,7 +189,7 @@ h2 { margin: 4px 0; color: var(--text-primary); font-size: 22px; }
 .fact-grid span { display: block; color: var(--text-muted); font-size: 12px; margin-bottom: 6px; }
 .fact-grid strong { color: var(--text-primary); }
 .section-block { margin-bottom: 12px; padding: 14px; border: 1px solid var(--border-color); border-radius: 8px; }
-.section-block h3 { margin: 0 0 10px; color: var(--text-primary); font-size: 14px; }
+.section-block h3 { margin: 0 0 10px; color: var(--text-primary); font-size: 15px; }
 .empty-copy { margin: 0; color: var(--text-muted); }
 .structured-scalar { color: var(--text-primary); overflow-wrap: anywhere; }
 .structured-empty { color: var(--text-muted); font-weight: 400; }

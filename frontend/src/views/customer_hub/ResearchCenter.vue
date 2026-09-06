@@ -1,12 +1,12 @@
 <template>
-  <div class="workflow">
+  <div class="workflow customer-hub">
     <div class="actions"><GlassButton v-permission="'sales_automation:admin'" variant="primary" left-icon="Plus" @click="batchDialog = true">公海筛选规则与批次</GlassButton></div>
     <el-alert v-if="workflowError" type="error" title="操作失败，请检查策略版本、配额或权限后重试。" :closable="false" show-icon />
     <el-tabs v-model="activeTab">
       <el-tab-pane label="研究任务与质量审核" name="research"><CustomerHubWorkspace ref="workspace" kind="research" @inspect-task="inspectTask" /></el-tab-pane>
       <el-tab-pane label="开发资格待审" name="qualification" lazy><QualificationPanel ref="qualification" /></el-tab-pane>
     </el-tabs>
-    <el-drawer v-model="detailVisible" title="背调任务详情" size="min(640px, 100vw)">
+    <el-drawer class="customer-hub-drawer" v-model="detailVisible" title="背调任务详情" size="min(640px, 100vw)">
       <div v-loading="detailLoading" class="detail-body">
         <el-alert v-if="detailError" type="error" title="任务详情加载失败；列表信息不能替代复核依据。" :closable="false" show-icon><template #default><el-button link type="primary" @click="retryTaskDetail">重试</el-button></template></el-alert>
         <template v-else-if="detail?.content_redacted">
@@ -15,10 +15,12 @@
         <template v-else-if="detail">
           <ResearchSummary :detail="detail" />
           <p class="timestamp">最近更新：{{ formatDate(detail.updated_at) }}</p>
-          <div v-if="reviewReady" class="review-actions"><GlassButton v-permission="'sales_automation:admin'" variant="success" left-icon="Check" :loading="workflowLoading" :disabled="workflowLoading" @click="review('accepted')">通过复核</GlassButton><GlassButton v-permission="'sales_automation:admin'" variant="warning" left-icon="RefreshLeft" :loading="workflowLoading" :disabled="workflowLoading" @click="review('revision_requested')">要求修订</GlassButton><GlassButton v-permission="'sales_automation:admin'" variant="danger" left-icon="Close" :loading="workflowLoading" :disabled="workflowLoading" @click="review('rejected')">驳回结果</GlassButton></div>
-          <el-alert v-else type="info" title="仅已完成的背调任务可进行结果复核。" :closable="false" show-icon />
+          <el-alert v-if="!reviewReady" type="info" title="仅已完成的背调任务可进行结果复核。" :closable="false" show-icon />
         </template>
       </div>
+      <template v-if="reviewReady && !detail?.content_redacted" #footer>
+        <div class="review-actions"><GlassButton v-permission="'sales_automation:admin'" variant="success" left-icon="Check" :loading="workflowLoading" :disabled="workflowLoading" @click="review('accepted')">通过复核</GlassButton><GlassButton v-permission="'sales_automation:admin'" variant="warning" left-icon="RefreshLeft" :loading="workflowLoading" :disabled="workflowLoading" @click="review('revision_requested')">要求修订</GlassButton><GlassButton v-permission="'sales_automation:admin'" variant="danger" left-icon="Close" :loading="workflowLoading" :disabled="workflowLoading" @click="review('rejected')">驳回结果</GlassButton></div>
+      </template>
     </el-drawer>
     <PublicPoolRules v-model="batchDialog" @created="workspace?.refresh()" />
   </div>

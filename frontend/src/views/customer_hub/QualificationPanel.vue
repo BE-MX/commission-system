@@ -1,18 +1,18 @@
 <template>
   <section class="qualification-panel">
     <el-alert type="info" title="开发资格决定是否值得继续开发；研究质量审核只确认材料是否可用。审核通过不会改变客户归属。" :closable="false" />
-    <div class="toolbar"><el-input v-model="searchForm.keyword" placeholder="搜索待审核客户" clearable @keyup.enter="handleSearch" @clear="handleSearch" /><GlassButton variant="secondary" :loading="loading" @click="handleSearch">刷新</GlassButton></div>
+    <div class="toolbar"><el-input v-model="searchForm.keyword" placeholder="搜索待审核客户" clearable @keyup.enter="handleSearch" @clear="handleSearch" /><GlassButton variant="secondary" left-icon="Refresh" :loading="loading" @click="handleSearch">刷新</GlassButton></div>
     <el-alert v-if="error" type="error" title="资格队列加载失败，请重试。" :closable="false" />
-    <el-table v-else v-loading="loading" :data="list" border class="list-table" row-key="research_task_id">
-      <el-table-column prop="customer_name" label="客户" min-width="180" />
-      <el-table-column prop="scope_label" label="开发方向" min-width="160" />
+    <div v-else class="table-card"><el-table v-loading="loading" :data="list" border class="list-table" row-key="research_task_id">
+      <el-table-column prop="customer_name" label="客户" min-width="180" show-overflow-tooltip />
+      <el-table-column prop="scope_label" label="开发方向" min-width="160" show-overflow-tooltip />
       <el-table-column label="目标匹配分" min-width="120"><template #default="{ row }">{{ row.match_score ?? '未评估' }}</template></el-table-column>
       <el-table-column label="研究更新" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.updated_at, { seconds: false }) }}</template></el-table-column>
-      <el-table-column label="操作" min-width="130" max-width="180"><template #default="{ row }"><GlassButton variant="link" @click="inspect(row)">{{ row.can_review ? '审阅并决定' : '查看受限原因' }}</GlassButton></template></el-table-column>
+      <el-table-column label="操作" min-width="150" max-width="180" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="inspect(row)">{{ row.can_review ? '审阅并决定' : '查看受限原因' }}</GlassButton></template></el-table-column>
       <template #empty>当前没有待做资格判断的客户；已决定或未到重评时间的客户不会重复出现。</template>
-    </el-table>
+    </el-table></div>
     <el-pagination v-model:current-page="page" :page-size="pageSize" :total="total" layout="total, prev, pager, next" @current-change="handlePageChange" />
-    <el-drawer v-model="visible" title="开发资格审核" size="min(760px, 100vw)" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
+    <el-drawer class="customer-hub-drawer" v-model="visible" title="开发资格审核" size="min(760px, 100vw)" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
       <div v-loading="context.loading" class="review-body">
         <el-alert v-if="context.error" type="error" title="审核依据加载失败，请重新加载后再决定。" :closable="false"><el-button link @click="reload">重新加载</el-button></el-alert>
         <template v-else-if="context.data">
@@ -62,4 +62,4 @@ async function save() {
 }
 defineExpose({ refresh: fetchList })
 </script>
-<style scoped>.qualification-panel { display: grid; gap: 14px; }.toolbar { display: flex; gap: 10px; }.toolbar :deep(.el-input) { max-width: 400px; }.review-body { min-height: 160px; }.review-body h2 { margin: 0; font-size: 20px; }.review-body p { color: var(--text-secondary); line-height: 1.6; }.decision-form { margin-top: 20px; }.decision-form :deep(.el-date-editor) { width: 100%; }.hint { color: var(--text-muted); font-size: 12px; }.el-pagination { overflow-x: auto; }</style>
+<style scoped>.qualification-panel { display: grid; gap: 14px; }.toolbar { display: flex; gap: 10px; }.toolbar :deep(.el-input) { max-width: 400px; }.review-body { min-height: 160px; }.review-body h2 { margin: 0; font-size: 17px; }.review-body p { color: var(--text-secondary); line-height: 1.6; }.decision-form { margin-top: 20px; }.decision-form :deep(.el-date-editor) { width: 100%; }.hint { color: var(--text-muted); font-size: 12px; }.el-pagination { overflow-x: auto; }</style>

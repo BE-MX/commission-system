@@ -1,5 +1,5 @@
 <template>
-  <el-dialog v-model="visible" append-to-body title="处理客户待办" width="min(620px, calc(100vw - 24px))" :close-on-click-modal="!workflowLoading" :close-on-press-escape="!workflowLoading" :show-close="!workflowLoading">
+  <el-dialog class="customer-hub-dialog" v-model="visible" append-to-body title="处理客户待办" width="min(620px, calc(100vw - 24px))" :close-on-click-modal="!workflowLoading" :close-on-press-escape="!workflowLoading" :show-close="!workflowLoading">
     <p>{{ current?.customer_name }} · {{ current?.next_action || actionLabels[current?.action_type] || current?.action_type }}</p>
     <el-alert v-if="workflowError" type="error" title="保存失败，请检查时间、权限或刷新待办状态后重试。已填写的内容仍保留。" :closable="false" show-icon />
     <el-form label-position="top" :disabled="workflowLoading" class="action-form">
