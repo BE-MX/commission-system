@@ -30,7 +30,6 @@
     "transition_all": 5
   },
   "frontend/src/components/WorldMapCanvas.vue": {
-    "hex_colors": 11,
     "lines_over_500": 0,
     "transition_all": 0
   },
@@ -85,7 +84,6 @@
     "transition_all": 0
   },
   "frontend/src/views/auth/LoginPage.vue": {
-    "hex_colors": 17,
     "lines_over_500": 0,
     "transition_all": 0
   },

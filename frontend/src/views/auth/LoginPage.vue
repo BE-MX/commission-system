@@ -1,19 +1,20 @@
 <template>
-  <div class="relative w-screen h-screen overflow-hidden bg-[#0a0a0f]">
-    <!-- 全屏 LeShine 品牌水印，铺在地图下面（地图 canvas 已透明底，点阵浮其上） -->
+  <div class="login-page">
+    <!-- Static ambient light and watermark keep the form surface stable. -->
+    <div class="login-atmosphere" aria-hidden="true"></div>
     <img :src="logoGold" class="bg-watermark" aria-hidden="true" alt="" />
-    <div class="absolute top-0 left-0 h-full w-full lg:w-[55%]" style="z-index: 1;">
+    <div class="login-map">
       <WorldMapCanvas />
     </div>
 
     <!-- Content Overlay -->
-    <div class="relative z-10 flex h-full">
+    <div class="login-layout">
       <!-- Left Panel - Brand Zone -->
       <div
-        class="hidden lg:flex flex-col justify-between h-full brand-panel will-animate animate-fade-in"
+        class="brand-panel"
       >
         <!-- Brand Header -->
-        <div class="pt-4 will-animate animate-fade-in-left delay-200">
+        <div class="brand-header login-enter">
           <div class="brand-lockup">
             <img :src="logoGold" class="brand-logo" alt="leShine Hair" />
             <span class="brand-divider"></span>
@@ -22,32 +23,36 @@
         </div>
 
         <!-- Main Title Block -->
-        <div class="flex-1 flex flex-col justify-center will-animate animate-fade-in-left delay-350">
-          <p class="brand-eyebrow"><span class="brand-dot"></span>企业级 AI 综合中台</p>
+        <div class="brand-copy login-enter">
+          <p class="brand-eyebrow"><span class="brand-dot"></span>AI 驱动的企业协同平台</p>
           <h1 class="brand-title">
-            <span class="brand-trails" aria-hidden="true"><i class="rail"></i><i class="rail"></i><i class="rail"></i></span>莱莎方舟
+            <span class="brand-wake" aria-hidden="true">
+              <i v-for="lane in 5" :key="`lane-${lane}`" class="wake-stream" :style="{ '--lane': lane }"></i>
+              <i v-for="particle in wakeParticles" :key="particle.id" class="wake-particle" :style="particle.style"></i>
+            </span>
+            <span class="brand-title-text">莱莎方舟</span>
           </h1>
           <p class="brand-latin">LeShine Ark Platform</p>
           <span class="brand-rule"></span>
-          <p class="brand-desc">二十大业务模块 <b>·</b> 一体协同</p>
-          <div class="brand-pillars will-animate animate-fade-in-left delay-500">
-            <span>提成</span><i></i><span>订单发票</span><i></i><span>方舟洞见</span><i></i><span>生产制造</span><i></i><span>全链路履约</span>
+          <p class="brand-desc">贯通业务 <b>·</b> 沉淀知识 <b>·</b> 智能协同</p>
+          <div class="brand-pillars">
+            <span>客户经营</span><i></i><span>产销履约</span><i></i><span>业绩核算</span><i></i><span>创意设计</span><i></i><span>知识洞察</span>
           </div>
         </div>
 
         <!-- Footer -->
-        <div class="pb-4 will-animate animate-fade-in-left delay-650">
+        <div class="brand-bottom">
           <p class="brand-footer">© 2026 LeShine Co., Ltd. <span>企业内部平台</span></p>
         </div>
       </div>
 
       <!-- Right Panel - Login Form -->
-      <div class="form-side relative flex-1 flex items-center justify-center p-6">
-        <div class="glass-card gold-glow login-card w-full will-animate animate-fade-in-right delay-300">
+      <div class="form-side">
+        <div class="login-card login-enter">
           <!-- Form Header (brand logo serves all viewports) -->
           <div class="mb-8">
             <img :src="logoGold" class="form-logo" alt="leShine Hair" />
-            <p class="text-sm text-white/60 mt-4">欢迎登录莱莎方舟综合管理平台</p>
+            <p class="text-sm text-white/60 mt-4">欢迎登录莱莎方舟企业协同平台</p>
           </div>
 
           <form @submit.prevent="handleSubmit">
@@ -58,6 +63,8 @@
               </svg>
               <input
                 v-model="username"
+                aria-label="用户名"
+                autocomplete="username"
                 type="text"
                 placeholder="请输入用户名"
                 class="tech-input w-full h-12 pl-12 pr-4 text-sm"
@@ -71,6 +78,8 @@
               </svg>
               <input
                 v-model="password"
+                aria-label="密码"
+                autocomplete="current-password"
                 :type="showPassword ? 'text' : 'password'"
                 placeholder="请输入密码"
                 class="tech-input w-full h-12 pl-12 pr-12 text-sm"
@@ -78,7 +87,9 @@
               <button
                 type="button"
                 @click="showPassword = !showPassword"
-                class="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 hover:text-white/50 transition-colors"
+                class="password-toggle"
+                :aria-label="showPassword ? '隐藏密码' : '显示密码'"
+                :aria-pressed="showPassword"
               >
                 <svg v-if="showPassword" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
@@ -91,24 +102,12 @@
             </div>
 
             <!-- Options -->
-            <div class="flex items-center justify-between mt-5">
+            <div class="login-options">
               <label class="flex items-center gap-2 cursor-pointer group">
-                <div
-                  @click="remember = !remember"
-                  :class="[
-                    'w-4 h-4 rounded border transition-all duration-200 flex items-center justify-center',
-                    remember
-                      ? 'bg-[#d4af6e] border-[#d4af6e]'
-                      : 'border-white/30 group-hover:border-white/50'
-                  ]"
-                >
-                  <svg v-if="remember" class="w-3 h-3 text-[#0a0a0f]" viewBox="0 0 12 12" fill="none">
-                    <path d="M2 6L5 9L10 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </div>
+                <input v-model="remember" type="checkbox" class="remember-checkbox" />
                 <span class="text-sm text-white/60">记住登录状态</span>
               </label>
-              <a href="#" class="text-sm text-[#d4af6e] hover:underline transition-all">
+              <a href="#" class="forgot-link">
                 忘记密码?
               </a>
             </div>
@@ -133,7 +132,7 @@
           </form>
         </div>
         <footer
-          class="site-filing will-animate animate-fade-in delay-650"
+          class="site-filing"
           aria-label="网站备案信息"
         >
           <a
@@ -158,6 +157,20 @@ import WorldMapCanvas from '@/components/WorldMapCanvas.vue'
 import logoGold from '@/assets/leshine-logo-gold.png'
 import { EXPO_KIOSK_PATH } from '@/router/expoKioskRoute'
 import { readSessionItem } from '@/utils/safeSessionStorage'
+
+// Deterministic stagger keeps the wake continuous from the first frame.
+const wakeParticles = Array.from({ length: 38 }, (_, id) => ({
+  id,
+  style: {
+    '--origin-y': `${22 + (id * 17 % 57)}%`,
+    '--drift-y': `${(id * 23 % 65) - 32}px`,
+    '--travel': `${130 + (id * 31 % 130)}px`,
+    '--duration': `${2.6 + (id % 9) * 0.2}s`,
+    '--delay': `${-(id * 0.37 % 4.2)}s`,
+    '--size': `${id % 5 === 0 ? 3 : 1.5}px`,
+    '--length': `${id % 6 === 0 ? 16 : id % 3 === 0 ? 5 : 2}px`,
+  },
+}))
 
 const router = useRouter()
 const route = useRoute()
@@ -204,166 +217,158 @@ const handleSubmit = async () => {
 </script>
 
 <style scoped>
-/* Tailwind utilities are available globally via kimi-design.css */
-
-/* ── 左侧品牌区排版（金色渐变文字 + Outfit 字标 + 结构分隔） ── */
-/* 整块品牌文字往里推，避免贴左边缘、页面中段空旷 */
-.brand-panel { padding: 46px 44px 46px clamp(96px, 12vw, 220px); }
-/* lg 下右侧登录栏给固定像素宽（容纳 620 卡片 + 内边距），左栏 flex:1 吃掉剩余。
-   确定性布局：卡片列宽固定，不再被左栏内容撑宽而挤出视口 */
-@media (min-width: 1024px) {
-  .brand-panel { flex: 1 1 0%; min-width: 0; }
-  .form-side { flex: 0 0 520px; min-width: 0; }
+.login-page {
+  position: relative; isolation: isolate; width: 100%; min-height: 100vh; min-height: 100svh;
+  overflow: clip; background: var(--login-bg); color: var(--login-text);
 }
-
-.brand-wordmark {
-  font-family: 'Outfit', sans-serif;
-  font-weight: 700; font-size: 26px; letter-spacing: 0.01em; line-height: 1;
-  background: linear-gradient(118deg, #f9ecc6, #d4af6e 70%);
-  -webkit-background-clip: text; background-clip: text; color: transparent;
+.login-page :where(*, *::before, *::after) { box-sizing: border-box; }
+.login-atmosphere {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at 18% 24%, var(--login-wash), transparent 56%),
+    radial-gradient(ellipse at 90% 70%, var(--login-wash), transparent 46%);
 }
-.brand-wordmark-sub {
-  font-family: 'Outfit', sans-serif;
-  font-weight: 500; font-size: 11.5px; letter-spacing: 0.34em;
-  color: rgba(255, 255, 255, 0.42);
-}
-.brand-lockup { display: flex; align-items: center; gap: 16px; }
-.brand-logo { height: 44px; width: auto; display: block; }
-.brand-divider { width: 1px; height: 26px; background: rgba(212, 175, 110, 0.4); }
-
-.brand-eyebrow {
-  display: flex; align-items: center; gap: 12px; margin: 0 0 18px;
-  font-family: 'Outfit', 'PingFang SC', sans-serif;
-  font-weight: 600; font-size: 18px; letter-spacing: 0.18em;
-  color: #e2c17c;
-}
-.brand-dot {
-  width: 8px; height: 8px; border-radius: 50%; flex: none;
-  background: linear-gradient(120deg, #f9ecc6, #d4af6e);
-  box-shadow: 0 0 12px rgba(212, 175, 110, 0.6);
-}
-
-.brand-title {
-  position: relative; margin: 0;
-  font-family: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
-  font-weight: 800; font-size: clamp(46px, 5vw, 66px); line-height: 1.05;
-  letter-spacing: 0.02em;
-  background: linear-gradient(135deg, #fbeecb 0%, #e7c882 44%, #c99a4e 100%);
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-  text-shadow: 0 2px 46px rgba(212, 175, 110, 0.14);
-}
-
-/* 方舟航迹：标题左侧的金色滑行光轨，向标题方向驶入——凸显「方舟」的动态意象、补白左侧 */
-.brand-trails {
-  position: absolute; top: 50%; right: calc(100% + 26px); transform: translateY(-50%);
-  width: clamp(130px, 15vw, 300px); height: 118px; pointer-events: none;
-}
-.brand-trails .rail {
-  position: absolute; left: 0; right: 0; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(212, 175, 110, 0.05) 55%, rgba(212, 175, 110, 0.22));
-}
-.brand-trails .rail:nth-child(1) { top: 28%; }
-.brand-trails .rail:nth-child(2) { top: 50%; }
-.brand-trails .rail:nth-child(3) { top: 72%; }
-.brand-trails .rail::after {
-  content: ''; position: absolute; top: -3px; left: 0;
-  width: 42%; height: 6px; border-radius: 6px; filter: blur(1px);
-  background: linear-gradient(90deg, transparent, #f7e3b0, #d4af6e, transparent);
-  animation: ark-glide 4.6s cubic-bezier(0.42, 0, 0.2, 1) infinite;
-}
-.brand-trails .rail:nth-child(2)::after { animation-duration: 5.4s; animation-delay: 1.5s; }
-.brand-trails .rail:nth-child(3)::after { animation-duration: 4s; animation-delay: 2.8s; }
-@keyframes ark-glide {
-  0%   { transform: translateX(-46%); opacity: 0; }
-  16%  { opacity: 1; }
-  72%  { opacity: 1; }
-  100% { transform: translateX(255%); opacity: 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .brand-trails .rail::after { animation: none; opacity: 0.5; transform: translateX(120%); }
-}
-
-/* 全屏 LeShine 品牌水印：整枚金标放大铺在地图下面，地图点阵浮其上，登录卡毛玻璃也透出它 */
 .bg-watermark {
-  position: absolute; z-index: 0; pointer-events: none; user-select: none;
-  left: 50%; top: 50%; transform: translate(-50%, -50%);
-  width: min(1500px, 94vw); height: auto;
-  opacity: 0.05; filter: saturate(0.75);
+  position: absolute; left: -6%; bottom: 4%; width: 65%; height: auto;
+  opacity: 0.01; pointer-events: none; user-select: none;
 }
-
-/* 登录卡内金标（替代打字的 LeShine Hair，全站品牌一致） */
-.form-logo { height: 34px; width: auto; display: block; }
-
-/* 登录卡：加宽 + 半透明暖调毛玻璃 + 金色边缘发光（叠在地图上也通透好看） */
+.login-map {
+  position: absolute; left: 0; top: 49%; transform: translateY(-50%);
+  width: calc(100% - 490px); height: clamp(400px, 68vh, 700px); opacity: 0.85;
+}
+.login-layout { position: relative; z-index: 1; display: flex; min-height: 100vh; min-height: 100svh; }
+.brand-panel { display: flex; flex: 1; min-width: 0; flex-direction: column; padding: 48px 32px 30px clamp(48px, 7vw, 140px); }
+.brand-copy {
+  flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: flex-start;
+  padding: 0 0 28px clamp(42px, 7vw, 110px);
+}
+.brand-lockup { display: flex; align-items: center; gap: 18px; }
+.brand-logo { height: 40px; width: auto; display: block; }
+.brand-divider { width: 1px; height: 24px; background: var(--login-border); }
+.brand-wordmark-sub { font-family: 'Outfit', sans-serif; font-size: 10px; letter-spacing: 0.3em; color: var(--login-muted); }
+.brand-eyebrow { display: flex; align-items: center; gap: 10px; margin: 0 0 18px; font-size: 13px; letter-spacing: 0.18em; color: var(--login-gold); }
+.brand-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--login-gold); }
+.brand-title {
+  position: relative; margin: 0; white-space: nowrap; font-size: clamp(42px, 4.4vw, 64px);
+  font-weight: 700; line-height: 1.2; letter-spacing: 0.06em;
+  animation: ark-sailing 7s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+}
+.brand-title-text {
+  position: relative; z-index: 1;
+  background: linear-gradient(115deg, var(--login-gold-light), var(--login-gold));
+  background-clip: text; -webkit-background-clip: text; color: transparent;
+  filter: drop-shadow(0 2px 8px var(--login-bg));
+}
+/* The wake travels LEFT from the title, implying forward sailing to the right. */
+.brand-wake {
+  position: absolute; right: calc(100% - 8px); top: -18%; width: 270px; height: 136%;
+  pointer-events: none; mask-image: linear-gradient(90deg, transparent, var(--login-bg) 30%);
+}
+.brand-wake::before {
+  content: ''; position: absolute; right: -4px; top: 5%; width: 95%; height: 90%;
+  background: radial-gradient(ellipse at right, var(--login-wake-glow), transparent 72%);
+}
+.wake-stream {
+  position: absolute; right: 0; top: calc(16% + var(--lane) * 11%);
+  width: calc(52% + var(--lane) * 8%); height: 1px; opacity: 0.42;
+  transform-origin: right; transform: rotate(calc((var(--lane) - 3) * 2deg));
+  background: linear-gradient(90deg, transparent, var(--login-wake-glow) 40%, var(--login-gold));
+}
+.wake-particle {
+  position: absolute; right: 0; top: var(--origin-y); width: var(--length); height: var(--size);
+  border-radius: 50%; background: linear-gradient(90deg, var(--login-gold), var(--login-gold-light));
+  animation: ark-wake var(--duration) linear var(--delay) infinite both;
+}
+@keyframes ark-wake {
+  0% { transform: translate(0, 0) scale(1); opacity: 0; }
+  12% { opacity: 0.85; }
+  55% { opacity: 0.35; }
+  100% { transform: translate(calc(-1 * var(--travel)), var(--drift-y)) scale(0.4); opacity: 0; }
+}
+@keyframes ark-sailing {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(8px, -3px); }
+}
+.brand-latin { position: relative; text-shadow: 0 1px 8px var(--login-bg); margin: 12px 0 0; font-family: 'Outfit', sans-serif; font-size: 11px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--login-dim); }
+.brand-rule { display: block; width: 36px; height: 1px; margin: 24px 0; background: var(--login-gold); }
+.brand-desc { position: relative; text-shadow: 0 1px 8px var(--login-bg); margin: 0; font-size: 15px; letter-spacing: 0.08em; color: var(--login-muted); }
+.brand-desc b { margin: 0 5px; color: var(--login-gold); font-weight: 400; }
+.brand-pillars { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; font-size: 11px; color: var(--login-dim); }
+.brand-pillars i { width: 1px; height: 10px; background: var(--login-border); }
+.brand-footer { margin: 0; font-size: 11px; line-height: 1.8; color: var(--login-dim); }
+.brand-footer span { margin-left: 12px; }
+.form-side { position: relative; flex: 0 0 500px; display: flex; align-items: center; justify-content: center; min-width: 0; padding: 64px 48px 88px 24px; }
 .login-card {
-  width: 100%; max-width: 414px; padding: 44px 46px; border-radius: 22px;
-  background: linear-gradient(158deg, rgba(40, 33, 23, 0.40), rgba(14, 12, 16, 0.56));
-  backdrop-filter: blur(28px) saturate(1.35);
-  -webkit-backdrop-filter: blur(28px) saturate(1.35);
-  border: 1px solid rgba(212, 175, 110, 0.24);
-  box-shadow:
-    0 24px 70px rgba(0, 0, 0, 0.5),
-    0 0 44px rgba(212, 175, 110, 0.16),
-    0 0 100px rgba(212, 175, 110, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  width: 100%; max-width: 420px; padding: 40px 34px; border-radius: 20px;
+  background: linear-gradient(145deg, var(--login-surface), var(--login-bg));
+  border: 1px solid var(--login-border);
+  box-shadow: 0 24px 64px var(--login-shadow), inset 0 1px 0 var(--login-wash);
 }
-@media (max-width: 640px) {
-  .login-card { padding: 36px 28px; }
+.form-logo { height: 36px; width: auto; display: block; }
+.login-card .text-white\/60 { color: var(--login-muted); }
+.tech-input { color: var(--login-text); border-color: var(--login-border); transition: border-color 160ms ease, box-shadow 160ms ease; }
+.tech-input::placeholder { color: var(--login-dim); }
+.password-toggle {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: grid; place-items: center;
+  width: 40px; height: 40px; padding: 0; border: 0; border-radius: 6px;
+  color: var(--login-muted); background: transparent; cursor: pointer; transition: color 160ms ease;
 }
-.brand-latin {
-  margin: 14px 0 0;
-  font-family: 'Outfit', sans-serif;
-  font-weight: 500; font-size: 13.5px; letter-spacing: 0.3em; text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.26);
+.login-options { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 20px; }
+.remember-checkbox { width: 15px; height: 15px; margin: 0; accent-color: var(--login-gold); cursor: pointer; }
+.forgot-link { color: var(--login-gold); font-size: 13px; white-space: nowrap; text-decoration: none; }
+.tech-btn-primary { background: linear-gradient(115deg, var(--login-gold-light), var(--login-gold)); color: var(--login-bg); transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 160ms ease; }
+.tech-btn-primary:hover { filter: none; box-shadow: none; }
+.tech-btn-primary:disabled { opacity: 0.7; cursor: wait; }
+.tech-btn-primary:disabled:active { transform: none; }
+.login-card :is(button, a, input[type='checkbox']):focus-visible { outline: 2px solid var(--login-gold); outline-offset: 4px; }
+@media (hover: hover) and (pointer: fine) {
+  .password-toggle:hover { color: var(--login-gold-light); }
+  .forgot-link:hover { text-decoration: underline; }
+  .tech-btn-primary:not(:disabled):hover { box-shadow: 0 4px 20px var(--login-wash); }
 }
-.brand-rule {
-  display: block; width: 60px; height: 3px; border-radius: 2px; margin: 30px 0;
-  background: linear-gradient(90deg, #d4af6e, rgba(212, 175, 110, 0));
-}
-.brand-desc {
-  margin: 0; font-size: 17px; font-weight: 500; letter-spacing: 0.04em;
-  color: rgba(255, 255, 255, 0.66);
-}
-.brand-desc b { color: #d4af6e; font-weight: 500; margin: 0 4px; }
-
-.brand-pillars {
-  display: flex; align-items: center; gap: 13px; margin-top: 20px;
-  font-size: 12.5px; letter-spacing: 0.14em; color: rgba(255, 255, 255, 0.42);
-}
-.brand-pillars i {
-  width: 1px; height: 11px; flex: none; display: inline-block;
-  background: rgba(212, 175, 110, 0.3);
-}
-
-.brand-footer {
-  margin: 0; font-size: 12px; letter-spacing: 0.05em; color: rgba(255, 255, 255, 0.28);
-}
-.brand-footer span { color: rgba(212, 175, 110, 0.5); margin-left: 8px; }
-
-.form-side { padding-bottom: 76px; }
-
 .site-filing {
   position: absolute; right: 24px; bottom: 18px; left: 24px;
-  display: flex; align-items: center; justify-content: center; gap: 12px;
-  font-size: 12px; line-height: 1.5; letter-spacing: 0.03em;
-  color: rgba(255, 255, 255, 0.34);
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px 10px;
+  font-size: 11px; line-height: 1.6; color: var(--login-dim);
 }
-.site-filing a {
-  color: rgba(212, 175, 110, 0.68); text-decoration: none;
-  transition: color 180ms ease;
+.site-filing a { color: var(--login-muted); text-decoration: none; transition: color 160ms ease; }
+.site-filing a:hover { color: var(--login-gold-light); }
+.site-filing a:focus-visible { outline: 1px solid currentColor; outline-offset: 4px; }
+.site-filing__divider { width: 1px; height: 10px; background: var(--login-border); }
+.login-enter { animation: login-enter 280ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+.brand-copy { animation-delay: 60ms; }
+@keyframes login-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@media (min-width: 1024px) and (max-height: 760px) {
+  .brand-copy { padding-bottom: 16px; }
+  .brand-rule { margin: 18px 0; }
 }
-.site-filing a:hover { color: rgba(249, 236, 198, 0.92); }
-.site-filing a:focus-visible {
-  outline: 1px solid currentColor; outline-offset: 4px; border-radius: 2px;
-}
-.site-filing__divider {
-  width: 1px; height: 12px; flex: none;
-  background: rgba(255, 255, 255, 0.16);
+@media (max-width: 1023px) {
+  .brand-panel { display: none; }
+  .form-side { flex: 1; min-height: 100vh; min-height: 100svh; padding: 100px 24px 96px; }
+  .login-map { left: 0; top: 0; bottom: auto; width: 100%; height: 300px; transform: none; opacity: 0.45; }
+  .bg-watermark { width: 100%; left: 0; bottom: 8%; }
 }
 @media (max-width: 640px) {
-  .form-side { padding-bottom: 88px; }
+  .form-side { padding: 72px 20px 96px; }
+  .login-card { padding: 32px 24px; }
+  .tech-input { font-size: 16px; }
   .site-filing { bottom: 18px; flex-wrap: wrap; gap: 4px 10px; }
   .site-filing__divider { display: none; }
   .site-filing span:last-child { flex-basis: 100%; text-align: center; }
+}
+@media (max-width: 359px) {
+  .form-side { padding-inline: 12px; }
+  .login-card { padding-inline: 18px; }
+  .login-options { gap: 8px; }
+  .login-options .text-sm { font-size: 12px; }
+}
+@media (min-width: 1024px) and (max-height: 600px) {
+  .login-layout { min-height: 600px; }
+  .login-map { top: 290px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-enter, .brand-title { animation: none; }
+  .wake-particle { animation: none; opacity: 0; }
+  .tech-btn-primary { transition: none; }
+  .tech-btn-primary:active { transform: none; }
 }
 </style>

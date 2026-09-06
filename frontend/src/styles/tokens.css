@@ -5,6 +5,19 @@
    =================================================== */
 
 :root {
+  /* Login: quiet dark-gold scene, separate from the light workspace surfaces. */
+  --login-bg: #0d0e13;
+  --login-gold: #d4af6e;
+  --login-gold-light: #f2dfb0;
+  --login-text: #f1eee8;
+  --login-muted: #a7a39c;
+  --login-dim: #827e77;
+  --login-wake-glow: rgba(212, 175, 110, 0.2);
+  --login-wash: rgba(212, 175, 110, 0.09);
+  --login-border: rgba(212, 175, 110, 0.22);
+  --login-surface: rgba(24, 23, 24, 0.96);
+  --login-shadow: rgba(0, 0, 0, 0.35);
+
   /* ── Primary: LeShine Gold ── */
   --color-primary:        #D4941C;
   --color-primary-hover:  #BB8218;

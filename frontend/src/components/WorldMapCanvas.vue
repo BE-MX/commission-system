@@ -1,441 +1,248 @@
 <template>
-  <canvas
-    ref="canvasRef"
-    :style="{
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      width: '100%',
-      height: '100%',
-      zIndex: 0
-    }"
-  />
+  <div class="world-map" aria-hidden="true">
+    <canvas ref="mapRef" />
+    <canvas ref="motionRef" />
+  </div>
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import landContours from '@/assets/world-land.json'
 
-const canvasRef = ref(null)
-const particles = ref([])
-const ripples = ref([])
-const stars = ref([])
-let animRef = 0
-let lastSpawnTime = 0
-let lastRippleTime = 0
+const mapRef = ref(null)
+const motionRef = ref(null)
+let dispose = () => {}
 
-// 大陆多边形数据
-const CONTINENTS = [
-  // North America
-  [[-155,65],[-140,70],[-120,72],[-100,70],[-90,65],[-80,60],[-70,55],[-60,50],[-55,45],[-50,40],[-80,30],[-100,25],[-110,30],[-120,35],[-130,40],[-140,50],[-150,55],[-155,65]],
-  // South America
-  [[-80,10],[-70,0],[-60,-10],[-55,-20],[-55,-30],[-60,-40],[-65,-50],[-70,-55],[-75,-50],[-75,-40],[-75,-30],[-75,-20],[-75,-10],[-78,0],[-80,10]],
-  // Europe
-  [[-10,35],[0,40],[10,45],[20,50],[30,55],[40,60],[45,65],[40,70],[30,70],[20,65],[10,60],[0,55],[-10,50],[-10,45],[-10,40],[-10,35]],
-  // Africa
-  [[-15,35],[0,35],[15,35],[30,32],[40,25],[45,15],[40,5],[35,-5],[30,-15],[25,-25],[20,-30],[15,-35],[10,-30],[5,-20],[0,-10],[-5,0],[-10,10],[-15,20],[-15,30],[-15,35]],
-  // Middle East
-  [[35,25],[45,30],[55,35],[60,30],[65,25],[60,20],[55,15],[50,15],[45,20],[40,22],[35,25]],
-  // Asia
-  [[60,70],[80,75],[100,75],[120,72],[140,65],[150,60],[160,55],[170,50],[170,40],[160,30],[150,25],[140,20],[130,15],[120,10],[110,5],[100,0],[90,5],[80,10],[70,15],[65,20],[60,25],[55,30],[55,40],[55,50],[60,60],[60,70]],
-  // Australia
-  [[115,-15],[125,-15],[135,-18],[145,-25],[150,-30],[150,-35],[145,-38],[140,-40],[130,-38],[120,-35],[115,-30],[115,-25],[115,-20],[115,-15]],
-  // India
-  [[70,8],[80,8],[88,10],[92,15],[90,22],[85,25],[80,22],[75,18],[72,12],[70,8]]
-]
+// Natural Earth 1:110m land, public domain; source and processing in DESIGN.md.
+const landPolygons = landContours.map(points => ({
+  points,
+  west: Math.min(...points.map(p => p[0])), east: Math.max(...points.map(p => p[0])),
+  south: Math.min(...points.map(p => p[1])), north: Math.max(...points.map(p => p[1])),
+}))
 
-// 目标城市
 const DESTINATIONS = [
-  { name: '北美', color: '#00d4ff', lat: 45, lon: -100 },
-  { name: '欧洲', color: '#d4af6e', lat: 50, lon: 10 },
-  { name: '中东', color: '#ff9f43', lat: 25, lon: 50 },
-  { name: '澳洲', color: '#54d468', lat: -25, lon: 135 }
+  { name: '北美', lon: -100, lat: 45 },
+  { name: '欧洲', lon: 10, lat: 50 },
+  { name: '中东', lon: 50, lat: 25 },
+  { name: '澳洲', lon: 135, lat: -25 },
 ]
-
-// 青岛坐标
-const qingdaoLon = 120.383
-const qingdaoLat = 36.067
-
-// 点在多边形内判断
-function pointInPolygon(x, y, polygon) {
-  let inside = false
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const xi = polygon[i][0], yi = polygon[i][1]
-    const xj = polygon[j][0], yj = polygon[j][1]
-    const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)
-    if (intersect) inside = !inside
-  }
-  return inside
-}
+const ORIGIN = { name: '青岛', lon: 120.383, lat: 36.067 }
 
 function isLand(lon, lat) {
-  return CONTINENTS.some(poly => pointInPolygon(lon, lat, poly))
+  return landPolygons.some(({ points: polygon, west, east, south, north }) => {
+    if (lon < west || lon > east || lat < south || lat > north) return false
+    let inside = false
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const [xi, yi] = polygon[i]
+      const [xj, yj] = polygon[j]
+      if ((yi > lat) !== (yj > lat) && lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) inside = !inside
+    }
+    return inside
+  })
+}
+
+// Geographic membership never changes: calculate once, not for every frame.
+const landDots = []
+for (let lat = -55; lat <= 80; lat += 3) {
+  for (let lon = -175; lon <= 175; lon += 3) {
+    if (isLand(lon, lat)) landDots.push({ lon, lat })
+  }
 }
 
 onMounted(() => {
-  const canvas = canvasRef.value
-  if (!canvas) return
+  const canvas = mapRef.value
+  const motion = motionRef.value
   const ctx = canvas.getContext('2d')
-  if (!ctx) return
+  const fx = motion.getContext('2d')
+  if (!ctx || !fx) return
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
+  const compact = window.matchMedia('(max-width: 1023px)')
+  const palette = getComputedStyle(canvas)
+  const gold = palette.getPropertyValue('--login-gold').trim()
+  const light = palette.getPropertyValue('--login-gold-light').trim()
+  let width = 0, height = 0, frame = 0, previous = null, elapsed = 0
+  let routes = []
+  let origin = { x: 0, y: 0 }
 
-  let width = 0
-  let height = 0
-  const dpr = Math.min(window.devicePixelRatio || 1, 2)
-  // 精修：尊重系统「减少动态」偏好——降级为单帧静态图，不跑 rAF
-  const prefersReduced = window.matchMedia
-    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
-  function resize() {
-    width = canvas.offsetWidth
-    height = canvas.offsetHeight
-    canvas.width = width * dpr
-    canvas.height = height * dpr
-    // setTransform 绝对赋值（reset + scale 一步）：避免多次 resize 时 ctx.scale 叠乘放大
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-
-    // 初始化星星（密度降到 45，更克制）
-    stars.value = []
-    for (let i = 0; i < 45; i++) {
-      stars.value.push({
-        x: Math.random() * width,
-        y: Math.random() * height,
-        size: Math.random() * 1.4 + 0.3,
-        twinkle: Math.random() * Math.PI * 2,
-        speed: Math.random() * 0.02 + 0.005
-      })
-    }
-
-    if (prefersReduced) renderStatic()
+  function point(location) {
+    const scale = Math.min((width - 40) / 360, (height - 48) / 155)
+    return { x: width / 2 + location.lon * scale, y: height / 2 + (10 - location.lat) * scale }
   }
 
-  function getMapParams() {
-    const cx = width * 0.40
-    const cy = height * 0.5
-    const scale = Math.min(width, height) * 0.0028
-    return { cx, cy, scale }
+  function dot(context, x, y, radius) {
+    context.beginPath()
+    context.arc(x, y, radius, 0, Math.PI * 2)
+    context.fill()
   }
 
-  function drawDotMatrix() {
-    const { cx, cy, scale } = getMapParams()
-    const spacing = 7
-    const dotSize = 1.2
-
-    for (let y = 0; y < height; y += spacing) {
-      for (let x = 0; x < width; x += spacing) {
-        const lon = (x - cx) / scale
-        const lat = (cy - y) / scale
-
-        if (lon < -180 || lon > 180 || lat < -60 || lat > 85) continue
-
-        const dLon = lon - qingdaoLon
-        const dLat = lat - qingdaoLat
-        const dist = Math.sqrt(dLon * dLon + dLat * dLat)
-
-        const land = isLand(lon, lat)
-        if (land) {
-          let highlight = false
-          let destColor = ''
-          for (const dest of DESTINATIONS) {
-            const ddLon = lon - dest.lon
-            const ddLat = lat - dest.lat
-            const dd = Math.sqrt(ddLon * ddLon + ddLat * ddLat)
-            if (dd < 12) {
-              highlight = true
-              destColor = dest.color
-              break
-            }
-          }
-
-          if (highlight && destColor) {
-            ctx.fillStyle = destColor
-            ctx.globalAlpha = 0.35
-          } else if (dist < 8) {
-            ctx.fillStyle = '#ff6b6b'
-            ctx.globalAlpha = 0.45
-          } else {
-            ctx.fillStyle = '#d4af6e'
-            ctx.globalAlpha = 0.18
-          }
-          ctx.beginPath()
-          ctx.arc(x, y, dotSize, 0, Math.PI * 2)
-          ctx.fill()
-          ctx.globalAlpha = 1
-        } else {
-          ctx.fillStyle = '#00d4ff'
-          ctx.globalAlpha = 0.04
-          ctx.beginPath()
-          ctx.arc(x, y, dotSize * 0.7, 0, Math.PI * 2)
-          ctx.fill()
-          ctx.globalAlpha = 1
-        }
-      }
+  function sample(route, t) {
+    const u = 1 - t
+    return {
+      x: u * u * origin.x + 2 * u * t * route.control.x + t * t * route.end.x,
+      y: u * u * origin.y + 2 * u * t * route.control.y + t * t * route.end.y,
     }
   }
 
-  function drawGrid() {
-    const { cx, cy, scale } = getMapParams()
-    ctx.strokeStyle = 'rgba(0, 212, 255, 0.03)'
-    ctx.lineWidth = 1
-
+  function drawMap() {
+    ctx.clearRect(0, 0, width, height)
+    // Coastlines and a quiet graticule make the land masses recognizable at a glance.
+    ctx.strokeStyle = gold
+    ctx.lineWidth = 0.6
+    ctx.globalAlpha = 0.07
     for (let lon = -180; lon <= 180; lon += 30) {
-      const x = cx + lon * scale
-      ctx.beginPath()
-      ctx.moveTo(x, 0)
-      ctx.lineTo(x, height)
-      ctx.stroke()
+      const start = point({ lon, lat: -55 }), end = point({ lon, lat: 80 })
+      ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke()
     }
-    for (let lat = -60; lat <= 80; lat += 20) {
-      const y = cy - lat * scale
-      ctx.beginPath()
-      ctx.moveTo(0, y)
-      ctx.lineTo(width, y)
-      ctx.stroke()
+    for (let lat = -40; lat <= 80; lat += 20) {
+      const start = point({ lon: -180, lat }), end = point({ lon: 180, lat })
+      ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke()
     }
-  }
-
-  function drawStars(time) {
-    for (const star of stars.value) {
-      const alpha = 0.2 + 0.25 * Math.sin(time * star.speed + star.twinkle)
-      ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`
+    ctx.fillStyle = gold
+    ctx.lineWidth = 0.85
+    for (const polygon of landContours) {
       ctx.beginPath()
-      ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2)
-      ctx.fill()
-    }
-  }
-
-  function drawQingdaoGlow(time) {
-    const { cx, cy, scale } = getMapParams()
-    const qx = cx + qingdaoLon * scale
-    const qy = cy - qingdaoLat * scale
-
-    const pulse = 2.5 + 1.5 * Math.sin(time * 0.002)
-
-    const gradient = ctx.createRadialGradient(qx, qy, 0, qx, qy, 25)
-    gradient.addColorStop(0, 'rgba(255, 107, 107, 0.6)')
-    gradient.addColorStop(0.3, 'rgba(255, 107, 107, 0.2)')
-    gradient.addColorStop(1, 'rgba(255, 107, 107, 0)')
-    ctx.fillStyle = gradient
-    ctx.beginPath()
-    ctx.arc(qx, qy, 25, 0, Math.PI * 2)
-    ctx.fill()
-
-    ctx.fillStyle = '#ff6b6b'
-    ctx.shadowColor = '#ff6b6b'
-    ctx.shadowBlur = 15
-    ctx.beginPath()
-    ctx.arc(qx, qy, pulse, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.shadowBlur = 0
-
-    ctx.fillStyle = 'rgba(255, 107, 107, 0.9)'
-    ctx.font = '12px Inter, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText('青岛', qx, qy + 22)
-  }
-
-  function drawDestinations() {
-    const { cx, cy, scale } = getMapParams()
-    for (const dest of DESTINATIONS) {
-      const dx = cx + dest.lon * scale
-      const dy = cy - dest.lat * scale
-
-      const gradient = ctx.createRadialGradient(dx, dy, 0, dx, dy, 18)
-      gradient.addColorStop(0, dest.color + '40')
-      gradient.addColorStop(1, dest.color + '00')
-      ctx.fillStyle = gradient
-      ctx.beginPath()
-      ctx.arc(dx, dy, 18, 0, Math.PI * 2)
-      ctx.fill()
-
-      ctx.fillStyle = dest.color
-      ctx.shadowColor = dest.color
-      ctx.shadowBlur = 10
-      ctx.beginPath()
-      ctx.arc(dx, dy, 3, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.shadowBlur = 0
-
-      ctx.fillStyle = dest.color + 'cc'
-      ctx.font = '11px Inter, sans-serif'
-      ctx.textAlign = 'center'
-      ctx.fillText(dest.name, dx, dy + 18)
-    }
-  }
-
-  function spawnParticles(time) {
-    if (time - lastSpawnTime < 600) return
-    lastSpawnTime = time
-
-    const { cx, cy, scale } = getMapParams()
-    const qx = cx + qingdaoLon * scale
-    const qy = cy - qingdaoLat * scale
-
-    if (particles.value.length >= 28) return
-
-    for (const dest of DESTINATIONS) {
-      if (Math.random() > 0.72) continue
-      const destX = cx + dest.lon * scale
-      const destY = cy - dest.lat * scale
-      particles.value.push({
-        x: qx,
-        y: qy,
-        destX,
-        destY,
-        progress: 0,
-        speed: 0.003 + Math.random() * 0.004,
-        color: dest.color,
-        trail: [],
-        curveOffset: (Math.random() - 0.5) * 40
+      polygon.forEach(([lon, lat], index) => {
+        const p = point({ lon, lat })
+        if (index === 0) ctx.moveTo(p.x, p.y)
+        else ctx.lineTo(p.x, p.y)
       })
-    }
-  }
-
-  function updateParticles() {
-    for (let i = particles.value.length - 1; i >= 0; i--) {
-      const p = particles.value[i]
-      p.progress += p.speed
-
-      const t = p.progress
-      const midX = (p.x + p.destX) / 2 + p.curveOffset
-      const midY = (p.y + p.destY) / 2 - Math.abs(p.curveOffset) * 0.5
-
-      const nx = (1 - t) * (1 - t) * p.x + 2 * (1 - t) * t * midX + t * t * p.destX
-      const ny = (1 - t) * (1 - t) * p.y + 2 * (1 - t) * t * midY + t * t * p.destY
-
-      p.trail.push({ x: nx, y: ny, opacity: 0.6 })
-      if (p.trail.length > 10) p.trail.shift()
-
-      p.x = nx
-      p.y = ny
-
-      if (p.progress >= 1) {
-        particles.value.splice(i, 1)
-      }
-    }
-  }
-
-  function drawParticles() {
-    for (const p of particles.value) {
-      for (let i = 0; i < p.trail.length; i++) {
-        const t = p.trail[i]
-        const alpha = (t.opacity * (i + 1) / p.trail.length) * 0.5
-        ctx.fillStyle = p.color + Math.floor(alpha * 255).toString(16).padStart(2, '0')
-        const size = 1 + (i / p.trail.length) * 1.5
-        ctx.beginPath()
-        ctx.arc(t.x, t.y, size, 0, Math.PI * 2)
-        ctx.fill()
-      }
-
-      ctx.fillStyle = p.color
-      ctx.shadowColor = p.color
-      ctx.shadowBlur = 8
-      ctx.beginPath()
-      ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2)
+      ctx.closePath()
+      ctx.globalAlpha = 0.07
       ctx.fill()
-      ctx.shadowBlur = 0
-    }
-  }
-
-  function spawnRipple(time) {
-    if (time - lastRippleTime < 4000) return
-    lastRippleTime = time
-
-    const { cx, cy, scale } = getMapParams()
-    const qx = cx + qingdaoLon * scale
-    const qy = cy - qingdaoLat * scale
-
-    ripples.value.push({
-      x: qx,
-      y: qy,
-      radius: 0,
-      opacity: 0.6,
-      maxRadius: 80
-    })
-  }
-
-  function updateRipples() {
-    for (let i = ripples.value.length - 1; i >= 0; i--) {
-      const r = ripples.value[i]
-      r.radius += 1.2
-      r.opacity = 0.6 * (1 - r.radius / r.maxRadius)
-      if (r.radius >= r.maxRadius) {
-        ripples.value.splice(i, 1)
-      }
-    }
-  }
-
-  function drawRipples() {
-    for (const r of ripples.value) {
-      ctx.strokeStyle = `rgba(255, 107, 107, ${r.opacity})`
-      ctx.lineWidth = 1.5
-      ctx.beginPath()
-      ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2)
+      ctx.globalAlpha = 0.32
       ctx.stroke()
     }
+    ctx.globalAlpha = 0.2
+    for (const location of landDots) {
+      const { x, y } = point(location)
+      dot(ctx, x, y, width < 450 ? 0.8 : 1.1)
+    }
+    origin = point(ORIGIN)
+    routes = DESTINATIONS.map(location => {
+      const end = point(location)
+      return { end, control: { x: (origin.x + end.x) / 2, y: Math.min(origin.y, end.y) - Math.min(65, Math.abs(origin.x - end.x) * 0.2) } }
+    })
+    ctx.strokeStyle = gold
+    ctx.globalAlpha = 0.2
+    ctx.lineWidth = 0.8
+    for (const route of routes) {
+      ctx.beginPath()
+      ctx.moveTo(origin.x, origin.y)
+      ctx.quadraticCurveTo(route.control.x, route.control.y, route.end.x, route.end.y)
+      ctx.stroke()
+    }
+    for (const location of [...DESTINATIONS, ORIGIN]) {
+      const { x, y } = point(location)
+      const isOrigin = location === ORIGIN
+      if (isOrigin) {
+        const glow = ctx.createRadialGradient(x, y, 0, x, y, 34)
+        glow.addColorStop(0, light)
+        glow.addColorStop(0.25, gold)
+        glow.addColorStop(1, 'transparent')
+        ctx.fillStyle = glow
+        ctx.globalAlpha = 0.38
+        dot(ctx, x, y, 34)
+        ctx.strokeStyle = light
+        ctx.lineWidth = 1
+        ctx.globalAlpha = 0.55
+        ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI * 2); ctx.stroke()
+      } else {
+        ctx.globalAlpha = 0.1
+        dot(ctx, x, y, 10)
+      }
+      ctx.globalAlpha = isOrigin ? 1 : 0.8
+      ctx.fillStyle = light
+      dot(ctx, x, y, isOrigin ? 4.5 : 2)
+      ctx.globalAlpha = isOrigin ? 0.95 : 0.65
+      ctx.font = isOrigin ? '600 12px "Microsoft YaHei", sans-serif' : '11px "Microsoft YaHei", sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText(location.name, x, y + (isOrigin ? 32 : 19))
+      ctx.fillStyle = gold
+    }
+    ctx.globalAlpha = 1
+  }
+
+  function drawMotion() {
+    fx.clearRect(0, 0, width, height)
+    fx.fillStyle = light
+    routes.forEach((route, index) => {
+      // Fixed start/control/end points; timing is independent of display refresh rate.
+      const phase = (elapsed / 6500 + index * 0.25) % 1
+      for (let tail = 7; tail >= 0; tail--) {
+        const t = phase - tail * 0.008
+        if (t < 0) continue
+        const p = sample(route, t)
+        fx.globalAlpha = (1 - tail / 8) * Math.min(1, phase * 12, (1 - phase) * 12) * 0.85
+        dot(fx, p.x, p.y, tail === 0 ? 2 : 1.2)
+      }
+    })
+    // Two staggered rings keep Qingdao visibly active without a flashing beacon.
+    fx.strokeStyle = light
+    fx.lineWidth = 1.3
+    for (let ring = 0; ring < 2; ring++) {
+      const phase = (elapsed / 3600 + ring * 0.5) % 1
+      fx.globalAlpha = 0.5 * (1 - phase) ** 2
+      fx.beginPath()
+      fx.arc(origin.x, origin.y, 10 + phase * 28, 0, Math.PI * 2)
+      fx.stroke()
+    }
+    fx.globalAlpha = 0.9
+    dot(fx, origin.x, origin.y, 4.8 + Math.sin(elapsed / 1400) * 0.6)
+    fx.globalAlpha = 1
   }
 
   function animate(time) {
-    ctx.clearRect(0, 0, width, height)
-
-    // 底透明（不再填不透明黑）：露出下层的 LeShine 品牌水印，页面 bg #0a0a0f 兜底
-
-    drawGrid()
-    drawStars(time)
-    drawDotMatrix()
-    drawDestinations()
-
-    spawnParticles(time)
-    updateParticles()
-    drawParticles()
-
-    spawnRipple(time)
-    updateRipples()
-    drawRipples()
-
-    drawQingdaoGlow(time)
-
-    animRef = requestAnimationFrame(animate)
+    frame = requestAnimationFrame(animate)
+    if (previous === null) previous = time
+    const delta = time - previous
+    if (delta < 1000 / 30) return
+    elapsed += Math.min(delta, 100)
+    previous = time
+    drawMotion()
   }
 
-  // 减少动态偏好下的单帧静态图：只画地图/目的地/青岛，不含粒子/涟漪/闪烁动画
-  function renderStatic() {
-    ctx.clearRect(0, 0, width, height)
-    // 底透明（不再填不透明黑）：露出下层的 LeShine 品牌水印，页面 bg #0a0a0f 兜底
-    drawGrid()
-    drawStars(0)
-    drawDotMatrix()
-    drawDestinations()
-    drawQingdaoGlow(0)
-  }
-
-  resize()
-
-  if (prefersReduced) {
-    renderStatic()
-  } else {
-    animRef = requestAnimationFrame(animate)
-  }
-
-  const handleResize = () => {
-    resize()
-  }
-  window.addEventListener('resize', handleResize)
-
-  // 页面不可见时暂停 rAF（省电、不空烧 CPU），重新可见再续
-  const handleVisibility = () => {
-    if (prefersReduced) return
-    if (document.hidden) {
-      cancelAnimationFrame(animRef)
-      animRef = 0
-    } else if (!animRef) {
-      animRef = requestAnimationFrame(animate)
+  function syncMotion() {
+    cancelAnimationFrame(frame)
+    frame = 0
+    previous = null
+    fx.clearRect(0, 0, width, height)
+    // Small screens keep the same composition as a still, saving battery behind the form.
+    if (!document.hidden && !reduced.matches && !compact.matches && width > 0 && height > 0) {
+      frame = requestAnimationFrame(animate)
     }
   }
-  document.addEventListener('visibilitychange', handleVisibility)
 
-  onUnmounted(() => {
-    cancelAnimationFrame(animRef)
-    window.removeEventListener('resize', handleResize)
-    document.removeEventListener('visibilitychange', handleVisibility)
-  })
+  function resize() {
+    const bounds = canvas.parentElement.getBoundingClientRect()
+    width = Math.max(0, bounds.width)
+    height = Math.max(0, bounds.height)
+    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    for (const [surface, context] of [[canvas, ctx], [motion, fx]]) {
+      surface.width = Math.round(width * dpr)
+      surface.height = Math.round(height * dpr)
+      context.setTransform(dpr, 0, 0, dpr, 0, 0)
+    }
+    if (width > 40 && height > 48) drawMap()
+    syncMotion()
+  }
+
+  const observer = new ResizeObserver(resize)
+  observer.observe(canvas.parentElement)
+  reduced.addEventListener('change', syncMotion)
+  compact.addEventListener('change', syncMotion)
+  document.addEventListener('visibilitychange', syncMotion)
+  resize()
+  dispose = () => {
+    cancelAnimationFrame(frame)
+    observer.disconnect()
+    reduced.removeEventListener('change', syncMotion)
+    compact.removeEventListener('change', syncMotion)
+    document.removeEventListener('visibilitychange', syncMotion)
+  }
 })
+onUnmounted(() => dispose())
 </script>
+
+<style scoped>
+.world-map, canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+</style>
