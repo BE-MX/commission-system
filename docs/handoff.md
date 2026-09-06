@@ -1,6 +1,6 @@
-### 平台前后端、服务与 UI 审查（2026-09-06，本地完成，待审阅）
+### 平台前后端、服务与 UI 审查（2026-09-06，已合入 main，未部署）
 
-本任务在 `codex/platform-audit` / `D:/MyProgram/commission-system-codex-platform-audit`，保留未提交 diff，未合并、push 或部署。主目录已有修改未触碰。完整发现、改动和限制见 [平台审查报告](requirements/2026-09-06-platform-audit.md)，目录和页面明细见 [覆盖清单](requirements/2026-09-06-platform-audit-coverage.md)。
+代码提交 `cc54bfbd` 已快进合入 `main`。亮哥授权的交付范围为合并并推送 GitHub `origin/main`，不含生产部署。合并结果与已验证代码一致，按原基点 `7cf596fb` 执行约定检查通过；主目录三份已有规则修改经 SHA-256 核验完整保留。579 份验证材料已复制并逐文件核验，保留在主目录 `tmp/platform-audit/`；临时任务 worktree 在集成验证后清理。完整发现、改动和限制见 [平台审查报告](requirements/2026-09-06-platform-audit.md)，目录和页面明细见 [覆盖清单](requirements/2026-09-06-platform-audit-coverage.md)。
 
 已修复工艺路线 DELETE 缺失及内外贸引用保护，列表 20 条 SELECT 从 42 次降为 4 次；中央请求加载槽/取消/序列化异常、运维页缓存轮询/加载状态、WhatsApp 缺密钥匿名放行、OpenClaw 正文超时、SSH 连接重试。前端统一登记 client，删除 19 个无引用旧洞见 API；共享按钮、加载层、手机导航、主站/PM 弹窗与多页手机布局完成调整。样式按已有模式放在应用级和领域 CSS，债务门禁没有扩额。
 

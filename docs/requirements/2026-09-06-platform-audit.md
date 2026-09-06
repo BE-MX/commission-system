@@ -4,7 +4,7 @@
 
 本轮发现并修复了需要优先处理的接口缺失、加载状态、服务鉴权、请求超时、数据库查询放大及手机操作不可达问题。平台继续采用模块化单体；当前源码与测试证据不足以支持拆成更多微服务或全面换 UI 框架。应先保证契约、数据边界和共享交互正确。
 
-改动位于 `codex/platform-audit` / `D:/MyProgram/commission-system-codex-platform-audit`，保留未提交 diff。未合并、未推送、未部署；没有数据库迁移或生产数据变更。主工作区已有改动未触碰。
+代码提交 `cc54bfbd` 已从 `codex/platform-audit` 快进合入 `main`，交付目录为 `D:/MyProgram/commission-system`。本轮已获合并并推送 GitHub `origin/main` 的授权，不含部署；没有数据库迁移或生产数据变更。主工作区已有三份规则改动经 SHA-256 核验保留，验证材料归档在主目录 `tmp/platform-audit/`。合并与验证详情见 `docs/handoff.md` 最新记录。
 
 ## 审查范围与方法
 
