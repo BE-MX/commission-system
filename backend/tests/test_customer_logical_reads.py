@@ -414,6 +414,14 @@ def test_opportunity_list_scopes_and_serializes_by_effective_owner(db):
         "owner_user_id": None,
         "due_at": None,
         "updated_at": NOW.replace(tzinfo=None).isoformat() + "+08:00",
+        "customer_name": "LOGICAL",
+        "customer_code": "LOGICAL",
+        "country_code": None,
+        "identity_status": "verified",
+        "relationship_stage": "discovered",
+        "industry": None,
+        "owner_name": "待分配",
+        "can_operate": False,
     }]
 
 

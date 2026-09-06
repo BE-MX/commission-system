@@ -274,3 +274,12 @@
   justify-content: space-between;
   align-items: center;
 }
+
+@media (max-width: 768px) {
+  .asset-upload-page { padding: 0; }
+  .upload-layout { flex-direction: column; }
+  .left-panel, .right-panel { width: 100%; min-width: 0; box-sizing: border-box; }
+  .right-panel { padding: 16px; }
+  .form-actions { flex-wrap: wrap; }
+  .asset-uploader :deep(.el-upload) { width: 100%; }
+}

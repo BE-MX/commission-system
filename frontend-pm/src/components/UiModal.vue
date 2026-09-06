@@ -2,7 +2,7 @@
   <Teleport to="body">
     <transition name="modal">
       <div v-if="modelValue" class="modal-mask" @pointerdown.self="close">
-        <div class="modal" role="alertdialog" :aria-label="title">
+        <div ref="modalRoot" class="modal" role="alertdialog" aria-modal="true" tabindex="-1" :aria-label="title">
           <h3 class="modal-title">{{ title }}</h3>
           <div class="modal-body"><slot>{{ message }}</slot></div>
           <footer class="modal-foot">
@@ -23,6 +23,9 @@
 </template>
 
 <script setup>
+import { ref } from 'vue'
+import { useOverlayFocus } from '../composables/useOverlayFocus'
+
 const props = defineProps({
   modelValue: Boolean,
   title: { type: String, default: '确认' },
@@ -32,6 +35,8 @@ const props = defineProps({
   danger: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:modelValue', 'confirm'])
+const modalRoot = ref(null)
+useOverlayFocus(() => props.modelValue, modalRoot, close)
 function close() { emit('update:modelValue', false) }
 function confirm() { emit('confirm'); close() }
 </script>
@@ -55,6 +60,9 @@ function confirm() { emit('confirm'); close() }
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-overlay);
   padding: 26px 26px 20px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 48px);
   transform-origin: center; /* modal 保持中心缩放（popover 才贴触发器） */
 }
 .modal-title {
@@ -63,11 +71,15 @@ function confirm() { emit('confirm'); close() }
   margin-bottom: 10px;
 }
 .modal-body {
+  min-height: 0;
+  overflow: auto;
   color: var(--ink-2);
   font-size: 13.5px;
   line-height: 1.7;
 }
 .modal-foot {
+  flex-wrap: wrap;
+  flex-shrink: 0;
   margin-top: 22px;
   display: flex;
   justify-content: flex-end;

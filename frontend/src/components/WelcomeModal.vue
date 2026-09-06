@@ -1,12 +1,6 @@
 <template>
-  <Teleport to="body">
-    <Transition name="modal-fade">
-      <div v-if="visible" class="welcome-modal-overlay">
-        <!-- 背景遮罩 -->
-        <div class="welcome-modal-backdrop" @click="handleClose" />
-
-        <!-- 弹框卡片 -->
-        <Transition name="modal-card" appear>
+  <el-dialog v-model="visible" class="welcome-dialog" width="420px" align-center
+    :show-close="false" append-to-body aria-label="欢迎回来" @close="handleClose">
           <div class="welcome-modal-card">
             <!-- 发光背景 -->
             <div class="welcome-modal-glow" />
@@ -15,7 +9,7 @@
             <div class="welcome-modal-topline" />
 
             <!-- 关闭按钮 -->
-            <button class="welcome-modal-close" @click="handleClose">
+            <button type="button" aria-label="关闭欢迎提示" class="welcome-modal-close" @click="handleClose">
               <el-icon><Close /></el-icon>
             </button>
 
@@ -91,29 +85,19 @@
 
               <!-- 今日不再显示 -->
               <label class="welcome-dont-show">
-                <span
-                  class="check-box"
-                  :class="{ checked: dontShowAgain }"
-                  @click.stop="dontShowAgain = !dontShowAgain"
-                >
-                  <el-icon v-if="dontShowAgain"><Check /></el-icon>
-                </span>
+                <input v-model="dontShowAgain" class="check-box" type="checkbox" />
                 <span class="check-label">今日不再显示</span>
               </label>
             </div>
           </div>
-        </Transition>
-      </div>
-    </Transition>
-  </Teleport>
+  </el-dialog>
 </template>
-
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, onDeactivated, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import {
   Close, Star, ReadingLamp, Sunny, Sunrise, Moon,
-  PartlyCloudy, Check
+  PartlyCloudy
 } from '@element-plus/icons-vue'
 import dailyTipsData from '@/assets/daily-tips.json'
 import greetingsData from '@/assets/greetings.json'
@@ -242,10 +226,14 @@ function open() {
   markShownInSession()
 }
 
+let showTimer
+function cancelShow() { clearTimeout(showTimer) }
+
 function tryShow() {
+  cancelShow()
   if (isDontShowToday()) return
   if (isShownInSession()) return
-  setTimeout(() => {
+  showTimer = setTimeout(() => {
     visible.value = true
     markShownInSession()
   }, 600)
@@ -253,6 +241,8 @@ function tryShow() {
 
 // 自动显示（延迟 600ms）
 onMounted(tryShow)
+onBeforeUnmount(cancelShow)
+onDeactivated(() => { cancelShow(); visible.value = false })
 
 // 监听登录状态变化：登出后重新登录时触发
 watch(() => authStore.isLoggedIn, (loggedIn) => {
@@ -265,29 +255,12 @@ defineExpose({ open })
 </script>
 
 <style scoped>
-/* ===== 遮罩层 ===== */
-.welcome-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 2000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.welcome-modal-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(10, 10, 15, 0.6);
-  backdrop-filter: blur(12px);
-}
-
 /* ===== 弹框卡片 ===== */
 .welcome-modal-card {
   position: relative;
   width: 100%;
   max-width: 420px;
-  margin: 0 20px;
+  margin: 0;
   border-radius: 20px;
   background: linear-gradient(180deg, #1a1a2e 0%, #14142b 100%);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -301,7 +274,7 @@ defineExpose({ open })
   inset: -1px;
   border-radius: 20px;
   background: linear-gradient(135deg, rgba(212, 175, 110, 0.25), rgba(0, 212, 255, 0.15), rgba(212, 175, 110, 0.25));
-  filter: blur(16px);
+
   opacity: 0.5;
   z-index: 0;
 }
@@ -313,18 +286,9 @@ defineExpose({ open })
   height: 3px;
   background: linear-gradient(90deg, var(--color-gold), #00d4ff, var(--color-gold));
   background-size: 200% 100%;
-  animation: topLineSlide 2s ease-out forwards, topLineShine 3s ease-in-out infinite 2s;
 }
 
-@keyframes topLineSlide {
-  from { transform: scaleX(0); }
-  to   { transform: scaleX(1); }
-}
 
-@keyframes topLineShine {
-  0%, 100% { background-position: 0% 50%; }
-  50%      { background-position: 100% 50%; }
-}
 
 /* 关闭按钮 */
 .welcome-modal-close {
@@ -342,7 +306,7 @@ defineExpose({ open })
   justify-content: center;
   cursor: pointer;
   color: rgba(255, 255, 255, 0.4);
-  transition: all 0.2s ease;
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
 }
 .welcome-modal-close:hover {
   color: #fff;
@@ -366,18 +330,13 @@ defineExpose({ open })
   border-radius: 50%;
   background: var(--color-gold);
   opacity: 0.3;
-  animation: particleFloat 3s ease-in-out infinite;
 }
 
-@keyframes particleFloat {
-  0%, 100% { transform: translateY(0) scale(1); opacity: 0.2; }
-  50%      { transform: translateY(-12px) scale(1.4); opacity: 0.6; }
-}
 
 .particle-orb {
   position: absolute;
   border-radius: 50%;
-  filter: blur(40px);
+
   opacity: 0.15;
 }
 .orb-right {
@@ -385,14 +344,14 @@ defineExpose({ open })
   right: -20px;
   width: 120px;
   height: 120px;
-  background: var(--color-gold);
+  background: radial-gradient(circle, var(--color-gold), transparent 70%);
 }
 .orb-left {
   bottom: -20px;
   left: -20px;
   width: 100px;
   height: 100px;
-  background: #00d4ff;
+  background: radial-gradient(circle, var(--color-gold), transparent 70%);
 }
 
 /* ===== 内容区 ===== */
@@ -419,11 +378,6 @@ defineExpose({ open })
   background: linear-gradient(135deg, #d4af6e, #a08040);
   box-shadow: 0 4px 20px rgba(212, 175, 110, 0.3);
   margin-bottom: 12px;
-  animation: avatarPop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s both;
-}
-@keyframes avatarPop {
-  from { transform: scale(0) rotate(-180deg); opacity: 0; }
-  to   { transform: scale(1) rotate(0deg); opacity: 1; }
 }
 
 .welcome-avatar .avatar-img {
@@ -448,15 +402,9 @@ defineExpose({ open })
   border-radius: 50%;
   background: #16a34a;
   border: 3px solid #1a1a2e;
-  animation: statusPop 0.3s ease 0.6s both;
-}
-@keyframes statusPop {
-  from { transform: scale(0); }
-  to   { transform: scale(1); }
 }
 
 .welcome-greeting {
-  animation: fadeSlideUp 0.5s ease 0.3s both;
 }
 
 .greeting-main {
@@ -496,7 +444,6 @@ defineExpose({ open })
   border-radius: 100px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  animation: fadeSlideUp 0.5s ease 0.4s both;
 }
 
 .date-icon {
@@ -519,7 +466,6 @@ defineExpose({ open })
   margin: 0 0 14px;
   padding: 0 8px;
   font-style: italic;
-  animation: fadeSlideUp 0.5s ease 0.45s both;
 }
 
 .welcome-tip-card {
@@ -528,7 +474,6 @@ defineExpose({ open })
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.06);
   margin-bottom: 16px;
-  animation: fadeSlideUp 0.5s ease 0.5s both;
 }
 
 .tip-header {
@@ -565,13 +510,8 @@ defineExpose({ open })
   border-radius: 50%;
   background: var(--color-gold);
   margin-left: auto;
-  animation: pulse 2s ease-in-out infinite;
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50%      { opacity: 0.4; transform: scale(0.7); }
-}
 
 .tip-body {
   display: flex;
@@ -606,7 +546,6 @@ defineExpose({ open })
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   margin-bottom: 16px;
-  animation: fadeSlideUp 0.5s ease 0.6s both;
 }
 
 .welcome-stat {
@@ -643,8 +582,7 @@ defineExpose({ open })
   font-size: 14px;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s ease;
-  animation: fadeSlideUp 0.5s ease 0.7s both;
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
 }
 .welcome-start-btn:hover {
   box-shadow: 0 4px 20px rgba(212, 175, 110, 0.3);
@@ -662,7 +600,6 @@ defineExpose({ open })
   gap: 8px;
   margin-top: 12px;
   cursor: pointer;
-  animation: fadeSlideUp 0.5s ease 0.8s both;
 }
 
 .check-box {
@@ -674,11 +611,11 @@ defineExpose({ open })
   border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.3);
   background: transparent;
-  transition: all 0.2s ease;
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
   color: #0a0a0f;
   font-size: 12px;
 }
-.check-box.checked {
+.check-box:checked {
   background: var(--color-gold);
   border-color: var(--color-gold);
 }
@@ -693,33 +630,17 @@ defineExpose({ open })
 }
 
 /* ===== 通用动画 ===== */
-@keyframes fadeSlideUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
 
-/* ===== Transition 类 ===== */
-.modal-fade-enter-active,
-.modal-fade-leave-active {
-  transition: opacity 0.3s ease;
+.welcome-modal-close:focus-visible,
+.check-box:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 3px; }
+.check-box { accent-color: var(--color-gold); cursor: pointer; }
+@media (prefers-reduced-motion: reduce) {
+  .welcome-modal-card *, .welcome-modal-card *::before, .welcome-modal-card *::after { transition: none; animation: none; }
 }
-.modal-fade-enter-from,
-.modal-fade-leave-to {
-  opacity: 0;
-}
+</style>
 
-.modal-card-enter-active {
-  transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.modal-card-leave-active {
-  transition: all 0.3s ease;
-}
-.modal-card-enter-from {
-  opacity: 0;
-  transform: scale(0.85) translateY(40px);
-}
-.modal-card-leave-to {
-  opacity: 0;
-  transform: scale(0.9) translateY(20px);
-}
+<style>
+.el-dialog.welcome-dialog { padding: 0; background: transparent; }
+.welcome-dialog .el-dialog__header { display: none; }
+.welcome-dialog .el-dialog__body { padding: 0; }
 </style>

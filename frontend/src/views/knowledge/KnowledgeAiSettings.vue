@@ -230,7 +230,7 @@ onMounted(load)
 .page-header h1 { margin: 0; color: var(--text-primary); font-size: 24px; }
 .page-header p { margin: 6px 0 0; color: var(--text-secondary); }
 .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.summary-grid article { display: grid; gap: 4px; padding: 16px; border: 1px solid var(--border-color); border-radius: var(--dash-card-radius); background: var(--surface-card); }
+.summary-grid article { display: grid; gap: 4px; padding: 16px; border: 1px solid var(--border-color); border-radius: var(--dash-card-radius); background: var(--card-bg); }
 .summary-grid span { color: var(--text-muted-blue); font-size: 12px; }
 .summary-grid strong { color: var(--text-primary); font-size: 24px; }
 .settings-panel { overflow: hidden; }

@@ -2,7 +2,7 @@
   <Teleport to="body">
     <transition name="drawer">
       <div v-if="modelValue" class="drawer-mask" @pointerdown.self="close">
-        <aside class="drawer" role="dialog" :aria-label="title" :style="{ width: `${width}px` }">
+        <aside ref="drawerRoot" class="drawer" role="dialog" aria-modal="true" tabindex="-1" :aria-label="title" :style="{ width: `${width}px` }">
           <header class="drawer-head">
             <div>
               <div class="drawer-eyebrow" v-if="eyebrow">{{ eyebrow }}</div>
@@ -25,7 +25,8 @@
 </template>
 
 <script setup>
-import { watch } from 'vue'
+import { ref } from 'vue'
+import { useOverlayFocus } from '../composables/useOverlayFocus'
 
 const props = defineProps({
   modelValue: Boolean,
@@ -34,17 +35,13 @@ const props = defineProps({
   width: { type: Number, default: 460 },
 })
 const emit = defineEmits(['update:modelValue'])
+const drawerRoot = ref(null)
+useOverlayFocus(() => props.modelValue, drawerRoot, close)
 
 function close() {
   emit('update:modelValue', false)
 }
 
-watch(
-  () => props.modelValue,
-  (v) => {
-    document.body.style.overflow = v ? 'hidden' : ''
-  }
-)
 </script>
 
 <style scoped>
@@ -68,6 +65,7 @@ watch(
   flex-direction: column;
 }
 .drawer-head {
+  flex-shrink: 0;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -97,11 +95,14 @@ watch(
   .drawer-close:hover { color: var(--ink); background: var(--paper-sunken); }
 }
 .drawer-body {
+  min-height: 0;
   flex: 1;
   overflow-y: auto;
   padding: 24px 28px;
 }
 .drawer-foot {
+  flex-wrap: wrap;
+  flex-shrink: 0;
   padding: 16px 28px 20px;
   border-top: 1px solid var(--hairline);
   display: flex;

@@ -360,4 +360,13 @@ function formatTime(iso) {
 .sku-warn {
   margin-left: 8px;
 }
+
+@media (max-width: 768px) {
+  .table-card { padding: 16px; }
+  .inline-row { flex-wrap: wrap; width: 100%; }
+  .settings-form :deep(.el-form-item) { display: block; }
+  .settings-form :deep(.el-form-item__label) { width: auto !important; justify-content: flex-start; }
+  .settings-form :deep(.el-form-item__content) { margin-left: 0 !important; min-width: 0; }
+  .settings-form :deep(.el-input), .settings-form :deep(.el-select) { max-width: 100%; }
+}
 </style>

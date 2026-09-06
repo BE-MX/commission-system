@@ -266,4 +266,10 @@ onMounted(() => {
 .preview-label { font-size: 12px; color: #909399; margin-bottom: 8px; }
 .preview-steps { font-size: 13px; line-height: 1.6; }
 .bind-tip { margin-top: 12px; font-size: 12px; color: #e6a23c; }
+
+@media (max-width: 768px) {
+  .toolbar, .toolbar-left, .toolbar-right { flex-wrap: wrap; gap: 10px; }
+  .toolbar-left { min-width: 0; width: 100%; }
+  .toolbar-left :deep(.el-input), .toolbar-left :deep(.el-select) { max-width: 100%; }
+}
 </style>

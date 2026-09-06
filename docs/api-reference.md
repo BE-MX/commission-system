@@ -443,7 +443,8 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `GET /dashboard` — 生产看板数据聚合（需 `production:read`，4 条批量 SQL + 内存聚合，无 N+1）
   - `GET /processes` / `POST /processes` / `PUT /processes/{id}` / `DELETE /processes/{id}` — 工序 CRUD（需 `production:admin`）
   - `GET /active-processes` — 启用中工序列表（选择器用）
-  - `GET /process-routes` / `POST /process-routes` / `PUT /process-routes/{id}` — 工序路线 CRUD（需 `production:admin`）
+  - `GET /process-routes` / `POST /process-routes` / `PUT /process-routes/{id}` — 工序路线查询、创建和编辑（写入需 `production:admin`）
+  - `DELETE /process-routes/{id}` — 删除未被引用的路线及其步骤（需 `production:admin`）；成功返回 `ok()` 信封，缺失返回 404。外贸/内贸产品、工艺映射、订单、生产进度或条件规则仍有引用时返回 409；数据库外键冲突回滚后同样返回 409。不会解除已有业务绑定。列表读权限仍为 `production_route:read` 或 `production:read`。
   - `POST /process-routes/{id}/steps` — 保存路线步骤（全量覆盖，需 `production:admin`）
   - `GET /process-routes/{id}/steps` — 获取路线步骤
   - `GET /active-routes` — 启用中路线列表（选择器用）

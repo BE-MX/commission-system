@@ -217,7 +217,7 @@ const {
   max-height: 58vh;
   overflow: auto;
   border-radius: var(--radius-md);
-  background: var(--bg-subtle);
+  background: var(--toolbar-bg);
   color: var(--text-primary);
   font-family: var(--font-mono);
   line-height: 1.65;

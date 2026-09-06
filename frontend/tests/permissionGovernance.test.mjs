@@ -6,7 +6,7 @@ const matrix = fs.readFileSync(new URL('../src/views/system/composables/usePermi
 const navigation = fs.readFileSync(new URL('../src/config/navigation.js', import.meta.url), 'utf8')
 const operations = fs.readFileSync(new URL('../src/views/system/OperationsCenter.vue', import.meta.url), 'utf8')
 const composable = fs.readFileSync(new URL('../src/views/system/composables/useOperationsCenter.js', import.meta.url), 'utf8')
-const app = fs.readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+const app = fs.readFileSync(new URL('../src/styles/app.css', import.meta.url), 'utf8')
 
 test('new domains have Chinese permission ownership instead of falling into English fallback', () => {
   const expected = {

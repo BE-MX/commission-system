@@ -258,7 +258,7 @@ onBeforeUnmount(stopPolling)
 .warning { color: var(--color-warning-text); }
 .job-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 13px; }
 .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-.metrics article { display: grid; gap: 3px; padding: 12px; border: 1px solid var(--border-color); border-radius: 9px; background: var(--surface-subtle); }
+.metrics article { display: grid; gap: 3px; padding: 12px; border: 1px solid var(--border-color); border-radius: 9px; background: var(--toolbar-bg); }
 .metrics span, .source-card span { color: var(--text-muted-blue); font-size: 12px; }
 .metrics strong { color: var(--text-primary); font-size: 20px; }
 .comparison-preview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }

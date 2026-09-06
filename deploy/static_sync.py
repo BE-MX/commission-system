@@ -9,6 +9,7 @@ import subprocess
 import tarfile
 
 SSH_OPTIONS = ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=10",
+               "-o", "ConnectionAttempts=3",
                "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=4"]
 HERE = Path(__file__).resolve().parent
 

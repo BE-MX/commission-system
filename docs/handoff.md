@@ -1,3 +1,13 @@
+### 平台前后端、服务与 UI 审查（2026-09-06，本地完成，待审阅）
+
+本任务在 `codex/platform-audit` / `D:/MyProgram/commission-system-codex-platform-audit`，保留未提交 diff，未合并、push 或部署。主目录已有修改未触碰。完整发现、改动和限制见 [平台审查报告](requirements/2026-09-06-platform-audit.md)，目录和页面明细见 [覆盖清单](requirements/2026-09-06-platform-audit-coverage.md)。
+
+已修复工艺路线 DELETE 缺失及内外贸引用保护，列表 20 条 SELECT 从 42 次降为 4 次；中央请求加载槽/取消/序列化异常、运维页缓存轮询/加载状态、WhatsApp 缺密钥匿名放行、OpenClaw 正文超时、SSH 连接重试。前端统一登记 client，删除 19 个无引用旧洞见 API；共享按钮、加载层、手机导航、主站/PM 弹窗与多页手机布局完成调整。样式按已有模式放在应用级和领域 CSS，债务门禁没有扩额。
+
+验证：后端全量 **4577 passed, 4 skipped**；主站 **551/551**；发布 **23 passed, 11 skipped**（Linux 文件系统语义）；OpenClaw **47 passed, 1 skipped**；WhatsApp **2/2**；主站与 PM 构建通过。116 主站路由双视口、58 独立入口/PM 视口用例已到访；成功态表单/工艺删除/短屏页尾和嵌套焦点单独验证。全局约定检查通过，Git 巡检使用 `--no-fetch` 本地快照。证据保留 `tmp/platform-audit/`。
+
+不等于生产验收：真实 MySQL 并发、大数据量/真实角色业务流、外部 AI/OCR/OKKI/钉钉/WhatsApp、小程序真机及实际部署未验。上线本轮代码前需核对 Connector 非空密钥及监听地址；默认仅 `127.0.0.1`。旧未注册 sales_automation 页面仍有 18 个 API 扫描候选、主站 vendor/ECharts 大包及历史颜色技术债保留在报告中，现役客户经营走 customer-hub。
+
 ### 登录页航行主题优化（2026-09-06，已合入 main，未部署）
 
 代码提交 `2e2e8516`。本次交付范围为合入 `main` 并推送 `origin/main`，未执行生产部署。登录页采用真实海岸线地图、金色点阵和经纬线；标题位于地图中部，以轻微浮动、左向渐变粒子尾迹形成航行意象。青岛主节点放大，并增加暖金光晕、呼吸和双层扩散环。黑金登录卡使用静态渐变；入场 280ms，手机及减少动态模式保留静态地图。地图静态层仅在缩放时重绘，动画按时间运行且后台暂停，卸载清理事件和帧请求。自然地理数据来源与处理记录在 `DESIGN.md`。

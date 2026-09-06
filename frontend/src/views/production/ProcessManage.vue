@@ -223,4 +223,10 @@ onMounted(loadData)
 .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .toolbar-left { display: flex; gap: 10px; align-items: center; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }
+
+@media (max-width: 768px) {
+  .toolbar, .toolbar-left, .toolbar-right { flex-wrap: wrap; gap: 10px; }
+  .toolbar-left { min-width: 0; width: 100%; }
+  .toolbar-left :deep(.el-input), .toolbar-left :deep(.el-select) { max-width: 100%; }
+}
 </style>

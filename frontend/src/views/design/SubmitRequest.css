@@ -85,3 +85,8 @@
   font-size: 12px;
   line-height: 1.8;
 }
+
+@media (max-width: 768px) {
+  .form-card-header, .submit-form { padding: 16px; }
+  .submit-form :deep(.el-col) { max-width: 100%; flex-basis: 100%; }
+}

@@ -77,9 +77,15 @@ class TestSchedulerRegistration:
         monkeypatch.setattr(real_settings, "WHATSAPP_AUTO_SYNC_ENABLED", True)
 
         from app.schedulers.registry import start_scheduler, shutdown_scheduler
+        recovery = MagicMock()
+        policies = MagicMock()
+        monkeypatch.setattr("app.operations.observability.recover_stale_job_runs", recovery)
+        monkeypatch.setattr("app.schedulers.registry._apply_persisted_job_policies", policies)
         scheduler = start_scheduler()
         try:
             assert scheduler is not None
+            recovery.assert_called_once()
+            policies.assert_called_once_with(scheduler)
             ids = {j.id for j in scheduler.get_jobs()}
             assert ids == {
                 "design_shoot_reminder",

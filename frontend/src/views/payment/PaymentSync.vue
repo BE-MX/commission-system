@@ -278,4 +278,11 @@ async function fetchPayments() {
   gap: 12px;
 }
 .pagination { margin-top: 16px; justify-content: flex-end; }
+
+@media (max-width: 768px) {
+  .sync-action-card { position: relative; padding: 16px; flex-direction: column; align-items: stretch; gap: 16px; }
+  .sync-action-right { flex-wrap: wrap; }
+  .sync-action-right :deep(.el-date-editor) { max-width: 100%; min-width: 0; }
+  .sync-icon { flex-shrink: 0; }
+}
 </style>

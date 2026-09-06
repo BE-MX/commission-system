@@ -169,7 +169,7 @@ onMounted(loadBatch)
 .page-header p, .section-heading span, .asset-info span { margin: 0; color: var(--text-secondary); }
 .review-alert { margin-bottom: 16px; }
 .upload-panel { padding: 18px; margin-bottom: 24px; }
-.upload-icon { font-size: 42px; color: var(--primary-color); }
+.upload-icon { font-size: 42px; color: var(--color-primary); }
 .upload-tip { color: var(--text-secondary); }
 .queue-list { margin-top: 16px; display: grid; gap: 8px; }
 .queue-item { display: grid; grid-template-columns: minmax(160px, 1fr) 2fr; align-items: center; gap: 16px; }

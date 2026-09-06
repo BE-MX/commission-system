@@ -1,16 +1,20 @@
 <template>
   <el-container class="main-layout">
-    <SidebarNavigation :collapsed="isCollapse" />
+    <SidebarNavigation v-if="!isNarrow" :collapsed="isCollapse" />
+    <el-drawer v-else v-model="mobileNavigationOpen" direction="ltr" size="280px"
+      title="导航" class="mobile-navigation" append-to-body>
+      <SidebarNavigation :collapsed="false" />
+    </el-drawer>
 
     <el-container class="right-container">
       <el-header class="header">
         <div class="header-left">
           <button
-            v-if="!isNarrow"
             class="collapse-toggle"
             type="button"
-            :aria-label="isCollapse ? '展开导航栏' : '收起导航栏'"
-            @click="isCollapse = !isCollapse"
+            :aria-label="isNarrow ? '打开导航菜单' : (isCollapse ? '展开导航栏' : '收起导航栏')"
+            :aria-expanded="isNarrow ? mobileNavigationOpen : !isCollapse"
+            @click="isNarrow ? mobileNavigationOpen = true : isCollapse = !isCollapse"
           >
             <Fold v-if="!isCollapse" />
             <Expand v-else />
@@ -99,6 +103,7 @@ const authStore = useAuthStore()
 const mobileQuery = globalThis.matchMedia?.('(max-width: 640px)')
 const isNarrow = ref(mobileQuery?.matches ?? false)
 const desktopCollapse = ref(false)
+const mobileNavigationOpen = ref(false)
 const isCollapse = computed({
   get: () => isNarrow.value || desktopCollapse.value,
   set: value => {
@@ -136,7 +141,9 @@ watch(cachedTabNames, names => {
 
 function onNarrowChange(event) {
   isNarrow.value = event.matches
+  mobileNavigationOpen.value = false
 }
+watch(() => route.fullPath, () => { mobileNavigationOpen.value = false })
 
 onMounted(() => mobileQuery?.addEventListener('change', onNarrowChange))
 onBeforeUnmount(() => mobileQuery?.removeEventListener('change', onNarrowChange))
@@ -148,7 +155,7 @@ function handleUserCommand(command) {
 </script>
 
 <style scoped>
-.main-layout { height: 100vh; }
+.main-layout { height: 100vh; height: 100dvh; }
 .right-container {
   min-width: 0;
   flex-direction: column;
@@ -166,9 +173,11 @@ function handleUserCommand(command) {
   z-index: 5;
 }
 .header-left { display: flex; min-width: 0; align-items: center; gap: 16px; }
+.header-title-group { min-width: 0; }
 .collapse-toggle {
   display: flex;
   width: 32px;
+  flex-shrink: 0;
   height: 32px;
   align-items: center;
   justify-content: center;
@@ -231,9 +240,10 @@ function handleUserCommand(command) {
   background: var(--page-bg);
 }
 .page-wrapper { max-width: 1440px; }
-.page-enter-active { transition: opacity 0.3s ease, transform 0.3s ease; }
-.page-leave-active { transition: opacity 0.15s ease; }
-.page-enter-from { opacity: 0; transform: translateY(10px); }
+.page-wrapper > * { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.page-enter-active { transition: opacity 120ms ease; }
+.page-leave-active { transition: opacity 80ms ease; }
+.page-enter-from { opacity: 0; }
 .page-leave-to { opacity: 0; }
 
 @media (max-width: 640px) {
@@ -253,4 +263,10 @@ function handleUserCommand(command) {
   .page-leave-active { transition: none; }
   .page-enter-from { transform: none; }
 }
+</style>
+
+<style>
+.mobile-navigation.el-drawer.ltr { border-radius: 0 16px 16px 0 !important; }
+.mobile-navigation .el-drawer__body { display: flex; padding: 0; }
+.mobile-navigation .aside { width: 100% !important; }
 </style>

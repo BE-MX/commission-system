@@ -1,9 +1,7 @@
 /**
  * 生产报工 API client
  */
-import { createApiClient } from './request'
-
-const productionClient = createApiClient({ baseURL: '/api/production', timeout: 60000 })
+import { productionClient } from './clients'
 
 // ── 工序管理 ──────────────────────────────────────────
 export const getProcesses = (params) => productionClient.get('/processes', { params })
@@ -16,7 +14,7 @@ export const getActiveProcesses = () => productionClient.get('/active-processes'
 export const getProcessRoutes = (params) => productionClient.get('/process-routes', { params })
 export const createProcessRoute = (data) => productionClient.post('/process-routes', data)
 export const updateProcessRoute = (id, data) => productionClient.put(`/process-routes/${id}`, data)
-export const deleteProcessRoute = (id) => productionClient.delete(`/process-routes/${id}`)
+export const deleteProcessRoute = (id) => productionClient.delete(`/process-routes/${id}`, { suppressToast: true })
 export const getRouteSteps = (id) => productionClient.get(`/process-routes/${id}/steps`)
 export const saveRouteSteps = (id, steps) => productionClient.post(`/process-routes/${id}/steps`, { steps })
 export const getActiveRoutes = () => productionClient.get('/active-routes')

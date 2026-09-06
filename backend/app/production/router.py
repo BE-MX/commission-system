@@ -4,8 +4,10 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.core.database import get_db
+from app.core.response import ok
 from app.auth.dependencies import require_permission, require_any_permission
 from app.production import (
     process_service, route_service, binding_service, report_service,
@@ -164,6 +166,27 @@ def update_route(
         raise HTTPException(404, "路线不存在")
     except ValueError as e:
         raise HTTPException(409, str(e))
+
+
+@router.delete("/process-routes/{route_id}", summary="删除未引用的工序路线")
+def delete_route(
+    route_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("production:admin")),
+):
+    try:
+        route_service.delete_route(db, route_id)
+        db.commit()
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(404, "路线不存在") from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "路线存在关联数据，不能删除；请刷新后检查引用") from exc
+    return ok(None, "路线已删除")
 
 
 @router.post("/process-routes/{route_id}/steps", summary="保存路线步骤（全量覆盖）")

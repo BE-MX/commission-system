@@ -7,11 +7,12 @@ import express from 'express'
 import qrcode from 'qrcode'
 import { v4 as uuidv4 } from 'uuid'
 import whatsapp from 'whatsapp-web.js'
+import { authenticateWith, connectorConfig } from './auth.js'
 
 const { Client, LocalAuth } = whatsapp
 
 const PORT = Number(process.env.PORT || 8787)
-const API_KEY = process.env.WHATSAPP_CONNECTOR_API_KEY || ''
+const { apiKey: API_KEY, host: HOST } = connectorConfig(process.env)
 const DATA_DIR = process.env.WHATSAPP_DATA_DIR || './data'
 const HEADLESS = (process.env.WHATSAPP_HEADLESS || 'true') !== 'false'
 const RESTORE_ON_START = (process.env.WHATSAPP_RESTORE_ON_START || 'true') !== 'false'
@@ -26,7 +27,7 @@ const state = loadState()
 const app = express()
 app.use(cors())
 app.use(express.json({ limit: '1mb' }))
-app.use(authenticate)
+app.use(authenticateWith(API_KEY))
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' })
@@ -160,19 +161,10 @@ app.use((err, req, res, next) => {
   res.status(status).json({ code: status, message: err.message || 'internal error' })
 })
 
-app.listen(PORT, () => {
-  console.log(`WhatsApp Connector listening on ${PORT}`)
+app.listen(PORT, HOST, () => {
+  console.log(`WhatsApp Connector listening on ${HOST}:${PORT}`)
   restoreActiveClients()
 })
-
-function authenticate(req, res, next) {
-  if (!API_KEY) return next()
-  const header = req.headers.authorization || ''
-  if (header !== `Bearer ${API_KEY}`) {
-    return res.status(401).json({ code: 401, message: 'unauthorized' })
-  }
-  next()
-}
 
 function asyncHandler(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next)

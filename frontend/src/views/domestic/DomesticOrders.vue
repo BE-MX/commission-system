@@ -7,36 +7,36 @@
     </div>
 
     <el-row :gutter="16" class="toolbar">
-      <el-col :span="4">
+      <el-col :xs="24" :sm="12" :lg="4">
         <el-input v-model="searchForm.keyword" placeholder="搜索系统单号 / 客户订单号" clearable prefix-icon="Search" @keyup.enter="handleSearch" @clear="handleSearch" />
       </el-col>
-      <el-col :span="3">
+      <el-col :xs="24" :sm="12" :lg="3">
         <el-select v-model="searchForm.status" placeholder="订单状态" clearable style="width: 100%" @change="handleSearch">
           <el-option v-for="s in ORDER_STATUS" :key="s.value" :label="s.label" :value="s.value" />
         </el-select>
       </el-col>
-      <el-col :span="3">
+      <el-col :xs="24" :sm="12" :lg="3">
         <el-select v-model="searchForm.order_category" placeholder="订单类别" clearable style="width: 100%" @change="handleSearch">
           <el-option v-for="v in filterOptions.order_categories" :key="v.value" :label="v.label" :value="v.value" />
         </el-select>
       </el-col>
-      <el-col :span="3">
+      <el-col :xs="24" :sm="12" :lg="3">
         <el-select v-model="searchForm.order_type" placeholder="订单类型" clearable style="width: 100%" @change="handleSearch">
           <el-option v-for="v in filterOptions.order_types" :key="v.value" :label="v.label" :value="v.value" />
         </el-select>
       </el-col>
-      <el-col :span="3">
+      <el-col :xs="24" :sm="12" :lg="3">
         <el-select v-model="searchForm.order_channel" placeholder="订单渠道" clearable style="width: 100%" @change="handleSearch">
           <el-option v-for="v in filterOptions.order_channels" :key="v.value" :label="v.label" :value="v.value" />
         </el-select>
       </el-col>
-      <el-col :span="4">
+      <el-col :xs="24" :sm="12" :lg="4">
         <el-date-picker
           v-model="searchForm.dateRange" type="daterange" value-format="YYYY-MM-DD"
           start-placeholder="下单起" end-placeholder="下单止" style="width: 100%" @change="handleSearch"
         />
       </el-col>
-      <el-col :span="4">
+      <el-col :xs="24" :sm="12" :lg="4">
         <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
         <GlassButton v-permission="'domestic:write'" variant="ghost" left-icon="Plus" @click="goCreate">新建订单</GlassButton>
       </el-col>
@@ -417,175 +417,4 @@ const {
 } = useDomesticOrders()
 </script>
 
-<style scoped>
-.orders-page { position: relative; }
-.orders-aurora { inset: -24px -28px; }
-.orders-page .toolbar,
-.orders-page .orders-panel { position: relative; z-index: 1; }
-
-.toolbar { margin-bottom: 16px; }
-
-.orders-panel {
-  border: 1px solid var(--dash-glass-border);
-  border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg);
-  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
-}
-
-.orders-panel :deep(.el-table) {
-  --el-table-bg-color: transparent;
-  --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
-  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
-  background: transparent;
-}
-
-.orders-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
-.orders-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
-.orders-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
-
-.pager { margin: 12px; justify-content: flex-end; }
-
-.info-card {
-  padding: 12px 14px;
-  border-radius: 10px;
-  background: var(--el-fill-color-lighter);
-  margin-bottom: 12px;
-}
-
-.info-name { font-weight: 600; margin-bottom: 8px; }
-
-.info-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 20px;
-  font-size: 13px;
-  color: var(--el-text-color-regular);
-}
-
-.unrouted-alert { margin-bottom: 12px; }
-
-.item-block {
-  padding: 12px 14px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
-  margin-bottom: 12px;
-}
-
-.item-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.item-head-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.item-name { font-weight: 600; }
-
-.item-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 20px;
-  padding: 8px 10px;
-  background: var(--el-fill-color-light);
-  border-radius: 8px;
-  font-size: 13px;
-  margin-bottom: 8px;
-}
-
-.meta-item b { font-weight: 600; color: var(--el-text-color-primary); }
-.meta-item.muted { color: var(--el-text-color-secondary); }
-.meta-discount { color: var(--el-color-success); }
-.meta-amount { font-weight: 600; color: var(--el-text-color-primary); }
-
-.item-current {
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-}
-
-.item-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 10px;
-  padding-top: 8px;
-  border-top: 1px dashed var(--el-border-color-lighter);
-  margin-bottom: 10px;
-}
-
-.muted { font-size: 12px; color: var(--el-text-color-secondary); }
-
-.step-table { margin-bottom: 10px; }
-
-.qty-ready { color: var(--el-color-success); font-weight: 600; }
-.skip-progress { margin-top: 2px; font-size: 12px; color: var(--el-text-color-secondary); }
-.skip-form { margin-top: 16px; }
-
-.no-route {
-  font-size: 13px;
-  color: var(--el-color-warning);
-  margin-bottom: 10px;
-}
-
-.section-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 16px;
-}
-
-.section-label {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 4px;
-}
-
-.notes-line {
-  font-size: 13px;
-  color: var(--el-text-color-regular);
-  white-space: pre-wrap;
-  margin-bottom: 6px;
-}
-
-.ship-line {
-  margin-top: 10px;
-  font-size: 13px;
-  color: var(--el-color-info);
-}
-
-.ship-date-overdue { color: var(--el-color-danger); font-weight: 600; }
-
-.unit-hint {
-  margin-left: 8px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-
-.wxacode-body {
-  min-height: 200px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-
-.wxacode-img {
-  width: 240px;
-  height: 240px;
-}
-
-.wxacode-no { font-weight: 600; }
-
-.wxacode-hint {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-
-.wxacode-warn { color: var(--el-color-warning); }
-</style>
+<style scoped src="./domestic-orders.css"></style>

@@ -5,6 +5,19 @@
    =================================================== */
 
 :root {
+  --font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+  /* Shared GlassButton semantic states. */
+  --button-primary-hover-from: #c4891a;
+  --button-primary-hover-to: #a87616;
+  --button-soft-border: #f5e0b5;
+  --button-soft-hover: #fef3e0;
+  --button-soft-border-hover: #e8cc8e;
+  --button-warning-from: #f59e0b;
+  --button-warning-to: #d97706;
+  --button-warning-hover: #b45309;
+  --button-info-from: #3b82f6;
+  --button-info-hover: #1d4ed8;
+
   /* Login: quiet dark-gold scene, separate from the light workspace surfaces. */
   --login-bg: #0d0e13;
   --login-gold: #d4af6e;

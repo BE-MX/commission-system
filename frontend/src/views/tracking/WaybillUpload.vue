@@ -340,4 +340,12 @@ const {
 .field-missing :deep(.el-input__wrapper) {
   box-shadow: 0 0 0 1px #f56c6c inset;
 }
+
+@media (max-width: 768px) {
+  .waybill-upload-page { padding: 0; }
+  .upload-layout { flex-direction: column; }
+  .left-panel, .right-panel { width: 100%; min-width: 0; box-sizing: border-box; }
+  .right-panel { padding: 16px; }
+  .waybill-uploader :deep(.el-upload) { width: 100%; }
+}
 </style>

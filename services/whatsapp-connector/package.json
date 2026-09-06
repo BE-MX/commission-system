@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
-    "check": "node --check src/server.js"
+    "check": "node --check src/server.js && node --check src/auth.js",
+    "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",

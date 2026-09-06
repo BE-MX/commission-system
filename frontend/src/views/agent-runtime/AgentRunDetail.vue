@@ -209,7 +209,7 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer) })
 .artifact-field { margin-top: 14px; }
 .field-label { margin-bottom: 6px; font-size: 13px; font-weight: 700; }
 pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: inherit; line-height: 1.55; }
-.field-value, .field-list, .event-card pre { padding: 10px; border-radius: 8px; background: var(--surface-subtle); }
+.field-value, .field-list, .event-card pre { padding: 10px; border-radius: 8px; background: var(--toolbar-bg); }
 .field-list { margin: 0; padding-left: 30px; }
 .field-list li + li { margin-top: 6px; }
 .evidence-collapse { margin-top: 12px; }

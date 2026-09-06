@@ -290,19 +290,21 @@ test('library creation requires an explicit category and resets to company after
 })
 
 
+const memberDialogSource = readFileSync(new URL('../src/views/knowledge/components/KnowledgeMemberDialog.vue', import.meta.url), 'utf8')
+
 test('member permissions use Ark usernames, remote candidates, and an explicit add action', () => {
   const workbench = readFileSync(
     new URL('../src/views/knowledge/KnowledgeWorkbench.vue', import.meta.url),
     'utf8',
   )
 
-  assert.match(workbench, /:title="`成员权限 · \$\{memberLibrary\?\.name \|\| ''\}`"/)
+  assert.match(memberDialogSource, /:title="`成员权限 · \$\{library\?\.name \|\| ''\}`"/)
   assert.doesNotMatch(workbench, /POC 使用方舟用户 ID|请填写成员用户 ID|<el-input-number/)
-  assert.match(workbench, /class="member-identity"[\s\S]*?class="member-username"[\s\S]*?\{\{ member\.username \}\}[\s\S]*?class="member-real-name"[\s\S]*?\{\{ member\.real_name \|\| '未设置姓名' \}\}/)
-  assert.match(workbench, /<el-select[\s\S]*?v-model="candidateUserId"[\s\S]*?filterable[\s\S]*?remote[\s\S]*?:remote-method="searchMemberCandidates"[\s\S]*?:loading="memberSearchLoading"[\s\S]*?placeholder="输入方舟用户名或姓名搜索"/)
-  assert.match(workbench, /<el-select[\s\S]*?v-model="candidateUserId"[\s\S]*?reserve-keyword[\s\S]*?:remote-method="searchMemberCandidates"/)
-  assert.match(workbench, /v-for="candidate in memberCandidates"[\s\S]*?:value="candidate\.user_id"[\s\S]*?candidate\.username[\s\S]*?candidate\.real_name/)
-  assert.match(workbench, /<GlassButton[^>]*:disabled="!candidateUserId \|\| memberSaving"[^>]*@click="addSelectedMember"[^>]*>添加成员<\/GlassButton>/)
+  assert.match(memberDialogSource, /class="member-identity"[\s\S]*?class="member-username"[\s\S]*?\{\{ member\.username \}\}[\s\S]*?class="member-real-name"[\s\S]*?\{\{ member\.real_name \|\| '未设置姓名' \}\}/)
+  assert.match(memberDialogSource, /<el-select[\s\S]*?:model-value="candidateUserId"[\s\S]*?filterable[\s\S]*?remote[\s\S]*?:remote-method="query => \$emit\('search', query\)"[\s\S]*?:loading="searchLoading"[\s\S]*?placeholder="输入方舟用户名或姓名搜索"/)
+  assert.match(memberDialogSource, /<el-select[\s\S]*?:model-value="candidateUserId"[\s\S]*?reserve-keyword[\s\S]*?:remote-method="query => \$emit\('search', query\)"/)
+  assert.match(memberDialogSource, /v-for="candidate in candidates"[\s\S]*?:value="candidate\.user_id"[\s\S]*?candidate\.username[\s\S]*?candidate\.real_name/)
+  assert.match(memberDialogSource, /<GlassButton[^>]*:disabled="!candidateUserId \|\| saving"[^>]*@click="\$emit\('add'\)"[^>]*>添加成员<\/GlassButton>/)
   assert.doesNotMatch(workbench, /@change="addSelectedMember"/)
 
   const searchMembers = workbench.slice(workbench.indexOf('async function searchMemberCandidates'), workbench.indexOf('function addSelectedMember'))
@@ -348,7 +350,7 @@ test('member loading is race-safe, failure-safe, and save uses the loaded librar
   assert.ok(saveMembers.indexOf('await knowledgeClient.put') < saveMembers.indexOf('memberDialog.value = false'))
 
   const resetMemberDialog = workbench.slice(workbench.indexOf('function resetMemberDialog'), workbench.indexOf('async function openApprovals'))
-  assert.match(workbench, /<el-dialog[^>]*v-model="memberDialog"[^>]*@closed="resetMemberDialog"/)
+  assert.match(workbench, /<KnowledgeMemberDialog[^>]*v-model="memberDialog"[^>]*@closed="resetMemberDialog"/)
   assert.match(resetMemberDialog, /memberLibrary\.value = null/)
   assert.match(resetMemberDialog, /memberLoadRequest\.value \+= 1/)
   assert.match(resetMemberDialog, /memberCandidates\.value = \[\]/)
@@ -378,13 +380,13 @@ test('member replacement is single-flight and locks every draft-changing control
   )
 
   assert.match(workbench, /const memberSaving = ref\(false\)/)
-  assert.match(workbench, /<el-dialog[\s\S]*?:close-on-click-modal="!memberSaving"[\s\S]*?:close-on-press-escape="!memberSaving"[\s\S]*?:show-close="!memberSaving"/)
-  assert.match(workbench, /<el-select[\s\S]*?v-model="candidateUserId"[\s\S]*?:disabled="memberSaving"/)
-  assert.match(workbench, /<GlassButton[^>]*:disabled="!candidateUserId \|\| memberSaving"[^>]*@click="addSelectedMember"/)
-  assert.match(workbench, /<el-select v-model="member\.role"[^>]*:disabled="memberSaving \|\| isProtectedActor\(member\) \|\| invalidMemberIds\.includes\(member\.user_id\)"/)
-  assert.match(workbench, /<GlassButton[^>]*v-else[^>]*:disabled="memberSaving"[^>]*@click="removeMember\(index\)"[^>]*>移除<\/GlassButton>/)
-  assert.match(workbench, /<GlassButton[^>]*:disabled="memberSaving"[^>]*@click="memberDialog = false">取消<\/GlassButton>/)
-  assert.match(workbench, /<GlassButton[^>]*:loading="memberSaving"[^>]*@click="saveMembers">保存权限<\/GlassButton>/)
+  assert.match(memberDialogSource, /<el-dialog[\s\S]*?:close-on-click-modal="!saving"[\s\S]*?:close-on-press-escape="!saving"[\s\S]*?:show-close="!saving"/)
+  assert.match(memberDialogSource, /<el-select[\s\S]*?:model-value="candidateUserId"[\s\S]*?:disabled="saving"/)
+  assert.match(memberDialogSource, /<GlassButton[^>]*:disabled="!candidateUserId \|\| saving"[^>]*@click="\$emit\('add'\)"/)
+  assert.match(memberDialogSource, /<el-select\s+v-model="member\.role"[^>]*:disabled="saving \|\| isProtected\(member\) \|\| invalidUserIds\.includes\(member\.user_id\)"/)
+  assert.match(memberDialogSource, /<GlassButton[^>]*v-else[^>]*:disabled="saving"[^>]*@click="\$emit\('remove', index\)"[^>]*>移除<\/GlassButton>/)
+  assert.match(memberDialogSource, /<GlassButton[^>]*:disabled="saving"[^>]*@click="\$emit\('update:modelValue', false\)">取消<\/GlassButton>/)
+  assert.match(memberDialogSource, /<GlassButton[^>]*:loading="saving"[^>]*@click="\$emit\('save'\)">保存权限<\/GlassButton>/)
 
   const addMember = workbench.slice(workbench.indexOf('function addSelectedMember'), workbench.indexOf('function removeMember'))
   assert.match(addMember, /if \(memberSaving\.value\) return/)
@@ -407,8 +409,8 @@ test('invalid members stay visible and are marked for removal after save validat
   )
 
   assert.match(workbench, /const invalidMemberIds = ref\(\[\]\)/)
-  assert.match(workbench, /:class="\{ 'member-row-invalid': invalidMemberIds\.includes\(member\.user_id\) \}"/)
-  assert.match(workbench, /v-if="invalidMemberIds\.includes\(member\.user_id\)"[^>]*>账号已停用或删除，请移除后重试<\/span>/)
+  assert.match(memberDialogSource, /:class="\{ 'member-row-invalid': invalidUserIds\.includes\(member\.user_id\) \}"/)
+  assert.match(memberDialogSource, /v-if="invalidUserIds\.includes\(member\.user_id\)"[^>]*>账号已停用或删除，请移除后重试<\/span>/)
   const removeMember = workbench.slice(workbench.indexOf('function removeMember'), workbench.indexOf('async function saveMembers'))
   assert.match(removeMember, /invalidMemberIds\.value = invalidMemberIds\.value\.filter\(userId => userId !== removed\.user_id\)/)
   const reset = workbench.slice(workbench.indexOf('function resetMemberDialog'), workbench.indexOf('async function openApprovals'))
@@ -423,11 +425,9 @@ test('non-super current administrator is visibly protected using the real auth f
   )
 
   assert.match(workbench, /const isSuperAdmin = computed\(\(\) => auth\.roles\.includes\('super_admin'\)\)/)
-  const guard = workbench.slice(workbench.indexOf('function isProtectedActor'), workbench.indexOf('async function openMembers'))
-  assert.match(guard, /!isSuperAdmin\.value/)
-  assert.match(guard, /member\.role === 'admin'/)
-  assert.match(guard, /Number\(member\.user_id\) === Number\(auth\.user\?\.id\)/)
-  assert.match(workbench, /v-if="isProtectedActor\(member\)"[^>]*>当前账号，管理员权限不可移除<\/span>/)
+  assert.match(workbench, /isSuperAdmin\.value \? null : Number\(auth\.user\?\.id\)/)
+  assert.match(memberDialogSource, /member\.role === 'admin' && props\.protectedUserId === Number\(member\.user_id\)/)
+  assert.match(memberDialogSource, /v-if="isProtected\(member\)"[^>]*>当前账号，管理员权限不可移除<\/span>/)
 })
 
 
@@ -437,12 +437,24 @@ test('member dialog has accessible selects and a single-column small-screen layo
     'utf8',
   )
 
-  assert.match(workbench, /:title="`成员权限 · \$\{memberLibrary\?\.name \|\| ''\}`"[\s\S]*?width="min\(620px, calc\(100vw - 32px\)\)"/)
-  assert.match(workbench, /v-model="candidateUserId"[\s\S]*?aria-label="搜索并选择方舟成员"/)
-  assert.match(workbench, /<el-select v-model="member\.role"[^>]*:aria-label="`设置 \$\{member\.username\} 的权限`"/)
-  const mobileStyles = workbench.slice(workbench.indexOf('@media (max-width: 640px)'))
-  assert.match(mobileStyles, /\.member-add\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/)
+  assert.match(memberDialogSource, /:title="`成员权限 · \$\{library\?\.name \|\| ''\}`"[\s\S]*?width="min\(620px, calc\(100vw - 32px\)\)"/)
+  assert.match(memberDialogSource, /:model-value="candidateUserId"[\s\S]*?aria-label="搜索并选择方舟成员"/)
+  assert.match(memberDialogSource, /<el-select\s+v-model="member\.role"[^>]*:aria-label="`设置 \$\{member\.username\} 的权限`"/)
+  const mobileStyles = memberDialogSource.slice(memberDialogSource.indexOf('@media (max-width: 640px)'))
+  assert.match(mobileStyles, /\.member-add,\s*\.member-row\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/)
   assert.match(mobileStyles, /\.member-row\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\)/)
   assert.doesNotMatch(workbench, /memberCandidateQuery/)
 })
 
+
+test('member dialog extraction preserves parent permissions and event contracts', () => {
+  const workbench = readFileSync(new URL('../src/views/knowledge/KnowledgeWorkbench.vue', import.meta.url), 'utf8')
+  for (const binding of [':library="memberLibrary"', ':members="members"', ':candidates="memberCandidates"',
+    ':invalid-user-ids="invalidMemberIds"', ':protected-user-id="protectedActorUserId"',
+    ':search-loading="memberSearchLoading"', ':saving="memberSaving"',
+    '@search="searchMemberCandidates"', '@add="addSelectedMember"', '@remove="removeMember"', '@save="saveMembers"']) {
+    assert.ok(workbench.includes(binding), binding)
+  }
+  assert.match(workbench, /const protectedActorUserId = computed\(\(\) => isSuperAdmin\.value \? null : Number\(auth\.user\?\.id\)\)/)
+  assert.match(memberDialogSource, /member\.role === 'admin' && props\.protectedUserId === Number\(member\.user_id\)/)
+})

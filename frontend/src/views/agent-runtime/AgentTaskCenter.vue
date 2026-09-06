@@ -332,7 +332,7 @@ const percent = value => `${Math.round(Number(value || 0) * 100)}%`
 .evaluation-head p { margin: 5px 0 0; color: var(--text-secondary); }
 .evaluation-actions { justify-content: flex-end; }
 .evaluation-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
-.evaluation-metric { padding: 13px; border-radius: 10px; background: var(--surface-subtle); }
+.evaluation-metric { padding: 13px; border-radius: 10px; background: var(--toolbar-bg); }
 .evaluation-metric > div { justify-content: space-between; margin-bottom: 9px; }
 .evaluation-metric strong { font-size: 18px; }
 .evaluation-metric small { display: block; margin-top: 8px; color: var(--text-secondary); }

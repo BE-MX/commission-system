@@ -12,6 +12,7 @@ import { getInviteAuthorization } from '@/views/customer-image/inviteSession'
 
 export const v1Client = createApiClient({ baseURL: '/api/v1' })
 export const designClient = createApiClient({ baseURL: '/api/design' })
+export const invoiceClient = createApiClient({ baseURL: '/api/invoice' })
 export const aiClient = createApiClient({ baseURL: '/api/ai', timeout: 300000 })
 export const insightClient = createApiClient({ baseURL: '/api/insight', timeout: 90000 })
 export const customerHubClient = createApiClient({ baseURL: '/api/customer-hub', timeout: 90000 })

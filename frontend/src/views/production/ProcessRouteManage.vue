@@ -258,7 +258,7 @@ async function handleRouteSubmit() {
 
 async function deleteRoute(row) {
   try {
-    await ElMessageBox.confirm('确认删除该路线？已绑定的产品不会被影响。', '提示', { type: 'warning' })
+    await ElMessageBox.confirm('仅未被产品、订单、生产进度或内贸规则引用的路线可以删除。确认删除该路线及其工序配置？', '删除路线', { type: 'warning' })
     await api.deleteProcessRoute(row.id)
     ElMessage.success('已删除')
     if (selectedRoute.value?.id === row.id) selectedRoute.value = null
@@ -443,55 +443,4 @@ onMounted(() => {
 })
 </script>
 
-<style scoped>
-.process-route-manage { padding: 20px; height: calc(100vh - 120px); position: relative; }
-
-/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
-.route-manage-aurora { inset: -24px -28px; }
-
-/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
-   el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
-   .el-overlay 的 position: fixed，弹窗打开后看不见 */
-.process-route-manage .split-layout { position: relative; z-index: 1; }
-
-.split-layout { display: flex; gap: 16px; height: 100%; }
-
-/* 左右面板：同款渐变玻璃 */
-.route-list-panel,
-.route-detail-panel {
-  border: 1px solid var(--dash-glass-border);
-  border-radius: var(--dash-card-radius);
-  background: var(--dash-glass-bg);
-  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
-  overflow: hidden;
-}
-.route-list-panel { width: 320px; flex-shrink: 0; display: flex; flex-direction: column; }
-.route-detail-panel { flex: 1; display: flex; flex-direction: column; }
-.panel-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #ebeef5; }
-.panel-title { font-weight: 600; font-size: 15px; }
-.header-actions { display: flex; gap: 8px; }
-.save-error { margin: 12px 16px 0; width: auto; }
-.route-list { flex: 1; overflow-y: auto; padding: 8px; }
-.route-item { padding: 10px 12px; border-radius: 4px; cursor: pointer; margin-bottom: 4px; transition: background 0.2s; position: relative; }
-.route-item:hover { background: #f5f7fa; }
-.route-item.active { background: #ecf5ff; }
-.route-item-name { font-weight: 500; font-size: 14px; }
-.route-item-meta { font-size: 12px; color: #909399; margin-top: 4px; }
-.route-item-actions { position: absolute; right: 8px; top: 8px; display: none; }
-.route-item:hover .route-item-actions { display: flex; gap: 4px; }
-.step-list { flex: 1; overflow-y: auto; padding: 12px 16px; }
-.step-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
-.step-row { flex-direction: column; align-items: stretch; gap: 0; }
-.step-main { display: flex; align-items: center; gap: 10px; }
-.drag-handle { cursor: grab; color: #c0c4cc; font-size: 18px; }
-.step-order { width: 24px; height: 24px; background: #409eff; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; }
-.step-name { flex: 1; font-weight: 500; }
-.rule-type-select { width: 150px; }
-.decision-editor { margin: 8px 34px 4px; padding: 10px 12px; border-radius: 8px; background: var(--el-fill-color-lighter); }
-.decision-option { padding: 8px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
-.decision-option:last-of-type { border-bottom: none; }
-.option-fields { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(150px, 1fr) auto; gap: 8px; }
-.skip-targets { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 8px; }
-.skip-label { font-size: 13px; color: var(--el-text-color-secondary); }
-.path-summary { margin-top: 6px; font-size: 12px; color: var(--el-text-color-secondary); }
-</style>
+<style scoped src="./process-route-manage.css"></style>

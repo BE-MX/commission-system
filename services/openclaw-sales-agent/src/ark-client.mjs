@@ -57,7 +57,40 @@ export class ArkClient {
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
+
+      if (response.status >= 300 && response.status < 400) {
+        throw new ArkApiError(`Ark API 拒绝跨地址重定向 (HTTP ${response.status})`, response.status);
+      }
+      const declaredLength = Number.parseInt(response.headers.get("content-length") || "0", 10);
+      if (declaredLength > MAX_RESPONSE_BYTES) {
+        throw new ArkApiError("Ark API 响应超过安全上限", response.status);
+      }
+      const raw = await response.text();
+      if (Buffer.byteLength(raw, "utf8") > MAX_RESPONSE_BYTES) {
+        throw new ArkApiError("Ark API 响应超过安全上限", response.status);
+      }
+
+      let payload;
+      try {
+        payload = raw ? JSON.parse(raw) : null;
+      } catch {
+        throw new ArkApiError(`Ark API 返回了无效 JSON (HTTP ${response.status})`, response.status);
+      }
+      if (!response.ok) {
+        const detail = typeof payload?.detail === "string"
+          ? payload.detail
+          : (typeof payload?.message === "string" ? payload.message : "请求失败");
+        throw new ArkApiError(
+          `Ark API HTTP ${response.status}: ${this.#redact(detail).slice(0, 500)}`,
+          response.status,
+        );
+      }
+      if (!payload || payload.code !== 200 || !("data" in payload)) {
+        throw new ArkApiError("Ark API 响应不符合统一信封契约", response.status);
+      }
+      return payload.data;
     } catch (error) {
+      if (error instanceof ArkApiError) throw error;
       if (error?.name === "AbortError") {
         throw new ArkApiError("Ark API 请求超时");
       }
@@ -66,37 +99,6 @@ export class ArkClient {
       clearTimeout(timeout);
     }
 
-    if (response.status >= 300 && response.status < 400) {
-      throw new ArkApiError(`Ark API 拒绝跨地址重定向 (HTTP ${response.status})`, response.status);
-    }
-    const declaredLength = Number.parseInt(response.headers.get("content-length") || "0", 10);
-    if (declaredLength > MAX_RESPONSE_BYTES) {
-      throw new ArkApiError("Ark API 响应超过安全上限", response.status);
-    }
-    const raw = await response.text();
-    if (Buffer.byteLength(raw, "utf8") > MAX_RESPONSE_BYTES) {
-      throw new ArkApiError("Ark API 响应超过安全上限", response.status);
-    }
-
-    let payload;
-    try {
-      payload = raw ? JSON.parse(raw) : null;
-    } catch {
-      throw new ArkApiError(`Ark API 返回了无效 JSON (HTTP ${response.status})`, response.status);
-    }
-    if (!response.ok) {
-      const detail = typeof payload?.detail === "string"
-        ? payload.detail
-        : (typeof payload?.message === "string" ? payload.message : "请求失败");
-      throw new ArkApiError(
-        `Ark API HTTP ${response.status}: ${this.#redact(detail).slice(0, 500)}`,
-        response.status,
-      );
-    }
-    if (!payload || payload.code !== 200 || !("data" in payload)) {
-      throw new ArkApiError("Ark API 响应不符合统一信封契约", response.status);
-    }
-    return payload.data;
   }
 
   listSearchJobs(status = "claimable", page = 1, pageSize = 20) {

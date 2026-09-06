@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { AxiosHeaders } from 'axios'
+import { AxiosHeaders, isCancel } from 'axios'
 
 import {
   INVITE_KEY,
@@ -30,6 +30,7 @@ function loadCreateApiClient({ accessToken = 'ark-token' } = {}) {
   const body = source.slice(start, end).replace('export function', 'function')
   const handlers = {}
   const axios = {
+    isCancel,
     create() {
       return {
         interceptors: {

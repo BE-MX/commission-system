@@ -94,6 +94,10 @@
   transform: scale(0.98);
 }
 
+@media (max-width: 640px) {
+  .main-layout .main-content .lg-aurora { inset: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .lg-card:hover,
   .lg-card:active {

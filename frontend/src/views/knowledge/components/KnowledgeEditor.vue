@@ -470,7 +470,7 @@ onBeforeUnmount(() => editor.value?.destroy())
 .document-canvas :deep(.tiptap h4) { margin: 1.15em 0 .4em; font-size: 16px; }
 .document-canvas :deep(.tiptap h5), .document-canvas :deep(.tiptap h6) { margin: 1.1em 0 .35em; font-size: 15px; }
 .document-canvas :deep(.tiptap blockquote) { margin: .8em 0; padding-left: 12px; border-left: 3px solid var(--color-primary); color: var(--text-secondary); }
-.document-canvas :deep(.tiptap pre) { overflow: auto; padding: 10px 12px; border-radius: 9px; color: var(--surface-card); background: var(--sidebar-bg-to); font-family: Consolas, monospace; line-height: 1.5; }
+.document-canvas :deep(.tiptap pre) { overflow: auto; padding: 10px 12px; border-radius: 9px; color: var(--card-bg); background: var(--sidebar-bg-to); font-family: Consolas, monospace; line-height: 1.5; }
 .document-canvas :deep(.tiptap code:not(pre code)) { padding: 2px 5px; border-radius: 4px; color: var(--color-primary); background: var(--color-primary-light); }
 .document-canvas :deep([data-confirmation='true']) { color: var(--color-danger); font-weight: 700; }
 .document-canvas :deep(.knowledge-text-color--gold) { color: var(--color-primary); }

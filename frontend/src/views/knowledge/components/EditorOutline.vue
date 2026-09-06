@@ -18,7 +18,7 @@ defineEmits(['navigate'])
 </script>
 
 <style scoped>
-.editor-outline { min-width: 0; overflow: auto; padding: 18px 12px; border-left: 1px solid var(--border-color); background: var(--surface-card); }
+.editor-outline { min-width: 0; overflow: auto; padding: 18px 12px; border-left: 1px solid var(--border-color); background: var(--card-bg); }
 .outline-title { margin-bottom: 8px; color: var(--text-primary); font-size: 13px; font-weight: 700; }
 button { display: block; width: 100%; overflow: hidden; padding-block: 4px; border: 0; border-radius: 6px; color: var(--text-secondary); background: transparent; cursor: pointer; font-size: 11.5px; line-height: 1.4; text-align: left; text-overflow: ellipsis; white-space: nowrap; transition: color .15s ease, background-color .15s ease; }
 p { color: var(--text-muted-blue); font-size: 11.5px; line-height: 1.5; }

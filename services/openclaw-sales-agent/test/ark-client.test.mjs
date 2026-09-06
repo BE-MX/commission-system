@@ -8,6 +8,25 @@ import {
   LeaseStore,
 } from "../src/ark-client.mjs";
 
+test("ArkClient keeps its deadline until the response body finishes", async () => {
+  let requestSignal;
+  const api = new ArkClient({ baseUrl: "http://local.test", token: "test", timeoutMs: 10 }, async (_url, { signal }) => {
+    requestSignal = signal;
+    return {
+      status: 200, ok: true, headers: new Headers(),
+      text: () => new Promise((resolve, reject) => {
+        const fallback = setTimeout(() => resolve('{"code":200,"data":{}}'), 80);
+        signal.addEventListener("abort", () => {
+          clearTimeout(fallback);
+          reject(new DOMException("aborted", "AbortError"));
+        }, { once: true });
+      }),
+    };
+  });
+  await assert.rejects(api.request("/slow-body"), /请求超时/);
+  assert.equal(requestSignal.aborted, true);
+});
+
 async function withServer(handler, run) {
   const server = createServer(handler);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));

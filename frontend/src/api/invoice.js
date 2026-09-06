@@ -1,6 +1,4 @@
-import { createApiClient } from './request'
-
-const request = createApiClient({ baseURL: '/api/invoice' })
+import { invoiceClient as request } from './clients'
 
 // 后端统一 {code,message,data} 信封，拦截器返回整个信封，这里取业务数据
 const unwrap = promise => promise.then(res => (res && res.data !== undefined ? res.data : res))

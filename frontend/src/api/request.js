@@ -28,10 +28,13 @@ export function createApiClient({
 } = {}) {
   const service = axios.create({ baseURL, timeout })
 
+  function releaseLoading(config) {
+    if (!config?._arkLoadingStarted) return
+    config._arkLoadingStarted = false
+    loading.hide()
+  }
+
   service.interceptors.request.use(config => {
-    if (config.showLoading !== false) {
-      loading.show(config.loadingText || '')
-    }
     if (getAuthorization) {
       const authorization = getAuthorization()
       if (typeof config.headers?.set === 'function'
@@ -49,14 +52,27 @@ export function createApiClient({
       const token = getAccessToken()
       if (token) config.headers.Authorization = `Bearer ${token}`
     }
+    if (config.showLoading !== false) {
+      loading.show(config.loadingText || '')
+      config._arkLoadingStarted = true
+      // Axios serialization can throw before it attaches config to the error.
+      // Release only this request's slot, without hiding other pending requests.
+      const transforms = config.transformRequest
+      if (transforms) config.transformRequest = [transforms].flat().map(transform => function (...args) {
+        try {
+          return transform.apply(this, args)
+        } catch (error) {
+          releaseLoading(config)
+          throw error
+        }
+      })
+    }
     return config
   })
 
   service.interceptors.response.use(
     response => {
-      if (response.config.showLoading !== false) {
-        loading.hide()
-      }
+      releaseLoading(response.config)
       if (response.config.responseType === 'blob') {
         return response
       }
@@ -64,15 +80,15 @@ export function createApiClient({
       // 业务码校验: text response (string) 跳过, JSON 才进入此分支
       if (res && typeof res === 'object' && res.code !== undefined
           && (typeof res.code !== 'number' || res.code < 200 || res.code >= 300)) {
-        ElMessage.error(res.message || '请求失败')
+        if (!response.config.suppressToast) ElMessage.error({ message: res.message || '请求失败', grouping: true })
         return Promise.reject(new Error(res.message || '请求失败'))
       }
       return res
     },
     error => {
-      if (error.config?.showLoading !== false) {
-        loading.hide()
-      }
+      releaseLoading(error.config)
+      // Changing filters or leaving a page can intentionally cancel a request.
+      if (axios.isCancel(error)) return Promise.reject(error)
       // 调用方主动 suppress 404 (例如"暂无日报"页)
       if (error.response?.status === 404 && error.config?.suppressNotFound) {
         return Promise.reject(error)
@@ -95,7 +111,7 @@ export function createApiClient({
       if (typeof msg === 'object' && msg !== null) {
         msg = msg.message || JSON.stringify(msg)
       }
-      ElMessage.error(msg)
+      ElMessage.error({ message: msg, grouping: true })
       return Promise.reject(error)
     }
   )

@@ -18,6 +18,8 @@ Set the same API key in:
 
 Set Ark backend `WHATSAPP_CONNECTOR_BASE_URL=http://127.0.0.1:8787`.
 
+An empty or blank API key stops startup before any state is created or HTTP port is opened. The service binds to `127.0.0.1` by default. Set `WHATSAPP_CONNECTOR_HOST` explicitly only when Ark connects from another host; bearer authentication remains required, including health checks. Run `npm test` for isolated authentication checks.
+
 `WHATSAPP_RESTORE_ON_START=true` makes the connector load active WhatsApp Web sessions from disk after the connector process restarts. If WhatsApp rejects the stored session, the account is marked `reconnect_required` and Ark must show a new QR binding flow.
 
 ## Notes

@@ -18,6 +18,7 @@
 - 方舟不保存 WhatsApp Web 会话密钥。
 - 方舟不直接访问 WhatsApp Web 私有协议。
 - Connector 对方舟暴露内网 HTTP API，并通过 `WHATSAPP_CONNECTOR_API_KEY` 鉴权。
+- 密钥缺失或全空白时必须启动失败；所有接口（含 `/health`）均验证 Bearer。监听默认 `127.0.0.1`，跨主机访问必须显式配置 `WHATSAPP_CONNECTOR_HOST`，不能以漏配密钥启用匿名模式。
 
 ## Connector API
 

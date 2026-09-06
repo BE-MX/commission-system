@@ -86,9 +86,9 @@ onBeforeUnmount(releaseUrl)
 <style scoped>
 .knowledge-image { margin: 18px 0; padding: 8px; border: 1px solid transparent; border-radius: 10px; }
 .knowledge-image.selected { border-color: var(--color-primary); background: var(--color-primary-light); }
-.image-frame { display: grid; min-height: 120px; place-items: center; color: var(--text-muted-blue); background: var(--surface-subtle); }
+.image-frame { display: grid; min-height: 120px; place-items: center; color: var(--text-muted-blue); background: var(--toolbar-bg); }
 .image-frame img { display: block; max-width: 100%; max-height: 640px; object-fit: contain; }
-.image-placeholder { display: grid; min-height: 160px; place-items: center; gap: 8px; border: 1px dashed var(--border-color); border-radius: 9px; color: var(--text-secondary); background: var(--surface-subtle); }
+.image-placeholder { display: grid; min-height: 160px; place-items: center; gap: 8px; border: 1px dashed var(--border-color); border-radius: 9px; color: var(--text-secondary); background: var(--toolbar-bg); }
 .image-placeholder small { color: var(--text-muted-blue); }
 .image-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; margin-top: 8px; }
 button { padding: 6px 10px; border: 0; border-radius: 7px; color: var(--color-danger); background: transparent; cursor: pointer; }

@@ -11,7 +11,7 @@
       <!-- ── 客户档案 ─────────────────────────── -->
       <el-tab-pane label="客户档案" name="customers">
         <el-row :gutter="12" class="toolbar-row">
-          <el-col :span="18">
+          <el-col :xs="24" :md="18">
             <el-form inline @submit.prevent="customerPage.handleSearch">
               <el-form-item label="业务员">
                 <el-select v-model="customerPage.searchForm.salesperson_id" clearable placeholder="全部"
@@ -29,7 +29,7 @@
               </el-form-item>
             </el-form>
           </el-col>
-          <el-col :span="6" style="text-align: right">
+          <el-col :xs="24" :md="6" style="text-align: right">
             <GlassButton v-permission="'card:write'" variant="primary" left-icon="Plus" @click="openCustomerDialog(null)">
               新建客户
             </GlassButton>

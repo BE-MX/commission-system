@@ -89,7 +89,7 @@ def test_research_list_batches_access_for_multiple_customers(db):
     user = ArkUser(id=1951, username="research-count", password_hash="x", real_name="Research")
     db.add(user)
     db.flush()
-    customers = [_account(db, f"RESEARCH-{index}", user.id) for index in range(2)]
+    customers = [_account(db, f"RESEARCH-{index}", user.id) for index in range(20)]
     for index, customer in enumerate(customers, 1):
         db.add(models.CustomerResearchTask(
             customer_id=customer.id, task_type="company_research", task_status="completed",
@@ -109,9 +109,11 @@ def test_research_list_batches_access_for_multiple_customers(db):
         }, page=1, page_size=20,
     ))
 
-    assert total == len(rows) == 2
+    assert total == len(rows) == 20
     assert {row["customer_id"] for row in rows} == {item.id for item in customers}
-    assert selects == 3
+    # Count + page + batched access + batched customer labels, independent of page size.
+    assert selects == 4
+    assert all(row['customer_name'].startswith('RESEARCH-') for row in rows)
 
 
 def test_canonical_alias_cycle_fails_closed(db):

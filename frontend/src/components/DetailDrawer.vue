@@ -3,6 +3,8 @@
     :model-value="modelValue"
     :title="title"
     :size="width"
+    class="detail-drawer"
+    append-to-body
     destroy-on-close
     @update:model-value="v => $emit('update:modelValue', v)"
     @closed="$emit('closed')"
@@ -34,4 +36,9 @@ defineEmits(['update:modelValue', 'closed'])
 <style scoped>
 .detail-drawer-body { min-height: 120px; }
 .detail-drawer-footer { display: flex; justify-content: flex-end; gap: 10px; }
+.detail-drawer-footer { flex-wrap: wrap; }
+</style>
+
+<style>
+.el-drawer.detail-drawer { max-width: 100vw; }
 </style>

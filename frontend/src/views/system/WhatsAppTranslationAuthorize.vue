@@ -137,7 +137,7 @@ onMounted(async () => {
 <style scoped>
 .authorize-page {
   align-items: center;
-  background: var(--bg-color-page);
+  background: var(--page-bg);
   display: flex;
   justify-content: center;
   min-height: 100vh;

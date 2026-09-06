@@ -144,4 +144,11 @@ onUnmounted(() => {
 .db-topbar__theme-label {
   white-space: nowrap;
 }
+
+@media (max-width: 768px) {
+  .db-topbar { height: auto; min-height: 56px; padding: 12px; flex-wrap: wrap; gap: 12px; }
+  .db-topbar__left, .db-topbar__right { min-width: 0; }
+  .db-topbar__center { order: 3; flex-basis: 100%; }
+  .db-topbar__title { font-size: 14px; white-space: normal; }
+}
 </style>

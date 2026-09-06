@@ -85,7 +85,7 @@ function table(command) {
 </script>
 
 <style scoped>
-.editor-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 5px 14px; border-bottom: 1px solid var(--border-color); background: var(--surface-subtle); }
+.editor-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 5px 14px; border-bottom: 1px solid var(--border-color); background: var(--toolbar-bg); }
 .tool-group { display: flex; align-items: center; gap: 2px; padding-right: 4px; border-right: 1px solid var(--border-color); }
 .tool-group:last-of-type { border-right: 0; }
 button, select { height: 30px; border: 1px solid transparent; border-radius: 6px; color: var(--text-secondary); background: transparent; font: inherit; font-size: 13px; }

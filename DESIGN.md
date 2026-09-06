@@ -82,12 +82,13 @@
 
 ## Motion
 - **Approach:** intentional — 有意义的过渡，不滥用动画
-- **Page transition:** fade + slide up (opacity 0→1, translateY 12px→0), 300ms ease
-- **Stagger:** 页面子元素依次入场，间隔 70ms
+- **Page transition:** 主站高频页面切换只淡入/淡出，进入 120ms、退出 80ms；不位移业务表格。
+- **Stagger:** 业务表单和列表不延迟显示；低频介绍场景才使用短交错入场。
 - **Card hover:** translateY(-2px) + shadow 加深, 250ms ease
 - **Sidebar toggle:** width transition 300ms cubic-bezier(0.4, 0, 0.2, 1)
 - **Menu item hover:** background color 200ms ease
 - **Input focus:** box-shadow ring 200ms ease
+- **Reduced motion:** 主站全局缩短 CSS 动画/过渡并关闭平滑滚动；组件中的持续 JS/Canvas 动画须自行遵循系统偏好和页面生命周期。GlassButton 在触屏、键盘聚焦及减少动态模式不产生位移；加载状态始终保留可读文字。
 
 ## Component Patterns
 - **Toolbar:** sticky top bar, card 样式（白底 + border + shadow），包含筛选和操作按钮
@@ -96,6 +97,9 @@
 - **Button System:** 见下方「Button Spec」完整规范
 - **Metric card:** 大数字 + 状态圆点 + 操作链接，hover 上浮
 - **Dialog:** 16px 圆角，header 带 bottom border
+- **Small viewport:** 主站窄屏导航使用抽屉，页面使用完整可用宽度；筛选栏允许换行，多列表单和上传/配置双栏转为单列。保留表格内部横向滚动，不通过隐藏整个页面溢出来掩盖不可达控件。
+- **Overlay boundaries:** 非全屏弹窗最大宽度为视口减 24px，最大高度为动态视口减 32px；正文滚动、页头页尾保留。详情抽屉挂到 body，最大宽度不超过视口。欢迎提示使用标准 Dialog，支持焦点管理、Escape 与原生复选框。
+- **PM overlays:** PM 站保留独立设计系统；Modal/Drawer 共用焦点栈，只有顶层处理 Tab/Escape，关闭后恢复触发控件焦点及原有页面滚动状态。
 
 ## Liquid Glass 页面材质体系（2026-07-25 起）
 
@@ -381,7 +385,7 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 
 延迟类：`.delay-200`、`.delay-300`、`.delay-350`、`.delay-500`、`.delay-650`
 
-所有动画元素初始必须加 `.will-animate`（`opacity: 0`），配合延迟类实现交错入场。
+以上长入场类是历史展示页模式，不用于新的业务操作页。新组件默认可见；如展示场景使用 `.will-animate`，必须提供减少动态及初始化失败时的可见兜底。当前登录页以文末 2026-09-06 航行主题记录为准。
 
 ## Decisions Log
 | Date | Decision | Rationale |

@@ -24,19 +24,25 @@ function cssBlock(header) {
   return ''
 }
 
-test('mobile layout starts collapsed without overwriting the desktop preference', () => {
+test('mobile navigation starts closed without overwriting the desktop preference', () => {
   assert.match(source, /matchMedia\?\.\('\(max-width: 640px\)'\)/)
   assert.match(source, /const isNarrow = ref\(mobileQuery\?\.matches \?\? false\)/)
   assert.match(source, /const desktopCollapse = ref\(false\)/)
+  assert.match(source, /const mobileNavigationOpen = ref\(false\)/)
   assert.match(source, /get:\s*\(\)\s*=>\s*isNarrow\.value \|\| desktopCollapse\.value/)
   assert.match(source, /if \(!isNarrow\.value\) desktopCollapse\.value = value/)
   assert.match(source, /mobileQuery\?\.addEventListener\('change', onNarrowChange\)/)
   assert.match(source, /mobileQuery\?\.removeEventListener\('change', onNarrowChange\)/)
 })
 
-test('mobile layout hides the dishonest toggle and reserves usable content width', () => {
+test('mobile layout opens a navigation drawer and reserves the full content width', () => {
   const toggle = openingTag('collapse-toggle')
-  assert.match(toggle, /v-if="!isNarrow"/)
+  assert.doesNotMatch(toggle, /v-if="!isNarrow"/)
+  assert.match(toggle, /mobileNavigationOpen = true/)
+  assert.match(toggle, /:aria-expanded=/)
+  assert.match(source, /<SidebarNavigation v-if="!isNarrow"/)
+  assert.match(source, /<el-drawer v-else v-model="mobileNavigationOpen" direction="ltr"/)
+  assert.match(source, /watch\(\(\) => route\.fullPath, \(\) => \{ mobileNavigationOpen\.value = false \}\)/)
 
   const mobileStyles = cssBlock('@media (max-width: 640px)')
   assert.match(mobileStyles, /\.header\s*\{\s*padding:\s*0 10px;/)

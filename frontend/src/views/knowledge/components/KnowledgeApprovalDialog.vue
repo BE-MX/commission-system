@@ -52,6 +52,6 @@ watch(
 <style scoped>
 .review-detail { display: grid; gap: 12px; }
 .review-meta { color: var(--text-muted-blue); font-size: 13px; }
-.review-sources { padding: 12px 14px; border: 1px solid var(--border-color); border-radius: var(--radius-md, 10px); color: var(--text-secondary); background: var(--surface-subtle); }
+.review-sources { padding: 12px 14px; border: 1px solid var(--border-color); border-radius: var(--radius-md, 10px); color: var(--text-secondary); background: var(--toolbar-bg); }
 .review-sources ul { margin: 8px 0 10px; padding-left: 20px; }
 </style>

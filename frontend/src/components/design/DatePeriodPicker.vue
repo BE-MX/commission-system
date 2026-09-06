@@ -114,11 +114,15 @@ function emitChange() {
 <style scoped>
 .date-period-picker {
   display: flex;
+  min-width: 0;
+  max-width: 100%;
   flex-direction: column;
   gap: 8px;
 }
 .date-row {
   display: flex;
+  flex-wrap: wrap;
+  row-gap: 4px;
   align-items: center;
   gap: 0;
 }

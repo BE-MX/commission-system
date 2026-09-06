@@ -4,7 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.production.models import (
-    Process, ProcessRoute, ProcessRouteStep, ProductProcessRoute,
+    Process, ProcessRoute, ProcessRouteStep, ProductProcessRoute, OrderProductProcessProgress,
 )
 
 
@@ -25,17 +25,25 @@ def list_routes(
     total = q.count()
     routes = q.order_by(ProcessRoute.id.asc()).offset((page - 1) * page_size).limit(page_size).all()
 
+    route_ids = [route.id for route in routes]
+    if not route_ids:
+        return [], total
+    step_counts = dict(db.query(ProcessRouteStep.route_id, func.count(ProcessRouteStep.id))
+                       .filter(ProcessRouteStep.route_id.in_(route_ids))
+                       .group_by(ProcessRouteStep.route_id).all())
+    product_counts = dict(db.query(ProductProcessRoute.route_id, func.count(ProductProcessRoute.id))
+                          .filter(ProductProcessRoute.route_id.in_(route_ids))
+                          .group_by(ProductProcessRoute.route_id).all())
+
     result = []
     for r in routes:
-        step_count = db.query(func.count()).filter(ProcessRouteStep.route_id == r.id).scalar()
-        product_count = db.query(func.count()).filter(ProductProcessRoute.route_id == r.id).scalar()
         result.append({
             "id": r.id,
             "name": r.name,
             "description": r.description,
             "status": r.status,
-            "step_count": step_count,
-            "product_count": product_count,
+            "step_count": step_counts.get(r.id, 0),
+            "product_count": product_counts.get(r.id, 0),
             "created_at": r.created_at,
             "updated_at": r.updated_at,
         })
@@ -72,13 +80,24 @@ def update_route(db: Session, route_id: int, **kwargs) -> ProcessRoute:
 
 
 def delete_route(db: Session, route_id: int) -> None:
-    obj = db.query(ProcessRoute).get(route_id)
+    from app.domestic.models import (
+        DomesticProduct, DomesticCraftRoute, DomesticOrderItem,
+        DomesticItemProgress, DomesticRouteRule,
+    )
+
+    # Lock the parent until commit; MySQL FK checks serialize concurrent new references.
+    obj = db.query(ProcessRoute).filter(ProcessRoute.id == route_id).with_for_update().first()
     if not obj:
         raise LookupError("路线不存在")
-    product_count = db.query(func.count()).filter(ProductProcessRoute.route_id == route_id).scalar()
-    if product_count:
-        raise ValueError(f"该路线已被 {product_count} 个产品绑定，请先解绑所有产品")
-    # CASCADE 会自动删除 process_route_step
+    for model, label in (
+        (ProductProcessRoute, "外贸产品"), (OrderProductProcessProgress, "外贸生产进度"),
+        (DomesticProduct, "内贸产品"), (DomesticCraftRoute, "内贸工艺映射"),
+        (DomesticOrderItem, "内贸订单"), (DomesticItemProgress, "内贸生产进度"),
+        (DomesticRouteRule, "内贸条件规则"),
+    ):
+        if db.query(model.id).filter(model.route_id == route_id).first():
+            raise ValueError(f"该路线仍被{label}引用，不能删除；请先检查关联数据")
+    db.query(ProcessRouteStep).filter(ProcessRouteStep.route_id == route_id).delete(synchronize_session=False)
     db.delete(obj)
     db.flush()
 

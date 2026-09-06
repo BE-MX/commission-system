@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { operationsClient } from '@/api/clients'
 
@@ -13,22 +13,18 @@ export function useOperationsCenter() {
   let refreshTimer = null
   let requestSequence = 0
   let runRequestSequence = 0
-  let dashboardSequence = 0
+  let interactiveRequests = 0
+  let active = false
 
   const scheduler = computed(() => overview.value?.scheduler || { jobs: [] })
   const services = computed(() => overview.value?.services || [])
   const runtimeInstances = computed(() => overview.value?.runtime_instances || [])
   const summary = computed(() => overview.value?.summary || {})
 
-  async function loadOverview({ quiet = false } = {}) {
+  async function loadOverview() {
     const sequence = ++requestSequence
-    if (!quiet) loading.value = true
-    try {
-      const response = await operationsClient.get('/overview', { showLoading: false })
-      if (sequence === requestSequence) overview.value = response.data
-    } finally {
-      if (!quiet && sequence === requestSequence) loading.value = false
-    }
+    const response = await operationsClient.get('/overview', { showLoading: false })
+    if (sequence === requestSequence) overview.value = response.data
   }
 
   async function loadJobRuns() {
@@ -40,12 +36,14 @@ export function useOperationsCenter() {
   }
 
   async function loadDashboard({ quiet = false } = {}) {
-    const sequence = ++dashboardSequence
-    if (!quiet) loading.value = true
+    if (!quiet) {
+      interactiveRequests++
+      loading.value = true
+    }
     try {
-      await Promise.all([loadOverview({ quiet: true }), loadJobRuns()])
+      await Promise.all([loadOverview(), loadJobRuns()])
     } finally {
-      if (!quiet && sequence === dashboardSequence) loading.value = false
+      if (!quiet) loading.value = --interactiveRequests > 0
     }
   }
 
@@ -74,13 +72,26 @@ export function useOperationsCenter() {
     }
   }
 
-  onMounted(async () => {
-    await loadDashboard()
-    refreshTimer = window.setInterval(() => loadDashboard({ quiet: true }), AUTO_REFRESH_MS)
-  })
-  onBeforeUnmount(() => {
-    if (refreshTimer) window.clearInterval(refreshTimer)
-  })
+  function refresh(quiet = true) {
+    if (document.hidden) return
+    // The shared request interceptor reports network failures to the user.
+    void loadDashboard({ quiet }).catch(() => {})
+  }
+  function startRefresh() {
+    if (active) return
+    active = true
+    refresh(Boolean(overview.value))
+    refreshTimer = window.setInterval(() => refresh(), AUTO_REFRESH_MS)
+  }
+  function stopRefresh() {
+    active = false
+    if (refreshTimer !== null) window.clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+  onMounted(startRefresh)
+  onActivated(startRefresh)
+  onDeactivated(stopRefresh)
+  onBeforeUnmount(stopRefresh)
 
   return {
     loading, actionJobId, overview, scheduler, services, runtimeInstances, summary,

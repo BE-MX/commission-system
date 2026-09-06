@@ -2,14 +2,14 @@
   <Teleport to="body">
     <Transition name="loading-fade">
       <div v-if="visible" class="global-loading-overlay" @click.stop @mousedown.stop>
-        <div class="loading-content">
-          <div class="loader">
+        <div class="loading-content" role="status" aria-live="polite" aria-atomic="true">
+          <div class="loader" aria-hidden="true">
             <div class="loader-ring"></div>
             <div class="loader-ring"></div>
             <div class="loader-ring"></div>
             <div class="loader-dot"></div>
           </div>
-          <p v-if="text" class="loading-text">{{ text }}</p>
+          <p class="loading-text">{{ text || '正在加载…' }}</p>
         </div>
       </div>
     </Transition>
@@ -30,8 +30,6 @@ const { visible, text } = useLoading()
   align-items: center;
   justify-content: center;
   background: rgba(26, 24, 22, 0.35);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
   cursor: wait;
 }
 
@@ -57,13 +55,13 @@ const { visible, text } = useLoading()
 }
 
 .loader-ring:nth-child(1) {
-  border-top-color: #D4941C;
+  border-top-color: var(--color-primary);
   animation: loader-spin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
 }
 
 .loader-ring:nth-child(2) {
   inset: 7px;
-  border-right-color: #F5CB5C;
+  border-right-color: var(--color-gold);
   animation: loader-spin 1.6s cubic-bezier(0.5, 0, 0.5, 1) infinite reverse;
 }
 
@@ -81,7 +79,7 @@ const { visible, text } = useLoading()
   height: 6px;
   margin: -3px 0 0 -3px;
   border-radius: 50%;
-  background: #D4941C;
+  background: var(--color-primary);
   animation: loader-pulse 1.2s ease-in-out infinite;
 }
 
@@ -104,7 +102,6 @@ const { visible, text } = useLoading()
   color: rgba(255, 255, 255, 0.88);
   letter-spacing: 0.06em;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
-  animation: text-breathe 2s ease-in-out infinite;
 }
 
 @keyframes text-breathe {
@@ -117,10 +114,15 @@ const { visible, text } = useLoading()
   transition: opacity 0.2s ease-out;
 }
 .loading-fade-leave-active {
-  transition: opacity 0.35s ease-in;
+  transition: opacity 120ms var(--ease-out-strong);
 }
 .loading-fade-enter-from,
 .loading-fade-leave-to {
   opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loader-ring, .loader-dot { animation: none; }
+  .loading-fade-enter-active, .loading-fade-leave-active { transition: none; }
 }
 </style>

@@ -188,4 +188,11 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   background: var(--el-bg-color);
 }
+
+@media (max-width: 768px) {
+  .concept-graph { padding: 0; }
+  .page-header, .header-actions { flex-wrap: wrap; gap: 12px; }
+  .header-actions { width: 100%; }
+  .header-actions :deep(.el-select) { width: 100% !important; }
+}
 </style>

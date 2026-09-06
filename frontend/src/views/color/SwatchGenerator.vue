@@ -282,4 +282,9 @@ function statusLabel(s) {
   --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
   background: transparent;
 }
+
+@media (max-width: 768px) {
+  .generator-layout { flex-direction: column; }
+  .selector-panel, .preview-panel { width: 100%; min-width: 0; box-sizing: border-box; }
+}
 </style>

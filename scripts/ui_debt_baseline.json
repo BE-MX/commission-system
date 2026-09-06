@@ -1,19 +1,4 @@
 {
-  "frontend/src/App.vue": {
-    "hex_colors": 8,
-    "lines_over_500": 81,
-    "transition_all": 1
-  },
-  "frontend/src/components/GlassButton.vue": {
-    "hex_colors": 13,
-    "lines_over_500": 0,
-    "transition_all": 1
-  },
-  "frontend/src/components/GlobalLoading.vue": {
-    "hex_colors": 3,
-    "lines_over_500": 0,
-    "transition_all": 0
-  },
   "frontend/src/components/StimulsoftDesigner.vue": {
     "hex_colors": 1,
     "lines_over_500": 0,
@@ -25,12 +10,8 @@
     "transition_all": 0
   },
   "frontend/src/components/WelcomeModal.vue": {
-    "hex_colors": 14,
-    "lines_over_500": 225,
-    "transition_all": 5
-  },
-  "frontend/src/components/WorldMapCanvas.vue": {
-    "lines_over_500": 0,
+    "hex_colors": 13,
+    "lines_over_500": 146,
     "transition_all": 0
   },
   "frontend/src/components/design/GanttChart.vue": {
@@ -69,8 +50,8 @@
     "transition_all": 0
   },
   "frontend/src/views/asset/AssetLibrary.vue": {
-    "hex_colors": 17,
-    "lines_over_500": 757,
+    "hex_colors": 2,
+    "lines_over_500": 234,
     "transition_all": 0
   },
   "frontend/src/views/asset/AssetStats.vue": {
@@ -83,18 +64,9 @@
     "lines_over_500": 185,
     "transition_all": 0
   },
-  "frontend/src/views/auth/LoginPage.vue": {
-    "lines_over_500": 0,
-    "transition_all": 0
-  },
   "frontend/src/views/card/CardButler.vue": {
     "hex_colors": 4,
     "lines_over_500": 0,
-    "transition_all": 0
-  },
-  "frontend/src/views/domestic/DomesticOrders.vue": {
-    "hex_colors": 0,
-    "lines_over_500": 46,
     "transition_all": 0
   },
   "frontend/src/views/color/PaletteView.vue": {
@@ -293,18 +265,13 @@
     "transition_all": 0
   },
   "frontend/src/views/production/ProcessRouteManage.vue": {
-    "hex_colors": 8,
+    "hex_colors": 1,
     "lines_over_500": 0,
     "transition_all": 0
   },
   "frontend/src/views/production/ProductManage.vue": {
     "hex_colors": 4,
     "lines_over_500": 0,
-    "transition_all": 0
-  },
-  "frontend/src/views/production/ProductionDashboard.vue": {
-    "hex_colors": 0,
-    "lines_over_500": 95,
     "transition_all": 0
   },
   "frontend/src/views/report/ReportCenter.vue": {
@@ -343,8 +310,8 @@
     "transition_all": 0
   },
   "frontend/src/views/stock/SafetyConfig.vue": {
-    "hex_colors": 45,
-    "lines_over_500": 419,
+    "hex_colors": 18,
+    "lines_over_500": 307,
     "transition_all": 0
   },
   "frontend/src/views/stock/StockOverview.vue": {
@@ -390,11 +357,6 @@
   "frontend/src/views/system/components/UserPermissionDrawer.vue": {
     "hex_colors": 6,
     "lines_over_500": 0,
-    "transition_all": 0
-  },
-  "frontend/src/views/tracking/ShippingDailyReport.vue": {
-    "hex_colors": 70,
-    "lines_over_500": 232,
     "transition_all": 0
   },
   "frontend/src/views/tracking/TrackingDetail.vue": {
