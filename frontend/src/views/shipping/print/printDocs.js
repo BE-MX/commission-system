@@ -50,6 +50,7 @@ body{margin:0;font-family:"Microsoft YaHei","PingFang SC",sans-serif;color:#000}
 .items-table .num{text-align:right}
 .remark-section{margin-top:10px;border:1px solid #333;padding:6px 8px;font-size:13px}
 .remark-label{font-weight:700;margin-bottom:4px}
+.remark-content{white-space:pre-wrap;overflow-wrap:anywhere}
 .photo-section{margin-top:12px}
 .photo-section h3{font-size:14px;margin:0 0 6px}
 .photo-group{margin-bottom:10px}
@@ -79,12 +80,12 @@ function printedAt() {
   return currentBeijingDateTime()
 }
 
-function itemsTable(items) {
+function itemsTable(items, { showSku = true } = {}) {
   const rows = (items || []).map((item, index) => `<tr>
       <td>${index + 1}</td>
       <td>${esc(item.product_name)}</td>
       <td>${esc(item.spec)}</td>
-      <td>${esc(item.sku)}</td>
+      ${showSku ? `<td>${esc(item.sku)}</td>` : ''}
       <td class="num">${esc(item.qty)}</td>
       <td>${esc(item.unit)}</td>
     </tr>`).join('')
@@ -92,7 +93,7 @@ function itemsTable(items) {
   return `<div class="items-section">
     <h3>出库明细</h3>
     <table class="items-table">
-      <thead><tr><th>#</th><th>产品名称</th><th>规格</th><th>SKU</th><th>数量</th><th>单位</th></tr></thead>
+      <thead><tr><th>#</th><th>产品名称</th><th>规格</th>${showSku ? '<th>SKU</th>' : ''}<th>数量</th><th>单位</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   </div>`
@@ -128,7 +129,9 @@ export function buildOutboundDoc({ record, items = [], qr_code_base64 = '' }) {
     ${qrSection}
   </div>
 
-  ${itemsTable(items)}
+  <div class="remark-section"><div class="remark-label">发货备注</div><div class="remark-content">${esc(record.remark || '无')}</div></div>
+
+  ${itemsTable(items, { showSku: false })}
 
   <div class="footer">
     <span>莱莎方舟平台 · 发货检验</span>

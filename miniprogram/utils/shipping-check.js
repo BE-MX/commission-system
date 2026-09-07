@@ -62,13 +62,11 @@ function decorateView(payload) {
     var ps = byItem[it.item_id] || []
     return {
       item_id: it.item_id,
-      product_name: it.product_name,
+      model: it.model || '未维护型号',
       qty: it.qty,
       unit: it.unit || '',
-      spec: it.spec || '',
-      sku: it.sku || '',
       qtyText: '' + (it.qty === null || it.qty === undefined ? 0 : it.qty) + (it.unit || ''),
-      specText: [it.spec, it.sku].filter(Boolean).join(' · '),
+      specText: [it.size, it.color].filter(Boolean).join(' / '),
       photos: ps,
       photoCount: ps.length
     }
@@ -80,7 +78,8 @@ function decorateView(payload) {
       outbound_record_id: record.outbound_record_id,
       outbound_no: record.outbound_no || '',
       outbound_date: record.outbound_date || '',
-      customer_name: record.customer_name || ''
+      customer_name: record.customer_name || '',
+      remark: record.remark || ''
     },
     items: items,
     wholePhotos: whole,

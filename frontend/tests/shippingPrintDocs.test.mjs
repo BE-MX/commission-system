@@ -9,6 +9,7 @@ const outboundPayload = {
     outbound_date: '2026-09-01',
     customer_name: '王女士<旗舰店>',
     owner_name: '张三',
+    remark: '分箱包装\n附标签 <script>alert("x")</script>',
   },
   items: [
     { item_id: 1, product_name: '真人发头套', spec: '自然色 16寸', sku: 'TT-16', qty: 2, unit: '件' },
@@ -29,9 +30,19 @@ test('出库单文档：A4 自含样式 + 单头字段 + 明细表 + 二维码�
   assert.match(doc, /王女士&lt;旗舰店&gt;/)
   assert.ok(!doc.includes('王女士<旗舰店>'))
   assert.match(doc, /真人发头套/)
-  assert.match(doc, /FP-DB/)
+  assert.ok(!doc.includes('<th>SKU</th>'))
+  assert.ok(!doc.includes('FP-DB'))
+  assert.ok(!doc.includes('TT-16'))
+  assert.match(doc, /发货备注/)
+  assert.match(doc, /分箱包装\n附标签 &lt;script&gt;alert\(&quot;x&quot;\)&lt;\/script&gt;/)
+  assert.ok(!doc.includes('<script>'))
   // 后端给纯 base64，进 <img> 必须带 data URL 头
   assert.match(doc, /src="data:image\/png;base64,aGVsbG8="/)
+})
+
+test('出库单文档：空备注明确显示无', () => {
+  const doc = buildOutboundDoc({ ...outboundPayload, record: { ...outboundPayload.record, remark: null } })
+  assert.match(doc, /<div class="remark-content">无<\/div>/)
 })
 
 test('出库单文档：无二维码时不输出破损 img', () => {
@@ -65,6 +76,8 @@ test('验货单文档：整单照片在前，明细照片按组标注产品名�
   assert.match(doc, /出库单号：CK20260901-001/)
   assert.match(doc, /李四/)
   assert.match(doc, /包装完好/)
+  assert.match(doc, /<th>SKU<\/th>/)
+  assert.match(doc, /FP-DB/)
 
   const wholeIdx = doc.indexOf('整单照片')
   const item1Idx = doc.indexOf('cGljMQ==')

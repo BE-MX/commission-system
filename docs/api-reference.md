@@ -1027,6 +1027,8 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 字段口径已于 2026-09-01 实库摸底校准（`scripts/show_okki_outbound_columns.py`），明细经 `outbound_invoice_id` 桥接关联单头，见 `docs/database.md` 发货检验一节。
 
+2026-09-07 显示字段：扫码及出库打印数据的 `record.remark` 来自 `okki_outbound_records.remark`；`items[].model/size/color` 通过明细 `product_id` 左连 `okki_products.product_id` 读取，同一产品的多条出库明细保留各自数量和照片归属。产品未匹配或字段为空时返回 `null`，不以名称或明细旧规格替代型号。小程序首行用深绿色 40rpx/800 显示型号（缺失提示“未维护型号”），次行 32rpx 显示 `size / color`；顶部发货备注与底部提交的检验备注独立。出库单打印新增发货备注并移除 SKU 列，验货单打印保持原样。
+
 ## 已退役：智能获客旧 API（迁移 126 前）
 
 > 本节路径不再注册，只作为历史审计记录。禁止调用 `/leads`、`/agent/leads/*` 或 `/agent/public-pool/tasks/*`；当前人机接口见本文顶部 `/api/customer-hub` 与 `/api/sales-automation/agent`。

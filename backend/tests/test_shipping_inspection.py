@@ -9,13 +9,43 @@ from contextlib import contextmanager
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from app.auth.models import ArkUser
 from app.auth.utils import create_access_token
 from app.core.database import get_db
 from app.mini.auth import create_mini_token
-from app.shipping_inspection import qr_service
+from app.shipping_inspection import outbound_service, qr_service
 from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto
+
+
+@pytest.fixture(autouse=True)
+def product_display_source(db):
+    """只在内存 SQLite 补真实产品关联字段，不修改其他领域的公共种子表。"""
+    outbound_service._columns_cache.clear()
+    db.execute(text("ALTER TABLE lsordertest.okki_outbound_records ADD COLUMN remark TEXT"))
+    db.execute(text("ALTER TABLE lsordertest.okki_outbound_record_items ADD COLUMN product_id INTEGER"))
+    db.execute(text("""
+        CREATE TABLE lsordertest.okki_products (
+            product_id INTEGER PRIMARY KEY, name TEXT, model TEXT, size TEXT, color TEXT
+        )
+    """))
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_products VALUES
+        (101, '不能用作型号的产品名称', 'MODEL-13x4', '20inch', '#1B'),
+        (102, '型号未维护产品', NULL, NULL, NULL)
+    """))
+    db.execute(text("""
+        UPDATE lsordertest.okki_outbound_record_items SET product_id =
+        CASE id WHEN 'IT001' THEN 101 WHEN 'IT002' THEN 999 ELSE 102 END
+    """))
+    db.execute(text("""
+        UPDATE lsordertest.okki_outbound_records SET remark = '分箱包装\n附标签'
+        WHERE id = 'OB001'
+    """))
+    db.commit()
+    yield
+    outbound_service._columns_cache.clear()
 
 
 def _user(db, username="inspector"):
@@ -98,10 +128,47 @@ def test_scan_valid_code_returns_record_items_and_null_inspection(db):
     assert body["record"]["outbound_record_id"] == "OB001"
     assert body["record"]["outbound_no"] == "CK2026001"
     assert body["record"]["customer_name"] == "客户甲"
+    assert body["record"]["remark"] == "分箱包装\n附标签"
     assert [item["item_id"] for item in body["items"]] == ["IT001", "IT002"]
     assert body["items"][0]["qty"] == 10
+    assert body["items"][0]["model"] == "MODEL-13x4"
+    assert body["items"][0]["size"] == "20inch"
+    assert body["items"][0]["color"] == "#1B"
+    assert body["items"][1]["model"] is None
+    assert body["items"][1]["qty"] == 5
     assert body["inspection"] is None
     assert body["photos"] == []
+
+
+def test_product_fields_can_be_null_without_using_item_name_or_spec(db):
+    item = outbound_service.list_outbound_items(db, "OB002")[0]
+    assert item["model"] is None
+    assert item["size"] is None
+    assert item["color"] is None
+    assert item["product_name"] == "假发头套C"
+    assert item["spec"] == "22inch"
+    assert outbound_service.get_outbound_record(db, "OB002")["remark"] is None
+
+
+def test_product_join_preserves_invoice_bridge_and_multiple_lines(db):
+    # 实库 records.id 与 items.outbound_record_id 不相交，必须继续按 invoice 关联。
+    db.execute(text("ALTER TABLE lsordertest.okki_outbound_records ADD COLUMN outbound_invoice_id TEXT"))
+    db.execute(text("ALTER TABLE lsordertest.okki_outbound_record_items ADD COLUMN outbound_invoice_id TEXT"))
+    db.execute(text("UPDATE lsordertest.okki_outbound_records SET outbound_invoice_id = 'INV1' WHERE id = 'OB001'"))
+    db.execute(text("""
+        UPDATE lsordertest.okki_outbound_record_items
+        SET outbound_invoice_id = 'INV1', outbound_record_id = 'UNRELATED', product_id = 101
+        WHERE id IN ('IT001', 'IT002')
+    """))
+    outbound_service._columns_cache.clear()
+    items = outbound_service.list_outbound_items(db, "OB001")
+    assert [(i["item_id"], i["model"], i["qty"]) for i in items] == [
+        ("IT001", "MODEL-13x4", 10), ("IT002", "MODEL-13x4", 5),
+    ]
+    records, _ = outbound_service.list_outbound_records(db)
+    record = next(r for r in records if r["outbound_record_id"] == "OB001")
+    assert record["item_count"] == 2
+    assert record["total_qty"] == 15
 
 
 def test_scan_rejects_forged_sign(db):
@@ -277,7 +344,9 @@ def test_pc_print_data_contains_qr(db):
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["record"]["outbound_no"] == "CK2026001"
+        assert data["record"]["remark"] == "分箱包装\n附标签"
         assert len(data["items"]) == 2
+        assert data["items"][0]["model"] == "MODEL-13x4"
         assert data["qr_code_base64"].startswith("data:image/png;base64,")
         # 二维码内容可通过本模块验签
         valid, record_id = qr_service.verify_qr_data(data["qr_data"])

@@ -54,10 +54,11 @@ const payload = {
     outbound_record_id: 9,
     outbound_no: 'CK20260901-01',
     outbound_date: '2026-09-01',
-    customer_name: '杭州某客户'
+    customer_name: '杭州某客户',
+    remark: '分箱包装\n附标签'
   },
   items: [
-    { item_id: 11, product_name: '蕾丝假发', qty: 20, unit: '件', spec: '13x4', sku: 'LS-01' },
+    { item_id: 11, product_name: '蕾丝假发', model: 'MODEL-13x4', size: '20inch', color: '#1B', qty: 20, unit: '件', spec: '13x4', sku: 'LS-01' },
     { item_id: 12, product_name: '发条', qty: 5, unit: '套', spec: '', sku: '' }
   ],
   inspection: null,
@@ -85,7 +86,11 @@ test('decorateView groups photos under whole-order and matching item rows', func
 test('decorateView pre-computes row display text so wxml stays expression-free', function () {
   var view = sc.decorateView(payload)
   assert.equal(view.items[0].qtyText, '20件')
-  assert.equal(view.items[0].specText, '13x4 · LS-01')
+  assert.equal(view.items[0].model, 'MODEL-13x4')
+  assert.equal(view.items[0].specText, '20inch / #1B')
+  assert.equal(view.items[0].product_name, undefined)
+  assert.equal(view.items[1].model, '未维护型号')
+  assert.equal(view.record.remark, '分箱包装\n附标签')
   assert.equal(view.items[1].qtyText, '5套')
   assert.equal(view.items[1].specText, '')
 })
@@ -109,12 +114,21 @@ test('decorateView tolerates an empty payload', function () {
     outbound_record_id: undefined,
     outbound_no: '',
     outbound_date: '',
-    customer_name: ''
+    customer_name: '',
+    remark: ''
   })
   assert.deepEqual(view.items, [])
   assert.deepEqual(view.wholePhotos, [])
   assert.equal(view.canSubmit, false)
   assert.equal(view.submitted, false)
+})
+
+test('decorateView handles partial size and color without extra separators', function () {
+  var view = sc.decorateView({ items: [
+    { item_id: 1, model: 'A', size: '18inch', color: null },
+    { item_id: 2, model: 'B', size: null, color: '#4' }
+  ] })
+  assert.deepEqual(view.items.map(function (it) { return it.specText }), ['18inch', '#4'])
 })
 
 test('decorateView drops orphan photos whose item_id matches no detail row', function () {

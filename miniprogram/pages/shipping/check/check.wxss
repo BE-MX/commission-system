@@ -107,6 +107,16 @@
 
 .si-record-cust { display: block; margin-top: 12rpx; font-size: 30rpx; }
 .si-record-date { display: block; margin-top: 6rpx; font-size: 26rpx; color: var(--text-muted); }
+.si-record-remark {
+  display: block;
+  margin-top: 16rpx;
+  padding-top: 16rpx;
+  border-top: 1rpx solid var(--border);
+  font-size: 28rpx;
+  color: var(--text-sub);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
 
 /* ── 已提交只读横幅 ── */
 .si-readonly {
@@ -186,13 +196,20 @@
   gap: 20rpx;
 }
 
-.si-item-name { flex: 1; min-width: 0; font-size: 32rpx; font-weight: 700; }
+.si-item-model {
+  flex: 1;
+  min-width: 0;
+  font-size: 40rpx;
+  font-weight: 800;
+  color: var(--brand-green-d);
+  word-break: break-all;
+}
 
 .si-item-qty { flex-shrink: 0; display: flex; align-items: baseline; }
 .si-qty-num { font-size: 40rpx; font-weight: 700; }
 .si-qty-unit { margin-left: 6rpx; font-size: 26rpx; color: var(--text-sub); }
 
-.si-item-spec { display: block; margin-top: 8rpx; font-size: 26rpx; color: var(--text-muted); }
+.si-item-spec { display: block; margin-top: 8rpx; font-size: 32rpx; color: var(--text-sub); word-break: break-all; }
 
 /* ── 备注 ── */
 .si-remark { margin: 24rpx 32rpx 0; }

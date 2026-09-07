@@ -5,6 +5,8 @@ okki_outbound_records / okki_outbound_record_items 是 OKKI 同步作业维护�
 - 单号 = serial_id，出库时间 = warehouse_invoice_time，客户 = company_name，
   制单人 = create_user_name；明细数量 = outbound_count，单位 = product_unit，
   规格 = product_model，SKU = sku_code。
+- 小程序型号/尺寸/颜色 = okki_products.model/size/color，按 product_id 左连；
+  发货备注 = records.remark（2026-09-07 实库列核验）。
 - 关键：明细关联出库单走 outbound_invoice_id 桥（两表都有此列且 14125/14125 命中）；
   items.outbound_record_id 是 OKKI 侧另一个实体 id，与 records.id 完全不相交，
   绝不能拿它做 join。无 outbound_invoice_id 列的库（如单元测试种子表）才回退
@@ -30,6 +32,7 @@ settings = get_settings()
 
 RECORDS_TABLE = "okki_outbound_records"
 ITEMS_TABLE = "okki_outbound_record_items"
+PRODUCTS_TABLE = "okki_products"
 
 # 逻辑字段 → 候选列名（按优先级取第一个实际存在的；首选名已按 2026-09-01 实库摸底校准）
 _RECORD_CANDIDATES: dict[str, list[str]] = {
@@ -39,12 +42,14 @@ _RECORD_CANDIDATES: dict[str, list[str]] = {
     "outbound_date": ["warehouse_invoice_time", "outbound_date", "outbound_time", "delivery_date", "ship_date", "created_at", "create_time", "gmt_create"],
     "customer_name": ["company_name", "customer_name", "client_name", "buyer_name"],
     "owner_name": ["create_user_name", "owner_name", "salesman_name", "user_name", "operator_name"],
+    "remark": ["remark"],
 }
 
 _ITEM_CANDIDATES: dict[str, list[str]] = {
     "id": ["id"],
     "record_id": ["outbound_record_id", "record_id", "outbound_id", "order_id", "parent_id"],
     "invoice_id": ["outbound_invoice_id"],
+    "product_id": ["product_id"],
     "product_name": ["product_name", "product_cn_name", "cn_name", "name", "product"],
     "quantity": ["outbound_count", "quantity", "qty", "outbound_quantity", "outbound_qty", "num", "amount"],
     "unit": ["product_unit", "unit", "unit_name"],
@@ -150,6 +155,7 @@ def _map_record_row(row) -> dict:
         "outbound_date": _str_or_none(row["outbound_date"]),
         "customer_name": _str_or_none(row["customer_name"]),
         "owner_name": _str_or_none(row["owner_name"]),
+        "remark": _str_or_none(row["remark"]),
         "item_count": int(row["item_count"] or 0),
         "total_qty": _num(row["total_qty"]) or 0,
     }
@@ -159,6 +165,9 @@ def _map_item_row(row) -> dict:
     return {
         "item_id": str(row["item_id"]),
         "product_name": _str_or_none(row["product_name"]),
+        "model": _str_or_none(row["model"]),
+        "size": _str_or_none(row["size"]),
+        "color": _str_or_none(row["color"]),
         "spec": _str_or_none(row["spec"]),
         "sku": _str_or_none(row["sku"]),
         "qty": _num(row["qty"]),
@@ -172,7 +181,8 @@ def _record_select(rm: dict[str, str | None]) -> str:
         f"{_col(rm, 'outbound_no', 'r')} AS outbound_no, "
         f"{_col(rm, 'outbound_date', 'r')} AS outbound_date, "
         f"{_col(rm, 'customer_name', 'r')} AS customer_name, "
-        f"{_col(rm, 'owner_name', 'r')} AS owner_name"
+        f"{_col(rm, 'owner_name', 'r')} AS owner_name, "
+        f"{_col(rm, 'remark', 'r')} AS remark"
     )
 
 
@@ -274,7 +284,7 @@ def get_outbound_record(db: Session, record_id: str) -> dict | None:
 
 
 def list_outbound_items(db: Session, record_id: str) -> list[dict]:
-    """出库明细（产品名称、数量、单位、规格、SKU）；两库无任何关联列时返回空。"""
+    """出库明细附产品表 model/size/color；LEFT JOIN 保留产品缺失的原始明细。"""
     link, rm, im = _link(db)
     if link is None:
         logger.warning("%s 缺少出库单关联列，明细查询降级为空", ITEMS_TABLE)
@@ -292,11 +302,14 @@ def list_outbound_items(db: Session, record_id: str) -> list[dict]:
     rows = db.execute(text(f"""
         SELECT i.`{im['id']}` AS item_id,
                {_col(im, 'product_name', 'i')} AS product_name,
+               p.model AS model, p.size AS size, p.color AS color,
                {_col(im, 'spec', 'i')} AS spec,
                {_col(im, 'sku', 'i')} AS sku,
                {_col(im, 'quantity', 'i')} AS qty,
                {_col(im, 'unit', 'i')} AS unit
         FROM `{schema}`.`{ITEMS_TABLE}` i
+        LEFT JOIN `{schema}`.`{PRODUCTS_TABLE}` p
+          ON p.product_id = {_col(im, 'product_id', 'i')}
         WHERE {where}
         ORDER BY i.`{im['id']}`
     """), {"rid": record_id}).mappings().all()

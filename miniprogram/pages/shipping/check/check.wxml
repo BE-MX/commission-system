@@ -33,6 +33,7 @@
         </view>
         <text class="si-record-cust">{{record.customer_name}}</text>
         <text class="si-record-date">出库日期 {{record.outbound_date}}</text>
+        <text class="si-record-remark">发货备注：{{record.remark || '无'}}</text>
       </view>
 
       <view class="si-readonly" wx:if="{{submitted}}">本单已提交检验，照片只读不可更改</view>
@@ -59,7 +60,7 @@
       <!-- 出库明细：每行产品 + 数量 + 该行照片 -->
       <view class="si-item" wx:for="{{items}}" wx:key="item_id" wx:for-item="it">
         <view class="si-item-head">
-          <text class="si-item-name">{{it.product_name}}</text>
+          <text class="si-item-model">{{it.model}}</text>
           <view class="si-item-qty">
             <text class="si-qty-num">{{it.qty}}</text>
             <text class="si-qty-unit">{{it.unit}}</text>
@@ -81,7 +82,7 @@
 
       <!-- 备注（选填） -->
       <view class="si-remark" wx:if="{{!submitted}}">
-        <input class="si-remark-input" placeholder="备注（选填）" placeholder-class="si-remark-ph"
+        <input class="si-remark-input" placeholder="检验备注（选填）" placeholder-class="si-remark-ph"
                value="{{remark}}" bindinput="onRemarkInput" />
       </view>
 
