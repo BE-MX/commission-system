@@ -778,10 +778,11 @@ _COMPOSITE_TEMPLATE = (
     "Reproduce the wig's exact silhouette, length, layering, fringe, volume, parting and "
     "texture precisely as shown in the reference images, even if it looks very different "
     "from the original hair. Keep the customer's face, facial features and skin tone "
-    "exactly the same as the first image, with light natural makeup. Treat the FIRST "
+    "faithful to the first image, with light natural makeup and the restrained skin "
+    "retouching specified below. Treat the FIRST "
     "image as the sole visual source of truth for her face. Preserve its exact geometry, "
     "stable natural asymmetry, age traits and identifying skin marks; do not average, "
-    "symmetrize, idealize or reinterpret them. The wig references provide hair information "
+    "symmetrize or reinterpret these identity traits. The wig references provide hair information "
     "only and must never influence the face. The hairline "
     "transition must look naturally grown, with realistic fine baby hairs at the "
     "temples. {extra}"
@@ -931,29 +932,24 @@ _FRAMING_CLAUSE = (
     "background, so she belongs in the scene rather than being a cut-out pasted onto a backdrop."
 )
 
-# 面部神采（2026-08-01 亮哥反馈「年龄较大的女性出图脸部不够有精神和光泽」，
-# 并明确「针对提示词补强，不要过于美颜」）：
-# **病根不是年龄，是这套 prompt 从没交代过脸该怎么打光**——原景保持与场景置换两条子句
-# 都只写了「头发的高光阴影跟随光源方向」，脸的用光一字未提；再叠上「面部与肤色与原图
-# 完全一致」和「禁止过度磨皮」两道锁，模型最省力的解就是把脸平铺直叙地渲出来，于是暗、
-# 平、没有立体感。胶原蛋白少的脸在平光下尤其显疲态，所以在年长客户身上先暴露。
-# 因此补的是**摄影用光与眼神**，不是美颜：
-#   给 = 暗部补光（以保住细节为限，结构阴影不动）、颧骨眉弓的塑形光、眼神光、
-#        面部高点的镜面微光、唇部血色（2026-08-02 起血色只留唇、几何由对称锁保护，
-#        原「唇颊血色+逐项禁瘦脸」把瘦脸客户画胖，机制见 _LIGHTING_BASE ④）
-#   禁 = 磨皮/去皱/丰盈/提亮肤色（逐项写死，堵掉模型「变年轻=变好看」的捷径）
-# 措辞注意事项 ①~④ 见 _LIGHTING_BASE 上方注释（唯一真相源，此处不重复）。
-# 合成版本（2026-08-01 亮哥指令）：客户在甄选页必选一个，三版差别**只在皮肤怎么处理**，
-# 用光一律打好——「真实版」是真实的好照片，不是没打光的照片。若真实版不打光，今早那条
-# 反馈对每一个不改默认值的客户就原封不动地留着，而绝大多数客户不会去改默认值。
-#
-# 落库到 ExpoResult.prompt_variant（085 迁移）而不是只做运行时参数：合成在后台线程里读
-# 那一行跑，运行时参数根本传不到；且「客户当时选的哪版」是排障与复现的唯一依据。
-#
-# 上一版做过一个「后台 preset 参数切换」（face_vitality 键），已随本次改动删除——同一段
-# 提示词留两个控制入口就是两份真相，界面选择既然是必选项，后台默认值永远轮不上。
+# 合成版本（2026-09-07）：三版均允许适度美颜，以像本人、提升购买意向为共同目标。
+# 真实=轻修，柔光=轻修加柔和场景光，美颜=适度精修；身份、几何和发丝细节不随版本放开。
+# 版本仍随 ExpoResult.prompt_variant 落库，默认 real；不另设后台切换入口。
 PROMPT_VARIANTS = ("real", "soft", "beauty")
 DEFAULT_PROMPT_VARIANT = "real"
+
+# 所有版本、三条合成路径共用；购买意向靠本人戴上所选假发后的可信吸引力，不能改产品。
+_PURCHASE_INTENT_CLAUSE = (
+    " Base the result on this customer's own appearance and create a flattering, believable "
+    "preview designed to inspire a very strong desire to purchase the wig she is trying on. "
+    "She should immediately recognize herself and feel: this is me, looking my best in this "
+    "wig. Combine unmistakable personal likeness with moderate, natural-looking beauty "
+    "enhancement at the selected finish level. Show how this exact wig complements her "
+    "features; preserve the specified wig design, density, texture and colour rather than "
+    "inventing a more attractive product. Personal likeness takes priority over beautification. "
+    "Preserve her apparent age, natural skin tone and identifying marks; never turn her into "
+    "a different person or use exaggerated beauty filters."
+)
 
 # 三版共用的身份安全光影底座（2026-08-29）：场景光影完整作用于假发、身体和环境，
 # 面部只做低强度的整体曝光/色温融合，不再单独塑造颧骨、眉弓、阴影侧或眼神光。
@@ -971,59 +967,52 @@ _LIGHTING_BASE = (
     "micro-expression; light may blend the portrait, never reshape the face."
 )
 
-# 皮肤纹理不可动的措辞（真实版）：逐项写死，堵掉模型「变年轻=变好看」的捷径。
-# 2026-08-02 摘掉两处（瘦脸变胖修复，机制见 _LIGHTING_BASE ④）：
-#   「blood warmth in the cheeks」→ 只留唇——「脸颊红润」在训练语料里的原型就是饱满苹果肌，
-#   等于把「饱满」意象押在 cheeks 上；气色由光和唇色承担。
-#   「do not slim the face or enlarge the eyes」→ 删——单向否定禁令，已被 _LIGHTING_BASE
-#   的对称几何锁（含 eye size 由 identity 锁兜底）取代，别再加回来。
-_SKIN_UNTOUCHED = (
-    " Keep the facial skin exactly as photographed, including its natural blood warmth in "
-    "the lips. Every pore, fine line, wrinkle, eye bag and age spot stays exactly as in the original "
-    "photo - do not smooth, retouch, plump, lighten or rejuvenate the skin. The liveliness "
-    "of the portrait must come from the wig, body, environment and overall colour balance, "
-    "never from repainting facial skin or erasing her age."
+# 真实/柔光也允许轻修，但保留毛孔、年龄特征和面部结构，避免旧禁修句抵消新需求。
+_SKIN_LIGHT_RETOUCH = (
+    " Apply subtle skin retouching: gently even out temporary unevenness in the complexion, "
+    "reduce temporary blemishes and slightly soften the appearance of fine lines, while "
+    "keeping visible pores, natural skin texture and age-defining details. Keep the natural "
+    "blood warmth in her lips and her original skin tone. The finish should be fresh and "
+    "natural, with no obvious smoothing, whitening or artificial rejuvenation."
 )
 
-# 头发保护句：只出现在美颜版。磨皮会连带把发丝磨成塑料感，而发丝正是这个产品要卖的东西，
-# 所以修皮肤的同时必须把头发显式圈出来保护（2026-08-01 亮哥知情并拍板要做美颜版）
+# 三版都修皮肤，因此共用护发与修后几何复锁，防止磨皮影响发丝或改变脸型。
 _HAIR_FIDELITY_GUARD = (
     " The retouching applies to facial skin ONLY. The wig must stay perfectly crisp: keep "
     "every individual hair strand, the cut's layering and its natural sheen exactly as sharp "
     "and detailed as in the reference - never soften, blur, smooth or plasticise the hair."
 )
 
+_FACE_RETOUCH_GUARD = (
+    " Her face keeps the exact geometry of the first image - the same face width, cheek "
+    "contour, jawline and eye size, neither slimmer nor fuller; this locks her facial "
+    "structure, not her expression."
+)
+
 _PROMPT_VARIANT_CLAUSES = {
-    # 真实版：打光 + 皮肤一动不动
-    "real": _LIGHTING_BASE + _SKIN_UNTOUCHED,
-    # 柔光版：更柔的光、更低的反差，皮肤纹理仍然保留——观感更润，但不是磨皮。
-    # 2026-08-02：原「shadow side lifted further…heavy fill」是全 prompt 里最重的填光措辞
-    # （heavy fill 在摄影语义里就是把面部立体凹陷抹平的布光），瘦脸变胖在本版最严重；
-    # 柔=光源大、影缘软，不等于把结构阴影填没，见 _LIGHTING_BASE ④
+    "real": (
+        _LIGHTING_BASE + _SKIN_LIGHT_RETOUCH + _FACE_RETOUCH_GUARD + _HAIR_FIDELITY_GUARD
+    ),
+    # 柔光只降低面部锚点以外的反差，不能靠填掉结构阴影把瘦脸画胖。
     "soft": (
         _LIGHTING_BASE
         + " Use a softer, more diffused light on the wig, clothing, body and background, "
         "lowering contrast outside the facial anchor while keeping the face limited to the "
         "uniform blend described above."
-        + _SKIN_UNTOUCHED
+        + _SKIN_LIGHT_RETOUCH + _FACE_RETOUCH_GUARD + _HAIR_FIDELITY_GUARD
     ),
-    # 美颜版：真磨皮提亮。这里刻意允许上面禁掉的那类词，因为这正是本版要的效果；
-    # 但范围死死限定在面部皮肤，并配上头发保护句
+    # 美颜比轻修更精致，但仍受适度、保年龄和本人辨识度限制。
     "beauty": (
         _LIGHTING_BASE
         + " Use a restrained beauty finish within the existing facial boundary. Retouch her "
         "facial skin the way a magazine "
-        "portrait is finished: even out the complexion, soften fine lines and wrinkles, reduce "
-        "temporary blemishes, and give the skin a smooth, luminous finish - while "
+        "portrait is finished: gently even out the complexion, moderately soften fine lines "
+        "and wrinkles without erasing them, reduce temporary blemishes, and give the skin a "
+        "refined, natural finish - while "
         "keeping her facial features, bone structure and identity unmistakably the same person, "
         "and keeping enough skin texture that she still reads as a photograph rather than an "
-        # 图像模型位置权重偏向靠后（同 C1 审查）：几何复锁必须排在磨皮指令之后（顺序有
-        # 测试锚定）——用对称正向措辞+表情豁免，不用「Do not slim」单向禁令（2026-08-02，
-        # 见 _LIGHTING_BASE ④；eye size 入锁因为磨皮语境下笑会眯眼，锁结构不锁表情）
-        "illustration. Her face keeps the exact geometry of the first image - the same face "
-        "width, cheek contour, jawline and eye size, neither slimmer nor fuller; this locks "
-        "her facial structure, not her expression."
-        + _HAIR_FIDELITY_GUARD
+        "illustration."
+        + _FACE_RETOUCH_GUARD + _HAIR_FIDELITY_GUARD
     ),
 }
 
@@ -1311,8 +1300,9 @@ SCENES = [
 
 _SCENE_TEMPLATE = (
     "The person in the photo is wearing a premium wig as their hairstyle. Keep the "
-    "person's face, facial features, hairstyle, hair color and hair length exactly the "
-    "same as in the photo. Recreate it as a high-end magazine-quality portrait "
+    "person's facial identity and features faithful to the photo, allowing only the "
+    "restrained skin retouching specified below. Keep the hairstyle, hair color and hair "
+    "length exactly the same as in the photo. Recreate it as a high-end magazine-quality portrait "
     "photograph set in {scene}. Naturally adapt the background, outfit and lighting to "
     "the scene while keeping the person clearly recognizable and the hair identical."
     + _SUMMER_WARDROBE_CLAUSE
@@ -1520,6 +1510,7 @@ def _build_prompt(
             _SCENE_TEMPLATE.format(scene=scene["prompt"] if scene else row.scene_json.get("label", ""))
             # banquet 旗袍属场景规定装（uniform），只注首饰；其余 4 景注入完整 look
             + _wardrobe_variation_clause(uniform=bool(scene and scene.get("uniform")))
+            + _PURCHASE_INTENT_CLAUSE
             + resolve_prompt_variant(variant)
             + _SCENE_TAIL
         )
@@ -1555,6 +1546,7 @@ def _build_prompt(
         )
         + color_clause
         + scene_clause
+        + _PURCHASE_INTENT_CLAUSE
         + resolve_prompt_variant(variant)  # 两条场景路径都要：用光与皮肤处理跟场景无关
         + resolve_style_tail(variant)      # 收尾句同源，不能与上一句自相矛盾
         + _PORTRAIT_SPEC_CLAUSE
