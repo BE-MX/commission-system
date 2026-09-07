@@ -1,4 +1,18 @@
-### 数据库 139 发布准备（2026-09-07）
+### 数据库 139 全平台发布（2026-09-07，已完成）
+
+亮哥授权合并、推送并更新服务器，随后提供办公室 `backend/.env` 作为迁移管理凭据来源。通过统一 `deploy/deploy.bat` 固定发布 `bf36a2e13b8b3f736932bc3982ebde0bd8a386dc`：办公室和北京后端均到同一版本，新加坡/北京主站制品摘要一致；PM 与客户素材门户内容未变且 HTTP 摘要核验通过。正式发布退出码 0，`publish-success.json` 指向该版本，迁移 writer 日志为 `completed`。本次只发布已演练的 139，未包含 main 后续新增的 140 内贸迁移、物流展示和 OpenClaw 改动；下次发布仍须按实际 pending 迁移检查，不能直接用 main 代替本次候选。
+
+现场依次解决陈旧 `publish.lock`、writer 清单/PM2 控制缺失，以及 Windows Git SSH 长命令约 12 KB 时的引号截断。SSH 现统一使用短 bootstrap，经 stdin 顺序传递源码和 JSON；系统 OpenSSH 在非交互 Python 子进程中挂起，因此本次部署进程 PATH 前置已安装 Git `usr/bin`。工具补丁通过保留祖先关系的 bootstrap 提交快进到服务器，未在运行目录手改受管文件。
+
+迁移前冻结新加坡主站/PM、北京域名/HTTP IP/HTTPS IP 的 Expo API，并临时阻断办公室直连 8001 入站；五个公网入口实测 503，两台后端线程栈均无 Expo 任务。四个原本运行的 writer（办公室两 NSSM、北京 systemd 后端、新加坡 PM2 物流进程）由迁移入口停止并复核后，只执行一次 `138_public_pool_rules → 139_expo_prompt_versions`。随后四服务全部恢复，维护配置按原文件摘要还原，临时防火墙规则撤销。历史 737 条试戴结果、377 条会话所有原字段摘要一致；新增历史字段全为 NULL，三个种子与冻结 JSON 完全一致，默认项、外键和索引验证通过。
+
+运行 `.env` SHA-256 前后相同。迁移使用单独创建、限定办公室来源和 `commission_db` 的临时账号；完成后账号与凭据文件均已删除。没有对真实客户发起 AI 生图测试。公网两主站、PM、素材门户首页均 200，两主站健康检查为 `ok/database=connected`；新增版本接口匿名访问为 403，权限边界保留。办公室仓库干净；北京保留两份原有未跟踪 `.env.bak-*`，未复制或清理。
+
+验证：最终 Windows 部署测试 48 passed、11 skipped；Linux 临时目录补跑 11 项静态语义及 2 项传输测试全部通过；提示词专项 97 passed，独立审查无剩余阻断。真实 MySQL 隔离 schema 上下行演练通过，两次临时 schema 均删除。准备阶段每台主站传输 741,927 字节，正式切换复用候选、传输为零。非敏感交付证据归档在主目录 `.deploy_state/migration139-delivery/`，服务器保留本次发布/迁移日志与配置回滚备份。
+
+收尾再次以同一 SHA 执行 `--no-pull --prepare-only`（无 DBA 文件）退出 0，后端 `changed=false/schema_changed=false`，构建跳过，四个静态目标零变化/零传输。该检查不切换服务；当前发布器会把 `publish-current.json` 留为这次检查的 `preparing`，应结合 `noop-result.json` 的 0 退出码及 `noop.log` 最后 `Prepared and verified` 判断，而非误判正式发布未完成。
+
+### 数据库 139 发布准备（2026-09-07，以下为发布前记录）
 
 窗口修复后确认正式发布被迁移保护拦截：数据库为 `138_public_pool_rules`，候选新增 `139_expo_prompt_versions`，尚未执行 DDL 或停服务。现场重新核实了办公室两个 NSSM、北京后端和新加坡 PM2 物流写入者，PM2 控制能力从 138 任务中独立纳入本任务，并增加停止后复核。保留独立 DBA、命名锁和失败恢复边界；新增持久化原始 writer 状态、迁移链复核、跨重跑恢复保护及固定完整 SHA 的发布参数。
 
