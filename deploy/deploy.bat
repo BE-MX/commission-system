@@ -8,4 +8,8 @@ if not exist "%DEPLOY_PYTHON%" set DEPLOY_PYTHON=python
 "%DEPLOY_PYTHON%" "%~dp0publish.py" %*
 set DEPLOY_RESULT=%ERRORLEVEL%
 if not "%DEPLOY_RESULT%"=="0" echo Deployment failed. See the platform and stage above.
+if not "%DEPLOY_NO_PAUSE%"=="1" (
+    echo Press any key to close this window...
+    pause >nul
+)
 exit /b %DEPLOY_RESULT%
