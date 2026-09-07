@@ -71,6 +71,7 @@ def chat(
     caller_user_id: Optional[int] = None,
     snapshot_mode: str = "full",
     timeout_sec: Optional[int] = None,
+    enforce_total_timeout: bool = False,
 ) -> dict:
     """同步调用直连大模型。"""
     preset = (
@@ -162,6 +163,7 @@ def chat(
             headers=headers,
             body=params,
             timeout_sec=request_timeout_sec,
+            **({"enforce_total_timeout": True} if enforce_total_timeout else {}),
         )
 
         # 按协议类型解析响应

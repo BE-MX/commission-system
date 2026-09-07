@@ -115,6 +115,11 @@ export function createOutgoingComposer(
   }
 
   return {
+    invalidateDraft(): void {
+      chatGeneration += 1
+      preview = undefined
+      restorePoint = undefined
+    },
     bindShortcut(ownerDocument: Document, handler: () => void): () => void {
       const listener = (event: KeyboardEvent) => {
         if (event.altKey && event.key.toLowerCase() === 't') {

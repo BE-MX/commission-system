@@ -433,3 +433,5 @@ def auto_init_ai_presets() -> None:
         description="WhatsApp 内部扩展：发件方向中文→客户语言（商务聊天语域，带回译）",
         require_direct_openai=True,
     )
+    from app.bootstrap.seed_whatsapp_reply import auto_init_reply_presets
+    auto_init_reply_presets()

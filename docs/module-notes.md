@@ -1017,6 +1017,12 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 
 ## WhatsApp 实时翻译（whatsapp_translation，2026-09-03）
 
+**话术助手（1.3.0，2026-09-07，本地实现、默认关闭）**：在原领域增加 `reply_service/reply_state/reply_guard/reply_schemas/reply_prompts`；来源适配位于 `knowledge/reply_sources.py`，只走发布读取和实时员工 ACL，不调用会记录原始 query 的搜索审计接口。独立 `whatsapp_reply:write` 不扩展知识权限。UI 先预览一条回复及中文含义、简短策略理由，填入/恢复共享编辑器写保护；取消、切换会话、新消息、草稿和语言变化均使旧结果失效，绝不触发原生发送。
+
+**知识用途边界**：Settings 中的来源绑定精确指定文档、发布修订、章节索引/文本 SHA-256、政策版本及 `method/public_fact/constraint/blocked` 用途。仅 `public_fact` 可被引用为新对客事实，method 只指导策略，constraint 限制承诺。必需约束独立于检索排名；按完整标题章节打包，每段最多 1,200 字符、合计 6,000/6 段。更新、撤权、停用或缓存命中均重新校验；新修订不会继承外发许可。尚无生产对外事实授权配置。
+
+**调用与启用**：最多两次 `app.ai.service.chat(snapshot_mode="metadata")`，独立 planner/generator 预设由 bootstrap 准备为关闭状态，不覆盖管理员修改、不变更翻译预设。话术专用 HTTP 总期限会取消在途连接，其他 AI 调用默认行为不变。服务端 30 秒、扩展 35 秒，独立每人并发 1/每分钟 6/每天 100。配置、合成验收及启用前提见 [话术启用说明](requirements/2026-09-07-whatsapp-reply-activation.md)；当前未合并、推送或部署，未实测模型质量。
+
 **DOM 边界**：WhatsApp 结构识别只允许放在 `extensions/whatsapp-translation/src/whatsapp/`，只读取当前一对一文字会话；群组、社区、媒体、语音、文件、贴纸和未知 DOM 一律 fail-closed。测试只能使用自建合成 fixture，禁止真实 WhatsApp 截图、HTML、文本、联系人、电话或消息 ID 进入仓库。
 
 **发送边界**：扩展可以翻译可见收件消息，也可以把译文写入发件框；但永远不模拟 WhatsApp 发送按钮或提交事件。发译必须先展示预览，员工仍执行原生发送。

@@ -179,3 +179,31 @@ class TranslationUsageDaily(Base):
 
     user = relationship("ArkUser", lazy="noload", foreign_keys=[user_id])
     device = relationship("TranslationDevice", lazy="noload")
+
+
+class ReplyRequestRecord(Base):
+    """Shared duplicate/cost guard. Never stores prompts, replies or explanations."""
+
+    __tablename__ = "ark_whatsapp_reply_requests"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(USER_ID, ForeignKey("ark_users.id", ondelete="CASCADE"), nullable=False)
+    device_id = Column(BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), ForeignKey("ark_whatsapp_translation_devices.id", ondelete="CASCADE"), nullable=False)
+    request_id = Column(String(36), nullable=False, comment="扩展本地随机请求标识")
+    payload_hash = Column(String(64), nullable=False, comment="请求载荷摘要，不存正文")
+    owner_id = Column(String(36), nullable=False, comment="执行进程随机标识")
+    status = Column(String(32), nullable=False, default="pending")
+    input_chars = Column(Integer, nullable=False)
+    source_revisions = Column(JSON, nullable=False, default=list, comment="授权知识文档及修订标识")
+    timings_ms = Column(JSON, nullable=False, default=dict, comment="阶段耗时毫秒数")
+    error_code = Column(String(64), nullable=True, comment="受限错误码，不存异常正文")
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
+    lease_until = Column(DateTime, nullable=False, comment="并发占位截止北京时间，不允许接管重跑")
+    finished_at = Column(DateTime, nullable=True, comment="完成北京时间")
+
+    __table_args__ = (
+        UniqueConstraint("device_id", "request_id", name="uq_war_device_request"),
+        Index("idx_war_user_created", "user_id", "created_at"),
+        Index("idx_war_user_lease", "user_id", "status", "lease_until"),
+        CheckConstraint("input_chars >= 0", name="ck_war_nonnegative_chars"),
+    )

@@ -4,6 +4,8 @@ import { refreshSession, resumePairing, startPairing } from '@/background/auth'
 import type { Capabilities, PairingState, RuntimeRequest, RuntimeResponse, Session, TranslationResult } from '@/shared/contracts'
 import { DEFAULT_OUTGOING_LANGUAGE, TARGET_LANGUAGES } from '@/shared/contracts'
 import { chatKey, ensureTrustedStorageAccess, storage } from '@/shared/storage'
+import { boundedReplyCapabilities, replyFitsCapabilities, validReplyRequest, validReplyResponse } from '@/shared/replyValidation'
+import { REPLY_ERROR_CODES } from '@/shared/replyCodes'
 
 const POPUP_REQUEST_TYPES = new Set(['pairing/resume', 'pairing/start', 'preferences/set', 'session/refresh'])
 const translationCache = new TranslationCache<TranslationResult>()
@@ -76,6 +78,30 @@ function browserInfo(): { browserName: string; browserVersion: string } {
 
 async function handleMessage(request: RuntimeRequest): Promise<RuntimeResponse> {
   switch (request.type) {
+    case 'reply/disclosure': {
+      if (request.acknowledged === true) await storage.set({ replyDisclosureAcknowledged: true })
+      return { type: 'reply/disclosure', acknowledged: (await storage.get('replyDisclosureAcknowledged')) === true }
+    }
+    case 'reply/capabilities': {
+      const token = await storage.get('deviceToken')
+      if (!token) throw new Error('device_token_missing')
+      const capabilities = await apiClient.getCapabilities(token, chrome.runtime.getManifest().version)
+      return { type: 'reply/capabilities', reply: boundedReplyCapabilities(capabilities.reply) }
+    }
+    case 'reply/suggest': {
+      if (!validReplyRequest(request.payload)) return { type: 'error', message: 'reply_invalid_request' }
+      const token = await storage.get('deviceToken')
+      if (!token) throw new Error('device_token_missing')
+      if (!(await storage.get('replyDisclosureAcknowledged'))) return { type: 'error', message: 'reply_disclosure_required' }
+      const capabilities = await apiClient.getCapabilities(token, chrome.runtime.getManifest().version)
+      const limits = boundedReplyCapabilities(capabilities.reply)
+      if (request.payload.draft_intent.length > limits.max_draft_chars) return { type: 'error', message: 'reply_draft_too_long' }
+      if (request.payload.goal.length > limits.max_goal_chars) return { type: 'error', message: 'reply_goal_too_long' }
+      if (!replyFitsCapabilities(request.payload, limits)) return { type: 'error', message: 'reply_context_too_large' }
+      const result = await apiClient.suggestReply(token, chrome.runtime.getManifest().version, request.payload)
+      if (!validReplyResponse(result, request.payload)) return { type: 'error', message: 'reply_invalid_response' }
+      return { type: 'reply/suggest', result }
+    }
     case 'pairing/start': {
       const { browserName, browserVersion } = browserInfo()
       const state: PairingState = await startPairing({
@@ -153,7 +179,7 @@ async function handleMessage(request: RuntimeRequest): Promise<RuntimeResponse> 
 
 function errorResponse(error: unknown): RuntimeResponse {
   if (error instanceof ArkApiError) return { type: 'error', message: error.code }
-  if (error instanceof Error && ['device_token_missing', 'unsupported_language', 'translation_disabled'].includes(error.message)) {
+  if (error instanceof Error && [...REPLY_ERROR_CODES, 'device_token_missing', 'unsupported_language', 'translation_disabled'].includes(error.message)) {
     return { type: 'error', message: error.message }
   }
   return { type: 'error', message: 'unexpected_error' }
@@ -168,11 +194,26 @@ chrome.runtime.onMessage.addListener((request: unknown, sender, sendResponse) =>
   }
 
   const typedRequest = request as RuntimeRequest
+  if (typeof typedRequest.type !== 'string') {
+    sendResponse({ type: 'error', message: 'unsupported_request' })
+    return false
+  }
+  if (typedRequest.type?.startsWith('reply/') && sender.url !== 'https://web.whatsapp.com/' && !sender.url?.startsWith('https://web.whatsapp.com/?')) {
+    sendResponse({ type: 'error', message: 'unsupported_request' })
+    return false
+  }
   if (POPUP_REQUEST_TYPES.has(typedRequest.type) && !sender.url?.endsWith('/src/popup/index.html')) {
     sendResponse({ type: 'error', message: 'unsupported_request' })
     return false
   }
 
-  handleMessage(typedRequest).then(sendResponse).catch((error: unknown) => sendResponse(errorResponse(error)))
+  handleMessage(typedRequest).then(sendResponse).catch((error: unknown) => {
+    const response = errorResponse(error)
+    if (typedRequest.type.startsWith('reply/') && response.type === 'error') {
+      const safe = new Set<string>([...REPLY_ERROR_CODES, 'device_token_missing', 'device_expired', 'device_not_found', 'device_revoked', 'extension_outdated', 'invalid_bearer', 'user_inactive', 'permission_denied', 'rate_limited', 'daily_quota_exceeded', 'request_timeout', 'ai_timeout', 'ai_unavailable', 'backend_unavailable', 'network_error', 'unsupported_language'])
+      if (!safe.has(response.message)) response.message = 'reply_failed'
+    }
+    sendResponse(response)
+  })
   return true
 })

@@ -2,12 +2,15 @@ import { detectChatKind } from '@/whatsapp/chatDetector'
 import { parseIncomingMessages } from '@/whatsapp/messageParser'
 import { WHATSAPP_SELECTORS } from '@/whatsapp/selectors'
 import { ARK_MARKS } from '@/shared/marks'
+import { collectReplyContext } from '@/whatsapp/replyContext'
+import type { ReplyContextLimits } from '@/whatsapp/replyContext'
 
 function normalizeComposerText(value: string): string {
   return value.replace(/\s+/gu, ' ').trim()
 }
 
 export class WhatsAppAdapter {
+  private writing = false
   constructor(private readonly root: Document | HTMLElement) {}
 
   inspectChat() {
@@ -41,8 +44,36 @@ export class WhatsAppAdapter {
     if (composers.length !== 1) return ''
     return normalizeComposerText(composers[0].textContent ?? '')
   }
+  conversationElement(): Element | null { return this.root.querySelector(WHATSAPP_SELECTORS.conversationTitle) }
+
+  composerElement(): Element | null { return this.root.querySelector(WHATSAPP_SELECTORS.composer) }
+  hasToolbar(): boolean { return !!this.root.querySelector(`[${ARK_MARKS.toolbarHost}="1"]`) }
+  collectReplyContext(limit: 20 | 40 = 20, limits?: ReplyContextLimits) { return collectReplyContext(this.root, limit, limits) }
+
+  /** Version observation excludes extension UI while retaining edits even when reverted. */
+  isComposerMutation(record: MutationRecord): boolean {
+    const composer = this.composerElement()
+    return !!composer && (record.target === composer || composer.contains(record.target))
+  }
+  isMessageMutation(record: MutationRecord): boolean {
+    const element = record.target.nodeType === 1 ? record.target as Element : record.target.parentElement
+    if (!element || element.closest(`[${ARK_MARKS.translationHost}], [${ARK_MARKS.toolbarHost}]`)) return false
+    const nodes = [...record.addedNodes, ...record.removedNodes]
+    if (nodes.length && nodes.every(node => node.nodeType === 1 && (node as Element).matches(`[${ARK_MARKS.translationHost}], [${ARK_MARKS.toolbarHost}]`))) return false
+    return !!element.closest(WHATSAPP_SELECTORS.message) || nodes.some(node => node.nodeType === 1 && (
+      (node as Element).matches(WHATSAPP_SELECTORS.message) || !!(node as Element).querySelector(WHATSAPP_SELECTORS.message)
+    ))
+  }
+  isWritingComposer(): boolean { return this.writing }
 
   async replaceComposer(text: string, isCurrent: () => boolean = () => true): Promise<boolean> {
+    if (this.writing || !isCurrent()) return false
+    this.writing = true
+    try { return await this.writeComposer(text, isCurrent) }
+    finally { this.writing = false }
+  }
+
+  private async writeComposer(text: string, isCurrent: () => boolean): Promise<boolean> {
     if (this.inspectChat().kind !== 'direct') return false
     const composers = this.root.querySelectorAll(WHATSAPP_SELECTORS.composer)
     if (composers.length !== 1) return false

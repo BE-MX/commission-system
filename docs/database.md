@@ -444,12 +444,15 @@ T1 = 当前公海且有历史订单；T2 = 无历史订单但有企业邮箱、�
 - `ark_knowledge_approval_requests`：审批绑定不可变 revision；`(document_id,pending_slot)` 唯一，pending 时 slot=1，approved/rejected/cancelled 终态置 NULL，数据库层阻止并发双待审。知识库或节点软删除时关联待审批进入 cancelled。
 - `ark_knowledge_audit_logs`：成员、编辑、审批和 MCP 读取的追加式安全审计。
 
-## WhatsApp 实时翻译（迁移 136，2026-09-03）
+## WhatsApp 实时翻译（迁移 136）与话术请求（迁移 141，2026-09-07）
 
 - `translation_pairings`：一次性配对。存 `device_code_hash`、`proposed_token_hash`、设备/浏览器/扩展元数据、状态、审批人、时间；`(device_code_hash)` 唯一。明文 token/device code 不入库。
 - `translation_devices`：已授权设备。存 `token_hash`（唯一）、员工、设备元数据、过期时间、启用状态和撤销原因；employee/device 查询建索引。设备撤销保留原因与审计时间，不保存聊天密钥。
 - `translation_usage_daily`：北京时间日聚合，键为 `(user_id,device_id,usage_date)`。只保存请求数、成功率、字符数、token、方向/语言对与错误码计数。
-- 三张表均不含 WhatsApp 文本、译文、联系人、电话、消息/聊天 ID、页面 HTML、prompt 或 response。模型层测试会拒绝含明文字段的迁移；迁移 136 是当前唯一 head。
+- 三张翻译表均不含 WhatsApp 文本、译文、联系人、电话、消息/聊天 ID、页面 HTML、prompt 或 response。模型层测试会拒绝含明文字段的迁移。
+- `ark_whatsapp_reply_requests`：迁移 `141_whatsapp_reply_requests`（前置 `140_domestic_order_kinds`）新增话术共享幂等及配额元数据。字段为 `id/user_id/device_id/request_id/payload_hash/owner_id/status/input_chars/source_revisions/timings_ms/error_code/created_at/lease_until/finished_at`；不存聊天、草稿、模型输出或原始检索词。`request_id` 是扩展随机 UUID，不是 WhatsApp ID。
+- 唯一键 `(device_id,request_id)`；索引 `(user_id,created_at)`、`(user_id,status,lease_until)`。用户外键为 `INTEGER UNSIGNED`、设备外键为 `BIGINT UNSIGNED`，匹配现有目标列。请求准入持用户行锁，完成后只更新元数据。租约过期释放并发槽但绝不允许接管同请求重跑；不同进程或重启后无法取回内存结果时返回明确错误。
+- 新时间字段由 `beijing_now()` 写北京时间，含非东八区主机/北京零点测试。隔离 SQLite 迁移上下行及 MySQL DDL 编译已验证；尚未执行真实 MySQL 141 迁移。生产仅允许授权后通过统一部署入口执行，不从开发机升级共享库。
 - `ark_knowledge_assets`：私有图片元数据和相对存储路径；状态为 temporary/attached，临时图带过期时间。
 - `ark_knowledge_revision_assets`：修订与图片的不可变有序引用，`(revision_id,asset_id)` 唯一；图片不能跨库附着。
 - `ark_knowledge_ai_profiles`：AI Preset、两类业务提示词、安全与配额配置；每次更新递增 `config_version`。

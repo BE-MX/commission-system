@@ -1,4 +1,5 @@
 import type { ApiEnvelope, CapabilitiesResponse, PairingStatusResponse, SessionResponse, StartPairingRequest, StartPairingResponse, TranslationRequest, TranslationResponse } from '@/shared/contracts'
+import type { ReplyRequest, ReplyResponse } from '@/shared/contracts'
 
 const BASE_URL = 'https://leshine.cloud/api/whatsapp-translation'
 const REQUEST_TIMEOUT_MS = 20_000
@@ -94,7 +95,7 @@ export function getSession(token: string, extensionVersion: string): Promise<Ses
 }
 
 export function getCapabilities(token: string, extensionVersion: string): Promise<CapabilitiesResponse> {
-  return request('/capabilities', { headers: headers(token, extensionVersion) })
+  return request('/capabilities', { headers: headers(token, extensionVersion), cache: 'no-store' })
 }
 
 export async function translate(
@@ -119,6 +120,14 @@ export async function translate(
 }
 
 export const apiClient = {
+  suggestReply: async (token: string, extensionVersion: string, payload: ReplyRequest): Promise<ReplyResponse> => {
+    const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo(() => { void chrome.runtime.lastError }), 25_000)
+    try {
+      return await request('/reply-suggestions', {
+        body: JSON.stringify(payload), headers: headers(token, extensionVersion), method: 'POST', cache: 'no-store',
+      }, false, 35_000)
+    } finally { clearInterval(keepAlive) }
+  },
   createPairing,
   exchangePairing,
   getCapabilities,

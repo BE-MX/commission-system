@@ -39,6 +39,7 @@ export type SessionResponse = {
 }
 
 export type CapabilitiesResponse = {
+  reply?: ReplyCapabilities
   ai_config_version: number
   daily_input_chars: number
   directions: string[]
@@ -111,6 +112,9 @@ export function languageLabel(code: string): string {
 }
 
 export type RuntimeRequest =
+  | { type: 'reply/suggest'; payload: ReplyRequest }
+  | { type: 'reply/capabilities' }
+  | { type: 'reply/disclosure'; acknowledged?: true }
   | { type: 'pairing/start' }
   | { type: 'pairing/resume' }
   | { type: 'session/refresh' }
@@ -123,6 +127,9 @@ export type RuntimeRequest =
   | { type: 'translation/outgoing'; request_id: string; sourceLanguage: string; targetLanguage: string; text: string }
 
 export type RuntimeResponse =
+  | { type: 'reply/suggest'; result: ReplyResponse }
+  | { type: 'reply/capabilities'; reply?: ReplyCapabilities }
+  | { type: 'reply/disclosure'; acknowledged: boolean }
   | { type: 'pairing/start'; state: PairingState }
   | { type: 'pairing/resume'; state: PairingState | null }
   | { type: 'session/refresh'; session: Session }
@@ -141,4 +148,39 @@ export function mapStartPairing(response: StartPairingResponse): PairingState {
     authorizeUrl: response.authorize_url,
     status: 'pending',
   }
+}
+
+export type ReplyCapabilities = {
+  available: boolean
+  max_messages: number
+  default_messages: number
+  max_context_chars: number
+  max_draft_chars: number
+  max_goal_chars: number
+  timeout_seconds: number
+}
+export type ReplyStyle = 'default' | 'shorter' | 'softer' | 'alternative'
+export type ReplyRequest = {
+  request_id: string
+  conversation_epoch: string
+  context_version: number
+  draft_version: number
+  messages: { role: 'customer' | 'salesperson'; text: string }[]
+  context_scope: { requested_limit: 20 | 40; truncated: boolean; omitted_media: boolean; latest_visible: boolean }
+  draft_intent: string
+  target_language: 'auto' | TargetLanguage
+  fallback_language: TargetLanguage
+  style: ReplyStyle
+  goal: string
+}
+export type ReplyResponse = Pick<ReplyRequest, 'request_id' | 'conversation_epoch' | 'context_version' | 'draft_version'> & {
+  status: 'ready' | 'needs_confirmation' | 'insufficient_context'
+  reply_language: TargetLanguage
+  reply_text: string
+  meaning_zh: string
+  rationale_zh: string
+  sources: { document_id: number; revision_id: number; version_no: number; section: string; title: string }[]
+  claims: { text: string; source_index: number; quote: string }[]
+  risk_flags: string[]
+  missing_information: string[]
 }

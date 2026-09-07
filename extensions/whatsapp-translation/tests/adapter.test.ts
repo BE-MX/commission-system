@@ -19,6 +19,23 @@ const unknownFixture = loadFixture('unknown')
 const noChatFixture = loadFixture('no-chat')
 
 describe('WhatsApp adapter', () => {
+  it('serializes reply and translation writes and rechecks the winning write before dispatch', async () => {
+    const document = loadFixture('direct')
+    const adapter = adapterFor(document)
+    const composer = document.querySelector('[contenteditable]') as HTMLElement
+    composer.focus()
+    const harness = installControlledComposer(document, composer, { manualFrames: true })
+    let current = true
+    const first = adapter.replaceComposer('First candidate', () => current)
+    expect(adapter.isWritingComposer()).toBe(true)
+    expect(await adapter.replaceComposer('Second candidate')).toBe(false)
+    current = false
+    harness.flushFrame()
+    expect(await first).toBe(false)
+    expect(harness.commandCount()).toBe(0)
+    expect(adapter.readComposer()).toBe('Current draft')
+    expect(adapter.isWritingComposer()).toBe(false)
+  })
   it.each(['个人主页详情', 'Profile details'])('recognizes a direct chat with header label %s', async label => {
     const document = loadFixture('direct')
     document.querySelector('[aria-label="个人主页详情"]')!.setAttribute('aria-label', label)

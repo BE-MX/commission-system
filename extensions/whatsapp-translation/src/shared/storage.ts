@@ -1,6 +1,7 @@
 const STORAGE_ACCESS = 'TRUSTED_CONTEXTS'
 
 export type LocalState = {
+  replyDisclosureAcknowledged?: boolean
   chatKeySalt: string
   chatLanguages: Record<string, string>
   defaultTargetLanguage: string

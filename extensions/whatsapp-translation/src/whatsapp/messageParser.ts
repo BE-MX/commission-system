@@ -26,7 +26,7 @@ async function localMessageKey(direction: string, text: string, ordinal: number)
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
-function normalizeText(element: Element): string {
+export function normalizeText(element: Element): string {
   const text = element.cloneNode(true) as Element
   for (const emoji of text.querySelectorAll(WHATSAPP_SELECTORS.messageEmoji)) {
     emoji.replaceWith(element.ownerDocument.createTextNode(emoji.getAttribute('data-plain-text') || emoji.getAttribute('alt') || ''))
@@ -57,7 +57,7 @@ function hiddenTimeDecorations(message: Element, textRoot: Element, metadata: El
   ))
 }
 
-function hasOnlyTextMessageStructure(message: Element, textRoot: Element, metadata: Element): boolean {
+export function hasOnlyTextMessageStructure(message: Element, textRoot: Element, metadata: Element, options: { allowParagraphs?: boolean } = {}): boolean {
   const decorations = [
     ...message.querySelectorAll(WHATSAPP_SELECTORS.messageDecoration),
     ...hiddenTimeDecorations(message, textRoot, metadata),
@@ -72,6 +72,7 @@ function hasOnlyTextMessageStructure(message: Element, textRoot: Element, metada
     const testId = element.getAttribute('data-testid')
     if (testId !== null) return TEXT_MESSAGE_TEST_IDS.has(testId)
     if (textRoot.contains(element)) return ['A', 'B', 'BR', 'CODE', 'EM', 'I', 'S', 'SPAN', 'STRONG'].includes(tag)
+      || (options.allowParagraphs === true && ['P', 'DIV'].includes(tag) && !element.hasAttribute('role'))
     if (decorations.some(root => root.contains(element))) return ['DIV', 'SPAN', 'SVG', 'TITLE', 'PATH'].includes(tag)
     // Empty DIV/SPAN placeholders carry no message content. Nonempty wrappers
     // must connect recognized parts without introducing standalone text.

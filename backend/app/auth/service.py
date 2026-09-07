@@ -461,6 +461,7 @@ def seed_role_permissions(db: Session):
         ("whatsapp:write", "whatsapp", "write", "创建绑定/触发同步/解绑账号"),
         ("whatsapp:admin", "whatsapp", "admin", "管理全部 WhatsApp 同步账号"),
         ("whatsapp_translation:write", "whatsapp_translation", "write", "使用 WhatsApp 实时翻译"),
+        ("whatsapp_reply:write", "whatsapp_reply", "write", "使用 WhatsApp 销售话术助手"),
         ("whatsapp_translation:admin", "whatsapp_translation", "admin", "管理 WhatsApp 翻译设备与用量"),        # 客户经营雷达
         ("customer_radar:read",   "customer_radar", "read",   "查看客户经营雷达"),
         ("customer_radar:write",  "customer_radar", "write",  "完成/延后/反馈行动"),

@@ -4,13 +4,14 @@ import { createOutgoingComposer } from '@/content/outgoingComposer'
 import { mountTranslation } from '@/content/render'
 import { createToolbarView } from '@/content/toolbarView'
 import { createLatestMountGuard } from '@/content/latestMountGuard'
+import { createReplyAssistant } from '@/content/replyAssistant'
+import { createReplyView } from '@/content/replyView'
 import { adapterFor } from '@/whatsapp/adapter'
 import { DEFAULT_OUTGOING_LANGUAGE, TARGET_LANGUAGES } from '@/shared/contracts'
 import type { TargetLanguage } from '@/shared/contracts'
 import type { RuntimeRequest, RuntimeResponse } from '@/shared/contracts'
 import type { IncomingBridge, IncomingBridgeRequest } from '@/content/incomingTranslator'
 import type { OutgoingBridge, OutgoingBridgeRequest } from '@/content/outgoingComposer'
-import { WHATSAPP_SELECTORS } from '@/whatsapp/selectors'
 
 async function send(message: RuntimeRequest): Promise<RuntimeResponse | undefined> {
   return await chrome.runtime.sendMessage(message) as RuntimeResponse | undefined
@@ -66,8 +67,11 @@ function startContentScript(): void {
   const adapter = adapterFor(document)
   const outgoingComposer = createOutgoingComposer(adapter, outgoingBridge)
   let chatRoot = adapter.chatRootElement()
+  let conversationElement = adapter.conversationElement()
+  let chatKind = adapter.inspectChat().kind
   let currentTitle = ''
   let controller: ReturnType<typeof createComposerController> | undefined
+  let reply: ReturnType<typeof createReplyAssistant> | undefined
   let composerElement: Element | null = null
   const mountGuard = createLatestMountGuard()
   const translator = createIncomingTranslator(adapter, backgroundBridge, {
@@ -75,25 +79,39 @@ function startContentScript(): void {
   }, {
     onDetectedLanguage: (_message, language) => {
       if (!TARGET_LANGUAGES.includes(language as TargetLanguage)) return
+      if (language !== outgoingComposer.getTargetLanguage()) reply?.optionsChanged()
       void controller?.onLanguageChange(language)
     },
   })
 
-  const onComposerInput = () => controller?.onComposerInput()
+  const onComposerInput = (event: Event) => {
+    if (adapter.isWritingComposer() && !event.isTrusted) return
+    reply?.draftChanged()
+    outgoingComposer.invalidateDraft()
+    controller?.onComposerInput()
+  }
 
   function watchComposer(): void {
-    const next = document.querySelector(WHATSAPP_SELECTORS.composer)
+    const next = adapter.composerElement()
     if (next === composerElement) return
+    if (composerElement) {
+      reply?.chatChanged()
+      outgoingComposer.invalidateChat()
+    }
     composerElement?.removeEventListener('input', onComposerInput)
+    composerElement?.removeEventListener('beforeinput', onComposerInput)
     composerElement = next
     composerElement?.addEventListener('input', onComposerInput)
+    composerElement?.addEventListener('beforeinput', onComposerInput)
   }
 
   async function mountToolbar(): Promise<void> {
+    reply?.chatChanged()
     const mountGeneration = mountGuard.begin()
     const shadow = adapter.mountComposerToolbar()
     if (!shadow) {
       controller = undefined
+      reply = undefined
       return
     }
     const title = adapter.chatTitle()
@@ -108,11 +126,20 @@ function startContentScript(): void {
     if (adapter.isDarkTheme()) (shadow.host as HTMLElement).setAttribute('data-ark-theme', 'dark')
     const view = createToolbarView(shadow, {
       onCancelPreview: () => controller?.onCancelPreview(),
-      onLanguageChange: language => void controller?.onLanguageChange(language),
-      onReplace: () => void controller?.onReplace(),
-      onRestore: () => void controller?.onRestore(),
+      onLanguageChange: language => { reply?.optionsChanged(); void controller?.onLanguageChange(language) },
+      onReplace: () => { reply?.draftChanged(); void controller?.onReplace() },
+      onRestore: () => { reply?.draftChanged(); void controller?.onRestore() },
       onRetry: () => void controller?.onRetry(),
       onTranslate: () => void controller?.onTranslate(),
+      onReply: () => {
+        const current = reply
+        current?.open()
+        const revision = current?.getRevision()
+        void send({ type: 'reply/disclosure' }).then(response => {
+          if (current !== reply || !current?.getState().open || current.getRevision() !== revision) return
+          if (response?.type === 'reply/disclosure' && response.acknowledged) void current.generate(replyView.options())
+        }).catch(() => { /* Disclosure stays visible; explicit generation can retry. */ })
+      },
     })
     controller = createComposerController(outgoingComposer, view, {
       save: async (language) => {
@@ -120,32 +147,71 @@ function startContentScript(): void {
         await send({ chatTitle: currentTitle, targetLanguage: language, type: 'chat-language/set' })
       },
     })
+    const replyView = createReplyView(shadow, {
+      generate: (options, style) => {
+        const current = reply
+        const revision = current?.getRevision()
+        void send({ type: 'reply/disclosure', acknowledged: true }).then(response => {
+          if (current !== reply || !current?.getState().open || current.getRevision() !== revision) return
+          if (response?.type === 'reply/disclosure' && response.acknowledged) void current.generate(options, style)
+        }).catch(() => current?.cancel())
+      },
+      change: () => reply?.optionsChanged(), close: () => reply?.close(), cancel: () => reply?.cancel(),
+      fill: () => { outgoingComposer.invalidateDraft(); controller?.onComposerInput(); void reply?.fill() },
+      restore: () => { outgoingComposer.invalidateDraft(); controller?.onComposerInput(); void reply?.restore() },
+    })
+    reply = createReplyAssistant(adapter, {
+      async capabilities() {
+        const response = await send({ type: 'reply/capabilities' })
+        if (response?.type !== 'reply/capabilities') throw bridgeError(response)
+        return response.reply
+      },
+      async suggest(payload) {
+        const response = await send({ type: 'reply/suggest', payload })
+        if (response?.type !== 'reply/suggest') throw bridgeError(response)
+        return response.result
+      },
+    }, () => outgoingComposer.getTargetLanguage() as TargetLanguage, state => replyView.render(state))
     controller.reset()
     watchComposer()
   }
 
   outgoingComposer.bindShortcut(document, () => {
+    if (outgoingComposer.previewIsFresh()) reply?.draftChanged()
     void controller?.onShortcut()
   })
 
   void mountToolbar()
 
-  const observer = new MutationObserver(() => {
+  const observer = new MutationObserver(records => {
     const currentChatRoot = adapter.chatRootElement()
     const title = adapter.chatTitle()
-    if (currentChatRoot !== chatRoot || title !== currentTitle) {
+    const nextConversation = adapter.conversationElement()
+    const nextKind = adapter.inspectChat().kind
+    if (currentChatRoot !== chatRoot || title !== currentTitle || nextConversation !== conversationElement || nextKind !== chatKind) {
       chatRoot = currentChatRoot
+      conversationElement = nextConversation
+      chatKind = nextKind
       translator.chatChanged()
       outgoingComposer.invalidateChat()
+      reply?.chatChanged()
       void mountToolbar()
-    } else if (!document.querySelector('[data-ark-outgoing-control="1"]') && adapter.inspectChat().kind === 'direct') {
+    } else if (!adapter.hasToolbar() && adapter.inspectChat().kind === 'direct') {
       // WhatsApp re-rendered the footer and dropped our host.
       void mountToolbar()
+    }
+    if (records.some(record => adapter.isMessageMutation(record))) reply?.contextChanged()
+    if (!adapter.isWritingComposer() && records.some(record => adapter.isComposerMutation(record))) {
+      reply?.draftChanged()
+      outgoingComposer.invalidateDraft()
+      controller?.onComposerInput()
     }
     watchComposer()
     translator.notifyMutation()
   })
   observer.observe(document, {
+    attributes: true,
+    attributeFilter: ['aria-label', 'data-testid', 'style', 'class', 'contenteditable'],
     characterData: true,
     childList: true,
     subtree: true,

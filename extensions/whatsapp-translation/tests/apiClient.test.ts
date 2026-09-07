@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiClient } from '@/background/apiClient'
+import type { ReplyRequest } from '@/shared/contracts'
 
 const fetchMock = vi.fn()
 const getPlatformInfo = vi.fn()
@@ -15,6 +16,31 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers() })
 
 describe('Ark API client', () => {
+  const replyPayload: ReplyRequest = {
+    request_id: '4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de63', conversation_epoch: '4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de64',
+    context_version: 1, draft_version: 2, messages: [{ role: 'customer', text: 'Synthetic question' }],
+    context_scope: { requested_limit: 20, truncated: false, omitted_media: false, latest_visible: false },
+    draft_intent: '', target_language: 'auto', fallback_language: 'en', goal: '', style: 'default',
+  }
+  it('sends reply POST no-store and never retries transport errors', async () => {
+    fetchMock.mockRejectedValue(new TypeError('Synthetic private transport detail'))
+    await expect(apiClient.suggestReply('token', '1.2.6', replyPayload)).rejects.toMatchObject({ code: 'network_error', message: 'request failed' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('https://leshine.cloud/api/whatsapp-translation/reply-suggestions')
+    expect(init).toMatchObject({ cache: 'no-store', method: 'POST', body: JSON.stringify(replyPayload) })
+  })
+  it('aborts reply at 35 seconds with no automatic retry and clears keepalive', async () => {
+    vi.useFakeTimers()
+    fetchMock.mockImplementation((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+    }))
+    const outcome = apiClient.suggestReply('token', '1.2.6', replyPayload).catch(error => error)
+    await vi.advanceTimersByTimeAsync(35_000)
+    expect(await outcome).toMatchObject({ code: 'request_timeout' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBe(0)
+  })
   it('unwraps the numeric Ark envelope and sends device credentials only on device routes', async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({
       code: 200,

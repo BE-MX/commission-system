@@ -22,6 +22,8 @@ from app.whatsapp_translation.pairing_service import (
 from app.whatsapp_translation.quota_service import BoundedSlidingWindowLimiter, client_ip
 from app.whatsapp_translation.schemas import PairingCodeRequest, PairingCreate
 from app.whatsapp_translation import service, translation_service
+from app.whatsapp_translation import reply_service
+from app.whatsapp_translation.reply_schemas import ReplyRequest
 
 
 router = APIRouter(tags=["WhatsApp 实时翻译"])
@@ -125,13 +127,20 @@ def session_route(identity=Depends(device_identity)):
 
 
 @router.get("/capabilities", dependencies=[Depends(no_store)])
-def capabilities_route(identity=Depends(device_identity)):
-    return ok(service.get_capabilities())
+def capabilities_route(identity=Depends(device_identity), db=Depends(get_db)):
+    return ok({**service.get_capabilities(), "reply": reply_service.reply_capabilities(db, identity)})
 
 
 @router.post("/translate", dependencies=[Depends(no_store)])
 def translate_route(payload: translation_service.TranslateRequest, identity=Depends(device_identity), db=Depends(get_db)):
     return ok(translation_service.translate_text(db, identity, payload).model_dump(mode="json"))
+
+
+@router.post("/reply-suggestions", dependencies=[Depends(no_store)])
+def reply_suggestions_route(payload: ReplyRequest, identity=Depends(device_identity), db=Depends(get_db)):
+    # Machine-to-machine device auth maps to a human; service rechecks the separate
+    # whatsapp_reply:write grant plus live knowledge ACL before any result returns.
+    return ok(reply_service.suggest_reply(db, identity, payload).model_dump(mode="json"))
 
 
 @router.get("/admin/devices")

@@ -27,6 +27,7 @@ export type ToolbarModel = {
 }
 
 export type ToolbarHandlers = {
+  onReply?: () => void
   onCancelPreview: () => void
   onLanguageChange: (language: string) => void
   onReplace: () => void
@@ -207,6 +208,12 @@ export function createToolbarView(shadow: ShadowRoot, handlers: ToolbarHandlers)
     translate.addEventListener('click', handlers.onTranslate)
 
     bar.append(chip, translate)
+    if (handlers.onReply) {
+      const reply = el('button', 'btn', '话术')
+      reply.type = 'button'
+      reply.addEventListener('click', handlers.onReply)
+      bar.append(reply)
+    }
 
     if (model.status.kind === 'error') {
       const message = messageForCode(model.status.code)

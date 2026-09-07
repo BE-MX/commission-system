@@ -4,6 +4,7 @@
 支持 OpenAI (Chat Completions) 和 Anthropic (Messages) 两种 API 协议。
 """
 
+import asyncio
 import re
 
 import httpx
@@ -116,8 +117,14 @@ def post_json(
     headers: dict,
     body: dict,
     timeout_sec: int | float,
+    enforce_total_timeout: bool = False,
 ) -> dict:
     """通过 httpx 的受信任 CA 链发送通用 AI JSON 请求。"""
+    if enforce_total_timeout:
+        # The reply route is synchronous (FastAPI worker thread). Cancellation
+        # propagates into the async socket operation and closes the client, unlike
+        # timing out a Future while its paid HTTP request keeps running unchecked.
+        return asyncio.run(_post_json_with_deadline(url, headers, body, timeout_sec))
     with httpx.Client(
         timeout=timeout_sec,
         verify=True,
@@ -126,6 +133,14 @@ def post_json(
         response = client.post(url, headers=headers, json=body)
         response.raise_for_status()
         return response.json()
+
+
+async def _post_json_with_deadline(url, headers, body, timeout_sec):
+    async with asyncio.timeout(timeout_sec):
+        async with httpx.AsyncClient(timeout=timeout_sec, verify=True, follow_redirects=False) as client:
+            response = await client.post(url, headers=headers, json=body)
+            response.raise_for_status()
+            return response.json()
 
 
 def build_anthropic_body(

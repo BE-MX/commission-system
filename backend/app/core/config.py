@@ -244,6 +244,14 @@ class Settings(BaseSettings):
     WHATSAPP_TRANSLATION_MAX_TEXT_CHARS: _PositiveInt = 4_000
     WHATSAPP_TRANSLATION_AI_TIMEOUT_SECONDS: _PositiveInt = 40
     WHATSAPP_TRANSLATION_MIN_EXTENSION_VERSION: str = "1.0.0"
+    WHATSAPP_REPLY_ENABLED: bool = False
+    WHATSAPP_REPLY_PLANNER_PRESET: str = "whatsapp_reply_planner"
+    WHATSAPP_REPLY_GENERATOR_PRESET: str = "whatsapp_reply_generator"
+    WHATSAPP_REPLY_TIMEOUT_SECONDS: _PositiveInt = 30
+    WHATSAPP_REPLY_DAILY_REQUESTS: _PositiveInt = 100
+    WHATSAPP_REPLY_RATE_PER_MINUTE: _PositiveInt = 6
+    WHATSAPP_REPLY_MAX_CONTEXT_CHARS: _PositiveInt = 12000
+    WHATSAPP_REPLY_SOURCE_BINDINGS: list[dict] = []
     # ── 运行与自动化中心（健康检查仅允许由部署环境配置，不接受网页输入）────
     OPERATIONS_PROBE_TIMEOUT_SECONDS: float = 3.0
     OPERATIONS_CACHE_TTL_SECONDS: float = 20.0

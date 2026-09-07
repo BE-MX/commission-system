@@ -1164,7 +1164,16 @@ MCP `/mcp` 新增 `search_knowledge` 与 `get_knowledge_document`。二者使用
 | GET | `/usage/me` | Ark JWT + `whatsapp_translation:write` | 本人聚合用量，不含文本。 |
 | GET | `/session`、`/capabilities` | 设备 Bearer + `X-Ark-Extension-Version` | 会话、能力、最低扩展版本和额度元数据。 |
 | POST | `/translate` | 设备 Bearer | body `request_id`(UUID)、`direction`、`source_language`、`target_language`、`text`；返回译文、检测语言、`model_log_id`，发出方向额外返回 `back_translation`（中文回译）。服务端只记录长度、方向、语言、token 用量、耗时和错误码。 |
+| POST | `/reply-suggestions` | 设备 Bearer + 员工实时 `whatsapp_reply:write` | 1.3.0 话术建议；双方有序文字、快照版本、可选草稿意图/目标/风格换取一条可预览回复。来源仍受员工知识库 ACL 约束；不会发送消息。 |
 | GET/DELETE | `/admin/devices`, `/admin/devices/{device_id}` | Ark JWT + `whatsapp_translation:admin` | 管理设备与撤销。 |
 | GET | `/admin/usage`, `/admin/health` | Ark JWT + `whatsapp_translation:admin` | 聚合用量、健康、成功率与窗口。 |
 
-`request_id + device_id` 做 5 分钟幂等；相同请求在窗口内回放同一结果，不重复消耗额度。明文请求/译文只存在于处理过程，不进入数据库、日志或前端接口响应。
+翻译的 `request_id + device_id` 做 5 分钟幂等；相同请求在窗口内回放同一结果，不重复消耗额度。明文请求/译文只存在于处理过程及必要的响应预览，不进入数据库或日志。
+
+话术请求包含 `request_id/conversation_epoch` 两个随机 UUID、`context_version/draft_version`、`messages[{role:customer|salesperson,text}]`、`context_scope{requested_limit:20|40,truncated,omitted_media,latest_visible}`；可选 `draft_intent`、`target_language:auto|支持语言`、`fallback_language`、`style:default|shorter|softer|alternative`、`goal`。默认采集 20 条，可扩到 40 条；消息最多 12,000 字符、草稿 2,000、目标 500，服务端可下调。不得上传真实聊天 ID；完整定义见 [实现契约](requirements/2026-09-07-whatsapp-reply-implementation.md)。
+
+响应回显 UUID 和版本，含 `status`、`reply_language/reply_text/meaning_zh/rationale_zh`、服务端来源 `sources`、带来源索引及逐字引句的 `claims`、受限 `risk_flags` 和 `missing_information`。无必需政策时仅给不含事实承诺的安全澄清；已明确停止联系时给结束回应。结构或安全校验失败不返回草稿。知识检索异常与真正无知识分开处理。
+
+`GET /capabilities` 新增可选 `reply{available,max_messages,default_messages,max_context_chars,max_draft_chars,max_goal_chars,timeout_seconds}`。旧后端无该字段时扩展仅保留翻译；扩展采集前及后台发送前均执行当前能力上限。
+
+话术错误码包括 `reply_not_enabled/reply_not_configured/reply_permission_denied`、`reply_context_too_large`、`reply_busy/reply_rate_limited/reply_daily_quota_exceeded`、`reply_request_conflict/reply_in_progress/reply_result_unavailable`、`reply_configuration_changed/reply_sources_changed`、`reply_timeout/reply_invalid_response/reply_invalid_evidence/reply_unsafe_response/reply_missing_evidence/reply_internal_disclosure/reply_unsupported_number/reply_language_mismatch/reply_unavailable`。响应和校验错误均 no-store，不回显请求正文。相同设备/请求 ID 的共享占位不自动重跑；结果仅在原进程内存保留 120 秒。超时或结果丢失需员工主动重新生成，不自动追加计费。
