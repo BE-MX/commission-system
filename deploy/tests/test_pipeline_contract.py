@@ -74,6 +74,7 @@ def pipeline(tmp_path, monkeypatch):
     state.mkdir()
     monkeypatch.setattr(publish, "ROOT", tmp_path)
     monkeypatch.setattr(publish, "STATE", state)
+    monkeypatch.setattr(schema_release, "STATE", state)
     monkeypatch.setattr(publish, "deployment_lock", nullcontext)
     monkeypatch.setattr(source_release, "prepare", Mock(return_value=(tmp_path, "new", "old")))
     office = {"python": "isolated-python", "pending": []}
@@ -95,7 +96,7 @@ def pipeline(tmp_path, monkeypatch):
     monkeypatch.setattr(static_sync, "activate", activate)
     command = Mock()
     monkeypatch.setattr(publish, "run", command)
-    return SimpleNamespace(args=SimpleNamespace(no_pull=True, cloud_only=False, migration_credentials=None, prepare_only=False),
+    return SimpleNamespace(args=SimpleNamespace(no_pull=True, cloud_only=False, migration_credentials=None, prepare_only=False, revision=None),
                            state=state, prepare=prepare, activate=activate, office_activate=office_activate, command=command)
 
 
@@ -140,8 +141,8 @@ def test_render_preflight_runs_as_module_before_connector_or_activation():
     assert source.index('schema_check(') < source.index('scripts.check_design_image_document_render') < source.index('connector_changed =')
 
 
-@pytest.mark.parametrize("failure", ["stop", "partial-stop", "ddl", "verification"])
-def test_migration_failure_preserves_writer_boundary(failure, monkeypatch):
+@pytest.mark.parametrize("failure", ["chain", "stop", "partial-stop", "stop-not-verified", "ddl", "verification"])
+def test_migration_failure_preserves_writer_boundary(failure, monkeypatch, tmp_path):
     import migration_runner
     from alembic import command
     from alembic.script import ScriptDirectory
@@ -167,21 +168,77 @@ def test_migration_failure_preserves_writer_boundary(failure, monkeypatch):
     engine.connect.return_value = nullcontext(connection)
     monkeypatch.setattr(sqlalchemy, "create_engine", Mock(return_value=engine))
     monkeypatch.setattr(config, "get_settings", lambda: runtime)
+    states = {"first": "running", "second": "running", "inactive": "stopped"}
+    journal = tmp_path / "schema-writers.json"
     def control_writer(writer, operation, _nssm):
+        # The baseline must survive even a stop command with an uncertain outcome.
+        assert json.loads(journal.read_text())["writers"][0]["before"] == "running"
+        previous = states[writer["id"]]
+        if not (failure == "stop-not-verified" and operation == "stop" and writer["id"] == "first"):
+            states[writer["id"]] = "stopped" if operation == "stop" else "running"
         if operation == "stop" and (failure == "stop" or (failure == "partial-stop" and writer["id"] == "second")):
             raise RuntimeError("stop")
-        return True
+        return states[writer["id"]] != previous
     control = Mock(side_effect=control_writer)
     monkeypatch.setattr(schema_release, "control", control)
+    monkeypatch.setattr(schema_release, "writer_state", lambda w, _: states[w["id"]])
     upgrade = Mock(side_effect=RuntimeError("ddl") if failure == "ddl" else None)
     monkeypatch.setattr(command, "upgrade", upgrade)
-    monkeypatch.setattr(ScriptDirectory, "from_config", Mock(return_value=SimpleNamespace(get_heads=lambda: ["head"])))
+    monkeypatch.setattr(ScriptDirectory, "from_config", Mock(return_value=SimpleNamespace(
+        get_heads=lambda: ["head"], iterate_revisions=lambda *_: [] if failure == "chain" else [SimpleNamespace(revision="head")])))
     with pytest.raises(RuntimeError):
-        migration_runner.execute({"credential_file": "unused", "action": "apply", "writers": [{"id": "first"}, {"id": "second"}], "nssm": "mock"})
+        migration_runner.execute({"credential_file": "unused", "action": "apply",
+                                  "journal_path": str(journal),
+                                  "schema": "head", "pending": ["head"],
+                                  "writers": [{"id": "first"}, {"id": "second"}, {"id": "inactive"}], "nssm": "mock"})
     restarted = [call.args[0]["id"] for call in control.call_args_list if call.args[1] == "start"]
-    assert restarted == (["first"] if failure == "partial-stop" else [])
-    assert upgrade.call_count == (0 if failure in ("stop", "partial-stop") else 1)
+    assert "inactive" not in restarted
+    before_ddl = failure in ("chain", "stop", "partial-stop", "stop-not-verified")
+    assert states == {"first": "running" if before_ddl else "stopped",
+                      "second": "running" if before_ddl else "stopped", "inactive": "stopped"}
+    assert json.loads(journal.read_text())["status"] == ("restored-before-ddl" if before_ddl else "failed-after-ddl")
+    if not before_ddl:
+        assert restarted == []
+    assert upgrade.call_count == (0 if before_ddl else 1)
+    if failure == "chain":
+        control.assert_not_called()
     assert any("RELEASE_LOCK" in str(call.args[0]) for call in connection.execute.call_args_list)
+
+
+@pytest.mark.parametrize("phase", ["stopping", "running-ddl", "failed-after-ddl", "recovery-required", "upgraded"])
+def test_incomplete_migration_blocks_retry_before_credentials_or_writer_changes(phase, tmp_path, monkeypatch):
+    import dotenv
+    import migration_runner
+    journal = tmp_path / "schema-writers.json"
+    journal.write_text(json.dumps({"status": phase}))
+    credentials = Mock()
+    monkeypatch.setattr(dotenv, "dotenv_values", credentials)
+    control = Mock()
+    monkeypatch.setattr(schema_release, "control", control)
+    with pytest.raises(RuntimeError, match="requires inspection"):
+        migration_runner.execute({"action": "check", "journal_path": str(journal)})
+    credentials.assert_not_called()
+    control.assert_not_called()
+
+
+@pytest.mark.parametrize("scope", ["office", "cloud-only"])
+def test_database_at_head_does_not_bypass_an_unfinished_release(pipeline, scope):
+    pipeline.args.cloud_only = scope == "cloud-only"
+    (pipeline.state / "schema-writers.json").write_text(json.dumps({"status": "upgraded", "schema": "head"}))
+    with pytest.raises(RuntimeError, match="requires inspection"):
+        publish.publish(pipeline.args)
+    pipeline.prepare.assert_not_called()
+    pipeline.activate.assert_not_called()
+    pipeline.office_activate.assert_not_called()
+
+
+def test_verified_release_closes_migration_journal(tmp_path, monkeypatch):
+    monkeypatch.setattr(schema_release, "STATE", tmp_path)
+    journal = tmp_path / "schema-writers.json"
+    journal.write_text(json.dumps({"status": "upgraded", "schema": "head", "writers": []}))
+    schema_release.complete({"schema_changed": True, "schema": "head"})
+    schema_release.check_recovery()
+    assert json.loads(journal.read_text())["status"] == "completed"
 
 
 def test_extension_changes_rebuild_frontend_and_corrupt_cache_is_rejected(tmp_path, monkeypatch):

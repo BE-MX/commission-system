@@ -15,6 +15,35 @@ import source_release
 
 
 class SourceReleaseTests(unittest.TestCase):
+    def test_pinned_revision_does_not_publish_a_later_commit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            def git(*args):
+                return subprocess.check_output(["git", *args], cwd=root, text=True,
+                                               stderr=subprocess.DEVNULL).strip()
+            git("init")
+            git("config", "user.name", "Deployment Test")
+            git("config", "user.email", "deployment-test@example.invalid")
+            (root / ".gitignore").write_text(".deploy_state/\n")
+            revisions = []
+            for name in ("live", "reviewed", "unrelated"):
+                (root / "code.txt").write_text(name)
+                git("add", ".")
+                git("commit", "-m", name)
+                revisions.append(git("rev-parse", "HEAD"))
+            git("checkout", "--detach", revisions[0])
+            source, revision, previous = source_release.prepare(
+                root, root / ".deploy_state", False, pinned_revision=revisions[1])
+            self.assertEqual(revision, revisions[1])
+            self.assertEqual(previous, revisions[0])
+            self.assertEqual((source / "code.txt").read_text(), "reviewed")
+            self.assertEqual((root / "code.txt").read_text(), "live")
+            with self.assertRaisesRegex(ValueError, "full commit SHA"):
+                source_release.prepare(root, root / ".deploy_state", False, pinned_revision="HEAD")
+            git("checkout", "--detach", revisions[2])
+            with self.assertRaisesRegex(RuntimeError, "not a fast-forward"):
+                source_release.prepare(root, root / ".deploy_state", False, pinned_revision=revisions[1])
+
     def test_preparation_never_changes_live_and_next_release_keeps_tracking(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

@@ -137,12 +137,14 @@ def publish(args):
     import source_release
     live = ROOT
     with deployment_lock():
-        ROOT, revision, previous = source_release.prepare(live, STATE, not args.no_pull)
+        ROOT, revision, previous = source_release.prepare(live, STATE, not args.no_pull,
+                                                         pinned_revision=args.revision)
+        import schema_release
+        schema_release.check_recovery()
         from office_release import prepare as office_prepare, activate as office_activate, stage_static
         office = None if args.cloud_only else office_prepare(live, previous, revision)
         inventory = json.loads((ROOT / "deploy/platforms.json").read_text(encoding="utf-8-sig"))
         if office:
-            import schema_release
             schema_release.preflight(office, inventory, args.migration_credentials)
         journal = {"revision": revision, "scope": "cloud-only" if args.cloud_only else "office-and-cloud", "status": "preparing", "completed": [], "deferred": []}
         atomic_json(STATE / "publish-current.json", journal)
@@ -187,6 +189,8 @@ def publish(args):
             print(json.dumps(static_sync.activate(item)), flush=True)
             journal["completed"].append(item["target"] + ":" + item["request"]["root"])
             atomic_json(STATE / "publish-current.json", journal)
+        if office:
+            schema_release.complete(office)
         summary = {"revision": revision, "scope": "cloud-only" if args.cloud_only else "office-and-cloud",
                    "schema": backend["schema"], "transfer_bytes": sum(item["bytes"] for item in prepared), "deferred": journal["deferred"]}
         atomic_json(STATE / "publish-success.json", summary)
@@ -204,6 +208,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cloud-only", action="store_true")
     parser.add_argument("--no-pull", action="store_true")
+    parser.add_argument("--revision", help="Pin a reviewed full commit SHA; fetch still runs unless --no-pull")
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--migration-credentials", help="Protected file containing only DBA user/password; required only for pending DDL")
     try:

@@ -2,11 +2,14 @@
 
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 
 
-def prepare(live, state, pull):
+def prepare(live, state, pull, pinned_revision=None):
+    if pinned_revision and not re.fullmatch(r"[0-9a-f]{40}", pinned_revision):
+        raise ValueError("Pinned release requires a full commit SHA")
     def git(*args):
         return subprocess.check_output(["git", *args], cwd=live, text=True).strip()
     previous = git("rev-parse", "HEAD")
@@ -15,6 +18,11 @@ def prepare(live, state, pull):
     revision = previous
     if pull:
         git("fetch", "--prune")
+    if pinned_revision:
+        revision = git("rev-parse", pinned_revision + "^{commit}")
+        if git("merge-base", previous, revision) != previous:
+            raise RuntimeError("Pinned deployment is not a fast-forward")
+    elif pull:
         upstream = git("rev-parse", "@{upstream}")
         base = git("merge-base", previous, upstream)
         if base == previous:

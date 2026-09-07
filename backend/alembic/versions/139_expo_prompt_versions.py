@@ -64,8 +64,8 @@ def upgrade():
 
 def downgrade():
     with op.batch_alter_table("ark_expo_results") as batch:
-        batch.drop_index("idx_expo_result_prompt_version")
         batch.drop_constraint("fk_expo_result_prompt_version", type_="foreignkey")
+        batch.drop_index("idx_expo_result_prompt_version")
         batch.drop_column("prompt_snapshot")
         batch.drop_column("prompt_version_id")
     op.drop_table("ark_expo_prompt_versions")

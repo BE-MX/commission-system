@@ -115,7 +115,13 @@
     "miniprogram (WeChat review/publish)",
     "WhatsApp translation extension (package updated; browser installation separate)"
   ],
-  "migration_writers_verified": false,
-  "migration_note": "Office service access and independent writer ownership must be verified before running pending shared-DB DDL. Current schema 137 needs no DDL.",
+  "migration_writers_verified": true,
+  "migration_writers": [
+    {"kind": "nssm", "host": "office", "service": "CommissionSystem"},
+    {"kind": "nssm", "host": "office", "service": "WhatsAppConnector"},
+    {"kind": "systemd", "host": "ubuntu@154.8.205.162", "service": "ark-backend"},
+    {"kind": "pm2", "host": "root@119.28.107.92", "service": "shipment-tracking-mcp", "executable": "/root/.nvm/versions/node/v22.22.1/bin/pm2"}
+  ],
+  "migration_note": "Writers verified on 2026-09-07 through office-prod SSH and live MySQL connection/process ownership. Recheck after adding or moving writers. Pending migrations still require an independent DBA file and service-stop verification.",
   "cos_file_migration": "deferred by owner"
 }
