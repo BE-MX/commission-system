@@ -12,7 +12,47 @@
 
 仍待：完成修复后的完整 30 条模型复测（新付费调用需另行授权）、安全拦截诊断、性能优化、业务负责人语义盲评和实际 WhatsApp 1.3.0 冒烟；启用前核验供应商保留策略、来源对外用途与冲突政策，再另行授权部署。只读检查没有将“已发布”自动当作“允许对客披露”。入口见 [验收记录](requirements/2026-09-07-whatsapp-reply-implementation.md) / [启用说明](requirements/2026-09-07-whatsapp-reply-activation.md)。不能将离线绿色测试称为销售质量验收。
 
-### 数据库 139 发布准备（2026-09-07）
+### 内贸订单编辑、报价缓存与 Excel（2026-09-07，合并交付）
+
+本轮在 `codex/domestic-order-edit-export`（独立 worktree `commission-system-codex-domestic-order-edit-export`）完成亮哥 7 项优化：业务 Excel 仅客户编码、对应产品单元格嵌入参考图、真实余额前后及本单金额、原价/减免额/优惠后商品单价/手工费/小计、数量后空白入库数量；新增或复制行保留其他行手工价；保存成功清空 KeepAlive 新建表单；提交后可由创建人独立编辑订单头、明细数量/成交价/图文。草稿标记预计余额，已调整订单区分当前总额与实际补扣/退回，生产单保持无销售金额。未新增迁移，未修改真实业务数据。
+
+编辑成交单价包含手工费，优惠额计算先减手工费；已发货/终止及报工数量限制沿用服务端。仅发送实际变化字段；历史零价明细仍可改备注、图片和数量。独立审查指出的短多行图文重叠、历史零价编辑校验与金额浮点上界误拦已修复并加回归，最终复核无剩余已发现阻塞项。
+
+验证：后端内贸 `655 passed, 1 skipped, 714 warnings in 87.85s`；前端内贸 `54 passed / 0 failed`；Vite `built in 18.01s`；`check_conventions --strict` 增量无违规。隔离浏览器（所有 API 为合成 mock）实测新增/复制保价、保存草稿后重新新建、正式订单头修改、明细数量/含手工费价格/图片上传、补扣确认以及 390px 布局，`errors=0`；不是生产后端端到端验证。Excel 真实文件的媒体、锚点、单元格和财务快照测试通过，合成示例与页面证据保留本 worktree `tmp/`。没有可用 Excel/LibreOffice，未声称完成原生 Office 打印验收。
+
+亮哥已授权本轮合并并推送 `origin/main`，不包含生产部署。功能提交 `c9aed860` 已通过上述验证；集成从 `55d8a21a` 快进，不改写功能代码。主目录原有六份未提交修改单独保留；验证材料和合成 Excel 归档到主目录 `tmp/domestic-order-edit-export-delivery/evidence/`，临时任务 worktree 在推送核验后清理。Git 巡检使用 `--no-fetch`，不自动处理他人分支。
+
+### 默认双击部署与 140 迁移（2026-09-07，已发布并无参数复跑）
+
+用户再次运行默认 `deploy.bat` 时，main 已包含 140，而上一轮只固定发布 139；要求每次传 `--migration-credentials` 导致双击入口继续报错。修复 `8b4556fa` 使默认调用读取办公室运行仓库 `.deploy_state/credentials/migration.env`，显式参数仍可覆盖，指定文件缺失不会静默回退。服务器已配置限定办公室来源及 `commission_db` 的独立迁移账号（九项 DDL/DML 权限，无账号管理/转授权），文件及目录 NTFS ACL 仅部署账号、SYSTEM、Administrators。该账号和文件长期保留供后续部署使用，不再随一次发布清理；没有复制到开发机、候选或云服务器，应用 `.env` SHA-256 未变。
+
+BAT 从 PATH 定位 Git，优先使用其自带 SSH，已验证含空格/括号的安装路径，不再依赖临时手改 PATH。`--prepare-only` 成功状态修正为 `prepared`。Windows 部署回归 53 passed、11 Linux-only skipped；独立审查通过。未修改 140 业务迁移本身：补充真实库只读预检确认全部旧单满足新约束、两旧 CHECK 存在、没有部分 140 结构，两源路线启用且四计划为 18/5/18/5 步和 4/0/4/0 条规则。用真实 139 表定义在随机新 MySQL 库造合成数据，实际 upgrade、历史字段保留、新路线/规则、合法与非法生产字段、拒绝有生产单时 downgrade、回滚合成新行后 downgrade/re-upgrade 均通过；没有复制客户数据，三次演练创建的随机库全部删除。
+
+服务器先快进仅工具补丁 `4fa5dc4c`，随后以默认目标准备并**两次实际执行无参数 `deploy/deploy.bat`**，未传 revision、migration-credentials 或手设 SSH PATH（仅 `DEPLOY_NO_PAUSE=1` 用于无人值守收集退出码）。两次均退出 0，发布版本 `40c4a46ab79212c0b1ef3c859a83f29645cf71e9`，覆盖当时 main 的 140 与此前未上线代码。首次经统一入口停止全部四个 writer，执行 `139_expo_prompt_versions → 140_domestic_order_kinds` 并完成双后端/云静态切换；第二次构建跳过、四目标零变化/零传输，无服务重启，`publish-current.json=succeeded`、`schema-writers.json=completed`。
+
+维护窗口冻结新加坡/北京各主站、PM 和北京 IP API 入口及办公室 8001 直连，两后端线程栈无 Expo 任务后才切换。迁移后 19 张相关表的全部旧字段摘要一致，包括 30 张订单、42 条明细、931 条进度、540 个客户和 72 条资金流水；只按计划新增四条路线及其步骤/规则。四个 writer 均恢复，Nginx 配置按原摘要还原，临时防火墙规则撤销。两主站及 PM/素材首页 HTTP 200，两主站健康检查为 `ok/database=connected`，内贸接口匿名为 403。原有 Matplotlib 可选依赖和 Nginx 配置警告非本次阻断，未为消除警告改依赖或无关站点。
+
+交付证据保留主目录 `.deploy_state/default-migration-delivery/`，服务器保留本轮日志、摘要及维护回滚备份；临时诊断工具清理。部署账号后续轮换/撤销按 `deploy/README.md`，不要改运行 `.env` 或删除迁移保护。未纳管独立服务和小程序/浏览器扩展的终端安装仍按部署清单单独处理；这里的无参数成功指已登记的办公室与云应用发布。
+
+### OpenClaw 获客修复合并（2026-09-07）
+
+亮哥已授权将 PR #1 的候选契约、主要身份唯一约束冲突及原批次超时重试修复合并并推送 main。本机 OpenClaw 已安装并验证；本次为代码合并，不执行生产发布或任务重新入队。最新部署交接已记录办公室可用入口 `office-prod`，下方“没有部署通道”为修复当时的历史记录。
+
+### 数据库 139 全平台发布（2026-09-07，已完成）
+
+亮哥授权合并、推送并更新服务器，随后提供办公室 `backend/.env` 作为迁移管理凭据来源。通过统一 `deploy/deploy.bat` 固定发布 `bf36a2e13b8b3f736932bc3982ebde0bd8a386dc`：办公室和北京后端均到同一版本，新加坡/北京主站制品摘要一致；PM 与客户素材门户内容未变且 HTTP 摘要核验通过。正式发布退出码 0，`publish-success.json` 指向该版本，迁移 writer 日志为 `completed`。本次只发布已演练的 139，未包含 main 后续新增的 140 内贸迁移、物流展示和 OpenClaw 改动；下次发布仍须按实际 pending 迁移检查，不能直接用 main 代替本次候选。
+
+现场依次解决陈旧 `publish.lock`、writer 清单/PM2 控制缺失，以及 Windows Git SSH 长命令约 12 KB 时的引号截断。SSH 现统一使用短 bootstrap，经 stdin 顺序传递源码和 JSON；系统 OpenSSH 在非交互 Python 子进程中挂起，因此本次部署进程 PATH 前置已安装 Git `usr/bin`。工具补丁通过保留祖先关系的 bootstrap 提交快进到服务器，未在运行目录手改受管文件。
+
+迁移前冻结新加坡主站/PM、北京域名/HTTP IP/HTTPS IP 的 Expo API，并临时阻断办公室直连 8001 入站；五个公网入口实测 503，两台后端线程栈均无 Expo 任务。四个原本运行的 writer（办公室两 NSSM、北京 systemd 后端、新加坡 PM2 物流进程）由迁移入口停止并复核后，只执行一次 `138_public_pool_rules → 139_expo_prompt_versions`。随后四服务全部恢复，维护配置按原文件摘要还原，临时防火墙规则撤销。历史 737 条试戴结果、377 条会话所有原字段摘要一致；新增历史字段全为 NULL，三个种子与冻结 JSON 完全一致，默认项、外键和索引验证通过。
+
+运行 `.env` SHA-256 前后相同。迁移使用单独创建、限定办公室来源和 `commission_db` 的临时账号；完成后账号与凭据文件均已删除。没有对真实客户发起 AI 生图测试。公网两主站、PM、素材门户首页均 200，两主站健康检查为 `ok/database=connected`；新增版本接口匿名访问为 403，权限边界保留。办公室仓库干净；北京保留两份原有未跟踪 `.env.bak-*`，未复制或清理。
+
+验证：最终 Windows 部署测试 48 passed、11 skipped；Linux 临时目录补跑 11 项静态语义及 2 项传输测试全部通过；提示词专项 97 passed，独立审查无剩余阻断。真实 MySQL 隔离 schema 上下行演练通过，两次临时 schema 均删除。准备阶段每台主站传输 741,927 字节，正式切换复用候选、传输为零。非敏感交付证据归档在主目录 `.deploy_state/migration139-delivery/`，服务器保留本次发布/迁移日志与配置回滚备份。
+
+收尾再次以同一 SHA 执行 `--no-pull --prepare-only`（无 DBA 文件）退出 0，后端 `changed=false/schema_changed=false`，构建跳过，四个静态目标零变化/零传输。该检查不切换服务；当前发布器会把 `publish-current.json` 留为这次检查的 `preparing`，应结合 `noop-result.json` 的 0 退出码及 `noop.log` 最后 `Prepared and verified` 判断，而非误判正式发布未完成。
+
+### 数据库 139 发布准备（2026-09-07，以下为发布前记录）
 
 窗口修复后确认正式发布被迁移保护拦截：数据库为 `138_public_pool_rules`，候选新增 `139_expo_prompt_versions`，尚未执行 DDL 或停服务。现场重新核实了办公室两个 NSSM、北京后端和新加坡 PM2 物流写入者，PM2 控制能力从 138 任务中独立纳入本任务，并增加停止后复核。保留独立 DBA、命名锁和失败恢复边界；新增持久化原始 writer 状态、迁移链复核、跨重跑恢复保护及固定完整 SHA 的发布参数。
 
@@ -60,12 +100,31 @@
 
 生产实测：真实入口的 `--help` 与无效参数分别返回 0/2，交互模式确实等到按键，无人值守直接返回，四项均通过；脚本 SHA-256 与本地一致（`229a77f28b1a3e9b5cf1c303fb1561620657c4ca1ddbf9fb18d9c8eafd9bed3d`）。`CommissionSystem`、`WhatsAppConnector` 均 Running，`/health` 为 `ok/database=connected`。生产验证脚本保存在 `.deploy_state/launcher-fix-20260907/`，仅测试参数解析和窗口停留，未发起真实业务发布。若后续默认发布报错，窗口现在会保留其实际错误。
 
+### OpenClaw 0907-1 重复提交 500 修复（2026-09-07，待后端部署）
+
+本机已安装 `~/.openclaw-ark-sales/runtime/search-contract-79b4d1ef`，配置与双工作区 Skill 已同步，私有备份位于同 profile 的 `backups/search-contract-79b4d1ef`。Gateway 重启、RPC 读探针、MCP doctor 通过，cron 和 triggers 均 enabled。修复见 PR #1；办公室后端仍待发布。
+
+用户日志确认任务 #5 首批 10 条已经提交成功但响应超时，后续换批次重复提交触发 `uq_ark_customer_external_identities_primary_identity_slot`。根因为弱官网身份按 source_record_id 保留证据，但每条新证据均请求 is_primary。现在在主体行锁内按主体+身份类型（跨 namespace）保留唯一活动主身份，新来源保存为非主证据；旧身份恢复活动时也不能抢占当前主槽。联系人路径补行锁。无迁移，不删除或改写线上历史记录。
+
+客户端候选提交对 transport timeout/network error 自动原样重试一次，发送前固定完整 JSON 快照；明确 HTTP 错误不重试，其他写操作不重试。仍无回执时明确返回结果未确认，禁止换 key/改分/拆批。Skill 与说明同步。任务 #5 已留存 10 位客户、10 条结果、10 个研究任务；尚未重新入队，也未宣称目标 20 条完成。
+
+验证：SQLite 补等效 MySQL 活动主身份唯一约束，修复前三项回归复现唯一冲突；修复后相关后端 255 通过、2 跳过（含真实 MySQL 并发测试），Node 54 通过，MCP→实际 CandidateBatch 的 7+20 条离线契约通过；两轮独立审查无阻断。真实 MySQL 并发尚未实测。代码已同步 origin/main；后端必须通过办公室统一部署入口发布，本轮没有办公室部署通道，没有推送 main。
+
 ### 展会生图提示词配置与版本（2026-09-07，合并交付，未部署）
 
 - 实现提交 `d46d86ba`，亮哥已授权合并至 `main` 并推送 GitHub `origin/main`。已实现管理页、动态版本选择、原子快照、版本修订冲突保护与管理员历史快照查看；本轮不含生产发布。
 - 139 迁移新增版本表及结果快照。真实/柔光/美颜完整迁移，78 个历史生成组合文本哈希一致。生产尚未迁移或发布；线上仍为此前回滚版本。
 - 验证：最终直接运行全部 test_expo_*.py，425 项通过（含版本专项 97 项）；前端动态版本、kiosk 隔离与导航回归 30 项通过。前端生产构建和增量约定检查通过。验证材料归档于主目录 `tmp/expo-prompt-config/`。管理页浏览器验证创建、未保存预览、保存、生效列表及 390px 布局，X/Escape/遮罩取消放弃保留草稿，保存中阻止关闭。独立审查发现的关闭保护与历史快照入口已处理。
 - 发布前必须停止接收新生成并排空旧线程，由指定部署入口统一执行 schema 139，再同步前后端并刷新设备。只有 SQLite 迁移与业务实测，MySQL 锁并发未实测。生产发布需另有明确授权。
+### OpenClaw 获客候选提交 422 修复（2026-09-07）
+
+`codex/openclaw-search-contract-20260907` 修复主研究代理候选提交契约：MCP 保留 `name` 输入并转换成后端 `company_name`；自动生成稳定来源页 SHA-256 ID 和官网 host 上下文 ID（超长 host 改用 SHA-256）；新增必填、有来源理由的 `score/score_reasons`，不设置默认高分。422 返回字段路径和校验类型，不回显原始输入、错误上下文或租约。工具列表仅支持 claimable；空列表不再被描述成失败/完成状态查询。Skill/API 文档同步。
+
+验证：51 项 Node 测试通过；7 条和 20 条离线样本经过 MCP → ArkClient → 仓库真实 Pydantic `CandidateBatch` 校验，共 27 条通过，无网络或数据库写入；约定检查和 diff 检查通过。独立审查发现的超长域名边界已修复，复审无阻断项。
+
+本机已安装独立运行目录 `~/.openclaw-ark-sales/runtime/search-contract-7df86d13`，MCP 配置指向此目录，避免依赖临时 worktree。主代理与默认工作区的获客 Skill 已同步；旧配置和 Skill 备份在 `~/.openclaw-ark-sales/backups/search-contract-7df86d13`（不入库）。Gateway 重启成功，RPC 与 MCP doctor 通过，cron/触发器启用；实际 MCP 工具 schema 已确认必填 score/score_reasons，方舟只读队列查询成功。没有改后端、数据库或 main；代码已备份到 feature 分支。
+
+任务 #3「0903-2」与 #4「0907」之前已终结为 failed，本轮未重新入队；方舟网页登录页没有可用登录会话，尚未做线上成功入库验收。登录后通过正常获客页面重新入队，由恢复的 heartbeat 按最早任务优先执行。不要把 claimable 空队列或模型 HTTP 200 当作业务完成证据。
 
 ### 展会合成提示词回滚（2026-09-07）
 

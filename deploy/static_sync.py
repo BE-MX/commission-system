@@ -4,7 +4,6 @@ import base64
 import hashlib
 import json
 from pathlib import Path
-import shlex
 import subprocess
 import tarfile
 
@@ -19,11 +18,18 @@ def run(args, **kwargs):
 
 
 def remote(target, request):
-    code = base64.b64encode((HERE / "remote_static.py").read_bytes()).decode()
-    expression = "import base64;exec(base64.b64decode(" + repr(code) + "))"
-    result = run(["ssh", *SSH_OPTIONS, target, "sudo -n python3 -c " + shlex.quote(expression)],
-                 input=json.dumps(request), text=True, capture_output=True, timeout=300)
+    result = remote_python(target, HERE / "remote_static.py", request, sudo=True)
+    result.check_returncode()
     return json.loads(result.stdout)
+
+
+def remote_python(target, script, request, *, sudo=False, timeout=300):
+    # Windows SSH launchers truncate long command arguments. Stream the source
+    # separately from JSON; the executed script continues reading the same stdin.
+    command = ("sudo -n " if sudo else "") + "python3 -c 'import base64,sys;exec(base64.b64decode(sys.stdin.readline()))'"
+    payload = base64.b64encode(script.read_bytes()).decode() + "\n" + json.dumps(request)
+    return subprocess.run(["ssh", *SSH_OPTIONS, target, command], input=payload,
+                          text=True, capture_output=True, timeout=timeout)
 
 
 def manifest(source, require_index=True):

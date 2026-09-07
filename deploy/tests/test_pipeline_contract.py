@@ -1,9 +1,11 @@
 """Release contracts formerly asserted against BAT text; all effects are local/mocked."""
 
 from contextlib import nullcontext
+import base64
 import json
 from pathlib import Path
 import sys
+import subprocess
 import tarfile
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -43,14 +45,32 @@ def test_static_archive_includes_nested_public_artifacts_and_uses_ssh_retries(tm
 
 
 def test_remote_command_is_ascii_and_passes_payload_on_stdin(monkeypatch):
-    command = Mock(return_value=SimpleNamespace(stdout='{}'))
-    monkeypatch.setattr(static_sync, "run", command)
+    command = Mock(return_value=subprocess.CompletedProcess([], 0, '{}', ''))
+    monkeypatch.setattr(static_sync.subprocess, "run", command)
     payload = {"action": "plan", "host": "测试"}
     static_sync.remote("example.test", payload)
     args = command.call_args.args[0]
     assert args[0] == "ssh" and "ConnectionAttempts=3" in args
     assert args[-1].isascii()
-    assert json.loads(command.call_args.kwargs["input"]) == payload
+    code, request = command.call_args.kwargs["input"].split("\n", 1)
+    assert base64.b64decode(code) == (static_sync.HERE / "remote_static.py").read_bytes()
+    assert json.loads(request) == payload
+
+
+def test_backend_uses_streamed_script_and_rejects_remote_failure(monkeypatch):
+    command = Mock(return_value=subprocess.CompletedProcess([], 0, '{}', ''))
+    monkeypatch.setattr(static_sync.subprocess, "run", command)
+    request = {"action": "prepare", "revision": "a" * 40}
+    assert cloud_backend.invoke(request) == {}
+    args = command.call_args.args[0]
+    assert args[-1].startswith("python3 -c ") and len(args[-1]) < 200
+    code, payload = command.call_args.kwargs["input"].split("\n", 1)
+    assert base64.b64decode(code) == (static_sync.HERE / "remote_backend.py").read_bytes()
+    assert json.loads(payload) == request
+    assert command.call_args.kwargs["timeout"] == 1200
+    command.return_value = subprocess.CompletedProcess([], 1, '', 'probe failure')
+    with pytest.raises(RuntimeError, match="probe failure"):
+        cloud_backend.invoke(request)
 
 
 def test_unchanged_static_does_not_upload(tmp_path, monkeypatch):
@@ -131,6 +151,7 @@ def test_prepare_only_never_stops_or_activates_writers(pipeline):
     pipeline.office_activate.assert_not_called()
     schema_release.migrate.assert_not_called()
     assert not (pipeline.state / "publish-success.json").exists()
+    assert json.loads((pipeline.state / "publish-current.json").read_text())["status"] == "prepared"
 
 
 def test_render_preflight_runs_as_module_before_connector_or_activation():
