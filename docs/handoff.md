@@ -7,6 +7,8 @@
 亮哥随后授权合并、推送并更新服务器。本机可访问 GitHub；办公室已登记地址 `192.168.101.193` 的 SSH 22、WinRM 5985 均连接超时，需要当前可用管理入口才能更新 Windows 生产服务器。此任务只更新部署入口修复；不据此激活 main 中另有迁移要求的业务版本。
 ### OpenClaw 0907-1 重复提交 500 修复（2026-09-07，待后端部署）
 
+本机已安装 `~/.openclaw-ark-sales/runtime/search-contract-79b4d1ef`，配置与双工作区 Skill 已同步，私有备份位于同 profile 的 `backups/search-contract-79b4d1ef`。Gateway 重启、RPC 读探针、MCP doctor 通过，cron 和 triggers 均 enabled。修复见 PR #1；办公室后端仍待发布。
+
 用户日志确认任务 #5 首批 10 条已经提交成功但响应超时，后续换批次重复提交触发 `uq_ark_customer_external_identities_primary_identity_slot`。根因为弱官网身份按 source_record_id 保留证据，但每条新证据均请求 is_primary。现在在主体行锁内按主体+身份类型（跨 namespace）保留唯一活动主身份，新来源保存为非主证据；旧身份恢复活动时也不能抢占当前主槽。联系人路径补行锁。无迁移，不删除或改写线上历史记录。
 
 客户端候选提交对 transport timeout/network error 自动原样重试一次，发送前固定完整 JSON 快照；明确 HTTP 错误不重试，其他写操作不重试。仍无回执时明确返回结果未确认，禁止换 key/改分/拆批。Skill 与说明同步。任务 #5 已留存 10 位客户、10 条结果、10 个研究任务；尚未重新入队，也未宣称目标 20 条完成。
