@@ -3,6 +3,8 @@ chcp 65001 >nul
 setlocal
 title LeShine Ark Platform - Deploy
 set PYTHONUTF8=1
+for %%G in (git.exe) do set DEPLOY_GIT=%%~$PATH:G
+if defined DEPLOY_GIT for %%G in ("%DEPLOY_GIT%") do if exist "%%~dpG..\usr\bin\ssh.exe" set PATH=%%~dpG..\usr\bin;%PATH%
 set DEPLOY_PYTHON=%~dp0..\backend\.venv\Scripts\python.exe
 if not exist "%DEPLOY_PYTHON%" set DEPLOY_PYTHON=python
 "%DEPLOY_PYTHON%" "%~dp0publish.py" %*
