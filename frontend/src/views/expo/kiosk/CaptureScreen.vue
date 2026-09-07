@@ -1,5 +1,6 @@
 <template>
   <div class="capture">
+    <div class="capture-heading"><p class="xk-eyebrow">YOUR PORTRAIT</p><h2 class="xk-title">留住此刻的您</h2></div>
     <div class="viewport">
       <!-- 相机可用：实时取景；不可用：文件选择兜底 -->
       <video v-show="cameraOn && !previewUrl" ref="videoEl" autoplay playsinline muted
@@ -89,7 +90,7 @@
 
     <!-- 最佳拍摄角度示范：进入拍照屏自动展示（kiosk 用户皆为一次性用户），可从取景框顶部按钮重开 -->
     <div v-if="guideOpen" class="gd-overlay" @click.self="closeGuide">
-      <div class="gd-panel">
+      <div class="gd-panel" role="dialog" aria-modal="true" aria-label="拍摄示范">
         <div class="gd-title">三步拍出高级感</div>
         <div class="gd-sub">{{ isScene ? '好照片，让场景大片更出彩' : '好照片，让试戴效果更逼真' }}</div>
 
@@ -97,8 +98,8 @@
           <figure class="gd-fig">
             <svg viewBox="0 0 120 96" aria-hidden="true">
               <!-- 人物侧影：头 + 肩身弧 -->
-              <circle cx="38" cy="46" r="13" fill="rgba(232, 196, 121, 0.08)" stroke="var(--xk-gold)" stroke-width="1.6" />
-              <path d="M16 90 Q38 60 60 90" fill="rgba(232, 196, 121, 0.08)" stroke="var(--xk-gold)" stroke-width="1.6" />
+              <circle cx="38" cy="46" r="13" fill="var(--xk-selected)" stroke="var(--xk-gold)" stroke-width="1.6" />
+              <path d="M16 90 Q38 60 60 90" fill="var(--xk-selected)" stroke="var(--xk-gold)" stroke-width="1.6" />
               <circle cx="44" cy="44" r="1.6" fill="var(--xk-gold-hi)" />
               <!-- 相机在右上：略高于视线，连线呈俯角 -->
               <rect x="92" y="12" width="17" height="11" rx="2.5" fill="none" stroke="var(--xk-gold-hi)" stroke-width="1.6" />
@@ -114,8 +115,8 @@
               <rect x="3" y="3" width="84" height="114" rx="9" fill="none" stroke="var(--xk-gold)" stroke-width="1.6" />
               <line x1="3" y1="41" x2="87" y2="41" stroke="var(--xk-gold-dim)" stroke-width="1" stroke-dasharray="4 4" opacity="0.7" />
               <line x1="3" y1="79" x2="87" y2="79" stroke="var(--xk-gold-dim)" stroke-width="1" stroke-dasharray="4 4" opacity="0.7" />
-              <ellipse cx="45" cy="34" rx="12" ry="14" fill="rgba(232, 196, 121, 0.08)" stroke="var(--xk-gold)" stroke-width="1.6" />
-              <path d="M20 117 Q45 58 70 117" fill="rgba(232, 196, 121, 0.08)" stroke="var(--xk-gold)" stroke-width="1.6" />
+              <ellipse cx="45" cy="34" rx="12" ry="14" fill="var(--xk-selected)" stroke="var(--xk-gold)" stroke-width="1.6" />
+              <path d="M20 117 Q45 58 70 117" fill="var(--xk-selected)" stroke="var(--xk-gold)" stroke-width="1.6" />
             </svg>
             <figcaption>头部靠上 · 多露上身<small>面部微侧 · 背景简洁</small></figcaption>
           </figure>
@@ -161,11 +162,12 @@ const {
 </script>
 
 <style scoped>
-.capture { flex: 1; display: flex; flex-direction: column; padding: 0 4vw 3vh; }
+.capture { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 24px 4vw 20px; overflow-y: auto; }
+.capture-heading { flex: none; margin-bottom: 22px; }
 .viewport {
-  position: relative; flex: 1; min-height: 0;
+  position: relative; flex: 1; min-height: 300px; width: min(100%, 1100px); margin: 0 auto;
   border-radius: 26px; overflow: hidden;
-  background: radial-gradient(60% 55% at 50% 42%, #2c251c, #15110c);
+  background: radial-gradient(60% 55% at 50% 42%, var(--xk-surface), var(--xk-surface));
 }
 video, .preview {
   position: absolute; inset: 0; width: 100%; height: 100%;
@@ -174,19 +176,19 @@ video, .preview {
 .preview { transform: none; }
 video.rear { transform: none; } /* 后置不镜像：所见即实景方向 */
 /* 快门闪：按下即时反馈，白幕快速淡出 */
-.flash { position: absolute; inset: 0; z-index: 6; background: #fff; animation: shutter-flash 180ms ease-out forwards; }
+.flash { position: absolute; inset: 0; z-index: 6; background: var(--xk-ink-2); animation: shutter-flash 180ms ease-out forwards; }
 @keyframes shutter-flash { from { opacity: 0.85; } to { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .flash { animation-duration: 90ms; } }
 .guide {
   /* 中心 40%：头部落在画面上三分之一附近，下方多容纳肩颈上身（2026-07-13 拍摄构图引导） */
   position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%);
   width: min(52vw, 300px); aspect-ratio: 0.78; border-radius: 50% / 54%;
-  border: 2px dashed rgba(232, 196, 121, 0.75);
-  box-shadow: 0 0 0 200vmax rgba(8, 6, 4, 0.55);
+  border: 2px dashed var(--xk-selected);
+  box-shadow: 0 0 0 200vmax var(--xk-overlay);
   animation: guide-pulse 2.6s ease-in-out infinite;
 }
 @keyframes guide-pulse {
-  0%, 100% { border-color: rgba(232, 196, 121, 0.4); }
+  0%, 100% { border-color: var(--xk-selected); }
   50% { border-color: var(--xk-gold-hi); }
 }
 .corner { position: absolute; width: 26px; height: 26px; border: 2px solid var(--xk-gold); }
@@ -206,7 +208,7 @@ video.rear { transform: none; } /* 后置不镜像：所见即实景方向 */
 .preview-loading {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   padding: 8px 18px; border-radius: 16px; font-size: 12px; letter-spacing: 0.12em;
-  color: var(--xk-gold-hi); background: rgba(8, 6, 4, 0.55); backdrop-filter: blur(3px);
+  color: var(--xk-gold-hi); background: var(--xk-overlay); backdrop-filter: blur(3px);
 }
 .actions {
   flex: none; display: flex; justify-content: center; gap: 16px;
@@ -248,7 +250,7 @@ video.rear { transform: none; } /* 后置不镜像：所见即实景方向 */
 .guide-entry {
   position: absolute; left: 50%; top: 16px; transform: translateX(-50%);
   height: 34px; padding: 0 16px; border-radius: 18px; cursor: pointer;
-  border: 1px solid var(--xk-gold-line); background: rgba(8, 6, 4, 0.45);
+  border: 1px solid var(--xk-gold-line); background: var(--xk-overlay);
   color: var(--xk-gold-hi); font-size: 12px; letter-spacing: 0.14em;
   backdrop-filter: blur(3px);
   transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), border-color 160ms ease;
@@ -262,7 +264,7 @@ video.rear { transform: none; } /* 后置不镜像：所见即实景方向 */
   padding:
     calc(16px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right))
     calc(16px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
-  background: rgba(6, 5, 3, 0.72); backdrop-filter: blur(4px); animation: gd-fade 200ms ease;
+  background: var(--xk-overlay); backdrop-filter: blur(4px); animation: gd-fade 200ms ease;
 }
 @keyframes gd-fade { from { opacity: 0; } }
 .gd-panel {
@@ -270,12 +272,12 @@ video.rear { transform: none; } /* 后置不镜像：所见即实景方向 */
   display: flex; flex-direction: column; align-items: center;
   padding: 30px 30px 26px; border: 1px solid var(--xk-gold-line); border-radius: 22px;
   background: linear-gradient(160deg, var(--xk-ink-2), var(--xk-ink));
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5), 0 0 40px rgba(232, 196, 121, 0.12);
+  box-shadow: 0 24px 70px var(--xk-shadow), 0 0 40px var(--xk-selected);
   animation: gd-pop 240ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 @keyframes gd-pop { from { opacity: 0; transform: scale(0.96); } }
 .gd-title {
-  font-family: 'Noto Serif SC', serif; font-size: 22px; letter-spacing: 0.14em;
+  font-family: var(--xk-serif); font-size: 22px; letter-spacing: 0.14em;
   color: var(--xk-gold-hi);
 }
 .gd-sub { margin-top: 6px; font-size: 12px; letter-spacing: 0.2em; color: var(--xk-mut); }
@@ -289,7 +291,7 @@ video.rear { transform: none; } /* 后置不镜像：所见即实景方向 */
 .gd-fig svg {
   height: 132px; width: auto; display: block;
   border: 1px solid var(--xk-gold-line); border-radius: 14px; padding: 10px;
-  background: rgba(232, 196, 121, 0.04);
+  background: var(--xk-selected);
 }
 .gd-fig figcaption {
   font-size: 13px; letter-spacing: 0.1em; color: var(--xk-gold); text-align: center;
@@ -328,7 +330,7 @@ video.rear { transform: none; } /* 后置不镜像：所见即实景方向 */
 .qr-overlay {
   position: fixed; inset: 0; z-index: 40; display: flex;
   align-items: center; justify-content: center;
-  background: rgba(6, 5, 4, 0.82); backdrop-filter: blur(6px);
+  background: var(--xk-overlay); backdrop-filter: blur(6px);
 }
 .qr-panel {
   display: flex; flex-direction: column; align-items: center; gap: 14px;
@@ -339,4 +341,29 @@ video.rear { transform: none; } /* 后置不镜像：所见即实景方向 */
 .qr-sub { font-size: 12px; color: var(--xk-mut); }
 .qr-canvas { border-radius: 12px; }
 .qr-hint { font-size: 12px; color: var(--xk-gold-dim); letter-spacing: 0.08em; }
+
+/* Photo overlays keep a stable dark scrim; text remains readable over any live camera frame. */
+.tip { color: var(--xk-on-dark); background: var(--xk-photo-shade); padding: 12px; bottom: 0; font-size: 15px; }
+.tip small { color: var(--xk-on-dark); font-size: 12px; }
+.guide-entry, .preview-loading { color: var(--xk-on-dark); background: var(--xk-photo-shade); }
+.guide-entry { min-height: 48px; }
+.guide { border-color: var(--xk-on-dark); animation: none; box-shadow: 0 0 0 200vmax var(--xk-overlay); }
+.corner { border-color: var(--xk-on-dark); }
+.fallback { width: min(90%, 430px); top: 45%; }
+.fallback .xk-btn { width: 100%; background: var(--xk-ink-2); color: var(--xk-paper); }
+.qr-overlay { padding: calc(20px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom)); }
+.qr-panel { max-width: 100%; max-height: 100%; overflow-y: auto; }
+.shutter { flex: none; }
+.shutter i { background: var(--xk-button); }
+@media (max-width: 600px) {
+  .capture { padding: 18px 14px; }
+  .capture-heading { margin-bottom: 16px; }
+  .actions { gap: 12px; }
+  .side, .side-stack { width: min(29vw, 148px); }
+  .side, .side-stack > .xk-btn { font-size: 12px; padding: 6px; letter-spacing: 0; gap: 4px; }
+  .shutter { width: 60px; height: 60px; padding: 4px; }
+  .shutter i { width: 46px; height: 46px; }
+  .gd-title { font-size: 24px; }
+  .gd-sub { font-size: 13px; text-align: center; }
+}
 </style>

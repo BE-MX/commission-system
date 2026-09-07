@@ -1,8 +1,9 @@
 <template>
   <div class="matching">
     <div class="m-scroll">
-      <h2 class="xk-title">为您甄选 <em>{{ flow.matches.value.length }}</em> 款</h2>
-      <div class="xk-sub">依据您的脸型 · 肤色 · 气质定制推荐 · 轻触选择一款</div>
+      <p class="xk-eyebrow">CURATED FOR YOU</p>
+      <h2 class="xk-title">为您甄选，恰好是您</h2>
+      <div class="xk-sub">依据您的脸型与气质，为您推荐 {{ flow.matches.value.length }} 款 · 轻触选择</div>
 
       <!-- AI 面容解读：只展示 serialize 剥离 internal 后的正面公开字段 -->
       <div v-if="flow.analysis.value" class="reading">
@@ -15,10 +16,11 @@
       </div>
 
       <div class="cards">
-        <div
+        <button type="button"
           v-for="(match, i) in shownMatches" :key="match.wig_id"
+          :aria-pressed="flow.selectedWigId.value === match.wig_id"
           class="card" :class="{ zhizhen: match.series === 'zhizhen', custom: match.custom, sel: flow.selectedWigId.value === match.wig_id }"
-          :style="{ animationDelay: `${0.15 + i * 0.25}s` }"
+          :style="{ animationDelay: `${i * 0.07}s` }"
           @click="pickWig(match.wig_id)"
         >
           <span v-if="match.custom" class="badge badge-custom">自选</span>
@@ -35,8 +37,8 @@
           <div v-if="match.custom" class="pct pct-custom">自选<small>发型库</small></div>
           <div v-else-if="match.must_recommend" class="pct pct-custom">主推<small>为您优选</small></div>
           <div v-else-if="match.score != null" class="pct">{{ Math.round(match.score) }}<small>匹配</small></div>
-          <span class="tick" :class="{ on: flow.selectedWigId.value === match.wig_id }">✓</span>
-        </div>
+          <span class="tick" :class="{ on: flow.selectedWigId.value === match.wig_id }" aria-hidden="true">✓</span>
+        </button>
       </div>
 
       <div class="match-actions">
@@ -48,10 +50,10 @@
 
       <!-- 从发型库选择：全部启用发型网格，滑动挑一款 -->
       <div v-if="libraryOpen" class="lib-overlay" @click.self="libraryOpen = false">
-        <div class="lib-panel">
+        <div class="lib-panel" role="dialog" aria-modal="true" aria-label="从发型库选择">
           <div class="lib-head">
             <span class="lib-title">从发型库选择</span>
-            <button class="lib-close" @click="libraryOpen = false">✕</button>
+            <button class="lib-close" aria-label="关闭发型库" @click="libraryOpen = false">✕</button>
           </div>
           <div v-loading="libraryLoading" class="lib-grid">
             <button
@@ -277,7 +279,7 @@ function centerScene(i) {
   const el = trackRef.value
   const card = el?.querySelectorAll('.scard')[i]
   if (!el || !card) return
-  el.scrollTo({ left: cardCenterOffset(el, card), behavior: 'smooth' })
+  el.scrollTo({ left: cardCenterOffset(el, card), behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
 }
 
 onMounted(async () => {
@@ -298,280 +300,4 @@ onMounted(async () => {
 onBeforeUnmount(() => { if (scRaf) cancelAnimationFrame(scRaf) })
 </script>
 
-<style scoped>
-/* 滚动交给内层 .m-scroll，CTA 留在外层常驻可见——这一屏内容长（解读+6 张卡+发色+场景），
-   小屏上按钮跟着内容滚出屏幕后，客户挑完款找不到「生成」。目标是选完就能按下，不是滚到底去找 */
-.matching { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; padding: 2vh 6vw 3vh; overflow: hidden; }
-.m-scroll {
-  flex: 1; min-height: 0; width: 100%;
-  display: flex; flex-direction: column; align-items: center;
-  overflow-y: auto; -webkit-overflow-scrolling: touch;
-}
-.reading {
-  width: min(88vw, 560px); margin-top: 2vh; padding: 14px 18px;
-  border: 1px solid var(--xk-gold-line); border-radius: 16px;
-  background: rgba(232, 196, 121, 0.05);
-  animation: card-in 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.2) backwards;
-}
-.reading-note {
-  font-family: 'Noto Serif SC', serif; font-size: 14px; line-height: 1.7;
-  letter-spacing: 0.06em; color: var(--xk-gold-hi);
-}
-.reading-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.rchip {
-  font-size: 11px; letter-spacing: 0.12em; color: var(--xk-mut);
-  border: 1px solid var(--xk-gold-line); border-radius: 14px; padding: 4px 12px;
-}
-.rchip b { color: var(--xk-gold); font-weight: 400; margin-right: 6px; }
-.cards { width: min(88vw, 560px); display: flex; flex-direction: column; gap: 14px; margin-top: 3vh; }
-.card {
-  position: relative; display: flex; gap: 16px; align-items: center;
-  border: 1px solid var(--xk-gold-line); border-radius: 18px; padding: 14px 16px;
-  background: linear-gradient(120deg, rgba(232, 196, 121, 0.06), rgba(232, 196, 121, 0.015));
-  transform-origin: top;
-  /* backwards 填充：入场动画只定义 from，结束后不锁 transform（否则 :active 按压 scale 会被 fill:forwards 持帧覆盖） */
-  animation: card-in 0.9s cubic-bezier(0.2, 0.9, 0.3, 1.2) backwards;
-}
-@keyframes card-in { from { opacity: 0; transform: perspective(600px) rotateX(24deg) translateY(14px); } }
-.card.zhizhen {
-  border-color: rgba(232, 196, 121, 0.55);
-  background: linear-gradient(120deg, rgba(232, 196, 121, 0.14), rgba(232, 196, 121, 0.03));
-}
-.card { cursor: pointer; transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), border-color 160ms ease, background 160ms ease; }
-.card:active { transform: scale(0.98); }
-.card.sel {
-  border-color: var(--xk-gold);
-  background: linear-gradient(120deg, rgba(232, 196, 121, 0.18), rgba(232, 196, 121, 0.05));
-  box-shadow: 0 0 18px rgba(232, 196, 121, 0.18);
-}
-.tick {
-  position: absolute; right: 12px; bottom: 10px;
-  width: 22px; height: 22px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 12px; color: var(--xk-ink);
-  background: linear-gradient(110deg, var(--xk-gold), var(--xk-gold-hi));
-  opacity: 0; transform: scale(0.9);
-  transition: opacity 160ms cubic-bezier(0.23, 1, 0.32, 1), transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-.tick.on { opacity: 1; transform: scale(1); }
-.swap {
-  margin-top: 14px; background: transparent; border: none; cursor: pointer;
-  font-size: 12px; letter-spacing: 0.18em; color: var(--xk-gold-dim);
-  padding: 8px 16px; transition: color 160ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-.swap:active { transform: scale(0.96); }
-.match-actions { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; justify-content: center; margin-top: 14px; }
-.match-actions .swap { margin-top: 0; }
-.lib-entry { color: var(--xk-gold-hi); border: 1px solid var(--xk-gold-line); border-radius: 20px; }
-
-/* 自选卡（从发型库选的款） */
-.card.custom {
-  border-color: var(--xk-gold);
-  background: linear-gradient(120deg, rgba(232, 196, 121, 0.16), rgba(232, 196, 121, 0.04));
-}
-.badge-custom { background: linear-gradient(110deg, var(--xk-gold-hi), var(--xk-gold)); }
-.pct-custom { font-style: normal; font-size: 15px; }
-
-/* 从发型库选择浮层 */
-.lib-overlay {
-  position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
-  /* fixed 不吃 .xk-root 的安全区 padding，自己收口；面板高度随之改成相对本容器的百分比，
-     一并解开「vh ≠ 手机可见高度」——地址栏或刘海会把 84vh 的底部推到屏幕外 */
-  padding:
-    calc(16px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right))
-    calc(16px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
-  background: rgba(6, 5, 3, 0.72); backdrop-filter: blur(4px); animation: lib-fade 200ms ease;
-}
-@keyframes lib-fade { from { opacity: 0; } to { opacity: 1; } }
-.lib-panel {
-  width: min(92vw, 720px); max-height: 100%; display: flex; flex-direction: column;
-  border: 1px solid var(--xk-gold-line); border-radius: 20px;
-  background: linear-gradient(160deg, var(--xk-ink-2), var(--xk-ink));
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5), 0 0 40px rgba(232, 196, 121, 0.12);
-  animation: lib-pop 240ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-@keyframes lib-pop { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
-.lib-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 18px 22px; border-bottom: 1px solid var(--xk-gold-line);
-}
-.lib-title { font-family: 'Noto Serif SC', serif; font-size: 18px; color: var(--xk-gold-hi); letter-spacing: 0.08em; }
-/* 44px 是最小可靠触摸目标：原来 26x34 的裸文字按钮在手机上要点两三次才中 */
-.lib-close {
-  flex: none; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
-  background: transparent; border: none; color: var(--xk-mut); font-size: 18px; cursor: pointer;
-}
-.lib-close:active { transform: scale(0.9); }
-.lib-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 12px; padding: 18px 22px; overflow-y: auto;
-}
-.lib-empty {
-  grid-column: 1 / -1; padding: 40px 0; text-align: center;
-  font-size: 12px; letter-spacing: 0.14em; color: var(--xk-mut);
-}
-.lib-card {
-  position: relative; display: flex; flex-direction: column; gap: 8px; padding: 0;
-  border: 1px solid var(--xk-gold-line); border-radius: 14px; overflow: hidden;
-  background: var(--xk-ink-2); cursor: pointer;
-  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), border-color 160ms ease;
-}
-.lib-card:active { transform: scale(0.97); }
-.lib-card.on { border-color: var(--xk-gold); box-shadow: 0 0 16px rgba(232, 196, 121, 0.2); }
-/* img 必须 position:absolute 脱离文档流——否则流内的 <img height:100%> 会用图片自身比例
-   撑高缩略框，本机荣耀 WebView 上 aspect-ratio 被架空：2:3 封面把框顶高、名字被挤出
-   overflow:hidden 裁掉，只有恰好 3:4 的封面幸免（2026-07-24 CDP 实测定位）。绝对定位后
-   框高纯由 aspect-ratio 决定，各卡统一，名字恒可见。 */
-/* flex:none 是配套保险——2026-07-24 那次是 img 撑高缩略框把名字挤出 overflow:hidden，
-   而缩略框本身作为 flex item 默认可收缩，同样能在名字与图之间挤掉一方。两端都锁死才稳。 */
-.lib-thumb { flex: none; position: relative; width: 100%; aspect-ratio: 3 / 4; display: flex; align-items: center; justify-content: center; }
-.lib-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.lib-ph { font-size: 12px; letter-spacing: 0.3em; color: var(--xk-gold-dim); }
-.lib-nm { flex: none; font-size: 12px; color: var(--xk-paper); text-align: center; padding: 0 6px 10px; line-height: 1.4; }
-.lib-tag {
-  position: absolute; top: 8px; right: 8px; font-size: 9px; letter-spacing: 0.1em; color: var(--xk-ink);
-  background: linear-gradient(110deg, var(--xk-gold), var(--xk-gold-hi)); padding: 2px 8px; border-radius: 10px;
-}
-.badge {
-  position: absolute; top: -10px; right: 16px;
-  font-size: 10px; letter-spacing: 0.24em; color: var(--xk-ink);
-  background: linear-gradient(110deg, var(--xk-gold), var(--xk-gold-hi));
-  padding: 4px 12px; border-radius: 14px;
-}
-.thumb {
-  width: 76px; height: 92px; flex: none; border-radius: 14px; overflow: hidden;
-  border: 1px solid var(--xk-gold-line); background: #1c1610;
-  display: flex; align-items: center; justify-content: center;
-}
-.thumb img { width: 100%; height: 100%; object-fit: cover; }
-.thumb-ph { font-size: 12px; letter-spacing: 0.3em; color: var(--xk-gold-dim); }
-.info { flex: 1; min-width: 0; }
-.info .no { font-size: 10px; letter-spacing: 0.24em; color: var(--xk-gold-dim); }
-.info .nm { font-family: 'Noto Serif SC', serif; font-size: 18px; color: var(--xk-gold-hi); margin: 3px 0; }
-.info .why { font-size: 12px; color: var(--xk-mut); line-height: 1.7; }
-.pct {
-  flex: none; font-family: 'Noto Serif SC', serif; font-style: italic;
-  font-size: 24px; color: var(--xk-gold); text-align: right;
-}
-.pct small { display: block; font-style: normal; font-size: 9px; letter-spacing: 0.2em; color: var(--xk-mut); }
-/* 发色区与 CTA 作为一组吸底（无色板数据时 CTA 自身吸底，布局同改造前） */
-/* margin-top:auto 仍在（把发色区顶到滚动区底部）；原先的 .color-pick + .go 已失效——
-   CTA 移出 .m-scroll 后不再是它的兄弟，间距统一由 .go 自己的 margin-top 给 */
-.color-pick { width: min(88vw, 560px); margin-top: auto; padding-top: 16px; }
-.cp-title {
-  font-size: 11px; letter-spacing: 0.24em; color: var(--xk-gold-dim);
-  display: flex; align-items: baseline; gap: 10px;
-}
-.cp-title small { font-size: 10px; letter-spacing: 0.1em; color: var(--xk-mut); }
-.chips {
-  display: flex; gap: 8px; margin-top: 10px; padding-bottom: 6px;
-  overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
-}
-.chips::-webkit-scrollbar { display: none; }
-.chip {
-  flex: none; display: flex; align-items: center; gap: 7px;
-  height: 38px; padding: 0 14px; border-radius: 20px; cursor: pointer;
-  border: 1px solid var(--xk-gold-line); background: transparent;
-  color: var(--xk-mut); font-size: 12px; letter-spacing: 0.08em;
-  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), border-color 160ms ease, color 160ms ease;
-}
-.chip:active { transform: scale(0.96); }
-.chip.on { border-color: var(--xk-gold); color: var(--xk-gold-hi); }
-.sw {
-  width: 16px; height: 16px; border-radius: 50%;
-  border: 1px solid var(--xk-gold-line);
-  object-fit: cover; flex: none;
-}
-.sw.origin { background: conic-gradient(var(--xk-ink-2), var(--xk-gold-dim), var(--xk-ink-2)); }
-.chip-tag { margin-left: 7px; font-size: 10px; color: var(--xk-gold-dim); letter-spacing: 0.1em; }
-
-/* ── 生成场景滑动选择器（居中卡放大，仅示意不参与合成） ── */
-.scene-pick { width: min(88vw, 560px); margin-top: auto; --scard-w: 118px; }
-.color-pick + .scene-pick { margin-top: 20px; }
-/* 分类分段控件（职场专业 / 长辈生活）：金色胶囊，选中填金 */
-.scene-cats { display: flex; gap: 8px; margin-top: 12px; }
-.scene-cat {
-  flex: none; height: 34px; padding: 0 18px; border-radius: 18px; cursor: pointer;
-  border: 1px solid var(--xk-gold-line); background: transparent;
-  color: var(--xk-mut); font-size: 13px; letter-spacing: 0.06em;
-  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), border-color 160ms ease,
-    color 160ms ease, background 160ms ease;
-}
-.scene-cat:active { transform: scale(0.96); }
-.scene-cat.on {
-  border-color: var(--xk-gold); color: var(--xk-ink);
-  background: linear-gradient(110deg, var(--xk-gold-dim), var(--xk-gold) 55%, var(--xk-gold-hi));
-}
-.scene-cats + .scene-track { margin-top: 10px; }
-.scene-track {
-  /* 必须定位：让 .scard 的 offsetParent = 本容器，否则 offsetLeft 相对更上层的 xk-root(fixed)
-     测量，混入常量偏移，syncScene/centerScene 的居中数学在宽屏错位（2026-07-09 对抗性审查修复） */
-  position: relative;
-  display: flex; gap: 4px; margin-top: 12px; padding-bottom: 4px;
-  padding-inline: calc((100% - var(--scard-w)) / 2);
-  overflow-x: auto; scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch; scrollbar-width: none;
-}
-.scene-track::-webkit-scrollbar { display: none; }
-.scard {
-  flex: none; width: var(--scard-w); scroll-snap-align: center;
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
-  padding: 0; border: none; background: transparent; cursor: pointer;
-  transform: scale(0.82); opacity: 0.5; transform-origin: center bottom;
-  transition: transform 240ms cubic-bezier(0.23, 1, 0.32, 1),
-    opacity 240ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-.scard.on { transform: scale(1); opacity: 1; }
-.scard-pic {
-  width: 100%; aspect-ratio: 3 / 4; border-radius: 16px; overflow: hidden;
-  border: 1px solid var(--xk-gold-line); background: var(--xk-ink-2);
-  display: flex; align-items: center; justify-content: center;
-  transition: border-color 240ms ease, box-shadow 240ms ease, transform 120ms ease-out;
-}
-.scard.on .scard-pic { border-color: var(--xk-gold); box-shadow: 0 8px 28px rgba(232, 196, 121, 0.22); }
-.scard:active .scard-pic { transform: scale(0.97); }
-.scard-pic img { width: 100%; height: 100%; object-fit: cover; }
-.scard-ph {
-  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
-  background:
-    radial-gradient(circle at 50% 32%, rgba(232, 196, 121, 0.16), rgba(232, 196, 121, 0.02) 62%),
-    linear-gradient(160deg, var(--xk-ink-2), var(--xk-ink));
-}
-.scard-emoji { font-size: 34px; opacity: 0.6; filter: saturate(0.8); }
-.scard-cap { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.scard-lb { font-family: 'Noto Serif SC', serif; font-size: 15px; color: var(--xk-mut); transition: color 240ms ease; }
-.scard.on .scard-lb { color: var(--xk-gold-hi); }
-.scard-tg { font-size: 10px; letter-spacing: 0.14em; color: var(--xk-gold-dim); }
-
-@media (prefers-reduced-motion: reduce) {
-  .scard { transition: opacity 200ms ease; transform: none; opacity: 0.55; }
-  .scard.on { transform: none; opacity: 1; }
-  .scard:active .scard-pic { transform: none; }
-}
-
-/* 64px 对齐首屏主 CTA 的分量：这是全流程的终点动作，52px 的通用按钮压不住。
-   第二道墨色阴影（向上偏移 + 扩散）把滚动内容在按钮上沿柔化掉——否则卡片被拦腰切断，
-   看起来像内容被裁没了，而不是「还能往下滑」 */
-/* 出图风格：必选项，横向三档。压在生成按钮上方——客户的决策顺序是「选发型 → 定风格 → 生成」，
-   放在按钮之后会被 .go 的上沿阴影盖住，放在卡片区之内又会跟着滚出视野 */
-.go {
-  flex: none; margin-top: 16px; margin-bottom: 1vh; min-width: 300px; height: 64px; font-size: 17px;
-  box-shadow: 0 6px 26px rgba(232, 196, 121, 0.3), 0 -14px 22px 18px var(--xk-ink);
-}
-.go:disabled { opacity: 0.4; }
-/* ── 手机竖屏（≤560px）── 横向留白让给内容：88vw 在 390px 屏上只剩 343px，
-   而卡片内 缩略图76 + 匹配度48 + 两道 gap 是固定开销，发型名与推荐理由被压到不足 160px */
-@media (max-width: 560px) {
-  /* 三档横排 + 前缀标签在 390px 屏上会挤成两行错位：标签独占一行，选项行居中铺开 */
-
-  .matching { padding: 1.5vh 4vw 2vh; }
-  .reading, .cards, .color-pick, .scene-pick { width: 100%; }
-  .go { min-width: 0; width: 100%; height: 56px; font-size: 16px; }
-  .info .nm { font-size: 17px; }
-  .pct { font-size: 21px; }
-  .lib-head { padding: 14px 16px; }
-  .lib-title { font-size: 16px; }
-  .lib-grid { padding: 14px 16px; gap: 10px; }
-  .lib-nm { font-size: 13px; padding: 0 6px 12px; }
-}
-</style>
+<style scoped src="./styles/matching.css"></style>

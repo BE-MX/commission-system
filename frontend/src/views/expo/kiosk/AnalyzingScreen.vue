@@ -1,8 +1,11 @@
 <template>
   <div class="analyzing">
+    <p class="xk-eyebrow">DISCOVER YOUR SIGNATURE</p>
+    <h2 class="xk-title">读懂气质，找到适合您的美</h2>
+    <p class="xk-sub" role="status">正在分析您的照片，请稍候</p>
     <div class="scan-stage">
       <img v-if="photoUrl" :src="photoUrl" class="photo" alt="" />
-      <div class="grid" />
+
       <div class="scanline" />
     </div>
 
@@ -15,7 +18,7 @@
 
     <div class="proof">
       <transition name="fade" mode="out-in">
-        <p :key="proofIndex">“{{ TESTIMONIALS[proofIndex].quote }}”<em> —— {{ TESTIMONIALS[proofIndex].who }}</em></p>
+        <p :key="proofIndex">{{ ATELIER_NOTES[proofIndex] }}</p>
       </transition>
     </div>
 
@@ -56,62 +59,37 @@ const chips = computed(() => {
   ]
 })
 
-// 等待期社会证明：老客户证言轮播（正式素材由市场部提供后替换）
-const TESTIMONIALS = [
-  { quote: '这不像假发，像我三年前的自己。', who: '45 岁 · 企业管理者 · 莱莎老客户' },
-  { quote: '开会的时候再也不会想头发的事了。', who: '莱莎老客户' },
-  { quote: '第一次觉得贵，第二次只买莱莎。', who: '两年复购客户' },
+// 等待文案只提供体验引导，不把占位内容呈现为真实客户证言。
+const ATELIER_NOTES = [
+  '接下来，您可以挑选发型、发色与生成场景。',
+  '轻触喜欢的发型，看看它与您的气质如何相衬。',
+  '效果生成后，可以拖动对比，并扫码保存到手机。',
 ]
 const proofIndex = ref(0)
 let proofTimer = null
 onMounted(() => {
   proofTimer = setInterval(() => {
-    proofIndex.value = (proofIndex.value + 1) % TESTIMONIALS.length
+    proofIndex.value = (proofIndex.value + 1) % ATELIER_NOTES.length
   }, 5000)
 })
 onBeforeUnmount(() => clearInterval(proofTimer))
 </script>
 
 <style scoped>
-.analyzing { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 0 6vw 3vh; }
-.scan-stage {
-  position: relative; width: min(64vw, 420px); flex: 1; min-height: 0; max-height: 46dvh;
-  border-radius: 24px; overflow: hidden;
-  background: radial-gradient(60% 55% at 50% 45%, #2c251c, #15110c 75%);
-}
-.photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.85; }
-.grid {
-  position: absolute; inset: 0; opacity: 0.16;
-  background-image:
-    linear-gradient(rgba(232, 196, 121, 0.5) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(232, 196, 121, 0.5) 1px, transparent 1px);
-  background-size: 26px 26px;
-}
-.scanline {
-  position: absolute; left: 0; right: 0; height: 80px; top: -90px;
-  background: linear-gradient(180deg, transparent, rgba(232, 196, 121, 0.22) 45%, var(--xk-gold) 50%, rgba(232, 196, 121, 0.22) 55%, transparent);
-  animation: scan 3.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  mix-blend-mode: screen;
-}
-@keyframes scan { 0% { top: -90px; } 55%, 100% { top: 105%; } }
-.readouts { width: min(64vw, 420px); display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
-.chip {
-  display: flex; justify-content: space-between; align-items: center;
-  border: 1px solid var(--xk-gold-line); border-radius: 12px;
-  padding: 12px 18px; background: rgba(232, 196, 121, 0.04);
-  opacity: 0; transform: translateY(10px);
-  animation: chip-in 0.7s ease forwards;
-}
-@keyframes chip-in { to { opacity: 1; transform: none; } }
-.chip .k { font-size: 11px; letter-spacing: 0.26em; color: var(--xk-gold-dim); }
-.chip .v { font-size: 14px; color: var(--xk-gold-hi); }
-.proof {
-  margin-top: 18px; min-height: 44px; max-width: 480px; text-align: center;
-  font-size: 12px; color: var(--xk-mut); line-height: 1.8;
-}
-.proof em { font-style: normal; color: var(--xk-gold-dim); }
-.fade-enter-active, .fade-leave-active { transition: opacity 0.6s; }
+.analyzing { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: center; padding: 28px 5vw; }
+.scan-stage { flex: none; position: relative; width: min(60vw, 360px); height: clamp(230px, 36vh, 440px); border-radius: 180px 180px 12px 12px; overflow: hidden; background: var(--xk-surface); margin-top: 26px; border: 7px solid var(--xk-ink-2); outline: 1px solid var(--xk-gold-line); }
+.photo { width: 100%; height: 100%; object-fit: cover; }
+.scanline { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(120deg, transparent 25%, var(--xk-glow) 50%, transparent 75%); animation: scan-light 3.6s ease-in-out infinite; }
+@keyframes scan-light { from { transform: translateX(-120%); } to { transform: translateX(120%); } }
+.readouts { width: min(100%, 760px); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 26px; }
+.chip { padding: 12px; text-align: center; border-bottom: 1px solid var(--xk-gold-line); animation: chip-in 480ms var(--xk-ease) backwards; }
+.k { display: block; color: var(--xk-mut); font-size: 12px; margin-bottom: 8px; }
+.v { font-size: 16px; color: var(--xk-paper); }
+@keyframes chip-in { from { opacity: 0; transform: translateY(8px); } }
+.proof { color: var(--xk-mut); text-align: center; font-size: 14px; min-height: 68px; max-width: 640px; margin-top: 18px; }
+.stages { display: flex; gap: 28px; color: var(--xk-mut); font-size: 13px; }
+.stages .on { color: var(--xk-gold); border-bottom: 1px solid var(--xk-gold); padding-bottom: 8px; }
+.fade-enter-active, .fade-leave-active { transition: opacity 300ms ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
-.stages { display: flex; gap: 30px; margin-top: 12px; font-size: 11px; letter-spacing: 0.2em; color: var(--xk-mut); }
-.stages .on { color: var(--xk-gold); border-bottom: 1px solid var(--xk-gold); padding-bottom: 6px; }
+@media (max-width: 600px) { .readouts { grid-template-columns: repeat(2, minmax(0, 1fr)); } .scan-stage { width: 65vw; } .analyzing { padding-top: 22px; } }
 </style>

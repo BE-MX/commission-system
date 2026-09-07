@@ -192,3 +192,28 @@
    --radius-lg:  12px   (cards, containers)
    --radius-xl:  16px   (dialogs, drawers)
 */
+
+/* 展会 A 私享沙龙：只在独立 kiosk 内生效，业务后台不继承。 */
+.xk-root {
+  --xk-ink: #f7f3ed;
+  --xk-ink-2: #fffcf7;
+  --xk-paper: #35261e;
+  --xk-gold: #745139;
+  --xk-gold-hi: #35261e;
+  --xk-gold-dim: #735f50;
+  --xk-gold-line: #d5c6b6;
+  --xk-mut: #74685d;
+  --xk-warn: #a43827;
+  --xk-surface: #eee6db;
+  --xk-selected: #eaddcc;
+  --xk-button: #38261b;
+  --xk-button-hover: #513a2a;
+  --xk-on-dark: #fffbf5;
+  --xk-photo-shade: rgba(32, 23, 17, 0.64);
+  --xk-overlay: rgba(40, 30, 23, 0.46);
+  --xk-shadow: rgba(67, 45, 27, 0.12);
+  --xk-glow: rgba(255, 248, 233, 0.64);
+  --xk-transparent: rgba(247, 243, 237, 0);
+  --xk-serif: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  --xk-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}

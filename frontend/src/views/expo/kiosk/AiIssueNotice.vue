@@ -34,27 +34,28 @@ const issue = computed(() => flow.aiIssue.value)
 
 <style scoped>
 .xk-ai-retry {
+  pointer-events: none;
   position: absolute;
   left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); z-index: 71;
   width: min(88vw, 620px); transform: translateX(-50%);
   padding: 12px 22px; border: 1px solid var(--xk-gold-line); border-radius: 24px;
-  background: rgba(20, 17, 13, 0.94); color: var(--xk-gold-hi);
-  box-shadow: 0 8px 28px rgba(6, 5, 3, 0.42);
+  background: var(--xk-ink-2); color: var(--xk-gold-hi);
+  box-shadow: 0 8px 28px var(--xk-overlay);
   text-align: center; font-size: 13px; letter-spacing: 0.08em;
 }
 .xk-ai-contact {
-  position: absolute; inset: 52px 0 0; z-index: 74;
+  position: absolute; inset: calc(var(--xk-header-height) + env(safe-area-inset-top)) 0 0; z-index: 74;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(6, 5, 3, 0.78);
+  background: var(--xk-overlay);
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
 }
 .xk-ai-contact-panel {
   width: min(82vw, 440px); padding: 34px 30px; border: 1px solid var(--xk-gold-line);
   border-radius: 22px; background: var(--xk-ink-2); text-align: center;
-  box-shadow: 0 18px 54px rgba(6, 5, 3, 0.58);
+  box-shadow: 0 18px 54px var(--xk-overlay);
 }
 .xac-title {
-  color: var(--xk-warn); font-family: 'Noto Serif SC', serif;
+  color: var(--xk-warn); font-family: var(--xk-serif);
   font-size: 24px; letter-spacing: 0.16em;
 }
 .xac-sub { margin-top: 12px; color: var(--xk-mut); font-size: 13px; letter-spacing: 0.08em; }

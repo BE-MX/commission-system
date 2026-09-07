@@ -1,0 +1,9 @@
+# Private Atelier hero
+
+`atelier-hero.webp` is an AI-generated editorial illustration for the approved A concept (2026-09-07). It depicts a fictional model; the welcome screen identifies it as AI illustrative imagery. It is not a customer result or a product performance claim. The UI, lettering and controls are rendered by Vue, not baked into the photograph.
+
+Generated with the built-in imagegen tool using the approved A board as reference. The 1536×1024 image is encoded as WebP (quality 88; 93,766 bytes) without changing the composition. No production asset references the tool's generated-image directory.
+
+Prompt:
+
+> Use case: compositing / identity-preserve. Produce ONE photographic hero asset for implementation of the approved A Private Atelier LESHINE app. Use the woman in the LEFT welcome screen of the reference as the subject reference, preserving her Chinese facial identity, natural mature age about 45, elegant very short dark chestnut bob, cream V-neck silk blouse and tiny gold necklace. Remove ALL app UI, text, buttons, frames, typography and other screen panels. Create a polished single photorealistic landscape editorial beauty photograph, approx 1536x1024. The woman is on the RIGHT half, from mid torso upwards, head entirely inside frame with generous space above, gently facing slightly right with confident warm expression. LEFT half is mostly empty softly lit creamy travertine/plaster wall with graceful architectural arch shadow, useful for overlaying live HTML text. Premium private hair salon in warm daylight, subtle plant blurred far right, extremely realistic individual hair strands, natural skin and age, warm ivory and beige, like high end skincare editorial. No baked-in words or logo, no borders, no before/after or collage. Deliver only the photograph, not the UI mockup.
