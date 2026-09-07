@@ -77,11 +77,17 @@ export class ArkClient {
         throw new ArkApiError(`Ark API 返回了无效 JSON (HTTP ${response.status})`, response.status);
       }
       if (!response.ok) {
-        const detail = typeof payload?.detail === "string"
+        const detail = Array.isArray(payload?.detail)
+          ? payload.detail.slice(0, 8).map((issue) => {
+            // Never echo FastAPI input/ctx/msg: they can contain credentials or raw records.
+            const location = Array.isArray(issue?.loc) ? issue.loc.join(".") : "body";
+            return `${location}: ${typeof issue?.type === "string" ? issue.type : "validation_error"}`;
+          }).join("; ")
+          : typeof payload?.detail === "string"
           ? payload.detail
           : (typeof payload?.message === "string" ? payload.message : "请求失败");
         throw new ArkApiError(
-          `Ark API HTTP ${response.status}: ${this.#redact(detail).slice(0, 500)}`,
+          `Ark API HTTP ${response.status}: ${this.#redact(detail).split(body?.lease_token || "\u0000").join("[REDACTED]").slice(0, 500)}`,
           response.status,
         );
       }

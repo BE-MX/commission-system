@@ -146,3 +146,26 @@ test("ArkClient submits a unified research industry gate with the in-memory leas
   assert.equal(received.body.agent_id, "test-agent");
   assert.equal(received.body.lease_token, "l".repeat(32));
 });
+
+test("422 validation errors retain field paths without echoing input, context or lease secrets", async () => {
+  const secret = "secret-bearer";
+  const lease = "secret-lease";
+  const api = new ArkClient({ baseUrl: "https://ark.example", token: secret }, async () => new Response(JSON.stringify({
+    detail: [
+      { loc: ["body", "candidates", 0, "external_record_id"], type: "missing", msg: `Field required ${lease}`, input: { lease_token: lease }, ctx: { secret } },
+      { loc: ["body", "candidates", 0, "score"], type: "missing", input: secret },
+    ],
+  }), { status: 422 }));
+  await assert.rejects(api.submitCandidates(3, lease, "batch", []), (error) => {
+    assert.match(error.message, /body.candidates.0.external_record_id: missing/);
+    assert.match(error.message, /body.candidates.0.score: missing/);
+    assert.doesNotMatch(error.message, /secret-bearer|secret-lease|Field required/);
+    assert.equal(error.status, 422);
+    return true;
+  });
+  const echoed = new ArkClient({ baseUrl: "https://ark.example", token: secret }, async () => new Response(JSON.stringify({ detail: `Rejected ${lease} ${secret}` }), { status: 400 }));
+  await assert.rejects(echoed.submitCandidates(3, lease, "batch", []), (error) => {
+    assert.doesNotMatch(error.message, /secret-bearer|secret-lease/);
+    return true;
+  });
+});
