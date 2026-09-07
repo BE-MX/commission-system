@@ -11,6 +11,10 @@ deploy\deploy.bat --cloud-only --no-pull --prepare-only # 准备并校验，暂�
 
 ## 目录与版本规则
 
+双击或右键「以管理员身份运行」时，发布结束会保留窗口，按任意键关闭；失败时先查看上方 `DEPLOY FAILED` 或 Python 启动错误，再处理具体原因。窗口关闭本身不代表部署成功。无人值守调用前设置 `DEPLOY_NO_PAUSE=1`（PowerShell：`$env:DEPLOY_NO_PAUSE='1'`），跳过等待并保留发布程序的退出码。
+
+旧版入口若闪退，可先打开管理员命令提示符，在现有窗口中运行服务器仓库下的 `deploy\deploy.bat`，以保留错误输出。无需先改服务器受 Git 管理的脚本，以免触发下方的干净工作区检查。
+
 - 仓库必须干净；候选源码、构建缓存、依赖、传输包、状态只在 `.deploy_state/`。
 - Git 只传缺失对象到北京 `repo.git` 的独立 `deploy/<SHA>` 引用；不会 push origin/main。
 - 默认 fetch 后只接收可快进的新提交；本地已审查提交领先远端时保留本地 HEAD，分叉时停止发布。无需为了部署先推送 main。
