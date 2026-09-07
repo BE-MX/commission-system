@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok, page_result
-from app.expo import ai_pipeline, quota_service, script_service, service, store_service, upload_service
+from app.expo import prompt_service, ai_pipeline, quota_service, script_service, service, store_service, upload_service
 from app.expo.ai_pipeline import (
     build_composite_rows,
     build_scene_rows,
@@ -37,7 +37,10 @@ from app.expo.schemas import (
 
 logger = logging.getLogger("commission.expo")
 
+from app.expo.prompt_router import router as prompt_router, prompt_transaction
+
 router = APIRouter()
+router.include_router(prompt_router)
 
 
 def _commit_or_500(db: Session, context: str) -> None:
@@ -182,7 +185,7 @@ def generate(
         if store.total_quota - store.used_quota < planned_count:
             raise HTTPException(400, "门店剩余额度不足，请联系运营充值")
         rows = build_scene_rows(
-            session_id, scenes, quality=body.quality, prompt_variant=body.prompt_variant,
+            session_id, scenes, quality=body.quality,
         )
     else:
         if session.status == "pending":
@@ -211,10 +214,13 @@ def generate(
             raise HTTPException(400, "门店剩余额度不足，请联系运营充值")
         rows = build_composite_rows(
             session_id, wig_ids, hair_color=hair_color, scene=tryon_scene, db=db,
-            quality=body.quality, prompt_variant=body.prompt_variant,
+            quality=body.quality,
         )
 
-    result_ids, start_strategy = prepare_composite_batch(session_id, rows, db)
+    with prompt_transaction(db):
+        version = prompt_service.capture_batch(db, session, rows, body.prompt_version_id)
+        version_summary = prompt_service.serialize_version(version)
+        result_ids, start_strategy = prepare_composite_batch(session_id, rows, db)
     if not result_ids:
         # 正常路径不会出现：row 为空时早被 planned_count 校验拦住；防御性兜底
         raise HTTPException(500, "生成任务创建失败")
@@ -238,8 +244,8 @@ def generate(
 
     if session.mode == "scene":
         return ok({"scene_keys": [r.scene_json["key"] for r in rows if r.scene_json],
-                   "prompt_variant": body.prompt_variant})
-    return ok({"wig_ids": [r.wig_id for r in rows], "prompt_variant": body.prompt_variant})
+                   "prompt_version": version_summary})
+    return ok({"wig_ids": [r.wig_id for r in rows], "prompt_version": version_summary})
 
 
 @router.get("/hair-colors", summary="发色库列表（kiosk 默认只取启用项）")

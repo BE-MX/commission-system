@@ -1,3 +1,4 @@
+from tests import expo_prompt_support as prompts
 """发型×发色组合三角度参考图（072 迁移）测试。
 
 覆盖：
@@ -54,7 +55,7 @@ def test_build_prompt_uses_combo_photos_no_recolor(tmp_path, monkeypatch):
         "hair_color_id": 5, "name": "栗棕", "code": "6", "hex": "#5a3a26",
         "ref_photos": photos,
     })
-    prompt, images, size = ai_pipeline._build_prompt(_session(), row, wig)
+    prompt, images, size = prompts.build_prompt(_session(), row, wig)
     assert "reference images already show the exact target color" in prompt
     assert "recolor it to this exact" not in prompt  # 无文字上色
     assert len(images) == 4  # 自拍 + 3 组合图
@@ -73,7 +74,7 @@ def test_build_prompt_combo_missing_files_falls_back_to_text(tmp_path, monkeypat
         "hair_color_id": 5, "name": "栗棕", "code": "6", "hex": "#5a3a26",
         "ref_photos": ["uploads/expo/wigs/gone_0.jpg"],  # 文件不存在
     })
-    prompt, images, size = ai_pipeline._build_prompt(_session(), row, wig)
+    prompt, images, size = prompts.build_prompt(_session(), row, wig)
     assert "recolor it to this exact" in prompt  # 文字上色兜底
     assert "reference images already show" not in prompt
     assert len(images) == 2  # 自拍 + 发型默认图
@@ -88,7 +89,7 @@ def test_build_prompt_original_color_no_combo(tmp_path, monkeypatch):
     wig = ExpoWig(model_no="LS-2", name="短发", wig_description="pixie",
                   angle_photos=["uploads/expo/wigs/d.jpg"])
     row = ExpoResult(session_id=1, wig_id=2, hair_color_json=None)
-    prompt, images, _ = ai_pipeline._build_prompt(_session(), row, wig)
+    prompt, images, _ = prompts.build_prompt(_session(), row, wig)
     assert "recolor" not in prompt.lower()
     assert "reference images already show" not in prompt
     assert len(images) == 2
@@ -105,7 +106,7 @@ def test_build_prompt_color_without_combo_uses_text(tmp_path, monkeypatch):
     row = ExpoResult(session_id=1, wig_id=3, hair_color_json={
         "hair_color_id": 5, "name": "亚麻金", "code": "613", "hex": "#d9c08a",
     })
-    prompt, _, _ = ai_pipeline._build_prompt(_session(), row, wig)
+    prompt, _, _ = prompts.build_prompt(_session(), row, wig)
     assert "亚麻金" in prompt and "recolor it to this exact" in prompt
 
 
@@ -139,11 +140,7 @@ def test_start_composites_injects_combo_ref_photos(db, monkeypatch):
     db.commit()
     session = _make_session(db, wig.id)
     snapshot = service.snapshot_hair_color(db, color.id)
-    # 不真正起线程：桩掉 _start_batch，抓 rows
-    captured = {}
-    monkeypatch.setattr(ai_pipeline, "_start_batch", lambda sid, rows: captured.setdefault("rows", rows))
-    ai_pipeline.start_composites(session.id, [wig.id], hair_color=snapshot, db=db)
-    rows = captured["rows"]
+    rows = ai_pipeline.build_composite_rows(session.id, [wig.id], hair_color=snapshot, db=db)
     assert len(rows) == 1
     assert rows[0].hair_color_json["ref_photos"] == ["uploads/expo/wigs/c0.jpg", "uploads/expo/wigs/c1.jpg"]
 
@@ -154,10 +151,8 @@ def test_start_composites_no_combo_leaves_snapshot_plain(db, monkeypatch):
     db.commit()
     session = _make_session(db, wig.id)
     snapshot = service.snapshot_hair_color(db, color.id)
-    captured = {}
-    monkeypatch.setattr(ai_pipeline, "_start_batch", lambda sid, rows: captured.setdefault("rows", rows))
-    ai_pipeline.start_composites(session.id, [wig.id], hair_color=snapshot, db=db)
-    assert "ref_photos" not in captured["rows"][0].hair_color_json
+    rows = ai_pipeline.build_composite_rows(session.id, [wig.id], hair_color=snapshot, db=db)
+    assert "ref_photos" not in rows[0].hair_color_json
 
 
 # ---------------- service：kiosk 过滤 / 管理端矩阵 / CRUD ----------------

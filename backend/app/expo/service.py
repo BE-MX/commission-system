@@ -1,5 +1,7 @@
 """Expo try-on 业务逻辑：客户/会话/结果/反馈/发型库 CRUD 与序列化。"""
 
+from app.expo import prompt_service
+
 import logging
 import shutil
 from datetime import datetime
@@ -336,6 +338,7 @@ def serialize_session(db: Session, session: ExpoSession, include_internal: bool 
                 "reaction": r.reaction,
                 "short_code": r.short_code,
                 "gen_ms": r.gen_ms,
+                "prompt_version": prompt_service.result_version(r),
             }
             for r in session.results
         ],

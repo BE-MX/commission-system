@@ -72,10 +72,10 @@ export function contactExpoAdmin(sessionId) {
   return expoClient.post(`/sessions/${sessionId}/contact-admin`, null, { ...KIOSK })
 }
 
-export function generateResults(sessionId, { wigIds = null, batch = 0, hairColorId = null, sceneKey = null, sceneKeys = null, quality = null, promptVariant = null } = {}) {
+export function generateResults(sessionId, { wigIds = null, batch = 0, hairColorId = null, sceneKey = null, sceneKeys = null, quality = null, promptVersionId = null } = {}) {
   return expoClient.post(`/sessions/${sessionId}/generate`, {
     wig_ids: wigIds, batch, hair_color_id: hairColorId, scene_key: sceneKey, scene_keys: sceneKeys,
-    quality, prompt_variant: promptVariant,
+    quality, prompt_version_id: promptVersionId,
   }, { ...KIOSK })
 }
 
@@ -269,3 +269,14 @@ export function updateScript(id, data) {
 export function seedScripts() {
   return expoClient.post('/scripts/seed')
 }
+
+// 生图提示词版本：客户只取名称，完整配置限 expo:admin。
+export const getPromptVersionPicker = () => expoClient.get('/prompt-versions/picker', { ...KIOSK, timeout: 10000 })
+export const getPromptVersions = params => expoClient.get('/prompt-versions', { params, showLoading: false })
+export const getPromptEditor = () => expoClient.get('/prompt-versions/editor', { showLoading: false })
+export const getPromptVersion = id => expoClient.get(`/prompt-versions/${id}`, { showLoading: false })
+export const createPromptVersion = data => expoClient.post('/prompt-versions', data, { suppressToast: true, showLoading: false })
+export const updatePromptVersion = (id, data) => expoClient.put(`/prompt-versions/${id}`, data, { suppressToast: true, showLoading: false })
+export const setDefaultPromptVersion = (id, revision) => expoClient.post(`/prompt-versions/${id}/default`, { expected_revision: revision }, { showLoading: false })
+export const previewPromptVersion = data => expoClient.post('/prompt-versions/preview', data, { suppressToast: true, showLoading: false })
+export const getPromptSnapshot = id => expoClient.get(`/results/${id}/prompt-snapshot`, { showLoading: false })

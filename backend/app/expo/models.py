@@ -7,6 +7,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     Column,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -17,6 +18,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
+from sqlalchemy.dialects import mysql
 
 from app.core.database import Base
 from app.core.time import beijing_now
@@ -170,6 +172,33 @@ class ExpoSession(Base):
     )
 
 
+class ExpoPromptVersion(Base):
+    """Operator-managed image prompts; new generations store an immutable snapshot."""
+
+    __tablename__ = "ark_expo_prompt_versions"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="提示词版本ID")
+    name = Column(String(80), nullable=False, comment="版本名称，显示于试戴选择器")
+    hint = Column(String(160), nullable=False, default="", comment="客户可见的版本说明")
+    config_json = Column(JSON, nullable=False, comment="完整合成提示词配置")
+    revision = Column(Integer, nullable=False, default=1, comment="保存时递增的修订号")
+    is_active = Column(Boolean, nullable=False, default=True, comment="是否允许新生成选择")
+    default_slot = Column(Integer, nullable=True, comment="默认版本为1，其余为NULL")
+    updated_by = Column(Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql"),
+                        ForeignKey("ark_users.id"), nullable=True, comment="最后修改用户ID")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建北京时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now,
+                        comment="修改北京时间")
+
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_expo_prompt_version_name"),
+        UniqueConstraint("default_slot", name="uq_expo_prompt_default"),
+        CheckConstraint("default_slot IS NULL OR (default_slot = 1 AND is_active = 1)",
+                        name="ck_expo_prompt_default_active"),
+        {"comment": "展会AI试戴-可配置生图提示词版本"},
+    )
+
+
 class ExpoResult(Base):
     """一张效果图一条。short_code 供扫码带走。"""
 
@@ -184,7 +213,10 @@ class ExpoResult(Base):
     # 2026-07-31 起 kiosk 不再写入（档位选择器已撤，中转站实测不透传该参数）：
     # 历史行留 high/medium，新行一律 NULL。全仓无消费方，保留供换通道后复用
     quality = Column(String(16), nullable=True, comment="出图档位（2026-07-31 起弃用，新行为空）")
-    prompt_variant = Column(String(16), nullable=True, comment="合成版本 real=真实 / soft=柔光 / beauty=美颜；空=回落默认版")
+    prompt_variant = Column(String(16), nullable=True, comment="历史固定版本记录；新生成不再写入")
+    prompt_version_id = Column(BigInteger, ForeignKey("ark_expo_prompt_versions.id", ondelete="RESTRICT"),
+                               nullable=True, comment="本次选择的提示词版本；历史记录为空")
+    prompt_snapshot = Column(JSON, nullable=True, comment="最终提示词、版本和输入快照；历史为空")
     gen_ms = Column(Integer, nullable=True, comment="生成耗时（毫秒）")
     status = Column(String(16), nullable=False, default="pending", comment="pending/generating/done/failed")
     reaction = Column(String(16), nullable=True, comment="loved/soso")
@@ -198,6 +230,7 @@ class ExpoResult(Base):
     __table_args__ = (
         Index("idx_ark_expo_results_session", "session_id"),
         Index("idx_ark_expo_results_share", "short_code"),
+        Index("idx_expo_result_prompt_version", "prompt_version_id"),
         {"comment": "展会AI试戴-效果图表（一张效果图一条，short_code 供扫码带走）"},
     )
 

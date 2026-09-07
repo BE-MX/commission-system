@@ -11,7 +11,6 @@ import base64
 import json
 import logging
 import os
-import random
 import re
 import shutil
 import threading
@@ -764,438 +763,8 @@ def _run_analysis(session_id: int) -> None:
 
 # ---------------- 管线二：效果图合成（多款并行，双模式） ----------------
 
-# tryon 合成模板（锚场色机魂结构；2026-07-07 从三格回退单场景——三格单图 200~300s+
-# 撞上游网关 504 结构性走不通，场景改为用户单选，见 TRYON_SCENES）。
-# 组装顺序：锚（主体锁定） + 发色子句 + 场景子句（原景/置换二选一） + 色机魂收尾。
-_COMPOSITE_TEMPLATE = (
-    "The FIRST image is the customer's own photo — use it ONLY for the face, body and "
-    "pose. The following wig reference image(s) show the EXACT wig to put on the customer, "
-    "from multiple angles: {description}. CRITICAL: the customer's hair in the output MUST "
-    "come entirely from these wig reference images. COMPLETELY remove and replace the "
-    "customer's original hair from the first image — do NOT keep, retain or blend in any "
-    "part of the original hairstyle (its length, shape, silhouette, parting, fringe, "
-    "volume, texture or color); not a single strand of the original hair may remain. "
-    "Reproduce the wig's exact silhouette, length, layering, fringe, volume, parting and "
-    "texture precisely as shown in the reference images, even if it looks very different "
-    "from the original hair. Keep the customer's face, facial features and skin tone "
-    "exactly the same as the first image, with light natural makeup. Treat the FIRST "
-    "image as the sole visual source of truth for her face. Preserve its exact geometry, "
-    "stable natural asymmetry, age traits and identifying skin marks; do not average, "
-    "symmetrize, idealize or reinterpret them. The wig references provide hair information "
-    "only and must never influence the face. The hairline "
-    "transition must look naturally grown, with realistic fine baby hairs at the "
-    "temples. {extra}"
-)
-
-# 夏季衣橱子句（2026-07-17 亮哥指令：展会在夏天；2026-07-21 依亮哥提供的两组穿搭参考
-# 图重写——法式极简通勤基调取代原「裙装/T恤/POLO/旗袍」四类单一枚举，具体单品由
-# _wardrobe_variation_clause 每次随机注入一套完整 look）：凡换装路径（tryon 场景置换 +
-# scene 场景大片）统一夏季着装——轻薄短袖/无袖，干净中性色系的分离式单品自由组合。
-# **不写具体品牌名**：图像模型见品牌名易生成 logo/花押字（侵权+穿帮），故用风格描述并
-# 显式禁 logo。场景明确规定着装（制服/职业装/旗袍/舞蹈装）时着装属性优先，只换轻薄
-# 短袖夏季版。原景保持路径锁定原服装，不注入本子句
-_SUMMER_WARDROBE_CLAUSE = (
-    " It is summer: dress her in lightweight breathable summer clothing with short "
-    "or elbow-length sleeves or sleeveless cuts, in a clean French-minimalist "
-    "everyday-chic register - "
-    "effortless mix-and-match separates such as crisp shirts, fine knit tops, flowing "
-    "midi skirts, straight or wide-leg trousers and well-cut jeans, in a calm neutral "
-    "palette of white, cream, black, navy, light blue, grey, khaki-camel and denim "
-    "washes; if the scene description prescribes specific attire (a uniform, a "
-    "professional dress code, or a festive or activity-specific outfit), keep that "
-    "attire but in a light short-sleeve summer version. The outfit must look "
-    "thoughtfully styled, with a refined flattering silhouette that elevates her "
-    "presence and the photo's overall quality - understated, timeless, with premium "
-    "fabric texture and impeccable relaxed tailoring, and no visible brand logos or "
-    "monograms."
-)
-
-# 穿搭 look 池（2026-07-21 亮哥指令：从两组穿搭参考图逐套提取，取代原配色×花纹随机
-# 组合与「裙装单一描述」——法式极简通勤风，衬衫/针织/半裙/阔腿裤/牛仔裤的完整搭配，
-# 中性色系：白/米/黑/藏青/浅蓝/灰/卡其驼/牛仔蓝）。静态 prompt 必然收敛到模型最高
-# 概率输出（此前=小黑裙），多样性靠每次合成随机抽一套完整 look 注入；look 具体到
-# 单品+颜色+鞋包配饰，锚定权重足以压过场景里的泛化着装词。参考图中的牛仔迷你裙已
-# 调整为及膝长度（目标客群为中老年女性）。首饰池保留 2026-07-17 版不动
-_OUTFIT_LOOKS = [
-    # ── 参考图一（基础款通勤，8 套） ──
-    "a light-blue oversized shirt worn open over a white tank top, with white "
-    "straight-leg trousers and black loafers",
-    "a fitted black short-sleeve tee tucked into a high-waisted khaki-camel flared "
-    "midi skirt, with brown loafers",
-    "a navy-and-white breton striped top with white straight-leg jeans and black "
-    "pointed flats",
-    "a crisp white shirt loosely tucked into mid-blue straight-leg jeans, with "
-    "black loafers",
-    "a cream fine-knit cardigan over a white top, with black high-waisted wide-leg "
-    "trousers, a slim black belt and ballet flats",
-    "a light-blue shirt with a navy sweater draped over the shoulders, mid-blue "
-    "straight-leg jeans and brown loafers",
-    "a white shirt worn open over a black tank top, with mid-blue wide-leg jeans "
-    "and loafers",
-    "an oatmeal-beige short-sleeve knit top tucked into a khaki-camel flared midi "
-    "skirt, with brown pointed flats",
-    # ── 参考图二（黑白极简实拍，8 套） ──
-    "a black puff-sleeve short-sleeve shirt with a white flowy midi skirt, white "
-    "socks and black low-profile sneakers",
-    "a white elbow-sleeve shirt tucked into navy pleated wide-leg trousers with a "
-    "slim brown belt",
-    "a white short-sleeve shirt tucked into a white knee-length A-line skirt with "
-    "a slim black belt and black loafers",
-    "a grey short-sleeve henley knit top with relaxed light-wash wide-leg jeans",
-    "a black puff-sleeve short-sleeve shirt with relaxed light-wash wide-leg jeans",
-    "a black V-neck button-up vest worn as a top, with a voluminous white maxi skirt",
-    "a white short-sleeve shirt tucked into off-white straight-leg jeans with a "
-    "slim brown belt and loafers",
-    "a white short-sleeve shirt tucked into a dark-indigo denim knee-length skirt "
-    "with a slim brown belt, white socks and black loafers",
-]
-_JEWELRY_OPTIONS = [
-    "small pearl stud earrings",
-    "a slim jade bangle and simple gold ear studs",
-    "delicate gold huggie earrings",
-    "a fine gold chain with a tiny mother-of-pearl charm worn close to the collarbone",
-    "an elegant patterned silk scarf knotted lightly at the neck",
-    "a tasteful vintage brooch on the chest",
-    "small celadon-glazed ceramic earrings",
-    "a short string of freshwater pearls sitting at the collarbone",
-]
-
-
-def _wardrobe_variation_clause(uniform: bool = False) -> str:
-    """每次合成随机抽一套完整穿搭 look，打散模型的默认收敛（小黑裙+心形长项链）。
-
-    着装锁定场景（uniform=True：制服/职业装/旗袍/舞蹈装）服装不动，只注入首饰变奏。"""
-    jewelry = random.choice(_JEWELRY_OPTIONS)
-    jewelry_part = (
-        f" Accessorize with {jewelry} - small, tasteful pieces in quietly luxurious "
-        "materials with real texture (pearl, jade, gold, silk, mother-of-pearl). "
-        "Never use a long necklace with a heart-shaped pendant."
-    )
-    if uniform:
-        return jewelry_part
-    look = random.choice(_OUTFIT_LOOKS)
-    return (
-        f" For this shot, dress her in {look}, keeping these colors and this overall "
-        "styling; in a formal or professional setting, render any casual pieces "
-        "(denim, sneakers, white-socks styling) as polished tailored equivalents in "
-        "the same tones - not a plain all-black look and not a generic dress."
-        + jewelry_part
-    )
-
-# 场景子句：默认保持原景（body/背景/景深全锁定）；选场景时置换背景（可换装，
-# 85mm 浅景深只在此路径——原景路径不能既要背景原封又要虚化）。prompt 只在服务端
-_TRYON_KEEP_BG_CLAUSE = (
-    " Keep the facial expression, body, outfit, background and framing exactly the same "
-    "as the first image, preserve the original photo's depth of field, and light the new "
-    "hair to match the original photo's light direction."
-)
-# 场景置换（有限面部适配）：身体、服装和环境按场景变化；头部、视线和表情默认沿用原图，
-# 优先让道具与互动方向迁就原视线。只有场景明显不协调时才允许三者作为一个整体做最小调整，
-# 不得跨越正脸/侧脸或表情类别，避免为场景叙事重画整张脸（用户确认 2026-08-29）。
-_TRYON_SCENE_CLAUSE = (
-    " Recreate the portrait in {scene}. Adapt the background, outfit, body pose and gesture "
-    "to suit the scene, while preserving the FIRST image as the facial reference. Prefer her "
-    "existing head angle, gaze direction and expression category, and first compose the props "
-    "and interaction around her existing gaze. Only when the scene would otherwise look "
-    "physically inconsistent, allow a minimal coordinated adjustment of head, eyes and "
-    "micro-expression together, staying in the same head-pose family and the same expression "
-    "category and mouth-open state. Never turn her from frontal to profile or profile to "
-    "frontal, and never introduce a large head tilt, turn or pitch. Such adjustment may change "
-    "only demeanor, never identity, facial geometry, age traits or skin marks. Keep the wig and "
-    "hair color exactly as composited. Any other people may appear only as a soft, blurred, "
-    "out-of-focus background presence - never in sharp focus, never with detailed faces or "
-    "hands. The hair highlights and shadows must follow the scene's light direction, blending "
-    "naturally with no cut-and-paste look. Shot like a candid 85mm documentary snapshot with "
-    "shallow depth of field focused on the face and hair, natural and unposed."
-) + _SUMMER_WARDROBE_CLAUSE
-
-# 构图与人体比例（2026-08-29）：保留 85mm 腰上景别以展示发丝，但删除「头占画面三分之一」
-# 这一会把蓬松假发解释成大头的单点锚。改用头、颈、肩、锁骨之间的关系互相校验：假发可改变
-# 发型轮廓，不能改变客户头骨、颈长和肩宽。只用于场景置换，原景保持路径继续锁原构图。
-_FRAMING_CLAUSE = (
-    " Framing and human proportion: photograph her from about 1.5 metres away on the 85mm lens "
-    "as a waist-up portrait. At this crop the hairstyle must read clearly - individual strands, "
-    "the cut's layering, its silhouette and its sheen all legible at a glance. Keep her entire "
-    "hairstyle inside the frame with comfortable space above it - never crop the top, the sides "
-    "or the ends of the hair. Keep her full shoulder span, upper chest and collarbone area in "
-    "frame: this is a waist-up portrait, not a head-and-shoulders close-up. Preserve the FIRST "
-    "image's original head scale and natural neck length relative to her shoulders and torso, "
-    "with natural visible space from jawline to neckline; never raise the shoulders, shorten "
-    "the neck, enlarge the skull or let the wig's volume change the body's proportions. The wig "
-    "silhouette comes from its references, but the customer's head, neck and shoulder proportions "
-    "do not. Keep correct natural human proportions with no enlarged head and no wide-angle facial "
-    "distortion. Render her top, neckline and any visible accessories faithfully, while her lower "
-    "garments and footwear simply fall outside the crop. Keep the setting around her "
-    "readable behind and beside her but softly out of focus, sharing one consistent perspective, "
-    "eye level and lighting with her, with genuine depth separation between her and the "
-    "background, so she belongs in the scene rather than being a cut-out pasted onto a backdrop."
-)
-
-# 面部神采（2026-08-01 亮哥反馈「年龄较大的女性出图脸部不够有精神和光泽」，
-# 并明确「针对提示词补强，不要过于美颜」）：
-# **病根不是年龄，是这套 prompt 从没交代过脸该怎么打光**——原景保持与场景置换两条子句
-# 都只写了「头发的高光阴影跟随光源方向」，脸的用光一字未提；再叠上「面部与肤色与原图
-# 完全一致」和「禁止过度磨皮」两道锁，模型最省力的解就是把脸平铺直叙地渲出来，于是暗、
-# 平、没有立体感。胶原蛋白少的脸在平光下尤其显疲态，所以在年长客户身上先暴露。
-# 因此补的是**摄影用光与眼神**，不是美颜：
-#   给 = 暗部补光（以保住细节为限，结构阴影不动）、颧骨眉弓的塑形光、眼神光、
-#        面部高点的镜面微光、唇部血色（2026-08-02 起血色只留唇、几何由对称锁保护，
-#        原「唇颊血色+逐项禁瘦脸」把瘦脸客户画胖，机制见 _LIGHTING_BASE ④）
-#   禁 = 磨皮/去皱/丰盈/提亮肤色（逐项写死，堵掉模型「变年轻=变好看」的捷径）
-# 措辞注意事项 ①~④ 见 _LIGHTING_BASE 上方注释（唯一真相源，此处不重复）。
-# 合成版本（2026-08-01 亮哥指令）：客户在甄选页必选一个，三版差别**只在皮肤怎么处理**，
-# 用光一律打好——「真实版」是真实的好照片，不是没打光的照片。若真实版不打光，今早那条
-# 反馈对每一个不改默认值的客户就原封不动地留着，而绝大多数客户不会去改默认值。
-#
-# 落库到 ExpoResult.prompt_variant（085 迁移）而不是只做运行时参数：合成在后台线程里读
-# 那一行跑，运行时参数根本传不到；且「客户当时选的哪版」是排障与复现的唯一依据。
-#
-# 上一版做过一个「后台 preset 参数切换」（face_vitality 键），已随本次改动删除——同一段
-# 提示词留两个控制入口就是两份真相，界面选择既然是必选项，后台默认值永远轮不上。
-PROMPT_VARIANTS = ("real", "soft", "beauty")
-DEFAULT_PROMPT_VARIANT = "real"
-
-# 三版共用的身份安全光影底座（2026-08-29）：场景光影完整作用于假发、身体和环境，
-# 面部只做低强度的整体曝光/色温融合，不再单独塑造颧骨、眉弓、阴影侧或眼神光。
-# 原因：图像模型不是在原脸上真实补光，而是通过重画脸实现局部用光，医生和高铁场景因此
-# 出现身份、年龄与脸型漂移。对称几何锁继续保留，有限微表情只能动神态，不能动面部结构。
-_LIGHTING_BASE = (
-    " Preserve the FIRST image's facial lighting pattern and visible facial skin as the visual "
-    "anchor. Match the face to the scene only with a gentle, uniform exposure and "
-    "colour-temperature blend; do not add a new local key light, fill light or catchlight on "
-    "the face, and never repaint the facial shadow pattern around the cheekbones, brow, eyes, "
-    "nose or mouth. Apply the scene's directional light fully to the wig, neck, clothing, body "
-    "and background, including coherent highlights, contact shadows and colour. Her face keeps "
-    "the exact geometry of the first image - the same face width, cheek contour and jawline, "
-    "neither slimmer nor fuller; facial anatomy stays immutable during any allowed "
-    "micro-expression; light may blend the portrait, never reshape the face."
-)
-
-# 皮肤纹理不可动的措辞（真实版）：逐项写死，堵掉模型「变年轻=变好看」的捷径。
-# 2026-08-02 摘掉两处（瘦脸变胖修复，机制见 _LIGHTING_BASE ④）：
-#   「blood warmth in the cheeks」→ 只留唇——「脸颊红润」在训练语料里的原型就是饱满苹果肌，
-#   等于把「饱满」意象押在 cheeks 上；气色由光和唇色承担。
-#   「do not slim the face or enlarge the eyes」→ 删——单向否定禁令，已被 _LIGHTING_BASE
-#   的对称几何锁（含 eye size 由 identity 锁兜底）取代，别再加回来。
-_SKIN_UNTOUCHED = (
-    " Keep the facial skin exactly as photographed, including its natural blood warmth in "
-    "the lips. Every pore, fine line, wrinkle, eye bag and age spot stays exactly as in the original "
-    "photo - do not smooth, retouch, plump, lighten or rejuvenate the skin. The liveliness "
-    "of the portrait must come from the wig, body, environment and overall colour balance, "
-    "never from repainting facial skin or erasing her age."
-)
-
-# 头发保护句：只出现在美颜版。磨皮会连带把发丝磨成塑料感，而发丝正是这个产品要卖的东西，
-# 所以修皮肤的同时必须把头发显式圈出来保护（2026-08-01 亮哥知情并拍板要做美颜版）
-_HAIR_FIDELITY_GUARD = (
-    " The retouching applies to facial skin ONLY. The wig must stay perfectly crisp: keep "
-    "every individual hair strand, the cut's layering and its natural sheen exactly as sharp "
-    "and detailed as in the reference - never soften, blur, smooth or plasticise the hair."
-)
-
-_PROMPT_VARIANT_CLAUSES = {
-    # 真实版：打光 + 皮肤一动不动
-    "real": _LIGHTING_BASE + _SKIN_UNTOUCHED,
-    # 柔光版：更柔的光、更低的反差，皮肤纹理仍然保留——观感更润，但不是磨皮。
-    # 2026-08-02：原「shadow side lifted further…heavy fill」是全 prompt 里最重的填光措辞
-    # （heavy fill 在摄影语义里就是把面部立体凹陷抹平的布光），瘦脸变胖在本版最严重；
-    # 柔=光源大、影缘软，不等于把结构阴影填没，见 _LIGHTING_BASE ④
-    "soft": (
-        _LIGHTING_BASE
-        + " Use a softer, more diffused light on the wig, clothing, body and background, "
-        "lowering contrast outside the facial anchor while keeping the face limited to the "
-        "uniform blend described above."
-        + _SKIN_UNTOUCHED
-    ),
-    # 美颜版：真磨皮提亮。这里刻意允许上面禁掉的那类词，因为这正是本版要的效果；
-    # 但范围死死限定在面部皮肤，并配上头发保护句
-    "beauty": (
-        _LIGHTING_BASE
-        + " Use a restrained beauty finish within the existing facial boundary. Retouch her "
-        "facial skin the way a magazine "
-        "portrait is finished: even out the complexion, soften fine lines and wrinkles, reduce "
-        "temporary blemishes, and give the skin a smooth, luminous finish - while "
-        "keeping her facial features, bone structure and identity unmistakably the same person, "
-        "and keeping enough skin texture that she still reads as a photograph rather than an "
-        # 图像模型位置权重偏向靠后（同 C1 审查）：几何复锁必须排在磨皮指令之后（顺序有
-        # 测试锚定）——用对称正向措辞+表情豁免，不用「Do not slim」单向禁令（2026-08-02，
-        # 见 _LIGHTING_BASE ④；eye size 入锁因为磨皮语境下笑会眯眼，锁结构不锁表情）
-        "illustration. Her face keeps the exact geometry of the first image - the same face "
-        "width, cheek contour, jawline and eye size, neither slimmer nor fuller; this locks "
-        "her facial structure, not her expression."
-        + _HAIR_FIDELITY_GUARD
-    ),
-}
-
-
-def resolve_prompt_variant(name: str | None) -> str:
-    """版本名 → 子句文本；空值/未知值回落默认版并出声。
-
-    绝不因为一个非法值就抛异常——展位现场生不出图的代价远大于用错一个版本。
-    空值是**正常情况**（085 迁移之前的老数据、老代码写的行），不出声。
-    """
-    if not name:
-        return _PROMPT_VARIANT_CLAUSES[DEFAULT_PROMPT_VARIANT]
-    if name in _PROMPT_VARIANT_CLAUSES:
-        return _PROMPT_VARIANT_CLAUSES[name]
-    msg = (f"[expo] 未知合成版本 {name!r}，回落 {DEFAULT_PROMPT_VARIANT}；"
-           f"可选：{'/'.join(PROMPT_VARIANTS)}")
-    logger.warning(msg)
-    print(msg, flush=True)
-    return _PROMPT_VARIANT_CLAUSES[DEFAULT_PROMPT_VARIANT]
-
-# 色 + 魂 收尾。**必须跟着版本走**（2026-08-01 对抗性审查 C1）：这句排在版本子句之后、
-# 且是全篇最后一句，而图像模型的位置权重偏向句尾。原来那句写死了
-# 「true skin texture with visible pores」和「no over-smoothing」，与美颜版要的磨皮
-# 相距 685 字符正面打架，禁项还在后——文字确实不同了，指令却不一定活到出图，
-# 那就是换了个形态的假选择。美颜版换用兼容收尾：realism / 发丝 / 禁塑料感全部保留，
-# 只摘掉与磨皮直接冲突的那两处。
-_STYLE_TAIL_TEXTURE_KEPT = (
-    " Photorealistic straight-out-of-camera quality: true skin texture with visible "
-    "pores, individual hair strands with natural sheen and realistic physics. No "
-    "plastic skin, no over-smoothing, no painterly or illustration look, no wig-cap "
-    "artificiality, no heavy filter grading - one real moment of daily life."
-)
-_STYLE_TAIL_RETOUCH_OK = (
-    " Photorealistic straight-out-of-camera quality: individual hair strands with "
-    "natural sheen and realistic physics. No plastic skin, no painterly or illustration "
-    "look, no wig-cap artificiality, no heavy filter grading - one real moment of "
-    "daily life."
-)
-_VARIANT_STYLE_TAILS = {
-    "real": _STYLE_TAIL_TEXTURE_KEPT,
-    "soft": _STYLE_TAIL_TEXTURE_KEPT,
-    "beauty": _STYLE_TAIL_RETOUCH_OK,
-}
-
-
-def resolve_style_tail(name: str | None) -> str:
-    """版本名 → 收尾句。与 resolve_prompt_variant 同一套回落语义。"""
-    return _VARIANT_STYLE_TAILS.get(name or "", _VARIANT_STYLE_TAILS[DEFAULT_PROMPT_VARIANT])
-
-# 输出规格：6 寸照片，单场景竖版 102×152mm（2:3 → 1024x1536）。size 走 /v1/images/edits
-# 请求参数，prompt 内的规格文字只是二重锚定，真正的像素约束靠 size 参数
-_SIZE_PORTRAIT = "1024x1536"
-_PORTRAIT_SPEC_CLAUSE = (
-    " Output exactly one 6-inch portrait photo, 102x152mm, 2:3 vertical aspect ratio."
-)
-
-# tryon 生成场景（换发路径）：kiosk 甄选发型页滑动选择、必选一个（原景仅弱网兜底）。
-# 每条 prompt 是注入 _TRYON_SCENE_CLAUSE「Recreate the portrait in {scene}」的名词短语——
-# 结构=场景空间 + 单人自信动作/姿态 + 主光源方向 + 虚化背景（含仅暗示的第二人物）。
-# 职业场景带强动作（演示/讲解/接待/看材料/检查），叙事化但收敛为单人主体（用户定稿 2026-07-09）。
-# 光源方向显式声明，发丝受光跟随场景。顺序即卡片顺序，默认选中第一个。
-# 2026-07-17：服装全面夏季化（展会在夏天）。2026-07-21：非锁定景的场景内具体单品词
-# （sheath dress/silk blouse/summer dress 等）泛化为 lightweight summer outfit——具体
-# 单品改由尾部 _wardrobe_variation_clause 随机注入完整 look（亮哥参考图提取），场景内
-# 保留 lightweight/summer 定性词继续压 blazer/suit 厚重词；着装锁定景（uniform: True，
-# 制服/职业装外扩至旗袍/舞蹈装等场景规定装）单品词保留原样、不注入 look。
-# 2026-07-10 扩到 20 景：新增银行/律师/药剂师/财务/社区主任/小区管理员/高铁出差等职场，及喜婆婆/
-# 接孙放学/广场舞/老年大学/闺蜜咖啡/晨间公园等长辈生活景。长辈景用 poised/graceful/radiant/refreshed
-# 等气质词表达「假发衬得更精致」，靠发型+光营造，不写 younger 以免与身份锁（保脸/保年龄）冲突。
-TRYON_SCENES = [
-    {"key": "whitecollar", "label": "白领高管", "tagline": "从容主场",
-     "prompt": ("a bright modern corporate boardroom during a meeting, she stands "
-                "mid-presentation in a chic lightweight summer outfit, one hand gesturing "
-                "naturally toward a softly glowing presentation screen, cool window daylight "
-                "shaping her wig, clothing and boardroom, a long conference "
-                "table and blurred out-of-focus seated colleagues far behind")},
-    {"key": "teacher", "label": "老师", "tagline": "讲台风采",
-     "prompt": ("a warm university lecture hall at the podium, she stands poised while "
-                "teaching with an engaging open-hand gesture in an elegant lightweight summer outfit, "
-                "soft daylight shaping her wig, clothing and lecture hall, a blurred blackboard or "
-                "projection behind and out-of-focus students seated far below, suggested "
-                "only as soft shapes")},
-    {"key": "shopowner", "label": "老板娘", "tagline": "门店主理",
-     "prompt": ("an elegant boutique storefront, she stands welcoming a guest "
-                "with an inviting open gesture toward tasteful product displays in a "
-                "refined lightweight summer outfit, soft warm shop lighting shaping her wig, "
-                "clothing and storefront, blurred shelves of merchandise and a faint out-of-focus "
-                "customer beside her")},
-    {"key": "civilservant", "label": "公务员", "tagline": "沉稳干练",
-     "prompt": ("a composed government office meeting room, she sits in the front row "
-                "reviewing documents in a crisp lightweight summer outfit, even soft ceiling "
-                "lighting shaping her wig, clothing and meeting room, a blurred long "
-                "table and out-of-focus colleagues seated further back")},
-    {"key": "doctor", "label": "医生", "tagline": "专业信赖", "uniform": True,
-     "prompt": ("a clean bright clinic consulting room, she stands professionally in a "
-                "short-sleeve white coat with a stethoscope while reviewing a chart positioned "
-                "compatible with her existing gaze direction, cool clinical daylight shaping "
-                "her wig, white coat and room, blurred medical shelving and a faintly "
-                "out-of-focus patient seated to the side")},
-    {"key": "home", "label": "居家", "tagline": "温馨日常",
-     "prompt": ("a cozy living room beside a sofa, warm afternoon window light shaping her wig, "
-                "clothing and living room, blurred green plants and wooden furniture behind")},
-    {"key": "gathering", "label": "聚会", "tagline": "晚间光彩",
-     "prompt": ("an evening dinner party, warm pendant light shaping her wig, clothing and "
-                "dining room, golden bokeh of string lights and candles behind")},
-    # ── 职场专业（2026-07-10 扩充） ──
-    {"key": "lawyer", "label": "律师", "tagline": "庭上锋芒", "uniform": True,
-     "prompt": ("a solemn courtroom, she stands confidently delivering her argument with "
-                "a measured hand gesture in a sharp lightweight dark summer suit over a silk "
-                "short-sleeve blouse, focused daylight shaping her wig, clothing and courtroom, blurred "
-                "wooden benches and out-of-focus figures seated behind")},
-    {"key": "banker", "label": "银行柜员", "tagline": "专业干练", "uniform": True,
-     "prompt": ("a bright modern bank hall counter, she stands poised serving a customer "
-                "in a tidy short-sleeve summer uniform, cool even ceiling lighting shaping her wig, "
-                "clothing and bank hall, blurred glass partitions and a faint "
-                "out-of-focus customer in front of the counter")},
-    {"key": "accountant", "label": "公司财务", "tagline": "沉稳可靠",
-     "prompt": ("a tidy modern office by a filing cabinet, she stands retrieving a "
-                "document in an elegant lightweight summer outfit, soft daylight shaping her wig, "
-                "clothing and office, a blurred desk with a monitor and a faint out-of-focus "
-                "colleague waiting beside her")},
-    {"key": "director", "label": "社区主任", "tagline": "亲切为民",
-     "prompt": ("a warm community service center, she sits attentively helping an elderly "
-                "resident fill out a form, pen in hand, in a smart lightweight summer outfit, "
-                "soft side-window daylight shaping her wig, clothing and service center, blurred "
-                "notice boards and a faint out-of-focus elderly resident across the desk")},
-    {"key": "pharmacist", "label": "药剂师", "tagline": "专业亲和", "uniform": True,
-     "prompt": ("a clean bright pharmacy, she stands filling a prescription at the medicine "
-                "shelves in a short-sleeve white pharmacist coat, soft even lighting shaping her wig, "
-                "white coat and pharmacy, blurred rows of medicine "
-                "drawers and a faint out-of-focus customer waiting at the counter")},
-    {"key": "propertymanager", "label": "小区管理员", "tagline": "邻里亲和",
-     "prompt": ("a residential compound lobby, she stands chatting with a resident "
-                "while holding a notebook in a neat lightweight summer outfit, soft entrance "
-                "daylight shaping her wig, clothing and lobby, blurred mailboxes "
-                "and a faint out-of-focus resident beside her")},
-    {"key": "hsrtravel", "label": "高铁出差", "tagline": "出差精致",
-     "prompt": ("a high-speed train window seat, she sits in a natural business-travel pose "
-                "with a laptop and tray positioned compatible with her existing gaze direction, "
-                "bright window daylight shaping her wig, shoulders, clothing and seat, with a "
-                "simple softly blurred sense of landscape motion outside")},
-    # ── 长辈 / 退休生活（发型提升气质，从容优雅，不改脸/年龄） ──
-    {"key": "weddinghost", "label": "喜婆婆", "tagline": "喜庆体面", "uniform": True,  # 旗袍是场景规定装
-     "prompt": ("an elegant wedding banquet entrance, she stands graciously welcoming guests "
-                "in a refined festive short-sleeve silk qipao with tasteful jewelry, warm golden "
-                "banquet lighting shaping her wig, qipao and entrance, a blurred floral arch "
-                "and out-of-focus guests arriving behind")},
-    {"key": "schoolpickup", "label": "接孙放学", "tagline": "校门风采",
-     "prompt": ("a primary school gate in the afternoon, she stands waiting to pick up her "
-                "grandchild in an elegant breezy summer outfit, soft afternoon daylight shaping her wig, "
-                "clothing and school entrance, a "
-                "blurred school gate and out-of-focus parents and grandparents around her")},
-    {"key": "squaredance", "label": "广场舞领舞", "tagline": "广场C位", "uniform": True,  # 舞蹈活动装是场景规定装
-     "prompt": ("a community plaza at dusk, she leads a group dance rehearsal at the front "
-                "mid-gesture in a bright well-cut T-shirt and comfortable summer activewear, warm low "
-                "evening light shaping her wig, clothing and plaza, blurred plaza trees "
-                "and out-of-focus dancers following behind her")},
-    {"key": "seniorcollege", "label": "老年大学", "tagline": "老有所乐",
-     "prompt": ("a bright senior-university classroom, she sits gracefully learning a "
-                "musical instrument among peers, holding the instrument, warm window daylight "
-                "shaping her wig, clothing and classroom, blurred music stands "
-                "and out-of-focus classmates around her")},
-    {"key": "seniorcafe", "label": "闺蜜咖啡", "tagline": "闺蜜时光",
-     "prompt": ("a cozy sunlit cafe, she sits chatting over coffee with friends in a tasteful "
-                "breezy summer outfit, warm afternoon window light shaping her wig, clothing and cafe, "
-                "a blurred cafe interior and out-of-focus friends "
-                "across the small table")},
-    {"key": "parkwalk", "label": "晨间公园", "tagline": "晨间从容",
-     "prompt": ("a green park path in the morning, she takes a leisurely walk in an elegant "
-                "lightweight summer outfit, soft golden morning light shaping her wig, clothing and path, "
-                "blurred trees and greenery behind")},
-]
+from app.expo.prompt_catalog import SCENES, TRYON_SCENES
+from app.expo.prompt_service import read_snapshot
 
 
 def resolve_tryon_scene(key: str | None) -> dict | None:
@@ -1272,56 +841,6 @@ def save_scene_image(key: str, upload) -> str:
     return scene_image_url(key)  # 统一出口，带 ?v= 版本号（文件刚落盘必非 None）
 
 
-# 发色注入合成 prompt，来源 ark_expo_hair_colors 快照。
-# 只用文本锚点（名称/色号/hex），色板图**不再**随图送入模型——实测色板参考图会把
-# 合成结果拽偏（构图/人物位置偏移严重），hex 主色在上传色板时已提取（2026-07-14 亮哥指令）
-_COLOR_TEXT_CLAUSE = (
-    " After replacing the hair, recolor it to this exact hair color: {name} "
-    "(color code {code}{hex_part}). {description}The color must look like naturally "
-    "grown human hair with realistic depth, dimension and shine under the final "
-    "lighting. Do not change the hairstyle shape or length, and do not alter the face."
-)
-
-# 组合参考图路径：三角度图本身就是「该发型该发色」实拍，参考图既定发型也既定发色，
-# 所以只需让模型连颜色一起照搬，不再有 recolor 指令（2026-07-15 起，取代色板图/文字上色）
-_COLOR_FROM_REFERENCE_CLAUSE = (
-    " Match the hair color exactly as shown in the wig reference images - reproduce their "
-    "hue, depth, tone and highlights faithfully. Do not recolor or shift the color; the "
-    "reference images already show the exact target color."
-)
-
-# scene 模式：客户佩戴假发实拍 → 保持人与发型不变，置换到场景（prompt 只在服务端）
-SCENES = [
-    {"key": "business", "label": "商务会议", "tagline": "职场气场 · 从容主导",
-     "prompt": ("a bright modern executive boardroom with floor-to-ceiling windows, "
-                "she wears a chic lightweight summer outfit and presents with confidence, soft daylight")},
-    {"key": "banquet", "label": "晚宴礼遇", "tagline": "高定光影 · 优雅登场", "uniform": True,  # 晚宴旗袍是场景规定装
-     "prompt": ("an elegant evening banquet hall with warm golden bokeh lights, "
-                "she wears a refined short-sleeve silk qipao, cinematic warm portrait lighting")},
-    {"key": "cafe", "label": "午后咖啡", "tagline": "松弛日常 · 精致在线",
-     "prompt": ("a sunlit boutique coffee shop by the window, a breezy chic summer outfit, "
-                "warm afternoon light with shallow depth of field")},
-    {"key": "travel", "label": "户外旅行", "tagline": "自然光下 · 状态满分",
-     "prompt": ("an outdoor seaside promenade on a sunny day with a gentle breeze, "
-                "a light stylish summer travel outfit, natural golden-hour sunlight")},
-    {"key": "home", "label": "温馨居家", "tagline": "舒适自在 · 优雅如常",
-     "prompt": ("a cozy warm home living room with soft lamp light, a soft comfortable "
-                "summer outfit, relaxed and genuine atmosphere")},
-]
-
-_SCENE_TEMPLATE = (
-    "The person in the photo is wearing a premium wig as their hairstyle. Keep the "
-    "person's face, facial features, hairstyle, hair color and hair length exactly the "
-    "same as in the photo. Recreate it as a high-end magazine-quality portrait "
-    "photograph set in {scene}. Naturally adapt the background, outfit and lighting to "
-    "the scene while keeping the person clearly recognizable and the hair identical."
-    + _SUMMER_WARDROBE_CLAUSE
-)
-# 拆出尾句是为了让面部神采子句能插在原来的位置上：它现在按预设动态取值，不能再在
-# 模块加载期拼死（场景大片路径同样是给同一批客户拍脸，与换发路径共用同一个开关）
-_SCENE_TAIL = " The result must look like a real photograph, not an illustration."
-
-
 def resolve_scenes(keys: list[str] | None) -> list[dict]:
     """场景 key → 场景定义；不传取默认前 3 个，未知 key 丢弃并去重。"""
     if not keys:
@@ -1330,24 +849,12 @@ def resolve_scenes(keys: list[str] | None) -> list[dict]:
     return [by_key[k] for k in dict.fromkeys(keys) if k in by_key]
 
 
-def _color_clause(color: dict | None) -> str:
-    if not color:
-        return ""
-    hex_val = color.get("hex") or ""
-    description = (color.get("description") or "").strip()
-    template = _COLOR_TEXT_CLAUSE
-    return template.format(
-        name=color.get("name_en") or color.get("name") or "",
-        code=color.get("code") or "",
-        hex_part=f", hex {hex_val}" if hex_val else "",
-        description=f"Color description: {description}. " if description else "",
-    )
 
 
 def build_composite_rows(
     session_id: int, wig_ids: list[int],
     hair_color: dict | None = None, scene: dict | None = None, db=None,
-    quality: str | None = None, prompt_variant: str | None = None,
+    quality: str | None = None,
 ) -> list[ExpoResult]:
     """tryon 模式：构造待写入的 ExpoResult 行（不操作 DB）。
 
@@ -1364,29 +871,12 @@ def build_composite_rows(
         rows.append(ExpoResult(
             session_id=session_id, wig_id=wig_id,
             hair_color_json=snap, scene_json=scene_snapshot,
-            quality=quality, prompt_variant=prompt_variant,
+            quality=quality,
             status="generating",
         ))
     return rows
 
 
-def start_composites(
-    session_id: int, wig_ids: list[int],
-    hair_color: dict | None = None, scene: dict | None = None, db=None,
-    quality: str | None = None, prompt_variant: str | None = None,
-) -> None:
-    """tryon 模式：每款一条 result，发色/场景快照随 result 落库并注入 prompt。
-
-    发色选定时，按 wig 解析「该发型该发色」的组合三角度图组（ark_expo_wig_colors），
-    把路径写进各 result 的 hair_color_json.ref_photos——合成时直接拿这组图当参考、
-    连颜色一起照搬，不再文字上色（2026-07-15）。无组合图的 wig 走文字上色兜底。
-    """
-    rows = build_composite_rows(
-        session_id, wig_ids,
-        hair_color=hair_color, scene=scene, db=db,
-        quality=quality, prompt_variant=prompt_variant,
-    )
-    _start_batch(session_id, rows)
 
 
 def _resolve_combo_photos(wig_ids: list[int], color_id: int, db=None) -> dict[int, list[str]]:
@@ -1415,27 +905,19 @@ def _resolve_combo_photos(wig_ids: list[int], color_id: int, db=None) -> dict[in
 
 def build_scene_rows(
     session_id: int, scenes: list[dict], quality: str | None = None,
-    prompt_variant: str | None = None,
 ) -> list[ExpoResult]:
     """scene 模式：构造待写入的 ExpoResult 行（不操作 DB）。"""
     return [
         ExpoResult(
             session_id=session_id, wig_id=None,
             scene_json={"key": scene["key"], "label": scene["label"]},
-            quality=quality, prompt_variant=prompt_variant,
+            quality=quality,
             status="generating",
         )
         for scene in scenes
     ]
 
 
-def start_scene_composites(
-    session_id: int, scenes: list[dict], quality: str | None = None,
-    prompt_variant: str | None = None,
-) -> None:
-    """scene 模式：每个场景一条 result（wig_id 为空，场景快照落库）。"""
-    rows = build_scene_rows(session_id, scenes, quality=quality, prompt_variant=prompt_variant)
-    _start_batch(session_id, rows)
 
 
 def prepare_composite_batch(
@@ -1474,92 +956,8 @@ def launch_composite_threads(
         threading.Thread(target=_run_composite, args=(session_id, result_id), daemon=True).start()
 
 
-def _start_batch(session_id: int, rows: list[ExpoResult]) -> None:
-    """状态置位 + 插行合并为一个事务；失败回滚并把会话标 failed（不许无声吞）。
-
-    这是独立入口的完整封装；router 侧使用 prepare_composite_batch + launch_composite_threads
-    以便把配额扣减与 result 创建打包在同一事务内。
-    """
-    db = SessionLocal()
-    result_ids: list[int] = []
-    start_strategy = False
-    try:
-        result_ids, start_strategy = prepare_composite_batch(session_id, rows, db)
-        db.commit()
-    except Exception as exc:
-        db.rollback()
-        _log_fail("composite-start", session_id, exc)
-        result_ids = []
-        session = db.get(ExpoSession, session_id)
-        if session:
-            session.status = "failed"
-            session.error_message = f"composite-start: {exc}"
-            db.commit()
-    finally:
-        db.close()
-
-    launch_composite_threads(session_id, result_ids, start_strategy)
 
 
-def _build_prompt(
-    session: ExpoSession, row: ExpoResult, wig: ExpoWig | None,
-    variant: str | None = None,
-) -> tuple[str, list[Path], str | None]:
-    """按 result 形态组装 (prompt, 图片, 输出尺寸)。
-
-    分支按 wig_id 判定：无发型=scene 模式（佩戴实拍置换场景，尺寸沿用 preset 默认）；
-    有发型=tryon 换发（竖版 6 寸），scene_json 是生成场景（弱网未选=原景保持原背景，
-    否则置换到 TRYON_SCENES 中选定的职业/生活场景）。
-
-    variant 收**版本名**：子句与收尾句必须同源解析（审查 C1——分两处传，迟早出现
-    「子句要磨皮、收尾句禁磨皮」这种自相矛盾）。解析本身是纯函数、不碰 DB。
-    """
-    if row.wig_id is None and row.scene_json:
-        scene = next((s for s in SCENES if s["key"] == row.scene_json.get("key")), None)
-        prompt = (
-            _SCENE_TEMPLATE.format(scene=scene["prompt"] if scene else row.scene_json.get("label", ""))
-            # banquet 旗袍属场景规定装（uniform），只注首饰；其余 4 景注入完整 look
-            + _wardrobe_variation_clause(uniform=bool(scene and scene.get("uniform")))
-            + resolve_prompt_variant(variant)
-            + _SCENE_TAIL
-        )
-        return prompt, [to_abs(session.photo_path)], None
-
-    # 发色优先用「该发型该发色」的组合三角度实拍图（参考图即目标色）；文件在才算数。
-    # 缺组合 / 文件丢失 → 回退发型自身多角度图 + 文字上色（原色时文字为空），不留空参考
-    color = row.hair_color_json or {}
-    combo_refs = [to_abs(p) for p in (color.get("ref_photos") or [])[:3] if to_abs(p).exists()]
-    if combo_refs:
-        refs = combo_refs
-        color_clause = _COLOR_FROM_REFERENCE_CLAUSE  # 连颜色一起照搬，无 recolor
-    else:
-        refs = [to_abs(p) for p in (wig.angle_photos or [])[:3] if to_abs(p).exists()]
-        if not refs and wig.cover_path and to_abs(wig.cover_path).exists():
-            refs = [to_abs(wig.cover_path)]
-        color_clause = _color_clause(row.hair_color_json)  # 文字上色兜底（原色为空）
-    # 随图只送 自拍 + 发型参考图（组合图或原色图），不送色板图（会把合成拽偏）
-    images = [to_abs(session.photo_path), *refs]
-
-    tryon_scene = resolve_tryon_scene((row.scene_json or {}).get("key"))
-    scene_clause = (
-        _TRYON_SCENE_CLAUSE.format(scene=tryon_scene["prompt"])
-        + _wardrobe_variation_clause(uniform=bool(tryon_scene.get("uniform")))
-        + _FRAMING_CLAUSE  # 构图约束只跟场景置换走（原景保持要求构图不变，见该常量注释）
-        if tryon_scene
-        else _TRYON_KEEP_BG_CLAUSE  # 原景保持：服装整体锁定，不注入变奏
-    )
-    prompt = (
-        _COMPOSITE_TEMPLATE.format(
-            description=wig.wig_description or wig.name,
-            extra=wig.composite_prompt or "",
-        )
-        + color_clause
-        + scene_clause
-        + resolve_prompt_variant(variant)  # 两条场景路径都要：用光与皮肤处理跟场景无关
-        + resolve_style_tail(variant)      # 收尾句同源，不能与上一句自相矛盾
-        + _PORTRAIT_SPEC_CLAUSE
-    )
-    return prompt, images, _SIZE_PORTRAIT
 
 
 def _run_composite(session_id: int, result_id: int) -> None:
@@ -1570,12 +968,7 @@ def _run_composite(session_id: int, result_id: int) -> None:
     try:
         row = db.get(ExpoResult, result_id)
         session = db.get(ExpoSession, session_id)
-        wig = db.get(ExpoWig, row.wig_id) if row.wig_id else None
-
-        # 版本是客户在甄选页选的，随 result 落库（085）；空值/非法值在 resolve_* 里回落
-        prompt, images, size = _build_prompt(
-            session, row, wig, variant=row.prompt_variant,
-        )
+        prompt, images, size = read_snapshot(row)
         prepared_images = [_prep_image(path) for path in images]
 
         def call_and_save():

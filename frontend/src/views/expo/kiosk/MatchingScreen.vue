@@ -117,28 +117,16 @@
       </div>
     </div>
 
-    <!-- 合成版本：必选项，默认真实版。三版差别在皮肤怎么处理，用光一律打好 -->
-    <div class="variant-row">
-      <span class="variant-lb">出图风格</span>
-      <div class="variant-opts">
-        <button
-          v-for="v in flow.PROMPT_VARIANTS" :key="v.value"
-          class="variant-opt" :class="{ sel: flow.promptVariant.value === v.value }"
-          @click="flow.promptVariant.value = v.value"
-        >
-          <span class="vo-lb">{{ v.label }}</span>
-          <span class="vo-hint">{{ v.hint }}</span>
-        </button>
-      </div>
-    </div>
+    <PromptVersionPicker />
 
-    <button class="xk-btn go" :disabled="!flow.selectedWigId.value" @click="flow.generate()">
+    <button class="xk-btn go" :disabled="!flow.selectedWigId.value || !flow.promptVersionReady.value || flow.generating.value" @click="flow.generate()">
       生成我的试戴效果
     </button>
   </div>
 </template>
 
 <script setup>
+import PromptVersionPicker from './PromptVersionPicker.vue'
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { getWigPicker } from '@/api/expo'
 
@@ -566,25 +554,6 @@ onBeforeUnmount(() => { if (scRaf) cancelAnimationFrame(scRaf) })
    看起来像内容被裁没了，而不是「还能往下滑」 */
 /* 出图风格：必选项，横向三档。压在生成按钮上方——客户的决策顺序是「选发型 → 定风格 → 生成」，
    放在按钮之后会被 .go 的上沿阴影盖住，放在卡片区之内又会跟着滚出视野 */
-.variant-row {
-  flex: none; display: flex; align-items: center; justify-content: center;
-  gap: 12px; margin-top: 14px;
-}
-.variant-lb { font-size: 11px; letter-spacing: 0.2em; color: var(--xk-gold-dim); }
-.variant-opts { display: flex; gap: 8px; }
-.variant-opt {
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  padding: 8px 16px; border-radius: 12px; cursor: pointer;
-  border: 1px solid var(--xk-gold-line); background: rgba(232, 196, 121, 0.03);
-}
-.variant-opt.sel {
-  border-color: var(--xk-gold);
-  background: rgba(232, 196, 121, 0.12);
-  box-shadow: inset 0 0 16px rgba(232, 196, 121, 0.14);
-}
-.vo-lb { font-size: 14px; color: var(--xk-paper); }
-.variant-opt.sel .vo-lb { color: var(--xk-gold-hi); }
-.vo-hint { font-size: 10px; letter-spacing: 0.06em; color: var(--xk-mut); }
 .go {
   flex: none; margin-top: 16px; margin-bottom: 1vh; min-width: 300px; height: 64px; font-size: 17px;
   box-shadow: 0 6px 26px rgba(232, 196, 121, 0.3), 0 -14px 22px 18px var(--xk-ink);
@@ -594,8 +563,6 @@ onBeforeUnmount(() => { if (scRaf) cancelAnimationFrame(scRaf) })
    而卡片内 缩略图76 + 匹配度48 + 两道 gap 是固定开销，发型名与推荐理由被压到不足 160px */
 @media (max-width: 560px) {
   /* 三档横排 + 前缀标签在 390px 屏上会挤成两行错位：标签独占一行，选项行居中铺开 */
-  .variant-row { flex-direction: column; gap: 6px; margin-top: 10px; }
-  .variant-opt { padding: 7px 12px; }
 
   .matching { padding: 1.5vh 4vw 2vh; }
   .reading, .cards, .color-pick, .scene-pick { width: 100%; }

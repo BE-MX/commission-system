@@ -1,3 +1,4 @@
+from tests import expo_prompt_support as prompts
 """展会试戴「发色选择 + 场景大片双入口」纯逻辑测试（047 迁移配套）。
 
 覆盖：场景解析、发色 prompt 子句、双模板组图、批次切片边界、GenerateRequest 校验。
@@ -44,7 +45,7 @@ def test_resolve_scenes_all_invalid_returns_empty():
 # ---------------- 发色 prompt 子句（048 发色库快照形态） ----------------
 
 def test_color_clause_text_mode_carries_description():
-    clause = ai_pipeline._color_clause({
+    clause = prompts.color({
         "name": "自然黑", "code": "1B", "hex": "#1a1110",
         "description": "深邃自然黑，光下泛冷调蓝黑光泽",
     })
@@ -57,7 +58,7 @@ def test_color_clause_text_mode_carries_description():
 def test_color_clause_ignores_swatch_path_stays_text_mode():
     """快照带 swatch_path 也只走文本模板：色板图不再进合成（2026-07-14 亮哥指令，
     色板参考图会把合成结果拽偏）。"""
-    clause = ai_pipeline._color_clause(
+    clause = prompts.color(
         {"name": "栗棕", "code": "6", "hex": "#5a3a26", "description": "暖调栗棕",
          "swatch_path": "uploads/expo/hair_colors/swatch_x.png"},
     )
@@ -66,11 +67,11 @@ def test_color_clause_ignores_swatch_path_stays_text_mode():
 
 
 def test_color_clause_none_is_empty():
-    assert ai_pipeline._color_clause(None) == ""
+    assert prompts.color(None) == ""
 
 
 def test_color_clause_missing_hex_and_description_omitted():
-    clause = ai_pipeline._color_clause({"name": "深棕", "code": "2"})
+    clause = prompts.color({"name": "深棕", "code": "2"})
     assert "hex" not in clause
     assert "Color description" not in clause
     assert "深棕" in clause
@@ -85,7 +86,7 @@ def _session(photo="uploads/expo/photos/x.jpg", mode="tryon"):
 def test_build_prompt_scene_uses_scene_template_and_single_image():
     session = _session(mode="scene")
     row = ExpoResult(session_id=1, wig_id=None, scene_json={"key": "cafe", "label": "午后咖啡"})
-    prompt, images, size = ai_pipeline._build_prompt(session, row, None)
+    prompt, images, size = prompts.build_prompt(session, row, None)
     assert "coffee shop" in prompt
     assert "magazine-quality" in prompt
     assert len(images) == 1  # 只有客户实拍，不带发型参考图
@@ -98,7 +99,7 @@ def test_build_prompt_tryon_appends_color_clause():
         session_id=1, wig_id=1,
         hair_color_json={"name": "栗棕", "code": "6", "hex": "#5a3a26", "description": "暖调栗棕"},
     )
-    prompt, images, size = ai_pipeline._build_prompt(session, row, wig)
+    prompt, images, size = prompts.build_prompt(session, row, wig)
     assert "short bob" in prompt
     assert "栗棕" in prompt and "#5a3a26" in prompt
     assert "LAST reference image" not in prompt  # 色板图不存在 → 纯文本子句
@@ -118,7 +119,7 @@ def test_build_prompt_tryon_swatch_image_never_sent(tmp_path):
             "description": "暖调栗棕", "swatch_path": str(swatch),
         },
     )
-    prompt, images, size = ai_pipeline._build_prompt(session, row, wig)
+    prompt, images, size = prompts.build_prompt(session, row, wig)
     assert "LAST reference image" not in prompt
     assert swatch not in images
     assert len(images) == 1  # 只剩自拍（发型参考图文件不存在）
@@ -129,7 +130,7 @@ def test_build_prompt_tryon_without_color_has_no_clause():
     session = _session()
     wig = ExpoWig(model_no="LS-2", name="知性短发", wig_description="pixie cut")
     row = ExpoResult(session_id=1, wig_id=2, hair_color_json=None)
-    prompt, _, _ = ai_pipeline._build_prompt(session, row, wig)
+    prompt, _, _ = prompts.build_prompt(session, row, wig)
     assert "recolor" not in prompt.lower()
 
 
@@ -138,7 +139,7 @@ def test_build_prompt_tryon_default_keeps_background():
     session = _session()
     wig = ExpoWig(model_no="LS-3", name="轻盈波波", wig_description="airy bob")
     row = ExpoResult(session_id=1, wig_id=3, hair_color_json=None)
-    prompt, images, size = ai_pipeline._build_prompt(session, row, wig)
+    prompt, images, size = prompts.build_prompt(session, row, wig)
     assert "FIRST image is the customer's own photo" in prompt  # 锚：参考图角色分工
     assert "background and framing exactly the same" in prompt   # 场：默认原景全锁定
     assert "85mm" not in prompt  # 浅景深只随场景置换路径（原景不能又锁背景又虚化）
@@ -158,7 +159,7 @@ def test_build_prompt_tryon_with_scene_swaps_background():
         session_id=1, wig_id=3,
         scene_json={"key": "whitecollar", "label": "白领高管"},
     )
-    prompt, _, _ = ai_pipeline._build_prompt(session, row, wig)
+    prompt, _, _ = prompts.build_prompt(session, row, wig)
     assert "boardroom" in prompt  # whitecollar 场景 prompt 注入
     assert "background and framing exactly the same" not in prompt
     assert "85mm" in prompt  # 场景置换路径带摄像语言
@@ -186,19 +187,19 @@ def test_build_prompt_tryon_single_scene_is_portrait():
     session = _session()
     wig = ExpoWig(model_no="LS-3", name="轻盈波波", wig_description="airy bob")
     row = ExpoResult(session_id=1, wig_id=3, hair_color_json=None)
-    prompt, _, size = ai_pipeline._build_prompt(session, row, wig)
+    prompt, _, size = prompts.build_prompt(session, row, wig)
     assert size == "1024x1536"
     assert "102x152mm" in prompt
 
     row_scene = ExpoResult(session_id=1, wig_id=3, scene_json={"key": "whitecollar", "label": "白领高管"})
-    _, _, size2 = ai_pipeline._build_prompt(session, row_scene, wig)
+    _, _, size2 = prompts.build_prompt(session, row_scene, wig)
     assert size2 == "1024x1536"
 
 
 def test_build_prompt_scene_mode_size_follows_preset():
     session = _session(mode="scene")
     row = ExpoResult(session_id=1, wig_id=None, scene_json={"key": "cafe", "label": "午后咖啡"})
-    _, _, size = ai_pipeline._build_prompt(session, row, None)
+    _, _, size = prompts.build_prompt(session, row, None)
     assert size is None  # scene 模式不限定，沿用 preset 配置
 
 
@@ -261,7 +262,7 @@ def test_scene_mode_home_key_not_confused_with_tryon_home():
     """SCENES 与 TRYON_SCENES 都有 key=home：wig_id 为空必须命中 scene 模式模板（撞名守卫）。"""
     session = _session(mode="scene")
     row = ExpoResult(session_id=1, wig_id=None, scene_json={"key": "home", "label": "温馨居家"})
-    prompt, images, size = ai_pipeline._build_prompt(session, row, None)
+    prompt, images, size = prompts.build_prompt(session, row, None)
     assert "soft lamp light" in prompt      # scene 模式 home 的独有描述
     assert "front-left" not in prompt       # tryon home 的独有描述不得混入
     assert len(images) == 1
@@ -278,7 +279,7 @@ def test_build_prompt_color_and_scene_combined(tmp_path):
         hair_color_json={"name": "栗棕", "code": "6", "swatch_path": str(swatch)},
         scene_json={"key": "gathering", "label": "聚会"},
     )
-    prompt, images, size = ai_pipeline._build_prompt(session, row, wig)
+    prompt, images, size = prompts.build_prompt(session, row, wig)
     assert "LAST reference image" not in prompt
     assert "栗棕" in prompt
     assert "dinner party" in prompt
@@ -289,9 +290,9 @@ def test_build_prompt_color_and_scene_combined(tmp_path):
 # ---------------- 穿搭变奏子句（2026-07-21 参考图 look 池版） ----------------
 
 def test_wardrobe_variation_non_uniform_has_look_and_bans():
-    clause = ai_pipeline._wardrobe_variation_clause(uniform=False)
+    clause = prompts.wardrobe(uniform=False)
     assert "For this shot, dress her in" in clause          # look 注入在场
-    assert any(look in clause for look in ai_pipeline._OUTFIT_LOOKS)  # 来自参考图 look 池
+    assert any(look in clause for look in prompts._OUTFIT_LOOKS)  # 来自参考图 look 池
     assert "not a plain all-black look" in clause           # 禁纯黑
     assert "heart-shaped pendant" in clause                 # 禁心形坠长项链
     assert "Accessorize with" in clause
@@ -299,7 +300,7 @@ def test_wardrobe_variation_non_uniform_has_look_and_bans():
 
 def test_wardrobe_variation_uniform_only_jewelry():
     """着装锁定场景（制服/职业装/旗袍/舞蹈装）不得改场景规定着装，只注入首饰变奏。"""
-    clause = ai_pipeline._wardrobe_variation_clause(uniform=True)
+    clause = prompts.wardrobe(uniform=True)
     assert "For this shot, dress her in" not in clause
     assert "all-black" not in clause
     assert "Accessorize with" in clause
@@ -312,13 +313,13 @@ def test_build_prompt_scene_swap_injects_variation_uniform_aware():
     # 非制服景（白领高管）：完整变奏
     row = ExpoResult(session_id=1, wig_id=1,
                      scene_json={"key": "whitecollar", "label": "白领高管"})
-    prompt, _, _ = ai_pipeline._build_prompt(session, row, wig)
+    prompt, _, _ = prompts.build_prompt(session, row, wig)
     assert "For this shot, dress her in" in prompt
     assert "heart-shaped pendant" in prompt
     # 制服景（医生白大褂）：不动着装，只有首饰
     row_uni = ExpoResult(session_id=1, wig_id=1,
                          scene_json={"key": "doctor", "label": "医生"})
-    prompt_uni, _, _ = ai_pipeline._build_prompt(session, row_uni, wig)
+    prompt_uni, _, _ = prompts.build_prompt(session, row_uni, wig)
     assert "For this shot, dress her in" not in prompt_uni
     assert "Accessorize with" in prompt_uni
 
@@ -329,13 +330,13 @@ def test_build_prompt_scene_prescribed_attire_locked():
     wig = ExpoWig(model_no="LS-1", name="轻盈波波", wig_description="short bob")
     for key, garment in (("weddinghost", "qipao"), ("squaredance", "activewear")):
         row = ExpoResult(session_id=1, wig_id=1, scene_json={"key": key, "label": key})
-        prompt, _, _ = ai_pipeline._build_prompt(session, row, wig)
+        prompt, _, _ = prompts.build_prompt(session, row, wig)
         assert "For this shot, dress her in" not in prompt
         assert "Accessorize with" in prompt
         assert garment in prompt  # 场景规定装保留
     row = ExpoResult(session_id=1, wig_id=None,
                      scene_json={"key": "banquet", "label": "晚宴礼遇"})
-    prompt, _, _ = ai_pipeline._build_prompt(_session(mode="scene"), row, None)
+    prompt, _, _ = prompts.build_prompt(_session(mode="scene"), row, None)
     assert "For this shot, dress her in" not in prompt
     assert "silk qipao" in prompt  # 场景规定装保留
 
@@ -346,11 +347,11 @@ def test_unlocked_scene_prompts_have_no_hardcoded_garments():
         r"dress|blouse|qipao|polo|slacks|activewear|sheath|suit\b|coat|uniform",
         re.IGNORECASE,
     )
-    for s in ai_pipeline.TRYON_SCENES + ai_pipeline.SCENES:
+    for mode, s in [(mode, s) for mode, scenes in [("tryon", ai_pipeline.TRYON_SCENES), ("scene", ai_pipeline.SCENES)] for s in scenes]:
         if s.get("uniform"):
             continue
-        m = garment.search(s["prompt"])
-        assert not m, f"{s['key']} 泄漏单品词 {m.group() if m else ''}: {s['prompt']}"
+        m = garment.search(prompts.config()["scene_prompts"][f"{mode}:{s['key']}"])
+        assert not m, f"{s['key']} 泄漏单品词 {m.group() if m else ''}"
 
 
 def _tryon_scene_prompt(scene_key: str, variant: str = "real") -> str:
@@ -362,7 +363,7 @@ def _tryon_scene_prompt(scene_key: str, variant: str = "real") -> str:
         wig_id=1,
         scene_json={"key": scene_key, "label": scene["label"]},
     )
-    return ai_pipeline._build_prompt(session, row, wig, variant=variant)[0]
+    return prompts.build_prompt(session, row, wig, variant=variant)[0]
 
 
 class TestLimitedFaceAdaptation:
@@ -387,7 +388,7 @@ class TestLimitedFaceAdaptation:
 
     @pytest.mark.parametrize("scene_key", ["doctor", "hsrtravel"])
     def test_identity_sensitive_scenes_do_not_prescribe_a_new_expression(self, scene_key):
-        scene_prompt = ai_pipeline.resolve_tryon_scene(scene_key)["prompt"]
+        scene_prompt = prompts.config()["scene_prompts"][f"tryon:{scene_key}"]
         banned = ("expression", "smile", "reassuring", "looking composed", "confident expression")
         assert all(word not in scene_prompt for word in banned)
         assert "compatible with her existing gaze direction" in scene_prompt
@@ -398,7 +399,7 @@ class TestLimitedFaceAdaptation:
             re.IGNORECASE,
         )
         for scene in ai_pipeline.TRYON_SCENES:
-            prompt = scene["prompt"]
+            prompt = prompts.config()["scene_prompts"][f"tryon:{scene['key']}"]
             hit = facial_direction.search(prompt)
             assert not hit, f"{scene['key']} 强制面部状态: {hit.group() if hit else ''}"
             assert "key light" not in prompt, f"{scene['key']} 仍指定面部主光"
@@ -411,7 +412,7 @@ def test_scene_swap_framing_preserves_head_neck_and_shoulders():
     wig = ExpoWig(model_no="LS-9", name="胎毛波波", wig_description="airy bob")
     row = ExpoResult(session_id=1, wig_id=9,
                      scene_json={"key": "whitecollar", "label": "白领高管"})
-    prompt, _, _ = ai_pipeline._build_prompt(session, row, wig)
+    prompt, _, _ = prompts.build_prompt(session, row, wig)
 
     assert "waist-up" in prompt
     assert "full shoulder span, upper chest and collarbone area" in prompt
@@ -433,7 +434,7 @@ def _variant_prompts(variant="real"):
     keep = ExpoResult(session_id=1, wig_id=7)          # 无 scene_json → 原景保持
     scene = ExpoResult(session_id=1, wig_id=None,
                        scene_json={"key": "banquet", "label": "晚宴礼遇"})
-    build = ai_pipeline._build_prompt
+    build = prompts.build_prompt
     return {
         "场景置换": build(_session(), swap, wig, variant=variant)[0],
         "原景保持": build(_session(), keep, wig, variant=variant)[0],
@@ -450,8 +451,8 @@ class TestPromptVariantSwitch:
 
     def test_all_three_variants_limit_face_relighting(self):
         """三版都保留场景光影，但不得靠局部重打面部光来实现。"""
-        for name in ai_pipeline.PROMPT_VARIANTS:
-            clause = ai_pipeline.resolve_prompt_variant(name)
+        for name in prompts.PROMPT_VARIANTS:
+            clause = prompts.finish(name)
             assert "uniform exposure and colour-temperature blend" in clause, name
             assert "do not add a new local key light, fill light or catchlight" in clause, name
             assert "directional light fully to the wig, neck, clothing, body and background" in clause, name
@@ -460,9 +461,9 @@ class TestPromptVariantSwitch:
     def test_skin_handling_is_what_actually_differs(self):
         """三版不能是「换了措辞的同一件事」——上一个选择器就是因为假选择被撤的。
         真实/柔光锁死皮肤纹理，美颜明确要求磨皮，这是可断言的实质差异。"""
-        real = ai_pipeline.resolve_prompt_variant("real")
-        soft = ai_pipeline.resolve_prompt_variant("soft")
-        beauty = ai_pipeline.resolve_prompt_variant("beauty")
+        real = prompts.finish("real")
+        soft = prompts.finish("soft")
+        beauty = prompts.finish("beauty")
 
         for keeps_texture in (real, soft):
             assert "do not smooth, retouch, plump, lighten or rejuvenate" in keeps_texture
@@ -474,19 +475,11 @@ class TestPromptVariantSwitch:
 
     def test_beauty_variant_protects_the_hair(self):
         """磨皮会连带把发丝磨成塑料感，而发丝正是要卖的东西——美颜版必须显式护发。"""
-        beauty = ai_pipeline.resolve_prompt_variant("beauty")
+        beauty = prompts.finish("beauty")
         assert "facial skin ONLY" in beauty
         assert "never soften, blur, smooth or plasticise the hair" in beauty
         # 另两版不需要这句（它们本来就不修皮肤）
-        assert "plasticise the hair" not in ai_pipeline.resolve_prompt_variant("real")
-
-    @pytest.mark.parametrize("bad", ["", None, "REAL", "美颜", "v1", "off", "x"])
-    def test_blank_or_unknown_falls_back_to_default_without_raising(self, bad):
-        """空值是正常情况（085 迁移前的老行、老代码写的行），非法值是笔误——都回落，绝不抛。"""
-        assert ai_pipeline.resolve_prompt_variant(bad) ==             ai_pipeline.resolve_prompt_variant(ai_pipeline.DEFAULT_PROMPT_VARIANT)
-
-    def test_default_is_the_first_option_shown_to_customers(self):
-        assert ai_pipeline.DEFAULT_PROMPT_VARIANT == ai_pipeline.PROMPT_VARIANTS[0] == "real"
+        assert "plasticise the hair" not in prompts.finish("real")
 
     def test_beauty_prompt_has_no_self_contradiction(self):
         """审查 C1：收尾句排在版本子句之后且是全篇最后一句，位置权重更高。
@@ -517,65 +510,7 @@ class TestPromptVariantSwitch:
             assert "soften fine lines and wrinkles" in prompt, f"{name} 没吃到版本"
 
 
-class TestPromptVariantWiring:
-    """接线覆盖（2026-08-01 对抗性审查 C2）。
-
-    审查做了三个变异——start_composites 不写该字段、start_scene_composites 不写、
-    _run_composite 写死 "real"——每一个都等价于「客户点的那一下永远到不了图上」，
-    而 1074 条测试**全部照常通过**。当时的测试全压在提示词文本上，接线一根没测。
-    这正是 2026-07-31 那个「假选择」档位选择器犯过一次的错，不能再犯第二次。
-    """
-
-    @staticmethod
-    def _captured_rows(monkeypatch, call):
-        """打桩 _start_batch 捕获「构造出来的 result 行」。
-
-        真调 start_composites 会自建 session 并起线程打 AI——测试里不能跑，
-        而要防的那两个变异（构造时漏写字段）恰好就发生在打桩点之前。
-        """
-        seen = []
-        monkeypatch.setattr(ai_pipeline, "_start_batch", lambda sid, rows: seen.extend(rows))
-        call()
-        return seen
-
-    def test_tryon_choice_lands_on_every_row(self, monkeypatch):
-        """一次 generate 生成多条 result，每条都要带上客户选的版本。"""
-        rows = self._captured_rows(
-            monkeypatch,
-            lambda: ai_pipeline.start_composites(1, [11, 22], prompt_variant="beauty"),
-        )
-        assert len(rows) == 2
-        assert {r.prompt_variant for r in rows} == {"beauty"}
-
-    def test_scene_choice_lands_on_every_row(self, monkeypatch):
-        scenes = [{"key": "cafe", "label": "午后咖啡"}, {"key": "home", "label": "温馨居家"}]
-        rows = self._captured_rows(
-            monkeypatch,
-            lambda: ai_pipeline.start_scene_composites(1, scenes, prompt_variant="soft"),
-        )
-        assert len(rows) == 2
-        assert {r.prompt_variant for r in rows} == {"soft"}
-
-    def test_composite_reads_the_stored_choice(self):
-        """_run_composite 必须把 row.prompt_variant 传给 _build_prompt。
-
-        直接锚源码：打桩整条 _run_composite 要 mock 掉 DB/AI/文件系统三层，
-        维护成本高于它能挡的风险（同 test_stamp_precedes_display 的既有取舍）。
-        写死任何字面量都会让这条挂掉。
-        """
-        import inspect
-
-        src = inspect.getsource(ai_pipeline._run_composite)
-        assert "variant=row.prompt_variant" in src, "合成没有读取落库的版本，选择到不了图上"
-
-    def test_generate_request_accepts_and_rejects_the_right_values(self):
-        for good in ai_pipeline.PROMPT_VARIANTS:
-            assert GenerateRequest(prompt_variant=good).prompt_variant == good
-        assert GenerateRequest().prompt_variant is None  # 老客户端不传 → 后端回落
-        for bad in ("REAL", "glam", "美颜", "real "):
-            with pytest.raises(ValidationError):
-                GenerateRequest(prompt_variant=bad)
-
+# Dynamic version persistence and worker behavior are covered in test_expo_prompt_versions.py.
 
 class TestLightingBase:
     """三版共有的身份安全光影底座（2026-08-29）。"""
@@ -592,8 +527,8 @@ class TestLightingBase:
             "reduce under-eye shadows",
             "liveliness must come from light, gaze and colour",
         )
-        for variant in ai_pipeline.PROMPT_VARIANTS:
-            prompt = ai_pipeline.resolve_prompt_variant(variant)
+        for variant in prompts.PROMPT_VARIANTS:
+            prompt = prompts.finish(variant)
             for phrase in banned:
                 assert phrase not in prompt, f"{variant} 仍含局部重画面部指令: {phrase}"
 
@@ -602,7 +537,7 @@ class TestLightingBase:
         锁必须①对称（neither slimmer nor fuller）②正向锚回第一张图③带表情豁免——
         场景置换放开表情且场景文案明写 smile，无豁免的 exact geometry 会僵脸或被无视。
         三版三路径全查——锁在 _LIGHTING_BASE 里，谁把它挪进单个版本就会在这里挂掉。"""
-        for variant in ai_pipeline.PROMPT_VARIANTS:
+        for variant in prompts.PROMPT_VARIANTS:
             for name, prompt in _variant_prompts(variant=variant).items():
                 assert "neither slimmer nor fuller" in prompt, f"{variant}/{name} 缺对称几何锁"
                 assert "same face width, cheek contour and jawline" in prompt, \
@@ -611,7 +546,7 @@ class TestLightingBase:
                     f"{variant}/{name} 缺有限表情下的面部结构锁"
         # 美颜版必须在磨皮指令**之后**再锁一次几何（含 eye size——磨皮语境下笑会眯眼）；
         # 位置权重靠后，先锁后磨等于没锁，顺序也锚死
-        beauty = ai_pipeline.resolve_prompt_variant("beauty")
+        beauty = prompts.finish("beauty")
         relock = "cheek contour, jawline and eye size"
         assert relock in beauty, "美颜版缺磨皮后几何复锁"
         assert beauty.index("smooth, luminous finish") < beauty.index(relock), \
@@ -621,7 +556,7 @@ class TestLightingBase:
         """旧措辞回归探测（2026-08-02 病灶三件套）：「do not slim the face」单向禁令、
         「heavy fill / 无上限填光」、「warmth in the cheeks」苹果肌血色意象。
         扫**整段 prompt**而非仅版本子句——加回场景子句或合成模板同样要挂。"""
-        for variant in ai_pipeline.PROMPT_VARIANTS:
+        for variant in prompts.PROMPT_VARIANTS:
             for name, prompt in _variant_prompts(variant=variant).items():
                 where = f"{variant}/{name}"
                 assert "do not slim the face" not in prompt, f"{where} 单向禁令回潮"
@@ -647,14 +582,14 @@ class TestLightingBase:
         banned = re.compile(r"(radiant|glowing|youthful|flawless|blemish-free|porcelain)",
                             re.I)
         for name in ("real", "soft"):
-            hit = banned.search(ai_pipeline.resolve_prompt_variant(name))
+            hit = banned.search(prompts.finish(name))
             assert not hit, f"{name} 版出现美颜触发词 {hit.group() if hit else ''}"
 
     def test_no_variant_mentions_age(self):
         """任何一版出现 mature/elderly 都会把人往老里推，正好与诉求相反——三版都不许。"""
         banned = re.compile(r"(elderly|mature|middle-aged|older woman)", re.I)
-        for name in ai_pipeline.PROMPT_VARIANTS:
-            hit = banned.search(ai_pipeline.resolve_prompt_variant(name))
+        for name in prompts.PROMPT_VARIANTS:
+            hit = banned.search(prompts.finish(name))
             assert not hit, f"{name} 版出现年龄描述 {hit.group() if hit else ''}"
 
 
@@ -663,7 +598,7 @@ def test_keep_bg_path_has_no_framing_clause():
     session = _session()
     wig = ExpoWig(model_no="LS-8", name="轻盈波波", wig_description="short bob")
     row = ExpoResult(session_id=1, wig_id=8)  # 无 scene_json → keep_bg 分支
-    prompt, _, _ = ai_pipeline._build_prompt(session, row, wig)
+    prompt, _, _ = prompts.build_prompt(session, row, wig)
     assert "waist-up" not in prompt
     assert "mid-thigh" not in prompt
     assert "background and framing exactly the same" in prompt
@@ -674,7 +609,7 @@ def test_build_prompt_keep_bg_has_no_variation():
     session = _session()
     wig = ExpoWig(model_no="LS-1", name="轻盈波波", wig_description="short bob")
     row = ExpoResult(session_id=1, wig_id=1)
-    prompt, _, _ = ai_pipeline._build_prompt(session, row, wig)
+    prompt, _, _ = prompts.build_prompt(session, row, wig)
     assert "It is summer" not in prompt
     assert "Accessorize with" not in prompt
     assert "For this shot, dress her in" not in prompt
@@ -683,7 +618,7 @@ def test_build_prompt_keep_bg_has_no_variation():
 def test_build_prompt_scene_mode_injects_variation():
     session = _session(mode="scene")
     row = ExpoResult(session_id=1, wig_id=None, scene_json={"key": "cafe", "label": "午后咖啡"})
-    prompt, _, _ = ai_pipeline._build_prompt(session, row, None)
+    prompt, _, _ = prompts.build_prompt(session, row, None)
     assert "For this shot, dress her in" in prompt
     assert "heart-shaped pendant" in prompt
 

@@ -9,9 +9,10 @@
  */
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import {
-  createSession, generateResults, getScenes,
+  createSession, generateResults, getScenes, getPromptVersionPicker,
   getSession, getWigColors, registerCustomer, setReaction, submitFeedback, updateCustomer,
 } from '@/api/expo'
+import { usePromptVersions } from './usePromptVersions'
 import { normalisePhone } from './expoPhone'
 import { useAiIssueSupport } from './useAiIssueSupport'
 import { useQrUpload } from './useQrUpload'
@@ -43,13 +44,8 @@ export function useTryOnFlow() {
   const guideShown = ref(false)      // 拍摄示范浮层一客只自动弹一次（register↔capture 往返不重弹）
   const tryonScenes = ref([])        // tryon 生成场景选项（职业/生活场景，滑动选择）
   const selectedTryonScene = ref(null) // 默认选中第一个；仅弱网加载失败时留 null=原景兜底
-  // 合成版本必选、默认真实；值域与后端 GenerateRequest.prompt_variant 同步。
-  const PROMPT_VARIANTS = [
-    { value: 'real', label: '真实', hint: '如实还原 · 不修皮肤' },
-    { value: 'soft', label: '柔光', hint: '光线更柔 · 保留质感' },
-    { value: 'beauty', label: '美颜', hint: '磨皮提亮 · 精修质感' },
-  ]
-  const promptVariant = ref(PROMPT_VARIANTS[0].value)
+  const promptState = usePromptVersions(getPromptVersionPicker)
+  const { promptVersionId, promptVersionReady, loadPromptVersions, resetPromptVersions } = promptState
   // 出图档位选择器已于 2026-07-31 撤除：实测云雾中转站不透传 quality，high/medium/low
   // 三档耗时(165~180s)、体积与 output_tokens 均无差别，画质目视也无差别——它既是个假选择，
   // 又对外承诺了错误的时长（约1分钟 vs 实际约3分钟）。后端字段与入参保留，
@@ -65,6 +61,7 @@ export function useTryOnFlow() {
   let pollTimer = null
   let idleTimer = null
   let pollBusy = false   // 在途守卫：上一轮未返回不发新请求
+  let checkingGeneration = false
   let pollFails = 0      // 连续失败计数，成功即清零
   let pollGen = 0        // 轮询代际：旧会话的迟到响应不许解锁新会话的 pollBusy
   let registerPromise = null // 乐观切换：后台建档 promise，submitPhoto 前 await 兑现
@@ -102,6 +99,7 @@ export function useTryOnFlow() {
   }
 
   function resetAll() {
+    checkingGeneration = false
     stopPolling()
     if (idleTimer) clearTimeout(idleTimer)
     registerPromise = null
@@ -120,7 +118,7 @@ export function useTryOnFlow() {
     selectedColorId.value = null
     selectedSceneKeys.value = []
     selectedTryonScene.value = null
-    promptVariant.value = PROMPT_VARIANTS[0].value // 必选项复位到默认，不带给下一位客户
+    resetPromptVersions()
     salesReturnStep.value = 'result'
     guideShown.value = false
     // 必须放在 step='attract' 之后：closeQr 内部调 touch()，touch() 见 attract 直接返回不
@@ -341,6 +339,19 @@ export function useTryOnFlow() {
       session.value = res.data
       const status = res.data.status
       const issue = res.data.ai_issue
+      if (checkingGeneration) {
+        checkingGeneration = false
+        errorText.value = ''
+        if (status === 'generating') generating.value = true
+        else if (status !== 'done' && status !== 'failed') {
+          generating.value = false
+          stopPolling()
+          step.value = mode.value === 'scene' ? 'scene' : 'matching'
+          errorText.value = '生成请求未成功，请重新选择后重试'
+          touch()
+          return
+        }
+      }
 
       if (step.value === 'analyzing' && status === 'analyzed') {
         step.value = 'matching'
@@ -393,21 +404,34 @@ export function useTryOnFlow() {
 
   // 单选生成：只合成用户选中的那一款（发色可选）
   async function generate() {
-    if (generating.value || !selectedWigId.value) return
+    if (generating.value || !selectedWigId.value || !promptVersionReady.value) return
     errorText.value = ''
     generating.value = true
     if (session.value) session.value.ai_issue = null
+    const sid = sessionId.value
     step.value = 'result'
     touch() // 忙态已置位：只清残留 idle 定时器不再武装（防 pointerdown 先于 click 的竞态跳屏）
     try {
       await generateResults(sessionId.value, {
         wigIds: [selectedWigId.value], hairColorId: selectedColorId.value,
-        sceneKey: selectedTryonScene.value, promptVariant: promptVariant.value,
+        sceneKey: selectedTryonScene.value, promptVersionId: promptVersionId.value,
       })
+      if (sid !== sessionId.value) return
       startPolling()
     } catch (e) {
+      if (sid !== sessionId.value) return
       generating.value = false
-      errorText.value = '生成请求失败，请呼叫顾问'
+      if (e?.response?.status >= 400 && e?.response?.status < 500) {
+        step.value = mode.value === 'scene' ? 'scene' : 'matching'
+        const detail = e.response.data?.detail
+        errorText.value = typeof detail === 'string' ? detail : '生成选项已变化，请重新选择'
+        loadPromptVersions()
+      } else {
+        checkingGeneration = true
+        generating.value = true
+        errorText.value = '请求结果暂未确认，正在查询生成状态…'
+        startPolling()
+      }
     }
   }
 
@@ -425,20 +449,33 @@ export function useTryOnFlow() {
   }
 
   async function generateScenes() {
-    if (!selectedSceneKeys.value.length) return
+    if (generating.value || !selectedSceneKeys.value.length || !promptVersionReady.value) return
     errorText.value = ''
     generating.value = true
     if (session.value) session.value.ai_issue = null
+    const sid = sessionId.value
     step.value = 'result'
     touch() // 同 generate：清残留 idle 定时器
     try {
       await generateResults(sessionId.value, {
-        sceneKeys: [...selectedSceneKeys.value], promptVariant: promptVariant.value,
+        sceneKeys: [...selectedSceneKeys.value], promptVersionId: promptVersionId.value,
       })
+      if (sid !== sessionId.value) return
       startPolling()
     } catch (e) {
+      if (sid !== sessionId.value) return
       generating.value = false
-      errorText.value = '生成请求失败，请呼叫顾问'
+      if (e?.response?.status >= 400 && e?.response?.status < 500) {
+        step.value = mode.value === 'scene' ? 'scene' : 'matching'
+        const detail = e.response.data?.detail
+        errorText.value = typeof detail === 'string' ? detail : '生成选项已变化，请重新选择'
+        loadPromptVersions()
+      } else {
+        checkingGeneration = true
+        generating.value = true
+        errorText.value = '请求结果暂未确认，正在查询生成状态…'
+        startPolling()
+      }
     }
   }
 
@@ -479,6 +516,7 @@ export function useTryOnFlow() {
   }
 
   onBeforeUnmount(() => {
+    checkingGeneration = false
     stopPolling()
     if (idleTimer) clearTimeout(idleTimer)
     disposeQr()
@@ -491,7 +529,7 @@ export function useTryOnFlow() {
     customerId, sessionId,
     hairColors, selectedColorId, scenes, selectedSceneKeys, guideShown,
     tryonScenes, selectedTryonScene, loadTryonScenes,
-    PROMPT_VARIANTS, promptVariant,
+    ...promptState,
     start, submitRegister, submitPhoto, generate, react,
     loadScenes, toggleScene, generateScenes, reselectScenes,
     openSales, submitSales, contactAdmin, contactAdminPending, resetAll, touch,

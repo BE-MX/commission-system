@@ -516,6 +516,14 @@ export const NAV_ENTRIES = [
     },
   },
   {
+    path: '/expo/prompt-versions',
+    name: 'ExpoPromptVersions',
+    component: () => import('@/views/expo/PromptVersions.vue'),
+    title: '生图提示词',
+    permission: 'expo:admin',
+    menu: { group: 'expo', title: '生图提示词', icon: Reading, order: 18, permission: 'expo:admin' },
+  },
+  {
     path: '/expo/scripts',
     name: 'ExpoScriptLibrary',
     component: () => import('@/views/expo/ScriptLibrary.vue'),

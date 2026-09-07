@@ -1,0 +1,138 @@
+{
+  "tryon": [
+    {
+      "key": "whitecollar",
+      "label": "白领高管",
+      "tagline": "从容主场"
+    },
+    {
+      "key": "teacher",
+      "label": "老师",
+      "tagline": "讲台风采"
+    },
+    {
+      "key": "shopowner",
+      "label": "老板娘",
+      "tagline": "门店主理"
+    },
+    {
+      "key": "civilservant",
+      "label": "公务员",
+      "tagline": "沉稳干练"
+    },
+    {
+      "key": "doctor",
+      "label": "医生",
+      "tagline": "专业信赖",
+      "uniform": true
+    },
+    {
+      "key": "home",
+      "label": "居家",
+      "tagline": "温馨日常"
+    },
+    {
+      "key": "gathering",
+      "label": "聚会",
+      "tagline": "晚间光彩"
+    },
+    {
+      "key": "lawyer",
+      "label": "律师",
+      "tagline": "庭上锋芒",
+      "uniform": true
+    },
+    {
+      "key": "banker",
+      "label": "银行柜员",
+      "tagline": "专业干练",
+      "uniform": true
+    },
+    {
+      "key": "accountant",
+      "label": "公司财务",
+      "tagline": "沉稳可靠"
+    },
+    {
+      "key": "director",
+      "label": "社区主任",
+      "tagline": "亲切为民"
+    },
+    {
+      "key": "pharmacist",
+      "label": "药剂师",
+      "tagline": "专业亲和",
+      "uniform": true
+    },
+    {
+      "key": "propertymanager",
+      "label": "小区管理员",
+      "tagline": "邻里亲和"
+    },
+    {
+      "key": "hsrtravel",
+      "label": "高铁出差",
+      "tagline": "出差精致"
+    },
+    {
+      "key": "weddinghost",
+      "label": "喜婆婆",
+      "tagline": "喜庆体面",
+      "uniform": true
+    },
+    {
+      "key": "schoolpickup",
+      "label": "接孙放学",
+      "tagline": "校门风采"
+    },
+    {
+      "key": "squaredance",
+      "label": "广场舞领舞",
+      "tagline": "广场C位",
+      "uniform": true
+    },
+    {
+      "key": "seniorcollege",
+      "label": "老年大学",
+      "tagline": "老有所乐"
+    },
+    {
+      "key": "seniorcafe",
+      "label": "闺蜜咖啡",
+      "tagline": "闺蜜时光"
+    },
+    {
+      "key": "parkwalk",
+      "label": "晨间公园",
+      "tagline": "晨间从容"
+    }
+  ],
+  "scene": [
+    {
+      "key": "business",
+      "label": "商务会议",
+      "tagline": "职场气场 · 从容主导"
+    },
+    {
+      "key": "banquet",
+      "label": "晚宴礼遇",
+      "tagline": "高定光影 · 优雅登场",
+      "uniform": true
+    },
+    {
+      "key": "cafe",
+      "label": "午后咖啡",
+      "tagline": "松弛日常 · 精致在线"
+    },
+    {
+      "key": "travel",
+      "label": "户外旅行",
+      "tagline": "自然光下 · 状态满分"
+    },
+    {
+      "key": "home",
+      "label": "温馨居家",
+      "tagline": "舒适自在 · 优雅如常"
+    }
+  ]
+}

@@ -82,6 +82,12 @@ def _make_wig(db):
     return wig
 
 
+@pytest.fixture(autouse=True)
+def prompt_versions(db):
+    from tests.expo_prompt_support import seed_versions
+    seed_versions(db)
+
+
 class TestGenerateQuota:
     def test_generate_rejects_without_store(self, db, monkeypatch):
         """未绑定门店的账号触发生成应被 400 拦截。"""

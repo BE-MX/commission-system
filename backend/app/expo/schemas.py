@@ -3,7 +3,7 @@
 import re
 import unicodedata
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class CustomerRegister(BaseModel):
@@ -37,6 +37,7 @@ class CustomerRegister(BaseModel):
 
 
 class GenerateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     wig_ids: list[int] | None = Field(None, description="不传则取匹配排名第一批（tryon 模式）")
     batch: int = Field(0, ge=0, le=3, description="换一批批次，0=Top3，1=第4~6名（tryon 模式）")
     hair_color_id: int | None = Field(None, description="发色库 ark_expo_hair_colors.id，不传则保持发型原色（tryon 模式）")
@@ -47,13 +48,7 @@ class GenerateRequest(BaseModel):
     # **2026-07-31 起 kiosk 不再传这个值**：实测云雾中转站不透传 quality，三档耗时
     # (165~180s)、体积、output_tokens、目视画质全无差别，前端选择器已撤（见 module-notes）。
     # 字段保留是为了换到真正支持该参数的通道后能直接复用，届时时长须重新实测。
-    # 合成版本（2026-08-01）：客户在甄选页必选，三版差别在皮肤怎么处理（用光一律打好）。
-    # 值域收在 pattern 里而不是自由字符串——它决定注入哪段提示词，放开等于把 prompt
-    # 注入的口子留给前端。不传时后端回落默认版（老客户端/重试路径仍可用）
-    prompt_variant: str | None = Field(
-        None, pattern="^(real|soft|beauty)$",
-        description="合成版本 real=真实 / soft=柔光 / beauty=美颜；不传回落 real",
-    )
+    prompt_version_id: int | None = Field(None, gt=0, description="提示词版本 ID；不传使用当前默认版本")
     quality: str | None = Field(
         None, pattern="^(high|medium)$",
         description="出图档位 high=精致大片 / medium=形象速览；不传则用 AI preset 配置",

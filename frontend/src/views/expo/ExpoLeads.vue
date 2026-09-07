@@ -101,6 +101,7 @@
                 <span v-if="r.reaction === 'loved'" class="loved-badge">♥ 心动</span>
                 <!-- scene_json 双语义：无 wig 才是场景大片；tryon 结果的 scene 是可选生成场景 -->
                 <div class="result-name">{{ r.wig_name }} <span class="muted">{{ !r.wig_id ? '场景大片' : (r.series === 'zhizhen' ? '至臻' : '经典') + (r.scene ? ' · ' + r.scene.label : '') }}</span></div>
+                <PromptSnapshotButton :result="r" />
               </div>
             </div>
 
@@ -130,6 +131,7 @@
 </template>
 
 <script setup>
+import PromptSnapshotButton from './PromptSnapshotButton.vue'
 /**
  * 分页列表页标杆用例（2026-07-03 治理 F-2）：
  * useListPage（分页/搜索/loading 编排）+ feedback.js（统一提示与危险确认）+ DetailDrawer（抽屉骨架）。
