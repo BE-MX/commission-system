@@ -18,6 +18,7 @@ deploy\deploy.bat --revision <full-commit-sha> --migration-credentials <protecte
 
 - 仓库必须干净；候选源码、构建缓存、依赖、传输包、状态只在 `.deploy_state/`。
 - Git 只传缺失对象到北京 `repo.git` 的独立 `deploy/<SHA>` 引用；不会 push origin/main。
+- 远程 Python 脚本和 JSON 请求通过 SSH 标准输入传递，命令参数保持短小，避免 Windows SSH 启动链截断长脚本。如果系统 OpenSSH 在非交互子进程中挂起，可在该次部署进程的 PATH 前置已安装的 Git `usr/bin`，并先用 `--prepare-only` 验证。
 - 默认 fetch 后只接收可快进的新提交；本地已审查提交领先远端时保留本地 HEAD，分叉时停止发布。无需为了部署先推送 main。
 - 维护窗口使用 `--revision` 固定审查过的完整 40 位提交 SHA；即使远端有更新也不改变本次候选，拒绝倒退或分叉。`--no-pull` 仅控制是否 fetch。
 - 本地源码以内容及 Node 版本计算构建指纹；相同输入复用同一制品。扩展包缓存也复用，避免仅因打包时间变化导致全站重建。
