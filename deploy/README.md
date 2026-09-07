@@ -7,6 +7,7 @@ deploy\deploy.bat                           # 跟踪分支的最新提交；办�
 deploy\deploy.bat --no-pull                 # 使用当前已提交、审查的 HEAD
 deploy\deploy.bat --cloud-only --no-pull    # 明确只处理云端，不代表办公室已更新
 deploy\deploy.bat --cloud-only --no-pull --prepare-only # 准备并校验，暂不切换
+deploy\deploy.bat --revision <full-commit-sha> --migration-credentials <protected-file> --prepare-only
 ```
 
 ## 目录与版本规则
@@ -18,6 +19,7 @@ deploy\deploy.bat --cloud-only --no-pull --prepare-only # 准备并校验，暂�
 - 仓库必须干净；候选源码、构建缓存、依赖、传输包、状态只在 `.deploy_state/`。
 - Git 只传缺失对象到北京 `repo.git` 的独立 `deploy/<SHA>` 引用；不会 push origin/main。
 - 默认 fetch 后只接收可快进的新提交；本地已审查提交领先远端时保留本地 HEAD，分叉时停止发布。无需为了部署先推送 main。
+- 维护窗口使用 `--revision` 固定审查过的完整 40 位提交 SHA；即使远端有更新也不改变本次候选，拒绝倒退或分叉。`--no-pull` 仅控制是否 fetch。
 - 本地源码以内容及 Node 版本计算构建指纹；相同输入复用同一制品。扩展包缓存也复用，避免仅因打包时间变化导致全站重建。
 - 每个云目标一次计算 SHA-256 清单，变化文件打成一个包传输。未变文件零传输，不按单文件重复建立 SSH。
 - 制品全部校验后才切换。首次发布用 Linux `renameat2` 原子地将原 Nginx 根目录换成受管符号链接；Nginx 原配置与别名仍指向相同路径。
@@ -29,15 +31,19 @@ deploy\deploy.bat --cloud-only --no-pull --prepare-only # 准备并校验，暂�
 
 办公室与北京共享 `commission_db`，每次发布都读数据库 revision，并检查发布代码的唯一 head 和迁移链。数据库已到目标则跳过 DDL；未知 revision、数据库领先、分叉均阻断。不会复制、覆盖或 downgrade 数据库。
 
-有待执行迁移时，必须先核实 `platforms.json` 中所有 writer 的归属，登记 `migration_writers` 并将 `migration_writers_verified` 设为 true。当前办公室远程管理和独立任务清单尚未核实，因此保持 false；这次已知数据库 137，无需执行 DDL。
+有待执行迁移时，必须核实 `platforms.json` 中所有 writer 的归属。2026-09-07 已按生产连接与进程核实并登记办公室 `CommissionSystem` / `WhatsAppConnector`、北京 `ark-backend`、新加坡 PM2 `shipment-tracking-mcp`；PM2 只控制该进程，不操作整个 PM2 管理器。新增或迁移写入实例后必须重新核实清单，不能沿用旧确认。数据库 revision 每次读取，不使用历史版本号推断是否有 DDL。
 
 迁移使用独立 DBA 身份：通过 `--migration-credentials` 指定一个受保护文件，只含 `COMMISSION_DB_USER` 和 `COMMISSION_DB_PASSWORD` 两项。库地址和库名沿用已校验运行配置；停机前检查 DBA 权限。凭据只进入受控迁移子进程，禁止替换运行服务 `.env`，禁止把文件提交 Git。
 
-迁移子进程先取得 MySQL 命名锁，再停登记 writer，只运行一次 Alembic upgrade，随后核对唯一 head。两个后端激活成功后恢复其他 writer。DDL 失败不自动恢复旧程序，需先检查 MySQL 实际结构。
+迁移子进程先取得 MySQL 命名锁，再复核准备阶段的迁移链；停服务前持久化原始状态，停后再次核验全部 writer 已停止，才执行一次 Alembic upgrade。两个后端激活成功后恢复其他原本运行的 writer。DDL 前失败按原始状态恢复；DDL 开始后的失败不自动恢复旧程序，需检查 MySQL 实际结构。
+
+展会分析、生图和话术使用后台 daemon 线程，发布前须冻结两台后端的新试戴提交（含办公室直连入口），以线程栈和数据库状态确认排空，再停服务。会话 `done` 不代表话术线程已结束；历史卡死记录单独核实，不批量改状态来伪造排空。
 
 ## 状态与恢复
 
 优先读取 `.deploy_state/publish-current.json`：本轮 revision、阶段、已成功目标。`publish-success.json` 仅代表最近一次成功，不表示当前运行成功。跨机器发布不是分布式事务：后面的目标失败时，前面已验证的目标可能已更新，脚本返回非零并保留阶段记录。
+
+迁移恢复证据在 `.deploy_state/schema-writers.json`。`stopping`、`running-ddl`、`upgraded`、`failed-after-ddl`、`recovery-required` 等未完成阶段都阻断新一轮发布，即使数据库已到 head、没有 pending 也不能绕过。所有发布目标验证完成后才写 `completed`。检查实际结构、原始 writer 基线及当前应用版本后处理恢复记录，不能直接删除日志重跑。
 
 旧 `rollback.bat` 已阻断，不能再消费旧 `dist_backup` 并 SCP 覆盖受管版本。失败激活在 schema 不变时有自动回退。已完成发布的人工回退必须先核对候选旧代码是否认识当前 schema，再按受管后端与静态发布流程执行；不得直接覆盖 `current` 下文件或降级数据库。
 
@@ -45,7 +51,7 @@ deploy\deploy.bat --cloud-only --no-pull --prepare-only # 准备并校验，暂�
 
 ```powershell
 python -m compileall -q deploy
-python -m unittest discover -s deploy/tests -v
+python -m pytest deploy/tests -q
 ```
 
 静态文件语义测试必须在 Linux 临时目录执行（包含原子目录交换和符号链接），不连接生产数据库、不修改站点根目录。Windows 会明确跳过该组；源码准备及数据库阻断测试在 Windows 执行。部署后再运行同一命令验证无变化构建/文件传输被跳过。
