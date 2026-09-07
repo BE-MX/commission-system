@@ -10,6 +10,17 @@ from app.core.database import SessionLocal
 logger = logging.getLogger("commission.whatsapp_reply")
 
 
+def reply_parameters(base_parameters, max_tokens, api_type="openai") -> dict:
+    parameters = {key: value for key, value in (base_parameters or {}).items()
+                  if key in {"temperature", "top_p", "thinking", "reasoning_effort"}}
+    parameters["max_tokens"] = max_tokens
+    if api_type == "openai":
+        # Schema is supplied per phase. Never inherit a translation-only schema
+        # or rely solely on prompt wording to suppress Markdown fences.
+        parameters["response_format"] = {"type": "json_object"}
+    return parameters
+
+
 def seed_reply_presets(db) -> int:
     settings = get_settings()
     names = (settings.WHATSAPP_REPLY_PLANNER_PRESET, settings.WHATSAPP_REPLY_GENERATOR_PRESET)
@@ -32,9 +43,8 @@ def seed_reply_presets(db) -> int:
         # or silently overwrite it during bootstrap.
         if db.query(AiPreset.id).filter(AiPreset.preset_name == name).first():
             continue
-        parameters = {key: value for key, value in (base.parameters or {}).items()
-                      if key in {"temperature", "top_p", "thinking", "reasoning_effort", "response_format"}}
-        parameters["max_tokens"] = max_tokens
+        provider = db.get(AiProvider, base.provider_id)
+        parameters = reply_parameters(base.parameters, max_tokens, provider.api_type)
         db.add(AiPreset(
             preset_name=name, provider_id=base.provider_id, model=base.model,
             parameters=parameters, system_prompt="", description=description, is_enabled=False,

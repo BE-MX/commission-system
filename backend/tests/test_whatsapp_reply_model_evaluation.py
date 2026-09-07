@@ -2,7 +2,7 @@
 
 import pytest
 
-from scripts.whatsapp_reply_evaluation import evaluate_cases, install_memory_provider, load_provider_configuration
+from scripts.whatsapp_reply_evaluation import evaluate_cases, install_memory_provider, load_provider_configuration, install_metadata_diagnostics
 from tests.reply_support import request, seed_reply
 
 
@@ -15,7 +15,9 @@ def test_opt_in_real_reply_baseline(db, monkeypatch, pytestconfig):
     identity, _, _, _, _, settings = seed_reply(db, monkeypatch)
     configuration = load_provider_configuration(path)
     install_memory_provider(db, configuration, settings, monkeypatch)
-    summary = evaluate_cases(db, identity, request)
+    install_metadata_diagnostics(monkeypatch)
+    case_ids = pytestconfig.getoption("--reply-eval-case", default=[])
+    summary = evaluate_cases(db, identity, request, case_ids)
     assert summary["calls"] <= 60
-    assert len(summary["cases"]) == 30
+    assert len(summary["cases"]) == (len(set(case_ids)) if case_ids else 30)
     assert all(row["status"] in {"ready", "needs_confirmation", "insufficient_context"} for row in summary["cases"]), "technical failures present; inspect metadata summary"

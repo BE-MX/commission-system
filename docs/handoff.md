@@ -1,5 +1,7 @@
 ### WhatsApp 话术助手（2026-09-07，1.3.0 本地实现，待模型验收）
 
+**真实模型验收更新**：亮哥随后允许 30 条合成对话、最多 60 次调用，实际执行 59 次、103,410 tokens（`deepseek-v4-flash`，关闭思考，全部隔离内存数据）。初轮 30 条均在 planner 结构校验失败，1 次诊断确认 JSON 被 Markdown 围栏包裹；已为独立话术 OpenAI 预设默认补 `response_format=json_object`，严格解析/安全规则未放宽，不改翻译或已有管理员配置。修复后 14 条端到端复测为 5 ready / 6 needs_confirmation / 3 安全拦截，中位 9.094s、P95 18.688s，**尚未达到上线验收**。3 条拦截未返回草稿，因未保存正文不能判定正确拦截或误拦；已加测试专用的规则类别诊断。剩余 1 次不足正常两阶段验证，未再调用。完整元数据见 [模型基线](requirements/2026-09-07-whatsapp-reply-model-baseline.md)。以下 268/198/14 为此前离线交付证据，不替代模型质量/时延验收。
+
 在 `codex/whatsapp-reply-design` / `commission-system-codex-whatsapp-reply-design` 实现确认的方案和 SOUL。吸收谈单助手的客户复盘、阶段与活跃度分离、买方动作证据、按阻塞选择推进方式；不引入阿里记录提取。扩展新增话术入口、双方已加载 20/40 条上下文、一条回复预览及中文含义/理由、选用草稿意图和目标、语言/风格调整、安全填入和恢复，绝不发送。当前代码和包均为 1.3.0，后端默认关闭，现有翻译预设和线上配置未改。
 
 后端新增 `/api/whatsapp-translation/reply-suggestions`、独立 `whatsapp_reply:write` 与两个关闭的预设。每次请求通过真实设备所属员工的实时 ACL 读取发布知识，来源用途绑定修订/章节哈希/政策版本；必需政策缺失只作安全澄清。最多两次 AI facade 调用，30 秒整体期限会关闭在途传输；不持久化正文、草稿、回复或检索词。141 迁移仅存跨 worker 幂等、配额和耗时元数据；相同请求结果丢失不自动再计费。
@@ -8,7 +10,7 @@
 
 本地包 `extensions/whatsapp-translation/release/whatsapp-translation-1.3.0.zip`，36,078 bytes，SHA256 `6ef76643c4bbe89e1ff501c8a4eb2f43b2c71a287d381f5412b56ed1698b944c`。源码与文档保留在独立 worktree；不提交生成 ZIP。未合并、推送、部署或写生产知识/权限。相关源码、API、数据库、模块说明已同步。
 
-仍待：授权运行 30 条原创合成模型基线（英语/德语各 15，最多 60 次调用）、业务负责人语义盲评和实际 WhatsApp 1.3.0 冒烟；启用前核验模型供应商保留策略、来源对外用途与冲突政策，再另行授权部署。只读检查已确认设计相关知识当前修订，未把“已发布”自动当作“允许对客披露”。入口和具体边界见 [验收记录](requirements/2026-09-07-whatsapp-reply-implementation.md) / [启用说明](requirements/2026-09-07-whatsapp-reply-activation.md)。不能将当前离线绿色测试称为销售质量验收。
+仍待：完成修复后的完整 30 条模型复测（新付费调用需另行授权）、安全拦截诊断、性能优化、业务负责人语义盲评和实际 WhatsApp 1.3.0 冒烟；启用前核验供应商保留策略、来源对外用途与冲突政策，再另行授权部署。只读检查没有将“已发布”自动当作“允许对客披露”。入口见 [验收记录](requirements/2026-09-07-whatsapp-reply-implementation.md) / [启用说明](requirements/2026-09-07-whatsapp-reply-activation.md)。不能将离线绿色测试称为销售质量验收。
 
 ### 数据库 139 发布准备（2026-09-07）
 

@@ -25,7 +25,7 @@ Settings hold a finite list of bindings with document ID, exact published revisi
 
 ## Acceptance status
 
-Local implementation and independent review complete; model/real-UI acceptance remains pending. No production changes, paid calls, push, merge or deployment.
+Local implementation and independent review complete; model/real-UI acceptance is not yet passed. The authorized 59-call synthetic baseline found a JSON-mode omission, now fixed. Post-fix 14-case retest returned 11 suggestions and 3 safety rejections, median 9.094s/P95 18.688s. See [model baseline](2026-09-07-whatsapp-reply-model-baseline.md). No production changes, push, merge or deployment.
 
 | Requirement | Current evidence | Boundary |
 | --- | --- | --- |
@@ -37,7 +37,7 @@ Local implementation and independent review complete; model/real-UI acceptance r
 | Migration 141 / independent disabled seeds | SQLite up/down preserves existing user data; unsigned MySQL FK compilation; seed preservation regression | Shared production database untouched; actual MySQL 141 migration not run |
 | Compatibility and documentation | Backend scoped suite: **268 passed, 1 skipped** (29.44s); extension package/build/test and browser run both exit 0 | Backend scope: reply, translation, knowledge, AI HTTP/call/facade; not whole repository suite |
 | Adversarial review | Independent spec + quality review passed; five findings fixed with regressions | Original issues: cancelled restore, late autodetection, paragraph loss, drip timeout, capability ceilings |
-| Real model baseline / business-owner blind review | Opt-in pytest entry prepared and default skipped; max 30 cases/60 calls, memory-only writes | Explicit paid-test authorization and semantic review still required |
+| Real model baseline / business-owner blind review | Authorized 59 calls, 103,410 tokens; JSON mode fixed; 14 post-fix cases: 11 returned / 3 blocked | Full 30-case post-fix gate, rejection diagnosis, performance and semantic review unpassed; new paid calls need new budget authorization |
 
 Convention check: no red findings; one reviewed yellow for the device-authenticated reply route. Its documented machine-to-human dependency plus service `whatsapp_reply:write`/knowledge ACL checks are intentional, not a public endpoint. API, database, module notes, extension instructions and [activation guide](2026-09-07-whatsapp-reply-activation.md) synchronized.
 

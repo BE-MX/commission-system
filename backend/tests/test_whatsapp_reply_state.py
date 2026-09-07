@@ -11,7 +11,7 @@ from sqlalchemy.dialects import mysql
 from sqlalchemy.schema import CreateTable
 
 from app.ai.models import AiPreset, AiProvider
-from app.bootstrap.seed_whatsapp_reply import seed_reply_presets
+from app.bootstrap.seed_whatsapp_reply import reply_parameters, seed_reply_presets
 from app.core import time as core_time
 from app.core.config import get_settings
 from app.whatsapp_translation import reply_state
@@ -117,6 +117,7 @@ def test_seed_creates_separate_disabled_presets_and_preserves_existing(db):
     assert seed_reply_presets(db) == 2
     result = db.query(AiPreset).filter(AiPreset.preset_name.in_([settings.WHATSAPP_REPLY_PLANNER_PRESET, settings.WHATSAPP_REPLY_GENERATOR_PRESET])).all()
     assert len(result) == 2 and all(not row.is_enabled for row in result)
+    assert all(row.parameters.get("response_format") == {"type": "json_object"} for row in result)
     result[0].system_prompt = "administrator customization"
     db.commit()
     assert seed_reply_presets(db) == 0
@@ -125,3 +126,12 @@ def test_seed_creates_separate_disabled_presets_and_preserves_existing(db):
     assert result[0].system_prompt == "administrator customization"
     assert base.parameters == {"thinking": {"type": "disabled"}, "max_tokens": 4096}
     assert base.system_prompt == "keep translation prompt"
+
+
+def test_reply_parameters_replace_translation_schema_without_mutating_source():
+    source = {"temperature": .1, "response_format": {"type": "json_schema", "json_schema": {"name": "translation_only"}}, "messages": ["synthetic"], "max_tokens": 4096}
+    result = reply_parameters(source, 1400)
+    assert result == {"temperature": .1, "response_format": {"type": "json_object"}, "max_tokens": 1400}
+    assert source["response_format"]["type"] == "json_schema"
+    assert source["max_tokens"] == 4096
+    assert "response_format" not in reply_parameters(source, 1400, "anthropic")

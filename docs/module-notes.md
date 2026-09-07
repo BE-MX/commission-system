@@ -1021,7 +1021,7 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 
 **知识用途边界**：Settings 中的来源绑定精确指定文档、发布修订、章节索引/文本 SHA-256、政策版本及 `method/public_fact/constraint/blocked` 用途。仅 `public_fact` 可被引用为新对客事实，method 只指导策略，constraint 限制承诺。必需约束独立于检索排名；按完整标题章节打包，每段最多 1,200 字符、合计 6,000/6 段。更新、撤权、停用或缓存命中均重新校验；新修订不会继承外发许可。尚无生产对外事实授权配置。
 
-**调用与启用**：最多两次 `app.ai.service.chat(snapshot_mode="metadata")`，独立 planner/generator 预设由 bootstrap 准备为关闭状态，不覆盖管理员修改、不变更翻译预设。话术专用 HTTP 总期限会取消在途连接，其他 AI 调用默认行为不变。服务端 30 秒、扩展 35 秒，独立每人并发 1/每分钟 6/每天 100。配置、合成验收及启用前提见 [话术启用说明](requirements/2026-09-07-whatsapp-reply-activation.md)；当前未合并、推送或部署，未实测模型质量。
+**调用与启用**：最多两次 `app.ai.service.chat(snapshot_mode="metadata")`，独立 planner/generator 预设由 bootstrap 准备为关闭状态，不覆盖管理员修改、不变更翻译预设。OpenAI 协议默认 `response_format=json_object`，避免仅凭提示词约束而返回 Markdown 围栏；已有话术预设需管理员核对该配置。话术专用 HTTP 总期限会取消在途连接，其他 AI 调用默认行为不变。服务端 30 秒、扩展 35 秒，独立每人并发 1/每分钟 6/每天 100。配置与前提见 [启用说明](requirements/2026-09-07-whatsapp-reply-activation.md)，已获授权的 59 次模型基线和未通过项见 [实测记录](requirements/2026-09-07-whatsapp-reply-model-baseline.md)；未合并、推送或部署。
 
 **DOM 边界**：WhatsApp 结构识别只允许放在 `extensions/whatsapp-translation/src/whatsapp/`，只读取当前一对一文字会话；群组、社区、媒体、语音、文件、贴纸和未知 DOM 一律 fail-closed。测试只能使用自建合成 fixture，禁止真实 WhatsApp 截图、HTML、文本、联系人、电话或消息 ID 进入仓库。
 
