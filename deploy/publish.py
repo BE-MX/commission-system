@@ -166,6 +166,8 @@ def publish(args):
             prepared.append(static_sync.prepare(outputs[target["component"]], target["host"], target["root"],
                             STATE / "transfers", target["domain"]))
         if args.prepare_only:
+            journal["status"] = "prepared"
+            atomic_json(STATE / "publish-current.json", journal)
             print("Prepared and verified; no service or live static pointer activated.")
             return
         journal["status"] = "activating"
@@ -210,7 +212,7 @@ if __name__ == "__main__":
     parser.add_argument("--no-pull", action="store_true")
     parser.add_argument("--revision", help="Pin a reviewed full commit SHA; fetch still runs unless --no-pull")
     parser.add_argument("--prepare-only", action="store_true")
-    parser.add_argument("--migration-credentials", help="Protected file containing only DBA user/password; required only for pending DDL")
+    parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         publish(parser.parse_args())
     except Exception as error:

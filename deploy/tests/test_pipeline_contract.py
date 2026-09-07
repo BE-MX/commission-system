@@ -151,6 +151,7 @@ def test_prepare_only_never_stops_or_activates_writers(pipeline):
     pipeline.office_activate.assert_not_called()
     schema_release.migrate.assert_not_called()
     assert not (pipeline.state / "publish-success.json").exists()
+    assert json.loads((pipeline.state / "publish-current.json").read_text())["status"] == "prepared"
 
 
 def test_render_preflight_runs_as_module_before_connector_or_activation():
