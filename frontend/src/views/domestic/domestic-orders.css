@@ -5,6 +5,8 @@
 
 .toolbar { margin-bottom: 16px; }
 .order-kind-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.order-kind-tabs { padding: 0 16px; --el-color-primary: var(--color-primary); }
+.order-kind-tabs :deep(.el-tabs__header) { margin-bottom: 0; }
 
 .orders-panel {
   border: 1px solid var(--dash-glass-border);

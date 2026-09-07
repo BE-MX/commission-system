@@ -7,11 +7,6 @@
     </div>
 
     <div class="toolbar order-kind-toolbar">
-      <el-radio-group v-model="searchForm.order_kind" @change="handleKindChange">
-        <el-radio-button value="">全部订单</el-radio-button>
-        <el-radio-button value="business">业务订单</el-radio-button>
-        <el-radio-button value="production">生产订单</el-radio-button>
-      </el-radio-group>
       <GlassButton v-permission="'domestic:write'" variant="primary" left-icon="Plus" @click="goCreate('business')">业务订单下单</GlassButton>
       <GlassButton v-permission="'domestic:write'" variant="secondary" left-icon="Plus" @click="goCreate('production')">生产订单下单</GlassButton>
     </div>
@@ -56,6 +51,11 @@
     </el-row>
 
     <div class="table-card orders-panel">
+      <el-tabs v-model="searchForm.order_kind" class="order-kind-tabs" @tab-change="handleKindChange">
+        <el-tab-pane label="全部订单" name="" />
+        <el-tab-pane label="业务订单" name="business" />
+        <el-tab-pane label="生产订单" name="production" />
+      </el-tabs>
       <el-table :data="list" v-loading="loading" border class="list-table" style="width: 100%">
         <!-- 列顺序按内贸销售台账：编号 → 日期 → 客户 → 归属销售 → 类型 → 渠道 → 状态 → 交付日期 → 客户复购节奏，与线下台账一致 -->
         <el-table-column prop="domestic_no" label="订单编号" min-width="130" show-overflow-tooltip>

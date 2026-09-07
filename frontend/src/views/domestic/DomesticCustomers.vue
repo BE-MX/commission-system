@@ -113,6 +113,7 @@
         </el-table-column>
         <el-table-column label="操作" min-width="270" fixed="right">
           <template #default="{ row }">
+            <div class="customer-row-actions">
             <GlassButton v-if="canOperateCustomer(row)" v-permission="'domestic:write'" variant="link" left-icon="Edit" @click="openDialog(row)">编辑</GlassButton>
             <GlassButton v-if="canOperateCustomer(row)" v-permission="'domestic:write'" variant="link" :link-tone="row.status ? '' : 'success'" left-icon="SwitchButton" @click="toggleStatus(row)">
               {{ row.status ? '停用' : '启用' }}
@@ -122,6 +123,7 @@
             <GlassButton v-if="canOperateCustomer(row)" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="EditPen" @click="openAdjust(row)">调整</GlassButton>
             <GlassButton v-if="canOperateCustomer(row)" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Tickets" @click="openLedger(row)">流水</GlassButton>
             <GlassButton v-if="canOperateCustomer(row)" v-permission="'domestic:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -418,6 +420,8 @@ const {
 
 .customer-tabs { padding: 0 16px; --el-color-primary: var(--color-primary); }
 .customer-tabs :deep(.el-tabs__header) { margin-bottom: 0; }
+.customer-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; white-space: normal; }
+.customer-row-actions :deep(button) { margin: 0; flex: 0 0 auto; white-space: nowrap; }
 
 .customers-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
 .customers-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
