@@ -23,13 +23,15 @@ onBeforeUnmount(() => window.removeEventListener('focus', refresh))
 </script>
 
 <style scoped>
-.prompt-picker { width: min(88vw, 640px); flex: none; margin-top: 12px; }
-.picker-title { color: var(--xk-gold-dim); font-size: 12px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.picker-title button { background: transparent; border: 0; color: var(--xk-gold); padding: 8px 12px; cursor: pointer; }
-.picker-options { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
-.picker-option { flex: 1 0 120px; max-width: 240px; display: flex; flex-direction: column; justify-content: center; gap: 4px; border: 1px solid var(--xk-gold-line); background: var(--xk-ink); border-radius: 12px; padding: 10px 14px; color: var(--xk-paper); cursor: pointer; overflow-wrap: anywhere; }
-.picker-option.selected { border-color: var(--xk-gold); color: var(--xk-gold-hi); }
-.picker-option small { color: var(--xk-mut); font-size: 10px; }
-.picker-error { color: var(--xk-gold-hi); font-size: 13px; padding: 8px 0; }
-.picker-option:focus-visible, .picker-title button:focus-visible { outline: 2px solid var(--xk-gold-hi); outline-offset: 2px; }
+.prompt-picker { width: min(100%, 760px); flex: none; padding-top: 10px; border-top: 1px solid var(--xk-gold-line); }
+.picker-title { color: var(--xk-gold-dim); font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
+.picker-title button { background: transparent; border: 0; color: var(--xk-gold); min-height: 48px; padding: 8px 12px; cursor: pointer; }
+.picker-options { display: flex; gap: 8px; overflow-x: auto; padding: 4px 3px 6px; }
+.picker-option { flex: 1 0 120px; min-height: 54px; display: flex; flex-direction: column; justify-content: center; gap: 4px; border: 1px solid var(--xk-gold-line); background: transparent; border-radius: 7px; padding: 9px 14px; color: var(--xk-paper); cursor: pointer; overflow-wrap: anywhere; }
+.picker-option.selected { border-color: var(--xk-gold); background: var(--xk-selected); }
+.picker-option small { color: var(--xk-mut); font-size: 12px; }
+.picker-error { color: var(--xk-warn); font-size: 14px; padding: 8px 0; }
+.picker-option:disabled { opacity: 0.5; }
+@media (max-height: 700px) { .prompt-picker { padding-top: 2px; } .picker-title button { min-height: 36px; } }
+@media (max-width: 600px) { .picker-option { flex-basis: calc((100% - 16px) / 3); min-width: 88px; padding: 9px 8px; } }
 </style>

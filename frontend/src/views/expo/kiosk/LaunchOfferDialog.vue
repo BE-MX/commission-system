@@ -156,7 +156,7 @@ const steps = [
   padding:
     calc(16px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right))
     calc(16px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
-  background: rgba(6, 5, 3, 0.78);
+  background: var(--xk-overlay);
   -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px);
 }
 .xm-panel {
@@ -166,12 +166,12 @@ const steps = [
   padding: 30px 30px 22px; border-radius: 22px;
   border: 1px solid var(--xk-gold-line);
   background: linear-gradient(160deg, var(--xk-ink-2), var(--xk-ink));
-  box-shadow: 0 26px 76px rgba(0, 0, 0, 0.55), 0 0 44px rgba(232, 196, 121, 0.12);
+  box-shadow: 0 26px 76px var(--xk-shadow), 0 0 44px var(--xk-selected);
 }
 .xm-close {
   position: absolute; top: 14px; right: 16px;
   width: 38px; height: 38px; border-radius: 50%; cursor: pointer;
-  border: 1px solid var(--xk-gold-line); background: rgba(232, 196, 121, 0.05);
+  border: 1px solid var(--xk-gold-line); background: var(--xk-selected);
   color: var(--xk-gold); font-size: 22px; line-height: 1;
   transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), border-color 160ms ease;
 }
@@ -181,7 +181,7 @@ const steps = [
 .xm-kicker { font-size: 11px; letter-spacing: 0.34em; color: var(--xk-gold-dim); }
 .xm-title {
   margin: 12px 0 0;
-  font-family: 'Noto Serif SC', 'STSong', serif;
+  font-family: var(--xk-serif);
   font-size: clamp(22px, 3.4vw, 30px); font-weight: 600;
   letter-spacing: 0.08em; color: var(--xk-gold-hi);
 }
@@ -201,15 +201,15 @@ const steps = [
   position: relative;
   padding: 22px 22px 24px; border-radius: 16px;
   border: 1px solid var(--xk-gold-line);
-  background: rgba(232, 196, 121, 0.03);
+  background: var(--xk-selected);
   /* 卡片依次入场：短 stagger 让「合作」与「试用」有先后节奏，不阻塞任何交互 */
   opacity: 0; transform: translateY(10px);
   animation: xm-rise 320ms cubic-bezier(0.23, 1, 0.32, 1) var(--stagger) forwards;
 }
 .xm-card.hot {
-  border-color: rgba(232, 196, 121, 0.55);
-  background: rgba(232, 196, 121, 0.07);
-  box-shadow: inset 0 0 40px rgba(232, 196, 121, 0.06);
+  border-color: var(--xk-selected);
+  background: var(--xk-selected);
+  box-shadow: inset 0 0 40px var(--xk-selected);
 }
 @keyframes xm-rise { to { opacity: 1; transform: translateY(0); } }
 .xm-badge {
@@ -219,20 +219,20 @@ const steps = [
   color: var(--xk-ink); font-size: 11px; letter-spacing: 0.16em;
 }
 .xm-name {
-  font-family: 'Noto Serif SC', 'STSong', serif;
+  font-family: var(--xk-serif);
   font-size: 18px; letter-spacing: 0.2em; color: var(--xk-gold-hi);
 }
 /* 数字是主角：门槛动作（首发价/押金）作前缀，「/ 首年」退为注脚 */
 .xm-price { display: flex; align-items: baseline; gap: 7px; margin-top: 14px; flex-wrap: wrap; }
 .xm-prefix { font-size: 13px; letter-spacing: 0.14em; color: var(--xk-gold-dim); }
-.xm-cur { font-family: 'Noto Serif SC', 'STSong', serif; font-size: 22px; line-height: 1; color: var(--xk-gold); }
+.xm-cur { font-family: var(--xk-serif); font-size: 22px; line-height: 1; color: var(--xk-gold); }
 .xm-price b {
-  font-family: 'Noto Serif SC', 'STSong', serif;
+  font-family: var(--xk-serif);
   font-size: 40px; font-weight: 600; line-height: 1; color: var(--xk-gold);
 }
 .xm-slash { font-size: 16px; line-height: 1; color: var(--xk-gold-dim); }
 .xm-unit {
-  font-family: 'Noto Serif SC', 'STSong', serif;
+  font-family: var(--xk-serif);
   font-size: 16px; font-weight: 500; line-height: 1;
   letter-spacing: 0.08em; color: var(--xk-gold-dim);
 }
@@ -259,8 +259,8 @@ const steps = [
 .xm-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .xm-chip {
   padding: 5px 12px; border-radius: 999px;
-  border: 1px solid rgba(232, 196, 121, 0.35);
-  background: rgba(232, 196, 121, 0.08);
+  border: 1px solid var(--xk-selected);
+  background: var(--xk-selected);
   font-size: 12.5px; letter-spacing: 0.08em; color: var(--xk-gold-hi);
 }
 .xm-pitch { margin: 16px 0 0; font-size: 13px; letter-spacing: 0.08em; color: var(--xk-paper); opacity: 0.86; }
@@ -275,7 +275,7 @@ const steps = [
 .xm-list li::before {
   content: ''; position: absolute; left: 4px; top: 9px;
   width: 6px; height: 6px; transform: rotate(45deg);
-  background: var(--xk-gold); box-shadow: 0 0 6px rgba(232, 196, 121, 0.55);
+  background: var(--xk-gold); box-shadow: 0 0 6px var(--xk-selected);
 }
 /* 首发卡子元素接力入场：接在卡片 rise 尾部，逐行 70ms 落位；
    纯装饰不阻塞交互，复用 xm-rise 与全 kiosk 同一条 ease-out 曲线 */
@@ -326,7 +326,7 @@ const steps = [
   display: flex; align-items: center; justify-content: center;
   border: 1px solid var(--xk-gold-line); color: var(--xk-gold);
   font-style: normal; font-size: 11px;
-  font-family: 'Noto Serif SC', 'STSong', serif;
+  font-family: var(--xk-serif);
 }
 .xm-step b { display: block; font-size: 12.5px; font-weight: 600; letter-spacing: 0.08em; color: var(--xk-gold-hi); }
 .xm-step span { display: block; margin-top: 4px; font-size: 11.5px; line-height: 1.6; letter-spacing: 0.04em; color: var(--xk-mut); }

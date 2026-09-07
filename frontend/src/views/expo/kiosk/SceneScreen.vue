@@ -1,16 +1,19 @@
 <template>
   <div class="scene">
     <div class="s-scroll">
+      <p class="xk-eyebrow">YOUR NEXT SCENE</p>
       <h2 class="xk-title">选择您的<em>场景大片</em></h2>
       <div class="xk-sub">保持此刻佩戴效果 · 最多选 3 个场景</div>
 
       <div class="cards">
         <button
           v-for="(s, i) in flow.scenes.value" :key="s.key"
+          :aria-pressed="selected(s.key)"
           class="card" :class="{ on: selected(s.key) }"
-          :style="{ animationDelay: `${0.1 + i * 0.12}s` }"
+          :style="{ animationDelay: `${i * 0.07}s` }"
           @click="flow.toggleScene(s.key)"
         >
+          <span class="scene-image"><img v-if="s.image" :src="s.image" alt="" /><span v-else class="scene-number">{{ String(i + 1).padStart(2, '0') }}</span></span>
           <span class="mark">{{ selected(s.key) ? '✓' : '' }}</span>
           <span class="lb">{{ s.label }}</span>
           <span class="tg">{{ s.tagline }}</span>
@@ -44,62 +47,19 @@ function selected(key) {
 </script>
 
 <style scoped>
-/* 同 MatchingScreen：滚动交给内层，CTA 常驻——场景卡多时按钮会跟着滚出屏幕 */
-.scene { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; padding: 2vh 6vw 3vh; overflow: hidden; }
-.s-scroll {
-  flex: 1; min-height: 0; width: 100%;
-  display: flex; flex-direction: column; align-items: center;
-  overflow-y: auto; -webkit-overflow-scrolling: touch;
-}
-.cards {
-  width: min(88vw, 560px);
-  display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;
-  margin-top: 3vh;
-}
-.card {
-  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
-  padding: 18px 16px; border-radius: 18px; cursor: pointer; text-align: left;
-  border: 1px solid var(--xk-gold-line);
-  background: linear-gradient(120deg, rgba(232, 196, 121, 0.06), rgba(232, 196, 121, 0.015));
-  color: var(--xk-paper);
-  opacity: 0; transform: perspective(600px) rotateX(24deg) translateY(14px);
-  transform-origin: top;
-  animation: scene-in 0.9s cubic-bezier(0.2, 0.9, 0.3, 1.2) forwards;
-  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), border-color 160ms ease;
-}
-@keyframes scene-in { to { opacity: 1; transform: none; } }
-.card:active { transform: scale(0.97); }
-.card.on {
-  border-color: rgba(232, 196, 121, 0.55);
-  background: linear-gradient(120deg, rgba(232, 196, 121, 0.14), rgba(232, 196, 121, 0.03));
-}
-.mark {
-  position: absolute; top: 12px; right: 14px;
-  width: 22px; height: 22px; border-radius: 50%;
-  border: 1px solid var(--xk-gold-line);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 12px; color: var(--xk-ink);
-  transition: background 160ms ease;
-}
-.card.on .mark { background: linear-gradient(110deg, var(--xk-gold), var(--xk-gold-hi)); border: none; }
-.lb { font-family: 'Noto Serif SC', serif; font-size: 18px; color: var(--xk-gold-hi); }
-.tg { font-size: 11px; letter-spacing: 0.12em; color: var(--xk-mut); }
-
-/* 同 MatchingScreen：第二道墨色阴影柔化按钮上沿被切断的滚动内容 */
-/* 出图风格：与 MatchingScreen 同一套（两屏都是「生成前的最后一个决策」，样式刻意一致，
-   客户在两条路径上看到的是同一个控件） */
-.go {
-  flex: none; margin-top: 16px; margin-bottom: 1vh; min-width: 300px; height: 64px; font-size: 17px;
-  box-shadow: 0 6px 26px rgba(232, 196, 121, 0.3), 0 -14px 22px 18px var(--xk-ink);
-}
-.go:disabled { opacity: 0.4; }
-
-/* 手机竖屏：min-width:300 在 390px 屏上只剩 43px 余量，撑满比留一线更稳也更好点 */
-@media (max-width: 560px) {
-  /* 三档横排 + 前缀标签在 390px 屏上会挤成两行错位：标签独占一行，选项行居中铺开 */
-
-  .scene { padding: 1.5vh 4vw 2vh; }
-  .cards { width: 100%; }
-  .go { min-width: 0; width: 100%; height: 56px; font-size: 16px; }
-}
+.scene { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; padding: 26px 4vw 20px; }
+.s-scroll { flex: 1; min-height: 0; width: 100%; max-width: 1100px; overflow-y: auto; padding: 0 4px 18px; }
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; margin: 28px auto 0; }
+.card { position: relative; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; border: 1px solid transparent; border-radius: 12px; padding: 6px; background: transparent; color: var(--xk-paper); text-align: left; cursor: pointer; animation: scene-in 480ms var(--xk-ease) backwards; }
+.card.on { border-color: var(--xk-gold); background: var(--xk-ink-2); }
+.scene-image { width: 100%; aspect-ratio: 4/3; background: var(--xk-surface); border-radius: 8px; overflow: hidden; }
+.scene-image img { width: 100%; height: 100%; object-fit: cover; }
+.scene-number { height: 100%; display: flex; align-items: center; justify-content: center; font: 48px var(--xk-serif); color: var(--xk-gold-dim); }
+.mark { position: absolute; top: 16px; right: 16px; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--xk-gold-line); background: var(--xk-ink-2); }
+.card.on .mark { background: var(--xk-button); color: var(--xk-on-dark); }
+.lb { font-family: var(--xk-serif); font-size: 23px; padding: 14px 8px 4px; }
+.tg { font-size: 14px; color: var(--xk-mut); padding: 0 8px 12px; }
+.go { width: min(100%, 760px); margin-top: 12px; flex: none; }
+@keyframes scene-in { from { opacity: 0; transform: translateY(16px); } }
+@media (max-width: 750px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; } .lb { font-size: 20px; } .scene { padding: 22px 16px 14px; } }
 </style>

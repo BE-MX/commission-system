@@ -134,11 +134,6 @@
     "lines_over_500": 60,
     "transition_all": 0
   },
-  "frontend/src/views/expo/ExpoKiosk.vue": {
-    "hex_colors": 8,
-    "lines_over_500": 0,
-    "transition_all": 0
-  },
   "frontend/src/views/expo/ExpoLeads.vue": {
     "hex_colors": 2,
     "lines_over_500": 0,
@@ -162,36 +157,6 @@
   "frontend/src/views/expo/WigLibrary.vue": {
     "hex_colors": 3,
     "lines_over_500": 35,
-    "transition_all": 0
-  },
-  "frontend/src/views/expo/kiosk/AnalyzingScreen.vue": {
-    "hex_colors": 2,
-    "lines_over_500": 0,
-    "transition_all": 0
-  },
-  "frontend/src/views/expo/kiosk/CaptureScreen.vue": {
-    "hex_colors": 2,
-    "lines_over_500": 0,
-    "transition_all": 0
-  },
-  "frontend/src/views/expo/kiosk/MatchingScreen.vue": {
-    "hex_colors": 1,
-    "lines_over_500": 77,
-    "transition_all": 0
-  },
-  "frontend/src/views/expo/kiosk/RegisterScreen.vue": {
-    "hex_colors": 1,
-    "lines_over_500": 0,
-    "transition_all": 0
-  },
-  "frontend/src/views/expo/kiosk/ResultScreen.vue": {
-    "hex_colors": 5,
-    "lines_over_500": 0,
-    "transition_all": 0
-  },
-  "frontend/src/views/expo/kiosk/SalesPanel.vue": {
-    "hex_colors": 6,
-    "lines_over_500": 0,
     "transition_all": 0
   },
   "frontend/src/views/governance/ConceptEditor.vue": {

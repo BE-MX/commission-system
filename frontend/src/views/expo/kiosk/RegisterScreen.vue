@@ -1,28 +1,30 @@
 <template>
   <div class="reg">
+    <p class="xk-eyebrow">A LITTLE ABOUT YOU</p>
     <h2 class="xk-title">先认识一下您</h2>
     <div class="xk-sub">试戴效果图将发送给您，随时回看 · 约 30 秒</div>
 
     <div class="form">
       <div class="row">
         <div class="field">
-          <label>怎么称呼您 <i>*</i></label>
-          <input v-model="flow.regForm.name" placeholder="如：陈女士" />
+          <label for="expo-name">怎么称呼您 <i>*</i></label>
+          <input id="expo-name" autocomplete="name" v-model="flow.regForm.name" placeholder="如：陈女士" />
         </div>
         <div class="field">
-          <label>手机号 <i>*</i></label>
+          <label for="expo-phone">手机号 <i>*</i></label>
           <!-- 提前说清 11 位要求，别让客户填完点了「下一步」才被退回来（页头已说明用途） -->
-          <input v-model="flow.regForm.phone" inputmode="tel" placeholder="11 位手机号" />
+          <input id="expo-phone" autocomplete="tel" v-model="flow.regForm.phone" inputmode="tel" placeholder="11 位手机号" />
         </div>
         <div class="field">
-          <label>微信号（选填）</label>
-          <input v-model="flow.regForm.wechat_id" placeholder="方便顾问发效果图" />
+          <label for="expo-wechat">微信号（选填）</label>
+          <input id="expo-wechat" v-model="flow.regForm.wechat_id" placeholder="方便顾问发效果图" />
         </div>
       </div>
 
       <label class="group-label">您最关心的是</label>
       <div class="cards">
-        <div
+        <button type="button"
+          :aria-pressed="flow.regForm.primary_need === need.value"
           v-for="need in NEEDS" :key="need.value"
           class="card" :class="{ sel: flow.regForm.primary_need === need.value }"
           @click="flow.regForm.primary_need = need.value"
@@ -30,26 +32,27 @@
           <span class="ic">{{ need.icon }}</span>
           <span class="zh">{{ need.label }}</span>
           <span class="en">{{ need.hint }}</span>
-        </div>
+        </button>
       </div>
 
       <label class="group-label">偏爱风格</label>
       <div class="cards">
-        <div
+        <button type="button"
+          :aria-pressed="flow.regForm.style_pref === style"
           v-for="style in STYLES" :key="style"
           class="card" :class="{ sel: flow.regForm.style_pref === style }"
           @click="flow.regForm.style_pref = style"
         >
           <span class="zh">{{ style }}</span>
-        </div>
+        </button>
       </div>
 
-      <label class="consent" @click="flow.regForm.consent = !flow.regForm.consent">
-        <span class="box" :class="{ on: flow.regForm.consent }" />
+      <label class="consent">
+        <input v-model="flow.regForm.consent" type="checkbox" />
         <span>同意为生成试戴效果拍摄照片。照片仅用于本次体验与效果回看，保留 90 天，可随时联系我们删除。</span>
       </label>
 
-      <button class="xk-btn submit" @click="flow.submitRegister()">下一步</button>
+      <button class="xk-btn submit" @click="flow.submitRegister()">下一步 · 拍摄照片 →</button>
     </div>
   </div>
 </template>
@@ -69,57 +72,23 @@ const STYLES = ['知性优雅', '减龄轻盈', '自然日常', '端庄大气', 
 </script>
 
 <style scoped>
-.reg { flex: 1; display: flex; flex-direction: column; padding: 2vh 6vw 0; overflow-y: auto; }
-.form { max-width: 720px; width: 100%; margin: 3vh auto 0; display: flex; flex-direction: column; }
-.row { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
-.field label, .group-label {
-  display: block; font-size: 11px; letter-spacing: 0.24em;
-  color: var(--xk-gold-dim); margin: 0 0 8px 2px;
-}
-.field label i { color: var(--xk-gold); font-style: normal; }
-.group-label { margin-top: 22px; }
-.field input {
-  width: 100%; height: 48px; border-radius: 12px;
-  border: 1px solid var(--xk-gold-line);
-  background: rgba(232, 196, 121, 0.045);
-  color: var(--xk-paper); font-size: 15px; padding: 0 16px; outline: none;
-  box-sizing: border-box;
-}
-.field input:focus { border-color: var(--xk-gold); }
-.field input::placeholder { color: #5d5647; }
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
-.card {
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  padding: 16px 8px; border-radius: 14px; cursor: pointer;
-  border: 1px solid var(--xk-gold-line); background: rgba(232, 196, 121, 0.03);
-}
-.card.sel {
-  border-color: var(--xk-gold);
-  background: rgba(232, 196, 121, 0.1);
-  box-shadow: inset 0 0 20px rgba(232, 196, 121, 0.12);
-}
-.card .ic { font-family: 'Noto Serif SC', serif; font-size: 20px; color: var(--xk-gold); font-style: italic; }
-.card .zh { font-size: 14px; }
-.card .en { font-size: 10px; color: var(--xk-mut); letter-spacing: 0.1em; }
-.consent {
-  display: flex; gap: 10px; margin-top: 24px; cursor: pointer;
-  font-size: 12px; color: var(--xk-mut); line-height: 1.8;
-}
-.consent .box {
-  flex: none; width: 18px; height: 18px; margin-top: 3px;
-  border-radius: 5px; border: 1px solid var(--xk-gold); position: relative;
-}
-.consent .box.on { background: rgba(232, 196, 121, 0.2); }
-.consent .box.on::after {
-  content: ''; position: absolute; left: 5px; top: 1px;
-  width: 5px; height: 10px;
-  border: solid var(--xk-gold); border-width: 0 2px 2px 0; transform: rotate(40deg);
-}
-.submit { margin: 26px auto 4vh; min-width: 280px; }
-
-/* 手机竖屏：表单本身靠 auto-fit 已能自适应降列，只需收紧留白与撑满提交按钮 */
-@media (max-width: 560px) {
-  .reg { padding: 1.5vh 4vw 0; }
-  .submit { min-width: 0; width: 100%; margin: 22px 0 3vh; }
-}
+.reg { flex: 1; min-height: 0; overflow-y: auto; padding: 34px 6vw; }
+.form { width: 100%; max-width: 880px; margin: 28px auto 0; }
+.row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.field label, .group-label { display: block; color: var(--xk-gold-dim); font-size: 14px; margin-bottom: 10px; }
+.field label i { color: var(--xk-warn); font-style: normal; }
+.field input { width: 100%; height: 54px; padding: 0 16px; border: 1px solid var(--xk-gold-line); border-radius: 8px; background: var(--xk-ink-2); color: var(--xk-paper); }
+.field input::placeholder { color: var(--xk-mut); }
+.group-label { margin-top: 30px; }
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; min-height: 58px; padding: 18px 12px; border: 1px solid var(--xk-gold-line); border-radius: 10px; background: var(--xk-ink-2); color: var(--xk-paper); cursor: pointer; transition: transform 180ms var(--xk-ease), background 180ms ease; }
+.card.sel { border-color: var(--xk-gold); background: var(--xk-selected); }
+.card:active { transform: scale(0.98); }
+.ic { font: 24px var(--xk-serif); color: var(--xk-gold); }
+.zh { font-size: 16px; }
+.en { font-size: 12px; color: var(--xk-mut); }
+.consent { display: flex; align-items: flex-start; gap: 12px; margin-top: 28px; color: var(--xk-mut); font-size: 13px; line-height: 1.9; padding: 10px 0; cursor: pointer; }
+.consent input { flex: none; margin-top: 3px; width: 22px; height: 22px; accent-color: var(--xk-gold); }
+.submit { margin: 26px auto 0; width: min(100%, 460px); }
+@media (max-width: 600px) { .reg { padding: 24px 20px; } .row { grid-template-columns: 1fr; gap: 14px; } .cards { gap: 8px; } .card { padding: 14px 6px; } .zh { font-size: 14px; } .group-label { margin-top: 24px; } }
 </style>
