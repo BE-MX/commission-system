@@ -212,3 +212,9 @@ $HOME/.openclaw/bin/openclaw --profile ark-sales gateway restart
 - MCP 进程重启后会丢失内存租约。不猜测旧租约，等 15 分钟过期后重新领取。
 - 默认线上 Agent 路由若返回 404，表示该环境尚未部署智能获客后端；不要写入 token 反复重试。基础搜客需 migration `099_sales_automation.py`，公海背调还需 `106_public_pool_research.py`，或把 profile 指向已部署环境。
 - 查看日志时不要粘贴 profile `.env`、Authorization 头或客户 PII。
+
+### 候选提交契约回归
+
+MCP 候选参数在原有 `name/website/source_url/captured_at` 基础上必须提供 `score` 和非空 `score_reasons`（`dimension/reason/source_url`）。侧车生成后端要求的稳定信源标识并映射 `company_name`，不默认填评分。任务列表只返回可领取项，不支持按失败/完成状态过滤。
+
+除 `npm test` 外，运行 `ARK_CONTRACT_PYTHON=/path/to/python node scripts/verify-candidate-contract.mjs`；Python 需安装 Pydantic 2。该检查让 7 条和 20 条离线样本经过真实 MCP 与 HTTP 序列化，再由仓库 `CandidateBatch` 校验，不访问网络或数据库。
