@@ -1094,11 +1094,13 @@ def get_order_detail(
     # 实际扣款和客户余额属于内部财务数据；免登录进度页、普通绑定小程序
     # 都不返回。主站 RBAC 详情才包含这两个字段。
     if include_finance:
+        detail["created_by"] = order.created_by
         detail["created_by_name"] = db.query(ArkUser.real_name).filter(
             ArkUser.id == order.created_by
         ).scalar()
         detail["charged_amount"] = float(order.charged_amount or 0)
         detail["customer_balance"] = float(customer.balance or 0) if customer else None
+        detail["balance_snapshot"] = balance_service.order_balance_snapshot(db, order, customer)
         detail["current_expected_quotes"] = [{
             "client_key": None,
             "item_id": item.id,
@@ -1422,17 +1424,20 @@ def update_item(
 
     new_price = data.get("unit_price")
     if new_price is not None:
-        # 手工改价：优惠价只允许往低改（不超过原价快照），差额由下方
-        # sync_order_finance 与客户余额多退少补；改后该明细脱离会员规则。
+        # unit_price 为含手工费的成交单价。优惠金额只比较商品原价与
+        # 扣除手工费后的价格；差额由下方余额结算多退少补。
         price = balance_service.money(new_price)
         original = balance_service.money(item.original_price)
+        labor_fee = balance_service.money(item.labor_fee)
         if price <= 0:
             raise ValueError("优惠价必须大于 0")
-        if price > original:
-            raise ValueError(f"优惠价不能高于原价 ¥{original:.2f}")
+        if price <= labor_fee:
+            raise ValueError("成交单价必须高于手工费，优惠后商品单价必须大于 0")
+        if price > original + labor_fee:
+            raise ValueError(f"优惠价不能高于原价 ¥{original:.2f}（成交单价上限含手工费 ¥{original + labor_fee:.2f}）")
         if price != balance_service.money(item.unit_price):
             item.unit_price = price
-            item.discount_amount = balance_service.money(original - price)
+            item.discount_amount = balance_service.money(original - (price - labor_fee))
             item.pricing_rule = "manual_override"
 
     for field in _TEXT_FIELDS:

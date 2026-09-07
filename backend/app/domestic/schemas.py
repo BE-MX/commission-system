@@ -603,7 +603,7 @@ class OrderItemUpdate(BaseModel):
     order_qty: int | None = Field(None, gt=0, le=2000)
     unit_price: Decimal | None = Field(
         None, gt=0, le=Decimal("999999999999.99"), max_digits=14, decimal_places=2,
-        description="手工改价后的优惠价；不得高于原价快照，改后该明细记为 manual_override",
+        description="含手工费的成交单价；减去手工费后须大于0且不高于原价快照，改后记为 manual_override",
     )
     hairstyle: str | None = Field(None, max_length=1000)
     hairstyle_images: list[str] | None = None

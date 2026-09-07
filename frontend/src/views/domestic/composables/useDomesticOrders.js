@@ -9,7 +9,7 @@ import {
   attachItemRoute, deleteOrder, exportOrder, getItemWxacode, getOptions, getOrder, getProcessRoutes,
   listDomesticSkips, listOrders, listProcessWorkers, listReports, newRequestId,
   revokeDomesticSkip, revokeReport, shipItem, skipDomesticStep,
-  submitDraftOrder, submitReport, terminateOrder, updateOrderItem,
+  submitDraftOrder, submitReport, terminateOrder,
 } from '@/api/domestic'
 import { useListPage } from '@/composables/useListPage'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
@@ -300,46 +300,11 @@ export function useDomesticOrders() {
     downloadBlob(response)
   }
 
-  // 手工改价：已提交订单的差额立即与客户余额结算，所以确认文案说清钱的方向
-  const priceEditDialog = reactive({ visible: false, item: null, price: null, saving: false })
+  const editDialog = reactive({ visible: false, orderId: null, itemId: null })
 
-  function openPriceEdit(item) {
-    Object.assign(priceEditDialog, {
-      visible: true, item, price: Number(item.unit_price || 0), saving: false,
-    })
-  }
-
-  async function confirmPriceEdit() {
-    const item = priceEditDialog.item
-    const price = Number(priceEditDialog.price)
-    const original = Number(item?.original_price || 0)
-    if (!(price > 0)) return ElMessage.warning('优惠价必须大于 0')
-    if (price > original) return ElMessage.warning(`优惠价不能高于原价 ¥${original.toFixed(2)}`)
-    if (price === Number(item.unit_price || 0)) {
-      priceEditDialog.visible = false
-      return
-    }
-    const delta = (price - Number(item.unit_price || 0)) * Number(item.order_qty || 0)
-    const settled = detail.value?.status !== 0
-    try {
-      await ElMessageBox.confirm(
-        `「${item.line_code} ${item.product_name}」优惠价 ¥${Number(item.unit_price).toFixed(2)} → ¥${price.toFixed(2)}`
-        + (settled && delta !== 0
-          ? `，差额 ¥${Math.abs(delta).toFixed(2)} 将立即${delta > 0 ? '从客户余额补扣' : '退回客户余额'}`
-          : ''),
-        '确认改价',
-        { type: 'warning', confirmButtonText: '确认改价', cancelButtonText: '再想想' },
-      )
-    } catch { return }
-    priceEditDialog.saving = true
-    try {
-      await updateOrderItem(item.id, { unit_price: price })
-      priceEditDialog.visible = false
-      msgSuccess('改价')
-      await refreshAll()
-    } catch { /* 拦截器已提示 */ } finally {
-      priceEditDialog.saving = false
-    }
+  function openEdit(row, itemId = null) {
+    if (!canOperateOrder(row) || [3, 4].includes(row.status)) return
+    Object.assign(editDialog, { visible: true, orderId: row.id, itemId })
   }
 
   // 已发货/已终止的单不再亮红；字符串日期可直接按字典序比较（YYYY-MM-DD）
@@ -503,7 +468,7 @@ export function useDomesticOrders() {
     wxacodeDialog, openWxacode, downloadWxacode,
     handleExport, handleSubmitDraft, submittingOrderIds, handleTerminate, handleDelete, goCreate,
     canOperateOrder,
-    priceEditDialog, openPriceEdit, confirmPriceEdit,
+    editDialog, openEdit,
     isShipDateOverdue,
   }
 }

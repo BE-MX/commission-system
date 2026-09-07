@@ -847,6 +847,10 @@ frontend/src/
 
 ## 内贸订单管理（domestic，2026-07-27）
 
+2026-09-07 订单体验更新：业务领货单 Excel 只展示客户编码，产品规格合并一列，为原价/减免额/优惠后商品单价/手工费/小计和参考图留出 A4 空间；数量后增加空白入库数量。私有图由 `export_image_service` 读取并嵌入对应单元格，缺图显式提示，多行文字与图片分区、全文续表。`balance_service.order_balance_snapshot` 从订单自己的最新结算流水取真实前后余额，草稿/调整/缺流水明确标注；没有新增表或迁移。
+
+新建页在 KeepAlive 内保存成功即重置；报价按行指纹独立失效，新增空行或复制不覆盖已有手工价。`DomesticOrderEditDialog` 提供创建人的订单头和明细独立编辑，变化字段由 `domesticOrderEditing` 构造；正式单数量/价格修改显示差额确认，沿用后端状态、报工数量与余额约束。成交单价包含手工费，优惠额计算先减手工费，生产单编辑不发送销售字段。
+
 **与外贸的关系**：`app/domestic/` 是与「生产订单（app/stock）+ 生产报工（app/production）」**平行的一套**，订单/产品/客户/进度全部独立建表。不复用 `order_product_process_progress` 的原因：那张表 FK 硬绑 `ark_production_order_items` 且是整行 0/1 流转，没有数量字段；内贸要拆批必须改结构，动老表要牵动报工/看板/小程序/打印/重置工艺 5 处。共用的只有 `process` / `process_route` / `process_route_step` / `user_process_binding`。
 
 **订单大类（140）**：业务订单 `business/DO` 与内部备货 `production/DP` 使用独立入口和编号。生产单无客户、销售维度、发型要求或报价；头套省去发型系列，发片仍选工艺/尺寸与发长。`order_kind_service.py` 统一归一化生产输入、固定路线选择和 options 输出；不能经改价、改单、追加、草稿提交重新引入销售账务。生产单入库完成后状态为已完工，无发货登记。

@@ -2,7 +2,6 @@
 
 from datetime import date, datetime
 from io import BytesIO
-from math import ceil
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, Side
@@ -10,15 +9,29 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.page import PageMargins
 
 from app.domestic.constants import PRODUCT_TYPES
+from app.domestic.balance_service import money
+from app.domestic.export_image_service import add_cell_images, needs_image_appendix, wrapped_text_lines
 
 
-_HEADERS = (
-    "明细号", "产品类型", "产品名称", "工艺/尺寸", "发长", "网帽颜色",
-    "头套尺寸", "发量", "发型系列", "数量", "发型", "颜色", "发型要求", "备注",
+# Business rows group the repeated product attributes into one readable cell,
+# leaving enough A4 print width for prices and the original reference images.
+_BUSINESS_COLUMNS = (
+    ("line_code", "明细号", 6), ("product_type", "产品类型", 8), ("specification", "产品规格", 22),
+    ("order_qty", "数量", 6), ("received_qty", "入库数量", 7),
+    ("original_price", "原价（元/件）", 9), ("discount_amount", "优惠金额（元/件）", 9),
+    ("discount_price", "优惠后单价（元/件）", 10), ("labor_fee", "手工费（元/件）", 8),
+    ("line_amount", "小计（元）", 11), ("hairstyle", "发型备注", 21),
+    ("color", "颜色", 12), ("style_requirement", "发型要求", 23), ("remark", "备注", 16),
 )
-_WIDTHS = (
-    9, 11, 24, 15, 12, 14, 12, 11, 13, 10, 18, 18, 26, 22,
+_PRODUCTION_COLUMNS = (
+    ("line_code", "明细号", 9), ("product_type", "产品类型", 11), ("product_name", "产品名称", 24),
+    ("craft", "工艺/尺寸", 15), ("length", "发长", 12), ("net_color", "网帽颜色", 14),
+    ("size", "头套尺寸", 12), ("density", "发量", 11),
+    ("order_qty", "数量", 10), ("received_qty", "入库数量", 10), ("color", "颜色", 18), ("remark", "备注", 22),
 )
+_IMAGE_FIELDS = {"hairstyle": "hairstyle_images", "color": "color_images",
+                 "style_requirement": "style_images", "remark": "remark_images"}
+_MONEY_FIELDS = {"original_price", "discount_amount", "discount_price", "labor_fee", "line_amount"}
 _FONT_NAME = "宋体"
 _THIN = Side(style="thin", color="000000")
 _BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
@@ -65,15 +78,7 @@ def _date_text(value) -> str:
 
 
 def _wrapped_lines(value, width: int) -> int:
-    text = str(value or "")
-    chars_per_line = max(6, int(width * 1.4))
-    return sum(max(1, ceil(len(part) / chars_per_line)) for part in text.splitlines() or [""])
-
-
-def _item_row_height(values: tuple) -> float:
-    text_columns = ((1, 11), (2, 24), (10, 18), (11, 18), (12, 26), (13, 22))
-    lines = max(_wrapped_lines(values[index], width) for index, width in text_columns)
-    return min(300, max(75, lines * 15 + 15))
+    return len(wrapped_text_lines(value, width))
 
 
 def _print_chunks(
@@ -109,7 +114,10 @@ def _add_full_requirements_sheet(wb: Workbook, detail: dict) -> None:
             if detail.get("order_kind") == "production" and key in ("hairstyle", "style_requirement"):
                 continue
             text = str(item.get(key) or "").strip()
-            if len(text) > _LONG_TEXT_THRESHOLD:
+            columns = _PRODUCTION_COLUMNS if detail.get("order_kind") == "production" else _BUSINESS_COLUMNS
+            width = next((width for field, _, width in columns if field == key), 22)
+            image_overflow = item.get(_IMAGE_FIELDS[key]) and needs_image_appendix(text, width)
+            if len(text) > _LONG_TEXT_THRESHOLD or image_overflow:
                 for index, chunk in enumerate(_print_chunks(text)):
                     chunk_label = label if index == 0 else f"{label}（续）"
                     rows.append((_display(item.get("line_code")), chunk_label, _safe_raw_text(chunk)))
@@ -155,23 +163,59 @@ def _add_full_requirements_sheet(wb: Workbook, detail: dict) -> None:
     ws.page_margins = PageMargins(left=0.35, right=0.35, top=0.5, bottom=0.5)
 
 
+def _item_values(item: dict) -> dict:
+    attrs = item.get("attrs") or {}
+    piece = attrs.get("product_type") == "piece"
+    specification = [f"工艺/尺寸：{attrs.get('craft') or '—'}", f"发长：{attrs.get('length') or '—'}"]
+    if not piece:
+        specification.extend(f"{label}：{attrs[key]}" for key, label in (
+            ("net_color", "网帽颜色"), ("size", "尺码"), ("density", "发量"), ("hair_style_series", "发型系列"),
+        ) if attrs.get(key))
+    values = {**{key: _display(item.get(key)) for key in ("line_code", "product_name", *_IMAGE_FIELDS)},
+              **{key: _display(attrs.get(key)) for key in ("craft", "length", "net_color", "size", "density")},
+              "product_type": PRODUCT_TYPES.get(attrs.get("product_type"), "—"),
+              "specification": _safe_text("\n".join(specification)),
+              "order_qty": item.get("order_qty") or 0, "received_qty": None}
+    if piece:
+        values.update(net_color=None, size=None, density=None)
+    for key in _MONEY_FIELDS - {"discount_price"}:
+        values[key] = float(money(item[key])) if item.get(key) is not None else None
+    values["discount_price"] = float(money(item["unit_price"]) - money(item.get("labor_fee"))) if item.get("unit_price") is not None else None
+    return values
+
+
+def _finance_text(detail: dict) -> str:
+    snapshot = detail.get("balance_snapshot") or {}
+    source = snapshot.get("source", "unavailable")
+    amount = money(detail.get("total_amount"))
+    if source == "unavailable":
+        return f"本次订单金额：¥{amount:.2f}     扣款前/后余额：无历史扣款记录，无法核实"
+    before, after = money(snapshot.get("balance_before")), money(snapshot.get("balance_after"))
+    if source == "draft_preview":
+        return f"草稿未扣款 · 当前余额：¥{before:.2f}     本次订单金额：¥{amount:.2f}     预计扣减后余额：¥{after:.2f}"
+    if snapshot.get("transaction_type") == "order_charge":
+        return f"之前余额：¥{before:.2f}     本次订单金额：¥{amount:.2f}     扣减本次订单后余额：¥{after:.2f}"
+    delta = money(snapshot.get("settlement_amount"))
+    action = f"实际补扣：¥{delta:.2f}" if delta >= 0 else f"实际退回：¥{-delta:.2f}"
+    return (f"最近调整前余额：¥{before:.2f}     本次订单金额：¥{amount:.2f}     "
+            f"{action}     调整后余额：¥{after:.2f}")
+
+
 def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
-    """按内贸领货单模板生成单张订单工作簿。"""
+    """Generate an A4 requisition with historical finance and embedded references."""
     production = detail.get("order_kind") == "production"
-    columns = [i for i in range(len(_HEADERS)) if not production or i not in (8, 10, 12)]
-    headers = [_HEADERS[i] for i in columns]
-    widths = [_WIDTHS[i] for i in columns]
+    columns = _PRODUCTION_COLUMNS if production else _BUSINESS_COLUMNS
     last_column = get_column_letter(len(columns))
+    header_row = 4 if production else 5
+    first_item_row = header_row + 1
     title = "内贸生产备货单" if production else "内贸订单领货单"
     wb = Workbook()
     ws = wb.active
     ws.title = title
-
     ws.merge_cells(f"B1:{last_column}1")
     ws["B1"] = title
     ws["B1"].font = Font(name=_FONT_NAME, size=18, bold=True)
     ws["B1"].alignment = Alignment(horizontal="center", vertical="center")
-
     ws.merge_cells(f"A2:{last_column}2")
     ws["A2"] = (
         f"下单日期：{_date_text(detail.get('order_date'))}     "
@@ -179,7 +223,7 @@ def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
         f"客户订单号：{_safe_text(detail.get('order_no'))}     "
         f"系统单号：{_safe_text(detail.get('domestic_no'))}     "
         f"申请人：{_safe_text(applicant_name)}     "
-        f"客户：{_safe_text(detail.get('customer_name'))}"
+        f"客户编码：{_safe_text(detail.get('customer_custom_code')) or '未填写'}"
     )
     ws.merge_cells(f"A3:{last_column}3")
     ws["A3"] = (
@@ -189,80 +233,66 @@ def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
         f"订单渠道：{_safe_text(detail.get('order_channel_label'))}"
     )
     if production:
-        ws["A2"] = (
-            f"下单日期：{_date_text(detail.get('order_date'))}     "
-            f"生产单号：{_safe_text(detail.get('domestic_no'))}     "
-            f"申请人：{_safe_text(applicant_name)}"
-        )
+        ws["A2"] = (f"下单日期：{_date_text(detail.get('order_date'))}     "
+                    f"生产单号：{_safe_text(detail.get('domestic_no'))}     "
+                    f"申请人：{_safe_text(applicant_name)}")
         ws["A3"] = "用途：公司毛坯备货（确认下单至入库）     审批人签字：____________________"
-    for cell in (ws["A2"], ws["A3"]):
+    else:
+        ws.merge_cells(f"A4:{last_column}4")
+        ws["A4"] = _finance_text(detail)
+    for row in range(2, header_row):
+        cell = ws.cell(row, 1)
         cell.font = Font(name=_FONT_NAME, size=12, bold=True)
         cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
         cell.border = _BORDER
-
-    for col, header in enumerate(headers, start=1):
-        cell = ws.cell(4, col, header)
-        cell.font = Font(name=_FONT_NAME, size=12, bold=True)
+        ws.row_dimensions[row].height = 38
+    for col, (_, label, width) in enumerate(columns, start=1):
+        cell = ws.cell(header_row, col, label)
+        cell.font = Font(name=_FONT_NAME, size=11, bold=True)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         cell.border = _BORDER
+        ws.column_dimensions[get_column_letter(col)].width = width
 
     items = detail.get("items") or []
-    for row_idx, item in enumerate(items, start=5):
-        attrs = item.get("attrs") or {}
-        is_piece = attrs.get("product_type") == "piece"
-        values = (
-            _display(item.get("line_code")),
-            PRODUCT_TYPES.get(attrs.get("product_type"), _display(attrs.get("product_type"))),
-            _display(item.get("product_name")),
-            _display(attrs.get("craft")),
-            _display(attrs.get("length")),
-            "" if is_piece else _display(attrs.get("net_color")),
-            "" if is_piece else _display(attrs.get("size")),
-            "" if is_piece else _display(attrs.get("density")),
-            "" if is_piece else _display(attrs.get("hair_style_series")),
-            item.get("order_qty") or 0,
-            _display(item.get("hairstyle")),
-            _display(item.get("color")),
-            _display(item.get("style_requirement")),
-            _display(item.get("remark")),
-        )
-        for col, value in enumerate([values[i] for i in columns], start=1):
-            cell = ws.cell(row_idx, col, value)
+    for row_idx, item in enumerate(items, start=first_item_row):
+        values = _item_values(item)
+        lines = max(_wrapped_lines(values.get(key), width) for key, _, width in columns)
+        ws.row_dimensions[row_idx].height = min(300, max(75, lines * 15 + 15))
+        for col, (key, _, width) in enumerate(columns, start=1):
+            cell = ws.cell(row_idx, col, values.get(key))
             cell.font = Font(name=_FONT_NAME, size=11)
-            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.alignment = Alignment(horizontal="right" if key in _MONEY_FIELDS else "center",
+                                       vertical="center", wrap_text=True)
             cell.border = _BORDER
-        ws.row_dimensions[row_idx].height = _item_row_height(values)
+            if key in _MONEY_FIELDS:
+                cell.number_format = '#,##0.00;[Red]-#,##0.00;0.00'
+            if key in _IMAGE_FIELDS:
+                add_cell_images(ws, row_idx, col, item.get(_IMAGE_FIELDS[key]) or [], width)
 
-    notes_row = 5 + len(items) + 1
+    notes_row = first_item_row + len(items) + 1
     ws.merge_cells(start_row=notes_row, start_column=1, end_row=notes_row, end_column=len(columns))
-    notes = "注意事项：\n！导出内容以方舟内贸订单记录为准。\n！领货与签字流程按内贸部门现行规定执行。"
+    notes = "注意事项：\n！入库数量留空，由收货人员填写。\n！领货与签字流程按内贸部门现行规定执行。"
+    if not production:
+        notes += "\n！金额单位为人民币元；小计 =（优惠后单价 + 手工费）× 数量。余额取本订单扣款/调整记录，不随后续充值变化。"
     if detail.get("remark"):
         notes += f"\n订单备注：{_safe_text(detail['remark'])}"
     ws.cell(notes_row, 1, notes)
     ws.cell(notes_row, 1).font = Font(name=_FONT_NAME, size=11, bold=True)
     ws.cell(notes_row, 1).alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
     ws.cell(notes_row, 1).border = _BORDER
-
-    for col, width in enumerate(widths, start=1):
-        ws.column_dimensions[get_column_letter(col)].width = width
     ws.row_dimensions[1].height = 32
-    ws.row_dimensions[2].height = 26
-    ws.row_dimensions[3].height = 42
-    ws.row_dimensions[4].height = 36
-    ws.row_dimensions[notes_row].height = min(
-        240, max(75, _wrapped_lines(notes, sum(widths)) * 15 + 15)
-    )
-
+    ws.row_dimensions[header_row].height = 42
+    ws.row_dimensions[notes_row].height = min(240, max(75, _wrapped_lines(notes, sum(c[2] for c in columns)) * 15 + 15))
+    ws.freeze_panes = f"A{first_item_row}"
     ws.page_setup.orientation = "landscape"
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_margins = PageMargins(left=0.24, right=0.24, top=0.35, bottom=0.35)
-    ws.print_title_rows = "1:4"
+    ws.print_title_rows = f"1:{header_row}"
     ws.print_area = f"A1:{last_column}{notes_row}"
     _add_full_requirements_sheet(wb, detail)
-
     stream = BytesIO()
     wb.save(stream)
     stream.seek(0)
