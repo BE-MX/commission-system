@@ -45,7 +45,9 @@ function hiddenTimeDecorations(message: Element, textRoot: Element, metadata: El
   const visibleTimes = message.querySelectorAll(WHATSAPP_SELECTORS.messageTime)
   if (visibleTimes.length !== 1) return []
   const time = visibleTimes[0].textContent?.trim() ?? ''
-  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(time)) return []
+  // This is a duplicate of the recognized metadata, not a clock to parse.
+  // WhatsApp localizes both copies (day periods, digits and hour padding).
+  if (!time) return []
   return [...metadata.querySelectorAll(WHATSAPP_SELECTORS.messageHiddenTime)].filter(element => (
     !textRoot.contains(element)
     && element.textContent?.trim() === time

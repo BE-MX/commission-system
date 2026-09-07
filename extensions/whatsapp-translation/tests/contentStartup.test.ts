@@ -13,11 +13,20 @@ afterEach(() => {
   vi.resetModules()
 })
 
-it('translates an already loaded chat without waiting for another DOM mutation or focus event', async () => {
+it.each([null, '早上7:14', '7:14 AM'])('automatically translates an already loaded chat with timestamp %s', async localizedTime => {
   vi.useFakeTimers()
   page = new JSDOM(readFileSync(new URL('./fixtures/direct-nested-text.html', import.meta.url), 'utf8'), {
     url: 'https://web.whatsapp.com/',
   })
+  if (localizedTime) {
+    for (const message of page.window.document.querySelectorAll('[data-testid="msg-container"]')) {
+      message.querySelector('[data-testid="msg-meta"]')!.textContent = localizedTime
+      const hidden = page.window.document.createElement('span')
+      hidden.setAttribute('aria-hidden', 'true')
+      hidden.textContent = localizedTime
+      message.querySelector('.copyable-text')!.append(hidden)
+    }
+  }
   Object.defineProperty(page.window.document, 'readyState', { value: 'complete' })
   vi.stubGlobal('document', page.window.document)
   vi.stubGlobal('window', page.window)

@@ -76,6 +76,48 @@ describe('nested incoming text structures', () => {
     ])
   })
 
+  it.each(['07:14', '7:14', '早上7:14', '下午3:26', '7:14 AM', '3:26 PM', '٧:١٤ ص'])('recognizes a duplicated localized timestamp: %s', async time => {
+    const document = loadDocument()
+    for (const visibleTime of document.querySelectorAll('[data-testid="msg-meta"]')) visibleTime.textContent = time
+    appendHiddenTimes(document, '<span>$TIME</span>')
+
+    expect((await adapterFor(document).listUntranslatedIncomingMessages()).map(message => message.text)).toEqual([
+      'Please send the sample details. 🙂',
+      'Danke für die Informationen. Wir prüfen die Muster und melden uns morgen.',
+    ])
+  })
+
+  it.each([
+    '<span>Unknown hidden text</span>',
+    '<span>下午4:27</span>',
+    '<span>$TIME<img></span>',
+    '<span>$TIME<span role="img"></span></span>',
+    '<span>$TIME<span data-testid="unknown-content"></span></span>',
+  ])('still rejects unmatched or semantic hidden content with localized time: %s', async markup => {
+    const document = loadDocument()
+    for (const visibleTime of document.querySelectorAll('[data-testid="msg-meta"]')) visibleTime.textContent = '下午3:26'
+    appendHiddenTimes(document, markup)
+
+    await expect(adapterFor(document).listUntranslatedIncomingMessages()).resolves.toEqual([])
+  })
+
+  it.each(['missing', 'duplicate', 'outside', 'outgoing', 'group', 'unknown'])('does not use localized time to bypass the %s boundary', async boundary => {
+    const document = loadDocument()
+    for (const visibleTime of document.querySelectorAll('[data-testid="msg-meta"]')) visibleTime.textContent = '下午3:26'
+    appendHiddenTimes(document, '<span>$TIME</span>')
+    for (const message of document.querySelectorAll('[data-testid="msg-container"]')) {
+      const time = message.querySelector('[data-testid="msg-meta"]')!
+      if (boundary === 'missing') time.remove()
+      if (boundary === 'duplicate') message.append(time.cloneNode(true))
+      if (boundary === 'outside') message.append(message.querySelector('[aria-hidden="true"]')!)
+      if (boundary === 'outgoing') (message.parentElement as HTMLElement).style.alignItems = 'flex-end'
+    }
+    if (boundary === 'group') document.querySelector('[aria-label="个人主页详情"]')!.setAttribute('aria-label', 'Group details')
+    if (boundary === 'unknown') document.querySelector('[data-testid="conversation-header"]')!.remove()
+
+    await expect(adapterFor(document).listUntranslatedIncomingMessages()).resolves.toEqual([])
+  })
+
   it.each([
     '<span>10:32</span>',
     '<span>Unknown hidden text</span>',
