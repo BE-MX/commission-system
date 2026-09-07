@@ -1,3 +1,15 @@
+### 默认双击部署与 140 迁移（2026-09-07，已发布并无参数复跑）
+
+用户再次运行默认 `deploy.bat` 时，main 已包含 140，而上一轮只固定发布 139；要求每次传 `--migration-credentials` 导致双击入口继续报错。修复 `8b4556fa` 使默认调用读取办公室运行仓库 `.deploy_state/credentials/migration.env`，显式参数仍可覆盖，指定文件缺失不会静默回退。服务器已配置限定办公室来源及 `commission_db` 的独立迁移账号（九项 DDL/DML 权限，无账号管理/转授权），文件及目录 NTFS ACL 仅部署账号、SYSTEM、Administrators。该账号和文件长期保留供后续部署使用，不再随一次发布清理；没有复制到开发机、候选或云服务器，应用 `.env` SHA-256 未变。
+
+BAT 从 PATH 定位 Git，优先使用其自带 SSH，已验证含空格/括号的安装路径，不再依赖临时手改 PATH。`--prepare-only` 成功状态修正为 `prepared`。Windows 部署回归 53 passed、11 Linux-only skipped；独立审查通过。未修改 140 业务迁移本身：补充真实库只读预检确认全部旧单满足新约束、两旧 CHECK 存在、没有部分 140 结构，两源路线启用且四计划为 18/5/18/5 步和 4/0/4/0 条规则。用真实 139 表定义在随机新 MySQL 库造合成数据，实际 upgrade、历史字段保留、新路线/规则、合法与非法生产字段、拒绝有生产单时 downgrade、回滚合成新行后 downgrade/re-upgrade 均通过；没有复制客户数据，三次演练创建的随机库全部删除。
+
+服务器先快进仅工具补丁 `4fa5dc4c`，随后以默认目标准备并**两次实际执行无参数 `deploy/deploy.bat`**，未传 revision、migration-credentials 或手设 SSH PATH（仅 `DEPLOY_NO_PAUSE=1` 用于无人值守收集退出码）。两次均退出 0，发布版本 `40c4a46ab79212c0b1ef3c859a83f29645cf71e9`，覆盖当时 main 的 140 与此前未上线代码。首次经统一入口停止全部四个 writer，执行 `139_expo_prompt_versions → 140_domestic_order_kinds` 并完成双后端/云静态切换；第二次构建跳过、四目标零变化/零传输，无服务重启，`publish-current.json=succeeded`、`schema-writers.json=completed`。
+
+维护窗口冻结新加坡/北京各主站、PM 和北京 IP API 入口及办公室 8001 直连，两后端线程栈无 Expo 任务后才切换。迁移后 19 张相关表的全部旧字段摘要一致，包括 30 张订单、42 条明细、931 条进度、540 个客户和 72 条资金流水；只按计划新增四条路线及其步骤/规则。四个 writer 均恢复，Nginx 配置按原摘要还原，临时防火墙规则撤销。两主站及 PM/素材首页 HTTP 200，两主站健康检查为 `ok/database=connected`，内贸接口匿名为 403。原有 Matplotlib 可选依赖和 Nginx 配置警告非本次阻断，未为消除警告改依赖或无关站点。
+
+交付证据保留主目录 `.deploy_state/default-migration-delivery/`，服务器保留本轮日志、摘要及维护回滚备份；临时诊断工具清理。部署账号后续轮换/撤销按 `deploy/README.md`，不要改运行 `.env` 或删除迁移保护。未纳管独立服务和小程序/浏览器扩展的终端安装仍按部署清单单独处理；这里的无参数成功指已登记的办公室与云应用发布。
+
 ### OpenClaw 获客修复合并（2026-09-07）
 
 亮哥已授权将 PR #1 的候选契约、主要身份唯一约束冲突及原批次超时重试修复合并并推送 main。本机 OpenClaw 已安装并验证；本次为代码合并，不执行生产发布或任务重新入队。最新部署交接已记录办公室可用入口 `office-prod`，下方“没有部署通道”为修复当时的历史记录。
