@@ -1,3 +1,7 @@
+### OpenClaw 获客修复合并（2026-09-07）
+
+亮哥已授权将 PR #1 的候选契约、主要身份唯一约束冲突及原批次超时重试修复合并并推送 main。本机 OpenClaw 已安装并验证；本次为代码合并，不执行生产发布或任务重新入队。最新部署交接已记录办公室可用入口 `office-prod`，下方“没有部署通道”为修复当时的历史记录。
+
 ### 数据库 139 发布准备（2026-09-07）
 
 窗口修复后确认正式发布被迁移保护拦截：数据库为 `138_public_pool_rules`，候选新增 `139_expo_prompt_versions`，尚未执行 DDL 或停服务。现场重新核实了办公室两个 NSSM、北京后端和新加坡 PM2 物流写入者，PM2 控制能力从 138 任务中独立纳入本任务，并增加停止后复核。保留独立 DBA、命名锁和失败恢复边界；新增持久化原始 writer 状态、迁移链复核、跨重跑恢复保护及固定完整 SHA 的发布参数。
@@ -46,12 +50,31 @@
 
 生产实测：真实入口的 `--help` 与无效参数分别返回 0/2，交互模式确实等到按键，无人值守直接返回，四项均通过；脚本 SHA-256 与本地一致（`229a77f28b1a3e9b5cf1c303fb1561620657c4ca1ddbf9fb18d9c8eafd9bed3d`）。`CommissionSystem`、`WhatsAppConnector` 均 Running，`/health` 为 `ok/database=connected`。生产验证脚本保存在 `.deploy_state/launcher-fix-20260907/`，仅测试参数解析和窗口停留，未发起真实业务发布。若后续默认发布报错，窗口现在会保留其实际错误。
 
+### OpenClaw 0907-1 重复提交 500 修复（2026-09-07，待后端部署）
+
+本机已安装 `~/.openclaw-ark-sales/runtime/search-contract-79b4d1ef`，配置与双工作区 Skill 已同步，私有备份位于同 profile 的 `backups/search-contract-79b4d1ef`。Gateway 重启、RPC 读探针、MCP doctor 通过，cron 和 triggers 均 enabled。修复见 PR #1；办公室后端仍待发布。
+
+用户日志确认任务 #5 首批 10 条已经提交成功但响应超时，后续换批次重复提交触发 `uq_ark_customer_external_identities_primary_identity_slot`。根因为弱官网身份按 source_record_id 保留证据，但每条新证据均请求 is_primary。现在在主体行锁内按主体+身份类型（跨 namespace）保留唯一活动主身份，新来源保存为非主证据；旧身份恢复活动时也不能抢占当前主槽。联系人路径补行锁。无迁移，不删除或改写线上历史记录。
+
+客户端候选提交对 transport timeout/network error 自动原样重试一次，发送前固定完整 JSON 快照；明确 HTTP 错误不重试，其他写操作不重试。仍无回执时明确返回结果未确认，禁止换 key/改分/拆批。Skill 与说明同步。任务 #5 已留存 10 位客户、10 条结果、10 个研究任务；尚未重新入队，也未宣称目标 20 条完成。
+
+验证：SQLite 补等效 MySQL 活动主身份唯一约束，修复前三项回归复现唯一冲突；修复后相关后端 255 通过、2 跳过（含真实 MySQL 并发测试），Node 54 通过，MCP→实际 CandidateBatch 的 7+20 条离线契约通过；两轮独立审查无阻断。真实 MySQL 并发尚未实测。代码已同步 origin/main；后端必须通过办公室统一部署入口发布，本轮没有办公室部署通道，没有推送 main。
+
 ### 展会生图提示词配置与版本（2026-09-07，合并交付，未部署）
 
 - 实现提交 `d46d86ba`，亮哥已授权合并至 `main` 并推送 GitHub `origin/main`。已实现管理页、动态版本选择、原子快照、版本修订冲突保护与管理员历史快照查看；本轮不含生产发布。
 - 139 迁移新增版本表及结果快照。真实/柔光/美颜完整迁移，78 个历史生成组合文本哈希一致。生产尚未迁移或发布；线上仍为此前回滚版本。
 - 验证：最终直接运行全部 test_expo_*.py，425 项通过（含版本专项 97 项）；前端动态版本、kiosk 隔离与导航回归 30 项通过。前端生产构建和增量约定检查通过。验证材料归档于主目录 `tmp/expo-prompt-config/`。管理页浏览器验证创建、未保存预览、保存、生效列表及 390px 布局，X/Escape/遮罩取消放弃保留草稿，保存中阻止关闭。独立审查发现的关闭保护与历史快照入口已处理。
 - 发布前必须停止接收新生成并排空旧线程，由指定部署入口统一执行 schema 139，再同步前后端并刷新设备。只有 SQLite 迁移与业务实测，MySQL 锁并发未实测。生产发布需另有明确授权。
+### OpenClaw 获客候选提交 422 修复（2026-09-07）
+
+`codex/openclaw-search-contract-20260907` 修复主研究代理候选提交契约：MCP 保留 `name` 输入并转换成后端 `company_name`；自动生成稳定来源页 SHA-256 ID 和官网 host 上下文 ID（超长 host 改用 SHA-256）；新增必填、有来源理由的 `score/score_reasons`，不设置默认高分。422 返回字段路径和校验类型，不回显原始输入、错误上下文或租约。工具列表仅支持 claimable；空列表不再被描述成失败/完成状态查询。Skill/API 文档同步。
+
+验证：51 项 Node 测试通过；7 条和 20 条离线样本经过 MCP → ArkClient → 仓库真实 Pydantic `CandidateBatch` 校验，共 27 条通过，无网络或数据库写入；约定检查和 diff 检查通过。独立审查发现的超长域名边界已修复，复审无阻断项。
+
+本机已安装独立运行目录 `~/.openclaw-ark-sales/runtime/search-contract-7df86d13`，MCP 配置指向此目录，避免依赖临时 worktree。主代理与默认工作区的获客 Skill 已同步；旧配置和 Skill 备份在 `~/.openclaw-ark-sales/backups/search-contract-7df86d13`（不入库）。Gateway 重启成功，RPC 与 MCP doctor 通过，cron/触发器启用；实际 MCP 工具 schema 已确认必填 score/score_reasons，方舟只读队列查询成功。没有改后端、数据库或 main；代码已备份到 feature 分支。
+
+任务 #3「0903-2」与 #4「0907」之前已终结为 failed，本轮未重新入队；方舟网页登录页没有可用登录会话，尚未做线上成功入库验收。登录后通过正常获客页面重新入队，由恢复的 heartbeat 按最早任务优先执行。不要把 claimable 空队列或模型 HTTP 200 当作业务完成证据。
 
 ### 展会合成提示词回滚（2026-09-07）
 
