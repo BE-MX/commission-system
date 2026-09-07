@@ -19,6 +19,42 @@ const unknownFixture = loadFixture('unknown')
 const noChatFixture = loadFixture('no-chat')
 
 describe('WhatsApp adapter', () => {
+  it.each(['个人主页详情', 'Profile details'])('recognizes a direct chat with header label %s', async label => {
+    const document = loadFixture('direct')
+    document.querySelector('[aria-label="个人主页详情"]')!.setAttribute('aria-label', label)
+    const adapter = adapterFor(document)
+
+    expect(adapter.inspectChat().kind).toBe('direct')
+    expect(adapter.mountComposerToolbar()).not.toBeNull()
+    expect(adapter.readComposer()).not.toBe('')
+    expect(await adapter.listUntranslatedIncomingMessages()).toHaveLength(2)
+  })
+
+  it.each(['Group details', 'Group info', '群组详情', 'Profile details unknown'])('does not recognize unsupported header label %s as a direct chat', async label => {
+    const document = loadFixture('direct')
+    document.querySelector('[aria-label="个人主页详情"]')!.setAttribute('aria-label', label)
+    const adapter = adapterFor(document)
+
+    expect(adapter.inspectChat().kind).toBe('unknown')
+    expect(adapter.mountComposerToolbar()).toBeNull()
+    expect(adapter.readComposer()).toBe('')
+    expect(await adapter.listUntranslatedIncomingMessages()).toEqual([])
+  })
+
+  it.each(['outside-header', 'missing-role', 'missing-title'])('requires the full English direct-chat structure: %s', async boundary => {
+    const document = loadFixture('direct')
+    const profile = document.querySelector('[aria-label="个人主页详情"]')!
+    profile.setAttribute('aria-label', 'Profile details')
+    if (boundary === 'outside-header') document.body.append(profile)
+    if (boundary === 'missing-role') profile.removeAttribute('role')
+    if (boundary === 'missing-title') document.querySelector('[data-testid="conversation-info-header-chat-title"]')!.remove()
+    const adapter = adapterFor(document)
+
+    expect(adapter.inspectChat().kind).toBe('unknown')
+    expect(adapter.mountComposerToolbar()).toBeNull()
+    expect(await adapter.listUntranslatedIncomingMessages()).toEqual([])
+  })
+
   it('classifies current direct, unsupported and no-chat structures', () => {
     expect(adapterFor(directFixture).inspectChat().kind).toBe('direct')
     expect(adapterFor(directEmptyFixture).inspectChat().kind).toBe('direct')

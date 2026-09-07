@@ -13,11 +13,17 @@ afterEach(() => {
   vi.resetModules()
 })
 
-it.each([null, '早上7:14', '7:14 AM'])('automatically translates an already loaded chat with timestamp %s', async localizedTime => {
+it.each([
+  ['个人主页详情', null],
+  ['个人主页详情', '早上7:14'],
+  ['个人主页详情', '7:14 AM'],
+  ['Profile details', '7:14 AM'],
+])('mounts the toolbar and automatically translates %s with timestamp %s', async (label, localizedTime) => {
   vi.useFakeTimers()
   page = new JSDOM(readFileSync(new URL('./fixtures/direct-nested-text.html', import.meta.url), 'utf8'), {
     url: 'https://web.whatsapp.com/',
   })
+  page.window.document.querySelector('[aria-label="个人主页详情"]')!.setAttribute('aria-label', label!)
   if (localizedTime) {
     for (const message of page.window.document.querySelectorAll('[data-testid="msg-container"]')) {
       message.querySelector('[data-testid="msg-meta"]')!.textContent = localizedTime
@@ -51,5 +57,6 @@ it.each([null, '早上7:14', '7:14 AM'])('automatically translates an already lo
   await vi.waitFor(() => {
     const incomingRequests = sendMessage.mock.calls.filter(([request]) => request.type === 'translation/incoming')
     expect(incomingRequests).toHaveLength(2)
+    expect(page!.window.document.querySelector('[data-ark-outgoing-control="1"]')).not.toBeNull()
   })
 })
