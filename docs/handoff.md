@@ -1,3 +1,9 @@
+### 工作区存量改动集成（2026-09-07，授权合并推送，未部署）
+
+亮哥先授权本地提交，再明确要求合并推送。文档提交 `470609c8` 与迁移工具提交 `1f136ba9` 在 Codex 任务分支整合；以远端 `fbea64b1` 为基点，保留主线全部后续部署修复、PM2 状态核验、四类 writer 清单、默认受限凭据和共享恢复日志。专项 137→138 入口补传 schema、成功恢复后关闭共享日志、无 pending 时仍检查未完成恢复，并拒绝与 `--revision` 混用。旧迁移记录仅描述当时结果，不代表本次执行生产迁移。
+
+集成验证：部署测试 `63 passed, 11 skipped`（Windows 跳过 Linux 文件系统语义）；新增两项共享日志回归先失败后通过，编译与覆盖 `fbea64b1` 的约定检查通过。独立审查因额度限制不可用，按完工清单补一轮自查，未声称独立审查通过。本轮仅 Git 合并推送，不部署、不执行数据库操作；旧 stash 与原迁移工作区中的恢复材料保留。
+
 ### WhatsApp 话术助手（2026-09-07，1.3.0 合并交付，未部署、待模型验收）
 
 **授权集成**：亮哥在获知模型基线未通过后明确要求合并推送。本轮交付为把功能 `1f89f00a` / JSON 模式修复 `3f0a7960` 整合至 GitHub `origin/main`，不包含发布或新增付费调用。任务分支已整合主线 `f9a0c313` 与最新远端 `3ff473f7`；仅交接记录冲突，双方内容完整保留，话术业务代码与已验证版本一致。合并后相关后端 **271 passed, 1 skipped**（24.98s），Alembic 唯一 head 为 `141_whatsapp_reply_requests`；约定检查 0 红/1 已核验的设备鉴权黄项。扩展代码未变，沿用 198 单测/14 浏览器测试及构建证据。主目录 6 份原有修改单独保留，不夹带提交；生成包和验证材料归档到主目录 `tmp/whatsapp-reply-delivery/`，推送核验后清理本任务 worktree。下方“本地、未推送”为此前验证阶段记录；模型验收未通过的结论不因合并改变。
@@ -186,6 +192,15 @@ Mac 同事的英文网页中私聊按钮标识为 `Profile details`，原选择�
 验证：142 项扩展测试、构建打包与约定检查通过。合成回归覆盖单数字小时、中文时段、AM/PM、非拉丁数字及未知/媒体/方向保护，并确认打开已有聊天时自动发起来信翻译；存档没有配套 CSS，仅在明确 tail-in 的来信行补齐排列样式进行内存隔离重放，旧版识别 0 条、新版 5 条，图片仍排除。原始存档/聊天未复制进仓库或测试。实际同事电脑安装后验收尚未完成。
 
 交付物：`extensions/whatsapp-translation/release/whatsapp-translation-1.2.4.zip`，SHA-256 `a3fbbd5f2e9d7bbd29feacf33312df4f999077f35032eb6d93bdc92040724b75`。在任务 worktree `commission-system-codex-whatsapp-localized-time` 保留，需更新扩展并刷新 WhatsApp 页面；本次修复无需后端部署。主目录已有未提交文档与规则修改均未触碰。
+### 生产数据库迁移完成（2026-09-07，仅数据库）
+
+亮哥授权执行迁移。共享 `commission_db` 已从 `137_domestic_labor_fee` 升至 `138_public_pool_rules`；新增 `ark_public_pool_rule_configs` 六个字段、主键、外键和单例 CHECK 均实查通过，当前 0 行。运行 `.env` 摘要未变。办公室保持 `59b2ff1f`，北京保持 `05e3da57`，本次没有发布应用代码或静态资源。
+
+按现场清单暂停并恢复了办公室 `CommissionSystem` / `WhatsAppConnector`、北京 `ark-backend`、新加坡 PM2 `shipment-tracking-mcp`；四项恢复运行，两个后端 `/health` 均为 `ok` / `database=connected`。唯一数据库事件只更新物流表且无关联触发器，经过审查不影响新增表，保留启用并核验定义摘要未变。未停止整个 PM2，避免其旧保存清单复活已退役任务。
+
+迁移通过统一 `deploy.bat --migrate-only` 入口、固定候选 `eaa914fa26cbd9025a81ced74192ddf8e4ab79f5` 执行。生产制品目录 `.deploy_state/migration138-tools-a0dda8a8064c/` 含计划及逐文件 SHA-256 清单；状态为 `.deploy_state/migration-138-current.json` 的 `succeeded`，结构与清理记录位于 `.deploy_state/migration138-20260907/`。临时 DBA 只获该库迁移权限，验收后账号与凭据文件均已删除。
+
+本地部署工具补充了仅迁移入口、PM2 单进程控制和失败重跑保护，保留在 `codex/migration-138` 工作区供交付，不自动合并或推送。已有部署测试 `31 passed, 11 skipped`，新增 PM2 隔离测试 `4 passed`，约定检查通过；独立复核无剩余阻塞。生产预检曾因 Windows OpenSSH 的 Python 子进程卡顿停止，未执行 DDL；改用同机 Git SSH 后预检与正式执行均通过。
 
 ### 平台前后端、服务与 UI 审查（2026-09-06，已合入 main，未部署）
 

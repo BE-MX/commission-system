@@ -212,11 +212,19 @@ if __name__ == "__main__":
     parser.add_argument("--no-pull", action="store_true")
     parser.add_argument("--revision", help="Pin a reviewed full commit SHA; fetch still runs unless --no-pull")
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--migrate-only", metavar="PLAN", help="Execute only the reviewed 137 -> 138 migration using a verified local plan")
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
-        publish(parser.parse_args())
+        args = parser.parse_args()
+        if args.migrate_only:
+            if args.cloud_only or args.no_pull or args.revision:
+                raise RuntimeError("Migration-only uses its pinned plan; cloud-only/no-pull/revision do not apply")
+            from migration_only import execute
+            execute(args.migrate_only, args.migration_credentials, args.prepare_only)
+        else:
+            publish(args)
     except Exception as error:
-        if STATE.exists():
+        if STATE.exists() and not getattr(locals().get("args"), "migrate_only", None):
             journal = marker("publish-current")
             journal.update(status="failed", error_type=type(error).__name__)
             atomic_json(STATE / "publish-current.json", journal)

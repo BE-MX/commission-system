@@ -46,6 +46,18 @@ deploy\deploy.bat --revision <full-commit-sha> --migration-credentials <protecte
 
 展会分析、生图和话术使用后台 daemon 线程，发布前须冻结两台后端的新试戴提交（含办公室直连入口），以线程栈和数据库状态确认排空，再停服务。会话 `done` 不代表话术线程已结束；历史卡死记录单独核实，不批量改状态来伪造排空。
 
+### 仅执行已审查的 137 → 138 迁移
+
+`deploy\deploy.bat --migrate-only PLAN_JSON --migration-credentials PROTECTED_ENV --prepare-only` 先验证，移除 `--prepare-only` 才执行。此入口只支持已审查的新增表脚本及兼容应用版本，不构建前端、不切换应用代码、不写完整发布成功标记。
+
+计划固定 `live_root`、`.deploy_state/sources/<revision>` 下的候选源码、办公室与北京 `application_revisions`、`nssm` 路径，以及完整 `migration_writers` 和核实标记。仅对本次从运行状态停止的 writer 恢复原状态，再检查两个后端数据库健康。PM2 按明确进程名操作，禁止整组 stop/resurrect 或改写 save 清单。`reviewed_unaffected_events` 只记录已审查为无影响的事件，不代表暂停事件。
+
+状态写入 `.deploy_state/migration-138-current.json`。若上次停留在迁移、验证或恢复阶段（含这些阶段失败），普通重跑会保留原记录并阻断，必须先根据原始 writer 基线检查恢复；不能把服务仍停着的新基线误报为成功。
+
+此历史专项入口仍遵守主线 `.deploy_state/schema-writers.json` 恢复保护：无 pending 也检查未完成记录，恢复与健康核验成功后才标记共享日志完成。候选由计划指定，不能与 `--revision`、`--cloud-only` 或 `--no-pull` 混用；不适用于 138 之后的迁移。
+
+办公室 Windows 自带 OpenSSH 在 Python 子进程内发生过建立连接前卡住；已用同机 Git SSH 验证可运行。执行时可仅在当前进程 PATH 中将 `C:/Program Files/Git/usr/bin` 置于系统 OpenSSH 前，保留非交互认证与严格主机密钥校验，不修改系统 PATH。
+
 ## 状态与恢复
 
 优先读取 `.deploy_state/publish-current.json`：本轮 revision、阶段、已成功目标。`publish-success.json` 仅代表最近一次成功，不表示当前运行成功。跨机器发布不是分布式事务：后面的目标失败时，前面已验证的目标可能已更新，脚本返回非零并保留阶段记录。
