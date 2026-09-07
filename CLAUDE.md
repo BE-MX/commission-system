@@ -9,15 +9,15 @@
 - 后端：Python 3.12 + FastAPI + SQLAlchemy 2.0 + Alembic + APScheduler
 - 前端：Vue 3 + Element Plus + Vite 5；微信小程序（生产报工）
 - 数据库：腾讯云 RDS MySQL 双库——`commission_db`（读写）+ `lsordertest`（业务镜像默认只读跨查；唯一写例外是管理员回款日期修复对 `okki_receipts.collection_date` 的受审计单列 UPDATE）。**生产迁移由部署入口统一检查并只执行一次，禁止开发机自行升级共享生产库**（2026-09-05 部署调整）。数据库未知 revision、领先于发布代码或多 head 必须阻断；不能 stamp/downgrade 掩盖差异。涉及破坏性 schema 的迁移必须先冻结全部相关写实例；普通发布不复制或覆盖数据库。开发验证使用隔离库，现存开发配置尚未隔离前不得执行迁移或写入型测试。
-- 部署：Windows Server + NSSM；生产 = 腾讯云 Nginx 静态直出 + frp 内网穿透反代本地 8002（云端 frps，本地 frpc 挂 NSSM——不是 SSH 隧道，2026-07-10 核实）；2026-07-22 起另有**北京云展会实例**（154.8.205.162，方舟全量、SCHEDULER 关闭防定时任务双跑、开发机 `git push cloud` 部署，运维见 runbook「云端展会实例」节）
+- 部署：统一使用 `deploy/deploy.bat` 候选发布入口；目标、增量传输、迁移和恢复规则见 `deploy/README.md`，已验证拓扑见 `docs/architecture.md`。Scheduler 保持单活，不把历史 `git push cloud` 流程作为发布入口。
 - 环境变量：`backend/.env`（不进 git）；配置一律走 `app/core/config.py` 的 Settings，**禁止直读 os.environ**
 
 ## 命令与端口
 
 ```bash
 start.bat                                   # 本地一键启动前后端（venv python，绕过 PATH 污染）
-cd backend && pytest                        # 后端测试（asyncio_mode=auto）
-cd backend && alembic upgrade head          # 迁移
+cd backend && pytest                        # 后端测试（asyncio_mode=auto；写入型测试须使用隔离库）
+cd backend && alembic upgrade head          # 仅限已确认的隔离开发库；生产迁移由部署入口统一执行
 cd frontend && npm run dev                  # 前端 dev :3000（代理 /api → 8001）
 cd frontend && npm run build                # 构建
 cd frontend-pm && npm run dev               # PM 站前端 dev :3100（代理 /api → 8001；start.bat 不含它）
@@ -65,7 +65,7 @@ miniprogram/  services/whatsapp-connector/  deploy/  docs/  config/
 
 10. **navigation.js 是路由+菜单唯一来源**：新页面只加一条 entry（permission/anyPermission 声明，守卫统一拦截）；全屏页（如 /expo/kiosk）例外，在 router/index.js 顶层注册
 11. **禁止自建 axios**：API 模块从 `api/clients.js` 取 client 并登记（auth.js 是唯一例外）
-12. **单文件 >500 行必须拆** `views/<domain>/composables/use<Page>.js`（全部 state+方法），主文件留薄壳
+12. **按职责拆分前端文件**：超过 500 行时检查是否存在独立职责，可用 `views/<domain>/composables/use<Page>.js` 提取相关状态与方法；不为凑行数移动全部代码。自动约定检查仍需运行，机械阈值命中应说明原因，不伪报无红项。
 13. **颜色用 tokens.css 变量**，不写裸 hex；UI 决策以 `DESIGN.md` 为准
 13.5 **原型设计 / UI 动效任务强制加载 Emil Kowalski skill 组**：动手前先 `Skill: emil-design-eng`（UI 打磨与动效决策哲学）；动效代码完工后按 `~/.claude/skills/review-animations/STANDARDS.md` 逐条自查（该 skill 限用户 `/review-animations` 手动触发，模型侧读标准文件执行同级审查）；描述不清的动效效果用 `animation-vocabulary` 定位术语
 14. **新列表页两个标杆**：标记/样式复制 `system/DictManagement.vue`；分页/搜索/反馈编排照 `views/expo/ExpoLeads.vue`（useListPage + utils/feedback + DetailDrawer；上传用 components/AppUpload）
@@ -74,23 +74,17 @@ miniprogram/  services/whatsapp-connector/  deploy/  docs/  config/
 ### 通用
 
 16. bat 脚本：UTF-8 + 首行 `chcp 65001 >nul`；`set VAR=value` 不带引号
-17. 密钥/token/密码不进代码；**main 的 push 等用户说才执行**；feature 分支 `push -u` 是备份、随时可推（2026-07-18 起）
+17. 密钥/token/密码不进代码；Git 推送与合并只遵守根目录 `AGENTS.md`，不在此重复维护授权规则。
 18. **搬移/重命名函数前全局 grep 旧引用**（含函数体内延迟 import）——注册期不报错、运行期才炸
-19. **小步提交**：一个功能拆 3~5 个提交（迁移/后端/前端/测试），每个提交可独立回滚
+19. **提交按变更意图组织**：每个提交保持可理解、可验证；不固定拆成 3~5 个，不为了流程制造提交。
 20. 展会试戴(expo)文案禁用词：便宜/划算/性价比/打折/薅羊毛；发量头皮判断只进 internal 字段
 21. **移动端 `/m/` 冻结为素材域专用**，不再往里加新领域；新移动端需求走主站响应式或微信小程序两条既有路径
-22. **多智能体并行 Git**（细则见根目录 `AGENTS.md`，两处同步维护）：①分支 `<tool>/<topic>`（claude/codex/kimi），每个代理固定用自己的 worktree，merge 回 main 只在主目录做，合并后立删本地+远端分支；②分支创建当天 `push -u`；③零散小改动不开新分支；④同模块同时只允许一个代理，接力者先 rebase 最新 main 且当天合并；⑤commit 前 `git branch --show-current` 确认分支、建迁移前 `git log --all --oneline -- backend/alembic/versions/` 查撞号；⑥收工跑 `python scripts/git_sweep.py`（每日 18:00 定时巡检推钉钉）
+22. **多智能体 Git**：唯一规范见根目录 `AGENTS.md`（worktree 归属、远端写入授权、交接、迁移编号与巡检）。
 23. **全平台业务时间统一北京时间**：①写 MySQL `DATETIME` 一律用 `app.core.time.beijing_now()`（naive UTC+8），业务日期用 `beijing_today()`，禁止任何直接 `datetime.now(...)` / `datetime.utcnow()` / `datetime.today()` / `date.today()`；②`NOW()` / `CURRENT_TIMESTAMP` 依赖数据库连接初始化 `SET time_zone='+08:00'`；③主站展示、“今日”和日期默认值统一走 `frontend/src/utils/datetime.js`，PM 站走 `frontend-pm/src/utils/labels.js` 的北京时间函数，小程序走 `miniprogram/utils/time.js`，全部固定 `Asia/Shanghai`/UTC+8，禁止直接用客户端本地时区或 `toISOString().slice(0,10)`；④JWT/OAuth 签名、外部协议、跨机器租约可保留 UTC，但必须显式使用 `utc_now()` / `utc_now_naive()`、在 `scripts/check_conventions.py` 的 UTC 窄白名单登记文件与用途，普通 created/updated/started/finished 审计字段不得使用 UTC；外部 Z/offset 时间必须先换算后再去 tzinfo，禁止直接 `.replace(tzinfo=None)` 丢偏移；⑤新增时间字段的测试必须同时覆盖“服务器非东八区”和“北京时间 00:00 跨日”；⑥历史时间迁移只能转换有确定写入证据的列，混合 `NOW()`/UTC/外来时间不得猜测平移，且必须在停掉所有写实例的维护窗口执行。
 
-## 完工 DoD（每次改动落地前自查）
+## 完工 DoD
 
-1. `python scripts/check_conventions.py` 无红项（查增量 diff：自建 axios / 新增裸 hex / 超 500 行 / 无权限端点 / 吞异常 / 迁移 ID 超长 / 共享层新增）。**提交前跑**——`--base` 默认 `HEAD` 即工作区未提交改动。已提交后要查得显式给基点：feature 分支用 `--base $(git merge-base main HEAD)`；**直接在 main 上提交时该写法退化成 `--base HEAD` 又变成空转**（2026-08-01 实际踩中并误报「无违规」），得用 `--base HEAD~N` 或 `--base origin/main`
-2. 涉及后端：`pytest` 通过；管钱管货的计算/状态机必须有测试
-3. 涉及前端：`npm run build` 通过；UI 对照 DESIGN.md
-4. **报告实际跑出的验证证据**，不说"应该没问题"
-5. 满足任一条件派独立 agent 对抗性审查：跨 3+ 文件 / 涉提成·发票·回款·库存数量 / 状态机变更 / 迁移脚本（审查视角：边界条件、并发写、幂等、前后端契约）
-6. 文档同步：新端点→`docs/api-reference.md`；新表→`docs/database.md`；新模块→auto-memory 建 `project_<domain>.md`
-7. 详细清单（含新模块 9 步 checklist）走 skill：`completion-checklist`（按需加载，不常驻上下文）
+完成标准与按改动类型选择的检查只维护在 `.agents/skills/completion-checklist/SKILL.md`。本机 `.claude/skills/completion-checklist/SKILL.md` 是被 Git 忽略的跨工具副本，存在时保持与维护来源一致；新检出直接使用维护来源。按影响范围执行适用项；不适用项不扩成需求。验证失败先定位修复，环境阻塞如实报告；不能因阶段结束、子代理已启动或仍待外部动作就宣称完成。
 
 ## 记忆协议（claude-mem 本地 + Mem0 共享）
 
@@ -109,7 +103,8 @@ miniprogram/  services/whatsapp-connector/  deploy/  docs/  config/
 | 模块专题细节 + 各模块已踩坑（钉钉/报表/OCR/洞见管线/短链等） | `docs/module-notes.md` |
 | 系统架构 / 数据流 / 部署拓扑 | `docs/architecture.md` |
 | 项目状态 / 待办 / 技术债 | `docs/handoff.md` |
-| 部署 / 故障排查 / 备份 | `docs/runbook.md` |
+| 发布入口 / 迁移与恢复 | `deploy/README.md` |
+| 故障排查 / 备份 | `docs/runbook.md` |
 | 架构评估与治理路线图 | `docs/2026-07-03-architecture-assessment.md` |
 | 设计系统（颜色/字体/间距/组件） | `DESIGN.md` |
 | 历史教训 | `.wolf/cerebrum.md` |

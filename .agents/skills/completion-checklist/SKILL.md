@@ -1,34 +1,35 @@
 ---
 name: completion-checklist
-description: 开新领域模块、或改动收尾自查时使用。给出新模块 9 步 checklist（迁移→四件套→权限→前端→导航→标杆页→测试→文档）、完工 DoD 验收项、以及对抗性审查的触发标准与固定审查视角。
+description: "开新领域模块或改动收尾时，按实际影响选择项目验收、验证与独立审查；不把不适用项扩成需求。"
 ---
 
-# 流程检查清单（2026-07-03 治理落地，配合 AGENTS.md 宪法使用）
+# 项目完工检查
 
-## 新模块 Checklist（开新领域模块照此走完，漏一步都算未完成）
+此清单给出验收标准，不扩展需求。只执行改动涉及的条目；不适用项直接跳过，无需用户逐项批准。
 
-1. Alembic 迁移（revision ≤32 字符，创建后立即 `git add`）
-2. `app/<domain>/`：models → schemas → service → router（每端点权限 Depends + `ok()` 信封）
-3. `app/routers.py` 注册 + `seed_role_permissions` 加权限码（read/write/admin 三档起步）
-4. 前端 `api/<domain>.js`（走 createApiClient，clients.js 登记）
-5. `navigation.js` 加 entry（permission 声明；全屏页在 router/index.js 顶层注册）
-6. 列表页复制 `system/DictManagement.vue` 标杆
-7. 核心计算 / 状态流转写测试（管钱管货的必须有）
-8. 文档三处：`docs/api-reference.md` 加端点、`docs/database.md` 加表、auto-memory 建 `project_<domain>.md`
-9. 跑 `python scripts/check_conventions.py` + `pytest` + `npm run build`
+## 新领域模块
 
-## 完工 DoD
+- 涉及持久表结构才建 Alembic 迁移；遵守 CLAUDE.md 的隔离库、revision、单 head 与生产发布约束。没有表变更就不制造空迁移。
+- 后端业务按领域组织，在实际需要时增加 models、schemas、service、router；新端点注册、权限与 `ok()` 信封遵守项目约定。
+- 按实际动作配置权限，不为每个模块预设 read/write/admin 全套。
+- 有前端需求才添加 API client、navigation 和页面；列表页复用项目标杆及既有反馈组件。
+- 管钱管货的计算、状态流转必须有有区分力的测试。新端点更新 API 文档，新表更新数据库文档；稳定领域知识按项目记忆协议保存，不要求不可用的 auto-memory 工具。
 
-- check_conventions 无红项；测试/构建通过并**贴出实际输出**
-- 涉及 UI 对照 DESIGN.md；新增文件 <500 行或已拆 composable
-- 上传/文件路径锚定 REPO_ROOT（cerebrum 2026-07-03 条目）
-- 新增或修改时间字段时，业务时间必须经后端 `app.core.time`、主站 `utils/datetime.js`、PM 站/小程序各自的北京时间工具统一读写；技术性 UTC 例外必须登记到 `scripts/check_conventions.py` 白名单，并补非东八区运行环境和北京零点边界测试
+## 按影响验证
 
-## 对抗性审查触发标准（满足任一即派独立 agent）
+- 仓库修改运行 `python scripts/check_conventions.py`。默认检查未提交 diff；已提交变更必须显式提供覆盖本次改动的基点，不能用空 diff 报通过。main 上 `merge-base main HEAD` 不能覆盖已提交改动。
+- 后端行为变更运行受影响的 pytest；涉及共享基础设施或风险无法局部覆盖时扩大测试。写入型测试与迁移只用隔离库。
+- 前端变更运行对应前端的 `npm run build`；UI 再验证用户关键路径和 DESIGN.md 约定。纯文档修改检查内容、引用、差异即可，不跑无关全套构建。
+- 文件按职责组织，超过 500 行检查是否应拆分；约定脚本仍报错时明确说明，不用机械拆文件或隐藏红项换取通过。
+- 上传/文件路径锚定 REPO_ROOT。新增或修改时间字段按 CLAUDE.md 的北京时间约束处理，补非东八区和北京时间零点边界测试。
+- 汇报实际命令、结果及必要限制；无需贴全量日志。失败先修复；已确认无关的基线失败或环境阻塞单独列出，不能说全部通过。
 
-- 跨 3 个以上文件的改动
-- 涉及提成、发票、回款、库存数量的逻辑
-- 状态机变更（batch 状态流 / 订单状态 / 会话状态等）
-- 迁移脚本
+## 独立审查
 
-审查 agent 固定视角：边界条件、并发写、幂等性、前后端契约一致、被修改函数的全部调用方。
+涉及提成、发票、回款、库存数量、状态机、迁移或跨模块契约时，派独立 agent 审查风险相关差异，修复后验证。多文件指令体系重写同样需要独立场景审查，检查重复确认、越权和提前结束。仅因文件数 ≥3 不触发双重审查。
+
+代码审查关注边界条件、并发写、幂等、前后端契约与调用方；指令审查关注目标、授权、歧义和停止条件。审查工具不可用时做独立一轮自查并说明限制；生产或关键业务所需的审批不能以自查替代。审查通过后不重复叠加同类 Skill 审批。
+
+## 交付
+
+请求的产物落地、适用检查有证据、相关文档同步后即可交付。不强制用户测验或再选一次完成流程。commit、push、合并、部署是否属于本次完成范围，取决于用户请求和 Git 授权；未请求的远端动作不妨碍交付本地修改。必需步骤被阻塞时明确未完成部分与解锁条件。

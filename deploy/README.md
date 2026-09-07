@@ -34,6 +34,8 @@ deploy\deploy.bat --revision <full-commit-sha> --migration-credentials <protecte
 
 有待执行迁移时，必须核实 `platforms.json` 中所有 writer 的归属。2026-09-07 已按生产连接与进程核实并登记办公室 `CommissionSystem` / `WhatsAppConnector`、北京 `ark-backend`、新加坡 PM2 `shipment-tracking-mcp`；PM2 只控制该进程，不操作整个 PM2 管理器。新增或迁移写入实例后必须重新核实清单，不能沿用旧确认。数据库 revision 每次读取，不使用历史版本号推断是否有 DDL。
 
+2026-09-05 实施时数据库为 137、当次无需 DDL，见 [实施记录](../docs/requirements/2026-09-05-deployment-adjustment-implementation.md)；这属于历史记录，后续发布必须重新读取实际 revision，与候选代码比较。
+
 迁移使用独立 DBA 身份。默认读取办公室运行仓库下 `.deploy_state/credentials/migration.env`，只含 `COMMISSION_DB_USER` 和 `COMMISSION_DB_PASSWORD` 两项；配置一次后双击入口即可复用。`--migration-credentials` 可以显式覆盖路径，显式文件不存在时直接报错，不偷偷换用默认文件。无 pending 时不需要该文件。
 
 该文件由服务器管理员预先配置，NTFS 权限仅授予部署账号、SYSTEM 和 Administrators；目录禁用权限继承，不复制到候选源码、云服务器或开发机。使用独立、限定办公室来源与 `commission_db` 的迁移账号，仅授予 `SELECT/INSERT/UPDATE/DELETE/CREATE/ALTER/DROP/INDEX/REFERENCES`，不授予账号管理或转授权。账号与文件长期留在该服务器供后续部署使用；轮换时更新受限文件，停用部署能力时撤销账号并删除文件。程序不会创建账号，也不会从应用 `.env` 自动提升为 DBA。
@@ -57,11 +59,11 @@ deploy\deploy.bat --revision <full-commit-sha> --migration-credentials <protecte
 ## 验证
 
 ```powershell
-python -m compileall -q deploy
-python -m pytest deploy/tests -q
+backend\.venv\Scripts\python.exe -m compileall -q deploy
+backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 ```
 
-静态文件语义测试必须在 Linux 临时目录执行（包含原子目录交换和符号链接），不连接生产数据库、不修改站点根目录。Windows 会明确跳过该组；源码准备及数据库阻断测试在 Windows 执行。部署后再运行同一命令验证无变化构建/文件传输被跳过。
+从仓库根目录运行；Linux 使用对应虚拟环境的 Python。pytest 同时收集 unittest 类和函数式回归，避免遗漏新增发布流程测试。静态文件语义测试必须在 Linux 临时目录执行（包含原子目录交换和符号链接），不连接生产数据库、不修改站点根目录。Windows 会明确跳过该组；源码准备及数据库阻断测试在 Windows 执行。实际部署完成后，再次运行相同发布命令验证无变化构建/文件传输被跳过。
 
 ## 当前边界
 
