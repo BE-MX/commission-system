@@ -1067,7 +1067,7 @@ Agent 接口只接受可撤销的 MCP opaque token，且账号必须具有 `sale
 
 | 方法 | Agent 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/agent/search-jobs` | invoke | 分页列出任务；默认 `status=claimable`，同时返回 `pending` 与租约已过期的 `running`，崩溃任务不会永久卡住 |
+| GET | `/agent/search-jobs` | invoke | 仅分页列出可领取任务（`pending` 与租约已过期的 `running`）；不支持状态筛选，空列表不代表已完成 |
 | GET | `/agent/search-jobs/{id}/context` | invoke | 返回冻结画像、条件和输出契约 |
 | POST | `/agent/search-jobs/{id}/claim` | invoke | 领取任务；返回仅展示一次的 15 分钟租约令牌 |
 | POST | `/agent/search-jobs/{id}/heartbeat` | invoke | 持有租约时续租 15 分钟 |
@@ -1090,6 +1090,8 @@ Agent 接口只接受可撤销的 MCP opaque token，且账号必须具有 `sale
 Agent Skill 位于 `.agents/skills/ark-lead-discovery`、`.agents/skills/ark-company-research` 与 `.agents/skills/ark-public-pool-research`。运行器必须安全注入 `ARK_BASE_URL`、同源约束 `ARK_ALLOWED_ORIGIN` 与 `ARK_AGENT_TOKEN`；三者严禁写入仓库或由网页内容覆盖。公海 Skill 先用已发布企业知识建立产品/行业基准，再做低成本行业门控；无官网客户优先核验 Instagram/Facebook/TikTok/预约页等经营证据。知识库内容只作为内部匹配依据，不冒充客户公开事实；Skill 只生成供人工审核的策略和草稿，不发送邮件或 WhatsApp。
 
 候选批次入库前按归一化官网域名查询当前 OKKI 公海；企业邮箱域名仅作为无官网时的精确补充键，免费邮箱不参与。命中候选不创建新的开发客户，并通过 `public_pool_deduplicated_count` 单独计数。未命中且画像匹配分 `>=70` 的候选自动进入同一 `/agent/public-pool/tasks` 队列，复用公海行业门控、证据、评分、成交研判和未发送草稿结构。
+
+OpenClaw 候选工具提交 `name/website/source_url/captured_at/score/score_reasons`；侧车把 `name` 映射为 HTTP `company_name`，按来源 URL 的 SHA-256 和官网 host 生成稳定 `external_record_id/external_context_id`，固定 `public_web/global/company_page`。评分必须有来源理由，不能用默认高分；详细契约见 `.agents/skills/ark-lead-discovery/references/api-contract.md`。422 错误向 Agent 返回字段路径与校验类型，不回显输入或异常上下文。
 
 本地 OpenClaw 运行器、最小权限 MCP 侧车、免密公开检索源、macOS LaunchAgent 初始化与凭证交付步骤见 [`services/openclaw-sales-agent/README.md`](../services/openclaw-sales-agent/README.md)。该侧车把 Ark token 限制在独立 `0600` 文件中，并把任务租约留在进程内存，不暴露给模型。
 

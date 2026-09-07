@@ -146,3 +146,70 @@ test("ArkClient submits a unified research industry gate with the in-memory leas
   assert.equal(received.body.agent_id, "test-agent");
   assert.equal(received.body.lease_token, "l".repeat(32));
 });
+
+test("422 validation errors retain field paths without echoing input, context or lease secrets", async () => {
+  const secret = "secret-bearer";
+  const lease = "secret-lease";
+  const api = new ArkClient({ baseUrl: "https://ark.example", token: secret }, async () => new Response(JSON.stringify({
+    detail: [
+      { loc: ["body", "candidates", 0, "external_record_id"], type: "missing", msg: `Field required ${lease}`, input: { lease_token: lease }, ctx: { secret } },
+      { loc: ["body", "candidates", 0, "score"], type: "missing", input: secret },
+    ],
+  }), { status: 422 }));
+  await assert.rejects(api.submitCandidates(3, lease, "batch", []), (error) => {
+    assert.match(error.message, /body.candidates.0.external_record_id: missing/);
+    assert.match(error.message, /body.candidates.0.score: missing/);
+    assert.doesNotMatch(error.message, /secret-bearer|secret-lease|Field required/);
+    assert.equal(error.status, 422);
+    return true;
+  });
+  const echoed = new ArkClient({ baseUrl: "https://ark.example", token: secret }, async () => new Response(JSON.stringify({ detail: `Rejected ${lease} ${secret}` }), { status: 400 }));
+  await assert.rejects(echoed.submitCandidates(3, lease, "batch", []), (error) => {
+    assert.doesNotMatch(error.message, /secret-bearer|secret-lease/);
+    return true;
+  });
+});
+
+test("candidate lost response replays the identical committed batch despite caller mutation", async () => {
+  const bodies = [];
+  const candidates = [{ company_name: "Original", score: 90 }];
+  const receipt = { received: 1, created_customers: 1 };
+  const api = new ArkClient({ baseUrl: "http://local.test", token: "secret", agentId: "test" }, async (_url, options) => {
+    bodies.push(options.body);
+    if (bodies.length === 1) {
+      candidates[0].score = 10;
+      candidates.push({ company_name: "Added" });
+      throw new DOMException("response lost after commit", "AbortError");
+    }
+    return new Response(JSON.stringify({ code: 200, data: receipt }));
+  });
+  assert.deepEqual(await api.submitCandidates(1, "lease", "batch-1", candidates), receipt);
+  assert.equal(bodies.length, 2);
+  assert.equal(bodies[0], bodies[1]);
+  assert.equal(JSON.parse(bodies[1]).candidates.length, 1);
+});
+
+test("candidate transport retries are bounded and request an unchanged manual replay", async () => {
+  let calls = 0;
+  const api = new ArkClient({ baseUrl: "http://local.test", token: "secret" }, async () => {
+    calls += 1;
+    throw new TypeError("network failed");
+  });
+  await assert.rejects(api.submitCandidates(1, "lease", "batch-1", []), /不得换 key/);
+  assert.equal(calls, 2);
+  calls = 0;
+  await assert.rejects(api.claimSearchJob(1), /网络请求失败/);
+  assert.equal(calls, 1);
+});
+
+test("candidate HTTP errors are never automatically retried", async () => {
+  for (const status of [401, 409, 422, 500]) {
+    let calls = 0;
+    const api = new ArkClient({ baseUrl: "http://local.test", token: "secret" }, async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ detail: "failure" }), { status });
+    });
+    await assert.rejects(api.submitCandidates(1, "lease", "batch", []), error => error.status === status);
+    assert.equal(calls, 1);
+  }
+});

@@ -99,6 +99,8 @@ test("MCP exposes only the Ark workflow and never returns the lease token", asyn
       job_id: 42,
       request_key: "job-42-batch-1",
       candidates: [{
+        score: 72,
+        score_reasons: [{ dimension: "product_fit", reason: "Official catalog lists matching products", source_url: "https://example-industrial.test/about" }],
         name: "Example Industrial",
         website: "https://example-industrial.test",
         source_url: "https://example-industrial.test/about",

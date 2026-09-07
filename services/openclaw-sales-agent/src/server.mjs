@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { ArkClient, LeaseStore } from "./ark-client.mjs";
 import { loadConfig } from "./config.mjs";
 import { RuntimeHeartbeatReporter } from "./runtime-heartbeat.mjs";
+import { toCandidateInput } from "./candidate-contract.mjs";
 
 const timestamp = z.string().min(10).max(64).describe("ISO 8601 capture timestamp with timezone");
 const publicUrl = z.string().url().max(1024).refine((value) => {
@@ -27,14 +28,21 @@ const publicUrl = z.string().url().max(1024).refine((value) => {
   }
 }, "URL must use public HTTP(S) without credentials or private hosts");
 const candidate = z.object({
-  name: z.string().min(1).max(255),
-  website: z.string().min(4).max(512),
+  name: z.string().trim().min(1).max(255),
+  website: publicUrl.pipe(z.string().max(512)),
   country: z.string().max(128).optional(),
   industry: z.string().max(255).optional(),
   description: z.string().max(5000).optional(),
   source_url: publicUrl,
-  source_provider: z.string().max(64).default("openclaw_web_search"),
-  captured_at: timestamp,
+  source_provider: z.string().trim().min(1).max(64).default("openclaw_web_search"),
+  captured_at: z.iso.datetime({ offset: true }),
+  score: z.number().min(0).max(100).multipleOf(0.01)
+    .describe("Evidence-backed profile-fit score, 0–100; use frozen profile policy, never a default or threshold-filling score"),
+  score_reasons: z.array(z.object({
+    dimension: z.string().trim().min(1).max(128),
+    reason: z.string().trim().min(1).max(2000),
+    source_url: publicUrl,
+  })).min(1).max(50).describe("Observed evidence supporting the score; distinguish unknowns and inference"),
 });
 const knowledgeReference = z.object({
   document_id: z.number().int().min(1),
@@ -140,9 +148,9 @@ export function createServer(
   });
 
   server.registerTool("ark_list_search_jobs", {
-    description: "List claimable or status-filtered Ark sales search jobs.",
+    description: "List only claimable Ark search jobs (pending or expired leases); an empty list does not indicate completion.",
     inputSchema: z.object({
-      status: z.enum(["claimable", "pending", "running", "completed", "failed"]).default("claimable"),
+      status: z.literal("claimable").default("claimable"),
       page: z.number().int().min(1).default(1),
       page_size: z.number().int().min(1).max(100).default(20),
     }),
@@ -185,7 +193,7 @@ export function createServer(
     }),
     annotations: { readOnlyHint: false, idempotentHint: true },
   }, safeTracked(({ job_id: jobId, request_key: requestKey, candidates }) => (
-    client.submitCandidates(jobId, leases.require(jobId).token, requestKey, candidates)
+    client.submitCandidates(jobId, leases.require(jobId).token, requestKey, candidates.map(toCandidateInput))
   )));
 
   server.registerTool("ark_complete_search_job", {
