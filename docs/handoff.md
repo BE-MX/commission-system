@@ -1,3 +1,13 @@
+### 生产数据库迁移完成（2026-09-07，仅数据库）
+
+亮哥授权执行迁移。共享 `commission_db` 已从 `137_domestic_labor_fee` 升至 `138_public_pool_rules`；新增 `ark_public_pool_rule_configs` 六个字段、主键、外键和单例 CHECK 均实查通过，当前 0 行。运行 `.env` 摘要未变。办公室保持 `59b2ff1f`，北京保持 `05e3da57`，本次没有发布应用代码或静态资源。
+
+按现场清单暂停并恢复了办公室 `CommissionSystem` / `WhatsAppConnector`、北京 `ark-backend`、新加坡 PM2 `shipment-tracking-mcp`；四项恢复运行，两个后端 `/health` 均为 `ok` / `database=connected`。唯一数据库事件只更新物流表且无关联触发器，经过审查不影响新增表，保留启用并核验定义摘要未变。未停止整个 PM2，避免其旧保存清单复活已退役任务。
+
+迁移通过统一 `deploy.bat --migrate-only` 入口、固定候选 `eaa914fa26cbd9025a81ced74192ddf8e4ab79f5` 执行。生产制品目录 `.deploy_state/migration138-tools-a0dda8a8064c/` 含计划及逐文件 SHA-256 清单；状态为 `.deploy_state/migration-138-current.json` 的 `succeeded`，结构与清理记录位于 `.deploy_state/migration138-20260907/`。临时 DBA 只获该库迁移权限，验收后账号与凭据文件均已删除。
+
+本地部署工具补充了仅迁移入口、PM2 单进程控制和失败重跑保护，保留在 `codex/migration-138` 工作区供交付，不自动合并或推送。已有部署测试 `31 passed, 11 skipped`，新增 PM2 隔离测试 `4 passed`，约定检查通过；独立复核无剩余阻塞。生产预检曾因 Windows OpenSSH 的 Python 子进程卡顿停止，未执行 DDL；改用同机 Git SSH 后预检与正式执行均通过。
+
 ### 平台前后端、服务与 UI 审查（2026-09-06，已合入 main，未部署）
 
 代码提交 `cc54bfbd` 已快进合入 `main`。亮哥授权的交付范围为合并并推送 GitHub `origin/main`，不含生产部署。合并结果与已验证代码一致，按原基点 `7cf596fb` 执行约定检查通过；主目录三份已有规则修改经 SHA-256 核验完整保留。579 份验证材料已复制并逐文件核验，保留在主目录 `tmp/platform-audit/`；临时任务 worktree 在集成验证后清理。完整发现、改动和限制见 [平台审查报告](requirements/2026-09-06-platform-audit.md)，目录和页面明细见 [覆盖清单](requirements/2026-09-06-platform-audit-coverage.md)。

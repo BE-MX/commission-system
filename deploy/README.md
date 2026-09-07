@@ -25,11 +25,21 @@ deploy\deploy.bat --cloud-only --no-pull --prepare-only # 准备并校验，暂�
 
 办公室与北京共享 `commission_db`，每次发布都读数据库 revision，并检查发布代码的唯一 head 和迁移链。数据库已到目标则跳过 DDL；未知 revision、数据库领先、分叉均阻断。不会复制、覆盖或 downgrade 数据库。
 
-有待执行迁移时，必须先核实 `platforms.json` 中所有 writer 的归属，登记 `migration_writers` 并将 `migration_writers_verified` 设为 true。当前办公室远程管理和独立任务清单尚未核实，因此保持 false；这次已知数据库 137，无需执行 DDL。
+有待执行迁移时，必须先核实 `platforms.json` 中所有 writer 的归属，登记 `migration_writers` 并将 `migration_writers_verified` 设为 true。默认清单保持 false，不能直接改成 true 绕过核验；本次迁移使用经过现场核实的独立计划，实际执行结果见 `docs/handoff.md`。
 
 迁移使用独立 DBA 身份：通过 `--migration-credentials` 指定一个受保护文件，只含 `COMMISSION_DB_USER` 和 `COMMISSION_DB_PASSWORD` 两项。库地址和库名沿用已校验运行配置；停机前检查 DBA 权限。凭据只进入受控迁移子进程，禁止替换运行服务 `.env`，禁止把文件提交 Git。
 
 迁移子进程先取得 MySQL 命名锁，再停登记 writer，只运行一次 Alembic upgrade，随后核对唯一 head。两个后端激活成功后恢复其他 writer。DDL 失败不自动恢复旧程序，需先检查 MySQL 实际结构。
+
+### 仅执行已审查的 137 → 138 迁移
+
+`deploy\deploy.bat --migrate-only PLAN_JSON --migration-credentials PROTECTED_ENV --prepare-only` 先验证，移除 `--prepare-only` 才执行。此入口只支持已审查的新增表脚本及兼容应用版本，不构建前端、不切换应用代码、不写完整发布成功标记。
+
+计划固定 `live_root`、`.deploy_state/sources/<revision>` 下的候选源码、办公室与北京 `application_revisions`、`nssm` 路径，以及完整 `migration_writers` 和核实标记。仅对本次从运行状态停止的 writer 恢复原状态，再检查两个后端数据库健康。PM2 按明确进程名操作，禁止整组 stop/resurrect 或改写 save 清单。`reviewed_unaffected_events` 只记录已审查为无影响的事件，不代表暂停事件。
+
+状态写入 `.deploy_state/migration-138-current.json`。若上次停留在迁移、验证或恢复阶段（含这些阶段失败），普通重跑会保留原记录并阻断，必须先根据原始 writer 基线检查恢复；不能把服务仍停着的新基线误报为成功。
+
+办公室 Windows 自带 OpenSSH 在 Python 子进程内发生过建立连接前卡住；已用同机 Git SSH 验证可运行。执行时可仅在当前进程 PATH 中将 `C:/Program Files/Git/usr/bin` 置于系统 OpenSSH 前，保留非交互认证与严格主机密钥校验，不修改系统 PATH。
 
 ## 状态与恢复
 
@@ -41,7 +51,7 @@ deploy\deploy.bat --cloud-only --no-pull --prepare-only # 准备并校验，暂�
 
 ```powershell
 python -m compileall -q deploy
-python -m unittest discover -s deploy/tests -v
+python -m pytest deploy/tests -q
 ```
 
 静态文件语义测试必须在 Linux 临时目录执行（包含原子目录交换和符号链接），不连接生产数据库、不修改站点根目录。Windows 会明确跳过该组；源码准备及数据库阻断测试在 Windows 执行。部署后再运行同一命令验证无变化构建/文件传输被跳过。
