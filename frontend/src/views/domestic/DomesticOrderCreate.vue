@@ -7,10 +7,10 @@
     </div>
 
     <div class="panel head-panel">
-      <div class="panel-title">订单信息</div>
+      <div class="panel-title">{{ isProduction ? '生产订单 · 内部毛坯备货' : '业务订单' }}</div>
       <el-form :model="form" label-width="92px" class="head-form">
         <el-row :gutter="16">
-          <el-col :span="8">
+          <el-col v-if="!isProduction" :span="8">
             <el-form-item label="客户店名" required>
               <el-select
                 v-model="form.customer_id" filterable clearable remote
@@ -37,17 +37,18 @@
               </div>
             </el-form-item>
           </el-col>
-          <el-col :span="5">
-            <el-form-item label="订单号" required>
-              <el-input v-model="form.order_no" placeholder="客户订单号，如 710 / 特涵5-506" />
+          <el-col :span="isProduction ? 10 : 5">
+            <el-form-item label="订单号" :required="!isProduction">
+              <span v-if="isProduction" class="muted">提交后自动生成 DP 开头的生产单号</span>
+              <el-input v-else v-model="form.order_no" placeholder="客户订单号，如 710 / 特涵5-506" />
             </el-form-item>
           </el-col>
-          <el-col :span="5">
+          <el-col :span="isProduction ? 8 : 5">
             <el-form-item label="下单日期" required>
               <el-date-picker v-model="form.order_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
             </el-form-item>
           </el-col>
-          <el-col :span="6">
+          <el-col v-if="!isProduction" :span="6">
             <el-form-item label="订单类别" required>
               <el-radio-group v-model="form.order_category" @change="onOrderCategoryChange">
                 <el-radio-button v-for="t in options.order_categories" :key="t.value" :value="t.value">{{ t.label }}</el-radio-button>
@@ -57,26 +58,26 @@
         </el-row>
 
         <el-row :gutter="16">
-          <el-col :span="6">
+          <el-col v-if="!isProduction" :span="6">
             <el-form-item label="订单类型" required>
               <el-select v-model="form.order_type" placeholder="选择订单类型" style="width: 100%">
                 <el-option v-for="t in options.order_types" :key="t.value" :label="t.label" :value="t.value" />
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="6">
+          <el-col v-if="!isProduction" :span="6">
             <el-form-item label="订单渠道" required>
               <el-select v-model="form.order_channel" placeholder="选择订单渠道" style="width: 100%">
                 <el-option v-for="t in options.order_channels" :key="t.value" :label="t.label" :value="t.value" />
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="6">
+          <el-col v-if="!isProduction" :span="6">
             <el-form-item label="要求发货" required>
               <el-date-picker v-model="form.required_ship_date" type="date" value-format="YYYY-MM-DD" placeholder="要求发货日期" style="width: 100%" />
             </el-form-item>
           </el-col>
-          <el-col :span="6">
+          <el-col :span="isProduction ? 12 : 6">
             <el-form-item label="订单备注">
               <el-input v-model="form.remark" placeholder="整单说明，选填" />
             </el-form-item>
@@ -198,6 +199,7 @@
           </el-col>
         </el-row>
 
+        <template v-if="!isProduction">
         <div class="item-sec__title item-sec__title--gap">报价信息</div>
 
         <!-- 特单：不调原始价，直接录入销售价 -->
@@ -285,10 +287,11 @@
           </el-col>
         </el-row>
 
+        </template>
         <div class="item-sec__title item-sec__title--gap">要求与备注</div>
 
         <el-row :gutter="16">
-          <el-col v-for="section in DETAIL_SECTIONS" :key="section.key" :span="12">
+          <el-col v-for="section in detailSections" :key="section.key" :span="12">
             <el-form-item :label="section.label">
               <el-input
                 v-model="item[section.key]" type="textarea" :rows="2"
@@ -317,7 +320,7 @@
       <GlassButton variant="ghost" left-icon="Plus" @click="addItem">再加一行明细</GlassButton>
       <div class="footer-right">
         <span v-if="unroutedCount" class="warn-text">{{ unroutedCount }} 行明细的工艺未配路线</span>
-        <span class="order-total">订单总价：¥{{ orderTotal.toFixed(2) }}</span>
+        <span v-if="!isProduction" class="order-total">订单总价：¥{{ orderTotal.toFixed(2) }}</span>
         <GlassButton variant="ghost" left-icon="Document" :loading="submitting" @click="submit(true)">保存草稿</GlassButton>
         <GlassButton variant="primary" left-icon="Check" :loading="submitting" @click="submit(false)">提交订单</GlassButton>
       </div>
@@ -335,15 +338,20 @@ import AppUpload from '@/components/AppUpload.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import { useDomesticOrderCreate } from './composables/useDomesticOrderCreate'
 import { quoteStatusLabel } from './composables/domesticMemberPricing'
+import { detailSectionsForKind } from './domesticOrderKinds'
+
+const props = defineProps({ orderKind: { type: String, default: 'business' } })
+const detailSections = detailSectionsForKind(props.orderKind, DETAIL_SECTIONS)
 
 const {
+  isProduction,
   loading, submitting, quoteLoading, options, customers, customerLoading, form,
   attrOptions, attributePlaceholder, hasField, visibleFields,
   routeOf, unroutedCount, orderTotal, selectedCustomer,
   onProductTypeChange, onLengthChange, onOrderCategoryChange, addItem, copyItem, removeItem,
   makeUploadFn, removeImage, searchCustomers, refreshQuotes, goProducts, submit,
   effectiveDiscountPrice, onManualPrice,
-} = useDomesticOrderCreate()
+} = useDomesticOrderCreate(props.orderKind)
 </script>
 
 <style scoped>
@@ -460,5 +468,15 @@ const {
 .muted {
   color: var(--el-text-color-secondary);
   font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .create-page :deep(.el-col) { flex: 0 0 50%; max-width: 50%; }
+  .footer-panel, .footer-right { flex-wrap: wrap; gap: 12px; }
+}
+
+@media (max-width: 600px) {
+  .create-page :deep(.el-col) { flex: 0 0 100%; max-width: 100%; }
+  .panel { padding: 16px 12px; }
 }
 </style>

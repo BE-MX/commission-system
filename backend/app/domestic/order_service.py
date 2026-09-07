@@ -16,6 +16,7 @@ from app.domestic import constants as C
 from app.domestic import (
     attribute_service,
     balance_service,
+    order_kind_service,
     customer_service,
     pricing_service,
     product_service,
@@ -243,6 +244,7 @@ def _order_create_result(
     ).scalar() or 0
     return {
         "id": order.id,
+        "order_kind": order.order_kind,
         "domestic_no": order.domestic_no,
         "order_no": order.order_no,
         "customer_name": customer_name,
@@ -260,9 +262,9 @@ def _validate_order_replay(order: DomesticOrder, request_hash: str) -> None:
         raise ValueError("该建单请求号已用于不同订单内容，请刷新页面后重新提交")
 
 
-def _generate_domestic_no(db: Session) -> str:
+def _generate_domestic_no(db: Session, order_kind: str = "business") -> str:
     """系统单号 DO{YYYYMMDD}-{NNN}，按天自增。撞号由调用方 savepoint 重试。"""
-    prefix = f"DO{beijing_today().strftime('%Y%m%d')}-"
+    prefix = f"{'DP' if order_kind == 'production' else 'DO'}{beijing_today().strftime('%Y%m%d')}-"
     # 锁定读是必须的：MySQL 默认 RR 下普通读走事务开头的快照，撞号后重试
     # 会一直读到同一个旧最大值，5 次全撞同一个号永远不收敛。
     # 走 ORM 而不是裸 SQL —— with_for_update 会按方言决定是否发 FOR UPDATE，
@@ -270,7 +272,7 @@ def _generate_domestic_no(db: Session) -> str:
     row = (
         db.query(DomesticOrder.domestic_no)
         .filter(DomesticOrder.domestic_no.like(f"{prefix}%"))
-        .order_by(DomesticOrder.domestic_no.desc())
+        .order_by(func.length(DomesticOrder.domestic_no).desc(), DomesticOrder.domestic_no.desc())
         .limit(1)
         .with_for_update()
         .first()
@@ -300,7 +302,7 @@ def _build_item(
     line_no: int,
     payload: OrderItemInput,
     product: DomesticProduct,
-    quote: pricing_service.LockedOrderQuote,
+    quote: pricing_service.LockedOrderQuote | None,
 ) -> tuple[DomesticOrderItem, str | None]:
     """Persist one item from a server-validated, locked quote.
 
@@ -308,24 +310,30 @@ def _build_item(
     """
     product.use_count = (product.use_count or 0) + 1
 
-    labor_fee = balance_service.money(payload.labor_fee)
-    unit_price = balance_service.money(quote.discount.final_price) + labor_fee
+    order = db.query(DomesticOrder).filter(DomesticOrder.id == order_id).one()
+    production = order_kind_service.is_production(order)
+    labor_fee = balance_service.money(0 if production else payload.labor_fee)
+    unit_price = 0 if production else balance_service.money(quote.discount.final_price) + labor_fee
+    route_id = order_kind_service.resolve_order_route(
+        db, order_kind=order.order_kind, order_category=order.order_category,
+        product_type=product.product_type,
+    )
     item = DomesticOrderItem(
         order_id=order_id,
         line_no=line_no,
         product_id=product.id,
         product_name=product.name,
         attrs_snapshot=payload.attrs.model_dump(),
-        route_id=product.route_id,
+        route_id=route_id,
         order_qty=payload.order_qty,
-        original_price=quote.discount.original_price,
+        original_price=0 if production else quote.discount.original_price,
         unit_price=unit_price,
-        discount_amount=quote.discount.discount_amount,
+        discount_amount=0 if production else quote.discount.discount_amount,
         labor_fee=labor_fee,
-        membership_level_snapshot=quote.membership_level,
-        pricing_rule=quote.discount.pricing_rule,
-        pricing_version=pricing_service.PRICING_VERSION,
-        base_price_version_snapshot=quote.base_row.version,
+        membership_level_snapshot=None if production else quote.membership_level,
+        pricing_rule="production" if production else quote.discount.pricing_rule,
+        pricing_version="production-v1" if production else pricing_service.PRICING_VERSION,
+        base_price_version_snapshot=0 if production else quote.base_row.version,
         status=C.ITEM_PRODUCING,
     )
     for field in _TEXT_FIELDS:
@@ -337,12 +345,13 @@ def _build_item(
     unit_service.sync_item_units(db, item, item.order_qty)
 
     warning = None
-    if product.route_id:
+    if route_id:
         steps = progress_service.init_item_progress(db, item)
         if not steps:
             warning = f"「{product.name}」绑定的工艺路线还没配工序，暂时不能开工"
     else:
-        warning = f"「{product.name}」的工艺「{product.craft}」还没配工艺路线，暂时不能开工"
+        name = order_kind_service.route_name(order.order_kind, order.order_category, product.product_type)
+        warning = f"「{product.name}」所需路线「{name}」尚未配置或已停用，暂时不能开工"
     return item, warning
 
 
@@ -352,12 +361,19 @@ def _prepare_order_products(
     *,
     order_category: str,
     user_id: int,
+    order_kind: str = "business",
 ) -> list[tuple[OrderItemInput, DomesticProduct]]:
     prepared = []
     for line_no, payload in enumerate(payloads, start=1):
+        if order_kind == "production":
+            order_kind_service.normalize_production_input(payload)
+        else:
+            ProductAttrs.model_validate(payload.attrs.model_dump())
+            if payload.expected_quote is None and payload.special_price is None:
+                raise ValueError("业务订单明细必须填写报价或销售价")
         attribute_service.prepare_item_attrs(
             db,
-            order_category=order_category,
+            order_category="normal" if order_kind == "production" else order_category,
             attrs=payload.attrs,
             user_id=user_id,
             line_no=line_no,
@@ -425,19 +441,19 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
         # 后续客户、单号、特单字典与产品都会使用 savepoint；先建立真实外层事务，
         # 避免 SQLite legacy transaction mode 把第一个 RELEASE 当成提交。
         _ensure_sqlite_outer_transaction(db)
-        attribute_service.validate_order_dimensions(
-            db,
-            payload.order_type,
-            payload.order_channel,
-        )
-        if payload.customer_id:
+        production = payload.order_kind == "production"
+        if not production:
+            attribute_service.validate_order_dimensions(db, payload.order_type, payload.order_channel)
+        if production:
+            customer = None
+        elif payload.customer_id:
             customer = _lock_customer(db, payload.customer_id)
         else:
             customer = customer_service.find_or_create_by_shop_name(
                 db, payload.customer_shop_name, user_id
             )
             customer = _lock_customer(db, customer.id)
-        if customer.owner_user_id != user_id:
+        if not production and customer.owner_user_id != user_id:
             raise ValueError("只有客户归属销售可以对该客户下单")
 
         prepared = _prepare_order_products(
@@ -445,6 +461,7 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
             payload.items,
             order_category=payload.order_category,
             user_id=user_id,
+            order_kind=payload.order_kind,
         )
         # 特单：明细带销售价时直接按销售价成交，跳过报价与 409 变动确认；
         # 未带销售价的特单（存量/草稿回填）仍走报价路径兼容旧数据。
@@ -452,7 +469,9 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
             payload.order_category == "special"
             and all(item.special_price is not None for item in payload.items)
         )
-        if use_special_price:
+        if production:
+            quotes = [None] * len(prepared)
+        elif use_special_price:
             quotes = _build_special_order_quotes(
                 payload.items, [product for _item, product in prepared]
             )
@@ -466,14 +485,14 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
         # Check the discounted total before the order-number savepoint. The definitive
         # finance sync still runs after items are built; this early check also keeps
         # SQLite from retaining a released savepoint after insufficiency.
-        estimated_total = balance_service.money(sum(
+        estimated_total = balance_service.money(0 if production else sum(
             (balance_service.money(quote.discount.final_price) + balance_service.money(item.labor_fee))
             * item.order_qty
             for (item, _product), quote in zip(prepared, quotes)
         ))
-        available = balance_service.money(customer.balance)
+        available = balance_service.money(customer.balance) if customer else 0
         if (
-            not payload.is_draft
+            not production and not payload.is_draft
             and customer.settle_mode != "credit"
             and available < estimated_total
         ):
@@ -485,12 +504,14 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
         order = None
         for _ in range(5):
             savepoint = db.begin_nested()
+            domestic_no = _generate_domestic_no(db, payload.order_kind)
             candidate = DomesticOrder(
-                domestic_no=_generate_domestic_no(db),
-                order_no=payload.order_no,
+                domestic_no=domestic_no,
+                order_kind=payload.order_kind,
+                order_no=domestic_no if production else payload.order_no,
                 order_date=payload.order_date,
                 required_ship_date=payload.required_ship_date,
-                customer_id=customer.id,
+                customer_id=customer.id if customer else None,
                 order_category=payload.order_category,
                 order_type=payload.order_type,
                 order_channel=payload.order_channel,
@@ -598,20 +619,23 @@ def order_dimension_view(
 ) -> dict:
     """统一输出订单类别、类型、渠道；NULL 历史值不猜测。"""
     type_labels, channel_labels = label_maps or dimension_label_maps(db, [order])
+    empty_label = "—" if order_kind_service.is_production(order) else "未填写"
     return {
+        "order_kind": order.order_kind,
+        "order_kind_label": "生产订单" if order_kind_service.is_production(order) else "业务订单",
         "order_category": order.order_category,
         "order_category_label": C.ORDER_CATEGORIES.get(
-            order.order_category, order.order_category or "未填写"
+            order.order_category, order.order_category or empty_label
         ),
         "order_type": order.order_type,
         "order_type_label": (
             type_labels.get(order.order_type, order.order_type)
-            if order.order_type else "未填写"
+            if order.order_type else empty_label
         ),
         "order_channel": order.order_channel,
         "order_channel_label": (
             channel_labels.get(order.order_channel, order.order_channel)
-            if order.order_channel else "未填写"
+            if order.order_channel else empty_label
         ),
     }
 
@@ -725,6 +749,7 @@ def list_orders(
     keyword: str = "",
     status: int | None = None,
     customer_id: int | None = None,
+    order_kind: str = "",
     order_category: str = "",
     order_type: str = "",
     order_channel: str = "",
@@ -737,6 +762,8 @@ def list_orders(
     include_finance: bool = True,
 ) -> tuple[list[dict], int]:
     q = db.query(DomesticOrder).filter(DomesticOrder.deleted_flag == 0)
+    if order_kind:
+        q = q.filter(DomesticOrder.order_kind == order_kind)
     if not include_all:
         q = q.filter(DomesticOrder.created_by == creator_id)
     if keyword:
@@ -949,7 +976,7 @@ def get_order_detail(
     if not order:
         raise ValueError("订单不存在")
 
-    customer = db.query(DomesticCustomer).get(order.customer_id)
+    customer = db.get(DomesticCustomer, order.customer_id) if order.customer_id else None
     items = (
         db.query(DomesticOrderItem)
         .filter(DomesticOrderItem.order_id == order_id)
@@ -1081,7 +1108,7 @@ def get_order_detail(
             "membership_level": item.membership_level_snapshot,
             "pricing_rule": item.pricing_rule,
             "pricing_version": item.pricing_version,
-        } for item in items]
+        } for item in items if not order_kind_service.is_production(order)]
     return detail
 
 
@@ -1140,6 +1167,17 @@ def update_order(
         order = _get_order_or_raise(db, order_id, lock=True)
         _ensure_order_creator(order, user_id)
         data = payload.model_dump(exclude_unset=True)
+        if order_kind_service.is_production(order):
+            if set(data) & (order_kind_service.PRODUCTION_HEADER_EXCLUDED | {"order_no"}):
+                raise ValueError("生产订单不能填写销售字段或修改系统编号")
+            if order.status == C.ORDER_TERMINATED:
+                raise ValueError("已终止的订单不能编辑")
+            for field, value in data.items():
+                setattr(order, field, value)
+            db.commit()
+            return order
+        if "order_category" in data and data["order_category"] != order.order_category:
+            raise ValueError("订单类别决定工艺路线，创建后不能切换；请重新下单")
         changes_customer = "customer_id" in data
 
         if changes_customer:
@@ -1267,6 +1305,9 @@ def add_item(
         _ensure_order_creator(order, user_id)
         if order.status in (C.ORDER_TERMINATED, C.ORDER_SHIPPED):
             raise ValueError("已终止/已发货的订单不能加明细")
+        payload = payload.model_copy(deep=True)
+        if order_kind_service.is_production(order):
+            order_kind_service.normalize_production_input(payload)
         request_hash = _item_append_request_hash(payload)
         existing = db.query(DomesticItemAppendRequest).filter(
             DomesticItemAppendRequest.order_id == order.id,
@@ -1285,15 +1326,19 @@ def add_item(
         if new_total_qty > C.MAX_ORDER_UNITS:
             raise ValueError(f"单张订单合计数量不能超过 {C.MAX_ORDER_UNITS} 件")
 
-        customer = _lock_customer(db, order.customer_id)
+        production = order_kind_service.is_production(order)
+        customer = None if production else _lock_customer(db, order.customer_id)
         prepared = _prepare_order_products(
             db,
             [payload],
             order_category=order.order_category,
             user_id=user_id or order.created_by,
+            order_kind=order.order_kind,
         )
         # 特单追加明细：带销售价则直录，否则回退报价兼容旧数据
-        if order.order_category == "special" and payload.special_price is not None:
+        if production:
+            quotes = [None]
+        elif order.order_category == "special" and payload.special_price is not None:
             quotes = _build_special_order_quotes([payload], [prepared[0][1]])
         else:
             _customer, quotes = pricing_service.lock_and_validate_order_quotes(
@@ -1348,6 +1393,11 @@ def update_item(
         raise ValueError("已发货的明细不能编辑")
 
     data = payload.model_dump(exclude_unset=True)
+    if order_kind_service.is_production(order):
+        if "unit_price" in data:
+            raise ValueError("生产订单不设置价格")
+        if set(data) & set(order_kind_service.PRODUCTION_FIELDS):
+            raise ValueError("生产订单不填写发型要求")
     new_qty = data.get("order_qty")
     if new_qty is not None and new_qty != item.order_qty:
         new_total_qty = int(order.total_unit_qty or 0) - item.order_qty + new_qty
@@ -1473,11 +1523,14 @@ def attach_route(
             raise ValueError(f"该明细已有 {skipped} 条跳过记录，不能重建工序进度")
         raise ValueError("该明细已配置工艺路线，不能重复补配")
     rid = route_id
+    expected_route = order_kind_service.resolve_order_route(
+        db, order_kind=order.order_kind, order_category=order.order_category,
+        product_type=(item.attrs_snapshot or {}).get("product_type"),
+    )
+    if rid is not None and rid != expected_route:
+        raise ValueError("工艺路线必须与订单大类、订单类别和产品类型一致")
     if rid is None:
-        product = db.query(DomesticProduct).get(item.product_id)
-        rid = product.route_id if product else None
-        if rid is None and product:
-            rid = product_service.resolve_route_id(db, product.product_type, product.craft)
+        rid = expected_route
     if rid is None:
         raise ValueError("没有可用的工艺路线，请先在「工艺路线映射」里配好这个工艺")
 
@@ -1521,10 +1574,13 @@ def submit_draft(
         if order.status != C.ORDER_DRAFT:
             raise ValueError("只有草稿订单可以提交")
 
-        customer = _lock_customer(db, order.customer_id)
+        production = order_kind_service.is_production(order)
+        customer = None if production else _lock_customer(db, order.customer_id)
         items = _lock_draft_items(db, order.id)
         # 特单没有原始价格，草稿提交时不重新报价，直接按录入的销售价结算
-        if order.order_category == "special":
+        if production:
+            total = balance_service.money(0)
+        elif order.order_category == "special":
             total = balance_service.money(sum(
                 balance_service.money(item.unit_price) * item.order_qty for item in items
             ))
@@ -1555,10 +1611,11 @@ def submit_draft(
                 )
             _apply_saved_item_quotes(items, quotes)
         order.status = C.ORDER_PRODUCING
-        customer.last_order_date = max(
-            value for value in (customer.last_order_date, order.order_date)
-            if value is not None
-        )
+        if customer:
+            customer.last_order_date = max(
+                value for value in (customer.last_order_date, order.order_date)
+                if value is not None
+            )
         db.flush()
         balance_service.sync_order_finance(
             db, order, user_id=user_id,
@@ -1596,6 +1653,8 @@ def ship_item(
     """登记发货。首版要求全工序做齐才允许发货。"""
     order, item = _lock_order_then_item(db, item_id)
     _ensure_order_creator(order, user_id)
+    if order_kind_service.is_production(order):
+        raise ValueError("生产订单在入库工序完成后完工，无需登记发货")
     if item.status == C.ITEM_SHIPPED:
         raise ValueError("该明细已发货")
     if order.status == C.ORDER_TERMINATED:

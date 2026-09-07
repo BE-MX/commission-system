@@ -12,8 +12,8 @@
         <div class="panel">
           <el-alert
             type="info" show-icon :closable="false" class="tips"
-            title="配好这里，下单就不用选工艺路线"
-            description="每种「产品类型 + 工艺」配一条默认工艺路线。下单选完属性后系统自动按这张表配路线；新配的映射会自动补给此前漏配的同工艺产品。"
+            title="产品档案的工艺路线映射"
+            description="此处维护产品档案的默认路线。新订单按用途匹配：生产订单截止入库，业务普单从毛坯出库开始，业务特单使用完整递针路线；具体工序请在工艺路线中维护。"
           />
           <div class="panel-actions">
             <GlassButton v-permission="'domestic:admin'" variant="primary" left-icon="Plus" @click="openMapping()">新增映射</GlassButton>

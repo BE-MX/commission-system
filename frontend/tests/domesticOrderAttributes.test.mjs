@@ -7,7 +7,6 @@ import {
   clearNonstandardAttributes,
   normalizeItemAttrs,
   requiredAttributeFields,
-  routeForItem,
   validateItemAttributes,
   visibleAttributeFields,
 } from '../src/views/domestic/domesticAttributeRules.js'
@@ -152,24 +151,7 @@ test('载荷统一 trim 可见属性并丢弃空白选填值', () => {
   })
 })
 
-test('特单自定义工艺没有精确映射时预览产品默认路线', () => {
-  const item = { attrs: { product_type: 'cap', craft: '手工递针' } }
-  assert.deepEqual(routeForItem(item, 'special', [], options.default_routes), {
-    route_id: 8, route_name: '头套网帽（递针）', step_count: 4, is_default: true,
-  })
-  assert.equal(routeForItem(item, 'normal', [], options.default_routes), null)
-})
-
-test('精确工艺映射优先于特单默认路线', () => {
-  const item = { attrs: { product_type: 'cap', craft: ' 递旋 ' } }
-  const mappings = [{ product_type: 'cap', craft: '递旋', route_id: 3, route_name: '递旋路线' }]
-  assert.deepEqual(routeForItem(item, 'special', mappings, options.default_routes), mappings[0])
-})
-
-test('特单中的标准工艺未配映射时不假报默认路线', () => {
-  const item = { attrs: { product_type: 'cap', craft: '递旋' } }
-  assert.equal(routeForItem(item, 'special', [], options.default_routes, ['递旋']), null)
-})
+// Route previews are covered by the six order-kind combinations in domesticOrderKinds.test.mjs.
 
 test('下单、列表和产品页保持新属性合约', () => {
   const createView = read('../src/views/domestic/DomesticOrderCreate.vue')

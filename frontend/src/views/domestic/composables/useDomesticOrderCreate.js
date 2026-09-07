@@ -8,7 +8,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  createOrder, getOptions, listCraftRoutes, listCustomers, quoteDomesticPrices, uploadImage,
+  createOrder, getOptions, listCustomers, quoteDomesticPrices, uploadImage,
 } from '@/api/domestic'
 import { msgError } from '@/utils/feedback'
 import { currentBeijingDate } from '@/utils/datetime'
@@ -18,11 +18,11 @@ import {
   clearInapplicableAttributes,
   clearNonstandardAttributes,
   normalizeItemAttrs,
-  routeForItem,
   validateItemAttributes,
   visibleAttributeFields,
 } from '@/views/domestic/domesticAttributeRules'
 import { createLatestRequestRunner } from '@/views/domestic/composables/latestRequest'
+import { buildProductionPayload, routeForOrder } from '../domesticOrderKinds'
 import {
   applyQuoteChange, applyQuoteResult, buildCreateItems, buildQuoteRequest,
   effectiveDiscountPrice, ensureRequestIdentity, hasBlockingPrice, invalidateItemQuote,
@@ -55,8 +55,9 @@ function emptyItem() {
   }
 }
 
-export function useDomesticOrderCreate() {
+export function useDomesticOrderCreate(orderKind = 'business') {
   const router = useRouter()
+  const isProduction = orderKind === 'production'
 
   const loading = ref(false)
   const submitting = ref(false)
@@ -65,7 +66,6 @@ export function useDomesticOrderCreate() {
     attr_dicts: {}, special_attr_dicts: {}, standard_values: {}, special_values: {},
     default_routes: {},
   })
-  const craftRoutes = ref([])
   const customers = ref([])
   const customerLoading = ref(false)
   const runLatestCustomerSearch = createLatestRequestRunner()
@@ -99,15 +99,12 @@ export function useDomesticOrderCreate() {
   }
 
   function hasField(productType, field) {
+    if (isProduction && field === 'hair_style_series') return false
     return Boolean(options.value.attr_dicts?.[productType]?.[field])
   }
 
   function routeOf(item) {
-    const craftDict = options.value.attr_dicts?.[item.attrs.product_type]?.craft
-    const standardCrafts = options.value.standard_values?.[craftDict] || []
-    return routeForItem(
-      item, form.order_category, craftRoutes.value, options.value.default_routes, standardCrafts,
-    )
+    return routeForOrder(item, orderKind, form.order_category, options.value.order_routes)
   }
 
   const unroutedCount = computed(
@@ -158,7 +155,7 @@ export function useDomesticOrderCreate() {
   }
 
   function visibleFields(item) {
-    return visibleAttributeFields(item.attrs)
+    return visibleAttributeFields(item.attrs, orderKind)
   }
 
   function addItem() {
@@ -243,6 +240,7 @@ export function useDomesticOrderCreate() {
   }
 
   async function refreshQuotes() {
+    if (isProduction) return
     if (form.order_category === 'special') return
     if (!allItemsQuotable()) return
     const sequence = ++quoteSequence
@@ -264,6 +262,7 @@ export function useDomesticOrderCreate() {
   }
 
   function scheduleQuote() {
+    if (isProduction) return
     quoteSequence += 1
     quoteLoading.value = false
     form.items.forEach(invalidateItemQuote)
@@ -274,19 +273,20 @@ export function useDomesticOrderCreate() {
   }
 
   function validate() {
-    if (!form.order_no.trim()) return '请填写客户订单号'
+    if (!isProduction && !form.order_no.trim()) return '请填写客户订单号'
     if (!form.order_date) return '请选择下单日期'
-    if (!form.required_ship_date) return '请选择要求发货日期'
-    if (!form.customer_id && !form.customer_shop_name.trim()) return '请选择或填写客户店名'
-    if (!form.order_category) return '请选择订单类别'
-    if (!form.order_type) return '请选择订单类型'
-    if (!form.order_channel) return '请选择订单渠道'
+    if (!isProduction && !form.required_ship_date) return '请选择要求发货日期'
+    if (!isProduction && !form.customer_id && !form.customer_shop_name.trim()) return '请选择或填写客户店名'
+    if (!isProduction && !form.order_category) return '请选择订单类别'
+    if (!isProduction && !form.order_type) return '请选择订单类型'
+    if (!isProduction && !form.order_channel) return '请选择订单渠道'
     const isSpecial = form.order_category === 'special'
     for (const [idx, item] of form.items.entries()) {
       const label = `第 ${idx + 1} 行明细`
-      const attrError = validateItemAttributes(item.attrs)
+      const attrError = validateItemAttributes(item.attrs, orderKind)
       if (attrError) return `${label}：${attrError}`
       if (!(item.order_qty > 0)) return `${label}的数量要大于 0`
+      if (isProduction) continue
       if (isSpecial) {
         if (!(Number(item.specialPrice) > 0)) return `${label}请填写销售价`
         continue
@@ -298,7 +298,9 @@ export function useDomesticOrderCreate() {
   }
 
   function buildPayload() {
+    if (isProduction) return buildProductionPayload(form)
     return {
+      order_kind: 'business',
       order_no: form.order_no.trim(),
       order_date: form.order_date,
       required_ship_date: form.required_ship_date,
@@ -384,18 +386,18 @@ export function useDomesticOrderCreate() {
       msgError(error)
       return
     }
-    if (hasBlockingPrice(form.items) && form.order_category !== 'special') {
+    if (!isProduction && hasBlockingPrice(form.items) && form.order_category !== 'special') {
       msgError('所有明细必须完成报价；缺原价的产品需先去产品清单维护')
       return
     }
-    if (!isDraft && !form.customer_id) {
+    if (!isProduction && !isDraft && !form.customer_id) {
       msgError('新客户还没有充值账户：请先保存草稿，充值后再提交；或在客户管理把结算方式改为「先下单后付款」')
       return
     }
     // 先下单后付款的客户不校验余额：允许欠款下单，欠款记为负余额
     const isCreditCustomer = selectedCustomer.value?.settle_mode === 'credit'
     if (
-      !isDraft && selectedCustomer.value && !isCreditCustomer
+      !isProduction && !isDraft && selectedCustomer.value && !isCreditCustomer
       && Number(selectedCustomer.value.balance || 0) < orderTotal.value
     ) {
       msgError(`客户余额不足：当前 ¥${Number(selectedCustomer.value.balance || 0).toFixed(2)}，订单需 ¥${orderTotal.value.toFixed(2)}`)
@@ -419,7 +421,7 @@ export function useDomesticOrderCreate() {
       if (!res) return
       const data = res.data || {}
       ElMessage.success(`${isDraft ? '草稿已保存' : '下单成功'}：${data.domestic_no}`)
-      router.push({ name: 'DomesticOrders', query: { keyword: data.domestic_no } })
+      router.push({ name: 'DomesticOrders', query: { keyword: data.domestic_no, order_kind: orderKind } })
     } catch { /* 拦截器已提示 */ } finally {
       submitting.value = false
     }
@@ -428,10 +430,9 @@ export function useDomesticOrderCreate() {
   onMounted(async () => {
     loading.value = true
     try {
-      const [optRes, craftRes] = await Promise.all([getOptions(), listCraftRoutes()])
+      const optRes = await getOptions()
       options.value = optRes.data || options.value
-      craftRoutes.value = craftRes.data || []
-      await searchCustomers('')
+      if (!isProduction) await searchCustomers('')
     } catch { /* 拦截器已提示 */ } finally {
       loading.value = false
     }
@@ -446,6 +447,7 @@ export function useDomesticOrderCreate() {
   onBeforeUnmount(() => clearTimeout(quoteTimer))
 
   return {
+    isProduction,
     loading, submitting, quoteLoading, options, customers, customerLoading, form,
     attrOptions, attributePlaceholder, hasField, visibleFields,
     routeOf, unroutedCount, orderTotal, selectedCustomer,

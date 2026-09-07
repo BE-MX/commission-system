@@ -74,6 +74,7 @@ def workers(db, route):
 
 @pytest.fixture
 def craft_mapping(db, route):
+    route.name = "业务普单 · 头套网帽（递针）"
     db.add(DomesticCraftRoute(product_type="cap", craft="递针旋全头套", route_id=route.id))
     _seed_order_values(db, _attrs())
     db.flush()
@@ -205,22 +206,24 @@ def test_order_expands_route_into_progress_rows(db, craft_mapping, workers):
     assert steps[2]["reportable_qty"] == 0
 
 
-def test_order_without_craft_mapping_warns_and_cannot_start(db, route):
+def test_order_without_kind_route_warns_and_cannot_start(db, route):
     creator = _user(db, "planner")
     result = _create_order(db, creator, qty=5, craft="没配过的工艺")
 
     assert len(result["warnings"]) == 1
-    assert "还没配工艺路线" in result["warnings"][0]
+    assert "业务普单 · 头套网帽（递针）" in result["warnings"][0]
     item = _item_of(db, result["id"])
     assert _steps(db, item) == []
     assert item.route_id is None
 
 
-def test_attach_route_recovers_item_missing_mapping(db, route):
+def test_attach_route_recovers_item_missing_kind_route(db, route):
     creator = _user(db, "planner")
     result = _create_order(db, creator, qty=5, craft="没配过的工艺")
     item = _item_of(db, result["id"])
 
+    route.name = "业务普单 · 头套网帽（递针）"
+    db.flush()
     order_service.attach_route(db, item.id, route.id)
 
     db.refresh(item)
@@ -700,6 +703,7 @@ def test_attach_route_refuses_when_report_logs_exist(db, craft_mapping, workers,
 
 def test_progress_steps_renumbered_from_one(db, route):
     """路线侧序号跳号也不能影响上下游口径 —— 展开时自己按位置重排。"""
+    route.name = "业务普单 · 头套网帽（递针）"
     steps = product_service.get_route_steps(db, route.id)
     steps[-1].step_order = 9
     db.flush()
@@ -782,10 +786,14 @@ def test_enlarging_quantity_reopens_completed_item(db, craft_mapping, workers):
 
 def test_scan_blocks_when_no_route_and_when_all_done(db, route, craft_mapping, workers):
     creator = _user(db, "planner")
+    route.status = 0
+    db.flush()
     unrouted = _item_of(db, _create_order(db, creator, qty=2, craft="没配过的工艺")["id"])
     assert report_service.scan_item(db, unrouted.id, workers[0].id)["block_reason"] == \
         report_service.BLOCK_NO_ROUTE
 
+    route.status = 1
+    db.flush()
     done = _item_of(db, _create_order(db, creator, qty=2)["id"])
     for idx, worker in enumerate(workers):
         _report(db, done, idx, worker, 2)

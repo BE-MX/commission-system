@@ -321,7 +321,7 @@ def scan_item(db: Session, item_id: int, user_id: int) -> dict:
                 "block_message": BLOCK_MESSAGES[BLOCK_ITEM_NOT_FOUND]}
 
     order = db.query(DomesticOrder).get(item.order_id)
-    customer = db.query(DomesticCustomer).get(order.customer_id) if order else None
+    customer = db.get(DomesticCustomer, order.customer_id) if order and order.customer_id else None
     steps = progress_service.build_progress_view(db, item)
     if order:
         from app.domestic.order_service import order_dimension_view

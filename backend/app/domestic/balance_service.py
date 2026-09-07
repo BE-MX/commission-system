@@ -176,6 +176,10 @@ def sync_order_finance(
     reason: str,
 ) -> Decimal:
     """Recalculate total and, for submitted orders, settle the charge delta."""
+    if order.order_kind == "production":
+        order.total_amount = money(0)
+        order.charged_amount = money(0)
+        return money(0)
     total = order_total(db, order.id)
     order.total_amount = total
     if order.status in (C.ORDER_DRAFT, C.ORDER_TERMINATED):
@@ -205,6 +209,8 @@ def refund_order_charge(
     user_id: int,
     reason: str,
 ) -> Decimal:
+    if order.order_kind == "production":
+        return money(0)
     charged = money(order.charged_amount)
     if charged <= 0:
         return Decimal("0.00")

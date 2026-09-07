@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -156,6 +156,7 @@ class CustomerAdjust(BaseModel):
 class ProductAttrs(BaseModel):
     """产品属性组合 —— 这组值唯一决定一个内贸产品"""
 
+    require_hair_style: ClassVar[bool] = True
     product_type: Literal["cap", "piece"] = Field(..., description="cap=头套,piece=发片")
     craft: str = Field(..., min_length=1, max_length=64, description="头套工艺 / 发片工艺尺寸")
     net_color: str | None = Field(None, max_length=64, description="网底颜色（仅头套）")
@@ -183,7 +184,7 @@ class ProductAttrs(BaseModel):
             return self
         if not self.size:
             raise ValueError("头套尺码不能为空")
-        if not self.hair_style_series:
+        if self.require_hair_style and not self.hair_style_series:
             raise ValueError("头套发型系列不能为空")
         if self.length == "15厘米":
             if not self.density:
@@ -191,6 +192,12 @@ class ProductAttrs(BaseModel):
         else:
             self.density = None
         return self
+
+
+class ProductionProductAttrs(ProductAttrs):
+    """毛坯规格不包含发型系列；业务产品仍使用 ProductAttrs 校验。"""
+
+    require_hair_style: ClassVar[bool] = False
 
 
 class BasePriceUpdate(BaseModel):
@@ -380,7 +387,7 @@ class DraftSubmitRequest(BaseModel):
 
     request_id: str = Field(..., min_length=8, max_length=64)
     expected_quotes: list[ItemExpectedQuote] = Field(
-        ..., min_length=1, max_length=50
+        default_factory=list, max_length=50
     )
 
     @field_validator("request_id", mode="before")
@@ -440,7 +447,17 @@ class OrderItemInput(BaseModel):
         return self
 
 
-class OrderItemAppend(OrderItemInput):
+class ProductionOrderItemInput(OrderItemInput):
+    attrs: ProductionProductAttrs
+
+    @model_validator(mode="after")
+    def _require_quote_or_special_price(self):
+        # 大类由订单头决定；service 再按所属订单校验追加操作。
+        return self
+
+
+class OrderItemAppend(ProductionOrderItemInput):
+    attrs: ProductAttrs | ProductionProductAttrs
     request_id: str = Field(..., min_length=8, max_length=64, description="客户端追加明细幂等键")
 
     @field_validator("request_id", mode="before")
@@ -453,17 +470,18 @@ class OrderCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     request_id: str = Field(..., min_length=8, max_length=64, description="客户端建单幂等键")
-    order_no: str = Field(..., min_length=1, max_length=64, description="客户订单号")
+    order_kind: Literal["business", "production"] = "business"
+    order_no: str | None = Field(None, min_length=1, max_length=64, description="业务单客户订单号；生产单自动编号")
     order_date: date
-    required_ship_date: date = Field(..., description="要求发货日期（必填）")
+    required_ship_date: date | None = None
     customer_id: int | None = Field(None, description="已有客户 ID")
     customer_shop_name: str | None = Field(None, max_length=120, description="就地新建客户的店名")
-    order_category: Literal["normal", "special"] = "normal"
-    order_type: str = Field(..., min_length=1, max_length=32)
-    order_channel: str = Field(..., min_length=1, max_length=32)
+    order_category: Literal["normal", "special"] | None = "normal"
+    order_type: str | None = Field(None, min_length=1, max_length=32)
+    order_channel: str | None = Field(None, min_length=1, max_length=32)
     is_draft: bool = Field(False, description="true=只存草稿，不扣客户余额")
     remark: str | None = Field(None, max_length=1000)
-    items: list[OrderItemInput] = Field(..., min_length=1, max_length=50)
+    items: list[OrderItemInput | ProductionOrderItemInput] = Field(..., min_length=1, max_length=50)
 
     @field_validator("order_no")
     @classmethod
@@ -485,8 +503,28 @@ class OrderCreate(BaseModel):
 
     @model_validator(mode="after")
     def _need_customer(self):
-        if not self.customer_id and not (self.customer_shop_name or "").strip():
-            raise ValueError("请选择客户或填写客户店名")
+        if self.order_kind == "production":
+            from app.domestic.order_kind_service import normalize_production_input
+
+            self.order_no = None
+            self.customer_id = None
+            self.customer_shop_name = None
+            self.order_category = None
+            self.order_type = None
+            self.order_channel = None
+            self.required_ship_date = None
+            for item in self.items:
+                normalize_production_input(item)
+        else:
+            if not self.customer_id and not (self.customer_shop_name or "").strip():
+                raise ValueError("请选择客户或填写客户店名")
+            if not self.order_no or not self.order_category:
+                raise ValueError("业务订单必须填写客户订单号和订单类别")
+            if not self.required_ship_date or not self.order_type or not self.order_channel:
+                raise ValueError("业务订单必须填写要求发货日期、订单类型和订单渠道")
+            for item in self.items:
+                ProductAttrs.model_validate(item.attrs.model_dump())
+                OrderItemInput.model_validate(item.model_dump())
         if sum(item.order_qty for item in self.items) > 5000:
             raise ValueError("单张订单合计数量不能超过 5000 件")
         client_keys = [item.client_key for item in self.items]

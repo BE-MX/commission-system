@@ -16,6 +16,7 @@
       <!-- 产品信息 -->
       <view class="sheet-section">
         <text class="sheet-sec-label">产品信息</text>
+        <view class="info-row" wx:if="{{item.order_kind === 'production'}}"><text class="info-lbl">用途</text><text class="info-val">生产订单 · 公司备货</text></view>
         <view class="info-row">
           <text class="info-lbl">产品</text>
           <view class="info-val-wrap">
@@ -23,7 +24,7 @@
             <text class="tag-urgent" wx:if="{{item.order_category === 'special'}}">特单</text>
           </view>
         </view>
-        <view class="info-row">
+        <view class="info-row" wx:if="{{item.order_kind !== 'production'}}">
           <text class="info-lbl">客户</text>
           <text class="info-val">{{item.customer_name || '-'}}</text>
         </view>
@@ -31,15 +32,15 @@
           <text class="info-lbl">所属订单</text>
           <text class="info-val" style="color:var(--text-sub)">{{item.order_no || '-'}}</text>
         </view>
-        <view class="info-row">
+        <view class="info-row" wx:if="{{item.order_kind !== 'production'}}">
           <text class="info-lbl">订单类别</text>
           <text class="info-val">{{item.order_category_label}}</text>
         </view>
-        <view class="info-row">
+        <view class="info-row" wx:if="{{item.order_kind !== 'production'}}">
           <text class="info-lbl">订单类型</text>
           <text class="info-val">{{item.order_type_label}}</text>
         </view>
-        <view class="info-row">
+        <view class="info-row" wx:if="{{item.order_kind !== 'production'}}">
           <text class="info-lbl">订单渠道</text>
           <text class="info-val">{{item.order_channel_label}}</text>
         </view>

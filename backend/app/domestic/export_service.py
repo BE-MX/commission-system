@@ -106,6 +106,8 @@ def _add_full_requirements_sheet(wb: Workbook, detail: dict) -> None:
     rows = []
     for item in detail.get("items") or []:
         for key, label in _TEXT_FIELDS:
+            if detail.get("order_kind") == "production" and key in ("hairstyle", "style_requirement"):
+                continue
             text = str(item.get(key) or "").strip()
             if len(text) > _LONG_TEXT_THRESHOLD:
                 for index, chunk in enumerate(_print_chunks(text)):
@@ -155,16 +157,22 @@ def _add_full_requirements_sheet(wb: Workbook, detail: dict) -> None:
 
 def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
     """按内贸领货单模板生成单张订单工作簿。"""
+    production = detail.get("order_kind") == "production"
+    columns = [i for i in range(len(_HEADERS)) if not production or i not in (8, 10, 12)]
+    headers = [_HEADERS[i] for i in columns]
+    widths = [_WIDTHS[i] for i in columns]
+    last_column = get_column_letter(len(columns))
+    title = "内贸生产备货单" if production else "内贸订单领货单"
     wb = Workbook()
     ws = wb.active
-    ws.title = "内贸订单领货单"
+    ws.title = title
 
-    ws.merge_cells("B1:N1")
-    ws["B1"] = "内贸订单领货单"
+    ws.merge_cells(f"B1:{last_column}1")
+    ws["B1"] = title
     ws["B1"].font = Font(name=_FONT_NAME, size=18, bold=True)
     ws["B1"].alignment = Alignment(horizontal="center", vertical="center")
 
-    ws.merge_cells("A2:N2")
+    ws.merge_cells(f"A2:{last_column}2")
     ws["A2"] = (
         f"下单日期：{_date_text(detail.get('order_date'))}     "
         f"要求发货日期：{_date_text(detail.get('required_ship_date'))}     "
@@ -173,19 +181,26 @@ def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
         f"申请人：{_safe_text(applicant_name)}     "
         f"客户：{_safe_text(detail.get('customer_name'))}"
     )
-    ws.merge_cells("A3:N3")
+    ws.merge_cells(f"A3:{last_column}3")
     ws["A3"] = (
         "审批人签字：____________________     "
         f"订单类别：{_safe_text(detail.get('order_category_label'))}     "
         f"订单类型：{_safe_text(detail.get('order_type_label'))}     "
         f"订单渠道：{_safe_text(detail.get('order_channel_label'))}"
     )
+    if production:
+        ws["A2"] = (
+            f"下单日期：{_date_text(detail.get('order_date'))}     "
+            f"生产单号：{_safe_text(detail.get('domestic_no'))}     "
+            f"申请人：{_safe_text(applicant_name)}"
+        )
+        ws["A3"] = "用途：公司毛坯备货（确认下单至入库）     审批人签字：____________________"
     for cell in (ws["A2"], ws["A3"]):
         cell.font = Font(name=_FONT_NAME, size=12, bold=True)
         cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
         cell.border = _BORDER
 
-    for col, header in enumerate(_HEADERS, start=1):
+    for col, header in enumerate(headers, start=1):
         cell = ws.cell(4, col, header)
         cell.font = Font(name=_FONT_NAME, size=12, bold=True)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -211,7 +226,7 @@ def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
             _display(item.get("style_requirement")),
             _display(item.get("remark")),
         )
-        for col, value in enumerate(values, start=1):
+        for col, value in enumerate([values[i] for i in columns], start=1):
             cell = ws.cell(row_idx, col, value)
             cell.font = Font(name=_FONT_NAME, size=11)
             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -219,7 +234,7 @@ def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
         ws.row_dimensions[row_idx].height = _item_row_height(values)
 
     notes_row = 5 + len(items) + 1
-    ws.merge_cells(start_row=notes_row, start_column=1, end_row=notes_row, end_column=14)
+    ws.merge_cells(start_row=notes_row, start_column=1, end_row=notes_row, end_column=len(columns))
     notes = "注意事项：\n！导出内容以方舟内贸订单记录为准。\n！领货与签字流程按内贸部门现行规定执行。"
     if detail.get("remark"):
         notes += f"\n订单备注：{_safe_text(detail['remark'])}"
@@ -228,14 +243,14 @@ def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
     ws.cell(notes_row, 1).alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
     ws.cell(notes_row, 1).border = _BORDER
 
-    for col, width in enumerate(_WIDTHS, start=1):
+    for col, width in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(col)].width = width
     ws.row_dimensions[1].height = 32
     ws.row_dimensions[2].height = 26
     ws.row_dimensions[3].height = 42
     ws.row_dimensions[4].height = 36
     ws.row_dimensions[notes_row].height = min(
-        240, max(75, _wrapped_lines(notes, sum(_WIDTHS)) * 15 + 15)
+        240, max(75, _wrapped_lines(notes, sum(widths)) * 15 + 15)
     )
 
     ws.page_setup.orientation = "landscape"
@@ -245,7 +260,7 @@ def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_margins = PageMargins(left=0.24, right=0.24, top=0.35, bottom=0.35)
     ws.print_title_rows = "1:4"
-    ws.print_area = f"A1:N{notes_row}"
+    ws.print_area = f"A1:{last_column}{notes_row}"
     _add_full_requirements_sheet(wb, detail)
 
     stream = BytesIO()

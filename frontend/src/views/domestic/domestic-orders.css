@@ -4,6 +4,7 @@
 .orders-page .orders-panel { position: relative; z-index: 1; }
 
 .toolbar { margin-bottom: 16px; }
+.order-kind-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
 .orders-panel {
   border: 1px solid var(--dash-glass-border);

@@ -827,10 +827,21 @@ export const NAV_ENTRIES = [
     path: '/domestic/orders/create',
     name: 'DomesticOrderCreate',
     component: () => import('@/views/domestic/DomesticOrderCreate.vue'),
-    title: '内贸下单',
+    title: '业务订单下单',
     permission: 'domestic:write',
     menu: {
-      group: 'domestic', title: '新建订单', icon: EditPen, order: 11,
+      group: 'domestic', title: '业务订单下单', icon: EditPen, order: 11,
+      permission: 'domestic:write',
+    },
+  },
+  {
+    path: '/domestic/production-orders/create',
+    name: 'DomesticProductionOrderCreate',
+    component: () => import('@/views/domestic/DomesticProductionOrderCreate.vue'),
+    title: '生产订单下单',
+    permission: 'domestic:write',
+    menu: {
+      group: 'domestic', title: '生产订单下单', icon: EditPen, order: 12,
       permission: 'domestic:write',
     },
   },
