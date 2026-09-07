@@ -102,10 +102,12 @@ def control(writer, operation, nssm):
 
 
 def invoke(prepared, writers, credential_file, action):
-    if not credential_file or not Path(credential_file).is_file():
-        raise RuntimeError("Pending DDL requires --migration-credentials with a protected DBA file; runtime .env is never modified")
+    credential = Path(credential_file) if credential_file else STATE / "credentials" / "migration.env"
+    if not credential.is_file():
+        raise RuntimeError("Pending DDL requires a protected independent DBA credential file at "
+                           + str(credential) + "; provision it once or pass --migration-credentials")
     request = {"action": action, "writers": writers, "nssm": str(prepared["nssm"]),
-               "credential_file": str(Path(credential_file).resolve()),
+               "credential_file": str(credential.resolve()),
                "journal_path": str(STATE / "schema-writers.json"),
                "schema": prepared["schema"], "pending": prepared["pending"]}
     runner = prepared.get("runner", ROOT / "deploy/migration_runner.py")
