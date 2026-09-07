@@ -214,6 +214,8 @@
 
 ## 内贸订单（迁移 081～140，2026-07-27 至 2026-09-07）
 
+业务订单客户订单号现为选填，`order_no` 未填存空串，沿用现有 NOT NULL 列，无 schema 迁移。渠道字典改为 recharge/cash，历史按客户 prepay/credit 结算属性转换，仅改订单渠道及更新时间；客户来源直接查询客户档案 `customer_source`，订单不新增来源副本。
+
 2026-09-07 导出/编辑优化不新增数据库结构。订单详情的 `balance_snapshot` 是只读派生值，读取 `ark_domestic_customer_ledger` 内该订单最近一次结算；不用当前客户余额回填历史。明细 `unit_price` 包含 `labor_fee`，手工改价的优惠额按 `original_price - (unit_price - labor_fee)` 更新，原价/手工费快照不变。
 
 与外贸生产订单/报工**平行**的一套表。不复用 `order_product_process_progress`：那张表 FK 硬绑 `ark_production_order_items` 且是整行 0/1 流转，内贸要按数量拆批，结构不同；平行建表换取外贸链路零改动。共用的是 `process` / `process_route` / `process_route_step` / `user_process_binding`（工序、路线、工人分工内外贸同一套）。

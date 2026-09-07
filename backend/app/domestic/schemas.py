@@ -471,7 +471,7 @@ class OrderCreate(BaseModel):
 
     request_id: str = Field(..., min_length=8, max_length=64, description="客户端建单幂等键")
     order_kind: Literal["business", "production"] = "business"
-    order_no: str | None = Field(None, min_length=1, max_length=64, description="业务单客户订单号；生产单自动编号")
+    order_no: str | None = Field("", max_length=64, description="业务单客户订单号（选填）；生产单自动编号")
     order_date: date
     required_ship_date: date | None = None
     customer_id: int | None = Field(None, description="已有客户 ID")
@@ -483,13 +483,10 @@ class OrderCreate(BaseModel):
     remark: str | None = Field(None, max_length=1000)
     items: list[OrderItemInput | ProductionOrderItemInput] = Field(..., min_length=1, max_length=50)
 
-    @field_validator("order_no")
+    @field_validator("order_no", mode="before")
     @classmethod
     def _strip_no(cls, v: str) -> str:
-        v = (v or "").strip()
-        if not v:
-            raise ValueError("订单号不能为空")
-        return v
+        return "" if v is None else v.strip() if isinstance(v, str) else v
 
     @field_validator("request_id", mode="before")
     @classmethod
@@ -518,8 +515,8 @@ class OrderCreate(BaseModel):
         else:
             if not self.customer_id and not (self.customer_shop_name or "").strip():
                 raise ValueError("请选择客户或填写客户店名")
-            if not self.order_no or not self.order_category:
-                raise ValueError("业务订单必须填写客户订单号和订单类别")
+            if not self.order_category:
+                raise ValueError("业务订单必须填写订单类别")
             if not self.required_ship_date or not self.order_type or not self.order_channel:
                 raise ValueError("业务订单必须填写要求发货日期、订单类型和订单渠道")
             for item in self.items:
@@ -538,7 +535,7 @@ class OrderUpdate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    order_no: str | None = Field(None, min_length=1, max_length=64)
+    order_no: str | None = Field(None, max_length=64)
     order_date: date | None = None
     required_ship_date: date | None = None
     customer_id: int | None = Field(None, gt=0)
@@ -550,6 +547,11 @@ class OrderUpdate(BaseModel):
     expected_quotes: list[ItemExpectedQuote] | None = Field(
         None, min_length=1, max_length=50
     )
+
+    @field_validator("order_no", mode="before")
+    @classmethod
+    def _strip_optional_order_no(cls, value: str | None) -> str:
+        return "" if value is None else value.strip() if isinstance(value, str) else value
 
     @field_validator("order_category", mode="before")
     @classmethod

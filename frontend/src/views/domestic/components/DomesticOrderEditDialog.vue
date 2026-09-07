@@ -10,7 +10,7 @@
         </div>
         <el-form label-position="top" :disabled="headerSaving || !editable">
           <div class="order-edit-grid">
-            <el-form-item v-if="!production" label="客户订单号" required><el-input v-model="header.order_no" maxlength="64" /></el-form-item>
+            <el-form-item v-if="!production" label="客户订单号"><el-input v-model="header.order_no" placeholder="选填" maxlength="64" /></el-form-item>
             <el-form-item label="下单日期" required><el-date-picker v-model="header.order_date" type="date" value-format="YYYY-MM-DD" /></el-form-item>
             <el-form-item v-if="!production" label="要求发货日期" required><el-date-picker v-model="header.required_ship_date" type="date" value-format="YYYY-MM-DD" /></el-form-item>
             <el-form-item v-if="!production" label="订单类型" required>
@@ -146,8 +146,8 @@ async function closeItem(done) {
 
 async function saveHeader() {
   if (!editable.value || headerSaving.value) return
-  if (!header.order_date || (!production.value && (!header.order_no.trim() || !header.required_ship_date || !header.order_type || !header.order_channel))) {
-    return ElMessage.warning('请补齐订单号、日期、订单类型和渠道等必填项')
+  if (!header.order_date || (!production.value && (!header.required_ship_date || !header.order_type || !header.order_channel))) {
+    return ElMessage.warning('请补齐日期、订单类型和渠道等必填项')
   }
   const patch = buildHeaderPatch(detail.value, header)
   if (!Object.keys(patch).length) return

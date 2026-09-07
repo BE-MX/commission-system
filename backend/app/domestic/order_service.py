@@ -508,7 +508,7 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
             candidate = DomesticOrder(
                 domestic_no=domestic_no,
                 order_kind=payload.order_kind,
-                order_no=domestic_no if production else payload.order_no,
+                order_no=domestic_no if production else (payload.order_no or ""),
                 order_date=payload.order_date,
                 required_ship_date=payload.required_ship_date,
                 customer_id=customer.id if customer else None,
@@ -753,6 +753,7 @@ def list_orders(
     order_category: str = "",
     order_type: str = "",
     order_channel: str = "",
+    customer_source: str = "",
     date_start: date | None = None,
     date_end: date | None = None,
     sort_field: str = "",
@@ -779,6 +780,10 @@ def list_orders(
         q = q.filter(DomesticOrder.order_type == order_type)
     if order_channel:
         q = q.filter(DomesticOrder.order_channel == order_channel)
+    if customer_source:
+        q = q.filter(DomesticOrder.customer_id.in_(
+            db.query(DomesticCustomer.id).filter(DomesticCustomer.customer_source == customer_source)
+        ))
     if date_start:
         q = q.filter(DomesticOrder.order_date >= date_start)
     if date_end:
@@ -803,11 +808,12 @@ def list_orders(
     customer_ids = {o.customer_id for o in orders}
     customer_rows = {
         row.id: row
-        for row in db.query(DomesticCustomer.id, DomesticCustomer.shop_name, DomesticCustomer.owner_user_id)
+        for row in db.query(DomesticCustomer.id, DomesticCustomer.shop_name, DomesticCustomer.owner_user_id, DomesticCustomer.customer_source)
         .filter(DomesticCustomer.id.in_(customer_ids))
         .all()
     }
     customer_names = {cid: row.shop_name for cid, row in customer_rows.items()}
+    source_labels = dict(db.query(SysDict.code, SysDict.label).filter(SysDict.type == C.CUSTOMER_SOURCE_DICT).all())
     owner_ids = {row.owner_user_id for row in customer_rows.values() if row.owner_user_id}
     owner_names = dict(
         db.query(ArkUser.id, ArkUser.real_name)
@@ -881,6 +887,11 @@ def list_orders(
             "required_ship_date": o.required_ship_date,
             "customer_id": o.customer_id,
             "customer_name": customer_names.get(o.customer_id),
+            "customer_source": customer_rows[o.customer_id].customer_source if o.customer_id in customer_rows else None,
+            "customer_source_label": (
+                source_labels.get(customer_rows[o.customer_id].customer_source, customer_rows[o.customer_id].customer_source) or "未填写"
+                if o.customer_id in customer_rows else "—"
+            ),
             "owner_name": (
                 owner_names.get(customer_rows[o.customer_id].owner_user_id)
                 if o.customer_id in customer_rows else None

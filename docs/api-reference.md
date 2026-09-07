@@ -605,6 +605,9 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 
 ## 内贸订单（`/api/domestic`，081～140 相关迁移，2026-07-27 至 2026-09-07）
 
+- 2026-09-07 下单与列表：业务 `POST /orders` 的 `order_no` 选填，省略/null/空白均规范化为空串，系统 `domestic_no` 始终自动生成；`PUT /orders/{id}` 可显式传空/null清空客户订单号，省略则保留原值。渠道字典改为 `recharge=充值扣账`、`cash=现金结账`，新建页按客户 `settle_mode` 默认选择并允许调整，标签不改变结算逻辑。历史转换工具 `backend/scripts/domestic_order_channel_cutover.py` 按 prepay→recharge、credit→cash 更新业务单，先预览再持独占备份和指纹执行；旧字典停用，生产单保持无渠道。
+- `GET /orders` 新增 `customer_source` 精确筛选（分页前生效，不扩大创建人数据范围），返回客户当前档案的 `customer_source/customer_source_label`。未填写显示“未填写”，生产单显示“—”；`GET /options` 的 `customer_sources` 复用启用的 `domestic_customer_source` 字典。主站客户来源列紧跟客户/用途列，切换到生产订单时清除该筛选。
+
 内贸生产的下单 + 按数量拆批报工。与外贸「生产订单（`/api/stock/production`）+ 生产报工（`/api/production`）」是**平行的两套**：外贸报工整行 0/1 流转，内贸带数量。只共用工序/工艺路线/工人工序绑定三类全局资产。
 
 - 订单大类（140）：`POST /orders` 新增 `order_kind=business|production`，缺省为业务订单。业务单沿用 `DO{YYYYMMDD}-{NNN}`；生产单单独递增 `DP{YYYYMMDD}-{NNN}`，`order_no` 自动取该系统号。生产单不建客户档案，`customer_id/order_category/order_type/order_channel/required_ship_date` 均为 NULL；不需要报价、原价或客户余额，保存草稿和正式提交都不产生客户资金流水。生产单请求中的销售与发型字段在落库前统一清空，更新接口明确拒绝这些字段；头套不需发型系列，发片保留工艺/尺寸和发长，保留颜色及通用备注图文。`POST /orders/{id}/submit` 对生产单只需 `request_id`；追加明细无需 `expected_quote`。业务订单继续遵守下文报价、客户与发货日期契约。

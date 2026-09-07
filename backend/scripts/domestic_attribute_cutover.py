@@ -71,11 +71,8 @@ STANDARD_DICTIONARIES = {
         ("after_sales_remake", "售后重做"),
     ],
     C.ORDER_CHANNEL_DICT: [
-        ("wechat", "微信"),
-        ("phone", "电话"),
-        ("exhibition", "展会"),
-        ("offline_visit", "线下拜访"),
-        ("other", "其他"),
+        ("recharge", "充值扣账"),
+        ("cash", "现金结账"),
     ],
 }
 

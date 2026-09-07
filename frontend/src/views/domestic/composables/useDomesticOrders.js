@@ -24,12 +24,12 @@ export function useDomesticOrders() {
   const auth = useAuthStore()
   const route = useRoute()
   const router = useRouter()
-  const filterOptions = ref({ order_categories: [], order_types: [], order_channels: [] })
+  const filterOptions = ref({ order_categories: [], order_types: [], order_channels: [], customer_sources: [] })
 
   const listApi = useListPage(
     async ({ page, page_size, ...form }) => {
       const params = { page, page_size }
-      for (const key of ['keyword', 'order_kind', 'order_category', 'order_type', 'order_channel']) {
+      for (const key of ['keyword', 'order_kind', 'order_category', 'order_type', 'order_channel', 'customer_source']) {
         if (form[key]) params[key] = form[key]
       }
       if (form.status !== '' && form.status !== null) params.status = form.status
@@ -48,6 +48,7 @@ export function useDomesticOrders() {
         order_category: '',
         order_type: '',
         order_channel: '',
+        customer_source: '',
         dateRange: [],
       },
     },

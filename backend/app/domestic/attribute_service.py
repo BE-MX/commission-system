@@ -53,6 +53,7 @@ def get_order_options(db: Session) -> dict:
         *special_types,
         C.ORDER_TYPE_DICT,
         C.ORDER_CHANNEL_DICT,
+        C.CUSTOMER_SOURCE_DICT,
     ]
     rows = (
         db.query(SysDict)
@@ -100,6 +101,7 @@ def get_order_options(db: Session) -> dict:
         ],
         "order_types": _options(by_type[C.ORDER_TYPE_DICT]),
         "order_channels": _options(by_type[C.ORDER_CHANNEL_DICT]),
+        "customer_sources": _options(by_type[C.CUSTOMER_SOURCE_DICT]),
         "attr_dicts": C.ATTR_DICTS,
         "special_attr_dicts": special_attr_dicts,
         "standard_values": {

@@ -38,9 +38,9 @@
             </el-form-item>
           </el-col>
           <el-col :span="isProduction ? 10 : 5">
-            <el-form-item label="订单号" :required="!isProduction">
+            <el-form-item label="订单号">
               <span v-if="isProduction" class="muted">提交后自动生成 DP 开头的生产单号</span>
-              <el-input v-else v-model="form.order_no" placeholder="客户订单号，如 710 / 特涵5-506" />
+              <el-input v-else v-model="form.order_no" placeholder="选填，客户订单号" maxlength="64" />
             </el-form-item>
           </el-col>
           <el-col :span="isProduction ? 8 : 5">

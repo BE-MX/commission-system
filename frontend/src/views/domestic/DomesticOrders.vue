@@ -39,6 +39,11 @@
           <el-option v-for="v in filterOptions.order_channels" :key="v.value" :label="v.label" :value="v.value" />
         </el-select>
       </el-col>
+      <el-col v-if="searchForm.order_kind !== 'production'" :xs="24" :sm="12" :lg="3">
+        <el-select v-model="searchForm.customer_source" placeholder="客户来源" clearable style="width: 100%" @change="handleSearch">
+          <el-option v-for="v in filterOptions.customer_sources" :key="v.value" :label="v.label" :value="v.value" />
+        </el-select>
+      </el-col>
       <el-col :xs="24" :sm="12" :lg="4">
         <el-date-picker
           v-model="searchForm.dateRange" type="daterange" value-format="YYYY-MM-DD"
@@ -64,6 +69,7 @@
         <el-table-column prop="customer_name" label="客户 / 用途" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ row.order_kind === 'production' ? '公司备货' : row.customer_name }}</template>
         </el-table-column>
+        <el-table-column prop="customer_source_label" label="客户来源" min-width="100" show-overflow-tooltip />
         <el-table-column prop="owner_name" label="归属销售" min-width="95" show-overflow-tooltip>
           <template #default="{ row }">{{ row.owner_name || '-' }}</template>
         </el-table-column>
@@ -411,6 +417,7 @@ function handleKindChange() {
   searchForm.order_category = ''
   searchForm.order_type = ''
   searchForm.order_channel = ''
+  searchForm.customer_source = ''
   handleSearch()
 }
 </script>

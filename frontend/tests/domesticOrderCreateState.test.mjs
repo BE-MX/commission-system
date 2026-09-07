@@ -130,3 +130,23 @@ test('failed draft save preserves entered fields and manual prices for retry', a
   assert.equal(page.form.items[0].manualDiscountPrice, 850)
   assert.deepEqual(navigations, [])
 })
+
+test('customer order number is optional and channel defaults follow customer settlement mode', async t => {
+  const { page, settle, created } = harness(t)
+  await settle()
+  assert.equal(page.form.order_channel, 'recharge')
+  page.form.order_no = ''
+  await page.submit(true)
+  assert.equal(created.length, 1)
+  assert.equal(created[0].order_no, '')
+  page.customers.value = [{ id: 8, settle_mode: 'credit' }]
+  page.form.customer_id = 8
+  await settle()
+  assert.equal(page.form.order_channel, 'cash')
+  page.form.order_channel = 'recharge'
+  page.customers.value = []
+  await settle()
+  page.customers.value = [{ id: 8, settle_mode: 'credit' }]
+  await settle()
+  assert.equal(page.form.order_channel, 'recharge')
+})

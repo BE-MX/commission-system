@@ -300,7 +300,6 @@ export function useDomesticOrderCreate(orderKind = 'business') {
   }
 
   function validate() {
-    if (!isProduction && !form.order_no.trim()) return '请填写客户订单号'
     if (!form.order_date) return '请选择下单日期'
     if (!isProduction && !form.required_ship_date) return '请选择要求发货日期'
     if (!isProduction && !form.customer_id && !form.customer_shop_name.trim()) return '请选择或填写客户店名'
@@ -463,6 +462,18 @@ export function useDomesticOrderCreate(orderKind = 'business') {
       if (!isProduction) await searchCustomers('')
     } catch { /* 拦截器已提示 */ } finally {
       loading.value = false
+    }
+  })
+
+  let channelCustomerId = null
+  watch(() => [form.customer_id, selectedCustomer.value?.id], () => {
+    if (isProduction) return
+    if (!form.customer_id) {
+      channelCustomerId = null
+      form.order_channel = ''
+    } else if (selectedCustomer.value && channelCustomerId !== form.customer_id) {
+      channelCustomerId = form.customer_id
+      form.order_channel = selectedCustomer.value.settle_mode === 'credit' ? 'cash' : 'recharge'
     }
   })
 
