@@ -389,6 +389,6 @@ Phase 0 已验证当前 TeamRouter 的 `gpt-image-2` generation、两图 edit、
 
 ## WhatsApp 实时翻译（2026-09-03）
 
-WhatsApp Web → Chrome/Edge MV3 extension → `leshine.work`（Ark 前端与 API）→ Nginx → FRP 8002 → FastAPI → `app.ai.service.chat`。扩展只访问当前 WhatsApp Web 页面 DOM，收译结果用 closed Shadow DOM 展示；发译先显示预览，由员工执行 WhatsApp 原生发送动作。
+WhatsApp Web → Chrome/Edge MV3 extension（1.2.6 起）→ `leshine.cloud` API → 北京 Nginx → FastAPI → `app.ai.service.chat`。配对确认页仍使用 `leshine.work/whatsapp-translation/authorize`，与北京后端的 `SHORT_LINK_BASE_URL` 一致；旧版扩展仍走 work 的新加坡／办公室路径，升级不要求重建设备身份。扩展只访问当前 WhatsApp Web 页面 DOM，收译结果用 closed Shadow DOM 展示；发译先显示预览，由员工执行 WhatsApp 原生发送动作。
 
 `backend/app/whatsapp_translation` 是独立域，不复用、不导入、不连接 `backend/app/whatsapp` 和 `services/whatsapp-connector`。它只拥有设备配对、授权、用量、配额、管理和 AI metadata 调用；数据库不保存聊天文本、译文、联系人、电话、消息/聊天 ID 或页面 HTML。

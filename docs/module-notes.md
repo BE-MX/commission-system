@@ -1025,6 +1025,6 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 
 **译文质量（v1.1，2026-09-04）**：收发拆两个 preset——`whatsapp_text_translation` 收件方向（忠实还原客户语气与歧义，只译向 zh-CN），`whatsapp_outgoing_translation` 发件方向（WhatsApp 商务聊天语域，额外返回 `back_translation` 中文回译供业务员核对）。外贸术语表复用 `sys_dict`，类型 `whatsapp_glossary_<lang>`，`code`=中文术语、`label`=对应语言术语，运行时只注入命中的条目（`.7` 见 `app/whatsapp_translation/glossary_service.py`）；可识别源语言列表由 constants 注入 user message，不写死在 prompt。`seed_ai` 的升级函数只在 `whatsapp_text_translation` 仍是首版提示词时替换为外贸语域版，管理员改过的不动。
 
-**身份与范围**：Manifest 使用固定 public key，扩展 ID 为 `bnkecbkoidckffckbefjjcbchmngjobi`；生产 API 只允许 `https://leshine.work`，host 权限不含 WhatsApp。支持范围仅限 WhatsApp Web 一对一文字，收译和发译均要求 `whatsapp_translation:write`，管理端要求 `whatsapp_translation:admin`。
+**身份与范围**：Manifest 使用固定 public key，扩展 ID 为 `bnkecbkoidckffckbefjjcbchmngjobi`；1.2.6 起扩展 API 与唯一 host 权限为 `https://leshine.cloud`，host 权限不含 WhatsApp。配对确认页仍严格限定 `https://leshine.work/whatsapp-translation/authorize`，与北京后端配置一致；设备存储与 token 处理不变。支持范围仅限 WhatsApp Web 一对一文字，收译和发译均要求 `whatsapp_translation:write`，管理端要求 `whatsapp_translation:admin`。
 
 **发布边界**：ZIP 和 `latest.json` 可从 Ark 前端静态路径公开下载，但包内只有编译后的扩展代码，不含 API key、设备 token、聊天数据或服务端配置。翻译能力仍由设备配对、设备 token、员工权限、配额和版本门禁控制。

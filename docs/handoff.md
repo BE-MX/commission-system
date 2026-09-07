@@ -8,6 +8,16 @@
 
 发布需走统一部署入口处理 140 迁移，并协调全部应用切换：旧应用不认识生产单的 NULL 客户，切换完成前不开放该入口；不得在开发机直接升级共享库。API、数据库、模块说明和领域记忆已同步。亮哥已授权将实现 `36eda235` 合并至 `main` 并推送 GitHub `origin/main`，本轮不含生产部署。集成仅与部署入口修复的交接记录发生冲突，两个记录均保留；业务代码与此前验证版本一致。验证材料归档到主目录 `tmp/domestic-production-orders/`。
 
+### WhatsApp Cloud 路由（2026-09-07，1.2.6）
+
+`codex/whatsapp-cloud-validation` 基于 `204cd788` 准备并实测 `1.2.6-cloud-test`，亮哥授权合并推送后去掉测试显示标识，作为 `1.2.6` 集成：扩展 API 与唯一 host permission 改为 `leshine.cloud`，稳定扩展 ID、设备存储、work 配对确认页校验及 WhatsApp 页面行为不变。北京后端的 `SHORT_LINK_BASE_URL=https://leshine.work` 已只读核实。测试流程见 `extensions/whatsapp-translation/CLOUD-VALIDATION.md`。本次范围仅源码合并推送，不包含后端部署、下载站发布或替换已安装插件。
+
+验证：原版基线 152 tests passed；cloud URL 断言在改代码前出现 2 项预期失败，改后及去掉测试标识后均为 152 tests passed，TypeScript/Vite 构建与打包通过，约定检查通过。改前后 `content.js` SHA-256 均为 `7bab776db7d0d3897ee311c5a7accfc3dab746f6b92c05563e0176e7ee6790f8`。测试 ZIP SHA-256 `fac1d245755016396ac9099a0927475c4694ba84ec762d75779361e47ae68c2f`，27965 bytes；1.2.6 去标识 ZIP SHA-256 `789738ce38077ee6c459cfac8443dfcad30e6fe88dad33d326cad3b5b73b220f`，27930 bytes。npm ci 使用现有锁文件，报告 5 项存量依赖审计告警，本次未升级依赖。
+
+用户于 2026-09-07 自行加载测试包，15:30 合成文本实测报告约 3 秒返回。后台只读核对：设备版本 1.2.6 且有效；北京 Nginx 的 session/translate 返回 200；最新对应发译 AI 日志 5554 成功，模型耗时 1692 ms。已验证一次正常设备认证下的 cloud 实际请求链路；约 3 秒来自用户观察，未做浏览器精确打点或独立译文质量检查。浏览器 URL 安全策略禁止扩展管理页自动化，因此加载由用户完成，没有绕过限制或导出 token。未改线上后端或系统代理。
+
+补测：从本交接新记录找到并验证 `office-prod` 后，在办公室与北京服务器后端目录各运行 3 次同配置、同请求摘要的合成模型调用，全部成功。办公室中位 3.475 秒，北京中位 1.221 秒。仅远程独立诊断进程，不是运行中 HTTP 服务或已配对插件的端到端数据；未写生产数据库。
+
 ### 部署入口闪退（2026-09-07，已合并推送，办公室入口已更新）
 
 `codex/deploy-launcher-fix` 修复 `deploy/deploy.bat` 在发布程序结束后直接退出、右键管理员运行看不到错误的问题。现在保留窗口直到按键；无人值守通过 `DEPLOY_NO_PAUSE=1` 跳过等待，原退出码与参数传递保持不变。Python 发布器已按脚本位置定位仓库，隔离测试从 System32 启动验证路径正确，不额外修改发布流程。
