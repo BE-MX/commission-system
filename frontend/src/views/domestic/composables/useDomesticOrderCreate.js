@@ -1,8 +1,7 @@
 /**
  * 内贸下单页逻辑（宪法 12：全部 state + 方法在此，页面只留薄壳）。
  *
- * 关键交互决策：工艺路线不让下单人选。选完属性后前端就地查「工艺→路线」映射，
- * 当场显示会走哪条路线；没配映射的当场标红提示，而不是等下单成功后才在列表里发现开不了工。
+ * 工艺路线由订单大类和业务类别决定；报价按产品行失效，避免新增行清掉已谈好的价格。
  */
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -55,6 +54,14 @@ function emptyItem() {
   }
 }
 
+function emptyForm() {
+  return {
+    order_no: '', order_date: todayStr(), required_ship_date: '',
+    customer_id: null, customer_shop_name: '', order_category: 'normal',
+    order_type: '', order_channel: '', remark: '', items: [emptyItem()],
+  }
+}
+
 export function useDomesticOrderCreate(orderKind = 'business') {
   const router = useRouter()
   const isProduction = orderKind === 'production'
@@ -74,18 +81,15 @@ export function useDomesticOrderCreate(orderKind = 'business') {
   let quoteTimer = null
   let quoteSequence = 0
 
-  const form = reactive({
-    order_no: '',
-    order_date: todayStr(),
-    required_ship_date: '',
-    customer_id: null,
-    customer_shop_name: '',
-    order_category: 'normal',
-    order_type: '',
-    order_channel: '',
-    remark: '',
-    items: [emptyItem()],
-  })
+  const form = reactive(emptyForm())
+  const quoteInputs = new Map()
+
+  function quoteInputOf(item) {
+    return payloadFingerprint({
+      customer_id: form.customer_id, order_category: form.order_category,
+      attrs: normalizeItemAttrs(item.attrs),
+    })
+  }
 
   function attrOptions(productType, field) {
     return attributeOptions(options.value, form.order_category, productType, field)
@@ -168,7 +172,10 @@ export function useDomesticOrderCreate(orderKind = 'business') {
       ...JSON.parse(JSON.stringify(source)),
       key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     }
-    invalidateItemQuote(copied)
+    // 相同客户、规格的复制行沿用报价和手工价；若源行在同一轮已变更，
+    // 保留旧输入指纹，让下一轮 watch 同时使源行和复制行失效。
+    quoteInputs.set(copied.key, quoteInputs.get(source.key) || quoteInputOf(source))
+    if (copied.quote) copied.quote.client_key = copied.key
     form.items.splice(index + 1, 0, copied)
   }
 
@@ -200,13 +207,24 @@ export function useDomesticOrderCreate(orderKind = 'business') {
     if (removed?.url) URL.revokeObjectURL(removed.url)
   }
 
-  onBeforeUnmount(() => {
+  function releaseImageUrls() {
     for (const item of form.items) {
       for (const section of ['hairstyle_images', 'color_images', 'style_images', 'remark_images']) {
         item[section].forEach(f => f.url && URL.revokeObjectURL(f.url))
       }
     }
-  })
+  }
+  onBeforeUnmount(releaseImageUrls)
+
+  function resetForm() {
+    clearTimeout(quoteTimer)
+    quoteSequence += 1
+    quoteLoading.value = false
+    releaseImageUrls()
+    quoteInputs.clear()
+    orderRequestIdentity = null
+    Object.assign(form, emptyForm())
+  }
 
   async function searchCustomers(keyword) {
     customerLoading.value = true
@@ -217,8 +235,8 @@ export function useDomesticOrderCreate(orderKind = 'business') {
     )
   }
 
-  function allItemsQuotable() {
-    return form.items.length > 0 && form.items.every(item => !validateItemAttributes(item.attrs))
+  function quotableItems() {
+    return form.items.filter(item => !validateItemAttributes({ ...item.attrs }))
   }
 
   // 手工改价：null/等于系统报价都视为未改；改动不影响报价有效性，
@@ -239,23 +257,24 @@ export function useDomesticOrderCreate(orderKind = 'business') {
     item.manualDiscountPrice = manual
   }
 
-  async function refreshQuotes() {
+  async function refreshQuotes(pendingOnly = false) {
     if (isProduction) return
     if (form.order_category === 'special') return
-    if (!allItemsQuotable()) return
+    const items = quotableItems().filter(item => pendingOnly !== true || item.quoteStatus === 'pending')
+    if (!items.length) return
     const sequence = ++quoteSequence
-    form.items.forEach(item => { item.quoteStatus = 'quoting' })
+    items.forEach(item => { item.quoteStatus = 'quoting' })
     quoteLoading.value = true
     try {
-      const res = await quoteDomesticPrices(buildQuoteRequest(form, normalizeItemAttrs))
+      const res = await quoteDomesticPrices(buildQuoteRequest({ ...form, items }, normalizeItemAttrs))
       if (sequence !== quoteSequence) return
-      const cleared = applyQuoteResult(form.items, res.data || {})
+      const cleared = applyQuoteResult(items, res.data || {})
       if (cleared?.length) {
         ElMessage.warning(`第 ${cleared.map(key => form.items.findIndex(item => item.key === key) + 1).join('、')} 行的手工价已高于新原价，恢复为系统报价`)
       }
     } catch {
       if (sequence !== quoteSequence) return
-      form.items.forEach(item => { if (item.quoteStatus === 'quoting') item.quoteStatus = 'pending' })
+      items.forEach(item => { if (item.quoteStatus === 'quoting') item.quoteStatus = 'pending' })
     } finally {
       if (sequence === quoteSequence) quoteLoading.value = false
     }
@@ -265,11 +284,19 @@ export function useDomesticOrderCreate(orderKind = 'business') {
     if (isProduction) return
     quoteSequence += 1
     quoteLoading.value = false
-    form.items.forEach(invalidateItemQuote)
+    const activeKeys = new Set(form.items.map(item => item.key))
+    for (const key of quoteInputs.keys()) if (!activeKeys.has(key)) quoteInputs.delete(key)
+    for (const item of form.items) {
+      const input = quoteInputOf(item)
+      if (quoteInputs.has(item.key) && quoteInputs.get(item.key) !== input) invalidateItemQuote(item)
+      // 本轮输入变化使之前的异步响应过期，重新安排仍在报价中的行。
+      if (item.quoteStatus === 'quoting') item.quoteStatus = 'pending'
+      quoteInputs.set(item.key, input)
+    }
     clearTimeout(quoteTimer)
     if (form.order_category === 'special') return  // 特单不报价
-    if (!allItemsQuotable()) return
-    quoteTimer = setTimeout(refreshQuotes, 280)
+    if (!quotableItems().some(item => item.quoteStatus === 'pending')) return
+    quoteTimer = setTimeout(() => refreshQuotes(true), 280)
   }
 
   function validate() {
@@ -421,6 +448,7 @@ export function useDomesticOrderCreate(orderKind = 'business') {
       if (!res) return
       const data = res.data || {}
       ElMessage.success(`${isDraft ? '草稿已保存' : '下单成功'}：${data.domestic_no}`)
+      resetForm()
       router.push({ name: 'DomesticOrders', query: { keyword: data.domestic_no, order_kind: orderKind } })
     } catch { /* 拦截器已提示 */ } finally {
       submitting.value = false

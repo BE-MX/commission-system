@@ -91,10 +91,11 @@
         <el-table-column prop="remark" label="订单备注" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ row.remark || '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" min-width="220" fixed="right">
+        <el-table-column label="操作" min-width="270" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
             <GlassButton variant="link" left-icon="Download" @click="handleExport(row)">导出</GlassButton>
+            <GlassButton v-if="canOperateOrder(row) && row.status < 3" v-permission="'domestic:write'" variant="link" left-icon="EditPen" @click="openEdit(row)">编辑</GlassButton>
             <GlassButton v-if="row.status === 0 && canOperateOrder(row)" v-permission="'domestic:write'" variant="link" left-icon="Promotion" :loading="submittingOrderIds.has(row.id)" :disabled="submittingOrderIds.has(row.id)" @click="handleSubmitDraft(row)">提交</GlassButton>
             <GlassButton v-else-if="canOperateOrder(row)" v-permission="'domestic:write'" variant="link" left-icon="CircleClose" :disabled="row.status >= 3" @click="handleTerminate(row)">终止</GlassButton>
             <GlassButton v-if="canOperateOrder(row)" v-permission="'domestic:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
@@ -173,9 +174,9 @@
             >异常跳过记录</GlassButton>
             <GlassButton v-if="!item.route_id" v-permission="'domestic:write'" variant="link" left-icon="Connection" @click="openAttachRoute(item)">配工艺路线</GlassButton>
             <GlassButton
-              v-if="detail.order_kind !== 'production' && detail.status <= 2 && item.status !== 2" v-permission="'domestic:write'"
-              variant="link" left-icon="EditPen" @click="openPriceEdit(item)"
-            >改价</GlassButton>
+              v-if="detail.status <= 2 && item.status !== 2 && canOperateOrder(detail)" v-permission="'domestic:write'"
+              variant="link" left-icon="EditPen" @click="openEdit(detail, item.id)"
+            >编辑明细</GlassButton>
             <GlassButton v-if="detail.order_kind !== 'production' && item.status === 1" v-permission="'domestic:write'" variant="link" left-icon="Van" @click="openShip(item)">登记发货</GlassButton>
           </div>
 
@@ -226,31 +227,8 @@
       </template>
     </DetailDrawer>
 
-    <el-dialog v-model="priceEditDialog.visible" title="手工改价" width="420px">
-      <el-form label-width="90px" v-loading="priceEditDialog.saving">
-        <el-form-item label="明细">
-          <span>{{ priceEditDialog.item?.line_code }} · {{ priceEditDialog.item?.product_name }} × {{ priceEditDialog.item?.order_qty }}</span>
-        </el-form-item>
-        <el-form-item label="原始价">
-          <span>¥{{ Number(priceEditDialog.item?.original_price || 0).toFixed(2) }}</span>
-        </el-form-item>
-        <el-form-item label="当前优惠价">
-          <span>¥{{ Number(priceEditDialog.item?.unit_price || 0).toFixed(2) }}（{{ priceEditDialog.item?.pricing_rule_label || '历史人工价' }}）</span>
-        </el-form-item>
-        <el-form-item label="新优惠价" required>
-          <el-input-number
-            v-model="priceEditDialog.price" :min="0.01"
-            :max="Number(priceEditDialog.item?.original_price || 0) || undefined"
-            :precision="2" style="width: 100%"
-          />
-          <span class="unit-hint">不能超过原价；已提交订单的差额立即与客户余额结算</span>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <GlassButton variant="ghost" @click="priceEditDialog.visible = false">取消</GlassButton>
-        <GlassButton variant="primary" :loading="priceEditDialog.saving" @click="confirmPriceEdit">确认改价</GlassButton>
-      </template>
-    </el-dialog>
+    <DomesticOrderEditDialog v-model="editDialog.visible" :order-id="editDialog.orderId"
+      :initial-item-id="editDialog.itemId" @saved="refreshAll" />
 
     <el-dialog v-model="shipDialog.visible" title="登记发货" width="420px">
       <el-form label-width="90px">
@@ -405,6 +383,7 @@ import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import DomesticImages from '@/components/domestic/DomesticImages.vue'
 import DomesticSkipAuditDialog from './components/DomesticSkipAuditDialog.vue'
+import DomesticOrderEditDialog from './components/DomesticOrderEditDialog.vue'
 import DomesticPrintDialog from './print/DomesticPrintDialog.vue'
 import { useDomesticOrders } from './composables/useDomesticOrders'
 import { detailSectionsForKind } from './domesticOrderKinds'
@@ -413,7 +392,7 @@ import { membershipLevelLabel } from './composables/domesticMemberPricing'
 const {
   loading, list, total, page, pageSize, searchForm, filterOptions,
   handleSearch, handlePageChange, handleSizeChange,
-  detailVisible, detailLoading, detail, routes, hasUnrouted, openDetail,
+  detailVisible, detailLoading, detail, routes, hasUnrouted, openDetail, refreshAll,
   shipDialog, openShip, confirmShip,
   reportDialog, openReport, confirmReport,
   skipDialog, openSkip, confirmSkip,
@@ -424,7 +403,7 @@ const {
   wxacodeDialog, openWxacode, downloadWxacode,
   handleExport, handleSubmitDraft, submittingOrderIds, handleTerminate, handleDelete, goCreate,
   canOperateOrder,
-  priceEditDialog, openPriceEdit, confirmPriceEdit,
+  editDialog, openEdit,
   isShipDateOverdue,
 } = useDomesticOrders()
 

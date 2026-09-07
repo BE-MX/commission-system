@@ -227,6 +227,39 @@ def refund_order_charge(
     return charged
 
 
+def order_balance_snapshot(db: Session, order: DomesticOrder, customer: DomesticCustomer | None) -> dict | None:
+    """Export the actual last settlement of this order, not today's account balance.
+
+    An edited order may have intervening recharges or other orders. Keep its
+    current total separate from the last charge/refund delta so the statement
+    never implies that the whole order was deducted a second time.
+    """
+    if order.order_kind == "production":
+        return None
+    amount = money(order.total_amount)
+    result = {
+        "source": "unavailable", "transaction_type": None,
+        "balance_before": None, "order_amount": float(amount),
+        "settlement_amount": None, "balance_after": None,
+    }
+    if order.status == C.ORDER_DRAFT and customer is not None:
+        before = money(customer.balance)
+        return {**result, "source": "draft_preview", "balance_before": float(before),
+                "settlement_amount": float(amount), "balance_after": float(before - amount)}
+    entry = db.query(DomesticCustomerLedger).filter(
+        DomesticCustomerLedger.order_id == order.id,
+        DomesticCustomerLedger.customer_id == order.customer_id,
+        DomesticCustomerLedger.transaction_type.in_(("order_charge", "order_adjustment", "order_refund")),
+    ).order_by(DomesticCustomerLedger.id.desc()).first()
+    if entry is None:
+        return result
+    return {
+        **result, "source": "ledger", "transaction_type": entry.transaction_type,
+        "balance_before": float(entry.balance_before), "balance_after": float(entry.balance_after),
+        "settlement_amount": float(-entry.amount),
+    }
+
+
 def list_customer_ledger(
     db: Session,
     *,

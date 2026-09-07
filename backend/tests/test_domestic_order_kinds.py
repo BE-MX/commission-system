@@ -229,7 +229,7 @@ def test_production_export_drops_sales_and_hairstyle_columns(db, context):
     order_id = order_service.create_order(db, payload(), context.id)["id"]
     sheet = load_workbook(build_order_workbook(order_service.get_order_detail(db, order_id))).active
     assert sheet.title == "内贸生产备货单"
-    assert sheet.max_column == 11
+    assert sheet.max_column == 12
     text = " ".join(str(cell.value or "") for row in sheet for cell in row)
     assert "公司毛坯备货" in text
     assert not any(field in text for field in ("客户订单号", "客户：", "要求发货", "订单类别", "订单类型", "订单渠道", "发型系列", "发型要求"))

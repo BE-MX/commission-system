@@ -184,6 +184,6 @@ test('页面契约：不手改会员，优惠价只能走手工改价契约', as
   assert.match(createPage, /goProducts/)
   assert.match(createPage, /onManualPrice/)
   assert.match(orders, /submittingOrderIds\.has\(row\.id\)/)
-  assert.match(orders, /openPriceEdit/)
+  assert.match(orders, /openEdit/)
   assert.match(products, /affected_sku_count/)
 })
