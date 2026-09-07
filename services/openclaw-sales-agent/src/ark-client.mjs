@@ -1,10 +1,11 @@
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 export class ArkApiError extends Error {
-  constructor(message, status = null) {
+  constructor(message, status = null, retryable = false) {
     super(message);
     this.name = "ArkApiError";
     this.status = status;
+    this.retryable = retryable;
   }
 }
 
@@ -98,9 +99,9 @@ export class ArkClient {
     } catch (error) {
       if (error instanceof ArkApiError) throw error;
       if (error?.name === "AbortError") {
-        throw new ArkApiError("Ark API 请求超时");
+        throw new ArkApiError("Ark API 请求超时", null, true);
       }
-      throw new ArkApiError("Ark API 网络请求失败");
+      throw new ArkApiError("Ark API 网络请求失败", null, true);
     } finally {
       clearTimeout(timeout);
     }
@@ -142,16 +143,23 @@ export class ArkClient {
     });
   }
 
-  submitCandidates(jobId, leaseToken, requestKey, candidates) {
-    return this.request(`/api/sales-automation/agent/search-jobs/${integerId(jobId, "job_id")}/candidates`, {
-      method: "POST",
-      body: {
-        agent_id: this.#agentId,
-        lease_token: leaseToken,
-        request_key: requestKey,
-        candidates,
-      },
-    });
+  async submitCandidates(jobId, leaseToken, requestKey, candidates) {
+    const path = `/api/sales-automation/agent/search-jobs/${integerId(jobId, "job_id")}/candidates`;
+    // Snapshot before awaiting: a lost response may still mean the batch committed.
+    const body = JSON.parse(JSON.stringify({
+      agent_id: this.#agentId, lease_token: leaseToken,
+      request_key: requestKey, candidates,
+    }));
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await this.request(path, { method: "POST", body });
+      } catch (error) {
+        if (!(error instanceof ArkApiError) || !error.retryable) throw error;
+        if (attempt === 1) {
+          throw new ArkApiError("候选提交结果未确认：已按原 request_key 和完整原批次重试；只能原样重试，不得换 key、拆分或修改候选", null, true);
+        }
+      }
+    }
   }
 
   searchKnowledge(query, limit = 10) {

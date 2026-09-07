@@ -548,7 +548,8 @@ def _attach_identity_candidate(
         _account_for_update(db, customer_id)
         affected_ids = (customer_id,)
     else:
-        contact = db.get(CustomerContact, contact_id)
+        contact = (db.query(CustomerContact).filter(CustomerContact.id == contact_id)
+                   .with_for_update().one_or_none())
         if contact is None or contact.record_status != "active":
             raise CustomerDomainError("CUSTOMER_REFERENCE_INVALID")
         affected_ids = _contact_customer_ids(db, contact_id)
@@ -617,17 +618,37 @@ def _attach_identity_candidate(
             .with_for_update()
             .one_or_none()
         )
+    # The MySQL primary slot is per subject + identifier_type, across namespaces.
+    # Keep each source's evidence, but ingestion must never replace a primary.
+    # The subject row lock above serializes even the first (empty-slot) insert.
+    primary = None
+    if is_primary or (existing is not None and existing.is_primary):
+        primary = (
+            db.query(CustomerExternalIdentity)
+            .filter(
+                CustomerExternalIdentity.customer_id == customer_id,
+                CustomerExternalIdentity.contact_id == contact_id,
+                CustomerExternalIdentity.identifier_type == identifier_type,
+                CustomerExternalIdentity.is_primary.is_(True),
+                CustomerExternalIdentity.status == "active",
+            )
+            .with_for_update()
+            .one_or_none()
+        )
+    may_be_primary = bool(is_primary and (primary is None or primary is existing))
     if existing is not None:
         changed = False
         if verification_status == "verified" and existing.verification_status == "candidate":
             existing.verification_status = "verified"
             existing.status = "active"
+            if primary is not None and primary is not existing:
+                existing.is_primary = False
             existing.verified_at = now
             changed = True
         if confidence_value > existing.confidence:
             existing.confidence = confidence_value
             changed = True
-        if is_primary and not existing.is_primary:
+        if may_be_primary and not existing.is_primary:
             existing.is_primary = True
             changed = True
         if source_record_id is not None and existing.source_record_id != source_record_id:
@@ -660,7 +681,7 @@ def _attach_identity_candidate(
         confidence=confidence_value,
         confidence_method_version="confidence_v1",
         confidence_components_json=dict(_CLASSIFICATION_COMPONENTS),
-        is_primary=bool(is_primary),
+        is_primary=may_be_primary,
         source_record_id=source_record_id,
         first_seen_at=now,
         last_seen_at=now,

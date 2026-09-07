@@ -218,3 +218,5 @@ $HOME/.openclaw/bin/openclaw --profile ark-sales gateway restart
 MCP 候选参数在原有 `name/website/source_url/captured_at` 基础上必须提供 `score` 和非空 `score_reasons`（`dimension/reason/source_url`）。侧车生成后端要求的稳定信源标识并映射 `company_name`，不默认填评分。任务列表只返回可领取项，不支持按失败/完成状态过滤。
 
 除 `npm test` 外，运行 `ARK_CONTRACT_PYTHON=/path/to/python node scripts/verify-candidate-contract.mjs`；Python 需安装 Pydantic 2。该检查让 7 条和 20 条离线样本经过真实 MCP 与 HTTP 序列化，再由仓库 `CandidateBatch` 校验，不访问网络或数据库。
+
+候选提交发生网络错误或超时时，sidecar 会使用发送前固定的完整请求（包括原 request_key）自动重试一次；其他写操作和明确的 HTTP 错误不会自动重试。两次仍未收到回执时返回“结果未确认”，必须原样重试，不能拆批、改分数或换 key；超时不代表后端未入库。后端按客户/联系人及身份类型保留唯一的活动主要身份，新来源证据不能替换已存在的主要身份。

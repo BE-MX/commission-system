@@ -88,3 +88,5 @@ On failure:
   "error_code": "agent_execution_failed"
 }
 ```
+
+A candidate submission timeout is an unknown outcome, not proof of rollback. The sidecar automatically retries transport failures once with an immutable copy of the original batch and request key. If still unconfirmed, retry only that exact batch and key; do not shrink the batch, rescore candidates, switch keys, or declare completion without a receipt. HTTP errors are not automatically retried.
