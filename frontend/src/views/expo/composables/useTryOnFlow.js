@@ -45,9 +45,9 @@ export function useTryOnFlow() {
   const selectedTryonScene = ref(null) // 默认选中第一个；仅弱网加载失败时留 null=原景兜底
   // 合成版本必选、默认真实；值域与后端 GenerateRequest.prompt_variant 同步。
   const PROMPT_VARIANTS = [
-    { value: 'real', label: '真实', hint: '自然轻修 · 保留本人' },
-    { value: 'soft', label: '柔光', hint: '柔光轻修 · 保留质感' },
-    { value: 'beauty', label: '美颜', hint: '适度精修 · 自然好气色' },
+    { value: 'real', label: '真实', hint: '如实还原 · 不修皮肤' },
+    { value: 'soft', label: '柔光', hint: '光线更柔 · 保留质感' },
+    { value: 'beauty', label: '美颜', hint: '磨皮提亮 · 精修质感' },
   ]
   const promptVariant = ref(PROMPT_VARIANTS[0].value)
   // 出图档位选择器已于 2026-07-31 撤除：实测云雾中转站不透传 quality，high/medium/low

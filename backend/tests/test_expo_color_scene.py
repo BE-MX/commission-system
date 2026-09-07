@@ -459,42 +459,26 @@ class TestPromptVariantSwitch:
 
     def test_skin_handling_is_what_actually_differs(self):
         """三版不能是「换了措辞的同一件事」——上一个选择器就是因为假选择被撤的。
-        真实/柔光轻修并保留毛孔，美颜适度精修；三版均允许美颜。"""
+        真实/柔光锁死皮肤纹理，美颜明确要求磨皮，这是可断言的实质差异。"""
         real = ai_pipeline.resolve_prompt_variant("real")
         soft = ai_pipeline.resolve_prompt_variant("soft")
         beauty = ai_pipeline.resolve_prompt_variant("beauty")
 
-        for light_retouch in (real, soft):
-            assert "Apply subtle skin retouching" in light_retouch
-            assert "keeping visible pores, natural skin texture and age-defining details" in light_retouch
-            assert "refined, natural finish" not in light_retouch
+        for keeps_texture in (real, soft):
+            assert "do not smooth, retouch, plump, lighten or rejuvenate" in keeps_texture
+            assert "soften fine lines" not in keeps_texture
         assert "soften fine lines and wrinkles" in beauty
         assert "do not smooth, retouch" not in beauty      # 美颜版必须真的放开
         assert soft != real                                 # 柔光≠真实：另有柔光措辞
         assert "softer, more diffused light" in soft
 
-    @pytest.mark.parametrize("variant", ai_pipeline.PROMPT_VARIANTS)
-    def test_every_variant_protects_the_hair(self, variant):
-        """三版都允许修皮肤，三条输出路径都必须保护发丝。"""
-        for prompt in _variant_prompts(variant).values():
-            assert "facial skin ONLY" in prompt
-            assert "never soften, blur, smooth or plasticise the hair" in prompt
-
-    @pytest.mark.parametrize("variant", ai_pipeline.PROMPT_VARIANTS)
-    def test_purchase_intent_and_moderate_beauty_reach_every_path(self, variant):
-        """商业目标不能漏路径，也不能被旧禁修词抵消或以换脸/改产品实现。"""
-        for prompt in _variant_prompts(variant).values():
-            assert prompt.count("very strong desire to purchase the wig") == 1
-            assert "this customer's own appearance" in prompt
-            assert "moderate, natural-looking beauty enhancement" in prompt
-            assert "Personal likeness takes priority over beautification" in prompt
-            assert "preserve the specified wig design, density, texture and colour" in prompt
-            assert "Preserve her apparent age, natural skin tone and identifying marks" in prompt
-            assert "do not smooth, retouch" not in prompt
-            assert "Keep the facial skin exactly as photographed" not in prompt
-            assert "wrinkle, eye bag and age spot stays exactly as in the original" not in prompt
-            retouch = "refined, natural finish" if variant == "beauty" else "Apply subtle skin retouching"
-            assert prompt.index(retouch) < prompt.index("cheek contour, jawline and eye size")
+    def test_beauty_variant_protects_the_hair(self):
+        """磨皮会连带把发丝磨成塑料感，而发丝正是要卖的东西——美颜版必须显式护发。"""
+        beauty = ai_pipeline.resolve_prompt_variant("beauty")
+        assert "facial skin ONLY" in beauty
+        assert "never soften, blur, smooth or plasticise the hair" in beauty
+        # 另两版不需要这句（它们本来就不修皮肤）
+        assert "plasticise the hair" not in ai_pipeline.resolve_prompt_variant("real")
 
     @pytest.mark.parametrize("bad", ["", None, "REAL", "美颜", "v1", "off", "x"])
     def test_blank_or_unknown_falls_back_to_default_without_raising(self, bad):
@@ -520,12 +504,12 @@ class TestPromptVariantSwitch:
             assert "No plastic skin" in prompt, f"{name} 丢了禁塑料感"
 
     def test_texture_variants_keep_the_strict_tail(self):
-        """真实/柔光允许轻修，收尾仍需保留纹理并禁止过度磨皮。"""
+        """真实/柔光两版必须保留原收尾句——它们本来就不修皮肤，禁项与子句一致。"""
         for variant in ("real", "soft"):
             for name, prompt in _variant_prompts(variant=variant).items():
                 if "场景大片" in name:
                     continue  # scene 模式本就没有 tryon 收尾句
-                assert "no over-smoothing" in prompt, f"{variant}/{name} 丢了禁止过度磨皮"
+                assert "no over-smoothing" in prompt, f"{variant}/{name} 丢了禁磨皮"
 
     def test_variant_reaches_every_output_path(self):
         """三条出图路径都要吃到版本子句——漏一条就是「有的图修了有的没修」。"""
@@ -630,7 +614,7 @@ class TestLightingBase:
         beauty = ai_pipeline.resolve_prompt_variant("beauty")
         relock = "cheek contour, jawline and eye size"
         assert relock in beauty, "美颜版缺磨皮后几何复锁"
-        assert beauty.index("refined, natural finish") < beauty.index(relock), \
+        assert beauty.index("smooth, luminous finish") < beauty.index(relock), \
             "几何复锁必须排在磨皮指令之后"
 
     def test_one_way_slimming_ban_stays_dead(self):
@@ -646,15 +630,20 @@ class TestLightingBase:
                     f"{where} 无上限填光措辞回潮"
                 assert "warmth in the cheeks" not in prompt, f"{where} 苹果肌血色意象回潮"
 
-    def test_default_variant_allows_only_subtle_retouching(self):
-        """默认版也允许轻修，但保留纹理和年龄特征，不能改脸型。"""
+    def test_default_variant_keeps_the_anti_retouch_guards(self):
+        """默认版（真实）打光不等于放开磨皮：禁项必须与给项同时在场，缺一就会滑向美颜。"""
         for name, prompt in _variant_prompts(variant="real").items():
-            assert "Apply subtle skin retouching" in prompt, name
-            assert "keeping visible pores, natural skin texture and age-defining details" in prompt, name
+            assert "do not smooth, retouch, plump, lighten or rejuvenate" in prompt, name
+            assert "wrinkle, eye bag and age spot stays exactly as in the original" in prompt, name
             assert "light may blend the portrait, never reshape the face" in prompt, name
 
-    def test_light_retouch_variants_avoid_heavy_filter_trigger_words(self):
-        """轻修避免重滤镜触发词；只扫皮肤子句，避免误判场景里的屏幕发光。"""
+    def test_only_the_beauty_variant_may_use_retouch_words(self):
+        """radiant/glowing/youthful 是美颜滤镜触发词：真实/柔光两版一旦沾上就翻车成磨皮脸。
+        美颜版**刻意**放开——那正是它要的效果，所以按版本分别断言，不能一刀切。
+
+        **只扫版本子句、不扫整段 prompt**：场景文案里的 "softly glowing presentation
+        screen" 讲的是屏幕发光，与皮肤无关，扫全段会把它误判成美颜词。
+        """
         banned = re.compile(r"(radiant|glowing|youthful|flawless|blemish-free|porcelain)",
                             re.I)
         for name in ("real", "soft"):
