@@ -1,23 +1,19 @@
 """Beijing code update. Shared schema is checked, never migrated on a second host."""
 
-import base64
 import json
 from pathlib import Path
 import shlex
 import subprocess
 import sys
 
-from static_sync import SSH_OPTIONS
+from static_sync import SSH_OPTIONS, remote_python
 
 TARGET = "ubuntu@154.8.205.162"
 REPOSITORY = "ssh://ubuntu@154.8.205.162/home/ubuntu/repo.git"
 
 
 def invoke(request):
-    code = base64.b64encode((Path(__file__).parent / "remote_backend.py").read_bytes()).decode()
-    expression = "import base64;exec(base64.b64decode(" + repr(code) + "))"
-    result = subprocess.run(["ssh", *SSH_OPTIONS, TARGET, "python3 -c " + shlex.quote(expression)],
-                            input=json.dumps(request), text=True, capture_output=True, timeout=1200)
+    result = remote_python(TARGET, Path(__file__).parent / "remote_backend.py", request, timeout=1200)
     # Remote output is operational status only; never dump environment or credentials.
     if result.returncode:
         raise RuntimeError(result.stderr[-4000:] + result.stdout[-2000:])
