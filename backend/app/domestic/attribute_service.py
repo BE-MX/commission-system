@@ -86,7 +86,10 @@ def get_order_options(db: Session) -> dict:
                 "step_count": step_count,
             }
 
+    from app.domestic.order_kind_service import order_routes_view
+
     return {
+        "order_routes": order_routes_view(db),
         "product_types": [
             {"value": value, "label": label}
             for value, label in C.PRODUCT_TYPES.items()

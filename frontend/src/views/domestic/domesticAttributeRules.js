@@ -25,14 +25,15 @@ export function attributeFieldLabel(productType, field) {
   }[field] || field
 }
 
-export function visibleAttributeFields(attrs) {
+export function visibleAttributeFields(attrs, orderKind = 'business') {
   if (attrs.product_type === 'piece') return PIECE_FIELDS
-  return cleanValue(attrs.length) === '15厘米' ? [...CAP_FIELDS, 'density'] : CAP_FIELDS
+  const fields = cleanValue(attrs.length) === '15厘米' ? [...CAP_FIELDS, 'density'] : CAP_FIELDS
+  return orderKind === 'production' ? fields.filter(field => field !== 'hair_style_series') : fields
 }
 
-export function requiredAttributeFields(attrs) {
+export function requiredAttributeFields(attrs, orderKind = 'business') {
   if (attrs.product_type === 'piece') return PIECE_FIELDS
-  const fields = ['craft', 'length', 'size', 'hair_style_series']
+  const fields = ['craft', 'length', 'size', ...(orderKind === 'production' ? [] : ['hair_style_series'])]
   return cleanValue(attrs.length) === '15厘米' ? [...fields, 'density'] : fields
 }
 
@@ -68,14 +69,14 @@ export function clearNonstandardAttributes(attrs, options) {
   return removedFields
 }
 
-export function validateItemAttributes(attrs) {
-  for (const field of visibleAttributeFields(attrs)) {
+export function validateItemAttributes(attrs, orderKind = 'business') {
+  for (const field of visibleAttributeFields(attrs, orderKind)) {
     attrs[field] = cleanValue(attrs[field]) || ''
   }
-  for (const field of requiredAttributeFields(attrs)) {
+  for (const field of requiredAttributeFields(attrs, orderKind)) {
     if (!attrs[field]) return `${attributeFieldLabel(attrs.product_type, field)}不能为空`
   }
-  for (const field of visibleAttributeFields(attrs)) {
+  for (const field of visibleAttributeFields(attrs, orderKind)) {
     const maxLength = ATTRIBUTE_MAX_LENGTHS[field]
     if (attrs[field] && attrs[field].length > maxLength) {
       return `${attributeFieldLabel(attrs.product_type, field)}最多输入${maxLength}个字符`
@@ -84,10 +85,10 @@ export function validateItemAttributes(attrs) {
   return ''
 }
 
-export function normalizeItemAttrs(attrs) {
+export function normalizeItemAttrs(attrs, orderKind = 'business') {
   return Object.fromEntries([
     ['product_type', attrs.product_type],
-    ...visibleAttributeFields(attrs).map(field => [field, cleanValue(attrs[field])]),
+    ...visibleAttributeFields(attrs, orderKind).map(field => [field, cleanValue(attrs[field])]),
   ].filter(([, value]) => value !== '' && value !== null && value !== undefined))
 }
 
@@ -98,24 +99,4 @@ export function clearInapplicableAttributes(attrs) {
     if (!applicable.has(field)) attrs[field] = ''
   }
   return attrs
-}
-
-export function routeForItem(item, orderCategory, craftRoutes, defaultRoutes, standardCrafts = []) {
-  const { product_type: productType } = item.attrs
-  const craft = cleanValue(item.attrs.craft)
-  if (!craft) return null
-  const exact = craftRoutes.find(route => (
-    route.product_type === productType && cleanValue(route.craft) === craft
-  ))
-  if (exact) return exact
-  const isCustomCraft = !standardCrafts.map(cleanValue).includes(craft)
-  const fallback = orderCategory === 'special' && isCustomCraft
-    ? defaultRoutes?.[productType]
-    : null
-  return fallback ? {
-    route_id: fallback.id,
-    route_name: fallback.name,
-    step_count: fallback.step_count,
-    is_default: true,
-  } : null
 }

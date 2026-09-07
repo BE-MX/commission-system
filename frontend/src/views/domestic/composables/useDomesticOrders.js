@@ -29,7 +29,7 @@ export function useDomesticOrders() {
   const listApi = useListPage(
     async ({ page, page_size, ...form }) => {
       const params = { page, page_size }
-      for (const key of ['keyword', 'order_category', 'order_type', 'order_channel']) {
+      for (const key of ['keyword', 'order_kind', 'order_category', 'order_type', 'order_channel']) {
         if (form[key]) params[key] = form[key]
       }
       if (form.status !== '' && form.status !== null) params.status = form.status
@@ -43,6 +43,7 @@ export function useDomesticOrders() {
     {
       searchForm: {
         keyword: route.query.keyword || '',
+        order_kind: route.query.order_kind || '',
         status: '',
         order_category: '',
         order_type: '',
@@ -277,7 +278,9 @@ export function useDomesticOrders() {
   const attachDialog = reactive({ visible: false, item: null, route_id: null })
 
   function openAttachRoute(item) {
-    Object.assign(attachDialog, { visible: true, item, route_id: null })
+    const group = detail.value.order_kind === 'production' ? 'production' : detail.value.order_category
+    const matched = filterOptions.value.order_routes?.[group]?.[item.attrs.product_type]
+    Object.assign(attachDialog, { visible: true, item, route_id: matched?.route_id || null })
   }
 
   async function confirmAttachRoute() {
@@ -351,9 +354,10 @@ export function useDomesticOrders() {
     if (submittingOrderIds.has(row.id)) return
     try {
       await ElMessageBox.confirm(
-        `提交后将从客户充值余额扣除 ¥${Number(row.total_amount || 0).toFixed(2)}，确认继续？`,
+        row.order_kind === 'production' ? '提交后开始毛坯生产，工艺路线截止入库。'
+          : `提交后将从客户充值余额扣除 ¥${Number(row.total_amount || 0).toFixed(2)}，确认继续？`,
         '提交草稿',
-        { type: 'warning', confirmButtonText: '提交并扣款' },
+        { type: 'warning', confirmButtonText: row.order_kind === 'production' ? '提交生产' : '提交并扣款' },
       )
     } catch { return }
     submittingOrderIds.add(row.id)
@@ -469,8 +473,8 @@ export function useDomesticOrders() {
     a.click()
   }
 
-  function goCreate() {
-    router.push({ name: 'DomesticOrderCreate' })
+  function goCreate(kind = 'business') {
+    router.push({ name: kind === 'production' ? 'DomesticProductionOrderCreate' : 'DomesticOrderCreate' })
   }
 
   const hasUnrouted = computed(

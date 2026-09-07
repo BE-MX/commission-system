@@ -6,6 +6,15 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
+    <div class="toolbar order-kind-toolbar">
+      <el-radio-group v-model="searchForm.order_kind" @change="handleKindChange">
+        <el-radio-button value="">全部订单</el-radio-button>
+        <el-radio-button value="business">业务订单</el-radio-button>
+        <el-radio-button value="production">生产订单</el-radio-button>
+      </el-radio-group>
+      <GlassButton v-permission="'domestic:write'" variant="primary" left-icon="Plus" @click="goCreate('business')">业务订单下单</GlassButton>
+      <GlassButton v-permission="'domestic:write'" variant="secondary" left-icon="Plus" @click="goCreate('production')">生产订单下单</GlassButton>
+    </div>
     <el-row :gutter="16" class="toolbar">
       <el-col :xs="24" :sm="12" :lg="4">
         <el-input v-model="searchForm.keyword" placeholder="搜索系统单号 / 客户订单号" clearable prefix-icon="Search" @keyup.enter="handleSearch" @clear="handleSearch" />
@@ -15,17 +24,17 @@
           <el-option v-for="s in ORDER_STATUS" :key="s.value" :label="s.label" :value="s.value" />
         </el-select>
       </el-col>
-      <el-col :xs="24" :sm="12" :lg="3">
+      <el-col v-if="searchForm.order_kind !== 'production'" :xs="24" :sm="12" :lg="3">
         <el-select v-model="searchForm.order_category" placeholder="订单类别" clearable style="width: 100%" @change="handleSearch">
           <el-option v-for="v in filterOptions.order_categories" :key="v.value" :label="v.label" :value="v.value" />
         </el-select>
       </el-col>
-      <el-col :xs="24" :sm="12" :lg="3">
+      <el-col v-if="searchForm.order_kind !== 'production'" :xs="24" :sm="12" :lg="3">
         <el-select v-model="searchForm.order_type" placeholder="订单类型" clearable style="width: 100%" @change="handleSearch">
           <el-option v-for="v in filterOptions.order_types" :key="v.value" :label="v.label" :value="v.value" />
         </el-select>
       </el-col>
-      <el-col :xs="24" :sm="12" :lg="3">
+      <el-col v-if="searchForm.order_kind !== 'production'" :xs="24" :sm="12" :lg="3">
         <el-select v-model="searchForm.order_channel" placeholder="订单渠道" clearable style="width: 100%" @change="handleSearch">
           <el-option v-for="v in filterOptions.order_channels" :key="v.value" :label="v.label" :value="v.value" />
         </el-select>
@@ -38,7 +47,6 @@
       </el-col>
       <el-col :xs="24" :sm="12" :lg="4">
         <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
-        <GlassButton v-permission="'domestic:write'" variant="ghost" left-icon="Plus" @click="goCreate">新建订单</GlassButton>
       </el-col>
     </el-row>
 
@@ -48,11 +56,14 @@
         <el-table-column prop="domestic_no" label="订单编号" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">
             <div>{{ row.domestic_no }}</div>
-            <div v-if="row.order_no" class="muted">{{ row.order_no }}</div>
+            <div v-if="row.order_no && row.order_no !== row.domestic_no" class="muted">{{ row.order_no }}</div>
           </template>
         </el-table-column>
+        <el-table-column prop="order_kind_label" label="订单大类" min-width="100" />
         <el-table-column prop="order_date" label="下单日期" min-width="105" />
-        <el-table-column prop="customer_name" label="客户名称" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="customer_name" label="客户 / 用途" min-width="120" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.order_kind === 'production' ? '公司备货' : row.customer_name }}</template>
+        </el-table-column>
         <el-table-column prop="owner_name" label="归属销售" min-width="95" show-overflow-tooltip>
           <template #default="{ row }">{{ row.owner_name || '-' }}</template>
         </el-table-column>
@@ -100,19 +111,19 @@
     <DetailDrawer v-model="detailVisible" title="内贸订单详情" :width="880" :loading="detailLoading">
       <template v-if="detail">
         <div class="info-card">
-          <div class="info-name">{{ detail.domestic_no }} · {{ detail.customer_name }}</div>
+          <div class="info-name">{{ detail.domestic_no }} · {{ detail.order_kind === 'production' ? '生产订单 · 公司备货' : detail.customer_name }}</div>
           <div class="info-grid">
             <span>客户订单号：{{ detail.order_no }}</span>
             <span>下单日期：{{ detail.order_date }}</span>
-            <span>要求发货：{{ detail.required_ship_date || '-' }}</span>
-            <span>订单类别：{{ detail.order_category_label }}</span>
-            <span>订单类型：{{ detail.order_type_label }}</span>
-            <span>订单渠道：{{ detail.order_channel_label }}</span>
+            <span v-if="detail.order_kind !== 'production'">要求发货：{{ detail.required_ship_date || '-' }}</span>
+            <span v-if="detail.order_kind !== 'production'">订单类别：{{ detail.order_category_label }}</span>
+            <span v-if="detail.order_kind !== 'production'">订单类型：{{ detail.order_type_label }}</span>
+            <span v-if="detail.order_kind !== 'production'">订单渠道：{{ detail.order_channel_label }}</span>
             <span>状态：{{ detail.status_label }}</span>
-            <span>订单总价：¥{{ Number(detail.total_amount || 0).toFixed(2) }}</span>
-            <span>已扣余额：¥{{ Number(detail.charged_amount || 0).toFixed(2) }}</span>
+            <span v-if="detail.order_kind !== 'production'">订单总价：¥{{ Number(detail.total_amount || 0).toFixed(2) }}</span>
+            <span v-if="detail.order_kind !== 'production'">已扣余额：¥{{ Number(detail.charged_amount || 0).toFixed(2) }}</span>
             <span v-if="detail.customer_custom_code">客户编码：{{ detail.customer_custom_code }}</span>
-            <span>当前会员：{{ membershipLevelLabel(detail.customer_membership_level) }}</span>
+            <span v-if="detail.order_kind !== 'production'">当前会员：{{ membershipLevelLabel(detail.customer_membership_level) }}</span>
             <span v-if="detail.customer_province || detail.customer_city">地区：{{ [detail.customer_province, detail.customer_city].filter(Boolean).join(' / ') }}</span>
             <span v-if="detail.customer_contact">联系人：{{ detail.customer_contact }}</span>
             <span v-if="detail.customer_phone">电话：{{ detail.customer_phone }}</span>
@@ -123,7 +134,7 @@
 
         <el-alert
           v-if="hasUnrouted" type="warning" show-icon :closable="false" class="unrouted-alert"
-          title="有明细还没配工艺路线，这些货暂时不能开工" description="在下方明细里点「配工艺路线」补配，或去「产品与工艺」页配好该工艺的默认路线。"
+          title="有明细还没配工艺路线，这些货暂时不能开工" description="请先维护该订单大类对应的工艺路线，再点「配工艺路线」补配。"
         />
 
         <div v-for="item in detail.items" :key="item.id" class="item-block">
@@ -138,17 +149,17 @@
 
           <div class="item-meta">
             <span class="meta-item">数量 <b>{{ item.order_qty }} 件</b></span>
-            <template v-if="detail.order_category === 'special'">
+            <template v-if="detail.order_kind !== 'production' && detail.order_category === 'special'">
               <span class="meta-item">销售价 <b>¥{{ Number(item.unit_price || 0).toFixed(2) }}</b> / 件</span>
             </template>
-            <template v-else>
+            <template v-else-if="detail.order_kind !== 'production'">
               <span class="meta-item">明细单价 <b>¥{{ Number(item.unit_price || 0).toFixed(2) }}</b> / 件</span>
               <span class="meta-item muted">优惠价 ¥{{ (Number(item.unit_price || 0) - Number(item.labor_fee || 0)).toFixed(2) }}<template v-if="Number(item.labor_fee || 0) > 0"> + 手工费 ¥{{ Number(item.labor_fee).toFixed(2) }}</template></span>
               <span class="meta-item muted">原始价 ¥{{ Number(item.original_price || 0).toFixed(2) }}</span>
               <span v-if="Number(item.discount_amount || 0) > 0" class="meta-item meta-discount">优惠 -¥{{ Number(item.discount_amount).toFixed(2) }}</span>
               <span class="meta-item muted">{{ membershipLevelLabel(item.membership_level_snapshot) }} · {{ item.pricing_rule_label || '历史人工价' }}</span>
             </template>
-            <span class="meta-item meta-amount">小计 ¥{{ Number(item.line_amount || 0).toFixed(2) }}</span>
+            <span v-if="detail.order_kind !== 'production'" class="meta-item meta-amount">小计 ¥{{ Number(item.line_amount || 0).toFixed(2) }}</span>
           </div>
 
           <div class="item-actions">
@@ -162,10 +173,10 @@
             >异常跳过记录</GlassButton>
             <GlassButton v-if="!item.route_id" v-permission="'domestic:write'" variant="link" left-icon="Connection" @click="openAttachRoute(item)">配工艺路线</GlassButton>
             <GlassButton
-              v-if="detail.status <= 2 && item.status !== 2" v-permission="'domestic:write'"
+              v-if="detail.order_kind !== 'production' && detail.status <= 2 && item.status !== 2" v-permission="'domestic:write'"
               variant="link" left-icon="EditPen" @click="openPriceEdit(item)"
             >改价</GlassButton>
-            <GlassButton v-if="item.status === 1" v-permission="'domestic:write'" variant="link" left-icon="Van" @click="openShip(item)">登记发货</GlassButton>
+            <GlassButton v-if="detail.order_kind !== 'production' && item.status === 1" v-permission="'domestic:write'" variant="link" left-icon="Van" @click="openShip(item)">登记发货</GlassButton>
           </div>
 
           <el-table v-if="item.steps.length" :data="item.steps" size="small" border class="step-table list-table">
@@ -199,7 +210,7 @@
           <div v-else class="no-route">未配工艺路线，还没有工序进度</div>
 
           <div class="section-grid">
-            <div v-for="s in DETAIL_SECTIONS" :key="s.key" class="section-block">
+            <div v-for="s in detailSectionsForKind(detail.order_kind, DETAIL_SECTIONS)" :key="s.key" class="section-block">
               <template v-if="item[s.key] || item[s.imageKey]?.length">
                 <div class="section-label">{{ s.label }}</div>
                 <div v-if="item[s.key]" class="notes-line">{{ item[s.key] }}</div>
@@ -371,7 +382,7 @@
     <el-dialog v-model="attachDialog.visible" title="配工艺路线" width="460px">
       <el-form label-width="90px">
         <el-form-item label="工艺路线">
-          <el-select v-model="attachDialog.route_id" placeholder="选择路线" style="width: 100%">
+          <el-select v-model="attachDialog.route_id" disabled placeholder="对应路线尚未配置或未启用" style="width: 100%">
             <el-option v-for="r in routes" :key="r.id" :label="`${r.name}（${r.step_count} 道）`" :value="r.id" />
           </el-select>
         </el-form-item>
@@ -396,6 +407,7 @@ import DomesticImages from '@/components/domestic/DomesticImages.vue'
 import DomesticSkipAuditDialog from './components/DomesticSkipAuditDialog.vue'
 import DomesticPrintDialog from './print/DomesticPrintDialog.vue'
 import { useDomesticOrders } from './composables/useDomesticOrders'
+import { detailSectionsForKind } from './domesticOrderKinds'
 import { membershipLevelLabel } from './composables/domesticMemberPricing'
 
 const {
@@ -415,6 +427,13 @@ const {
   priceEditDialog, openPriceEdit, confirmPriceEdit,
   isShipDateOverdue,
 } = useDomesticOrders()
+
+function handleKindChange() {
+  searchForm.order_category = ''
+  searchForm.order_type = ''
+  searchForm.order_channel = ''
+  handleSearch()
+}
 </script>
 
 <style scoped src="./domestic-orders.css"></style>

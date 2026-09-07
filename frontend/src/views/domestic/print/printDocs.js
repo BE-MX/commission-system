@@ -149,8 +149,9 @@ const SECTIONS = [
 
 export function buildCardDoc({ card, imageMap = {} }) {
   const item = card.item || {}
+  const production = card.order_kind === 'production'
 
-  const reqBlocks = SECTIONS.map(([textKey, imgKey, label]) => {
+  const reqBlocks = SECTIONS.filter(([key]) => !production || !['hairstyle', 'style_requirement'].includes(key)).map(([textKey, imgKey, label]) => {
     const text = item[textKey]
     const paths = item[imgKey] || []
     if (!text && !paths.length) return ''
@@ -175,8 +176,8 @@ export function buildCardDoc({ card, imageMap = {} }) {
   const body = `<div class="card">
   <div class="header">
     <div>
-      <h1>内贸流转卡</h1>
-      <div class="order-no">${esc(card.domestic_no)} · 客户订单号 ${esc(card.order_no)}</div>
+      <h1>${production ? '生产订单流转卡' : '内贸流转卡'}</h1>
+      <div class="order-no">${esc(card.domestic_no)}${production ? ' · 公司备货' : ` · 客户订单号 ${esc(card.order_no)}`}</div>
     </div>
     ${card.order_category === 'special' ? '<div class="special-badge">特单</div>' : ''}
   </div>
@@ -184,13 +185,13 @@ export function buildCardDoc({ card, imageMap = {} }) {
   <div class="body-row">
     <div class="left">
       <table class="info-table">
-        <tr><td>客户店名</td><td><strong>${esc(card.customer_name)}</strong></td></tr>
+        ${production ? '<tr><td>用途</td><td>内部毛坯备货 · 截止入库</td></tr>' : `<tr><td>客户店名</td><td><strong>${esc(card.customer_name)}</strong></td></tr>`}
         <tr><td>产品</td><td><strong>${esc(item.product_name)}</strong></td></tr>
         <tr><td>生产数量</td><td><span class="qty-value">${esc(item.order_qty)}</span> 件</td></tr>
         <tr><td>下单日期</td><td>${esc(card.order_date)}</td></tr>
-        <tr><td>订单类别</td><td>${esc(card.order_category_label)}</td></tr>
+        ${production ? '' : `<tr><td>订单类别</td><td>${esc(card.order_category_label)}</td></tr>
         <tr><td>订单类型</td><td>${esc(card.order_type_label)}</td></tr>
-        <tr><td>订单渠道</td><td>${esc(card.order_channel_label)}</td></tr>
+        <tr><td>订单渠道</td><td>${esc(card.order_channel_label)}</td></tr>`}
       </table>
     </div>
     <div class="qr-section">${qr}<div class="qr-hint">扫码报工<br>可按数量拆批</div></div>

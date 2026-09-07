@@ -849,6 +849,10 @@ frontend/src/
 
 **与外贸的关系**：`app/domestic/` 是与「生产订单（app/stock）+ 生产报工（app/production）」**平行的一套**，订单/产品/客户/进度全部独立建表。不复用 `order_product_process_progress` 的原因：那张表 FK 硬绑 `ark_production_order_items` 且是整行 0/1 流转，没有数量字段；内贸要拆批必须改结构，动老表要牵动报工/看板/小程序/打印/重置工艺 5 处。共用的只有 `process` / `process_route` / `process_route_step` / `user_process_binding`。
 
+**订单大类（140）**：业务订单 `business/DO` 与内部备货 `production/DP` 使用独立入口和编号。生产单无客户、销售维度、发型要求或报价；头套省去发型系列，发片仍选工艺/尺寸与发长。`order_kind_service.py` 统一归一化生产输入、固定路线选择和 options 输出；不能经改价、改单、追加、草稿提交重新引入销售账务。生产单入库完成后状态为已完工，无发货登记。
+
+**六种明细路线**：按生产/业务普单/业务特单 × 头套/发片匹配。生产路线为“确认下单～入库”，普单为“毛坯出库～发货完成”，特单为原始完整路线。140 克隆四条独立路线并保留条件/可选规则；已有报工快照不重建。产品档案映射只服务档案，同一发片 SKU 可同时出现在三种路线快照中。业务单保存后不能改类别，避免普单与特单的工序定义错配。
+
 **数量口径（唯一定义在 `progress_service.py`）**：`可报数量(第N道) = completed_qty(第N-1道) − completed_qty(第N道)`，首道上游 = `order_qty`。不存冗余「待做数量」字段。拆批 = 报工时填个更小的数，剩余量停在上一道，之后扫**同一张卡**继续报。
 
 **二维码前缀**：内贸 `ARK-D:`，外贸 `ARK-P:`，共用 `QR_SIGN_SECRET` 签名。小程序两侧互扫会自动分流到对方模块。
@@ -863,7 +867,7 @@ frontend/src/
 - 进度行是报工流水的 FK 父（CASCADE），重建会连已撤销流水一起删；`attach_route` 的守卫看「有没有流水」而不是「数量是不是 0」。
 - 代报工必须传 `on_behalf_user_id`，否则件数记到操作电脑的人头上，计件工资算错人。
 
-**上线后的人工配置**（漏了单能下但开不了工）：角色管理页分配 `domestic:read/write/admin` → 「产品与工艺」页配「工艺→路线」映射 → 给内贸工人绑工序。
+**上线后的人工配置**（漏了单能下但开不了工）：角色管理页分配 `domestic:read/write/admin` → 核验两条原始路线及 140 创建的四条分段路线均启用 → 给内贸工人绑工序。产品档案仍可维护工艺映射，新订单明细按六种固定路线选择。
 
 **产品进度小程序码（2026-07-28；明细级，与流转卡同粒度）**：主站订单详情抽屉明细动作区「进度码」按钮 → `GET /api/domestic/items/{id}/wxacode` 生成微信小程序码（`wxacode.getUnlimited`，scene=`i:<item_id>:<hmac16>`，永久有效），弹窗可下载图片或打印 30×20mm 标签（左 LOGO 右码，与流转卡二维码标签同版式）。微信扫一扫拉起小程序落到**免登录**页 `pages/domestic/track/track`（调 `GET /api/mini/domestic/track?scene=`），只显示码指向的那一条明细。要点：
 - 免登录的唯一授权凭证是 scene 的 16 hex HMAC 签名（免登录口子 8 hex 不够，64-bit 才谈得上防在线遍历），域 `ARK-DT:<item_id>` 与流转卡 `ARK-D:<item_id>` 隔离——同一个 item_id 两个域，流转卡贴在车间人尽可见且只截 8 hex，共用域会泄露签名前半。track 端点把 items 过滤到一条（一码一品）；track 页无搜索/扫码入口防遍历；软删单 404。进度信息对客户公开不遮挡（亮哥 2026-07-28 拍板）。
@@ -1021,6 +1025,6 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 
 **译文质量（v1.1，2026-09-04）**：收发拆两个 preset——`whatsapp_text_translation` 收件方向（忠实还原客户语气与歧义，只译向 zh-CN），`whatsapp_outgoing_translation` 发件方向（WhatsApp 商务聊天语域，额外返回 `back_translation` 中文回译供业务员核对）。外贸术语表复用 `sys_dict`，类型 `whatsapp_glossary_<lang>`，`code`=中文术语、`label`=对应语言术语，运行时只注入命中的条目（`.7` 见 `app/whatsapp_translation/glossary_service.py`）；可识别源语言列表由 constants 注入 user message，不写死在 prompt。`seed_ai` 的升级函数只在 `whatsapp_text_translation` 仍是首版提示词时替换为外贸语域版，管理员改过的不动。
 
-**身份与范围**：Manifest 使用固定 public key，扩展 ID 为 `bnkecbkoidckffckbefjjcbchmngjobi`；生产 API 只允许 `https://leshine.work`，host 权限不含 WhatsApp。支持范围仅限 WhatsApp Web 一对一文字，收译和发译均要求 `whatsapp_translation:write`，管理端要求 `whatsapp_translation:admin`。
+**身份与范围**：Manifest 使用固定 public key，扩展 ID 为 `bnkecbkoidckffckbefjjcbchmngjobi`；1.2.6 起扩展 API 与唯一 host 权限为 `https://leshine.cloud`，host 权限不含 WhatsApp。配对确认页仍严格限定 `https://leshine.work/whatsapp-translation/authorize`，与北京后端配置一致；设备存储与 token 处理不变。支持范围仅限 WhatsApp Web 一对一文字，收译和发译均要求 `whatsapp_translation:write`，管理端要求 `whatsapp_translation:admin`。
 
 **发布边界**：ZIP 和 `latest.json` 可从 Ark 前端静态路径公开下载，但包内只有编译后的扩展代码，不含 API key、设备 token、聊天数据或服务端配置。翻译能力仍由设备配对、设备 token、员工权限、配额和版本门禁控制。

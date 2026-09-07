@@ -24,7 +24,7 @@ describe('Ark API client', () => {
 
     await expect(apiClient.getSession('token', '1.0.0')).resolves.toEqual({ device_id: 7 })
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('https://leshine.work/api/whatsapp-translation/session')
+    expect(url).toBe('https://leshine.cloud/api/whatsapp-translation/session')
     expect(init.headers.Authorization).toBe('Bearer token')
     expect(init.headers['X-Ark-Extension-Version']).toBe('1.0.0')
   })
@@ -76,6 +76,7 @@ describe('Ark API client', () => {
     })).resolves.toMatchObject({ translated_text: '合成译文' })
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[0][0]).toBe('https://leshine.cloud/api/whatsapp-translation/translate')
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).request_id).toBe(JSON.parse(fetchMock.mock.calls[1][1].body).request_id)
   })
 

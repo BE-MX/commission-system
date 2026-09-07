@@ -641,6 +641,7 @@ def list_orders(
     status: int | None = Query(None),
     customer_id: int | None = Query(None),
     order_category: str = Query("", pattern="^(normal|special)?$"),
+    order_kind: str = Query("", pattern="^(business|production)?$"),
     order_type: str = Query(""),
     order_channel: str = Query(""),
     date_start: date | None = Query(None),
@@ -653,7 +654,7 @@ def list_orders(
     can_read_all = _can_read_all_orders(current_user)
     items, total = order_service.list_orders(
         db, page=page, page_size=page_size, keyword=keyword, status=status,
-        customer_id=customer_id, order_category=order_category,
+        customer_id=customer_id, order_category=order_category, order_kind=order_kind,
         order_type=order_type, order_channel=order_channel,
         date_start=date_start, date_end=date_end,
         sort_field=sort_field, sort_order=sort_order,
@@ -884,6 +885,8 @@ def get_print_card(
         "order_no": order.order_no,
         "order_date": order.order_date,
         "customer_name": detail["customer_name"],
+        "order_kind": detail["order_kind"],
+        "order_kind_label": detail["order_kind_label"],
         "order_category": detail["order_category"],
         "order_category_label": detail["order_category_label"],
         "order_type": detail["order_type"],

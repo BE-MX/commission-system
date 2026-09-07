@@ -20,10 +20,10 @@
         <text class="order-no">{{item.domestic_no}}</text>
         <text class="order-status status-{{item.status}}">{{item.status_label}}</text>
       </view>
-      <text class="order-customer">{{item.customer_name}} · 单号 {{item.order_no}}</text>
+      <text class="order-customer">{{item.order_kind === 'production' ? '生产订单 · 公司备货' : item.customer_name}} · 单号 {{item.order_no}}</text>
       <view class="order-meta">
         <text>{{item.item_count}} 行 / {{item.total_qty}} 件</text>
-        <text>{{item.order_category_label}} · {{item.order_type_label}} · {{item.order_channel_label}}</text>
+        <text wx:if="{{item.order_kind !== 'production'}}">{{item.order_category_label}} · {{item.order_type_label}} · {{item.order_channel_label}}</text>
         <text>{{item.order_date}}</text>
       </view>
       <view class="progress-track">
@@ -44,8 +44,8 @@
         <text class="detail-title">{{detail.domestic_no}}</text>
         <text class="detail-close" bindtap="onDetailClose">关闭</text>
       </view>
-      <text class="detail-sub">{{detail.customer_name}} · {{detail.status_label}}</text>
-      <text class="detail-sub">{{detail.order_category_label}} · {{detail.order_type_label}} · {{detail.order_channel_label}}</text>
+      <text class="detail-sub">{{detail.order_kind === 'production' ? '生产订单 · 公司备货' : detail.customer_name}} · {{detail.status_label}}</text>
+      <text class="detail-sub" wx:if="{{detail.order_kind !== 'production'}}">{{detail.order_category_label}} · {{detail.order_type_label}} · {{detail.order_channel_label}}</text>
 
       <scroll-view class="detail-body" scroll-y>
         <view class="detail-item" wx:for="{{detail.items}}" wx:key="id">

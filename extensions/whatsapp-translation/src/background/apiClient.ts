@@ -1,6 +1,6 @@
 import type { ApiEnvelope, CapabilitiesResponse, PairingStatusResponse, SessionResponse, StartPairingRequest, StartPairingResponse, TranslationRequest, TranslationResponse } from '@/shared/contracts'
 
-const BASE_URL = 'https://leshine.work/api/whatsapp-translation'
+const BASE_URL = 'https://leshine.cloud/api/whatsapp-translation'
 const REQUEST_TIMEOUT_MS = 20_000
 // Allow the model's 40-second timeout plus response/network overhead.
 const TRANSLATION_TIMEOUT_MS = 45_000

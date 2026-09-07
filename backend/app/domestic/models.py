@@ -167,12 +167,13 @@ class DomesticOrder(Base):
     __tablename__ = "ark_domestic_orders"
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
-    domestic_no = Column(String(32), nullable=False, unique=True, comment="系统单号 DO{YYYYMMDD}-{NNN}")
+    domestic_no = Column(String(32), nullable=False, unique=True, comment="业务单 DO / 生产单 DP + 日期流水")
+    order_kind = Column(String(16), nullable=False, default="business", server_default="business", comment="business=业务订单,production=生产订单")
     order_no = Column(String(64), nullable=False, comment="客户订单号（原样文本）")
     order_date = Column(Date, nullable=False, comment="下单日期")
     required_ship_date = Column(Date, comment="要求发货日期（新单必填；存量单为 NULL）")
-    customer_id = Column(Integer, ForeignKey("ark_domestic_customers.id", ondelete="RESTRICT"), nullable=False, comment="客户")
-    order_category = Column(String(16), nullable=False, default="normal", comment="normal=普货,special=特单")
+    customer_id = Column(Integer, ForeignKey("ark_domestic_customers.id", ondelete="RESTRICT"), nullable=True, comment="业务客户；生产订单为空")
+    order_category = Column(String(16).evaluates_none(), nullable=True, default="normal", comment="normal=普货,special=特单；生产订单为空")
     order_type = Column(String(32), comment="订单类型（sys_dict: domestic_order_type）")
     order_channel = Column(String(32), comment="订单渠道（sys_dict: domestic_order_channel）")
     status = Column(SmallInteger, nullable=False, default=1, comment="0=草稿,1=生产中,2=已完工,3=已发货,4=已终止")
@@ -194,6 +195,14 @@ class DomesticOrder(Base):
     customer = relationship("DomesticCustomer", lazy="noload")
 
     __table_args__ = (
+        CheckConstraint("order_kind IN ('business', 'production')", name="ck_dom_order_kind"),
+        CheckConstraint(
+            "(order_kind = 'business' AND customer_id IS NOT NULL AND order_category IS NOT NULL AND order_category IN ('normal', 'special')) OR "
+            "(order_kind = 'production' AND customer_id IS NULL AND order_category IS NULL AND "
+            "order_type IS NULL AND order_channel IS NULL AND required_ship_date IS NULL AND total_amount = 0 AND charged_amount = 0)",
+            name="ck_dom_order_kind_fields",
+        ),
+        Index("idx_dom_order_kind", "order_kind", "deleted_flag"),
         Index("idx_dom_order_status", "status", "deleted_flag"),
         Index("idx_dom_order_customer", "customer_id"),
         Index("idx_dom_order_date", "order_date"),
@@ -262,7 +271,7 @@ class DomesticOrderItem(Base):
             name="ck_dom_item_unit_not_above_original",
         ),
         CheckConstraint(
-            "original_price > 0 OR pricing_rule = 'legacy_manual'",
+            "original_price > 0 OR pricing_rule IN ('legacy_manual', 'production')",
             name="ck_dom_item_original_price_valid",
         ),
         CheckConstraint(
@@ -277,8 +286,13 @@ class DomesticOrderItem(Base):
         CheckConstraint(
             "pricing_rule IN ('base_price', 'member_fixed', "
             "'member_fixed_capped', 'member_reduction', 'manual_override', "
-            "'legacy_manual')",
+            "'legacy_manual', 'production')",
             name="ck_dom_item_pricing_rule",
+        ),
+        CheckConstraint(
+            "pricing_rule <> 'production' OR (unit_price = 0 AND original_price = 0 AND "
+            "discount_amount = 0 AND labor_fee = 0 AND membership_level_snapshot IS NULL AND base_price_version_snapshot = 0)",
+            name="ck_dom_item_production_price",
         ),
         Index("idx_dom_item_order", "order_id"),
         Index("idx_dom_item_status", "status"),

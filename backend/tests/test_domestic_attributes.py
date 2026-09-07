@@ -355,7 +355,7 @@ def test_cap_requires_size_and_hair_style_series(missing_field):
 
 def test_models_expose_new_nullable_database_contract():
     order_columns = DomesticOrder.__table__.c
-    assert order_columns.order_category.nullable is False
+    assert order_columns.order_category.nullable is True  # Production orders have no sales category.
     assert order_columns.order_type.nullable is True
     assert order_columns.order_channel.nullable is True
 
@@ -541,7 +541,7 @@ def test_special_order_creates_and_reuses_only_special_option_and_route(db):
     assert mapping.route_id == context["routes"]["cap"].id
 
 
-def test_existing_special_craft_mapping_survives_disabled_default_route(db):
+def test_special_order_does_not_fall_back_to_craft_mapping_when_full_route_is_disabled(db):
     context = _seed_attribute_context(db)
     custom_craft = "已配置非默认路线的工艺"
     db.add(_dict_row(f"{C.DICT_CAP_CRAFT}_special", custom_craft))
@@ -579,7 +579,8 @@ def test_existing_special_craft_mapping_survives_disabled_default_route(db):
     ).one()
     item = db.query(DomesticOrderItem).filter_by(order_id=result["id"]).one()
     assert mapping.route_id == custom_route.id
-    assert item.route_id == custom_route.id
+    assert item.route_id is None
+    assert result["warnings"]  # New orders always follow the category route, preserving the old product mapping.
 
 
 def test_special_craft_mapping_race_keeps_winning_route(monkeypatch):
@@ -1124,7 +1125,7 @@ def test_special_order_with_custom_attrs_cannot_be_changed_to_normal(db):
         context["user"].id,
     )
 
-    with pytest.raises(ValueError, match="第 1 行.*切换为特单"):
+    with pytest.raises(ValueError, match="订单类别决定工艺路线"):
         order_service.update_order(
             db,
             created["id"],

@@ -196,6 +196,9 @@ export function applyQuoteChange(items, currentExpectedQuotes, requestIdFactory)
 }
 
 export function buildDraftSubmitPayload(detail, requestIdFactory) {
+  if (detail?.order_kind === 'production') {
+    return { request_id: requestIdFactory(), expected_quotes: [] }
+  }
   const expectedQuotes = detail?.current_expected_quotes?.length
     ? detail.current_expected_quotes
     : (detail?.items || []).map(item => ({

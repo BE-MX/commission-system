@@ -97,7 +97,7 @@ def _seed_order_values(db):
 
 def _route_and_workers(db):
     _seed_order_values(db)
-    route = ProcessRoute(name="逐件路线", status=1)
+    route = ProcessRoute(name="业务普单 · 头套网帽（递针）", status=1)
     db.add(route)
     db.flush()
     workers = []
@@ -852,7 +852,7 @@ def test_required_ship_date_required_and_returned(db):
     creator = _user(db, "ship-date-planner")
     customer = _customer(db, creator, "发货日期客户")
 
-    with pytest.raises(ValidationError, match="required_ship_date"):
+    with pytest.raises(ValidationError, match="要求发货日期"):
         OrderCreate(
             request_id="ship-date-missing",
             order_no="SHIP-DATE-001",

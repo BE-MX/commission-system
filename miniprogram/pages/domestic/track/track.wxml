@@ -27,11 +27,12 @@
         <text class="lk-order-no">{{order.domestic_no}}</text>
         <text class="lk-badge lk-badge--s{{order.status}}">{{order.status_label}}</text>
       </view>
-      <text class="lk-order-cust">{{order.customer_name}} · 客户单号 {{order.order_no}}</text>
+      <text class="lk-order-cust" wx:if="{{order.order_kind === 'production'}}">生产订单 · 公司毛坯备货</text>
+      <text class="lk-order-cust" wx:else>{{order.customer_name}} · 客户单号 {{order.order_no}}</text>
       <view class="lk-order-meta">
-        <text>{{order.order_category_label}} · {{order.order_type_label}} · {{order.order_channel_label}}</text>
+        <text wx:if="{{order.order_kind !== 'production'}}">{{order.order_category_label}} · {{order.order_type_label}} · {{order.order_channel_label}}</text>
         <text>下单 {{order.order_date}}</text>
-        <text>总价 ¥{{order.totalAmountText}}</text>
+        <text wx:if="{{order.order_kind !== 'production'}}">总价 ¥{{order.totalAmountText}}</text>
       </view>
       <view class="tk-detail-grid">
         <text wx:if="{{order.customer_custom_code}}">客户编码：{{order.customer_custom_code}}</text>
@@ -55,7 +56,7 @@
       </view>
       <view class="tk-item-detail">
         <text wx:if="{{it.attrText}}">属性：{{it.attrText}}</text>
-        <text>单价 ¥{{it.unitPriceText}} · 明细总价 ¥{{it.lineAmountText}}</text>
+        <text wx:if="{{order.order_kind !== 'production'}}">单价 ¥{{it.unitPriceText}} · 明细总价 ¥{{it.lineAmountText}}</text>
         <text wx:if="{{it.hairstyle}}">发型：{{it.hairstyle}}</text>
         <text wx:if="{{it.color}}">颜色：{{it.color}}</text>
         <text wx:if="{{it.style_requirement}}">发型要求：{{it.style_requirement}}</text>
