@@ -11,7 +11,7 @@ from app.customer import outreach_service
 from app.customer.access_service import CustomerAccessDenied, require_customer_access
 from app.knowledge import service as knowledge_service
 from app.knowledge.models import KnowledgeLibrary
-from app.sales_automation import public_pool_service, service
+from app.sales_automation import public_pool_service, service, enrichment_service
 from app.sales_automation.dependencies import require_sales_agent
 from app.sales_automation.router import _call, _iso, _job, _research_task, _user_id
 from app.sales_automation.schemas import (
@@ -87,6 +87,7 @@ def _research_context(db: Session, task_id: int) -> dict:
             "identity_status": customer.identity_status,
             "relationship_stage": customer.relationship_stage,
         },
+        "fact_contract": enrichment_service.research_fact_contract(),
         "research_rules": {
             "identity_boundary": "仅围绕商业身份和公开业务证据调查；主体不明时保留待识别，不拼接同名主体资料",
             "industry_gate": "先验证业务相关性；明确无关时停止，不猜联系方式、不生成触达草稿或正向成交分",

@@ -1,3 +1,12 @@
+## 2026-09-08 0908 生产重跑：事实契约缺口
+
+- Validation: 197 related backend tests (in-memory SQLite), 63 Node tests and conventions checks passed. Independent review passed after enforcing source-only layers.
+- Task 11 remains running until lease expiry: the original MCP process ended and a follow-up could not fail without its lease. Do not guess credentials; updated local MCP preflight will prevent claims against the old fact contract. Tasks 12-28 remain failed.
+
+- 管理员浏览器通过 retry API 成功重新入队 task 11；本机 OpenClaw 创建实际 Run 1，attempt 2，行业 gate passed。
+- 真实公开搜索完成后，推断 provenance 缺失触发 422；修正后未登记的 fact_key 连续触发 400。无事实入库，无有效结果完成；其余 17 条仍未重新入队。
+- 分支 codex/research-facts-contract 补充受限的公开公司研究事实登记及动态 fact_contract；MCP 在领取前检查该契约，防止旧后端消费任务。需要部署此补丁及更新本机 MCP 后再单条验证，不可把本轮 CLI status=ok 当作业务成功。
+
 ### OpenClaw 背调补丁合并（2026-09-08）
 
 亮哥已明确授权合并并推送 PR #2。此次合并外部背调 Run/证据回执闭环、MCP 自动注入 Run ID 与停止后续领取保护、具备客户范围权限的人工重试接口。本机新版已经安装，生产后端仍待统一部署；18 条任务 #11–28 尚未重新入队。本次仅合并推送，不代表部署或背调完成。

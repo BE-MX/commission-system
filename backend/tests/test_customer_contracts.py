@@ -454,6 +454,10 @@ def test_fact_registry_order_is_stable():
         "risk.confirmed.fraud",
         "risk.confirmed.material_legal",
         "risk.confirmed.sanctions",
+        "research.source.business_contact",
+        "research.source.business_profile",
+        "research.source.company_identity",
+        "research.source.product_catalog",
     )
 
     assert tuple(FACT_REGISTRY) == expected_keys

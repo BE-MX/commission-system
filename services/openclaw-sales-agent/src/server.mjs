@@ -55,7 +55,7 @@ const researchIndustryGate = z.object({
   reason: z.string().min(1).max(2000),
 });
 const researchFact = z.object({
-  fact_key: z.string().min(1).max(128),
+  fact_key: z.string().min(1).max(128).describe("Use only a key listed for this source in the current task context fact_contract; do not invent keys"),
   value_type: z.enum(["string", "number", "boolean", "date", "datetime", "list", "object"]),
   value: z.unknown(),
   fact_layer: z.enum(["source", "inferred"]),
@@ -275,7 +275,8 @@ export function createServer(
     researchClaimPending = true;
     try {
       const context = await client.getResearchTaskContext(taskId);
-      if (context.execution_contract !== "external_research_run_v1") {
+      if (context.execution_contract !== "external_research_run_v1" ||
+          context.fact_contract?.version !== "registered_research_facts_v1") {
         researchFailure = true;
         throw new Error("方舟背调执行契约尚未部署，未领取任务；停止本轮并报告");
       }
@@ -294,6 +295,7 @@ export function createServer(
       researchRuns.set(taskId, data.agent_run_id);
       return { research_task_id: data.research_task_id, customer_id: data.customer_id,
         agent_run_id: data.agent_run_id, input_hash: data.input_hash,
+        fact_contract: context.fact_contract,
         lease_expires_at: data.lease_expires_at, lease_held: true };
     } finally {
       researchClaimPending = false;

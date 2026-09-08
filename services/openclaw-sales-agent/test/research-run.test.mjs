@@ -7,7 +7,7 @@ import { createServer } from "../src/server.mjs";
 async function fixture(t, overrides = {}) {
   const sent = [];
   const server = createServer({
-    getResearchTaskContext: async () => ({ execution_contract: "external_research_run_v1" }),
+    getResearchTaskContext: async () => ({ execution_contract: "external_research_run_v1", fact_contract: {version:"registered_research_facts_v1"} }),
     claimResearchTask: async taskId => ({ research_task_id: taskId, customer_id: 101,
       agent_run_id: 9001, input_hash: "a".repeat(64), lease_token: "private-lease-".repeat(4) }),
     appendResearchFacts: async (...args) => { sent.push(args); return { evidence_refs: [] }; },
@@ -94,4 +94,19 @@ test("completion injects the claimed Run and clears the active task", async t =>
   assert.equal(response.isError,undefined);
   assert.equal(sent[0][2].agent_run_id,9001);
   assert.equal((await call("ark_claim_research_task",{research_task_id:12})).isError,undefined);
+});
+
+
+test("missing fact contract refuses claim before consuming a task", async t => {
+  let calls = 0;
+  const {call} = await fixture(t, {getResearchTaskContext: async () => ({execution_contract:"external_research_run_v1"}),
+    claimResearchTask: async () => {calls++; return {};}});
+  assert.equal((await call("ark_claim_research_task", {research_task_id:11})).isError, true);
+  assert.equal(calls, 0);
+});
+
+test("claim returns the server fact contract to the model", async t => {
+  const {call} = await fixture(t);
+  assert.equal((await call("ark_claim_research_task", {research_task_id:11})).structuredContent.fact_contract.version,
+    "registered_research_facts_v1");
 });
