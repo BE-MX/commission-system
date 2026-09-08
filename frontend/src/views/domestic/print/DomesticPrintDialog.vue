@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible" :title="title" :width="isLabel ? '520px' : '900px'"
-    top="5vh" destroy-on-close @update:model-value="close"
+    top="16px" append-to-body destroy-on-close @update:model-value="close"
   >
     <div v-if="loadError" class="state-line">{{ loadError }}</div>
     <div v-else-if="loading" class="state-line">
@@ -208,12 +208,15 @@ watch(() => [props.visible, props.itemId, props.mode], ([isOpen]) => {
 
 .footer-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 16px;
 }
 
 .copies {
   display: flex;
+  flex-wrap: wrap;
+  flex: 1 0 100%;
   align-items: center;
   gap: 8px;
 }
@@ -223,8 +226,11 @@ watch(() => [props.visible, props.itemId, props.mode], ([isOpen]) => {
   color: var(--el-text-color-regular);
 }
 
+.unit-range :deep(.el-input-number) { width: 90px; }
+
 .tip {
-  flex: 1;
+  flex: 1 1 180px;
+  min-width: 0;
   text-align: left;
   font-size: 12px;
   color: var(--el-text-color-secondary);
@@ -234,6 +240,8 @@ watch(() => [props.visible, props.itemId, props.mode], ([isOpen]) => {
 
 .footer-actions {
   display: flex;
+  flex: 0 0 auto;
+  margin-left: auto;
   gap: 8px;
 }
 </style>
