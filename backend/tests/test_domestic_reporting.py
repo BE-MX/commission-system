@@ -949,3 +949,18 @@ def test_skipped_final_step_does_not_count_as_scanned_completion(db, craft_mappi
     )
     assert item.status == C.ITEM_PRODUCING
     assert order_service.get_order_detail(db, order_id)["status"] == C.ORDER_PRODUCING
+
+
+def test_unit_labels_include_customer_name_and_keep_distinct_codes(db, craft_mapping, workers):
+    from app.domestic.router import get_item_unit_qrcodes
+    creator = _user(db, "label-customer-planner")
+    order_id = _create_order(db, creator, qty=2)["id"]
+    item = _item_of(db, order_id)
+    result = get_item_unit_qrcodes(
+        item.id, start_no=1, end_no=2, db=db,
+        _user={"sub": str(creator.id), "permissions": ["domestic:read"], "roles": []},
+    )["data"]
+    assert result["customer_name"] == "马姐假发"
+    assert result["order_kind"] == "business"
+    assert len({unit["qr_data"] for unit in result["units"]}) == 2
+    assert [unit["unit_code"] for unit in result["units"]] == ["A1-01", "A1-02"]

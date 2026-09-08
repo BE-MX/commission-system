@@ -65,13 +65,16 @@ export function buildLabelDoc({ card, logoUrl, copies = 1 }) {
   return wrapDoc(`二维码标签 ${card.domestic_no}`, LABEL_CSS, one.repeat(Math.max(1, copies)))
 }
 
-// 逐件标签：每个数量一张不同二维码，A1-01/A1-02/... 印在标签上便于人工核对。
+// 逐件标签显示客户名称；二维码仍保留各单件独立身份。
 export function buildUnitLabelDoc({ data, logoUrl }) {
   const units = data.units || []
+  const customerName = data.order_kind === 'production' ? '公司备货' : (data.customer_name || '未填写客户')
+  // Reserve the QR's physical size; fit long names into the text area.
+  const customerFontMm = Math.min(2, Math.sqrt(70 / Array.from(customerName).length))
   const body = units.map(unit => `<div class="label unit-label">
     <div class="unit-meta">
       ${img(logoUrl, 'unit-logo', '莱莎健康假发')}
-      <strong class="unit-code">${esc(unit.unit_code)}</strong>
+      <strong class="unit-customer" style="font-size:${customerFontMm}mm">${esc(customerName)}</strong>
       <span class="unit-order">${esc(data.domestic_no)}</span>
     </div>
     ${img(unit.qr_image, 'unit-qr', `单件 ${unit.unit_code}`)}
@@ -79,8 +82,8 @@ export function buildUnitLabelDoc({ data, logoUrl }) {
   const css = `${LABEL_CSS}
     .unit-label{gap:.6mm}
     .unit-meta{width:10.6mm;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0}
-    .unit-logo{width:9.5mm;height:8mm;object-fit:contain}
-    .unit-code{font-size:2.4mm;line-height:1.15;white-space:nowrap}
+    .unit-logo{width:9.5mm;height:6mm;object-fit:contain;flex-shrink:0}
+    .unit-customer{width:100%;font-size:2mm;line-height:1.1;text-align:center;overflow-wrap:anywhere;word-break:break-all}
     .unit-order{max-width:10.2mm;font-size:1.25mm;line-height:1.15;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
     .unit-qr{width:16.8mm;height:16.8mm;object-fit:contain;image-rendering:pixelated;flex-shrink:0}
   `
