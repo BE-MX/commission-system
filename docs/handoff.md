@@ -1,8 +1,31 @@
-## 2026-09-08 WhatsApp 生成依据契约（Codex，本地待交付集成）
+## 2026-09-08 WhatsApp 生成依据契约（Codex，合并交付）
 
 分支 `codex/whatsapp-reply-evidence-contract`，基点 `cda42155`。针对仅有 method/constraint 时模型仍尝试引用而触发依据校验：生成输入显式携带原始来源编号及可引用事实编号，动态 schema 限定允许编号、无事实时要求空 claims；提示词区分方法、约束与对客事实。不改 guard、不剥除引用、不自动重试，不涉及数字校验或启动权限自动授予问题。
 
-新增生成契约回归先失败后通过，覆盖无事实、混合来源原始编号、违规引用仍拒绝及 schema 请求隔离。话术离线回归 107 passed / 1 failed；失败为本地慢流超时测试请求未到达服务器，在未修改主分支单测同样复现，未改测试断言。独立静态审查无阻塞。未调用真实模型、未提交/合并/推送/部署，`.env` 无需调整；线上效果需发布后验证。
+新增生成契约回归先失败后通过，覆盖无事实、混合来源原始编号、违规引用仍拒绝及 schema 请求隔离。话术离线回归 107 passed / 1 failed；失败为本地慢流超时测试请求未到达服务器，在未修改主分支单测同样复现，未改测试断言。独立静态审查无阻塞。亮哥随后授权合并推送，先集成远端 `6a6fb225`，仅交接文档冲突并保留双方记录，业务代码无冲突；未调用真实模型或部署，`.env` 无需调整，线上效果需发布后验证。
+
+## 2026-09-08 0908 生产重跑：事实契约缺口
+
+- Validation: 197 related backend tests (in-memory SQLite), 63 Node tests and conventions checks passed. Independent review passed after enforcing source-only layers.
+- Task 11 remains running until lease expiry: the original MCP process ended and a follow-up could not fail without its lease. Do not guess credentials; updated local MCP preflight will prevent claims against the old fact contract. Tasks 12-28 remain failed.
+
+- 管理员浏览器通过 retry API 成功重新入队 task 11；本机 OpenClaw 创建实际 Run 1，attempt 2，行业 gate passed。
+- 真实公开搜索完成后，推断 provenance 缺失触发 422；修正后未登记的 fact_key 连续触发 400。无事实入库，无有效结果完成；其余 17 条仍未重新入队。
+- 分支 codex/research-facts-contract 补充受限的公开公司研究事实登记及动态 fact_contract；MCP 在领取前检查该契约，防止旧后端消费任务。需要部署此补丁及更新本机 MCP 后再单条验证，不可把本轮 CLI status=ok 当作业务成功。
+
+### OpenClaw 背调补丁合并（2026-09-08）
+
+亮哥已明确授权合并并推送 PR #2。此次合并外部背调 Run/证据回执闭环、MCP 自动注入 Run ID 与停止后续领取保护、具备客户范围权限的人工重试接口。本机新版已经安装，生产后端仍待统一部署；18 条任务 #11–28 尚未重新入队。本次仅合并推送，不代表部署或背调完成。
+
+### OpenClaw 0908 背调 Run 闭环修复（2026-09-08，后端待部署）
+
+任务 #6「0908」搜索已完成20条，背调 #11–28 共18条failed，均attempt_count=1/agent_run_id=NULL；最先facts 409为无匹配Run，后续无有效fact回执仍提交complete，最后#18–28被批量领取后标failed。此次修复：Agent claim与外部running Run/客户范围/created、started事件同事务；事实与规范tool.requested/succeeded回执同事务并返回tool_call_id；旧租约/跨任务/替代Run继续拒绝，结束/跳过/重领关闭Run。native重审保持兼容。新增人工retry端点，管理权限+客户范围+expected_attempt_count CAS，不向MCP开放重试能力。
+
+MCP自动保存并注入Run ID，不再让模型填写；旧后端preflight在领取前阻断。单任务限制、claim丢响应和任务fail后停止新领取，恢复后需重启MCP；知识搜索数组改为structuredContent对象。公司研究、公海研究Skill与heartbeat规则同步。
+
+验证：相关后端152通过，Node61通过；覆盖真实HTTP领取→事实→引用→完成闭环、写入回滚、旧Run隔离、native重审、retry权限403/404/200、领取丢响应和旧后端零领取。独立审查三项问题均已修正并复审通过，约定检查通过。使用隔离SQLite（autoflush=False）；未跑真实MySQL并发。尝试额外customer_api全路由收集因测试环境缺jinja2而中止；相关路由自身权限与请求测试已通过，未将其记作全量通过。
+
+本机安装目录 `~/.openclaw-ark-sales/runtime/research-run-b01b19e5`，MCP配置、双工作区Skill/HEARTBEAT同步，私有备份 `backups/research-run-b01b19e5`。本机已重启，后端尚未部署，未重新入队或改动18条生产任务。当前SSH配置仅有github.com，`office-prod`无法解析，已向用户询问当前部署入口；用户询问是否本机执行，已解释本机负责搜索与研究、后端负责执行记录和证据校验。恢复部署通道后走统一deploy.bat固定此分支修订，核实execution_contract，再仅重试#11–28（expected_attempt_count=1），先验证一条完整成功再按单任务heartbeat处理其余，遇系统错误停止。
 
 ## 2026-09-08 列表密度与标签日期集成交付
 

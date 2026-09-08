@@ -191,6 +191,14 @@ class FactRegistration:
     supports_high_impact: bool
 
 
+# Public statements remain candidate research evidence; never identity promotion.
+PUBLIC_RESEARCH_FACT_DESCRIPTIONS = MappingProxyType({
+    "research.source.company_identity": "Company name, registration identifiers or trading identity explicitly stated on its official website; no automatic identity verification",
+    "research.source.business_profile": "Officially stated locations, operating history and business model; exclude private personal information",
+    "research.source.product_catalog": "Products, materials and services explicitly offered on the official website; no inferred purchase intent",
+    "research.source.business_contact": "Public corporate contact channels explicitly published by the company; never guessed or private personal contact details",
+})
+
 _PUBLIC_FACT_SOURCES = frozenset({
     ("okki", "customer"),
     ("official_registry", "customer"),
@@ -272,6 +280,7 @@ _STRING_VALUE_FACT_KEYS = (
         "behavior.confirmed.priority",
         "behavior.confirmed.relationship_note",
     }
+    | set(PUBLIC_RESEARCH_FACT_DESCRIPTIONS)
     | (_EXPRESSED_FACT_KEYS - _NUMBER_VALUE_FACT_KEYS - _OBJECT_VALUE_FACT_KEYS)
     | (_OBSERVED_PREFERENCE_FACT_KEYS - _NUMBER_VALUE_FACT_KEYS)
     | (
@@ -408,6 +417,13 @@ _fact_registry.update({
     )
     for fact_key in sorted(_MATERIAL_RISK_CONFIRMED_FACT_KEYS)
 })
+_fact_registry.update(_registrations(
+    frozenset(PUBLIC_RESEARCH_FACT_DESCRIPTIONS),
+    classification=DataClassification.PUBLIC_BUSINESS,
+    sources=frozenset({("public_web", "company_page")}),
+    ttl_days=365,
+    purposes=frozenset({"research"}),
+))
 FACT_REGISTRY: Mapping[str, FactRegistration] = MappingProxyType(_fact_registry)
 del _fact_registry
 
@@ -581,7 +597,7 @@ SOURCE_REGISTRY: Mapping[tuple[str, str], SourceRegistration] = MappingProxyType
         authority="official_company",
         publisher_key_rule="registrable_domain",
         source_family_key_rule="canonical_content_hash",
-        allowed_fact_keys=frozenset({"business.industry"}),
+        allowed_fact_keys=frozenset({"business.industry", *PUBLIC_RESEARCH_FACT_DESCRIPTIONS}),
         default_classification=DataClassification.PUBLIC_BUSINESS,
         ttl_days=365,
         promotion_ceiling="candidate",

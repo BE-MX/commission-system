@@ -37,3 +37,11 @@ Read [references/api-contract.md](references/api-contract.md) before Ark calls a
 ## Handoff
 
 Report `research_task_id`, Ark `customer_id`, gate state, verified/candidate/unresolved identity anchors, evidence fact IDs, claim sections, material unknowns, and result review status. Do not describe research completion as qualification or outreach completion.
+
+## Execution receipt discipline
+
+Claim creates the server-owned Run and returns the current `agent_run_id` and `input_hash`. MCP retains the Run ID and injects it into fact and completion requests; do not supply, guess, or reuse a Run ID. The pre-claim context hash may change when a new lease generation is created, so use the claim response's hash.
+
+A successful fact append returns `tool_call_id` and `evidence_refs`. Copy that call ID, each `fact:<id>`, and its exact 64-character hash into citations; use `claim_...` and `citation_...` IDs. Do not complete after a rejected fact append. Record uncertainty honestly with sourced observations.
+
+Process only one task per heartbeat. After an operational failure, stop and report; never claim more tasks just to mark them failed. MCP blocks new claims after a failed task or ambiguous claim response until investigated and restarted. An old backend without `external_research_run_v1` is detected before claim; do not bypass that check.

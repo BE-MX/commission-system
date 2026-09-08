@@ -626,6 +626,7 @@ def claim_task(
     task_id: int,
     actor_id: int,
     agent_id: str,
+    *, external_run: bool = False,
 ) -> tuple[CustomerResearchTask, str]:
     task = get_task(db, task_id, for_update=True)
     now = beijing_now()
@@ -658,6 +659,13 @@ def claim_task(
     task.finished_at = None
     task.error_code = None
     task.error_message = None
+    if external_run:
+        from app.sales_automation.research_run_service import start_run
+        start_run(db, task, actor_id, research_input_hash(task))
+    else:
+        from app.sales_automation.research_run_service import finish_run
+        finish_run(db, task, "cancelled", "research_lease_reclaimed")
+        task.agent_run_id = None
     db.commit()
     db.refresh(task)
     return task, token
@@ -719,6 +727,8 @@ def submit_industry_gate(
         task.gate_status = "stopped"
         task.task_status = "skipped"
         task.result_review_status = "not_required"
+        from app.sales_automation.research_run_service import finish_run
+        finish_run(db, task, "completed")
         task.result_schema_version = "research_gate_v1"
         task.result_json = {
             "schema_version": "research_gate_v1",
@@ -757,6 +767,13 @@ def _validate_research_run_and_citations(
     run = db.query(AgentRun).filter(AgentRun.id == agent_run_id).one_or_none()
     run_input = dict(run.input_json or {}) if run is not None else {}
     run_context = dict(run.context_snapshot or {}) if run is not None else {}
+    if task.agent_run_id is not None and task.agent_run_id != agent_run_id:
+        raise service.ConflictError("研究执行记录不属于当前任务绑定")
+    if run is not None and run.source_runtime == "openclaw" and (
+        task.agent_run_id != run.id
+        or run_input.get("lease_generation") != task.lease_generation
+    ):
+        raise service.ConflictError("研究执行记录不属于当前租约代次")
     if (
         run is None
         or run.owner_user_id != actor_id
@@ -900,6 +917,8 @@ def complete_task_research(
     )[:10000]
     task.evidence_fact_ids = normalized_fact_ids
     task.agent_run_id = run.id
+    from app.sales_automation.research_run_service import finish_run
+    finish_run(db, task, "completed")
     task.data_classification = strictest_classification
     task.visibility_scope = strictest_visibility
     task.classification_reason = "strictest classification inherited from task, caller and evidence facts"
@@ -925,6 +944,8 @@ def fail_task(
     task.task_status = "failed"
     task.error_code = str(error_code)
     task.error_message = safe_message
+    from app.sales_automation.research_run_service import finish_run
+    finish_run(db, task, "failed", str(error_code))
     task.finished_at = beijing_now()
     task.claimed_by = None
     task.lease_token_hash = None

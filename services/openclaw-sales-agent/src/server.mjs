@@ -55,7 +55,7 @@ const researchIndustryGate = z.object({
   reason: z.string().min(1).max(2000),
 });
 const researchFact = z.object({
-  fact_key: z.string().min(1).max(128),
+  fact_key: z.string().min(1).max(128).describe("Use only a key listed for this source in the current task context fact_contract; do not invent keys"),
   value_type: z.enum(["string", "number", "boolean", "date", "datetime", "list", "object"]),
   value: z.unknown(),
   fact_layer: z.enum(["source", "inferred"]),
@@ -90,7 +90,6 @@ const researchCitation = z.object({
 });
 const researchCompletion = z.object({
   research_task_id: z.number().int().min(1),
-  agent_run_id: z.number().int().min(1),
   data_classification: z.enum(["public_business", "internal_business", "personal_contact", "restricted_internal"]).default("internal_business"),
   visibility_scope: z.enum(["all_authorized", "customer_team", "management"]).default("customer_team"),
   result_json: z.object({
@@ -104,6 +103,7 @@ const researchCompletion = z.object({
 });
 
 function result(data) {
+  if (Array.isArray(data)) data = { items: data };
   return {
     content: [{ type: "text", text: JSON.stringify(data) }],
     structuredContent: data,
@@ -142,6 +142,14 @@ export function createServer(
       ].join(" "),
     },
   );
+  const researchRuns = new Map();
+  let researchClaimPending = false;
+  let researchFailure = false;
+  const requireResearchRun = (taskId) => {
+    const runId = researchRuns.get(taskId);
+    if (!runId) throw new Error("当前进程没有该任务的受控执行记录，请先领取任务；禁止猜测 agent_run_id");
+    return runId;
+  };
   const safeTracked = (handler) => safe(async (args) => {
     runtimeReporter?.markActivity();
     return handler(args);
@@ -262,15 +270,36 @@ export function createServer(
     inputSchema: z.object({ research_task_id: z.number().int().min(1) }),
     annotations: { readOnlyHint: false, idempotentHint: false },
   }, safeTracked(async ({ research_task_id: taskId }) => {
-    const data = await client.claimResearchTask(taskId);
-    researchLeases.remember(taskId, data.lease_token, data.lease_expires_at);
-    return {
-      research_task_id: data.research_task_id,
-      customer_id: data.customer_id,
-      input_hash: data.input_hash,
-      lease_expires_at: data.lease_expires_at,
-      lease_held: true,
-    };
+    if (researchFailure) throw new Error("本 MCP 进程背调已停止领取；请报告并排查错误，恢复后重启 MCP，禁止批量领取后续任务");
+    if (researchClaimPending || researchRuns.size) throw new Error("请先完成当前背调任务；每次只允许领取一个任务");
+    researchClaimPending = true;
+    try {
+      const context = await client.getResearchTaskContext(taskId);
+      if (context.execution_contract !== "external_research_run_v1" ||
+          context.fact_contract?.version !== "registered_research_facts_v1") {
+        researchFailure = true;
+        throw new Error("方舟背调执行契约尚未部署，未领取任务；停止本轮并报告");
+      }
+      let data;
+      try {
+        data = await client.claimResearchTask(taskId);
+      } catch (error) {
+        researchFailure = true;
+        throw error;
+      }
+      if (!Number.isSafeInteger(data.agent_run_id) || data.agent_run_id < 1) {
+        researchFailure = true;
+        throw new Error("方舟未返回有效 agent_run_id，请更新后端；停止本轮，不能猜测执行记录");
+      }
+      researchLeases.remember(taskId, data.lease_token, data.lease_expires_at);
+      researchRuns.set(taskId, data.agent_run_id);
+      return { research_task_id: data.research_task_id, customer_id: data.customer_id,
+        agent_run_id: data.agent_run_id, input_hash: data.input_hash,
+        fact_contract: context.fact_contract,
+        lease_expires_at: data.lease_expires_at, lease_held: true };
+    } finally {
+      researchClaimPending = false;
+    }
   }));
 
   server.registerTool("ark_heartbeat_research_task", {
@@ -285,20 +314,25 @@ export function createServer(
     description: "Submit the task's industry relevance gate before deeper research.",
     inputSchema: researchIndustryGate,
     annotations: { readOnlyHint: false, idempotentHint: true },
-  }, safeTracked(({ research_task_id: taskId, ...gate }) => (
-    client.submitResearchIndustryGate(taskId, researchLeases.require(taskId).token, gate)
-  )));
+  }, safeTracked(async ({ research_task_id: taskId, ...gate }) => {
+    requireResearchRun(taskId);
+    const data = await client.submitResearchIndustryGate(taskId, researchLeases.require(taskId).token, gate);
+    if (data.gate_status === "stopped") {
+      researchLeases.forget(taskId);
+      researchRuns.delete(taskId);
+    }
+    return data;
+  }));
 
   server.registerTool("ark_append_research_facts", {
     description: "Append sourced or inferred facts to the claimed task and return canonical evidence references.",
     inputSchema: z.object({
       research_task_id: z.number().int().min(1),
-      agent_run_id: z.number().int().min(1),
       facts: z.array(researchFact).min(1).max(100),
     }),
     annotations: { readOnlyHint: false, idempotentHint: false },
-  }, safeTracked(({ research_task_id: taskId, agent_run_id: agentRunId, facts }) => (
-    client.appendResearchFacts(taskId, researchLeases.require(taskId).token, agentRunId, facts)
+  }, safeTracked(({ research_task_id: taskId, facts }) => (
+    client.appendResearchFacts(taskId, researchLeases.require(taskId).token, requireResearchRun(taskId), facts)
   )));
 
   server.registerTool("ark_complete_research_task", {
@@ -306,8 +340,9 @@ export function createServer(
     inputSchema: researchCompletion,
     annotations: { readOnlyHint: false, idempotentHint: true },
   }, safeTracked(async ({ research_task_id: taskId, ...research }) => {
-    const data = await client.completeResearchTask(taskId, researchLeases.require(taskId).token, research);
+    const data = await client.completeResearchTask(taskId, researchLeases.require(taskId).token, { ...research, agent_run_id: requireResearchRun(taskId) });
     researchLeases.forget(taskId);
+    researchRuns.delete(taskId);
     return data;
   }));
 
@@ -321,10 +356,13 @@ export function createServer(
     }),
     annotations: { readOnlyHint: false, idempotentHint: false },
   }, safeTracked(async ({ research_task_id: taskId, error_code: errorCode }) => {
+    requireResearchRun(taskId);
     const data = await client.failResearchTask(
       taskId, researchLeases.require(taskId).token, errorCode,
     );
     researchLeases.forget(taskId);
+    researchRuns.delete(taskId);
+    researchFailure = true;
     return data;
   }));
 

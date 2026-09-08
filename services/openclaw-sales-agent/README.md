@@ -220,3 +220,7 @@ MCP 候选参数在原有 `name/website/source_url/captured_at` 基础上必须�
 除 `npm test` 外，运行 `ARK_CONTRACT_PYTHON=/path/to/python node scripts/verify-candidate-contract.mjs`；Python 需安装 Pydantic 2。该检查让 7 条和 20 条离线样本经过真实 MCP 与 HTTP 序列化，再由仓库 `CandidateBatch` 校验，不访问网络或数据库。
 
 候选提交发生网络错误或超时时，sidecar 会使用发送前固定的完整请求（包括原 request_key）自动重试一次；其他写操作和明确的 HTTP 错误不会自动重试。两次仍未收到回执时返回“结果未确认”，必须原样重试，不能拆批、改分数或换 key；超时不代表后端未入库。后端按客户/联系人及身份类型保留唯一的活动主要身份，新来源证据不能替换已存在的主要身份。
+
+背调要求后端 context 声明 `external_research_run_v1`。新版 MCP 在领取前检查；后端领取时原子创建研究 Run/客户范围，MCP 保存 Run ID 并注入后续写入，不再让模型填写。事实提交事务返回服务器 `tool_call_id` 与 `evidence_refs`，并写同一 Run 的规范请求/成功事件。失败/跳过/完成/租约重领关闭相应外部 Run。MCP 单次只持有一个研究任务；任务失败或领取响应不确定时阻止本进程后续领取，需排查并重启。知识搜索数组封装为 `{items: [...]}`，满足 MCP structuredContent 对象契约。
+
+部署顺序：通过方舟统一部署入口更新后端并确认 context execution_contract，再安装本机 sidecar/双工作区 Skill 和 HEARTBEAT；不要在后端未更新前重新入队。人工获准重试通过 `POST /api/customer-hub/research-tasks/{id}/retry?expected_attempt_count=N`，要求获客管理权限及客户读取范围；只接受仍为 failed 且尝试次数匹配的任务。

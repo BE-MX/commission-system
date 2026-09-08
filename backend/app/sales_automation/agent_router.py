@@ -11,7 +11,7 @@ from app.customer import outreach_service
 from app.customer.access_service import CustomerAccessDenied, require_customer_access
 from app.knowledge import service as knowledge_service
 from app.knowledge.models import KnowledgeLibrary
-from app.sales_automation import enrichment_service, public_pool_service, service
+from app.sales_automation import public_pool_service, service, enrichment_service
 from app.sales_automation.dependencies import require_sales_agent
 from app.sales_automation.router import _call, _iso, _job, _research_task, _user_id
 from app.sales_automation.schemas import (
@@ -70,6 +70,9 @@ def _research_context(db: Session, task_id: int) -> dict:
         input_snapshot["customer_id"] = task.logical_customer_id
     return {
         "research_task_id": task.id,
+        "execution_contract": "external_research_run_v1",
+        "task_status": task.task_status,
+        "gate_status": task.gate_status,
         "customer_id": task.logical_customer_id,
         "task_type": task.task_type,
         "tier": task.tier,
@@ -84,6 +87,7 @@ def _research_context(db: Session, task_id: int) -> dict:
             "identity_status": customer.identity_status,
             "relationship_stage": customer.relationship_stage,
         },
+        "fact_contract": enrichment_service.research_fact_contract(),
         "research_rules": {
             "identity_boundary": "仅围绕商业身份和公开业务证据调查；主体不明时保留待识别，不拼接同名主体资料",
             "industry_gate": "先验证业务相关性；明确无关时停止，不猜联系方式、不生成触达草稿或正向成交分",
@@ -178,9 +182,11 @@ def claim_agent_research_task(
         task_id,
         _user_id(agent),
         payload.agent_id,
+        external_run=True,
     )
     return ok({
         "research_task_id": row.id,
+        "agent_run_id": row.agent_run_id,
         "customer_id": row.logical_customer_id,
         "lease_token": token,
         "lease_generation": row.lease_generation,
@@ -239,36 +245,9 @@ def append_agent_research_facts(
     db: Session = Depends(get_db),
     agent=Depends(require_sales_agent),
 ):
-    task, input_hash = _call(
-        public_pool_service.validate_research_fact_write,
-        db,
-        task_id,
-        _user_id(agent),
-        payload.agent_id,
-        payload.lease_token,
-        payload.agent_run_id,
-    )
-    _sources, facts = _call(
-        enrichment_service.append_research_facts,
-        db,
-        task_id,
-        payload.facts,
-        agent_run_id=payload.agent_run_id,
-    )
-    db.commit()
-    return ok({
-        "research_task_id": task.id,
-        "customer_id": task.logical_customer_id,
-        "input_hash": input_hash,
-        "evidence_refs": [{
-            "customer_id": task.logical_customer_id,
-            "evidence_ref": f"fact:{fact.id}",
-            "evidence_content_hash": fact.fact_fingerprint,
-            "input_hash": input_hash,
-            "data_classification": fact.data_classification,
-            "visibility_scope": fact.visibility_scope,
-        } for fact in facts],
-    })
+    from app.sales_automation.research_run_service import append_facts
+    return ok(_call(append_facts, db, task_id, _user_id(agent), payload.agent_id,
+                    payload.lease_token, payload.agent_run_id, payload.facts))
 
 
 @router.post("/agent/research-tasks/{task_id}/complete")

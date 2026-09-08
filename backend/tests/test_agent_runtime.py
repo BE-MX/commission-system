@@ -470,7 +470,7 @@ def _start(db, run_id, claim):
 
 
 def test_profile_seed_is_immutable_and_idempotent(db):
-    assert db.query(models.AgentProfile).count() == 3
+    assert db.query(models.AgentProfile).count() == 4
     assert seed.seed_default_profiles(db) == 0
     profile = service.get_active_profile(db, "customer_order_copilot")
     assert profile.version == 5
