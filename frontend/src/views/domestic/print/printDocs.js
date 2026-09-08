@@ -72,22 +72,24 @@ export function buildUnitLabelDoc({ data, logoUrl }) {
   // Reserve the QR's physical size; fit long names into the text area.
   const customerFontMm = Math.min(2, Math.sqrt(40 / Array.from(customerName).length))
   const orderFontMm = Math.min(1.25, Math.sqrt(30 / Math.max(1, String(data.domestic_no || '').length)))
+  const orderDate = esc(data.order_date || '-').replace(/^(\d{4}-)(\d{2}-\d{2})$/, '<span>$1</span><span>$2</span>')
   const body = units.map(unit => `<div class="label unit-label">
     <div class="unit-meta">
       ${img(logoUrl, 'unit-logo', '莱莎健康假发')}
       <strong class="unit-customer" style="font-size:${customerFontMm}mm">${esc(customerName)}</strong>
       <span class="unit-order" style="font-size:${orderFontMm}mm">${esc(data.domestic_no)}</span>
-      <span class="unit-date">${esc(data.order_date || '-')}</span>
+      <span class="unit-date">${orderDate}</span>
     </div>
     ${img(unit.qr_image, 'unit-qr', `单件 ${unit.unit_code}`)}
   </div>`).join('')
   const css = `${LABEL_CSS}
     .unit-label{gap:.6mm}
-    .unit-meta{width:10.6mm;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0}
-    .unit-logo{width:9.5mm;height:4.8mm;object-fit:contain;flex-shrink:0}
+    .unit-meta{width:10.6mm;height:100%;gap:.3mm;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0}
+    .unit-logo{width:9.5mm;height:4.2mm;object-fit:contain;flex-shrink:0}
     .unit-customer{width:100%;font-size:2mm;line-height:1.1;text-align:center;overflow-wrap:anywhere;word-break:break-all}
     .unit-order{width:100%;font-size:1.25mm;line-height:1.15;text-align:center;white-space:normal;overflow-wrap:anywhere;word-break:break-all}
-    .unit-date{width:100%;font-size:1.25mm;line-height:1.2;text-align:center;white-space:nowrap}
+    .unit-date{width:100%;font-size:2mm;font-weight:600;line-height:1.2;text-align:center;display:flex;flex-wrap:wrap;justify-content:center}
+    .unit-date span{white-space:nowrap}
     .unit-qr{width:16.8mm;height:16.8mm;object-fit:contain;image-rendering:pixelated;flex-shrink:0}
   `
   return wrapDoc(`逐件二维码 ${data.domestic_no}`, css, body)
