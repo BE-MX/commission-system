@@ -223,6 +223,22 @@ def research_task_detail(task_id: int, db: Session = Depends(get_db), user=Depen
         _not_found()
     return ok(data)
 
+@router.post("/research-tasks/{task_id}/retry")
+def retry_research_task(
+    task_id: int,
+    expected_attempt_count: int = Query(..., ge=1),
+    db: Session = Depends(get_db),
+    user=Depends(require_permission("sales_automation:admin")),
+):
+    from app.sales_automation.research_run_service import requeue_failed_task
+    _, logical_id = _logical_record(
+        db, CustomerResearchTask, "research_task", task_id, user, RESEARCH_READ,
+    )
+    access = _access(db, int(logical_id), user, action_permissions=RESEARCH_READ)
+    row = _service_call(requeue_failed_task, db, task_id, _user_id(user), expected_attempt_count)
+    return ok(query_service.serialize_research_task(row, access, customer_id=int(logical_id)))
+
+
 @router.post("/research-tasks/{task_id}/result-review")
 def review_research_task(task_id: int, payload: ResearchResultReview, db: Session = Depends(get_db), user=Depends(require_permission("sales_automation:admin"))):
     row, logical_id = _logical_record(

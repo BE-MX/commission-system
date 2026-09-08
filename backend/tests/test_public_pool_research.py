@@ -364,6 +364,15 @@ def test_revision_requested_requeues_same_task_with_new_fencing_generation(db):
         public_pool_service.heartbeat_task(
             db, task.id, 1, "research-agent", first_token,
         )
+    second_run = _governed_run(db, rerun, run_id=90_000 + task.id)
+    second_fact = _research_fact(db, rerun, second_run, suffix="revised")
+    _record_fact_tool_output(db, rerun, second_run, second_fact)
+    public_pool_service.complete_task_research(
+        db, task.id, 1, "research-agent", second_token,
+        _research_result(rerun, second_fact), agent_run_id=second_run.id,
+    )
+    assert task.task_status == "completed"
+    assert task.agent_run_id == second_run.id
 
 
 def test_gate_stopped_task_cannot_enter_or_pass_qualification(db):
@@ -811,8 +820,10 @@ def test_agent_research_context_is_customer_scoped_and_contains_no_credentials(d
 
 def test_agent_appends_task_scoped_research_facts_with_canonical_evidence(db):
     task = _task(db)
-    claimed, lease_token = public_pool_service.claim_task(db, task.id, 1, "research-agent")
-    run = _governed_run(db, claimed)
+    from app.agent_runtime.seed import seed_default_profiles
+    seed_default_profiles(db)
+    claimed, lease_token = public_pool_service.claim_task(db, task.id, 1, "research-agent", external_run=True)
+    run = db.get(AgentRun, claimed.agent_run_id)
     db.commit()
     app = FastAPI()
     app.include_router(agent_router.router, prefix="/api/sales-automation")
