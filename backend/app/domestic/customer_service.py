@@ -86,7 +86,8 @@ def release_stale_private_customers(db: Session) -> int:
     cutoff = _months_ago(beijing_today(), PUBLIC_SEA_MONTHS)
     latest_order_dates = dict(
         db.query(DomesticOrder.customer_id, func.max(DomesticOrder.order_date))
-        .filter(DomesticOrder.deleted_flag == 0, DomesticOrder.status != C.ORDER_DRAFT)
+        .filter(DomesticOrder.deleted_flag == 0, DomesticOrder.status != C.ORDER_DRAFT,
+                DomesticOrder.order_kind == "business")
         .group_by(DomesticOrder.customer_id)
         .all()
     )
@@ -118,6 +119,7 @@ def release_stale_private_customers(db: Session) -> int:
             DomesticOrder.customer_id.in_(locked_ids or {0}),
             DomesticOrder.deleted_flag == 0,
             DomesticOrder.status != C.ORDER_DRAFT,
+            DomesticOrder.order_kind == "business",
         )
         .group_by(DomesticOrder.customer_id)
         .all()
@@ -193,6 +195,7 @@ def list_customers(
             db.query(DomesticOrder.customer_id, func.count(DomesticOrder.id))
             .filter(
                 DomesticOrder.customer_id.in_(row_ids),
+                DomesticOrder.order_kind == "business",
                 DomesticOrder.deleted_flag == 0,
             )
             .group_by(DomesticOrder.customer_id)

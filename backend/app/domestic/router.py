@@ -936,6 +936,7 @@ def get_item_unit_qrcodes(
         "line_code": f"A{item.line_no or 1}",
         "product_name": item.product_name,
         "domestic_no": detail["domestic_no"],
+        "order_date": detail["order_date"],
         "customer_name": detail["customer_name"],
         "order_kind": detail["order_kind"],
         "order_qty": item.order_qty,

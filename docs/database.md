@@ -228,7 +228,7 @@
 
 > **130/131 是会员定价两阶段停写迁移，禁止滚动混部。** 130 建原价表和定价请求表、回填客户最近充值会员快照及历史订单 `legacy_manual` 价格快照；131 先拒绝任何空或非法快照，再移除旧 `unit_price DEFAULT 0.00`、收紧非空并建立金额/枚举 CHECK。MySQL DDL 不可事务回滚，必须停止全部内贸写入并等待在途事务排空，在隔离 MySQL 先演练 upgrade/downgrade，再执行生产迁移和数据复核；开发验证不得直接应用生产库。
 
-**140 订单大类迁移**：`ark_domestic_orders.order_kind` 为非空 `business/production`，数据库默认 `business` 使存量单原样归入业务单；新增 `(order_kind, deleted_flag)` 索引。`customer_id/order_category` 改为可空，CHECK 区分业务单必须有客户和有效类别，生产单客户、类别、类型、渠道和发货日期均为空且总额/已扣金额为 0。生产单号 `DP{YYYYMMDD}-{NNN}` 独立递增，自动用作 `order_no`，不创建虚拟客户。下文订单定价与客户规则仅适用于业务单。
+**140 订单大类迁移**：`ark_domestic_orders.order_kind` 为非空 `business/production`，数据库默认 `business` 使存量单原样归入业务单；新增 `(order_kind, deleted_flag)` 索引。`customer_id/order_category` 改为可空，CHECK 区分业务单必须有客户和有效类别，140 原约束要求生产单客户为空；142 起允许关联已有客户，其类别、类型、渠道和发货日期仍为空且总额/已扣金额为 0。生产单号 `DP{YYYYMMDD}-{NNN}` 独立递增，自动用作 `order_no`，不创建虚拟客户。下文订单定价与客户规则仅适用于业务单。
 
 140 从两条原路线各克隆生产（确认下单～入库）与普单（毛坯出库～发货完成）路线，复制保留区段内的条件规则并裁剪跳过目标；跨区段控制、边界缺失/重复、源路线停用或目标重名会在 DDL 前报错。未配置源路线的空安装只升级结构，建单会提示缺少路线，配置后按对应固定路线补挂才能报工。已有订单、逐件数据、报工、产品档案和明细路线快照不改写。旧应用不了解生产单的 NULL 客户，上线须协调 schema 与全部读写应用切换，完成前不开放生产单入口。存在生产订单或分段路线引用时拒绝 downgrade，防止数据丢失。
 
@@ -472,3 +472,5 @@ T1 = 当前公海且有历史订单；T2 = 无历史订单但有企业邮箱、�
 图片文件不进入数据库，存放在 `KNOWLEDGE_STORAGE_ROOT/{library_id}/...` 私有目录，数据库只保存相对路径。修订事务会锁定并校验图片所有权后写 `ark_knowledge_revision_assets`；24 小时仍为 temporary 且无引用的图片由每日清理任务软删后移除文件。
 
 AI Worker 用 `status + lease_token + lease_expires_at` 领取任务，模型网络调用期间不持有业务行锁。租约按 Provider timeout 延长，过期任务最多领取 3 次；达到上限转 failed，避免无限重放。应用结果时重新锁定知识库/文档/任务并核对 `base_revision_id`，因此不会覆盖任务创建后的编辑。
+
+**142 生产客户关联迁移**：仅放松 `ck_dom_order_kind_fields` 中生产单 customer_id 必须为空的限制，保留业务客户必填、生产零金额和客户外键；不清空、不回填现有订单。MySQL 单条 ALTER 替换 CHECK；已存在生产客户关联时拒绝回退。部署入口执行，开发验证只使用隔离库。

@@ -112,7 +112,7 @@ def test_production_discards_sales_and_hairstyle_fields():
             "hairstyle_images": ["old.png"], "style_images": ["old.png"], "color": "黑色", "remark": "备货"}
     request = payload(customer_id=1, customer_shop_name="test", order_type="first", order_channel="wechat",
                       required_ship_date="2026-09-08", items=[item])
-    assert request.customer_id is None and request.required_ship_date is None
+    assert request.customer_id == 1 and request.required_ship_date is None
     row = request.items[0]
     assert row.attrs.hair_style_series is None
     assert row.special_price is None and row.labor_fee == 0
@@ -268,3 +268,47 @@ def test_migration_compiles_mysql_nullable_columns_and_zero_price_constraints(mo
     assert "MODIFY order_category VARCHAR(16) NULL" in sql
     assert "ck_dom_order_kind_fields" in sql and "customer_id IS NULL" in sql
     assert "ck_dom_item_production_price" in sql and "base_price_version_snapshot = 0" in sql
+
+
+@pytest.mark.parametrize("draft", [False, True])
+def test_production_can_select_customer_without_sales_side_effects(db, context, monkeypatch, draft):
+    customer = DomesticCustomer(shop_name="生产关联客户", balance=Decimal("1234.00"), created_by=context.id,
+                                last_order_date=date(2026, 8, 1))
+    db.add(customer)
+    db.commit()
+    monkeypatch.setattr(pricing_service, "lock_and_validate_order_quotes", lambda *a, **k: pytest.fail("Pricing was called"))
+    request = payload(customer_id=customer.id, is_draft=draft)
+    result = order_service.create_order(db, request, context.id)
+    detail = order_service.get_order_detail(db, result["id"])
+    assert detail["customer_id"] == customer.id
+    assert detail["customer_name"] == "生产关联客户"
+    from app.domestic.router import get_item_unit_qrcodes
+    from app.domestic.export_service import build_order_workbook
+    from openpyxl import load_workbook
+    labels = get_item_unit_qrcodes(detail["items"][0]["id"], start_no=1, end_no=1, db=db,
+                                   _user={"sub": str(context.id), "permissions": ["domestic:read"], "roles": []})["data"]
+    assert labels["customer_name"] == "生产关联客户" and labels["order_date"] == date(2026, 9, 7)
+    sheet = load_workbook(build_order_workbook(detail)).active
+    assert "生产关联客户" in sheet["A3"].value
+    assert detail["total_amount"] == detail["charged_amount"] == 0
+    if draft:
+        order_service.submit_draft(db, result["id"], DraftSubmitRequest(request_id=str(uuid4())), context.id)
+    db.refresh(customer)
+    assert customer.balance == Decimal("1234.00")
+    assert customer.last_order_date == date(2026, 8, 1)
+    assert db.query(DomesticCustomerLedger).count() == 0
+    assert order_service.create_order(db, request, context.id)["replayed"] is True
+
+
+def test_production_edit_customer_can_select_clear_and_reject_missing(db, context):
+    customer = DomesticCustomer(shop_name="可选生产客户", balance=Decimal("100"), created_by=context.id)
+    db.add(customer)
+    db.commit()
+    result = order_service.create_order(db, payload(), context.id)
+    order_service.update_order(db, result["id"], OrderUpdate(production_customer_id=customer.id), context.id)
+    assert order_service.get_order_detail(db, result["id"])["customer_id"] == customer.id
+    order_service.update_order(db, result["id"], OrderUpdate(production_customer_id=None), context.id)
+    assert order_service.get_order_detail(db, result["id"])["customer_id"] is None
+    with pytest.raises(ValueError, match="客户不存在"):
+        order_service.update_order(db, result["id"], OrderUpdate(production_customer_id=999999), context.id)
+    assert db.query(DomesticCustomerLedger).count() == 0

@@ -14,13 +14,14 @@ test('production cap needs blank specifications but no hairstyle series', () => 
   assert.equal(validateItemAttributes({ product_type: 'piece', craft: '全递针9*14', length: '25厘米' }, 'production'), '')
 })
 
-test('production payload omits customer, pricing, sales dimensions and hairstyle remnants', () => {
+test('production payload keeps optional customer and omits pricing, sales dimensions and hairstyle remnants', () => {
   const body = buildProductionPayload({
     order_no: 'old', customer_id: 1, order_type: 'first', order_channel: 'wechat', order_date: '2026-09-07',
     items: [{ key: 'one', order_qty: 3, attrs: { product_type: 'cap', craft: '递旋', size: '59', length: '20厘米', hair_style_series: 'old' },
       specialPrice: 999, laborFee: 1, hairstyle: 'old', style_images: ['old.png'], color: '黑', color_images: [{ path: 'black.png' }], remark: '备货' }],
   })
-  assert.deepEqual(Object.keys(body).sort(), ['items', 'order_date', 'order_kind', 'remark'])
+  assert.deepEqual(Object.keys(body).sort(), ['customer_id', 'items', 'order_date', 'order_kind', 'remark'])
+  assert.equal(body.customer_id, 1)
   assert.deepEqual(body.items[0], {
     client_key: 'one', order_qty: 3, attrs: { product_type: 'cap', craft: '递旋', length: '20厘米', size: '59' },
     color: '黑', color_images: ['black.png'], remark: '备货', remark_images: [],

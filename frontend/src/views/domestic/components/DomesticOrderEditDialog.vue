@@ -5,11 +5,16 @@
       <template v-if="detail">
         <div class="order-edit-summary">
           <strong>{{ detail.domestic_no }}</strong>
-          <span>{{ production ? '生产订单 · 公司备货' : `客户编码：${detail.customer_custom_code || '未填写'} · ${detail.order_category_label}` }}</span>
+          <span>{{ production ? `生产订单 · ${detail.customer_name || '公司备货'}` : `客户编码：${detail.customer_custom_code || '未填写'} · ${detail.order_category_label}` }}</span>
           <span>{{ detail.status_label }}</span>
         </div>
         <el-form label-position="top" :disabled="headerSaving || !editable">
           <div class="order-edit-grid">
+            <el-form-item v-if="production" label="客户店名">
+              <el-select v-model="header.production_customer_id" filterable clearable remote :remote-method="searchProductionCustomers" :loading="customerLoading" placeholder="选填，不选则为公司备货">
+                <el-option v-for="customer in customerChoices" :key="customer.id" :value="customer.id" :label="customer.shop_name" />
+              </el-select>
+            </el-form-item>
             <el-form-item v-if="!production" label="客户订单号"><el-input v-model="header.order_no" placeholder="选填" maxlength="64" /></el-form-item>
             <el-form-item label="下单日期" required><el-date-picker v-model="header.order_date" type="date" value-format="YYYY-MM-DD" /></el-form-item>
             <el-form-item v-if="!production" label="要求发货日期" required><el-date-picker v-model="header.required_ship_date" type="date" value-format="YYYY-MM-DD" /></el-form-item>
@@ -84,11 +89,12 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { DETAIL_SECTIONS, getOptions, getOrder, updateOrder, updateOrderItem, uploadImage } from '@/api/domestic'
+import { DETAIL_SECTIONS, getOptions, getOrder, listCustomers, updateOrder, updateOrderItem, uploadImage } from '@/api/domestic'
 import { useAuthStore } from '@/stores/auth'
 import AppUpload from '@/components/AppUpload.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import DomesticImages from '@/components/domestic/DomesticImages.vue'
+import { createLatestRequestRunner } from '../composables/latestRequest'
 import DomesticDraftItemDialog from './DomesticDraftItemDialog.vue'
 import { detailSectionsForKind } from '../domesticOrderKinds'
 import { orderHeaderForm, buildHeaderPatch, orderItemForm, buildItemPatch, itemEditDelta, itemPriceError } from '../domesticOrderEditing'
@@ -99,6 +105,20 @@ const auth = useAuthStore()
 const detail = ref(null), loading = ref(false), headerSaving = ref(false), pendingUploads = ref(0)
 const options = ref({ order_types: [], order_channels: [] })
 const header = reactive(orderHeaderForm(null))
+const customerOptions = ref([]), customerLoading = ref(false)
+const runLatestCustomerSearch = createLatestRequestRunner()
+const customerChoices = computed(() => {
+  const current = detail.value?.customer_id ? [{ id: detail.value.customer_id, shop_name: detail.value.customer_name }] : []
+  return [...new Map([...current, ...customerOptions.value].map(row => [row.id, row])).values()]
+})
+async function searchProductionCustomers(keyword) {
+  customerLoading.value = true
+  await runLatestCustomerSearch(
+    () => listCustomers({ page: 1, page_size: 50, keyword, status: 1 }),
+    res => { customerOptions.value = res.data?.items || [] },
+    () => { customerLoading.value = false },
+  )
+}
 const appendVisible = ref(false)
 const itemDialog = reactive({ visible: false, item: null, form: {}, saving: false })
 let loadSequence = 0
@@ -124,6 +144,7 @@ watch(() => [props.modelValue, props.orderId], async ([visible, id]) => {
     detail.value = order.data
     options.value = opts.data || options.value
     Object.assign(header, orderHeaderForm(detail.value))
+    if (production.value) await searchProductionCustomers('')
     const item = detail.value.items.find(row => row.id === props.initialItemId)
     if (item && editable.value && item.status !== 2) openItem(item)
   } catch { /* API interceptor reports the load failure. */ } finally {
@@ -168,6 +189,10 @@ async function saveHeader() {
   try {
     await updateOrder(detail.value.id, patch)
     Object.assign(detail.value, patch)
+    if (Object.hasOwn(patch, 'production_customer_id')) {
+      detail.value.customer_id = patch.production_customer_id
+      detail.value.customer_name = customerChoices.value.find(row => row.id === patch.production_customer_id)?.shop_name || null
+    }
     ElMessage.success('订单信息已保存')
     emit('saved')
   } catch { /* API interceptor reports the save failure. */ } finally { headerSaving.value = false }

@@ -172,7 +172,7 @@ class DomesticOrder(Base):
     order_no = Column(String(64), nullable=False, comment="客户订单号（原样文本）")
     order_date = Column(Date, nullable=False, comment="下单日期")
     required_ship_date = Column(Date, comment="要求发货日期（新单必填；存量单为 NULL）")
-    customer_id = Column(Integer, ForeignKey("ark_domestic_customers.id", ondelete="RESTRICT"), nullable=True, comment="业务客户；生产订单为空")
+    customer_id = Column(Integer, ForeignKey("ark_domestic_customers.id", ondelete="RESTRICT"), nullable=True, comment="关联客户，业务单必填，生产单可选")
     order_category = Column(String(16).evaluates_none(), nullable=True, default="normal", comment="normal=普货,special=特单；生产订单为空")
     order_type = Column(String(32), comment="订单类型（sys_dict: domestic_order_type）")
     order_channel = Column(String(32), comment="订单渠道（sys_dict: domestic_order_channel）")
@@ -198,7 +198,7 @@ class DomesticOrder(Base):
         CheckConstraint("order_kind IN ('business', 'production')", name="ck_dom_order_kind"),
         CheckConstraint(
             "(order_kind = 'business' AND customer_id IS NOT NULL AND order_category IS NOT NULL AND order_category IN ('normal', 'special')) OR "
-            "(order_kind = 'production' AND customer_id IS NULL AND order_category IS NULL AND "
+            "(order_kind = 'production' AND order_category IS NULL AND "
             "order_type IS NULL AND order_channel IS NULL AND required_ship_date IS NULL AND total_amount = 0 AND charged_amount = 0)",
             name="ck_dom_order_kind_fields",
         ),

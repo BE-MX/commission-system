@@ -68,23 +68,26 @@ export function buildLabelDoc({ card, logoUrl, copies = 1 }) {
 // 逐件标签显示客户名称；二维码仍保留各单件独立身份。
 export function buildUnitLabelDoc({ data, logoUrl }) {
   const units = data.units || []
-  const customerName = data.order_kind === 'production' ? '公司备货' : (data.customer_name || '未填写客户')
+  const customerName = data.customer_name || (data.order_kind === 'production' ? '公司备货' : '未填写客户')
   // Reserve the QR's physical size; fit long names into the text area.
-  const customerFontMm = Math.min(2, Math.sqrt(70 / Array.from(customerName).length))
+  const customerFontMm = Math.min(2, Math.sqrt(40 / Array.from(customerName).length))
+  const orderFontMm = Math.min(1.25, Math.sqrt(30 / Math.max(1, String(data.domestic_no || '').length)))
   const body = units.map(unit => `<div class="label unit-label">
     <div class="unit-meta">
       ${img(logoUrl, 'unit-logo', '莱莎健康假发')}
       <strong class="unit-customer" style="font-size:${customerFontMm}mm">${esc(customerName)}</strong>
-      <span class="unit-order">${esc(data.domestic_no)}</span>
+      <span class="unit-order" style="font-size:${orderFontMm}mm">${esc(data.domestic_no)}</span>
+      <span class="unit-date">${esc(data.order_date || '-')}</span>
     </div>
     ${img(unit.qr_image, 'unit-qr', `单件 ${unit.unit_code}`)}
   </div>`).join('')
   const css = `${LABEL_CSS}
     .unit-label{gap:.6mm}
     .unit-meta{width:10.6mm;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0}
-    .unit-logo{width:9.5mm;height:6mm;object-fit:contain;flex-shrink:0}
+    .unit-logo{width:9.5mm;height:4.8mm;object-fit:contain;flex-shrink:0}
     .unit-customer{width:100%;font-size:2mm;line-height:1.1;text-align:center;overflow-wrap:anywhere;word-break:break-all}
-    .unit-order{max-width:10.2mm;font-size:1.25mm;line-height:1.15;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+    .unit-order{width:100%;font-size:1.25mm;line-height:1.15;text-align:center;white-space:normal;overflow-wrap:anywhere;word-break:break-all}
+    .unit-date{width:100%;font-size:1.25mm;line-height:1.2;text-align:center;white-space:nowrap}
     .unit-qr{width:16.8mm;height:16.8mm;object-fit:contain;image-rendering:pixelated;flex-shrink:0}
   `
   return wrapDoc(`逐件二维码 ${data.domestic_no}`, css, body)
@@ -180,7 +183,7 @@ export function buildCardDoc({ card, imageMap = {} }) {
   <div class="header">
     <div>
       <h1>${production ? '生产订单流转卡' : '内贸流转卡'}</h1>
-      <div class="order-no">${esc(card.domestic_no)}${production ? ' · 公司备货' : ` · 客户订单号 ${esc(card.order_no)}`}</div>
+      <div class="order-no">${esc(card.domestic_no)}${production ? ` · ${esc(card.customer_name || '公司备货')}` : ` · 客户订单号 ${esc(card.order_no)}`}</div>
     </div>
     ${card.order_category === 'special' ? '<div class="special-badge">特单</div>' : ''}
   </div>

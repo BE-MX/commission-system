@@ -17,6 +17,7 @@ export function buildProductionPayload(form) {
   const paths = images => (images || []).map(image => typeof image === 'string' ? image : image.path)
   return {
     order_kind: 'production',
+    customer_id: form.customer_id || null,
     order_date: form.order_date,
     remark: form.remark || null,
     items: form.items.map(item => ({

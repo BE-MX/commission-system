@@ -7,27 +7,28 @@
     </div>
 
     <div class="panel head-panel">
-      <div class="panel-title">{{ isProduction ? '生产订单 · 内部毛坯备货' : '业务订单' }}</div>
+      <div class="panel-title">{{ isProduction ? '生产订单' : '业务订单' }}</div>
       <el-form :model="form" label-width="92px" class="head-form">
         <el-row :gutter="16">
-          <el-col v-if="!isProduction" :span="8">
-            <el-form-item label="客户店名" required>
+          <el-col :span="8">
+            <el-form-item label="客户店名" :required="!isProduction">
               <el-select
                 v-model="form.customer_id" filterable clearable remote
                 :remote-method="searchCustomers" :loading="customerLoading"
-                placeholder="搜索已有客户，没有就在下面直接填新店名" style="width: 100%"
+                :placeholder="isProduction ? '选填，搜索并选择客户' : '搜索已有客户，没有就在下面直接填新店名'" style="width: 100%"
               >
                 <el-option
                   v-for="c in customers" :key="c.id"
-                  :label="`${c.shop_name}（${c.settle_mode === 'credit' ? '先下单后付款 · ' : ''}${c.membership_label || '普通客户'} · 余额 ¥${Number(c.balance || 0).toFixed(2)}）`"
+                  :label="isProduction ? c.shop_name : `${c.shop_name}（${c.settle_mode === 'credit' ? '先下单后付款 · ' : ''}${c.membership_label || '普通客户'} · 余额 ¥${Number(c.balance || 0).toFixed(2)}）`"
                   :value="c.id"
                 />
               </el-select>
               <el-input
-                v-if="!form.customer_id" v-model="form.customer_shop_name"
+                v-if="!isProduction && !form.customer_id" v-model="form.customer_shop_name"
                 placeholder="新客户：直接输入店名，下单时自动建档" class="new-customer"
               />
-              <div v-if="selectedCustomer" class="balance-hint">
+              <div v-if="isProduction" class="balance-hint">可选择已有客户；不选则为公司备货</div>
+              <div v-if="!isProduction && selectedCustomer" class="balance-hint">
                 <template v-if="selectedCustomer.settle_mode === 'credit'">
                   先下单后付款 · 不校验余额，欠款记负余额（当前 ¥{{ Number(selectedCustomer.balance || 0).toFixed(2) }}）
                 </template>
@@ -37,7 +38,7 @@
               </div>
             </el-form-item>
           </el-col>
-          <el-col :span="isProduction ? 10 : 5">
+          <el-col :span="isProduction ? 8 : 5">
             <el-form-item label="订单号">
               <span v-if="isProduction" class="muted">提交后自动生成 DP 开头的生产单号</span>
               <el-input v-else v-model="form.order_no" placeholder="选填，客户订单号" maxlength="64" />

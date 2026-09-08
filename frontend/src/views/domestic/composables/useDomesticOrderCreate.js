@@ -459,7 +459,7 @@ export function useDomesticOrderCreate(orderKind = 'business') {
     try {
       const optRes = await getOptions()
       options.value = optRes.data || options.value
-      if (!isProduction) await searchCustomers('')
+      await searchCustomers('')
     } catch { /* 拦截器已提示 */ } finally {
       loading.value = false
     }

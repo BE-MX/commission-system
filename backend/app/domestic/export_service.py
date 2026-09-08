@@ -236,7 +236,9 @@ def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
         ws["A2"] = (f"下单日期：{_date_text(detail.get('order_date'))}     "
                     f"生产单号：{_safe_text(detail.get('domestic_no'))}     "
                     f"申请人：{_safe_text(applicant_name)}")
-        ws["A3"] = "用途：公司毛坯备货（确认下单至入库）     审批人签字：____________________"
+        customer_label = _safe_text(detail.get("customer_name"))
+        purpose = f"客户：{customer_label}（毛坯生产至入库）" if customer_label else "用途：公司毛坯备货（确认下单至入库）"
+        ws["A3"] = f"{purpose}     审批人签字：____________________"
     else:
         ws.merge_cells(f"A4:{last_column}4")
         ws["A4"] = _finance_text(detail)

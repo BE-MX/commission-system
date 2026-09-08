@@ -64,7 +64,7 @@
           </template>
         </el-table-column>
         <el-table-column :render-header="renderOrderHeader" prop="customer_name" label="客户 / 用途" min-width="120" fixed="left" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.order_kind === 'production' ? '公司备货' : row.customer_name }}</template>
+          <template #default="{ row }">{{ row.customer_name || (row.order_kind === 'production' ? '公司备货' : '-') }}</template>
         </el-table-column>
         <el-table-column :render-header="renderOrderHeader" prop="customer_source_label" label="客户来源" min-width="100" show-overflow-tooltip />
         <el-table-column :render-header="renderOrderHeader" prop="order_kind_label" label="订单大类" min-width="90" />
@@ -119,7 +119,7 @@
     <DetailDrawer v-model="detailVisible" title="内贸订单详情" :width="880" :loading="detailLoading">
       <template v-if="detail">
         <div class="info-card">
-          <div class="info-name">{{ detail.domestic_no }} · {{ detail.order_kind === 'production' ? '生产订单 · 公司备货' : detail.customer_name }}</div>
+          <div class="info-name">{{ detail.domestic_no }} · {{ detail.order_kind === 'production' ? `生产订单 · ${detail.customer_name || '公司备货'}` : detail.customer_name }}</div>
           <div class="info-grid">
             <span>客户订单号：{{ detail.order_no }}</span>
             <span>下单日期：{{ detail.order_date }}</span>

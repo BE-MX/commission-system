@@ -268,3 +268,21 @@ def test_draft_delete_permissions(db, status, own, permission, expected):
     assert response.status_code == expected, response.text
     db.refresh(order)
     assert order.deleted_flag == (1 if expected == 200 else 0)
+
+
+
+def test_production_customer_link_does_not_extend_private_ownership(db):
+    owner = _user(db, "production-link-owner")
+    stale_date = beijing_today() - timedelta(days=120)
+    customer = _customer(db, owner, "生产关联不算购买", last_order_date=stale_date)
+    customer.created_at = beijing_now() - timedelta(days=120)
+    customer.first_contact_date = stale_date
+    db.add(DomesticOrder(domestic_no="DP-RECENT-REFERENCE", order_no="DP-RECENT-REFERENCE",
+                         order_kind="production", order_category=None, customer_id=customer.id,
+                         order_date=beijing_today(), created_by=owner.id, status=1))
+    db.commit()
+    assert customer_service.release_stale_private_customers(db) == 1
+    db.refresh(customer)
+    assert customer.owner_user_id is None
+    rows, total = customer_service.list_customers(db, keyword=customer.shop_name)
+    assert total == 1 and rows[0]["order_count"] == 0

@@ -474,7 +474,7 @@ class OrderCreate(BaseModel):
     order_no: str | None = Field("", max_length=64, description="业务单客户订单号（选填）；生产单自动编号")
     order_date: date
     required_ship_date: date | None = None
-    customer_id: int | None = Field(None, description="已有客户 ID")
+    customer_id: int | None = Field(None, gt=0, description="已有客户 ID，生产单可选")
     customer_shop_name: str | None = Field(None, max_length=120, description="就地新建客户的店名")
     order_category: Literal["normal", "special"] | None = "normal"
     order_type: str | None = Field(None, min_length=1, max_length=32)
@@ -504,7 +504,6 @@ class OrderCreate(BaseModel):
             from app.domestic.order_kind_service import normalize_production_input
 
             self.order_no = None
-            self.customer_id = None
             self.customer_shop_name = None
             self.order_category = None
             self.order_type = None
@@ -539,6 +538,7 @@ class OrderUpdate(BaseModel):
     order_date: date | None = None
     required_ship_date: date | None = None
     customer_id: int | None = Field(None, gt=0)
+    production_customer_id: int | None = Field(None, gt=0, description="生产单客户关联，可清空；不参与销售报价")
     order_category: Literal["normal", "special"] | None = None
     order_type: str | None = Field(None, min_length=1, max_length=32)
     order_channel: str | None = Field(None, min_length=1, max_length=32)

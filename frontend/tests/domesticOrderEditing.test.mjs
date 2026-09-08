@@ -47,3 +47,14 @@ test('legacy zero-price rows allow non-price edits while changed prices respect 
   assert.equal(itemPriceError({ original_price: 1000, labor_fee: 30.13 }, { unit_price: 1030.13 }), '')
   assert.ok(itemPriceError({ original_price: 1000, labor_fee: 30.13 }, { unit_price: 1030.14 }))
 })
+
+
+test('production can choose and clear customer without a sales repricing payload', () => {
+  const detail = { order_kind: 'production', customer_id: 7, order_date: '2026-09-08' }
+  const form = orderHeaderForm(detail)
+  assert.equal(form.production_customer_id, 7)
+  form.production_customer_id = 8
+  assert.deepEqual(buildHeaderPatch(detail, form), { production_customer_id: 8 })
+  form.production_customer_id = null
+  assert.deepEqual(buildHeaderPatch(detail, form), { production_customer_id: null })
+})

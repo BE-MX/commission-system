@@ -4,13 +4,19 @@ const ITEM_FIELDS = ['order_qty', 'unit_price', 'hairstyle', 'hairstyle_images',
 const PRODUCTION_EXCLUDED = new Set(['unit_price', 'hairstyle', 'hairstyle_images', 'style_requirement', 'style_images'])
 
 export function orderHeaderForm(detail) {
-  return Object.fromEntries(HEADER_FIELDS.map(key => [key, detail?.[key] || '']))
+  return { ...Object.fromEntries(HEADER_FIELDS.map(key => [key, detail?.[key] || ''])),
+    ...(detail?.order_kind === 'production' ? { production_customer_id: detail.customer_id || null } : {}),
+  }
 }
 
 export function buildHeaderPatch(detail, form) {
   const fields = detail.order_kind === 'production' ? ['order_date', 'remark'] : HEADER_FIELDS
-  return Object.fromEntries(fields.filter(key => (detail[key] || '') !== form[key])
+  const patch = Object.fromEntries(fields.filter(key => (detail[key] || '') !== form[key])
     .map(key => [key, key === 'remark' ? (form[key] || null) : form[key]]))
+  if (detail.order_kind === 'production' && (detail.customer_id || null) !== (form.production_customer_id || null)) {
+    patch.production_customer_id = form.production_customer_id || null
+  }
+  return patch
 }
 
 export function orderItemForm(item) {

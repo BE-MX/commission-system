@@ -397,6 +397,15 @@ def _lock_customer(db: Session, customer_id: int) -> DomesticCustomer:
     return customer
 
 
+def _lock_production_customer(db: Session, customer_id: int | None) -> DomesticCustomer | None:
+    if customer_id is None:
+        return None
+    customer = _lock_customer(db, customer_id)
+    if customer.status != 1:
+        raise ValueError("客户已停用，请选择启用中的客户")
+    return customer
+
+
 def _build_special_order_quotes(
     items: list[OrderItemInput],
     products: list[DomesticProduct],
@@ -445,7 +454,7 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
         if not production:
             attribute_service.validate_order_dimensions(db, payload.order_type, payload.order_channel)
         if production:
-            customer = None
+            customer = _lock_production_customer(db, payload.customer_id)
         elif payload.customer_id:
             customer = _lock_customer(db, payload.customer_id)
         else:
@@ -829,6 +838,7 @@ def list_orders(
             DomesticOrder.customer_id.in_(customer_ids),
             DomesticOrder.deleted_flag == 0,
             DomesticOrder.status != C.ORDER_DRAFT,
+            DomesticOrder.order_kind == "business",
         )
         .order_by(DomesticOrder.customer_id, DomesticOrder.order_date, DomesticOrder.id)
         .all()
@@ -1185,10 +1195,15 @@ def update_order(
                 raise ValueError("生产订单不能填写销售字段或修改系统编号")
             if order.status == C.ORDER_TERMINATED:
                 raise ValueError("已终止的订单不能编辑")
+            if "production_customer_id" in data:
+                customer = _lock_production_customer(db, data.pop("production_customer_id"))
+                order.customer_id = customer.id if customer else None
             for field, value in data.items():
                 setattr(order, field, value)
             db.commit()
             return order
+        if "production_customer_id" in data:
+            raise ValueError("只有生产订单可以设置生产关联客户")
         if "order_category" in data and data["order_category"] != order.order_category:
             raise ValueError("订单类别决定工艺路线，创建后不能切换；请重新下单")
         changes_customer = "customer_id" in data
