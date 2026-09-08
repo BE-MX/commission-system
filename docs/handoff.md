@@ -1,3 +1,11 @@
+## 2026-09-08 PDA Android 6.0.1 HTTPS 修复（Codex，合并交付；待真机验证）
+
+`codex/pda-android6-tls` 基于 `ea4eb3bb`，针对 PDA 登录“检查 Wi-Fi 和服务器地址”：用户确认设备为 Android 6.0.1；线上 `www.leshine.cloud` 的 HTTPS、健康检查和登录参数校验正常，证书为 9 月 5 日替换的 Let's Encrypt。客户端原来只依赖系统根证书，旧安卓缺少 ISRG Root X1。
+
+PDA 1.0.5（versionCode 6）仅对 Android API 23–25 的 cloud/work 四个精确主机名追加官方 ISRG Root X1，保留系统根证书和默认域名校验；按证书、DNS、超时、拒绝连接细分错误。报工契约和默认/已保存地址不变。亮哥已授权合并并推送 main，本次不含后端部署。
+
+验证：32 项 JVM 测试通过（包含显式开启的线上只读 TLS 测试），模拟移除 ISRG 根证书时复现握手失败、补根后 cloud/www cloud/work 的鉴权端点返回预期 403；APK 构建、Android 6 所需 v1 签名和最低 API 23 核验通过。新包签名与主目录现存旧 PDA APK 一致，可覆盖该旧包升级。约定检查通过；Git 巡检已运行 `--no-fetch`。APK 和失败/通过测试证据已保留到主目录 `tmp/pda-android6-tls-delivery/pda-tls-evidence/`。尚无连接的真机，需 PDA 覆盖安装后确认登录和扫描；不要卸载以免清除待确认报工。
+
 ## 2026-09-08 草稿追加与生产客户集成交付
 
 亮哥已授权合并并推送 main，包含 `073c179e` 保存后草稿追加明细及 `d594c970` 生产单可选客户、逐件标签编号换行和下单日期。从 `ea4eb3bb` 快进集成，核验业务代码与已验证版本一致后推送；远端核验后清理本任务 worktree 与已合并本地分支。迁移 142 随后续部署入口执行，本轮不部署、不对真实数据库执行迁移。

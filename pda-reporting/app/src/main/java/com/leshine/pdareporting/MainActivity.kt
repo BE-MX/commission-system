@@ -10,7 +10,6 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.Toast
 import org.json.JSONObject
-import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executors
@@ -50,7 +49,7 @@ class MainActivity : Activity() {
             prefs.edit().putString(KEY_SERVER, defaultServer).apply()
             defaultServer
         }
-        api = ApiClient(safeServer)
+        api = ApiClient(safeServer) { resources.openRawResource(R.raw.isrg_root_x1) }
         api.token = prefs.getString(KEY_TOKEN, "") ?: ""
         feedback = Feedback(this)
         scannerInput = ScannerInput(this, ::handleRawScan, ::handleMalformedBroadcast)
@@ -543,11 +542,7 @@ class MainActivity : Activity() {
         prefs.edit().remove(KEY_TOKEN).remove(KEY_USER_NAME).apply()
     }
 
-    private fun readableError(error: Exception): String = when (error) {
-        is ApiException -> error.message
-        is IOException -> "网络连接失败，请检查 Wi-Fi 和服务器地址"
-        else -> error.message ?: "未知错误"
-    }
+    private fun readableError(error: Exception): String = connectionErrorMessage(error)
 
     private fun ui(action: () -> Unit) {
         if (!isFinishing && !isDestroyed) runOnUiThread(action)

@@ -4,6 +4,28 @@
 扫描头输出；报工校验、工序分配、数量守恒、逐件流转、幂等和撤销仍复用方舟现有后端。
 最低支持 Android 6.0（API 23），已覆盖 Android 6.0.1 PDA。
 
+## 1.0.5：旧安卓 HTTPS 证书兼容
+
+2026-09-05 服务器改用 Let's Encrypt 后，Android 6.0.1 的系统证书库缺少 ISRG Root X1，
+登录可能显示“网络连接失败，请检查 Wi-Fi 和服务器地址”。1.0.5 为 Android 6/7（API 23–25）
+访问 `leshine.cloud`、`www.leshine.cloud`、`leshine.work`、`www.leshine.work` 时补充该公开根证书，
+保留系统已有根证书与默认域名校验。其他域名和 Android 8 及以上仍使用系统默认 HTTPS 配置。
+证书、DNS、超时等连接失败分别显示对应处理提示。
+
+根证书来自 [Let's Encrypt 官方](https://letsencrypt.org/certs/isrgrootx1.pem)，存放于
+`app/src/main/res/raw/isrg_root_x1.pem`。DER SHA-256：
+`96bcec06264976f37460779acf28c5a7cfe8a3c0aae11a8ffcee05c0bddf08c6`。
+参考：[官方兼容说明](https://letsencrypt.org/docs/certificate-compatibility/)。
+
+覆盖安装时沿用原签名，不卸载旧 APP，以保留服务器设置、登录配置和待确认报工。
+服务器地址可继续使用 `https://www.leshine.cloud`，不需要添加 `/api`。
+如仍提示 HTTPS 失败，先检查 PDA 日期时间，再提供完整错误提示。
+
+单元测试包含证书指纹、根证书补充/保留、拒绝无关证书、旧系统与域名边界及错误分类。
+设置环境变量 `PDA_TLS_SMOKE=1` 后运行 `testDebugUnitTest`，额外使用不含 ISRG 根证书的
+JVM 信任库复现线上 TLS 握手失败，再验证补根后的三个线上入口（仅无凭据 GET，不写业务数据）。
+这项检查不替代 Android 6.0.1 真机登录与扫码验收。
+
 ## 功能
 
 - 方舟账号密码登录，报工记录归入当前工人

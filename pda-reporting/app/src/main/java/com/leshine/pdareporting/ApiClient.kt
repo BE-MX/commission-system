@@ -1,12 +1,15 @@
 package com.leshine.pdareporting
 
 import android.net.Uri
+import android.os.Build
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
+import javax.net.ssl.HttpsURLConnection
 
 class ApiException(
     val statusCode: Int,
@@ -14,7 +17,10 @@ class ApiException(
     val code: String? = null,
 ) : Exception(message)
 
-class ApiClient(baseUrl: String) {
+class ApiClient(baseUrl: String, private val bundledRoot: (() -> InputStream)? = null) {
+    private val legacySocketFactory by lazy {
+        bundledRoot?.let { LegacyTls.socketFactory(LegacyTls.augmentedTrustManager(it())) }
+    }
     var baseUrl: String = normalizeBaseUrl(baseUrl)
         private set
     var token: String = ""
@@ -124,6 +130,12 @@ class ApiClient(baseUrl: String) {
     ): ByteArray {
         val connection = URL(baseUrl + path).openConnection() as HttpURLConnection
         try {
+            if (connection is HttpsURLConnection &&
+                LegacyTls.needsBundledRoot(Build.VERSION.SDK_INT, connection.url.host)
+            ) {
+                legacySocketFactory?.let { connection.sslSocketFactory = it }
+                // Keep HttpsURLConnection's default certificate hostname verification.
+            }
             connection.requestMethod = method
             connection.connectTimeout = 15_000
             connection.readTimeout = 30_000
