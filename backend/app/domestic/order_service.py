@@ -1716,10 +1716,14 @@ def terminate_order(
         raise
 
 
-def delete_order(db: Session, order_id: int, user_id: int | None = None) -> None:
+def delete_order(
+    db: Session, order_id: int, user_id: int | None = None, *, allow_non_draft: bool = True,
+) -> None:
     """软删。已有报工记录的订单只能终止，不能删。"""
     order = _get_order_or_raise(db, order_id, lock=True)
     _ensure_order_creator(order, user_id)
+    if not allow_non_draft and order.status != C.ORDER_DRAFT:
+        raise ValueError("只能删除自己的草稿订单；非草稿订单需要内贸管理权限")
     reported = (
         db.query(func.count(DomesticReportLog.id))
         .join(DomesticOrderItem, DomesticOrderItem.id == DomesticReportLog.item_id)

@@ -246,3 +246,25 @@ def test_order_writes_reject_non_creator(db):
 
     with pytest.raises(ValueError, match="只有订单创建人"):
         order_service.update_order(db, order.id, OrderUpdate(), user_id=intruder.id)
+
+
+@pytest.mark.parametrize("status,own,permission,expected", [
+    (0, True, "domestic:write", 200),
+    (0, False, "domestic:write", 400),
+    (1, True, "domestic:write", 400),
+    (0, True, "domestic:read", 403),
+    (1, True, "domestic:admin", 200),
+])
+def test_draft_delete_permissions(db, status, own, permission, expected):
+    owner = _user(db, "draft-delete-owner")
+    other = _user(db, "draft-delete-other")
+    customer = _customer(db, owner, "草稿删除客户")
+    order = _order(db, customer, owner, "DO-DELETE-DRAFT", beijing_today())
+    order.status = status
+    db.commit()
+    response = _api_client(db, owner if own else other, permission).delete(
+        f"/api/domestic/orders/{order.id}",
+    )
+    assert response.status_code == expected, response.text
+    db.refresh(order)
+    assert order.deleted_flag == (1 if expected == 200 else 0)

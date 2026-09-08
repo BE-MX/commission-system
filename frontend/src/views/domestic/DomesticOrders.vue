@@ -104,7 +104,8 @@
             <GlassButton v-if="canOperateOrder(row) && row.status < 3" v-permission="'domestic:write'" variant="link" left-icon="EditPen" @click="openEdit(row)">编辑</GlassButton>
             <GlassButton v-if="row.status === 0 && canOperateOrder(row)" v-permission="'domestic:write'" variant="link" left-icon="Promotion" :loading="submittingOrderIds.has(row.id)" :disabled="submittingOrderIds.has(row.id)" @click="handleSubmitDraft(row)">提交</GlassButton>
             <GlassButton v-else-if="canOperateOrder(row)" v-permission="'domestic:write'" variant="link" left-icon="CircleClose" :disabled="row.status >= 3" @click="handleTerminate(row)">终止</GlassButton>
-            <GlassButton v-if="canOperateOrder(row)" v-permission="'domestic:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
+            <GlassButton v-if="row.status === 0 && canOperateOrder(row)" v-any-permission="['domestic:write', 'domestic:admin']" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
+            <GlassButton v-else-if="canOperateOrder(row)" v-permission="'domestic:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
           </template>
         </el-table-column>
       </el-table>

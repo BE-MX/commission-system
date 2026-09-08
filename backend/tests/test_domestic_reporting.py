@@ -459,7 +459,8 @@ def test_cannot_revoke_twice(db, craft_mapping, workers):
         report_service.revoke_report(db, result["log_id"], workers[0].id)
 
 
-def test_revoke_reopens_completed_item(db, craft_mapping, workers):
+@pytest.mark.parametrize("autoflush", [True, False])
+def test_revoke_reopens_completed_item(db, craft_mapping, workers, autoflush):
     creator = _user(db, "planner")
     order_id = _create_order(db, creator, qty=5)["id"]
     item = _item_of(db, order_id)
@@ -467,6 +468,7 @@ def test_revoke_reopens_completed_item(db, craft_mapping, workers):
     db.refresh(item)
     assert item.status == C.ITEM_DONE
 
+    db.autoflush = autoflush
     report_service.revoke_report(db, logs[-1]["log_id"], workers[-1].id)
 
     db.refresh(item)
@@ -733,7 +735,8 @@ def test_workload_summary_excludes_revoked(db, craft_mapping, workers):
     assert mine[0]["report_count"] == 1
 
 
-def test_multi_item_order_status_rolls_up_partially(db, craft_mapping, workers):
+@pytest.mark.parametrize("autoflush", [True, False])
+def test_multi_item_order_status_rolls_up_partially(db, craft_mapping, workers, autoflush):
     """一单多品：一行做完不等于整单做完，一行发货不等于整单发货。"""
     creator = _user(db, "planner")
     customer = _pricing_customer(db, creator)
@@ -751,6 +754,7 @@ def test_multi_item_order_status_rolls_up_partially(db, craft_mapping, workers):
     order_id = order_service.create_order(db, payload, creator.id)["id"]
     items = db.query(DomesticOrderItem).filter(DomesticOrderItem.order_id == order_id).all()
     assert len(items) == 2
+    db.autoflush = autoflush
 
     for idx, worker in enumerate(workers):
         _report(db, items[0], idx, worker, 3)
@@ -761,8 +765,11 @@ def test_multi_item_order_status_rolls_up_partially(db, craft_mapping, workers):
     order_service.ship_item(db, items[0].id, ship)
     assert order_service.get_order_detail(db, order_id)["status"] == C.ORDER_PRODUCING
 
-    for idx, worker in enumerate(workers):
+    for idx, worker in enumerate(workers[:-1]):
         _report(db, items[1], idx, worker, 5)
+    _report(db, items[1], 2, workers[2], 4)
+    assert order_service.get_order_detail(db, order_id)["status"] == C.ORDER_PRODUCING
+    _report(db, items[1], 2, workers[2], 1)
     assert order_service.get_order_detail(db, order_id)["status"] == C.ORDER_DONE
 
     order_service.ship_item(db, items[1].id, ship)
@@ -878,3 +885,67 @@ def test_lookup_skips_deleted_orders(db, craft_mapping, workers):
 
     with pytest.raises(ValueError, match="没找到订单"):
         order_service.lookup_order(db, created["domestic_no"])
+
+
+@pytest.mark.parametrize("autoflush", [True, False])
+def test_final_report_completes_order_with_production_session_config(db, craft_mapping, workers, autoflush):
+    creator = _user(db, "final-flush-planner")
+    order_id = _create_order(db, creator, qty=2)["id"]
+    item = _item_of(db, order_id)
+    db.autoflush = autoflush
+    for idx, worker in enumerate(workers):
+        _report(db, item, idx, worker, 2)
+    assert order_service.get_order_detail(db, order_id)["status"] == C.ORDER_DONE
+
+
+def test_completion_uses_only_active_final_reports(db, craft_mapping, workers):
+    creator = _user(db, "final-only-planner")
+    order_id = _create_order(db, creator, qty=2)["id"]
+    item = _item_of(db, order_id)
+    for idx, worker in enumerate(workers):
+        _report(db, item, idx, worker, 2)
+    # Historical upstream records must not gate an already scanned final step.
+    db.query(DomesticReportLog).filter(
+        DomesticReportLog.item_id == item.id, DomesticReportLog.step_order < 3,
+    ).update({DomesticReportLog.revoked: 1})
+    db.flush()
+    progress_service.recalc_item_status(db, item)
+    assert item.status == C.ITEM_DONE
+    db.query(DomesticReportLog).filter(
+        DomesticReportLog.item_id == item.id, DomesticReportLog.step_order == 3,
+    ).update({DomesticReportLog.revoked: 1})
+    db.flush()
+    progress_service.recalc_item_status(db, item)
+    progress_service.sync_order_status(db, order_id)
+    assert item.status == C.ITEM_PRODUCING
+    assert order_service.get_order_detail(db, order_id)["status"] == C.ORDER_PRODUCING
+
+
+def test_inactive_units_do_not_complete_order(db, craft_mapping, workers):
+    from app.domestic import routing_service
+    creator = _user(db, "inactive-final-planner")
+    order_id = _create_order(db, creator, qty=2)["id"]
+    item = _item_of(db, order_id)
+    for idx, worker in enumerate(workers):
+        _report(db, item, idx, worker, 2)
+    db.autoflush = False
+    routing_service.active_units(db, item)[0].status = 0
+    progress_service.recalc_item_status(db, item)
+    progress_service.sync_order_status(db, order_id)
+    assert item.status == C.ITEM_PRODUCING
+    assert order_service.get_order_detail(db, order_id)["status"] == C.ORDER_PRODUCING
+
+
+def test_skipped_final_step_does_not_count_as_scanned_completion(db, craft_mapping, workers):
+    creator = _user(db, "skipped-final-planner")
+    order_id = _create_order(db, creator, qty=2)["id"]
+    item = _item_of(db, order_id)
+    for idx, worker in enumerate(workers[:-1]):
+        _report(db, item, idx, worker, 2)
+    final = _steps(db, item)[-1]
+    report_service.submit_manual_skip(
+        db, item_id=item.id, progress_id=final["progress_id"], qty=2, unit_id=None,
+        reason="测试末道跳过不算扫描", request_id=str(uuid4()), user_id=creator.id,
+    )
+    assert item.status == C.ITEM_PRODUCING
+    assert order_service.get_order_detail(db, order_id)["status"] == C.ORDER_PRODUCING

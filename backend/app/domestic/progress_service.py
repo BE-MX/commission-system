@@ -212,6 +212,7 @@ def recalc_item_status(db: Session, item: DomesticOrderItem) -> None:
     """末道工序数量做齐 = 明细完工。已发货的明细不回退。"""
     if item.status == C.ITEM_SHIPPED:
         return
+    db.flush()
     last = (
         db.query(DomesticItemProgress)
         .filter(DomesticItemProgress.item_id == item.id)
@@ -219,20 +220,18 @@ def recalc_item_status(db: Session, item: DomesticOrderItem) -> None:
         .first()
     )
     state = routing_service.load_passage_state(db, item)
-    rows = db.query(DomesticItemProgress).filter(
-        DomesticItemProgress.item_id == item.id,
-    ).order_by(DomesticItemProgress.step_order.asc()).all()
-    units = routing_service.active_units(db, item)
-    rules = routing_service.runtime_rule_map(db, item.route_id)
-    _upstream, _skipped, passed = routing_service.effective_passage_maps(
-        rows, state, {unit.id for unit in units}, rules,
-    )
-    done = bool(last) and len(passed.get(last.id, set())) >= item.order_qty
+    active_ids = {unit.id for unit in routing_service.active_units(db, item)}
+    # Completion follows actual final-step scans only, independent of upstream
+    # passage or administrative skips. Revoked and inactive units do not count.
+    final_reported = state.reported_by_progress.get(last.id, set()) if last else set()
+    done = bool(last) and item.order_qty > 0 and len(final_reported & active_ids) >= item.order_qty
     item.status = C.ITEM_DONE if done else C.ITEM_PRODUCING
 
 
 def sync_progress_statuses(db: Session, item: DomesticOrderItem) -> None:
     """缓存实际工作数量，并以有效通过身份同步各进度状态。"""
+    # Include pending report/skip revocations even with autoflush disabled.
+    db.flush()
     rows = db.query(DomesticItemProgress).filter(
         DomesticItemProgress.item_id == item.id,
     ).order_by(DomesticItemProgress.step_order.asc()).all()
@@ -249,6 +248,9 @@ def sync_progress_statuses(db: Session, item: DomesticOrderItem) -> None:
 
 def sync_order_status(db: Session, order_id: int) -> None:
     """由明细状态回算订单状态。已终止的订单不受业务动作影响。"""
+    # Production sessions disable autoflush: persist the newly computed item
+    # status before the scalar aggregate reads it back from the database.
+    db.flush()
     order = db.query(DomesticOrder).get(order_id)
     if not order or order.status in (C.ORDER_DRAFT, C.ORDER_TERMINATED):
         return

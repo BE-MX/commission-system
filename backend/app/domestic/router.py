@@ -757,10 +757,10 @@ def update_order_status(
 def delete_order(
     order_id: int,
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("domestic:admin")),
+    _user: dict = Depends(require_any_permission("domestic:write", "domestic:admin")),
 ):
     try:
-        order_service.delete_order(db, order_id, _uid(_user))
+        order_service.delete_order(db, order_id, _uid(_user), allow_non_draft=_has_admin(_user))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(message="已删除")
