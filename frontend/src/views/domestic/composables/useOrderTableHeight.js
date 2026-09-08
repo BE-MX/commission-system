@@ -13,7 +13,8 @@ export function useOrderTableHeight() {
   onMounted(() => {
     nextTick(update)
     observer = new ResizeObserver(update)
-    if (filtersRef.value?.$el) observer.observe(filtersRef.value.$el)
+    const filters = filtersRef.value?.$el || filtersRef.value
+    if (filters) observer.observe(filters)
     window.addEventListener('resize', update)
   })
   onActivated(() => nextTick(update))

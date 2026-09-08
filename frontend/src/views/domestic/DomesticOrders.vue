@@ -6,49 +6,48 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <div class="toolbar order-kind-toolbar">
-      <GlassButton v-permission="'domestic:write'" variant="primary" left-icon="Plus" @click="goCreate('business')">业务订单下单</GlassButton>
-      <GlassButton v-permission="'domestic:write'" variant="secondary" left-icon="Plus" @click="goCreate('production')">生产订单下单</GlassButton>
-    </div>
-    <el-row ref="filtersRef" :gutter="16" class="toolbar">
-      <el-col :xs="24" :sm="12" :lg="4">
+    <div ref="filtersRef" class="toolbar orders-toolbar">
+      <GlassButton v-permission="'domestic:write'" variant="primary" left-icon="Plus" @click="goCreate('business')">业务下单</GlassButton>
+      <GlassButton v-permission="'domestic:write'" variant="secondary" left-icon="Plus" @click="goCreate('production')">生产下单</GlassButton>
+
+      <div class="order-filter order-filter-wide">
         <el-input v-model="searchForm.keyword" placeholder="搜索系统单号 / 客户订单号" clearable prefix-icon="Search" @keyup.enter="handleSearch" @clear="handleSearch" />
-      </el-col>
-      <el-col :xs="24" :sm="12" :lg="3">
+      </div>
+      <div class="order-filter">
         <el-select v-model="searchForm.status" placeholder="订单状态" clearable style="width: 100%" @change="handleSearch">
           <el-option v-for="s in ORDER_STATUS" :key="s.value" :label="s.label" :value="s.value" />
         </el-select>
-      </el-col>
-      <el-col v-if="searchForm.order_kind !== 'production'" :xs="24" :sm="12" :lg="3">
+      </div>
+      <div v-if="searchForm.order_kind !== 'production'" class="order-filter">
         <el-select v-model="searchForm.order_category" placeholder="订单类别" clearable style="width: 100%" @change="handleSearch">
           <el-option v-for="v in filterOptions.order_categories" :key="v.value" :label="v.label" :value="v.value" />
         </el-select>
-      </el-col>
-      <el-col v-if="searchForm.order_kind !== 'production'" :xs="24" :sm="12" :lg="3">
+      </div>
+      <div v-if="searchForm.order_kind !== 'production'" class="order-filter">
         <el-select v-model="searchForm.order_type" placeholder="订单类型" clearable style="width: 100%" @change="handleSearch">
           <el-option v-for="v in filterOptions.order_types" :key="v.value" :label="v.label" :value="v.value" />
         </el-select>
-      </el-col>
-      <el-col v-if="searchForm.order_kind !== 'production'" :xs="24" :sm="12" :lg="3">
+      </div>
+      <div v-if="searchForm.order_kind !== 'production'" class="order-filter">
         <el-select v-model="searchForm.order_channel" placeholder="订单渠道" clearable style="width: 100%" @change="handleSearch">
           <el-option v-for="v in filterOptions.order_channels" :key="v.value" :label="v.label" :value="v.value" />
         </el-select>
-      </el-col>
-      <el-col v-if="searchForm.order_kind !== 'production'" :xs="24" :sm="12" :lg="3">
+      </div>
+      <div v-if="searchForm.order_kind !== 'production'" class="order-filter">
         <el-select v-model="searchForm.customer_source" placeholder="客户来源" clearable style="width: 100%" @change="handleSearch">
           <el-option v-for="v in filterOptions.customer_sources" :key="v.value" :label="v.label" :value="v.value" />
         </el-select>
-      </el-col>
-      <el-col :xs="24" :sm="12" :lg="4">
+      </div>
+      <div class="order-filter order-filter-date">
         <el-date-picker
           v-model="searchForm.dateRange" type="daterange" value-format="YYYY-MM-DD"
           start-placeholder="下单起" end-placeholder="下单止" style="width: 100%" @change="handleSearch"
         />
-      </el-col>
-      <el-col :xs="24" :sm="12" :lg="4">
+      </div>
+      <div class="order-filter-action">
         <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
-      </el-col>
-    </el-row>
+      </div>
+    </div>
 
     <div class="table-card orders-panel">
       <el-tabs v-model="searchForm.order_kind" class="order-kind-tabs" @tab-change="handleKindChange">

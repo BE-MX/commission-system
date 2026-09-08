@@ -3,8 +3,16 @@
 .orders-page .toolbar,
 .orders-page .orders-panel { position: relative; z-index: 1; }
 
-.toolbar { margin-bottom: 16px; }
-.order-kind-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.orders-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 10px; }
+.order-filter { flex: 0 0 116px; min-width: 0; }
+.order-filter-wide { flex-basis: 220px; }
+.order-filter-date { flex-basis: 240px; }
+.order-filter-date :deep(.el-date-editor) { box-sizing: border-box; max-width: 100%; }
+.order-filter-action { flex: 0 0 auto; }
+@media (max-width: 600px) {
+  .order-filter { flex: 1 1 calc(50% - 8px); }
+  .order-filter-wide, .order-filter-date { flex-basis: 100%; }
+}
 .order-kind-tabs { padding: 0 16px; --el-color-primary: var(--color-primary); }
 .order-kind-tabs :deep(.el-tabs__header) { margin-bottom: 0; }
 
@@ -173,6 +181,8 @@
 .wxacode-warn { color: var(--el-color-warning); }
 
 /* Keep the ledger compact while preserving full identifiers and date values. */
-.orders-panel :deep(.el-table .cell) { padding: 0 8px; }
+.orders-panel :deep(.list-table .el-table__body td.el-table__cell) { padding: 4px 0; }
+.orders-panel :deep(.list-table .el-table__header th.el-table__cell) { padding: 8px 0; }
+.orders-panel :deep(.el-table .cell) { padding: 0 8px; line-height: 20px; }
 .orders-panel :deep(.el-table .order-number-column .cell) { white-space: normal !important; overflow-wrap: anywhere; word-break: break-all; }
 .orders-panel :deep(.order-column-title) { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
