@@ -1,3 +1,13 @@
+### OpenClaw 0908 背调 Run 闭环修复（2026-09-08，后端待部署）
+
+任务 #6「0908」搜索已完成20条，背调 #11–28 共18条failed，均attempt_count=1/agent_run_id=NULL；最先facts 409为无匹配Run，后续无有效fact回执仍提交complete，最后#18–28被批量领取后标failed。此次修复：Agent claim与外部running Run/客户范围/created、started事件同事务；事实与规范tool.requested/succeeded回执同事务并返回tool_call_id；旧租约/跨任务/替代Run继续拒绝，结束/跳过/重领关闭Run。native重审保持兼容。新增人工retry端点，管理权限+客户范围+expected_attempt_count CAS，不向MCP开放重试能力。
+
+MCP自动保存并注入Run ID，不再让模型填写；旧后端preflight在领取前阻断。单任务限制、claim丢响应和任务fail后停止新领取，恢复后需重启MCP；知识搜索数组改为structuredContent对象。公司研究、公海研究Skill与heartbeat规则同步。
+
+验证：相关后端152通过，Node61通过；覆盖真实HTTP领取→事实→引用→完成闭环、写入回滚、旧Run隔离、native重审、retry权限403/404/200、领取丢响应和旧后端零领取。独立审查三项问题均已修正并复审通过，约定检查通过。使用隔离SQLite（autoflush=False）；未跑真实MySQL并发。尝试额外customer_api全路由收集因测试环境缺jinja2而中止；相关路由自身权限与请求测试已通过，未将其记作全量通过。
+
+本机安装目录 `~/.openclaw-ark-sales/runtime/research-run-b01b19e5`，MCP配置、双工作区Skill/HEARTBEAT同步，私有备份 `backups/research-run-b01b19e5`。本机已重启，后端尚未部署，未重新入队或改动18条生产任务。当前SSH配置仅有github.com，`office-prod`无法解析，已向用户询问当前部署入口；用户询问是否本机执行，已解释本机负责搜索与研究、后端负责执行记录和证据校验。恢复部署通道后走统一deploy.bat固定此分支修订，核实execution_contract，再仅重试#11–28（expected_attempt_count=1），先验证一条完整成功再按单任务heartbeat处理其余，遇系统错误停止。
+
 ## 2026-09-08 列表密度与标签日期集成交付
 
 亮哥已授权合并并推送 main，包含 `d27d0c98` 内贸列表密度优化及 `9259091c` 逐件码日期放大。开发基点为 `b61e1a4f`；交付时 main 已进入 PDA 修复 `21962ff9`，先在任务分支合并最新 main，交接文档保留双方记录，业务代码互不重叠。核验两侧代码各自保持已验证版本后集成推送。证据归档至主目录 `tmp/domestic-density-date-delivery/evidence/`，远端核验后清理本任务 worktree 和已合并本地分支。本轮不含应用部署。

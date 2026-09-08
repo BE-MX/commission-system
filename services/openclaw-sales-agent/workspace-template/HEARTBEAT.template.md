@@ -22,3 +22,7 @@
 7. 研究超过 10 分钟时调用 `ark_heartbeat_research_task`。身份无法确认是正常研究结论，不标失败；只有登记的网络、鉴权、提供商或执行故障才调用 `ark_fail_research_task`。
 
 两个队列都没有可处理任务时，回复 `HEARTBEAT_OK`，不要产生其他消息。
+
+## 背调回执与停止规则
+
+领取时以后端返回的新 `input_hash` 为准，MCP 自动保存并注入 `agent_run_id`，禁止自己填任务ID或1。事实写入成功后，逐项复制返回的 `tool_call_id`、`evidence_ref` 和完整 `evidence_content_hash` 构造citation。写事实失败不得继续提交结果。一次 heartbeat 仅处理一个研究任务，不论成功、失败或门控跳过都到此结束；执行失败后报告并停止，不得领取剩余任务后批量标失败。MCP进程阻止错误后的新领取，排查恢复后再重启。

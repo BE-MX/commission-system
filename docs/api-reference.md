@@ -1190,3 +1190,9 @@ MCP `/mcp` 新增 `search_knowledge` 与 `get_knowledge_document`。二者使用
 2026-09-08 草稿续加明细：`POST /domestic/orders/{order_id}/items?draft_only=true` 要求订单仍为草稿，否则拒绝新增（原请求成功后的幂等重放除外）。仍要求 domestic:write 且为创建人；新增后草稿不扣余额，提交时统一报价确认与结算。默认未传 draft_only 的既有追加行为不变。
 
 2026-09-08 生产单可选客户（迁移142）：创建生产单可传 `customer_id`（已有启用客户，可不填）；编辑生产单通过 `production_customer_id` 选择或传 null 清空，仍要求订单创建人和 domestic:write。客户关联不参与销售报价、余额扣款、客户订单数/复购周期或公海保留期限。列表、详情、生产导出和逐件标签优先显示客户名，无客户显示公司备货。逐件标签接口增加 `order_date`，标签系统编号居中换行，下一行打印下单日期；二维码身份和尺寸不变。
+
+### OpenClaw 背调执行回执（2026-09-08）
+
+研究 context 增加 `execution_contract=external_research_run_v1`、task_status、gate_status。领取响应增加服务端生成的 `agent_run_id`，与任务租约代次、客户和 input_hash 绑定；MCP 自动注入此ID。事实接口返回 `tool_call_id` 及真实写入的 evidence_refs，同事务生成规范工具事件，complete 仍严格检查同Run引用闭包。旧Run和跨任务引用不能复用。
+
+`POST /api/customer-hub/research-tasks/{task_id}/retry?expected_attempt_count=N`：人工重试失败背调；要求 `sales_automation:admin` 和该客户读取范围。仅 failed + attempt_count 匹配时重新置pending；保留历史事实，不动搜索结果，下一次claim创建新Run/租约代次。非failed或版本冲突409，无客户权限统一404。
