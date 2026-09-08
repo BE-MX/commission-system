@@ -99,7 +99,7 @@ def test_build_order_workbook_matches_requisition_layout_and_fields():
     assert "客户余额" not in sheet["A3"].value
 
     assert [sheet.cell(5, col).value for col in range(1, 15)] == [
-        "明细号", "产品类型", "产品规格", "数量", "入库数量", "原价（元/件）", "优惠金额（元/件）",
+        "明细号", "产品类型", "产品规格", "数量", "出库数量", "原价（元/件）", "优惠金额（元/件）",
         "优惠后单价（元/件）", "手工费（元/件）", "小计（元）", "发型备注", "颜色", "发型要求", "备注",
     ]
     assert [sheet.cell(6, col).value for col in (1, 2, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14)] == [

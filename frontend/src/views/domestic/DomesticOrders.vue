@@ -10,7 +10,7 @@
       <GlassButton v-permission="'domestic:write'" variant="primary" left-icon="Plus" @click="goCreate('business')">业务订单下单</GlassButton>
       <GlassButton v-permission="'domestic:write'" variant="secondary" left-icon="Plus" @click="goCreate('production')">生产订单下单</GlassButton>
     </div>
-    <el-row :gutter="16" class="toolbar">
+    <el-row ref="filtersRef" :gutter="16" class="toolbar">
       <el-col :xs="24" :sm="12" :lg="4">
         <el-input v-model="searchForm.keyword" placeholder="搜索系统单号 / 客户订单号" clearable prefix-icon="Search" @keyup.enter="handleSearch" @clear="handleSearch" />
       </el-col>
@@ -56,48 +56,48 @@
         <el-tab-pane label="业务订单" name="business" />
         <el-tab-pane label="生产订单" name="production" />
       </el-tabs>
-      <el-table :data="list" v-loading="loading" border class="list-table" style="width: 100%">
-        <!-- 列顺序按内贸销售台账：编号 → 日期 → 客户 → 归属销售 → 类型 → 渠道 → 状态 → 交付日期 → 客户复购节奏，与线下台账一致 -->
-        <el-table-column prop="domestic_no" label="订单编号" min-width="130" show-overflow-tooltip>
+      <el-table ref="tableRef" :data="list" :height="tableHeight" scrollbar-always-on v-loading="loading" border class="list-table" style="width: 100%">
+        <el-table-column :render-header="renderOrderHeader" prop="domestic_no" label="订单编号" min-width="140" fixed="left" class-name="order-number-column">
           <template #default="{ row }">
             <div>{{ row.domestic_no }}</div>
             <div v-if="row.order_no && row.order_no !== row.domestic_no" class="muted">{{ row.order_no }}</div>
           </template>
         </el-table-column>
-        <el-table-column prop="order_kind_label" label="订单大类" min-width="100" />
-        <el-table-column prop="order_date" label="下单日期" min-width="105" />
-        <el-table-column prop="customer_name" label="客户 / 用途" min-width="120" show-overflow-tooltip>
+        <el-table-column :render-header="renderOrderHeader" prop="customer_name" label="客户 / 用途" min-width="120" fixed="left" show-overflow-tooltip>
           <template #default="{ row }">{{ row.order_kind === 'production' ? '公司备货' : row.customer_name }}</template>
         </el-table-column>
-        <el-table-column prop="customer_source_label" label="客户来源" min-width="100" show-overflow-tooltip />
-        <el-table-column prop="owner_name" label="归属销售" min-width="95" show-overflow-tooltip>
+        <el-table-column :render-header="renderOrderHeader" prop="customer_source_label" label="客户来源" min-width="100" show-overflow-tooltip />
+        <el-table-column :render-header="renderOrderHeader" prop="order_kind_label" label="订单大类" min-width="90" />
+        <el-table-column :render-header="renderOrderHeader" prop="order_date" label="下单日期" min-width="116" />
+        <el-table-column :render-header="renderOrderHeader" prop="owner_name" label="归属销售" min-width="95" show-overflow-tooltip>
           <template #default="{ row }">{{ row.owner_name || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="order_type_label" label="订单类型" min-width="95" />
-        <el-table-column prop="order_channel_label" label="订单渠道" min-width="95" />
-        <el-table-column label="订单状态" min-width="95">
+        <el-table-column :render-header="renderOrderHeader" prop="order_type_label" label="订单类型" min-width="95" />
+        <el-table-column :render-header="renderOrderHeader" prop="order_channel_label" label="订单渠道" min-width="95" />
+        <el-table-column :render-header="renderOrderHeader" prop="total_qty" label="产品总数" min-width="90" align="right" />
+        <el-table-column :render-header="renderOrderHeader" label="订单状态" min-width="95">
           <template #default="{ row }">
             <el-tag size="small" :type="ORDER_STATUS_TAGS[row.status]">{{ row.status_label }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="要求交付日期" min-width="110">
+        <el-table-column :render-header="renderOrderHeader" label="要求交付日期" min-width="116">
           <template #default="{ row }">
             <span :class="{ 'ship-date-overdue': isShipDateOverdue(row) }">{{ row.required_ship_date || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="实际交付日期" min-width="110">
+        <el-table-column :render-header="renderOrderHeader" label="实际交付日期" min-width="116">
           <template #default="{ row }">{{ row.actual_ship_date || '-' }}</template>
         </el-table-column>
-        <el-table-column label="上次下单日期" min-width="110">
+        <el-table-column :render-header="renderOrderHeader" label="上次下单日期" min-width="116">
           <template #default="{ row }">{{ row.last_order_date || '-' }}</template>
         </el-table-column>
-        <el-table-column label="复购周期/天" min-width="100" align="right">
+        <el-table-column :render-header="renderOrderHeader" label="复购周期/天" min-width="100" align="right">
           <template #default="{ row }">{{ row.repurchase_cycle_days != null ? row.repurchase_cycle_days : '-' }}</template>
         </el-table-column>
-        <el-table-column prop="remark" label="订单备注" min-width="140" show-overflow-tooltip>
+        <el-table-column :render-header="renderOrderHeader" prop="remark" label="订单备注" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ row.remark || '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" min-width="270" fixed="right">
+        <el-table-column :render-header="renderOrderHeader" label="操作" min-width="270">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
             <GlassButton variant="link" left-icon="Download" @click="handleExport(row)">导出</GlassButton>
@@ -126,6 +126,7 @@
             <span v-if="detail.order_kind !== 'production'">订单类别：{{ detail.order_category_label }}</span>
             <span v-if="detail.order_kind !== 'production'">订单类型：{{ detail.order_type_label }}</span>
             <span v-if="detail.order_kind !== 'production'">订单渠道：{{ detail.order_channel_label }}</span>
+            <span>产品总数：{{ detailTotalQty }} 件</span>
             <span>状态：{{ detail.status_label }}</span>
             <span v-if="detail.order_kind !== 'production'">订单总价：¥{{ Number(detail.total_amount || 0).toFixed(2) }}</span>
             <span v-if="detail.order_kind !== 'production'">已扣余额：¥{{ Number(detail.charged_amount || 0).toFixed(2) }}</span>
@@ -384,6 +385,9 @@
  * 内贸订单列表 + 详情。逻辑在 composables/useDomesticOrders.js（宪法 12）。
  * 进度按「数量」展示：每道工序看到已完成多少 / 还能接多少，拆批状态一眼可见。
  */
+import { computed, h } from 'vue'
+import { ElTooltip } from 'element-plus'
+import { useOrderTableHeight } from './composables/useOrderTableHeight'
 import { DETAIL_SECTIONS, ORDER_STATUS, ORDER_STATUS_TAGS } from '@/api/domestic'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
@@ -412,6 +416,14 @@ const {
   editDialog, openEdit,
   isShipDateOverdue,
 } = useDomesticOrders()
+
+const { tableRef, filtersRef, tableHeight } = useOrderTableHeight()
+const detailTotalQty = computed(() => (detail.value?.items || []).reduce((sum, item) => sum + Number(item.order_qty || 0), 0))
+function renderOrderHeader({ column }) {
+  return h(ElTooltip, { content: column.label, placement: 'top' }, {
+    default: () => h('span', { class: 'order-column-title' }, column.label),
+  })
+}
 
 function handleKindChange() {
   searchForm.order_category = ''

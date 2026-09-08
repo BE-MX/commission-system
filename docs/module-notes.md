@@ -849,7 +849,7 @@ frontend/src/
 
 2026-09-07 下单/渠道/来源：客户订单号选填，空值规范化为 `''`，保证省略与 null 的请求幂等一致；非法类型交由 Pydantic 拒绝。新建页根据客户结算方式默认充值扣账/现金结账，搜索候选刷新不覆盖手动选择。列表来源取客户当前档案并在分页前筛选。渠道字典种子与一次性数据转换脚本统一为 recharge/cash；转换只改渠道字段并保留旧字典供审计，不触发扣款或改客户属性。
 
-2026-09-07 订单体验更新：业务领货单 Excel 只展示客户编码，产品规格合并一列，为原价/减免额/优惠后商品单价/手工费/小计和参考图留出 A4 空间；数量后增加空白入库数量。私有图由 `export_image_service` 读取并嵌入对应单元格，缺图显式提示，多行文字与图片分区、全文续表。`balance_service.order_balance_snapshot` 从订单自己的最新结算流水取真实前后余额，草稿/调整/缺流水明确标注；没有新增表或迁移。
+2026-09-07 订单体验更新：业务领货单 Excel 只展示客户编码，产品规格合并一列，为原价/减免额/优惠后商品单价/手工费/小计和参考图留出 A4 空间；数量后增加空白出库数量。私有图由 `export_image_service` 读取并嵌入对应单元格，缺图显式提示，多行文字与图片分区、全文续表。`balance_service.order_balance_snapshot` 从订单自己的最新结算流水取真实前后余额，草稿/调整/缺流水明确标注；没有新增表或迁移。
 
 新建页在 KeepAlive 内保存成功即重置；报价按行指纹独立失效，新增空行或复制不覆盖已有手工价。`DomesticOrderEditDialog` 提供创建人的订单头和明细独立编辑，变化字段由 `domesticOrderEditing` 构造；正式单数量/价格修改显示差额确认，沿用后端状态、报工数量与余额约束。成交单价包含手工费，优惠额计算先减手工费，生产单编辑不发送销售字段。
 
@@ -1040,3 +1040,5 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 **身份与范围**：Manifest 使用固定 public key，扩展 ID 为 `bnkecbkoidckffckbefjjcbchmngjobi`；1.2.6 起扩展 API 与唯一 host 权限为 `https://leshine.cloud`，host 权限不含 WhatsApp。配对确认页仍严格限定 `https://leshine.work/whatsapp-translation/authorize`，与北京后端配置一致；设备存储与 token 处理不变。支持范围仅限 WhatsApp Web 一对一文字，收译和发译均要求 `whatsapp_translation:write`，管理端要求 `whatsapp_translation:admin`。
 
 **发布边界**：ZIP 和 `latest.json` 可从 Ark 前端静态路径公开下载，但包内只有编译后的扩展代码，不含 API key、设备 token、聊天数据或服务端配置。翻译能力仍由设备配对、设备 token、员工权限、配额和版本门禁控制。
+
+2026-09-08 内贸订单台账：业务/生产列表在状态前展示产品总数（现有 total_qty，合计全部明细 order_qty），详情同口径汇总。编号和客户/用途为左侧冻结两列，编号自动换行；列表随视口和筛选区调整高度，横向滚动条常驻表底，表头支持悬浮完整名称，日期保留完整宽度。业务/生产 Excel 空白手填列统一为“出库数量”，注意事项同步。

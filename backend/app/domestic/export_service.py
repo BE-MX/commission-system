@@ -17,7 +17,7 @@ from app.domestic.export_image_service import add_cell_images, needs_image_appen
 # leaving enough A4 print width for prices and the original reference images.
 _BUSINESS_COLUMNS = (
     ("line_code", "明细号", 6), ("product_type", "产品类型", 8), ("specification", "产品规格", 22),
-    ("order_qty", "数量", 6), ("received_qty", "入库数量", 7),
+    ("order_qty", "数量", 6), ("issued_qty", "出库数量", 7),
     ("original_price", "原价（元/件）", 9), ("discount_amount", "优惠金额（元/件）", 9),
     ("discount_price", "优惠后单价（元/件）", 10), ("labor_fee", "手工费（元/件）", 8),
     ("line_amount", "小计（元）", 11), ("hairstyle", "发型备注", 21),
@@ -27,7 +27,7 @@ _PRODUCTION_COLUMNS = (
     ("line_code", "明细号", 9), ("product_type", "产品类型", 11), ("product_name", "产品名称", 24),
     ("craft", "工艺/尺寸", 15), ("length", "发长", 12), ("net_color", "网帽颜色", 14),
     ("size", "头套尺寸", 12), ("density", "发量", 11),
-    ("order_qty", "数量", 10), ("received_qty", "入库数量", 10), ("color", "颜色", 18), ("remark", "备注", 22),
+    ("order_qty", "数量", 10), ("issued_qty", "出库数量", 10), ("color", "颜色", 18), ("remark", "备注", 22),
 )
 _IMAGE_FIELDS = {"hairstyle": "hairstyle_images", "color": "color_images",
                  "style_requirement": "style_images", "remark": "remark_images"}
@@ -175,7 +175,7 @@ def _item_values(item: dict) -> dict:
               **{key: _display(attrs.get(key)) for key in ("craft", "length", "net_color", "size", "density")},
               "product_type": PRODUCT_TYPES.get(attrs.get("product_type"), "—"),
               "specification": _safe_text("\n".join(specification)),
-              "order_qty": item.get("order_qty") or 0, "received_qty": None}
+              "order_qty": item.get("order_qty") or 0, "issued_qty": None}
     if piece:
         values.update(net_color=None, size=None, density=None)
     for key in _MONEY_FIELDS - {"discount_price"}:
@@ -271,7 +271,7 @@ def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
 
     notes_row = first_item_row + len(items) + 1
     ws.merge_cells(start_row=notes_row, start_column=1, end_row=notes_row, end_column=len(columns))
-    notes = "注意事项：\n！入库数量留空，由收货人员填写。\n！领货与签字流程按内贸部门现行规定执行。"
+    notes = "注意事项：\n！出库数量留空，由出库人员填写。\n！领货与签字流程按内贸部门现行规定执行。"
     if not production:
         notes += "\n！金额单位为人民币元；小计 =（优惠后单价 + 手工费）× 数量。余额取本订单扣款/调整记录，不随后续充值变化。"
     if detail.get("remark"):

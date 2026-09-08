@@ -23,9 +23,9 @@
   background: transparent;
 }
 
-.orders-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
-.orders-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
-.orders-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
+.orders-panel :deep(.el-table-fixed-column--left) { background-color: rgba(249, 244, 234, 0.97); }
+.orders-panel :deep(th.el-table-fixed-column--left) { background-color: rgba(246, 239, 226, 0.98); }
+.orders-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--left) { background-color: rgba(245, 236, 220, 0.98); }
 
 .pager { margin: 12px; justify-content: flex-end; }
 
@@ -171,3 +171,8 @@
 }
 
 .wxacode-warn { color: var(--el-color-warning); }
+
+/* Keep the ledger compact while preserving full identifiers and date values. */
+.orders-panel :deep(.el-table .cell) { padding: 0 8px; }
+.orders-panel :deep(.el-table .order-number-column .cell) { white-space: normal !important; overflow-wrap: anywhere; word-break: break-all; }
+.orders-panel :deep(.order-column-title) { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
