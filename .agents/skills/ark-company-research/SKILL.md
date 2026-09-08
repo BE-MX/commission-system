@@ -36,3 +36,11 @@ Never print or persist the token. Require the exact scheme/host/port of `ARK_BAS
 ## Handoff
 
 Return `research_task_id`, Ark `customer_id`, gate outcome, captured fact IDs by classification, submitted claim count, review status, unresolved identity conflicts, and API failures. Do not claim completion if Ark rejected the evidence closure or task result.
+
+## Execution receipt discipline
+
+Claim creates the server-owned Run and returns the current `agent_run_id` and `input_hash`. MCP retains the Run ID and injects it into fact and completion requests; do not supply, guess, or reuse a Run ID. The pre-claim context hash may change when a new lease generation is created, so use the claim response's hash.
+
+A successful fact append returns `tool_call_id` and `evidence_refs`. Copy that call ID, each `fact:<id>`, and its exact 64-character hash into citations; use `claim_...` and `citation_...` IDs. Do not complete after a rejected fact append. Record uncertainty honestly with sourced observations.
+
+Process only one task per heartbeat. After an operational failure, stop and report; never claim more tasks just to mark them failed. MCP blocks new claims after a failed task or ambiguous claim response until investigated and restarted. An old backend without `external_research_run_v1` is detected before claim; do not bypass that check.

@@ -30,10 +30,11 @@ test("MCP exposes only the Ark workflow and never returns the lease token", asyn
     searchKnowledge: async () => ([{ document_id: 7, title: "Target buyers", version_no: 2 }]),
     getKnowledgeDocument: async (documentId) => ({ document_id: documentId, title: "Target buyers", version_no: 2, content: "Salons" }),
     listResearchTasks: async () => ({ items: [] }),
-    getResearchTaskContext: async (taskId) => ({ research_task_id: taskId, customer_id: 101 }),
+    getResearchTaskContext: async (taskId) => ({ research_task_id: taskId, customer_id: 101, execution_contract: "external_research_run_v1" }),
     getCustomerOutreachContext: async (customerId) => ({ customer_id: customerId, current_profile_version_id: 33 }),
     claimResearchTask: async (taskId) => ({
       research_task_id: taskId,
+      agent_run_id: 901,
       customer_id: 101,
       input_hash: "a".repeat(64),
       lease_token: researchLeaseToken,
