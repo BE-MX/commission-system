@@ -1308,6 +1308,7 @@ def add_item(
     order_id: int,
     payload: OrderItemAppend,
     user_id: int | None = None,
+    *, draft_only: bool = False,
 ) -> dict:
     try:
         # SQLite must reserve the writer slot before reading next_line_no or
@@ -1332,6 +1333,9 @@ def add_item(
             if existing.item_id is None:
                 raise ValueError("该请求创建的明细已删除，不能用原请求号再次追加")
             return {"id": existing.item_id, "warning": None, "replayed": True}
+
+        if draft_only and order.status != C.ORDER_DRAFT:
+            raise ValueError("订单已不再是草稿，请刷新后查看最新订单")
 
         if int(order.item_count or 0) >= C.MAX_ORDER_ITEMS:
             raise ValueError(f"单张订单最多允许 {C.MAX_ORDER_ITEMS} 行明细")

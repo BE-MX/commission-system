@@ -1186,3 +1186,5 @@ MCP `/mcp` 新增 `search_knowledge` 与 `get_knowledge_document`。二者使用
 话术错误码包括 `reply_not_enabled/reply_not_configured/reply_permission_denied`、`reply_context_too_large`、`reply_busy/reply_rate_limited/reply_daily_quota_exceeded`、`reply_request_conflict/reply_in_progress/reply_result_unavailable`、`reply_configuration_changed/reply_sources_changed`、`reply_timeout/reply_invalid_response/reply_invalid_evidence/reply_unsafe_response/reply_missing_evidence/reply_internal_disclosure/reply_unsupported_number/reply_language_mismatch/reply_unavailable`。响应和校验错误均 no-store，不回显请求正文。相同设备/请求 ID 的共享占位不自动重跑；结果仅在原进程内存保留 120 秒。超时或结果丢失需员工主动重新生成，不自动追加计费。
 
 2026-09-08 内贸逐件标签：`GET /domestic/items/{item_id}/unit-qrcodes` 增加 `customer_name` 与 `order_kind`；30×20mm 标签原单件编码文字改为客户名称，生产单显示公司备货，单件编码与签名二维码数据保持不变。
+
+2026-09-08 草稿续加明细：`POST /domestic/orders/{order_id}/items?draft_only=true` 要求订单仍为草稿，否则拒绝新增（原请求成功后的幂等重放除外）。仍要求 domestic:write 且为创建人；新增后草稿不扣余额，提交时统一报价确认与结算。默认未传 draft_only 的既有追加行为不变。

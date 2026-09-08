@@ -156,6 +156,10 @@ export function exportOrder(orderId) {
   return domesticClient.get(`/orders/${orderId}/export`, { responseType: 'blob' })
 }
 
+export function addDraftOrderItem(orderId, data) {
+  return domesticClient.post(`/orders/${orderId}/items`, data, { params: { draft_only: true } })
+}
+
 export function updateOrder(id, data) {
   return domesticClient.put(`/orders/${id}`, data)
 }

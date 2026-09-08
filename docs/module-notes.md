@@ -1046,3 +1046,5 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 2026-09-08 草稿删除入口对本人开放 domestic:write，非草稿维持 domestic:admin；服务在订单行锁内检查状态和创建人。订单完成以全部明细末道有效实际报工单件数为准，不计末道跳过或撤销。生产 SessionLocal 的 autoflush=False：进度/明细读取前 flush 报工与撤销事实，整单状态汇总前 flush 明细状态，避免最后一笔报工后整单仍生产中或撤销后仍完成。无表结构或历史数据变更。
 
 2026-09-08 内贸逐件标签：`GET /domestic/items/{item_id}/unit-qrcodes` 增加 `customer_name` 与 `order_kind`；30×20mm 标签原单件编码文字改为客户名称，生产单显示公司备货，单件编码与签名二维码数据保持不变。
+
+2026-09-08 草稿编辑弹框在产品明细旁提供添加入口；DomesticDraftItemDialog 独立管理新增规格、报价、特单销售价、数量及图文，复用属性与报价工具。每条新增独立保存，刷新后仍可继续添加，取消前提示未保存输入。追加 API draft_only 参数在订单锁内校验，避免旧弹框向已提交订单追加并意外扣款；同请求提交后重放仍返回首次新增结果。无迁移。

@@ -773,11 +773,12 @@ def delete_order(
 def add_item(
     order_id: int,
     payload: OrderItemAppend,
+    draft_only: bool = Query(False, description="仅允许向仍为草稿的订单追加"),
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("domestic:write")),
 ):
     try:
-        data = order_service.add_item(db, order_id, payload, _uid(_user))
+        data = order_service.add_item(db, order_id, payload, _uid(_user), draft_only=draft_only)
     except pricing_service.DomesticQuoteChangedError as exc:
         raise HTTPException(status_code=409, detail=exc.detail)
     except ValueError as exc:

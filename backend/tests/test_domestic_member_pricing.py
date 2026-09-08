@@ -5625,3 +5625,45 @@ def test_initialize_and_adjust_api_require_recharge_or_admin(db):
     assert adjusted.status_code == 200
     assert adjusted.json()["data"]["current_balance"] == 250.00
     assert adjusted.json()["data"]["membership_level"] is None
+
+
+@pytest.mark.parametrize("is_draft", [True, False])
+def test_append_from_saved_draft_preserves_balance_and_guards_submitted_order(db, is_draft):
+    user, customer, product, base, expected, attrs = _order_pricing_context(
+        db, "draft-append-ui", original_price="1000", balance="10000",
+    )
+    created = order_service.create_order(db, _priced_order_payload(
+        customer, attrs, expected, request_id="draft-append-base", qty=1, is_draft=is_draft,
+    ), user.id)
+    before = customer.balance
+    payload = {**_order_item_payload(client_key="added-line", attrs=attrs, order_qty=2,
+                                    expected_quote=expected), "request_id": "draft-append-new-line"}
+    payload = OrderItemAppend.model_validate(payload).model_dump(mode="json")
+    client = _pricing_api_client(db, user.id, "domestic:write")
+    response = client.post(f"/api/domestic/orders/{created['id']}/items?draft_only=true", json=payload)
+    assert response.status_code == (200 if is_draft else 400), response.text
+    db.refresh(customer)
+    assert customer.balance == before
+    detail = order_service.get_order_detail(db, created["id"])
+    if not is_draft:
+        assert len(detail["items"]) == 1
+        return
+    assert detail["status"] == domestic_constants.ORDER_DRAFT
+    assert len(detail["items"]) == 2
+    assert sum(row["order_qty"] for row in detail["items"]) == 3
+    assert detail["charged_amount"] == 0
+    replay = client.post(f"/api/domestic/orders/{created['id']}/items?draft_only=true", json=payload)
+    assert replay.status_code == 200 and replay.json()["data"]["replayed"] is True
+    submit = DraftSubmitRequest.model_validate({"request_id": "draft-appended-submit",
+                                               "expected_quotes": detail["current_expected_quotes"]})
+    result = order_service.submit_draft(db, created["id"], submit, user.id)
+    db.refresh(customer)
+    assert D(str(result["charged_amount"])) == D("2640.00")
+    assert customer.balance == D("7360.00")
+
+    replay_after_submit = client.post(f"/api/domestic/orders/{created['id']}/items?draft_only=true", json=payload)
+    assert replay_after_submit.status_code == 200
+    assert replay_after_submit.json()["data"]["replayed"] is True
+    db.refresh(customer)
+    assert customer.balance == D("7360.00")
+    assert len(order_service.get_order_detail(db, created["id"])["items"]) == 2

@@ -25,7 +25,10 @@
         <div class="order-edit-actions">
           <GlassButton v-permission="'domestic:write'" variant="primary" :loading="headerSaving" :disabled="!editable || !headerDirty" @click="saveHeader">保存订单信息</GlassButton>
         </div>
-        <h3>产品明细</h3>
+        <div class="order-edit-item-heading">
+          <h3>产品明细</h3>
+          <GlassButton v-if="detail.status === 0 && editable" v-permission="'domestic:write'" variant="secondary" left-icon="Plus" :disabled="busy" @click="appendVisible = true">添加明细</GlassButton>
+        </div>
         <p class="order-edit-hint">每条明细独立保存。产品规格和工艺路线已锁定，数量不能少于已完成报工的件数。</p>
         <div v-for="item in detail.items" :key="item.id" class="order-edit-item">
           <div><strong>{{ item.line_code }} · {{ item.product_name }}</strong><div class="order-edit-hint">{{ item.order_qty }} 件<span v-if="!production"> · 成交单价 ¥{{ Number(item.unit_price).toFixed(2) }}</span></div></div>
@@ -75,6 +78,7 @@
       <GlassButton v-permission="'domestic:write'" variant="primary" :disabled="pendingUploads > 0 || !itemDirty" :loading="itemDialog.saving" @click="saveItem">保存这条明细</GlassButton>
     </template>
   </el-dialog>
+  <DomesticDraftItemDialog v-if="appendVisible && detail" :order="detail" :options="options" @close="appendVisible = false" @saved="reloadAfterAppend" />
 </template>
 
 <script setup>
@@ -85,6 +89,7 @@ import { useAuthStore } from '@/stores/auth'
 import AppUpload from '@/components/AppUpload.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import DomesticImages from '@/components/domestic/DomesticImages.vue'
+import DomesticDraftItemDialog from './DomesticDraftItemDialog.vue'
 import { detailSectionsForKind } from '../domesticOrderKinds'
 import { orderHeaderForm, buildHeaderPatch, orderItemForm, buildItemPatch, itemEditDelta, itemPriceError } from '../domesticOrderEditing'
 
@@ -94,6 +99,7 @@ const auth = useAuthStore()
 const detail = ref(null), loading = ref(false), headerSaving = ref(false), pendingUploads = ref(0)
 const options = ref({ order_types: [], order_channels: [] })
 const header = reactive(orderHeaderForm(null))
+const appendVisible = ref(false)
 const itemDialog = reactive({ visible: false, item: null, form: {}, saving: false })
 let loadSequence = 0
 const production = computed(() => detail.value?.order_kind === 'production')
@@ -103,7 +109,7 @@ const headerDirty = computed(() => detail.value && Object.keys(buildHeaderPatch(
 const itemDirty = computed(() => itemDialog.item && Object.keys(buildItemPatch(detail.value, itemDialog.item, itemDialog.form)).length > 0)
 const amountDelta = computed(() => itemDialog.item ? itemEditDelta(itemDialog.item, itemDialog.form) : 0)
 const itemBusy = computed(() => itemDialog.saving || pendingUploads.value > 0)
-const busy = computed(() => loading.value || headerSaving.value || itemBusy.value || itemDialog.visible)
+const busy = computed(() => loading.value || headerSaving.value || itemBusy.value || itemDialog.visible || appendVisible.value)
 
 watch(() => [props.modelValue, props.orderId], async ([visible, id]) => {
   const sequence = ++loadSequence
@@ -111,6 +117,7 @@ watch(() => [props.modelValue, props.orderId], async ([visible, id]) => {
   loading.value = true
   detail.value = null
   itemDialog.visible = false
+  appendVisible.value = false
   try {
     const [order, opts] = await Promise.all([getOrder(id), getOptions()])
     if (sequence !== loadSequence) return
@@ -142,6 +149,12 @@ async function closeItem(done) {
   if (itemBusy.value || !await canDiscard(itemDirty.value)) return
   if (typeof done === 'function') done()
   itemDialog.visible = false
+}
+
+async function reloadAfterAppend() {
+  loading.value = true
+  emit('saved')
+  try { const res = await getOrder(detail.value.id); detail.value = res.data } catch { /* API interceptor reports refresh failure. */ } finally { loading.value = false }
 }
 
 async function saveHeader() {
@@ -207,6 +220,7 @@ async function saveItem() {
 .order-edit-grid :deep(.el-date-editor), .order-edit-grid :deep(.el-input-number) { width: 100%; }
 .order-edit-actions { display: flex; justify-content: flex-end; margin-bottom: 24px; }
 .order-edit-hint { color: var(--el-text-color-secondary); font-size: 13px; line-height: 1.6; margin: 8px 0; }
+.order-edit-item-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .order-edit-item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid var(--el-border-color-lighter); }
 .order-edit-images { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 @media (max-width: 600px) { .order-edit-grid { grid-template-columns: minmax(0, 1fr); } .order-edit-item { align-items: flex-start; flex-wrap: wrap; } }
