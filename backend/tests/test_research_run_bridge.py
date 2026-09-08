@@ -177,3 +177,49 @@ def test_retry_endpoint_requires_admin_and_customer_scope(bridge):
         response = human.post(url)
         assert response.status_code == 200, response.text
         assert response.json()['data']['task_status'] == 'pending'
+
+
+def test_published_fact_contract_and_company_evidence_complete(bridge):
+    from app.customer.contracts import PUBLIC_RESEARCH_FACT_DESCRIPTIONS, FACT_REGISTRY
+    db, task_id, client = bridge
+    context = client.get(f'/api/sales-automation/agent/research-tasks/{task_id}/context').json()['data']
+    contract = context['fact_contract']
+    source = next(s for s in contract['sources'] if s['source_system'] == 'public_web')
+    keys = {f['fact_key'] for f in source['facts']}
+    assert keys == {'business.industry', *PUBLIC_RESEARCH_FACT_DESCRIPTIONS}
+    claimed = claim(client, task_id)
+    auth = {'lease_token': claimed['lease_token'], 'agent_run_id': claimed['agent_run_id']}
+    assert post(client, task_id, 'industry-gate', lease_token=auth['lease_token'],
+                industry_relevance='core', reason='Official hair extension catalog').status_code == 200
+    facts = [dict(FACT, fact_key=key, value='Official page statement '+key,
+                  external_record_id='official-'+key) for key in PUBLIC_RESEARCH_FACT_DESCRIPTIONS]
+    response = post(client, task_id, 'facts', **auth, facts=facts)
+    assert response.status_code == 200, response.text
+    receipt = response.json()['data']
+    assert len(receipt['evidence_refs']) == 4
+    assert all(f.verification_status == 'candidate' for f in db.query(CustomerFact).all())
+    for key in PUBLIC_RESEARCH_FACT_DESCRIPTIONS:
+        assert FACT_REGISTRY[key].allowed_purposes == frozenset({'research'})
+        assert not FACT_REGISTRY[key].supports_high_impact
+    result = result_from(claimed, receipt)
+    result['claims'][0]['section'] = 'identity'
+    result['claims'][0]['statement'] = facts[0]['value']
+    response = post(client, task_id, 'complete', **auth, result_json=result)
+    assert response.status_code == 200, response.text
+    assert response.json()['data']['task_status'] == 'completed'
+
+
+@pytest.mark.parametrize('change,code', [
+    ({'fact_key':'company.name'}, 'FACT_NOT_REGISTERED'),
+    ({'fact_key':'commercial.has_valid_order', 'value_type':'boolean', 'value':True}, 'FACT_SOURCE_NOT_ALLOWED'),
+    ({'fact_key':'research.source.company_identity', 'value_type':'object', 'value':{}}, 'FACT_VALUE_INVALID'),
+])
+def test_fact_contract_rejections_are_actionable_and_atomic(bridge, change, code):
+    db, task_id, client = bridge
+    claimed = claim(client, task_id)
+    response = post(client, task_id, 'facts', lease_token=claimed['lease_token'],
+                    agent_run_id=claimed['agent_run_id'], facts=[FACT, dict(FACT, **change)])
+    assert response.status_code == 400
+    assert code in response.json()['detail']
+    assert db.query(CustomerFact).count() == 0
+    assert db.query(AgentEvent).filter_by(event_type='tool.succeeded').count() == 0

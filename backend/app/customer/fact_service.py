@@ -20,6 +20,7 @@ from app.core.time import beijing_now, to_beijing_naive
 from app.customer.contracts import (
     DATA_CLASSIFICATIONS,
     FACT_REGISTRY,
+    PUBLIC_RESEARCH_FACT_DESCRIPTIONS,
     SOURCE_REGISTRY,
     DataClassification,
     source_policy,
@@ -784,6 +785,8 @@ def _validate_fact_layer(fact_key: str, fact_layer: str) -> None:
     for layer in ("expressed", "observed", "inferred", "confirmed"):
         if f".{layer}." in fact_key and fact_layer != layer:
             raise CustomerDomainError("FACT_LAYER_INVALID")
+    if fact_key in PUBLIC_RESEARCH_FACT_DESCRIPTIONS and fact_layer != "source":
+        raise CustomerDomainError("FACT_LAYER_INVALID")
     if fact_key == "commercial.has_valid_order" and fact_layer != "observed":
         raise CustomerDomainError("FACT_LAYER_INVALID")
     if fact_key == "business.industry" and fact_layer not in {"source", "confirmed"}:

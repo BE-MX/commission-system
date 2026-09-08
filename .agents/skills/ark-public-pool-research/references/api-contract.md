@@ -15,3 +15,9 @@ Use only these `ark-sales` tools for public-pool-style research:
 The sidecar injects Agent identity and holds the lease. Never request, include, log, or disclose either secret. Task completion returns `research_task_id`, `customer_id`, task status, result review status, and evidence fact IDs. It does not qualify the customer or send a message.
 
 Every final claim must cite a same-Run evidence envelope returned for the task's `customer_id` and frozen `input_hash`. Published company-knowledge references contain only document, immutable revision, and version IDs; they do not become customer facts.
+
+## Registered facts
+
+Before constructing facts, read the current task context or claim `fact_contract`. Choose only a listed source/key/value-type combination; the server registry is authoritative. Do not invent fields such as `company.name`. Public company statements must be grounded in that company's official website. Unsupported evidence, third-party registry/social sources and unresolved identity/risk conclusions belong in evidence gaps unless a matching source policy is available. Inferred facts require previously returned supporting fact IDs and a rule version; never relabel inference as source.
+
+If facts are rejected, correct only a specific schema/contract error using the published contract. Never try completion without successful fact receipts, and never substitute unrelated industry facts for identity/contact claims. Stop and fail safely on persistent operational errors; do not consume more tasks.

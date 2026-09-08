@@ -3179,3 +3179,12 @@ def test_order_validity_revoked_event_requires_exact_invalid_order_source(db):
             source_ref_id=str(order.id),
         )
     assert invalid.value.error_code == "EVENT_REFERENCE_INVALID"
+
+
+@pytest.mark.parametrize("layer", ["inferred", "confirmed", "observed", "expressed"])
+def test_public_research_statement_cannot_be_relabelled(db, layer):
+    customer = _customer(db, "research-layer")
+    source = _source(db, customer, external_id="research-page")
+    with pytest.raises(CustomerDomainError) as exc:
+        _industry_fact(db, customer, source, fact_key="research.source.company_identity", fact_layer=layer)
+    assert exc.value.error_code == "FACT_LAYER_INVALID"

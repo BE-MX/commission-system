@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.time import beijing_now
 from app.customer.fact_service import DirectFactEvidence, append_fact, append_source_record
+from app.customer.contracts import FACT_REGISTRY, SOURCE_REGISTRY, PUBLIC_RESEARCH_FACT_DESCRIPTIONS
 from app.customer.models import CustomerFact, CustomerResearchTask, CustomerSourceRecord
 from app.sales_automation import service
 
@@ -18,6 +19,27 @@ def _data(value: Any) -> dict:
     if hasattr(value, "model_dump"):
         return value.model_dump(exclude_unset=True)
     return dict(value)
+
+
+def research_fact_contract() -> dict:
+    """Describe the live registry intersection supported by the research API."""
+    sources = []
+    for system, entity, layer in [("public_web", "company_page", "source"), ("agent", "research_report", "inferred")]:
+        policy = SOURCE_REGISTRY[(system, entity)]
+        facts = []
+        for key in sorted(policy.allowed_fact_keys):
+            registration = FACT_REGISTRY.get(key)
+            if registration is None or (system, entity) not in registration.allowed_sources:
+                continue
+            facts.append({"fact_key": key, "value_types": sorted(registration.value_types),
+                          "description": PUBLIC_RESEARCH_FACT_DESCRIPTIONS.get(key, key)})
+        sources.append({"source_system": system, "source_entity_type": entity,
+                       "fact_layer": layer, "facts": facts})
+    return {"version": "registered_research_facts_v1", "sources": sources,
+            "rules": ["Use only listed keys and registered value types; source facts require official company page evidence.",
+                      "Inferred facts require existing supporting_fact_ids and rule_version; never relabel an inference as source.",
+                      "Unsupported claims belong in evidence gaps, not invented fact keys or unrelated citations.",
+                      "Only server fact receipts may be cited. Do not attempt completion if evidence ingestion failed."]}
 
 
 def append_research_facts(
@@ -39,6 +61,15 @@ def append_research_facts(
         data = _data(raw)
         source_system = str(data.get("source_system") or "").strip()
         source_entity_type = str(data.get("source_entity_type") or "").strip()
+        key = str(data.get("fact_key") or "")
+        policy = SOURCE_REGISTRY.get((source_system, source_entity_type))
+        registration = FACT_REGISTRY.get(key)
+        if registration is None:
+            raise ValueError("FACT_NOT_REGISTERED: read research context fact_contract for supported keys")
+        if policy is None or key not in policy.allowed_fact_keys or (source_system, source_entity_type) not in registration.allowed_sources:
+            raise ValueError("FACT_SOURCE_NOT_ALLOWED: use the source/key combination from fact_contract")
+        if data.get("value_type") not in registration.value_types:
+            raise ValueError("FACT_VALUE_INVALID: use the registered value type from fact_contract")
         observed_at = data.get("observed_at") or beijing_now()
         source = append_source_record(
             db,

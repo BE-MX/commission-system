@@ -1196,3 +1196,7 @@ MCP `/mcp` 新增 `search_knowledge` 与 `get_knowledge_document`。二者使用
 研究 context 增加 `execution_contract=external_research_run_v1`、task_status、gate_status。领取响应增加服务端生成的 `agent_run_id`，与任务租约代次、客户和 input_hash 绑定；MCP 自动注入此ID。事实接口返回 `tool_call_id` 及真实写入的 evidence_refs，同事务生成规范工具事件，complete 仍严格检查同Run引用闭包。旧Run和跨任务引用不能复用。
 
 `POST /api/customer-hub/research-tasks/{task_id}/retry?expected_attempt_count=N`：人工重试失败背调；要求 `sales_automation:admin` 和该客户读取范围。仅 failed + attempt_count 匹配时重新置pending；保留历史事实，不动搜索结果，下一次claim创建新Run/租约代次。非failed或版本冲突409，无客户权限统一404。
+
+### Research fact contract (2026-09-08)
+
+Agent research context now includes `fact_contract.version=registered_research_facts_v1` and the live source/key/value-type registry intersection. MCP checks it before claim and repeats it in the claim receipt. Official company-page research supports candidate, research-only `research.source.company_identity`, `research.source.business_profile`, `research.source.product_catalog`, and `research.source.business_contact` string facts in addition to `business.industry`. This does not verify identity, authorize outreach, or promote customer qualification. Unsupported fact keys, source combinations and types return actionable 400 codes without echoing submitted values. Existing Run/lease, evidence closure and review checks remain mandatory. No schema migration is required.
