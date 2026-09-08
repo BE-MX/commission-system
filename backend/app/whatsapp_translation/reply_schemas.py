@@ -113,6 +113,17 @@ class ReplyOutput(StrictModel):
         return values
 
 
+def generation_schema(allowed_fact_source_indices: list[int]) -> dict:
+    """Narrow the model-facing schema; the independent output guard still applies."""
+    schema = ReplyOutput.model_json_schema()
+    schema["required"].append("claims")
+    if allowed_fact_source_indices:
+        schema["$defs"]["ReplyClaim"]["properties"]["source_index"]["enum"] = list(allowed_fact_source_indices)
+    else:
+        schema["properties"]["claims"]["maxItems"] = 0
+    return schema
+
+
 class ReplyResponse(ReplyOutput):
     request_id: UUID
     conversation_epoch: UUID

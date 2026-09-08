@@ -45,7 +45,13 @@ GENERATOR_RULES = """输出恰好一条推荐回复。reply_language必须等于
 reply_text 仅对客正文；meaning_zh 忠实释义，不增加承诺；rationale_zh 1至2句说明
 当前阻塞、推荐路径和客户侧完成信号，不是思维过程。未核实条件放内部missing_information。
 每项产品事实必须在claims中给出reply_text原文片段、证据source_index和片段逐字quote。
-只使用public_fact来源；没有适用事实时只作礼貌回应、共情或最小澄清，不假造依据。
+claims 的 source_index 只能取 allowed_fact_source_indices 内的值，对应 sources 中明确给出的
+source_index（从0开始）；不是 document_id、revision_id、section，也不是过滤后的重新编号。
+只使用public_fact来源。method 仅指导表达和策略，constraint 仅限制承诺，均不能写入claims。
+allowed_fact_source_indices 为空时，必须输出 claims: []，不得引用方法或内部政策来凑依据；
+正文只作礼貌回应、共情、忠实复述客户已确认需求或一个最小澄清，不新增产品性能、商务
+事实或承诺。复述需求不是公司产品事实，不为它添加知识引用。不说“我们有/产品是”等无依据断言。
+列表非空也不必强行引用：没有适用事实时仍输出空claims和不含新事实的回应。
 不把有来源等同于语义保证，不借引用越过适用范围。知识充分且安全可ready，存在业务
 缺口用needs_confirmation且正文仍必须安全；无法理解当前话题用insufficient_context。
 禁止输出来源之外的事实、金额/日期/收益/保证，禁止占位符与内部备注混入正文。

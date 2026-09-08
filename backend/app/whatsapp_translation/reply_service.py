@@ -18,7 +18,7 @@ from app.whatsapp_translation.reply_guard import (
     RISK_FLAGS, choose_language, safe_clarification, validate_output, validate_plan,
 )
 from app.whatsapp_translation.reply_prompts import GENERATOR_RULES, PLANNER_RULES, SOUL
-from app.whatsapp_translation.reply_schemas import ReplyOutput, ReplyPlan, ReplyRequest, ReplyResponse, ReplySource
+from app.whatsapp_translation.reply_schemas import ReplyOutput, ReplyPlan, ReplyRequest, ReplyResponse, ReplySource, generation_schema
 from app.whatsapp_translation.reply_state import (
     OWNER_ID, digest, error, finish_request, live_actor, reply_cache, reserve_request,
 )
@@ -153,12 +153,16 @@ def suggest_reply(db, identity, request: ReplyRequest) -> ReplyResponse:
         else:
             phase = time.monotonic()
             glossary = glossary_for(db, direction="outgoing", text="\n".join([*(item.text for item in request.messages), *plan.queries]), target_language=language)
-            source_input = [{key: value for key, value in source.items() if key != "binding"} for source in sources]
+            source_input = [{**{key: value for key, value in source.items() if key != "binding"},
+                             "source_index": index} for index, source in enumerate(sources)]
+            allowed_fact_source_indices = [index for index, source in enumerate(sources)
+                                           if source["purpose"] == "public_fact"]
             content = _call(
                 db, identity, settings.WHATSAPP_REPLY_GENERATOR_PRESET, GENERATOR_RULES,
                 {"conversation": conversation, "review": plan.model_dump(), "target_language": language,
                  "sources": source_input, "glossary": glossary, "allowed_risk_flags": sorted(RISK_FLAGS),
-                 "schema": ReplyOutput.model_json_schema()}, deadline,
+                 "allowed_fact_source_indices": allowed_fact_source_indices,
+                 "schema": generation_schema(allowed_fact_source_indices)}, deadline,
             )
             timings["generation"] = int((time.monotonic() - phase) * 1000)
             phase = time.monotonic()
