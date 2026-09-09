@@ -88,7 +88,7 @@ def test_build_order_workbook_matches_requisition_layout_and_fields():
     assert "系统单号：DO20260819-001" in sheet["A2"].value
     assert "申请人：Rice" in sheet["A2"].value
     assert "客户编码：LS-00322" in sheet["A2"].value
-    assert "尚都" not in " ".join(str(c.value or "") for row in sheet for c in row)
+    assert "客户名称：尚都" in sheet["A3"].value
     assert "之前余额：¥6504.00" in sheet["A4"].value
     assert "本次订单金额：¥1998.00" in sheet["A4"].value
     assert "扣减本次订单后余额：¥4506.00" in sheet["A4"].value
@@ -177,28 +177,19 @@ def test_build_order_workbook_preserves_long_requirements_for_printing():
 
     workbook = load_workbook(build_order_workbook(detail, "下单员"), data_only=False)
     order_sheet = workbook["内贸订单领货单"]
-    requirement_sheet = workbook["完整要求"]
-
+    assert len(workbook.worksheets) == 2
     assert order_sheet.row_dimensions[6].height > 75
-    assert order_sheet.print_area == "'内贸订单领货单'!$A$1:$N$57"
     assert order_sheet.page_setup.paperSize == 9
-    assert requirement_sheet.page_setup.paperSize == 9
     assert order_sheet.print_title_rows == "$1:$5"
-    assert requirement_sheet["A2"].value == "A1"
-    assert requirement_sheet["B2"].value == "发型要求"
-    requirement_rows = [
-        row for row in range(2, requirement_sheet.max_row + 1)
-        if requirement_sheet.cell(row, 1).value == "A1"
-    ]
-    assert len(requirement_rows) > 1
-    assert "".join(requirement_sheet.cell(row, 3).value for row in requirement_rows) == long_requirement
-    assert max(requirement_sheet.row_dimensions[row].height for row in requirement_rows) <= 300
-    continuous_rows = [
-        row for row in range(2, requirement_sheet.max_row + 1)
-        if requirement_sheet.cell(row, 1).value == "A2"
-    ]
-    assert len(continuous_rows) > 1
-    assert "".join(requirement_sheet.cell(row, 3).value for row in continuous_rows) == continuous_requirement
+    for sheet in workbook:
+        section_row = next(row for row in range(1, sheet.max_row + 1) if sheet.cell(row, 1).value == "完整要求")
+        assert section_row > 55
+        assert sheet.print_area.endswith(f"${sheet.max_row}")
+        for code, original in (("A1", long_requirement), ("A2", continuous_requirement)):
+            rows = [row for row in range(section_row + 2, sheet.max_row + 1) if sheet.cell(row, 1).value == code]
+            assert len(rows) > 1
+            assert "".join(sheet.cell(row, 3).value for row in rows) == original
+            assert max(sheet.row_dimensions[row].height for row in rows) <= 300
 
 
 def test_reference_images_are_embedded_in_their_product_cells(tmp_path, monkeypatch):
@@ -214,11 +205,14 @@ def test_reference_images_are_embedded_in_their_product_cells(tmp_path, monkeypa
     detail["items"][1]["style_images"] = ["second.webp"]
     stream = build_order_workbook(detail)
     with ZipFile(stream) as archive:
-        assert len([name for name in archive.namelist() if name.startswith("xl/media/")]) == 3
+        assert len([name for name in archive.namelist() if name.startswith("xl/media/")]) == 6
         assert all(b"TargetMode=\"External\"" not in archive.read(name)
                    for name in archive.namelist() if name.endswith(".rels"))
     stream.seek(0)
-    sheet = load_workbook(stream).active
+    workbook = load_workbook(stream)
+    sheet = workbook.active
+    public = workbook.worksheets[1]
+    assert [(image.anchor._from.row, image.anchor._from.col) for image in public._images] == [(4, 5), (4, 5), (5, 7)]
     assert [(image.anchor._from.row, image.anchor._from.col) for image in sheet._images] == [(5, 10), (5, 10), (6, 12)]
     assert sheet["K6"].value == "短直发"
     assert sheet["M7"].value == "—"
@@ -251,7 +245,8 @@ def test_short_multiline_image_text_is_preserved_without_overlapping_images(tmp_
     workbook = load_workbook(build_order_workbook(detail))
     sheet = workbook.active
     assert "全文见完整要求" in sheet["K6"].value
-    assert workbook["完整要求"]["C2"].value == text
+    for view in workbook:
+        assert any(view.cell(row, 3).value == text for row in range(1, view.max_row + 1))
     image = sheet._images[0]
     assert image.anchor._from.rowOff >= len(wrapped_text_lines(sheet["K6"].value, 21)) * 19 * 9525
     assert image.anchor._from.rowOff + image.anchor.ext.cy <= sheet.row_dimensions[6].height * 12700
@@ -276,3 +271,47 @@ def test_export_adjustment_and_draft_balances_are_labeled():
     detail["balance_snapshot"]["source"] = "draft_preview"
     sheet = load_workbook(build_order_workbook(detail)).active
     assert "草稿未扣款" in sheet["A4"].value and "预计扣减后余额" in sheet["A4"].value
+
+
+def test_two_export_sheets_separate_all_structured_financial_information():
+    detail = _order_detail()
+    detail['items'][0].update(labor_fee=30, unit_price=879, line_amount=1758)
+    workbook = load_workbook(build_order_workbook(detail))
+    assert workbook.sheetnames == ['内贸订单领货单', '内贸订单领货单（无价格）']
+    normal, public = workbook.worksheets
+    for sheet in workbook:
+        assert '客户名称：尚都' in sheet['A3'].value
+    assert normal['I6'].value == 30
+    assert public.max_column == 9
+    assert [public.cell(4, col).value for col in range(1, 10)] == [
+        '明细号', '产品类型', '产品规格', '数量', '出库数量', '发型备注', '颜色', '发型要求', '备注',
+    ]
+    text = ' '.join(str(cell.value or '') for row in public for cell in row)
+    assert not any(word in text for word in ('原价', '优惠', '手工费', '小计', '金额', '余额', '¥'))
+    assert not any(d.hidden for d in public.column_dimensions.values())
+    assert not any(cell.value in (998, 149, 849, 30, 1758, 1998, 6504, 4506) for row in public for cell in row)
+    assert [public.cell(5, col).value for col in (1, 2, 4, 5, 6, 9)] == ['A1', '头套', 2, None, '短直发', '明细备注']
+
+
+def test_production_two_sheets_show_customer_without_inventing_prices():
+    detail = _order_detail() | {'order_kind':'production', 'customer_name':'备货客户'}
+    workbook = load_workbook(build_order_workbook(detail))
+    assert workbook.sheetnames == ['内贸生产备货单', '内贸生产备货单（无价格）']
+    for sheet in workbook:
+        assert '客户名称：备货客户' in sheet['A3'].value
+        assert sheet.max_column == 12
+        text = ' '.join(str(cell.value or '') for row in sheet for cell in row)
+        assert not any(word in text for word in ('原价', '优惠', '手工费', '小计', '余额', '¥'))
+
+
+def test_requirement_appendix_rows_fit_wrapped_labels_and_short_tail():
+    from app.domestic.export_image_service import wrapped_text_lines
+    detail = _order_detail()
+    detail['items'][0]['style_requirement'] = '字' * 601
+    workbook = load_workbook(build_order_workbook(detail))
+    for sheet in workbook:
+        rows = [row for row in range(1, sheet.max_row + 1) if sheet.cell(row, 2).value == '发型要求（续）']
+        assert rows
+        for row in rows:
+            required = len(wrapped_text_lines(sheet.cell(row, 2).value, sheet.column_dimensions['B'].width)) * 15 + 15
+            assert sheet.row_dimensions[row].height >= required
