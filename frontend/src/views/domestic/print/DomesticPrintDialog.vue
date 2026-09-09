@@ -88,7 +88,7 @@ const docHtml = computed(() => {
     })
   }
   return props.mode === 'label'
-    ? buildUnitLabelDoc({ data: card.value, logoUrl })
+    ? buildUnitLabelDoc({ data: card.value })
     : buildCardDoc({ card: card.value, imageMap: imageMap.value })
 })
 
