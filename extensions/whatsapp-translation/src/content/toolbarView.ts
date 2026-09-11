@@ -27,6 +27,7 @@ export type ToolbarModel = {
 }
 
 export type ToolbarHandlers = {
+  onAutoReply?: () => void
   onReply?: () => void
   onCancelPreview: () => void
   onLanguageChange: (language: string) => void
@@ -71,7 +72,8 @@ const STYLES = `
     --danger: #f28b82;
     --border: rgba(233, 237, 239, 0.1);
   }
-  .bar { align-items: center; display: flex; gap: 8px; min-height: 30px; }
+  .auto-toggle { transition:none; } .auto-toggle::after { content:none; } .auto-toggle[aria-pressed="true"] { background:var(--accent); color:var(--accent-fg); } .auto-note { margin:6px 0; font-size:12px; color:var(--muted); overflow-wrap:anywhere; }
+  .bar { flex-wrap:wrap; align-items: center; display: flex; gap: 8px; min-height: 30px; }
   .chip, .btn, .link {
     align-items: center;
     border: 1px solid var(--border);
@@ -134,6 +136,7 @@ const STYLES = `
 `
 
 export type ToolbarView = {
+  setAutoStatus?: (active: boolean, note: string) => void
   render: (model: ToolbarModel, options?: { animatePreview?: boolean }) => void
 }
 
@@ -143,6 +146,12 @@ export function createToolbarView(shadow: ShadowRoot, handlers: ToolbarHandlers)
   style.textContent = STYLES
   const root = doc.createElement('div')
   root.className = 'ark'
+  let autoActive = false, autoNote = ''
+  function updateAuto() {
+    const toggle = root.querySelector<HTMLButtonElement>('.auto-toggle')
+    if (toggle) { toggle.textContent = autoActive ? '停止接管' : '自动接管'; toggle.setAttribute('aria-pressed', String(autoActive)) }
+    const note = root.querySelector<HTMLElement>('.auto-note'); if (note) { note.textContent = autoNote; note.hidden = !autoNote }
+  }
   root.addEventListener('mousedown', event => {
     // Keep WhatsApp's editor selection alive until the action runs. Refocusing
     // after a button steals focus can restore a stale caret over our selection.
@@ -215,6 +224,9 @@ export function createToolbarView(shadow: ShadowRoot, handlers: ToolbarHandlers)
       bar.append(reply)
     }
 
+    if (handlers.onAutoReply) {
+      const toggle = el('button', 'chip auto-toggle', '自动接管'); toggle.type = 'button'; toggle.title = '开启后仅当前聊天自动生成并发送回复'; toggle.addEventListener('click', handlers.onAutoReply); bar.append(toggle)
+    }
     if (model.status.kind === 'error') {
       const message = messageForCode(model.status.code)
       const status = el('span', 'status error', message.text)
@@ -238,10 +250,12 @@ export function createToolbarView(shadow: ShadowRoot, handlers: ToolbarHandlers)
   }
 
   return {
+    setAutoStatus(active, note) { autoActive = active; autoNote = note; updateAuto() },
     render(model, options = {}) {
       root.replaceChildren()
       if (model.preview) root.append(renderPreview(model.preview, options.animatePreview ?? false, model.status.kind === 'replacing'))
       root.append(renderBar(model))
+      const note = el('p', 'auto-note', autoNote); note.setAttribute('role', 'status'); root.append(note); updateAuto()
     },
   }
 }

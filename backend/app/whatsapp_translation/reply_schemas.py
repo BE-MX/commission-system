@@ -30,6 +30,7 @@ class ContextScope(StrictModel):
 
 
 class ReplyRequest(StrictModel):
+    mode: Literal["draft", "auto"] = "draft"
     request_id: UUID
     conversation_epoch: UUID
     context_version: int = Field(ge=0)
@@ -107,6 +108,8 @@ class ReplyClaim(StrictModel):
 
 
 class ReplyOutput(StrictModel):
+    auto_action: Literal["reply", "wait", "handoff"] | None = None
+    reply_segments: list[str] = Field(default_factory=list, max_length=3)
     status: Literal["ready", "needs_confirmation", "insufficient_context"]
     reply_language: str
     reply_text: str = Field(min_length=1, max_length=3000)

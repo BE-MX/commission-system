@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs'
 import { expect, it, vi } from 'vitest'
-import { collectHistory } from '@/whatsapp/replyHistory'
+import { collectHistory, createHistoryCollector } from '@/whatsapp/replyHistory'
 import { adapterFor } from '@/whatsapp/adapter'
 
 function fixture() {
@@ -89,4 +89,78 @@ it('new message arriving during restore invalidates the captured snapshot', asyn
     f.render()
     if (boundary) document.querySelector('[data-testid="selectable-text"]')!.textContent = 'New customer correction'
   })).rejects.toThrow('reply_stale')
+})
+
+it('reuses history without scrolling and appends new messages while preserving earlier rows', async () => {
+  const f = fixture(); const wait = vi.fn(async () => f.render())
+  const collector = createHistoryCollector(document, wait)
+  const first = await collector.collect(limits, () => true, () => {})
+  expect(first.messages).toHaveLength(120)
+  wait.mockClear()
+  expect((await collector.collect(limits, () => true, () => {})).messages).toEqual(first.messages)
+  expect(wait).not.toHaveBeenCalled()
+  const row = f.scroll.lastElementChild!.cloneNode(true) as HTMLElement
+  row.setAttribute('data-id', 'false_synthetic-chat_120')
+  row.querySelector('[data-testid="selectable-text"]')!.textContent = 'New customer message'
+  f.scroll.append(row)
+  const next = await collector.collect(limits, () => true, () => {})
+  expect(next.messages).toHaveLength(121)
+  expect(next.messages[0].text).toBe('Synthetic message 0')
+  expect(next.messages.at(-1)?.text).toBe('New customer message')
+  expect(wait).not.toHaveBeenCalled()
+  await expect(collector.collect({ ...limits, maxMessages: 100 }, () => true, () => {})).rejects.toThrow('reply_context_too_large')
+})
+it('clearing the active chat forces a new capture', async () => {
+  const f = fixture(); const wait = vi.fn(async () => f.render())
+  const collector = createHistoryCollector(document, wait)
+  await collector.collect(limits, () => true, () => {})
+  collector.clear(); wait.mockClear()
+  await collector.collect(limits, () => true, () => {})
+  expect(wait).toHaveBeenCalled()
+})
+it('edited visible messages trigger a fresh capture instead of retaining stale text', async () => {
+  const f = fixture(); let edited = false
+  const wait = vi.fn(async () => { f.render(); if (edited) for (const node of f.scroll.querySelectorAll('[data-testid="selectable-text"]')) node.textContent += ' corrected' })
+  const collector = createHistoryCollector(document, wait)
+  await collector.collect(limits, () => true, () => {})
+  edited = true; await wait(); wait.mockClear()
+  const result = await collector.collect(limits, () => true, () => {})
+  expect(wait).toHaveBeenCalled()
+  expect(result.messages.every(m => m.text.endsWith(' corrected'))).toBe(true)
+})
+
+it.each([true, false])('removes a deleted tail message when starting at bottom=%s', async atBottom => {
+  const f = fixture(); let deleted = false
+  const wait = vi.fn(async () => { f.render(); if (deleted) f.scroll.querySelector('[data-id="false_synthetic-chat_119"]')?.remove() })
+  const collector = createHistoryCollector(document, wait)
+  await collector.collect(limits, () => true, () => {})
+  deleted = true; if (!atBottom) f.scroll.scrollTop = 2000
+  await wait(); wait.mockClear()
+  const result = await collector.collect(limits, () => true, () => {})
+  expect(wait).toHaveBeenCalled()
+  expect(result.messages).toHaveLength(119)
+  expect(result.messages.at(-1)?.text).toBe('Synthetic message 118')
+})
+
+import { createAutoReply } from '@/content/autoReply'
+
+it('auto takeover can finish real history collection without treating scroll windows as new messages', async () => {
+  const f = fixture(); vi.useFakeTimers()
+  try {
+    const adapter = adapterFor(document)
+    adapter.composerElement()!.textContent = ''
+    const collector = createHistoryCollector(document, async () => { await new Promise(resolve => setTimeout(resolve, 10)); f.render() })
+    const suggest = vi.fn(async (p) => ({ ...p, status: 'ready', auto_action: 'wait', reply_segments: [], reply_text: 'Wait', reply_language: 'en', meaning_zh: '等待', rationale_zh: '等待', sources: [], claims: [], risk_flags: [], missing_information: [] }))
+    // Last row of the synthetic conversation is a customer message for this case.
+    const render = f.render
+    f.render = () => { render(); const last = f.scroll.querySelector('[data-id="false_synthetic-chat_119"]') as HTMLElement | null; if (last) last.style.alignItems = 'flex-start' }
+    f.render()
+    const auto = createAutoReply({ snapshot: () => adapter.autoSnapshot(), collect: (_caps, current) => collector.collect(limits, current, () => {}), send: vi.fn() }, {
+      capabilities: async () => ({ available: true, history_enabled: true, auto_reply_enabled: true, max_messages: 2000, default_messages: 2000, max_context_chars: 120000, max_draft_chars: 2000, max_goal_chars: 500, timeout_seconds: 120 }), suggest,
+    }, () => ({ language: 'auto', fallback: 'en', goal: '' }), vi.fn())
+    auto.start(); await vi.advanceTimersByTimeAsync(7000)
+    expect(suggest).toHaveBeenCalledTimes(1)
+    expect(suggest.mock.calls[0][0].messages).toHaveLength(120)
+    auto.stop()
+  } finally { vi.useRealTimers() }
 })

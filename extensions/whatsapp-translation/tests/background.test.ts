@@ -76,6 +76,25 @@ describe('background message dispatcher', () => {
     expect(fetch.mock.calls[0][0]).toContain('/capabilities')
     expect(fetch.mock.calls[0][1].body).toBeUndefined()
   })
+  it('preserves history support from the API through background and content validation', async () => {
+    store.set('deviceToken', 'synthetic-token'); store.set('replyDisclosureAcknowledged', true)
+    const reply = { available: true, history_enabled: true, max_messages: 2000, default_messages: 2000,
+      max_context_chars: 120000, max_draft_chars: 2000, max_goal_chars: 500, timeout_seconds: 120 }
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ code: 200, message: 'ok', data: { reply } }))))
+    await import('@/background/index')
+    const result = await dispatch({ type: 'reply/capabilities' }) as { reply: unknown }
+    const { boundedReplyCapabilities } = await import('@/shared/replyValidation')
+    expect(boundedReplyCapabilities(result.reply)).toMatchObject(reply)
+  })
+  it.each([undefined, false])('still rejects a backend without history support (%s)', async history_enabled => {
+    store.set('deviceToken', 'synthetic-token'); store.set('replyDisclosureAcknowledged', true)
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ code: 200, message: 'ok', data: { reply: {
+      available: true, history_enabled, max_messages: 2000, default_messages: 2000,
+      max_context_chars: 120000, max_draft_chars: 2000, max_goal_chars: 500, timeout_seconds: 120,
+    } } }))))
+    await import('@/background/index')
+    expect(await dispatch({ type: 'reply/capabilities' })).toEqual({ type: 'error', message: 'reply_backend_update_required' })
+  })
   it('rejects malformed reply context before network and sanitizes unexpected API codes', async () => {
     store.set('deviceToken', 'synthetic-token'); store.set('replyDisclosureAcknowledged', true)
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 500, message: 'private detail', data: { error_code: 'Synthetic raw private body' } }), { status: 500 }))

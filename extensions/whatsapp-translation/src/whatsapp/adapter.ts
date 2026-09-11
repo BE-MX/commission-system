@@ -1,9 +1,9 @@
-import { collectHistory } from './replyHistory'
+import { createHistoryCollector } from './replyHistory'
 import { detectChatKind } from '@/whatsapp/chatDetector'
 import { parseIncomingMessages } from '@/whatsapp/messageParser'
 import { WHATSAPP_SELECTORS } from '@/whatsapp/selectors'
 import { ARK_MARKS } from '@/shared/marks'
-import { collectReplyContext } from '@/whatsapp/replyContext'
+import { collectReplyContext, MESSAGE_IDENTITY, maskContacts } from '@/whatsapp/replyContext'
 import type { ReplyContextLimits } from '@/whatsapp/replyContext'
 
 function normalizeComposerText(value: string): string {
@@ -12,7 +12,9 @@ function normalizeComposerText(value: string): string {
 
 export class WhatsAppAdapter {
   private writing = false
-  constructor(private readonly root: Document | HTMLElement) {}
+  private readonly history: ReturnType<typeof createHistoryCollector>
+  constructor(private readonly root: Document | HTMLElement) { this.history = createHistoryCollector(root) }
+  clearReplyHistory() { this.history.clear() }
 
   inspectChat() {
     return detectChatKind(this.root)
@@ -55,7 +57,7 @@ export class WhatsAppAdapter {
   async collectReplyHistory(limits: ReplyContextLimits, current: () => boolean, progress: (context: ReturnType<typeof collectReplyContext>) => void) {
     if (this.collectingHistory) throw new Error('reply_history_busy')
     this.collectingHistory = true
-    try { return await collectHistory(this.root, limits, current, progress) }
+    try { return await this.history.collect(limits, current, progress) }
     finally { this.collectingHistory = false }
   }
   collectReplyContext(limit: number = 2000, limits?: ReplyContextLimits) { return collectReplyContext(this.root, limit, limits) }
@@ -161,6 +163,37 @@ export class WhatsAppAdapter {
       && this.readComposer() === normalizeComposerText(text)
     if (!replaced) collapseFullSelection()
     return replaced
+  }
+
+  autoSnapshot() {
+    const context = this.collectReplyContext()
+    const key = (m: typeof context.messages[number] | undefined) => m ? String((m as unknown as Record<symbol, string>)[MESSAGE_IDENTITY] ?? '') + JSON.stringify(m) : ''
+    return { identity: [this.chatRootElement(), this.conversationElement(), this.chatTitle(), this.composerElement()],
+      tail: key(context.messages.at(-1)), incoming: key(context.messages.filter(m => m.role === 'customer').at(-1)),
+      role: context.messages.at(-1)?.role, draft: this.readComposer() }
+  }
+  isNativeSendTarget(target: EventTarget | null): boolean { return target instanceof Element && !!target.closest(WHATSAPP_SELECTORS.sendButton) }
+  async sendAutomatic(text: string, current: () => boolean): Promise<boolean> {
+    if (this.inspectChat().kind !== 'direct' || this.readComposer() || !current()) return false
+    const snapshot = this.autoSnapshot()
+    const same = () => current() && this.inspectChat().kind === 'direct' && snapshot.identity.every((v, i) => this.autoSnapshot().identity[i] === v)
+    if (!await this.replaceComposer(text, same)) return false
+    const buttons = this.root.querySelectorAll<HTMLButtonElement>(WHATSAPP_SELECTORS.sendButton)
+    const button = buttons[0]
+    if (!same() || this.autoSnapshot().tail !== snapshot.tail || buttons.length !== 1 || !button.isConnected || button.disabled || button.getAttribute('aria-disabled') === 'true'
+      || this.readComposer() !== normalizeComposerText(text) || !button.getClientRects().length) return false
+    const previous = new Set(this.collectReplyContext().messages.map(m => String((m as unknown as Record<symbol, string>)[MESSAGE_IDENTITY])))
+    button.click()
+    // Never retry a click with an uncertain outcome. An outgoing bubble + cleared composer confirms local submission only.
+    for (let i = 0; i < 20; i++) {
+      await new Promise<void>(resolve => setTimeout(resolve, 250))
+      if (!same()) return false
+      const sent = this.collectReplyContext().messages.some(m => m.role === 'salesperson'
+        && normalizeComposerText(m.text) === normalizeComposerText(maskContacts(text))
+        && !previous.has(String((m as unknown as Record<symbol, string>)[MESSAGE_IDENTITY])))
+      if (sent && !this.readComposer()) return true
+    }
+    return false
   }
 
   /**

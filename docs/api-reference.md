@@ -1178,6 +1178,8 @@ MCP `/mcp` 新增 `search_knowledge` 与 `get_knowledge_document`。二者使用
 
 翻译的 `request_id + device_id` 做 5 分钟幂等；相同请求在窗口内回放同一结果，不重复消耗额度。明文请求/译文只存在于处理过程及必要的响应预览，不进入数据库或日志。
 
+v1.6.0自动接管：请求可传 `mode:draft|auto`（默认draft）。auto响应增加 `auto_action:reply|wait|handoff`、`reply_segments`（reply时1–3段，每段最多400字符；wait/handoff必须为空）。需能力 `auto_reply_enabled=true`；权限、配额与metadata-only日志不变，服务端不直接发送消息。扩展只在用户开启当前聊天接管后执行逐段发送；发送不确定不重试。详见 [接管契约](requirements/2026-09-11-whatsapp-auto-takeover.md)。
+
 话术请求包含随机 `request_id/conversation_epoch`、`context_version/draft_version`、`messages[{role:customer|salesperson,text,timestamp?,quoted_text?,kind?:text|media|unknown}]`、`context_scope{requested_limit:1..2000,truncated,omitted_media,latest_visible,history_status}`。默认主动加载当前聊天可获取的历史，最多 2,000 条、正文与引用合计 120,000 字符（服务端可下调）；草稿 2,000、目标 500。保留显式最近 20/40 条选项。其余语言、风格、goal 字段不变；禁止上传 WhatsApp 消息或聊天 ID。采集结果可下载同内容的聊天 JSON，上传沿用 JSON 请求而非附件接口。详见 [长历史实现](requirements/2026-09-11-whatsapp-full-history.md)。
 
 响应回显 UUID 和版本，保留 `status`、语言/草稿/中文释义/理由、来源、风险提示和 missing_information；新增 `context_processing:full|summarized`、可选 `memory_error`。直接生成草稿，不再进行数字、价格、日期、链接、逐字引用等语义拒绝校验；claims 不作为生成门槛。缺知识仍生成并提示，记忆失败不抑制草稿；权限、容量、技术解析、过期/错聊天保护保留。超过 32,000 字符分块摘要后生成，界面明确提示。
@@ -1186,7 +1188,7 @@ MCP `/mcp` 新增 `search_knowledge` 与 `get_knowledge_document`。二者使用
 
 `reply-memory`：list 返回当前账号/设备最多 100 份未过期记录的元数据；create 使用客户端随机 UUID 作幂等键，label 可选；read 返回 entries；correct 带 entry_id、revision、status、必填 note，支持取消、人工核实需求、人工完成/重新待办；delete 必须匹配 revision。commit 缓存过期不重跑模型。记录自创建日起默认 30 天到期，读取即不可见，后台清理物理删除；重建同 UUID 获得新实例标识。新增错误：`reply_memory_disabled/not_found/conflict/full/human_override`。能力字段新增 `memory_enabled/memory_retention_days`。完整约束见 [第一二阶段实现](requirements/2026-09-08-whatsapp-reply-continuity.md)。
 
-`GET /capabilities` 新增可选 `reply{available,history_enabled,max_messages,default_messages,max_context_chars,max_draft_chars,max_goal_chars,timeout_seconds}`。新版话术扩展要求 `history_enabled=true`，否则提示更新后端；扩展采集前及后台发送前均执行当前能力上限。
+`GET /capabilities` 新增可选 `reply{available,history_enabled,auto_reply_enabled,max_messages,default_messages,max_context_chars,max_draft_chars,max_goal_chars,timeout_seconds}`。新版话术扩展要求 `history_enabled=true`，否则提示更新后端；扩展采集前及后台发送前均执行当前能力上限。
 
 话术错误码包括 `reply_not_enabled/reply_not_configured/reply_permission_denied`、`reply_context_too_large`、`reply_busy/reply_rate_limited/reply_daily_quota_exceeded`、`reply_request_conflict/reply_in_progress/reply_result_unavailable`、`reply_configuration_changed/reply_sources_changed`、`reply_timeout/reply_invalid_response/reply_unavailable`。响应和校验错误均 no-store，不回显请求正文。相同设备/请求 ID 的共享占位不自动重跑；结果仅在原进程内存保留 120 秒。超时或结果丢失需员工主动重新生成，不自动追加计费。
 

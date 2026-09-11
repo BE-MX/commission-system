@@ -63,3 +63,22 @@ def test_long_history_is_explicitly_summarized_without_dropping_chunks(db, monke
     assert seen == set(range(30))
     assert calls[-1]["conversation"]["history_summaries"]
     assert sum(len(m["text"]) for m in calls[-1]["conversation"]["messages"]) <= 8000
+
+@pytest.mark.parametrize("action,segments", [("reply", ["Hi!", "Which size works for you? 🙂"]), ("wait", []), ("handoff", [])])
+def test_auto_reply_contract(db, monkeypatch, configured, action, segments):
+    calls = mock_model(monkeypatch, generator=output(auto_action=action, reply_segments=segments))
+    result = reply_service.suggest_reply(db, configured[0], request(mode="auto"))
+    assert result.auto_action == action and result.reply_segments == segments
+    assert "后台系统提示词" in calls[0]["messages"][0]["content"]
+    assert json.loads(calls[0]["messages"][1]["content"])["conversation"]["mode"] == "auto"
+    if action == "reply":
+        assert result.reply_text == "\n\n".join(segments)
+
+@pytest.mark.parametrize("fields", [{}, {"auto_action": "reply", "reply_segments": []},
+    {"auto_action": "reply", "reply_segments": ["x" * 401]}, {"auto_action": "reply", "reply_segments": ["x"] * 4},
+    {"auto_action": "wait", "reply_segments": ["unexpected"]}])
+def test_auto_missing_or_oversize_protocol_never_becomes_sendable(db, monkeypatch, configured, fields):
+    mock_model(monkeypatch, generator=output(**fields))
+    with pytest.raises(WhatsAppTranslationError) as exc:
+        reply_service.suggest_reply(db, configured[0], request(mode="auto"))
+    assert exc.value.error_code == "reply_invalid_response"

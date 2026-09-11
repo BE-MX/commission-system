@@ -5,6 +5,8 @@ export const WHATSAPP_SELECTORS = {
   darkTheme: 'body.dark',
   directChat: '#main [data-testid="conversation-header"] [role="button"]:is([aria-label="个人主页详情"], [aria-label="Profile details"])',
   footer: '#main footer',
+  sendButton: '#main footer button[data-testid="compose-btn-send"], #main footer button:has([data-icon="send"])',
+  messagePanel: '#main [data-testid="conversation-panel-messages"]',
   message: '#main [data-testid="msg-container"]',
   messageDecoration: '[data-testid="forwarded"], [data-testid="msg-meta"], [data-testid="reaction-bubble"], [data-testid="reaction-bubble-item"], [data-testid="tail-in"], [data-testid="tail-out"]',
   messageEmoji: 'img[data-testid="selectable-text"][data-plain-text][alt]',

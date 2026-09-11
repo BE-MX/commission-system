@@ -1,3 +1,4 @@
+import { REPLY_PANEL_STYLES } from '@/content/replyViewStyles'
 import { LANGUAGE_LABELS, TARGET_LANGUAGES, languageLabel } from '@/shared/contracts'
 import type { ReplyStyle } from '@/shared/contracts'
 import type { ReplyOptions, ReplyState } from '@/content/replyAssistant'
@@ -48,15 +49,7 @@ export function createReplyView(shadow: ShadowRoot, handlers: {
   root.hidden = true
   root.setAttribute('aria-label', '话术助手')
   const style = doc.createElement('style')
-  style.textContent = `.reply-panel { padding-bottom:8px; } .reply-panel[hidden] { display:none; }
-    .reply-panel .card { max-height: min(460px, 55vh); overflow:auto; }
-    .reply-panel .actions { flex-wrap:wrap; } .reply-panel .text { overflow-wrap:anywhere; }
-    .reply-panel textarea { background:var(--surface); color:var(--fg); border:1px solid var(--border); border-radius:8px; width:100%; min-height:54px; resize:vertical; font:inherit; padding:8px; }
-    .reply-panel select { background:var(--surface); color:var(--fg); font:inherit; border:1px solid var(--border); border-radius:8px; padding:4px; }
-    .reply-panel summary { cursor:pointer; color:var(--muted); margin-top:8px; } .reply-panel p { margin:8px 0; }
-    .reply-panel button:focus-visible, .reply-panel select:focus-visible, .reply-panel textarea:focus-visible { outline:2px solid var(--link); outline-offset:2px; }
-    .reply-panel .disclosure { color:var(--muted); } .reply-panel .primary { font-size:15px; }
-    .reply-panel .status { margin:8px 0; display:block; }`
+  style.textContent = REPLY_PANEL_STYLES
   const el = <K extends keyof HTMLElementTagNameMap>(tag: K, text = '', className = '') => {
     const node = doc.createElement(tag); node.textContent = text; node.className = className; return node
   }
@@ -66,10 +59,10 @@ export function createReplyView(shadow: ShadowRoot, handlers: {
   root.addEventListener('mousedown', e => { if (e.button === 0 && (e.target as Element).closest('button')) e.preventDefault() })
   root.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); handlers.close() } })
   const card = el('div', '', 'card')
-  const head = el('div', '', 'actions')
+  const head = el('div', '', 'reply-head')
   head.append(el('strong', '话术助手'), button('关闭话术', handlers.close))
   const disclosure = el('p', '当前聊天可获取历史、可选草稿意图及所选询盘复盘将发送至莱莎方舟及已配置模型。启用记录时保存有来源的需求和待办，不保存草稿为已发送消息。仅预览和填入，不自动发送。', 'disclosure')
-  const settings = el('div', '', 'actions')
+  const settings = el('div', '', 'reply-settings')
   const limit = el('select'); limit.setAttribute('aria-label', '话术上下文条数')
   const defaultLimit = el('option', '加载历史并生成'); defaultLimit.value = 'default'; limit.append(defaultLimit)
   const loaded = el('option', '仅当前已加载消息'); loaded.value = 'loaded'; limit.append(loaded)
@@ -78,7 +71,7 @@ export function createReplyView(shadow: ShadowRoot, handlers: {
   for (const code of ['auto', ...TARGET_LANGUAGES]) { const o = el('option', code === 'auto' ? '自动判断客户语言' : LANGUAGE_LABELS[code]); o.value = code; language.append(o) }
   const draftLabel = el('label'); const include = el('input'); include.type = 'checkbox'; include.checked = true
   draftLabel.append(include, doc.createTextNode(' 使用草稿意图'))
-  settings.append(limit, language, draftLabel)
+  settings.append(language, draftLabel)
   const goal = el('textarea'); goal.maxLength = 500; goal.placeholder = '本次目标（可选，最多 500 字符）'; goal.setAttribute('aria-label', '本次目标')
   const options = (): ReplyOptions => ({ limit: ['default', 'loaded'].includes(limit.value) ? limit.value as 'default' | 'loaded' : Number(limit.value) as 20 | 40, language: language.value as ReplyOptions['language'], includeDraft: include.checked, goal: goal.value })
   for (const input of [limit, language, include]) input.addEventListener('change', handlers.change)
@@ -87,10 +80,45 @@ export function createReplyView(shadow: ShadowRoot, handlers: {
   const output = el('div'); const actions = el('div', '', 'actions')
   const generate = button('生成话术', () => handlers.generate(options(), 'default'), true)
   const cancel = button('取消生成', handlers.cancel)
-  actions.append(generate, cancel)
+  const fillSlot = el('div', '', 'actions')
+  actions.classList.add('reply-footer')
+  actions.append(fillSlot, generate, cancel)
   const memoryView = handlers.memory ? createMemoryView(doc, handlers.memory) : undefined
-  card.append(head, disclosure, settings, goal, actions, snapshot, status, output)
-  if (memoryView) card.append(memoryView.root)
+  const tabs = el('div', '', 'reply-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', '话术内容')
+  const replyPane = el('div', '', 'reply-pane')
+  const contextPane = el('div', '', 'reply-pane')
+  const memoryPane = el('div', '', 'reply-pane')
+  const panels = [replyPane, contextPane, memoryPane]
+  const tabButtons: HTMLButtonElement[] = []
+  function selectTab(index: number) {
+    panels.forEach((panel, i) => { panel.hidden = i !== index; tabButtons[i].setAttribute('aria-selected', String(i === index)); tabButtons[i].tabIndex = i === index ? 0 : -1 })
+  }
+  for (const [index, label] of ['建议回复', '聊天上下文', '询盘与接管'].entries()) {
+    const tab = button(label, () => selectTab(index)); tab.setAttribute('role', 'tab')
+    tab.id = `reply-tab-${index}`; tab.setAttribute('aria-controls', `reply-pane-${index}`)
+    const panel = panels[index]; panel.id = `reply-pane-${index}`; panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', tab.id)
+    tab.addEventListener('keydown', event => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+      event.preventDefault()
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? 2 : (index + (event.key === 'ArrowRight' ? 1 : 2)) % 3
+      selectTab(next); tabButtons[next].focus()
+    })
+    tabButtons.push(tab); tabs.append(tab)
+  }
+  selectTab(0)
+  const preferences = el('details', '', 'reply-preferences'); preferences.append(el('summary', '调整生成要求'), settings, goal)
+  const brief = el('p', '聊天内容发送至方舟及配置模型，仅生成草稿，由你确认发送。', 'reply-caption')
+  replyPane.append(brief, output, preferences)
+  const exportSlot = el('div', '', 'actions')
+  const scopeLabel = el('label', '读取范围', 'reply-field'); scopeLabel.append(limit)
+  const privacy = el('details'); privacy.append(el('summary', '数据使用说明'), disclosure)
+  contextPane.append(el('h3', '本次聊天记录'), scopeLabel, snapshot, exportSlot, privacy)
+  const memoryEmpty = el('p', '生成回复后可查看接管摘要；询盘记录需管理员启用。', 'reply-caption')
+  const handoffSlot = el('div')
+  memoryPane.append(memoryEmpty, handoffSlot)
+  if (memoryView) { memoryView.root.open = true; memoryPane.append(memoryView.root) }
+  else memoryPane.append(el('p', '当前未启用询盘记录。', 'reply-caption'))
+  card.append(head, tabs, status, ...panels, actions)
   root.append(card); shadow.append(style, root)
   return {
     options,
@@ -105,28 +133,32 @@ export function createReplyView(shadow: ShadowRoot, handlers: {
       }
       generate.disabled = !!state.collecting || state.busy || !!state.memoryBusy || !!state.paused
       generate.textContent = state.collecting ? '加载历史中…' : state.busy ? '生成中…' : '重新生成话术'
+      generate.className = state.result?.status === 'ready' ? 'link' : 'btn'
       cancel.hidden = !state.busy
       status.textContent = state.error ? (REPLY_COPY[state.error] ?? messageForCode(state.error).text) : state.collecting ? '正在向上加载并累计历史，可取消；切换聊天会停止采集。' : state.busy ? '正在生成，长历史会分段整理；编辑草稿会使本次生成失效。' : ''
+      status.hidden = !status.textContent
       const context = state.context
       snapshot.textContent = context ? `已采集 ${context.messages.length} 条 · ${context.range}。${context.context_scope.truncated ? '超过容量，未发送。' : ''}${context.context_scope.omitted_media ? '媒体仅保留占位，内容未读取。' : ''}${context.skippedUnknown ? '存在无法识别的消息。' : ''}${context.context_scope.history_status === 'web_boundary_unverified' ? '已滚动至网页当前边界，不能保证包含手机全部历史。' : '仅代表已采集范围，完整性未确认。'}` : ''
 
-      output.replaceChildren()
-      if (context?.messages.length) output.append(button('下载聊天 JSON', () => {
+      output.replaceChildren(); exportSlot.replaceChildren(); fillSlot.replaceChildren(); handoffSlot.replaceChildren()
+      if (context?.messages.length) exportSlot.append(button('下载聊天 JSON', () => {
         const blob = new Blob([JSON.stringify({ schema_version: 1, context_scope: context.context_scope, messages: context.messages }, null, 2)], { type: 'application/json' })
         const url = URL.createObjectURL(blob)
         const link = doc.createElement('a'); link.href = url; link.download = 'whatsapp-conversation.json'; link.click()
         setTimeout(() => URL.revokeObjectURL(url), 1000)
       }))
-      if (state.canRestore) output.append(button('恢复原草稿', handlers.restore))
+      if (state.canRestore) fillSlot.append(button('恢复原草稿', handlers.restore))
+      memoryEmpty.hidden = !!state.capabilities?.memory_enabled || !!state.result?.handoff || !!state.handoffResult
       const result = state.result
       memoryView?.render(state, code => REPLY_COPY[code] ?? '询盘记录操作失败，请重试。')
-      if (state.paused && handlers.memory) output.append(renderHandoff(doc, state, handlers.memory.pause))
-      if (!result) return
-      if (result.context_processing === 'summarized') output.append(el('p', '本次历史较长，已分段整理后生成；下载 JSON 可查看原始采集内容。'))
-      output.append(el('p', `建议回复 · ${languageLabel(result.reply_language)}`, 'label'), el('div', result.reply_text, 'text primary'))
+      if (state.paused && handlers.memory) handoffSlot.append(renderHandoff(doc, state, handlers.memory.pause))
+      if (!result) { output.append(el('p', state.busy ? '正在准备建议回复…' : state.paused ? '已暂停辅助，可在「询盘与接管」中恢复。' : '生成一条回复，核对后填入聊天框。', 'reply-empty')); return }
+      if (result.context_processing === 'summarized') exportSlot.append(el('p', '本次历史较长，已分段整理后生成；下载 JSON 可查看原始采集内容。'))
+      output.append(el('p', `建议回复 · ${languageLabel(result.reply_language)}`, 'label'), el('div', result.reply_text, 'text reply-draft'))
       if (result.status !== 'ready') output.append(el('p', result.status === 'needs_confirmation' ? '需要补充确认，暂不可填入。' : '上下文不足，暂不可填入。', 'status'))
-      const details = el('details'); details.append(el('summary', '中文含义、建议理由与依据'))
-      details.append(el('p', result.meaning_zh, 'text'), el('p', result.rationale_zh, 'text'))
+      output.append(el('p', result.meaning_zh, 'text reply-meaning'))
+      const details = el('details'); details.append(el('summary', '建议理由与依据'))
+      details.append(el('p', result.rationale_zh, 'text'))
       for (const source of result.sources) details.append(el('p', `来源：${source.title} · v${source.version_no} · ${source.section}`, 'text back'))
       for (const missing of result.missing_information) details.append(el('p', `待确认：${missing}`, 'text'))
       for (const risk of result.risk_flags) details.append(el('p', `注意：${REPLY_RISK_LABELS[risk] ?? '请核实这条建议的适用条件'}`, 'text'))
@@ -136,11 +168,10 @@ export function createReplyView(shadow: ShadowRoot, handlers: {
         for (const material of result.materials) materials.append(el('p', material.title), el('p', material.applicability, 'text back'), el('p', material.text, 'text'))
         output.append(materials)
       }
-      if (handlers.memory && result.handoff) output.append(renderHandoff(doc, state, handlers.memory.pause))
+      if (handlers.memory && result.handoff) handoffSlot.append(renderHandoff(doc, state, handlers.memory.pause))
       const resultActions = el('div', '', 'actions')
-      if (result.status === 'ready') resultActions.append(button('填入输入框', handlers.fill, true))
+      if (result.status === 'ready') fillSlot.prepend(button('填入输入框', handlers.fill, true))
       for (const [label, value] of [['短一点', 'shorter'], ['柔和一点', 'softer'], ['换个策略', 'alternative']] as const) resultActions.append(button(label, () => handlers.generate(options(), value)))
-      resultActions.append(button('按本次目标生成', () => handlers.generate(options(), 'default')))
       output.append(resultActions)
     },
   }

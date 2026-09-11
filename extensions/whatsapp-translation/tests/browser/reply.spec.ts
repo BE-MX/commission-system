@@ -36,7 +36,7 @@ test.beforeAll(async () => {
   ;[fixture, editorBundle, extensionBundle] = await Promise.all([
     readFile(fileURLToPath(new URL('./fixture.html', import.meta.url)), 'utf8'), bundle('./lexicalEditor.ts'), bundle('./replyHarness.ts'),
   ])
-  fixture = fixture.replace('<footer>', '<div style="align-items:flex-start"><div data-testid="msg-container"><div class="copyable-text" data-pre-plain-text="Synthetic"><span data-testid="selectable-text">Can I have a sample?</span></div></div></div><footer>')
+  fixture = fixture.replace('<footer>', '<div data-testid="conversation-panel-messages"><div style="align-items:flex-start"><div data-testid="msg-container"><div class="copyable-text" data-pre-plain-text="Synthetic"><span data-testid="selectable-text">Can I have a sample?</span></div></div></div></div><footer>')
 })
 test.beforeEach(async ({ page }, info) => {
   await page.route('**/*', route => route.request().url() === url ? route.fulfill({ contentType: 'text/html', body: fixture }) : route.abort())
@@ -55,7 +55,10 @@ test('full content integration fills and restores real Lexical draft, never send
   const cdp = await page.context().newCDPSession(page)
   await click(page, cdp, '话术')
   await expect(page.locator('html')).toHaveAttribute('data-reply-requested', 'true')
-  await resolve(page); await click(page, cdp, '填入输入框')
+  await resolve(page)
+  await expect.poll(async () => !!await find(cdp, '填入输入框')).toBe(true)
+  await page.screenshot({ path: '../../tmp/whatsapp-composer-browser/reply-tabs-desktop.png' })
+  await click(page, cdp, '填入输入框')
   await expect(page.locator('html')).toHaveAttribute('data-lexical-text', 'What sample size do you need?')
   await click(page, cdp, '恢复原草稿')
   await expect(page.locator('html')).toHaveAttribute('data-lexical-text', '原草稿')
@@ -68,7 +71,7 @@ test('inquiry records persist a fresh snapshot and show internal handoff without
   await expect(page.locator('html')).toHaveAttribute('data-reply-requested', 'true')
   await resolve(page)
   await expect(page.locator('html')).toHaveAttribute('data-memory-committed', '1')
-  await click(page, cdp, '询盘记录与承诺台账', 'SUMMARY')
+  await click(page, cdp, '询盘与接管')
   const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true })
   expect(all(root).map(text).join(' ')).toContain('Customer asks for a sample')
   const refresh = (await find(cdp, '刷新记录'))!
@@ -195,6 +198,7 @@ test('server lower capacity stops instead of silently truncating history', async
 })
 
 test('long history loads earlier batches without translation calls and exports the full JSON', async ({ page }) => {
+  test.setTimeout(40000)
   const cdp = await page.context().newCDPSession(page)
   await page.evaluate(() => {
     const first = document.querySelector('[data-testid="msg-container"]')!.parentElement!
@@ -220,14 +224,25 @@ test('long history loads earlier batches without translation calls and exports t
   })
   // Let translation of the initially loaded batch finish before measuring history loads.
   await expect(page.locator('html')).toHaveAttribute('data-translation-calls', '20')
+  await page.evaluate(() => { const scroll = document.querySelector('#synthetic-history')!; scroll.scrollTop = scroll.scrollHeight })
   await click(page, cdp, '话术')
   const translationsAtStart = await page.locator('html').getAttribute('data-translation-calls')
   await expect(page.locator('html')).toHaveAttribute('data-reply-messages', '100', { timeout: 25000 })
   expect(await page.locator('html').getAttribute('data-translation-calls')).toBe(translationsAtStart)
   await resolve(page)
+  await page.evaluate(() => {
+    const scroll = document.querySelector('#synthetic-history')!
+    scroll.addEventListener('scroll', () => { document.documentElement.dataset.repeatHistoryScroll = 'true' })
+  })
+  await click(page, cdp, '重新生成话术')
+  await expect(page.locator('html')).toHaveAttribute('data-reply-calls', '2', { timeout: 3000 })
+  await expect(page.locator('html')).not.toHaveAttribute('data-repeat-history-scroll', 'true')
+  await expect(page.locator('html')).toHaveAttribute('data-reply-messages', '100')
+  await resolve(page)
   await click(page, cdp, '填入输入框')
   await expect(page.locator('html')).toHaveAttribute('data-lexical-text', 'What sample size do you need?')
   const download = page.waitForEvent('download')
+  await click(page, cdp, '聊天上下文')
   await click(page, cdp, '下载聊天 JSON')
   const file = await download
   const path = await file.path()
@@ -237,4 +252,71 @@ test('long history loads earlier batches without translation calls and exports t
   expect(JSON.stringify(exported)).not.toContain('false_synthetic')
   await expect(page.locator('html')).not.toHaveAttribute('data-send-clicked', 'true')
   await page.screenshot({ path: '../../tmp/whatsapp-composer-browser/full-history.png' })
+})
+
+test('reply tabs remain usable on narrow screens and with the keyboard', async ({ page }) => {
+  await page.setViewportSize({ width: 420, height: 820 })
+  const cdp = await page.context().newCDPSession(page)
+  await click(page, cdp, '话术'); await resolve(page)
+  await expect.poll(async () => !!await find(cdp, '填入输入框')).toBe(true)
+  await page.screenshot({ path: '../../tmp/whatsapp-composer-browser/reply-tabs-narrow.png' })
+  const tab = (await find(cdp, '建议回复'))!
+  await cdp.send('DOM.focus', { nodeId: tab.nodeId })
+  await page.keyboard.press('ArrowRight')
+  const contextTab = (await find(cdp, '聊天上下文'))!
+  const { attributes } = await cdp.send('DOM.getAttributes', { nodeId: contextTab.nodeId })
+  expect(attributes).toContain('true')
+  await click(page, cdp, '建议回复')
+  await click(page, cdp, '填入输入框')
+  await expect(page.locator('html')).toHaveAttribute('data-lexical-text', 'What sample size do you need?')
+})
+
+test('auto takeover sends two ordered synthetic messages and stops with its toggle', async ({ page }) => {
+  test.setTimeout(30000)
+  const cdp = await page.context().newCDPSession(page)
+  await page.getByRole('textbox', { name: 'Synthetic composer' }).fill('')
+  await page.evaluate(() => { document.documentElement.dataset.autoHarness = 'true'; document.querySelector('#send')!.setAttribute('data-testid', 'compose-btn-send') })
+  await click(page, cdp, '自动接管')
+  await expect(page.locator('html')).toHaveAttribute('data-auto-sent', '2', { timeout: 15000 })
+  const sent = await page.locator('[data-id^="true_synthetic_sent_"]').allTextContents()
+  expect(sent).toEqual(['Hi! Happy to help 🙂', 'Which sample size works for you?'])
+  await expect(page.locator('html')).toHaveAttribute('data-lexical-text', '')
+  await page.screenshot({ path: '../../tmp/whatsapp-composer-browser/auto-takeover.png' })
+  await click(page, cdp, '停止接管')
+  await expect.poll(async () => !!await find(cdp, '自动接管')).toBe(true)
+})
+test('manual input stops auto takeover before sending', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  const composer = page.getByRole('textbox', { name: 'Synthetic composer' })
+  await composer.fill('')
+  await page.evaluate(() => document.querySelector('#send')!.setAttribute('data-testid', 'compose-btn-send'))
+  await click(page, cdp, '自动接管')
+  await composer.fill('I will handle this myself')
+  await expect.poll(async () => !!await find(cdp, '自动接管')).toBe(true)
+  await expect(page.locator('html')).not.toHaveAttribute('data-send-clicked', 'true')
+})
+
+test('manual mode cancels an auto activation still awaiting disclosure', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  await page.getByRole('textbox', { name: 'Synthetic composer' }).fill('')
+  await page.evaluate(() => { document.documentElement.dataset.deferAutoDisclosure = 'true' })
+  await click(page, cdp, '自动接管')
+  await click(page, cdp, '话术')
+  await page.evaluate(() => document.dispatchEvent(new Event('synthetic-auto-disclosure')))
+  await expect.poll(async () => !!await find(cdp, '自动接管')).toBe(true)
+  expect(await find(cdp, '停止接管')).toBeUndefined()
+})
+
+test('auto takeover cannot start while another instance owns the browser lock', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  await page.getByRole('textbox', { name: 'Synthetic composer' }).fill('')
+  await page.evaluate(() => { void navigator.locks.request('leshine-whatsapp-auto-takeover', async () => {
+    document.documentElement.dataset.syntheticLock = 'true'
+    await new Promise(resolve => document.addEventListener('synthetic-release-lock', resolve, { once: true }))
+  }) })
+  await expect(page.locator('html')).toHaveAttribute('data-synthetic-lock', 'true')
+  await click(page, cdp, '自动接管')
+  await expect.poll(async () => { const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true }); return all(root).map(text).join(' ') }).toContain('另一个窗口正在自动接管')
+  await expect(page.locator('html')).not.toHaveAttribute('data-reply-requested', 'true')
+  await page.evaluate(() => document.dispatchEvent(new Event('synthetic-release-lock')))
 })

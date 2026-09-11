@@ -15,7 +15,7 @@ from app.whatsapp_translation.auth import require_supported_extension
 from app.whatsapp_translation.constants import SUPPORTED_TARGET_LANGUAGES
 from app.whatsapp_translation.errors import WhatsAppTranslationError
 from app.whatsapp_translation.glossary_service import glossary_for
-from app.whatsapp_translation.reply_direct import RULES
+from app.whatsapp_translation.reply_direct import RULES, AUTO_RULES
 from app.whatsapp_translation import reply_memory
 from app.whatsapp_translation.reply_schemas import ReplyRequest, ReplyResponse, ReplySource
 from app.whatsapp_translation.reply_state import (
@@ -62,7 +62,7 @@ def reply_capabilities(db, identity) -> dict:
             # Expected disabled/ungranted capability; the request still rechecks.
             available = False
     return {
-        "available": available, "history_enabled": True, "max_messages": 2000, "default_messages": 2000,
+        "available": available, "history_enabled": True, "auto_reply_enabled": True, "max_messages": 2000, "default_messages": 2000,
         "max_context_chars": min(120000, settings.WHATSAPP_REPLY_MAX_CONTEXT_CHARS),
         "max_draft_chars": 2000, "max_goal_chars": 500,
         "timeout_seconds": min(180, settings.WHATSAPP_REPLY_TIMEOUT_SECONDS),
@@ -73,7 +73,7 @@ def reply_capabilities(db, identity) -> dict:
 
 def _configuration_signature(settings, preset_version: str) -> str:
     return digest({"sources": settings.WHATSAPP_REPLY_SOURCE_BINDINGS, "presets": preset_version,
-                   "generator": RULES,
+                   "generator": RULES, "auto_rules": AUTO_RULES,
                    "memory_enabled": settings.WHATSAPP_REPLY_MEMORY_ENABLED})
 
 

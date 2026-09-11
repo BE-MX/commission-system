@@ -23,6 +23,18 @@ message_index（原始JSON的0起始索引）、quote（该消息连续原文摘
 不输出思维过程，不发送消息，不执行业务动作。"""
 
 
+AUTO_RULES = """当前为业务员主动开启的自动接管模式，回复将由扩展发送给当前客户。
+沿用后台系统提示词配置的品牌口吻、业务目标和销售逻辑；先回应最新问题，再自然推进一个下一步。
+理解历史和最新更正，避免重复问已知信息、连续追问、长篇推销、无意义刷屏或假装已完成业务动作。
+输出 auto_action: reply/wait/handoff，以及 reply_segments 数组。reply 时必填1至3段、每段最多400字符。
+每段通常1至2句话；不需要分段时只发1段。段落按语义拆分，不机械切字。语气词和表情适量、贴合客户语气，严肃问题不卖萌。
+客户正在结束对话、仅需等待或不需要回应时用wait，reply_segments为空；停止联系要求不得继续营销。
+涉及无法确定的报价/库存/付款操作或需要人工决策时用handoff，reply_segments为空，rationale_zh说明交接原因。
+禁止为推进目标编造事实或承诺。只读图片/语音占位不能假装已理解其内容，应请求文字说明或交人工。
+reply_text保留合并后的回复；wait/handoff时写内部简短原因（不会发送）。不输出思维链。
+"""
+
+
 def _object(content):
     if not isinstance(content, str) or len(content) > 24000:
         raise error("reply_invalid_response", 502)
@@ -78,7 +90,7 @@ def generate_direct(db, identity, settings, request, conversation, sources, dead
         conversation = {**conversation, "messages": recent,
                         "message_index_offset": max(0, len(request.messages) - len(recent)), "history_summaries": summaries}
         processing = "summarized"
-    value = _object(call(db, identity, settings.WHATSAPP_REPLY_GENERATOR_PRESET, RULES,
+    value = _object(call(db, identity, settings.WHATSAPP_REPLY_GENERATOR_PRESET, RULES + (AUTO_RULES if request.mode == "auto" else ""),
         {"conversation": conversation, "sources": sources, "memory_schema": MemoryChange.model_json_schema()}, deadline))
     text = value.get("reply_text")
     if not isinstance(text, str) or not text.strip() or len(text) > 3000:
@@ -94,6 +106,19 @@ def generate_direct(db, identity, settings, request, conversation, sources, dead
         meaning_zh=optional_text("meaning_zh", 1800) or "未提供中文释义。",
         rationale_zh=optional_text("rationale_zh", 600) or "请核对后使用。",
         missing_information=[item[:300] for item in notes[:8] if isinstance(item, str)] if isinstance(notes, list) else [])
+    if request.mode == "auto":
+        action = value.get("auto_action")
+        segments = value.get("reply_segments")
+        if action not in {"reply", "wait", "handoff"} or not isinstance(segments, list):
+            raise error("reply_invalid_response", 502)
+        if action == "reply":
+            if not 1 <= len(segments) <= 3 or any(not isinstance(part, str) or not part.strip() or len(part) > 400 for part in segments):
+                raise error("reply_invalid_response", 502)
+            output.reply_segments = [part.strip() for part in segments]
+            output.reply_text = "\n\n".join(output.reply_segments)
+        elif segments:
+            raise error("reply_invalid_response", 502)
+        output.auto_action = action
     changes = []
     memory_parse_error = False
     for item in value.get("memory_changes", [])[:12] if isinstance(value.get("memory_changes"), list) else []:

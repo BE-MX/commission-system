@@ -12,7 +12,8 @@ export function boundedReplyCapabilities(value: unknown): ReplyCapabilities {
   if (positive.some(n => !Number.isSafeInteger(n) || n < 1) || optional.some(n => !Number.isSafeInteger(n) || n < 0)
     || p.default_messages > p.max_messages) throw new Error('reply_configuration_invalid')
   return {
-    available: true, max_messages: Math.min(2000, p.max_messages), default_messages: Math.min(2000, p.default_messages),
+    auto_reply_enabled: p.auto_reply_enabled === true,
+    available: true, history_enabled: true, max_messages: Math.min(2000, p.max_messages), default_messages: Math.min(2000, p.default_messages),
     max_context_chars: Math.min(120000, p.max_context_chars), max_draft_chars: Math.min(2000, p.max_draft_chars),
     max_goal_chars: Math.min(500, p.max_goal_chars), timeout_seconds: Math.min(180, p.timeout_seconds),
     memory_enabled: p.memory_enabled === true,
@@ -31,7 +32,7 @@ const language = (value: unknown) => (TARGET_LANGUAGES as readonly unknown[]).in
 export function validReplyRequest(value: unknown): value is ReplyRequest {
   if (!value || typeof value !== 'object') return false
   const p = value as ReplyRequest
-  return typeof p.request_id === 'string' && uuid.test(p.request_id)
+  return (p.mode === undefined || ['draft', 'auto'].includes(p.mode)) && typeof p.request_id === 'string' && uuid.test(p.request_id)
     && typeof p.conversation_epoch === 'string' && uuid.test(p.conversation_epoch)
     && Number.isInteger(p.context_version) && p.context_version >= 0
     && Number.isInteger(p.draft_version) && p.draft_version >= 0
@@ -49,7 +50,11 @@ export function validReplyRequest(value: unknown): value is ReplyRequest {
 export function validReplyResponse(value: unknown, request: ReplyRequest): value is ReplyResponse {
   if (!value || typeof value !== 'object') return false
   const p = value as ReplyResponse
-  return p.request_id === request.request_id && p.conversation_epoch === request.conversation_epoch
+  const autoValid = request.mode !== 'auto' || (['reply', 'wait', 'handoff'].includes(p.auto_action ?? '')
+    && Array.isArray(p.reply_segments) && (p.auto_action === 'reply'
+      ? p.reply_segments.length >= 1 && p.reply_segments.length <= 3 && p.reply_segments.every(s => isText(s, 400) && !!s.trim())
+      : p.reply_segments.length === 0))
+  return autoValid && p.request_id === request.request_id && p.conversation_epoch === request.conversation_epoch
     && p.context_version === request.context_version && p.draft_version === request.draft_version
     && ['ready', 'needs_confirmation', 'insufficient_context'].includes(p.status) && language(p.reply_language)
     && isText(p.reply_text, 12000) && (p.status !== 'ready' || !!p.reply_text.trim())

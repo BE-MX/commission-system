@@ -153,6 +153,7 @@ export function mapStartPairing(response: StartPairingResponse): PairingState {
 }
 
 export type ReplyCapabilities = {
+  auto_reply_enabled?: boolean
   history_enabled?: boolean
   available: boolean
   max_messages: number
@@ -166,6 +167,7 @@ export type ReplyCapabilities = {
 }
 export type ReplyStyle = 'default' | 'shorter' | 'softer' | 'alternative'
 export type ReplyRequest = {
+  mode?: 'draft' | 'auto'
   request_id: string
   conversation_epoch: string
   context_version: number
@@ -181,6 +183,8 @@ export type ReplyRequest = {
   memory_revision?: number
 }
 export type ReplyResponse = Pick<ReplyRequest, 'request_id' | 'conversation_epoch' | 'context_version' | 'draft_version'> & {
+  auto_action?: 'reply' | 'wait' | 'handoff' | null
+  reply_segments?: string[]
   memory_error?: string | null
   context_processing?: string
   status: 'ready' | 'needs_confirmation' | 'insufficient_context'

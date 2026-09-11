@@ -26,3 +26,24 @@ it('renders model text literally, localizes risk flags, and makes needs_confirma
   expect(handlers.change).toHaveBeenCalledTimes(1)
   expect(handlers.generate).not.toHaveBeenCalled()
 })
+
+it('keeps settings and generation intact when switching accessible tabs', () => {
+  const host = document.createElement('div'); document.body.append(host)
+  const shadow = host.attachShadow({ mode: 'closed' })
+  const handlers = { generate: vi.fn(), change: vi.fn(), close: vi.fn(), cancel: vi.fn(), fill: vi.fn(), restore: vi.fn() }
+  const view = createReplyView(shadow, handlers)
+  view.render({ open: true, busy: false, canRestore: false })
+  const tabs = [...shadow.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+  const panels = [...shadow.querySelectorAll<HTMLElement>('[role="tabpanel"]')]
+  expect(panels.map(p => p.hidden)).toEqual([false, true, true])
+  const goal = shadow.querySelector('textarea')!; goal.value = 'Keep this goal'
+  tabs[1].click()
+  expect(panels.map(p => p.hidden)).toEqual([true, false, true])
+  view.render({ open: true, busy: true, canRestore: false })
+  expect(tabs[1].getAttribute('aria-selected')).toBe('true')
+  tabs[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+  expect(panels.map(p => p.hidden)).toEqual([true, true, false])
+  expect(view.options().goal).toBe('Keep this goal')
+  expect(handlers.generate).not.toHaveBeenCalled()
+  expect(handlers.change).not.toHaveBeenCalled()
+})

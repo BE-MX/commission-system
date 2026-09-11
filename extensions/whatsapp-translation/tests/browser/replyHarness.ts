@@ -26,9 +26,10 @@ Object.assign(globalThis, { chrome: { runtime: {
       document.documentElement.dataset.detectedLanguage = request.targetLanguage
       return { type: request.type, targetLanguage: request.targetLanguage }
     }
+    if (request.type === 'reply/disclosure' && request.acknowledged && document.documentElement.dataset.deferAutoDisclosure === 'true') return new Promise(resolve => document.addEventListener('synthetic-auto-disclosure', () => resolve({ type: 'reply/disclosure', acknowledged: true }), { once: true }))
     if (request.type === 'reply/disclosure') return { type: request.type, acknowledged: true }
     if (request.type === 'reply/capabilities') return { type: request.type, reply: {
-      available: true, history_enabled: true, max_messages: 2000, default_messages: 2000,
+      available: true, history_enabled: true, auto_reply_enabled: true, max_messages: 2000, default_messages: 2000,
       max_context_chars: document.documentElement.dataset.lowerReplyLimit === 'true' ? 6000 : 120000,
       max_draft_chars: 2000, max_goal_chars: 500, timeout_seconds: 30,
       memory_enabled: document.documentElement.dataset.memoryEnabled === 'true', memory_retention_days: 30,
@@ -60,10 +61,15 @@ Object.assign(globalThis, { chrome: { runtime: {
     if (request.type === 'translation/outgoing') return { type: request.type, sourceLanguage: 'zh-CN', translation: 'Synthetic translated draft' }
     if (request.type === 'reply/suggest') {
       document.documentElement.dataset.replyRequested = 'true'
+      document.documentElement.dataset.replyCalls = String(Number(document.documentElement.dataset.replyCalls ?? 0) + 1)
       const p = request.payload
       document.documentElement.dataset.replyCharacters = String(p.messages.reduce((sum, message) => sum + message.text.length, 0))
       document.documentElement.dataset.replyMessages = String(p.messages.length)
       document.documentElement.dataset.replyTruncated = String(p.context_scope.truncated)
+      if (p.mode === 'auto') return { type: 'reply/suggest', result: {
+        ...p, status: 'ready', auto_action: 'reply', reply_segments: ['Hi! Happy to help 🙂', 'Which sample size works for you?'],
+        reply_language: 'en', reply_text: 'Hi! Happy to help 🙂\n\nWhich sample size works for you?', meaning_zh: '确认样品尺寸', rationale_zh: '推进下一步', sources: [], claims: [], risk_flags: [], missing_information: [],
+      } }
       return new Promise(resolve => document.addEventListener('synthetic-reply-resolve', () => resolve({
         type: 'reply/suggest', result: {
           ...p, status: 'ready', reply_language: 'en', reply_text: 'What sample size do you need?',
