@@ -471,6 +471,11 @@ def seed_role_permissions(db: Session):
         ("sales_automation:write", "sales_automation", "write", "创建搜索任务并确认候选客户"),
         ("sales_automation:admin", "sales_automation", "admin", "管理获客模型与Agent接入"),
         ("sales_automation:invoke", "sales_automation", "invoke", "Agent领取任务并提交搜索与研究结果"),
+        # 客户邮件触达：审核后定时发送开发信；worker 使用独立机器凭证，不具备审批能力
+        ("mail_outreach:read",   "mail_outreach", "read",   "查看邮件触达草稿/队列/事件"),
+        ("mail_outreach:write",  "mail_outreach", "write",  "生成、编辑、审批和撤销开发信"),
+        ("mail_outreach:admin",  "mail_outreach", "admin",  "管理发件邮箱绑定与限额"),
+        ("mail_outreach:worker", "mail_outreach", "worker", "邮件发送 Worker 机器凭证"),
         # 企业知识库：平台权限与知识库成员 ACL 双重校验
         ("knowledge:read",   "knowledge", "read",   "查看已授权知识库"),
         ("knowledge:write",  "knowledge", "write",  "编辑知识文档并提交审批"),

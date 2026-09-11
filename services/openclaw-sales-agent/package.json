@@ -7,6 +7,7 @@
   "scripts": {
     "build:email-tools": "node scripts/build-email-tools.mjs",
     "configure:email": "node scripts/configure-email-agent.mjs",
+    "service:schedule": "node src/mail-schedule-service.mjs",
     "start": "node src/server.mjs",
     "test": "node --test",
     "verify:email": "node scripts/verify-email-agent.mjs"

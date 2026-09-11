@@ -90,6 +90,33 @@ $HOME/.openclaw-ark-sales/bin/outreach-queue list
 
 Agent 只开放工作区内的 `read`，用于按需加载已安装的 `SKILL.md`；`write`、`edit`、`apply_patch`、shell 和工作区外读取继续禁用，因此位于工作区外的 Ark token 仍不可见。`HEARTBEAT.md` 是 bootstrap 管理的自动化策略，每次 bootstrap 都会更新：仅 main 获客代理启用 5 分钟 heartbeat，每轮优先处理最早一条 `target_count <= 20` 的搜索任务，较大任务留待人工显式执行；搜索队列没有合格任务时才处理一条公海背调任务，两个队列都无任务时静默返回。Heartbeat 使用 30 分钟上限的轻量隔离会话，每轮只加载当前策略，不继承主会话的历史行为；任务执行要求最迟每 10 分钟续租、25 分钟前可控收尾，避免在有效租约中硬终止。
 
+### 排程侧车服务
+
+`src/mail-schedule-service.mjs` 是纯函数排程库 `src/outreach-schedule.mjs` 的薄 HTTP 封装（Node 原生 `node:http`，零新增依赖），供方舟主站（Python）的 `schedule_client` 做发送时间预览——它是 schedule preview 的唯一算法源；发送 worker 直接 import 同一个 `outreach-schedule.mjs`，预览与实算永远是同一份代码，不存在两份实现漂移。
+
+环境变量：
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `MAIL_SCHEDULE_BIND` | `127.0.0.1` | 监听地址，仅内网/回环 |
+| `MAIL_SCHEDULE_PORT` | `7910` | 监听端口 |
+| `MAIL_SCHEDULE_TOKEN` | 无 | 共享 Bearer 令牌；缺省时进程直接报错退出 |
+| `MAIL_SCHEDULE_ALLOW_INSECURE` | 无 | 仅本地调试：置 `1` 时允许无令牌启动（免鉴权） |
+
+端点：
+
+- `GET /health` → `200 {ok:true,data:{service:'mail-schedule',version:'1'}}`，不需鉴权。
+- `POST /schedule/preview` → 需 `Authorization: Bearer <MAIL_SCHEDULE_TOKEN>`，否则 `401 {ok:false,error:{code:'unauthorized'}}`；body 为 `{country, state?, timezone, language, languageSource, languageBasis, officeStart?, now?}`（上限 64KB，非法 JSON 返回 400）。成功返回 `200 {ok:true,data:{country,state,timezone,language,officeStart,scheduledAtUtc,scheduledAtLocal,localDate}}`；国家/州/时区/语言组合不合法返回 `400 {ok:false,error:{code:'invalid_locale',message}}`。其余路径/方法一律 404/405。响应均为 JSON；服务只记状态码级别日志，不打请求体（其中含客户语言依据）。
+
+启动：
+
+```bash
+cd services/openclaw-sales-agent
+MAIL_SCHEDULE_TOKEN=<共享令牌> npm run service:schedule
+```
+
+运行时要求 Node ≥24.15.0（周末数据依赖 ICU 的 `Intl.Locale.getWeekInfo()`）。
+
 ## 需要人工补充的凭证
 
 ### 1. 方舟 Agent token

@@ -64,3 +64,4 @@ export const customerMediaClient = createApiClient({
   baseURL: import.meta.env.VITE_CUSTOMER_MEDIA_API_BASE || '/api/customer-media',
   timeout: 120000,
 })
+export const mailOutreachClient = createApiClient({ baseURL: '/api/mail-outreach', timeout: 300000 }) // 草稿生成走 AI，放宽超时

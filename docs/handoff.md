@@ -35,7 +35,13 @@
 
 验证：后端客户查询/订单渠道/客户订单权限专项70 passed；补接口参数/长度校验后客户查询专项3 passed；前端筛选状态与订单大类9 passed；最终前端构建通过。Edge 模拟接口完整页面验证客户名+订单号、五项高级条件组合、回车查询、取消、应用、标签移除、分页、生产页签、重置以及1366/1024/768/390宽度，页面异常为0，证据在本 worktree `tmp/order-filters/`。测试仅用内存SQLite和模拟API。约定检查仍被 AssetTagEditor small 按钮及 AssetLibrary 行数基线两项既有问题阻挡；未改相关文件。亮哥已授权合并推送；集成前 fetch 确认 main 与 origin/main 均为 `051e6d04`，无上游代码差异。验证证据归档至主目录 `tmp/domestic-order-filters-delivery/`，主目录其他任务的未提交改动保持原样。本轮不部署应用。Git巡检使用 `--no-fetch` 本地快照。
 
-## 2026-09-11 WhatsApp 长历史直接生成 v1.5.0（合并交付）
+## 2026-09-11 客户邮件触达 P1（本地实现，未提交待审阅）
+
+在主 worktree 直接实现（基线 main `915837f6`），按设计文档 [docs/2026-09-11-mail-outreach-auto-send-design.md](2026-09-11-mail-outreach-auto-send-design.md) 完成 P1 阶段；亮哥已授权合并推送，直接提交 main 并推 origin（推送前 fetch 核对远端无分歧）。约定检查初跑拦下本任务新增表格 11 处固定列宽，已全部改 min-width 清零；剩余 AssetTagEditor/AssetLibrary 两项为既有基线问题，干净 main 同样复现。交付：迁移 `144_mail_outreach_core`（8 表，编号已核对全分支最大 143；downgrade 按约定抛错）；新域 `backend/app/mail_outreach/`（触达快照/资格/生成/审批/队列/排程客户端 + 14 个人类 JWT 端点，注册 `/api/mail-outreach`；审批哈希锁定 + 同事务建 job + 版本失效 + `_require_human`）；权限 seeds `mail_outreach:read/write/admin/worker`；settings 总开关 `MAIL_OUTREACH_SEND_ENABLED=false`；AI preset `mail_outreach_generate`（方法源与 ark-email-outreach SKILL 双向断言）；前端客户详情「邮件触达」Tab、审核抽屉（照 QualificationPanel 幂等范式）、`/mail-outreach` 队列工作台；Node 排程侧车 `mail-schedule-service.mjs`（复用 outreach-schedule 唯一算法源，Bearer 鉴权，本机 Node v26.3.0）。
+
+验证：后端 54 passed（新增 30：资格/审批/生成/preset）+ 客户与调度回归无影响；侧车 21 passed、整包 69 pass/1 skipped（既有条件跳过）；前端 build 通过、导航布局回归 fail 0；迁移 143→144 离线 `--sql` 渲染 MySQL DDL 正常；`git_sweep --no-fetch` 与增量约定检查均已跑（本地快照）。前后端契约已抽检对齐（context contacts[].points、详情 current_revision、jobs 序列化字段）。
+
+边界：未连真实数据库执行迁移（隔离开发库未确认）；未接真实 Agent Mail CLI/邮箱；发送链路（worker claim/send-authorize/临发复查/收件回流）属 P2/P3 未开工；P0 外部准入（腾讯条款、自有邮箱 PoC、常驻节点）未定。约定检查除素材库两项既有基线问题（干净 main 复现）外无新增红项。
 
 分支 `codex/whatsapp-full-history`，基于 main `915837f6`。按用户方案移除话术内容拒绝校验、直接生成 Agent；默认自动滚动采集聊天 JSON，支持下载，最多 2,000 条/120,000 字符，超过 32,000 字符明确分块摘要。记忆失败不阻断可用草稿。权限、知识撤权、幂等、错聊天和未发送边界保留，无迁移。
 

@@ -49,6 +49,7 @@ export const MENU_GROUPS = {
       'customer:read',
       'sales_automation:read',
       'customer_opportunity:read', 'customer_radar:read',
+      'mail_outreach:read', 'mail_outreach:write', 'mail_outreach:admin',
     ],
   },
   invoice: {
@@ -348,6 +349,17 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'customerOperations', title: '今日工作台', icon: Aim, order: 0,
       anyPermission: ['customer_radar:read'],
+    },
+  },
+  {
+    path: '/mail-outreach',
+    name: 'MailOutreachQueue',
+    component: () => import('@/views/mail_outreach/MailOutreachQueue.vue'),
+    title: '邮件触达队列',
+    anyPermission: ['mail_outreach:read', 'mail_outreach:write', 'mail_outreach:admin'],
+    menu: {
+      group: 'customerOperations', title: '邮件触达队列', icon: Postcard, order: 50,
+      anyPermission: ['mail_outreach:read', 'mail_outreach:write', 'mail_outreach:admin'],
     },
   },
 

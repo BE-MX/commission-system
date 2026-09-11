@@ -64,6 +64,16 @@ class Settings(BaseSettings):
     TFT_SERVICE_ENABLED: bool = False
     TFT_SERVICE_URL: str = ""
 
+    # ── 客户邮件触达（审核后定时发送）──────────────────────
+    # 总停发开关：关闭时 claim / send-authorize 一律拒绝，优先于一切队列任务。
+    MAIL_OUTREACH_SEND_ENABLED: bool = False
+    # Node 排程侧车（复用 outreach-schedule.mjs 的唯一算法源）；留空 = 预览不可用
+    MAIL_OUTREACH_SCHEDULE_SERVICE_URL: str = ""
+    MAIL_OUTREACH_SCHEDULE_TOKEN: str = ""
+    # 收件人冷却期（天）与邮箱默认日额度（通道口径以上线时腾讯页面为准）
+    MAIL_OUTREACH_RECIPIENT_COOLDOWN_DAYS: int = 14
+    MAIL_OUTREACH_DEFAULT_DAILY_QUOTA: int = 50
+
     # ── 对外库存查询（客户公开查询页 / 客户系统 API） ─────
     # 2026-08-19 二期起端点全公开免 key，本配置废弃（保留字段兼容存量 .env）
     PUBLIC_STOCK_KEYS: str = ""
