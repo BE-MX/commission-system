@@ -654,10 +654,50 @@ def test_batch_delete_assets_reports_missing(db):
 
     a1 = _make_asset(db, "d1.jpg")
     a2 = _make_asset(db, "d2.jpg")
+    a1_id, a2_id = a1.id, a2.id
 
-    result = batch_delete_assets(db, [a1.id, a2.id, 424242])
+    result = batch_delete_assets(db, [a1_id, a2_id, 424242])
 
     assert result["deleted"] == 2
-    assert sorted(result["deleted_ids"]) == [a1.id, a2.id]
+    assert sorted(result["deleted_ids"]) == [a1_id, a2_id]
     assert result["failed_ids"] == [424242]
-    assert db.query(Asset).filter(Asset.id.in_([a1.id, a2.id])).count() == 0
+    assert db.query(Asset).filter(Asset.id.in_([a1_id, a2_id])).count() == 0
+
+
+def test_delete_asset_cascades_all_child_rows(db):
+    """删除素材须清理全部子表行（ark_assets 的 5 个 FK 引用均无 ON DELETE CASCADE，
+    旧实现只删主表行，真实素材（必带版本+权限行）删除必被 FK 拒绝 → 500）。"""
+    from app.asset.asset_service import delete_asset
+    from app.asset.models import (
+        Asset, AssetPermission, AssetVersion, DownloadLog,
+        FavoriteFolder, FavoriteItem, asset_tag_association as ata,
+    )
+
+    _, multi, vals = _make_dims(db)
+    asset = _make_asset(db, "cascade.jpg")
+    version = AssetVersion(asset_id=asset.id, version_number=1,
+                           storage_path="t/cascade.jpg", file_size=1, uploader_id=1)
+    folder = FavoriteFolder(user_id=1, name="夹")
+    db.add_all([version, folder])
+    db.flush()
+    db.add_all([
+        AssetPermission(asset_id=asset.id),
+        FavoriteItem(folder_id=folder.id, asset_id=asset.id),
+        DownloadLog(asset_id=asset.id, user_id=1),
+    ])
+    db.execute(ata.insert().values(asset_id=asset.id, version_id=version.id,
+                                   dimension_id=multi.id, tag_value_id=vals[2].id))
+    db.flush()
+
+    # 删除后 asset 对象的属性访问会触发刷新并报 ObjectDeletedError，id 先取出
+    asset_id = asset.id
+    assert delete_asset(db, asset_id) is True
+
+    assert db.query(Asset).filter_by(id=asset_id).count() == 0
+    assert db.query(AssetVersion).filter_by(asset_id=asset_id).count() == 0
+    assert db.query(AssetPermission).filter_by(asset_id=asset_id).count() == 0
+    assert db.query(FavoriteItem).filter_by(asset_id=asset_id).count() == 0
+    assert db.query(DownloadLog).filter_by(asset_id=asset_id).count() == 0
+    assert db.execute(ata.select().where(ata.c.asset_id == asset_id)).fetchall() == []
+    # 收藏夹本身保留（属于用户，不随素材删除）
+    assert db.query(FavoriteFolder).filter_by(id=folder.id).count() == 1
