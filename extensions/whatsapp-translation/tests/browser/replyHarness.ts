@@ -72,6 +72,9 @@ Object.assign(globalThis, { chrome: { runtime: {
       if (p.mode === 'auto') return { type: 'reply/suggest', result: {
         ...p, status: 'ready', auto_action: 'reply', reply_segments: autoParts,
         reply_language: 'en', reply_text: autoParts.join('\n\n'), meaning_zh: '确认样品尺寸', rationale_zh: '推进下一步', sources: [], claims: [], risk_flags: [], missing_information: [],
+        ...(document.documentElement.dataset.reviewReply === 'true' ? { auto_action: 'handoff', reply_segments: [],
+          reply_text: 'Synthetic complete answer retained for review. Final topic is also retained.',
+          rationale_zh: '完整回复需要人工处理。', risk_flags: ['auto_reply_review_required'] } : {}),
       } }
       return new Promise(resolve => document.addEventListener('synthetic-reply-resolve', () => resolve({
         type: 'reply/suggest', result: {

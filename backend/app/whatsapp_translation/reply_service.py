@@ -10,13 +10,16 @@ import httpx
 from app.ai.models import AiPreset, AiProvider
 from app.ai.service import chat
 from app.core.config import get_settings
-from app.knowledge.reply_sources import parse_bindings, retrieve_reply_sources, revalidate_sources
+from app.knowledge.reply_sources import retrieve_reply_sources, revalidate_sources
 from app.whatsapp_translation.auth import require_supported_extension
 from app.whatsapp_translation.constants import SUPPORTED_TARGET_LANGUAGES
 from app.whatsapp_translation.errors import WhatsAppTranslationError
 from app.whatsapp_translation.glossary_service import glossary_for
 from app.whatsapp_translation.reply_direct import RULES, AUTO_RULES
 from app.whatsapp_translation import reply_memory
+from app.whatsapp_translation.reply_profile import source_profile
+from app.whatsapp_translation.reply_catalog import retrieve_catalog
+from app.invoice.catalog_specs import can_read_specs
 from app.whatsapp_translation.reply_schemas import ReplyRequest, ReplyResponse, ReplySource
 from app.whatsapp_translation.reply_state import (
     OWNER_ID, digest, error, finish_request, live_actor, reply_cache, reserve_request,
@@ -72,7 +75,7 @@ def reply_capabilities(db, identity) -> dict:
 
 
 def _configuration_signature(settings, preset_version: str) -> str:
-    return digest({"sources": settings.WHATSAPP_REPLY_SOURCE_BINDINGS, "presets": preset_version,
+    return digest({"sources": [b.model_dump(mode='json') for b in source_profile(settings)], "presets": preset_version,
                    "generator": RULES, "auto_rules": AUTO_RULES,
                    "memory_enabled": settings.WHATSAPP_REPLY_MEMORY_ENABLED})
 
@@ -96,8 +99,10 @@ def _call(db, identity, preset, system, payload, deadline):
     return result["content"]
 
 
-def _check_current(db, identity, sources, signature):
+def _check_current(db, identity, sources, signature, *, catalog_required=False):
     actor = live_actor(db, identity)
+    if catalog_required and not can_read_specs(actor):
+        raise error('reply_permission_denied', 403)
     settings = get_settings()
     if not settings.WHATSAPP_REPLY_ENABLED or _configuration_signature(settings, preset_signature(db, settings)) != signature:
         raise error("reply_configuration_changed")
@@ -115,7 +120,8 @@ def _cached_response(db, identity, record, signature):
     response, sources, original_signature = cached
     if original_signature != signature:
         raise error("reply_configuration_changed")
-    _check_current(db, identity, sources, original_signature)
+    _check_current(db, identity, sources, original_signature,
+                   catalog_required=bool({'catalog_matched', 'catalog_not_found'}.intersection(response.risk_flags)))
     return response.model_copy(deep=True)
 
 
@@ -132,7 +138,7 @@ def suggest_reply(db, identity, request: ReplyRequest) -> ReplyResponse:
         if sum(len(item.text) + len(item.quoted_text) for item in request.messages) > settings.WHATSAPP_REPLY_MAX_CONTEXT_CHARS:
             raise error("reply_context_too_large", 422)
         signature = _configuration_signature(settings, preset_signature(db, settings))
-        bindings = parse_bindings(settings.WHATSAPP_REPLY_SOURCE_BINDINGS)
+        bindings = source_profile(settings)
         try:
             memory_snapshot = reply_memory.load_for_generation(db, identity, request)
         except WhatsAppTranslationError as exc:
@@ -154,10 +160,12 @@ def suggest_reply(db, identity, request: ReplyRequest) -> ReplyResponse:
         queries += [alias for binding in bindings for alias in binding.aliases if alias.casefold() in all_text]
         latest_customer = next((m.text for m in reversed(request.messages) if m.role == 'customer'), '')
         sources, policies_available = retrieve_reply_sources(db, actor, bindings, queries, focus_query=latest_customer)
+        conversation['product_catalog'] = retrieve_catalog(db, actor, request)
+        catalog_required = conversation['product_catalog']['status'] in {'matched', 'not_found'}
         from app.whatsapp_translation.reply_direct import generate_direct
         conversation["glossary"] = glossary_for(db, direction="outgoing", text="\n".join(m.text for m in request.messages[-40:]), target_language=request.target_language if request.target_language != "auto" else request.fallback_language)
         def checked_call(*args):
-            _check_current(db, identity, sources, signature)
+            _check_current(db, identity, sources, signature, catalog_required=catalog_required)
             return _call(*args)
         output, plan, processing = generate_direct(db, identity, settings, request, conversation, sources, deadline, checked_call)
         memory_error = "reply_memory_update_failed" if plan.memory_parse_error else None
@@ -175,9 +183,12 @@ def suggest_reply(db, identity, request: ReplyRequest) -> ReplyResponse:
             output.risk_flags = list(dict.fromkeys([*output.risk_flags, "media_not_read"]))
         if policies_available and not any(source["purpose"] == "public_fact" for source in sources):
             output.risk_flags = list(dict.fromkeys([*output.risk_flags, "no_public_facts"]))
+        catalog = conversation['product_catalog']
+        if catalog['status'] != 'not_requested':
+            output.risk_flags.append('catalog_' + catalog['status'])
         # All selected evidence, including mandatory constraints, is reauthorized
         # even if the model chose not to cite it. Cached results get the same check.
-        _check_current(db, identity, sources, signature)
+        _check_current(db, identity, sources, signature, catalog_required=catalog_required)
         _remaining(deadline)
         try:
             reply_memory.recheck_revision(db, identity, request, memory_snapshot["instance_id"])

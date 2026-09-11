@@ -1023,6 +1023,10 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 
 ## WhatsApp 实时翻译（whatsapp_translation，2026-09-03）
 
+**话术事实 v1.6.5**：默认加载随发布profile，环境绑定按章节显式覆盖；解决“config文件有FAQ但实例仅约束”的问题。生成前按发帘产品族/明确长度查询有权访问的启用目录规格，结果区分未匹配、无权限和不可用，不等同库存或供货承诺。生成与缓存返回重验目录权限。详见 [事实与目录](requirements/2026-09-11-whatsapp-facts-catalog.md)。
+
+**自动接管 v1.6.4**：生成结果先无损整理再形成发送契约；有segments可补重复正文，按自然边界拆长段/合并过多短段，长度使用与浏览器一致的UTF16单位。不能整理或未知动作保草稿handoff；显式wait/handoff不发送。扩展展示恢复的人工草稿，真正JSON损坏/无正文/展示超限各报具体错误。详见 [结果恢复](requirements/2026-09-11-whatsapp-result-recovery.md)。
+
 **自动接管 v1.6.3**：实机发送控件可能只有精确的 Send/发送标签或 wds-ic-send-filled 图标；不能只依赖旧 testid。限制当前 footer、可见可用单候选，嵌套去重。完整回复预览保留全部段落和本地提交数，第一段失败不代表模型只生成一段。生成规则要求多问题覆盖优先于简短偏好。详见 [发送与完整回复](requirements/2026-09-11-whatsapp-send-coverage.md)。
 
 **FAQ检索修复（2026-09-11）**：英文检索按完整词和出现与否评分、过滤虚词、优先最新客户问题；补酸处理章节绑定，已知问题直接回答未知单独澄清。必须同时更新后端与环境绑定。详见 [知识召回](requirements/2026-09-11-whatsapp-faq-retrieval.md)。

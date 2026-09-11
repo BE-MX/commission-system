@@ -71,6 +71,7 @@ def seed_reply(db, monkeypatch):
     bindings = [binding(policy, "constraint", mandatory=True), binding(fact, "public_fact")]
     settings = get_settings()
     monkeypatch.setattr(settings, "WHATSAPP_REPLY_ENABLED", True)
+    monkeypatch.setattr(settings, "WHATSAPP_REPLY_SOURCE_PROFILE", "")
     monkeypatch.setattr(settings, "WHATSAPP_REPLY_SOURCE_BINDINGS", [item.model_dump() for item in bindings])
     return identity, token, library, policy, fact, settings
 

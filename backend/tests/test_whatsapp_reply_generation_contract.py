@@ -21,6 +21,55 @@ def test_auto_preserves_all_topic_answers_in_order_without_extra_model_calls(db,
     assert '所有段落合起来应回应本轮每个问题' in calls[0]['messages'][0]['content']
 
 
+def test_release_facts_and_queried_catalog_reach_one_generation_call(db, monkeypatch, configured, tmp_path):
+    from tests.reply_support import publish, binding
+    from app.whatsapp_translation import reply_service
+    identity, _, library, _, _, settings = configured
+    actor = {'sub': str(identity.user_id), 'roles': ['super_admin']}
+    process = publish(db, actor, library.id, 'Synthetic process FAQ', 'Process P uses method Z.')
+    finish = publish(db, actor, library.id, 'Synthetic finish FAQ', 'Finish F follows step Z.')
+    profile = tmp_path / 'profile.json'
+    profile.write_text(json.dumps([binding(process, 'public_fact').model_dump(), binding(finish, 'public_fact').model_dump()]), encoding='utf8')
+    monkeypatch.setattr(settings, 'WHATSAPP_REPLY_SOURCE_PROFILE', str(profile))
+    # An older inline list contains only constraints; release facts must still enter.
+    monkeypatch.setattr(settings, 'WHATSAPP_REPLY_SOURCE_BINDINGS', settings.WHATSAPP_REPLY_SOURCE_BINDINGS[:1])
+    catalog = {'status': 'matched', 'matched_by': 'family', 'matches': [{'model': 'Synthetic Weft', 'size': '12', 'unit': '17g'}], 'available_lengths': ['12']}
+    monkeypatch.setattr(reply_service, 'retrieve_catalog', lambda *args: catalog)
+    live_actor = reply_service.live_actor
+    monkeypatch.setattr(reply_service, 'live_actor', lambda *args: {**live_actor(*args), 'permissions': ['whatsapp_reply:write', 'knowledge:read', 'invoice:read']})
+    calls = mock_model(monkeypatch, generator=output(auto_action='reply', reply_segments=['Process P uses method Z.', 'Finish F follows step Z.', 'Synthetic Weft is 12 inches and 17g.']))
+    result = reply_service.suggest_reply(db, identity, request(mode='auto', messages=[{'role':'customer','text':'What process and finish apply to this weft?'}]))
+    payload = json.loads(calls[0]['messages'][1]['content'])
+    assert {process['document_id'], finish['document_id']}.issubset({item['document_id'] for item in payload['sources']})
+    assert payload['conversation']['product_catalog'] == catalog
+    assert result.risk_flags == ['limited_context', 'catalog_matched']
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize('revoke_at', ['generation', 'cache'])
+def test_catalog_permission_is_rechecked_after_generation_and_on_cache(db, monkeypatch, configured, revoke_at):
+    allowed = [True]
+    live_actor = reply_service.live_actor
+    def actor(*args):
+        value = live_actor(*args)
+        if allowed[0]:
+            value['permissions'].append('invoice:read')
+        return value
+    monkeypatch.setattr(reply_service, 'live_actor', actor)
+    monkeypatch.setattr(reply_service, 'retrieve_catalog', lambda *args: {'status': 'matched', 'matches': [{'model': 'Synthetic', 'size': '12', 'unit': '17g'}]})
+    def on_call(*args):
+        if revoke_at == 'generation':
+            allowed[0] = False
+    mock_model(monkeypatch, on_call=on_call)
+    payload = request()
+    if revoke_at == 'cache':
+        assert reply_service.suggest_reply(db, configured[0], payload).status == 'ready'
+        allowed[0] = False
+    with pytest.raises(WhatsAppTranslationError) as exc:
+        reply_service.suggest_reply(db, configured[0], payload)
+    assert exc.value.error_code == 'reply_permission_denied'
+
+
 def test_latest_customer_focus_and_direct_answer_instructions_reach_auto_agent(db, monkeypatch, configured):
     from tests.reply_support import publish, binding
     identity, _, library, _, _, settings = configured
@@ -109,11 +158,55 @@ def test_auto_reply_contract(db, monkeypatch, configured, action, segments):
     if action == "reply":
         assert result.reply_text == "\n\n".join(segments)
 
-@pytest.mark.parametrize("fields", [{}, {"auto_action": "reply", "reply_segments": []},
-    {"auto_action": "reply", "reply_segments": ["x" * 401]}, {"auto_action": "reply", "reply_segments": ["x"] * 4},
-    {"auto_action": "wait", "reply_segments": ["unexpected"]}])
-def test_auto_missing_or_oversize_protocol_never_becomes_sendable(db, monkeypatch, configured, fields):
+@pytest.mark.parametrize("fields", [{},
+    {"auto_action": {'unexpected': 'object'}, "reply_segments": ['Known answer.']},
+    {"auto_action": "reply", "reply_segments": ["x" * 401]},
+    {"auto_action": "reply", "reply_segments": ['word ' * 300]},
+    {"auto_action": "reply", "reply_segments": ['Known answer.', {'invalid': 'part'}]}])
+def test_ambiguous_or_unfit_auto_output_preserves_draft_without_sending(db, monkeypatch, configured, fields):
     mock_model(monkeypatch, generator=output(**fields))
+    result = reply_service.suggest_reply(db, configured[0], request(mode="auto"))
+    assert result.auto_action == 'handoff' and result.reply_segments == []
+    assert 'auto_reply_review_required' in result.risk_flags
+    if fields.get('reply_segments') and all(isinstance(part, str) for part in fields['reply_segments']):
+        assert result.reply_text == '\n\n'.join(fields['reply_segments']).strip()
+    else:
+        assert result.reply_text == output()['reply_text']
+
+
+@pytest.mark.parametrize('fields', [
+    {'reply_text': None, 'reply_segments': ['First answer.', 'Second answer.']},
+    {'reply_segments': ['Known answer. ' * 35]},
+    {'reply_segments': ['First.', 'Second.', 'Third.', 'Fourth.']},
+    {'reply_segments': ['Answer 🙂. ' * 39]},
+    {'reply_segments': []},
+])
+def test_auto_recovers_usable_segments_without_another_model_call(db, monkeypatch, configured, fields):
+    from app.whatsapp_translation.reply_segments import browser_length
+    calls = mock_model(monkeypatch, generator=output(auto_action='reply', **fields))
+    result = reply_service.suggest_reply(db, configured[0], request(mode='auto'))
+    original = '\n\n'.join(fields['reply_segments']) or output()['reply_text']
+    assert result.auto_action == 'reply' and 1 <= len(result.reply_segments) <= 3
+    assert ''.join(result.reply_text.split()) == ''.join(original.split())
+    assert all(browser_length(part) <= 400 for part in result.reply_segments)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize('action', ['wait', 'handoff'])
+def test_explicit_no_send_action_wins_over_stray_segments(db, monkeypatch, configured, action):
+    mock_model(monkeypatch, generator=output(auto_action=action, reply_text=None, rationale_zh={'invalid': 'optional'}, reply_segments=['Do not send this.']))
+    result = reply_service.suggest_reply(db, configured[0], request(mode='auto'))
+    assert result.auto_action == action and result.reply_segments == []
+
+
+@pytest.mark.parametrize('content,code', [
+    ('{"reply_text":', 'reply_model_format_invalid'),
+    ('[]', 'reply_model_format_invalid'),
+    ('{"auto_action":"reply","reply_segments":[]}', 'reply_model_empty'),
+    (json.dumps(output(reply_text='x' * 3001)), 'reply_model_too_long'),
+])
+def test_unrecoverable_output_reports_specific_metadata_only_error(db, monkeypatch, configured, content, code):
+    monkeypatch.setattr(reply_service, 'chat', lambda *args, **kwargs: {'content': content})
     with pytest.raises(WhatsAppTranslationError) as exc:
-        reply_service.suggest_reply(db, configured[0], request(mode="auto"))
-    assert exc.value.error_code == "reply_invalid_response"
+        reply_service.suggest_reply(db, configured[0], request(mode='auto'))
+    assert exc.value.error_code == code

@@ -23,6 +23,16 @@ it('stays off until enabled, sends ordered short segments once, and then waits',
   await vi.advanceTimersByTimeAsync(20000); expect(s.suggest).toHaveBeenCalledTimes(1)
   s.auto.stop()
 })
+it('keeps the recovered full draft visible on handoff without filling or sending it', async () => {
+  const s = setup()
+  const text = 'Synthetic first answer. '.repeat(65) + 'Final answer.'
+  s.suggest.mockImplementation(async p => ({ ...s.response(p), auto_action: 'handoff', reply_segments: [], reply_text: text,
+    risk_flags: ['auto_reply_review_required'], rationale_zh: '完整回复需要人工处理。' }))
+  s.auto.start(); await vi.advanceTimersByTimeAsync(15000)
+  expect(s.auto.getState()).toMatchObject({ active: false, segments: [text], sentCount: 0 })
+  expect(s.send).not.toHaveBeenCalled(); expect(s.suggest).toHaveBeenCalledTimes(1)
+  expect(s.snapshot.draft).toBe('')
+})
 it('drops the remaining segment when a new customer message arrives', async () => {
   const s = setup(); s.auto.start(); await vi.advanceTimersByTimeAsync(4700)
   expect(s.send).toHaveBeenCalledTimes(1)

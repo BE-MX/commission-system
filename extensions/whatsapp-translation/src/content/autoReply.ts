@@ -57,12 +57,20 @@ wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))) {
       const response = await bridge.suggest(request)
       if (!current()) return
       if (!validReplyResponse(response, request) || response.status !== 'ready') throw new Error('回复格式异常，已停止接管')
-      if (response.auto_action === 'handoff') { stop('需要人工处理：' + response.rationale_zh); return }
+      if (response.auto_action === 'handoff') {
+        if (response.risk_flags.includes('auto_reply_review_required')) state.segments = [response.reply_text]
+        stop('需要人工处理：' + response.rationale_zh); return
+      }
       if (response.auto_action === 'wait') { processed = incoming; state.note = '本轮无需回复，等待客户新消息'; return }
       state.segments = [...response.reply_segments!]
       state.knowledgeNote = response.risk_flags.includes('knowledge_unavailable') ? '本轮知识配置不可用，请检查后端知识绑定。'
         : response.risk_flags.includes('no_public_facts') ? '本轮未命中可对客事实资料。'
         : response.sources.length ? '本轮输入资料：' + [...new Set(response.sources.map(source => source.title))].join('、') : '本轮没有返回知识来源。'
+      const catalogNote = response.risk_flags.includes('catalog_matched') ? '产品目录：已查到相关规格。'
+        : response.risk_flags.includes('catalog_not_found') ? '产品目录：未查到所问规格，不能据此判定不销售。'
+        : response.risk_flags.includes('catalog_permission_denied') ? '产品目录：当前账号无查询权限。'
+        : response.risk_flags.includes('catalog_unavailable') ? '产品目录：查询暂不可用。' : ''
+      if (catalogNote) state.knowledgeNote += '\n' + catalogNote
       for (const [index, part] of response.reply_segments!.entries()) {
         state.note = `准备发送第 ${index + 1}/${response.reply_segments!.length} 段`; paint()
         await wait(index ? 2500 : 1500)

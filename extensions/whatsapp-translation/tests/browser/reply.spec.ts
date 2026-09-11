@@ -345,6 +345,20 @@ test('unavailable send keeps every generated topic visible and reports zero subm
   await page.screenshot({ path: '../../tmp/whatsapp-composer-browser/complete-auto-reply.png' })
 })
 
+test('recovered manual review draft is visible without filling or sending', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  const composer = page.getByRole('textbox', { name: 'Synthetic composer' })
+  await composer.fill('')
+  await page.evaluate(() => { document.documentElement.dataset.autoHarness = 'true'; document.documentElement.dataset.reviewReply = 'true' })
+  await click(page, cdp, '自动接管')
+  const pageText = async () => { const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true }); return all(root).map(text).join(' ') }
+  await expect.poll(pageText, { timeout: 12000 }).toContain('Final topic is also retained.')
+  expect(await pageText()).toContain('已提交 0/1 段')
+  expect(await find(cdp, '自动接管')).toBeDefined()
+  await expect(composer).toBeEmpty()
+  await expect(page.locator('html')).not.toHaveAttribute('data-send-clicked', 'true')
+})
+
 test('auto takeover handles system notices and older unknown placeholders before a readable customer message', async ({ page }) => {
   const cdp = await page.context().newCDPSession(page)
   await page.getByRole('textbox', { name: 'Synthetic composer' }).fill('')
