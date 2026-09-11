@@ -18,6 +18,7 @@ from app.whatsapp_translation.reply_guard import (
     RISK_FLAGS, choose_language, safe_clarification, validate_output, validate_plan,
 )
 from app.whatsapp_translation.reply_prompts import GENERATOR_RULES, PLANNER_RULES, SOUL
+from app.whatsapp_translation import reply_memory
 from app.whatsapp_translation.reply_schemas import ReplyOutput, ReplyPlan, ReplyRequest, ReplyResponse, ReplySource, generation_schema
 from app.whatsapp_translation.reply_state import (
     OWNER_ID, digest, error, finish_request, live_actor, reply_cache, reserve_request,
@@ -67,11 +68,15 @@ def reply_capabilities(db, identity) -> dict:
         "max_context_chars": min(12000, settings.WHATSAPP_REPLY_MAX_CONTEXT_CHARS),
         "max_draft_chars": 2000, "max_goal_chars": 500,
         "timeout_seconds": min(30, settings.WHATSAPP_REPLY_TIMEOUT_SECONDS),
+        "memory_enabled": settings.WHATSAPP_REPLY_MEMORY_ENABLED,
+        "memory_retention_days": settings.WHATSAPP_REPLY_MEMORY_RETENTION_DAYS,
     }
 
 
 def _configuration_signature(settings, preset_version: str) -> str:
-    return digest({"sources": settings.WHATSAPP_REPLY_SOURCE_BINDINGS, "presets": preset_version, "soul": SOUL})
+    return digest({"sources": settings.WHATSAPP_REPLY_SOURCE_BINDINGS, "presets": preset_version,
+                   "soul": SOUL, "planner": PLANNER_RULES, "generator": GENERATOR_RULES,
+                   "memory_enabled": settings.WHATSAPP_REPLY_MEMORY_ENABLED})
 
 
 def _remaining(deadline: float) -> float:
@@ -130,17 +135,21 @@ def suggest_reply(db, identity, request: ReplyRequest) -> ReplyResponse:
             raise error("reply_context_too_large", 422)
         signature = _configuration_signature(settings, preset_signature(db, settings))
         bindings = parse_bindings(settings.WHATSAPP_REPLY_SOURCE_BINDINGS)
+        memory_snapshot = reply_memory.load_for_generation(db, identity, request)
+        prior_memory = memory_snapshot["entries"]
         record, owner = reserve_request(db, identity, request, settings)
         if not owner:
             return _cached_response(db, identity, record, signature)
         row_id = record.id
         deadline = started + min(30, settings.WHATSAPP_REPLY_TIMEOUT_SECONDS)
         phase = time.monotonic()
-        conversation = request.model_dump(mode="json", exclude={"request_id", "conversation_epoch", "context_version", "draft_version"})
+        conversation = request.model_dump(mode="json", exclude={"request_id", "conversation_epoch", "context_version", "draft_version", "memory_conversation_id", "memory_revision"})
+        conversation["saved_observations"] = prior_memory
         plan = validate_plan(_call(
             db, identity, settings.WHATSAPP_REPLY_PLANNER_PRESET, PLANNER_RULES,
             {"conversation": conversation, "supported_languages": list(SUPPORTED_TARGET_LANGUAGES), "schema": ReplyPlan.model_json_schema()}, deadline,
         ), request)
+        memory_update = reply_memory.build_update(plan, request, prior_memory)
         language, confident = choose_language(plan, request)
         timings["planning"] = int((time.monotonic() - phase) * 1000)
         phase = time.monotonic()
@@ -159,14 +168,14 @@ def suggest_reply(db, identity, request: ReplyRequest) -> ReplyResponse:
                                            if source["purpose"] == "public_fact"]
             content = _call(
                 db, identity, settings.WHATSAPP_REPLY_GENERATOR_PRESET, GENERATOR_RULES,
-                {"conversation": conversation, "review": plan.model_dump(), "target_language": language,
+                {"conversation": conversation, "review": plan.model_dump(mode="json"), "target_language": language,
                  "sources": source_input, "glossary": glossary, "allowed_risk_flags": sorted(RISK_FLAGS),
                  "allowed_fact_source_indices": allowed_fact_source_indices,
                  "schema": generation_schema(allowed_fact_source_indices)}, deadline,
             )
             timings["generation"] = int((time.monotonic() - phase) * 1000)
             phase = time.monotonic()
-            output = validate_output(content, language, sources, request)
+            output = validate_output(content, language, sources, request, memory=memory_update, plan=plan)
             timings["validation"] = int((time.monotonic() - phase) * 1000)
         if not confident:
             output.risk_flags = list(dict.fromkeys([*output.risk_flags, "language_uncertain"]))
@@ -180,10 +189,18 @@ def suggest_reply(db, identity, request: ReplyRequest) -> ReplyResponse:
         # even if the model chose not to cite it. Cached results get the same check.
         _check_current(db, identity, sources, signature)
         _remaining(deadline)
+        reply_memory.recheck_revision(db, identity, request, memory_snapshot["instance_id"])
         response = ReplyResponse(
             **output.model_dump(), request_id=request.request_id, conversation_epoch=request.conversation_epoch,
             context_version=request.context_version, draft_version=request.draft_version,
             sources=[ReplySource(**{key: source[key] for key in ReplySource.model_fields}) for source in sources],
+            action=plan.action, memory_conversation_id=request.memory_conversation_id,
+            memory_instance_id=memory_snapshot["instance_id"],
+            memory_revision=request.memory_revision, memory_update=memory_update,
+            handoff=reply_memory.handoff_summary(memory_update, plan),
+            materials=[{"document_id": source["document_id"], "revision_id": source["revision_id"],
+                        "title": source["title"], "text": source["text"], "applicability": source.get("applicability", "")}
+                       for source in sources if source["purpose"] == "public_fact" and source.get("shareable_text")],
         )
         timings["total"] = int((time.monotonic() - started) * 1000)
         finish_request(db, row_id, status=output.status, sources=sources, timings=timings)

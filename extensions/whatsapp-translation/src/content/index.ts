@@ -68,6 +68,7 @@ function startContentScript(): void {
   const outgoingComposer = createOutgoingComposer(adapter, outgoingBridge)
   let chatRoot = adapter.chatRootElement()
   let conversationElement = adapter.conversationElement()
+  let messageElements = adapter.messageElements()
   let chatKind = adapter.inspectChat().kind
   let currentTitle = ''
   let controller: ReturnType<typeof createComposerController> | undefined
@@ -159,8 +160,19 @@ function startContentScript(): void {
       change: () => reply?.optionsChanged(), close: () => reply?.close(), cancel: () => reply?.cancel(),
       fill: () => { outgoingComposer.invalidateDraft(); controller?.onComposerInput(); void reply?.fill() },
       restore: () => { outgoingComposer.invalidateDraft(); controller?.onComposerInput(); void reply?.restore() },
+      memory: {
+        list: () => { void reply?.listInquiries() }, preview: id => { void reply?.previewInquiry(id) }, usePreview: () => reply?.usePreview(),
+        create: label => { void reply?.newInquiry(label) }, enabled: enabled => reply?.setMemoryEnabled(enabled),
+        refresh: () => { void reply?.refreshMemory() }, remove: () => { void reply?.deleteMemory() }, save: () => { void reply?.saveMemory() },
+        correct: (id, status, note) => { void reply?.correctMemory(id, status, note) }, pause: paused => reply?.setPaused(paused),
+      },
     })
     reply = createReplyAssistant(adapter, {
+      async memory(payload) {
+        const response = await send({ type: 'reply/memory', payload })
+        if (response?.type !== 'reply/memory') throw bridgeError(response)
+        return response.result
+      },
       async capabilities() {
         const response = await send({ type: 'reply/capabilities' })
         if (response?.type !== 'reply/capabilities') throw bridgeError(response)
@@ -188,6 +200,9 @@ function startContentScript(): void {
     const title = adapter.chatTitle()
     const nextConversation = adapter.conversationElement()
     const nextKind = adapter.inspectChat().kind
+    const nextMessages = adapter.messageElements()
+    const transcriptReplaced = messageElements.length > 0 && !nextMessages.some(node => messageElements.includes(node))
+    messageElements = nextMessages
     if (currentChatRoot !== chatRoot || title !== currentTitle || nextConversation !== conversationElement || nextKind !== chatKind) {
       chatRoot = currentChatRoot
       conversationElement = nextConversation
@@ -199,6 +214,11 @@ function startContentScript(): void {
     } else if (!adapter.hasToolbar() && adapter.inspectChat().kind === 'direct') {
       // WhatsApp re-rendered the footer and dropped our host.
       void mountToolbar()
+    } else if (transcriptReplaced) {
+      // Titles and containers may be reused for another contact. With no stable
+      // identity, wholesale transcript replacement disconnects inquiry memory.
+      // A full history remount may also disconnect; explicit restore is safer.
+      reply?.chatChanged()
     }
     if (records.some(record => adapter.isMessageMutation(record))) reply?.contextChanged()
     if (!adapter.isWritingComposer() && records.some(record => adapter.isComposerMutation(record))) {

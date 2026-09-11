@@ -450,6 +450,8 @@ T1 = 当前公海且有历史订单；T2 = 无历史订单但有企业邮箱、�
 
 ## WhatsApp 实时翻译（迁移 136）与话术请求（迁移 141，2026-09-07）
 
+迁移 `143_whatsapp_reply_inquiries`（前置 142）新增 `ark_whatsapp_reply_inquiries`：`id/instance_id/user_id/device_id/label/revision/entries/last_commit_request/created_at/updated_at/expires_at`。这是用户授权的第一二阶段业务复盘持久化例外，不改变下述翻译/请求元数据表的无正文边界。每条记录最多 80 项，每项摘要/摘录各最多 240 字符，最多 3 条消息证据；只保存脱敏片段与人工修正，不存整段聊天、未发送草稿或真实 WhatsApp 标识。准确 user/device 归属、CAS、不可复用实例标识保护删除重建；默认固定 30 天后不可读并由既有清理任务物理删除。降级代码保留表，不自动 downgrade 删除业务资料。MySQL 外键保持 user INTEGER UNSIGNED/device BIGINT UNSIGNED；业务时间均为北京时间。上线前须经统一部署入口迁移。
+
 - `translation_pairings`：一次性配对。存 `device_code_hash`、`proposed_token_hash`、设备/浏览器/扩展元数据、状态、审批人、时间；`(device_code_hash)` 唯一。明文 token/device code 不入库。
 - `translation_devices`：已授权设备。存 `token_hash`（唯一）、员工、设备元数据、过期时间、启用状态和撤销原因；employee/device 查询建索引。设备撤销保留原因与审计时间，不保存聊天密钥。
 - `translation_usage_daily`：北京时间日聚合，键为 `(user_id,device_id,usage_date)`。只保存请求数、成功率、字符数、token、方向/语言对与错误码计数。

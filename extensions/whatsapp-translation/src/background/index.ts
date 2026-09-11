@@ -6,6 +6,7 @@ import { DEFAULT_OUTGOING_LANGUAGE, TARGET_LANGUAGES } from '@/shared/contracts'
 import { chatKey, ensureTrustedStorageAccess, storage } from '@/shared/storage'
 import { boundedReplyCapabilities, replyFitsCapabilities, validReplyRequest, validReplyResponse } from '@/shared/replyValidation'
 import { REPLY_ERROR_CODES } from '@/shared/replyCodes'
+import { validMemoryCommand, validMemoryResult } from '@/shared/replyMemory'
 
 const POPUP_REQUEST_TYPES = new Set(['pairing/resume', 'pairing/start', 'preferences/set', 'session/refresh'])
 const translationCache = new TranslationCache<TranslationResult>()
@@ -78,6 +79,15 @@ function browserInfo(): { browserName: string; browserVersion: string } {
 
 async function handleMessage(request: RuntimeRequest): Promise<RuntimeResponse> {
   switch (request.type) {
+    case 'reply/memory': {
+      if (!validMemoryCommand(request.payload)) return { type: 'error', message: 'reply_invalid_request' }
+      const token = await storage.get('deviceToken')
+      if (!token) throw new Error('device_token_missing')
+      if (!(await storage.get('replyDisclosureAcknowledged'))) return { type: 'error', message: 'reply_disclosure_required' }
+      const result = await apiClient.memory(token, chrome.runtime.getManifest().version, request.payload)
+      if (!validMemoryResult(result, request.payload)) return { type: 'error', message: 'reply_invalid_response' }
+      return { type: 'reply/memory', result }
+    }
     case 'reply/disclosure': {
       if (request.acknowledged === true) await storage.set({ replyDisclosureAcknowledged: true })
       return { type: 'reply/disclosure', acknowledged: (await storage.get('replyDisclosureAcknowledged')) === true }

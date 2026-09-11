@@ -1,5 +1,6 @@
 import { TARGET_LANGUAGES } from '@/shared/contracts'
 import type { ReplyCapabilities, ReplyRequest, ReplyResponse } from '@/shared/contracts'
+import { validAction, validEntries, validHandoff } from '@/shared/replyMemory'
 
 /** Server configuration may narrow these local safety ceilings, never widen them. */
 export function boundedReplyCapabilities(value: unknown): ReplyCapabilities {
@@ -13,6 +14,8 @@ export function boundedReplyCapabilities(value: unknown): ReplyCapabilities {
     available: true, max_messages: Math.min(40, p.max_messages), default_messages: Math.min(40, p.default_messages),
     max_context_chars: Math.min(12000, p.max_context_chars), max_draft_chars: Math.min(2000, p.max_draft_chars),
     max_goal_chars: Math.min(500, p.max_goal_chars), timeout_seconds: Math.min(35, p.timeout_seconds),
+    memory_enabled: p.memory_enabled === true,
+    memory_retention_days: Number.isInteger(p.memory_retention_days) ? Math.min(90, Math.max(1, p.memory_retention_days!)) : 30,
   }
 }
 
@@ -40,6 +43,7 @@ export function validReplyRequest(value: unknown): value is ReplyRequest {
     && isText(p.draft_intent, 2000) && isText(p.goal, 500)
     && (p.target_language === 'auto' || language(p.target_language)) && language(p.fallback_language)
     && ['default', 'shorter', 'softer', 'alternative'].includes(p.style)
+    && (p.memory_conversation_id == null || (uuid.test(p.memory_conversation_id) && Number.isSafeInteger(p.memory_revision) && p.memory_revision! >= 0))
 }
 export function validReplyResponse(value: unknown, request: ReplyRequest): value is ReplyResponse {
   if (!value || typeof value !== 'object') return false
@@ -54,4 +58,13 @@ export function validReplyResponse(value: unknown, request: ReplyRequest): value
     && Array.isArray(p.claims) && p.claims.length <= 50
     && p.claims.every(c => c && isText(c.text, 4000) && isText(c.quote, 4000) && Number.isInteger(c.source_index) && c.source_index >= 0 && c.source_index < p.sources.length)
     && [p.risk_flags, p.missing_information].every(items => Array.isArray(items) && items.length <= 50 && items.every(t => isText(t, 2000)))
+    && (p.action == null || validAction(p.action))
+    && (p.memory_update === undefined || validEntries(p.memory_update))
+    && (p.handoff === undefined || validHandoff(p.handoff))
+    && (p.materials === undefined || (Array.isArray(p.materials) && p.materials.length <= 6 && p.materials.every(m => m
+      && Number.isInteger(m.document_id) && m.document_id > 0 && Number.isInteger(m.revision_id) && m.revision_id > 0
+      && isText(m.title, 500) && isText(m.text, 1200) && isText(m.applicability, 240)
+      && p.sources.some(s => s.document_id === m.document_id && s.revision_id === m.revision_id))))
+    && (p.memory_conversation_id ?? null) === (request.memory_conversation_id ?? null)
+    && (!request.memory_conversation_id || (p.memory_revision === request.memory_revision && validEntries(p.memory_update) && validHandoff(p.handoff)))
 }

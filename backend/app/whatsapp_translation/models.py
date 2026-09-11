@@ -207,3 +207,27 @@ class ReplyRequestRecord(Base):
         Index("idx_war_user_lease", "user_id", "status", "lease_until"),
         CheckConstraint("input_chars >= 0", name="ck_war_nonnegative_chars"),
     )
+
+
+class ReplyInquiry(Base):
+    """Explicitly selected, device/owner-scoped notes, never a WhatsApp identity."""
+
+    __tablename__ = "ark_whatsapp_reply_inquiries"
+
+    id = Column(String(36), primary_key=True)
+    instance_id = Column(String(36), nullable=False, comment="记录实例标识，防止删除重建后旧候选回写")
+    user_id = Column(Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql"), ForeignKey("ark_users.id", ondelete="CASCADE"), nullable=False)
+    device_id = Column(BigInteger().with_variant(mysql.BIGINT(unsigned=True), "mysql"), ForeignKey("ark_whatsapp_translation_devices.id", ondelete="CASCADE"), nullable=False)
+    label = Column(String(80), nullable=False, comment="业务员询盘备注，不用于自动匹配联系人")
+    revision = Column(Integer, nullable=False, default=0, comment="乐观锁版本")
+    entries = Column(JSON, nullable=False, default=list, comment="有界复盘条目、脱敏证据与人工修正")
+    last_commit_request = Column(String(36), nullable=True, comment="最近已保存候选的随机请求标识")
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
+    updated_at = Column(DateTime, nullable=False, default=beijing_now)
+    expires_at = Column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index("idx_wri_owner_device", "user_id", "device_id"),
+        Index("idx_wri_expiry", "expires_at"),
+        CheckConstraint("revision >= 0", name="ck_wri_revision"),
+    )

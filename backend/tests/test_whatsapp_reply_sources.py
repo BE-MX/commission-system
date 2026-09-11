@@ -100,3 +100,26 @@ def test_total_budget_reserves_constraints_and_never_exceeds_six(db, configured)
     assert len(sources) <= 6
     assert sum(len(source["text"]) for source in sources) <= 6000
     assert sources[0]["purpose"] == "constraint"
+
+
+def test_expired_material_is_excluded_and_revalidation_checks_expiry(db, configured, monkeypatch):
+    from datetime import date
+    from app.knowledge import reply_sources
+    identity, *_, settings = configured
+    bindings = parse_bindings(settings.WHATSAPP_REPLY_SOURCE_BINDINGS)
+    bindings[1].aliases = ["silicone"]
+    bindings[1].shareable_text = True
+    bindings[1].valid_until = date(2026, 9, 8)
+    monkeypatch.setattr(reply_sources, "beijing_today", lambda: date(2026, 9, 8))
+    sources, ready = retrieve_reply_sources(db, actor(identity), bindings, ["silicone"])
+    assert ready and sources[1]["shareable_text"]
+    monkeypatch.setattr(reply_sources, "beijing_today", lambda: date(2026, 9, 9))
+    assert not reply_sources.revalidate_sources(db, actor(identity), sources)
+    remaining, ready = retrieve_reply_sources(db, actor(identity), bindings, ["silicone"])
+    assert ready and len(remaining) == 1
+
+
+def test_method_cannot_be_shareable_material(configured):
+    settings = configured[-1]
+    with pytest.raises(ValueError, match="public facts"):
+        SourceBinding.model_validate({**settings.WHATSAPP_REPLY_SOURCE_BINDINGS[1], "purpose": "method", "shareable_text": True})

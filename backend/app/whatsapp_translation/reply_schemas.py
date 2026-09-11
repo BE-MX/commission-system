@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.whatsapp_translation.constants import SUPPORTED_TARGET_LANGUAGES
+from app.whatsapp_translation.reply_memory_schemas import MemoryChange, ReplyAction
 
 
 class StrictModel(BaseModel):
@@ -36,6 +37,8 @@ class ReplyRequest(StrictModel):
     fallback_language: str = "en"
     style: Literal["default", "shorter", "softer", "alternative"] = "default"
     goal: str = Field(default="", max_length=500)
+    memory_conversation_id: UUID | None = None
+    memory_revision: int = Field(default=0, ge=0)
 
     @field_validator("target_language", "fallback_language")
     @classmethod
@@ -72,6 +75,10 @@ class ReplyPlan(StrictModel):
     strategy: str = Field(max_length=300)
     completion_signal: str = Field(max_length=300)
     evidence: list[ReviewEvidence] = Field(max_length=8)
+    action: ReplyAction
+    memory_changes: list[MemoryChange] = Field(max_length=12)
+    unanswered_requests: list[int] = Field(max_length=12)
+    answered_questions: list[int] = Field(max_length=12)
 
     @field_validator("queries")
     @classmethod
@@ -130,3 +137,10 @@ class ReplyResponse(ReplyOutput):
     context_version: int
     draft_version: int
     sources: list[ReplySource] = Field(default_factory=list, max_length=6)
+    action: ReplyAction | None = None
+    memory_conversation_id: UUID | None = None
+    memory_instance_id: UUID | None = None
+    memory_revision: int = 0
+    memory_update: list[dict] = Field(default_factory=list, max_length=80)
+    handoff: dict = Field(default_factory=dict)
+    materials: list[dict] = Field(default_factory=list, max_length=6)

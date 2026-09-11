@@ -72,7 +72,7 @@ def install_memory_provider(db, configuration, settings, monkeypatch):
     provider = db.query(AiProvider).filter_by(name="synthetic-reply").one()
     for key, value in configuration["provider"].items():
         setattr(provider, key, value)
-    for name, cap in ((settings.WHATSAPP_REPLY_PLANNER_PRESET, 1400), (settings.WHATSAPP_REPLY_GENERATOR_PRESET, 1800)):
+    for name, cap in ((settings.WHATSAPP_REPLY_PLANNER_PRESET, 3200), (settings.WHATSAPP_REPLY_GENERATOR_PRESET, 1800)):
         preset = db.query(AiPreset).filter_by(preset_name=name).one()
         preset.model = configuration["model"]
         preset.parameters = reply_parameters(configuration["parameters"], cap, configuration["provider"]["api_type"])

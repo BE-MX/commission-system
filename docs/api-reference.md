@@ -1172,6 +1172,7 @@ MCP `/mcp` 新增 `search_knowledge` 与 `get_knowledge_document`。二者使用
 | GET | `/session`、`/capabilities` | 设备 Bearer + `X-Ark-Extension-Version` | 会话、能力、最低扩展版本和额度元数据。 |
 | POST | `/translate` | 设备 Bearer | body `request_id`(UUID)、`direction`、`source_language`、`target_language`、`text`；返回译文、检测语言、`model_log_id`，发出方向额外返回 `back_translation`（中文回译）。服务端只记录长度、方向、语言、token 用量、耗时和错误码。 |
 | POST | `/reply-suggestions` | 设备 Bearer + 员工实时 `whatsapp_reply:write` | 1.3.0 话术建议；双方有序文字、快照版本、可选草稿意图/目标/风格换取一条可预览回复。来源仍受员工知识库 ACL 约束；不会发送消息。 |
+| POST | `/reply-memory` | 同上，并限定准确 user/device 归属 | `operation=list/create/read/commit/correct/delete` 管理询盘复盘；统一 no-store，不接收客户端自造的模型记忆。 |
 | GET/DELETE | `/admin/devices`, `/admin/devices/{device_id}` | Ark JWT + `whatsapp_translation:admin` | 管理设备与撤销。 |
 | GET | `/admin/usage`, `/admin/health` | Ark JWT + `whatsapp_translation:admin` | 聚合用量、健康、成功率与窗口。 |
 
@@ -1180,6 +1181,10 @@ MCP `/mcp` 新增 `search_knowledge` 与 `get_knowledge_document`。二者使用
 话术请求包含 `request_id/conversation_epoch` 两个随机 UUID、`context_version/draft_version`、`messages[{role:customer|salesperson,text}]`、`context_scope{requested_limit:20|40,truncated,omitted_media,latest_visible}`；可选 `draft_intent`、`target_language:auto|支持语言`、`fallback_language`、`style:default|shorter|softer|alternative`、`goal`。默认采集 20 条，可扩到 40 条；消息最多 12,000 字符、草稿 2,000、目标 500，服务端可下调。不得上传真实聊天 ID；完整定义见 [实现契约](requirements/2026-09-07-whatsapp-reply-implementation.md)。
 
 响应回显 UUID 和版本，含 `status`、`reply_language/reply_text/meaning_zh/rationale_zh`、服务端来源 `sources`、带来源索引及逐字引句的 `claims`、受限 `risk_flags` 和 `missing_information`。无必需政策时仅给不含事实承诺的安全澄清；已明确停止联系时给结束回应。结构或安全校验失败不返回草稿。知识检索异常与真正无知识分开处理。
+
+第一二阶段增量：建议请求可带 `memory_conversation_id`（随机询盘记录 UUID，非 WhatsApp ID）及 `memory_revision`。响应新增 `action`、`memory_update`、`memory_instance_id`、`handoff` 和 `materials`（仅显式允许外发的完整知识片段）。生成不落库；扩展确认结果仍属于当前有效快照后独立提交 `operation=commit,conversation_id,revision,request_id`。服务端只保存缓存中的候选，检查归属、实例标识、CAS 版本与当前知识权限；已经发出的提交保存当时有效观察，不代表草稿已发送。
+
+`reply-memory`：list 返回当前账号/设备最多 100 份未过期记录的元数据；create 使用客户端随机 UUID 作幂等键，label 可选；read 返回 entries；correct 带 entry_id、revision、status、必填 note，支持取消、人工核实需求、人工完成/重新待办；delete 必须匹配 revision。commit 缓存过期不重跑模型。记录自创建日起默认 30 天到期，读取即不可见，后台清理物理删除；重建同 UUID 获得新实例标识。新增错误：`reply_memory_disabled/not_found/conflict/full/human_override`、`reply_repeated_question`。能力字段新增 `memory_enabled/memory_retention_days`。完整约束见 [第一二阶段实现](requirements/2026-09-08-whatsapp-reply-continuity.md)。
 
 `GET /capabilities` 新增可选 `reply{available,max_messages,default_messages,max_context_chars,max_draft_chars,max_goal_chars,timeout_seconds}`。旧后端无该字段时扩展仅保留翻译；扩展采集前及后台发送前均执行当前能力上限。
 

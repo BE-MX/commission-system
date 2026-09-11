@@ -24,7 +24,7 @@ class WhatsAppTranslationError(Exception):
 def register_whatsapp_translation_error_handler(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def handle_private_validation(request: Request, exc: RequestValidationError):
-        if request.url.path == "/api/whatsapp-translation/reply-suggestions":
+        if request.url.path in {"/api/whatsapp-translation/reply-suggestions", "/api/whatsapp-translation/reply-memory"}:
             # FastAPI's default includes invalid input values (possibly chat text).
             return JSONResponse(status_code=422, headers={"Cache-Control": "no-store"}, content={
                 "code": 422, "message": "Invalid reply request", "data": {"error_code": "reply_invalid_request"},

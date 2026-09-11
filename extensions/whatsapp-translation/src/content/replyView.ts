@@ -3,8 +3,14 @@ import type { ReplyStyle } from '@/shared/contracts'
 import type { ReplyOptions, ReplyState } from '@/content/replyAssistant'
 import { messageForCode } from '@/content/messages'
 import { REPLY_RISK_LABELS } from '@/shared/replyCodes'
+import { createMemoryView, renderHandoff } from '@/content/replyMemoryView'
+import type { MemoryHandlers } from '@/content/replyMemoryView'
 
 export const REPLY_COPY: Record<string, string> = {
+  reply_memory_disabled: '当前服务未启用询盘记录。', reply_memory_not_found: '记录不存在、已到期或不属于当前账号和设备。',
+  reply_memory_conflict: '记录已被其他操作更新，请刷新记录后重新生成。', reply_memory_full: '记录容量已满，请整理记录或新建独立询盘。',
+  reply_memory_human_override: '复盘试图覆盖人工修正，已拦截，请核对后重新生成。',
+  reply_repeated_question: '检测到重复询问已回答的问题，已拦截，请重新生成。', reply_paused: '已由业务员接管，请先恢复话术辅助。',
   reply_busy: '已有话术正在生成，请稍后重试。', reply_in_progress: '本次话术仍在生成，请稍后重试。',
   reply_configuration_changed: '话术配置已更新，请重新生成。', reply_sources_changed: '知识依据已更新，请重新生成。',
   reply_configuration_invalid: '话术配置有误，请联系管理员检查。', reply_not_configured: '话术模型尚未配置，请联系管理员。',
@@ -30,6 +36,7 @@ export const REPLY_COPY: Record<string, string> = {
 export function createReplyView(shadow: ShadowRoot, handlers: {
   generate: (options: ReplyOptions, style: ReplyStyle) => void
   change: () => void; close: () => void; cancel: () => void; fill: () => void; restore: () => void
+  memory?: MemoryHandlers
 }) {
   const doc = shadow.ownerDocument
   const root = doc.createElement('section')
@@ -57,7 +64,7 @@ export function createReplyView(shadow: ShadowRoot, handlers: {
   const card = el('div', '', 'card')
   const head = el('div', '', 'actions')
   head.append(el('strong', '话术助手'), button('关闭话术', handlers.close))
-  const disclosure = el('p', '仅使用当前已加载的聊天文本；文本和可选草稿意图将发送至莱莎方舟及已配置模型。仅预览和填入，绝不自动发送。', 'disclosure')
+  const disclosure = el('p', '当前聊天片段、可选草稿意图及所选询盘复盘将发送至莱莎方舟及已配置模型。启用记录时保存有来源的需求和待办，不保存草稿为已发送消息。仅预览和填入，不自动发送。', 'disclosure')
   const settings = el('div', '', 'actions')
   const limit = el('select'); limit.setAttribute('aria-label', '话术上下文条数')
   const defaultLimit = el('option', '默认最近 20 条'); defaultLimit.value = 'default'; limit.append(defaultLimit)
@@ -76,7 +83,9 @@ export function createReplyView(shadow: ShadowRoot, handlers: {
   const generate = button('生成话术', () => handlers.generate(options(), 'default'), true)
   const cancel = button('取消生成', handlers.cancel)
   actions.append(generate, cancel)
+  const memoryView = handlers.memory ? createMemoryView(doc, handlers.memory) : undefined
   card.append(head, disclosure, settings, goal, actions, snapshot, status, output)
+  if (memoryView) card.append(memoryView.root)
   root.append(card); shadow.append(style, root)
   return {
     options,
@@ -89,7 +98,7 @@ export function createReplyView(shadow: ShadowRoot, handlers: {
         goal.placeholder = `本次目标（可选，最多 ${caps.max_goal_chars} 字符）`
         draftLabel.title = `草稿意图最多 ${caps.max_draft_chars} 字符`
       }
-      generate.disabled = state.busy
+      generate.disabled = state.busy || !!state.memoryBusy || !!state.paused
       generate.textContent = state.busy ? '生成中…' : '重新生成话术'
       cancel.hidden = !state.busy
       status.textContent = state.error ? (REPLY_COPY[state.error] ?? messageForCode(state.error).text) : state.busy ? '正在生成，可继续查看聊天；编辑草稿会使本次生成失效。' : ''
@@ -98,6 +107,8 @@ export function createReplyView(shadow: ShadowRoot, handlers: {
       output.replaceChildren()
       if (state.canRestore) output.append(button('恢复原草稿', handlers.restore))
       const result = state.result
+      memoryView?.render(state, code => REPLY_COPY[code] ?? '询盘记录操作失败，请重试。')
+      if (state.paused && handlers.memory) output.append(renderHandoff(doc, state, handlers.memory.pause))
       if (!result) return
       output.append(el('p', `建议回复 · ${languageLabel(result.reply_language)}`, 'label'), el('div', result.reply_text, 'text primary'))
       if (result.status !== 'ready') output.append(el('p', result.status === 'needs_confirmation' ? '需要补充确认，暂不可填入。' : '上下文不足，暂不可填入。', 'status'))
@@ -107,6 +118,12 @@ export function createReplyView(shadow: ShadowRoot, handlers: {
       for (const missing of result.missing_information) details.append(el('p', `待确认：${missing}`, 'text'))
       for (const risk of result.risk_flags) details.append(el('p', `注意：${REPLY_RISK_LABELS[risk] ?? '请核实这条建议的适用条件'}`, 'text'))
       output.append(details)
+      if (result.materials?.length) {
+        const materials = el('details'); materials.append(el('summary', '可对客资料片段（请核对适用范围后使用）'))
+        for (const material of result.materials) materials.append(el('p', material.title), el('p', material.applicability, 'text back'), el('p', material.text, 'text'))
+        output.append(materials)
+      }
+      if (handlers.memory && result.handoff) output.append(renderHandoff(doc, state, handlers.memory.pause))
       const resultActions = el('div', '', 'actions')
       if (result.status === 'ready') resultActions.append(button('填入输入框', handlers.fill, true))
       for (const [label, value] of [['短一点', 'shorter'], ['柔和一点', 'softer'], ['换个策略', 'alternative']] as const) resultActions.append(button(label, () => handlers.generate(options(), value)))

@@ -19,13 +19,14 @@ async function bundle(entry: string) {
 type Node = { nodeId: number; nodeName: string; nodeValue?: string; children?: Node[]; shadowRoots?: Node[] }
 const all = (node: Node): Node[] => [node, ...(node.children ?? []).flatMap(all), ...(node.shadowRoots ?? []).flatMap(all)]
 const text = (node: Node): string => (node.nodeValue ?? '') + (node.children ?? []).map(text).join('')
-async function find(cdp: CDPSession, label: string) {
+async function find(cdp: CDPSession, label: string, tag = 'BUTTON') {
   const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true })
-  return all(root).find(node => node.nodeName === 'BUTTON' && text(node) === label)
+  return all(root).find(node => node.nodeName === tag && text(node) === label)
 }
-async function click(page: Page, cdp: CDPSession, label: string) {
-  await expect.poll(async () => !!await find(cdp, label)).toBe(true)
-  const node = (await find(cdp, label))!
+async function click(page: Page, cdp: CDPSession, label: string, tag = 'BUTTON') {
+  await expect.poll(async () => !!await find(cdp, label, tag)).toBe(true)
+  const node = (await find(cdp, label, tag))!
+  await cdp.send('DOM.scrollIntoViewIfNeeded', { nodeId: node.nodeId })
   const { model } = await cdp.send('DOM.getBoxModel', { nodeId: node.nodeId })
   const b = model.border
   await page.mouse.click((b[0] + b[2] + b[4] + b[6]) / 4, (b[1] + b[3] + b[5] + b[7]) / 4)
@@ -41,6 +42,7 @@ test.beforeEach(async ({ page }, info) => {
   await page.route('**/*', route => route.request().url() === url ? route.fulfill({ contentType: 'text/html', body: fixture }) : route.abort())
   await page.goto(url); await page.addScriptTag({ content: editorBundle })
   if (info.title.includes('detected language')) await page.evaluate(() => { document.documentElement.dataset.deferIncoming = 'true' })
+  if (info.title.includes('inquiry')) await page.evaluate(() => { document.documentElement.dataset.memoryEnabled = 'true' })
   const cdp = await page.context().newCDPSession(page)
   const { frameTree } = await cdp.send('Page.getFrameTree')
   const { executionContextId } = await cdp.send('Page.createIsolatedWorld', { frameId: frameTree.frame.id, worldName: 'reply-synthetic' })
@@ -57,6 +59,58 @@ test('full content integration fills and restores real Lexical draft, never send
   await expect(page.locator('html')).toHaveAttribute('data-lexical-text', 'What sample size do you need?')
   await click(page, cdp, '恢复原草稿')
   await expect(page.locator('html')).toHaveAttribute('data-lexical-text', '原草稿')
+  await expect(page.locator('html')).not.toHaveAttribute('data-send-clicked', 'true')
+})
+
+test('inquiry records persist a fresh snapshot and show internal handoff without sending', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  await click(page, cdp, '话术')
+  await expect(page.locator('html')).toHaveAttribute('data-reply-requested', 'true')
+  await resolve(page)
+  await expect(page.locator('html')).toHaveAttribute('data-memory-committed', '1')
+  await click(page, cdp, '询盘记录与承诺台账', 'SUMMARY')
+  const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true })
+  expect(all(root).map(text).join(' ')).toContain('Customer asks for a sample')
+  const refresh = (await find(cdp, '刷新记录'))!
+  await cdp.send('DOM.scrollIntoViewIfNeeded', { nodeId: refresh.nodeId })
+  await page.screenshot({ path: '../../tmp/whatsapp-composer-browser/inquiry-preview.png' })
+  await click(page, cdp, '接管摘要（仅内部）', 'SUMMARY')
+  await click(page, cdp, '暂停生成，由我接管')
+  await expect.poll(async () => !!await find(cdp, '填入输入框')).toBe(false)
+  await expect(page.locator('html')).not.toHaveAttribute('data-send-clicked', 'true')
+})
+
+test('inquiry does not save a late response after a new customer message', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  await click(page, cdp, '话术')
+  await expect(page.locator('html')).toHaveAttribute('data-reply-requested', 'true')
+  await page.evaluate(() => {
+    const bubble = document.querySelector('[data-testid="msg-container"]')!
+    const row = bubble.parentElement!.cloneNode(true) as Element
+    row.querySelector('[data-testid="selectable-text"]')!.textContent = 'Actually, please wait.'
+    bubble.parentElement!.after(row)
+  })
+  await resolve(page)
+  await expect.poll(async () => !!await find(cdp, '填入输入框')).toBe(false)
+  await expect(page.locator('html')).not.toHaveAttribute('data-memory-committed', '1')
+})
+
+test('inquiry disconnects when a same-title container replaces every message row', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  await click(page, cdp, '话术')
+  await expect(page.locator('html')).toHaveAttribute('data-reply-requested', 'true')
+  await resolve(page)
+  await expect(page.locator('html')).toHaveAttribute('data-memory-committed', '1')
+  await page.evaluate(() => {
+    const row = document.querySelector('[data-testid="msg-container"]')!.parentElement!
+    const replacement = row.cloneNode(true) as Element
+    replacement.querySelector('[data-testid="selectable-text"]')!.textContent = 'Different synthetic inquiry'
+    row.replaceWith(replacement)
+    delete document.documentElement.dataset.memoryCommitted
+  })
+  await click(page, cdp, '话术')
+  await resolve(page)
+  await expect(page.locator('html')).toHaveAttribute('data-memory-committed', '1')
   await expect(page.locator('html')).not.toHaveAttribute('data-send-clicked', 'true')
 })
 test('reverted genuine draft edit invalidates pending response', async ({ page }) => {
