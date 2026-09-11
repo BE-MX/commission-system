@@ -273,6 +273,8 @@ def list_customers(
     owner_scope: str = Query("", pattern="^(private|public)?$"),
     province: str = Query(""),
     city: str = Query(""),
+    customer_level: str = Query("", max_length=8),
+    owner_user_id: int | None = Query(None, gt=0),
     db: Session = Depends(get_db),
     _user: dict = Depends(require_any_permission(*_CUSTOMER_READ)),
 ):
@@ -280,6 +282,7 @@ def list_customers(
     items, total = customer_service.list_customers(
         db, page=page, page_size=page_size, keyword=keyword, status=status,
         owner_scope=owner_scope, province=province, city=city,
+        customer_level=customer_level, owner_user_id=owner_user_id,
     )
     return ok(page_result(items, total, page, page_size))
 

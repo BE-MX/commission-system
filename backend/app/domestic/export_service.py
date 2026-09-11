@@ -213,6 +213,7 @@ def _add_order_sheet(wb: Workbook, detail: dict, applicant_name: str, *, show_pr
     ws.merge_cells(f"A3:{last_column}3")
     ws["A3"] = (
         f"客户名称：{_display(detail.get('customer_name'))}     "
+        f"顾客：{_display(detail.get('guest_name'))}     "
         "审批人签字：____________________     "
         f"订单类别：{_safe_text(detail.get('order_category_label'))}     "
         f"订单类型：{_safe_text(detail.get('order_type_label'))}     "

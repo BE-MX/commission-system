@@ -1,4 +1,4 @@
-const HEADER_FIELDS = ['order_no', 'order_date', 'required_ship_date', 'order_type', 'order_channel', 'remark']
+const HEADER_FIELDS = ['order_no', 'order_date', 'required_ship_date', 'order_type', 'order_channel', 'guest_name', 'remark']
 const ITEM_FIELDS = ['order_qty', 'unit_price', 'hairstyle', 'hairstyle_images', 'color', 'color_images',
   'style_requirement', 'style_images', 'remark', 'remark_images']
 const PRODUCTION_EXCLUDED = new Set(['unit_price', 'hairstyle', 'hairstyle_images', 'style_requirement', 'style_images'])

@@ -54,3 +54,19 @@ test('customer tab changes reset pagination and retain search and region filters
   assert.equal(requests[1].city, '青岛市')
   assert.equal(state.list.value[0].id, 'public')
 })
+
+
+test('grade and owner filters compose, reset pagination and clear from requests', async () => {
+  const { state, requests } = createState()
+  state.page.value = 5
+  Object.assign(state.searchForm, { customer_level: 'A', owner_user_id: 7 })
+  await state.handleSearch()
+  assert.equal(requests.at(-1).page, 1)
+  assert.equal(requests.at(-1).customer_level, 'A')
+  assert.equal(requests.at(-1).owner_user_id, 7)
+  state.searchForm.customer_level = ''
+  state.searchForm.owner_user_id = ''
+  await state.handleSearch()
+  assert.equal(Object.hasOwn(requests.at(-1), 'customer_level'), false)
+  assert.equal(Object.hasOwn(requests.at(-1), 'owner_user_id'), false)
+})

@@ -58,3 +58,15 @@ test('production can choose and clear customer without a sales repricing payload
   form.production_customer_id = null
   assert.deepEqual(buildHeaderPatch(detail, form), { production_customer_id: null })
 })
+
+
+test('guest can be edited and cleared only on business orders', () => {
+  const detail = { order_kind: 'business', guest_name: '王女士' }
+  const form = orderHeaderForm(detail)
+  assert.equal(form.guest_name, '王女士')
+  form.guest_name = '李先生'
+  assert.deepEqual(buildHeaderPatch(detail, form), { guest_name: '李先生' })
+  form.guest_name = ''
+  assert.deepEqual(buildHeaderPatch(detail, form), { guest_name: '' })
+  assert.deepEqual(buildHeaderPatch({ ...detail, order_kind: 'production' }, form), {})
+})

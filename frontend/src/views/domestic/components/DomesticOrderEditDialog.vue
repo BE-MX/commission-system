@@ -16,6 +16,7 @@
               </el-select>
             </el-form-item>
             <el-form-item v-if="!production" label="客户订单号"><el-input v-model="header.order_no" placeholder="选填" maxlength="64" /></el-form-item>
+            <el-form-item v-if="!production" label="顾客"><el-input v-model="header.guest_name" placeholder="选填，顾客姓名" maxlength="120" /></el-form-item>
             <el-form-item label="下单日期" required><el-date-picker v-model="header.order_date" type="date" value-format="YYYY-MM-DD" /></el-form-item>
             <el-form-item v-if="!production" label="要求发货日期" required><el-date-picker v-model="header.required_ship_date" type="date" value-format="YYYY-MM-DD" /></el-form-item>
             <el-form-item v-if="!production" label="订单类型" required>

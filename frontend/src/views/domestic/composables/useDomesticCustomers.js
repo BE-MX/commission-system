@@ -47,12 +47,14 @@ export function useDomesticCustomers() {
       params.owner_scope = form.owner_scope || 'private'
       if (form.province) params.province = form.province
       if (form.city) params.city = form.city
+      if (form.customer_level) params.customer_level = form.customer_level
+      if (form.owner_user_id) params.owner_user_id = form.owner_user_id
       const res = await listCustomers(params)
       return res.data || {}
     },
     {
       searchForm: {
-        keyword: '', status: '', owner_scope: 'private', province: '', city: '',
+        keyword: '', status: '', owner_scope: 'private', province: '', city: '', customer_level: '', owner_user_id: '',
       },
     },
   )

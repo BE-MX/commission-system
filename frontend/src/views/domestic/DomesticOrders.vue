@@ -97,6 +97,7 @@
             <span v-if="detail.customer_phone">电话：{{ detail.customer_phone }}</span>
             <span v-if="detail.customer_address">地址：{{ detail.customer_address }}</span>
           </div>
+          <div v-if="detail.order_kind !== 'production'" class="notes-line">顾客：{{ detail.guest_name || '—' }}</div>
           <div v-if="detail.remark" class="notes-line">备注：{{ detail.remark }}</div>
         </div>
 

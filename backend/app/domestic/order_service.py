@@ -75,8 +75,12 @@ def _public_progress_step(step: dict) -> dict:
 
 def _order_request_hash(payload: OrderCreate) -> str:
     """Canonical fingerprint used to reject accidental request-id reuse."""
+    data = payload.model_dump(mode="json", exclude={"request_id"})
+    # Preserve persisted fingerprints for requests created before the optional field existed.
+    if data.get("guest_name") is None:
+        data.pop("guest_name", None)
     encoded = json.dumps(
-        payload.model_dump(mode="json", exclude={"request_id"}),
+        data,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -533,6 +537,7 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
                 request_id=payload.request_id,
                 request_hash=request_hash,
                 remark=payload.remark,
+                guest_name=payload.guest_name,
                 created_by=user_id,
                 deleted_flag=0,
             )
@@ -932,6 +937,7 @@ def list_orders(
                 if prev_order_date.get(o.id) and o.order_date else None
             ),
             "remark": o.remark,
+            "guest_name": o.guest_name,
             "created_by": o.created_by,
             "created_at": o.created_at,
         }
@@ -1116,6 +1122,7 @@ def get_order_detail(
         "status_label": C.ORDER_STATUS_LABELS.get(order.status, str(order.status)),
         "total_amount": float(order.total_amount or 0),
         "remark": order.remark,
+        "guest_name": order.guest_name,
         "created_at": order.created_at,
         "items": item_views,
     }
@@ -1198,7 +1205,7 @@ def update_order(
         _ensure_order_creator(order, user_id)
         data = payload.model_dump(exclude_unset=True)
         if order_kind_service.is_production(order):
-            if set(data) & (order_kind_service.PRODUCTION_HEADER_EXCLUDED | {"order_no"}):
+            if set(data) & (order_kind_service.PRODUCTION_HEADER_EXCLUDED | {"order_no", "guest_name"}):
                 raise ValueError("生产订单不能填写销售字段或修改系统编号")
             if order.status == C.ORDER_TERMINATED:
                 raise ValueError("已终止的订单不能编辑")

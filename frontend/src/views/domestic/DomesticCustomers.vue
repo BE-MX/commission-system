@@ -27,6 +27,16 @@
             <el-option v-for="city in options.cities" :key="city" :label="city" :value="city" />
           </el-select>
         </div>
+        <div class="customer-filter">
+          <el-select v-model="searchForm.customer_level" placeholder="客户等级" clearable style="width: 100%" @change="handleSearch">
+            <el-option v-for="item in options.customer_level" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </div>
+        <div class="customer-filter">
+          <el-select v-model="searchForm.owner_user_id" placeholder="归属销售" filterable clearable style="width: 100%" @change="handleSearch">
+            <el-option v-for="item in options.owners" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </div>
         <div class="customer-filter-actions">
           <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
           <GlassButton v-permission="'domestic:write'" variant="ghost" left-icon="Plus" @click="openDialog()">新增客户</GlassButton>

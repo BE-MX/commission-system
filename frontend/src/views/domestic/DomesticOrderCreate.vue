@@ -58,6 +58,13 @@
           </el-col>
         </el-row>
 
+        <el-row v-if="!isProduction" :gutter="16">
+          <el-col :span="8">
+            <el-form-item label="顾客">
+              <el-input v-model="form.guest_name" placeholder="选填，顾客姓名" maxlength="120" />
+            </el-form-item>
+          </el-col>
+        </el-row>
         <el-row :gutter="16">
           <el-col v-if="!isProduction" :span="6">
             <el-form-item label="订单类型" required>

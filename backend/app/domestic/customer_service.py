@@ -162,6 +162,8 @@ def list_customers(
     owner_scope: str = "",
     province: str = "",
     city: str = "",
+    customer_level: str = "",
+    owner_user_id: int | None = None,
 ) -> tuple[list[dict], int]:
     q = db.query(DomesticCustomer)
     if keyword:
@@ -182,6 +184,11 @@ def list_customers(
         q = q.filter(DomesticCustomer.province == province)
     if city:
         q = q.filter(DomesticCustomer.city == city)
+
+    if customer_level:
+        q = q.filter(DomesticCustomer.customer_level == customer_level)
+    if owner_user_id is not None:
+        q = q.filter(DomesticCustomer.owner_user_id == owner_user_id)
 
     total = q.count()
     rows = q.order_by(DomesticCustomer.id.desc()).offset((page - 1) * page_size).limit(page_size).all()

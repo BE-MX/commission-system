@@ -150,3 +150,13 @@ test('customer order number is optional and channel defaults follow customer set
   await settle()
   assert.equal(page.form.order_channel, 'recharge')
 })
+
+
+test('business guest is trimmed in payload and cleared after successful save', async t => {
+  const { page, settle, created } = harness(t)
+  await settle()
+  page.form.guest_name = '  王女士  '
+  await page.submit(true)
+  assert.equal(created[0].guest_name, '王女士')
+  assert.equal(page.form.guest_name, '')
+})

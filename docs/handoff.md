@@ -1,3 +1,9 @@
+## 2026-09-11 内贸客户筛选与业务订单顾客（合并交付）
+
+分支 `codex/domestic-guest`，工作目录 `D:/MyProgram/commission-system-codex-domestic-guest`，基点 `23e4c994`。客户列表新增客户等级、归属销售组合筛选；业务订单新增选填顾客（120 字），贯通录入、编辑/清空、详情及两版 Excel。新增迁移 `145_domestic_order_guest`（可空列，历史数据保留）；空顾客不改变旧建单请求哈希，保留跨版本重试。生产单不使用该字段。
+
+验证：后端 107 项、前端状态/交互 23 项通过，前端构建通过；迁移在内存 SQLite 验证旧记录保留，并确认单 head。独立审查问题已修复并复核通过。`check_conventions.py` 被素材库既有两项 UI 门禁阻断（AssetTagEditor 旧 small 按钮、AssetLibrary 行数基线过期，main 同样复现）；单独执行其增量代码检查无违规。`git diff --check` 通过，已运行 `git_sweep.py --no-fetch`，仅为本地远端引用快照。未连接生产库或进行浏览器实机验收。用户已授权合并 main 并推送 origin；fetch 确认 main 与 origin/main 均为基点 23e4c994，无上游差异。本轮不部署；发布时由正式入口应用迁移。
+
 ## 2026-09-11 WhatsApp v1.6.5 事实与产品目录（合并交付）
 
 沿用codex/whatsapp-result-recovery，基点ce7270dd，包含1.6.4恢复改动。生产只读元数据确认近期成功请求仅350/351/398约束无FAQ；默认随发布加载21项审核profile，并保留显式section覆盖。新检索只读确认341/5/6/7进入输入。生成前增加有权限的有限产品目录投影，实查14英寸无记录（不能推断不销售），相关长度16/18/20/22/24。目录权限生成前后/缓存重验；不查价格库存、不写生产、不调用真实模型。后端121通过，补边界42/6专项通过，扩展构建283单测通过；浏览器27通过/1项询盘截图时序失败，该项独立3次通过；独立审查闭环。用户已授权合并推送，fetch确认main与origin/main均为ce7270dd，无上游差异；本轮不部署。详见 [事实与规格查询](requirements/2026-09-11-whatsapp-facts-catalog.md)。

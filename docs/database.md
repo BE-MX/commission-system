@@ -212,7 +212,9 @@
 
 - `ark_dashboard_preference`：每用户一行的工作台布局配置。`user_id`（INT UNSIGNED FK→ark_users.id ON DELETE CASCADE，UNIQUE）+ `prefs`（JSON：`{version, metrics:{hidden,order}, actions:{hidden,order}}`）+ 时间戳。卡片 key 的合法性不在库层校验——真相源是前端 `views/dashboard/cards.js` 注册表，未知 key 前端忽略（注册表增删卡片对存量配置向前兼容）。
 
-## 内贸订单（迁移 081～140，2026-07-27 至 2026-09-07）
+## 内贸订单（迁移 081～145，2026-07-27 至 2026-09-11）
+
+迁移 `145_domestic_order_guest` 在 `ark_domestic_orders` 新增 `guest_name VARCHAR(120) NULL`（业务订单顾客）。历史记录保持 NULL，不回填客户联系人；生产单不使用。迁移由正式部署入口执行。
 
 业务订单客户订单号现为选填，`order_no` 未填存空串，沿用现有 NOT NULL 列，无 schema 迁移。渠道字典改为 recharge/cash，历史按客户 prepay/credit 结算属性转换，仅改订单渠道及更新时间；客户来源直接查询客户档案 `customer_source`，订单不新增来源副本。
 

@@ -58,7 +58,7 @@ function emptyForm() {
   return {
     order_no: '', order_date: todayStr(), required_ship_date: '',
     customer_id: null, customer_shop_name: '', order_category: 'normal',
-    order_type: '', order_channel: '', remark: '', items: [emptyItem()],
+    order_type: '', order_channel: '', guest_name: '', remark: '', items: [emptyItem()],
   }
 }
 
@@ -336,6 +336,7 @@ export function useDomesticOrderCreate(orderKind = 'business') {
       order_type: form.order_type,
       order_channel: form.order_channel,
       remark: form.remark || null,
+      guest_name: form.guest_name.trim() || null,
       items: buildCreateItems(form.items, normalizeItemAttrs),
     }
   }
