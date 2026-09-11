@@ -1,6 +1,17 @@
 import { TARGET_LANGUAGES } from '@/shared/contracts'
-import type { ReplyCapabilities, ReplyRequest, ReplyResponse } from '@/shared/contracts'
+import type { AutoReplySchedule, ReplyCapabilities, ReplyRequest, ReplyResponse } from '@/shared/contracts'
 import { validAction, validEntries, validHandoff } from '@/shared/replyMemory'
+
+const SCHEDULE_TIME = /^([01]\d|2[0-3]):[0-5]\d$/
+/** 时段使用本地时区 HH:MM，days 遵循 Date.getDay() 约定（0=周日）。 */
+export function validAutoReplySchedule(value: unknown): value is AutoReplySchedule | null {
+  if (value === null) return true
+  if (!value || typeof value !== 'object') return false
+  const p = value as AutoReplySchedule
+  return SCHEDULE_TIME.test(p.start) && SCHEDULE_TIME.test(p.end)
+    && Array.isArray(p.days) && p.days.length >= 1 && p.days.length <= 7
+    && p.days.every(day => Number.isInteger(day) && day >= 0 && day <= 6)
+}
 
 /** Server configuration may narrow these local safety ceilings, never widen them. */
 export function boundedReplyCapabilities(value: unknown): ReplyCapabilities {

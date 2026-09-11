@@ -1,6 +1,6 @@
 import { REPLY_COPY } from '@/content/replyView'
 import { messageForCode } from '@/content/messages'
-import type { ReplyCapabilities, ReplyRequest, ReplyResponse, TargetLanguage } from '@/shared/contracts'
+import type { AutoReplyPolicy, ReplyCapabilities, ReplyRequest, ReplyResponse, TargetLanguage } from '@/shared/contracts'
 import { maskContacts } from '@/whatsapp/replyContext'
 import type { ReplyContext } from '@/whatsapp/replyContext'
 import { boundedReplyCapabilities, validReplyResponse } from '@/shared/replyValidation'
@@ -9,13 +9,43 @@ import type { MemoryCommand, MemoryResult } from '@/shared/replyMemory'
 
 export type AutoSnapshot = { identity: unknown[]; tail: string; incoming: string; role?: string; draft: string }
 export type AutoState = { active: boolean; busy: boolean; note: string; segments: string[]; sentCount: number; knowledgeNote?: string }
+
+// Humanized pacing: a reading pause before the first segment grows with the
+// customer's latest message; a typing pause before each later segment grows
+// with that segment's length, with per-segment random rate and jitter.
+function readingDelay(latestText: string): number {
+  return Math.min(4000, 1200 + latestText.length * 20)
+}
+function typingDelay(segment: string): number {
+  return Math.min(8000, (800 + segment.length * (40 + Math.random() * 40)) * (0.9 + Math.random() * 0.2))
+}
+
+function policyRefusal(policy: AutoReplyPolicy | undefined): string {
+  if (!policy) return ''
+  if (policy.blocked) return '当前聊天已禁止自动接管'
+  if (policy.allowlistEnabled && !policy.allowlisted) return '已开启仅白名单自动接管，当前聊天不在白名单'
+  return ''
+}
+
+function withinSchedule(policy: AutoReplyPolicy | undefined, now: Date): boolean {
+  const schedule = policy?.schedule
+  if (!schedule) return true
+  if (!schedule.days.includes(now.getDay())) return false
+  const [startHour, startMinute] = schedule.start.split(':').map(Number)
+  const [endHour, endMinute] = schedule.end.split(':').map(Number)
+  const at = now.getHours() * 60 + now.getMinutes()
+  const start = startHour * 60 + startMinute, end = endHour * 60 + endMinute
+  return start <= end ? at >= start && at <= end : at >= start || at <= end
+}
+
 export function createAutoReply(adapter: {
   snapshot: () => AutoSnapshot
   collect: (caps: ReplyCapabilities, current: () => boolean) => Promise<ReplyContext>
   send: (text: string, current: () => boolean) => Promise<boolean>
 }, bridge: { capabilities: () => Promise<unknown>; suggest: (request: ReplyRequest) => Promise<ReplyResponse>
   memory?: (command: MemoryCommand) => Promise<MemoryResult>
-  binding?: { read: () => Promise<string | null>; write: (inquiryId: string | null) => Promise<void> } },
+  binding?: { read: () => Promise<string | null>; write: (inquiryId: string | null) => Promise<void> }
+  policy?: () => Promise<AutoReplyPolicy | null> },
 options: () => { language: 'auto' | TargetLanguage; fallback: TargetLanguage; goal: string; detected?: string }, changed: (state: AutoState) => void,
 wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))) {
   let state: AutoState = { active: false, busy: false, note: '', segments: [], sentCount: 0 }
@@ -24,6 +54,7 @@ wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))) {
   let identity: unknown[] = [], incoming = '', settledAt = 0, processed = '', epoch = ''
   let memory: { id: string; revision: number } | undefined
   let memoryReady = true
+  let policy: AutoReplyPolicy | null = null
   const paint = () => changed({ ...state })
   const sameChat = (snapshot: AutoSnapshot) => identity.every((v, i) => snapshot.identity[i] === v)
   function stop(note = '自动接管已关闭') {
@@ -59,6 +90,10 @@ wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))) {
   }
   async function run() {
     if (!state.active || state.busy || !memoryReady || Date.now() - settledAt < 3000 || incoming === processed) return
+    if (!withinSchedule(policy ?? undefined, new Date())) {
+      if (state.note !== '不在自动接管时段内') { state.note = '不在自动接管时段内'; paint() }
+      return
+    }
     state.busy = true; state.segments = []; state.sentCount = 0; state.knowledgeNote = ''; state.note = '正在生成回复…'; paint()
     const version = revision
     const current = () => state.active && revision === version && sameChat(adapter.snapshot())
@@ -116,7 +151,7 @@ wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))) {
       if (catalogNote) state.knowledgeNote += '\n' + catalogNote
       for (const [index, part] of response.reply_segments!.entries()) {
         state.note = `准备发送第 ${index + 1}/${response.reply_segments!.length} 段`; paint()
-        await wait(index ? 2500 : 1500)
+        await wait(index ? typingDelay(part) : readingDelay(latest.text))
         if (!current()) return
         const snapshot = adapter.snapshot()
         if (snapshot.draft || snapshot.tail !== tail) throw new Error('聊天或输入已变化，请人工接管')
@@ -147,10 +182,19 @@ wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))) {
   }
   return {
     getState: () => ({ ...state }), stop,
+    async refreshPolicy() {
+      if (!bridge.policy) return
+      try { policy = await bridge.policy() } catch { return }
+      // A panel change takes effect immediately: refuse a running takeover too.
+      const refused = policyRefusal(policy ?? undefined)
+      if (state.active && refused) stop(refused)
+    },
     start() {
       if (state.active || state.busy) return
       const snapshot = adapter.snapshot()
       if (snapshot.draft) { stop('请先处理输入框草稿，再开启自动接管'); return }
+      const refused = policyRefusal(policy ?? undefined)
+      if (refused) { stop(refused); return }
       identity = snapshot.identity; incoming = snapshot.incoming; processed = ''; epoch = crypto.randomUUID(); revision++
       memory = undefined
       if (bridge.binding && bridge.memory) { memoryReady = false; void initMemory(revision) }

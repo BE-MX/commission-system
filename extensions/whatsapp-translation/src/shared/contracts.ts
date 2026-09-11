@@ -111,11 +111,18 @@ export function languageLabel(code: string): string {
   return LANGUAGE_LABELS[code] ?? code
 }
 
+export type AutoReplySchedule = { start: string; end: string; days: number[] }
+export type AutoReplyPolicy = { blocked: boolean; allowlisted: boolean; allowlistEnabled: boolean; schedule: AutoReplySchedule | null }
+
 export type RuntimeRequest =
   | { type: 'reply/memory'; payload: import('./replyMemory').MemoryCommand }
   | { type: 'reply/suggest'; payload: ReplyRequest }
   | { type: 'reply/capabilities' }
   | { type: 'reply/disclosure'; acknowledged?: true }
+  | { type: 'reply/auto-policy/get'; chatTitle: string }
+  | { type: 'reply/auto-policy/set-chat'; chatTitle: string; list: 'block' | 'allow'; value: boolean }
+  | { type: 'reply/auto-policy/set-allowlist-enabled'; enabled: boolean }
+  | { type: 'reply/auto-policy/set-schedule'; schedule: AutoReplySchedule | null }
   | { type: 'pairing/start' }
   | { type: 'pairing/resume' }
   | { type: 'session/refresh' }
@@ -134,6 +141,10 @@ export type RuntimeResponse =
   | { type: 'reply/suggest'; result: ReplyResponse }
   | { type: 'reply/capabilities'; reply?: ReplyCapabilities }
   | { type: 'reply/disclosure'; acknowledged: boolean }
+  | { type: 'reply/auto-policy/get'; blocked: boolean; allowlisted: boolean; allowlistEnabled: boolean; schedule: AutoReplySchedule | null }
+  | { type: 'reply/auto-policy/set-chat' }
+  | { type: 'reply/auto-policy/set-allowlist-enabled' }
+  | { type: 'reply/auto-policy/set-schedule' }
   | { type: 'pairing/start'; state: PairingState }
   | { type: 'pairing/resume'; state: PairingState | null }
   | { type: 'session/refresh'; session: Session }

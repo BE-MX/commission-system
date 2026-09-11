@@ -18,6 +18,7 @@ beforeEach(() => {
   vi.stubGlobal('chrome', {
     runtime: {
       getManifest: () => ({ version: '1.0.0' }),
+      getPlatformInfo: (callback?: () => void) => callback?.(),
       id: 'extension-id',
       onMessage: {
         addListener: (listener: MessageListener) => {
@@ -258,5 +259,106 @@ describe('chat inquiry bindings', () => {
     await import('@/background/index')
     expect(await dispatch({ type: 'reply/memory-binding/get', chatTitle: 'Alice Example' }, { id: 'extension-id', url: 'https://example.test/' }))
       .toEqual({ type: 'error', message: 'unsupported_request' })
+  })
+})
+
+describe('auto takeover policy', () => {
+  const sender = { id: 'extension-id', url: 'https://web.whatsapp.com/' }
+  async function dispatch(request: unknown, origin = sender): Promise<unknown> {
+    return new Promise(resolve => { messageListener?.(request, origin, resolve) })
+  }
+  it('defaults to unrestricted for any chat', async () => {
+    store.set('chatKeySalt', 'synthetic-salt')
+    await import('@/background/index')
+    expect(await dispatch({ type: 'reply/auto-policy/get', chatTitle: 'Alice Example' }))
+      .toEqual({ type: 'reply/auto-policy/get', blocked: false, allowlisted: false, allowlistEnabled: false, schedule: null })
+  })
+  it('stores list entries under salted hashes and toggles them per chat', async () => {
+    store.set('chatKeySalt', 'synthetic-salt')
+    await import('@/background/index')
+    expect(await dispatch({ type: 'reply/auto-policy/set-chat', chatTitle: 'Alice Example', list: 'block', value: true })).toEqual({ type: 'reply/auto-policy/set-chat' })
+    expect(await dispatch({ type: 'reply/auto-policy/get', chatTitle: 'Alice Example' })).toMatchObject({ blocked: true, allowlisted: false })
+    expect(await dispatch({ type: 'reply/auto-policy/get', chatTitle: 'Someone Else' })).toMatchObject({ blocked: false })
+    const blocklist = store.get('autoReplyBlocklist') as Record<string, boolean>
+    expect(Object.keys(blocklist)[0]).toMatch(/^[0-9a-f]{64}$/)
+    expect(JSON.stringify(blocklist)).not.toContain('Alice')
+    expect(await dispatch({ type: 'reply/auto-policy/set-chat', chatTitle: 'Alice Example', list: 'block', value: false })).toEqual({ type: 'reply/auto-policy/set-chat' })
+    expect(await dispatch({ type: 'reply/auto-policy/get', chatTitle: 'Alice Example' })).toMatchObject({ blocked: false })
+    expect(await dispatch({ type: 'reply/auto-policy/set-chat', chatTitle: 'Alice Example', list: 'both', value: true })).toEqual({ type: 'error', message: 'reply_invalid_request' })
+  })
+  it('evicts the oldest policy entry beyond 500 per list but never on update', async () => {
+    store.set('chatKeySalt', 'synthetic-salt')
+    const seeded: Record<string, boolean> = {}
+    for (let i = 0; i < 500; i++) seeded[`hash-${String(i).padStart(3, '0')}`] = true
+    store.set('autoReplyAllowlist', seeded)
+    await import('@/background/index')
+    await dispatch({ type: 'reply/auto-policy/set-chat', chatTitle: 'New Chat', list: 'allow', value: true })
+    let allowlist = store.get('autoReplyAllowlist') as Record<string, boolean>
+    expect(Object.keys(allowlist)).toHaveLength(500)
+    expect(allowlist['hash-000']).toBeUndefined()
+    expect(allowlist['hash-001']).toBe(true)
+    await dispatch({ type: 'reply/auto-policy/set-chat', chatTitle: 'New Chat', list: 'allow', value: true })
+    allowlist = store.get('autoReplyAllowlist') as Record<string, boolean>
+    expect(Object.keys(allowlist)).toHaveLength(500)
+    expect(allowlist['hash-001']).toBe(true)
+  })
+  it('toggles allowlist mode and validates the schedule', async () => {
+    store.set('chatKeySalt', 'synthetic-salt')
+    await import('@/background/index')
+    expect(await dispatch({ type: 'reply/auto-policy/set-allowlist-enabled', enabled: true })).toEqual({ type: 'reply/auto-policy/set-allowlist-enabled' })
+    expect(await dispatch({ type: 'reply/auto-policy/get', chatTitle: 'Alice Example' })).toMatchObject({ allowlistEnabled: true })
+    const schedule = { start: '09:00', end: '18:30', days: [1, 2, 3, 4, 5] }
+    expect(await dispatch({ type: 'reply/auto-policy/set-schedule', schedule })).toEqual({ type: 'reply/auto-policy/set-schedule' })
+    expect(await dispatch({ type: 'reply/auto-policy/get', chatTitle: 'Alice Example' })).toMatchObject({ schedule })
+    expect(await dispatch({ type: 'reply/auto-policy/set-schedule', schedule: null })).toEqual({ type: 'reply/auto-policy/set-schedule' })
+    for (const bad of [{ start: '25:00', end: '18:00', days: [1] }, { start: '09:00', end: '18:00', days: [7] },
+      { start: '09:00', end: '18:00', days: [] }, { start: '9:00', end: '18:00', days: [1] }, 'open']) {
+      expect(await dispatch({ type: 'reply/auto-policy/set-schedule', schedule: bad })).toEqual({ type: 'error', message: 'reply_invalid_request' })
+    }
+    expect(await dispatch({ type: 'reply/auto-policy/set-allowlist-enabled', enabled: 'yes' })).toEqual({ type: 'error', message: 'reply_invalid_request' })
+  })
+  it('requires the WhatsApp sender', async () => {
+    store.set('chatKeySalt', 'synthetic-salt')
+    await import('@/background/index')
+    expect(await dispatch({ type: 'reply/auto-policy/get', chatTitle: 'Alice Example' }, { id: 'extension-id', url: 'https://example.test/' }))
+      .toEqual({ type: 'error', message: 'unsupported_request' })
+  })
+})
+
+describe('reply suggest timeout', () => {
+  const sender = { id: 'extension-id', url: 'https://web.whatsapp.com/' }
+  const payload: ReplyRequest = {
+    request_id: '4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de63', conversation_epoch: '4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de64',
+    context_version: 1, draft_version: 2, messages: [{ role: 'customer', text: 'Synthetic question' }],
+    context_scope: { requested_limit: 20, truncated: false, omitted_media: false, latest_visible: false },
+    draft_intent: '', target_language: 'auto', fallback_language: 'en', goal: '', style: 'default',
+  }
+  async function dispatch(request: unknown): Promise<unknown> {
+    return new Promise(resolve => { messageListener?.(request, sender, resolve) })
+  }
+  it('times the suggest request out at the capability timeout_seconds', async () => {
+    vi.useFakeTimers()
+    try {
+      store.set('deviceToken', 'synthetic-token'); store.set('replyDisclosureAcknowledged', true)
+      const fetch = vi.fn((url: string, init?: RequestInit) => {
+        if (String(url).includes('/capabilities')) {
+          return Promise.resolve(new Response(JSON.stringify({ code: 200, message: 'ok', data: { reply: {
+            available: true, history_enabled: true, max_messages: 2000, default_messages: 2000,
+            max_context_chars: 120000, max_draft_chars: 2000, max_goal_chars: 500, timeout_seconds: 60,
+          } } })))
+        }
+        return new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))))
+      })
+      vi.stubGlobal('fetch', fetch)
+      await import('@/background/index')
+      let settled = false
+      const outcome = dispatch({ type: 'reply/suggest', payload }).then(response => { settled = true; return response })
+      await vi.advanceTimersByTimeAsync(59_999)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(await outcome).toEqual({ type: 'error', message: 'request_timeout' })
+      expect(fetch).toHaveBeenCalledTimes(2)
+      expect(fetch.mock.calls[1][0]).toContain('/reply-suggestions')
+    } finally { vi.useRealTimers() }
   })
 })

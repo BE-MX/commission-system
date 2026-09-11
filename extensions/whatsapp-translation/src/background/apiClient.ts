@@ -125,12 +125,13 @@ export const apiClient = {
       body: JSON.stringify(payload), headers: headers(token, extensionVersion), method: 'POST', cache: 'no-store',
     })
   },
-  suggestReply: async (token: string, extensionVersion: string, payload: ReplyRequest): Promise<ReplyResponse> => {
+  suggestReply: async (token: string, extensionVersion: string, payload: ReplyRequest, timeoutMs = 185_000): Promise<ReplyResponse> => {
+    // timeoutMs follows the live capability timeout_seconds (clamped ≤180s by the caller); 185s is the fallback.
     const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo(() => { void chrome.runtime.lastError }), 25_000)
     try {
       return await request('/reply-suggestions', {
         body: JSON.stringify(payload), headers: headers(token, extensionVersion), method: 'POST', cache: 'no-store',
-      }, false, 185_000)
+      }, false, timeoutMs)
     } finally { clearInterval(keepAlive) }
   },
   createPairing,

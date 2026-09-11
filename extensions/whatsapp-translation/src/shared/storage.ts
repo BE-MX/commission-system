@@ -1,6 +1,10 @@
 const STORAGE_ACCESS = 'TRUSTED_CONTEXTS'
 
 export type LocalState = {
+  autoReplyAllowlist?: Record<string, boolean>
+  autoReplyAllowlistEnabled?: boolean
+  autoReplyBlocklist?: Record<string, boolean>
+  autoReplySchedule?: import('./contracts').AutoReplySchedule | null
   replyDisclosureAcknowledged?: boolean
   chatKeySalt: string
   chatLanguages: Record<string, string>
