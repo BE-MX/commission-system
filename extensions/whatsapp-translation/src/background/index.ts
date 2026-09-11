@@ -10,6 +10,8 @@ import { validMemoryCommand, validMemoryResult } from '@/shared/replyMemory'
 
 const POPUP_REQUEST_TYPES = new Set(['pairing/resume', 'pairing/start', 'preferences/set', 'session/refresh'])
 const translationCache = new TranslationCache<TranslationResult>()
+const MAX_CHAT_INQUIRIES = 200
+const INQUIRY_ID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/iu
 
 async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
@@ -166,6 +168,30 @@ async function handleMessage(request: RuntimeRequest): Promise<RuntimeResponse> 
         chatLanguages: { ...((await storage.get('chatLanguages')) ?? {}), [key]: request.targetLanguage },
       })
       return { type: 'chat-language/set', targetLanguage: request.targetLanguage }
+    }
+    case 'reply/memory-binding/get': {
+      const salt = await storage.get('chatKeySalt')
+      if (!salt) throw new Error('device_token_missing')
+      const key = await chatKey(request.chatTitle, salt)
+      const bindings = (await storage.get('chatInquiries')) ?? {}
+      return { type: 'reply/memory-binding/get', inquiryId: bindings[key] ?? null }
+    }
+    case 'reply/memory-binding/set': {
+      if (request.inquiryId !== null && (typeof request.inquiryId !== 'string' || !INQUIRY_ID.test(request.inquiryId))) {
+        return { type: 'error', message: 'reply_invalid_request' }
+      }
+      const salt = await storage.get('chatKeySalt')
+      if (!salt) throw new Error('device_token_missing')
+      const key = await chatKey(request.chatTitle, salt)
+      const bindings = { ...((await storage.get('chatInquiries')) ?? {}) }
+      if (request.inquiryId === null) delete bindings[key]
+      else {
+        // Keys are salted hashes; FIFO eviction keeps the map bounded.
+        while (!(key in bindings) && Object.keys(bindings).length >= MAX_CHAT_INQUIRIES) delete bindings[Object.keys(bindings)[0]]
+        bindings[key] = request.inquiryId
+      }
+      await storage.set({ chatInquiries: bindings })
+      return { type: 'reply/memory-binding/set' }
     }
     case 'translation/incoming': {
       if (!(TARGET_LANGUAGES as readonly string[]).includes(request.target_language)) throw new Error('unsupported_language')

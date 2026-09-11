@@ -4,6 +4,7 @@ export type LocalState = {
   replyDisclosureAcknowledged?: boolean
   chatKeySalt: string
   chatLanguages: Record<string, string>
+  chatInquiries: Record<string, string>
   defaultTargetLanguage: string
   deviceToken?: string
   enabled: boolean

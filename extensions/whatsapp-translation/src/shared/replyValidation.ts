@@ -44,6 +44,7 @@ export function validReplyRequest(value: unknown): value is ReplyRequest {
     && ['truncated', 'omitted_media', 'latest_visible'].every(key => typeof p.context_scope[key as keyof typeof p.context_scope] === 'boolean')
     && isText(p.draft_intent, 2000) && isText(p.goal, 500)
     && (p.target_language === 'auto' || language(p.target_language)) && language(p.fallback_language)
+    && (p.detected_language === undefined || language(p.detected_language))
     && ['default', 'shorter', 'softer', 'alternative'].includes(p.style)
     && (p.memory_conversation_id == null || (uuid.test(p.memory_conversation_id) && Number.isSafeInteger(p.memory_revision) && p.memory_revision! >= 0))
 }

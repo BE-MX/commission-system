@@ -104,6 +104,13 @@ describe('background message dispatcher', () => {
     expect(fetch).not.toHaveBeenCalled()
     expect(await dispatch({ type: 'reply/suggest', payload })).toEqual({ type: 'error', message: 'reply_failed' })
   })
+  it('rejects an unsupported detected language before any network call', async () => {
+    store.set('deviceToken', 'synthetic-token'); store.set('replyDisclosureAcknowledged', true)
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch)
+    await import('@/background/index')
+    expect(await dispatch({ type: 'reply/suggest', payload: { ...payload, detected_language: 'klingon' } })).toEqual({ type: 'error', message: 'reply_invalid_request' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
   it('rechecks a lower live server limit before POSTing any text', async () => {
     store.set('deviceToken', 'synthetic-token'); store.set('replyDisclosureAcknowledged', true)
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 200, message: 'ok', data: { reply: {
@@ -197,5 +204,59 @@ describe('background message dispatcher', () => {
         type: 'preferences/get',
       })
     })
+  })
+})
+
+describe('chat inquiry bindings', () => {
+  const sender = { id: 'extension-id', url: 'https://web.whatsapp.com/' }
+  const inquiryId = '4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de63'
+  async function dispatch(request: unknown, origin = sender): Promise<unknown> {
+    return new Promise(resolve => { messageListener?.(request, origin, resolve) })
+  }
+  it('stores bindings under salted hashes and reads them back', async () => {
+    store.set('chatKeySalt', 'synthetic-salt')
+    await import('@/background/index')
+    expect(await dispatch({ type: 'reply/memory-binding/set', chatTitle: 'Alice Example', inquiryId })).toEqual({ type: 'reply/memory-binding/set' })
+    expect(await dispatch({ type: 'reply/memory-binding/get', chatTitle: 'Alice Example' })).toEqual({ type: 'reply/memory-binding/get', inquiryId })
+    const bindings = store.get('chatInquiries') as Record<string, string>
+    expect(Object.values(bindings)).toEqual([inquiryId])
+    expect(Object.keys(bindings)[0]).toMatch(/^[0-9a-f]{64}$/)
+    expect(JSON.stringify(bindings)).not.toContain('Alice')
+    expect(await dispatch({ type: 'reply/memory-binding/get', chatTitle: 'Someone Else' })).toEqual({ type: 'reply/memory-binding/get', inquiryId: null })
+  })
+  it('clears a binding and rejects malformed inquiry ids', async () => {
+    store.set('chatKeySalt', 'synthetic-salt')
+    await import('@/background/index')
+    await dispatch({ type: 'reply/memory-binding/set', chatTitle: 'Alice Example', inquiryId })
+    expect(await dispatch({ type: 'reply/memory-binding/set', chatTitle: 'Alice Example', inquiryId: null })).toEqual({ type: 'reply/memory-binding/set' })
+    expect(await dispatch({ type: 'reply/memory-binding/get', chatTitle: 'Alice Example' })).toEqual({ type: 'reply/memory-binding/get', inquiryId: null })
+    expect(store.get('chatInquiries')).toEqual({})
+    expect(await dispatch({ type: 'reply/memory-binding/set', chatTitle: 'Alice Example', inquiryId: 'not-a-uuid' })).toEqual({ type: 'error', message: 'reply_invalid_request' })
+  })
+  it('evicts the oldest binding beyond 200 entries but never on update', async () => {
+    store.set('chatKeySalt', 'synthetic-salt')
+    const seeded: Record<string, string> = {}
+    for (let i = 0; i < 200; i++) seeded[`hash-${String(i).padStart(3, '0')}`] = `inquiry-${i}`
+    store.set('chatInquiries', seeded)
+    await import('@/background/index')
+    await dispatch({ type: 'reply/memory-binding/set', chatTitle: 'New Chat', inquiryId })
+    let bindings = store.get('chatInquiries') as Record<string, string>
+    expect(Object.keys(bindings)).toHaveLength(200)
+    expect(bindings['hash-000']).toBeUndefined()
+    expect(bindings['hash-001']).toBe('inquiry-1')
+    const { chatKey } = await import('@/shared/storage')
+    const key = await chatKey('New Chat', 'synthetic-salt')
+    expect(bindings[key]).toBe(inquiryId)
+    await dispatch({ type: 'reply/memory-binding/set', chatTitle: 'New Chat', inquiryId: '4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de64' })
+    bindings = store.get('chatInquiries') as Record<string, string>
+    expect(Object.keys(bindings)).toHaveLength(200)
+    expect(bindings['hash-001']).toBe('inquiry-1')
+    expect(bindings[key]).toBe('4f1d9b4f-0cd1-4cdf-bf9a-2e13e2e0de64')
+  })
+  it('requires the WhatsApp sender', async () => {
+    store.set('chatKeySalt', 'synthetic-salt')
+    await import('@/background/index')
+    expect(await dispatch({ type: 'reply/memory-binding/get', chatTitle: 'Alice Example' }, { id: 'extension-id', url: 'https://example.test/' }))
+      .toEqual({ type: 'error', message: 'unsupported_request' })
   })
 })

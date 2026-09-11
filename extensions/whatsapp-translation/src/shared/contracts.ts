@@ -124,6 +124,8 @@ export type RuntimeRequest =
   | { type: 'capabilities/get' }
   | { type: 'chat-language/get'; chatTitle: string }
   | { type: 'chat-language/set'; chatTitle: string; targetLanguage: string }
+  | { type: 'reply/memory-binding/get'; chatTitle: string }
+  | { type: 'reply/memory-binding/set'; chatTitle: string; inquiryId: string | null }
   | { type: 'translation/incoming'; request_id: string; source_language: 'auto'; target_language: string; text: string }
   | { type: 'translation/outgoing'; request_id: string; sourceLanguage: string; targetLanguage: string; text: string }
 
@@ -140,6 +142,8 @@ export type RuntimeResponse =
   | { type: 'capabilities/get'; capabilities: Capabilities }
   | { type: 'chat-language/get'; targetLanguage: string }
   | { type: 'chat-language/set'; targetLanguage: string }
+  | { type: 'reply/memory-binding/get'; inquiryId: string | null }
+  | { type: 'reply/memory-binding/set' }
   | { type: 'translation/incoming'; translation: string; sourceLanguage: string }
   | { type: 'translation/outgoing'; translation: string; sourceLanguage: string; backTranslation?: string }
   | { type: 'error'; message: string }
@@ -179,6 +183,7 @@ export type ReplyRequest = {
   fallback_language: TargetLanguage
   style: ReplyStyle
   goal: string
+  detected_language?: string
   memory_conversation_id?: string | null
   memory_revision?: number
 }

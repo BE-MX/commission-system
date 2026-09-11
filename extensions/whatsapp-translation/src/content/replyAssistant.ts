@@ -19,7 +19,9 @@ export function createReplyAssistant(adapter: {
   collectReplyHistory?: (limits: ReplyContextLimits, current: () => boolean, progress: (context: ReplyContext) => void) => Promise<ReplyContext>
   readComposer: () => string
   replaceComposer: (text: string, current: () => boolean) => Promise<boolean>
-}, bridge: { capabilities: () => Promise<unknown>; suggest: (request: ReplyRequest) => Promise<ReplyResponse>; memory?: (command: MemoryCommand) => Promise<MemoryResult> }, fallback: () => TargetLanguage, changed: (state: ReplyState) => void) {
+}, bridge: { capabilities: () => Promise<unknown>; suggest: (request: ReplyRequest) => Promise<ReplyResponse>; memory?: (command: MemoryCommand) => Promise<MemoryResult>
+  binding?: { read: () => Promise<string | null>; write: (inquiryId: string | null) => Promise<void> } },
+fallback: () => TargetLanguage, changed: (state: ReplyState) => void, detectedLanguage: () => string = () => '') {
   let epoch = crypto.randomUUID()
   let contextVersion = 0
   let draftVersion = 0
@@ -43,6 +45,7 @@ export function createReplyAssistant(adapter: {
     if (!validMemoryResult(result, command)) throw new Error('reply_invalid_response')
     return result
   }
+  const writeBinding = (inquiryId: string | null) => { void bridge.binding?.write(inquiryId).catch(() => undefined) }
   async function manageMemory(command: MemoryCommand, apply: (result: MemoryResult) => void) {
     if (state.busy || state.memoryBusy) return
     invalidate()
@@ -113,6 +116,7 @@ export function createReplyAssistant(adapter: {
     usePreview() {
       if (!state.previewInquiry || state.busy || state.memoryBusy) return
       invalidate(); state.inquiry = state.previewInquiry; state.previewInquiry = undefined; state.inquiries = undefined
+      writeBinding(state.inquiry.id)
       state.memoryEnabled = true; state.memoryNotice = '已使用所选询盘记录，请核对是否属于当前客户。'; paint()
     },
     newInquiry(label = '') {
@@ -120,6 +124,7 @@ export function createReplyAssistant(adapter: {
       createId = crypto.randomUUID()
       return manageMemory({ operation: 'create', conversation_id: createId, label: maskContacts(label) }, result => {
         state.inquiry = result.inquiry; state.previewInquiry = undefined; state.inquiries = undefined
+        if (state.inquiry) writeBinding(state.inquiry.id)
         state.memoryEnabled = true; state.memoryNotice = '已新建独立询盘记录。'
       })
     },
@@ -136,6 +141,7 @@ export function createReplyAssistant(adapter: {
       if (!state.inquiry) return
       return manageMemory({ operation: 'delete', conversation_id: state.inquiry.id, revision: state.inquiry.revision }, () => {
         state.inquiry = undefined; state.previewInquiry = undefined; state.inquiries = undefined
+        writeBinding(null)
         state.memoryEnabled = false; createId = crypto.randomUUID(); state.memoryNotice = '已删除记录，后续生成不会恢复或自动保存它。'
       })
     },
@@ -158,12 +164,32 @@ export function createReplyAssistant(adapter: {
         if (current !== operation) return
         state.capabilities = caps
         if (caps.memory_enabled && bridge.memory && state.memoryEnabled !== false && !state.inquiry) {
-          try {
-            const created = await memory({ operation: 'create', conversation_id: createId })
-            if (current !== operation) return
-            state.inquiry = created.inquiry
-          } catch (error) { state.memoryError = error instanceof Error ? error.message : 'reply_memory_update_failed' }
+          const boundId = await bridge.binding?.read().catch(() => undefined)
           if (current !== operation) return
+          let restoreFailed = false
+          if (boundId) {
+            try {
+              const restored = await memory({ operation: 'read', conversation_id: boundId })
+              if (current !== operation) return
+              state.inquiry = restored.inquiry
+            } catch (error) {
+              if (current !== operation) return
+              const code = error instanceof Error ? error.message : 'reply_memory_update_failed'
+              // A deleted or expired record is unbound so the next chat starts clean;
+              // transient failures keep the binding and skip creating a duplicate.
+              if (code === 'reply_memory_not_found') writeBinding(null)
+              else { state.memoryError = code; restoreFailed = true }
+            }
+          }
+          if (!state.inquiry && !restoreFailed) {
+            try {
+              const created = await memory({ operation: 'create', conversation_id: createId })
+              if (current !== operation) return
+              state.inquiry = created.inquiry
+              if (state.inquiry) writeBinding(state.inquiry.id)
+            } catch (error) { state.memoryError = error instanceof Error ? error.message : 'reply_memory_update_failed' }
+            if (current !== operation) return
+          }
         }
         const count = typeof options.limit === 'number' ? options.limit : caps.max_messages
         const limits = { maxMessages: Math.min(count, caps.max_messages), maxChars: caps.max_context_chars }
@@ -183,11 +209,13 @@ export function createReplyAssistant(adapter: {
         const goal = maskContacts(options.goal)
         if (options.includeDraft && Math.max(draft.length, draftIntent.length) > caps.max_draft_chars) throw new Error('reply_draft_too_long')
         if (Math.max(options.goal.length, goal.length) > caps.max_goal_chars) throw new Error('reply_goal_too_long')
+        const detected = detectedLanguage()
         const frozen: ReplyRequest = {
           request_id: crypto.randomUUID(), conversation_epoch: epoch, context_version: contextVersion, draft_version: draftVersion,
           messages: context.messages, context_scope: context.context_scope,
           draft_intent: draftIntent, target_language: options.language,
           fallback_language: fallback(), goal, style,
+          ...(detected ? { detected_language: detected } : {}),
           ...(state.inquiry ? { memory_conversation_id: state.inquiry.id, memory_revision: state.inquiry.revision } : {}),
         }
         request = frozen

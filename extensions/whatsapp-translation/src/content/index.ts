@@ -11,6 +11,7 @@ import { adapterFor } from '@/whatsapp/adapter'
 import { DEFAULT_OUTGOING_LANGUAGE, TARGET_LANGUAGES } from '@/shared/contracts'
 import type { TargetLanguage } from '@/shared/contracts'
 import type { RuntimeRequest, RuntimeResponse } from '@/shared/contracts'
+import type { MemoryCommand } from '@/shared/replyMemory'
 import type { IncomingBridge, IncomingBridgeRequest } from '@/content/incomingTranslator'
 import type { OutgoingBridge, OutgoingBridgeRequest } from '@/content/outgoingComposer'
 
@@ -75,6 +76,7 @@ function startContentScript(): void {
   let messageElements = adapter.messageElements()
   let chatKind = adapter.inspectChat().kind
   let currentTitle = ''
+  let detectedLanguage = ''
   let controller: ReturnType<typeof createComposerController> | undefined
   let reply: ReturnType<typeof createReplyAssistant> | undefined
   let composerElement: Element | null = null
@@ -84,6 +86,7 @@ function startContentScript(): void {
   }, {
     onDetectedLanguage: (_message, language) => {
       if (adapter.isCollectingHistory() || !TARGET_LANGUAGES.includes(language as TargetLanguage)) return
+      detectedLanguage = language
       if (language !== outgoingComposer.getTargetLanguage()) reply?.optionsChanged()
       void controller?.onLanguageChange(language)
     },
@@ -95,6 +98,29 @@ function startContentScript(): void {
     reply?.draftChanged()
     outgoingComposer.invalidateDraft()
     controller?.onComposerInput()
+  }
+
+  async function memoryCommand(payload: MemoryCommand) {
+    const response = await send({ type: 'reply/memory', payload })
+    if (response?.type !== 'reply/memory') throw bridgeError(response)
+    return response.result
+  }
+
+  // Bindings key inquiries by the salted chat-title hash; the title never leaves the page.
+  const memoryBinding = {
+    async read(): Promise<string | null> {
+      const chatTitle = adapter.chatTitle()
+      if (!chatTitle) return null
+      const response = await send({ type: 'reply/memory-binding/get', chatTitle })
+      if (response?.type !== 'reply/memory-binding/get') throw bridgeError(response)
+      return response.inquiryId
+    },
+    async write(inquiryId: string | null): Promise<void> {
+      const chatTitle = adapter.chatTitle()
+      if (!chatTitle) return
+      const response = await send({ type: 'reply/memory-binding/set', chatTitle, inquiryId })
+      if (response?.type !== 'reply/memory-binding/set') throw bridgeError(response)
+    },
   }
 
   function watchComposer(): void {
@@ -198,11 +224,8 @@ function startContentScript(): void {
       },
     })
     reply = createReplyAssistant(adapter, {
-      async memory(payload) {
-        const response = await send({ type: 'reply/memory', payload })
-        if (response?.type !== 'reply/memory') throw bridgeError(response)
-        return response.result
-      },
+      memory: memoryCommand,
+      binding: memoryBinding,
       async capabilities() {
         const response = await send({ type: 'reply/capabilities' })
         if (response?.type !== 'reply/capabilities') throw bridgeError(response)
@@ -213,15 +236,17 @@ function startContentScript(): void {
         if (response?.type !== 'reply/suggest') throw bridgeError(response)
         return response.result
       },
-    }, () => outgoingComposer.getTargetLanguage() as TargetLanguage, state => replyView.render(state))
+    }, () => outgoingComposer.getTargetLanguage() as TargetLanguage, state => replyView.render(state), () => detectedLanguage)
     auto = createAutoReply({
       snapshot: () => adapter.autoSnapshot(),
       collect: (caps, current) => adapter.collectReplyHistory({ maxMessages: caps.max_messages, maxChars: caps.max_context_chars }, current, () => {}),
       send: (text, current) => adapter.sendAutomatic(text, current),
     }, {
+      memory: memoryCommand,
+      binding: memoryBinding,
       async capabilities() { const response = await send({ type: 'reply/capabilities' }); if (response?.type !== 'reply/capabilities') throw bridgeError(response); return response.reply },
       async suggest(payload) { const response = await send({ type: 'reply/suggest', payload }); if (response?.type !== 'reply/suggest') throw bridgeError(response); return response.result },
-    }, () => ({ language: replyView.options().language, fallback: outgoingComposer.getTargetLanguage() as TargetLanguage, goal: replyView.options().goal }), state => { view.setAutoStatus?.(state.active, state.note, state); if (!state.active) releaseAuto?.() })
+    }, () => ({ language: replyView.options().language, fallback: outgoingComposer.getTargetLanguage() as TargetLanguage, goal: replyView.options().goal, detected: detectedLanguage }), state => { view.setAutoStatus?.(state.active, state.note, state); if (!state.active) releaseAuto?.() })
     controller.reset()
     watchComposer()
   }
@@ -248,6 +273,7 @@ function startContentScript(): void {
       chatRoot = currentChatRoot
       conversationElement = nextConversation
       chatKind = nextKind
+      detectedLanguage = ''
       translator.chatChanged()
       outgoingComposer.invalidateChat()
       reply?.chatChanged()

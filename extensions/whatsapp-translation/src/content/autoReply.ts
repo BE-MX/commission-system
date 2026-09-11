@@ -4,6 +4,8 @@ import type { ReplyCapabilities, ReplyRequest, ReplyResponse, TargetLanguage } f
 import { maskContacts } from '@/whatsapp/replyContext'
 import type { ReplyContext } from '@/whatsapp/replyContext'
 import { boundedReplyCapabilities, validReplyResponse } from '@/shared/replyValidation'
+import { validMemoryResult } from '@/shared/replyMemory'
+import type { MemoryCommand, MemoryResult } from '@/shared/replyMemory'
 
 export type AutoSnapshot = { identity: unknown[]; tail: string; incoming: string; role?: string; draft: string }
 export type AutoState = { active: boolean; busy: boolean; note: string; segments: string[]; sentCount: number; knowledgeNote?: string }
@@ -11,21 +13,52 @@ export function createAutoReply(adapter: {
   snapshot: () => AutoSnapshot
   collect: (caps: ReplyCapabilities, current: () => boolean) => Promise<ReplyContext>
   send: (text: string, current: () => boolean) => Promise<boolean>
-}, bridge: { capabilities: () => Promise<unknown>; suggest: (request: ReplyRequest) => Promise<ReplyResponse> },
-options: () => { language: 'auto' | TargetLanguage; fallback: TargetLanguage; goal: string }, changed: (state: AutoState) => void,
+}, bridge: { capabilities: () => Promise<unknown>; suggest: (request: ReplyRequest) => Promise<ReplyResponse>
+  memory?: (command: MemoryCommand) => Promise<MemoryResult>
+  binding?: { read: () => Promise<string | null>; write: (inquiryId: string | null) => Promise<void> } },
+options: () => { language: 'auto' | TargetLanguage; fallback: TargetLanguage; goal: string; detected?: string }, changed: (state: AutoState) => void,
 wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))) {
   let state: AutoState = { active: false, busy: false, note: '', segments: [], sentCount: 0 }
   let collecting = false
   let revision = 0, timer: ReturnType<typeof setInterval> | undefined
   let identity: unknown[] = [], incoming = '', settledAt = 0, processed = '', epoch = ''
+  let memory: { id: string; revision: number } | undefined
+  let memoryReady = true
   const paint = () => changed({ ...state })
   const sameChat = (snapshot: AutoSnapshot) => identity.every((v, i) => snapshot.identity[i] === v)
   function stop(note = '自动接管已关闭') {
     revision++; state.active = false; state.note = note
     if (timer) clearInterval(timer); timer = undefined; paint()
   }
+  // Auto takeover only ever reads inquiry memory; creating and committing stay manual.
+  async function readInquiry(id: string) {
+    const command: MemoryCommand = { operation: 'read', conversation_id: id }
+    const result = await bridge.memory!(command)
+    if (!validMemoryResult(result, command)) throw new Error('reply_invalid_response')
+    return result.inquiry!
+  }
+  async function initMemory(version: number) {
+    try {
+      const boundId = await bridge.binding!.read()
+      if (!state.active || revision !== version) return
+      if (!boundId) { state.note = '未绑定询盘记忆，自动接管无跨轮记忆；在话术面板生成一次即可建立。'; paint(); return }
+      const inquiry = await readInquiry(boundId)
+      if (!state.active || revision !== version) return
+      memory = { id: inquiry.id, revision: inquiry.revision }
+    } catch (error) {
+      if (!state.active || revision !== version) return
+      const code = error instanceof Error ? error.message : ''
+      if (code === 'reply_memory_not_found' || code === 'reply_memory_disabled') {
+        memory = undefined
+        void bridge.binding!.write(null).catch(() => undefined)
+        state.note = '未绑定询盘记忆，自动接管无跨轮记忆；在话术面板生成一次即可建立。'; paint()
+      }
+    } finally {
+      if (revision === version) memoryReady = true
+    }
+  }
   async function run() {
-    if (!state.active || state.busy || Date.now() - settledAt < 3000 || incoming === processed) return
+    if (!state.active || state.busy || !memoryReady || Date.now() - settledAt < 3000 || incoming === processed) return
     state.busy = true; state.segments = []; state.sentCount = 0; state.knowledgeNote = ''; state.note = '正在生成回复…'; paint()
     const version = revision
     const current = () => state.active && revision === version && sameChat(adapter.snapshot())
@@ -50,6 +83,8 @@ wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))) {
         mode: 'auto', request_id: crypto.randomUUID(), conversation_epoch: epoch,
         context_version: version, draft_version: 0, messages: context.messages, context_scope: context.context_scope,
         draft_intent: '', target_language: selected.language, fallback_language: selected.fallback, goal: maskContacts(selected.goal), style: 'default',
+        ...(selected.detected ? { detected_language: selected.detected } : {}),
+        ...(memory ? { memory_conversation_id: memory.id, memory_revision: memory.revision } : {}),
       }
       const observed = adapter.snapshot()
       if (observed.role !== 'customer') { processed = incoming; state.note = '检测到卖方已回复，等待客户新消息'; return }
@@ -57,6 +92,14 @@ wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))) {
       const response = await bridge.suggest(request)
       if (!current()) return
       if (!validReplyResponse(response, request) || response.status !== 'ready') throw new Error('回复格式异常，已停止接管')
+      if (response.memory_error === 'reply_memory_conflict' && memory) {
+        // This round used degraded memory; refresh the revision so the next round rejoins.
+        const stale = memory
+        void readInquiry(stale.id).then(fresh => { if (state.active && memory === stale) stale.revision = fresh.revision }).catch(() => undefined)
+      } else if ((response.memory_error === 'reply_memory_not_found' || response.memory_error === 'reply_memory_disabled') && memory) {
+        memory = undefined
+        void bridge.binding?.write(null).catch(() => undefined)
+      }
       if (response.auto_action === 'handoff') {
         if (response.risk_flags.includes('auto_reply_review_required')) state.segments = [response.reply_text]
         stop('需要人工处理：' + response.rationale_zh); return
@@ -109,6 +152,8 @@ wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))) {
       const snapshot = adapter.snapshot()
       if (snapshot.draft) { stop('请先处理输入框草稿，再开启自动接管'); return }
       identity = snapshot.identity; incoming = snapshot.incoming; processed = ''; epoch = crypto.randomUUID(); revision++
+      memory = undefined
+      if (bridge.binding && bridge.memory) { memoryReady = false; void initMemory(revision) }
       settledAt = Date.now(); state = { active: true, busy: false, note: '已开启，仅当前聊天自动回复；可随时关闭', segments: [], sentCount: 0 }; paint()
       timer = setInterval(tick, 1000)
     },
