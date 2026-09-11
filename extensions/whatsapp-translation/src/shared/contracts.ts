@@ -112,6 +112,7 @@ export function languageLabel(code: string): string {
 }
 
 export type RuntimeRequest =
+  | { type: 'reply/memory'; payload: import('./replyMemory').MemoryCommand }
   | { type: 'reply/suggest'; payload: ReplyRequest }
   | { type: 'reply/capabilities' }
   | { type: 'reply/disclosure'; acknowledged?: true }
@@ -127,6 +128,7 @@ export type RuntimeRequest =
   | { type: 'translation/outgoing'; request_id: string; sourceLanguage: string; targetLanguage: string; text: string }
 
 export type RuntimeResponse =
+  | { type: 'reply/memory'; result: import('./replyMemory').MemoryResult }
   | { type: 'reply/suggest'; result: ReplyResponse }
   | { type: 'reply/capabilities'; reply?: ReplyCapabilities }
   | { type: 'reply/disclosure'; acknowledged: boolean }
@@ -158,6 +160,8 @@ export type ReplyCapabilities = {
   max_draft_chars: number
   max_goal_chars: number
   timeout_seconds: number
+  memory_enabled?: boolean
+  memory_retention_days?: number
 }
 export type ReplyStyle = 'default' | 'shorter' | 'softer' | 'alternative'
 export type ReplyRequest = {
@@ -172,6 +176,8 @@ export type ReplyRequest = {
   fallback_language: TargetLanguage
   style: ReplyStyle
   goal: string
+  memory_conversation_id?: string | null
+  memory_revision?: number
 }
 export type ReplyResponse = Pick<ReplyRequest, 'request_id' | 'conversation_epoch' | 'context_version' | 'draft_version'> & {
   status: 'ready' | 'needs_confirmation' | 'insufficient_context'
@@ -183,4 +189,10 @@ export type ReplyResponse = Pick<ReplyRequest, 'request_id' | 'conversation_epoc
   claims: { text: string; source_index: number; quote: string }[]
   risk_flags: string[]
   missing_information: string[]
+  action?: import('./replyMemory').ReplyAction | null
+  memory_conversation_id?: string | null
+  memory_revision?: number
+  memory_update?: import('./replyMemory').InquiryEntry[]
+  handoff?: import('./replyMemory').HandoffSummary
+  materials?: { document_id: number; revision_id: number; title: string; text: string; applicability: string }[]
 }

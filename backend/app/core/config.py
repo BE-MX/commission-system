@@ -252,6 +252,8 @@ class Settings(BaseSettings):
     WHATSAPP_REPLY_RATE_PER_MINUTE: _PositiveInt = 6
     WHATSAPP_REPLY_MAX_CONTEXT_CHARS: _PositiveInt = 12000
     WHATSAPP_REPLY_SOURCE_BINDINGS: list[dict] = []
+    WHATSAPP_REPLY_MEMORY_ENABLED: bool = True
+    WHATSAPP_REPLY_MEMORY_RETENTION_DAYS: int = Field(default=30, ge=1, le=90)
     # ── 运行与自动化中心（健康检查仅允许由部署环境配置，不接受网页输入）────
     OPERATIONS_PROBE_TIMEOUT_SECONDS: float = 3.0
     OPERATIONS_CACHE_TTL_SECONDS: float = 20.0

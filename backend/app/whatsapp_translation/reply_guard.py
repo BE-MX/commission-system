@@ -2,6 +2,7 @@
 
 import json
 import re
+from difflib import SequenceMatcher
 
 from pydantic import ValidationError
 
@@ -16,6 +17,7 @@ RISK_FLAGS = {
     "internal_confirmation_required", "alternative_not_supported", "no_public_facts",
 }
 CONTACT = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|(?<!\w)\+?\d[\d ()-]{7,}\d(?!\w)")
+SPECIFICATION = re.compile(r"\d+(?:[.,]\d+)?\s*(?:inch(?:es)?\b|in\b|cm\b|mm\b|g\b|grams?\b|Zoll\b|英寸|厘米|SKUs?\b|units?\b|pieces?\b|pcs\b|models?\b|件|款)", re.I)
 LINK_OR_MARKUP = re.compile(r"https?://|www\.|<[^>]+>|\[(?:name|price|date|customer|姓名|价格|日期)[^\]]*\]", re.I)
 UNSAFE = re.compile(
     r"[$€£¥]|\b(?:USD|EUR|GBP|RMB)\b|\d\s*%|"
@@ -67,6 +69,11 @@ def validate_plan(content, request) -> ReplyPlan:
             raise error("reply_invalid_evidence", 502)
         if item.kind in {"confirmed_need", "buyer_action"} and item.role != "customer":
             raise error("reply_invalid_evidence", 502)
+    for indices, role in ((plan.unanswered_requests, "customer"), (plan.answered_questions, "salesperson")):
+        if len(indices) != len(set(indices)) or any(index < 0 or index >= len(request.messages) or request.messages[index].role != role for index in indices):
+            raise error("reply_invalid_evidence", 502)
+    if plan.action.kind == "close" and plan.action.question:
+        raise error("reply_invalid_response", 502)
     return plan
 
 
@@ -102,7 +109,7 @@ def _script_matches(text: str, language: str) -> bool:
     return True
 
 
-def validate_output(content, language: str, sources: list[dict], request) -> ReplyOutput:
+def validate_output(content, language: str, sources: list[dict], request, *, memory=(), plan=None) -> ReplyOutput:
     output = parse_json(content, ReplyOutput)
     if output.reply_language != language or not _script_matches(output.reply_text, language):
         raise error("reply_language_mismatch", 502)
@@ -134,12 +141,43 @@ def validate_output(content, language: str, sources: list[dict], request) -> Rep
     # Quantities may repeat a customer's product specification, never a seller's
     # old quote or draft intent. A number alone is not evidence for a new claim.
     customer_specs = " ".join(message.text for message in request.messages if message.role == "customer")
+    # Only the current evidence of an active customer need, not superseded values,
+    # seller promises or generated summaries, can supply a remembered quantity.
+    customer_specs += " " + " ".join(
+        item["evidence"][-1]["quote"] for item in memory
+        if item["kind"] == "need" and item["status"] in {"confirmed", "tentative"}
+        and item["evidence"] and item["evidence"][-1]["role"] == "customer"
+    )
+    customer_specs += " " + " ".join(item["human_note"] for item in memory
+                                       if item["kind"] == "need" and item["status"] == "human_confirmed")
+    # An older quote still appearing in the visible window does not revive a
+    # superseded value in that same need. Independent active needs can share it.
+    retired_specs, active_specs = set(), set()
+    for item in memory:
+        if item["kind"] != "need" or not item["evidence"]:
+            continue
+        active_text = item["human_note"] if item["status"] == "human_confirmed" else item["evidence"][-1]["quote"]
+        if item["status"] != "cancelled":
+            active_specs.update(match.group().casefold() for match in SPECIFICATION.finditer(active_text))
+        historical = item["evidence"] if item["status"] in {"cancelled", "human_confirmed"} else item["evidence"][:-1]
+        retired_specs.update(match.group().casefold() for source in historical for match in SPECIFICATION.finditer(source["quote"]))
     for match in re.finditer(r"\d+(?:[.,]\d+)?", output.reply_text):
         rest = output.reply_text[match.end():]
-        unit = re.match(r"\s*(?:inch(?:es)?|in\b|cm\b|mm\b|g\b|grams?\b|Zoll\b|英寸|厘米)", rest, re.I)
+        unit = re.match(r"\s*(?:inch(?:es)?\b|in\b|cm\b|mm\b|g\b|grams?\b|Zoll\b|英寸|厘米|SKUs?\b|units?\b|pieces?\b|pcs\b|models?\b|件|款)", rest, re.I)
         specification = match.group() + (unit.group() if unit else "")
-        if not unit or specification.casefold() not in customer_specs.casefold():
+        if not unit or specification.casefold() not in customer_specs.casefold() or specification.casefold() in retired_specs - active_specs:
             raise error("reply_unsupported_number", 502)
+    if plan is not None:
+        answered = [request.messages[index].text for index in plan.answered_questions]
+        answered += [entry["evidence"][0]["quote"] for entry in memory
+                     if entry["kind"] == "question" and entry["status"] in {"answered", "human_completed"} and entry["evidence"]]
+        normalize = lambda text: re.sub(r"[^\w\s]", "", text.casefold()).strip()
+        questions = re.findall(r"[^.!?。！？]*[?？]", output.reply_text)
+        if any(SequenceMatcher(None, normalize(question), normalize(previous)).ratio() >= 0.82
+               for question in questions for previous in answered):
+            raise error("reply_repeated_question", 502)
+        if plan.action.kind == "close" and questions:
+            raise error("reply_invalid_response", 502)
     # A source may guide strategy, but its internal wording must not be copied to
     # the external draft. Cross-language disclosure remains a semantic test gate.
     normalized_reply = re.sub(r"\s+", " ", output.reply_text).casefold()

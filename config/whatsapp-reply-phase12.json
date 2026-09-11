@@ -1,0 +1,285 @@
+[
+  {
+    "document_id": 350,
+    "revision_id": 374,
+    "section_index": 5,
+    "content_hash": "39d84c95a5f72f48dcfbc7eea8dcd7a69619df3c60f415e8664e49b20690fc9a",
+    "purpose": "constraint",
+    "mandatory": true,
+    "policy_version": "reply-phase12-reviewed-20260908",
+    "aliases": [],
+    "applicability": "",
+    "shareable_text": false
+  },
+  {
+    "document_id": 351,
+    "revision_id": 378,
+    "section_index": 5,
+    "content_hash": "4f8bac5b1835bcd28b2de60a8c56c68c617a6b6ed3167ef0eedcaabd0db38c85",
+    "purpose": "constraint",
+    "mandatory": true,
+    "policy_version": "reply-phase12-reviewed-20260908",
+    "aliases": [],
+    "applicability": "",
+    "shareable_text": false
+  },
+  {
+    "document_id": 398,
+    "revision_id": 488,
+    "section_index": 1,
+    "content_hash": "b896189c659c05bf25167edc445603aaefdc07b67965dc233592513ec43d2cea",
+    "purpose": "constraint",
+    "mandatory": true,
+    "policy_version": "reply-phase12-reviewed-20260908",
+    "aliases": [],
+    "applicability": "",
+    "shareable_text": false
+  },
+  {
+    "document_id": 398,
+    "revision_id": 488,
+    "section_index": 9,
+    "content_hash": "3475866b34c37ffd8877ab11cd597a3cd65bfbc764ef8159c1beb0dee4b18955",
+    "purpose": "method",
+    "mandatory": false,
+    "policy_version": "reply-phase12-reviewed-20260908",
+    "aliases": [],
+    "applicability": "",
+    "shareable_text": false
+  },
+  {
+    "document_id": 398,
+    "revision_id": 488,
+    "section_index": 16,
+    "content_hash": "e621ecc1a2af2fdd161284a58f13856b2f945a7a18f80f3ee0e4c0b6b0427761",
+    "purpose": "method",
+    "mandatory": false,
+    "policy_version": "reply-phase12-reviewed-20260908",
+    "aliases": [],
+    "applicability": "",
+    "shareable_text": false
+  },
+  {
+    "document_id": 398,
+    "revision_id": 488,
+    "section_index": 21,
+    "content_hash": "bfdc276348c9cae4f7c9556081ab84bed69cd717c9827100510681a92e8d29cf",
+    "purpose": "method",
+    "mandatory": false,
+    "policy_version": "reply-phase12-reviewed-20260908",
+    "aliases": [],
+    "applicability": "",
+    "shareable_text": false
+  },
+  {
+    "document_id": 398,
+    "revision_id": 488,
+    "section_index": 22,
+    "content_hash": "322552e1a4c08a82f3fbbe42efd8cea1c2e39163cc4338d644aecd5208706fbd",
+    "purpose": "method",
+    "mandatory": false,
+    "policy_version": "reply-phase12-reviewed-20260908",
+    "aliases": [],
+    "applicability": "",
+    "shareable_text": false
+  },
+  {
+    "document_id": 398,
+    "revision_id": 488,
+    "section_index": 28,
+    "content_hash": "22b46396a67c12b09de7bf0119e58043fca1beed4963facdbe28832075b5ca64",
+    "purpose": "method",
+    "mandatory": false,
+    "policy_version": "reply-phase12-reviewed-20260908",
+    "aliases": [],
+    "applicability": "",
+    "shareable_text": false
+  },
+  {
+    "document_id": 398,
+    "revision_id": 488,
+    "section_index": 29,
+    "content_hash": "5eea6bdaad7cf15bebd509c18c2c0de9b7b2ab000047caa5d904c524bd23e610",
+    "purpose": "method",
+    "mandatory": false,
+    "policy_version": "reply-phase12-reviewed-20260908",
+    "aliases": [],
+    "applicability": "",
+    "shareable_text": false
+  },
+  {
+    "document_id": 398,
+    "revision_id": 488,
+    "section_index": 31,
+    "content_hash": "f93cebe264322a7b4b43e59f1be04448c14488a252cacc124c5d20f9afa0326e",
+    "purpose": "method",
+    "mandatory": false,
+    "policy_version": "reply-phase12-reviewed-20260908",
+    "aliases": [],
+    "applicability": "",
+    "shareable_text": false
+  },
+  {
+    "document_id": 398,
+    "revision_id": 488,
+    "section_index": 33,
+    "content_hash": "c42e3c36044dde22e645f4ef4c274c5d27b6e66d30743cddb4e1c6c9e0a18029",
+    "purpose": "method",
+    "mandatory": false,
+    "policy_version": "reply-phase12-reviewed-20260908",
+    "aliases": [],
+    "applicability": "",
+    "shareable_text": false
+  },
+  {
+    "document_id": 398,
+    "revision_id": 488,
+    "section_index": 39,
+    "content_hash": "6c1511e46710ac4d680c8679c779940aa04916fbd709e6fc47efdbde30a6b2a0",
+    "purpose": "method",
+    "mandatory": false,
+    "policy_version": "reply-phase12-reviewed-20260908",
+    "aliases": [],
+    "applicability": "",
+    "shareable_text": false
+  },
+  {
+    "document_id": 341,
+    "revision_id": 363,
+    "section_index": 1,
+    "content_hash": "c11b42e4e2da83f5c9a1a0f17293b385fac1cdd330079c085386280c34334d8d",
+    "purpose": "public_fact",
+    "mandatory": false,
+    "policy_version": "reply-phase12-reviewed-20260908",
+    "aliases": [
+      "供体",
+      "单供体",
+      "混合供体",
+      "single donor",
+      "mixed donor"
+    ],
+    "applicability": "标准成品接发；不能把特例 single-donor 概括为全产品。",
+    "shareable_text": true
+  },
+  {
+    "document_id": 341,
+    "revision_id": 363,
+    "section_index": 3,
+    "content_hash": "88415dda11eda05142260e10b8f2a61c80e1acfc43ddff3ebf1d84ff65112243",
+    "purpose": "public_fact",
+    "mandatory": false,
+    "policy_version": "reply-phase12-reviewed-20260908",
+    "aliases": [
+      "双抽",
+      "发尾",
+      "丰盈",
+      "double drawn",
+      "fullness"
+    ],
+    "applicability": "按约定等级、规格和封样说明发尾比例；不承诺具体库存或价格。",
+    "shareable_text": true
+  },
+  {
+    "document_id": 341,
+    "revision_id": 363,
+    "section_index": 6,
+    "content_hash": "5d3849fac1fbdc1784e8db5e89a0057c85fb74194bb1e1b285658b22f03aaf6a",
+    "purpose": "public_fact",
+    "mandatory": false,
+    "policy_version": "reply-phase12-reviewed-20260908",
+    "aliases": [
+      "硅油",
+      "涂层",
+      "silicone",
+      "softness"
+    ],
+    "applicability": "说明公开的处理方式；不推出永久柔顺或使用寿命保证。",
+    "shareable_text": true
+  },
+  {
+    "document_id": 341,
+    "revision_id": 363,
+    "section_index": 7,
+    "content_hash": "89f83b089035dbd19009285e8e069d73fcf5acc1675920778fe0887d8030a21e",
+    "purpose": "public_fact",
+    "mandatory": false,
+    "policy_version": "reply-phase12-reviewed-20260908",
+    "aliases": [
+      "原发长度",
+      "长度标准",
+      "donor length",
+      "hair length"
+    ],
+    "applicability": "原发长度因批次变化；成品按规格和封样，不给通用平均长度。",
+    "shareable_text": true
+  },
+  {
+    "document_id": 341,
+    "revision_id": 363,
+    "section_index": 9,
+    "content_hash": "fa1367286dd17628b5affb1470ddce1b1307944bd918ebebc613d979f32985e6",
+    "purpose": "public_fact",
+    "mandatory": false,
+    "policy_version": "reply-phase12-reviewed-20260908",
+    "aliases": [
+      "实验室",
+      "测试",
+      "检测",
+      "laboratory",
+      "testing"
+    ],
+    "applicability": "客户可自行安排样品检测；不声称已有特定认证或免费检测。",
+    "shareable_text": true
+  },
+  {
+    "document_id": 343,
+    "revision_id": 366,
+    "section_index": 0,
+    "content_hash": "b0486389118d5cf5c7eb4b694492728ee67c0090092b4878f6b7b7a33cec5029",
+    "purpose": "public_fact",
+    "mandatory": false,
+    "policy_version": "reply-phase12-reviewed-20260908",
+    "aliases": [
+      "定制颜色",
+      "色样",
+      "custom colors",
+      "custom shades"
+    ],
+    "applicability": "基于实物色样开发并封样；不承诺时间、价格、色号独家。",
+    "shareable_text": true
+  },
+  {
+    "document_id": 343,
+    "revision_id": 366,
+    "section_index": 1,
+    "content_hash": "fe8f76e17f3f51420de34b474d1c2da1f2b2d09b68d530ff2a78e1a012c7d72f",
+    "purpose": "public_fact",
+    "mandatory": false,
+    "policy_version": "reply-phase12-reviewed-20260908",
+    "aliases": [
+      "配色",
+      "颜色匹配",
+      "color matching",
+      "colour reference"
+    ],
+    "applicability": "实物参考和前批次比对流程；不构成无色差保证。",
+    "shareable_text": true
+  },
+  {
+    "document_id": 343,
+    "revision_id": 366,
+    "section_index": 2,
+    "content_hash": "3d441ec4373ca7efa66cb292627560e95fb52951373bc9ff7f7b143a0633339f",
+    "purpose": "public_fact",
+    "mandatory": false,
+    "policy_version": "reply-phase12-reviewed-20260908",
+    "aliases": [
+      "批次色差",
+      "色差仪",
+      "color consistency",
+      "batch variation"
+    ],
+    "applicability": "天然材料色差按约定容差控制；不得承诺完全一致。",
+    "shareable_text": true
+  }
+]

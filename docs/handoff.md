@@ -1,3 +1,13 @@
+## 2026-09-08 WhatsApp 话术第一、第二阶段（Codex，本地实现待发布）
+
+分支 `codex/whatsapp-reply-continuity`，基点 `060cef69`。Planner 增加具体动作、未回应请求、已问问题与消息证据；Generator 优先回应客户当前诉求。知识配置增加8段已核对的公开FAQ，方法/政策不能当作对客事实；资料只输出授权FAQ片段，尚未接入实际目录/PDF或业务工具。
+
+新增询盘复盘、承诺台账、人工纠正和内部接管。用户/配对设备隔离，默认保留30天，切换聊天后需预览确认恢复；不按姓名自动关联。生成只产生候选，独立提交采用缓存证据、版本和实例UUID的原子条件，人工纠正及删除重建不能被旧响应覆盖。新增迁移143，只在隔离SQLite验证；线上未迁移、未修改配置或知识正文。
+
+验证：话术后端全套144 passed / 1 skipped（真实模型测试未启用）；扩展214 passed，浏览器17 passed，构建及1.4.0打包成功。独立审查发现的人工优先、异步写回及删除重建并发问题已修复并复查通过。迁移测试核验SQLite保留数据/拒绝有损回退及MySQL unsigned FK DDL；未做真实MySQL并发和实际WhatsApp线上验证。知识20个绑定的ACL/版本/hash及4类检索已用只读事务核验。
+
+交付说明见 `docs/requirements/2026-09-08-whatsapp-reply-continuity.md`。安装包及配置片段在用户工作区 `outputs/whatsapp-reply-phase12/`。后续上线须通过统一部署入口执行143，应用审核后的绑定配置并核对已有Planner预设预算3200；安装新扩展不能替代后端发布。本轮未合并、push或部署。
+
 ## 2026-09-08 WhatsApp 生成依据契约（Codex，合并交付）
 
 分支 `codex/whatsapp-reply-evidence-contract`，基点 `cda42155`。针对仅有 method/constraint 时模型仍尝试引用而触发依据校验：生成输入显式携带原始来源编号及可引用事实编号，动态 schema 限定允许编号、无事实时要求空 claims；提示词区分方法、约束与对客事实。不改 guard、不剥除引用、不自动重试，不涉及数字校验或启动权限自动授予问题。

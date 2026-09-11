@@ -45,6 +45,7 @@ export class WhatsAppAdapter {
     return normalizeComposerText(composers[0].textContent ?? '')
   }
   conversationElement(): Element | null { return this.root.querySelector(WHATSAPP_SELECTORS.conversationTitle) }
+  messageElements(): Element[] { return [...this.root.querySelectorAll(WHATSAPP_SELECTORS.message)] }
 
   composerElement(): Element | null { return this.root.querySelector(WHATSAPP_SELECTORS.composer) }
   hasToolbar(): boolean { return !!this.root.querySelector(`[${ARK_MARKS.toolbarHost}="1"]`) }
@@ -52,6 +53,9 @@ export class WhatsAppAdapter {
 
   /** Version observation excludes extension UI while retaining edits even when reverted. */
   isComposerMutation(record: MutationRecord): boolean {
+    // Lexical changes presentation styles on blur (including opening our
+    // details). That is not a draft edit; text/input and editability still count.
+    if (record.type === 'attributes' && ['style', 'class'].includes(record.attributeName ?? '')) return false
     const composer = this.composerElement()
     return !!composer && (record.target === composer || composer.contains(record.target))
   }

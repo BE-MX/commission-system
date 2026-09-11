@@ -120,6 +120,11 @@ export async function translate(
 }
 
 export const apiClient = {
+  memory: async (token: string, extensionVersion: string, payload: import('@/shared/replyMemory').MemoryCommand): Promise<import('@/shared/replyMemory').MemoryResult> => {
+    return await request('/reply-memory', {
+      body: JSON.stringify(payload), headers: headers(token, extensionVersion), method: 'POST', cache: 'no-store',
+    })
+  },
   suggestReply: async (token: string, extensionVersion: string, payload: ReplyRequest): Promise<ReplyResponse> => {
     const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo(() => { void chrome.runtime.lastError }), 25_000)
     try {

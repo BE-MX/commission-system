@@ -30,6 +30,8 @@ def plan(**overrides):
         "blocker": "尚未确认安装方式", "goal": "确认所需安装方式", "strategy": "先回答再确认用途",
         "completion_signal": "客户确认安装方式",
         "evidence": [{"message_index": 0, "role": "customer", "kind": "confirmed_need", "summary": "客户询问轻薄发帘"}],
+        "action": {"kind": "clarify", "focus": "确认安装方式", "question": "Which installation method do you prefer?", "owner": "customer", "completion_signal": "客户确认安装方式"},
+        "memory_changes": [], "unanswered_requests": [0], "answered_questions": [],
     }, **overrides}
 
 

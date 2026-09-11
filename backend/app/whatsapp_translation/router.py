@@ -24,6 +24,8 @@ from app.whatsapp_translation.schemas import PairingCodeRequest, PairingCreate
 from app.whatsapp_translation import service, translation_service
 from app.whatsapp_translation import reply_service
 from app.whatsapp_translation.reply_schemas import ReplyRequest
+from app.whatsapp_translation.reply_memory_schemas import MemoryCommand
+from app.whatsapp_translation.reply_memory import handle_memory
 
 
 router = APIRouter(tags=["WhatsApp 实时翻译"])
@@ -146,6 +148,15 @@ def reply_suggestions_route(payload: ReplyRequest, identity=Depends(device_ident
 @router.get("/admin/devices")
 def list_admin_devices_route(current_user=Depends(translation_permission("whatsapp_translation:admin")), db=Depends(get_db)):
     return ok(service.list_admin_devices(db))
+
+
+@router.post("/reply-memory", dependencies=[Depends(no_store)])
+def reply_memory_route(payload: MemoryCommand, identity=Depends(device_identity), db=Depends(get_db)):
+    # 鉴权豁免说明：设备 Bearer 属机器端入口；handle_memory 实时检查员工
+    # whatsapp_reply:write 及准确 user/device 归属，不接受管理员跨归属访问。
+    # Machine-to-machine device maps to a human. Service rechecks the reply grant
+    # and exact user/device ownership for every operation, including admin users.
+    return ok(handle_memory(db, identity, payload))
 
 
 @router.delete("/admin/devices/{device_id}")

@@ -1,4 +1,6 @@
 export const REPLY_ERROR_CODES = [
+  'reply_memory_disabled', 'reply_memory_not_found', 'reply_memory_conflict', 'reply_memory_full',
+  'reply_memory_human_override', 'reply_repeated_question',
   'reply_busy', 'reply_configuration_changed', 'reply_configuration_invalid', 'reply_context_too_large',
   'reply_daily_quota_exceeded', 'reply_in_progress', 'reply_internal_disclosure', 'reply_invalid_evidence',
   'reply_invalid_request', 'reply_invalid_response', 'reply_language_mismatch', 'reply_missing_evidence',
