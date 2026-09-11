@@ -10,6 +10,31 @@ def configured(db, monkeypatch):
     reply_state.reply_cache.clear()
     return seed_reply(db, monkeypatch)
 
+
+def test_latest_customer_focus_and_direct_answer_instructions_reach_auto_agent(db, monkeypatch, configured):
+    from tests.reply_support import publish, binding
+    identity, _, library, _, _, settings = configured
+    admin = {'sub': str(identity.user_id), 'roles': ['super_admin']}
+    fact = publish(db, admin, library.id, 'Synthetic finish FAQ', 'Synthetic finish Z is used only after colouring.')
+    item = binding(fact, 'public_fact'); item.aliases = ['finish']
+    settings.WHATSAPP_REPLY_SOURCE_BINDINGS.append(item.model_dump())
+    focused = []
+    retrieve = reply_service.retrieve_reply_sources
+    def observed_retrieval(*args, **kwargs):
+        focused.append(kwargs['focus_query'])
+        return retrieve(*args, **kwargs)
+    monkeypatch.setattr(reply_service, 'retrieve_reply_sources', observed_retrieval)
+    calls = mock_model(monkeypatch, generator=output(auto_action='reply', reply_segments=['Synthetic finish Z is used after colouring.']))
+    result = reply_service.suggest_reply(db, identity, request(mode='auto', messages=[
+        {'role': 'salesperson', 'text': 'Historical generic extensions and donor details. ' * 150},
+        {'role': 'customer', 'text': 'What finish is used, and which specifications are offered?'},
+    ]))
+    payload = json.loads(calls[0]['messages'][1]['content'])
+    assert any(s['document_id'] == fact['document_id'] and s['purpose'] == 'public_fact' for s in payload['sources'])
+    assert '已知与未知分开处理' in calls[0]['messages'][0]['content']
+    assert result.status == 'ready'
+    assert focused == ['What finish is used, and which specifications are offered?']
+
 @pytest.mark.parametrize("text", [
     "Thanks for your message today.", "You mentioned USD 100 as your budget.",
     "I cannot guarantee delivery.", "Catalog: https://example.com/catalog",

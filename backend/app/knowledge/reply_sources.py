@@ -97,7 +97,26 @@ def resolve_binding(db, identity: dict, binding: SourceBinding, *, documents=Non
     }
 
 
-def retrieve_reply_sources(db, identity: dict, bindings: list[SourceBinding], queries: list[str]) -> tuple[list[dict], bool]:
+_QUERY_STOPWORDS = frozenset('a an the and or of to for from in on at by with is are was were be been being do does did have has had i we you your our it its this that these those what which how any all as so thank thanks please can could would should saying used stage'.split())
+
+
+def query_terms(queries: list[str]) -> set[str]:
+    return {term for query in queries for term in re.findall(r'[\w-]{2,80}', query.casefold()) if term not in _QUERY_STOPWORDS}
+
+
+def _matches(term, value):
+    if term.isascii():
+        return bool(re.search(r'(?<!\w)' + re.escape(term) + r'(?!\w)', value.casefold()))
+    return term in value.casefold()
+
+
+def _score(source, aliases, terms):
+    # Presence, not repetition: long generic paragraphs must not beat an FAQ answer.
+    return sum(3 * _matches(term, source['title']) + _matches(term, source['text'])
+               + 5 * any(_matches(term, alias) for alias in aliases) for term in terms)
+
+
+def retrieve_reply_sources(db, identity: dict, bindings: list[SourceBinding], queries: list[str], *, focus_query: str = '') -> tuple[list[dict], bool]:
     documents = {}  # This invocation only; never shared across users or requests.
     mandatory = [binding for binding in bindings if binding.mandatory and binding.purpose == "constraint"]
     if not mandatory:
@@ -109,7 +128,8 @@ def retrieve_reply_sources(db, identity: dict, bindings: list[SourceBinding], qu
     chars = sum(len(source["text"]) for source in selected)
     if len(selected) > 6 or chars > 6000:
         return [], False
-    terms = {term.casefold() for query in queries for term in re.split(r"[\s,，;/]+", query) if len(term) >= 2}
+    terms = query_terms(queries)
+    focus = query_terms([focus_query])
     # Small corpus: title-weighted lexical scoring after Chinese/alias planning.
     candidates = []
     required_keys = {(item.document_id, item.section_index) for item in mandatory}
@@ -119,13 +139,12 @@ def retrieve_reply_sources(db, identity: dict, bindings: list[SourceBinding], qu
         source = resolve_binding(db, identity, binding, documents=documents)
         if source is None:
             continue
-        score = sum(3 * (term in source["title"].casefold()) + source["text"].casefold().count(term) for term in terms)
-        score += sum(5 * any(term in alias.casefold() or alias.casefold() in term for alias in binding.aliases) for term in terms)
+        score = _score(source, binding.aliases, terms | focus)
         if score:
-            candidates.append((score, source))
+            candidates.append((_score(source, binding.aliases, focus), score, source))
     # Relevant answer evidence gets a slot before stylistic examples; otherwise
     # long method paragraphs can crowd out the product answer the customer needs.
-    for _, source in sorted(candidates, key=lambda item: (item[1]["purpose"] != "method", item[0]), reverse=True):
+    for _, _, source in sorted(candidates, key=lambda item: (item[2]["purpose"] != "method", item[0], item[1]), reverse=True):
         if len(selected) >= 6:
             break
         if chars + len(source["text"]) <= 6000:

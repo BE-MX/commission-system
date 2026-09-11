@@ -151,7 +151,7 @@ def test_missing_policy_still_provides_editable_draft_with_warning(db, setup_rep
 def test_retrieval_error_is_not_reported_as_no_knowledge(db, setup_reply, monkeypatch):
     calls = mock_model(monkeypatch)
 
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise RuntimeError("SYNTHETIC_PRIVATE_BODY")
 
     monkeypatch.setattr(reply_service, "retrieve_reply_sources", fail)

@@ -182,6 +182,24 @@
   {
     "document_id": 341,
     "revision_id": 363,
+    "section_index": 5,
+    "content_hash": "05ec59e2087da1c1e91175e3b15f6af4740e756557ea62ce53ebdbf1b3a5b8ce",
+    "purpose": "public_fact",
+    "mandatory": false,
+    "policy_version": "reply-faq-reviewed-20260911",
+    "aliases": [
+      "酸处理",
+      "酸浴",
+      "acid",
+      "acid bath",
+      "acid processing"
+    ],
+    "applicability": "仅说明已发布FAQ明确的处理方式，保留强酸浴和快速剥离等限定，不泛化为任何阶段完全无酸。",
+    "shareable_text": true
+  },
+  {
+    "document_id": 341,
+    "revision_id": 363,
     "section_index": 6,
     "content_hash": "5d3849fac1fbdc1784e8db5e89a0057c85fb74194bb1e1b285658b22f03aaf6a",
     "purpose": "public_fact",

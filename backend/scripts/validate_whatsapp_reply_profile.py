@@ -22,7 +22,7 @@ def validate_profile(db, actor, profile):
     documents = {}
     invalid = [{"document_id": b.document_id, "section_index": b.section_index}
                for b in bindings if resolve_binding(db, actor, b, documents=documents) is None]
-    queries = [["single donor"], ["custom colors"], ["实验室"], ["silicone"]]
+    queries = [["single donor"], ["custom colors"], ["实验室"], ["silicone"], ["acid"]]
     checks = []
     for query in queries:
         selected, policies = retrieve_reply_sources(db, actor, bindings, query)

@@ -152,7 +152,8 @@ def suggest_reply(db, identity, request: ReplyRequest) -> ReplyResponse:
         queries = list(dict.fromkeys(terms))[-120:]
         all_text = " ".join(m.text for m in request.messages).casefold()
         queries += [alias for binding in bindings for alias in binding.aliases if alias.casefold() in all_text]
-        sources, policies_available = retrieve_reply_sources(db, actor, bindings, queries)
+        latest_customer = next((m.text for m in reversed(request.messages) if m.role == 'customer'), '')
+        sources, policies_available = retrieve_reply_sources(db, actor, bindings, queries, focus_query=latest_customer)
         from app.whatsapp_translation.reply_direct import generate_direct
         conversation["glossary"] = glossary_for(db, direction="outgoing", text="\n".join(m.text for m in request.messages[-40:]), target_language=request.target_language if request.target_language != "auto" else request.fallback_language)
         def checked_call(*args):

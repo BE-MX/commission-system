@@ -17,6 +17,32 @@ def actor(identity):
     return {"sub": str(identity.user_id), "roles": [], "permissions": ["knowledge:read"]}
 
 
+def test_focused_questions_beat_repeated_generic_words_with_three_fact_slots(db, configured):
+    identity, _, library, _, _, settings = configured
+    admin = {"sub": str(identity.user_id), "roles": ["super_admin"]}
+    bindings = parse_bindings(settings.WHATSAPP_REPLY_SOURCE_BINDINGS)[:1]
+    for i in range(2):
+        bindings.append(binding(publish(db, admin, library.id, f'Synthetic policy {i}', 'Internal conditions.'), 'constraint', mandatory=True))
+    for i in range(4):
+        bindings.append(binding(publish(db, admin, library.id, f'Synthetic general {i}', 'We have extensions and you are welcome. ' * 20), 'public_fact'))
+    expected = set()
+    for topic in ['acid', 'silicone', 'length']:
+        document = publish(db, admin, library.id, f'Synthetic FAQ {topic}', f'Synthetic {topic} specification, subject to grade A.')
+        item = binding(document, 'public_fact'); item.aliases = [topic]; bindings.append(item); expected.add(document['document_id'])
+    question = 'Please explain the length options for extensions. Is acid used? How about silicone?'
+    sources, ready = retrieve_reply_sources(db, actor(identity), bindings, [question, 'general extensions welcome'], focus_query=question)
+    assert ready and len(sources) == 6
+    assert {s['document_id'] for s in sources if s['purpose'] == 'public_fact'} == expected
+
+
+def test_english_partial_words_do_not_match_unrelated_aliases(db, configured):
+    identity, *_, settings = configured
+    bindings = parse_bindings(settings.WHATSAPP_REPLY_SOURCE_BINDINGS)
+    bindings[1].aliases = ['showcase', 'silicone']
+    sources, ready = retrieve_reply_sources(db, actor(identity), bindings, ['how', 'on', 'cone'])
+    assert ready and len(sources) == 1
+
+
 def test_mandatory_policy_survives_irrelevant_search_terms(db, configured):
     identity, _, _, policy, _, settings = configured
     sources, ready = retrieve_reply_sources(db, actor(identity), parse_bindings(settings.WHATSAPP_REPLY_SOURCE_BINDINGS), ["nonmatching"])
