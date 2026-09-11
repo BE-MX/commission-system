@@ -37,6 +37,8 @@ from app.asset.asset_service import (  # noqa: F401
 
 # 批量服务
 from app.asset.batch_service import (  # noqa: F401
+    batch_add_tags,
+    batch_delete_assets,
     batch_download,
 )
 

@@ -98,6 +98,8 @@
       <div v-if="isBatchMode" class="batch-toolbar">
         <span class="batch-info">已选择 {{ selectedAssets.length }} 项</span>
         <GlassButton variant="primary" size="sm" :left-icon="Download" @click="handleBatchDownload">批量下载</GlassButton>
+        <GlassButton v-if="canWrite" variant="secondary" size="sm" :left-icon="CollectionTag" @click="openBatchTagEditor">批量加标签</GlassButton>
+        <GlassButton v-if="canDelete" variant="danger" size="sm" :left-icon="Delete" @click="handleBatchDelete">批量删除</GlassButton>
         <GlassButton variant="secondary" size="sm" @click="clearSelection">取消选择</GlassButton>
       </div>
 
@@ -212,6 +214,16 @@
                 <el-icon><Star /></el-icon>
               </el-button>
             </el-tooltip>
+            <el-tooltip v-if="canWrite" content="编辑标签">
+              <el-button circle @click="openTagEditor(asset)">
+                <el-icon><EditPen /></el-icon>
+              </el-button>
+            </el-tooltip>
+            <el-tooltip v-if="canDelete" content="删除">
+              <el-button circle type="danger" plain @click="handleDelete(asset)">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </el-tooltip>
           </div>
         </div>
       </div>
@@ -247,13 +259,19 @@
         <el-table-column label="上传时间" prop="created_at" min-width="160" sortable="custom">
           <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" min-width="140" fixed="right">
+        <el-table-column label="操作" min-width="200" fixed="right">
           <template #default="{ row }">
             <el-button @click.stop="handleDownload(row)">
               <el-icon><Download /></el-icon>
             </el-button>
             <el-button @click.stop="handleFavorite(row)">
               <el-icon><Star /></el-icon>
+            </el-button>
+            <el-button v-if="canWrite" title="编辑标签" @click.stop="openTagEditor(row)">
+              <el-icon><EditPen /></el-icon>
+            </el-button>
+            <el-button v-if="canDelete" type="danger" plain title="删除" @click.stop="handleDelete(row)">
+              <el-icon><Delete /></el-icon>
             </el-button>
           </template>
         </el-table-column>
@@ -303,6 +321,8 @@
             <GlassButton variant="primary" :left-icon="Download" @click="handleDownload(previewAsset)">下载</GlassButton>
             <GlassButton variant="secondary" :left-icon="Star" @click="handleFavorite(previewAsset)">收藏</GlassButton>
             <GlassButton variant="secondary" :left-icon="MagicStick" :loading="aiAnalyzing" @click="handleAiAnalyze(previewAsset)">AI 分析</GlassButton>
+            <GlassButton v-if="canWrite" variant="secondary" :left-icon="EditPen" @click="openTagEditor(previewAsset)">编辑标签</GlassButton>
+            <GlassButton v-if="canDelete" variant="danger" :left-icon="Delete" @click="handleDelete(previewAsset)">删除</GlassButton>
           </div>
         </div>
       </div>
@@ -329,6 +349,15 @@
       </template>
     </el-dialog>
 
+    <!-- 标签编辑（单个编辑 / 批量追加） -->
+    <AssetTagEditor
+      v-model:visible="tagEditorVisible"
+      :assets="tagEditorAssets"
+      :mode="tagEditorMode"
+      :dimensions="dimensions"
+      @saved="onTagsSaved"
+    />
+
   </div>
 </template>
 
@@ -338,15 +367,22 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search, Grid, List, Download, Star, Picture,
   VideoPlay, Document, Folder, MagicStick, ArrowDown,
+  EditPen, Delete, CollectionTag,
 } from '@element-plus/icons-vue'
 import {
   getAssetList, getTagDimensions, downloadAsset, getFavoriteFolders,
-  addFavoriteItem, analyzeAsset, batchDownload,
+  addFavoriteItem, analyzeAsset, batchDownload, deleteAsset, batchDeleteAssets,
 } from '@/api/asset'
+import { useAuthStore } from '@/stores/auth'
+import AssetTagEditor from './components/AssetTagEditor.vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { currentBeijingDate, formatBeijingDate } from '@/utils/datetime'
 
 const orderSort = useTableSort()
+
+const authStore = useAuthStore()
+const canWrite = computed(() => authStore.hasPermission('asset:write'))
+const canDelete = computed(() => authStore.hasPermission('asset:delete'))
 
 const loading = ref(false)
 const assets = ref([])
@@ -498,6 +534,85 @@ const previewAiTags = ref([])
 // 批量操作
 const selectedAssets = ref([])
 const isBatchMode = computed(() => selectedAssets.value.length > 0)
+
+// 标签编辑弹窗（edit=单个编辑全量回填；batch=多选批量追加）
+const tagEditorVisible = ref(false)
+const tagEditorAssets = ref([])
+const tagEditorMode = ref('edit')
+
+function openTagEditor(asset) {
+  if (!asset) return
+  tagEditorMode.value = 'edit'
+  tagEditorAssets.value = [asset]
+  tagEditorVisible.value = true
+}
+
+function openBatchTagEditor() {
+  if (!selectedAssets.value.length) return
+  tagEditorMode.value = 'batch'
+  tagEditorAssets.value = [...selectedAssets.value]
+  tagEditorVisible.value = true
+}
+
+async function onTagsSaved() {
+  await loadData()
+  // 预览弹窗还开着时同步刷新其中的标签展示
+  if (previewVisible.value && previewAsset.value) {
+    const fresh = assets.value.find(a => a.id === previewAsset.value.id)
+    if (fresh) previewAsset.value = fresh
+  }
+}
+
+// ── 删除素材 ────────────────────────────────────────────
+
+async function handleDelete(asset) {
+  if (!asset) return
+  try {
+    await ElMessageBox.confirm(
+      `确定删除「${asset.file_name}」吗？文件将被一并删除，不可恢复。`,
+      '删除素材',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await deleteAsset(asset.id)
+    ElMessage.success('已删除')
+    selectedAssets.value = selectedAssets.value.filter(a => a.id !== asset.id)
+    if (previewAsset.value?.id === asset.id) previewVisible.value = false
+    await loadData()
+  } catch (e) {
+    // 拦截器已弹出后端错误提示
+  }
+}
+
+async function handleBatchDelete() {
+  if (!selectedAssets.value.length) return
+  const count = selectedAssets.value.length
+  try {
+    await ElMessageBox.confirm(
+      `确定删除选中的 ${count} 个素材吗？文件将被一并删除，不可恢复。`,
+      '批量删除',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  try {
+    const res = await batchDeleteAssets(selectedAssets.value.map(a => a.id))
+    const data = res.data || {}
+    if (data.failed_ids?.length) {
+      ElMessage.warning(`已删除 ${data.deleted} 个，${data.failed_ids.length} 个失败`)
+    } else {
+      ElMessage.success(`已删除 ${data.deleted ?? count} 个素材`)
+    }
+    clearSelection()
+    await loadData()
+  } catch (e) {
+    // 拦截器已弹出后端错误提示
+  }
+}
 
 // 初始化维度筛选状态
 watch(dimensions, (dims) => {

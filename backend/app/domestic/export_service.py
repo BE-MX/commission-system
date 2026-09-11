@@ -107,14 +107,13 @@ def _print_chunks(
     return chunks
 
 
-def _add_full_requirements_sheet(wb: Workbook, detail: dict) -> None:
+def _append_full_requirements(ws, detail: dict, columns: tuple, start_row: int) -> int:
     rows = []
     for item in detail.get("items") or []:
         for key, label in _TEXT_FIELDS:
             if detail.get("order_kind") == "production" and key in ("hairstyle", "style_requirement"):
                 continue
             text = str(item.get(key) or "").strip()
-            columns = _PRODUCTION_COLUMNS if detail.get("order_kind") == "production" else _BUSINESS_COLUMNS
             width = next((width for field, _, width in columns if field == key), 22)
             image_overflow = item.get(_IMAGE_FIELDS[key]) and needs_image_appendix(text, width)
             if len(text) > _LONG_TEXT_THRESHOLD or image_overflow:
@@ -127,40 +126,25 @@ def _add_full_requirements_sheet(wb: Workbook, detail: dict) -> None:
             label = "订单备注" if index == 0 else "订单备注（续）"
             rows.append(("订单", label, _safe_raw_text(chunk)))
     if not rows:
-        return
+        return ws.max_row
 
-    ws = wb.create_sheet("完整要求")
-    for col, value in enumerate(("明细号", "字段", "完整内容"), start=1):
-        cell = ws.cell(1, col, value)
-        cell.font = Font(name=_FONT_NAME, size=12, bold=True)
-        cell.alignment = Alignment(horizontal="center", vertical="center")
-        cell.border = _BORDER
-    for row_idx, (line_code, label, content) in enumerate(rows, start=2):
-        for col, value in enumerate((line_code, label, content), start=1):
+    last_col = len(columns)
+    ws.merge_cells(start_row=start_row, start_column=1, end_row=start_row, end_column=last_col)
+    ws.cell(start_row, 1, "完整要求").font = Font(name=_FONT_NAME, size=12, bold=True)
+    ws.row_dimensions[start_row].height = 28
+    header_row = start_row + 1
+    content_width = sum(width for _, _, width in columns[2:])
+    for row_idx, values in enumerate([("明细号", "字段", "完整内容"), *rows], start=header_row):
+        ws.merge_cells(start_row=row_idx, start_column=3, end_row=row_idx, end_column=last_col)
+        for col, value in enumerate(values, start=1):
             cell = ws.cell(row_idx, col, value)
-            cell.font = Font(name=_FONT_NAME, size=11)
-            cell.alignment = Alignment(
-                horizontal="left" if col == 3 else "center",
-                vertical="top",
-                wrap_text=True,
-            )
+            cell.font = Font(name=_FONT_NAME, size=11, bold=row_idx == header_row)
+            cell.alignment = Alignment(horizontal="left" if col == 3 else "center", vertical="top", wrap_text=True)
             cell.border = _BORDER
-        ws.row_dimensions[row_idx].height = min(
-            409, max(45, _wrapped_lines(content, 100) * 15 + 15)
-        )
-    ws.column_dimensions["A"].width = 10
-    ws.column_dimensions["B"].width = 14
-    ws.column_dimensions["C"].width = 100
-    ws.row_dimensions[1].height = 28
-    ws.freeze_panes = "A2"
-    ws.print_title_rows = "1:1"
-    ws.print_area = f"A1:C{len(rows) + 1}"
-    ws.page_setup.orientation = "portrait"
-    ws.page_setup.paperSize = ws.PAPERSIZE_A4
-    ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = 0
-    ws.sheet_properties.pageSetUpPr.fitToPage = True
-    ws.page_margins = PageMargins(left=0.35, right=0.35, top=0.5, bottom=0.5)
+        widths = (columns[0][2], columns[1][2], min(100, content_width))
+        lines = max(_wrapped_lines(value, width) for value, width in zip(values, widths))
+        ws.row_dimensions[row_idx].height = max(30, lines * 15 + 15)
+    return ws.max_row
 
 
 def _item_values(item: dict) -> dict:
@@ -201,17 +185,18 @@ def _finance_text(detail: dict) -> str:
             f"{action}     调整后余额：¥{after:.2f}")
 
 
-def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
-    """Generate an A4 requisition with historical finance and embedded references."""
+def _add_order_sheet(wb: Workbook, detail: dict, applicant_name: str, *, show_prices: bool) -> None:
+    """Build each sheet independently so the no-price version contains no money cells."""
     production = detail.get("order_kind") == "production"
     columns = _PRODUCTION_COLUMNS if production else _BUSINESS_COLUMNS
+    include_finance = show_prices and not production
+    if not show_prices:
+        columns = tuple(column for column in columns if column[0] not in _MONEY_FIELDS)
     last_column = get_column_letter(len(columns))
-    header_row = 4 if production else 5
+    header_row = 5 if include_finance else 4
     first_item_row = header_row + 1
     title = "内贸生产备货单" if production else "内贸订单领货单"
-    wb = Workbook()
-    ws = wb.active
-    ws.title = title
+    ws = wb.create_sheet(title if show_prices else f"{title}（无价格）")
     ws.merge_cells(f"B1:{last_column}1")
     ws["B1"] = title
     ws["B1"].font = Font(name=_FONT_NAME, size=18, bold=True)
@@ -227,6 +212,7 @@ def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
     )
     ws.merge_cells(f"A3:{last_column}3")
     ws["A3"] = (
+        f"客户名称：{_display(detail.get('customer_name'))}     "
         "审批人签字：____________________     "
         f"订单类别：{_safe_text(detail.get('order_category_label'))}     "
         f"订单类型：{_safe_text(detail.get('order_type_label'))}     "
@@ -237,9 +223,9 @@ def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
                     f"生产单号：{_safe_text(detail.get('domestic_no'))}     "
                     f"申请人：{_safe_text(applicant_name)}")
         customer_label = _safe_text(detail.get("customer_name"))
-        purpose = f"客户：{customer_label}（毛坯生产至入库）" if customer_label else "用途：公司毛坯备货（确认下单至入库）"
-        ws["A3"] = f"{purpose}     审批人签字：____________________"
-    else:
+        purpose = "用途：毛坯生产至入库" if customer_label else "用途：公司毛坯备货（确认下单至入库）"
+        ws["A3"] = f"客户名称：{customer_label or '公司备货'}     {purpose}     审批人签字：____________________"
+    elif include_finance:
         ws.merge_cells(f"A4:{last_column}4")
         ws["A4"] = _finance_text(detail)
     for row in range(2, header_row):
@@ -247,7 +233,7 @@ def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
         cell.font = Font(name=_FONT_NAME, size=12, bold=True)
         cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
         cell.border = _BORDER
-        ws.row_dimensions[row].height = 38
+        ws.row_dimensions[row].height = max(38, _wrapped_lines(cell.value, sum(c[2] for c in columns)) * 15 + 15)
     for col, (_, label, width) in enumerate(columns, start=1):
         cell = ws.cell(header_row, col, label)
         cell.font = Font(name=_FONT_NAME, size=11, bold=True)
@@ -274,7 +260,7 @@ def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
     notes_row = first_item_row + len(items) + 1
     ws.merge_cells(start_row=notes_row, start_column=1, end_row=notes_row, end_column=len(columns))
     notes = "注意事项：\n！出库数量留空，由出库人员填写。\n！领货与签字流程按内贸部门现行规定执行。"
-    if not production:
+    if include_finance:
         notes += "\n！金额单位为人民币元；小计 =（优惠后单价 + 手工费）× 数量。余额取本订单扣款/调整记录，不随后续充值变化。"
     if detail.get("remark"):
         notes += f"\n订单备注：{_safe_text(detail['remark'])}"
@@ -293,8 +279,16 @@ def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_margins = PageMargins(left=0.24, right=0.24, top=0.35, bottom=0.35)
     ws.print_title_rows = f"1:{header_row}"
-    ws.print_area = f"A1:{last_column}{notes_row}"
-    _add_full_requirements_sheet(wb, detail)
+    last_row = _append_full_requirements(ws, detail, columns, notes_row + 2)
+    ws.print_area = f"A1:{last_column}{last_row}"
+
+
+def build_order_workbook(detail: dict, applicant_name: str = "") -> BytesIO:
+    """Export exactly two complete views, with and without structured prices."""
+    wb = Workbook()
+    wb.remove(wb.active)
+    _add_order_sheet(wb, detail, applicant_name, show_prices=True)
+    _add_order_sheet(wb, detail, applicant_name, show_prices=False)
     stream = BytesIO()
     wb.save(stream)
     stream.seek(0)

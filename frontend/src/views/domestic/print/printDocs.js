@@ -65,30 +65,44 @@ export function buildLabelDoc({ card, logoUrl, copies = 1 }) {
   return wrapDoc(`二维码标签 ${card.domestic_no}`, LABEL_CSS, one.repeat(Math.max(1, copies)))
 }
 
-// 逐件标签显示客户名称；二维码仍保留各单件独立身份。
-export function buildUnitLabelDoc({ data, logoUrl }) {
+// Fit each text field in its own physical area without shrinking the QR.
+function unitLabelFontSize(text, maximum, height) {
+  const widthUnits = Array.from(String(text)).reduce((sum, char) => sum + (/[^\x00-\x7F]|[MW@&<>]/.test(char) ? 1 : .65), 0)
+  let size = maximum
+  while (size > .3 && Math.ceil(widthUnits * size / 10.2) * size * 1.2 > height) size -= .05
+  return size.toFixed(2)
+}
+
+// 逐件标签：规格、实际单件序号、客户、系统单号、日期。
+export function buildUnitLabelDoc({ data }) {
   const units = data.units || []
+  const attrs = data.item?.attrs || {}
+  const specification = attrs.product_type === 'piece'
+    ? (attrs.craft || '未填写工艺')
+    : [attrs.size || '未填写尺码', attrs.length || '未填写发长'].join('/')
   const customerName = data.customer_name || (data.order_kind === 'production' ? '公司备货' : '未填写客户')
-  // Reserve the QR's physical size; fit long names into the text area.
-  const customerFontMm = Math.min(2, Math.sqrt(40 / Array.from(customerName).length))
-  const orderFontMm = Math.min(1.25, Math.sqrt(30 / Math.max(1, String(data.domestic_no || '').length)))
+  const orderNo = data.domestic_no || '-'
+  const specFont = unitLabelFontSize(specification, 2, 3.2)
+  const customerFont = unitLabelFontSize(customerName, 2, 3.2)
+  const orderFont = unitLabelFontSize(orderNo, 1.25, 3)
   const orderDate = esc(data.order_date || '-').replace(/^(\d{4}-)(\d{2}-\d{2})$/, '<span>$1</span><span>$2</span>')
   const body = units.map(unit => `<div class="label unit-label">
     <div class="unit-meta">
-      ${img(logoUrl, 'unit-logo', '莱莎健康假发')}
-      <strong class="unit-customer" style="font-size:${customerFontMm}mm">${esc(customerName)}</strong>
-      <span class="unit-order" style="font-size:${orderFontMm}mm">${esc(data.domestic_no)}</span>
+      <strong class="unit-spec"><span style="font-size:${specFont}mm">${esc(specification)}</span></strong>
+      <strong class="unit-serial">${esc(String(unit.unit_no).padStart(2, '0'))}</strong>
+      <strong class="unit-customer"><span style="font-size:${customerFont}mm">${esc(customerName)}</span></strong>
+      <span class="unit-order"><span style="font-size:${orderFont}mm">${esc(orderNo)}</span></span>
       <span class="unit-date">${orderDate}</span>
     </div>
     ${img(unit.qr_image, 'unit-qr', `单件 ${unit.unit_code}`)}
   </div>`).join('')
   const css = `${LABEL_CSS}
     .unit-label{gap:.6mm}
-    .unit-meta{width:10.6mm;height:100%;gap:.3mm;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0}
-    .unit-logo{width:9.5mm;height:4.2mm;object-fit:contain;flex-shrink:0}
-    .unit-customer{width:100%;font-size:2mm;line-height:1.1;text-align:center;overflow-wrap:anywhere;word-break:break-all}
-    .unit-order{width:100%;font-size:1.25mm;line-height:1.15;text-align:center;white-space:normal;overflow-wrap:anywhere;word-break:break-all}
-    .unit-date{width:100%;font-size:2mm;font-weight:600;line-height:1.2;text-align:center;display:flex;flex-wrap:wrap;justify-content:center}
+    .unit-meta{width:10.6mm;height:100%;display:grid;grid-template-rows:3.2mm 2.6mm 3.2mm 3mm 5.2mm;row-gap:.2mm;min-width:0;text-align:center}
+    .unit-spec,.unit-serial,.unit-customer,.unit-order{display:flex;align-items:center;justify-content:center;min-width:0;line-height:1.2}
+    .unit-spec span,.unit-customer span,.unit-order span{width:100%;white-space:normal;overflow-wrap:anywhere;word-break:break-all}
+    .unit-serial{font-size:2.2mm;line-height:1.1}
+    .unit-date{width:100%;font-size:2mm;font-weight:600;line-height:1.2;text-align:center;display:flex;flex-wrap:wrap;align-content:center;justify-content:center}
     .unit-date span{white-space:nowrap}
     .unit-qr{width:16.8mm;height:16.8mm;object-fit:contain;image-rendering:pixelated;flex-shrink:0}
   `
