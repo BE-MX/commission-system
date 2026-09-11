@@ -1023,6 +1023,8 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 
 ## WhatsApp 实时翻译（whatsapp_translation，2026-09-03）
 
+**自动接管 v1.6.3**：实机发送控件可能只有精确的 Send/发送标签或 wds-ic-send-filled 图标；不能只依赖旧 testid。限制当前 footer、可见可用单候选，嵌套去重。完整回复预览保留全部段落和本地提交数，第一段失败不代表模型只生成一段。生成规则要求多问题覆盖优先于简短偏好。详见 [发送与完整回复](requirements/2026-09-11-whatsapp-send-coverage.md)。
+
 **FAQ检索修复（2026-09-11）**：英文检索按完整词和出现与否评分、过滤虚词、优先最新客户问题；补酸处理章节绑定，已知问题直接回答未知单独澄清。必须同时更新后端与环境绑定。详见 [知识召回](requirements/2026-09-11-whatsapp-faq-retrieval.md)。
 
 **自动接管 v1.6.2**：系统通知不参与完整性判断，旧未知占位交Agent判断；最新未知/媒体及未识别发送方仍停止，各原因单独提示。详见 [完整性误判修复](requirements/2026-09-11-whatsapp-auto-context-fix.md)。

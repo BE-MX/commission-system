@@ -6,7 +6,7 @@ import type { ReplyContext } from '@/whatsapp/replyContext'
 import { boundedReplyCapabilities, validReplyResponse } from '@/shared/replyValidation'
 
 export type AutoSnapshot = { identity: unknown[]; tail: string; incoming: string; role?: string; draft: string }
-export type AutoState = { active: boolean; busy: boolean; note: string }
+export type AutoState = { active: boolean; busy: boolean; note: string; segments: string[]; sentCount: number; knowledgeNote?: string }
 export function createAutoReply(adapter: {
   snapshot: () => AutoSnapshot
   collect: (caps: ReplyCapabilities, current: () => boolean) => Promise<ReplyContext>
@@ -14,7 +14,7 @@ export function createAutoReply(adapter: {
 }, bridge: { capabilities: () => Promise<unknown>; suggest: (request: ReplyRequest) => Promise<ReplyResponse> },
 options: () => { language: 'auto' | TargetLanguage; fallback: TargetLanguage; goal: string }, changed: (state: AutoState) => void,
 wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))) {
-  let state: AutoState = { active: false, busy: false, note: '' }
+  let state: AutoState = { active: false, busy: false, note: '', segments: [], sentCount: 0 }
   let collecting = false
   let revision = 0, timer: ReturnType<typeof setInterval> | undefined
   let identity: unknown[] = [], incoming = '', settledAt = 0, processed = '', epoch = ''
@@ -26,7 +26,7 @@ wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))) {
   }
   async function run() {
     if (!state.active || state.busy || Date.now() - settledAt < 3000 || incoming === processed) return
-    state.busy = true; state.note = '正在生成回复…'; paint()
+    state.busy = true; state.segments = []; state.sentCount = 0; state.knowledgeNote = ''; state.note = '正在生成回复…'; paint()
     const version = revision
     const current = () => state.active && revision === version && sameChat(adapter.snapshot())
       && (collecting || adapter.snapshot().incoming === incoming)
@@ -59,6 +59,10 @@ wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))) {
       if (!validReplyResponse(response, request) || response.status !== 'ready') throw new Error('回复格式异常，已停止接管')
       if (response.auto_action === 'handoff') { stop('需要人工处理：' + response.rationale_zh); return }
       if (response.auto_action === 'wait') { processed = incoming; state.note = '本轮无需回复，等待客户新消息'; return }
+      state.segments = [...response.reply_segments!]
+      state.knowledgeNote = response.risk_flags.includes('knowledge_unavailable') ? '本轮知识配置不可用，请检查后端知识绑定。'
+        : response.risk_flags.includes('no_public_facts') ? '本轮未命中可对客事实资料。'
+        : response.sources.length ? '本轮输入资料：' + [...new Set(response.sources.map(source => source.title))].join('、') : '本轮没有返回知识来源。'
       for (const [index, part] of response.reply_segments!.entries()) {
         state.note = `准备发送第 ${index + 1}/${response.reply_segments!.length} 段`; paint()
         await wait(index ? 2500 : 1500)
@@ -70,6 +74,7 @@ wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))) {
           return
         }
         tail = adapter.snapshot().tail
+        state.sentCount = index + 1; paint()
       }
       processed = incoming; state.note = '已回复，等待客户新消息'
     } catch (error) {
@@ -96,7 +101,7 @@ wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))) {
       const snapshot = adapter.snapshot()
       if (snapshot.draft) { stop('请先处理输入框草稿，再开启自动接管'); return }
       identity = snapshot.identity; incoming = snapshot.incoming; processed = ''; epoch = crypto.randomUUID(); revision++
-      settledAt = Date.now(); state = { active: true, busy: false, note: '已开启，仅当前聊天自动回复；可随时关闭' }; paint()
+      settledAt = Date.now(); state = { active: true, busy: false, note: '已开启，仅当前聊天自动回复；可随时关闭', segments: [], sentCount: 0 }; paint()
       timer = setInterval(tick, 1000)
     },
   }

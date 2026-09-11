@@ -60,6 +60,9 @@ Object.assign(globalThis, { chrome: { runtime: {
     }
     if (request.type === 'translation/outgoing') return { type: request.type, sourceLanguage: 'zh-CN', translation: 'Synthetic translated draft' }
     if (request.type === 'reply/suggest') {
+      const autoParts = document.documentElement.dataset.multiTopic === 'true'
+        ? ['Synthetic process P applies only to grade Z.', 'Synthetic finish F is used after colouring.', 'Which specification do you need?']
+        : ['Hi! Happy to help 🙂', 'Which sample size works for you?']
       document.documentElement.dataset.replyRequested = 'true'
       document.documentElement.dataset.replyCalls = String(Number(document.documentElement.dataset.replyCalls ?? 0) + 1)
       const p = request.payload
@@ -67,8 +70,8 @@ Object.assign(globalThis, { chrome: { runtime: {
       document.documentElement.dataset.replyMessages = String(p.messages.length)
       document.documentElement.dataset.replyTruncated = String(p.context_scope.truncated)
       if (p.mode === 'auto') return { type: 'reply/suggest', result: {
-        ...p, status: 'ready', auto_action: 'reply', reply_segments: ['Hi! Happy to help 🙂', 'Which sample size works for you?'],
-        reply_language: 'en', reply_text: 'Hi! Happy to help 🙂\n\nWhich sample size works for you?', meaning_zh: '确认样品尺寸', rationale_zh: '推进下一步', sources: [], claims: [], risk_flags: [], missing_information: [],
+        ...p, status: 'ready', auto_action: 'reply', reply_segments: autoParts,
+        reply_language: 'en', reply_text: autoParts.join('\n\n'), meaning_zh: '确认样品尺寸', rationale_zh: '推进下一步', sources: [], claims: [], risk_flags: [], missing_information: [],
       } }
       return new Promise(resolve => document.addEventListener('synthetic-reply-resolve', () => resolve({
         type: 'reply/suggest', result: {

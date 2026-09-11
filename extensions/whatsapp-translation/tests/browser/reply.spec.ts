@@ -39,7 +39,8 @@ test.beforeAll(async () => {
   fixture = fixture.replace('<footer>', '<div data-testid="conversation-panel-messages"><div style="align-items:flex-start"><div data-testid="msg-container"><div class="copyable-text" data-pre-plain-text="Synthetic"><span data-testid="selectable-text">Can I have a sample?</span></div></div></div></div><footer>')
 })
 test.beforeEach(async ({ page }, info) => {
-  await page.route('**/*', route => route.request().url() === url ? route.fulfill({ contentType: 'text/html', body: fixture }) : route.abort())
+  const html = info.title.includes('semantic role send') ? fixture.replace('<button id="send" type="button">Synthetic send</button>', '<div id="send" role="button" aria-label="Send" tabindex="0">Synthetic send</div>') : fixture
+  await page.route('**/*', route => route.request().url() === url ? route.fulfill({ contentType: 'text/html', body: html }) : route.abort())
   await page.goto(url); await page.addScriptTag({ content: editorBundle })
   if (info.title.includes('detected language')) await page.evaluate(() => { document.documentElement.dataset.deferIncoming = 'true' })
   if (info.title.includes('inquiry')) await page.evaluate(() => { document.documentElement.dataset.memoryEnabled = 'true' })
@@ -316,6 +317,32 @@ test('auto takeover waits for a delayed native send render after each fill', asy
   await expect(page.locator('html')).toHaveAttribute('data-lexical-text', '')
   expect(await find(cdp, '停止接管')).toBeDefined()
   await click(page, cdp, '停止接管')
+})
+
+test('semantic role send submits all three topic answers and stays active', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  await page.getByRole('textbox', { name: 'Synthetic composer' }).fill('')
+  await page.evaluate(() => { document.documentElement.dataset.autoHarness = 'true'; document.documentElement.dataset.multiTopic = 'true' })
+  await click(page, cdp, '自动接管')
+  await expect(page.locator('html')).toHaveAttribute('data-auto-sent', '3', { timeout: 18000 })
+  expect(await page.locator('[data-id^="true_synthetic_sent_"]').allTextContents()).toEqual(['Synthetic process P applies only to grade Z.', 'Synthetic finish F is used after colouring.', 'Which specification do you need?'])
+  expect(await find(cdp, '停止接管')).toBeDefined()
+  await click(page, cdp, '停止接管')
+})
+
+test('unavailable send keeps every generated topic visible and reports zero submissions', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  await page.getByRole('textbox', { name: 'Synthetic composer' }).fill('')
+  await page.evaluate(() => { document.documentElement.dataset.autoHarness = 'true'; document.documentElement.dataset.multiTopic = 'true' })
+  await click(page, cdp, '自动接管')
+  const pageText = async () => { const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true }); return all(root).map(text).join(' ') }
+  await expect.poll(pageText, { timeout: 12000 }).toContain('已提交 0/3 段')
+  await expect.poll(async () => !!await find(cdp, '自动接管')).toBe(true)
+  const content = await pageText()
+  expect(content).toContain('Synthetic finish F is used after colouring.')
+  expect(content).toContain('Which specification do you need?')
+  await expect(page.locator('html')).not.toHaveAttribute('data-send-clicked', 'true')
+  await page.screenshot({ path: '../../tmp/whatsapp-composer-browser/complete-auto-reply.png' })
 })
 
 test('auto takeover handles system notices and older unknown placeholders before a readable customer message', async ({ page }) => {

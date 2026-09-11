@@ -11,6 +11,16 @@ def configured(db, monkeypatch):
     return seed_reply(db, monkeypatch)
 
 
+def test_auto_preserves_all_topic_answers_in_order_without_extra_model_calls(db, monkeypatch, configured):
+    parts = ['Synthetic process P is applied only in step two.', 'Synthetic finish F is limited to grade Z.', 'Which of the listed specifications do you need?']
+    calls = mock_model(monkeypatch, generator=output(auto_action='reply', reply_segments=parts))
+    result = reply_service.suggest_reply(db, configured[0], request(mode='auto'))
+    assert result.reply_segments == parts
+    assert result.reply_text == '\n\n'.join(parts)
+    assert len(calls) == 1
+    assert '所有段落合起来应回应本轮每个问题' in calls[0]['messages'][0]['content']
+
+
 def test_latest_customer_focus_and_direct_answer_instructions_reach_auto_agent(db, monkeypatch, configured):
     from tests.reply_support import publish, binding
     identity, _, library, _, _, settings = configured

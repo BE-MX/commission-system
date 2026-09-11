@@ -221,7 +221,7 @@ function startContentScript(): void {
     }, {
       async capabilities() { const response = await send({ type: 'reply/capabilities' }); if (response?.type !== 'reply/capabilities') throw bridgeError(response); return response.reply },
       async suggest(payload) { const response = await send({ type: 'reply/suggest', payload }); if (response?.type !== 'reply/suggest') throw bridgeError(response); return response.result },
-    }, () => ({ language: replyView.options().language, fallback: outgoingComposer.getTargetLanguage() as TargetLanguage, goal: replyView.options().goal }), state => { view.setAutoStatus?.(state.active, state.note); if (!state.active) releaseAuto?.() })
+    }, () => ({ language: replyView.options().language, fallback: outgoingComposer.getTargetLanguage() as TargetLanguage, goal: replyView.options().goal }), state => { view.setAutoStatus?.(state.active, state.note, state); if (!state.active) releaseAuto?.() })
     controller.reset()
     watchComposer()
   }

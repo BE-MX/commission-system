@@ -1,6 +1,7 @@
 import { messageForCode } from '@/content/messages'
 import type { OutgoingPreview } from '@/content/outgoingComposer'
 import { TARGET_LANGUAGES, languageLabel } from '@/shared/contracts'
+import type { AutoState } from '@/content/autoReply'
 
 /**
  * Composer toolbar + preview card, rendered into a closed shadow root that the
@@ -133,10 +134,11 @@ const STYLES = `
   .text.back { color: var(--muted); }
   .actions { align-items: center; display: flex; gap: 8px; margin-top: 6px; }
   .hint { color: var(--muted); font-size: 11.5px; margin-left: auto; }
+  .auto-reply-detail { max-height: 280px; overflow: auto; }
 `
 
 export type ToolbarView = {
-  setAutoStatus?: (active: boolean, note: string) => void
+  setAutoStatus?: (active: boolean, note: string, detail?: Pick<AutoState, 'segments' | 'sentCount' | 'knowledgeNote'>) => void
   render: (model: ToolbarModel, options?: { animatePreview?: boolean }) => void
 }
 
@@ -147,10 +149,24 @@ export function createToolbarView(shadow: ShadowRoot, handlers: ToolbarHandlers)
   const root = doc.createElement('div')
   root.className = 'ark'
   let autoActive = false, autoNote = ''
+  let autoDetail: Pick<AutoState, 'segments' | 'sentCount' | 'knowledgeNote'> = { segments: [], sentCount: 0 }
   function updateAuto() {
     const toggle = root.querySelector<HTMLButtonElement>('.auto-toggle')
     if (toggle) { toggle.textContent = autoActive ? '停止接管' : '自动接管'; toggle.setAttribute('aria-pressed', String(autoActive)) }
     const note = root.querySelector<HTMLElement>('.auto-note'); if (note) { note.textContent = autoNote; note.hidden = !autoNote }
+    const previous = root.querySelector<HTMLDetailsElement>('.auto-reply-detail')
+    const wasOpen = previous?.open ?? false
+    previous?.remove()
+    if (autoDetail.segments.length) {
+      const detail = el('details', 'auto-reply-detail card')
+      detail.open = wasOpen || (!autoActive && autoDetail.sentCount < autoDetail.segments.length)
+      detail.append(el('summary', undefined, `本轮完整回复 · 已提交 ${autoDetail.sentCount}/${autoDetail.segments.length} 段`))
+      if (autoDetail.knowledgeNote) detail.append(el('p', 'text back', autoDetail.knowledgeNote))
+      autoDetail.segments.forEach((part, i) => {
+        detail.append(el('p', 'text', `${i + 1}. ${i < autoDetail.sentCount ? '已提交' : '未确认发送'}\n${part}`))
+      })
+      root.append(detail)
+    }
   }
   root.addEventListener('mousedown', event => {
     // Keep WhatsApp's editor selection alive until the action runs. Refocusing
@@ -250,7 +266,7 @@ export function createToolbarView(shadow: ShadowRoot, handlers: ToolbarHandlers)
   }
 
   return {
-    setAutoStatus(active, note) { autoActive = active; autoNote = note; updateAuto() },
+    setAutoStatus(active, note, detail) { autoActive = active; autoNote = note; if (detail) autoDetail = detail; updateAuto() },
     render(model, options = {}) {
       root.replaceChildren()
       if (model.preview) root.append(renderPreview(model.preview, options.animatePreview ?? false, model.status.kind === 'replacing'))

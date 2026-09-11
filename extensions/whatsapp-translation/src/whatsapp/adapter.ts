@@ -189,13 +189,19 @@ export class WhatsAppAdapter {
     if (!await this.replaceComposer(text, same)) return false
     // The editor commits before WhatsApp replaces its microphone with Send.
     // Wait for that render, rechecking cancellation, chat, tail and exact draft.
-    let button: HTMLButtonElement | undefined
+    let button: HTMLElement | undefined
     for (let i = 0; i <= 20; i++) {
       if (!same() || this.autoSnapshot().tail !== snapshot.tail || this.readComposer() !== normalizeComposerText(text)) return false
-      const buttons = this.root.querySelectorAll<HTMLButtonElement>(WHATSAPP_SELECTORS.sendButton)
+      const candidates = [...this.root.querySelectorAll<HTMLElement>(WHATSAPP_SELECTORS.sendButton)].filter(node => {
+        const style = node.ownerDocument.defaultView?.getComputedStyle(node)
+        return node.isConnected && !node.closest(WHATSAPP_SELECTORS.hiddenControl) && node.getClientRects().length
+          && style?.visibility !== 'hidden' && style?.display !== 'none'
+      })
+      // Nested icon wrappers and their semantic button are one control.
+      const buttons = candidates.filter(node => !candidates.some(other => other !== node && node.contains(other)))
       if (buttons.length > 1) throw new Error('reply_send_control_unavailable')
       const candidate = buttons[0]
-      if (candidate?.isConnected && !candidate.disabled && candidate.getAttribute('aria-disabled') !== 'true' && candidate.getClientRects().length) { button = candidate; break }
+      if (candidate?.isConnected && !candidate.closest(WHATSAPP_SELECTORS.disabledControl)) { button = candidate; break }
       if (i < 20) await new Promise<void>(resolve => setTimeout(resolve, 100))
     }
     if (!button) throw new Error('reply_send_control_unavailable')

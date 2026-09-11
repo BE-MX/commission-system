@@ -25,6 +25,62 @@ it('clicks once and requires a new outgoing bubble plus empty composer', async (
   const pending = s.adapter.sendAutomatic('Hello', () => true)
   await vi.runAllTimersAsync(); expect(await pending).toBe(true); expect(clicked).toHaveBeenCalledTimes(1)
 })
+it.each(['role-label', 'role-icon', 'button-label'])('sends through an explicit native %s control', async kind => {
+  const s = setup(); vi.useFakeTimers(); s.button.remove()
+  const control = document.createElement(kind === 'button-label' ? 'button' : 'div')
+  if (kind !== 'button-label') control.setAttribute('role', 'button')
+  if (kind === 'role-icon') control.innerHTML = '<span data-icon="wds-ic-send-filled"></span>'
+  else control.setAttribute('aria-label', 'Send')
+  control.getClientRects = () => [{ width: 20 }] as unknown as DOMRectList
+  const clicked = vi.fn(() => { s.append('Hello'); s.clear() }); control.onclick = clicked
+  document.querySelector('footer')!.append(control)
+  const pending = s.adapter.sendAutomatic('Hello', () => true)
+  const result = pending.catch(() => false)
+  await vi.runAllTimersAsync(); expect(await result).toBe(true); expect(clicked).toHaveBeenCalledTimes(1)
+})
+it('ignores hidden duplicate send controls', async () => {
+  const s = setup(); vi.useFakeTimers()
+  const hidden = document.createElement('button'); hidden.dataset.testid = 'compose-btn-send'; hidden.hidden = true
+  document.querySelector('footer')!.append(hidden)
+  const clicked = vi.fn(() => { s.append('Hello'); s.clear() }); s.button.onclick = clicked
+  const result = s.adapter.sendAutomatic('Hello', () => true).catch(() => false)
+  await vi.runAllTimersAsync(); expect(await result).toBe(true); expect(clicked).toHaveBeenCalledTimes(1)
+})
+it.each(['group', 'unknown'])('does not use semantic send controls in %s chats', async kind => {
+  const s = setup(); s.button.removeAttribute('data-testid'); s.button.setAttribute('aria-label', 'Send')
+  if (kind === 'group') document.querySelector('[aria-label="个人主页详情"]')!.setAttribute('aria-label', '群组信息')
+  else document.querySelector('[data-testid="conversation-header"]')!.remove()
+  const clicked = vi.fn(); s.button.onclick = clicked
+  expect(await s.adapter.sendAutomatic('Hello', () => true)).toBe(false); expect(clicked).not.toHaveBeenCalled()
+})
+it('never treats a voice-message control as the text send button', async () => {
+  const s = setup(); vi.useFakeTimers(); s.button.removeAttribute('data-testid'); s.button.setAttribute('aria-label', 'Send voice message')
+  const clicked = vi.fn(); s.button.onclick = clicked
+  const pending = expect(s.adapter.sendAutomatic('Hello', () => true)).rejects.toThrow('reply_send_control_unavailable')
+  await vi.runAllTimersAsync(); await pending; expect(clicked).not.toHaveBeenCalled()
+})
+it('matches the observed Chinese filled-send icon without a test id', async () => {
+  const s = setup(); vi.useFakeTimers(); s.button.removeAttribute('data-testid')
+  s.button.setAttribute('aria-label', '发送'); s.button.innerHTML = '<span data-icon="wds-ic-send-filled"></span>'
+  const clicked = vi.fn(() => { s.append('Hello'); s.clear() }); s.button.onclick = clicked
+  const pending = s.adapter.sendAutomatic('Hello', () => true)
+  await vi.runAllTimersAsync(); expect(await pending).toBe(true); expect(clicked).toHaveBeenCalledTimes(1)
+})
+it('clicks nested semantic wrappers only once', async () => {
+  const s = setup(); vi.useFakeTimers()
+  const inner = document.createElement('div'); inner.setAttribute('role', 'button'); inner.setAttribute('aria-label', 'Send')
+  inner.getClientRects = s.button.getClientRects; s.button.append(inner)
+  const clicked = vi.fn(() => { s.append('Hello'); s.clear() }); s.button.onclick = clicked
+  const pending = s.adapter.sendAutomatic('Hello', () => true)
+  await vi.runAllTimersAsync(); expect(await pending).toBe(true); expect(clicked).toHaveBeenCalledTimes(1)
+})
+it.each(['aria-disabled', 'aria-hidden'])('does not click a send control inside an %s ancestor', async attribute => {
+  const s = setup(); vi.useFakeTimers()
+  const outer = document.createElement('div'); outer.setAttribute(attribute, 'true'); s.button.before(outer); outer.append(s.button)
+  const clicked = vi.fn(); s.button.onclick = clicked
+  const pending = expect(s.adapter.sendAutomatic('Hello', () => true)).rejects.toThrow('reply_send_control_unavailable')
+  await vi.runAllTimersAsync(); await pending; expect(clicked).not.toHaveBeenCalled()
+})
 it('waits for the native send control to render after filling the composer', async () => {
   const s = setup(); vi.useFakeTimers(); s.button.remove()
   const clicked = vi.fn(() => { s.append('Hello'); s.clear() }); s.button.onclick = clicked

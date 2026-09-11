@@ -1,3 +1,7 @@
+## 2026-09-11 WhatsApp v1.6.3 发送与完整回复（合并交付）
+
+分支 codex/whatsapp-send-and-coverage，基点70969c12。实机只读确认发送按钮为中文 aria-label + wds-ic-send-filled，旧选择器0匹配、新选择器1匹配，未读正文或试发。修复控件识别并补边界测试；完整回复预览保留未发送段落和来源提示，后端强调多问题先覆盖已知事实。构建及282单测、后端契约22项、完整浏览器27项通过，独立审查通过；实机模型输出与办公室运行时配置未验证。用户已授权合并推送，fetch确认main与origin/main均为70969c12，无上游差异；本轮不部署。详见 [修复与使用](requirements/2026-09-11-whatsapp-send-coverage.md)。
+
 ## 2026-09-11 WhatsApp FAQ 召回与直接回答（合并交付）
 
 只读核验FAQ文档341/revision363，修复酸处理section5漏绑、英文虚词/子串重复计分及最新问题无优先级导致硅油答案未入选。修复后本轮问题同时命中5/7/6章节；生成要求已知直接回答、未知单独澄清，保留限定。94项受影响回归通过，补强2项专项通过，独立审查通过；素材库两项既有约定问题保留。无真实模型调用，未改生产或知识文档。需部署后端并应用已准备的source-bindings配置，扩展无需更新；分支codex/whatsapp-faq-retrieval，基点2a2e7d47。用户已授权合并推送；fetch确认main与origin/main仍为该基点，无上游差异，保留主目录其他任务未提交改动。详见 [诊断与生效方式](requirements/2026-09-11-whatsapp-faq-retrieval.md)。

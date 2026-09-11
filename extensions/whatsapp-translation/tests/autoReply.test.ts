@@ -42,6 +42,21 @@ it('never retries an uncertain send outcome', async () => {
   await vi.advanceTimersByTimeAsync(20000)
   expect(s.send).toHaveBeenCalledTimes(1); expect(s.auto.getState().active).toBe(false)
 })
+it('retains all generated parts and zero submissions when the first send control is unavailable', async () => {
+  const s = setup(); const parts = ['Synthetic process answer.', 'Synthetic coating answer.', 'Please confirm the specification.']
+  s.suggest.mockImplementation(async p => ({ ...s.response(p), reply_segments: parts }))
+  s.send.mockRejectedValue(new Error('reply_send_control_unavailable'))
+  s.auto.start(); await vi.advanceTimersByTimeAsync(10000)
+  expect(s.send).toHaveBeenCalledTimes(1)
+  expect(s.auto.getState()).toMatchObject({ active: false, segments: parts, sentCount: 0 })
+})
+it('sends three topic answers in order and records every local submission', async () => {
+  const s = setup(); const parts = ['Synthetic process answer.', 'Synthetic coating answer.', 'Please confirm the specification.']
+  s.suggest.mockImplementation(async p => ({ ...s.response(p), reply_segments: parts }))
+  s.auto.start(); await vi.advanceTimersByTimeAsync(12000)
+  expect(s.send.mock.calls.map(call => call[0])).toEqual(parts)
+  expect(s.auto.getState()).toMatchObject({ active: true, segments: parts, sentCount: 3 }); s.auto.stop()
+})
 it.each(['wait', 'handoff'] as const)('does not send model action %s', async action => {
   const s = setup(); s.suggest.mockImplementation(async p => ({ ...s.response(p), auto_action: action, reply_segments: [] }))
   s.auto.start(); await vi.advanceTimersByTimeAsync(10000)
