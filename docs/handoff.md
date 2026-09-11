@@ -1,13 +1,19 @@
-## 2026-09-11 WhatsApp 长历史直接生成 v1.5.0（本地待集成）
+## 2026-09-11 WhatsApp 长历史直接生成 v1.5.0（合并交付）
 
 分支 `codex/whatsapp-full-history`，基于 main `915837f6`。按用户方案移除话术内容拒绝校验、直接生成 Agent；默认自动滚动采集聊天 JSON，支持下载，最多 2,000 条/120,000 字符，超过 32,000 字符明确分块摘要。记忆失败不阻断可用草稿。权限、知识撤权、幂等、错聊天和未发送边界保留，无迁移。
 
 后端 93 passed/1 skipped；扩展构建与 222 单测通过；18 项合成 Chromium/Lexical 路径通过（长历史计数起点修正后单独复测）。覆盖 100 条自动加载、120 条虚拟化、160 条后端完整上下文。独立审查闭环。真实 WhatsApp 浏览器连接失败，真实 DOM 加载与模型质量待实测，不能将合成验证视为实机完成。
 
-交付 ZIP v1.5.0，44,029 字节，SHA-256 `03f0ad98bccfee2fe0b7d3cf331fba8e9feb29e0c45dbb9e9d731c6fea291dd8`。后端须同步更新 history_enabled 能力，显式旧 .env 容量/期限及已有 generator 输出预算须核对；本轮未修改生产配置、未合并推送部署。详见 [实现、启用与验证说明](requirements/2026-09-11-whatsapp-full-history.md)。
+交付 ZIP v1.5.0，44,029 字节，SHA-256 `03f0ad98bccfee2fe0b7d3cf331fba8e9feb29e0c45dbb9e9d731c6fea291dd8`。后端须同步更新 history_enabled 能力，显式旧 .env 容量/期限及已有 generator 输出预算须核对；亮哥已授权合并推送；集成 main `3a944d1d`，仅交接文档新增记录冲突，已保留双方内容。业务代码与已验证版本一致。本轮未修改生产配置、不部署。详见 [实现、启用与验证说明](requirements/2026-09-11-whatsapp-full-history.md)。
 
 
 约定检查被未修改的资产 UI 两项既有基线问题阻挡：AssetTagEditor.vue small 按钮、AssetLibrary.vue 行数基线失配；main 同样复现。本任务 diff 空白检查与 Git 巡检通过，未处理其他工作树。
+
+## 2026-09-11 内贸客户列表 UI 优化（Codex，合并交付）
+
+分支 `codex/domestic-customer-ui`，基点 `915837f6`。客户列表沿用内贸订单页的紧凑单元格、筛选栏换行和 `useOrderTableHeight` 窗口高度控制，滚动条常显、分页置于表格外。客户店名移到首列并冻结，左右冻结列补齐悬停背景；操作改为单行“编辑 / 流水 / 更多”，其余五项操作收入下拉菜单，权限与归属条件保持原口径。最近充值金额和时间拆为两列，消除双行内容撑高。
+
+验证：前端构建通过；既有客户权限/筛选测试 2 passed；Edge 无头浏览器模拟数据验证紧凑行高（预览实测 30px）、横向滚动冻结店名、菜单五项、编辑/充值/流水入口、窗口缩放和仅写权限菜单显隐，无页面异常。权限指令挂在菜单项的实际 DOM 外层，避免 Element Plus 菜单项组件不承接指令导致显隐失效。截图与验证脚本保留于本 worktree `tmp/customer-ui/`，未访问真实客户写接口。约定检查仍被素材库两项既有问题阻挡（AssetTagEditor small 按钮、AssetLibrary 行数基线过期），主目录同样复现。亮哥已授权合并推送；集成前 fetch 确认 main 与 origin/main 均为 `915837f6`，无上游差异。验证证据归档至主目录 `tmp/domestic-customer-ui-delivery/`。Git 巡检使用 `--no-fetch`。本轮不部署应用。
 
 ## 2026-09-11 背调资格队列修复合并交付
 
