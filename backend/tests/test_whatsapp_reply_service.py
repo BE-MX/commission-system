@@ -5,13 +5,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.auth.models import ArkPermission, ArkRolePermission, ArkUser
-from app.ai.models import AiPreset
+from app.ai.models import AiPreset, AiProvider
 from app.core.database import get_db
 from app.core.time import beijing_now
 from app.knowledge import service as knowledge
 from app.knowledge.models import KnowledgeLibraryMember, KnowledgeLibrary, KnowledgeAuditLog
 from app.main import app
-from app.whatsapp_translation import reply_service, reply_state
+from app.whatsapp_translation import reply_rewrite, reply_service, reply_state
 from app.whatsapp_translation.errors import WhatsAppTranslationError
 from app.whatsapp_translation.models import ReplyRequestRecord, TranslationDevice
 from tests.reply_support import encode, mock_model, output, plan, request, seed_reply
@@ -20,8 +20,10 @@ from tests.reply_support import encode, mock_model, output, plan, request, seed_
 @pytest.fixture(autouse=True)
 def clear_cache():
     reply_state.reply_cache.clear()
+    reply_rewrite._cache.clear()
     yield
     reply_state.reply_cache.clear()
+    reply_rewrite._cache.clear()
 
 
 @pytest.fixture
@@ -212,3 +214,100 @@ def test_real_http_device_mapping_and_no_store(db, setup_reply, monkeypatch):
         assert calls[0]["caller_user_id"] == setup_reply[0].user_id
     finally:
         app.dependency_overrides.clear()
+
+
+def test_chinese_conversation_retrieves_fact_via_bigrams(db, setup_reply, monkeypatch):
+    identity, _, _, _, fact, _ = setup_reply
+    mock_model(monkeypatch)
+    result = reply_service.suggest_reply(db, identity, request(messages=[
+        {"role": "customer", "text": "请问你们的发帘接缝厚吗"},
+    ]))
+    assert any(source.document_id == fact["document_id"] for source in result.sources)
+
+
+def test_query_terms_capped_with_recency_priority(db, setup_reply, monkeypatch):
+    identity = setup_reply[0]
+    captured = []
+    real_retrieve = reply_service.retrieve_reply_sources
+
+    def observed(*args, **kwargs):
+        captured.append(args[3])
+        return real_retrieve(*args, **kwargs)
+
+    monkeypatch.setattr(reply_service, "retrieve_reply_sources", observed)
+    mock_model(monkeypatch)
+    messages = [{"role": "customer", "text": " ".join(f"word{index:03d}" for index in range(batch * 50, batch * 50 + 50))}
+                for batch in range(10)]
+    messages[-1]["text"] += " zzzrecentmarker"
+    reply_service.suggest_reply(db, identity, request(messages=messages))
+    assert len(captured) == 1
+    assert len(captured[0]) <= 300
+    assert "zzzrecentmarker" in captured[0]
+    assert "word000" not in captured[0]  # the cap drops the oldest terms first
+
+
+def _enable_rewrite_preset(db, settings):
+    provider = db.query(AiProvider).filter_by(name="synthetic-reply").one()
+    db.add(AiPreset(preset_name=settings.WHATSAPP_REPLY_QUERY_REWRITE_PRESET, provider_id=provider.id,
+                    model="synthetic-model", is_enabled=True, parameters={"max_tokens": 400}))
+    db.commit()
+
+
+def test_query_rewrite_recovers_lexical_miss(db, setup_reply, monkeypatch):
+    identity, _, _, _, fact, settings = setup_reply
+    _enable_rewrite_preset(db, settings)
+    calls = []
+
+    def fake_chat(db, **kwargs):
+        calls.append(kwargs)
+        if kwargs["preset_name"] == settings.WHATSAPP_REPLY_QUERY_REWRITE_PRESET:
+            return {"content": encode({"queries": ["thin seam"]}), "log_id": len(calls)}
+        return {"content": encode({**output(), "memory_changes": []}), "log_id": len(calls)}
+
+    monkeypatch.setattr(reply_service, "chat", fake_chat)
+    result = reply_service.suggest_reply(db, identity, request(messages=[
+        {"role": "customer", "text": "Quelle est la couture?"},
+    ]))
+    assert any(call["preset_name"] == settings.WHATSAPP_REPLY_QUERY_REWRITE_PRESET for call in calls)
+    assert any(source.document_id == fact["document_id"] for source in result.sources)
+    assert "no_public_facts" not in result.risk_flags
+
+
+def test_query_rewrite_not_attempted_when_lexical_retrieval_succeeds(db, setup_reply, monkeypatch):
+    identity, _, _, _, fact, settings = setup_reply
+    _enable_rewrite_preset(db, settings)
+    calls = mock_model(monkeypatch)
+    result = reply_service.suggest_reply(db, identity, request())
+    assert any(source.document_id == fact["document_id"] for source in result.sources)
+    assert len(calls) == 1
+
+
+def test_query_rewrite_failure_falls_back_to_lexical_draft(db, setup_reply, monkeypatch):
+    identity, *_, settings = setup_reply
+    _enable_rewrite_preset(db, settings)
+    calls = []
+
+    def fake_chat(db, **kwargs):
+        calls.append(kwargs)
+        if kwargs["preset_name"] == settings.WHATSAPP_REPLY_QUERY_REWRITE_PRESET:
+            raise TimeoutError("synthetic timeout")
+        return {"content": encode({**output(), "memory_changes": []}), "log_id": len(calls)}
+
+    monkeypatch.setattr(reply_service, "chat", fake_chat)
+    result = reply_service.suggest_reply(db, identity, request(messages=[
+        {"role": "customer", "text": "Quelle est la couture?"},
+    ]))
+    assert len(calls) == 2
+    assert result.status == "ready"
+    assert "no_public_facts" in result.risk_flags
+
+
+def test_stale_binding_adds_risk_flag_without_failing_draft(db, setup_reply, monkeypatch):
+    identity, *_, settings = setup_reply
+    bindings = [dict(item) for item in settings.WHATSAPP_REPLY_SOURCE_BINDINGS]
+    bindings[1]["content_hash"] = "0" * 64
+    monkeypatch.setattr(settings, "WHATSAPP_REPLY_SOURCE_BINDINGS", bindings)
+    mock_model(monkeypatch)
+    result = reply_service.suggest_reply(db, identity, request())
+    assert result.status == "ready"
+    assert "knowledge_binding_stale" in result.risk_flags

@@ -23,7 +23,7 @@ def reply_parameters(base_parameters, max_tokens, api_type="openai") -> dict:
 
 def seed_reply_presets(db) -> int:
     settings = get_settings()
-    names = (settings.WHATSAPP_REPLY_GENERATOR_PRESET,)
+    names = (settings.WHATSAPP_REPLY_GENERATOR_PRESET, settings.WHATSAPP_REPLY_QUERY_REWRITE_PRESET)
     if set(names).intersection({settings.WHATSAPP_TRANSLATION_PRESET_NAME, settings.WHATSAPP_TRANSLATION_OUTGOING_PRESET_NAME}):
         raise ValueError("reply presets must be independent")
     base = db.query(AiPreset).join(AiProvider, AiPreset.provider_id == AiProvider.id).filter(
@@ -37,6 +37,7 @@ def seed_reply_presets(db) -> int:
     created = 0
     for name, max_tokens, description in (
         (names[0], 3200, "WhatsApp 话术：完整对话生成与可选复盘（独立预设，核验后手动启用）"),
+        (names[1], 400, "WhatsApp 话术：检索查询扩展（独立预设，核验后手动启用；未启用时检索自动退化为纯词法匹配）"),
     ):
         # A deleted/customized name belongs to the administrator; never resurrect
         # or silently overwrite it during bootstrap.

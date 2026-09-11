@@ -149,3 +149,36 @@ def test_method_cannot_be_shareable_material(configured):
     settings = configured[-1]
     with pytest.raises(ValueError, match="public facts"):
         SourceBinding.model_validate({**settings.WHATSAPP_REPLY_SOURCE_BINDINGS[1], "purpose": "method", "shareable_text": True})
+
+
+def test_extract_query_terms_segments_cjk_into_bigrams():
+    from app.knowledge.reply_sources import extract_query_terms
+    assert extract_query_terms("发帘") == ["发帘"]
+    assert extract_query_terms("好") == []
+    terms = extract_query_terms("请问 Genius Weft 的接缝厚度")
+    assert "genius" in terms and "weft" in terms
+    assert "接缝" in terms and "缝厚" in terms
+    assert "的接缝厚度" not in terms  # a CJK run never stays one unmatchable term
+    assert "used" not in extract_query_terms("used weft")  # stopwords still filtered
+
+
+def test_chinese_sentence_matches_via_bigrams_not_whole_run(db, configured):
+    identity, _, _, _, fact, settings = configured
+    # A natural Chinese sentence used to tokenize into a single long run that
+    # could never substring-match a knowledge paragraph.
+    sources, ready = retrieve_reply_sources(
+        db, actor(identity), parse_bindings(settings.WHATSAPP_REPLY_SOURCE_BINDINGS),
+        ["客户想知道天才发帘的接缝厚度"])
+    assert ready
+    assert any(source["document_id"] == fact["document_id"] for source in sources)
+
+
+def test_stale_binding_is_audited_and_logged(db, configured, caplog):
+    identity, *_, settings = configured
+    bindings = parse_bindings(settings.WHATSAPP_REPLY_SOURCE_BINDINGS)
+    bindings[1].content_hash = "0" * 64
+    audit = []
+    sources, ready = retrieve_reply_sources(db, actor(identity), bindings, ["Genius"], audit=audit)
+    assert ready and len(sources) == 1  # the mandatory constraint still resolves
+    assert audit == [{"document_id": bindings[1].document_id, "section_index": 0, "reason": "content_mismatch"}]
+    assert "reply source binding stale" in caplog.text
