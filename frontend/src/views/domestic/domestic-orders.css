@@ -3,16 +3,6 @@
 .orders-page .toolbar,
 .orders-page .orders-panel { position: relative; z-index: 1; }
 
-.orders-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 10px; }
-.order-filter { flex: 0 0 116px; min-width: 0; }
-.order-filter-wide { flex-basis: 220px; }
-.order-filter-date { flex-basis: 240px; }
-.order-filter-date :deep(.el-date-editor) { box-sizing: border-box; max-width: 100%; }
-.order-filter-action { flex: 0 0 auto; }
-@media (max-width: 600px) {
-  .order-filter { flex: 1 1 calc(50% - 8px); }
-  .order-filter-wide, .order-filter-date { flex-basis: 100%; }
-}
 .order-kind-tabs { padding: 0 16px; --el-color-primary: var(--color-primary); }
 .order-kind-tabs :deep(.el-tabs__header) { margin-bottom: 0; }
 

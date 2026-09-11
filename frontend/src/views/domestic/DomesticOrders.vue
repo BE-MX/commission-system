@@ -6,48 +6,8 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <div ref="filtersRef" class="toolbar orders-toolbar">
-      <GlassButton v-permission="'domestic:write'" variant="primary" left-icon="Plus" @click="goCreate('business')">业务下单</GlassButton>
-      <GlassButton v-permission="'domestic:write'" variant="secondary" left-icon="Plus" @click="goCreate('production')">生产下单</GlassButton>
-
-      <div class="order-filter order-filter-wide">
-        <el-input v-model="searchForm.keyword" placeholder="搜索系统单号 / 客户订单号" clearable prefix-icon="Search" @keyup.enter="handleSearch" @clear="handleSearch" />
-      </div>
-      <div class="order-filter">
-        <el-select v-model="searchForm.status" placeholder="订单状态" clearable style="width: 100%" @change="handleSearch">
-          <el-option v-for="s in ORDER_STATUS" :key="s.value" :label="s.label" :value="s.value" />
-        </el-select>
-      </div>
-      <div v-if="searchForm.order_kind !== 'production'" class="order-filter">
-        <el-select v-model="searchForm.order_category" placeholder="订单类别" clearable style="width: 100%" @change="handleSearch">
-          <el-option v-for="v in filterOptions.order_categories" :key="v.value" :label="v.label" :value="v.value" />
-        </el-select>
-      </div>
-      <div v-if="searchForm.order_kind !== 'production'" class="order-filter">
-        <el-select v-model="searchForm.order_type" placeholder="订单类型" clearable style="width: 100%" @change="handleSearch">
-          <el-option v-for="v in filterOptions.order_types" :key="v.value" :label="v.label" :value="v.value" />
-        </el-select>
-      </div>
-      <div v-if="searchForm.order_kind !== 'production'" class="order-filter">
-        <el-select v-model="searchForm.order_channel" placeholder="订单渠道" clearable style="width: 100%" @change="handleSearch">
-          <el-option v-for="v in filterOptions.order_channels" :key="v.value" :label="v.label" :value="v.value" />
-        </el-select>
-      </div>
-      <div v-if="searchForm.order_kind !== 'production'" class="order-filter">
-        <el-select v-model="searchForm.customer_source" placeholder="客户来源" clearable style="width: 100%" @change="handleSearch">
-          <el-option v-for="v in filterOptions.customer_sources" :key="v.value" :label="v.label" :value="v.value" />
-        </el-select>
-      </div>
-      <div class="order-filter order-filter-date">
-        <el-date-picker
-          v-model="searchForm.dateRange" type="daterange" value-format="YYYY-MM-DD"
-          start-placeholder="下单起" end-placeholder="下单止" style="width: 100%" @change="handleSearch"
-        />
-      </div>
-      <div class="order-filter-action">
-        <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
-      </div>
-    </div>
+    <DomesticOrderFilters ref="filtersRef" :form="searchForm" :options="filterOptions" :loading="loading"
+      @search="handleSearch" @create="goCreate" />
 
     <div class="table-card orders-panel">
       <el-tabs v-model="searchForm.order_kind" class="order-kind-tabs" @tab-change="handleKindChange">
@@ -388,11 +348,12 @@
 import { computed, h } from 'vue'
 import { ElTooltip } from 'element-plus'
 import { useOrderTableHeight } from './composables/useOrderTableHeight'
-import { DETAIL_SECTIONS, ORDER_STATUS, ORDER_STATUS_TAGS } from '@/api/domestic'
+import { DETAIL_SECTIONS, ORDER_STATUS_TAGS } from '@/api/domestic'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import DomesticImages from '@/components/domestic/DomesticImages.vue'
 import DomesticSkipAuditDialog from './components/DomesticSkipAuditDialog.vue'
+import DomesticOrderFilters from './components/DomesticOrderFilters.vue'
 import DomesticOrderEditDialog from './components/DomesticOrderEditDialog.vue'
 import DomesticPrintDialog from './print/DomesticPrintDialog.vue'
 import { useDomesticOrders } from './composables/useDomesticOrders'

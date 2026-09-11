@@ -606,6 +606,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 ## 内贸订单（`/api/domestic`，081～140 相关迁移，2026-07-27 至 2026-09-07）
 
 - 2026-09-07 下单与列表：业务 `POST /orders` 的 `order_no` 选填，省略/null/空白均规范化为空串，系统 `domestic_no` 始终自动生成；`PUT /orders/{id}` 可显式传空/null清空客户订单号，省略则保留原值。渠道字典改为 `recharge=充值扣账`、`cash=现金结账`，新建页按客户 `settle_mode` 默认选择并允许调整，标签不改变结算逻辑。历史转换工具 `backend/scripts/domestic_order_channel_cutover.py` 按 prepay→recharge、credit→cash 更新业务单，先预览再持独占备份和指纹执行；旧字典停用，生产单保持无渠道。
+- 订单客户查询（2026-09-11）：`GET /orders` 接受 `customer_name`（可选，最多 200 字符），去除首尾空格后按客户当前店名做包含匹配，`%` / `_` 按普通字符处理；空白不筛选。与订单号 `keyword`、状态、客户 ID、日期和分类条件取交集，分页前生效，创建人数据范围保持不变；无客户的生产单不会匹配“公司备货”展示文案。主站常用查询保留订单号、客户名称、订单状态；下单日期、订单类别/类型/渠道和客户来源移入高级查询弹框，应用后显示可移除标签，取消不改变条件，重置保留当前订单大类页签。
 - `GET /orders` 新增 `customer_source` 精确筛选（分页前生效，不扩大创建人数据范围），返回客户当前档案的 `customer_source/customer_source_label`。未填写显示“未填写”，未关联客户的生产单显示“—”；`GET /options` 的 `customer_sources` 复用启用的 `domestic_customer_source` 字典。主站客户来源列紧跟客户/用途列，切换到生产订单时清除该筛选。
 
 内贸生产的下单 + 按数量拆批报工。与外贸「生产订单（`/api/stock/production`）+ 生产报工（`/api/production`）」是**平行的两套**：外贸报工整行 0/1 流转，内贸带数量。只共用工序/工艺路线/工人工序绑定三类全局资产。

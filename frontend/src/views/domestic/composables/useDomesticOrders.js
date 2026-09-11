@@ -11,6 +11,7 @@ import {
   revokeDomesticSkip, revokeReport, shipItem, skipDomesticStep,
   submitDraftOrder, submitReport, terminateOrder,
 } from '@/api/domestic'
+import { buildOrderListParams } from './useDomesticOrderFilters'
 import { useListPage } from '@/composables/useListPage'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import { downloadBlob } from '@/utils/download'
@@ -27,22 +28,15 @@ export function useDomesticOrders() {
   const filterOptions = ref({ order_categories: [], order_types: [], order_channels: [], customer_sources: [] })
 
   const listApi = useListPage(
-    async ({ page, page_size, ...form }) => {
-      const params = { page, page_size }
-      for (const key of ['keyword', 'order_kind', 'order_category', 'order_type', 'order_channel', 'customer_source']) {
-        if (form[key]) params[key] = form[key]
-      }
-      if (form.status !== '' && form.status !== null) params.status = form.status
-      if (form.dateRange?.length === 2) {
-        params.date_start = form.dateRange[0]
-        params.date_end = form.dateRange[1]
-      }
+    async (form) => {
+      const params = buildOrderListParams(form)
       const res = await listOrders(params)
       return res.data || {}
     },
     {
       searchForm: {
         keyword: route.query.keyword || '',
+        customer_name: route.query.customer_name || '',
         order_kind: route.query.order_kind || '',
         status: '',
         order_category: '',

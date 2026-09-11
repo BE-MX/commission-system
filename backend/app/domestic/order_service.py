@@ -758,6 +758,7 @@ def list_orders(
     keyword: str = "",
     status: int | None = None,
     customer_id: int | None = None,
+    customer_name: str = "",
     order_kind: str = "",
     order_category: str = "",
     order_type: str = "",
@@ -783,6 +784,12 @@ def list_orders(
         q = q.filter(DomesticOrder.status == status)
     if customer_id:
         q = q.filter(DomesticOrder.customer_id == customer_id)
+    if customer_name.strip():
+        q = q.filter(DomesticOrder.customer_id.in_(
+            db.query(DomesticCustomer.id).filter(
+                DomesticCustomer.shop_name.contains(customer_name.strip(), autoescape=True)
+            )
+        ))
     if order_category:
         q = q.filter(DomesticOrder.order_category == order_category)
     if order_type:
