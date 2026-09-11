@@ -130,7 +130,7 @@ export const apiClient = {
     try {
       return await request('/reply-suggestions', {
         body: JSON.stringify(payload), headers: headers(token, extensionVersion), method: 'POST', cache: 'no-store',
-      }, false, 35_000)
+      }, false, 185_000)
     } finally { clearInterval(keepAlive) }
   },
   createPairing,

@@ -15,7 +15,7 @@ class MemoryChange(MemoryModel):
     kind: Literal["need", "question", "request", "commitment"]
     status: Literal["confirmed", "tentative", "open", "answered", "mentioned", "reported_done", "cancelled"]
     summary: str = Field(min_length=1, max_length=240)
-    message_index: int = Field(ge=0, le=39)
+    message_index: int = Field(ge=0, le=1999)
     quote: str = Field(min_length=1, max_length=240)
 
     @model_validator(mode="after")

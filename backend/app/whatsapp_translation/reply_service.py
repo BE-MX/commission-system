@@ -1,8 +1,9 @@
-"""Two-call sales reply orchestration. Chat payloads live only in request memory."""
+"""Direct sales reply orchestration. Chat payloads live only in request memory."""
 
 import json
 import logging
 import time
+import re
 
 import httpx
 
@@ -14,12 +15,9 @@ from app.whatsapp_translation.auth import require_supported_extension
 from app.whatsapp_translation.constants import SUPPORTED_TARGET_LANGUAGES
 from app.whatsapp_translation.errors import WhatsAppTranslationError
 from app.whatsapp_translation.glossary_service import glossary_for
-from app.whatsapp_translation.reply_guard import (
-    RISK_FLAGS, choose_language, safe_clarification, validate_output, validate_plan,
-)
-from app.whatsapp_translation.reply_prompts import GENERATOR_RULES, PLANNER_RULES, SOUL
+from app.whatsapp_translation.reply_direct import RULES
 from app.whatsapp_translation import reply_memory
-from app.whatsapp_translation.reply_schemas import ReplyOutput, ReplyPlan, ReplyRequest, ReplyResponse, ReplySource, generation_schema
+from app.whatsapp_translation.reply_schemas import ReplyRequest, ReplyResponse, ReplySource
 from app.whatsapp_translation.reply_state import (
     OWNER_ID, digest, error, finish_request, live_actor, reply_cache, reserve_request,
 )
@@ -29,8 +27,8 @@ logger = logging.getLogger("commission.whatsapp_reply")
 
 
 def preset_signature(db, settings) -> str:
-    names = [settings.WHATSAPP_REPLY_PLANNER_PRESET, settings.WHATSAPP_REPLY_GENERATOR_PRESET]
-    if len(set(names)) != 2 or set(names).intersection({settings.WHATSAPP_TRANSLATION_PRESET_NAME, settings.WHATSAPP_TRANSLATION_OUTGOING_PRESET_NAME}):
+    names = [settings.WHATSAPP_REPLY_GENERATOR_PRESET]
+    if set(names).intersection({settings.WHATSAPP_TRANSLATION_PRESET_NAME, settings.WHATSAPP_TRANSLATION_OUTGOING_PRESET_NAME}):
         raise error("reply_configuration_invalid", 503)
     items = []
     for name in names:
@@ -64,10 +62,10 @@ def reply_capabilities(db, identity) -> dict:
             # Expected disabled/ungranted capability; the request still rechecks.
             available = False
     return {
-        "available": available, "max_messages": 40, "default_messages": 20,
-        "max_context_chars": min(12000, settings.WHATSAPP_REPLY_MAX_CONTEXT_CHARS),
+        "available": available, "history_enabled": True, "max_messages": 2000, "default_messages": 2000,
+        "max_context_chars": min(120000, settings.WHATSAPP_REPLY_MAX_CONTEXT_CHARS),
         "max_draft_chars": 2000, "max_goal_chars": 500,
-        "timeout_seconds": min(30, settings.WHATSAPP_REPLY_TIMEOUT_SECONDS),
+        "timeout_seconds": min(180, settings.WHATSAPP_REPLY_TIMEOUT_SECONDS),
         "memory_enabled": settings.WHATSAPP_REPLY_MEMORY_ENABLED,
         "memory_retention_days": settings.WHATSAPP_REPLY_MEMORY_RETENTION_DAYS,
     }
@@ -75,7 +73,7 @@ def reply_capabilities(db, identity) -> dict:
 
 def _configuration_signature(settings, preset_version: str) -> str:
     return digest({"sources": settings.WHATSAPP_REPLY_SOURCE_BINDINGS, "presets": preset_version,
-                   "soul": SOUL, "planner": PLANNER_RULES, "generator": GENERATOR_RULES,
+                   "generator": RULES,
                    "memory_enabled": settings.WHATSAPP_REPLY_MEMORY_ENABLED})
 
 
@@ -89,7 +87,7 @@ def _remaining(deadline: float) -> float:
 def _call(db, identity, preset, system, payload, deadline):
     result = chat(
         db, preset_name=preset,
-        messages=[{"role": "system", "content": SOUL + system},
+        messages=[{"role": "system", "content": system},
                   {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
         caller_module="whatsapp_reply", caller_user_id=identity.user_id,
         snapshot_mode="metadata", timeout_sec=_remaining(deadline), enforce_total_timeout=True,
@@ -131,54 +129,45 @@ def suggest_reply(db, identity, request: ReplyRequest) -> ReplyResponse:
             raise error("reply_not_enabled", 503)
         require_supported_extension(identity)
         actor = live_actor(db, identity)
-        if sum(len(item.text) for item in request.messages) > settings.WHATSAPP_REPLY_MAX_CONTEXT_CHARS:
+        if sum(len(item.text) + len(item.quoted_text) for item in request.messages) > settings.WHATSAPP_REPLY_MAX_CONTEXT_CHARS:
             raise error("reply_context_too_large", 422)
         signature = _configuration_signature(settings, preset_signature(db, settings))
         bindings = parse_bindings(settings.WHATSAPP_REPLY_SOURCE_BINDINGS)
-        memory_snapshot = reply_memory.load_for_generation(db, identity, request)
+        try:
+            memory_snapshot = reply_memory.load_for_generation(db, identity, request)
+        except WhatsAppTranslationError as exc:
+            if exc.error_code not in {"reply_memory_conflict", "reply_memory_not_found", "reply_memory_disabled"}:
+                raise
+            memory_snapshot = {"entries": [], "instance_id": None}
         prior_memory = memory_snapshot["entries"]
         record, owner = reserve_request(db, identity, request, settings)
         if not owner:
             return _cached_response(db, identity, record, signature)
         row_id = record.id
-        deadline = started + min(30, settings.WHATSAPP_REPLY_TIMEOUT_SECONDS)
+        deadline = started + min(180, settings.WHATSAPP_REPLY_TIMEOUT_SECONDS)
         phase = time.monotonic()
         conversation = request.model_dump(mode="json", exclude={"request_id", "conversation_epoch", "context_version", "draft_version", "memory_conversation_id", "memory_revision"})
         conversation["saved_observations"] = prior_memory
-        plan = validate_plan(_call(
-            db, identity, settings.WHATSAPP_REPLY_PLANNER_PRESET, PLANNER_RULES,
-            {"conversation": conversation, "supported_languages": list(SUPPORTED_TARGET_LANGUAGES), "schema": ReplyPlan.model_json_schema()}, deadline,
-        ), request)
-        memory_update = reply_memory.build_update(plan, request, prior_memory)
-        language, confident = choose_language(plan, request)
-        timings["planning"] = int((time.monotonic() - phase) * 1000)
-        phase = time.monotonic()
-        actor = _check_current(db, identity, [], signature)
-        sources, policies_available = retrieve_reply_sources(db, actor, bindings, plan.queries)
-        timings["retrieval"] = int((time.monotonic() - phase) * 1000)
-        _remaining(deadline)
+        terms = re.findall(r"[\w-]{2,40}", " ".join(m.text for m in request.messages[-40:]).casefold())
+        queries = list(dict.fromkeys(terms))[-120:]
+        all_text = " ".join(m.text for m in request.messages).casefold()
+        queries += [alias for binding in bindings for alias in binding.aliases if alias.casefold() in all_text]
+        sources, policies_available = retrieve_reply_sources(db, actor, bindings, queries)
+        from app.whatsapp_translation.reply_direct import generate_direct
+        conversation["glossary"] = glossary_for(db, direction="outgoing", text="\n".join(m.text for m in request.messages[-40:]), target_language=request.target_language if request.target_language != "auto" else request.fallback_language)
+        def checked_call(*args):
+            _check_current(db, identity, sources, signature)
+            return _call(*args)
+        output, plan, processing = generate_direct(db, identity, settings, request, conversation, sources, deadline, checked_call)
+        memory_error = "reply_memory_update_failed" if plan.memory_parse_error else None
+        try:
+            memory_update = prior_memory if memory_error else reply_memory.build_update(plan, request, prior_memory)
+        except WhatsAppTranslationError:
+            memory_update = prior_memory
+            memory_error = "reply_memory_update_failed"
+        timings["generation"] = int((time.monotonic() - phase) * 1000)
         if not policies_available:
-            output = safe_clarification(language, request)
-        else:
-            phase = time.monotonic()
-            glossary = glossary_for(db, direction="outgoing", text="\n".join([*(item.text for item in request.messages), *plan.queries]), target_language=language)
-            source_input = [{**{key: value for key, value in source.items() if key != "binding"},
-                             "source_index": index} for index, source in enumerate(sources)]
-            allowed_fact_source_indices = [index for index, source in enumerate(sources)
-                                           if source["purpose"] == "public_fact"]
-            content = _call(
-                db, identity, settings.WHATSAPP_REPLY_GENERATOR_PRESET, GENERATOR_RULES,
-                {"conversation": conversation, "review": plan.model_dump(mode="json"), "target_language": language,
-                 "sources": source_input, "glossary": glossary, "allowed_risk_flags": sorted(RISK_FLAGS),
-                 "allowed_fact_source_indices": allowed_fact_source_indices,
-                 "schema": generation_schema(allowed_fact_source_indices)}, deadline,
-            )
-            timings["generation"] = int((time.monotonic() - phase) * 1000)
-            phase = time.monotonic()
-            output = validate_output(content, language, sources, request, memory=memory_update, plan=plan)
-            timings["validation"] = int((time.monotonic() - phase) * 1000)
-        if not confident:
-            output.risk_flags = list(dict.fromkeys([*output.risk_flags, "language_uncertain"]))
+            output.risk_flags.append("knowledge_unavailable")
         if not request.context_scope.latest_visible or request.context_scope.truncated:
             output.risk_flags = list(dict.fromkeys([*output.risk_flags, "limited_context"]))
         if request.context_scope.omitted_media:
@@ -189,11 +178,15 @@ def suggest_reply(db, identity, request: ReplyRequest) -> ReplyResponse:
         # even if the model chose not to cite it. Cached results get the same check.
         _check_current(db, identity, sources, signature)
         _remaining(deadline)
-        reply_memory.recheck_revision(db, identity, request, memory_snapshot["instance_id"])
+        try:
+            reply_memory.recheck_revision(db, identity, request, memory_snapshot["instance_id"])
+        except WhatsAppTranslationError:
+            memory_error = "reply_memory_conflict"
         response = ReplyResponse(
             **output.model_dump(), request_id=request.request_id, conversation_epoch=request.conversation_epoch,
             context_version=request.context_version, draft_version=request.draft_version,
             sources=[ReplySource(**{key: source[key] for key in ReplySource.model_fields}) for source in sources],
+            memory_error=memory_error, context_processing=processing,
             action=plan.action, memory_conversation_id=request.memory_conversation_id,
             memory_instance_id=memory_snapshot["instance_id"],
             memory_revision=request.memory_revision, memory_update=memory_update,

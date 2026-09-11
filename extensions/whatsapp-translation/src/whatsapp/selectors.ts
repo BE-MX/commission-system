@@ -11,6 +11,7 @@ export const WHATSAPP_SELECTORS = {
   messageHiddenTime: 'span[aria-hidden="true"]',
   messageMetadata: '.copyable-text[data-pre-plain-text]',
   messageText: 'span[data-testid="selectable-text"]',
+  messageIdentity: '[data-id]',
   messageTime: '[data-testid="msg-meta"]',
   quotedMessage: '[data-testid="quoted-message"], [data-testid="quoted-message-container"]',
   mediaMessage: '[data-testid="image-thumb"], [data-testid="audio-message"], [data-testid="video-content"], [data-testid="document-message"], audio, video, canvas',

@@ -6,14 +6,14 @@ import { ARK_MARKS } from '@/shared/marks'
 import { parseIncomingMessages } from '@/whatsapp/messageParser'
 
 beforeEach(() => { document.body.innerHTML = readFileSync('tests/fixtures/direct.html', 'utf8') })
-it('collects both directions including already translated originals and excludes media/system text', () => {
+it('collects both directions including already translated originals and retains media placeholders and excludes system text', () => {
   const host = document.createElement('div')
   host.setAttribute(ARK_MARKS.translationHost, '1')
   host.setAttribute(ARK_MARKS.translationState, 'success')
   host.textContent = 'Generated translation must stay private'
   document.querySelector('[data-testid="msg-container"]')!.append(host)
   const result = collectReplyContext(document)
-  expect(result.messages).toEqual([
+  expect(result.messages.filter(m => m.kind !== "media").map(({ role, text }) => ({ role, text }))).toEqual([
     { role: 'customer', text: 'Can you ship this week?' },
     { role: 'customer', text: 'Thanks 🥰' },
     { role: 'salesperson', text: 'Already sent' },
@@ -37,15 +37,15 @@ function textRows(values: string[]) {
     metadata.append(span); bubble.append(metadata); row.append(bubble); container.append(row)
   }
 }
-it('selects the newest 20 by default, optional 40, and truncates only whole messages', () => {
+it('collects all loaded messages by default and reports explicit capacity truncation', () => {
   textRows(Array.from({ length: 45 }, (_, i) => `Synthetic message ${i}`))
-  expect(collectReplyContext(document).messages[0].text).toBe('Synthetic message 25')
+  expect(collectReplyContext(document).messages[0].text).toBe('Synthetic message 0')
   expect(collectReplyContext(document, 40).messages).toHaveLength(40)
   textRows(['a'.repeat(8000), 'b'.repeat(5000), 'last'])
-  const result = collectReplyContext(document)
+  const result = collectReplyContext(document, 2000, { maxMessages: 2000, maxChars: 12000 })
   expect(result.messages.map(m => m.text)).toEqual(['b'.repeat(5000), 'last'])
   expect(result.context_scope.truncated).toBe(true)
-  textRows(['short', 'x'.repeat(12001)])
+  textRows(['short', 'x'.repeat(120001)])
   expect(() => collectReplyContext(document)).toThrow('reply_latest_too_long')
 })
 it('removes quoted duplicates and skips ambiguous direction without guessing', () => {
@@ -63,10 +63,10 @@ it('masks contacts without changing hair dimensions, units or quantities', () =>
   expect(maskContacts('Email sample@example.test or +1 202-555-0147. 13x4 lace, 18 inches, 150% density, 200 pieces')).toBe('Email [email] or [phone]. 13x4 lace, 18 inches, 150% density, 200 pieces')
 })
 it('enforces the wire character budget even when masking expands a short email', () => {
-  textRows(['a'.repeat(11988), 'x@y.co'])
-  expect(collectReplyContext(document).messages.reduce((n, m) => n + m.text.length, 0)).toBeLessThanOrEqual(12000)
-  textRows(['a'.repeat(11999), 'x@y.co'])
-  expect(collectReplyContext(document).messages).toEqual([{ role: 'salesperson', text: '[email]' }])
+  textRows(['a'.repeat(119988), 'x@y.co'])
+  expect(collectReplyContext(document).messages.reduce((n, m) => n + m.text.length, 0)).toBeLessThanOrEqual(120000)
+  textRows(['a'.repeat(119999), 'x@y.co'])
+  expect(collectReplyContext(document).messages.map(({ role, text }) => ({ role, text }))).toEqual([{ role: 'salesperson', text: '[email]' }])
 })
 it('preserves meaningful line breaks for reply context without changing incoming translation normalization', async () => {
   textRows(['Synthetic placeholder'])
@@ -87,7 +87,7 @@ it('preserves plain paragraph text in reply context', () => {
 it('honors a lowered 6000-character server cap at whole-message boundaries', () => {
   textRows(['a'.repeat(4000), 'b'.repeat(4000)])
   const result = collectReplyContext(document, 20, { maxMessages: 20, maxChars: 6000 })
-  expect(result.messages).toEqual([{ role: 'salesperson', text: 'b'.repeat(4000) }])
+  expect(result.messages.map(({ role, text }) => ({ role, text }))).toEqual([{ role: 'salesperson', text: 'b'.repeat(4000) }])
   expect(result.context_scope.truncated).toBe(true)
   expect(result.range).toContain('2–2')
   textRows(['x'.repeat(8000)])

@@ -5,16 +5,18 @@ import { boundedReplyCapabilities, replyFitsCapabilities, validReplyResponse } f
 import { validMemoryResult } from '@/shared/replyMemory'
 import type { MemoryCommand, MemoryResult, ReplyInquiry } from '@/shared/replyMemory'
 
-export type ReplyOptions = { limit: 'default' | 20 | 40; includeDraft: boolean; language: 'auto' | TargetLanguage; goal: string }
+export type ReplyOptions = { limit: 'default' | 'loaded' | 20 | 40; includeDraft: boolean; language: 'auto' | TargetLanguage; goal: string }
 export type ReplyState = {
   open: boolean; busy: boolean; context?: ReplyContext; capabilities?: ReplyCapabilities; result?: ReplyResponse; error?: string; canRestore: boolean
   inquiry?: ReplyInquiry; inquiries?: ReplyInquiry[]; previewInquiry?: ReplyInquiry
+  collecting?: boolean;
   memoryBusy?: boolean; memoryNotice?: string; memoryError?: string; memoryEnabled?: boolean; paused?: boolean
   handoffResult?: Pick<ReplyResponse, 'action' | 'handoff'>
 }
 export function createReplyAssistant(adapter: {
   inspectChat: () => { kind: string }
-  collectReplyContext: (limit: 20 | 40, limits: ReplyContextLimits) => ReplyContext
+  collectReplyContext: (limit: number, limits: ReplyContextLimits) => ReplyContext
+  collectReplyHistory?: (limits: ReplyContextLimits, current: () => boolean, progress: (context: ReplyContext) => void) => Promise<ReplyContext>
   readComposer: () => string
   replaceComposer: (text: string, current: () => boolean) => Promise<boolean>
 }, bridge: { capabilities: () => Promise<unknown>; suggest: (request: ReplyRequest) => Promise<ReplyResponse>; memory?: (command: MemoryCommand) => Promise<MemoryResult> }, fallback: () => TargetLanguage, changed: (state: ReplyState) => void) {
@@ -26,6 +28,7 @@ export function createReplyAssistant(adapter: {
   let draft = ''
   let request: ReplyRequest | undefined
   let restore: { original: string; text: string; version: number } | undefined
+  let collectionRunning = false
   let createId = crypto.randomUUID()
   const paint = () => changed({ ...state, canRestore: !!restore && restore.version === draftVersion && adapter.readComposer() === restore.text })
   function invalidate(error = 'reply_stale') {
@@ -58,6 +61,7 @@ export function createReplyAssistant(adapter: {
     }
   }
   async function saveCandidate(candidate: ReplyResponse, current: number) {
+    if (candidate.memory_error) { state.memoryError = candidate.memory_error; paint(); return }
     if (!candidate.memory_conversation_id || current !== operation || state.result !== candidate) return
     const savedEpoch = epoch
     state.memoryBusy = true; state.memoryError = undefined; paint()
@@ -86,7 +90,7 @@ export function createReplyAssistant(adapter: {
         const caps = boundedReplyCapabilities(await bridge.capabilities())
         if (current !== operation || !state.open) return
         state.capabilities = caps
-        state.context = adapter.collectReplyContext(caps.default_messages > 20 ? 40 : 20, { maxMessages: caps.default_messages, maxChars: caps.max_context_chars })
+        state.context = adapter.collectReplyContext(caps.default_messages, { maxMessages: caps.default_messages, maxChars: caps.max_context_chars })
       } catch (error) {
         if (current !== operation) return
         state.context = undefined
@@ -143,7 +147,7 @@ export function createReplyAssistant(adapter: {
     saveMemory() { if (state.result && !state.memoryBusy) return saveCandidate(state.result, operation) },
     setPaused(paused: boolean) { const result = state.result; invalidate(); state.paused = paused; state.handoffResult = paused ? result : undefined; state.memoryNotice = paused ? '已暂停话术生成，请由业务员接管。' : '已恢复话术辅助。'; paint() },
     async generate(options: ReplyOptions, style: ReplyStyle = 'default') {
-      if (state.memoryBusy) return
+      if (state.memoryBusy || collectionRunning) return
       if (state.paused) { state.error = 'reply_paused'; paint(); return }
       const current = ++operation
       state = { ...state, open: true, busy: true, context: undefined, result: undefined, error: undefined }
@@ -154,13 +158,24 @@ export function createReplyAssistant(adapter: {
         if (current !== operation) return
         state.capabilities = caps
         if (caps.memory_enabled && bridge.memory && state.memoryEnabled !== false && !state.inquiry) {
-          const created = await memory({ operation: 'create', conversation_id: createId })
+          try {
+            const created = await memory({ operation: 'create', conversation_id: createId })
+            if (current !== operation) return
+            state.inquiry = created.inquiry
+          } catch (error) { state.memoryError = error instanceof Error ? error.message : 'reply_memory_update_failed' }
           if (current !== operation) return
-          state.inquiry = created.inquiry
         }
-        const count = options.limit === 'default' ? caps.default_messages : options.limit
-        const requested = options.limit === 'default' ? (count > 20 ? 40 : 20) : options.limit
-        const context = adapter.collectReplyContext(requested, { maxMessages: Math.min(count, caps.max_messages), maxChars: caps.max_context_chars })
+        const count = typeof options.limit === 'number' ? options.limit : caps.max_messages
+        const limits = { maxMessages: Math.min(count, caps.max_messages), maxChars: caps.max_context_chars }
+        let context: ReplyContext
+        if (options.limit === 'default' && adapter.collectReplyHistory) {
+          collectionRunning = true; state.collecting = true; paint()
+          try { context = await adapter.collectReplyHistory(limits, () => current === operation, value => { if (current === operation) { state.context = value; paint() } }) }
+          finally { collectionRunning = false; state.collecting = false; paint() }
+        } else context = adapter.collectReplyContext(count, limits)
+        if (current !== operation) return
+        state.context = context
+        if (context.context_scope.truncated && !(typeof options.limit === 'number' && context.messages.length === Math.min(count, caps.max_messages))) throw new Error('reply_context_too_large')
         state.context = context
         if (!context.messages.length) throw new Error('reply_empty_context')
         draft = adapter.readComposer()
@@ -184,6 +199,7 @@ export function createReplyAssistant(adapter: {
         if (adapter.readComposer() !== draft) { this.draftChanged(); return }
         if (!validReplyResponse(result, frozen)) throw new Error('reply_invalid_response')
         state.result = result
+        state.busy = false; paint()
         await saveCandidate(result, current)
       } catch (error) {
         if (current !== operation) return

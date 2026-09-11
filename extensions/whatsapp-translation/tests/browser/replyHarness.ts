@@ -28,8 +28,8 @@ Object.assign(globalThis, { chrome: { runtime: {
     }
     if (request.type === 'reply/disclosure') return { type: request.type, acknowledged: true }
     if (request.type === 'reply/capabilities') return { type: request.type, reply: {
-      available: true, max_messages: 40, default_messages: 20,
-      max_context_chars: document.documentElement.dataset.lowerReplyLimit === 'true' ? 6000 : 12000,
+      available: true, history_enabled: true, max_messages: 2000, default_messages: 2000,
+      max_context_chars: document.documentElement.dataset.lowerReplyLimit === 'true' ? 6000 : 120000,
       max_draft_chars: 2000, max_goal_chars: 500, timeout_seconds: 30,
       memory_enabled: document.documentElement.dataset.memoryEnabled === 'true', memory_retention_days: 30,
     } }
@@ -48,6 +48,7 @@ Object.assign(globalThis, { chrome: { runtime: {
       return { type: request.type, result: { inquiry: structuredClone(inquiries.get(p.conversation_id!)!) } }
     }
     if (request.type === 'translation/incoming') {
+      document.documentElement.dataset.translationCalls = String(Number(document.documentElement.dataset.translationCalls ?? 0) + 1)
       if (document.documentElement.dataset.deferIncoming === 'true') {
         document.documentElement.dataset.incomingRequested = 'true'
         return new Promise(resolve => document.addEventListener('synthetic-incoming-resolve', () => resolve({

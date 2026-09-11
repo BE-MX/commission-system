@@ -6,21 +6,22 @@ import { validAction, validEntries, validHandoff } from '@/shared/replyMemory'
 export function boundedReplyCapabilities(value: unknown): ReplyCapabilities {
   if (!value || typeof value !== 'object' || (value as ReplyCapabilities).available !== true) throw new Error('reply_unavailable')
   const p = value as ReplyCapabilities
+  if (p.history_enabled !== true) throw new Error("reply_backend_update_required")
   const positive = [p.max_messages, p.default_messages, p.max_context_chars, p.timeout_seconds]
   const optional = [p.max_draft_chars, p.max_goal_chars]
   if (positive.some(n => !Number.isSafeInteger(n) || n < 1) || optional.some(n => !Number.isSafeInteger(n) || n < 0)
     || p.default_messages > p.max_messages) throw new Error('reply_configuration_invalid')
   return {
-    available: true, max_messages: Math.min(40, p.max_messages), default_messages: Math.min(40, p.default_messages),
-    max_context_chars: Math.min(12000, p.max_context_chars), max_draft_chars: Math.min(2000, p.max_draft_chars),
-    max_goal_chars: Math.min(500, p.max_goal_chars), timeout_seconds: Math.min(35, p.timeout_seconds),
+    available: true, max_messages: Math.min(2000, p.max_messages), default_messages: Math.min(2000, p.default_messages),
+    max_context_chars: Math.min(120000, p.max_context_chars), max_draft_chars: Math.min(2000, p.max_draft_chars),
+    max_goal_chars: Math.min(500, p.max_goal_chars), timeout_seconds: Math.min(180, p.timeout_seconds),
     memory_enabled: p.memory_enabled === true,
     memory_retention_days: Number.isInteger(p.memory_retention_days) ? Math.min(90, Math.max(1, p.memory_retention_days!)) : 30,
   }
 }
 
 export function replyFitsCapabilities(p: ReplyRequest, caps: ReplyCapabilities): boolean {
-  return p.messages.length <= caps.max_messages && p.messages.reduce((sum, message) => sum + message.text.length, 0) <= caps.max_context_chars
+  return p.messages.length <= caps.max_messages && p.messages.reduce((sum, message) => sum + message.text.length + (message.quoted_text?.length ?? 0), 0) <= caps.max_context_chars
     && p.draft_intent.length <= caps.max_draft_chars && p.goal.length <= caps.max_goal_chars
 }
 
@@ -34,10 +35,10 @@ export function validReplyRequest(value: unknown): value is ReplyRequest {
     && typeof p.conversation_epoch === 'string' && uuid.test(p.conversation_epoch)
     && Number.isInteger(p.context_version) && p.context_version >= 0
     && Number.isInteger(p.draft_version) && p.draft_version >= 0
-    && Array.isArray(p.messages) && p.messages.length > 0 && p.messages.length <= 40
-    && p.messages.every(m => m && ['customer', 'salesperson'].includes(m.role) && isText(m.text, 12000) && m.text.trim())
-    && p.messages.reduce((n, m) => n + m.text.length, 0) <= 12000
-    && !!p.context_scope && [20, 40].includes(p.context_scope.requested_limit)
+    && Array.isArray(p.messages) && p.messages.length > 0 && p.messages.length <= 2000
+    && p.messages.every(m => m && ['customer', 'salesperson'].includes(m.role) && isText(m.text, 120000) && m.text.trim() && (m.timestamp === undefined || isText(m.timestamp, 120)) && (m.quoted_text === undefined || isText(m.quoted_text, 12000)) && (m.kind === undefined || ['text', 'media', 'unknown'].includes(m.kind)))
+    && p.messages.reduce((n, m) => n + m.text.length + (m.quoted_text?.length ?? 0), 0) <= 120000
+    && !!p.context_scope && Number.isInteger(p.context_scope.requested_limit) && p.context_scope.requested_limit > 0 && p.context_scope.requested_limit <= 2000
     && p.messages.length <= p.context_scope.requested_limit
     && ['truncated', 'omitted_media', 'latest_visible'].every(key => typeof p.context_scope[key as keyof typeof p.context_scope] === 'boolean')
     && isText(p.draft_intent, 2000) && isText(p.goal, 500)

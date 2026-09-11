@@ -6,7 +6,7 @@ import { validMemoryCommand, validMemoryResult } from '@/shared/replyMemory'
 import type { MemoryCommand, MemoryResult, ReplyInquiry } from '@/shared/replyMemory'
 import { JSDOM } from 'jsdom'
 
-const caps = { available: true, max_messages: 40, default_messages: 20, max_context_chars: 12000, max_draft_chars: 2000, max_goal_chars: 500, timeout_seconds: 30, memory_enabled: true, memory_retention_days: 30 }
+const caps = { available: true, history_enabled: true, max_messages: 40, default_messages: 20, max_context_chars: 12000, max_draft_chars: 2000, max_goal_chars: 500, timeout_seconds: 30, memory_enabled: true, memory_retention_days: 30 }
 const options = { limit: 'default' as const, includeDraft: true, language: 'auto' as const, goal: '' }
 const now = '2026-09-08T21:00:00'
 const entry = () => ({ id: crypto.randomUUID(), kind: 'need' as const, status: 'tentative' as const, summary: '20 units initially', human_note: '', updated_at: now,
@@ -45,6 +45,24 @@ function setup() {
 }
 
 describe('inquiry continuity', () => {
+  it('still generates when creating the optional inquiry fails', async () => {
+    const s = setup(); s.bridge.memory.mockRejectedValueOnce(new Error('reply_memory_full'))
+    const pending = s.assistant.generate(options); await s.started(); s.resolve(); await pending
+    expect(s.assistant.getState().result?.reply_text).toBeTruthy()
+    expect(s.assistant.getState().error).toBeUndefined()
+    expect(s.assistant.getState().memoryError).toBe('reply_memory_full')
+  })
+  it('displays the draft before a slow save and retains it when that save fails', async () => {
+    const s = setup(); const pending = s.assistant.generate(options); await s.started()
+    let fail!: (error: Error) => void
+    s.bridge.memory.mockImplementationOnce(() => new Promise((_, reject) => { fail = reject }))
+    s.resolve()
+    await vi.waitFor(() => expect(s.assistant.getState().result?.reply_text).toBeTruthy())
+    expect(s.assistant.getState().busy).toBe(false)
+    fail(new Error('network_error')); await pending
+    expect(s.assistant.getState().result?.reply_text).toBeTruthy()
+    expect(s.assistant.getState().memoryError).toBe('network_error')
+  })
   it('saves a current observation snapshot separately and uses its new revision next turn', async () => {
     const s = setup(); const pending = s.assistant.generate(options); await s.started(); s.resolve(); await pending
     expect(s.bridge.memory.mock.calls.map(([c]) => c.operation)).toEqual(['create', 'commit'])

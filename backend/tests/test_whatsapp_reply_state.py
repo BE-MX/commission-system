@@ -79,7 +79,7 @@ def test_beijing_day_quota_rolls_over_even_when_server_clock_is_utc(db, monkeypa
     monkeypatch.setattr(settings, "WHATSAPP_REPLY_DAILY_REQUESTS", 1)
     first, _ = reply_state.reserve_request(db, identity, request(), settings)
     assert first.created_at == datetime(2026, 9, 7, 23, 59, 59)
-    assert first.lease_until == datetime(2026, 9, 8, 0, 0, 39)
+    assert first.lease_until == datetime(2026, 9, 8, 0, 2, 9)
     reply_state.finish_request(db, first.id, status="failed")
     with pytest.raises(WhatsAppTranslationError):
         reply_state.reserve_request(db, identity, request(), settings)
@@ -114,9 +114,9 @@ def test_seed_creates_separate_disabled_presets_and_preserves_existing(db):
     base = AiPreset(preset_name=settings.WHATSAPP_TRANSLATION_PRESET_NAME, provider_id=provider.id, model="synthetic-model", parameters={"thinking": {"type": "disabled"}, "max_tokens": 4096}, system_prompt="keep translation prompt", is_enabled=True)
     db.add(base)
     db.commit()
-    assert seed_reply_presets(db) == 2
-    result = db.query(AiPreset).filter(AiPreset.preset_name.in_([settings.WHATSAPP_REPLY_PLANNER_PRESET, settings.WHATSAPP_REPLY_GENERATOR_PRESET])).all()
-    assert len(result) == 2 and all(not row.is_enabled for row in result)
+    assert seed_reply_presets(db) == 1
+    result = db.query(AiPreset).filter(AiPreset.preset_name.in_([settings.WHATSAPP_REPLY_GENERATOR_PRESET])).all()
+    assert len(result) == 1 and all(not row.is_enabled for row in result)
     assert all(row.parameters.get("response_format") == {"type": "json_object"} for row in result)
     result[0].system_prompt = "administrator customization"
     db.commit()

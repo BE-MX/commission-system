@@ -1023,19 +1023,17 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 
 ## WhatsApp 实时翻译（whatsapp_translation，2026-09-03）
 
-**第一二阶段连续对话（2026-09-08，本地实现待部署）**：Planner 新增具体动作、未回应请求、已答问题及有证据的记忆变更；Generator 先回应当前阻塞，避免重复盘问。增加随机询盘记录、承诺台账、人工修正、接管摘要与暂停辅助；生成与保存分离，CAS + 实例标识防旧候选覆盖。当前没有稳定客户标识，切换聊天或整个消息区换掉时断开记录，必须预览选择后才能恢复；不按同名客户自动关联。知识新增别名、适用范围、可复用对客文本用途与失效日期，相关事实优先于方法示例。20 项已核验绑定在 `config/whatsapp-reply-phase12.json`（8 public_fact、3 constraint、9 method），不自动修改生产 .env；详见 [实现和交付边界](requirements/2026-09-08-whatsapp-reply-continuity.md)。
+**话术助手 v1.5.0（2026-09-11，本地待集成）**：默认自动滚动加载当前一对一聊天可获取的历史，保留角色、时间、引用及媒体占位，可下载脱敏 JSON；最多 2,000 条/120,000 字符，容量到达明确停止，不静默截断。DOM ID 仅作内存重叠匹配，不序列化。网页边界不等于手机全部历史，群组及未知聊天结构仍拒绝采集。详见 [长历史实现与验证边界](requirements/2026-09-11-whatsapp-full-history.md)。
 
-**话术助手（1.3.0，2026-09-07，本地实现、默认关闭）**：在原领域增加 `reply_service/reply_state/reply_guard/reply_schemas/reply_prompts`；来源适配位于 `knowledge/reply_sources.py`，只走发布读取和实时员工 ACL，不调用会记录原始 query 的搜索审计接口。独立 `whatsapp_reply:write` 不扩展知识权限。UI 先预览一条回复及中文含义、简短策略理由，填入/恢复共享编辑器写保护；取消、切换会话、新消息、草稿和语言变化均使旧结果失效，绝不触发原生发送。
+**生成与记忆**：`reply_direct` 替换 planner→generator 及旧 `reply_guard/reply_prompts`，普通输入一次生成，超过 32,000 字符先分块摘要。取消草稿内容语义拒绝；JSON 解析、权限、知识发布版本/ACL、幂等与时效仍保留。询盘、承诺台账、人工修正、接管摘要延续，记忆生成/保存失败仅提示，不阻止草稿展示和使用；保存仍检查证据、归属和 CAS。20 项知识绑定见 `config/whatsapp-reply-phase12.json`，method/public_fact/constraint 用途由提示词指导，不再以 claims 阻断草稿。
 
-**知识用途边界**：Settings 中的来源绑定精确指定文档、发布修订、章节索引/文本 SHA-256、政策版本及 `method/public_fact/constraint/blocked` 用途。仅 `public_fact` 可被引用为新对客事实，method 只指导策略，constraint 限制承诺。必需约束独立于检索排名；按完整标题章节打包，每段最多 1,200 字符、合计 6,000/6 段。更新、撤权、停用或缓存命中均重新校验；新修订不会继承外发许可。尚无生产对外事实授权配置。
+**调用与启用**：仅使用 generator 预设，bootstrap 默认关闭且不覆盖管理员已有配置；建议 max_tokens 3,200，默认总期限 120 秒（上限 180），扩展请求期限 185 秒。模型调用走 `app.ai.service.chat(snapshot_mode="metadata")`；长输入增加摘要调用，共享总期限。并发/配额限制不变。本轮不修改生产配置、不部署；旧 planner 数据库预设保留，运行时不再依赖。既有模型基线属于旧策略，不能当作新版质量验收。
 
-**调用与启用**：最多两次 `app.ai.service.chat(snapshot_mode="metadata")`，独立 planner/generator 预设由 bootstrap 准备为关闭状态，不覆盖管理员修改、不变更翻译预设。OpenAI 协议默认 `response_format=json_object`，避免仅凭提示词约束而返回 Markdown 围栏；已有话术预设需管理员核对该配置。话术专用 HTTP 总期限会取消在途连接，其他 AI 调用默认行为不变。服务端 30 秒、扩展 35 秒，独立每人并发 1/每分钟 6/每天 100。配置与前提见 [启用说明](requirements/2026-09-07-whatsapp-reply-activation.md)，已获授权的 59 次模型基线和未通过项见 [实测记录](requirements/2026-09-07-whatsapp-reply-model-baseline.md)；未合并、推送或部署。
-
-**DOM 边界**：WhatsApp 结构识别只允许放在 `extensions/whatsapp-translation/src/whatsapp/`，只读取当前一对一文字会话；群组、社区、媒体、语音、文件、贴纸和未知 DOM 一律 fail-closed。测试只能使用自建合成 fixture，禁止真实 WhatsApp 截图、HTML、文本、联系人、电话或消息 ID 进入仓库。
+**DOM 边界**：选择器仅在 `src/whatsapp/`；用户主动采集期间暂停消息变化触发的翻译和自失效，仍检测聊天/输入框身份变化。采集可取消，完成后尽量恢复原滚动位置；新消息在恢复过程中到达则废弃快照。自动向上加载已用合成页面验证，真实 WhatsApp 仍待实机验证。
 
 **发送边界**：扩展可以翻译可见收件消息，也可以把译文写入发件框；但永远不模拟 WhatsApp 发送按钮或提交事件。发译必须先展示预览，员工仍执行原生发送。
 
-**AI 与数据边界**：模型调用只通过 `app.ai.service.chat` 的 metadata-only 模式；AI 日志仅保留方向、语言、字符数、token、耗时、成功/错误码和 `model_log_id`。日志、fixture、截图和 commit 不得出现真实 WhatsApp 明文/译文、联系人、电话、message ID 或页面 HTML。唯一持久正文例外是用户授权的 `ark_whatsapp_reply_inquiries` 内有界复盘、脱敏证据和人工修正；不存扩展 storage，默认固定30天、可主动删除。翻译和话术请求表继续只存元数据。
+**AI 与数据边界**：模型调用只通过 `app.ai.service.chat` 的 metadata-only 模式；AI 日志仅保留方向、语言、字符数、token、耗时、成功/错误码和 `model_log_id`。日志、fixture、截图和 commit 不得出现真实 WhatsApp 明文/译文、联系人、电话、message ID 或页面 HTML。主动下载的脱敏聊天 JSON 可保存在用户本地文件；服务端唯一持久正文例外是用户授权的 `ark_whatsapp_reply_inquiries` 内有界复盘、脱敏证据和人工修正；不存扩展 storage，默认固定30天、可主动删除。翻译和话术请求表继续只存元数据。
 
 **译文质量（v1.1，2026-09-04）**：收发拆两个 preset——`whatsapp_text_translation` 收件方向（忠实还原客户语气与歧义，只译向 zh-CN），`whatsapp_outgoing_translation` 发件方向（WhatsApp 商务聊天语域，额外返回 `back_translation` 中文回译供业务员核对）。外贸术语表复用 `sys_dict`，类型 `whatsapp_glossary_<lang>`，`code`=中文术语、`label`=对应语言术语，运行时只注入命中的条目（`.7` 见 `app/whatsapp_translation/glossary_service.py`）；可识别源语言列表由 constants 注入 user message，不写死在 prompt。`seed_ai` 的升级函数只在 `whatsapp_text_translation` 仍是首版提示词时替换为外贸语域版，管理员改过的不动。
 

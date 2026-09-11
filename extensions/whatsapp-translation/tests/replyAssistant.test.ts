@@ -4,7 +4,7 @@ import type { ReplyOptions } from '@/content/replyAssistant'
 import type { ReplyRequest, ReplyResponse } from '@/shared/contracts'
 
 const options: ReplyOptions = { limit: 20, includeDraft: true, language: 'auto', goal: '' }
-const capabilities = { available: true, max_messages: 40, default_messages: 20, max_context_chars: 12000, max_draft_chars: 2000, max_goal_chars: 500, timeout_seconds: 30 }
+const capabilities = { available: true, history_enabled: true, max_messages: 40, default_messages: 20, max_context_chars: 12000, max_draft_chars: 2000, max_goal_chars: 500, timeout_seconds: 30 }
 function setup() {
   let text = '原草稿'
   let resolve!: (result: ReplyResponse) => void
@@ -106,7 +106,7 @@ it('awaits valid capabilities before reading any context and honors server defau
   expect(s.adapter.collectReplyContext).not.toHaveBeenCalled()
   resolveCaps({ ...capabilities, default_messages: 10, max_messages: 15, max_context_chars: 6000 })
   await s.started()
-  expect(s.adapter.collectReplyContext).toHaveBeenCalledWith(20, { maxMessages: 10, maxChars: 6000 })
+  expect(s.adapter.collectReplyContext).toHaveBeenCalledWith(15, { maxMessages: 15, maxChars: 6000 })
   s.resolve(); await pending
 })
 it.each([

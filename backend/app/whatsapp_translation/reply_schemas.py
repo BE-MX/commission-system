@@ -15,11 +15,15 @@ class StrictModel(BaseModel):
 
 class ReplyMessage(StrictModel):
     role: Literal["customer", "salesperson"]
-    text: str = Field(min_length=1, max_length=12000)
+    text: str = Field(min_length=1, max_length=120000)
+    timestamp: str = Field(default="", max_length=120)
+    quoted_text: str = Field(default="", max_length=12000)
+    kind: Literal["text", "media", "unknown"] = "text"
 
 
 class ContextScope(StrictModel):
-    requested_limit: Literal[20, 40] = 20
+    requested_limit: int = Field(default=2000, ge=1, le=2000)
+    history_status: str = Field(default="loaded_only", max_length=40)
     truncated: bool = False
     omitted_media: bool = False
     latest_visible: bool = False
@@ -30,7 +34,7 @@ class ReplyRequest(StrictModel):
     conversation_epoch: UUID
     context_version: int = Field(ge=0)
     draft_version: int = Field(ge=0)
-    messages: list[ReplyMessage] = Field(min_length=1, max_length=40)
+    messages: list[ReplyMessage] = Field(min_length=1, max_length=2000)
     context_scope: ContextScope
     draft_intent: str = Field(default="", max_length=2000)
     target_language: str = "auto"
@@ -49,7 +53,7 @@ class ReplyRequest(StrictModel):
 
     @model_validator(mode="after")
     def bounded_context(self):
-        if sum(len(message.text) for message in self.messages) > 12000:
+        if sum(len(message.text) + len(message.quoted_text) for message in self.messages) > 120000:
             raise ValueError("context too large")
         if len(self.messages) > self.context_scope.requested_limit:
             raise ValueError("message count exceeds selected scope")
@@ -57,7 +61,7 @@ class ReplyRequest(StrictModel):
 
 
 class ReviewEvidence(StrictModel):
-    message_index: int = Field(ge=0, le=39)
+    message_index: int = Field(ge=0, le=1999)
     role: Literal["customer", "salesperson"]
     kind: Literal["confirmed_need", "buyer_action", "seller_statement", "inference"]
     summary: str = Field(min_length=1, max_length=200)
@@ -120,15 +124,6 @@ class ReplyOutput(StrictModel):
         return values
 
 
-def generation_schema(allowed_fact_source_indices: list[int]) -> dict:
-    """Narrow the model-facing schema; the independent output guard still applies."""
-    schema = ReplyOutput.model_json_schema()
-    schema["required"].append("claims")
-    if allowed_fact_source_indices:
-        schema["$defs"]["ReplyClaim"]["properties"]["source_index"]["enum"] = list(allowed_fact_source_indices)
-    else:
-        schema["properties"]["claims"]["maxItems"] = 0
-    return schema
 
 
 class ReplyResponse(ReplyOutput):
@@ -137,6 +132,8 @@ class ReplyResponse(ReplyOutput):
     context_version: int
     draft_version: int
     sources: list[ReplySource] = Field(default_factory=list, max_length=6)
+    memory_error: str | None = None
+    context_processing: str = "full"
     action: ReplyAction | None = None
     memory_conversation_id: UUID | None = None
     memory_instance_id: UUID | None = None

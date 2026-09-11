@@ -100,8 +100,9 @@ def mock_model(monkeypatch, planner=None, generator=None, on_call=None):
         calls.append(kwargs)
         if on_call:
             on_call(db, len(calls))
-        payload = planner if len(calls) % 2 else generator
-        return {"content": encode(payload if payload is not None else (plan() if len(calls) % 2 else output())), "log_id": len(calls)}
+        payload = generator if generator is not None else output()
+        payload = {**payload, "memory_changes": (planner or plan()).get("memory_changes", [])}
+        return {"content": encode(payload), "log_id": len(calls)}
 
     monkeypatch.setattr(reply_service, "chat", fake_chat)
     return calls

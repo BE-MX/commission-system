@@ -227,6 +227,8 @@ def _handle_memory(db, identity, command: MemoryCommand):
     if record is None:
         raise error("reply_result_unavailable")
     response = _cached_response(db, identity, record, _configuration_signature(settings, preset_signature(db, settings)))
+    if response.memory_error:
+        raise error("reply_result_unavailable")
     if str(response.memory_conversation_id) != inquiry_id or response.memory_revision != command.revision or str(response.memory_instance_id) != instance_id:
         raise error("reply_memory_conflict")
     return {"inquiry": _write(db, identity, inquiry_id, instance_id, command.revision,

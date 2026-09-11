@@ -79,7 +79,7 @@ function startContentScript(): void {
     mountTranslation: (target, state, onRetry) => mountTranslation(target, state, onRetry, { dark: adapter.isDarkTheme() }),
   }, {
     onDetectedLanguage: (_message, language) => {
-      if (!TARGET_LANGUAGES.includes(language as TargetLanguage)) return
+      if (adapter.isCollectingHistory() || !TARGET_LANGUAGES.includes(language as TargetLanguage)) return
       if (language !== outgoingComposer.getTargetLanguage()) reply?.optionsChanged()
       void controller?.onLanguageChange(language)
     },
@@ -214,20 +214,20 @@ function startContentScript(): void {
     } else if (!adapter.hasToolbar() && adapter.inspectChat().kind === 'direct') {
       // WhatsApp re-rendered the footer and dropped our host.
       void mountToolbar()
-    } else if (transcriptReplaced) {
+    } else if (transcriptReplaced && !adapter.isCollectingHistory()) {
       // Titles and containers may be reused for another contact. With no stable
       // identity, wholesale transcript replacement disconnects inquiry memory.
       // A full history remount may also disconnect; explicit restore is safer.
       reply?.chatChanged()
     }
-    if (records.some(record => adapter.isMessageMutation(record))) reply?.contextChanged()
+    if (!adapter.isCollectingHistory() && records.some(record => adapter.isMessageMutation(record))) reply?.contextChanged()
     if (!adapter.isWritingComposer() && records.some(record => adapter.isComposerMutation(record))) {
       reply?.draftChanged()
       outgoingComposer.invalidateDraft()
       controller?.onComposerInput()
     }
     watchComposer()
-    translator.notifyMutation()
+    if (!adapter.isCollectingHistory()) translator.notifyMutation()
   })
   observer.observe(document, {
     attributes: true,
@@ -241,7 +241,7 @@ function startContentScript(): void {
   // Popup toggles / re-authorization happen out of band; re-arm on focus.
   window.addEventListener('focus', () => {
     translator.resume()
-    translator.notifyMutation()
+    if (!adapter.isCollectingHistory()) translator.notifyMutation()
   })
 }
 

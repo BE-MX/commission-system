@@ -88,7 +88,7 @@ describe('background message dispatcher', () => {
   it('rechecks a lower live server limit before POSTing any text', async () => {
     store.set('deviceToken', 'synthetic-token'); store.set('replyDisclosureAcknowledged', true)
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 200, message: 'ok', data: { reply: {
-      available: true, max_messages: 40, default_messages: 20, max_context_chars: 6000,
+      available: true, history_enabled: true, max_messages: 40, default_messages: 20, max_context_chars: 6000,
       max_draft_chars: 1000, max_goal_chars: 100, timeout_seconds: 30,
     } } })))
     vi.stubGlobal('fetch', fetch)
@@ -101,7 +101,7 @@ describe('background message dispatcher', () => {
   it.each(['messages', 'draft', 'goal'] as const)('rejects requests exceeding the current server %s bound before POST', async field => {
     store.set('deviceToken', 'synthetic-token'); store.set('replyDisclosureAcknowledged', true)
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 200, message: 'ok', data: { reply: {
-      available: true, max_messages: 1, default_messages: 1, max_context_chars: 6000,
+      available: true, history_enabled: true, max_messages: 1, default_messages: 1, max_context_chars: 6000,
       max_draft_chars: 1, max_goal_chars: 1, timeout_seconds: 30,
     } } })))
     vi.stubGlobal('fetch', fetch); await import('@/background/index')

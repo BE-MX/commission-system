@@ -29,7 +29,7 @@ def setup_reply(db, monkeypatch):
     return seed_reply(db, monkeypatch)
 
 
-def test_two_calls_are_metadata_only_and_response_echoes_snapshot(db, setup_reply, monkeypatch, caplog):
+def test_direct_call_is_metadata_only_and_response_echoes_snapshot(db, setup_reply, monkeypatch, caplog):
     identity, _, _, _, fact, _ = setup_reply
     calls = mock_model(monkeypatch)
     payload = request()
@@ -38,10 +38,10 @@ def test_two_calls_are_metadata_only_and_response_echoes_snapshot(db, setup_repl
     assert result.conversation_epoch == payload.conversation_epoch
     assert result.context_version == payload.context_version and result.draft_version == payload.draft_version
     assert result.sources[1].revision_id == fact["revision_id"]
-    assert len(calls) == 2
+    assert len(calls) == 1
     assert all(call["snapshot_mode"] == "metadata" for call in calls)
     assert all(call["caller_user_id"] == identity.user_id for call in calls)
-    assert 0 < calls[1]["timeout_sec"] <= calls[0]["timeout_sec"] <= 30
+    assert 0 < calls[0]["timeout_sec"] <= 120
     row = db.query(ReplyRequestRecord).one()
     persisted = encode({column.name: str(getattr(row, column.name)) for column in row.__table__.columns})
     for forbidden in [payload.messages[0].text, result.reply_text, result.rationale_zh, "Genius Weft"]:
@@ -58,7 +58,7 @@ def test_same_request_reuses_only_authorized_local_result(db, setup_reply, monke
     first = reply_service.suggest_reply(db, identity, payload)
     second = reply_service.suggest_reply(db, identity, payload)
     assert first == second
-    assert len(calls) == 2
+    assert len(calls) == 1
     assert db.query(ReplyRequestRecord).count() == 1
 
 
@@ -70,7 +70,7 @@ def test_duplicate_id_with_different_payload_never_calls_again(db, setup_reply, 
     with pytest.raises(WhatsAppTranslationError) as caught:
         reply_service.suggest_reply(db, identity, payload.model_copy(update={"goal": "different"}))
     assert caught.value.error_code == "reply_request_conflict"
-    assert len(calls) == 2
+    assert len(calls) == 1
 
 
 @pytest.mark.parametrize("state", ["cache_lost", "other_worker", "pending_expired", "failed"])
@@ -100,8 +100,8 @@ def test_duplicate_with_unavailable_result_never_restarts_cost(db, setup_reply, 
 def test_revocation_or_source_change_prevents_return(db, setup_reply, monkeypatch, change, when):
     identity, _, library, policy, _, settings = setup_reply
 
-    def mutate(db, call_number=2):
-        if call_number != 2:
+    def mutate(db, call_number=1):
+        if call_number != 1:
             return
         if change == "grant":
             permission = db.query(ArkPermission).filter_by(code="whatsapp_reply:write").one()
@@ -132,10 +132,10 @@ def test_revocation_or_source_change_prevents_return(db, setup_reply, monkeypatc
     with pytest.raises(WhatsAppTranslationError) as caught:
         reply_service.suggest_reply(db, identity, payload)
     assert caught.value.error_code in {"reply_permission_denied", "device_revoked", "reply_sources_changed", "reply_configuration_changed"}
-    assert len(calls) == 2
+    assert len(calls) == 1
 
 
-def test_missing_policy_is_safe_and_never_generates_unconstrained_reply(db, setup_reply, monkeypatch):
+def test_missing_policy_still_provides_editable_draft_with_warning(db, setup_reply, monkeypatch):
     identity, _, library, _, _, _ = setup_reply
     db.query(KnowledgeLibraryMember).filter_by(library_id=library.id).delete()
     db.commit()
@@ -143,9 +143,9 @@ def test_missing_policy_is_safe_and_never_generates_unconstrained_reply(db, setu
     result = reply_service.suggest_reply(db, identity, request())
     assert len(calls) == 1
     assert result.sources == [] and result.claims == []
-    assert result.status == "needs_confirmation"
+    assert result.status == "ready"
     assert "knowledge_unavailable" in result.risk_flags
-    assert "Genius" not in result.reply_text
+    assert result.reply_text == output()["reply_text"]
 
 
 def test_retrieval_error_is_not_reported_as_no_knowledge(db, setup_reply, monkeypatch):
@@ -158,17 +158,17 @@ def test_retrieval_error_is_not_reported_as_no_knowledge(db, setup_reply, monkey
     with pytest.raises(WhatsAppTranslationError) as caught:
         reply_service.suggest_reply(db, setup_reply[0], request())
     assert caught.value.error_code == "reply_unavailable"
-    assert len(calls) == 1
+    assert len(calls) == 0
 
 
 def test_invalid_response_is_not_retried_or_cached(db, setup_reply, monkeypatch):
-    calls = mock_model(monkeypatch, generator=output(reply_text="We guarantee delivery in seven days."))
+    calls = mock_model(monkeypatch, generator=output(reply_text=""))
     payload = request()
     with pytest.raises(WhatsAppTranslationError):
         reply_service.suggest_reply(db, setup_reply[0], payload)
     with pytest.raises(WhatsAppTranslationError):
         reply_service.suggest_reply(db, setup_reply[0], payload)
-    assert len(calls) == 2
+    assert len(calls) == 1
     assert db.query(ReplyRequestRecord).one().status == "failed"
 
 

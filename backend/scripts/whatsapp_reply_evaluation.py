@@ -72,7 +72,7 @@ def install_memory_provider(db, configuration, settings, monkeypatch):
     provider = db.query(AiProvider).filter_by(name="synthetic-reply").one()
     for key, value in configuration["provider"].items():
         setattr(provider, key, value)
-    for name, cap in ((settings.WHATSAPP_REPLY_PLANNER_PRESET, 3200), (settings.WHATSAPP_REPLY_GENERATOR_PRESET, 1800)):
+    for name, cap in ((settings.WHATSAPP_REPLY_GENERATOR_PRESET, 3200),):
         preset = db.query(AiPreset).filter_by(preset_name=name).one()
         preset.model = configuration["model"]
         preset.parameters = reply_parameters(configuration["parameters"], cap, configuration["provider"]["api_type"])
@@ -84,53 +84,15 @@ def install_memory_provider(db, configuration, settings, monkeypatch):
 
 
 def install_metadata_diagnostics(monkeypatch):
-    from app.whatsapp_translation import reply_guard
-    from app.whatsapp_translation import reply_service
-    from pydantic import ValidationError
-    original = reply_guard.parse_json
-
-    def parse_with_diagnostics(content, schema):
+    from app.whatsapp_translation import reply_direct
+    original = reply_direct._object
+    def parse(content):
         try:
-            return original(content, schema)
+            return original(content)
         except WhatsAppTranslationError:
-            diagnostic = {"schema": schema.__name__, "chars": len(content) if isinstance(content, str) else 0}
-            try:
-                value = json.loads(content)
-            except (ValueError, TypeError):
-                diagnostic["kind"] = "invalid_json"
-                diagnostic["markdown_fence"] = isinstance(content, str) and content.strip().startswith("```")
-            else:
-                try:
-                    schema.model_validate(value)
-                except ValidationError as exc:
-                    diagnostic["kind"] = "schema_validation"
-                    diagnostic["errors"] = [{"field": item["loc"][0] if item["loc"] and item["loc"][0] in schema.model_fields else "unknown", "type": item["type"]} for item in exc.errors(include_input=False, include_context=False, include_url=False)]
-            print(json.dumps({"reply_diagnostic": diagnostic}), flush=True)
+            print(json.dumps({"reply_diagnostic": {"kind": "invalid_json_object", "chars": len(content) if isinstance(content, str) else 0}}), flush=True)
             raise
-
-    monkeypatch.setattr(reply_guard, "parse_json", parse_with_diagnostics)
-    original_output = reply_service.validate_output
-
-    def validate_with_diagnostics(content, language, sources, request):
-        try:
-            return original_output(content, language, sources, request)
-        except WhatsAppTranslationError as exc:
-            if exc.error_code == "reply_unsafe_response":
-                # Only classify the check that blocked a draft; never print the
-                # matching words/sentence or claim that a match proves danger.
-                output = original(content, reply_guard.ReplyOutput)
-                all_text = " ".join([output.reply_text, output.meaning_zh, output.rationale_zh, *output.missing_information])
-                checks = {
-                    "contact": bool(reply_guard.CONTACT.search(all_text)),
-                    "link_or_markup": bool(reply_guard.LINK_OR_MARKUP.search(all_text)),
-                    "commercial_or_internal_term": bool(reply_guard.UNSAFE.search(output.reply_text)),
-                    "dynamic_time": bool(reply_guard.DYNAMIC_TIME.search(output.reply_text)),
-                    "financial_commitment": bool(reply_guard.COMMITMENT.search(output.reply_text)),
-                }
-                print(json.dumps({"reply_diagnostic": {"schema": "ReplyOutput", "kind": "safety_check", "matched_checks": [key for key, matched in checks.items() if matched]}}), flush=True)
-            raise
-
-    monkeypatch.setattr(reply_service, "validate_output", validate_with_diagnostics)
+    monkeypatch.setattr(reply_direct, "_object", parse)
 
 
 def evaluate_cases(db, identity, make_request, case_ids=None):

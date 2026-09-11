@@ -15,7 +15,7 @@ export const REPLY_COPY: Record<string, string> = {
   reply_configuration_changed: '话术配置已更新，请重新生成。', reply_sources_changed: '知识依据已更新，请重新生成。',
   reply_configuration_invalid: '话术配置有误，请联系管理员检查。', reply_not_configured: '话术模型尚未配置，请联系管理员。',
   reply_not_enabled: '话术功能尚未启用，请联系管理员。', reply_permission_denied: '账号尚未开通话术权限，请联系管理员。',
-  reply_context_too_large: '上下文超过服务限制，请改为最近 20 条后重试。',
+  reply_context_too_large: '已采集内容超过本次服务容量，尚未发送。可下载 JSON，或明确选择较小范围。',
   reply_daily_quota_exceeded: '今日话术额度已用完，请明日再试。', reply_rate_limited: '话术请求较快，请稍后重试。',
   reply_internal_disclosure: '话术可能包含内部信息，已拦截，请重新生成。',
   reply_invalid_evidence: '话术引用依据未通过校验，请重新生成。', reply_missing_evidence: '话术缺少事实依据，已拦截，请重新生成。',
@@ -30,6 +30,10 @@ export const REPLY_COPY: Record<string, string> = {
   reply_latest_too_long: '最新一条文本超过当前服务字符上限，无法生成话术。',
   reply_draft_too_long: '草稿超过当前服务上限，请缩短或关闭“使用草稿意图”。',
   reply_goal_too_long: '本次目标超过当前服务字符上限，请缩短。', reply_invalid_response: '话术结果未通过校验，请重新生成。',
+  reply_backend_update_required: '当前后端尚未支持长历史话术，请先更新后端。',
+  reply_history_busy: '上次历史采集正在结束，请稍后重试。',
+  reply_history_changed: '聊天身份或历史连续性无法确认，已停止采集，请在原聊天重试。',
+  reply_memory_update_failed: '复盘未保存，建议回复仍可使用。',
   reply_failed: '话术生成失败，请重试。', request_timeout: '话术生成超时，请重试。', ai_timeout: '话术生成超时，请重试。',
   ai_unavailable: '话术服务暂时不可用，请稍后重试。',
 }
@@ -64,10 +68,11 @@ export function createReplyView(shadow: ShadowRoot, handlers: {
   const card = el('div', '', 'card')
   const head = el('div', '', 'actions')
   head.append(el('strong', '话术助手'), button('关闭话术', handlers.close))
-  const disclosure = el('p', '当前聊天片段、可选草稿意图及所选询盘复盘将发送至莱莎方舟及已配置模型。启用记录时保存有来源的需求和待办，不保存草稿为已发送消息。仅预览和填入，不自动发送。', 'disclosure')
+  const disclosure = el('p', '当前聊天可获取历史、可选草稿意图及所选询盘复盘将发送至莱莎方舟及已配置模型。启用记录时保存有来源的需求和待办，不保存草稿为已发送消息。仅预览和填入，不自动发送。', 'disclosure')
   const settings = el('div', '', 'actions')
   const limit = el('select'); limit.setAttribute('aria-label', '话术上下文条数')
-  const defaultLimit = el('option', '默认最近 20 条'); defaultLimit.value = 'default'; limit.append(defaultLimit)
+  const defaultLimit = el('option', '加载历史并生成'); defaultLimit.value = 'default'; limit.append(defaultLimit)
+  const loaded = el('option', '仅当前已加载消息'); loaded.value = 'loaded'; limit.append(loaded)
   for (const n of [20, 40]) { const o = el('option', `最近 ${n} 条`); o.value = String(n); limit.append(o) }
   const language = el('select'); language.setAttribute('aria-label', '话术语言')
   for (const code of ['auto', ...TARGET_LANGUAGES]) { const o = el('option', code === 'auto' ? '自动判断客户语言' : LANGUAGE_LABELS[code]); o.value = code; language.append(o) }
@@ -75,7 +80,7 @@ export function createReplyView(shadow: ShadowRoot, handlers: {
   draftLabel.append(include, doc.createTextNode(' 使用草稿意图'))
   settings.append(limit, language, draftLabel)
   const goal = el('textarea'); goal.maxLength = 500; goal.placeholder = '本次目标（可选，最多 500 字符）'; goal.setAttribute('aria-label', '本次目标')
-  const options = (): ReplyOptions => ({ limit: limit.value === 'default' ? 'default' : Number(limit.value) as 20 | 40, language: language.value as ReplyOptions['language'], includeDraft: include.checked, goal: goal.value })
+  const options = (): ReplyOptions => ({ limit: ['default', 'loaded'].includes(limit.value) ? limit.value as 'default' | 'loaded' : Number(limit.value) as 20 | 40, language: language.value as ReplyOptions['language'], includeDraft: include.checked, goal: goal.value })
   for (const input of [limit, language, include]) input.addEventListener('change', handlers.change)
   goal.addEventListener('input', handlers.change)
   const snapshot = el('p', '', 'text back'); const status = el('p', '', 'status'); status.setAttribute('role', 'status')
@@ -93,23 +98,31 @@ export function createReplyView(shadow: ShadowRoot, handlers: {
       root.hidden = !state.open
       if (state.capabilities) {
         const caps = state.capabilities
-        defaultLimit.textContent = `默认最近 ${caps.default_messages} 条`
+        defaultLimit.textContent = '加载历史并生成'
         goal.maxLength = caps.max_goal_chars
         goal.placeholder = `本次目标（可选，最多 ${caps.max_goal_chars} 字符）`
         draftLabel.title = `草稿意图最多 ${caps.max_draft_chars} 字符`
       }
-      generate.disabled = state.busy || !!state.memoryBusy || !!state.paused
-      generate.textContent = state.busy ? '生成中…' : '重新生成话术'
+      generate.disabled = !!state.collecting || state.busy || !!state.memoryBusy || !!state.paused
+      generate.textContent = state.collecting ? '加载历史中…' : state.busy ? '生成中…' : '重新生成话术'
       cancel.hidden = !state.busy
-      status.textContent = state.error ? (REPLY_COPY[state.error] ?? messageForCode(state.error).text) : state.busy ? '正在生成，可继续查看聊天；编辑草稿会使本次生成失效。' : ''
+      status.textContent = state.error ? (REPLY_COPY[state.error] ?? messageForCode(state.error).text) : state.collecting ? '正在向上加载并累计历史，可取消；切换聊天会停止采集。' : state.busy ? '正在生成，长历史会分段整理；编辑草稿会使本次生成失效。' : ''
       const context = state.context
-      snapshot.textContent = context ? `使用 ${context.messages.length} 条 · ${context.range} · 当前已加载 ${context.loadedCount} 条可用文本。上限 ${state.capabilities?.max_context_chars ?? 12000} 字符 / ${state.capabilities?.max_messages ?? 40} 条。${context.context_scope.truncated ? '已按条数或字符上限截断。' : ''}${context.context_scope.omitted_media ? '已跳过媒体，存在上下文缺口。' : ''}${context.skippedUnknown ? '已跳过无法识别的消息。' : ''}无法确认是否包含最新消息。` : ''
+      snapshot.textContent = context ? `已采集 ${context.messages.length} 条 · ${context.range}。${context.context_scope.truncated ? '超过容量，未发送。' : ''}${context.context_scope.omitted_media ? '媒体仅保留占位，内容未读取。' : ''}${context.skippedUnknown ? '存在无法识别的消息。' : ''}${context.context_scope.history_status === 'web_boundary_unverified' ? '已滚动至网页当前边界，不能保证包含手机全部历史。' : '仅代表已采集范围，完整性未确认。'}` : ''
+
       output.replaceChildren()
+      if (context?.messages.length) output.append(button('下载聊天 JSON', () => {
+        const blob = new Blob([JSON.stringify({ schema_version: 1, context_scope: context.context_scope, messages: context.messages }, null, 2)], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const link = doc.createElement('a'); link.href = url; link.download = 'whatsapp-conversation.json'; link.click()
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+      }))
       if (state.canRestore) output.append(button('恢复原草稿', handlers.restore))
       const result = state.result
       memoryView?.render(state, code => REPLY_COPY[code] ?? '询盘记录操作失败，请重试。')
       if (state.paused && handlers.memory) output.append(renderHandoff(doc, state, handlers.memory.pause))
       if (!result) return
+      if (result.context_processing === 'summarized') output.append(el('p', '本次历史较长，已分段整理后生成；下载 JSON 可查看原始采集内容。'))
       output.append(el('p', `建议回复 · ${languageLabel(result.reply_language)}`, 'label'), el('div', result.reply_text, 'text primary'))
       if (result.status !== 'ready') output.append(el('p', result.status === 'needs_confirmation' ? '需要补充确认，暂不可填入。' : '上下文不足，暂不可填入。', 'status'))
       const details = el('details'); details.append(el('summary', '中文含义、建议理由与依据'))

@@ -1,3 +1,4 @@
+import { collectHistory } from './replyHistory'
 import { detectChatKind } from '@/whatsapp/chatDetector'
 import { parseIncomingMessages } from '@/whatsapp/messageParser'
 import { WHATSAPP_SELECTORS } from '@/whatsapp/selectors'
@@ -49,7 +50,15 @@ export class WhatsAppAdapter {
 
   composerElement(): Element | null { return this.root.querySelector(WHATSAPP_SELECTORS.composer) }
   hasToolbar(): boolean { return !!this.root.querySelector(`[${ARK_MARKS.toolbarHost}="1"]`) }
-  collectReplyContext(limit: 20 | 40 = 20, limits?: ReplyContextLimits) { return collectReplyContext(this.root, limit, limits) }
+  private collectingHistory = false
+  isCollectingHistory() { return this.collectingHistory }
+  async collectReplyHistory(limits: ReplyContextLimits, current: () => boolean, progress: (context: ReturnType<typeof collectReplyContext>) => void) {
+    if (this.collectingHistory) throw new Error('reply_history_busy')
+    this.collectingHistory = true
+    try { return await collectHistory(this.root, limits, current, progress) }
+    finally { this.collectingHistory = false }
+  }
+  collectReplyContext(limit: number = 2000, limits?: ReplyContextLimits) { return collectReplyContext(this.root, limit, limits) }
 
   /** Version observation excludes extension UI while retaining edits even when reverted. */
   isComposerMutation(record: MutationRecord): boolean {

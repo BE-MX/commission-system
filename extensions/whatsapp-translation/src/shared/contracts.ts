@@ -153,6 +153,7 @@ export function mapStartPairing(response: StartPairingResponse): PairingState {
 }
 
 export type ReplyCapabilities = {
+  history_enabled?: boolean
   available: boolean
   max_messages: number
   default_messages: number
@@ -169,8 +170,8 @@ export type ReplyRequest = {
   conversation_epoch: string
   context_version: number
   draft_version: number
-  messages: { role: 'customer' | 'salesperson'; text: string }[]
-  context_scope: { requested_limit: 20 | 40; truncated: boolean; omitted_media: boolean; latest_visible: boolean }
+  messages: { role: 'customer' | 'salesperson'; text: string; timestamp?: string; quoted_text?: string; kind?: 'text' | 'media' | 'unknown' }[]
+  context_scope: { requested_limit: number; history_status?: string; truncated: boolean; omitted_media: boolean; latest_visible: boolean }
   draft_intent: string
   target_language: 'auto' | TargetLanguage
   fallback_language: TargetLanguage
@@ -180,6 +181,8 @@ export type ReplyRequest = {
   memory_revision?: number
 }
 export type ReplyResponse = Pick<ReplyRequest, 'request_id' | 'conversation_epoch' | 'context_version' | 'draft_version'> & {
+  memory_error?: string | null
+  context_processing?: string
   status: 'ready' | 'needs_confirmation' | 'insufficient_context'
   reply_language: TargetLanguage
   reply_text: string

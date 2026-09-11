@@ -30,13 +30,13 @@ describe('Ark API client', () => {
     expect(url).toBe('https://leshine.cloud/api/whatsapp-translation/reply-suggestions')
     expect(init).toMatchObject({ cache: 'no-store', method: 'POST', body: JSON.stringify(replyPayload) })
   })
-  it('aborts reply at 35 seconds with no automatic retry and clears keepalive', async () => {
+  it('aborts reply at 185 seconds with no automatic retry and clears keepalive', async () => {
     vi.useFakeTimers()
     fetchMock.mockImplementation((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
       init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
     }))
     const outcome = apiClient.suggestReply('token', '1.2.6', replyPayload).catch(error => error)
-    await vi.advanceTimersByTimeAsync(35_000)
+    await vi.advanceTimersByTimeAsync(185_000)
     expect(await outcome).toMatchObject({ code: 'request_timeout' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(vi.getTimerCount()).toBe(0)

@@ -175,7 +175,7 @@ for (const action of ['close', 'context'] as const) test(`pending restore cannot
   await expect(page.locator('html')).toHaveAttribute('data-lexical-text', 'What sample size do you need?')
   await expect(page.locator('html')).not.toHaveAttribute('data-send-clicked', 'true')
 })
-test('server lower 6000-character capability trims the captured request before generation', async ({ page }) => {
+test('server lower capacity stops instead of silently truncating history', async ({ page }) => {
   const cdp = await page.context().newCDPSession(page)
   await page.evaluate(() => {
     document.documentElement.dataset.lowerReplyLimit = 'true'
@@ -186,11 +186,55 @@ test('server lower 6000-character capability trims the captured request before g
     first.parentElement!.after(next)
   })
   await click(page, cdp, '话术')
-  await expect(page.locator('html')).toHaveAttribute('data-reply-requested', 'true')
-  await expect(page.locator('html')).toHaveAttribute('data-reply-characters', '4000')
-  await expect(page.locator('html')).toHaveAttribute('data-reply-messages', '1')
-  await expect(page.locator('html')).toHaveAttribute('data-reply-truncated', 'true')
-  const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true })
-  expect(all(root).map(text).join('')).toContain('上限 6000 字符')
+  await expect.poll(async () => {
+    const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true })
+    return all(root).map(text).join('')
+  }).toContain('超过本次服务容量')
+  await expect(page.locator('html')).not.toHaveAttribute('data-reply-requested', 'true')
   await expect(page.locator('html')).toHaveAttribute('data-lexical-text', '原草稿')
+})
+
+test('long history loads earlier batches without translation calls and exports the full JSON', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  await page.evaluate(() => {
+    const first = document.querySelector('[data-testid="msg-container"]')!.parentElement!
+    const scroll = document.createElement('div')
+    scroll.id = 'synthetic-history'; scroll.style.cssText = 'height:240px;overflow-y:auto'
+    first.replaceWith(scroll)
+    let oldest = 100
+    const prepend = () => {
+      const end = oldest; oldest = Math.max(0, oldest - 20)
+      const items = document.createDocumentFragment()
+      for (let i = oldest; i < end; i++) {
+        const row = document.createElement('div'); row.style.cssText = 'height:28px;display:flex;align-items:flex-start'
+        row.dataset.id = `false_synthetic_${i}`
+        const bubble = document.createElement('div'); bubble.dataset.testid = 'msg-container'
+        const meta = document.createElement('div'); meta.className = 'copyable-text'; meta.dataset.prePlainText = '[10:00, 2026-09-11] Synthetic:'
+        const span = document.createElement('span'); span.dataset.testid = 'selectable-text'; span.textContent = `Synthetic history ${i}`
+        meta.append(span); bubble.append(meta); row.append(bubble); items.append(row)
+      }
+      const before = scroll.scrollHeight; scroll.prepend(items); scroll.scrollTop += scroll.scrollHeight - before
+    }
+    prepend(); scroll.scrollTop = scroll.scrollHeight
+    scroll.addEventListener('scroll', () => { if (scroll.scrollTop < 100 && oldest) prepend() })
+  })
+  // Let translation of the initially loaded batch finish before measuring history loads.
+  await expect(page.locator('html')).toHaveAttribute('data-translation-calls', '20')
+  await click(page, cdp, '话术')
+  const translationsAtStart = await page.locator('html').getAttribute('data-translation-calls')
+  await expect(page.locator('html')).toHaveAttribute('data-reply-messages', '100', { timeout: 25000 })
+  expect(await page.locator('html').getAttribute('data-translation-calls')).toBe(translationsAtStart)
+  await resolve(page)
+  await click(page, cdp, '填入输入框')
+  await expect(page.locator('html')).toHaveAttribute('data-lexical-text', 'What sample size do you need?')
+  const download = page.waitForEvent('download')
+  await click(page, cdp, '下载聊天 JSON')
+  const file = await download
+  const path = await file.path()
+  const exported = JSON.parse(await readFile(path!, 'utf8'))
+  expect(exported.messages).toHaveLength(100)
+  expect(exported.messages[0].text).toBe('Synthetic history 0')
+  expect(JSON.stringify(exported)).not.toContain('false_synthetic')
+  await expect(page.locator('html')).not.toHaveAttribute('data-send-clicked', 'true')
+  await page.screenshot({ path: '../../tmp/whatsapp-composer-browser/full-history.png' })
 })
