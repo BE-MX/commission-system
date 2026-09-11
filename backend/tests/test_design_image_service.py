@@ -1358,6 +1358,7 @@ def test_config_reports_verified_choices_limit_and_remaining(configured, db, mon
     assert config == {
         "models": [
             {"id": "gpt-image-2", "label": "GPT Image 2", "available": True},
+            {"id": "gpt-image-2.5-sunburst", "label": "GPT Image 2.5", "available": False},
             {"id": "grok-imagine-image-2.0", "label": "Grok Image 2", "available": False},
             {"id": "gemini-3-pro-image", "label": "Nano Banana Pro", "available": False},
             {"id": "gemini-3.1-flash-image", "label": "Nano Banana 2", "available": False},

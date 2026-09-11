@@ -18,6 +18,7 @@ from app.ai.models import AiPreset, AiProvider
 
 ImageModelId = Literal[
     "gpt-image-2",
+    "gpt-image-2.5-sunburst",
     "grok-imagine-image-2.0",
     "gemini-3-pro-image",
     "gemini-3.1-flash-image",
@@ -42,6 +43,13 @@ IMAGE_MODEL_OPTIONS: tuple[ImageModelOption, ...] = (
         label="GPT Image 2",
         preset_name="design_image_generation",
         api_style="images",
+    ),
+    ImageModelOption(
+        id="gpt-image-2.5-sunburst",
+        label="GPT Image 2.5",
+        preset_name="design_image_generation_GPT_image_25",
+        api_style="images",
+        provider_host="api.openlux.ai",
     ),
     ImageModelOption(
         id="grok-imagine-image-2.0",

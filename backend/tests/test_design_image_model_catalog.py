@@ -108,3 +108,27 @@ def test_grok_image_2_rejects_unverified_provider(db, api_base):
 def test_openlux_does_not_enable_other_catalog_models(db):
     _configured_model(db, api_base="https://api.openlux.ai/v1")
     assert model_catalog.configured_model_row(db, "gpt-image-2") is None
+
+
+@pytest.mark.parametrize("api_base", ["https://api.openlux.ai", "https://api.openlux.ai/v1"])
+def test_gpt_image_25_uses_verified_openlux_model(db, api_base):
+    preset, _provider = _configured_model(db, api_base=api_base)
+    preset.preset_name = "design_image_generation_GPT_image_25"
+    preset.model = "gpt-image-2.5-sunburst"
+    db.flush()
+
+    configured = model_catalog.configured_model_row(db, "gpt-image-2.5-sunburst")
+
+    assert configured is not None
+    assert configured[1] is preset
+
+
+def test_gpt_image_25_rejects_teamrouter_provider(db):
+    preset, _provider = _configured_model(
+        db, api_base="https://api.teamorouter.cn/v1"
+    )
+    preset.preset_name = "design_image_generation_GPT_image_25"
+    preset.model = "gpt-image-2.5-sunburst"
+    db.flush()
+
+    assert model_catalog.configured_model_row(db, "gpt-image-2.5-sunburst") is None
