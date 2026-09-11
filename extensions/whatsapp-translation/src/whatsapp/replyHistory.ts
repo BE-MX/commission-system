@@ -31,7 +31,7 @@ export async function collectHistory(root: Document | HTMLElement, limits: Reply
   const read = () => collectReplyContext(root, 2000, { maxMessages: 2000, maxChars: 120000 })
   let context = read()
   const visibleTail = context.messages.at(-1)
-  if (seed) context = { ...seed, messages: mergeHistory(seed.messages, context.messages, 'down'), context_scope: { ...seed.context_scope, omitted_media: seed.context_scope.omitted_media || context.context_scope.omitted_media }, skippedUnknown: seed.skippedUnknown || context.skippedUnknown }
+  if (seed) context = { ...seed, messages: mergeHistory(seed.messages, context.messages, 'down'), context_scope: { ...seed.context_scope, omitted_media: seed.context_scope.omitted_media || context.context_scope.omitted_media }, skippedUnknown: seed.skippedUnknown || context.skippedUnknown, unrepresentedMessages: seed.unrepresentedMessages || context.unrepresentedMessages }
   let scroller = root.querySelector(WHATSAPP_SELECTORS.message)?.parentElement
   while (scroller && scroller !== chat && !(scroller.scrollHeight > scroller.clientHeight && /auto|scroll/.test(getComputedStyle(scroller).overflowY))) scroller = scroller.parentElement
   if (!scroller || scroller === chat) {
@@ -73,12 +73,19 @@ export async function collectHistory(root: Document | HTMLElement, limits: Reply
         check()
         scroll.scrollTop += (direction === 'up' ? -1 : 1) * Math.max(40, scroll.clientHeight * 0.5)
         await wait(); check()
-        const batch = read()
+        let batch = read()
+        // Virtualized history can briefly unmount every row while loading.
+        // Stay at this scroll position; an empty frame proves neither a gap nor
+        // a boundary. Identity/cancellation checks remain active on every wait.
+        for (let retry = 0; !batch.messages.length && !batch.skippedUnknown && retry < 4; retry++) {
+          check(); await wait(); check(); batch = read()
+        }
         const before = messages.length
         try { messages = mergeHistory(messages, batch.messages, direction) }
         catch (error) { safeToRestore = false; throw error }
         context.context_scope.omitted_media ||= batch.context_scope.omitted_media
         context.skippedUnknown ||= batch.skippedUnknown
+        context.unrepresentedMessages ||= batch.unrepresentedMessages
         if (batch.context_scope.truncated || messages.length > limits.maxMessages || messages.reduce((n, m) => n + m.text.length + (m.quoted_text?.length ?? 0), 0) > limits.maxChars) {
           status = 'capacity'; publish(); throw new Error('reply_context_too_large')
         }
@@ -105,6 +112,7 @@ export async function collectHistory(root: Document | HTMLElement, limits: Reply
       await wait()
       if (current() && sameChat()) {
         const restored = read()
+        if (restored.unrepresentedMessages) throw new Error('reply_stale')
         if (restored.messages.some(m => !messages.some(saved => key(saved) === key(m)))) throw new Error('reply_stale')
       }
     }

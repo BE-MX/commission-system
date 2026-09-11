@@ -10,6 +10,14 @@ function normalizeComposerText(value: string): string {
   return value.replace(/\s+/gu, ' ').trim()
 }
 
+function composerText(node: Element | DocumentFragment): string {
+  const copy = node.cloneNode(true) as Element | DocumentFragment
+  for (const emoji of copy.querySelectorAll(WHATSAPP_SELECTORS.messageEmoji)) {
+    emoji.replaceWith(node.ownerDocument!.createTextNode(emoji.getAttribute('data-plain-text') || emoji.getAttribute('alt') || ''))
+  }
+  return normalizeComposerText(copy.textContent ?? '')
+}
+
 export class WhatsAppAdapter {
   private writing = false
   private readonly history: ReturnType<typeof createHistoryCollector>
@@ -45,7 +53,7 @@ export class WhatsAppAdapter {
     if (this.inspectChat().kind !== 'direct') return ''
     const composers = this.root.querySelectorAll(WHATSAPP_SELECTORS.composer)
     if (composers.length !== 1) return ''
-    return normalizeComposerText(composers[0].textContent ?? '')
+    return composerText(composers[0])
   }
   conversationElement(): Element | null { return this.root.querySelector(WHATSAPP_SELECTORS.conversationTitle) }
   messageElements(): Element[] { return [...this.root.querySelectorAll(WHATSAPP_SELECTORS.message)] }
@@ -140,7 +148,7 @@ export class WhatsAppAdapter {
       !composerContextIsCurrent() || this.readComposer() !== composerVersion || !isCurrent()
       || doc.activeElement !== composer || selection.rangeCount !== 1
       || !belongsToComposer(selection.anchorNode) || !belongsToComposer(selection.focusNode)
-      || normalizeComposerText(selection.toString()) !== composerVersion
+      || composerText(selection.getRangeAt(0).cloneContents()) !== composerVersion
     ) {
       collapseFullSelection()
       return false
@@ -176,12 +184,21 @@ export class WhatsAppAdapter {
   async sendAutomatic(text: string, current: () => boolean): Promise<boolean> {
     if (this.inspectChat().kind !== 'direct' || this.readComposer() || !current()) return false
     const snapshot = this.autoSnapshot()
-    const same = () => current() && this.inspectChat().kind === 'direct' && snapshot.identity.every((v, i) => this.autoSnapshot().identity[i] === v)
+    const same = () => current() && this.inspectChat().kind === 'direct' && !this.collectReplyContext().unrepresentedMessages
+      && snapshot.identity.every((v, i) => this.autoSnapshot().identity[i] === v)
     if (!await this.replaceComposer(text, same)) return false
-    const buttons = this.root.querySelectorAll<HTMLButtonElement>(WHATSAPP_SELECTORS.sendButton)
-    const button = buttons[0]
-    if (!same() || this.autoSnapshot().tail !== snapshot.tail || buttons.length !== 1 || !button.isConnected || button.disabled || button.getAttribute('aria-disabled') === 'true'
-      || this.readComposer() !== normalizeComposerText(text) || !button.getClientRects().length) return false
+    // The editor commits before WhatsApp replaces its microphone with Send.
+    // Wait for that render, rechecking cancellation, chat, tail and exact draft.
+    let button: HTMLButtonElement | undefined
+    for (let i = 0; i <= 20; i++) {
+      if (!same() || this.autoSnapshot().tail !== snapshot.tail || this.readComposer() !== normalizeComposerText(text)) return false
+      const buttons = this.root.querySelectorAll<HTMLButtonElement>(WHATSAPP_SELECTORS.sendButton)
+      if (buttons.length > 1) throw new Error('reply_send_control_unavailable')
+      const candidate = buttons[0]
+      if (candidate?.isConnected && !candidate.disabled && candidate.getAttribute('aria-disabled') !== 'true' && candidate.getClientRects().length) { button = candidate; break }
+      if (i < 20) await new Promise<void>(resolve => setTimeout(resolve, 100))
+    }
+    if (!button) throw new Error('reply_send_control_unavailable')
     const previous = new Set(this.collectReplyContext().messages.map(m => String((m as unknown as Record<symbol, string>)[MESSAGE_IDENTITY])))
     button.click()
     // Never retry a click with an uncertain outcome. An outgoing bubble + cleared composer confirms local submission only.

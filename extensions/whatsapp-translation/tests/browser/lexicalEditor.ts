@@ -11,6 +11,11 @@ registerPlainText(editor)
 editor.registerUpdateListener(({ editorState }) => {
   editorState.read(() => {
     document.documentElement.dataset.lexicalText = $getRoot().getTextContent()
+    if (document.documentElement.dataset.delayedSend === 'true') {
+      const button = document.getElementById('send')!
+      button.removeAttribute('data-testid')
+      if ($getRoot().getTextContent()) setTimeout(() => button.setAttribute('data-testid', 'compose-btn-send'), 300)
+    }
   })
 })
 document.getElementById('send')!.addEventListener('click', () => {

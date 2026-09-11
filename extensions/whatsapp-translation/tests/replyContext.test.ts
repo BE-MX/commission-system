@@ -6,6 +6,18 @@ import { ARK_MARKS } from '@/shared/marks'
 import { parseIncomingMessages } from '@/whatsapp/messageParser'
 
 beforeEach(() => { document.body.innerHTML = readFileSync('tests/fixtures/direct.html', 'utf8') })
+it('ignores centered system notices before classifying sender alignment', () => {
+  const row = document.createElement('div'); row.style.alignItems = 'center'
+  row.innerHTML = '<div data-testid="msg-container"><span data-testid="system_message">Synthetic notice</span></div>'
+  document.querySelector('[data-testid="conversation-panel-messages"]')!.append(row)
+  expect(collectReplyContext(document).skippedUnknown).toBe(false)
+})
+it('keeps readable customer text when a quote contains a revoked notice', () => {
+  const row = document.querySelector('[data-testid="msg-container"]')!
+  const quote = document.createElement('div'); quote.dataset.testid = 'quoted-message'
+  quote.innerHTML = '<span data-testid="revoked-message">Synthetic removed quote</span>'; row.prepend(quote)
+  expect(collectReplyContext(document).messages[0].text).toBe('Can you ship this week?')
+})
 it('collects both directions including already translated originals and retains media placeholders and excludes system text', () => {
   const host = document.createElement('div')
   host.setAttribute(ARK_MARKS.translationHost, '1')

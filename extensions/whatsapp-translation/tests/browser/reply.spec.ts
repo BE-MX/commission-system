@@ -197,7 +197,7 @@ test('server lower capacity stops instead of silently truncating history', async
   await expect(page.locator('html')).toHaveAttribute('data-lexical-text', '原草稿')
 })
 
-test('long history loads earlier batches without translation calls and exports the full JSON', async ({ page }) => {
+test('long history recovers from an empty loading frame and exports the full JSON without extra translation', async ({ page }) => {
   test.setTimeout(40000)
   const cdp = await page.context().newCDPSession(page)
   await page.evaluate(() => {
@@ -220,7 +220,17 @@ test('long history loads earlier batches without translation calls and exports t
       const before = scroll.scrollHeight; scroll.prepend(items); scroll.scrollTop += scroll.scrollHeight - before
     }
     prepend(); scroll.scrollTop = scroll.scrollHeight
-    scroll.addEventListener('scroll', () => { if (scroll.scrollTop < 100 && oldest) prepend() })
+    let delayed = false, loading = false
+    scroll.addEventListener('scroll', () => {
+      if (scroll.scrollTop >= 100 || !oldest || loading) return
+      if (delayed) { prepend(); return }
+      delayed = true; loading = true
+      const rows = [...scroll.childNodes], top = scroll.scrollTop
+      const placeholder = document.createElement('div'); placeholder.style.height = `${scroll.scrollHeight}px`
+      scroll.replaceChildren(placeholder)
+      document.documentElement.dataset.syntheticEmptyHistory = 'true'
+      setTimeout(() => { scroll.replaceChildren(...rows); scroll.scrollTop = top; prepend(); loading = false }, 650)
+    })
   })
   // Let translation of the initially loaded batch finish before measuring history loads.
   await expect(page.locator('html')).toHaveAttribute('data-translation-calls', '20')
@@ -228,6 +238,7 @@ test('long history loads earlier batches without translation calls and exports t
   await click(page, cdp, '话术')
   const translationsAtStart = await page.locator('html').getAttribute('data-translation-calls')
   await expect(page.locator('html')).toHaveAttribute('data-reply-messages', '100', { timeout: 25000 })
+  await expect(page.locator('html')).toHaveAttribute('data-synthetic-empty-history', 'true')
   expect(await page.locator('html').getAttribute('data-translation-calls')).toBe(translationsAtStart)
   await resolve(page)
   await page.evaluate(() => {
@@ -294,6 +305,36 @@ test('manual input stops auto takeover before sending', async ({ page }) => {
   await composer.fill('I will handle this myself')
   await expect.poll(async () => !!await find(cdp, '自动接管')).toBe(true)
   await expect(page.locator('html')).not.toHaveAttribute('data-send-clicked', 'true')
+})
+
+test('auto takeover waits for a delayed native send render after each fill', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  await page.getByRole('textbox', { name: 'Synthetic composer' }).fill('')
+  await page.evaluate(() => { document.documentElement.dataset.autoHarness = 'true'; document.documentElement.dataset.delayedSend = 'true' })
+  await click(page, cdp, '自动接管')
+  await expect(page.locator('html')).toHaveAttribute('data-auto-sent', '2', { timeout: 15000 })
+  await expect(page.locator('html')).toHaveAttribute('data-lexical-text', '')
+  expect(await find(cdp, '停止接管')).toBeDefined()
+  await click(page, cdp, '停止接管')
+})
+
+test('auto takeover handles system notices and older unknown placeholders before a readable customer message', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  await page.getByRole('textbox', { name: 'Synthetic composer' }).fill('')
+  await page.evaluate(() => {
+    document.documentElement.dataset.autoHarness = 'true'
+    document.querySelector('#send')!.setAttribute('data-testid', 'compose-btn-send')
+    const panel = document.querySelector('[data-testid="conversation-panel-messages"]')!
+    const notice = document.createElement('div'); notice.style.alignItems = 'center'
+    notice.innerHTML = '<div data-testid="msg-container"><span data-testid="system_message">Synthetic notice</span></div>'
+    const unknown = document.createElement('div'); unknown.style.alignItems = 'flex-start'
+    unknown.innerHTML = '<div data-testid="msg-container"><span>Synthetic unsupported historical content</span></div>'
+    panel.prepend(notice, unknown)
+  })
+  await click(page, cdp, '自动接管')
+  await expect(page.locator('html')).toHaveAttribute('data-auto-sent', '2', { timeout: 15000 })
+  expect(await find(cdp, '停止接管')).toBeDefined()
+  await click(page, cdp, '停止接管')
 })
 
 test('manual mode cancels an auto activation still awaiting disclosure', async ({ page }) => {

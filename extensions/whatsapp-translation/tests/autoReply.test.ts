@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
+import type { ReplyContext } from '@/whatsapp/replyContext'
 import { createAutoReply, type AutoSnapshot } from '@/content/autoReply'
 import type { ReplyRequest, ReplyResponse } from '@/shared/contracts'
 const caps = { available: true, history_enabled: true, auto_reply_enabled: true, max_messages: 2000, default_messages: 2000, max_context_chars: 120000, max_draft_chars: 2000, max_goal_chars: 500, timeout_seconds: 120 }
@@ -9,7 +10,7 @@ function setup() {
   const response = (p: ReplyRequest): ReplyResponse => ({ ...p, status: 'ready', auto_action: 'reply', reply_segments: ['Hi!', 'Which size?'], reply_text: 'Hi! Which size?', reply_language: 'en', meaning_zh: '测试', rationale_zh: '确认尺寸', sources: [], claims: [], risk_flags: [], missing_information: [] })
   const suggest = vi.fn(async (p: ReplyRequest) => response(p))
   const send = vi.fn(async (_text: string, current: () => boolean) => { if (!current()) return false; snapshot.tail += '-sent'; snapshot.role = 'salesperson'; return true })
-  const collect = vi.fn(async () => ({ messages: [{ role: 'customer' as const, text: 'Hello' }], loadedCount: 1, skippedUnknown: false, range: '1', context_scope: { requested_limit: 2000, truncated: false, omitted_media: false, latest_visible: true } }))
+  const collect = vi.fn(async (): Promise<ReplyContext> => ({ messages: [{ role: 'customer' as const, text: 'Hello' }], loadedCount: 1, skippedUnknown: false, range: '1', context_scope: { requested_limit: 2000, truncated: false, omitted_media: false, latest_visible: true } }))
   const capabilities = vi.fn(async () => caps)
   const auto = createAutoReply({ snapshot: () => snapshot, collect, send }, { capabilities, suggest }, () => ({ language: 'auto', fallback: 'en', goal: 'Learn sample needs' }), vi.fn())
   return { auto, snapshot, send, suggest, response, capabilities, collect }
@@ -48,6 +49,27 @@ it.each(['wait', 'handoff'] as const)('does not send model action %s', async act
 })
 it('does not enable over a human draft', () => {
   const s = setup(); s.snapshot.draft = 'Human'; s.auto.start(); expect(s.auto.getState().active).toBe(false)
+})
+it('passes historical unknown placeholders to the agent when the latest customer message is readable', async () => {
+  const s = setup(); const context = await s.collect()
+  s.collect.mockResolvedValue({ ...context, skippedUnknown: true, messages: [{ role: 'customer', kind: 'unknown', text: '[未识别的消息结构]' }, ...context.messages] })
+  s.auto.start(); await vi.advanceTimersByTimeAsync(10000)
+  expect(s.suggest).toHaveBeenCalledTimes(1); expect(s.send).toHaveBeenCalledTimes(2)
+  expect(s.suggest.mock.calls[0][0].messages[0].kind).toBe('unknown'); s.auto.stop()
+})
+it.each(['unknown', 'media'] as const)('still stops for an unreadable latest %s message', async kind => {
+  const s = setup(); const context = await s.collect()
+  s.collect.mockResolvedValue({ ...context, messages: [{ role: 'customer', kind, text: '[未读取内容]' }] })
+  s.auto.start(); await vi.advanceTimersByTimeAsync(10000)
+  expect(s.send).not.toHaveBeenCalled(); expect(s.suggest).not.toHaveBeenCalled()
+  expect(s.auto.getState().note).toContain('最新消息')
+})
+it('does not generate if some messages have no identifiable sender', async () => {
+  const s = setup(); const context = await s.collect()
+  s.collect.mockResolvedValue({ ...context, skippedUnknown: true, unrepresentedMessages: true })
+  s.auto.start(); await vi.advanceTimersByTimeAsync(10000)
+  expect(s.suggest).not.toHaveBeenCalled(); expect(s.send).not.toHaveBeenCalled()
+  expect(s.auto.getState().note).toContain('发送方')
 })
 it('stops before generation when backend auto support is missing', async () => {
   const s = setup(); s.capabilities.mockResolvedValue({ ...caps, auto_reply_enabled: false }); s.auto.start()

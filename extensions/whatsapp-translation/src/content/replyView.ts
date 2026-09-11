@@ -34,6 +34,7 @@ export const REPLY_COPY: Record<string, string> = {
   reply_backend_update_required: '当前后端尚未支持长历史话术，请先更新后端。',
   reply_history_busy: '上次历史采集正在结束，请稍后重试。',
   reply_history_changed: '聊天身份或历史连续性无法确认，已停止采集，请在原聊天重试。',
+  reply_send_control_unavailable: '回复已填入，但发送按钮尚不可用，未点击发送；请检查输入框并手动发送。',
   reply_memory_update_failed: '复盘未保存，建议回复仍可使用。',
   reply_failed: '话术生成失败，请重试。', request_timeout: '话术生成超时，请重试。', ai_timeout: '话术生成超时，请重试。',
   ai_unavailable: '话术服务暂时不可用，请稍后重试。',

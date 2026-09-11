@@ -19,6 +19,21 @@ const unknownFixture = loadFixture('unknown')
 const noChatFixture = loadFixture('no-chat')
 
 describe('WhatsApp adapter', () => {
+  it('reads composer emoji images as text instead of dropping generated emoji', () => {
+    const document = loadFixture('direct')
+    document.querySelector('[contenteditable]')!.innerHTML = 'Hello <img data-testid="selectable-text" data-plain-text="🙂" alt="🙂">'
+    expect(adapterFor(document).readComposer()).toBe('Hello 🙂')
+  })
+  it('replaces an existing emoji image draft after checking the full selection', async () => {
+    const document = loadFixture('direct')
+    const composer = document.querySelector('[contenteditable]') as HTMLElement
+    composer.innerHTML = 'Hello <img data-testid="selectable-text" data-plain-text="🙂" alt="🙂">'
+    const harness = installControlledComposer(document, composer)
+    const adapter = adapterFor(document)
+    expect(await adapter.replaceComposer('Updated draft')).toBe(true)
+    expect(adapter.readComposer()).toBe('Updated draft')
+    expect(harness.commandCount()).toBe(1)
+  })
   it('serializes reply and translation writes and rechecks the winning write before dispatch', async () => {
     const document = loadFixture('direct')
     const adapter = adapterFor(document)

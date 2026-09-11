@@ -28,6 +28,7 @@ export type ReplyContext = {
   context_scope: ReplyRequest['context_scope']
   loadedCount: number
   skippedUnknown: boolean
+  unrepresentedMessages?: boolean
   range: string
 }
 export type ReplyContextLimits = { maxMessages: number; maxChars: number }
@@ -59,16 +60,17 @@ export function collectReplyContext(root: Document | HTMLElement, limit: number 
   const parsed: (ReplyRequest['messages'][number] & { cost: number })[] = []
   let omittedMedia = false
   let skippedUnknown = false
+  let unrepresentedMessages = false
   for (const row of rows) {
     if (row.closest(`[${ARK_MARKS.translationHost}], [${ARK_MARKS.toolbarHost}]`)) continue
+    const clean = row.cloneNode(true) as Element
+    clean.querySelectorAll(`[${ARK_MARKS.translationHost}], [${ARK_MARKS.toolbarHost}], ${WHATSAPP_SELECTORS.quotedMessage}`).forEach(node => node.remove())
+    if (clean.matches(WHATSAPP_SELECTORS.systemNotice) || clean.querySelector(WHATSAPP_SELECTORS.systemNotice)) continue
     const align = row.parentElement && row.ownerDocument.defaultView?.getComputedStyle(row.parentElement).alignItems
-    if (align !== 'flex-start' && align !== 'flex-end') { skippedUnknown = true; continue }
+    if (align !== 'flex-start' && align !== 'flex-end') { skippedUnknown = true; unrepresentedMessages = true; continue }
     const quoted = maskContacts(row.querySelector(WHATSAPP_SELECTORS.quotedMessage)?.textContent?.trim() ?? '')
     const metadataText = row.querySelector(WHATSAPP_SELECTORS.messageMetadata)?.getAttribute('data-pre-plain-text') ?? ''
     const timestamp = (metadataText.match(/^\[([^\]]+)\]/u)?.[1] ?? row.querySelector(WHATSAPP_SELECTORS.messageTime)?.textContent ?? '').trim().slice(0, 120)
-    const clean = row.cloneNode(true) as Element
-    clean.querySelectorAll(`[${ARK_MARKS.translationHost}], [${ARK_MARKS.toolbarHost}], ${WHATSAPP_SELECTORS.quotedMessage}`).forEach(node => node.remove())
-    if (clean.querySelector(WHATSAPP_SELECTORS.systemNotice)) continue
     if (clean.querySelector(WHATSAPP_SELECTORS.mediaMessage)) {
       omittedMedia = true
       const text = '[媒体消息：未读取图片、语音或附件内容]'
@@ -105,6 +107,7 @@ export function collectReplyContext(root: Document | HTMLElement, limit: number 
     context_scope: { requested_limit: limit, truncated: kept.length < parsed.length, omitted_media: omittedMedia, latest_visible: false },
     loadedCount: parsed.length,
     skippedUnknown,
+    unrepresentedMessages,
     range: kept.length ? `已加载文本第 ${parsed.indexOf(kept[0]) + 1}–${parsed.indexOf(kept[kept.length - 1]) + 1} 条` : '无可用文本',
   }
 }

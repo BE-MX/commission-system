@@ -72,6 +72,43 @@ it('same-title replacement with different message identities is rejected', async
   })).rejects.toThrow('reply_history_changed')
 })
 
+it('waits in place for a temporarily empty virtual window without dropping history', async () => {
+  const f = fixture(); let ticks = 0; let waitingTop = -1
+  const result = await collectHistory(document, limits, () => true, () => {}, async () => {
+    if (ticks === 2) expect(f.scroll.scrollTop).toBe(waitingTop)
+    f.render()
+    if (++ticks === 2) { waitingTop = f.scroll.scrollTop; f.scroll.replaceChildren() }
+  })
+  expect(result.messages).toHaveLength(120)
+  expect(result.context_scope.latest_visible).toBe(true)
+  expect(f.scroll.scrollTop).toBe(4400)
+})
+
+it('does not treat a persistently empty window as the history boundary', async () => {
+  const f = fixture(); let ticks = 0
+  await expect(collectHistory(document, limits, () => true, () => {}, async () => {
+    f.render(); if (++ticks >= 2) f.scroll.replaceChildren()
+  })).rejects.toThrow('reply_history_changed')
+  expect(ticks).toBeLessThan(10)
+})
+
+it('still cancels while waiting for an empty history window to recover', async () => {
+  const f = fixture(); let ticks = 0; let current = true
+  await expect(collectHistory(document, limits, () => current, () => {}, async () => {
+    f.render(); if (++ticks === 2) f.scroll.replaceChildren()
+    if (ticks === 3) current = false
+  })).rejects.toThrow('reply_history_changed')
+})
+
+it('rejects different message identities after an empty loading window', async () => {
+  const f = fixture(); let ticks = 0
+  await expect(collectHistory(document, limits, () => true, () => {}, async () => {
+    f.render(); ticks++
+    if (ticks === 2) f.scroll.replaceChildren()
+    if (ticks >= 3) for (const row of document.querySelectorAll('[data-id]')) row.setAttribute('data-id', `different_${row.getAttribute('data-id')}`)
+  })).rejects.toThrow('reply_history_changed')
+})
+
 it('capacity stop retains collected JSON for inspection and does not pretend completeness', async () => {
   const f = fixture(); let count = 0; let status = ''
   await expect(collectHistory(document, { ...limits, maxMessages: 40 }, () => true, result => {
@@ -88,6 +125,15 @@ it('new message arriving during restore invalidates the captured snapshot', asyn
   }, async () => {
     f.render()
     if (boundary) document.querySelector('[data-testid="selectable-text"]')!.textContent = 'New customer correction'
+  })).rejects.toThrow('reply_stale')
+})
+it('rejects a message with an unknown sender arriving during restore', async () => {
+  const f = fixture(); let boundary = false
+  await expect(collectHistory(document, limits, () => true, result => {
+    boundary = result.context_scope.history_status === 'web_boundary_unverified'
+  }, async () => {
+    f.render()
+    if (boundary) { const row = document.createElement('div'); row.innerHTML = '<div data-testid="msg-container">Synthetic unknown direction</div>'; f.scroll.append(row) }
   })).rejects.toThrow('reply_stale')
 })
 

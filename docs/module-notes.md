@@ -1023,6 +1023,10 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 
 ## WhatsApp 实时翻译（whatsapp_translation，2026-09-03）
 
+**自动接管 v1.6.2**：系统通知不参与完整性判断，旧未知占位交Agent判断；最新未知/媒体及未识别发送方仍停止，各原因单独提示。详见 [完整性误判修复](requirements/2026-09-11-whatsapp-auto-context-fix.md)。
+
+**自动接管 v1.6.1 修复**：等待原生发送按钮渲染，草稿与选区识别图片表情；历史滚动空窗有限原地等待，恢复后仍须匹配重叠。仅扩展更新。详见 [复现与交付](requirements/2026-09-11-whatsapp-takeover-fixes.md)。
+
 **自动接管 v1.6.0**：用户主动开启当前前台聊天后自动生成短段并发送，沿用后台预设；等待/交人工动作、发送前核验、单实例锁和不确定停止。普通话术仍为预览/填入。详见 [发送授权与验收边界](requirements/2026-09-11-whatsapp-auto-takeover.md)。
 
 **扩展 v1.5.3 界面整理**：话术面板分建议回复、聊天上下文、询盘与接管三个标签；主操作固定，设置与依据按需展开。详见 [UI交付](requirements/2026-09-11-whatsapp-reply-ui.md)。

@@ -38,7 +38,10 @@ wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))) {
       const context = await adapter.collect(caps, current)
       collecting = false
       if (!current()) return
-      if (!context.context_scope.latest_visible || context.context_scope.truncated || context.skippedUnknown || !context.messages.length) throw new Error('聊天内容不完整，请人工确认')
+      if (!context.context_scope.latest_visible) throw new Error('尚未确认最新消息位置，请将聊天滚动到底部后重新开启')
+      if (context.context_scope.truncated) throw new Error('聊天记录超过采集容量，请使用手动话术处理')
+      if (context.unrepresentedMessages) throw new Error('部分消息无法识别发送方，已停止；请使用手动话术处理')
+      if (!context.messages.length) throw new Error('当前聊天没有可读取的消息，请等待消息加载后重试')
       const latest = context.messages.at(-1)!
       if (latest.role !== 'customer') { processed = incoming; state.note = '等待客户新消息'; return }
       if (latest.kind === 'media' || latest.kind === 'unknown') throw new Error('最新消息含未读取内容，请人工接管')
