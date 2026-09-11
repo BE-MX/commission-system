@@ -14,7 +14,7 @@ from app.main import app
 from app.whatsapp_translation import reply_rewrite, reply_service, reply_state
 from app.whatsapp_translation.errors import WhatsAppTranslationError
 from app.whatsapp_translation.models import ReplyRequestRecord, TranslationDevice
-from tests.reply_support import encode, mock_model, output, plan, request, seed_reply
+from tests.reply_support import binding, encode, mock_model, output, plan, publish, request, seed_reply
 
 
 @pytest.fixture(autouse=True)
@@ -354,3 +354,60 @@ def test_auto_handoff_next_step_uses_real_review_reason(db, setup_reply, monkeyp
     assert result.action.kind == "handoff"
     assert result.action.focus == "模型分段格式不完整，已保留回复，请人工处理。"
     assert result.handoff["next_step"] == result.action.focus
+
+
+def test_auto_reply_with_unverified_price_hands_off(db, setup_reply, monkeypatch):
+    identity = setup_reply[0]
+    mock_model(monkeypatch, generator=output(
+        reply_text="It costs $100. Shall I proceed?",
+        auto_action="reply", reply_segments=["It costs $100.", "Shall I proceed?"]))
+    result = reply_service.suggest_reply(db, identity, request(mode="auto"))
+    assert result.auto_action == "handoff"
+    assert result.reply_segments == []
+    assert "price_unverified" in result.risk_flags
+    assert "auto_reply_review_required" in result.risk_flags
+    assert result.action.kind == "handoff" and result.action.focus.endswith("请人工处理。")
+
+
+def test_auto_reply_with_sourced_price_is_sent(db, setup_reply, monkeypatch):
+    identity, _, library, _, _, settings = setup_reply
+    admin = {"sub": str(identity.user_id), "roles": ["super_admin"]}
+    priced = publish(db, admin, library.id, "Synthetic price FAQ", "Sample fee is USD 100 per set.")
+    item = binding(priced, "public_fact")
+    item.aliases = ["price", "fee"]
+    settings.WHATSAPP_REPLY_SOURCE_BINDINGS.append(item.model_dump())
+    mock_model(monkeypatch, generator=output(
+        reply_text="The sample fee is USD 100 per set.",
+        auto_action="reply", reply_segments=["The sample fee is USD 100 per set."]))
+    result = reply_service.suggest_reply(db, identity, request(mode="auto", messages=[
+        {"role": "customer", "text": "What is the sample fee?"},
+    ]))
+    assert result.auto_action == "reply"
+    assert result.reply_segments == ["The sample fee is USD 100 per set."]
+    assert "price_unverified" not in result.risk_flags
+
+
+def test_draft_mode_keeps_unverified_price_for_human_review(db, setup_reply, monkeypatch):
+    identity = setup_reply[0]
+    mock_model(monkeypatch, generator=output(reply_text="It costs $100."))
+    result = reply_service.suggest_reply(db, identity, request())
+    assert result.status == "ready"
+    assert result.reply_text == "It costs $100."
+    assert "price_unverified" not in result.risk_flags
+
+
+def test_auto_mode_requires_auto_enabled(db, setup_reply, monkeypatch):
+    identity, *_, settings = setup_reply
+    monkeypatch.setattr(settings, "WHATSAPP_REPLY_AUTO_ENABLED", False)
+    mock_model(monkeypatch)
+    with pytest.raises(WhatsAppTranslationError) as caught:
+        reply_service.suggest_reply(db, identity, request(mode="auto"))
+    assert caught.value.error_code == "reply_auto_disabled"
+    result = reply_service.suggest_reply(db, identity, request())
+    assert result.status == "ready"
+
+
+def test_capabilities_reflect_auto_toggle(db, setup_reply, monkeypatch):
+    identity, *_, settings = setup_reply
+    monkeypatch.setattr(settings, "WHATSAPP_REPLY_AUTO_ENABLED", False)
+    assert reply_service.reply_capabilities(db, identity)["auto_reply_enabled"] is False

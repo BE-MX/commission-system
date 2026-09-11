@@ -261,3 +261,17 @@ def test_recreated_instance_between_validation_and_atomic_write_is_rejected(db, 
     replacement = db.get(ReplyInquiry, inquiry["id"])
     assert replacement.instance_id == replacement_instance
     assert replacement.entries == [] and replacement.revision == 0
+
+
+def test_full_memory_reclaims_cancelled_entries_before_failing():
+    payload = request(messages=[{"role": "customer", "text": "20 units"}])
+    base = {"kind": "need", "summary": "x", "human_note": "", "evidence": [], "updated_at": "2026-09-11T00:00:00"}
+    prior = [{**base, "id": str(uuid4()), "summary": f"need-{index}",
+              "status": "cancelled" if index < 5 else "tentative"} for index in range(80)]
+    entries = reply_memory.build_update(validated_plan(memory_changes=[change()]), payload, prior)
+    assert len(entries) == 76
+    assert all(entry["status"] != "cancelled" for entry in entries)
+    active_prior = [{**base, "id": str(uuid4()), "summary": f"need-{index}", "status": "tentative"} for index in range(80)]
+    with pytest.raises(WhatsAppTranslationError) as caught:
+        reply_memory.build_update(validated_plan(memory_changes=[change()]), payload, active_prior)
+    assert caught.value.error_code == "reply_memory_full"

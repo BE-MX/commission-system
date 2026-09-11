@@ -67,7 +67,7 @@ def reply_capabilities(db, identity) -> dict:
             # Expected disabled/ungranted capability; the request still rechecks.
             available = False
     return {
-        "available": available, "history_enabled": True, "auto_reply_enabled": True, "max_messages": 2000, "default_messages": 2000,
+        "available": available, "history_enabled": True, "auto_reply_enabled": settings.WHATSAPP_REPLY_AUTO_ENABLED, "max_messages": 2000, "default_messages": 2000,
         "max_context_chars": min(120000, settings.WHATSAPP_REPLY_MAX_CONTEXT_CHARS),
         "max_draft_chars": 2000, "max_goal_chars": 500,
         "timeout_seconds": min(180, settings.WHATSAPP_REPLY_TIMEOUT_SECONDS),
@@ -80,6 +80,7 @@ def _configuration_signature(settings, preset_version: str) -> str:
     return digest({"sources": [b.model_dump(mode='json') for b in source_profile(settings)], "presets": preset_version,
                    "generator": RULES, "auto_rules": AUTO_RULES,
                    "catalog": [rule.model_dump(mode='json') for rule in catalog_rules(settings)],
+                   "auto_enabled": settings.WHATSAPP_REPLY_AUTO_ENABLED,
                    "memory_enabled": settings.WHATSAPP_REPLY_MEMORY_ENABLED})
 
 
@@ -136,6 +137,8 @@ def suggest_reply(db, identity, request: ReplyRequest) -> ReplyResponse:
         settings = get_settings()
         if not settings.WHATSAPP_REPLY_ENABLED:
             raise error("reply_not_enabled", 503)
+        if request.mode == "auto" and not settings.WHATSAPP_REPLY_AUTO_ENABLED:
+            raise error("reply_auto_disabled", 403)
         require_supported_extension(identity)
         actor = live_actor(db, identity)
         if sum(len(item.text) + len(item.quoted_text) for item in request.messages) > settings.WHATSAPP_REPLY_MAX_CONTEXT_CHARS:

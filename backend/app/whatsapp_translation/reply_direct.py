@@ -1,6 +1,7 @@
 """Direct draft generation. Optional bookkeeping cannot suppress a usable draft."""
 
 import json
+import re
 from types import SimpleNamespace
 
 from app.whatsapp_translation.constants import SUPPORTED_TARGET_LANGUAGES
@@ -58,6 +59,26 @@ def _object(content):
     return result
 
 
+_PRICE_RE = re.compile(r'(?:[$€£¥₹₩]\s?\d[\d,]*(?:\.\d+)?|(?:USD|EUR|GBP|RMB|CNY|JPY|INR|KRW)\s?\d[\d,]*(?:\.\d+)?|\d[\d,]*(?:\.\d+)?\s?(?:USD|EUR|GBP|RMB|CNY|JPY|INR|KRW|美元|欧元|英镑|人民币|日元|韩元|美金|块|刀))', re.IGNORECASE)
+_AMOUNT_RE = re.compile(r'\d[\d,]*(?:\.\d+)?')
+PRICE_REVIEW_REASON = '回复包含未能在资料中核实的金额，已保留回复，请人工处理。'
+
+
+def _price_unverified(text, sources):
+    """Auto replies may restate amounts only when a bound source carries the same
+    figure. Chat history is not evidence (customer quotes and model guesses look
+    alike), and the catalog never carries prices, so neither can vouch."""
+    amounts = []
+    for match in _PRICE_RE.finditer(text):
+        amount = _AMOUNT_RE.search(match.group(0))
+        if amount:
+            amounts.append(amount.group(0).replace(',', ''))
+    if not amounts:
+        return False
+    evidence = '\n'.join(source['text'] for source in sources).replace(',', '')
+    return any(not re.search(r'(?<![\d.])' + re.escape(amount) + r'(?![\d.])', evidence) for amount in amounts)
+
+
 def generate_direct(db, identity, settings, request, conversation, sources, deadline, call):
     # The transport retains every message. Larger inputs are explicitly condensed
     # in bounded chunks; original message indices survive for optional evidence.
@@ -102,6 +123,7 @@ def generate_direct(db, identity, settings, request, conversation, sources, dead
         {"conversation": conversation, "sources": sources, "memory_schema": MemoryChange.model_json_schema()}, deadline))
     text = value.get("reply_text")
     action, segments, review_reason = None, [], ''
+    price_unverified = False
     if request.mode == "auto":
         action = value.get("auto_action") if isinstance(value.get("auto_action"), str) else None
         raw_segments = value.get("reply_segments")
@@ -122,6 +144,9 @@ def generate_direct(db, identity, settings, request, conversation, sources, dead
                 segments = prepare_segments(parts or ([text] if isinstance(text, str) else [])) or []
                 if not segments:
                     review_reason = '完整回复无法整理为三段短消息，已保留全文，请人工处理。'
+                elif _price_unverified('\n\n'.join(segments), sources):
+                    review_reason = PRICE_REVIEW_REASON
+                    price_unverified = True
             if review_reason:
                 action, segments = 'handoff', []
             else:
@@ -146,6 +171,8 @@ def generate_direct(db, identity, settings, request, conversation, sources, dead
         output.reply_segments = segments
         if review_reason:
             output.risk_flags.append('auto_reply_review_required')
+            if price_unverified:
+                output.risk_flags.append('price_unverified')
             output.rationale_zh = review_reason
     changes = []
     memory_parse_error = False
