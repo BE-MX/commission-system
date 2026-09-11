@@ -155,5 +155,11 @@ def generate_direct(db, identity, settings, request, conversation, sources, dead
         except ValueError:
             memory_parse_error = True
             continue
-    action = ReplyAction(kind="answer", owner="salesperson", focus="核对并使用建议回复", question="", completion_signal="客户回应本轮事项")
+    if request.mode == "auto" and review_reason:
+        # The handoff panel shows this verbatim; keep the real review reason.
+        action = ReplyAction(kind="handoff", owner="none", focus=review_reason[:240], question="", completion_signal="人工接管后继续跟进")
+    else:
+        # Surface the first open verification item instead of a fixed placeholder.
+        focus = output.missing_information[0][:240] if output.missing_information else "核对并使用建议回复"
+        action = ReplyAction(kind="answer", owner="salesperson", focus=focus, question="", completion_signal="客户回应本轮事项")
     return output, SimpleNamespace(memory_changes=changes, action=action, memory_parse_error=memory_parse_error), processing

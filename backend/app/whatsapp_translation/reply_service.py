@@ -175,7 +175,9 @@ def suggest_reply(db, identity, request: ReplyRequest) -> ReplyResponse:
         conversation['product_catalog'] = retrieve_catalog(db, actor, request, settings)
         catalog_required = conversation['product_catalog']['status'] in {'matched', 'not_found'}
         from app.whatsapp_translation.reply_direct import generate_direct
-        conversation["glossary"] = glossary_for(db, direction="outgoing", text="\n".join(m.text for m in request.messages[-40:]), target_language=request.target_language if request.target_language != "auto" else request.fallback_language)
+        # Extension-detected chat language beats the manual target/fallback guess.
+        glossary_language = request.detected_language or (request.target_language if request.target_language != "auto" else request.fallback_language)
+        conversation["glossary"] = glossary_for(db, direction="outgoing", text="\n".join(m.text for m in request.messages[-40:]), target_language=glossary_language)
         def checked_call(*args):
             _check_current(db, identity, sources, signature, catalog_required=catalog_required)
             return _call(*args)

@@ -311,3 +311,46 @@ def test_stale_binding_adds_risk_flag_without_failing_draft(db, setup_reply, mon
     result = reply_service.suggest_reply(db, identity, request())
     assert result.status == "ready"
     assert "knowledge_binding_stale" in result.risk_flags
+
+
+def test_detected_language_drives_glossary_over_fallback(db, setup_reply, monkeypatch):
+    identity = setup_reply[0]
+    captured = {}
+    real_glossary = reply_service.glossary_for
+
+    def observed(db, **kwargs):
+        captured.update(kwargs)
+        return real_glossary(db, **kwargs)
+
+    monkeypatch.setattr(reply_service, "glossary_for", observed)
+    mock_model(monkeypatch)
+    reply_service.suggest_reply(db, identity, request(detected_language="fr"))
+    assert captured["target_language"] == "fr"
+    reply_service.suggest_reply(db, identity, request(target_language="es"))
+    assert captured["target_language"] == "es"
+    reply_service.suggest_reply(db, identity, request())
+    assert captured["target_language"] == "en"
+
+
+def test_detected_language_must_be_a_supported_code(db, setup_reply):
+    with pytest.raises(ValueError):
+        request(detected_language="xx")
+    assert request(detected_language="").detected_language == ""
+
+
+def test_handoff_next_step_uses_first_missing_information(db, setup_reply, monkeypatch):
+    identity = setup_reply[0]
+    mock_model(monkeypatch, generator=output(missing_information=["需确认是否可定制颜色"]))
+    result = reply_service.suggest_reply(db, identity, request())
+    assert result.action.focus == "需确认是否可定制颜色"
+    assert result.handoff["next_step"] == "需确认是否可定制颜色"
+
+
+def test_auto_handoff_next_step_uses_real_review_reason(db, setup_reply, monkeypatch):
+    identity = setup_reply[0]
+    mock_model(monkeypatch, generator=output(auto_action="reply", reply_segments="not-a-list"))
+    result = reply_service.suggest_reply(db, identity, request(mode="auto"))
+    assert result.auto_action == "handoff"
+    assert result.action.kind == "handoff"
+    assert result.action.focus == "模型分段格式不完整，已保留回复，请人工处理。"
+    assert result.handoff["next_step"] == result.action.focus
