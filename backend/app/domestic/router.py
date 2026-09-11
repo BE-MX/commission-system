@@ -640,6 +640,7 @@ def list_orders(
     keyword: str = Query(""),
     status: int | None = Query(None),
     customer_id: int | None = Query(None),
+    customer_name: str = Query("", max_length=200),
     order_category: str = Query("", pattern="^(normal|special)?$"),
     order_kind: str = Query("", pattern="^(business|production)?$"),
     order_type: str = Query(""),
@@ -655,7 +656,8 @@ def list_orders(
     can_read_all = _can_read_all_orders(current_user)
     items, total = order_service.list_orders(
         db, page=page, page_size=page_size, keyword=keyword, status=status,
-        customer_id=customer_id, order_category=order_category, order_kind=order_kind,
+        customer_id=customer_id, customer_name=customer_name,
+        order_category=order_category, order_kind=order_kind,
         order_type=order_type, order_channel=order_channel, customer_source=customer_source,
         date_start=date_start, date_end=date_end,
         sort_field=sort_field, sort_order=sort_order,
