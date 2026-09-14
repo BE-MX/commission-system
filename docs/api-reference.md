@@ -821,6 +821,8 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | GET | `/sales-portal/customers/{customer_id}` | 同上 | 返回客户摘要及其实际可见的已发布批次；批次标题与拍摄类型也由客户公开门户返回。停用账号不签发素材 URL。 |
 | GET | `/sales-portal/assets/{asset_id}/content?expires=&token=&download=` | 业务预览 purpose-bound HMAC | 返回业务预览或下载文件；签名绑定用途、素材 ID 与过期时间，并在每次读取时重验门户账号仍启用、所属批次仍为 published，停用或下架立即 404。 |
 | GET | `/assets/{asset_id}/content?expires=&token=&download=` | 内部审核 HMAC | 返回设计审核工作流中的内部预览或下载文件；与业务预览签名不可互换。 |
+| GET | `/batches/{batch_id}/directories` | `customer_media:write/admin` + 任务维护权限 | 客户共享目录，`asset_count` 为本批次数量，`total_asset_count` 为目录跨批次未删素材总数。 |
+| DELETE | `/batches/{batch_id}/directories/{directory_id}` | `customer_media:write/admin` + 所有关联任务维护权限 | 原子删除客户共享目录及其全部图片、视频；任一关联批次不可编辑或无权维护则整笔拒绝。素材软删除、清空目录引用，提交后清理物理原件。返回更新后的当前批次。 |
 | POST | `/portal/login` | 公开门户邮箱密码 | 登录限流后签发 HttpOnly 门户 Cookie；错误账号与密码统一 401。 |
 | POST | `/portal/logout` | 门户 Cookie | 撤销当前会话并删除 Cookie。 |
 | GET | `/portal/me` | 门户 Cookie | 返回当前客户身份。 |
@@ -828,6 +830,8 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | GET | `/portal/assets/{asset_id}/content?download=` | 门户 Cookie | 再校验客户归属和批次发布状态；下载时写下载审计。 |
 
 业务预览页面位于 `/design/media/portal`，左侧客户导航只展示 API 已授权的门户；右侧直接渲染详情响应，不模拟草稿或审核中素材。`search` 只是授权结果集上的名称、客户 ID、登录邮箱过滤条件，不能扩大数据范围。
+
+素材上传的客户门户弹窗支持拖入或选择文件夹，按顶层文件夹名通过 `POST /batches/{batch_id}/assets` 的 `directory_name` 自动建目录（同名复用），嵌套文件打平归入顶层目录；散文件使用入队时选中目录的 `directory_id`。内部签名 URL 返回 `/api/customer-media/...` 相对地址，前端跟随素材 API origin 解析，兼容同源代理及 `VITE_CUSTOMER_MEDIA_API_BASE` 云端直传。目录删除沿用原有可编辑状态约束，不绕过审核/发布流程。
 
 ## 客户 AI 方案对话（`/api/ai-chat`，100 迁移，2026-08-09）
 

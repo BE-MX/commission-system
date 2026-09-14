@@ -43,3 +43,10 @@ export function dropHasDirectory(dataTransfer) {
   if (!items) return false
   return [...items].some(it => it.webkitGetAsEntry?.()?.isDirectory)
 }
+
+// 文件夹始终按顶层名称归组，散文件使用入队时选中的目录。
+export function uploadDirectoryOptions(file, directoryName, selected) {
+  const folder = directoryName || file.webkitRelativePath?.split('/').slice(0, -1)[0]
+  if (folder) return { directoryName: folder }
+  return typeof selected === 'number' ? { directoryId: selected } : {}
+}

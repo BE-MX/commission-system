@@ -17,7 +17,7 @@
             :disabled="!editable"
             @keyup.enter="createDir"
           />
-          <el-button size="small" type="primary" :disabled="!editable || !newDirName.trim()" :loading="creating" @click="createDir">新建</el-button>
+          <el-button type="primary" :disabled="!editable || !newDirName.trim()" :loading="creating" @click="createDir">新建</el-button>
         </div>
         <div class="dir-list">
           <button type="button" :class="['dir-row', { active: selected === 'all' }]" @click="selected = 'all'">
@@ -29,14 +29,17 @@
           <div v-for="dir in directories" :key="dir.id" class="dir-row-wrap">
             <div v-if="renamingId === dir.id" class="dir-rename">
               <el-input v-model="renamingName" size="small" maxlength="128" @keyup.enter="confirmRename" @keyup.esc="renamingId = null" />
-              <el-button size="small" type="primary" link :loading="renaming" @click="confirmRename">确定</el-button>
-              <el-button size="small" link @click="renamingId = null">取消</el-button>
+              <el-button type="primary" link :loading="renaming" @click="confirmRename">确定</el-button>
+              <el-button link @click="renamingId = null">取消</el-button>
             </div>
-            <button v-else type="button" :class="['dir-row', { active: selected === dir.id }]" @click="selected = dir.id">
+            <div v-else class="dir-actions">
+            <button type="button" :class="['dir-row', { active: selected === dir.id }]" @click="selected = dir.id">
               <span class="dir-name" :title="dir.name">{{ dir.name }}</span>
               <span class="dir-count">{{ dir.asset_count }}</span>
-              <el-icon v-if="editable" class="dir-edit" title="重命名" @click.stop="startRename(dir)"><Edit /></el-icon>
             </button>
+            <el-button v-if="editable" link :icon="Edit" :disabled="uploading || deleting" :aria-label="`重命名 ${dir.name}`" @click="startRename(dir)" />
+            <el-button v-if="editable" link type="danger" :icon="Delete" :disabled="uploading || deleting" :aria-label="`删除目录 ${dir.name}`" @click="removeDirectory(dir)" />
+            </div>
           </div>
           <div v-if="!directories.length" class="dir-empty">尚无目录，可在上方新建</div>
         </div>
@@ -49,12 +52,15 @@
             multiple
             :auto-upload="false"
             :show-file-list="false"
-            :disabled="uploading"
+            :disabled="uploading || deleting"
             accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm"
             :on-change="queueFile"
           >
-            <div class="el-upload__text">拖入文件或文件夹，上传到「{{ selectedLabel }}」</div>
+            <div class="el-upload__text">拖入文件或文件夹；文件夹自动按名称创建目录</div>
+            <div class="el-upload__tip">散文件上传到「{{ selectedLabel }}」；嵌套文件夹归入顶层目录</div>
           </el-upload>
+          <el-button :disabled="uploading || deleting" @click="folderInput.click()">选择文件夹上传</el-button>
+          <input ref="folderInput" type="file" webkitdirectory multiple hidden @change="onFolderSelected" />
         </div>
         <div v-if="uploadQueue.length" class="queue-list">
           <div v-for="item in uploadQueue" :key="item.uid" class="queue-item">
@@ -71,26 +77,26 @@
               <strong :title="asset.file_name">{{ asset.file_name }}</strong>
               <span>{{ formatSize(asset.file_size) }}</span>
             </div>
-            <el-button v-if="editable" link type="danger" size="small" @click="removeAsset(asset)">删除</el-button>
+            <el-button v-if="editable" link type="danger" :disabled="deleting" @click="removeAsset(asset)">删除</el-button>
           </article>
         </div>
         <el-empty v-else :description="`「${selectedLabel}」暂无素材`" />
       </div>
     </div>
 
-    <el-image-viewer v-if="previewUrl" :url-list="[previewUrl]" @close="previewUrl = ''" />
+    <el-image-viewer v-if="previewUrl" teleported :url-list="[previewUrl]" @close="previewUrl = ''" />
   </el-dialog>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Edit } from '@element-plus/icons-vue'
+import { ElImageViewer, ElMessage, ElMessageBox } from 'element-plus'
+import { Delete, Edit } from '@element-plus/icons-vue'
 import {
-  createMediaDirectory, deleteMediaAsset, getTaskMediaBatch,
+  createMediaDirectory, deleteMediaAsset, deleteMediaDirectory, getTaskMediaBatch,
   renameMediaDirectory, uploadMediaAsset,
 } from '@/api/customerMedia'
-import { collectDroppedFiles, dropHasDirectory } from './droppedFiles'
+import { collectDroppedFiles, dropHasDirectory, uploadDirectoryOptions } from './droppedFiles'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -109,6 +115,8 @@ const renaming = ref(false)
 const uploading = ref(false)
 const uploadQueue = ref([])
 const previewUrl = ref('')
+const folderInput = ref(null)
+const deleting = ref(false)
 
 const assets = computed(() => props.batch?.assets || [])
 const directories = computed(() => props.batch?.directories || [])
@@ -125,6 +133,7 @@ const selectedLabel = computed(() => {
 })
 
 watch(() => props.modelValue, visible => {
+  previewUrl.value = ''
   if (visible) {
     selected.value = ALL
     renamingId.value = null
@@ -173,16 +182,11 @@ async function confirmRename() {
   } finally { renaming.value = false }
 }
 
-function targetDirectoryOptions() {
-  // 上传目标固定为当前选中目录；「全部/未分类」视图下归入未分类
-  return typeof selected.value === 'number' ? { directoryId: selected.value } : {}
-}
-
-async function uploadOne(item, file) {
+async function uploadOne(item, file, options) {
   try {
     const res = await uploadMediaAsset(props.batch.id, file, event => {
       item.progress = event.total ? Math.round(event.loaded / event.total * 100) : 0
-    }, targetDirectoryOptions())
+    }, options)
     item.progress = 100
     item.done = true
     emit('update:batch', res.data)
@@ -195,7 +199,7 @@ let queueSeq = 0
 function pushQueueItem(name) {
   const item = { uid: `${Date.now()}-${queueSeq++}`, name, progress: 0, done: false, error: false }
   uploadQueue.value.push(item)
-  return item
+  return uploadQueue.value[uploadQueue.value.length - 1]
 }
 
 function scheduleQueueCleanup() {
@@ -207,11 +211,11 @@ function warnIfAllSelected() {
 }
 
 async function queueFile(uploadFile) {
-  if (!props.editable) return
+  if (!props.editable || deleting.value) return
   warnIfAllSelected()
   uploading.value = true
   const item = pushQueueItem(uploadFile.name)
-  await uploadOne(item, uploadFile.raw)
+  await uploadOne(item, uploadFile.raw, uploadDirectoryOptions(uploadFile.raw, '', selected.value))
   uploading.value = uploadQueue.value.some(row => !row.done && !row.error)
   scheduleQueueCleanup()
 }
@@ -219,24 +223,56 @@ async function queueFile(uploadFile) {
 const FOLDER_ACCEPT_RE = /\.(jpe?g|png|webp|gif|mp4|mov|webm)$/i
 
 async function onDropFolders(e) {
-  if (!props.editable || uploading.value) return
   if (!dropHasDirectory(e.dataTransfer)) return
-  // 弹窗内文件夹拖入统一归入当前选中目录，不再按文件夹名建目录
   e.preventDefault()
   e.stopPropagation()
-  const { files } = await collectDroppedFiles(e.dataTransfer)
+  if (!props.editable || uploading.value || deleting.value) return
+  const target = selected.value
+  uploading.value = true
+  try {
+    const { files } = await collectDroppedFiles(e.dataTransfer)
+    await uploadFolderFiles(files, target)
+  } catch (error) {
+    ElMessage.error(`读取文件夹失败：${error.message || '请重新选择文件夹'}`)
+  } finally { uploading.value = false }
+}
+
+async function onFolderSelected(event) {
+  const files = [...event.target.files].map(file => ({ file, directoryName: '' }))
+  event.target.value = ''
+  if (!props.editable || uploading.value || deleting.value) return
+  uploading.value = true
+  try { await uploadFolderFiles(files, selected.value) } finally { uploading.value = false }
+}
+
+async function uploadFolderFiles(files, target) {
   const accepted = files.filter(({ file }) => FOLDER_ACCEPT_RE.test(file.name))
   const skipped = files.length - accepted.length
   if (skipped > 0) ElMessage.warning(`已忽略 ${skipped} 个不支持的文件（仅支持 JPG、PNG、WebP、GIF、MP4、MOV、WebM）`)
   if (!accepted.length) return
-  warnIfAllSelected()
-  uploading.value = true
-  for (const { file } of accepted) {
+  for (const { file, directoryName } of accepted) {
     const item = pushQueueItem(file.name)
-    await uploadOne(item, file)
+    await uploadOne(item, file, uploadDirectoryOptions(file, directoryName, target))
   }
-  uploading.value = uploadQueue.value.some(row => !row.done && !row.error)
   scheduleQueueCleanup()
+}
+
+async function removeDirectory(dir) {
+  if (!props.editable || uploading.value || deleting.value) return
+  deleting.value = true
+  try {
+    try {
+      await ElMessageBox.confirm(
+        `删除「${dir.name}」及其中全部 ${dir.total_asset_count ?? dir.asset_count} 个素材（图片和视频）？该目录由此客户的多个交付批次共享，删除不可恢复。`,
+        '删除目录及素材', { type: 'warning', confirmButtonText: '删除目录及素材' },
+      )
+    } catch { return }
+    const res = await deleteMediaDirectory(props.batch.id, dir.id)
+    if (selected.value === dir.id) selected.value = ALL
+    previewUrl.value = ''
+    emit('update:batch', res.data)
+    ElMessage.success('目录及素材已删除')
+  } finally { deleting.value = false }
 }
 
 async function removeAsset(asset) {
@@ -252,6 +288,9 @@ async function removeAsset(asset) {
 .dir-sidebar { display: flex; min-height: 0; flex-direction: column; border-right: 1px solid var(--border-color); padding-right: 14px; }
 .dir-create { display: flex; gap: 8px; margin-bottom: 12px; }
 .dir-list { flex: 1; overflow-y: auto; display: grid; gap: 4px; align-content: start; }
+.dir-actions { display: flex; align-items: center; gap: 4px; }
+.dir-actions .dir-row { flex: 1; min-width: 0; }
+.dir-actions .el-button { margin-left: 0; }
 .dir-row { display: flex; width: 100%; align-items: center; gap: 8px; padding: 8px 10px; border: 0; border-radius: 8px; color: var(--text-primary); background: transparent; cursor: pointer; text-align: left; font-size: 13px; }
 .dir-row:hover { background: var(--color-primary-light); }
 .dir-row.active { background: var(--color-primary-light); color: var(--color-primary-hover); font-weight: 600; }

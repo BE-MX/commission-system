@@ -1,3 +1,11 @@
+## 2026-09-14 客户素材上传目录与预览修复（合并交付，未部署）
+
+来源分支 `codex/customer-media-folders`，基点 `6ed74c5f`。客户门户弹窗拖入/选择文件夹按顶层名称自动创建或复用目录，散文件固定使用入队时选中目录。内部预览返回相对签名 URL，前端按素材 API origin 解析，兼容同源与云端直传；大图查看器 teleport 到弹窗外。
+
+左侧增加目录删除及跨批次素材总数确认。目录为客户级共享，服务端在同一事务校验所有相关任务写权限及可编辑状态，软删除全部关联图片/视频并移除目录，提交后清理原件。目录→客户批次→素材采用锁内当前读，上传最后校验也刷新批次状态，处理 MySQL 快照和 ORM 缓存竞态。独立审查发现的两处问题均已修复并复核通过；没有真实 MySQL 并发测试，不涉及迁移或生产数据。
+
+验证：`pytest tests/test_customer_media.py tests/test_customer_media_directory_delete.py -q` 15 passed；Node 文件夹/门户测试 5 passed；Chrome 隔离浏览器测试 `frontend/tests/customerMediaDirectory.browser.py` 5 条关键路径通过、无页面错误（Vite 3077，fixture 位于 `frontend/tests/fixtures/customer-media-qa.html`，全部素材 API mock）；`npm run build` 通过，保留既有 chunk 提示。`check_conventions.py` 被无关的 AssetTagEditor 小按钮及 AssetLibrary/AIManager 过期 UI 基线共 3 项阻挡，本次增量代码 `check('HEAD')` 无违规，`git diff --check` 通过。用户已授权合并 main 并推送 origin；fetch 确认 main 与 origin/main 均为基点 `6ed74c5f`，无上游差异。本轮不部署。
+
 ## 2026-09-14 站点网关公网配置与复制修复（合并交付）
 
 分支 `codex/gateway-public-config`。站点密钥配置改为固定公网入口 `https://leshine.work/api/ai-gateway`，不再使用管理员当前浏览器 origin，避免局域网地址外发。配置采用只读文本框；优先 Clipboard API，不可用或权限拒绝时在弹窗内选择复制，两种方式均受限则保持全选并提示键盘复制。关闭密钥弹窗仍清空密钥。

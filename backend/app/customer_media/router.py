@@ -228,6 +228,17 @@ async def upload_batch_asset(
     return ok(_batch_full(db, row), "上传成功")
 
 
+@router.delete("/batches/{batch_id}/directories/{directory_id}")
+def remove_batch_directory(
+    batch_id: int,
+    directory_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission("customer_media:write", "customer_media:admin")),
+):
+    row = _call(service.delete_directory, db, batch_id, directory_id, payload)
+    return ok(_batch_full(db, row), "目录及素材已删除")
+
+
 @router.delete("/batches/{batch_id}/assets/{asset_id}")
 def remove_batch_asset(
     batch_id: int,

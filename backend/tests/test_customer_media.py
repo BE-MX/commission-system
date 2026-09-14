@@ -218,6 +218,7 @@ def test_public_portal_login_headers_and_uniform_failure(db):
 def test_internal_preview_signature_is_bound_to_asset(monkeypatch):
     monkeypatch.setattr(service.time, "time", lambda: 1_000)
     url = service.internal_preview_url(42, ttl_seconds=600)
+    assert url.startswith("/api/customer-media/assets/42/content?")
     query = dict(item.split("=", 1) for item in url.split("?", 1)[1].split("&"))
     assert service.verify_internal_preview(42, int(query["expires"]), query["token"])
     assert not service.verify_internal_preview(43, int(query["expires"]), query["token"])

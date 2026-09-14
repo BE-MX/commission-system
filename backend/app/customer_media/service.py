@@ -394,10 +394,65 @@ def batch_directory_summary(db: Session, batch: CustomerMediaBatch) -> list[dict
         CustomerMediaAsset.directory_id.is_not(None),
     ).group_by(CustomerMediaAsset.directory_id)).all()
     counts = {directory_id: count for directory_id, count in count_rows}
+    total_counts = dict(db.execute(select(
+        CustomerMediaAsset.directory_id, func.count(CustomerMediaAsset.id),
+    ).join(CustomerMediaDirectory, CustomerMediaDirectory.id == CustomerMediaAsset.directory_id).where(
+        CustomerMediaDirectory.customer_id == batch.customer_id,
+        CustomerMediaAsset.deleted_at.is_(None),
+    ).group_by(CustomerMediaAsset.directory_id)).all())
     return [
-        {"id": directory.id, "name": directory.name, "asset_count": counts.get(directory.id, 0)}
+        {"id": directory.id, "name": directory.name, "asset_count": counts.get(directory.id, 0),
+         "total_asset_count": total_counts.get(directory.id, 0)}
         for directory in directories
     ]
+
+
+def delete_directory(db: Session, batch_id: int, directory_id: int, payload: dict) -> CustomerMediaBatch:
+    """删除客户共享目录；全部关联批次通过写权限/状态校验后才原子删除。"""
+    try:
+        current = _load_batch_for_write(db, batch_id, payload)
+        directory = db.scalar(select(CustomerMediaDirectory).where(
+            CustomerMediaDirectory.id == directory_id,
+        ).with_for_update())
+        if not directory or directory.customer_id != current.customer_id:
+            raise CustomerMediaNotFound("素材目录不存在")
+        # 上传最终入库也先锁目录，再锁批次，防止删除期间新增素材。
+        # MySQL REPEATABLE READ 下普通 SELECT 可能保留等待目录锁前的快照。
+        # 按目录→客户批次→素材顺序做当前读，兼容单素材删除的批次→素材顺序。
+        batches = list(db.scalars(select(CustomerMediaBatch).where(
+            CustomerMediaBatch.customer_id == current.customer_id,
+        ).order_by(CustomerMediaBatch.id).with_for_update().execution_options(populate_existing=True)))
+        assets = list(db.scalars(select(CustomerMediaAsset).where(
+            CustomerMediaAsset.directory_id == directory_id,
+        ).with_for_update().execution_options(populate_existing=True)))
+        affected_ids = {asset.batch_id for asset in assets if asset.deleted_at is None} | {batch_id}
+        batches = [batch for batch in batches if batch.id in affected_ids]
+        for batch in batches:
+            task, _ = _load_task(db, batch.task_id)
+            _assert_writer(db, payload, task)
+            if batch.status not in EDITABLE_STATUSES:
+                raise CustomerMediaConflict("目录含审核中或已发布批次，请先退回或下架后再删除")
+        files = [(asset.id, asset.storage_provider, asset.object_key) for asset in assets if asset.deleted_at is None]
+        now = beijing_now()
+        for asset in assets:
+            if asset.deleted_at is None:
+                asset.deleted_at = now
+            asset.directory_id = None
+        for batch in batches:
+            batch.updated_at = now
+        db.delete(directory)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    for asset_id, provider, object_key in files:
+        try:
+            storage_for(provider).delete(object_key)
+        except Exception as exc:
+            logger = __import__("logging").getLogger("commission")
+            logger.warning("[customer-media] orphan after directory delete asset=%s: %s", asset_id, exc)
+            print(f"[customer-media] orphan after directory delete asset={asset_id}: {exc}", flush=True)
+    return get_batch(db, batch_id)
 
 
 async def upload_asset(
@@ -437,9 +492,15 @@ async def upload_asset(
         elif directory_name and directory_name.strip():
             # 文件夹拖拽上传按顶层文件夹名归组：同名目录直接复用，否则自动新建。
             directory = find_or_create_directory(db, batch, directory_name, user_id)
+        if directory is not None:
+            directory = db.scalar(select(CustomerMediaDirectory).where(
+                CustomerMediaDirectory.id == directory.id,
+            ).with_for_update().execution_options(populate_existing=True))
+            if directory is None:
+                raise CustomerMediaNotFound("素材目录已删除，请刷新后重试")
         batch = db.scalar(select(CustomerMediaBatch).where(
             CustomerMediaBatch.id == batch_id,
-        ).with_for_update())
+        ).with_for_update().execution_options(populate_existing=True))
         if not batch:
             raise CustomerMediaNotFound("素材批次不存在")
         task, _ = _load_task(db, batch.task_id)
@@ -799,12 +860,9 @@ def _preview_signature(asset_id: int, expires: int) -> str:
 
 
 def internal_preview_url(asset_id: int, ttl_seconds: int = 3600) -> str:
-    from app.core.config import get_settings
-    settings = get_settings()
     expires = int(time.time()) + ttl_seconds
     token = _preview_signature(asset_id, expires)
-    origin = settings.CUSTOMER_MEDIA_PORTAL_ORIGIN.rstrip("/")
-    return f"{origin}/api/customer-media/assets/{asset_id}/content?expires={expires}&token={token}"
+    return f"/api/customer-media/assets/{asset_id}/content?expires={expires}&token={token}"
 
 
 def verify_internal_preview(asset_id: int, expires: int, token: str) -> bool:

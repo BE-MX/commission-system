@@ -1,4 +1,10 @@
 import { customerMediaClient } from './clients'
+import { resolveBatchMediaUrls } from './customerMediaUrls'
+
+customerMediaClient.interceptors.response.use(response => {
+  response.data = resolveBatchMediaUrls(response.data, customerMediaClient.defaults.baseURL, window.location.origin)
+  return response
+})
 
 export const searchMediaCustomers = search => customerMediaClient.get('/customers', { params: { search }, showLoading: false })
 export const getTaskMediaBatch = taskId => customerMediaClient.get(`/tasks/${taskId}/batch`)
@@ -18,6 +24,7 @@ export const uploadMediaAsset = (batchId, file, onUploadProgress, { directoryId,
   })
 }
 export const deleteMediaAsset = (batchId, assetId) => customerMediaClient.delete(`/batches/${batchId}/assets/${assetId}`)
+export const deleteMediaDirectory = (batchId, directoryId) => customerMediaClient.delete(`/batches/${batchId}/directories/${directoryId}`)
 export const submitMediaBatch = (batchId, lockVersion) => customerMediaClient.post(`/batches/${batchId}/submit`, { lock_version: lockVersion })
 export const getMediaReviews = (status = 'pending_review') => customerMediaClient.get('/reviews', { params: { status }, showLoading: false })
 export const reviewMediaBatch = (batchId, data) => customerMediaClient.post(`/batches/${batchId}/review`, data)
