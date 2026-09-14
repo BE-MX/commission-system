@@ -14,8 +14,9 @@ from sqlalchemy.orm import Session, selectinload
 from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.auth.utils import hash_password, verify_password
 from app.customer_media.models import (
-    CustomerMediaAsset, CustomerMediaBatch, CustomerMediaDownload,
-    CustomerMediaReview, CustomerPortalAccount, CustomerPortalSession,
+    CustomerMediaAsset, CustomerMediaBatch, CustomerMediaDirectory,
+    CustomerMediaDownload, CustomerMediaReview, CustomerPortalAccount,
+    CustomerPortalSession,
 )
 from app.customer_media.storage import StoredUpload, storage_for
 from app.design.models import DesignDesigner, DesignScheduleRequest, DesignScheduleTask
@@ -299,7 +300,110 @@ def get_batch(db: Session, batch_id: int) -> CustomerMediaBatch:
     return batch
 
 
-async def upload_asset(db: Session, batch_id: int, payload: dict, upload) -> CustomerMediaBatch:
+def _normalize_directory_name(name: str | None) -> str:
+    normalized = (name or "").strip()
+    if not normalized:
+        raise CustomerMediaConflict("目录名称不能为空")
+    if len(normalized) > 128:
+        raise CustomerMediaConflict("目录名称不能超过 128 个字符")
+    return normalized
+
+
+def _find_directory(db: Session, customer_id: str, name: str) -> CustomerMediaDirectory | None:
+    # 显式 lower() 匹配：不依赖 MySQL ci 排序规则，SQLite 测试库行为一致
+    return db.scalar(select(CustomerMediaDirectory).where(
+        CustomerMediaDirectory.customer_id == customer_id,
+        func.lower(CustomerMediaDirectory.name) == name.lower(),
+    ))
+
+
+def find_or_create_directory(db: Session, batch: CustomerMediaBatch, name: str, user_id: int) -> CustomerMediaDirectory:
+    """按客户+目录名幂等获取目录：同名（数据库 ci 排序规则下忽略大小写）直接复用，否则新建。"""
+    normalized = _normalize_directory_name(name)
+    existing = _find_directory(db, batch.customer_id, normalized)
+    if existing:
+        return existing
+    directory = CustomerMediaDirectory(customer_id=batch.customer_id, name=normalized, created_by=user_id)
+    db.add(directory)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = _find_directory(db, batch.customer_id, normalized)
+        if existing:
+            return existing
+        raise
+    db.refresh(directory)
+    return directory
+
+
+def _load_batch_for_write(db: Session, batch_id: int, payload: dict) -> CustomerMediaBatch:
+    batch = db.scalar(select(CustomerMediaBatch).where(CustomerMediaBatch.id == batch_id))
+    if not batch:
+        raise CustomerMediaNotFound("素材批次不存在")
+    task, _ = _load_task(db, batch.task_id)
+    _assert_writer(db, payload, task)
+    return batch
+
+
+def list_batch_directories(db: Session, batch_id: int, payload: dict) -> list[dict]:
+    batch = _load_batch_for_write(db, batch_id, payload)
+    return batch_directory_summary(db, batch)
+
+
+def create_directory(db: Session, batch_id: int, payload: dict, name: str) -> dict:
+    user_id, _, _ = user_identity(db, payload)
+    batch = _load_batch_for_write(db, batch_id, payload)
+    directory = find_or_create_directory(db, batch, name, user_id)
+    return {"id": directory.id, "name": directory.name, "asset_count": 0}
+
+
+def rename_directory(db: Session, batch_id: int, directory_id: int, payload: dict, name: str) -> dict:
+    batch = _load_batch_for_write(db, batch_id, payload)
+    directory = db.scalar(select(CustomerMediaDirectory).where(
+        CustomerMediaDirectory.id == directory_id,
+    ).with_for_update())
+    if not directory or directory.customer_id != batch.customer_id:
+        raise CustomerMediaNotFound("素材目录不存在")
+    normalized = _normalize_directory_name(name)
+    if normalized.lower() != directory.name.lower():
+        clash = _find_directory(db, batch.customer_id, normalized)
+        if clash and clash.id != directory.id:
+            raise CustomerMediaConflict("同名目录已存在")
+    if normalized != directory.name:
+        directory.name = normalized
+        directory.updated_at = beijing_now()
+        try:
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            raise CustomerMediaConflict("同名目录已存在") from exc
+    return {"id": directory.id, "name": directory.name}
+
+
+def batch_directory_summary(db: Session, batch: CustomerMediaBatch) -> list[dict]:
+    """客户级目录列表 + 当前批次内各目录未删素材数。"""
+    directories = list(db.scalars(select(CustomerMediaDirectory).where(
+        CustomerMediaDirectory.customer_id == batch.customer_id,
+    ).order_by(CustomerMediaDirectory.name, CustomerMediaDirectory.id)))
+    count_rows = db.execute(select(
+        CustomerMediaAsset.directory_id, func.count(CustomerMediaAsset.id),
+    ).where(
+        CustomerMediaAsset.batch_id == batch.id,
+        CustomerMediaAsset.deleted_at.is_(None),
+        CustomerMediaAsset.directory_id.is_not(None),
+    ).group_by(CustomerMediaAsset.directory_id)).all()
+    counts = {directory_id: count for directory_id, count in count_rows}
+    return [
+        {"id": directory.id, "name": directory.name, "asset_count": counts.get(directory.id, 0)}
+        for directory in directories
+    ]
+
+
+async def upload_asset(
+    db: Session, batch_id: int, payload: dict, upload,
+    directory_id: int | None = None, directory_name: str | None = None,
+) -> CustomerMediaBatch:
     user_id, _, _ = user_identity(db, payload)
     batch = db.scalar(select(CustomerMediaBatch).where(CustomerMediaBatch.id == batch_id))
     if not batch:
@@ -325,6 +429,14 @@ async def upload_asset(db: Session, batch_id: int, payload: dict, upload) -> Cus
             batch_id=batch_id,
             max_bytes=settings.CUSTOMER_MEDIA_MAX_FILE_MB * 1024 * 1024,
         )
+        directory = None
+        if directory_id is not None:
+            directory = db.get(CustomerMediaDirectory, directory_id)
+            if not directory or directory.customer_id != customer_id:
+                raise CustomerMediaNotFound("素材目录不存在")
+        elif directory_name and directory_name.strip():
+            # 文件夹拖拽上传按顶层文件夹名归组：同名目录直接复用，否则自动新建。
+            directory = find_or_create_directory(db, batch, directory_name, user_id)
         batch = db.scalar(select(CustomerMediaBatch).where(
             CustomerMediaBatch.id == batch_id,
         ).with_for_update())
@@ -346,6 +458,7 @@ async def upload_asset(db: Session, batch_id: int, payload: dict, upload) -> Cus
         )) or 0
         asset = CustomerMediaAsset(
             batch_id=batch.id,
+            directory_id=directory.id if directory else None,
             file_name=stored.file_name,
             media_type=stored.media_type,
             content_type=stored.content_type,

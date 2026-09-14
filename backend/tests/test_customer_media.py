@@ -19,7 +19,8 @@ from app.auth.utils import hash_password
 from app.core.database import get_db
 from app.customer_media import service
 from app.customer_media.models import (
-    CustomerMediaAsset, CustomerMediaBatch, CustomerPortalAccount,
+    CustomerMediaAsset, CustomerMediaBatch, CustomerMediaDirectory,
+    CustomerPortalAccount,
 )
 from app.customer_media.public_router import PortalSecurityHeadersMiddleware, router as public_router
 from app.customer_media.storage import LocalMediaStorage, MediaStorageError
@@ -379,3 +380,62 @@ def test_sales_portal_preview_uses_current_customer_scope_and_published_content(
     db.commit()
     with pytest.raises(service.CustomerMediaNotFound, match="已下架"):
         service.sales_portal_asset(db, batch.assets[0].id)
+
+
+def _upload_png(name="asset.png"):
+    return UploadFile(BytesIO(_png()), filename=name)
+
+
+def test_directory_find_or_create_rename_and_upload_assignment(db, tmp_path, monkeypatch):
+    _add_customer(db, "CUST-MEDIA-1", "客户甲")
+    _applicant, designer, _request, task = _seed_workflow(db)
+    writer = _payload(designer, "customer_media:write")
+    batch = service.get_or_create_batch(db, task.id, writer)
+    monkeypatch.setattr(
+        service, "storage_for", lambda provider="local": LocalMediaStorage(tmp_path),
+    )
+
+    # 入口一：上传带 directory_name，自动建目录；同名（含大小写/空白差异）复用不新建
+    updated = asyncio.run(service.upload_asset(
+        db, batch.id, writer, _upload_png("1.png"), directory_name=" 白底图 ",
+    ))
+    directory_id = updated.assets[0].directory_id
+    assert directory_id is not None
+    updated = asyncio.run(service.upload_asset(
+        db, batch.id, writer, _upload_png("2.png"), directory_name="白底图",
+    ))
+    assert updated.assets[1].directory_id == directory_id
+    directories = service.list_batch_directories(db, batch.id, writer)
+    assert [(row["name"], row["asset_count"]) for row in directories] == [("白底图", 2)]
+
+    # 散文件归入未分类
+    updated = asyncio.run(service.upload_asset(db, batch.id, writer, _upload_png("3.png")))
+    assert updated.assets[2].directory_id is None
+
+    # 入口二：手动新建目录幂等，按 directory_id 上传归入
+    created = service.create_directory(db, batch.id, writer, "场景图")
+    assert service.create_directory(db, batch.id, writer, " 场景图 ")["id"] == created["id"]
+    updated = asyncio.run(service.upload_asset(
+        db, batch.id, writer, _upload_png("4.png"), directory_id=created["id"],
+    ))
+    assert updated.assets[3].directory_id == created["id"]
+    counts = {row["id"]: row["asset_count"] for row in service.list_batch_directories(db, batch.id, writer)}
+    assert counts[created["id"]] == 1
+
+    # 重命名：成功、仅大小写变化允许、与他人重名 409、不存在 404
+    assert service.rename_directory(db, batch.id, created["id"], writer, "实拍图")["name"] == "实拍图"
+    with pytest.raises(service.CustomerMediaConflict, match="同名目录已存在"):
+        service.rename_directory(db, batch.id, created["id"], writer, "白底图 ")
+    with pytest.raises(service.CustomerMediaNotFound):
+        service.rename_directory(db, batch.id, 999999, writer, "不存在")
+
+    # 跨客户目录：不可改名也不可上传归入
+    other = CustomerMediaDirectory(customer_id="CUST-MEDIA-2", name="他人目录", created_by=designer.id)
+    db.add(other)
+    db.commit()
+    with pytest.raises(service.CustomerMediaNotFound):
+        service.rename_directory(db, batch.id, other.id, writer, "越权")
+    with pytest.raises(service.CustomerMediaNotFound):
+        asyncio.run(service.upload_asset(
+            db, batch.id, writer, _upload_png("5.png"), directory_id=other.id,
+        ))

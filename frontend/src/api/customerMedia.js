@@ -2,9 +2,14 @@ import { customerMediaClient } from './clients'
 
 export const searchMediaCustomers = search => customerMediaClient.get('/customers', { params: { search }, showLoading: false })
 export const getTaskMediaBatch = taskId => customerMediaClient.get(`/tasks/${taskId}/batch`)
-export const uploadMediaAsset = (batchId, file, onUploadProgress) => {
+export const getMediaDirectories = batchId => customerMediaClient.get(`/batches/${batchId}/directories`, { showLoading: false })
+export const createMediaDirectory = (batchId, name) => customerMediaClient.post(`/batches/${batchId}/directories`, { name })
+export const renameMediaDirectory = (batchId, directoryId, name) => customerMediaClient.patch(`/batches/${batchId}/directories/${directoryId}`, { name })
+export const uploadMediaAsset = (batchId, file, onUploadProgress, { directoryId, directoryName } = {}) => {
   const data = new FormData()
   data.append('file', file)
+  if (directoryId != null) data.append('directory_id', String(directoryId))
+  else if (directoryName) data.append('directory_name', directoryName)
   return customerMediaClient.post(`/batches/${batchId}/assets`, data, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 0,
