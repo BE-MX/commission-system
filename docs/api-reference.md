@@ -1,5 +1,26 @@
 # 莱莎方舟 API 参考
 
+## 站点 AI 网关（2026-09-12，迁移 146 后可用）
+
+机器调用：`POST /api/ai-gateway/chat`，`Authorization: Bearer <站点密钥>` 和 UUID 格式 `X-Request-ID` 必填。仅接受 `{preset,messages}`，messages 为 1–20 条 user/assistant 文本、最后一条为 user，总长 ≤16,000 字符，请求体 ≤64 KiB。站点负责人、调用模块、模型和输出上限均由服务端确定；不接受客户端 system/provider/model/max_tokens 参数。
+
+成功信封使用 `code=0`，data 为 `{request_id,content,usage:{input_tokens,output_tokens,total_tokens,status}}`；用量未知为 null，status 为 known/partial/unknown。错误使用实际 HTTP 状态及 `{code,message,data:{request_id,error}}`：401 密钥无效；403 应用/负责人失效或能力未授权；409 重复请求；413 体积超限；422 参数无效；429 次数/频率/并发限制；502 上游失败；503 配置/落库不可用；504 超时。固定分钟/日限额带 Retry-After；重复/未知请求不能自动重发。
+
+管理前缀 `/api/ai-gateway/admin`，全部需登录及 `ai:admin`，返回标准 `code=200` 信封：
+
+| 方法与路径 | 内容 |
+| --- | --- |
+| GET `/options` | 有效负责人和可用文本 Preset 选项，不含供应商秘密 |
+| GET `/apps` | page/page_size/search；分页配置、今日次数/已知 token/未知用量/失败/待核查占用 |
+| POST `/apps` | 创建应用；api_key 仅此响应返回一次 |
+| GET `/apps/{id}` | 详情及 preset_ids/preset_names，不含密钥明文/哈希 |
+| PATCH `/apps/{id}` | 修改非空配置、负责人、能力授权、启停；禁止显式 null |
+| POST `/apps/{id}/rotate-key` | 原子替换旧密钥；仅本响应返回新 api_key |
+| GET `/apps/{id}/requests` | page/page_size/status/date_from/date_to，北京日期闭区间筛选 |
+| POST `/apps/{id}/requests/{request_id}/resolve` | `{reason}`（5–1,000 字符），只处理至少 75 秒的 pending/unknown；记录操作者、核查原因、时间，不退次数、不重发 |
+
+所有网关响应 `Cache-Control: no-store`。单应用默认每日 100、每分钟 10、并发 2、输出 2,048；管理员范围上限分别为 100,000 / 1,000 / 20 / 4,096。完整字段与语义见 [开发规格](requirements/2026-09-11-ai-site-gateway.md)。
+
 > 本文档由 CLAUDE.md 瘦身治理（2026-07-03，见 docs/2026-07-03-architecture-assessment.md G-1）拆出。
 > 变更 API/表结构/模块行为时**同步更新本文件**。
 

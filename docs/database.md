@@ -1,5 +1,13 @@
 # 莱莎方舟 数据库表参考
 
+## 站点 AI 网关（146_ai_site_gateway）
+
+- `ark_ai_gateway_apps`：站点身份、负责人、密钥 SHA-256/掩码、启停、日/分钟/并发/输出限额、创建/更新人和北京时间。key_hash 唯一；owner_user_id 的 FK 使用 INT UNSIGNED 与真实 ark_users 一致。
+- `ark_ai_gateway_app_presets`：app_id BIGINT + preset_id INT 联合主键，分别关联应用与现有 AI Preset。独立于 MCP/员工权限。
+- `ark_ai_gateway_requests`：准入账本；`(app_id, request_id)` 唯一，索引 `(app_id, created_at)`、`(app_id, status)`。保存归属及预设/模型快照、pending/success/error/timeout/unknown、可空 AI log FK、可空 token 与 usage_status、耗时、脱敏错误、时间和解除占用审计。无消息/回答正文。
+
+日/分钟限额以准入记录计数；pending/unknown 持续占并发，不能由日志清理或过期任务自动释放。所有普通时间列由 beijing_now 写入；新表不物理清理历史，生产回滚不得 downgrade 删除账本。迁移仅新增三表，父 revision 为 145_domestic_order_guest。
+
 > 本文档由 CLAUDE.md 瘦身治理（2026-07-03，见 docs/2026-07-03-architecture-assessment.md G-1）拆出。
 > 变更 API/表结构/模块行为时**同步更新本文件**。
 

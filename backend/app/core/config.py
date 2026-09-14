@@ -21,6 +21,8 @@ _PublicPoolQuota = Annotated[int, Field(gt=0, le=100)]
 class Settings(BaseSettings):
     # ── 应用环境 ──────────────────────────────────────────
     APP_ENV: str = "development"  # development / production
+    AI_GATEWAY_MAX_OUTPUT_TOKENS: Annotated[int, Field(gt=0, le=4096)] = 4096
+    AI_GATEWAY_TIMEOUT_SEC: Annotated[int, Field(gt=0, le=60)] = 60
 
     # ── 提成系统数据库（读写）──────────────────────────────
     COMMISSION_DB_HOST: str = "localhost"

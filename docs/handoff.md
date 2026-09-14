@@ -1,3 +1,13 @@
+## 2026-09-14 业务员站点 AI 网关（合并交付，未部署）
+
+任务分支 `codex/ai-site-gateway`，目录 `D:/MyProgram/commission-system-codex-ai-site-gateway`，基点 `794b2499`。按 `docs/requirements/2026-09-11-ai-site-gateway.md` 实现三表迁移146、每站密钥、文本 Preset 授权、MySQL 原子准入、日/分钟/并发上限、未知用量与审计解除、AI 管理站点页签、后端接入示例及 Nginx 候选片段。未触碰主目录其他未跟踪文档。
+
+验证：72 项后端/示例测试通过，含隔离 MySQL 8.4.6 的9项迁移及20并发门禁；浏览器实际页面+mock API 验证创建、编辑、直接重置、一次性密钥、启停、核查解除及窄屏；前端构建通过。独立风险审查所列问题已修复。增量代码约定红0黄0；完整 UI 门禁仍报告两个素材模块原有问题，以及 AIManager 既有超长组件因新增页签增加4行（新业务为独立组件，未改基线规避）。
+
+交付入口：开发规格第13节、`examples/ai-site-gateway/README.md`、`scripts/test_ai_gateway_ui.py`。API/数据库/专题/运维文档已同步。用户已授权合并 main 并推送 origin；集成前 fetch 确认 main 与 origin/main 均为基点 `794b2499`，无上游差异。本轮不部署。后续获环境发布授权后由指定入口应用迁移146并核对 Nginx 路径和真实供应商连通性；生产数据、实际计费和跨云延迟尚未验证。
+
+收尾：测试 MySQL 和 Vite 已停止，临时 MySQL 目录清理被自动审批以 `blocked by policy` 拒绝；任务 `tmp/ai-gateway-mysql/` 及 UI 初始探针文件保留，不进入 Git/发布制品。数据库测试自己创建的随机测试 schema 均已由 fixture 清理，保留的是已停机的隔离实例目录。
+
 ## 2026-09-11 内贸客户筛选与业务订单顾客（合并交付）
 
 分支 `codex/domestic-guest`，工作目录 `D:/MyProgram/commission-system-codex-domestic-guest`，基点 `23e4c994`。客户列表新增客户等级、归属销售组合筛选；业务订单新增选填顾客（120 字），贯通录入、编辑/清空、详情及两版 Excel。新增迁移 `145_domestic_order_guest`（可空列，历史数据保留）；空顾客不改变旧建单请求哈希，保留跨版本重试。生产单不使用该字段。

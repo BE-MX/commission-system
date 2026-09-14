@@ -1,5 +1,17 @@
 # 莱莎方舟 模块专题笔记（含各模块已踩坑）
 
+## 站点 AI 网关
+
+实现位于 `app/ai_gateway/`；管理页为 AI 接入管理的“站点应用”，需要 ai:admin。单站密钥独立于员工 JWT/MCP token。密钥仅存哈希，创建和重置时返回一次，页面关闭后清空内存；站点将密钥配置在服务端，浏览器只调用本站后端。
+
+准入、启停、重置、授权修改均先锁应用行。重复 ID、负责人、授权和计数使用 MySQL 当前读，不能依赖已建立的 REPEATABLE READ 快照。准入提交后再调用 facade，锁不跨网络请求；每日次数包含准入后的错误。unknown 继续占并发，75 秒后管理员确认执行结束并完成上游核查才可解除。
+
+`app.ai.service.prepare_text_chat()` 在短事务内复制已授权文本配置，`chat(... trusted_text_snapshot=..., snapshot_mode="metadata")` 使用该副本，避免 ORM 过期或管理员并发修改改变实际发出的模型/参数。仅允许文本参数 max_tokens/temperature/top_p/stop/frequency_penalty/presence_penalty；有工具、图片或其他参数的预设不可授权。上限取 Preset、应用和 Settings 硬上限最小值。无自动 HTTP 重试，整体超时关闭本地连接不保证供应商取消。
+
+用量先归一化再写 AI 日志：usage 缺失、null、非对象或非法数值不能把成功文本变成日志落库失败；未知不是 0，部分已知则单独展示。AI 网关仅保存 metadata，不暴露原始上游异常。
+
+UI 注意：从 DetailDrawer 打开的核查弹窗必须 append-to-body，避免被抽屉层拦截；窄屏解除右侧固定操作列，保留横向滚动。重置密钥直接使用列表返回的 preset_names，不依赖曾打开过编辑器。
+
 > 本文档由 CLAUDE.md 瘦身治理（2026-07-03，见 docs/2026-07-03-architecture-assessment.md G-1）拆出。
 > 变更 API/表结构/模块行为时**同步更新本文件**。
 

@@ -197,9 +197,13 @@ def extract_anthropic_content(result: dict) -> str:
 
 def extract_anthropic_usage(result: dict) -> dict:
     """从 Anthropic 响应中提取 token 用量,映射为 OpenAI 兼容字段。"""
-    usage = result.get("usage", {})
+    usage = result.get("usage") if isinstance(result.get("usage"), dict) else {}
+    input_tokens = usage.get("input_tokens")
+    output_tokens = usage.get("output_tokens")
+    input_tokens = input_tokens if type(input_tokens) is int and input_tokens >= 0 else None
+    output_tokens = output_tokens if type(output_tokens) is int and output_tokens >= 0 else None
     return {
-        "prompt_tokens": usage.get("input_tokens"),
-        "completion_tokens": usage.get("output_tokens"),
-        "total_tokens": (usage.get("input_tokens") or 0) + (usage.get("output_tokens") or 0),
+        "prompt_tokens": input_tokens,
+        "completion_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens if input_tokens is not None and output_tokens is not None else None,
     }
