@@ -44,6 +44,11 @@
     {
       "component": "video",
       "reason": "Authoritative source outside repository; COS migration deferred"
+    },
+    {
+      "component": "colorwork-workbench",
+      "domain": "colorwork.leshine.work",
+      "reason": "库存色块图工作台子站（workerd 本地服务，非静态站点）；DNS/TLS 与 systemd 单元未开通，需手动部署，见 colorwork-workbench/README.md"
     }
   ],
   "external_services": [

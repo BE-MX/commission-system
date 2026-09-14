@@ -39,6 +39,7 @@ UI 注意：从 DetailDrawer 打开的核查弹窗必须 append-to-body，避免
 | AI 接入 | `ai:admin` / `ai:invoke` | AI 管理/调用 |
 | 方舟洞见 | `insight:read` / `insight:write` / `insight:internal_read` / `insight:admin` | 查看/上传/内部报告/管理 |
 | 备货管理 | `stock:read` / `stock:write` / `stock:admin` | 查看/设置/管理 |
+| 库存色块图 | `colorwork_download:read` / `colorwork_edit:read` / `colorwork_master:read` | 库存图直接下载/实时库存图修改/原始库存图文件（三个页面独立授权） |
 | 素材管理 | `asset:read` / `asset:write` / `asset:delete` / `asset:admin` | 查看素材库/上传编辑/删除/标签维度管理 |
 | 色彩管理 | `color:read` / `color:write` / `color:admin` | 查看色板数据库/色彩趋势/编辑色号/生成色板图/管理竞品监控 |
 | 生产订单 | `production:read` / `production:write` / `production:print` / `production:admin` | 查看订单/创建编辑订单与入库/打印工作台/删除订单（备货管理菜单组下独立子菜单） |
@@ -1086,3 +1087,12 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 2026-09-09 逐件标签排版：去掉 LOGO；左侧五区为规格（头套 size/length，发片 craft）、实际 unit_no 至少两位、客户、系统编号、日期。规格来自现有 item.attrs，分段打印保持单件实际序号，二维码身份及 16.8mm 尺寸不变。长文本按区域预算调整字号并换行，常规规格和客户文字 2mm，序号 2.2mm、日期 2mm。
 
 2026-09-09 内贸 Excel 双表：`build_order_workbook` 分别生成正常和无价格表，后者从列定义中排除五个金额字段，并跳过财务汇总与金额说明；两表共用客户头、产品规格及数量，参考图分别嵌入。完整要求改为每个表末尾的合并列区域，保持两张 sheet，行高按明细号/字段/正文各自换行数取最大值，打印区域包含全部续行。
+
+## 库存色块图工作台集成（colorwork，2026-09-14）
+
+库存色块图调整台（仓库顶层 `colorwork-workbench/`，vinext + Cloudflare Worker/D1/R2 技术栈）以**独立子站点**方式并入方舟：方舟管功能入口与页面权限，工作台自身 UI 与业务逻辑原样保留，账号与设置模块已移除（首次素材导入并入「原始库存图文件」页）。
+
+- **入口与权限**：侧边栏「库存色块图」分组下三个页面（库存图直接下载 `/colorwork/download`、实时库存图修改 `/colorwork/edit`、原始库存图文件 `/colorwork/master`），各挂独立页面权限码。前端 `ColorworkFrame.vue` 调 `GET /api/colorwork/sso?view=…` 换短命 HS256 令牌（120s，含 views 清单），iframe 载入工作台 `/api/auth/ark` 落座（站内会话 Cookie + 视图清单存 local_sessions.views_json）。
+- **站内逐视图校验**：工作台 API 用 `requireView('library'|'inventory'|'master')` 兜底；master 视图持有者映射为站内 admin 角色。无方舟会话直开站点只见进入提示，原站内登录页/账号管理 API 已删除。
+- **实时库存状态**：`GET /api/colorwork/inventory-status?template_id=`（共享密钥头 `x-colorwork-sync-key`，仅供工作台服务端回源）按 `TEMPLATE_MATCH`（`app/colorwork/constants.py`）把 23 个模板映射到 okki_products 名称前缀（Regular=Standard Double Drawn；Butterfly=Double Genius Holes Weft；Injection=Invisible Tape Hair；Flex=Volume Weft——2026-09-14 业务确认），按「颜色|尺寸」聚合 SUM(enable_count)>0 → 到货正常，否则正在补货。工作台 `getCurrentSnapshot` 返回前实时覆盖（`lib/server/ark-sync.ts`，3.5s 超时，失败回退站内手动状态），页面每 30 秒静默轮询（有未保存修改时跳过）。okki 无对应产品的规格不覆盖、保留站内状态。
+- **配置**：方舟端 `COLORWORK_SSO_SECRET` / `COLORWORK_BASE_URL` / `COLORWORK_SYNC_KEY`（.env）；工作台端 `ARK_SSO_SECRET` / `ARK_STATUS_ENDPOINT` / `ARK_SYNC_KEY`（.dev.vars，见 .dev.vars.example）。部署：`deploy/nginx/colorwork.leshine.work.conf`（frame-ancestors 仅放行方舟主站）+ `deploy/systemd/colorwork-workbench.service`。

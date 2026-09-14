@@ -1066,6 +1066,17 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 2026-09-07 显示字段：扫码及出库打印数据的 `record.remark` 来自 `okki_outbound_records.remark`；`items[].model/size/color` 通过明细 `product_id` 左连 `okki_products.product_id` 读取，同一产品的多条出库明细保留各自数量和照片归属。产品未匹配或字段为空时返回 `null`，不以名称或明细旧规格替代型号。小程序首行用深绿色 40rpx/800 显示型号（缺失提示“未维护型号”），次行 32rpx 显示 `size / color`；顶部发货备注与底部提交的检验备注独立。出库单打印新增发货备注并移除 SKU 列，验货单打印保持原样。
 
+## 库存色块图工作台集成（`/api/colorwork`，2026-09-14）
+
+库存色块图调整台（`colorwork-workbench/`，独立 workerd 子站点）的方舟侧集成接口：方舟管功能入口与页面权限，工作台 UI/逻辑原样保留，详见 `docs/module-notes.md` 对应一节与 `colorwork-workbench/README.md`。
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/sso?view=library\|inventory\|master` | 对应视图的 `colorwork_download:read` / `colorwork_edit:read` / `colorwork_master:read` | 按页面权限签发工作台 SSO 链接（短命 HS256，120s，claims 含用户全部可见视图）；无权限 403，未知视图 400 |
+| GET | `/inventory-status?template_id=` | 共享密钥头 `x-colorwork-sync-key`（非用户 JWT，仅工作台服务端回源） | 按 `TEMPLATE_MATCH` 映射聚合 `okki_inventory.enable_count`：SUM>0 → normal（到货正常）否则 restocking（正在补货）；键为 `{颜色}|{尺寸}`；未配置映射的模板返回 `unmapped: true`，工作台保留手动状态 |
+
+实时生效链路：工作台 `getCurrentSnapshot` 返回前逐规格覆盖（3.5s 超时回退站内状态），页面 30s 静默轮询。规格↔okki 匹配口径与有货判定复用 `stock/public_service.py` 的约定。
+
 ## 已退役：智能获客旧 API（迁移 126 前）
 
 > 本节路径不再注册，只作为历史审计记录。禁止调用 `/leads`、`/agent/leads/*` 或 `/agent/public-pool/tasks/*`；当前人机接口见本文顶部 `/api/customer-hub` 与 `/api/sales-automation/agent`。

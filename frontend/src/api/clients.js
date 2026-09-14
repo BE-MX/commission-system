@@ -66,3 +66,4 @@ export const customerMediaClient = createApiClient({
   timeout: 120000,
 })
 export const mailOutreachClient = createApiClient({ baseURL: '/api/mail-outreach', timeout: 300000 }) // 草稿生成走 AI，放宽超时
+export const colorworkClient = createApiClient({ baseURL: '/api/colorwork', timeout: 30000 })

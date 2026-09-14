@@ -508,6 +508,11 @@ def seed_role_permissions(db: Session):
         ("shipping_inspection:admin", "shipping_inspection", "admin", "发货检验模块管理"),
         # read_all 仅扩展出库单数据范围（默认本人 OKKI 客户）；admin 角色由通用补齐逻辑自动授予
         ("shipping_inspection:read_all", "shipping_inspection", "read_all", "查看全部出库单（数据范围）"),
+        # 库存色块图工作台（2026-09-14 集成）：三个页面各自独立授权，工作台子站点凭
+        # SSO 令牌内的视图清单过滤导航并逐视图校验 API。
+        ("colorwork_download:read", "colorwork", "read", "库存色块图-库存图直接下载"),
+        ("colorwork_edit:read",     "colorwork", "read", "库存色块图-实时库存图修改"),
+        ("colorwork_master:read",   "colorwork", "read", "库存色块图-原始库存图文件"),
     ]
     # upsert：活跃权限 + 已下架权限统一处理，元数据每次启动刷新
     existing_map = {p.code: p for p in db.query(ArkPermission).all()}
