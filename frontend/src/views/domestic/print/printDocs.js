@@ -104,7 +104,9 @@ export function buildUnitLabelDoc({ data }) {
     .unit-serial{font-size:2.2mm;line-height:1.1}
     .unit-date{width:100%;font-size:2mm;font-weight:600;line-height:1.2;text-align:center;display:flex;flex-wrap:wrap;align-content:center;justify-content:center}
     .unit-date span{white-space:nowrap}
-    .unit-qr{width:16.8mm;height:16.8mm;object-fit:contain;image-rendering:pixelated;flex-shrink:0}
+    /* 二维码比剩余槽位小一圈：水平 margin:auto 把空余均分到两侧，
+       配合 flex 垂直居中，四周各留约 2mm 白边方便装订 */
+    .unit-qr{width:14mm;height:14mm;margin:0 auto;object-fit:contain;image-rendering:pixelated;flex-shrink:0}
   `
   return wrapDoc(`逐件二维码 ${data.domestic_no}`, css, body)
 }
