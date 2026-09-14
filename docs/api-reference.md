@@ -1045,8 +1045,8 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/outbound-records?keyword=&date_from=&date_to=&page=&page_size=` | 出库单分页列表，含检验状态 none/draft/submitted 与照片数 |
-| GET | `/outbound-records/{record_id}/print-data` | 出库单打印数据：单头+明细+`qr_code_base64`（二维码内容 `ARK-I:{record_id}:{hmac8}`） |
+| GET | `/outbound-records?keyword=&date_from=&date_to=&page=&page_size=` | 出库单分页列表，含检验状态 none/draft/submitted 与照片数；按 OKKI 归属过滤（见下） |
+| GET | `/outbound-records/{record_id}/print-data` | 出库单打印数据：单头+明细+`qr_code_base64`（二维码内容 `ARK-I:{record_id}:{hmac8}`）；同样按归属过滤，不可见返回 404 |
 | GET | `/records?keyword=&date_from=&date_to=&page=&page_size=` | 已提交验货单分页列表（按提交时间过滤） |
 | GET | `/records/{id}` | 验货单详情：单头+实时明细+照片相对路径数组 |
 | GET | `/images/{rel_path:path}` | 鉴权读图（FileResponse，私有存储不挂静态目录） |
@@ -1057,6 +1057,8 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | GET | `/api/mini/shipping-inspection/images/{rel_path:path}` | 小程序鉴权读图 |
 
 字段口径已于 2026-09-01 实库摸底校准（`scripts/show_okki_outbound_columns.py`），明细经 `outbound_invoice_id` 桥接关联单头，见 `docs/database.md` 发货检验一节。
+
+2026-09-14 出库单数据范围：`/outbound-records` 列表与 print-data 按 OKKI 归属过滤——业务员只能看本人订单客户的出库单（`okki_outbound_records.company_id` 命中 `okki_orders` 同客户且 `user_id` = 当前用户绑定的 OKKI 业务员 id，绑定解析同 order_intelligence 的 active/primary 规则，未绑定返回 422）；`shipping_inspection:read_all`（数据范围权限，启动 seed 时由通用逻辑补授 admin 角色）或 super_admin 看全部。小程序验货端点不加归属门槛（仓管扫码场景，维持既有口径）。
 
 2026-09-07 显示字段：扫码及出库打印数据的 `record.remark` 来自 `okki_outbound_records.remark`；`items[].model/size/color` 通过明细 `product_id` 左连 `okki_products.product_id` 读取，同一产品的多条出库明细保留各自数量和照片归属。产品未匹配或字段为空时返回 `null`，不以名称或明细旧规格替代型号。小程序首行用深绿色 40rpx/800 显示型号（缺失提示“未维护型号”），次行 32rpx 显示 `size / color`；顶部发货备注与底部提交的检验备注独立。出库单打印新增发货备注并移除 SKU 列，验货单打印保持原样。
 

@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app.auth.models import ArkUser
+from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.auth.utils import create_access_token
 from app.core.database import get_db
 from app.mini.auth import create_mini_token
@@ -57,7 +57,7 @@ def _user(db, username="inspector"):
 
 
 @contextmanager
-def _pc_client(db, user, permissions):
+def _pc_client(db, user, permissions, roles=None):
     from app.shipping_inspection.router import router
 
     app = FastAPI()
@@ -71,7 +71,7 @@ def _pc_client(db, user, permissions):
         "sub": str(user.id),
         "username": user.username,
         "real_name": user.real_name,
-        "roles": [],
+        "roles": roles or [],
         "permissions": permissions,
     })
     with TestClient(app, headers={"Authorization": f"Bearer {token}"}) as client:
@@ -294,7 +294,8 @@ def test_submit_success_then_idempotent_and_locked(db, storage):
 
 # ── PC 端 ─────────────────────────────────────────────────
 
-_PC_PERMS = ["shipping_inspection:read", "shipping_inspection:write"]
+# read_all 保持全量视图：下列既有用例聚焦列表/状态组装机制，不重复归属过滤
+_PC_PERMS = ["shipping_inspection:read", "shipping_inspection:write", "shipping_inspection:read_all"]
 
 
 def _submit_one(db, user, record_id="OB001", item_id="IT001"):
@@ -339,7 +340,7 @@ def test_pc_outbound_records_require_permission(db):
 
 def test_pc_print_data_contains_qr(db):
     user = _user(db)
-    with _pc_client(db, user, ["shipping_inspection:read"]) as client:
+    with _pc_client(db, user, ["shipping_inspection:read", "shipping_inspection:read_all"]) as client:
         resp = client.get("/api/shipping-inspection/outbound-records/OB001/print-data")
         assert resp.status_code == 200
         data = resp.json()["data"]
@@ -394,6 +395,80 @@ def test_image_read_endpoints(db, storage):
     # 无权限读图被拒
     with _pc_client(db, user, []) as client:
         assert client.get(f"/api/shipping-inspection/images/{photo['file_path']}").status_code == 403
+
+
+# ── 出库单归属过滤（shipping_inspection:read_all 数据范围）────────────────
+
+@pytest.fixture
+def outbound_scope_seed(db):
+    """归属过滤种子：出库单补 company_id 列，okki_orders 建立 客户→业务员 映射。"""
+    outbound_service._columns_cache.clear()
+    db.execute(text("ALTER TABLE lsordertest.okki_outbound_records ADD COLUMN company_id TEXT"))
+    db.execute(text("""
+        UPDATE lsordertest.okki_outbound_records
+        SET company_id = CASE id WHEN 'OB001' THEN 'C1' ELSE 'C2' END
+    """))
+    db.execute(text("""
+        INSERT OR IGNORE INTO lsordertest.okki_orders (order_id, order_no, company_id, user_id)
+        VALUES ('ORD1', 'SO-1', 'C1', '9001'), ('ORD2', 'SO-2', 'C2', '9002')
+    """))
+    db.commit()
+    yield
+    outbound_service._columns_cache.clear()
+
+
+def _bind_okki(db, user, external_id="9001"):
+    binding = ArkUserExternalBinding(
+        ark_user_id=user.id, provider="okki", external_account_id=external_id,
+        binding_status="active", is_primary=True,
+    )
+    db.add(binding)
+    db.commit()
+    return binding
+
+
+def test_outbound_list_scoped_to_own_okki_customers(db, outbound_scope_seed):
+    user = _user(db, "sales-own")
+    _bind_okki(db, user, "9001")
+    with _pc_client(db, user, ["shipping_inspection:read"]) as client:
+        resp = client.get("/api/shipping-inspection/outbound-records")
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["total"] == 1
+        assert data["items"][0]["outbound_record_id"] == "OB001"
+        # keyword 筛选叠加归属过滤
+        kw = client.get(
+            "/api/shipping-inspection/outbound-records", params={"keyword": "客户乙"},
+        ).json()["data"]
+        assert kw["total"] == 0
+        # 打印数据：本人客户 200，他人客户 404（不泄露单是否存在）
+        assert client.get("/api/shipping-inspection/outbound-records/OB001/print-data").status_code == 200
+        assert client.get("/api/shipping-inspection/outbound-records/OB002/print-data").status_code == 404
+
+
+def test_outbound_list_read_all_sees_everything(db, outbound_scope_seed):
+    user = _user(db, "sales-all")
+    _bind_okki(db, user, "9001")
+    with _pc_client(db, user, ["shipping_inspection:read", "shipping_inspection:read_all"]) as client:
+        data = client.get("/api/shipping-inspection/outbound-records").json()["data"]
+        assert data["total"] == 2
+        assert client.get("/api/shipping-inspection/outbound-records/OB002/print-data").status_code == 200
+
+
+def test_outbound_list_super_admin_sees_everything(db, outbound_scope_seed):
+    user = _user(db, "boss")
+    with _pc_client(db, user, ["shipping_inspection:read"], roles=["super_admin"]) as client:
+        data = client.get("/api/shipping-inspection/outbound-records").json()["data"]
+        assert data["total"] == 2
+
+
+def test_outbound_list_requires_okki_binding(db, outbound_scope_seed):
+    user = _user(db, "sales-unbound")
+    with _pc_client(db, user, ["shipping_inspection:read"]) as client:
+        resp = client.get("/api/shipping-inspection/outbound-records")
+        assert resp.status_code == 422
+        assert "OKKI" in resp.json()["detail"]
+        assert client.get("/api/shipping-inspection/outbound-records/OB001/print-data").status_code == 422
 
 
 # ── mini 端点响应形状契约 ─────────────────────────────────
