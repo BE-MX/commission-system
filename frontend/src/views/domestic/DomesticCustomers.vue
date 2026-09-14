@@ -303,7 +303,8 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="rechargeDialog.visible" title="客户充值" width="440px">
+    <el-dialog v-model="rechargeDialog.visible" title="客户充值（提交后需审核）" width="440px">
+      <el-alert type="info" show-icon :closable="false" class="tips" title="充值申请提交后进入审核，审核通过才入账并重新核定会员等级。" />
       <el-form label-width="90px">
         <el-form-item label="客户"><strong>{{ rechargeDialog.customer?.shop_name }}</strong></el-form-item>
         <el-form-item label="当前余额">¥{{ Number(rechargeDialog.customer?.balance || 0).toFixed(2) }}</el-form-item>
@@ -314,13 +315,24 @@
           <el-tag effect="plain">{{ membershipPreview(rechargeDialog.amount) }}</el-tag>
           <span class="preview-hint">仅按本次充值金额计算</span>
         </el-form-item>
+        <el-form-item label="转账凭证" required>
+          <el-upload
+            :file-list="rechargeDialog.voucherList" :auto-upload="false" :limit="1"
+            accept=".jpg,.jpeg,.png,.webp,.pdf"
+            :on-change="onRechargeVoucherChange" :on-remove="onRechargeVoucherRemove"
+            :on-exceed="onRechargeVoucherExceed"
+          >
+            <GlassButton variant="ghost">选择图片 / PDF</GlassButton>
+            <template #tip><span class="preview-hint">银行流水或转账截图，必填，不超过 20MB</span></template>
+          </el-upload>
+        </el-form-item>
         <el-form-item label="说明">
           <el-input v-model="rechargeDialog.remark" type="textarea" :rows="2" maxlength="500" placeholder="如：银行转账到账" />
         </el-form-item>
       </el-form>
       <template #footer>
         <GlassButton variant="ghost" @click="rechargeDialog.visible = false">取消</GlassButton>
-        <GlassButton variant="primary" :loading="rechargeDialog.saving" @click="confirmRecharge">确认充值</GlassButton>
+        <GlassButton variant="primary" :loading="rechargeDialog.saving" @click="confirmRecharge">提交审核</GlassButton>
       </template>
     </el-dialog>
 
@@ -346,8 +358,8 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="adjustDialog.visible" title="临时调整余额 / 等级" width="460px">
-      <el-alert type="warning" show-icon :closable="false" class="tips" title="余额正数加、负数减；等级覆盖是临时的，下一次充值会按金额重新核定。" />
+    <el-dialog v-model="adjustDialog.visible" title="临时调整余额 / 等级（提交后需审核）" width="460px">
+      <el-alert type="warning" show-icon :closable="false" class="tips" title="余额正数加、负数减；等级覆盖是临时的，下一次充值会按金额重新核定。提交后进入审核，审核通过才生效。" />
       <el-form label-width="90px">
         <el-form-item label="客户"><strong>{{ adjustDialog.customer?.shop_name }}</strong></el-form-item>
         <el-form-item label="当前状态">
@@ -369,7 +381,7 @@
       </el-form>
       <template #footer>
         <GlassButton variant="ghost" @click="adjustDialog.visible = false">取消</GlassButton>
-        <GlassButton variant="primary" :loading="adjustDialog.saving" @click="confirmAdjust">确认调整</GlassButton>
+        <GlassButton variant="primary" :loading="adjustDialog.saving" @click="confirmAdjust">提交审核</GlassButton>
       </template>
     </el-dialog>
 
@@ -414,6 +426,7 @@ const {
   canOperateCustomer, handleProvinceChange,
   saving, dialog, options, openDialog, save,
   rechargeDialog, openRecharge, confirmRecharge,
+  onRechargeVoucherChange, onRechargeVoucherRemove, onRechargeVoucherExceed,
   initDialog, openInit, confirmInit,
   adjustDialog, openAdjust, confirmAdjust,
   ledgerDrawer, ledgerTypeLabel, openLedger, loadLedger,

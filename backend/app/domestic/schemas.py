@@ -150,6 +150,35 @@ class CustomerAdjust(BaseModel):
         return v.strip() if isinstance(v, str) else v
 
 
+class ReviewRemark(BaseModel):
+    """审核意见（通过可空，驳回必填——服务端按端点再校）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    remark: str | None = Field(None, max_length=500)
+
+    @field_validator("remark", mode="before")
+    @classmethod
+    def _strip_remark(cls, v: str | None) -> str | None:
+        value = v.strip() if isinstance(v, str) else v
+        return value or None
+
+
+class ReviewDecision(BaseModel):
+    """审核决定：approve=通过 / reject=驳回（驳回必须写原因，服务端再校）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["approve", "reject"]
+    remark: str | None = Field(None, max_length=500, description="审核意见；驳回必填（≥2 字）")
+
+    @field_validator("remark", mode="before")
+    @classmethod
+    def _strip_remark(cls, v: str | None) -> str | None:
+        value = v.strip() if isinstance(v, str) else v
+        return value or None
+
+
 # ── 产品属性 ──────────────────────────────────────────
 
 

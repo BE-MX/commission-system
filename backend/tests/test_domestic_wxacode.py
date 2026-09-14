@@ -117,7 +117,14 @@ def _create_order(db, user, item_count=1):
         order_channel="wechat",
         items=items,
     )
-    return order_service.create_order(db, payload, user.id)
+    created = order_service.create_order(db, payload, user.id)
+    # 会员优惠价单先落待审核：审核通过转生产中后才能生成客户进度码
+    reviewer = _user(db, f"wx-reviewer-{uuid4().hex[:8]}")
+    order_service.review_order(
+        db, created["id"], decision="approve", remark=None,
+        reviewer_id=reviewer.id, can_admin=False,
+    )
+    return created
 
 
 def _items_of(db, order_id):

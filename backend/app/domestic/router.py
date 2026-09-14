@@ -9,10 +9,11 @@ import base64
 import io
 import logging
 from datetime import date, datetime
+from decimal import Decimal
 from app.core.time import beijing_now
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
@@ -32,17 +33,22 @@ from app.domestic import (
     product_service,
     progress_service,
     report_service,
+    request_service,
     route_rule_service,
     unit_service,
 )
-from app.domestic.models import DomesticCustomer, DomesticOrder, DomesticOrderItem
+from app.domestic.models import (
+    DomesticCustomer,
+    DomesticCustomerRequest,
+    DomesticOrder,
+    DomesticOrderItem,
+)
 from app.domestic.schemas import (
     BasePriceUpdate,
     CraftRouteUpsert,
     CustomerAdjust,
     CustomerCreate,
     CustomerInitialize,
-    CustomerRechargeCreate,
     CustomerUpdate,
     DraftSubmitRequest,
     ItemShipRequest,
@@ -56,6 +62,8 @@ from app.domestic.schemas import (
     ManualSkipSubmit,
     ReportRevoke,
     ReportSubmit,
+    ReviewDecision,
+    ReviewRemark,
     RouteRuleSaveRequest,
     RouteConfigurationSaveRequest,
 )
@@ -91,6 +99,14 @@ def _can_operate_all_customers(current_user: dict) -> bool:
         "super_admin" in (current_user.get("roles") or [])
         or "domestic_customer:admin" in (current_user.get("permissions") or [])
     )
+
+
+def _can_review(current_user: dict) -> bool:
+    """充值/调整/优惠价订单的审核权：domestic:review 或 domestic:admin。"""
+    if "super_admin" in (current_user.get("roles") or []):
+        return True
+    permissions = current_user.get("permissions") or []
+    return "domestic:review" in permissions or "domestic:admin" in permissions
 
 
 def _ensure_customer_owner(db: Session, customer_id: int, current_user: dict) -> None:
@@ -363,24 +379,33 @@ def delete_customer(
     return ok(message="已删除")
 
 
-@router.post("/customers/{customer_id}/recharges", summary="客户充值")
-def recharge_customer(
+@router.post("/customers/{customer_id}/recharges", summary="客户充值申请（附凭证，审核通过后生效）")
+async def recharge_customer(
     customer_id: int,
-    payload: CustomerRechargeCreate,
+    amount: Decimal = Form(..., le=Decimal("999999999999.99")),
+    request_id: str = Form(...),
+    remark: str | None = Form(None),
+    file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_any_permission("domestic:recharge", "domestic:admin")),
 ):
     _ensure_customer_owner(db, customer_id, current_user)
+    content = await file.read()
     try:
-        data = balance_service.recharge_customer(
+        file_service.validate_voucher_upload(file.filename, file.content_type or "", len(content))
+        voucher_path = file_service.store_bytes(file.filename, content)
+        data = request_service.create_recharge_request(
             db,
             customer_id=customer_id,
-            amount=payload.amount,
+            amount=amount,
+            voucher_path=voucher_path,
             user_id=_uid(current_user),
-            remark=payload.remark,
-            request_id=payload.request_id,
+            remark=remark,
+            request_id=request_id,
             can_operate_all=_can_operate_all_customers(current_user),
         )
+    except file_service.FileValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(exc))
@@ -390,11 +415,99 @@ def recharge_customer(
     return ok(
         data,
         message=(
-            "该笔充值已经处理过，当前会员状态以返回结果为准"
+            "该笔充值申请已提交过，当前状态以返回结果为准"
             if data["replayed"]
-            else "充值成功"
+            else "充值申请已提交，审核通过后生效"
         ),
     )
+
+
+@router.get("/customer-requests", summary="充值/调整申请列表（审核员看全部，申请人看自己）")
+def list_customer_requests(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    status: str = Query("", pattern="^(pending|approved|rejected)?$"),
+    request_type: str = Query("", pattern="^(recharge|adjust)?$"),
+    keyword: str = Query("", max_length=120),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(
+        require_any_permission("domestic:review", "domestic:admin", "domestic:recharge")
+    ),
+):
+    items, total = request_service.list_requests(
+        db, status=status, request_type=request_type, keyword=keyword,
+        page=page, page_size=page_size,
+        viewer_user_id=_uid(current_user), can_review_all=_can_review(current_user),
+    )
+    return ok(page_result(items, total, page, page_size))
+
+
+@router.post("/customer-requests/{request_id}/approve", summary="审核通过充值/调整申请（立即入账）")
+def approve_customer_request(
+    request_id: int,
+    payload: ReviewRemark | None = None,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_any_permission("domestic:review", "domestic:admin")),
+):
+    try:
+        data = request_service.approve_request(
+            db, request_id,
+            reviewer_id=_uid(current_user), can_admin=_has_admin(current_user),
+            remark=payload.remark if payload else None,
+        )
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception:
+        db.rollback()
+        raise
+    return ok(data, message="审核通过，已入账")
+
+
+@router.post("/customer-requests/{request_id}/reject", summary="驳回充值/调整申请")
+def reject_customer_request(
+    request_id: int,
+    payload: ReviewRemark | None = None,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_any_permission("domestic:review", "domestic:admin")),
+):
+    try:
+        data = request_service.reject_request(
+            db, request_id,
+            reviewer_id=_uid(current_user), can_admin=_has_admin(current_user),
+            remark=payload.remark if payload else None,
+        )
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception:
+        db.rollback()
+        raise
+    return ok(data, message="已驳回")
+
+
+@router.get("/customer-requests/{request_id}/voucher", summary="查看充值/调整申请凭证")
+def get_customer_request_voucher(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(
+        require_any_permission("domestic:review", "domestic:admin", "domestic:recharge")
+    ),
+):
+    voucher_path = db.query(DomesticCustomerRequest.voucher_path, DomesticCustomerRequest.created_by).filter(
+        DomesticCustomerRequest.id == request_id
+    ).first()
+    if voucher_path is None or not voucher_path[0]:
+        raise HTTPException(status_code=404, detail="凭证不存在")
+    if not _can_review(current_user) and voucher_path[1] != _uid(current_user):
+        raise HTTPException(status_code=404, detail="凭证不存在")
+    try:
+        abs_path = file_service.resolve_path(voucher_path[0])
+    except file_service.FileValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not abs_path.is_file():
+        raise HTTPException(status_code=404, detail="凭证文件不存在")
+    return FileResponse(abs_path)
 
 
 @router.post("/customers/{customer_id}/initialize", summary="期初初始化客户余额与会员等级")
@@ -422,7 +535,7 @@ def initialize_customer(
     )
 
 
-@router.post("/customers/{customer_id}/adjust", summary="临时调整客户余额与会员等级")
+@router.post("/customers/{customer_id}/adjust", summary="调整申请（审核通过后生效）")
 def adjust_customer(
     customer_id: int,
     payload: CustomerAdjust,
@@ -431,7 +544,7 @@ def adjust_customer(
 ):
     _ensure_customer_owner(db, customer_id, current_user)
     try:
-        data = customer_service.adjust_customer(
+        data = request_service.create_adjust_request(
             db, customer_id, payload, _uid(current_user),
             can_operate_all=_can_operate_all_customers(current_user),
         )
@@ -443,7 +556,11 @@ def adjust_customer(
         raise
     return ok(
         data,
-        message="该调整已经处理过，当前状态以返回结果为准" if data["replayed"] else "调整完成",
+        message=(
+            "该调整申请已提交过，当前状态以返回结果为准"
+            if data["replayed"]
+            else "调整申请已提交，审核通过后生效"
+        ),
     )
 
 
@@ -630,9 +747,12 @@ def create_order(
         raise HTTPException(status_code=409, detail=exc.detail)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    message = "草稿已保存" if data["is_draft"] else "下单成功"
+    if data["status"] == C.ORDER_PENDING_REVIEW:
+        message = "订单已提交：优惠价低于原始价，审核通过后正式生效"
+    else:
+        message = "草稿已保存" if data["is_draft"] else "下单成功"
     if data["warnings"]:
-        message = ("草稿已保存" if data["is_draft"] else "下单成功") + "，但有明细暂时不能开工，见提示"
+        message += "，但有明细暂时不能开工，见提示"
     return ok(data, message=message)
 
 
@@ -741,7 +861,30 @@ def submit_draft_order(
         raise HTTPException(status_code=409, detail=exc.detail)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    if result["status"] == C.ORDER_PENDING_REVIEW:
+        return ok(result, message="订单已提交：优惠价低于原始价，审核通过后正式生效")
     return ok(result, message="订单已提交，余额扣款成功")
+
+
+@router.post("/orders/{order_id}/review", summary="审核优惠价订单（通过即扣款生效）")
+def review_order(
+    order_id: int,
+    payload: ReviewDecision,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_any_permission("domestic:review", "domestic:admin")),
+):
+    try:
+        data = order_service.review_order(
+            db, order_id,
+            decision=payload.decision, remark=payload.remark,
+            reviewer_id=_uid(current_user), can_admin=_has_admin(current_user),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(
+        data,
+        message="审核通过，订单已生效并扣款" if payload.decision == "approve" else "订单已驳回",
+    )
 
 
 @router.post("/orders/{order_id}/status", summary="终止订单")
@@ -986,6 +1129,8 @@ def get_item_wxacode(
         raise HTTPException(status_code=404, detail="订单不存在")
     if order.status == C.ORDER_DRAFT:
         raise HTTPException(status_code=400, detail="草稿订单提交后才能生成客户进度码")
+    if order.status in (C.ORDER_PENDING_REVIEW, C.ORDER_REJECTED):
+        raise HTTPException(status_code=400, detail="订单审核通过后才能生成客户进度码")
 
     scene = report_service.generate_track_scene(item_id)
     try:

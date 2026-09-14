@@ -18,6 +18,12 @@ UPLOAD_LIMITS: dict[str, tuple[int, set[str]]] = {
     ".webp": (20, {"image/webp"}),
 }
 
+# 充值凭证（银行流水/转账截图）：图片之外放行 PDF 流水单
+VOUCHER_LIMITS: dict[str, tuple[int, set[str]]] = {
+    **UPLOAD_LIMITS,
+    ".pdf": (20, {"application/pdf"}),
+}
+
 
 class FileValidationError(ValueError):
     pass
@@ -27,16 +33,25 @@ def storage_root() -> Path:
     return Path(get_settings().DOMESTIC_STORAGE_ROOT)
 
 
-def validate_upload(filename: str, mime_type: str, file_size: int) -> str:
+def _validate(filename: str, mime_type: str, file_size: int,
+              limits: dict[str, tuple[int, set[str]]], kind: str) -> str:
     ext = Path(filename or "").suffix.lower()
-    if ext not in UPLOAD_LIMITS:
-        raise FileValidationError(f"只支持图片：{' '.join(sorted(UPLOAD_LIMITS))}")
-    max_mb, mimes = UPLOAD_LIMITS[ext]
+    if ext not in limits:
+        raise FileValidationError(f"只支持{kind}:{' '.join(sorted(limits))}")
+    max_mb, mimes = limits[ext]
     if file_size > max_mb * 1024 * 1024:
-        raise FileValidationError(f"图片不能超过 {max_mb}MB")
+        raise FileValidationError(f"文件不能超过 {max_mb}MB")
     if mimes and mime_type and mime_type not in mimes:
         raise FileValidationError(f"文件内容类型 {mime_type} 与后缀 {ext} 不匹配")
     return ext
+
+
+def validate_upload(filename: str, mime_type: str, file_size: int) -> str:
+    return _validate(filename, mime_type, file_size, UPLOAD_LIMITS, "图片")
+
+
+def validate_voucher_upload(filename: str, mime_type: str, file_size: int) -> str:
+    return _validate(filename, mime_type, file_size, VOUCHER_LIMITS, "图片或 PDF")
 
 
 def store_bytes(original_filename: str, content: bytes) -> str:

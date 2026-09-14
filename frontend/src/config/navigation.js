@@ -879,6 +879,17 @@ export const NAV_ENTRIES = [
       anyPermission: ['domestic:read', 'domestic:write', 'domestic:recharge', 'domestic:admin'],
     },
   },
+  {
+    path: '/domestic/customer-requests',
+    name: 'DomesticCustomerRequests',
+    component: () => import('@/views/domestic/DomesticCustomerRequests.vue'),
+    title: '充值调整审核',
+    anyPermission: ['domestic:review', 'domestic:admin', 'domestic:recharge'],
+    menu: {
+      group: 'domestic', title: '充值调整审核', icon: Stamp, order: 14,
+      anyPermission: ['domestic:review', 'domestic:admin', 'domestic:recharge'],
+    },
+  },
   // 流转卡 / 二维码标签没有独立路由：它们是订单详情里的打印弹框
   // （views/domestic/print/DomesticPrintDialog.vue），内容渲染在 iframe 的
   // 独立文档里——打印只出那份文档，用户也不用离开订单页。
@@ -906,9 +917,10 @@ export const NAV_ENTRIES = [
       anyPermission: ['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin'],
     },
   },
-  // 出库单 / 验货单打印没有独立路由：打印弹框
-  // （views/shipping/print/ShippingPrintDialog.vue）把完整文档渲进 iframe 的
-  // 独立文档里——打印只出那份文档，用户也不用离开列表页。
+  // 出库单 / 验货单打印没有独立路由：验货单走打印弹框
+  // （views/shipping/print/ShippingPrintDialog.vue）预览后打印；出库单点击
+  // 「打印出库单」直接用隐藏 iframe 调起浏览器打印（printDocs.js printDocHtml），
+  // 不出预览弹框。两种打印都只出那份独立文档，用户也不离开列表页。
 
   // ── 素材管理 ───────────────────────────────────────────
   {

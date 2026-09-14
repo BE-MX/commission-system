@@ -86,7 +86,8 @@ def release_stale_private_customers(db: Session) -> int:
     cutoff = _months_ago(beijing_today(), PUBLIC_SEA_MONTHS)
     latest_order_dates = dict(
         db.query(DomesticOrder.customer_id, func.max(DomesticOrder.order_date))
-        .filter(DomesticOrder.deleted_flag == 0, DomesticOrder.status != C.ORDER_DRAFT,
+        .filter(DomesticOrder.deleted_flag == 0,
+                DomesticOrder.status.notin_(C.ORDER_INACTIVE_STATUSES),
                 DomesticOrder.order_kind == "business")
         .group_by(DomesticOrder.customer_id)
         .all()
@@ -118,7 +119,7 @@ def release_stale_private_customers(db: Session) -> int:
         .filter(
             DomesticOrder.customer_id.in_(locked_ids or {0}),
             DomesticOrder.deleted_flag == 0,
-            DomesticOrder.status != C.ORDER_DRAFT,
+            DomesticOrder.status.notin_(C.ORDER_INACTIVE_STATUSES),
             DomesticOrder.order_kind == "business",
         )
         .group_by(DomesticOrder.customer_id)
@@ -481,7 +482,7 @@ def initialize_customer(
 
 def adjust_customer(
     db: Session, customer_id: int, payload, user_id: int,
-    *, can_operate_all: bool = False,
+    *, can_operate_all: bool = False, commit: bool = True,
 ) -> dict:
     """临时调整：余额可有符号增减，会员等级可显式覆盖或取消。
 
@@ -534,5 +535,7 @@ def adjust_customer(
             created_by=user_id,
         ))
         customer.membership_level = payload.membership_level
-    db.commit()
+    # commit=False 给审核流用：申请单状态与调整在同一事务提交
+    if commit:
+        db.commit()
     return _customer_snapshot(customer)
