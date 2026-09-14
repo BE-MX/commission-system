@@ -70,3 +70,24 @@ test('guest can be edited and cleared only on business orders', () => {
   assert.deepEqual(buildHeaderPatch(detail, form), { guest_name: '' })
   assert.deepEqual(buildHeaderPatch({ ...detail, order_kind: 'production' }, form), {})
 })
+
+
+test('item spec attrs can be edited; patch carries normalized attrs only when changed', () => {
+  const item = { order_qty: 1, unit_price: 100, attrs: { product_type: 'cap', craft: '递针', net_color: '呼吸红', size: 'S', length: '15厘米', density: '65%', hair_style_series: '直发' } }
+  const form = orderItemForm(item)
+  assert.deepEqual(buildItemPatch({ order_kind: 'business' }, item, form), {})
+  form.attrs.length = '20厘米'
+  form.attrs.density = ''
+  assert.deepEqual(buildItemPatch({ order_kind: 'business' }, item, form), {
+    attrs: { product_type: 'cap', craft: '递针', length: '20厘米', net_color: '呼吸红', size: 'S', hair_style_series: '直发' },
+  })
+})
+
+test('production item attrs exclude hair style series and allow spec edits', () => {
+  const item = { order_qty: 1, unit_price: 0, attrs: { product_type: 'cap', craft: '递针', net_color: '呼吸红', size: 'S', length: '15厘米', density: '65%' } }
+  const form = orderItemForm(item)
+  form.attrs.craft = '手织'
+  assert.deepEqual(buildItemPatch({ order_kind: 'production' }, item, form), {
+    attrs: { product_type: 'cap', craft: '手织', length: '15厘米', net_color: '呼吸红', size: 'S', density: '65%' },
+  })
+})

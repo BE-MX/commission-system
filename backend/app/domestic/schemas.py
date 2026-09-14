@@ -623,6 +623,10 @@ class OrderItemUpdate(BaseModel):
         None, gt=0, le=Decimal("999999999999.99"), max_digits=14, decimal_places=2,
         description="含手工费的成交单价；减去手工费后须大于0且不高于原价快照，改后记为 manual_override",
     )
+    attrs: dict | None = Field(
+        None,
+        description="产品属性组合（工艺/发长/尺码等）；产品类型不可改，改规格不重算成交价",
+    )
     hairstyle: str | None = Field(None, max_length=1000)
     hairstyle_images: list[str] | None = None
     color: str | None = Field(None, max_length=1000)

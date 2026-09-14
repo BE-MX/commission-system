@@ -1,3 +1,5 @@
+import { normalizeItemAttrs } from './domesticAttributeRules.js'
+
 const HEADER_FIELDS = ['order_no', 'order_date', 'required_ship_date', 'order_type', 'order_channel', 'guest_name', 'remark']
 const ITEM_FIELDS = ['order_qty', 'unit_price', 'hairstyle', 'hairstyle_images', 'color', 'color_images',
   'style_requirement', 'style_images', 'remark', 'remark_images']
@@ -20,17 +22,25 @@ export function buildHeaderPatch(detail, form) {
 }
 
 export function orderItemForm(item) {
-  return Object.fromEntries(ITEM_FIELDS.map(key => [key,
-    key.endsWith('_images') ? [...(item[key] || [])]
-      : ['order_qty', 'unit_price'].includes(key) ? Number(item[key] || 0) : (item[key] || ''),
-  ]))
+  return {
+    ...Object.fromEntries(ITEM_FIELDS.map(key => [key,
+      key.endsWith('_images') ? [...(item[key] || [])]
+        : ['order_qty', 'unit_price'].includes(key) ? Number(item[key] || 0) : (item[key] || ''),
+    ])),
+    attrs: { ...(item?.attrs || {}) },
+  }
 }
 
 export function buildItemPatch(detail, item, form) {
   const previous = orderItemForm(item)
-  return Object.fromEntries(ITEM_FIELDS.filter(key => detail.order_kind !== 'production' || !PRODUCTION_EXCLUDED.has(key))
+  const patch = Object.fromEntries(ITEM_FIELDS.filter(key => detail.order_kind !== 'production' || !PRODUCTION_EXCLUDED.has(key))
     .filter(key => JSON.stringify(previous[key]) !== JSON.stringify(form[key]))
     .map(key => [key, typeof form[key] === 'string' ? (form[key] || null) : form[key]]))
+  const kind = detail.order_kind || 'business'
+  const before = normalizeItemAttrs({ ...previous.attrs }, kind)
+  const after = normalizeItemAttrs({ ...(form.attrs || {}) }, kind)
+  if (JSON.stringify(before) !== JSON.stringify(after)) patch.attrs = after
+  return patch
 }
 
 export function itemEditDelta(item, form) {

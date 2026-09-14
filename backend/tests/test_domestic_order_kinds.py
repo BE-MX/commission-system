@@ -151,6 +151,27 @@ def test_production_draft_append_update_and_submit_without_money(db, context, mo
         order_service.update_order(db, order_id, OrderUpdate(order_type="other"), context.id)
 
 
+def test_production_item_attrs_editable_without_hair_style_series(db, context):
+    order_id = order_service.create_order(db, payload(), context.id)["id"]
+    item = db.query(DomesticOrderItem).filter_by(order_id=order_id).one()
+    assert item.attrs_snapshot.get("hair_style_series") is None
+    old_product_id = item.product_id
+
+    db.add(SysDict(type=C.ATTR_DICTS["cap"]["length"], code="25厘米", label="25厘米", sort=2, is_active=True))
+    db.flush()
+    order_service.update_item(
+        db, item.id,
+        OrderItemUpdate(attrs={**item.attrs_snapshot, "length": "25厘米"}),
+        context.id,
+    )
+    db.refresh(item)
+    assert item.attrs_snapshot["length"] == "25厘米"
+    assert item.attrs_snapshot["hair_style_series"] is None
+    assert item.product_id != old_product_id
+    assert "25厘米" in item.product_name
+    assert item.unit_price == 0 and item.pricing_rule == "production"
+
+
 def test_storage_finishes_production_and_shipping_is_rejected(db, context):
     order_id = order_service.create_order(db, payload(), context.id)["id"]
     item = db.query(DomesticOrderItem).filter_by(order_id=order_id).one()
