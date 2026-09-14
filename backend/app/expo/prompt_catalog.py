@@ -12,7 +12,7 @@ SCENE_KEYS = frozenset(f"{mode}:{item['key']}" for mode, items in _CATALOG.items
 PART_FIELDS = [
     {"key": "tryon_base", "label": "换发主体", "group": "main", "required": True,
      "variables": {"description": "所选发型描述", "extra": "发型库中的补充合成要求"}},
-    {"key": "finish", "label": "面部与皮肤处理", "group": "main", "variables": {}},
+    {"key": "finish", "label": "面部与皮肤处理（已停用，不参与生成）", "group": "main", "variables": {}, "disabled": True},
     {"key": "keep_background", "label": "保持原背景", "group": "main", "variables": {}},
     {"key": "replace_background", "label": "换发场景与服装", "group": "main", "variables": {"scene": "所选场景描述"}},
     {"key": "framing", "label": "换发场景构图", "group": "main", "variables": {}},

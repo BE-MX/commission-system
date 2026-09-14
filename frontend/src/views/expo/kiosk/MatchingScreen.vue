@@ -119,16 +119,13 @@
       </div>
     </div>
 
-    <PromptVersionPicker />
-
-    <button class="xk-btn go" :disabled="!flow.selectedWigId.value || !flow.promptVersionReady.value || flow.generating.value" @click="flow.generate()">
+    <button class="xk-btn go" :disabled="!flow.selectedWigId.value || flow.generating.value" @click="flow.generate()">
       生成我的试戴效果
     </button>
   </div>
 </template>
 
 <script setup>
-import PromptVersionPicker from './PromptVersionPicker.vue'
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { getWigPicker } from '@/api/expo'
 

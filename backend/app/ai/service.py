@@ -29,6 +29,7 @@ from app.ai.image_service import (  # noqa: F401
     build_image_config_version,
     edit_image,
     generate_image,
+    get_image_config_snapshot,
 )
 from app.ai.agent_service import prepare_agent_chat  # noqa: F401
 from app.ai.text_snapshot import prepare_text_chat  # noqa: F401

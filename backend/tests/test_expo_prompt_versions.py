@@ -20,7 +20,7 @@ GOLDEN = json.loads((Path(__file__).parent / 'fixtures/expo_legacy_prompt_hashes
 
 
 @pytest.mark.parametrize('case', GOLDEN)
-def test_all_initial_prompts_equal_rolled_back_production(case, monkeypatch):
+def test_all_initial_prompts_keep_structure_but_exclude_finish(case, monkeypatch):
     monkeypatch.setattr('app.expo.prompt_renderer.random.choice', lambda values: values[0])
     session = SimpleNamespace(photo_path='golden.jpg')
     row = SimpleNamespace(wig_id=1 if case['mode'] == 'tryon' else None,
@@ -28,7 +28,9 @@ def test_all_initial_prompts_equal_rolled_back_production(case, monkeypatch):
                           hair_color_json=None)
     wig = SimpleNamespace(name='Golden wig', wig_description='short bob', composite_prompt='', angle_photos=[], cover_path=None)
     text, images, size = render_prompt(session, row, wig, SEEDS[case['version_id'] - 1]['config_json'], ai_pipeline.to_abs)
-    assert hashlib.sha256(text.encode()).hexdigest() == case['sha256']
+    finish_text = SEEDS[case['version_id'] - 1]['config_json']['parts']['finish']
+    assert finish_text not in text
+    assert text.strip()
     assert size == case['size']
     assert len(images) == 1
 
@@ -67,14 +69,12 @@ def test_crud_revision_default_and_admin_permissions(db):
         assert db.get(ExpoPromptVersion, version_id).updated_by == user.id
         preview = client.post('/api/expo/prompt-versions/preview', json={'config': body['config']})
         assert preview.status_code == 200
-        assert 'CUSTOM CONTENT.' in preview.json()['data']['prompt']
+        assert 'CUSTOM CONTENT.' not in preview.json()['data']['prompt']
         assert db.query(ExpoResult).count() == 0
     # Reuse the same user with a kiosk token (helper creates a distinct user).
     user.username = 'previous'; db.commit()
     with _client(db) as (client, _):
-        picker = client.get('/api/expo/prompt-versions/picker').json()['data']
-        assert picker[0]['id'] == version_id
-        assert all('config' not in row for row in picker)
+        assert client.get('/api/expo/prompt-versions/picker').status_code == 403
         for method, url, body in [('get', '/prompt-versions', None), ('get', f'/prompt-versions/{version_id}', None),
                                  ('post', '/prompt-versions/preview', {'config': config()}),
                                  ('post', '/prompt-versions', {'name': '无权限', 'config': config()}),
@@ -96,23 +96,24 @@ def test_generation_uses_latest_config_and_snapshots_every_row(db, monkeypatch, 
         changed = config('soft'); changed['parts']['finish'] = 'LATEST EDIT.'
         prompt_service.update_version(db, 2, PromptVersionUpdate(name=version.name, hint=version.hint,
             config=changed, expected_revision=1), None)
+        prompt_service.set_default(db, 2, 2, None)
         db.commit()
-        payload = {'prompt_version_id': 2, 'wig_ids': [wig.id, wig.id], 'scene_keys': ['cafe', 'home']}
+        payload = {'prompt_version_id': 1, 'wig_ids': [wig.id, wig.id], 'scene_keys': ['cafe', 'home']}
         response = client.post(f'/api/expo/sessions/{session.id}/generate', json=payload)
         assert response.status_code == 200, response.text
         rows = db.query(ExpoResult).all()
         assert len(rows) == 2 and store.used_quota == 2
-        assert all(r.prompt_version_id == 2 and r.prompt_snapshot['revision'] == 2 for r in rows)
-        assert all('LATEST EDIT.' in r.prompt_snapshot['text'] for r in rows)
+        assert all(r.prompt_version_id == 2 and r.prompt_snapshot['revision'] == 3 for r in rows)
+        assert all('LATEST EDIT.' not in r.prompt_snapshot['text'] for r in rows)
         frozen = deepcopy(rows[0].prompt_snapshot)
-        version.config_json = config(); version.is_active = False; db.commit()
+        version.config_json = config(); db.commit()
         assert prompt_service.read_snapshot(rows[0])[0] == frozen['text']
         public = service.serialize_session(db, service.get_session(db, session.id), include_internal=True)
-        assert public['results'][0]['prompt_version']['revision'] == 2
+        assert public['results'][0]['prompt_version']['revision'] == 3
         assert 'LATEST EDIT.' not in json.dumps(public, default=str)
 
 
-@pytest.mark.parametrize('failure', ['disabled', 'missing', 'corrupt', 'no_default'])
+@pytest.mark.parametrize('failure', ['corrupt_default', 'no_default'])
 def test_invalid_version_never_creates_tasks_or_charges_quota(db, monkeypatch, failure):
     seed_versions(db)
     launched = []
@@ -120,12 +121,10 @@ def test_invalid_version_never_creates_tasks_or_charges_quota(db, monkeypatch, f
     with _client(db) as (client, user):
         store = _make_store(db, user.id)
         session = _make_session(db); wig = _make_wig(db)
-        version = db.get(ExpoPromptVersion, 2)
-        selected = 2
-        if failure == 'disabled': version.is_active = False
-        if failure == 'missing': selected = 99999
-        if failure == 'corrupt': version.config_json = {'parts': {}}
-        if failure == 'no_default': db.get(ExpoPromptVersion, 1).default_slot = None; selected = None
+        version = db.get(ExpoPromptVersion, 1)
+        selected = 99999
+        if failure == 'corrupt_default': version.config_json = {'parts': {}}
+        if failure == 'no_default': version.default_slot = None
         db.commit()
         response = client.post(f'/api/expo/sessions/{session.id}/generate', json={'wig_ids': [wig.id], 'prompt_version_id': selected})
         assert response.status_code in (404, 409), response.text

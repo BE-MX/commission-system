@@ -39,6 +39,21 @@
           扫码传照片
         </button>
       </div>
+
+    </div>
+
+    <div class="processing-row">
+      <fieldset class="processing-mode" :disabled="submitting">
+        <legend>照片处理方式</legend>
+        <label :class="{ on: flow.photoProcessingMode.value === 'original' }">
+          <input v-model="flow.photoProcessingMode.value" type="radio" value="original" />
+          <span><b>原照片生成</b><small>按上传照片直接生成，不做美颜</small></span>
+        </label>
+        <label :class="{ on: flow.photoProcessingMode.value === 'beauty', unavailable: !flow.beautyAvailable.value }">
+          <input v-model="flow.photoProcessingMode.value" type="radio" value="beauty" :disabled="!flow.beautyAvailable.value" />
+          <span><b>美颜生成</b><small>{{ flow.beautyAvailable.value ? '强美颜·焕颜级，先精修一次再生成' : '当前暂不可用，请选择原照片' }}</small></span>
+        </label>
+      </fieldset>
     </div>
 
     <div class="actions">
@@ -205,6 +220,26 @@ video.rear { transform: none; } /* 后置不镜像：所见即实景方向 */
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   display: flex; flex-direction: column; align-items: center; gap: 12px;
 }
+.processing-row {
+  flex: none; width: min(100%, 1100px); margin: 12px auto 0;
+  display: flex; justify-content: flex-end;
+}
+.processing-mode {
+  width: min(680px, 100%); margin: 0; padding: 8px;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
+  border: 1px solid var(--xk-gold-line); border-radius: 16px;
+  background: var(--xk-paper); color: var(--xk-ink);
+}
+.processing-mode legend { padding: 0 7px; font-size: 11px; letter-spacing: .14em; color: var(--xk-mut); }
+.processing-mode label { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid transparent; border-radius: 10px; cursor: pointer; }
+.processing-mode label.on { border-color: var(--xk-gold); background: var(--xk-selected); }
+.processing-mode label.on, .processing-mode label.on small { color: var(--xk-ink); opacity: 1; }
+.processing-mode label.unavailable { opacity: .58; cursor: not-allowed; }
+.processing-mode input { flex: none; accent-color: var(--xk-gold); }
+.processing-mode span { min-width: 0; }
+.processing-mode b, .processing-mode small { display: block; }
+.processing-mode b { font-size: 14px; font-weight: 500; }
+.processing-mode small { margin-top: 2px; font-size: 11px; line-height: 1.4; color: var(--xk-mut); opacity: .9; }
 .preview-loading {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   padding: 8px 18px; border-radius: 16px; font-size: 12px; letter-spacing: 0.12em;
@@ -365,5 +400,7 @@ video.rear { transform: none; } /* 后置不镜像：所见即实景方向 */
   .shutter i { width: 46px; height: 46px; }
   .gd-title { font-size: 24px; }
   .gd-sub { font-size: 13px; text-align: center; }
+  .processing-row { margin-top: 10px; }
+  .processing-mode { grid-template-columns: 1fr; }
 }
 </style>

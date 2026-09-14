@@ -536,7 +536,7 @@ export const NAV_ENTRIES = [
   {
     path: '/expo/prompt-versions',
     name: 'ExpoPromptVersions',
-    component: () => import('@/views/expo/PromptVersions.vue'),
+    component: () => import('@/views/expo/PromptSettings.vue'),
     title: '生图提示词',
     permission: 'expo:admin',
     menu: { group: 'expo', title: '生图提示词', icon: Reading, order: 18, permission: 'expo:admin' },

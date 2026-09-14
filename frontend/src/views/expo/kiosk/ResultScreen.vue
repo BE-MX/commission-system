@@ -6,8 +6,8 @@
         <img v-if="photoUrl" :src="photoUrl" class="waiting-photo" alt="" />
         <div class="halo" /><div class="ring" />
       </div>
-      <h2 class="wait-title">{{ isScene ? '您的专属大片，正在成形' : '更适合您的造型，正在成形' }}</h2>
-      <p class="wait-sub">{{ flow.generating.value ? 'AI 精细处理中，请稍候' : '本次生成暂未完成，可重试或请顾问协助' }}</p>
+      <h2 class="wait-title">{{ flow.waitingForBeautify.value ? '正在进行焕颜精修' : isScene ? '您的专属大片，正在成形' : '更适合您的造型，正在成形' }}</h2>
+      <p class="wait-sub">{{ flow.waitingForBeautify.value ? '精修只进行一次，完成后将自动生成效果图' : flow.generating.value ? 'AI 精细处理中，请稍候' : '本次生成暂未完成，可重试或请顾问协助' }}</p>
       <Transition name="phrase" mode="out-in"><div v-if="flow.generating.value" class="phrase" :key="phraseIdx">{{ phrases[phraseIdx] }}</div></Transition>
       <div v-if="flow.generating.value" class="bar" aria-hidden="true"><i /></div>
       <div class="stages"><span>{{ isScene ? '佩戴实拍' : '解析面容' }}</span><span>{{ isScene ? '场景甄选' : '甄选发型' }}</span><span class="on">生成效果</span></div>

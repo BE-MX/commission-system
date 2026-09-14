@@ -33,7 +33,14 @@ def color_clause(config: dict, color: dict | None) -> str:
 
 def render_prompt(session, row, wig, config: dict, resolve_path) -> tuple[str, list, str | None]:
     """Resolve images and all variable text once, before committing a generation."""
-    images = [resolve_path(session.photo_path)]
+    source_path = (
+        session.beautified_photo_path
+        if getattr(session, "photo_processing_mode", "original") == "beauty"
+        and getattr(session, "beautify_status", "skipped") == "ready"
+        and getattr(session, "beautified_photo_path", None)
+        else session.photo_path
+    )
+    images = [resolve_path(source_path)]
     if row.wig_id is None and row.scene_json:
         scene = next((s for s in SCENES if s["key"] == row.scene_json.get("key")), None)
         if scene is None:
@@ -41,7 +48,7 @@ def render_prompt(session, row, wig, config: dict, resolve_path) -> tuple[str, l
         prompt = (
             render_part(config, "scene_base", scene=config["scene_prompts"][f"scene:{scene['key']}"])
             + wardrobe_clause(config, uniform=bool(scene.get("uniform")))
-            + render_part(config, "finish") + render_part(config, "scene_tail")
+            + render_part(config, "scene_tail")
         )
         size = None
     else:
@@ -72,7 +79,7 @@ def render_prompt(session, row, wig, config: dict, resolve_path) -> tuple[str, l
         prompt = (
             render_part(config, "tryon_base", description=wig.wig_description or wig.name,
                         extra=wig.composite_prompt or "")
-            + color_text + scene_text + render_part(config, "finish")
+            + color_text + scene_text
             + render_part(config, "tryon_tail") + render_part(config, "portrait_spec")
         )
         size = "1024x1536"

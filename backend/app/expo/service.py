@@ -1,8 +1,9 @@
 """Expo try-on 业务逻辑：客户/会话/结果/反馈/发型库 CRUD 与序列化。"""
 
-from app.expo import prompt_service
+from app.expo import beautify_prompt_service, beautify_service, prompt_service
 
 import logging
+import hashlib
 import shutil
 from datetime import datetime
 from app.core.time import beijing_now
@@ -40,6 +41,11 @@ STALE_PENDING_SECS = 240
 # 必须大于 ai/image_service.py 的 MIN_IMAGE_EDIT_TIMEOUT_SEC(300)，否则会把仍在
 # 正常等待上游的合成误判为卡死（单场景模板实测 ~130s，420 是刻意宽余量）
 STALE_GENERATING_SECS = 420
+STALE_BEAUTIFY_SECS = 420
+
+
+class SessionRequestConflict(ValueError):
+    """同一建会话幂等键被用于不同输入。"""
 
 
 # ---------------- 客户 ----------------
@@ -89,12 +95,28 @@ def update_customer(db: Session, customer_id: int, body: CustomerRegister) -> Ex
 
 def delete_customer(db: Session, customer_id: int) -> bool:
     """隐私合规：物理删除客户照片、效果图、扫码上传待取照片与全部记录。"""
-    customer = db.get(ExpoCustomer, customer_id)
+    # 同时锁客户与会话行。美颜 worker 的最终 CAS 必须等这里提交；若删除先取得锁，
+    # worker 随后更新 0 行并自行删除刚生成的文件；若 worker 先完成，这里会读取并删除
+    # 已落库的 beautified_photo_path，避免客户删除与后台出图交错时留下孤儿文件。
+    customer = (db.query(ExpoCustomer)
+                .filter(ExpoCustomer.id == customer_id)
+                .with_for_update().one_or_none())
     if not customer:
         return False
-    for session in customer.sessions:
+    sessions = (db.query(ExpoSession)
+                .filter(ExpoSession.customer_id == customer_id)
+                .order_by(ExpoSession.id).with_for_update().all())
+    session_ids = [session.id for session in sessions]
+    results = (db.query(ExpoResult)
+               .filter(ExpoResult.session_id.in_(session_ids))
+               .order_by(ExpoResult.id).with_for_update().all()) if session_ids else []
+    results_by_session: dict[int, list[ExpoResult]] = {}
+    for result in results:
+        results_by_session.setdefault(result.session_id, []).append(result)
+    for session in sessions:
         _remove_file(session.photo_path)
-        for result in session.results:
+        _remove_file(session.beautified_photo_path)
+        for result in results_by_session.get(session.id, []):
             _remove_file(result.image_path)
     # 扫码上传的待取照片（uploads/expo/pending/）是与 photos/、results/ 平级的
     # 第二个照片仓库，本函数原逻辑只走 sessions 关联的 photo_path/image_path，
@@ -146,7 +168,8 @@ def _remove_wig_color_files(db: Session, *, wig_id: int | None = None, color_id:
 def create_session(
     db: Session, customer_id: int, upload_file,
     operator_user_id: int | None, mode: str = "tryon",
-    pending_name: str | None = None,
+    pending_name: str | None = None, photo_processing_mode: str = "original",
+    client_request_id: str | None = None,
 ) -> ExpoSession:
     """建会话。照片来源二选一：现场拍照的 upload_file，或扫码上传的 pending_name。
 
@@ -155,6 +178,11 @@ def create_session(
     """
     if (upload_file is None) == (pending_name is None):
         raise ValueError("照片来源须在现场拍照与扫码上传之间二选一")
+    if photo_processing_mode not in ("original", "beauty"):
+        raise ValueError("照片处理方式无效")
+    client_request_id = (client_request_id or "").strip() or None
+    if client_request_id and len(client_request_id) > 64:
+        raise ValueError("请求标识无效")
 
     customer = db.get(ExpoCustomer, customer_id)
     if not customer:
@@ -162,10 +190,45 @@ def create_session(
     if not customer.consent_at:
         raise ValueError("客户未同意拍照存储，无法创建会话")
 
-    ai_pipeline.ensure_dirs()
     pending_source: Path | None = None
+    request_basis = f"{customer_id}|{mode}|{photo_processing_mode}"
     if pending_name is not None:
+        # 扫码照片会在首次建会话成功后删除；同号重放必须先凭冻结的服务端文件名
+        # 找回旧会话，不能再次要求那个已消费的 pending 文件仍然存在。
+        request_hash = hashlib.sha256(f"{request_basis}|pending|{pending_name}".encode()).hexdigest()
+        if client_request_id:
+            existing = (db.query(ExpoSession)
+                        .filter(ExpoSession.customer_id == customer_id,
+                                ExpoSession.client_request_id == client_request_id)
+                        .one_or_none())
+            if existing:
+                if existing.request_hash != request_hash:
+                    raise SessionRequestConflict("同一请求标识对应的照片或处理方式不同，请重新拍照")
+                existing._idempotent_replay = True
+                return existing
         pending_source = upload_service.resolve_pending(customer_id, pending_name)
+    else:
+        # 摘要后恢复流位置，后续 copyfileobj 仍写入完整照片。
+        start_pos = upload_file.file.tell()
+        digest = hashlib.sha256()
+        for chunk in iter(lambda: upload_file.file.read(1024 * 1024), b""):
+            digest.update(chunk)
+        upload_file.file.seek(start_pos)
+        source_digest = digest.hexdigest()
+        request_hash = hashlib.sha256(f"{request_basis}|upload|{source_digest}".encode()).hexdigest()
+    if client_request_id:
+        existing = (db.query(ExpoSession)
+                    .filter(ExpoSession.customer_id == customer_id,
+                            ExpoSession.client_request_id == client_request_id)
+                    .one_or_none())
+        if existing:
+            if existing.request_hash != request_hash:
+                raise SessionRequestConflict("同一请求标识对应的照片或处理方式不同，请重新拍照")
+            existing._idempotent_replay = True
+            return existing
+
+    ai_pipeline.ensure_dirs()
+    if pending_name is not None:
         photo_path = ai_pipeline.PHOTO_DIR / upload_service.photo_filename(customer_id, pending_source.suffix)
         # 复制而非移动：commit 前只留一份，一旦提交失败（展位现场连的是公网 RDS，
         # 隧道断线是真实故障率而非理论风险），待取文件已经没了、会话也没建成——
@@ -194,19 +257,49 @@ def create_session(
     # 压过一次，downscale_inplace 幂等，重复调用只是空转
     ai_pipeline.downscale_inplace(photo_path)
 
+    beautify_snapshot = None
+    if photo_processing_mode == "beauty":
+        try:
+            beautify_snapshot = beautify_prompt_service.snapshot_published(db)
+            beautify_snapshot["source_hash"] = beautify_service.source_hash(photo_path)
+        except Exception:
+            photo_path.unlink(missing_ok=True)
+            raise
+
     store = store_service.get_active_store_by_user(db, operator_user_id) if operator_user_id else None
     session = ExpoSession(
         customer_id=customer_id,
         mode=mode,
+        client_request_id=client_request_id,
+        request_hash=request_hash if client_request_id else None,
         photo_path=ai_pipeline.to_rel(photo_path),
+        photo_processing_mode=photo_processing_mode,
+        beautify_status="pending" if photo_processing_mode == "beauty" else "skipped",
+        beautify_queued_at=beijing_now() if photo_processing_mode == "beauty" else None,
+        beautify_snapshot=beautify_snapshot,
         # scene 模式不做面容分析，直接就绪等待选场景生成
         status="analyzed" if mode == "scene" else "pending",
         operator_user_id=operator_user_id,
         store_id=store.id if store else None,
     )
     db.add(session)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        photo_path.unlink(missing_ok=True)
+        if not client_request_id:
+            raise
+        existing = (db.query(ExpoSession)
+                    .filter(ExpoSession.customer_id == customer_id,
+                            ExpoSession.client_request_id == client_request_id)
+                    .one_or_none())
+        if not existing or existing.request_hash != request_hash:
+            raise SessionRequestConflict("同一请求标识对应的照片或处理方式不同，请重新拍照") from None
+        existing._idempotent_replay = True
+        return existing
     db.refresh(session)
+    session._idempotent_replay = False
     if pending_source is not None:
         # commit 已成功、会话已落库，待取原件才不再需要——删除失败无所谓
         # （sweep_stale 兜底），但绝不能在这一步之前碰它
@@ -227,8 +320,48 @@ def get_session(db: Session, session_id: int) -> ExpoSession | None:
         .first()
     )
     if session:
+        _heal_stale_beautify(db, session)
         _heal_stale_session(db, session)
     return session
+
+
+def _heal_stale_beautify(db: Session, session: ExpoSession) -> None:
+    """Recover a beautify worker lost during process restart without changing the main flow."""
+    if session.beautify_status not in ("pending", "processing"):
+        return
+    reference = session.beautify_started_at if session.beautify_status == "processing" else session.beautify_queued_at
+    if not reference:
+        return
+    age = (beijing_now() - reference).total_seconds()
+    if age <= STALE_BEAUTIFY_SECS:
+        return
+    token = session.beautify_token
+    started_at = session.beautify_started_at
+    queued_at = session.beautify_queued_at
+    expected_status = session.beautify_status
+    now = beijing_now()
+    updated = (db.query(ExpoSession)
+               .filter(ExpoSession.id == session.id,
+                       ExpoSession.beautify_status == expected_status,
+                       ExpoSession.beautify_token == token,
+                       ExpoSession.beautify_started_at == started_at,
+                       ExpoSession.beautify_queued_at == queued_at)
+               .update({
+                   "beautify_status": "failed",
+                   "beautify_token": None,
+                   "beautify_error_message": f"watchdog: beautify stale over {STALE_BEAUTIFY_SECS}s",
+                   "beautify_finished_at": now,
+                   "updated_at": now,
+               }, synchronize_session=False))
+    if not updated:
+        db.rollback()
+        db.refresh(session)
+        return
+    db.commit()
+    db.refresh(session)
+    msg = f"[expo] beautify watchdog healed session={session.id} (age={int(age)}s)"
+    logger.warning(msg)
+    print(msg, flush=True)
 
 
 def _heal_stale_session(db: Session, session: ExpoSession) -> None:
@@ -317,6 +450,13 @@ def serialize_session(db: Session, session: ExpoSession, include_internal: bool 
     payload = {
         "id": session.id,
         "mode": session.mode,
+        "photo_processing_mode": session.photo_processing_mode,
+        "beautify_status": session.beautify_status,
+        "processing_stage": (
+            "beautifying" if session.beautify_status in ("pending", "processing")
+            else "beautify_failed" if session.beautify_status == "failed"
+            else session.status
+        ),
         "status": session.status,
         "analysis": ai_pipeline.public_analysis(session.analysis_json),
         "matches": matches,

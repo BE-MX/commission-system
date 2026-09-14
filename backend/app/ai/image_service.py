@@ -399,6 +399,17 @@ def build_image_config_version(preset, provider) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def get_image_config_snapshot(db: Session, preset_name: str) -> dict:
+    """Validate a direct image preset and return its non-secret immutable identity."""
+    preset, provider = _get_enabled_direct_preset(db, preset_name)
+    return {
+        "preset_name": preset.preset_name,
+        "model": preset.model,
+        "provider_id": provider.id,
+        "fingerprint": build_image_config_version(preset, provider),
+    }
+
+
 def _assert_config_version(preset, provider, expected: dict | None) -> None:
     if expected is None:
         return

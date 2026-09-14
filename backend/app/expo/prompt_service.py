@@ -1,6 +1,7 @@
 """Version management, preview and atomic generation snapshots. Callers commit."""
 
 from copy import deepcopy
+import hashlib
 from types import SimpleNamespace
 
 from sqlalchemy import or_
@@ -39,13 +40,6 @@ def list_versions(db: Session, *, keyword: str = "", only_active: bool = False,
     rows = (query.order_by(ExpoPromptVersion.default_slot.desc(), ExpoPromptVersion.id.asc())
             .offset((page - 1) * page_size).limit(page_size).all())
     return rows, total
-
-
-def picker_options(db: Session) -> list[dict]:
-    # A fresh request always reads current DB rows; no process-local prompt cache.
-    rows = (db.query(ExpoPromptVersion).filter(ExpoPromptVersion.is_active.is_(True))
-            .order_by(ExpoPromptVersion.default_slot.desc(), ExpoPromptVersion.id.asc()).all())
-    return [serialize_version(row) for row in rows]
 
 
 def get_version(db: Session, version_id: int, *, lock: bool = False) -> ExpoPromptVersion:
@@ -133,8 +127,23 @@ def capture_batch(db: Session, session, rows: list[ExpoResult], version_id: int 
     snapshots = []
     for row in rows:
         prompt, images, size = render_prompt(session, row, wigs.get(row.wig_id), config, ai_pipeline.to_abs)
+        input_hash = None
+        if images[0].exists():
+            digest = hashlib.sha256()
+            with open(images[0], "rb") as source:
+                for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            input_hash = digest.hexdigest()
+        processing_mode = getattr(session, "photo_processing_mode", None) or "original"
+        beauty = getattr(session, "beautify_snapshot", None) or {}
         snapshots.append({"version_id": version.id, "version_name": version.name, "revision": version.revision,
-                          "text": prompt, "image_paths": [ai_pipeline.to_rel(path) for path in images], "size": size})
+                          "text": prompt, "image_paths": [ai_pipeline.to_rel(path) for path in images], "size": size,
+                          "photo_processing_mode": processing_mode,
+                          "input_hash": input_hash,
+                          "beautify_version": ({
+                              "id": beauty.get("version_id"), "name": beauty.get("version_name"),
+                              "revision": beauty.get("revision"), "prompt_hash": beauty.get("prompt_hash"),
+                          } if processing_mode == "beauty" else None)})
     # Validate every row before modifying any row so a bad batch cannot be partly captured.
     for row, snapshot in zip(rows, snapshots):
         row.prompt_version_id = version.id
