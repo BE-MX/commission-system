@@ -168,7 +168,14 @@ def _create_order(db, user, qty=20, craft="递针旋全头套"):
         order_channel="wechat",
         items=[_zero_price_item(db, attrs, qty, "reporting-line-1")],
     )
-    return order_service.create_order(db, payload, user.id)
+    created = order_service.create_order(db, payload, user.id)
+    # 会员优惠价单先落待审核：由另一人审核通过转生产中后才可报工
+    reviewer = _user(db, f"reviewer-{uuid4().hex[:8]}")
+    order_service.review_order(
+        db, created["id"], decision="approve", remark=None,
+        reviewer_id=reviewer.id, can_admin=False,
+    )
+    return created
 
 
 def _item_of(db, order_id):
@@ -752,6 +759,12 @@ def test_multi_item_order_status_rolls_up_partially(db, craft_mapping, workers, 
         ],
     )
     order_id = order_service.create_order(db, payload, creator.id)["id"]
+    # 会员优惠价单先落待审核：审核通过转生产中后才可报工
+    reviewer = _user(db, f"reviewer-{uuid4().hex[:8]}")
+    order_service.review_order(
+        db, order_id, decision="approve", remark=None,
+        reviewer_id=reviewer.id, can_admin=False,
+    )
     items = db.query(DomesticOrderItem).filter(DomesticOrderItem.order_id == order_id).all()
     assert len(items) == 2
     db.autoflush = autoflush

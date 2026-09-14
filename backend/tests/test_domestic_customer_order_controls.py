@@ -138,6 +138,16 @@ CUSTOMER_OPERATIONS = [
 ]
 
 
+def _send_operation(client, method, url, suffix, payload):
+    """充值端点现在收 multipart（必须附凭证），其余仍走 JSON。"""
+    if suffix == "/recharges" and payload is not None:
+        return client.request(
+            method, url, data=payload,
+            files={"file": ("voucher.png", b"fake-png-bytes", "image/png")},
+        )
+    return client.request(method, url, json=payload)
+
+
 @pytest.mark.parametrize("method,suffix,payload", CUSTOMER_OPERATIONS)
 @pytest.mark.parametrize("scope", ["owner", "other", "public", "super_admin"])
 def test_customer_operations_with_explicit_admin_permission(db, method, suffix, payload, scope):
@@ -152,7 +162,7 @@ def test_customer_operations_with_explicit_admin_permission(db, method, suffix, 
     if scope in ("other", "public"):
         permissions.append("domestic_customer:admin")
     client = _api_client(db, operator, *permissions, roles=roles)
-    response = client.request(method, f"/api/domestic/customers/{customer.id}{suffix}", json=payload)
+    response = _send_operation(client, method, f"/api/domestic/customers/{customer.id}{suffix}", suffix, payload)
     assert response.status_code == 200, response.text
     if method == "DELETE":
         assert db.get(DomesticCustomer, customer.id) is None
@@ -162,10 +172,20 @@ def test_customer_operations_with_explicit_admin_permission(db, method, suffix, 
             assert getattr(customer, field) == value
     elif method == "POST":
         db.refresh(customer)
+        if suffix in ("/recharges", "/adjust"):
+            # 充值/调整先落待审核申请：审核通过才入账
+            assert response.json()["data"]["status"] == "pending"
+            assert customer.balance == 0
+            from app.domestic import request_service
+            request_service.approve_request(
+                db, response.json()["data"]["id"],
+                reviewer_id=operator.id, can_admin=True,
+            )
+            db.refresh(customer)
         assert customer.balance == 100
         ledger = db.query(DomesticCustomerLedger).filter_by(customer_id=customer.id).one()
         assert ledger.created_by == operator.id
-        replay = client.request(method, f"/api/domestic/customers/{customer.id}{suffix}", json=payload)
+        replay = _send_operation(client, method, f"/api/domestic/customers/{customer.id}{suffix}", suffix, payload)
         assert replay.status_code == 200, replay.text
         assert replay.json()["data"]["replayed"] is True
         db.refresh(customer)
@@ -182,7 +202,7 @@ def test_existing_admin_and_read_all_do_not_grant_cross_owner_operations(db, met
         customer.owner_user_id = None
         db.flush()
     client = _api_client(db, operator, "domestic:write", "domestic:admin", "domestic:read_all")
-    response = client.request(method, f"/api/domestic/customers/{customer.id}{suffix}", json=payload)
+    response = _send_operation(client, method, f"/api/domestic/customers/{customer.id}{suffix}", suffix, payload)
     assert response.status_code == 404
     db.refresh(customer)
     assert customer.balance == 0

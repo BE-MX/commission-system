@@ -447,7 +447,11 @@ export function useDomesticOrderCreate(orderKind = 'business') {
       const res = await createWithQuoteConfirmation(isDraft)
       if (!res) return
       const data = res.data || {}
-      ElMessage.success(`${isDraft ? '草稿已保存' : '下单成功'}：${data.domestic_no}`)
+      if (data.status === 5) {
+        ElMessage.success(`订单已提交，待审核：${data.domestic_no}（优惠价低于原始价，审核通过后才正式生效）`)
+      } else {
+        ElMessage.success(`${isDraft ? '草稿已保存' : '下单成功'}：${data.domestic_no}`)
+      }
       resetForm()
       router.push({ name: 'DomesticOrders', query: { keyword: data.domestic_no, order_kind: orderKind } })
     } catch { /* 拦截器已提示 */ } finally {

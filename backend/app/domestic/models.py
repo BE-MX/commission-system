@@ -186,6 +186,9 @@ class DomesticOrder(Base):
     request_id = Column(String(64), comment="客户端建单幂等键")
     request_hash = Column(String(64), comment="建单载荷 SHA-256 指纹")
     remark = Column(String(1000), comment="订单备注")
+    reviewed_by = Column(_UINT, ForeignKey("ark_users.id"), comment="优惠价审核人（待审核→生产中/已驳回）")
+    reviewed_at = Column(DateTime, comment="审核时间")
+    review_remark = Column(String(500), comment="审核意见（驳回原因）")
     created_by = Column(_UINT, ForeignKey("ark_users.id"), nullable=False, comment="下单人")
     deleted_flag = Column(SmallInteger, nullable=False, default=0, comment="0=正常,1=已删除")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
@@ -439,6 +442,47 @@ class DomesticCustomerLedger(Base):
     __table_args__ = (
         Index("idx_dom_ledger_customer_time", "customer_id", "created_at"),
         Index("idx_dom_ledger_order", "order_id"),
+    )
+
+
+class DomesticCustomerRequest(Base):
+    """客户资金申请：充值/调整先落申请单，审核通过才真正入账。
+
+    business_key 即执行时写入账本的幂等键（recharge:/adjust: 前缀），
+    申请行与账行靠它一一对应；审核通过前余额与会员等级不变。
+    充值必须带银行流水/转账截图（voucher_path），调整可选。
+    """
+
+    __tablename__ = "ark_domestic_customer_requests"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    customer_id = Column(Integer, ForeignKey("ark_domestic_customers.id", ondelete="RESTRICT"), nullable=False)
+    request_type = Column(String(16), nullable=False, comment="recharge=充值,adjust=调整")
+    amount = Column(Numeric(14, 2), nullable=False, default=0, comment="充值金额/余额调整额（正加负减，仅调等级为 0）")
+    change_membership = Column(SmallInteger, nullable=False, default=0, comment="1=调整会员等级到 membership_level（NULL=取消会员）")
+    membership_level = Column(String(16), comment="目标会员等级 silver/black/supreme；change_membership=1 且为 NULL 表示取消会员")
+    voucher_path = Column(String(255), comment="银行流水/转账截图相对路径（充值必填）")
+    remark = Column(String(500), comment="申请说明/调整原因")
+    status = Column(String(16), nullable=False, default="pending", comment="pending/approved/rejected")
+    request_id = Column(String(64), nullable=False, unique=True, comment="客户端提交幂等键")
+    business_key = Column(String(128), nullable=False, unique=True, comment="执行入账时的账本幂等键")
+    created_by = Column(_UINT, ForeignKey("ark_users.id", ondelete="RESTRICT"), nullable=False, comment="申请人")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="申请时间")
+    reviewed_by = Column(_UINT, ForeignKey("ark_users.id", ondelete="RESTRICT"), comment="审核人")
+    reviewed_at = Column(DateTime, comment="审核时间")
+    review_remark = Column(String(500), comment="审核意见（驳回必填）")
+
+    __table_args__ = (
+        CheckConstraint(
+            "request_type IN ('recharge', 'adjust')",
+            name="ck_dom_request_type",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected')",
+            name="ck_dom_request_status",
+        ),
+        Index("idx_dom_request_status", "status", "created_at"),
+        Index("idx_dom_request_customer", "customer_id"),
     )
 
 

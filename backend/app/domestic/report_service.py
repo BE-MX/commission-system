@@ -148,6 +148,7 @@ BLOCK_ITEM_NOT_FOUND = "ITEM_NOT_FOUND"
 BLOCK_NO_ROUTE = "NO_ROUTE"
 BLOCK_ORDER_TERMINATED = "ORDER_TERMINATED"
 BLOCK_ORDER_DRAFT = "ORDER_DRAFT"
+BLOCK_ORDER_REVIEW = "ORDER_REVIEW"
 BLOCK_ALL_DONE = "ALL_DONE"
 BLOCK_NOT_ASSIGNED = "NOT_ASSIGNED"
 BLOCK_NOTHING_REPORTABLE = "NOTHING_REPORTABLE"
@@ -157,6 +158,7 @@ BLOCK_MESSAGES = {
     BLOCK_NO_ROUTE: "这个产品还没配工艺路线，请联系跟单",
     BLOCK_ORDER_TERMINATED: "订单已终止或已删除，不能报工",
     BLOCK_ORDER_DRAFT: "订单还是草稿，请跟单提交后再报工",
+    BLOCK_ORDER_REVIEW: "订单待审核或审核未通过，审核通过后再报工",
     BLOCK_ALL_DONE: "这批货所有工序都做完了",
     BLOCK_NOT_ASSIGNED: "你没有被分配到这道工序",
     BLOCK_NOTHING_REPORTABLE: "上一道工序还没做出可接的数量，请稍后再扫",
@@ -180,6 +182,10 @@ def _assert_order_reportable(order: DomesticOrder) -> None:
         raise ValueError("订单已删除，不能报工")
     if order.status == C.ORDER_DRAFT:
         raise ValueError("订单还是草稿，不能报工")
+    if order.status == C.ORDER_PENDING_REVIEW:
+        raise ValueError("订单待审核，审核通过后再报工")
+    if order.status == C.ORDER_REJECTED:
+        raise ValueError("订单审核未通过，不能报工")
     if order.status == C.ORDER_TERMINATED:
         raise ValueError("订单已终止，不能报工")
 
@@ -370,6 +376,8 @@ def scan_item(db: Session, item_id: int, user_id: int) -> dict:
         return blocked(BLOCK_ORDER_TERMINATED)
     if order.status == C.ORDER_DRAFT:
         return blocked(BLOCK_ORDER_DRAFT)
+    if order.status in (C.ORDER_PENDING_REVIEW, C.ORDER_REJECTED):
+        return blocked(BLOCK_ORDER_REVIEW)
     if not steps:
         return blocked(BLOCK_NO_ROUTE)
     if steps[-1]["passed_qty"] >= item.order_qty:
@@ -407,7 +415,7 @@ def scan_unit(db: Session, unit_id: int, user_id: int) -> dict:
     })
     if not item or base.get("block_reason") in {
         BLOCK_ITEM_NOT_FOUND, BLOCK_NO_ROUTE, BLOCK_ORDER_TERMINATED,
-        BLOCK_ORDER_DRAFT, BLOCK_ALL_DONE, BLOCK_NOT_ASSIGNED,
+        BLOCK_ORDER_DRAFT, BLOCK_ORDER_REVIEW, BLOCK_ALL_DONE, BLOCK_NOT_ASSIGNED,
     }:
         return base
 
