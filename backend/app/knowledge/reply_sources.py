@@ -6,6 +6,7 @@ never truncated into a potentially misleading policy.
 """
 
 import hashlib
+import logging
 import re
 from datetime import date
 
@@ -15,6 +16,9 @@ from typing import Literal
 from app.knowledge import service
 from app.knowledge.content import extract_text
 from app.core.time import beijing_today
+
+
+logger = logging.getLogger("commission.whatsapp_reply")
 
 
 class SourceBinding(BaseModel):
@@ -69,7 +73,7 @@ def content_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def resolve_binding(db, identity: dict, binding: SourceBinding, *, documents=None) -> dict | None:
+def resolve_binding(db, identity: dict, binding: SourceBinding, *, documents=None, audit: list | None = None) -> dict | None:
     if binding.valid_until is not None and binding.valid_until < beijing_today():
         return None
     try:
@@ -82,11 +86,23 @@ def resolve_binding(db, identity: dict, binding: SourceBinding, *, documents=Non
     except (service.ForbiddenError, service.NotFoundError):
         # Expected ACL exclusion. Do not reveal existence/title or audit chat queries.
         return None
+    # The document was fetched, so a mismatch below means the binding went stale
+    # after a content edit. That must be loud to operators, never a silent drop.
+    stale = None
     parts = sections(document["content_json"])
     if document["revision_id"] != binding.revision_id or binding.section_index >= len(parts):
-        return None
-    text = parts[binding.section_index]
-    if len(text) > 1200 or content_hash(text) != binding.content_hash:
+        stale = "revision_or_section_mismatch"
+    else:
+        text = parts[binding.section_index]
+        if len(text) > 1200:
+            stale = "section_oversized"
+        elif content_hash(text) != binding.content_hash:
+            stale = "content_mismatch"
+    if stale is not None:
+        logger.warning("reply source binding stale document_id=%s section_index=%s reason=%s",
+                       binding.document_id, binding.section_index, stale)
+        if audit is not None:
+            audit.append({"document_id": binding.document_id, "section_index": binding.section_index, "reason": stale})
         return None
     return {
         "document_id": document["document_id"], "revision_id": document["revision_id"],
@@ -99,29 +115,49 @@ def resolve_binding(db, identity: dict, binding: SourceBinding, *, documents=Non
 
 _QUERY_STOPWORDS = frozenset('a an the and or of to for from in on at by with is are was were be been being do does did have has had i we you your our it its this that these those what which how any all as so thank thanks please can could would should saying used stage'.split())
 
+_CJK_RUN_RE = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+')
+_ASCII_TERM_RE = re.compile(r'[\w-]{2,80}')
+
+
+def extract_query_terms(text: str) -> list[str]:
+    """Ordered unique terms: ASCII words plus CJK bigrams.
+
+    CJK text has no spaces; a whole unsegmented run used to become one long
+    term that could never substring-match a knowledge paragraph. Bigrams give
+    retrieval usable units without pulling in a tokenizer dependency.
+    """
+    casefolded = text.casefold()
+    terms = [term for term in _ASCII_TERM_RE.findall(_CJK_RUN_RE.sub(' ', casefolded))
+             if term not in _QUERY_STOPWORDS]
+    for run in _CJK_RUN_RE.findall(casefolded):
+        terms.extend(run[index:index + 2] for index in range(len(run) - 1))
+    return list(dict.fromkeys(terms))
+
 
 def query_terms(queries: list[str]) -> set[str]:
-    return {term for query in queries for term in re.findall(r'[\w-]{2,80}', query.casefold()) if term not in _QUERY_STOPWORDS}
+    return {term for query in queries for term in extract_query_terms(query)}
 
 
-def _matches(term, value):
+def _matches(term, casefolded_value):
     if term.isascii():
-        return bool(re.search(r'(?<!\w)' + re.escape(term) + r'(?!\w)', value.casefold()))
-    return term in value.casefold()
+        return bool(re.search(r'(?<!\w)' + re.escape(term) + r'(?!\w)', casefolded_value))
+    return term in casefolded_value
 
 
 def _score(source, aliases, terms):
     # Presence, not repetition: long generic paragraphs must not beat an FAQ answer.
-    return sum(3 * _matches(term, source['title']) + _matches(term, source['text'])
-               + 5 * any(_matches(term, alias) for alias in aliases) for term in terms)
+    title, text = source['title'].casefold(), source['text'].casefold()
+    folded_aliases = [alias.casefold() for alias in aliases]
+    return sum(3 * _matches(term, title) + _matches(term, text)
+               + 5 * any(_matches(term, alias) for alias in folded_aliases) for term in terms)
 
 
-def retrieve_reply_sources(db, identity: dict, bindings: list[SourceBinding], queries: list[str], *, focus_query: str = '') -> tuple[list[dict], bool]:
+def retrieve_reply_sources(db, identity: dict, bindings: list[SourceBinding], queries: list[str], *, focus_query: str = '', audit: list | None = None) -> tuple[list[dict], bool]:
     documents = {}  # This invocation only; never shared across users or requests.
     mandatory = [binding for binding in bindings if binding.mandatory and binding.purpose == "constraint"]
     if not mandatory:
         return [], False
-    required = [resolve_binding(db, identity, binding, documents=documents) for binding in mandatory]
+    required = [resolve_binding(db, identity, binding, documents=documents, audit=audit) for binding in mandatory]
     if any(source is None for source in required):
         return [], False
     selected = list(required)
@@ -136,7 +172,7 @@ def retrieve_reply_sources(db, identity: dict, bindings: list[SourceBinding], qu
     for binding in bindings:
         if binding.purpose == "blocked" or (binding.document_id, binding.section_index) in required_keys:
             continue
-        source = resolve_binding(db, identity, binding, documents=documents)
+        source = resolve_binding(db, identity, binding, documents=documents, audit=audit)
         if source is None:
             continue
         score = _score(source, binding.aliases, terms | focus)

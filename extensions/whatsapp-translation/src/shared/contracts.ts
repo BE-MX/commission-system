@@ -111,11 +111,18 @@ export function languageLabel(code: string): string {
   return LANGUAGE_LABELS[code] ?? code
 }
 
+export type AutoReplySchedule = { start: string; end: string; days: number[] }
+export type AutoReplyPolicy = { blocked: boolean; allowlisted: boolean; allowlistEnabled: boolean; schedule: AutoReplySchedule | null }
+
 export type RuntimeRequest =
   | { type: 'reply/memory'; payload: import('./replyMemory').MemoryCommand }
   | { type: 'reply/suggest'; payload: ReplyRequest }
   | { type: 'reply/capabilities' }
   | { type: 'reply/disclosure'; acknowledged?: true }
+  | { type: 'reply/auto-policy/get'; chatTitle: string }
+  | { type: 'reply/auto-policy/set-chat'; chatTitle: string; list: 'block' | 'allow'; value: boolean }
+  | { type: 'reply/auto-policy/set-allowlist-enabled'; enabled: boolean }
+  | { type: 'reply/auto-policy/set-schedule'; schedule: AutoReplySchedule | null }
   | { type: 'pairing/start' }
   | { type: 'pairing/resume' }
   | { type: 'session/refresh' }
@@ -124,6 +131,8 @@ export type RuntimeRequest =
   | { type: 'capabilities/get' }
   | { type: 'chat-language/get'; chatTitle: string }
   | { type: 'chat-language/set'; chatTitle: string; targetLanguage: string }
+  | { type: 'reply/memory-binding/get'; chatTitle: string }
+  | { type: 'reply/memory-binding/set'; chatTitle: string; inquiryId: string | null }
   | { type: 'translation/incoming'; request_id: string; source_language: 'auto'; target_language: string; text: string }
   | { type: 'translation/outgoing'; request_id: string; sourceLanguage: string; targetLanguage: string; text: string }
 
@@ -132,6 +141,10 @@ export type RuntimeResponse =
   | { type: 'reply/suggest'; result: ReplyResponse }
   | { type: 'reply/capabilities'; reply?: ReplyCapabilities }
   | { type: 'reply/disclosure'; acknowledged: boolean }
+  | { type: 'reply/auto-policy/get'; blocked: boolean; allowlisted: boolean; allowlistEnabled: boolean; schedule: AutoReplySchedule | null }
+  | { type: 'reply/auto-policy/set-chat' }
+  | { type: 'reply/auto-policy/set-allowlist-enabled' }
+  | { type: 'reply/auto-policy/set-schedule' }
   | { type: 'pairing/start'; state: PairingState }
   | { type: 'pairing/resume'; state: PairingState | null }
   | { type: 'session/refresh'; session: Session }
@@ -140,6 +153,8 @@ export type RuntimeResponse =
   | { type: 'capabilities/get'; capabilities: Capabilities }
   | { type: 'chat-language/get'; targetLanguage: string }
   | { type: 'chat-language/set'; targetLanguage: string }
+  | { type: 'reply/memory-binding/get'; inquiryId: string | null }
+  | { type: 'reply/memory-binding/set' }
   | { type: 'translation/incoming'; translation: string; sourceLanguage: string }
   | { type: 'translation/outgoing'; translation: string; sourceLanguage: string; backTranslation?: string }
   | { type: 'error'; message: string }
@@ -179,6 +194,7 @@ export type ReplyRequest = {
   fallback_language: TargetLanguage
   style: ReplyStyle
   goal: string
+  detected_language?: string
   memory_conversation_id?: string | null
   memory_revision?: number
 }

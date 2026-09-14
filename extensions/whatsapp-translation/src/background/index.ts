@@ -4,12 +4,15 @@ import { refreshSession, resumePairing, startPairing } from '@/background/auth'
 import type { Capabilities, PairingState, RuntimeRequest, RuntimeResponse, Session, TranslationResult } from '@/shared/contracts'
 import { DEFAULT_OUTGOING_LANGUAGE, TARGET_LANGUAGES } from '@/shared/contracts'
 import { chatKey, ensureTrustedStorageAccess, storage } from '@/shared/storage'
-import { boundedReplyCapabilities, replyFitsCapabilities, validReplyRequest, validReplyResponse } from '@/shared/replyValidation'
+import { boundedReplyCapabilities, replyFitsCapabilities, validAutoReplySchedule, validReplyRequest, validReplyResponse } from '@/shared/replyValidation'
 import { REPLY_ERROR_CODES } from '@/shared/replyCodes'
 import { validMemoryCommand, validMemoryResult } from '@/shared/replyMemory'
 
 const POPUP_REQUEST_TYPES = new Set(['pairing/resume', 'pairing/start', 'preferences/set', 'session/refresh'])
 const translationCache = new TranslationCache<TranslationResult>()
+const MAX_CHAT_INQUIRIES = 200
+const MAX_AUTO_POLICY_CHATS = 500
+const INQUIRY_ID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/iu
 
 async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
@@ -108,7 +111,9 @@ async function handleMessage(request: RuntimeRequest): Promise<RuntimeResponse> 
       if (request.payload.draft_intent.length > limits.max_draft_chars) return { type: 'error', message: 'reply_draft_too_long' }
       if (request.payload.goal.length > limits.max_goal_chars) return { type: 'error', message: 'reply_goal_too_long' }
       if (!replyFitsCapabilities(request.payload, limits)) return { type: 'error', message: 'reply_context_too_large' }
-      const result = await apiClient.suggestReply(token, chrome.runtime.getManifest().version, request.payload)
+      // HTTP 超时跟随当次 capability 的 timeout_seconds（本地已钳到 ≤180s），拿不到时由 apiClient 回退 185s。
+      const result = await apiClient.suggestReply(token, chrome.runtime.getManifest().version, request.payload,
+        limits.timeout_seconds > 0 ? limits.timeout_seconds * 1000 : undefined)
       if (!validReplyResponse(result, request.payload)) return { type: 'error', message: 'reply_invalid_response' }
       return { type: 'reply/suggest', result }
     }
@@ -166,6 +171,67 @@ async function handleMessage(request: RuntimeRequest): Promise<RuntimeResponse> 
         chatLanguages: { ...((await storage.get('chatLanguages')) ?? {}), [key]: request.targetLanguage },
       })
       return { type: 'chat-language/set', targetLanguage: request.targetLanguage }
+    }
+    case 'reply/memory-binding/get': {
+      const salt = await storage.get('chatKeySalt')
+      if (!salt) throw new Error('device_token_missing')
+      const key = await chatKey(request.chatTitle, salt)
+      const bindings = (await storage.get('chatInquiries')) ?? {}
+      return { type: 'reply/memory-binding/get', inquiryId: bindings[key] ?? null }
+    }
+    case 'reply/memory-binding/set': {
+      if (request.inquiryId !== null && (typeof request.inquiryId !== 'string' || !INQUIRY_ID.test(request.inquiryId))) {
+        return { type: 'error', message: 'reply_invalid_request' }
+      }
+      const salt = await storage.get('chatKeySalt')
+      if (!salt) throw new Error('device_token_missing')
+      const key = await chatKey(request.chatTitle, salt)
+      const bindings = { ...((await storage.get('chatInquiries')) ?? {}) }
+      if (request.inquiryId === null) delete bindings[key]
+      else {
+        // Keys are salted hashes; FIFO eviction keeps the map bounded.
+        while (!(key in bindings) && Object.keys(bindings).length >= MAX_CHAT_INQUIRIES) delete bindings[Object.keys(bindings)[0]]
+        bindings[key] = request.inquiryId
+      }
+      await storage.set({ chatInquiries: bindings })
+      return { type: 'reply/memory-binding/set' }
+    }
+    case 'reply/auto-policy/get': {
+      const salt = await storage.get('chatKeySalt')
+      if (!salt) throw new Error('device_token_missing')
+      const key = await chatKey(request.chatTitle, salt)
+      const [blocklist, allowlist, allowlistEnabled, schedule] = await Promise.all([
+        storage.get('autoReplyBlocklist'), storage.get('autoReplyAllowlist'),
+        storage.get('autoReplyAllowlistEnabled'), storage.get('autoReplySchedule'),
+      ])
+      return { type: 'reply/auto-policy/get', blocked: blocklist?.[key] === true, allowlisted: allowlist?.[key] === true,
+        allowlistEnabled: allowlistEnabled === true, schedule: schedule ?? null }
+    }
+    case 'reply/auto-policy/set-chat': {
+      if (!['block', 'allow'].includes(request.list) || typeof request.value !== 'boolean') return { type: 'error', message: 'reply_invalid_request' }
+      const salt = await storage.get('chatKeySalt')
+      if (!salt) throw new Error('device_token_missing')
+      const key = await chatKey(request.chatTitle, salt)
+      const chats = { ...((await storage.get(request.list === 'block' ? 'autoReplyBlocklist' : 'autoReplyAllowlist')) ?? {}) }
+      if (!request.value) delete chats[key]
+      else {
+        // Keys are salted hashes; FIFO eviction keeps the map bounded.
+        while (!(key in chats) && Object.keys(chats).length >= MAX_AUTO_POLICY_CHATS) delete chats[Object.keys(chats)[0]]
+        chats[key] = true
+      }
+      if (request.list === 'block') await storage.set({ autoReplyBlocklist: chats })
+      else await storage.set({ autoReplyAllowlist: chats })
+      return { type: 'reply/auto-policy/set-chat' }
+    }
+    case 'reply/auto-policy/set-allowlist-enabled': {
+      if (typeof request.enabled !== 'boolean') return { type: 'error', message: 'reply_invalid_request' }
+      await storage.set({ autoReplyAllowlistEnabled: request.enabled })
+      return { type: 'reply/auto-policy/set-allowlist-enabled' }
+    }
+    case 'reply/auto-policy/set-schedule': {
+      if (!validAutoReplySchedule(request.schedule)) return { type: 'error', message: 'reply_invalid_request' }
+      await storage.set({ autoReplySchedule: request.schedule })
+      return { type: 'reply/auto-policy/set-schedule' }
     }
     case 'translation/incoming': {
       if (!(TARGET_LANGUAGES as readonly string[]).includes(request.target_language)) throw new Error('unsupported_language')

@@ -50,6 +50,33 @@ def test_latest_query_drives_lookup_and_reports_outage_without_private_details(m
     assert calls == [(['genius', '天才'], '14')]
 
 
+def test_custom_catalog_rule_triggers_new_product_line(monkeypatch):
+    from app.core.config import get_settings
+    from app.whatsapp_translation import reply_catalog
+    calls = []
+    monkeypatch.setattr(reply_catalog, 'lookup_specs', lambda db, actor, terms, length: calls.append(terms) or {'status': 'matched'})
+    monkeypatch.setattr(get_settings(), 'WHATSAPP_REPLY_CATALOG_RULES', [{"trigger": r"\bwigs?\b|假发", "terms": ["wig", "假发"]}])
+    # Configured rules replace the defaults entirely.
+    weft_request = SimpleNamespace(messages=[SimpleNamespace(role='customer', text='Is the weft 20g?')])
+    assert retrieve_catalog(None, {}, weft_request)['status'] == 'not_requested'
+    wig_request = SimpleNamespace(messages=[SimpleNamespace(role='customer', text='Do you have wigs in stock?')])
+    assert retrieve_catalog(None, {}, wig_request)['status'] == 'matched'
+    assert calls == [['wig', '假发']]
+
+
+def test_invalid_catalog_rules_fail_closed(monkeypatch):
+    from app.core.config import get_settings
+    from app.whatsapp_translation.errors import WhatsAppTranslationError
+    from app.whatsapp_translation import reply_catalog
+    monkeypatch.setattr(get_settings(), 'WHATSAPP_REPLY_CATALOG_RULES', [{"trigger": "([", "terms": ["wig"]}])
+    with pytest.raises(WhatsAppTranslationError) as caught:
+        retrieve_catalog(None, {}, SimpleNamespace(messages=[]))
+    assert caught.value.error_code == 'reply_configuration_invalid'
+    monkeypatch.setattr(get_settings(), 'WHATSAPP_REPLY_CATALOG_RULES', [{"trigger": "x", "terms": ["t"]}] * 33)
+    with pytest.raises(WhatsAppTranslationError):
+        reply_catalog.catalog_rules(get_settings())
+
+
 def test_requested_length_is_queried_even_outside_overview_limit(catalog):
     for i in range(40):
         catalog.execute(text('INSERT INTO lsordertest.okki_products VALUES (:model, :size, :unit, 0)'), {'model': 'Synthetic Weft', 'size': str(i), 'unit': '17g'})

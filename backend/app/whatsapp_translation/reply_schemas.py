@@ -6,7 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.whatsapp_translation.constants import SUPPORTED_TARGET_LANGUAGES
-from app.whatsapp_translation.reply_memory_schemas import MemoryChange, ReplyAction
+from app.whatsapp_translation.reply_memory_schemas import ReplyAction
 
 
 class StrictModel(BaseModel):
@@ -44,11 +44,13 @@ class ReplyRequest(StrictModel):
     goal: str = Field(default="", max_length=500)
     memory_conversation_id: UUID | None = None
     memory_revision: int = Field(default=0, ge=0)
+    # Extension-detected language of the current chat; "" means unknown.
+    detected_language: str = ""
 
-    @field_validator("target_language", "fallback_language")
+    @field_validator("target_language", "fallback_language", "detected_language")
     @classmethod
     def supported_language(cls, value, info):
-        if value not in SUPPORTED_TARGET_LANGUAGES and not (info.field_name == "target_language" and value == "auto"):
+        if value not in SUPPORTED_TARGET_LANGUAGES and not (info.field_name == "target_language" and value == "auto") and not (info.field_name == "detected_language" and value == ""):
             raise ValueError("unsupported language")
         return value
 
@@ -59,38 +61,6 @@ class ReplyRequest(StrictModel):
         if len(self.messages) > self.context_scope.requested_limit:
             raise ValueError("message count exceeds selected scope")
         return self
-
-
-class ReviewEvidence(StrictModel):
-    message_index: int = Field(ge=0, le=1999)
-    role: Literal["customer", "salesperson"]
-    kind: Literal["confirmed_need", "buyer_action", "seller_statement", "inference"]
-    summary: str = Field(min_length=1, max_length=200)
-
-
-class ReplyPlan(StrictModel):
-    reply_language: str
-    language_confident: bool
-    queries: list[str] = Field(max_length=6)
-    stage: str = Field(max_length=100)
-    activity: str = Field(max_length=100)
-    trend: Literal["unknown", "stronger", "stable", "weaker", "blocked"]
-    blocker: str = Field(max_length=300)
-    goal: str = Field(max_length=300)
-    strategy: str = Field(max_length=300)
-    completion_signal: str = Field(max_length=300)
-    evidence: list[ReviewEvidence] = Field(max_length=8)
-    action: ReplyAction
-    memory_changes: list[MemoryChange] = Field(max_length=12)
-    unanswered_requests: list[int] = Field(max_length=12)
-    answered_questions: list[int] = Field(max_length=12)
-
-    @field_validator("queries")
-    @classmethod
-    def bounded_queries(cls, queries):
-        if any(not value or len(value) > 80 for value in queries):
-            raise ValueError("invalid query")
-        return queries
 
 
 class ReplySource(StrictModel):

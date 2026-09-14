@@ -257,6 +257,7 @@ class Settings(BaseSettings):
     WHATSAPP_TRANSLATION_AI_TIMEOUT_SECONDS: _PositiveInt = 40
     WHATSAPP_TRANSLATION_MIN_EXTENSION_VERSION: str = "1.0.0"
     WHATSAPP_REPLY_ENABLED: bool = False
+    WHATSAPP_REPLY_AUTO_ENABLED: bool = True
     WHATSAPP_REPLY_GENERATOR_PRESET: str = "whatsapp_reply_generator"
     WHATSAPP_REPLY_TIMEOUT_SECONDS: _PositiveInt = 120
     WHATSAPP_REPLY_DAILY_REQUESTS: _PositiveInt = 100
@@ -264,6 +265,8 @@ class Settings(BaseSettings):
     WHATSAPP_REPLY_MAX_CONTEXT_CHARS: _PositiveInt = 120000
     WHATSAPP_REPLY_SOURCE_BINDINGS: list[dict] = []
     WHATSAPP_REPLY_SOURCE_PROFILE: str = "config/whatsapp-reply-phase12.json"
+    WHATSAPP_REPLY_CATALOG_RULES: list[dict] = []
+    WHATSAPP_REPLY_QUERY_REWRITE_PRESET: str = "whatsapp_reply_query_rewrite"
     WHATSAPP_REPLY_MEMORY_ENABLED: bool = True
     WHATSAPP_REPLY_MEMORY_RETENTION_DAYS: int = Field(default=30, ge=1, le=90)
     # ── 运行与自动化中心（健康检查仅允许由部署环境配置，不接受网页输入）────
