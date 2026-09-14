@@ -5,6 +5,7 @@ All /api requests are intercepted; no credentials or paid provider are used.
 """
 
 import argparse
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -88,7 +89,45 @@ def main():
             page.get_by_role('button', name='重置密钥', exact=True).click()
             page.get_by_role('button', name='确定重置密钥', exact=True).click()
             key_dialog = page.get_by_role('dialog', name='保存站点密钥')
-            expect(key_dialog.locator('pre')).to_contain_text('ARK_AI_PRESET=sales_copy')
+            config = key_dialog.get_by_role('textbox', name='站点服务端配置')
+            expected_config = 'ARK_AI_BASE_URL=https://leshine.work/api/ai-gateway\nARK_AI_KEY=ark_site_UI_TEST_ONLY\nARK_AI_PRESET=sales_copy'
+            expect(config).to_have_value(expected_config)
+            # Modern Clipboard API remains the preferred path when available.
+            page.evaluate("""() => {
+                Object.defineProperty(navigator, 'clipboard', {configurable: true, value: {
+                    writeText: async text => { window.modernCopiedConfig = text; }
+                }});
+            }""")
+            key_dialog.get_by_role('button', name='复制配置').click()
+            assert page.evaluate('window.modernCopiedConfig') == expected_config
+            # LAN HTTP has no Clipboard API; capture the selection passed to real copy.
+            page.evaluate("""() => {
+                window.originalExecCommand = document.execCommand.bind(document);
+                document.execCommand = command => {
+                    const el = document.activeElement;
+                    window.copiedConfig = el.value.slice(el.selectionStart, el.selectionEnd);
+                    return window.originalExecCommand(command);
+                };
+                Object.defineProperty(navigator, 'clipboard', {configurable: true, value: undefined});
+            }""")
+            key_dialog.get_by_role('button', name='复制配置').click()
+            assert page.evaluate('window.copiedConfig') == expected_config
+            expect(page.get_by_text('复制成功', exact=True).last).to_be_visible()
+            # A denied modern API must also fall back without exposing the key.
+            page.evaluate("""() => {
+                window.copiedConfig = null;
+                Object.defineProperty(navigator, 'clipboard', {configurable: true, value: {
+                    writeText: () => Promise.reject(new DOMException('Denied', 'NotAllowedError'))
+                }});
+            }""")
+            key_dialog.get_by_role('button', name='复制配置').click()
+            page.wait_for_function('window.copiedConfig !== null')
+            assert page.evaluate('window.copiedConfig') == expected_config
+            # If both browser mechanisms are blocked, retain an explicit selection.
+            page.evaluate("document.execCommand = () => false")
+            key_dialog.get_by_role('button', name='复制配置').click()
+            expect(page.get_by_text('浏览器阻止了自动复制，配置已全选，请按 Ctrl+C（Mac：⌘C）保存', exact=True)).to_be_visible()
+            assert config.evaluate('(el) => el.selectionEnd - el.selectionStart') == len(expected_config)
             page.get_by_role('button', name='已保存，关闭').click()
             expect(key_dialog).not_to_be_visible()
             expect(page.get_by_text('ark_site_UI_TEST_ONLY', exact=False)).to_have_count(0)
@@ -131,7 +170,7 @@ def main():
             expect(key_dialog).to_be_visible()
             page.get_by_role('button', name='已保存，关闭').click()
             expect(key_dialog).not_to_be_visible()
-            expect(page.locator('.key-config')).not_to_contain_text('ark_site_')
+            expect(page.locator('.key-config')).not_to_have_value(re.compile('ark_site_'))
             expect(page.get_by_text('新建示例站点', exact=True)).to_be_visible()
             assert any(action == 'create' for action, _ in writes)
             assert not errors, errors

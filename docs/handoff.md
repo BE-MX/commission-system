@@ -1,3 +1,9 @@
+## 2026-09-14 站点网关公网配置与复制修复（合并交付）
+
+分支 `codex/gateway-public-config`。站点密钥配置改为固定公网入口 `https://leshine.work/api/ai-gateway`，不再使用管理员当前浏览器 origin，避免局域网地址外发。配置采用只读文本框；优先 Clipboard API，不可用或权限拒绝时在弹窗内选择复制，两种方式均受限则保持全选并提示键盘复制。关闭密钥弹窗仍清空密钥。
+
+浏览器 mock 回归覆盖公网地址、现代复制、无 Clipboard API、权限拒绝、复制全部被阻止、密钥关闭清空，以及原有创建/重置/编辑/启停/核查/窄屏路径；前端构建通过。仅修改前端及回归脚本，无数据库迁移。用户已授权合并 main 并推送 origin；集成前 main 与 origin/main 均为 `e43071ac`。本轮不部署。
+
 ## 2026-09-14 业务员站点 AI 网关（合并交付，未部署）
 
 任务分支 `codex/ai-site-gateway`，目录 `D:/MyProgram/commission-system-codex-ai-site-gateway`，基点 `794b2499`。按 `docs/requirements/2026-09-11-ai-site-gateway.md` 实现三表迁移146、每站密钥、文本 Preset 授权、MySQL 原子准入、日/分钟/并发上限、未知用量与审计解除、AI 管理站点页签、后端接入示例及 Nginx 候选片段。未触碰主目录其他未跟踪文档。

@@ -56,9 +56,7 @@
 
     <el-dialog v-model="keyVisible" title="保存站点密钥" width="620px" :close-on-click-modal="false" append-to-body @closed="issuedKey = ''">
       <el-alert title="密钥只显示这一次，请保存到站点服务端的密钥配置中。关闭后无法找回，可通过重置生成新密钥。" type="warning" :closable="false" />
-      <pre class="key-config">ARK_AI_BASE_URL={{ gatewayBase }}
-ARK_AI_KEY={{ issuedKey }}
-ARK_AI_PRESET={{ issuedPreset }}</pre>
+      <textarea ref="configField" class="key-config" :value="keyConfig" readonly rows="4" aria-label="站点服务端配置" spellcheck="false" />
       <p>让 Codex 编写后端调用代码，密钥由你填入服务端配置。不要把这段密钥粘贴进网页源码或公开文档。</p>
       <template #footer><GlassButton @click="copyKey">复制配置</GlassButton><GlassButton variant="primary" @click="keyVisible = false">已保存，关闭</GlassButton></template>
     </el-dialog>
@@ -94,7 +92,7 @@ ARK_AI_PRESET={{ issuedPreset }}</pre>
 </template>
 
 <script setup>
-import { onBeforeUnmount, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import GlassButton from '@/components/GlassButton.vue'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import { useListPage } from '@/composables/useListPage'
@@ -121,7 +119,10 @@ const rules = { name: [{ required: true, message: '请输入应用名称', trigg
 const keyVisible = ref(false)
 const issuedKey = ref('')
 const issuedPreset = ref('')
-const gatewayBase = `${window.location.origin}/api/ai-gateway`
+// Public service entry is independent of the administrator's LAN/dev address.
+const gatewayBase = 'https://leshine.work/api/ai-gateway'
+const configField = ref(null)
+const keyConfig = computed(() => `ARK_AI_BASE_URL=${gatewayBase}\nARK_AI_KEY=${issuedKey.value}\nARK_AI_PRESET=${issuedPreset.value}`)
 const requestsVisible = ref(false)
 const selected = ref(null)
 const statusNames = { pending: '执行中 / 待核查', success: '成功', error: '失败', timeout: '已核查超时', unknown: '结果未知' }
@@ -168,8 +169,19 @@ async function toggle(row) {
   try { await updateGatewayApp(row.id, { is_enabled: !row.is_enabled }); msgSuccess(row.is_enabled ? '停用' : '启用'); await fetchList() } finally { busy.value = false }
 }
 async function copyKey() {
-  try { await navigator.clipboard.writeText(`ARK_AI_BASE_URL=${gatewayBase}\nARK_AI_KEY=${issuedKey.value}\nARK_AI_PRESET=${issuedPreset.value}`); msgSuccess('复制') }
-  catch { msgError('复制失败，请手动选择并保存配置') }
+  if (navigator.clipboard?.writeText) {
+    try { await navigator.clipboard.writeText(keyConfig.value); msgSuccess('复制'); return }
+    catch { /* Permission denial: try selection-based copy inside this dialog. */ }
+  }
+  const field = configField.value
+  if (!field) return
+  field.focus()
+  field.select()
+  field.setSelectionRange(0, field.value.length)
+  try {
+    if (document.execCommand('copy')) { msgSuccess('复制'); return }
+  } catch { /* Keep the full configuration selected for keyboard copy. */ }
+  msgError('浏览器阻止了自动复制，配置已全选，请按 Ctrl+C（Mac：⌘C）保存')
 }
 async function showRequests(row) {
   selected.value = row
@@ -206,6 +218,6 @@ onBeforeUnmount(() => { issuedKey.value = ''; narrowQuery.removeEventListener('c
 .el-pagination { margin-top: 16px; }
 .el-select { width: 100%; }
 .limits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.key-config { white-space: pre-wrap; overflow-wrap: anywhere; padding: 16px; background: var(--page-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 8px; }
+.key-config { display: block; width: 100%; box-sizing: border-box; margin-top: 16px; resize: vertical; font-family: monospace; white-space: pre-wrap; overflow-wrap: anywhere; padding: 16px; background: var(--page-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 8px; }
 @media (max-width: 600px) { .limits { grid-template-columns: 1fr; } }
 </style>

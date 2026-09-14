@@ -1656,3 +1656,9 @@ journalctl -u leshine-ark-dsh-worker -n 200 --no-pager
 2. 紧急止损按顺序执行：在 Ark 中禁用 AI Preset 阻止模型调用；撤销设备阻止旧扩展继续翻译；提高最低扩展版本阻断过期客户端；必要时把上一版源码打包为更高版本号发布。
 3. 后端/前端代码回滚不得 downgrade Alembic 迁移。迁移 135 的三张表只保存设备哈希、状态和聚合用量，保留不影响旧版本运行。
 4. 回滚后检查 `/api/whatsapp-translation/health`、`/capabilities`、管理页设备数量、当日请求数和成功率；确认数据库、日志和管理页没有聊天明文。
+
+### 站点密钥配置地址与复制
+
+站点应用生成的 `ARK_AI_BASE_URL` 使用固定公网入口 `https://leshine.work/api/ai-gateway`，与管理员通过公网、局域网或本机访问管理页无关。更换公网入口时同步更新 `AiGatewayApps.vue` 中的 `gatewayBase`，验证公网路由后重新发布前端。既有站点配置若使用局域网地址，改为上述公网地址即可，不必重置密钥。
+
+“复制配置”优先使用 Clipboard API；内网 HTTP 或浏览器拒绝权限时，在密钥弹窗内通过文本选区复制。浏览器同时阻止两种机制时会保留全选，可按 Ctrl+C / ⌘C；关闭弹窗后密钥清空。
