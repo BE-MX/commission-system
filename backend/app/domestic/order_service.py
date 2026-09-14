@@ -1151,6 +1151,29 @@ def get_order_detail(
     return detail
 
 
+# 免登录进度码给客户看的字段白名单（2026-09-14 亮哥拍板）：
+# 只留店面名称、客户单号、顾客名称和产品的工艺参数/发型/颜色；
+# 价格、订单状态、产品状态、工序进度等内部信息一律不下发——
+# 免登录端点拿不到鉴权，视图层藏字段挡不住直接调接口的人。
+_TRACK_ORDER_FIELDS = ("order_kind", "order_no", "customer_name", "guest_name")
+_TRACK_ITEM_FIELDS = (
+    "id", "line_code", "product_name", "attrs",
+    "hairstyle", "color", "style_requirement",
+    "hairstyle_images", "color_images", "style_images",
+)
+
+
+def track_public_view(detail: dict) -> dict:
+    """把 get_order_detail 的结果裁剪成进度码白名单，供免登录 track 端点返回。"""
+    return {
+        **{field: detail.get(field) for field in _TRACK_ORDER_FIELDS},
+        "items": [
+            {field: item.get(field) for field in _TRACK_ITEM_FIELDS}
+            for item in detail["items"]
+        ],
+    }
+
+
 # ── 编辑 ──────────────────────────────────────────────
 
 

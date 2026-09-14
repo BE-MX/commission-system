@@ -1,7 +1,7 @@
 """内贸订单产品进度小程序码：scene 签名 / 免登录 track 端点 / 码生成端点
 
 免登录端点的唯一授权凭证是 HMAC 签名——签名域隔离（track vs 流转卡，同一个
-item_id 两个域）、伪签拒绝、软删单拦截、完整订单返回，都是这个
+item_id 两个域）、伪签拒绝、软删单拦截、返回字段白名单裁剪，都是这个
 口子的安全边界，必须钉死。
 """
 
@@ -219,7 +219,9 @@ def test_default_secret_locks_generation_and_verification(db, monkeypatch):
 
 
 def test_track_returns_complete_order(db):
-    """任一进度码都返回其所属订单的全部明细。"""
+    """任一进度码都返回其所属订单的全部明细，但字段按白名单裁剪：
+    只留店面名称、客户单号、顾客名称和产品工艺参数/发型/颜色——
+    价格、订单状态、产品状态、工序进度对免登录端点一律不下发。"""
     creator = _user(db)
     order = _create_order(db, creator, item_count=2)
     first, second = _items_of(db, order["id"])
@@ -229,13 +231,17 @@ def test_track_returns_complete_order(db):
         resp = client.get("/api/mini/domestic/track", params={"scene": scene})
     assert resp.status_code == 200
     data = resp.json()
-    assert data["id"] == order["id"]
+    assert set(data) == {"order_kind", "order_no", "customer_name", "guest_name", "items"}
+    assert data["order_no"] == "710"
+    assert data["customer_name"].startswith("马姐假发-")
     assert [i["id"] for i in data["items"]] == [first.id, second.id]
-    assert data["items"][0]["order_qty"] == first.order_qty
-    assert data["items"][1]["order_qty"] == second.order_qty
-    assert "customer_balance" not in data
-    assert "charged_amount" not in data
-    assert "created_by_name" not in data
+    for item_view in data["items"]:
+        assert set(item_view) == {
+            "id", "line_code", "product_name", "attrs",
+            "hairstyle", "color", "style_requirement",
+            "hairstyle_images", "color_images", "style_images",
+        }
+    assert data["items"][0]["attrs"]["craft"] == first.attrs_snapshot["craft"]
 
 
 def test_track_image_allows_other_item_in_same_order_only(db, tmp_path, monkeypatch):

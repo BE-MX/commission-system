@@ -1,16 +1,9 @@
 // pages/domestic/track/track.js — 订单进度（小程序码免登录查看）
-// 客户/员工微信扫「订单进度码」直达本页：不要求登录，凭码里的签名看这一单。
+// 客户微信扫「订单进度码」直达本页：不要求登录，凭码里的签名看这一单。
 // 页面上没有搜索、没有扫码入口——没有码就查不了别的订单。
+// 2026-09-14 起只展示店面名称、客户单号、顾客名称和产品工艺参数/发型/颜色；
+// 价格、订单状态、产品状态、工序进度服务端已不下发。
 var app = getApp()
-var routing = require('../../../utils/domestic-routing')
-
-// 工序三态 → 颜色与文案（与订单速查同一套判定）
-function stateOf(step) {
-  if (step.passed_qty >= step.order_qty && step.order_qty > 0) return ['done', '已完成']
-  if (step.passed_qty > 0) return ['doing', '进行中']
-  if (step.reportable_qty > 0) return ['ready', '可开工']
-  return ['wait', '等上道']
-}
 
 Page({
   data: {
@@ -33,7 +26,7 @@ Page({
     this._query()
   },
 
-  // 进度会变，客户会反复看同一张码——下拉即刷新
+  // 内容会变（比如补图），客户会反复看同一张码——下拉即刷新
   onPullDownRefresh: function () {
     if (this._scene) this._query()
     else wx.stopPullDownRefresh()
@@ -51,7 +44,7 @@ Page({
         self.setData({ loading: false })
         if (res.statusCode !== 200) {
           var detail = (res.data && res.data.detail) || {}
-          // 手上有旧进度时保留着，别因为一次刷新失败把整页清成"请重新扫码"
+          // 手上有旧内容时保留着，别因为一次刷新失败把整页清成"请重新扫码"
           if (!self.data.order) self.setData({ errorText: detail.message || '查询失败，请重试' })
           return
         }
@@ -65,19 +58,13 @@ Page({
     })
   },
 
-  // 视图态在这里算好，wxml 里不放表达式（与订单速查同一套）
+  // 视图态在这里算好，wxml 里不放表达式
   _decorate: function (order) {
-    // 下拉刷新后保留用户已展开的明细，不折回去
-    var prevExpanded = {}
-    var prevItems = (this.data.order && this.data.order.items) || []
-    for (var p = 0; p < prevItems.length; p++) prevExpanded[prevItems[p].id] = prevItems[p].expanded
     var items = order.items || []
     for (var i = 0; i < items.length; i++) {
       var attrs = items[i].attrs || {}
       items[i].attrText = [attrs.craft, attrs.net_color, attrs.size, attrs.length, attrs.density].filter(Boolean).join(' / ')
-      items[i].unitPriceText = Number(items[i].unit_price || 0).toFixed(2)
-      items[i].lineAmountText = Number(items[i].line_amount || 0).toFixed(2)
-      var imageFields = ['hairstyle_images', 'color_images', 'style_images', 'remark_images']
+      var imageFields = ['hairstyle_images', 'color_images', 'style_images']
       var imageUrls = []
       for (var f = 0; f < imageFields.length; f++) {
         var paths = items[i][imageFields[f]] || []
@@ -87,42 +74,9 @@ Page({
         }
       }
       items[i].imageUrls = imageUrls
-      var steps = items[i].steps || []
-      var view = []
-      for (var j = 0; j < steps.length; j++) {
-        var s = steps[j]
-        var publicData = routing.publicStep(s)
-        var progress = routing.decorateProgress(publicData)
-        var st = stateOf(publicData)
-        view.push({
-          step_order: publicData.step_order,
-          process_name: publicData.process_name,
-          completed_qty: progress.completedQty,
-          skipped_qty: progress.skippedQty,
-          passed_qty: progress.passedQty,
-          order_qty: publicData.order_qty,
-          skip_label: publicData.skip_label || '',
-          reportable_qty: publicData.reportable_qty,
-          pct: progress.percent,
-          state: st[0],
-          stateText: st[1]
-        })
-      }
-      items[i].stepView = view
-      items[i].expanded = prevExpanded[items[i].id] || false   // 默认只出前 3 道
     }
     order.items = items
-    order.totalAmountText = Number(order.total_amount || 0).toFixed(2)
-    order.regionText = [order.customer_province, order.customer_city].filter(Boolean).join(' / ')
     return order
-  },
-
-  onToggleSteps: function (e) {
-    var idx = e.currentTarget.dataset.idx
-    var key = 'order.items[' + idx + '].expanded'
-    var obj = {}
-    obj[key] = !this.data.order.items[idx].expanded
-    this.setData(obj)
   },
 
   onPreviewImage: function (e) {
