@@ -10,6 +10,7 @@ from app.core.time import beijing_today
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from pydantic import ValidationError
 
 from app.auth.models import ArkUser
 from app.domestic import constants as C
@@ -48,6 +49,7 @@ from app.domestic.schemas import (
     OrderItemUpdate,
     OrderUpdate,
     ProductAttrs,
+    ProductionProductAttrs,
 )
 from app.system.models import SysDict
 
@@ -1424,6 +1426,50 @@ def add_item(
         raise
 
 
+def _apply_item_attrs(
+    db: Session,
+    order: DomesticOrder,
+    item: DomesticOrderItem,
+    raw_attrs: dict,
+    *,
+    user_id: int | None,
+) -> None:
+    """改明细规格：只换属性快照与产品归属。
+
+    工艺路线只随产品类型走，而产品类型不允许在这里改（改了会让在制工序失真）；
+    成交价保持下单口径，不随规格重算 —— 需要改价走 unit_price。
+    """
+    production = order_kind_service.is_production(order)
+    attrs_model = ProductionProductAttrs if production else ProductAttrs
+    try:
+        attrs = attrs_model.model_validate(raw_attrs)
+    except ValidationError as exc:
+        errors = exc.errors()
+        message = errors[0].get("msg", "产品属性不合法") if errors else "产品属性不合法"
+        raise ValueError(message.replace("Value error, ", "")) from exc
+    old_type = (item.attrs_snapshot or {}).get("product_type")
+    if old_type and attrs.product_type != old_type:
+        raise ValueError("产品类型不可修改，如需变更请新增明细")
+    attrs = attribute_service.prepare_item_attrs(
+        db,
+        order_category="normal" if production else order.order_category,
+        attrs=attrs,
+        user_id=user_id or order.created_by,
+    )
+    snapshot = attrs.model_dump()
+    if snapshot == (item.attrs_snapshot or {}):
+        return
+    product = product_service.find_or_create_product(db, attrs)
+    if product.id != item.product_id:
+        old_product = db.get(DomesticProduct, item.product_id)
+        if old_product is not None:
+            old_product.use_count = max(0, (old_product.use_count or 0) - 1)
+        product.use_count = (product.use_count or 0) + 1
+        item.product_id = product.id
+        item.product_name = product.name
+    item.attrs_snapshot = snapshot
+
+
 def update_item(
     db: Session,
     item_id: int,
@@ -1490,6 +1536,8 @@ def update_item(
     for field in _IMAGE_FIELDS:
         if field in data and data[field] is not None:
             setattr(item, field, data[field])
+    if data.get("attrs") is not None:
+        _apply_item_attrs(db, order, item, data["attrs"], user_id=user_id)
 
     progress_service.recalc_item_status(db, item)
     progress_service.sync_order_status(db, item.order_id)

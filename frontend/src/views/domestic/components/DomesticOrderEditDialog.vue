@@ -35,7 +35,7 @@
           <h3>产品明细</h3>
           <GlassButton v-if="detail.status === 0 && editable" v-permission="'domestic:write'" variant="secondary" left-icon="Plus" :disabled="busy" @click="appendVisible = true">添加明细</GlassButton>
         </div>
-        <p class="order-edit-hint">每条明细独立保存。产品规格和工艺路线已锁定，数量不能少于已完成报工的件数。</p>
+        <p class="order-edit-hint">每条明细独立保存。改规格不重新报价，产品类型与工艺路线不可改；数量不能少于已完成报工的件数。</p>
         <div v-for="item in detail.items" :key="item.id" class="order-edit-item">
           <div><strong>{{ item.line_code }} · {{ item.product_name }}</strong><div class="order-edit-hint">{{ item.order_qty }} 件<span v-if="!production"> · 成交单价 ¥{{ Number(item.unit_price).toFixed(2) }}</span></div></div>
           <GlassButton v-permission="'domestic:write'" variant="secondary" left-icon="EditPen" :disabled="!editable || item.status === 2" @click="openItem(item)">编辑明细</GlassButton>
@@ -60,6 +60,18 @@
           </el-form-item>
         </div>
         <p v-if="!production" class="order-edit-hint">原价 ¥{{ Number(itemDialog.item.original_price).toFixed(2) }}，手工费 ¥{{ Number(itemDialog.item.labor_fee || 0).toFixed(2) }}。优惠后商品单价 ¥{{ (Number(itemDialog.form.unit_price || 0) - Number(itemDialog.item.labor_fee || 0)).toFixed(2) }}。</p>
+        <div class="order-edit-grid">
+          <el-form-item label="产品类型">
+            <el-input :model-value="PRODUCT_TYPE_LABELS[itemDialog.form.attrs?.product_type] || '未设置'" disabled />
+          </el-form-item>
+          <el-form-item v-for="field in itemAttrFields" :key="field"
+            :label="attributeFieldLabel(itemDialog.form.attrs.product_type, field)" :required="itemAttrRequired.includes(field)">
+            <el-select v-model="itemDialog.form.attrs[field]" filterable clearable :allow-create="special" :default-first-option="special">
+              <el-option v-for="value in attributeOptions(options, detail.order_category, itemDialog.form.attrs.product_type, field)" :key="value" :label="value" :value="value" />
+            </el-select>
+          </el-form-item>
+        </div>
+        <p class="order-edit-hint">改规格只更新产品属性，成交价格保持不变（可在上方单独改价）；产品类型与工艺路线不可改。</p>
         <div class="order-edit-grid">
           <el-form-item v-for="section in sections" :key="section.key" :label="section.label">
             <el-input v-model="itemDialog.form[section.key]" type="textarea" :rows="3" :maxlength="['hairstyle', 'color'].includes(section.key) ? 1000 : 2000" />
@@ -90,7 +102,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { DETAIL_SECTIONS, getOptions, getOrder, listCustomers, updateOrder, updateOrderItem, uploadImage } from '@/api/domestic'
+import { DETAIL_SECTIONS, PRODUCT_TYPE_LABELS, getOptions, getOrder, listCustomers, updateOrder, updateOrderItem, uploadImage } from '@/api/domestic'
 import { useAuthStore } from '@/stores/auth'
 import AppUpload from '@/components/AppUpload.vue'
 import GlassButton from '@/components/GlassButton.vue'
@@ -98,6 +110,7 @@ import DomesticImages from '@/components/domestic/DomesticImages.vue'
 import { createLatestRequestRunner } from '../composables/latestRequest'
 import DomesticDraftItemDialog from './DomesticDraftItemDialog.vue'
 import { detailSectionsForKind } from '../domesticOrderKinds'
+import { attributeFieldLabel, attributeOptions, requiredAttributeFields, validateItemAttributes, visibleAttributeFields } from '../domesticAttributeRules'
 import { orderHeaderForm, buildHeaderPatch, orderItemForm, buildItemPatch, itemEditDelta, itemPriceError } from '../domesticOrderEditing'
 
 const props = defineProps({ modelValue: Boolean, orderId: Number, initialItemId: Number })
@@ -126,6 +139,9 @@ let loadSequence = 0
 const production = computed(() => detail.value?.order_kind === 'production')
 const editable = computed(() => detail.value?.created_by === auth.user?.id && ![3, 4].includes(detail.value?.status))
 const sections = computed(() => detailSectionsForKind(detail.value?.order_kind, DETAIL_SECTIONS))
+const special = computed(() => !production.value && detail.value?.order_category === 'special')
+const itemAttrFields = computed(() => itemDialog.form.attrs ? visibleAttributeFields(itemDialog.form.attrs, detail.value?.order_kind) : [])
+const itemAttrRequired = computed(() => itemDialog.form.attrs ? requiredAttributeFields(itemDialog.form.attrs, detail.value?.order_kind) : [])
 const headerDirty = computed(() => detail.value && Object.keys(buildHeaderPatch(detail.value, header)).length > 0)
 const itemDirty = computed(() => itemDialog.item && Object.keys(buildItemPatch(detail.value, itemDialog.item, itemDialog.form)).length > 0)
 const amountDelta = computed(() => itemDialog.item ? itemEditDelta(itemDialog.item, itemDialog.form) : 0)
@@ -219,6 +235,10 @@ async function saveItem() {
   const form = itemDialog.form, item = itemDialog.item
   if (!Number.isInteger(form.order_qty) || form.order_qty < 1) return ElMessage.warning('数量必须为正整数')
   const patch = buildItemPatch(detail.value, item, form)
+  if (Object.hasOwn(patch, 'attrs')) {
+    const attrError = validateItemAttributes({ ...patch.attrs }, detail.value.order_kind)
+    if (attrError) return ElMessage.warning(attrError)
+  }
   const priceError = itemPriceError(item, patch)
   if (priceError) return ElMessage.warning(priceError)
   if (!Object.keys(patch).length) return
@@ -243,7 +263,7 @@ async function saveItem() {
 .order-edit-body { min-height: 140px; }
 .order-edit-summary { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 20px; }
 .order-edit-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
-.order-edit-grid :deep(.el-date-editor), .order-edit-grid :deep(.el-input-number) { width: 100%; }
+.order-edit-grid :deep(.el-date-editor), .order-edit-grid :deep(.el-input-number), .order-edit-grid :deep(.el-select) { width: 100%; }
 .order-edit-actions { display: flex; justify-content: flex-end; margin-bottom: 24px; }
 .order-edit-hint { color: var(--el-text-color-secondary); font-size: 13px; line-height: 1.6; margin: 8px 0; }
 .order-edit-item-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

@@ -29,6 +29,7 @@ from app.domestic.models import (
     DomesticItemUnit,
     DomesticOrder,
     DomesticOrderItem,
+    DomesticProduct,
     DomesticReportLog,
 )
 from app.domestic.schemas import (
@@ -515,6 +516,54 @@ def test_item_amount_edits_settle_difference_and_termination_refunds(db):
         order_service.update_item(db, item.id, OrderItemUpdate(order_qty=4), creator.id)
     db.refresh(customer)
     assert customer.balance == Decimal("100.00")
+
+
+def test_item_attrs_edit_relinks_product_without_repricing(db):
+    _route_and_workers(db)
+    creator = _user(db, "attrs-planner")
+    customer = _customer(db, creator, "规格客户")
+    balance_service.recharge_customer(
+        db, customer_id=customer.id, amount=Decimal("100.00"), user_id=creator.id,
+        request_id="attrs-edit-recharge",
+    )
+    created = _create_order(db, creator, customer, qty=2, price="10.00")
+    item = _item(db, created["id"])
+    old_product = db.get(DomesticProduct, item.product_id)
+    old_use_count = old_product.use_count
+
+    # 普单不接受标准字典之外的属性值
+    with pytest.raises(ValueError, match="标准选项"):
+        order_service.update_item(
+            db, item.id,
+            OrderItemUpdate(attrs={**item.attrs_snapshot, "density": "80%"}),
+            creator.id,
+        )
+
+    db.add(SysDict(
+        type=C.ATTR_DICTS["cap"]["density"], code="80%", label="80%", sort=2, is_active=True,
+    ))
+    db.flush()
+    order_service.update_item(
+        db, item.id,
+        OrderItemUpdate(attrs={**item.attrs_snapshot, "density": "80%"}),
+        creator.id,
+    )
+    db.refresh(item)
+    db.refresh(old_product)
+    assert item.attrs_snapshot["density"] == "80%"
+    assert item.product_id != old_product.id
+    assert "80%" in item.product_name
+    # 改规格不重算成交价，也不动工艺路线
+    assert item.unit_price == Decimal("10.00")
+    assert item.route_id is not None
+    assert old_product.use_count == old_use_count - 1
+
+    with pytest.raises(ValueError, match="产品类型不可修改"):
+        order_service.update_item(
+            db, item.id,
+            OrderItemUpdate(attrs={**item.attrs_snapshot, "product_type": "piece"}),
+            creator.id,
+        )
 
 
 def test_quantity_reports_consume_unit_codes_in_order(db):
