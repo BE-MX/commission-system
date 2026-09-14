@@ -1,10 +1,12 @@
 /**
- * OKKI 出库单列表 + 打印弹框逻辑（宪法 12/14：useListPage + 打印弹框模式）。
+ * OKKI 出库单列表 + 直接打印逻辑（宪法 12/14：useListPage；打印不走预览弹框）。
  */
-import { reactive } from 'vue'
+import { ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { listOutboundRecords } from '@/api/shipping'
+import { ElMessage } from 'element-plus'
+import { getOutboundPrintData, listOutboundRecords } from '@/api/shipping'
 import { useListPage } from '@/composables/useListPage'
+import { buildOutboundDoc, printDocHtml } from '../print/printDocs'
 
 export function useOutboundRecords() {
   const route = useRoute()
@@ -28,16 +30,30 @@ export function useOutboundRecords() {
     },
   )
 
-  // 打印弹框：内容渲染在 iframe 里的独立文档中，打印只出那份文档，
-  // 弹框本身停在列表页上——关掉就回来，不用按浏览器后退
-  const printDialog = reactive({ visible: false, recordId: null })
+  // 点击「打印出库单」直接调起浏览器打印：取数 → 构建文档 → 隐藏 iframe print()
+  // printingId 给按钮上 loading，同时挡住重复点击
+  const printingId = ref(null)
 
-  function openPrint(row) {
-    Object.assign(printDialog, { visible: true, recordId: row.outbound_record_id })
+  async function openPrint(row) {
+    if (printingId.value) return
+    printingId.value = row.outbound_record_id
+    try {
+      const res = await getOutboundPrintData(row.outbound_record_id)
+      const data = res.data || {}
+      printDocHtml(buildOutboundDoc({
+        record: data.record || {},
+        items: data.items || [],
+        qr_code_base64: data.qr_code_base64 || '',
+      }))
+    } catch {
+      ElMessage.error('出库单打印数据加载失败，请稍后重试')
+    } finally {
+      printingId.value = null
+    }
   }
 
   return {
     ...listApi,
-    printDialog, openPrint,
+    printingId, openPrint,
   }
 }

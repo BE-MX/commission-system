@@ -41,7 +41,11 @@
         </el-table-column>
         <el-table-column label="操作" min-width="130" fixed="right">
           <template #default="{ row }">
-            <GlassButton variant="link" left-icon="Printer" @click="openPrint(row)">打印出库单</GlassButton>
+            <GlassButton
+              variant="link" left-icon="Printer"
+              :loading="printingId === row.outbound_record_id"
+              @click="openPrint(row)"
+            >打印出库单</GlassButton>
           </template>
         </el-table-column>
       </el-table>
@@ -51,27 +55,21 @@
         class="pager" @current-change="handlePageChange" @size-change="handleSizeChange"
       />
     </div>
-
-    <ShippingPrintDialog
-      v-model:visible="printDialog.visible"
-      mode="outbound" :record-id="printDialog.recordId"
-    />
   </div>
 </template>
 
 <script setup>
 /**
- * OKKI 出库单列表 + 出库单打印。逻辑在 composables/useOutboundRecords.js（宪法 12）。
+ * OKKI 出库单列表 + 出库单直接打印（无预览弹框）。逻辑在 composables/useOutboundRecords.js（宪法 12）。
  */
 import { INSPECTION_STATUS_LABELS, INSPECTION_STATUS_TAGS } from '@/api/shipping'
 import GlassButton from '@/components/GlassButton.vue'
-import ShippingPrintDialog from './print/ShippingPrintDialog.vue'
 import { useOutboundRecords } from './composables/useOutboundRecords'
 
 const {
   loading, list, total, page, pageSize, searchForm,
   handleSearch, handlePageChange, handleSizeChange,
-  printDialog, openPrint,
+  printingId, openPrint,
 } = useOutboundRecords()
 </script>
 
