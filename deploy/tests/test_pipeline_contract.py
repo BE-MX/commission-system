@@ -262,6 +262,33 @@ def test_verified_release_closes_migration_journal(tmp_path, monkeypatch):
     assert json.loads(journal.read_text())["status"] == "completed"
 
 
+def test_recovery149_rejects_unpinned_or_cloud_only_before_source_preparation(pipeline):
+    pipeline.args.recover_migration_149 = True
+    pipeline.args.revision = None
+    with pytest.raises(RuntimeError, match="pinned"):
+        publish.publish(pipeline.args)
+    pipeline.args.revision = "a" * 40
+    pipeline.args.cloud_only = True
+    with pytest.raises(RuntimeError, match="full office/cloud"):
+        publish.publish(pipeline.args)
+    pipeline.prepare.assert_not_called()
+
+
+def test_recovery149_prepare_only_propagates_flag_without_migration_or_activation(pipeline, monkeypatch):
+    pipeline.args.recover_migration_149 = True
+    pipeline.args.revision = "a" * 40
+    pipeline.args.prepare_only = True
+    monkeypatch.setattr(schema_release, "check_recovery", Mock())
+    migrate = Mock()
+    monkeypatch.setattr(schema_release, "migrate", migrate)
+    publish.publish(pipeline.args)
+    assert pipeline.prepare.call_args.kwargs["recover_149"] is True
+    assert schema_release.preflight.call_args.args[0]["recover_149"] is True
+    migrate.assert_not_called()
+    pipeline.activate.assert_not_called()
+    pipeline.office_activate.assert_not_called()
+
+
 def test_extension_changes_rebuild_frontend_and_corrupt_cache_is_rejected(tmp_path, monkeypatch):
     monkeypatch.setattr(publish, "ROOT", tmp_path)
     monkeypatch.setattr(publish, "STATE", tmp_path / "state")

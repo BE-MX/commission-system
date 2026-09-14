@@ -985,3 +985,12 @@ Mac 同事的英文网页中私聊按钮标识为 `Profile details`，原选择�
 **交接人**：亮哥  
 **交接日期**：待定  
 **接手人**：待定
+## 2026-09-14 迁移 149 超长编号故障修复（合并交付，待生产恢复）
+
+分支 `codex/migration-149-recovery`，基点 `15dcd7a9`。生产用户提供 `.deploy_state/schema-writers.json`：原始147→148→旧149，`failed-after-ddl`，办公室 CommissionSystem/WhatsAppConnector、北京 ark-backend、新加坡 shipment-tracking-mcp 原本运行且均记录为 stopped。当前服务状态尚待服务器确认。
+
+本轮通过现有配置只读查询共享库：版本为148；149的三个列（reviewed_by unsigned int nullable、reviewed_at datetime nullable、review_remark varchar500 nullable）与 reviewed_by→ark_users.id 外键全部存在；版本列为 varchar32。旧 revision `149_domestic_order_review_columns` 长33，是 DDL落地但版本写入失败的根因。未执行生产DDL/DML、未修改恢复记录、未启停服务。
+
+迁移编号缩短为 `149_dom_order_review_columns`；兼容已有结构则复用，仅补缺项，异常结构拒绝，不stamp。新增仅针对该事故的 `--recover-migration-149 --revision <full-sha>` 发布参数，保留原始运行基线，核验DB148/新149及四个writer清单，准备模式只读验证，正式恢复沿统一DB锁/Alembic/应用激活/健康验证链路，成功才关闭journal。重试即使DB已到新149仍恢复完整发布；失败不重启旧代码。使用方法与脚本更新前提见 deploy/README.md。
+
+验证：部署测试80 passed、11项Linux文件系统测试在Windows跳过；迁移隔离测试34 passed；实库`validate_existing(require_complete=True)`只读验证通过；独立审查无阻断项，补了提交后重读版本、当前148/新149完整性、prepare-only和固定候选测试。项目约定全量检查仍被4项无关UI旧债阻挡，增量代码检查无违规；git diff --check通过，git_sweep --no-fetch已执行（远端仅本地引用快照）。用户已授权将本次修复合并 main 并推送 origin；fetch 确认 main 与 origin/main 均为基点15dcd7a9，无上游差异。本轮不执行生产恢复，服务状态仍需服务器核验。

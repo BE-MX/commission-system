@@ -66,6 +66,23 @@ deploy\deploy.bat --revision <full-commit-sha> --migration-credentials <protecte
 
 迁移恢复证据在 `.deploy_state/schema-writers.json`。`stopping`、`running-ddl`、`upgraded`、`failed-after-ddl`、`recovery-required` 等未完成阶段都阻断新一轮发布，即使数据库已到 head、没有 pending 也不能绕过。所有发布目标验证完成后才写 `completed`。检查实际结构、原始 writer 基线及当前应用版本后处理恢复记录，不能直接删除日志重跑。
 
+### 2026-09-14：149 版本编号超长的专项恢复
+
+旧 revision `149_domestic_order_review_columns` 长 33 字符，超过 `alembic_version.version_num` 的 32 字符。已只读确认的现场是版本停在 148，而 149 的三个审核字段与外键都已存在。修正版使用 `149_dom_order_review_columns`（27 字符）；迁移先严格校验已有列类型、可空性及外键，复用兼容对象，只补缺项，不 stamp、不删除字段。
+
+此专项入口只接受原始 `failed-after-ddl`、147→148→旧149 的完整日志，四个 writer 原本均 running 且有完整停止证据。原始日志保存在 `recovery_original` 中；当前清单必须完全一致。当前数据库必须为 148 或修正版149，代码唯一 head 必须为修正版149。其他事故仍阻断，不能把此开关当通用强制发布。
+
+在生产恢复获得授权、服务器已具备本次修复的部署脚本后，使用经审查的完整提交 SHA 固定候选。先执行只准备命令，检查通过后再执行完整恢复：
+
+```powershell
+deploy\deploy.bat --recover-migration-149 --revision <reviewed-full-commit-sha> --prepare-only
+deploy\deploy.bat --recover-migration-149 --revision <reviewed-full-commit-sha>
+```
+
+仍使用原有受限 DBA 凭据，可按需加 `--migration-credentials`。只准备阶段不启停服务、不执行 DDL、不改迁移日志；办公室服务若因原事故仍停止，允许准备。正式恢复重新取得数据库发布锁、核验结构及四个 writer，保持原始运行基线，确认全部停止后由 Alembic 完成迁移版本登记。随后沿正常入口激活办公室/北京后端及静态站，恢复原本运行的附属 writer，全部成功才关闭恢复记录。任何恢复失败保留记录，不自动启动旧代码；后续仍须使用同一固定候选和专项入口核验后重试。
+
+此入口要求完整办公室/云发布，不支持 `--cloud-only`、`--migrate-only` 或未固定 `--revision`。部署脚本自身不会在运行中切换到新版本；如果服务器启动入口仍是旧代码，应在维护窗口核对办公室服务已停止后，将服务器 checkout 快进到经审查的修复提交，再运行新入口。不能从未安装服务的候选 worktree 直接启动完整发布，也不能删除日志以绕过旧入口。
+
 旧 `rollback.bat` 已阻断，不能再消费旧 `dist_backup` 并 SCP 覆盖受管版本。失败激活在 schema 不变时有自动回退。已完成发布的人工回退必须先核对候选旧代码是否认识当前 schema，再按受管后端与静态发布流程执行；不得直接覆盖 `current` 下文件或降级数据库。
 
 ## 验证
