@@ -105,6 +105,11 @@ export const MENU_GROUPS = {
       'semifinished:read', 'semifinished:write', 'semifinished:admin',
     ],
   },
+  colorwork: {
+    title: '库存色块图',
+    icon: Brush,
+    anyPermission: ['colorwork_download:read', 'colorwork_edit:read', 'colorwork_master:read'],
+  },
   domestic: {
     title: '内贸订单',
     icon: Tickets,
@@ -1510,6 +1515,41 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'governance', title: '变更历史', icon: Document, order: 30,
       permission: 'governance_log:read',
+    },
+  },
+
+  // ── 库存色块图工作台（独立子站点，iframe 嵌入；方舟管入口与页面权限）────────
+  {
+    path: '/colorwork/download',
+    name: 'ColorworkDownload',
+    component: () => import('@/views/colorwork/ColorworkFrame.vue'),
+    title: '库存图直接下载',
+    permission: 'colorwork_download:read',
+    menu: {
+      group: 'colorwork', title: '库存图直接下载', icon: Collection, order: 10,
+      permission: 'colorwork_download:read',
+    },
+  },
+  {
+    path: '/colorwork/edit',
+    name: 'ColorworkEdit',
+    component: () => import('@/views/colorwork/ColorworkFrame.vue'),
+    title: '实时库存图修改',
+    permission: 'colorwork_edit:read',
+    menu: {
+      group: 'colorwork', title: '实时库存图修改', icon: EditPen, order: 20,
+      permission: 'colorwork_edit:read',
+    },
+  },
+  {
+    path: '/colorwork/master',
+    name: 'ColorworkMaster',
+    component: () => import('@/views/colorwork/ColorworkFrame.vue'),
+    title: '原始库存图文件',
+    permission: 'colorwork_master:read',
+    menu: {
+      group: 'colorwork', title: '原始库存图文件', icon: Picture, order: 30,
+      permission: 'colorwork_master:read',
     },
   },
 
