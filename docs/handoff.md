@@ -1,3 +1,13 @@
+## 2026-09-15 库存色块生产 401（代码交付，未部署）
+
+修复分支 `codex/colorwork-prod-routing`，用户已授权合并 main 并推送 origin；本轮不部署。只读复现：新加坡经办公室隧道请求 `/api/colorwork/workbench/api/health` 返回 `401 {"code":401,"message":"unauthorized"}`，响应带 `x-powered-by: Express`；该响应来自 WhatsApp Connector，办公室与工作台默认端口同为 8787。北京运行代码为 `7015e3625`，`ark-colorwork` 为 not-found/inactive、8787 无监听、没有 colorwork/current.json。用户所述“已部署”未覆盖北京内部模块。
+
+修复在部署入口纳管两个公网入口 `/api/colorwork/` 整段：新加坡经证书校验的 TLS 转北京，SSO 签发、会话、文件均落同一北京实例；已知 `.work` Origin 转换成上游 Origin，其余保留由后端拒绝。工作台健康后先切北京再切新加坡；配置摘要漂移阻断，语法/reload/真实域名 readiness 失败恢复原配置。外部 writer 在路由激活前恢复。提供 `--colorwork-routing-only` 专项（要求已有健康模块）并接入普通发布。没有改办公室 WhatsApp 服务、数据库或业务数据。办公室直连入口不属于本次公网路由覆盖。
+
+验证：发布回归 117 passed / 11 skipped（Windows 跳过现有 Linux 静态发布用例）；独立审查未发现 P0/P1/P2。经 `deploy.bat --colorwork-routing-only --prepare-only` 在两机生成候选并通过 Nginx 语法检查，未修改活动配置、未 reload/启停服务；准备状态在 `.deploy_state/colorwork-routing.json`，服务器候选在 `/etc/nginx/.ark-backups/colorwork/`，保留用于正式发布前核验。增量约定检查无违规、diff 格式检查通过；完整约定检查仍被 AssetTagEditor small 按钮及 AssetLibrary/ProductionOrderManage/AIManager 三项行数基线阻断。Git 巡检为 --no-fetch 本地快照。
+
+未完成：生产发布未获本轮授权；需通过统一入口先部署北京工作台，再激活两站路由。办公室 SSH 的本机 2223 通道当前拒绝连接；跨实例 JWT 一致性、真实账号三个入口与文件访问必须在发布后验收，readiness 不代表 SSO 成功。首次素材导入要求仍见工作台 README。不得将当前修复准备状态报告为线上已恢复。
+
 ## 2026-09-15 发货检验扫描引导（合并推送，未发布）
 
 用户要求扫描按钮采用外贸报工同款动效，并加入提供的出库单示例图。发货检验待扫码页现有旋转光圈、二维码点阵和往返扫描线，下方示例突出右上角二维码，可点击调用微信图片预览。隐藏页面暂停动效，减少动态偏好关闭连续动画。示例原图原样存于 `miniprogram/assets/shipping-scan-example.png`。

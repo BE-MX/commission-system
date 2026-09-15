@@ -117,6 +117,18 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 ## 库存色块内部模块
 
 北京后端发布同时纳管 colorwork-workbench：浏览器使用方舟 `/api/colorwork/workbench/`，不使用子域名。
+完整发布和 `--cloud-only` 均准备两站 `/api/colorwork/` 路由；北京模块激活并通过 readiness 后，
+先切北京再切新加坡，使 `.work` 的 SSO、会话、文件全部落北京。办公室 8787 属于 WhatsApp Connector，
+不得用它承接色块工作台。两个入口仍使用既有方舟 Bearer 鉴权，工作台使用路径受限 Cookie。
+新加坡到北京校验 TLS；仅将两个合法 `.work` Origin 转为北京 Origin，其他 Origin 保留给后端拒绝。
+26MiB 请求上限覆盖 25MiB JPG 和 8MiB PSD 分片；禁用 upstream 重试与缓存，SSO 请求不写访问日志。
+
+已有健康北京模块时，可用 `deploy\deploy.bat --colorwork-routing-only --prepare-only` 单独准备路由，
+正式应用去掉 `--prepare-only`。此入口不安装模块，不支持与普通发布参数混用；北京模块未就绪时在改配置前阻断。
+准备期只生成候选并检查 Nginx 语法，不 reload；正式切换前复核原配置摘要，失败恢复原文件并重载。
+路由备份在各服务器 `/etc/nginx/.ark-backups/colorwork/`，专项状态在本地 `.deploy_state/colorwork-routing.json`。
+每站激活后核验真实域名 readiness；新加坡失败时北京可能已切换，按 `completed` 查看实际完成范围。
+
 `remote_backend.py` 依次调用 `colorwork_release.py` prepare/activate，自动准备固定 Node/pnpm、构建、受限运行配置、
 隔离 D1 验证、正式 D1/R2 整体备份与迁移、回环运行服务 `ark-colorwork` 及 readiness 检查。
 `--prepare-only` 不启动服务、不改正式 D1/R2。同候选复用校验后的制品，同成功候选重跑不重启模块。

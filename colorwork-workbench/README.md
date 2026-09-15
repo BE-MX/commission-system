@@ -7,7 +7,7 @@
 ## 接入与权限
 
 ```
-方舟三个菜单 → GET /api/colorwork/sso?view=library|inventory|master
+方舟三个菜单 → GET /api/colorwork/sso?view=library|inventory|master（两个公网入口均路由北京）
              → 同源 iframe /api/colorwork/workbench/api/auth/ark
              → 方舟后端流式转发 → 内部 workerd
 ```
@@ -43,7 +43,10 @@
 配置项：`COLORWORK_INTERNAL_ORIGIN` 仅后端使用，北京默认 `http://127.0.0.1:8787`；
 SSO 可显式配置 `COLORWORK_SSO_SECRET`，否则从 JWT_SECRET_KEY 按 SSO 用途派生；回源密钥可显式配置 COLORWORK_SYNC_KEY，
 否则以用途隔离的 HMAC 派生。部署自动同步至内部服务，不向浏览器或构建日志公开。
-本轮纳管北京（leshine.cloud）；若办公室主站也接入，须由服务器回源同一北京数据实例并对齐 SSO 配置，不能另建独立数据副本。
+内部模块只在北京运行；`.work` 的整个 `/api/colorwork/` 前缀由新加坡代理北京，SSO 签发也在北京完成，
+无需办公室另设工作台 SSO 密钥或数据副本。两后端须能验证同一主站 Bearer，沿用现有跨实例认证约定。
+办公室 8787 是 WhatsApp Connector，不能直接用作工作台；办公室直连入口不在本次公网路由范围。
+两站路由的准备、激活和恢复见 `deploy/README.md`。
 
 首次业务使用仍需在「原始库存图文件」导入 87 个工作台素材与 23 组 JPG/PSD。代码仓库只含目录清单，不含真实素材。
 未导入时普通用户看到明确的首次设置状态，不把空库当成可生成成品的完整上线。

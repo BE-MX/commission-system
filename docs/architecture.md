@@ -398,6 +398,9 @@ WhatsApp Web → Chrome/Edge MV3 extension（1.2.6 起）→ `leshine.cloud` API
 ## 库存色块工作台同源集成
 
 `/colorwork/download|edit|master` 菜单 → 方舟 SSO → `/api/colorwork/workbench/` 同源 iframe。
-该路径复用主站现有 `/api` 路由到 FastAPI，由 colorwork.proxy 流式转发北京回环 workerd（8787）；
+两个公网入口的 `/api/colorwork/`（含 SSO 签发）统一路由北京 FastAPI，
+由 colorwork.proxy 流式转发北京回环 workerd（8787）；`.work` 经新加坡 TLS 代理北京，
+不经过办公室后端的 8787（该端口属于 WhatsApp Connector）。部署入口准备两站路由，
+北京模块健康后才依次激活北京、新加坡配置；当前现场与未部署项见 `docs/handoff.md`。
 浏览器不连接内部地址，不需要额外 DNS/TLS。工作台保留独立的 D1/R2 数据格式与逐视图会话权限，
 作为内部运行模块由统一部署入口纳管，持久存储唯一归属北京，详见 `colorwork-workbench/README.md`。

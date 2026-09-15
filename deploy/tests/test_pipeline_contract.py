@@ -15,6 +15,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
 import cloud_backend
+import colorwork_routing
 import office_release
 import publish
 import schema_release
@@ -111,6 +112,8 @@ def pipeline(tmp_path, monkeypatch):
     monkeypatch.setattr(publish, "build_lan", Mock(return_value=tmp_path / "lan"))
     monkeypatch.setattr(cloud_backend, "prepare", Mock(return_value={"schema": "head"}))
     monkeypatch.setattr(cloud_backend, "activate", Mock(return_value={}))
+    monkeypatch.setattr(colorwork_routing, "prepare", Mock(return_value=[{"payload": {"region": "cloud"}}, {"payload": {"region": "office"}}]))
+    monkeypatch.setattr(colorwork_routing, "activate", Mock(side_effect=lambda item, source: {"region": item["payload"]["region"]}))
     monkeypatch.setattr(static_sync, "prepare", Mock(return_value={"target": "example.test", "request": {"root": "/registered"}, "bytes": 0}))
     activate = Mock(return_value={})
     monkeypatch.setattr(static_sync, "activate", activate)
@@ -150,8 +153,30 @@ def test_prepare_only_never_stops_or_activates_writers(pipeline):
     pipeline.activate.assert_not_called()
     pipeline.office_activate.assert_not_called()
     schema_release.migrate.assert_not_called()
+    colorwork_routing.activate.assert_not_called()
     assert not (pipeline.state / "publish-success.json").exists()
     assert json.loads((pipeline.state / "publish-current.json").read_text())["status"] == "prepared"
+
+
+def test_colorwork_routes_activate_after_beijing_and_before_static(pipeline, monkeypatch):
+    events = []
+    monkeypatch.setattr(cloud_backend, "activate", lambda _: events.append("beijing"))
+    def route(item, source):
+        region = item["payload"]["region"]
+        events.append(region)
+        return {"region": region}
+    monkeypatch.setattr(colorwork_routing, "activate", route)
+    pipeline.activate.side_effect = lambda _: events.append("static")
+    publish.publish(pipeline.args)
+    assert events == ["beijing", "cloud", "office", "static"]
+
+
+def test_colorwork_failure_never_marks_publish_success(pipeline):
+    colorwork_routing.activate.side_effect = RuntimeError("module unavailable")
+    with pytest.raises(RuntimeError, match="module unavailable"):
+        publish.publish(pipeline.args)
+    pipeline.activate.assert_not_called()
+    assert not (pipeline.state / "publish-success.json").exists()
 
 
 def test_render_preflight_runs_as_module_before_connector_or_activation():
