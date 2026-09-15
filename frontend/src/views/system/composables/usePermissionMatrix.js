@@ -17,6 +17,10 @@ import { ROLE_TEMPLATES } from '@/config/roleTemplates'
 
 /** 前缀 → 中文行名（矩阵行头） */
 export const PREFIX_LABELS = {
+  mini_export: '小程序 · 外贸报工',
+  mini_domestic: '小程序 · 内贸报工',
+  mini_lookup: '小程序 · 订单速查',
+  mini_shipping: '小程序 · 出库检验',
   employee: '员工属性',
   supervisor: '主管关系',
   customer: '客户管理',
@@ -142,6 +146,7 @@ export const PAGE_PARENTS = {
 
 /** 矩阵行分组（视觉分组条，按导航语义排序） */
 const ROW_GROUPS = [
+  { label: '小程序 · 功能入口', prefixes: ['mini_export', 'mini_domestic', 'mini_lookup', 'mini_shipping'] },
   { label: '经营 · 提成与客户', prefixes: ['commission', 'commission_my', 'payment', 'customer', 'sales_automation', 'customer_opportunity', 'customer_radar', 'employee', 'supervisor'] },
   { label: '单据 · 订单与物流', prefixes: [
     'invoice', 'invoice_price', 'invoice_okki', 'invoice_repair', 'invoice_private_filter', 'festival', 'festival_order', 'order_intelligence', 'domestic',

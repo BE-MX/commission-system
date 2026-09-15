@@ -1,58 +1,47 @@
-// pages/entry/entry.js — 登录后的模块选择（外贸报工 / 内贸报工）
-// 零 import，纯回调（与其余页面同一套风格）
 var app = getApp()
 var beijingNow = require('../../utils/time').beijingNow
+var navigation = require('../../utils/navigation')
 
 Page({
-  data: {
-    statusBarHeight: 20,
-    userName: '',
-    greeting: '你好，',
-    entered: false
-  },
-
+  data: { statusBarHeight: 20, userName: '', avatarLetter: '', greeting: '你好，', entries: [], loading: true, error: '' },
   onLoad: function () {
-    var info = wx.getSystemInfoSync()
+    this.setData({ statusBarHeight: wx.getSystemInfoSync().statusBarHeight || 20 })
+  },
+  onShow: function () { this.loadEntries() },
+  onHide: function () { this._requestId = (this._requestId || 0) + 1 },
+  onUnload: function () { this._requestId = (this._requestId || 0) + 1 },
+  loadEntries: function () {
+    if (!app.globalData.token) { wx.reLaunch({ url: '/pages/login/login' }); return }
+    var self = this
+    var requestId = this._requestId = (this._requestId || 0) + 1
+    var token = app.globalData.token
     var hour = beijingNow().getHours()
-    var greeting = '你好，'
-    if (hour < 6) greeting = '夜里好，'
-    else if (hour < 11) greeting = '早上好，'
-    else if (hour < 14) greeting = '中午好，'
-    else if (hour < 18) greeting = '下午好，'
-    else greeting = '晚上好，'
-
-    this.setData({
-      statusBarHeight: info.statusBarHeight || 20,
-      userName: (app.globalData.userInfo && app.globalData.userInfo.name) || '',
-      greeting: greeting
+    var name = (app.globalData.userInfo || {}).name || ''
+    app.globalData.allowedEntries = []
+    this.setData({ loading: true, error: '', entries: [], userName: name, avatarLetter: name.charAt(0),
+      greeting: hour < 6 ? '夜里好，' : hour < 11 ? '早上好，' : hour < 14 ? '中午好，' : hour < 18 ? '下午好，' : '晚上好，' })
+    function current() { return self._requestId === requestId && app.globalData.token === token }
+    function failed() { if (current()) self.setData({ loading: false, error: '功能加载失败，请检查网络后重试' }) }
+    wx.request({
+      url: app.globalData.baseUrl + '/api/mini/auth/verify',
+      header: { Authorization: 'Bearer ' + token }, timeout: 15000,
+      success: function (res) {
+        if (!current()) return
+        if (res.statusCode === 401) { app.logout(); return }
+        if (res.statusCode !== 200 || !res.data || !res.data.valid || !Array.isArray(res.data.allowed_entries)) { failed(); return }
+        var entries = navigation.visibleEntries(res.data.allowed_entries)
+        app.globalData.allowedEntries = entries.map(function (entry) { return entry.id })
+        var user = res.data.user || app.globalData.userInfo
+        if (user) { app.globalData.userInfo = user; wx.setStorageSync('ark_user', user) }
+        var userName = (user || {}).name || ''
+        self.setData({ loading: false, entries: entries, userName: userName, avatarLetter: userName.charAt(0) })
+      },
+      fail: failed
     })
   },
-
-  onShow: function () {
-    // 每次回到本页重放入场：从模块退回来时也有方向感，而不是硬切
-    var self = this
-    this.setData({ entered: false })
-    setTimeout(function () { self.setData({ entered: true }) }, 30)
+  onEntryTap: function (event) {
+    if (!this.data.loading && !this.data.error) navigation.open(event.currentTarget.dataset.id)
   },
-
-  onExportTap: function () {
-    // 外贸是 tabBar 页，只能 switchTab
-    wx.switchTab({ url: '/pages/scan/scan' })
-  },
-
-  onDomesticTap: function () {
-    // 内贸页现在也是 tabBar 页，同样只能 switchTab
-    wx.switchTab({ url: '/pages/domestic/scan/scan' })
-  },
-
-  onLookupTap: function () {
-    wx.navigateTo({ url: '/pages/domestic/lookup/lookup' })
-  },
-
-  onShippingTap: function () {
-    wx.navigateTo({ url: '/pages/shipping/check/check' })
-  },
-
   onLogoutTap: function () {
     wx.showModal({
       title: '退出登录',

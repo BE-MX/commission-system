@@ -1249,3 +1249,10 @@ v1.6.0自动接管：请求可传 `mode:draft|auto`（默认draft）。auto响�
 ### Research fact contract (2026-09-08)
 
 Agent research context now includes `fact_contract.version=registered_research_facts_v1` and the live source/key/value-type registry intersection. MCP checks it before claim and repeats it in the claim receipt. Official company-page research supports candidate, research-only `research.source.company_identity`, `research.source.business_profile`, `research.source.product_catalog`, and `research.source.business_contact` string facts in addition to `business.industry`. This does not verify identity, authorize outreach, or promote customer qualification. Unsupported fact keys, source combinations and types return actionable 400 codes without echoing submitted values. Existing Run/lease, evidence closure and review checks remain mandatory. No schema migration is required.
+
+
+### 小程序功能导航授权（2026-09-15）
+
+`GET /api/mini/auth/verify` 保留 `valid`、`user` 字段，新增 `allowed_entries: string[]`，可能值为 `export`、`domestic`、`lookup`、`shipping`；按实时角色授权返回。对应权限分别为 `mini_export:write`、`mini_domestic:write`、`mini_lookup:read`、`mini_shipping:write`，超级管理员全部可见。未授权业务接口返回 HTTP 403 / `detail.code=FORBIDDEN`。
+
+外贸 `/scan/*`、内贸报工/历史、订单速查 `/domestic/lookup`、出库检验 `/shipping-inspection/*` 分别校验入口权限。内贸订单/图片供内贸报工与速查共享。公开 `/domestic/track` 和 `/domestic/track-image` 继续只按原签名范围访问，不要求入口授权。

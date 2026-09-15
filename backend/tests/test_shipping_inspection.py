@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app.auth.models import ArkUser, ArkUserExternalBinding
+from app.auth.models import ArkUser, ArkUserExternalBinding, ArkRole, ArkPermission
 from app.auth.utils import create_access_token
 from app.core.database import get_db
 from app.mini.auth import create_mini_token
@@ -50,6 +50,14 @@ def product_display_source(db):
 
 def _user(db, username="inspector"):
     user = ArkUser(username=username, password_hash="x", real_name=username, is_active=True)
+    # Business-flow fixtures explicitly grant the new mini inspection capability.
+    # No-permission HTTP boundaries are covered by test_mini_navigation.py.
+    permission = db.query(ArkPermission).filter_by(code="mini_shipping:write").first()
+    if permission is None:
+        permission = ArkPermission(code="mini_shipping:write", module="mini_shipping", action="write", label="小程序出库检验")
+    role = ArkRole(name="mini-inspector-" + username, label="测试检验角色")
+    role.permissions.append(permission)
+    user.roles.append(role)
     db.add(user)
     db.commit()
     db.refresh(user)

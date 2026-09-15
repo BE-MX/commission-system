@@ -4,7 +4,7 @@
 
 <view class="tabbar safe-bottom" wx:if="{{!hide}}">
   <!-- 0 外贸报工：扫描框 — 四角取景框 + 扫描线 -->
-  <view class="tab-item {{selected === 0 ? 'active' : ''}}" bindtap="onTabTap" data-index="0">
+  <view wx:if="{{canExport}}" class="tab-item {{selected === 0 ? 'active' : ''}}" bindtap="onTabTap" data-index="0">
     <view class="tab-icon icon-scan">
       <view class="sc-c sc-tl"></view>
       <view class="sc-c sc-tr"></view>
@@ -17,7 +17,7 @@
 
   <!-- 1 内贸报工：叠卡 — 两张错位卡片，对应「按数量拆批」；
        与扫描框同为 2px 描边风格，不用实心块（实心横条会读成菜单图标） -->
-  <view class="tab-item tab-item--domestic {{selected === 1 ? 'active' : ''}}" bindtap="onTabTap" data-index="1">
+  <view wx:if="{{canDomestic}}" class="tab-item tab-item--domestic {{selected === 1 ? 'active' : ''}}" bindtap="onTabTap" data-index="1">
     <view class="tab-icon icon-layers">
       <view class="ly-back"></view>
       <view class="ly-front"></view>

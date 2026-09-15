@@ -11,6 +11,7 @@ from app.auth.models import ArkUser
 from app.auth.service import get_user_permissions
 from app.mini.auth import get_current_mini_user, create_mini_token, jscode2session
 from app.mini import service
+from app.mini.access import allowed_entries, require_mini_entry
 from app.mini.schemas import (
     MiniBindRequest, MiniLoginRequest,
     ScanSubmitRequest, RevokeRequest,
@@ -116,9 +117,10 @@ async def mini_bind(body: MiniBindRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/auth/verify", summary="验证 token 有效性")
-async def mini_verify(current_user: ArkUser = Depends(get_current_mini_user)):
+async def mini_verify(current_user: ArkUser = Depends(get_current_mini_user), db: Session = Depends(get_db)):
     return {
         "valid": True,
+        "allowed_entries": allowed_entries(db, current_user),
         "user": {"id": current_user.id, "name": current_user.real_name or current_user.username, "wx_id": current_user.wx_id},
     }
 
@@ -129,7 +131,7 @@ async def mini_verify(current_user: ArkUser = Depends(get_current_mini_user)):
 async def scan_product(
     order_product_id: int,
     sign: str = Query(..., description="二维码 HMAC 签名"),
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("export")),
     db: Session = Depends(get_db),
 ):
     return service.scan_product(db, order_product_id, sign, current_user)
@@ -138,7 +140,7 @@ async def scan_product(
 @router.post("/scan/submit", summary="提交报工")
 async def scan_submit(
     body: ScanSubmitRequest,
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("export")),
     db: Session = Depends(get_db),
 ):
     result = service.submit_report(db, body.progress_id, body.order_product_id, current_user)
@@ -150,7 +152,7 @@ async def scan_submit(
 
 @router.get("/scan/history", summary="今日报工记录")
 async def scan_history(
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("export")),
     db: Session = Depends(get_db),
 ):
     return service.get_today_history(db, current_user.id)
@@ -164,7 +166,7 @@ async def scan_history_all(
     date_end: str = Query(None, description="结束日期 YYYY-MM-DD"),
     keyword: str = Query(None, description="产品型号模糊搜索"),
     order_no: str = Query(None, description="所属批次号"),
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("export")),
     db: Session = Depends(get_db),
 ):
     return service.get_history(db, current_user.id, page, page_size,
@@ -176,7 +178,7 @@ async def scan_history_all(
 async def scan_overview(
     date_start: str = Query(None, description="开始日期 YYYY-MM-DD"),
     date_end: str = Query(None, description="结束日期 YYYY-MM-DD"),
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("export")),
     db: Session = Depends(get_db),
 ):
     return service.get_overview(db, date_start=date_start, date_end=date_end)
@@ -186,7 +188,7 @@ async def scan_overview(
 async def scan_overview_detail(
     date: str = Query(..., description="日期 YYYY-MM-DD"),
     process_id: int = Query(..., description="工序 ID"),
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("export")),
     db: Session = Depends(get_db),
 ):
     return service.get_overview_detail(db, date=date, process_id=process_id)
@@ -195,7 +197,7 @@ async def scan_overview_detail(
 @router.post("/scan/revoke", summary="撤销报工")
 async def scan_revoke(
     body: RevokeRequest,
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("export")),
     db: Session = Depends(get_db),
 ):
     result = service.revoke_report(db, body.progress_id, current_user)
@@ -231,13 +233,13 @@ async def vision_recognize(
 # ── 内贸报工 ──────────────────────────────────────────────
 # 业务逻辑全在 app/domestic/report_service，这里只做薄路由。
 # 与上面的外贸报工两点不同：二维码前缀是 ARK-D/ARK-DU、报工可按数量或逐件。
-# 登录仍沿用 mini token；角色权限只用来决定报工模式。
+# 登录沿用 mini token；入口权限控制访问，报工模式权限决定数量或逐件操作。
 
 @router.get("/domestic/scan/{item_id}", summary="内贸扫码：取明细与可报数量")
 async def domestic_scan(
     item_id: int,
     sign: str = Query(..., description="二维码 HMAC 签名"),
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("domestic")),
     db: Session = Depends(get_db),
 ):
     valid, signed_id = domestic_report_service.verify_qr_data(
@@ -265,7 +267,7 @@ async def domestic_scan(
 async def domestic_unit_scan(
     unit_id: int,
     sign: str = Query(..., description="逐件二维码 HMAC 签名"),
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("domestic")),
     db: Session = Depends(get_db),
 ):
     valid, signed_id = domestic_report_service.verify_unit_qr_data(
@@ -295,7 +297,7 @@ async def domestic_unit_scan(
 @router.post("/domestic/scan/submit", summary="内贸报工（带数量，可拆批）")
 async def domestic_submit(
     body: DomesticSubmitRequest,
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("domestic")),
     db: Session = Depends(get_db),
 ):
     try:
@@ -330,7 +332,7 @@ async def domestic_submit(
 @router.post("/domestic/scan/revoke", summary="内贸撤销报工")
 async def domestic_revoke(
     body: DomesticRevokeRequest,
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("domestic")),
     db: Session = Depends(get_db),
 ):
     try:
@@ -341,7 +343,7 @@ async def domestic_revoke(
 
 @router.get("/domestic/history", summary="内贸今日报工记录")
 async def domestic_history(
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("domestic")),
     db: Session = Depends(get_db),
 ):
     records = domestic_report_service.list_today_reports(db, current_user.id)
@@ -357,7 +359,7 @@ async def domestic_history(
 async def domestic_history_all(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("domestic")),
     db: Session = Depends(get_db),
 ):
     items, total = domestic_report_service.list_reports(
@@ -369,7 +371,7 @@ async def domestic_history_all(
 @router.get("/domestic/images/{rel_path:path}", summary="内贸参考图（小程序）")
 async def domestic_image(
     rel_path: str,
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("domestic", "lookup")),
 ):
     """小程序 token 里没有 RBAC 声明，走不了主站那个 domestic:read 图片端点，
     所以这里给一个同源的 mini 版本——车间要在手机上看清参考图才能做对活。"""
@@ -389,7 +391,7 @@ async def domestic_orders(
     page_size: int = Query(20, ge=1, le=100),
     keyword: str = Query(""),
     status: int | None = Query(None),
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("domestic", "lookup")),
     db: Session = Depends(get_db),
 ):
     _ = current_user
@@ -403,7 +405,7 @@ async def domestic_orders(
 @router.get("/domestic/lookup", summary="订单速查：单号或扫码直接查进度")
 async def domestic_lookup(
     code: str = Query(..., description="二维码内容 / 系统单号 / 客户订单号，服务端自行分辨"),
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("lookup")),
     db: Session = Depends(get_db),
 ):
     _ = current_user
@@ -485,7 +487,7 @@ async def domestic_track_image(
 @router.get("/domestic/orders/{order_id}", summary="内贸订单明细进度")
 async def domestic_order_detail(
     order_id: int,
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("domestic", "lookup")),
     db: Session = Depends(get_db),
 ):
     _ = current_user
@@ -504,7 +506,7 @@ async def domestic_order_detail(
 @router.post("/shipping-inspection/scan", summary="发货检验：扫出库单二维码")
 async def shipping_scan(
     body: ShippingScanRequest,
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("shipping")),
     db: Session = Depends(get_db),
 ):
     _ = current_user
@@ -531,7 +533,7 @@ async def shipping_upload_photo(
     file: UploadFile = File(...),
     outbound_record_id: str = Form(...),
     item_id: str | None = Form(None),
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("shipping")),
     db: Session = Depends(get_db),
 ):
     # 先拿声明大小挡一刀超大请求体，避免全量读进内存后才校验（M3）
@@ -575,7 +577,7 @@ async def shipping_upload_photo(
 @router.delete("/shipping-inspection/photos/{photo_id}", summary="发货检验：删除照片（仅提交前）")
 async def shipping_delete_photo(
     photo_id: int,
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("shipping")),
     db: Session = Depends(get_db),
 ):
     try:
@@ -588,7 +590,7 @@ async def shipping_delete_photo(
 @router.post("/shipping-inspection/submit", summary="发货检验：提交验货单")
 async def shipping_submit(
     body: ShippingSubmitRequest,
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("shipping")),
     db: Session = Depends(get_db),
 ):
     try:
@@ -612,7 +614,7 @@ async def shipping_submit(
 @router.get("/shipping-inspection/images/{rel_path:path}", summary="验货照片（小程序）")
 async def shipping_image(
     rel_path: str,
-    current_user: ArkUser = Depends(get_current_mini_user),
+    current_user: ArkUser = Depends(require_mini_entry("shipping")),
 ):
     """小程序 token 里没有 RBAC 声明，走不了主站那个 shipping_inspection:read 图片端点，
     所以这里给一个同源的 mini 版本——小程序显示缩略图用。"""

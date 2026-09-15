@@ -3,6 +3,7 @@
 // 内贸独有的只有「报工数量」和图文要求，都收在 domestic-sheet 里。
 // 零 import，纯回调（与其余页面同一套风格）
 var app = getApp()
+var navigation = require('../../../utils/navigation')
 
 var SWIPE_THRESHOLD = 60
 var SWIPE_OPEN = -72
@@ -56,6 +57,7 @@ Page({
   _requestId: '',
 
   onLoad: function (options) {
+    if (!navigation.guard('domestic')) return
     var info = wx.getSystemInfoSync()
     this.setData({ statusBarHeight: info.statusBarHeight || 20 })
     // 本页是 tabBar 页，正常不带 query；保留兼容旧的 navigateTo 链接
@@ -65,8 +67,9 @@ Page({
   },
 
   onShow: function () {
+    if (!navigation.guard('domestic')) return
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
-      this.getTabBar().setData({ selected: 1, hide: false })
+      this.getTabBar().setData({ selected: 1, hide: false, canExport: navigation.canAccess('export'), canDomestic: navigation.canAccess('domestic') })
     }
     var user = app.globalData.userInfo
     if (user) {
@@ -146,6 +149,7 @@ Page({
         if (!m) {
           // 扫到外贸卡：说清楚再切过去，别让工人一头雾水
           if (/^ARK-P:/.test(raw)) {
+            if (!navigation.canAccess('export')) { wx.showToast({ title: '未开通外贸报工权限', icon: 'none' }); return }
             wx.showToast({ title: '这是外贸流转卡，帮你切到外贸报工', icon: 'none', duration: 2000 })
             setTimeout(function () { wx.switchTab({ url: '/pages/scan/scan' }) }, 1200)
             return

@@ -502,6 +502,11 @@ def seed_role_permissions(db: Session):
         ("salary:read",  "salary", "read",  "查看员工档案/规则参数/工资批次"),
         ("salary:write", "salary", "write", "维护员工档案与部门映射 / 导入考勤社保 / 试算与人工调整"),
         ("salary:admin", "salary", "admin", "改职级表与规则参数 / 锁定解锁工资批次 / 查看解密银行卡"),
+        # 小程序功能入口，独立于主站业务权限和内贸报工模式。
+        ("mini_export:write", "mini_export", "write", "小程序：外贸报工"),
+        ("mini_domestic:write", "mini_domestic", "write", "小程序：内贸报工"),
+        ("mini_lookup:read", "mini_lookup", "read", "小程序：订单速查"),
+        ("mini_shipping:write", "mini_shipping", "write", "小程序：出库检验"),
         # 发货检验（2026-09-01）：OKKI 出库单打印 → 小程序扫码拍照验货 → 验货单归档
         ("shipping_inspection:read",  "shipping_inspection", "read",  "查看出库单与验货单"),
         ("shipping_inspection:write", "shipping_inspection", "write", "打印出库单 / 维护验货照片"),
@@ -579,6 +584,7 @@ def seed_role_permissions(db: Session):
 
     # 高爆炸半径权限只能人工授予；启动 seed 不得静默扩大既有 admin 的生产控制权。
     manual_grant_codes = {
+        "mini_export:write", "mini_domestic:write", "mini_lookup:read", "mini_shipping:write",
         "domestic_customer:admin",
         "operations:admin",
         "customer_opportunity:confirm_without_order",

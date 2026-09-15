@@ -2,6 +2,7 @@
 // 一个输入框吃三种：系统单号 / 客户订单号 / 扫码，交给服务端分辨。
 // 零 import，纯回调（与其余页面同一套风格）
 var app = getApp()
+var navigation = require('../../../utils/navigation')
 var routing = require('../../../utils/domestic-routing')
 
 // 工序三态 → 颜色与文案（车间抬眼要能立刻分辨）
@@ -13,6 +14,7 @@ function stateOf(step) {
 }
 
 Page({
+  onShow: function () { navigation.guard('lookup') },
   data: {
     statusBarHeight: 20,
     keyword: '',
@@ -22,6 +24,7 @@ Page({
   },
 
   onLoad: function (options) {
+    if (!navigation.guard('lookup')) return
     var info = wx.getSystemInfoSync()
     this.setData({ statusBarHeight: info.statusBarHeight || 20 })
     if (options && options.code) {

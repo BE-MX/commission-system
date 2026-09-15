@@ -1,6 +1,7 @@
 // pages/scan/scan.js — 零 import，纯回调
 
 var app = getApp()
+var navigation = require('../../utils/navigation')
 
 var SWIPE_THRESHOLD = 60
 var SWIPE_OPEN = -72
@@ -49,14 +50,16 @@ Page({
   _swipeOpenList: '',
 
   onLoad: function () {
+    if (!navigation.guard('export')) return
     var sysInfo = wx.getSystemInfoSync()
     var isDev = app.globalData.baseUrl.indexOf('127.0.0.1') >= 0 || app.globalData.baseUrl.indexOf('localhost') >= 0
     this.setData({ statusBarHeight: sysInfo.statusBarHeight || 20 })
   },
 
   onShow: function () {
+    if (!navigation.guard('export')) return
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
-      this.getTabBar().setData({ selected: 0 })
+      this.getTabBar().setData({ selected: 0, canExport: navigation.canAccess('export'), canDomestic: navigation.canAccess('domestic') })
     }
     var user = app.globalData.userInfo
     if (user) {
@@ -285,6 +288,7 @@ Page({
     // 内贸逐件码优先识别（ARK-DU 是独立签名域）。
     var domesticUnit = raw.match(/^ARK-DU:(\d+):([a-f0-9]+)$/)
     if (domesticUnit) {
+      if (!navigation.canAccess('domestic')) { this.setData({ state: 'idle' }); wx.showToast({ title: '未开通内贸报工权限', icon: 'none' }); return }
       this.setData({ state: 'idle' })
       app.globalData.pendingDomesticScan = {
         unitId: parseInt(domesticUnit[1]),
@@ -298,6 +302,7 @@ Page({
     // switchTab 不能带 query，payload 先存 globalData，内贸页 onShow 取走
     var domestic = raw.match(/^ARK-D:(\d+):([a-f0-9]+)$/)
     if (domestic) {
+      if (!navigation.canAccess('domestic')) { this.setData({ state: 'idle' }); wx.showToast({ title: '未开通内贸报工权限', icon: 'none' }); return }
       this.setData({ state: 'idle' })
       app.globalData.pendingDomesticScan = {
         itemId: parseInt(domestic[1]),

@@ -2,6 +2,7 @@
 App({
   globalData: {
     userInfo: null,
+    allowedEntries: [],
     token: null,
     // 外贸页扫到 ARK-D 码时的暂存位：switchTab 不能带 query 参数，
     // 内贸页 onShow 取走后立即置回 null（只消费一次）
@@ -26,6 +27,8 @@ App({
 
   logout: function (options) {
     if (options && options.manual) wx.setStorageSync('ark_manual_logout', true)
+    this.globalData.pendingDomesticScan = null
+    this.globalData.allowedEntries = []
     this.globalData.token = null
     this.globalData.userInfo = null
     wx.removeStorageSync('ark_token')
@@ -34,6 +37,8 @@ App({
   },
 
   saveAuth: function (token, user) {
+    this.globalData.pendingDomesticScan = null
+    this.globalData.allowedEntries = []
     wx.removeStorageSync('ark_manual_logout')
     this.globalData.token = token
     this.globalData.userInfo = user

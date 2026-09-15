@@ -2,9 +2,11 @@
 // 扫出库单二维码（ARK-I: 原文直交后端验签，小程序不解析格式）→ 整单/明细拍照 → 提交。
 // 零 import 纯回调，状态机 idle→loading→ready→submitting，与其余页面同一套风格。
 var app = getApp()
+var navigation = require('../../../utils/navigation')
 var sc = require('../../../utils/shipping-check')
 
 Page({
+  onShow: function () { navigation.guard('shipping') },
   data: {
     statusBarHeight: 20,
     state: 'idle',            // idle | loading | ready | submitting
@@ -29,6 +31,7 @@ Page({
   _imageBatch: 0,
 
   onLoad: function () {
+    if (!navigation.guard('shipping')) return
     var info = wx.getSystemInfoSync()
     this.setData({ statusBarHeight: info.statusBarHeight || 20 })
   },

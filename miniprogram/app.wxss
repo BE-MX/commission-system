@@ -16,6 +16,13 @@ page {
   --brand-green-bg: #E8F5EF;
   --brand-green-ink: #005434;   /* 浅绿底上的文字色，保证对比度 */
 
+  /* 工作台导航的中性色与工具图标色。 */
+  --nav-bg: #F5F6F2;
+  --nav-border: #E2E6DC;
+  --nav-slate-bg: #ECF0F3;
+  --nav-slate-ink: #5B7180;
+  --nav-orange-bg: #F7EBDF;
+  --nav-orange-ink: #A46E3E;
   --gray-bg: #F2F3F5;
   --card-bg: #FFFFFF;
   --text-main: #1A1A1A;
