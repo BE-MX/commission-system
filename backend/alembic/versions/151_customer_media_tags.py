@@ -4,7 +4,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "151_customer_media_tags"
-down_revision = "150_domestic_item_guest"
+down_revision = "152_shipping_media_recall"
 branch_labels = None
 depends_on = None
 
