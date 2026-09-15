@@ -25,6 +25,20 @@
 
 实时库存仍回源方舟 `/api/colorwork/inventory-status`；23 套模板按 okki 库存口径计算，未改业务规则。
 
+## 库存图直接下载
+
+工作台不再渲染内置顶栏、账号/页面路径栏或移动端底部导航，三个视图通过方舟主站菜单进入。
+
+下载页只列出「库存图JPG」，不再显示业务修改成品列表；历史成品文件继续保留。
+每个产品 / Radio 提供「下载原始库存图JPG」和「下载实时库存图JPG」。后者打开模态预览，
+复用 `InventoryBoard` 的 LIVE PREVIEW、30 秒刷新及仅下载流程，不创建历史成品。
+原图缩略图预览与原图批量 ZIP 下载保留；弹窗支持关闭按钮、Escape 和焦点返回。
+
+只有 library 权限的账号通过 `/api/templates/:id/inventory` 读取共享快照，
+通过 `/api/templates/:id/inventory/validate` 在绘图前后校验源版本、母版、库存修订及规格。
+这两个入口复用现有快照与校验服务；库存 PATCH 和成品写入仍要求 inventory 权限。
+回归运行 `node --test scripts/qa-library-live-download.mjs`。
+
 ## 部署
 
 统一入口仍是 `deploy/deploy.bat`。北京后端 prepare/activate 自动调用 `deploy/colorwork_release.py`：

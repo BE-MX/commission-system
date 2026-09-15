@@ -108,6 +108,7 @@ export const MENU_GROUPS = {
   colorwork: {
     title: '库存色块图',
     icon: Brush,
+    iconBadge: 'BY 加程',
     anyPermission: ['colorwork_download:read', 'colorwork_edit:read', 'colorwork_master:read'],
   },
   domestic: {

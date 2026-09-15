@@ -1069,6 +1069,15 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 ## 库存色块图工作台集成（`/api/colorwork`，2026-09-14）
 
+工作台下载页新增只读接口（完整前缀 `/api/colorwork/workbench`，模块会话鉴权）：
+
+| 方法 | 模块内路径 | 权限 | 说明 |
+|------|------------|------|------|
+| GET | `/api/templates/:id/inventory` | library（`colorwork_download:read`） | 当前模板、源版本、母版、共享库存规格快照，复用实时库存页快照服务及 OKKI 状态覆盖，响应禁止缓存 |
+| POST | `/api/templates/:id/inventory/validate` | library（`colorwork_download:read`） | 实时 JPG 生成前后校验；提交 `expectedMasterRevision`、`expectedInventoryRevision`、`expectedSourceVersionId`、`specIds`，返回沿用的生成校验结果；版本冲突 409、无效规格 422；不提供库存修改操作 |
+
+原 `/api/inventory/:templateId` 的 PATCH 和成品写入权限保持 inventory，不因下载页功能开放。
+
 库存色块图调整台（`colorwork-workbench/`，方舟同源内部 workerd 运行模块）的方舟侧集成接口：方舟管功能入口与页面权限，工作台 UI/逻辑原样保留，详见 `docs/module-notes.md` 对应一节与 `colorwork-workbench/README.md`。
 
 | 方法 | 路径 | 权限 | 说明 |

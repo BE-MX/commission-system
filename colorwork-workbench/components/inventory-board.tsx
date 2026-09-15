@@ -21,6 +21,8 @@ import { paintPoster } from '@/lib/poster';
 type InventoryBoardProps = {
   catalog: CatalogData;
   user: { role: 'admin' | 'member'; displayName: string };
+  previewOnly?: boolean;
+  initialTemplateId?: string;
 };
 
 async function responseJson<T>(response: Response): Promise<T> {
@@ -60,10 +62,10 @@ function formatTime(value: string | null) {
   return value ? new Date(value).toLocaleString('zh-CN') : '尚未修改';
 }
 
-export function InventoryBoard({ catalog, user }: InventoryBoardProps) {
+export function InventoryBoard({ catalog, user, previewOnly = false, initialTemplateId }: InventoryBoardProps) {
   const { colors: catalogColors, templates } = catalog;
   const products = useMemo(() => productNames(templates), [templates]);
-  const [templateId, setTemplateId] = useState(templates[0].id);
+  const [templateId, setTemplateId] = useState(initialTemplateId ?? templates[0].id);
   const [state, setState] = useState<TemplateState | null>(null);
   const [draft, setDraft] = useState<Record<string, InventoryStatus>>({});
   const [query, setQuery] = useState('');
@@ -87,6 +89,9 @@ export function InventoryBoard({ catalog, user }: InventoryBoardProps) {
     [state?.availableLengths],
   );
 
+  const snapshotPath = useCallback((id: string) => previewOnly
+    ? `/api/templates/${id}/inventory` : `/api/inventory/${id}`, [previewOnly]);
+
   const load = useCallback(async (id = templateId, silent = false) => {
     const seq = ++loadSeq.current;
     if (!silent) {
@@ -96,7 +101,7 @@ export function InventoryBoard({ catalog, user }: InventoryBoardProps) {
       setConflict(false);
     }
     try {
-      const next = await responseJson<TemplateState>(await workbenchFetch(`/api/inventory/${id}`, { cache: 'no-store' }));
+      const next = await responseJson<TemplateState>(await workbenchFetch(snapshotPath(id), { cache: 'no-store' }));
       // 过期响应丢弃：用户已切换模板/Radio；静默轮询响应落地时若已有未保存修改也不覆盖草稿
       if (seq !== loadSeq.current) return;
       if (silent && dirtyRef.current) return;
@@ -109,7 +114,7 @@ export function InventoryBoard({ catalog, user }: InventoryBoardProps) {
     } finally {
       if (!silent && seq === loadSeq.current) setLoading(false);
     }
-  }, [templateId]);
+  }, [templateId, snapshotPath]);
 
   useEffect(() => { void load(templateId); }, [load, templateId]);
 
@@ -121,7 +126,7 @@ export function InventoryBoard({ catalog, user }: InventoryBoardProps) {
     if (!state) return;
     const checkVersion = async () => {
       try {
-        const latest = await responseJson<TemplateState>(await workbenchFetch(`/api/inventory/${state.templateId}`, { cache: 'no-store' }));
+        const latest = await responseJson<TemplateState>(await workbenchFetch(snapshotPath(state.templateId), { cache: 'no-store' }));
         if (latest.sourceVersion.id !== state.sourceVersion.id) {
           setConflict(true);
           setError(`源文件已从 S${state.sourceVersion.number ?? '旧'} 更新为 S${latest.sourceVersion.number ?? '新'}。本页未保存修改不会自动覆盖新版。`);
@@ -132,7 +137,7 @@ export function InventoryBoard({ catalog, user }: InventoryBoardProps) {
     };
     window.addEventListener('focus', checkVersion);
     return () => window.removeEventListener('focus', checkVersion);
-  }, [state]);
+  }, [state, snapshotPath]);
 
   const masterSelection = useMemo(
     () => activeMasterSelection(state?.selection ?? []),
@@ -275,7 +280,7 @@ export function InventoryBoard({ catalog, user }: InventoryBoardProps) {
 
   async function validateCurrent(snapshot: TemplateState, snapshotTemplateId: string) {
     if (dirty) throw new Error('请先保存库存状态，再导出图片。');
-    await responseJson(await workbenchFetch(`/api/inventory/${snapshotTemplateId}/validate`, {
+    await responseJson(await workbenchFetch(`${snapshotPath(snapshotTemplateId)}/validate`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -351,8 +356,8 @@ export function InventoryBoard({ catalog, user }: InventoryBoardProps) {
   }, [draft, state]);
 
   return (
-    <div className="inventory-workspace">
-      <section className="inventory-controls" aria-label="共享库存状态">
+    <div className={previewOnly ? 'inventory-download-preview' : 'inventory-workspace'}>
+      {!previewOnly && <section className="inventory-controls" aria-label="共享库存状态">
         <header className="panel-intro">
           <span>SHARED INVENTORY STATUS</span>
           <h1>维护当前库存与补货状态</h1>
@@ -429,14 +434,16 @@ export function InventoryBoard({ catalog, user }: InventoryBoardProps) {
           <button onClick={() => void saveStatuses()} disabled={!dirty || saving || conflict}><Save size={17} />{saving ? '正在保存…' : '保存共享状态'}</button>
         </div>
         {notice && <output className="success inventory-notice">{notice}</output>}
-      </section>
+      </section>}
 
       <aside className="inventory-preview" aria-label="库存提示图预览">
         <div className="preview-heading"><div><span>LIVE PREVIEW</span><h2>{item.productName}</h2><p>{item.radio}</p></div><span className={ready ? 'render-ready' : ''}>{ready ? dirty ? '未保存预览' : '最新预览' : '正在更新'}</span></div>
+        {previewOnly && error && <p className="error" role="alert">{error}</p>}
+        {previewOnly && notice && <output className="success">{notice}</output>}
         <div className="canvas-frame" style={{ aspectRatio: `${item.width} / ${item.height}` }}><canvas ref={canvasRef} width={item.width} height={item.height} aria-label="库存提示图预览" /></div>
         <div className="static-image-note"><FileImage size={17} /><p><strong>下载的是静态 JPG</strong><span>恢复到货后，需要重新导出并发送给客户。</span></p></div>
-        <button className="primary-action" onClick={() => void exportJpg(true)} disabled={!state || !ready || dirty || exporting || conflict}><Download size={18} />{exporting ? '正在核对并生成…' : '保存成品并下载 JPG'}</button>
-        <button className="secondary-action" onClick={() => void exportJpg(false)} disabled={!state || !ready || dirty || exporting || conflict}><Download size={16} />只下载最新 JPG</button>
+        {!previewOnly && <button className="primary-action" onClick={() => void exportJpg(true)} disabled={!state || !ready || dirty || exporting || conflict}><Download size={18} />{exporting ? '正在核对并生成…' : '保存成品并下载 JPG'}</button>}
+        <button className={previewOnly ? 'primary-action' : 'secondary-action'} onClick={() => void exportJpg(false)} disabled={!state || !ready || dirty || exporting || conflict}><Download size={16} />{exporting ? '正在核对并生成…' : previewOnly ? '下载实时库存图JPG' : '只下载最新 JPG'}</button>
         <button className="secondary-action" onClick={() => void load(item.id)} disabled={loading || dirty || saving || exporting}><RefreshCw size={16} />刷新服务器最新状态</button>
       </aside>
     </div>

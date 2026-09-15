@@ -50,7 +50,10 @@
         :index="group.key"
       >
         <template #title>
-          <el-icon><component :is="group.icon" /></el-icon>
+          <el-icon class="nav-group-icon">
+            <component :is="group.icon" />
+            <span v-if="group.iconBadge" class="nav-icon-badge">{{ group.iconBadge }}</span>
+          </el-icon>
           <span>{{ group.title }}</span>
         </template>
         <template v-for="item in group.items" :key="item.path">
@@ -165,6 +168,26 @@ function rememberClosedGroup(key) {
 </script>
 
 <style scoped>
+.nav-group-icon { position: relative; overflow: visible; }
+.nav-icon-badge {
+  position: absolute;
+  right: -12px;
+  bottom: -9px;
+  z-index: 1;
+  padding: 1px 3px;
+  border: 1px solid var(--color-gold-muted);
+  border-radius: 3px;
+  background: var(--sidebar-bg-from);
+  color: var(--color-gold);
+  font-family: var(--font-body);
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 10px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .aside {
   background: linear-gradient(180deg, var(--sidebar-glass-from) 0%, var(--sidebar-glass-to) 100%);
   border-right: 1px solid rgba(255, 255, 255, 0.06);

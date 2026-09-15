@@ -1,3 +1,11 @@
+## 2026-09-15 库存图直接下载与实时预览（代码交付，未发布）
+
+任务分支 `codex/colorwork-live-download`。按后续截图要求去掉工作台深色顶栏与下方账号/页面路径栏，移动端底部内置导航及其留白同步移除；三个页面由方舟菜单进入；方舟「库存色块图」分组图标右下角增加 `BY 加程` 金色角标（由 navigation.js 配置）。下载页移除业务修改图列表，保留原始图缩略图与批量 ZIP；栏目改为「库存图JPG」，逐模板提供「下载原始库存图JPG」及「下载实时库存图JPG」。实时按钮打开模态弹窗，直接复用 InventoryBoard 的 LIVE PREVIEW、30 秒自动刷新、JPG 绘制与前后两次版本校验；只下载，不创建历史成品。
+
+为仅有下载页面权限的账号增加 library 鉴权的模板 inventory 快照与 validate 路由，复用现有服务，不放开 inventory PATCH 或成品写入权限。原始库存数据、历史成品与 OKKI 状态判断规则保留。
+
+验证：主站与工作台构建、TypeScript 检查、8 项导航回归及 7 项下载权限/界面事件/共享导出/URL 回归通过，独立审查未发现阻断问题。全仓约定检查仍受 AssetTagEditor small 按钮及 AssetLibrary、ProductionOrderManage、AIManager 三项既有基线问题阻断。Git 巡检使用 --no-fetch 本地快照。浏览器连接不可用，尚未执行真实浏览器视觉验收；用户已授权合并 main 并推送 origin，本次不执行生产发布。
+
 ## 2026-09-15 库存色块局域网 401（补齐代码交付，未部署办公室）
 
 分支 `codex/colorwork-lan`。用户反馈 `.cloud` 已正常、局域网仍401；只读再次确认办公室隧道工作台健康路径返回 WhatsApp Connector 的 Express 401，而 `.cloud` 返回200。上轮只覆盖公网 Nginx，未覆盖局域网直连办公室。本轮沿用同一故障的合并推送授权交付代码，不执行生产部署。
