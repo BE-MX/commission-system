@@ -794,6 +794,7 @@ def list_orders(
     order_type: str = "",
     order_channel: str = "",
     customer_source: str = "",
+    owner_user_id: int | None = None,
     date_start: date | None = None,
     date_end: date | None = None,
     sort_field: str = "",
@@ -829,6 +830,10 @@ def list_orders(
     if customer_source:
         q = q.filter(DomesticOrder.customer_id.in_(
             db.query(DomesticCustomer.id).filter(DomesticCustomer.customer_source == customer_source)
+        ))
+    if owner_user_id:
+        q = q.filter(DomesticOrder.customer_id.in_(
+            db.query(DomesticCustomer.id).filter(DomesticCustomer.owner_user_id == owner_user_id)
         ))
     if date_start:
         q = q.filter(DomesticOrder.order_date >= date_start)

@@ -14,6 +14,11 @@
       <el-form-item label="客户名称">
         <el-input v-model="form.customer_name" placeholder="输入客户店名，支持模糊查询" maxlength="200" clearable @clear="$emit('search')" />
       </el-form-item>
+      <el-form-item label="归属销售">
+        <el-select v-model="form.owner_user_id" placeholder="全部销售" filterable clearable @change="$emit('search')">
+          <el-option v-for="item in options.owners || []" :key="item.value" :label="item.label" :value="item.value" />
+        </el-select>
+      </el-form-item>
       <el-form-item label="订单状态">
         <el-select v-model="form.status" placeholder="全部状态" clearable @change="$emit('search')">
           <el-option v-for="s in ORDER_STATUS" :key="s.value" :label="s.label" :value="s.value" />
@@ -78,7 +83,7 @@ const { advancedVisible, draft, advancedTags, openAdvanced, clearDraft, applyAdv
 .order-search-heading, .order-create-actions, .order-search-actions, .order-filter-footer { display: flex; align-items: center; gap: 8px; }
 .order-search-heading { justify-content: space-between; gap: 16px; margin-bottom: 12px; }
 .order-search-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
-.order-search-form { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) 140px auto; align-items: end; gap: 12px; }
+.order-search-form { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) 150px 130px auto; align-items: end; gap: 12px; }
 .order-search-form :deep(.el-form-item) { margin-bottom: 0; min-width: 0; }
 .order-search-form :deep(.el-form-item__label) { margin-bottom: 6px; line-height: 20px; }
 .order-search-form :deep(.el-input__wrapper), .order-search-form :deep(.el-select__wrapper) { height: 36px; min-height: 36px; box-sizing: border-box; }
