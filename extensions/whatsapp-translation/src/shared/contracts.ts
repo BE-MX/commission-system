@@ -96,14 +96,14 @@ export type TargetLanguage = (typeof TARGET_LANGUAGES)[number]
 export const DEFAULT_OUTGOING_LANGUAGE: TargetLanguage = 'en'
 
 export const LANGUAGE_LABELS: Record<string, string> = {
-  ar: 'العربية',
-  de: 'Deutsch',
-  en: 'English',
-  es: 'Español',
-  fr: 'Français',
-  ja: '日本語',
-  nl: 'Nederlands',
-  sv: 'Svenska',
+  ar: '阿拉伯语（العربية）',
+  de: '德语（Deutsch）',
+  en: '英语（English）',
+  es: '西班牙语（Español）',
+  fr: '法语（Français）',
+  ja: '日语（日本語）',
+  nl: '荷兰语（Nederlands）',
+  sv: '瑞典语（Svenska）',
   'zh-CN': '中文',
 }
 

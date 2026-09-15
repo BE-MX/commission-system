@@ -152,7 +152,7 @@ export function createToolbarView(shadow: ShadowRoot, handlers: ToolbarHandlers)
   let autoDetail: Pick<AutoState, 'segments' | 'sentCount' | 'knowledgeNote'> = { segments: [], sentCount: 0 }
   function updateAuto() {
     const toggle = root.querySelector<HTMLButtonElement>('.auto-toggle')
-    if (toggle) { toggle.textContent = autoActive ? '停止接管' : '自动接管'; toggle.setAttribute('aria-pressed', String(autoActive)) }
+    if (toggle) { toggle.textContent = autoActive ? '停止接管' : '自动接管（测试中）'; toggle.setAttribute('aria-pressed', String(autoActive)) }
     const note = root.querySelector<HTMLElement>('.auto-note'); if (note) { note.textContent = autoNote; note.hidden = !autoNote }
     const previous = root.querySelector<HTMLDetailsElement>('.auto-reply-detail')
     const wasOpen = previous?.open ?? false
@@ -241,7 +241,7 @@ export function createToolbarView(shadow: ShadowRoot, handlers: ToolbarHandlers)
     }
 
     if (handlers.onAutoReply) {
-      const toggle = el('button', 'chip auto-toggle', '自动接管'); toggle.type = 'button'; toggle.title = '开启后仅当前聊天自动生成并发送回复'; toggle.addEventListener('click', handlers.onAutoReply); bar.append(toggle)
+      const toggle = el('button', 'chip auto-toggle', '自动接管（测试中）'); toggle.type = 'button'; toggle.title = '开启后仅当前聊天自动生成并发送回复'; toggle.addEventListener('click', handlers.onAutoReply); bar.append(toggle)
     }
     if (model.status.kind === 'error') {
       const message = messageForCode(model.status.code)
