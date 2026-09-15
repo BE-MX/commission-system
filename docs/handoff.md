@@ -1,3 +1,13 @@
+## 2026-09-15 充值凭证统一办公室路由（已发布，历史凭证待登录验证）
+
+分支 `codex/voucher-office`，目录 `D:/MyProgram/commission-system-codex-voucher-office`。新加坡和北京增加仅匹配充值提交/凭证读取的 Nginx 片段；北京经证书验证 HTTPS 到新加坡，沿原8002隧道访问办公室。原用户 Authorization、接口权限和凭证归属校验保留；两级21MiB请求体、禁缓存、禁自动重试，其余业务API不变。新增 `deploy.bat --voucher-routing-only [--prepare-only]`，具有两机先准备、当前配置摘要检查、单机失败回滚和独立状态记录，不发布应用或迁移数据。
+
+验证：部署测试100 passed/11 skipped（原有外部集成测试）；内存SQLite充值审核回归12 passed；独立agent审查无必修项；两机实际 `--prepare-only` 成功，片段 Nginx 语法及真实配置锚点通过，未修改线上路由或reload。全局约定检查被4个已有UI门禁项阻挡（AssetTagEditor旧small按钮、AssetLibrary/ProductionOrderManage/AIManager行数基线过期），本任务未改这些前端文件。Git本地巡检已运行，未fetch，不代表远端最新状态。
+
+现场只读证据：北京仍使用 `D:\WORKSOURCE\domestic` 默认存储，解析为Linux工作目录内的同名字面目录且不存在；数据库仅发现申请id1有凭证路径，北京无对应文件。办公室SSH本机2223通道不可用，未核实办公室原件或跨实例JWT一致性。匿名403不能代替登录后端到端成功；须用真实账号检查原申请在两入口可读。如原件不在办公室，须先找到来源，不能通过伪造文件或改账务记录消除404。代码未提交、未合并、未推送，历史凭证未迁移。
+
+用户明确授权「发布」后，通过 `deploy.bat --voucher-routing-only` 完成两机激活；发布状态 `.deploy_state/voucher-routing.json` 两项均为 activated。09:20–09:21（北京时间）对两域名各发送无凭据的 GET 凭证/POST 充值请求，均返回403 JSON `Not authenticated` 和 `private, no-store`，未创建充值申请。新加坡访问日志记录北京IP发来的两条对应请求，确认转发实际生效。两机完整 `nginx -t` 均通过（保留其他站点既有警告），北京公网 `/health` 为 ok/database=connected。备份：新加坡 `/etc/nginx/.ark-backups/domestic-voucher/office-41354855288b4ecfb3f7a3ef68730dcc.conf`；北京 `/etc/nginx/.ark-backups/domestic-voucher/cloud-332d7097f59f4dce8f7d83148ad088fd.conf`。未执行其他应用发布、数据库写入或审批操作。
+
 ## 2026-09-14 生产订单列表操作栏与导出（合并交付，未部署）
 
 分支 `codex/production-export`，目录 `D:/MyProgram/commission-system-codex-production-export`。订单维度操作列最小宽度调整为260，按钮使用 flex 换行，避免全局单元格 nowrap 裁切后续操作；后面的“打印订单”改为“导出”，复用既有 Word 导出接口，保留单号和当前审核人参数。原有报表打印下拉保留。

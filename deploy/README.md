@@ -96,6 +96,17 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 
 ## 当前边界
 
+### 充值凭证统一办公室存储
+
+`deploy\deploy.bat --voucher-routing-only --prepare-only` 仅准备新加坡、北京的两个凭证路由并执行独立 Nginx 语法检查，不切换流量。经授权后移除 `--prepare-only` 应用；不与普通应用发布、迁移、`--revision` 或 `--cloud-only` 混用。此专项使用当前工作目录中的路由脚本及配置，执行前必须完成 diff 审查。
+
+- 新加坡 `/api/domestic/customers/{id}/recharges` 和 `/api/domestic/customer-requests/{id}/voucher` 走原有办公室 `127.0.0.1:8002` 隧道；北京同路径经证书校验的 HTTPS 转发到新加坡 `leshine.work`。北京主域 HTTPS 和既有 IP 入口都覆盖。
+- 转发完整原始 URI、表单和用户 Authorization，仍由办公室后端执行归属/审核权限、文件类型与大小检查。文件存储使用办公室 `DOMESTIC_STORAGE_ROOT`（默认 `D:\WORKSOURCE\domestic`）。其他内贸 API 不变；不迁移 COS、不复制数据库或文件。
+- 两级网关请求体限额为 21MiB（后端文件上限20MiB），凭证禁止缓存，充值禁止 upstream 自动重试。办公室隧道不可用时请求失败，不回退北京落盘。
+- 两机都准备成功后，先切新加坡再切北京；激活前核对当前配置摘要，漂移则阻断。每台切换前备份至该机 `/etc/nginx/.ark-backups/domestic-voucher/`；全局 `nginx -t` 或 reload 失败恢复原文件。状态写在本地 `.deploy_state/voucher-routing.json`。北京失败时新加坡可能已经生效，查 `completed`，不要误报两机都成功。
+- 准备检查只验证片段语法和目标文件结构；完整运行配置在激活时检查。发布后需用真实申请分别在 `.work`、`.cloud` 查看图片/PDF，并核实同一笔申请、权限及文件内容。没有凭证的记录保持404；禁止为了验证制造充值或审批。
+- 历史凭证先按数据库相对路径核对办公室原文件；若文件在其他实例，只能在确认来源和目标、核对摘要并保留原件后另行迁移。修改路由不会自动找回缺失文件。
+
 - COS 文件迁移暂缓，办公室文件和北京 `/data/customer-media` 保持原位置。
 - `pm.leshine.cloud` 尚缺 DNS/TLS，已列为 pending；不得未开通就显示成功。
 - hair/video 权威源码仍在本仓库之外；独立 MCP、同步器、中继、OpenClaw、n8n 和终端安装分别列出，不盲目升级 latest。

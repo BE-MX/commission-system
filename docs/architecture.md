@@ -36,6 +36,8 @@ hair.leshine.work / video.leshine.work → 新加坡现有静态站
 
 完整功能盘点、地域测速和目标部署结构见 [部署调整方案](requirements/2026-09-05-deployment-adjustment-plan.md)，实际落地与阻断见 [实施记录](requirements/2026-09-05-deployment-adjustment-implementation.md)。
 
+**充值凭证归属（2026-09-15，两机路由已上线）**：充值提交与凭证读取统一办公室本地文件服务。`.work` 经原有新加坡隧道访问办公室；`.cloud` 仅将这两个 API 经验证证书的 HTTPS 转发至 `.work`，保留用户鉴权，其余内贸 API 仍在当前实例执行。存库路径保持相对路径；不设置北京落盘 fallback。办公室断网时两入口的凭证功能均不可用。已用访问日志确认北京转发及匿名鉴权拦截；真实登录与历史凭证原件仍待验证。配置、准备/切换和恢复入口见 [部署说明](../deploy/README.md#充值凭证统一办公室存储)。
+
 ## 技术栈
 
 | 层级 | 技术选型 | 说明 |
