@@ -12,8 +12,8 @@ from app.colorwork.service import (
     build_sso_url,
     compute_template_statuses,
     issue_sso_token,
+    sync_secret,
 )
-from app.core.config import get_settings
 from app.core.database import get_db
 
 router = APIRouter()
@@ -66,14 +66,8 @@ def inventory_status(
     仅供工作台 worker 服务端调用（共享密钥头校验），不暴露给浏览器直访；
     只出有货状态，不出具体库存数量。
     """
-    settings = get_settings()
-    if not settings.COLORWORK_SYNC_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="COLORWORK_SYNC_KEY 未配置",
-        )
     if not x_colorwork_sync_key or not hmac.compare_digest(
-        x_colorwork_sync_key, settings.COLORWORK_SYNC_KEY
+        x_colorwork_sync_key, sync_secret()
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -1,5 +1,7 @@
 'use client';
 
+import { workbenchFetch, workbenchUrl } from '@/lib/workbench-url';
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle, CheckCircle2, Download, FileImage, RefreshCw, Save,
@@ -94,7 +96,7 @@ export function InventoryBoard({ catalog, user }: InventoryBoardProps) {
       setConflict(false);
     }
     try {
-      const next = await responseJson<TemplateState>(await fetch(`/api/inventory/${id}`, { cache: 'no-store' }));
+      const next = await responseJson<TemplateState>(await workbenchFetch(`/api/inventory/${id}`, { cache: 'no-store' }));
       // 过期响应丢弃：用户已切换模板/Radio；静默轮询响应落地时若已有未保存修改也不覆盖草稿
       if (seq !== loadSeq.current) return;
       if (silent && dirtyRef.current) return;
@@ -119,7 +121,7 @@ export function InventoryBoard({ catalog, user }: InventoryBoardProps) {
     if (!state) return;
     const checkVersion = async () => {
       try {
-        const latest = await responseJson<TemplateState>(await fetch(`/api/inventory/${state.templateId}`, { cache: 'no-store' }));
+        const latest = await responseJson<TemplateState>(await workbenchFetch(`/api/inventory/${state.templateId}`, { cache: 'no-store' }));
         if (latest.sourceVersion.id !== state.sourceVersion.id) {
           setConflict(true);
           setError(`源文件已从 S${state.sourceVersion.number ?? '旧'} 更新为 S${latest.sourceVersion.number ?? '新'}。本页未保存修改不会自动覆盖新版。`);
@@ -249,7 +251,7 @@ export function InventoryBoard({ catalog, user }: InventoryBoardProps) {
       .filter((spec) => (draft[spec.specId] ?? spec.status) !== spec.status)
       .map((spec) => ({ specId: spec.specId, status: draft[spec.specId] ?? spec.status }));
     try {
-      const next = await responseJson<TemplateState>(await fetch(`/api/inventory/${item.id}`, {
+      const next = await responseJson<TemplateState>(await workbenchFetch(`/api/inventory/${item.id}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -273,7 +275,7 @@ export function InventoryBoard({ catalog, user }: InventoryBoardProps) {
 
   async function validateCurrent(snapshot: TemplateState, snapshotTemplateId: string) {
     if (dirty) throw new Error('请先保存库存状态，再导出图片。');
-    await responseJson(await fetch(`/api/inventory/${snapshotTemplateId}/validate`, {
+    await responseJson(await workbenchFetch(`/api/inventory/${snapshotTemplateId}/validate`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -310,7 +312,7 @@ export function InventoryBoard({ catalog, user }: InventoryBoardProps) {
         const created = await responseJson<{
           artifact: { id: string };
           upload: { jpg: string; finalize: string };
-        }>(await fetch('/api/artifacts', {
+        }>(await workbenchFetch('/api/artifacts', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
@@ -321,8 +323,8 @@ export function InventoryBoard({ catalog, user }: InventoryBoardProps) {
             expectedSourceVersionId: exportState.sourceVersion.id,
           }),
         }));
-        await responseJson(await fetch(created.upload.jpg, { method: 'PUT', body: jpg }));
-        await responseJson(await fetch(created.upload.finalize, {
+        await responseJson(await workbenchFetch(created.upload.jpg, { method: 'PUT', body: jpg }));
+        await responseJson(await workbenchFetch(created.upload.finalize, {
           method: 'PATCH',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ jpgOnly: true }),
@@ -395,7 +397,7 @@ export function InventoryBoard({ catalog, user }: InventoryBoardProps) {
               const section = item.sections.find((value) => value.key === entry.section)?.label;
               return (
                 <article className="inventory-color-row" key={entry.entryId}>
-                  <img src={color.image} alt={`${color.code} 色块`} />
+                  <img src={workbenchUrl(color.image)} alt={`${color.code} 色块`} />
                   <div className="inventory-color-title"><strong>{color.code}</strong>{section && <span>{section}</span>}{color.legacy && <span>历史色</span>}</div>
                   <div className="spec-statuses">
                     {entry.lengths.map((length) => {

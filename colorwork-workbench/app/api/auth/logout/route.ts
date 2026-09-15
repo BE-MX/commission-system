@@ -1,3 +1,4 @@
+import { workbenchUrl } from '@/lib/workbench-url';
 import {
   clearedSessionCookie,
   destroyLocalSession,
@@ -7,9 +8,9 @@ import {
 export async function GET(request: Request) {
   await destroyLocalSession(sessionTokenFromCookieHeader(request.headers.get('cookie')));
   const url = new URL(request.url);
-  const returnTo = url.searchParams.get('return_to');
-  const location = returnTo?.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/';
-  const secure = url.protocol === 'https:';
+  // Always return inside this module, never let a query redirect outside Ark.
+  const location = workbenchUrl('/');
+  const secure = url.protocol === 'https:' || request.headers.get('x-forwarded-proto') === 'https';
   return new Response(null, {
     status: 303,
     headers: { location, 'set-cookie': clearedSessionCookie(secure), 'cache-control': 'no-store' },

@@ -1,5 +1,7 @@
 'use client';
 
+import { workbenchFetch, workbenchUrl } from '@/lib/workbench-url';
+
 import { useCallback, useEffect, useState } from 'react';
 import { Check, Download, FileType2, FolderOpen, RefreshCw, Trash2, X } from 'lucide-react';
 import type { TemplateSummary } from '@/lib/catalog';
@@ -36,7 +38,7 @@ export function FileLibrary({ userRole, templates }: { userRole: 'admin' | 'memb
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('/api/artifacts?scope=shared', { cache: 'no-store' });
+      const response = await workbenchFetch('/api/artifacts?scope=shared', { cache: 'no-store' });
       const data = await response.json() as { artifacts?: Artifact[]; error?: string };
       if (!response.ok) throw new Error(data.error || '历史成品读取失败。');
       setArtifacts(data.artifacts ?? []);
@@ -51,7 +53,7 @@ export function FileLibrary({ userRole, templates }: { userRole: 'admin' | 'memb
 
   const archiveArtifact = async (id: string) => {
     if (!window.confirm('确认从当前下载列表移除这张业务图片吗？历史文件仍会保留。')) return;
-    const response = await fetch(`/api/artifacts/${id}`, { method: 'DELETE' });
+    const response = await workbenchFetch(`/api/artifacts/${id}`, { method: 'DELETE' });
     if (!response.ok) {
       const data = await response.json().catch(() => ({})) as { error?: string };
       setError(data.error || '移除失败，请刷新后重试。');
@@ -64,7 +66,7 @@ export function FileLibrary({ userRole, templates }: { userRole: 'admin' | 'memb
   const batchDownload = async (keys: string[], filename: string) => {
     if (!keys.length) return;
     const items = keys.map((key) => { const [kind, id] = key.split(':'); return { kind: kind === 'template' ? 'template' : 'artifact', id }; });
-    const response = await fetch('/api/downloads/zip', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ items }) });
+    const response = await workbenchFetch('/api/downloads/zip', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ items }) });
     if (!response.ok) { setError('批量下载失败，请刷新后重试。'); return; }
     const blob = await response.blob();
     const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url);
@@ -91,10 +93,10 @@ export function FileLibrary({ userRole, templates }: { userRole: 'admin' | 'memb
         {artifacts.map((item) => (
           <article className="artifact-row" key={item.id}>
             <label className="select-box"><input type="checkbox" checked={selected.includes(artifactKey(item.id))} onChange={() => toggle(artifactKey(item.id))} /><span>{selected.includes(artifactKey(item.id)) ? <Check size={14} /> : null}</span></label>
-            <button type="button" className="thumbnail-button" onClick={() => setPreview({ src: `/api/artifacts/${item.id}/download/jpg?inline=1`, name: `${item.name}.jpg` })}><img src={`/api/artifacts/${item.id}/download/jpg?inline=1`} alt={item.name} loading="lazy" /></button>
+            <button type="button" className="thumbnail-button" onClick={() => setPreview({ src: `/api/artifacts/${item.id}/download/jpg?inline=1`, name: `${item.name}.jpg` })}><img src={workbenchUrl(`/api/artifacts/${item.id}/download/jpg?inline=1`)} alt={item.name} loading="lazy" /></button>
             <div><h2>{item.name}.jpg</h2><p>{item.ownerName} · {new Date(item.createdAt).toLocaleDateString('zh-CN')}</p></div>
             <span>JPG {fileSize(item.jpgSize)}{item.masterVersion ? <><br />源 S{item.sourceVersion ?? '—'} · 母版 v{item.masterVersion} · 状态 r{item.inventoryRevision}</> : null}</span>
-            <div className="artifact-actions"><a href={`/api/artifacts/${item.id}/download/jpg`}><Download size={15} />下载 JPG</a><button type="button" onClick={() => void archiveArtifact(item.id)}><Trash2 size={15} />移除</button></div>
+            <div className="artifact-actions"><a href={workbenchUrl(`/api/artifacts/${item.id}/download/jpg`)}><Download size={15} />下载 JPG</a><button type="button" onClick={() => void archiveArtifact(item.id)}><Trash2 size={15} />移除</button></div>
           </article>
         ))}
       </div>
@@ -103,11 +105,11 @@ export function FileLibrary({ userRole, templates }: { userRole: 'admin' | 'memb
       <div className="download-toolbar section-toolbar"><label><input type="checkbox" checked={originalSelected} onChange={() => selectGroup(originalKeys, originalSelected)} disabled={!originalKeys.length} />全选原始库存图</label><button type="button" onClick={() => void batchDownload(selected.filter((key) => key.startsWith('template:')), '原始库存图.zip')} disabled={!selected.some((key) => key.startsWith('template:'))}><Download size={15} />批量下载原始库存图{selected.filter((key) => key.startsWith('template:')).length ? `（${selected.filter((key) => key.startsWith('template:')).length}）` : ''}</button></div>
       <div className="source-template-list">
         {templates.map((item) => (
-          <article key={item.id}><label className="select-box"><input type="checkbox" checked={selected.includes(templateKey(item.id))} onChange={() => toggle(templateKey(item.id))} /><span>{selected.includes(templateKey(item.id)) ? <Check size={14} /> : null}</span></label><button type="button" className="thumbnail-button" onClick={() => setPreview({ src: `/api/templates/${item.id}/download/jpg?inline=1`, name: `${item.productName}-${item.radio}.jpg` })}><img src={`/api/templates/${item.id}/download/jpg?inline=1`} alt={`${item.productName}-${item.radio}`} loading="lazy" /></button><div><strong>{item.productName}-{item.radio}.jpg</strong><span>原始库存图</span></div><a href={`/api/templates/${item.id}/download/jpg`}><Download size={15} />下载 JPG</a></article>
+          <article key={item.id}><label className="select-box"><input type="checkbox" checked={selected.includes(templateKey(item.id))} onChange={() => toggle(templateKey(item.id))} /><span>{selected.includes(templateKey(item.id)) ? <Check size={14} /> : null}</span></label><button type="button" className="thumbnail-button" onClick={() => setPreview({ src: `/api/templates/${item.id}/download/jpg?inline=1`, name: `${item.productName}-${item.radio}.jpg` })}><img src={workbenchUrl(`/api/templates/${item.id}/download/jpg?inline=1`)} alt={`${item.productName}-${item.radio}`} loading="lazy" /></button><div><strong>{item.productName}-{item.radio}.jpg</strong><span>原始库存图</span></div><a href={workbenchUrl(`/api/templates/${item.id}/download/jpg`)}><Download size={15} />下载 JPG</a></article>
         ))}
       </div>
       {userRole === 'admin' && <p className="source-note"><FileType2 size={15} />PSD 请在“原始库存图文件”中管理和下载。</p>}
-      {preview && <dialog open className="image-lightbox" aria-label={preview.name}><button type="button" className="lightbox-close" onClick={() => setPreview(null)} aria-label="关闭"><X size={22} /></button><figure><img src={preview.src} alt={preview.name} /><figcaption>{preview.name}</figcaption></figure></dialog>}
+      {preview && <dialog open className="image-lightbox" aria-label={preview.name}><button type="button" className="lightbox-close" onClick={() => setPreview(null)} aria-label="关闭"><X size={22} /></button><figure><img src={workbenchUrl(preview.src)} alt={preview.name} /><figcaption>{preview.name}</figcaption></figure></dialog>}
     </section>
   );
 }

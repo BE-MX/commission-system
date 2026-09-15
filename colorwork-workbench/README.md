@@ -1,90 +1,62 @@
-# 库存色块图调整台（colorwork-workbench）
+# 方舟库存色块图工作台
 
-库存色块图工作台：调用加程维护的标准母版，标记暂时缺货/正在补货，并生成给客户使用的库存提示 JPG。
-2026-09-14 起作为**方舟平台子站点**运行：UI 与业务逻辑保持原样，账号体系移除，入口与三个页面的访问权限由方舟 RBAC 控制。
+库存图直接下载、实时库存图修改、原始库存图文件三个页面通过方舟菜单使用。
+浏览器页面、静态资源、接口与下载全部位于主站的 `/api/colorwork/workbench/`，**不使用独立域名**。
+现有 React/vinext 界面和图像处理逻辑保留；workerd 仅作为方舟内部运行服务监听 `127.0.0.1:8787`。
 
-技术栈：vinext（Next.js 兼容层）+ React 19 + Cloudflare Workers 运行时（workerd）+ D1(SQLite) + R2（本地模拟层）。
-
-## 与方舟平台的集成
+## 接入与权限
 
 ```
-浏览器 ──► 方舟前端「库存色块图」菜单（3 个页面，各自权限码）
-              │  GET /api/colorwork/sso?view=library|inventory|master（需对应页面权限）
-              ▼  返回短命 SSO 链接（HS256，120s，claims: sub/name/views）
-         iframe ──► 工作台 /api/auth/ark?token=…&view=…
-              │  验签 → 自动开通站内账号 → 会话 Cookie（含视图清单）→ 302 /?view=…
-              ▼
-         工作台三个视图（导航按 views 过滤，API 逐视图 requireView 校验）
-              │  「实时库存图修改」快照返回前，服务端回源方舟：
-              │  GET {ARK_STATUS_ENDPOINT}?template_id=…  (头 x-colorwork-sync-key)
-              ▼  方舟按 lsordertest.okki_inventory.enable_count 实时计算 到货正常/正在补货
-         规格状态被 okki 数据覆盖后返回；页面每 30s 静默轮询自动生效
+方舟三个菜单 → GET /api/colorwork/sso?view=library|inventory|master
+             → 同源 iframe /api/colorwork/workbench/api/auth/ark
+             → 方舟后端流式转发 → 内部 workerd
 ```
 
-### 页面 ↔ 权限码 ↔ 工作台视图
+方舟按 `colorwork_download:read`、`colorwork_edit:read`、`colorwork_master:read` 签发 120 秒 SSO。
+内部会话 HttpOnly、SameSite=Lax，Cookie Path 固定 `/api/colorwork/workbench`（含无尾斜杠根页），有效期 12 小时。
+后端不转发方舟 Bearer token 或其他 Cookie。业务 API 保持逐视图鉴权，master 视图映射站内管理员。
 
-| 方舟菜单 | 权限码 | 工作台视图 | 说明 |
-|---|---|---|---|
-| 库存图直接下载 | `colorwork_download:read` | `library` | 业务成品图与原始 JPG 下载 |
-| 实时库存图修改 | `colorwork_edit:read` | `inventory` | 库存状态维护/导出 JPG（状态以 okki 实时数据为准） |
-| 原始库存图文件 | `colorwork_master:read` | `master` | 母版/源文件版本管理 + 首次素材导入（站内 admin） |
+`next.config.ts` 的 basePath 与 `lib/workbench-url.ts` 对齐；生成目录和已存储源文件 URL 保持原有相对路径，
+仅在浏览器请求、图像加载和下载时补前缀，不迁移或重写已有业务数据。
 
-权限在方舟「系统管理 → 角色权限」按角色分配；`super_admin` 自动拥有全部三个页面。
-工作台内不再维护账号：用户经 SSO 进入时按方舟用户 id 自动开通站内账号（`ark-<id>@ark.local`），
-持有 master 视图即站内 admin。审计字段（updatedBy 等）显示方舟显示名。SSO 会话 12 小时有效
-（权限撤销最迟次日生效）；未命中的 okki 规格保留站内手动状态作为兜底。
+实时库存仍回源方舟 `/api/colorwork/inventory-status`；23 套模板按 okki 库存口径计算，未改业务规则。
 
-### 环境变量
+## 部署
 
-工作台侧（`.dev.vars`，参考 `.dev.vars.example`；gitignored）：
+统一入口仍是 `deploy/deploy.bat`。北京后端 prepare/activate 自动调用 `deploy/colorwork_release.py`：
 
-| 变量 | 说明 |
-|---|---|
-| `ARK_SSO_SECRET` | SSO 验签密钥，与方舟后端 `COLORWORK_SSO_SECRET` 一致 |
-| `ARK_STATUS_ENDPOINT` | 方舟库存状态接口地址，如 `https://<方舟后端>/api/colorwork/inventory-status`；留空则不做 okki 覆盖 |
-| `ARK_SYNC_KEY` | 回源共享密钥，与方舟后端 `COLORWORK_SYNC_KEY` 一致 |
+- 准备：下载并校验固定 Node v22.23.2 Linux x64（官方 SHA-256 固定在部署代码），使用 pnpm 10.33.2 和锁文件构建；
+  自动根据本机后端 Settings 生成 gitignored、0600 的 `.dev.vars`；迁移只应用到隔离 validation 目录。
+- 激活：复核最新迁移历史，停止 `ark-colorwork`，完整备份 D1/R2，再迁移持久目录并启动纳管 unit；
+  DB/R2 readiness 通过才记成功。服务由部署入口管理，不需要手工新建域名、证书或 Nginx location。
+- 同候选重跑复核构建摘要、不重写在用配置；同成功候选激活仅做健康核验。失败记录阻断普通重试。
 
-方舟后端侧（`backend/.env`）：`COLORWORK_SSO_SECRET` / `COLORWORK_BASE_URL`（工作台外部地址）/
-`COLORWORK_SYNC_KEY`，详见 `backend/.env.example`。
+运行数据唯一归属北京：`/home/ubuntu/commission-system/.deploy_state/colorwork/data`，
+包含 D1、R2 元数据与 blobs，必须整体纳入备份，**不可作为普通构建缓存清理**。
+`backups/<revision>-<attempt>` 保留发布前数据；`current.json` 保留失败阶段，`success.json` 记录已应用迁移 checksum。
+发现旧 `/var/lib/colorwork-workbench/state` 或旧工作目录 `.wrangler/state` 的数据时阻止新建空库，先明确迁移归属。
 
-## 本地开发
+恢复先停止 `ark-colorwork`、保留失败现场及数据，核对本轮 unit/备份/迁移记录；向前修复候选并检查现存 schema。
+只有核验原始基线与数据兼容性后才能人工恢复记录状态，不能删除日志或拿旧备份覆盖发布后新增业务数据。
+该模块失败不会自动降级数据库，也不把恢复旧主站代码当作工作台恢复。
 
-```bash
-pnpm install
-cp .dev.vars.example .dev.vars   # 填入与方舟后端一致的密钥
-pnpm db:local                    # 应用 D1 迁移（含 0008 会话视图列）
-pnpm dev --port 8787             # 开发服务器
+配置项：`COLORWORK_INTERNAL_ORIGIN` 仅后端使用，北京默认 `http://127.0.0.1:8787`；
+SSO 可显式配置 `COLORWORK_SSO_SECRET`，否则从 JWT_SECRET_KEY 按 SSO 用途派生；回源密钥可显式配置 COLORWORK_SYNC_KEY，
+否则以用途隔离的 HMAC 派生。部署自动同步至内部服务，不向浏览器或构建日志公开。
+本轮纳管北京（leshine.cloud）；若办公室主站也接入，须由服务器回源同一北京数据实例并对齐 SSO 配置，不能另建独立数据副本。
+
+首次业务使用仍需在「原始库存图文件」导入 87 个工作台素材与 23 组 JPG/PSD。代码仓库只含目录清单，不含真实素材。
+未导入时普通用户看到明确的首次设置状态，不把空库当成可生成成品的完整上线。
+
+## 本地验证
+
 ```
-
-直开 http://localhost:8787 只会看到「请从方舟平台进入」——正常。联调时用方舟后端
-`GET /api/colorwork/sso?view=…` 拿链接进入（方舟前端 dev 代理把 `/api` 转给本地后端）。
-
-## 生产部署（办公室服务器，systemd + nginx）
-
-```bash
-# 代码就位后（以 /opt/commission-system/colorwork-workbench 为例）
 pnpm install --frozen-lockfile
-cp .dev.vars.example /etc/ark-colorwork/.dev.vars  # 建议放 /etc 并软链或拷入项目根（gitignored）
+pnpm lint
 pnpm build
-# 首次：在生产 state 目录应用 D1 迁移
-npx wrangler d1 migrations apply site-creator-d1 --local --config wrangler.prod.jsonc \
-  --persist-to /var/lib/colorwork-workbench/state
-# systemd / nginx
-sudo install -m 644 ../deploy/systemd/colorwork-workbench.service /etc/systemd/system/
-sudo systemctl enable --now colorwork-workbench
-# nginx 站点：deploy/nginx/colorwork.leshine.work.conf（DNS/证书就绪后启用，先 nginx -t）
+node --test scripts/qa-workbench-url.mjs
 ```
 
-- 数据持久化：D1 与 R2 都落在 `--persist-to` 目录（systemd 单元用 `/var/lib/colorwork-workbench/state`），
-  **该目录需纳入备份**（库存状态、历史成品、源文件全在里面）。
-- 首次使用：管理员从方舟「原始库存图文件」页进入，用页内导入器上传首次素材包
-  （23 套母版 PSD/JPG + 色块图素材），完成后三个页面对业务开放。
-- 反向代理：工作台必须经 HTTPS 子域名访问（iframe Cookie 需要 Secure + 与主站同站）。
-
-## 测试
-
-```bash
-pnpm lint                 # oxlint（含 TS 类型规则）
-pnpm build                # 产物构建
-pnpm qa:admin-guards      # 需先启动本地服务（见脚本头部注释）
-```
+本地用独立测试 `.dev.vars` 和 `--persist-to .wrangler/<test-name>` 运行 wrangler，不连接生产 D1/R2。
+方舟开发服务器已有 `/api` 代理，因此无需新增前端代理；后端开发配置把 COLORWORK_INTERNAL_ORIGIN 指向测试服务即可。
+浏览器经方舟 `/api/colorwork/workbench/` 访问。后端回归见 `backend/tests/test_colorwork*.py`，发布回归见 `deploy/tests/test_colorwork_release.py`。

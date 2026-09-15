@@ -1,5 +1,7 @@
 'use client';
 
+import { workbenchFetch, workbenchUrl } from '@/lib/workbench-url';
+
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
@@ -129,7 +131,7 @@ export function SourceVersionManager({
 
   const loadVersions = useCallback(async () => {
     try {
-      const data = await responseJson<SourceList>(await fetch(`/api/template-sources/${state.templateId}`, { cache: 'no-store' }));
+      const data = await responseJson<SourceList>(await workbenchFetch(`/api/template-sources/${state.templateId}`, { cache: 'no-store' }));
       setVersions(data.versions);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '源文件版本读取失败。');
@@ -220,13 +222,13 @@ export function SourceVersionManager({
         sourceVersion: { id: string; number: number };
         uploadId: string;
         partSize: number;
-      }>(await fetch(`/api/template-sources/${state.templateId}`, {
+      }>(await workbenchFetch(`/api/template-sources/${state.templateId}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ psdName: psd.name, jpgName: jpg.name, psdSize: psd.size, jpgSize: jpg.size }),
       }));
       versionId = started.sourceVersion.id;
-      await responseJson(await fetch(`/api/template-sources/${state.templateId}/${versionId}/file/jpg`, {
+      await responseJson(await workbenchFetch(`/api/template-sources/${state.templateId}/${versionId}/file/jpg`, {
         method: 'PUT',
         headers: { 'content-type': 'image/jpeg' },
         body: jpg,
@@ -238,12 +240,12 @@ export function SourceVersionManager({
         const partNumber = index + 1;
         setProgress(`步骤 1／4：正在上传 PSD ${partNumber}／${totalParts}…`);
         const chunk = psd.slice(index * started.partSize, Math.min(psd.size, partNumber * started.partSize));
-        parts.push(await responseJson<{ partNumber: number; etag: string }>(await fetch(
+        parts.push(await responseJson<{ partNumber: number; etag: string }>(await workbenchFetch(
           `/api/template-sources/${state.templateId}/${versionId}/psd-upload/${encodeURIComponent(started.uploadId)}/${partNumber}`,
           { method: 'PUT', headers: { 'content-type': 'application/octet-stream' }, body: chunk },
         )));
       }
-      await responseJson(await fetch(
+      await responseJson(await workbenchFetch(
         `/api/template-sources/${state.templateId}/${versionId}/psd-upload/${encodeURIComponent(started.uploadId)}/complete`,
         {
           method: 'POST',
@@ -265,13 +267,13 @@ export function SourceVersionManager({
       for (const [index, asset] of parsed.assets.entries()) {
         setProgress(`步骤 2／4：正在保存解析素材 ${index + 1}／${parsed.assets.length}…`);
         const path = asset.name.split('/').map(encodeURIComponent).join('/');
-        await responseJson(await fetch(`/api/template-sources/${state.templateId}/${versionId}/assets/${path}`, {
+        await responseJson(await workbenchFetch(`/api/template-sources/${state.templateId}/${versionId}/assets/${path}`, {
           method: 'PUT',
           headers: { 'content-type': 'image/png' },
           body: asset.blob,
         }));
       }
-      const detail = await responseJson<SourceVersionSummary>(await fetch(
+      const detail = await responseJson<SourceVersionSummary>(await workbenchFetch(
         `/api/template-sources/${state.templateId}/${versionId}/parse`,
         {
           method: 'POST',
@@ -288,7 +290,7 @@ export function SourceVersionManager({
       setError(`${message} 原有效版本保持不变。`);
       setProgress('解析失败：原有效版本仍可正常使用。');
       if (versionId) {
-        await fetch(`/api/template-sources/${state.templateId}/${versionId}`, {
+        await workbenchFetch(`/api/template-sources/${state.templateId}/${versionId}`, {
           method: 'PATCH',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ failureReason: message }),
@@ -355,7 +357,7 @@ export function SourceVersionManager({
           section: mapping.mode === 'ignore' ? null : mapping.section || null,
         };
       });
-      await responseJson(await fetch(`/api/template-sources/${state.templateId}/${candidate.id}/activate`, {
+      await responseJson(await workbenchFetch(`/api/template-sources/${state.templateId}/${candidate.id}/activate`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -389,7 +391,7 @@ export function SourceVersionManager({
   async function continueReview(version: SourceVersionSummary) {
     setError('');
     try {
-      const detail = await responseJson<SourceVersionSummary>(await fetch(
+      const detail = await responseJson<SourceVersionSummary>(await workbenchFetch(
         `/api/template-sources/${state.templateId}/${version.id}`,
         { cache: 'no-store' },
       ));
@@ -403,7 +405,7 @@ export function SourceVersionManager({
   async function markStalledFailed(version: SourceVersionSummary) {
     setError('');
     try {
-      await responseJson(await fetch(`/api/template-sources/${state.templateId}/${version.id}`, {
+      await responseJson(await workbenchFetch(`/api/template-sources/${state.templateId}/${version.id}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ failureReason: '上传或解析未完成，管理员已结束本次候选。' }),
@@ -468,7 +470,7 @@ export function SourceVersionManager({
               const eligible = eligibleEntries(card);
               return (
                 <article key={card.candidateId} className={card.matchState === 'unresolved' ? 'needs-review' : ''}>
-                  <img src={colorForId(mergeColors(state.colors, config.colors), config.template, card.colorId)?.image} alt="" />
+                  <img src={workbenchUrl(colorForId(mergeColors(state.colors, config.colors), config.template, card.colorId)?.image)} alt="" />
                   <div><strong>{card.colorCode}</strong><small>{card.matchReason}</small></div>
                   <select value={mapping?.mode || ''} onChange={(event) => updateMapping(card.candidateId, { mode: event.target.value as MappingDraft['mode'], entryId: '' })}>
                     <option value="">请选择对应方式</option>
@@ -524,8 +526,8 @@ export function SourceVersionManager({
             <nav>
               {(version.status === 'ready' || version.status === 'needs_review') && <button onClick={() => void continueReview(version)}>继续审阅</button>}
               {(version.status === 'uploading' || version.status === 'parsing') && <button onClick={() => void markStalledFailed(version)}>结束未完成候选</button>}
-              <a href={`/api/template-sources/${state.templateId}/${version.id}/download/psd`}><Download size={13} />PSD</a>
-              <a href={`/api/template-sources/${state.templateId}/${version.id}/download/jpg`}><Download size={13} />JPG</a>
+              <a href={workbenchUrl(`/api/template-sources/${state.templateId}/${version.id}/download/psd`)}><Download size={13} />PSD</a>
+              <a href={workbenchUrl(`/api/template-sources/${state.templateId}/${version.id}/download/jpg`)}><Download size={13} />JPG</a>
             </nav>
           </article>
         ))}

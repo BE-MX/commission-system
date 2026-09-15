@@ -65,6 +65,7 @@ from app.shipping_inspection.router import router as shipping_inspection_router
 from app.whatsapp_translation.router import router as whatsapp_translation_router
 from app.mail_outreach.router import router as mail_outreach_router
 from app.colorwork.router import router as colorwork_router
+from app.colorwork.proxy import router as colorwork_proxy_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -136,3 +137,4 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(whatsapp_translation_router, prefix="/api/whatsapp-translation", tags=["WhatsApp 实时翻译"])
     app.include_router(mail_outreach_router, prefix="/api/mail-outreach", tags=["客户邮件触达"])
     app.include_router(colorwork_router, prefix="/api/colorwork", tags=["库存色块图工作台"])
+    app.include_router(colorwork_proxy_router, prefix="/api/colorwork")

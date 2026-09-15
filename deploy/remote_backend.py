@@ -103,11 +103,16 @@ def prepare(revision, allow_pending=False, recover_149=False):
     run([str(python), "-m", "compileall", "-q", str(source / "backend/app")])
     # Import the new route graph without starting the application lifespan/seeds/jobs.
     run([str(python), "-c", "import app.routers"], cwd=source / "backend")
+    colorwork = json.loads(run([
+        str(python), str(source / "deploy/colorwork_release.py"), "prepare",
+        "--root", str(ROOT), "--source", str(source), "--python", str(python),
+    ], capture=True).splitlines()[-1])
     previous = run(["git", "rev-parse", "HEAD"], capture=True)
     changes = run(["git", "diff", "--name-only", previous, revision, "--", "backend", "config"], capture=True)
     info = {"revision": revision, "previous": previous, "schema": checked["schema"],
             "schema_changed": bool(checked["pending"]) or recover_149,
-            "changed": bool(changes), "environment": str(candidate_env) if requirements_changed else None}
+            "changed": bool(changes), "environment": str(candidate_env) if requirements_changed else None,
+            "colorwork": colorwork}
     STATE.mkdir(exist_ok=True)
     (STATE / ("backend-prepared-" + revision + ".json")).write_text(json.dumps(info))
     return info
@@ -136,6 +141,9 @@ def activate_locked(revision):
     source = STATE / "checkouts" / revision
     python = Path(info["environment"]) / "bin/python" if info["environment"] else ROOT / "backend/.venv/bin/python"
     schema_check(source, python)
+    if info.get("colorwork"):
+        run([str(python), str(source / "deploy/colorwork_release.py"), "activate",
+             "--root", str(ROOT), "--source", str(source)])
     if not info["changed"] and not info.get("schema_changed"):
         healthy()
         return {"status": "unchanged", "schema": info["schema"]}

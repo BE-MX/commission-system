@@ -1068,12 +1068,13 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 ## 库存色块图工作台集成（`/api/colorwork`，2026-09-14）
 
-库存色块图调整台（`colorwork-workbench/`，独立 workerd 子站点）的方舟侧集成接口：方舟管功能入口与页面权限，工作台 UI/逻辑原样保留，详见 `docs/module-notes.md` 对应一节与 `colorwork-workbench/README.md`。
+库存色块图调整台（`colorwork-workbench/`，方舟同源内部 workerd 运行模块）的方舟侧集成接口：方舟管功能入口与页面权限，工作台 UI/逻辑原样保留，详见 `docs/module-notes.md` 对应一节与 `colorwork-workbench/README.md`。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/sso?view=library\|inventory\|master` | 对应视图的 `colorwork_download:read` / `colorwork_edit:read` / `colorwork_master:read` | 按页面权限签发工作台 SSO 链接（短命 HS256，120s，claims 含用户全部可见视图）；无权限 403，未知视图 400 |
 | GET | `/inventory-status?template_id=` | 共享密钥头 `x-colorwork-sync-key`（非用户 JWT，仅工作台服务端回源） | 按 `TEMPLATE_MATCH` 映射聚合 `okki_inventory.enable_count`：SUM>0 → normal（到货正常）否则 restocking（正在补货）；键为 `{颜色}|{尺寸}`；未配置映射的模板返回 `unmapped: true`，工作台保留手动状态 |
+| GET/HEAD/POST/PUT/PATCH/DELETE | `/workbench/{path}` | 工作台 HttpOnly 会话；业务接口逐视图校验，SSO 入口仍由方舟页面权限签发 | 页面/资源/文件同源流式代理；不转发方舟 Bearer 或其它 Cookie；内部服务不可用返回 503，不返回 localhost 链接 |
 
 实时生效链路：工作台 `getCurrentSnapshot` 返回前逐规格覆盖（3.5s 超时回退站内状态），页面 30s 静默轮询。规格↔okki 匹配口径与有货判定复用 `stock/public_service.py` 的约定。
 

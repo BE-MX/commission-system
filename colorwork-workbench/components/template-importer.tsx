@@ -1,5 +1,7 @@
 'use client';
 
+import { workbenchFetch } from '@/lib/workbench-url';
+
 import { ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, FolderInput, HardDriveUpload, RefreshCw, TriangleAlert } from 'lucide-react';
 import type { CatalogData, RuntimeAsset, TemplateSummary } from '@/lib/catalog';
@@ -23,7 +25,7 @@ function selectedPath(file: File) {
 }
 
 async function uploadRuntimeAsset(pair: RuntimePair) {
-  await responseJson(await fetch(apiAssetPath(pair.asset.key), {
+  await responseJson(await workbenchFetch(apiAssetPath(pair.asset.key), {
     method: 'PUT',
     headers: { 'content-type': pair.asset.contentType },
     body: pair.file,
@@ -33,9 +35,9 @@ async function uploadRuntimeAsset(pair: RuntimePair) {
 async function uploadPair(pair: SourcePair, onProgress: (value: number) => void) {
   if (pair.psd.size > 256 * 1024 * 1024) throw new Error(`${pair.psd.name} 超过 256 MB。`);
   const start = await responseJson<{ uploadId: string; versionId: string; partSize: number }>(
-    await fetch(`/api/templates/${pair.template.id}/psd-upload`, { method: 'POST' }),
+    await workbenchFetch(`/api/templates/${pair.template.id}/psd-upload`, { method: 'POST' }),
   );
-  await responseJson(await fetch(
+  await responseJson(await workbenchFetch(
     `/api/templates/${pair.template.id}/file/jpg?version=${encodeURIComponent(start.versionId)}`,
     { method: 'PUT', headers: { 'content-type': 'image/jpeg' }, body: pair.jpg },
   ));
@@ -45,7 +47,7 @@ async function uploadPair(pair: SourcePair, onProgress: (value: number) => void)
   for (let index = 0; index < totalParts; index += 1) {
     const partNumber = index + 1;
     const chunk = pair.psd.slice(index * start.partSize, Math.min(pair.psd.size, partNumber * start.partSize));
-    const uploaded = await responseJson<{ partNumber: number; etag: string }>(await fetch(
+    const uploaded = await responseJson<{ partNumber: number; etag: string }>(await workbenchFetch(
       `/api/templates/${pair.template.id}/psd-upload/${encodeURIComponent(start.uploadId)}/${partNumber}?version=${encodeURIComponent(start.versionId)}`,
       { method: 'PUT', headers: { 'content-type': 'application/octet-stream' }, body: chunk },
     ));
@@ -53,7 +55,7 @@ async function uploadPair(pair: SourcePair, onProgress: (value: number) => void)
     onProgress(Math.round(partNumber / totalParts * 100));
   }
 
-  await responseJson(await fetch(
+  await responseJson(await workbenchFetch(
     `/api/templates/${pair.template.id}/psd-upload/${encodeURIComponent(start.uploadId)}/complete`,
     {
       method: 'POST',
@@ -91,8 +93,8 @@ export function TemplateImporter({
     setLoading(true);
     try {
       const [templateData, runtimeData] = await Promise.all([
-        fetch('/api/templates/status', { cache: 'no-store' }).then(responseJson<{ templates: ImportedTemplate[] }>),
-        fetch('/api/runtime-assets/status', { cache: 'no-store' }).then(responseJson<{ ready: boolean; assets: Array<{ key: string }> }>),
+        workbenchFetch('/api/templates/status', { cache: 'no-store' }).then(responseJson<{ templates: ImportedTemplate[] }>),
+        workbenchFetch('/api/runtime-assets/status', { cache: 'no-store' }).then(responseJson<{ ready: boolean; assets: Array<{ key: string }> }>),
       ]);
       setImported(templateData.templates);
       setUploadedRuntimeKeys(runtimeData.assets.map((asset) => asset.key));
@@ -161,7 +163,7 @@ export function TemplateImporter({
     if (!failures.length && !runtimeIsReady) {
       try {
         setProgress('正在核对工作台素材完整性…');
-        await responseJson(await fetch('/api/runtime-assets/complete', { method: 'POST' }));
+        await responseJson(await workbenchFetch('/api/runtime-assets/complete', { method: 'POST' }));
         setRuntimeIsReady(true);
         onRuntimeReady();
       } catch (reason) {

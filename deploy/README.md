@@ -102,3 +102,15 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 - 办公室服务器实际远程更新、内网 DNS 和办公室直连北京隧道，需要可用的办公室管理入口才能完成。
 - `--cloud-only` 若发现新加坡前端有变化，会等待对应办公室后端发布并列为 deferred；不提前上线依赖旧 API 的新页面。完全一致的页面可核验并接入受管目录。
 - `tls_setup.py` 用于已有域名的 ACME 路径与证书路径调整；正式配置切换前先 `nginx -t`，每次备份到服务器受限目录。新发型站配置见 `nginx/hair.leshine.cloud.conf`。
+
+## 库存色块内部模块
+
+北京后端发布同时纳管 colorwork-workbench：浏览器使用方舟 `/api/colorwork/workbench/`，不使用子域名。
+`remote_backend.py` 依次调用 `colorwork_release.py` prepare/activate，自动准备固定 Node/pnpm、构建、受限运行配置、
+隔离 D1 验证、正式 D1/R2 整体备份与迁移、回环运行服务 `ark-colorwork` 及 readiness 检查。
+`--prepare-only` 不启动服务、不改正式 D1/R2。同候选复用校验后的制品，同成功候选重跑不重启模块。
+
+数据位于北京 `.deploy_state/colorwork/data`，**此子目录是业务持久存储，不可清理**。
+失败时 `current.json` 和本轮 `backups/<revision>-<attempt>` 必须保留；普通重试会阻断，先按
+`colorwork-workbench/README.md` 核验失败现场、备份及 schema。北京原先没有 Node 时由准备阶段下载官方固定版本并校验摘要，
+不要求手工全局安装。首次使用的真实 PSD/JPG 素材包需单独导入，不能通过代码发布复制业务数据。

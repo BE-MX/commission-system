@@ -1090,9 +1090,9 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 
 ## 库存色块图工作台集成（colorwork，2026-09-14）
 
-库存色块图调整台（仓库顶层 `colorwork-workbench/`，vinext + Cloudflare Worker/D1/R2 技术栈）以**独立子站点**方式并入方舟：方舟管功能入口与页面权限，工作台自身 UI 与业务逻辑原样保留，账号与设置模块已移除（首次素材导入并入「原始库存图文件」页）。
+库存色块图调整台（仓库顶层 `colorwork-workbench/`，vinext + Cloudflare Worker/D1/R2 技术栈）以**主站同源内部模块**方式并入方舟：方舟管功能入口与页面权限，工作台自身 UI 与业务逻辑原样保留，账号与设置模块已移除（首次素材导入并入「原始库存图文件」页）。
 
-- **入口与权限**：侧边栏「库存色块图」分组下三个页面（库存图直接下载 `/colorwork/download`、实时库存图修改 `/colorwork/edit`、原始库存图文件 `/colorwork/master`），各挂独立页面权限码。前端 `ColorworkFrame.vue` 调 `GET /api/colorwork/sso?view=…` 换短命 HS256 令牌（120s，含 views 清单），iframe 载入工作台 `/api/auth/ark` 落座（站内会话 Cookie + 视图清单存 local_sessions.views_json）。
+- **入口与权限**：侧边栏「库存色块图」分组下三个页面（库存图直接下载 `/colorwork/download`、实时库存图修改 `/colorwork/edit`、原始库存图文件 `/colorwork/master`），各挂独立页面权限码。前端 `ColorworkFrame.vue` 调 `GET /api/colorwork/sso?view=…` 换短命 HS256 令牌（120s，含 views 清单），iframe 载入同源 `/api/colorwork/workbench/api/auth/ark` 落座（站内会话 Cookie + 视图清单存 local_sessions.views_json）。
 - **站内逐视图校验**：工作台 API 用 `requireView('library'|'inventory'|'master')` 兜底；master 视图持有者映射为站内 admin 角色。无方舟会话直开站点只见进入提示，原站内登录页/账号管理 API 已删除。
 - **实时库存状态**：`GET /api/colorwork/inventory-status?template_id=`（共享密钥头 `x-colorwork-sync-key`，仅供工作台服务端回源）按 `TEMPLATE_MATCH`（`app/colorwork/constants.py`）把 23 个模板映射到 okki_products 名称前缀（Regular=Standard Double Drawn；Butterfly=Double Genius Holes Weft；Injection=Invisible Tape Hair；Flex=Volume Weft——2026-09-14 业务确认），按「颜色|尺寸」聚合 SUM(enable_count)>0 → 到货正常，否则正在补货。工作台 `getCurrentSnapshot` 返回前实时覆盖（`lib/server/ark-sync.ts`，3.5s 超时，失败回退站内手动状态），页面每 30 秒静默轮询（有未保存修改时跳过）。okki 无对应产品的规格不覆盖、保留站内状态。
-- **配置**：方舟端 `COLORWORK_SSO_SECRET` / `COLORWORK_BASE_URL` / `COLORWORK_SYNC_KEY`（.env）；工作台端 `ARK_SSO_SECRET` / `ARK_STATUS_ENDPOINT` / `ARK_SYNC_KEY`（.dev.vars，见 .dev.vars.example）。部署：`deploy/nginx/colorwork.leshine.work.conf`（frame-ancestors 仅放行方舟主站）+ `deploy/systemd/colorwork-workbench.service`。
+- **部署与配置**：浏览器固定走 `/api/colorwork/workbench/`，方舟后端代理到 COLORWORK_INTERNAL_ORIGIN（默认回环8787），不需要独立域名。统一部署入口自动构建并管理北京内部运行服务、隔离验证迁移、备份持久数据及生成受限密钥配置；详见 `colorwork-workbench/README.md`。SSO 默认从 JWT 密钥按用途派生，回源密钥按用途派生；支持显式配置覆盖。

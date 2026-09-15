@@ -994,3 +994,12 @@ Mac 同事的英文网页中私聊按钮标识为 `Profile details`，原选择�
 迁移编号缩短为 `149_dom_order_review_columns`；兼容已有结构则复用，仅补缺项，异常结构拒绝，不stamp。新增仅针对该事故的 `--recover-migration-149 --revision <full-sha>` 发布参数，保留原始运行基线，核验DB148/新149及四个writer清单，准备模式只读验证，正式恢复沿统一DB锁/Alembic/应用激活/健康验证链路，成功才关闭journal。重试即使DB已到新149仍恢复完整发布；失败不重启旧代码。使用方法与脚本更新前提见 deploy/README.md。
 
 验证：部署测试80 passed、11项Linux文件系统测试在Windows跳过；迁移隔离测试34 passed；实库`validate_existing(require_complete=True)`只读验证通过；独立审查无阻断项，补了提交后重读版本、当前148/新149完整性、prepare-only和固定候选测试。项目约定全量检查仍被4项无关UI旧债阻挡，增量代码检查无违规；git diff --check通过，git_sweep --no-fetch已执行（远端仅本地引用快照）。用户已授权将本次修复合并 main 并推送 origin；fetch 确认 main 与 origin/main 均为基点15dcd7a9，无上游差异。本轮不执行生产恢复，服务状态仍需服务器核验。
+## 2026-09-14 库存色块工作台同源集成（合并交付，未部署）
+
+分支 `codex/colorwork-entry-fix`，目录 `D:/MyProgram/commission-system-codex-colorwork-entry-fix`。用户明确改为方舟内部使用、不要独立域名。此前北京只读核实工作台 URL/密钥未设、8787 无监听，主站部署未包括工作台；本轮又核实服务账号 PATH 无 Node。现改为固定相对 SSO URL `/api/colorwork/workbench/api/auth/ark`，所有 HTML/JS/CSS/API/文件经方舟后端流式同源代理；不转发主站 Bearer 与其他 Cookie，保留逐视图鉴权，Cookie 限定模块路径。
+
+工作台保留 React/vinext 与 D1/R2 格式，basePath、浏览器 fetch、图片/Canvas/PSD、下载与退出均补同源路径；不改已有持久 URL 和库存计算。独立域名 Nginx/systemd 旧模板删除。统一 deploy.bat 的北京后端流程纳管内部服务 ark-colorwork，自动下载并校验固定 Node v22.23.2、锁定 pnpm，准备期使用隔离 D1，激活先停服务、每次独立备份 D1/R2 再迁移，readiness 后记成功。同 SHA 重跑校验制品并跳过在用配置写入/成功激活；未知或改写迁移、旧数据待迁移、失败记录均阻断。SSO 与回源密钥分别派生，运行服务不持主站原始 JWT 密钥。
+
+验证：后端 SSO/代理/权限 19 passed，发布回归 90 passed / 11 skipped（现有 Linux 专属静态发布用例在 Windows 跳过），Node URL 单测 2 passed；工作台 pnpm lint/build 通过。真实隔离 workerd + FastAPI 代理实测三个 SSO 视图、两种尾斜杠刷新、登录退出、全部引用的 JS/CSS、无权限403；浏览器确认 master 首次导入页与普通账号首次设置页，同源会话保持正常。输出在 `.deploy_state/colorwork-test/results.json`，不连接生产库；测试服务与浏览器已关闭。自动审批以 blocked by policy 拒绝临时目录清理，隔离测试 SQLite/R2 和仅含测试密钥的 .dev.vars 保留，未进入 Git。真实素材包不在仓库，成品生成和真实素材下载仍需导入后验收。独立审查发现的 Cookie 边界、流中断清理、激活迁移复核及旧候选回退备份均修复并有回归。
+
+项目完整约定检查仍阻于四项现有 UI 基线：AssetTagEditor small 按钮、AssetLibrary / ProductionOrderManage / AIManager 行数；包含新增文件的增量检查无违规，diff 格式检查通过。Git 巡检为 --no-fetch 本地快照。2026-09-15 用户授权合并 main 并推送 origin；集成前 fetch 确认 main 与 origin/main 均为 a8283637，无上游差异。本轮不部署。北京运行环境安装与 systemd 激活尚未在真实生产执行；素材与 D1/R2 唯一数据归属北京，不为办公室另建数据副本。完整接入及恢复规则见 `colorwork-workbench/README.md`。

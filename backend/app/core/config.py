@@ -332,12 +332,12 @@ class Settings(BaseSettings):
     PM_TOKEN_EPOCH: int = 1  # 全局版本号 salt：+1 即全员重新验证（极端情况兜底）
     PM_FILE_SIGN_TTL_SECONDS: int = 300  # 下载/预览签名 URL 短时效（秒）
     PM_MAX_UPLOAD_MB: int = 50  # 单文件上传上限（frp 隧道带宽是全站稀缺资源）
-    # ── 库存色块图工作台（独立子站点集成）────────────────
-    # SSO 签发密钥；留空回退 JWT_SECRET_KEY，生产建议单独配置随机串。
+    # ── 库存色块图工作台（方舟同源内部模块）────────────────
+    # SSO 签发密钥；留空从 JWT_SECRET_KEY 按用途派生，生产建议单独配置随机串。
     COLORWORK_SSO_SECRET: str = ""
-    # 工作台站点外部访问地址（用于拼接 SSO 跳转链接），本地开发默认 wrangler 端口。
-    COLORWORK_BASE_URL: str = "http://localhost:8787"
-    # 工作台 worker 回源 /api/colorwork/inventory-status 的共享密钥；未配置时该接口 503。
+    # 仅后端连接的内部运行服务，绝不返回浏览器；保留完整 workbench 路径转发。
+    COLORWORK_INTERNAL_ORIGIN: str = "http://127.0.0.1:8787"
+    # 工作台回源密钥；未配置时从 JWT_SECRET_KEY 按用途派生，部署同步给运行服务。
     COLORWORK_SYNC_KEY: str = ""
 
     # 发票 PDF 中文字体：部署/启动时强制预检，避免用户导出时才失败。

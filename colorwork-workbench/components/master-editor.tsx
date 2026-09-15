@@ -1,5 +1,7 @@
 'use client';
 
+import { workbenchFetch, workbenchUrl } from '@/lib/workbench-url';
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Flame, History,
@@ -74,8 +76,8 @@ export function MasterEditor({ catalog }: { catalog: CatalogData }) {
     setConflict(false);
     try {
       const [current, history] = await Promise.all([
-        responseJson<TemplateState>(await fetch(`/api/master/${id}/current`, { cache: 'no-store' })),
-        responseJson<{ versions: MasterVersion[] }>(await fetch(`/api/master/${id}/versions`, { cache: 'no-store' })),
+        responseJson<TemplateState>(await workbenchFetch(`/api/master/${id}/current`, { cache: 'no-store' })),
+        responseJson<{ versions: MasterVersion[] }>(await workbenchFetch(`/api/master/${id}/versions`, { cache: 'no-store' })),
       ]);
       setState(current);
       setDraft(selectionFromMaster(current.colors, current.template, current.selection));
@@ -210,7 +212,7 @@ export function MasterEditor({ catalog }: { catalog: CatalogData }) {
     setNotice('');
     setConflict(false);
     try {
-      await responseJson(await fetch(`/api/master/${item.id}/versions`, {
+      await responseJson(await workbenchFetch(`/api/master/${item.id}/versions`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -243,7 +245,7 @@ export function MasterEditor({ catalog }: { catalog: CatalogData }) {
         selection?: Selection;
         inventory?: TemplateState['specs'];
       }>(
-        await fetch(`/api/master/${item.id}/versions/${version.id}`, { cache: 'no-store' }),
+        await workbenchFetch(`/api/master/${item.id}/versions/${version.id}`, { cache: 'no-store' }),
       );
       const historical = data.version;
       const selection = data.selection ?? historical.selection;
@@ -275,7 +277,7 @@ export function MasterEditor({ catalog }: { catalog: CatalogData }) {
     setError('');
     setConflict(false);
     try {
-      await responseJson(await fetch(`/api/master/${item.id}/restore`, {
+      await responseJson(await workbenchFetch(`/api/master/${item.id}/restore`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -318,7 +320,7 @@ export function MasterEditor({ catalog }: { catalog: CatalogData }) {
               const activeIndex = activeDraft.findIndex((candidate) => candidate.entryId === entry.entryId);
               return (
                 <article className={entry.lengths.length ? 'master-color-row active' : 'master-color-row'} key={entry.entryId}>
-                  <img src={color.image} alt={`${color.code} 色块`} />
+                  <img src={workbenchUrl(color.image)} alt={`${color.code} 色块`} />
                   <div className="master-color-title"><strong>{color.code}</strong>{color.legacy && <span>历史色</span>}</div>
                   <div className="master-lengths">
                     {availableLengths.map((length) => {

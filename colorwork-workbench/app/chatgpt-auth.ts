@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { headers } from 'next/headers';
 import { LOCAL_ACCOUNTS, type LocalAccountDefinition } from '@/lib/local-accounts';
+import { WORKBENCH_PATH, workbenchUrl } from '@/lib/workbench-url';
 
 export { LOCAL_ACCOUNTS } from '@/lib/local-accounts';
 
@@ -163,15 +164,14 @@ export async function destroyLocalSession(token: string | null) {
 }
 
 export function sessionCookie(token: string, secure: boolean, maxAgeSeconds = SESSION_MAX_AGE_SECONDS) {
-  // SameSite=Lax：与主站同 eTLD+1（子域名）时 iframe 内请求属 same-site，Cookie 正常携带
-  return `${SESSION_COOKIE}=${token}; Path=/; Max-Age=${maxAgeSeconds}; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
+  return `${SESSION_COOKIE}=${token}; Path=${WORKBENCH_PATH}; Max-Age=${maxAgeSeconds}; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
 }
 
 export function clearedSessionCookie(secure: boolean) {
-  return `${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
+  return `${SESSION_COOKIE}=; Path=${WORKBENCH_PATH}; Max-Age=0; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
 }
 
 export function localSignOutPath(returnTo = '/') {
   const safeReturnTo = returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/';
-  return `/api/auth/logout?return_to=${encodeURIComponent(safeReturnTo)}`;
+  return workbenchUrl(`/api/auth/logout?return_to=${encodeURIComponent(safeReturnTo)}`);
 }

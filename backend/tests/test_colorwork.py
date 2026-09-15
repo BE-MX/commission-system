@@ -153,8 +153,6 @@ def _client(db, user, permissions, monkeypatch):
         JWT_SECRET_KEY = "test-jwt-secret"
 
     monkeypatch.setattr(service, "get_settings", lambda: S())
-    import app.colorwork.router as router_module
-    monkeypatch.setattr(router_module, "get_settings", lambda: S())
 
     app = FastAPI()
     app.include_router(router, prefix="/api/colorwork")
@@ -177,7 +175,7 @@ def test_sso_granted_for_permitted_view(db, monkeypatch):
         resp = client.get("/api/colorwork/sso?view=library")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["url"].startswith("https://colorwork.example.com/api/auth/ark?token=")
+    assert body["url"].startswith("/api/colorwork/workbench/api/auth/ark?token=")
     assert body["url"].endswith("&view=library")
     assert body["views"] == ["library"]
 

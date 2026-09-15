@@ -1,4 +1,5 @@
 import { env } from 'cloudflare:workers';
+import { workbenchUrl } from '@/lib/workbench-url';
 import {
   ALL_VIEWS,
   createArkSession,
@@ -90,11 +91,11 @@ export async function GET(request: Request) {
   }
 
   const session = await createArkSession(claims);
-  const secure = url.protocol === 'https:';
+  const secure = url.protocol === 'https:' || request.headers.get('x-forwarded-proto') === 'https';
   return new Response(null, {
     status: 302,
     headers: {
-      location: `/?view=${encodeURIComponent(view)}`,
+      location: workbenchUrl(`/?view=${encodeURIComponent(view)}`),
       'set-cookie': sessionCookie(session.token, secure, session.maxAgeSeconds),
       ...noStoreHeaders,
     },

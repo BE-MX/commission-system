@@ -1,3 +1,4 @@
+import { workbenchUrl } from '@/lib/workbench-url';
 import {
   colorForId,
   type Selection,
@@ -34,7 +35,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
           imageCache.delete(src);
           reject(new Error(`素材加载失败：${src.split('/').pop()}`));
         };
-        image.src = src;
+        image.src = workbenchUrl(src);
       }),
     );
   }

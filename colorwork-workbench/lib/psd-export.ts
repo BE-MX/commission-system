@@ -1,3 +1,4 @@
+import { workbenchUrl } from '@/lib/workbench-url';
 import { writePsd, type Layer, type Psd } from 'ag-psd';
 import type { Selection, StockColor, TemplateSummary } from '@/lib/catalog';
 import { activeColorsFor, layoutFor, sizeText } from '@/lib/poster';
@@ -19,7 +20,7 @@ async function loadImage(src: string) {
     const image = new Image();
     image.onload = () => resolve(image);
     image.onerror = () => reject(new Error(`无法读取源文件素材：${src}`));
-    image.src = src;
+    image.src = workbenchUrl(src);
   });
 }
 

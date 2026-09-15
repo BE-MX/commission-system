@@ -1,6 +1,8 @@
 """colorwork 集成服务：SSO 令牌签发 + okki 实时库存状态计算。"""
 
 from datetime import timedelta
+import hashlib
+import hmac
 
 from fastapi import HTTPException, status
 from jose import jwt
@@ -19,7 +21,16 @@ from app.core.time import utc_now
 
 def _sso_secret() -> str:
     settings = get_settings()
-    return settings.COLORWORK_SSO_SECRET or settings.JWT_SECRET_KEY
+    return settings.COLORWORK_SSO_SECRET or hmac.new(
+        settings.JWT_SECRET_KEY.encode(), b"ark-colorwork-sso", hashlib.sha256,
+    ).hexdigest()
+
+
+def sync_secret() -> str:
+    settings = get_settings()
+    return settings.COLORWORK_SYNC_KEY or hmac.new(
+        settings.JWT_SECRET_KEY.encode(), b"ark-colorwork-inventory-sync", hashlib.sha256,
+    ).hexdigest()
 
 
 def allowed_views_for(user: dict) -> list[str]:
@@ -48,9 +59,12 @@ def issue_sso_token(user: dict, views: list[str], display_name: str | None = Non
     return jwt.encode(payload, _sso_secret(), algorithm="HS256")
 
 
+WORKBENCH_PATH = "/api/colorwork/workbench"
+
+
 def build_sso_url(view: str, token: str) -> str:
-    base = get_settings().COLORWORK_BASE_URL.rstrip("/")
-    return f"{base}/api/auth/ark?token={token}&view={view}"
+    """Same-origin URL: browser must never connect to the internal runtime address."""
+    return f"{WORKBENCH_PATH}/api/auth/ark?token={token}&view={view}"
 
 
 def compute_template_statuses(db: Session, template_id: str) -> dict:
