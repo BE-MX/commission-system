@@ -1147,3 +1147,8 @@ Mac 同事的英文网页中私聊按钮标识为 `Profile details`，原选择�
 验证：后端 SSO/代理/权限 19 passed，发布回归 90 passed / 11 skipped（现有 Linux 专属静态发布用例在 Windows 跳过），Node URL 单测 2 passed；工作台 pnpm lint/build 通过。真实隔离 workerd + FastAPI 代理实测三个 SSO 视图、两种尾斜杠刷新、登录退出、全部引用的 JS/CSS、无权限403；浏览器确认 master 首次导入页与普通账号首次设置页，同源会话保持正常。输出在 `.deploy_state/colorwork-test/results.json`，不连接生产库；测试服务与浏览器已关闭。自动审批以 blocked by policy 拒绝临时目录清理，隔离测试 SQLite/R2 和仅含测试密钥的 .dev.vars 保留，未进入 Git。真实素材包不在仓库，成品生成和真实素材下载仍需导入后验收。独立审查发现的 Cookie 边界、流中断清理、激活迁移复核及旧候选回退备份均修复并有回归。
 
 项目完整约定检查仍阻于四项现有 UI 基线：AssetTagEditor small 按钮、AssetLibrary / ProductionOrderManage / AIManager 行数；包含新增文件的增量检查无违规，diff 格式检查通过。Git 巡检为 --no-fetch 本地快照。2026-09-15 用户授权合并 main 并推送 origin；集成前 fetch 确认 main 与 origin/main 均为 a8283637，无上游差异。本轮不部署。北京运行环境安装与 systemd 激活尚未在真实生产执行；素材与 D1/R2 唯一数据归属北京，不为办公室另建数据副本。完整接入及恢复规则见 `colorwork-workbench/README.md`。
+# 展会美颜部署入口恢复（2026-09-16）
+
+生产安装目录仍为 520c22ca，9/15 18:46 发布候选 7efe0cf0 失败且 completed 为空。只读实测数据库仍为 150，美颜版本表及146/152新增列均不存在；schema-writers 为 restored-before-ddl，writers/stopped 为空。根因为父部署进程继续加载安装目录旧 remote_backend.schema_check（未启用 implicit_base），候选 migration_runner 已修复，计划分别是 [152] 与 [146_expo,152]。候选的真实 Alembic 升级计划与新预检一致。
+
+分支 codex/deploy-candidate-runtime 基于当次已审查候选7efe，只新增部署器 --live-root 启动支持、测试与说明，不纳入后来151/153业务迁移。允许从受管固定候选调用原 deploy.bat，部署模块统一取候选，安装目录/状态/锁/服务/DBA保护保持原归属。无生产迁移、业务切换或 origin 写入；生产发布由亮哥执行。验证及服务器候选准备结果见本任务交付说明。
