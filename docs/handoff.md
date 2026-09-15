@@ -1,3 +1,12 @@
+## 2026-09-15 工作目录整理
+
+- 已核对所有旧worktree：原有已提交历史均在main；本轮将DHL错误提示、凭证路由工具和WhatsApp测试标记/语言中文标签三个已验证补丁集成至本地main。用户本轮授权合并和清理，未新增远端推送或部署。
+- 集成复验：DHL/凭证路由16项，WhatsApp扩展313项测试及构建通过；凭证路由独立审查无阻断。约定检查仍受已记录的4项既有UI问题阻挡。
+- 已完成的临时worktree清理；原有配置、上传材料、验证/部署记录集中保留在 `tmp/worktree-cleanup-20260915/`（仅本机，不入Git）。
+- 保留 `commission-system-codex-miniprogram-review`（送审准备未真机验收）、`commission-system-codex-shipping-upload`（真实上传超时仍待排查）；不合并未完成验收工作。
+- 保留 `commission-system-codex-deployment-plan` 及其两个发布源快照（部署状态与回滚引用），保留 `commission-system-kimi`（固定工作区含本地配置/数据）。
+- `commission-system-codex-colorwork-entry-fix` Git登记已移除，但Git删除途中遇Windows长路径错误，部分文件残留。后续递归删除命令被执行策略拒绝（blocked by policy），未重试绕过；本机日志没有更细拒绝理由。其配置/部署记录已先保留到上述目录。
+
 ## 2026-09-11 WhatsApp v1.6.7 语言中文标记（代码集成）
 
 沿用codex/whatsapp-testing-label，包含未合并的测试中按钮标记。语言选择器统一为中文在前、原文括注，覆盖聊天工具栏、话术及扩展弹窗。仅显示名称调整，无后端变更；构建283单测及语言选择/窄屏2条浏览器路径通过，约定检查剩素材库两项既有问题；未合并推送。
