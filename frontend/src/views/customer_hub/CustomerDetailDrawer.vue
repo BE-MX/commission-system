@@ -29,6 +29,9 @@
         <el-tab-pane v-if="canViewActions" label="待办" name="workbench" lazy>
           <WorkbenchList v-if="modelValue" :customer-id="customer.customer_id" @saved="$emit('action-saved')" />
         </el-tab-pane>
+        <el-tab-pane v-if="canViewMailOutreach" label="邮件触达" name="mailOutreach" lazy>
+          <MailOutreachPanel v-if="modelValue" v-any-permission="['mail_outreach:read','mail_outreach:write','mail_outreach:admin']" :customer-id="customer.customer_id" />
+        </el-tab-pane>
         <el-tab-pane label="概览" name="overview">
           <div class="fact-grid">
             <article><span>关系阶段</span><strong>{{ customer.relationship_stage || '未评估' }}</strong></article>
@@ -100,6 +103,7 @@ import { useAuthStore } from '@/stores/auth'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import WorkbenchList from './WorkbenchList.vue'
 import EvidencePicker from './EvidencePicker.vue'
+import MailOutreachPanel from './mail_outreach/MailOutreachPanel.vue'
 import { formatBeijingDateTime } from '@/utils/datetime'
 import { getTimelineLimitNotice, mapCustomerProfileSections } from './customerHubController'
 import { getProfileValueKind, profileFieldLabel } from './customerHubPresentation'
@@ -121,6 +125,7 @@ defineEmits(['update:modelValue', 'action-saved'])
 
 const auth = useAuthStore()
 const canViewActions = computed(() => auth.hasAnyPermission(['customer_radar:read', 'customer:read_all']))
+const canViewMailOutreach = computed(() => auth.hasAnyPermission(['mail_outreach:read', 'mail_outreach:write', 'mail_outreach:admin']))
 const activeTab = ref(canViewActions.value ? 'workbench' : 'overview')
 watch(() => props.customer?.customer_id, customerId => {
   if (customerId) activeTab.value = canViewActions.value ? 'workbench' : 'overview'

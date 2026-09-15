@@ -21,6 +21,7 @@ from app.bootstrap import (
 )
 from app.routers import register_routers
 from app.whatsapp_translation.errors import register_whatsapp_translation_error_handler
+from app.mail_outreach.errors import register_mail_outreach_error_handler
 from app.mcp.server import mount_mcp, mcp_session_lifespan
 from app.schedulers import start_scheduler, shutdown_scheduler
 
@@ -78,6 +79,7 @@ app.add_middleware(
 
 
 register_whatsapp_translation_error_handler(app)
+register_mail_outreach_error_handler(app)
 
 # 全局异常处理
 @app.exception_handler(ValueError)

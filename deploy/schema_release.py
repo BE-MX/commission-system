@@ -11,8 +11,12 @@ from static_sync import SSH_OPTIONS
 from remote_backend import database_lock, schema_check
 
 
-def check_recovery(path=None):
+def check_recovery(path=None, recover_149=False):
     journal = Path(path) if path else STATE / "schema-writers.json"
+    if recover_149:
+        from migration_recovery149 import read_record
+        read_record(journal)
+        return
     if journal.exists():
         previous = json.loads(journal.read_text(encoding="utf-8"))
         if previous.get("status") not in {"completed", "restored-before-ddl"}:
@@ -110,6 +114,8 @@ def invoke(prepared, writers, credential_file, action):
                "credential_file": str(credential.resolve()),
                "journal_path": str(STATE / "schema-writers.json"),
                "schema": prepared["schema"], "pending": prepared["pending"]}
+    if prepared.get("recover_149"):
+        request["recover_149"] = True
     runner = prepared.get("runner", ROOT / "deploy/migration_runner.py")
     result = subprocess.run([str(prepared["python"]), str(runner)],
         cwd=ROOT / "backend", input=json.dumps(request), text=True, capture_output=True, timeout=1200)
@@ -119,15 +125,15 @@ def invoke(prepared, writers, credential_file, action):
 
 
 def preflight(prepared, inventory, credential_file):
-    check_recovery()
-    writers = validate(inventory, prepared["pending"])
+    check_recovery(recover_149=prepared.get("recover_149", False))
+    writers = validate(inventory, prepared["pending"] or prepared.get("recover_149"))
     if writers:
         invoke(prepared, writers, credential_file, "check")
 
 
 def migrate(prepared, inventory, credential_file=None):
-    check_recovery()
-    writers = validate(inventory, prepared["pending"])
+    check_recovery(recover_149=prepared.get("recover_149", False))
+    writers = validate(inventory, prepared["pending"] or prepared.get("recover_149"))
     if not writers:
         return []
     atomic_json(STATE / "schema-current.json", {"status": "migrating", "pending": prepared["pending"]})

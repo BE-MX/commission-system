@@ -5,23 +5,25 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.auth.models import ArkPermission, ArkRolePermission, ArkUser
-from app.ai.models import AiPreset
+from app.ai.models import AiPreset, AiProvider
 from app.core.database import get_db
 from app.core.time import beijing_now
 from app.knowledge import service as knowledge
 from app.knowledge.models import KnowledgeLibraryMember, KnowledgeLibrary, KnowledgeAuditLog
 from app.main import app
-from app.whatsapp_translation import reply_service, reply_state
+from app.whatsapp_translation import reply_rewrite, reply_service, reply_state
 from app.whatsapp_translation.errors import WhatsAppTranslationError
 from app.whatsapp_translation.models import ReplyRequestRecord, TranslationDevice
-from tests.reply_support import encode, mock_model, output, plan, request, seed_reply
+from tests.reply_support import binding, encode, mock_model, output, plan, publish, request, seed_reply
 
 
 @pytest.fixture(autouse=True)
 def clear_cache():
     reply_state.reply_cache.clear()
+    reply_rewrite._cache.clear()
     yield
     reply_state.reply_cache.clear()
+    reply_rewrite._cache.clear()
 
 
 @pytest.fixture
@@ -29,7 +31,7 @@ def setup_reply(db, monkeypatch):
     return seed_reply(db, monkeypatch)
 
 
-def test_two_calls_are_metadata_only_and_response_echoes_snapshot(db, setup_reply, monkeypatch, caplog):
+def test_direct_call_is_metadata_only_and_response_echoes_snapshot(db, setup_reply, monkeypatch, caplog):
     identity, _, _, _, fact, _ = setup_reply
     calls = mock_model(monkeypatch)
     payload = request()
@@ -38,10 +40,10 @@ def test_two_calls_are_metadata_only_and_response_echoes_snapshot(db, setup_repl
     assert result.conversation_epoch == payload.conversation_epoch
     assert result.context_version == payload.context_version and result.draft_version == payload.draft_version
     assert result.sources[1].revision_id == fact["revision_id"]
-    assert len(calls) == 2
+    assert len(calls) == 1
     assert all(call["snapshot_mode"] == "metadata" for call in calls)
     assert all(call["caller_user_id"] == identity.user_id for call in calls)
-    assert 0 < calls[1]["timeout_sec"] <= calls[0]["timeout_sec"] <= 30
+    assert 0 < calls[0]["timeout_sec"] <= 120
     row = db.query(ReplyRequestRecord).one()
     persisted = encode({column.name: str(getattr(row, column.name)) for column in row.__table__.columns})
     for forbidden in [payload.messages[0].text, result.reply_text, result.rationale_zh, "Genius Weft"]:
@@ -58,7 +60,7 @@ def test_same_request_reuses_only_authorized_local_result(db, setup_reply, monke
     first = reply_service.suggest_reply(db, identity, payload)
     second = reply_service.suggest_reply(db, identity, payload)
     assert first == second
-    assert len(calls) == 2
+    assert len(calls) == 1
     assert db.query(ReplyRequestRecord).count() == 1
 
 
@@ -70,7 +72,7 @@ def test_duplicate_id_with_different_payload_never_calls_again(db, setup_reply, 
     with pytest.raises(WhatsAppTranslationError) as caught:
         reply_service.suggest_reply(db, identity, payload.model_copy(update={"goal": "different"}))
     assert caught.value.error_code == "reply_request_conflict"
-    assert len(calls) == 2
+    assert len(calls) == 1
 
 
 @pytest.mark.parametrize("state", ["cache_lost", "other_worker", "pending_expired", "failed"])
@@ -100,8 +102,8 @@ def test_duplicate_with_unavailable_result_never_restarts_cost(db, setup_reply, 
 def test_revocation_or_source_change_prevents_return(db, setup_reply, monkeypatch, change, when):
     identity, _, library, policy, _, settings = setup_reply
 
-    def mutate(db, call_number=2):
-        if call_number != 2:
+    def mutate(db, call_number=1):
+        if call_number != 1:
             return
         if change == "grant":
             permission = db.query(ArkPermission).filter_by(code="whatsapp_reply:write").one()
@@ -132,10 +134,10 @@ def test_revocation_or_source_change_prevents_return(db, setup_reply, monkeypatc
     with pytest.raises(WhatsAppTranslationError) as caught:
         reply_service.suggest_reply(db, identity, payload)
     assert caught.value.error_code in {"reply_permission_denied", "device_revoked", "reply_sources_changed", "reply_configuration_changed"}
-    assert len(calls) == 2
+    assert len(calls) == 1
 
 
-def test_missing_policy_is_safe_and_never_generates_unconstrained_reply(db, setup_reply, monkeypatch):
+def test_missing_policy_still_provides_editable_draft_with_warning(db, setup_reply, monkeypatch):
     identity, _, library, _, _, _ = setup_reply
     db.query(KnowledgeLibraryMember).filter_by(library_id=library.id).delete()
     db.commit()
@@ -143,32 +145,32 @@ def test_missing_policy_is_safe_and_never_generates_unconstrained_reply(db, setu
     result = reply_service.suggest_reply(db, identity, request())
     assert len(calls) == 1
     assert result.sources == [] and result.claims == []
-    assert result.status == "needs_confirmation"
+    assert result.status == "ready"
     assert "knowledge_unavailable" in result.risk_flags
-    assert "Genius" not in result.reply_text
+    assert result.reply_text == output()["reply_text"]
 
 
 def test_retrieval_error_is_not_reported_as_no_knowledge(db, setup_reply, monkeypatch):
     calls = mock_model(monkeypatch)
 
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise RuntimeError("SYNTHETIC_PRIVATE_BODY")
 
     monkeypatch.setattr(reply_service, "retrieve_reply_sources", fail)
     with pytest.raises(WhatsAppTranslationError) as caught:
         reply_service.suggest_reply(db, setup_reply[0], request())
     assert caught.value.error_code == "reply_unavailable"
-    assert len(calls) == 1
+    assert len(calls) == 0
 
 
 def test_invalid_response_is_not_retried_or_cached(db, setup_reply, monkeypatch):
-    calls = mock_model(monkeypatch, generator=output(reply_text="We guarantee delivery in seven days."))
+    calls = mock_model(monkeypatch, generator=output(reply_text=""))
     payload = request()
     with pytest.raises(WhatsAppTranslationError):
         reply_service.suggest_reply(db, setup_reply[0], payload)
     with pytest.raises(WhatsAppTranslationError):
         reply_service.suggest_reply(db, setup_reply[0], payload)
-    assert len(calls) == 2
+    assert len(calls) == 1
     assert db.query(ReplyRequestRecord).one().status == "failed"
 
 
@@ -212,3 +214,200 @@ def test_real_http_device_mapping_and_no_store(db, setup_reply, monkeypatch):
         assert calls[0]["caller_user_id"] == setup_reply[0].user_id
     finally:
         app.dependency_overrides.clear()
+
+
+def test_chinese_conversation_retrieves_fact_via_bigrams(db, setup_reply, monkeypatch):
+    identity, _, _, _, fact, _ = setup_reply
+    mock_model(monkeypatch)
+    result = reply_service.suggest_reply(db, identity, request(messages=[
+        {"role": "customer", "text": "请问你们的发帘接缝厚吗"},
+    ]))
+    assert any(source.document_id == fact["document_id"] for source in result.sources)
+
+
+def test_query_terms_capped_with_recency_priority(db, setup_reply, monkeypatch):
+    identity = setup_reply[0]
+    captured = []
+    real_retrieve = reply_service.retrieve_reply_sources
+
+    def observed(*args, **kwargs):
+        captured.append(args[3])
+        return real_retrieve(*args, **kwargs)
+
+    monkeypatch.setattr(reply_service, "retrieve_reply_sources", observed)
+    mock_model(monkeypatch)
+    messages = [{"role": "customer", "text": " ".join(f"word{index:03d}" for index in range(batch * 50, batch * 50 + 50))}
+                for batch in range(10)]
+    messages[-1]["text"] += " zzzrecentmarker"
+    reply_service.suggest_reply(db, identity, request(messages=messages))
+    assert len(captured) == 1
+    assert len(captured[0]) <= 300
+    assert "zzzrecentmarker" in captured[0]
+    assert "word000" not in captured[0]  # the cap drops the oldest terms first
+
+
+def _enable_rewrite_preset(db, settings):
+    provider = db.query(AiProvider).filter_by(name="synthetic-reply").one()
+    db.add(AiPreset(preset_name=settings.WHATSAPP_REPLY_QUERY_REWRITE_PRESET, provider_id=provider.id,
+                    model="synthetic-model", is_enabled=True, parameters={"max_tokens": 400}))
+    db.commit()
+
+
+def test_query_rewrite_recovers_lexical_miss(db, setup_reply, monkeypatch):
+    identity, _, _, _, fact, settings = setup_reply
+    _enable_rewrite_preset(db, settings)
+    calls = []
+
+    def fake_chat(db, **kwargs):
+        calls.append(kwargs)
+        if kwargs["preset_name"] == settings.WHATSAPP_REPLY_QUERY_REWRITE_PRESET:
+            return {"content": encode({"queries": ["thin seam"]}), "log_id": len(calls)}
+        return {"content": encode({**output(), "memory_changes": []}), "log_id": len(calls)}
+
+    monkeypatch.setattr(reply_service, "chat", fake_chat)
+    result = reply_service.suggest_reply(db, identity, request(messages=[
+        {"role": "customer", "text": "Quelle est la couture?"},
+    ]))
+    assert any(call["preset_name"] == settings.WHATSAPP_REPLY_QUERY_REWRITE_PRESET for call in calls)
+    assert any(source.document_id == fact["document_id"] for source in result.sources)
+    assert "no_public_facts" not in result.risk_flags
+
+
+def test_query_rewrite_not_attempted_when_lexical_retrieval_succeeds(db, setup_reply, monkeypatch):
+    identity, _, _, _, fact, settings = setup_reply
+    _enable_rewrite_preset(db, settings)
+    calls = mock_model(monkeypatch)
+    result = reply_service.suggest_reply(db, identity, request())
+    assert any(source.document_id == fact["document_id"] for source in result.sources)
+    assert len(calls) == 1
+
+
+def test_query_rewrite_failure_falls_back_to_lexical_draft(db, setup_reply, monkeypatch):
+    identity, *_, settings = setup_reply
+    _enable_rewrite_preset(db, settings)
+    calls = []
+
+    def fake_chat(db, **kwargs):
+        calls.append(kwargs)
+        if kwargs["preset_name"] == settings.WHATSAPP_REPLY_QUERY_REWRITE_PRESET:
+            raise TimeoutError("synthetic timeout")
+        return {"content": encode({**output(), "memory_changes": []}), "log_id": len(calls)}
+
+    monkeypatch.setattr(reply_service, "chat", fake_chat)
+    result = reply_service.suggest_reply(db, identity, request(messages=[
+        {"role": "customer", "text": "Quelle est la couture?"},
+    ]))
+    assert len(calls) == 2
+    assert result.status == "ready"
+    assert "no_public_facts" in result.risk_flags
+
+
+def test_stale_binding_adds_risk_flag_without_failing_draft(db, setup_reply, monkeypatch):
+    identity, *_, settings = setup_reply
+    bindings = [dict(item) for item in settings.WHATSAPP_REPLY_SOURCE_BINDINGS]
+    bindings[1]["content_hash"] = "0" * 64
+    monkeypatch.setattr(settings, "WHATSAPP_REPLY_SOURCE_BINDINGS", bindings)
+    mock_model(monkeypatch)
+    result = reply_service.suggest_reply(db, identity, request())
+    assert result.status == "ready"
+    assert "knowledge_binding_stale" in result.risk_flags
+
+
+def test_detected_language_drives_glossary_over_fallback(db, setup_reply, monkeypatch):
+    identity = setup_reply[0]
+    captured = {}
+    real_glossary = reply_service.glossary_for
+
+    def observed(db, **kwargs):
+        captured.update(kwargs)
+        return real_glossary(db, **kwargs)
+
+    monkeypatch.setattr(reply_service, "glossary_for", observed)
+    mock_model(monkeypatch)
+    reply_service.suggest_reply(db, identity, request(detected_language="fr"))
+    assert captured["target_language"] == "fr"
+    reply_service.suggest_reply(db, identity, request(target_language="es"))
+    assert captured["target_language"] == "es"
+    reply_service.suggest_reply(db, identity, request())
+    assert captured["target_language"] == "en"
+
+
+def test_detected_language_must_be_a_supported_code(db, setup_reply):
+    with pytest.raises(ValueError):
+        request(detected_language="xx")
+    assert request(detected_language="").detected_language == ""
+
+
+def test_handoff_next_step_uses_first_missing_information(db, setup_reply, monkeypatch):
+    identity = setup_reply[0]
+    mock_model(monkeypatch, generator=output(missing_information=["需确认是否可定制颜色"]))
+    result = reply_service.suggest_reply(db, identity, request())
+    assert result.action.focus == "需确认是否可定制颜色"
+    assert result.handoff["next_step"] == "需确认是否可定制颜色"
+
+
+def test_auto_handoff_next_step_uses_real_review_reason(db, setup_reply, monkeypatch):
+    identity = setup_reply[0]
+    mock_model(monkeypatch, generator=output(auto_action="reply", reply_segments="not-a-list"))
+    result = reply_service.suggest_reply(db, identity, request(mode="auto"))
+    assert result.auto_action == "handoff"
+    assert result.action.kind == "handoff"
+    assert result.action.focus == "模型分段格式不完整，已保留回复，请人工处理。"
+    assert result.handoff["next_step"] == result.action.focus
+
+
+def test_auto_reply_with_unverified_price_hands_off(db, setup_reply, monkeypatch):
+    identity = setup_reply[0]
+    mock_model(monkeypatch, generator=output(
+        reply_text="It costs $100. Shall I proceed?",
+        auto_action="reply", reply_segments=["It costs $100.", "Shall I proceed?"]))
+    result = reply_service.suggest_reply(db, identity, request(mode="auto"))
+    assert result.auto_action == "handoff"
+    assert result.reply_segments == []
+    assert "price_unverified" in result.risk_flags
+    assert "auto_reply_review_required" in result.risk_flags
+    assert result.action.kind == "handoff" and result.action.focus.endswith("请人工处理。")
+
+
+def test_auto_reply_with_sourced_price_is_sent(db, setup_reply, monkeypatch):
+    identity, _, library, _, _, settings = setup_reply
+    admin = {"sub": str(identity.user_id), "roles": ["super_admin"]}
+    priced = publish(db, admin, library.id, "Synthetic price FAQ", "Sample fee is USD 100 per set.")
+    item = binding(priced, "public_fact")
+    item.aliases = ["price", "fee"]
+    settings.WHATSAPP_REPLY_SOURCE_BINDINGS.append(item.model_dump())
+    mock_model(monkeypatch, generator=output(
+        reply_text="The sample fee is USD 100 per set.",
+        auto_action="reply", reply_segments=["The sample fee is USD 100 per set."]))
+    result = reply_service.suggest_reply(db, identity, request(mode="auto", messages=[
+        {"role": "customer", "text": "What is the sample fee?"},
+    ]))
+    assert result.auto_action == "reply"
+    assert result.reply_segments == ["The sample fee is USD 100 per set."]
+    assert "price_unverified" not in result.risk_flags
+
+
+def test_draft_mode_keeps_unverified_price_for_human_review(db, setup_reply, monkeypatch):
+    identity = setup_reply[0]
+    mock_model(monkeypatch, generator=output(reply_text="It costs $100."))
+    result = reply_service.suggest_reply(db, identity, request())
+    assert result.status == "ready"
+    assert result.reply_text == "It costs $100."
+    assert "price_unverified" not in result.risk_flags
+
+
+def test_auto_mode_requires_auto_enabled(db, setup_reply, monkeypatch):
+    identity, *_, settings = setup_reply
+    monkeypatch.setattr(settings, "WHATSAPP_REPLY_AUTO_ENABLED", False)
+    mock_model(monkeypatch)
+    with pytest.raises(WhatsAppTranslationError) as caught:
+        reply_service.suggest_reply(db, identity, request(mode="auto"))
+    assert caught.value.error_code == "reply_auto_disabled"
+    result = reply_service.suggest_reply(db, identity, request())
+    assert result.status == "ready"
+
+
+def test_capabilities_reflect_auto_toggle(db, setup_reply, monkeypatch):
+    identity, *_, settings = setup_reply
+    monkeypatch.setattr(settings, "WHATSAPP_REPLY_AUTO_ENABLED", False)
+    assert reply_service.reply_capabilities(db, identity)["auto_reply_enabled"] is False

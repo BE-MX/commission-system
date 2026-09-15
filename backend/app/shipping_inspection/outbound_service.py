@@ -7,6 +7,9 @@ okki_outbound_records / okki_outbound_record_items 是 OKKI 同步作业维护�
   规格 = product_model，SKU = sku_code。
 - 小程序型号/尺寸/颜色 = okki_products.model/size/color，按 product_id 左连；
   发货备注 = records.remark（2026-09-07 实库列核验）。
+- 归属过滤（2026-09-14 实库核验）：records.company_id → okki_orders 同客户且
+  user_id = 当前用户绑定的 OKKI 业务员 id；无 shipping_inspection:read_all 权限时
+  由 router 强制传入。实库 4290 单 company_id 全部能命中 okki_orders。
 - 关键：明细关联出库单走 outbound_invoice_id 桥（两表都有此列且 14125/14125 命中）；
   items.outbound_record_id 是 OKKI 侧另一个实体 id，与 records.id 完全不相交，
   绝不能拿它做 join。无 outbound_invoice_id 列的库（如单元测试种子表）才回退
@@ -41,6 +44,7 @@ _RECORD_CANDIDATES: dict[str, list[str]] = {
     "outbound_no": ["serial_id", "outbound_no", "outbound_order_no", "record_no", "bill_no", "order_no", "no", "code"],
     "outbound_date": ["warehouse_invoice_time", "outbound_date", "outbound_time", "delivery_date", "ship_date", "created_at", "create_time", "gmt_create"],
     "customer_name": ["company_name", "customer_name", "client_name", "buyer_name"],
+    "company_id": ["company_id"],
     "owner_name": ["create_user_name", "owner_name", "salesman_name", "user_name", "operator_name"],
     "remark": ["remark"],
 }
@@ -127,6 +131,23 @@ def _col(mapping: dict[str, str | None], key: str, alias: str) -> str:
     return f"{alias}.`{name}`" if name else "NULL"
 
 
+def _owner_scope_clause(db: Session, rm: dict[str, str | None]) -> str:
+    """按 OKKI 归属过滤：出库单客户在该业务员的订单里出现（okki_orders.user_id）。
+
+    company_id 列缺失时抛错（fail-closed），绝不降级为未过滤查询。
+    """
+    if not rm.get("company_id"):
+        columns = sorted(_table_columns(db, RECORDS_TABLE))
+        raise OutboundTableError(
+            f"业务库表 {_schema()}.{RECORDS_TABLE} 缺少 company_id 列，无法按归属过滤；实际列：{columns}"
+        )
+    schema = _schema()
+    return (
+        f"EXISTS (SELECT 1 FROM `{schema}`.`okki_orders` o "
+        f"WHERE o.`company_id` = r.`{rm['company_id']}` AND o.`user_id` = :scope_okki_user_id)"
+    )
+
+
 def _str_or_none(value) -> str | None:
     if value is None:
         return None
@@ -194,14 +215,21 @@ def list_outbound_records(
     date_to: date | None = None,
     page: int = 1,
     page_size: int = 20,
+    okki_user_id: str | None = None,
 ) -> tuple[list[dict], int]:
-    """出库单分页列表：keyword 匹配单号/客户，date 按出库日期过滤（含当日）。"""
+    """出库单分页列表：keyword 匹配单号/客户，date 按出库日期过滤（含当日）。
+
+    okki_user_id 非空时按 OKKI 归属过滤：只保留客户在该业务员订单中出现的出库单。
+    """
     rm = _record_columns(db)
     im = _item_columns(db)
     schema = _schema()
 
     params: dict[str, object] = {}
     clauses: list[str] = []
+    if okki_user_id:
+        clauses.append(_owner_scope_clause(db, rm))
+        params["scope_okki_user_id"] = okki_user_id
     if keyword:
         like_parts = []
         if rm["outbound_no"]:
@@ -265,16 +293,21 @@ def list_outbound_records(
     return [_map_record_row(row) for row in rows], int(total)
 
 
-def get_outbound_record(db: Session, record_id: str) -> dict | None:
-    """单条出库单头；不存在返回 None。"""
+def get_outbound_record(db: Session, record_id: str, okki_user_id: str | None = None) -> dict | None:
+    """单条出库单头；不存在（或归属过滤后不可见）返回 None。"""
     rm = _record_columns(db)
     schema = _schema()
+    scope = ""
+    params: dict[str, object] = {"rid": record_id}
+    if okki_user_id:
+        scope = f" AND {_owner_scope_clause(db, rm)}"
+        params["scope_okki_user_id"] = okki_user_id
     row = db.execute(text(f"""
         SELECT {_record_select(rm)}, 0 AS item_count, 0 AS total_qty
         FROM `{schema}`.`{RECORDS_TABLE}` r
-        WHERE r.`{rm['id']}` = :rid
+        WHERE r.`{rm['id']}` = :rid{scope}
         LIMIT 1
-    """), {"rid": record_id}).mappings().first()
+    """), params).mappings().first()
     if row is None:
         return None
     result = _map_record_row(row)

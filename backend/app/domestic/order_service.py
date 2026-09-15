@@ -5,11 +5,12 @@ import json
 import logging
 from datetime import date
 from types import SimpleNamespace
-from app.core.time import beijing_today
+from app.core.time import beijing_now, beijing_today
 
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from pydantic import ValidationError
 
 from app.auth.models import ArkUser
 from app.domestic import constants as C
@@ -48,12 +49,13 @@ from app.domestic.schemas import (
     OrderItemUpdate,
     OrderUpdate,
     ProductAttrs,
+    ProductionProductAttrs,
 )
 from app.system.models import SysDict
 
 logger = logging.getLogger("commission")
 
-_TEXT_FIELDS = ("hairstyle", "color", "style_requirement", "remark")
+_TEXT_FIELDS = ("guest_name", "hairstyle", "color", "style_requirement", "remark")
 _IMAGE_FIELDS = ("hairstyle_images", "color_images", "style_images", "remark_images")
 _PUBLIC_PROGRESS_FIELDS = (
     "step_order",
@@ -75,8 +77,14 @@ def _public_progress_step(step: dict) -> dict:
 
 def _order_request_hash(payload: OrderCreate) -> str:
     """Canonical fingerprint used to reject accidental request-id reuse."""
+    data = payload.model_dump(mode="json", exclude={"request_id"})
+    # Preserve persisted fingerprints for requests created before the optional field existed.
+    for item in data["items"]:
+        for field in ("guest_name", "guest_order_date"):
+            if item.get(field) is None:
+                item.pop(field, None)
     encoded = json.dumps(
-        payload.model_dump(mode="json", exclude={"request_id"}),
+        data,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -85,8 +93,12 @@ def _order_request_hash(payload: OrderCreate) -> str:
 
 
 def _item_append_request_hash(payload: OrderItemAppend) -> str:
+    data = payload.model_dump(mode="json", exclude={"request_id"})
+    for field in ("guest_name", "guest_order_date"):
+        if data.get(field) is None:
+            data.pop(field, None)
     encoded = json.dumps(
-        payload.model_dump(mode="json", exclude={"request_id"}),
+        data,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -324,6 +336,7 @@ def _build_item(
         product_id=product.id,
         product_name=product.name,
         attrs_snapshot=payload.attrs.model_dump(),
+        guest_order_date=payload.guest_order_date,
         route_id=route_id,
         order_qty=payload.order_qty,
         original_price=0 if production else quote.discount.original_price,
@@ -510,6 +523,19 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
                 f"本次需扣 ¥{estimated_total:.2f}"
             )
 
+        # 优惠价低于原始价（会员价/手工改价）的业务正式单先落待审核：
+        # 不扣款、不能报工、不能改明细，审核通过才转生产中并结算。
+        # 带销售价的特单直录（discount 恒 0）不触发；存量回填特单走报价路径时仍按优惠判定。
+        requires_review = (
+            not production
+            and not payload.is_draft
+            and any(
+                quote is not None
+                and balance_service.money(quote.discount.discount_amount) > 0
+                for quote in quotes
+            )
+        )
+
         order = None
         for _ in range(5):
             savepoint = db.begin_nested()
@@ -524,7 +550,11 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
                 order_category=payload.order_category,
                 order_type=payload.order_type,
                 order_channel=payload.order_channel,
-                status=C.ORDER_DRAFT if payload.is_draft else C.ORDER_PRODUCING,
+                status=(
+                    C.ORDER_DRAFT if payload.is_draft
+                    else C.ORDER_PENDING_REVIEW if requires_review
+                    else C.ORDER_PRODUCING
+                ),
                 total_amount=0,
                 charged_amount=0,
                 next_line_no=1,
@@ -758,6 +788,7 @@ def list_orders(
     keyword: str = "",
     status: int | None = None,
     customer_id: int | None = None,
+    customer_name: str = "",
     order_kind: str = "",
     order_category: str = "",
     order_type: str = "",
@@ -783,6 +814,12 @@ def list_orders(
         q = q.filter(DomesticOrder.status == status)
     if customer_id:
         q = q.filter(DomesticOrder.customer_id == customer_id)
+    if customer_name.strip():
+        q = q.filter(DomesticOrder.customer_id.in_(
+            db.query(DomesticCustomer.id).filter(
+                DomesticCustomer.shop_name.contains(customer_name.strip(), autoescape=True)
+            )
+        ))
     if order_category:
         q = q.filter(DomesticOrder.order_category == order_category)
     if order_type:
@@ -830,14 +867,14 @@ def list_orders(
         .all()
     )
 
-    # 上次下单日期 / 复购周期：同一客户上一张非草稿单的下单日期，以及两次下单的间隔天数。
-    # 草稿不算一次「下单」——还没提交的占位单不该出现在客户的下单节奏里。
+    # 上次下单日期 / 复购周期：同一客户上一张正式单的下单日期，以及两次下单的间隔天数。
+    # 草稿/待审核/已驳回不算一次「下单」——还没生效的占位单不该出现在客户的下单节奏里。
     prev_rows = (
         db.query(DomesticOrder.customer_id, DomesticOrder.id, DomesticOrder.order_date)
         .filter(
             DomesticOrder.customer_id.in_(customer_ids),
             DomesticOrder.deleted_flag == 0,
-            DomesticOrder.status != C.ORDER_DRAFT,
+            DomesticOrder.status.notin_(C.ORDER_INACTIVE_STATUSES),
             DomesticOrder.order_kind == "business",
         )
         .order_by(DomesticOrder.customer_id, DomesticOrder.order_date, DomesticOrder.id)
@@ -990,6 +1027,7 @@ def get_order_detail(
     *,
     public_progress_only: bool = False,
     include_finance: bool = True,
+    item_id: int | None = None,
 ) -> dict:
     order = db.query(DomesticOrder).filter(
         DomesticOrder.id == order_id, DomesticOrder.deleted_flag == 0
@@ -1001,6 +1039,7 @@ def get_order_detail(
     items = (
         db.query(DomesticOrderItem)
         .filter(DomesticOrderItem.order_id == order_id)
+        .filter(DomesticOrderItem.id == item_id if item_id is not None else True)
         .order_by(DomesticOrderItem.id.asc())
         .all()
     )
@@ -1047,6 +1086,8 @@ def get_order_detail(
             "line_code": f"A{item.line_no or 1}",
             "product_id": item.product_id,
             "product_name": item.product_name,
+            "guest_name": item.guest_name,
+            "guest_order_date": item.guest_order_date.isoformat() if item.guest_order_date else None,
             "attrs": item.attrs_snapshot or {},
             "route_id": item.route_id,
             "order_qty": item.order_qty,
@@ -1135,6 +1176,33 @@ def get_order_detail(
     return detail
 
 
+# 进度码只公开签名对应明细；金额、数量和内部路线元数据不下发。
+_TRACK_ORDER_FIELDS = ("order_kind", "order_no", "customer_name")
+_TRACK_ITEM_FIELDS = (
+    "id", "line_code", "product_name", "guest_name", "guest_order_date", "attrs",
+    "hairstyle", "color", "style_requirement", "remark",
+    "hairstyle_images", "color_images", "style_images", "remark_images",
+)
+
+
+def track_public_view(detail: dict) -> dict:
+    """Serialize customer-facing details and configured public process progress."""
+    return {
+        **{field: detail.get(field) for field in _TRACK_ORDER_FIELDS},
+        "items": [
+            {
+                **{field: item.get(field) for field in _TRACK_ITEM_FIELDS},
+                "steps": [
+                    {"process_name": step["process_name"],
+                     "completed": step["passed_qty"] >= item["order_qty"]}
+                    for step in item.get("steps", [])
+                ],
+            }
+            for item in detail["items"]
+        ],
+    }
+
+
 # ── 编辑 ──────────────────────────────────────────────
 
 
@@ -1191,7 +1259,7 @@ def update_order(
         _ensure_order_creator(order, user_id)
         data = payload.model_dump(exclude_unset=True)
         if order_kind_service.is_production(order):
-            if set(data) & (order_kind_service.PRODUCTION_HEADER_EXCLUDED | {"order_no"}):
+            if set(data) & (order_kind_service.PRODUCTION_HEADER_EXCLUDED | {"order_no", "guest_name"}):
                 raise ValueError("生产订单不能填写销售字段或修改系统编号")
             if order.status == C.ORDER_TERMINATED:
                 raise ValueError("已终止的订单不能编辑")
@@ -1244,6 +1312,8 @@ def update_order(
         else:
             if order.status == C.ORDER_TERMINATED:
                 raise ValueError("已终止的订单不能编辑")
+            if order.status in (C.ORDER_PENDING_REVIEW, C.ORDER_REJECTED):
+                raise ValueError("订单待审核/已驳回，审核通过前不能编辑")
             items = None
             quotes = None
 
@@ -1334,6 +1404,8 @@ def add_item(
         _ensure_order_creator(order, user_id)
         if order.status in (C.ORDER_TERMINATED, C.ORDER_SHIPPED):
             raise ValueError("已终止/已发货的订单不能加明细")
+        if order.status in (C.ORDER_PENDING_REVIEW, C.ORDER_REJECTED):
+            raise ValueError("订单待审核/已驳回，审核通过前不能加明细")
         payload = payload.model_copy(deep=True)
         if order_kind_service.is_production(order):
             order_kind_service.normalize_production_input(payload)
@@ -1410,6 +1482,50 @@ def add_item(
         raise
 
 
+def _apply_item_attrs(
+    db: Session,
+    order: DomesticOrder,
+    item: DomesticOrderItem,
+    raw_attrs: dict,
+    *,
+    user_id: int | None,
+) -> None:
+    """改明细规格：只换属性快照与产品归属。
+
+    工艺路线只随产品类型走，而产品类型不允许在这里改（改了会让在制工序失真）；
+    成交价保持下单口径，不随规格重算 —— 需要改价走 unit_price。
+    """
+    production = order_kind_service.is_production(order)
+    attrs_model = ProductionProductAttrs if production else ProductAttrs
+    try:
+        attrs = attrs_model.model_validate(raw_attrs)
+    except ValidationError as exc:
+        errors = exc.errors()
+        message = errors[0].get("msg", "产品属性不合法") if errors else "产品属性不合法"
+        raise ValueError(message.replace("Value error, ", "")) from exc
+    old_type = (item.attrs_snapshot or {}).get("product_type")
+    if old_type and attrs.product_type != old_type:
+        raise ValueError("产品类型不可修改，如需变更请新增明细")
+    attrs = attribute_service.prepare_item_attrs(
+        db,
+        order_category="normal" if production else order.order_category,
+        attrs=attrs,
+        user_id=user_id or order.created_by,
+    )
+    snapshot = attrs.model_dump()
+    if snapshot == (item.attrs_snapshot or {}):
+        return
+    product = product_service.find_or_create_product(db, attrs)
+    if product.id != item.product_id:
+        old_product = db.get(DomesticProduct, item.product_id)
+        if old_product is not None:
+            old_product.use_count = max(0, (old_product.use_count or 0) - 1)
+        product.use_count = (product.use_count or 0) + 1
+        item.product_id = product.id
+        item.product_name = product.name
+    item.attrs_snapshot = snapshot
+
+
 def update_item(
     db: Session,
     item_id: int,
@@ -1421,6 +1537,8 @@ def update_item(
     _ensure_order_creator(order, user_id)
     if order.status in (C.ORDER_TERMINATED, C.ORDER_SHIPPED):
         raise ValueError("已终止/已发货的订单不能修改明细")
+    if order.status in (C.ORDER_PENDING_REVIEW, C.ORDER_REJECTED):
+        raise ValueError("订单待审核/已驳回，审核通过前不能修改明细")
     if item.status == C.ITEM_SHIPPED:
         raise ValueError("已发货的明细不能编辑")
 
@@ -1470,12 +1588,16 @@ def update_item(
             item.discount_amount = balance_service.money(original - (price - labor_fee))
             item.pricing_rule = "manual_override"
 
+    if "guest_order_date" in data:
+        item.guest_order_date = data["guest_order_date"]
     for field in _TEXT_FIELDS:
         if field in data:
             setattr(item, field, data[field])
     for field in _IMAGE_FIELDS:
         if field in data and data[field] is not None:
             setattr(item, field, data[field])
+    if data.get("attrs") is not None:
+        _apply_item_attrs(db, order, item, data["attrs"], user_id=user_id)
 
     progress_service.recalc_item_status(db, item)
     progress_service.sync_order_status(db, item.order_id)
@@ -1508,6 +1630,8 @@ def delete_item(db: Session, item_id: int, user_id: int | None = None) -> None:
     order_id = order.id
     if order.status in (C.ORDER_TERMINATED, C.ORDER_SHIPPED):
         raise ValueError("已终止/已发货的订单不能删除明细")
+    if order.status in (C.ORDER_PENDING_REVIEW, C.ORDER_REJECTED):
+        raise ValueError("订单待审核/已驳回，审核通过前不能删除明细")
     remaining = db.query(func.count(DomesticOrderItem.id)).filter(
         DomesticOrderItem.order_id == order_id
     ).scalar()
@@ -1545,6 +1669,8 @@ def attach_route(
     _ensure_order_creator(order, user_id)
     if order.status in (C.ORDER_TERMINATED, C.ORDER_SHIPPED):
         raise ValueError("已终止/已发货的订单不能重配工艺路线")
+    if order.status in (C.ORDER_PENDING_REVIEW, C.ORDER_REJECTED):
+        raise ValueError("订单待审核/已驳回，审核通过前不能重配工艺路线")
     if item.route_id is not None:
         reported = db.query(func.count(DomesticReportLog.id)).filter(
             DomesticReportLog.item_id == item.id
@@ -1645,8 +1771,17 @@ def submit_draft(
                     f"本次需扣 ¥{total:.2f}"
                 )
             _apply_saved_item_quotes(items, quotes)
-        order.status = C.ORDER_PRODUCING
-        if customer:
+        # 优惠价低于原始价的提交先落待审核（不扣款），审核通过才转生产中
+        requires_review = (
+            not production
+            and any(
+                balance_service.money(item.discount_amount or 0) > 0
+                for item in items
+            )
+        )
+        order.status = C.ORDER_PENDING_REVIEW if requires_review else C.ORDER_PRODUCING
+        if customer and not requires_review:
+            # 待审核单不推进下单节奏：审核通过时才记 last_order_date（与统计口径一致）
             customer.last_order_date = max(
                 value for value in (customer.last_order_date, order.order_date)
                 if value is not None
@@ -1674,6 +1809,66 @@ def submit_draft(
         )
         db.commit()
         return result
+    except Exception:
+        db.rollback()
+        raise
+
+
+def review_order(
+    db: Session,
+    order_id: int,
+    *,
+    decision: str,
+    remark: str | None,
+    reviewer_id: int,
+    can_admin: bool,
+) -> dict:
+    """审核优惠价订单：通过=转生产中并按报价快照扣款；驳回=落已驳回。
+
+    待审核单从未扣款，驳回不需要退款；报价以提交时快照为准，审核不重算。
+    """
+    try:
+        order = _get_order_or_raise(db, order_id, lock=True)
+        if order.status != C.ORDER_PENDING_REVIEW:
+            raise ValueError("该订单不在待审核状态，请刷新查看最新状态")
+        # 审自己不成立；domestic:admin / super_admin 兜底（如只有一人在岗）
+        if order.created_by == reviewer_id and not can_admin:
+            raise ValueError("不能审核自己提交的订单")
+        remark = (remark or "").strip()
+        if decision == "reject":
+            if len(remark) < 2:
+                raise ValueError("驳回必须填写原因（至少 2 个字）")
+            order.status = C.ORDER_REJECTED
+            order.reviewed_by = reviewer_id
+            order.reviewed_at = beijing_now()
+            order.review_remark = remark
+            order.remark = f"{order.remark or ''}\n[审核驳回] {remark}".strip()[:1000]
+            db.commit()
+            return {"id": order.id, "status": order.status}
+        production = order_kind_service.is_production(order)
+        customer = None if production else _lock_customer(db, order.customer_id)
+        order.status = C.ORDER_PRODUCING
+        order.reviewed_by = reviewer_id
+        order.reviewed_at = beijing_now()
+        order.review_remark = remark or None
+        if customer:
+            customer.last_order_date = max(
+                value for value in (customer.last_order_date, order.order_date)
+                if value is not None
+            )
+        db.flush()
+        # 通过即正式下单：余额校验与扣款发生在这一刻；余额不足则整单回滚保持待审核
+        balance_service.sync_order_finance(
+            db, order, user_id=reviewer_id,
+            reason=f"订单 {order.domestic_no} 审核通过扣款",
+        )
+        db.commit()
+        return {
+            "id": order.id,
+            "status": order.status,
+            "total_amount": float(order.total_amount or 0),
+            "charged_amount": float(order.charged_amount or 0),
+        }
     except Exception:
         db.rollback()
         raise

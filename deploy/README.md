@@ -66,6 +66,23 @@ deploy\deploy.bat --revision <full-commit-sha> --migration-credentials <protecte
 
 迁移恢复证据在 `.deploy_state/schema-writers.json`。`stopping`、`running-ddl`、`upgraded`、`failed-after-ddl`、`recovery-required` 等未完成阶段都阻断新一轮发布，即使数据库已到 head、没有 pending 也不能绕过。所有发布目标验证完成后才写 `completed`。检查实际结构、原始 writer 基线及当前应用版本后处理恢复记录，不能直接删除日志重跑。
 
+### 2026-09-14：149 版本编号超长的专项恢复
+
+旧 revision `149_domestic_order_review_columns` 长 33 字符，超过 `alembic_version.version_num` 的 32 字符。已只读确认的现场是版本停在 148，而 149 的三个审核字段与外键都已存在。修正版使用 `149_dom_order_review_columns`（27 字符）；迁移先严格校验已有列类型、可空性及外键，复用兼容对象，只补缺项，不 stamp、不删除字段。
+
+此专项入口只接受原始 `failed-after-ddl`、147→148→旧149 的完整日志，四个 writer 原本均 running 且有完整停止证据。原始日志保存在 `recovery_original` 中；当前清单必须完全一致。当前数据库必须为 148 或修正版149，代码唯一 head 必须为修正版149。其他事故仍阻断，不能把此开关当通用强制发布。
+
+在生产恢复获得授权、服务器已具备本次修复的部署脚本后，使用经审查的完整提交 SHA 固定候选。先执行只准备命令，检查通过后再执行完整恢复：
+
+```powershell
+deploy\deploy.bat --recover-migration-149 --revision <reviewed-full-commit-sha> --prepare-only
+deploy\deploy.bat --recover-migration-149 --revision <reviewed-full-commit-sha>
+```
+
+仍使用原有受限 DBA 凭据，可按需加 `--migration-credentials`。只准备阶段不启停服务、不执行 DDL、不改迁移日志；办公室服务若因原事故仍停止，允许准备。正式恢复重新取得数据库发布锁、核验结构及四个 writer，保持原始运行基线，确认全部停止后由 Alembic 完成迁移版本登记。随后沿正常入口激活办公室/北京后端及静态站，恢复原本运行的附属 writer，全部成功才关闭恢复记录。任何恢复失败保留记录，不自动启动旧代码；后续仍须使用同一固定候选和专项入口核验后重试。
+
+此入口要求完整办公室/云发布，不支持 `--cloud-only`、`--migrate-only` 或未固定 `--revision`。部署脚本自身不会在运行中切换到新版本；如果服务器启动入口仍是旧代码，应在维护窗口核对办公室服务已停止后，将服务器 checkout 快进到经审查的修复提交，再运行新入口。不能从未安装服务的候选 worktree 直接启动完整发布，也不能删除日志以绕过旧入口。
+
 旧 `rollback.bat` 已阻断，不能再消费旧 `dist_backup` 并 SCP 覆盖受管版本。失败激活在 schema 不变时有自动回退。已完成发布的人工回退必须先核对候选旧代码是否认识当前 schema，再按受管后端与静态发布流程执行；不得直接覆盖 `current` 下文件或降级数据库。
 
 ## 验证
@@ -79,9 +96,32 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 
 ## 当前边界
 
+### 充值凭证统一办公室存储
+
+`deploy\deploy.bat --voucher-routing-only --prepare-only` 仅准备新加坡、北京的两个凭证路由并执行独立 Nginx 语法检查，不切换流量。经授权后移除 `--prepare-only` 应用；不与普通应用发布、迁移、`--revision` 或 `--cloud-only` 混用。此专项使用当前工作目录中的路由脚本及配置，执行前必须完成 diff 审查。
+
+- 新加坡 `/api/domestic/customers/{id}/recharges` 和 `/api/domestic/customer-requests/{id}/voucher` 走原有办公室 `127.0.0.1:8002` 隧道；北京同路径经证书校验的 HTTPS 转发到新加坡 `leshine.work`。北京主域 HTTPS 和既有 IP 入口都覆盖。
+- 转发完整原始 URI、表单和用户 Authorization，仍由办公室后端执行归属/审核权限、文件类型与大小检查。文件存储使用办公室 `DOMESTIC_STORAGE_ROOT`（默认 `D:\WORKSOURCE\domestic`）。其他内贸 API 不变；不迁移 COS、不复制数据库或文件。
+- 两级网关请求体限额为 21MiB（后端文件上限20MiB），凭证禁止缓存，充值禁止 upstream 自动重试。办公室隧道不可用时请求失败，不回退北京落盘。
+- 两机都准备成功后，先切新加坡再切北京；激活前核对当前配置摘要，漂移则阻断。每台切换前备份至该机 `/etc/nginx/.ark-backups/domestic-voucher/`；全局 `nginx -t` 或 reload 失败恢复原文件。状态写在本地 `.deploy_state/voucher-routing.json`。北京失败时新加坡可能已经生效，查 `completed`，不要误报两机都成功。
+- 准备检查只验证片段语法和目标文件结构；完整运行配置在激活时检查。发布后需用真实申请分别在 `.work`、`.cloud` 查看图片/PDF，并核实同一笔申请、权限及文件内容。没有凭证的记录保持404；禁止为了验证制造充值或审批。
+- 历史凭证先按数据库相对路径核对办公室原文件；若文件在其他实例，只能在确认来源和目标、核对摘要并保留原件后另行迁移。修改路由不会自动找回缺失文件。
+
 - COS 文件迁移暂缓，办公室文件和北京 `/data/customer-media` 保持原位置。
 - `pm.leshine.cloud` 尚缺 DNS/TLS，已列为 pending；不得未开通就显示成功。
 - hair/video 权威源码仍在本仓库之外；独立 MCP、同步器、中继、OpenClaw、n8n 和终端安装分别列出，不盲目升级 latest。
 - 办公室服务器实际远程更新、内网 DNS 和办公室直连北京隧道，需要可用的办公室管理入口才能完成。
 - `--cloud-only` 若发现新加坡前端有变化，会等待对应办公室后端发布并列为 deferred；不提前上线依赖旧 API 的新页面。完全一致的页面可核验并接入受管目录。
 - `tls_setup.py` 用于已有域名的 ACME 路径与证书路径调整；正式配置切换前先 `nginx -t`，每次备份到服务器受限目录。新发型站配置见 `nginx/hair.leshine.cloud.conf`。
+
+## 库存色块内部模块
+
+北京后端发布同时纳管 colorwork-workbench：浏览器使用方舟 `/api/colorwork/workbench/`，不使用子域名。
+`remote_backend.py` 依次调用 `colorwork_release.py` prepare/activate，自动准备固定 Node/pnpm、构建、受限运行配置、
+隔离 D1 验证、正式 D1/R2 整体备份与迁移、回环运行服务 `ark-colorwork` 及 readiness 检查。
+`--prepare-only` 不启动服务、不改正式 D1/R2。同候选复用校验后的制品，同成功候选重跑不重启模块。
+
+数据位于北京 `.deploy_state/colorwork/data`，**此子目录是业务持久存储，不可清理**。
+失败时 `current.json` 和本轮 `backups/<revision>-<attempt>` 必须保留；普通重试会阻断，先按
+`colorwork-workbench/README.md` 核验失败现场、备份及 schema。北京原先没有 Node 时由准备阶段下载官方固定版本并校验摘要，
+不要求手工全局安装。首次使用的真实 PSD/JPG 素材包需单独导入，不能通过代码发布复制业务数据。

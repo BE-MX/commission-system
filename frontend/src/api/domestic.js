@@ -9,6 +9,8 @@ export const ORDER_STATUS = [
   { value: 2, label: '已完工', tag: 'success' },
   { value: 3, label: '已发货', tag: 'info' },
   { value: 4, label: '已终止', tag: 'danger' },
+  { value: 5, label: '待审核', tag: 'warning' },
+  { value: 6, label: '已驳回', tag: 'danger' },
 ]
 export const ORDER_STATUS_LABELS = Object.fromEntries(ORDER_STATUS.map(s => [s.value, s.label]))
 export const ORDER_STATUS_TAGS = Object.fromEntries(ORDER_STATUS.map(s => [s.value, s.tag]))
@@ -85,17 +87,44 @@ export function deleteCustomer(id) {
   return domesticClient.delete(`/customers/${id}`)
 }
 
-export function rechargeCustomer(id, data) {
-  return domesticClient.post(`/customers/${id}/recharges`, data)
+// 充值改为「申请+审核」：必须附银行流水/转账截图（图片或 PDF），审核通过才入账
+export function rechargeCustomer(id, { amount, remark, request_id, file }) {
+  const form = new FormData()
+  form.append('amount', amount)
+  form.append('request_id', request_id)
+  if (remark) form.append('remark', remark)
+  form.append('file', file)
+  return domesticClient.post(`/customers/${id}/recharges`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
 }
 
-// 期初初始化（仅 admin，且无流水时才可用）与临时调整（余额增减/等级覆盖）
+// 期初初始化（仅 admin，且无流水时才可用）与临时调整（余额增减/等级覆盖，审核通过后生效）
 export function initializeCustomer(id, data) {
   return domesticClient.post(`/customers/${id}/initialize`, data)
 }
 
 export function adjustCustomer(id, data) {
   return domesticClient.post(`/customers/${id}/adjust`, data)
+}
+
+// ── 充值/调整申请审核 ──
+export function listCustomerRequests(params) {
+  return domesticClient.get('/customer-requests', { params })
+}
+
+export function approveCustomerRequest(id, remark) {
+  return domesticClient.post(`/customer-requests/${id}/approve`, { remark: remark || null })
+}
+
+export function rejectCustomerRequest(id, remark) {
+  return domesticClient.post(`/customer-requests/${id}/reject`, { remark: remark || null })
+}
+
+// 凭证走鉴权端点，<img>/新窗口不带 token —— 取 blob 转 object URL（同参考图做法）
+export async function fetchVoucherBlob(requestId) {
+  const res = await domesticClient.get(`/customer-requests/${requestId}/voucher`, { responseType: 'blob' })
+  return { url: URL.createObjectURL(res.data), isImage: (res.data.type || '').startsWith('image/') }
 }
 
 export function listCustomerBalanceLedger(id, params) {
@@ -166,6 +195,11 @@ export function updateOrder(id, data) {
 
 export function submitDraftOrder(id, data, config) {
   return domesticClient.post(`/orders/${id}/submit`, data, config)
+}
+
+// 优惠价订单审核：approve=通过并扣款生效；reject=驳回（remark 必填）
+export function reviewOrder(id, decision, remark) {
+  return domesticClient.post(`/orders/${id}/review`, { decision, remark: remark || null })
 }
 
 export function terminateOrder(id, reason) {

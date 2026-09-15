@@ -134,15 +134,21 @@ def build_lan():
 
 def publish(args):
     global ROOT
+    recover_149 = getattr(args, "recover_migration_149", False)
+    if recover_149 and (args.cloud_only or not args.revision):
+        raise RuntimeError("Recovery 149 requires a pinned --revision and a full office/cloud release")
     import source_release
     live = ROOT
     with deployment_lock():
         ROOT, revision, previous = source_release.prepare(live, STATE, not args.no_pull,
                                                          pinned_revision=args.revision)
         import schema_release
-        schema_release.check_recovery()
+        schema_release.check_recovery(recover_149=recover_149)
         from office_release import prepare as office_prepare, activate as office_activate, stage_static
-        office = None if args.cloud_only else office_prepare(live, previous, revision)
+        office_options = {"recover_149": True} if recover_149 else {}
+        office = None if args.cloud_only else office_prepare(live, previous, revision, **office_options)
+        if recover_149:
+            office["recover_149"] = True
         inventory = json.loads((ROOT / "deploy/platforms.json").read_text(encoding="utf-8-sig"))
         if office:
             schema_release.preflight(office, inventory, args.migration_credentials)
@@ -151,7 +157,7 @@ def publish(args):
         outputs = build_frontends()
         if office:
             stage_static({**outputs, "pm-lan": build_lan()}, office)
-        backend = cloud_backend.prepare(ROOT, revision, allow_pending=bool(office))
+        backend = cloud_backend.prepare(ROOT, revision, allow_pending=bool(office), **office_options)
         prepared = []
         outputs["customer-media"] = outputs["frontend"] / "customer-media"
         for target in inventory["static_targets"]:
@@ -212,19 +218,26 @@ if __name__ == "__main__":
     parser.add_argument("--no-pull", action="store_true")
     parser.add_argument("--revision", help="Pin a reviewed full commit SHA; fetch still runs unless --no-pull")
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--voucher-routing-only", action="store_true", help="Route recharge uploads and voucher reads to the office only")
     parser.add_argument("--migrate-only", metavar="PLAN", help="Execute only the reviewed 137 -> 138 migration using a verified local plan")
+    parser.add_argument("--recover-migration-149", action="store_true", help="Resume only the inspected revision-149 overflow with original writer evidence")
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
-        if args.migrate_only:
-            if args.cloud_only or args.no_pull or args.revision:
+        if args.voucher_routing_only:
+            if args.migrate_only or args.cloud_only or args.no_pull or args.revision or args.recover_migration_149 or args.migration_credentials:
+                raise RuntimeError("Voucher routing only accepts --prepare-only")
+            from voucher_routing import execute
+            execute(args.prepare_only)
+        elif args.migrate_only:
+            if args.cloud_only or args.no_pull or args.revision or args.recover_migration_149:
                 raise RuntimeError("Migration-only uses its pinned plan; cloud-only/no-pull/revision do not apply")
             from migration_only import execute
             execute(args.migrate_only, args.migration_credentials, args.prepare_only)
         else:
             publish(args)
     except Exception as error:
-        if STATE.exists() and not getattr(locals().get("args"), "migrate_only", None):
+        if STATE.exists() and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "voucher_routing_only", False):
             journal = marker("publish-current")
             journal.update(status="failed", error_type=type(error).__name__)
             atomic_json(STATE / "publish-current.json", journal)

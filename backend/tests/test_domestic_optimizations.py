@@ -29,6 +29,7 @@ from app.domestic.models import (
     DomesticItemUnit,
     DomesticOrder,
     DomesticOrderItem,
+    DomesticProduct,
     DomesticReportLog,
 )
 from app.domestic.schemas import (
@@ -185,6 +186,20 @@ def _item(db, order_id):
     return db.query(DomesticOrderItem).filter(DomesticOrderItem.order_id == order_id).one()
 
 
+def _approve_pending_order(db, order_id, reviewer):
+    """优惠价单先落待审核（不扣款）：审核通过才转生产中并按快照扣款。"""
+    order = db.query(DomesticOrder).get(order_id)
+    assert order.status == C.ORDER_PENDING_REVIEW
+    assert order.charged_amount == Decimal("0.00")
+    result = order_service.review_order(
+        db, order_id, decision="approve", remark=None,
+        reviewer_id=reviewer.id, can_admin=False,
+    )
+    db.refresh(order)
+    assert order.status == C.ORDER_PRODUCING
+    return result
+
+
 def _steps(db, item):
     return progress_service.build_progress_view(db, item)
 
@@ -309,7 +324,15 @@ def test_draft_does_not_charge_until_submit(db):
         request_id="draft-submit-optimization",
         expected_quotes=[quote],
     )
-    order_service.submit_draft(db, order.id, payload, creator.id)
+    submitted = order_service.submit_draft(db, order.id, payload, creator.id)
+    db.refresh(customer)
+    db.refresh(order)
+    assert submitted["status"] == C.ORDER_PENDING_REVIEW
+    assert order.status == C.ORDER_PENDING_REVIEW
+    assert order.charged_amount == Decimal("0.00")
+    assert customer.balance == Decimal("100.00")
+
+    _approve_pending_order(db, order.id, _user(db, "draft-order-reviewer"))
     db.refresh(customer)
     db.refresh(order)
     assert order.status == C.ORDER_PRODUCING
@@ -372,6 +395,10 @@ def test_formal_order_request_id_prevents_double_charge(db):
     db.refresh(customer)
     assert replay["id"] == first["id"]
     assert replay["replayed"] is True
+    assert customer.balance == Decimal("100.00")
+
+    _approve_pending_order(db, first["id"], _user(db, "formal-retry-reviewer"))
+    db.refresh(customer)
     assert customer.balance == Decimal("80.00")
     assert db.query(DomesticOrder).count() == 1
     mini_rows, _ = order_service.list_orders(db, include_finance=False)
@@ -391,6 +418,7 @@ def test_append_item_request_id_prevents_duplicate_item_and_charge(db):
         request_id="append-retry-recharge",
     )
     created = _create_order(db, creator, customer, qty=1, price="0")
+    _approve_pending_order(db, created["id"], _user(db, "append-retry-reviewer"))
     payload = _priced_item(
         db, customer,
         request_id="append-network-retry",
@@ -466,6 +494,7 @@ def test_order_scale_limits_creation_and_append(db):
     creator = _user(db, "limit-planner")
     customer = _customer(db, creator, "订单上限客户")
     created = _create_order(db, creator, customer, qty=1, price="0")
+    _approve_pending_order(db, created["id"], _user(db, "limit-order-reviewer"))
     order = db.query(DomesticOrder).get(created["id"])
     order.total_unit_qty = C.MAX_ORDER_UNITS - 1
     db.commit()
@@ -493,6 +522,7 @@ def test_item_amount_edits_settle_difference_and_termination_refunds(db):
         request_id="order-delta-recharge",
     )
     created = _create_order(db, creator, customer, qty=2, price="10.00")
+    _approve_pending_order(db, created["id"], _user(db, "amount-order-reviewer"))
     item = _item(db, created["id"])
     db.refresh(customer)
     assert customer.balance == Decimal("80.00")
@@ -517,11 +547,61 @@ def test_item_amount_edits_settle_difference_and_termination_refunds(db):
     assert customer.balance == Decimal("100.00")
 
 
+def test_item_attrs_edit_relinks_product_without_repricing(db):
+    _route_and_workers(db)
+    creator = _user(db, "attrs-planner")
+    customer = _customer(db, creator, "规格客户")
+    balance_service.recharge_customer(
+        db, customer_id=customer.id, amount=Decimal("100.00"), user_id=creator.id,
+        request_id="attrs-edit-recharge",
+    )
+    created = _create_order(db, creator, customer, qty=2, price="10.00")
+    _approve_pending_order(db, created["id"], _user(db, "attrs-order-reviewer"))
+    item = _item(db, created["id"])
+    old_product = db.get(DomesticProduct, item.product_id)
+    old_use_count = old_product.use_count
+
+    # 普单不接受标准字典之外的属性值
+    with pytest.raises(ValueError, match="标准选项"):
+        order_service.update_item(
+            db, item.id,
+            OrderItemUpdate(attrs={**item.attrs_snapshot, "density": "80%"}),
+            creator.id,
+        )
+
+    db.add(SysDict(
+        type=C.ATTR_DICTS["cap"]["density"], code="80%", label="80%", sort=2, is_active=True,
+    ))
+    db.flush()
+    order_service.update_item(
+        db, item.id,
+        OrderItemUpdate(attrs={**item.attrs_snapshot, "density": "80%"}),
+        creator.id,
+    )
+    db.refresh(item)
+    db.refresh(old_product)
+    assert item.attrs_snapshot["density"] == "80%"
+    assert item.product_id != old_product.id
+    assert "80%" in item.product_name
+    # 改规格不重算成交价，也不动工艺路线
+    assert item.unit_price == Decimal("10.00")
+    assert item.route_id is not None
+    assert old_product.use_count == old_use_count - 1
+
+    with pytest.raises(ValueError, match="产品类型不可修改"):
+        order_service.update_item(
+            db, item.id,
+            OrderItemUpdate(attrs={**item.attrs_snapshot, "product_type": "piece"}),
+            creator.id,
+        )
+
+
 def test_quantity_reports_consume_unit_codes_in_order(db):
     _, workers = _route_and_workers(db)
     creator = _user(db, "sequence-planner")
     customer = _customer(db, creator, "顺序客户")
     created = _create_order(db, creator, customer, qty=10, price="0")
+    _approve_pending_order(db, created["id"], _user(db, "sequence-order-reviewer"))
     item = _item(db, created["id"])
     step = _steps(db, item)[0]
 
@@ -552,6 +632,7 @@ def test_report_replay_from_preexisting_session_returns_unit_mapping(db, engine)
     creator = _user(db, "rr-replay-planner")
     customer = _customer(db, creator, "RR重放客户")
     created = _create_order(db, creator, customer, qty=2, price="0")
+    _approve_pending_order(db, created["id"], _user(db, "rr-replay-reviewer"))
     item = _item(db, created["id"])
     progress_id = _steps(db, item)[0]["progress_id"]
     Session = sessionmaker(bind=engine)
@@ -582,6 +663,7 @@ def test_revoked_report_history_still_blocks_item_delete(db):
     creator = _user(db, "audit-delete-planner")
     customer = _customer(db, creator, "审计删除客户")
     created = _create_order(db, creator, customer, qty=2, price="0")
+    _approve_pending_order(db, created["id"], _user(db, "audit-delete-reviewer"))
     original = _item(db, created["id"])
     order_service.add_item(
         db, created["id"],
@@ -605,6 +687,7 @@ def test_unit_mode_requires_exact_upstream_unit_and_exact_revoke_guard(db):
     creator = _user(db, "unit-planner")
     customer = _customer(db, creator, "逐件客户")
     created = _create_order(db, creator, customer, qty=5, price="0")
+    _approve_pending_order(db, created["id"], _user(db, "unit-mode-reviewer"))
     item = _item(db, created["id"])
     steps = _steps(db, item)
     first_log = report_service.submit_report(
@@ -640,6 +723,7 @@ def test_shrink_rejects_high_numbered_reported_unit(db):
     creator = _user(db, "shrink-planner")
     customer = _customer(db, creator, "缩量客户")
     created = _create_order(db, creator, customer, qty=10, price="0")
+    _approve_pending_order(db, created["id"], _user(db, "shrink-order-reviewer"))
     item = _item(db, created["id"])
     step = _steps(db, item)[0]
     unit_ten = unit_service.ensure_item_units(db, item)[9]
@@ -686,6 +770,7 @@ def test_unit_display_codes_stay_stable_when_quantity_crosses_digit_boundary(db)
     creator = _user(db, "stable-code-planner")
     customer = _customer(db, creator, "稳定码客户")
     created = _create_order(db, creator, customer, qty=99, price="0")
+    _approve_pending_order(db, created["id"], _user(db, "stable-code-reviewer"))
     item = _item(db, created["id"])
     first = unit_service.ensure_item_units(db, item)[0]
     assert unit_service.unit_display_code(item, first.unit_no) == "A1-01"
@@ -735,6 +820,7 @@ def test_unit_submit_requires_qr_signature_again_at_write_time(db):
     creator = _user(db, "signed-unit-planner")
     customer = _customer(db, creator, "签名逐件客户")
     created = _create_order(db, creator, customer, qty=2, price="0")
+    _approve_pending_order(db, created["id"], _user(db, "signed-unit-reviewer"))
     item = _item(db, created["id"])
     unit = unit_service.ensure_item_units(db, item)[0]
     progress_id = _steps(db, item)[0]["progress_id"]
@@ -763,6 +849,12 @@ def test_credit_customer_orders_without_balance(db):
 
     db.refresh(customer)
     order = db.query(DomesticOrder).get(created["id"])
+    assert order.status == C.ORDER_PENDING_REVIEW
+    assert customer.balance == Decimal("0.00")
+
+    _approve_pending_order(db, order.id, _user(db, "credit-order-reviewer"))
+    db.refresh(customer)
+    db.refresh(order)
     assert order.status == C.ORDER_PRODUCING
     assert customer.balance == Decimal("-20.00")
     charge = db.query(DomesticCustomerLedger).filter_by(
@@ -807,6 +899,12 @@ def test_credit_customer_draft_submit_without_balance(db):
     )
     order_service.submit_draft(db, order.id, payload, creator.id)
 
+    db.refresh(customer)
+    db.refresh(order)
+    assert order.status == C.ORDER_PENDING_REVIEW
+    assert customer.balance == Decimal("0.00")
+
+    _approve_pending_order(db, order.id, _user(db, "credit-draft-reviewer"))
     db.refresh(customer)
     db.refresh(order)
     assert order.status == C.ORDER_PRODUCING
@@ -892,10 +990,13 @@ def test_order_list_shows_owner_and_repurchase_fields(db):
     """列表补台账字段：归属销售、上次下单日期、复购周期、实际交付日期。"""
     _route_and_workers(db)
     owner = _user(db, "owner-sales")
+    reviewer = _user(db, "ledger-reviewer")
     customer = _customer(db, owner, "台账客户")
     db.flush()
 
-    _create_order(db, owner, customer, qty=1, price="0")
+    # 会员优惠价单先落待审核，审核通过才计入「正式下单」节奏
+    first = _create_order(db, owner, customer, qty=1, price="0")
+    _approve_pending_order(db, first["id"], reviewer)
 
     # 第二张单：同一客户的复购
     second = order_service.create_order(
@@ -913,6 +1014,7 @@ def test_order_list_shows_owner_and_repurchase_fields(db):
         ),
         owner.id,
     )
+    _approve_pending_order(db, second["id"], reviewer)
 
     rows, _ = order_service.list_orders(db)
     by_no = {r["order_no"]: r for r in rows}

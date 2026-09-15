@@ -8,6 +8,25 @@ from tests.test_customer_workbench import NOW, hub
 from tests.test_customer_workflow import _research_task
 
 
+def test_mysql_ranked_scope_uses_review_table_collation():
+    """Derived CASE columns must not inherit MySQL 8's connection collation."""
+    from sqlalchemy import create_mock_engine
+    from sqlalchemy.dialects import mysql
+    from sqlalchemy.orm import Session
+    from app.customer.qualification_service import _ranked_research
+
+    engine = create_mock_engine("mysql+pymysql://", lambda *args, **kwargs: None)
+    with Session(bind=engine) as session:
+        ranked = _ranked_research(session, {"sub": "1", "roles": ["super_admin"], "permissions": []})
+        for name in ("scope_type", "scope_ref_id"):
+            expression = str(
+                ranked.element.selected_columns[name].compile(dialect=mysql.dialect())
+            )
+            assert "COLLATE utf8mb4_unicode_ci" in expression
+        sql = str(ranked.element.compile(dialect=mysql.dialect()))
+        assert "CAST(ark_sales_search_results.id AS CHAR) COLLATE utf8mb4_unicode_ci" in sql
+
+
 def decision(client, task_id, **values):
     context = client.get(f"/api/customer-hub/qualification-queue/{task_id}")
     assert context.status_code == 200, context.text

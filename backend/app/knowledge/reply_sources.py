@@ -6,13 +6,19 @@ never truncated into a potentially misleading policy.
 """
 
 import hashlib
+import logging
 import re
+from datetime import date
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing import Literal
 
 from app.knowledge import service
 from app.knowledge.content import extract_text
+from app.core.time import beijing_today
+
+
+logger = logging.getLogger("commission.whatsapp_reply")
 
 
 class SourceBinding(BaseModel):
@@ -24,11 +30,19 @@ class SourceBinding(BaseModel):
     policy_version: str = Field(min_length=1, max_length=64)
     purpose: Literal["method", "public_fact", "constraint", "blocked"]
     mandatory: bool = False
+    aliases: list[str] = Field(default_factory=list, max_length=20)
+    applicability: str = Field(default="", max_length=240)
+    valid_until: date | None = None
+    shareable_text: bool = False
 
     @model_validator(mode="after")
     def mandatory_requires_constraint(self):
         if self.mandatory and self.purpose != "constraint":
             raise ValueError("mandatory source must be a constraint")
+        if self.shareable_text and self.purpose != "public_fact":
+            raise ValueError("only reviewed public facts can be reusable material")
+        if any(not value.strip() or len(value) > 80 for value in self.aliases):
+            raise ValueError("invalid source alias")
         return self
 
 
@@ -59,51 +73,114 @@ def content_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def resolve_binding(db, identity: dict, binding: SourceBinding) -> dict | None:
+def resolve_binding(db, identity: dict, binding: SourceBinding, *, documents=None, audit: list | None = None) -> dict | None:
+    if binding.valid_until is not None and binding.valid_until < beijing_today():
+        return None
     try:
-        document = service.get_published_document(db, identity, binding.document_id)
+        if documents is not None and binding.document_id in documents:
+            document = documents[binding.document_id]
+        else:
+            document = service.get_published_document(db, identity, binding.document_id)
+            if documents is not None:
+                documents[binding.document_id] = document
     except (service.ForbiddenError, service.NotFoundError):
         # Expected ACL exclusion. Do not reveal existence/title or audit chat queries.
         return None
+    # The document was fetched, so a mismatch below means the binding went stale
+    # after a content edit. That must be loud to operators, never a silent drop.
+    stale = None
     parts = sections(document["content_json"])
     if document["revision_id"] != binding.revision_id or binding.section_index >= len(parts):
-        return None
-    text = parts[binding.section_index]
-    if len(text) > 1200 or content_hash(text) != binding.content_hash:
+        stale = "revision_or_section_mismatch"
+    else:
+        text = parts[binding.section_index]
+        if len(text) > 1200:
+            stale = "section_oversized"
+        elif content_hash(text) != binding.content_hash:
+            stale = "content_mismatch"
+    if stale is not None:
+        logger.warning("reply source binding stale document_id=%s section_index=%s reason=%s",
+                       binding.document_id, binding.section_index, stale)
+        if audit is not None:
+            audit.append({"document_id": binding.document_id, "section_index": binding.section_index, "reason": stale})
         return None
     return {
         "document_id": document["document_id"], "revision_id": document["revision_id"],
         "version_no": document["version_no"], "title": document["title"],
         "section": str(binding.section_index), "text": text,
-        "purpose": binding.purpose, "binding": binding.model_dump(),
+        "purpose": binding.purpose, "binding": binding.model_dump(mode="json"),
+        "applicability": binding.applicability, "shareable_text": binding.shareable_text,
     }
 
 
-def retrieve_reply_sources(db, identity: dict, bindings: list[SourceBinding], queries: list[str]) -> tuple[list[dict], bool]:
+_QUERY_STOPWORDS = frozenset('a an the and or of to for from in on at by with is are was were be been being do does did have has had i we you your our it its this that these those what which how any all as so thank thanks please can could would should saying used stage'.split())
+
+_CJK_RUN_RE = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+')
+_ASCII_TERM_RE = re.compile(r'[\w-]{2,80}')
+
+
+def extract_query_terms(text: str) -> list[str]:
+    """Ordered unique terms: ASCII words plus CJK bigrams.
+
+    CJK text has no spaces; a whole unsegmented run used to become one long
+    term that could never substring-match a knowledge paragraph. Bigrams give
+    retrieval usable units without pulling in a tokenizer dependency.
+    """
+    casefolded = text.casefold()
+    terms = [term for term in _ASCII_TERM_RE.findall(_CJK_RUN_RE.sub(' ', casefolded))
+             if term not in _QUERY_STOPWORDS]
+    for run in _CJK_RUN_RE.findall(casefolded):
+        terms.extend(run[index:index + 2] for index in range(len(run) - 1))
+    return list(dict.fromkeys(terms))
+
+
+def query_terms(queries: list[str]) -> set[str]:
+    return {term for query in queries for term in extract_query_terms(query)}
+
+
+def _matches(term, casefolded_value):
+    if term.isascii():
+        return bool(re.search(r'(?<!\w)' + re.escape(term) + r'(?!\w)', casefolded_value))
+    return term in casefolded_value
+
+
+def _score(source, aliases, terms):
+    # Presence, not repetition: long generic paragraphs must not beat an FAQ answer.
+    title, text = source['title'].casefold(), source['text'].casefold()
+    folded_aliases = [alias.casefold() for alias in aliases]
+    return sum(3 * _matches(term, title) + _matches(term, text)
+               + 5 * any(_matches(term, alias) for alias in folded_aliases) for term in terms)
+
+
+def retrieve_reply_sources(db, identity: dict, bindings: list[SourceBinding], queries: list[str], *, focus_query: str = '', audit: list | None = None) -> tuple[list[dict], bool]:
+    documents = {}  # This invocation only; never shared across users or requests.
     mandatory = [binding for binding in bindings if binding.mandatory and binding.purpose == "constraint"]
     if not mandatory:
         return [], False
-    required = [resolve_binding(db, identity, binding) for binding in mandatory]
+    required = [resolve_binding(db, identity, binding, documents=documents, audit=audit) for binding in mandatory]
     if any(source is None for source in required):
         return [], False
     selected = list(required)
     chars = sum(len(source["text"]) for source in selected)
     if len(selected) > 6 or chars > 6000:
         return [], False
-    terms = {term.casefold() for query in queries for term in re.split(r"[\s,，;/]+", query) if len(term) >= 2}
+    terms = query_terms(queries)
+    focus = query_terms([focus_query])
     # Small corpus: title-weighted lexical scoring after Chinese/alias planning.
     candidates = []
     required_keys = {(item.document_id, item.section_index) for item in mandatory}
     for binding in bindings:
         if binding.purpose == "blocked" or (binding.document_id, binding.section_index) in required_keys:
             continue
-        source = resolve_binding(db, identity, binding)
+        source = resolve_binding(db, identity, binding, documents=documents, audit=audit)
         if source is None:
             continue
-        score = sum(3 * (term in source["title"].casefold()) + source["text"].casefold().count(term) for term in terms)
+        score = _score(source, binding.aliases, terms | focus)
         if score:
-            candidates.append((score, source))
-    for _, source in sorted(candidates, key=lambda item: item[0], reverse=True):
+            candidates.append((_score(source, binding.aliases, focus), score, source))
+    # Relevant answer evidence gets a slot before stylistic examples; otherwise
+    # long method paragraphs can crowd out the product answer the customer needs.
+    for _, _, source in sorted(candidates, key=lambda item: (item[2]["purpose"] != "method", item[0], item[1]), reverse=True):
         if len(selected) >= 6:
             break
         if chars + len(source["text"]) <= 6000:
@@ -113,4 +190,5 @@ def retrieve_reply_sources(db, identity: dict, bindings: list[SourceBinding], qu
 
 
 def revalidate_sources(db, identity: dict, sources: list[dict]) -> bool:
-    return all(resolve_binding(db, identity, SourceBinding.model_validate(source["binding"])) is not None for source in sources)
+    documents = {}
+    return all(resolve_binding(db, identity, SourceBinding.model_validate(source["binding"]), documents=documents) is not None for source in sources)

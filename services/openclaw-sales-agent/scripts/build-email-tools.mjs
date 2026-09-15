@@ -11,10 +11,15 @@ const outputDir = resolve(serviceDir, "dist");
 const nodeBin = process.env.OPENCLAW_NODE || join(homedir(), ".openclaw", "tools", "node", "bin", "node");
 await mkdir(outputDir, { recursive: true });
 
-for (const name of ["outreach-queue", "outreach-dispatch", "outreach-skill-reader"]) {
+for (const [name, entry] of [
+  ["outreach-queue", resolve(serviceDir, "scripts", "outreach-queue.mjs")],
+  ["outreach-dispatch", resolve(serviceDir, "scripts", "outreach-dispatch.mjs")],
+  ["outreach-skill-reader", resolve(serviceDir, "scripts", "outreach-skill-reader.mjs")],
+  ["mail-schedule-service", resolve(serviceDir, "src", "mail-schedule-service.mjs")],
+]) {
   const outfile = resolve(outputDir, name);
   await build({
-    entryPoints: [resolve(serviceDir, "scripts", `${name}.mjs`)],
+    entryPoints: [entry],
     outfile,
     bundle: true,
     platform: "node",

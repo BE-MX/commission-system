@@ -31,3 +31,4 @@ from app.ai.image_service import (  # noqa: F401
     generate_image,
 )
 from app.ai.agent_service import prepare_agent_chat  # noqa: F401
+from app.ai.text_snapshot import prepare_text_chat  # noqa: F401

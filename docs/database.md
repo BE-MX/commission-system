@@ -1,5 +1,13 @@
 # 莱莎方舟 数据库表参考
 
+## 站点 AI 网关（146_ai_site_gateway）
+
+- `ark_ai_gateway_apps`：站点身份、负责人、密钥 SHA-256/掩码、启停、日/分钟/并发/输出限额、创建/更新人和北京时间。key_hash 唯一；owner_user_id 的 FK 使用 INT UNSIGNED 与真实 ark_users 一致。
+- `ark_ai_gateway_app_presets`：app_id BIGINT + preset_id INT 联合主键，分别关联应用与现有 AI Preset。独立于 MCP/员工权限。
+- `ark_ai_gateway_requests`：准入账本；`(app_id, request_id)` 唯一，索引 `(app_id, created_at)`、`(app_id, status)`。保存归属及预设/模型快照、pending/success/error/timeout/unknown、可空 AI log FK、可空 token 与 usage_status、耗时、脱敏错误、时间和解除占用审计。无消息/回答正文。
+
+日/分钟限额以准入记录计数；pending/unknown 持续占并发，不能由日志清理或过期任务自动释放。所有普通时间列由 beijing_now 写入；新表不物理清理历史，生产回滚不得 downgrade 删除账本。迁移仅新增三表，父 revision 为 145_domestic_order_guest。
+
 > 本文档由 CLAUDE.md 瘦身治理（2026-07-03，见 docs/2026-07-03-architecture-assessment.md G-1）拆出。
 > 变更 API/表结构/模块行为时**同步更新本文件**。
 
@@ -212,7 +220,9 @@
 
 - `ark_dashboard_preference`：每用户一行的工作台布局配置。`user_id`（INT UNSIGNED FK→ark_users.id ON DELETE CASCADE，UNIQUE）+ `prefs`（JSON：`{version, metrics:{hidden,order}, actions:{hidden,order}}`）+ 时间戳。卡片 key 的合法性不在库层校验——真相源是前端 `views/dashboard/cards.js` 注册表，未知 key 前端忽略（注册表增删卡片对存量配置向前兼容）。
 
-## 内贸订单（迁移 081～140，2026-07-27 至 2026-09-07）
+## 内贸订单（迁移 081～145，2026-07-27 至 2026-09-11）
+
+迁移 `150_domestic_item_guest` 在 `ark_domestic_order_items` 新增 `guest_name VARCHAR(120) NULL`，业务顾客按产品明细保存；同一未发布迁移增加 `guest_order_date DATE NULL` 保存顾客下单日期，历史日期未知保持 NULL，不以订单创建日期回填。将历史业务订单头顾客复制到其已有明细，不覆盖已有明细顾客；订单头的旧列仅保留历史数据，应用不再录入或展示。生产明细不使用。迁移由正式部署入口执行，开发机不升级共享库。
 
 业务订单客户订单号现为选填，`order_no` 未填存空串，沿用现有 NOT NULL 列，无 schema 迁移。渠道字典改为 recharge/cash，历史按客户 prepay/credit 结算属性转换，仅改订单渠道及更新时间；客户来源直接查询客户档案 `customer_source`，订单不新增来源副本。
 
@@ -234,10 +244,11 @@
 
 - `ark_domestic_customers`：内贸客户，`shop_name` UNIQUE，`custom_code` 可选且 UNIQUE，另存派生会员等级、`last_recharge_amount/last_recharged_at` 和 `balance`。会员只看最近一次成功充值金额，与余额和历史合计无关；充值事务在客户行锁下同时更新余额、会员快照和流水。有订单的客户禁删只停用。133 迁移补客户档案列：`customer_source`（来源）、`store_type`（门店类型）、`customer_level`（S/A/B/C）、`lifecycle_status`（活跃/潜在/沉默/流失，四个值域均为 sys_dict，与 `status` 停用开关不同）、`owner_user_id`（归属销售 FK ark_users）、`first_contact_date/first_order_date/last_order_date`、`total_order_count/total_sales_amount`（历史档案口径，不随系统订单联动）。
 - `ark_domestic_customer_ledger`：客户充值/订单扣款/差额补扣/退款流水。`amount` 是有符号变动额，`balance_after` 是变动后快照，`business_key` 唯一；充值时将客户端 `request_id` 编码为业务键实现幂等。所有余额变动在客户行锁下完成，不允许透支。
+- `ark_domestic_customer_requests`（148 迁移，2026-09-14）：客户充值/调整的先申请后审核单。`request_type`（recharge/adjust）、`amount`、`change_membership`+`membership_level`（调整等级目标，NULL=取消会员）、`voucher_path`（充值必传的银行流水/转账截图相对路径）、`status`（pending/approved/rejected）、`request_id` UNIQUE（提交幂等）、`business_key` UNIQUE（审核通过执行时写入账本的 `recharge:/adjust:` 幂等键，申请行与账行一一对应）、申请/审核双方经办人与审核意见。审核通过前余额与会员等级不变；驳回不落账本。
 - `ark_domestic_products`：下单选属性后 find-or-create 沉淀，`attrs_key` 使用稳定 JSON 数组编码 `product_type/craft/net_color/size/length/density/hair_style_series`，UNIQUE 即产品身份，避免属性值含分隔符时碰撞；`route_id` 按工艺映射自动绑定，可人工改绑。129 新增可空 `hair_style_series`，并将 `size/density` 放宽为可空：头套使用工艺、发长、可选网帽颜色、必填尺码和发型系列，只有 `15厘米` 头套有必填发量；发片将工艺和尺寸合并存入 `craft`，只再保存发长，其余头套专属字段均为 `NULL`。标准属性值存 `domestic_cap_*` 与 `domestic_piece_*` 字典，特单自定义值存对应 `_special` 字典。
 - `ark_domestic_base_prices`：共享原价表，唯一键为 `(product_type, craft, length)`；发片的尺寸已合并进 `craft`，因此不另设 size 列。`original_price > 0`，`version >= 1`，每次维护递增版本并记录操作人。130 内置截图确认的 131 条种子；标准和特单 SKU 都可由管理员补充精确价格，缺价时可以进入产品清单和创建生产订单，但不能报价或创建业务订单。
 - `ark_domestic_craft_routes`：`(product_type, craft)` UNIQUE → `route_id`。此表维护产品档案默认路线；140 起新订单明细由订单大类/类别/产品类型独立选路线，不能用共享 SKU 的路线覆盖明细快照。
-- `ark_domestic_orders`：`domestic_no`（系统号 `DO{YYYYMMDD}-{NNN}` UNIQUE）+ `order_no`（客户订单号）+ 客户 + `order_category`（`normal=普货 / special=特单`）+ `order_type`（`sys_dict: domestic_order_type`）+ `order_channel`（`sys_dict: domestic_order_channel`）+ `status`（0草稿/1生产中/2已完工/3已发货/4已终止）+ `total_amount` + `charged_amount` + 软删。应用层要求新建和每次编辑后的最终订单类型/渠道都非空且命中启用字典；数据库列暂时可空是为了保留历史行，读取历史 `NULL` 时展示“未填写”，不做猜测或回填，编辑时必须一次补齐两项。`request_id` UNIQUE 与 `request_hash` 防止弱网重试重复建单/扣款；`next_line_no` 在订单行锁下分配 A1/A2/…，避免追加明细与改单/报工发生反向锁序；`item_count` / `total_unit_qty` 在同一订单锁下维护当前行数和合计件数。草稿不扣款，提交时一次性扣款；在制单改数量/单价只结算差额，终止或可删除时退回已扣金额。
+- `ark_domestic_orders`：`domestic_no`（系统号 `DO{YYYYMMDD}-{NNN}` UNIQUE）+ `order_no`（客户订单号）+ 客户 + `order_category`（`normal=普货 / special=特单`）+ `order_type`（`sys_dict: domestic_order_type`）+ `order_channel`（`sys_dict: domestic_order_channel`）+ `status`（0草稿/1生产中/2已完工/3已发货/4已终止/5待审核/6已驳回）+ `total_amount` + `charged_amount` + 软删。应用层要求新建和每次编辑后的最终订单类型/渠道都非空且命中启用字典；数据库列暂时可空是为了保留历史行，读取历史 `NULL` 时展示“未填写”，不做猜测或回填，编辑时必须一次补齐两项。`request_id` UNIQUE 与 `request_hash` 防止弱网重试重复建单/扣款；`next_line_no` 在订单行锁下分配 A1/A2/…，避免追加明细与改单/报工发生反向锁序；`item_count` / `total_unit_qty` 在同一订单锁下维护当前行数和合计件数。草稿不扣款，提交时一次性扣款；在制单改数量/单价只结算差额，终止或可删除时退回已扣金额。149 迁移补 `reviewed_by/reviewed_at/review_remark` 审核留痕列（仅优惠价审核单有值）。
 - `ark_domestic_order_items`：一单多品，`line_no` 是订单内稳定非空序号（展示 A1/A2/…）。`original_price / unit_price / discount_amount / membership_level_snapshot / pricing_rule / pricing_version / base_price_version_snapshot` 冻结下单时定价事实；除会员快照可空外均非空且无应用或数据库兜底默认。CHECK 保证金额非负、优惠价不高于原价、会员/规则枚举有效；历史 `legacy_manual` 与内部 `production` 行允许原价为 0；生产行用 `pricing_rule=production`，CHECK 强制原价、单价、优惠额、手工费和基础价格版本为 0、会员快照为 NULL，不参与客户账务。`unit_price × order_qty` 推导明细金额，后续充值或原价变化不追改正式订单。逐件码需同步物化，API 限制每单最多 50 行、合计 5000 件、单明细 2000 件。其余含四组图文要求、路线快照和明细级发货信息。
 - `ark_domestic_order_pricing_requests`：草稿提交和草稿换客户的持久化定价幂等记录，`(order_id, request_id)` UNIQUE，保存操作类型、请求 SHA-256 与首次成功结果。同键同内容只重放结果，不重复扣款；同键改内容拒绝；报价已变化的 409 不写成功记录。
 - `ark_domestic_item_append_requests`：追加明细的持久化幂等占位，`(order_id, request_id)` UNIQUE 并保存请求指纹与首次创建的 `item_id`；明细后来删除也保留占位，避免弱网旧请求再次创建和扣款。
@@ -382,6 +393,7 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 - `ark_shipping_inspections`：每个 OKKI 出库单一行，`outbound_record_id` 唯一键（存业务库出库单 id 字符串，不建跨库外键）；冗余 `outbound_no / customer_name` 便于检索；`status` 为 `draft/submitted`，提交时落 `photo_count / submitted_at / submitted_by`（BigInteger 存 ark_users.id，未建 FK——ark_users.id 为 INT UNSIGNED，类型不匹配）。
 - `ark_shipping_inspection_photos`：`inspection_id → ark_shipping_inspections.id CASCADE`；`item_id` 为出库明细 id 字符串、NULL 表示整单照片；`file_path` 存相对路径（私有存储根 `SHIPPING_INSPECTION_STORAGE_ROOT`，鉴权端点读图，不挂静态目录）。
 - 数据源 `lsordertest.okki_outbound_records / okki_outbound_record_items` 为 OKKI 同步只读镜像（2026-09-01 已实库摸底，3966 单 / 14125 明细）：单头单号 `serial_id`、出库时间 `warehouse_invoice_time`、客户 `company_name`、制单人 `create_user_name`；明细数量 `outbound_count`、单位 `product_unit`、规格 `product_model`、SKU `sku_code`。**明细关联单头走 `outbound_invoice_id` 桥**（两表都有此列，全量命中）；`items.outbound_record_id` 是 OKKI 侧另一实体 id，与 `records.id` 完全不相交，不能 join。自适应候选映射见 `app/shipping_inspection/outbound_service.py`。
+- 归属过滤（2026-09-14 实库核验）：`okki_outbound_records.company_id`（bigint，4290 单全量命中 `okki_orders.company_id`）→ `okki_orders.user_id`（varchar(50)，单值）= 当前用户绑定的 OKKI 业务员 id；无 `shipping_inspection:read_all` 时强制，`company_id` 列缺失时 fail-closed 报错而非返回未过滤数据。
 
 ## 已退役：智能获客旧表（迁移 099，迁移 126 删除）
 
@@ -449,6 +461,8 @@ T1 = 当前公海且有历史订单；T2 = 无历史订单但有企业邮箱、�
 - `ark_knowledge_audit_logs`：成员、编辑、审批和 MCP 读取的追加式安全审计。
 
 ## WhatsApp 实时翻译（迁移 136）与话术请求（迁移 141，2026-09-07）
+
+迁移 `143_whatsapp_reply_inquiries`（前置 142）新增 `ark_whatsapp_reply_inquiries`：`id/instance_id/user_id/device_id/label/revision/entries/last_commit_request/created_at/updated_at/expires_at`。这是用户授权的第一二阶段业务复盘持久化例外，不改变下述翻译/请求元数据表的无正文边界。每条记录最多 80 项，每项摘要/摘录各最多 240 字符，最多 3 条消息证据；只保存脱敏片段与人工修正，不存整段聊天、未发送草稿或真实 WhatsApp 标识。准确 user/device 归属、CAS、不可复用实例标识保护删除重建；默认固定 30 天后不可读并由既有清理任务物理删除。降级代码保留表，不自动 downgrade 删除业务资料。MySQL 外键保持 user INTEGER UNSIGNED/device BIGINT UNSIGNED；业务时间均为北京时间。上线前须经统一部署入口迁移。
 
 - `translation_pairings`：一次性配对。存 `device_code_hash`、`proposed_token_hash`、设备/浏览器/扩展元数据、状态、审批人、时间；`(device_code_hash)` 唯一。明文 token/device code 不入库。
 - `translation_devices`：已授权设备。存 `token_hash`（唯一）、员工、设备元数据、过期时间、启用状态和撤销原因；employee/device 查询建索引。设备撤销保留原因与审计时间，不保存聊天密钥。

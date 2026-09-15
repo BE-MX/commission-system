@@ -55,7 +55,9 @@ from app.asset.schemas import (
     AssetTagItem,
     AssetUpdateStatus,
     AssetUpdateTags,
+    BatchDeleteRequest,
     BatchDownloadRequest,
+    BatchTagsRequest,
     FavoriteFolderCreate,
     FavoriteFolderUpdate,
     FavoriteItemCreate,
@@ -1044,6 +1046,35 @@ def batch_download_assets(
         media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quoted}"},
     )
+
+
+# ── 批量加标签 ──────────────────────────────────────────
+
+@router.post("/batch/tags")
+def batch_add_tags(
+    req: BatchTagsRequest,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("asset:write")),
+):
+    """批量追加标签（多选维度并集，单选维度替换；托管维度跳过）"""
+    try:
+        result = service.batch_add_tags(db, req.asset_ids, req.tags)
+    except SingleSelectViolation as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return _ok(result, message="标签已更新")
+
+
+# ── 批量删除 ────────────────────────────────────────────
+
+@router.post("/batch/delete")
+def batch_delete_assets(
+    req: BatchDeleteRequest,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("asset:delete")),
+):
+    """批量删除素材（含物理文件）"""
+    result = service.batch_delete_assets(db, req.asset_ids)
+    return _ok(result, message=f"已删除 {result['deleted']} 个素材")
 
 
 # ── 收藏夹 ──────────────────────────────────────────────

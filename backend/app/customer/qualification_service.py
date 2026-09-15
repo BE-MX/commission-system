@@ -22,12 +22,19 @@ def _ranked_research(db, user, customer_id=None):
     owner = logical_owner_expression(CustomerResearchTask, "research_task")
     scope_type = case((SearchJob.profile_id.isnot(None), "target_profile"), else_="source")
     scope_ref = case((SearchJob.profile_id.isnot(None), cast(SearchJob.profile_id, String)), else_="public_pool")
+    result_ref = cast(SearchResult.id, String)
+    if db.get_bind().dialect.name == "mysql":
+        # CASE/CAST expressions inherit the MySQL 8 connection collation;
+        # match the stored scope and source-reference columns at both joins.
+        scope_type = scope_type.collate("utf8mb4_unicode_ci")
+        scope_ref = scope_ref.collate("utf8mb4_unicode_ci")
+        result_ref = result_ref.collate("utf8mb4_unicode_ci")
     query = query_service.scoped_research_query(db, user)
     if customer_id is not None:
         query = query.filter(owner == customer_id)
     return query.outerjoin(
         SearchResult, and_(CustomerResearchTask.source_ref_type == "search_result",
-                           CustomerResearchTask.source_ref_id == cast(SearchResult.id, String),
+                           CustomerResearchTask.source_ref_id == result_ref,
                            logical_owner_expression(SearchResult, "search_result") == owner),
     ).outerjoin(SearchJob, SearchJob.id == SearchResult.job_id).filter(
         CustomerResearchTask.task_status == "completed",

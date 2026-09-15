@@ -1,23 +1,39 @@
 import { TARGET_LANGUAGES } from '@/shared/contracts'
-import type { ReplyCapabilities, ReplyRequest, ReplyResponse } from '@/shared/contracts'
+import type { AutoReplySchedule, ReplyCapabilities, ReplyRequest, ReplyResponse } from '@/shared/contracts'
+import { validAction, validEntries, validHandoff } from '@/shared/replyMemory'
+
+const SCHEDULE_TIME = /^([01]\d|2[0-3]):[0-5]\d$/
+/** 时段使用本地时区 HH:MM，days 遵循 Date.getDay() 约定（0=周日）。 */
+export function validAutoReplySchedule(value: unknown): value is AutoReplySchedule | null {
+  if (value === null) return true
+  if (!value || typeof value !== 'object') return false
+  const p = value as AutoReplySchedule
+  return SCHEDULE_TIME.test(p.start) && SCHEDULE_TIME.test(p.end)
+    && Array.isArray(p.days) && p.days.length >= 1 && p.days.length <= 7
+    && p.days.every(day => Number.isInteger(day) && day >= 0 && day <= 6)
+}
 
 /** Server configuration may narrow these local safety ceilings, never widen them. */
 export function boundedReplyCapabilities(value: unknown): ReplyCapabilities {
   if (!value || typeof value !== 'object' || (value as ReplyCapabilities).available !== true) throw new Error('reply_unavailable')
   const p = value as ReplyCapabilities
+  if (p.history_enabled !== true) throw new Error("reply_backend_update_required")
   const positive = [p.max_messages, p.default_messages, p.max_context_chars, p.timeout_seconds]
   const optional = [p.max_draft_chars, p.max_goal_chars]
   if (positive.some(n => !Number.isSafeInteger(n) || n < 1) || optional.some(n => !Number.isSafeInteger(n) || n < 0)
     || p.default_messages > p.max_messages) throw new Error('reply_configuration_invalid')
   return {
-    available: true, max_messages: Math.min(40, p.max_messages), default_messages: Math.min(40, p.default_messages),
-    max_context_chars: Math.min(12000, p.max_context_chars), max_draft_chars: Math.min(2000, p.max_draft_chars),
-    max_goal_chars: Math.min(500, p.max_goal_chars), timeout_seconds: Math.min(35, p.timeout_seconds),
+    auto_reply_enabled: p.auto_reply_enabled === true,
+    available: true, history_enabled: true, max_messages: Math.min(2000, p.max_messages), default_messages: Math.min(2000, p.default_messages),
+    max_context_chars: Math.min(120000, p.max_context_chars), max_draft_chars: Math.min(2000, p.max_draft_chars),
+    max_goal_chars: Math.min(500, p.max_goal_chars), timeout_seconds: Math.min(180, p.timeout_seconds),
+    memory_enabled: p.memory_enabled === true,
+    memory_retention_days: Number.isInteger(p.memory_retention_days) ? Math.min(90, Math.max(1, p.memory_retention_days!)) : 30,
   }
 }
 
 export function replyFitsCapabilities(p: ReplyRequest, caps: ReplyCapabilities): boolean {
-  return p.messages.length <= caps.max_messages && p.messages.reduce((sum, message) => sum + message.text.length, 0) <= caps.max_context_chars
+  return p.messages.length <= caps.max_messages && p.messages.reduce((sum, message) => sum + message.text.length + (message.quoted_text?.length ?? 0), 0) <= caps.max_context_chars
     && p.draft_intent.length <= caps.max_draft_chars && p.goal.length <= caps.max_goal_chars
 }
 
@@ -27,24 +43,30 @@ const language = (value: unknown) => (TARGET_LANGUAGES as readonly unknown[]).in
 export function validReplyRequest(value: unknown): value is ReplyRequest {
   if (!value || typeof value !== 'object') return false
   const p = value as ReplyRequest
-  return typeof p.request_id === 'string' && uuid.test(p.request_id)
+  return (p.mode === undefined || ['draft', 'auto'].includes(p.mode)) && typeof p.request_id === 'string' && uuid.test(p.request_id)
     && typeof p.conversation_epoch === 'string' && uuid.test(p.conversation_epoch)
     && Number.isInteger(p.context_version) && p.context_version >= 0
     && Number.isInteger(p.draft_version) && p.draft_version >= 0
-    && Array.isArray(p.messages) && p.messages.length > 0 && p.messages.length <= 40
-    && p.messages.every(m => m && ['customer', 'salesperson'].includes(m.role) && isText(m.text, 12000) && m.text.trim())
-    && p.messages.reduce((n, m) => n + m.text.length, 0) <= 12000
-    && !!p.context_scope && [20, 40].includes(p.context_scope.requested_limit)
+    && Array.isArray(p.messages) && p.messages.length > 0 && p.messages.length <= 2000
+    && p.messages.every(m => m && ['customer', 'salesperson'].includes(m.role) && isText(m.text, 120000) && m.text.trim() && (m.timestamp === undefined || isText(m.timestamp, 120)) && (m.quoted_text === undefined || isText(m.quoted_text, 12000)) && (m.kind === undefined || ['text', 'media', 'unknown'].includes(m.kind)))
+    && p.messages.reduce((n, m) => n + m.text.length + (m.quoted_text?.length ?? 0), 0) <= 120000
+    && !!p.context_scope && Number.isInteger(p.context_scope.requested_limit) && p.context_scope.requested_limit > 0 && p.context_scope.requested_limit <= 2000
     && p.messages.length <= p.context_scope.requested_limit
     && ['truncated', 'omitted_media', 'latest_visible'].every(key => typeof p.context_scope[key as keyof typeof p.context_scope] === 'boolean')
     && isText(p.draft_intent, 2000) && isText(p.goal, 500)
     && (p.target_language === 'auto' || language(p.target_language)) && language(p.fallback_language)
+    && (p.detected_language === undefined || language(p.detected_language))
     && ['default', 'shorter', 'softer', 'alternative'].includes(p.style)
+    && (p.memory_conversation_id == null || (uuid.test(p.memory_conversation_id) && Number.isSafeInteger(p.memory_revision) && p.memory_revision! >= 0))
 }
 export function validReplyResponse(value: unknown, request: ReplyRequest): value is ReplyResponse {
   if (!value || typeof value !== 'object') return false
   const p = value as ReplyResponse
-  return p.request_id === request.request_id && p.conversation_epoch === request.conversation_epoch
+  const autoValid = request.mode !== 'auto' || (['reply', 'wait', 'handoff'].includes(p.auto_action ?? '')
+    && Array.isArray(p.reply_segments) && (p.auto_action === 'reply'
+      ? p.reply_segments.length >= 1 && p.reply_segments.length <= 3 && p.reply_segments.every(s => isText(s, 400) && !!s.trim())
+      : p.reply_segments.length === 0))
+  return autoValid && p.request_id === request.request_id && p.conversation_epoch === request.conversation_epoch
     && p.context_version === request.context_version && p.draft_version === request.draft_version
     && ['ready', 'needs_confirmation', 'insufficient_context'].includes(p.status) && language(p.reply_language)
     && isText(p.reply_text, 12000) && (p.status !== 'ready' || !!p.reply_text.trim())
@@ -54,4 +76,13 @@ export function validReplyResponse(value: unknown, request: ReplyRequest): value
     && Array.isArray(p.claims) && p.claims.length <= 50
     && p.claims.every(c => c && isText(c.text, 4000) && isText(c.quote, 4000) && Number.isInteger(c.source_index) && c.source_index >= 0 && c.source_index < p.sources.length)
     && [p.risk_flags, p.missing_information].every(items => Array.isArray(items) && items.length <= 50 && items.every(t => isText(t, 2000)))
+    && (p.action == null || validAction(p.action))
+    && (p.memory_update === undefined || validEntries(p.memory_update))
+    && (p.handoff === undefined || validHandoff(p.handoff))
+    && (p.materials === undefined || (Array.isArray(p.materials) && p.materials.length <= 6 && p.materials.every(m => m
+      && Number.isInteger(m.document_id) && m.document_id > 0 && Number.isInteger(m.revision_id) && m.revision_id > 0
+      && isText(m.title, 500) && isText(m.text, 1200) && isText(m.applicability, 240)
+      && p.sources.some(s => s.document_id === m.document_id && s.revision_id === m.revision_id))))
+    && (p.memory_conversation_id ?? null) === (request.memory_conversation_id ?? null)
+    && (!request.memory_conversation_id || (p.memory_revision === request.memory_revision && validEntries(p.memory_update) && validHandoff(p.handoff)))
 }

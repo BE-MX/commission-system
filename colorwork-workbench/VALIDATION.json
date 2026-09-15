@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "templateCount": 23,
+  "productCount": 11,
+  "canonicalColorCount": 38,
+  "initialCardCount": 341,
+  "hotCount": 44,
+  "legacyColorCount": 2,
+  "iTipRegularSections": {
+    "Regular I Tip Hair": 3,
+    "New Upgraded I Tip Hair": 5
+  },
+  "errors": []
+}

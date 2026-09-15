@@ -1,6 +1,7 @@
 import { messageForCode } from '@/content/messages'
 import type { OutgoingPreview } from '@/content/outgoingComposer'
 import { TARGET_LANGUAGES, languageLabel } from '@/shared/contracts'
+import type { AutoState } from '@/content/autoReply'
 
 /**
  * Composer toolbar + preview card, rendered into a closed shadow root that the
@@ -27,6 +28,7 @@ export type ToolbarModel = {
 }
 
 export type ToolbarHandlers = {
+  onAutoReply?: () => void
   onReply?: () => void
   onCancelPreview: () => void
   onLanguageChange: (language: string) => void
@@ -71,7 +73,8 @@ const STYLES = `
     --danger: #f28b82;
     --border: rgba(233, 237, 239, 0.1);
   }
-  .bar { align-items: center; display: flex; gap: 8px; min-height: 30px; }
+  .auto-toggle { transition:none; } .auto-toggle::after { content:none; } .auto-toggle[aria-pressed="true"] { background:var(--accent); color:var(--accent-fg); } .auto-note { margin:6px 0; font-size:12px; color:var(--muted); overflow-wrap:anywhere; }
+  .bar { flex-wrap:wrap; align-items: center; display: flex; gap: 8px; min-height: 30px; }
   .chip, .btn, .link {
     align-items: center;
     border: 1px solid var(--border);
@@ -131,9 +134,11 @@ const STYLES = `
   .text.back { color: var(--muted); }
   .actions { align-items: center; display: flex; gap: 8px; margin-top: 6px; }
   .hint { color: var(--muted); font-size: 11.5px; margin-left: auto; }
+  .auto-reply-detail { max-height: 280px; overflow: auto; }
 `
 
 export type ToolbarView = {
+  setAutoStatus?: (active: boolean, note: string, detail?: Pick<AutoState, 'segments' | 'sentCount' | 'knowledgeNote'>) => void
   render: (model: ToolbarModel, options?: { animatePreview?: boolean }) => void
 }
 
@@ -143,6 +148,26 @@ export function createToolbarView(shadow: ShadowRoot, handlers: ToolbarHandlers)
   style.textContent = STYLES
   const root = doc.createElement('div')
   root.className = 'ark'
+  let autoActive = false, autoNote = ''
+  let autoDetail: Pick<AutoState, 'segments' | 'sentCount' | 'knowledgeNote'> = { segments: [], sentCount: 0 }
+  function updateAuto() {
+    const toggle = root.querySelector<HTMLButtonElement>('.auto-toggle')
+    if (toggle) { toggle.textContent = autoActive ? '停止接管' : '自动接管（测试中）'; toggle.setAttribute('aria-pressed', String(autoActive)) }
+    const note = root.querySelector<HTMLElement>('.auto-note'); if (note) { note.textContent = autoNote; note.hidden = !autoNote }
+    const previous = root.querySelector<HTMLDetailsElement>('.auto-reply-detail')
+    const wasOpen = previous?.open ?? false
+    previous?.remove()
+    if (autoDetail.segments.length) {
+      const detail = el('details', 'auto-reply-detail card')
+      detail.open = wasOpen || (!autoActive && autoDetail.sentCount < autoDetail.segments.length)
+      detail.append(el('summary', undefined, `本轮完整回复 · 已提交 ${autoDetail.sentCount}/${autoDetail.segments.length} 段`))
+      if (autoDetail.knowledgeNote) detail.append(el('p', 'text back', autoDetail.knowledgeNote))
+      autoDetail.segments.forEach((part, i) => {
+        detail.append(el('p', 'text', `${i + 1}. ${i < autoDetail.sentCount ? '已提交' : '未确认发送'}\n${part}`))
+      })
+      root.append(detail)
+    }
+  }
   root.addEventListener('mousedown', event => {
     // Keep WhatsApp's editor selection alive until the action runs. Refocusing
     // after a button steals focus can restore a stale caret over our selection.
@@ -215,6 +240,9 @@ export function createToolbarView(shadow: ShadowRoot, handlers: ToolbarHandlers)
       bar.append(reply)
     }
 
+    if (handlers.onAutoReply) {
+      const toggle = el('button', 'chip auto-toggle', '自动接管（测试中）'); toggle.type = 'button'; toggle.title = '开启后仅当前聊天自动生成并发送回复'; toggle.addEventListener('click', handlers.onAutoReply); bar.append(toggle)
+    }
     if (model.status.kind === 'error') {
       const message = messageForCode(model.status.code)
       const status = el('span', 'status error', message.text)
@@ -238,10 +266,12 @@ export function createToolbarView(shadow: ShadowRoot, handlers: ToolbarHandlers)
   }
 
   return {
+    setAutoStatus(active, note, detail) { autoActive = active; autoNote = note; if (detail) autoDetail = detail; updateAuto() },
     render(model, options = {}) {
       root.replaceChildren()
       if (model.preview) root.append(renderPreview(model.preview, options.animatePreview ?? false, model.status.kind === 'replacing'))
       root.append(renderBar(model))
+      const note = el('p', 'auto-note', autoNote); note.setAttribute('role', 'status'); root.append(note); updateAuto()
     },
   }
 }

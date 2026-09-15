@@ -6,48 +6,8 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <div ref="filtersRef" class="toolbar orders-toolbar">
-      <GlassButton v-permission="'domestic:write'" variant="primary" left-icon="Plus" @click="goCreate('business')">业务下单</GlassButton>
-      <GlassButton v-permission="'domestic:write'" variant="secondary" left-icon="Plus" @click="goCreate('production')">生产下单</GlassButton>
-
-      <div class="order-filter order-filter-wide">
-        <el-input v-model="searchForm.keyword" placeholder="搜索系统单号 / 客户订单号" clearable prefix-icon="Search" @keyup.enter="handleSearch" @clear="handleSearch" />
-      </div>
-      <div class="order-filter">
-        <el-select v-model="searchForm.status" placeholder="订单状态" clearable style="width: 100%" @change="handleSearch">
-          <el-option v-for="s in ORDER_STATUS" :key="s.value" :label="s.label" :value="s.value" />
-        </el-select>
-      </div>
-      <div v-if="searchForm.order_kind !== 'production'" class="order-filter">
-        <el-select v-model="searchForm.order_category" placeholder="订单类别" clearable style="width: 100%" @change="handleSearch">
-          <el-option v-for="v in filterOptions.order_categories" :key="v.value" :label="v.label" :value="v.value" />
-        </el-select>
-      </div>
-      <div v-if="searchForm.order_kind !== 'production'" class="order-filter">
-        <el-select v-model="searchForm.order_type" placeholder="订单类型" clearable style="width: 100%" @change="handleSearch">
-          <el-option v-for="v in filterOptions.order_types" :key="v.value" :label="v.label" :value="v.value" />
-        </el-select>
-      </div>
-      <div v-if="searchForm.order_kind !== 'production'" class="order-filter">
-        <el-select v-model="searchForm.order_channel" placeholder="订单渠道" clearable style="width: 100%" @change="handleSearch">
-          <el-option v-for="v in filterOptions.order_channels" :key="v.value" :label="v.label" :value="v.value" />
-        </el-select>
-      </div>
-      <div v-if="searchForm.order_kind !== 'production'" class="order-filter">
-        <el-select v-model="searchForm.customer_source" placeholder="客户来源" clearable style="width: 100%" @change="handleSearch">
-          <el-option v-for="v in filterOptions.customer_sources" :key="v.value" :label="v.label" :value="v.value" />
-        </el-select>
-      </div>
-      <div class="order-filter order-filter-date">
-        <el-date-picker
-          v-model="searchForm.dateRange" type="daterange" value-format="YYYY-MM-DD"
-          start-placeholder="下单起" end-placeholder="下单止" style="width: 100%" @change="handleSearch"
-        />
-      </div>
-      <div class="order-filter-action">
-        <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
-      </div>
-    </div>
+    <DomesticOrderFilters ref="filtersRef" :form="searchForm" :options="filterOptions" :loading="loading"
+      @search="handleSearch" @create="goCreate" />
 
     <div class="table-card orders-panel">
       <el-tabs v-model="searchForm.order_kind" class="order-kind-tabs" @tab-change="handleKindChange">
@@ -100,9 +60,11 @@
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
             <GlassButton variant="link" left-icon="Download" @click="handleExport(row)">导出</GlassButton>
+            <GlassButton v-if="row.status === 5 && canReviewOrder(row)" variant="link" left-icon="Stamp" :loading="reviewingOrderIds.has(row.id)" :disabled="reviewingOrderIds.has(row.id)" @click="handleReviewApprove(row)">通过</GlassButton>
+            <GlassButton v-if="row.status === 5 && canReviewOrder(row)" variant="link" link-tone="danger" left-icon="CircleClose" :disabled="reviewingOrderIds.has(row.id)" @click="handleReviewReject(row)">驳回</GlassButton>
             <GlassButton v-if="canOperateOrder(row) && row.status < 3" v-permission="'domestic:write'" variant="link" left-icon="EditPen" @click="openEdit(row)">编辑</GlassButton>
             <GlassButton v-if="row.status === 0 && canOperateOrder(row)" v-permission="'domestic:write'" variant="link" left-icon="Promotion" :loading="submittingOrderIds.has(row.id)" :disabled="submittingOrderIds.has(row.id)" @click="handleSubmitDraft(row)">提交</GlassButton>
-            <GlassButton v-else-if="canOperateOrder(row)" v-permission="'domestic:write'" variant="link" left-icon="CircleClose" :disabled="row.status >= 3" @click="handleTerminate(row)">终止</GlassButton>
+            <GlassButton v-else-if="canOperateOrder(row)" v-permission="'domestic:write'" variant="link" left-icon="CircleClose" :disabled="[3, 4, 6].includes(row.status)" @click="handleTerminate(row)">终止</GlassButton>
             <GlassButton v-if="row.status === 0 && canOperateOrder(row)" v-any-permission="['domestic:write', 'domestic:admin']" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
             <GlassButton v-else-if="canOperateOrder(row)" v-permission="'domestic:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
           </template>
@@ -126,10 +88,7 @@
             <span v-if="detail.order_kind !== 'production'">订单类别：{{ detail.order_category_label }}</span>
             <span v-if="detail.order_kind !== 'production'">订单类型：{{ detail.order_type_label }}</span>
             <span v-if="detail.order_kind !== 'production'">订单渠道：{{ detail.order_channel_label }}</span>
-            <span>产品总数：{{ detailTotalQty }} 件</span>
             <span>状态：{{ detail.status_label }}</span>
-            <span v-if="detail.order_kind !== 'production'">订单总价：¥{{ Number(detail.total_amount || 0).toFixed(2) }}</span>
-            <span v-if="detail.order_kind !== 'production'">已扣余额：¥{{ Number(detail.charged_amount || 0).toFixed(2) }}</span>
             <span v-if="detail.customer_custom_code">客户编码：{{ detail.customer_custom_code }}</span>
             <span v-if="detail.order_kind !== 'production'">当前会员：{{ membershipLevelLabel(detail.customer_membership_level) }}</span>
             <span v-if="detail.customer_province || detail.customer_city">地区：{{ [detail.customer_province, detail.customer_city].filter(Boolean).join(' / ') }}</span>
@@ -140,41 +99,29 @@
           <div v-if="detail.remark" class="notes-line">备注：{{ detail.remark }}</div>
         </div>
 
-        <el-alert
-          v-if="hasUnrouted" type="warning" show-icon :closable="false" class="unrouted-alert"
-          title="有明细还没配工艺路线，这些货暂时不能开工" description="请先维护该订单大类对应的工艺路线，再点「配工艺路线」补配。"
-        />
-
         <div v-for="item in detail.items" :key="item.id" class="item-block">
-          <!-- 明细头分三行：名称与状态 / 价格信息 / 操作按钮，避免一行里塞满标签和按钮 -->
+          <h3 v-if="item.guest_name" class="item-guest">顾客：{{ item.guest_name }}</h3>
+          <div v-if="item.guest_order_date" class="notes-line">顾客下单日期：{{ item.guest_order_date }}</div>
+          <!-- 顾客、产品属性与生产操作按层级展示 -->
           <div class="item-head">
             <span class="item-name">{{ item.line_code }} · {{ item.product_name }}</span>
             <span class="item-head-right">
               <el-tag size="small" :type="item.status === 2 ? 'info' : (item.status === 1 ? 'success' : '')">{{ item.status_label }}</el-tag>
-              <span class="item-current">当前：{{ item.current_process }}</span>
+              <span v-if="item.steps.length" class="item-current">当前：{{ item.current_process }}</span>
             </span>
           </div>
 
-          <div class="item-meta">
-            <span class="meta-item">数量 <b>{{ item.order_qty }} 件</b></span>
-            <template v-if="detail.order_kind !== 'production' && detail.order_category === 'special'">
-              <span class="meta-item">销售价 <b>¥{{ Number(item.unit_price || 0).toFixed(2) }}</b> / 件</span>
-            </template>
-            <template v-else-if="detail.order_kind !== 'production'">
-              <span class="meta-item">明细单价 <b>¥{{ Number(item.unit_price || 0).toFixed(2) }}</b> / 件</span>
-              <span class="meta-item muted">优惠价 ¥{{ (Number(item.unit_price || 0) - Number(item.labor_fee || 0)).toFixed(2) }}<template v-if="Number(item.labor_fee || 0) > 0"> + 手工费 ¥{{ Number(item.labor_fee).toFixed(2) }}</template></span>
-              <span class="meta-item muted">原始价 ¥{{ Number(item.original_price || 0).toFixed(2) }}</span>
-              <span v-if="Number(item.discount_amount || 0) > 0" class="meta-item meta-discount">优惠 -¥{{ Number(item.discount_amount).toFixed(2) }}</span>
-              <span class="meta-item muted">{{ membershipLevelLabel(item.membership_level_snapshot) }} · {{ item.pricing_rule_label || '历史人工价' }}</span>
-            </template>
-            <span v-if="detail.order_kind !== 'production'" class="meta-item meta-amount">小计 ¥{{ Number(item.line_amount || 0).toFixed(2) }}</span>
+          <div class="notes-line">
+            <span v-for="field in visibleAttributeFields(item.attrs, detail.order_kind)" :key="field" class="item-attribute">
+              <template v-if="item.attrs[field]">{{ attributeFieldLabel(item.attrs.product_type, field) }}：{{ item.attrs[field] }}</template>
+            </span>
           </div>
 
           <div class="item-actions">
-            <GlassButton v-if="detail.status !== 0" variant="link" left-icon="Printer" @click="openPrintCard(item)">流转卡</GlassButton>
+            <GlassButton v-if="![0, 5, 6].includes(detail.status)" variant="link" left-icon="Printer" @click="openPrintCard(item)">流转卡</GlassButton>
             <GlassButton variant="link" left-icon="Grid" @click="openQrLabel(item)">逐件码</GlassButton>
-            <GlassButton v-if="detail.status !== 0" variant="link" left-icon="Share" @click="openWxacode(item)">进度码</GlassButton>
-            <GlassButton v-if="detail.status !== 0" variant="link" left-icon="Tickets" @click="openLogs(item)">报工流水</GlassButton>
+            <GlassButton v-if="![0, 5, 6].includes(detail.status)" variant="link" left-icon="Share" @click="openWxacode(item)">进度码</GlassButton>
+            <GlassButton v-if="![0, 5, 6].includes(detail.status)" variant="link" left-icon="Tickets" @click="openLogs(item)">报工流水</GlassButton>
             <GlassButton
               v-if="item.route_id" v-permission="'domestic:admin'"
               variant="link" left-icon="Warning" @click="openSkipAudits(item)"
@@ -215,7 +162,6 @@
               </template>
             </el-table-column>
           </el-table>
-          <div v-else class="no-route">未配工艺路线，还没有工序进度</div>
 
           <div class="section-grid">
             <div v-for="s in detailSectionsForKind(detail.order_kind, DETAIL_SECTIONS)" :key="s.key" class="section-block">
@@ -385,24 +331,26 @@
  * 内贸订单列表 + 详情。逻辑在 composables/useDomesticOrders.js（宪法 12）。
  * 进度按「数量」展示：每道工序看到已完成多少 / 还能接多少，拆批状态一眼可见。
  */
-import { computed, h } from 'vue'
+import { h } from 'vue'
 import { ElTooltip } from 'element-plus'
 import { useOrderTableHeight } from './composables/useOrderTableHeight'
-import { DETAIL_SECTIONS, ORDER_STATUS, ORDER_STATUS_TAGS } from '@/api/domestic'
+import { DETAIL_SECTIONS, ORDER_STATUS_TAGS } from '@/api/domestic'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import DomesticImages from '@/components/domestic/DomesticImages.vue'
 import DomesticSkipAuditDialog from './components/DomesticSkipAuditDialog.vue'
+import DomesticOrderFilters from './components/DomesticOrderFilters.vue'
 import DomesticOrderEditDialog from './components/DomesticOrderEditDialog.vue'
 import DomesticPrintDialog from './print/DomesticPrintDialog.vue'
 import { useDomesticOrders } from './composables/useDomesticOrders'
+import { attributeFieldLabel, visibleAttributeFields } from './domesticAttributeRules'
 import { detailSectionsForKind } from './domesticOrderKinds'
 import { membershipLevelLabel } from './composables/domesticMemberPricing'
 
 const {
   loading, list, total, page, pageSize, searchForm, filterOptions,
   handleSearch, handlePageChange, handleSizeChange,
-  detailVisible, detailLoading, detail, routes, hasUnrouted, openDetail, refreshAll,
+  detailVisible, detailLoading, detail, routes, openDetail, refreshAll,
   shipDialog, openShip, confirmShip,
   reportDialog, openReport, confirmReport,
   skipDialog, openSkip, confirmSkip,
@@ -413,12 +361,12 @@ const {
   wxacodeDialog, openWxacode, downloadWxacode,
   handleExport, handleSubmitDraft, submittingOrderIds, handleTerminate, handleDelete, goCreate,
   canOperateOrder,
+  canReviewOrder, reviewingOrderIds, handleReviewApprove, handleReviewReject,
   editDialog, openEdit,
   isShipDateOverdue,
 } = useDomesticOrders()
 
 const { tableRef, filtersRef, tableHeight } = useOrderTableHeight()
-const detailTotalQty = computed(() => (detail.value?.items || []).reduce((sum, item) => sum + Number(item.order_qty || 0), 0))
 function renderOrderHeader({ column }) {
   return h(ElTooltip, { content: column.label, placement: 'top' }, {
     default: () => h('span', { class: 'order-column-title' }, column.label),

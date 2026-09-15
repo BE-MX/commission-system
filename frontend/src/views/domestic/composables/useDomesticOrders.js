@@ -8,9 +8,11 @@ import { useAuthStore } from '@/stores/auth'
 import {
   attachItemRoute, deleteOrder, exportOrder, getItemWxacode, getOptions, getOrder, getProcessRoutes,
   listDomesticSkips, listOrders, listProcessWorkers, listReports, newRequestId,
+  reviewOrder,
   revokeDomesticSkip, revokeReport, shipItem, skipDomesticStep,
   submitDraftOrder, submitReport, terminateOrder,
 } from '@/api/domestic'
+import { buildOrderListParams } from './useDomesticOrderFilters'
 import { useListPage } from '@/composables/useListPage'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import { downloadBlob } from '@/utils/download'
@@ -27,22 +29,15 @@ export function useDomesticOrders() {
   const filterOptions = ref({ order_categories: [], order_types: [], order_channels: [], customer_sources: [] })
 
   const listApi = useListPage(
-    async ({ page, page_size, ...form }) => {
-      const params = { page, page_size }
-      for (const key of ['keyword', 'order_kind', 'order_category', 'order_type', 'order_channel', 'customer_source']) {
-        if (form[key]) params[key] = form[key]
-      }
-      if (form.status !== '' && form.status !== null) params.status = form.status
-      if (form.dateRange?.length === 2) {
-        params.date_start = form.dateRange[0]
-        params.date_end = form.dateRange[1]
-      }
+    async (form) => {
+      const params = buildOrderListParams(form)
       const res = await listOrders(params)
       return res.data || {}
     },
     {
       searchForm: {
         keyword: route.query.keyword || '',
+        customer_name: route.query.customer_name || '',
         order_kind: route.query.order_kind || '',
         status: '',
         order_category: '',
@@ -65,6 +60,52 @@ export function useDomesticOrders() {
 
   function canOperateOrder(row) {
     return auth.user?.id === row.created_by
+  }
+
+  // 优惠价订单审核：domestic:review / domestic:admin；创建人不能审自己的单（服务端同样拦截）
+  const canReview = computed(
+    () => auth.hasPermission('domestic:review') || auth.hasPermission('domestic:admin'),
+  )
+  function canReviewOrder(row) {
+    return canReview.value && (auth.hasPermission('domestic:admin') || row.created_by !== auth.user?.id)
+  }
+  const reviewingOrderIds = reactive(new Set())
+
+  async function handleReviewApprove(row) {
+    try {
+      await ElMessageBox.confirm(
+        `通过后订单正式生效，并从客户余额扣款 ¥${Number(row.total_amount || 0).toFixed(2)}。`,
+        `审核订单 ${row.domestic_no}`,
+        { type: 'warning', confirmButtonText: '通过并扣款', cancelButtonText: '再想想' },
+      )
+    } catch { return }
+    reviewingOrderIds.add(row.id)
+    try {
+      await reviewOrder(row.id, 'approve')
+    } catch { return } finally {
+      reviewingOrderIds.delete(row.id)
+    }
+    msgSuccess('审核')
+    await refreshAll()
+  }
+
+  async function handleReviewReject(row) {
+    let value
+    try {
+      ({ value } = await ElMessageBox.prompt('填个驳回原因（至少 2 个字）：', `驳回订单 ${row.domestic_no}`, {
+        type: 'warning',
+        inputPlaceholder: '如：优惠价未经同意',
+        inputValidator: v => (v && v.trim().length >= 2) || '驳回原因至少 2 个字',
+      }))
+    } catch { return }
+    reviewingOrderIds.add(row.id)
+    try {
+      await reviewOrder(row.id, 'reject', value.trim())
+    } catch { return } finally {
+      reviewingOrderIds.delete(row.id)
+    }
+    msgSuccess('驳回')
+    await refreshAll()
   }
 
   async function loadDetail(orderId) {
@@ -304,14 +345,14 @@ export function useDomesticOrders() {
   const editDialog = reactive({ visible: false, orderId: null, itemId: null })
 
   function openEdit(row, itemId = null) {
-    if (!canOperateOrder(row) || [3, 4].includes(row.status)) return
+    if (!canOperateOrder(row) || [3, 4, 5, 6].includes(row.status)) return
     Object.assign(editDialog, { visible: true, orderId: row.id, itemId })
   }
 
-  // 已发货/已终止的单不再亮红；字符串日期可直接按字典序比较（YYYY-MM-DD）
+  // 已发货/已终止/待审核/已驳回的单不再亮红；字符串日期可直接按字典序比较（YYYY-MM-DD）
   function isShipDateOverdue(row) {
     return Boolean(
-      row.required_ship_date && row.status !== 3 && row.status !== 4
+      row.required_ship_date && ![3, 4, 5, 6].includes(row.status)
       && row.required_ship_date < currentBeijingDate(),
     )
   }
@@ -332,8 +373,9 @@ export function useDomesticOrders() {
       const current = res.data || {}
       if (!draftSubmitRequestIds.has(row.id)) draftSubmitRequestIds.set(row.id, newRequestId())
       const payload = buildDraftSubmitPayload(current, () => draftSubmitRequestIds.get(row.id))
+      let submitRes
       try {
-        await submitDraftOrder(row.id, payload)
+        submitRes = await submitDraftOrder(row.id, payload)
       } catch (error) {
         const changed = quoteChangedDetail(error)
         if (!changed) throw error
@@ -361,13 +403,17 @@ export function useDomesticOrders() {
         } catch { return }
         const retryRequestId = newRequestId()
         draftSubmitRequestIds.set(row.id, retryRequestId)
-        await submitDraftOrder(row.id, {
+        submitRes = await submitDraftOrder(row.id, {
           request_id: retryRequestId,
           expected_quotes: changed.current_expected_quotes,
         })
       }
       draftSubmitRequestIds.delete(row.id)
-      msgSuccess('提交订单')
+      if (submitRes.data?.status === 5) {
+        ElMessage.success('订单已提交，待审核：优惠价低于原始价，审核通过后正式生效并扣款')
+      } else {
+        msgSuccess('提交订单')
+      }
       await refreshAll()
     } finally {
       submittingOrderIds.delete(row.id)
@@ -443,9 +489,6 @@ export function useDomesticOrders() {
     router.push({ name: kind === 'production' ? 'DomesticProductionOrderCreate' : 'DomesticOrderCreate' })
   }
 
-  const hasUnrouted = computed(
-    () => (detail.value?.items || []).some(i => !i.route_id),
-  )
 
   onMounted(async () => {
     try {
@@ -457,7 +500,7 @@ export function useDomesticOrders() {
   return {
     ...listApi,
     filterOptions,
-    detailVisible, detailLoading, detail, routes, hasUnrouted,
+    detailVisible, detailLoading, detail, routes,
     openDetail, refreshAll,
     shipDialog, openShip, confirmShip,
     reportDialog, openReport, confirmReport,
@@ -469,6 +512,7 @@ export function useDomesticOrders() {
     wxacodeDialog, openWxacode, downloadWxacode,
     handleExport, handleSubmitDraft, submittingOrderIds, handleTerminate, handleDelete, goCreate,
     canOperateOrder,
+    canReview, canReviewOrder, reviewingOrderIds, handleReviewApprove, handleReviewReject,
     editDialog, openEdit,
     isShipDateOverdue,
   }

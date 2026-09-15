@@ -1,7 +1,7 @@
 """内贸订单产品进度小程序码：scene 签名 / 免登录 track 端点 / 码生成端点
 
 免登录端点的唯一授权凭证是 HMAC 签名——签名域隔离（track vs 流转卡，同一个
-item_id 两个域）、伪签拒绝、软删单拦截、完整订单返回，都是这个
+item_id 两个域）、伪签拒绝、软删单拦截、返回字段白名单裁剪，都是这个
 口子的安全边界，必须钉死。
 """
 
@@ -117,7 +117,14 @@ def _create_order(db, user, item_count=1):
         order_channel="wechat",
         items=items,
     )
-    return order_service.create_order(db, payload, user.id)
+    created = order_service.create_order(db, payload, user.id)
+    # 会员优惠价单先落待审核：审核通过转生产中后才能生成客户进度码
+    reviewer = _user(db, f"wx-reviewer-{uuid4().hex[:8]}")
+    order_service.review_order(
+        db, created["id"], decision="approve", remark=None,
+        reviewer_id=reviewer.id, can_admin=False,
+    )
+    return created
 
 
 def _items_of(db, order_id):
@@ -218,27 +225,37 @@ def test_default_secret_locks_generation_and_verification(db, monkeypatch):
 # ── 免登录 track 端点 ─────────────────────────────────
 
 
-def test_track_returns_complete_order(db):
-    """任一进度码都返回其所属订单的全部明细。"""
+def test_track_returns_only_signed_item(db):
     creator = _user(db)
     order = _create_order(db, creator, item_count=2)
     first, second = _items_of(db, order["id"])
+    first.guest_name, second.guest_name = "王女士", "李先生"
+    db.flush()
     scene = report_service.generate_track_scene(first.id)
 
     with _mini_client(db) as client:
         resp = client.get("/api/mini/domestic/track", params={"scene": scene})
     assert resp.status_code == 200
     data = resp.json()
-    assert data["id"] == order["id"]
-    assert [i["id"] for i in data["items"]] == [first.id, second.id]
-    assert data["items"][0]["order_qty"] == first.order_qty
-    assert data["items"][1]["order_qty"] == second.order_qty
-    assert "customer_balance" not in data
-    assert "charged_amount" not in data
-    assert "created_by_name" not in data
+    assert set(data) == {"order_kind", "order_no", "customer_name", "items"}
+    assert data["order_no"] == "710"
+    assert data["customer_name"].startswith("马姐假发-")
+    assert [i["id"] for i in data["items"]] == [first.id]
+    for item_view in data["items"]:
+        assert set(item_view) == {
+            "id", "line_code", "product_name", "guest_name", "guest_order_date", "attrs", "steps", "remark", "remark_images",
+            "hairstyle", "color", "style_requirement",
+            "hairstyle_images", "color_images", "style_images",
+        }
+    assert data["items"][0]["guest_name"] == "王女士"
+    with _mini_client(db) as client:
+        second_data = client.get("/api/mini/domestic/track", params={"scene": report_service.generate_track_scene(second.id)}).json()
+    assert [i["id"] for i in second_data["items"]] == [second.id]
+    assert second_data["items"][0]["guest_name"] == "李先生"
+    assert data["items"][0]["attrs"]["craft"] == first.attrs_snapshot["craft"]
 
 
-def test_track_image_allows_other_item_in_same_order_only(db, tmp_path, monkeypatch):
+def test_track_image_rejects_other_item_in_same_order(db, tmp_path, monkeypatch):
     creator = _user(db)
     order = _create_order(db, creator, item_count=2)
     first, second = _items_of(db, order["id"])
@@ -249,9 +266,14 @@ def test_track_image_allows_other_item_in_same_order_only(db, tmp_path, monkeypa
     image.parent.mkdir(parents=True)
     image.write_bytes(b"png-test")
     monkeypatch.setattr(get_settings(), "DOMESTIC_STORAGE_ROOT", str(root))
-    scene = report_service.generate_track_scene(first.id)
+    scene = report_service.generate_track_scene(second.id)
 
     with _mini_client(db) as client:
+        cross_item = client.get(
+            "/api/mini/domestic/track-image",
+            params={"scene": report_service.generate_track_scene(first.id), "rel_path": "refs/second.png"},
+        )
+        assert cross_item.status_code == 403
         allowed = client.get(
             "/api/mini/domestic/track-image",
             params={"scene": scene, "rel_path": "refs/second.png"},

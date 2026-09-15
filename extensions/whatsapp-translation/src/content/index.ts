@@ -4,12 +4,14 @@ import { createOutgoingComposer } from '@/content/outgoingComposer'
 import { mountTranslation } from '@/content/render'
 import { createToolbarView } from '@/content/toolbarView'
 import { createLatestMountGuard } from '@/content/latestMountGuard'
+import { createAutoReply } from '@/content/autoReply'
 import { createReplyAssistant } from '@/content/replyAssistant'
 import { createReplyView } from '@/content/replyView'
 import { adapterFor } from '@/whatsapp/adapter'
 import { DEFAULT_OUTGOING_LANGUAGE, TARGET_LANGUAGES } from '@/shared/contracts'
-import type { TargetLanguage } from '@/shared/contracts'
+import type { AutoReplyPolicy, AutoReplySchedule, TargetLanguage } from '@/shared/contracts'
 import type { RuntimeRequest, RuntimeResponse } from '@/shared/contracts'
+import type { MemoryCommand } from '@/shared/replyMemory'
 import type { IncomingBridge, IncomingBridgeRequest } from '@/content/incomingTranslator'
 import type { OutgoingBridge, OutgoingBridgeRequest } from '@/content/outgoingComposer'
 
@@ -65,11 +67,16 @@ async function resolveChatLanguage(chatTitle: string): Promise<string> {
 
 function startContentScript(): void {
   const adapter = adapterFor(document)
+  let auto: ReturnType<typeof createAutoReply> | undefined
+  let autoActivation = 0, autoEnabling = false
+  function stopAuto(note = '自动接管已关闭') { const engaged = autoEnabling || auto?.getState().active; autoActivation++; autoEnabling = false; if (engaged) auto?.stop(note) }
   const outgoingComposer = createOutgoingComposer(adapter, outgoingBridge)
   let chatRoot = adapter.chatRootElement()
   let conversationElement = adapter.conversationElement()
+  let messageElements = adapter.messageElements()
   let chatKind = adapter.inspectChat().kind
   let currentTitle = ''
+  let detectedLanguage = ''
   let controller: ReturnType<typeof createComposerController> | undefined
   let reply: ReturnType<typeof createReplyAssistant> | undefined
   let composerElement: Element | null = null
@@ -78,17 +85,70 @@ function startContentScript(): void {
     mountTranslation: (target, state, onRetry) => mountTranslation(target, state, onRetry, { dark: adapter.isDarkTheme() }),
   }, {
     onDetectedLanguage: (_message, language) => {
-      if (!TARGET_LANGUAGES.includes(language as TargetLanguage)) return
+      if (adapter.isCollectingHistory() || !TARGET_LANGUAGES.includes(language as TargetLanguage)) return
+      detectedLanguage = language
       if (language !== outgoingComposer.getTargetLanguage()) reply?.optionsChanged()
       void controller?.onLanguageChange(language)
     },
   })
 
   const onComposerInput = (event: Event) => {
+    if (event.isTrusted) stopAuto('检测到人工输入，自动接管已关闭')
     if (adapter.isWritingComposer() && !event.isTrusted) return
     reply?.draftChanged()
     outgoingComposer.invalidateDraft()
     controller?.onComposerInput()
+  }
+
+  async function memoryCommand(payload: MemoryCommand) {
+    const response = await send({ type: 'reply/memory', payload })
+    if (response?.type !== 'reply/memory') throw bridgeError(response)
+    return response.result
+  }
+
+  // Bindings key inquiries by the salted chat-title hash; the title never leaves the page.
+  const memoryBinding = {
+    async read(): Promise<string | null> {
+      const chatTitle = adapter.chatTitle()
+      if (!chatTitle) return null
+      const response = await send({ type: 'reply/memory-binding/get', chatTitle })
+      if (response?.type !== 'reply/memory-binding/get') throw bridgeError(response)
+      return response.inquiryId
+    },
+    async write(inquiryId: string | null): Promise<void> {
+      const chatTitle = adapter.chatTitle()
+      if (!chatTitle) return
+      const response = await send({ type: 'reply/memory-binding/set', chatTitle, inquiryId })
+      if (response?.type !== 'reply/memory-binding/set') throw bridgeError(response)
+    },
+  }
+
+  // Auto-takeover lists and schedule live in background storage under the same salted hash.
+  const autoPolicy = {
+    async read(): Promise<AutoReplyPolicy | null> {
+      const chatTitle = adapter.chatTitle()
+      if (!chatTitle) return null
+      const response = await send({ type: 'reply/auto-policy/get', chatTitle })
+      if (response?.type !== 'reply/auto-policy/get') throw bridgeError(response)
+      return { blocked: response.blocked, allowlisted: response.allowlisted, allowlistEnabled: response.allowlistEnabled, schedule: response.schedule }
+    },
+    async setChat(list: 'block' | 'allow', value: boolean): Promise<void> {
+      const chatTitle = adapter.chatTitle()
+      if (!chatTitle) return
+      const response = await send({ type: 'reply/auto-policy/set-chat', chatTitle, list, value })
+      if (response?.type !== 'reply/auto-policy/set-chat') throw bridgeError(response)
+      await auto?.refreshPolicy()
+    },
+    async setAllowlistEnabled(enabled: boolean): Promise<void> {
+      const response = await send({ type: 'reply/auto-policy/set-allowlist-enabled', enabled })
+      if (response?.type !== 'reply/auto-policy/set-allowlist-enabled') throw bridgeError(response)
+      await auto?.refreshPolicy()
+    },
+    async setSchedule(schedule: AutoReplySchedule | null): Promise<void> {
+      const response = await send({ type: 'reply/auto-policy/set-schedule', schedule })
+      if (response?.type !== 'reply/auto-policy/set-schedule') throw bridgeError(response)
+      await auto?.refreshPolicy()
+    },
   }
 
   function watchComposer(): void {
@@ -106,6 +166,8 @@ function startContentScript(): void {
   }
 
   async function mountToolbar(): Promise<void> {
+    stopAuto('聊天已切换，自动接管已关闭')
+    adapter.clearReplyHistory()
     reply?.chatChanged()
     const mountGeneration = mountGuard.begin()
     const shadow = adapter.mountComposerToolbar()
@@ -124,14 +186,43 @@ function startContentScript(): void {
     ) return
     outgoingComposer.setTargetLanguage(language)
     if (adapter.isDarkTheme()) (shadow.host as HTMLElement).setAttribute('data-ark-theme', 'dark')
+    let releaseAuto: (() => void) | undefined
     const view = createToolbarView(shadow, {
       onCancelPreview: () => controller?.onCancelPreview(),
-      onLanguageChange: language => { reply?.optionsChanged(); void controller?.onLanguageChange(language) },
+      onLanguageChange: language => { stopAuto('发送语言已修改，请重新开启接管'); reply?.optionsChanged(); void controller?.onLanguageChange(language) },
       onReplace: () => { reply?.draftChanged(); void controller?.onReplace() },
       onRestore: () => { reply?.draftChanged(); void controller?.onRestore() },
       onRetry: () => void controller?.onRetry(),
-      onTranslate: () => void controller?.onTranslate(),
+      onTranslate: () => { stopAuto('已切换到人工翻译'); void controller?.onTranslate() },
+      onAutoReply: () => {
+        if (auto?.getState().active || autoEnabling) { stopAuto(); return }
+        const target = auto, activation = ++autoActivation
+        autoEnabling = true; view.setAutoStatus?.(true, '正在开启当前聊天自动接管…')
+        reply?.cancel()
+        void send({ type: 'reply/disclosure', acknowledged: true }).then(response => {
+          if (activation !== autoActivation) return
+          autoEnabling = false
+          if (target !== auto || document.hidden || !shadow.host.isConnected || adapter.inspectChat().kind !== 'direct' || response?.type !== 'reply/disclosure' || !response.acknowledged) { target?.stop('未能开启接管，请重试'); return }
+          if (!navigator.locks) { target?.stop('浏览器无法锁定接管实例，请更新浏览器'); return }
+          autoEnabling = true
+          void navigator.locks.request('leshine-whatsapp-auto-takeover', { ifAvailable: true }, async lock => {
+            if (activation !== autoActivation || target !== auto || document.hidden) return
+            autoEnabling = false
+            if (!lock) { target?.stop('另一个窗口正在自动接管，请先关闭它'); return }
+            await new Promise<void>(resolve => {
+              releaseAuto = resolve
+              // Refresh the per-chat policy right before engaging the takeover.
+              void (target?.refreshPolicy() ?? Promise.resolve()).then(() => {
+                target?.start()
+                if (!target?.getState().active) resolve()
+              })
+            })
+            releaseAuto = undefined
+          }).catch(() => { if (activation === autoActivation) { autoEnabling = false; target?.stop('无法锁定接管实例，已停止') } })
+        }).catch(() => { if (activation === autoActivation) { autoEnabling = false; target?.stop('授权检查失败，请重试') } })
+      },
       onReply: () => {
+        stopAuto('已切换到手动话术')
         const current = reply
         current?.open()
         const revision = current?.getRevision()
@@ -149,6 +240,7 @@ function startContentScript(): void {
     })
     const replyView = createReplyView(shadow, {
       generate: (options, style) => {
+        stopAuto('已切换到手动话术')
         const current = reply
         const revision = current?.getRevision()
         void send({ type: 'reply/disclosure', acknowledged: true }).then(response => {
@@ -156,11 +248,25 @@ function startContentScript(): void {
           if (response?.type === 'reply/disclosure' && response.acknowledged) void current.generate(options, style)
         }).catch(() => current?.cancel())
       },
-      change: () => reply?.optionsChanged(), close: () => reply?.close(), cancel: () => reply?.cancel(),
+      change: () => { stopAuto('生成要求已修改，请重新开启接管'); reply?.optionsChanged() }, close: () => reply?.close(), cancel: () => reply?.cancel(),
       fill: () => { outgoingComposer.invalidateDraft(); controller?.onComposerInput(); void reply?.fill() },
       restore: () => { outgoingComposer.invalidateDraft(); controller?.onComposerInput(); void reply?.restore() },
+      memory: {
+        list: () => { void reply?.listInquiries() }, preview: id => { void reply?.previewInquiry(id) }, usePreview: () => reply?.usePreview(),
+        create: label => { void reply?.newInquiry(label) }, enabled: enabled => reply?.setMemoryEnabled(enabled),
+        refresh: () => { void reply?.refreshMemory() }, remove: () => { void reply?.deleteMemory() }, save: () => { void reply?.saveMemory() },
+        correct: (id, status, note) => { void reply?.correctMemory(id, status, note) }, pause: paused => { stopAuto('已由业务员接管'); reply?.setPaused(paused) },
+      },
+      policy: {
+        read: () => autoPolicy.read(),
+        setChat: (list, value) => autoPolicy.setChat(list, value),
+        setAllowlistEnabled: enabled => autoPolicy.setAllowlistEnabled(enabled),
+        setSchedule: schedule => autoPolicy.setSchedule(schedule),
+      },
     })
     reply = createReplyAssistant(adapter, {
+      memory: memoryCommand,
+      binding: memoryBinding,
       async capabilities() {
         const response = await send({ type: 'reply/capabilities' })
         if (response?.type !== 'reply/capabilities') throw bridgeError(response)
@@ -171,7 +277,18 @@ function startContentScript(): void {
         if (response?.type !== 'reply/suggest') throw bridgeError(response)
         return response.result
       },
-    }, () => outgoingComposer.getTargetLanguage() as TargetLanguage, state => replyView.render(state))
+    }, () => outgoingComposer.getTargetLanguage() as TargetLanguage, state => replyView.render(state), () => detectedLanguage)
+    auto = createAutoReply({
+      snapshot: () => adapter.autoSnapshot(),
+      collect: (caps, current) => adapter.collectReplyHistory({ maxMessages: caps.max_messages, maxChars: caps.max_context_chars }, current, () => {}),
+      send: (text, current) => adapter.sendAutomatic(text, current),
+    }, {
+      memory: memoryCommand,
+      binding: memoryBinding,
+      policy: () => autoPolicy.read(),
+      async capabilities() { const response = await send({ type: 'reply/capabilities' }); if (response?.type !== 'reply/capabilities') throw bridgeError(response); return response.reply },
+      async suggest(payload) { const response = await send({ type: 'reply/suggest', payload }); if (response?.type !== 'reply/suggest') throw bridgeError(response); return response.result },
+    }, () => ({ language: replyView.options().language, fallback: outgoingComposer.getTargetLanguage() as TargetLanguage, goal: replyView.options().goal, detected: detectedLanguage }), state => { view.setAutoStatus?.(state.active, state.note, state); if (!state.active) releaseAuto?.() })
     controller.reset()
     watchComposer()
   }
@@ -181,6 +298,9 @@ function startContentScript(): void {
     void controller?.onShortcut()
   })
 
+  document.addEventListener('keydown', event => { if (event.isTrusted && adapter.composerElement()?.contains(event.target as Node)) stopAuto('检测到人工操作，自动接管已关闭') }, true)
+  document.addEventListener('click', event => { if (event.isTrusted && adapter.isNativeSendTarget(event.target)) stopAuto('检测到人工发送，自动接管已关闭') }, true)
+  document.addEventListener('visibilitychange', () => { if (document.hidden) stopAuto('页面已切到后台，自动接管已关闭') })
   void mountToolbar()
 
   const observer = new MutationObserver(records => {
@@ -188,10 +308,14 @@ function startContentScript(): void {
     const title = adapter.chatTitle()
     const nextConversation = adapter.conversationElement()
     const nextKind = adapter.inspectChat().kind
+    const nextMessages = adapter.messageElements()
+    const transcriptReplaced = messageElements.length > 0 && !nextMessages.some(node => messageElements.includes(node))
+    messageElements = nextMessages
     if (currentChatRoot !== chatRoot || title !== currentTitle || nextConversation !== conversationElement || nextKind !== chatKind) {
       chatRoot = currentChatRoot
       conversationElement = nextConversation
       chatKind = nextKind
+      detectedLanguage = ''
       translator.chatChanged()
       outgoingComposer.invalidateChat()
       reply?.chatChanged()
@@ -199,15 +323,22 @@ function startContentScript(): void {
     } else if (!adapter.hasToolbar() && adapter.inspectChat().kind === 'direct') {
       // WhatsApp re-rendered the footer and dropped our host.
       void mountToolbar()
+    } else if (transcriptReplaced && !adapter.isCollectingHistory()) {
+      stopAuto('聊天记录已替换，自动接管已关闭')
+      adapter.clearReplyHistory()
+      // Titles and containers may be reused for another contact. With no stable
+      // identity, wholesale transcript replacement disconnects inquiry memory.
+      // A full history remount may also disconnect; explicit restore is safer.
+      reply?.chatChanged()
     }
-    if (records.some(record => adapter.isMessageMutation(record))) reply?.contextChanged()
+    if (!adapter.isCollectingHistory() && records.some(record => adapter.isMessageMutation(record))) reply?.contextChanged()
     if (!adapter.isWritingComposer() && records.some(record => adapter.isComposerMutation(record))) {
       reply?.draftChanged()
       outgoingComposer.invalidateDraft()
       controller?.onComposerInput()
     }
     watchComposer()
-    translator.notifyMutation()
+    if (!adapter.isCollectingHistory()) translator.notifyMutation()
   })
   observer.observe(document, {
     attributes: true,
@@ -221,7 +352,7 @@ function startContentScript(): void {
   // Popup toggles / re-authorization happen out of band; re-arm on focus.
   window.addEventListener('focus', () => {
     translator.resume()
-    translator.notifyMutation()
+    if (!adapter.isCollectingHistory()) translator.notifyMutation()
   })
 }
 

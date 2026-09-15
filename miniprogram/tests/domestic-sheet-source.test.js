@@ -35,9 +35,27 @@ test('domestic order list and detail show all three order dimensions', function 
   assertDimensionLabels(source, 'detail')
 })
 
-test('lookup and tracking pages show all three order dimensions', function () {
+test('lookup page shows all three order dimensions', function () {
   assertDimensionLabels(fs.readFileSync(lookupPath, 'utf8'), 'order')
-  assertDimensionLabels(fs.readFileSync(trackPath, 'utf8'), 'order')
+})
+
+test('tracking page shows only the customer-facing whitelist', function () {
+  // 进度码只展示当前产品明细和公开工序，不显示内部订单维度。
+  const source = fs.readFileSync(trackPath, 'utf8')
+
+  assert.match(source, /\{\{order\.customer_name\}\}/)
+  assert.match(source, /\{\{order\.order_no\}\}/)
+  assert.match(source, /\{\{it\.guest_name\}\}/)
+  for (const field of [
+    'order_category_label',
+    'order_type_label',
+    'order_channel_label',
+    'status_label',
+    'current_process',
+    'stepView',
+  ]) {
+    assert.doesNotMatch(source, new RegExp(field))
+  }
 })
 
 test('domestic reporting sheet shows all three order dimensions', function () {

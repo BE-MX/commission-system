@@ -1,7 +1,7 @@
 """微信小程序端接口 — Pydantic schemas"""
 
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ── 认证 ──────────────────────────────────────────────────
@@ -13,6 +13,13 @@ class MiniLoginRequest(BaseModel):
 class MiniBindRequest(BaseModel):
     open_id: str = Field(..., description="登录接口返回的 openId")
     identifier: str = Field(..., description="工号或手机号")
+
+    @field_validator("open_id")
+    @classmethod
+    def require_wechat_identity(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("微信身份无效，请重新微信登录")
+        return value
 
 
 class MiniUserInfo(BaseModel):

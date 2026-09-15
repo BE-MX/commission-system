@@ -1,4 +1,5 @@
 """数据模型汇总导入"""
+from app.ai_gateway.models import GatewayApp, GatewayAppPreset, GatewayRequest  # noqa: F401
 
 from app.models.employee import EmployeeAttributeHistory, SupervisorRelationHistory
 from app.models.customer import CustomerCommissionSnapshot

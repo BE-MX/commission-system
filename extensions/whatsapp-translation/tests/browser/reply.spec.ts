@@ -19,13 +19,14 @@ async function bundle(entry: string) {
 type Node = { nodeId: number; nodeName: string; nodeValue?: string; children?: Node[]; shadowRoots?: Node[] }
 const all = (node: Node): Node[] => [node, ...(node.children ?? []).flatMap(all), ...(node.shadowRoots ?? []).flatMap(all)]
 const text = (node: Node): string => (node.nodeValue ?? '') + (node.children ?? []).map(text).join('')
-async function find(cdp: CDPSession, label: string) {
+async function find(cdp: CDPSession, label: string, tag = 'BUTTON') {
   const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true })
-  return all(root).find(node => node.nodeName === 'BUTTON' && text(node) === label)
+  return all(root).find(node => node.nodeName === tag && text(node) === label)
 }
-async function click(page: Page, cdp: CDPSession, label: string) {
-  await expect.poll(async () => !!await find(cdp, label)).toBe(true)
-  const node = (await find(cdp, label))!
+async function click(page: Page, cdp: CDPSession, label: string, tag = 'BUTTON') {
+  await expect.poll(async () => !!await find(cdp, label, tag)).toBe(true)
+  const node = (await find(cdp, label, tag))!
+  await cdp.send('DOM.scrollIntoViewIfNeeded', { nodeId: node.nodeId })
   const { model } = await cdp.send('DOM.getBoxModel', { nodeId: node.nodeId })
   const b = model.border
   await page.mouse.click((b[0] + b[2] + b[4] + b[6]) / 4, (b[1] + b[3] + b[5] + b[7]) / 4)
@@ -35,12 +36,14 @@ test.beforeAll(async () => {
   ;[fixture, editorBundle, extensionBundle] = await Promise.all([
     readFile(fileURLToPath(new URL('./fixture.html', import.meta.url)), 'utf8'), bundle('./lexicalEditor.ts'), bundle('./replyHarness.ts'),
   ])
-  fixture = fixture.replace('<footer>', '<div style="align-items:flex-start"><div data-testid="msg-container"><div class="copyable-text" data-pre-plain-text="Synthetic"><span data-testid="selectable-text">Can I have a sample?</span></div></div></div><footer>')
+  fixture = fixture.replace('<footer>', '<div data-testid="conversation-panel-messages"><div style="align-items:flex-start"><div data-testid="msg-container"><div class="copyable-text" data-pre-plain-text="Synthetic"><span data-testid="selectable-text">Can I have a sample?</span></div></div></div></div><footer>')
 })
 test.beforeEach(async ({ page }, info) => {
-  await page.route('**/*', route => route.request().url() === url ? route.fulfill({ contentType: 'text/html', body: fixture }) : route.abort())
+  const html = info.title.includes('semantic role send') ? fixture.replace('<button id="send" type="button">Synthetic send</button>', '<div id="send" role="button" aria-label="Send" tabindex="0">Synthetic send</div>') : fixture
+  await page.route('**/*', route => route.request().url() === url ? route.fulfill({ contentType: 'text/html', body: html }) : route.abort())
   await page.goto(url); await page.addScriptTag({ content: editorBundle })
   if (info.title.includes('detected language')) await page.evaluate(() => { document.documentElement.dataset.deferIncoming = 'true' })
+  if (info.title.includes('inquiry')) await page.evaluate(() => { document.documentElement.dataset.memoryEnabled = 'true' })
   const cdp = await page.context().newCDPSession(page)
   const { frameTree } = await cdp.send('Page.getFrameTree')
   const { executionContextId } = await cdp.send('Page.createIsolatedWorld', { frameId: frameTree.frame.id, worldName: 'reply-synthetic' })
@@ -53,10 +56,65 @@ test('full content integration fills and restores real Lexical draft, never send
   const cdp = await page.context().newCDPSession(page)
   await click(page, cdp, '话术')
   await expect(page.locator('html')).toHaveAttribute('data-reply-requested', 'true')
-  await resolve(page); await click(page, cdp, '填入输入框')
+  await resolve(page)
+  await expect.poll(async () => !!await find(cdp, '填入输入框')).toBe(true)
+  await page.screenshot({ path: '../../tmp/whatsapp-composer-browser/reply-tabs-desktop.png' })
+  await click(page, cdp, '填入输入框')
   await expect(page.locator('html')).toHaveAttribute('data-lexical-text', 'What sample size do you need?')
   await click(page, cdp, '恢复原草稿')
   await expect(page.locator('html')).toHaveAttribute('data-lexical-text', '原草稿')
+  await expect(page.locator('html')).not.toHaveAttribute('data-send-clicked', 'true')
+})
+
+test('inquiry records persist a fresh snapshot and show internal handoff without sending', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  await click(page, cdp, '话术')
+  await expect(page.locator('html')).toHaveAttribute('data-reply-requested', 'true')
+  await resolve(page)
+  await expect(page.locator('html')).toHaveAttribute('data-memory-committed', '1')
+  await click(page, cdp, '询盘与接管')
+  const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true })
+  expect(all(root).map(text).join(' ')).toContain('Customer asks for a sample')
+  const refresh = (await find(cdp, '刷新记录'))!
+  await cdp.send('DOM.scrollIntoViewIfNeeded', { nodeId: refresh.nodeId })
+  await page.screenshot({ path: '../../tmp/whatsapp-composer-browser/inquiry-preview.png' })
+  await click(page, cdp, '接管摘要（仅内部）', 'SUMMARY')
+  await click(page, cdp, '暂停生成，由我接管')
+  await expect.poll(async () => !!await find(cdp, '填入输入框')).toBe(false)
+  await expect(page.locator('html')).not.toHaveAttribute('data-send-clicked', 'true')
+})
+
+test('inquiry does not save a late response after a new customer message', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  await click(page, cdp, '话术')
+  await expect(page.locator('html')).toHaveAttribute('data-reply-requested', 'true')
+  await page.evaluate(() => {
+    const bubble = document.querySelector('[data-testid="msg-container"]')!
+    const row = bubble.parentElement!.cloneNode(true) as Element
+    row.querySelector('[data-testid="selectable-text"]')!.textContent = 'Actually, please wait.'
+    bubble.parentElement!.after(row)
+  })
+  await resolve(page)
+  await expect.poll(async () => !!await find(cdp, '填入输入框')).toBe(false)
+  await expect(page.locator('html')).not.toHaveAttribute('data-memory-committed', '1')
+})
+
+test('inquiry disconnects when a same-title container replaces every message row', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  await click(page, cdp, '话术')
+  await expect(page.locator('html')).toHaveAttribute('data-reply-requested', 'true')
+  await resolve(page)
+  await expect(page.locator('html')).toHaveAttribute('data-memory-committed', '1')
+  await page.evaluate(() => {
+    const row = document.querySelector('[data-testid="msg-container"]')!.parentElement!
+    const replacement = row.cloneNode(true) as Element
+    replacement.querySelector('[data-testid="selectable-text"]')!.textContent = 'Different synthetic inquiry'
+    row.replaceWith(replacement)
+    delete document.documentElement.dataset.memoryCommitted
+  })
+  await click(page, cdp, '话术')
+  await resolve(page)
+  await expect(page.locator('html')).toHaveAttribute('data-memory-committed', '1')
   await expect(page.locator('html')).not.toHaveAttribute('data-send-clicked', 'true')
 })
 test('reverted genuine draft edit invalidates pending response', async ({ page }) => {
@@ -121,7 +179,7 @@ for (const action of ['close', 'context'] as const) test(`pending restore cannot
   await expect(page.locator('html')).toHaveAttribute('data-lexical-text', 'What sample size do you need?')
   await expect(page.locator('html')).not.toHaveAttribute('data-send-clicked', 'true')
 })
-test('server lower 6000-character capability trims the captured request before generation', async ({ page }) => {
+test('server lower capacity stops instead of silently truncating history', async ({ page }) => {
   const cdp = await page.context().newCDPSession(page)
   await page.evaluate(() => {
     document.documentElement.dataset.lowerReplyLimit = 'true'
@@ -132,11 +190,215 @@ test('server lower 6000-character capability trims the captured request before g
     first.parentElement!.after(next)
   })
   await click(page, cdp, '话术')
-  await expect(page.locator('html')).toHaveAttribute('data-reply-requested', 'true')
-  await expect(page.locator('html')).toHaveAttribute('data-reply-characters', '4000')
-  await expect(page.locator('html')).toHaveAttribute('data-reply-messages', '1')
-  await expect(page.locator('html')).toHaveAttribute('data-reply-truncated', 'true')
-  const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true })
-  expect(all(root).map(text).join('')).toContain('上限 6000 字符')
+  await expect.poll(async () => {
+    const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true })
+    return all(root).map(text).join('')
+  }).toContain('超过本次服务容量')
+  await expect(page.locator('html')).not.toHaveAttribute('data-reply-requested', 'true')
   await expect(page.locator('html')).toHaveAttribute('data-lexical-text', '原草稿')
+})
+
+test('long history recovers from an empty loading frame and exports the full JSON without extra translation', async ({ page }) => {
+  test.setTimeout(40000)
+  const cdp = await page.context().newCDPSession(page)
+  await page.evaluate(() => {
+    const first = document.querySelector('[data-testid="msg-container"]')!.parentElement!
+    const scroll = document.createElement('div')
+    scroll.id = 'synthetic-history'; scroll.style.cssText = 'height:240px;overflow-y:auto'
+    first.replaceWith(scroll)
+    let oldest = 100
+    const prepend = () => {
+      const end = oldest; oldest = Math.max(0, oldest - 20)
+      const items = document.createDocumentFragment()
+      for (let i = oldest; i < end; i++) {
+        const row = document.createElement('div'); row.style.cssText = 'height:28px;display:flex;align-items:flex-start'
+        row.dataset.id = `false_synthetic_${i}`
+        const bubble = document.createElement('div'); bubble.dataset.testid = 'msg-container'
+        const meta = document.createElement('div'); meta.className = 'copyable-text'; meta.dataset.prePlainText = '[10:00, 2026-09-11] Synthetic:'
+        const span = document.createElement('span'); span.dataset.testid = 'selectable-text'; span.textContent = `Synthetic history ${i}`
+        meta.append(span); bubble.append(meta); row.append(bubble); items.append(row)
+      }
+      const before = scroll.scrollHeight; scroll.prepend(items); scroll.scrollTop += scroll.scrollHeight - before
+    }
+    prepend(); scroll.scrollTop = scroll.scrollHeight
+    let delayed = false, loading = false
+    scroll.addEventListener('scroll', () => {
+      if (scroll.scrollTop >= 100 || !oldest || loading) return
+      if (delayed) { prepend(); return }
+      delayed = true; loading = true
+      const rows = [...scroll.childNodes], top = scroll.scrollTop
+      const placeholder = document.createElement('div'); placeholder.style.height = `${scroll.scrollHeight}px`
+      scroll.replaceChildren(placeholder)
+      document.documentElement.dataset.syntheticEmptyHistory = 'true'
+      setTimeout(() => { scroll.replaceChildren(...rows); scroll.scrollTop = top; prepend(); loading = false }, 650)
+    })
+  })
+  // Let translation of the initially loaded batch finish before measuring history loads.
+  await expect(page.locator('html')).toHaveAttribute('data-translation-calls', '20')
+  await page.evaluate(() => { const scroll = document.querySelector('#synthetic-history')!; scroll.scrollTop = scroll.scrollHeight })
+  await click(page, cdp, '话术')
+  const translationsAtStart = await page.locator('html').getAttribute('data-translation-calls')
+  await expect(page.locator('html')).toHaveAttribute('data-reply-messages', '100', { timeout: 25000 })
+  await expect(page.locator('html')).toHaveAttribute('data-synthetic-empty-history', 'true')
+  expect(await page.locator('html').getAttribute('data-translation-calls')).toBe(translationsAtStart)
+  await resolve(page)
+  await page.evaluate(() => {
+    const scroll = document.querySelector('#synthetic-history')!
+    scroll.addEventListener('scroll', () => { document.documentElement.dataset.repeatHistoryScroll = 'true' })
+  })
+  await click(page, cdp, '重新生成话术')
+  await expect(page.locator('html')).toHaveAttribute('data-reply-calls', '2', { timeout: 3000 })
+  await expect(page.locator('html')).not.toHaveAttribute('data-repeat-history-scroll', 'true')
+  await expect(page.locator('html')).toHaveAttribute('data-reply-messages', '100')
+  await resolve(page)
+  await click(page, cdp, '填入输入框')
+  await expect(page.locator('html')).toHaveAttribute('data-lexical-text', 'What sample size do you need?')
+  const download = page.waitForEvent('download')
+  await click(page, cdp, '聊天上下文')
+  await click(page, cdp, '下载聊天 JSON')
+  const file = await download
+  const path = await file.path()
+  const exported = JSON.parse(await readFile(path!, 'utf8'))
+  expect(exported.messages).toHaveLength(100)
+  expect(exported.messages[0].text).toBe('Synthetic history 0')
+  expect(JSON.stringify(exported)).not.toContain('false_synthetic')
+  await expect(page.locator('html')).not.toHaveAttribute('data-send-clicked', 'true')
+  await page.screenshot({ path: '../../tmp/whatsapp-composer-browser/full-history.png' })
+})
+
+test('reply tabs remain usable on narrow screens and with the keyboard', async ({ page }) => {
+  await page.setViewportSize({ width: 420, height: 820 })
+  const cdp = await page.context().newCDPSession(page)
+  await click(page, cdp, '话术'); await resolve(page)
+  await expect.poll(async () => !!await find(cdp, '填入输入框')).toBe(true)
+  await page.screenshot({ path: '../../tmp/whatsapp-composer-browser/reply-tabs-narrow.png' })
+  const tab = (await find(cdp, '建议回复'))!
+  await cdp.send('DOM.focus', { nodeId: tab.nodeId })
+  await page.keyboard.press('ArrowRight')
+  const contextTab = (await find(cdp, '聊天上下文'))!
+  const { attributes } = await cdp.send('DOM.getAttributes', { nodeId: contextTab.nodeId })
+  expect(attributes).toContain('true')
+  await click(page, cdp, '建议回复')
+  await click(page, cdp, '填入输入框')
+  await expect(page.locator('html')).toHaveAttribute('data-lexical-text', 'What sample size do you need?')
+})
+
+test('auto takeover sends two ordered synthetic messages and stops with its toggle', async ({ page }) => {
+  test.setTimeout(30000)
+  const cdp = await page.context().newCDPSession(page)
+  await page.getByRole('textbox', { name: 'Synthetic composer' }).fill('')
+  await page.evaluate(() => { document.documentElement.dataset.autoHarness = 'true'; document.querySelector('#send')!.setAttribute('data-testid', 'compose-btn-send') })
+  await click(page, cdp, '自动接管（测试中）')
+  await expect(page.locator('html')).toHaveAttribute('data-auto-sent', '2', { timeout: 15000 })
+  const sent = await page.locator('[data-id^="true_synthetic_sent_"]').allTextContents()
+  expect(sent).toEqual(['Hi! Happy to help 🙂', 'Which sample size works for you?'])
+  await expect(page.locator('html')).toHaveAttribute('data-lexical-text', '')
+  await page.screenshot({ path: '../../tmp/whatsapp-composer-browser/auto-takeover.png' })
+  await click(page, cdp, '停止接管')
+  await expect.poll(async () => !!await find(cdp, '自动接管（测试中）')).toBe(true)
+})
+test('manual input stops auto takeover before sending', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  const composer = page.getByRole('textbox', { name: 'Synthetic composer' })
+  await composer.fill('')
+  await page.evaluate(() => document.querySelector('#send')!.setAttribute('data-testid', 'compose-btn-send'))
+  await click(page, cdp, '自动接管（测试中）')
+  await composer.fill('I will handle this myself')
+  await expect.poll(async () => !!await find(cdp, '自动接管（测试中）')).toBe(true)
+  await expect(page.locator('html')).not.toHaveAttribute('data-send-clicked', 'true')
+})
+
+test('auto takeover waits for a delayed native send render after each fill', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  await page.getByRole('textbox', { name: 'Synthetic composer' }).fill('')
+  await page.evaluate(() => { document.documentElement.dataset.autoHarness = 'true'; document.documentElement.dataset.delayedSend = 'true' })
+  await click(page, cdp, '自动接管（测试中）')
+  await expect(page.locator('html')).toHaveAttribute('data-auto-sent', '2', { timeout: 15000 })
+  await expect(page.locator('html')).toHaveAttribute('data-lexical-text', '')
+  expect(await find(cdp, '停止接管')).toBeDefined()
+  await click(page, cdp, '停止接管')
+})
+
+test('semantic role send submits all three topic answers and stays active', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  await page.getByRole('textbox', { name: 'Synthetic composer' }).fill('')
+  await page.evaluate(() => { document.documentElement.dataset.autoHarness = 'true'; document.documentElement.dataset.multiTopic = 'true' })
+  await click(page, cdp, '自动接管（测试中）')
+  await expect(page.locator('html')).toHaveAttribute('data-auto-sent', '3', { timeout: 18000 })
+  expect(await page.locator('[data-id^="true_synthetic_sent_"]').allTextContents()).toEqual(['Synthetic process P applies only to grade Z.', 'Synthetic finish F is used after colouring.', 'Which specification do you need?'])
+  expect(await find(cdp, '停止接管')).toBeDefined()
+  await click(page, cdp, '停止接管')
+})
+
+test('unavailable send keeps every generated topic visible and reports zero submissions', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  await page.getByRole('textbox', { name: 'Synthetic composer' }).fill('')
+  await page.evaluate(() => { document.documentElement.dataset.autoHarness = 'true'; document.documentElement.dataset.multiTopic = 'true' })
+  await click(page, cdp, '自动接管（测试中）')
+  const pageText = async () => { const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true }); return all(root).map(text).join(' ') }
+  await expect.poll(pageText, { timeout: 12000 }).toContain('已提交 0/3 段')
+  await expect.poll(async () => !!await find(cdp, '自动接管（测试中）')).toBe(true)
+  const content = await pageText()
+  expect(content).toContain('Synthetic finish F is used after colouring.')
+  expect(content).toContain('Which specification do you need?')
+  await expect(page.locator('html')).not.toHaveAttribute('data-send-clicked', 'true')
+  await page.screenshot({ path: '../../tmp/whatsapp-composer-browser/complete-auto-reply.png' })
+})
+
+test('recovered manual review draft is visible without filling or sending', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  const composer = page.getByRole('textbox', { name: 'Synthetic composer' })
+  await composer.fill('')
+  await page.evaluate(() => { document.documentElement.dataset.autoHarness = 'true'; document.documentElement.dataset.reviewReply = 'true' })
+  await click(page, cdp, '自动接管（测试中）')
+  const pageText = async () => { const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true }); return all(root).map(text).join(' ') }
+  await expect.poll(pageText, { timeout: 12000 }).toContain('Final topic is also retained.')
+  expect(await pageText()).toContain('已提交 0/1 段')
+  expect(await find(cdp, '自动接管（测试中）')).toBeDefined()
+  await expect(composer).toBeEmpty()
+  await expect(page.locator('html')).not.toHaveAttribute('data-send-clicked', 'true')
+})
+
+test('auto takeover handles system notices and older unknown placeholders before a readable customer message', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  await page.getByRole('textbox', { name: 'Synthetic composer' }).fill('')
+  await page.evaluate(() => {
+    document.documentElement.dataset.autoHarness = 'true'
+    document.querySelector('#send')!.setAttribute('data-testid', 'compose-btn-send')
+    const panel = document.querySelector('[data-testid="conversation-panel-messages"]')!
+    const notice = document.createElement('div'); notice.style.alignItems = 'center'
+    notice.innerHTML = '<div data-testid="msg-container"><span data-testid="system_message">Synthetic notice</span></div>'
+    const unknown = document.createElement('div'); unknown.style.alignItems = 'flex-start'
+    unknown.innerHTML = '<div data-testid="msg-container"><span>Synthetic unsupported historical content</span></div>'
+    panel.prepend(notice, unknown)
+  })
+  await click(page, cdp, '自动接管（测试中）')
+  await expect(page.locator('html')).toHaveAttribute('data-auto-sent', '2', { timeout: 15000 })
+  expect(await find(cdp, '停止接管')).toBeDefined()
+  await click(page, cdp, '停止接管')
+})
+
+test('manual mode cancels an auto activation still awaiting disclosure', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  await page.getByRole('textbox', { name: 'Synthetic composer' }).fill('')
+  await page.evaluate(() => { document.documentElement.dataset.deferAutoDisclosure = 'true' })
+  await click(page, cdp, '自动接管（测试中）')
+  await click(page, cdp, '话术')
+  await page.evaluate(() => document.dispatchEvent(new Event('synthetic-auto-disclosure')))
+  await expect.poll(async () => !!await find(cdp, '自动接管（测试中）')).toBe(true)
+  expect(await find(cdp, '停止接管')).toBeUndefined()
+})
+
+test('auto takeover cannot start while another instance owns the browser lock', async ({ page }) => {
+  const cdp = await page.context().newCDPSession(page)
+  await page.getByRole('textbox', { name: 'Synthetic composer' }).fill('')
+  await page.evaluate(() => { void navigator.locks.request('leshine-whatsapp-auto-takeover', async () => {
+    document.documentElement.dataset.syntheticLock = 'true'
+    await new Promise(resolve => document.addEventListener('synthetic-release-lock', resolve, { once: true }))
+  }) })
+  await expect(page.locator('html')).toHaveAttribute('data-synthetic-lock', 'true')
+  await click(page, cdp, '自动接管（测试中）')
+  await expect.poll(async () => { const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true }); return all(root).map(text).join(' ') }).toContain('另一个窗口正在自动接管')
+  await expect(page.locator('html')).not.toHaveAttribute('data-reply-requested', 'true')
+  await page.evaluate(() => document.dispatchEvent(new Event('synthetic-release-lock')))
 })

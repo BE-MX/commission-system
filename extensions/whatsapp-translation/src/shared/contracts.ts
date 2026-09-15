@@ -96,14 +96,14 @@ export type TargetLanguage = (typeof TARGET_LANGUAGES)[number]
 export const DEFAULT_OUTGOING_LANGUAGE: TargetLanguage = 'en'
 
 export const LANGUAGE_LABELS: Record<string, string> = {
-  ar: 'العربية',
-  de: 'Deutsch',
-  en: 'English',
-  es: 'Español',
-  fr: 'Français',
-  ja: '日本語',
-  nl: 'Nederlands',
-  sv: 'Svenska',
+  ar: '阿拉伯语（العربية）',
+  de: '德语（Deutsch）',
+  en: '英语（English）',
+  es: '西班牙语（Español）',
+  fr: '法语（Français）',
+  ja: '日语（日本語）',
+  nl: '荷兰语（Nederlands）',
+  sv: '瑞典语（Svenska）',
   'zh-CN': '中文',
 }
 
@@ -111,10 +111,18 @@ export function languageLabel(code: string): string {
   return LANGUAGE_LABELS[code] ?? code
 }
 
+export type AutoReplySchedule = { start: string; end: string; days: number[] }
+export type AutoReplyPolicy = { blocked: boolean; allowlisted: boolean; allowlistEnabled: boolean; schedule: AutoReplySchedule | null }
+
 export type RuntimeRequest =
+  | { type: 'reply/memory'; payload: import('./replyMemory').MemoryCommand }
   | { type: 'reply/suggest'; payload: ReplyRequest }
   | { type: 'reply/capabilities' }
   | { type: 'reply/disclosure'; acknowledged?: true }
+  | { type: 'reply/auto-policy/get'; chatTitle: string }
+  | { type: 'reply/auto-policy/set-chat'; chatTitle: string; list: 'block' | 'allow'; value: boolean }
+  | { type: 'reply/auto-policy/set-allowlist-enabled'; enabled: boolean }
+  | { type: 'reply/auto-policy/set-schedule'; schedule: AutoReplySchedule | null }
   | { type: 'pairing/start' }
   | { type: 'pairing/resume' }
   | { type: 'session/refresh' }
@@ -123,13 +131,20 @@ export type RuntimeRequest =
   | { type: 'capabilities/get' }
   | { type: 'chat-language/get'; chatTitle: string }
   | { type: 'chat-language/set'; chatTitle: string; targetLanguage: string }
+  | { type: 'reply/memory-binding/get'; chatTitle: string }
+  | { type: 'reply/memory-binding/set'; chatTitle: string; inquiryId: string | null }
   | { type: 'translation/incoming'; request_id: string; source_language: 'auto'; target_language: string; text: string }
   | { type: 'translation/outgoing'; request_id: string; sourceLanguage: string; targetLanguage: string; text: string }
 
 export type RuntimeResponse =
+  | { type: 'reply/memory'; result: import('./replyMemory').MemoryResult }
   | { type: 'reply/suggest'; result: ReplyResponse }
   | { type: 'reply/capabilities'; reply?: ReplyCapabilities }
   | { type: 'reply/disclosure'; acknowledged: boolean }
+  | { type: 'reply/auto-policy/get'; blocked: boolean; allowlisted: boolean; allowlistEnabled: boolean; schedule: AutoReplySchedule | null }
+  | { type: 'reply/auto-policy/set-chat' }
+  | { type: 'reply/auto-policy/set-allowlist-enabled' }
+  | { type: 'reply/auto-policy/set-schedule' }
   | { type: 'pairing/start'; state: PairingState }
   | { type: 'pairing/resume'; state: PairingState | null }
   | { type: 'session/refresh'; session: Session }
@@ -138,6 +153,8 @@ export type RuntimeResponse =
   | { type: 'capabilities/get'; capabilities: Capabilities }
   | { type: 'chat-language/get'; targetLanguage: string }
   | { type: 'chat-language/set'; targetLanguage: string }
+  | { type: 'reply/memory-binding/get'; inquiryId: string | null }
+  | { type: 'reply/memory-binding/set' }
   | { type: 'translation/incoming'; translation: string; sourceLanguage: string }
   | { type: 'translation/outgoing'; translation: string; sourceLanguage: string; backTranslation?: string }
   | { type: 'error'; message: string }
@@ -151,6 +168,8 @@ export function mapStartPairing(response: StartPairingResponse): PairingState {
 }
 
 export type ReplyCapabilities = {
+  auto_reply_enabled?: boolean
+  history_enabled?: boolean
   available: boolean
   max_messages: number
   default_messages: number
@@ -158,22 +177,32 @@ export type ReplyCapabilities = {
   max_draft_chars: number
   max_goal_chars: number
   timeout_seconds: number
+  memory_enabled?: boolean
+  memory_retention_days?: number
 }
 export type ReplyStyle = 'default' | 'shorter' | 'softer' | 'alternative'
 export type ReplyRequest = {
+  mode?: 'draft' | 'auto'
   request_id: string
   conversation_epoch: string
   context_version: number
   draft_version: number
-  messages: { role: 'customer' | 'salesperson'; text: string }[]
-  context_scope: { requested_limit: 20 | 40; truncated: boolean; omitted_media: boolean; latest_visible: boolean }
+  messages: { role: 'customer' | 'salesperson'; text: string; timestamp?: string; quoted_text?: string; kind?: 'text' | 'media' | 'unknown' }[]
+  context_scope: { requested_limit: number; history_status?: string; truncated: boolean; omitted_media: boolean; latest_visible: boolean }
   draft_intent: string
   target_language: 'auto' | TargetLanguage
   fallback_language: TargetLanguage
   style: ReplyStyle
   goal: string
+  detected_language?: string
+  memory_conversation_id?: string | null
+  memory_revision?: number
 }
 export type ReplyResponse = Pick<ReplyRequest, 'request_id' | 'conversation_epoch' | 'context_version' | 'draft_version'> & {
+  auto_action?: 'reply' | 'wait' | 'handoff' | null
+  reply_segments?: string[]
+  memory_error?: string | null
+  context_processing?: string
   status: 'ready' | 'needs_confirmation' | 'insufficient_context'
   reply_language: TargetLanguage
   reply_text: string
@@ -183,4 +212,10 @@ export type ReplyResponse = Pick<ReplyRequest, 'request_id' | 'conversation_epoc
   claims: { text: string; source_index: number; quote: string }[]
   risk_flags: string[]
   missing_information: string[]
+  action?: import('./replyMemory').ReplyAction | null
+  memory_conversation_id?: string | null
+  memory_revision?: number
+  memory_update?: import('./replyMemory').InquiryEntry[]
+  handoff?: import('./replyMemory').HandoffSummary
+  materials?: { document_id: number; revision_id: number; title: string; text: string; applicability: string }[]
 }

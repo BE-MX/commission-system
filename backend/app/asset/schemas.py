@@ -163,6 +163,15 @@ class BatchDownloadRequest(BaseModel):
     asset_ids: list[int] = Field(..., min_length=1, max_length=100)
 
 
+class BatchTagsRequest(BaseModel):
+    asset_ids: list[int] = Field(..., min_length=1, max_length=100)
+    tags: list[AssetTagItem] = Field(..., min_length=1)
+
+
+class BatchDeleteRequest(BaseModel):
+    asset_ids: list[int] = Field(..., min_length=1, max_length=100)
+
+
 # ── 列表查询 ────────────────────────────────────────────
 
 class AssetListRequest(BaseModel):
