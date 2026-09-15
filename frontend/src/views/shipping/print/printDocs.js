@@ -80,20 +80,43 @@ function printedAt() {
   return currentBeijingDateTime()
 }
 
-function itemsTable(items, { showSku = true } = {}) {
+// 出库单在首个分隔符处拆分；颜色可能含斜杠（例如 #8TP18/60），后半段原样保留。
+function outboundProductCells(productName) {
+  const name = String(productName ?? '').trim()
+  const separator = name.search(/[/／]/)
+  const category = separator < 0 ? name : name.slice(0, separator).trim()
+  const details = separator < 0 ? '' : name.slice(separator + 1).trim()
+  return `<td class="product-category">${esc(category)}</td>
+      <td class="product-details">${esc(details).replace(/[/／]/g, '$&<wbr>')}</td>`
+}
+
+// 独立打印文档不加载主站 tokens；纸张使用共用单据的黑白灰配色。
+const OUTBOUND_CSS = `
+.sheet{padding:12mm 6mm}
+.items-table{table-layout:fixed}
+.items-table th,.items-table td{padding:6px 5px;overflow-wrap:anywhere}
+.items-table tbody tr{height:12mm;break-inside:avoid}
+.items-table .product-category{font-size:12px}
+.items-table .product-details{font-size:14px;font-weight:700}
+.items-table tbody tr:nth-child(even){background:rgb(245,245,245)}
+.items-table{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+`
+
+function itemsTable(items, { outbound = false } = {}) {
   const rows = (items || []).map((item, index) => `<tr>
       <td>${index + 1}</td>
-      <td>${esc(item.product_name)}</td>
+      ${outbound ? outboundProductCells(item.product_name) : `<td>${esc(item.product_name)}</td>`}
       <td>${esc(item.spec)}</td>
-      ${showSku ? `<td>${esc(item.sku)}</td>` : ''}
+      ${outbound ? '' : `<td>${esc(item.sku)}</td>`}
       <td class="num">${esc(item.qty)}</td>
-      <td>${esc(item.unit)}</td>
+      ${outbound ? '<td class="batch-no"></td>' : `<td>${esc(item.unit)}</td>`}
     </tr>`).join('')
   if (!rows) return ''
   return `<div class="items-section">
     <h3>出库明细</h3>
     <table class="items-table">
-      <thead><tr><th>#</th><th>产品名称</th><th>规格</th>${showSku ? '<th>SKU</th>' : ''}<th>数量</th><th>单位</th></tr></thead>
+      ${outbound ? '<colgroup><col style="width:4%"><col style="width:18%"><col style="width:23%"><col style="width:17%"><col style="width:7%"><col></colgroup>' : ''}
+      <thead><tr><th>#</th>${outbound ? '<th>产品类别</th><th>颜色/尺寸/克重</th>' : '<th>产品名称</th>'}<th>规格</th>${outbound ? '' : '<th>SKU</th>'}<th>数量</th><th>${outbound ? '批次号' : '单位'}</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   </div>`
@@ -131,7 +154,7 @@ export function buildOutboundDoc({ record, items = [], qr_code_base64 = '' }) {
 
   <div class="remark-section"><div class="remark-label">发货备注</div><div class="remark-content">${esc(record.remark || '无')}</div></div>
 
-  ${itemsTable(items, { showSku: false })}
+  ${itemsTable(items, { outbound: true })}
 
   <div class="footer">
     <span>莱莎方舟平台 · 发货检验</span>
@@ -140,7 +163,7 @@ export function buildOutboundDoc({ record, items = [], qr_code_base64 = '' }) {
   </div>
 </div>`
 
-  return wrapDoc(`出库单 ${record.outbound_no}`, SHEET_CSS, body)
+  return wrapDoc(`出库单 ${record.outbound_no}`, SHEET_CSS + OUTBOUND_CSS, body)
 }
 
 // ── 验货单 A4 ─────────────────────────────────────────

@@ -45,6 +45,37 @@ test('出库单文档：空备注明确显示无', () => {
   assert.match(doc, /<div class="remark-content">无<\/div>/)
 })
 
+test('出库单拆分首个斜杠，保留复合颜色、规格并为批次号留空', () => {
+  const doc = buildOutboundDoc({
+    ...outboundPayload,
+    items: [{ product_name: 'Super Double Drawn Genius Weft/22/#8TP18/60/20g', spec: 'B1天才发帘', qty: 4, unit: '件' }],
+  })
+  assert.match(doc, /<td class="product-category">Super Double Drawn Genius Weft<\/td>/)
+  assert.match(doc, /<td class="product-details">22\/<wbr>#8TP18\/<wbr>60\/<wbr>20g<\/td>/)
+  assert.match(doc, /<td>B1天才发帘<\/td>/)
+  assert.match(doc, /<th>产品类别<\/th><th>颜色\/尺寸\/克重<\/th>/)
+  assert.match(doc, /<th>批次号<\/th>/)
+  assert.match(doc, /<td class="batch-no"><\/td>/)
+  assert.ok(!doc.includes('<th>单位</th>'))
+  assert.ok(!doc.includes('<td>件</td>'))
+})
+
+test('出库单名称缺失、无分隔符、全角分隔符及特殊字符不丢失或注入 HTML', () => {
+  const doc = buildOutboundDoc({
+    ...outboundPayload,
+    items: [
+      { product_name: null },
+      { product_name: '真人发头套' },
+      { product_name: ' Tape & Weft ／ <img src=x>/20g ' },
+    ],
+  })
+  assert.match(doc, /<td class="product-category"><\/td>/)
+  assert.match(doc, /<td class="product-category">真人发头套<\/td>\s*<td class="product-details"><\/td>/)
+  assert.match(doc, /<td class="product-category">Tape &amp; Weft<\/td>/)
+  assert.match(doc, /<td class="product-details">&lt;img src=x&gt;\/<wbr>20g<\/td>/)
+  assert.ok(!doc.includes('<img src=x>'))
+})
+
 test('出库单文档：无二维码时不输出破损 img', () => {
   const doc = buildOutboundDoc({ ...outboundPayload, qr_code_base64: '' })
 
