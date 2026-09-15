@@ -17,6 +17,7 @@ class TagDimensionOut(BaseModel):
     is_single_select: int
     is_system: int
     is_required: int
+    tag_scope: str = "internal"
     sort_order: int
 
     class Config:
@@ -55,6 +56,7 @@ class TagDimensionCreate(BaseModel):
     is_single_select: int = Field(default=0, ge=0, le=1)
     is_required: int = Field(default=0, ge=0, le=1)
     sort_order: int = Field(default=0)
+    tag_scope: str = Field(default="internal", pattern="^(internal|customer)$")
 
 
 class TagDimensionUpdate(BaseModel):
@@ -63,6 +65,7 @@ class TagDimensionUpdate(BaseModel):
     is_required: Optional[int] = Field(None, ge=0, le=1)
     sort_order: Optional[int] = None
     is_visible: Optional[int] = Field(None, ge=0, le=1)
+    tag_scope: Optional[str] = Field(None, pattern="^(internal|customer)$")
 
 
 # ── 素材 ────────────────────────────────────────────────

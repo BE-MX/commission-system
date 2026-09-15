@@ -118,6 +118,22 @@ class CustomerMediaReview(Base):
     )
 
 
+class CustomerMediaAssetTag(Base):
+    """客户素材-客户标签关联（仅 tag_scope='customer' 的维度值）。"""
+
+    __tablename__ = "ark_customer_media_asset_tags"
+
+    asset_id = Column(BigInteger, ForeignKey("ark_customer_media_assets.id", ondelete="CASCADE"), primary_key=True, comment="客户素材ID")
+    dimension_id = Column(Integer, ForeignKey("ark_tag_dimensions.id"), primary_key=True, comment="标签维度ID")
+    tag_value_id = Column(Integer, ForeignKey("ark_tag_values.id"), primary_key=True, comment="标签值ID")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="打标时间")
+
+    __table_args__ = (
+        Index("idx_cmt_dim", "dimension_id", "tag_value_id", "asset_id"),
+        {"comment": "客户素材-客户标签关联表"},
+    )
+
+
 class CustomerPortalAccount(Base):
     __tablename__ = "ark_customer_portal_accounts"
 

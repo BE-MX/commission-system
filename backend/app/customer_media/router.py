@@ -1,5 +1,7 @@
 """方舟内部客户素材交付 API。"""
 
+import json
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -9,8 +11,9 @@ from app.core.database import get_db
 from app.core.response import ok
 from app.customer_media import service
 from app.customer_media.schemas import (
-    BatchReviewIn, BatchSubmitIn, DirectoryNameIn, PortalAccountCreate,
-    PortalAccountUpdate,
+    AssetTagsUpdateIn, BatchReviewIn, BatchSubmitIn, CustomerMediaTagItem,
+    DirectoryNameIn, PortalAccountCreate, PortalAccountUpdate, TagResolveIn,
+    TagValidateIn, TagValueCreateIn,
 )
 from app.customer_media.storage import MediaStorageError, storage_for
 
@@ -27,6 +30,8 @@ def _call(function, *args, **kwargs):
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
     except service.CustomerMediaConflict as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except service.CustomerMediaError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     except MediaStorageError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
@@ -40,11 +45,13 @@ async def _call_async(function, *args, **kwargs):
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
     except service.CustomerMediaConflict as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except service.CustomerMediaError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     except MediaStorageError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
 
-def _asset(row, *, internal: bool = True) -> dict:
+def _asset(row, *, internal: bool = True, tags: list | None = None) -> dict:
     return {
         "id": row.id,
         "file_name": row.file_name,
@@ -57,11 +64,13 @@ def _asset(row, *, internal: bool = True) -> dict:
         "height": row.height,
         "duration_seconds": row.duration_seconds,
         "created_at": row.created_at.isoformat(),
+        "tags": tags if tags is not None else [],
         "content_url": service.internal_preview_url(row.id) if internal else f"/api/customer-media/portal/assets/{row.id}/content",
     }
 
 
-def _batch(row, *, directories: list | None = None) -> dict:
+def _batch(row, *, directories: list | None = None, tags_map: dict | None = None) -> dict:
+    tag_lookup = tags_map or {}
     return {
         "id": row.id,
         "task_id": row.task_id,
@@ -76,7 +85,10 @@ def _batch(row, *, directories: list | None = None) -> dict:
         "submitted_at": row.submitted_at.isoformat() if row.submitted_at else None,
         "reviewed_at": row.reviewed_at.isoformat() if row.reviewed_at else None,
         "published_at": row.published_at.isoformat() if row.published_at else None,
-        "assets": [_asset(asset) for asset in row.assets if asset.deleted_at is None],
+        "assets": [
+            _asset(asset, tags=tag_lookup.get(asset.id, []))
+            for asset in row.assets if asset.deleted_at is None
+        ],
         "directories": directories if directories is not None else [],
         "reviews": [{
             "id": review.id,
@@ -90,7 +102,8 @@ def _batch(row, *, directories: list | None = None) -> dict:
 
 
 def _batch_full(db: Session, row) -> dict:
-    return _batch(row, directories=service.batch_directory_summary(db, row))
+    tags_map = service.asset_tags_map(db, [asset.id for asset in row.assets if asset.deleted_at is None])
+    return _batch(row, directories=service.batch_directory_summary(db, row), tags_map=tags_map)
 
 
 def _account(row) -> dict:
@@ -115,7 +128,19 @@ def _portal_customer(row: dict) -> dict:
     }
 
 
-def _portal_preview_batch(row, task_meta: dict) -> dict:
+def _portal_preview_batch(row, task_meta: dict, *, tags_map: dict | None = None, matching: set | None = None) -> dict | None:
+    """内部预览批次。matching 非 None 时按标签筛选素材，整批无命中则返回 None。"""
+    tag_lookup = tags_map or {}
+    assets = [
+        {
+            **_asset(asset, tags=tag_lookup.get(asset.id, [])),
+            "content_url": service.sales_portal_preview_url(asset.id),
+        }
+        for asset in row.assets
+        if asset.deleted_at is None and (matching is None or asset.id in matching)
+    ]
+    if matching is not None and not assets:
+        return None
     task = task_meta.get(row.task_id, {})
     return {
         "id": row.id,
@@ -124,13 +149,7 @@ def _portal_preview_batch(row, task_meta: dict) -> dict:
         "title": task.get("task_name") or "拍摄交付",
         "shoot_type": task.get("shoot_type"),
         "published_at": row.published_at.isoformat() if row.published_at else None,
-        "assets": [
-            {
-                **_asset(asset),
-                "content_url": service.sales_portal_preview_url(asset.id),
-            }
-            for asset in row.assets if asset.deleted_at is None
-        ],
+        "assets": assets,
     }
 
 
@@ -158,17 +177,26 @@ def sales_portal_customers(
 @router.get("/sales-portal/customers/{customer_id}")
 def sales_portal_customer(
     customer_id: str,
+    tag_value_ids: str | None = Query(default=None, max_length=1000),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_any_permission(
         "customer_media_portal:read", "customer_media:admin",
     )),
 ):
-    detail = _call(service.sales_portal_customer_detail, db, payload, customer_id)
+    detail = _call(
+        service.sales_portal_customer_detail, db, payload, customer_id,
+        service.parse_tag_value_ids(tag_value_ids),
+    )
+    asset_ids = [asset.id for row in detail["batches"] for asset in row.assets if asset.deleted_at is None]
+    tags_map = service.asset_tags_map(db, asset_ids)
     return ok({
         "customer": _portal_customer(detail["customer"]),
         "batches": [
-            _portal_preview_batch(row, detail["task_meta"])
-            for row in detail["batches"]
+            batch for row in detail["batches"]
+            if (batch := _portal_preview_batch(
+                row, detail["task_meta"],
+                tags_map=tags_map, matching=detail["matching_asset_ids"],
+            )) is not None
         ],
     })
 
@@ -212,20 +240,101 @@ def rename_batch_directory(
     return ok(_call(service.rename_directory, db, batch_id, directory_id, payload, data.name), "目录已重命名")
 
 
+def _parse_tags_json(tags_json: str | None) -> list[CustomerMediaTagItem] | None:
+    if not tags_json:
+        return None
+    try:
+        raw = json.loads(tags_json)
+        return [CustomerMediaTagItem(**item) for item in raw]
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "tags_json 格式错误") from exc
+
+
 @router.post("/batches/{batch_id}/assets")
 async def upload_batch_asset(
     batch_id: int,
     file: UploadFile = File(...),
     directory_id: int | None = Form(default=None),
     directory_name: str | None = Form(default=None, max_length=128),
+    tags_json: str | None = Form(default=None),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_any_permission("customer_media:write", "customer_media:admin")),
 ):
     row = await _call_async(
         service.upload_asset, db, batch_id, payload, file,
         directory_id=directory_id, directory_name=directory_name,
+        tags=_parse_tags_json(tags_json),
     )
     return ok(_batch_full(db, row), "上传成功")
+
+
+@router.patch("/batches/{batch_id}/assets/{asset_id}/tags")
+def update_batch_asset_tags(
+    batch_id: int,
+    asset_id: int,
+    data: AssetTagsUpdateIn,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission("customer_media:read", "customer_media:admin")),
+):
+    """素材客户标签编辑（审核页）— 权限与审核一致：预约发起人或 admin。"""
+    row = _call(service.update_asset_tags, db, batch_id, asset_id, payload, data.tags)
+    return ok(_batch_full(db, row), "标签已更新")
+
+
+# ── 客户标签 ────────────────────────────────────────────
+
+@router.get("/tags/dimensions")
+def customer_tag_dimensions(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission(
+        "customer_media:read", "customer_media:write", "customer_media:admin",
+    )),
+):
+    """上传页/审核页可选的客户标签维度（tag_scope='customer' 且可见）。"""
+    return ok(_call(service.list_customer_tag_dimensions, db))
+
+
+@router.post("/tags/validate")
+def validate_customer_tags(
+    data: TagValidateIn,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission("customer_media:write", "customer_media:admin")),
+):
+    """文件夹名候选与客户标签库匹配：matched/suggested/missing/ambiguous。"""
+    result = _call(service.validate_tags, db, data.tag_names)
+    return ok({
+        "is_valid": result.is_valid,
+        "matched": result.matched,
+        "suggested": result.suggested,
+        "missing": result.missing,
+        "ambiguous": result.ambiguous,
+    })
+
+
+@router.post("/tags/resolve")
+def resolve_customer_tags(
+    data: TagResolveIn,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission("customer_media:write", "customer_media:admin")),
+):
+    """确认后自动新建客户标签（幂等，唯一索引冲突即复用），返回 tag_mapping。"""
+    return ok({"tag_mapping": _call(service.resolve_auto_create_tags, db, payload, data.auto_create_tags)})
+
+
+@router.post("/tags/values")
+def create_customer_tag_value(
+    data: TagValueCreateIn,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission(
+        "customer_media:read", "customer_media:write", "customer_media:admin",
+    )),
+):
+    """上传页/审核页现场新建客户标签；同名直接复用。"""
+    row = _call(
+        service.create_customer_tag_value, db, payload, data.dimension_id, data.value,
+        name_en=data.name_en, aliases=data.aliases,
+    )
+    return ok(row, "标签已就绪")
 
 
 @router.delete("/batches/{batch_id}/directories/{directory_id}")

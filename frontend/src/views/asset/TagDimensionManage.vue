@@ -13,7 +13,13 @@
         <el-icon><CollectionTag /></el-icon>
         标签维度管理
       </h2>
-      <GlassButton variant="primary" :left-icon="Plus" @click="showCreateDim = true">新建维度</GlassButton>
+      <div class="toolbar-right">
+        <el-radio-group v-model="activeScope" size="small" @change="loadData">
+          <el-radio-button value="internal">内部标签</el-radio-button>
+          <el-radio-button value="customer">客户标签</el-radio-button>
+        </el-radio-group>
+        <GlassButton variant="primary" :left-icon="Plus" @click="showCreateDim = true">新建维度</GlassButton>
+      </div>
     </div>
 
     <!-- 维度列表 -->
@@ -34,6 +40,9 @@
           <div class="dim-info">
             <span class="dim-name">{{ dim.label }}</span>
             <span class="dim-meta">{{ dim.name }}</span>
+            <el-tag size="small" :type="dim.tag_scope === 'customer' ? 'warning' : 'info'" effect="plain">
+              {{ dim.tag_scope === 'customer' ? '客户标签' : '内部标签' }}
+            </el-tag>
             <el-tag v-if="dim.is_system" size="small" type="info">系统内置</el-tag>
             <el-tag v-if="dim.is_single_select" size="small" type="warning">单选</el-tag>
             <el-tag v-else size="small" type="success">多选</el-tag>
@@ -138,6 +147,13 @@
             <el-radio-button :label="0">多选</el-radio-button>
           </el-radio-group>
         </el-form-item>
+        <el-form-item label="标签属性">
+          <el-radio-group v-model="dimForm.tag_scope">
+            <el-radio-button value="internal">内部标签</el-radio-button>
+            <el-radio-button value="customer">客户标签</el-radio-button>
+          </el-radio-group>
+          <div class="scope-hint">客户标签用于设计管理素材上传与客户素材门户，标签值对客户可见</div>
+        </el-form-item>
         <el-form-item label="是否必填">
           <el-switch v-model="dimForm.is_required" :active-value="1" :inactive-value="0" />
         </el-form-item>
@@ -220,6 +236,21 @@ import {
 const loading = ref(false)
 const dimensions = ref([])
 const valueSearchQuery = ref({})
+// 列表按标签属性筛选：internal 内部标签（素材库）/ customer 客户标签（客户素材门户）
+const activeScope = ref('internal')
+
+async function loadData() {
+  loading.value = true
+  try {
+    // 管理页需要看到未启用（并存期隐藏）的维度，并按当前 scope 过滤
+    const res = await getTagDimensions(true, activeScope.value)
+    dimensions.value = res.data || []
+  } catch (e) {
+    ElMessage.error('加载标签维度失败')
+  } finally {
+    loading.value = false
+  }
+}
 
 function filteredValues(dim) {
   const q = (valueSearchQuery.value[dim.id] || '').trim().toLowerCase()
@@ -243,19 +274,6 @@ const parentOptions = computed(() => {
   }
   return (dim.values || []).filter(v => !v.parent_value_id && v.id !== currentValue.value?.id)
 })
-
-async function loadData() {
-  loading.value = true
-  try {
-    // 管理页需要看到未启用（并存期隐藏）的维度
-    const res = await getTagDimensions(true)
-    dimensions.value = res.data || []
-  } catch (e) {
-    ElMessage.error('加载标签维度失败')
-  } finally {
-    loading.value = false
-  }
-}
 
 async function toggleDimVisible(dim) {
   const next = dim.is_visible ? 0 : 1
@@ -287,6 +305,7 @@ const dimForm = ref({
   label: '',
   is_single_select: 0,
   is_required: 0,
+  tag_scope: 'internal',
   sort_order: 0,
 })
 
@@ -297,6 +316,7 @@ function openEditDim(dim) {
     label: dim.label,
     is_single_select: dim.is_single_select,
     is_required: dim.is_required,
+    tag_scope: dim.tag_scope || 'internal',
     sort_order: dim.sort_order,
   }
   showDimDialog.value = true
@@ -310,6 +330,8 @@ watch(showCreateDim, (v) => {
       label: '',
       is_single_select: 0,
       is_required: 0,
+      // 在当前筛选 tab 下新建，默认归入该属性
+      tag_scope: activeScope.value,
       sort_order: dimensions.value.length,
     }
     showDimDialog.value = true
@@ -504,6 +526,19 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.scope-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
 }
 
 .page-title {

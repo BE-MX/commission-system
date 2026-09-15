@@ -1000,3 +1000,13 @@ select:focus-visible { outline: 3px solid rgba(246, 212, 93, .72); outline-offse
   .asset-gallery { padding-top: 20px; }
   .modal { border-radius: 19px; padding: 26px 20px; }
 }
+
+/* ── 客户标签筛选条与图片卡角标（tag_scope='customer' 标签） ── */
+.tag-filter-row > span { padding-top: 13px; }
+.tag-count { margin-left: 7px; padding: 1px 6px; border-radius: 999px; background: rgba(23, 22, 20, .07); font-size: 9px; font-style: normal; font-weight: 700; }
+.finder-options button.active .tag-count { background: rgba(255, 255, 255, .22); }
+.tag-clear-row { border-bottom: 0; }
+.tag-clear { border: 0; border-bottom: 1px solid #777; background: transparent; padding: 4px 0; color: #555; font-size: 9px; text-transform: uppercase; letter-spacing: .08em; cursor: pointer; }
+.tag-clear:hover { color: #111; }
+.asset-corner-tags { position: absolute; z-index: 2; left: 8px; bottom: 8px; display: flex; max-width: calc(100% - 16px); flex-wrap: wrap; gap: 4px; pointer-events: none; }
+.asset-corner-tags i { padding: 4px 8px; border-radius: 999px; background: rgba(0, 0, 0, .68); color: #fff; font-size: 9px; font-style: normal; font-weight: 600; line-height: 1.2; backdrop-filter: blur(3px); }

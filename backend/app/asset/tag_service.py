@@ -96,8 +96,8 @@ def link_taxonomy_parents(db: Session) -> None:
 # ── 维度查询 ────────────────────────────────────────────
 
 # 进程内缓存: 跨海 RDS 跑一次需要 1-2 秒,标签维度变更频率极低,值得缓存
-# 任何写操作后调用 invalidate_dim_cache() 立即失效
-_DIM_CACHE: dict = {"data": None, "expires_at": 0.0}
+# 按 scope 分槽缓存; 任何写操作后调用 invalidate_dim_cache() 清全部 scope
+_DIM_CACHE: dict[str, dict] = {}
 _DIM_CACHE_LOCK = threading.Lock()
 _DIM_CACHE_TTL_SECONDS = 60
 
@@ -113,6 +113,7 @@ def _build_dim_payload(dims: list[TagDimension]) -> list[dict]:
         "is_required": d.is_required,
         "is_visible": d.is_visible,
         "is_managed": d.is_managed,
+        "tag_scope": d.tag_scope,
         "sort_order": d.sort_order,
         "values": [{
             "id": v.id,
@@ -129,44 +130,40 @@ def _build_dim_payload(dims: list[TagDimension]) -> list[dict]:
     } for d in dims]
 
 
-def list_dimensions(db: Session) -> list[TagDimension]:
-    """所有标签维度（含标签值）— 直接查库,返回 ORM 对象。"""
+def list_dimensions(db: Session, scope: str | None = None) -> list[TagDimension]:
+    """所有标签维度（含标签值）— 直接查库,返回 ORM 对象。scope 限定使用域,None=全部。"""
     from sqlalchemy.orm import selectinload
-    return (
-        db.query(TagDimension)
-        .options(selectinload(TagDimension.values))
-        .order_by(TagDimension.sort_order)
-        .all()
-    )
+    query = db.query(TagDimension).options(selectinload(TagDimension.values))
+    if scope is not None:
+        query = query.filter(TagDimension.tag_scope == scope)
+    return query.order_by(TagDimension.sort_order).all()
 
 
-def list_dimensions_cached(db: Session) -> list[dict]:
+def list_dimensions_cached(db: Session, scope: str = "internal") -> list[dict]:
     """缓存版本 — 返回纯 dict,直接喂给 router 的 JSON 响应。
 
-    TTL 60 秒,任何写操作会调用 invalidate_dim_cache() 立即失效。
+    TTL 60 秒,缓存按 scope 分槽,任何写操作会调用 invalidate_dim_cache() 清全部。
     """
     now = time.time()
-    cached = _DIM_CACHE
-    if cached["data"] is not None and now < cached["expires_at"]:
+    cached = _DIM_CACHE.get(scope)
+    if cached is not None and cached["data"] is not None and now < cached["expires_at"]:
         return cached["data"]
 
     with _DIM_CACHE_LOCK:
         # double check 防止并发重复刷新
-        cached = _DIM_CACHE
-        if cached["data"] is not None and now < cached["expires_at"]:
+        cached = _DIM_CACHE.get(scope)
+        if cached is not None and cached["data"] is not None and now < cached["expires_at"]:
             return cached["data"]
 
-        dims = list_dimensions(db)
+        dims = list_dimensions(db, scope=scope)
         payload = _build_dim_payload(dims)
-        _DIM_CACHE["data"] = payload
-        _DIM_CACHE["expires_at"] = now + _DIM_CACHE_TTL_SECONDS
+        _DIM_CACHE[scope] = {"data": payload, "expires_at": now + _DIM_CACHE_TTL_SECONDS}
         return payload
 
 
 def invalidate_dim_cache() -> None:
-    """清空标签维度缓存,在任何 CRUD 写操作之后调用。"""
-    _DIM_CACHE["data"] = None
-    _DIM_CACHE["expires_at"] = 0.0
+    """清空标签维度缓存(全部 scope 分槽),在任何 CRUD 写操作之后调用。"""
+    _DIM_CACHE.clear()
 
 
 def get_dimension(db: Session, dim_id: int) -> TagDimension | None:
@@ -278,7 +275,10 @@ def create_dimension(
     is_system: int = 0,
     is_required: int = 0,
     sort_order: int = 0,
+    tag_scope: str = "internal",
 ) -> TagDimension:
+    if tag_scope not in ("internal", "customer"):
+        raise ValueError(f"非法的标签使用域: {tag_scope}")
     dim = TagDimension(
         name=name,
         label=label,
@@ -286,6 +286,7 @@ def create_dimension(
         is_system=is_system,
         is_required=is_required,
         sort_order=sort_order,
+        tag_scope=tag_scope,
     )
     db.add(dim)
     db.commit()
@@ -302,6 +303,7 @@ def update_dimension(
     is_required: int | None = None,
     sort_order: int | None = None,
     is_visible: int | None = None,
+    tag_scope: str | None = None,
 ) -> TagDimension | None:
     dim = db.query(TagDimension).filter(TagDimension.id == dim_id).first()
     if not dim:
@@ -316,6 +318,10 @@ def update_dimension(
         dim.sort_order = sort_order
     if is_visible is not None:
         dim.is_visible = is_visible
+    if tag_scope is not None:
+        if tag_scope not in ("internal", "customer"):
+            raise ValueError(f"非法的标签使用域: {tag_scope}")
+        dim.tag_scope = tag_scope
     db.commit()
     db.refresh(dim)
     invalidate_dim_cache()
