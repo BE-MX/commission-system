@@ -487,7 +487,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 - `/api/mini` — 微信小程序端（独立领域模块 `app/mini/`，JWT 鉴权，无 RBAC 权限）
   - `POST /auth/dev-login` — 开发调试登录（非 production 可用）
   - `POST /auth/login` — wx.login code 换 token（→ jscode2session → 查绑定）
-  - `POST /auth/bind` — 绑定 openId ↔ 方舟用户（body: open_id + identifier）
+  - `POST /auth/bind` — 绑定 openId ↔ 方舟用户（body: open_id + identifier）；open_id 为空或纯空白返回 422，不写库或签发 token。成功提交到 `ark_users.wx_id` 后返回登录信息。
   - `GET /auth/verify` — 验证 token 有效性
   - `GET /scan/product/{id}` — 扫码获取产品+工序信息（需 sign 参数）
   - `POST /scan/submit` — 提交报工（body: progress_id + order_product_id）

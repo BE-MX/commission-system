@@ -8,6 +8,12 @@
 - 验证：顾客/扫码 22 项、条件工序 77 项通过；更广会员报价/订单大类/导出检查已执行，导出改动后 33 项定向复验通过。前端定向 37 项及生产构建通过，独立审查发现的旧追加幂等指纹问题已修复。
 - 既有基线：前端全组 1 项测试仍检查已移动的筛选代码；check_conventions 的 4 项失败均来自素材、生产订单、AI 管理页面，main 同样复现。git_sweep 使用本地快照完成。未做微信真机扫码，需发布前后按环境验收。
 
+## 2026-09-15 小程序空关联与退出回登录（合并交付，未发布）
+
+分支 `codex/mini-auth-session`，目录 `D:/MyProgram/commission-system-codex-mini-auth-session`。办公室生产只读确认 wanghong（id=67）的 wx_id 为长度 0 的空字符串，线上绑定路由包含 commit。复现旧登录失败后仍可空 openId 绑定的代码路径；没有历史请求体证据，不能断定该账号当时必然走此路径。现前端仅拿到微信身份后才显示/允许绑定，后端拒绝空或纯空白 OpenID。主动退出通过持久化标记阻止登录页立即自动登录及重开自动登录，点击微信登录成功后恢复；保留已有关联并修正文案。
+
+验证：小程序 Node 测试 30 项通过，新增覆盖退出/重开/主动登录、失败重试、空身份阻断及重复绑定点击；后端 9 项隔离 SQLite 测试通过，验证空身份拒绝、跨会话持久化及历史空值重新绑定。JavaScript 语法检查与增量约定 check(HEAD) 无违规。独立 agent 审查无阻断，复跑新增 Node 用例 5/5 通过。约定检查被 4 项既有主站 UI 债务阻断（AssetTagEditor small 按钮，AssetLibrary/ProductionOrderManage/AIManager 基线过期），未修改这些页面。Git 巡检已运行 --no-fetch，仅本地快照。亮哥已授权本轮合并 main 并推送 origin/main；fetch 核对 main 与 origin/main 均为 b8b0ba3c。未发布后端/小程序，未修改生产账号；wanghong 需通过真实微信重新绑定以填充 OpenID。
+
 ## 2026-09-14 生产订单列表操作栏与导出（合并交付，未部署）
 
 分支 `codex/production-export`，目录 `D:/MyProgram/commission-system-codex-production-export`。订单维度操作列最小宽度调整为260，按钮使用 flex 换行，避免全局单元格 nowrap 裁切后续操作；后面的“打印订单”改为“导出”，复用既有 Word 导出接口，保留单号和当前审核人参数。原有报表打印下拉保留。
