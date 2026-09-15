@@ -63,6 +63,9 @@
           :batches="detail?.batches || []"
           :loading="loadingDetail"
           :error="detailError"
+          :tag-dimensions="tagDimensions"
+          :selected-tag-ids="tagValueIds"
+          @update:selected-tag-ids="applyTagFilter"
         />
       </div>
     </section>
@@ -70,9 +73,10 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { getCustomerTagDimensions } from '@/api/customerMedia'
 import CustomerMediaClientLibrary from './CustomerMediaClientLibrary.vue'
 import { initials, portalStatusMeta } from './portalPreviewState'
 import { useCustomerMediaPortalPreview } from './useCustomerMediaPortalPreview'
@@ -81,6 +85,7 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const showMobileNav = ref(false)
+const tagDimensions = ref([])
 const viewerName = computed(() => auth.user?.real_name || auth.user?.username || '业务账号')
 const {
   customers,
@@ -92,14 +97,22 @@ const {
   loadingCustomers,
   loadingDetail,
   detailError,
+  tagValueIds,
   loadCustomers,
   selectCustomer,
+  applyTagFilter,
 } = useCustomerMediaPortalPreview({ route, router })
 
 async function chooseCustomer(customerId) {
   showMobileNav.value = false
   await selectCustomer(customerId)
 }
+
+onMounted(async () => {
+  try {
+    tagDimensions.value = (await getCustomerTagDimensions()).data || []
+  } catch { /* 标签筛选条不可用不阻断预览 */ }
+})
 </script>
 
 <style scoped>

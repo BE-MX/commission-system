@@ -96,3 +96,47 @@ class PortalLoginIn(BaseModel):
     @classmethod
     def validate_email(cls, value):
         return _email(value)
+
+
+# ── 客户标签 ────────────────────────────────────────────
+
+class CustomerMediaTagItem(BaseModel):
+    """上传 tags_json 与 PATCH tags 共用：[{dimension_id, tag_value_ids}]，按维度全量覆盖。"""
+
+    dimension_id: int = Field(gt=0)
+    tag_value_ids: list[int] = Field(default_factory=list, max_length=50)
+
+
+class AssetTagsUpdateIn(BaseModel):
+    tags: list[CustomerMediaTagItem] = Field(default_factory=list, max_length=50)
+
+
+class TagValidateIn(BaseModel):
+    tag_names: list[str] = Field(min_length=1, max_length=200)
+
+    @field_validator("tag_names")
+    @classmethod
+    def normalize_names(cls, value):
+        names = [name.strip() for name in value if name and name.strip()]
+        if not names:
+            raise ValueError("候选标签名不能为空")
+        return names
+
+
+class TagResolveIn(BaseModel):
+    auto_create_tags: dict[str, int] = Field(min_length=1, max_length=100)
+
+
+class TagValueCreateIn(BaseModel):
+    dimension_id: int = Field(gt=0)
+    value: str = Field(min_length=1, max_length=128)
+    name_en: str | None = Field(default=None, max_length=128)
+    aliases: list[str] | None = Field(default=None, max_length=20)
+
+    @field_validator("value")
+    @classmethod
+    def normalize_value(cls, value):
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("标签名不能为空")
+        return normalized

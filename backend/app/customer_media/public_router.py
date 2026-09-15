@@ -114,19 +114,43 @@ def me(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/library")
 # require_permission exemption: 外部门户使用 HttpOnly 会话 cookie，并按 customer_id 过滤。
-def library(request: Request, db: Session = Depends(get_db)):
+def library(
+    request: Request,
+    tag_value_ids: str | None = Query(default=None, max_length=1000),
+    db: Session = Depends(get_db),
+):
     account = _session_account(request, db)
     rows = service.portal_library(db, account)
+    matching = service.matching_asset_ids(db, rows, service.parse_tag_value_ids(tag_value_ids))
+    asset_ids = [asset.id for row in rows for asset in row.assets if asset.deleted_at is None]
+    tags_map = service.asset_tags_map(db, asset_ids)
     task_meta = service.portal_task_meta(db, rows)
-    return ok([{
-        "id": row.id,
-        "task_id": row.task_id,
-        "revision": row.revision,
-        "title": task_meta.get(row.task_id, {}).get("task_name") or "拍摄交付",
-        "shoot_type": task_meta.get(row.task_id, {}).get("shoot_type"),
-        "published_at": row.published_at.isoformat() if row.published_at else None,
-        "assets": [_asset(asset, internal=False) for asset in row.assets if asset.deleted_at is None],
-    } for row in rows])
+    items = []
+    for row in rows:
+        assets = [
+            _asset(asset, internal=False, tags=tags_map.get(asset.id, []))
+            for asset in row.assets
+            if asset.deleted_at is None and (matching is None or asset.id in matching)
+        ]
+        if matching is not None and not assets:
+            continue
+        items.append({
+            "id": row.id,
+            "task_id": row.task_id,
+            "revision": row.revision,
+            "title": task_meta.get(row.task_id, {}).get("task_name") or "拍摄交付",
+            "shoot_type": task_meta.get(row.task_id, {}).get("shoot_type"),
+            "published_at": row.published_at.isoformat() if row.published_at else None,
+            "assets": assets,
+        })
+    return ok(items)
+
+
+@router.get("/tags")
+# require_permission exemption: 外部门户使用 HttpOnly 会话 cookie，仅出该客户已发布素材实际用到的标签。
+def tags(request: Request, db: Session = Depends(get_db)):
+    account = _session_account(request, db)
+    return ok(service.portal_used_tags(db, account))
 
 
 @router.get("/assets/{asset_id}/content")
