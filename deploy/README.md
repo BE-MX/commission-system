@@ -98,6 +98,16 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 
 ### 充值凭证统一办公室存储
 
+
+#### 上传 500 与预检查临时目录隔离
+
+若充值/图片上传在 Nginx 错误日志出现 `/var/lib/nginx/body/... Permission denied`，先核对运行 worker 的账号及临时目录属主。请求此时尚未到达业务 API，不能据此修改充值申请或余额。
+
+`voucher_routing_remote.py` 与 `colorwork_routing_remote.py` 的语法预检查必须显式指定五种临时路径（client_body/proxy/fastcgi/uwsgi/scgi），以及 pid、error_log、access_log，并通过 `-e stderr` 隔离配置解析前的启动日志；路径仅落各自备份目录内的区域 syntax 子目录。仅指定 `-c` 或 `-p` 不足以隔离编译时的绝对默认路径。root 执行 `nginx -t/-T` 会创建或调整临时目录属主：最小配置省略 user 时可能改成 nobody，使正式 www-data worker 无法写入；即使没有 reload、候选无变化或准备后停止也会影响线上。
+
+生产排障先直接读取配置文件、worker 账号、目录元数据及日志，不把 `nginx -T` 当成无副作用读取。恢复目录权限属于生产操作，先获得授权、记录原属主/模式并核对实际路径和 worker；不递归修改业务目录，不使用 777。用超过缓冲区大小的匿名请求检查传输层时，预期到达后端并返回鉴权失败，不能将其当作真实充值审核成功。
+
+
 `deploy\deploy.bat --voucher-routing-only --prepare-only` 仅准备新加坡、北京的两个凭证路由并执行独立 Nginx 语法检查，不切换流量。经授权后移除 `--prepare-only` 应用；不与普通应用发布、迁移、`--revision` 或 `--cloud-only` 混用。此专项使用当前工作目录中的路由脚本及配置，执行前必须完成 diff 审查。
 
 - 新加坡 `/api/domestic/customers/{id}/recharges` 和 `/api/domestic/customer-requests/{id}/voucher` 走原有办公室 `127.0.0.1:8002` 隧道；北京同路径经证书校验的 HTTPS 转发到新加坡 `leshine.work`。北京主域 HTTPS 和既有 IP 入口都覆盖。

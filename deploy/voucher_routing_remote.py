@@ -38,6 +38,25 @@ def run(args):
     subprocess.run(args, check=True, stdout=sys.stderr, stderr=sys.stderr, timeout=30)
 
 
+def syntax_config(snippet, scratch):
+    """Root nginx -t also chowns temp dirs; isolate every runtime path.
+
+    Keep this helper in each standalone script: transport sends only that file.
+    """
+    prefix = scratch.resolve().as_posix()
+    paths = "".join(
+        f'{directive} "{prefix}/{directory}";\n'
+        for directive, directory in (
+            ("client_body_temp_path", "body"), ("proxy_temp_path", "proxy"),
+            ("fastcgi_temp_path", "fastcgi"), ("uwsgi_temp_path", "uwsgi"),
+            ("scgi_temp_path", "scgi"),
+        )
+    )
+    return (f'pid "{prefix}/nginx.pid";\nerror_log stderr;\nevents {{}}\nhttp {{\n'
+            + paths + "access_log off;\nserver { listen 127.0.0.1:18979;\n"
+            + snippet + "\n} }\n")
+
+
 def execute(request):
     region = request["region"]
     path = Path(SPECS[region][0]).resolve()
@@ -48,11 +67,12 @@ def execute(request):
     baseline = digest(original)
     if request["action"] == "prepare":
         STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
-        # Syntax validation uses a separate config and never reloads live workers.
+        # Never let a root syntax check inherit the production temp paths.
+        scratch = STATE / (region + "-syntax")
+        scratch.mkdir(parents=True, exist_ok=True, mode=0o700)
         check = STATE / (region + "-syntax.conf")
-        check.write_text("events {}\nhttp { server { listen 127.0.0.1:18979;\n"
-                         + request["snippet"] + "\n} }\n")
-        run(["nginx", "-t", "-c", str(check)])
+        check.write_text(syntax_config(request["snippet"], scratch))
+        run(["nginx", "-t", "-c", str(check), "-e", "stderr"])
         candidate_path = STATE / (region + "-candidate.conf")
         candidate_path.write_text(candidate)
         return {"region": region, "status": "prepared", "baseline": baseline,

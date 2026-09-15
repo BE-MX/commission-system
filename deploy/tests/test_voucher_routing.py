@@ -75,6 +75,28 @@ def test_prepare_never_changes_live_config_or_reloads(site):
     assert command.call_args.args[0][:3] == ["nginx", "-t", "-c"]
 
 
+@pytest.mark.parametrize("region", ["office", "cloud"])
+def test_prepare_isolates_all_nginx_runtime_paths(site, region, monkeypatch):
+    path, command, request = site
+    # Both sites use the same scratch generator; exercise each region's paths.
+    monkeypatch.setitem(routing.SPECS, region, (str(path), "8001", 2))
+    request = {**request, "region": region, "snippet": snippet(region)}
+    routing.execute(request)
+    assert command.call_args.args[0][4:] == ["-e", "stderr"]
+    config_path = Path(command.call_args.args[0][3])
+    syntax = config_path.read_text()
+    for directive in ("client_body_temp_path", "proxy_temp_path", "fastcgi_temp_path",
+                      "uwsgi_temp_path", "scgi_temp_path", "pid"):
+        match = re.search(r"(?m)^" + directive + r' "([^";]+)";', syntax)
+        assert match, f"Missing isolated {directive}: nginx would use live defaults"
+        target = Path(match.group(1))
+        assert target.is_absolute()
+        assert target.is_relative_to(routing.STATE)
+    assert "error_log stderr;" in syntax
+    assert "access_log off;" in syntax
+    assert "/var/lib/nginx" not in syntax
+
+
 def test_configuration_drift_blocks_activation(site):
     path, command, request = site
     prepared = routing.execute(request)

@@ -1,3 +1,13 @@
+## 2026-09-15 内贸充值上传 500（两站权限已恢复；防复发代码交付）
+
+任务分支 `codex/domestic-recharge-fix`，工作目录 `commission-system-codex-recharge-fix`。新加坡 Nginx 日志确认 15:31–15:39 客户45的充值请求在写 `/var/lib/nginx/body` 时 Permission denied，尚未到达业务 API；内贸图片上传也受影响。北京同样复现，worker 为 www-data，而五种临时目录使用 nobody/root、700。根因是凭证/色块路由的 root 最小配置 `nginx -t -c` 未隔离默认 temp paths，省略 user 后可将正式目录改属 nobody；无变化激活直接返回，无法恢复。
+
+修复两个 standalone remote 脚本：预检查显式隔离 client_body/proxy/fastcgi/uwsgi/scgi 临时路径、pid 和日志到各自 syntax 工作目录。保留业务路由、充值审核与账本逻辑。部署说明记录 nginx -t/-T 的权限副作用和排障方式。
+
+验证：新增4项回归修复前失败、修复后通过；部署全套121 passed/11 skipped（Windows平台相关跳过）；北京 Linux 对4份真实路由片段执行隔离 nginx -t 全部通过，正式五目录 uid/gid/mode/ctime_ns 均未改变。独立审查通过；补充 -e stderr 隔离启动期日志，并让参数化测试使用对应站点片段后，29项针对性测试及4份Linux配置实测再次通过。约定检查受4项既有前端UI问题阻断（AssetTagEditor、AssetLibrary、ProductionOrderManage、AIManager）；git diff --check 通过，Git巡检为 --no-fetch 本地快照。
+
+现场状态：排查新加坡时执行 nginx -T 意外触发正式配置的目录属主校正，已向用户明确说明；15:43目录恢复 www-data/root 700。用户随后明确授权北京恢复；16:52重新核对 worker、五目录真实路径/属主/模式后，仅将五目录 uid 从65534改为33，gid和0700保持不变，未递归修改、未重启。原元数据保存在北京 `.deploy_state/nginx-temp-owner-recovery-20260915T085213384296Z.json`。两域名64KiB匿名POST均返回后端403，.work的1MiB也通过；.cloud首次1MiB在30秒超时，改用120秒预算从北京复测，40.01秒返回后端403；上传权限故障已消除，但该链路传输较慢。未修改充值/账务数据，真实登录提交及审核未验证。用户已授权将防复发代码合并 main 并推送 origin；本轮只集成代码，不执行生产部署。
+
 ## 2026-09-15 出库单打印版式优化
 
 
