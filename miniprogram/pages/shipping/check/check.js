@@ -6,8 +6,17 @@ var navigation = require('../../../utils/navigation')
 var sc = require('../../../utils/shipping-check')
 
 Page({
-  onShow: function () { navigation.guard('shipping') },
+  onShow: function () { this.setData({ scanActive: navigation.guard('shipping') }) },
+  onHide: function () { this.setData({ scanActive: false }) },
+  onPreviewScanExample: function () {
+    wx.getImageInfo({
+      src: '/assets/shipping-scan-example.png',
+      success: function (image) { wx.previewImage({ current: image.path, urls: [image.path] }) },
+      fail: function () { wx.showToast({ title: '示例图片加载失败', icon: 'none' }) }
+    })
+  },
   data: {
+    scanActive: false,
     statusBarHeight: 20,
     state: 'idle',            // idle | loading | ready | submitting
     record: null,             // 出库单头：单号/客户/日期

@@ -6,15 +6,33 @@
   <view class="si-body" style="padding-top: {{statusBarHeight + 44}}px">
 
     <!-- idle：大扫码按钮 -->
-    <view class="si-idle" wx:if="{{state === 'idle'}}">
-      <view class="si-scan-btn" bindtap="onScanTap" hover-class="si-press" hover-stay-time="80">
-        <view class="si-scan-icon">
-          <view class="si-c si-tl"></view><view class="si-c si-tr"></view>
-          <view class="si-c si-bl"></view><view class="si-c si-br"></view>
+    <view class="si-idle {{scanActive ? '' : 'si-scan-paused'}}" wx:if="{{state === 'idle'}}">
+      <view class="si-scan-btn-wrap">
+        <view class="si-scan-outer-ring"></view>
+        <view class="si-scan-ring"></view>
+        <view class="si-scan-btn" role="button" aria-label="扫描出库单二维码" hover-class="si-press" bindtap="onScanTap">
+          <view class="si-scan-icon">
+            <view class="si-qr-corner si-qr-tl"><view class="si-qr-inner"></view></view>
+            <view class="si-qr-corner si-qr-tr"><view class="si-qr-inner"></view></view>
+            <view class="si-qr-corner si-qr-bl"><view class="si-qr-inner"></view></view>
+            <view class="si-qr-dot d1"></view>
+            <view class="si-qr-dot d2"></view>
+            <view class="si-qr-dot d3"></view>
+            <view class="si-qr-dot d4"></view>
+            <view class="si-qr-dot d5"></view>
+            <view class="si-qr-dot d6"></view>
+            <view class="si-qr-dot d7"></view>
+            <view class="si-scan-line"></view>
+          </view>
+          <text class="si-scan-btn-text">扫出库单二维码</text>
         </view>
-        <text class="si-scan-text">扫出库单二维码</text>
       </view>
-      <text class="si-idle-hint">扫描出库单上的二维码，拍照留档后提交检验</text>
+      <text class="si-idle-hint">扫描出库单右上角二维码，拍照留档后提交检验</text>
+      <view class="si-example">
+        <view class="si-example-heading"><text class="si-example-title">扫描示例</text><text class="si-example-zoom">点击图片放大</text></view>
+        <text class="si-example-caption">对准橙色框标出的二维码</text>
+        <image class="si-example-image" src="/assets/shipping-scan-example.png" mode="widthFix" bindtap="onPreviewScanExample" aria-label="出库单扫描示例，二维码位于右上角橙色框内" />
+      </view>
     </view>
 
     <!-- loading -->
