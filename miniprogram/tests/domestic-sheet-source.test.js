@@ -40,13 +40,12 @@ test('lookup page shows all three order dimensions', function () {
 })
 
 test('tracking page shows only the customer-facing whitelist', function () {
-  // 进度码免登录页 2026-09-14 起只留店面/客户单号/顾客和产品工艺参数，
-  // 订单维度、状态、工序进度一律不展示（服务端也不下发）
+  // 进度码只展示当前产品明细和公开工序，不显示内部订单维度。
   const source = fs.readFileSync(trackPath, 'utf8')
 
   assert.match(source, /\{\{order\.customer_name\}\}/)
   assert.match(source, /\{\{order\.order_no\}\}/)
-  assert.match(source, /\{\{order\.guest_name\}\}/)
+  assert.match(source, /\{\{it\.guest_name\}\}/)
   for (const field of [
     'order_category_label',
     'order_type_label',

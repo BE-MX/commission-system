@@ -213,7 +213,6 @@ def _add_order_sheet(wb: Workbook, detail: dict, applicant_name: str, *, show_pr
     ws.merge_cells(f"A3:{last_column}3")
     ws["A3"] = (
         f"客户名称：{_display(detail.get('customer_name'))}     "
-        f"顾客：{_display(detail.get('guest_name'))}     "
         "审批人签字：____________________     "
         f"订单类别：{_safe_text(detail.get('order_category_label'))}     "
         f"订单类型：{_safe_text(detail.get('order_type_label'))}     "
@@ -245,6 +244,8 @@ def _add_order_sheet(wb: Workbook, detail: dict, applicant_name: str, *, show_pr
     items = detail.get("items") or []
     for row_idx, item in enumerate(items, start=first_item_row):
         values = _item_values(item)
+        if not production and item.get("guest_name"):
+            values["specification"] = f"顾客：{_safe_text(item['guest_name'])}\n{values['specification']}"
         lines = max(_wrapped_lines(values.get(key), width) for key, _, width in columns)
         ws.row_dimensions[row_idx].height = min(300, max(75, lines * 15 + 15))
         for col, (key, _, width) in enumerate(columns, start=1):

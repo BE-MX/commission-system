@@ -56,11 +56,11 @@ Page({
   onLogoutTap: function () {
     wx.showModal({
       title: '退出登录',
-      content: '退出后需要重新绑定工号。确定退出吗？',
+      content: '退出后需点击微信登录重新进入，已绑定的工号会保留。确定退出吗？',
       confirmText: '退出',
       confirmColor: '#E53935',
       success: function (res) {
-        if (res.confirm) app.logout()
+        if (res.confirm) app.logout({ manual: true })
       }
     })
   }

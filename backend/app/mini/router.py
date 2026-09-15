@@ -415,16 +415,16 @@ async def domestic_lookup(
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": str(exc)})
 
 
-@router.get("/domestic/track", summary="完整订单进度（小程序码免登录查看）")
+@router.get("/domestic/track", summary="产品明细进度（小程序码免登录查看）")
 async def domestic_track(
     scene: str = Query(..., description="小程序码 scene：i:<item_id>:<hmac16>"),
     db: Session = Depends(get_db),
 ):
     """无鉴权白名单端点：微信扫「进度小程序码」进来的客户没有方舟账号。
     授权凭证是 scene 里的 HMAC 签名——码只能由主站有 domestic 权限的人生成，
-    拿到码 = 被授权看这一张订单；验签不过一律 403。
+    拿到码 = 被授权看对应产品明细；验签不过一律 403。
     2026-09-14 起返回内容按 track_public_view 白名单裁剪：只留店面名称、
-    客户单号、顾客名称和产品的工艺参数/发型/颜色，价格、状态、工序进度不下发。
+    客户单号、明细顾客、产品属性备注与配置为公开的工序进度，价格和数量不下发。
     """
     # 密钥还是仓库默认值时签名可被离线伪造，验证侧同样必须拒绝服务
     if domestic_report_service.qr_secret_is_default():
@@ -440,7 +440,7 @@ async def domestic_track(
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "订单明细不存在"})
     try:
         detail = domestic_order_service.get_order_detail(
-            db, item.order_id, public_progress_only=True, include_finance=False,
+            db, item.order_id, public_progress_only=True, include_finance=False, item_id=item.id,
         )
     except ValueError:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "订单不存在或已删除"})
@@ -466,14 +466,10 @@ async def domestic_track_image(
     order = db.query(DomesticOrder).get(item.order_id) if item else None
     if not item or not order or order.deleted_flag:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "订单不存在"})
-    order_items = db.query(DomesticOrderItem).filter(
-        DomesticOrderItem.order_id == order.id,
-    ).all()
     allowed = {
         path
-        for order_item in order_items
         for field in ("hairstyle_images", "color_images", "style_images", "remark_images")
-        for path in (getattr(order_item, field) or [])
+        for path in (getattr(item, field) or [])
     }
     if rel_path not in allowed:
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "图片不属于该进度码"})

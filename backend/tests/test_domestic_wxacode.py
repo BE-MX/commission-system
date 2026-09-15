@@ -225,33 +225,37 @@ def test_default_secret_locks_generation_and_verification(db, monkeypatch):
 # ── 免登录 track 端点 ─────────────────────────────────
 
 
-def test_track_returns_complete_order(db):
-    """任一进度码都返回其所属订单的全部明细，但字段按白名单裁剪：
-    只留店面名称、客户单号、顾客名称和产品工艺参数/发型/颜色——
-    价格、订单状态、产品状态、工序进度对免登录端点一律不下发。"""
+def test_track_returns_only_signed_item(db):
     creator = _user(db)
     order = _create_order(db, creator, item_count=2)
     first, second = _items_of(db, order["id"])
+    first.guest_name, second.guest_name = "王女士", "李先生"
+    db.flush()
     scene = report_service.generate_track_scene(first.id)
 
     with _mini_client(db) as client:
         resp = client.get("/api/mini/domestic/track", params={"scene": scene})
     assert resp.status_code == 200
     data = resp.json()
-    assert set(data) == {"order_kind", "order_no", "customer_name", "guest_name", "items"}
+    assert set(data) == {"order_kind", "order_no", "customer_name", "items"}
     assert data["order_no"] == "710"
     assert data["customer_name"].startswith("马姐假发-")
-    assert [i["id"] for i in data["items"]] == [first.id, second.id]
+    assert [i["id"] for i in data["items"]] == [first.id]
     for item_view in data["items"]:
         assert set(item_view) == {
-            "id", "line_code", "product_name", "attrs",
+            "id", "line_code", "product_name", "guest_name", "guest_order_date", "attrs", "steps", "remark", "remark_images",
             "hairstyle", "color", "style_requirement",
             "hairstyle_images", "color_images", "style_images",
         }
+    assert data["items"][0]["guest_name"] == "王女士"
+    with _mini_client(db) as client:
+        second_data = client.get("/api/mini/domestic/track", params={"scene": report_service.generate_track_scene(second.id)}).json()
+    assert [i["id"] for i in second_data["items"]] == [second.id]
+    assert second_data["items"][0]["guest_name"] == "李先生"
     assert data["items"][0]["attrs"]["craft"] == first.attrs_snapshot["craft"]
 
 
-def test_track_image_allows_other_item_in_same_order_only(db, tmp_path, monkeypatch):
+def test_track_image_rejects_other_item_in_same_order(db, tmp_path, monkeypatch):
     creator = _user(db)
     order = _create_order(db, creator, item_count=2)
     first, second = _items_of(db, order["id"])
@@ -262,9 +266,14 @@ def test_track_image_allows_other_item_in_same_order_only(db, tmp_path, monkeypa
     image.parent.mkdir(parents=True)
     image.write_bytes(b"png-test")
     monkeypatch.setattr(get_settings(), "DOMESTIC_STORAGE_ROOT", str(root))
-    scene = report_service.generate_track_scene(first.id)
+    scene = report_service.generate_track_scene(second.id)
 
     with _mini_client(db) as client:
+        cross_item = client.get(
+            "/api/mini/domestic/track-image",
+            params={"scene": report_service.generate_track_scene(first.id), "rel_path": "refs/second.png"},
+        )
+        assert cross_item.status_code == 403
         allowed = client.get(
             "/api/mini/domestic/track-image",
             params={"scene": scene, "rel_path": "refs/second.png"},

@@ -207,7 +207,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `GET /stats` — 状态概览统计(数据范围同上,与列表保持同口径)
   - `GET /submitters` — 提交人去重列表(需 `tracking:read_all`)
   - `GET /shipments/{waybill_no}` — 运单详情 + 轨迹
-  - `POST /shipments/{waybill_no}/refresh` — 手动刷新
+  - `POST /shipments/{waybill_no}/refresh` — 手动刷新；信封业务码 404 表示运单不存在，502 表示物流服务商查询失败（HTTP 状态仍为 200）。DHL 401/403 显示接口鉴权失败、所用环境和可用的请求编号。
   - `DELETE /shipments/{waybill_no}` — 删除运单(软删除,需 `tracking:delete`)
   - `POST /upload-ocr` — 上传运单图片,AI OCR 识别(需 `tracking:write`,multipart 上传)
   - `GET /waybills/check?waybill_no=xxx` — 运单号去重检查(需 `tracking:write`)
@@ -487,7 +487,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 - `/api/mini` — 微信小程序端（独立领域模块 `app/mini/`，JWT 鉴权，无 RBAC 权限）
   - `POST /auth/dev-login` — 开发调试登录（非 production 可用）
   - `POST /auth/login` — wx.login code 换 token（→ jscode2session → 查绑定）
-  - `POST /auth/bind` — 绑定 openId ↔ 方舟用户（body: open_id + identifier）
+  - `POST /auth/bind` — 绑定 openId ↔ 方舟用户（body: open_id + identifier）；open_id 为空或纯空白返回 422，不写库或签发 token。成功提交到 `ark_users.wx_id` 后返回登录信息。
   - `GET /auth/verify` — 验证 token 有效性
   - `GET /scan/product/{id}` — 扫码获取产品+工序信息（需 sign 参数）
   - `POST /scan/submit` — 提交报工（body: progress_id + order_product_id）
@@ -644,7 +644,8 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 - 发片标准值：“发片工艺/尺寸”为 U型13*15/U型14*16/U型16*18/全递针9*14/全递针12*14/全递针13*15/全递针14*16/全递针15*17/特单发片；发长为 20/25/30/35/40厘米。乘号按业务值存半角 `*`。
 - 业务订单报价与下单：`POST /pricing/quote` 接收 `customer_id?` 和最多 50 个 `{client_key, product_id|attrs}`，返回客户会员快照及逐行 `priced` 或 `missing_base_price`；已报价行同时返回原价、优惠价、优惠额、规则说明和可原样回传的 `expected_quote`。银/黑/至尊通常分别在原价上立减 70/120/130 元；截图指定的 15/20/25 厘米头套固定会员价优先，但固定价高于原价时按原价。`POST /orders` 不接受客户端自填成交价；每行必须带稳定 `client_key`、属性、数量和服务端报价返回的 `expected_quote`。服务端在订单、客户及原价行锁下重新计算，任何快照变化统一返回 HTTP 409、`error_code=DOMESTIC_QUOTE_CHANGED`、逐行变化原因和 `current_expected_quotes`；客户端必须展示并经用户确认，换新 `request_id` 后重试，不能静默接受。可传 `is_draft=true` 保存草稿但仍必须有完整报价；`POST /orders` 与草稿提交都必填 `required_ship_date`（要求发货日期，134 迁移起；存量单为 NULL），订单头可经 `PUT /orders/{id}` 修改，列表支持按 `required_ship_date` 排序，导出 Excel 头部同步展示。余额校验按客户 `settle_mode` 分流：`prepay` 客户余额不足整单拒绝；`credit` 客户（先下单后付款）不校验余额，扣款后余额可为负，负余额即欠款，之后充值自动冲抵。`POST /orders/{id}/submit` 必须传 `request_id + 按 item_id 的 expected_quotes`，按当前会员和原价原子重算、扣余额并持久化成功幂等结果。草稿更换客户时 `PUT /orders/{id}` 同样必须传 `customer_id/request_id/expected_quotes` 并原子重算，但不扣款。正式订单冻结每行原价、优惠价、优惠额、会员、规则、算法版本和基础价格版本；后续改原价或充值不追改历史订单。每单最多 50 行、合计 5000 件，单明细最多 2000 件。优惠价订单审核（2026-09-14 起）：业务正式单（含草稿提交）只要任一明细 `discount_amount > 0`（成交价低于原始价：会员价或手工改价），即落 `status=5 待审核`——不扣款、不能改明细/报工/生成进度码；`POST /orders/{id}/review`（`domestic:review` 或 `domestic:admin`，不能审自己的单，admin 兜底）body 为 `decision=approve|reject` + 可选 `remark`（驳回必填 ≥2 字）：通过转 `1 生产中` 并按提交时快照扣款（此时余额不足整单回滚保持待审核），驳回转 `6 已驳回`（从未扣款，无退款，备注追加 `[审核驳回]`）。特单按录入销售价直录、无原价概念，不触发审核；生产单不参与。
 - 草稿删除与完工判定（2026-09-08）：`DELETE /domestic/orders/{order_id}` 接受 `domestic:write` 或 `domestic:admin`，仍只允许创建人操作；普通写权限仅可删除草稿，非草稿保留管理权限和无有效报工记录限制。删除为软删。订单全部明细的末道工序有效实际报工数量达到各自下单量后自动完成；不依赖上游工序记录，末道跳过不算实际报工，撤销及停用单件不计入。末道报工撤销后重新回算；已终止订单和已发货明细保留原保护。
-- 业务订单顾客（2026-09-11）：创建与编辑订单支持 `guest_name`，选填、最多 120 字，去除首尾空白，空串存 NULL；列表与详情返回该字段，两版 Excel 表头显示“顾客”。生产单创建清空该字段、编辑拒绝该字段，生产打印不显示。
+- 业务订单顾客（2026-09-15）：`POST /orders` 的 `items[]`、追加明细与 `PUT /items/{id}` 支持 `guest_name`，选填、最多 120 字，去除首尾空白，空串存 NULL。订单头不再接受或返回该字段；详情 `items[]` 返回顾客名，两版 Excel 显示在对应产品规格上方。生产明细不使用。明细另支持选填 `guest_order_date`（顾客下单日期），创建/追加/编辑均可填写或清空；只接收年月日，详情与扫码结果返回 `YYYY-MM-DD`，不包含时分秒。
+- 免登录进度码 `GET /api/mini/domestic/track?scene=` 只返回签名对应的产品明细。订单仅返回 `order_kind/order_no/customer_name`；明细返回顾客、顾客下单日期、属性、发型、颜色、要求、备注与参考图，以及配置为公开的工序 `{process_name, completed}`。不下发数量、价格、路线与内部状态。`track-image` 同样只允许读取该明细引用的图片。
 - 订单数据范围与导出（2026-09-07）：`GET /orders`、`GET /orders/{id}`、`GET /orders/{id}/export` 默认只允许创建人访问；`domestic:read_all` 或 super_admin 可查看全部，但该数据范围码不扩大操作权。草稿提交会把正式订单日期同步为客户最近下单日期。Excel 固定导出两个 A4 工作表：正常表保留原价、优惠金额、优惠后商品单价、手工费、小计及订单余额汇总；“（无价格）”表不写入这些列、金额汇总或财务说明。两表都显示客户名称，业务客户编码继续单独显示（缺失为“未填写”）；两类订单数量后均有空白“出库数量”。参考图分别嵌入两表对应产品/字段单元格，长文字在各表末尾的“完整要求”区域续写，不另加第三表，缺图显式提示。生产单两表都保持无金额，无关联客户显示公司备货。
 - 订单余额快照与编辑：带财务的订单详情额外返回 `created_by` 和 `balance_snapshot`，快照含 `source/transaction_type/balance_before/order_amount/settlement_amount/balance_after`。正式单取该订单最近一次扣款、调整或退款流水；本单当前总额与本次实际结算差额分开，后续其他流水不改变历史快照。草稿 `source=draft_preview` 只预览当前余额减总额，缺流水为 `unavailable`，生产单为 `null`；无财务公共详情不返回该字段。列表和详情提供创建人的编辑入口：订单头和每条明细独立保存，业务客户/类别/规格/路线锁定，生产客户可选择或清空，数量、含手工费成交单价及图文允许按已有状态限制编辑；正式单金额变化确认后按差额结算。新建页只在成功保存后重置表单及请求身份；新增和复制其他行不清除已报价行的手工价，修改该行报价属性或客户才失效。
 - 手工改价（132 迁移，2026-09-02）：优惠价允许人工改，但只能走显式契约。建单时每行可附 `manual_discount_price`（>0 且不高于当前原价，随幂等 hash 一起校验）；`expected_quote` 仍只承载系统报价，报价漂移的 409 确认流程对手工行照常生效，确认重试时手工价不丢。已保存的明细用 `PUT /items/{id}` 传 `unit_price` 改价（含固定手工费，减去手工费后的商品单价须 >0 且不高于原价快照，已发货明细、已发货/已终止订单拒绝），改后该行 `pricing_rule` 记为 `manual_override`、规则说明为「手工改价」；非草稿订单改价差额立即与客户余额多退少补（`order_adjustment` 流水），草稿改价不动余额。手工价是用户确认过的绝对金额：草稿提交或换客户重算时该行不再参与报价漂移比较，`expected_quotes` 按 `manual_override` 快照回传即可；仅当管理员把原价调到手工价之下时才拒绝提交，须先改价。

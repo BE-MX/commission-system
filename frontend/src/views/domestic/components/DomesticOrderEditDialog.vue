@@ -16,7 +16,6 @@
               </el-select>
             </el-form-item>
             <el-form-item v-if="!production" label="客户订单号"><el-input v-model="header.order_no" placeholder="选填" maxlength="64" /></el-form-item>
-            <el-form-item v-if="!production" label="顾客"><el-input v-model="header.guest_name" placeholder="选填，顾客姓名" maxlength="120" /></el-form-item>
             <el-form-item label="下单日期" required><el-date-picker v-model="header.order_date" type="date" value-format="YYYY-MM-DD" /></el-form-item>
             <el-form-item v-if="!production" label="要求发货日期" required><el-date-picker v-model="header.required_ship_date" type="date" value-format="YYYY-MM-DD" /></el-form-item>
             <el-form-item v-if="!production" label="订单类型" required>
@@ -50,6 +49,10 @@
     <template v-if="itemDialog.item">
       <p class="order-edit-hint">{{ itemDialog.item.product_name }}</p>
       <el-form label-position="top" :disabled="itemDialog.saving">
+        <el-form-item v-if="!production" label="顾客名称"><el-input v-model="itemDialog.form.guest_name" maxlength="120" placeholder="选填，当前产品对应的顾客姓名" /></el-form-item>
+        <el-form-item v-if="!production" label="顾客下单日期">
+          <el-date-picker v-model="itemDialog.form.guest_order_date" type="date" :default-value="beijingCalendarDate()" value-format="YYYY-MM-DD" format="YYYY-MM-DD" placeholder="选填，选择日期" />
+        </el-form-item>
         <div class="order-edit-grid">
           <el-form-item label="数量" required><el-input-number v-model="itemDialog.form.order_qty" :min="1" :max="2000" :precision="0" /></el-form-item>
           <el-form-item v-if="!production" label="成交单价（含手工费）" required>
@@ -100,6 +103,7 @@
 </template>
 
 <script setup>
+import { beijingCalendarDate } from '@/utils/datetime'
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DETAIL_SECTIONS, PRODUCT_TYPE_LABELS, getOptions, getOrder, listCustomers, updateOrder, updateOrderItem, uploadImage } from '@/api/domestic'

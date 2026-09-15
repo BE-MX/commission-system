@@ -1,7 +1,3 @@
-<!-- pages/domestic/track/track.wxml — 订单进度（免登录）
-     客户扫进度码只看：店面名称、客户单号、顾客名称、产品工艺参数/发型/颜色；
-     价格、订单状态、产品状态、工序进度服务端已不下发（2026-09-14 起）。
-     结构与配色借订单速查（lk- 类，@import 复用），去掉搜索/扫码入口 -->
 <view class="lk-page">
   <view class="lk-top tk-top" style="padding-top: {{statusBarHeight}}px">
     <view class="lk-top-inner">
@@ -32,11 +28,12 @@
       <block wx:else>
         <view class="lk-order-head"><text class="lk-order-no">{{order.customer_name}}</text></view>
         <text class="lk-order-cust" wx:if="{{order.order_no}}">客户单号 {{order.order_no}}</text>
-        <text class="lk-order-cust" wx:if="{{order.guest_name}}">顾客 {{order.guest_name}}</text>
       </block>
     </view>
 
     <view class="lk-item" wx:for="{{order.items}}" wx:key="id" wx:for-item="it" wx:for-index="idx">
+      <view class="tk-guest" wx:if="{{it.guest_name}}">顾客：{{it.guest_name}}</view>
+      <view class="tk-item-detail" wx:if="{{it.guest_order_date}}">顾客下单日期：{{it.guest_order_date}}</view>
       <view class="lk-item-head">
         <text class="lk-item-name">{{it.line_code}} · {{it.product_name}}</text>
       </view>
@@ -45,6 +42,12 @@
         <text wx:if="{{it.hairstyle}}">发型：{{it.hairstyle}}</text>
         <text wx:if="{{it.color}}">颜色：{{it.color}}</text>
         <text wx:if="{{it.style_requirement}}">发型要求：{{it.style_requirement}}</text>
+        <text wx:if="{{it.remark}}">备注：{{it.remark}}</text>
+      </view>
+      <view class="tk-progress" wx:if="{{it.steps.length}}">
+        <view class="tk-step" wx:for="{{it.steps}}" wx:key="index" wx:for-item="step">
+          <text>{{step.process_name}}</text><text>{{step.completed ? '已完成' : '未完成'}}</text>
+        </view>
       </view>
       <view class="tk-images" wx:if="{{it.imageUrls.length}}">
         <image

@@ -155,8 +155,21 @@ test('customer order number is optional and channel defaults follow customer set
 test('business guest is trimmed in payload and cleared after successful save', async t => {
   const { page, settle, created } = harness(t)
   await settle()
-  page.form.guest_name = '  王女士  '
+  page.form.items[0].guest_name = '  王女士  '
   await page.submit(true)
-  assert.equal(created[0].guest_name, '王女士')
-  assert.equal(page.form.guest_name, '')
+  assert.equal(created[0].items[0].guest_name, '王女士')
+  assert.equal(page.form.items[0].guest_name, '')
+})
+
+
+test('guest order date belongs to each item and resets after save', async t => {
+  const { page, settle, created } = harness(t)
+  await settle()
+  page.form.items[0].guest_order_date = '2026-09-15'
+  page.copyItem(0)
+  page.form.items[1].guest_order_date = '2026-09-14'
+  await settle()
+  await page.submit(true)
+  assert.deepEqual(created[0].items.map(item => item.guest_order_date), ['2026-09-15', '2026-09-14'])
+  assert.equal(page.form.items[0].guest_order_date, '')
 })

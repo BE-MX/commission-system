@@ -8,6 +8,22 @@
 
 用户明确授权「发布」后，通过 `deploy.bat --voucher-routing-only` 完成两机激活；发布状态 `.deploy_state/voucher-routing.json` 两项均为 activated。09:20–09:21（北京时间）对两域名各发送无凭据的 GET 凭证/POST 充值请求，均返回403 JSON `Not authenticated` 和 `private, no-store`，未创建充值申请。新加坡访问日志记录北京IP发来的两条对应请求，确认转发实际生效。两机完整 `nginx -t` 均通过（保留其他站点既有警告），北京公网 `/health` 为 ok/database=connected。备份：新加坡 `/etc/nginx/.ark-backups/domestic-voucher/office-41354855288b4ecfb3f7a3ef68730dcc.conf`；北京 `/etc/nginx/.ark-backups/domestic-voucher/cloud-332d7097f59f4dce8f7d83148ad088fd.conf`。未执行其他应用发布、数据库写入或审批操作。
 
+## 2026-09-15 内贸明细顾客与进度码（代码交付，待部署）
+
+- 开发分支 `codex/domestic-item-progress`；功能、迁移和测试随代码一并交付。
+- 顾客下单日期：业务建单/草稿追加/明细编辑支持选填 `guest_order_date`（DATE），扫码与主站详情只显示年月日，不含时分秒；历史留空，字段并入尚未发布的150迁移。日期修正后后端28项、前端18项通过。
+- 业务建单、草稿追加和明细编辑按产品录入顾客；详情及导出按明细显示。订单头旧顾客列只保留历史数据。
+- 进度码和图片接口只取签名对应明细；展示明细顾客、属性、备注及公开工序完成情况，隐藏件数、金额、路线和未配路线提示。主站详情同步隐藏明细件数、金额、未配路线提示，属性备注放大；业务报价录入和生产操作保持原口径。
+- 新迁移 `150_domestic_item_guest` 从 149 延续，历史订单顾客复制至已有明细，不覆盖已填写的明细顾客。仅隔离 SQLite 验证，未执行生产迁移或部署。
+- 验证：顾客/扫码 22 项、条件工序 77 项通过；更广会员报价/订单大类/导出检查已执行，导出改动后 33 项定向复验通过。前端定向 37 项及生产构建通过，独立审查发现的旧追加幂等指纹问题已修复。
+- 既有基线：前端全组 1 项测试仍检查已移动的筛选代码；check_conventions 的 4 项失败均来自素材、生产订单、AI 管理页面，main 同样复现。git_sweep 使用本地快照完成。未做微信真机扫码，需发布前后按环境验收。
+
+## 2026-09-15 小程序空关联与退出回登录（合并交付，未发布）
+
+分支 `codex/mini-auth-session`，目录 `D:/MyProgram/commission-system-codex-mini-auth-session`。办公室生产只读确认 wanghong（id=67）的 wx_id 为长度 0 的空字符串，线上绑定路由包含 commit。复现旧登录失败后仍可空 openId 绑定的代码路径；没有历史请求体证据，不能断定该账号当时必然走此路径。现前端仅拿到微信身份后才显示/允许绑定，后端拒绝空或纯空白 OpenID。主动退出通过持久化标记阻止登录页立即自动登录及重开自动登录，点击微信登录成功后恢复；保留已有关联并修正文案。
+
+验证：小程序 Node 测试 30 项通过，新增覆盖退出/重开/主动登录、失败重试、空身份阻断及重复绑定点击；后端 9 项隔离 SQLite 测试通过，验证空身份拒绝、跨会话持久化及历史空值重新绑定。JavaScript 语法检查与增量约定 check(HEAD) 无违规。独立 agent 审查无阻断，复跑新增 Node 用例 5/5 通过。约定检查被 4 项既有主站 UI 债务阻断（AssetTagEditor small 按钮，AssetLibrary/ProductionOrderManage/AIManager 基线过期），未修改这些页面。Git 巡检已运行 --no-fetch，仅本地快照。亮哥已授权本轮合并 main 并推送 origin/main；fetch 核对 main 与 origin/main 均为 b8b0ba3c。未发布后端/小程序，未修改生产账号；wanghong 需通过真实微信重新绑定以填充 OpenID。
+
 ## 2026-09-14 生产订单列表操作栏与导出（合并交付，未部署）
 
 分支 `codex/production-export`，目录 `D:/MyProgram/commission-system-codex-production-export`。订单维度操作列最小宽度调整为260，按钮使用 flex 换行，避免全局单元格 nowrap 裁切后续操作；后面的“打印订单”改为“导出”，复用既有 Word 导出接口，保留单号和当前审核人参数。原有报表打印下拉保留。
@@ -995,6 +1011,12 @@ Mac 同事的英文网页中私聊按钮标识为 `Profile details`，原选择�
 **交接人**：亮哥  
 **交接日期**：待定  
 **接手人**：待定
+## 2026-09-09 DHL 刷新鉴权排查（代码已集成，线上凭据待核实）
+
+分支 `codex/tracking-auth`。用户报刷新返回 DHL 原始 Unauthorized JSON。本机 Settings 中 DHL 凭据已填写、无首尾空格、环境为 production；使用占位运单号做只读查询，test/prod 均返回 HTTP 401。尚未核验线上实例配置，不能认定凭据已过期或已撤销；需 DHL 负责人核实有效凭据与接口访问权限，线上恢复仍未完成。
+
+补丁将 DHL 401/403 转为明确中文提示，保留环境及安全格式的 msgId；刷新服务商失败改为信封业务码 502，缺失运单仍为 404，准确区分运单不存在与服务商查询失败。独立审查无阻塞，约定检查通过，Git 巡检基于本地快照。新增回归先失败后通过，相关测试 77 passed，均无生产库写入。目录整理时将补丁集成至本地 main，6项定向回归通过；未改凭据、未推送、未部署。
+
 ## 2026-09-14 迁移 149 超长编号故障修复（合并交付，待生产恢复）
 
 分支 `codex/migration-149-recovery`，基点 `15dcd7a9`。生产用户提供 `.deploy_state/schema-writers.json`：原始147→148→旧149，`failed-after-ddl`，办公室 CommissionSystem/WhatsAppConnector、北京 ark-backend、新加坡 shipment-tracking-mcp 原本运行且均记录为 stopped。当前服务状态尚待服务器确认。

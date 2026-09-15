@@ -1,8 +1,3 @@
-// pages/domestic/track/track.js — 订单进度（小程序码免登录查看）
-// 客户微信扫「订单进度码」直达本页：不要求登录，凭码里的签名看这一单。
-// 页面上没有搜索、没有扫码入口——没有码就查不了别的订单。
-// 2026-09-14 起只展示店面名称、客户单号、顾客名称和产品工艺参数/发型/颜色；
-// 价格、订单状态、产品状态、工序进度服务端已不下发。
 var app = getApp()
 
 Page({
@@ -64,7 +59,7 @@ Page({
     for (var i = 0; i < items.length; i++) {
       var attrs = items[i].attrs || {}
       items[i].attrText = [attrs.craft, attrs.net_color, attrs.size, attrs.length, attrs.density].filter(Boolean).join(' / ')
-      var imageFields = ['hairstyle_images', 'color_images', 'style_images']
+      var imageFields = ['hairstyle_images', 'color_images', 'style_images', 'remark_images']
       var imageUrls = []
       for (var f = 0; f < imageFields.length; f++) {
         var paths = items[i][imageFields[f]] || []

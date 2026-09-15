@@ -92,7 +92,8 @@ async def refresh_shipment(
 ):
     result = await refresh_single(db, waybill_no)
     if "error" in result:
-        return {"code": 404, "message": result["error"], "data": None}
+        code = 502 if result.get("status") == "error" else 404
+        return {"code": code, "message": result["error"], "data": None}
     return {"code": 200, "message": "ok", "data": result}
 
 

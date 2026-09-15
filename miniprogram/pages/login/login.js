@@ -15,14 +15,17 @@ Page({
   onLoad: function () {
     var isDev = app.globalData.baseUrl.indexOf('127.0.0.1') >= 0 || app.globalData.baseUrl.indexOf('localhost') >= 0
     this.setData({ devMode: isDev })
-    if (!isDev) {
+    if (!isDev && !wx.getStorageSync('ark_manual_logout')) {
       this._autoLogin()
     }
   },
 
+  onWechatLogin: function () { this._autoLogin() },
+
   _autoLogin: function () {
+    if (this.data.isLoggingIn || this.data.loading) return
     var self = this
-    this.setData({ isLoggingIn: true })
+    this.setData({ isLoggingIn: true, openId: '' })
     wx.login({
       success: function (loginRes) {
         wx.request({
@@ -66,7 +69,7 @@ Page({
   onBind: function () {
     var self = this
     var identifier = this.data.identifier.trim()
-    if (!identifier) return
+    if (!identifier || !this.data.openId || this.data.loading) return
 
     this.setData({ loading: true })
     wx.request({

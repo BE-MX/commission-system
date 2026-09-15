@@ -1,9 +1,9 @@
 import { normalizeItemAttrs } from './domesticAttributeRules.js'
 
-const HEADER_FIELDS = ['order_no', 'order_date', 'required_ship_date', 'order_type', 'order_channel', 'guest_name', 'remark']
-const ITEM_FIELDS = ['order_qty', 'unit_price', 'hairstyle', 'hairstyle_images', 'color', 'color_images',
+const HEADER_FIELDS = ['order_no', 'order_date', 'required_ship_date', 'order_type', 'order_channel', 'remark']
+const ITEM_FIELDS = ['guest_name', 'guest_order_date', 'order_qty', 'unit_price', 'hairstyle', 'hairstyle_images', 'color', 'color_images',
   'style_requirement', 'style_images', 'remark', 'remark_images']
-const PRODUCTION_EXCLUDED = new Set(['unit_price', 'hairstyle', 'hairstyle_images', 'style_requirement', 'style_images'])
+const PRODUCTION_EXCLUDED = new Set(['guest_name', 'guest_order_date', 'unit_price', 'hairstyle', 'hairstyle_images', 'style_requirement', 'style_images'])
 
 export function orderHeaderForm(detail) {
   return { ...Object.fromEntries(HEADER_FIELDS.map(key => [key, detail?.[key] || ''])),
