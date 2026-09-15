@@ -1,7 +1,20 @@
 {
   "description": "微信小程序项目配置文件",
   "packOptions": {
-    "ignore": [],
+    "ignore": [
+      {
+        "value": "pages/photo",
+        "type": "folder"
+      },
+      {
+        "value": "pages/assistant",
+        "type": "folder"
+      },
+      {
+        "value": "tests",
+        "type": "folder"
+      }
+    ],
     "include": []
   },
   "setting": {
@@ -45,5 +58,6 @@
     "tabSize": 2
   },
   "appid": "wx4dea4f10fe1bda19",
-  "simulatorPluginLibVersion": {}
+  "simulatorPluginLibVersion": {},
+  "libVersion": "3.16.1"
 }

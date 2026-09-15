@@ -3,8 +3,6 @@
   "pages": [
     "pages/entry/entry",
     "pages/scan/scan",
-    "pages/photo/photo",
-    "pages/assistant/assistant",
     "pages/login/login",
     "pages/history/history",
     "pages/overview/overview",
@@ -28,14 +26,6 @@
       {
         "pagePath": "pages/domestic/scan/scan",
         "text": "内贸报工"
-      },
-      {
-        "pagePath": "pages/photo/photo",
-        "text": "拍照上传"
-      },
-      {
-        "pagePath": "pages/assistant/assistant",
-        "text": "生产助手"
       }
     ]
   },
