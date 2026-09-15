@@ -15,6 +15,9 @@ export function useCaptureScreen() {
   const cameraOn = ref(false)
   const previewUrl = ref('')
   const submitting = ref(false)
+  const qualityChecking = ref(false)
+  const qualityWarnings = ref([])
+  const qualityAcknowledged = ref(false)
   // 拍摄示范一客只自动弹一次（flow 级标志，resetAll 复位）：register↔capture 往返、
   // 分析失败退回重拍都不重弹——避免同一位客户重复看引导、浮层盖住头部导航
   const guideOpen = ref(!flow.guideShown.value)
@@ -117,6 +120,8 @@ export function useCaptureScreen() {
   function openPendingPhoto(photoUrl) {
     previewLoading.value = true
     previewUrl.value = photoUrl
+    qualityWarnings.value = []
+    qualityAcknowledged.value = false
   }
   function onPreviewLoaded() {
     previewLoading.value = false
@@ -153,6 +158,7 @@ export function useCaptureScreen() {
       // retake()）——现场重拍会静默提交回那张旧的扫码照，而不是刚拍的这张
       flow.pendingName.value = ''
       previewUrl.value = URL.createObjectURL(blob)
+      inspectPhoto(blob)
     }, 'image/jpeg', 0.9)
   }
 
@@ -169,6 +175,52 @@ export function useCaptureScreen() {
   // 不做方形裁切——相册照人脸位置任意，居中裁可能切脸；等比缩放交给取景框 object-fit 展示
   const PICK_MAX_EDGE = 1080
   const PICK_RAW_OK_BYTES = 1024 * 1024 // 尺寸达标且 ≤1MB 的原图直接用，避免无谓二次有损
+
+  async function inspectPhoto(blob) {
+    qualityChecking.value = true
+    qualityWarnings.value = []
+    qualityAcknowledged.value = false
+    const url = URL.createObjectURL(blob)
+    try {
+      const img = new Image()
+      img.src = url
+      await img.decode()
+      const warnings = []
+      if (Math.min(img.naturalWidth, img.naturalHeight) < 640) warnings.push('照片分辨率偏低，发丝细节可能不够清晰')
+      const canvas = document.createElement('canvas')
+      const scale = Math.min(1, 160 / Math.max(img.naturalWidth, img.naturalHeight))
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale))
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale))
+      const ctx = canvas.getContext('2d', { willReadFrequently: true })
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+      let total = 0
+      let edges = 0
+      for (let y = 0; y < canvas.height; y += 1) {
+        for (let x = 0; x < canvas.width; x += 1) {
+          const i = (y * canvas.width + x) * 4
+          const light = pixels[i] * 0.299 + pixels[i + 1] * 0.587 + pixels[i + 2] * 0.114
+          total += light
+          if (x) {
+            const p = i - 4
+            const previous = pixels[p] * 0.299 + pixels[p + 1] * 0.587 + pixels[p + 2] * 0.114
+            edges += Math.abs(light - previous)
+          }
+        }
+      }
+      const average = total / (canvas.width * canvas.height)
+      const edgeScore = edges / Math.max(1, canvas.height * (canvas.width - 1))
+      if (average < 48) warnings.push('画面偏暗，请靠近柔和光源重拍')
+      else if (average > 225) warnings.push('画面过亮，面部细节可能丢失')
+      if (edgeScore < 5) warnings.push('照片可能有拖影或失焦，请稳住镜头重拍')
+      qualityWarnings.value = warnings
+    } catch (e) {
+      // 解码或像素读取不可用时交给服务端原有校验，不阻断客户。
+    } finally {
+      qualityChecking.value = false
+      URL.revokeObjectURL(url)
+    }
+  }
 
   async function downscalePickedPhoto(file) {
     const url = URL.createObjectURL(file)
@@ -199,6 +251,7 @@ export function useCaptureScreen() {
     photoBlob = blob
     flow.pendingName.value = '' // 同 snap()：本地相册/系统相机取到新照片同样要作废旧的扫码待取名
     previewUrl.value = URL.createObjectURL(blob)
+    inspectPhoto(blob)
   }
 
   function retake() {
@@ -208,6 +261,8 @@ export function useCaptureScreen() {
     previewUrl.value = ''
     previewLoading.value = false
     photoBlob = null
+    qualityWarnings.value = []
+    qualityAcknowledged.value = false
     flow.pendingName.value = ''   // 不清则「重拍」后仍会提交上一张扫码传来的照片
     // 恢复取景（snap 时 pause 了）；仅相机路径，文件选择兜底下 video 无流，play() 会 reject
     if (cameraOn.value) videoEl.value?.play?.()?.catch(() => {})
@@ -216,6 +271,11 @@ export function useCaptureScreen() {
   async function confirm() {
     // 两种来源二选一即可提交：现场拍照有 blob，扫码上传有待取文件名
     if ((!photoBlob && !flow.pendingName.value) || submitting.value) return
+    if (qualityWarnings.value.length && !qualityAcknowledged.value) {
+      qualityAcknowledged.value = true
+      flow.touch()
+      return
+    }
     submitting.value = true
     try {
       // 不在此处 stopCamera：上传失败会留在拍摄页（errorText 提示），提前停流
@@ -228,7 +288,7 @@ export function useCaptureScreen() {
 
   return {
     flow, isScene,
-    videoEl, cameraOn, previewUrl, submitting,
+    videoEl, cameraOn, previewUrl, submitting, qualityChecking, qualityWarnings, qualityAcknowledged,
     guideOpen, openGuide, closeGuide,
     facing, flipCamera,
     qrCanvas, previewLoading, qrValidMinutes,

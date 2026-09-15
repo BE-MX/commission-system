@@ -1240,7 +1240,12 @@ def serialize_wig(wig: ExpoWig) -> dict:
 
 
 def serialize_wig_picker(wig: ExpoWig) -> dict:
-    """kiosk「从发型库选择」用的轻量载荷：只给挑款需要的字段，不暴露管理端数据。"""
+    """kiosk「从发型库选择」用的轻量载荷。
+
+    fit_tags 只透出客户挑款所需的分类字段，不带销售策略、不适合原因
+    或生图 prompt。前端据此做真实数据筛选，而不是展示无效的假选项。
+    """
+    tags = wig.fit_tags or {}
     return {
         "wig_id": wig.id,
         "model_no": wig.model_no,
@@ -1250,4 +1255,9 @@ def serialize_wig_picker(wig: ExpoWig) -> dict:
             # 列表用缩略图（长边400 q82），没有则回退原图——存量素材在批处理
             # 跑完之前没有缩略图，不能因此让列表变空白
             "thumb_url": ai_pipeline.thumb_url_for(wig.cover_path) or _to_url(wig.cover_path),
+        "fit_tags": {
+            key: tags.get(key)
+            for key in ("gender", "length", "styles", "face_shapes", "needs")
+            if tags.get(key)
+        },
     }

@@ -32,6 +32,15 @@
 .xk-quota { font-size: 13px; color: var(--xk-mut); white-space: nowrap; }
 .xk-quota.is-zero { color: var(--xk-warn); }
 .xk-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.xk-journey { flex: none; min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 24px; padding: 6px clamp(16px, 4vw, 64px); border-bottom: 1px solid var(--xk-gold-line); background: var(--xk-ink-2); }
+.xk-journey ol { width: min(100%, 620px); display: grid; grid-template-columns: repeat(4, 1fr); margin: 0; padding: 0; list-style: none; }
+.xk-journey li { position: relative; display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--xk-mut); font-size: 12px; }
+.xk-journey li:not(:last-child)::after { content: ''; position: absolute; z-index: 0; left: calc(50% + 34px); right: calc(-50% + 34px); height: 1px; background: var(--xk-gold-line); }
+.xk-journey li i { position: relative; z-index: 1; width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid var(--xk-gold-line); border-radius: 50%; background: var(--xk-ink-2); font-style: normal; }
+.xk-journey li.on, .xk-journey li.done { color: var(--xk-paper); }
+.xk-journey li.on i, .xk-journey li.done i { border-color: var(--xk-gold); background: var(--xk-button); color: var(--xk-on-dark); }
+.xk-mode-chip { flex: none; padding: 5px 10px; border: 1px solid var(--xk-gold-line); border-radius: 999px; color: var(--xk-mut); font-size: 11px; white-space: nowrap; }
+.xk-mode-chip.beauty { border-color: var(--xk-gold); color: var(--xk-gold); }
 .xk-stage > :not(.attract) { animation: atelier-page 480ms var(--xk-ease) backwards; }
 @keyframes atelier-page { from { opacity: 0; transform: translateY(12px); } }
 .xk-btn {
@@ -81,6 +90,11 @@
   .xk-nav { padding: 0 8px; font-size: 14px; }
   .xk-step { display: none; }
   .xk-quota { font-size: 11px; }
+  .xk-journey { gap: 8px; padding: 5px 8px; }
+  .xk-journey li { gap: 3px; font-size: 10px; }
+  .xk-journey li i { width: 20px; height: 20px; }
+  .xk-journey li:not(:last-child)::after { left: calc(50% + 28px); right: calc(-50% + 28px); }
+  .xk-mode-chip { padding: 4px 7px; font-size: 9px; }
   .xk-btn { padding: 12px 18px; min-height: 50px; font-size: 16px; }
   .xk-confirm-panel, .xk-quota-panel { padding: 24px 18px; }
   .xc-actions { flex-wrap: wrap; }

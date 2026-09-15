@@ -5,6 +5,11 @@
       <h2 class="xk-title">为您甄选，恰好是您</h2>
       <div class="xk-sub">依据您的脸型与气质，为您推荐 {{ flow.matches.value.length }} 款 · 轻触选择</div>
 
+      <div class="source-proof">
+        <img v-if="flow.session.value?.photo_url" :src="flow.session.value.photo_url" alt="本次原始照片" />
+        <div><b>{{ processingTitle }}</b><span>{{ processingCopy }}</span></div>
+      </div>
+
       <!-- AI 面容解读：只展示 serialize 剥离 internal 后的正面公开字段 -->
       <div v-if="flow.analysis.value" class="reading">
         <div v-if="flow.analysis.value.display_notes" class="reading-note">{{ flow.analysis.value.display_notes }}</div>
@@ -55,9 +60,16 @@
             <span class="lib-title">从发型库选择</span>
             <button class="lib-close" aria-label="关闭发型库" @click="libraryOpen = false">✕</button>
           </div>
+          <div v-if="filterGroups.length" class="lib-filters" aria-label="发型筛选">
+            <div v-for="group in filterGroups" :key="group.key" class="lib-filter-row">
+              <span>{{ group.label }}</span>
+              <button :class="{ on: !libraryFilters[group.key] }" @click="libraryFilters[group.key] = ''">全部</button>
+              <button v-for="option in group.options" :key="option.value" :class="{ on: libraryFilters[group.key] === option.value }" @click="libraryFilters[group.key] = option.value">{{ option.label }}</button>
+            </div>
+          </div>
           <div v-loading="libraryLoading" class="lib-grid">
             <button
-              v-for="w in libraryWigs" :key="w.wig_id"
+              v-for="w in filteredLibraryWigs" :key="w.wig_id"
               class="lib-card" :class="{ on: flow.selectedWigId.value === w.wig_id }"
               @click="pickFromLibrary(w)"
             >
@@ -68,8 +80,8 @@
               <span v-if="w.series === 'zhizhen'" class="lib-tag">至臻</span>
               <span class="lib-nm">{{ w.name }}</span>
             </button>
-            <div v-if="!libraryLoading && !libraryWigs.length" class="lib-empty">
-              发型库加载失败，请关闭后重试或呼叫顾问
+            <div v-if="!libraryLoading && !filteredLibraryWigs.length" class="lib-empty">
+              {{ libraryWigs.length ? '暂无符合条件的发型，请调整筛选' : '发型库加载失败，请关闭后重试或呼叫顾问' }}
             </div>
           </div>
         </div>
@@ -126,7 +138,7 @@
 </template>
 
 <script setup>
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { getWigPicker } from '@/api/expo'
 
 const flow = inject('tryonFlow')
@@ -142,6 +154,10 @@ const skinLabel = computed(() => {
   const parts = [DEPTH_LABELS[skin.depth], TONE_LABELS[skin.undertone]].filter(Boolean)
   return parts.join(' · ')
 })
+const processingTitle = computed(() => flow.photoProcessingMode.value === 'beauty' ? '已选焕颜精修' : '已选原照保真')
+const processingCopy = computed(() => flow.photoProcessingMode.value === 'beauty'
+  ? '原照只精修一次，后续换发型不重复美颜'
+  : '保持原照的面部与皮肤，只替换发型')
 
 function pickWig(id) {
   flow.selectWig(id) // 换发型即重置为原色并加载该发型可选发色
@@ -158,6 +174,23 @@ const libraryOpen = ref(false)
 const libraryWigs = ref([])
 const libraryLoading = ref(false)
 const pickedWig = ref(null)  // 从库选的款，塑成 match 卡形态置于最前
+const libraryFilters = reactive({ gender: '', length: '', styles: '' })
+const FILTER_LABELS = {
+  gender: { female: '女士', male: '男士', unisex: '中性', women: '女士', men: '男士' },
+  length: { short: '短发', medium: '中发', long: '长发' },
+}
+const normaliseTagValues = value => Array.isArray(value) ? value : (value ? [value] : [])
+const optionLabel = (key, value) => FILTER_LABELS[key]?.[value] || value
+const filterGroups = computed(() => [
+  { key: 'gender', label: '性别' }, { key: 'length', label: '长度' }, { key: 'styles', label: '风格' },
+].map(group => {
+  const values = new Set()
+  libraryWigs.value.forEach(w => normaliseTagValues(w.fit_tags?.[group.key]).forEach(value => values.add(String(value))))
+  return { ...group, options: [...values].map(value => ({ value, label: optionLabel(group.key, value) })) }
+}).filter(group => group.options.length))
+const filteredLibraryWigs = computed(() => libraryWigs.value.filter(w =>
+  Object.entries(libraryFilters).every(([key, selected]) => !selected || normaliseTagValues(w.fit_tags?.[key]).map(String).includes(selected)),
+))
 
 // 展示的发型卡 = 推荐列表；若从库选了款且不在推荐里，则把它插到最前（标「自选」）
 const shownMatches = computed(() => {
