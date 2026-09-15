@@ -67,7 +67,7 @@ print(json.dumps({'schema':heads[0], 'database':current[0], 'pending':list(rever
     return result
 
 
-def prepare(revision, allow_pending=False):
+def prepare(revision, allow_pending=False, recover_149=False):
     if run(["git", "status", "--porcelain", "--untracked-files=no"], capture=True):
         raise RuntimeError("Beijing checkout has tracked changes; refusing to overwrite")
     run(["git", "fetch", "/home/ubuntu/repo.git", revision])
@@ -98,14 +98,21 @@ def prepare(revision, allow_pending=False):
             marker.write_text(digest(requirements))
         python = candidate_env / "bin/python"
     checked = schema_check(source, python, allow_pending=allow_pending)
+    if recover_149 and checked["schema"] != "149_dom_order_review_columns":
+        raise RuntimeError("Recovery 149 requires the corrected code head")
     run([str(python), "-m", "compileall", "-q", str(source / "backend/app")])
     # Import the new route graph without starting the application lifespan/seeds/jobs.
     run([str(python), "-c", "import app.routers"], cwd=source / "backend")
+    colorwork = json.loads(run([
+        str(python), str(source / "deploy/colorwork_release.py"), "prepare",
+        "--root", str(ROOT), "--source", str(source), "--python", str(python),
+    ], capture=True).splitlines()[-1])
     previous = run(["git", "rev-parse", "HEAD"], capture=True)
     changes = run(["git", "diff", "--name-only", previous, revision, "--", "backend", "config"], capture=True)
     info = {"revision": revision, "previous": previous, "schema": checked["schema"],
-            "schema_changed": bool(checked["pending"]),
-            "changed": bool(changes), "environment": str(candidate_env) if requirements_changed else None}
+            "schema_changed": bool(checked["pending"]) or recover_149,
+            "changed": bool(changes), "environment": str(candidate_env) if requirements_changed else None,
+            "colorwork": colorwork}
     STATE.mkdir(exist_ok=True)
     (STATE / ("backend-prepared-" + revision + ".json")).write_text(json.dumps(info))
     return info
@@ -134,6 +141,9 @@ def activate_locked(revision):
     source = STATE / "checkouts" / revision
     python = Path(info["environment"]) / "bin/python" if info["environment"] else ROOT / "backend/.venv/bin/python"
     schema_check(source, python)
+    if info.get("colorwork"):
+        run([str(python), str(source / "deploy/colorwork_release.py"), "activate",
+             "--root", str(ROOT), "--source", str(source)])
     if not info["changed"] and not info.get("schema_changed"):
         healthy()
         return {"status": "unchanged", "schema": info["schema"]}
@@ -190,7 +200,7 @@ def main():
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise ValueError("Expected a complete commit SHA")
     if request["action"] == "prepare":
-        result = prepare(revision, request.get("allow_pending", False))
+        result = prepare(revision, request.get("allow_pending", False), request.get("recover_149", False))
     elif request["action"] == "activate":
         result = activate(revision)
     else:

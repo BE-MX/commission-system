@@ -6,6 +6,8 @@ import { messageForCode } from '@/content/messages'
 import { REPLY_RISK_LABELS } from '@/shared/replyCodes'
 import { createMemoryView, renderHandoff } from '@/content/replyMemoryView'
 import type { MemoryHandlers } from '@/content/replyMemoryView'
+import { createPolicyView } from '@/content/replyPolicyView'
+import type { PolicyHandlers } from '@/content/replyPolicyView'
 
 export const REPLY_COPY: Record<string, string> = {
   reply_memory_disabled: '当前服务未启用询盘记录。', reply_memory_not_found: '记录不存在、已到期或不属于当前账号和设备。',
@@ -16,6 +18,7 @@ export const REPLY_COPY: Record<string, string> = {
   reply_configuration_changed: '话术配置已更新，请重新生成。', reply_sources_changed: '知识依据已更新，请重新生成。',
   reply_configuration_invalid: '话术配置有误，请联系管理员检查。', reply_not_configured: '话术模型尚未配置，请联系管理员。',
   reply_not_enabled: '话术功能尚未启用，请联系管理员。', reply_permission_denied: '账号尚未开通话术权限，请联系管理员。',
+  reply_auto_disabled: '自动接管已由管理员关闭，仍可手动生成话术。',
   reply_context_too_large: '已采集内容超过本次服务容量，尚未发送。可下载 JSON，或明确选择较小范围。',
   reply_daily_quota_exceeded: '今日话术额度已用完，请明日再试。', reply_rate_limited: '话术请求较快，请稍后重试。',
   reply_internal_disclosure: '话术可能包含内部信息，已拦截，请重新生成。',
@@ -47,6 +50,7 @@ export function createReplyView(shadow: ShadowRoot, handlers: {
   generate: (options: ReplyOptions, style: ReplyStyle) => void
   change: () => void; close: () => void; cancel: () => void; fill: () => void; restore: () => void
   memory?: MemoryHandlers
+  policy?: PolicyHandlers
 }) {
   const doc = shadow.ownerDocument
   const root = doc.createElement('section')
@@ -89,6 +93,7 @@ export function createReplyView(shadow: ShadowRoot, handlers: {
   actions.classList.add('reply-footer')
   actions.append(fillSlot, generate, cancel)
   const memoryView = handlers.memory ? createMemoryView(doc, handlers.memory) : undefined
+  const policyView = handlers.policy ? createPolicyView(doc, handlers.policy) : undefined
   const tabs = el('div', '', 'reply-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', '话术内容')
   const replyPane = el('div', '', 'reply-pane')
   const contextPane = el('div', '', 'reply-pane')
@@ -123,6 +128,7 @@ export function createReplyView(shadow: ShadowRoot, handlers: {
   memoryPane.append(memoryEmpty, handoffSlot)
   if (memoryView) { memoryView.root.open = true; memoryPane.append(memoryView.root) }
   else memoryPane.append(el('p', '当前未启用询盘记录。', 'reply-caption'))
+  if (policyView) memoryPane.append(policyView.root)
   card.append(head, tabs, status, ...panels, actions)
   root.append(card); shadow.append(style, root)
   return {
@@ -156,6 +162,7 @@ export function createReplyView(shadow: ShadowRoot, handlers: {
       memoryEmpty.hidden = !!state.capabilities?.memory_enabled || !!state.result?.handoff || !!state.handoffResult
       const result = state.result
       memoryView?.render(state, code => REPLY_COPY[code] ?? '询盘记录操作失败，请重试。')
+      policyView?.render(state.open)
       if (state.paused && handlers.memory) handoffSlot.append(renderHandoff(doc, state, handlers.memory.pause))
       if (!result) { output.append(el('p', state.busy ? '正在准备建议回复…' : state.paused ? '已暂停辅助，可在「询盘与接管」中恢复。' : '生成一条回复，核对后填入聊天框。', 'reply-empty')); return }
       if (result.context_processing === 'summarized') exportSlot.append(el('p', '本次历史较长，已分段整理后生成；下载 JSON 可查看原始采集内容。'))

@@ -6,12 +6,19 @@ service 级测试逮不住这个 bug，必须调 router 函数并跨 session 断
 """
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy.orm import sessionmaker
 
 from app.auth.models import ArkUser
 from app.mini import service
 from app.mini.router import mini_bind
 from app.mini.schemas import MiniBindRequest
+
+
+@pytest.mark.parametrize("open_id", ["", " ", "\t\n"])
+def test_bind_rejects_missing_wechat_identity(open_id):
+    with pytest.raises(ValidationError):
+        MiniBindRequest(open_id=open_id, identifier="worker01")
 
 
 @pytest.fixture
@@ -88,3 +95,15 @@ async def test_rebind_same_user_other_wechat_rejected(Session):
     assert result["success"] is False
     assert result["error"] == "ALREADY_BOUND"
     db2.close()
+
+
+async def test_real_wechat_binding_replaces_historical_empty_value(Session):
+    uid = _create_user(Session)
+    with Session() as db:
+        db.get(ArkUser, uid).wx_id = ""
+        db.commit()
+    with Session() as db:
+        await mini_bind(MiniBindRequest(open_id="wxo_recovered", identifier="worker01"), db=db)
+    with Session() as db:
+        assert db.get(ArkUser, uid).wx_id == "wxo_recovered"
+        assert service.login_by_openid(db, "wxo_recovered")["id"] == uid

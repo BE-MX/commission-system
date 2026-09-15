@@ -392,3 +392,10 @@ Phase 0 已验证当前 TeamRouter 的 `gpt-image-2` generation、两图 edit、
 WhatsApp Web → Chrome/Edge MV3 extension（1.2.6 起）→ `leshine.cloud` API → 北京 Nginx → FastAPI → `app.ai.service.chat`。配对确认页仍使用 `leshine.work/whatsapp-translation/authorize`，与北京后端的 `SHORT_LINK_BASE_URL` 一致；旧版扩展仍走 work 的新加坡／办公室路径，升级不要求重建设备身份。扩展只访问当前 WhatsApp Web 页面 DOM，收译结果用 closed Shadow DOM 展示；发译先显示预览，由员工执行 WhatsApp 原生发送动作。
 
 `backend/app/whatsapp_translation` 是独立域，不复用、不导入、不连接 `backend/app/whatsapp` 和 `services/whatsapp-connector`。它只拥有设备配对、授权、用量、配额、管理和 AI metadata 调用；数据库不保存聊天文本、译文、联系人、电话、消息/聊天 ID 或页面 HTML。
+
+## 库存色块工作台同源集成
+
+`/colorwork/download|edit|master` 菜单 → 方舟 SSO → `/api/colorwork/workbench/` 同源 iframe。
+该路径复用主站现有 `/api` 路由到 FastAPI，由 colorwork.proxy 流式转发北京回环 workerd（8787）；
+浏览器不连接内部地址，不需要额外 DNS/TLS。工作台保留独立的 D1/R2 数据格式与逐视图会话权限，
+作为内部运行模块由统一部署入口纳管，持久存储唯一归属北京，详见 `colorwork-workbench/README.md`。

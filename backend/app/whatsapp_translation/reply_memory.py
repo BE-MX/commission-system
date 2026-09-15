@@ -120,6 +120,9 @@ def build_update(plan, request, prior):
                      and item["summary"] == entry["summary"] for item in entries):
             entries.append(entry)
     if len(entries) > MAX_ENTRIES:
+        # Cancelled observations are dead weight; reclaim them before failing.
+        entries = [entry for entry in entries if entry["status"] != "cancelled"]
+    if len(entries) > MAX_ENTRIES:
         raise error("reply_memory_full", 409)
     return entries
 

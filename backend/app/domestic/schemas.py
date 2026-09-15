@@ -150,6 +150,35 @@ class CustomerAdjust(BaseModel):
         return v.strip() if isinstance(v, str) else v
 
 
+class ReviewRemark(BaseModel):
+    """审核意见（通过可空，驳回必填——服务端按端点再校）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    remark: str | None = Field(None, max_length=500)
+
+    @field_validator("remark", mode="before")
+    @classmethod
+    def _strip_remark(cls, v: str | None) -> str | None:
+        value = v.strip() if isinstance(v, str) else v
+        return value or None
+
+
+class ReviewDecision(BaseModel):
+    """审核决定：approve=通过 / reject=驳回（驳回必须写原因，服务端再校）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["approve", "reject"]
+    remark: str | None = Field(None, max_length=500, description="审核意见；驳回必填（≥2 字）")
+
+    @field_validator("remark", mode="before")
+    @classmethod
+    def _strip_remark(cls, v: str | None) -> str | None:
+        value = v.strip() if isinstance(v, str) else v
+        return value or None
+
+
 # ── 产品属性 ──────────────────────────────────────────
 
 
@@ -404,6 +433,15 @@ class DraftSubmitRequest(BaseModel):
 
 
 class OrderItemInput(BaseModel):
+    guest_name: str | None = Field(None, max_length=120, description="产品明细顾客（选填）")
+    guest_order_date: date | None = Field(None, description="顾客下单日期（选填）")
+
+
+    @field_validator("guest_name", mode="before")
+    @classmethod
+    def _strip_guest_name(cls, value):
+        return (value.strip() or None) if isinstance(value, str) else value
+
     model_config = ConfigDict(extra="forbid")
 
     client_key: str = Field(..., min_length=1, max_length=64)
@@ -600,12 +638,26 @@ class OrderUpdate(BaseModel):
 class OrderItemUpdate(BaseModel):
     """明细编辑。order_qty 已开始报工后不允许改小到低于已完成数（service 校验）。"""
 
+    guest_name: str | None = Field(None, max_length=120, description="产品明细顾客（选填）")
+    guest_order_date: date | None = Field(None, description="顾客下单日期（选填）")
+
+
+    @field_validator("guest_name", mode="before")
+    @classmethod
+    def _strip_guest_name(cls, value):
+        return (value.strip() or None) if isinstance(value, str) else value
+
+
     model_config = ConfigDict(extra="forbid")
 
     order_qty: int | None = Field(None, gt=0, le=2000)
     unit_price: Decimal | None = Field(
         None, gt=0, le=Decimal("999999999999.99"), max_digits=14, decimal_places=2,
         description="含手工费的成交单价；减去手工费后须大于0且不高于原价快照，改后记为 manual_override",
+    )
+    attrs: dict | None = Field(
+        None,
+        description="产品属性组合（工艺/发长/尺码等）；产品类型不可改，改规格不重算成交价",
     )
     hairstyle: str | None = Field(None, max_length=1000)
     hairstyle_images: list[str] | None = None

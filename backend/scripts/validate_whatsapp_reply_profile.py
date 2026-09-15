@@ -20,8 +20,13 @@ from app.knowledge.reply_sources import parse_bindings, resolve_binding, retriev
 def validate_profile(db, actor, profile):
     bindings = parse_bindings(profile)
     documents = {}
-    invalid = [{"document_id": b.document_id, "section_index": b.section_index}
-               for b in bindings if resolve_binding(db, actor, b, documents=documents) is None]
+    invalid = []
+    for b in bindings:
+        audit: list = []
+        if resolve_binding(db, actor, b, documents=documents, audit=audit) is None:
+            # reason stays null for ACL/expiry exclusions; stale content is named.
+            invalid.append({"document_id": b.document_id, "section_index": b.section_index,
+                            "reason": audit[0]["reason"] if audit else None})
     queries = [["single donor"], ["custom colors"], ["实验室"], ["silicone"], ["acid"]]
     checks = []
     for query in queries:

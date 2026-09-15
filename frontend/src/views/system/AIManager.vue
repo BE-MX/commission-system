@@ -256,6 +256,9 @@
 
         <el-pagination v-model:current-page="logPage" v-model:page-size="logPageSize" :page-sizes="[20, 50, 100]" :total="logTotal" layout="total, sizes, prev, pager, next" class="pagination" @change="fetchLogs" />
       </el-tab-pane>
+      <el-tab-pane label="站点应用" name="sites" lazy>
+        <AiGatewayApps />
+      </el-tab-pane>
     </el-tabs>
 
     <!-- Provider Dialog -->
@@ -413,6 +416,7 @@
 </template>
 
 <script setup>
+import AiGatewayApps from './components/AiGatewayApps.vue'
 import {
   Cpu, Monitor, Position, Lightning, Edit, Delete,
   VideoPlay, DocumentCopy, ChatDotRound, UploadFilled,

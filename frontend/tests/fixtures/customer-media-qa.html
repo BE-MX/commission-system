@@ -1,0 +1,9 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>Customer media isolated QA</title></head><body><div id="app"></div><script type="module">
+import { createApp, ref } from '/node_modules/vue/dist/vue.esm-bundler.js'
+import ElementPlus from '/node_modules/element-plus/es/index.mjs'
+import '/node_modules/element-plus/dist/index.css'
+import '/src/styles/tokens.css'
+import Dialog from '/src/views/design/customer-media/CustomerMediaDirectoryDialog.vue'
+const initial = { id: 1, task_id: 1, status: 'draft', directories: [{id: 7, name: '产品图', asset_count: 1, total_asset_count: 1}], assets: [{ id: 1, directory_id: 7, file_name: 'photo.png', media_type: 'image', file_size: 100, content_url: '/api/customer-media/assets/1/content?expires=100&token=demo' }] }
+createApp({ components: { Dialog }, setup() { return { batch: ref(initial) } }, template: '<Dialog :model-value="true" v-model:batch="batch" :editable="true" />' }).use(ElementPlus).mount('#app')
+</script></body></html>

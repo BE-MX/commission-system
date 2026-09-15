@@ -18,6 +18,7 @@ function setup() {
   let finish!: (result: ReplyResponse) => void
   let payload!: ReplyRequest
   const records = new Map<string, ReplyInquiry>()
+  const binding = { read: vi.fn(async (): Promise<string | null> => null), write: vi.fn(async (_inquiryId: string | null) => {}) }
   const bridge = {
     capabilities: vi.fn(async () => caps),
     suggest: vi.fn((request: ReplyRequest) => { payload = request; return new Promise<ReplyResponse>(resolve => { finish = resolve }) }),
@@ -31,6 +32,7 @@ function setup() {
       if (command.operation === 'correct') { record.revision += 1; record.entries[0].human_note = command.note! }
       return { inquiry: structuredClone(record) }
     }),
+    binding,
   }
   const adapter = {
     inspectChat: () => ({ kind: 'direct' }), readComposer: () => 'unsent intent', replaceComposer: vi.fn(async () => true),
@@ -38,7 +40,7 @@ function setup() {
   }
   const assistant = createReplyAssistant(adapter, bridge, () => 'en', vi.fn())
   return {
-    assistant, bridge, records,
+    assistant, bridge, records, binding,
     started: () => vi.waitFor(() => expect(bridge.suggest).toHaveBeenCalled()),
     resolve: () => finish({ ...payload, status: 'ready', reply_language: 'en', reply_text: 'Understood, 20 units initially.', meaning_zh: '暂定20件。', rationale_zh: '先选品', sources: [], claims: [], risk_flags: [], missing_information: [], memory_update: [entry()], handoff }),
   }
@@ -122,6 +124,50 @@ describe('inquiry continuity', () => {
   it('supports stateless mode without creating or saving a record', async () => {
     const s = setup(); s.assistant.setMemoryEnabled(false); const pending = s.assistant.generate(options); await s.started(); s.resolve(); await pending
     expect(s.bridge.memory).not.toHaveBeenCalled()
+  })
+  it('restores the bound inquiry instead of creating a new record', async () => {
+    const s = setup()
+    const old = inquiry(); s.records.set(old.id, old)
+    s.binding.read.mockResolvedValue(old.id)
+    const pending = s.assistant.generate(options); await s.started()
+    expect(s.bridge.memory.mock.calls.map(([c]) => c.operation)).toEqual(['read'])
+    expect(s.bridge.suggest.mock.calls[0][0]).toMatchObject({ memory_conversation_id: old.id, memory_revision: 0 })
+    s.resolve(); await pending
+    expect(s.bridge.memory.mock.calls.map(([c]) => c.operation)).toEqual(['read', 'commit'])
+    expect(s.assistant.getState().inquiry?.id).toBe(old.id)
+    expect(s.binding.write).not.toHaveBeenCalled()
+  })
+  it('clears a stale binding and creates a fresh record when the bound inquiry is gone', async () => {
+    const s = setup()
+    s.binding.read.mockResolvedValue(crypto.randomUUID())
+    s.bridge.memory.mockRejectedValueOnce(new Error('reply_memory_not_found'))
+    const pending = s.assistant.generate(options); await s.started()
+    expect(s.binding.write).toHaveBeenCalledWith(null)
+    expect(s.bridge.memory.mock.calls.map(([c]) => c.operation)).toEqual(['read', 'create'])
+    s.resolve(); await pending
+    const created = s.assistant.getState().inquiry!
+    expect(created).toBeDefined()
+    expect(s.binding.write).toHaveBeenLastCalledWith(created.id)
+    expect(s.bridge.memory.mock.calls.map(([c]) => c.operation)).toEqual(['read', 'create', 'commit'])
+  })
+  it('binds the chat when a record is created during generation', async () => {
+    const s = setup()
+    const pending = s.assistant.generate(options); await s.started(); s.resolve(); await pending
+    const created = s.assistant.getState().inquiry!
+    expect(created).toBeDefined()
+    expect(s.binding.write).toHaveBeenCalledWith(created.id)
+  })
+  it('binds a chosen existing record and unbinds after deletion', async () => {
+    const s = setup()
+    const old = inquiry(); s.records.set(old.id, old)
+    await s.assistant.listInquiries()
+    await s.assistant.previewInquiry(old.id)
+    s.assistant.usePreview()
+    expect(s.assistant.getState().inquiry?.id).toBe(old.id)
+    expect(s.binding.write).toHaveBeenLastCalledWith(old.id)
+    await s.assistant.deleteMemory()
+    expect(s.binding.write).toHaveBeenLastCalledWith(null)
+    expect(s.assistant.getState().inquiry).toBeUndefined()
   })
 })
 

@@ -212,3 +212,30 @@ export function buildInspectionDoc({ record, items = [], photosDataUrls = [], ph
 
   return wrapDoc(`验货单 ${record.outbound_no}`, SHEET_CSS, body)
 }
+
+// ── 直接打印（无预览）──────────────────────────────────
+
+/**
+ * 把完整文档塞进隐藏 iframe，加载完成后直接调起浏览器打印对话框，不出预览弹框。
+ * afterprint 或兜底超时后移除 iframe。仅浏览器环境可调用（node 测试只 import 不执行）。
+ */
+export function printDocHtml(html) {
+  const frame = document.createElement('iframe')
+  // 不用 display:none：Firefox 打不了不渲染的 iframe；零尺寸 + 移出视口即可
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0'
+  frame.srcdoc = html
+  const cleanup = () => frame.remove()
+  frame.onload = () => {
+    const win = frame.contentWindow
+    if (!win) {
+      cleanup()
+      return
+    }
+    win.addEventListener('afterprint', cleanup)
+    setTimeout(cleanup, 60000)
+    // 必须先 focus：不聚焦时部分浏览器会把打印指令派给父文档，变成打印整页
+    win.focus()
+    win.print()
+  }
+  document.body.appendChild(frame)
+}

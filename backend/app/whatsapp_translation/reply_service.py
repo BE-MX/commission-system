@@ -3,14 +3,13 @@
 import json
 import logging
 import time
-import re
 
 import httpx
 
 from app.ai.models import AiPreset, AiProvider
 from app.ai.service import chat
 from app.core.config import get_settings
-from app.knowledge.reply_sources import retrieve_reply_sources, revalidate_sources
+from app.knowledge.reply_sources import extract_query_terms, retrieve_reply_sources, revalidate_sources
 from app.whatsapp_translation.auth import require_supported_extension
 from app.whatsapp_translation.constants import SUPPORTED_TARGET_LANGUAGES
 from app.whatsapp_translation.errors import WhatsAppTranslationError
@@ -18,7 +17,8 @@ from app.whatsapp_translation.glossary_service import glossary_for
 from app.whatsapp_translation.reply_direct import RULES, AUTO_RULES
 from app.whatsapp_translation import reply_memory
 from app.whatsapp_translation.reply_profile import source_profile
-from app.whatsapp_translation.reply_catalog import retrieve_catalog
+from app.whatsapp_translation.reply_catalog import catalog_rules, retrieve_catalog
+from app.whatsapp_translation.reply_rewrite import rewrite_queries
 from app.invoice.catalog_specs import can_read_specs
 from app.whatsapp_translation.reply_schemas import ReplyRequest, ReplyResponse, ReplySource
 from app.whatsapp_translation.reply_state import (
@@ -27,6 +27,8 @@ from app.whatsapp_translation.reply_state import (
 
 
 logger = logging.getLogger("commission.whatsapp_reply")
+
+_MAX_QUERY_TERMS = 300
 
 
 def preset_signature(db, settings) -> str:
@@ -65,7 +67,7 @@ def reply_capabilities(db, identity) -> dict:
             # Expected disabled/ungranted capability; the request still rechecks.
             available = False
     return {
-        "available": available, "history_enabled": True, "auto_reply_enabled": True, "max_messages": 2000, "default_messages": 2000,
+        "available": available, "history_enabled": True, "auto_reply_enabled": settings.WHATSAPP_REPLY_AUTO_ENABLED, "max_messages": 2000, "default_messages": 2000,
         "max_context_chars": min(120000, settings.WHATSAPP_REPLY_MAX_CONTEXT_CHARS),
         "max_draft_chars": 2000, "max_goal_chars": 500,
         "timeout_seconds": min(180, settings.WHATSAPP_REPLY_TIMEOUT_SECONDS),
@@ -77,6 +79,8 @@ def reply_capabilities(db, identity) -> dict:
 def _configuration_signature(settings, preset_version: str) -> str:
     return digest({"sources": [b.model_dump(mode='json') for b in source_profile(settings)], "presets": preset_version,
                    "generator": RULES, "auto_rules": AUTO_RULES,
+                   "catalog": [rule.model_dump(mode='json') for rule in catalog_rules(settings)],
+                   "auto_enabled": settings.WHATSAPP_REPLY_AUTO_ENABLED,
                    "memory_enabled": settings.WHATSAPP_REPLY_MEMORY_ENABLED})
 
 
@@ -133,6 +137,8 @@ def suggest_reply(db, identity, request: ReplyRequest) -> ReplyResponse:
         settings = get_settings()
         if not settings.WHATSAPP_REPLY_ENABLED:
             raise error("reply_not_enabled", 503)
+        if request.mode == "auto" and not settings.WHATSAPP_REPLY_AUTO_ENABLED:
+            raise error("reply_auto_disabled", 403)
         require_supported_extension(identity)
         actor = live_actor(db, identity)
         if sum(len(item.text) + len(item.quoted_text) for item in request.messages) > settings.WHATSAPP_REPLY_MAX_CONTEXT_CHARS:
@@ -154,19 +160,38 @@ def suggest_reply(db, identity, request: ReplyRequest) -> ReplyResponse:
         phase = time.monotonic()
         conversation = request.model_dump(mode="json", exclude={"request_id", "conversation_epoch", "context_version", "draft_version", "memory_conversation_id", "memory_revision"})
         conversation["saved_observations"] = prior_memory
-        terms = re.findall(r"[\w-]{2,40}", " ".join(m.text for m in request.messages[-40:]).casefold())
-        queries = list(dict.fromkeys(terms))[-120:]
         all_text = " ".join(m.text for m in request.messages).casefold()
-        queries += [alias for binding in bindings for alias in binding.aliases if alias.casefold() in all_text]
+        # Reviewed aliases are the curated matching surface and outrank recency;
+        # message terms keep newest-first order so the cap drops the oldest.
+        queries = [alias for binding in bindings for alias in binding.aliases if alias.casefold() in all_text]
+        seen = {alias.casefold() for alias in queries}
+        recent_terms = []
+        for message in reversed(request.messages[-40:]):
+            for term in extract_query_terms(message.text):
+                if term not in seen:
+                    seen.add(term)
+                    recent_terms.append(term)
+        queries += recent_terms[:_MAX_QUERY_TERMS]
         latest_customer = next((m.text for m in reversed(request.messages) if m.role == 'customer'), '')
-        sources, policies_available = retrieve_reply_sources(db, actor, bindings, queries, focus_query=latest_customer)
-        conversation['product_catalog'] = retrieve_catalog(db, actor, request)
+        stale_bindings: list = []
+        sources, policies_available = retrieve_reply_sources(db, actor, bindings, queries, focus_query=latest_customer, audit=stale_bindings)
+        conversation['product_catalog'] = retrieve_catalog(db, actor, request, settings)
         catalog_required = conversation['product_catalog']['status'] in {'matched', 'not_found'}
         from app.whatsapp_translation.reply_direct import generate_direct
-        conversation["glossary"] = glossary_for(db, direction="outgoing", text="\n".join(m.text for m in request.messages[-40:]), target_language=request.target_language if request.target_language != "auto" else request.fallback_language)
+        # Extension-detected chat language beats the manual target/fallback guess.
+        glossary_language = request.detected_language or (request.target_language if request.target_language != "auto" else request.fallback_language)
+        conversation["glossary"] = glossary_for(db, direction="outgoing", text="\n".join(m.text for m in request.messages[-40:]), target_language=glossary_language)
         def checked_call(*args):
             _check_current(db, identity, sources, signature, catalog_required=catalog_required)
             return _call(*args)
+        if policies_available and not any(source["purpose"] != "constraint" for source in sources):
+            # Lexical retrieval found only constraints: try one cheap LLM query
+            # expansion, then rescore. The draft proceeds either way.
+            rewrite_started = time.monotonic()
+            extra_queries = rewrite_queries(db, identity, settings, request.messages, deadline, checked_call)
+            timings["query_rewrite"] = int((time.monotonic() - rewrite_started) * 1000)
+            if extra_queries:
+                sources, policies_available = retrieve_reply_sources(db, actor, bindings, queries + extra_queries, focus_query=latest_customer, audit=stale_bindings)
         output, plan, processing = generate_direct(db, identity, settings, request, conversation, sources, deadline, checked_call)
         memory_error = "reply_memory_update_failed" if plan.memory_parse_error else None
         try:
@@ -177,6 +202,8 @@ def suggest_reply(db, identity, request: ReplyRequest) -> ReplyResponse:
         timings["generation"] = int((time.monotonic() - phase) * 1000)
         if not policies_available:
             output.risk_flags.append("knowledge_unavailable")
+        if stale_bindings:
+            output.risk_flags = list(dict.fromkeys([*output.risk_flags, "knowledge_binding_stale"]))
         if not request.context_scope.latest_visible or request.context_scope.truncated:
             output.risk_flags = list(dict.fromkeys([*output.risk_flags, "limited_context"]))
         if request.context_scope.omitted_media:

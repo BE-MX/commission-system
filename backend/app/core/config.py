@@ -21,6 +21,8 @@ _PublicPoolQuota = Annotated[int, Field(gt=0, le=100)]
 class Settings(BaseSettings):
     # ── 应用环境 ──────────────────────────────────────────
     APP_ENV: str = "development"  # development / production
+    AI_GATEWAY_MAX_OUTPUT_TOKENS: Annotated[int, Field(gt=0, le=4096)] = 4096
+    AI_GATEWAY_TIMEOUT_SEC: Annotated[int, Field(gt=0, le=60)] = 60
 
     # ── 提成系统数据库（读写）──────────────────────────────
     COMMISSION_DB_HOST: str = "localhost"
@@ -255,6 +257,7 @@ class Settings(BaseSettings):
     WHATSAPP_TRANSLATION_AI_TIMEOUT_SECONDS: _PositiveInt = 40
     WHATSAPP_TRANSLATION_MIN_EXTENSION_VERSION: str = "1.0.0"
     WHATSAPP_REPLY_ENABLED: bool = False
+    WHATSAPP_REPLY_AUTO_ENABLED: bool = True
     WHATSAPP_REPLY_GENERATOR_PRESET: str = "whatsapp_reply_generator"
     WHATSAPP_REPLY_TIMEOUT_SECONDS: _PositiveInt = 120
     WHATSAPP_REPLY_DAILY_REQUESTS: _PositiveInt = 100
@@ -262,6 +265,8 @@ class Settings(BaseSettings):
     WHATSAPP_REPLY_MAX_CONTEXT_CHARS: _PositiveInt = 120000
     WHATSAPP_REPLY_SOURCE_BINDINGS: list[dict] = []
     WHATSAPP_REPLY_SOURCE_PROFILE: str = "config/whatsapp-reply-phase12.json"
+    WHATSAPP_REPLY_CATALOG_RULES: list[dict] = []
+    WHATSAPP_REPLY_QUERY_REWRITE_PRESET: str = "whatsapp_reply_query_rewrite"
     WHATSAPP_REPLY_MEMORY_ENABLED: bool = True
     WHATSAPP_REPLY_MEMORY_RETENTION_DAYS: int = Field(default=30, ge=1, le=90)
     # ── 运行与自动化中心（健康检查仅允许由部署环境配置，不接受网页输入）────
@@ -327,6 +332,14 @@ class Settings(BaseSettings):
     PM_TOKEN_EPOCH: int = 1  # 全局版本号 salt：+1 即全员重新验证（极端情况兜底）
     PM_FILE_SIGN_TTL_SECONDS: int = 300  # 下载/预览签名 URL 短时效（秒）
     PM_MAX_UPLOAD_MB: int = 50  # 单文件上传上限（frp 隧道带宽是全站稀缺资源）
+    # ── 库存色块图工作台（方舟同源内部模块）────────────────
+    # SSO 签发密钥；留空从 JWT_SECRET_KEY 按用途派生，生产建议单独配置随机串。
+    COLORWORK_SSO_SECRET: str = ""
+    # 仅后端连接的内部运行服务，绝不返回浏览器；保留完整 workbench 路径转发。
+    COLORWORK_INTERNAL_ORIGIN: str = "http://127.0.0.1:8787"
+    # 工作台回源密钥；未配置时从 JWT_SECRET_KEY 按用途派生，部署同步给运行服务。
+    COLORWORK_SYNC_KEY: str = ""
+
     # 发票 PDF 中文字体：部署/启动时强制预检，避免用户导出时才失败。
     PDF_CJK_FONT_PATH: str = "C:\\Windows\\Fonts\\msyh.ttc"
 

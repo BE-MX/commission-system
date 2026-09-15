@@ -1,5 +1,17 @@
 # 莱莎方舟 模块专题笔记（含各模块已踩坑）
 
+## 站点 AI 网关
+
+实现位于 `app/ai_gateway/`；管理页为 AI 接入管理的“站点应用”，需要 ai:admin。单站密钥独立于员工 JWT/MCP token。密钥仅存哈希，创建和重置时返回一次，页面关闭后清空内存；站点将密钥配置在服务端，浏览器只调用本站后端。
+
+准入、启停、重置、授权修改均先锁应用行。重复 ID、负责人、授权和计数使用 MySQL 当前读，不能依赖已建立的 REPEATABLE READ 快照。准入提交后再调用 facade，锁不跨网络请求；每日次数包含准入后的错误。unknown 继续占并发，75 秒后管理员确认执行结束并完成上游核查才可解除。
+
+`app.ai.service.prepare_text_chat()` 在短事务内复制已授权文本配置，`chat(... trusted_text_snapshot=..., snapshot_mode="metadata")` 使用该副本，避免 ORM 过期或管理员并发修改改变实际发出的模型/参数。仅允许文本参数 max_tokens/temperature/top_p/stop/frequency_penalty/presence_penalty；有工具、图片或其他参数的预设不可授权。上限取 Preset、应用和 Settings 硬上限最小值。无自动 HTTP 重试，整体超时关闭本地连接不保证供应商取消。
+
+用量先归一化再写 AI 日志：usage 缺失、null、非对象或非法数值不能把成功文本变成日志落库失败；未知不是 0，部分已知则单独展示。AI 网关仅保存 metadata，不暴露原始上游异常。
+
+UI 注意：从 DetailDrawer 打开的核查弹窗必须 append-to-body，避免被抽屉层拦截；窄屏解除右侧固定操作列，保留横向滚动。重置密钥直接使用列表返回的 preset_names，不依赖曾打开过编辑器。
+
 > 本文档由 CLAUDE.md 瘦身治理（2026-07-03，见 docs/2026-07-03-architecture-assessment.md G-1）拆出。
 > 变更 API/表结构/模块行为时**同步更新本文件**。
 
@@ -27,6 +39,7 @@
 | AI 接入 | `ai:admin` / `ai:invoke` | AI 管理/调用 |
 | 方舟洞见 | `insight:read` / `insight:write` / `insight:internal_read` / `insight:admin` | 查看/上传/内部报告/管理 |
 | 备货管理 | `stock:read` / `stock:write` / `stock:admin` | 查看/设置/管理 |
+| 库存色块图 | `colorwork_download:read` / `colorwork_edit:read` / `colorwork_master:read` | 库存图直接下载/实时库存图修改/原始库存图文件（三个页面独立授权） |
 | 素材管理 | `asset:read` / `asset:write` / `asset:delete` / `asset:admin` | 查看素材库/上传编辑/删除/标签维度管理 |
 | 色彩管理 | `color:read` / `color:write` / `color:admin` | 查看色板数据库/色彩趋势/编辑色号/生成色板图/管理竞品监控 |
 | 生产订单 | `production:read` / `production:write` / `production:print` / `production:admin` | 查看订单/创建编辑订单与入库/打印工作台/删除订单（备货管理菜单组下独立子菜单） |
@@ -199,6 +212,8 @@ nssm start CommissionSystem    # 正常启动
 - `WX_MINI_APPID` — 微信小程序 AppID（`wx4dea4f10fe1bda19`）
 - `WX_MINI_SECRET` — 微信小程序 AppSecret（从微信公众平台获取）
 - `QR_SIGN_SECRET` — 二维码 HMAC 签名密钥（生产报工扫码验签用）
+
+**小程序关联与退出**：`ark_users.wx_id` 存微信 OpenID。微信身份获取失败时只显示可重试的“微信登录”，没有 OpenID 不显示绑定表单，后端拒绝空值与纯空白。历史空字符串可在获取真实微信身份后重新绑定修复，不根据用户名猜填。主动退出保留账号关联，清除本地会话并持久化 `ark_manual_logout`；重开后须点击微信登录，登录成功才清除该标记。过期会话仍沿原路径重新识别微信。
 
 **WhatsApp Connector 环境变量**（`.env` 可选配置，不配则 WhatsApp 功能不可用）：
 - `WHATSAPP_CONNECTOR_BASE_URL` — WhatsApp Connector Node.js 服务地址（如 `http://localhost:3100`）
@@ -875,8 +890,8 @@ frontend/src/
 
 **上线后的人工配置**（漏了单能下但开不了工）：角色管理页分配 `domestic:read/write/admin` → 核验两条原始路线及 140 创建的四条分段路线均启用 → 给内贸工人绑工序。产品档案仍可维护工艺映射，新订单明细按六种固定路线选择。
 
-**产品进度小程序码（2026-07-28；明细级，与流转卡同粒度）**：主站订单详情抽屉明细动作区「进度码」按钮 → `GET /api/domestic/items/{id}/wxacode` 生成微信小程序码（`wxacode.getUnlimited`，scene=`i:<item_id>:<hmac16>`，永久有效），弹窗可下载图片或打印 30×20mm 标签（左 LOGO 右码，与流转卡二维码标签同版式）。微信扫一扫拉起小程序落到**免登录**页 `pages/domestic/track/track`（调 `GET /api/mini/domestic/track?scene=`），只显示码指向的那一条明细。要点：
-- 免登录的唯一授权凭证是 scene 的 16 hex HMAC 签名（免登录口子 8 hex 不够，64-bit 才谈得上防在线遍历），域 `ARK-DT:<item_id>` 与流转卡 `ARK-D:<item_id>` 隔离——同一个 item_id 两个域，流转卡贴在车间人尽可见且只截 8 hex，共用域会泄露签名前半。track 端点把 items 过滤到一条（一码一品）；track 页无搜索/扫码入口防遍历；软删单 404。进度信息对客户公开不遮挡（亮哥 2026-07-28 拍板）。
+**产品进度小程序码（2026-07-28；明细级，与流转卡同粒度）**：主站订单详情抽屉明细动作区「进度码」按钮 → `GET /api/domestic/items/{id}/wxacode` 生成微信小程序码（`wxacode.getUnlimited`，scene=`i:<item_id>:<hmac16>`，永久有效），弹窗可下载图片或打印 30×20mm 标签（左 LOGO 右码，与流转卡二维码标签同版式）。微信扫一扫拉起小程序落到**免登录**页 `pages/domestic/track/track`（调 `GET /api/mini/domestic/track?scene=`），自 2026-09-15 起仅返回签名对应明细（图片访问同粒度），显示明细顾客、属性备注及配置为公开的工序完成情况；不公开件数、金额和工艺路线，未配路线时不显示提示。顾客名在明细上方，其下显示选填的顾客下单日期（年月日）；属性备注字号 32rpx。要点：
+- 免登录的唯一授权凭证是 scene 的 16 hex HMAC 签名（免登录口子 8 hex 不够，64-bit 才谈得上防在线遍历），域 `ARK-DT:<item_id>` 与流转卡 `ARK-D:<item_id>` 隔离——同一个 item_id 两个域，流转卡贴在车间人尽可见且只截 8 hex，共用域会泄露签名前半。track 页无搜索/扫码入口防遍历；软删单 404。**track 端点按 `order_service.track_public_view` 白名单裁剪**：2026-09-15 调整为仅当前明细的顾客、属性、发型、颜色、要求、备注（含参考图）及配置为公开的工序完成情况；金额、数量、路线与内部状态不下发。
 - **`QR_SIGN_SECRET` 停在仓库默认值时，出码端点和 track 端点都 503 拒绝服务**——默认值进了 git，人人可离线伪造签名，整个免登录授权模型就没了。部署前必须在 `.env` 配随机值。
 - **密钥轮换过渡（2026-07-30）**：这把密钥同时签外贸 ARK-P 打印卡——2026-07-30 生产换钥后全部已印卡（外贸+内贸）验签失效。补了 `QR_SIGN_SECRET_LEGACY` 兜底：登录后的报工扫码（外贸 `production/report_service.qr_sign_matches`、内贸 `domestic/report_service.qr_sign_matches`）当前密钥验不过时用旧密钥再试；**免登录进度码 `verify_track_scene` 永远只认当前密钥**（有测试钉死）。在制订单消化完后删掉该配置关闭兜底。
 - `app/mini/wx_client.py`：access_token 走 **stable_token**（幂等不顶号），内存缓存提前 300s 刷新；**该接口要求服务器出口 IP 在微信公众平台 IP 白名单**（jscode2session 不要求，登录正常≠这里能通，报 40164 就是白名单）。
@@ -1074,3 +1089,12 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 2026-09-09 逐件标签排版：去掉 LOGO；左侧五区为规格（头套 size/length，发片 craft）、实际 unit_no 至少两位、客户、系统编号、日期。规格来自现有 item.attrs，分段打印保持单件实际序号，二维码身份及 16.8mm 尺寸不变。长文本按区域预算调整字号并换行，常规规格和客户文字 2mm，序号 2.2mm、日期 2mm。
 
 2026-09-09 内贸 Excel 双表：`build_order_workbook` 分别生成正常和无价格表，后者从列定义中排除五个金额字段，并跳过财务汇总与金额说明；两表共用客户头、产品规格及数量，参考图分别嵌入。完整要求改为每个表末尾的合并列区域，保持两张 sheet，行高按明细号/字段/正文各自换行数取最大值，打印区域包含全部续行。
+
+## 库存色块图工作台集成（colorwork，2026-09-14）
+
+库存色块图调整台（仓库顶层 `colorwork-workbench/`，vinext + Cloudflare Worker/D1/R2 技术栈）以**主站同源内部模块**方式并入方舟：方舟管功能入口与页面权限，工作台自身 UI 与业务逻辑原样保留，账号与设置模块已移除（首次素材导入并入「原始库存图文件」页）。
+
+- **入口与权限**：侧边栏「库存色块图」分组下三个页面（库存图直接下载 `/colorwork/download`、实时库存图修改 `/colorwork/edit`、原始库存图文件 `/colorwork/master`），各挂独立页面权限码。前端 `ColorworkFrame.vue` 调 `GET /api/colorwork/sso?view=…` 换短命 HS256 令牌（120s，含 views 清单），iframe 载入同源 `/api/colorwork/workbench/api/auth/ark` 落座（站内会话 Cookie + 视图清单存 local_sessions.views_json）。
+- **站内逐视图校验**：工作台 API 用 `requireView('library'|'inventory'|'master')` 兜底；master 视图持有者映射为站内 admin 角色。无方舟会话直开站点只见进入提示，原站内登录页/账号管理 API 已删除。
+- **实时库存状态**：`GET /api/colorwork/inventory-status?template_id=`（共享密钥头 `x-colorwork-sync-key`，仅供工作台服务端回源）按 `TEMPLATE_MATCH`（`app/colorwork/constants.py`）把 23 个模板映射到 okki_products 名称前缀（Regular=Standard Double Drawn；Butterfly=Double Genius Holes Weft；Injection=Invisible Tape Hair；Flex=Volume Weft——2026-09-14 业务确认），按「颜色|尺寸」聚合 SUM(enable_count)>0 → 到货正常，否则正在补货。工作台 `getCurrentSnapshot` 返回前实时覆盖（`lib/server/ark-sync.ts`，3.5s 超时，失败回退站内手动状态），页面每 30 秒静默轮询（有未保存修改时跳过）。okki 无对应产品的规格不覆盖、保留站内状态。
+- **部署与配置**：浏览器固定走 `/api/colorwork/workbench/`，方舟后端代理到 COLORWORK_INTERNAL_ORIGIN（默认回环8787），不需要独立域名。统一部署入口自动构建并管理北京内部运行服务、隔离验证迁移、备份持久数据及生成受限密钥配置；详见 `colorwork-workbench/README.md`。SSO 默认从 JWT 密钥按用途派生，回源密钥按用途派生；支持显式配置覆盖。

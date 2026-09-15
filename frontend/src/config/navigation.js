@@ -105,6 +105,11 @@ export const MENU_GROUPS = {
       'semifinished:read', 'semifinished:write', 'semifinished:admin',
     ],
   },
+  colorwork: {
+    title: '库存色块图',
+    icon: Brush,
+    anyPermission: ['colorwork_download:read', 'colorwork_edit:read', 'colorwork_master:read'],
+  },
   domestic: {
     title: '内贸订单',
     icon: Tickets,
@@ -879,6 +884,17 @@ export const NAV_ENTRIES = [
       anyPermission: ['domestic:read', 'domestic:write', 'domestic:recharge', 'domestic:admin'],
     },
   },
+  {
+    path: '/domestic/customer-requests',
+    name: 'DomesticCustomerRequests',
+    component: () => import('@/views/domestic/DomesticCustomerRequests.vue'),
+    title: '充值调整审核',
+    anyPermission: ['domestic:review', 'domestic:admin', 'domestic:recharge'],
+    menu: {
+      group: 'domestic', title: '充值调整审核', icon: Stamp, order: 14,
+      anyPermission: ['domestic:review', 'domestic:admin', 'domestic:recharge'],
+    },
+  },
   // 流转卡 / 二维码标签没有独立路由：它们是订单详情里的打印弹框
   // （views/domestic/print/DomesticPrintDialog.vue），内容渲染在 iframe 的
   // 独立文档里——打印只出那份文档，用户也不用离开订单页。
@@ -906,9 +922,10 @@ export const NAV_ENTRIES = [
       anyPermission: ['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin'],
     },
   },
-  // 出库单 / 验货单打印没有独立路由：打印弹框
-  // （views/shipping/print/ShippingPrintDialog.vue）把完整文档渲进 iframe 的
-  // 独立文档里——打印只出那份文档，用户也不用离开列表页。
+  // 出库单 / 验货单打印没有独立路由：验货单走打印弹框
+  // （views/shipping/print/ShippingPrintDialog.vue）预览后打印；出库单点击
+  // 「打印出库单」直接用隐藏 iframe 调起浏览器打印（printDocs.js printDocHtml），
+  // 不出预览弹框。两种打印都只出那份独立文档，用户也不离开列表页。
 
   // ── 素材管理 ───────────────────────────────────────────
   {
@@ -1510,6 +1527,41 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'governance', title: '变更历史', icon: Document, order: 30,
       permission: 'governance_log:read',
+    },
+  },
+
+  // ── 库存色块图工作台（独立子站点，iframe 嵌入；方舟管入口与页面权限）────────
+  {
+    path: '/colorwork/download',
+    name: 'ColorworkDownload',
+    component: () => import('@/views/colorwork/ColorworkFrame.vue'),
+    title: '库存图直接下载',
+    permission: 'colorwork_download:read',
+    menu: {
+      group: 'colorwork', title: '库存图直接下载', icon: Collection, order: 10,
+      permission: 'colorwork_download:read',
+    },
+  },
+  {
+    path: '/colorwork/edit',
+    name: 'ColorworkEdit',
+    component: () => import('@/views/colorwork/ColorworkFrame.vue'),
+    title: '实时库存图修改',
+    permission: 'colorwork_edit:read',
+    menu: {
+      group: 'colorwork', title: '实时库存图修改', icon: EditPen, order: 20,
+      permission: 'colorwork_edit:read',
+    },
+  },
+  {
+    path: '/colorwork/master',
+    name: 'ColorworkMaster',
+    component: () => import('@/views/colorwork/ColorworkFrame.vue'),
+    title: '原始库存图文件',
+    permission: 'colorwork_master:read',
+    menu: {
+      group: 'colorwork', title: '原始库存图文件', icon: Picture, order: 30,
+      permission: 'colorwork_master:read',
     },
   },
 

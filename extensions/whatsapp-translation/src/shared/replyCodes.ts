@@ -1,5 +1,5 @@
 export const REPLY_ERROR_CODES = [
-  'reply_backend_update_required',
+  'reply_auto_disabled', 'reply_backend_update_required',
   'reply_model_format_invalid', 'reply_model_empty', 'reply_model_too_long', 'reply_history_summary_invalid',
   'reply_memory_disabled', 'reply_memory_not_found', 'reply_memory_conflict', 'reply_memory_full',
   'reply_memory_human_override', 'reply_repeated_question',
@@ -12,6 +12,7 @@ export const REPLY_ERROR_CODES = [
 ] as const
 export const REPLY_RISK_LABELS: Record<string, string> = {
   auto_reply_review_required: '已保留完整回复，请人工处理',
+  price_unverified: '回复包含未经资料核实的金额', knowledge_binding_stale: '部分知识绑定已随文档更新失效',
   catalog_matched: '已查询产品目录并取得规格', catalog_not_found: '目录未查到所问规格，不能推断不销售',
   catalog_permission_denied: '当前账号无产品目录查询权限', catalog_unavailable: '产品目录查询暂不可用',
   limited_context: '仅依据有限的已加载上下文', media_not_read: '未读取图片、语音等媒体内容',

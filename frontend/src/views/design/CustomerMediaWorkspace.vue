@@ -25,21 +25,30 @@
     />
 
     <section class="upload-panel lg-card">
-      <el-upload
-        drag
-        multiple
-        :auto-upload="false"
-        :show-file-list="false"
-        :disabled="!editable || uploading"
-        accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm"
-        :on-change="queueFile"
-      >
-        <el-icon class="upload-icon"><UploadFilled /></el-icon>
-        <div class="el-upload__text">拖入图片或视频，或点击选择文件</div>
-        <template #tip>
-          <div class="upload-tip">支持 JPG、PNG、WebP、GIF、MP4、MOV、WebM；原件上传，不做在线编辑。</div>
-        </template>
-      </el-upload>
+      <div class="upload-entries">
+        <div class="upload-drop" @drop.capture="onDropFolders">
+          <el-upload
+            drag
+            multiple
+            :auto-upload="false"
+            :show-file-list="false"
+            :disabled="!editable || uploading"
+            accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm"
+            :on-change="queueFile"
+          >
+            <el-icon class="upload-icon"><UploadFilled /></el-icon>
+            <div class="el-upload__text">拖入图片、视频或文件夹，或点击选择文件</div>
+            <template #tip>
+              <div class="upload-tip">支持 JPG、PNG、WebP、GIF、MP4、MOV、WebM；可整体拖入文件夹（含多级目录），同名目录自动归入；原件上传，不做在线编辑。</div>
+            </template>
+          </el-upload>
+        </div>
+        <button type="button" class="portal-entry" :disabled="!batch" @click="showDirectoryDialog = true">
+          <el-icon class="portal-entry-icon"><FolderOpened /></el-icon>
+          <strong>客户素材门户</strong>
+          <span>按目录管理 / 上传素材</span>
+        </button>
+      </div>
       <div v-if="uploadQueue.length" class="queue-list">
         <div v-for="item in uploadQueue" :key="item.uid" class="queue-item">
           <span>{{ item.name }}</span>
@@ -67,6 +76,7 @@
           <div class="asset-info">
             <strong :title="asset.file_name">{{ asset.file_name }}</strong>
             <span>{{ formatSize(asset.file_size) }}</span>
+            <el-tag size="small" effect="plain" :type="asset.directory_id ? 'warning' : 'info'">{{ directoryLabel(asset) }}</el-tag>
           </div>
           <GlassButton v-if="editable" variant="link" link-tone="danger" left-icon="Delete" @click="removeAsset(asset)">删除</GlassButton>
         </article>
@@ -75,6 +85,12 @@
     </section>
 
     <el-image-viewer v-if="previewUrl" :url-list="[previewUrl]" @close="previewUrl = ''" />
+    <CustomerMediaDirectoryDialog
+      v-model="showDirectoryDialog"
+      :batch="batch"
+      :editable="editable"
+      @update:batch="batch = $event"
+    />
   </div>
 </template>
 
@@ -82,8 +98,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, UploadFilled } from '@element-plus/icons-vue'
+import { ArrowLeft, FolderOpened, UploadFilled } from '@element-plus/icons-vue'
 import { deleteMediaAsset, getTaskMediaBatch, submitMediaBatch, uploadMediaAsset } from '@/api/customerMedia'
+import CustomerMediaDirectoryDialog from './customer-media/CustomerMediaDirectoryDialog.vue'
+import { collectDroppedFiles, dropHasDirectory } from './customer-media/droppedFiles'
 
 const route = useRoute()
 const router = useRouter()
@@ -93,8 +111,10 @@ const uploading = ref(false)
 const submitting = ref(false)
 const uploadQueue = ref([])
 const previewUrl = ref('')
+const showDirectoryDialog = ref(false)
 
 const assets = computed(() => batch.value?.assets || [])
+const directories = computed(() => batch.value?.directories || [])
 const editable = computed(() => ['draft', 'changes_requested'].includes(batch.value?.status))
 const totalSize = computed(() => formatSize(assets.value.reduce((sum, item) => sum + item.file_size, 0)))
 const statusMeta = computed(() => ({
@@ -117,24 +137,65 @@ async function loadBatch() {
   batch.value = res.data
 }
 
-async function queueFile(uploadFile) {
-  if (!editable.value) return
-  const item = { uid: uploadFile.uid, name: uploadFile.name, progress: 0, done: false, error: false }
-  uploadQueue.value.push(item)
-  uploading.value = true
+function directoryLabel(asset) {
+  if (!asset.directory_id) return '未分类'
+  return directories.value.find(d => d.id === asset.directory_id)?.name || '未分类'
+}
+
+async function uploadOne(item, raw, options = {}) {
   try {
-    const res = await uploadMediaAsset(batch.value.id, uploadFile.raw, event => {
+    const res = await uploadMediaAsset(batch.value.id, raw, event => {
       item.progress = event.total ? Math.round(event.loaded / event.total * 100) : 0
-    })
+    }, options)
     item.progress = 100
     item.done = true
     batch.value = res.data
   } catch {
     item.error = true
-  } finally {
-    uploading.value = uploadQueue.value.some(row => !row.done && !row.error)
-    window.setTimeout(() => { uploadQueue.value = uploadQueue.value.filter(row => !row.done) }, 1200)
   }
+}
+
+let queueSeq = 0
+function pushQueueItem(name) {
+  const item = { uid: `${Date.now()}-${queueSeq++}`, name, progress: 0, done: false, error: false }
+  uploadQueue.value.push(item)
+  return item
+}
+
+function scheduleQueueCleanup() {
+  window.setTimeout(() => { uploadQueue.value = uploadQueue.value.filter(row => !row.done) }, 1200)
+}
+
+async function queueFile(uploadFile) {
+  if (!editable.value) return
+  uploading.value = true
+  const item = pushQueueItem(uploadFile.name)
+  await uploadOne(item, uploadFile.raw)
+  uploading.value = uploadQueue.value.some(row => !row.done && !row.error)
+  scheduleQueueCleanup()
+}
+
+const FOLDER_ACCEPT_RE = /\.(jpe?g|png|webp|gif|mp4|mov|webm)$/i
+
+async function onDropFolders(e) {
+  if (!editable.value || uploading.value) return
+  if (!dropHasDirectory(e.dataTransfer)) return
+  // 命中文件夹时拦截事件，自行递归遍历；纯文件仍交给 el-upload 处理
+  e.preventDefault()
+  e.stopPropagation()
+  const { files } = await collectDroppedFiles(e.dataTransfer)
+  const accepted = files.filter(({ file }) => FOLDER_ACCEPT_RE.test(file.name))
+  const skipped = files.length - accepted.length
+  if (skipped > 0) ElMessage.warning(`已忽略 ${skipped} 个不支持的文件（仅支持 JPG、PNG、WebP、GIF、MP4、MOV、WebM）`)
+  if (!accepted.length) return
+  uploading.value = true
+  for (const { file, directoryName } of accepted) {
+    // 顶层文件夹名作为目录名：后端按客户 find-or-create，同名目录直接归入不新建
+    const item = pushQueueItem(directoryName ? `${directoryName}/${file.name}` : file.name)
+    await uploadOne(item, file, directoryName ? { directoryName } : {})
+  }
+  uploading.value = uploadQueue.value.some(row => !row.done && !row.error)
+  scheduleQueueCleanup()
 }
 
 async function removeAsset(asset) {
@@ -169,6 +230,13 @@ onMounted(loadBatch)
 .page-header p, .section-heading span, .asset-info span { margin: 0; color: var(--text-secondary); }
 .review-alert { margin-bottom: 16px; }
 .upload-panel { padding: 18px; margin-bottom: 24px; }
+.upload-entries { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 16px; align-items: stretch; }
+.portal-entry { display: grid; place-content: center; justify-items: center; gap: 6px; border: 1px dashed var(--color-primary); border-radius: 8px; color: var(--color-primary-hover); background: var(--color-primary-light); cursor: pointer; transition: background 180ms ease; }
+.portal-entry:hover:not(:disabled) { background: rgba(212, 148, 28, 0.18); }
+.portal-entry:disabled { cursor: not-allowed; opacity: 0.55; }
+.portal-entry-icon { font-size: 34px; color: var(--color-primary); }
+.portal-entry span { color: var(--text-secondary); font-size: 12px; }
+@media (max-width: 700px) { .upload-entries { grid-template-columns: minmax(0, 1fr); } }
 .upload-icon { font-size: 42px; color: var(--color-primary); }
 .upload-tip { color: var(--text-secondary); }
 .queue-list { margin-top: 16px; display: grid; gap: 8px; }

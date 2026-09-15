@@ -75,22 +75,24 @@
               <el-tag :type="statusTagType(row.status)" size="small" effect="plain">{{ row.status_label }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" min-width="220" max-width="330" fixed="right">
+          <el-table-column label="操作" min-width="260" max-width="390" fixed="right">
             <template #default="{ row }">
-              <GlassButton variant="link" left-icon="View" @click="viewOrderDetail(row)">详情</GlassButton>
-              <GlassButton variant="link" left-icon="Edit" @click="editOrder(row)">编辑</GlassButton>
-              <el-dropdown trigger="click" @command="(cmd) => handlePrintCommand(cmd, row)">
-                <GlassButton variant="link" left-icon="Printer">打印</GlassButton>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="order">打印生产单</el-dropdown-item>
-                    <el-dropdown-item command="process_card">打印工序卡片</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-              <GlassButton variant="link" left-icon="Printer" @click="printOrderHtml(row)">打印订单</GlassButton>
-              <GlassButton variant="link" left-icon="Refresh" @click="handleResetProcess(row)">重置工艺</GlassButton>
-              <GlassButton variant="link" link-tone="danger" left-icon="Delete" @click="deleteOrder(row)" v-if="authStore.hasPermission('production:admin')">删除</GlassButton>
+              <div class="order-actions">
+                <GlassButton variant="link" left-icon="View" @click="viewOrderDetail(row)">详情</GlassButton>
+                <GlassButton variant="link" left-icon="Edit" @click="editOrder(row)">编辑</GlassButton>
+                <el-dropdown trigger="click" @command="(cmd) => handlePrintCommand(cmd, row)">
+                  <GlassButton variant="link" left-icon="Printer">打印</GlassButton>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="order">打印生产单</el-dropdown-item>
+                      <el-dropdown-item command="process_card">打印工序卡片</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+                <GlassButton variant="link" left-icon="Download" @click="exportOrder(row)">导出</GlassButton>
+                <GlassButton variant="link" left-icon="Refresh" @click="handleResetProcess(row)">重置工艺</GlassButton>
+                <GlassButton variant="link" link-tone="danger" left-icon="Delete" @click="deleteOrder(row)" v-if="authStore.hasPermission('production:admin')">删除</GlassButton>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -789,15 +791,17 @@ function handlePrintCommand(cmd, row) {
   printDialogVisible.value = true
 }
 
-function printOrderHtml(row) {
+function exportOrder(row) {
   const reviewerName = encodeURIComponent(authStore.user?.real_name || '')
-  const url = `/api/report/print/production-order?order_no=${encodeURIComponent(row.order_no)}&reviewer=${reviewerName}`
+  const url = `/api/report/export/production-order?order_no=${encodeURIComponent(row.order_no)}&reviewer=${reviewerName}`
   window.open(url, '_blank')
 }
 </script>
 
 <style scoped>
 .production-order-page { display: flex; flex-direction: column; gap: 20px; position: relative; }
+.order-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.order-actions > * { flex-shrink: 0; }
 
 /* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
 .prod-order-aurora { inset: -24px -28px; }

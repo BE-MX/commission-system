@@ -26,6 +26,7 @@ DEVICE = {
     ("GET", "/api/whatsapp-translation/capabilities"),
     ("POST", "/api/whatsapp-translation/translate"),
     ("POST", "/api/whatsapp-translation/reply-suggestions"),
+    ("POST", "/api/whatsapp-translation/reply-memory"),
 }
 ADMIN = {
     ("GET", "/api/whatsapp-translation/admin/devices"),

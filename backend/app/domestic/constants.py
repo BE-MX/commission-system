@@ -62,7 +62,25 @@ ORDER_PRODUCING = 1
 ORDER_DONE = 2
 ORDER_SHIPPED = 3
 ORDER_TERMINATED = 4
-ORDER_STATUS_LABELS = {0: "草稿", 1: "生产中", 2: "已完工", 3: "已发货", 4: "已终止"}
+# 优惠价低于原始价的业务订单先落待审核：不扣款、不能报工、不能改明细，
+# 审核通过才转生产中并扣款；驳回落已驳回，等同终止态（从未扣款，无退款）。
+ORDER_PENDING_REVIEW = 5
+ORDER_REJECTED = 6
+ORDER_STATUS_LABELS = {
+    0: "草稿", 1: "生产中", 2: "已完工", 3: "已发货", 4: "已终止",
+    5: "待审核", 6: "已驳回",
+}
+# 不参与「正式下单」统计（客户下单节奏/公海释放口径）的状态
+ORDER_INACTIVE_STATUSES = (ORDER_DRAFT, ORDER_PENDING_REVIEW, ORDER_REJECTED)
+
+# 客户资金申请（充值/调整先申请、审核通过才生效）
+REQUEST_TYPE_RECHARGE = "recharge"
+REQUEST_TYPE_ADJUST = "adjust"
+REQUEST_TYPES = (REQUEST_TYPE_RECHARGE, REQUEST_TYPE_ADJUST)
+REQUEST_STATUS_PENDING = "pending"
+REQUEST_STATUS_APPROVED = "approved"
+REQUEST_STATUS_REJECTED = "rejected"
+REQUEST_STATUSES = (REQUEST_STATUS_PENDING, REQUEST_STATUS_APPROVED, REQUEST_STATUS_REJECTED)
 
 # 明细状态
 ITEM_PRODUCING = 0

@@ -1,5 +1,17 @@
 # 莱莎方舟平台 运维手册
 
+## 站点 AI 网关接入与核查
+
+上线候选须包含迁移 `146_ai_site_gateway`、前后端代码及 `deploy/nginx/ark-ai-gateway-location.conf`。该片段放入 leshine.work HTTPS server，沿用该入口的 `127.0.0.1:8002` 转发；北京或其他入口按现有拓扑选择自身后端。Docker 示例同步 `frontend/nginx.conf`。均限制 64 KiB，代理等待 75 秒，禁用 proxy_next_upstream 重试。配置变更和生产迁移只在获得该环境发布授权后，通过项目部署入口执行；本文不表示生产已上线。
+
+Settings：`AI_GATEWAY_MAX_OUTPUT_TOKENS=4096`、`AI_GATEWAY_TIMEOUT_SEC=60`（只能向下调整）。不用新增供应商环境密钥，继续在 AI 管理后台配置 Provider/Preset。
+
+管理员创建文本 Preset → 创建站点应用/负责人/额度 → 将一次性密钥交给站点负责人配置在服务端 → 按 `examples/ai-site-gateway/README.md` 接入。确认站点自己的用户鉴权/访客限制已启用。发放响应丢失先查应用列表，不自动重复创建；密钥不可找回时明确执行重置。
+
+429 并发持续不恢复时，在应用调用记录检查 pending/unknown。核查 request_id、开始时间、站点负责人、供应商结果及本地执行是否结束；确认后填写结论并“解除占用”。该动作只把状态改为 timeout，不退调用次数、不更改已知用量、不再次调用上游。因进程退出留下的 pending 不会自行过期。停用或重置只影响尚未准入请求，不能取消已发送调用或承诺退费。
+
+本地 MySQL 并发验证使用独立回环地址实例、独立随机 `ark_ai_gateway_test_*` schema，由 `backend/tests/test_ai_gateway_mysql.py` 创建并清理；禁止将公司业务库 URL 用于测试。测试专用变量 `AI_GATEWAY_TEST_MYSQL_URL` 必须没有数据库名，且 host 只能为回环地址。不读取 backend/.env 的业务连接。
+
 > 2026-09-05 部署入口已改为候选准备、SHA-256 增量发布与共享 schema 校验，操作及真实纳管范围以 [deploy/README.md](../deploy/README.md) 为准。旧 rollback.bat 已阻断，不再使用旧 dist_backup 直接覆盖云目录。COS 文件迁移暂缓。
 
 > **版本**：v1.0  
@@ -7,6 +19,12 @@
 > **目标读者**：运维人员、项目交接人员
 
 ## 环境准备
+
+### DHL 物流刷新鉴权失败
+
+物流刷新出现 DHL `Unauthorized` / HTTP 401、403 时，检查后端 `DHL_API_USERNAME`、`DHL_API_PASSWORD`、`DHL_API_ENV`，不要将密钥写入日志或交接文档。MyDHL 使用 HTTP Basic Auth；测试环境为 `https://express.api.dhl.com/mydhlapi/test`，正式环境为 `https://express.api.dhl.com/mydhlapi`（配置 `prod` 或 `production`）。参考 [DHL 官方接口文档](https://developer.dhl.com/api-reference/dhl-express-mydhl-api?lang=en)。
+
+两套环境都返回 401 时，不能仅靠切换环境解决。请 DHL 接口负责人核实凭据有效性及环境访问权限，提供错误中的请求编号以便追查。核对实际运行实例的配置；本机配置检查不能替代线上核验。获得有效凭据后按目标环境的变更流程更新配置并重启后端（Settings 和适配器均有进程内缓存），再刷新一张运单确认；不要在聊天中传递密码。
 
 ### 服务器环境
 
@@ -1644,3 +1662,9 @@ journalctl -u leshine-ark-dsh-worker -n 200 --no-pager
 2. 紧急止损按顺序执行：在 Ark 中禁用 AI Preset 阻止模型调用；撤销设备阻止旧扩展继续翻译；提高最低扩展版本阻断过期客户端；必要时把上一版源码打包为更高版本号发布。
 3. 后端/前端代码回滚不得 downgrade Alembic 迁移。迁移 135 的三张表只保存设备哈希、状态和聚合用量，保留不影响旧版本运行。
 4. 回滚后检查 `/api/whatsapp-translation/health`、`/capabilities`、管理页设备数量、当日请求数和成功率；确认数据库、日志和管理页没有聊天明文。
+
+### 站点密钥配置地址与复制
+
+站点应用生成的 `ARK_AI_BASE_URL` 使用固定公网入口 `https://leshine.work/api/ai-gateway`，与管理员通过公网、局域网或本机访问管理页无关。更换公网入口时同步更新 `AiGatewayApps.vue` 中的 `gatewayBase`，验证公网路由后重新发布前端。既有站点配置若使用局域网地址，改为上述公网地址即可，不必重置密钥。
+
+“复制配置”优先使用 Clipboard API；内网 HTTP 或浏览器拒绝权限时，在密钥弹窗内通过文本选区复制。浏览器同时阻止两种机制时会保留全选，可按 Ctrl+C / ⌘C；关闭弹窗后密钥清空。

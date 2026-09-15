@@ -14,6 +14,7 @@ export const v1Client = createApiClient({ baseURL: '/api/v1' })
 export const designClient = createApiClient({ baseURL: '/api/design' })
 export const invoiceClient = createApiClient({ baseURL: '/api/invoice' })
 export const aiClient = createApiClient({ baseURL: '/api/ai', timeout: 300000 })
+export const aiGatewayClient = createApiClient({ baseURL: '/api/ai-gateway/admin', timeout: 30000 })
 export const insightClient = createApiClient({ baseURL: '/api/insight', timeout: 90000 })
 export const customerHubClient = createApiClient({ baseURL: '/api/customer-hub', timeout: 90000 })
 export const stockClient = createApiClient({ baseURL: '/api/stock', timeout: 90000 })
@@ -65,3 +66,4 @@ export const customerMediaClient = createApiClient({
   timeout: 120000,
 })
 export const mailOutreachClient = createApiClient({ baseURL: '/api/mail-outreach', timeout: 300000 }) // 草稿生成走 AI，放宽超时
+export const colorworkClient = createApiClient({ baseURL: '/api/colorwork', timeout: 30000 })

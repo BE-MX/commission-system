@@ -6,7 +6,7 @@ from app.domestic import constants as C
 from app.production.models import ProcessRoute, ProcessRouteStep
 
 
-PRODUCTION_FIELDS = ("hairstyle", "hairstyle_images", "style_requirement", "style_images")
+PRODUCTION_FIELDS = ("guest_name", "guest_order_date", "hairstyle", "hairstyle_images", "style_requirement", "style_images")
 PRODUCTION_HEADER_EXCLUDED = {
     "customer_id", "order_category", "order_type", "order_channel", "required_ship_date",
 }

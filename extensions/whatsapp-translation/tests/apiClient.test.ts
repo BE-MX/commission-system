@@ -41,6 +41,20 @@ describe('Ark API client', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(vi.getTimerCount()).toBe(0)
   })
+  it('aborts reply at the capability-driven timeout when one is provided', async () => {
+    vi.useFakeTimers()
+    fetchMock.mockImplementation((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+    }))
+    const outcome = apiClient.suggestReply('token', '1.2.6', replyPayload, 60_000).catch(error => error)
+    await vi.advanceTimersByTimeAsync(59_999)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBeGreaterThan(0)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await outcome).toMatchObject({ code: 'request_timeout' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBe(0)
+  })
   it('unwraps the numeric Ark envelope and sends device credentials only on device routes', async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({
       code: 200,

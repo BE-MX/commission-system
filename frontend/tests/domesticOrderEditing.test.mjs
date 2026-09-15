@@ -58,3 +58,50 @@ test('production can choose and clear customer without a sales repricing payload
   form.production_customer_id = null
   assert.deepEqual(buildHeaderPatch(detail, form), { production_customer_id: null })
 })
+
+
+test('guest can be edited and cleared on each business item', () => {
+  const detail = { order_kind: 'business' }
+  const item = { guest_name: '王女士' }
+  const form = orderItemForm(item)
+  assert.equal(form.guest_name, '王女士')
+  form.guest_name = '李先生'
+  assert.deepEqual(buildItemPatch(detail, item, form), { guest_name: '李先生' })
+  form.guest_name = ''
+  assert.deepEqual(buildItemPatch(detail, item, form), { guest_name: null })
+  assert.deepEqual(buildItemPatch({ order_kind: 'production' }, item, form), {})
+  assert.ok(!Object.hasOwn(orderHeaderForm(detail), 'guest_name'))
+})
+
+
+test('item spec attrs can be edited; patch carries normalized attrs only when changed', () => {
+  const item = { order_qty: 1, unit_price: 100, attrs: { product_type: 'cap', craft: '递针', net_color: '呼吸红', size: 'S', length: '15厘米', density: '65%', hair_style_series: '直发' } }
+  const form = orderItemForm(item)
+  assert.deepEqual(buildItemPatch({ order_kind: 'business' }, item, form), {})
+  form.attrs.length = '20厘米'
+  form.attrs.density = ''
+  assert.deepEqual(buildItemPatch({ order_kind: 'business' }, item, form), {
+    attrs: { product_type: 'cap', craft: '递针', length: '20厘米', net_color: '呼吸红', size: 'S', hair_style_series: '直发' },
+  })
+})
+
+test('production item attrs exclude hair style series and allow spec edits', () => {
+  const item = { order_qty: 1, unit_price: 0, attrs: { product_type: 'cap', craft: '递针', net_color: '呼吸红', size: 'S', length: '15厘米', density: '65%' } }
+  const form = orderItemForm(item)
+  form.attrs.craft = '手织'
+  assert.deepEqual(buildItemPatch({ order_kind: 'production' }, item, form), {
+    attrs: { product_type: 'cap', craft: '手织', length: '15厘米', net_color: '呼吸红', size: 'S', density: '65%' },
+  })
+})
+
+
+test('guest order date can be changed and cleared without touching other fields', () => {
+  const item = { guest_order_date: '2026-09-15' }
+  const form = orderItemForm(item)
+  assert.deepEqual(buildItemPatch({ order_kind: 'business' }, item, form), {})
+  form.guest_order_date = '2026-09-14'
+  assert.deepEqual(buildItemPatch({ order_kind: 'business' }, item, form), { guest_order_date: '2026-09-14' })
+  form.guest_order_date = ''
+  assert.deepEqual(buildItemPatch({ order_kind: 'business' }, item, form), { guest_order_date: null })
+  assert.deepEqual(buildItemPatch({ order_kind: 'production' }, item, form), {})
+})

@@ -114,16 +114,20 @@ def test_seed_creates_separate_disabled_presets_and_preserves_existing(db):
     base = AiPreset(preset_name=settings.WHATSAPP_TRANSLATION_PRESET_NAME, provider_id=provider.id, model="synthetic-model", parameters={"thinking": {"type": "disabled"}, "max_tokens": 4096}, system_prompt="keep translation prompt", is_enabled=True)
     db.add(base)
     db.commit()
-    assert seed_reply_presets(db) == 1
-    result = db.query(AiPreset).filter(AiPreset.preset_name.in_([settings.WHATSAPP_REPLY_GENERATOR_PRESET])).all()
-    assert len(result) == 1 and all(not row.is_enabled for row in result)
+    assert seed_reply_presets(db) == 2
+    names = [settings.WHATSAPP_REPLY_GENERATOR_PRESET, settings.WHATSAPP_REPLY_QUERY_REWRITE_PRESET]
+    result = db.query(AiPreset).filter(AiPreset.preset_name.in_(names)).all()
+    assert len(result) == 2 and all(not row.is_enabled for row in result)
     assert all(row.parameters.get("response_format") == {"type": "json_object"} for row in result)
-    result[0].system_prompt = "administrator customization"
+    by_name = {row.preset_name: row for row in result}
+    assert by_name[names[0]].parameters["max_tokens"] == 3200
+    assert by_name[names[1]].parameters["max_tokens"] == 400
+    by_name[names[0]].system_prompt = "administrator customization"
     db.commit()
     assert seed_reply_presets(db) == 0
-    db.refresh(result[0])
+    db.refresh(by_name[names[0]])
     db.refresh(base)
-    assert result[0].system_prompt == "administrator customization"
+    assert by_name[names[0]].system_prompt == "administrator customization"
     assert base.parameters == {"thinking": {"type": "disabled"}, "max_tokens": 4096}
     assert base.system_prompt == "keep translation prompt"
 

@@ -1,6 +1,7 @@
 """Synthetic multi-turn regression, isolated SQLite only."""
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -12,9 +13,17 @@ from app.main import app
 from app.whatsapp_translation import reply_memory, reply_service, reply_state
 from app.whatsapp_translation.errors import WhatsAppTranslationError
 from app.whatsapp_translation.models import ReplyInquiry, TranslationDevice
-from app.whatsapp_translation.reply_memory_schemas import MemoryCommand
-from app.whatsapp_translation.reply_schemas import ReplyPlan
+from app.whatsapp_translation.reply_memory_schemas import MemoryChange, MemoryCommand, ReplyAction
 from tests.reply_support import mock_model, output, plan, request, seed_reply
+
+
+def validated_plan(**overrides):
+    """Plan-shaped namespace validated field by field; the wire ReplyPlan is gone."""
+    value = plan(**overrides)
+    return SimpleNamespace(
+        memory_changes=[MemoryChange.model_validate(item) for item in value["memory_changes"]],
+        action=ReplyAction.model_validate(value["action"]),
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -148,13 +157,13 @@ def test_commit_without_cached_candidate_never_repeats_model_call(db, monkeypatc
 def test_model_cannot_use_draft_fabricated_quote_role_or_foreign_entry(bad):
     payload = request(messages=[{"role": "customer", "text": "20 units"}], draft_intent="I already sent the catalog.")
     with pytest.raises(WhatsAppTranslationError) as caught:
-        reply_memory.build_update(ReplyPlan.model_validate(plan(memory_changes=[bad])), payload, [])
+        reply_memory.build_update(validated_plan(memory_changes=[bad]), payload, [])
     assert caught.value.error_code == "reply_invalid_evidence"
 
 
 def test_seller_reported_completion_is_not_tool_or_human_completion():
     payload = request(messages=[{"role": "salesperson", "text": "I have sent the catalog."}])
-    p = ReplyPlan.model_validate(plan(memory_changes=[change(kind="commitment", status="reported_done", quote="sent the catalog", summary="Seller reports catalog sent")]))
+    p = validated_plan(memory_changes=[change(kind="commitment", status="reported_done", quote="sent the catalog", summary="Seller reports catalog sent")])
     entries = reply_memory.build_update(p, payload, [])
     assert entries[0]["status"] == "reported_done"
     assert reply_memory.handoff_summary(entries, p)["commitments"][0]["status"] == "reported_done"
@@ -225,7 +234,7 @@ def test_recreated_id_rejects_candidate_from_deleted_incarnation(db, monkeypatch
 def test_handoff_uses_human_value_and_reopened_requests():
     base = {"evidence": [], "human_note": "", "summary": "Send catalog", "kind": "request", "status": "pending"}
     entries = [base, {**base, "kind": "need", "status": "human_confirmed", "summary": "20 units", "human_note": "10 units"}]
-    handoff = reply_memory.handoff_summary(entries, ReplyPlan.model_validate(plan()))
+    handoff = reply_memory.handoff_summary(entries, validated_plan())
     assert handoff["needs"] == ["10 units"]
     assert handoff["open_requests"] == ["Send catalog"]
 
@@ -252,3 +261,17 @@ def test_recreated_instance_between_validation_and_atomic_write_is_rejected(db, 
     replacement = db.get(ReplyInquiry, inquiry["id"])
     assert replacement.instance_id == replacement_instance
     assert replacement.entries == [] and replacement.revision == 0
+
+
+def test_full_memory_reclaims_cancelled_entries_before_failing():
+    payload = request(messages=[{"role": "customer", "text": "20 units"}])
+    base = {"kind": "need", "summary": "x", "human_note": "", "evidence": [], "updated_at": "2026-09-11T00:00:00"}
+    prior = [{**base, "id": str(uuid4()), "summary": f"need-{index}",
+              "status": "cancelled" if index < 5 else "tentative"} for index in range(80)]
+    entries = reply_memory.build_update(validated_plan(memory_changes=[change()]), payload, prior)
+    assert len(entries) == 76
+    assert all(entry["status"] != "cancelled" for entry in entries)
+    active_prior = [{**base, "id": str(uuid4()), "summary": f"need-{index}", "status": "tentative"} for index in range(80)]
+    with pytest.raises(WhatsAppTranslationError) as caught:
+        reply_memory.build_update(validated_plan(memory_changes=[change()]), payload, active_prior)
+    assert caught.value.error_code == "reply_memory_full"
