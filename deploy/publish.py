@@ -218,12 +218,18 @@ if __name__ == "__main__":
     parser.add_argument("--no-pull", action="store_true")
     parser.add_argument("--revision", help="Pin a reviewed full commit SHA; fetch still runs unless --no-pull")
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--voucher-routing-only", action="store_true", help="Route recharge uploads and voucher reads to the office only")
     parser.add_argument("--migrate-only", metavar="PLAN", help="Execute only the reviewed 137 -> 138 migration using a verified local plan")
     parser.add_argument("--recover-migration-149", action="store_true", help="Resume only the inspected revision-149 overflow with original writer evidence")
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
-        if args.migrate_only:
+        if args.voucher_routing_only:
+            if args.migrate_only or args.cloud_only or args.no_pull or args.revision or args.recover_migration_149 or args.migration_credentials:
+                raise RuntimeError("Voucher routing only accepts --prepare-only")
+            from voucher_routing import execute
+            execute(args.prepare_only)
+        elif args.migrate_only:
             if args.cloud_only or args.no_pull or args.revision or args.recover_migration_149:
                 raise RuntimeError("Migration-only uses its pinned plan; cloud-only/no-pull/revision do not apply")
             from migration_only import execute
@@ -231,7 +237,7 @@ if __name__ == "__main__":
         else:
             publish(args)
     except Exception as error:
-        if STATE.exists() and not getattr(locals().get("args"), "migrate_only", None):
+        if STATE.exists() and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "voucher_routing_only", False):
             journal = marker("publish-current")
             journal.update(status="failed", error_type=type(error).__name__)
             atomic_json(STATE / "publish-current.json", journal)
