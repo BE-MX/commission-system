@@ -56,7 +56,7 @@ def execute(request):
             current = list(connection.execute(text("SELECT version_num FROM alembic_version")).scalars())
             if len(current) != 1 or script.get_heads() != [request["schema"]]:
                 raise RuntimeError("Database/code head changed since preflight; no writer stopped")
-            pending = list(reversed([r.revision for r in script.iterate_revisions(request["schema"], current[0])]))
+            pending = list(reversed([r.revision for r in script.iterate_revisions(request["schema"], current[0], implicit_base=True)]))
             if pending != request["pending"]:
                 raise RuntimeError("Pending migration chain changed since preflight; no writer stopped")
             record.update(status="stopping", schema=request["schema"], database=current[0], pending=pending,

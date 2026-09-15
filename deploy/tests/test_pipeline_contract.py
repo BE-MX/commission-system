@@ -231,7 +231,7 @@ def test_migration_failure_preserves_writer_boundary(failure, monkeypatch, tmp_p
     upgrade = Mock(side_effect=RuntimeError("ddl") if failure == "ddl" else None)
     monkeypatch.setattr(command, "upgrade", upgrade)
     monkeypatch.setattr(ScriptDirectory, "from_config", Mock(return_value=SimpleNamespace(
-        get_heads=lambda: ["head"], iterate_revisions=lambda *_: [] if failure == "chain" else [SimpleNamespace(revision="head")])))
+        get_heads=lambda: ["head"], iterate_revisions=lambda *_, implicit_base: [] if failure == "chain" else [SimpleNamespace(revision="head")])))
     with pytest.raises(RuntimeError):
         migration_runner.execute({"credential_file": "unused", "action": "apply",
                                   "journal_path": str(journal),

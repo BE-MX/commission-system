@@ -58,7 +58,7 @@ engine.dispose()
 if len(heads)!=1 or len(current)!=1:
     raise RuntimeError('Expected one database revision and one code head')
 script.get_revision(current[0])
-pending=[r.revision for r in script.iterate_revisions(heads[0],current[0])]
+pending=[r.revision for r in script.iterate_revisions(heads[0],current[0],implicit_base=True)]
 print(json.dumps({'schema':heads[0], 'database':current[0], 'pending':list(reversed(pending))}))
 '''
     result = json.loads(run([str(python), "-c", code], cwd=source / "backend", capture=True))
