@@ -508,6 +508,7 @@ def seed_role_permissions(db: Session):
         ("mini_lookup:read", "mini_lookup", "read", "小程序：订单速查"),
         ("mini_shipping:write", "mini_shipping", "write", "小程序：出库检验"),
         # 发货检验（2026-09-01）：OKKI 出库单打印 → 小程序扫码拍照验货 → 验货单归档
+        ("shipping_station:write", "shipping_station", "write", "共用手机发货质检（选择操作人）"),
         ("shipping_inspection:read",  "shipping_inspection", "read",  "查看出库单与验货单"),
         ("shipping_inspection:write", "shipping_inspection", "write", "打印出库单 / 维护验货照片"),
         ("shipping_inspection:admin", "shipping_inspection", "admin", "发货检验模块管理"),

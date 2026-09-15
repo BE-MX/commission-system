@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 class ShippingScanRequest(BaseModel):
     qr_raw: str = Field(..., description="出库单二维码原文")
+    request_id: str | None = Field(None, min_length=1, max_length=64)
 
 
 class ShippingSubmitRequest(BaseModel):

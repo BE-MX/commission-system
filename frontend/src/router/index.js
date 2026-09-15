@@ -12,11 +12,12 @@ import {
   isExpoKioskTarget,
 } from './expoKioskRoute'
 import { readSessionItem } from '@/utils/safeSessionStorage'
+import { isShippingStationPath, shippingStationLogin } from './shippingStationRoute'
 
 // NAV_ENTRIES 中每条记录映射成 vue-router 的 children 路由
 // path 去掉前导 '/' 因为父路由是 '/'
 // external 条目（静态页/外链）只进菜单不进路由
-const layoutRoutes = NAV_ENTRIES.filter(entry => !entry.external).map(entry => ({
+const configuredRoutes = NAV_ENTRIES.filter(entry => !entry.external).map(entry => ({
   path: entry.path.replace(/^\//, ''),
   name: entry.name,
   component: entry.component,
@@ -25,10 +26,14 @@ const layoutRoutes = NAV_ENTRIES.filter(entry => !entry.external).map(entry => (
     permission: entry.permission,
     anyPermission: entry.anyPermission,
     activeMenu: entry.activeMenu,
+    fullscreen: entry.fullscreen,
   },
 }))
+const layoutRoutes = configuredRoutes.filter(route => !route.meta.fullscreen)
+const fullscreenRoutes = configuredRoutes.filter(route => route.meta.fullscreen).map(route => ({ ...route, path: '/' + route.path }))
 
 const routes = [
+  ...fullscreenRoutes,
   {
     path: '/login',
     name: 'Login',
@@ -92,7 +97,7 @@ router.beforeEach(async (to, from, next) => {
   // 移动端访问登录页：直接走移动端独立登录页
   // 例外：目标是展会 kiosk（展位 iPad 用主站登录，不进移动端素材页）
   const redirectTarget = String(to.query.redirect || '')
-  if (isMobileUA && !desktopMode && to.path === '/login' && !redirectTarget.startsWith('/expo')) {
+  if (isMobileUA && !desktopMode && to.path === '/login' && !redirectTarget.startsWith('/expo') && !isShippingStationPath(redirectTarget)) {
     window.location.href = '/m/login.html'
     return false
   }
@@ -125,6 +130,7 @@ router.beforeEach(async (to, from, next) => {
   if (to.meta.permission && !auth.hasPermission(to.meta.permission)) {
     const { ElMessage } = await import('element-plus')
     ElMessage.error('权限不足')
+    if (isShippingStationPath(to.path)) return next(shippingStationLogin())
     // 首次打开 kiosk 时 from.fullPath 是 '/'；沿用通用兜底会把展会设备送进后台。
     // kiosk 只允许回专用登录页，重新认证后仍固定回 kiosk。
     if (isExpoKioskTarget(to)) {

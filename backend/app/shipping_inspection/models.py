@@ -5,7 +5,7 @@
 约束/索引名与迁移文件显式对齐，避免 autogenerate 漂移。
 """
 
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, JSON
 
 from app.core.database import Base
 from app.core.time import beijing_now
@@ -55,3 +55,42 @@ class ShippingInspectionPhoto(Base):
     sort = Column(Integer, nullable=False, default=0, comment="展示顺序")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     created_by = Column(Integer, comment="上传人")
+
+
+class ShippingStationSession(Base):
+    __tablename__ = 'ark_shipping_station_sessions'
+    __table_args__ = (UniqueConstraint('login_user_id', 'scan_request_id', name='uq_shipping_station_scan'),)
+    id = Column(String(36), primary_key=True, comment="主键")
+    login_user_id = Column(Integer, nullable=False, comment="登录账号 id")
+    operator_user_id = Column(Integer, nullable=False, comment="实际操作人 id")
+    operator_name = Column(String(50), nullable=False, comment="实际操作人姓名快照")
+    outbound_record_id = Column(String(64), nullable=False, comment="出库记录 id")
+    scan_request_id = Column(String(64), nullable=False, comment="扫码幂等请求编号")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间（北京时间）")
+    last_active_at = Column(DateTime, nullable=False, default=beijing_now, comment="最近操作时间（北京时间）")
+    expires_at = Column(DateTime, nullable=False, comment="最长有效期（北京时间）")
+    ended_at = Column(DateTime, comment="结束时间（北京时间）")
+
+
+class ShippingOperationEvent(Base):
+    __tablename__ = 'ark_shipping_operation_events'
+    __table_args__ = (
+        UniqueConstraint('scope', 'request_id', name='uq_shipping_event_request'),
+        Index('idx_shipping_event_outbound', 'outbound_record_id', 'id'),
+    )
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    scope = Column(String(80), nullable=False, comment="幂等范围：会话或入口用户")
+    request_id = Column(String(64), comment="幂等请求编号")
+    source = Column(String(20), nullable=False, comment="操作来源")
+    action = Column(String(20), nullable=False, comment="操作动作")
+    login_user_id = Column(Integer, nullable=False, comment="登录账号 id")
+    operator_user_id = Column(Integer, nullable=False, comment="实际操作人 id")
+    operator_name = Column(String(50), nullable=False, comment="实际操作人姓名快照")
+    login_name = Column(String(50), nullable=False, comment="登录账号姓名快照")
+    outbound_record_id = Column(String(64), nullable=False, comment="出库记录 id")
+    inspection_id = Column(BigInteger, comment="检验单 id")
+    media_id = Column(BigInteger, comment="媒体 id")
+    edit_version = Column(Integer, comment="操作时编辑版本")
+    payload = Column(JSON, comment="幂等内容摘要与业务参数")
+    result = Column(JSON, comment="原操作回执")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间（北京时间）")

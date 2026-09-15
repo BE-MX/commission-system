@@ -490,3 +490,11 @@ T1 = 当前公海且有历史订单；T2 = 无历史订单但有企业邮箱、�
 AI Worker 用 `status + lease_token + lease_expires_at` 领取任务，模型网络调用期间不持有业务行锁。租约按 Provider timeout 延长，过期任务最多领取 3 次；达到上限转 failed，避免无限重放。应用结果时重新锁定知识库/文档/任务并核对 `base_revision_id`，因此不会覆盖任务创建后的编辑。
 
 **142 生产客户关联迁移**：仅放松 `ck_dom_order_kind_fields` 中生产单 customer_id 必须为空的限制，保留业务客户必填、生产零金额和客户外键；不清空、不回填现有订单。MySQL 单条 ALTER 替换 CHECK；已存在生产客户关联时拒绝回退。部署入口执行，开发验证只使用隔离库。
+# 共用手机发货质检：迁移 153_shipping_station
+
+父版本 `152_shipping_media_recall`。新增两张表，原出库检验和媒体表继续共用，不复制业务数据：
+
+- `ark_shipping_station_sessions`：UUID 会话，绑定 login_user_id、operator_user_id、姓名快照和 outbound_record_id；记录创建、最近活动、最长有效期及结束时间。`(login_user_id, scan_request_id)` 唯一，保证扫码重试只创建一个会话。
+- `ark_shipping_operation_events`：记录来源、动作、登录人与实际操作人的 ID/姓名快照、出库单/检验单/媒体、编辑版本、请求内容及回执。`(scope, request_id)` 唯一；按 `(outbound_record_id,id)` 索引读取最近事件。时间为北京时间。
+
+扫描只创建事件和会话，不创建空检验单；上传/删除/提交与审计同事务。保留历史媒体上传人，换人接手不覆盖原记录。事件不级联删除、不回填虚构的历史操作。迁移支持中途建表后重入，并核验已有表列、主键和唯一约束；降级拒绝删除身份历史，应采用审查后的前向迁移。仅在隔离 SQLite 验证过迁移，未执行生产迁移。

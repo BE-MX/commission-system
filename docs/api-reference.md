@@ -1274,3 +1274,21 @@ Agent research context now includes `fact_contract.version=registered_research_f
 `GET /api/mini/auth/verify` 保留 `valid`、`user` 字段，新增 `allowed_entries: string[]`，可能值为 `export`、`domestic`、`lookup`、`shipping`；按实时角色授权返回。对应权限分别为 `mini_export:write`、`mini_domestic:write`、`mini_lookup:read`、`mini_shipping:write`，超级管理员全部可见。未授权业务接口返回 HTTP 403 / `detail.code=FORBIDDEN`。
 
 外贸 `/scan/*`、内贸报工/历史、订单速查 `/domestic/lookup`、出库检验 `/shipping-inspection/*` 分别校验入口权限。内贸订单/图片供内贸报工与速查共享。公开 `/domestic/track` 和 `/domestic/track-image` 继续只按原签名范围访问，不要求入口授权。
+# 共用手机发货质检（2026-09-15）
+
+独立页面 `/shipping/scan`；接口前缀 `/api/shipping-inspection/station`。登录用户必须具有实时数据库权限 `shipping_station:write`（或 super_admin）。选人仅登记业务归属；操作人必须属于配置的发货质检角色、启用且未删除，并且不能是登录账号本人。普通小程序入口不接受该代理身份。
+
+| 方法与路径 | 内容 |
+| --- | --- |
+| GET `/operators` | 返回 `{id,name,hint}`；重名时 hint 为用户名，不返回联系方式 |
+| POST `/scan` | `{qr_raw,operator_id,request_id}`；校验签名、创建绑定登录人/操作人/出库单的 session_id，记录扫描事件，不创建空检验单 |
+| GET `/sessions/{id}` | 刷新原单状态和编辑版本，延长空闲计时，不增加扫描事件 |
+| POST `/sessions/{id}/photos` 或 `/videos` | multipart：file、可选 item_id、edit_version、request_id；整单 item_id 留空；照片 20 MiB、视频 100 MiB |
+| GET `/sessions/{id}/media/{media_id}` | 私有鉴权媒体流，只允许访问会话所属出库单 |
+| DELETE `/sessions/{id}/media/{media_id}` | query：edit_version、request_id |
+| POST `/sessions/{id}/submit` | `{edit_version,request_id,remark}`；至少一张照片，返回操作人和单号回执，结束会话 |
+| POST `/sessions/{id}/end` | 结束会话，保留已上传媒体及原上传人 |
+
+返回沿用 `ok()` 信封；错误 detail 包含 code/message。会话默认空闲 15 分钟、最长 8 小时，刷新网页不恢复人员选择。所有请求重新校验登录权限与操作人角色；上传落盘前后均校验。业务写入与审计同事务，提交/上传/删除的相同请求编号重放原回执，内容冲突返回 409。已结束会话只允许查询同一次提交回执，不能更改撤回后的新轮次。网络或 5xx 的提交结果未确认时锁定编辑，以同一 request_id 确认；明确 4xx 拒绝可刷新后恢复。
+
+小程序 `/api/mini/shipping-inspection/scan` 新增可选 request_id 并记录登录用户扫描事件；新增 POST `/refresh` 仅刷新数据。PC 验货记录详情新增最近 200 条 events（含小程序、共用手机、PC 撤回来源）；一般查看者只见操作人，admin/super_admin 投影另含登录账号姓名。视频仍不进入打印。

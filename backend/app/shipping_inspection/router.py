@@ -30,6 +30,8 @@ from app.shipping_inspection.schemas import ShippingRecallRequest
 logger = logging.getLogger("commission")
 
 router = APIRouter()
+from app.shipping_inspection.station_router import router as station_router
+router.include_router(station_router)
 
 _READ = ("shipping_inspection:read", "shipping_inspection:write", "shipping_inspection:admin")
 
@@ -220,6 +222,10 @@ def record_detail(
     detail = service.get_record_detail(db, inspection_id)
     if detail is None:
         raise HTTPException(status_code=404, detail="验货单不存在")
+    from app.auth.service import get_live_user_authorization
+    from app.shipping_inspection.audit_service import list_events
+    roles, permissions = get_live_user_authorization(db, int(_user['sub']))
+    detail['events'] = list_events(db, detail['outbound_record_id'], include_login='super_admin' in roles or 'shipping_inspection:admin' in permissions)
     return ok(detail)
 
 

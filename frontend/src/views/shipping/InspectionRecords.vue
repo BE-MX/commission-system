@@ -60,6 +60,7 @@
           <el-descriptions-item label="备注" :span="2">{{ detail.remark || '-' }}</el-descriptions-item>
         </el-descriptions>
 
+        <InspectionEvents :events="detail.events || []" />
         <div class="section-title">出库明细</div>
         <el-table :data="detail.items || []" size="small" border class="list-table" style="width: 100%">
           <el-table-column type="index" label="#" min-width="46" />
@@ -93,6 +94,7 @@ import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import InspectionPhotos from './components/InspectionPhotos.vue'
 import InspectionVideos from './components/InspectionVideos.vue'
+import InspectionEvents from './components/InspectionEvents.vue'
 import ShippingPrintDialog from './print/ShippingPrintDialog.vue'
 import { useInspectionRecords } from './composables/useInspectionRecords'
 

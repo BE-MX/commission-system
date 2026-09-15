@@ -29,7 +29,7 @@ def render(original, snippet, region, feature="voucher"):
         "# BEGIN ARK SHIPPING VIDEO ROUTING", "# END ARK SHIPPING VIDEO ROUTING", "/api/mini/shipping-inspection/videos")
     # Replace only our blocks. Unknown layout or conflicting rules must be reviewed.
     clean = re.sub(re.escape(begin) + r".*?" + re.escape(end) + r"\n?", "", original, flags=re.S)
-    if begin in clean or end in clean or conflict in clean:
+    if begin in clean or end in clean or conflict in clean or (feature == 'shipping-video' and '/api/shipping-inspection/station/' in clean):
         raise ValueError("Conflicting domestic routing; inspect the current configuration")
     anchor = re.compile(r"location /api/\s*\{\s*proxy_pass http://127\.0\.0\.1:" + port + r";")
     if len(anchor.findall(clean)) != expected:

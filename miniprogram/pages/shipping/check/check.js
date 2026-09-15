@@ -10,7 +10,7 @@ Page(Object.assign({
   onShow: function () {
     if (!navigation.guard('shipping')) return
     this.setData({ scanActive: true })
-    if (this.data.submitted && !this.data.uploading && this._qrRaw) this._loadByQr(this._qrRaw)
+    if (this.data.submitted && !this.data.uploading && this._qrRaw) this._loadByQr(this._qrRaw, true)
   },
   onHide: function () { this.setData({ scanActive: false }) },
   onPreviewScanExample: function () {
@@ -47,7 +47,7 @@ Page(Object.assign({
   _imageBatch: 0,
   _qrRaw: '',
   onRefreshInspection: function () {
-    if (this._qrRaw && !this.data.uploading && this.data.state === 'ready') this._loadByQr(this._qrRaw)
+    if (this._qrRaw && !this.data.uploading && this.data.state === 'ready') this._loadByQr(this._qrRaw, true)
   },
 
   onLoad: function () {
@@ -88,16 +88,16 @@ Page(Object.assign({
     })
   },
 
-  _loadByQr: function (raw) {
+  _loadByQr: function (raw, refresh) {
     var self = this
     this.setData({ state: 'loading' })
     this._qrRaw = raw
     wx.request({
-      url: app.globalData.baseUrl + '/api/mini/shipping-inspection/scan',
+      url: app.globalData.baseUrl + '/api/mini/shipping-inspection/' + (refresh ? 'refresh' : 'scan'),
       method: 'POST',
       header: this._header(),
       timeout: 30000,
-      data: { qr_raw: raw },
+      data: { qr_raw: raw, request_id: 'scan-' + Date.now() + '-' + Math.random().toString(36).slice(2) },
       success: function (res) {
         if (res.statusCode === 401) { self.setData({ state: 'idle' }); app.logout(); return }
         // mini 端惯例：成功返回裸业务 dict，无 code/data 信封；错误才走 detail

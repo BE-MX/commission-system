@@ -196,6 +196,10 @@ class Settings(BaseSettings):
 
     # ── 发货检验（验货照片）────────────────────────────────
     SHIPPING_INSPECTION_STORAGE_ROOT: str = str(_BACKEND_DIR.parent / "uploads" / "shipping-inspection")
+    # Verified 2026-09-15: fhqc / 发货质检, role id 28. Override in isolated environments.
+    SHIPPING_STATION_ROLE_ID: int = 28
+    SHIPPING_STATION_IDLE_MINUTES: int = 15
+    SHIPPING_STATION_MAX_HOURS: int = 8
 
     # ── 客户拍摄素材门户 ──────────────────────────────────
     CUSTOMER_MEDIA_STORAGE_ROOT: str = "D:\\WORKSOURCE\\customer-media"

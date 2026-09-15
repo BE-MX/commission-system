@@ -928,6 +928,13 @@ export const NAV_ENTRIES = [
   // 「打印出库单」直接用隐藏 iframe 调起浏览器打印（printDocs.js printDocHtml），
   // 不出预览弹框。两种打印都只出那份独立文档，用户也不离开列表页。
 
+  {
+    path: '/shipping/scan', name: 'ShippingScan', title: '共用手机发货质检',
+    component: () => import('@/views/shipping/ShippingScan.vue'),
+    permission: 'shipping_station:write', fullscreen: true,
+    menu: { group: 'shipping', title: '手机发货质检', icon: Camera, order: 30, permission: 'shipping_station:write' },
+  },
+
   // ── 素材管理 ───────────────────────────────────────────
   {
     path: '/asset/library',

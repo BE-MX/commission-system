@@ -32,7 +32,7 @@ async def shipping_scan(
             detail={"code": "SIGN_INVALID", "message": "二维码无效，请扫描系统打印的出库单二维码"},
         )
     try:
-        return shipping_service.scan_payload(db, record_id)
+        return shipping_service.scan_for_user(db, record_id, current_user.id, body.request_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"code": "RECORD_NOT_FOUND", "message": str(exc)})
     except shipping_outbound_service.OutboundTableError:
@@ -41,6 +41,17 @@ async def shipping_scan(
             status_code=500,
             detail={"code": "OUTBOUND_SOURCE_ERROR", "message": "出库单数据源异常，请联系管理员"},
         )
+
+
+@router.post('/shipping-inspection/refresh', summary='发货检验：刷新当前单据（不记录扫码）')
+async def shipping_refresh(body: ShippingScanRequest, current_user: ArkUser = Depends(require_mini_entry('shipping')), db: Session = Depends(get_db)):
+    valid, record_id = shipping_qr_service.verify_qr_data(body.qr_raw)
+    if not valid:
+        raise HTTPException(400, detail={'message': '二维码无效'})
+    try:
+        return shipping_service.scan_payload(db, record_id)
+    except ValueError as exc:
+        raise HTTPException(400, detail={'message': str(exc)}) from exc
 
 
 @router.post("/shipping-inspection/photos", summary="发货检验：上传验货照片（逐张）")

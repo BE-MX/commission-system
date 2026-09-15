@@ -156,6 +156,7 @@ import { ElMessage } from 'element-plus'
 import WorldMapCanvas from '@/components/WorldMapCanvas.vue'
 import logoGold from '@/assets/leshine-logo-gold.png'
 import { EXPO_KIOSK_PATH } from '@/router/expoKioskRoute'
+import { isShippingStationPath } from '@/router/shippingStationRoute'
 import { readSessionItem } from '@/utils/safeSessionStorage'
 
 // Deterministic stagger keeps the wake continuous from the first frame.
@@ -199,7 +200,7 @@ const handleSubmit = async () => {
     // 或目标是展会 kiosk（展位 iPad 不进移动端素材页）
     const isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
     const desktopMode = readSessionItem('ark_desktop_mode') === '1'
-    if (isMobileUA && !desktopMode && !redirect.startsWith('/expo')) {
+    if (isMobileUA && !desktopMode && !redirect.startsWith('/expo') && !isShippingStationPath(redirect)) {
       window.location.href = '/m/'
       return
     }

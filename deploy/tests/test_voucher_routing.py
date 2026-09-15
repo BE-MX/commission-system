@@ -156,6 +156,22 @@ def test_shipping_video_routing_coexists_with_vouchers_without_changing_ownershi
     assert 'proxy_request_buffering off;' in video
 
 
+@pytest.mark.parametrize('region', ['office', 'cloud'])
+def test_station_upload_routes_are_narrow_and_keep_host_ownership(region):
+    content = (DEPLOY / 'nginx' / f'shipping-video-{region}.conf').read_text()
+    patterns = re.findall(r'location ~ (\S+) \{', content)
+    assert len(patterns) == 2
+    for suffix in ['photos', 'videos']:
+        path = '/api/shipping-inspection/station/sessions/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/' + suffix
+        assert sum(bool(re.fullmatch(pattern, path)) for pattern in patterns) == 1
+    for path in ['/api/shipping-inspection/station/scan', '/api/shipping-inspection/station/sessions/abc/submit', '/api/assets/upload']:
+        assert not any(re.fullmatch(pattern, path) for pattern in patterns)
+    assert 'client_max_body_size 21m;' in content
+    assert content.count(f'proxy_pass http://127.0.0.1:{routing.SPECS[region][1]};') == 3
+    with pytest.raises(ValueError):
+        routing.render(config(region) + '\n# /api/shipping-inspection/station/ already managed', content, region, 'shipping-video')
+
+
 def test_shipping_video_prepare_and_failed_activation_preserve_live_config(site):
     path, command, request = site
     request.update(feature='shipping-video', snippet=(DEPLOY / 'nginx/shipping-video-cloud.conf').read_text())

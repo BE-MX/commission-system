@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.auth.models import ArkUser
 from app.core.time import beijing_now
 from app.shipping_inspection import constants as C
-from app.shipping_inspection import file_service, outbound_service
+from app.shipping_inspection import file_service, outbound_service, audit_service
 from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto
 
 logger = logging.getLogger("commission")
@@ -80,8 +80,8 @@ def get_or_create_draft(db: Session, outbound_record_id: str, user_id: int) -> S
     """按出库单 id 取检验单；没有则从业务库取单头快照建 draft。
 
     唯一键 outbound_record_id 兜底并发：两个请求同建一单时，后到的 IntegrityError
-    回退为复用已有行。注意 MySQL REPEATABLE READ 下必须先 rollback 换全新快照再重查，
-    否则一致性读仍看不到对方刚提交的行（本函数只在 mini 上传路径被调，调用方未 commit）。
+    回退为复用已有行。MySQL REPEATABLE READ 下使用 savepoint 回滚与当前读，
+    既看到对方已提交的行，也保留共用手机会话锁与外层审计事务。
     """
     inspection = _get_by_outbound_id(db, outbound_record_id)
     if inspection is not None:
@@ -104,8 +104,10 @@ def get_or_create_draft(db: Session, outbound_record_id: str, user_id: int) -> S
             db.flush()
     except IntegrityError as exc:  # noqa: BLE001 - 并发插入同一出库单：回退为复用
         logger.warning("shipping inspection 并发创建回退为复用 outbound=%s: %s", outbound_record_id, exc)
-        db.rollback()  # 换全新事务快照，RR 下才能读到对方已提交的行
-        inspection = _get_by_outbound_id(db, outbound_record_id)
+        # Savepoint has rolled back. Current read sees the winner without releasing
+        # the caller's station-session lock or discarding its audit transaction.
+        print("shipping inspection concurrent draft creation; reusing winner", flush=True)
+        inspection = db.query(ShippingInspection).filter_by(outbound_record_id=outbound_record_id).with_for_update().populate_existing().first()
         if inspection is None:
             raise
     return inspection
@@ -120,6 +122,7 @@ def add_photo(
     user_id: int,
     media_type: str = "image",
     edit_version: int = 0,
+    commit: bool = True,
 ) -> ShippingInspectionPhoto:
     """上传一张照片：draft 检验单懒创建；已提交的单拒绝再传。"""
     inspection = get_or_create_draft(db, outbound_record_id, user_id)
@@ -146,12 +149,15 @@ def add_photo(
     db.add(photo)
     inspection.updated_at = beijing_now()
     inspection.updated_by = user_id
-    _commit(db)
-    db.refresh(photo)
+    db.flush()
+    if commit:
+        audit_service.record(db, 'upload', user_id, outbound_record_id, inspection=inspection, media_id=photo.id)
+        _commit(db)
+        db.refresh(photo)
     return photo
 
 
-def delete_photo(db: Session, photo_id: int, user_id: int, *, edit_version: int = 0, media_type: str = "image") -> None:
+def delete_photo(db: Session, photo_id: int, user_id: int, *, edit_version: int = 0, media_type: str = "image", commit: bool = True):
     """仅 draft 可删；删库行后顺手清落盘文件，清文件失败只记日志（残留文件可人工清理）。"""
     photo = db.get(ShippingInspectionPhoto, photo_id)
     if photo is None or photo.media_type != media_type:
@@ -166,6 +172,10 @@ def delete_photo(db: Session, photo_id: int, user_id: int, *, edit_version: int 
         inspection.updated_at = beijing_now()
         inspection.updated_by = user_id
     db.delete(photo)
+    if not commit:
+        db.flush()
+        return rel_path
+    audit_service.record(db, 'delete', user_id, inspection.outbound_record_id, inspection=inspection, media_id=photo_id)
     _commit(db)
     try:
         abs_path = file_service.resolve_path(rel_path)
@@ -182,6 +192,7 @@ def submit(
     user_id: int,
     remark: str | None = None,
     edit_version: int = 0,
+    commit: bool = True,
 ) -> ShippingInspection:
     """提交验货：照片总数 ≥ 1；已提交幂等返回原单（request_id 靠状态幂等，不落库）。"""
     inspection = _get_by_outbound_id(db, outbound_record_id)
@@ -203,8 +214,12 @@ def submit(
         inspection.remark = remark
     inspection.updated_at = beijing_now()
     inspection.updated_by = user_id
-    _commit(db)
-    db.refresh(inspection)
+    if commit:
+        audit_service.record(db, 'submit', user_id, outbound_record_id, inspection=inspection)
+        _commit(db)
+        db.refresh(inspection)
+    else:
+        db.flush()
     return inspection
 
 
@@ -223,6 +238,8 @@ def recall(db: Session, inspection_id: int, user_id: int, edit_version: int) -> 
     inspection.recalled_by = user_id
     inspection.updated_at = inspection.recalled_at
     inspection.updated_by = user_id
+    audit_service.record(db, 'recall', user_id, inspection.outbound_record_id, inspection=inspection,
+                         context={'source': 'pc', 'scope': f'pc:{user_id}'})
     _commit(db)
     db.refresh(inspection)
     return inspection
@@ -248,6 +265,19 @@ def scan_payload(db: Session, outbound_record_id: str) -> dict:
         "photos": [_photo_to_dict(p) for p in photos],
         "videos": [_photo_to_dict(p) for p in videos],
     }
+
+
+def scan_for_user(db, outbound_record_id, user_id, request_id=None):
+    db.query(ArkUser.id).filter_by(id=user_id).with_for_update().first()
+    payload = scan_payload(db, outbound_record_id)
+    from app.shipping_inspection.models import ShippingOperationEvent
+    previous = db.query(ShippingOperationEvent).filter_by(scope=f'mini:{user_id}', request_id=request_id).first() if request_id else None
+    if previous and previous.outbound_record_id != outbound_record_id:
+        raise ValueError('扫码请求编号已用于其他单据')
+    if not previous:
+        audit_service.record(db, 'scan', user_id, outbound_record_id, request_id=request_id)
+        _commit(db)
+    return payload
 
 
 # ── PC 验货单列表 / 详情 ──────────────────────────────────

@@ -163,3 +163,12 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 失败时 `current.json` 和本轮 `backups/<revision>-<attempt>` 必须保留；普通重试会阻断，先按
 `colorwork-workbench/README.md` 核验失败现场、备份及 schema。北京原先没有 Node 时由准备阶段下载官方固定版本并校验摘要，
 不要求手工全局安装。首次使用的真实 PSD/JPG 素材包需单独导入，不能通过代码发布复制业务数据。
+# 共用手机发货质检发布补充（2026-09-15）
+
+入口为方舟同域名 HTTPS `/shipping/scan`，手机登录后返回该页面。摄像头使用浏览器 API，HTTP 普通局域网地址不能代替 HTTPS 验收。
+
+上线依赖：备份并按标准发布流程应用迁移 `153_shipping_station`，更新实际承接请求的后端、前端与小程序刷新接口。迁移不创建账号或授予权限；管理员需给专用登录账号配置 `shipping_station:write`，不要将其作为实际操作人员。候选角色由 `SHIPPING_STATION_ROLE_ID` 指定，当前安装已只读核验为 28（fhqc，发货质检）；异库部署必须核对。空闲/最长会话分别配置 `SHIPPING_STATION_IDLE_MINUTES=15`、`SHIPPING_STATION_MAX_HOURS=8`。
+
+现有 `--shipping-video-routing-only` 专用入口同时纳管 station 会话照片、视频路径：照片请求上限 21m、视频 101m，300 秒上传超时；普通 API 限制和各站后端归属保持原值。仍先 prepare-only 检查，再在取得目标环境发布授权后激活。主站代码发布不会自动执行此专项入口。
+
+真机验收需覆盖 Android Chrome / iPhone Safari：扫码授权与后置摄像头、相册视频、弱网重试、多人交接、PC 撤回后继续编辑；当前已完成本地组件/模拟摄像头识别和隔离数据库验收，未代替真实手机或生产 MySQL 并发验收。
