@@ -24,15 +24,17 @@ App({
     }
   },
 
-  logout: function () {
+  logout: function (options) {
+    if (options && options.manual) wx.setStorageSync('ark_manual_logout', true)
     this.globalData.token = null
     this.globalData.userInfo = null
     wx.removeStorageSync('ark_token')
     wx.removeStorageSync('ark_user')
-    wx.redirectTo({ url: '/pages/login/login' })
+    wx.reLaunch({ url: '/pages/login/login' })
   },
 
   saveAuth: function (token, user) {
+    wx.removeStorageSync('ark_manual_logout')
     this.globalData.token = token
     this.globalData.userInfo = user
     wx.setStorageSync('ark_token', token)

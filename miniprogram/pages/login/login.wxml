@@ -49,6 +49,14 @@
     </button>
   </view>
 
+  <view class="panel" wx:elif="{{!openId}}">
+    <view class="panel-head">
+      <text class="panel-title">微信登录</text>
+    </view>
+    <text class="panel-desc">已绑定工号可直接登录，首次使用需绑定方舟账号。</text>
+    <button class="btn-primary" bindtap="onWechatLogin">微信登录</button>
+  </view>
+
   <!-- 绑定方舟账号 -->
   <view class="panel" wx:else>
     <view class="panel-head">

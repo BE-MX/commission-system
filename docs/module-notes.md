@@ -213,6 +213,8 @@ nssm start CommissionSystem    # 正常启动
 - `WX_MINI_SECRET` — 微信小程序 AppSecret（从微信公众平台获取）
 - `QR_SIGN_SECRET` — 二维码 HMAC 签名密钥（生产报工扫码验签用）
 
+**小程序关联与退出**：`ark_users.wx_id` 存微信 OpenID。微信身份获取失败时只显示可重试的“微信登录”，没有 OpenID 不显示绑定表单，后端拒绝空值与纯空白。历史空字符串可在获取真实微信身份后重新绑定修复，不根据用户名猜填。主动退出保留账号关联，清除本地会话并持久化 `ark_manual_logout`；重开后须点击微信登录，登录成功才清除该标记。过期会话仍沿原路径重新识别微信。
+
 **WhatsApp Connector 环境变量**（`.env` 可选配置，不配则 WhatsApp 功能不可用）：
 - `WHATSAPP_CONNECTOR_BASE_URL` — WhatsApp Connector Node.js 服务地址（如 `http://localhost:3100`）
 - `WHATSAPP_CONNECTOR_API_KEY` — Connector API 认证密钥
