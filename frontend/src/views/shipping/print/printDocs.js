@@ -81,12 +81,13 @@ function printedAt() {
 }
 
 // 出库单在首个分隔符处拆分；颜色可能含斜杠（例如 #8TP18/60），后半段原样保留。
-function outboundProductCells(productName) {
+function outboundProductCells(productName, spec) {
   const name = String(productName ?? '').trim()
   const separator = name.search(/[/／]/)
   const category = separator < 0 ? name : name.slice(0, separator).trim()
   const details = separator < 0 ? '' : name.slice(separator + 1).trim()
   return `<td class="product-category">${esc(category)}</td>
+      <td class="product-spec">${esc(spec)}</td>
       <td class="product-details">${esc(details).replace(/[/／]/g, '$&<wbr>')}</td>`
 }
 
@@ -98,6 +99,7 @@ const OUTBOUND_CSS = `
 .items-table tbody tr{height:12mm;break-inside:avoid}
 .items-table .product-category{font-size:12px}
 .items-table .product-details{font-size:14px;font-weight:700}
+.items-table .num{text-align:center}
 .items-table tbody tr:nth-child(even){background:rgb(245,245,245)}
 .items-table{print-color-adjust:exact;-webkit-print-color-adjust:exact}
 `
@@ -105,8 +107,7 @@ const OUTBOUND_CSS = `
 function itemsTable(items, { outbound = false } = {}) {
   const rows = (items || []).map((item, index) => `<tr>
       <td>${index + 1}</td>
-      ${outbound ? outboundProductCells(item.product_name) : `<td>${esc(item.product_name)}</td>`}
-      <td>${esc(item.spec)}</td>
+      ${outbound ? outboundProductCells(item.product_name, item.spec) : `<td>${esc(item.product_name)}</td><td>${esc(item.spec)}</td>`}
       ${outbound ? '' : `<td>${esc(item.sku)}</td>`}
       <td class="num">${esc(item.qty)}</td>
       ${outbound ? '<td class="batch-no"></td>' : `<td>${esc(item.unit)}</td>`}
@@ -115,8 +116,8 @@ function itemsTable(items, { outbound = false } = {}) {
   return `<div class="items-section">
     <h3>出库明细</h3>
     <table class="items-table">
-      ${outbound ? '<colgroup><col style="width:4%"><col style="width:18%"><col style="width:23%"><col style="width:17%"><col style="width:7%"><col></colgroup>' : ''}
-      <thead><tr><th>#</th>${outbound ? '<th>产品类别</th><th>颜色/尺寸/克重</th>' : '<th>产品名称</th>'}<th>规格</th>${outbound ? '' : '<th>SKU</th>'}<th>数量</th><th>${outbound ? '批次号' : '单位'}</th></tr></thead>
+      ${outbound ? '<colgroup><col style="width:4%"><col style="width:18%"><col style="width:32.5%"><col style="width:23%"><col style="width:7%"><col style="width:15.5%"></colgroup>' : ''}
+      <thead><tr><th>#</th>${outbound ? '<th>产品类别</th><th>规格</th><th>颜色/尺寸/克重</th>' : '<th>产品名称</th><th>规格</th><th>SKU</th>'}<th${outbound ? ' class="num"' : ''}>数量</th><th>${outbound ? '批次号' : '单位'}</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   </div>`
