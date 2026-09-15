@@ -57,3 +57,35 @@ def test_customer_name_api_passes_filter_and_validates_length(db):
     missing = client.get("/api/domestic/orders", params={"customer_name": "济南"})
     assert missing.status_code == 200 and missing.json()["data"]["total"] == 0
     assert client.get("/api/domestic/orders", params={"customer_name": "名" * 201}).status_code == 422
+
+
+def test_owner_user_id_filter_matches_customer_owner(db):
+    user, customer, _ = context(db, "owner-filter")
+    other = DomesticCustomer(shop_name="别家客户", owner_user_id=user.id + 100, created_by=user.id)
+    no_owner = DomesticCustomer(shop_name="无主客户", created_by=user.id)
+    db.add_all([other, no_owner])
+    db.flush()
+    for index, customer_id in enumerate([customer.id, other.id, no_owner.id, None]):
+        db.add(DomesticOrder(domestic_no=f"OWN-{index}", order_no=f"PO-OWN-{index}",
+            order_date=date(2026, 9, 11), customer_id=customer_id,
+            order_kind="production" if customer_id is None else "business",
+            order_category=None if customer_id is None else "normal",
+            status=0, created_by=user.id))
+    db.flush()
+    rows, total = order_service.list_orders(db, owner_user_id=user.id)
+    assert total == 1 and [r["domestic_no"] for r in rows] == ["OWN-0"]
+    assert rows[0]["owner_name"] == user.real_name
+    assert order_service.list_orders(db, owner_user_id=user.id + 100)[1] == 1
+    assert order_service.list_orders(db, owner_user_id=user.id + 200)[1] == 0
+    assert order_service.list_orders(db)[1] == 4
+
+
+def test_owner_user_id_api_passes_filter_and_rejects_nonpositive(db):
+    user, customer, payload = context(db, "owner-api")
+    order_service.create_order(db, payload, user.id)
+    client = _api_client(db, user, "domestic:read")
+    matching = client.get("/api/domestic/orders", params={"owner_user_id": user.id})
+    assert matching.status_code == 200 and matching.json()["data"]["total"] == 1
+    missing = client.get("/api/domestic/orders", params={"owner_user_id": user.id + 100})
+    assert missing.status_code == 200 and missing.json()["data"]["total"] == 0
+    assert client.get("/api/domestic/orders", params={"owner_user_id": 0}).status_code == 422

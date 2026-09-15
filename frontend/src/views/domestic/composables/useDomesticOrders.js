@@ -6,7 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import {
-  attachItemRoute, deleteOrder, exportOrder, getItemWxacode, getOptions, getOrder, getProcessRoutes,
+  attachItemRoute, deleteOrder, exportOrder, getCustomerOptions, getItemWxacode, getOptions, getOrder, getProcessRoutes,
   listDomesticSkips, listOrders, listProcessWorkers, listReports, newRequestId,
   reviewOrder,
   revokeDomesticSkip, revokeReport, shipItem, skipDomesticStep,
@@ -26,7 +26,7 @@ export function useDomesticOrders() {
   const auth = useAuthStore()
   const route = useRoute()
   const router = useRouter()
-  const filterOptions = ref({ order_categories: [], order_types: [], order_channels: [], customer_sources: [] })
+  const filterOptions = ref({ order_categories: [], order_types: [], order_channels: [], customer_sources: [], owners: [] })
 
   const listApi = useListPage(
     async (form) => {
@@ -38,6 +38,7 @@ export function useDomesticOrders() {
       searchForm: {
         keyword: route.query.keyword || '',
         customer_name: route.query.customer_name || '',
+        owner_user_id: '',
         order_kind: route.query.order_kind || '',
         status: '',
         order_category: '',
@@ -493,7 +494,11 @@ export function useDomesticOrders() {
   onMounted(async () => {
     try {
       const res = await getOptions()
-      filterOptions.value = res.data || filterOptions.value
+      filterOptions.value = { ...filterOptions.value, ...(res.data || {}) }
+    } catch { /* 拦截器已提示 */ }
+    try {
+      const res = await getCustomerOptions()
+      filterOptions.value = { ...filterOptions.value, owners: res.data?.owners || [] }
     } catch { /* 拦截器已提示 */ }
   })
 

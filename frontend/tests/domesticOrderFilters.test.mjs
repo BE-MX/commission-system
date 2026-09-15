@@ -17,6 +17,7 @@ test('customer and order queries combine with draft status, dates and advanced f
     order_channel: 'cash', date_start: '2026-09-01', date_end: '2026-09-11',
   })
   assert.deepEqual(buildOrderListParams({ page: 1, page_size: 20, keyword: ' ', status: '', dateRange: null }), { page: 1, page_size: 20 })
+  assert.deepEqual(buildOrderListParams({ page: 1, page_size: 20, owner_user_id: 7, dateRange: [] }), { page: 1, page_size: 20, owner_user_id: 7 })
 })
 
 test('cancel and clear in advanced dialog do not change current filters; reopening restores them', () => {
@@ -46,10 +47,12 @@ test('apply, tag removal and reset each query once and preserve the current tab'
   filters.removeAdvanced('order_channel')
   assert.equal(calls(), 2)
   assert.deepEqual(filters.advancedTags.value, [])
+  form.owner_user_id = 7
   filters.resetFilters()
   assert.equal(calls(), 3)
   assert.equal(form.order_kind, 'business')
   assert.equal(form.customer_name, '')
+  assert.equal(form.owner_user_id, '')
   assert.equal(form.keyword, '')
   assert.equal(form.status, '')
 })
