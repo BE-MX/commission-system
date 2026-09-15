@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok, page_result
-from app.expo import prompt_service, ai_pipeline, quota_service, script_service, service, store_service, upload_service
+from app.expo import beautify_prompt_service, beautify_service, prompt_service, ai_pipeline, quota_service, script_service, service, store_service, upload_service
 from app.expo.ai_pipeline import (
     build_composite_rows,
     build_scene_rows,
@@ -94,6 +94,8 @@ def create_session(
     mode: str = Query("tryon", pattern="^(tryon|scene)$"),
     photo: UploadFile | None = File(None),
     pending_photo: str | None = Form(None),
+    photo_processing_mode: str = Form("original", pattern="^(original|beauty)$"),
+    client_request_id: str | None = Form(None, max_length=64),
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("expo:write")),
 ):
@@ -103,14 +105,49 @@ def create_session(
     try:
         session = service.create_session(
             db, customer_id, photo, _user_id(current_user),
-            mode=mode, pending_name=pending_photo,
+            mode=mode, pending_name=pending_photo, photo_processing_mode=photo_processing_mode,
+            client_request_id=client_request_id,
         )
+    except service.SessionRequestConflict as exc:
+        raise HTTPException(409, str(exc)) from None
+    except prompt_service.PromptError as exc:
+        raise HTTPException(exc.status_code, str(exc))
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     upload_service.sweep_stale()   # 确认路径上的第二次机会式清理
-    if mode == "tryon":
+    replay = bool(getattr(session, "_idempotent_replay", False))
+    if mode == "tryon" and not replay:
         ai_pipeline.start_analysis(session.id)
-    return ok({"session_id": session.id}, code=201)
+    if photo_processing_mode == "beauty" and not replay:
+        beautify_service.start(session.id)
+    return ok({"session_id": session.id}, code=200 if replay else 201)
+
+
+@router.get("/beautify-availability", summary="上传页查询美颜生成是否可用")
+def beautify_availability(
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("expo:write")),
+):
+    return ok(beautify_prompt_service.availability(db))
+
+
+@router.post("/sessions/{session_id}/beautify/retry", summary="重试会话美颜预处理")
+def retry_beautify(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("expo:write")),
+):
+    session = service.get_session(db, session_id)
+    if not session:
+        raise HTTPException(404, "会话不存在")
+    store = store_service.get_active_store_by_user(db, _user_id(current_user))
+    if store is None or session.store_id != store.id:
+        raise HTTPException(400, "当前会话不属于当前门店，无法重试美颜")
+    try:
+        session = beautify_service.retry(db, session)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from None
+    return ok({"beautify_status": session.beautify_status})
 
 
 @router.get("/sessions/{session_id}", summary="轮询会话（status+分析+匹配+效果图）")
@@ -165,6 +202,11 @@ def generate(
         raise HTTPException(404, "会话不存在")
     if session.status == "generating":
         raise HTTPException(400, "效果图正在生成中，请稍候")
+    if session.photo_processing_mode == "beauty":
+        if session.beautify_status in ("pending", "processing"):
+            raise HTTPException(409, "照片正在美颜精修，请稍候")
+        if session.beautify_status != "ready" or not session.beautified_photo_path:
+            raise HTTPException(409, "美颜精修未成功，请重试或改用原照片生成")
 
     user_id = _user_id(current_user)
     store = store_service.get_active_store_by_user(db, user_id)
@@ -218,7 +260,8 @@ def generate(
         )
 
     with prompt_transaction(db):
-        version = prompt_service.capture_batch(db, session, rows, body.prompt_version_id)
+        # 客户侧不再选择提示词版本；统一冻结当前后台默认版本。
+        version = prompt_service.capture_batch(db, session, rows, None)
         version_summary = prompt_service.serialize_version(version)
         result_ids, start_strategy = prepare_composite_batch(session_id, rows, db)
     if not result_ids:

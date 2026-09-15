@@ -1028,14 +1028,20 @@ def _run_composite(session_id: int, result_id: int) -> None:
 def _save_result_image(ai_result: dict, result_id: int) -> Path:
     """从 AI 响应提取图片：data URL / 裸 base64 / http URL 三种形态。"""
     ensure_dirs()
+    return save_ai_image(ai_result, RESULT_DIR, f"expo_{result_id}")
+
+
+def save_ai_image(ai_result: dict, target_dir: Path, prefix: str) -> Path:
+    """Persist and validate an image result without applying result-only branding."""
+    target_dir.mkdir(parents=True, exist_ok=True)
     content = ai_result.get("content", "") or ""
-    filename = f"expo_{result_id}_{uuid.uuid4().hex[:8]}.png"
-    target = RESULT_DIR / filename
+    filename = f"{prefix}_{uuid.uuid4().hex[:8]}.png"
+    target = target_dir / filename
 
     data_match = re.search(r"data:image/\w+;base64,([A-Za-z0-9+/=]+)", content)
     if data_match:
         target.write_bytes(base64.b64decode(data_match.group(1)))
-        return target
+        return _validate_saved_image(target)
 
     url_match = re.search(r"https?://\S+?\.(?:png|jpe?g|webp)\S*", content)
     if url_match:
@@ -1050,14 +1056,29 @@ def _save_result_image(ai_result: dict, result_id: int) -> Path:
         resp = httpx.get(url_match.group(0), **kwargs)
         resp.raise_for_status()
         target.write_bytes(resp.content)
-        return target
+        return _validate_saved_image(target)
 
     stripped = content.strip()
     if len(stripped) > 1000 and re.fullmatch(r"[A-Za-z0-9+/=\s]+", stripped[:2000] or " "):
         target.write_bytes(base64.b64decode(re.sub(r"\s", "", stripped)))
-        return target
+        return _validate_saved_image(target)
 
     raise ValueError(f"AI 响应中未找到图片数据（前 120 字符: {content[:120]}）")
+
+
+def _validate_saved_image(path: Path) -> Path:
+    try:
+        from PIL import Image
+
+        with Image.open(path) as image:
+            image.verify()
+        with Image.open(path) as image:
+            if min(image.size) < 64:
+                raise ValueError("AI 返回图片尺寸无效")
+        return path
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
 
 
 def _make_share_code(result_id: int) -> str:

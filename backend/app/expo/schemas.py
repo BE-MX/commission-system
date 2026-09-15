@@ -48,7 +48,8 @@ class GenerateRequest(BaseModel):
     # **2026-07-31 起 kiosk 不再传这个值**：实测云雾中转站不透传 quality，三档耗时
     # (165~180s)、体积、output_tokens、目视画质全无差别，前端选择器已撤（见 module-notes）。
     # 字段保留是为了换到真正支持该参数的通道后能直接复用，届时时长须重新实测。
-    prompt_version_id: int | None = Field(None, gt=0, description="提示词版本 ID；不传使用当前默认版本")
+    # 仅保留请求兼容；客户值会被忽略，服务端始终使用当前后台默认版本。
+    prompt_version_id: int | None = Field(None, gt=0, description="已弃用；服务端始终使用当前默认版本")
     quality: str | None = Field(
         None, pattern="^(high|medium)$",
         description="出图档位 high=精致大片 / medium=形象速览；不传则用 AI preset 配置",

@@ -66,6 +66,7 @@ backend/data/
 
 # 临时演示/生成物（git-sweep 看板等）
 /tmp/
+/frontend/tmp/
 # 脚本运行产物（标签迁移日志/映射 Excel 等）
 backend/tmp/
 

@@ -9,10 +9,9 @@
  */
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import {
-  createSession, generateResults, getScenes, getPromptVersionPicker,
-  getSession, getWigColors, registerCustomer, setReaction, submitFeedback, updateCustomer,
+  createSession, generateResults, getBeautifyAvailability, getScenes,
+  getSession, getWigColors, registerCustomer, retryBeautify, setReaction, submitFeedback, updateCustomer,
 } from '@/api/expo'
-import { usePromptVersions } from './usePromptVersions'
 import { normalisePhone } from './expoPhone'
 import { useAiIssueSupport } from './useAiIssueSupport'
 import { useQrUpload } from './useQrUpload'
@@ -29,10 +28,13 @@ const NO_IDLE_STEPS = ['analyzing', 'matching', 'result']
 export function useTryOnFlow() {
   const step = ref('attract')
   const mode = ref('tryon')          // tryon=AI 换发试戴 / scene=佩戴实拍场景大片
+  const photoProcessingMode = ref('original') // 上传页唯一的面部处理选择
+  const beautyAvailable = ref(true)
   const customerId = ref(null)
   const sessionId = ref(null)
   const session = ref(null)          // GET /sessions/{id} 的最新载荷
   const generating = ref(false)
+  const waitingForBeautify = ref(false)
   const errorText = ref('')
   const selectedWigId = ref(null)    // 单选：从推荐中挑一款生成
   const matchPage = ref(0)           // 候选页：0=Top3 / 1=第4~6名
@@ -44,8 +46,6 @@ export function useTryOnFlow() {
   const guideShown = ref(false)      // 拍摄示范浮层一客只自动弹一次（register↔capture 往返不重弹）
   const tryonScenes = ref([])        // tryon 生成场景选项（职业/生活场景，滑动选择）
   const selectedTryonScene = ref(null) // 默认选中第一个；仅弱网加载失败时留 null=原景兜底
-  const promptState = usePromptVersions(getPromptVersionPicker)
-  const { promptVersionId, promptVersionReady, loadPromptVersions, resetPromptVersions } = promptState
   // 出图档位选择器已于 2026-07-31 撤除：实测云雾中转站不透传 quality，high/medium/low
   // 三档耗时(165~180s)、体积与 output_tokens 均无差别，画质目视也无差别——它既是个假选择，
   // 又对外承诺了错误的时长（约1分钟 vs 实际约3分钟）。后端字段与入参保留，
@@ -67,6 +67,7 @@ export function useTryOnFlow() {
   let registerPromise = null // 乐观切换：后台建档 promise，submitPhoto 前 await 兑现
   let registerGen = 0        // 建档代际：resetAll(换客户/idle)后，旧后台建档的迟到结果不许回写 customerId
   let registerInFlight = false // 防「下一步」双击建双档：在途期间忽略二次提交
+  let sessionRequest = null // 网络结果不明时复用同一幂等键，避免二次美颜计费
 
   // 扫码传照片子状态机（useQrUpload.js，2026-08-01 抽出）：touch 传引用即可（hoisted）；
   // getRegisterPromise 传取值器——registerPromise 会被重新赋值，直接传值只拿得到此刻的快照
@@ -104,13 +105,16 @@ export function useTryOnFlow() {
     if (idleTimer) clearTimeout(idleTimer)
     registerPromise = null
     registerInFlight = false
+    sessionRequest = null
     registerGen += 1 // 作废在途后台建档：其迟到结果不再回写（防污染下一位客户）
     step.value = 'attract'
     mode.value = 'tryon'
+    photoProcessingMode.value = 'original'
     customerId.value = null
     sessionId.value = null
     session.value = null
     generating.value = false
+    waitingForBeautify.value = false
     resetAiIssueSupport()
     errorText.value = ''
     selectedWigId.value = null
@@ -118,7 +122,6 @@ export function useTryOnFlow() {
     selectedColorId.value = null
     selectedSceneKeys.value = []
     selectedTryonScene.value = null
-    resetPromptVersions()
     salesReturnStep.value = 'result'
     guideShown.value = false
     // 必须放在 step='attract' 之后：closeQr 内部调 touch()，touch() 见 attract 直接返回不
@@ -135,7 +138,19 @@ export function useTryOnFlow() {
   function start(nextMode = 'tryon') {
     mode.value = nextMode
     step.value = 'register'
+    loadBeautyAvailability()
     touch()
+  }
+
+  async function loadBeautyAvailability() {
+    try {
+      const response = await getBeautifyAvailability()
+      beautyAvailable.value = !!response.data?.available
+      if (!beautyAvailable.value && photoProcessingMode.value === 'beauty') photoProcessingMode.value = 'original'
+    } catch (e) {
+      beautyAvailable.value = false
+      if (photoProcessingMode.value === 'beauty') photoProcessingMode.value = 'original'
+    }
   }
 
   async function submitRegister() {
@@ -233,13 +248,24 @@ export function useTryOnFlow() {
     }
     let res
     try {
+      const requestShape = [blob, pendingName.value || '', mode.value, photoProcessingMode.value]
+      if (!sessionRequest || requestShape.some((value, index) => sessionRequest.shape[index] !== value)) {
+        sessionRequest = {
+          id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          shape: requestShape,
+        }
+      }
       // 第四参：待取照片文件名（扫码上传来源）；本地拍照走 blob 时为空，两者二选一
-      res = await createSession(customerId.value, blob, mode.value, pendingName.value || null)
+      res = await createSession(
+        customerId.value, blob, mode.value, pendingName.value || null,
+        photoProcessingMode.value, sessionRequest.id,
+      )
     } catch (e) {
       // 停留拍摄页：photoBlob 还在，用户可直接重按「确认」重传
       errorText.value = '照片上传失败，请再试一次或呼叫顾问'
       return
     }
+    sessionRequest = null
     sessionId.value = res.data.session_id
     if (mode.value === 'scene') {
       step.value = 'scene'
@@ -404,7 +430,7 @@ export function useTryOnFlow() {
 
   // 单选生成：只合成用户选中的那一款（发色可选）
   async function generate() {
-    if (generating.value || !selectedWigId.value || !promptVersionReady.value) return
+    if (generating.value || !selectedWigId.value) return
     errorText.value = ''
     generating.value = true
     if (session.value) session.value.ai_issue = null
@@ -412,20 +438,24 @@ export function useTryOnFlow() {
     step.value = 'result'
     touch() // 忙态已置位：只清残留 idle 定时器不再武装（防 pointerdown 先于 click 的竞态跳屏）
     try {
+      await ensureBeautifyReady(sid)
       await generateResults(sessionId.value, {
         wigIds: [selectedWigId.value], hairColorId: selectedColorId.value,
-        sceneKey: selectedTryonScene.value, promptVersionId: promptVersionId.value,
+        sceneKey: selectedTryonScene.value,
       })
       if (sid !== sessionId.value) return
       startPolling()
     } catch (e) {
       if (sid !== sessionId.value) return
       generating.value = false
-      if (e?.response?.status >= 400 && e?.response?.status < 500) {
+      if (e?.beautifyFailure) {
+        step.value = mode.value === 'scene' ? 'scene' : 'matching'
+        errorText.value = e.message
+        touch()
+      } else if (e?.response?.status >= 400 && e?.response?.status < 500) {
         step.value = mode.value === 'scene' ? 'scene' : 'matching'
         const detail = e.response.data?.detail
         errorText.value = typeof detail === 'string' ? detail : '生成选项已变化，请重新选择'
-        loadPromptVersions()
       } else {
         checkingGeneration = true
         generating.value = true
@@ -449,7 +479,7 @@ export function useTryOnFlow() {
   }
 
   async function generateScenes() {
-    if (generating.value || !selectedSceneKeys.value.length || !promptVersionReady.value) return
+    if (generating.value || !selectedSceneKeys.value.length) return
     errorText.value = ''
     generating.value = true
     if (session.value) session.value.ai_issue = null
@@ -457,25 +487,53 @@ export function useTryOnFlow() {
     step.value = 'result'
     touch() // 同 generate：清残留 idle 定时器
     try {
+      await ensureBeautifyReady(sid)
       await generateResults(sessionId.value, {
-        sceneKeys: [...selectedSceneKeys.value], promptVersionId: promptVersionId.value,
+        sceneKeys: [...selectedSceneKeys.value],
       })
       if (sid !== sessionId.value) return
       startPolling()
     } catch (e) {
       if (sid !== sessionId.value) return
       generating.value = false
-      if (e?.response?.status >= 400 && e?.response?.status < 500) {
+      if (e?.beautifyFailure) {
+        step.value = mode.value === 'scene' ? 'scene' : 'matching'
+        errorText.value = e.message
+        touch()
+      } else if (e?.response?.status >= 400 && e?.response?.status < 500) {
         step.value = mode.value === 'scene' ? 'scene' : 'matching'
         const detail = e.response.data?.detail
         errorText.value = typeof detail === 'string' ? detail : '生成选项已变化，请重新选择'
-        loadPromptVersions()
       } else {
         checkingGeneration = true
         generating.value = true
         errorText.value = '请求结果暂未确认，正在查询生成状态…'
         startPolling()
       }
+    }
+  }
+
+  async function ensureBeautifyReady(sid) {
+    if (photoProcessingMode.value !== 'beauty') return
+    waitingForBeautify.value = true
+    try {
+      let latest = session.value
+      if (latest?.beautify_status === 'failed') await retryBeautify(sid)
+      while (sid === sessionId.value) {
+        const response = await getSession(sid)
+        latest = response.data
+        session.value = latest
+        if (latest.beautify_status === 'ready') return
+        if (latest.beautify_status === 'failed') {
+          const error = new Error('美颜精修未成功，请再次生成重试，或返回重拍并选择原照片生成')
+          error.beautifyFailure = true
+          throw error
+        }
+        await new Promise(resolve => setTimeout(resolve, POLL_MS))
+      }
+      throw new Error('会话已切换')
+    } finally {
+      waitingForBeautify.value = false
     }
   }
 
@@ -523,13 +581,12 @@ export function useTryOnFlow() {
   })
 
   return {
-    step, mode, regForm, errorText, generating,
+    step, mode, photoProcessingMode, beautyAvailable, regForm, errorText, generating, waitingForBeautify,
     session, analysis, matches, results, doneResults, aiIssue,
     selectedWigId, selectWig, canSwapMatches, swapMatches, backToMatching, goBack,
     customerId, sessionId,
     hairColors, selectedColorId, scenes, selectedSceneKeys, guideShown,
     tryonScenes, selectedTryonScene, loadTryonScenes,
-    ...promptState,
     start, submitRegister, submitPhoto, generate, react,
     loadScenes, toggleScene, generateScenes, reselectScenes,
     openSales, submitSales, contactAdmin, contactAdminPending, resetAll, touch,

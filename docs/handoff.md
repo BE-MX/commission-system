@@ -10,6 +10,14 @@
 
 约定检查仍被 4 项既有 UI 问题阻断；单独增量检查无红项，7 个小程序端点鉴权黄项为脚本未识别 `require_mini_entry`，已有路由依赖回归测试覆盖。Git 巡检为 `--no-fetch` 本地快照。临时前端页面已删除、测试服务已停止；自动审批阻止递归清理 `tmp/docx-validation-deps`，该临时依赖仍保留在忽略目录，不进入交付 diff。
 
+## 2026-09-15 参考图上传 500 复发（17:45 恢复两站目录权限）
+
+北京17:42:15 `POST /api/domestic/images` 在 Nginx 写 body 临时文件时 Permission denied；新加坡订单导出也在 proxy 临时目录失败。两站 worker 为 www-data，五目录属主再次为 nobody。北京17:12:46的 `/etc/nginx/.ark-backups/colorwork/cloud-syntax.conf` 仍是未隔离临时目录的旧配置，mtime与目录ctime一致；新加坡目录17:12:51变化。该次预检查发生在防复发修复 `1d2ba329` 合入main之前，不能将代码推送等同于所有执行端已更新。
+
+沿用同一故障此前明确恢复授权，17:45按相同校验恢复两站五目录 uid=www-data，gid=root、模式0700保持不变；无递归改权限、无重启、无业务数据写入。原元数据保存在北京 `/etc/nginx/.ark-backups/temp-owner-recovery/20260915T094547301372Z.json` 与新加坡同目录 `20260915T094553114598Z.json`。
+
+验证：`www.leshine.work` 与 `www.leshine.cloud` 的 `/api/domestic/images` 64KiB、1MiB匿名POST均到达后端鉴权并返回403 JSON，不再出现500；各耗时0.53/0.60/1.71/2.20秒。此验证只证明上传通道恢复，不替代真实登录后参考图落盘与订单保存验收。未代用户上传业务参考图。后续路由预检查必须使用main的 `1d2ba329` 或更新版本；本轮未切换服务器应用代码。恢复记录在独立任务目录维护，未修改其他代理的未提交文件。
+
 ## 2026-09-15 内贸充值上传 500（两站权限已恢复；防复发代码交付）
 
 任务分支 `codex/domestic-recharge-fix`，工作目录 `commission-system-codex-recharge-fix`。新加坡 Nginx 日志确认 15:31–15:39 客户45的充值请求在写 `/var/lib/nginx/body` 时 Permission denied，尚未到达业务 API；内贸图片上传也受影响。北京同样复现，worker 为 www-data，而五种临时目录使用 nobody/root、700。根因是凭证/色块路由的 root 最小配置 `nginx -t -c` 未隔离默认 temp paths，省略 user 后可将正式目录改属 nobody；无变化激活直接返回，无法恢复。

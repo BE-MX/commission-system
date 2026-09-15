@@ -85,3 +85,22 @@ class PromptPreviewRequest(BaseModel):
     scene_key: str | None = Field(default=None, max_length=32)
     wig_id: int | None = Field(default=None, gt=0)
     hair_color_id: int | None = Field(default=None, gt=0)
+
+
+class BeautifyPromptCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=80)
+    prompt_text: str = Field(min_length=1, max_length=30000)
+
+    @field_validator("name", "prompt_text")
+    @classmethod
+    def strip_beautify_text(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("内容不能为空")
+        return value
+
+
+class BeautifyPromptUpdate(BeautifyPromptCreate):
+    expected_revision: int = Field(gt=0)

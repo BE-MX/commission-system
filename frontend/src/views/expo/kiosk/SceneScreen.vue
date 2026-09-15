@@ -21,11 +21,9 @@
       </div>
     </div>
 
-    <PromptVersionPicker />
-
     <button
       class="xk-btn go"
-      :disabled="!flow.selectedSceneKeys.value.length || !flow.promptVersionReady.value || flow.generating.value"
+      :disabled="!flow.selectedSceneKeys.value.length || flow.generating.value"
       @click="flow.generateScenes()"
     >
       生成场景大片（{{ flow.selectedSceneKeys.value.length }}）
@@ -34,7 +32,6 @@
 </template>
 
 <script setup>
-import PromptVersionPicker from './PromptVersionPicker.vue'
 import { inject, onMounted } from 'vue'
 
 const flow = inject('tryonFlow')
