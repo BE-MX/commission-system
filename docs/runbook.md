@@ -8,6 +8,12 @@
 
 ## 环境准备
 
+### DHL 物流刷新鉴权失败
+
+物流刷新出现 DHL `Unauthorized` / HTTP 401、403 时，检查后端 `DHL_API_USERNAME`、`DHL_API_PASSWORD`、`DHL_API_ENV`，不要将密钥写入日志或交接文档。MyDHL 使用 HTTP Basic Auth；测试环境为 `https://express.api.dhl.com/mydhlapi/test`，正式环境为 `https://express.api.dhl.com/mydhlapi`（配置 `prod` 或 `production`）。参考 [DHL 官方接口文档](https://developer.dhl.com/api-reference/dhl-express-mydhl-api?lang=en)。
+
+两套环境都返回 401 时，不能仅靠切换环境解决。请 DHL 接口负责人核实凭据有效性及环境访问权限，提供错误中的请求编号以便追查。核对实际运行实例的配置；本机配置检查不能替代线上核验。获得有效凭据后按目标环境的变更流程更新配置并重启后端（Settings 和适配器均有进程内缓存），再刷新一张运单确认；不要在聊天中传递密码。
+
 ### 服务器环境
 
 - **操作系统**：Windows Server 2019+

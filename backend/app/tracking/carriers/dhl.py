@@ -1,6 +1,7 @@
 """DHL MyDHL API 适配器"""
 
 from datetime import datetime
+import re
 
 import httpx
 
@@ -77,6 +78,20 @@ class DHLAdapter(CarrierAdapter):
             return TrackingResult(False, waybill_no, "exception", "请求失败", "", None, [], error=str(e))
 
         if resp.status_code != 200:
+            if resp.status_code in (401, 403):
+                environment = "测试环境" if self.base_url.endswith("/test") else "正式环境"
+                error = (
+                    f"DHL 接口鉴权失败（HTTP {resp.status_code}，{environment}），"
+                    "请管理员核对 DHL API 用户名、密码及对应环境的访问权限"
+                )
+                # Only expose the provider correlation ID, never its raw error payload.
+                match = re.search(r'"msgId"\s*:\s*"([A-Za-z0-9_-]{1,128})"', resp.text)
+                if match:
+                    error += f"；请求编号：{match.group(1)}"
+                return TrackingResult(
+                    False, waybill_no, "exception", "DHL 接口鉴权失败",
+                    "", None, [], error=error,
+                )
             return TrackingResult(False, waybill_no, "exception", f"HTTP {resp.status_code}", "", None, [], error=resp.text[:500])
 
         try:

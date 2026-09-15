@@ -186,7 +186,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `GET /stats` — 状态概览统计(数据范围同上,与列表保持同口径)
   - `GET /submitters` — 提交人去重列表(需 `tracking:read_all`)
   - `GET /shipments/{waybill_no}` — 运单详情 + 轨迹
-  - `POST /shipments/{waybill_no}/refresh` — 手动刷新
+  - `POST /shipments/{waybill_no}/refresh` — 手动刷新；信封业务码 404 表示运单不存在，502 表示物流服务商查询失败（HTTP 状态仍为 200）。DHL 401/403 显示接口鉴权失败、所用环境和可用的请求编号。
   - `DELETE /shipments/{waybill_no}` — 删除运单(软删除,需 `tracking:delete`)
   - `POST /upload-ocr` — 上传运单图片,AI OCR 识别(需 `tracking:write`,multipart 上传)
   - `GET /waybills/check?waybill_no=xxx` — 运单号去重检查(需 `tracking:write`)
