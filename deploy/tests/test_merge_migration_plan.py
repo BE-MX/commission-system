@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'backend'))
 
 
-@pytest.mark.parametrize('current_revision', ['150_domestic_item_guest', '146_expo_beautify_prompt', '145_domestic_order_guest', '152_shipping_media_recall'])
+@pytest.mark.parametrize('current_revision', ['150_domestic_item_guest', '146_expo_beautify_prompt', '145_domestic_order_guest', '152_shipping_media_recall', '151_customer_media_tags'])
 @pytest.mark.parametrize('filename', ['remote_backend.py', 'migration_runner.py'])
 def test_preflight_pending_matches_alembic_upgrade(current_revision, filename):
     script = ScriptDirectory(str(ROOT / 'backend/alembic'))
