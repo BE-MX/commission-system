@@ -559,3 +559,145 @@ def test_sync_color_family_derives_and_overwrites(db):
     sync_color_family(db, asset.id, None)
     rows = db.execute(ata.select().where(ata.c.dimension_id == fam_dim.id)).fetchall()
     assert {r.tag_value_id for r in rows} == {fams[0].id}
+
+
+# ── 批量加标签 / 批量删除 ────────────────────────────────
+
+def _make_asset(db, name="a.jpg"):
+    from app.asset.models import Asset
+
+    asset = Asset(file_name=name, file_type="image", file_format="jpg",
+                  storage_path=f"t/{name}", uploader_id=1)
+    db.add(asset)
+    db.flush()
+    return asset
+
+
+def _asset_tag_ids(db, asset_id):
+    from app.asset.models import asset_tag_association as ata
+
+    rows = db.execute(ata.select().where(ata.c.asset_id == asset_id)).fetchall()
+    return {(r.dimension_id, r.tag_value_id) for r in rows}
+
+
+def test_batch_add_tags_union_multi_and_replace_single(db):
+    from app.asset.batch_service import batch_add_tags
+    from app.asset.models import asset_tag_association as ata
+    from app.asset.schemas import AssetTagItem
+
+    single, multi, vals = _make_dims(db)  # S0/S1 单选维度; M0/M1 多选维度
+    s0, s1, m0, m1 = [v.id for v in vals]
+    a1 = _make_asset(db, "a1.jpg")
+    a2 = _make_asset(db, "a2.jpg")
+    # a1 已有 S0 和 M0
+    db.execute(ata.insert().values(asset_id=a1.id, version_id=None,
+                                   dimension_id=single.id, tag_value_id=s0))
+    db.execute(ata.insert().values(asset_id=a1.id, version_id=None,
+                                   dimension_id=multi.id, tag_value_id=m0))
+
+    result = batch_add_tags(db, [a1.id, a2.id, 999999], [
+        AssetTagItem(dimension_id=single.id, tag_value_ids=[s1]),
+        AssetTagItem(dimension_id=multi.id, tag_value_ids=[m1]),
+    ])
+
+    assert result["missing"] == [999999]
+    assert sorted(result["updated"]) == [a1.id, a2.id]
+    # 单选维度替换为 S1
+    a1_tags = _asset_tag_ids(db, a1.id)
+    assert (single.id, s1) in a1_tags
+    assert (single.id, s0) not in a1_tags
+    # 多选维度并集：a1 同时保留 M0、追加 M1
+    assert (multi.id, m0) in a1_tags
+    assert (multi.id, m1) in a1_tags
+    # a2 获得新标签
+    a2_tags = _asset_tag_ids(db, a2.id)
+    assert (single.id, s1) in a2_tags
+    assert (multi.id, m1) in a2_tags
+
+
+def test_batch_add_tags_idempotent_for_existing_multi_values(db):
+    from app.asset.batch_service import batch_add_tags
+    from app.asset.models import asset_tag_association as ata
+    from app.asset.schemas import AssetTagItem
+
+    _, multi, vals = _make_dims(db)
+    m0 = vals[2].id
+    asset = _make_asset(db)
+    db.execute(ata.insert().values(asset_id=asset.id, version_id=None,
+                                   dimension_id=multi.id, tag_value_id=m0))
+
+    # 重复追加同一标签值不产生重复关联行
+    batch_add_tags(db, [asset.id], [AssetTagItem(dimension_id=multi.id, tag_value_ids=[m0])])
+    assert _asset_tag_ids(db, asset.id) == {(multi.id, m0)}
+
+
+def test_batch_add_tags_skips_managed_dimension(db):
+    from app.asset.batch_service import batch_add_tags
+    from app.asset.models import TagDimension, TagValue
+    from app.asset.schemas import AssetTagItem
+
+    managed = TagDimension(name="color_family", label="色系", is_system=1, is_managed=1)
+    db.add(managed)
+    db.flush()
+    tv = TagValue(dimension_id=managed.id, value="黑色系")
+    db.add(tv)
+    db.flush()
+    asset = _make_asset(db)
+
+    batch_add_tags(db, [asset.id], [AssetTagItem(dimension_id=managed.id, tag_value_ids=[tv.id])])
+    assert _asset_tag_ids(db, asset.id) == set()
+
+
+def test_batch_delete_assets_reports_missing(db):
+    from app.asset.batch_service import batch_delete_assets
+    from app.asset.models import Asset
+
+    a1 = _make_asset(db, "d1.jpg")
+    a2 = _make_asset(db, "d2.jpg")
+    a1_id, a2_id = a1.id, a2.id
+
+    result = batch_delete_assets(db, [a1_id, a2_id, 424242])
+
+    assert result["deleted"] == 2
+    assert sorted(result["deleted_ids"]) == [a1_id, a2_id]
+    assert result["failed_ids"] == [424242]
+    assert db.query(Asset).filter(Asset.id.in_([a1_id, a2_id])).count() == 0
+
+
+def test_delete_asset_cascades_all_child_rows(db):
+    """删除素材须清理全部子表行（ark_assets 的 5 个 FK 引用均无 ON DELETE CASCADE，
+    旧实现只删主表行，真实素材（必带版本+权限行）删除必被 FK 拒绝 → 500）。"""
+    from app.asset.asset_service import delete_asset
+    from app.asset.models import (
+        Asset, AssetPermission, AssetVersion, DownloadLog,
+        FavoriteFolder, FavoriteItem, asset_tag_association as ata,
+    )
+
+    _, multi, vals = _make_dims(db)
+    asset = _make_asset(db, "cascade.jpg")
+    version = AssetVersion(asset_id=asset.id, version_number=1,
+                           storage_path="t/cascade.jpg", file_size=1, uploader_id=1)
+    folder = FavoriteFolder(user_id=1, name="夹")
+    db.add_all([version, folder])
+    db.flush()
+    db.add_all([
+        AssetPermission(asset_id=asset.id),
+        FavoriteItem(folder_id=folder.id, asset_id=asset.id),
+        DownloadLog(asset_id=asset.id, user_id=1),
+    ])
+    db.execute(ata.insert().values(asset_id=asset.id, version_id=version.id,
+                                   dimension_id=multi.id, tag_value_id=vals[2].id))
+    db.flush()
+
+    # 删除后 asset 对象的属性访问会触发刷新并报 ObjectDeletedError，id 先取出
+    asset_id = asset.id
+    assert delete_asset(db, asset_id) is True
+
+    assert db.query(Asset).filter_by(id=asset_id).count() == 0
+    assert db.query(AssetVersion).filter_by(asset_id=asset_id).count() == 0
+    assert db.query(AssetPermission).filter_by(asset_id=asset_id).count() == 0
+    assert db.query(FavoriteItem).filter_by(asset_id=asset_id).count() == 0
+    assert db.query(DownloadLog).filter_by(asset_id=asset_id).count() == 0
+    assert db.execute(ata.select().where(ata.c.asset_id == asset_id)).fetchall() == []
+    # 收藏夹本身保留（属于用户，不随素材删除）
+    assert db.query(FavoriteFolder).filter_by(id=folder.id).count() == 1

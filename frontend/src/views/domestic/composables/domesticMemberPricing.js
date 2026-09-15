@@ -155,6 +155,8 @@ export function buildCreateItems(items, normalizeAttrs) {
     manual_discount_price: item.manualDiscountPrice > 0 ? item.manualDiscountPrice : null,
     labor_fee: item.laborFee > 0 ? Number(item.laborFee) : 0,
     special_price: item.specialPrice > 0 ? Number(item.specialPrice) : null,
+    guest_name: item.guest_name?.trim() || null,
+    guest_order_date: item.guest_order_date || null,
     hairstyle: item.hairstyle || null,
     hairstyle_images: imagePaths(item.hairstyle_images),
     color: item.color || null,

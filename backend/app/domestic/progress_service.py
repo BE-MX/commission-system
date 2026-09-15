@@ -247,12 +247,14 @@ def sync_progress_statuses(db: Session, item: DomesticOrderItem) -> None:
 
 
 def sync_order_status(db: Session, order_id: int) -> None:
-    """由明细状态回算订单状态。已终止的订单不受业务动作影响。"""
+    """由明细状态回算订单状态。已终止/待审核/已驳回的订单不受业务动作影响。"""
     # Production sessions disable autoflush: persist the newly computed item
     # status before the scalar aggregate reads it back from the database.
     db.flush()
     order = db.query(DomesticOrder).get(order_id)
-    if not order or order.status in (C.ORDER_DRAFT, C.ORDER_TERMINATED):
+    if not order or order.status in (
+        C.ORDER_DRAFT, C.ORDER_TERMINATED, C.ORDER_PENDING_REVIEW, C.ORDER_REJECTED,
+    ):
         return
     statuses = [
         s for (s,) in db.query(DomesticOrderItem.status)

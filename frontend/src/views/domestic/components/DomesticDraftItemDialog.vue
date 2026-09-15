@@ -3,6 +3,10 @@
     :close-on-click-modal="false" :close-on-press-escape="!busy" :show-close="!busy" :before-close="close">
     <p class="draft-item-hint">添加到 {{ order.domestic_no }}，保存后仍为草稿，提交订单时统一结算。</p>
     <el-form label-position="top" :disabled="saving">
+      <el-form-item v-if="!production" label="顾客名称"><el-input v-model="item.guest_name" maxlength="120" placeholder="选填，当前产品对应的顾客姓名" /></el-form-item>
+        <el-form-item v-if="!production" label="顾客下单日期">
+          <el-date-picker v-model="item.guest_order_date" type="date" :default-value="beijingCalendarDate()" value-format="YYYY-MM-DD" format="YYYY-MM-DD" placeholder="选填，选择日期" />
+        </el-form-item>
       <div class="draft-item-grid">
         <el-form-item label="产品类型" required>
           <el-select v-model="item.attrs.product_type" @change="changeType">
@@ -53,6 +57,7 @@
 </template>
 
 <script setup>
+import { beijingCalendarDate } from '@/utils/datetime'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { addDraftOrderItem, DETAIL_SECTIONS, quoteDomesticPrices, uploadImage } from '@/api/domestic'
@@ -66,7 +71,7 @@ import { applyQuoteChange, applyQuoteResult, buildCreateItems, buildQuoteRequest
 const props = defineProps({ order: { type: Object, required: true }, options: { type: Object, required: true } })
 const emit = defineEmits(['close', 'saved'])
 const makeRequestId = () => globalThis.crypto?.randomUUID?.() || `draft-item-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
-const item = reactive({ key: makeRequestId(), attrs: { product_type: 'cap' }, order_qty: 1,
+const item = reactive({ key: makeRequestId(), attrs: { product_type: 'cap' }, order_qty: 1, guest_name: '', guest_order_date: '',
   quoteStatus: 'pending', quote: null, expectedQuote: null, manualDiscountPrice: null, laborFee: 0, specialPrice: null,
   hairstyle: '', hairstyle_images: [], color: '', color_images: [], style_requirement: '', style_images: [], remark: '', remark_images: [] })
 const saving = ref(false), pendingUploads = ref(0), quoteLoading = ref(false)

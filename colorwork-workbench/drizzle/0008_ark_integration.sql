@@ -1,0 +1,1 @@
+ALTER TABLE `local_sessions` ADD `views_json` text;

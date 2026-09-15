@@ -1,7 +1,9 @@
 """发货检验 — PC 端 API 路由
 
 权限：shipping_inspection:read（查看）/ shipping_inspection:write / shipping_inspection:admin，
-读接口任一即可。统一信封 ok()；业务库（lsordertest）只读。
+读接口任一即可。出库单（列表 + 打印数据）另按 OKKI 归属过滤：业务员只能看本人
+订单（okki_orders.user_id）客户的出库单；shipping_inspection:read_all 或 super_admin 看全部。
+统一信封 ok()；业务库（lsordertest）只读。
 """
 
 import base64
@@ -15,6 +17,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_any_permission
+from app.auth.models import ArkUserExternalBinding
 from app.core.database import get_db
 from app.core.response import ok, page_result
 from app.shipping_inspection import constants as C
@@ -26,6 +29,36 @@ logger = logging.getLogger("commission")
 router = APIRouter()
 
 _READ = ("shipping_inspection:read", "shipping_inspection:write", "shipping_inspection:admin")
+
+
+def _outbound_scope(db: Session, user: dict) -> str | None:
+    """出库单数据范围：看全部返回 None；否则返回当前用户绑定的 OKKI 业务员 id。
+
+    解析模式与 order_intelligence.resolve_scope 一致：active OKKI 绑定、primary 优先。
+    """
+    if "super_admin" in (user.get("roles") or []):
+        return None
+    if "shipping_inspection:read_all" in (user.get("permissions") or []):
+        return None
+    try:
+        ark_user_id = int(user.get("sub"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="登录用户信息无效") from None
+    binding = (
+        db.query(ArkUserExternalBinding)
+        .filter(
+            ArkUserExternalBinding.ark_user_id == ark_user_id,
+            ArkUserExternalBinding.provider == "okki",
+            ArkUserExternalBinding.binding_status == "active",
+            ArkUserExternalBinding.deleted_at.is_(None),
+        )
+        .order_by(ArkUserExternalBinding.is_primary.desc(), ArkUserExternalBinding.id)
+        .first()
+    )
+    okki_user_id = str(binding.external_account_id).strip() if binding and binding.external_account_id else ""
+    if not okki_user_id:
+        raise HTTPException(status_code=422, detail="当前账号尚未绑定 OKKI 业务员，请联系管理员配置")
+    return okki_user_id
 
 
 def _qr_png_base64(qr_data: str) -> str | None:
@@ -54,11 +87,13 @@ def list_outbound_records(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_any_permission(*_READ)),
+    user: dict = Depends(require_any_permission(*_READ)),
 ):
+    scope_okki_user = _outbound_scope(db, user)
     try:
         rows, total = outbound_service.list_outbound_records(
             db, keyword=keyword, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
+            okki_user_id=scope_okki_user,
         )
     except outbound_service.OutboundTableError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -99,10 +134,12 @@ def list_outbound_records(
 def outbound_print_data(
     record_id: str,
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_any_permission(*_READ)),
+    user: dict = Depends(require_any_permission(*_READ)),
 ):
+    scope_okki_user = _outbound_scope(db, user)
     try:
-        record = outbound_service.get_outbound_record(db, record_id)
+        # 归属过滤并入查询：不可见与不存在统一 404，不泄露单号是否存在
+        record = outbound_service.get_outbound_record(db, record_id, okki_user_id=scope_okki_user)
         if record is None:
             raise HTTPException(status_code=404, detail="出库单不存在")
         items = outbound_service.list_outbound_items(db, record_id)

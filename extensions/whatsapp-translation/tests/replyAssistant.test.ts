@@ -4,8 +4,8 @@ import type { ReplyOptions } from '@/content/replyAssistant'
 import type { ReplyRequest, ReplyResponse } from '@/shared/contracts'
 
 const options: ReplyOptions = { limit: 20, includeDraft: true, language: 'auto', goal: '' }
-const capabilities = { available: true, max_messages: 40, default_messages: 20, max_context_chars: 12000, max_draft_chars: 2000, max_goal_chars: 500, timeout_seconds: 30 }
-function setup() {
+const capabilities = { available: true, history_enabled: true, max_messages: 40, default_messages: 20, max_context_chars: 12000, max_draft_chars: 2000, max_goal_chars: 500, timeout_seconds: 30 }
+function setup(detected = '') {
   let text = '原草稿'
   let resolve!: (result: ReplyResponse) => void
   let payload!: ReplyRequest
@@ -18,7 +18,7 @@ function setup() {
     collectReplyContext: vi.fn(() => ({ messages: [{ role: 'customer' as const, text: 'Can I have a sample?' }], context_scope: { requested_limit: 20 as const, truncated: false, omitted_media: false, latest_visible: false }, loadedCount: 1, skippedUnknown: false, range: '1–1' })),
     replaceComposer: vi.fn(async (value: string, current: () => boolean) => { if (!current()) return false; text = value; return true }),
   }
-  const assistant = createReplyAssistant(adapter, bridge, () => 'en', vi.fn())
+  const assistant = createReplyAssistant(adapter, bridge, () => 'en', vi.fn(), () => detected)
   const response = (): ReplyResponse => ({ ...payload, status: 'ready', reply_language: 'en', reply_text: 'What size would you prefer?', meaning_zh: '您想要什么尺寸？', rationale_zh: '先确认需求', sources: [], claims: [], risk_flags: [], missing_information: [] })
   return { assistant, adapter, bridge, response, started: () => vi.waitFor(() => expect(bridge.suggest).toHaveBeenCalled()), getPayload: () => payload, resolve: (overrides: Partial<ReplyResponse> = {}) => resolve({ ...response(), ...overrides }), edit: (value: string) => { text = value; assistant.draftChanged() } }
 }
@@ -106,7 +106,7 @@ it('awaits valid capabilities before reading any context and honors server defau
   expect(s.adapter.collectReplyContext).not.toHaveBeenCalled()
   resolveCaps({ ...capabilities, default_messages: 10, max_messages: 15, max_context_chars: 6000 })
   await s.started()
-  expect(s.adapter.collectReplyContext).toHaveBeenCalledWith(20, { maxMessages: 10, maxChars: 6000 })
+  expect(s.adapter.collectReplyContext).toHaveBeenCalledWith(15, { maxMessages: 15, maxChars: 6000 })
   s.resolve(); await pending
 })
 it.each([
@@ -132,4 +132,11 @@ it.each(['draft', 'goal'] as const)('enforces the lowered server %s maximum befo
   await s.assistant.generate({ ...options, includeDraft: field === 'draft', goal: field === 'goal' ? 'long goal' : '' })
   expect(s.assistant.getState().error).toBe(field === 'draft' ? 'reply_draft_too_long' : 'reply_goal_too_long')
   expect(s.bridge.suggest).not.toHaveBeenCalled()
+})
+it.each(['fr', ''] as const)('reports the detected incoming language only when known (%s)', async detected => {
+  const s = setup(detected)
+  const pending = s.assistant.generate(options); await s.started()
+  if (detected) expect(s.getPayload()).toMatchObject({ detected_language: 'fr', target_language: 'auto' })
+  else expect(s.getPayload()).not.toHaveProperty('detected_language')
+  s.resolve(); await pending
 })

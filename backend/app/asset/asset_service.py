@@ -19,6 +19,7 @@ from app.asset.models import (
     AssetPermission,
     AssetVersion,
     DownloadLog,
+    FavoriteItem,
     TagValue,
     asset_tag_association,
 )
@@ -573,7 +574,20 @@ def delete_asset(db: Session, asset_id: int) -> bool:
     for v in asset.versions:
         _delete_file(v.storage_path)
 
-    db.delete(asset)
+    # 子表关联行先行清理：5 张表 FK 指向 ark_assets 且无 ON DELETE CASCADE，
+    # 直接 db.delete(asset) 会被 FK 拒绝（500）。标签关联含 version_id 引用，
+    # 必须先于版本表删除。统一走 bulk delete 绕开 ORM 级联（避免对已加载
+    # 集合做空值化 UPDATE）。
+    db.execute(
+        asset_tag_association.delete().where(
+            asset_tag_association.c.asset_id == asset_id
+        )
+    )
+    db.query(DownloadLog).filter(DownloadLog.asset_id == asset_id).delete(synchronize_session=False)
+    db.query(FavoriteItem).filter(FavoriteItem.asset_id == asset_id).delete(synchronize_session=False)
+    db.query(AssetPermission).filter(AssetPermission.asset_id == asset_id).delete(synchronize_session=False)
+    db.query(AssetVersion).filter(AssetVersion.asset_id == asset_id).delete(synchronize_session=False)
+    db.query(Asset).filter(Asset.id == asset_id).delete(synchronize_session=False)
     db.commit()
     return True
 

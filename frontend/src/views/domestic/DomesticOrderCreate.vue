@@ -102,6 +102,12 @@
       />
 
       <el-form :model="item" label-width="92px">
+        <el-form-item v-if="!isProduction" label="顾客名称">
+          <el-input v-model="item.guest_name" placeholder="选填，当前产品对应的顾客姓名" maxlength="120" />
+        </el-form-item>
+        <el-form-item v-if="!isProduction" label="顾客下单日期">
+          <el-date-picker v-model="item.guest_order_date" type="date" :default-value="beijingCalendarDate()" value-format="YYYY-MM-DD" format="YYYY-MM-DD" placeholder="选填，选择日期" />
+        </el-form-item>
 
         <div class="item-sec__title">产品规格</div>
 
@@ -330,6 +336,7 @@
 </template>
 
 <script setup>
+import { beijingCalendarDate } from '@/utils/datetime'
 /**
  * 内贸下单。逻辑全在 composables/useDomesticOrderCreate.js（宪法 12）。
  * 产品不用先建：选完属性后端 find-or-create 自动沉淀，并按工艺映射自动配工艺路线。

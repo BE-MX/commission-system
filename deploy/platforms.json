@@ -123,5 +123,17 @@
     {"kind": "pm2", "host": "root@119.28.107.92", "service": "shipment-tracking-mcp", "executable": "/root/.nvm/versions/node/v22.22.1/bin/pm2"}
   ],
   "migration_note": "Writers verified on 2026-09-07 through office-prod SSH and live MySQL connection/process ownership. Recheck after adding or moving writers. Pending migrations still require an independent DBA file and service-stop verification.",
-  "cos_file_migration": "deferred by owner"
+  "cos_file_migration": "deferred by owner",
+  "internal_modules": [
+    {
+      "component": "colorwork-workbench",
+      "host": "ubuntu@154.8.205.162",
+      "path": "/api/colorwork/workbench",
+      "service": "ark-colorwork",
+      "listen": "127.0.0.1:8787",
+      "data": ".deploy_state/colorwork/data",
+      "owner": "beijing",
+      "deploy": "remote_backend -> colorwork_release (deploy.bat)"
+    }
+  ]
 }

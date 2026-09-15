@@ -110,6 +110,7 @@ def recharge_customer(
     remark: str | None = None,
     request_id: str | None = None,
     can_operate_all: bool = False,
+    commit: bool = True,
 ) -> dict:
     request_id = request_id.strip() if isinstance(request_id, str) else ""
     if not request_id:
@@ -149,7 +150,9 @@ def recharge_customer(
         customer.membership_level = current_level
         customer.last_recharge_amount = amount
         customer.last_recharged_at = ledger.created_at
-    db.commit()
+    # commit=False 给审核流用：申请单状态与入账在同一事务提交，锁不提前释放
+    if commit:
+        db.commit()
     return {
         "ledger_id": ledger.id,
         "amount": float(ledger.amount),
@@ -182,7 +185,9 @@ def sync_order_finance(
         return money(0)
     total = order_total(db, order.id)
     order.total_amount = total
-    if order.status in (C.ORDER_DRAFT, C.ORDER_TERMINATED):
+    # 草稿/待审核/已驳回/已终止：未正式生效的单一律不结算
+    if order.status in (C.ORDER_DRAFT, C.ORDER_TERMINATED,
+                        C.ORDER_PENDING_REVIEW, C.ORDER_REJECTED):
         return total
 
     charged = money(order.charged_amount)

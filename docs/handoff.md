@@ -1,3 +1,180 @@
+## 2026-09-15 内贸明细顾客与进度码（代码交付，待部署）
+
+- 开发分支 `codex/domestic-item-progress`；功能、迁移和测试随代码一并交付。
+- 顾客下单日期：业务建单/草稿追加/明细编辑支持选填 `guest_order_date`（DATE），扫码与主站详情只显示年月日，不含时分秒；历史留空，字段并入尚未发布的150迁移。日期修正后后端28项、前端18项通过。
+- 业务建单、草稿追加和明细编辑按产品录入顾客；详情及导出按明细显示。订单头旧顾客列只保留历史数据。
+- 进度码和图片接口只取签名对应明细；展示明细顾客、属性、备注及公开工序完成情况，隐藏件数、金额、路线和未配路线提示。主站详情同步隐藏明细件数、金额、未配路线提示，属性备注放大；业务报价录入和生产操作保持原口径。
+- 新迁移 `150_domestic_item_guest` 从 149 延续，历史订单顾客复制至已有明细，不覆盖已填写的明细顾客。仅隔离 SQLite 验证，未执行生产迁移或部署。
+- 验证：顾客/扫码 22 项、条件工序 77 项通过；更广会员报价/订单大类/导出检查已执行，导出改动后 33 项定向复验通过。前端定向 37 项及生产构建通过，独立审查发现的旧追加幂等指纹问题已修复。
+- 既有基线：前端全组 1 项测试仍检查已移动的筛选代码；check_conventions 的 4 项失败均来自素材、生产订单、AI 管理页面，main 同样复现。git_sweep 使用本地快照完成。未做微信真机扫码，需发布前后按环境验收。
+
+## 2026-09-15 小程序空关联与退出回登录（合并交付，未发布）
+
+分支 `codex/mini-auth-session`，目录 `D:/MyProgram/commission-system-codex-mini-auth-session`。办公室生产只读确认 wanghong（id=67）的 wx_id 为长度 0 的空字符串，线上绑定路由包含 commit。复现旧登录失败后仍可空 openId 绑定的代码路径；没有历史请求体证据，不能断定该账号当时必然走此路径。现前端仅拿到微信身份后才显示/允许绑定，后端拒绝空或纯空白 OpenID。主动退出通过持久化标记阻止登录页立即自动登录及重开自动登录，点击微信登录成功后恢复；保留已有关联并修正文案。
+
+验证：小程序 Node 测试 30 项通过，新增覆盖退出/重开/主动登录、失败重试、空身份阻断及重复绑定点击；后端 9 项隔离 SQLite 测试通过，验证空身份拒绝、跨会话持久化及历史空值重新绑定。JavaScript 语法检查与增量约定 check(HEAD) 无违规。独立 agent 审查无阻断，复跑新增 Node 用例 5/5 通过。约定检查被 4 项既有主站 UI 债务阻断（AssetTagEditor small 按钮，AssetLibrary/ProductionOrderManage/AIManager 基线过期），未修改这些页面。Git 巡检已运行 --no-fetch，仅本地快照。亮哥已授权本轮合并 main 并推送 origin/main；fetch 核对 main 与 origin/main 均为 b8b0ba3c。未发布后端/小程序，未修改生产账号；wanghong 需通过真实微信重新绑定以填充 OpenID。
+
+## 2026-09-14 生产订单列表操作栏与导出（合并交付，未部署）
+
+分支 `codex/production-export`，目录 `D:/MyProgram/commission-system-codex-production-export`。订单维度操作列最小宽度调整为260，按钮使用 flex 换行，避免全局单元格 nowrap 裁切后续操作；后面的“打印订单”改为“导出”，复用既有 Word 导出接口，保留单号和当前审核人参数。原有报表打印下拉保留。
+
+验证：Chrome 隔离页面使用实际组件与全局样式、mock 订单 API，1440/1024/768/390 四档屏宽及横向滚动两端，六个按钮均完整可见且中心可点击；打印菜单及导出参数编码通过，页面错误0。未连接生产库，未验证真实订单文档生成。前端构建通过。约定检查仍报素材组件旧 small 按钮、AssetLibrary/AIManager 既有超长基线，以及本页原有大组件增加4行导致基线过期；新增内容是局部布局，无独立职责，不为行数拆分或修改基线。已运行本地 Git 巡检（--no-fetch），不代表远端最新状态。浏览器验证脚本、fixture、截图和构建日志归档到主目录 `tmp/production-export-evidence/`。用户已授权合并 main 并推送 origin；fetch 确认 main 与 origin/main 均为基点 `578481a9`，无上游差异。本轮不部署。
+
+## 2026-09-14 客户素材上传目录与预览修复（合并交付，未部署）
+
+来源分支 `codex/customer-media-folders`，基点 `6ed74c5f`。客户门户弹窗拖入/选择文件夹按顶层名称自动创建或复用目录，散文件固定使用入队时选中目录。内部预览返回相对签名 URL，前端按素材 API origin 解析，兼容同源与云端直传；大图查看器 teleport 到弹窗外。
+
+左侧增加目录删除及跨批次素材总数确认。目录为客户级共享，服务端在同一事务校验所有相关任务写权限及可编辑状态，软删除全部关联图片/视频并移除目录，提交后清理原件。目录→客户批次→素材采用锁内当前读，上传最后校验也刷新批次状态，处理 MySQL 快照和 ORM 缓存竞态。独立审查发现的两处问题均已修复并复核通过；没有真实 MySQL 并发测试，不涉及迁移或生产数据。
+
+验证：`pytest tests/test_customer_media.py tests/test_customer_media_directory_delete.py -q` 15 passed；Node 文件夹/门户测试 5 passed；Chrome 隔离浏览器测试 `frontend/tests/customerMediaDirectory.browser.py` 5 条关键路径通过、无页面错误（Vite 3077，fixture 位于 `frontend/tests/fixtures/customer-media-qa.html`，全部素材 API mock）；`npm run build` 通过，保留既有 chunk 提示。`check_conventions.py` 被无关的 AssetTagEditor 小按钮及 AssetLibrary/AIManager 过期 UI 基线共 3 项阻挡，本次增量代码 `check('HEAD')` 无违规，`git diff --check` 通过。用户已授权合并 main 并推送 origin；fetch 确认 main 与 origin/main 均为基点 `6ed74c5f`，无上游差异。本轮不部署。
+
+## 2026-09-14 站点网关公网配置与复制修复（合并交付）
+
+分支 `codex/gateway-public-config`。站点密钥配置改为固定公网入口 `https://leshine.work/api/ai-gateway`，不再使用管理员当前浏览器 origin，避免局域网地址外发。配置采用只读文本框；优先 Clipboard API，不可用或权限拒绝时在弹窗内选择复制，两种方式均受限则保持全选并提示键盘复制。关闭密钥弹窗仍清空密钥。
+
+浏览器 mock 回归覆盖公网地址、现代复制、无 Clipboard API、权限拒绝、复制全部被阻止、密钥关闭清空，以及原有创建/重置/编辑/启停/核查/窄屏路径；前端构建通过。仅修改前端及回归脚本，无数据库迁移。用户已授权合并 main 并推送 origin；集成前 main 与 origin/main 均为 `e43071ac`。本轮不部署。
+
+## 2026-09-14 业务员站点 AI 网关（合并交付，未部署）
+
+任务分支 `codex/ai-site-gateway`，目录 `D:/MyProgram/commission-system-codex-ai-site-gateway`，基点 `794b2499`。按 `docs/requirements/2026-09-11-ai-site-gateway.md` 实现三表迁移146、每站密钥、文本 Preset 授权、MySQL 原子准入、日/分钟/并发上限、未知用量与审计解除、AI 管理站点页签、后端接入示例及 Nginx 候选片段。未触碰主目录其他未跟踪文档。
+
+验证：72 项后端/示例测试通过，含隔离 MySQL 8.4.6 的9项迁移及20并发门禁；浏览器实际页面+mock API 验证创建、编辑、直接重置、一次性密钥、启停、核查解除及窄屏；前端构建通过。独立风险审查所列问题已修复。增量代码约定红0黄0；完整 UI 门禁仍报告两个素材模块原有问题，以及 AIManager 既有超长组件因新增页签增加4行（新业务为独立组件，未改基线规避）。
+
+交付入口：开发规格第13节、`examples/ai-site-gateway/README.md`、`scripts/test_ai_gateway_ui.py`。API/数据库/专题/运维文档已同步。用户已授权合并 main 并推送 origin；集成前 fetch 确认 main 与 origin/main 均为基点 `794b2499`，无上游差异。本轮不部署。后续获环境发布授权后由指定入口应用迁移146并核对 Nginx 路径和真实供应商连通性；生产数据、实际计费和跨云延迟尚未验证。
+
+收尾：测试 MySQL 和 Vite 已停止，临时 MySQL 目录清理被自动审批以 `blocked by policy` 拒绝；任务 `tmp/ai-gateway-mysql/` 及 UI 初始探针文件保留，不进入 Git/发布制品。数据库测试自己创建的随机测试 schema 均已由 fixture 清理，保留的是已停机的隔离实例目录。
+
+## 2026-09-11 内贸客户筛选与业务订单顾客（合并交付）
+
+分支 `codex/domestic-guest`，工作目录 `D:/MyProgram/commission-system-codex-domestic-guest`，基点 `23e4c994`。客户列表新增客户等级、归属销售组合筛选；业务订单新增选填顾客（120 字），贯通录入、编辑/清空、详情及两版 Excel。新增迁移 `145_domestic_order_guest`（可空列，历史数据保留）；空顾客不改变旧建单请求哈希，保留跨版本重试。生产单不使用该字段。
+
+验证：后端 107 项、前端状态/交互 23 项通过，前端构建通过；迁移在内存 SQLite 验证旧记录保留，并确认单 head。独立审查问题已修复并复核通过。`check_conventions.py` 被素材库既有两项 UI 门禁阻断（AssetTagEditor 旧 small 按钮、AssetLibrary 行数基线过期，main 同样复现）；单独执行其增量代码检查无违规。`git diff --check` 通过，已运行 `git_sweep.py --no-fetch`，仅为本地远端引用快照。未连接生产库或进行浏览器实机验收。用户已授权合并 main 并推送 origin；fetch 确认 main 与 origin/main 均为基点 23e4c994，无上游差异。本轮不部署；发布时由正式入口应用迁移。
+
+## 2026-09-11 WhatsApp v1.6.5 事实与产品目录（合并交付）
+
+沿用codex/whatsapp-result-recovery，基点ce7270dd，包含1.6.4恢复改动。生产只读元数据确认近期成功请求仅350/351/398约束无FAQ；默认随发布加载21项审核profile，并保留显式section覆盖。新检索只读确认341/5/6/7进入输入。生成前增加有权限的有限产品目录投影，实查14英寸无记录（不能推断不销售），相关长度16/18/20/22/24。目录权限生成前后/缓存重验；不查价格库存、不写生产、不调用真实模型。后端121通过，补边界42/6专项通过，扩展构建283单测通过；浏览器27通过/1项询盘截图时序失败，该项独立3次通过；独立审查闭环。用户已授权合并推送，fetch确认main与origin/main均为ce7270dd，无上游差异；本轮不部署。详见 [事实与规格查询](requirements/2026-09-11-whatsapp-facts-catalog.md)。
+
+## 2026-09-11 WhatsApp v1.6.4 自动接管结果恢复（已纳入1.6.5）
+
+分支codex/whatsapp-result-recovery，基点ce7270dd。复现缺重复reply_text、段数/长度与UTF16计数引起的整轮拒绝，改为无损整理；不明确动作或无法分段时handoff保全文，扩展展示但不发送。明确wait/handoff不转reply，未增加模型调用。构建283单测通过，后端92通过/时限单独复核1通过，浏览器首轮27通过/手动恢复1项失败，随后该项连续3次通过；独立审查通过。未验证真实模型输出，未合并推送部署。详见 [恢复规则与验证](requirements/2026-09-11-whatsapp-result-recovery.md)。
+
+## 2026-09-11 WhatsApp v1.6.3 发送与完整回复（合并交付）
+
+分支 codex/whatsapp-send-and-coverage，基点70969c12。实机只读确认发送按钮为中文 aria-label + wds-ic-send-filled，旧选择器0匹配、新选择器1匹配，未读正文或试发。修复控件识别并补边界测试；完整回复预览保留未发送段落和来源提示，后端强调多问题先覆盖已知事实。构建及282单测、后端契约22项、完整浏览器27项通过，独立审查通过；实机模型输出与办公室运行时配置未验证。用户已授权合并推送，fetch确认main与origin/main均为70969c12，无上游差异；本轮不部署。详见 [修复与使用](requirements/2026-09-11-whatsapp-send-coverage.md)。
+
+## 2026-09-11 WhatsApp FAQ 召回与直接回答（合并交付）
+
+只读核验FAQ文档341/revision363，修复酸处理section5漏绑、英文虚词/子串重复计分及最新问题无优先级导致硅油答案未入选。修复后本轮问题同时命中5/7/6章节；生成要求已知直接回答、未知单独澄清，保留限定。94项受影响回归通过，补强2项专项通过，独立审查通过；素材库两项既有约定问题保留。无真实模型调用，未改生产或知识文档。需部署后端并应用已准备的source-bindings配置，扩展无需更新；分支codex/whatsapp-faq-retrieval，基点2a2e7d47。用户已授权合并推送；fetch确认main与origin/main仍为该基点，无上游差异，保留主目录其他任务未提交改动。详见 [诊断与生效方式](requirements/2026-09-11-whatsapp-faq-retrieval.md)。
+
+## 2026-09-11 WhatsApp v1.6.2 完整性误判（合并交付）
+
+排除居中系统通知误记未知消息；历史未知占位交Agent判断，最新未读取消息仍交人工。拆分完整性错误提示，新增无法识别发送方的内部标志并覆盖缓存、恢复、临发复核。269单测、25浏览器路径通过，独立审查闭环，构建打包通过；素材库两项既有约定问题保留。包含1.6.1修改；用户已授权合并推送，集成前main与origin/main均为3e9393ea，无上游差异。保留主目录其他任务未提交修改。本轮不部署，实机未确认。详见 [修复与验收](requirements/2026-09-11-whatsapp-auto-context-fix.md)。
+
+## 2026-09-11 WhatsApp v1.6.1 自动接管误停修复（本地交付）
+
+修复填入后发送按钮尚未渲染、图片表情导致草稿内容核对不一致、历史虚拟列表暂空即判为断连这三项可复现缺陷。按钮最多等2秒、空窗额外等4次，持续核对聊天/取消/尾消息/草稿，仍只点击一次且不重试不确定发送。261条单测路径覆盖（全量260通过后补1条、adapter专项31通过），完整24条浏览器回归、构建打包和独立审查通过。约定检查仍有素材库两项既有问题。仅升级扩展并刷新页面，不需改1.6.0配套后端；实机浏览器连接不可用，未向真实客户试发。分支 codex/whatsapp-takeover-fixes，基于3e9393ea；未合并推送部署。详见 [复现和交付说明](requirements/2026-09-11-whatsapp-takeover-fixes.md)。
+
+## 2026-09-11 WhatsApp v1.6.0 自动接管（合并交付）
+
+用户授权当前聊天主动开启后自动生成并发送。话术旁新增开关，沿用后台生成预设，模型选择回复/等待/交人工，最多3段短消息。当前前台一对一聊天生效；人工输入、切聊天/后台、发送不确定等停止；浏览器同站点单实例锁。独立审查发现的采集自失效、其他设备抢先回复、发送不确定被新消息覆盖、待开启竞态和最新边界检查均补回归。合并后后端100通过/1跳过，既有超时用例批量运行受初始化时限影响失败、单独复核1通过；扩展250单测、完整23条合成浏览器路径通过，安装和确定性打包通过。约定检查仍有素材库两项既有基线问题；真实WhatsApp和真实模型未测。必须配套更新后端auto_reply_enabled契约，无迁移。用户已授权合并推送，已集成 main 的 a3fa3a45 内贸筛选变更；本轮不部署生产。详见 [使用和边界](requirements/2026-09-11-whatsapp-auto-takeover.md)。
+
+## 2026-09-11 WhatsApp v1.5.3 话术面板排版（本地交付）
+
+在同一worktree保留1.5.1/1.5.2修复，新增建议回复/聊天上下文/询盘与接管三标签。正文与中文含义优先，设置折叠，固定底部填入/重新生成操作。231单测、19浏览器回归通过，桌面/窄屏合成预览已检查，无动画。无需更新后端，本轮未合并推送。详见 [布局与安装说明](requirements/2026-09-11-whatsapp-reply-ui.md)。
+
+## 2026-09-11 WhatsApp v1.5.2 增量历史采集（本地交付）
+
+包含未合并的1.5.1修复。同聊天成功采集历史保存在页面内存；后续生成从当前DOM可靠重叠追加，在底部不滚动，不在底部只向下补齐。聊天/整体消息区切换清缓存，编辑/删除尾部/缺少重叠时重采，不持久化正文。删除尾部的底部和中间起点问题经独立审查发现并修复；类型检查、构建、230单测通过。详细行为与安装说明见 [历史复用](requirements/2026-09-11-whatsapp-history-cache.md)。本轮未合并推送，不需后端变更。
+
+## 2026-09-11 WhatsApp v1.5.1 能力字段修复（本地交付）
+
+用户更新 1.5.0 和生产后端后仍提示后端未支持长历史。确定根因在扩展：background 的 boundedReplyCapabilities 检查 history_enabled 后返回对象丢失该字段，content 再次检查必然失败。返回值现保留已确认的 true；缺字段/false 仍拒绝，并将明确更新提示加入安全错误码列表。
+
+新增 API→background dispatch→content 二次校验回归，修改前失败、修改后通过；补缺字段/false 用例。构建、225 单测、确定性打包通过；本次无后端修改，不需为此缺陷再次部署后端。用户需换 1.5.1 扩展并刷新 WhatsApp 页面。未验证用户实机，未合并推送。
+## 2026-09-11 内贸订单客户查询与高级查询（Codex，合并交付）
+
+分支 `codex/domestic-order-filters`，基点 `051e6d04`。常用查询保留订单号、客户名称、订单状态，下单动作单列在查询区标题右侧；下单日期、订单类别/类型/渠道、客户来源收进双列高级查询弹框，窄屏单列。高级查询编辑使用独立草稿，应用后才刷新，取消不变；已选条件显示数量和可移除标签，移除条件重置分页；重置清空查询但保留当前订单大类。查询区整体接入既有表格高度观察，标签和响应式换行后重新计算列表窗口。
+
+新增 `GET /api/domestic/orders?customer_name=`，按当前客户店名包含匹配，与其他条件取交集且在分页前过滤，原创建人范围不变；特殊字符按字面量查询，最多200字符，无数据库迁移。生产订单保留客户、状态、日期查询，清除不适用的业务分类条件。API 说明已同步 `docs/api-reference.md`。
+
+验证：后端客户查询/订单渠道/客户订单权限专项70 passed；补接口参数/长度校验后客户查询专项3 passed；前端筛选状态与订单大类9 passed；最终前端构建通过。Edge 模拟接口完整页面验证客户名+订单号、五项高级条件组合、回车查询、取消、应用、标签移除、分页、生产页签、重置以及1366/1024/768/390宽度，页面异常为0，证据在本 worktree `tmp/order-filters/`。测试仅用内存SQLite和模拟API。约定检查仍被 AssetTagEditor small 按钮及 AssetLibrary 行数基线两项既有问题阻挡；未改相关文件。亮哥已授权合并推送；集成前 fetch 确认 main 与 origin/main 均为 `051e6d04`，无上游代码差异。验证证据归档至主目录 `tmp/domestic-order-filters-delivery/`，主目录其他任务的未提交改动保持原样。本轮不部署应用。Git巡检使用 `--no-fetch` 本地快照。
+
+## 2026-09-11 客户邮件触达 P1（本地实现，未提交待审阅）
+
+在主 worktree 直接实现（基线 main `915837f6`），按设计文档 [docs/2026-09-11-mail-outreach-auto-send-design.md](2026-09-11-mail-outreach-auto-send-design.md) 完成 P1 阶段；亮哥已授权合并推送，直接提交 main 并推 origin（推送前 fetch 核对远端无分歧）。约定检查初跑拦下本任务新增表格 11 处固定列宽，已全部改 min-width 清零；剩余 AssetTagEditor/AssetLibrary 两项为既有基线问题，干净 main 同样复现。交付：迁移 `144_mail_outreach_core`（8 表，编号已核对全分支最大 143；downgrade 按约定抛错）；新域 `backend/app/mail_outreach/`（触达快照/资格/生成/审批/队列/排程客户端 + 14 个人类 JWT 端点，注册 `/api/mail-outreach`；审批哈希锁定 + 同事务建 job + 版本失效 + `_require_human`）；权限 seeds `mail_outreach:read/write/admin/worker`；settings 总开关 `MAIL_OUTREACH_SEND_ENABLED=false`；AI preset `mail_outreach_generate`（方法源与 ark-email-outreach SKILL 双向断言）；前端客户详情「邮件触达」Tab、审核抽屉（照 QualificationPanel 幂等范式）、`/mail-outreach` 队列工作台；Node 排程侧车 `mail-schedule-service.mjs`（复用 outreach-schedule 唯一算法源，Bearer 鉴权，本机 Node v26.3.0）。
+
+验证：后端 54 passed（新增 30：资格/审批/生成/preset）+ 客户与调度回归无影响；侧车 21 passed、整包 69 pass/1 skipped（既有条件跳过）；前端 build 通过、导航布局回归 fail 0；迁移 143→144 离线 `--sql` 渲染 MySQL DDL 正常；`git_sweep --no-fetch` 与增量约定检查均已跑（本地快照）。前后端契约已抽检对齐（context contacts[].points、详情 current_revision、jobs 序列化字段）。
+
+边界：未连真实数据库执行迁移（隔离开发库未确认）；未接真实 Agent Mail CLI/邮箱；发送链路（worker claim/send-authorize/临发复查/收件回流）属 P2/P3 未开工；P0 外部准入（腾讯条款、自有邮箱 PoC、常驻节点）未定。约定检查除素材库两项既有基线问题（干净 main 复现）外无新增红项。
+
+分支 `codex/whatsapp-full-history`，基于 main `915837f6`。按用户方案移除话术内容拒绝校验、直接生成 Agent；默认自动滚动采集聊天 JSON，支持下载，最多 2,000 条/120,000 字符，超过 32,000 字符明确分块摘要。记忆失败不阻断可用草稿。权限、知识撤权、幂等、错聊天和未发送边界保留，无迁移。
+
+后端 93 passed/1 skipped；扩展构建与 222 单测通过；18 项合成 Chromium/Lexical 路径通过（长历史计数起点修正后单独复测）。覆盖 100 条自动加载、120 条虚拟化、160 条后端完整上下文。独立审查闭环。真实 WhatsApp 浏览器连接失败，真实 DOM 加载与模型质量待实测，不能将合成验证视为实机完成。
+
+交付 ZIP v1.5.0，44,029 字节，SHA-256 `03f0ad98bccfee2fe0b7d3cf331fba8e9feb29e0c45dbb9e9d731c6fea291dd8`。后端须同步更新 history_enabled 能力，显式旧 .env 容量/期限及已有 generator 输出预算须核对；亮哥已授权合并推送；集成 main `3a944d1d`，仅交接文档新增记录冲突，已保留双方内容。业务代码与已验证版本一致。本轮未修改生产配置、不部署。详见 [实现、启用与验证说明](requirements/2026-09-11-whatsapp-full-history.md)。
+
+
+约定检查被未修改的资产 UI 两项既有基线问题阻挡：AssetTagEditor.vue small 按钮、AssetLibrary.vue 行数基线失配；main 同样复现。本任务 diff 空白检查与 Git 巡检通过，未处理其他工作树。
+
+## 2026-09-11 内贸客户列表 UI 优化（Codex，合并交付）
+
+分支 `codex/domestic-customer-ui`，基点 `915837f6`。客户列表沿用内贸订单页的紧凑单元格、筛选栏换行和 `useOrderTableHeight` 窗口高度控制，滚动条常显、分页置于表格外。客户店名移到首列并冻结，左右冻结列补齐悬停背景；操作改为单行“编辑 / 流水 / 更多”，其余五项操作收入下拉菜单，权限与归属条件保持原口径。最近充值金额和时间拆为两列，消除双行内容撑高。
+
+验证：前端构建通过；既有客户权限/筛选测试 2 passed；Edge 无头浏览器模拟数据验证紧凑行高（预览实测 30px）、横向滚动冻结店名、菜单五项、编辑/充值/流水入口、窗口缩放和仅写权限菜单显隐，无页面异常。权限指令挂在菜单项的实际 DOM 外层，避免 Element Plus 菜单项组件不承接指令导致显隐失效。截图与验证脚本保留于本 worktree `tmp/customer-ui/`，未访问真实客户写接口。约定检查仍被素材库两项既有问题阻挡（AssetTagEditor small 按钮、AssetLibrary 行数基线过期），主目录同样复现。亮哥已授权合并推送；集成前 fetch 确认 main 与 origin/main 均为 `915837f6`，无上游差异。验证证据归档至主目录 `tmp/domestic-customer-ui-delivery/`。Git 巡检使用 `--no-fetch`。本轮不部署应用。
+
+## 2026-09-11 背调资格队列修复合并交付
+
+亮哥已授权合并推送。本次集成最新 main `ac7d35eb`，只处理交接文档新增记录冲突并保留双方内容，业务修复与已验证版本一致；合并后资格队列/客户工作流/公海研究专项 96 passed。约定检查被 AssetTagEditor.vue 既有 small 按钮和 AssetLibrary.vue 行数债务基线失配阻挡，干净 main 同样复现，本次未改资产前端。独立审查本轮完成，无阻断问题：三个排序规则修正不改变资格筛选、归属校验、去重或复核状态条件。此次不部署应用，也不重复执行 9 月 9 日的任务激活。
+
+## 2026-09-09 失败背调任务重新激活一次（已执行）
+
+亮哥明确要求将背调中心全部失败任务重新激活一次。生产读取锁定当时失败名单 #1–10、#12–28，共 27 条；逐项调用既有 `requeue_failed_task`，用原 `attempt_count=1` 和行锁核验，不直接绕过状态流转。27 条均重新入队为 `pending`，gate/review 重置 pending，原尝试次数、租约代次及历史错误保留；非目标记录（含已完成 #11）核验未变。新连接验证 27 条均 pending，这仅表示等待执行，不能写成背调已完成。重试防重/权限专项 3 passed；写前快照、逐项回执和写后快照保留在主目录 `backend/tmp/research-reactivate-20260909/`。本次未部署上一轮资格队列修复。
+
+## 2026-09-09 背调资格队列排序规则修复（Codex，待集成发布）
+
+分支 `codex/qualification-collation`，基点 `b0d58ea6`。北京线上日志确认研究任务 11 的 `result-review` 返回 200，随后刷新 `qualification-queue` 返回 500；提示“数据库连接失败”实际是 MySQL 1267。连接采用 `utf8mb4_0900_ai_ci`，持久表采用 `utf8mb4_unicode_ci`；来源 ID 的 CAST 及开发范围的 CASE 在联表时冲突。仅在该查询的 MySQL 表达式上显式使用表的排序规则，不修改 schema、业务数据、审核状态或连接全局配置。
+
+验证：原查询在 `SET TRANSACTION READ ONLY` 连接复现 1267；修复后相同连接配置下列表返回 1 条、详情读取成功（按现有公海权限脱敏，`can_review=false`）、无匹配关键词返回 0。新增 MySQL SQL 回归先失败后通过，资格队列/客户工作流/公海研究专项 `96 passed`；增量约定检查通过，`git_sweep.py --no-fetch` 已运行，仅代表本地远端快照。独立审查代理因模型容量不足启动失败，已另行自查确认权限、队列筛选、分组排序和状态写入逻辑未变，仍缺独立审查结论。未执行生产复核写入，未合并、推送或部署。
+
+## 2026-09-11 WhatsApp 第一、第二阶段集成交付
+
+亮哥已授权合并推送。实现提交 `8c25bbcd`，集成最新 main `d081e1a1`，业务代码及迁移无冲突，仅交接文档保留双方内容。原有144项后端、214项扩展及17项浏览器验证对应的业务实现未变；本次集成后后端144 passed / 1 skipped、扩展构建通过，Alembic单head为143。规范检查在本分支和未修改main均复现素材库两项既有UI失败（AssetTagEditor小按钮、AssetLibrary基线过期）；本任务未改相关素材库代码或弱化检查。迁移143、知识配置和Planner预算仍随后续正式部署启用，本轮不部署。
+
+## 2026-09-08 WhatsApp 话术第一、第二阶段（Codex，本地实现待发布）
+
+分支 `codex/whatsapp-reply-continuity`，基点 `060cef69`。Planner 增加具体动作、未回应请求、已问问题与消息证据；Generator 优先回应客户当前诉求。知识配置增加8段已核对的公开FAQ，方法/政策不能当作对客事实；资料只输出授权FAQ片段，尚未接入实际目录/PDF或业务工具。
+
+新增询盘复盘、承诺台账、人工纠正和内部接管。用户/配对设备隔离，默认保留30天，切换聊天后需预览确认恢复；不按姓名自动关联。生成只产生候选，独立提交采用缓存证据、版本和实例UUID的原子条件，人工纠正及删除重建不能被旧响应覆盖。新增迁移143，只在隔离SQLite验证；线上未迁移、未修改配置或知识正文。
+
+验证：话术后端全套144 passed / 1 skipped（真实模型测试未启用）；扩展214 passed，浏览器17 passed，构建及1.4.0打包成功。独立审查发现的人工优先、异步写回及删除重建并发问题已修复并复查通过。迁移测试核验SQLite保留数据/拒绝有损回退及MySQL unsigned FK DDL；未做真实MySQL并发和实际WhatsApp线上验证。知识20个绑定的ACL/版本/hash及4类检索已用只读事务核验。
+
+交付说明见 `docs/requirements/2026-09-08-whatsapp-reply-continuity.md`。安装包及配置片段在用户工作区 `outputs/whatsapp-reply-phase12/`。后续上线须通过统一部署入口执行143，应用审核后的绑定配置并核对已有Planner预设预算3200；安装新扩展不能替代后端发布。本轮未合并、push或部署。
+## 2026-09-09 逐件标签与 Excel 双表集成交付
+
+亮哥已授权将 `f1f0e1f3` 逐件标签规格/序号排版和 `a11a0786` Excel 正常/无价格双表合并推送 main。核验业务代码与已验证版本一致后交付；验证材料归档至主目录 `tmp/domestic-label-export-delivery/evidence/`，远端核验后清理本任务 worktree 和已合并本地分支。本轮不含应用部署。
+
+## 2026-09-09 内贸 Excel 正常/无价格双表（Codex，合并交付）
+
+在 `codex/domestic-label-layout` 接续逐件标签改版：订单导出固定两张工作表，正常表保留原价格、手工费和历史结算摘要，新增“（无价格）”表不写价格列、金额/余额摘要或金额说明。两表都显示客户名称，生产未选客户时显示公司备货，生产两表仍无销售金额。参考图片分别嵌入；完整要求附页改到两表各自末尾，保留全文并扩展打印范围。
+
+验证：业务/生产、关联客户、价格隔离、图片锚点、长要求完整性、历史财务及公式注入防护共 15 passed。独立审查发现附区续行标签行高不足，用 601 字短尾段先复现再修复，最终无剩余阻塞项。实际服务生成样例 xlsx，经 artifact-tool 导入渲染业务/生产的两表，核对客户头、无价格列、文字续区。规范检查通过；无 schema 或真实数据修改。证据在本任务 tmp/two-sheets-*.log 与 export-*.xlsx/png；按本轮授权合并推送，未部署。
+
+## 2026-09-09 逐件标签规格与序号排版（Codex，合并交付）
+
+分支 `codex/domestic-label-layout`，基点 `060cef69`。按亮哥参考图去掉逐件标签 LOGO，左侧自上而下为头套尺码/发长（发片显示工艺）、实际单件序号（01/02，100 以上不截断）、客户名称、系统订单号、下单日期。读取已有 `item.attrs` 与 `units[].unit_no`，分段打印不从 01 重新编号，未改变后端 API、数据库或单件二维码身份。左侧按物理尺寸划分五个区域，长文本调整字号并换行，规格/序号/客户突出，保持日期 2mm 加粗、二维码 16.8mm 和 30×20mm 标签。
+
+隔离浏览器验证头套/发片、缺失规格提示、转义字符、120 字客户名和 64 字编号、真实序号 01/102；屏幕/打印模式均核对字段边界、无区域重叠和标签/二维码尺寸，预览截图已检查。前端构建 18.16s、严格规范检查通过；证据在本任务 tmp/unit-layout-ui.cjs、unit-layout-*.png、unit-layout-build.log。未实际纸张打印；按本轮授权合并推送，未部署。
+
+## 2026-09-09 内贸逐件码跨实例签名修复（配置已生效，手机复扫待确认）
+
+亮哥报告 DO20260908-003 的逐件码无效，提供逐件码原文及微信截图。只读核实该单 item 57 / unit 479 有效、5 道工序完整，38 张在产订单无单件数量缺失；该单创建于 9 月 8 日，不在 9 月 7 日工序快照修复范围。实际原因有两层：北京打印实例仍用旧默认 QR 签名，办公室报工实例用非默认密钥且无 legacy；截图文案则来自客户端格式识别，旧小程序源码只认 ARK-D，当前源码可识别 ARK-DU。用同一原文执行两版扫码函数，旧版精确复现截图、当前版转入 unit 479。
+
+用户授权修复并恢复 office-prod SSH 后，先给办公室增加 QR_SIGN_SECRET_LEGACY，再将北京 QR_SIGN_SECRET 统一到办公室现用值并保留原值为 legacy；未改办公室当前密钥。只改这两个配置字段，配置原子替换并保持原 owner/ACL，其他配置解析值不变。先备份、CAS、独立审查，再通过已有受管服务控制重载，核实服务进程身份变化及两端 health=ok/database=connected；没有代码切换、schema 迁移或订单/工序/报工修复写入。首次尝试分别遇到 Windows ACL 的 AI 元数据差异、北京 root 文件归属，均先确认原配置摘要未变，针对原因修正后继续，未重复执行不确定写入。
+
+新连接复核：两端新二维码完全相同，原 unit 479 签名均有效；ARK-DU/D/P/I 的新旧签名均有效、篡改签名拒绝。北京打印日志涉及 7 张订单、9 条明细、424 个单件：在产 DO20260907-005/007、DO20260908-002/003、DP20260908-003 共 384 件；另 DP20260908-001/002 的 40 件属于已终止订单，状态未改。该范围旧签名全部通过，日志仅证明取过打印数据，不证明每张纸均已打印。两端真实 HTTP 进度接口以当前签名返回 200 与 DO20260908-003，以旧签名返回 403；原二维码的实际手机登录扫码尚待用户复扫确认，不能将此进度接口检查写成手机扫码已完成。浏览器验证工具因 debugger unattached/超时不可用，未取得已登录页面验证。小程序既有测试 24 passed；新旧格式函数复现记录已保存。
+
+一次性脚本与非敏感验证证据在主工作区 `.deploy_state/qr-config-repair/`，两台服务器各自 `.deploy_state/qr-config-repair-20260909/before.json` 保留受限备份（含敏感旧配置，只留原服务器，不提交或输出）。恢复前比较当前两字段与备份 after，仅恢复备份 before 的值/原存在性，不覆盖其他配置，随后受管重载和复核。legacy 是已打印标签过渡配置，现有实现覆盖内贸、外贸及出库单的登录扫码；待这些旧标签消化完、确认所有打印入口均使用统一新签名后再移除，不按日期自动删除。免登录进度码始终只认当前密钥；北京旧默认期间官方进度码生成/验证本就锁定。小程序需使用含逐件扫码的版本，本轮没有上传、审核或发布小程序。本次 Git 交付只包含修复记录；一次性运维脚本和验证证据留在本地恢复目录。
+
 ## 2026-09-08 WhatsApp 生成依据契约（Codex，合并交付）
 
 分支 `codex/whatsapp-reply-evidence-contract`，基点 `cda42155`。针对仅有 method/constraint 时模型仍尝试引用而触发依据校验：生成输入显式携带原始来源编号及可引用事实编号，动态 schema 限定允许编号、无事实时要求空 claims；提示词区分方法、约束与对客事实。不改 guard、不剥除引用、不自动重试，不涉及数字校验或启动权限自动授予问题。
@@ -824,8 +1001,27 @@ Mac 同事的英文网页中私聊按钮标识为 `Profile details`，原选择�
 **交接人**：亮哥  
 **交接日期**：待定  
 **接手人**：待定
-## 2026-09-09 DHL 刷新鉴权排查（Codex，本地补丁待集成）
+## 2026-09-09 DHL 刷新鉴权排查（代码已集成，线上凭据待核实）
 
 分支 `codex/tracking-auth`。用户报刷新返回 DHL 原始 Unauthorized JSON。本机 Settings 中 DHL 凭据已填写、无首尾空格、环境为 production；使用占位运单号做只读查询，test/prod 均返回 HTTP 401。尚未核验线上实例配置，不能认定凭据已过期或已撤销；需 DHL 负责人核实有效凭据与接口访问权限，线上恢复仍未完成。
 
-补丁将 DHL 401/403 转为明确中文提示，保留环境及安全格式的 msgId；刷新服务商失败改为信封业务码 502，缺失运单仍为 404，准确区分运单不存在与服务商查询失败。独立审查无阻塞，约定检查通过，Git 巡检基于本地快照。新增回归先失败后通过，相关测试 77 passed，均无生产库写入。未改凭据、未合并、未推送、未部署。
+补丁将 DHL 401/403 转为明确中文提示，保留环境及安全格式的 msgId；刷新服务商失败改为信封业务码 502，缺失运单仍为 404，准确区分运单不存在与服务商查询失败。独立审查无阻塞，约定检查通过，Git 巡检基于本地快照。新增回归先失败后通过，相关测试 77 passed，均无生产库写入。目录整理时将补丁集成至本地 main，6项定向回归通过；未改凭据、未推送、未部署。
+
+## 2026-09-14 迁移 149 超长编号故障修复（合并交付，待生产恢复）
+
+分支 `codex/migration-149-recovery`，基点 `15dcd7a9`。生产用户提供 `.deploy_state/schema-writers.json`：原始147→148→旧149，`failed-after-ddl`，办公室 CommissionSystem/WhatsAppConnector、北京 ark-backend、新加坡 shipment-tracking-mcp 原本运行且均记录为 stopped。当前服务状态尚待服务器确认。
+
+本轮通过现有配置只读查询共享库：版本为148；149的三个列（reviewed_by unsigned int nullable、reviewed_at datetime nullable、review_remark varchar500 nullable）与 reviewed_by→ark_users.id 外键全部存在；版本列为 varchar32。旧 revision `149_domestic_order_review_columns` 长33，是 DDL落地但版本写入失败的根因。未执行生产DDL/DML、未修改恢复记录、未启停服务。
+
+迁移编号缩短为 `149_dom_order_review_columns`；兼容已有结构则复用，仅补缺项，异常结构拒绝，不stamp。新增仅针对该事故的 `--recover-migration-149 --revision <full-sha>` 发布参数，保留原始运行基线，核验DB148/新149及四个writer清单，准备模式只读验证，正式恢复沿统一DB锁/Alembic/应用激活/健康验证链路，成功才关闭journal。重试即使DB已到新149仍恢复完整发布；失败不重启旧代码。使用方法与脚本更新前提见 deploy/README.md。
+
+验证：部署测试80 passed、11项Linux文件系统测试在Windows跳过；迁移隔离测试34 passed；实库`validate_existing(require_complete=True)`只读验证通过；独立审查无阻断项，补了提交后重读版本、当前148/新149完整性、prepare-only和固定候选测试。项目约定全量检查仍被4项无关UI旧债阻挡，增量代码检查无违规；git diff --check通过，git_sweep --no-fetch已执行（远端仅本地引用快照）。用户已授权将本次修复合并 main 并推送 origin；fetch 确认 main 与 origin/main 均为基点15dcd7a9，无上游差异。本轮不执行生产恢复，服务状态仍需服务器核验。
+## 2026-09-14 库存色块工作台同源集成（合并交付，未部署）
+
+分支 `codex/colorwork-entry-fix`，目录 `D:/MyProgram/commission-system-codex-colorwork-entry-fix`。用户明确改为方舟内部使用、不要独立域名。此前北京只读核实工作台 URL/密钥未设、8787 无监听，主站部署未包括工作台；本轮又核实服务账号 PATH 无 Node。现改为固定相对 SSO URL `/api/colorwork/workbench/api/auth/ark`，所有 HTML/JS/CSS/API/文件经方舟后端流式同源代理；不转发主站 Bearer 与其他 Cookie，保留逐视图鉴权，Cookie 限定模块路径。
+
+工作台保留 React/vinext 与 D1/R2 格式，basePath、浏览器 fetch、图片/Canvas/PSD、下载与退出均补同源路径；不改已有持久 URL 和库存计算。独立域名 Nginx/systemd 旧模板删除。统一 deploy.bat 的北京后端流程纳管内部服务 ark-colorwork，自动下载并校验固定 Node v22.23.2、锁定 pnpm，准备期使用隔离 D1，激活先停服务、每次独立备份 D1/R2 再迁移，readiness 后记成功。同 SHA 重跑校验制品并跳过在用配置写入/成功激活；未知或改写迁移、旧数据待迁移、失败记录均阻断。SSO 与回源密钥分别派生，运行服务不持主站原始 JWT 密钥。
+
+验证：后端 SSO/代理/权限 19 passed，发布回归 90 passed / 11 skipped（现有 Linux 专属静态发布用例在 Windows 跳过），Node URL 单测 2 passed；工作台 pnpm lint/build 通过。真实隔离 workerd + FastAPI 代理实测三个 SSO 视图、两种尾斜杠刷新、登录退出、全部引用的 JS/CSS、无权限403；浏览器确认 master 首次导入页与普通账号首次设置页，同源会话保持正常。输出在 `.deploy_state/colorwork-test/results.json`，不连接生产库；测试服务与浏览器已关闭。自动审批以 blocked by policy 拒绝临时目录清理，隔离测试 SQLite/R2 和仅含测试密钥的 .dev.vars 保留，未进入 Git。真实素材包不在仓库，成品生成和真实素材下载仍需导入后验收。独立审查发现的 Cookie 边界、流中断清理、激活迁移复核及旧候选回退备份均修复并有回归。
+
+项目完整约定检查仍阻于四项现有 UI 基线：AssetTagEditor small 按钮、AssetLibrary / ProductionOrderManage / AIManager 行数；包含新增文件的增量检查无违规，diff 格式检查通过。Git 巡检为 --no-fetch 本地快照。2026-09-15 用户授权合并 main 并推送 origin；集成前 fetch 确认 main 与 origin/main 均为 a8283637，无上游差异。本轮不部署。北京运行环境安装与 systemd 激活尚未在真实生产执行；素材与 D1/R2 唯一数据归属北京，不为办公室另建数据副本。完整接入及恢复规则见 `colorwork-workbench/README.md`。

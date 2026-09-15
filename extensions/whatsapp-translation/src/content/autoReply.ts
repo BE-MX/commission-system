@@ -1,0 +1,205 @@
+import { REPLY_COPY } from '@/content/replyView'
+import { messageForCode } from '@/content/messages'
+import type { AutoReplyPolicy, ReplyCapabilities, ReplyRequest, ReplyResponse, TargetLanguage } from '@/shared/contracts'
+import { maskContacts } from '@/whatsapp/replyContext'
+import type { ReplyContext } from '@/whatsapp/replyContext'
+import { boundedReplyCapabilities, validReplyResponse } from '@/shared/replyValidation'
+import { validMemoryResult } from '@/shared/replyMemory'
+import type { MemoryCommand, MemoryResult } from '@/shared/replyMemory'
+
+export type AutoSnapshot = { identity: unknown[]; tail: string; incoming: string; role?: string; draft: string }
+export type AutoState = { active: boolean; busy: boolean; note: string; segments: string[]; sentCount: number; knowledgeNote?: string }
+
+// Humanized pacing: a reading pause before the first segment grows with the
+// customer's latest message; a typing pause before each later segment grows
+// with that segment's length, with per-segment random rate and jitter.
+function readingDelay(latestText: string): number {
+  return Math.min(4000, 1200 + latestText.length * 20)
+}
+function typingDelay(segment: string): number {
+  return Math.min(8000, (800 + segment.length * (40 + Math.random() * 40)) * (0.9 + Math.random() * 0.2))
+}
+
+function policyRefusal(policy: AutoReplyPolicy | undefined): string {
+  if (!policy) return ''
+  if (policy.blocked) return '当前聊天已禁止自动接管'
+  if (policy.allowlistEnabled && !policy.allowlisted) return '已开启仅白名单自动接管，当前聊天不在白名单'
+  return ''
+}
+
+function withinSchedule(policy: AutoReplyPolicy | undefined, now: Date): boolean {
+  const schedule = policy?.schedule
+  if (!schedule) return true
+  if (!schedule.days.includes(now.getDay())) return false
+  const [startHour, startMinute] = schedule.start.split(':').map(Number)
+  const [endHour, endMinute] = schedule.end.split(':').map(Number)
+  const at = now.getHours() * 60 + now.getMinutes()
+  const start = startHour * 60 + startMinute, end = endHour * 60 + endMinute
+  return start <= end ? at >= start && at <= end : at >= start || at <= end
+}
+
+export function createAutoReply(adapter: {
+  snapshot: () => AutoSnapshot
+  collect: (caps: ReplyCapabilities, current: () => boolean) => Promise<ReplyContext>
+  send: (text: string, current: () => boolean) => Promise<boolean>
+}, bridge: { capabilities: () => Promise<unknown>; suggest: (request: ReplyRequest) => Promise<ReplyResponse>
+  memory?: (command: MemoryCommand) => Promise<MemoryResult>
+  binding?: { read: () => Promise<string | null>; write: (inquiryId: string | null) => Promise<void> }
+  policy?: () => Promise<AutoReplyPolicy | null> },
+options: () => { language: 'auto' | TargetLanguage; fallback: TargetLanguage; goal: string; detected?: string }, changed: (state: AutoState) => void,
+wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))) {
+  let state: AutoState = { active: false, busy: false, note: '', segments: [], sentCount: 0 }
+  let collecting = false
+  let revision = 0, timer: ReturnType<typeof setInterval> | undefined
+  let identity: unknown[] = [], incoming = '', settledAt = 0, processed = '', epoch = ''
+  let memory: { id: string; revision: number } | undefined
+  let memoryReady = true
+  let policy: AutoReplyPolicy | null = null
+  const paint = () => changed({ ...state })
+  const sameChat = (snapshot: AutoSnapshot) => identity.every((v, i) => snapshot.identity[i] === v)
+  function stop(note = '自动接管已关闭') {
+    revision++; state.active = false; state.note = note
+    if (timer) clearInterval(timer); timer = undefined; paint()
+  }
+  // Auto takeover only ever reads inquiry memory; creating and committing stay manual.
+  async function readInquiry(id: string) {
+    const command: MemoryCommand = { operation: 'read', conversation_id: id }
+    const result = await bridge.memory!(command)
+    if (!validMemoryResult(result, command)) throw new Error('reply_invalid_response')
+    return result.inquiry!
+  }
+  async function initMemory(version: number) {
+    try {
+      const boundId = await bridge.binding!.read()
+      if (!state.active || revision !== version) return
+      if (!boundId) { state.note = '未绑定询盘记忆，自动接管无跨轮记忆；在话术面板生成一次即可建立。'; paint(); return }
+      const inquiry = await readInquiry(boundId)
+      if (!state.active || revision !== version) return
+      memory = { id: inquiry.id, revision: inquiry.revision }
+    } catch (error) {
+      if (!state.active || revision !== version) return
+      const code = error instanceof Error ? error.message : ''
+      if (code === 'reply_memory_not_found' || code === 'reply_memory_disabled') {
+        memory = undefined
+        void bridge.binding!.write(null).catch(() => undefined)
+        state.note = '未绑定询盘记忆，自动接管无跨轮记忆；在话术面板生成一次即可建立。'; paint()
+      }
+    } finally {
+      if (revision === version) memoryReady = true
+    }
+  }
+  async function run() {
+    if (!state.active || state.busy || !memoryReady || Date.now() - settledAt < 3000 || incoming === processed) return
+    if (!withinSchedule(policy ?? undefined, new Date())) {
+      if (state.note !== '不在自动接管时段内') { state.note = '不在自动接管时段内'; paint() }
+      return
+    }
+    state.busy = true; state.segments = []; state.sentCount = 0; state.knowledgeNote = ''; state.note = '正在生成回复…'; paint()
+    const version = revision
+    const current = () => state.active && revision === version && sameChat(adapter.snapshot())
+      && (collecting || adapter.snapshot().incoming === incoming)
+    try {
+      const caps = boundedReplyCapabilities(await bridge.capabilities())
+      if (!caps.auto_reply_enabled) throw new Error('后端尚未支持自动接管，请更新后端')
+      if (!current()) return
+      collecting = true
+      const context = await adapter.collect(caps, current)
+      collecting = false
+      if (!current()) return
+      if (!context.context_scope.latest_visible) throw new Error('尚未确认最新消息位置，请将聊天滚动到底部后重新开启')
+      if (context.context_scope.truncated) throw new Error('聊天记录超过采集容量，请使用手动话术处理')
+      if (context.unrepresentedMessages) throw new Error('部分消息无法识别发送方，已停止；请使用手动话术处理')
+      if (!context.messages.length) throw new Error('当前聊天没有可读取的消息，请等待消息加载后重试')
+      const latest = context.messages.at(-1)!
+      if (latest.role !== 'customer') { processed = incoming; state.note = '等待客户新消息'; return }
+      if (latest.kind === 'media' || latest.kind === 'unknown') throw new Error('最新消息含未读取内容，请人工接管')
+      const selected = options()
+      const request: ReplyRequest = {
+        mode: 'auto', request_id: crypto.randomUUID(), conversation_epoch: epoch,
+        context_version: version, draft_version: 0, messages: context.messages, context_scope: context.context_scope,
+        draft_intent: '', target_language: selected.language, fallback_language: selected.fallback, goal: maskContacts(selected.goal), style: 'default',
+        ...(selected.detected ? { detected_language: selected.detected } : {}),
+        ...(memory ? { memory_conversation_id: memory.id, memory_revision: memory.revision } : {}),
+      }
+      const observed = adapter.snapshot()
+      if (observed.role !== 'customer') { processed = incoming; state.note = '检测到卖方已回复，等待客户新消息'; return }
+      let tail = observed.tail
+      const response = await bridge.suggest(request)
+      if (!current()) return
+      if (!validReplyResponse(response, request) || response.status !== 'ready') throw new Error('回复格式异常，已停止接管')
+      if (response.memory_error === 'reply_memory_conflict' && memory) {
+        // This round used degraded memory; refresh the revision so the next round rejoins.
+        const stale = memory
+        void readInquiry(stale.id).then(fresh => { if (state.active && memory === stale) stale.revision = fresh.revision }).catch(() => undefined)
+      } else if ((response.memory_error === 'reply_memory_not_found' || response.memory_error === 'reply_memory_disabled') && memory) {
+        memory = undefined
+        void bridge.binding?.write(null).catch(() => undefined)
+      }
+      if (response.auto_action === 'handoff') {
+        if (response.risk_flags.includes('auto_reply_review_required')) state.segments = [response.reply_text]
+        stop('需要人工处理：' + response.rationale_zh); return
+      }
+      if (response.auto_action === 'wait') { processed = incoming; state.note = '本轮无需回复，等待客户新消息'; return }
+      state.segments = [...response.reply_segments!]
+      state.knowledgeNote = response.risk_flags.includes('knowledge_unavailable') ? '本轮知识配置不可用，请检查后端知识绑定。'
+        : response.risk_flags.includes('no_public_facts') ? '本轮未命中可对客事实资料。'
+        : response.sources.length ? '本轮输入资料：' + [...new Set(response.sources.map(source => source.title))].join('、') : '本轮没有返回知识来源。'
+      const catalogNote = response.risk_flags.includes('catalog_matched') ? '产品目录：已查到相关规格。'
+        : response.risk_flags.includes('catalog_not_found') ? '产品目录：未查到所问规格，不能据此判定不销售。'
+        : response.risk_flags.includes('catalog_permission_denied') ? '产品目录：当前账号无查询权限。'
+        : response.risk_flags.includes('catalog_unavailable') ? '产品目录：查询暂不可用。' : ''
+      if (catalogNote) state.knowledgeNote += '\n' + catalogNote
+      for (const [index, part] of response.reply_segments!.entries()) {
+        state.note = `准备发送第 ${index + 1}/${response.reply_segments!.length} 段`; paint()
+        await wait(index ? typingDelay(part) : readingDelay(latest.text))
+        if (!current()) return
+        const snapshot = adapter.snapshot()
+        if (snapshot.draft || snapshot.tail !== tail) throw new Error('聊天或输入已变化，请人工接管')
+        if (!await adapter.send(part, current)) {
+          if (state.active && sameChat(adapter.snapshot())) stop('发送结果未确认，已停止；请检查聊天记录，勿直接重发')
+          return
+        }
+        tail = adapter.snapshot().tail
+        state.sentCount = index + 1; paint()
+      }
+      processed = incoming; state.note = '已回复，等待客户新消息'
+    } catch (error) {
+      if (state.active && revision === version) {
+        const code = error instanceof Error ? error.message : ''
+        stop(REPLY_COPY[code] ?? (/^[a-z_]+$/.test(code) ? messageForCode(code).text : code || '自动接管异常，已停止'))
+      }
+    } finally { collecting = false; state.busy = false; paint() }
+  }
+  function tick() {
+    if (!state.active) return
+    const snapshot = adapter.snapshot()
+    if (!sameChat(snapshot)) { stop('聊天已切换，自动接管已关闭'); return }
+    if (collecting) return
+    if (snapshot.incoming !== incoming) { incoming = snapshot.incoming; revision++; settledAt = Date.now() }
+    if (snapshot.draft && !state.busy) { stop('检测到人工草稿，自动接管已关闭'); return }
+    if (!state.busy && snapshot.role === 'salesperson') { processed = incoming; return }
+    void run()
+  }
+  return {
+    getState: () => ({ ...state }), stop,
+    async refreshPolicy() {
+      if (!bridge.policy) return
+      try { policy = await bridge.policy() } catch { return }
+      // A panel change takes effect immediately: refuse a running takeover too.
+      const refused = policyRefusal(policy ?? undefined)
+      if (state.active && refused) stop(refused)
+    },
+    start() {
+      if (state.active || state.busy) return
+      const snapshot = adapter.snapshot()
+      if (snapshot.draft) { stop('请先处理输入框草稿，再开启自动接管'); return }
+      const refused = policyRefusal(policy ?? undefined)
+      if (refused) { stop(refused); return }
+      identity = snapshot.identity; incoming = snapshot.incoming; processed = ''; epoch = crypto.randomUUID(); revision++
+      memory = undefined
+      if (bridge.binding && bridge.memory) { memoryReady = false; void initMemory(revision) }
+      settledAt = Date.now(); state = { active: true, busy: false, note: '已开启，仅当前聊天自动回复；可随时关闭', segments: [], sentCount: 0 }; paint()
+      timer = setInterval(tick, 1000)
+    },
+  }
+}

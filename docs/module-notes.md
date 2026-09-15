@@ -1,5 +1,17 @@
 # 莱莎方舟 模块专题笔记（含各模块已踩坑）
 
+## 站点 AI 网关
+
+实现位于 `app/ai_gateway/`；管理页为 AI 接入管理的“站点应用”，需要 ai:admin。单站密钥独立于员工 JWT/MCP token。密钥仅存哈希，创建和重置时返回一次，页面关闭后清空内存；站点将密钥配置在服务端，浏览器只调用本站后端。
+
+准入、启停、重置、授权修改均先锁应用行。重复 ID、负责人、授权和计数使用 MySQL 当前读，不能依赖已建立的 REPEATABLE READ 快照。准入提交后再调用 facade，锁不跨网络请求；每日次数包含准入后的错误。unknown 继续占并发，75 秒后管理员确认执行结束并完成上游核查才可解除。
+
+`app.ai.service.prepare_text_chat()` 在短事务内复制已授权文本配置，`chat(... trusted_text_snapshot=..., snapshot_mode="metadata")` 使用该副本，避免 ORM 过期或管理员并发修改改变实际发出的模型/参数。仅允许文本参数 max_tokens/temperature/top_p/stop/frequency_penalty/presence_penalty；有工具、图片或其他参数的预设不可授权。上限取 Preset、应用和 Settings 硬上限最小值。无自动 HTTP 重试，整体超时关闭本地连接不保证供应商取消。
+
+用量先归一化再写 AI 日志：usage 缺失、null、非对象或非法数值不能把成功文本变成日志落库失败；未知不是 0，部分已知则单独展示。AI 网关仅保存 metadata，不暴露原始上游异常。
+
+UI 注意：从 DetailDrawer 打开的核查弹窗必须 append-to-body，避免被抽屉层拦截；窄屏解除右侧固定操作列，保留横向滚动。重置密钥直接使用列表返回的 preset_names，不依赖曾打开过编辑器。
+
 > 本文档由 CLAUDE.md 瘦身治理（2026-07-03，见 docs/2026-07-03-architecture-assessment.md G-1）拆出。
 > 变更 API/表结构/模块行为时**同步更新本文件**。
 
@@ -27,6 +39,7 @@
 | AI 接入 | `ai:admin` / `ai:invoke` | AI 管理/调用 |
 | 方舟洞见 | `insight:read` / `insight:write` / `insight:internal_read` / `insight:admin` | 查看/上传/内部报告/管理 |
 | 备货管理 | `stock:read` / `stock:write` / `stock:admin` | 查看/设置/管理 |
+| 库存色块图 | `colorwork_download:read` / `colorwork_edit:read` / `colorwork_master:read` | 库存图直接下载/实时库存图修改/原始库存图文件（三个页面独立授权） |
 | 素材管理 | `asset:read` / `asset:write` / `asset:delete` / `asset:admin` | 查看素材库/上传编辑/删除/标签维度管理 |
 | 色彩管理 | `color:read` / `color:write` / `color:admin` | 查看色板数据库/色彩趋势/编辑色号/生成色板图/管理竞品监控 |
 | 生产订单 | `production:read` / `production:write` / `production:print` / `production:admin` | 查看订单/创建编辑订单与入库/打印工作台/删除订单（备货管理菜单组下独立子菜单） |
@@ -199,6 +212,8 @@ nssm start CommissionSystem    # 正常启动
 - `WX_MINI_APPID` — 微信小程序 AppID（`wx4dea4f10fe1bda19`）
 - `WX_MINI_SECRET` — 微信小程序 AppSecret（从微信公众平台获取）
 - `QR_SIGN_SECRET` — 二维码 HMAC 签名密钥（生产报工扫码验签用）
+
+**小程序关联与退出**：`ark_users.wx_id` 存微信 OpenID。微信身份获取失败时只显示可重试的“微信登录”，没有 OpenID 不显示绑定表单，后端拒绝空值与纯空白。历史空字符串可在获取真实微信身份后重新绑定修复，不根据用户名猜填。主动退出保留账号关联，清除本地会话并持久化 `ark_manual_logout`；重开后须点击微信登录，登录成功才清除该标记。过期会话仍沿原路径重新识别微信。
 
 **WhatsApp Connector 环境变量**（`.env` 可选配置，不配则 WhatsApp 功能不可用）：
 - `WHATSAPP_CONNECTOR_BASE_URL` — WhatsApp Connector Node.js 服务地址（如 `http://localhost:3100`）
@@ -849,7 +864,7 @@ frontend/src/
 
 2026-09-07 下单/渠道/来源：客户订单号选填，空值规范化为 `''`，保证省略与 null 的请求幂等一致；非法类型交由 Pydantic 拒绝。新建页根据客户结算方式默认充值扣账/现金结账，搜索候选刷新不覆盖手动选择。列表来源取客户当前档案并在分页前筛选。渠道字典种子与一次性数据转换脚本统一为 recharge/cash；转换只改渠道字段并保留旧字典供审计，不触发扣款或改客户属性。
 
-2026-09-07 订单体验更新：业务领货单 Excel 只展示客户编码，产品规格合并一列，为原价/减免额/优惠后商品单价/手工费/小计和参考图留出 A4 空间；数量后增加空白出库数量。私有图由 `export_image_service` 读取并嵌入对应单元格，缺图显式提示，多行文字与图片分区、全文续表。`balance_service.order_balance_snapshot` 从订单自己的最新结算流水取真实前后余额，草稿/调整/缺流水明确标注；没有新增表或迁移。
+2026-09-07 订单体验更新：业务领货单 Excel 展示客户编码（2026-09-09 起同时显示客户名称并导出正常/无价格双表），产品规格合并一列，为原价/减免额/优惠后商品单价/手工费/小计和参考图留出 A4 空间；数量后增加空白出库数量。私有图由 `export_image_service` 读取并嵌入对应单元格，缺图显式提示，多行文字与图片分区、全文续表。`balance_service.order_balance_snapshot` 从订单自己的最新结算流水取真实前后余额，草稿/调整/缺流水明确标注；没有新增表或迁移。
 
 新建页在 KeepAlive 内保存成功即重置；报价按行指纹独立失效，新增空行或复制不覆盖已有手工价。`DomesticOrderEditDialog` 提供创建人的订单头和明细独立编辑，变化字段由 `domesticOrderEditing` 构造；正式单数量/价格修改显示差额确认，沿用后端状态、报工数量与余额约束。成交单价包含手工费，优惠额计算先减手工费，生产单编辑不发送销售字段。
 
@@ -875,8 +890,8 @@ frontend/src/
 
 **上线后的人工配置**（漏了单能下但开不了工）：角色管理页分配 `domestic:read/write/admin` → 核验两条原始路线及 140 创建的四条分段路线均启用 → 给内贸工人绑工序。产品档案仍可维护工艺映射，新订单明细按六种固定路线选择。
 
-**产品进度小程序码（2026-07-28；明细级，与流转卡同粒度）**：主站订单详情抽屉明细动作区「进度码」按钮 → `GET /api/domestic/items/{id}/wxacode` 生成微信小程序码（`wxacode.getUnlimited`，scene=`i:<item_id>:<hmac16>`，永久有效），弹窗可下载图片或打印 30×20mm 标签（左 LOGO 右码，与流转卡二维码标签同版式）。微信扫一扫拉起小程序落到**免登录**页 `pages/domestic/track/track`（调 `GET /api/mini/domestic/track?scene=`），只显示码指向的那一条明细。要点：
-- 免登录的唯一授权凭证是 scene 的 16 hex HMAC 签名（免登录口子 8 hex 不够，64-bit 才谈得上防在线遍历），域 `ARK-DT:<item_id>` 与流转卡 `ARK-D:<item_id>` 隔离——同一个 item_id 两个域，流转卡贴在车间人尽可见且只截 8 hex，共用域会泄露签名前半。track 端点把 items 过滤到一条（一码一品）；track 页无搜索/扫码入口防遍历；软删单 404。进度信息对客户公开不遮挡（亮哥 2026-07-28 拍板）。
+**产品进度小程序码（2026-07-28；明细级，与流转卡同粒度）**：主站订单详情抽屉明细动作区「进度码」按钮 → `GET /api/domestic/items/{id}/wxacode` 生成微信小程序码（`wxacode.getUnlimited`，scene=`i:<item_id>:<hmac16>`，永久有效），弹窗可下载图片或打印 30×20mm 标签（左 LOGO 右码，与流转卡二维码标签同版式）。微信扫一扫拉起小程序落到**免登录**页 `pages/domestic/track/track`（调 `GET /api/mini/domestic/track?scene=`），自 2026-09-15 起仅返回签名对应明细（图片访问同粒度），显示明细顾客、属性备注及配置为公开的工序完成情况；不公开件数、金额和工艺路线，未配路线时不显示提示。顾客名在明细上方，其下显示选填的顾客下单日期（年月日）；属性备注字号 32rpx。要点：
+- 免登录的唯一授权凭证是 scene 的 16 hex HMAC 签名（免登录口子 8 hex 不够，64-bit 才谈得上防在线遍历），域 `ARK-DT:<item_id>` 与流转卡 `ARK-D:<item_id>` 隔离——同一个 item_id 两个域，流转卡贴在车间人尽可见且只截 8 hex，共用域会泄露签名前半。track 页无搜索/扫码入口防遍历；软删单 404。**track 端点按 `order_service.track_public_view` 白名单裁剪**：2026-09-15 调整为仅当前明细的顾客、属性、发型、颜色、要求、备注（含参考图）及配置为公开的工序完成情况；金额、数量、路线与内部状态不下发。
 - **`QR_SIGN_SECRET` 停在仓库默认值时，出码端点和 track 端点都 503 拒绝服务**——默认值进了 git，人人可离线伪造签名，整个免登录授权模型就没了。部署前必须在 `.env` 配随机值。
 - **密钥轮换过渡（2026-07-30）**：这把密钥同时签外贸 ARK-P 打印卡——2026-07-30 生产换钥后全部已印卡（外贸+内贸）验签失效。补了 `QR_SIGN_SECRET_LEGACY` 兜底：登录后的报工扫码（外贸 `production/report_service.qr_sign_matches`、内贸 `domestic/report_service.qr_sign_matches`）当前密钥验不过时用旧密钥再试；**免登录进度码 `verify_track_scene` 永远只认当前密钥**（有测试钉死）。在制订单消化完后删掉该配置关闭兜底。
 - `app/mini/wx_client.py`：access_token 走 **stable_token**（幂等不顶号），内存缓存提前 300s 刷新；**该接口要求服务器出口 IP 在微信公众平台 IP 白名单**（jscode2session 不要求，登录正常≠这里能通，报 40164 就是白名单）。
@@ -1023,17 +1038,35 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 
 ## WhatsApp 实时翻译（whatsapp_translation，2026-09-03）
 
-**话术助手（1.3.0，2026-09-07，本地实现、默认关闭）**：在原领域增加 `reply_service/reply_state/reply_guard/reply_schemas/reply_prompts`；来源适配位于 `knowledge/reply_sources.py`，只走发布读取和实时员工 ACL，不调用会记录原始 query 的搜索审计接口。独立 `whatsapp_reply:write` 不扩展知识权限。UI 先预览一条回复及中文含义、简短策略理由，填入/恢复共享编辑器写保护；取消、切换会话、新消息、草稿和语言变化均使旧结果失效，绝不触发原生发送。
+**话术事实 v1.6.5**：默认加载随发布profile，环境绑定按章节显式覆盖；解决“config文件有FAQ但实例仅约束”的问题。生成前按发帘产品族/明确长度查询有权访问的启用目录规格，结果区分未匹配、无权限和不可用，不等同库存或供货承诺。生成与缓存返回重验目录权限。详见 [事实与目录](requirements/2026-09-11-whatsapp-facts-catalog.md)。
 
-**知识用途边界**：Settings 中的来源绑定精确指定文档、发布修订、章节索引/文本 SHA-256、政策版本及 `method/public_fact/constraint/blocked` 用途。仅 `public_fact` 可被引用为新对客事实，method 只指导策略，constraint 限制承诺。必需约束独立于检索排名；按完整标题章节打包，每段最多 1,200 字符、合计 6,000/6 段。更新、撤权、停用或缓存命中均重新校验；新修订不会继承外发许可。尚无生产对外事实授权配置。
+**自动接管 v1.6.4**：生成结果先无损整理再形成发送契约；有segments可补重复正文，按自然边界拆长段/合并过多短段，长度使用与浏览器一致的UTF16单位。不能整理或未知动作保草稿handoff；显式wait/handoff不发送。扩展展示恢复的人工草稿，真正JSON损坏/无正文/展示超限各报具体错误。详见 [结果恢复](requirements/2026-09-11-whatsapp-result-recovery.md)。
 
-**调用与启用**：最多两次 `app.ai.service.chat(snapshot_mode="metadata")`，独立 planner/generator 预设由 bootstrap 准备为关闭状态，不覆盖管理员修改、不变更翻译预设。OpenAI 协议默认 `response_format=json_object`，避免仅凭提示词约束而返回 Markdown 围栏；已有话术预设需管理员核对该配置。话术专用 HTTP 总期限会取消在途连接，其他 AI 调用默认行为不变。服务端 30 秒、扩展 35 秒，独立每人并发 1/每分钟 6/每天 100。配置与前提见 [启用说明](requirements/2026-09-07-whatsapp-reply-activation.md)，已获授权的 59 次模型基线和未通过项见 [实测记录](requirements/2026-09-07-whatsapp-reply-model-baseline.md)；未合并、推送或部署。
+**自动接管 v1.6.3**：实机发送控件可能只有精确的 Send/发送标签或 wds-ic-send-filled 图标；不能只依赖旧 testid。限制当前 footer、可见可用单候选，嵌套去重。完整回复预览保留全部段落和本地提交数，第一段失败不代表模型只生成一段。生成规则要求多问题覆盖优先于简短偏好。详见 [发送与完整回复](requirements/2026-09-11-whatsapp-send-coverage.md)。
 
-**DOM 边界**：WhatsApp 结构识别只允许放在 `extensions/whatsapp-translation/src/whatsapp/`，只读取当前一对一文字会话；群组、社区、媒体、语音、文件、贴纸和未知 DOM 一律 fail-closed。测试只能使用自建合成 fixture，禁止真实 WhatsApp 截图、HTML、文本、联系人、电话或消息 ID 进入仓库。
+**FAQ检索修复（2026-09-11）**：英文检索按完整词和出现与否评分、过滤虚词、优先最新客户问题；补酸处理章节绑定，已知问题直接回答未知单独澄清。必须同时更新后端与环境绑定。详见 [知识召回](requirements/2026-09-11-whatsapp-faq-retrieval.md)。
 
-**发送边界**：扩展可以翻译可见收件消息，也可以把译文写入发件框；但永远不模拟 WhatsApp 发送按钮或提交事件。发译必须先展示预览，员工仍执行原生发送。
+**自动接管 v1.6.2**：系统通知不参与完整性判断，旧未知占位交Agent判断；最新未知/媒体及未识别发送方仍停止，各原因单独提示。详见 [完整性误判修复](requirements/2026-09-11-whatsapp-auto-context-fix.md)。
 
-**AI 与数据边界**：模型调用只通过 `app.ai.service.chat` 的 metadata-only 模式；AI 日志仅保留方向、语言、字符数、token、耗时、成功/错误码和 `model_log_id`。数据库、日志、fixture、截图和 commit 不得出现 WhatsApp 明文/译文、联系人、电话、message ID 或页面 HTML。
+**自动接管 v1.6.1 修复**：等待原生发送按钮渲染，草稿与选区识别图片表情；历史滚动空窗有限原地等待，恢复后仍须匹配重叠。仅扩展更新。详见 [复现与交付](requirements/2026-09-11-whatsapp-takeover-fixes.md)。
+
+**自动接管 v1.6.0**：用户主动开启当前前台聊天后自动生成短段并发送，沿用后台预设；等待/交人工动作、发送前核验、单实例锁和不确定停止。普通话术仍为预览/填入。详见 [发送授权与验收边界](requirements/2026-09-11-whatsapp-auto-takeover.md)。
+
+**扩展 v1.5.3 界面整理**：话术面板分建议回复、聊天上下文、询盘与接管三个标签；主操作固定，设置与依据按需展开。详见 [UI交付](requirements/2026-09-11-whatsapp-reply-ui.md)。
+
+**扩展 v1.5.2 增量更新**：同聊天历史复用页面内缓存，可靠追加新消息，最新底部不再滚动；聊天切换或无法衔接时重采。包含1.5.1能力字段传递修复。详见 [缓存边界](requirements/2026-09-11-whatsapp-history-cache.md)。
+
+**话术助手 v1.5.0（2026-09-11，本地待集成）**：默认自动滚动加载当前一对一聊天可获取的历史，保留角色、时间、引用及媒体占位，可下载脱敏 JSON；最多 2,000 条/120,000 字符，容量到达明确停止，不静默截断。DOM ID 仅作内存重叠匹配，不序列化。网页边界不等于手机全部历史，群组及未知聊天结构仍拒绝采集。详见 [长历史实现与验证边界](requirements/2026-09-11-whatsapp-full-history.md)。
+
+**生成与记忆**：`reply_direct` 替换 planner→generator 及旧 `reply_guard/reply_prompts`，普通输入一次生成，超过 32,000 字符先分块摘要。取消草稿内容语义拒绝；JSON 解析、权限、知识发布版本/ACL、幂等与时效仍保留。询盘、承诺台账、人工修正、接管摘要延续，记忆生成/保存失败仅提示，不阻止草稿展示和使用；保存仍检查证据、归属和 CAS。20 项知识绑定见 `config/whatsapp-reply-phase12.json`，method/public_fact/constraint 用途由提示词指导，不再以 claims 阻断草稿。
+
+**调用与启用**：仅使用 generator 预设，bootstrap 默认关闭且不覆盖管理员已有配置；建议 max_tokens 3,200，默认总期限 120 秒（上限 180），扩展请求期限 185 秒。模型调用走 `app.ai.service.chat(snapshot_mode="metadata")`；长输入增加摘要调用，共享总期限。并发/配额限制不变。本轮不修改生产配置、不部署；旧 planner 数据库预设保留，运行时不再依赖。既有模型基线属于旧策略，不能当作新版质量验收。
+
+**DOM 边界**：选择器仅在 `src/whatsapp/`；用户主动采集期间暂停消息变化触发的翻译和自失效，仍检测聊天/输入框身份变化。采集可取消，完成后尽量恢复原滚动位置；新消息在恢复过程中到达则废弃快照。自动向上加载已用合成页面验证，真实 WhatsApp 仍待实机验证。
+
+**发送边界**：扩展可以翻译可见收件消息，也可以把译文写入发件框；普通翻译/话术不触发发送；用户明确开启的v1.6自动接管按上述边界调用当前聊天发送按钮。发译必须先展示预览，员工仍执行原生发送。
+
+**AI 与数据边界**：模型调用只通过 `app.ai.service.chat` 的 metadata-only 模式；AI 日志仅保留方向、语言、字符数、token、耗时、成功/错误码和 `model_log_id`。日志、fixture、截图和 commit 不得出现真实 WhatsApp 明文/译文、联系人、电话、message ID 或页面 HTML。主动下载的脱敏聊天 JSON 可保存在用户本地文件；服务端唯一持久正文例外是用户授权的 `ark_whatsapp_reply_inquiries` 内有界复盘、脱敏证据和人工修正；不存扩展 storage，默认固定30天、可主动删除。翻译和话术请求表继续只存元数据。
 
 **译文质量（v1.1，2026-09-04）**：收发拆两个 preset——`whatsapp_text_translation` 收件方向（忠实还原客户语气与歧义，只译向 zh-CN），`whatsapp_outgoing_translation` 发件方向（WhatsApp 商务聊天语域，额外返回 `back_translation` 中文回译供业务员核对）。外贸术语表复用 `sys_dict`，类型 `whatsapp_glossary_<lang>`，`code`=中文术语、`label`=对应语言术语，运行时只注入命中的条目（`.7` 见 `app/whatsapp_translation/glossary_service.py`）；可识别源语言列表由 constants 注入 user message，不写死在 prompt。`seed_ai` 的升级函数只在 `whatsapp_text_translation` 仍是首版提示词时替换为外贸语域版，管理员改过的不动。
 
@@ -1052,3 +1085,16 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 2026-09-08 生产客户可选关联：保留生产金额/路线边界，创建传customer_id，修改用production_customer_id与业务换客重报价契约区分。公海释放、客户订单数及复购历史只统计business。逐件标签订单号居中自动换行，其下增加下单日期；长名称/编号自动调整字号，二维码保持16.8mm。142仅放松生产客户空值CHECK，保留数据及零金额限制，不能回退丢失已有客户关联。
 
 2026-09-08 内贸台账密度：下单与查询共用 flex 换行工具栏；行单元格仅保留一层水平留白，正文维持 13px，普通编号单行、超长号按需换行。表格剩余高度观察原生工具栏，以适配宽度变化和生产标签隐藏销售筛选。
+
+2026-09-09 逐件标签排版：去掉 LOGO；左侧五区为规格（头套 size/length，发片 craft）、实际 unit_no 至少两位、客户、系统编号、日期。规格来自现有 item.attrs，分段打印保持单件实际序号，二维码身份及 16.8mm 尺寸不变。长文本按区域预算调整字号并换行，常规规格和客户文字 2mm，序号 2.2mm、日期 2mm。
+
+2026-09-09 内贸 Excel 双表：`build_order_workbook` 分别生成正常和无价格表，后者从列定义中排除五个金额字段，并跳过财务汇总与金额说明；两表共用客户头、产品规格及数量，参考图分别嵌入。完整要求改为每个表末尾的合并列区域，保持两张 sheet，行高按明细号/字段/正文各自换行数取最大值，打印区域包含全部续行。
+
+## 库存色块图工作台集成（colorwork，2026-09-14）
+
+库存色块图调整台（仓库顶层 `colorwork-workbench/`，vinext + Cloudflare Worker/D1/R2 技术栈）以**主站同源内部模块**方式并入方舟：方舟管功能入口与页面权限，工作台自身 UI 与业务逻辑原样保留，账号与设置模块已移除（首次素材导入并入「原始库存图文件」页）。
+
+- **入口与权限**：侧边栏「库存色块图」分组下三个页面（库存图直接下载 `/colorwork/download`、实时库存图修改 `/colorwork/edit`、原始库存图文件 `/colorwork/master`），各挂独立页面权限码。前端 `ColorworkFrame.vue` 调 `GET /api/colorwork/sso?view=…` 换短命 HS256 令牌（120s，含 views 清单），iframe 载入同源 `/api/colorwork/workbench/api/auth/ark` 落座（站内会话 Cookie + 视图清单存 local_sessions.views_json）。
+- **站内逐视图校验**：工作台 API 用 `requireView('library'|'inventory'|'master')` 兜底；master 视图持有者映射为站内 admin 角色。无方舟会话直开站点只见进入提示，原站内登录页/账号管理 API 已删除。
+- **实时库存状态**：`GET /api/colorwork/inventory-status?template_id=`（共享密钥头 `x-colorwork-sync-key`，仅供工作台服务端回源）按 `TEMPLATE_MATCH`（`app/colorwork/constants.py`）把 23 个模板映射到 okki_products 名称前缀（Regular=Standard Double Drawn；Butterfly=Double Genius Holes Weft；Injection=Invisible Tape Hair；Flex=Volume Weft——2026-09-14 业务确认），按「颜色|尺寸」聚合 SUM(enable_count)>0 → 到货正常，否则正在补货。工作台 `getCurrentSnapshot` 返回前实时覆盖（`lib/server/ark-sync.ts`，3.5s 超时，失败回退站内手动状态），页面每 30 秒静默轮询（有未保存修改时跳过）。okki 无对应产品的规格不覆盖、保留站内状态。
+- **部署与配置**：浏览器固定走 `/api/colorwork/workbench/`，方舟后端代理到 COLORWORK_INTERNAL_ORIGIN（默认回环8787），不需要独立域名。统一部署入口自动构建并管理北京内部运行服务、隔离验证迁移、备份持久数据及生成受限密钥配置；详见 `colorwork-workbench/README.md`。SSO 默认从 JWT 密钥按用途派生，回源密钥按用途派生；支持显式配置覆盖。

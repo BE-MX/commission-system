@@ -38,6 +38,18 @@ class BatchSubmitIn(BaseModel):
     lock_version: int = Field(gt=0)
 
 
+class DirectoryNameIn(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value):
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("目录名称不能为空")
+        return normalized
+
+
 class PortalAccountCreate(BaseModel):
     customer_id: str = Field(min_length=1, max_length=64)
     login_email: str

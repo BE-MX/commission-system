@@ -131,6 +131,8 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     def _whatsapp_translation_pairing_cleanup_job():
         with SessionLocal() as db:
             prune_unconsumed_pairings(db)
+            from app.whatsapp_translation.reply_memory import purge_expired_inquiries
+            purge_expired_inquiries(db)
 
     def _domestic_public_sea_daily_job():
         with SessionLocal() as db:

@@ -226,6 +226,15 @@ export function batchDownload(assetIds) {
   })
 }
 
+// 批量追加标签（多选维度并集，单选维度替换）：tags = [{dimension_id, tag_value_ids}]
+export function batchAddTags(assetIds, tags) {
+  return assetClient.post('/batch/tags', { asset_ids: assetIds, tags })
+}
+
+export function batchDeleteAssets(assetIds) {
+  return assetClient.post('/batch/delete', { asset_ids: assetIds })
+}
+
 export function downloadAsset(assetId) {
   return assetClient.get(`/${assetId}/download`, { responseType: 'blob' })
 }

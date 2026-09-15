@@ -25,27 +25,19 @@ def test_evaluation_covers_thirty_cases_without_printing_generated_body(db, monk
 
 def test_diagnostics_never_echo_model_values(monkeypatch, capsys):
     import pytest
-    from app.whatsapp_translation import reply_guard
-    from app.whatsapp_translation.reply_schemas import ReplyPlan
+    from app.whatsapp_translation import reply_direct
     from app.whatsapp_translation.errors import WhatsAppTranslationError
     evaluation.install_metadata_diagnostics(monkeypatch)
     with pytest.raises(WhatsAppTranslationError):
-        reply_guard.parse_json('{"stage":"SYNTHETIC_PRIVATE_OUTPUT"}', ReplyPlan)
+        reply_direct._object('SYNTHETIC_PRIVATE_OUTPUT invalid JSON')
     printed = capsys.readouterr().out
     assert "SYNTHETIC_PRIVATE_OUTPUT" not in printed
-    assert "missing" in printed
-    assert "schema_validation" in printed
+    assert "invalid_json_object" in printed
 
 
-def test_safety_diagnostic_classifies_rule_without_echoing_draft(monkeypatch, capsys):
-    import pytest
-    from app.whatsapp_translation import reply_service
-    from app.whatsapp_translation.errors import WhatsAppTranslationError
+def test_commercial_terms_do_not_generate_safety_rejection_diagnostics(monkeypatch, capsys):
+    from app.whatsapp_translation import reply_direct
     evaluation.install_metadata_diagnostics(monkeypatch)
-    payload = output(reply_text="SYNTHETIC_PRIVATE_OUTPUT: We offer free samples.", claims=[])
-    with pytest.raises(WhatsAppTranslationError):
-        reply_service.validate_output(json.dumps(payload), "en", [], request())
-    printed = capsys.readouterr().out
-    assert "commercial_or_internal_term" in printed
-    assert "free samples" not in printed
-    assert "SYNTHETIC_PRIVATE_OUTPUT" not in printed
+    payload = output(reply_text="SYNTHETIC_PRIVATE_OUTPUT: We offer free samples.")
+    assert reply_direct._object(json.dumps(payload))["reply_text"] == payload["reply_text"]
+    assert capsys.readouterr().out == ""

@@ -13,6 +13,7 @@ var BLOCK_MESSAGES = {
   NO_ROUTE: '这个产品还没配工艺路线，请联系跟单',
   ORDER_TERMINATED: '订单已终止或已删除，不能报工',
   ORDER_DRAFT: '订单还是草稿，请跟单提交后再报工',
+  ORDER_REVIEW: '订单待审核或审核未通过，审核通过后再报工',
   UNIT_QR_REQUIRED: '当前账号是逐件扫码模式，请扫描 A1-01 这类单件二维码',
   ALL_DONE: '这批货所有工序都做完了',
   NOT_ASSIGNED: '你没有被分配到这道工序',

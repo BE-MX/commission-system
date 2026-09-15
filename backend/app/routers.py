@@ -16,6 +16,7 @@ from app.dingtalk.router import router as dingtalk_router
 from app.dingtalk.callback import router as dingtalk_callback_router
 from app.system.router import router as system_router
 from app.ai.router import router as ai_router
+from app.ai_gateway.router import router as ai_gateway_router, admin_router as ai_gateway_admin_router
 from app.insight.router import router as insight_router
 from app.stock.router import router as stock_router
 from app.stock.public_router import router as stock_public_router
@@ -62,6 +63,9 @@ from app.semifinished.router import router as semifinished_router
 from app.integration.router import router as integration_router
 from app.shipping_inspection.router import router as shipping_inspection_router
 from app.whatsapp_translation.router import router as whatsapp_translation_router
+from app.mail_outreach.router import router as mail_outreach_router
+from app.colorwork.router import router as colorwork_router
+from app.colorwork.proxy import router as colorwork_proxy_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -83,6 +87,8 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(short_link_router, tags=["短链接"])
     app.include_router(system_router, prefix="/api/system", tags=["系统字典"])
     app.include_router(ai_router, prefix="/api/ai", tags=["AI 接入"])
+    app.include_router(ai_gateway_router, prefix="/api/ai-gateway", tags=["站点 AI 调用"])
+    app.include_router(ai_gateway_admin_router, prefix="/api/ai-gateway/admin", tags=["站点 AI 管理"])
     app.include_router(insight_router, prefix="/api/insight", tags=["方舟洞见"])
     app.include_router(stock_router, prefix="/api/stock", tags=["备货管理"])
     app.include_router(stock_public_router, prefix="/api/public/stock", tags=["对外库存查询"])
@@ -129,3 +135,6 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(integration_router, prefix="/api/integrations", tags=["外部站点发票接入"])
     app.include_router(shipping_inspection_router, prefix="/api/shipping-inspection", tags=["发货检验"])
     app.include_router(whatsapp_translation_router, prefix="/api/whatsapp-translation", tags=["WhatsApp 实时翻译"])
+    app.include_router(mail_outreach_router, prefix="/api/mail-outreach", tags=["客户邮件触达"])
+    app.include_router(colorwork_router, prefix="/api/colorwork", tags=["库存色块图工作台"])
+    app.include_router(colorwork_proxy_router, prefix="/api/colorwork")

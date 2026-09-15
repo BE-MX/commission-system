@@ -21,7 +21,7 @@ def health(port):
         raise RuntimeError("Office HTTP/database readiness failed")
 
 
-def prepare(live, previous, revision):
+def prepare(live, previous, revision, recover_149=False):
     if os.name != "nt":
         raise RuntimeError("Full release runs on the office Windows server")
     nssm = shutil.which("nssm") or str(Path.home() / "AppData/Local/Microsoft/WinGet/Links/nssm.exe")
@@ -40,7 +40,16 @@ def prepare(live, previous, revision):
     current_python = application.parent / "python.exe"
     if not current_python.exists():
         raise RuntimeError("Office Python executable missing")
-    health(int(port.group(1)))
+    if recover_149:
+        from schema_release import check_recovery
+        check_recovery(recover_149=True)
+        current_state = run([nssm, "status", "CommissionSystem"], capture=True)
+        if current_state not in {"SERVICE_RUNNING", "SERVICE_STOPPED"}:
+            raise RuntimeError("Office service must be stable before recovery")
+        if current_state == "SERVICE_RUNNING":
+            health(int(port.group(1)))
+    else:
+        health(int(port.group(1)))
     requirements = ROOT / "backend/requirements.txt"
     stamp = input_digest([requirements], run([current_python, "--version"], capture=True))
     candidate = STATE / "python-envs" / stamp

@@ -68,6 +68,30 @@ export function formatBeijingTime(value, options = {}) {
   return `${parts.hour}:${parts.minute}${seconds}`
 }
 
+/**
+ * 按指定 IANA 时区格式化时间（如客户当地时间）。
+ * value 为 UTC ISO 字符串或 Date；timeZone 为后端返回的 IANA 名。
+ * 解析/格式化失败（含非法时区名）兜底返回空串，由调用方决定占位文案。
+ */
+export function formatInTimeZone(value, timeZone) {
+  if (value == null || value === '' || !timeZone) return ''
+  const date = value instanceof Date ? value : new Date(String(value).trim())
+  if (Number.isNaN(date.getTime())) return ''
+  try {
+    return new Intl.DateTimeFormat('zh-CN', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).format(date)
+  } catch {
+    return ''
+  }
+}
+
 export function currentBeijingHour() {
   return Number(new Intl.DateTimeFormat('en-GB', {
     timeZone: BEIJING_TIME_ZONE,

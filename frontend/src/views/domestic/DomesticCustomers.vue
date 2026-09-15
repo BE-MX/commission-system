@@ -6,43 +6,56 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <el-row :gutter="16" class="toolbar">
-      <el-col :span="4">
-        <el-input v-model="searchForm.keyword" placeholder="搜索编码 / 店名 / 联系人 / 电话" clearable prefix-icon="Search" @keyup.enter="handleSearch" @clear="handleSearch" />
-      </el-col>
-      <el-col :span="4">
-        <el-select v-model="searchForm.status" placeholder="状态" clearable style="width: 100%" @change="handleSearch">
-          <el-option label="启用" :value="1" />
-          <el-option label="停用" :value="0" />
-        </el-select>
-      </el-col>
-      <el-col :span="3">
-        <el-select v-model="searchForm.province" placeholder="省份" filterable clearable style="width: 100%" @change="handleProvinceChange">
-          <el-option v-for="province in options.provinces" :key="province" :label="province" :value="province" />
-        </el-select>
-      </el-col>
-      <el-col :span="3">
-        <el-select v-model="searchForm.city" placeholder="城市" filterable clearable style="width: 100%" @change="handleSearch">
-          <el-option v-for="city in options.cities" :key="city" :label="city" :value="city" />
-        </el-select>
-      </el-col>
-      <el-col :span="10">
-        <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
-        <GlassButton v-permission="'domestic:write'" variant="ghost" left-icon="Plus" @click="openDialog()">新增客户</GlassButton>
-        <GlassButton v-permission="'domestic:admin'" variant="ghost" left-icon="Upload" @click="openImport">导入客户</GlassButton>
-      </el-col>
-    </el-row>
+    <div ref="filtersRef" class="customer-filters">
+      <div class="toolbar customers-toolbar">
+        <div class="customer-filter customer-filter-wide">
+          <el-input v-model="searchForm.keyword" placeholder="搜索编码 / 店名 / 联系人 / 电话" clearable prefix-icon="Search" @keyup.enter="handleSearch" @clear="handleSearch" />
+        </div>
+        <div class="customer-filter">
+          <el-select v-model="searchForm.status" placeholder="状态" clearable style="width: 100%" @change="handleSearch">
+            <el-option label="启用" :value="1" />
+            <el-option label="停用" :value="0" />
+          </el-select>
+        </div>
+        <div class="customer-filter">
+          <el-select v-model="searchForm.province" placeholder="省份" filterable clearable style="width: 100%" @change="handleProvinceChange">
+            <el-option v-for="province in options.provinces" :key="province" :label="province" :value="province" />
+          </el-select>
+        </div>
+        <div class="customer-filter">
+          <el-select v-model="searchForm.city" placeholder="城市" filterable clearable style="width: 100%" @change="handleSearch">
+            <el-option v-for="city in options.cities" :key="city" :label="city" :value="city" />
+          </el-select>
+        </div>
+        <div class="customer-filter">
+          <el-select v-model="searchForm.customer_level" placeholder="客户等级" clearable style="width: 100%" @change="handleSearch">
+            <el-option v-for="item in options.customer_level" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </div>
+        <div class="customer-filter">
+          <el-select v-model="searchForm.owner_user_id" placeholder="归属销售" filterable clearable style="width: 100%" @change="handleSearch">
+            <el-option v-for="item in options.owners" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </div>
+        <div class="customer-filter-actions">
+          <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
+          <GlassButton v-permission="'domestic:write'" variant="ghost" left-icon="Plus" @click="openDialog()">新增客户</GlassButton>
+          <GlassButton v-permission="'domestic:admin'" variant="ghost" left-icon="Upload" @click="openImport">导入客户</GlassButton>
+        </div>
+      </div>
 
-    <el-alert class="membership-tip" type="info" :closable="false" show-icon title="会员等级默认按最近一次充值金额核定；管理员可「初始化」期初或「调整」临时覆盖，下一次充值会重新按金额核定。" />
+      <el-alert class="membership-tip" type="info" :closable="false" show-icon title="会员等级默认按最近一次充值金额核定；管理员可「初始化」期初或「调整」临时覆盖，下一次充值会重新按金额核定。" />
+
+    </div>
 
     <div class="table-card customers-panel">
       <el-tabs v-model="searchForm.owner_scope" class="customer-tabs" @tab-change="handleSearch">
         <el-tab-pane label="私海客户" name="private" />
         <el-tab-pane label="公海客户" name="public" />
       </el-tabs>
-      <el-table :data="list" v-loading="loading" border class="list-table" style="width: 100%">
+      <el-table ref="tableRef" :data="list" :height="tableHeight" scrollbar-always-on v-loading="loading" border class="list-table" style="width: 100%">
+        <el-table-column prop="shop_name" label="客户店名" min-width="160" fixed="left" show-overflow-tooltip />
         <el-table-column prop="custom_code" label="客户编码" min-width="110" show-overflow-tooltip />
-        <el-table-column prop="shop_name" label="客户店名" min-width="160" show-overflow-tooltip />
         <el-table-column label="客户等级" min-width="90">
           <template #default="{ row }">
             <el-tag v-if="row.customer_level" size="small" effect="plain" type="warning">{{ row.customer_level }}</el-tag>
@@ -70,14 +83,11 @@
         <el-table-column label="会员等级" min-width="110">
           <template #default="{ row }"><el-tag size="small" effect="plain">{{ row.membership_label }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="最近充值" min-width="170">
-          <template #default="{ row }">
-            <template v-if="row.last_recharge_amount != null">
-              <div>¥{{ Number(row.last_recharge_amount).toFixed(2) }}</div>
-              <div class="muted">{{ row.last_recharged_at || '-' }}</div>
-            </template>
-            <span v-else>-</span>
-          </template>
+        <el-table-column label="最近充值" min-width="120" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.last_recharge_amount != null ? `¥${Number(row.last_recharge_amount).toFixed(2)}` : '-' }}</template>
+        </el-table-column>
+        <el-table-column label="最近充值时间" min-width="170" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.last_recharged_at || '-' }}</template>
         </el-table-column>
         <el-table-column label="省 / 市" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">{{ [row.province, row.city].filter(Boolean).join(' / ') || '-' }}</template>
@@ -111,18 +121,35 @@
             <el-tag size="small" :type="row.status ? 'success' : 'info'" effect="plain">{{ row.status ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="270" fixed="right">
+        <el-table-column label="操作" min-width="230" fixed="right">
           <template #default="{ row }">
-            <div class="customer-row-actions">
-            <GlassButton v-if="canOperateCustomer(row)" v-permission="'domestic:write'" variant="link" left-icon="Edit" @click="openDialog(row)">编辑</GlassButton>
-            <GlassButton v-if="canOperateCustomer(row)" v-permission="'domestic:write'" variant="link" :link-tone="row.status ? '' : 'success'" left-icon="SwitchButton" @click="toggleStatus(row)">
-              {{ row.status ? '停用' : '启用' }}
-            </GlassButton>
-            <GlassButton v-if="canOperateCustomer(row)" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Wallet" @click="openRecharge(row)">充值</GlassButton>
-            <GlassButton v-if="canOperateCustomer(row) && !row.initialized" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="CirclePlus" @click="openInit(row)">初始化</GlassButton>
-            <GlassButton v-if="canOperateCustomer(row)" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="EditPen" @click="openAdjust(row)">调整</GlassButton>
-            <GlassButton v-if="canOperateCustomer(row)" v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Tickets" @click="openLedger(row)">流水</GlassButton>
-            <GlassButton v-if="canOperateCustomer(row)" v-permission="'domestic:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
+            <div v-if="canOperateCustomer(row)" class="customer-row-actions">
+              <GlassButton v-permission="'domestic:write'" variant="link" left-icon="Edit" @click="openDialog(row)">编辑</GlassButton>
+              <GlassButton v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Tickets" @click="openLedger(row)">流水</GlassButton>
+              <div v-any-permission="['domestic:write', 'domestic:recharge', 'domestic:admin']" class="customer-more">
+                <el-dropdown trigger="click" placement="bottom-end">
+                  <GlassButton variant="link" right-icon="ArrowDown">更多</GlassButton>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <div v-permission="'domestic:write'" role="none">
+                        <el-dropdown-item icon="SwitchButton" @click="toggleStatus(row)">{{ row.status ? '停用' : '启用' }}</el-dropdown-item>
+                      </div>
+                      <div v-any-permission="['domestic:recharge', 'domestic:admin']" role="none">
+                        <el-dropdown-item icon="Wallet" @click="openRecharge(row)">充值</el-dropdown-item>
+                      </div>
+                      <div v-if="!row.initialized" v-any-permission="['domestic:recharge', 'domestic:admin']" role="none">
+                        <el-dropdown-item icon="CirclePlus" @click="openInit(row)">初始化</el-dropdown-item>
+                      </div>
+                      <div v-any-permission="['domestic:recharge', 'domestic:admin']" role="none">
+                        <el-dropdown-item icon="EditPen" @click="openAdjust(row)">调整</el-dropdown-item>
+                      </div>
+                      <div v-permission="'domestic:admin'" role="none">
+                        <el-dropdown-item icon="Delete" class="customer-delete-action" @click="handleDelete(row)">删除</el-dropdown-item>
+                      </div>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </div>
             </div>
           </template>
         </el-table-column>
@@ -276,7 +303,8 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="rechargeDialog.visible" title="客户充值" width="440px">
+    <el-dialog v-model="rechargeDialog.visible" title="客户充值（提交后需审核）" width="440px">
+      <el-alert type="info" show-icon :closable="false" class="tips" title="充值申请提交后进入审核，审核通过才入账并重新核定会员等级。" />
       <el-form label-width="90px">
         <el-form-item label="客户"><strong>{{ rechargeDialog.customer?.shop_name }}</strong></el-form-item>
         <el-form-item label="当前余额">¥{{ Number(rechargeDialog.customer?.balance || 0).toFixed(2) }}</el-form-item>
@@ -287,13 +315,24 @@
           <el-tag effect="plain">{{ membershipPreview(rechargeDialog.amount) }}</el-tag>
           <span class="preview-hint">仅按本次充值金额计算</span>
         </el-form-item>
+        <el-form-item label="转账凭证" required>
+          <el-upload
+            :file-list="rechargeDialog.voucherList" :auto-upload="false" :limit="1"
+            accept=".jpg,.jpeg,.png,.webp,.pdf"
+            :on-change="onRechargeVoucherChange" :on-remove="onRechargeVoucherRemove"
+            :on-exceed="onRechargeVoucherExceed"
+          >
+            <GlassButton variant="ghost">选择图片 / PDF</GlassButton>
+            <template #tip><span class="preview-hint">银行流水或转账截图，必填，不超过 20MB</span></template>
+          </el-upload>
+        </el-form-item>
         <el-form-item label="说明">
           <el-input v-model="rechargeDialog.remark" type="textarea" :rows="2" maxlength="500" placeholder="如：银行转账到账" />
         </el-form-item>
       </el-form>
       <template #footer>
         <GlassButton variant="ghost" @click="rechargeDialog.visible = false">取消</GlassButton>
-        <GlassButton variant="primary" :loading="rechargeDialog.saving" @click="confirmRecharge">确认充值</GlassButton>
+        <GlassButton variant="primary" :loading="rechargeDialog.saving" @click="confirmRecharge">提交审核</GlassButton>
       </template>
     </el-dialog>
 
@@ -319,8 +358,8 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="adjustDialog.visible" title="临时调整余额 / 等级" width="460px">
-      <el-alert type="warning" show-icon :closable="false" class="tips" title="余额正数加、负数减；等级覆盖是临时的，下一次充值会按金额重新核定。" />
+    <el-dialog v-model="adjustDialog.visible" title="临时调整余额 / 等级（提交后需审核）" width="460px">
+      <el-alert type="warning" show-icon :closable="false" class="tips" title="余额正数加、负数减；等级覆盖是临时的，下一次充值会按金额重新核定。提交后进入审核，审核通过才生效。" />
       <el-form label-width="90px">
         <el-form-item label="客户"><strong>{{ adjustDialog.customer?.shop_name }}</strong></el-form-item>
         <el-form-item label="当前状态">
@@ -342,7 +381,7 @@
       </el-form>
       <template #footer>
         <GlassButton variant="ghost" @click="adjustDialog.visible = false">取消</GlassButton>
-        <GlassButton variant="primary" :loading="adjustDialog.saving" @click="confirmAdjust">确认调整</GlassButton>
+        <GlassButton variant="primary" :loading="adjustDialog.saving" @click="confirmAdjust">提交审核</GlassButton>
       </template>
     </el-dialog>
 
@@ -375,9 +414,11 @@
 import { CHINA_REGIONS } from '@/data/chinaRegions'
 import AppUpload from '@/components/AppUpload.vue'
 import GlassButton from '@/components/GlassButton.vue'
+import { useOrderTableHeight } from './composables/useOrderTableHeight'
 import { useDomesticCustomers } from './composables/useDomesticCustomers'
 
 const chinaRegions = CHINA_REGIONS
+const { tableRef, filtersRef, tableHeight } = useOrderTableHeight()
 
 const {
   loading, list, total, page, pageSize, searchForm,
@@ -385,6 +426,7 @@ const {
   canOperateCustomer, handleProvinceChange,
   saving, dialog, options, openDialog, save,
   rechargeDialog, openRecharge, confirmRecharge,
+  onRechargeVoucherChange, onRechargeVoucherRemove, onRechargeVoucherExceed,
   initDialog, openInit, confirmInit,
   adjustDialog, openAdjust, confirmAdjust,
   ledgerDrawer, ledgerTypeLabel, openLedger, loadLedger,
@@ -400,7 +442,14 @@ const {
 .customers-page .toolbar,
 .customers-page .customers-panel { position: relative; z-index: 1; }
 
-.toolbar { margin-bottom: 16px; }
+.customers-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 10px; }
+.customer-filter { flex: 0 0 116px; min-width: 0; }
+.customer-filter-wide { flex-basis: 300px; }
+.customer-filter-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 600px) {
+  .customer-filter { flex: 1 1 calc(50% - 8px); }
+  .customer-filter-wide { flex-basis: 100%; }
+}
 .membership-tip { margin-bottom: 12px; position: relative; z-index: 1; }
 
 .customers-panel {
@@ -420,11 +469,21 @@ const {
 
 .customer-tabs { padding: 0 16px; --el-color-primary: var(--color-primary); }
 .customer-tabs :deep(.el-tabs__header) { margin-bottom: 0; }
-.customer-row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; white-space: normal; }
+.customer-row-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: 12px; white-space: nowrap; }
 .customer-row-actions :deep(button) { margin: 0; flex: 0 0 auto; white-space: nowrap; }
 
+.customers-panel :deep(.el-table-fixed-column--left),
 .customers-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
+.customers-panel :deep(th.el-table-fixed-column--left),
 .customers-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
+
+.customers-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--left),
+.customers-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
+.customers-panel :deep(.list-table .el-table__body td.el-table__cell) { padding: 4px 0; }
+.customers-panel :deep(.list-table .el-table__header th.el-table__cell) { padding: 8px 0; }
+.customers-panel :deep(.el-table .cell) { padding: 0 8px; line-height: 20px; white-space: nowrap; }
+.customer-more { display: flex; align-items: center; flex: 0 0 auto; }
+.customer-delete-action { color: var(--el-color-danger); }
 
 .pager { margin: 12px; justify-content: flex-end; }
 .balance-value { color: var(--el-color-success); font-weight: 600; }

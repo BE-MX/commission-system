@@ -43,6 +43,7 @@ from app.domestic import (
     customer_service,
     order_service,
     pricing_service,
+    request_service,
 )
 from app.domestic import models as domestic_models
 from app.domestic.schemas import (
@@ -573,26 +574,40 @@ def test_customer_api_returns_recharge_and_list_membership_contract(db):
     customer = _membership_customer(db, user, "api-contract")
     client = _customer_api_client(db, user.id)
 
+    form = {"amount": "30000", "request_id": "api-contract-recharge"}
+    voucher = {"file": ("voucher.png", b"fake-png-bytes", "image/png")}
     recharge_response = client.post(
         f"/api/domestic/customers/{customer.id}/recharges",
-        json={"amount": 30000, "request_id": "api-contract-recharge"},
+        data=form, files=voucher,
     )
     replay_response = client.post(
         f"/api/domestic/customers/{customer.id}/recharges",
-        json={"amount": 30000, "request_id": "api-contract-recharge"},
+        data=form, files=voucher,
     )
-    list_response = client.get("/api/domestic/customers")
 
     assert recharge_response.status_code == 200
-    assert recharge_response.json()["message"] == "充值成功"
+    assert recharge_response.json()["message"] == "充值申请已提交，审核通过后生效"
     assert "balance" not in recharge_response.json()["data"]
+    assert recharge_response.json()["data"]["status"] == "pending"
     assert replay_response.status_code == 200
-    assert replay_response.json()["message"] == "该笔充值已经处理过，当前会员状态以返回结果为准"
+    assert replay_response.json()["message"] == "该笔充值申请已提交过，当前状态以返回结果为准"
+
+    # 审核通过前余额与会员等级不变；由另一人审核通过才入账
+    db.refresh(customer)
+    assert customer.membership_level is None
+    assert customer.last_recharge_amount is None
+    reviewer = _operator(db, "customer-api-contract-reviewer")
+    approved = request_service.approve_request(
+        db, recharge_response.json()["data"]["id"],
+        reviewer_id=reviewer.id, can_admin=False,
+    )
+
+    list_response = client.get("/api/domestic/customers")
     item = list_response.json()["data"]["items"][0]
     assert item["membership_level"] == "black"
     assert item["membership_label"] == "黑卡会员"
     assert item["last_recharge_amount"] == 30000.0
-    assert item["last_recharged_at"] == recharge_response.json()["data"]["last_recharged_at"]
+    assert item["last_recharged_at"] == approved["result"]["last_recharged_at"].isoformat()
 
 
 def test_recharge_api_rolls_back_before_returning_business_error(db, monkeypatch):
@@ -607,15 +622,17 @@ def test_recharge_api_rolls_back_before_returning_business_error(db, monkeypatch
         session.flush()
         raise ValueError("模拟充值失败")
 
-    monkeypatch.setattr(balance_service, "recharge_customer", fail_after_write)
+    monkeypatch.setattr(request_service, "create_recharge_request", fail_after_write)
     response = client.post(
         f"/api/domestic/customers/{customer.id}/recharges",
-        json={"amount": 30000, "request_id": "api-rollback-request"},
+        data={"amount": "30000", "request_id": "api-rollback-request"},
+        files={"file": ("voucher.png", b"fake-png-bytes", "image/png")},
     )
 
     assert response.status_code == 400
     db.refresh(customer)
     assert customer.remark == "原备注"
+    assert db.query(domestic_models.DomesticCustomerRequest).count() == 0
 
 
 def test_recharge_api_rolls_back_unexpected_errors(db, monkeypatch):
@@ -634,15 +651,17 @@ def test_recharge_api_rolls_back_unexpected_errors(db, monkeypatch):
         session.flush()
         raise RuntimeError("模拟数据库提交失败")
 
-    monkeypatch.setattr(balance_service, "recharge_customer", fail_after_write)
+    monkeypatch.setattr(request_service, "create_recharge_request", fail_after_write)
     response = client.post(
         f"/api/domestic/customers/{customer.id}/recharges",
-        json={"amount": 30000, "request_id": "unexpected-rollback-request"},
+        data={"amount": "30000", "request_id": "unexpected-rollback-request"},
+        files={"file": ("voucher.png", b"fake-png-bytes", "image/png")},
     )
 
     assert response.status_code == 500
     db.refresh(customer)
     assert customer.remark == "原备注"
+    assert db.query(domestic_models.DomesticCustomerRequest).count() == 0
 
 
 def test_member_reductions_are_explicit():
@@ -1166,6 +1185,20 @@ def _operator(db, suffix):
     db.add(user)
     db.flush()
     return user
+
+
+def _approve_pending_review(db, order_id, reviewer):
+    """优惠价单先落待审核（不扣款）：审核通过才转生产中并按快照扣款。"""
+    order = db.get(domestic_models.DomesticOrder, order_id)
+    assert order.status == domestic_constants.ORDER_PENDING_REVIEW
+    assert order.charged_amount == D("0.00")
+    result = order_service.review_order(
+        db, order_id, decision="approve", remark=None,
+        reviewer_id=reviewer.id, can_admin=False,
+    )
+    db.refresh(order)
+    assert order.status == domestic_constants.ORDER_PRODUCING
+    return result
 
 
 def _customer_and_order(db, suffix):
@@ -3178,11 +3211,19 @@ def test_submit_draft_reprices_membership_atomically_then_charges_confirmed_quot
     db.refresh(item)
     db.refresh(customer)
     assert result["replayed"] is False
-    assert order.status == domestic_constants.ORDER_PRODUCING
+    # 会员价提交先落待审核：明细快照已重算，但未扣款
+    assert order.status == domestic_constants.ORDER_PENDING_REVIEW
     assert order.total_amount == D("880.00")
-    assert order.charged_amount == D("880.00")
+    assert order.charged_amount == D("0.00")
     assert item.membership_level_snapshot == "black"
     assert item.unit_price == D("880.00")
+    assert customer.balance == balance_before
+
+    reviewer = _operator(db, "draft-submit-membership-reviewer")
+    _approve_pending_review(db, order.id, reviewer)
+    db.refresh(customer)
+    assert order.status == domestic_constants.ORDER_PRODUCING
+    assert order.charged_amount == D("880.00")
     assert customer.balance == balance_before - D("880.00")
 
 
@@ -3291,6 +3332,8 @@ def test_submit_draft_flushes_repriced_items_with_autoflush_disabled(db):
     NoAutoflushSession = sessionmaker(
         bind=db.get_bind(), autoflush=False, expire_on_commit=False
     )
+    reviewer = _operator(db, "draft-submit-no-autoflush-reviewer")
+    db.commit()
 
     with NoAutoflushSession() as session:
         result = order_service.submit_draft(
@@ -3306,13 +3349,29 @@ def test_submit_draft_flushes_repriced_items_with_autoflush_disabled(db):
         saved_order = session.get(domestic_models.DomesticOrder, order.id)
         saved_item = session.get(domestic_models.DomesticOrderItem, item.id)
         saved_customer = session.get(domestic_models.DomesticCustomer, customer.id)
+        # 会员价提交先落待审核：明细已重算并 flush，但状态与余额未动
+        assert result["total_amount"] == 880.0
+        assert result["status"] == domestic_constants.ORDER_PENDING_REVIEW
+        assert saved_item.unit_price == D("880.00")
+        assert saved_order.total_amount == D("880.00")
+        assert saved_order.charged_amount == D("0.00")
+        assert saved_customer.balance == D("5000.00")
+        assert session.query(domestic_models.DomesticCustomerLedger).filter_by(
+            order_id=order.id
+        ).count() == 0
+
+        reviewed = order_service.review_order(
+            session, order.id, decision="approve", remark=None,
+            reviewer_id=reviewer.id, can_admin=False,
+        )
+
+        saved_order = session.get(domestic_models.DomesticOrder, order.id)
+        saved_customer = session.get(domestic_models.DomesticCustomer, customer.id)
         ledger = session.query(domestic_models.DomesticCustomerLedger).filter_by(
             order_id=order.id
         ).one()
-        assert result["total_amount"] == 880.0
-        assert result["charged_amount"] == 880.0
-        assert saved_item.unit_price == D("880.00")
-        assert saved_order.total_amount == D("880.00")
+        assert reviewed["charged_amount"] == 880.0
+        assert saved_order.status == domestic_constants.ORDER_PRODUCING
         assert saved_order.charged_amount == D("880.00")
         assert ledger.amount == D("-880.00")
         assert saved_customer.balance == D("4120.00")
@@ -3751,6 +3810,12 @@ def test_formal_black_order_charges_discount_and_persists_pricing_snapshot(db):
         user.id,
     )
 
+    # 黑卡立减单先落待审核：不扣款，审核通过才按快照结算
+    db.refresh(customer)
+    assert customer.balance == D("10000.00")
+    reviewer = _operator(db, "black-reduction-reviewer")
+    _approve_pending_review(db, created["id"], reviewer)
+
     item = db.query(domestic_models.DomesticOrderItem).one()
     order = db.get(domestic_models.DomesticOrder, created["id"])
     db.refresh(customer)
@@ -3844,6 +3909,12 @@ def test_discount_balance_threshold_and_draft_charge_contract(db):
         user.id,
     )
     assert formal["total_amount"] == 880.0
+    # 优惠价先落待审核：扣款发生在审核通过时
+    assert formal["status"] == domestic_constants.ORDER_PENDING_REVIEW
+    db.refresh(customer)
+    assert customer.balance == D("880.00")
+    reviewer = _operator(db, "discount-balance-reviewer")
+    _approve_pending_review(db, formal["id"], reviewer)
     db.refresh(customer)
     assert customer.balance == D("0.00")
 
@@ -4173,6 +4244,8 @@ def test_append_quotes_server_side_replays_and_quantity_uses_frozen_price(db):
         ),
         user.id,
     )
+    reviewer = _operator(db, "append-reviewer")
+    _approve_pending_review(db, created["id"], reviewer)
     append = OrderItemAppend.model_validate(
         {
             **_order_item_payload(
@@ -4219,6 +4292,8 @@ def test_append_quote_change_is_409_and_leaves_no_side_effects(db):
         ),
         user.id,
     )
+    reviewer = _operator(db, "append-change-reviewer")
+    _approve_pending_review(db, created["id"], reviewer)
     base.version += 1
     db.commit()
     append = OrderItemAppend.model_validate(
@@ -4986,6 +5061,11 @@ def test_create_order_with_manual_discount_price_charges_manual_amount(db):
     assert item.base_price_version_snapshot == 1
 
     db.refresh(customer)
+    assert customer.balance == D("10000.00")
+    reviewer = _operator(db, "manual-create-reviewer")
+    _approve_pending_review(db, created["id"], reviewer)
+
+    db.refresh(customer)
     assert customer.balance == D("8100.00")
     order = db.get(domestic_models.DomesticOrder, created["id"])
     assert order.charged_amount == D("1900.00")
@@ -5094,6 +5174,10 @@ def test_manual_price_is_part_of_create_replay_hash(db):
     with pytest.raises(ValueError, match="已用于不同订单内容"):
         order_service.create_order(db, _payload("900.00"), user.id)
     db.refresh(customer)
+    assert customer.balance == D("10000.00")
+    reviewer = _operator(db, "manual-replay-reviewer")
+    _approve_pending_review(db, created["id"], reviewer)
+    db.refresh(customer)
     assert customer.balance == D("9050.00")
 
 
@@ -5126,13 +5210,20 @@ def test_draft_with_manual_price_submits_without_409_and_charges_manual(db):
     result = order_service.submit_draft(
         db, order.id, _draft_submit_payload("manual-draft-submit", item), user.id
     )
-    assert result["charged_amount"] == 1900.00
+    assert result["status"] == domestic_constants.ORDER_PENDING_REVIEW
     db.refresh(order)
     db.refresh(item)
     db.refresh(customer)
-    assert order.status == domestic_constants.ORDER_PRODUCING
+    assert order.status == domestic_constants.ORDER_PENDING_REVIEW
+    assert order.charged_amount == D("0.00")
     assert item.unit_price == D("950.00")
     assert item.pricing_rule == "manual_override"
+    assert customer.balance == D("10000.00")
+
+    reviewer = _operator(db, "manual-draft-reviewer")
+    _approve_pending_review(db, order.id, reviewer)
+    db.refresh(customer)
+    assert order.charged_amount == D("1900.00")
     assert customer.balance == D("8100.00")
 
     replayed = order_service.submit_draft(
@@ -5180,12 +5271,16 @@ def test_manual_draft_survives_base_price_and_membership_drift(db):
     result = order_service.submit_draft(
         db, order.id, _draft_submit_payload("manual-drift-submit", item), user.id
     )
-    assert result["charged_amount"] == 950.00
+    assert result["status"] == domestic_constants.ORDER_PENDING_REVIEW
     db.refresh(item)
     assert item.unit_price == D("950.00")
     assert item.pricing_rule == "manual_override"
     assert item.original_price == D("1200.00")
     assert item.discount_amount == D("250.00")
+
+    reviewer = _operator(db, "manual-drift-reviewer")
+    _approve_pending_review(db, order.id, reviewer)
+    assert order.charged_amount == D("950.00")
 
 
 def test_manual_echo_above_current_original_is_rejected(db):
@@ -5343,6 +5438,10 @@ def test_update_item_unit_price_settles_balance_delta(db):
         order_id=order.id
     ).one()
     assert item.unit_price == D("880.00")
+    db.refresh(customer)
+    assert customer.balance == D("10000.00")
+    reviewer = _operator(db, "manual-edit-reviewer")
+    _approve_pending_review(db, created["id"], reviewer)
     db.refresh(customer)
     assert customer.balance == D("8240.00")
 
@@ -5623,8 +5722,18 @@ def test_initialize_and_adjust_api_require_recharge_or_admin(db):
         },
     )
     assert adjusted.status_code == 200
-    assert adjusted.json()["data"]["current_balance"] == 250.00
-    assert adjusted.json()["data"]["membership_level"] is None
+    assert adjusted.json()["message"] == "调整申请已提交，审核通过后生效"
+    # 审核前不生效；审核通过才真正入账
+    db.refresh(customer)
+    assert customer.balance == D("300.00")
+    assert customer.membership_level == "silver"
+    reviewer = _operator(db, "init-adjust-api-reviewer")
+    request_service.approve_request(
+        db, adjusted.json()["data"]["id"], reviewer_id=reviewer.id, can_admin=False,
+    )
+    db.refresh(customer)
+    assert customer.balance == D("250.00")
+    assert customer.membership_level is None
 
 
 @pytest.mark.parametrize("is_draft", [True, False])
@@ -5658,7 +5767,17 @@ def test_append_from_saved_draft_preserves_balance_and_guards_submitted_order(db
                                                "expected_quotes": detail["current_expected_quotes"]})
     result = order_service.submit_draft(db, created["id"], submit, user.id)
     db.refresh(customer)
-    assert D(str(result["charged_amount"])) == D("2640.00")
+    # 会员优惠价提交后先落待审核：不扣款，审核通过才结算
+    assert result["status"] == domestic_constants.ORDER_PENDING_REVIEW
+    assert D(str(result["charged_amount"])) == D("0.00")
+    assert customer.balance == D("10000.00")
+    approver = _operator(db, "draft-append-approver")
+    approved = order_service.review_order(
+        db, created["id"], decision="approve", remark=None,
+        reviewer_id=approver.id, can_admin=False,
+    )
+    db.refresh(customer)
+    assert D(str(approved["charged_amount"])) == D("2640.00")
     assert customer.balance == D("7360.00")
 
     replay_after_submit = client.post(f"/api/domestic/orders/{created['id']}/items?draft_only=true", json=payload)

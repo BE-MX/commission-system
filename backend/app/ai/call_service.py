@@ -21,6 +21,7 @@ from app.ai.http_client import (
 from app.ai.log_snapshot import serialize_response_snapshot
 from app.ai.provider_service import get_provider
 from app.core.time import utc_now
+from app.ai.text_snapshot import TextChatSnapshot
 
 # 带图 chat（如 expo 面容分析）的超时下限：多模态请求模型处理更慢，Provider 常配的
 # 60s 会掐死正常请求（2026-07-08 expo session=31/32/34/35 实测 61~75s 全超时→分析失败
@@ -72,24 +73,25 @@ def chat(
     snapshot_mode: str = "full",
     timeout_sec: Optional[int] = None,
     enforce_total_timeout: bool = False,
+    trusted_text_snapshot: Optional[TextChatSnapshot] = None,
 ) -> dict:
     """同步调用直连大模型。"""
-    preset = (
+    preset = trusted_text_snapshot.preset if trusted_text_snapshot else (
         db.query(AiPreset)
         .filter(AiPreset.preset_name == preset_name, AiPreset.deleted_at.is_(None))
         .first()
     )
     if not preset:
         raise ValueError(f"Preset '{preset_name}' 不存在")
-    if not preset.is_enabled:
+    if not trusted_text_snapshot and not preset.is_enabled:
         raise ValueError(f"Preset '{preset_name}' 已被禁用")
 
-    provider = get_provider(db, preset.provider_id)
+    provider = trusted_text_snapshot.provider if trusted_text_snapshot else get_provider(db, preset.provider_id)
     if provider.provider_type != "direct":
         raise ValueError(
             f"Preset '{preset_name}' 绑定的是 accio_work 类型 Provider，请使用 delegate 接口"
         )
-    if not provider.is_enabled:
+    if not trusted_text_snapshot and not provider.is_enabled:
         raise ValueError(f"Provider '{provider.name}' 当前不可用")
 
     # 构造 messages
@@ -191,7 +193,15 @@ def chat(
                           f"provider={provider.name} model={preset.model}", flush=True)
                     content = reasoning
 
-            usage = result.get("usage", {})
+            usage = result.get("usage") if isinstance(result.get("usage"), dict) else {}
+
+        if trusted_text_snapshot:
+            usage = {key: value if type(value) is int and 0 <= value <= 2147483647 else None
+                     for key, value in ((key, usage.get(key)) for key in
+                     ("prompt_tokens", "completion_tokens", "total_tokens"))}
+            if usage["total_tokens"] is None and usage["prompt_tokens"] is not None and usage["completion_tokens"] is not None:
+                total = usage["prompt_tokens"] + usage["completion_tokens"]
+                usage["total_tokens"] = total if total <= 2147483647 else None
 
         # 诊断: content 为空时记录完整响应结构
         if not content and result:
@@ -237,6 +247,8 @@ def chat(
             "log_id": log.id,
         }
     except Exception as e:
+        logger.warning("AI chat failed: %s", type(e).__name__)
+        print(f"[AI-DIAG] chat failed: {type(e).__name__}", flush=True)
         db.rollback()
         try:
             log.status = "error"
@@ -244,7 +256,9 @@ def chat(
             log.error_message = type(e).__name__ if snapshot_mode == "metadata" else str(e)[:500]
             log.duration_ms = int((time.time() - start) * 1000)
             db.commit()
-        except Exception:
+        except Exception as log_error:
+            logger.warning("AI error log persistence failed: %s", type(log_error).__name__)
+            print(f"[AI-DIAG] log persistence failed: {type(log_error).__name__}", flush=True)
             db.rollback()
         raise
 

@@ -1,17 +1,28 @@
+import { createHistoryCollector } from './replyHistory'
 import { detectChatKind } from '@/whatsapp/chatDetector'
 import { parseIncomingMessages } from '@/whatsapp/messageParser'
 import { WHATSAPP_SELECTORS } from '@/whatsapp/selectors'
 import { ARK_MARKS } from '@/shared/marks'
-import { collectReplyContext } from '@/whatsapp/replyContext'
+import { collectReplyContext, MESSAGE_IDENTITY, maskContacts } from '@/whatsapp/replyContext'
 import type { ReplyContextLimits } from '@/whatsapp/replyContext'
 
 function normalizeComposerText(value: string): string {
   return value.replace(/\s+/gu, ' ').trim()
 }
 
+function composerText(node: Element | DocumentFragment): string {
+  const copy = node.cloneNode(true) as Element | DocumentFragment
+  for (const emoji of copy.querySelectorAll(WHATSAPP_SELECTORS.messageEmoji)) {
+    emoji.replaceWith(node.ownerDocument!.createTextNode(emoji.getAttribute('data-plain-text') || emoji.getAttribute('alt') || ''))
+  }
+  return normalizeComposerText(copy.textContent ?? '')
+}
+
 export class WhatsAppAdapter {
   private writing = false
-  constructor(private readonly root: Document | HTMLElement) {}
+  private readonly history: ReturnType<typeof createHistoryCollector>
+  constructor(private readonly root: Document | HTMLElement) { this.history = createHistoryCollector(root) }
+  clearReplyHistory() { this.history.clear() }
 
   inspectChat() {
     return detectChatKind(this.root)
@@ -42,16 +53,28 @@ export class WhatsAppAdapter {
     if (this.inspectChat().kind !== 'direct') return ''
     const composers = this.root.querySelectorAll(WHATSAPP_SELECTORS.composer)
     if (composers.length !== 1) return ''
-    return normalizeComposerText(composers[0].textContent ?? '')
+    return composerText(composers[0])
   }
   conversationElement(): Element | null { return this.root.querySelector(WHATSAPP_SELECTORS.conversationTitle) }
+  messageElements(): Element[] { return [...this.root.querySelectorAll(WHATSAPP_SELECTORS.message)] }
 
   composerElement(): Element | null { return this.root.querySelector(WHATSAPP_SELECTORS.composer) }
   hasToolbar(): boolean { return !!this.root.querySelector(`[${ARK_MARKS.toolbarHost}="1"]`) }
-  collectReplyContext(limit: 20 | 40 = 20, limits?: ReplyContextLimits) { return collectReplyContext(this.root, limit, limits) }
+  private collectingHistory = false
+  isCollectingHistory() { return this.collectingHistory }
+  async collectReplyHistory(limits: ReplyContextLimits, current: () => boolean, progress: (context: ReturnType<typeof collectReplyContext>) => void) {
+    if (this.collectingHistory) throw new Error('reply_history_busy')
+    this.collectingHistory = true
+    try { return await this.history.collect(limits, current, progress) }
+    finally { this.collectingHistory = false }
+  }
+  collectReplyContext(limit: number = 2000, limits?: ReplyContextLimits) { return collectReplyContext(this.root, limit, limits) }
 
   /** Version observation excludes extension UI while retaining edits even when reverted. */
   isComposerMutation(record: MutationRecord): boolean {
+    // Lexical changes presentation styles on blur (including opening our
+    // details). That is not a draft edit; text/input and editability still count.
+    if (record.type === 'attributes' && ['style', 'class'].includes(record.attributeName ?? '')) return false
     const composer = this.composerElement()
     return !!composer && (record.target === composer || composer.contains(record.target))
   }
@@ -125,7 +148,7 @@ export class WhatsAppAdapter {
       !composerContextIsCurrent() || this.readComposer() !== composerVersion || !isCurrent()
       || doc.activeElement !== composer || selection.rangeCount !== 1
       || !belongsToComposer(selection.anchorNode) || !belongsToComposer(selection.focusNode)
-      || normalizeComposerText(selection.toString()) !== composerVersion
+      || composerText(selection.getRangeAt(0).cloneContents()) !== composerVersion
     ) {
       collapseFullSelection()
       return false
@@ -148,6 +171,52 @@ export class WhatsAppAdapter {
       && this.readComposer() === normalizeComposerText(text)
     if (!replaced) collapseFullSelection()
     return replaced
+  }
+
+  autoSnapshot() {
+    const context = this.collectReplyContext()
+    const key = (m: typeof context.messages[number] | undefined) => m ? String((m as unknown as Record<symbol, string>)[MESSAGE_IDENTITY] ?? '') + JSON.stringify(m) : ''
+    return { identity: [this.chatRootElement(), this.conversationElement(), this.chatTitle(), this.composerElement()],
+      tail: key(context.messages.at(-1)), incoming: key(context.messages.filter(m => m.role === 'customer').at(-1)),
+      role: context.messages.at(-1)?.role, draft: this.readComposer() }
+  }
+  isNativeSendTarget(target: EventTarget | null): boolean { return target instanceof Element && !!target.closest(WHATSAPP_SELECTORS.sendButton) }
+  async sendAutomatic(text: string, current: () => boolean): Promise<boolean> {
+    if (this.inspectChat().kind !== 'direct' || this.readComposer() || !current()) return false
+    const snapshot = this.autoSnapshot()
+    const same = () => current() && this.inspectChat().kind === 'direct' && !this.collectReplyContext().unrepresentedMessages
+      && snapshot.identity.every((v, i) => this.autoSnapshot().identity[i] === v)
+    if (!await this.replaceComposer(text, same)) return false
+    // The editor commits before WhatsApp replaces its microphone with Send.
+    // Wait for that render, rechecking cancellation, chat, tail and exact draft.
+    let button: HTMLElement | undefined
+    for (let i = 0; i <= 20; i++) {
+      if (!same() || this.autoSnapshot().tail !== snapshot.tail || this.readComposer() !== normalizeComposerText(text)) return false
+      const candidates = [...this.root.querySelectorAll<HTMLElement>(WHATSAPP_SELECTORS.sendButton)].filter(node => {
+        const style = node.ownerDocument.defaultView?.getComputedStyle(node)
+        return node.isConnected && !node.closest(WHATSAPP_SELECTORS.hiddenControl) && node.getClientRects().length
+          && style?.visibility !== 'hidden' && style?.display !== 'none'
+      })
+      // Nested icon wrappers and their semantic button are one control.
+      const buttons = candidates.filter(node => !candidates.some(other => other !== node && node.contains(other)))
+      if (buttons.length > 1) throw new Error('reply_send_control_unavailable')
+      const candidate = buttons[0]
+      if (candidate?.isConnected && !candidate.closest(WHATSAPP_SELECTORS.disabledControl)) { button = candidate; break }
+      if (i < 20) await new Promise<void>(resolve => setTimeout(resolve, 100))
+    }
+    if (!button) throw new Error('reply_send_control_unavailable')
+    const previous = new Set(this.collectReplyContext().messages.map(m => String((m as unknown as Record<symbol, string>)[MESSAGE_IDENTITY])))
+    button.click()
+    // Never retry a click with an uncertain outcome. An outgoing bubble + cleared composer confirms local submission only.
+    for (let i = 0; i < 20; i++) {
+      await new Promise<void>(resolve => setTimeout(resolve, 250))
+      if (!same()) return false
+      const sent = this.collectReplyContext().messages.some(m => m.role === 'salesperson'
+        && normalizeComposerText(m.text) === normalizeComposerText(maskContacts(text))
+        && !previous.has(String((m as unknown as Record<symbol, string>)[MESSAGE_IDENTITY])))
+      if (sent && !this.readComposer()) return true
+    }
+    return false
   }
 
   /**

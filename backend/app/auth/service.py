@@ -221,7 +221,7 @@ def list_okki_department_options(db: Session) -> list[dict]:
 
 
 # kind 派生规则（权限重设计方案）：data=数据范围，read/日报=页面可见，其余=操作级
-_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all", "agent_runtime:read_all", "customer:read_all", "domestic:read_all"}
+_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all", "agent_runtime:read_all", "customer:read_all", "domestic:read_all", "shipping_inspection:read_all"}
 _PAGE_KIND_EXTRA = {"tracking:daily_report"}
 
 
@@ -359,6 +359,7 @@ def seed_role_permissions(db: Session):
         ("domestic:admin",        "domestic", "admin",        "工艺路线映射 / 产品改绑 / 删单 / 撤销他人报工"),
         ("domestic:read_all",     "domestic", "read_all",     "查看全部内贸订单（数据范围）"),
         ("domestic:recharge",     "domestic", "recharge",     "内贸客户充值 / 余额与等级初始化 / 临时调整 / 余额流水"),
+        ("domestic:review",       "domestic", "review",       "审核内贸充值/调整申请与优惠价订单"),
         ("domestic_customer:admin", "domestic", "admin", "管理员可以显示所有客户的操作按钮"),
         ("domestic_quantity_report:write", "domestic", "write", "内贸小程序：输入数量报工模式"),
         ("domestic_unit_report:write",     "domestic", "write", "内贸小程序：逐件二维码报工模式"),
@@ -471,6 +472,11 @@ def seed_role_permissions(db: Session):
         ("sales_automation:write", "sales_automation", "write", "创建搜索任务并确认候选客户"),
         ("sales_automation:admin", "sales_automation", "admin", "管理获客模型与Agent接入"),
         ("sales_automation:invoke", "sales_automation", "invoke", "Agent领取任务并提交搜索与研究结果"),
+        # 客户邮件触达：审核后定时发送开发信；worker 使用独立机器凭证，不具备审批能力
+        ("mail_outreach:read",   "mail_outreach", "read",   "查看邮件触达草稿/队列/事件"),
+        ("mail_outreach:write",  "mail_outreach", "write",  "生成、编辑、审批和撤销开发信"),
+        ("mail_outreach:admin",  "mail_outreach", "admin",  "管理发件邮箱绑定与限额"),
+        ("mail_outreach:worker", "mail_outreach", "worker", "邮件发送 Worker 机器凭证"),
         # 企业知识库：平台权限与知识库成员 ACL 双重校验
         ("knowledge:read",   "knowledge", "read",   "查看已授权知识库"),
         ("knowledge:write",  "knowledge", "write",  "编辑知识文档并提交审批"),
@@ -500,6 +506,13 @@ def seed_role_permissions(db: Session):
         ("shipping_inspection:read",  "shipping_inspection", "read",  "查看出库单与验货单"),
         ("shipping_inspection:write", "shipping_inspection", "write", "打印出库单 / 维护验货照片"),
         ("shipping_inspection:admin", "shipping_inspection", "admin", "发货检验模块管理"),
+        # read_all 仅扩展出库单数据范围（默认本人 OKKI 客户）；admin 角色由通用补齐逻辑自动授予
+        ("shipping_inspection:read_all", "shipping_inspection", "read_all", "查看全部出库单（数据范围）"),
+        # 库存色块图工作台（2026-09-14 集成）：三个页面各自独立授权，工作台子站点凭
+        # SSO 令牌内的视图清单过滤导航并逐视图校验 API。
+        ("colorwork_download:read", "colorwork", "read", "库存色块图-库存图直接下载"),
+        ("colorwork_edit:read",     "colorwork", "read", "库存色块图-实时库存图修改"),
+        ("colorwork_master:read",   "colorwork", "read", "库存色块图-原始库存图文件"),
     ]
     # upsert：活跃权限 + 已下架权限统一处理，元数据每次启动刷新
     existing_map = {p.code: p for p in db.query(ArkPermission).all()}

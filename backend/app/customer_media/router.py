@@ -1,6 +1,6 @@
 """方舟内部客户素材交付 API。"""
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -9,7 +9,8 @@ from app.core.database import get_db
 from app.core.response import ok
 from app.customer_media import service
 from app.customer_media.schemas import (
-    BatchReviewIn, BatchSubmitIn, PortalAccountCreate, PortalAccountUpdate,
+    BatchReviewIn, BatchSubmitIn, DirectoryNameIn, PortalAccountCreate,
+    PortalAccountUpdate,
 )
 from app.customer_media.storage import MediaStorageError, storage_for
 
@@ -47,6 +48,7 @@ def _asset(row, *, internal: bool = True) -> dict:
     return {
         "id": row.id,
         "file_name": row.file_name,
+        "directory_id": row.directory_id,
         "media_type": row.media_type,
         "content_type": row.content_type,
         "file_size": row.file_size,
@@ -59,7 +61,7 @@ def _asset(row, *, internal: bool = True) -> dict:
     }
 
 
-def _batch(row) -> dict:
+def _batch(row, *, directories: list | None = None) -> dict:
     return {
         "id": row.id,
         "task_id": row.task_id,
@@ -75,6 +77,7 @@ def _batch(row) -> dict:
         "reviewed_at": row.reviewed_at.isoformat() if row.reviewed_at else None,
         "published_at": row.published_at.isoformat() if row.published_at else None,
         "assets": [_asset(asset) for asset in row.assets if asset.deleted_at is None],
+        "directories": directories if directories is not None else [],
         "reviews": [{
             "id": review.id,
             "revision": review.revision,
@@ -84,6 +87,10 @@ def _batch(row) -> dict:
             "created_at": review.created_at.isoformat(),
         } for review in row.reviews],
     }
+
+
+def _batch_full(db: Session, row) -> dict:
+    return _batch(row, directories=service.batch_directory_summary(db, row))
 
 
 def _account(row) -> dict:
@@ -172,18 +179,64 @@ def task_batch(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_any_permission("customer_media:write", "customer_media:admin")),
 ):
-    return ok(_batch(_call(service.get_or_create_batch, db, task_id, payload)))
+    return ok(_batch_full(db, _call(service.get_or_create_batch, db, task_id, payload)))
+
+
+@router.get("/batches/{batch_id}/directories")
+def batch_directories(
+    batch_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission("customer_media:write", "customer_media:admin")),
+):
+    return ok(_call(service.list_batch_directories, db, batch_id, payload))
+
+
+@router.post("/batches/{batch_id}/directories")
+def create_batch_directory(
+    batch_id: int,
+    data: DirectoryNameIn,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission("customer_media:write", "customer_media:admin")),
+):
+    return ok(_call(service.create_directory, db, batch_id, payload, data.name), "目录已就绪")
+
+
+@router.patch("/batches/{batch_id}/directories/{directory_id}")
+def rename_batch_directory(
+    batch_id: int,
+    directory_id: int,
+    data: DirectoryNameIn,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission("customer_media:write", "customer_media:admin")),
+):
+    return ok(_call(service.rename_directory, db, batch_id, directory_id, payload, data.name), "目录已重命名")
 
 
 @router.post("/batches/{batch_id}/assets")
 async def upload_batch_asset(
     batch_id: int,
     file: UploadFile = File(...),
+    directory_id: int | None = Form(default=None),
+    directory_name: str | None = Form(default=None, max_length=128),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_any_permission("customer_media:write", "customer_media:admin")),
 ):
-    row = await _call_async(service.upload_asset, db, batch_id, payload, file)
-    return ok(_batch(row), "上传成功")
+    row = await _call_async(
+        service.upload_asset, db, batch_id, payload, file,
+        directory_id=directory_id, directory_name=directory_name,
+    )
+    return ok(_batch_full(db, row), "上传成功")
+
+
+@router.delete("/batches/{batch_id}/directories/{directory_id}")
+def remove_batch_directory(
+    batch_id: int,
+    directory_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission("customer_media:write", "customer_media:admin")),
+):
+    row = _call(service.delete_directory, db, batch_id, directory_id, payload)
+    return ok(_batch_full(db, row), "目录及素材已删除")
 
 
 @router.delete("/batches/{batch_id}/assets/{asset_id}")
@@ -193,7 +246,7 @@ def remove_batch_asset(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_any_permission("customer_media:write", "customer_media:admin")),
 ):
-    return ok(_batch(_call(service.delete_asset, db, batch_id, asset_id, payload)), "已删除")
+    return ok(_batch_full(db, _call(service.delete_asset, db, batch_id, asset_id, payload)), "已删除")
 
 
 @router.post("/batches/{batch_id}/submit")
@@ -203,7 +256,7 @@ def submit_batch(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_any_permission("customer_media:write", "customer_media:admin")),
 ):
-    return ok(_batch(_call(service.submit_batch, db, batch_id, payload, data.lock_version)), "已送审")
+    return ok(_batch_full(db, _call(service.submit_batch, db, batch_id, payload, data.lock_version)), "已送审")
 
 
 @router.get("/reviews")
@@ -212,7 +265,7 @@ def review_queue(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_any_permission("customer_media:read", "customer_media:admin")),
 ):
-    return ok([_batch(row) for row in _call(service.list_reviews, db, payload, batch_status)])
+    return ok([_batch_full(db, row) for row in _call(service.list_reviews, db, payload, batch_status)])
 
 
 @router.post("/batches/{batch_id}/review")
@@ -223,7 +276,7 @@ def review_batch(
     payload: dict = Depends(require_any_permission("customer_media:read", "customer_media:admin")),
 ):
     row = _call(service.review_batch, db, batch_id, payload, data.action, data.comment, data.lock_version)
-    return ok(_batch(row), "审核完成")
+    return ok(_batch_full(db, row), "审核完成")
 
 
 @router.post("/batches/{batch_id}/unpublish")
@@ -233,7 +286,7 @@ def unpublish(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_permission("customer_media:admin")),
 ):
-    return ok(_batch(_call(service.unpublish_batch, db, batch_id, payload, comment)), "已下架")
+    return ok(_batch_full(db, _call(service.unpublish_batch, db, batch_id, payload, comment)), "已下架")
 
 
 @router.get("/assets/{asset_id}/content")

@@ -53,11 +53,29 @@ class CustomerMediaBatch(Base):
     )
 
 
+class CustomerMediaDirectory(Base):
+    __tablename__ = "ark_customer_media_directories"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    customer_id = Column(String(64), nullable=False, comment="customer_info.company_id")
+    name = Column(String(128), nullable=False, comment="目录名称")
+    created_by = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False, comment="创建人方舟用户ID")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间")
+
+    __table_args__ = (
+        UniqueConstraint("customer_id", "name", name="uq_customer_media_directory_name"),
+        Index("idx_customer_media_directory_customer", "customer_id"),
+        {"comment": "客户素材目录（客户级，跨批次共享）"},
+    )
+
+
 class CustomerMediaAsset(Base):
     __tablename__ = "ark_customer_media_assets"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     batch_id = Column(BigInteger, ForeignKey("ark_customer_media_batches.id", ondelete="CASCADE"), nullable=False, comment="素材批次ID")
+    directory_id = Column(BigInteger, ForeignKey("ark_customer_media_directories.id", ondelete="SET NULL"), nullable=True, comment="客户素材目录ID，空为未分类")
     file_name = Column(String(255), nullable=False, comment="上传文件名")
     media_type = Column(String(16), nullable=False, comment="媒体类型 image/video")
     content_type = Column(String(128), nullable=False, comment="MIME 类型")
@@ -78,6 +96,7 @@ class CustomerMediaAsset(Base):
         UniqueConstraint("storage_provider", "object_key", name="uq_customer_media_object"),
         Index("idx_customer_media_asset_batch", "batch_id", "deleted_at", "sort_order"),
         Index("idx_customer_media_asset_sha", "batch_id", "sha256"),
+        Index("idx_customer_media_asset_directory", "batch_id", "directory_id"),
         {"comment": "客户交付图片视频原件"},
     )
 

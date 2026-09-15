@@ -47,12 +47,14 @@ export function useDomesticCustomers() {
       params.owner_scope = form.owner_scope || 'private'
       if (form.province) params.province = form.province
       if (form.city) params.city = form.city
+      if (form.customer_level) params.customer_level = form.customer_level
+      if (form.owner_user_id) params.owner_user_id = form.owner_user_id
       const res = await listCustomers(params)
       return res.data || {}
     },
     {
       searchForm: {
-        keyword: '', status: '', owner_scope: 'private', province: '', city: '',
+        keyword: '', status: '', owner_scope: 'private', province: '', city: '', customer_level: '', owner_user_id: '',
       },
     },
   )
@@ -132,30 +134,49 @@ export function useDomesticCustomers() {
 
   const rechargeDialog = reactive({
     visible: false, customer: null, amount: 0, remark: '', requestId: '', saving: false,
+    voucherFile: null, voucherList: [],
   })
 
   function openRecharge(customer) {
     Object.assign(rechargeDialog, {
       visible: true, customer, amount: 0, remark: '', requestId: newRequestId(), saving: false,
+      voucherFile: null, voucherList: [],
     })
+  }
+
+  // el-upload 手动模式：只留最新选择的一个文件，真正上传随表单一起 multipart 提交
+  function onRechargeVoucherChange(uploadFile, uploadFiles) {
+    const latest = uploadFiles[uploadFiles.length - 1]
+    rechargeDialog.voucherList = latest ? [latest] : []
+    rechargeDialog.voucherFile = latest?.raw || null
+  }
+
+  function onRechargeVoucherRemove() {
+    rechargeDialog.voucherList = []
+    rechargeDialog.voucherFile = null
+  }
+
+  function onRechargeVoucherExceed(files) {
+    const file = files[0]
+    rechargeDialog.voucherList = [{ name: file.name, raw: file }]
+    rechargeDialog.voucherFile = file
   }
 
   async function confirmRecharge() {
     if (!(rechargeDialog.amount > 0)) return ElMessage.warning('请输入充值金额')
+    if (!rechargeDialog.voucherFile) return ElMessage.warning('请上传银行流水或转账截图')
     rechargeDialog.saving = true
     try {
       const res = await rechargeCustomer(rechargeDialog.customer.id, {
         amount: rechargeDialog.amount,
         remark: rechargeDialog.remark || null,
-        // 弹窗打开时生成一次：服务端已入账但响应丢失后，用户重点仍是同一笔。
+        // 弹窗打开时生成一次：申请已落库但响应丢失后，用户重点仍是同一笔。
         request_id: rechargeDialog.requestId,
+        file: rechargeDialog.voucherFile,
       })
       const data = res.data || {}
       rechargeDialog.visible = false
-      const membershipChange = membershipChangeLabel(data.membership_change)
-      ElMessage.success(data.replayed
-        ? `已入账，本次未重复充值；当前${data.membership_label}，余额 ¥${Number(data.current_balance || 0).toFixed(2)}`
-        : `充值成功；会员等级${membershipChange || `保持${data.membership_label}`}；余额 ¥${Number(data.current_balance || 0).toFixed(2)}`)
+      ElMessage.success(res.message || (data.replayed ? '该笔充值申请已提交过' : '充值申请已提交，审核通过后生效'))
       await fetchList()
     } catch { /* 拦截器已提示 */ } finally {
       rechargeDialog.saving = false
@@ -219,11 +240,8 @@ export function useDomesticCustomers() {
       }
       if (changeLevel) payload.membership_level = adjustDialog.membership_level
       const res = await adjustCustomer(adjustDialog.customer.id, payload)
-      const data = res.data || {}
       adjustDialog.visible = false
-      ElMessage.success(data.replayed
-        ? `本次调整已入账过，未重复执行；当前${data.membership_label}，余额 ¥${Number(data.current_balance || 0).toFixed(2)}`
-        : `调整完成；当前${data.membership_label}，余额 ¥${Number(data.current_balance || 0).toFixed(2)}`)
+      ElMessage.success(res.message || '调整申请已提交，审核通过后生效')
       await fetchList()
     } catch { /* 拦截器已提示 */ } finally {
       adjustDialog.saving = false
@@ -308,6 +326,7 @@ export function useDomesticCustomers() {
     canOperateCustomer, handleProvinceChange,
     saving, dialog, options, openDialog, save,
     rechargeDialog, openRecharge, confirmRecharge,
+    onRechargeVoucherChange, onRechargeVoucherRemove, onRechargeVoucherExceed,
     initDialog, openInit, confirmInit,
     adjustDialog, openAdjust, confirmAdjust,
     ledgerDrawer, ledgerTypeLabel, openLedger, loadLedger,
