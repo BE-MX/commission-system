@@ -23,6 +23,17 @@
       </div>
     </header>
 
+    <nav v-if="journeyVisible" class="xk-journey" aria-label="试戴进度">
+      <ol>
+        <li v-for="(item, index) in journeySteps" :key="item.key" :class="{ on: index === journeyIndex, done: index < journeyIndex }">
+          <i>{{ index < journeyIndex ? '✓' : index + 1 }}</i><span>{{ item.label }}</span>
+        </li>
+      </ol>
+      <span class="xk-mode-chip" :class="{ beauty: flow.photoProcessingMode.value === 'beauty' }">
+        {{ flow.photoProcessingMode.value === 'beauty' ? '焕颜精修' : '原照保真' }}
+      </span>
+    </nav>
+
     <div v-if="flow.errorText.value" class="xk-error" role="alert">{{ flow.errorText.value }}</div>
 
     <main class="xk-stage">
@@ -138,6 +149,18 @@ const stepLabel = computed(() => ({
   result: flow.mode.value === 'scene' ? '场景大片' : '试戴效果',
   sales: '销售模式',
 }[flow.step.value] || ''))
+
+const journeyVisible = computed(() => ['capture', 'analyzing', 'matching', 'scene', 'result'].includes(flow.step.value))
+const journeySteps = computed(() => flow.mode.value === 'scene'
+  ? [{ key: 'capture', label: '照片' }, { key: 'scene', label: '选场景' }, { key: 'generate', label: '生成' }, { key: 'result', label: '对比' }]
+  : [{ key: 'capture', label: '照片' }, { key: 'matching', label: '选发型' }, { key: 'generate', label: '生成' }, { key: 'result', label: '对比' }])
+const journeyIndex = computed(() => {
+  const current = flow.step.value
+  if (current === 'capture' || current === 'analyzing') return 0
+  if (current === 'matching' || current === 'scene') return 1
+  if (current === 'result' && flow.generating.value && !flow.doneResults.value.length) return 2
+  return current === 'result' ? 3 : 0
+})
 
 // ── 全流程导航（2026-07-13）：attract 之外每屏都有「上一步 / 主页」 ──
 const showNav = computed(() => flow.step.value !== 'attract')

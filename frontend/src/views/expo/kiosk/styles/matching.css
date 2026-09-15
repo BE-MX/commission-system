@@ -1,6 +1,11 @@
 .matching { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; padding: 24px clamp(16px, 4vw, 64px) 20px; overflow: hidden; }
 .m-scroll { flex: 1; min-height: 0; width: 100%; max-width: 1120px; overflow-y: auto; overscroll-behavior: contain; padding: 0 6px 20px; }
 .reading { margin: 20px auto 22px; max-width: 850px; text-align: center; }
+.source-proof { width: min(100%, 560px); display: flex; align-items: center; gap: 12px; margin: 16px auto 0; padding: 8px 12px; border: 1px solid var(--xk-gold-line); border-radius: 10px; background: var(--xk-ink-2); }
+.source-proof img { width: 52px; height: 52px; flex: none; border-radius: 8px; object-fit: cover; }
+.source-proof div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.source-proof b { color: var(--xk-paper); font-size: 13px; font-weight: 500; }
+.source-proof span { color: var(--xk-mut); font-size: 11px; line-height: 1.5; }
 .reading-note { color: var(--xk-gold-dim); font-size: 15px; line-height: 1.8; }
 .reading-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 20px; margin-top: 10px; }
 .rchip { font-size: 13px; color: var(--xk-mut); }
@@ -49,6 +54,11 @@
 .lib-overlay { position: fixed; z-index: 45; inset: 0; padding: calc(20px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left)); display: flex; align-items: center; justify-content: center; background: var(--xk-overlay); backdrop-filter: blur(5px); }
 .lib-panel { width: min(100%, 960px); max-height: 100%; display: flex; flex-direction: column; padding: 24px; background: var(--xk-ink); border-radius: 16px; box-shadow: 0 24px 70px var(--xk-shadow); }
 .lib-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.lib-filters { display: flex; flex-direction: column; gap: 8px; margin: 0 0 14px; padding-bottom: 12px; border-bottom: 1px solid var(--xk-gold-line); }
+.lib-filter-row { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.lib-filter-row > span { width: 42px; color: var(--xk-mut); font-size: 12px; }
+.lib-filter-row button { min-height: 38px; padding: 6px 12px; border: 1px solid var(--xk-gold-line); border-radius: 999px; background: transparent; color: var(--xk-paper); cursor: pointer; }
+.lib-filter-row button.on { border-color: var(--xk-gold); background: var(--xk-button); color: var(--xk-on-dark); }
 .lib-title { font-family: var(--xk-serif); font-size: 26px; }
 .lib-close { width: 48px; height: 48px; background: transparent; border: 1px solid var(--xk-gold-line); border-radius: 50%; color: var(--xk-paper); cursor: pointer; }
 .lib-grid { overflow-y: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }

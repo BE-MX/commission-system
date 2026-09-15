@@ -10,7 +10,9 @@
       <p class="wait-sub">{{ flow.waitingForBeautify.value ? '精修只进行一次，完成后将自动生成效果图' : flow.generating.value ? 'AI 精细处理中，请稍候' : '本次生成暂未完成，可重试或请顾问协助' }}</p>
       <Transition name="phrase" mode="out-in"><div v-if="flow.generating.value" class="phrase" :key="phraseIdx">{{ phrases[phraseIdx] }}</div></Transition>
       <div v-if="flow.generating.value" class="bar" aria-hidden="true"><i /></div>
-      <div class="stages"><span>{{ isScene ? '佩戴实拍' : '解析面容' }}</span><span>{{ isScene ? '场景甄选' : '甄选发型' }}</span><span class="on">生成效果</span></div>
+      <div class="stages">
+        <span v-for="stage in generationStages" :key="stage.label" :class="{ on: stage.on, done: stage.done }">{{ stage.done ? '✓ ' : '' }}{{ stage.label }}</span>
+      </div>
       <Transition name="bcard" mode="out-in"><div class="brand-card" :key="brandIdx"><b>{{ BRAND_CARDS[brandIdx].tag }}</b><span>{{ BRAND_CARDS[brandIdx].text }}</span></div></Transition>
       <div v-if="!flow.generating.value" class="wait-actions"><button class="xk-btn ghost" @click="retryGenerate">重新生成</button><button class="xk-btn" @click="flow.openSales()">呼叫顾问</button></div>
     </div>
@@ -35,6 +37,7 @@
         <div class="result-details">
           <Transition name="pill"><div v-if="flow.generating.value" class="gen-pill" role="status"><i />正在合成新选择 · 完成后自动切换</div></Transition>
           <div class="meta"><span class="nm">{{ current.wig_name || (isScene ? '专属场景大片' : '专属试戴') }}</span><span class="md">{{ metaLine }}</span></div>
+          <div class="processing-proof"><b>{{ flow.photoProcessingMode.value === 'beauty' ? '焕颜精修' : '原照保真' }}</b><span>{{ flow.photoProcessingMode.value === 'beauty' ? '精修只在上传后执行一次' : '面部与皮肤按原照保留' }}</span></div>
           <div class="meta-tags"><span v-if="current.hair_color" class="color-tag"><i :style="{ background: current.hair_color.hex || 'var(--xk-gold)' }" />{{ current.hair_color.name }}</span><span v-if="current.scene" class="color-tag">{{ current.scene.label }}</span></div>
           <div class="result-thumbs" aria-label="切换试戴效果"><button v-for="(r, i) in doneList" :key="r.id" :aria-label="`查看第 ${i + 1} 张效果`" :aria-pressed="currentIndex === i" :class="{ on: currentIndex === i }" @click="currentIndex = i; flow.touch()"><img :src="r.display_url || r.image_url" @error="fallbackThumbnail($event, r)" alt="" /><span>{{ i + 1 }}</span></button></div>
           <div class="reacts"><button class="react" :class="{ liked: current.reaction === 'loved' }" :aria-pressed="current.reaction === 'loved'" @click="flow.react(current.id, 'loved')">♡ 心动</button><button class="react" :class="{ liked: current.reaction === 'soso' }" :aria-pressed="current.reaction === 'soso'" @click="flow.react(current.id, 'soso')">再看看</button></div>
@@ -105,6 +108,15 @@ const photoUrl = computed(() => flow.session.value?.photo_url || '')
 const doneList = computed(() => flow.doneResults.value)
 const doneCount = computed(() => doneList.value.length)
 const isScene = computed(() => flow.mode.value === 'scene')
+const generationStages = computed(() => {
+  const beauty = flow.photoProcessingMode.value === 'beauty'
+  const beautifying = flow.waitingForBeautify.value
+  const base = beauty ? [
+    { label: '焕颜精修', on: beautifying, done: !beautifying },
+    { label: isScene.value ? '融合场景' : '替换发型', on: !beautifying, done: false },
+  ] : [{ label: '原照准备', on: false, done: true }, { label: isScene.value ? '融合场景' : '替换发型', on: true, done: false }]
+  return [...base, { label: '生成对比图', on: false, done: false }]
+})
 
 const currentIndex = ref(0)
 const current = computed(() => doneList.value[currentIndex.value] || null)

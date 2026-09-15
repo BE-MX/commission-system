@@ -5,6 +5,7 @@ export const portrait = '/src/assets/expo/atelier-hero.webp'
 export const wigs = ['轻盈短发', '优雅齐肩', '柔感层次', '自然短发', '柔和波波', '知性中发'].map((name, i) => ({
   wig_id: i + 1, model_no: `DEMO-${i + 1}`, name, series: i === 1 ? 'zhizhen' : 'classic',
   cover_url: portrait, thumb_url: portrait, score: 95 - i,
+  fit_tags: { gender: 'female', length: i % 2 ? 'medium' : 'short', styles: [i % 2 ? '优雅' : '自然'] },
   reason: '柔和层次，与知性气质自然相衬',
 }))
 export const scenes = ['商务肖像', '日常生活', '晚宴时刻', '旅行记忆'].map((label, i) => ({

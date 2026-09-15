@@ -42,6 +42,15 @@
 
     </div>
 
+    <div v-if="previewUrl && (qualityChecking || qualityWarnings.length)" class="quality-check" :class="{ warn: qualityWarnings.length }" role="status">
+      <template v-if="qualityChecking">正在本机检查照片清晰度与光线…</template>
+      <template v-else>
+        <b>建议重拍，效果会更自然</b>
+        <span v-for="warning in qualityWarnings" :key="warning">{{ warning }}</span>
+        <small>{{ qualityAcknowledged ? '已确认继续使用这张照片' : '如果照片实际清晰，点“仍用这张”后再确认上传' }}</small>
+      </template>
+    </div>
+
     <div class="processing-row">
       <fieldset class="processing-mode" :disabled="submitting">
         <legend>照片处理方式</legend>
@@ -59,8 +68,8 @@
     <div class="actions">
       <template v-if="previewUrl">
         <button class="xk-btn ghost" @click="retake">重拍</button>
-        <button class="xk-btn" :disabled="submitting" @click="confirm">
-          {{ submitting ? '上传中…' : '就用这张' }}
+        <button class="xk-btn" :disabled="submitting || qualityChecking" @click="confirm">
+          {{ submitting ? '上传中…' : qualityWarnings.length ? (qualityAcknowledged ? '确认上传' : '仍用这张') : '就用这张' }}
         </button>
       </template>
       <!-- 三槽布局：快门始终居中。右侧槽改双层堆叠（本地相册 + 扫码传照片）而非并列加第 4 项——
@@ -167,7 +176,7 @@ import { useCaptureScreen } from '../composables/useCaptureScreen'
 
 const {
   flow, isScene,
-  videoEl, cameraOn, previewUrl, submitting,
+  videoEl, cameraOn, previewUrl, submitting, qualityChecking, qualityWarnings, qualityAcknowledged,
   guideOpen, openGuide, closeGuide,
   facing, flipCamera,
   qrCanvas, previewLoading, qrValidMinutes,
@@ -179,6 +188,10 @@ const {
 <style scoped>
 .capture { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 24px 4vw 20px; overflow-y: auto; }
 .capture-heading { flex: none; margin-bottom: 22px; }
+.quality-check { flex: none; width: min(100%, 1100px); display: flex; flex-wrap: wrap; gap: 5px 14px; margin: 10px auto 0; padding: 10px 14px; border: 1px solid var(--xk-gold-line); border-radius: 9px; color: var(--xk-mut); font-size: 12px; }
+.quality-check b { width: 100%; color: var(--xk-warn); font-weight: 500; }
+.quality-check span::before { content: '· '; }
+.quality-check small { width: 100%; color: var(--xk-gold-dim); }
 .viewport {
   position: relative; flex: 1; min-height: 300px; width: min(100%, 1100px); margin: 0 auto;
   border-radius: 26px; overflow: hidden;
