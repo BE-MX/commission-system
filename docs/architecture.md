@@ -402,5 +402,9 @@ WhatsApp Web → Chrome/Edge MV3 extension（1.2.6 起）→ `leshine.cloud` API
 由 colorwork.proxy 流式转发北京回环 workerd（8787）；`.work` 经新加坡 TLS 代理北京，
 不经过办公室后端的 8787（该端口属于 WhatsApp Connector）。部署入口准备两站路由，
 北京模块健康后才依次激活北京、新加坡配置；当前现场与未部署项见 `docs/handoff.md`。
+局域网直连办公室时，由 Windows 后端的 `COLORWORK_GATEWAY_ORIGIN`（默认 `https://leshine.cloud`）
+代理 SSO 与工作台，浏览器仍使用局域网同源地址。仅 SSO 转发方舟 Bearer，业务请求只转模块 Cookie；
+办公室校验同源后转换上游 Origin，并按浏览器入口 HTTP/HTTPS 调整模块 Cookie 的 Secure 属性。
+Linux 北京默认空网关，使用本地 workerd；代理标记阻断误配置回环。
 浏览器不连接内部地址，不需要额外 DNS/TLS。工作台保留独立的 D1/R2 数据格式与逐视图会话权限，
 作为内部运行模块由统一部署入口纳管，持久存储唯一归属北京，详见 `colorwork-workbench/README.md`。

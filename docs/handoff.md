@@ -1,3 +1,13 @@
+## 2026-09-15 库存色块局域网 401（补齐代码交付，未部署办公室）
+
+分支 `codex/colorwork-lan`。用户反馈 `.cloud` 已正常、局域网仍401；只读再次确认办公室隧道工作台健康路径返回 WhatsApp Connector 的 Express 401，而 `.cloud` 返回200。上轮只覆盖公网 Nginx，未覆盖局域网直连办公室。本轮沿用同一故障的合并推送授权交付代码，不执行生产部署。
+
+Windows Settings 默认 `COLORWORK_GATEWAY_ORIGIN=https://leshine.cloud`，办公室 `/sso` 先校验用户和视图权限，再携 Bearer 请求北京签发 SSO；iframe/API/文件由办公室代理北京，只转模块 Cookie，不转主站 Bearer。检查局域网写请求 Origin 后转换上游 Origin；HTTP 局域网 Cookie 移除 Secure，HTTPS 保留，均保留 HttpOnly/SameSite=Lax/模块 Path。绝对北京重定向转相对路径，浏览器始终留在局域网地址。Linux 默认空网关保持本地 workerd；显式空值供 Windows 隔离开发，办公室生产不能置空。代理标记阻断配置回环，不复制数据库、素材或 SSO 密钥。
+
+验证：修复前5个回归失败（办公室签发错误来源的SSO、上传/退出继续收到401），修复后色块与配置回归37 passed；独立审查无 P0/P1/P2。当前修复代码以 HTTP 局域网 Origin 实际代理北京健康端点，返回200及精确 colorwork JSON；这次只读检查未创建生产会话。完整约定检查仍受4项现有主站UI债务阻断，增量无违规；差异检查通过，Git 巡检使用 --no-fetch 本地快照。
+
+上线需要通过统一 `deploy.bat` 更新办公室后端；只更新北京或 Nginx 不会修复局域网。北京现有本地工作台无需为 LAN 单独改配置。发布后用实际账号验收三个入口、刷新、上传、退出，并确认办公室 JWT 可由北京验证；健康端点200及模拟凭据测试不能替代真实SSO验收。本轮尚未部署办公室，不能报告局域网生产故障已解除。
+
 ## 2026-09-15 库存色块生产 401（代码交付，未部署）
 
 修复分支 `codex/colorwork-prod-routing`，用户已授权合并 main 并推送 origin；本轮不部署。只读复现：新加坡经办公室隧道请求 `/api/colorwork/workbench/api/health` 返回 `401 {"code":401,"message":"unauthorized"}`，响应带 `x-powered-by: Express`；该响应来自 WhatsApp Connector，办公室与工作台默认端口同为 8787。北京运行代码为 `7015e3625`，`ark-colorwork` 为 not-found/inactive、8787 无监听、没有 colorwork/current.json。用户所述“已部署”未覆盖北京内部模块。

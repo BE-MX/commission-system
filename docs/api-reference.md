@@ -1075,6 +1075,8 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 |---|---|---|---|
 | GET | `/sso?view=library\|inventory\|master` | 对应视图的 `colorwork_download:read` / `colorwork_edit:read` / `colorwork_master:read` | 按页面权限签发工作台 SSO 链接（短命 HS256，120s，claims 含用户全部可见视图）；无权限 403，未知视图 400 |
 | GET | `/inventory-status?template_id=` | 共享密钥头 `x-colorwork-sync-key`（非用户 JWT，仅工作台服务端回源） | 按 `TEMPLATE_MATCH` 映射聚合 `okki_inventory.enable_count`：SUM>0 → normal（到货正常）否则 restocking（正在补货）；键为 `{颜色}|{尺寸}`；未配置映射的模板返回 `unmapped: true`，工作台保留手动状态 |
+
+局域网 Windows 后端默认经 `COLORWORK_GATEWAY_ORIGIN=https://leshine.cloud` 获取 `/sso` 链接：先校验当前用户与页面权限，再向北京方舟 API 转发 Bearer，由北京签发 SSO；链接仍为相对模块路径且禁止缓存。`/workbench` 及子路径只转模块 Cookie，不转主站 Bearer；HTTP 局域网的会话 Cookie 不带 Secure，HTTPS 保持 Secure，两者均限定 HttpOnly/SameSite=Lax/模块 Path。跨站修改返回403，网关不可用或代理回环返回503。北京 Linux 默认本地模式，SSO 和数据口径不变。
 | GET/HEAD/POST/PUT/PATCH/DELETE | `/workbench/{path}` | 工作台 HttpOnly 会话；业务接口逐视图校验，SSO 入口仍由方舟页面权限签发 | 页面/资源/文件同源流式代理；不转发方舟 Bearer 或其它 Cookie；内部服务不可用返回 503，不返回 localhost 链接 |
 
 实时生效链路：工作台 `getCurrentSnapshot` 返回前逐规格覆盖（3.5s 超时回退站内状态），页面 30s 静默轮询。规格↔okki 匹配口径与有货判定复用 `stock/public_service.py` 的约定。

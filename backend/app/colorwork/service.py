@@ -3,6 +3,10 @@
 from datetime import timedelta
 import hashlib
 import hmac
+import logging
+from urllib.parse import parse_qs, urlsplit
+
+import httpx
 
 from fastapi import HTTPException, status
 from jose import jwt
@@ -60,6 +64,50 @@ def issue_sso_token(user: dict, views: list[str], display_name: str | None = Non
 
 
 WORKBENCH_PATH = "/api/colorwork/workbench"
+RELAY_HEADER = "x-ark-colorwork-relay"
+logger = logging.getLogger(__name__)
+
+
+def gateway_origin(relay_header: str | None = None) -> str:
+    """The office relays to a fixed HTTPS owner; Beijing uses its local runtime."""
+    origin = get_settings().COLORWORK_GATEWAY_ORIGIN.rstrip("/")
+    if not origin:
+        return ""
+    parsed = urlsplit(origin)
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.path or parsed.query
+            or parsed.fragment or parsed.username or parsed.password):
+        raise HTTPException(503, "库存色块图北京网关地址配置无效")
+    if relay_header:
+        raise HTTPException(503, "库存色块图代理形成循环，请检查北京服务配置")
+    return origin
+
+
+def gateway_sso_link(view: str, authorization: str, origin: str) -> dict:
+    """Obtain SSO from the data owner using the already authenticated Ark bearer."""
+    try:
+        with httpx.Client(timeout=15, follow_redirects=False, trust_env=False) as client:
+            response = client.get(origin + "/api/colorwork/sso", params={"view": view},
+                                  headers={"authorization": authorization, RELAY_HEADER: "1"})
+        data = response.json()
+    except (httpx.HTTPError, ValueError) as error:
+        # Neither credentials nor SSO URLs belong in logs.
+        logger.warning("Colorwork SSO gateway unavailable: %s", type(error).__name__)
+        print("Colorwork SSO gateway unavailable: " + type(error).__name__, flush=True)
+        raise HTTPException(503, "无法连接北京库存色块图工作台，请稍后重试") from None
+    if response.status_code != 200:
+        detail = data.get("detail") if isinstance(data, dict) else None
+        code = response.status_code if 400 <= response.status_code < 500 else 503
+        raise HTTPException(code, detail if isinstance(detail, str) else "北京库存色块图工作台暂不可用")
+    value = data.get("url") if isinstance(data, dict) else None
+    try:
+        url = urlsplit(value if isinstance(value, str) else "")
+    except ValueError:
+        raise HTTPException(503, "北京库存色块图工作台返回了无效的进入链接") from None
+    query = parse_qs(url.query)
+    if (url.scheme or url.netloc or url.path != WORKBENCH_PATH + "/api/auth/ark"
+            or query.get("view") != [view] or not query.get("token")):
+        raise HTTPException(503, "北京库存色块图工作台返回了无效的进入链接")
+    return data
 
 
 def build_sso_url(view: str, token: str) -> str:

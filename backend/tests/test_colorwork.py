@@ -23,6 +23,7 @@ from app.core.database import get_db
 def colorwork_db(db, monkeypatch):
     class S:
         BUSINESS_DB_NAME = "lsordertest"
+        COLORWORK_GATEWAY_ORIGIN = ""
         COLORWORK_SSO_SECRET = "test-sso-secret"
         COLORWORK_BASE_URL = "http://localhost:8787"
         COLORWORK_SYNC_KEY = "test-sync-key"
@@ -147,6 +148,7 @@ def _client(db, user, permissions, monkeypatch):
 
     class S:
         BUSINESS_DB_NAME = "lsordertest"
+        COLORWORK_GATEWAY_ORIGIN = ""
         COLORWORK_SSO_SECRET = "test-sso-secret"
         COLORWORK_BASE_URL = "https://colorwork.example.com"
         COLORWORK_SYNC_KEY = "test-sync-key"

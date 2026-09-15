@@ -1,6 +1,7 @@
 """Stream the internal workbench through Ark's existing /api reverse proxy."""
 
 import logging
+from http.cookies import SimpleCookie
 import anyio
 from urllib.parse import urlsplit
 
@@ -8,7 +9,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from starlette.responses import StreamingResponse
 
-from app.colorwork.service import WORKBENCH_PATH
+from app.colorwork.service import WORKBENCH_PATH, RELAY_HEADER, gateway_origin
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,33 @@ async def _stream(response, client):
         await _close(response, client)
 
 
+def _gateway_headers(headers, gateway, secure):
+    """Keep the Beijing session on the browser's LAN origin, including plain HTTP."""
+    result = []
+    for key, value in headers:
+        if key.lower() == b"set-cookie":
+            cookies = SimpleCookie()
+            cookies.load(value.decode("latin-1"))
+            cookie = cookies.get("inventory_workbench_session")
+            if cookie is None:
+                continue
+            cookie["domain"] = ""
+            cookie["path"] = WORKBENCH_PATH
+            cookie["secure"] = secure
+            cookie["httponly"] = True
+            cookie["samesite"] = "Lax"
+            value = cookie.OutputString().encode("latin-1")
+        elif key.lower() == b"location":
+            target = urlsplit(value.decode("latin-1"))
+            owner = urlsplit(gateway)
+            if target.netloc:
+                if target.scheme != owner.scheme or target.netloc != owner.netloc:
+                    raise HTTPException(502, "库存色块图工作台返回了无效的跳转")
+                value = (target.path + ("?" + target.query if target.query else "")).encode("latin-1")
+        result.append((key, value))
+    return result
+
+
 # HTML/assets use a scoped HttpOnly SSO session, not Ark's localStorage Bearer token.
 # Worker API handlers enforce requireView; SSO issuance remains protected by Ark RBAC.
 @router.api_route("/workbench", methods=["GET", "HEAD"], include_in_schema=False)
@@ -53,11 +81,13 @@ async def workbench_proxy(request: Request, path: str = ""):
     raw_path = request.scope.get("raw_path", request.url.path.encode()).decode("ascii")
     if not (raw_path == WORKBENCH_PATH or raw_path.startswith(WORKBENCH_PATH + "/")):
         raise HTTPException(400, "无效的工作台路径")
-    upstream_url = internal_origin() + raw_path
+    gateway = gateway_origin(request.headers.get(RELAY_HEADER))
+    target_origin = gateway or internal_origin()
+    upstream_url = target_origin + raw_path
     if request.url.query:
         upstream_url += "?" + request.url.query
     # Do not forward Ark bearer credentials or unrelated application cookies.
-    excluded = _HOP_HEADERS | {"host", "authorization", "cookie", "forwarded", "referer"}
+    excluded = _HOP_HEADERS | {"host", "authorization", "cookie", "forwarded", "referer", RELAY_HEADER}
     excluded |= {name.strip().lower() for name in request.headers.get("connection", "").split(",")}
     headers = {key: value for key, value in request.headers.items()
                if key not in excluded and not key.startswith("x-forwarded-")}
@@ -66,6 +96,13 @@ async def workbench_proxy(request: Request, path: str = ""):
         headers["cookie"] = "inventory_workbench_session=" + cookie
     headers["x-forwarded-proto"] = request.url.scheme
     headers["x-forwarded-host"] = request.url.netloc
+    if gateway:
+        headers[RELAY_HEADER] = "1"
+        # Browser origin was checked above. Beijing sees its own HTTPS origin.
+        if origin == str(request.base_url).rstrip("/"):
+            headers["origin"] = gateway
+        headers["x-forwarded-proto"] = "https"
+        headers["x-forwarded-host"] = urlsplit(gateway).netloc
     client = httpx.AsyncClient(timeout=httpx.Timeout(300, connect=3), follow_redirects=False, trust_env=False)
     try:
         upstream = await client.send(client.build_request(
@@ -84,8 +121,13 @@ async def workbench_proxy(request: Request, path: str = ""):
     response = StreamingResponse(_stream(upstream, client), status_code=upstream.status_code)
     blocked = _HOP_HEADERS | {"content-security-policy", "x-frame-options"}
     blocked |= {name.strip().lower() for name in upstream.headers.get("connection", "").split(",")}
-    response.raw_headers = [(key, value) for key, value in upstream.headers.raw
-                            if key.decode().lower() not in blocked]
+    raw_headers = [(key, value) for key, value in upstream.headers.raw
+                   if key.decode().lower() not in blocked]
+    try:
+        response.raw_headers = _gateway_headers(raw_headers, gateway, request.url.scheme == "https") if gateway else raw_headers
+    except BaseException:
+        await _close(upstream, client)
+        raise
     response.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"

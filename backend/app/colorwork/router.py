@@ -2,7 +2,7 @@
 
 import hmac
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
@@ -12,6 +12,9 @@ from app.colorwork.service import (
     build_sso_url,
     compute_template_statuses,
     issue_sso_token,
+    gateway_origin,
+    gateway_sso_link,
+    RELAY_HEADER,
     sync_secret,
 )
 from app.core.database import get_db
@@ -21,6 +24,8 @@ router = APIRouter()
 
 @router.get("/sso")
 def sso_entry(
+    request: Request,
+    response: Response,
     view: str = Query(..., description="工作台视图：library / inventory / master"),
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -41,6 +46,10 @@ def sso_entry(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"权限不足，需要: {VIEW_PERMISSIONS[view]}",
         )
+    response.headers["Cache-Control"] = "no-store"
+    origin = gateway_origin(request.headers.get(RELAY_HEADER))
+    if origin:
+        return gateway_sso_link(view, request.headers.get("authorization", ""), origin)
     from app.auth.models import ArkUser
 
     db_user = db.get(ArkUser, int(user["sub"])) if str(user.get("sub", "")).isdigit() else None

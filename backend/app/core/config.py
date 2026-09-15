@@ -4,6 +4,7 @@ import json
 import re
 from pathlib import Path
 import string
+import sys
 from typing import Annotated
 from urllib.parse import quote_plus
 
@@ -337,6 +338,11 @@ class Settings(BaseSettings):
     COLORWORK_SSO_SECRET: str = ""
     # 仅后端连接的内部运行服务，绝不返回浏览器；保留完整 workbench 路径转发。
     COLORWORK_INTERNAL_ORIGIN: str = "http://127.0.0.1:8787"
+    # Windows office has WhatsApp on 8787; relay LAN traffic to the Beijing owner.
+    # Linux Beijing owns the local runtime. Explicit empty value also enables local dev on Windows.
+    COLORWORK_GATEWAY_ORIGIN: str = Field(
+        default_factory=lambda: "https://leshine.cloud" if sys.platform == "win32" else "",
+    )
     # 工作台回源密钥；未配置时从 JWT_SECRET_KEY 按用途派生，部署同步给运行服务。
     COLORWORK_SYNC_KEY: str = ""
 

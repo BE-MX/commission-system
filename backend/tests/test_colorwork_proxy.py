@@ -7,7 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.colorwork import proxy
+from app.colorwork import proxy, service
 
 
 class Body(httpx.AsyncByteStream):
@@ -39,9 +39,12 @@ def harness(monkeypatch):
     monkeypatch.setattr(proxy.httpx, "AsyncClient", lambda **kwargs: original(
         **kwargs, transport=httpx.MockTransport(handle),
     ))
-    monkeypatch.setattr(proxy, "get_settings", lambda: SimpleNamespace(
+    settings = SimpleNamespace(
         COLORWORK_INTERNAL_ORIGIN="http://127.0.0.1:8787",
-    ))
+        COLORWORK_GATEWAY_ORIGIN="",
+    )
+    monkeypatch.setattr(proxy, "get_settings", lambda: settings)
+    monkeypatch.setattr(service, "get_settings", lambda: settings)
     app = FastAPI()
     app.include_router(proxy.router, prefix="/api/colorwork")
     with TestClient(app, base_url="https://leshine.cloud") as client:

@@ -120,6 +120,11 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 完整发布和 `--cloud-only` 均准备两站 `/api/colorwork/` 路由；北京模块激活并通过 readiness 后，
 先切北京再切新加坡，使 `.work` 的 SSO、会话、文件全部落北京。办公室 8787 属于 WhatsApp Connector，
 不得用它承接色块工作台。两个入口仍使用既有方舟 Bearer 鉴权，工作台使用路径受限 Cookie。
+局域网直连办公室不会经过这两条 Nginx 路由，需更新办公室后端代码：Windows 默认使用
+`COLORWORK_GATEWAY_ORIGIN=https://leshine.cloud` 代理 SSO 与工作台，Linux 默认使用本地运行服务。
+无需为办公室复制工作台密钥或数据；显式空网关表示本地模式，办公室生产环境不得设为空。
+`--cloud-only` 不更新办公室后端，因此不能用它验收局域网修复。发布后须通过局域网 HTTP
+验证三个入口、刷新、上传与退出，确认 Cookie 仍为局域网模块路径。
 新加坡到北京校验 TLS；仅将两个合法 `.work` Origin 转为北京 Origin，其他 Origin 保留给后端拒绝。
 26MiB 请求上限覆盖 25MiB JPG 和 8MiB PSD 分片；禁用 upstream 重试与缓存，SSO 请求不写访问日志。
 
