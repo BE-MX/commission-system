@@ -132,3 +132,39 @@ def test_success_and_repeat_activation(site):
     command.reset_mock()
     assert routing.execute({**request, **prepared, "action": "activate"})["status"] == "unchanged"
     command.assert_not_called()
+
+
+@pytest.mark.parametrize('region', ['office', 'cloud'])
+def test_shipping_video_routing_coexists_with_vouchers_without_changing_ownership(region):
+    video = (DEPLOY / 'nginx' / f'shipping-video-{region}.conf').read_text()
+    original = config(region)
+    vouchers = routing.render(original, snippet(region), region)
+    candidate = routing.render(vouchers, video, region, 'shipping-video')
+    assert routing.render(candidate, video, region, 'shipping-video') == candidate
+    refreshed = routing.render(candidate, snippet(region), region)
+    # Each renderer inserts its own block next to /api; ordering between the two
+    # non-overlapping routes can change, but neither block may be removed/duplicated.
+    assert snippet(region).strip() in refreshed and video.strip() in refreshed
+    assert refreshed.count('# BEGIN ARK SHIPPING VIDEO ROUTING') == routing.SPECS[region][2]
+    assert routing.render(refreshed, snippet(region), region) == refreshed
+    assert 'location = /api/mini/shipping-inspection/videos {' in candidate
+    assert 'client_max_body_size 101m;' in candidate
+    assert 'proxy_next_upstream off;' in video
+    assert 'proxy_set_header Authorization $http_authorization;' in video
+    assert f'proxy_pass http://127.0.0.1:{routing.SPECS[region][1]};' in video
+    assert 'proxy_read_timeout 300s;' in video
+    assert 'proxy_request_buffering off;' in video
+
+
+def test_shipping_video_prepare_and_failed_activation_preserve_live_config(site):
+    path, command, request = site
+    request.update(feature='shipping-video', snippet=(DEPLOY / 'nginx/shipping-video-cloud.conf').read_text())
+    original = path.read_bytes()
+    prepared = routing.execute(request)
+    assert path.read_bytes() == original
+    command.reset_mock()
+    command.side_effect = [None, RuntimeError('reload failed'), None, None]
+    with pytest.raises(RuntimeError, match='reload failed'):
+        routing.execute({**request, **prepared, 'action': 'activate'})
+    assert path.read_bytes() == original
+    assert list((routing.STATE.parent / 'shipping-video').glob('cloud-*.conf'))

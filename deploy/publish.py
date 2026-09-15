@@ -224,6 +224,7 @@ if __name__ == "__main__":
     parser.add_argument("--no-pull", action="store_true")
     parser.add_argument("--revision", help="Pin a reviewed full commit SHA; fetch still runs unless --no-pull")
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--shipping-video-routing-only", action="store_true", help="Enable 100MB private shipping video uploads on existing backends")
     parser.add_argument("--voucher-routing-only", action="store_true", help="Route recharge uploads and voucher reads to the office only")
     parser.add_argument("--colorwork-routing-only", action="store_true", help="Route colorwork to the existing healthy Beijing module")
     parser.add_argument("--migrate-only", metavar="PLAN", help="Execute only the reviewed 137 -> 138 migration using a verified local plan")
@@ -231,7 +232,12 @@ if __name__ == "__main__":
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
-        if args.colorwork_routing_only:
+        if args.shipping_video_routing_only:
+            if args.colorwork_routing_only or args.voucher_routing_only or args.migrate_only or args.cloud_only or args.no_pull or args.revision or args.recover_migration_149 or args.migration_credentials:
+                raise RuntimeError("Shipping video routing only accepts --prepare-only")
+            from voucher_routing import execute
+            execute(args.prepare_only, feature="shipping-video")
+        elif args.colorwork_routing_only:
             if args.voucher_routing_only or args.migrate_only or args.cloud_only or args.no_pull or args.revision or args.recover_migration_149 or args.migration_credentials:
                 raise RuntimeError("Colorwork routing only accepts --prepare-only")
             from colorwork_routing import execute
@@ -249,7 +255,7 @@ if __name__ == "__main__":
         else:
             publish(args)
     except Exception as error:
-        if STATE.exists() and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False):
+        if STATE.exists() and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False) and not getattr(locals().get("args"), "shipping_video_routing_only", False):
             journal = marker("publish-current")
             journal.update(status="failed", error_type=type(error).__name__)
             atomic_json(STATE / "publish-current.json", journal)

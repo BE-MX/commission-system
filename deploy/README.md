@@ -12,6 +12,17 @@ deploy\deploy.bat --revision <full-commit-sha> --migration-credentials <protecte
 
 ## 目录与版本规则
 
+### 出库检验视频（迁移 152）
+
+发布时先通过上述统一入口部署包含迁移 152 的后端与 PC 制品，再启用两站视频上传路由并更新小程序。旧小程序默认编辑版本为 0，无法编辑已撤回单据，应使用新版后再启用撤回操作。
+
+```powershell
+deploy\deploy.bat --shipping-video-routing-only --prepare-only
+deploy\deploy.bat --shipping-video-routing-only
+```
+
+该专用入口只接受可选的 `--prepare-only`，普通应用发布不会自动执行它。它在新加坡/北京现有站点增加视频上传精确路径：Nginx 请求上限 101m（含表单开销），应用单视频上限 100 MiB，上传超时 300 秒。保留各站现有后端归属及凭证/色块路由；视频依旧存于各后端私有存储，不迁移媒体或扩大其他 API 的限制。使用独立 shipping-video 状态目录和日志，候选检查隔离 Nginx 临时目录，激活前校验配置摘要，失败自动恢复配置。路由准备和激活属于生产操作，须按本次目标环境取得部署授权；本轮仅交付代码，未执行生产操作。
+
 双击或右键「以管理员身份运行」时，发布结束会保留窗口，按任意键关闭；失败时先查看上方 `DEPLOY FAILED` 或 Python 启动错误，再处理具体原因。窗口关闭本身不代表部署成功。入口从 PATH 定位 Git，并优先使用该安装自带的 `usr/bin/ssh.exe`，避免系统 OpenSSH 在非交互 Python 子进程中挂起；无需手动调整 PATH。无人值守调用前设置 `DEPLOY_NO_PAUSE=1`（PowerShell：`$env:DEPLOY_NO_PAUSE='1'`），跳过等待并保留发布程序的退出码。
 
 旧版入口若闪退，可先打开管理员命令提示符，在现有窗口中运行服务器仓库下的 `deploy\deploy.bat`，以保留错误输出。无需先改服务器受 Git 管理的脚本，以免触发下方的干净工作区检查。

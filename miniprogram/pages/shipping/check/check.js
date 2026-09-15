@@ -4,9 +4,14 @@
 var app = getApp()
 var navigation = require('../../../utils/navigation')
 var sc = require('../../../utils/shipping-check')
+var videoMethods = require('../../../utils/shipping-video')
 
-Page({
-  onShow: function () { this.setData({ scanActive: navigation.guard('shipping') }) },
+Page(Object.assign({
+  onShow: function () {
+    if (!navigation.guard('shipping')) return
+    this.setData({ scanActive: true })
+    if (this.data.submitted && !this.data.uploading && this._qrRaw) this._loadByQr(this._qrRaw)
+  },
   onHide: function () { this.setData({ scanActive: false }) },
   onPreviewScanExample: function () {
     wx.getImageInfo({
@@ -22,6 +27,8 @@ Page({
     record: null,             // 出库单头：单号/客户/日期
     items: [],                // 明细行（含每行照片）
     wholePhotos: [],          // 整单照片
+    wholeVideos: [],
+    editVersion: 0,
     totalPhotos: 0,
     canSubmit: false,
     submitted: false,         // 已提交：整页只读
@@ -38,6 +45,10 @@ Page({
 
   _requestId: '',
   _imageBatch: 0,
+  _qrRaw: '',
+  onRefreshInspection: function () {
+    if (this._qrRaw && !this.data.uploading && this.data.state === 'ready') this._loadByQr(this._qrRaw)
+  },
 
   onLoad: function () {
     if (!navigation.guard('shipping')) return
@@ -80,6 +91,7 @@ Page({
   _loadByQr: function (raw) {
     var self = this
     this.setData({ state: 'loading' })
+    this._qrRaw = raw
     wx.request({
       url: app.globalData.baseUrl + '/api/mini/shipping-inspection/scan',
       method: 'POST',
@@ -102,11 +114,13 @@ Page({
           record: view.record,
           items: view.items,
           wholePhotos: view.wholePhotos,
+          wholeVideos: view.wholeVideos,
+          editVersion: view.editVersion,
           totalPhotos: view.totalPhotos,
           canSubmit: view.canSubmit,
           submitted: view.submitted,
           statusText: view.statusText,
-          remark: ''
+          remark: view.remark
         })
         self._loadPhotoUrls()
       },
@@ -181,15 +195,17 @@ Page({
     })
   },
 
-  _upload: function (filePath, itemId) {
+  _upload: function (filePath, itemId, mediaType) {
+    if (this.data.submitted || this.data.state !== 'ready' || this.data.uploading) return
     var self = this
     this.setData({ uploading: true })
     wx.showLoading({ title: '上传中…', mask: true })
     // multipart 的 formData 只收字符串；整单照片不传 item_id
-    var formData = { outbound_record_id: String(this.data.record.outbound_record_id) }
+    var formData = { outbound_record_id: String(this.data.record.outbound_record_id), edit_version: String(this.data.editVersion) }
     if (itemId !== null && itemId !== undefined) formData.item_id = String(itemId)
     wx.uploadFile({
-      url: app.globalData.baseUrl + '/api/mini/shipping-inspection/photos',
+      url: app.globalData.baseUrl + '/api/mini/shipping-inspection/' + (mediaType === 'video' ? 'videos' : 'photos'),
+      timeout: 300000,
       filePath: filePath,
       name: 'file',
       header: { 'Authorization': 'Bearer ' + app.globalData.token },
@@ -207,7 +223,9 @@ Page({
           return
         }
         // 刚拍的本地临时路径直接用于显示，省一次回源下载
-        self._appendPhoto({
+        if (!body.id || !body.file_path) { self._error('上传未确认', '请刷新出库单核对后重试'); return }
+        var append = mediaType === 'video' ? self._appendVideo : self._appendPhoto
+        append.call(self, {
           id: body.id,
           itemId: itemId === undefined ? null : itemId,
           filePath: body.file_path,
@@ -267,7 +285,7 @@ Page({
   },
 
   onDeletePhoto: function (e) {
-    if (this.data.submitted || this.data.state === 'submitting') return
+    if (this.data.submitted || this.data.state === 'submitting' || this.data.uploading) return
     var photoId = e.currentTarget.dataset.photoId
     var self = this
     wx.showModal({
@@ -284,7 +302,7 @@ Page({
   _deletePhoto: function (photoId) {
     var self = this
     wx.request({
-      url: app.globalData.baseUrl + '/api/mini/shipping-inspection/photos/' + photoId,
+      url: app.globalData.baseUrl + '/api/mini/shipping-inspection/photos/' + photoId + '?edit_version=' + this.data.editVersion,
       method: 'DELETE',
       header: this._header(),
       timeout: 30000,
@@ -324,7 +342,7 @@ Page({
     }
     var body
     try {
-      body = sc.buildSubmitBody(this.data.record.outbound_record_id, this._requestId, this.data.remark)
+      body = sc.buildSubmitBody(this.data.record.outbound_record_id, this._requestId, this.data.remark, this.data.editVersion)
     } catch (err) {
       return
     }
@@ -351,6 +369,7 @@ Page({
         self._requestId = ''
         self.setData({
           successVisible: true,
+          submitted: true,
           successTitle: '提交成功',
           successDesc: '已上传 ' + count + ' 张照片'
         })
@@ -369,11 +388,14 @@ Page({
   _reset: function () {
     this._imageBatch += 1
     this._requestId = ''
+    this._qrRaw = ''
     this.setData({
       state: 'idle',
       record: null,
       items: [],
       wholePhotos: [],
+      wholeVideos: [],
+      editVersion: 0,
       totalPhotos: 0,
       canSubmit: false,
       submitted: false,
@@ -392,4 +414,4 @@ Page({
 
   // catch 需要真实存在的方法名，catchtap="" 挡不住冒泡（点弹层内容会误关）
   noop: function () {}
-})
+}, videoMethods))

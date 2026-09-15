@@ -7,6 +7,8 @@ import { ElMessage } from 'element-plus'
 import { getOutboundPrintData, listOutboundRecords } from '@/api/shipping'
 import { useListPage } from '@/composables/useListPage'
 import { buildOutboundDoc, printDocHtml } from '../print/printDocs'
+import { downloadOutboundWord } from '@/api/shipping'
+import { downloadBlob } from '@/utils/download'
 
 export function useOutboundRecords() {
   const route = useRoute()
@@ -33,6 +35,17 @@ export function useOutboundRecords() {
   // 点击「打印出库单」直接调起浏览器打印：取数 → 构建文档 → 隐藏 iframe print()
   // printingId 给按钮上 loading，同时挡住重复点击
   const printingId = ref(null)
+  const downloadingId = ref(null)
+
+  async function downloadWord(row) {
+    if (downloadingId.value !== null) return
+    downloadingId.value = row.outbound_record_id
+    try {
+      downloadBlob(await downloadOutboundWord(row.outbound_record_id))
+    } finally {
+      downloadingId.value = null
+    }
+  }
 
   async function openPrint(row) {
     if (printingId.value) return
@@ -54,6 +67,6 @@ export function useOutboundRecords() {
 
   return {
     ...listApi,
-    printingId, openPrint,
+    printingId, openPrint, downloadingId, downloadWord,
   }
 }

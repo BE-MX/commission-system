@@ -73,6 +73,12 @@ function decorateView(payload) {
   })
 
   var stats = photoStats(items, whole, submitted)
+  var videos = payload.videos || []
+  function groupVideos(itemId) {
+    return videos.filter(function (video) { return String(video.item_id == null ? '' : video.item_id) === String(itemId == null ? '' : itemId) })
+      .map(function (video) { return { id: video.id, itemId: video.item_id, filePath: video.file_path, url: '' } })
+  }
+  items.forEach(function (item) { item.videos = groupVideos(item.item_id) })
   return {
     record: {
       outbound_record_id: record.outbound_record_id,
@@ -83,6 +89,9 @@ function decorateView(payload) {
     },
     items: items,
     wholePhotos: whole,
+    wholeVideos: groupVideos(null),
+    editVersion: inspection ? inspection.edit_version || 0 : 0,
+    remark: inspection ? inspection.remark || '' : '',
     submitted: submitted,
     statusText: submitted ? '已提交' : '待检验',
     totalPhotos: stats.totalPhotos,
@@ -91,13 +100,14 @@ function decorateView(payload) {
 }
 
 // 提交体：request_id 是幂等键（同一次提交重试复用），remark 允许空串。
-function buildSubmitBody(outboundRecordId, requestId, remark) {
+function buildSubmitBody(outboundRecordId, requestId, remark, editVersion) {
   if (!outboundRecordId) throw new Error('缺少出库单 ID')
   if (!requestId) throw new Error('缺少 request_id')
   return {
     outbound_record_id: outboundRecordId,
     request_id: requestId,
-    remark: remark || ''
+    remark: remark || '',
+    edit_version: editVersion || 0
   }
 }
 

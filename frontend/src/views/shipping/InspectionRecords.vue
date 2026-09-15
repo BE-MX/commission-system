@@ -33,10 +33,13 @@
         <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ row.remark || '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" min-width="180" fixed="right">
+        <el-table-column label="操作" min-width="280" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">查看</GlassButton>
             <GlassButton variant="link" left-icon="Printer" @click="openPrint(row)">打印验货单</GlassButton>
+            <GlassButton v-any-permission="['shipping_inspection:write', 'shipping_inspection:admin']"
+              variant="link" left-icon="RefreshLeft" :loading="recallingId === row.id"
+              @click="recallForEdit(row)">撤回编辑</GlassButton>
           </template>
         </el-table-column>
       </el-table>
@@ -69,6 +72,8 @@
 
         <div class="section-title">验货照片</div>
         <InspectionPhotos :photos="detail.photos" :items="detail.items" />
+        <div v-if="detail.videos?.length" class="section-title">验货视频</div>
+        <InspectionVideos :videos="detail.videos" :items="detail.items" />
       </template>
     </DetailDrawer>
 
@@ -87,6 +92,7 @@
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import InspectionPhotos from './components/InspectionPhotos.vue'
+import InspectionVideos from './components/InspectionVideos.vue'
 import ShippingPrintDialog from './print/ShippingPrintDialog.vue'
 import { useInspectionRecords } from './composables/useInspectionRecords'
 
@@ -94,7 +100,7 @@ const {
   loading, list, total, page, pageSize, searchForm,
   handleSearch, handlePageChange, handleSizeChange,
   detailVisible, detailLoading, detail, openDetail,
-  printDialog, openPrint,
+  printDialog, openPrint, recallingId, recallForEdit,
 } = useInspectionRecords()
 </script>
 

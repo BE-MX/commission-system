@@ -39,13 +39,15 @@
         <el-table-column label="照片数" min-width="80" align="right">
           <template #default="{ row }">{{ row.photo_count }}</template>
         </el-table-column>
-        <el-table-column label="操作" min-width="130" fixed="right">
+        <el-table-column label="操作" min-width="230" fixed="right">
           <template #default="{ row }">
             <GlassButton
               variant="link" left-icon="Printer"
               :loading="printingId === row.outbound_record_id"
               @click="openPrint(row)"
             >打印出库单</GlassButton>
+            <GlassButton variant="link" left-icon="Download"
+              :loading="downloadingId === row.outbound_record_id" @click="downloadWord(row)">下载 Word</GlassButton>
           </template>
         </el-table-column>
       </el-table>
@@ -69,7 +71,7 @@ import { useOutboundRecords } from './composables/useOutboundRecords'
 const {
   loading, list, total, page, pageSize, searchForm,
   handleSearch, handlePageChange, handleSizeChange,
-  printingId, openPrint,
+  printingId, openPrint, downloadingId, downloadWord,
 } = useOutboundRecords()
 </script>
 

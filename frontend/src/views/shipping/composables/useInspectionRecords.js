@@ -3,8 +3,9 @@
  */
 import { reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { getInspectionRecord, listInspectionRecords } from '@/api/shipping'
+import { getInspectionRecord, listInspectionRecords, recallInspectionRecord } from '@/api/shipping'
 import { useListPage } from '@/composables/useListPage'
+import { confirmDanger, msgSuccess } from '@/utils/feedback'
 
 export function useInspectionRecords() {
   const route = useRoute()
@@ -47,6 +48,24 @@ export function useInspectionRecords() {
 
   // 打印弹框：内容渲染在 iframe 里的独立文档中，打印只出那份文档
   const printDialog = reactive({ visible: false, recordId: null })
+  const recallingId = ref(null)
+
+  async function recallForEdit(row) {
+    if (recallingId.value !== null) return
+    recallingId.value = row.id
+    try {
+      try {
+        await confirmDanger('撤回编辑', row.outbound_no, '已上传照片和视频会保留，小程序重新扫码后可继续上传和提交。')
+      } catch { return }
+      await recallInspectionRecord(row.id, row.edit_version)
+      detailVisible.value = false
+      printDialog.visible = false
+      msgSuccess('撤回')
+      await listApi.handleSearch()
+    } finally {
+      recallingId.value = null
+    }
+  }
 
   function openPrint(row) {
     Object.assign(printDialog, { visible: true, recordId: row.id })
@@ -55,6 +74,6 @@ export function useInspectionRecords() {
   return {
     ...listApi,
     detailVisible, detailLoading, detail, openDetail,
-    printDialog, openPrint,
+    printDialog, openPrint, recallingId, recallForEdit,
   }
 }

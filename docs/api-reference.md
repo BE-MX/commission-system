@@ -1046,20 +1046,26 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 ## 发货检验（`/api/shipping-inspection`，128 迁移，2026-09-01）
 
-基于 `lsordertest.okki_outbound_records / okki_outbound_record_items`（OKKI 只读镜像，跨库只读、运行时列内省自适应字段名）的发货检验闭环：PC 打印带二维码出库单 → 小程序扫码拍照上传 → PC 打印验货单。检验数据落 `ark_shipping_inspections / ark_shipping_inspection_photos`。PC 端点要求 `shipping_inspection:read/write/admin`（require_any_permission）；小程序端点挂 `/api/mini/shipping-inspection`，`get_current_mini_user` 鉴权、无 RBAC。
+基于 `lsordertest.okki_outbound_records / okki_outbound_record_items`（OKKI 只读镜像，跨库只读、运行时列内省自适应字段名）的发货检验闭环：PC 打印带二维码出库单 → 小程序扫码上传照片/视频 → PC 打印验货单。检验数据落 `ark_shipping_inspections / ark_shipping_inspection_photos`。PC 读取要求 `shipping_inspection:read/write/admin`（require_any_permission）；撤回要求 write/admin。小程序端点挂 `/api/mini/shipping-inspection`，登录鉴权并通过 `require_mini_entry("shipping")` 校验入口权限。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/outbound-records?keyword=&date_from=&date_to=&page=&page_size=` | 出库单分页列表，含检验状态 none/draft/submitted 与照片数；按 OKKI 归属过滤（见下） |
 | GET | `/outbound-records/{record_id}/print-data` | 出库单打印数据：单头+明细+`qr_code_base64`（二维码内容 `ARK-I:{record_id}:{hmac8}`）；同样按归属过滤，不可见返回 404 |
+| GET | `/outbound-records/{record_id}/word` | 下载可编辑 DOCX，保持当前 A4 版式、列宽、二维码及灰色斑马纹；数据范围同 print-data；二进制响应 |
 | GET | `/records?keyword=&date_from=&date_to=&page=&page_size=` | 已提交验货单分页列表（按提交时间过滤） |
-| GET | `/records/{id}` | 验货单详情：单头+实时明细+照片相对路径数组 |
+| GET | `/records/{id}` | 验货单详情：单头+实时明细+分开的 photos/videos 数组；视频只供预览，不进入验货打印 |
+| POST | `/records/{id}/recall` | 请求必填 edit_version；submitted → draft，版本加一，保留备注与全部媒体，记录撤回人/时间；过期状态 409 |
 | GET | `/images/{rel_path:path}` | 鉴权读图（FileResponse，私有存储不挂静态目录） |
-| POST | `/api/mini/shipping-inspection/scan` | 验签二维码原文 → 单头+明细+已有照片+状态；前缀/签名错 400 |
-| POST | `/api/mini/shipping-inspection/photos` | multipart 上传一张照片（file + outbound_record_id + item_id?）；draft 懒创建；已提交拒绝 |
-| DELETE | `/api/mini/shipping-inspection/photos/{photo_id}` | 仅 draft 可删，删行同时清文件 |
-| POST | `/api/mini/shipping-inspection/submit` | 提交验货单：照片总数 ≥1 否则 400；重复提交幂等返回原单 |
-| GET | `/api/mini/shipping-inspection/images/{rel_path:path}` | 小程序鉴权读图 |
+| POST | `/api/mini/shipping-inspection/scan` | 验签二维码原文 → 单头+明细+photos/videos+状态/edit_version/已存备注；前缀/签名错 400 |
+| POST | `/api/mini/shipping-inspection/photos` | multipart 上传一张照片（file + outbound_record_id + item_id? + edit_version）；draft 懒创建；已提交拒绝 |
+| POST | `/api/mini/shipping-inspection/videos` | 同照片表单字段；相册视频 MP4/MOV/M4V，单文件最多 100 MiB；校验扩展名、MIME、文件头及实际读取大小 |
+| DELETE | `/api/mini/shipping-inspection/photos/{photo_id}?edit_version=` | 仅当前版本 draft 可删，删行同时清文件 |
+| DELETE | `/api/mini/shipping-inspection/videos/{video_id}?edit_version=` | 同照片删除规则，拒绝跨媒体类型删除 |
+| POST | `/api/mini/shipping-inspection/submit` | 请求含 edit_version；照片总数 ≥1 否则 400，视频不计数；当前版本重复提交幂等返回原单 |
+| GET | `/api/mini/shipping-inspection/images/{rel_path:path}` | 小程序鉴权读取照片或视频；历史路径保留，文件不公开 |
+
+2026-09-15（迁移 152）：上传、删除、提交携带扫码返回的 `edit_version`，缺省 0 仅覆盖未撤回的初始轮次；撤回后的旧页面请求返回 400，重新扫码或点击刷新即可继续编辑。PC 重复撤回同一轮次幂等，新一轮已提交时旧撤回请求返回 409。撤回后从已提交列表移除，重新提交后再次显示。媒体写入和提交、撤回共享检验单行锁，照片计数使用 MySQL 当前读；视频不出现在 photos 数组和验货打印中。
 
 字段口径已于 2026-09-01 实库摸底校准（`scripts/show_okki_outbound_columns.py`），明细经 `outbound_invoice_id` 桥接关联单头，见 `docs/database.md` 发货检验一节。
 

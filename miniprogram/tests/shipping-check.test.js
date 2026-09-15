@@ -149,12 +149,12 @@ test('buildSubmitBody assembles the submit payload with a default empty remark',
   assert.deepEqual(sc.buildSubmitBody(9, 'req-1', undefined), {
     outbound_record_id: 9,
     request_id: 'req-1',
-    remark: ''
+    remark: '', edit_version: 0
   })
   assert.deepEqual(sc.buildSubmitBody(9, 'req-2', '外箱破损'), {
     outbound_record_id: 9,
     request_id: 'req-2',
-    remark: '外箱破损'
+    remark: '外箱破损', edit_version: 0
   })
 })
 

@@ -16,18 +16,21 @@ def remote(host, request):
     return json.loads(result.stdout)
 
 
-def execute(prepare_only):
+def execute(prepare_only, feature="voucher"):
     import publish
 
     with publish.deployment_lock():
         journal = {"status": "preparing", "completed": []}
-        record = publish.STATE / "voucher-routing.json"
+        if feature not in {"voucher", "shipping-video"}:
+            raise ValueError("Unknown routing feature")
+        record = publish.STATE / f"{feature}-routing.json"
         publish.atomic_json(record, journal)
         try:
             prepared = []
             for region, host in TARGETS:
-                snippet = (HERE / "nginx" / f"domestic-voucher-{region}.conf").read_text()
-                payload = {"region": region, "snippet": snippet, "action": "prepare"}
+                prefix = "domestic-voucher" if feature == "voucher" else "shipping-video"
+                snippet = (HERE / "nginx" / f"{prefix}-{region}.conf").read_text()
+                payload = {"region": region, "snippet": snippet, "action": "prepare", "feature": feature}
                 result = remote(host, payload)
                 prepared.append((host, payload, result))
             journal.update(status="prepared", prepared=[item[2] for item in prepared])

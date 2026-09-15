@@ -25,6 +25,9 @@ class ShippingInspection(Base):
     outbound_no = Column(String(64), comment="出库单号（冗余，便于检索与展示）")
     customer_name = Column(String(256), comment="客户名（冗余，列表展示用）")
     status = Column(String(20), nullable=False, default="draft", comment="draft=草稿,submitted=已提交")
+    edit_version = Column(Integer, nullable=False, default=0, server_default="0", comment="撤回后递增，拒绝旧页面提交")
+    recalled_at = Column(DateTime, comment="最近撤回时间")
+    recalled_by = Column(BigInteger, comment="最近撤回人")
     photo_count = Column(Integer, nullable=False, default=0, comment="提交时照片总数（列表页免 join）")
     remark = Column(String(500), comment="备注")
     submitted_at = Column(DateTime, comment="提交时间")
@@ -36,7 +39,7 @@ class ShippingInspection(Base):
 
 
 class ShippingInspectionPhoto(Base):
-    """发货检验照片（item_id 为空 = 整单照片）"""
+    """发货检验媒体（历史照片表，item_id 为空 = 整单媒体）"""
 
     __tablename__ = "ark_shipping_inspection_photos"
     __table_args__ = (
@@ -48,6 +51,7 @@ class ShippingInspectionPhoto(Base):
                            nullable=False, comment="检验单 id")
     item_id = Column(String(64), comment="出库明细 id；NULL=整单照片")
     file_path = Column(String(255), nullable=False, comment="相对路径（file_service 约定）")
+    media_type = Column(String(10), nullable=False, default="image", server_default="image", comment="image=照片,video=视频")
     sort = Column(Integer, nullable=False, default=0, comment="展示顺序")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     created_by = Column(Integer, comment="上传人")

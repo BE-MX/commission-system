@@ -13,6 +13,8 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
+from fastapi.responses import Response
+from urllib.parse import quote
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -23,6 +25,7 @@ from app.core.response import ok, page_result
 from app.shipping_inspection import constants as C
 from app.shipping_inspection import file_service, outbound_service, qr_service, service
 from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto
+from app.shipping_inspection.schemas import ShippingRecallRequest
 
 logger = logging.getLogger("commission")
 
@@ -114,7 +117,7 @@ def list_outbound_records(
     if draft_ids:
         draft_counts = dict(
             db.query(ShippingInspectionPhoto.inspection_id, func.count(ShippingInspectionPhoto.id))
-            .filter(ShippingInspectionPhoto.inspection_id.in_(draft_ids))
+            .filter(ShippingInspectionPhoto.inspection_id.in_(draft_ids), ShippingInspectionPhoto.media_type == "image")
             .group_by(ShippingInspectionPhoto.inspection_id)
             .all()
         )
@@ -155,6 +158,41 @@ def outbound_print_data(
 
 
 # ── 验货单（自有库）──────────────────────────────────────
+
+
+@router.get("/outbound-records/{record_id}/word", summary="下载出库单 Word（与打印版式一致）")
+def outbound_word(
+    record_id: str,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_any_permission(*_READ)),
+):
+    from app.shipping_inspection.word_service import build_outbound_word
+    scope = _outbound_scope(db, user)
+    try:
+        record = outbound_service.get_outbound_record(db, record_id, okki_user_id=scope)
+        if record is None:
+            raise HTTPException(status_code=404, detail="出库单不存在")
+        items = outbound_service.list_outbound_items(db, record_id)
+    except outbound_service.OutboundTableError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    content = build_outbound_word(record, items, qr_service.generate_qr_data(record_id))
+    filename = quote(f"出库单-{record['outbound_no']}.docx", safe="")
+    return Response(content, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"})
+
+
+@router.post("/records/{inspection_id}/recall", summary="撤回验货单编辑（保留已上传媒体）")
+def recall_record(
+    inspection_id: int,
+    body: ShippingRecallRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_any_permission("shipping_inspection:write", "shipping_inspection:admin")),
+):
+    try:
+        inspection = service.recall(db, inspection_id, int(user["sub"]), body.edit_version)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return ok({"id": inspection.id, "status": inspection.status, "edit_version": inspection.edit_version})
 
 
 @router.get("/records", summary="已提交验货单分页列表")

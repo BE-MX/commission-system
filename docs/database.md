@@ -390,6 +390,7 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 
 ## 发货检验（迁移 128，2026-09-01）
 
+- 迁移 152（2026-09-15）：检验单增加 `edit_version INT NOT NULL DEFAULT 0`、`recalled_at DATETIME`、`recalled_by BIGINT`；媒体表增加 `media_type VARCHAR(10) NOT NULL DEFAULT 'image'`（image/video）。历史照片自动归为 image，表名保留；`item_id=NULL` 同样代表整单视频。撤回保留照片、视频、备注与上次提交信息，递增编辑版本并记录最新撤回人/时间；再次提交刷新提交信息，`photo_count` 始终只计图片。迁移可续跑已部分完成的同型 DDL，禁止 downgrade 删除字段和历史数据。
 - `ark_shipping_inspections`：每个 OKKI 出库单一行，`outbound_record_id` 唯一键（存业务库出库单 id 字符串，不建跨库外键）；冗余 `outbound_no / customer_name` 便于检索；`status` 为 `draft/submitted`，提交时落 `photo_count / submitted_at / submitted_by`（BigInteger 存 ark_users.id，未建 FK——ark_users.id 为 INT UNSIGNED，类型不匹配）。
 - `ark_shipping_inspection_photos`：`inspection_id → ark_shipping_inspections.id CASCADE`；`item_id` 为出库明细 id 字符串、NULL 表示整单照片；`file_path` 存相对路径（私有存储根 `SHIPPING_INSPECTION_STORAGE_ROOT`，鉴权端点读图，不挂静态目录）。
 - 数据源 `lsordertest.okki_outbound_records / okki_outbound_record_items` 为 OKKI 同步只读镜像（2026-09-01 已实库摸底，3966 单 / 14125 明细）：单头单号 `serial_id`、出库时间 `warehouse_invoice_time`、客户 `company_name`、制单人 `create_user_name`；明细数量 `outbound_count`、单位 `product_unit`、规格 `product_model`、SKU `sku_code`。**明细关联单头走 `outbound_invoice_id` 桥**（两表都有此列，全量命中）；`items.outbound_record_id` 是 OKKI 侧另一实体 id，与 `records.id` 完全不相交，不能 join。自适应候选映射见 `app/shipping_inspection/outbound_service.py`。

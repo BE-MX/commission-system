@@ -20,25 +20,37 @@ from app.shipping_inspection.models import ShippingInspection, ShippingInspectio
 logger = logging.getLogger("commission")
 
 
+def _commit(db: Session) -> None:
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.warning("shipping inspection transaction commit failed", exc_info=True)
+        print("shipping inspection transaction commit failed; rolled back", flush=True)
+        raise
+
+
 def _photo_to_dict(photo: ShippingInspectionPhoto) -> dict:
-    return {"id": photo.id, "item_id": photo.item_id, "file_path": photo.file_path, "sort": photo.sort}
+    return {"id": photo.id, "item_id": photo.item_id, "file_path": photo.file_path, "sort": photo.sort, "media_type": photo.media_type}
 
 
-def list_photos(db: Session, inspection_id: int) -> list[ShippingInspectionPhoto]:
+def list_photos(db: Session, inspection_id: int, media_type: str = "image") -> list[ShippingInspectionPhoto]:
     return (
         db.query(ShippingInspectionPhoto)
-        .filter(ShippingInspectionPhoto.inspection_id == inspection_id)
+        .filter(ShippingInspectionPhoto.inspection_id == inspection_id, ShippingInspectionPhoto.media_type == media_type)
         .order_by(ShippingInspectionPhoto.sort.asc(), ShippingInspectionPhoto.id.asc())
         .all()
     )
 
 
 def _photo_count(db: Session, inspection_id: int) -> int:
-    return (
-        db.query(func.count(ShippingInspectionPhoto.id))
-        .filter(ShippingInspectionPhoto.inspection_id == inspection_id)
-        .scalar()
-    ) or 0
+    # 主表行锁后做当前读，不能在 MySQL RR 下沿用权限查询建立的旧快照。
+    return len(
+        db.query(ShippingInspectionPhoto.id)
+        .filter(ShippingInspectionPhoto.inspection_id == inspection_id, ShippingInspectionPhoto.media_type == "image")
+        .with_for_update()
+        .all()
+    )
 
 
 def _get_by_outbound_id(db: Session, outbound_record_id: str) -> ShippingInspection | None:
@@ -52,13 +64,14 @@ def _get_by_outbound_id(db: Session, outbound_record_id: str) -> ShippingInspect
 def _lock_inspection(db: Session, inspection_id: int) -> ShippingInspection | None:
     """对检验单行加写锁（SQLite 下 FOR UPDATE 被忽略，测试不受影响）。
 
-    上传/删除/提交三个写路径都要先拿这把锁再判状态、再数照片，
+    上传/删除/提交/撤回都要先拿这把锁再判状态、再数照片，
     否则并发下 photo_count 快照与实际照片会长期对不上。
     """
     return (
         db.query(ShippingInspection)
         .filter(ShippingInspection.id == inspection_id)
         .with_for_update()
+        .populate_existing()
         .first()
     )
 
@@ -105,11 +118,17 @@ def add_photo(
     item_id: str | None,
     file_path: str,
     user_id: int,
+    media_type: str = "image",
+    edit_version: int = 0,
 ) -> ShippingInspectionPhoto:
     """上传一张照片：draft 检验单懒创建；已提交的单拒绝再传。"""
     inspection = get_or_create_draft(db, outbound_record_id, user_id)
     # 行锁串行化 上传/删除/提交：先锁再判状态、再数照片
     inspection = _lock_inspection(db, inspection.id) or inspection
+    if inspection.edit_version != edit_version:
+        raise ValueError("验货单已撤回更新，请重新扫码后上传")
+    if media_type not in {"image", "video"}:
+        raise ValueError("不支持的媒介类型")
     if inspection.status == C.STATUS_SUBMITTED:
         raise ValueError("该发货单已提交验货，不能再上传照片")
     if item_id:
@@ -120,23 +139,26 @@ def add_photo(
         inspection_id=inspection.id,
         item_id=item_id or None,
         file_path=file_path,
+        media_type=media_type,
         sort=_photo_count(db, inspection.id),
         created_by=user_id,
     )
     db.add(photo)
     inspection.updated_at = beijing_now()
     inspection.updated_by = user_id
-    db.commit()
+    _commit(db)
     db.refresh(photo)
     return photo
 
 
-def delete_photo(db: Session, photo_id: int, user_id: int) -> None:
+def delete_photo(db: Session, photo_id: int, user_id: int, *, edit_version: int = 0, media_type: str = "image") -> None:
     """仅 draft 可删；删库行后顺手清落盘文件，清文件失败只记日志（残留文件可人工清理）。"""
     photo = db.get(ShippingInspectionPhoto, photo_id)
-    if photo is None:
+    if photo is None or photo.media_type != media_type:
         raise ValueError("照片不存在")
     inspection = _lock_inspection(db, photo.inspection_id)
+    if inspection is not None and inspection.edit_version != edit_version:
+        raise ValueError("验货单已撤回更新，请重新扫码后删除")
     if inspection is not None and inspection.status == C.STATUS_SUBMITTED:
         raise ValueError("该发货单已提交验货，不能删除照片")
     rel_path = photo.file_path
@@ -144,7 +166,7 @@ def delete_photo(db: Session, photo_id: int, user_id: int) -> None:
         inspection.updated_at = beijing_now()
         inspection.updated_by = user_id
     db.delete(photo)
-    db.commit()
+    _commit(db)
     try:
         abs_path = file_service.resolve_path(rel_path)
         if abs_path.is_file():
@@ -159,12 +181,15 @@ def submit(
     outbound_record_id: str,
     user_id: int,
     remark: str | None = None,
+    edit_version: int = 0,
 ) -> ShippingInspection:
     """提交验货：照片总数 ≥ 1；已提交幂等返回原单（request_id 靠状态幂等，不落库）。"""
     inspection = _get_by_outbound_id(db, outbound_record_id)
     if inspection is not None:
         # 行锁挡住并发的上传/删除，保证 photo_count 快照与实际一致
         inspection = _lock_inspection(db, inspection.id)
+    if inspection is not None and inspection.edit_version != edit_version:
+        raise ValueError("验货单已撤回更新，请重新扫码后提交")
     if inspection is not None and inspection.status == C.STATUS_SUBMITTED:
         return inspection
     count = _photo_count(db, inspection.id) if inspection is not None else 0
@@ -174,11 +199,31 @@ def submit(
     inspection.photo_count = count
     inspection.submitted_at = beijing_now()
     inspection.submitted_by = user_id
-    if remark:
+    if remark is not None:
         inspection.remark = remark
     inspection.updated_at = beijing_now()
     inspection.updated_by = user_id
-    db.commit()
+    _commit(db)
+    db.refresh(inspection)
+    return inspection
+
+
+def recall(db: Session, inspection_id: int, user_id: int, edit_version: int) -> ShippingInspection:
+    """撤回保留全部媒体/备注，版本令牌阻止旧提交或旧撤回请求越过编辑轮次。"""
+    inspection = _lock_inspection(db, inspection_id)
+    if inspection is None:
+        raise ValueError("验货单不存在")
+    if inspection.status == C.STATUS_DRAFT and inspection.edit_version == edit_version + 1:
+        return inspection
+    if inspection.status != C.STATUS_SUBMITTED or inspection.edit_version != edit_version:
+        raise ValueError("验货单状态已变化，请刷新列表后重试")
+    inspection.status = C.STATUS_DRAFT
+    inspection.edit_version += 1
+    inspection.recalled_at = beijing_now()
+    inspection.recalled_by = user_id
+    inspection.updated_at = inspection.recalled_at
+    inspection.updated_by = user_id
+    _commit(db)
     db.refresh(inspection)
     return inspection
 
@@ -191,14 +236,17 @@ def scan_payload(db: Session, outbound_record_id: str) -> dict:
     items = outbound_service.list_outbound_items(db, outbound_record_id)
     inspection = _get_by_outbound_id(db, outbound_record_id)
     photos = list_photos(db, inspection.id) if inspection is not None else []
+    videos = list_photos(db, inspection.id, "video") if inspection is not None else []
     return {
         "record": record,
         "items": items,
         "inspection": (
-            {"id": inspection.id, "status": inspection.status, "photo_count": len(photos)}
+            {"id": inspection.id, "status": inspection.status, "photo_count": len(photos),
+             "edit_version": inspection.edit_version, "remark": inspection.remark}
             if inspection is not None else None
         ),
         "photos": [_photo_to_dict(p) for p in photos],
+        "videos": [_photo_to_dict(p) for p in videos],
     }
 
 
@@ -240,6 +288,7 @@ def list_records(
     )
     items = [{
         "id": insp.id,
+        "edit_version": insp.edit_version,
         "outbound_record_id": insp.outbound_record_id,
         "outbound_no": insp.outbound_no,
         "customer_name": insp.customer_name,
@@ -265,6 +314,8 @@ def get_record_detail(db: Session, inspection_id: int) -> dict | None:
     submitter = db.get(ArkUser, inspection.submitted_by) if inspection.submitted_by else None
     return {
         "id": inspection.id,
+        "status": inspection.status,
+        "edit_version": inspection.edit_version,
         "outbound_record_id": inspection.outbound_record_id,
         "outbound_no": inspection.outbound_no,
         "customer_name": inspection.customer_name,
@@ -273,4 +324,5 @@ def get_record_detail(db: Session, inspection_id: int) -> dict | None:
         "submitted_by_name": submitter.real_name if submitter else None,
         "items": items,
         "photos": [_photo_to_dict(p) for p in photos],
+        "videos": [_photo_to_dict(p) for p in list_photos(db, inspection.id, "video")],
     }

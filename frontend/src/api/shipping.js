@@ -14,6 +14,14 @@ export function getOutboundPrintData(id) {
   return shippingClient.get(`/outbound-records/${id}/print-data`)
 }
 
+export function downloadOutboundWord(id) {
+  return shippingClient.get(`/outbound-records/${encodeURIComponent(id)}/word`, { responseType: 'blob' })
+}
+
+export function recallInspectionRecord(id, editVersion) {
+  return shippingClient.post(`/records/${id}/recall`, { edit_version: editVersion })
+}
+
 // ── 验货单（已提交的发货检验单）──
 export function listInspectionRecords(params) {
   return shippingClient.get('/records', { params })
@@ -27,6 +35,11 @@ export function getInspectionRecord(id) {
 // （同 domestic 参考图的做法，见 src/api/domestic.js）
 export async function fetchImageBlobUrl(path) {
   const res = await shippingClient.get(`/images/${path}`, { responseType: 'blob' })
+  return URL.createObjectURL(res.data)
+}
+
+export async function fetchVideoBlobUrl(path) {
+  const res = await shippingClient.get(`/images/${path}`, { responseType: 'blob', timeout: 300000 })
   return URL.createObjectURL(res.data)
 }
 

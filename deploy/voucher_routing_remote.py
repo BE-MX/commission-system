@@ -21,16 +21,20 @@ def digest(content):
     return hashlib.sha256(content.encode()).hexdigest()
 
 
-def render(original, snippet, region):
+def render(original, snippet, region, feature="voucher"):
     _, port, expected = SPECS[region]
+    if feature not in {"voucher", "shipping-video"}:
+        raise ValueError("Unknown routing feature")
+    begin, end, conflict = (BEGIN, END, "/api/domestic/") if feature == "voucher" else (
+        "# BEGIN ARK SHIPPING VIDEO ROUTING", "# END ARK SHIPPING VIDEO ROUTING", "/api/mini/shipping-inspection/videos")
     # Replace only our blocks. Unknown layout or conflicting rules must be reviewed.
-    clean = re.sub(re.escape(BEGIN) + r".*?" + re.escape(END) + r"\n?", "", original, flags=re.S)
-    if BEGIN in clean or END in clean or "/api/domestic/" in clean:
+    clean = re.sub(re.escape(begin) + r".*?" + re.escape(end) + r"\n?", "", original, flags=re.S)
+    if begin in clean or end in clean or conflict in clean:
         raise ValueError("Conflicting domestic routing; inspect the current configuration")
     anchor = re.compile(r"location /api/\s*\{\s*proxy_pass http://127\.0\.0\.1:" + port + r";")
     if len(anchor.findall(clean)) != expected:
         raise ValueError("Unexpected API upstream layout")
-    block = BEGIN + "\n" + snippet.strip() + "\n" + END + "\n"
+    block = begin + "\n" + snippet.strip() + "\n" + end + "\n"
     return anchor.sub(lambda match: block + match.group(0), clean)
 
 
@@ -63,17 +67,19 @@ def execute(request):
     if not path.is_relative_to("/etc/nginx"):
         raise ValueError("Nginx configuration escaped /etc/nginx")
     original = path.read_text()
-    candidate = render(original, request["snippet"], region)
+    feature = request.get("feature", "voucher")
+    candidate = render(original, request["snippet"], region, feature)
+    state = STATE if feature == "voucher" else STATE.parent / "shipping-video"
     baseline = digest(original)
     if request["action"] == "prepare":
-        STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
+        state.mkdir(parents=True, exist_ok=True, mode=0o700)
         # Never let a root syntax check inherit the production temp paths.
-        scratch = STATE / (region + "-syntax")
+        scratch = state / (region + "-syntax")
         scratch.mkdir(parents=True, exist_ok=True, mode=0o700)
-        check = STATE / (region + "-syntax.conf")
+        check = state / (region + "-syntax.conf")
         check.write_text(syntax_config(request["snippet"], scratch))
         run(["nginx", "-t", "-c", str(check), "-e", "stderr"])
-        candidate_path = STATE / (region + "-candidate.conf")
+        candidate_path = state / (region + "-candidate.conf")
         candidate_path.write_text(candidate)
         return {"region": region, "status": "prepared", "baseline": baseline,
                 "candidate": digest(candidate), "changed": candidate != original}
@@ -83,8 +89,8 @@ def execute(request):
         raise RuntimeError("Nginx configuration changed since preparation")
     if candidate == original:
         return {"region": region, "status": "unchanged"}
-    STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
-    backup = STATE / (region + "-" + uuid.uuid4().hex + ".conf")
+    state.mkdir(parents=True, exist_ok=True, mode=0o700)
+    backup = state / (region + "-" + uuid.uuid4().hex + ".conf")
     backup.write_bytes(path.read_bytes())
     try:
         path.write_text(candidate)

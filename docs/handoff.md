@@ -1,3 +1,15 @@
+## 2026-09-15 出库单 Word、撤回编辑与相册视频（本地交付）
+
+分支 `codex/shipping-word-recall-video`，基点 `1d2ba329`。用户已授权合并 main 并推送 origin；本轮不部署，生产数据库及 Nginx 未改动。集成远端 `5f0e35c2`，迁移改为 152 避开主目录另一任务未提交的 151；152 同时接续远端已有的 150 与 146_expo_beautify_prompt 两个 head，恢复提交版本的单 head。其他任务的 151 尚未纳入本次交付，后续合并须接续当时最新 head；主目录与其他任务的未提交修改未触碰。
+
+- PC 出库列表「下载 Word」生成可编辑 DOCX，沿用 A4/6mm 左右边距、规格在颜色前、现有列宽、类别小字/明细加粗、数量居中、灰纹、空白批次号与二维码。
+- 验货列表「撤回编辑」限 write/admin；保留所有媒体与备注，submitted → draft，重新提交后回到列表。迁移 152 增加编辑版本及撤回审计字段；上传/删除/提交携带版本，旧页面不能误改新轮次；小程序扫码页提供刷新并恢复已存备注。照片计数在主表锁后使用 MySQL 当前读。
+- 小程序整单/明细旁新增相册视频上传，MP4/MOV/M4V、单文件 100 MiB，支持预览和删除。PC 详情按需加载视频；视频私有鉴权、不计入必传照片数、不进入验货单打印。迁移 152 给历史媒体默认 image。发布配置见 `deploy/README.md`，新增视频专用路由入口（101m/300s），普通应用发布不会自动启用。
+
+验证：后端隔离 SQLite/temp 文件测试 45 passed；小程序 Node 测试 42 passed；打印测试 7 passed；部署路由/入口测试 43 passed；主站构建通过。独立审查发现的 MySQL RR 计数、Nginx 5MB、旧页面刷新、非 JSON 删除错误及视频超时均修复。实际 Vue 页面用模拟 API 验证 Word 下载触发、撤回确认/列表刷新及只读账号隐藏撤回。DOCX OOXML 校验通过，样例 `tmp/outbound-word-preview.docx`；截图与测试日志留在 tmp。未进行手机微信真机上传、Word/WPS 实际排版及生产 MySQL 双连接并发验收。
+
+约定检查仍被 4 项既有 UI 问题阻断；单独增量检查无红项，7 个小程序端点鉴权黄项为脚本未识别 `require_mini_entry`，已有路由依赖回归测试覆盖。Git 巡检为 `--no-fetch` 本地快照。临时前端页面已删除、测试服务已停止；自动审批阻止递归清理 `tmp/docx-validation-deps`，该临时依赖仍保留在忽略目录，不进入交付 diff。
+
 ## 2026-09-15 内贸充值上传 500（两站权限已恢复；防复发代码交付）
 
 任务分支 `codex/domestic-recharge-fix`，工作目录 `commission-system-codex-recharge-fix`。新加坡 Nginx 日志确认 15:31–15:39 客户45的充值请求在写 `/var/lib/nginx/body` 时 Permission denied，尚未到达业务 API；内贸图片上传也受影响。北京同样复现，worker 为 www-data，而五种临时目录使用 nobody/root、700。根因是凭证/色块路由的 root 最小配置 `nginx -t -c` 未隔离默认 temp paths，省略 user 后可将正式目录改属 nobody；无变化激活直接返回，无法恢复。
