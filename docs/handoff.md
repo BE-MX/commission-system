@@ -3,7 +3,8 @@
 - 已核对所有旧worktree：原有已提交历史均在main；本轮将DHL错误提示、凭证路由工具和WhatsApp测试标记/语言中文标签三个已验证补丁集成至本地main。用户本轮授权合并和清理，未新增远端推送或部署。
 - 集成复验：DHL/凭证路由16项，WhatsApp扩展313项测试及构建通过；凭证路由独立审查无阻断。约定检查仍受已记录的4项既有UI问题阻挡。
 - 已完成的临时worktree清理；原有配置、上传材料、验证/部署记录集中保留在 `tmp/worktree-cleanup-20260915/`（仅本机，不入Git）。
-- 保留 `commission-system-codex-miniprogram-review`（送审准备未真机验收）、`commission-system-codex-shipping-upload`（真实上传超时仍待排查）；不合并未完成验收工作。
+- 小程序送审准备代码按用户授权集成至本地 main，清理 `commission-system-codex-miniprogram-review` 与本地分支；移除未完成页面入口及上传内容，30 项 Node 测试通过。本机私有配置已备份，不纳入提交；微信真机验收、上传和审核仍未执行。
+- 保留 `commission-system-codex-shipping-upload`（真实上传超时仍待排查）。
 - 保留 `commission-system-codex-deployment-plan` 及其两个发布源快照（部署状态与回滚引用），保留 `commission-system-kimi`（固定工作区含本地配置/数据）。
 - `commission-system-codex-colorwork-entry-fix` Git登记已移除，但Git删除途中遇Windows长路径错误，部分文件残留。后续递归删除命令被执行策略拒绝（blocked by policy），未重试绕过；本机日志没有更细拒绝理由。其配置/部署记录已先保留到上述目录。
 
