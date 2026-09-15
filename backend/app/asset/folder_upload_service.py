@@ -448,9 +448,10 @@ def _similarity_score(source: str, candidate: str) -> float:
     return round(score, 4)
 
 
-def validate_folder_tags(db: Session, tag_names: list[str]) -> TagValidationResult:
+def validate_folder_tags(db: Session, tag_names: list[str], scope: str = "internal") -> TagValidationResult:
     """验证候选标签与标签库的匹配情况。
 
+    scope 限定参与匹配的标签使用域(internal=素材库/customer=客户标签)。
     匹配规则：
     1. 唯一匹配 → 成功
     2. 无匹配 → 缺失
@@ -470,7 +471,7 @@ def validate_folder_tags(db: Session, tag_names: list[str]) -> TagValidationResu
         db.query(TagValue)
         .join(TagDimension, TagDimension.id == TagValue.dimension_id)
         .filter(TagValue.is_active == 1, TagDimension.is_visible == 1,
-                TagDimension.is_managed == 0)
+                TagDimension.is_managed == 0, TagDimension.tag_scope == scope)
         .all()
     )
 
@@ -716,8 +717,9 @@ def _resolve_auto_create_tags(
     db: Session,
     tag_mapping: dict[str, dict],
     auto_create_tags: dict[str, int],
+    scope: str = "internal",
 ) -> tuple[dict[str, dict], list[dict]]:
-    """在上传事务内创建缺失标签，并补齐路径映射。"""
+    """在上传事务内创建缺失标签，并补齐路径映射。目标维度须属于 scope 使用域。"""
     if not auto_create_tags:
         return dict(tag_mapping), []
 
@@ -740,6 +742,8 @@ def _resolve_auto_create_tags(
             raise ValueError(f"标签[{clean_name}]选择的维度不存在或不可见")
         if dim.is_managed:
             raise ValueError(f"维度[{dim.label}]由系统维护，不能自动创建标签")
+        if dim.tag_scope != scope:
+            raise ValueError(f"维度[{dim.label}]不属于当前标签使用域，不能自动创建标签")
 
         existing = (
             db.query(TagValue)

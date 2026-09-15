@@ -89,15 +89,17 @@ def _require_auto_create_permission(user: dict, auto_create_tags: dict[str, int]
 @router.get("/tags/dimensions")
 def get_dimensions(
     include_hidden: int = Query(0, description="1=含隐藏维度(标签维度管理页用)"),
+    scope: str = Query("internal", pattern="^(internal|customer)$", description="标签使用域 internal/customer"),
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("asset:read")),
 ):
     """标签维度列表（含标签值）— 带 60 秒进程内缓存。
 
     默认只返回可见维度：新旧标签体系并存期，筛选/上传/移动端零改动即只见当前体系。
+    scope 默认 internal（素材库存量行为不变），客户标签走 customer_media 域端点。
     """
     from app.asset.tag_service import list_dimensions_cached
-    dims = list_dimensions_cached(db)
+    dims = list_dimensions_cached(db, scope)
     if not include_hidden:
         dims = [d for d in dims if d.get("is_visible", 1)]
     return _ok(dims)
@@ -115,6 +117,7 @@ def create_dimension(
         is_single_select=req.is_single_select,
         is_required=req.is_required,
         sort_order=req.sort_order,
+        tag_scope=req.tag_scope,
     )
     return _ok({"id": dim.id})
 
@@ -127,14 +130,18 @@ def update_dimension(
     _user: dict = Depends(require_permission("asset:admin")),
 ):
     """更新标签维度"""
-    dim = service.update_dimension(
-        db, dim_id,
-        label=req.label,
-        is_single_select=req.is_single_select,
-        is_required=req.is_required,
-        sort_order=req.sort_order,
-        is_visible=req.is_visible,
-    )
+    try:
+        dim = service.update_dimension(
+            db, dim_id,
+            label=req.label,
+            is_single_select=req.is_single_select,
+            is_required=req.is_required,
+            sort_order=req.sort_order,
+            is_visible=req.is_visible,
+            tag_scope=req.tag_scope,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not dim:
         raise HTTPException(status_code=404, detail="维度不存在")
     return _ok({"id": dim.id})

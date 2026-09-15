@@ -1,0 +1,18 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>Customer media workspace QA</title></head><body><div id="app"></div><script type="module">
+import { createApp, h } from '/node_modules/vue/dist/vue.esm-bundler.js'
+import { createRouter, createMemoryHistory } from 'vue-router'
+import ElementPlus from '/node_modules/element-plus/es/index.mjs'
+import '/node_modules/element-plus/dist/index.css'
+import '/src/styles/tokens.css'
+import '/src/styles/liquid-glass.css'
+import GlassButton from '/src/components/GlassButton.vue'
+import Workspace from '/src/views/design/CustomerMediaWorkspace.vue'
+const router = createRouter({ history: createMemoryHistory(), routes: [
+  { path: '/design/media/tasks/:taskId', component: Workspace },
+  { path: '/:pathMatch(.*)*', component: { template: '<div />' } },
+]})
+const app = createApp({ render: () => h(Workspace) })
+app.component('GlassButton', GlassButton)
+app.use(ElementPlus).use(router)
+router.push('/design/media/tasks/1').then(() => app.mount('#app'))
+</script></body></html>

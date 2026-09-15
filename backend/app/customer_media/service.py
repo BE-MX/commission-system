@@ -7,16 +7,17 @@ import time
 from datetime import datetime, timedelta
 from app.core.time import beijing_now
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, distinct, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from app.asset.models import TagDimension, TagValue
 from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.auth.utils import hash_password, verify_password
 from app.customer_media.models import (
-    CustomerMediaAsset, CustomerMediaBatch, CustomerMediaDirectory,
-    CustomerMediaDownload, CustomerMediaReview, CustomerPortalAccount,
-    CustomerPortalSession,
+    CustomerMediaAsset, CustomerMediaAssetTag, CustomerMediaBatch,
+    CustomerMediaDirectory, CustomerMediaDownload, CustomerMediaReview,
+    CustomerPortalAccount, CustomerPortalSession,
 )
 from app.customer_media.storage import StoredUpload, storage_for
 from app.design.models import DesignDesigner, DesignScheduleRequest, DesignScheduleTask
@@ -194,7 +195,9 @@ def list_sales_portal_customers(db: Session, payload: dict, search: str = "") ->
     return _summarize_sales_portal_accounts(db, accounts)
 
 
-def sales_portal_customer_detail(db: Session, payload: dict, customer_id: str) -> dict:
+def sales_portal_customer_detail(
+    db: Session, payload: dict, customer_id: str, tag_value_ids: list[int] | None = None,
+) -> dict:
     account = db.scalar(_sales_portal_account_statement(db, payload).where(
         CustomerPortalAccount.customer_id == customer_id,
     ))
@@ -209,6 +212,7 @@ def sales_portal_customer_detail(db: Session, payload: dict, customer_id: str) -
         "customer": summaries[0],
         "batches": batches,
         "task_meta": portal_task_meta(db, batches),
+        "matching_asset_ids": matching_asset_ids(db, batches, tag_value_ids),
     }
 
 
@@ -458,6 +462,7 @@ def delete_directory(db: Session, batch_id: int, directory_id: int, payload: dic
 async def upload_asset(
     db: Session, batch_id: int, payload: dict, upload,
     directory_id: int | None = None, directory_name: str | None = None,
+    tags: list | None = None,
 ) -> CustomerMediaBatch:
     user_id, _, _ = user_identity(db, payload)
     batch = db.scalar(select(CustomerMediaBatch).where(CustomerMediaBatch.id == batch_id))
@@ -533,6 +538,11 @@ async def upload_asset(
             uploaded_by=user_id,
         )
         db.add(asset)
+        db.flush()
+        if tags:
+            # 客户标签与素材同事务写入：scope/单选校验失败整单回滚。
+            _validate_customer_tag_items(db, tags)
+            _insert_asset_tags(db, asset.id, tags)
         batch.updated_at = beijing_now()
         db.commit()
     except Exception:
@@ -612,13 +622,18 @@ def submit_batch(db: Session, batch_id: int, payload: dict, lock_version: int) -
     return get_batch(db, batch.id)
 
 
+def _assert_batch_reviewer(db: Session, payload: dict, batch: CustomerMediaBatch, user_id: int) -> None:
+    """审核人与素材标签编辑共用：预约发起人或 customer_media:admin 才能操作。"""
+    if not is_admin(payload) and batch.applicant_user_id != user_id:
+        raise CustomerMediaForbidden("只有预约发起人可以操作该批次")
+
+
 def review_batch(db: Session, batch_id: int, payload: dict, action: str, comment: str | None, lock_version: int) -> CustomerMediaBatch:
     user_id, _, _ = user_identity(db, payload)
     batch = db.scalar(select(CustomerMediaBatch).where(CustomerMediaBatch.id == batch_id).with_for_update())
     if not batch:
         raise CustomerMediaNotFound("素材批次不存在")
-    if not is_admin(payload) and batch.applicant_user_id != user_id:
-        raise CustomerMediaForbidden("只有预约发起人可以审核该批次")
+    _assert_batch_reviewer(db, payload, batch, user_id)
     if batch.lock_version != lock_version:
         raise CustomerMediaConflict("素材批次已被其他人处理，请刷新后重试")
     if batch.status != "pending_review":
@@ -675,6 +690,257 @@ def list_reviews(db: Session, payload: dict, status: str | None = None) -> list[
         statement = statement.where(CustomerMediaBatch.applicant_user_id == user_id)
     statement = statement.where(CustomerMediaBatch.status == (status or "pending_review"))
     return list(db.scalars(statement).unique())
+
+
+# ── 客户标签 ────────────────────────────────────────────
+
+CUSTOMER_TAG_SCOPE = "customer"
+
+
+def list_customer_tag_dimensions(db: Session) -> list[dict]:
+    """上传页/审核页可选的客户标签维度（可见的 customer scope）。"""
+    from app.asset.tag_service import list_dimensions_cached
+    return [d for d in list_dimensions_cached(db, CUSTOMER_TAG_SCOPE) if d.get("is_visible", 1)]
+
+
+def validate_tags(db: Session, tag_names: list[str]):
+    """文件夹名候选与客户标签库匹配 —— 薄封装素材库匹配核心，限定 customer scope。"""
+    from app.asset.folder_upload_service import validate_folder_tags
+    return validate_folder_tags(db, tag_names, scope=CUSTOMER_TAG_SCOPE)
+
+
+def resolve_auto_create_tags(db: Session, payload: dict, auto_create_tags: dict[str, int]) -> dict:
+    """幂等创建缺失的客户标签（确认动作在前端完成），返回带 created 标记的 tag_mapping。"""
+    user_identity(db, payload)
+    if not auto_create_tags:
+        return {}
+    from app.asset.folder_upload_service import _resolve_auto_create_tags
+    from app.asset.tag_service import invalidate_dim_cache
+    try:
+        mapping, created = _resolve_auto_create_tags(db, {}, auto_create_tags, scope=CUSTOMER_TAG_SCOPE)
+    except ValueError as exc:
+        db.rollback()
+        raise CustomerMediaError(str(exc)) from exc
+    db.commit()
+    if created:
+        invalidate_dim_cache()
+    created_keys = {(c["dimension_id"], c["tag_value_id"]) for c in created}
+    return {
+        name: {**entry, "created": (entry["dimension_id"], entry["tag_value_id"]) in created_keys}
+        for name, entry in mapping.items()
+    }
+
+
+def create_customer_tag_value(
+    db: Session, payload: dict, dimension_id: int, value: str,
+    name_en: str | None = None, aliases: list[str] | None = None,
+) -> dict:
+    """审核页/上传页现场新建客户标签；同名（忽略大小写）直接复用。"""
+    user_identity(db, payload)
+    dim = db.get(TagDimension, dimension_id)
+    if not dim or dim.tag_scope != CUSTOMER_TAG_SCOPE:
+        raise CustomerMediaNotFound("客户标签维度不存在")
+    if dim.is_managed:
+        raise CustomerMediaError(f"维度[{dim.label}]由系统维护，不能新建标签")
+    clean = (value or "").strip()
+    if not clean:
+        raise CustomerMediaError("标签名不能为空")
+    existing = db.scalar(select(TagValue).where(
+        TagValue.dimension_id == dimension_id,
+        func.lower(TagValue.value) == clean.lower(),
+        TagValue.is_active == 1,
+    ))
+    if existing:
+        return {"id": existing.id, "value": existing.value, "dimension_id": dimension_id, "created": False}
+    from app.asset.tag_service import ManagedDimensionError, create_dimension_value
+    try:
+        tv = create_dimension_value(db, dimension_id, clean, name_en=name_en, aliases=aliases)
+    except ManagedDimensionError as exc:
+        raise CustomerMediaError(str(exc)) from exc
+    return {"id": tv.id, "value": tv.value, "dimension_id": dimension_id, "created": True}
+
+
+def _tag_item_fields(item) -> tuple[int, list[int]]:
+    """兼容 pydantic 模型与 dict 的 tags_json 项读取。"""
+    if isinstance(item, dict):
+        return item.get("dimension_id"), list(item.get("tag_value_ids") or [])
+    return getattr(item, "dimension_id", None), list(getattr(item, "tag_value_ids", None) or [])
+
+
+def _validate_customer_tag_items(db: Session, tags: list) -> None:
+    """校验 tags_json：仅可见非托管的 customer scope 维度；单选维度 ≤1 值；值属于维度且启用。"""
+    if not tags:
+        return
+    parsed = [_tag_item_fields(item) for item in tags]
+    dim_ids = [dim_id for dim_id, _ in parsed]
+    if len(set(dim_ids)) != len(dim_ids):
+        raise CustomerMediaError("同一维度只能提交一次（标签按维度全量覆盖）")
+    dims = {d.id: d for d in db.scalars(select(TagDimension).where(TagDimension.id.in_(dim_ids)))}
+    value_ids: list[int] = []
+    for dim_id, tv_ids in parsed:
+        dim = dims.get(dim_id)
+        if dim is None or dim.tag_scope != CUSTOMER_TAG_SCOPE or not dim.is_visible or dim.is_managed:
+            raise CustomerMediaError("仅支持可见的客户标签维度")
+        unique_ids = list(dict.fromkeys(tv_ids))
+        if dim.is_single_select and len(unique_ids) > 1:
+            raise CustomerMediaError(f"维度[{dim.label}]为单选，最多选择 1 个标签")
+        value_ids.extend(unique_ids)
+    if not value_ids:
+        return
+    values = {v.id: v for v in db.scalars(select(TagValue).where(TagValue.id.in_(value_ids)))}
+    for dim_id, tv_ids in parsed:
+        for tv_id in dict.fromkeys(tv_ids):
+            value = values.get(tv_id)
+            if value is None or value.dimension_id != dim_id or not value.is_active:
+                raise CustomerMediaError("标签值不存在、已停用或不属于所选维度")
+
+
+def _insert_asset_tags(db: Session, asset_id: int, tags: list) -> None:
+    for item in tags:
+        dim_id, tv_ids = _tag_item_fields(item)
+        for tv_id in dict.fromkeys(tv_ids):
+            db.add(CustomerMediaAssetTag(asset_id=asset_id, dimension_id=dim_id, tag_value_id=tv_id))
+
+
+def update_asset_tags(db: Session, batch_id: int, asset_id: int, payload: dict, tags: list) -> CustomerMediaBatch:
+    """按维度全量覆盖素材的客户标签（空数组=清该维度）。
+
+    权限与审核一致（预约发起人或 admin）；标签是资产属性，不走批次状态机，写后即时生效。
+    """
+    user_id, _, _ = user_identity(db, payload)
+    batch = db.scalar(select(CustomerMediaBatch).where(CustomerMediaBatch.id == batch_id).with_for_update())
+    if not batch:
+        raise CustomerMediaNotFound("素材批次不存在")
+    _assert_batch_reviewer(db, payload, batch, user_id)
+    asset = db.scalar(select(CustomerMediaAsset).where(
+        CustomerMediaAsset.id == asset_id,
+        CustomerMediaAsset.batch_id == batch.id,
+        CustomerMediaAsset.deleted_at.is_(None),
+    ))
+    if not asset:
+        raise CustomerMediaNotFound("素材不存在")
+    _validate_customer_tag_items(db, tags)
+    dim_ids = [_tag_item_fields(item)[0] for item in tags]
+    if dim_ids:
+        db.execute(delete(CustomerMediaAssetTag).where(
+            CustomerMediaAssetTag.asset_id == asset.id,
+            CustomerMediaAssetTag.dimension_id.in_(dim_ids),
+        ))
+        _insert_asset_tags(db, asset.id, tags)
+        db.add(CustomerMediaReview(
+            batch_id=batch.id, revision=batch.revision, action="update_tags",
+            remark=f"更新素材[{asset.file_name}]客户标签", actor_user_id=user_id,
+        ))
+    db.commit()
+    return get_batch(db, batch.id)
+
+
+def asset_tags_map(db: Session, asset_ids: list[int]) -> dict[int, list[dict]]:
+    """批量拼装素材的客户标签（customer scope），避免 N+1。
+
+    返回 {asset_id: [{dimension_id, dimension_label, tag_value_id, value}]}，
+    供审核列表/内部预览/客户门户三处复用。
+    """
+    result: dict[int, list[dict]] = {asset_id: [] for asset_id in asset_ids}
+    if not asset_ids:
+        return result
+    rows = db.execute(select(
+        CustomerMediaAssetTag.asset_id,
+        CustomerMediaAssetTag.dimension_id,
+        TagDimension.label,
+        CustomerMediaAssetTag.tag_value_id,
+        TagValue.value,
+    ).join(
+        TagDimension, TagDimension.id == CustomerMediaAssetTag.dimension_id,
+    ).join(
+        TagValue, TagValue.id == CustomerMediaAssetTag.tag_value_id,
+    ).where(
+        CustomerMediaAssetTag.asset_id.in_(asset_ids),
+        TagDimension.tag_scope == CUSTOMER_TAG_SCOPE,
+    ).order_by(
+        CustomerMediaAssetTag.asset_id,
+        TagDimension.sort_order, TagDimension.id,
+        TagValue.sort_order, TagValue.id,
+    )).all()
+    for asset_id, dimension_id, label, tag_value_id, value in rows:
+        result.setdefault(asset_id, []).append({
+            "dimension_id": dimension_id,
+            "dimension_label": label,
+            "tag_value_id": tag_value_id,
+            "value": value,
+        })
+    return result
+
+
+def parse_tag_value_ids(raw: str | None) -> list[int] | None:
+    """逗号分隔的 tag_value_ids 查询参数；空=不筛选，非法片段忽略。"""
+    if not raw:
+        return None
+    ids = [int(chunk) for chunk in (part.strip() for part in raw.split(",")) if chunk.isdigit()]
+    return ids or None
+
+
+def matching_asset_ids(
+    db: Session, batches: list[CustomerMediaBatch], tag_value_ids: list[int] | None,
+) -> set[int] | None:
+    """门户筛选：同维度 OR、跨维度 AND。返回 None 表示不筛选。"""
+    if not tag_value_ids:
+        return None
+    values = list(db.scalars(select(TagValue).join(
+        TagDimension, TagDimension.id == TagValue.dimension_id,
+    ).where(
+        TagValue.id.in_(tag_value_ids),
+        TagDimension.tag_scope == CUSTOMER_TAG_SCOPE,
+    )))
+    by_dimension: dict[int, list[int]] = {}
+    for value in values:
+        by_dimension.setdefault(value.dimension_id, []).append(value.id)
+    if not by_dimension:
+        return None
+    candidate_ids = [asset.id for batch in batches for asset in batch.assets if asset.deleted_at is None]
+    if not candidate_ids:
+        return set()
+    matching: set[int] | None = None
+    for dimension_id, ids in by_dimension.items():
+        hit = set(db.scalars(select(CustomerMediaAssetTag.asset_id).where(
+            CustomerMediaAssetTag.asset_id.in_(candidate_ids),
+            CustomerMediaAssetTag.dimension_id == dimension_id,
+            CustomerMediaAssetTag.tag_value_id.in_(ids),
+        )))
+        matching = hit if matching is None else (matching & hit)
+    return matching or set()
+
+
+def portal_used_tags(db: Session, account: CustomerPortalAccount) -> list[dict]:
+    """该客户已发布素材实际用到的客户标签，按维度分组（含每个值的素材数）。"""
+    rows = db.execute(select(
+        TagDimension.id, TagDimension.label, TagDimension.sort_order,
+        TagValue.id, TagValue.value, TagValue.sort_order,
+        func.count(distinct(CustomerMediaAssetTag.asset_id)),
+    ).select_from(CustomerMediaAssetTag).join(
+        TagValue, TagValue.id == CustomerMediaAssetTag.tag_value_id,
+    ).join(
+        TagDimension, TagDimension.id == CustomerMediaAssetTag.dimension_id,
+    ).join(
+        CustomerMediaAsset, CustomerMediaAsset.id == CustomerMediaAssetTag.asset_id,
+    ).join(
+        CustomerMediaBatch, CustomerMediaBatch.id == CustomerMediaAsset.batch_id,
+    ).where(
+        CustomerMediaBatch.customer_id == account.customer_id,
+        CustomerMediaBatch.status == "published",
+        CustomerMediaAsset.deleted_at.is_(None),
+        TagDimension.tag_scope == CUSTOMER_TAG_SCOPE,
+    ).group_by(
+        TagDimension.id, TagDimension.label, TagDimension.sort_order,
+        TagValue.id, TagValue.value, TagValue.sort_order,
+    ).order_by(
+        TagDimension.sort_order, TagDimension.id, TagValue.sort_order, TagValue.id,
+    )).all()
+    dimensions: dict[int, dict] = {}
+    for dim_id, label, _dim_sort, value_id, value, _value_sort, count in rows:
+        entry = dimensions.setdefault(dim_id, {"dimension_id": dim_id, "label": label, "values": []})
+        entry["values"].append({"id": value_id, "value": value, "count": count})
+    return list(dimensions.values())
 
 
 def create_portal_account(db: Session, payload: dict, customer_id: str, email: str, password: str) -> CustomerPortalAccount:

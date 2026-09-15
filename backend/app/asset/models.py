@@ -35,6 +35,8 @@ class TagDimension(Base):
     is_required = Column(SmallInteger, nullable=False, default=0, comment="0=选填,1=必填")
     is_visible = Column(SmallInteger, nullable=False, default=1, comment="0=隐藏(前端/folder_upload匹配均不参与),1=可见")
     is_managed = Column(SmallInteger, nullable=False, default=0, comment="1=系统托管,值由派生脚本写入,禁人工编辑")
+    tag_scope = Column(String(16), nullable=False, default="internal", server_default="internal",
+                       comment="标签使用域 internal=内部素材库/customer=客户标签")
     sort_order = Column(Integer, nullable=False, default=0, comment="排序权重")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
 
@@ -43,6 +45,7 @@ class TagDimension(Base):
     __table_args__ = (
         Index("idx_tag_dim_name", "name", unique=True),
         Index("idx_tag_dim_sort", "sort_order"),
+        Index("idx_tag_dim_scope", "tag_scope"),
         {"comment": "标签维度表"},
     )
 

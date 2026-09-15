@@ -70,6 +70,22 @@
               <button v-for="option in mediaOptions" :key="option.value" type="button" :class="{ active: mediaType === option.value }" @click="mediaType = option.value">{{ option.label }}</button>
             </div>
           </div>
+          <div v-for="dim in filterableDimensions" :key="dim.id" class="finder-row tag-filter-row">
+            <span>{{ dim.label }}</span>
+            <div class="finder-options" role="group" :aria-label="`按${dim.label}筛选`">
+              <button
+                v-for="val in dim.values"
+                :key="val.id"
+                type="button"
+                :class="{ active: selectedTagIds.includes(val.id) }"
+                @click="toggleTag(val.id)"
+              >{{ val.value }}</button>
+            </div>
+          </div>
+          <div v-if="selectedTagIds.length" class="finder-row tag-clear-row">
+            <span />
+            <button type="button" class="tag-clear" @click="emit('update:selectedTagIds', [])">清除标签筛选 ×</button>
+          </div>
         </section>
 
         <div v-if="customer.status === 'disabled'" class="empty-state disabled-state">
@@ -99,6 +115,9 @@
                 <div class="asset-footer">
                   <span><strong>{{ asset.media_type === 'image' ? `View ${String(assetIndex + 1).padStart(2, '0')}` : 'Video' }}</strong><small>{{ formatFileSize(asset.file_size) }}</small></span>
                   <a :href="appendDownload(asset.content_url)">Download ↓</a>
+                </div>
+                <div v-if="(asset.tags || []).length" class="asset-tags">
+                  <span v-for="tag in asset.tags" :key="`${tag.dimension_id}-${tag.tag_value_id}`" class="asset-tag">{{ tag.value }}</span>
                 </div>
               </article>
             </div>
@@ -154,7 +173,11 @@ const props = defineProps({
   batches: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
   error: { type: String, default: '' },
+  // 客户标签筛选条：维度（含值）与当前选中的 tag_value_id 列表
+  tagDimensions: { type: Array, default: () => [] },
+  selectedTagIds: { type: Array, default: () => [] },
 })
+const emit = defineEmits(['update:selectedTagIds'])
 
 const mediaOptions = [
   { label: 'All files', value: 'all' },
@@ -169,6 +192,17 @@ const filteredBatches = computed(() => filterPreviewBatches(props.batches, {
   search: search.value,
   mediaType: mediaType.value,
 }))
+// 只展示有可选值的维度
+const filterableDimensions = computed(() => (
+  (props.tagDimensions || []).filter(dim => (dim.values || []).length)
+))
+
+function toggleTag(id) {
+  const next = props.selectedTagIds.includes(id)
+    ? props.selectedTagIds.filter(item => item !== id)
+    : [...props.selectedTagIds, id]
+  emit('update:selectedTagIds', next)
+}
 
 function batchAssetCount(batch, type) {
   return batch.assets.filter(asset => asset.media_type === type).length
@@ -230,6 +264,11 @@ watch(() => props.customer?.customer_id, () => {
 .finder-options { display: flex; flex-wrap: wrap; gap: 7px; }
 .finder-options button { padding: 8px 13px; border: 1px solid rgba(61, 51, 35, 0.14); border-radius: 999px; color: var(--text-secondary); background: transparent; cursor: pointer; font-size: 12px; transition: color 180ms ease, background 180ms ease, border-color 180ms ease; }
 .finder-options button.active { border-color: var(--text-primary); color: var(--text-on-dark); background: var(--text-primary); }
+.tag-filter-row { padding-top: 12px; }
+.tag-clear-row { padding-top: 8px; }
+.tag-clear { border: 0; padding: 4px 0; color: var(--color-primary-hover); background: transparent; cursor: pointer; font-size: 12px; }
+.asset-tags { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 13px 12px; }
+.asset-tag { padding: 3px 8px; border: 1px solid rgba(212, 148, 28, 0.35); border-radius: 999px; color: var(--color-primary-hover); background: var(--color-primary-light); font-size: 10px; line-height: 1.4; }
 .sku-section { margin-bottom: 42px; }
 .sku-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 15px; padding-bottom: 13px; border-bottom: 1px solid rgba(61, 51, 35, 0.14); }
 .sku-heading h2 { margin: 6px 0 4px; font: 500 27px Georgia, serif; }

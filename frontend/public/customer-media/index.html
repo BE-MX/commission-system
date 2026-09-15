@@ -77,6 +77,7 @@
             <label class="search-field"><span>⌕</span><input id="search" aria-label="Search files" placeholder="Search file name" /></label>
           </div>
           <div class="finder-row"><span>Batch</span><div class="finder-options" id="batch-filters" role="tablist" aria-label="Batches"></div></div>
+          <div id="tag-filters"></div>
         </section>
 
         <div class="bulk-download-bar hidden" id="bulk-bar">
@@ -122,6 +123,8 @@
     let activeBatch = 'all';     // 'all' | String(batch.id)
     let selected = new Set();    // 已勾选素材 id
     let previewState = null;     // { batchId, assetId }
+    let tagGroups = [];          // [{ dimension_id, label, values: [{id, value, count}] }]
+    let activeTags = new Set();  // 已选 tag_value_id（同维度 OR、跨维度 AND，服务端过滤）
     let toastTimer = 0;
 
     async function request(path, opt = {}) {
@@ -196,6 +199,7 @@
                 ${a.media_type === 'image'
                   ? `<img src="${a.content_url}" alt="${escapeAttr(a.file_name)}" loading="lazy" />`
                   : `<video src="${a.content_url}" muted preload="metadata"></video><span class="asset-play">▶</span>`}
+                ${cornerTags(a)}
               </button>
               <div class="asset-footer"><span>View ${pad(i + 1)}</span><a href="${a.content_url}?download=true">Download ↓</a></div>
             </article>`).join('')}
@@ -207,8 +211,10 @@
       const empty = $('empty');
       if (shown.length === 0) {
         empty.classList.remove('hidden');
-        $('empty-title').textContent = batches.length ? 'No batch matches your search.' : 'No materials published yet.';
-        $('empty-clear').classList.toggle('hidden', !batches.length);
+        $('empty-title').textContent = batches.length
+          ? 'No batch matches your search.'
+          : (activeTags.size ? 'No materials match the selected tags.' : 'No materials published yet.');
+        $('empty-clear').classList.toggle('hidden', !batches.length && !activeTags.size);
       } else {
         empty.classList.add('hidden');
       }
@@ -269,20 +275,53 @@
       $('collection-logo').textContent = initials(session.customer_name);
     }
     async function loadLibrary() {
-      batches = await request('/library');
+      const query = activeTags.size ? '?tag_value_ids=' + [...activeTags].join(',') : '';
+      batches = await request('/library' + query);
       batches.sort((a, b) => String(b.published_at || '').localeCompare(String(a.published_at || '')));
       [...batches].sort((a, b) => String(a.published_at || '').localeCompare(String(b.published_at || '')))
         .forEach((b, i) => { b.seq = i + 1; });
-      activeBatch = 'all';
+      if (activeBatch !== 'all' && !batches.some(b => String(b.id) === activeBatch)) activeBatch = 'all';
       selected = new Set();
       previewState = null;
       render();
     }
 
+    // 标签筛选条：仅含该客户已发布素材实际用到的标签（/portal/tags）
+    async function loadTags() {
+      try { tagGroups = await request('/tags'); } catch { tagGroups = []; }
+      renderTagFilters();
+    }
+    function renderTagFilters() {
+      const box = $('tag-filters');
+      if (!tagGroups.length) { box.innerHTML = ''; return; }
+      box.innerHTML = tagGroups.map(group => `
+        <div class="finder-row tag-filter-row"><span>${escapeHtml(group.label)}</span>
+          <div class="finder-options" role="group" aria-label="Filter by ${escapeAttr(group.label)}">${group.values.map(v => `
+            <button class="${activeTags.has(v.id) ? 'active' : ''}" data-tag="${v.id}" role="button">${escapeHtml(v.value)}<em class="tag-count">${v.count}</em></button>`).join('')}
+          </div>
+        </div>`).join('') +
+        (activeTags.size ? `<div class="finder-row tag-clear-row"><span></span><button class="tag-clear" id="tag-clear">Clear tag filters ×</button></div>` : '');
+      const clear = $('tag-clear');
+      if (clear) clear.onclick = () => { activeTags = new Set(); renderTagFilters(); loadLibrary(); };
+    }
+    function toggleTag(id) {
+      activeTags.has(id) ? activeTags.delete(id) : activeTags.add(id);
+      renderTagFilters();
+      loadLibrary();
+    }
+    // 图片卡角标：最多展示 3 个标签
+    function cornerTags(asset) {
+      const tags = asset.tags || [];
+      if (!tags.length) return '';
+      const chips = tags.slice(0, 3).map(t => `<i>${escapeHtml(t.value)}</i>`).join('');
+      const more = tags.length > 3 ? `<i>+${tags.length - 3}</i>` : '';
+      return `<span class="asset-corner-tags">${chips}${more}</span>`;
+    }
+
     // 事件
     $('splash-enter').onclick = () => { session ? enterApp() : showLogin(); };
     async function enterApp() {
-      try { await loadLibrary(); showApp(); }
+      try { await loadLibrary(); loadTags(); showApp(); }
       catch { session = null; showLogin(); }
     }
     $('login-form').onsubmit = async e => {
@@ -308,17 +347,27 @@
     $('logout').onclick = async () => {
       await request('/logout', { method: 'POST' }).catch(() => {});
       session = null; batches = []; selected = new Set(); previewState = null;
+      tagGroups = []; activeTags = new Set(); renderTagFilters();
       showLogin();
     };
     $('browse-files').onclick = () => document.querySelector('.sku-finder')?.scrollIntoView({ behavior: 'smooth' });
     $('search').oninput = render;
-    $('empty-clear').onclick = () => { activeBatch = 'all'; $('search').value = ''; render(); };
+    $('empty-clear').onclick = () => {
+      activeBatch = 'all'; $('search').value = '';
+      if (activeTags.size) { activeTags = new Set(); renderTagFilters(); loadLibrary(); }
+      else render();
+    };
     $('batch-filters').addEventListener('click', e => {
       const btn = e.target.closest('button[data-batch]');
       if (!btn) return;
       activeBatch = btn.dataset.batch;
       render();
       window.setTimeout(() => document.querySelector('.sku-library')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+    });
+    $('tag-filters').addEventListener('click', e => {
+      const btn = e.target.closest('button[data-tag]');
+      if (!btn) return;
+      toggleTag(Number(btn.dataset.tag));
     });
     $('library').addEventListener('click', e => {
       const btn = e.target.closest('.asset-preview');

@@ -1,10 +1,14 @@
 import { assetClient } from './clients'
 
 // ── 标签维度 ────────────────────────────────────────────
-export function getTagDimensions(includeHidden = false) {
+// scope: internal（内部素材库，后端默认）/ customer（客户标签）
+export function getTagDimensions(includeHidden = false, scope) {
+  const params = {}
+  if (includeHidden) params.include_hidden = 1
+  if (scope) params.scope = scope
   return assetClient.get('/tags/dimensions', {
     showLoading: false,
-    params: includeHidden ? { include_hidden: 1 } : undefined,
+    params: Object.keys(params).length ? params : undefined,
   })
 }
 
