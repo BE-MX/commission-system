@@ -482,19 +482,10 @@ class TestPromptVariantSwitch:
         assert "plasticise the hair" not in prompts.finish("real")
 
     def test_beauty_prompt_has_no_self_contradiction(self):
-        """审查 C1：收尾句排在版本子句之后且是全篇最后一句，位置权重更高。
-        美颜版要磨皮，收尾句若仍写 no over-smoothing / visible pores，就是自相矛盾——
-        文字看着变了，指令未必活到出图，那是换了形态的假选择。"""
+        """面部与皮肤 finish 已停用，任何最终出图路径都不能再次执行美颜。"""
         for name, prompt in _variant_prompts(variant="beauty").items():
-            assert "soften fine lines and wrinkles" in prompt, f"{name} 没吃到美颜版"
-            # 这两条是矛盾本体，三条路径都不该出现
-            assert "no over-smoothing" not in prompt, f"{name} 收尾句仍禁磨皮，与美颜版打架"
-            assert "true skin texture with visible pores" not in prompt, f"{name} 收尾句仍要求毛孔"
-            if "场景大片" in name:
-                continue  # scene 模式不带 tryon 收尾句，它有自己的 _SCENE_TAIL 做 realism 锚
-            # 换发两条路径：realism 与发丝保护不能跟着矛盾项一起被摘掉
-            assert "individual hair strands with natural sheen" in prompt, f"{name} 丢了发丝要求"
-            assert "No plastic skin" in prompt, f"{name} 丢了禁塑料感"
+            assert prompts.finish("beauty") not in prompt, f"{name} 仍拼接已停用 finish"
+            assert "soften fine lines and wrinkles" not in prompt, f"{name} 最终生成重复美颜"
 
     def test_texture_variants_keep_the_strict_tail(self):
         """真实/柔光两版必须保留原收尾句——它们本来就不修皮肤，禁项与子句一致。"""
@@ -505,9 +496,11 @@ class TestPromptVariantSwitch:
                 assert "no over-smoothing" in prompt, f"{variant}/{name} 丢了禁磨皮"
 
     def test_variant_reaches_every_output_path(self):
-        """三条出图路径都要吃到版本子句——漏一条就是「有的图修了有的没修」。"""
-        for name, prompt in _variant_prompts(variant="beauty").items():
-            assert "soften fine lines and wrinkles" in prompt, f"{name} 没吃到版本"
+        """三条出图路径都排除完整 finish，但继续保留各自其他生图配置。"""
+        for variant in prompts.PROMPT_VARIANTS:
+            for name, prompt in _variant_prompts(variant=variant).items():
+                assert prompts.finish(variant) not in prompt, f"{variant}/{name} 仍拼接 finish"
+                assert len(prompt) > 200, f"{variant}/{name} 误删了整套生图配置"
 
 
 # Dynamic version persistence and worker behavior are covered in test_expo_prompt_versions.py.
@@ -516,10 +509,10 @@ class TestLightingBase:
     """三版共有的身份安全光影底座（2026-08-29）。"""
 
     def test_identity_safe_lighting_reaches_every_output_path(self):
+        """旧光影要求属于 finish；停用后不得以隐式公共底座继续出现。"""
         for name, prompt in _variant_prompts().items():
-            assert "uniform exposure and colour-temperature blend" in prompt, name
-            assert "never repaint the facial shadow pattern" in prompt, name
-            assert "directional light fully to the wig, neck, clothing, body and background" in prompt, name
+            assert "uniform exposure and colour-temperature blend" not in prompt, name
+            assert "never repaint the facial shadow pattern" not in prompt, name
 
     def test_variants_do_not_reintroduce_local_face_redrawing(self):
         banned = (
@@ -533,24 +526,11 @@ class TestLightingBase:
                 assert phrase not in prompt, f"{variant} 仍含局部重画面部指令: {phrase}"
 
     def test_face_geometry_lock_on_every_variant_and_path(self):
-        """对称几何锁（2026-08-01 补光上线次日瘦脸客户两颊变胖，2026-08-02 修）：
-        锁必须①对称（neither slimmer nor fuller）②正向锚回第一张图③带表情豁免——
-        场景置换放开表情且场景文案明写 smile，无豁免的 exact geometry 会僵脸或被无视。
-        三版三路径全查——锁在 _LIGHTING_BASE 里，谁把它挪进单个版本就会在这里挂掉。"""
+        """finish 中的几何处理同样停用；身份保真由各主体/场景原有片段承担。"""
         for variant in prompts.PROMPT_VARIANTS:
             for name, prompt in _variant_prompts(variant=variant).items():
-                assert "neither slimmer nor fuller" in prompt, f"{variant}/{name} 缺对称几何锁"
-                assert "same face width, cheek contour and jawline" in prompt, \
-                    f"{variant}/{name} 缺脸型几何锚定"
-                assert "facial anatomy stays immutable during any allowed micro-expression" in prompt, \
-                    f"{variant}/{name} 缺有限表情下的面部结构锁"
-        # 美颜版必须在磨皮指令**之后**再锁一次几何（含 eye size——磨皮语境下笑会眯眼）；
-        # 位置权重靠后，先锁后磨等于没锁，顺序也锚死
-        beauty = prompts.finish("beauty")
-        relock = "cheek contour, jawline and eye size"
-        assert relock in beauty, "美颜版缺磨皮后几何复锁"
-        assert beauty.index("smooth, luminous finish") < beauty.index(relock), \
-            "几何复锁必须排在磨皮指令之后"
+                assert "neither slimmer nor fuller" not in prompt, f"{variant}/{name} 仍含 finish 几何处理"
+                assert "face" in prompt.lower(), f"{variant}/{name} 丢失主体身份保真"
 
     def test_one_way_slimming_ban_stays_dead(self):
         """旧措辞回归探测（2026-08-02 病灶三件套）：「do not slim the face」单向禁令、
@@ -566,11 +546,11 @@ class TestLightingBase:
                 assert "warmth in the cheeks" not in prompt, f"{where} 苹果肌血色意象回潮"
 
     def test_default_variant_keeps_the_anti_retouch_guards(self):
-        """默认版（真实）打光不等于放开磨皮：禁项必须与给项同时在场，缺一就会滑向美颜。"""
+        """默认版也不得继续采用 finish 内的面部处理禁令。"""
         for name, prompt in _variant_prompts(variant="real").items():
-            assert "do not smooth, retouch, plump, lighten or rejuvenate" in prompt, name
-            assert "wrinkle, eye bag and age spot stays exactly as in the original" in prompt, name
-            assert "light may blend the portrait, never reshape the face" in prompt, name
+            assert "do not smooth, retouch, plump, lighten or rejuvenate" not in prompt, name
+            assert "wrinkle, eye bag and age spot stays exactly as in the original" not in prompt, name
+            assert "light may blend the portrait, never reshape the face" not in prompt, name
 
     def test_only_the_beauty_variant_may_use_retouch_words(self):
         """radiant/glowing/youthful 是美颜滤镜触发词：真实/柔光两版一旦沾上就翻车成磨皮脸。

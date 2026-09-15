@@ -48,8 +48,10 @@ export function getPendingPhoto(customerId) {
 }
 
 // photoBlob=现场拍照 / pendingName=扫码上传后待取的文件名，二选一随表单提交给后端
-export function createSession(customerId, photoBlob, mode = 'tryon', pendingName = null) {
+export function createSession(customerId, photoBlob, mode = 'tryon', pendingName = null, photoProcessingMode = 'original', clientRequestId = null) {
   const form = new FormData()
+  form.append('photo_processing_mode', photoProcessingMode)
+  if (clientRequestId) form.append('client_request_id', clientRequestId)
   if (pendingName) form.append('pending_photo', pendingName)
   else form.append('photo', photoBlob, 'photo.jpg')
   return expoClient.post(`/sessions?customer_id=${customerId}&mode=${mode}`, form, {
@@ -72,10 +74,18 @@ export function contactExpoAdmin(sessionId) {
   return expoClient.post(`/sessions/${sessionId}/contact-admin`, null, { ...KIOSK })
 }
 
-export function generateResults(sessionId, { wigIds = null, batch = 0, hairColorId = null, sceneKey = null, sceneKeys = null, quality = null, promptVersionId = null } = {}) {
+export function getBeautifyAvailability() {
+  return expoClient.get('/beautify-availability', { ...KIOSK })
+}
+
+export function retryBeautify(sessionId) {
+  return expoClient.post(`/sessions/${sessionId}/beautify/retry`, null, { ...KIOSK })
+}
+
+export function generateResults(sessionId, { wigIds = null, batch = 0, hairColorId = null, sceneKey = null, sceneKeys = null, quality = null } = {}) {
   return expoClient.post(`/sessions/${sessionId}/generate`, {
     wig_ids: wigIds, batch, hair_color_id: hairColorId, scene_key: sceneKey, scene_keys: sceneKeys,
-    quality, prompt_version_id: promptVersionId,
+    quality,
   }, { ...KIOSK })
 }
 
@@ -270,8 +280,7 @@ export function seedScripts() {
   return expoClient.post('/scripts/seed')
 }
 
-// 生图提示词版本：客户只取名称，完整配置限 expo:admin。
-export const getPromptVersionPicker = () => expoClient.get('/prompt-versions/picker', { ...KIOSK, timeout: 10000 })
+// 生图与美颜提示词版本：完整配置限 expo:admin，客户流程不读取版本列表。
 export const getPromptVersions = params => expoClient.get('/prompt-versions', { params, showLoading: false })
 export const getPromptEditor = () => expoClient.get('/prompt-versions/editor', { showLoading: false })
 export const getPromptVersion = id => expoClient.get(`/prompt-versions/${id}`, { showLoading: false })
@@ -279,4 +288,18 @@ export const createPromptVersion = data => expoClient.post('/prompt-versions', d
 export const updatePromptVersion = (id, data) => expoClient.put(`/prompt-versions/${id}`, data, { suppressToast: true, showLoading: false })
 export const setDefaultPromptVersion = (id, revision) => expoClient.post(`/prompt-versions/${id}/default`, { expected_revision: revision }, { showLoading: false })
 export const previewPromptVersion = data => expoClient.post('/prompt-versions/preview', data, { suppressToast: true, showLoading: false })
+export const getBeautifyPromptVersions = params => expoClient.get('/beautify-prompt-versions', { params, showLoading: false })
+export const getBeautifyPromptVersion = id => expoClient.get(`/beautify-prompt-versions/${id}`, { showLoading: false })
+export const createBeautifyPromptVersion = data => expoClient.post('/beautify-prompt-versions', data, { suppressToast: true, showLoading: false })
+export const updateBeautifyPromptVersion = (id, data) => expoClient.put(`/beautify-prompt-versions/${id}`, data, { suppressToast: true, showLoading: false })
+export const publishBeautifyPromptVersion = (id, revision) => expoClient.post(`/beautify-prompt-versions/${id}/publish`, { expected_revision: revision }, { suppressToast: true, showLoading: false })
+export const archiveBeautifyPromptVersion = (id, revision) => expoClient.post(`/beautify-prompt-versions/${id}/archive`, { expected_revision: revision }, { suppressToast: true, showLoading: false })
+export function previewBeautifyPromptVersion(id, revision, file) {
+  const form = new FormData()
+  form.append('expected_revision', revision)
+  form.append('photo', file)
+  return expoClient.post(`/beautify-prompt-versions/${id}/preview`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' }, suppressToast: true, showLoading: false,
+  })
+}
 export const getPromptSnapshot = id => expoClient.get(`/results/${id}/prompt-snapshot`, { showLoading: false })

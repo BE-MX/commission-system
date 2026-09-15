@@ -180,6 +180,8 @@ class Settings(BaseSettings):
     # ── 展会扫码上传（2026-08-01）────────────────────────────
     # 手机上传页免鉴权，令牌即凭证。生产环境须在 backend/.env 覆盖为随机串
     EXPO_UPLOAD_SIGN_SECRET: str = "leshine-expo-upload-secret"
+    # 上传页“美颜生成”使用的图片编辑 preset；提示词正文由 expo 版本表管理。
+    EXPO_BEAUTIFY_PRESET_NAME: str = "expo_wig_composite"
 
     # ── 客户售后管理 ─────────────────────────────────────────
     AFTERSALES_STORAGE_ROOT: str = "D:\\WORKSOURCE\\aftersales"

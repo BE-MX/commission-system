@@ -151,7 +151,19 @@ class ExpoSession(Base):
     customer_id = Column(BigInteger, ForeignKey("ark_expo_customers.id", ondelete="CASCADE"), nullable=False, comment="关联展会客户ID")
     store_id = Column(BigInteger, ForeignKey("ark_expo_stores.id"), nullable=True, comment="关联门店/展位 ark_expo_stores.id")
     mode = Column(String(16), nullable=False, default="tryon", comment="tryon=AI换发试戴 / scene=佩戴实拍场景效果图")
+    client_request_id = Column(String(64), nullable=True, comment="客户端建会话幂等键")
+    request_hash = Column(String(64), nullable=True, comment="建会话请求内容摘要，用于幂等冲突校验")
     photo_path = Column(String(512), nullable=False, comment="客户原始拍照路径")
+    photo_processing_mode = Column(String(16), nullable=False, default="original", comment="original=原照片 / beauty=先美颜")
+    beautify_status = Column(String(16), nullable=False, default="skipped", comment="skipped/pending/processing/ready/failed")
+    beautified_photo_path = Column(String(512), nullable=True, comment="美颜预处理产物路径")
+    beautify_snapshot = Column(JSON, nullable=True, comment="美颜提示词、预设指纹和原图哈希快照")
+    beautify_error_message = Column(Text, nullable=True, comment="美颜失败诊断，仅后台可见")
+    beautify_attempt = Column(Integer, nullable=False, default=0, comment="美颜任务尝试次数")
+    beautify_token = Column(String(32), nullable=True, comment="当前美颜任务租约令牌")
+    beautify_queued_at = Column(DateTime, nullable=True, comment="最近一次美颜入队北京时间")
+    beautify_started_at = Column(DateTime, nullable=True, comment="美颜开始北京时间")
+    beautify_finished_at = Column(DateTime, nullable=True, comment="美颜完成北京时间")
     analysis_json = Column(JSON, nullable=True, comment="AI面容分析结果JSON；internal 内部字段（发量/头皮判断等）仅销售端可见，不进客户共享屏")
     matched_wig_ids = Column(JSON, nullable=True, comment="全量排序后的 wig id 列表（换一批取后位）")
     strategy_json = Column(JSON, nullable=True, comment="双轨话术：opener/followup/objections")
@@ -168,6 +180,7 @@ class ExpoSession(Base):
     __table_args__ = (
         Index("idx_ark_expo_sessions_customer", "customer_id"),
         Index("idx_ark_expo_sessions_status", "status"),
+        UniqueConstraint("customer_id", "client_request_id", name="uq_expo_session_customer_request"),
         {"comment": "展会AI试戴-会话表（一次拍照一个会话）"},
     )
 
@@ -196,6 +209,30 @@ class ExpoPromptVersion(Base):
         CheckConstraint("default_slot IS NULL OR (default_slot = 1 AND is_active = 1)",
                         name="ck_expo_prompt_default_active"),
         {"comment": "展会AI试戴-可配置生图提示词版本"},
+    )
+
+
+class ExpoBeautifyPromptVersion(Base):
+    """独立于最终生图配置的美颜预处理提示词版本。"""
+
+    __tablename__ = "ark_expo_beautify_prompt_versions"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(String(80), nullable=False, unique=True)
+    prompt_text = Column(Text().with_variant(mysql.LONGTEXT(), "mysql"), nullable=False)
+    status = Column(String(16), nullable=False, default="draft")
+    revision = Column(Integer, nullable=False, default=1)
+    published_slot = Column(Integer, nullable=True)
+    updated_by = Column(Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql"), ForeignKey("ark_users.id"), nullable=True)
+    published_by = Column(Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql"), ForeignKey("ark_users.id"), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now)
+    published_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("published_slot", name="uq_expo_beautify_published"),
+        Index("idx_expo_beautify_prompt_status", "status"),
+        {"comment": "展会AI试戴-美颜预处理提示词版本"},
     )
 
 

@@ -1,6 +1,6 @@
 <template>
   <div class="prompt-page">
-    <p class="page-note">保存后，下一次生成立即使用新提示词。进行中的任务和历史图片保留各自的版本记录。</p>
+    <p class="page-note">客户生成统一使用当前默认版本。保存默认版本后影响下一次生成；非默认版本需“设为默认”后生效。进行中任务和历史图片保留各自快照。</p>
     <div class="toolbar">
       <el-input v-model="searchForm.keyword" placeholder="搜索版本名称" clearable @keyup.enter="handleSearch" @clear="handleSearch" />
       <GlassButton variant="ghost" left-icon="Search" @click="handleSearch">查询</GlassButton>
@@ -43,8 +43,8 @@
           </el-tabs>
           <template v-if="editorTab === 'main' || editorTab === 'details'">
             <el-form-item v-for="part in metadata.parts.filter(p => p.group === editorTab)" :key="part.key" :label="part.label" :required="part.required">
-              <el-input v-model="form.config.parts[part.key]" type="textarea" :autosize="{ minRows: 3, maxRows: 14 }" maxlength="20000" />
-              <div class="field-help"><template v-if="Object.keys(part.variables).length">可用占位符：<span v-for="(label, variable) in part.variables" :key="variable"><code>{{ '{' + variable + '}' }}</code> {{ label }}；</span></template><template v-else>直接填写文本。{{ part.required ? '' : '留空表示不添加本段要求。' }}</template></div>
+              <el-input v-model="form.config.parts[part.key]" type="textarea" :autosize="{ minRows: 3, maxRows: 14 }" maxlength="20000" :disabled="part.disabled" />
+              <div class="field-help"><template v-if="part.disabled">此历史字段保留用于兼容，tryon 与 scene 的新生成均不会采用。</template><template v-else-if="Object.keys(part.variables).length">可用占位符：<span v-for="(label, variable) in part.variables" :key="variable"><code>{{ '{' + variable + '}' }}</code> {{ label }}；</span></template><template v-else>直接填写文本。{{ part.required ? '' : '留空表示不添加本段要求。' }}</template></div>
             </el-form-item>
             <template v-if="editorTab === 'details'">
               <el-form-item label="穿搭候选（每行一套，留空关闭随机穿搭）"><el-input v-model="outfits" type="textarea" :autosize="{ minRows: 4, maxRows: 14 }" /></el-form-item>
@@ -69,7 +69,7 @@
           </template>
         </el-form>
       </template>
-      <template #footer><GlassButton variant="ghost" :disabled="saving" @click="closeEditor(false)">取消</GlassButton><GlassButton v-permission="'expo:admin'" variant="primary" :loading="saving" :disabled="opening || !form" @click="save">保存并生效</GlassButton></template>
+      <template #footer><GlassButton variant="ghost" :disabled="saving" @click="closeEditor(false)">取消</GlassButton><GlassButton v-permission="'expo:admin'" variant="primary" :loading="saving" :disabled="opening || !form" @click="save">保存</GlassButton></template>
     </DetailDrawer>
   </div>
 </template>

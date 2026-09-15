@@ -182,8 +182,9 @@
   - `ark_expo_hair_colors` — 发色库（code UNIQUE 色号, name, hex_code UI 色块可自动提取, swatch_path 色板图**仅 UI 色块与溯源**（2026-07-14 起不进合成）, color_description, priority, is_active）
   - `ark_expo_wig_colors` — 发型×发色组合三角度参考图（072）：wig_id/hair_color_id 双 FK（BigInteger，ON DELETE CASCADE）, UNIQUE(wig_id,hair_color_id), angle_photos JSON 三角度图组, cover_path, is_active。稀疏存储只存备图组合；合成时按选择匹配唯一颜色图组（参考图即目标色，取代文字/色板图上色）；「原色」用发型自身 angle_photos 不在此表
   - `ark_expo_scripts` — 话术卡库（script_type opener/demo/objection/closer/faq, track emotional/rational/identity, audience_tags JSON, evidence_points JSON；写入时禁用词强校验）
-  - `ark_expo_sessions` — 试戴会话（**mode tryon/scene 双入口**——scene=佩戴实拍生成场景图跳过分析, photo_path, analysis_json 含 **internal 内部字段仅销售端可见**, matched_wig_ids JSON 全量排名, strategy_json 双轨话术（scene 模式不生成）, status pending/analyzed/generating/done/failed）
+  - `ark_expo_sessions` — 试戴会话（**mode tryon/scene 双入口**——scene=佩戴实拍生成场景图跳过分析, photo_path, analysis_json 含 **internal 内部字段仅销售端可见**, matched_wig_ids JSON 全量排名, strategy_json 双轨话术（scene 模式不生成）, status pending/analyzed/generating/done/failed）。146 增加 `client_request_id` + `request_hash`（同客户唯一，防网络重试重复建会话）、`photo_processing_mode`（original/beauty）、`beautify_status`、`beautified_photo_path`、不可变 `beautify_snapshot`、错误/attempt/token/queued/start/finish 北京时间；美颜产物按会话复用，原图不覆盖。
   - `ark_expo_prompt_versions`（139）— 完整生图配置版本：name（唯一）、hint、config_json（15 个文本分区、25 个场景描述、穿搭/首饰候选）、revision（乐观锁）、is_active、default_slot（NULL 或唯一的 1；默认必须启用）、updated_by（ark_users unsigned FK）、created_at/updated_at（北京时间）。初始真实/柔光/美颜由迁移写入，运行时不读取种子、不覆盖运营编辑。
+  - `ark_expo_beautify_prompt_versions`（146）— 独立美颜预处理提示词：name（唯一）、prompt_text、status（draft/published/archived）、revision（乐观锁）、published_slot（当前发布唯一槽位）、更新/发布操作人与北京时间。迁移写入“强美颜·焕颜级 V1”；最终生图提示词不读取此表。
   - `ark_expo_results` — 效果图（session_id FK CASCADE, wig_id 可空，scene 模式为 NULL；hair_color_json 发色快照、scene_json 场景快照、reaction、short_code、gen_ms、quality）。139 新增 `prompt_version_id`（版本 FK RESTRICT + index）与 `prompt_snapshot`（版本 id/名称/修订号、最终 text、image_paths、size），与任务创建及扣额同事务写入；后台只读该快照。历史 `prompt_variant` 原值保留，不再写入；历史无快照保持 NULL，不凭现有配置伪造历史。
 
   - `ark_expo_feedback` — 销售反馈（intent_level A/B/C/D 直通客户机会台口径, next_action）
