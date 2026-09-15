@@ -170,7 +170,7 @@ class DomesticOrder(Base):
     domestic_no = Column(String(32), nullable=False, unique=True, comment="业务单 DO / 生产单 DP + 日期流水")
     order_kind = Column(String(16), nullable=False, default="business", server_default="business", comment="business=业务订单,production=生产订单")
     order_no = Column(String(64), nullable=False, comment="客户订单号（原样文本）")
-    guest_name = Column(String(120), nullable=True, comment="业务订单顾客")
+    guest_name = Column(String(120), nullable=True, comment="历史订单顾客，现按明细录入")
     order_date = Column(Date, nullable=False, comment="下单日期")
     required_ship_date = Column(Date, comment="要求发货日期（新单必填；存量单为 NULL）")
     customer_id = Column(Integer, ForeignKey("ark_domestic_customers.id", ondelete="RESTRICT"), nullable=True, comment="关联客户，业务单必填，生产单可选")
@@ -225,6 +225,8 @@ class DomesticOrderItem(Base):
     order_id = Column(Integer, ForeignKey("ark_domestic_orders.id", ondelete="CASCADE"), nullable=False, comment="所属订单")
     line_no = Column(Integer, nullable=False, comment="订单内稳定明细序号 A1/A2/...")
     product_id = Column(Integer, ForeignKey("ark_domestic_products.id", ondelete="RESTRICT"), nullable=False, comment="内贸产品")
+    guest_name = Column(String(120), nullable=True, comment="产品明细顾客")
+    guest_order_date = Column(Date, nullable=True, comment="顾客下单日期")
     product_name = Column(String(255), nullable=False, comment="产品名快照")
     attrs_snapshot = Column(JSON, comment="属性快照")
     route_id = Column(Integer, ForeignKey("process_route.id", ondelete="RESTRICT"),

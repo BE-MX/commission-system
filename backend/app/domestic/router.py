@@ -1095,7 +1095,7 @@ def get_item_unit_qrcodes(
     })
 
 
-@router.get("/items/{item_id}/wxacode", summary="订单进度小程序码（微信扫码免登录看完整订单）")
+@router.get("/items/{item_id}/wxacode", summary="订单进度小程序码（微信扫码免登录看对应明细）")
 # 鉴权仍由函数参数 Depends(require_any_permission(*_READ)) 执行；这里只更新了端点摘要。
 def get_item_wxacode(
     item_id: int,

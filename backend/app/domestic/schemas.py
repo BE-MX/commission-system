@@ -433,6 +433,15 @@ class DraftSubmitRequest(BaseModel):
 
 
 class OrderItemInput(BaseModel):
+    guest_name: str | None = Field(None, max_length=120, description="产品明细顾客（选填）")
+    guest_order_date: date | None = Field(None, description="顾客下单日期（选填）")
+
+
+    @field_validator("guest_name", mode="before")
+    @classmethod
+    def _strip_guest_name(cls, value):
+        return (value.strip() or None) if isinstance(value, str) else value
+
     model_config = ConfigDict(extra="forbid")
 
     client_key: str = Field(..., min_length=1, max_length=64)
@@ -496,13 +505,6 @@ class OrderItemAppend(ProductionOrderItemInput):
 
 
 class OrderCreate(BaseModel):
-    guest_name: str | None = Field(None, max_length=120, description="业务订单顾客（选填）")
-
-    @field_validator("guest_name", mode="before")
-    @classmethod
-    def _strip_guest_name(cls, value):
-        return (value.strip() or None) if isinstance(value, str) else value
-
     model_config = ConfigDict(extra="forbid")
 
     request_id: str = Field(..., min_length=8, max_length=64, description="客户端建单幂等键")
@@ -541,7 +543,6 @@ class OrderCreate(BaseModel):
 
             self.order_no = None
             self.customer_shop_name = None
-            self.guest_name = None
             self.order_category = None
             self.order_type = None
             self.order_channel = None
@@ -568,14 +569,6 @@ class OrderCreate(BaseModel):
 
 class OrderUpdate(BaseModel):
     """订单头编辑。明细的增删改走各自端点，避免整单覆盖冲掉在制进度。"""
-
-    guest_name: str | None = Field(None, max_length=120, description="业务订单顾客（选填）")
-
-    @field_validator("guest_name", mode="before")
-    @classmethod
-    def _strip_guest_name(cls, value):
-        return (value.strip() or None) if isinstance(value, str) else value
-
 
     model_config = ConfigDict(extra="forbid")
 
@@ -644,6 +637,16 @@ class OrderUpdate(BaseModel):
 
 class OrderItemUpdate(BaseModel):
     """明细编辑。order_qty 已开始报工后不允许改小到低于已完成数（service 校验）。"""
+
+    guest_name: str | None = Field(None, max_length=120, description="产品明细顾客（选填）")
+    guest_order_date: date | None = Field(None, description="顾客下单日期（选填）")
+
+
+    @field_validator("guest_name", mode="before")
+    @classmethod
+    def _strip_guest_name(cls, value):
+        return (value.strip() or None) if isinstance(value, str) else value
+
 
     model_config = ConfigDict(extra="forbid")
 

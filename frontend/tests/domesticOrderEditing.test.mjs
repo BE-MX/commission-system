@@ -60,15 +60,17 @@ test('production can choose and clear customer without a sales repricing payload
 })
 
 
-test('guest can be edited and cleared only on business orders', () => {
-  const detail = { order_kind: 'business', guest_name: '王女士' }
-  const form = orderHeaderForm(detail)
+test('guest can be edited and cleared on each business item', () => {
+  const detail = { order_kind: 'business' }
+  const item = { guest_name: '王女士' }
+  const form = orderItemForm(item)
   assert.equal(form.guest_name, '王女士')
   form.guest_name = '李先生'
-  assert.deepEqual(buildHeaderPatch(detail, form), { guest_name: '李先生' })
+  assert.deepEqual(buildItemPatch(detail, item, form), { guest_name: '李先生' })
   form.guest_name = ''
-  assert.deepEqual(buildHeaderPatch(detail, form), { guest_name: '' })
-  assert.deepEqual(buildHeaderPatch({ ...detail, order_kind: 'production' }, form), {})
+  assert.deepEqual(buildItemPatch(detail, item, form), { guest_name: null })
+  assert.deepEqual(buildItemPatch({ order_kind: 'production' }, item, form), {})
+  assert.ok(!Object.hasOwn(orderHeaderForm(detail), 'guest_name'))
 })
 
 
@@ -90,4 +92,16 @@ test('production item attrs exclude hair style series and allow spec edits', () 
   assert.deepEqual(buildItemPatch({ order_kind: 'production' }, item, form), {
     attrs: { product_type: 'cap', craft: '手织', length: '15厘米', net_color: '呼吸红', size: 'S', density: '65%' },
   })
+})
+
+
+test('guest order date can be changed and cleared without touching other fields', () => {
+  const item = { guest_order_date: '2026-09-15' }
+  const form = orderItemForm(item)
+  assert.deepEqual(buildItemPatch({ order_kind: 'business' }, item, form), {})
+  form.guest_order_date = '2026-09-14'
+  assert.deepEqual(buildItemPatch({ order_kind: 'business' }, item, form), { guest_order_date: '2026-09-14' })
+  form.guest_order_date = ''
+  assert.deepEqual(buildItemPatch({ order_kind: 'business' }, item, form), { guest_order_date: null })
+  assert.deepEqual(buildItemPatch({ order_kind: 'production' }, item, form), {})
 })

@@ -55,7 +55,7 @@ from app.system.models import SysDict
 
 logger = logging.getLogger("commission")
 
-_TEXT_FIELDS = ("hairstyle", "color", "style_requirement", "remark")
+_TEXT_FIELDS = ("guest_name", "hairstyle", "color", "style_requirement", "remark")
 _IMAGE_FIELDS = ("hairstyle_images", "color_images", "style_images", "remark_images")
 _PUBLIC_PROGRESS_FIELDS = (
     "step_order",
@@ -79,8 +79,10 @@ def _order_request_hash(payload: OrderCreate) -> str:
     """Canonical fingerprint used to reject accidental request-id reuse."""
     data = payload.model_dump(mode="json", exclude={"request_id"})
     # Preserve persisted fingerprints for requests created before the optional field existed.
-    if data.get("guest_name") is None:
-        data.pop("guest_name", None)
+    for item in data["items"]:
+        for field in ("guest_name", "guest_order_date"):
+            if item.get(field) is None:
+                item.pop(field, None)
     encoded = json.dumps(
         data,
         ensure_ascii=False,
@@ -91,8 +93,12 @@ def _order_request_hash(payload: OrderCreate) -> str:
 
 
 def _item_append_request_hash(payload: OrderItemAppend) -> str:
+    data = payload.model_dump(mode="json", exclude={"request_id"})
+    for field in ("guest_name", "guest_order_date"):
+        if data.get(field) is None:
+            data.pop(field, None)
     encoded = json.dumps(
-        payload.model_dump(mode="json", exclude={"request_id"}),
+        data,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -330,6 +336,7 @@ def _build_item(
         product_id=product.id,
         product_name=product.name,
         attrs_snapshot=payload.attrs.model_dump(),
+        guest_order_date=payload.guest_order_date,
         route_id=route_id,
         order_qty=payload.order_qty,
         original_price=0 if production else quote.discount.original_price,
@@ -556,7 +563,6 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
                 request_id=payload.request_id,
                 request_hash=request_hash,
                 remark=payload.remark,
-                guest_name=payload.guest_name,
                 created_by=user_id,
                 deleted_flag=0,
             )
@@ -956,7 +962,6 @@ def list_orders(
                 if prev_order_date.get(o.id) and o.order_date else None
             ),
             "remark": o.remark,
-            "guest_name": o.guest_name,
             "created_by": o.created_by,
             "created_at": o.created_at,
         }
@@ -1022,6 +1027,7 @@ def get_order_detail(
     *,
     public_progress_only: bool = False,
     include_finance: bool = True,
+    item_id: int | None = None,
 ) -> dict:
     order = db.query(DomesticOrder).filter(
         DomesticOrder.id == order_id, DomesticOrder.deleted_flag == 0
@@ -1033,6 +1039,7 @@ def get_order_detail(
     items = (
         db.query(DomesticOrderItem)
         .filter(DomesticOrderItem.order_id == order_id)
+        .filter(DomesticOrderItem.id == item_id if item_id is not None else True)
         .order_by(DomesticOrderItem.id.asc())
         .all()
     )
@@ -1079,6 +1086,8 @@ def get_order_detail(
             "line_code": f"A{item.line_no or 1}",
             "product_id": item.product_id,
             "product_name": item.product_name,
+            "guest_name": item.guest_name,
+            "guest_order_date": item.guest_order_date.isoformat() if item.guest_order_date else None,
             "attrs": item.attrs_snapshot or {},
             "route_id": item.route_id,
             "order_qty": item.order_qty,
@@ -1141,7 +1150,6 @@ def get_order_detail(
         "status_label": C.ORDER_STATUS_LABELS.get(order.status, str(order.status)),
         "total_amount": float(order.total_amount or 0),
         "remark": order.remark,
-        "guest_name": order.guest_name,
         "created_at": order.created_at,
         "items": item_views,
     }
@@ -1168,24 +1176,28 @@ def get_order_detail(
     return detail
 
 
-# 免登录进度码给客户看的字段白名单（2026-09-14 亮哥拍板）：
-# 只留店面名称、客户单号、顾客名称和产品的工艺参数/发型/颜色；
-# 价格、订单状态、产品状态、工序进度等内部信息一律不下发——
-# 免登录端点拿不到鉴权，视图层藏字段挡不住直接调接口的人。
-_TRACK_ORDER_FIELDS = ("order_kind", "order_no", "customer_name", "guest_name")
+# 进度码只公开签名对应明细；金额、数量和内部路线元数据不下发。
+_TRACK_ORDER_FIELDS = ("order_kind", "order_no", "customer_name")
 _TRACK_ITEM_FIELDS = (
-    "id", "line_code", "product_name", "attrs",
-    "hairstyle", "color", "style_requirement",
-    "hairstyle_images", "color_images", "style_images",
+    "id", "line_code", "product_name", "guest_name", "guest_order_date", "attrs",
+    "hairstyle", "color", "style_requirement", "remark",
+    "hairstyle_images", "color_images", "style_images", "remark_images",
 )
 
 
 def track_public_view(detail: dict) -> dict:
-    """把 get_order_detail 的结果裁剪成进度码白名单，供免登录 track 端点返回。"""
+    """Serialize customer-facing details and configured public process progress."""
     return {
         **{field: detail.get(field) for field in _TRACK_ORDER_FIELDS},
         "items": [
-            {field: item.get(field) for field in _TRACK_ITEM_FIELDS}
+            {
+                **{field: item.get(field) for field in _TRACK_ITEM_FIELDS},
+                "steps": [
+                    {"process_name": step["process_name"],
+                     "completed": step["passed_qty"] >= item["order_qty"]}
+                    for step in item.get("steps", [])
+                ],
+            }
             for item in detail["items"]
         ],
     }
@@ -1576,6 +1588,8 @@ def update_item(
             item.discount_amount = balance_service.money(original - (price - labor_fee))
             item.pricing_rule = "manual_override"
 
+    if "guest_order_date" in data:
+        item.guest_order_date = data["guest_order_date"]
     for field in _TEXT_FIELDS:
         if field in data:
             setattr(item, field, data[field])

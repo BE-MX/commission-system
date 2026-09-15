@@ -489,9 +489,6 @@ export function useDomesticOrders() {
     router.push({ name: kind === 'production' ? 'DomesticProductionOrderCreate' : 'DomesticOrderCreate' })
   }
 
-  const hasUnrouted = computed(
-    () => (detail.value?.items || []).some(i => !i.route_id),
-  )
 
   onMounted(async () => {
     try {
@@ -503,7 +500,7 @@ export function useDomesticOrders() {
   return {
     ...listApi,
     filterOptions,
-    detailVisible, detailLoading, detail, routes, hasUnrouted,
+    detailVisible, detailLoading, detail, routes,
     openDetail, refreshAll,
     shipDialog, openShip, confirmShip,
     reportDialog, openReport, confirmReport,

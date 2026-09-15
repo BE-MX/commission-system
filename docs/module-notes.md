@@ -888,8 +888,8 @@ frontend/src/
 
 **上线后的人工配置**（漏了单能下但开不了工）：角色管理页分配 `domestic:read/write/admin` → 核验两条原始路线及 140 创建的四条分段路线均启用 → 给内贸工人绑工序。产品档案仍可维护工艺映射，新订单明细按六种固定路线选择。
 
-**产品进度小程序码（2026-07-28；明细级，与流转卡同粒度）**：主站订单详情抽屉明细动作区「进度码」按钮 → `GET /api/domestic/items/{id}/wxacode` 生成微信小程序码（`wxacode.getUnlimited`，scene=`i:<item_id>:<hmac16>`，永久有效），弹窗可下载图片或打印 30×20mm 标签（左 LOGO 右码，与流转卡二维码标签同版式）。微信扫一扫拉起小程序落到**免登录**页 `pages/domestic/track/track`（调 `GET /api/mini/domestic/track?scene=`），返回码所属订单的全部明细。要点：
-- 免登录的唯一授权凭证是 scene 的 16 hex HMAC 签名（免登录口子 8 hex 不够，64-bit 才谈得上防在线遍历），域 `ARK-DT:<item_id>` 与流转卡 `ARK-D:<item_id>` 隔离——同一个 item_id 两个域，流转卡贴在车间人尽可见且只截 8 hex，共用域会泄露签名前半。track 页无搜索/扫码入口防遍历；软删单 404。**2026-09-14 起 track 端点按 `order_service.track_public_view` 白名单裁剪**（亮哥拍板，取代 2026-07-28「对客户公开不遮挡」）：只留店面名称、客户单号、顾客名称和产品工艺参数/发型/颜色（含参考图），价格、订单状态、产品状态、工序进度一律不下发。
+**产品进度小程序码（2026-07-28；明细级，与流转卡同粒度）**：主站订单详情抽屉明细动作区「进度码」按钮 → `GET /api/domestic/items/{id}/wxacode` 生成微信小程序码（`wxacode.getUnlimited`，scene=`i:<item_id>:<hmac16>`，永久有效），弹窗可下载图片或打印 30×20mm 标签（左 LOGO 右码，与流转卡二维码标签同版式）。微信扫一扫拉起小程序落到**免登录**页 `pages/domestic/track/track`（调 `GET /api/mini/domestic/track?scene=`），自 2026-09-15 起仅返回签名对应明细（图片访问同粒度），显示明细顾客、属性备注及配置为公开的工序完成情况；不公开件数、金额和工艺路线，未配路线时不显示提示。顾客名在明细上方，其下显示选填的顾客下单日期（年月日）；属性备注字号 32rpx。要点：
+- 免登录的唯一授权凭证是 scene 的 16 hex HMAC 签名（免登录口子 8 hex 不够，64-bit 才谈得上防在线遍历），域 `ARK-DT:<item_id>` 与流转卡 `ARK-D:<item_id>` 隔离——同一个 item_id 两个域，流转卡贴在车间人尽可见且只截 8 hex，共用域会泄露签名前半。track 页无搜索/扫码入口防遍历；软删单 404。**track 端点按 `order_service.track_public_view` 白名单裁剪**：2026-09-15 调整为仅当前明细的顾客、属性、发型、颜色、要求、备注（含参考图）及配置为公开的工序完成情况；金额、数量、路线与内部状态不下发。
 - **`QR_SIGN_SECRET` 停在仓库默认值时，出码端点和 track 端点都 503 拒绝服务**——默认值进了 git，人人可离线伪造签名，整个免登录授权模型就没了。部署前必须在 `.env` 配随机值。
 - **密钥轮换过渡（2026-07-30）**：这把密钥同时签外贸 ARK-P 打印卡——2026-07-30 生产换钥后全部已印卡（外贸+内贸）验签失效。补了 `QR_SIGN_SECRET_LEGACY` 兜底：登录后的报工扫码（外贸 `production/report_service.qr_sign_matches`、内贸 `domestic/report_service.qr_sign_matches`）当前密钥验不过时用旧密钥再试；**免登录进度码 `verify_track_scene` 永远只认当前密钥**（有测试钉死）。在制订单消化完后删掉该配置关闭兜底。
 - `app/mini/wx_client.py`：access_token 走 **stable_token**（幂等不顶号），内存缓存提前 300s 刷新；**该接口要求服务器出口 IP 在微信公众平台 IP 白名单**（jscode2session 不要求，登录正常≠这里能通，报 40164 就是白名单）。
