@@ -1,0 +1,16 @@
+[Unit]
+Description=Ark OKKI outbound task poller (auto-generate sales outbound via create-outbound.js)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/.openclaw/workspace/okki-sync
+EnvironmentFile=-/root/.openclaw/workspace/okki-sync/.env
+ExecStart=/usr/bin/node /root/.openclaw/workspace/okki-sync/okki_outbound_poller.js
+# oneshot 叠加保护：单轮最坏时长 = batch(5) × 单订单超时(120s) = 600s，留 1.5 倍余量；
+# 到点 SIGKILL 会让已认领未回写的行卡 running（poller 有卡死回收，但不该常态触发）
+TimeoutStartSec=900
+NoNewPrivileges=true
+PrivateTmp=true

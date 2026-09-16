@@ -275,6 +275,35 @@ class InvoiceSyncLog(Base):
     )
 
 
+class OkkiOutboundTask(Base):
+    """OKKI 销售出库单生成任务：发票首推小满成功后落行，singapore okki-sync 轮询消费。
+
+    状态机：pending → running → done/failed；failed 且 attempts 未超限由轮询器按
+    退避间隔重试。skipped = 含未建品非标合并行的发票（通用产品出库无拣货意义），
+    不自动生成，人工在 OKKI 处理。order_id 唯一约束与脚本侧 logs/created-outbound.jsonl
+    台账构成幂等双保险。
+    """
+
+    __tablename__ = "ark_okki_outbound_tasks"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    invoice_id = Column(BigInteger, ForeignKey("ark_invoices.id", ondelete="CASCADE"), nullable=False, comment="关联发票ID（ark_invoices.id）")
+    order_id = Column(String(64), nullable=False, comment="OKKI 订单 ID（数字字符串，口径同 ark_invoices.xiaoman_order_id）")
+    status = Column(String(16), nullable=False, default="pending", comment="pending/running/done/failed/skipped")
+    reason = Column(String(255), nullable=True, comment="跳过原因或失败摘要")
+    attempts = Column(Integer, nullable=False, default=0, comment="已认领次数（认领即 +1，含执行中与失败）")
+    last_error = Column(Text, nullable=True, comment="最近一次执行错误（截断留存）")
+    processed_at = Column(DateTime, nullable=True, comment="最近一次执行时间（北京时间）")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间（北京时间）")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="最后修改时间（北京时间）")
+
+    __table_args__ = (
+        UniqueConstraint("order_id", name="uq_okki_outbound_task_order"),
+        Index("idx_okki_outbound_task_status", "status", "id"),
+        {"comment": "OKKI 销售出库单自动生成任务队列（singapore okki-sync 轮询消费）"},
+    )
+
+
 class ReceiptRepairLog(Base):
     """Audit trail for collection_date fixes written into the read-only business
     mirror (lsordertest.okki_receipts).
