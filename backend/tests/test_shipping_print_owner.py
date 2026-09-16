@@ -49,9 +49,9 @@ def test_inactive_deleted_or_non_chinese_binding_is_not_used(db):
 
 
 def test_html_payload_and_word_show_same_owner(db, monkeypatch):
-    user = _user(db)
+    user = _user(db, "Alice")
     user.real_name = "王小红"
-    bind(db, user)
+    bind(db, user, name="王小红")
     from app.shipping_inspection import outbound_service
     monkeypatch.setattr(outbound_service, "get_outbound_record", lambda *a, **k: {
         "owner_name": "Alice", "outbound_no": "TEST"})
@@ -64,3 +64,31 @@ def test_html_payload_and_word_show_same_owner(db, monkeypatch):
         assert word.status_code == 200
         document = Document(io.BytesIO(word.content))
         assert document.tables[0].cell(2, 1).text == "Alice（王小红）"
+
+
+def test_username_matches_when_okki_display_name_is_chinese(db):
+    user = _user(db, "Ginny")
+    user.real_name = "翟佳盟"
+    bind(db, user, name="翟佳盟")
+    assert with_owner_chinese_name(db, {"owner_name": " ginny "})["owner_name"] == "ginny（翟佳盟）"
+
+
+def test_username_without_binding_and_cross_field_conflict(db):
+    user = _user(db, "Alice")
+    user.real_name = "王小红"
+    record = {"owner_name": "Alice"}
+    assert with_owner_chinese_name(db, record)["owner_name"] == "Alice（王小红）"
+    other = _user(db, "Other")
+    other.real_name = "李小明"
+    bind(db, other, name="Alice")
+    assert with_owner_chinese_name(db, record) == record
+
+
+def test_deleted_username_is_not_used(db):
+    from app.core.time import beijing_now
+    user = _user(db, "Alice")
+    user.real_name = "王小红"
+    user.deleted_at = beijing_now()
+    db.flush()
+    record = {"owner_name": "Alice"}
+    assert with_owner_chinese_name(db, record) == record
