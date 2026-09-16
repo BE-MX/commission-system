@@ -1,3 +1,15 @@
+## 2026-09-16 151 事故恢复发布（执行中）
+
+用户明确授权合并推送并完成这次恢复更新。任务 codex/recover-152，新增 --recover-migration-151 完整发布入口，固定候选SHA、保留原failed-after-ddl日志和原四writer基线，修复151 unsigned外键。原 --restore-pre151 仅用于恢复兼容旧服务；本轮将真实完成151/153/154迁移并升级办公室、北京及已登记静态站。执行前重新核实数据库仍152、原日志未改、两端旧版本与恢复记录；先prepare-only，再正式激活。以下旧阶段“未授权/未合并”是历史记录。
+
+## 2026-09-16 502 故障恢复：151 外键类型不匹配
+
+用户报告更新后 leshine.cloud 登录502。现场：办公室与北京运行代码仍 ba491dfe，候选 e0987b0b，schema-writers 为 failed-after-ddl，原四writer全running并已stop，数据库版本152。只读核实151已增加tag_scope VARCHAR16 NOT NULL DEFAULT internal和idx_tag_dim_scope，关联表/153/154新表未创建，customer_general种子不存在；ark_tag_dimensions.id、ark_tag_values.id实为unsigned INT，151关联列原signed导致外键失败。没有继续DDL、stamp或删除失败日志。
+
+在 codex/recover-152 开发专项 deploy.bat --restore-pre151 PLAN [--prepare-only]，仅允许已审查版本、journal SHA与实际schema白名单，取得原发布锁和数据库锁，核实两端服务目录、代码干净、writer原始基线；北京两份历史.env备份及两个业务存储前缀只读豁免，不删文件。脚本暂存办公室 .deploy_state/recovery-152/deploy，plan锁定原journal摘要。prepare-only通过；执行前办公室主服务已自行恢复健康，专项入口保留它，仅启动WhatsAppConnector、北京ark-backend、新加坡shipment-tracking-mcp，四writer最终running。恢复记录 .deploy_state/restore-152.json=restored-compatible-152；原schema-writers文件逐字保留failed-after-ddl，普通发布仍被阻断，避免用户再次撞同一DDL。
+
+验证公网https://leshine.cloud/health=200且database connected，/api/auth/me匿名403，/api/auth/login空JSON返回422参数校验，已无502。未使用用户密码登录；本轮恢复旧版本，不宣称新出库功能已上线。修复151迁移列类型与已有部分结构校验，9项隔离测试通过；恢复/部署入口测试通过，独立审查通过。后续须合并修复，再增加/审查保留原writer基线的151迁移继续方案，不直接清日志重跑。本轮未合并推送。
+
 ## 2026-09-16 部署源分叉修复准备
 
 用户反馈 Deployment source is not a fast-forward。已知办公室原运行 ba491dfe（部署器候选入口修复），而 main 未包含该祖先。本地在 codex/deploy-reconcile 将 ba491dfe 完整合并进当前 main 基点，保留部署修复及两边文档；不 cherry-pick，不关闭 fast-forward 保护，不改生产 checkout。SSH office-prod 的 127.0.0.1:2223 连接被拒绝，服务器当前状态仍待现场核对。31 项部署回归通过，独立审查通过；与新 HTTPS 入口集成时显式禁止 --live-root 配合 --office-lan-https。增量约定无违规，默认 UI 门禁仍有 10 项既有问题。用户已授权将本修复合并推送 main；本轮不执行生产部署。修复提交保留 ba491dfe 与 5d8037c2 双祖先，31 项部署测试及独立审查通过；服务器现场仍须恢复 SSH 后核验。

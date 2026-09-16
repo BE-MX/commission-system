@@ -20,7 +20,7 @@ def resolve_live_root(argv, script):
     if script != expected:
         raise RuntimeError('Candidate deployer must run from the pinned managed source')
     if any(arg.split('=', 1)[0] in {
-        '--cloud-only', '--migrate-only', '--recover-migration-149', '--office-lan-https',
+        '--cloud-only', '--migrate-only', '--recover-migration-149', '--office-lan-https', '--restore-pre151',
         '--shipping-video-routing-only', '--voucher-routing-only', '--colorwork-routing-only',
     } for arg in remaining):
         raise RuntimeError('Candidate deployer requires a normal full office/cloud release')
