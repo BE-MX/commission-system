@@ -1,6 +1,7 @@
 <template>
   <main class="shipping-station">
-    <header class="station-header"><div class="station-brand"><ScanLine :size="22" /><span>莱莎方舟</span></div><span class="station-device">共用手机 · 发货质检</span></header>
+    <header class="station-header"><div class="station-brand"><img src="/shipping-app/icon-180.png" alt="" width="32" height="32" /><span>莱莎出库检验</span></div><span class="station-device">共用手机 · 发货质检</span></header>
+    <StationInstallHint v-if="!view && !scannerOpen" />
     <section class="identity-card" :class="{ chosen: operator, expired: invalid }" aria-live="polite" aria-atomic="true">
       <div class="identity-eyebrow"><UserRound :size="16" />{{ invalid ? '操作身份已失效' : view ? '本单操作人' : prompt }}</div>
       <div :key="selectionVersion" class="identity-name" :class="{ 'identity-change': operator && !invalid }">{{ operator?.name || '请先选择姓名' }}<BadgeCheck v-if="operator && !invalid" :size="28" aria-hidden="true" /></div>
@@ -42,6 +43,7 @@ import { useShippingStation } from './composables/useShippingStation'
 import StationOperatorPicker from './components/StationOperatorPicker.vue'
 import StationScanner from './components/StationScanner.vue'
 import StationMediaGroup from './components/StationMediaGroup.vue'
+import StationInstallHint from './components/StationInstallHint.vue'
 const { operators, selected, operator, view, remark, busy, loading, scannerOpen, error, invalid, loginRequired,
   prompt, selectionVersion, receipt, progress, photos, videos, submitted, canWrite, sessionId, dirty, pendingUpload, pendingSubmit,
   choose, startScan, decoded, refresh, upload, retryUpload, remove, submit, end, loadOperators, fail } = useShippingStation()

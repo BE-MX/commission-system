@@ -202,3 +202,14 @@ PC 当前列表和打印继续显示实际提交人。详情新增折叠的“�
 发布顺序为已审查代码与迁移 → 网页上传路由 → 专用账号权限和指定角色配置 → 目标手机登录验收 → 开放使用。生产迁移只走项目统一部署入口，保留数据库和媒体，不在开发机升级共享生产库。账号创建/授权及生产部署均按届时具体授权执行。
 
 本方案完成后即可进入实现；目标手机、指定角色标识和正式入口域名属于开工核对项，能够从现场查明的由开发者自行核对，只有无法查明且影响结果时再集中确认。
+
+
+## 2026-09-16 桌面 Web App
+
+- 名称“莱莎出库检验”，固定 start_url/id 为 `/shipping/scan`，manifest 位于 `/shipping-app/manifest.webmanifest`，display=standalone。scope=/ 用于容纳现有 `/login`，并不扩大页面权限；不注册 Service Worker、不缓存私有业务数据或媒体，不承诺离线/后台上传。
+- 专用元数据只在扫码页及 redirect 回扫码页的登录页加载，成功路由切换后同步；离开这些页面移除专用元数据及 viewport-fit。原专用账号登录和每单实际操作人选择不变。首次桌面启动可能需重新登录。
+- iPhone Safari/Chrome：分享→添加到主屏幕→如有“作为 Web App 打开”则开启；Android 显示浏览器菜单安装指引；微信/钉钉提示先用系统浏览器打开。原生 details 默认收起，安装后或 standalone 隐藏，无新增循环动画。窄屏和安全区适配保留已有名单密度。
+- 图标基于用户提供 LeShine Logo，由内置 imagegen 生成黄色/黑色品牌变体（手写字标＋扫描框勾选），原图与180/192/512像素导出在 `frontend/public/shipping-app/`。仅声明 purpose=any，不声称支持 maskable 裁切。
+- 生成提示：Create a single square mobile app icon variant based on the supplied LeShine Hair logo for shipping quality inspection. Preserve the black handwritten LeShine wordmark and yellow brand background; combine it with a bold inspection checkmark in a minimal scanning frame. Flat, opaque, no phone mockup, no outer rounded corners, no extra Chinese text. Keep artwork centered and legible at small sizes.
+- 9项Node测试覆盖元数据隔离、登录参数、实际PNG尺寸及原扫码流程；Chrome移动UA浏览器验证模拟登录、返回扫码页、指引开合、320/390宽度、选人、standalone和普通路由恢复。模拟API不写生产数据。iPhone实际“添加到主屏幕”、摄像头授权及真实视频上传仍需真机验收。
+- 网页更新随正常前端发布，不涉及 App Store 或小程序平台发布；普通浏览器入口保持可用。安装URL可使用外网或内网域名，但域名不同是独立登录存储，内网图标只适用于对应网络。
