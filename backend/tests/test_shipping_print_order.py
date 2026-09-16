@@ -64,4 +64,3 @@ def test_print_api_and_word_share_order(db, monkeypatch):
         response = client.get("/api/shipping-inspection/outbound-records/OB001/print-data")
         assert response.status_code == 200
         assert [i["item_id"] for i in response.json()["data"]["items"]] == EXPECTED
-
