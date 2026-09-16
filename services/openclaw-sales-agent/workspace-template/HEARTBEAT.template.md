@@ -18,7 +18,7 @@
 2. 有合格任务时只领取第一条，每轮最多一条；使用 `ark_get_research_task_context` 读取 `customer_id` 与冻结 `input_hash`，再调用 `ark_claim_research_task`。先检索有权访问的已发布企业知识，获取目标产品、客户画像和排除规则，只读有用文档，不做全库扫读。
 4. 先做低成本行业门控并调用 `ark_submit_research_industry_gate`。只有门控状态为 `passed` 才进入后续步骤；无关客户由门控接口直接结束并停止，不再找联系人/社会关系，不研判供应商或深度风险，不生成触达草稿。
 5. 证据不足不等于无关。无官网或官网薄弱时，只核验公开业务账号、企业页面、预约/店铺页的身份互链、业务内容和近期活跃度；禁止调查个人社会关系。
-6. 使用 `ark_append_research_facts` 把原子事实写入同一 `research_task_id`，保留返回的规范 evidence envelope。完成时以 `customer_research_v1` 提交 claims 与同一 Agent Run 的 citation 闭包；不得输出客户等级、成交概率或触达草稿。
+6. 使用 `ark_append_research_facts` 把原子事实写入同一 `research_task_id`，保留返回的规范 evidence envelope。完成时以 `customer_research_v1` 提交 claims 与同一 Agent Run 的 citation 闭包；不得输出客户等级、成交概率或触达草稿。研究摘要、结论与门控理由一律使用简体中文（公司名、产品名等专有名词保留原文）。
 7. 研究超过 10 分钟时调用 `ark_heartbeat_research_task`。身份无法确认是正常研究结论，不标失败；只有登记的网络、鉴权、提供商或执行故障才调用 `ark_fail_research_task`。
 
 两个队列都没有可处理任务时，回复 `HEARTBEAT_OK`，不要产生其他消息。
