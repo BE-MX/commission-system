@@ -212,3 +212,10 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 `--recover-migration-151` 仅用于 2026-09-16 的外键符号类型不匹配事故：原日志为数据库152、目标154、pending151/153/154，四个原writer均running且有完整停机证据。恢复完整保留 `recovery_original`，重新核对当前数据库结构和迁移链；无stamp/downgrade/清日志操作。
 
 必须固定经审查的完整 `--revision`，执行完整办公室+云发布。先带 `--prepare-only` 验证；去掉该参数才停止writers、执行迁移并切换两端应用和静态站，最终完成健康验证后关闭事故日志。旧安装目录缺少该入口时，可从 `.deploy_state/sources/<revision>/deploy/deploy.bat` 加 `--live-root <安装目录>` 启动候选部署器；服务和状态始终归安装目录。数据库已完成部分revision时重新校验；不完整的未知结构或缺失原始writer证据仍阻断。中途失败不得启动不兼容旧程序。
+
+
+## 2026-09-16 出库检验媒体统一办公室归属
+
+`--shipping-video-routing-only` 同时纳管整个 `/api/shipping-inspection` 与 `/api/mini/shipping-inspection` 模块。北京经验证 TLS 的新加坡 HTTPS 转发到办公室8002隧道；新加坡直达该隧道。原用户 Authorization/URI 保留，业务权限在办公室后端照常验证，禁止公开静态媒体和失败自动重试/缓存。具体上传规则先匹配：视频101m，照片/其他模块请求21m、300秒超时，其他业务API不变。打印签名、扫描会话、上传、删除和读取均由同一后端处理，避免共享DB记录与两台机器私有文件分离。
+
+先核实现存媒体的实际存储、办公室后端版本/健康及云端已无独有媒体，再经同一入口 prepare-only、正式激活。不能只根据北京404就复制/迁移文件；若北京已有媒体，须另行核实和制定迁移方案。本次不迁移文件或修改数据库。候选渲染替换既有受管shipping块，发现块外shipping路由即拒绝；激活前检查配置摘要，失败恢复原配置，备份保留在各机 `/etc/nginx/.ark-backups/shipping-video/`。

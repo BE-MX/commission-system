@@ -1,3 +1,9 @@
+## 2026-09-16 验货照片跨域404修复（待办公室核验）
+
+用户请求修复leshine.cloud验货照片404。北京access日志确认 images接口404；生产共享库72条媒体记录全部在北京配置存储根缺失，两个常见历史目录也不存在。小程序baseUrl=leshine.work走办公室，cloud原路由却读北京本机。办公室经新加坡8002隧道/health=ok且database connected，但管理SSH127.0.0.1:2223连接被拒绝，已请用户恢复，原照片和办公室版本尚未现场核验。
+
+在codex/shipping-media-owner实现同模块统一办公室归属：cloud三类特定上传＋一般模块规则全部经TLS校验的SG转办公室，office本身走8002；保留原Authorization、大小限制、无缓存和禁重试；一般规则排在特定上传后，不改其他业务。受管块外shipping路由冲突阻断。49项部署/路由测试通过；增量约定检查另验，全局UI门禁仍10项既有问题。通过deploy.bat --shipping-video-routing-only --prepare-only在两台云机生成候选并语法校验，未切流量、未迁移文件、未写数据库。等待办公室映射恢复后核对文件和版本再上线，不能把候选准备当作生产已修复。本轮未合并推送。
+
 ## 2026-09-16 出库检验桌面 Web App（授权合并交付）
 
 任务 codex/shipping-web-app，基于8857f844。已按用户方案补齐扫码/专用登录页manifest、180/192/512图标、standalone显示、安装指引及iPhone安全区。Logo通过内置imagegen生成黄色黑字＋扫描勾选变体并保存工程。根scope仅容纳登录，不改变权限或操作人记录；无Service Worker、离线提交或后台上传。普通路由清理专用元数据；查询/hash参数的登录返回路径已补回归。原扫码、上传与人员选择逻辑未改。
