@@ -155,6 +155,7 @@ const MENU_ENTRY_BY_NAME = new Map(
 )
 router.afterEach((to, from, failure) => {
   if (failure) return
+  window.dispatchEvent(new Event('ark:route-ready'))
   const entry = MENU_ENTRY_BY_NAME.get(to.name)
   if (!entry || entry.name === 'Dashboard') return
   recordRecentNav({ name: entry.name, path: to.fullPath })

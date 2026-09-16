@@ -1,0 +1,16 @@
+{
+  "id": "/shipping/scan",
+  "name": "莱莎出库检验",
+  "short_name": "出库检验",
+  "description": "选择操作人员，扫描出库单，拍照和上传视频完成发货检验。",
+  "lang": "zh-CN",
+  "start_url": "/shipping/scan",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f0f2f7",
+  "theme_color": "#f0f2f7",
+  "icons": [
+    { "src": "/shipping-app/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/shipping-app/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
