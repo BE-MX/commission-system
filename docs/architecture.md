@@ -408,3 +408,8 @@ WhatsApp Web → Chrome/Edge MV3 extension（1.2.6 起）→ `leshine.cloud` API
 Linux 北京默认空网关，使用本地 workerd；代理标记阻断误配置回环。
 浏览器不连接内部地址，不需要额外 DNS/TLS。工作台保留独立的 D1/R2 数据格式与逐视图会话权限，
 作为内部运行模块由统一部署入口纳管，持久存储唯一归属北京，详见 `colorwork-workbench/README.md`。
+
+
+### 办公室内网 HTTPS（2026-09-16 已验证）
+
+`https://lan.leshine.cloud` 解析到 192.168.101.193，由独立 NSSM ArkOfficeHttps/Caddy 提供443并代理现有8001。仅放行192.168.100.0/23，未新增公网端口映射；原业务服务不变。证书到期2026-12-15，手动DNS-01续期，尚无自动续期。配置及恢复约束见 deploy/README.md 的办公室内网HTTPS专项入口。证书健康和匿名鉴权已验证，物理手机扫码未验收；办公室尚未部署新station接口，HTTPS启用不代表新出库检验页已上线。

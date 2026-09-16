@@ -1,3 +1,27 @@
+## 2026-09-16 内网 HTTPS 脚本合并交付
+
+用户已授权将 codex/office-lan-https 合并推送 main。本次仅提交安装脚本、专项部署入口、隔离测试和文档，不含证书、私钥或服务器状态文件，不触发应用部署。16 项检查通过，增量约定无违规；默认 UI 门禁仍有 10 项既有问题。现场验证证据保留在主目录 .deploy_state/office-lan-https-delivery；下方“未授权推送”为历史阶段记录。
+
+## 2026-09-16 办公室内网 HTTPS 已启用
+
+用户完成 DNSPod TXT 验证后，通过既有 certbot 账号签发 lan.leshine.cloud 公共信任证书，到期北京时间 2026-12-15 08:21:48。私钥仅经 SSH 进程内转送至办公室受限目录，未写入开发机磁盘、Git 或日志。办公室 `D:/commission-system/.deploy_state/office-lan-https` 权限限管理员/SYSTEM，证书在其 certs 子目录。
+
+专项 deploy.bat 先 prepare-only 后激活成功，随后重跑归属与线上证书检查返回 verified。独立 NSSM `ArkOfficeHttps`（Caddy 2.11.4，官方包SHA-512固定）自动启动，绑定 192.168.101.193:443，防火墙只允许 192.168.100.0/23，代理127.0.0.1:8001。CommissionSystem 未重启、现有8001未改，无生产应用/数据库迁移、无账号权限变更、无Git推送。执行源码暂存服务器 .deploy_state/office-lan-https/deployer，不覆盖其独有的发布器修复。
+
+服务器和开发机直连校验CA/SNI/叶证书一致，/health和/login均200，/api/auth/me匿名403。Codex内嵌浏览器返回连接关闭，开发机禁用请求代理后直连HTTPS正常，未修改系统代理；不能声称手机浏览器已验收。证据 .deploy_state/office-lan-https/verification.json。新扫码接口仍未部署（办公室运行 ba491dfe，无station路由），/shipping/scan返回200仅是SPA壳，不能作为新页面上线证据。后续新功能发布须保留办公室独有提交、核对共享库迁移与writer状态，不能直接覆盖或回退。
+
+手动DNS-01不会自动续期；应在12月15日前重新验证并安排独立HTTPS服务证书切换，原业务后端无需重启。源码在 codex/office-lan-https，本轮未授权合并推送。16项隔离测试通过；独立审查的配置漂移、回滚残留和证书续期误报已修复。默认约定门禁仍有main的10项既有UI问题，增量检查另行核验。
+
+## 2026-09-16 办公室内网 HTTPS（等待 DNS 验证）
+
+用户授权通过现有端口映射配置 lan.leshine.cloud 的 HTTPS 和网站入口，未授权本轮合并推送。任务 worktree `commission-system-codex-office-lan-https` / `codex/office-lan-https`。
+
+已通过本机 SSH alias office-prod（127.0.0.1:2223，现有密钥与严格主机密钥校验）连接 lys-acciowork。办公室运行根 D:/commission-system，IPv4 192.168.101.193/23，NSSM CommissionSystem 的 8001 /health 正常；80/443 未监听。域名目前可解析到内网地址，DNSPod 负责公共 DNS。办公室源码 ba491dfe，生产 OpenAPI 尚无 station 接口；不要把 HTTPS 入口完成等同新质检功能已部署，不直接回退或覆盖办公室独有发布器修复。
+
+用户选择手动 DNS 验证。北京既有 certbot 账号已启动 lan.leshine.cloud 申请，等待 TXT `_acme-challenge.lan`；具体挑战及 exec session 保存在本工作区 .deploy_state/office-lan-https/pending.json。未签发、未搬运私钥、未安装服务或改防火墙。用户添加后先核对权威 DNS，再继续 certbot；若会话丢失需核实申请状态，不能盲用旧挑战。
+
+已准备独立 deploy.bat --office-lan-https PLAN [--prepare-only] 入口，固定官方 Caddy 2.11.4/SHA-512，证书SAN/密钥/有效期、Windows安装归属、单独443绑定、仅局域网防火墙、真实SNI/CA及线上叶证书一致验证；独立审查发现的服务漂移、失败恢复和续期误报已修复。16 项隔离测试通过。手动 DNS 续期须人工更新验证记录，不能宣称自动续期。后续先完成证书及独立HTTPS入口，再依据已审查发布状态处理新扫码功能部署依赖，不运行无关全平台更新。
+
 ## 2026-09-15 共用手机质检：授权合并推送
 
 本次包含独立扫描页、按单选人和审计、照片/视频及提交重试、紧凑三列名单。集成 origin/main `43c2f43a`，迁移 153 改为接续其 151_customer_media_tags，保持唯一 head；未改生产数据库、账号、权限或网络。本轮仅合并推送 origin/main，不部署、不配置内网 HTTPS。下文未合并状态为历史阶段记录。

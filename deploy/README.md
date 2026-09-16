@@ -172,3 +172,12 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 现有 `--shipping-video-routing-only` 专用入口同时纳管 station 会话照片、视频路径：照片请求上限 21m、视频 101m，300 秒上传超时；普通 API 限制和各站后端归属保持原值。仍先 prepare-only 检查，再在取得目标环境发布授权后激活。主站代码发布不会自动执行此专项入口。
 
 真机验收需覆盖 Android Chrome / iPhone Safari：扫码授权与后置摄像头、相册视频、弱网重试、多人交接、PC 撤回后继续编辑；当前已完成本地组件/模拟摄像头识别和隔离数据库验收，未代替真实手机或生产 MySQL 并发验收。
+# 办公室内网 HTTPS 专项入口
+
+`deploy.bat --office-lan-https PLAN_JSON --prepare-only` 校验指定办公室安装、健康、证书和 Caddy 配置；移除 `--prepare-only` 才安装独立 `ArkOfficeHttps` NSSM 服务。此入口不发布应用、不运行迁移、不触碰其他服务。
+
+计划只含 `live_root`、`address`、`subnet`、`backend_port`；当前已核验分别为 `D:/commission-system`、`192.168.101.193`、`192.168.100.0/23`、`8001`。入口固定 `lan.leshine.cloud`。证书放运行根目录 `.deploy_state/office-lan-https/certs/fullchain.pem` 和 `privkey.pem`，目录权限仅管理员和 SYSTEM；不得提交或作为代码制品传输。证书应覆盖域名、密钥匹配且有效，最终使用系统 CA 和真实 SNI 校验线上证书及本地 PEM 一致。
+
+使用固定 Caddy 2.11.4 官方 Windows 包及 SHA-512 校验，只绑定指定内网地址 443；防火墙仅允许指定局域网，反向代理本机 8001。保留现有 HTTP 入口。首次安装失败清理本次服务与规则并核验残留，已有服务配置漂移则拒绝覆盖。
+
+手动 DNS-01 证书不支持无人值守续期。续期需要重新完成 DNS 验证、受限传输新证书，保留旧证书后安排独立 HTTPS 服务重启；原方舟后端不需重启。普通重跑会核对线上叶证书，旧证书未重载时拒绝报告新证书已上线。切换到 DNS API 自动续期应另外提供最小权限凭据。
