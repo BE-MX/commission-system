@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.core.config import get_settings
-from app.invoice import accessory_price_service, okki_client, product_service
+from app.invoice import accessory_price_service, okki_client, outbound_task_service, product_service
 from app.invoice.models import CustomProduct, Invoice, InvoiceSyncLog, XiaomanSettings
 from app.invoice.screenshot_source import (
     external_source_key,
@@ -159,6 +159,17 @@ def sync_invoice(
             .where(Invoice.id == invoice.id, Invoice.xiaoman_removed_lines == removed_snapshot)
             .values(xiaoman_removed_lines=None)
         )
+    # 首推成功 → OKKI 出库任务入队（仅 create；编辑重推由 --remaining 补出口径另行决策）。
+    # 尽力而为：异常只记日志，对账 job 兜底补齐，绝不阻断同步收尾。任务行随上层
+    # commit 落库；半成品 finalize 失败的整体回滚会连带丢弃它，不产生孤儿任务。
+    if action == "create" and get_settings().OKKI_OUTBOUND_AUTO_ENABLED:
+        try:
+            task = outbound_task_service.enqueue_outbound_task(db, invoice)
+            if task is not None and task.status == outbound_task_service.STATUS_SKIPPED:
+                logger.info("invoice %s outbound task skipped: %s", invoice.id, task.reason)
+        except Exception as exc:  # noqa: BLE001 - 出库触发失败不允许影响已受理的同步结果
+            logger.warning("outbound task enqueue failed invoice=%s: %s", invoice.id, exc)
+            print(f"[outbound] enqueue failed invoice={invoice.id}: {exc}", flush=True)
     return {
         "ok": True,
         "message": "已同步到小满",

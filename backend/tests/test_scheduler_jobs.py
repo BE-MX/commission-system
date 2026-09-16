@@ -113,6 +113,7 @@ class TestSchedulerRegistration:
                 "dingtalk_gmv_daily",
                 "whatsapp_translation_pairing_cleanup",
                 "domestic_public_sea_daily",
+                "okki_outbound_reconcile",
             }
             design_image = scheduler.get_job("design_image_queue")
             assert design_image.max_instances == 1
