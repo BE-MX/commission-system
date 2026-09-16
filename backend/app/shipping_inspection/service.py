@@ -193,6 +193,7 @@ def submit(
     remark: str | None = None,
     edit_version: int = 0,
     commit: bool = True,
+    submitted_ids: list[int] | None = None,
 ) -> ShippingInspection:
     """提交验货：照片总数 ≥ 1；已提交幂等返回原单（request_id 靠状态幂等，不落库）。"""
     inspection = _get_by_outbound_id(db, outbound_record_id)
@@ -220,6 +221,8 @@ def submit(
         db.refresh(inspection)
     else:
         db.flush()
+    if submitted_ids is not None:
+        submitted_ids.append(inspection.id)
     return inspection
 
 

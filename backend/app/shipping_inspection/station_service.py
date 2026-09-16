@@ -194,7 +194,7 @@ def delete_media(db, login_id, session_id, media_id, edit_version, request_id):
     return result
 
 
-def submit(db, login_id, session_id, edit_version, request_id, remark):
+def submit(db, login_id, session_id, edit_version, request_id, remark, submitted_ids=None):
     session = session_for(db, login_id, session_id, allow_ended=True)
     payload = {'edit_version': edit_version, 'remark': remark}
     prior = _replay(db, session, 'submit', request_id, payload)
@@ -207,7 +207,7 @@ def submit(db, login_id, session_id, edit_version, request_id, remark):
         if inspection.status == 'submitted':
             raise StationError('ALREADY_SUBMITTED', '本单已由其他操作提交，请刷新查看')
     inspection = service.submit(db, outbound_record_id=session.outbound_record_id, user_id=session.operator_user_id,
-                                edit_version=edit_version, remark=remark, commit=False)
+                                edit_version=edit_version, remark=remark, commit=False, submitted_ids=submitted_ids)
     result = {'id': inspection.id, 'status': inspection.status, 'operator_name': session.operator_name,
               'outbound_no': inspection.outbound_no, 'submitted_at': inspection.submitted_at.isoformat()}
     session.ended_at = beijing_now()
