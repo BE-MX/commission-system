@@ -7,7 +7,7 @@ const sc = require('../utils/shipping-check')
 
 function harness() {
   let page, videoMethods
-  const calls = { choose: [], uploads: [], requests: [], previews: [] }
+  const calls = { choose: [], uploads: [], requests: [], previews: [], compress: [], info: [] }
   const context = vm.createContext({
     module: { exports: {} },
     getApp: () => ({ globalData: { baseUrl: 'https://example.test', token: 'test' }, logout() {} }),
@@ -15,6 +15,7 @@ function harness() {
     Page: value => { page = value },
     setTimeout() {},
     wx: {
+      compressVideo: args => calls.compress.push(args), getFileInfo: args => calls.info.push(args),
       chooseMedia: args => calls.choose.push(args), uploadFile: args => calls.uploads.push(args),
       request: args => calls.requests.push(args), previewMedia: args => calls.previews.push(args),
       showModal: args => args.success({ confirm: true }), showLoading() {}, hideLoading() {},
@@ -37,13 +38,19 @@ function harness() {
   return { page, calls }
 }
 
-test('video chooses the album and uploads with the current item and recall version', () => {
+test('video captures then compresses before uploading with the frozen item and version', () => {
   const { page, calls } = harness()
   page.onItemVideoTap({ currentTarget: { dataset: { itemId: 'IT1' } } })
-  assert.deepEqual(Array.from(calls.choose[0].sourceType), ['album'])
+  assert.deepEqual(Array.from(calls.choose[0].sourceType), ['camera'])
   assert.deepEqual(Array.from(calls.choose[0].mediaType), ['video'])
   calls.choose[0].success({ tempFiles: [{ tempFilePath: '/album/clip.mp4', size: 3000 }] })
+  assert.equal(calls.uploads.length, 0)
+  assert.equal(page.data.uploading, true)
+  assert.equal(calls.compress[0].quality, 'medium')
+  calls.compress[0].success({ tempFilePath: '/compressed.mp4' })
+  calls.info[0].success({ size: 2000 })
   const upload = calls.uploads[0]
+  assert.equal(upload.filePath, '/compressed.mp4')
   assert.ok(upload.url.endsWith('/videos'))
   assert.equal(upload.formData.item_id, 'IT1')
   assert.equal(upload.formData.edit_version, '2')
@@ -63,6 +70,8 @@ test('oversized videos and submitted pages cannot start uploads', () => {
   const { page, calls } = harness()
   page.onWholeVideoTap()
   calls.choose[0].success({ tempFiles: [{ tempFilePath: '/clip.mp4', size: 101 * 1024 * 1024 }] })
+  calls.compress[0].success({ tempFilePath: '/large.mp4' })
+  calls.info[0].success({ size: 101 * 1024 * 1024 })
   assert.equal(calls.uploads.length, 0)
   assert.equal(page.data.errorTitle, '视频过大')
   page.data.submitted = true
@@ -99,4 +108,29 @@ test('video groups are separate from photo counts and submit gating', () => {
   assert.equal(view.items[0].videos.length, 1)
   assert.equal(view.totalPhotos, 0)
   assert.equal(view.canSubmit, false)
+})
+
+
+test('album remains available, cancellation and compression failure release lock', () => {
+  const { page, calls } = harness()
+  page.onWholeAlbumVideoTap()
+  assert.deepEqual(Array.from(calls.choose[0].sourceType), ['album'])
+  calls.choose[0].fail({ errMsg: 'cancel' })
+  assert.equal(page.data.uploading, false)
+  page.onWholeVideoTap()
+  calls.choose[1].success({ tempFiles: [{ tempFilePath: '/capture.mp4', size: 200000000 }] })
+  calls.compress[0].fail({})
+  assert.equal(page.data.uploading, false)
+  assert.equal(calls.uploads.length, 0)
+  assert.equal(page.data.errorTitle, '视频压缩失败')
+})
+
+test('stale compression callback does not upload to another record', () => {
+  const { page, calls } = harness()
+  page.onWholeVideoTap()
+  calls.choose[0].success({ tempFiles: [{ tempFilePath: '/capture.mp4', size: 3000 }] })
+  page.onUnload()
+  calls.compress[0].success({ tempFilePath: '/compressed.mp4' })
+  assert.equal(calls.uploads.length, 0)
+  assert.equal(calls.info.length, 0)
 })

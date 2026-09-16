@@ -73,13 +73,14 @@
         </scroll-view>
         <view class="si-capture-actions" wx:if="{{!submitted}}">
           <view class="si-camera-btn" bindtap="onWholeCameraTap" hover-class="si-press">拍整单照</view>
-          <view class="si-camera-btn si-camera-btn--row" bindtap="onWholeVideoTap" hover-class="si-press">上传视频</view>
+          <view class="si-camera-btn si-camera-btn--row" bindtap="onWholeVideoTap" hover-class="si-press">拍视频</view>
+          <view class="si-camera-btn si-camera-btn--row" bindtap="onWholeAlbumVideoTap" hover-class="si-press">相册视频</view>
         </view>
         <view class="si-video-entry" wx:for="{{wholeVideos}}" wx:key="id">
           <text data-video-id="{{item.id}}" bindtap="onPreviewVideo">▶ 整单视频 {{index + 1}}</text>
           <text wx:if="{{!submitted}}" data-video-id="{{item.id}}" bindtap="onDeleteVideo">删除</text>
         </view>
-        <text class="si-tip" wx:if="{{!submitted}}">视频从相册选择，每段不超过100MB；提交至少需要1张照片</text>
+        <text class="si-tip" wx:if="{{!submitted}}">拍摄或从相册选择后自动压缩上传，每段压缩后不超过100MB；提交至少需要1张照片</text>
         <text class="si-tip" wx:if="{{!submitted && wholePhotos.length > 0}}">点照片放大预览，长按可删除</text>
       </view>
 
@@ -105,7 +106,8 @@
           <view class="si-camera-btn si-camera-btn--row" data-item-id="{{it.item_id}}" bindtap="onItemCameraTap"
                 hover-class="si-press">拍照（{{it.photoCount}}张）</view>
           <view class="si-camera-btn si-camera-btn--row" data-item-id="{{it.item_id}}" bindtap="onItemVideoTap"
-                hover-class="si-press">上传视频</view>
+                hover-class="si-press">拍视频</view>
+          <view class="si-camera-btn si-camera-btn--row" data-item-id="{{it.item_id}}" bindtap="onItemAlbumVideoTap" hover-class="si-press">相册视频</view>
         </view>
         <view class="si-video-entry" wx:for="{{it.videos}}" wx:key="id" wx:for-item="video">
           <text data-video-id="{{video.id}}" bindtap="onPreviewVideo">▶ 明细视频 {{index + 1}}</text>

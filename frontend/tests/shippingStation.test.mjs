@@ -7,7 +7,7 @@ import { isShippingStationPath } from '../src/router/shippingStationRoute.js'
 
 const source = fs.readFileSync(new URL('../src/views/shipping/composables/useShippingStation.js', import.meta.url), 'utf8')
   .replace(/^import .*$/gm, '').replace('export function', 'function')
-function setup(overrides = {}) {
+function setup(overrides = {}, compressor = async file => file) {
   const calls = [], timers = new Map()
   const people = [{ id: 1, name: '张三' }, { id: 2, name: '李四' }]
   const payload = { session_id: 'session-one', operator: people[1], record: { outbound_no: 'CK001' }, items: [], photos: [{ id: 5 }], videos: [], inspection: { status: 'draft', edit_version: 3, remark: '' } }
@@ -25,7 +25,7 @@ function setup(overrides = {}) {
     onMounted: fn => { mounted = fn }, onBeforeUnmount() {}, stationApi: api,
     confirmDanger: async () => {}, setTimeout: fn => { const id=randomUUID(); timers.set(id,fn); return id },
     clearTimeout: id => timers.delete(id), setInterval() {}, clearInterval() {},
-    crypto: { randomUUID }, Date, FormData, Blob, console,
+    crypto: { randomUUID }, Date, FormData, Blob, console, AbortController, compressInspectionVideo: compressor,
     window: { addEventListener() {}, removeEventListener() {} },
   })
   vm.runInContext(source + '\nthis.state=useShippingStation()', context)
@@ -91,4 +91,32 @@ test('definitive stale-version rejection unlocks refresh instead of trapping an 
   await flush(); s.choose(people[1]); await s.decoded('ARK-I:OB001:signature'); await s.submit()
   assert.equal(s.pendingSubmit.value, null)
   await s.refresh(); assert.equal(refreshed, true); assert.equal(s.view.value.inspection.edit_version, 4)
+})
+
+
+test('compression locks the session and uploads only the result; network retry does not recompress', async () => {
+  let finish, count = 0
+  const files = []
+  const { s, people } = setup({ upload: async (_id, _type, form) => { files.push(await form.get('file').text()); if (files.length === 1) throw new Error('network') } }, () => { count++; return new Promise(resolve => { finish = resolve }) })
+  await flush(); s.choose(people[0]); await s.decoded('ARK-I:OB001:signature')
+  const task = s.upload(new Blob(['original']), 'IT1', 'videos')
+  assert.equal(s.busy.value, true)
+  assert.equal(s.canWrite.value, false)
+  await s.end(); assert.equal(s.sessionId.value, 'session-one')
+  assert.equal(files.length, 0)
+  finish(new Blob(['compressed']))
+  await task; await s.retryUpload()
+  assert.deepEqual(files, ['compressed', 'compressed'])
+  assert.equal(count, 1)
+  assert.equal(s.busy.value, false)
+})
+
+test('compression failure sends nothing and releases session lock', async () => {
+  const { s, people, calls } = setup({}, async () => { throw new Error('视频压缩失败') })
+  await flush(); s.choose(people[0]); await s.decoded('ARK-I:OB001:signature')
+  await s.upload(new Blob(['original']), null, 'videos')
+  assert.equal(s.error.value, '视频压缩失败')
+  assert.equal(s.busy.value, false)
+  assert.equal(s.pendingUpload.value, null)
+  assert.equal(calls.some(c => c[0] === 'upload'), false)
 })

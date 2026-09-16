@@ -1,5 +1,6 @@
 import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import { stationApi } from '@/api/shippingStation'
+import { compressInspectionVideo } from './compressInspectionVideo'
 import { confirmDanger } from '@/utils/feedback'
 
 const requestId = () => crypto.randomUUID()
@@ -8,6 +9,8 @@ export function useShippingStation(api = stationApi) {
   const busy = ref(false), loading = ref(false), scannerOpen = ref(false), error = ref('')
   const invalid = ref(false), loginRequired = ref(false), prompt = ref('请选择本次操作人')
   const selectionVersion = ref(0), receipt = ref(null), progress = ref(0), pendingUpload = ref(null), pendingSubmit = ref(null)
+  const uploadStage = ref('')
+  let compressionController
   let promptTimer, idleTimer, lastActive = Date.now(), alive = true, scanIntent = null
   const sessionId = computed(() => view.value?.session_id)
   const operator = computed(() => view.value?.operator || selected.value)
@@ -89,11 +92,27 @@ export function useShippingStation(api = stationApi) {
   }
   async function upload(file, itemId, type, retry = false) {
     if (!canWrite.value || !file) return
-    const limit = type === 'videos' ? 100 : 20
-    if (file.size > limit * 1024 * 1024) { error.value = `文件不能超过 ${limit}MB`; return }
-    if (!retry) pendingUpload.value = { file, itemId, type, request_id: requestId(), edit_version: editVersion() }
-    const intent = pendingUpload.value
     busy.value = true; progress.value = 0; error.value = ''
+    let intent
+    try {
+      if (!retry && type === 'videos') {
+        uploadStage.value = '正在压缩视频，请保持页面在前台'
+        compressionController = new AbortController()
+        file = await compressInspectionVideo(file, { signal: compressionController.signal, onProgress: value => { progress.value = value } })
+        if (!alive) return
+      }
+      const limit = type === 'videos' ? 100 : 20
+      if (file.size > limit * 1024 * 1024) throw new Error(`文件不能超过 ${limit}MB`)
+      if (!retry) pendingUpload.value = { file, itemId, type, request_id: requestId(), edit_version: editVersion() }
+      intent = pendingUpload.value
+    } catch (e) {
+      error.value = e.message || '视频压缩失败，请重新选择视频'
+      return
+    } finally {
+      compressionController = null
+      if (!intent) { busy.value = false; uploadStage.value = '' }
+    }
+    uploadStage.value = '正在上传'; progress.value = 0
     const form = new FormData()
     form.append('file', intent.file)
     form.append('edit_version', intent.edit_version)
@@ -106,7 +125,7 @@ export function useShippingStation(api = stationApi) {
       pendingUpload.value = null
       accept((await api.refresh(sessionId.value)).data, true)
     } catch (e) { await fail(e) }
-    finally { busy.value = false }
+    finally { busy.value = false; uploadStage.value = '' }
   }
   function retryUpload() {
     const p = pendingUpload.value
@@ -169,10 +188,10 @@ export function useShippingStation(api = stationApi) {
     }, 5000)
   })
   onBeforeUnmount(() => {
-    alive = false; clearTimeout(promptTimer); clearInterval(idleTimer)
+    alive = false; compressionController?.abort(); clearTimeout(promptTimer); clearInterval(idleTimer)
     window.removeEventListener('beforeunload', warnLeave)
   })
   return { operators, selected, operator, view, remark, busy, loading, scannerOpen, error, invalid, loginRequired,
-    prompt, selectionVersion, receipt, progress, photos, videos, submitted, canWrite, sessionId, dirty, pendingUpload, pendingSubmit,
+    prompt, selectionVersion, receipt, progress, uploadStage, photos, videos, submitted, canWrite, sessionId, dirty, pendingUpload, pendingSubmit,
     choose, startScan, decoded, refresh, upload, retryUpload, remove, submit, end, loadOperators, fail }
 }
