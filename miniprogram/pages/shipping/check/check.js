@@ -44,6 +44,8 @@ Page(Object.assign({
   },
 
   _requestId: '',
+  onUnload: function () { this._imageBatch += 1; wx.hideLoading() },
+
   _imageBatch: 0,
   _qrRaw: '',
   onRefreshInspection: function () {

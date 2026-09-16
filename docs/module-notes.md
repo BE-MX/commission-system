@@ -1098,3 +1098,10 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 - **站内逐视图校验**：工作台 API 用 `requireView('library'|'inventory'|'master')` 兜底；master 视图持有者映射为站内 admin 角色。无方舟会话直开站点只见进入提示，原站内登录页/账号管理 API 已删除。
 - **实时库存状态**：`GET /api/colorwork/inventory-status?template_id=`（共享密钥头 `x-colorwork-sync-key`，仅供工作台服务端回源）按 `TEMPLATE_MATCH`（`app/colorwork/constants.py`）把 23 个模板映射到 okki_products 名称前缀（Regular=Standard Double Drawn；Butterfly=Double Genius Holes Weft；Injection=Invisible Tape Hair；Flex=Volume Weft——2026-09-14 业务确认），按「颜色|尺寸」聚合 SUM(enable_count)>0 → 到货正常，否则正在补货。工作台 `getCurrentSnapshot` 返回前实时覆盖（`lib/server/ark-sync.ts`，3.5s 超时，失败回退站内手动状态），页面每 30 秒静默轮询（有未保存修改时跳过）。okki 无对应产品的规格不覆盖、保留站内状态。
 - **部署与配置**：浏览器固定走 `/api/colorwork/workbench/`，方舟后端代理到 COLORWORK_INTERNAL_ORIGIN（默认回环8787），不需要独立域名。统一部署入口自动构建并管理北京内部运行服务、隔离验证迁移、备份持久数据及生成受限密钥配置；详见 `colorwork-workbench/README.md`。SSO 默认从 JWT 密钥按用途派生，回源密钥按用途派生；支持显式配置覆盖。
+
+
+### 出库检验视频拍摄与本地压缩（2026-09-16）
+
+整单/明细均提供拍视频、相册视频。网页拍摄通过video file input的capture=environment唤起设备界面；选择后本地保留音轨重编码MP4，最长边1280、不放大、24fps、视频目标1.8Mbps。浏览器必须支持MP4 MediaRecorder、Canvas.captureStream和AudioContext；不支持时提示更新浏览器或使用小程序。压缩近实时且需前台运行，失败不自动上传原大文件；已紧凑的原MP4/MOV若小于重编码结果则保留原件。压缩后仍限100MB。微信使用wx.compressVideo medium。拍摄确认即进入压缩上传，不承诺另存手机相册；视频仍不进入验货打印。
+
+网页网络重试保持压缩结果、request_id与edit_version，压缩期间禁止切换/提交，卸载取消；小程序onUnload作废批次回调。不能用桌面文件输入测试替代iPhone/微信真机相机与权限验收。参考：[capture](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/capture)、[WebKit MediaRecorder](https://webkit.org/blog/11353/mediarecorder-api/)。

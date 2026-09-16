@@ -1,25 +1,50 @@
-// 相册视频交互；照片和视频分开计数，复用页面的鉴权上传与编辑状态。
+// 拍摄/相册视频压缩上传；照片和视频分开计数，复用页面的鉴权上传与编辑状态。
 var sc = require('./shipping-check')
 
 module.exports = {
   onWholeVideoTap: function () { this._chooseVideo(null) },
   onItemVideoTap: function (e) { this._chooseVideo(e.currentTarget.dataset.itemId) },
-  _chooseVideo: function (itemId) {
+  onWholeAlbumVideoTap: function () { this._chooseVideo(null, 'album') },
+  onItemAlbumVideoTap: function (e) { this._chooseVideo(e.currentTarget.dataset.itemId, 'album') },
+  _chooseVideo: function (itemId, sourceType) {
     if (this.data.submitted || this.data.state !== 'ready' || this.data.uploading) return
+    if (typeof wx.compressVideo !== 'function') { this._error('微信版本过旧', '请更新微信后重试'); return }
     var self = this
+    var batch = this._imageBatch
+    this.setData({ uploading: true })
+    function unlock() { if (batch === self._imageBatch) self.setData({ uploading: false }); wx.hideLoading() }
     wx.chooseMedia({
-      count: 1, mediaType: ['video'], sourceType: ['album'],
+      count: 1, mediaType: ['video'], sourceType: [sourceType || 'camera'], camera: 'back',
       success: function (res) {
+        if (batch !== self._imageBatch) return
         var file = res.tempFiles && res.tempFiles[0]
-        if (!file) return
-        if (file.size > 100 * 1024 * 1024) {
-          self._error('视频过大', '请选择不超过100MB的视频')
-          return
-        }
-        self._upload(file.tempFilePath, itemId, 'video')
+        if (!file) { unlock(); return }
+        wx.showLoading({ title: '压缩视频中…', mask: true })
+        wx.compressVideo({
+          src: file.tempFilePath, quality: 'medium',
+          success: function (compressed) {
+            if (batch !== self._imageBatch) return
+            wx.getFileInfo({
+              filePath: compressed.tempFilePath,
+              success: function (info) {
+                if (batch !== self._imageBatch) return
+                unlock()
+                if (!info.size || info.size > 100 * 1024 * 1024) {
+                  self._error('视频过大', '压缩后视频仍超过100MB或内容为空，请分段拍摄')
+                  return
+                }
+                self._upload(compressed.tempFilePath, itemId, 'video')
+              },
+              fail: function () { if (batch !== self._imageBatch) return; unlock(); self._error('读取视频失败', '请重新拍摄或选择视频') }
+            })
+          },
+          fail: function () { if (batch !== self._imageBatch) return; unlock(); self._error('视频压缩失败', '请重新拍摄或选择视频') }
+        })
       },
       fail: function (err) {
-        if ((err.errMsg || '').indexOf('cancel') < 0) self._error('无法选择视频', '请检查相册权限后重试')
+        if (batch !== self._imageBatch) return
+        unlock()
+        if ((err.errMsg || '').indexOf('cancel') < 0) self._error('无法选择视频', '请检查相机和相册权限后重试')
       }
     })
   },
