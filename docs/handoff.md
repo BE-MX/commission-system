@@ -1,6 +1,6 @@
 ## 2026-09-16 部署源分叉修复准备
 
-用户反馈 Deployment source is not a fast-forward。已知办公室原运行 ba491dfe（部署器候选入口修复），而 main 未包含该祖先。本地在 codex/deploy-reconcile 将 ba491dfe 完整合并进当前 main 基点，保留部署修复及两边文档；不 cherry-pick，不关闭 fast-forward 保护，不改生产 checkout。SSH office-prod 的 127.0.0.1:2223 连接被拒绝，服务器当前状态仍待现场核对。31 项部署回归通过，独立审查通过；与新 HTTPS 入口集成时显式禁止 --live-root 配合 --office-lan-https。增量约定无违规，默认 UI 门禁仍有 10 项既有问题。本轮未获新的 main 合并推送或生产部署授权。
+用户反馈 Deployment source is not a fast-forward。已知办公室原运行 ba491dfe（部署器候选入口修复），而 main 未包含该祖先。本地在 codex/deploy-reconcile 将 ba491dfe 完整合并进当前 main 基点，保留部署修复及两边文档；不 cherry-pick，不关闭 fast-forward 保护，不改生产 checkout。SSH office-prod 的 127.0.0.1:2223 连接被拒绝，服务器当前状态仍待现场核对。31 项部署回归通过，独立审查通过；与新 HTTPS 入口集成时显式禁止 --live-root 配合 --office-lan-https。增量约定无违规，默认 UI 门禁仍有 10 项既有问题。用户已授权将本修复合并推送 main；本轮不执行生产部署。修复提交保留 ba491dfe 与 5d8037c2 双祖先，31 项部署测试及独立审查通过；服务器现场仍须恢复 SSH 后核验。
 
 ## 2026-09-16 验货单按业务员归属控制
 
