@@ -49,6 +49,7 @@ FORBIDDEN_EXPO_WORDS = ["便宜", "划算", "性价比", "打折", "薅羊毛"]
 ALLOWED_PERM_ACTIONS = {
     "read", "write", "delete", "admin",              # 标准四动作
     "manage",                                         # ≡admin，历史用词
+    "inspection_read_all",  # 发货检验内独立的验货单数据范围，不复用出库单 read_all
     "self_read", "read_all", "internal_read",         # 数据范围类
     "daily_report", "audit", "invoke", "print",       # 登记特例
     "sync", "design", "import",

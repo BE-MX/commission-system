@@ -37,14 +37,14 @@ router.include_router(station_router)
 _READ = ("shipping_inspection:read", "shipping_inspection:write", "shipping_inspection:admin")
 
 
-def _outbound_scope(db: Session, user: dict) -> str | None:
+def _outbound_scope(db: Session, user: dict, read_all_permission: str = "shipping_inspection:read_all") -> str | None:
     """出库单数据范围：看全部返回 None；否则返回当前用户绑定的 OKKI 业务员 id。
 
     解析模式与 order_intelligence.resolve_scope 一致：active OKKI 绑定、primary 优先。
     """
     if "super_admin" in (user.get("roles") or []):
         return None
-    if "shipping_inspection:read_all" in (user.get("permissions") or []):
+    if read_all_permission in (user.get("permissions") or []):
         return None
     try:
         ark_user_id = int(user.get("sub"))
@@ -65,6 +65,25 @@ def _outbound_scope(db: Session, user: dict) -> str | None:
     if not okki_user_id:
         raise HTTPException(status_code=422, detail="当前账号尚未绑定 OKKI 业务员，请联系管理员配置")
     return okki_user_id
+
+
+def _inspection_scope(db: Session, user: dict) -> str | None:
+    return _outbound_scope(db, user, "shipping_inspection:inspection_read_all")
+
+
+def _require_inspection_scope(db: Session, user: dict, inspection_id: int):
+    scope = _inspection_scope(db, user)
+    inspection = db.get(ShippingInspection, inspection_id)
+    if inspection is None:
+        raise HTTPException(status_code=404, detail="验货单不存在")
+    if scope is not None:
+        try:
+            record = outbound_service.get_outbound_record(db, inspection.outbound_record_id, okki_user_id=scope)
+        except outbound_service.OutboundTableError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        if record is None:
+            raise HTTPException(status_code=404, detail="验货单不存在")
+    return inspection
 
 
 def _qr_png_base64(qr_data: str) -> str | None:
@@ -193,6 +212,7 @@ def recall_record(
     db: Session = Depends(get_db),
     user: dict = Depends(require_any_permission("shipping_inspection:write", "shipping_inspection:admin")),
 ):
+    _require_inspection_scope(db, user, inspection_id)
     try:
         inspection = service.recall(db, inspection_id, int(user["sub"]), body.edit_version)
     except ValueError as exc:
@@ -210,9 +230,14 @@ def list_records(
     db: Session = Depends(get_db),
     _user: dict = Depends(require_any_permission(*_READ)),
 ):
-    items, total = service.list_records(
-        db, keyword=keyword, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
-    )
+    scope = _inspection_scope(db, _user)
+    try:
+        items, total = service.list_records(
+            db, keyword=keyword, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
+            okki_user_id=scope,
+        )
+    except outbound_service.OutboundTableError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     return ok(page_result(items, total, page, page_size))
 
 
@@ -222,6 +247,7 @@ def record_detail(
     db: Session = Depends(get_db),
     _user: dict = Depends(require_any_permission(*_READ)),
 ):
+    _require_inspection_scope(db, _user, inspection_id)
     detail = service.get_record_detail(db, inspection_id)
     if detail is None:
         raise HTTPException(status_code=404, detail="验货单不存在")
@@ -238,12 +264,17 @@ def record_detail(
 @router.get("/images/{rel_path:path}", summary="读取验货照片")
 def get_image(
     rel_path: str,
+    db: Session = Depends(get_db),
     _user: dict = Depends(require_any_permission(*_READ)),
 ):
     try:
         abs_path = file_service.resolve_path(rel_path)
     except file_service.FileValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    photo = db.query(ShippingInspectionPhoto).filter(ShippingInspectionPhoto.file_path == rel_path).first()
+    if photo is None:
+        raise HTTPException(status_code=404, detail="图片不存在")
+    _require_inspection_scope(db, _user, photo.inspection_id)
     if not abs_path.is_file():
         raise HTTPException(status_code=404, detail="图片不存在")
     return FileResponse(abs_path)

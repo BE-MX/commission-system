@@ -221,7 +221,7 @@ def list_okki_department_options(db: Session) -> list[dict]:
 
 
 # kind 派生规则（权限重设计方案）：data=数据范围，read/日报=页面可见，其余=操作级
-_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all", "agent_runtime:read_all", "customer:read_all", "domestic:read_all", "shipping_inspection:read_all"}
+_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all", "agent_runtime:read_all", "customer:read_all", "domestic:read_all", "shipping_inspection:read_all", "shipping_inspection:inspection_read_all"}
 _PAGE_KIND_EXTRA = {"tracking:daily_report"}
 
 
@@ -514,6 +514,7 @@ def seed_role_permissions(db: Session):
         ("shipping_inspection:admin", "shipping_inspection", "admin", "发货检验模块管理"),
         # read_all 仅扩展出库单数据范围（默认本人 OKKI 客户）；admin 角色由通用补齐逻辑自动授予
         ("shipping_inspection:read_all", "shipping_inspection", "read_all", "查看全部出库单（数据范围）"),
+        ("shipping_inspection:inspection_read_all", "shipping_inspection", "inspection_read_all", "查看全部验货单（数据范围）"),
         # 库存色块图工作台（2026-09-14 集成）：三个页面各自独立授权，工作台子站点凭
         # SSO 令牌内的视图清单过滤导航并逐视图校验 API。
         ("colorwork_download:read", "colorwork", "read", "库存色块图-库存图直接下载"),
@@ -592,6 +593,7 @@ def seed_role_permissions(db: Session):
         "customer:manage_dnc",
         "customer:confirm_material_risk",
         "customer:read_all",
+        "shipping_inspection:inspection_read_all",
     }
     # 给 admin 角色补齐一般非 legacy 权限（跳过已下架和显式授权项）。
     admin_role = db.query(ArkRole).filter(ArkRole.name == "admin").first()

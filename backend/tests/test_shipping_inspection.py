@@ -303,7 +303,7 @@ def test_submit_success_then_idempotent_and_locked(db, storage):
 # ── PC 端 ─────────────────────────────────────────────────
 
 # read_all 保持全量视图：下列既有用例聚焦列表/状态组装机制，不重复归属过滤
-_PC_PERMS = ["shipping_inspection:read", "shipping_inspection:write", "shipping_inspection:read_all"]
+_PC_PERMS = ["shipping_inspection:read", "shipping_inspection:write", "shipping_inspection:read_all", "shipping_inspection:inspection_read_all"]
 
 
 def _submit_one(db, user, record_id="OB001", item_id="IT001"):
@@ -393,7 +393,7 @@ def test_image_read_endpoints(db, storage):
         assert mini_img.status_code == 200
         assert mini_img.content == b"jpeg-bytes"
 
-    with _pc_client(db, user, ["shipping_inspection:read"]) as client:
+    with _pc_client(db, user, ["shipping_inspection:read", "shipping_inspection:inspection_read_all"]) as client:
         pc_img = client.get(f"/api/shipping-inspection/images/{photo['file_path']}")
         assert pc_img.status_code == 200
         assert pc_img.content == b"jpeg-bytes"

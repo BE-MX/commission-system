@@ -23,13 +23,32 @@ from app.core.config import get_settings
 ASSET_STORAGE_ROOT = Path(get_settings().ASSET_STORAGE_ROOT)
 
 
+
+class PublicUploadFiles(StaticFiles):
+    """Public uploads must never expose private inspection media, including aliases."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        from app.shipping_inspection.file_service import storage_root
+        self.private_roots = (
+            storage_root().resolve(),
+            (UPLOADS_DIR / "shipping-inspection").resolve(),
+        )
+
+    def lookup_path(self, path):
+        full_path, stat_result = super().lookup_path(path)
+        if full_path and any(Path(full_path).resolve().is_relative_to(root) for root in self.private_roots):
+            return "", None
+        return full_path, stat_result
+
+
 def mount_uploads(app: FastAPI) -> None:
     """挂载头像等用户上传目录"""
     # 素材文件挂载必须先注册（路径更长，避免被 /uploads 拦截）
     if ASSET_STORAGE_ROOT.is_dir():
-        app.mount("/uploads/assets", StaticFiles(directory=ASSET_STORAGE_ROOT), name="asset_uploads")
+        app.mount("/uploads/assets", PublicUploadFiles(directory=ASSET_STORAGE_ROOT), name="asset_uploads")
     if UPLOADS_DIR.is_dir():
-        app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
+        app.mount("/uploads", PublicUploadFiles(directory=UPLOADS_DIR), name="uploads")
 
 
 def _mount_pm_lan_entry(app: FastAPI) -> None:
