@@ -1,3 +1,7 @@
+## 2026-09-16 部署源分叉修复准备
+
+用户反馈 Deployment source is not a fast-forward。已知办公室原运行 ba491dfe（部署器候选入口修复），而 main 未包含该祖先。本地在 codex/deploy-reconcile 将 ba491dfe 完整合并进当前 main 基点，保留部署修复及两边文档；不 cherry-pick，不关闭 fast-forward 保护，不改生产 checkout。SSH office-prod 的 127.0.0.1:2223 连接被拒绝，服务器当前状态仍待现场核对。31 项部署回归通过，独立审查通过；与新 HTTPS 入口集成时显式禁止 --live-root 配合 --office-lan-https。增量约定无违规，默认 UI 门禁仍有 10 项既有问题。用户已授权将本修复合并推送 main；本轮不执行生产部署。修复提交保留 ba491dfe 与 5d8037c2 双祖先，31 项部署测试及独立审查通过；服务器现场仍须恢复 SSH 后核验。
+
 ## 2026-09-16 验货单按业务员归属控制
 
 worktree commission-system-codex-inspection-scope / codex/inspection-scope，基于 fa0f6117。验货单与出库单共用客户→OKKI 业务员归属 SQL 规则，列表计数/分页、详情/打印、撤回、照片视频读取全部受限。新数据权限 shipping_inspection:inspection_read_all 独立于出库单 read_all；启动 seed 登记，人工授予，不自动补授 admin；不改小程序和共用手机作业入口。无 schema 迁移，无生产数据/权限修改。用户已授权本轮合并推送 main，本轮不部署。回归 53 项通过。独立审查发现 uploads 静态直链可绕过权限，已在两个公共上传挂载按文件实际路径屏蔽配置的验货存储目录和历史 shipping-inspection 目录，文件未移动/删除；新增默认/自定义/嵌套 assets 路径的 GET/HEAD/视频直链回归及现有 SPA 共 8 项通过。静态修复独立复审通过，无剩余阻断问题，共 61 项相关测试通过；增量检查无违规，默认 UI 门禁有 10 项既有问题。
@@ -1205,3 +1209,9 @@ Mac 同事的英文网页中私聊按钮标识为 `Profile details`，原选择�
 验证证据在本目录 `tmp/station-*`：受影响后端隔离库回归、前端/小程序 40 项相关测试、部署路由与真实迁移计划 25 项均通过，主站最终构建通过（既有大包警告）。实际 Vue 组件在模拟 API/人员/相机下，通过 jsQR 识别测试二维码，完成选人→扫码→照片上传→提交清空→另一人扫描只读预览；390px/320px 无横向溢出、减少动画模式有效、控制台无错误。独立审查问题均修复，确定性提交拒绝补回归。尚未进行物理手机扫码/相册视频与生产 MySQL 双连接并发验收。
 
 约定检查增量无红黄项；默认门禁仍报告 4 项已有 UI 基线问题（AssetTagEditor 小按钮以及 AssetLibrary / ProductionOrderManage / AIManager 行数基线），未修改无关文件。Git 巡检已运行 `--no-fetch`，仅代表本地快照。未清理其他代理分支/工作区。
+
+# 展会美颜部署入口恢复（2026-09-16）
+
+生产安装目录仍为 520c22ca，9/15 18:46 发布候选 7efe0cf0 失败且 completed 为空。只读实测数据库仍为 150，美颜版本表及146/152新增列均不存在；schema-writers 为 restored-before-ddl，writers/stopped 为空。根因为父部署进程继续加载安装目录旧 remote_backend.schema_check（未启用 implicit_base），候选 migration_runner 已修复，计划分别是 [152] 与 [146_expo,152]。候选的真实 Alembic 升级计划与新预检一致。
+
+分支 codex/deploy-candidate-runtime 基于当次已审查候选7efe，只新增部署器 --live-root 启动支持、测试与说明，不纳入后来151/153业务迁移。允许从受管固定候选调用原 deploy.bat，部署模块统一取候选，安装目录/状态/锁/服务/DBA保护保持原归属。无生产迁移、业务切换或 origin 写入；生产发布由亮哥执行。验证及服务器候选准备结果见本任务交付说明。

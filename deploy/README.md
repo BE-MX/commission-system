@@ -71,6 +71,23 @@ deploy\deploy.bat --shipping-video-routing-only
 
 ## 状态与恢复
 
+### 候选已含部署器修复，但安装目录仍在运行旧部署器
+
+2026-09-15 的 `520c22ca` 安装目录启动部署 `7efe0cf0` 时，旧进程的预检只算出 152，候选迁移 runner 则正确算出美颜分支 146 + 152。记录为 `failed` / `restored-before-ddl`、writers 与 stopped 均为空；取到新源码不等于当前 Python 进程已加载新部署器。
+
+这种情况可从已审查、固定版本的受管候选启动同一个 `deploy.bat`，显式传 `--live-root`。候选必须位于 `<live>/.deploy_state/sources/<完整 SHA>`，且 SHA 与 `--revision` 一致；仅支持普通完整发布及其 `--prepare-only`，不用于部分发布或迁移事故恢复。全部部署模块取自候选，服务目录、状态、锁和 DBA 凭据仍使用安装目录。不要先更新正在运行的业务 checkout，也不要删除迁移日志。
+
+```powershell
+# 候选提交须已安全传入本机 Git 并准备为受管 worktree。
+$releaseRoot = 'D:\commission-system'
+$releaseRevision = '<reviewed-full-commit-sha>'
+$env:PATH = "$releaseRoot\backend\.venv\Scripts;$env:PATH"
+& "$releaseRoot\.deploy_state\sources\$releaseRevision\deploy\deploy.bat" --live-root $releaseRoot --revision $releaseRevision --no-pull --prepare-only
+# 准备成功后，同一命令去掉 --prepare-only 才开始生产切换。
+```
+
+正常入口的命令不变；修复版本完整部署成功后，安装目录本身也具备新部署器，可继续双击原入口。固定候选分支后续仍需按 Git 授权规则集成到 main，避免与将来的发布来源分叉。
+
 优先读取 `.deploy_state/publish-current.json`：本轮 revision、阶段、已成功目标。`publish-success.json` 仅代表最近一次成功，不表示当前运行成功。跨机器发布不是分布式事务：后面的目标失败时，前面已验证的目标可能已更新，脚本返回非零并保留阶段记录。
 
 `--prepare-only` 成功后当前状态为 `prepared`，代表候选已校验但未切换；完整发布成功才更新 `publish-success.json`。
