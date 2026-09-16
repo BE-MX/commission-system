@@ -812,6 +812,7 @@ def test_agent_research_context_is_customer_scoped_and_contains_no_credentials(d
     assert context["research_rules"]["forbidden"] == [
         "猜测邮箱", "个人社会关系调查", "无来源事实", "跨客户读取", "直接触达",
     ]
+    assert "简体中文" in context["research_rules"]["output_language"]
     serialized = str(context).lower()
     assert "password" not in serialized
     assert "lease_token" not in serialized
