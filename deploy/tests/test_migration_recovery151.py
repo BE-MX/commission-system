@@ -259,5 +259,3 @@ def test_completed151_rejects_missing_tag_objects(monkeypatch):
     monkeypatch.setattr(recovery, "_migration", lambda *_: SimpleNamespace(_check_existing=Mock()))
     with pytest.raises(RuntimeError, match="incomplete customer tag"):
         recovery.validate_existing(Mock(), "script", recovery.CHAIN[0])
-
-

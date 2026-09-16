@@ -1,6 +1,12 @@
-## 2026-09-16 151 事故恢复发布（执行中）
+## 2026-09-16 151 事故恢复发布完成
 
-用户明确授权合并推送并完成这次恢复更新。任务 codex/recover-152，新增 --recover-migration-151 完整发布入口，固定候选SHA、保留原failed-after-ddl日志和原四writer基线，修复151 unsigned外键。原 --restore-pre151 仅用于恢复兼容旧服务；本轮将真实完成151/153/154迁移并升级办公室、北京及已登记静态站。执行前重新核实数据库仍152、原日志未改、两端旧版本与恢复记录；先prepare-only，再正式激活。以下旧阶段“未授权/未合并”是历史记录。
+用户授权合并推送并完成恢复更新。修复代码 ae7d904e，生产候选为 main 合并 554b06f108f3df6f1f81ecd5eaf63d2f72d4d90f，已推送 origin/main。办公室从受管候选 deploy/deploy.bat 加 --live-root、固定 --revision、--recover-migration-151 先 prepare-only 后正式发布，两次均成功。151 unsigned 外键修复完成，数据库真实迁移 152→151→153→154；没有 stamp、downgrade 或删除事故日志。
+
+办公室和北京 checkout 均为 554b06f1，数据库为 154_okki_outbound_tasks；CommissionSystem、WhatsAppConnector、ark-backend、shipment-tracking-mcp 四个 writer 均运行。办公室 .deploy_state/publish-current.json=succeeded、schema-writers.json=completed，完整保留 recovery_original 的 failed-after-ddl 现场及四 writer 基线。四个登记静态站全部激活，无 deferred；内网 ArkOfficeHttps 服务仍运行。随后通过已更新安装的 deploy.bat --shipping-video-routing-only 先准备再激活两站专用照片/视频上传路由，保留各站原配置备份。
+
+验证：专项恢复测试28项、其他部署/迁移回归104项，共132项通过，独立审查无阻断；增量约定检查无违规，默认 UI 门禁仍有10项既有问题。公网 leshine.cloud、leshine.work 的 /health=200/database connected，/login 与 /shipping/scan=200，匿名 station/operators=403、空登录请求=422（无502）；办公室后端 OpenAPI 确认 station、Word、recall 接口已加载。办公室服务器验证 lan.leshine.cloud 的受信 HTTPS /health 与 /shipping/scan 均200；开发机当前 DNS 无法解析该内网域名，未改变其 DNS。未使用真实账号登录，未替代手机拍照/扫码/视频及 Word 客户端实际验收。
+
+后续常规更新在办公室 D:/commission-system 运行 deploy\deploy.bat 即可，不再使用恢复参数。新 shipping_inspection:inspection_read_all 权限已随启动登记，需由管理员按业务授予；专用手机登录账号需 shipping_station:write。该次应用发布不代替微信小程序平台上传审核。pm.leshine.cloud DNS/TLS、仓库外 hair/video 独立站仍为发布器已列明的既有 pending，非本次故障恢复范围。下方旧阶段“未合并/待部署”为历史记录。
 
 ## 2026-09-16 502 故障恢复：151 外键类型不匹配
 
