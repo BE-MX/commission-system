@@ -52,7 +52,7 @@ test('出库单拆分首个斜杠，保留复合颜色、规格并为批次号�
   })
   assert.match(doc, /<td class="product-category">Super Double Drawn Genius Weft<\/td>/)
   assert.match(doc, /<td class="product-details">22\/<wbr>#8TP18\/<wbr>60\/<wbr>20g<\/td>/)
-  assert.match(doc, /<td class="product-spec">B1天才发帘<\/td>\s*<td class="product-details">/)
+  assert.match(doc, /<td class="product-spec"><strong class="spec-grade">B1<\/strong>天才发帘<\/td>\s*<td class="product-details">/)
   assert.match(doc, /<th>产品类别<\/th><th>规格<\/th><th>颜色\/尺寸\/克重<\/th>/)
   assert.match(doc, /<th>批次号<\/th>/)
   assert.match(doc, /<td class="batch-no"><\/td>/)
@@ -135,4 +135,16 @@ test('验货单文档：无照片无备注时不输出空区块', () => {
   assert.ok(!doc.includes('<div class="photo-section">'))
   assert.ok(!doc.includes('<div class="remark-section">'))
   assert.ok(!doc.includes('<div class="items-section">'))
+})
+
+
+test('规格仅突出 B1/B3，保留普通文字并安全转义', () => {
+  const doc = buildOutboundDoc({ ...outboundPayload, items: [
+    { spec: 'B1天才 / B3平行 / B10 / AB1 / <script>' },
+  ] })
+  assert.match(doc, /<strong class="spec-grade">B1<\/strong>天才/)
+  assert.match(doc, /<strong class="spec-grade">B3<\/strong>平行/)
+  assert.equal((doc.match(/<strong class="spec-grade">/g) || []).length, 2)
+  assert.match(doc, /B10 \/ AB1 \/ &lt;script&gt;/)
+  assert.match(doc, /spec-grade\{font-size:16px;font-weight:700\}/)
 })

@@ -355,7 +355,7 @@ def test_pc_print_data_contains_qr(db):
         assert data["record"]["outbound_no"] == "CK2026001"
         assert data["record"]["remark"] == "分箱包装\n附标签"
         assert len(data["items"]) == 2
-        assert data["items"][0]["model"] == "MODEL-13x4"
+        assert next(item for item in data["items"] if item["item_id"] == "IT001")["model"] == "MODEL-13x4"
         assert data["qr_code_base64"].startswith("data:image/png;base64,")
         # 二维码内容可通过本模块验签
         valid, record_id = qr_service.verify_qr_data(data["qr_data"])
