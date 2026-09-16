@@ -129,6 +129,7 @@ async def shipping_submit(
     current_user: ArkUser = Depends(require_mini_entry("shipping")),
     db: Session = Depends(get_db),
 ):
+    submitted_ids = []
     try:
         inspection = shipping_service.submit(
             db,
@@ -136,9 +137,12 @@ async def shipping_submit(
             user_id=current_user.id,
             remark=body.remark,
             edit_version=body.edit_version,
+            submitted_ids=submitted_ids,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"code": "SUBMIT_REJECTED", "message": str(exc)})
+    from app.shipping_inspection.notification_service import notify_submitted
+    await notify_submitted(db, submitted_ids)
     return {
         "id": inspection.id,
         "outbound_record_id": inspection.outbound_record_id,

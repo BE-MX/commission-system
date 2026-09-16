@@ -1105,3 +1105,10 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 整单/明细均提供拍视频、相册视频。网页拍摄通过video file input的capture=environment唤起设备界面；选择后本地保留音轨重编码MP4，最长边1280、不放大、24fps、视频目标1.8Mbps。浏览器必须支持MP4 MediaRecorder、Canvas.captureStream和AudioContext；不支持时提示更新浏览器或使用小程序。压缩近实时且需前台运行，失败不自动上传原大文件；已紧凑的原MP4/MOV若小于重编码结果则保留原件。压缩后仍限100MB。微信使用wx.compressVideo medium。拍摄确认即进入压缩上传，不承诺另存手机相册；视频仍不进入验货打印。
 
 网页网络重试保持压缩结果、request_id与edit_version，压缩期间禁止切换/提交，卸载取消；小程序onUnload作废批次回调。不能用桌面文件输入测试替代iPhone/微信真机相机与权限验收。参考：[capture](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/capture)、[WebKit MediaRecorder](https://webkit.org/blog/11353/mediarecorder-api/)。
+
+
+### 出库检验完成通知（2026-09-17）
+
+小程序/网页提交成功后，按同一业务库的出库company_id→customer_info.owner_user_ids查询当前OKKI业务员，叠加最新InvoiceCustomerOverlay手动同步归属，再精确匹配有效OKKI账号绑定与有效方舟用户的钉钉绑定。镜像update_time>=overlay.source_update_time取镜像；缺失/不可比时间取overlay，与发票客户选择口径相同。时间按北京解析（epoch由UTC转换）。多个当前负责人去重通知；任一负责人的外部账号绑定缺失/歧义时整体跳过，可能同时不通知其他已确定负责人；公海不发送。生产统一客户域尚无OKKI归属，不使用制单人或历史订单替代当前负责人。
+
+发送仅发生在提交事务成功之后，重复提交不重发；撤回重提再通知。发送失败不影响提交，超时10秒，无持久队列及不确定结果自动重试，进程中断或提供商异常可能漏发。日志按`[SHIPPING] notification`查跳过/失败；上线须有正确的当前OKKI归属、有效账号绑定和钉钉绑定。测试不发送真实通知。

@@ -92,7 +92,11 @@ async def delete(session_id: str, media_id: int, edit_version: int = Query(..., 
 
 @router.post('/sessions/{session_id}/submit')
 async def submit(session_id: str, body: SubmitRequest, user=Depends(login_id), db: Session = Depends(get_db)):
-    return await invoke(db, service.submit, user, session_id, body.edit_version, body.request_id, body.remark)
+    submitted_ids = []
+    result = await invoke(db, service.submit, user, session_id, body.edit_version, body.request_id, body.remark, submitted_ids=submitted_ids)
+    from app.shipping_inspection.notification_service import notify_submitted
+    await notify_submitted(db, submitted_ids)
+    return result
 
 
 @router.post('/sessions/{session_id}/end')

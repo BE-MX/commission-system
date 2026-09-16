@@ -1,3 +1,13 @@
+## 2026-09-17 出库检验完成钉钉通知
+
+任务codex/inspection-notify，基于d3160fe5。用户确认按客户当前业务员（非制单人）发通知。只读生产核验：当前OKKI客户归属在业务镜像customer_info.owner_user_ids；统一客户强身份仅public_web/website_domain91条，无OKKI company_id，active primary assignment为0，因此本模块采用实际运行的OKKI归属源。
+
+同BUSINESS_DB_NAME内出库记录company_id精确关联customer_info，按发票模块现有规则叠加InvoiceCustomerOverlay最新手动同步归属（镜像时间追平则取镜像，时间不可比则取overlay）；通过有效OKKI external_account_id绑定找到有效方舟账号的dingtalk_id。多个当前负责人去重发送；任一负责人外部绑定缺失/歧义时本条整体跳过并记录，公海不发送；不按姓名/历史订单归属推断。ISO时区及epoch统一北京解释。
+
+小程序与共用手机网页在检验提交事务成功后发OA工作通知，正文“客户【客户名称】的【出库单号】出库单已出库检验完成，请及时验货。”只有本次draft→submitted转换触发，重复提交/回执重放不重发，撤回重提会再次通知当前业务员。发送上限10秒，失败/缺绑定不回滚检验；无表结构变更。提交后尽力发送，无持久重试队列；进程中断或钉钉异常可能漏发，不确定结果不自动重发。测试模拟发送，无真实推送。
+
+新增通知19项通过，扩展回归60通过/1项既有失败；既有test_audit_beijing_midnight_ignores_server_timezone固定2026-09-16时钟导致JWT日期相关失败，未修改main亦复现。增量约定无违规，默认UI门禁10项既有债务；独立复审通过，无阻断。本轮未合并推送、未部署。
+
 ## 2026-09-16 出库检验直接拍视频与自动压缩
 
 任务 codex/shipping-video-capture，基于3799bda6。网页/小程序整单与明细增加直接拍视频入口，保留相册；拍摄确认后自动压缩上传。网页本地Canvas/MediaRecorder转1280最长边、24fps、目标1.8Mbps视频/96kbps音频MP4，保留声音；小程序wx.compressVideo medium，压缩完成后校验100MB限额。网页输出更大时保留已足够小的原MP4/MOV；不支持压缩或失败时提示重试，不静默跳过处理。未新增后端端点/依赖/迁移。网页压缩按视频时长近实时进行，必须保持前台；不承诺固定压缩率或自动保存一份到手机相册。

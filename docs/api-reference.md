@@ -1295,3 +1295,8 @@ Agent research context now includes `fact_contract.version=registered_research_f
 返回沿用 `ok()` 信封；错误 detail 包含 code/message。会话默认空闲 15 分钟、最长 8 小时，刷新网页不恢复人员选择。所有请求重新校验登录权限与操作人角色；上传落盘前后均校验。业务写入与审计同事务，提交/上传/删除的相同请求编号重放原回执，内容冲突返回 409。已结束会话只允许查询同一次提交回执，不能更改撤回后的新轮次。网络或 5xx 的提交结果未确认时锁定编辑，以同一 request_id 确认；明确 4xx 拒绝可刷新后恢复。
 
 小程序 `/api/mini/shipping-inspection/scan` 新增可选 request_id 并记录登录用户扫描事件；新增 POST `/refresh` 仅刷新数据。PC 验货记录详情新增最近 200 条 events（含小程序、共用手机、PC 撤回来源）；一般查看者只见操作人，admin/super_admin 投影另含登录账号姓名。视频仍不进入打印。
+
+
+### 出库检验提交后通知补充（2026-09-17）
+
+`POST /api/mini/shipping-inspection/submit` 和 `POST /api/shipping-inspection/station/sessions/{session_id}/submit`：请求/回执结构不变。新一次检验提交成功后，向客户当前OKKI负责业务员已绑定的钉钉发送“客户【客户名称】的【出库单号】出库单已出库检验完成，请及时验货。”重复提交/回执重放不重复发送；撤回重提重新通知。缺少有效客户归属或钉钉绑定、提供商失败不会撤销提交；发送最多等待10秒，无自动补发队列。
