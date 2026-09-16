@@ -12,8 +12,9 @@ import sys
 
 import cloud_backend
 import static_sync
+from runtime_root import resolve_live_root
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = resolve_live_root(sys.argv[1:], __file__)
 STATE = ROOT / ".deploy_state"
 SG = "root@119.28.107.92"
 BJ = "ubuntu@154.8.205.162"
@@ -219,10 +220,11 @@ def publish(args):
 
 if __name__ == "__main__":
     sys.modules["publish"] = sys.modules[__name__]
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--cloud-only", action="store_true")
     parser.add_argument("--no-pull", action="store_true")
     parser.add_argument("--revision", help="Pin a reviewed full commit SHA; fetch still runs unless --no-pull")
+    parser.add_argument("--live-root", help="Installed checkout for a pinned deployer under its .deploy_state/sources")
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--office-lan-https", metavar="PLAN", help="Configure only office LAN HTTPS using an existing domain certificate")
     parser.add_argument("--shipping-video-routing-only", action="store_true", help="Enable 100MB private shipping video uploads on existing backends")
