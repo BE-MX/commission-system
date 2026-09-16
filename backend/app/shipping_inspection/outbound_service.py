@@ -347,3 +347,12 @@ def list_outbound_items(db: Session, record_id: str) -> list[dict]:
         ORDER BY i.`{im['id']}`
     """), {"rid": record_id}).mappings().all()
     return [_map_item_row(row) for row in rows]
+
+
+def scoped_record_ids_query(db: Session, okki_user_id: str):
+    """SQL subquery shared by inspection pagination; never fetch IDs into memory."""
+    rm = _record_columns(db)
+    clause = _owner_scope_clause(db, rm)
+    return text(
+        f"SELECT r.`{rm['id']}` FROM `{_schema()}`.`{RECORDS_TABLE}` r WHERE {clause}"
+    ).bindparams(scope_okki_user_id=okki_user_id)

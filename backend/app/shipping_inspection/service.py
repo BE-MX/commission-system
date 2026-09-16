@@ -291,6 +291,7 @@ def list_records(
     date_to=None,
     page: int = 1,
     page_size: int = 20,
+    okki_user_id: str | None = None,
 ) -> tuple[list[dict], int]:
     """已提交验货单分页：keyword 匹配单号/客户，date 按提交时间过滤（含当日）。"""
     query = (
@@ -298,6 +299,9 @@ def list_records(
         .outerjoin(ArkUser, ArkUser.id == ShippingInspection.submitted_by)
         .filter(ShippingInspection.status == C.STATUS_SUBMITTED)
     )
+    if okki_user_id is not None:
+        query = query.filter(ShippingInspection.outbound_record_id.in_(
+            outbound_service.scoped_record_ids_query(db, okki_user_id)))
     if keyword:
         like = f"%{keyword}%"
         query = query.filter(or_(

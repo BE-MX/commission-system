@@ -36,7 +36,7 @@ def test_recall_retains_media_rejects_stale_requests_and_allows_resubmit(db, sto
         assert upload_video(mini).status_code == 400
         with _pc_client(db, user, ["shipping_inspection:read"]) as pc:
             assert pc.post(f"/api/shipping-inspection/records/{inspection_id}/recall", json={"edit_version": 0}).status_code == 403
-        with _pc_client(db, user, ["shipping_inspection:write"]) as pc:
+        with _pc_client(db, user, ["shipping_inspection:write", "shipping_inspection:inspection_read_all"]) as pc:
             for _ in range(2):
                 recall = pc.post(f"/api/shipping-inspection/records/{inspection_id}/recall", json={"edit_version": 0})
                 assert recall.status_code == 200
@@ -60,7 +60,7 @@ def test_recall_retains_media_rejects_stale_requests_and_allows_resubmit(db, sto
         )
         assert new_photo.status_code == 200
         assert submit(mini, 1, "").status_code == 200
-        with _pc_client(db, user, ["shipping_inspection:write"]) as pc:
+        with _pc_client(db, user, ["shipping_inspection:write", "shipping_inspection:inspection_read_all"]) as pc:
             assert pc.post(f"/api/shipping-inspection/records/{inspection_id}/recall", json={"edit_version": 0}).status_code == 409
             detail = pc.get(f"/api/shipping-inspection/records/{inspection_id}").json()["data"]
             assert len(detail["photos"]) == 2

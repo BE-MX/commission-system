@@ -1,3 +1,7 @@
+## 2026-09-16 验货单按业务员归属控制
+
+worktree commission-system-codex-inspection-scope / codex/inspection-scope，基于 fa0f6117。验货单与出库单共用客户→OKKI 业务员归属 SQL 规则，列表计数/分页、详情/打印、撤回、照片视频读取全部受限。新数据权限 shipping_inspection:inspection_read_all 独立于出库单 read_all；启动 seed 登记，人工授予，不自动补授 admin；不改小程序和共用手机作业入口。无 schema 迁移，无生产数据/权限修改。用户已授权本轮合并推送 main，本轮不部署。回归 53 项通过。独立审查发现 uploads 静态直链可绕过权限，已在两个公共上传挂载按文件实际路径屏蔽配置的验货存储目录和历史 shipping-inspection 目录，文件未移动/删除；新增默认/自定义/嵌套 assets 路径的 GET/HEAD/视频直链回归及现有 SPA 共 8 项通过。静态修复独立复审通过，无剩余阻断问题，共 61 项相关测试通过；增量检查无违规，默认 UI 门禁有 10 项既有问题。
+
 ## 2026-09-16 出库单负责人中文姓名
 
 任务 worktree commission-system-codex-shipping-owner / codex/shipping-owner。出库单打印数据与 Word 共同通过有效 OKKI 绑定 external_display_name 精确匹配（忽略首尾空格和英文大小写），读取唯一人员 real_name，显示英文名（中文姓名）。无匹配、多人员重名、无中文姓名或原名已有中文时保留原文；不修改账号、绑定、出库原始记录或扫码人员。新增隔离测试覆盖重名、重复绑定、失效/删除绑定、原文保留及打印/Word 一致性。后端 37 项、前端打印 8 项测试通过，增量约定检查无违规；全局 UI 门禁仍有 10 项既有问题。Git 巡检已执行。用户已授权本轮合并推送 main，本轮不部署。

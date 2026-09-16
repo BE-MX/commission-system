@@ -117,7 +117,7 @@ def test_recall_version_and_submit_attribution(db, storage, people):
         photo(client, sid)
         original = client.post(f'/api/shipping-inspection/station/sessions/{sid}/submit', json={'edit_version':0, 'request_id':'submit'}).json()
         inspection_id = original['data']['id']
-        with _pc_client(db, alice, ['shipping_inspection:write']) as pc:
+        with _pc_client(db, alice, ['shipping_inspection:write', 'shipping_inspection:inspection_read_all']) as pc:
             assert pc.post(f'/api/shipping-inspection/records/{inspection_id}/recall', json={'edit_version':0}).status_code == 200
         # A lost old submit response can still be resolved; it cannot submit the new round.
         assert client.post(f'/api/shipping-inspection/station/sessions/{sid}/submit', json={'edit_version':0, 'request_id':'submit'}).json() == original
