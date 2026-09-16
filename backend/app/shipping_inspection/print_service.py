@@ -27,22 +27,24 @@ def sort_outbound_print_items(items: list[dict]) -> list[dict]:
 
 
 def with_owner_chinese_name(db, record: dict) -> dict:
-    """Resolve the printed OKKI name through confirmed account bindings only."""
-    from sqlalchemy import func
+    """Resolve an English owner through account usernames or confirmed OKKI names."""
+    from sqlalchemy import func, or_, select
     from app.auth.models import ArkUser, ArkUserExternalBinding
 
     name = str(record.get("owner_name") or "").strip()
     if not name or re.search(r"[\u3400-\u9fff]", name):
         return record
+    bound_users = select(ArkUserExternalBinding.ark_user_id).where(
+        ArkUserExternalBinding.provider == "okki",
+        ArkUserExternalBinding.binding_status == "active",
+        ArkUserExternalBinding.deleted_at.is_(None),
+        func.lower(func.trim(ArkUserExternalBinding.external_display_name)) == name.lower(),
+    )
     matches = (db.query(ArkUser.id, ArkUser.real_name)
-        .join(ArkUserExternalBinding, ArkUserExternalBinding.ark_user_id == ArkUser.id)
-        .filter(
-            ArkUser.deleted_at.is_(None),
-            ArkUserExternalBinding.provider == "okki",
-            ArkUserExternalBinding.binding_status == "active",
-            ArkUserExternalBinding.deleted_at.is_(None),
-            func.lower(func.trim(ArkUserExternalBinding.external_display_name)) == name.lower(),
-        ).distinct().all())
+        .filter(ArkUser.deleted_at.is_(None), or_(
+            func.lower(func.trim(ArkUser.username)) == name.lower(),
+            ArkUser.id.in_(bound_users),
+        )).all())
     if len(matches) != 1:
         return record
     chinese_name = (matches[0].real_name or "").strip()

@@ -1,3 +1,9 @@
+## 2026-09-16 出库打印负责人英文名匹配修复
+
+用户反馈更新后中文姓名仍未显示。只读生产核验：出库单 create_user_name 为英文，方舟 username 对应英文，但 OKKI external_display_name 大多中文，原实现仅匹配后者导致漏显。在 codex/shipping-owner-match 修改打印共用转换：方舟 username 或有效 OKKI display_name 忽略大小写及首尾空格精确匹配，合并去重后只接受唯一未删除人员，跨字段重名保留原文。HTML 与 Word 使用同一结果，不修改业务数据、账号或权限。
+
+先新增测试复现3处失败，再修复；负责人/排序/Word与撤回媒体相关隔离测试18项通过，独立审查无阻断。只读姓名覆盖核查：34种负责人中31种可匹配方舟用户名；Olivia、Tina、Linda 当前没有未删除的同名方舟账号，不猜测中文名。增量约定无违规，默认UI门禁仍有10项既有问题。修复提交 ec35aece，用户已授权本轮合并推送 main；本轮不执行部署，生产仍为前次恢复的554b06f1。
+
 ## 2026-09-16 151 事故恢复发布完成
 
 用户授权合并推送并完成恢复更新。修复代码 ae7d904e，生产候选为 main 合并 554b06f108f3df6f1f81ecd5eaf63d2f72d4d90f，已推送 origin/main。办公室从受管候选 deploy/deploy.bat 加 --live-root、固定 --revision、--recover-migration-151 先 prepare-only 后正式发布，两次均成功。151 unsigned 外键修复完成，数据库真实迁移 152→151→153→154；没有 stamp、downgrade 或删除事故日志。
