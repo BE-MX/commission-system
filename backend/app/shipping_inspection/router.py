@@ -150,6 +150,8 @@ def outbound_print_data(
         items = outbound_service.list_outbound_items(db, record_id)
     except outbound_service.OutboundTableError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+    from app.shipping_inspection.print_service import sort_outbound_print_items
+    items = sort_outbound_print_items(items)
     qr_data = qr_service.generate_qr_data(record_id)
     return ok({
         "record": record,

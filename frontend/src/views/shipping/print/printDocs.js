@@ -87,7 +87,7 @@ function outboundProductCells(productName, spec) {
   const category = separator < 0 ? name : name.slice(0, separator).trim()
   const details = separator < 0 ? '' : name.slice(separator + 1).trim()
   return `<td class="product-category">${esc(category)}</td>
-      <td class="product-spec">${esc(spec)}</td>
+      <td class="product-spec">${esc(spec).replace(/(?<![A-Za-z0-9])B[13](?![A-Za-z0-9])/gi, '<strong class="spec-grade">$&</strong>')}</td>
       <td class="product-details">${esc(details).replace(/[/／]/g, '$&<wbr>')}</td>`
 }
 
@@ -97,6 +97,7 @@ const OUTBOUND_CSS = `
 .items-table{table-layout:fixed}
 .items-table th,.items-table td{padding:6px 5px;overflow-wrap:anywhere}
 .items-table tbody tr{height:12mm;break-inside:avoid}
+.items-table .spec-grade{font-size:16px;font-weight:700}
 .items-table .product-category{font-size:12px}
 .items-table .product-details{font-size:14px;font-weight:700}
 .items-table .num{text-align:center}

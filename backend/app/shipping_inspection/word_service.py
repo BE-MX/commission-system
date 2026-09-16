@@ -11,6 +11,7 @@ from docx.oxml.ns import qn
 from docx.shared import Mm, Pt, RGBColor
 
 from app.core.time import beijing_now
+from app.shipping_inspection.print_service import sort_outbound_print_items
 
 WIDTHS = [7.92, 35.64, 64.35, 45.54, 13.86, 30.69]  # 198mm × 4/18/32.5/23/7/15.5%
 
@@ -36,13 +37,18 @@ def _run(paragraph, value, size=9.75, bold=False):
     return run
 
 
-def _cell(cell, value, size=9.75, bold=False, shade=None, center=False):
+def _cell(cell, value, size=9.75, bold=False, shade=None, center=False, spec=False):
     cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
     paragraph = cell.paragraphs[0]
     paragraph.paragraph_format.space_after = Pt(0)
     if center:
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _run(paragraph, value, size, bold)
+    if spec:
+        for part in re.split(r"((?<![A-Za-z0-9])B[13](?![A-Za-z0-9]))", _text(value), flags=re.I):
+            emphasized = bool(re.fullmatch(r"B[13]", part, re.I))
+            _run(paragraph, part, 12 if emphasized else size, emphasized)
+    else:
+        _run(paragraph, value, size, bold)
     if shade:
         cell._tc.get_or_add_tcPr().insert_element_before(
             _xml("shd", val="clear", fill=shade), "w:noWrap", "w:tcMar", "w:textDirection", "w:tcFitText", "w:vAlign", "w:hideMark")
@@ -124,7 +130,7 @@ def build_outbound_word(record: dict, items: list[dict], qr_data: str) -> bytes:
         table.rows[0]._tr.get_or_add_trPr().append(_xml("tblHeader"))
         for index, label in enumerate(["#", "产品类别", "规格", "颜色/尺寸/克重", "数量", "批次号"]):
             _cell(table.cell(0, index), label, bold=True, shade="F0F0F0", center=index == 4)
-        for index, item in enumerate(items, start=1):
+        for index, item in enumerate(sort_outbound_print_items(items), start=1):
             parts = re.split(r"[/／]", _text(item.get("product_name")).strip(), maxsplit=1)
             values = [index, parts[0].strip(), item.get("spec"), parts[1].strip() if len(parts) > 1 else "", str(item.get("qty", "")), ""]
             row = table.rows[index]
@@ -132,7 +138,7 @@ def build_outbound_word(record: dict, items: list[dict], qr_data: str) -> bytes:
             row._tr.get_or_add_trPr().append(_xml("cantSplit"))
             for column, value in enumerate(values):
                 _cell(row.cells[column], value, size=9 if column == 1 else 10.5 if column == 3 else 9.75,
-                      bold=column == 3, shade="F5F5F5" if index % 2 == 0 else None, center=column == 4)
+                      bold=column == 3, shade="F5F5F5" if index % 2 == 0 else None, center=column == 4, spec=column == 2)
     footer = doc.add_paragraph()
     footer.paragraph_format.space_before = Pt(9)
     _line(footer)
