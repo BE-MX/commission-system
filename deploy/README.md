@@ -198,3 +198,17 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 使用固定 Caddy 2.11.4 官方 Windows 包及 SHA-512 校验，只绑定指定内网地址 443；防火墙仅允许指定局域网，反向代理本机 8001。保留现有 HTTP 入口。首次安装失败清理本次服务与规则并核验残留，已有服务配置漂移则拒绝覆盖。
 
 手动 DNS-01 证书不支持无人值守续期。续期需要重新完成 DNS 验证、受限传输新证书，保留旧证书后安排独立 HTTPS 服务重启；原方舟后端不需重启。普通重跑会核对线上叶证书，旧证书未重载时拒绝报告新证书已上线。切换到 DNS API 自动续期应另外提供最小权限凭据。
+
+
+## 2026-09-16：151 外键失败后的兼容服务恢复
+
+仅针对数据库仍在 `152_shipping_media_recall`、151只添加 `tag_scope` 及普通索引，关联表和153/154表均不存在、两端应用保持 `ba491dfe` 的已核实现场。使用 `deploy.bat --restore-pre151 PLAN --prepare-only` 验证；去掉 `--prepare-only` 才恢复原本运行的四个 writer。PLAN含 `live_root` 与原 `schema-writers.json` 的 SHA-256 `journal_sha256`。入口在安装目录发布锁及共享数据库锁内重新核实应用、服务归属、schema和原writer基线；不执行DDL，不移动业务文件，不更新应用代码。
+
+已运行的兼容旧服务保持运行，只启动停止的服务。恢复结果写入安装目录 `.deploy_state/restore-152.json`，原失败迁移日志保持不变，普通发布继续阻断。此操作恢复旧版可用性，不代表迁移或新版本发布完成。后续继续迁移需要另行审查原始日志与当前writer状态，禁止删除日志或手工stamp。此入口不能与 `--live-root`、普通发布、HTTPS、其他专项发布参数组合。
+
+
+### 继续完成 151 → 153 → 154 的恢复发布
+
+`--recover-migration-151` 仅用于 2026-09-16 的外键符号类型不匹配事故：原日志为数据库152、目标154、pending151/153/154，四个原writer均running且有完整停机证据。恢复完整保留 `recovery_original`，重新核对当前数据库结构和迁移链；无stamp/downgrade/清日志操作。
+
+必须固定经审查的完整 `--revision`，执行完整办公室+云发布。先带 `--prepare-only` 验证；去掉该参数才停止writers、执行迁移并切换两端应用和静态站，最终完成健康验证后关闭事故日志。旧安装目录缺少该入口时，可从 `.deploy_state/sources/<revision>/deploy/deploy.bat` 加 `--live-root <安装目录>` 启动候选部署器；服务和状态始终归安装目录。数据库已完成部分revision时重新校验；不完整的未知结构或缺失原始writer证据仍阻断。中途失败不得启动不兼容旧程序。

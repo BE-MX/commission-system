@@ -20,7 +20,7 @@ def invoke(request):
     return json.loads(result.stdout.splitlines()[-1])
 
 
-def prepare(repo, revision, allow_pending=False, recover_149=False):
+def prepare(repo, revision, allow_pending=False, recover_149=False, recover_151=False):
     import os
     env = dict(os.environ, GIT_SSH_COMMAND=shlex.join(["ssh", *SSH_OPTIONS]))
     subprocess.run(["git", "push", REPOSITORY, revision + ":refs/heads/deploy/" + revision],
@@ -28,6 +28,8 @@ def prepare(repo, revision, allow_pending=False, recover_149=False):
     request = {"action": "prepare", "revision": revision, "allow_pending": allow_pending}
     if recover_149:
         request["recover_149"] = True
+    if recover_151:
+        request["recover_151"] = True
     result = invoke(request)
     print("  Beijing backend: " + json.dumps(result), flush=True)
     return result

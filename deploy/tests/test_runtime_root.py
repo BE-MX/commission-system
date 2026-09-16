@@ -26,6 +26,7 @@ def test_candidate_entry_keeps_live_state_and_pinned_source(tmp_path):
 @pytest.mark.parametrize('extra', [[], ['--revision', 'short'], ['--revision', 'b' * 40],
                                  ['--revision', 'a' * 40, '--cloud-only'],
                                  ['--revision', 'a' * 40, '--office-lan-https', 'plan.json'],
+                                 ['--revision', 'a' * 40, '--restore-pre151', 'plan.json'],
                                  ['--revision', 'a' * 40, '--migrate-only', 'plan.json']])
 def test_candidate_entry_rejects_unpinned_mismatched_or_partial_release(tmp_path, extra):
     script = tmp_path / '.deploy_state/sources' / ('a' * 40) / 'deploy/publish.py'
@@ -77,3 +78,10 @@ def test_cli_rejects_abbreviations_before_creating_publish_state(tmp_path, flag)
     assert 'unrecognized arguments' in result.stderr
     assert not (tmp_path / '.deploy_state/publish-current.json').exists()
     assert not (tmp_path / '.deploy_state/publish.lock').exists()
+
+
+def test_reviewed_151_recovery_can_use_pinned_candidate_entry(tmp_path):
+    revision = 'a' * 40
+    script = tmp_path / '.deploy_state/sources' / revision / 'deploy/publish.py'
+    assert resolve_live_root(['--live-root', str(tmp_path), '--revision', revision,
+                              '--recover-migration-151', '--prepare-only'], script) == tmp_path
