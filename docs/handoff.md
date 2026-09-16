@@ -1,8 +1,10 @@
-## 2026-09-16 验货照片跨域404修复（待办公室核验）
+## 2026-09-16 验货照片跨域404路由修复已上线
 
-用户请求修复leshine.cloud验货照片404。北京access日志确认 images接口404；生产共享库72条媒体记录全部在北京配置存储根缺失，两个常见历史目录也不存在。小程序baseUrl=leshine.work走办公室，cloud原路由却读北京本机。办公室经新加坡8002隧道/health=ok且database connected，但管理SSH127.0.0.1:2223连接被拒绝，已请用户恢复，原照片和办公室版本尚未现场核验。
+用户授权修复并恢复办公室SSH映射。现场核验共享库73条媒体：全部存在办公室 D:/commission-system/uploads/shipping-inspection，北京配置目录及历史目录均无对应文件。办公室运行e4b83b4d，两端JWT签名配置匹配。根因是小程序上传办公室而cloud照片读取北京本地。
 
-在codex/shipping-media-owner实现同模块统一办公室归属：cloud三类特定上传＋一般模块规则全部经TLS校验的SG转办公室，office本身走8002；保留原Authorization、大小限制、无缓存和禁重试；一般规则排在特定上传后，不改其他业务。受管块外shipping路由冲突阻断。49项部署/路由测试通过；增量约定检查另验，全局UI门禁仍10项既有问题。通过deploy.bat --shipping-video-routing-only --prepare-only在两台云机生成候选并语法校验，未切流量、未迁移文件、未写数据库。等待办公室映射恢复后核对文件和版本再上线，不能把候选准备当作生产已修复。本轮未合并推送。
+在codex/shipping-media-owner统一整个出库检验模块到办公室：cloud经TLS验证的SG转8002，保留Authorization/URI、具体上传大小限制和原业务权限。既有办公室mini/photos exact规则逐字保留（21m/120秒），只允许该单个固定例外，未知路由仍阻断。受管规则300秒、禁止缓存和重试不包含此旧规则。
+
+50项路由/发布契约测试通过，独立复审无阻断。deploy.bat --shipping-video-routing-only 先prepare后正式激活，两站均activated，nginx校验/reload成功；备份在各机/etc/nginx/.ark-backups/shipping-video，任务本地.deploy_state/shipping-video-routing.json记录结果。没有文件迁移、数据库或应用发布。两域/health均200/database connected，原照片路径匿名403符合鉴权；SG访问日志确认cloud请求来自北京154.8.205.162，已转入办公室路由。浏览器工具不可用，未完成真实登录账号照片200验收，不以匿名403代替。增量约定无违规，默认UI门禁仍10项既有问题；Git巡检使用本地快照。本轮代码未合并推送。
 
 ## 2026-09-16 出库检验桌面 Web App（授权合并交付）
 

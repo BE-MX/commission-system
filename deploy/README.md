@@ -186,7 +186,7 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 
 上线依赖：备份并按标准发布流程应用迁移 `153_shipping_station`，更新实际承接请求的后端、前端与小程序刷新接口。迁移不创建账号或授予权限；管理员需给专用登录账号配置 `shipping_station:write`，不要将其作为实际操作人员。候选角色由 `SHIPPING_STATION_ROLE_ID` 指定，当前安装已只读核验为 28（fhqc，发货质检）；异库部署必须核对。空闲/最长会话分别配置 `SHIPPING_STATION_IDLE_MINUTES=15`、`SHIPPING_STATION_MAX_HOURS=8`。
 
-现有 `--shipping-video-routing-only` 专用入口同时纳管 station 会话照片、视频路径：照片请求上限 21m、视频 101m，300 秒上传超时；普通 API 限制和各站后端归属保持原值。仍先 prepare-only 检查，再在取得目标环境发布授权后激活。主站代码发布不会自动执行此专项入口。
+现有 `--shipping-video-routing-only` 专用入口纳管整个出库检验模块并统一转发办公室：受管照片请求上限 21m、视频 101m，300 秒上传超时；模块外普通 API 限制和归属保持原值。仍先 prepare-only 检查，再在取得目标环境发布授权后激活。主站代码发布不会自动执行此专项入口。
 
 真机验收需覆盖 Android Chrome / iPhone Safari：扫码授权与后置摄像头、相册视频、弱网重试、多人交接、PC 撤回后继续编辑；当前已完成本地组件/模拟摄像头识别和隔离数据库验收，未代替真实手机或生产 MySQL 并发验收。
 # 办公室内网 HTTPS 专项入口
@@ -218,4 +218,6 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 
 `--shipping-video-routing-only` 同时纳管整个 `/api/shipping-inspection` 与 `/api/mini/shipping-inspection` 模块。北京经验证 TLS 的新加坡 HTTPS 转发到办公室8002隧道；新加坡直达该隧道。原用户 Authorization/URI 保留，业务权限在办公室后端照常验证，禁止公开静态媒体和失败自动重试/缓存。具体上传规则先匹配：视频101m，照片/其他模块请求21m、300秒超时，其他业务API不变。打印签名、扫描会话、上传、删除和读取均由同一后端处理，避免共享DB记录与两台机器私有文件分离。
 
-先核实现存媒体的实际存储、办公室后端版本/健康及云端已无独有媒体，再经同一入口 prepare-only、正式激活。不能只根据北京404就复制/迁移文件；若北京已有媒体，须另行核实和制定迁移方案。本次不迁移文件或修改数据库。候选渲染替换既有受管shipping块，发现块外shipping路由即拒绝；激活前检查配置摘要，失败恢复原配置，备份保留在各机 `/etc/nginx/.ark-backups/shipping-video/`。
+先核实现存媒体的实际存储、办公室后端版本/健康及云端已无独有媒体，再经同一入口 prepare-only、正式激活。不能只根据北京404就复制/迁移文件；若北京已有媒体，须另行核实和制定迁移方案。本次不迁移文件或修改数据库。候选渲染替换既有受管shipping块，发现未知块外shipping路由即拒绝；激活前检查配置摘要，失败恢复原配置，备份保留在各机 `/etc/nginx/.ark-backups/shipping-video/`。
+
+办公室已有独立的 exact `/api/mini/shipping-inspection/photos` 规则保留原文：21m、办公室8002、120秒超时，未显式设置缓存和 upstream 重试。渲染器只允许该完整固定内容且仅出现一次；其他内容、重复规则或云端同类规则仍阻断。上述300秒、禁缓存/重试保证限本次受管规则。

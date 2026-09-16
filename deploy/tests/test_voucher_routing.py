@@ -213,3 +213,14 @@ def test_unmanaged_shipping_storage_routes_block_replacement(rule):
     content = (DEPLOY / 'nginx/shipping-video-cloud.conf').read_text()
     with pytest.raises(ValueError):
         routing.render(config('cloud') + rule, content, 'cloud', 'shipping-video')
+
+
+def test_inspected_office_photo_limit_is_preserved_but_drift_is_rejected():
+    content = (DEPLOY / 'nginx/shipping-video-office.conf').read_text()
+    existing = routing.OFFICE_PHOTO_RULE
+    result = routing.render(config('office') + existing, content, 'office', 'shipping-video')
+    assert result.endswith(existing)
+    assert routing.render(result, content, 'office', 'shipping-video') == result
+    for changed in [existing.replace('8002', '8001'), existing.replace('21m', '101m'), existing + existing]:
+        with pytest.raises(ValueError):
+            routing.render(config('office') + changed, content, 'office', 'shipping-video')
