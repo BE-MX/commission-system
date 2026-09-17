@@ -11,7 +11,7 @@
  *
  * 返回的 ref 直接绑定到 template 即可,主页面只负责布局。
  */
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import { uploadOCR, checkWaybill, createWaybill } from '@/api/tracking'
 import { beijingCalendarDate } from '@/utils/datetime'
@@ -113,6 +113,28 @@ export function useWaybillUpload() {
   }
 
   // ── Image upload + OCR ─────────────────────────────
+  function handlePaste(event) {
+    if (event.defaultPrevented || mode.value === 'manual' || ocrLoading.value || submitting.value || successVisible.value) return
+    // Keep normal paste behavior in form fields and rich-text editors.
+    if (event.target?.closest?.('input, textarea, [contenteditable]:not([contenteditable="false"])')) return
+
+    const images = Array.from(event.clipboardData?.items || [])
+      .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+      .map(item => item.getAsFile())
+      .filter(Boolean)
+    if (!images.length) return
+
+    event.preventDefault()
+    if (images.length > 1) ElMessage.info('每次识别一张运单图片，已选择第一张')
+    return handleFileChange({ raw: images[0] })
+  }
+
+  onMounted(() => document.addEventListener('paste', handlePaste))
+  onBeforeUnmount(() => {
+    document.removeEventListener('paste', handlePaste)
+    if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+  })
+
   function handleBeforeUpload(file) {
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp']
     if (!allowedTypes.includes(file.type)) {
@@ -127,6 +149,7 @@ export function useWaybillUpload() {
   }
 
   async function handleFileChange(uploadFile) {
+    if (mode.value === 'manual' || ocrLoading.value || submitting.value || successVisible.value) return
     const file = uploadFile.raw
     if (!handleBeforeUpload(file)) return
 
@@ -134,6 +157,7 @@ export function useWaybillUpload() {
     mode.value = 'ocr'
     form.entry_source = 'ocr'
 
+    if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
     previewUrl.value = URL.createObjectURL(file)
     resetRightPanel()
     ocrLoading.value = true

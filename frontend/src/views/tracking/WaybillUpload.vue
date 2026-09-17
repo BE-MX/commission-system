@@ -24,7 +24,7 @@
             accept="image/jpeg,image/png,image/webp"
             :before-upload="handleBeforeUpload"
             :on-change="handleFileChange"
-            :disabled="mode === 'manual'"
+            :disabled="mode === 'manual' || ocrLoading || submitting || successVisible"
           >
             <template v-if="previewUrl">
               <div class="preview-wrapper">
@@ -33,6 +33,7 @@
                   <el-button
                     type="danger"
                     plain
+                    :disabled="ocrLoading || submitting"
                     @click.stop="clearImage"
                   >
                     删除图片
@@ -51,6 +52,7 @@
                   拖拽图片到此处，或<em>点击上传</em>
                 </div>
                 <div class="el-upload__tip">
+                  支持 Ctrl+V / ⌘V 粘贴图片<br />
                   支持 JPG / PNG / WEBP，最大 10MB
                 </div>
               </template>

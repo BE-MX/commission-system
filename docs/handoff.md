@@ -1,3 +1,9 @@
+## 2026-09-17 运单图片剪贴板粘贴
+
+任务 `codex/waybill-clipboard`，基于 `3263d406`，用户已授权本轮合并推送 main，合并后运行专项回归并核对远端；本轮不部署。运单上传页支持 Ctrl+V / ⌘V 粘贴图片，复用选图上传的预览、JPG/PNG/WEBP 与 10MB 校验和 OCR 流程。输入框及富文本保留原生粘贴；手录模式、识别中、提交中、成功弹窗期间不接收图片；多图只取第一张并提示。选图与粘贴共用忙碌保护，识别/提交中禁用删除，替换图片与页面卸载释放预览 URL，卸载移除粘贴监听。
+
+验证：`node --test tests/waybillClipboard.test.mjs` 7 项通过，`npm run build` 通过；Chrome 原生剪贴板 Ctrl+V、预览回填、输入框隔离和文件选择回归通过，桌面/390px 截图及脚本在 `tmp/waybill-clipboard/`。浏览器 OCR API 为模拟响应，未调用真实识别或提交业务数据。默认约定检查仍有 10 项既有 UI 债务，本次增量检查无违规；`git diff --check` 通过，Git 巡检使用 `--no-fetch` 本地快照。
+
 ## 2026-09-17 出库检验完成钉钉通知
 
 任务codex/inspection-notify，基于d3160fe5。用户确认按客户当前业务员（非制单人）发通知。只读生产核验：当前OKKI客户归属在业务镜像customer_info.owner_user_ids；统一客户强身份仅public_web/website_domain91条，无OKKI company_id，active primary assignment为0，因此本模块采用实际运行的OKKI归属源。
