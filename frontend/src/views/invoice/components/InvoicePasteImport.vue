@@ -127,6 +127,9 @@
                 >
                   作为定制产品
                 </el-button>
+                <el-text v-if="row.candidates?.length && row.matched_product?.stock_warning" type="warning">
+                  {{ row.matched_product.stock_warning }}
+                </el-text>
                 <span v-if="row._useCustom" class="custom-confirmed">已确认作为定制产品</span>
                 <ul v-if="row.errors?.length || row.warnings?.length" class="row-messages">
                   <li v-for="message in row.errors" :key="`error-${message}`" class="error-text">{{ message }}</li>

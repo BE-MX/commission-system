@@ -49,13 +49,6 @@ def _seed_catalog(db) -> None:
         )
     """))
     db.execute(text("""
-        CREATE TABLE lsordertest.okki_inventory (
-            product_id INTEGER,
-            sku_id INTEGER,
-            disable_flag INTEGER
-        )
-    """))
-    db.execute(text("""
         CREATE TABLE lsordertest.okki_product_skus (
             product_id INTEGER,
             sku_id INTEGER,
@@ -85,7 +78,7 @@ def _seed_catalog(db) -> None:
             (2, 'ACC-002', 'Canonical Clip', 'Clip-M', 'Black', '', '', 0)
     """))
     db.execute(text("""
-        INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
+        INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag)
         VALUES (1, 1001, 0)
     """))
     db.execute(text("""
@@ -125,7 +118,7 @@ def _seed_catalog(db) -> None:
             "unit": "20g",
         })
         db.execute(text("""
-            INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
+            INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag)
             VALUES (:product_id, :sku_id, 0)
         """), {"product_id": product_id, "sku_id": sku_id})
         db.add(StdPrice(
@@ -830,7 +823,7 @@ def test_product_resolves_valid_pair_and_overwrites_forged_catalog_text(api):
 
 
 def test_accessory_resolves_only_from_active_accessory_sku_catalog(api):
-    client, _ = api
+    client, db = api
     response = client.post(
         "/api/integrations/v1/products/resolve",
         json={
@@ -852,6 +845,11 @@ def test_accessory_resolves_only_from_active_accessory_sku_catalog(api):
         "unit": "",
     }
 
+    # A warehouse record alone must never establish a catalog identity.
+    db.execute(text("DELETE FROM lsordertest.okki_product_skus WHERE product_id = 1"))
+    db.execute(text("CREATE TABLE lsordertest.okki_inventory (product_id INTEGER, sku_id INTEGER, disable_flag INTEGER)"))
+    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES (1, 1001, 0)"))
+    db.commit()
     wrong_catalog = _issue(client.post(
         "/api/integrations/v1/products/resolve",
         json={"product_kind": "accessory", "catalog_ref": {"product_id": 1, "sku_id": 1001}},
@@ -959,7 +957,7 @@ def test_product_reports_zero_multi_product_and_multi_sku_deterministically(api)
             (product_id, product_no, product_name, model, color, size, unit, disable_flag)
         VALUES (9, 'HAIR-009', 'Duplicate Hair', 'M1', 'Natural', '16', '20g', 0)
     """))
-    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES (9, 9009, 0)"))
+    db.execute(text("INSERT INTO lsordertest.okki_product_skus VALUES (9, 9009, 0)"))
     db.commit()
     multi_product = _issue(client.post(
         "/api/integrations/v1/products/resolve",
@@ -972,8 +970,8 @@ def test_product_reports_zero_multi_product_and_multi_sku_deterministically(api)
     assert multi_product["code"] == "PRODUCT_NOT_UNIQUE"
 
     db.execute(text("DELETE FROM lsordertest.okki_products WHERE product_id = 9"))
-    db.execute(text("DELETE FROM lsordertest.okki_inventory WHERE product_id = 9"))
-    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES (1, 1010, 0)"))
+    db.execute(text("DELETE FROM lsordertest.okki_product_skus WHERE product_id = 9"))
+    db.execute(text("INSERT INTO lsordertest.okki_product_skus VALUES (1, 1010, 0)"))
     db.commit()
     multi_sku = _issue(client.post(
         "/api/integrations/v1/products/resolve",
@@ -2148,7 +2146,7 @@ def test_two_real_sessions_racing_same_app_order_create_one_invoice(tmp_path):
             )
         """))
         setup.execute(text("""
-            CREATE TABLE lsordertest.okki_inventory (
+            CREATE TABLE lsordertest.okki_product_skus (
                 product_id INTEGER, sku_id INTEGER, disable_flag INTEGER
             )
         """))
@@ -2166,7 +2164,7 @@ def test_two_real_sessions_racing_same_app_order_create_one_invoice(tmp_path):
                 (1, 'HAIR-001', 'Canonical Hair/16/Natural/20g',
                  'M1', 'Natural', '16', '20g', 0)
         """))
-        setup.execute(text("INSERT INTO lsordertest.okki_inventory VALUES (1, 1001, 0)"))
+        setup.execute(text("INSERT INTO lsordertest.okki_product_skus VALUES (1, 1001, 0)"))
         owner = ArkUser(
             id=8201,
             username="race-owner",

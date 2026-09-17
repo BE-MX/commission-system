@@ -37,7 +37,7 @@ def _seed_products(db):
         )
     """))
     db.execute(text("""
-        CREATE TABLE IF NOT EXISTS lsordertest.okki_inventory (
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_product_skus (
             product_id INTEGER,
             sku_id INTEGER,
             disable_flag INTEGER
@@ -52,7 +52,7 @@ def _seed_products(db):
         (3, 'P003', 'Raw Hair/Body Wave', 'M2', 'Piano', '18', '120g', 0)
     """))
     db.execute(text("""
-        INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
+        INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag)
         VALUES (1, 9001, 0), (2, 9002, 0), (3, 9003, 0)
     """))
     db.commit()
@@ -153,19 +153,10 @@ def test_invoice_create_totals_and_validation(db):
 def test_mixed_invoice_exports_independent_accessory_table_and_full_summary(db):
     _seed_products(db)
     db.execute(text("""
-        CREATE TABLE lsordertest.okki_product_skus (
-            product_id INTEGER, sku_id INTEGER, disable_flag INTEGER
-        )
-    """))
-    db.execute(text("""
         INSERT INTO lsordertest.okki_products
             (product_id, product_no, name, model, color, size, unit, disable_flag)
         VALUES
             (4, 'ACC004', 'Hair Gripper', '魔术贴', '黑色', NULL, NULL, 0)
-    """))
-    db.execute(text("""
-        INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
-        VALUES (4, 9004, 0)
     """))
     db.execute(text("""
         INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag)
@@ -563,7 +554,7 @@ def test_xiaoman_settings_generic_product_resolution(db):
         ))
 
     # 多 SKU 且未指定时不猜测
-    db.execute(text("INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag) VALUES (1, 9010, 0)"))
+    db.execute(text("INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag) VALUES (1, 9010, 0)"))
     db.commit()
     row = xiaoman_service.update_settings(db, **_base_settings_kwargs(generic_product_no="P001"))
     db.commit()

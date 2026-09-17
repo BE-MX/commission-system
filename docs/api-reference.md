@@ -241,7 +241,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `POST /import/screenshot/preview?order_type=stock|production` — 上传一张 PNG/JPG/WebP OKKI 订单截图（invoice:write，分块读取，最大 10MB/4000 万像素）：AI 只做字段提取，服务端再按客户、授权业务员、产品编号+四维规格、SKU、日期/金额匹配业务库；返回可人工修正的预览，不保存原图，仅返回原图 SHA-256。截图文字始终按不可信数据处理，AI 调用仅保留 metadata 快照。
   - `POST /import/screenshot/resolve` — 对已有截图提取结果和人工选择重新执行确定性校验（invoice:write，不再次调用 AI）：客户/业务员/产品/SKU/产品合计/来源订单冲突会 `ready=false`；附加费总额始终忽略，运费/手续费/包装费按可见单项预填，无法归属的正差额落入运费，费用差异只警告不阻断。选择只能来自服务端候选及当前用户的代创建范围。`ready=true` 时返回 30 分钟有效的服务端签名预览凭证，绑定操作人、截图指纹、来源订单、客户/业务员、日期/币种/类型、产品/SKU/规格/数量/单价/折扣、费用和应付合计。
   - `POST /import/screenshot/create` — 使用上述签名凭证创建截图来源发票（invoice:write）；缺失/过期凭证、换用户或修改来源/客户/业务员/产品明细均拒绝，实时 OKKI 来源金额须与凭证中的截图订单金额一致。运费/手续费/包装费允许在编辑器人工修正，不会被凭证误判为篡改。普通 `POST /invoices` 不接受 `source_type=okki_screenshot`。
-  - `GET /products/match` — 按 model/color/size/unit 精确匹配产品
+  - `GET /products/match` — 按 model/color/size/unit 精确匹配产品；SKU 来自 `okki_product_skus`，`stock_warning` 为无实际库存时的非阻断提示（空字符串表示无提示）。Excel `/import/preview` 的匹配项/候选项同样携带该字段，唯一匹配时纳入行 warnings，允许继续导入和保存
   - `GET /products/entry-options` — 生产单自由录入候选值（okki UNION ark_custom_products，含 displays）
   - `GET /custom-products` — 沉淀产品列表；`POST /custom-products/reconcile` — 与 okki 产品库对账回填（invoice:admin）
   - `GET /price/accessory-candidates?keyword=`（`_PRICE_PAGE_READ`）— 联结 `lsordertest.okki_products` 与 `okki_product_skus`，仅返回产品和 SKU 均启用的记录，一 SKU 一行；keyword 匹配 Name/Model/Color，不依赖 `group_name`，返回真实 product_id/sku_id 与三属性
