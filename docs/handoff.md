@@ -1,3 +1,9 @@
+## 2026-09-17 Excel 导入 Model 回填（合并交付，未部署）
+
+任务 `codex/invoice-import-model`，worktree `D:/MyProgram/commission-system-codex-invoice-import-model`。根因是 `load_okki_rows` SQL 未选 model，导入产品索引也未向候选/唯一匹配结果传 model；前端原本已经读取 `matched_product.model`。两处补全，型号取匹配产品目录，不根据 Excel 文本猜测，也不改变匹配、SKU、价格或数量规则。
+
+两个新增后端回归先以缺少 model 失败，再修复通过，分别覆盖唯一匹配和歧义候选；后端粘贴/截图导入及 SKU 目录86项测试、前端导入16项测试通过。浏览器模拟API走编辑→Excel粘贴→校验→加入，Model立即显示GW-MODEL，导入成交价34.0000保留，未保存真实订单；证据保留在主目录 `tmp/invoice-import-model/`。独立审查未发现阻断问题；增量规则与diff检查通过，全局约定检查仍被10项主线既有UI债务阻挡，Git巡检为no-fetch本地快照。用户随后授权合并并推送 origin/main；本轮不部署，交付后清理本任务分支与 worktree。
+
 ## 2026-09-17 出库单打印与 Word 客户名称遮罩（Codex）
 
 - 来源分支 `codex/outbound-customer-mask`；用户已授权合并推送到 `origin/main`，完成后清理本任务分支与 worktree；本轮不部署。

@@ -141,6 +141,7 @@ def _load_product_indexes(db: Session) -> tuple[
             "product_no": str(row.get("product_no") or ""),
             "product_name": product_name,
             "product_display": product_display,
+            "model": str(row.get("model") or ""),
             "color": str(row["color"] or ""),
             "length": str(row["size"] or ""),
             "net_weight_grams": str(row["unit"] or ""),
