@@ -1300,3 +1300,8 @@ Agent research context now includes `fact_contract.version=registered_research_f
 ### 出库检验提交后通知补充（2026-09-17）
 
 `POST /api/mini/shipping-inspection/submit` 和 `POST /api/shipping-inspection/station/sessions/{session_id}/submit`：请求/回执结构不变。新一次检验提交成功后，向客户当前OKKI负责业务员已绑定的钉钉发送“客户【客户名称】的【出库单号】出库单已出库检验完成，请及时验货。”重复提交/回执重放不重复发送；撤回重提重新通知。缺少有效客户归属或钉钉绑定、提供商失败不会撤销提交；发送最多等待10秒，无自动补发队列。
+
+
+### 发票客户与联系人统一搜索（2026-09-17）
+
+`GET /api/invoice/customers/options`：需要 `invoice:write`。参数 `keyword`（客户名称/ID 或联系人姓名，最长200字符）、`private_only`（默认true）、`sales_user_id`（沿用代创建授权校验）、`offset`（默认0）、`limit`（默认50，最大100）。返回 `items/total/has_more`，私海请求另返回 `okki_bound`；未绑定时空结果。每项含 `option_key`（customer:公司ID / contact:联系人ID）、`kind`、`company_id/company_name/country_name`；联系人项含 `contact_id/name/email/tel`。空关键词只浏览客户，有关键词并列匹配两类。先按镜像/手动同步 overlay 的最新归属合并，再在数据库内计数和分页，避免20条截断及全量载入。仅客户级搜索旧端点仍供价格配置等独立调用方使用。
