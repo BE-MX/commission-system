@@ -1312,3 +1312,7 @@ Agent research context now includes `fact_contract.version=registered_research_f
 ### 2026-09-17 验货单组合查询
 
 `GET /api/shipping-inspection/records` 新增 `submitted_by_name`（提交人员姓名，模糊匹配）与 `salesperson_name`（该单实际关联订单业务员的镜像姓名/昵称或有效方舟绑定中文名，模糊匹配），均最多100字符。与既有 `keyword`（单号/客户）、`date_from/date_to`（提交日期，截止日含当天）、`page/page_size` 组合使用，条件取交集；倒置日期范围422。响应每行新增 `salesperson_name`，同单多业务员去重并列，未关联返回null。权限和数据范围沿用原验货单接口，不因输入人员姓名而扩大。
+
+### 发票客户与联系人统一搜索（2026-09-17）
+
+`GET /api/invoice/customers/options`：需要 `invoice:write`。参数 `keyword`（客户名称/ID 或联系人姓名，最长200字符）、`private_only`（默认true）、`sales_user_id`（沿用代创建授权校验）、`offset`（默认0）、`limit`（默认50，最大100）。返回 `items/total/has_more`，私海请求另返回 `okki_bound`；未绑定时空结果。每项含 `option_key`（customer:公司ID / contact:联系人ID）、`kind`、`company_id/company_name/country_name`；联系人项含 `contact_id/name/email/tel`。空关键词只浏览客户，有关键词并列匹配两类。先按镜像/手动同步 overlay 的最新归属合并，再在数据库内计数和分页，避免20条截断及全量载入。仅客户级搜索旧端点仍供价格配置等独立调用方使用。

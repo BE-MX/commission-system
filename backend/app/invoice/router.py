@@ -18,6 +18,7 @@ from app.core.response import ok
 from app.invoice import (
     accessory_price_service,
     customer_sync_service,
+    customer_picker_service,
     delegation_service,
     export_service,
     import_service,
@@ -174,6 +175,28 @@ def search_customers(
         db, keyword=keyword, limit=limit, owner_okki_id=owner_okki_id,
     )
     return ok(payload)
+
+
+@router.get("/customers/options", summary="Search invoice customers and contacts together")
+def search_customer_options(
+    keyword: str | None = Query(None, max_length=200),
+    private_only: bool = Query(True),
+    sales_user_id: int | None = Query(None, gt=0),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("invoice:write")),
+):
+    owner_okki_id = None
+    payload: dict = {}
+    if private_only:
+        owner_okki_id, bound = _resolve_private_owner(db, current_user, sales_user_id)
+        payload["okki_bound"] = bound
+        if not bound:
+            return ok({**payload, "items": [], "total": 0, "has_more": False})
+    return ok({**payload, **customer_picker_service.search_options(
+        db, keyword=keyword, owner_okki_id=owner_okki_id, offset=offset, limit=limit,
+    )})
 
 
 @router.get("/customers/contacts", summary="Search customers by contact name")

@@ -207,57 +207,38 @@
                 <div class="customer-filter-row">
                   <el-select
                     v-model="selectedCustomer"
-                    value-key="company_id"
+                    value-key="option_key"
                     filterable
                     remote
                     reserve-keyword
                     :remote-method="searchCustomers"
                     :loading="customerLoading"
-                    placeholder="输入客户名称/ID 搜索"
+                    placeholder="输入客户名称、ID 或联系人姓名"
                     class="customer-filter-select"
                     @change="onCustomerChange"
                   >
                     <el-option
                       v-for="customer in customerOptions"
-                      :key="customer.company_id"
-                      :label="customerLabel(customer)"
+                      :key="customer.option_key"
+                      :label="customerOptionLabel(customer)"
                       :value="customer"
                     />
+                    <template #footer>
+                      <span>共 {{ customerTotal }} 项匹配</span>
+                      <el-button v-if="customerHasMore" link type="primary" :loading="customerLoading" @click="loadMoreCustomers">
+                        加载更多
+                      </el-button>
+                    </template>
                   </el-select>
                   <el-checkbox v-permission="'invoice_private_filter:read'" v-model="privateOnlyCompany" class="customer-filter-check">仅私海</el-checkbox>
                 </div>
-                <InvoiceCustomerSyncEntry :on-select="selectSyncedCustomer" />
-                <div v-if="customerRule" class="rule-badge">该客户价格规则：{{ describeCustomerRule(customerRule) }}</div>
-              </el-form-item>
-              <el-form-item label="按联系人" class="span-3">
-                <div class="customer-filter-row">
-                  <el-select
-                    v-model="selectedContact"
-                    value-key="contact_id"
-                    filterable
-                    remote
-                    clearable
-                    reserve-keyword
-                    :remote-method="searchContacts"
-                    :loading="contactLoading"
-                    :placeholder="form.customer_id ? '搜索该客户的联系人' : '输入联系人姓名定位客户'"
-                    class="customer-filter-select"
-                    @change="onContactChange"
-                  >
-                    <el-option
-                      v-for="contact in contactOptions"
-                      :key="contact.contact_id"
-                      :label="contactLabel(contact)"
-                      :value="contact"
-                    />
-                  </el-select>
-                  <el-checkbox v-permission="'invoice_private_filter:read'" v-model="privateOnlyContact" class="customer-filter-check">仅私海</el-checkbox>
-                </div>
-                <div v-if="!okkiBound && (privateOnlyCompany || privateOnlyContact)" class="binding-helper">
+                <div v-if="!okkiBound && privateOnlyCompany" class="binding-helper">
                   {{ canTogglePrivate
                     ? '未绑定 OKKI，私海筛选无结果。请取消“仅私海”或前往外部账号绑定。'
                     : '未绑定 OKKI，暂无法搜索私海客户。请到 系统管理 → 外部账号绑定 处理。' }}
                 </div>
+                <InvoiceCustomerSyncEntry :on-select="selectSyncedCustomer" />
+                <div v-if="customerRule" class="rule-badge">该客户价格规则：{{ describeCustomerRule(customerRule) }}</div>
               </el-form-item>
               <el-form-item label="联系人" class="span-2">
                 <el-input v-model="form.contact_name" maxlength="100" placeholder="To" />
@@ -440,7 +421,8 @@ import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, Delete, Document, Download, Edit, Picture, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { EXPRESS_CHANNEL_OPTIONS, PAYMENT_METHOD_OPTIONS } from './composables/invoiceSettlement'
-import { contactLabel, customerLabel, describeCustomerRule, useInvoiceEditor } from './composables/useInvoiceEditor'
+import { customerOptionLabel } from './composables/useInvoiceCustomerSearch'
+import { describeCustomerRule, useInvoiceEditor } from './composables/useInvoiceEditor'
 import { useInvoiceManagePage } from './composables/useInvoiceManagePage'
 import InvoicePasteImport from './components/InvoicePasteImport.vue'
 import InvoiceCustomerSyncEntry from './components/InvoiceCustomerSyncEntry.vue'
@@ -460,13 +442,13 @@ const {
 } = page
 const {
   drawerVisible, customerLoading, customerOptions, salesUserOptions, selectedCustomer, customerRule,
-  contactLoading, contactOptions, selectedContact, privateOnlyCompany, privateOnlyContact,
+  customerTotal, customerHasMore, loadMoreCustomers, privateOnlyCompany,
   canTogglePrivate, okkiBound, invoiceNoTaken, entryOptions, form, hairItems, accessoryItems,
   saveAndSyncSubmitting,
   accessoryOptions, accessoryLoading, formHairPrice, formLineDiscountTotal, formAccessoryAmount,
   formAccessoryDiscount, formBaseAmount, formTotal, lastOrderDate, settlementError, isProduction,
-  searchCustomers, searchContacts, selectSyncedCustomer,
-  onCustomerChange, onSalesUserChange, onCurrencyChange, onContactChange, onInvoiceNoInput, onInvoiceNoBlur, openCreate, openEdit,
+  searchCustomers, selectSyncedCustomer,
+  onCustomerChange, onSalesUserChange, onCurrencyChange,  onInvoiceNoInput, onInvoiceNoBlur, openCreate, openEdit,
   applyScreenshotPreview,
   addLine, addAccessory, selectAccessory, removeAccessory, searchAccessoryOptions,
   updateAccessoryTotal, removeLine, loadLineOptions, onLineFilterChange, onCustomFieldChange,

@@ -21,6 +21,10 @@ export function searchInvoiceCustomers(params) {
   return unwrap(request.get('/customers/search', { params, showLoading: false }))
 }
 
+export function searchInvoiceCustomerOptions(params) {
+  return unwrap(request.get('/customers/options', { params, showLoading: false }))
+}
+
 // 搜索不到客户时（OKKI 镜像同步延迟），按公司名从 OKKI 拉取该客户最新资料（含负责人）
 export function syncInvoiceCustomerFromOkki(data) {
   return unwrap(request.post('/customers/sync-from-okki', data, { loadingText: '正在从 OKKI 同步客户...' }))
