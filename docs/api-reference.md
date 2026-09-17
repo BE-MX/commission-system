@@ -1,6 +1,6 @@
 # 莱莎方舟 API 参考
 
-## 回款管理（2026-09-17，本地实现，迁移 156 后可用）
+## 回款管理（2026-09-17，应用及迁移156已发布，小满发送未启用）
 
 前缀 `/api/receipts`，登录认证、标准 `ok()` 信封。数据范围沿用订单归属/代理授权；`receipt:read_all` 可看全部。详见[实现说明](requirements/2026-09-17-receipt-management-implementation.md)。
 

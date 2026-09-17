@@ -4,21 +4,25 @@
 
 ## 快速开始
 
-1. **首次部署** → 阅读 [runbook.md](runbook.md) 的「环境准备」和「首次部署」章节
+1. **开发/发布** → 开发先读根目录[README](../README.md)；生产以[deploy/README.md](../deploy/README.md)为唯一发布流程入口，运维手册补充排障
 2. **日常运维** → 阅读 [runbook.md](runbook.md) 的「常见问题」和「健康检查」章节
 3. **接入方舟 API** → 阅读 [integration-guide.md](integration-guide.md)
 4. **了解架构** → 阅读 [architecture.md](architecture.md)
 
 ## 文档清单
 
+完整枚举见[文档目录](document-catalog.md)；本页只保留常用入口。日期型设计、计划和验收报告代表当时范围，不自动代表当前生产状态。当前状态查[交接文档](handoff.md)，历史追溯查[归档交接](archive/handoff-2026-09-17.md)。
+
 | 文档 | 用途 | 适合谁 |
 |------|------|--------|
-| [architecture.md](architecture.md) | 系统架构、数据库表结构、核心模块说明 | 技术接手人、新后端开发 |
+| [architecture.md](architecture.md) | 系统架构、数据流、鉴权边界与已核验拓扑 | 技术接手人、新后端开发 |
 | [api-reference.md](api-reference.md) | 全模块 API 端点清单（新端点同步更新） | 前后端开发、AI 协作 |
 | [database.md](database.md) | 数据库表结构清单（新表同步更新） | 后端开发、DBA |
 | [module-notes.md](module-notes.md) | 模块专题笔记 + 各模块已踩坑 | 改对应模块前必读 |
 | [integration-guide.md](integration-guide.md) | API 接入指南、认证方式、错误码、示例代码 | 下游系统开发者、外部集成 |
-| [runbook.md](runbook.md) | 部署步骤、运维命令、故障排查、环境变量清单 | 运维人员、项目交接 |
+| [runbook.md](runbook.md) | 环境准备、故障排查、备份与专题维护条件 | 运维人员、项目交接 |
+| [部署说明](../deploy/README.md) | 发布、迁移、停写和恢复的唯一执行流程 | 发布执行者 |
+| [记忆说明](memory/README.md) | 既有领域笔记与共享记忆边界 | AI协作、知识维护 |
 | [全平台部署调整方案（2026-09-05）](requirements/2026-09-05-deployment-adjustment-plan.md) | 本地/北京/新加坡/COS 盘点、海外实测、域名规划与全平台增量发布方案（部分已实施，见实施记录） | 技术负责人、运维 |
 | [部署调整实施记录（2026-09-05）](requirements/2026-09-05-deployment-adjustment-implementation.md) | 实际上线、增量发布验证、暂缓 COS 与办公室/DNS 待办 | 技术负责人、运维 |
 | [handoff.md](handoff.md) | 项目状态、已完成功能、待办清单、技术债务 | 项目交接、管理层 |
@@ -43,12 +47,12 @@
 
 - **后端**：Python 3.12 + FastAPI + SQLAlchemy 2.0 + Alembic
 - **前端**：Vue 3 + Element Plus + Vite 5
-- **数据库**：腾讯云 RDS MySQL（提成库 `commission_db` 读写 + 业务库 `lsordertest` 只读）
+- **数据库**：腾讯云RDS MySQL；`commission_db`业务DML，`lsordertest`默认只读，受审计回款日期修复为明确列级例外。完整账号边界见[运维手册](runbook.md)。
 - **部署**：Windows Server + NSSM + 腾讯云 Nginx 反代
 
 ## 联系方式
 
 - **项目负责人**：亮哥（莱莎发制品 AI 技术支持部）
 - **代码仓库**：内部 Git 仓库
-- **生产环境**：https://leshine.work（腾讯云 Nginx 119.28.107.92 → 本地 Windows Server 8002）
+- **生产入口**：[leshine.work](https://leshine.work)走新加坡→办公室，[leshine.cloud](https://leshine.cloud)走北京；专题路由例外以[架构说明](architecture.md)和实际部署配置为准。
   - ⚠️ 线上代码不等于仓库当前代码：「已合入 main」不等于「已部署」，部署只走办公室服务器的 `deploy\deploy.bat`。最新发布状态与探测结果见 [handoff.md](handoff.md) 顶部提醒

@@ -45,6 +45,8 @@ deploy\deploy.bat --shipping-video-routing-only
 
 ## 数据库
 
+2026-09-17 公告/回款已由固定候选dab19815完成155/156生产迁移，详见[发布记录](../docs/reports/2026-09-17-receipt-release-fix.md)。该候选补充了新加坡出库timer的暂停、排空与恢复；当前main尚未合入此部署器修复，不能把main中的旧writer阻断开关直接改成true重跑。集成待办见[交接文档](../docs/handoff.md)。
+
 办公室与北京共享 `commission_db`，每次发布都读数据库 revision，并检查发布代码的唯一 head 和迁移链。数据库已到目标则跳过 DDL；未知 revision、数据库领先、分叉均阻断。不会复制、覆盖或 downgrade 数据库。
 
 有待执行迁移时，必须核实 `platforms.json` 中所有 writer 的归属。2026-09-07 已按生产连接与进程核实并登记办公室 `CommissionSystem` / `WhatsAppConnector`、北京 `ark-backend`、新加坡 PM2 `shipment-tracking-mcp`；PM2 只控制该进程，不操作整个 PM2 管理器。新增或迁移写入实例后必须重新核实清单，不能沿用旧确认。数据库 revision 每次读取，不使用历史版本号推断是否有 DDL。
