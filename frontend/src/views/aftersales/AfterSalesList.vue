@@ -65,7 +65,7 @@
         <el-table-column prop="creator_name_snapshot" label="业务员" min-width="100" max-width="150" show-overflow-tooltip />
         <el-table-column prop="current_owner_name" label="当前责任人" min-width="110" max-width="160" show-overflow-tooltip><template #default="{ row }">{{ row.current_owner_name || '—' }}</template></el-table-column>
         <el-table-column label="等待时长" min-width="100" max-width="130"><template #default="{ row }"><span class="tabular">{{ row.waiting_hours }}h</span></template></el-table-column>
-        <el-table-column label="操作" min-width="100" max-width="130" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="100" max-width="130" fixed="right">
           <template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="openCase(row)">查看</GlassButton></template>
         </el-table-column>
       </el-table>

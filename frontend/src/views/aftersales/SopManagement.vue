@@ -18,7 +18,7 @@
         <el-table-column label="解析状态" min-width="100" max-width="140"><template #default="{ row }"><el-tag :type="row.parse_status === 'parsed' ? 'success' : 'warning'" effect="plain">{{ row.parse_status }}</el-tag></template></el-table-column>
         <el-table-column label="生效状态" min-width="100" max-width="140"><template #default="{ row }"><el-tag :type="row.is_active ? 'success' : 'info'" effect="plain">{{ row.is_active ? '当前生效' : '未生效' }}</el-tag></template></el-table-column>
         <el-table-column prop="effective_date" label="生效日期" min-width="120" max-width="160" />
-        <el-table-column label="操作" min-width="180" max-width="240" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="preview(row)">查看解析</GlassButton><GlassButton v-if="!row.is_active" v-permission="'aftersales:admin'" variant="link" link-tone="success" left-icon="CircleCheck" @click="activate(row)">启用</GlassButton></template></el-table-column>
+        <el-table-column class-name="table-action-column" label="操作" min-width="180" max-width="240" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="preview(row)">查看解析</GlassButton><GlassButton v-if="!row.is_active" v-permission="'aftersales:admin'" variant="link" link-tone="success" left-icon="CircleCheck" @click="activate(row)">启用</GlassButton></template></el-table-column>
       </el-table>
     </div>
 

@@ -8,7 +8,7 @@
       <el-table-column prop="scope_label" label="开发方向" min-width="160" show-overflow-tooltip />
       <el-table-column label="目标匹配分" min-width="120"><template #default="{ row }">{{ row.match_score ?? '未评估' }}</template></el-table-column>
       <el-table-column label="研究更新" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.updated_at, { seconds: false }) }}</template></el-table-column>
-      <el-table-column label="操作" min-width="150" max-width="180" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="inspect(row)">{{ row.can_review ? '审阅并决定' : '查看受限原因' }}</GlassButton></template></el-table-column>
+      <el-table-column class-name="table-action-column" label="操作" min-width="150" max-width="180" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="inspect(row)">{{ row.can_review ? '审阅并决定' : '查看受限原因' }}</GlassButton></template></el-table-column>
       <template #empty>当前没有待做资格判断的客户；已决定或未到重评时间的客户不会重复出现。</template>
     </el-table></div>
     <el-pagination v-model:current-page="page" :page-size="pageSize" :total="total" layout="total, prev, pager, next" @current-change="handlePageChange" />

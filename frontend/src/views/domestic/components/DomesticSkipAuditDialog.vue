@@ -26,7 +26,7 @@
           <el-tag v-else size="small" type="warning" effect="plain">有效</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" min-width="90">
+      <el-table-column class-name="table-action-column" label="操作" min-width="90">
         <template #default="{ row: audit }">
           <GlassButton
             v-if="!audit.revoked" v-permission="'domestic:admin'"

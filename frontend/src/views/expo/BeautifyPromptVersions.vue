@@ -13,7 +13,7 @@
         <el-table-column prop="revision" label="修订" min-width="80" />
         <el-table-column label="发布时间" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.published_at) || '—' }}</template></el-table-column>
         <el-table-column label="最后更新" min-width="170"><template #default="{ row }">{{ formatBeijingDateTime(row.updated_at) }}</template></el-table-column>
-        <el-table-column label="操作" min-width="270" fixed="right"><template #default="{ row }">
+        <el-table-column class-name="table-action-column" label="操作" min-width="270" fixed="right"><template #default="{ row }">
           <GlassButton variant="link" @click="openVersion(row.id)">查看{{ row.status === 'draft' ? ' / 编辑' : '' }}</GlassButton>
           <GlassButton variant="link" @click="copyVersion(row.id)">复制草稿</GlassButton>
           <GlassButton v-if="row.status === 'draft'" variant="link" :disabled="busy" @click="publish(row)">发布</GlassButton>

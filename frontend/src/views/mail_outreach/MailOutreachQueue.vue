@@ -44,7 +44,7 @@
         <el-table-column label="顺延次数" min-width="100">
           <template #default="{ row }">{{ row.reschedule_count ?? 0 }}</template>
         </el-table-column>
-        <el-table-column label="操作" min-width="110" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="110" fixed="right">
           <template #default="{ row }">
             <GlassButton v-any-permission="['mail_outreach:write','mail_outreach:admin']" variant="link" link-tone="danger"
               :disabled="!isCancellable(row)" @click="cancel(row)">撤销</GlassButton>

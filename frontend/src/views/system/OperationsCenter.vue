@@ -136,7 +136,7 @@
         <el-table-column label="最近状态" min-width="115">
           <template #default="{ row }"><el-tag :type="jobStatusType(row.last_status)" effect="plain" round>{{ jobStatusLabel(row.last_status) }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="操作" min-width="230" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">
           <template #default="{ row }">
             <template v-if="row.registered">
               <el-button v-permission="'operations:admin'" link type="primary" :disabled="row.paused || Boolean(actionJobId)" :loading="actionJobId === row.id" @click="operateJob(row, 'run')"><el-icon><VideoPlay /></el-icon>立即执行</el-button>

@@ -60,7 +60,7 @@
             <span v-else>{{ row.reviewed_by_name || '—' }} · {{ row.reviewed_at || '' }}<template v-if="row.review_remark"> · {{ row.review_remark }}</template></span>
           </template>
         </el-table-column>
-        <el-table-column v-if="canReview" label="操作" min-width="150" fixed="right">
+        <el-table-column class-name="table-action-column" v-if="canReview" label="操作" min-width="150" fixed="right">
           <template #default="{ row }">
             <template v-if="row.status === 'pending' && canReviewRow(row)">
               <el-link type="success" :disabled="reviewingIds.has(row.id)" @click="handleApprove(row)">通过</el-link>

@@ -58,7 +58,7 @@
           {{ sourceLabel(row.source) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" min-width="180" fixed="right">
+      <el-table-column class-name="table-action-column" label="操作" min-width="180" fixed="right">
         <template #default="{ row }">
           <el-button @click="openDetail(row)">详情</el-button>
           <el-button v-if="canWrite" type="primary" @click="openEdit(row)">编辑</el-button>

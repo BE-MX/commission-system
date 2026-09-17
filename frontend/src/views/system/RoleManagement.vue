@@ -28,7 +28,7 @@
       <el-table-column prop="user_count" label="用户数" min-width="80" max-width="120" show-overflow-tooltip sortable />
       <el-table-column prop="permission_count" label="权限数" min-width="80" max-width="120" show-overflow-tooltip sortable />
       <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip sortable />
-      <el-table-column label="操作" min-width="220" max-width="300" fixed="right">
+      <el-table-column class-name="table-action-column" label="操作" min-width="220" max-width="300" fixed="right">
         <template #default="{ row }">
           <GlassButton v-permission="'role:write'" variant="link" :disabled="row.name === 'super_admin'" @click="openEditDialog(row)" left-icon="Edit">
             编辑

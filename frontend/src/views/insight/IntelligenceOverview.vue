@@ -125,7 +125,7 @@
             <el-tag :type="row.is_active ? 'success' : 'info'" size="small">{{ row.is_active ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="120">
+        <el-table-column class-name="table-action-column" label="操作" min-width="120">
           <template #default="{ row }">
             <el-button link @click="toggleRule(row.id)">{{ row.is_active ? '停用' : '启用' }}</el-button>
           </template>

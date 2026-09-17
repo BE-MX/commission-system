@@ -47,7 +47,7 @@
         <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ row.remark || '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" min-width="280" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="280" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">查看</GlassButton>
             <GlassButton variant="link" left-icon="Download" :loading="downloading" @click="downloadPdf(row)">下载 PDF</GlassButton>

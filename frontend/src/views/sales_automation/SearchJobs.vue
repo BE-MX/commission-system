@@ -44,7 +44,7 @@
             <span v-else class="muted">{{ resultText(row) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="110" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="110" fixed="right">
           <template #default="{ row }">
             <GlassButton
               v-if="row.status === 'failed'"

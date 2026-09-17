@@ -47,7 +47,7 @@
                 <el-tag v-else size="small" type="success" effect="plain">现行</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" min-width="100" fixed="right">
+            <el-table-column class-name="table-action-column" label="操作" min-width="100" fixed="right">
               <template #default="{ row }">
                 <GlassButton v-permission="'salary:write'" variant="link" left-icon="Edit" @click="openGrade(row)">编辑</GlassButton>
               </template>
@@ -76,7 +76,7 @@
               </template>
             </el-table-column>
             <el-table-column prop="effective_from" label="生效日" min-width="110" />
-            <el-table-column label="操作" min-width="150" fixed="right">
+            <el-table-column class-name="table-action-column" label="操作" min-width="150" fixed="right">
               <template #default="{ row }">
                 <template v-if="editingParamId === row.id">
                   <GlassButton variant="link" left-icon="Check" @click="saveParam(row)">保存</GlassButton>
@@ -108,7 +108,7 @@
               <template #default="{ row }"><el-tag size="small" effect="plain">{{ row.dept_group }}</el-tag></template>
             </el-table-column>
             <el-table-column prop="sort_order" label="排序" min-width="80" sortable />
-            <el-table-column label="操作" min-width="100" fixed="right">
+            <el-table-column class-name="table-action-column" label="操作" min-width="100" fixed="right">
               <template #default="{ row }">
                 <GlassButton v-permission="'salary:write'" variant="link" left-icon="Edit" @click="openDept(row)">编辑</GlassButton>
               </template>

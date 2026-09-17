@@ -71,7 +71,7 @@
               <el-table-column label="行业判定" min-width="115"><template #default="{ row }"><el-tag v-if="row.assessment" :type="relevanceMeta(row.assessment.industry_relevance).type" effect="plain">{{ relevanceMeta(row.assessment.industry_relevance).label }}</el-tag><span v-else>-</span></template></el-table-column>
               <el-table-column label="证据置信度" min-width="115"><template #default="{ row }">{{ confidenceLabel(row.assessment?.evidence_confidence) }}</template></el-table-column>
               <el-table-column label="团队分配" min-width="125"><template #default="{ row }"><el-tag :type="allocationMeta(row).type" effect="plain">{{ allocationMeta(row).label }}</el-tag></template></el-table-column>
-              <el-table-column label="操作" min-width="230" fixed="right">
+              <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">
                 <template #default="{ row }">
                   <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
                   <template v-if="row.status === 'completed' && row.review_status === 'pending'">

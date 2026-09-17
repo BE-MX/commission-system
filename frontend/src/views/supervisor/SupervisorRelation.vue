@@ -30,7 +30,7 @@
       <el-table-column prop="second_supervisor_id" label="二级主管ID" min-width="200" max-width="300" show-overflow-tooltip />
       <el-table-column prop="second_supervisor_name" label="二级主管姓名" min-width="140" max-width="210" show-overflow-tooltip />
       <el-table-column prop="effective_start" label="生效日期" min-width="120" max-width="180" show-overflow-tooltip sortable="custom" />
-      <el-table-column label="操作" min-width="160" max-width="240">
+      <el-table-column class-name="table-action-column" label="操作" min-width="160" max-width="240">
         <template #default="{ row }">
           <GlassButton v-permission="'supervisor:write'" variant="link" left-icon="Edit" @click="openSetDialog(row)">变更主管</GlassButton>
           <GlassButton variant="link" left-icon="Clock" @click="openHistory(row)">查看历史</GlassButton>

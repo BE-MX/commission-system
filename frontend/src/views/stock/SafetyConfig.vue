@@ -168,9 +168,9 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="160" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="160" fixed="right">
           <template #default="{ row }">
-            <div class="action-btns">
+            <div class="table-actions">
               <el-button type="warning" plain @click="aiGenerateSingle(row)" :loading="row.aiLoading" v-if="authStore.hasPermission('stock:write')">AI</el-button>
               <el-button type="primary" plain @click="openProductionDialog(row)" v-if="authStore.hasPermission('production:write')">
                 <el-icon><Plus /></el-icon> 生产下单
@@ -252,7 +252,7 @@
                 <el-input v-model="row.remark" size="small" placeholder="备注" @blur="handleCartRemarkChange(row)" />
               </template>
             </el-table-column>
-            <el-table-column label="操作" min-width="60">
+            <el-table-column class-name="table-action-column" label="操作" min-width="60">
               <template #default="{ row }">
                 <el-button type="danger" link @click="removeCartItem(row.id)">
                   <el-icon><Delete /></el-icon>
@@ -315,7 +315,7 @@
           </el-tag>
         </div>
         <el-table v-if="(currentStockStatusRow.stock_items || []).length > 0" :data="currentStockStatusRow.stock_items || []" size="small" style="width:100%" border class="list-table">
-          <el-table-column label="操作" min-width="70">
+          <el-table-column class-name="table-action-column" label="操作" min-width="70">
             <template #default="{ row }">
               <el-button link type="success" @click="openProgressDialog(row)">进度</el-button>
             </template>

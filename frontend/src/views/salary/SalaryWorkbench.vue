@@ -100,7 +100,7 @@
           <el-table-column prop="message" label="问题" min-width="260" show-overflow-tooltip />
           <!-- 每条异常都带 action：只报告问题不给下一步，等于把活推回给用户 -->
           <el-table-column prop="action" label="怎么处理" min-width="280" show-overflow-tooltip />
-          <el-table-column label="操作" min-width="100" fixed="right">
+          <el-table-column class-name="table-action-column" label="操作" min-width="100" fixed="right">
             <template #default="{ row }">
               <!-- 记录级异常的处理场所在明细表（action 文案也这么写），其余去考勤页 -->
               <el-button v-if="row.employee_id" link type="primary"
@@ -231,7 +231,7 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" min-width="80" fixed="right">
+            <el-table-column class-name="table-action-column" label="操作" min-width="80" fixed="right">
               <template #default="{ row }">
                 <el-button v-if="writable" v-permission="'salary:write'" link type="primary"
                            @click="openEditAttendance(row)">录入</el-button>

@@ -20,7 +20,7 @@
         <el-table-column prop="failures" label="失败 / 未知" min-width="110" />
         <el-table-column label="并发占用" min-width="160"><template #default="{ row }">{{ row.occupied }} / {{ row.concurrency_limit }}<el-tag v-if="row.needs_review" type="warning" effect="plain">{{ row.needs_review }} 条待核查</el-tag></template></el-table-column>
         <el-table-column label="最近调用" min-width="170"><template #default="{ row }">{{ formatDateTime(row.last_used_at) || '尚未调用' }}</template></el-table-column>
-        <el-table-column label="操作" min-width="300" :fixed="isNarrow ? false : 'right'">
+        <el-table-column class-name="table-action-column" label="操作" min-width="300" :fixed="isNarrow ? false : 'right'">
           <template #default="{ row }">
             <GlassButton v-permission="'ai:admin'" variant="link" @click="openEditor(row)">编辑</GlassButton>
             <GlassButton v-permission="'ai:admin'" variant="link" @click="showRequests(row)">调用记录</GlassButton>
@@ -79,7 +79,7 @@
         <el-table-column label="输入 / 输出" min-width="130"><template #default="{ row }">{{ row.tokens_prompt ?? '未知' }} / {{ row.tokens_completion ?? '未知' }}</template></el-table-column>
         <el-table-column prop="error_code" label="错误分类" min-width="160" />
         <el-table-column prop="resolution_reason" label="核查结论" min-width="180" show-overflow-tooltip />
-        <el-table-column label="处理" min-width="130" :fixed="isNarrow ? false : 'right'"><template #default="{ row }"><GlassButton v-if="row.can_resolve" v-permission="'ai:admin'" variant="link" @click="openResolution(row)">解除占用</GlassButton></template></el-table-column>
+        <el-table-column class-name="table-action-column" label="处理" min-width="130" :fixed="isNarrow ? false : 'right'"><template #default="{ row }"><GlassButton v-if="row.can_resolve" v-permission="'ai:admin'" variant="link" @click="openResolution(row)">解除占用</GlassButton></template></el-table-column>
       </el-table>
       <el-pagination :current-page="requests.page.value" :page-size="requests.pageSize.value" :total="requests.total.value" layout="total, prev, pager, next" @current-change="requests.handlePageChange" />
     </DetailDrawer>

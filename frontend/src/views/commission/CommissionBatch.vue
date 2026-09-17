@@ -60,7 +60,7 @@
       </el-table-column>
       <el-table-column prop="feedback_count" label="反馈数" min-width="80" max-width="120" align="right" />
       <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip sortable="custom" />
-      <el-table-column label="操作" min-width="280" max-width="420" fixed="right">
+      <el-table-column class-name="table-action-column" label="操作" min-width="280" max-width="420" fixed="right">
         <template #default="{ row }">
           <!-- 草稿 -->
           <template v-if="row.status === 'draft'">

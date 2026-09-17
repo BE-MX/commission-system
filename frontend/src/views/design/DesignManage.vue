@@ -70,7 +70,7 @@
             </template>
           </el-table-column>
           <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
-          <el-table-column label="操作" min-width="180" max-width="260" fixed="right">
+          <el-table-column class-name="table-action-column" label="操作" min-width="180" max-width="260" fixed="right">
             <template #default="{ row }">
               <GlassButton variant="link" left-icon="View" @click="openDetail(row.id)">详情</GlassButton>
               <GlassButton variant="link" left-icon="Calendar" @click="openConfirmDialog(row)">确认排期</GlassButton>
@@ -171,7 +171,7 @@
             </template>
           </el-table-column>
           <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
-          <el-table-column label="操作" min-width="260" max-width="380" fixed="right">
+          <el-table-column class-name="table-action-column" label="操作" min-width="260" max-width="380" fixed="right">
             <template #default="{ row }">
               <GlassButton variant="link" left-icon="View" @click="openDetail(row.request_id)">详情</GlassButton>
               <GlassButton
@@ -254,7 +254,7 @@
             </template>
           </el-table-column>
           <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
-          <el-table-column label="操作" min-width="100" max-width="150" fixed="right">
+          <el-table-column class-name="table-action-column" label="操作" min-width="100" max-width="150" fixed="right">
             <template #default="{ row }">
               <GlassButton variant="link" left-icon="View" @click="openDetail(row.request_id)">详情</GlassButton>
             </template>
@@ -297,7 +297,7 @@
             </template>
           </el-table-column>
           <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
-          <el-table-column label="操作" min-width="150" max-width="230" fixed="right">
+          <el-table-column class-name="table-action-column" label="操作" min-width="150" max-width="230" fixed="right">
             <template #default="{ row }">
               <GlassButton variant="link" left-icon="Edit" @click="openDesignerDialog(row)">编辑</GlassButton>
               <GlassButton

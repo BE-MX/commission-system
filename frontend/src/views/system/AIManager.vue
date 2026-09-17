@@ -88,7 +88,7 @@
               <el-switch v-model="row.is_enabled" @change="toggleProvider(row)" />
             </template>
           </el-table-column>
-          <el-table-column label="操作" min-width="200" fixed="right">
+          <el-table-column class-name="table-action-column" label="操作" min-width="200" fixed="right">
             <template #default="{ row }">
               <el-button link type="primary" :loading="testingId === row.id" @click="handleTestProvider(row)">
                 <el-icon><Lightning /></el-icon> 测试
@@ -146,7 +146,7 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" min-width="240" fixed="right">
+          <el-table-column class-name="table-action-column" label="操作" min-width="240" fixed="right">
             <template #default="{ row }">
               <el-button link type="primary" @click="openTestPreset(row)">
                 <el-icon><VideoPlay /></el-icon> 测试

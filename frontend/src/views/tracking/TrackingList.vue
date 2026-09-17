@@ -155,7 +155,7 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" min-width="130" max-width="180" fixed="right">
+      <el-table-column class-name="table-action-column" label="操作" min-width="130" max-width="180" fixed="right">
         <template #default="{ row }">
           <GlassButton v-permission="'tracking:write'" variant="link" left-icon="Refresh" @click="handleRefresh(row)">
             刷新

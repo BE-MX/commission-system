@@ -106,7 +106,7 @@
           <el-table-column label="不计汇总" min-width="105">
             <template #default="{ row }"><el-switch v-model="row.exclude_from_total" /></template>
           </el-table-column>
-          <el-table-column label="操作" min-width="70">
+          <el-table-column class-name="table-action-column" label="操作" min-width="70">
             <template #default="{ row }">
               <GlassButton
                 variant="link"

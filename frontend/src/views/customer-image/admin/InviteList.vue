@@ -29,7 +29,7 @@
           <el-tag :type="statusOf(row).type" effect="plain">{{ statusOf(row).label }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column v-if="canWrite" label="操作" min-width="100" fixed="right">
+      <el-table-column class-name="table-action-column" v-if="canWrite" label="操作" min-width="100" fixed="right">
         <template #default="{ row }">
           <GlassButton
             v-if="!row.revoked_at"

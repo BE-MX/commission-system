@@ -36,7 +36,7 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column v-if="canAdmin" label="操作" min-width="250" fixed="right">
+      <el-table-column class-name="table-action-column" v-if="canAdmin" label="操作" min-width="250" fixed="right">
         <template #default="{ row }">
           <GlassButton v-permission="'customer_image:admin'" variant="link" @click="openEditor(row)">编辑</GlassButton>
           <GlassButton

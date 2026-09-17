@@ -32,7 +32,7 @@
           <el-table-column prop="browser_name" label="浏览器" min-width="100" />
           <el-table-column prop="extension_version" label="扩展版本" min-width="90" />
           <el-table-column prop="expires_at" label="有效期" min-width="130" />
-          <el-table-column label="操作" min-width="90">
+          <el-table-column class-name="table-action-column" label="操作" min-width="90">
             <template #default="{ row }">
               <el-button link type="danger" @click="revoke(row.device_id)">撤销</el-button>
             </template>

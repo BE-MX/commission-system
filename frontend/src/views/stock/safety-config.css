@@ -77,7 +77,6 @@
 .avg-daily { font-weight: 500; color: #d4af6e; }
 .pagination-bar { margin-top: 16px; display: flex; justify-content: flex-end; }
 
-.action-btns { display: flex; gap: 4px; justify-content: center; }
 
 .ai-dialog-content { padding: 10px 0; }
 .ai-product-info { text-align: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #eee; }

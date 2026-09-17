@@ -85,7 +85,7 @@
         <el-table-column label="TotalPrice" min-width="100" max-width="140" align="right">
           <template #default="{ row }">{{ money(row.total_price) }}</template>
         </el-table-column>
-        <el-table-column label="操作" min-width="64" max-width="80" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="64" max-width="80" fixed="right">
           <template #default="{ row }">
             <el-button link type="danger" aria-label="删除配件" @click="$emit('remove', row)">
               <el-icon><Delete /></el-icon>

@@ -46,7 +46,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="created_at" label="创建时间" min-width="150" show-overflow-tooltip />
-        <el-table-column label="操作" min-width="220" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="220" fixed="right">
           <template #default="{ row }">
             <GlassButton v-any-permission="['expo_store:admin', 'expo_store:recharge']" variant="link" left-icon="Coin" @click="openQuota(row)">额度</GlassButton>
             <GlassButton v-permission="'expo_store:admin'" variant="link" left-icon="User" @click="openUsers(row)">人员</GlassButton>
@@ -114,7 +114,7 @@
             <span v-else class="muted">导购</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="80">
+        <el-table-column class-name="table-action-column" label="操作" min-width="80">
           <template #default="{ row }">
             <GlassButton variant="link" link-tone="danger" left-icon="Close" @click="handleUnbind(row)">解绑</GlassButton>
           </template>

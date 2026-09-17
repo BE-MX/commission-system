@@ -46,7 +46,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="last_login_at" label="最后登录" min-width="170" max-width="260" show-overflow-tooltip sortable="custom" />
-      <el-table-column label="操作" min-width="340" max-width="480" fixed="right">
+      <el-table-column class-name="table-action-column" label="操作" min-width="340" max-width="480" fixed="right">
         <template #default="{ row }">
           <GlassButton v-permission="'user:write'" variant="link" left-icon="Edit" @click="openEditDialog(row)">编辑</GlassButton>
           <GlassButton variant="link" left-icon="Lock" @click="openPermPreview(row)">权限</GlassButton>

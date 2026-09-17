@@ -46,7 +46,7 @@
         <el-table-column label="创建时间" min-width="160" max-width="240">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" min-width="240" max-width="360" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="240" max-width="360" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="Edit" @click="openForm(row)">编辑</GlassButton>
             <GlassButton variant="link" :link-tone="row.status === 1 ? 'warning' : 'success'" left-icon="SwitchButton" @click="toggleStatus(row)">

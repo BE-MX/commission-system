@@ -51,7 +51,7 @@
         </el-table-column>
         <el-table-column prop="next_action" label="下一步动作" min-width="150" show-overflow-tooltip />
         <el-table-column prop="created_at" label="登记时间" min-width="150" show-overflow-tooltip />
-        <el-table-column label="操作" min-width="140" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="140" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
             <GlassButton v-permission="'expo:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>

@@ -47,7 +47,7 @@
           <template #default="{ row }">{{ formatTime(row.first_seen_at) }}</template>
         </el-table-column>
         <el-table-column label="出现次数" prop="seen_count" min-width="90" max-width="135" />
-        <el-table-column label="操作" min-width="200" max-width="300" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="200" max-width="300" fixed="right">
           <template #default="{ row }">
             <template v-if="row.candidate_status === 'pending'">
               <GlassButton v-permission="'external_binding:write'" variant="link" left-icon="Connection" @click="openBindDialog(row)">绑定用户</GlassButton>

@@ -99,7 +99,7 @@
           <el-table-column label="差额" min-width="100" align="right">
             <template #default="{ row }">{{ nullableMoney(row.price_difference) }}</template>
           </el-table-column>
-          <el-table-column label="匹配结果 / 处理" min-width="290" fixed="right">
+          <el-table-column class-name="table-action-column" label="匹配结果 / 处理" min-width="290" fixed="right">
             <template #default="{ row }">
               <div class="resolution-cell">
                 <template v-if="row.candidates?.length">

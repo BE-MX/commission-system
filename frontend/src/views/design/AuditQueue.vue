@@ -90,7 +90,7 @@
           <span v-else class="text-muted">-</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" min-width="210" max-width="300" fixed="right">
+      <el-table-column class-name="table-action-column" label="操作" min-width="210" max-width="300" fixed="right">
         <template #default="{ row }">
           <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
           <GlassButton variant="link" link-tone="success" left-icon="CircleCheck" @click="handleApprove(row)">通过</GlassButton>

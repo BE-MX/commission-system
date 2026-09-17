@@ -116,7 +116,7 @@
       <table class="list-table">
         <thead>
           <tr>
-            <th>任务</th><th>状态</th><th>负责人</th><th>截止</th><th>Phase</th><th>关联资料</th><th></th>
+            <th>任务</th><th>状态</th><th>负责人</th><th>截止</th><th>Phase</th><th>关联资料</th><th>操作</th>
           </tr>
         </thead>
         <tbody>
@@ -128,7 +128,9 @@
             <td class="mono">{{ task.phase ? `P${task.phase}` : '—' }}</td>
             <td class="cell-mats">{{ task.materials.map((m) => m.name).join('、') || '—' }}</td>
             <td class="cell-actions">
+              <div class="table-actions">
               <button class="btn btn-sm btn-ghost btn-danger" type="button" @click.stop="askDelete(task)">删除</button>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -369,7 +371,8 @@ function askDelete(task) {
 }
 .blocked-form .input { padding: 5px 8px; font-size: 12.5px; }
 
-.list-table { width: 100%; border-collapse: collapse; background: var(--paper-raised); border: 1px solid var(--hairline-strong); }
+.list { max-width: 100%; overflow-x: auto; }
+.list-table { width: 100%; min-width: 680px; border-collapse: collapse; background: var(--paper-raised); border: 1px solid var(--hairline-strong); }
 .list-table th {
   text-align: left;
   font-size: 11.5px;
@@ -388,7 +391,9 @@ function askDelete(task) {
 }
 .cell-title { font-weight: 600; }
 .cell-mats { color: var(--ink-3); font-size: 12px; max-width: 220px; }
-.cell-actions { text-align: right; }
+.cell-actions { min-width: 80px; }
+.table-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.table-actions .btn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 
 @media (max-width: 1000px) {
   .board { grid-template-columns: repeat(2, 1fr); }

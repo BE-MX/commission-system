@@ -88,7 +88,7 @@
             <span class="stat-item muted">阅 {{ row.view_count }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="200" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="200" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click.stop="openDetail(row)">查看</GlassButton>
             <GlassButton

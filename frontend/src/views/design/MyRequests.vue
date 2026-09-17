@@ -124,7 +124,7 @@
         <template #default="{ row }">{{ row.remark || '-' }}</template>
       </el-table-column>
       <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
-      <el-table-column label="操作" min-width="160" max-width="240" fixed="right">
+      <el-table-column class-name="table-action-column" label="操作" min-width="160" max-width="240" fixed="right">
         <template #default="{ row }">
           <GlassButton variant="link" left-icon="View" @click="toggleDetail(row)">详情</GlassButton>
           <GlassButton

@@ -102,7 +102,7 @@
         <el-table-column prop="updated_at" label="更新时间" min-width="170" max-width="255" sortable="custom" show-overflow-tooltip>
           <template #default="{ row }">{{ formatDate(row.updated_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" min-width="200" max-width="300" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="200" max-width="300" fixed="right">
           <template #default="{ row }">
             <router-link :to="`/governance/concepts/${row.id}`" style="text-decoration: none;">
               <GlassButton variant="link" left-icon="View">查看</GlassButton>
