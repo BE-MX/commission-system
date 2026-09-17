@@ -1,5 +1,6 @@
 'use client';
 
+import { sourceReviewIssues } from '@/lib/source-review';
 import { readPsd, type Layer, type Psd } from 'ag-psd';
 import {
   colorForId,
@@ -41,7 +42,7 @@ export function normalizedColorCode(value: string) {
     .toUpperCase();
   const explicitlyPrefixed = cleaned.startsWith('#');
   const body = cleaned.replace(/^#/, '');
-  const genericLayerName = /^(?:LAYER|GROUP|SHAPE|RECTANGLE|ELLIPSE|OBJECT|SMARTOBJECT|IMAGE|PHOTO|PICTURE|BACKGROUND|BACKDROP|BG|COPY|VECTOR|MASK|TEXT|LABEL|SWATCH|COLOR|COLOUR|ARTBOARD|FRAME|FOLDER|CURVE|LEVELS|HUESATURATION|BRIGHTNESSCONTRAST)\d*$/;
+  const genericLayerName = /^(?:LAYER|GROUP|SHAPE|RECTANGLE|ELLIPSE|OBJECT|SMARTOBJECT|IMAGE|PHOTO|PICTURE|BACKGROUND|BACKDROP|BG|TITLE|HEADER|LOGO|DECORATION|ORNAMENT|COPY|VECTOR|MASK|TEXT|LABEL|SWATCH|COLOR|COLOUR|ARTBOARD|FRAME|FOLDER|CURVE|LEVELS|HUESATURATION|BRIGHTNESSCONTRAST)\d*$/;
   if (
     !body ||
     !/^[A-Z0-9]+(?:\/[A-Z0-9]+)*$/.test(body) ||
@@ -250,8 +251,18 @@ function imageDimensions(file: File) {
   });
 }
 
+function isDecorative(item: FlatLayer) {
+  const decoration = /(?:^|[\s_-])(?:title|header|logo|decoration|decorative|ornament)(?:$|[\s_\-\d])|标题|页眉|装饰|标志/i;
+  const name = cleanText(item.layer.name);
+  // Explicit color identities still take precedence over a decorative parent.
+  if (name.startsWith('#') || normalizedColorCode(item.text)) return false;
+  if (decoration.test(name)) return true;
+  if (normalizedColorCode(name)) return false;
+  return item.path.some((part) => decoration.test(part));
+}
+
 function looksLikeSwatchGeometry(item: FlatLayer, psd: Psd) {
-  if (!item.bounds || item.layer.children?.length || item.hidden || item.text || !item.layer.canvas) return false;
+  if (isDecorative(item) || !item.bounds || item.layer.children?.length || item.hidden || item.text || !item.layer.canvas) return false;
   const itemWidth = width(item.bounds);
   const itemHeight = height(item.bounds);
   const ratio = itemWidth / itemHeight;
@@ -336,6 +347,12 @@ export async function parseTemplateSource(args: {
       });
     }
   }
+  for (const item of flat) {
+    if (item.hidden || isDecorative(item) || item.layer.children?.length || item.text || !item.bounds) continue;
+    if (normalizedColorCode(item.layer.name || '') && (
+      item.bounds[0] < 0 || item.bounds[1] < 0 || item.bounds[2] > psd.width || item.bounds[3] > psd.height
+    )) throw new Error(`业务色块“${item.path.join(' › ')}”超出新版 PSD 画布 ${psd.width}×${psd.height}，请修正后重新上传。`);
+  }
   const swatches = flat.filter((item) => isCandidateSwatch(item, psd));
   if (!swatches.length) throw new Error('没有识别到可用颜色图层。请保留以色号命名的独立色块图层。');
   if (swatches.length > 100) throw new Error('识别到的颜色图层超过 100 个，无法安全建立母版。');
@@ -386,6 +403,9 @@ export async function parseTemplateSource(args: {
     (a.bounds![1] - b.bounds![1]) || (a.bounds![0] - b.bounds![0]) || (a.order - b.order)
   )).entries()) {
     const bounds = swatch.bounds!;
+    if (bounds[0] < 0 || bounds[1] < 0 || bounds[2] > psd.width || bounds[3] > psd.height) {
+      throw new Error(`业务色块“${swatch.path.join(' › ')}”超出新版 PSD 画布 ${psd.width}×${psd.height}，请修正后重新上传。`);
+    }
     const colorCode = displayColorCode(swatch.layer.name || '', currentColors);
     const section = sectionFor(bounds, sectionsWithTop);
     const sectionLabel = sections.find((value) => value.key === section)?.label ?? '';
@@ -518,13 +538,15 @@ export async function parseTemplateSource(args: {
     Math.min(left[2], right[2]) > Math.max(left[0], right[0]) &&
     Math.min(left[3], right[3]) > Math.max(left[1], right[1])
   );
-  const currentDynamicBounds = currentTemplate.dynamicBounds;
+  const currentDynamicBounds = currentTemplate.dynamicBounds.map((value, index) => (
+    value * (index % 2 === 0 ? psd.width / currentTemplate.width : psd.height / currentTemplate.height)
+  )) as Bounds;
   for (const item of flat) {
     if (hotPath(item)) excluded.add(item.layer);
   }
 
   for (const item of flat) {
-    if (item.hidden || excluded.has(item.layer)) continue;
+    if (item.hidden || excluded.has(item.layer) || isDecorative(item)) continue;
     const layerCode = normalizedColorCode(item.layer.name || '');
     const textCode = normalizedColorCode(item.text);
     const textLengths = parseLengths(item.text);
@@ -587,8 +609,8 @@ export async function parseTemplateSource(args: {
     ...(card.geometry.sizeLabel ? [card.geometry.sizeLabel] : []),
   ]);
   const dynamicBounds = boundsUnion(geometryBounds, psd.width, psd.height);
-  const availableLengths = [...new Set(cards.flatMap((card) => card.lengths))].sort((a, b) => a - b);
-  const identifiedIssues = issues.map((issue, index) => ({
+  const availableLengths = lengthsForTemplate(currentTemplate);
+  const identifiedIssues = sourceReviewIssues(issues, cards, currentColors, availableLengths).map((issue, index) => ({
     ...issue,
     issueId: issue.issueId || `issue-${index + 1}-${hash(`${issue.code}:${issue.candidateId || ''}:${issue.message}`).slice(0, 8)}`,
   }));
