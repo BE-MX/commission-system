@@ -1,6 +1,6 @@
 <template>
   <main class="shipping-station">
-    <header class="station-header"><div class="station-brand"><img src="/shipping-app/icon-180.png" alt="" width="32" height="32" /><span>莱莎出库检验</span></div><span class="station-device">共用手机 · 发货质检</span></header>
+    <header class="station-header"><div class="station-brand"><img src="/shipping-app/icon-180.png" alt="" width="32" height="32" /><span>莱莎出库检验</span></div><button v-if="view" class="station-link" type="button" :disabled="busy" @click="end"><HomeFilled :size="18" />返回主页</button><span v-else class="station-device">共用手机 · 发货质检</span></header>
     <StationInstallHint v-if="!view && !scannerOpen" />
     <section class="identity-card" :class="{ chosen: operator, expired: invalid }" aria-live="polite" aria-atomic="true">
       <div class="identity-eyebrow"><UserRound :size="16" />{{ invalid ? '操作身份已失效' : view ? '本单操作人' : prompt }}</div>
@@ -29,7 +29,7 @@
       <section v-if="!invalid" class="station-card"><label class="remark-label" for="station-remark">检验备注</label><textarea id="station-remark" v-model="remark" maxlength="500" rows="3" :disabled="!canWrite" placeholder="填写需要说明的情况（选填）" /><p class="station-help">已上传 {{ photos.length }} 张照片、{{ videos.length }} 段视频。至少需要一张照片，视频不进入验货打印。</p></section>
       <div v-if="busy" class="upload-progress" role="status">{{ uploadStage || '正在处理，请勿切换人员' }}<progress v-if="uploadStage" :value="progress" max="100" /><span v-if="uploadStage">{{ progress }}%</span></div>
       <button v-if="pendingUpload && !busy && !invalid" class="station-secondary" @click="retryUpload">重试本次上传（不会重复保存）</button>
-      <footer class="station-actions"><button v-if="!submitted && !invalid" class="submit-button" :disabled="busy || (!pendingSubmit && (!canWrite || !photos.length))" @click="submit"><Check :size="20" />{{ pendingSubmit ? '确认上次提交结果' : `由 ${operator.name} 提交验货` }}</button><button class="station-secondary" :disabled="busy" @click="end">{{ invalid ? '重新选择人员并扫码' : '结束本次操作 / 换人接手' }}</button></footer>
+      <footer class="station-actions"><button v-if="!submitted && !invalid" class="submit-button" :disabled="busy || (!pendingSubmit && (!canWrite || !photos.length))" @click="submit"><Check :size="20" />{{ pendingSubmit ? '确认上次提交结果' : `由 ${operator.name} 提交验货` }}</button><button class="station-secondary" :disabled="busy" @click="end">{{ invalid ? '重新选择人员并扫码' : '返回主页 / 重新选择人员' }}</button></footer>
     </template>
     <div class="station-footnote">莱莎方舟 · 发货检验</div>
   </main>
@@ -37,7 +37,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
-import { FullScreen as ScanLine, User as UserRound, CircleCheck as BadgeCheck, Right as ArrowRight, CircleCheckFilled as CheckCircle2, Warning as AlertCircle, Refresh as RefreshCw, Check } from '@element-plus/icons-vue'
+import { FullScreen as ScanLine, User as UserRound, CircleCheck as BadgeCheck, Right as ArrowRight, CircleCheckFilled as CheckCircle2, Warning as AlertCircle, Refresh as RefreshCw, Check, HomeFilled } from '@element-plus/icons-vue'
 import { confirmDanger } from '@/utils/feedback'
 import { useShippingStation } from './composables/useShippingStation'
 import StationOperatorPicker from './components/StationOperatorPicker.vue'

@@ -120,3 +120,24 @@ test('compression failure sends nothing and releases session lock', async () => 
   assert.equal(s.pendingUpload.value, null)
   assert.equal(calls.some(c => c[0] === 'upload'), false)
 })
+
+
+test('return home ends the scanned session and requires choosing a person again', async () => {
+  const ended = []
+  const { s, people } = setup({ end: async id => { ended.push(id) } })
+  await flush(); s.choose(people[0]); await s.decoded('ARK-I:OB001:signature')
+  await s.end()
+  assert.deepEqual(ended, ['session-one'])
+  assert.equal(s.view.value, null)
+  assert.equal(s.selected.value, null)
+  assert.equal(s.startScan(), false)
+})
+
+test('failed session end preserves the current order and identity for retry', async () => {
+  const { s, people } = setup({ end: async () => { throw new Error('offline') } })
+  await flush(); s.choose(people[0]); await s.decoded('ARK-I:OB001:signature')
+  await s.end()
+  assert.equal(s.sessionId.value, 'session-one')
+  assert.ok(s.operator.value)
+  assert.equal(s.busy.value, false)
+})

@@ -50,7 +50,8 @@ def test_mini_commit_notifies_current_owner_once_and_recall_resubmission_notifie
         assert response.status_code == 200
         assert mini_submit(client).status_code == 200
         notifier.send_oa_notice.assert_awaited_once_with(['ding-current-owner'], '出库检验完成',
-            '客户【客户甲】的【CK2026001】出库单已出库检验完成，请及时验货。')
+            '客户【客户甲】的【CK2026001】出库单已出库检验完成，请及时验货。 点击本通知下载验货单 PDF（含验货照片）。',
+            f"https://leshine.work/shipping/inspections?pdf={response.json()['id']}&version=0&keyword=CK2026001")
         service.recall(db, response.json()['id'], inspector.id, 0)
         replacement = _user(db, 'new-salesperson')
         replacement.dingtalk_id = 'ding-new-owner'

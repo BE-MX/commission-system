@@ -6,6 +6,12 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
+    <section v-if="noticePdf" class="notice-download">
+      <strong>通知验货单：{{ route.query.keyword || '出库检验完成' }}</strong>
+      <GlassButton variant="primary" left-icon="Download" :loading="downloading" @click="downloadPdf(noticePdf)">下载验货单 PDF</GlassButton>
+      <p>含验货照片。若单据已撤回或更新，请使用最新通知或下方列表。</p>
+    </section>
+    <el-alert v-if="pdfError" :title="pdfError" type="error" :closable="false" show-icon />
     <el-row :gutter="16" class="toolbar">
       <el-col :span="7">
         <el-input v-model="searchForm.keyword" placeholder="搜索出库单号 / 客户名称" clearable prefix-icon="Search" @keyup.enter="handleSearch" @clear="handleSearch" />
@@ -36,6 +42,7 @@
         <el-table-column label="操作" min-width="280" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">查看</GlassButton>
+            <GlassButton variant="link" left-icon="Download" :loading="downloading" @click="downloadPdf(row)">下载 PDF</GlassButton>
             <GlassButton variant="link" left-icon="Printer" @click="openPrint(row)">打印验货单</GlassButton>
             <GlassButton v-any-permission="['shipping_inspection:write', 'shipping_inspection:admin']"
               variant="link" left-icon="RefreshLeft" :loading="recallingId === row.id"
@@ -90,6 +97,7 @@
  * 验货单列表 + 详情抽屉（照片墙） + 验货单打印。
  * 逻辑在 composables/useInspectionRecords.js（宪法 12）。
  */
+import { useRoute } from 'vue-router'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import InspectionPhotos from './components/InspectionPhotos.vue'
@@ -98,7 +106,9 @@ import InspectionEvents from './components/InspectionEvents.vue'
 import ShippingPrintDialog from './print/ShippingPrintDialog.vue'
 import { useInspectionRecords } from './composables/useInspectionRecords'
 
+const route = useRoute()
 const {
+  noticePdf, downloading, pdfError, downloadPdf,
   loading, list, total, page, pageSize, searchForm,
   handleSearch, handlePageChange, handleSizeChange,
   detailVisible, detailLoading, detail, openDetail,
@@ -107,6 +117,9 @@ const {
 </script>
 
 <style scoped>
+.notice-download { position: relative; margin-bottom: 16px; padding: 16px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; }
+.notice-download strong { display: block; margin-bottom: 12px; overflow-wrap: anywhere; }
+.notice-download p { color: var(--text-secondary); font-size: 13px; }
 .inspection-page { position: relative; }
 .inspection-aurora { inset: -24px -28px; }
 .inspection-page .toolbar,

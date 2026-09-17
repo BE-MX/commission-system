@@ -1,14 +1,39 @@
 /**
  * 验货单列表 + 详情抽屉 + 打印弹框逻辑（宪法 12/14：useListPage + DetailDrawer）。
  */
-import { reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
-import { getInspectionRecord, listInspectionRecords, recallInspectionRecord } from '@/api/shipping'
+import { computed, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { downloadBlob } from '@/utils/download'
+import { getInspectionRecord, listInspectionRecords, recallInspectionRecord, downloadInspectionPdf } from '@/api/shipping'
 import { useListPage } from '@/composables/useListPage'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
 
 export function useInspectionRecords() {
   const route = useRoute()
+  const router = useRouter()
+  const downloading = ref(false), pdfError = ref('')
+  const noticePdf = computed(() => {
+    const id = String(route.query.pdf || ''), version = String(route.query.version ?? '')
+    return /^[1-9]\d*$/.test(id) && /^\d+$/.test(version) ? { id, version } : null
+  })
+  async function downloadPdf(row) {
+    if (downloading.value) return
+    downloading.value = true
+    pdfError.value = ''
+    try { downloadBlob(await downloadInspectionPdf(row.id, row.edit_version ?? row.version)) }
+    catch (error) {
+      if (error.response?.status === 401) {
+        await router.push({ name: 'Login', query: { redirect: route.fullPath } })
+        return
+      }
+      let detail = error.response?.data
+      if (detail instanceof Blob) {
+        try { detail = JSON.parse(await detail.text()) } catch { detail = null }
+      }
+      pdfError.value = detail?.detail || 'PDF 下载失败，请稍后重试'
+    } finally { downloading.value = false }
+  }
+
 
   const listApi = useListPage(
     async ({ page, page_size, ...form }) => {
@@ -72,7 +97,7 @@ export function useInspectionRecords() {
   }
 
   return {
-    ...listApi,
+    ...listApi, noticePdf, downloading, pdfError, downloadPdf,
     detailVisible, detailLoading, detail, openDetail,
     printDialog, openPrint, recallingId, recallForEdit,
   }

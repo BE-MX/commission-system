@@ -241,6 +241,23 @@ def list_records(
     return ok(page_result(items, total, page, page_size))
 
 
+@router.get("/records/{inspection_id}/pdf", summary="下载已提交验货单 PDF（含照片）")
+def inspection_pdf(
+    inspection_id: int,
+    edit_version: int | None = Query(None, ge=0),
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_any_permission(*_READ)),
+):
+    from app.shipping_inspection.pdf_service import export_inspection_pdf
+    _require_inspection_scope(db, user, inspection_id)
+    content, outbound_no = export_inspection_pdf(db, inspection_id, edit_version)
+    filename = quote(f"验货单-{outbound_no}.pdf", safe="")
+    return Response(content, media_type="application/pdf", headers={
+        "Content-Disposition": f"attachment; filename*=UTF-8''{filename}",
+        "Cache-Control": "no-store",
+    })
+
+
 @router.get("/records/{inspection_id}", summary="验货单详情（单头+明细+照片）")
 def record_detail(
     inspection_id: int,
