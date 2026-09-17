@@ -1,3 +1,9 @@
+## 2026-09-17 出库单打印与 Word 客户名称遮罩（Codex）
+
+- 来源分支 `codex/outbound-customer-mask`；用户已授权合并推送到 `origin/main`，完成后清理本任务分支与 worktree；本轮不部署。
+- 两个文档模板仅输出客户名称前三个字符 + `***`（如 `Inessa Wassiljev` → `Ine***`）；空名称保持空白，短名称追加星号。列表、扫码、验货单及原始数据不变。
+- 验证：打印模板 Node 测试 9 项通过；Word/打印排序 pytest 4 项通过（内存 SQLite）；前端构建通过；`git diff --check` 通过。约定检查受 10 项既有 UI 债务阻断，均在本次改动之外；Git 巡检已执行 `--no-fetch`，只代表本地快照。
+
 ## 2026-09-17 全平台列表操作列防遮挡（Codex）
 
 - 分支 `codex/table-actions-wrap`：主站 AST 扫描覆盖 77 个 Vue 文件中的 103 个操作/处理列，统一接入 `table-action-column`；按钮组统一 `table-actions`。修复全局 list-table 单行省略导致尾部按钮裁切，以及发票、内贸客户、备货等局部 nowrap 布局。普通文本列仍保留省略，权限、事件和业务接口未改。

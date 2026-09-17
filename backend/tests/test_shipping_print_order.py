@@ -64,3 +64,16 @@ def test_print_api_and_word_share_order(db, monkeypatch):
         response = client.get("/api/shipping-inspection/outbound-records/OB001/print-data")
         assert response.status_code == 200
         assert [i["item_id"] for i in response.json()["data"]["items"]] == EXPECTED
+
+
+def test_word_masks_customer_name_without_changing_source():
+    for name, expected in [
+        ("Inessa Wassiljev/Haarverlängerung", "Ine***"), ("AB", "AB***"),
+        ("ABC", "ABC***"), ("王女士旗舰店", "王女士***"),
+        ("😀AB Customer", "😀AB***"), (" <&>Company ", "<&>***"),
+        (None, ""), ("", ""), ("   ", ""),
+    ]:
+        record = {"customer_name": name}
+        document = Document(io.BytesIO(build_outbound_word(record, [], "test")))
+        assert document.tables[0].cell(0, 1).text == expected
+        assert record["customer_name"] == name

@@ -26,8 +26,8 @@ test('出库单文档：A4 自含样式 + 单头字段 + 明细表 + 二维码�
   assert.match(doc, /@media print/)
   assert.match(doc, /<h1>出库单<\/h1>/)
   assert.match(doc, /CK20260901-001/)
-  // 自由输入字段必须转义，不能原样进 HTML
-  assert.match(doc, /王女士&lt;旗舰店&gt;/)
+  // 客户名称只保留前三个字符，其他自由输入字段仍需转义
+  assert.match(doc, /王女士\*\*\*/)
   assert.ok(!doc.includes('王女士<旗舰店>'))
   assert.match(doc, /真人发头套/)
   assert.ok(!doc.includes('<th>SKU</th>'))
@@ -147,4 +147,19 @@ test('规格仅突出 B1/B3，保留普通文字并安全转义', () => {
   assert.equal((doc.match(/<strong class="spec-grade">/g) || []).length, 2)
   assert.match(doc, /B10 \/ AB1 \/ &lt;script&gt;/)
   assert.match(doc, /spec-grade\{font-size:16px;font-weight:700\}/)
+})
+
+
+test('outbound masks customer names only in the rendered document', () => {
+  for (const [name, expected] of [
+    ['Inessa Wassiljev/Haarverlängerung', 'Ine***'], ['AB', 'AB***'],
+    ['ABC', 'ABC***'], ['王女士旗舰店', '王女士***'],
+    ['😀AB Customer', '😀AB***'], [' <&>Company ', '&lt;&amp;&gt;***'],
+    [null, ''], ['', ''], ['   ', ''],
+  ]) {
+    const record = { ...outboundPayload.record, customer_name: name }
+    const doc = buildOutboundDoc({ ...outboundPayload, record })
+    assert.ok(doc.includes(`<strong>${expected}</strong>`))
+    assert.equal(record.customer_name, name)
+  }
 })

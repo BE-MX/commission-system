@@ -127,6 +127,8 @@ function itemsTable(items, { outbound = false } = {}) {
 // ── 出库单 A4 ─────────────────────────────────────────
 
 export function buildOutboundDoc({ record, items = [], qr_code_base64 = '' }) {
+  const customerName = Array.from(String(record.customer_name ?? '').trim()).slice(0, 3).join('')
+  const maskedCustomerName = customerName ? `${customerName}***` : ''
   // 后端 _qr_png_base64 返回的已是完整 data URL（含 data:image/png;base64, 前缀），直接进 <img>
   const qr = qr_code_base64
     ? `<img src="${esc(qr_code_base64)}" alt="出库单二维码">`
@@ -146,7 +148,7 @@ export function buildOutboundDoc({ record, items = [], qr_code_base64 = '' }) {
   <div class="body-row">
     <div class="left">
       <table class="info-table">
-        <tr><td>客户名称</td><td><strong>${esc(record.customer_name)}</strong></td></tr>
+        <tr><td>客户名称</td><td><strong>${esc(maskedCustomerName)}</strong></td></tr>
         <tr><td>出库日期</td><td>${esc(record.outbound_date)}</td></tr>
         <tr><td>负责人</td><td>${esc(record.owner_name)}</td></tr>
       </table>
