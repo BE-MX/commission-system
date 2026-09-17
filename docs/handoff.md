@@ -1367,4 +1367,8 @@ Mac 同事的英文网页中私聊按钮标识为 `Profile details`，原选择�
 
 任务分支 `codex/colorwork-source-rules`，基于线上 `80996982` 准备仅含本任务改动的发布候选。新版 PSD/JPG 相互等尺寸但可改变 S1；服务端读取 PSD 头核对实际宽高，缩放旧动态区域仅作参考。S1 长度集合不随新版扩展，候选异常长度提示并由启用接口硬校验；新色号提取候选色块且必须人工确认。结构合成问题合并，装饰越界不作为业务色块，明确色号越界仍阻止。删除尺寸也列入 removed；历史库存/母版/导出保留，未人工启用时继续 S1。
 
-已验证：真实浏览器解析专项、隔离 D1/R2 接口场景 13 项（包括历史状态保留及回退、旧成品摘要不变、尺寸伪造/越界拒绝、服务端生成新颜色/超长提醒、勾选不能绕过长度校验）、类型检查与构建。独立审查发现 Decorative 1 装饰名误判，已修正并补回归。本次变更文件 lint 通过；全量 lint 有 10 项其他文件已有问题，项目约定检查有 11 项主站已有 UI 债务，未扩大修改。未操作任何线上源 Sx 启用。发布结果另行补充。
+已验证：真实浏览器解析专项、隔离 D1/R2 接口场景 13 项（包括历史状态保留及回退、旧成品摘要不变、尺寸伪造/越界拒绝、服务端生成新颜色/超长提醒、勾选不能绕过长度校验）、类型检查与构建。独立审查发现 Decorative 1 装饰名误判，已修正并补回归。本次变更文件 lint 通过；全量 lint 有 10 项其他文件已有问题，项目约定检查有 11 项主站已有 UI 债务，未扩大修改。未操作任何线上源 Sx 启用。
+
+发布：经 `deploy/deploy.bat --cloud-only --no-pull --revision ba475d55af2ae6371b15899db42751cc3605b32f`（先 prepare-only）完成。发布日志和北京 colorwork/current.json 均 succeeded；主站后端 changed=false、schema_changed=false，其他静态站零变化。两个公网入口健康200。前后只读摘要一致：23套当前源仍全为S1，869条inventory_states、23个master_versions和1个artifact未变；验证证据在任务 worktree 的 colorwork-workbench/outputs。独立复核已通过装饰修复。发布基点上的约定检查为10项已有主站UI债务，直接增量 check(80996982) 无违规。
+
+未获得合并main授权，交付保留任务分支；后续发布main前需纳入本修复，避免覆盖已上线功能。两个本地隔离测试目录 .wrangler/source-rules-test 和 source-rules-final 的清理被自动审批以 blocked by policy 拒绝，未绕过；保留测试目录及发布恢复材料，不影响生产。
