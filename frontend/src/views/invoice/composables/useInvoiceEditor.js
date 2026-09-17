@@ -8,8 +8,7 @@ import {
   getCustomerRule,
   getInvoice,
   getInvoiceAssignees,
-  searchInvoiceCustomerContacts,
-  searchInvoiceCustomers,
+  searchInvoiceCustomerOptions,
   suggestInvoiceNo,
   updateInvoice,
 } from '@/api/invoice'
@@ -34,27 +33,21 @@ import {
   screenshotInvoiceNo,
   screenshotOrderName,
 } from './invoiceEditorState'
+import { customerOptionKey, useInvoiceCustomerSearch } from './useInvoiceCustomerSearch'
 import { useInvoiceHairItems } from './useInvoiceHairItems'
 
 export const CURL_OPTIONS = ['Straight', 'Body Wave', 'Deep Wave', 'Loose Wave', 'Kinky Curly', 'Water Wave']
 
 export function useInvoiceEditor({ onSaved } = {}) {
   const drawerVisible = ref(false)
-  const customerLoading = ref(false)
-  const customerOptions = ref([])
   const salesUserOptions = ref([])
   const selectedCustomer = ref(null)
   const customerRule = ref(null)
-  // 联系人维度筛选（与公司筛选联动：选公司收敛联系人，选联系人反向定位公司）
-  const contactLoading = ref(false)
-  const contactOptions = ref([])
-  const selectedContact = ref(null)
   // 「仅显示私海客户」（2026-07-14 亮哥定版）：所有人默认私海；
   // invoice_private_filter:read 只控制勾选框显隐=能否切到全量视图。
   // 无权限用户勾选框隐藏、恒定私海——未绑定 OKKI 时唯一出路是去绑定（提示文案区分）
   const canTogglePrivate = computed(() => useAuthStore().hasPermission('invoice_private_filter:read'))
   const privateOnlyCompany = ref(true)
-  const privateOnlyContact = ref(true)
   // false = 当前账号未绑定 OKKI，私海筛选无从判定（前端提示去绑定）
   const okkiBound = ref(true)
   const invoiceNoTaken = ref(false)
@@ -62,6 +55,13 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const entryOptions = ref({ displays: [], models: [], colors: [], sizes: [], units: [] })
 
   const form = reactive(emptyInvoiceForm())
+  const customerSearch = useInvoiceCustomerSearch({
+    request: searchInvoiceCustomerOptions,
+    scope: () => ({ private_only: privateOnlyCompany.value, sales_user_id: form.sales_user_id }),
+    selected: selectedCustomer,
+    onBound: value => { okkiBound.value = value },
+  })
+  const { options: customerOptions, loading: customerLoading, search: searchCustomers } = customerSearch
   const accessories = useInvoiceAccessories(form)
   const isProduction = computed(() => form.order_type === 'production')
   const hair = useInvoiceHairItems(form, accessories.hairItems, isProduction, entryOptions)
@@ -157,19 +157,23 @@ export function useInvoiceEditor({ onSaved } = {}) {
   // 快速切换客户或切换 drawer 时，先发后至的过期响应不得覆盖当前表单
   let contactFillSeq = 0
   let customerRuleSeq = 0
-  let customerSearchSeq = 0
-  let contactSearchSeq = 0
+  let customerSelectionSeq = 0
+  let customerContextSeq = 0
+  let customerDefaultsPromise = Promise.resolve()
   let invoiceNoSeq = 0
   // 用户手输过发票号后，建议号不再覆盖
   let invoiceNoEdited = false
 
   function resetForm(data = emptyInvoiceForm()) {
     contactFillSeq++
+    customerSelectionSeq++
+    customerContextSeq++
+    customerSearch.reset()
+    customerDefaultsPromise = Promise.resolve()
     customerRuleSeq++
     invoiceNoSeq++
     // 每次开单复位为默认私海（上一单里切过全量不带到下一单）
     privateOnlyCompany.value = true
-    privateOnlyContact.value = true
     // 编辑既有单（有 id）：发票号视为已确认，建议号不覆盖
     invoiceNoEdited = Boolean(data.id)
     invoiceNoTaken.value = false
@@ -196,8 +200,6 @@ export function useInvoiceEditor({ onSaved } = {}) {
       ? { company_id: form.customer_id, company_name: form.customer_name }
       : null
     ensureCustomerOption(selectedCustomer.value) // 编辑回显：客户可能不在当前候选里
-    selectedContact.value = null
-    contactOptions.value = []
     customerRule.value = null
     if (form.customer_id) {
       loadCustomerRule()
@@ -206,70 +208,18 @@ export function useInvoiceEditor({ onSaved } = {}) {
     }
   }
 
-  // el-select 按 value-key 在已渲染 options 里找到匹配项才能显示标签：
-  // 联系人反向定位/编辑回显注入的客户若不在候选里，输入框会显示空白。
-  // 候选里已有同 company_id 的 → selectedCustomer 复用候选对象引用
-  // （顺带消掉 number/string 类型差导致的匹配失败）；没有 → 注入候选头部。
   function ensureCustomerOption(customer) {
-    if (!customer) return
-    const match = customerOptions.value.find(
-      c => String(c.company_id) === String(customer.company_id),
-    )
-    if (match) {
-      if (match !== customer) selectedCustomer.value = match
-    } else {
-      customerOptions.value.unshift(customer)
-    }
+    if (customer) customer.option_key = customerOptionKey(customer)
   }
 
-  async function searchCustomers(keyword) {
-    const seq = ++customerSearchSeq
-    customerLoading.value = true
-    try {
-      const res = await searchInvoiceCustomers({
-        keyword,
-        private_only: privateOnlyCompany.value,
-        sales_user_id: form.sales_user_id,
-      })
-      if (seq !== customerSearchSeq) return
-      customerOptions.value = res.items || []
-      // 搜索响应会整体替换候选，把当前选中项补回去，否则选中标签变空白
-      ensureCustomerOption(selectedCustomer.value)
-      if (typeof res.okki_bound === 'boolean') okkiBound.value = res.okki_bound
-    } finally {
-      if (seq === customerSearchSeq) customerLoading.value = false
-    }
-  }
-
-  async function searchContacts(keyword) {
-    const seq = ++contactSearchSeq
-    contactLoading.value = true
-    try {
-      const res = await searchInvoiceCustomerContacts({
-        keyword,
-        // 已选公司则收敛到该客户名下（联动）；未选则全局按联系人名搜
-        company_id: form.customer_id || undefined,
-        private_only: privateOnlyContact.value,
-        sales_user_id: form.sales_user_id,
-      })
-      if (seq !== contactSearchSeq) return
-      contactOptions.value = res.items || []
-      if (typeof res.okki_bound === 'boolean') okkiBound.value = res.okki_bound
-    } finally {
-      if (seq === contactSearchSeq) contactLoading.value = false
-    }
-  }
-
-  // 勾选切换即刷新候选（保持当前下拉内容与勾选一致）
   watch(privateOnlyCompany, () => { searchCustomers('') })
-  watch(privateOnlyContact, () => { searchContacts('') })
 
   // 选用刚从 OKKI 同步的客户（InvoiceCustomerSyncEntry 回调）：必须过当前私海
   // 筛选——同步成功≠归属当前业务员（归属他人时同步结果里已展示负责人，这里
   // 明确提示，不静默绕过私海限制）。返回是否选用成功（成功才关弹框）。
   async function selectSyncedCustomer(res) {
-    await searchCustomers(res.company_name)
-    const found = customerOptions.value.find(c => String(c.company_id) === String(res.company_id))
+    await searchCustomers(String(res.company_id))
+    const found = customerSearch.findCustomer(res.company_id)
     if (!found) {
       ElMessage.warning('该客户已同步，但不在当前私海范围内（负责人见同步结果），无法选用')
       return false
@@ -290,51 +240,38 @@ export function useInvoiceEditor({ onSaved } = {}) {
   }
 
   async function onCustomerChange(customer) {
+    const seq = ++customerSelectionSeq
+    const sameCompanyContact = customer?.kind === 'contact' && String(customer.company_id) === form.customer_id
+    const contextSeq = sameCompanyContact ? customerContextSeq : ++customerContextSeq
+    selectedCustomer.value = customer || null
+    ensureCustomerOption(customer)
     form.customer_id = customer?.company_id == null ? '' : String(customer.company_id)
     form.customer_name = customer?.company_name || ''
-    accessories.invalidateCustomerContext()
-    // 联动：公司变了，已选联系人若不属于新公司即失效；候选收敛到新公司名下
-    if (selectedContact.value && String(selectedContact.value.company_id) !== form.customer_id) {
-      selectedContact.value = null
+    if (!sameCompanyContact) {
+      accessories.invalidateCustomerContext()
+      customerDefaultsPromise = fillContactDefaults()
+      await Promise.all([loadCustomerRule(), customerDefaultsPromise])
+    } else {
+      // Changing only the contact preserves this order's address and prices.
+      await customerDefaultsPromise
     }
-    searchContacts('')
-    await Promise.all([loadCustomerRule(), fillContactDefaults()])
-    // 客户变化 → 客户价规则变化，所有明细价重算
-    await Promise.all(accessories.hairItems.value.map(line => refreshLinePrice(line)))
-    await accessories.refreshAccessoryPrices()
+    if (contextSeq !== customerContextSeq) return
+    if (seq === customerSelectionSeq && customer?.kind === 'contact') {
+      // Explicit contact choice wins over the latest invoice's contact snapshot.
+      form.contact_name = customer.name || ''
+      form.contact_phone = customer.tel || ''
+      form.contact_email = customer.email || ''
+    }
+    if (!sameCompanyContact) {
+      await Promise.all(accessories.hairItems.value.map(line => refreshLinePrice(line)))
+      if (contextSeq === customerContextSeq) await accessories.refreshAccessoryPrices()
+    }
   }
 
   async function onCurrencyChange() {
     form.currency = String(form.currency || '').trim().toUpperCase()
     accessories.invalidateCustomerContext()
     await accessories.refreshAccessoryPrices()
-  }
-
-  async function onContactChange(contact) {
-    selectedContact.value = contact || null
-    if (!contact) return // 清空联系人筛选不动已选客户
-    const companyChanged = String(contact.company_id) !== form.customer_id
-    if (companyChanged) {
-      // 联动：选联系人反向定位其所属客户
-      form.customer_id = String(contact.company_id)
-      form.customer_name = contact.company_name || ''
-      selectedCustomer.value = {
-        company_id: contact.company_id,
-        company_name: contact.company_name,
-        country_name: contact.country_name,
-      }
-      ensureCustomerOption(selectedCustomer.value)
-      accessories.invalidateCustomerContext()
-      await Promise.all([loadCustomerRule(), fillContactDefaults()])
-    }
-    // 选中联系人是明确意图：整体覆盖联系字段（覆盖快照回填；残留他人联系方式是错单风险）
-    form.contact_name = contact.name || ''
-    form.contact_phone = contact.tel || ''
-    form.contact_email = contact.email || ''
-    if (companyChanged) {
-      await Promise.all(accessories.hairItems.value.map(line => refreshLinePrice(line)))
-      await accessories.refreshAccessoryPrices()
-    }
   }
 
   // 联系人/地址是客户属性：选客户后用该客户最近一张发票的快照整体覆盖（含清空），
@@ -388,7 +325,6 @@ export function useInvoiceEditor({ onSaved } = {}) {
     addLine()
     drawerVisible.value = true
     searchCustomers('')
-    searchContacts('')
     fetchSuggestedInvoiceNo()
     if (orderType === 'production') loadEntryOptions()
   }
@@ -399,7 +335,6 @@ export function useInvoiceEditor({ onSaved } = {}) {
     await loadSalesUsers()
     drawerVisible.value = true
     searchCustomers('')
-    searchContacts('')
     if (form.order_type === 'production') loadEntryOptions()
   }
 
@@ -449,7 +384,10 @@ export function useInvoiceEditor({ onSaved } = {}) {
   async function onSalesUserChange() {
     applySalesUserSnapshot()
     selectedCustomer.value = null
-    selectedContact.value = null
+    customerSelectionSeq++
+    customerContextSeq++
+    contactFillSeq++
+    customerRuleSeq++
     form.customer_id = ''
     form.customer_name = ''
     form.contact_name = ''
@@ -460,7 +398,6 @@ export function useInvoiceEditor({ onSaved } = {}) {
     accessories.invalidateCustomerContext()
     await Promise.all([
       searchCustomers(''),
-      searchContacts(''),
       ...accessories.hairItems.value.map(line => refreshLinePrice(line)),
       accessories.refreshAccessoryPrices(),
     ])
@@ -567,11 +504,10 @@ export function useInvoiceEditor({ onSaved } = {}) {
     salesUserOptions,
     selectedCustomer,
     customerRule,
-    contactLoading,
-    contactOptions,
-    selectedContact,
+    customerTotal: customerSearch.total,
+    customerHasMore: customerSearch.hasMore,
+    loadMoreCustomers: customerSearch.loadMore,
     privateOnlyCompany,
-    privateOnlyContact,
     canTogglePrivate,
     okkiBound,
     invoiceNoTaken,
@@ -593,12 +529,10 @@ export function useInvoiceEditor({ onSaved } = {}) {
     settlementError,
     isProduction,
     searchCustomers,
-    searchContacts,
     selectSyncedCustomer,
     onCustomerChange,
     onSalesUserChange,
     onCurrencyChange,
-    onContactChange,
     onInvoiceNoInput,
     onInvoiceNoBlur,
     openCreate,
@@ -633,13 +567,6 @@ export function customerLabel(customer) {
   return customer.country_name
     ? `${customer.company_name}(${customer.country_name})`
     : customer.company_name || ''
-}
-
-// 联系人下拉：姓名 — 所属公司（跨公司搜索时靠公司名区分同名联系人）
-export function contactLabel(contact) {
-  if (!contact) return ''
-  const name = contact.name || ''
-  return contact.company_name ? `${name} — ${contact.company_name}` : name
 }
 
 export function describeCustomerRule(rule) {
