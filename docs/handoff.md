@@ -1,10 +1,11 @@
-## 2026-09-17 库存单自动回款与回款管理（Codex，本地实现完成，未部署）
+## 2026-09-17 库存单自动回款与回款管理（Codex，合并推送交付，未部署）
 
 - worktree `D:/MyProgram/commission-system-codex-receipts`，分支 `codex/receipt-management`。库存单截图必填同步校验、完整同步后唯一自动建回款、手工回款、列表/详情/私有凭证、失败重试与未知结果核对已落地。
 - 原币余额包含小满已生效回款、本地占额与自动意图，同远端ID去重；订单锁+幂等键+余额版本+租约令牌防重复。截图仅方舟留存。`RECEIPT_SYNC_ENABLED=False` 默认不向小满写入，启用前核对待发单及 `collect_status=0` 对既有财务/提成的影响。
-- 迁移156当前接154；其它任务分支已有155公告迁移，合并时按最终主线串联并确认单head。办公室为凭证固定存储，北京配置 `RECEIPT_STORAGE_PROXY_URL=https://leshine.work`；部署验收包括JWT互认、12m入口上传限额、持久目录备份与连通性。
+- 迁移已串联154→155公告→156回款，确认单head。办公室为凭证固定存储，北京配置 `RECEIPT_STORAGE_PROXY_URL=https://leshine.work`；部署验收包括JWT互认、12m入口上传限额、持久目录备份与连通性。
 - 530项受影响后端测试通过，前端构建通过，CUA本机虚构数据手工创建/上传/详情、暂停提示及390×844窄屏验证通过。独立审查无遗留阻断项；增量规则及diff检查通过；全局规则仍有11项无关UI基线问题；Git巡检已执行no-fetch。
-- 未合并、未推送、未部署、未执行生产数据库迁移或真实小满回款写入。详见[实现与验收说明](requirements/2026-09-17-receipt-management-implementation.md)；设计及可交互原型一并保留。下一次集成须先核对最新main，保留其它任务成果。
+- 合并最新主线后582项集成回归通过、前端构建通过，补齐调度器任务清单，独立集成审查及迁移单head检查通过。验证记录归档主目录 `tmp/receipt-merge-preserve/evidence/`；主目录原设计草稿备份在其上级，其他未提交成果保留。
+- 用户已授权合并main并推送origin；集成已保留公告模块及其它主线成果，交付后清理本任务临时worktree。未部署、未执行生产数据库迁移或真实小满回款写入。详见[实现与验收说明](requirements/2026-09-17-receipt-management-implementation.md)；设计及可交互原型一并保留。
 
 ## 2026-09-17 Excel 导入 Model 回填（合并交付，未部署）
 

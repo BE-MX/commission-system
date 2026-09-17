@@ -1,6 +1,6 @@
 # 回款管理实现与交付说明
 
-2026-09-17；分支 `codex/receipt-management`。本地开发交付，尚未合并、推送或部署。设计依据：[功能设计](2026-09-17-receipt-management.md)。
+2026-09-17；来源分支 `codex/receipt-management`。用户已授权合并 main 并推送 origin，本轮不部署。设计依据：[功能设计](2026-09-17-receipt-management.md)。
 
 ## 已实现的行为
 
@@ -45,9 +45,9 @@
 
 ## 数据结构与权限
 
-迁移 `156_receipt_management` 当前父节点 `154_okki_outbound_tasks`，新增 `ark_receipts`、`ark_receipt_intents`、`ark_receipt_attachments`、`ark_receipt_logs`。回款行同时作为持久待发送记录，未另建设计草案中的 tasks 表；操作日志采用 logs 表。迁移可重入并检查已有结构，不导入历史数据，禁止删除账本式 downgrade。
+迁移 `156_receipt_management` 父节点为 `155_announcements`，新增 `ark_receipts`、`ark_receipt_intents`、`ark_receipt_attachments`、`ark_receipt_logs`。回款行同时作为持久待发送记录，未另建设计草案中的 tasks 表；操作日志采用 logs 表。迁移可重入并检查已有结构，不导入历史数据，禁止删除账本式 downgrade。
 
-其它任务分支已出现 `155_announcements`，尚不在本分支。合并时必须根据最终主线串联迁移并确认单 head，不能把两个基于 154 的 head 直接部署。
+集成最新主线后已串联 `154 → 155 → 156`，Alembic ScriptDirectory 检查唯一 head 为 `156_receipt_management`；未连接或升级生产数据库。
 
 `receipt:read` 查看，`receipt:write` 创建/修改/重试/本地作废，`receipt:admin` 处理未知结果，`receipt:read_all` 扩大数据范围。普通用户沿用订单归属及有效代理授权。首次权限种子给已有 invoice:sync 角色补查看权限；手工写权限单独分配。截图不挂静态目录，不提供公开 URL；只有订单权限的用户只能读库存单自身意图中的凭证，不能读取手工回款截图。
 
@@ -60,6 +60,8 @@
 不包含退款、远端删除后的自动额度释放、历史回款全量导入、自动批量刷新所有已同步单的财务状态。远端列表查不到单不能证明它已删除；保留占额，人工核验处理。
 
 ## 验收记录
+
+合并交付复验：合入主线公告与调度注册后，包含 receipt/invoice/okki/semifinished/integration/announcement/scheduler_jobs 的 **582 项测试通过，139 warnings，72.79秒**；前端构建14.40秒通过。迁移接到155，Alembic唯一head为156。调度器精确任务清单补充 receipt_delivery；独立集成审查确认两模块注册均保留。记录归档至主目录 `tmp/receipt-merge-preserve/evidence/`。以下530项为首次开发验收记录。
 
 | 检查 | 实际结果 |
 | --- | --- |

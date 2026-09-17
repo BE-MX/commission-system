@@ -116,6 +116,7 @@ class TestSchedulerRegistration:
                 "whatsapp_translation_pairing_cleanup",
                 "domestic_public_sea_daily",
                 "okki_outbound_reconcile",
+                "receipt_delivery",
             }
             design_image = scheduler.get_job("design_image_queue")
             assert design_image.max_instances == 1

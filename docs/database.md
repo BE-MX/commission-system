@@ -11,7 +11,7 @@
 
 回款 status=active/voided，sync_status=pending/syncing/synced/failed/uncertain；collect_status=0/1/NULL，与同步结果独立。所有普通时间列采用北京时间；回款日期为业务日期。数据范围由关联订单推导，创建人仅作审计。作废不删除账本，凭证绑定与日志保留；未做历史回填，downgrade拒绝删除财务数据。
 
-当前迁移父节点154，另任务分支155需合并时串联单head。凭证多实例配置、原币余额去重口径、备份及生产启用限制见[实现说明](requirements/2026-09-17-receipt-management-implementation.md)。
+迁移父节点155_announcements，已确认154→155→156单head。凭证多实例配置、原币余额去重口径、备份及生产启用限制见[实现说明](requirements/2026-09-17-receipt-management-implementation.md)。
 
 ## 站点 AI 网关（146_ai_site_gateway）
 
