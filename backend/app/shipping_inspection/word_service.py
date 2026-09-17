@@ -82,6 +82,8 @@ def _line(paragraph):
 
 
 def build_outbound_word(record: dict, items: list[dict], qr_data: str) -> bytes:
+    customer_name = str(record.get("customer_name") or "").strip()
+    masked_customer_name = customer_name[:3] + "***" if customer_name else ""
     doc = Document()
     doc.settings.element.find(qn("w:zoom")).set(qn("w:percent"), "100")
     section = doc.sections[0]
@@ -102,7 +104,7 @@ def build_outbound_word(record: dict, items: list[dict], qr_data: str) -> bytes:
     head = _table(doc, [24, 137, 37], rows=3)
     for row, (label, key) in zip(head.rows, [("客户名称", "customer_name"), ("出库日期", "outbound_date"), ("负责人", "owner_name")]):
         _cell(row.cells[0], label, 10.5, shade="F0F0F0")
-        _cell(row.cells[1], record.get(key), 10.5, bold=key == "customer_name")
+        _cell(row.cells[1], masked_customer_name if key == "customer_name" else record.get(key), 10.5, bold=key == "customer_name")
     qr_cell = head.cell(0, 2).merge(head.cell(2, 2))
     qr_cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
     image = io.BytesIO()
