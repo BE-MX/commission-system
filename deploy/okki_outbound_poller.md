@@ -2,6 +2,7 @@
 
 发票首推成功 → `ark_okki_outbound_tasks` → `okki_outbound_poller.js` →
 受管 `okki_outbound_creator.mjs` → OKKI 待出库单（status=1，不扣库存）。出库单号 serial_id 默认取对应方舟发票 invoice_no，缺少发票号则阻止创建，不让 OKKI 自动生成另一套编号。
+出库备注 `remark` 取同一任务关联方舟发票的 `remark`，保留换行与空格，空值写空串；不取 OKKI 订单备注。创建后回读备注，不一致进入 `uncertain` 待人工核对，不重复提交。已有单据仍跳过，不自动补填或覆盖备注。
 原独立 `create-outbound.js` 保留，轮询器不再调用它。
 
 ## 部署

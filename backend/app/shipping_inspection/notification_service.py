@@ -5,6 +5,8 @@ import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import text
+from urllib.parse import urlencode
+from app.core.config import get_settings
 from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.core.time import to_beijing_naive
 from app.invoice.models import InvoiceCustomerOverlay
@@ -86,8 +88,12 @@ async def notify_submitted(db, submitted_ids):
                 print(f'[SHIPPING] notification skipped: inspection={inspection_id}, current owner or DingTalk binding missing', flush=True)
                 continue
             content = f'客户【{inspection.customer_name or "未命名客户"}】的【{inspection.outbound_no}】出库单已出库检验完成，请及时验货。'
+            url = get_settings().SHIPPING_INSPECTION_NOTICE_BASE_URL.rstrip('/') + '/shipping/inspections?' + urlencode({
+                'pdf': inspection.id, 'version': inspection.edit_version, 'keyword': inspection.outbound_no,
+            })
+            content += ' 点击本通知下载验货单 PDF（含验货照片）。'
             sent = await asyncio.wait_for(get_work_notifier().send_oa_notice(
-                sorted({user.dingtalk_id.strip() for user in users}), '出库检验完成', content), timeout=10)
+                sorted({user.dingtalk_id.strip() for user in users}), '出库检验完成', content, url), timeout=10)
             if not sent:
                 logger.warning('Inspection notification failed: inspection=%s', inspection_id)
                 print(f'[SHIPPING] notification failed: inspection={inspection_id}', flush=True)

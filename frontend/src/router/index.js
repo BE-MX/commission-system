@@ -12,7 +12,7 @@ import {
   isExpoKioskTarget,
 } from './expoKioskRoute'
 import { readSessionItem } from '@/utils/safeSessionStorage'
-import { isShippingStationPath, shippingStationLogin } from './shippingStationRoute'
+import { isShippingInspectionPath, isShippingStationPath, shippingStationLogin } from './shippingStationRoute'
 
 // NAV_ENTRIES 中每条记录映射成 vue-router 的 children 路由
 // path 去掉前导 '/' 因为父路由是 '/'
@@ -97,7 +97,7 @@ router.beforeEach(async (to, from, next) => {
   // 移动端访问登录页：直接走移动端独立登录页
   // 例外：目标是展会 kiosk（展位 iPad 用主站登录，不进移动端素材页）
   const redirectTarget = String(to.query.redirect || '')
-  if (isMobileUA && !desktopMode && to.path === '/login' && !redirectTarget.startsWith('/expo') && !isShippingStationPath(redirectTarget)) {
+  if (isMobileUA && !desktopMode && to.path === '/login' && !redirectTarget.startsWith('/expo') && !isShippingStationPath(redirectTarget) && !isShippingInspectionPath(redirectTarget)) {
     window.location.href = '/m/login.html'
     return false
   }

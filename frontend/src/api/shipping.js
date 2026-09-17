@@ -53,3 +53,9 @@ export async function fetchImageDataUrl(path) {
     reader.readAsDataURL(res.data)
   })
 }
+
+export function downloadInspectionPdf(id, version) {
+  return shippingClient.get(`/records/${encodeURIComponent(id)}/pdf`, {
+    params: { edit_version: version }, responseType: 'blob', suppressToast: true, redirectOnUnauthorized: false,
+  })
+}

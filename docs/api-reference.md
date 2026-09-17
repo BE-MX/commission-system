@@ -1302,6 +1302,17 @@ Agent research context now includes `fact_contract.version=registered_research_f
 `POST /api/mini/shipping-inspection/submit` 和 `POST /api/shipping-inspection/station/sessions/{session_id}/submit`：请求/回执结构不变。新一次检验提交成功后，向客户当前OKKI负责业务员已绑定的钉钉发送“客户【客户名称】的【出库单号】出库单已出库检验完成，请及时验货。”重复提交/回执重放不重复发送；撤回重提重新通知。缺少有效客户归属或钉钉绑定、提供商失败不会撤销提交；发送最多等待10秒，无自动补发队列。
 
 
+### 2026-09-17 验货单 PDF 下载
+
+`GET /api/shipping-inspection/records/{inspection_id}/pdf?edit_version=N`：二进制 `application/pdf` 附件，UTF-8 文件名、`Cache-Control: no-store`。沿用验货单 `_READ` 与 `_require_inspection_scope`，不可见或不存在返回404；已撤回或指定版本不匹配409；明细/照片/字体读取失败503，不导出残缺内容。未传版本时下载当前已提交版。内容含单头、出库明细、检验备注和验货照片，排除视频。
+
+完成通知 OA `message_url` 指向 `/shipping/inspections?pdf={id}&version={edit_version}&keyword={单号}`，打开后点击“下载验货单 PDF”；登录/会话过期保留回跳参数。新配置 `SHIPPING_INSPECTION_NOTICE_BASE_URL` 默认 `https://leshine.work`，用于通知的主站地址。
+
+
+### 2026-09-17 验货单组合查询
+
+`GET /api/shipping-inspection/records` 新增 `submitted_by_name`（提交人员姓名，模糊匹配）与 `salesperson_name`（该单实际关联订单业务员的镜像姓名/昵称或有效方舟绑定中文名，模糊匹配），均最多100字符。与既有 `keyword`（单号/客户）、`date_from/date_to`（提交日期，截止日含当天）、`page/page_size` 组合使用，条件取交集；倒置日期范围422。响应每行新增 `salesperson_name`，同单多业务员去重并列，未关联返回null。权限和数据范围沿用原验货单接口，不因输入人员姓名而扩大。
+
 ### 发票客户与联系人统一搜索（2026-09-17）
 
 `GET /api/invoice/customers/options`：需要 `invoice:write`。参数 `keyword`（客户名称/ID 或联系人姓名，最长200字符）、`private_only`（默认true）、`sales_user_id`（沿用代创建授权校验）、`offset`（默认0）、`limit`（默认50，最大100）。返回 `items/total/has_more`，私海请求另返回 `okki_bound`；未绑定时空结果。每项含 `option_key`（customer:公司ID / contact:联系人ID）、`kind`、`company_id/company_name/country_name`；联系人项含 `contact_id/name/email/tel`。空关键词只浏览客户，有关键词并列匹配两类。先按镜像/手动同步 overlay 的最新归属合并，再在数据库内计数和分页，避免20条截断及全量载入。仅客户级搜索旧端点仍供价格配置等独立调用方使用。

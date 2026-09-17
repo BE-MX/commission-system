@@ -357,6 +357,8 @@ class Settings(BaseSettings):
     COLORWORK_SYNC_KEY: str = ""
 
     # 发票 PDF 中文字体：部署/启动时强制预检，避免用户导出时才失败。
+    SHIPPING_INSPECTION_NOTICE_BASE_URL: str = "https://leshine.work"
+
     PDF_CJK_FONT_PATH: str = "C:\\Windows\\Fonts\\msyh.ttc"
 
 

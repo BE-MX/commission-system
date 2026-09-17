@@ -290,6 +290,8 @@ def list_records(
     db: Session,
     *,
     keyword: str | None = None,
+    salesperson_name: str | None = None,
+    submitted_by_name: str | None = None,
     date_from=None,
     date_to=None,
     page: int = 1,
@@ -297,6 +299,7 @@ def list_records(
     okki_user_id: str | None = None,
 ) -> tuple[list[dict], int]:
     """已提交验货单分页：keyword 匹配单号/客户，date 按提交时间过滤（含当日）。"""
+    from app.shipping_inspection import record_query_service
     query = (
         db.query(ShippingInspection, ArkUser.real_name)
         .outerjoin(ArkUser, ArkUser.id == ShippingInspection.submitted_by)
@@ -311,6 +314,11 @@ def list_records(
             ShippingInspection.outbound_no.like(like),
             ShippingInspection.customer_name.like(like),
         ))
+    if salesperson_name and salesperson_name.strip():
+        query = query.filter(ShippingInspection.outbound_record_id.in_(
+            record_query_service.salesperson_record_ids(db, salesperson_name)))
+    if submitted_by_name:
+        query = query.filter(ArkUser.real_name.contains(submitted_by_name.strip(), autoescape=True))
     if date_from:
         query = query.filter(ShippingInspection.submitted_at >= date_from)
     if date_to:
@@ -323,6 +331,7 @@ def list_records(
         .limit(page_size)
         .all()
     )
+    salespeople = record_query_service.salesperson_names(db, [str(insp.outbound_record_id) for insp, _ in rows])
     items = [{
         "id": insp.id,
         "edit_version": insp.edit_version,
@@ -332,6 +341,7 @@ def list_records(
         "photo_count": insp.photo_count,
         "submitted_at": insp.submitted_at,
         "submitted_by_name": real_name,
+        "salesperson_name": salespeople.get(str(insp.outbound_record_id)),
         "remark": insp.remark,
     } for insp, real_name in rows]
     return items, total
