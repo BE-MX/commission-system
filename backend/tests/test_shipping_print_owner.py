@@ -92,3 +92,74 @@ def test_deleted_username_is_not_used(db):
     db.flush()
     record = {"owner_name": "Alice"}
     assert with_owner_chinese_name(db, record) == record
+
+
+def test_print_owner_uses_live_handler_not_api_creator(db, monkeypatch):
+    from app.invoice import okki_client
+    monkeypatch.setattr(okki_client, "get_outbound_info", lambda db, ident: {
+        "outbound_invoice_id": 123, "handler_info": [{"user_id": "57125949", "nickname": "Eva"}],
+        "create_user_info": {"nickname": "Rainy"},
+    })
+    record = {"outbound_invoice_id": "123", "owner_name": "Rainy"}
+    assert with_owner_chinese_name(db, record)["owner_name"] == "Eva"
+    assert record["owner_name"] == "Rainy"
+
+
+def test_print_owner_lookup_failure_does_not_print_creator(db, monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+    from app.invoice import okki_client
+    def fail(*args):
+        raise okki_client.OkkiApiError("timeout")
+    monkeypatch.setattr(okki_client, "get_outbound_info", fail)
+    with pytest.raises(HTTPException) as exc:
+        with_owner_chinese_name(db, {"outbound_invoice_id": "123", "owner_name": "Rainy"})
+    assert exc.value.status_code == 502
+
+
+def test_print_owner_multiple_handlers_and_no_handler(db, monkeypatch):
+    from app.invoice import okki_client
+    monkeypatch.setattr(okki_client, "get_outbound_info", lambda *args: {
+        "outbound_invoice_id": 123, "handler_info": [{"nickname": "Eva"}, {"nickname": "Mary"}, {"nickname": "Eva"}],
+    })
+    record = {"outbound_invoice_id": "123", "owner_name": "Rainy"}
+    assert with_owner_chinese_name(db, record)["owner_name"] == "Eva / Mary"
+    monkeypatch.setattr(okki_client, "get_outbound_info", lambda *args: {"outbound_invoice_id": 123, "handler_info": []})
+    assert with_owner_chinese_name(db, record)["owner_name"] is None
+
+
+def test_html_and_word_use_live_outbound_handler(db, monkeypatch):
+    from app.invoice import okki_client
+    from app.shipping_inspection import outbound_service
+    user = _user(db, "Admin")
+    monkeypatch.setattr(okki_client, "get_outbound_info", lambda *args: {
+        "outbound_invoice_id": 123, "handler_info": [{"nickname": "Eva"}],
+    })
+    monkeypatch.setattr(outbound_service, "get_outbound_record", lambda *a, **k: {
+        "outbound_invoice_id": "123", "owner_name": "Rainy", "outbound_no": "ly914首返出库单"})
+    monkeypatch.setattr(outbound_service, "list_outbound_items", lambda *a: [])
+    with _pc_client(db, user, [], roles=["super_admin"]) as client:
+        response = client.get("/api/shipping-inspection/outbound-records/123/print-data")
+        assert response.status_code == 200
+        assert response.json()["data"]["record"]["owner_name"] == "Eva"
+        response = client.get("/api/shipping-inspection/outbound-records/123/word")
+        assert response.status_code == 200
+        document = Document(io.BytesIO(response.content))
+        assert document.tables[0].cell(2, 1).text == "Eva"
+
+
+def test_print_persists_refreshed_okki_token(db, monkeypatch):
+    from sqlalchemy.orm import Session
+    from app.invoice import okki_client
+    from app.invoice.models import XiaomanSettings
+    row = XiaomanSettings(id=1, access_token="expired-test-token")
+    db.add(row)
+    db.commit()
+    def refreshed(session, ident):
+        session.get(XiaomanSettings, 1).access_token = "fresh-test-token"
+        return {"outbound_invoice_id": 123, "handler_info": [{"nickname": "Eva"}]}
+    monkeypatch.setattr(okki_client, "get_outbound_info", refreshed)
+    assert with_owner_chinese_name(db, {"outbound_invoice_id": "123", "owner_name": "Rainy"})["owner_name"] == "Eva"
+    db.rollback()  # Request end must not undo the refreshed token.
+    with Session(db.bind) as followup:
+        assert followup.get(XiaomanSettings, 1).access_token == "fresh-test-token"

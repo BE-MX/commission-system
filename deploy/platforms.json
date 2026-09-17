@@ -49,6 +49,14 @@
   "external_services": [
     {
       "host": "singapore",
+      "name": "ark-okki-outbound-poller",
+      "manager": "systemd",
+      "timer": "ark-okki-outbound-poller.timer",
+      "source": "deploy/okki_outbound_poller.js",
+      "database_writer": "commission_db.ark_okki_outbound_tasks"
+    },
+    {
+      "host": "singapore",
       "name": "deputy-relay",
       "manager": "systemd",
       "source": "/opt/deputy-relay"
@@ -115,14 +123,14 @@
     "miniprogram (WeChat review/publish)",
     "WhatsApp translation extension (package updated; browser installation separate)"
   ],
-  "migration_writers_verified": true,
+  "migration_writers_verified": false,
   "migration_writers": [
     {"kind": "nssm", "host": "office", "service": "CommissionSystem"},
     {"kind": "nssm", "host": "office", "service": "WhatsAppConnector"},
     {"kind": "systemd", "host": "ubuntu@154.8.205.162", "service": "ark-backend"},
     {"kind": "pm2", "host": "root@119.28.107.92", "service": "shipment-tracking-mcp", "executable": "/root/.nvm/versions/node/v22.22.1/bin/pm2"}
   ],
-  "migration_note": "Writers verified on 2026-09-07 through office-prod SSH and live MySQL connection/process ownership. Recheck after adding or moving writers. Pending migrations still require an independent DBA file and service-stop verification.",
+  "migration_note": "Writers verified on 2026-09-07 through office-prod SSH and live MySQL connection/process ownership. Recheck after adding or moving writers. Pending migrations still require an independent DBA file and service-stop verification. 2026-09-17: Singapore ark-okki-outbound-poller is now an additional writer. DDL is blocked until migration control supports stopping its timer, draining and verifying the in-flight oneshot service, and restoring the original scheduling state. Registration alone must not set verified=true.",
   "cos_file_migration": "deferred by owner",
   "internal_modules": [
     {

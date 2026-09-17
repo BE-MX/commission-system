@@ -2,9 +2,9 @@
 
 发票首推成功后由 xiaoman_service.sync_invoice 落一行任务（ark_okki_outbound_tasks），
 singapore 主机 okki-sync 的轮询器（deploy/okki_outbound_poller.js）消费并执行
-create-outbound.js。任务表是跨系统唯一事实来源：
+okki_outbound_creator.mjs。任务表是跨系统唯一事实来源：
 
-- 同一 OKKI order_id 仅一行（唯一约束），与脚本侧 logs/created-outbound.jsonl 台账双保险；
+- 同一 OKKI order_id 仅一行（唯一约束），并由执行端实时核查 OKKI 关联出库单、持久提交意图与台账防重；
 - 含未建品非标合并行的发票落 skipped（通用产品出库无拣货意义），人工在 OKKI 处理；
 - 首推部分受理（okki_accepted）不会走到这里——sync_invoice 只在大成功收尾时入队；
 - 入队/对账均为尽力而为：异常只记日志，绝不阻断同步主流程。

@@ -1,70 +1,68 @@
-# OKKI 出库单自动生成 — 轮询器部署说明（singapore）
+# OKKI 出库单轮询器（新加坡）
 
-> 发票首推小满成功 → 后端落 `ark_okki_outbound_tasks` 任务行 → 本轮询器在 singapore
-> 执行 `create-outbound.js <order_id> --run` → OKKI 生成「待出库」销售出库单 →
-> 既有 okki-sync 镜像作业回同步，发运检验模块可见。2026-09-16 引入。
+发票首推成功 → `ark_okki_outbound_tasks` → `okki_outbound_poller.js` →
+受管 `okki_outbound_creator.mjs` → OKKI 待出库单（status=1，不扣库存）。出库单号 serial_id 默认取对应方舟发票 invoice_no，缺少发票号则阻止创建，不让 OKKI 自动生成另一套编号。
+原独立 `create-outbound.js` 保留，轮询器不再调用它。
 
-## 链路
+## 部署
 
-```
-方舟后端 (office/beijing)                singapore                      OKKI
-sync_invoice 首推成功                                             ┌──────────────┐
-  └─ INSERT ark_okki_outbound_tasks ──► okki_outbound_poller.js ─►│ 销售出库单    │
-        (pending)                       └ spawn create-outbound.js│ status=1 待出库│
-                                        └ UPDATE 任务行 done/failed└──────────────┘
-对账 job（30min）补漏 ◄── 窗口内首推成功但无任务行的发票                ▲
-                                                            okki-sync 镜像回流
-                                                            okki_outbound_records
+统一入口，只更新这项服务，不发布其他应用或执行数据库迁移：
+
+```powershell
+deploy\deploy.bat --okki-outbound-only --prepare-only
+deploy\deploy.bat --okki-outbound-only
 ```
 
-- 队列表 `ark_okki_outbound_tasks.order_id` 唯一约束 + 脚本台账 `logs/created-outbound.jsonl` = 幂等双保险。
-- 含未建品非标合并行（通用产品）的发票落 `skipped`，不自动生成，人工在 OKKI 处理。
-- 编辑重推（update）不入队；数量变化的补出库（`--remaining`）本期不自动，人工执行。
-- 后端总开关 `OKKI_OUTBOUND_AUTO_ENABLED=false`：停入队、停对账，免发版止血。
+目标 `/root/.openclaw/workspace/okki-sync`；Node 使用已核验的
+`/root/.nvm/versions/node/v22.22.1/bin/node`。运行依赖沿用该目录 mysql2、auth.js、
+OKKI 配置。方舟数据库参数单独存远端 `.ark-outbound.env`（root:root / 600），
+包含 ARK_DB_HOST/PORT/USER/PASSWORD/NAME、ARK_BUSINESS_DB_NAME、OUTBOUND_SCRIPT_DIR。
+应用账户需要任务表 SELECT/UPDATE 及业务出库明细 SELECT；不授予镜像写权限。
+不得把凭据文件纳入代码制品或日志。
 
-## 部署步骤（singapore 主机，一次）
+预检校验 SHA-256、Node 语法、systemd 配置、数据库 SELECT 与 EXPLAIN UPDATE 权限；
+制品在目标 `.deploy-state/ark-outbound/<digest>`，旧文件备份保留在该目录 backup。
+启用前停 timer 并检查 service 空闲，避免运行途中换代码；timer 每分钟触发，
+同一 MySQL named lock 限制一个受管轮询器，逐笔认领，回写校验 attempts 版本。
+启用后的真实单据结果须再查任务表与 OKKI，不以 timer active 代替业务验证。
 
-```bash
-cd /root/.openclaw/workspace/okki-sync
-# 1) 放置轮询器（本仓库 deploy/okki_outbound_poller.js 原样拷贝）
-cp /path/to/repo/deploy/okki_outbound_poller.js .
+## 已有单与防重
 
-# 2) 依赖：mysql2（沿用 okki-sync 的 node_modules；缺则补装）
-npm ls mysql2 || npm install mysql2
+1. 用镜像查关联出库 ID，再实时读取 OKKI 详情核对 order_id。
+2. 未命中时，按销售订单 create_time 当天零点起查询全部出库更新时间列表，逐页、逐单核对详情关联。
+   不只检查“已出库数量”：实测人工待出库单存在时，订单的 to_outbound_count 与 task_outbound_count 仍可能是 0。
+3. 任一关联出库单存在即 `skipped`，包括人工创建、待出库、已出库和部分出库；不自动补差额。
+4. 提交前用独占文件持久化 `logs/ark-outbound-intents/<order_id>.json`；成功后核验关联并记
+   `logs/created-outbound.jsonl`。已有意图却查不到实时关联时，不自动再次提交。
+5. 查询失败不创建。提交超时、响应丢失、结果缺字段、验证失败、子进程被杀进入 `uncertain`，不自动重试。
+   明确的提交前错误进入 `failed`，最多尝试5次，按 (attempts+1)×5分钟退避。
 
-# 3) .env 追加方舟业务库连接（ark_invoices 所在 schema；最小权限账号：
-#    只需 ark_okki_outbound_tasks 的 SELECT/UPDATE）
-#    ARK_DB_HOST=...  ARK_DB_PORT=3306  ARK_DB_USER=...  ARK_DB_PASSWORD=...  ARK_DB_NAME=...
+官方列表接口不支持 order_id 筛选；count 是总数、start_index 是页码、time_type=1 是更新时间：
+[OKKI 销售出库单列表](https://open.xiaoman.cn/api-3484729)。
 
-# 4) 安装定时器（本仓库 deploy/systemd/ 下两个文件）
-cp /path/to/repo/deploy/systemd/ark-okki-outbound-poller.{service,timer} /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable --now ark-okki-outbound-poller.timer
-```
-
-## 验证
-
-```bash
-# 干跑一单（不动任务表）：手动执行脚本 dry-run 确认参数
-node create-outbound.js <order_id>          # 不带 --run，安全
-
-# 启用 timer 前，先手动跑一次轮询器验证 DB 连通与认领 SQL（任务表为空时应输出 no claimable tasks）
-node okki_outbound_poller.js
-
-# 端到端：造一张发票首推 → 看任务表出 pending 行 → 一分钟内 poller 消费
-systemctl list-timers ark-okki-outbound-poller.timer
-journalctl -u ark-okki-outbound-poller.service -n 50
-mysql -e "SELECT id, order_id, status, attempts, last_error FROM ark_okki_outbound_tasks ORDER BY id DESC LIMIT 10"
-# OKKI 侧应出现 status=1（待出库）的销售出库单；logs/created-outbound.jsonl 有记录
-```
+限制：OKKI 未提供此流程可用的跨客户端原子幂等键，人工或旧脚本在查询与提交的短窗口同时建单，
+仍可能形成外部竞态。受管轮询器的锁与意图文件只约束本服务。
+长时间积压使扫描超过120秒时也可能进入 uncertain，即使尚未提交；应核对后处理，不能盲目重置。
 
 ## 运维
 
-- 失败重试：`failed` 且 `attempts < 5` 按 (attempts+1)×5 分钟退避自动重试；超限保持 failed 待人工。
-- 卡死回收：`running` 超过单订单超时+5 分钟未回写视为认领进程已死，自动回收重试（attempts 未超限才回收）。
-- 人工重置：`UPDATE ark_okki_outbound_tasks SET status='pending', attempts=0 WHERE id=N;`
-- 人工补单：管理员「待核对 → 绑定已有 OKKI 订单」（resolve_uncertain_bind）的发票不自动入队，需要时手工执行 `node create-outbound.js <order_id> --run`（或向任务表手工插 pending 行）。
-- 上线时点口径：启用瞬间，首推成功落在近 24h 窗口内的在途订单会被对账 job 补建出库任务——这是预期行为，验收时不要把它们当误补。
-- 脚本报「已生成」类重复：台账幂等命中，视脚本退出码；若因此 failed，核对后用上面 SQL 重置。
-- 回滚：`systemctl disable --now ark-okki-outbound-poller.timer`；后端置 `OKKI_OUTBOUND_AUTO_ENABLED=false` 重启。
-- 时间口径：任务表时间为北京墙钟字符串，与 singapore 系统时区无关（脚本内已固定 UTC+8，SQL 不用 NOW()）。
+```bash
+systemctl list-timers ark-okki-outbound-poller.timer
+journalctl -u ark-okki-outbound-poller.service -n 80 --no-pager
+```
+
+任务表 `reason` 记录 created/existing 与单号，`last_error` 记录错误。
+`skipped` 也包括后端识别的未建品非标合并行；此类不进入执行器。
+`uncertain` 要先读 OKKI 实际关联和提交意图，确认后人工完成状态处理；不得直接删除意图或 force 重发。
+暂停自动执行使用 `systemctl stop ark-okki-outbound-poller.timer`；需要跨重启暂停用 disable --now。
+不要停止执行中的 service，以免制造不确定提交。后端总开关只控制入队与对账，不会暂停已经入队的任务。
+
+验证：`node --test deploy/tests/test_okki_outbound.mjs`，覆盖人工/部分已有单、查询失败、
+响应丢失、意图防重、真实结果验证、分页、并发认领和旧 worker 回写。
+
+## 数据库迁移保护
+
+此服务是新增 commission_db 任务表 writer。现有迁移控制器不能完整冻结 timer 与在途 oneshot，
+因此 platforms.json 已登记该服务，并把 migration_writers_verified 置 false：含待执行 DDL 的发布
+在迁移前阻断；无 DDL 的普通发布不受此标记影响。解除条件是补齐“停 timer → 排空 service →
+确认无写入 → 迁移 → 恢复原调度状态”的支持并验证，不能仅因服务已登记就改回 true。

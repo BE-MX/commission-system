@@ -226,6 +226,7 @@ def publish(args):
 if __name__ == "__main__":
     sys.modules["publish"] = sys.modules[__name__]
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser.add_argument("--okki-outbound-only", action="store_true", help="Deploy and enable only the Singapore outbound worker")
     parser.add_argument("--cloud-only", action="store_true")
     parser.add_argument("--no-pull", action="store_true")
     parser.add_argument("--revision", help="Pin a reviewed full commit SHA; fetch still runs unless --no-pull")
@@ -242,7 +243,12 @@ if __name__ == "__main__":
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
-        if args.restore_pre151:
+        if args.okki_outbound_only:
+            if any(value for key, value in vars(args).items() if key not in {"okki_outbound_only", "prepare_only"}):
+                raise RuntimeError("Outbound-only accepts only --prepare-only")
+            from okki_outbound_release import execute
+            execute(args.prepare_only)
+        elif args.restore_pre151:
             if any(value for key, value in vars(args).items() if key not in {"restore_pre151", "prepare_only"}):
                 raise RuntimeError("Restore pre151 only accepts its plan and --prepare-only")
             from restore_152 import execute
@@ -275,7 +281,7 @@ if __name__ == "__main__":
         else:
             publish(args)
     except Exception as error:
-        if STATE.exists() and not getattr(locals().get("args"), "restore_pre151", None) and not getattr(locals().get("args"), "office_lan_https", None) and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False) and not getattr(locals().get("args"), "shipping_video_routing_only", False):
+        if not getattr(locals().get("args"), "okki_outbound_only", False) and STATE.exists() and not getattr(locals().get("args"), "restore_pre151", None) and not getattr(locals().get("args"), "office_lan_https", None) and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False) and not getattr(locals().get("args"), "shipping_video_routing_only", False):
             journal = marker("publish-current")
             journal.update(status="failed", error_type=type(error).__name__)
             atomic_json(STATE / "publish-current.json", journal)
