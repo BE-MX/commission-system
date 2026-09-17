@@ -2,8 +2,8 @@
 
 - 分支 `codex/outbound-stock-wait`；实现明确库存不足 → waiting_stock → 每15分钟目标仓库可用库存复查 → 防重复核 → 补建。不限等待次数，其他不确定提交继续隔离。
 - 库存拒绝意图保留证据，后续提交独占 `.retry-N` 意图，库存查询异常不创建。
-- 历史问题单457/任务31仍在生产 uncertain，未修改；发布后需按 `deploy/okki_outbound_poller.md` 的明确拒绝审计恢复流程单独转等待，禁止批量按404重置。
-- 本次无数据库结构变更。用户已授权合并推送、专项发布轮询器及将任务31转入等待库存；执行结果随后补记。
+- 历史问题单457（翟 #260943）/任务31已按用户授权转为生产 `waiting_stock`。持有轮询锁，核验人工补建审计中的明确库存拒绝、实时无关联出库单，保留旧意图与任务快照后标注 stock_rejected；线上 dry-run 返回 waiting_stock，SKU5726需5件、目标仓库可用0件。未创建出库单，后续每15分钟复查。
+- 代码0631c29f已合并并推送 origin/main。使用 `deploy/deploy.bat --okki-outbound-only` 先预检再发布新加坡轮询服务，digest `f77a7ac81840b5824f401c2539966b37972af229ee206f65a831db176d89f04f`；两份线上JS SHA-256与发布源码一致，timer active。本次无数据库结构变更，不发布其他应用。
 - 验证：`node --test deploy/tests/test_okki_outbound.mjs` 32项通过（含最新主线备注功能）；增量约定扫描无违规，完整约定检查被主分支同样存在的10项前端UI基线问题阻断；`git diff --check`通过，Git巡检为 no-fetch 本地快照。
 
 ## 2026-09-17 出库检验改进集成
