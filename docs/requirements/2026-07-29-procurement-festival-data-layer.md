@@ -153,3 +153,12 @@ GROUP BY t.user_id, t.Name;
 2. service 层 ark provider 六函数 + Settings 开关 + 单测（复用现有 conftest，ark_invoices 走 Base.metadata 建表零额外 infra）；
 3. reconcile 对账端点 + runbook 操作项；
 4. 8/1 起 okki 轨开赛 + ark 并跑对账 → 达标后切换（或运营拍板直接 ark 起步）。
+
+
+## 9月新签日报与截图（2026-09-17）
+
+每日17:30采购节钉钉战报保留原日报，增加9月新签业务部总完成数/113目标、总完成率、达标组数、七团队及嘉树单人组的完成数/目标/完成率、当前第一团队（支持并列、空缺及月末待复核）。不展示奖金。统计直接复用 `september_service.get_payload`，与9月大屏使用相同OKKI统计及 `FESTIVAL_SEPTEMBER_FINALIZED` 复核状态；数据质量异常时，文字部分暂停发布未核对数字和第一团队。
+
+每日图片由四张增加为五张，追加 `/festival/september.html`。旧公司新签和个人新签前三显式标注8月。9月汇总标注自己的取数时间，图片均为发送时实时截图；补发日报不是历史日终截图。日发送时间、采购节专用群、每日幂等键和失败重试规则保持原有逻辑，不另建发送任务。
+
+9月页面为Vite构建入口：截图预检以 `festival-screen=september-new-sign` 标记识别页面，避免误把主站SPA回退页当成榜单。Chrome同时截图与读取DOM，页面只有数据有效、未过期且所有团队LOGO加载成功才标记就绪；不就绪则进入现有失败重试，避免空数据/缺LOGO截图投递。发布时须同步后端与前端构建产物。

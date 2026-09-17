@@ -24,7 +24,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.dingtalk.webhook import DingTalkWebhookError, WebhookSender
-from app.festival import service
+from app.festival import september_service, service
 from app.festival.models import FestivalEvent, FestivalState
 
 logger = logging.getLogger("festival.notification")
@@ -32,10 +32,11 @@ logger = logging.getLogger("festival.notification")
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _UPLOAD_ROOT = _REPO_ROOT / "uploads" / "festival" / "dingtalk"
 _BOARD_PAGES = (
-    ("个人新签积分榜", "xinqian.html", "new-sign", "new-sign"),
+    ("8月个人新签积分榜", "xinqian.html", "new-sign", "new-sign"),
     ("首返复购双榜", "fugou.html", "repurchase", "repurchase"),
     ("团队人均积分榜", "tuandui.html", "teams", "teams"),
     ("阵营新签 PK 榜", "zhenying.html", "camps", "camps"),
+    ("9月新签目标战报", "september.html", "september-new-sign", "september-new-sign"),
 )
 _BRAND_YELLOW = "#FDD956"
 _BRAND_BLACK = "#080303"
@@ -398,8 +399,10 @@ def capture_board_screenshots(target_date: date) -> list[dict]:
             except ValueError:
                 payload = None
             data = payload.get("data", payload) if isinstance(payload, dict) else None
+            page_marker = ('name="festival-screen" content="september-new-sign"'
+                           if page == "september.html" else "/api/public/festival/")
             if (page_response.status_code != 200
-                    or "/api/public/festival/" not in page_response.text
+                    or page_marker not in page_response.text
                     or api_response.status_code != 200
                     or not isinstance(data, dict)
                     or not data.get("as_of")):
@@ -413,16 +416,22 @@ def capture_board_screenshots(target_date: date) -> list[dict]:
         query = urlencode({"key": screen_key, "stay": "1"})
         url = f"{base_url}/festival/{page}?{query}"
         with tempfile.TemporaryDirectory(prefix=f"ark-festival-{slug}-") as profile:
+            command = _screenshot_command(browser, profile, source, url)
+            if page == "september.html":
+                command.insert(-1, "--dump-dom")
             try:
                 proc = subprocess.run(
-                    _screenshot_command(browser, profile, source, url),
-                    capture_output=True, text=True, timeout=40,
+                    command,
+                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=40,
                 )
             except (OSError, subprocess.TimeoutExpired):
                 # TimeoutExpired 会携带含 key 的完整命令，必须在进入任务日志前截断。
                 raise RuntimeError(f"{title}截图进程失败，请检查浏览器安装与服务状态") from None
             if proc.returncode != 0 or not source.is_file() or source.stat().st_size < 10_000:
                 raise RuntimeError(f"{title}截图失败（浏览器退出码 {proc.returncode}）")
+        if page == "september.html" and 'data-september-ready="true"' not in proc.stdout:
+            source.unlink(missing_ok=True)
+            raise RuntimeError("9月新签截图尚未加载完整数据或图片，请检查页面资源后重试")
         try:
             _compress_board_screenshot(source, output)
         finally:
@@ -650,6 +659,9 @@ def _daily_snapshot(target_date: date) -> dict:
         headline = service.get_headline_payload(db, None, None)
         day = target_date.isoformat()
         return {
+            "september": september_service.get_payload(
+                db, finalized=get_settings().FESTIVAL_SEPTEMBER_FINALIZED,
+            ),
             "date": day,
             "as_of": headline["as_of"],
             "today_new": service.get_company_new_total(db, day, day),
@@ -660,6 +672,26 @@ def _daily_snapshot(target_date: date) -> dict:
             "amount_top2": headline["amount_top2"],
             "teams_top3": headline["teams_top3"],
         }
+
+
+def _september_report_lines(data: dict) -> list[str]:
+    lines = ["", "### 9月新签 · 业务部与各组目标", f"> 数据截至 {data['as_of']} · OKKI"]
+    if not data["data_quality"]["ok"]:
+        return lines + ["- 数据待核对：总进度、各组完成情况与第一团队暂不发布，请以核对后的数据为准。"]
+    total = data["total"]
+    lines.append(f"- 业务部总目标：**{total['done']}/{total['target']} 个 · {total['rate']:.1f}%**")
+    lines.append(f"- 达标小组：**{total['achieved_groups']}/{total['group_count']}**")
+    for group in data["groups"]:
+        label = group["name"] + ("（单人）" if group["solo"] else "")
+        lines.append(f"- {label}：**{group['done']}/{group['target']} 个 · {group['rate']:.1f}%**")
+    champion = data["champion"]
+    label = "9月" if data["phase"] == "finalized" else "当前"
+    label += "并列第一团队" if champion["tied"] else "第一团队"
+    if data["phase"] == "pending_review":
+        label += "（待复核）"
+    names = "、".join(champion["names"]) or "暂未产生（至少2人且达标）"
+    lines.append(f"- {label}：**{names}**")
+    return lines
 
 
 def build_daily_markdown(snapshot: dict, screenshots: list[dict]) -> str:
@@ -674,13 +706,15 @@ def build_daily_markdown(snapshot: dict, screenshots: list[dict]) -> str:
         "",
         f"- 今日新签：**{snapshot['today_new']} 个**",
         f"- 今日 GMV：**${snapshot['today_gmv']:,.0f}**",
-        f"- 公司新签：**{summary['new_total']}/{summary['new_target']}**",
+        f"- 8月公司新签：**{summary['new_total']}/{summary['new_target']}**",
         f"- 公司 GMV：**${summary['gmv_total']:,.0f}/${summary['gmv_target']:,.0f}**",
-        f"- 新签前三：{sign}",
+        f"- 8月新签前三：{sign}",
         f"- 首返前二：{first}",
         f"- 复购前二：{repurchase}",
         f"- 团队前三：{teams}",
     ]
+    lines.extend(_september_report_lines(snapshot["september"]))
+    lines.extend(["", "> 以下榜单为发送时实时截图，补发日报时不代表历史日终快照。"])
     for shot in screenshots:
         lines.extend(["", f"### {shot['title']}", f"![{shot['title']}]({shot['url']})"])
     return "\n".join(lines)

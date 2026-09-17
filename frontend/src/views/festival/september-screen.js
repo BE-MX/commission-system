@@ -76,6 +76,8 @@ function updateStatus() {
   const notice = $('data-notice')
   const interrupted = Boolean(failure || stale)
   const badData = snapshot && !snapshot.data_quality.ok
+  const logosLoaded = [...document.querySelectorAll('.team-logo')].every(image => image.complete && image.naturalWidth > 0)
+  document.documentElement.dataset.septemberReady = String(Boolean(snapshot && !interrupted && logosLoaded))
   notice.classList.toggle('error', interrupted || Boolean(badData))
   notice.classList.toggle('review', snapshot?.phase === 'pending_review')
   if (interrupted) notice.textContent = snapshot ? '更新中断 · 保留最后数据' : '数据暂不可用'

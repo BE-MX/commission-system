@@ -1317,3 +1317,7 @@ Agent research context now includes `fact_contract.version=registered_research_f
 ### 发票客户与联系人统一搜索（2026-09-17）
 
 `GET /api/invoice/customers/options`：需要 `invoice:write`。参数 `keyword`（客户名称/ID 或联系人姓名，最长200字符）、`private_only`（默认true）、`sales_user_id`（沿用代创建授权校验）、`offset`（默认0）、`limit`（默认50，最大100）。返回 `items/total/has_more`，私海请求另返回 `okki_bound`；未绑定时空结果。每项含 `option_key`（customer:公司ID / contact:联系人ID）、`kind`、`company_id/company_name/country_name`；联系人项含 `contact_id/name/email/tel`。空关键词只浏览客户，有关键词并列匹配两类。先按镜像/手动同步 overlay 的最新归属合并，再在数据库内计数和分页，避免20条截断及全量载入。仅客户级搜索旧端点仍供价格配置等独立调用方使用。
+
+### 设计排期备注编辑
+
+`PUT /api/design/tasks/{task_id}/remark`：权限 `design:write` 或 `design:manage`，请求 `{ "remark": "备注内容" }`，空字符串清空备注。仅更新该任务备注，不覆盖预约备注或状态；任务不存在或关联预约已删除返回 HTTP 404。返回统一信封。预约备注继续使用 `PUT /api/design/requests/{request_id}/remark`。

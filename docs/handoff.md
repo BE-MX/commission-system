@@ -1,3 +1,22 @@
+## 2026-09-17 Excel 导入 Model 回填（合并交付，未部署）
+
+任务 `codex/invoice-import-model`，worktree `D:/MyProgram/commission-system-codex-invoice-import-model`。根因是 `load_okki_rows` SQL 未选 model，导入产品索引也未向候选/唯一匹配结果传 model；前端原本已经读取 `matched_product.model`。两处补全，型号取匹配产品目录，不根据 Excel 文本猜测，也不改变匹配、SKU、价格或数量规则。
+
+两个新增后端回归先以缺少 model 失败，再修复通过，分别覆盖唯一匹配和歧义候选；后端粘贴/截图导入及 SKU 目录86项测试、前端导入16项测试通过。浏览器模拟API走编辑→Excel粘贴→校验→加入，Model立即显示GW-MODEL，导入成交价34.0000保留，未保存真实订单；证据保留在主目录 `tmp/invoice-import-model/`。独立审查未发现阻断问题；增量规则与diff检查通过，全局约定检查仍被10项主线既有UI债务阻挡，Git巡检为no-fetch本地快照。用户随后授权合并并推送 origin/main；本轮不部署，交付后清理本任务分支与 worktree。
+
+## 2026-09-17 设计管理列表备注编辑（Codex，合并推送交付）
+
+- 分支 `codex/design-remark-dialog`，worktree `D:/MyProgram/commission-system-codex-design-remark`。排期任务列表的排期备注、预约备注各自可点击弹框修改；空值展示“添加备注”，弹框明确类型。待确认列表沿用预约备注入口并改为支持键盘的按钮。
+- 任务备注走新增 `PUT /api/design/tasks/{task_id}/remark`，预约备注沿用预约接口，按 task/request ID 分开保存，支持清空。成功更新当前行并刷新当前列表，失败保留草稿，重复提交有保护。无迁移、无生产写入。
+- 验证：6 项隔离 SQLite/后端测试、5 项前端 composable 交互测试、`npm run build`、独立静态审查通过。测试覆盖 ID 分流、备注互不覆盖、清空、失败保留草稿、重复提交、无效/已删除任务及回滚。未做真实登录页面浏览器验收。
+- `check_conventions.py` 完整检查报 11 项 UI 债务：主线已有 10 项，本次 DesignManage.vue 增加 10 行触发行数基线不匹配（762→772行）。页面已有独立 composable，本次为现有备注列的小范围扩展，不为行数机械拆分或抬高基线；底层增量规则检查无违规，`git diff --check` 通过。构建日志保留于主目录 `tmp/design-remark/`，Git 巡检为 `--no-fetch` 本地快照。用户已授权合并并推送 origin/main；本轮不部署，交付后清理本任务分支与 worktree。
+
+## 2026-09-17 出库单打印与 Word 客户名称遮罩（Codex）
+
+- 来源分支 `codex/outbound-customer-mask`；用户已授权合并推送到 `origin/main`，完成后清理本任务分支与 worktree；本轮不部署。
+- 两个文档模板仅输出客户名称前三个字符 + `***`（如 `Inessa Wassiljev` → `Ine***`）；空名称保持空白，短名称追加星号。列表、扫码、验货单及原始数据不变。
+- 验证：打印模板 Node 测试 9 项通过；Word/打印排序 pytest 4 项通过（内存 SQLite）；前端构建通过；`git diff --check` 通过。约定检查受 10 项既有 UI 债务阻断，均在本次改动之外；Git 巡检已执行 `--no-fetch`，只代表本地快照。
+
 ## 2026-09-17 全平台列表操作列防遮挡（Codex）
 
 - 分支 `codex/table-actions-wrap`：主站 AST 扫描覆盖 77 个 Vue 文件中的 103 个操作/处理列，统一接入 `table-action-column`；按钮组统一 `table-actions`。修复全局 list-table 单行省略导致尾部按钮裁切，以及发票、内贸客户、备货等局部 nowrap 布局。普通文本列仍保留省略，权限、事件和业务接口未改。
@@ -1363,6 +1382,13 @@ Mac 同事的英文网页中私聊按钮标识为 `Profile details`，原选择�
 分支 codex/deploy-candidate-runtime 基于当次已审查候选7efe，只新增部署器 --live-root 启动支持、测试与说明，不纳入后来151/153业务迁移。允许从受管固定候选调用原 deploy.bat，部署模块统一取候选，安装目录/状态/锁/服务/DBA保护保持原归属。无生产迁移、业务切换或 origin 写入；生产发布由亮哥执行。验证及服务器候选准备结果见本任务交付说明。
 
 
+### 2026-09-17 · 9月新签加入钉钉日报与截图
+
+任务分支 `codex/september-dingtalk`，基点 `f95a9076`。每日采购节战报加入9月业务部113目标、八组完成情况、第一团队及并列/待复核状态，不显示奖金；旧新签数据标明8月。截图增加9月频道，并校验模块页面身份、有效数据和全部团队LOGO就绪。沿用原发送时间、专用群、幂等和重试，不触发额外发送。截图和月进度均标明取数时间，补发不冒充历史日终快照。
+
+验证：相关后端58项、前端7项测试通过；前端生产构建及独立契约审查通过；实际Chrome运行生产截图命令，完成9月截图并验证嘉树LOGO缺失会阻止发送。浏览器使用本地模拟接口和历史快照测试数据，不连接生产库或发送真实钉钉消息。证据保留任务目录 `tmp/september-dingtalk/`。约定检查受11项既有UI债务阻挡，增量约定检查无违规；Git巡检为 `--no-fetch` 本地快照。亮哥已授权合并并推送 origin/main，本轮不部署。
+
+
 ## 2026-09-17 原始库存图源文件规则优化
 
 任务分支 `codex/colorwork-source-rules`，基于线上 `80996982` 准备仅含本任务改动的发布候选。新版 PSD/JPG 相互等尺寸但可改变 S1；服务端读取 PSD 头核对实际宽高，缩放旧动态区域仅作参考。S1 长度集合不随新版扩展，候选异常长度提示并由启用接口硬校验；新色号提取候选色块且必须人工确认。结构合成问题合并，装饰越界不作为业务色块，明确色号越界仍阻止。删除尺寸也列入 removed；历史库存/母版/导出保留，未人工启用时继续 S1。
@@ -1371,4 +1397,4 @@ Mac 同事的英文网页中私聊按钮标识为 `Profile details`，原选择�
 
 发布：经 `deploy/deploy.bat --cloud-only --no-pull --revision ba475d55af2ae6371b15899db42751cc3605b32f`（先 prepare-only）完成。发布日志和北京 colorwork/current.json 均 succeeded；主站后端 changed=false、schema_changed=false，其他静态站零变化。两个公网入口健康200。前后只读摘要一致：23套当前源仍全为S1，869条inventory_states、23个master_versions和1个artifact未变；验证证据在任务 worktree 的 colorwork-workbench/outputs。独立复核已通过装饰修复。发布基点上的约定检查为10项已有主站UI债务，直接增量 check(80996982) 无违规。
 
-未获得合并main授权，交付保留任务分支；后续发布main前需纳入本修复，避免覆盖已上线功能。两个本地隔离测试目录 .wrangler/source-rules-test 和 source-rules-final 的清理被自动审批以 blocked by policy 拒绝，未绕过；保留测试目录及发布恢复材料，不影响生产。
+用户已授权合并 main 并推送 origin，本轮整合仅同步已发布修复，不重复发布站点。两个本地隔离测试目录 .wrangler/source-rules-test 和 source-rules-final 的清理被自动审批以 blocked by policy 拒绝，未绕过；保留测试目录及发布恢复材料，不影响生产。

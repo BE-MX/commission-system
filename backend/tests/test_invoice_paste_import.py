@@ -210,6 +210,23 @@ def test_preview_import_blocks_ambiguous_products_with_candidates(db):
     assert "找到 2 个产品" in row["errors"][0]
 
 
+@pytest.mark.parametrize("ambiguous", [False, True])
+def test_preview_import_preserves_catalog_model(db, ambiguous):
+    products = [(11, "Standard Double Drawn Genius Weft/18/#1B/100g", "#1B", "18", "100g", 9011)]
+    if ambiguous:
+        products.append((12, "Standard Double Drawn Genius Weft/18/#1B/100g", "#1B", "18", "100g", 9012))
+    seed_okki_products(db, products)
+    db.execute(text("UPDATE lsordertest.okki_products SET model = 'GW-MODEL' WHERE product_id = 11"))
+    db.execute(text("UPDATE lsordertest.okki_products SET model = 'GW-OTHER' WHERE product_id = 12"))
+    row = import_service.preview_import(
+        db, customer_id="CUST001", order_type="stock", currency="USD", raw_rows=[valid_row()],
+    )["rows"][0]
+    if ambiguous:
+        assert {item["product_id"]: item["model"] for item in row["candidates"]} == {11: "GW-MODEL", 12: "GW-OTHER"}
+    else:
+        assert row["matched_product"]["model"] == "GW-MODEL"
+
+
 def test_preview_import_blocks_multiple_skus_for_one_product(db):
     seed_okki_products(db, [
         (11, "Standard Double Drawn Genius Weft/18/#1B/100g", "#1B", "18", "100g", 9011),

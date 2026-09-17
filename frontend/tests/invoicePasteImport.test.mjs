@@ -105,7 +105,7 @@ test('maps preview rows without losing the pasted transaction price', () => {
       quantity: 2, unit_price: '34.00',
     },
     matched_product: {
-      product_id: 11, sku_id: 9011, product_name: 'Genius Weft/18/#1B/100g',
+      product_id: 11, sku_id: 9011, product_name: 'Genius Weft/18/#1B/100g', model: 'GW-MODEL',
     },
     price_source: 'manual',
     standard_price: '36.00',
@@ -113,6 +113,7 @@ test('maps preview rows without losing the pasted transaction price', () => {
   }, 'batch-1', 'stock')
 
   assert.equal(line.product_id, 11)
+  assert.equal(normalizeHairRow(line).model, 'GW-MODEL')
   assert.equal(line.price_per_piece, 34)
   assert.equal(line.price_source, 'manual')
   assert.equal(line._importBatchFingerprint, 'batch-1')

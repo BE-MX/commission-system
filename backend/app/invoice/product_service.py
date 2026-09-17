@@ -447,10 +447,11 @@ def load_okki_rows(db: Session, *, limit: int | None = 10000) -> list:
         return []
     name_expr = _quoted_column(product_columns, "product_name", "name")
     product_no_expr = _quoted_column(product_columns, "product_no")
+    model_expr = _quoted_column(product_columns, "model")
     limit_sql = f"LIMIT {int(limit)}" if limit else ""
     return db.execute(text(f"""
         SELECT p.product_id, {product_no_expr} AS product_no,
-               {name_expr} AS product_name, p.color, p.size, p.unit
+               {name_expr} AS product_name, {model_expr} AS model, p.color, p.size, p.unit
         FROM `{schema}`.okki_products p
         WHERE {_disable_filter("okki_products", product_columns, alias="p")}
         ORDER BY p.product_id DESC
