@@ -35,7 +35,8 @@ OKKI 配置。方舟数据库参数单独存远端 `.ark-outbound.env`（root:ro
 3. 任一关联出库单存在即 `skipped`，包括人工创建、待出库、已出库和部分出库；不自动补差额。
 4. 提交前用独占文件持久化 `logs/ark-outbound-intents/<order_id>.json`；成功后核验关联并记
    `logs/created-outbound.jsonl`。已有意图却查不到实时关联时，不自动再次提交。
-5. 查询失败不创建。提交超时、响应丢失、结果缺字段、验证失败、子进程被杀进入 `uncertain`，不自动重试。
+5. 明确的 `HTTP=200 / code=404 / Operation Failed. 序号为[N]可用库存数量不足` 拒绝进入 `waiting_stock`，每15分钟复查，不受5次上限限制。其余业务错误仍按结果不确定处理。
+6. 查询失败不创建。提交超时、响应丢失、结果缺字段、验证失败、子进程被杀进入 `uncertain`，不自动重试。
    明确的提交前错误进入 `failed`，最多尝试5次，按 (attempts+1)×5分钟退避。
 
 官方列表接口不支持 order_id 筛选；count 是总数、start_index 是页码、time_type=1 是更新时间：
@@ -60,6 +61,14 @@ journalctl -u ark-okki-outbound-poller.service -n 80 --no-pager
 
 验证：`node --test deploy/tests/test_okki_outbound.mjs`，覆盖人工/部分已有单、查询失败、
 响应丢失、意图防重、真实结果验证、分页、并发认领和旧 worker 回写。
+
+## 等待库存恢复
+
+等待任务每15分钟认领一次，按最久未处理优先，不限制等待次数。每轮先实时核对已有出库单，再按 SKU 合并需求量，查询 `/v1/product/inventory-list`，只使用目标仓库 `8193514242746` 的启用库存 `enable_count`。其他仓库库存、实物库存 `real_count` 和订单详情库存字段不作替代；列表不完整、字段异常或查询失败时不提交。库存足够才提交整单，若检查后库存又被占用，明确的库存拒绝会重新等待。
+
+提交意图不删除：明确拒绝时持久记录 `stock_rejected` 与错误，下一次真正提交使用 `.retry-N` 独占意图文件，保留每次拒绝证据。响应丢失或超时仍为 `uncertain`，不得凭库存补足自动解锁。等待期间人工已建单则 `skipped`，不补差额。已有 `uncertain` 历史任务不自动转等待，因为旧日志可能缺少明确拒绝证据。
+
+历史明确库存拒绝任务恢复：在同一轮询锁下重新核对无关联出库单，读取远端人工恢复审计中的明确拒绝证据；把对应最后一次意图标为 `stock_rejected`，把任务改为 `waiting_stock`。保留原始文件备份和恢复审计，生产状态转换须有授权，不能仅按 `code=404` 批量解锁。
 
 ## 数据库迁移保护
 

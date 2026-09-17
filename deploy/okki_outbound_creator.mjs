@@ -63,7 +63,59 @@ export async function findExisting(order, api, knownIds = []) {
   throw new Error('Outbound scan limit exceeded; no creation attempted');
 }
 
-export async function createOne(orderId, {api, directory, invoiceNo, invoiceRemark, dryRun = false, knownIds = []}) {
+// Inventory is checked against the exact destination warehouse, not order enable_count.
+export async function stockShortages(payload, api) {
+  const needs = new Map();
+  for (const row of payload.record_list) needs.set(String(row.sku_id), (needs.get(String(row.sku_id)) || 0) + row.outbound_count);
+  const shortages = [];
+  for (const [sku, required] of needs) {
+    const data = await api('/v1/product/inventory-list?' + new URLSearchParams({sku_id: sku, count: '100', start_index: '1'}));
+    // Fail closed if a complete warehouse listing cannot be proved.
+    if (!Array.isArray(data.list) || !Number.isInteger(Number(data.count)) || Number(data.count) !== data.list.length) throw new Error('Incomplete inventory response');
+    const rows = data.list.filter(r => String(r.sku_id) === sku && String(r.warehouse_id) === String(payload.invoice_warehouse_id));
+    if (rows.length > 1) throw new Error('Duplicate warehouse inventory rows');
+    let available = 0;
+    if (rows.length) {
+      const row = rows[0];
+      if (row.enable_count == null || String(row.enable_count).trim() === '' || !Number.isFinite(Number(row.enable_count)) || ![0, 1].includes(Number(row.disable_flag)) || row.disable_flag == null) throw new Error('Invalid warehouse inventory');
+      available = Number(row.disable_flag) === 0 ? Number(row.enable_count) : 0;
+    }
+    if (available < required) shortages.push({sku_id: sku, required, available});
+  }
+  return shortages;
+}
+
+function nextSubmissionIntent(baseIntent, orderId) {
+  let intent = baseIntent, retry = 0;
+  while (fs.existsSync(intent)) {
+    let previous;
+    try { previous = JSON.parse(fs.readFileSync(intent, 'utf8')); }
+    catch { throw Object.assign(new Error('Unreadable submission intent; manual review required'), {uncertain: true}); }
+    if (previous.order_id !== orderId || previous.outcome !== 'stock_rejected') throw Object.assign(new Error('Prior submission intent exists; no automatic resubmission'), {uncertain: true});
+    intent = baseIntent + '.retry-' + (++retry);
+  }
+  return {intent, retry};
+}
+
+export async function createOne(orderId, options) {
+  try { return await createOneAttempt(orderId, options); }
+  catch (error) {
+    if (!error.uncertain && /^\d+$/.test(orderId)) {
+      const base = path.join(options.directory, 'logs', 'ark-outbound-intents', orderId + '.json');
+      // After worker recovery the queue may have lost its prior waiting state.
+      // Only durable rejection evidence with no newer active intent permits waiting.
+      try {
+        if (nextSubmissionIntent(base, orderId).retry > 0) {
+          console.warn('[outbound] stock retry deferred: ' + error.message);
+          return {outcome: 'waiting_stock', order_id: orderId, reason: 'Stock retry deferred: ' + error.message};
+        }
+      } catch { error.uncertain = true; }
+    }
+    throw error;
+  }
+}
+
+async function createOneAttempt(orderId, {api, directory, invoiceNo, invoiceRemark, dryRun = false, knownIds = []}) {
   if (!/^\d+$/.test(orderId)) throw new Error('Invalid order ID');
   const order = await api('/v1/invoices/order/info?order_id=' + orderId);
   if (String(order.order_id) !== orderId) throw new Error('Order ID mismatch');
@@ -76,8 +128,17 @@ export async function createOne(orderId, {api, directory, invoiceNo, invoiceRema
   }
   const payload = buildPayload(order, invoiceNo, invoiceRemark);
   const intents = path.join(directory, 'logs', 'ark-outbound-intents');
-  const intent = path.join(intents, orderId + '.json');
-  if (fs.existsSync(intent)) throw Object.assign(new Error('Prior submission intent exists; no automatic resubmission'), {uncertain: true});
+  const baseIntent = path.join(intents, orderId + '.json');
+  const {intent, retry} = nextSubmissionIntent(baseIntent, orderId);
+  if (retry) {
+    let shortages;
+    try { shortages = await stockShortages(payload, api); }
+    catch (error) {
+      console.warn('[outbound] inventory check failed: ' + error.message);
+      return {outcome: 'waiting_stock', order_id: orderId, reason: 'Inventory check failed: ' + error.message};
+    }
+    if (shortages.length) return {outcome: 'waiting_stock', order_id: orderId, reason: 'Insufficient warehouse stock', shortages};
+  }
   if (dryRun) return { outcome: 'dry_run', order_id: orderId, serial_id: payload.serial_id, items: payload.record_list.length, quantity: payload.record_list.reduce((n, r) => n + r.outbound_count, 0) };
   fs.mkdirSync(intents, {recursive: true, mode: 0o700});
   let fd;
@@ -96,7 +157,16 @@ export async function createOne(orderId, {api, directory, invoiceNo, invoiceRema
     const row = {order_id: orderId, outbound_invoice_id: result.outbound_invoice_id, serial_id: result.serial_id, at: now()};
     fs.appendFileSync(ledger, JSON.stringify(row) + '\n', {mode: 0o600});
     return {outcome: 'created', ...row};
-  } catch (error) { error.uncertain = true; throw error; }
+  } catch (error) {
+    if (error.stockRejected === true) {
+      // Preserve rejection evidence. A crash during this write fails closed on next read.
+      const fd = fs.openSync(intent, 'w', 0o600);
+      try { fs.writeFileSync(fd, JSON.stringify({order_id: orderId, outcome: 'stock_rejected', rejected_at: now(), error: error.message})); fs.fsyncSync(fd); }
+      finally { fs.closeSync(fd); }
+      return {outcome: 'waiting_stock', order_id: orderId, reason: error.message};
+    }
+    error.uncertain = true; throw error;
+  }
 }
 
 export async function requestOkki(auth, base, route, payload, fetchImpl = fetch) {
@@ -112,7 +182,14 @@ export async function requestOkki(auth, base, route, payload, fetchImpl = fetch)
         continue;
       }
       const data = await response.json();
-      if (!response.ok || data.code !== 200 || !data.data) throw new Error('OKKI ' + route.split('?')[0] + ' HTTP=' + response.status + ' code=' + data.code);
+      if (!response.ok || data.code !== 200 || !data.data) {
+        const message = typeof data.message === 'string' ? data.message.trim() : '';
+        const error = new Error('OKKI ' + route.split('?')[0] + ' HTTP=' + response.status + ' code=' + data.code + ' ' + message.slice(0, 500));
+        // Narrow, observed business rejection only; unrelated 404s remain uncertain.
+        error.stockRejected = !!payload && route === '/v1/invoices/outbound/push' && response.status === 200 && data.code === 404
+          && /^Operation Failed\. 序号为\[\d+\]可用库存数量不足$/.test(message) && !data.data?.outbound_invoice_id;
+        throw error;
+      }
       return data.data;
     } catch (error) {
       if (payload || attempt === 1) throw error;

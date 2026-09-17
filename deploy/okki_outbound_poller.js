@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Consume Ark outbound tasks on Singapore; run the managed creator with --run.
- * pending -> running -> done / skipped / failed / uncertain.
+ * pending / waiting_stock -> running -> done / skipped / waiting_stock / failed / uncertain.
  * A confirmed existing live outbound (including partial/manual) is skipped.
  * Pre-submit failures retry with backoff, up to five attempts. Ambiguous writes,
  * killed children, or invalid success envelopes are uncertain and never retried.
@@ -81,22 +81,23 @@ function log(message, extra) {
 }
 
 // 可认领口径（SELECT 与 UPDATE 共用同一谓词，多实例/回收场景下 UPDATE 复核防绕过）：
-//   待执行 / 失败未超限且退避到期 / running 卡死未超限
+//   待执行 / 等待库存满15分钟（不限次数） / 失败未超限且退避到期 / running 卡死（由持久意图保护提交）
 export const CLAIMABLE = `(
      status = 'pending'
+  OR (status = 'waiting_stock' AND updated_at <= DATE_SUB(?, INTERVAL 15 MINUTE))
   OR (status = 'failed' AND attempts < ? AND updated_at <= DATE_SUB(?, INTERVAL (attempts + 1) * 5 MINUTE))
-  OR (status = 'running' AND attempts < ? AND updated_at <= DATE_SUB(?, INTERVAL ? MINUTE))
+  OR (status = 'running' AND updated_at <= DATE_SUB(?, INTERVAL ? MINUTE))
 )`;
 
 export async function claimBatch(conn) {
   const now = beijingNow();
   const [rows] = await conn.query(
-    `SELECT id, order_id, attempts
+    `SELECT id, order_id, attempts, status
        FROM ark_okki_outbound_tasks
       WHERE ${CLAIMABLE}
-      ORDER BY id
+      ORDER BY updated_at, id
       LIMIT ?`,
-    [config.maxAttempts, now, config.maxAttempts, now, STALE_RUNNING_MINUTES, 1],
+    [now, config.maxAttempts, now, now, STALE_RUNNING_MINUTES, 1],
   );
   const claimed = [];
   for (const row of rows) {
@@ -105,9 +106,9 @@ export async function claimBatch(conn) {
       `UPDATE ark_okki_outbound_tasks
           SET status = 'running', attempts = attempts + 1, updated_at = ?
         WHERE id = ? AND ${CLAIMABLE}`,
-      [now, row.id, config.maxAttempts, now, config.maxAttempts, now, STALE_RUNNING_MINUTES],
+      [now, row.id, now, config.maxAttempts, now, now, STALE_RUNNING_MINUTES],
     );
-    if (result.affectedRows === 1) claimed.push({...row, attempts: Number(row.attempts) + 1});
+    if (result.affectedRows === 1) claimed.push({...row, priorStatus: row.status, attempts: Number(row.attempts) + 1});
   }
   return claimed;
 }
@@ -148,6 +149,7 @@ export function resultFromOutput(code, output, orderId) {
   if (lines.length !== 1) return null;
   try {
     const result = JSON.parse(lines[0].slice('ARK_OUTBOUND_RESULT='.length));
+    if (result.outcome === 'waiting_stock') return String(result.order_id) === String(orderId) && typeof result.reason === 'string' && result.reason.length > 0 && !result.outbound_invoice_id ? result : null;
     return ['created', 'existing'].includes(result.outcome) && String(result.order_id) === String(orderId)
       && result.outbound_invoice_id ? result : null;
   } catch { return null; }
@@ -171,14 +173,15 @@ async function runOnce(conn) {
     const {code, output} = await runCreateOutbound(task.order_id);
     const result = resultFromOutput(code, output, task.order_id);
     if (result) {
-      const status = result.outcome === 'existing' ? 'skipped' : 'done';
-      await finishTask(conn, task, status, `${result.outcome}: ${result.serial_id || result.outbound_invoice_id}`);
+      const status = result.outcome === 'waiting_stock' ? 'waiting_stock' : result.outcome === 'existing' ? 'skipped' : 'done';
+      const reason = status === 'waiting_stock' ? result.reason : `${result.outcome}: ${result.serial_id || result.outbound_invoice_id}`;
+      await finishTask(conn, task, status, reason.slice(0, 255), status === 'waiting_stock' ? JSON.stringify(result).slice(-1500) : null);
       ok++;
       log(`task#${task.id} ${status}`, result);
     } else {
       // code 1 is a definite pre-submit failure. Kill/unknown/intent failures
       // are quarantined instead of risking a duplicate after a lost response.
-      const status = code === 1 ? 'failed' : 'uncertain';
+      const status = code === 1 ? (task.priorStatus === 'waiting_stock' ? 'waiting_stock' : 'failed') : 'uncertain';
       await finishTask(conn, task, status, 'See last_error', `exit=${code}\n${output}`.slice(-1500));
       failed++;
       log(`task#${task.id} ${status}`, output.slice(-500));
