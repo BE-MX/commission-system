@@ -1,3 +1,8 @@
+## 2026-09-17 出库打印检验状态文案
+
+- `codex/inspection-status-label`：出库单打印列表 `draft` 展示名由“草稿”改为“检验中”；状态值、颜色与业务流程不变。
+- `npm --prefix frontend run build`通过；完整约定检查仍被10项既有UI问题阻断，差异检查通过；用户已授权合并推送；本轮不部署。
+
 ## 2026-09-17 9月新签大屏（合并推送交付，不部署）
 
 - 亮哥已确认设计、实现与嘉树LOGO，并明确授权「合并推送」。本轮交付到main，不部署；来源任务分支`codex/september-screen-prototype`。合并后清理本任务分支与worktree，其他代理改动保留。

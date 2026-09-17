@@ -2,7 +2,7 @@
 import { shippingClient } from './clients'
 
 // 出库单检验状态（与后端 shipping_inspection 同一套口径）
-export const INSPECTION_STATUS_LABELS = { none: '未检验', draft: '草稿', submitted: '已提交' }
+export const INSPECTION_STATUS_LABELS = { none: '未检验', draft: '检验中', submitted: '已提交' }
 export const INSPECTION_STATUS_TAGS = { none: 'info', draft: 'warning', submitted: 'success' }
 
 // ── OKKI 出库单 ──
