@@ -150,9 +150,10 @@ def test_board_screenshot_is_resized_and_compressed_to_jpeg(tmp_path):
     assert output.stat().st_size < source.stat().st_size
 
 
-def test_daily_markdown_has_report_and_all_four_screenshots():
+def test_daily_markdown_has_report_and_all_five_screenshots():
     snapshot = {
-        "date": "2026-08-04",
+        "september": september_report_payload(),
+        "date": "2026-09-17",
         "as_of": "2026-08-04 17:30:00",
         "today_new": 3,
         "today_gmv": 12500,
@@ -167,7 +168,7 @@ def test_daily_markdown_has_report_and_all_four_screenshots():
     }
     screenshots = [
         {"title": title, "url": f"https://example.test/{idx}.png"}
-        for idx, title in enumerate(("新签榜", "首返复购榜", "团队榜", "阵营榜"), 1)
+        for idx, title in enumerate(("8月新签榜", "首返复购榜", "团队榜", "阵营榜", "9月新签目标战报"), 1)
     ]
 
     markdown = notification_service.build_daily_markdown(snapshot, screenshots)
@@ -175,7 +176,11 @@ def test_daily_markdown_has_report_and_all_four_screenshots():
     assert "今日新签：**3 个**" in markdown
     assert "今日 GMV：**$12,500**" in markdown
     assert "公司新签：**45/143**" in markdown
-    assert markdown.count("![") == 4
+    assert markdown.count("![") == 5
+    assert "业务部总目标：**69/113 个 · 61.1%**" in markdown
+    assert "嘉树（单人）：**2/5 个 · 40.0%**" in markdown
+    assert "当前第一团队：**无名**" in markdown
+    assert "奖金" not in markdown
     for shot in screenshots:
         assert shot["url"] in markdown
 
@@ -243,7 +248,7 @@ def test_each_board_screenshot_uses_an_independent_browser_profile(tmp_path, mon
 
     class Response:
         status_code = 200
-        text = "/api/public/festival/"
+        text = '/api/public/festival/ <meta name="festival-screen" content="september-new-sign">'
 
         @staticmethod
         def json():
@@ -269,7 +274,7 @@ def test_each_board_screenshot_uses_an_independent_browser_profile(tmp_path, mon
         profiles.append(next(part for part in command if part.startswith("--user-data-dir=")))
         source = Path(next(part for part in command if part.startswith("--screenshot="))[13:])
         source.write_bytes(b"x" * 10_001)
-        return type("Proc", (), {"returncode": 0})()
+        return type("Proc", (), {"returncode": 0, "stdout": '<html data-september-ready="true">'})()
 
     def compress(_source, output):
         output.write_bytes(b"x" * 10_001)
@@ -280,8 +285,9 @@ def test_each_board_screenshot_uses_an_independent_browser_profile(tmp_path, mon
 
     result = notification_service.capture_board_screenshots(date(2026, 8, 5))
 
-    assert len(result) == 4
-    assert len(set(profiles)) == 4
+    assert len(result) == 5
+    assert result[-1]["path"].name == "september-new-sign.jpg"
+    assert len(set(profiles)) == 5
 
 
 def test_screenshot_preflight_rejects_error_page_without_leaking_key(tmp_path, monkeypatch):
@@ -332,7 +338,7 @@ def test_screenshot_timeout_does_not_leak_key(tmp_path, monkeypatch):
 
     class Response:
         status_code = 200
-        text = "/api/public/festival/"
+        text = '/api/public/festival/ <meta name="festival-screen" content="september-new-sign">'
 
         @staticmethod
         def json():
@@ -374,7 +380,7 @@ def test_screenshot_timeout_does_not_leak_key(tmp_path, monkeypatch):
         ("xinqian.html", "fugou.html"),
         ("fugou.html", "zhenying.html"),
         ("zhenying.html", "tuandui.html"),
-        ("tuandui.html", "zhaiyao.html"),
+        ("tuandui.html", "september.html"),
     ],
 )
 def test_every_festival_board_disables_popups_and_keeps_rotation(page, next_page):
@@ -580,3 +586,91 @@ async def test_daily_recovery_runs_even_when_event_delivery_fails(monkeypatch):
     with pytest.raises(RuntimeError, match="event failed"):
         await notification_service.monitor_festival_and_recover_daily()
     assert calls == ["events", "daily"]
+
+
+def september_report_payload():
+    from app.festival.september_service import TARGETS
+    groups = [dict(name=name, target=target, done=done, rate=round(done/target*100, 1),
+                   solo=name == "嘉树")
+              for (name, target), done in zip(TARGETS, [11, 3, 7, 20, 7, 5, 14, 2])]
+    return dict(as_of="2026-09-17T17:30:00+08:00", phase="ongoing", groups=groups,
+                total=dict(done=69, target=113, rate=61.1, achieved_groups=1, group_count=8),
+                data_quality=dict(ok=True), champion=dict(names=["无名"], tied=False))
+
+
+@pytest.mark.parametrize("phase,tied,names,expected", [
+    ("ongoing", True, ["无名", "乘风"], "当前并列第一团队：**无名、乘风**"),
+    ("ongoing", False, [], "当前第一团队：**暂未产生"),
+    ("pending_review", False, ["无名"], "当前第一团队（待复核）：**无名**"),
+    ("finalized", False, ["无名"], "9月第一团队：**无名**"),
+])
+def test_september_report_ranking_states(phase, tied, names, expected):
+    data = september_report_payload()
+    data["phase"] = phase
+    data["champion"].update(names=names, tied=tied)
+    result = "\n".join(notification_service._september_report_lines(data))
+    assert expected in result
+    for group in data["groups"]:
+        assert group["name"] in result
+
+
+def test_september_report_hides_unreliable_totals_and_rankings():
+    data = september_report_payload()
+    data["data_quality"]["ok"] = False
+    data["total"]["done"] = None
+    result = "\n".join(notification_service._september_report_lines(data))
+    assert "数据待核对" in result
+    assert "69/113" not in result
+    assert "无名" not in result
+    assert "None" not in result
+
+
+def test_daily_snapshot_uses_same_september_service_and_finalization(monkeypatch):
+    from contextlib import nullcontext
+    db = object()
+    settings = notification_service.get_settings()
+    monkeypatch.setattr(settings, "FESTIVAL_SEPTEMBER_FINALIZED", True)
+    monkeypatch.setattr(notification_service, "SessionLocal", lambda: nullcontext(db))
+    headline = dict(as_of="now", summary={}, sign_top3=[], first_top2=[], amount_top2=[], teams_top3=[])
+    monkeypatch.setattr(notification_service.service, "get_headline_payload", lambda *_: headline)
+    monkeypatch.setattr(notification_service.service, "get_company_new_total", lambda *_: 3)
+    monkeypatch.setattr(notification_service.service, "get_gmv_total", lambda *_: 100)
+    calls = []
+    def payload(session, *, finalized):
+        calls.append((session, finalized))
+        return september_report_payload()
+    monkeypatch.setattr(notification_service.september_service, "get_payload", payload)
+    snapshot = notification_service._daily_snapshot(date(2026, 9, 17))
+    assert calls == [(db, True)]
+    assert snapshot["september"]["total"]["done"] == 69
+
+
+@pytest.mark.parametrize("page_text,dom,expected", [
+    ('<div id="app"></div>', '', "预检失败"),
+    ('<meta name="festival-screen" content="september-new-sign">',
+     '<html data-september-ready="false">', "尚未加载完整"),
+])
+def test_september_screenshot_rejects_spa_fallback_and_unloaded_data(tmp_path, monkeypatch, page_text, dom, expected):
+    settings = notification_service.get_settings()
+    monkeypatch.setattr(settings, "FESTIVAL_SCREEN_KEYS", "test-secret")
+    monkeypatch.setattr(settings, "FESTIVAL_SCREENSHOT_BASE_URL", "http://screen.test")
+    monkeypatch.setattr(notification_service, "_BOARD_PAGES", notification_service._BOARD_PAGES[-1:])
+    monkeypatch.setattr(notification_service, "_UPLOAD_ROOT", tmp_path)
+    monkeypatch.setattr(notification_service, "_browser_executable", lambda: tmp_path / "chrome.exe")
+    monkeypatch.setattr(notification_service, "_event_token", lambda _: "test")
+    class Client:
+        def __init__(self, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def get(self, url, **kwargs):
+            return type("Response", (), dict(status_code=200, text=page_text,
+                json=lambda _: {"data": {"as_of": "now"}}))()
+    def run(command, **kwargs):
+        assert "--dump-dom" in command
+        Path(next(p[13:] for p in command if p.startswith("--screenshot="))).write_bytes(b"x" * 10001)
+        return type("Proc", (), dict(returncode=0, stdout=dom))()
+    monkeypatch.setattr(notification_service.httpx, "Client", Client)
+    monkeypatch.setattr(notification_service.subprocess, "run", run)
+    with pytest.raises(RuntimeError, match=expected) as caught:
+        notification_service.capture_board_screenshots(date(2026, 9, 17))
+    assert "test-secret" not in str(caught.value)
