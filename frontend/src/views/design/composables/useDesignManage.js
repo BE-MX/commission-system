@@ -18,7 +18,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getRequests, getTaskList, getDesigners, createDesigner, updateDesigner,
   actionRequest, rescheduleTask, importRequests,
-  updateExpectDate, updateRequestRemark, updateRequestShootType, updateTaskShootType,
+  updateExpectDate, updateRequestRemark, updateTaskRemark, updateRequestShootType, updateTaskShootType,
   triggerShootReminderScan,
 } from '@/api/design'
 import { getDictMap } from '@/utils/dict'
@@ -112,29 +112,40 @@ export function useDesignManage() {
     }
   }
 
-  // ── Edit remark (pending) ─────────────────────────────
+  // ── Edit request / task remark ─────────────────────────────
   const remarkVisible = ref(false)
   const remarkSaving = ref(false)
   const remarkRow = ref(null)
+  const remarkTarget = ref('request')
   const remarkForm = reactive({ remark: '' })
 
-  function openRemarkDialog(row) {
+  function openRemarkDialog(row, target = 'request') {
     remarkRow.value = row
-    remarkForm.remark = row.remark || ''
+    remarkTarget.value = target
+    remarkForm.remark = (target === 'request' && row.request_id ? row.request_remark : row.remark) || ''
     remarkVisible.value = true
   }
 
   async function submitRemark() {
+    if (remarkSaving.value) return
     remarkSaving.value = true
     try {
-      await updateRequestRemark(remarkRow.value.id, {
-        remark: remarkForm.remark,
-        operator_id: 1,
-        operator_name: '管理员',
-      })
+      const row = remarkRow.value
+      const remark = remarkForm.remark
+      if (remarkTarget.value === 'task') {
+        await updateTaskRemark(row.id, { remark })
+        row.remark = remark
+      } else {
+        await updateRequestRemark(row.request_id || row.id, { remark })
+        if (row.request_id) row.request_remark = remark
+        else row.remark = remark
+      }
       ElMessage.success('备注已更新')
       remarkVisible.value = false
-      fetchPending()
+      if (activeTab.value === 'scheduled') fetchScheduled()
+      else fetchPending()
+    } catch {
+      // API interceptor displays the error; keep the draft open for retry.
     } finally {
       remarkSaving.value = false
     }
@@ -632,7 +643,7 @@ export function useDesignManage() {
     calendarConfigRef,
     // Edit dialogs
     editDateVisible, editDateSaving, editDateForm, openEditDateDialog, submitEditDate,
-    remarkVisible, remarkSaving, remarkForm, openRemarkDialog, submitRemark,
+    remarkVisible, remarkSaving, remarkTarget, remarkForm, openRemarkDialog, submitRemark,
     shootTypeVisible, shootTypeSaving, shootTypeTarget, shootTypeForm,
     openShootTypeDialog, submitShootType,
     editingDesignerId, editingDesignerValue,

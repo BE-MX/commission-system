@@ -4,6 +4,13 @@
 
 两个新增后端回归先以缺少 model 失败，再修复通过，分别覆盖唯一匹配和歧义候选；后端粘贴/截图导入及 SKU 目录86项测试、前端导入16项测试通过。浏览器模拟API走编辑→Excel粘贴→校验→加入，Model立即显示GW-MODEL，导入成交价34.0000保留，未保存真实订单；证据保留在主目录 `tmp/invoice-import-model/`。独立审查未发现阻断问题；增量规则与diff检查通过，全局约定检查仍被10项主线既有UI债务阻挡，Git巡检为no-fetch本地快照。用户随后授权合并并推送 origin/main；本轮不部署，交付后清理本任务分支与 worktree。
 
+## 2026-09-17 设计管理列表备注编辑（Codex，合并推送交付）
+
+- 分支 `codex/design-remark-dialog`，worktree `D:/MyProgram/commission-system-codex-design-remark`。排期任务列表的排期备注、预约备注各自可点击弹框修改；空值展示“添加备注”，弹框明确类型。待确认列表沿用预约备注入口并改为支持键盘的按钮。
+- 任务备注走新增 `PUT /api/design/tasks/{task_id}/remark`，预约备注沿用预约接口，按 task/request ID 分开保存，支持清空。成功更新当前行并刷新当前列表，失败保留草稿，重复提交有保护。无迁移、无生产写入。
+- 验证：6 项隔离 SQLite/后端测试、5 项前端 composable 交互测试、`npm run build`、独立静态审查通过。测试覆盖 ID 分流、备注互不覆盖、清空、失败保留草稿、重复提交、无效/已删除任务及回滚。未做真实登录页面浏览器验收。
+- `check_conventions.py` 完整检查报 11 项 UI 债务：主线已有 10 项，本次 DesignManage.vue 增加 10 行触发行数基线不匹配（762→772行）。页面已有独立 composable，本次为现有备注列的小范围扩展，不为行数机械拆分或抬高基线；底层增量规则检查无违规，`git diff --check` 通过。构建日志保留于主目录 `tmp/design-remark/`，Git 巡检为 `--no-fetch` 本地快照。用户已授权合并并推送 origin/main；本轮不部署，交付后清理本任务分支与 worktree。
+
 ## 2026-09-17 出库单打印与 Word 客户名称遮罩（Codex）
 
 - 来源分支 `codex/outbound-customer-mask`；用户已授权合并推送到 `origin/main`，完成后清理本任务分支与 worktree；本轮不部署。

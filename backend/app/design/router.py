@@ -11,7 +11,9 @@ from fastapi import APIRouter, Depends, Query, File, UploadFile, BackgroundTasks
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app.core.database import get_db
+from app.core.response import ok
+from app.design.request_service import update_task_remark
 from app.auth.dependencies import require_permission, require_any_permission
 from app.design import service
 from app.design.schemas import (
@@ -19,6 +21,7 @@ from app.design.schemas import (
     DesignRequestAudit,
     DesignRequestAction,
     TaskReschedule,
+    TaskRemarkUpdate,
     UnavailableDateCreate,
     CapacityUpdate,
     ModeUpdate,
@@ -355,6 +358,17 @@ def action_request(
 
 
 # 动作 → 通知标题映射
+
+
+@router.put("/tasks/{task_id}/remark")
+def edit_task_remark(
+    task_id: int,
+    data: TaskRemarkUpdate,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission('design:write', 'design:manage')),
+):
+    update_task_remark(db, task_id, data.remark)
+    return ok(message="备注已更新")
 
 
 @router.put("/requests/{request_id}/remark")

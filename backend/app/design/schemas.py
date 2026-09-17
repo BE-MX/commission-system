@@ -196,3 +196,7 @@ class GanttResponse(BaseModel):
 
     designers: list[GanttDesigner] = []
     unavailable_dates: list[UnavailableDateItem] = []
+
+
+class TaskRemarkUpdate(BaseModel):
+    remark: str

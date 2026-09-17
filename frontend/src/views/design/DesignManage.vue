@@ -63,10 +63,10 @@
           </el-table-column>
           <el-table-column label="备注" min-width="160" max-width="260" show-overflow-tooltip>
             <template #default="{ row }">
-              <span class="clickable-remark" @click="openRemarkDialog(row)">
-                {{ row.remark || '-' }}
+              <button v-any-permission="['design:write', 'design:manage']" type="button" class="clickable-remark" aria-label="修改预约备注" @click="openRemarkDialog(row)">
+                {{ row.remark || '添加备注' }}
                 <el-icon class="edit-icon"><Edit /></el-icon>
-              </span>
+              </button>
             </template>
           </el-table-column>
           <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
@@ -152,15 +152,20 @@
           </el-table-column>
           <el-table-column label="备注" min-width="180" max-width="300" show-overflow-tooltip>
             <template #default="{ row }">
-              <div v-if="row.remark || row.request_remark" class="remark-mixed">
-                <div v-if="row.remark" class="remark-line">
-                  <span class="remark-tag task">排期</span>{{ row.remark }}
+              <div class="remark-mixed">
+                <div class="remark-line">
+                  <span class="remark-tag task">排期</span>
+                  <button v-any-permission="['design:write', 'design:manage']" type="button" class="clickable-remark" aria-label="修改排期备注" @click="openRemarkDialog(row, 'task')">
+                    {{ row.remark || '添加备注' }}<el-icon class="edit-icon"><Edit /></el-icon>
+                  </button>
                 </div>
-                <div v-if="row.request_remark" class="remark-line">
-                  <span class="remark-tag request">预约</span>{{ row.request_remark }}
+                <div class="remark-line">
+                  <span class="remark-tag request">预约</span>
+                  <button v-any-permission="['design:write', 'design:manage']" type="button" class="clickable-remark" aria-label="修改预约备注" @click="openRemarkDialog(row, 'request')">
+                    {{ row.request_remark || '添加备注' }}<el-icon class="edit-icon"><Edit /></el-icon>
+                  </button>
                 </div>
               </div>
-              <span v-else>-</span>
             </template>
           </el-table-column>
           <el-table-column label="状态" min-width="100" max-width="150" prop="status" sortable="custom">
@@ -476,14 +481,14 @@
     </el-dialog>
 
     <!-- 修改备注 -->
-    <el-dialog v-model="remarkVisible" title="修改备注" width="500px" :close-on-click-modal="false">
+    <el-dialog v-model="remarkVisible" :title="remarkTarget === 'task' ? '修改排期备注' : '修改预约备注'" width="500px" :close-on-click-modal="false" :close-on-press-escape="!remarkSaving" :show-close="!remarkSaving">
       <el-form label-width="80px">
         <el-form-item label="备注">
           <el-input v-model="remarkForm.remark" type="textarea" :rows="4" placeholder="请输入备注" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <GlassButton variant="ghost" @click="remarkVisible = false">取消</GlassButton>
+        <GlassButton variant="ghost" :disabled="remarkSaving" @click="remarkVisible = false">取消</GlassButton>
         <GlassButton variant="primary" @click="submitRemark" :loading="remarkSaving">保存</GlassButton>
       </template>
     </el-dialog>
@@ -551,7 +556,7 @@ const {
   calendarConfigRef,
   // Edit dialogs
   editDateVisible, editDateSaving, editDateForm, openEditDateDialog, submitEditDate,
-  remarkVisible, remarkSaving, remarkForm, openRemarkDialog, submitRemark,
+  remarkVisible, remarkSaving, remarkTarget, remarkForm, openRemarkDialog, submitRemark,
   shootTypeVisible, shootTypeSaving, shootTypeTarget, shootTypeForm,
   openShootTypeDialog, submitShootType,
   editingDesignerId, editingDesignerValue,
@@ -673,6 +678,11 @@ const {
 }
 
 .clickable-remark {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
   color: var(--color-primary);
   display: inline-flex;
