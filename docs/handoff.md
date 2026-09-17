@@ -2,7 +2,7 @@
 
 用户明确要求出库单号默认等于发票号、打印负责人显示Eva。受管creator从任务关联ark_invoices取得invoice_no，显式传serial_id，缺号或回执号不一致停止并标记待核对。现有5张本轮自动出库单已通过OKKI编辑接口改为对应发票号；逐张保存受限before/after快照，验证处理人、行ID、数量、价格、币种、仓库、状态均不变，同时更新本地台账和任务回执编号。ly914订单出库ID仍为105791346765650，单号已由XSCK2609170495改成ly914首返出库单，6行52件待出库，handler=Eva，creator=Rainy。
 
-打印修复从真实handler_info.nickname取负责人，制单账号不再进入打印负责人；HTML和Word共用，保留已有中文名匹配。实际详情接口失败则502提示重试，不打印错误负责人；惰性刷新token成功后提交保存。后端代码与测试已准备，发布验证进行中。命名修复轮询器已部署；完整后端将固定本任务候选发布，无迁移/无origin写入。
+打印修复从真实handler_info.nickname取负责人，制单账号不再进入打印负责人；HTML和Word共用，保留已有中文名匹配。实际详情接口失败则502提示重试，不打印错误负责人；惰性刷新token成功后提交保存。源码提交5cbfbc60已通过统一入口完成办公室与北京后端发布，publish-current=succeeded，无迁移、前端0字节变更、无origin写入。正式安装目录实库生成打印数据和Word双重核验：负责人Eva（刘也）、单号ly914首返出库单、6行52件；办公室健康接口ok/database connected。19项Python与16项Node测试通过，独立复审通过。最终轮询器digest b27845d4a94882470e816e3eabe903eef19748d7da5c9317afb09c5e438b60a8，timer active/enabled且空队列轮询成功。证据和Word预览在任务worktree .deploy_state/outbound；本机main和origin未合并本提交，办公室main仅由发布入口快进到候选。
 
 ## 2026-09-17 OKKI 出库轮询器已部署启用
 
