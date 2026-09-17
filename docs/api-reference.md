@@ -1307,3 +1307,8 @@ Agent research context now includes `fact_contract.version=registered_research_f
 `GET /api/shipping-inspection/records/{inspection_id}/pdf?edit_version=N`：二进制 `application/pdf` 附件，UTF-8 文件名、`Cache-Control: no-store`。沿用验货单 `_READ` 与 `_require_inspection_scope`，不可见或不存在返回404；已撤回或指定版本不匹配409；明细/照片/字体读取失败503，不导出残缺内容。未传版本时下载当前已提交版。内容含单头、出库明细、检验备注和验货照片，排除视频。
 
 完成通知 OA `message_url` 指向 `/shipping/inspections?pdf={id}&version={edit_version}&keyword={单号}`，打开后点击“下载验货单 PDF”；登录/会话过期保留回跳参数。新配置 `SHIPPING_INSPECTION_NOTICE_BASE_URL` 默认 `https://leshine.work`，用于通知的主站地址。
+
+
+### 2026-09-17 验货单组合查询
+
+`GET /api/shipping-inspection/records` 新增 `submitted_by_name`（提交人员姓名，模糊匹配）与 `salesperson_name`（该单实际关联订单业务员的镜像姓名/昵称或有效方舟绑定中文名，模糊匹配），均最多100字符。与既有 `keyword`（单号/客户）、`date_from/date_to`（提交日期，截止日含当天）、`page/page_size` 组合使用，条件取交集；倒置日期范围422。响应每行新增 `salesperson_name`，同单多业务员去重并列，未关联返回null。权限和数据范围沿用原验货单接口，不因输入人员姓名而扩大。

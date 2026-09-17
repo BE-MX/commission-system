@@ -223,6 +223,8 @@ def recall_record(
 @router.get("/records", summary="已提交验货单分页列表")
 def list_records(
     keyword: str | None = Query(None, description="匹配出库单号/客户"),
+    salesperson_name: str | None = Query(None, max_length=100, description="关联订单业务员姓名"),
+    submitted_by_name: str | None = Query(None, max_length=100, description="提交检验人员姓名"),
     date_from: date | None = Query(None, description="提交日期起"),
     date_to: date | None = Query(None, description="提交日期止"),
     page: int = Query(1, ge=1),
@@ -230,10 +232,12 @@ def list_records(
     db: Session = Depends(get_db),
     _user: dict = Depends(require_any_permission(*_READ)),
 ):
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=422, detail="提交日期起不能晚于提交日期止")
     scope = _inspection_scope(db, _user)
     try:
         items, total = service.list_records(
-            db, keyword=keyword, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
+            db, keyword=keyword, submitted_by_name=submitted_by_name, salesperson_name=salesperson_name, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
             okki_user_id=scope,
         )
     except outbound_service.OutboundTableError as exc:

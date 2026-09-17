@@ -12,6 +12,7 @@
     <section v-if="error" class="station-error" role="alert"><AlertCircle :size="20" /><div>{{ error }}<a v-if="loginRequired" :href="loginUrl">重新登录</a></div></section>
 
     <template v-if="!view">
+      <router-link v-if="!scannerOpen" v-any-permission="['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin']" class="station-secondary station-query" to="/shipping/inspections?from=station">查询验货单</router-link>
       <StationScanner v-if="scannerOpen" @decoded="decoded" @cancel="scannerOpen = false" />
       <template v-else>
         <button class="scan-button" type="button" :disabled="busy || loading || loginRequired || !operators.length" @click="scanTap"><ScanLine :size="34" /><span>{{ busy ? '正在校验出库单…' : selected ? `以 ${selected.name} 身份扫描` : '扫出库单二维码' }}</span><ArrowRight :size="21" /></button>

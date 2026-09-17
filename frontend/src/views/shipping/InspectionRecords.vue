@@ -12,28 +12,36 @@
       <p>含验货照片。若单据已撤回或更新，请使用最新通知或下方列表。</p>
     </section>
     <el-alert v-if="pdfError" :title="pdfError" type="error" :closable="false" show-icon />
-    <el-row :gutter="16" class="toolbar">
-      <el-col :span="7">
-        <el-input v-model="searchForm.keyword" placeholder="搜索出库单号 / 客户名称" clearable prefix-icon="Search" @keyup.enter="handleSearch" @clear="handleSearch" />
-      </el-col>
-      <el-col :span="8">
-        <el-date-picker
-          v-model="searchForm.dateRange" type="daterange" value-format="YYYY-MM-DD"
-          start-placeholder="提交起" end-placeholder="提交止" style="width: 100%" @change="handleSearch"
-        />
-      </el-col>
-      <el-col :span="9">
-        <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
-      </el-col>
-    </el-row>
+    <div v-if="route.query.from === 'station'" class="inspection-return">
+      <router-link to="/shipping/scan">← 返回出库检验主页</router-link>
+    </div>
+    <form class="inspection-filters" @submit.prevent="handleSearch">
+      <label>验货单号 / 客户<input v-model="searchForm.keyword" type="search" placeholder="输入单号或客户名称" /></label>
+      <label>提交检验人员<input v-model="searchForm.submittedByName" maxlength="100" placeholder="输入提交人姓名" /></label>
+      <label>对应业务员<input v-model="searchForm.salespersonName" maxlength="100" placeholder="输入业务员姓名" /></label>
+      <label>提交日期起<input v-model="searchForm.dateFrom" type="date" :max="searchForm.dateTo || undefined" /></label>
+      <label>提交日期止<input v-model="searchForm.dateTo" type="date" :min="searchForm.dateFrom || undefined" /></label>
+      <div class="filter-actions"><button type="submit" :disabled="loading">查询</button><button type="button" :disabled="loading" @click="handleReset">重置</button></div>
+    </form>
+    <section v-loading="loading" class="inspection-mobile-list" aria-label="验货单查询结果">
+      <p>共 {{ total }} 张验货单</p>
+      <el-empty v-if="!loading && !list.length" description="没有符合条件的验货单" />
+      <article v-for="row in list" :key="row.id" class="inspection-result">
+        <h2>{{ row.outbound_no }}</h2><p>{{ row.customer_name }}</p>
+        <dl><dt>提交人</dt><dd>{{ row.submitted_by_name || '—' }}</dd><dt>提交日期</dt><dd>{{ row.submitted_at || '—' }}</dd><dt>业务员</dt><dd>{{ row.salesperson_name || '未匹配' }}</dd><dt>照片</dt><dd>{{ row.photo_count }} 张</dd></dl>
+        <div class="result-actions"><GlassButton variant="primary" @click="openDetail(row)">查看验货单</GlassButton><GlassButton :loading="downloading" @click="downloadPdf(row)">下载 PDF</GlassButton></div>
+      </article>
+      <el-pagination v-model:current-page="page" :page-size="pageSize" :total="total" layout="prev, pager, next" :pager-count="5" @current-change="handlePageChange" />
+    </section>
 
-    <div class="table-card inspection-panel">
+    <div class="table-card inspection-panel inspection-desktop-list">
       <el-table :data="list" v-loading="loading" border class="list-table" style="width: 100%">
         <el-table-column prop="outbound_no" label="验货单号" min-width="140" show-overflow-tooltip />
         <el-table-column prop="customer_name" label="客户名称" min-width="130" show-overflow-tooltip />
         <el-table-column label="照片数" min-width="80" align="right">
           <template #default="{ row }">{{ row.photo_count }}</template>
         </el-table-column>
+        <el-table-column prop="salesperson_name" label="业务员" min-width="100" show-overflow-tooltip />
         <el-table-column prop="submitted_by_name" label="提交人" min-width="100" show-overflow-tooltip />
         <el-table-column prop="submitted_at" label="提交时间" min-width="150" show-overflow-tooltip />
         <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip>
@@ -110,13 +118,37 @@ const route = useRoute()
 const {
   noticePdf, downloading, pdfError, downloadPdf,
   loading, list, total, page, pageSize, searchForm,
-  handleSearch, handlePageChange, handleSizeChange,
+  handleSearch, handleReset, handlePageChange, handleSizeChange,
   detailVisible, detailLoading, detail, openDetail,
   printDialog, openPrint, recallingId, recallForEdit,
 } = useInspectionRecords()
 </script>
 
 <style scoped>
+.inspection-return { position: relative; margin-bottom: 16px; }
+.inspection-return a { color: var(--color-primary-hover); display: inline-flex; align-items: center; min-height: 44px; }
+.inspection-filters { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 16px; margin-bottom: 16px; background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border-color); }
+.inspection-filters label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-secondary); min-width: 0; }
+.inspection-filters input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; border: 1px solid var(--border-color); border-radius: 8px; padding: 8px; background: var(--card-bg); color: var(--text-primary); font: inherit; font-size: 16px; }
+.filter-actions { display: flex; align-items: end; gap: 12px; }
+.filter-actions button { min-height: 44px; padding: 8px 24px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--card-bg); color: var(--text-primary); cursor: pointer; }
+.filter-actions button[type=submit] { background: var(--color-primary); color: var(--card-bg); border-color: var(--color-primary); }
+.inspection-mobile-list { display: none; position: relative; }
+.inspection-result { margin-bottom: 12px; padding: 16px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-bg); }
+.inspection-result h2 { font-size: 18px; margin: 0; overflow-wrap: anywhere; }
+.inspection-result p { color: var(--text-secondary); }
+.inspection-result dl { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px; font-size: 14px; }
+.inspection-result dt { color: var(--text-secondary); }
+.inspection-result dd { margin: 0; overflow-wrap: anywhere; }
+.result-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 767px) {
+  .inspection-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .inspection-filters label:first-child, .filter-actions { grid-column: 1 / -1; }
+  .filter-actions button { flex: 1; }
+  .inspection-mobile-list { display: block; }
+  .inspection-desktop-list { display: none; }
+}
+
 .notice-download { position: relative; margin-bottom: 16px; padding: 16px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; }
 .notice-download strong { display: block; margin-bottom: 12px; overflow-wrap: anywhere; }
 .notice-download p { color: var(--text-secondary); font-size: 13px; }

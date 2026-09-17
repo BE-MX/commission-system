@@ -39,17 +39,17 @@ export function useInspectionRecords() {
     async ({ page, page_size, ...form }) => {
       const params = { page, page_size }
       if (form.keyword) params.keyword = form.keyword
-      if (form.dateRange?.length === 2) {
-        params.date_from = form.dateRange[0]
-        params.date_to = form.dateRange[1]
-      }
+      if (form.submittedByName?.trim()) params.submitted_by_name = form.submittedByName.trim()
+      if (form.salespersonName?.trim()) params.salesperson_name = form.salespersonName.trim()
+      if (form.dateFrom) params.date_from = form.dateFrom
+      if (form.dateTo) params.date_to = form.dateTo
       const res = await listInspectionRecords(params)
       return res.data || {}
     },
     {
       searchForm: {
         keyword: route.query.keyword || '',
-        dateRange: [],
+        submittedByName: '', salespersonName: '', dateFrom: '', dateTo: '',
       },
     },
   )
