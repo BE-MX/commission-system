@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 export const now = () => new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 19).replace('T', ' ');
 
-export function buildPayload(order, invoiceNo) {
+export function buildPayload(order, invoiceNo, invoiceRemark) {
+  if (invoiceRemark != null && typeof invoiceRemark !== 'string') throw new Error('Invalid Ark invoice remark');
   if (typeof invoiceNo !== 'string' || !invoiceNo.trim()) throw new Error('Missing Ark invoice number');
   if (!Array.isArray(order.product_list) || !order.product_list.length) throw new Error('Order has no items');
   const handler = (order.handler || []).map(String).filter(Boolean);
@@ -17,7 +18,7 @@ export function buildPayload(order, invoiceNo) {
       product_unit: p.unit || 'Piece', product_name: p.product_name, product_model: p.product_model,
       product_cn_name: p.product_cn_name || undefined };
   });
-  return { serial_id: invoiceNo, status: 1, source_type: 2, currency: order.currency || 'USD',
+  return { serial_id: invoiceNo, remark: invoiceRemark ?? '', status: 1, source_type: 2, currency: order.currency || 'USD',
     exchange_rate: Number(order.exchange_rate || 0), exchange_rate_usd: Number(order.exchange_rate_usd || 0),
     invoice_warehouse_id: 8193514242746, company_id: order.company_id, handler, record_list };
 }
@@ -62,7 +63,7 @@ export async function findExisting(order, api, knownIds = []) {
   throw new Error('Outbound scan limit exceeded; no creation attempted');
 }
 
-export async function createOne(orderId, {api, directory, invoiceNo, dryRun = false, knownIds = []}) {
+export async function createOne(orderId, {api, directory, invoiceNo, invoiceRemark, dryRun = false, knownIds = []}) {
   if (!/^\d+$/.test(orderId)) throw new Error('Invalid order ID');
   const order = await api('/v1/invoices/order/info?order_id=' + orderId);
   if (String(order.order_id) !== orderId) throw new Error('Order ID mismatch');
@@ -73,7 +74,7 @@ export async function createOne(orderId, {api, directory, invoiceNo, dryRun = fa
     const records = fs.readFileSync(ledger, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
     if (records.some(r => String(r.order_id) === orderId)) throw Object.assign(new Error('Local ledger exists but no live association; manual review required'), {uncertain: true});
   }
-  const payload = buildPayload(order, invoiceNo);
+  const payload = buildPayload(order, invoiceNo, invoiceRemark);
   const intents = path.join(directory, 'logs', 'ark-outbound-intents');
   const intent = path.join(intents, orderId + '.json');
   if (fs.existsSync(intent)) throw Object.assign(new Error('Prior submission intent exists; no automatic resubmission'), {uncertain: true});
@@ -91,6 +92,7 @@ export async function createOne(orderId, {api, directory, invoiceNo, dryRun = fa
     if (result.serial_id !== invoiceNo) throw new Error('Created outbound number differs from Ark invoice');
     const detail = await api('/v1/invoices/outbound/info?outbound_invoice_id=' + result.outbound_invoice_id);
     if (!Array.isArray(detail.record_list) || !detail.record_list.some(r => String(r.order_id) === orderId)) throw new Error('Created outbound association not verified');
+    if ((detail.remark ?? '') !== payload.remark) throw new Error('Created outbound remark differs from Ark invoice');
     const row = {order_id: orderId, outbound_invoice_id: result.outbound_invoice_id, serial_id: result.serial_id, at: now()};
     fs.appendFileSync(ledger, JSON.stringify(row) + '\n', {mode: 0o600});
     return {outcome: 'created', ...row};
@@ -119,6 +121,12 @@ export async function requestOkki(auth, base, route, payload, fetchImpl = fetch)
   throw new Error('OKKI read retry exhausted');
 }
 
+export async function loadInvoiceForOrder(conn, orderId) {
+  const [invoices] = await conn.query('SELECT i.invoice_no, i.remark FROM ark_invoices i JOIN ark_okki_outbound_tasks t ON t.invoice_id=i.id WHERE t.order_id=?', [orderId]);
+  if (invoices.length !== 1) throw new Error('Expected one Ark invoice for outbound task');
+  return {invoiceNo: invoices[0].invoice_no, invoiceRemark: invoices[0].remark};
+}
+
 async function main() {
   const directory = process.env.OUTBOUND_SCRIPT_DIR || path.dirname(fileURLToPath(import.meta.url));
   const {OkkiAuth, OKKI_CONFIG} = await import('./auth.js');
@@ -127,17 +135,15 @@ async function main() {
   const mysql = await import('mysql2/promise');
   const conn = await mysql.createConnection({host: process.env.ARK_DB_HOST, port: Number(process.env.ARK_DB_PORT || 3306),
     user: process.env.ARK_DB_USER, password: process.env.ARK_DB_PASSWORD, database: process.env.ARK_DB_NAME});
-  let knownIds, invoiceNo;
+  let knownIds, invoice;
   try {
     const schema = process.env.ARK_BUSINESS_DB_NAME;
     if (!/^[A-Za-z0-9_]+$/.test(schema || '')) throw new Error('Invalid business schema');
     const [rows] = await conn.query(`SELECT DISTINCT outbound_invoice_id FROM \`${schema}\`.okki_outbound_record_items WHERE order_id=?`, [process.argv[2]]);
     knownIds = rows.map(row => String(row.outbound_invoice_id));
-    const [invoices] = await conn.query('SELECT i.invoice_no FROM ark_invoices i JOIN ark_okki_outbound_tasks t ON t.invoice_id=i.id WHERE t.order_id=?', [process.argv[2]]);
-    if (invoices.length !== 1) throw new Error('Expected one Ark invoice for outbound task');
-    invoiceNo = invoices[0].invoice_no;
+    invoice = await loadInvoiceForOrder(conn, process.argv[2]);
   } finally { await conn.end(); }
-  const result = await createOne(process.argv[2], {api, directory, invoiceNo, knownIds, dryRun: !process.argv.includes('--run')});
+  const result = await createOne(process.argv[2], {api, directory, ...invoice, knownIds, dryRun: !process.argv.includes('--run')});
   console.log('ARK_OUTBOUND_RESULT=' + JSON.stringify(result));
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
