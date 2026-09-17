@@ -8,6 +8,7 @@ import sharp from 'sharp';
 
 const projectDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const baseUrl = (process.argv.find((value) => value.startsWith('--base-url='))?.split('=')[1] || 'http://127.0.0.1:4173').replace(/\/$/, '');
+if (!['127.0.0.1', 'localhost'].includes(new URL(baseUrl).hostname)) throw new Error('QA writes require an isolated local server.');
 const templateId = 'tape-hair-super';
 const initialWidth = 1000;
 const initialHeight = 1027;
@@ -24,7 +25,7 @@ function hash(bytes) {
 }
 
 async function api(urlPath, options = {}, expected = [200]) {
-  const headers = { ...options.headers };
+  const headers = { cookie: 'inventory_workbench_session=source-rules-local-qa', ...options.headers };
   let body = options.body;
   if (options.json !== undefined) {
     headers['content-type'] = 'application/json';
@@ -294,6 +295,13 @@ const parsedConfig = {
     documentHeight: nextHeight,
   },
 };
+await expectApiError(`/api/template-sources/${templateId}/${sourceVersionId}/parse`, {
+  method: 'POST', json: { ...parsedConfig, template: { ...parsedConfig.template, width: nextWidth + 1 } },
+}, 422, 'PSD_JPG_SIZE_MISMATCH');
+await expectApiError(`/api/template-sources/${templateId}/${sourceVersionId}/parse`, {
+  method: 'POST', json: { ...parsedConfig, template: { ...parsedConfig.template,
+    initialCards: nextCards.map((card, index) => index === 0 ? { ...card, geometry: { ...card.geometry, swatch: [-1, 180, 120, 300] } } : card) } },
+}, 422, 'INVALID_SOURCE_BOUNDS');
 const parsed = (await api(`/api/template-sources/${templateId}/${sourceVersionId}/parse`, {
   method: 'POST', json: parsedConfig,
 }, [200])).data;
@@ -319,9 +327,7 @@ note('PSD/JPG 尺寸不一致时失败且原版本继续使用');
 
 const activationBase = {
   expectedMasterRevision: beforeActivation.masterRevision,
-  mappings: [{
-    candidateId: 'candidate-62', entryId: null, treatAsNew: true, lengths: [18, 24], section: null,
-  }],
+  mappings: nextCards.map((card) => ({ candidateId: card.candidateId, entryId: card.matchedEntryId, treatAsNew: !card.matchedEntryId, lengths: card.lengths, section: card.section })),
   acknowledgedIssues: ['qa-unreliable-62'],
   initialStatuses: [
     { candidateId: 'candidate-1b', length: 24, status: 'out_of_stock' },
@@ -340,6 +346,10 @@ await expectApiError(`/api/template-sources/${templateId}/${sourceVersionId}/act
 }, 422, 'INITIAL_STATUS_MISMATCH');
 note('未确认识别问题、未映射或未填写新增规格状态时均阻止启用');
 
+await expectApiError(`/api/template-sources/${templateId}/${sourceVersionId}/activate`, {
+  method: 'POST', json: { ...activationBase, mappings: activationBase.mappings.map((item, index) => index === 0 ? { ...item, lengths: [28] } : item) },
+}, 422, 'INVALID_SOURCE_LENGTHS');
+note('人工确认不能绕过 S1 长度集合');
 let activated = (await api(`/api/template-sources/${templateId}/${sourceVersionId}/activate`, {
   method: 'POST', json: activationBase,
 }, [201])).data;
@@ -453,6 +463,33 @@ report.final = {
   inventoryRevision: rolledBack.inventoryRevision,
   sourceStatuses: finalSources.versions.map(({ id, number, status }) => ({ id, number, status })),
 };
+const ruleCandidate = await createSourceCandidate(nextPsd, nextJpg, 'QA-RULES');
+await completeSourceCandidate(ruleCandidate);
+const ruleId = ruleCandidate.versionId;
+const ruleConfig = JSON.parse(JSON.stringify(parsedConfig).split(sourceVersionId).join(ruleId));
+ruleConfig.colors.find((color) => color.id === byCode['#62'].color.id).id = 'source-color-999';
+ruleConfig.colors.find((color) => color.id === 'source-color-999').code = '#999';
+const newCard = ruleConfig.template.initialCards.find((card) => card.candidateId === 'candidate-62');
+Object.assign(newCard, { colorId: 'source-color-999', colorCode: '#999', lengths: [28], matchState: 'new' });
+ruleConfig.availableLengths = [28];
+ruleConfig.template.availableLengths = [28];
+ruleConfig.parseIssues = [1, 2].map((id) => ({ issueId: `structure-${id}`, code: 'UNSUPPORTED_LAYER_STRUCTURE', message: 'fixture', blocking: true }));
+await api(`/api/template-sources/${templateId}/${ruleId}/assets/base.png`, { method: 'PUT', body: await makePng(nextWidth, nextHeight, '#ffffff') });
+for (const assetName of Object.values(assetNames)) await api(`/api/template-sources/${templateId}/${ruleId}/assets/${assetName}`, { method: 'PUT', body: await makePng(100, 100, '#ffffff') });
+const ruleParsed = (await api(`/api/template-sources/${templateId}/${ruleId}/parse`, { method: 'POST', json: ruleConfig })).data;
+assert(!ruleParsed.config.availableLengths.includes(28), '客户端伪造允许尺寸被接受');
+assert(ruleParsed.config.parseIssues.some((issue) => issue.code === 'NEW_COLOR_SWATCH_REVIEW' && issue.blocking), '服务端没有强制新色块确认');
+assert(ruleParsed.config.parseIssues.some((issue) => issue.code === 'LENGTH_OUTSIDE_S1'), '服务端没有强制超长提醒');
+assert(ruleParsed.config.parseIssues.filter((issue) => issue.code === 'UNSUPPORTED_LAYER_STRUCTURE').length === 1, '服务端没有合并结构提醒');
+const ruleState = (await api(`/api/inventory/${templateId}`)).data;
+await expectApiError(`/api/template-sources/${templateId}/${ruleId}/activate`, { method: 'POST', json: {
+  ...activationBase, expectedMasterRevision: ruleState.masterRevision,
+  mappings: ruleConfig.template.initialCards.map((card) => ({ candidateId: card.candidateId, entryId: card.matchedEntryId, treatAsNew: !card.matchedEntryId, lengths: card.lengths, section: card.section })),
+  acknowledgedIssues: ruleParsed.config.parseIssues.filter((issue) => issue.blocking).map((issue) => issue.issueId),
+} }, 422, 'INVALID_SOURCE_LENGTHS');
+assert((await api(`/api/inventory/${templateId}`)).data.sourceVersion.id === oldSourceId, '新颜色解析或失败启用改变了当前 S1');
+note('新颜色、批量提醒由服务端强制补齐；伪造尺寸及勾选不能绕过 S1');
+
 report.passed = true;
 
 await mkdir(path.join(projectDir, 'outputs'), { recursive: true });

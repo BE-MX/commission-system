@@ -79,6 +79,16 @@ const psd = {
 };
 
 const psdBuffer = writePsdBuffer(psd);
+const rulesChildren = psd.children.map((layer) => layer.name === '#62' ? { ...layer, name: '#999' }
+  : layer.name === 'color label 62' ? textLayer('color label 999', '#999', 380, 310, 80)
+  : layer.name === 'size label 62' ? textLayer('size label 999', '28″', 360, 342) : layer);
+const rulesPsdBuffer = writePsdBuffer({ ...psd, children: [...rulesChildren,
+  { name: 'Header', children: [pixelLayer('Decorative 1', -40, -40, 100, 100, [0, 0, 0], { effects: { disabled: true } })] },
+  { name: 'Another adjustment', adjustment: { type: 'brightness/contrast', brightness: 5, contrast: 5 } },
+] });
+const outsidePsdBuffer = writePsdBuffer({ ...psd, children: [...psd.children,
+  pixelLayer('#999', -20, 100, 120, 120, [0, 0, 0]),
+] });
 const ambiguousPsdBuffer = writePsdBuffer({
   width,
   height,
@@ -142,6 +152,23 @@ try {
     currentColors: catalog.colors,
     currentSelection,
   });
+  const rules = await parseTemplateSource({
+    psdFile: await fileFrom('/rules.psd', 'rules.psd', 'image/vnd.adobe.photoshop'), jpgFile,
+    sourceVersionId: 'rules', currentTemplate, currentColors: catalog.colors, currentSelection,
+  });
+  let outsideError = '';
+  try {
+    await parseTemplateSource({ psdFile: await fileFrom('/outside.psd', 'outside.psd', 'image/vnd.adobe.photoshop'),
+      jpgFile, sourceVersionId: 'outside', currentTemplate, currentColors: catalog.colors, currentSelection });
+  } catch (error) { outsideError = error.message; }
+  const mismatchCanvas = document.createElement('canvas');
+  mismatchCanvas.width = 300; mismatchCanvas.height = 300;
+  const mismatchBlob = await new Promise((resolve) => mismatchCanvas.toBlob(resolve, 'image/jpeg'));
+  let mismatchError = '';
+  try {
+    await parseTemplateSource({ psdFile, jpgFile: new File([mismatchBlob], 'mismatch.jpg', { type: 'image/jpeg' }),
+      sourceVersionId: 'mismatch', currentTemplate, currentColors: catalog.colors, currentSelection });
+  } catch (error) { mismatchError = error.message; }
   const diff = computeSourceChanges(currentTemplate, catalog.colors, currentSelection, parsed.config);
   const urls = Object.fromEntries(parsed.assets.map((asset) => [asset.name, URL.createObjectURL(asset.blob)]));
   const previewColors = parsed.config.colors.map((color) => ({ ...color, image: urls[assetName(color.image)] }));
@@ -175,6 +202,8 @@ try {
       assets: parsed.assets.map((asset) => ({ name: asset.name, size: asset.blob.size })),
       summary: parsed.config.parseSummary,
     },
+    rules: { issues: rules.config.parseIssues, availableLengths: rules.config.availableLengths,
+      cards: rules.config.template.initialCards, assets: rules.assets.map((asset) => asset.name), outsideError, mismatchError },
     diff,
     preview: { width: preview.width, height: preview.height, bytes: previewBlob.size },
     ambiguity: {
@@ -265,6 +294,8 @@ try {
       const staticFiles = {
         '/bundle.js': ['text/javascript; charset=utf-8', await readFile(path.join(bundleDir, 'bundle.js'))],
         '/catalog.json': ['application/json', catalogBuffer],
+        '/rules.psd': ['image/vnd.adobe.photoshop', rulesPsdBuffer],
+        '/outside.psd': ['image/vnd.adobe.photoshop', outsidePsdBuffer],
         '/fixture.psd': ['image/vnd.adobe.photoshop', psdBuffer],
         '/ambiguous.psd': ['image/vnd.adobe.photoshop', ambiguousPsdBuffer],
         '/fixture.jpg': ['image/jpeg', jpgBuffer],
@@ -339,6 +370,16 @@ try {
   assert(ambiguousSizeIssues.length === 2 && ambiguousSizeIssues.every((issue) => issue.blocking), '共享尺寸文字没有逐色阻断并要求人工确认。');
   assert(new Set(ambiguousSizeIssues.map((issue) => issue.candidateId)).size === 2, '共享尺寸文字的阻断问题未绑定到两个独立色块。');
 
+  assert(result.rules.issues.filter((issue) => issue.code === 'UNSUPPORTED_LAYER_STRUCTURE').length === 1, '结构问题没有合并');
+  assert(result.rules.issues.some((issue) => issue.code === 'NEW_COLOR_SWATCH_REVIEW' && issue.blocking), '新颜色缺少人工确认提醒');
+  assert(result.rules.issues.some((issue) => issue.code === 'LENGTH_OUTSIDE_S1' && issue.blocking), '超长缺少提醒');
+  assert(!result.rules.availableLengths.includes(28), '新版自动扩展了允许长度');
+  assert(result.rules.cards.some((card) => card.colorCode === '#999' && card.lengths.includes(28)), '新颜色或待纠正的原始长度丢失');
+  assert(result.rules.assets.some((name) => name.startsWith('colors/999-')), '新颜色候选色块没有提取');
+  assert(!result.rules.issues.some((issue) => issue.message.includes('Header') || issue.message.includes('Logo')), '装饰被误判为业务色块');
+  assert(result.rules.outsideError.includes('超出新版 PSD'), '真实业务色块越界未阻止');
+  assert(result.rules.mismatchError.includes('尺寸不一致'), 'PSD/JPG 不一致未阻止');
+  assert(result.diff.removed.some((item) => item.colorCode === '#1B' && item.lengths.includes(22)), '删除尺寸未进入移除项目');
   const report = {
     passed: true,
     fixture: { psdBytes: psdBuffer.length, ambiguousPsdBytes: ambiguousPsdBuffer.length, jpgBytes: jpgBuffer.length, width, height },

@@ -1201,7 +1201,7 @@ export async function enableTemplateSourceVersion(
   for (const card of config.template.initialCards) {
     const decision = decisions.get(card.candidateId);
     if (decision?.ignore) continue;
-    if (card.matchState === 'unresolved' && !decision) {
+    if (!decision) {
       fail(422, 'SOURCE_MAPPING_REQUIRED', '无法可靠对应的颜色必须人工映射或明确确认为新增。', {
         candidateId: card.candidateId,
         colorCode: card.colorCode,
@@ -1209,8 +1209,8 @@ export async function enableTemplateSourceVersion(
     }
     const lengths = decision?.lengths ?? card.lengths;
     const section = decision ? decision.section : card.section;
-    if (!lengths.length || lengths.length > 20 || lengths.some((length) => !Number.isInteger(length) || length < 1 || length > 100)) {
-      fail(422, 'INVALID_SOURCE_LENGTHS', '人工确认的尺寸无效。', { candidateId: card.candidateId });
+    if (!lengths.length || lengths.length > 20 || lengths.some((length) => !Number.isInteger(length) || !lengthsForTemplate(identity).includes(length))) {
+      fail(422, 'INVALID_SOURCE_LENGTHS', '只能使用目标产品旧母版 S1 允许的尺寸，请修改尺寸或排除该颜色。', { candidateId: card.candidateId });
     }
     if (
       (config.template.sections.length === 0 && section !== null) ||
@@ -1254,7 +1254,7 @@ export async function enableTemplateSourceVersion(
   }
   if (!cards.length) fail(422, 'EMPTY_SOURCE_TEMPLATE', '新版至少需要保留一个业务颜色条目。');
 
-  const availableLengths = [...new Set(cards.flatMap((card) => card.lengths))].sort((a, b) => a - b);
+  const availableLengths = lengthsForTemplate(identity);
   const usedSections = new Set(cards.map((card) => card.section).filter((section): section is string => Boolean(section)));
   const sections = config.template.sections.filter((section) => usedSections.has(section.key));
   const usedColorIds = new Set(cards.map((card) => card.colorId));

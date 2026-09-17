@@ -49,7 +49,8 @@ async function responseJson<T>(response: Response): Promise<T> {
 }
 
 function parseLengths(value: string) {
-  const values = value.split(/[，,、\s/]+/).map(Number).filter((length) => Number.isInteger(length) && length > 0 && length <= 100);
+  const values = value.trim().split(/[，,、\s/]+/).map(Number);
+  if (values.some((length) => !Number.isInteger(length) || length <= 0 || length > 100)) return [];
   return [...new Set(values)].sort((a, b) => a - b);
 }
 
@@ -111,7 +112,7 @@ export function SourceVersionManager({
         matchedEntryId: existing ? mapping.entryId : mapping?.mode === 'new' ? null : card.matchedEntryId,
       }];
     }).map((card, order) => ({ ...card, order }));
-    const availableLengths = [...new Set(cards.flatMap((card) => card.lengths))].sort((a, b) => a - b);
+    const availableLengths = config.availableLengths;
     const usedSections = new Set(cards.map((card) => card.section).filter(Boolean));
     const sections = config.template.sections.filter((section) => usedSections.has(section.key));
     const usedColorIds = new Set(cards.map((card) => card.colorId));
@@ -158,7 +159,7 @@ export function SourceVersionManager({
     const next: Record<string, MappingDraft> = {};
     for (const card of config.template.initialCards) {
       next[card.candidateId] = {
-        mode: card.matchState === 'exact' ? 'existing' : card.matchState === 'new' ? 'new' : '',
+        mode: card.matchState === 'exact' ? 'existing' : '',
         entryId: card.matchedEntryId ?? '',
         lengthText: card.lengths.join(', '),
         section: card.section ?? '',
@@ -326,6 +327,7 @@ export function SourceVersionManager({
   const mappingsReady = Boolean(config && config.template.initialCards.every((card) => {
     const mapping = mappings[card.candidateId];
     return mapping?.mode === 'ignore' || (mapping?.mode && parseLengths(mapping.lengthText).length > 0 &&
+      parseLengths(mapping.lengthText).every((length) => config.availableLengths.includes(length)) &&
       (mapping.mode === 'new' || Boolean(mapping.entryId)) &&
       (!config.template.sections.length || Boolean(mapping.section)));
   }));
@@ -450,10 +452,10 @@ export function SourceVersionManager({
           </div>
 
           <div className="source-diff">
-            <h3>主要变化</h3>
+            <h3>主要变化</h3><p>移除项目仅影响新版画面与规格，历史库存状态、母版版本和导出记录仍保留。</p>
             <div className="diff-groups">
               <article><strong>新增 {reviewDiff?.added.length ?? 0}</strong><p>{reviewDiff?.added.map((item) => item.colorCode).join('、') || '无'}</p></article>
-              <article><strong>移除 {reviewDiff?.removed.length ?? 0}</strong><p>{reviewDiff?.removed.map((item) => item.colorCode).join('、') || '无'}</p></article>
+              <article><strong>移除 {reviewDiff?.removed.length ?? 0}</strong><p>{reviewDiff?.removed.map((item) => `${item.colorCode}（${item.lengths.join('／')}″）`).join('、') || '无'}</p></article>
               <article><strong>保持不变 {reviewDiff?.unchanged.length ?? 0}</strong><p>{reviewDiff?.unchanged.map((item) => item.colorCode).join('、') || '无'}</p></article>
               <article><strong>重新排列 {reviewDiff?.reordered.length ?? 0}</strong><p>{reviewDiff?.reordered.map((item) => item.colorCode).join('、') || '无'}</p></article>
               <article><strong>分区调整 {reviewDiff?.resectioned.length ?? 0}</strong><p>{reviewDiff?.resectioned.map((item) => item.colorCode).join('、') || '无'}</p></article>
@@ -464,7 +466,7 @@ export function SourceVersionManager({
 
           <div className="source-mapping">
             <h3>人工映射与尺寸确认</h3>
-            <p>只允许按色号业务身份人工对应；系统不会按位置、排列序号或文件名迁移库存。</p>
+            <p>只允许按色号业务身份人工对应；系统不会按位置、排列序号或文件名迁移库存。尺寸仅限旧母版 S1：{config.availableLengths.join("／")}″；超出时请修改或排除该颜色。</p>
             {config.template.initialCards.map((card) => {
               const mapping = mappings[card.candidateId];
               const eligible = eligibleEntries(card);
@@ -480,6 +482,7 @@ export function SourceVersionManager({
                   </select>
                   {mapping?.mode === 'existing' && <select value={mapping.entryId} onChange={(event) => updateMapping(card.candidateId, { entryId: event.target.value })}><option value="">选择现有条目</option>{eligible.map((entry) => <option key={entry.entryId} value={entry.entryId}>{card.colorCode} · {state.template.sections.find((section) => section.key === entry.section)?.label || '未分区'}</option>)}</select>}
                   {mapping?.mode !== 'ignore' && <label>尺寸（英寸，逗号分隔）<input value={mapping?.lengthText || ''} onChange={(event) => updateMapping(card.candidateId, { lengthText: event.target.value })} /></label>}
+                  {mapping?.mode !== 'ignore' && (!parseLengths(mapping?.lengthText || '').length || parseLengths(mapping?.lengthText || '').some((length) => !config.availableLengths.includes(length))) && <small role="alert">尺寸不在 S1 允许集合内，请修改或排除该颜色。</small>}
                   {mapping?.mode !== 'ignore' && config.template.sections.length > 0 && <label>分区<select value={mapping?.section || ''} onChange={(event) => updateMapping(card.candidateId, { section: event.target.value })}><option value="">请选择分区</option>{config.template.sections.map((section) => <option key={section.key} value={section.key}>{section.label}</option>)}</select></label>}
                 </article>
               );

@@ -1,3 +1,4 @@
+import { sourceReviewIssues } from '@/lib/source-review';
 import { env } from 'cloudflare:workers';
 import {
   colorsForTemplate,
@@ -17,7 +18,7 @@ import {
 } from '@/lib/source-versions';
 import type { AuthorizedUser } from '@/lib/server/auth';
 import { CATALOG, serverTemplateById } from '@/lib/server/catalog';
-import { JPG_LIMIT, PSD_LIMIT, PSD_PART_SIZE } from '@/lib/server/uploads';
+import { psdDimensions, JPG_LIMIT, PSD_LIMIT, PSD_PART_SIZE } from '@/lib/server/uploads';
 
 type SqlValue = string | number | null;
 
@@ -488,9 +489,11 @@ async function validateParsedConfig(row: StoredSourceVersion, input: unknown) {
     fail(422, 'INVALID_DOCUMENT_SIZE', 'PSD 画布尺寸无法用于工作台。');
   }
   const reference = await env.FILES.head(row.referenceJpgKey);
+  const psdObject = await env.FILES.get(row.sourcePsdKey, { range: { offset: 0, length: 26 } });
+  const psd = psdObject ? psdDimensions(new Uint8Array(await psdObject.arrayBuffer())) : null;
   const jpgWidth = Number(reference?.customMetadata?.width);
   const jpgHeight = Number(reference?.customMetadata?.height);
-  if (!reference || jpgWidth !== width || jpgHeight !== height) {
+  if (!psd || psd.width !== width || psd.height !== height || !reference || jpgWidth !== psd.width || jpgHeight !== psd.height) {
     fail(422, 'PSD_JPG_SIZE_MISMATCH', 'PSD 与对应 JPG 的画布尺寸不一致。', {
       psd: { width, height },
       jpg: { width: jpgWidth || null, height: jpgHeight || null },
@@ -503,7 +506,7 @@ async function validateParsedConfig(row: StoredSourceVersion, input: unknown) {
   ) {
     fail(422, 'TEMPLATE_IDENTITY_MISMATCH', '解析结果不能改变原产品与 Radio 的关联。');
   }
-  const availableLengths = [...new Set(raw.availableLengths.map(Number))].sort((a, b) => a - b);
+  const availableLengths = lengthsForTemplate(original);
   if (
     !availableLengths.length || availableLengths.length > 20 ||
     availableLengths.some((value) => !Number.isInteger(value) || value < 1 || value > 100)
@@ -568,7 +571,7 @@ async function validateParsedConfig(row: StoredSourceVersion, input: unknown) {
       typeof card.colorCode !== 'string' || card.colorCode.trim().length > 80 || !canonicalColorCode(card.colorCode) ||
       canonicalColorCode(card.colorCode) !== canonicalColorCode(sourceColor.code) ||
       !Array.isArray(card.lengths) || !card.lengths.length ||
-      card.lengths.some((value) => !Number.isInteger(Number(value)) || !availableLengths.includes(Number(value))) ||
+      card.lengths.some((value) => !Number.isInteger(Number(value)) || Number(value) < 1 || Number(value) > 100) ||
       new Set(card.lengths.map(Number)).size !== card.lengths.length ||
       !['exact', 'new', 'unresolved'].includes(card.matchState)
     ) fail(422, 'INVALID_SOURCE_CARD', '解析到的颜色条目不完整或重复。');
@@ -613,7 +616,7 @@ async function validateParsedConfig(row: StoredSourceVersion, input: unknown) {
     (issue.issueId != null && (typeof issue.issueId !== 'string' || !issue.issueId.trim() || issue.issueId.length > 160))
   ))) fail(422, 'INVALID_PARSE_ISSUES', '解析问题列表格式无效。');
   const issueIds = new Set<string>();
-  const normalizedIssues = issues.map((issue, index) => {
+  const normalizedIssues = sourceReviewIssues(issues, validatedCards, CATALOG.colors, availableLengths).map((issue, index) => {
     const issueId = issue.issueId?.trim() || `issue-${index + 1}-${issue.code.slice(0, 60)}`;
     if (issueIds.has(issueId)) fail(422, 'DUPLICATE_PARSE_ISSUE', '解析问题编号重复，无法逐项确认。', { issueId });
     issueIds.add(issueId);
@@ -817,7 +820,7 @@ function publicSourceVersion(row: StoredSourceVersion, includeConfig = false): S
     failureReason: row.failureReason,
     unresolvedCount: unresolved.length,
     diff: parseJson(row.diffJson, null),
-    ...(includeConfig ? { config: parseJson(row.configJson, null) } : {}),
+    ...(includeConfig ? { config: row.configJson ? sourceVersionConfig(row) : null } : {}),
   };
 }
 
@@ -888,5 +891,11 @@ export async function mayReadSourceAsset(row: StoredSourceVersion, actor: Author
 export function sourceVersionConfig(row: StoredSourceVersion) {
   const config = parseJson<SourceTemplateConfig | null>(row.configJson, null);
   if (!config) fail(500, 'SOURCE_CONFIG_MISSING', '源文件版本配置不存在。');
-  return config;
+  const allowedLengths = lengthsForTemplate(requireTemplate(row.templateId));
+  return {
+    ...config,
+    availableLengths: allowedLengths,
+    template: { ...config.template, availableLengths: allowedLengths },
+    parseIssues: sourceReviewIssues(config.parseIssues, config.template.initialCards, CATALOG.colors, allowedLengths),
+  };
 }
