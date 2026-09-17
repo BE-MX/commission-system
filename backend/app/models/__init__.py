@@ -131,7 +131,10 @@ from app.whatsapp_translation.models import (
     TranslationUsageDaily,
 )
 
+from app.receipt.models import Receipt, ReceiptIntent, ReceiptAttachment, ReceiptLog
+
 __all__ = [
+    "Receipt", "ReceiptIntent", "ReceiptAttachment", "ReceiptLog",
     # 提成系统自有表
     "EmployeeAttributeHistory",
     "SupervisorRelationHistory",

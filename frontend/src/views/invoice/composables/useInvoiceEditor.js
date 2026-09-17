@@ -185,6 +185,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     lastOrderDate.value = ''
     Object.assign(form, emptyInvoiceForm(), {
       ...data,
+      receipt_draft: data.receipt_draft ? { ...data.receipt_draft, amount: data.receipt_draft.amount == null ? null : Number(data.receipt_draft.amount) } : null,
       shipping_fee: Number(data.shipping_fee || 0),
       surcharge_amount: Number(data.surcharge_amount || 0),
       internal_discount: normalizeDiscount(data.internal_discount),
@@ -440,6 +441,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
   // ── 保存 ────────────────────────────────────────────
 
   async function saveDraft() {
+    if (form.receipt_uploading) { ElMessage.warning("请等待回款截图上传完成"); return null }
     if (form.items.some(line => Number(line.total_price || 0) < 0)) {
       ElMessage.warning('产品行折扣不能超过该行金额')
       return null

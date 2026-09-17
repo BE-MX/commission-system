@@ -1,5 +1,29 @@
 # 莱莎方舟 API 参考
 
+## 回款管理（2026-09-17，本地实现，迁移 156 后可用）
+
+前缀 `/api/receipts`，登录认证、标准 `ok()` 信封。数据范围沿用订单归属/代理授权；`receipt:read_all` 可看全部。详见[实现说明](requirements/2026-09-17-receipt-management-implementation.md)。
+
+| 方法与路径 | 参数 / 行为 | 权限 |
+| --- | --- | --- |
+| GET 空路径 | page/page_size、keyword、sync_status、source、status、date_from/date_to；返回列表与 delivery_enabled | read/write/admin 任一 |
+| GET `/order-options` | keyword/page；可关联的已同步订单 | read/write/admin 任一 |
+| GET `/types` | 当前小满回款方式 | 回款 read/write/admin 或发票 read/write/sync |
+| GET `/order-balance/{invoice_id}` | 最新原币余额与 version；读取小满核验 | read/write/admin 任一 |
+| POST `/attachments` | multipart file，1 张有效图片≤10MiB；返回私有资源 ID | receipt:write 或 invoice:write |
+| GET `/attachments/{identity}` | 图片流；对象权限校验，private/no-store | 回款或发票权限，再检查关联范围 |
+| POST 空路径 | invoice_id、request_key、balance_version + 回款字段 | receipt:write |
+| GET `/{id}` | 单据、凭证元数据和审计日志 | read/write/admin 任一 |
+| PATCH `/{id}` | version + 回款字段；仅未被远端接受的待同步/失败单 | receipt:write |
+| POST `/{id}/retry` | 明确失败的原单重新排队 | receipt:write |
+| POST `/{id}/void` | reason；仅本地待同步/明确失败单作废 | receipt:write |
+| POST `/{id}/reconcile` | 读取小满结果，不创建；返回候选或已核验单 | receipt:write/admin |
+| POST `/{id}/resolve` | resolution=bind_receipt/confirm_not_created、reason、可选 xiaoman_receipt_id；已知远端 ID 不允许换绑或确认未创建 | receipt:admin |
+
+回款字段：amount（>0，最多2位小数）、collection_date、payment_type、attachment_ids（1–5个不重复ID）、bank_charge（默认0且≤amount）、remark（≤500字）。币种、客户和远端订单 ID 由关联发票冻结，不接收客户端指定。request_key 为16–64位字母数字下划线/连字符；balance_version 为余额响应中的64位摘要。相同幂等键不同内容拒绝，余额变更返回409并要求刷新；参数错误422、资源/权限404或403、存储入口不可用503。代理上传超过限制413。
+
+库存发票 create/update 新增 `receipt_draft`（amount、collection_date、payment_type、remark、attachment_ids），detail 原样返回意图及生成状态；同步成功增加 receipt_generation_status/receipt_id。保存草稿可缺项，同步库存单前必须有截图；符合自动资格的新单还须完整回款字段。`pending/syncing/synced/failed/uncertain` 是传输状态，`collect_status=0/1/null` 是小满财务状态，二者不得混用。
+
 ## 站点 AI 网关（2026-09-12，迁移 146 后可用）
 
 机器调用：`POST /api/ai-gateway/chat`，`Authorization: Bearer <站点密钥>` 和 UUID 格式 `X-Request-ID` 必填。仅接受 `{preset,messages}`，messages 为 1–20 条 user/assistant 文本、最后一条为 user，总长 ≤16,000 字符，请求体 ≤64 KiB。站点负责人、调用模块、模型和输出上限均由服务端确定；不接受客户端 system/provider/model/max_tokens 参数。

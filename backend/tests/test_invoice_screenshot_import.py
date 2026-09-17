@@ -234,7 +234,16 @@ def test_unbound_delegate_cannot_be_selected_for_screenshot_source(db):
     assert result["sales_match"]["selected"] is None
 
 
-def test_screenshot_invoice_matched_in_current_okki_is_blocked_when_syncing(db):
+def _payment_draft(db, monkeypatch, tmp_path):
+    from app.receipt import attachments
+    monkeypatch.setattr(attachments, "STORAGE_ROOT", tmp_path / "receipt-proofs")
+    stream = io.BytesIO()
+    Image.new("RGB", (8, 8), "white").save(stream, format="PNG")
+    row = attachments.upload(db, stream.getvalue(), "payment-test.png", 27)
+    return {"amount": "1.00", "collection_date": "2026-09-17", "payment_type": "T/T", "attachment_ids": [row.id]}
+
+
+def test_screenshot_invoice_matched_in_current_okki_is_blocked_when_syncing(db, monkeypatch, tmp_path):
     _seed_example(db)
     preview = _resolve(db)
     invoice = service.create_invoice(
@@ -242,6 +251,7 @@ def test_screenshot_invoice_matched_in_current_okki_is_blocked_when_syncing(db):
         InvoiceCreate.model_validate({
             **preview["invoice_patch"],
             "invoice_no": "KATY-KC-0801",
+            "receipt_draft": _payment_draft(db, monkeypatch, tmp_path),
         }),
         user_id=27,
         allow_screenshot_source=True,
@@ -522,10 +532,11 @@ def test_different_order_name_in_current_okki_does_not_block_external_import(db)
     assert any("保存并同步时" in message for message in result["warnings"])
 
 
-def test_screenshot_sync_rechecks_projection_after_invoice_was_saved(db, monkeypatch):
+def test_screenshot_sync_rechecks_projection_after_invoice_was_saved(db, monkeypatch, tmp_path):
     _seed_example(db)
     order_name = "External Order 260825"
     preview = _resolve(db, _sample_extraction(order_name=order_name))
+    preview["invoice_patch"]["receipt_draft"] = _payment_draft(db, monkeypatch, tmp_path)
     invoice = service.create_invoice(
         db,
         InvoiceCreate.model_validate({
@@ -563,10 +574,11 @@ def test_screenshot_sync_rechecks_projection_after_invoice_was_saved(db, monkeyp
     assert called is False
 
 
-def test_external_screenshot_syncs_when_current_okki_has_no_same_order(db, monkeypatch):
+def test_external_screenshot_syncs_when_current_okki_has_no_same_order(db, monkeypatch, tmp_path):
     _seed_example(db)
     order_name = "外部系统订单#可同步"
     preview = _resolve(db, _sample_extraction(order_name=order_name))
+    preview["invoice_patch"]["receipt_draft"] = _payment_draft(db, monkeypatch, tmp_path)
     invoice = service.create_invoice(
         db,
         InvoiceCreate.model_validate({

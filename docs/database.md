@@ -1,5 +1,18 @@
 # 莱莎方舟 数据库表参考
 
+## 回款管理（156_receipt_management，本地实现）
+
+| 表 | 责任与关键约束 |
+| --- | --- |
+| `ark_receipts` | 原币回款账本及持久发送状态；invoice_id FK，receipt_no/request_key/auto_key/远端回款ID各自唯一；金额NUMERIC(14,2)，version、attempt_token、lease_until防重复与迟到覆盖 |
+| `ark_receipt_intents` | 每张库存单唯一意图；invoice_id唯一FK；draft→armed→ready→converted；eligible区分新单自动资格，保存截图/金额与订单同步租约 |
+| `ark_receipt_attachments` | UUID资源ID、存储键唯一、SHA256/MIME/大小、上传人、可空invoice_id/receipt_id FK；图片在固定主存储目录，数据库不存二进制 |
+| `ark_receipt_logs` | receipt_id FK、操作、原因、操作人和北京时间；保留创建/修改/重试/核对审计 |
+
+回款 status=active/voided，sync_status=pending/syncing/synced/failed/uncertain；collect_status=0/1/NULL，与同步结果独立。所有普通时间列采用北京时间；回款日期为业务日期。数据范围由关联订单推导，创建人仅作审计。作废不删除账本，凭证绑定与日志保留；未做历史回填，downgrade拒绝删除财务数据。
+
+当前迁移父节点154，另任务分支155需合并时串联单head。凭证多实例配置、原币余额去重口径、备份及生产启用限制见[实现说明](requirements/2026-09-17-receipt-management-implementation.md)。
+
 ## 站点 AI 网关（146_ai_site_gateway）
 
 - `ark_ai_gateway_apps`：站点身份、负责人、密钥 SHA-256/掩码、启停、日/分钟/并发/输出限额、创建/更新人和北京时间。key_hash 唯一；owner_user_id 的 FK 使用 INT UNSIGNED 与真实 ark_users 一致。

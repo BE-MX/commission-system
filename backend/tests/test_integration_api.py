@@ -2097,6 +2097,7 @@ def test_external_invoice_openapi_declares_create_replay_lookup_and_error_models
 
 
 def test_two_real_sessions_racing_same_app_order_create_one_invoice(tmp_path):
+    from app.receipt.models import Receipt, ReceiptIntent, ReceiptAttachment, ReceiptLog
     database_path = tmp_path / "invoice-race.sqlite3"
     catalog_path = tmp_path / "invoice-race-catalog.sqlite3"
     engine = create_engine(
@@ -2123,6 +2124,7 @@ def test_two_real_sessions_racing_same_app_order_create_one_invoice(tmp_path):
         StdPrice.__table__,
         PriceColorType.__table__,
         CustomerPriceRule.__table__,
+        Receipt.__table__, ReceiptIntent.__table__, ReceiptAttachment.__table__, ReceiptLog.__table__,
     ])
     Session = sessionmaker(bind=engine)
     setup = Session()

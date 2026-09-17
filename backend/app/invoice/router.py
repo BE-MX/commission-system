@@ -929,10 +929,21 @@ def sync_invoice(
     _ensure_invoice_visible(db, invoice, current_user)
     operator_id = _user_id(current_user)
     operation_key = None
+    receipt_token = None
+    from app.receipt import invoice_link
     try:
+        receipt_token = invoice_link.arm(db, invoice, operator_id)
+        if receipt_token:
+            db.commit()  # stock-only claim survives the order service's intermediate commits
+            invoice = service.get_invoice(db, invoice_id, for_update=True)
         operation_key = semifinished_invoice_service.prepare_invoice_sync(db, invoice, operator_id)
     except ValueError as exc:
         db.rollback()
+        if receipt_token:
+            invoice = service.get_invoice(db, invoice_id, for_update=True)
+            invoice_link.release_rejected(db, invoice, receipt_token)
+            invoice_link.finish_attempt(db, invoice, receipt_token)
+            db.commit()
         raise HTTPException(409, str(exc))
     # prepare 可能提交预占并释放原发票行锁；重新加锁，避免预占后的并发编辑/同步。
     invoice = service.get_invoice(db, invoice_id, for_update=True)
@@ -942,6 +953,8 @@ def sync_invoice(
         db.rollback()
         try:
             semifinished_invoice_service.release_invoice_sync(db, invoice_id, operation_key, operator_id)
+            invoice_link.release_rejected(db, invoice, receipt_token)
+            invoice_link.finish_attempt(db, invoice, receipt_token)
             db.commit()
         except Exception:  # noqa: BLE001 - 释放失败保留 pending，由管理员恢复
             db.rollback()
@@ -952,6 +965,7 @@ def sync_invoice(
         invoice,
         operator_id=operator_id,
         inventory_operation_key=operation_key,
+        receipt_sync_token=receipt_token,
     )
     if result.get("ok"):
         try:
@@ -968,6 +982,7 @@ def sync_invoice(
                 "inventory_pending": True,
             }
         else:
+            result.update(invoice_link.mark_success(db, invoice, receipt_token))
             db.commit()
     elif result.get("okki_accepted") and operation_key:
         # OKKI 已建单但响应缺行：无法可靠判断哪些产品已经生效，保留整批预占，
@@ -982,6 +997,7 @@ def sync_invoice(
     else:
         try:
             semifinished_invoice_service.release_invoice_sync(db, invoice_id, operation_key, operator_id)
+            invoice_link.release_rejected(db, invoice, receipt_token)
             db.commit()
         except Exception as exc:  # noqa: BLE001 - 释放异常必须显式暴露并保留日志
             logger.warning("semifinished release failed invoice=%s: %s", invoice_id, exc)
@@ -989,6 +1005,10 @@ def sync_invoice(
             db.rollback()
             result["message"] = f"{result.get('message') or '同步失败'}；半成品预占释放异常，请联系管理员"
             result["inventory_pending"] = True
+    if receipt_token:
+        invoice = service.get_invoice(db, invoice_id, for_update=True)
+        invoice_link.finish_attempt(db, invoice, receipt_token)
+        db.commit()
     return ok(result)
 
 

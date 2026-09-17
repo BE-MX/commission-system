@@ -221,7 +221,7 @@ def list_okki_department_options(db: Session) -> list[dict]:
 
 
 # kind 派生规则（权限重设计方案）：data=数据范围，read/日报=页面可见，其余=操作级
-_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all", "agent_runtime:read_all", "customer:read_all", "domestic:read_all", "shipping_inspection:read_all", "shipping_inspection:inspection_read_all"}
+_DATA_KIND_CODES = {"receipt:read_all", "tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all", "agent_runtime:read_all", "customer:read_all", "domestic:read_all", "shipping_inspection:read_all", "shipping_inspection:inspection_read_all"}
 _PAGE_KIND_EXTRA = {"tracking:daily_report"}
 
 
@@ -367,6 +367,10 @@ def seed_role_permissions(db: Session):
         ("production_dashboard:read", "production", "read",   "查看生产看板"),
         ("production_route:read",     "production", "read",   "查看工序路线"),
         # 订单发票管理（2026-07-12 三个 admin 配置页拆出独立页面码，invoice:admin 保留为操作码）
+        ("receipt:read", "receipt", "read", "查看回款单"),
+        ("receipt:write", "receipt", "write", "登记和同步回款单"),
+        ("receipt:admin", "receipt", "admin", "核对回款同步结果"),
+        ("receipt:read_all", "receipt", "read_all", "查看全部回款单（数据范围）"),
         ("invoice:read",          "invoice", "read",          "查看订单发票"),
         ("invoice:write",         "invoice", "write",         "创建/编辑订单发票"),
         ("invoice:sync",          "invoice", "sync",          "同步订单发票到小满"),
@@ -524,6 +528,7 @@ def seed_role_permissions(db: Session):
     # upsert：活跃权限 + 已下架权限统一处理，元数据每次启动刷新
     existing_map = {p.code: p for p in db.query(ArkPermission).all()}
     invoice_price_write_created = "invoice_price:write" not in existing_map
+    receipt_read_created = "receipt:read" not in existing_map
     customer_media_portal_read_created = "customer_media_portal:read" not in existing_map
     module_counter: dict = {}
     for entry in [(s, 0) for s in seeds] + [(s, 1) for s in LEGACY_SEEDS]:
@@ -542,6 +547,15 @@ def seed_role_permissions(db: Session):
         else:
             db.add(ArkPermission(code=code, **meta))
     db.flush()
+
+    # Existing invoice sync roles can inspect automatically generated receipts,
+    # within the same invoice ownership boundary. Manual writes remain explicit.
+    if receipt_read_created:
+        receipt_perm = db.query(ArkPermission).filter(ArkPermission.code == "receipt:read").one()
+        sync_perm = db.query(ArkPermission).filter(ArkPermission.code == "invoice:sync").one()
+        for (role_id,) in db.query(ArkRolePermission.role_id).filter(ArkRolePermission.permission_id == sync_perm.id).all():
+            db.add(ArkRolePermission(role_id=role_id, permission_id=receipt_perm.id))
+        db.flush()
 
     # invoice:admin 原本包含价格维护能力；拆出写权限后为既有价格管理员补授。
     invoice_admin_perm = db.query(ArkPermission).filter(ArkPermission.code == "invoice:admin").first()

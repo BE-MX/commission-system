@@ -15,6 +15,7 @@ export function screenshotInvoiceNo(preview = {}) {
 
 export function emptyInvoiceForm() {
   return {
+    receipt_draft: null, receipt_uploading: false,
     id: null, invoice_no: '', order_type: 'stock', sales_user_id: null, customer_id: '', customer_name: '',
     contact_name: '', contact_phone: '', contact_email: '', delivery_address: '',
     sales_user_name: '', sales_phone: '', sales_email: '',
@@ -71,7 +72,11 @@ export function emptyHairRow(isProduction = false) {
 }
 
 export function buildInvoicePayload(form, hairDiscount) {
+  const draft = form.receipt_draft
   return {
+    receipt_draft: draft ? { amount: draft.amount == null ? null : String(draft.amount),
+      collection_date: draft.collection_date || null, payment_type: draft.payment_type || null,
+      attachment_ids: draft.attachment_ids || [], remark: draft.remark || "" } : null,
     invoice_no: (form.invoice_no || '').trim() || null, sales_user_id: form.sales_user_id,
     order_type: form.order_type, customer_id: form.customer_id, customer_name: form.customer_name,
     contact_name: form.contact_name || null, contact_phone: form.contact_phone || null,

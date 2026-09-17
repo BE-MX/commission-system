@@ -337,6 +337,8 @@
             :on-handling-fee-input="markHandlingFeeTouched"
           />
 
+          <InvoiceReceiptFields :form="form" :total="formTotal" />
+
           <InvoiceHairTable
             :items="hairItems"
             :is-production="isProduction"
@@ -430,6 +432,7 @@ import InvoiceCustomerSyncEntry from './components/InvoiceCustomerSyncEntry.vue'
 import InvoiceScreenshotImport from './components/InvoiceScreenshotImport.vue'
 import InvoiceSyncLogsDialog from './components/InvoiceSyncLogsDialog.vue'
 import InvoiceAccessoryTable from './components/InvoiceAccessoryTable.vue'
+import InvoiceReceiptFields from './components/InvoiceReceiptFields.vue'
 import InvoiceSettlementFields from './components/InvoiceSettlementFields.vue'
 import InvoiceTotalsFooter from './components/InvoiceTotalsFooter.vue'
 import InvoiceHairTable from './components/InvoiceHairTable.vue'

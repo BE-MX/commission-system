@@ -893,7 +893,9 @@ def test_merged_uid_removed_when_all_members_backfilled(db):
     assert remove_rows[0]["product_id"] == 888 and remove_rows[0]["sku_id"] == 999
 
 
-def test_replace_items_carries_unique_id_and_accumulates_removed(db):
+def test_replace_items_carries_unique_id_and_accumulates_removed(db, monkeypatch):
+    from app.receipt import remote
+    monkeypatch.setattr(remote, "order_receipts", lambda *a: [])
     _seed_save_pairs(db)
     create_payload = InvoiceCreate(
         customer_id="123456",
@@ -989,7 +991,9 @@ def test_replace_items_carries_unique_id_and_accumulates_removed(db):
     assert [entry["unique_id"] for entry in json.loads(invoice.xiaoman_removed_lines)] == ["222"]
 
 
-def test_replace_items_duplicate_echoed_id_only_first_carries(db):
+def test_replace_items_duplicate_echoed_id_only_first_carries(db, monkeypatch):
+    from app.receipt import remote
+    monkeypatch.setattr(remote, "order_receipts", lambda *a: [])
     _seed_save_pairs(db)
     # 前端复制行若带上旧 id（或恶意请求），同一 unique_id 绝不能落到两行——
     # OKKI 编辑推单按 unique_id 锚定，两行同 ID 会互相覆盖且金额无声出错

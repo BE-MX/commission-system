@@ -218,7 +218,11 @@ class AccessoryPricePayload(BaseModel):
     currency: str = Field(default="USD", pattern="^[A-Z]{3}$")
 
 
+from app.receipt.schemas import ReceiptDraft
+
+
 class _InvoiceHeaderPayload(BaseModel):
+    receipt_draft: ReceiptDraft | None = None
     # 发票号开放编辑：None/空串 = 新建时按规则生成、编辑时保持原号
     invoice_no: Optional[str] = Field(None, max_length=64)
     sales_user_id: Optional[int] = Field(None, gt=0)

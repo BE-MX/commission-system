@@ -28,6 +28,7 @@ from app.governance.router import router as governance_router
 from app.training.router import router as training_router
 from app.whatsapp.router import router as whatsapp_router
 from app.invoice.router import router as invoice_router
+from app.receipt.router import router as receipt_router
 from app.expo.router import router as expo_router
 from app.aftersales.router import router as aftersales_router
 from app.mcp.token_admin import router as mcp_token_router
@@ -101,6 +102,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(governance_router, prefix="/api/governance", tags=["数据概念治理"])
     app.include_router(training_router, prefix="/api/training", tags=["培训速递"])
     app.include_router(whatsapp_router, prefix="/api/whatsapp", tags=["WhatsApp 同步"])
+    app.include_router(receipt_router, prefix="/api/receipts", tags=["回款单"])
     app.include_router(invoice_router, prefix="/api/invoice", tags=["Order Invoice"])
     app.include_router(expo_router, prefix="/api/expo", tags=["展会 AI 试戴"])
     app.include_router(aftersales_router, prefix="/api/aftersales", tags=["客户售后管理"])

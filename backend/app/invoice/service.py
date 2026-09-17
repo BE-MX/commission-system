@@ -211,6 +211,8 @@ def delete_invoice(db: Session, invoice: Invoice) -> None:
     """Judge by xiaoman_order_id, not sync_status: editing flips a synced invoice
     back to not_synced while the real OKKI order still exists, and deleting would
     orphan it AND cascade-drop its push audit logs."""
+    from app.receipt.invoice_link import guard_delete
+    guard_delete(db, invoice)
     if invoice.xiaoman_order_id or invoice.sync_status in {"synced", "sync_uncertain"}:
         raise ValueError("该发票已同步或同步结果待核对，不允许删除，请先在小满侧确认")
     # 半成品同步失败可能留下 allocated=0 的审计占位行。它们不代表真实出库，
@@ -328,10 +330,15 @@ def create_invoice(
         request_payload=body,
     )
     db.flush()
+    from app.receipt.invoice_link import save_draft
+    save_draft(db, invoice, body.receipt_draft, user_id, new=True)
+    db.flush()
     return invoice
 
 
 def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: int | None = None) -> Invoice:
+    from app.receipt import invoice_link
+    receipt_floor = invoice_link.guard_edit(db, invoice, body)
     from app.semifinished.models import InvoiceAllocation
 
     pending = db.query(InvoiceAllocation.id).filter(
@@ -373,6 +380,9 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
     _refresh_invoice_totals(invoice)
     _validate_internal_settlement(invoice)
     _validate_screenshot_source(db, invoice)
+    if invoice.total_amount < receipt_floor:
+        raise ValueError("订单金额不能低于已登记回款及待处理金额")
+    invoice_link.save_draft(db, invoice, body.receipt_draft, user_id)
     db.flush()
     return invoice
 
@@ -460,8 +470,10 @@ def serialize_detail(invoice: Invoice, db: Session | None = None) -> dict:
                 }
                 for material, balance in rows
             }
+    from app.receipt.invoice_link import describe as describe_receipt
     return {
         **_invoice_list_row(invoice, len(invoice.items)),
+        "receipt_draft": describe_receipt(db, invoice) if db is not None else None,
         "contact_name": invoice.contact_name,
         "contact_phone": invoice.contact_phone,
         "contact_email": invoice.contact_email,

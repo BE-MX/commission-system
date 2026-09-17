@@ -382,6 +382,15 @@ export const NAV_ENTRIES = [
     },
   },
   {
+    path: '/invoice/receipts',
+    name: 'ReceiptManage',
+    component: () => import('@/views/receipt/ReceiptManage.vue'),
+    title: '回款单',
+    anyPermission: ['receipt:read', 'receipt:write', 'receipt:admin'],
+    menu: { group: 'invoice', title: '回款单', icon: Document, order: 15,
+      anyPermission: ['receipt:read', 'receipt:write', 'receipt:admin'] },
+  },
+  {
     path: '/invoice/price-config',
     name: 'InvoicePriceConfig',
     component: () => import('@/views/invoice/InvoicePriceConfig.vue'),

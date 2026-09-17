@@ -110,6 +110,9 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     from app.domestic.customer_service import release_stale_private_customers
 
     settings = get_settings()
+    from app.receipt.scheduler import process_receipts
+    scheduler.add_job(process_receipts, trigger="interval", seconds=30,
+                      id="receipt_delivery", replace_existing=True, max_instances=1, coalesce=True)
 
     async def _scan_staging_job():
         with SessionLocal() as db:

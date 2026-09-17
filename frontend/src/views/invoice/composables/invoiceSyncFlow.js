@@ -30,7 +30,7 @@ export async function validateThenSync(id, showIssues) {
     }
     const result = await syncInvoice(id)
     if (result.ok) {
-      ElMessage.success('已同步到小满')
+      ElMessage.success(result.receipt_generation_status === 'ready' ? '订单已同步，已加入自动回款任务' : '已同步到小满')
       return INVOICE_SYNC_OUTCOME.SUCCESS
     }
     if (result.issues?.length) showIssues(result.issues)

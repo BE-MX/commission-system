@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     STAGING_SCAN_BATCH_SIZE: int = 100
 
     # ── APScheduler 定时任务 ─────────────────────────────
+    # Enable only after receipt migration and tenant receipt contract verification.
+    RECEIPT_SYNC_ENABLED: bool = False
+    RECEIPT_STORAGE_PROXY_URL: str = ""
     SCHEDULER_ENABLED: bool = True
     SCHEDULER_TIMEZONE: str = "Asia/Shanghai"
 

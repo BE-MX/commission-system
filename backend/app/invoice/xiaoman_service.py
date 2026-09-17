@@ -56,6 +56,7 @@ def sync_invoice(
     invoice: Invoice,
     operator_id: int | None = None,
     inventory_operation_key: str | None = None,
+    receipt_sync_token: str | None = None,
 ) -> dict:
     """Push one invoice to OKKI (create or edit). Never raises for expected
     failures — state + sync log are always persisted.
@@ -74,6 +75,11 @@ def sync_invoice(
                 "message": "请先到 OKKI 确认订单是否已生成，并由管理员补录订单 ID 或处理待核对状态",
             }],
         }
+    from app.receipt.invoice_link import preflight
+    try:
+        preflight(db, invoice, operator_id)
+    except ValueError as exc:
+        return {"ok": False, "message": str(exc), "issues": [{"field": "receipt_draft", "message": str(exc)}]}
     screenshot_issue = _screenshot_sync_issue(db, invoice)
     if screenshot_issue:
         return {
@@ -99,6 +105,11 @@ def sync_invoice(
     removed_snapshot = invoice.xiaoman_removed_lines
 
     action = "update" if invoice.xiaoman_order_id else "create"
+    from app.receipt.invoice_link import ensure_attempt
+    try:
+        ensure_attempt(db, invoice, receipt_sync_token)
+    except ValueError as exc:
+        return {"ok": False, "message": str(exc), "issues": []}
     try:
         data = okki_client.push_order(db, payload)
     except okki_client.OkkiOutcomeUncertainError as exc:
