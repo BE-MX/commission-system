@@ -111,6 +111,13 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
 
     settings = get_settings()
 
+    if settings.ANNOUNCEMENT_WORKER_ENABLED:
+        from app.announcement.scheduler import dispatch_announcements, generate_announcement_weekly
+        scheduler.add_job(dispatch_announcements, 'interval', seconds=10, id='announcement_dispatch',
+                          max_instances=1, coalesce=True, misfire_grace_time=60)
+        scheduler.add_job(generate_announcement_weekly, 'interval', minutes=1, id='announcement_weekly',
+                          max_instances=1, coalesce=True, misfire_grace_time=120)
+
     async def _scan_staging_job():
         with SessionLocal() as db:
             await scan_staging(db)

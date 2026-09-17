@@ -2,16 +2,16 @@
   <section v-if="document" class="editor-shell">
     <header class="editor-header">
       <div class="title-block">
-        <el-input v-if="actions.canSave" v-model="title" class="title-input" maxlength="256" @input="markDirty" />
+        <el-input v-if="actions.canSave" v-model="title" class="title-input" aria-label="文档标题" placeholder="输入标题" maxlength="256" @input="markDirty" />
         <h1 v-else>{{ document.title }}</h1>
         <div class="document-meta">
           <el-tag effect="plain" :type="statusType">{{ statusLabel }}</el-tag>
           <span>版本 v{{ document.version_no || 1 }}</span>
           <span class="save-status" :class="{ error: saveError }"><i class="save-dot" :class="saveTone" />{{ saveLabel }}</span>
-          <span v-if="document.pending_approval_id">审批中仍可编辑，新内容不会改变待审版本</span>
+          <span v-if="document.pending_approval_id && !externalControls">审批中仍可编辑，新内容不会改变待审版本</span>
         </div>
       </div>
-      <div class="header-actions">
+      <div v-if="!externalControls" class="header-actions">
         <GlassButton v-if="actions.canSave && canUseAi" variant="secondary" left-icon="MagicStick" @click="aiDrawer = true">AI 优化</GlassButton>
         <GlassButton v-if="actions.canDelete" class="delete-action" variant="ghost" left-icon="Delete" @click="$emit('delete', document)">删除</GlassButton>
         <GlassButton v-if="actions.canSave" variant="ghost" :loading="saving" :disabled="!dirty || saving || pendingUploads" @click="save">保存草稿</GlassButton>
@@ -95,7 +95,7 @@ import { msgError } from '@/utils/feedback'
 import { useAuthStore } from '@/stores/auth'
 import AiOptimizationDrawer from './AiOptimizationDrawer.vue'
 import { EDITOR_COMMANDS, extractOutline, filterEditorCommands, saveStatusLabel } from './editorConfig.js'
-const props = defineProps({ document: { type: Object, default: null }, role: { type: String, default: 'viewer' }, saving: Boolean })
+const props = defineProps({ document: { type: Object, default: null }, role: { type: String, default: 'viewer' }, saving: Boolean, externalControls: Boolean })
 const emit = defineEmits(['save', 'submit', 'dirty-change', 'delete', 'ai-applied'])
 const auth = useAuthStore()
 const canvas = ref(null)
@@ -185,6 +185,8 @@ function save() {
     fail: () => { if (savedVersion === changeVersion.value) failSave() },
   })
 }
+
+defineExpose({ save })
 
 function missingImageAltCount() {
   let count = 0
@@ -420,7 +422,7 @@ function navigateOutline(item) {
   headings?.[item.index]?.scrollIntoView({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' })
 }
 
-watch(() => props.document, value => {
+watch([() => props.document, editor], ([value]) => {
   changeVersion.value += 1
   title.value = value?.title || ''
   editor.value?.setEditable(Boolean(value && actions.value.canSave), false)

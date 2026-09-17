@@ -499,3 +499,19 @@ AI Worker 用 `status + lease_token + lease_expires_at` 领取任务，模型网
 - `ark_shipping_operation_events`：记录来源、动作、登录人与实际操作人的 ID/姓名快照、出库单/检验单/媒体、编辑版本、请求内容及回执。`(scope, request_id)` 唯一；按 `(outbound_record_id,id)` 索引读取最近事件。时间为北京时间。
 
 扫描只创建事件和会话，不创建空检验单；上传/删除/提交与审计同事务。保留历史媒体上传人，换人接手不覆盖原记录。事件不级联删除、不回填虚构的历史操作。迁移支持中途建表后重入，并核验已有表列、主键和唯一约束；降级拒绝删除身份历史，应采用审查后的前向迁移。仅在隔离 SQLite 验证过迁移，未执行生产迁移。
+
+
+## 公告管理（迁移 155_announcements）
+
+`ark_knowledge_libraries.managed_by` 为 nullable varchar(32)，公告库值 announcement。正文、目录、修订、审批、图片与成员均复用知识库，不复制正文。
+
+| 表 | 责任及关键约束 |
+|---|---|
+| ark_announcement_config | 单例 id=1；library_id 唯一；目标群、机器人、执行账号、配置版本、周报时刻和通道验证 |
+| ark_announcement_items | document_id 主键/FK；置顶、发布时间/发布人、撤回信息 |
+| ark_announcement_revision_meta | revision_id 主键/FK；类别名称快照、重要、生效/截止、变更说明 |
+| ark_announcement_publications | 发布/撤回事件；唯一 document_id+revision_id+kind |
+| ark_announcement_weekly | 唯一 library_id+period_start；冻结来源、正文、generation、旧版历史、生成租约 |
+| ark_announcement_deliveries | 唯一 source_key+sequence；内容和目标快照、授权指纹、租约、尝试、回执、错误 |
+
+新迁移接 154_okki_outbound_tasks，重复执行检查已存在结构，保留数据；降级拒绝自动删除历史。已验证 SQLite 升级/重复执行与 MySQL DDL 编译，未执行真实 MySQL 升级。生产按既有发布入口先备份与迁移演练。

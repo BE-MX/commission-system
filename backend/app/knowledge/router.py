@@ -142,7 +142,7 @@ async def upload_image(
     library_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user: dict = Depends(require_any_permission(*WRITE)),
+    user: dict = Depends(require_any_permission(*WRITE, 'announcement:write', 'announcement:admin')),
 ):
     content = await _read_image(file)
     try:
@@ -172,7 +172,7 @@ async def upload_image(
 def read_image(
     asset_id: int,
     db: Session = Depends(get_db),
-    user: dict = Depends(require_any_permission(*READ)),
+    user: dict = Depends(require_any_permission(*READ, 'announcement:read', 'announcement:write', 'announcement:admin')),
 ):
     row = _call(asset_service.get_image_asset, db, user, asset_id)
     path = image_service.resolve_private_path(row.storage_path)
@@ -192,7 +192,7 @@ def read_image(
 def delete_image(
     asset_id: int,
     db: Session = Depends(get_db),
-    user: dict = Depends(require_any_permission(*WRITE)),
+    user: dict = Depends(require_any_permission(*WRITE, 'announcement:write', 'announcement:admin')),
 ):
     return ok(_call(asset_service.delete_temporary_image, db, user, asset_id))
 

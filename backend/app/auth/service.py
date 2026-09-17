@@ -479,6 +479,9 @@ def seed_role_permissions(db: Session):
         ("mail_outreach:worker", "mail_outreach", "worker", "邮件发送 Worker 机器凭证"),
         # 企业知识库：平台权限与知识库成员 ACL 双重校验
         ("knowledge:read",   "knowledge", "read",   "查看已授权知识库"),
+        ("announcement:read", "announcement", "read", "查看公告和公告周报"),
+        ("announcement:write", "announcement", "write", "编辑公告并提交审核"),
+        ("announcement:admin", "announcement", "admin", "审核公告、管理类别、成员与推送设置"),
         ("knowledge:write",  "knowledge", "write",  "编辑知识文档并提交审批"),
         ("knowledge:review", "knowledge", "review", "审批知识文档"),
         ("knowledge:admin",  "knowledge", "admin",  "创建知识库并管理成员权限"),

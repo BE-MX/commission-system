@@ -221,6 +221,21 @@ export const NAV_ENTRIES = [
     menu: { icon: DataAnalysis, order: 0 },
   },
   {
+    path: '/announcements',
+    name: 'Announcements',
+    component: () => import('@/views/announcement/AnnouncementList.vue'),
+    title: '公告管理',
+    anyPermission: ['announcement:read', 'announcement:write', 'announcement:admin'],
+    menu: { title: '公告管理', icon: Document, order: 6 },
+  },
+  {
+    path: '/announcements/:documentId',
+    name: 'AnnouncementDetail',
+    component: () => import('@/views/announcement/AnnouncementList.vue'),
+    title: '公告详情',
+    anyPermission: ['announcement:read', 'announcement:write', 'announcement:admin'],
+  },
+  {
     path: '/agent-runtime/tasks',
     name: 'AgentTaskCenter',
     component: () => import('@/views/agent-runtime/AgentTaskCenter.vue'),

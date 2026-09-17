@@ -1321,3 +1321,34 @@ Agent research context now includes `fact_contract.version=registered_research_f
 ### 设计排期备注编辑
 
 `PUT /api/design/tasks/{task_id}/remark`：权限 `design:write` 或 `design:manage`，请求 `{ "remark": "备注内容" }`，空字符串清空备注。仅更新该任务备注，不覆盖预约备注或状态；任务不存在或关联预约已删除返回 HTTP 404。返回统一信封。预约备注继续使用 `PUT /api/design/requests/{request_id}/remark`。
+
+
+## 公告管理（2026-09-17）
+
+前缀 `/api/announcements`，统一 `ok()` 信封。需要公告平台权限与公告库成员 ACL 双重校验；审核还需库 reviewer/admin。仅已发布内容对阅读者可见。
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| GET / POST | `/config` / `/initialize` | 查询配置 / 管理员初始化公告知识库 |
+| PUT | `/config` | 管理员配置群、执行账号、周报时间；携带 version 乐观锁 |
+| GET / PUT | `/members` | 查看 / 替换成员 |
+| GET | `/member-candidates?q=` | 搜索成员候选 |
+| GET / POST | `/categories` | 查询 / 新建类别目录 |
+| PUT | `/categories/{id}` | 名称、启用状态 |
+| GET / POST | 空路径 | 分页列表 / 新建草稿 |
+| GET / PUT / DELETE | `/{document_id}` | 查看 / 保存版本 / 删除未发布草稿 |
+| GET | `/{document_id}/preview` | 保存版本的钉钉图文分片预览 |
+| POST | `/{document_id}/submit` | 提交审核（须已验证推送通道） |
+| POST | `/{document_id}/review` | approve、remark；审批通过同事务创建发布事件与投递 |
+| POST | `/{document_id}/withdraw` | 管理员撤回，必填 reason |
+| PUT | `/{document_id}/pin` | 管理员设置 pinned |
+| POST | `/channel-test` | 显式排队向配置群发送测试文字和图片 |
+| POST | `/channel-verify` | test_key、images_visible=true；两片有回执才能确认 |
+| GET | `/deliveries` | 管理员投递记录 |
+| POST | `/deliveries/{id}/retry` | 重试或核实结案；confirm_uncertain、mark_delivered、cancel |
+| GET / POST | `/weekly` | 最近 52 期 / 手动生成上周预览（regenerate 可重生成） |
+| POST | `/weekly/{id}/send` | 显式发送已生成版本；同版不得重复入队 |
+
+保存参数：title、content（Tiptap JSON）、category_id、base_revision_id（更新必需）、important、effective_at、expires_at、change_note。列表参数 q/category_id/status/page/page_size。审核中禁止改稿；已发布公告更新后，读者仍看上一发布版本。时间按北京时间保存。
+
+平台权限 `announcement:read/write/admin`；审批端点允许 `knowledge:review/knowledge:admin/announcement:admin`，仍需公告阅读权限和库审核 ACL。普通知识库接口不能修改 managed 公告库。

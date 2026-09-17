@@ -32,4 +32,6 @@ JOB_METADATA = {
     "runtime_heartbeat_monitor": JobMetadata("云端实例心跳巡检", "平台运维", "平台研发"),
     "operations_history_cleanup": JobMetadata("运行历史保留期清理", "平台运维", "平台研发"),
     "dingtalk_gmv_daily": JobMetadata("业务队 GMV 日报", "钉钉集成", "业务运营"),
+    "announcement_dispatch": JobMetadata("公告群消息投递", "公告管理", "公告管理员"),
+    "announcement_weekly": JobMetadata("公告 AI 周报", "公告管理", "公告管理员"),
 }

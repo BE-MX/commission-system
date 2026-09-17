@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from contextlib import nullcontext
+from functools import wraps
 
 from app.core.config import get_settings
 from app.knowledge import access, image_service, service
@@ -11,6 +13,20 @@ from app.knowledge.models import (
     KnowledgeApprovalRequest, KnowledgeAsset, KnowledgeDocument, KnowledgeLibrary,
     KnowledgeRevision, KnowledgeRevisionAsset, bj_now,
 )
+
+
+def _managed_asset(fn):
+    """Announcement entry permissions are scoped to its own library only."""
+    @wraps(fn)
+    def wrapped(db, identity, resource_id, *args, **kwargs):
+        from app.knowledge.managed import announcement_scope
+        asset = db.get(KnowledgeAsset, resource_id) if fn.__name__ != 'create_image_asset' else None
+        library_id = resource_id if fn.__name__ == 'create_image_asset' else (asset.library_id if asset else None)
+        library = db.get(KnowledgeLibrary, library_id) if library_id else None
+        scope = announcement_scope(library_id) if library and library.managed_by == 'announcement' else nullcontext()
+        with scope:
+            return fn(db, identity, resource_id, *args, **kwargs)
+    return wrapped
 
 
 def attach_revision_assets(db, identity: dict, document: KnowledgeDocument,
@@ -36,6 +52,7 @@ def attach_revision_assets(db, identity: dict, document: KnowledgeDocument,
         db.add(KnowledgeRevisionAsset(revision_id=revision.id, asset_id=asset_id, position=position))
 
 
+@_managed_asset
 def create_image_asset(db, identity: dict, library_id: int, *, original_name: str,
                        mime_type: str, content: bytes) -> KnowledgeAsset:
     service._require_platform(identity, "knowledge:write")
@@ -87,6 +104,7 @@ def _asset_is_visible(db, identity: dict, asset: KnowledgeAsset) -> bool:
     ).first() is not None
 
 
+@_managed_asset
 def get_image_asset(db, identity: dict, asset_id: int) -> KnowledgeAsset:
     service._require_platform(identity, "knowledge:read")
     row = db.query(KnowledgeAsset).filter(
@@ -100,6 +118,7 @@ def get_image_asset(db, identity: dict, asset_id: int) -> KnowledgeAsset:
     return row
 
 
+@_managed_asset
 def delete_temporary_image(db, identity: dict, asset_id: int) -> dict:
     service._require_platform(identity, "knowledge:write")
     row = db.query(KnowledgeAsset).filter(
