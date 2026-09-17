@@ -1,3 +1,10 @@
+## 2026-09-17 设计管理列表备注编辑（Codex，合并推送交付）
+
+- 分支 `codex/design-remark-dialog`，worktree `D:/MyProgram/commission-system-codex-design-remark`。排期任务列表的排期备注、预约备注各自可点击弹框修改；空值展示“添加备注”，弹框明确类型。待确认列表沿用预约备注入口并改为支持键盘的按钮。
+- 任务备注走新增 `PUT /api/design/tasks/{task_id}/remark`，预约备注沿用预约接口，按 task/request ID 分开保存，支持清空。成功更新当前行并刷新当前列表，失败保留草稿，重复提交有保护。无迁移、无生产写入。
+- 验证：6 项隔离 SQLite/后端测试、5 项前端 composable 交互测试、`npm run build`、独立静态审查通过。测试覆盖 ID 分流、备注互不覆盖、清空、失败保留草稿、重复提交、无效/已删除任务及回滚。未做真实登录页面浏览器验收。
+- `check_conventions.py` 完整检查报 11 项 UI 债务：主线已有 10 项，本次 DesignManage.vue 增加 10 行触发行数基线不匹配（762→772行）。页面已有独立 composable，本次为现有备注列的小范围扩展，不为行数机械拆分或抬高基线；底层增量规则检查无违规，`git diff --check` 通过。构建日志保留于主目录 `tmp/design-remark/`，Git 巡检为 `--no-fetch` 本地快照。用户已授权合并并推送 origin/main；本轮不部署，交付后清理本任务分支与 worktree。
+
 ## 2026-09-17 全平台列表操作列防遮挡（Codex）
 
 - 分支 `codex/table-actions-wrap`：主站 AST 扫描覆盖 77 个 Vue 文件中的 103 个操作/处理列，统一接入 `table-action-column`；按钮组统一 `table-actions`。修复全局 list-table 单行省略导致尾部按钮裁切，以及发票、内贸客户、备货等局部 nowrap 布局。普通文本列仍保留省略，权限、事件和业务接口未改。

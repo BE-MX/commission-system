@@ -277,6 +277,25 @@ def action_request(
     }
 
 
+def update_task_remark(db: Session, task_id: int, remark: str) -> None:
+    """只更新排期备注，不覆盖关联预约备注或任务状态。"""
+    task = db.query(DesignScheduleTask).join(
+        DesignScheduleRequest, DesignScheduleTask.request_id == DesignScheduleRequest.id,
+    ).filter(
+        DesignScheduleTask.id == task_id,
+        DesignScheduleRequest.deleted_at.is_(None),
+    ).first()
+    if not task:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="任务不存在")
+    task.remark = remark
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
 def update_request_remark(
     db: Session,
     request_id: int,
