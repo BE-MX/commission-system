@@ -38,6 +38,7 @@ export function normalizeHairRow(line = {}) {
     sku_id: line.sku_id || null,
     custom_product_id: line.custom_product_id || null,
     product_name: line.product_name || '',
+    stock_warning: line.stock_warning || '',
     product_display: line.product_display || '',
     net_weight_grams: line.net_weight_grams || '',
     curl: line.curl || '',

@@ -106,6 +106,7 @@ export function mapPreviewRowToInvoiceLine(row, batchFingerprint, orderType) {
     product_id: matched.product_id || null,
     sku_id: matched.sku_id || null,
     product_name: matched.product_name || '',
+    stock_warning: matched.stock_warning || '',
     product_display: normalized.product,
     net_weight_grams: normalized.weight,
     curl: '',

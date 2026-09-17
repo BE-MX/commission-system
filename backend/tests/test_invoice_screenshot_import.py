@@ -132,7 +132,7 @@ def _seed_example(db) -> None:
         )
     """))
     db.execute(text("""
-        CREATE TABLE lsordertest.okki_inventory (
+        CREATE TABLE lsordertest.okki_product_skus (
             product_id INTEGER,
             sku_id INTEGER,
             disable_flag INTEGER
@@ -147,7 +147,7 @@ def _seed_example(db) -> None:
              '#8TP18/60', '18', '20g', 0)
     """))
     db.execute(text("""
-        INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
+        INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag)
         VALUES (86457591838718, 86457591838775, 0)
     """))
     db.commit()
@@ -192,7 +192,7 @@ def test_product_number_conflict_blocks_preview(db):
         VALUES (999, '9999', 'Other Hair/20/#1B/100g', '', '#1B', '20', '100g', 0)
     """))
     db.execute(text("""
-        INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
+        INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag)
         VALUES (999, 1999, 0)
     """))
     extraction = _sample_extraction(items=[{

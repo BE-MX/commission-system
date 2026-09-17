@@ -44,7 +44,7 @@ def _create(db, items, **header_overrides) -> Invoice:
         )
     """))
     db.execute(text("""
-        CREATE TABLE IF NOT EXISTS lsordertest.okki_inventory (
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_product_skus (
             product_id INTEGER, sku_id INTEGER, disable_flag INTEGER
         )
     """))
@@ -59,11 +59,11 @@ def _create(db, items, **header_overrides) -> Invoice:
         VALUES (1, 'Raw Hair/Body Wave', 'Natural', '18', '100g', 0)
     """))
     exists = db.execute(text("""
-        SELECT 1 FROM lsordertest.okki_inventory WHERE product_id = 1 AND sku_id = 9001
+        SELECT 1 FROM lsordertest.okki_product_skus WHERE product_id = 1 AND sku_id = 9001
     """)).first()
     if not exists:
         db.execute(text("""
-            INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
+            INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag)
             VALUES (1, 9001, 0)
         """))
     payload = InvoiceCreate(
@@ -86,7 +86,7 @@ def _seed_accessory_for_amounts(db):
         )
     """))
     db.execute(text("""
-        CREATE TABLE IF NOT EXISTS lsordertest.okki_inventory (
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_product_skus (
             product_id INTEGER, sku_id INTEGER, disable_flag INTEGER
         )
     """))
@@ -101,7 +101,7 @@ def _seed_accessory_for_amounts(db):
         VALUES (2, 'Hair Gripper', 'Magic Tape', 'Black', NULL, NULL, 0)
     """))
     db.execute(text("""
-        INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
+        INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag)
         VALUES (2, 9002, 0)
     """))
     db.execute(text("""

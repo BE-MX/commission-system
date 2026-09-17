@@ -128,7 +128,7 @@ class InvoiceItem(Base):
     product_kind = Column(String(16), nullable=False, default="hair", server_default="hair", comment="hair/accessory")
     item_type = Column(String(16), nullable=False, default="stock", comment="stock/custom")
     product_id = Column(BigInteger, nullable=True, comment="okki_products.product_id; NULL for custom lines")
-    sku_id = Column(BigInteger, nullable=True, comment="okki_inventory.sku_id")
+    sku_id = Column(BigInteger, nullable=True, comment="okki_product_skus.sku_id")
     custom_product_id = Column(BigInteger, nullable=True, comment="ark_custom_products.id, no FK by design")
     product_name = Column(String(512), nullable=False, comment="产品全名（display/size/color/unit 组合）")
     product_display = Column(String(256), nullable=False, comment="发票 Product 列展示名（series+grade）")
