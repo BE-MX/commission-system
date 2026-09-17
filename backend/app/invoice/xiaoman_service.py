@@ -850,7 +850,7 @@ def serialize_settings(row: XiaomanSettings | None) -> dict:
 def resolve_generic_product(db: Session, product_no: str) -> dict | None:
     """Look up one okki product by product_no and list its enabled skus.
 
-    okki_products / okki_inventory are read-only projections of the OKKI cloud
+    okki_products / okki_product_skus are read-only projections of the OKKI cloud
     library — this is the authoritative source for generic_product_id/sku_id.
     """
     schema = product_service._schema()
@@ -868,13 +868,13 @@ def resolve_generic_product(db: Session, product_no: str) -> dict | None:
     """), {"no": product_no}).mappings().first()
     if row is None:
         return None
-    inventory_columns = product_service._table_columns(db, "okki_inventory")
+    sku_columns = product_service._table_columns(db, "okki_product_skus")
     # LIMIT 200 是 update_settings 校验 sku 归属的口径上限——超过它的 sku 会被误判"不属于该产品"
     skus = db.execute(text(f"""
         SELECT DISTINCT sku_id
-        FROM `{schema}`.okki_inventory
+        FROM `{schema}`.okki_product_skus
         WHERE product_id = :pid
-          AND {product_service._disable_filter("okki_inventory", inventory_columns)}
+          AND {product_service._disable_filter("okki_product_skus", sku_columns)}
         ORDER BY sku_id
         LIMIT 200
     """), {"pid": row["product_id"]}).scalars().all()

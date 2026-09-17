@@ -1042,7 +1042,7 @@ def _seed_save_pairs(db):
         )
     """))
     db.execute(text("""
-        CREATE TABLE IF NOT EXISTS lsordertest.okki_inventory (
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_product_skus (
             product_id INTEGER, sku_id INTEGER, disable_flag INTEGER
         )
     """))
@@ -1058,11 +1058,11 @@ def _seed_save_pairs(db):
             "length": length,
         })
         exists = db.execute(text("""
-            SELECT 1 FROM lsordertest.okki_inventory
+            SELECT 1 FROM lsordertest.okki_product_skus
             WHERE product_id = :product_id AND sku_id = :sku_id
         """), {"product_id": product_id, "sku_id": sku_id}).first()
         if not exists:
             db.execute(text("""
-                INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
+                INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag)
                 VALUES (:product_id, :sku_id, 0)
             """), {"product_id": product_id, "sku_id": sku_id})

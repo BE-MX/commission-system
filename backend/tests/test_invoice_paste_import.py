@@ -146,7 +146,7 @@ def seed_okki_products(db, rows):
         )
     """))
     db.execute(text("""
-        CREATE TABLE IF NOT EXISTS lsordertest.okki_inventory (
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_product_skus (
             product_id INTEGER,
             sku_id INTEGER,
             disable_flag INTEGER
@@ -167,7 +167,7 @@ def seed_okki_products(db, rows):
         })
         if sku_id is not None:
             db.execute(text("""
-                INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
+                INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag)
                 VALUES (:product_id, :sku_id, 0)
             """), {"product_id": product_id, "sku_id": sku_id})
     db.commit()
@@ -215,7 +215,7 @@ def test_preview_import_blocks_multiple_skus_for_one_product(db):
         (11, "Standard Double Drawn Genius Weft/18/#1B/100g", "#1B", "18", "100g", 9011),
     ])
     db.execute(text("""
-        INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
+        INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag)
         VALUES (11, 9012, 0)
     """))
     db.commit()

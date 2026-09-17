@@ -749,6 +749,8 @@ frontend/src/
 
 ## 订单发票 Excel/WPS 粘贴导入
 
+- 发票 SKU 身份统一来自 `okki_product_skus`，通过 `product_id` 关联 `okki_products`；页面匹配、属性匹配、粘贴/截图导入、保存校验和通用产品解析使用相同来源，并保留停用过滤。`okki_inventory` 只表达仓库库存，不能用于判断 SKU 是否存在：已建 SKU 但没有库存记录的产品仍应可匹配（2026-09-17）。按 SKU 汇总未停用仓库行的 `real_count`，无记录或总量不大于 0 只提示确认交期，不阻止页面下单、Excel 导入或保存；不会把库存数量当 SKU 身份条件。
+
 - 前端只负责解析剪贴板文本和交互，后端 `invoice/import_service.py` 必须重新校验并批量匹配；`POST /api/invoice/import/preview` 需要 `invoice:write`，且保持零写入。
 - 标准输入为 Product / Length / Color / Weight / Quantity / Unit Price 六列，兼容历史模板别名和无表头标准顺序；空行忽略，单批最多 200 行，错误必须带原 Excel 行号。
 - 产品匹配使用 `Product` 首段 + 颜色 + 长度 + 克重的规范化组合键；库存单无唯一产品/SKU时阻断，生产单可由用户显式选择作为定制产品，禁止静默降级。
@@ -827,7 +829,7 @@ frontend/src/
 
 ### 已踩过的坑
 - **页面不要自己 catch 弹错**：axios 拦截器已统一弹出 FastAPI 的 detail，页面 save() 再 catch `err.response.data.message`（undefined）会追加一条英文噪音 toast——OkkiSyncSettings 首版实case
-- okki_products / okki_inventory / user_basic 均为外部同步作业维护的**只读镜像**，OKKI 侧新建品/新账号有同步延迟，解析不到先等镜像
+- okki_products / okki_product_skus / user_basic 均为外部同步作业维护的**只读镜像**，OKKI 侧新建品/新账号有同步延迟，解析不到先等镜像
 - 手动覆盖 token 时表单里的过期时间是旧 token 残值不可信，服务端一律按"刚签发 8h"重算
 ## 客户售后管理（aftersales）
 

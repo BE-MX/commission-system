@@ -157,3 +157,18 @@ test('paste import dialog keeps preview validation ahead of append', () => {
   assert.match(component, /加入当前发票/)
   assert.match(component, /visible\.value = false/)
 })
+
+
+test('stock warning survives Excel append without dropping SKU or quantity', () => {
+  const warning = '暂无实际库存记录，可继续下单，请确认交期'
+  const row = {
+    normalized: { product: 'Genius Weft', length: '18', color: 'Cookies Cream', weight: '20g', quantity: 2, unit_price: 10 },
+    matched_product: { product_id: 105767890099971, sku_id: 105767890100162, stock_warning: warning },
+    status: 'warning', errors: [], warnings: [warning],
+  }
+  const line = normalizeHairRow(mapPreviewRowToInvoiceLine(row, 'stock-warning-batch', 'stock'))
+  assert.equal(line.stock_warning, warning)
+  assert.equal(line.sku_id, 105767890100162)
+  assert.equal(line.quantity, 2)
+  assert.equal(line.price_per_piece, 10)
+})

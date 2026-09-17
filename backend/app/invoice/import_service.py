@@ -96,10 +96,11 @@ def preview_import(
     ]
     product_ids = {int(hit["product_id"]) for hits in hits_by_row for hit in hits}
     sku_map = _load_sku_map(db, product_ids)
+    stock_warnings = product_service.load_stock_warnings(db, product_ids)
     pricing_context = _load_pricing_context(db, customer_id=str(customer_id))
     valid_results = iter([
         _apply_pricing(
-            _build_match_result(row, hits, sku_map, order_type),
+            _build_match_result(row, hits, sku_map, order_type, stock_warnings),
             pricing_context,
             str(currency).upper(),
         )
@@ -215,14 +216,14 @@ def _invalid_result(raw: Mapping[str, object], error: str) -> dict:
 def _load_sku_map(db: Session, product_ids: set[int]) -> dict[int, list[int]]:
     if not product_ids:
         return {}
-    columns = product_service._table_columns(db, "okki_inventory")
+    columns = product_service._table_columns(db, "okki_product_skus")
     if not {"product_id", "sku_id"}.issubset(columns):
         return {}
     schema = product_service._schema()
-    active = product_service._disable_filter("okki_inventory", columns)
+    active = product_service._disable_filter("okki_product_skus", columns)
     statement = text(f"""
         SELECT DISTINCT product_id, sku_id
-        FROM `{schema}`.okki_inventory
+        FROM `{schema}`.okki_product_skus
         WHERE product_id IN :product_ids AND {active}
         ORDER BY product_id, sku_id
     """).bindparams(bindparam("product_ids", expanding=True))
@@ -243,7 +244,7 @@ def _product_key(row: Mapping[str, object]) -> tuple[str, str, str, str]:
     )
 
 
-def _build_match_result(row: dict, hits: list[dict], sku_map: dict[int, list[int]], order_type: str) -> dict:
+def _build_match_result(row: dict, hits: list[dict], sku_map: dict[int, list[int]], order_type: str, stock_warnings: dict | None = None) -> dict:
     number_conflict = any(hit.get("_product_no_conflict") for hit in hits)
     number_missing = any(hit.get("_product_no_missing") for hit in hits)
     candidates = []
@@ -264,6 +265,10 @@ def _build_match_result(row: dict, hits: list[dict], sku_map: dict[int, list[int
                 if not key.startswith("_")
             })
 
+    for candidate in candidates:
+        candidate["stock_warning"] = (stock_warnings or {}).get(
+            (candidate["product_id"], candidate["sku_id"]), "",
+        )
     matched = candidates[0] if len(candidates) == 1 else None
     errors: list[str] = []
     warnings: list[str] = []
@@ -284,6 +289,8 @@ def _build_match_result(row: dict, hits: list[dict], sku_map: dict[int, list[int
     elif matched["sku_id"] is None:
         can_create_custom = order_type == "production"
         errors.append(f"第 {row['source_row']} 行匹配产品没有可用 SKU")
+    if matched and matched.get("stock_warning"):
+        warnings.append(f"第 {row['source_row']} 行：{matched['stock_warning']}")
     if number_missing:
         warnings.append(f"第 {row['source_row']} 行未找到产品编号 {row.get('product_no')}，已按产品属性匹配")
 

@@ -290,22 +290,22 @@ def match_product(
 ) -> dict:
     schema = _schema()
     product_columns = _table_columns(db, "okki_products")
-    inventory_columns = _table_columns(db, "okki_inventory")
+    sku_columns = _table_columns(db, "okki_product_skus")
     name_expr = _quoted_column(product_columns, "product_name", "name")
     product_no_expr = _quoted_column(product_columns, "product_no")
     if not {"model", "color", "size", "unit", "product_id"}.issubset(product_columns):
         return {"is_unique": False, "item": None, "matches": []}
 
-    inventory_join = ""
+    sku_join = ""
     sku_select = "NULL AS sku_id, 0 AS sku_count"
-    if {"product_id", "sku_id"}.issubset(inventory_columns):
-        inventory_join = f"""
+    if {"product_id", "sku_id"}.issubset(sku_columns):
+        sku_join = f"""
             LEFT JOIN (
                 SELECT product_id,
                        MIN(sku_id) AS sku_id,
                        COUNT(DISTINCT sku_id) AS sku_count
-                FROM `{schema}`.okki_inventory
-                WHERE { _disable_filter("okki_inventory", inventory_columns) }
+                FROM `{schema}`.okki_product_skus
+                WHERE { _disable_filter("okki_product_skus", sku_columns) }
                 GROUP BY product_id
             ) inv ON inv.product_id = p.product_id
         """
@@ -321,7 +321,7 @@ def match_product(
                p.size,
                p.unit
         FROM `{schema}`.okki_products p
-        {inventory_join}
+        {sku_join}
         WHERE {_disable_filter("okki_products", product_columns, alias="p")}
           AND p.model = :model
           AND p.color = :color
@@ -332,10 +332,40 @@ def match_product(
     """), {"model": model, "color": color, "size": size, "unit": unit}).mappings().all()
 
     matches = [_map_product_row(row) for row in rows]
+    stock_warnings = load_stock_warnings(db, {item["product_id"] for item in matches})
+    for item in matches:
+        item["stock_warning"] = stock_warnings.get((item["product_id"], item["sku_id"]), "")
     return {
         "is_unique": len(matches) == 1,
         "item": matches[0] if len(matches) == 1 else None,
         "matches": matches,
+    }
+
+
+def load_stock_warnings(db: Session, product_ids: set[int]) -> dict[tuple[int, int], str]:
+    """Inventory is advisory only; never use it to validate catalog identity."""
+    if not product_ids:
+        return {}
+    columns = _table_columns(db, "okki_inventory")
+    if not {"product_id", "sku_id", "real_count"}.issubset(columns):
+        return {}
+    schema = _schema()
+    statement = text(f"""
+        SELECT s.product_id, s.sku_id, SUM(i.real_count) AS real_count
+        FROM `{schema}`.okki_product_skus s
+        LEFT JOIN `{schema}`.okki_inventory i
+          ON i.product_id = s.product_id AND i.sku_id = s.sku_id
+          AND {_disable_filter("okki_inventory", columns, alias="i")}
+        WHERE s.product_id IN :product_ids
+        GROUP BY s.product_id, s.sku_id
+    """).bindparams(bindparam("product_ids", expanding=True))
+    rows = db.execute(statement, {"product_ids": sorted(product_ids)}).mappings().all()
+    return {
+        (int(row["product_id"]), int(row["sku_id"])):
+            "暂无实际库存记录，可继续下单，请确认交期"
+            if row["real_count"] is None else "当前实际库存不大于 0，可继续下单，请确认交期"
+        for row in rows
+        if row["sku_id"] is not None and (row["real_count"] is None or row["real_count"] <= 0)
     }
 
 
@@ -433,16 +463,16 @@ def valid_okki_product_skus(db: Session, pairs: set[tuple[int, int]]) -> set[tup
     if not pairs:
         return set()
     product_columns = _table_columns(db, "okki_products")
-    inventory_columns = _table_columns(db, "okki_inventory")
-    if not {"product_id"}.issubset(product_columns) or not {"product_id", "sku_id"}.issubset(inventory_columns):
+    sku_columns = _table_columns(db, "okki_product_skus")
+    if not {"product_id"}.issubset(product_columns) or not {"product_id", "sku_id"}.issubset(sku_columns):
         return set()
     schema = _schema()
     statement = text(f"""
         SELECT DISTINCT i.product_id, i.sku_id
-        FROM `{schema}`.okki_inventory i
+        FROM `{schema}`.okki_product_skus i
         JOIN `{schema}`.okki_products p ON p.product_id = i.product_id
         WHERE i.product_id IN :product_ids
-          AND {_disable_filter("okki_inventory", inventory_columns, alias="i")}
+          AND {_disable_filter("okki_product_skus", sku_columns, alias="i")}
           AND {_disable_filter("okki_products", product_columns, alias="p")}
     """).bindparams(bindparam("product_ids", expanding=True))
     rows = db.execute(statement, {"product_ids": sorted({product_id for product_id, _ in pairs})}).mappings().all()
@@ -489,8 +519,8 @@ def find_okki_by_attributes(
     schema = _schema()
     sku = db.execute(text(f"""
         SELECT MIN(sku_id) AS sku_id, COUNT(DISTINCT sku_id) AS sku_count
-        FROM `{schema}`.okki_inventory
-        WHERE product_id = :pid AND { _disable_filter("okki_inventory", _table_columns(db, "okki_inventory")) }
+        FROM `{schema}`.okki_product_skus
+        WHERE product_id = :pid AND { _disable_filter("okki_product_skus", _table_columns(db, "okki_product_skus")) }
     """), {"pid": hit["product_id"]}).mappings().first()
     return {
         "product_id": int(hit["product_id"]),
