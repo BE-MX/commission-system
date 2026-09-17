@@ -45,6 +45,10 @@ deploy\deploy.bat --shipping-video-routing-only
 
 ## 数据库
 
+2026-09-17 回款/公告补发：新加坡 `ark-okki-outbound-poller.timer` 已作为 `systemd_timer` writer 纳管。迁移前只停止计时器，等待对应 oneshot 为 inactive 且 MainPID=0（最多120秒），不强杀正在提交小满的任务；排空失败阻断DDL并按原基线恢复计时器。原来未运行的计时器不自动启用。迁移后仅恢复本次暂停的调度；原应用/PM2 writer 检查照常执行。配置中的外部出库轮询器存在时，遗漏此writer会直接阻断。
+
+生产菜单缺失排障先核对实际运行HEAD和静态入口；`publish-current.json` 的 failed 可能沿用此前版本/完成列表（预检在写新journal之前失败），不能据其中 completed 认定新版本已上线。9e5cd2dd 发布预检已复现旧writer清单不完整，办公室和北京仍为2609626f，schema最近成功记录154；修复后的候选需重新prepare再经授权完整发布155/156。
+
 办公室与北京共享 `commission_db`，每次发布都读数据库 revision，并检查发布代码的唯一 head 和迁移链。数据库已到目标则跳过 DDL；未知 revision、数据库领先、分叉均阻断。不会复制、覆盖或 downgrade 数据库。
 
 有待执行迁移时，必须核实 `platforms.json` 中所有 writer 的归属。2026-09-07 已按生产连接与进程核实并登记办公室 `CommissionSystem` / `WhatsAppConnector`、北京 `ark-backend`、新加坡 PM2 `shipment-tracking-mcp`；PM2 只控制该进程，不操作整个 PM2 管理器。新增或迁移写入实例后必须重新核实清单，不能沿用旧确认。数据库 revision 每次读取，不使用历史版本号推断是否有 DDL。
