@@ -50,6 +50,10 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        september: path.resolve(__dirname, 'festival/september.html'),
+      },
       output: {
         // 治理 F-7：稳定依赖拆独立 vendor chunk——业务代码变更不再打翻大依赖的浏览器缓存
         manualChunks(id) {

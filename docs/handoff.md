@@ -1,3 +1,14 @@
+## 2026-09-17 9月新签大屏（合并推送交付，不部署）
+
+- 亮哥已确认设计、实现与嘉树LOGO，并明确授权「合并推送」。本轮交付到main，不部署；来源任务分支`codex/september-screen-prototype`。合并后清理本任务分支与worktree，其他代理改动保留。
+- 方案：`docs/requirements/2026-09-17-september-new-sign-screen.md`；交互原型：`docs/requirements/september-new-sign-prototype/index.html`，截图与验证记录同目录。
+- 已实现`GET /api/public/festival/september-new-sign?key=`与`/festival/september.html`，新屏进入旧5屏轮播链路；Vite新增HTML入口，复用tokens和北京时间工具。固定读取OKKI，不改8月窗口/143目标/积分。无迁移、生产写入及新通知。
+- 嘉树LOGO已按用户提供的「露露-嘉树.png」原图接入，资源为`frontend/public/festival/assets/team-logos/jiashu.png`；正式屏与原型同步替换文字占位。
+- 规则：7队108 + 嘉树5 = 113，只展示目标/完成/完成率和第一团队；≥2人且100%达标、精确完成率优先、同率比有效新签金额、仍同则并列，嘉树不入评选。名册只读核对匹配；客户跨组冲突等异常暂停总进度和第一评选。月底默认待复核，Settings.FESTIVAL_SEPTEMBER_FINALIZED默认false。
+- 66项后端相关回归、7项前端测试、生产构建、4视口和六频道浏览器检查通过；独立审查3项发现（历史标签漏排/历史冲销/BFCache恢复）修复复核通过。完整规范检查仍被基点既有10项UI债务阻断，本次增量无违规。Git巡检为no-fetch本地快照。
+- 验证证据归档主目录`.deploy_state/september-screen-20260917/implementation/`（原`tmp/september-implementation/`），原型检查脚本存同级`prototype/`：构建日志、浏览器结果、实际快照和截图、只读核对脚本；09-17 13:16北京时间快照总69/113=61.1%，无名20/10=200%为第一，数据质量正常。原设计原型仍为演示数据。
+- 后续若授权上线，需合并后通过项目部署入口发布后端及完整前端构建；不能只复制源HTML到public。本轮仅执行已授权的合并推送，不部署。
+
 ## 2026-09-17 自动出库等待库存（Codex）
 
 - 分支 `codex/outbound-stock-wait`；实现明确库存不足 → waiting_stock → 每15分钟目标仓库可用库存复查 → 防重复核 → 补建。不限等待次数，其他不确定提交继续隔离。

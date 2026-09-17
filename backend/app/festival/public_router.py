@@ -19,7 +19,8 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.response import ok
-from app.festival import events_service, service
+from app.festival import events_service, service, september_service
+from app.core.time import beijing_today
 
 router = APIRouter()
 
@@ -71,6 +72,19 @@ def _norm_source(value: str | None) -> str | None:
     if v not in ("okki", "ark"):
         raise HTTPException(422, "source 仅支持 okki / ark")
     return v
+
+
+@router.get("/september-new-sign", summary="9月新签目标与第一团队（大屏取数，访问key门禁）")
+def september_new_sign_board(
+    key: str | None = Query(None, max_length=128),
+    db: Session = Depends(get_db),
+):
+    # Same fail-closed screen-key exception as the other public festival endpoints.
+    # Fixed September window and authoritative OKKI facts; no preview/source override.
+    _require_key(key)
+    finalized = get_settings().FESTIVAL_SEPTEMBER_FINALIZED
+    return ok(_cached('september-new-sign', beijing_today().isoformat(), str(finalized),
+                      lambda: september_service.get_payload(db, finalized=finalized)))
 
 
 @router.get("/new-sign", summary="个人新签积分榜（大屏取数，免登录白名单）")

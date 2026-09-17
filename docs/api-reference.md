@@ -359,11 +359,12 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `GET /new-sign?key=&date_from=&date_to=` — 个人新签积分榜 + 公司双目标进度（24 人名册全员，date_from/to 仅预览用，默认活动窗口 8/1–8/31 与 8/1–9/30）；口径详见 `docs/requirements/2026-07-29-procurement-festival-data-layer.md`；配套大屏静态页 `/festival/xinqian.html?key=`
   - `GET /camps?key=&date_from=&date_to=` — 阵营新签 PK 榜（三营进度/实时奖池(超额加成)/达标数/成员芯片含"阵营第一"标记与 unassigned 脏值计数）；配套静态页 `/festival/zhenying.html?key=`
   - `GET /teams?key=` — 团队人均积分榜（周年加权，附录C快照；个人队排除）；静态页 `/festival/tuandui.html?key=`
+  - `GET /september-new-sign?key=` — 独立9月新签目标屏，固定2026-09-01至09-30（只计截至北京时间今日的订单）；固定读取OKKI，不使用预览日期或source覆盖。返回`period/phase/groups/total/champion/data_quality/as_of`：113总目标、8组进度、≥2人且达标团队第一（精确完成率、同率比新签金额、仍同则并列），嘉树单人不入评选。不返回员工、客户明细或金额。跨组客户冲突/名册异常等使`total.done=null`并暂停第一评选。`as_of`为带`+08:00`的北京时间；月底默认`pending_review`，业务复核后配置`FESTIVAL_SEPTEMBER_FINALIZED=true`才展示已复核。页面`/festival/september.html?key=`，`stay=1`固定停留；与其他5屏组成30秒轮播。无数据库迁移、奖金核算或通知发送。
   - `GET /repurchase?key=` — 首返·复购双榜（24 人全员）；静态页 `/festival/fugou.html?key=`
   - `GET /headline?key=` — 摘要头条（左屏排名汇总 + 事件滚动流；真实窗口做事件检测并幂等落 `ark_festival_events`，预览窗口只出内存候选不落库）；静态页 `/festival/zhaiyao.html?key=`。事件含首单、大单/超级大单、个人/阵营达标、当日连击、公司 143 目标每 10%、阵营超额每 10%，以及新签前三/首返前二/复购前二/团队前三/阵营第一的名次上升或易主。
   - `GET /ai-tip?key=` — AI 赛事助手提示（走 AI 预设 `festival_screen_tip`，10 分钟缓存；预设缺失/失败时规则兜底文案）
   - `GET /reconcile?key=` — 双轨对账（okki vs ark 按人输出新签/首返/复购金额 diff，差异行置顶；并跑期运维用，连续 3 天 diff_count=0 即可切轨）
-  - 取数轨道：`Settings.FESTIVAL_DATA_SOURCE=okki|ark` 全局切换（okki=lsordertest 保底轨 / ark=方舟发票域仅 synced、金额扣手续费）；各端点支持 `?source=` 临时覆盖调试
+  - 取数轨道：原采购节榜单由`Settings.FESTIVAL_DATA_SOURCE=okki|ark` 全局切换（okki=lsordertest 保底轨 / ark=方舟发票域仅 synced、金额扣手续费）；原榜单支持 `?source=` 临时覆盖调试。9月新签目标屏固定OKKI事实源，不受此开关影响。
   - 以上端点均有 55s 进程内缓存（"数据截至"即缓存时间）
   - 后台 `festival_event_monitor` 每分钟独立检测事件并把弹框卡片 PNG 发到采购节钉钉群；`festival_daily_report` 每天 17:30 把战报与新签、首返复购、团队、阵营四张实时榜单截图合并成一条群消息。消息成功才落发送状态，失败由下一分钟重试。
 - `/api/festival` — 采购节大屏登录态入口（`festival/router.py`）

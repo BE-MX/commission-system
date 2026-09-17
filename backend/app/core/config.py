@@ -88,6 +88,8 @@ class Settings(BaseSettings):
     # 取数轨道：okki=保底轨(lsordertest 小满同步) / ark=主轨(方舟发票域，仅 synced)
     # 切轨策略见 data-layer 文档 §6.3：并跑对账连续 3 天零差异后切 ark
     FESTIVAL_DATA_SOURCE: str = "okki"
+    # September ranking remains provisional after month-end until business review.
+    FESTIVAL_SEPTEMBER_FINALIZED: bool = False
     # 采购节群使用独立机器人，禁止回退全局告警群，避免赛事实时消息发错群。
     FESTIVAL_DINGTALK_WEBHOOK_URL: str = ""
     FESTIVAL_DINGTALK_WEBHOOK_SECRET: str = ""
