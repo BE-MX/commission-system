@@ -127,7 +127,7 @@ export function hasImportedBatch(items, fingerprint) {
   return Boolean(fingerprint) && items.some(item => item._importBatchFingerprint === fingerprint)
 }
 
-// 新建单预置的空明细行（openCreate → addLine 的产物）：批量导入时应让位，
+// 新建单预置的空明细行（openCreate → addBlankLine 的产物）：批量导入时应让位，
 // 否则空行留在列表最上方、且空字符串能过后端 schema 一路存进库。
 // 判定必须全空——用户动过任何字段（含数量）都视为在录的行，不许静默删。
 export function isBlankInvoiceLine(line) {

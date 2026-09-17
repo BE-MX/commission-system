@@ -19,7 +19,8 @@
           <el-icon><component :is="showOptionalCols ? ArrowUp : ArrowDown" /></el-icon>
           {{ showOptionalCols ? '收起选填列' : '展开选填列' }}
         </el-button>
-        <el-button @click="$emit('add')"><el-icon><Plus /></el-icon>添加明细</el-button>
+        <el-button :disabled="!items.length" @click="$emit('copy')"><el-icon><DocumentCopy /></el-icon>复制一行</el-button>
+        <el-button @click="$emit('add-blank')"><el-icon><Plus /></el-icon>添加空行</el-button>
       </div>
     </div>
     <div class="line-table-wrap">
@@ -191,7 +192,7 @@ const props = defineProps({
   money: { type: Function, required: true },
   money4: { type: Function, required: true },
 })
-defineEmits(['paste', 'add', 'remove'])
+defineEmits(['paste', 'copy', 'add-blank', 'remove'])
 const showOptionalCols = ref(false)
 
 async function loadSemifinished(row) {
