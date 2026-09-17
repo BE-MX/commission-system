@@ -278,10 +278,10 @@ class InvoiceSyncLog(Base):
 class OkkiOutboundTask(Base):
     """OKKI 销售出库单生成任务：发票首推小满成功后落行，singapore okki-sync 轮询消费。
 
-    状态机：pending → running → done/failed；failed 且 attempts 未超限由轮询器按
+    状态机：pending → running → done/skipped/failed/uncertain；failed 且 attempts 未超限由轮询器按
     退避间隔重试。skipped = 含未建品非标合并行的发票（通用产品出库无拣货意义），
-    不自动生成，人工在 OKKI 处理。order_id 唯一约束与脚本侧 logs/created-outbound.jsonl
-    台账构成幂等双保险。
+    不自动生成，人工在 OKKI 处理。执行端发现已有出库单也会 skipped；uncertain
+    表示提交结果待核对，禁止自动重发。实时关联查询、提交意图与台账防重。
     """
 
     __tablename__ = "ark_okki_outbound_tasks"

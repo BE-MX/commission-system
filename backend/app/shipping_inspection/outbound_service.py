@@ -171,6 +171,7 @@ def _map_record_row(row) -> dict:
     outbound_no = _str_or_none(row["outbound_no"])
     return {
         "outbound_record_id": record_id,
+        "outbound_invoice_id": _str_or_none(row.get("outbound_invoice_id")),
         # 单号列缺失时回退展示 id，保证打印/检索有锚点
         "outbound_no": outbound_no or record_id,
         "outbound_date": _str_or_none(row["outbound_date"]),
@@ -199,6 +200,7 @@ def _map_item_row(row) -> dict:
 def _record_select(rm: dict[str, str | None]) -> str:
     return (
         f"r.`{rm['id']}` AS outbound_record_id, "
+        f"{_col(rm, 'invoice_id', 'r')} AS outbound_invoice_id, "
         f"{_col(rm, 'outbound_no', 'r')} AS outbound_no, "
         f"{_col(rm, 'outbound_date', 'r')} AS outbound_date, "
         f"{_col(rm, 'customer_name', 'r')} AS customer_name, "

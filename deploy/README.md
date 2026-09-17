@@ -10,6 +10,10 @@ deploy\deploy.bat --cloud-only --no-pull --prepare-only # 准备并校验，暂�
 deploy\deploy.bat --revision <full-commit-sha> --migration-credentials <protected-file> --prepare-only
 ```
 
+## OKKI 出库轮询器专项
+
+`deploy\deploy.bat --okki-outbound-only --prepare-only` 预检，去掉 `--prepare-only` 部署并启用新加坡出库轮询器。仅更新该服务，无应用发布或迁移；运行配置、已有单跳过与不确定提交处置见 [轮询器说明](okki_outbound_poller.md)。
+
 ## 目录与版本规则
 
 ### 出库检验视频（迁移 152）

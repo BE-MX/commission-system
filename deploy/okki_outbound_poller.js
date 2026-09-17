@@ -1,39 +1,21 @@
 #!/usr/bin/env node
 /**
- * okki_outbound_poller.js — 消费方舟 ark_okki_outbound_tasks，自动生成 OKKI 销售出库单。
- *
- * 部署位置：singapore 主机 /root/.openclaw/workspace/okki-sync/（与 create-outbound.js 同目录）。
- * 运行方式：单次处理一批后退出（推荐，由 systemd timer 每分钟触发）；OUTBOUND_LOOP=1 时常驻轮询。
- *
- * 任务状态机（后端 ark_okki_outbound_tasks 表是唯一事实来源）：
- *   pending → running → done / failed
- *   failed 且 attempts < OUTBOUND_MAX_ATTEMPTS 按 (attempts+1)*5 分钟退避后重试
- *   running 且超过 OUTBOUND_TIMEOUT_MS + 5 分钟未回写 = 认领进程已死，回收重试
- *   （attempts 用尽的 running/failed 行不再自动动，人工核对后重置 status='pending'）
- *   skipped（含非标合并行的发票）永不消费，由人工在 OKKI 处理
- *
- * 时间口径：后端写北京时间（naive）。本脚本所有 SQL 时间戳一律用北京墙钟字符串，
- * 不依赖 singapore 主机的系统时区，SQL 里禁止 NOW()。
- *
- * 环境变量（写在 okki-sync/.env 或进程环境）：
- *   ARK_DB_HOST / ARK_DB_PORT(3306) / ARK_DB_USER / ARK_DB_PASSWORD / ARK_DB_NAME
- *     —— 方舟业务库（ark_invoices 所在 schema）；账号只需该表的 SELECT/UPDATE 权限
- *   OUTBOUND_SCRIPT_DIR   —— create-outbound.js 所在目录（默认本脚本所在目录）
- *   OUTBOUND_BATCH        —— 单轮最多处理任务数（默认 5）
- *   OUTBOUND_MAX_ATTEMPTS —— 单任务最大认领次数（默认 5，超过后保持原状待人工）
- *   OUTBOUND_TIMEOUT_MS   —— 单订单脚本超时（默认 120000）
- *   OUTBOUND_LOOP         —— 1=常驻循环（默认 0，跑一批即退出）
- *   OUTBOUND_INTERVAL_MS  —— 常驻模式轮询间隔（默认 30000）
- *
- * 退出码：0=本轮全部成功或无任务；1=有失败或自身异常；2=配置缺失。
- * 注意：create-outbound.js 退出码 2=参数错误。所有非零退出都按 failed 退避重试，
- * 达 OUTBOUND_MAX_ATTEMPTS 后不再自动重试，避免参数类错误无限刷接口。
+ * Consume Ark outbound tasks on Singapore; run the managed creator with --run.
+ * pending -> running -> done / skipped / failed / uncertain.
+ * A confirmed existing live outbound (including partial/manual) is skipped.
+ * Pre-submit failures retry with backoff, up to five attempts. Ambiguous writes,
+ * killed children, or invalid success envelopes are uncertain and never retried.
+ * A MySQL named lock serializes pollers; each task is claimed just before use,
+ * and final writes require the same running attempt version.
+ * Configuration: .ark-outbound.env (mode 600), ARK_DB_* / ARK_BUSINESS_DB_NAME,
+ * OUTBOUND_SCRIPT_DIR, OUTBOUND_BATCH (5), OUTBOUND_MAX_ATTEMPTS (5),
+ * OUTBOUND_TIMEOUT_MS (120000), OUTBOUND_LOOP (0), OUTBOUND_INTERVAL_MS (30000).
+ * SQL timestamps are Beijing wall time. systemd triggers once per minute.
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import mysql from 'mysql2/promise';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 
@@ -56,6 +38,7 @@ function loadDotenv(file) {
   } catch { /* .env 不存在时全靠进程环境 */ }
 }
 loadDotenv(path.join(SCRIPT_DIR, '.env'));
+loadDotenv(path.join(SCRIPT_DIR, '.ark-outbound.env'));
 
 function num(value, fallback) {
   const n = Math.floor(Number(value));
@@ -99,13 +82,13 @@ function log(message, extra) {
 
 // 可认领口径（SELECT 与 UPDATE 共用同一谓词，多实例/回收场景下 UPDATE 复核防绕过）：
 //   待执行 / 失败未超限且退避到期 / running 卡死未超限
-const CLAIMABLE = `(
+export const CLAIMABLE = `(
      status = 'pending'
   OR (status = 'failed' AND attempts < ? AND updated_at <= DATE_SUB(?, INTERVAL (attempts + 1) * 5 MINUTE))
   OR (status = 'running' AND attempts < ? AND updated_at <= DATE_SUB(?, INTERVAL ? MINUTE))
 )`;
 
-async function claimBatch(conn) {
+export async function claimBatch(conn) {
   const now = beijingNow();
   const [rows] = await conn.query(
     `SELECT id, order_id, attempts
@@ -113,7 +96,7 @@ async function claimBatch(conn) {
       WHERE ${CLAIMABLE}
       ORDER BY id
       LIMIT ?`,
-    [config.maxAttempts, now, config.maxAttempts, now, STALE_RUNNING_MINUTES, config.batch],
+    [config.maxAttempts, now, config.maxAttempts, now, STALE_RUNNING_MINUTES, 1],
   );
   const claimed = [];
   for (const row of rows) {
@@ -124,7 +107,7 @@ async function claimBatch(conn) {
         WHERE id = ? AND ${CLAIMABLE}`,
       [now, row.id, config.maxAttempts, now, config.maxAttempts, now, STALE_RUNNING_MINUTES],
     );
-    if (result.affectedRows === 1) claimed.push(row);
+    if (result.affectedRows === 1) claimed.push({...row, attempts: Number(row.attempts) + 1});
   }
   return claimed;
 }
@@ -133,7 +116,7 @@ function runCreateOutbound(orderId) {
   return new Promise((resolve) => {
     const child = spawn(
       process.execPath,
-      [path.join(config.scriptDir, 'create-outbound.js'), String(orderId), '--run'],
+      [path.join(config.scriptDir, 'okki_outbound_creator.mjs'), String(orderId), '--run'],
       { cwd: config.scriptDir, env: process.env },
     );
     let output = '';
@@ -145,7 +128,8 @@ function runCreateOutbound(orderId) {
     child.stderr.on('data', onData);
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
-      resolve({ code: -1, output: `${output}\n[outbound-poller] timeout after ${config.timeoutMs}ms, killed` });
+      // Wait for close: never release claim while the killed child might still run.
+      output += '\n[outbound-poller] timeout; manual review required';
     }, config.timeoutMs);
     child.on('error', (err) => {
       clearTimeout(timer);
@@ -158,43 +142,49 @@ function runCreateOutbound(orderId) {
   });
 }
 
-async function markDone(conn, id) {
-  await conn.query(
-    `UPDATE ark_okki_outbound_tasks
-        SET status = 'done', last_error = NULL, processed_at = ?, updated_at = ?
-      WHERE id = ?`,
-    [beijingNow(), beijingNow(), id],
-  );
+export function resultFromOutput(code, output, orderId) {
+  if (code !== 0) return null;
+  const lines = output.split(/\r?\n/).filter(line => line.startsWith('ARK_OUTBOUND_RESULT='));
+  if (lines.length !== 1) return null;
+  try {
+    const result = JSON.parse(lines[0].slice('ARK_OUTBOUND_RESULT='.length));
+    return ['created', 'existing'].includes(result.outcome) && String(result.order_id) === String(orderId)
+      && result.outbound_invoice_id ? result : null;
+  } catch { return null; }
 }
 
-async function markFailed(conn, id, error) {
-  await conn.query(
-    `UPDATE ark_okki_outbound_tasks
-        SET status = 'failed', last_error = ?, processed_at = ?, updated_at = ?
-      WHERE id = ?`,
-    [String(error).slice(-1500), beijingNow(), beijingNow(), id],
-  );
+export async function finishTask(conn, task, status, reason, error = null) {
+  const [result] = await conn.query(
+    `UPDATE ark_okki_outbound_tasks SET status=?, reason=?, last_error=?, processed_at=?, updated_at=?
+     WHERE id=? AND status='running' AND attempts=?`,
+    [status, reason, error, beijingNow(), beijingNow(), task.id, task.attempts]);
+  if (result.affectedRows !== 1) throw new Error('Task ownership changed: ' + task.id);
 }
 
 async function runOnce(conn) {
-  const tasks = await claimBatch(conn);
-  if (tasks.length === 0) return { ok: 0, failed: 0 };
-  let ok = 0;
-  let failed = 0;
-  for (const task of tasks) {
-    log(`start task#${task.id} order=${task.order_id} attempt=${task.attempts + 1}`);
-    const { code, output } = await runCreateOutbound(task.order_id);
-    if (code === 0) {
-      await markDone(conn, task.id);
-      ok += 1;
-      log(`done task#${task.id} order=${task.order_id}`);
+  let ok = 0, failed = 0;
+  for (let n = 0; n < config.batch; n++) {
+    // Claim immediately before execution; never lease a waiting batch.
+    const [task] = await claimBatch(conn);
+    if (!task) break;
+    log(`start task#${task.id} order=${task.order_id} attempt=${task.attempts}`);
+    const {code, output} = await runCreateOutbound(task.order_id);
+    const result = resultFromOutput(code, output, task.order_id);
+    if (result) {
+      const status = result.outcome === 'existing' ? 'skipped' : 'done';
+      await finishTask(conn, task, status, `${result.outcome}: ${result.serial_id || result.outbound_invoice_id}`);
+      ok++;
+      log(`task#${task.id} ${status}`, result);
     } else {
-      await markFailed(conn, task.id, `exit=${code}\n${output}`);
-      failed += 1;
-      log(`failed task#${task.id} order=${task.order_id} exit=${code}`, output.slice(-500));
+      // code 1 is a definite pre-submit failure. Kill/unknown/intent failures
+      // are quarantined instead of risking a duplicate after a lost response.
+      const status = code === 1 ? 'failed' : 'uncertain';
+      await finishTask(conn, task, status, 'See last_error', `exit=${code}\n${output}`.slice(-1500));
+      failed++;
+      log(`task#${task.id} ${status}`, output.slice(-500));
     }
   }
-  return { ok, failed };
+  return {ok, failed};
 }
 
 async function main() {
@@ -204,7 +194,10 @@ async function main() {
   }
   log(`config: db=${config.db.host}:${config.db.port}/${config.db.database} scriptDir=${config.scriptDir} `
     + `batch=${config.batch} maxAttempts=${config.maxAttempts} timeoutMs=${config.timeoutMs} loop=${config.loop}`);
+  const mysql = await import('mysql2/promise');
   const conn = await mysql.createConnection(config.db);
+  const [[lock]] = await conn.query("SELECT GET_LOCK('ark-okki-outbound-poller', 0) AS acquired");
+  if (Number(lock.acquired) !== 1) { await conn.end(); log('another poller owns the lock'); return; }
   let totalFailed = 0;
   try {
     do {
@@ -219,7 +212,7 @@ async function main() {
   process.exit(totalFailed > 0 ? 1 : 0);
 }
 
-main().catch((err) => {
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch((err) => {
   console.error(`[outbound-poller] fatal: ${err && err.stack ? err.stack : err}`);
   process.exit(1);
 });

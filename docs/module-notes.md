@@ -1112,3 +1112,13 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 小程序/网页提交成功后，按同一业务库的出库company_id→customer_info.owner_user_ids查询当前OKKI业务员，叠加最新InvoiceCustomerOverlay手动同步归属，再精确匹配有效OKKI账号绑定与有效方舟用户的钉钉绑定。镜像update_time>=overlay.source_update_time取镜像；缺失/不可比时间取overlay，与发票客户选择口径相同。时间按北京解析（epoch由UTC转换）。多个当前负责人去重通知；任一负责人的外部账号绑定缺失/歧义时整体跳过，可能同时不通知其他已确定负责人；公海不发送。生产统一客户域尚无OKKI归属，不使用制单人或历史订单替代当前负责人。
 
 发送仅发生在提交事务成功之后，重复提交不重发；撤回重提再通知。发送失败不影响提交，超时10秒，无持久队列及不确定结果自动重试，进程中断或提供商异常可能漏发。日志按`[SHIPPING] notification`查跳过/失败；上线须有正确的当前OKKI归属、有效账号绑定和钉钉绑定。测试不发送真实通知。
+
+
+### 2026-09-17 出库单打印负责人
+
+HTML打印与Word共用 `print_service.with_owner_chinese_name`，先按 outbound_invoice_id 实时读取
+OKKI出库单详情的 handler_info.nickname，再沿用已确认的英文名→中文名匹配。
+create_user_info/create_user_name 仅表示制单账号（例如Rainy），不能作为自动建单的打印负责人；
+ly914首返出库单的处理人为Eva。详情获取失败时返回502提示重试，不回退打印制单人。
+多个处理人去重并列；无处理人显示空值。打印权限仍先走出库记录的数据范围过滤。
+打印GET惰性刷新token后提交保存，避免请求结束回滚导致每次重新鉴权。无镜像写入或表结构变更。

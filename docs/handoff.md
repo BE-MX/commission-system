@@ -1,3 +1,21 @@
+## 2026-09-17 出库默认编号与打印负责人补充
+
+用户明确要求出库单号默认等于发票号、打印负责人显示Eva。受管creator从任务关联ark_invoices取得invoice_no，显式传serial_id，缺号或回执号不一致停止并标记待核对。现有5张本轮自动出库单已通过OKKI编辑接口改为对应发票号；逐张保存受限before/after快照，验证处理人、行ID、数量、价格、币种、仓库、状态均不变，同时更新本地台账和任务回执编号。ly914订单出库ID仍为105791346765650，单号已由XSCK2609170495改成ly914首返出库单，6行52件待出库，handler=Eva，creator=Rainy。
+
+打印修复从真实handler_info.nickname取负责人，制单账号不再进入打印负责人；HTML和Word共用，保留已有中文名匹配。实际详情接口失败则502提示重试，不打印错误负责人；惰性刷新token成功后提交保存。后端代码与测试已准备，发布验证进行中。命名修复轮询器已部署；完整后端将固定本任务候选发布，无迁移/无origin写入。
+
+## 2026-09-17 OKKI 出库轮询器已部署启用
+
+任务分支 `codex/outbound-poller-deploy`，用户授权部署启用。根因：后端已入队，新加坡未安装轮询器/service/timer；原独立 create-outbound.js 仅有本地台账且失败可能 exit 0。已通过统一入口 `deploy.bat --okki-outbound-only` 部署受管 creator 与轮询器，使用实际 Node v22.22.1 路径，timer enabled，每轮退出60秒后继续。未发布其他应用、无数据库迁移。远端凭据仅存 root 600 的 `.ark-outbound.env`，不入 Git。
+
+实时判重读取镜像关联ID后核对 OKKI 详情；无命中则按订单创建日以来的全部更新出库单逐页查明细 order_id。人工待出库单存在时，订单 to_outbound_count/task_outbound_count 仍可能为0；官方列表不支持order_id参数。任一已有关联单（含部分出库）跳过，不自动补量。受管worker使用MySQL锁、逐笔认领与attempt版本回写；提交前独占持久意图，结果不明确进uncertain不重发；GET可重试一次，POST不自动重试。人工/旧脚本与受管worker在查询和创建间仍可能外部竞态。
+
+09:19实库验收：26任务中done=5、skipped=21（20单已有出库＋1单非标），无pending/running/failed/uncertain。早期task1 GET超时，使用新代码只读预演确认恢复且无提交意图后单笔重新入队，保留attempts，第二次成功。目标方舟invoice450 / OKKI order105791310195199（ly914首返出库单）于09:17:22创建XSCK2609170495，outbound_invoice_id=105791346765650；实时API核验status1待出库、6行52件、本地台账仅1条。其余新建XSCK2609170492/0493/0494/0496。
+
+远端部署digest `85f4830ecdb9f5a7ab0570ac38d10ea804e5130fc3aab76d7ec1ac6442830362`；脚本SHA256 poller `071e61f4939bc4fd5961be3991bf641e3dbff30eadc4d2c7331e83f0d9d1418b`、creator `bca8ef531595ff42a464bca3cca04956ec8fe53ffcc6c0fb4c4ffa540780748a`。证据在任务worktree `.deploy_state/outbound/`，服务器staging/backup保留必要恢复材料。14项Node回归通过，独立审查已完成，Python编译与增量约定检查无违规；默认约定检查仍被main既有10项UI债务阻断。Git巡检已按本地快照运行，无远端写入。
+
+本候选新增服务已登记platforms.json；当前迁移器无法安全冻结timer+在途oneshot，因此候选将migration_writers_verified=false，已验证无DDL发布仍允许、带DDL发布在停服务/执行DDL前阻断。后续需先补齐停timer、排空service、验证无写入和恢复原调度状态支持，不能直接改回true。该源码/保护尚未合并main，主线后续发布应先集成本分支；本次未获合并/push授权，不执行它们。
+
 ## 2026-09-17 出库检验完成钉钉通知
 
 任务codex/inspection-notify，基于d3160fe5。用户确认按客户当前业务员（非制单人）发通知。只读生产核验：当前OKKI客户归属在业务镜像customer_info.owner_user_ids；统一客户强身份仅public_web/website_domain91条，无OKKI company_id，active primary assignment为0，因此本模块采用实际运行的OKKI归属源。

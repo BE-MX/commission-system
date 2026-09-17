@@ -170,6 +170,19 @@ def get_company_info(db: Session, company_id: int) -> dict:
     return data or {}
 
 
+def get_outbound_info(db: Session, outbound_invoice_id: str) -> dict:
+    """Read live outbound handlers for printing; retry only expired authentication."""
+    params = {"outbound_invoice_id": outbound_invoice_id}
+    token = ensure_access_token(db)
+    data = _get_json("/v1/invoices/outbound/info", token, context="出库单详情", params=params)
+    if data is None:
+        token = ensure_access_token(db, force=True)
+        data = _get_json("/v1/invoices/outbound/info", token, context="出库单详情", params=params)
+        if data is None:
+            raise OkkiApiError("OKKI 出库单详情拉取失败：刷新凭证后仍被拒绝")
+    return data or {}
+
+
 def _post_json(path: str, token: str, payload: dict, *, context: str) -> dict | None:
     """POST with Bearer auth. Returns payload data; None means auth failure
     (caller may retry with a fresh token); other failures raise.
