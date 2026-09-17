@@ -352,7 +352,8 @@
             :money="money"
             :money4="money4"
             @paste="pasteImportVisible = true"
-            @add="addLine"
+            @copy="copyLine"
+            @add-blank="addBlankLine"
             @remove="removeLine"
           />
 
@@ -450,7 +451,7 @@ const {
   searchCustomers, selectSyncedCustomer,
   onCustomerChange, onSalesUserChange, onCurrencyChange,  onInvoiceNoInput, onInvoiceNoBlur, openCreate, openEdit,
   applyScreenshotPreview,
-  addLine, addAccessory, selectAccessory, removeAccessory, searchAccessoryOptions,
+  addBlankLine, copyLine, addAccessory, selectAccessory, removeAccessory, searchAccessoryOptions,
   updateAccessoryTotal, removeLine, loadLineOptions, onLineFilterChange, onCustomFieldChange,
   onPriceInput, onLineDiscountChange, updateLineTotal, appendImportedLines, saveDraft,
   saveAndSync, showIssues, markOkkiFlagTouched, onPaymentMethodChange, markHandlingFeeTouched,

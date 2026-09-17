@@ -62,6 +62,14 @@ export function normalizeHairRow(line = {}) {
   }
 }
 
+export function emptyHairRow(isProduction = false) {
+  return {
+    ...normalizeHairRow({ item_type: isProduction ? 'custom' : 'stock' }),
+    quantity: null,
+    discount_amount: null,
+  }
+}
+
 export function buildInvoicePayload(form, hairDiscount) {
   return {
     invoice_no: (form.invoice_no || '').trim() || null, sales_user_id: form.sales_user_id,

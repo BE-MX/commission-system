@@ -8,7 +8,7 @@ import {
 import { calculateLineTotal, normalizeDiscount } from './invoiceSettlement.js'
 import { createLatestRequestGate } from './accessoryPricing.js'
 import { hasImportedBatch, isBlankInvoiceLine, mapPreviewRowToInvoiceLine } from './useInvoicePasteImport.js'
-import { normalizeHairRow } from './invoiceEditorState.js'
+import { emptyHairRow, normalizeHairRow } from './invoiceEditorState.js'
 
 export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions) {
   const linePriceGates = new WeakMap()
@@ -21,14 +21,14 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions)
     return linePriceGates.get(row)
   }
   async function loadEntryOptions() { Object.assign(entryOptions.value, await getInvoiceEntryOptions()) }
-  function addLine() {
+  function addBlankLine() {
+    form.items.push(emptyHairRow(isProduction.value))
+  }
+  function copyLine() {
     const last = hairItems.value.at(-1)
-    if (last) {
-      const { options, matching, id, ...data } = last
-      form.items.push(normalizeHairRow(data))
-    } else {
-      form.items.push(normalizeHairRow({ quantity: 1, item_type: isProduction.value ? 'custom' : 'stock' }))
-    }
+    if (!last) return
+    const { options, matching, id, ...data } = last
+    form.items.push({ ...normalizeHairRow(data), quantity: last.quantity, discount_amount: last.discount_amount })
   }
   function removeLine(rowOrIndex) {
     const row = typeof rowOrIndex === 'number' ? hairItems.value[rowOrIndex] : rowOrIndex
@@ -111,7 +111,7 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions)
     return true
   }
   return {
-    addLine, appendImportedLines, loadEntryOptions, loadLineOptions, onCustomFieldChange,
+    addBlankLine, copyLine, appendImportedLines, loadEntryOptions, loadLineOptions, onCustomFieldChange,
     onLineDiscountChange, onLineFilterChange, onPriceInput, refreshLinePrice, removeLine,
     updateLineTotal,
   }

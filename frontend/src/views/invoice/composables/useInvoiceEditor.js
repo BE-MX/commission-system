@@ -66,7 +66,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const isProduction = computed(() => form.order_type === 'production')
   const hair = useInvoiceHairItems(form, accessories.hairItems, isProduction, entryOptions)
   const {
-    addLine, appendImportedLines, loadEntryOptions, loadLineOptions, onCustomFieldChange,
+    addBlankLine, copyLine, appendImportedLines, loadEntryOptions, loadLineOptions, onCustomFieldChange,
     onLineDiscountChange, onLineFilterChange, onPriceInput, refreshLinePrice, removeLine,
     updateLineTotal,
   } = hair
@@ -322,7 +322,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     const me = useAuthStore().user
     form.sales_user_id = me?.id || salesUserOptions.value[0]?.id || null
     applySalesUserSnapshot()
-    addLine()
+    addBlankLine()
     drawerVisible.value = true
     searchCustomers('')
     fetchSuggestedInvoiceNo()
@@ -538,7 +538,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
     openCreate,
     openEdit,
     applyScreenshotPreview,
-    addLine,
+    addBlankLine,
+    copyLine,
     addAccessory: accessories.addAccessory,
     selectAccessory: accessories.selectAccessory,
     removeAccessory: accessories.removeAccessory,
