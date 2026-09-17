@@ -30,6 +30,7 @@
             <el-select v-model="row.product_display" filterable allow-create default-first-option placeholder="系列描述，可输入" @change="onCustomFieldChange(row)">
               <el-option v-for="value in entryOptions.displays" :key="value" :label="value" :value="value" />
             </el-select>
+            <el-text v-if="row.stock_warning" type="warning">{{ row.stock_warning }}</el-text>
           </template>
         </el-table-column>
         <el-table-column v-if="showOptionalCols || !isProduction" label="Model" min-width="120" max-width="180">
@@ -122,6 +123,7 @@
               <el-tag v-if="row.sku_id" size="small" effect="plain">SKU {{ row.sku_id }}</el-tag>
               <el-tag v-else-if="row.matching" size="small" type="info" effect="plain">匹配中</el-tag>
             </div>
+            <el-text v-if="row.stock_warning" type="warning">{{ row.stock_warning }}</el-text>
           </template>
         </el-table-column>
         <el-table-column v-if="showOptionalCols" label="Curl" min-width="110" max-width="150">

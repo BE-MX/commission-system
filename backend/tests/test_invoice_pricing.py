@@ -29,7 +29,7 @@ def _seed_okki(db, rows=()):
         )
     """))
     db.execute(text("""
-        CREATE TABLE IF NOT EXISTS lsordertest.okki_inventory (
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_product_skus (
             product_id INTEGER, sku_id INTEGER, disable_flag INTEGER
         )
     """))
@@ -39,7 +39,7 @@ def _seed_okki(db, rows=()):
             "VALUES (:pid, :pno, :name, :model, :color, :size, :unit, 0)"
         ), {"pid": pid, "pno": f"P{pid}", "name": name, "model": model, "color": color, "size": size, "unit": unit})
         db.execute(text(
-            "INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag) VALUES (:pid, :sku, 0)"
+            "INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag) VALUES (:pid, :sku, 0)"
         ), {"pid": pid, "sku": sku})
     db.commit()
 
@@ -261,7 +261,7 @@ def test_reconcile_backfills_okki_id(db):
         "INSERT INTO lsordertest.okki_products (product_id, product_no, name, model, color, size, unit, disable_flag) "
         "VALUES (21, 'P21', 'Standard Double Drawn Genius Weft/18/#4/20g', 'B3', '#4', '18', '20g', 0)"
     ))
-    db.execute(text("INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag) VALUES (21, 9021, 0)"))
+    db.execute(text("INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag) VALUES (21, 9021, 0)"))
 
     result = product_service.reconcile_custom_products(db)
     assert result == {"checked": 1, "linked": 1}

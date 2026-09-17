@@ -34,7 +34,7 @@ def seed_invoice_product_pair(db):
         )
     """))
     db.execute(text("""
-        CREATE TABLE IF NOT EXISTS lsordertest.okki_inventory (
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_product_skus (
             product_id INTEGER, sku_id INTEGER, disable_flag INTEGER
         )
     """))
@@ -44,10 +44,10 @@ def seed_invoice_product_pair(db):
         VALUES (1, 'P001', 'Raw Hair/18/#1/100g', '', '#1', '18', '100g', 0)
     """))
     if not db.execute(text("""
-        SELECT 1 FROM lsordertest.okki_inventory WHERE product_id = 1 AND sku_id = 9001
+        SELECT 1 FROM lsordertest.okki_product_skus WHERE product_id = 1 AND sku_id = 9001
     """)).first():
         db.execute(text("""
-            INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
+            INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag)
             VALUES (1, 9001, 0)
         """))
 
