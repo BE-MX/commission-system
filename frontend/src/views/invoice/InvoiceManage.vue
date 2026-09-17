@@ -109,9 +109,9 @@
         <el-table-column label="创建时间" min-width="130" max-width="160" show-overflow-tooltip>
           <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" min-width="356" max-width="390" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="356" max-width="390" fixed="right">
           <template #default="{ row }">
-            <div class="row-actions">
+            <div class="table-actions">
               <el-button v-permission="'invoice:write'" link type="primary" @click="openEdit(row.id)">
                 <el-icon><Edit /></el-icon>
                 编辑

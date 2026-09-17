@@ -31,7 +31,7 @@
         <el-table-column label="版本/状态" min-width="130">
           <template #default="{ row }">v{{ row.config_version }} · {{ row.is_enabled ? '启用' : '停用' }}</template>
         </el-table-column>
-        <el-table-column label="操作" min-width="240">
+        <el-table-column class-name="table-action-column" label="操作" min-width="240">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="Edit" @click="openEdit(row)">编辑</GlassButton>
             <GlassButton variant="link" left-icon="Search" @click="openTest(row)">测试</GlassButton>

@@ -41,7 +41,7 @@
         <el-table-column label="半成品组成" min-width="240"><template #default="{ row }"><el-tag v-for="item in row.components" :key="item.material_id" size="small" effect="plain" style="margin: 2px">{{ item.size }}/{{ item.color_code }} · {{ percent(item.ratio) }}</el-tag></template></el-table-column>
         <el-table-column label="审核" min-width="110"><template #default="{ row }"><el-tag :type="row.parse_status === 'confirmed' ? 'success' : 'warning'" effect="plain">{{ row.parse_status === 'confirmed' ? '已确认' : '待审核' }}</el-tag></template></el-table-column>
         <el-table-column label="说明" min-width="160" prop="parse_message" show-overflow-tooltip />
-        <el-table-column label="操作" min-width="90" fixed="right"><template #default="{ row }"><el-button v-permission="'semifinished:write'" link type="primary" @click="editMapping(row)">配比</el-button></template></el-table-column>
+        <el-table-column class-name="table-action-column" label="操作" min-width="90" fixed="right"><template #default="{ row }"><el-button v-permission="'semifinished:write'" link type="primary" @click="editMapping(row)">配比</el-button></template></el-table-column>
       </el-table>
       <div class="sf-pagination"><el-pagination v-model:current-page="pagination.page" v-model:page-size="pagination.page_size" :total="pagination.total" :page-sizes="[20, 50, 100]" layout="total,sizes,prev,pager,next" @change="loadCurrent" /></div>
     </section>

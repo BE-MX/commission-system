@@ -204,7 +204,7 @@
           </el-tag>
         </div>
         <el-table v-if="(currentStockStatusRow.stock_items || []).length > 0" :data="currentStockStatusRow.stock_items || []" size="small" style="width:100%" border class="list-table">
-          <el-table-column label="操作" min-width="70">
+          <el-table-column class-name="table-action-column" label="操作" min-width="70">
             <template #default="{ row }">
               <el-button link type="success" @click="openProgressDialog(row)">进度</el-button>
             </template>

@@ -54,7 +54,7 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="操作" min-width="240" fixed="right">
+      <el-table-column class-name="table-action-column" label="操作" min-width="240" fixed="right">
         <template #default="{ row }">
           <GlassButton variant="link" left-icon="Connection" @click="testOne(row)">测试连通</GlassButton>
           <GlassButton variant="link" left-icon="Edit" @click="openEdit(row)">编辑</GlassButton>

@@ -73,7 +73,7 @@
         <el-table-column label="创建时间" min-width="160">
           <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" min-width="190" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="190" fixed="right">
           <template #default="{ row }">
             <template v-if="row.is_active">
               <GlassButton variant="link" left-icon="Refresh" @click="rotateToken(row)">重新发放</GlassButton>

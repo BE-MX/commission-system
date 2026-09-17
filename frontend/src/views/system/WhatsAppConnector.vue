@@ -76,7 +76,7 @@
           <el-table-column label="消息拉取" min-width="160" max-width="240">
             <template #default="{ row }">{{ formatTime(row.last_message_pull_at) }}</template>
           </el-table-column>
-          <el-table-column label="操作" min-width="260" max-width="390" fixed="right">
+          <el-table-column class-name="table-action-column" label="操作" min-width="260" max-width="390" fixed="right">
             <template #default="{ row }">
               <GlassButton v-permission="'whatsapp:write'" variant="link" left-icon="Refresh" @click="handlePull(row, 'messages')">拉取消息</GlassButton>
               <GlassButton variant="link" left-icon="View" @click="selectAccount(row)">查看对话</GlassButton>

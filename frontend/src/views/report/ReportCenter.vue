@@ -48,7 +48,7 @@
               {{ formatTime(row.updated_at) }}
             </template>
           </el-table-column>
-          <el-table-column label="操作" min-width="300" max-width="450" fixed="right">
+          <el-table-column class-name="table-action-column" label="操作" min-width="300" max-width="450" fixed="right">
             <template #default="{ row }">
               <GlassButton variant="link" left-icon="View" @click="previewReport(row)">查看</GlassButton>
               <GlassButton
@@ -166,7 +166,7 @@
             {{ formatTime(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="200" max-width="300" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="200" max-width="300" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="previewVersion(row)">预览</GlassButton>
             <GlassButton

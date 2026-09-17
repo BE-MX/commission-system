@@ -82,7 +82,7 @@
       <el-table-column label="来源" min-width="70" max-width="110">
         <template #default="{ row }">{{ sourceLabel(row.source) }}</template>
       </el-table-column>
-      <el-table-column label="操作" min-width="180" max-width="270" fixed="right">
+      <el-table-column class-name="table-action-column" label="操作" min-width="180" max-width="270" fixed="right">
         <template #default="{ row }">
           <GlassButton v-if="!row.is_complete" v-permission="'customer:write'" variant="link" left-icon="EditPen" @click="openCompleteDialog(row)">补充信息</GlassButton>
           <GlassButton v-permission="'customer:write'" variant="link" left-icon="RefreshRight" @click="openResetDialog(row)">重置归属</GlassButton>

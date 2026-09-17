@@ -56,7 +56,7 @@
         <el-table-column :render-header="renderOrderHeader" prop="remark" label="订单备注" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ row.remark || '-' }}</template>
         </el-table-column>
-        <el-table-column :render-header="renderOrderHeader" label="操作" min-width="270">
+        <el-table-column class-name="table-action-column" :render-header="renderOrderHeader" label="操作" min-width="270">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
             <GlassButton variant="link" left-icon="Download" @click="handleExport(row)">导出</GlassButton>
@@ -149,7 +149,7 @@
               </template>
             </el-table-column>
             <el-table-column prop="last_reported_at" label="最后报工" min-width="150" show-overflow-tooltip />
-            <el-table-column label="操作" min-width="170">
+            <el-table-column class-name="table-action-column" label="操作" min-width="170">
               <template #default="{ row }">
                 <GlassButton
                   v-if="row.reportable_qty > 0 && item.status === 0" v-permission="'domestic:write'"
@@ -265,7 +265,7 @@
             <el-tag v-else size="small" type="success" effect="plain">有效</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="90">
+        <el-table-column class-name="table-action-column" label="操作" min-width="90">
           <template #default="{ row }">
             <GlassButton
               v-if="!row.revoked" v-permission="'domestic:write'"

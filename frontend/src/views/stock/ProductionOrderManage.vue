@@ -75,9 +75,9 @@
               <el-tag :type="statusTagType(row.status)" size="small" effect="plain">{{ row.status_label }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" min-width="260" max-width="390" fixed="right">
+          <el-table-column class-name="table-action-column" label="操作" min-width="260" max-width="390" fixed="right">
             <template #default="{ row }">
-              <div class="order-actions">
+              <div class="table-actions">
                 <GlassButton variant="link" left-icon="View" @click="viewOrderDetail(row)">详情</GlassButton>
                 <GlassButton variant="link" left-icon="Edit" @click="editOrder(row)">编辑</GlassButton>
                 <el-dropdown trigger="click" @command="(cmd) => handlePrintCommand(cmd, row)">
@@ -147,7 +147,7 @@
           <el-table-column label="预计交期" min-width="110" max-width="165">
             <template #default="{ row }">{{ row.expected_delivery_date || '—' }}</template>
           </el-table-column>
-          <el-table-column label="操作" min-width="260" max-width="390" fixed="right">
+          <el-table-column class-name="table-action-column" label="操作" min-width="260" max-width="390" fixed="right">
             <template #default="{ row }">
               <GlassButton variant="link" left-icon="Edit" @click="editItem(row)">编辑</GlassButton>
               <GlassButton variant="link" left-icon="VideoPause" @click="changeItemStatus(row)">改状态</GlassButton>
@@ -179,7 +179,7 @@
         <el-divider />
         <div class="detail-subtitle">产品明细</div>
         <el-table :data="currentOrder.items || []" border class="list-table">
-          <el-table-column label="操作" min-width="140" max-width="210">
+          <el-table-column class-name="table-action-column" label="操作" min-width="140" max-width="210">
             <template #default="{ row }">
               <GlassButton variant="link" left-icon="List" @click="toggleItemProgress(row)">进度</GlassButton>
               <GlassButton variant="link" left-icon="Printer" @click="printCard(row)">打印流转卡</GlassButton>
@@ -800,8 +800,6 @@ function exportOrder(row) {
 
 <style scoped>
 .production-order-page { display: flex; flex-direction: column; gap: 20px; position: relative; }
-.order-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
-.order-actions > * { flex-shrink: 0; }
 
 /* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
 .prod-order-aurora { inset: -24px -28px; }

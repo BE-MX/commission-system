@@ -99,7 +99,7 @@
             <el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="120" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="120" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="toggleFeature(row)">
               {{ row.is_featured ? '取消精选' : '精选' }}

@@ -115,7 +115,7 @@
           <el-tag v-else type="warning" size="small" effect="light">未打印</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" min-width="130" fixed="right">
+      <el-table-column class-name="table-action-column" label="操作" min-width="130" fixed="right">
         <template #default="{ row }">
           <el-button
             type="primary"

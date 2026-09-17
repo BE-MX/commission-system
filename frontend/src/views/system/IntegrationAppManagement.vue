@@ -96,7 +96,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="190" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="190" fixed="right">
           <template #default="{ row }">
             <template v-if="row.is_active">
               <GlassButton

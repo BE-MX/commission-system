@@ -41,7 +41,7 @@
               <template #default="{ row }">{{ row.currency }} {{ Number(row.price).toFixed(2) }}</template>
             </el-table-column>
             <el-table-column prop="updated_at" label="更新时间" min-width="170" show-overflow-tooltip />
-            <el-table-column label="操作" min-width="140" fixed="right">
+            <el-table-column class-name="table-action-column" label="操作" min-width="140" fixed="right">
               <template #default="{ row }">
                 <el-button v-permission="'invoice:admin'" link type="primary" @click="openStdDialog(row)">
                   <el-icon><Edit /></el-icon>
@@ -73,7 +73,7 @@
                 <el-tag effect="plain">{{ colorTypeText(row.color_type) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" min-width="100" fixed="right">
+            <el-table-column class-name="table-action-column" label="操作" min-width="100" fixed="right">
               <template #default="{ row }">
                 <el-button v-permission="'invoice:admin'" link type="danger" @click="removeColor(row)">
                   <el-icon><Delete /></el-icon>
@@ -104,7 +104,7 @@
               </template>
             </el-table-column>
             <el-table-column prop="remark" label="备注" min-width="180" show-overflow-tooltip />
-            <el-table-column label="操作" min-width="140" fixed="right">
+            <el-table-column class-name="table-action-column" label="操作" min-width="140" fixed="right">
               <template #default="{ row }">
                 <el-button v-permission="'invoice:admin'" link type="primary" @click="openRuleDialog(row)">
                   <el-icon><Edit /></el-icon>

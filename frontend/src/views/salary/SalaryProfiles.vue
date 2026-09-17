@@ -81,7 +81,7 @@
             <el-tag v-if="!row.payroll_included" size="small" type="info" effect="plain">不参与工资表</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="100" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="100" fixed="right">
           <template #default="{ row }">
             <GlassButton v-permission="'salary:write'" variant="link" left-icon="Edit" @click="openEdit(row)">编辑</GlassButton>
           </template>

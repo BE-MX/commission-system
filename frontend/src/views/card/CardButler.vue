@@ -52,7 +52,7 @@
               </template>
             </el-table-column>
             <el-table-column prop="created_at" label="建档时间" min-width="140" />
-            <el-table-column label="操作" min-width="220" fixed="right">
+            <el-table-column class-name="table-action-column" label="操作" min-width="220" fixed="right">
               <template #default="{ row }">
                 <GlassButton v-permission="'card:write'" variant="link" left-icon="Notebook" @click="openEntries(row)">纪要</GlassButton>
                 <GlassButton v-permission="'card:write'" variant="link" left-icon="Edit" @click="openCustomerDialog(row)">编辑</GlassButton>
@@ -108,7 +108,7 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" min-width="110" fixed="right">
+            <el-table-column class-name="table-action-column" label="操作" min-width="110" fixed="right">
               <template #default="{ row }">
                 <GlassButton v-permission="'card:write'" variant="link" left-icon="Check" @click="markHandled(row)">
                   {{ row.status === 'new' ? '标记已处理' : '标记未处理' }}
@@ -145,7 +145,7 @@
                 <el-tag effect="plain" :type="row.is_active ? 'success' : 'info'">{{ row.is_active ? '启用' : '停用' }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" min-width="100" fixed="right">
+            <el-table-column class-name="table-action-column" label="操作" min-width="100" fixed="right">
               <template #default="{ row }">
                 <GlassButton v-permission="'card:write'" variant="link" left-icon="Edit" @click="openSpDialog(row)">编辑</GlassButton>
               </template>

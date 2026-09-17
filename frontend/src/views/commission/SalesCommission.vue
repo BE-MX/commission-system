@@ -112,7 +112,7 @@
           <template #default="{ row }">{{ money(row.total_payment_amount) }}</template>
         </el-table-column>
         <el-table-column label="回款单数量" prop="detail_count" min-width="110" max-width="150" align="right" />
-        <el-table-column label="操作" min-width="300" max-width="420" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="300" max-width="420" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="goDetail(row)">明细</GlassButton>
             <GlassButton variant="link" left-icon="Download" @click="handleExport(row)">导出</GlassButton>

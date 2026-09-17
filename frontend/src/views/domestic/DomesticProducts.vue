@@ -24,7 +24,7 @@
             <el-table-column prop="route_name" label="工艺路线" min-width="160" show-overflow-tooltip />
             <el-table-column prop="product_count" label="已沉淀产品" min-width="110" />
             <el-table-column prop="updated_at" label="更新时间" min-width="160" show-overflow-tooltip />
-            <el-table-column label="操作" min-width="140" fixed="right">
+            <el-table-column class-name="table-action-column" label="操作" min-width="140" fixed="right">
               <template #default="{ row }">
                 <GlassButton v-permission="'domestic:admin'" variant="link" left-icon="Edit" @click="openMapping(row)">改路线</GlassButton>
                 <GlassButton v-permission="'domestic:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="removeMapping(row)">删除</GlassButton>
@@ -104,7 +104,7 @@
               </template>
             </el-table-column>
             <el-table-column prop="use_count" label="下单次数" min-width="100" sortable />
-            <el-table-column label="操作" min-width="230" fixed="right">
+            <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">
               <template #default="{ row }">
                 <GlassButton v-permission="'domestic:admin'" variant="link" left-icon="Money" @click="openPrice(row)">{{ row.price_status === 'configured' ? '改原始价' : '配原始价' }}</GlassButton>
                 <GlassButton v-if="row.price_status === 'configured'" v-permission="'domestic:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="removePrice(row)">删除原始价</GlassButton>

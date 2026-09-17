@@ -325,6 +325,12 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 - 必须图标 + 文字
 - link 样式，金色文字
 
+操作/处理列统一加 `class-name="table-action-column"`，布局由 `frontend/src/styles/table-actions.css` 管理：按钮按原顺序换行，单元格随内容增高，不继承普通文本列的单行省略。需要额外包裹按钮时使用 `<div class="table-actions">`，不要另设 `nowrap`、固定高度或裁切。长按钮文字允许换行，间距统一使用 `gap`，不叠加相邻按钮的 margin。
+
+表格容器宽度不超过 768px 时取消左右固定列，通过表格横向滚动访问所有列，避免手机和窄抽屉中固定列互相覆盖；桌面宽表仍保留原固定列配置。普通文本列继续按原规则省略，既有下拉菜单、权限、加载和禁用状态不变。PM 站使用独立样式实现相同的换行与横向可达原则。
+
+新增操作列后运行 `node --test frontend/tests/tableActions.test.mjs` 检查接入。浏览器布局验证页见 `frontend/tests/fixtures/table-actions/index.html`（Vite 开发服务下访问；隔离数据，不调用业务 API），覆盖多按钮、长文案、窄图标列、下拉及确认弹层。
+
 **工具栏按钮**
 
 - 次操作：默认样式（白底 + 边框）

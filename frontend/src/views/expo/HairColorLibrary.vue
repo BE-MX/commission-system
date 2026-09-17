@@ -39,7 +39,7 @@
             <el-switch :model-value="!!row.is_active" @change="(v) => toggleActive(row, v)" />
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="140" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="140" fixed="right">
           <template #default="{ row }">
             <GlassButton v-permission="'expo:admin'" variant="link" left-icon="Edit" @click="openEdit(row)">编辑</GlassButton>
             <GlassButton v-permission="'expo:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>

@@ -12,7 +12,7 @@
         <el-table-column label="素材" min-width="110"><template #default="{ row }">{{ row.assets.length }} 个</template></el-table-column>
         <el-table-column prop="submitted_at" label="送审时间" min-width="180" />
         <el-table-column label="状态" min-width="110"><template #default><el-tag type="warning" effect="plain">待审核</el-tag></template></el-table-column>
-        <el-table-column label="操作" min-width="120" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="open(row)">审核</GlassButton></template></el-table-column>
+        <el-table-column class-name="table-action-column" label="操作" min-width="120" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="open(row)">审核</GlassButton></template></el-table-column>
       </el-table>
     </div>
 

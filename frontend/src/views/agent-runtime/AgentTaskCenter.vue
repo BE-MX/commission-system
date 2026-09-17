@@ -105,7 +105,7 @@
         <el-table-column label="创建时间" min-width="170">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" min-width="100" max-width="140" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="100" max-width="140" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openRun(row.id)">详情</GlassButton>
           </template>
@@ -150,7 +150,7 @@
         <el-table-column label="状态" min-width="105">
           <template #default="{ row }"><el-tag :type="evaluationCaseMeta(row).type" effect="plain" size="small">{{ evaluationCaseMeta(row).label }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="操作" min-width="105" max-width="130" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="105" max-width="130" fixed="right">
           <template #default="{ row }">
             <GlassButton
               v-if="row.completed_run_id || (row.latest_run_id && !['failed', 'cancelled', 'ambiguous'].includes(row.latest_status))"

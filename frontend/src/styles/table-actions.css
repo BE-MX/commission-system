@@ -1,0 +1,75 @@
+/* Action cells must never inherit the list's single-line ellipsis treatment.
+ * Keep buttons in document order; permissions and event handlers stay on them.
+ */
+.el-table {
+  container: ark-table / inline-size;
+}
+
+.el-table .el-table__body td.table-action-column {
+  padding: 8px 0;
+}
+
+.el-table .el-table__body td.table-action-column > .cell,
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.el-table .el-table__body td.table-action-column > .cell {
+  padding: 0 12px;
+}
+
+.table-actions {
+  width: 100%;
+}
+
+.el-table .table-action-column .cell :is(.glass-button, .el-button, .el-dropdown) {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+  white-space: normal;
+}
+
+/* A single long action must also fit, even in a narrow column. */
+.el-table .table-action-column :is(.gb-content, .el-button > span) {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.el-table .table-action-column :is(.gb-icon, .el-icon) {
+  flex-shrink: 0;
+}
+
+/* On phones and in narrow drawers, opposing sticky columns can cover each
+ * other. Let the existing horizontal scrollbar expose every column instead.
+ */
+@container ark-table (max-width: 768px) {
+  .el-table .el-table__cell:is(.el-table-fixed-column--left, .el-table-fixed-column--right) {
+    position: static !important;
+  }
+
+  .el-table .el-table__cell:is(.el-table-fixed-column--left, .el-table-fixed-column--right)::before {
+    display: none;
+  }
+}
+
+/* Viewport fallback for browsers without container-query support. */
+@media (max-width: 768px) {
+  .el-table .el-table__cell:is(.el-table-fixed-column--left, .el-table-fixed-column--right) {
+    position: static !important;
+  }
+
+  .el-table .el-table__cell:is(.el-table-fixed-column--left, .el-table-fixed-column--right)::before {
+    display: none;
+  }
+}

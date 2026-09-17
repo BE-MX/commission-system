@@ -43,12 +43,6 @@
 :is(.customer-hub, .customer-hub-dialog, .customer-hub-drawer) .list-table tr.hover-row > td.el-table-fixed-column--right {
   background: var(--table-row-hover);
 }
-.customer-hub .hub-operation-cell .cell {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  white-space: nowrap;
-}
 :is(.customer-hub, .customer-hub-dialog, .customer-hub-drawer) .el-pagination {
   max-width: 100%;
   overflow-x: auto;

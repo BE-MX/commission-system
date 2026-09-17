@@ -39,7 +39,7 @@
         <el-table-column label="照片数" min-width="80" align="right">
           <template #default="{ row }">{{ row.photo_count }}</template>
         </el-table-column>
-        <el-table-column label="操作" min-width="230" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">
           <template #default="{ row }">
             <GlassButton
               variant="link" left-icon="Printer"

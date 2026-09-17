@@ -62,7 +62,7 @@
           <el-table-column label="归档客户" min-width="110"><template #default="{ row }">{{ row.created_customer_count ?? 0 }}</template></el-table-column>
           <el-table-column prop="policy_version" label="策略版本" min-width="130" max-width="180" show-overflow-tooltip />
           <el-table-column label="反馈" min-width="190" max-width="320" show-overflow-tooltip><template #default="{ row }"><span :class="{ danger: getSearchJobFeedback(row).tone === 'danger' }">{{ getSearchJobFeedback(row).text }}</span></template></el-table-column>
-          <el-table-column label="操作" min-width="224" max-width="264" class-name="hub-operation-cell" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="$emit('view-results', row)">查看结果</GlassButton><GlassButton v-if="canRequeueJob(row)" v-any-permission="['sales_automation:write', 'sales_automation:admin']" variant="link" left-icon="RefreshRight" :loading="mutatingId === row.job_id" @click="retryJob(row)">重新入队</GlassButton></template></el-table-column>
+          <el-table-column label="操作" min-width="224" max-width="264" class-name="table-action-column" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="$emit('view-results', row)">查看结果</GlassButton><GlassButton v-if="canRequeueJob(row)" v-any-permission="['sales_automation:write', 'sales_automation:admin']" variant="link" left-icon="RefreshRight" :loading="mutatingId === row.job_id" @click="retryJob(row)">重新入队</GlassButton></template></el-table-column>
         </template>
 
         <template v-else-if="kind === 'research'">
@@ -72,7 +72,7 @@
           <el-table-column label="执行状态" min-width="110"><template #default="{ row }"><el-tag :type="tagType(row.task_status)" size="small">{{ statusLabel(row.task_status) }}</el-tag></template></el-table-column>
           <el-table-column label="研究质量" min-width="120"><template #default="{ row }">{{ operationStatusLabel(row.result_review_status) }}</template></el-table-column>
           <el-table-column label="数据级别" min-width="150" max-width="220" show-overflow-tooltip><template #default="{ row }">{{ classificationLabels[row.data_classification] || '待确认' }}</template></el-table-column>
-          <el-table-column label="操作" min-width="128" max-width="160" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="$emit('inspect-task', row)">查看详情</GlassButton></template></el-table-column>
+          <el-table-column class-name="table-action-column" label="操作" min-width="128" max-width="160" fixed="right"><template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="$emit('inspect-task', row)">查看详情</GlassButton></template></el-table-column>
         </template>
 
         <template v-else-if="kind === 'opportunities'">
@@ -82,7 +82,7 @@
           <el-table-column prop="priority_level" label="优先级" min-width="100" />
           <el-table-column prop="owner_name" label="负责人" min-width="100" />
           <el-table-column label="截止时间" min-width="170"><template #default="{ row }">{{ formatDate(row.due_at) }}</template></el-table-column>
-          <el-table-column label="操作" min-width="100" max-width="140" fixed="right"><template #default="{ row }"><GlassButton v-any-permission="['customer_opportunity:write', 'customer:admin']" variant="link" left-icon="Edit" :disabled="!row.can_operate || getOpportunityTransitionOptions(row.status).length === 0" @click="$emit('edit-opportunity', row)">更新</GlassButton></template></el-table-column>
+          <el-table-column class-name="table-action-column" label="操作" min-width="100" max-width="140" fixed="right"><template #default="{ row }"><GlassButton v-any-permission="['customer_opportunity:write', 'customer:admin']" variant="link" left-icon="Edit" :disabled="!row.can_operate || getOpportunityTransitionOptions(row.status).length === 0" @click="$emit('edit-opportunity', row)">更新</GlassButton></template></el-table-column>
         </template>
 
         <template v-else>
@@ -91,7 +91,7 @@
           <el-table-column label="状态" min-width="105"><template #default="{ row }"><el-tag :type="tagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
           <el-table-column prop="priority" label="优先级" min-width="100" />
           <el-table-column label="建议完成时间" min-width="170"><template #default="{ row }">{{ formatDate(row.due_at) }}</template></el-table-column>
-          <el-table-column label="操作" min-width="128" max-width="160" fixed="right"><template #default="{ row }"><GlassButton v-any-permission="['customer_radar:write', 'customer:admin']" variant="link" left-icon="Operation" :disabled="getRadarOperationOptions(row.status).length === 0" @click="$emit('operate-action', row)">处理</GlassButton></template></el-table-column>
+          <el-table-column class-name="table-action-column" label="操作" min-width="128" max-width="160" fixed="right"><template #default="{ row }"><GlassButton v-any-permission="['customer_radar:write', 'customer:admin']" variant="link" left-icon="Operation" :disabled="getRadarOperationOptions(row.status).length === 0" @click="$emit('operate-action', row)">处理</GlassButton></template></el-table-column>
         </template>
 
         <el-table-column label="最近更新" min-width="176"><template #default="{ row }">{{ formatDate(row.updated_at) }}</template></el-table-column>

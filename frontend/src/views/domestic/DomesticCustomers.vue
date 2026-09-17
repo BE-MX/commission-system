@@ -121,9 +121,9 @@
             <el-tag size="small" :type="row.status ? 'success' : 'info'" effect="plain">{{ row.status ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="230" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">
           <template #default="{ row }">
-            <div v-if="canOperateCustomer(row)" class="customer-row-actions">
+            <div v-if="canOperateCustomer(row)" class="table-actions">
               <GlassButton v-permission="'domestic:write'" variant="link" left-icon="Edit" @click="openDialog(row)">编辑</GlassButton>
               <GlassButton v-any-permission="['domestic:recharge', 'domestic:admin']" variant="link" left-icon="Tickets" @click="openLedger(row)">流水</GlassButton>
               <div v-any-permission="['domestic:write', 'domestic:recharge', 'domestic:admin']" class="customer-more">
@@ -469,8 +469,6 @@ const {
 
 .customer-tabs { padding: 0 16px; --el-color-primary: var(--color-primary); }
 .customer-tabs :deep(.el-tabs__header) { margin-bottom: 0; }
-.customer-row-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: 12px; white-space: nowrap; }
-.customer-row-actions :deep(button) { margin: 0; flex: 0 0 auto; white-space: nowrap; }
 
 .customers-panel :deep(.el-table-fixed-column--left),
 .customers-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }

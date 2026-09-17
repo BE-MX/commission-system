@@ -33,7 +33,7 @@
           <el-tag v-else type="info" size="small" effect="plain">未设置</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" min-width="160" max-width="240">
+      <el-table-column class-name="table-action-column" label="操作" min-width="160" max-width="240">
         <template #default="{ row }">
           <GlassButton v-permission="'employee:write'" variant="link" left-icon="Edit" @click="openSetDialog(row)">设置属性</GlassButton>
           <GlassButton variant="link" left-icon="Clock" @click="openHistory(row)">查看历史</GlassButton>

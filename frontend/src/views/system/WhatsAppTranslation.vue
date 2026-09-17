@@ -35,7 +35,7 @@
         <el-table-column label="状态" min-width="90">
           <template #default="{ row }">{{ deviceStatusLabel(row) }}</template>
         </el-table-column>
-        <el-table-column label="操作" min-width="100" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="100" fixed="right">
           <template #default="{ row }">
             <el-button v-permission="'whatsapp_translation:admin'" link type="danger" @click="revoke(row.device_id)">撤销</el-button>
           </template>

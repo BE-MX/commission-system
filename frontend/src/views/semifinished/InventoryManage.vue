@@ -12,7 +12,7 @@
         <el-table-column label="安全库存(g)" min-width="130" align="right"><template #default="{ row }">{{ grams(row.safety_stock_grams) }}</template></el-table-column>
         <el-table-column label="库存状态" min-width="100"><template #default="{ row }"><el-tag :type="stockType(row.stock_status)" effect="plain">{{ stockText(row.stock_status) }}</el-tag></template></el-table-column>
         <el-table-column label="更新时间" min-width="170" prop="updated_at" />
-        <el-table-column label="操作" min-width="150" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openLedger(row)">流水</el-button><el-button v-permission="'semifinished:admin'" link type="warning" @click="openAdjust(row)">调整</el-button></template></el-table-column>
+        <el-table-column class-name="table-action-column" label="操作" min-width="150" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openLedger(row)">流水</el-button><el-button v-permission="'semifinished:admin'" link type="warning" @click="openAdjust(row)">调整</el-button></template></el-table-column>
       </el-table>
       <div class="sf-pagination"><el-pagination v-model:current-page="pagination.page" v-model:page-size="pagination.page_size" :total="pagination.total" :page-sizes="[20,50,100]" layout="total,sizes,prev,pager,next" @change="load" /></div>
     </section>

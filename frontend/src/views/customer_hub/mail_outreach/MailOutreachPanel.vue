@@ -24,7 +24,7 @@
         <el-table-column label="更新时间（北京时间）" min-width="160">
           <template #default="{ row }">{{ row.updated_at ? formatBeijingDateTime(row.updated_at, { seconds: false }) : '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" min-width="110" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="110" fixed="right">
           <template #default="{ row }"><GlassButton variant="link" left-icon="View" @click="openReview(row.id)">查看/审核</GlassButton></template>
         </el-table-column>
         <template #empty>该客户暂无开发信草稿，点击「新建开发信」生成。</template>
