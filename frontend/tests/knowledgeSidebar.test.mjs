@@ -265,7 +265,7 @@ test('workbench passes review permissions and opens members for the clicked libr
   )
 
   assert.match(workbench, /const canReviewApprovals = computed\(\(\) => auth\.hasPermission\('knowledge:review'\) \|\| auth\.hasPermission\('knowledge:admin'\)\)/)
-  assert.match(workbench, /:can-manage-members="canCreateLibrary"/)
+  assert.match(workbench, /:can-manage-members="canCreateLibrary && !selectedLibrary\?\.managed_by"/)
   assert.match(workbench, /:can-review="canReviewApprovals"/)
   assert.match(workbench, /@open-members="openMembers"/)
   assert.match(workbench, /async function openMembers\(library\)[\s\S]*?`\/libraries\/\$\{library\.id\}\/members`/)

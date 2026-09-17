@@ -111,6 +111,8 @@ class TestSchedulerRegistration:
                 "operations_history_cleanup",
                 "agent_raw_event_redaction",
                 "dingtalk_gmv_daily",
+                "announcement_dispatch",
+                "announcement_weekly",
                 "whatsapp_translation_pairing_cleanup",
                 "domestic_public_sea_daily",
                 "okki_outbound_reconcile",

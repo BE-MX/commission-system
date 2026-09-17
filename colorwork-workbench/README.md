@@ -83,3 +83,13 @@ node --test scripts/qa-workbench-url.mjs
 本地用独立测试 `.dev.vars` 和 `--persist-to .wrangler/<test-name>` 运行 wrangler，不连接生产 D1/R2。
 方舟开发服务器已有 `/api` 代理，因此无需新增前端代理；后端开发配置把 COLORWORK_INTERNAL_ORIGIN 指向测试服务即可。
 浏览器经方舟 `/api/colorwork/workbench/` 访问。后端回归见 `backend/tests/test_colorwork*.py`，发布回归见 `deploy/tests/test_colorwork_release.py`。
+
+## 原始库存图源文件审阅规则
+
+新版 PSD/JPG 必须相互同尺寸，允许改变 S1 画板。解析与服务端坐标校验以新版 PSD 文件头宽高为准；旧动态区域仅按宽高比例缩放参考。标题、页眉、Logo、装饰图层不作为业务色块，明确色号图层越界仍阻止解析。
+
+原有颜色库之外的新色号进入候选并提取 PSD 色块；必须对照 JPG 确认，需要独立色块图时补充上传后重新解析。长度允许集合固定为该产品/Radio 的 S1 定义；候选保留识别出的异常长度并提示修改或排除，服务端启用再校验，不能靠勾选提醒扩大集合。
+
+结构合成问题统一为一条整体视觉确认，其他问题分别保留。移除颜色和尺寸记入主要变化；历史库存、母版与成品不删除。解析只建立候选，颜色映射、尺寸、问题、新规格状态和最终人工启用仍为必要步骤。
+
+验证：`pnpm exec tsc --noEmit`、`pnpm build`、`pnpm qa:source-parser`。`qa-source-update.mjs` 仅允许本地隔离服务，需在隔离 D1 创建测试管理员与 token 为 `source-rules-local-qa` 的本地测试会话；用 `--base-url=http://127.0.0.1:<port>/api/colorwork/workbench` 执行，禁止对生产运行。

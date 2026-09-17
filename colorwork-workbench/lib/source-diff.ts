@@ -96,6 +96,10 @@ export function computeSourceChanges(
     .filter((entry) => !matchedIds.has(entry.entryId))
     .map((entry) => currentItem(entry.entryId, currentActive, currentColors, currentTemplate)!)
     .filter(Boolean);
+  for (const item of resized) {
+    const removedLengths = item.previousLengths.filter((length) => !item.nextLengths.includes(length));
+    if (removedLengths.length) removed.push({ ...item, lengths: removedLengths });
+  }
   const currentSections = currentTemplate.sections.map((section) => section.label.trim().toLowerCase());
   const nextSections = next.template.sections.map((section) => section.label.trim().toLowerCase());
 

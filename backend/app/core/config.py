@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     RECEIPT_STORAGE_PROXY_URL: str = ""
     SCHEDULER_ENABLED: bool = True
     SCHEDULER_TIMEZONE: str = "Asia/Shanghai"
+    ANNOUNCEMENT_WORKER_ENABLED: bool = True
+    ANNOUNCEMENT_PUBLIC_BASE_URL: str = "https://leshine.work"
 
     # ── 智能获客公海背调批次 ─────────────────────────────
     # 默认关闭，完成 105 迁移并确认业务库只读账号可查询后再开启。

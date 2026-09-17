@@ -193,6 +193,7 @@ def test_library_category_is_required_and_department_round_trips():
             "description": None,
             "category": "department",
             "role": "admin",
+            "managed_by": None,
         }]
     finally:
         client.close()

@@ -1,5 +1,8 @@
 <template>
   <div class="knowledge-page">
+    <el-alert v-if="selectedLibrary?.managed_by === 'announcement'" type="info" :closable="false" title="公告库由公告管理维护">
+      <router-link to="/announcements">前往公告管理进行新建、编辑与审核</router-link>
+    </el-alert>
     <div class="workspace" :class="{ collapsed: sidebarCollapsed }">
       <KnowledgeSidebar
         :libraries="libraries"
@@ -10,8 +13,8 @@
         :can-write="canWriteLibrary"
         :can-create-library="canCreateLibrary"
         :can-review="canReviewApprovals"
-        :can-manage-members="canCreateLibrary"
-        :can-delete-library="canCreateLibrary"
+        :can-manage-members="canCreateLibrary && !selectedLibrary?.managed_by"
+        :can-delete-library="canCreateLibrary && !selectedLibrary?.managed_by"
         :can-delete-node="canWriteLibrary && capabilities.deleteNode"
         @update:search-query="searchQuery = $event"
         @search="runSearch"
@@ -27,7 +30,7 @@
       />
       <KnowledgeEditor
         :document="document"
-        :role="selectedLibrary?.role || 'viewer'"
+        :role="selectedLibrary?.managed_by ? 'viewer' : (selectedLibrary?.role || 'viewer')"
         :saving="saving"
         @save="saveDocument"
         @submit="submitDocument"
@@ -147,7 +150,7 @@ const libraryForm = reactive({ name: '', description: '', category: 'company' })
 const nodeForm = reactive({ title: '', node_type: 'document' })
 const selectedLibrary = computed(() => libraries.value.find(item => item.id === selectedLibraryId.value))
 const capabilities = computed(() => capabilitiesFor(selectedLibrary.value?.role))
-const canWriteLibrary = computed(() => capabilities.value.write && auth.hasAnyPermission(['knowledge:write', 'knowledge:admin']))
+const canWriteLibrary = computed(() => !selectedLibrary.value?.managed_by && capabilities.value.write && auth.hasAnyPermission(['knowledge:write', 'knowledge:admin']))
 const canCreateLibrary = computed(() => auth.hasPermission('knowledge:admin'))
 const canReviewApprovals = computed(() => auth.hasPermission('knowledge:review') || auth.hasPermission('knowledge:admin'))
 const isSuperAdmin = computed(() => auth.roles.includes('super_admin'))

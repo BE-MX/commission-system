@@ -64,6 +64,11 @@ def _library(db, identity: dict, library_id: int, capability: str = "read", *, f
     row = query.first()
     if not row or not access.can(db, identity, library_id, capability):
         raise NotFoundError("knowledge library not found")
+    from app.knowledge.managed import in_scope, _scope
+    if _scope.get() and not in_scope(library_id):
+        raise NotFoundError("knowledge library not found")
+    if capability != "read" and row.managed_by and not in_scope(library_id):
+        raise ConflictError("该知识库由公告管理维护，请前往公告管理操作")
     return row
 
 
@@ -148,6 +153,7 @@ def list_libraries(db, identity: dict) -> list[dict]:
             "description": library.description,
             "category": library.category,
             "role": role,
+            "managed_by": library.managed_by,
         }
         for library, role in rows
     ]
@@ -162,6 +168,7 @@ def get_library(db, identity: dict, library_id: int) -> dict:
         "description": row.description,
         "category": row.category,
         "role": access.member_role(db, identity, row.id),
+        "managed_by": row.managed_by,
     }
 
 
@@ -366,7 +373,7 @@ def _create_revision(db, identity: dict, document: KnowledgeDocument, title: str
     return revision
 
 
-def create_document(db, identity: dict, library_id: int, *, title: str, content: dict, parent_id: int | None = None) -> KnowledgeDocument:
+def create_document(db, identity: dict, library_id: int, *, title: str, content: dict, parent_id: int | None = None, commit: bool = True) -> KnowledgeDocument:
     _require_platform(identity, "knowledge:write")
     _library(db, identity, library_id, "write", for_update=True)
     if parent_id:
@@ -380,12 +387,12 @@ def create_document(db, identity: dict, library_id: int, *, title: str, content:
     db.flush()
     revision = _create_revision(db, identity, document, title, content)
     _audit(db, identity, library_id, "create_document", "document", document.id, revision.id)
-    db.commit()
+    db.commit() if commit else db.flush()
     db.refresh(document)
     return document
 
 
-def create_folder(db, identity: dict, library_id: int, *, title: str, parent_id: int | None = None) -> KnowledgeDocument:
+def create_folder(db, identity: dict, library_id: int, *, title: str, parent_id: int | None = None, commit: bool = True) -> KnowledgeDocument:
     _require_platform(identity, "knowledge:write")
     _library(db, identity, library_id, "write", for_update=True)
     if parent_id:
@@ -398,24 +405,24 @@ def create_folder(db, identity: dict, library_id: int, *, title: str, parent_id:
     db.add(folder)
     db.flush()
     _audit(db, identity, library_id, "create_folder", "document", folder.id)
-    db.commit()
+    db.commit() if commit else db.flush()
     db.refresh(folder)
     return folder
 
 
-def save_document(db, identity: dict, document_id: int, *, title: str, content: dict) -> KnowledgeRevision:
+def save_document(db, identity: dict, document_id: int, *, title: str, content: dict, commit: bool = True) -> KnowledgeRevision:
     _require_platform(identity, "knowledge:write")
     document = _document(db, identity, document_id, "write", lock_library=True)
     if document.node_type != "document":
         raise ValidationError("folders have no content")
     revision = _create_revision(db, identity, document, title, content)
     _audit(db, identity, document.library_id, "save_revision", "document", document.id, revision.id)
-    db.commit()
+    db.commit() if commit else db.flush()
     db.refresh(revision)
     return revision
 
 
-def submit_document(db, identity: dict, document_id: int) -> KnowledgeApprovalRequest:
+def submit_document(db, identity: dict, document_id: int, commit: bool = True) -> KnowledgeApprovalRequest:
     _require_platform(identity, "knowledge:write")
     document = _document(db, identity, document_id, "write", lock_library=True)
     if not document.draft_revision_id:
@@ -433,7 +440,7 @@ def submit_document(db, identity: dict, document_id: int) -> KnowledgeApprovalRe
         document.pending_approval_id = approval.id
         document.status = "pending"
         _audit(db, identity, document.library_id, "submit", "approval", approval.id, approval.revision_id)
-        db.commit()
+        db.commit() if commit else db.flush()
     except IntegrityError as exc:
         db.rollback()
         raise ConflictError("document already has a pending approval") from exc
@@ -462,6 +469,7 @@ def approve_request(
     *,
     remark: str | None = None,
     confirm_cross_library_sources: bool = False,
+    commit: bool = True,
 ) -> KnowledgeApprovalRequest:
     _require_platform(identity, "knowledge:review")
     approval, document = _approval(db, identity, approval_id, lock=True)
@@ -502,12 +510,12 @@ def approve_request(
     document.pending_approval_id = None
     document.status = "published"
     _audit(db, identity, document.library_id, "approve", "approval", approval.id, approval.revision_id)
-    db.commit()
+    db.commit() if commit else db.flush()
     db.refresh(approval)
     return approval
 
 
-def reject_request(db, identity: dict, approval_id: int, *, remark: str) -> KnowledgeApprovalRequest:
+def reject_request(db, identity: dict, approval_id: int, *, remark: str, commit: bool = True) -> KnowledgeApprovalRequest:
     _require_platform(identity, "knowledge:review")
     if not remark.strip():
         raise ValidationError("rejection reason is required")
@@ -522,7 +530,7 @@ def reject_request(db, identity: dict, approval_id: int, *, remark: str) -> Know
     document.pending_approval_id = None
     document.status = "draft" if not document.published_revision_id else "published"
     _audit(db, identity, document.library_id, "reject", "approval", approval.id, approval.revision_id)
-    db.commit()
+    db.commit() if commit else db.flush()
     db.refresh(approval)
     return approval
 
@@ -554,6 +562,8 @@ def get_document(db, identity: dict, document_id: int) -> dict:
     document = _document(db, identity, document_id, "read")
     role = access.member_role(db, identity, document.library_id)
     can_edit = role in access.CAPABILITIES["write"] and access.has_platform(identity, "knowledge:write")
+    if db.get(KnowledgeLibrary, document.library_id).managed_by:
+        can_edit = False
     revision_id = document.draft_revision_id if can_edit else document.published_revision_id
     if document.node_type == "document" and not revision_id:
         raise NotFoundError("document not found")
@@ -581,6 +591,8 @@ def get_tree(db, identity: dict, library_id: int) -> list[dict]:
     ).order_by(KnowledgeDocument.sort_order, KnowledgeDocument.id).all()
     role = access.member_role(db, identity, library_id)
     can_edit = role in access.CAPABILITIES["write"] and access.has_platform(identity, "knowledge:write")
+    if db.get(KnowledgeLibrary, library_id).managed_by:
+        can_edit = False
     if can_edit:
         visible_ids = {row.id for row in rows}
     else:
@@ -592,7 +604,10 @@ def get_tree(db, identity: dict, library_id: int) -> list[dict]:
                 visible_ids.add(parent_id)
                 parent_id = by_id[parent_id].parent_id
     return [
-        {"id": row.id, "parent_id": row.parent_id, "node_type": row.node_type, "title": row.title, "status": row.status}
+        {"id": row.id, "parent_id": row.parent_id, "node_type": row.node_type,
+         "title": (db.get(KnowledgeRevision, row.published_revision_id).title
+                   if not can_edit and row.node_type == "document" and row.published_revision_id else row.title),
+         "status": row.status if can_edit or row.node_type == "folder" else "published"}
         for row in rows if row.id in visible_ids
     ]
 

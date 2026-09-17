@@ -21,6 +21,9 @@ def is_super_admin(identity: dict) -> bool:
 
 
 def has_platform(identity: dict, permission: str) -> bool:
+    from app.knowledge.managed import permits
+    if permits(identity, permission):
+        return True
     if is_super_admin(identity):
         return True
     permissions = set(identity.get("permissions", []))
