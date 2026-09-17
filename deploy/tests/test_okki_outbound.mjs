@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {createOne, findExisting, buildPayload, requestOkki} from '../okki_outbound_creator.mjs';
+import {createOne, findExisting, buildPayload, requestOkki, loadInvoiceForOrder} from '../okki_outbound_creator.mjs';
 const order = {order_id: 123, create_time: '2026-09-17 08:00:00', handler: [9], company_id: 2,
   currency: 'USD', exchange_rate: 669, exchange_rate_usd: 100,
   product_list: [{product_id: 4, sku_id: 5, unique_id: 6, count: 2, unit_price: 10, to_outbound_count: 0}]};
@@ -134,4 +134,51 @@ test('upstream ignoring invoice number is uncertain instead of successful',async
     return route.includes('/order/info')?order:{count:0,list:[]};
   }}),e=>e.uncertain===true && /differs/.test(e.message));
   assert.equal(posts,1);
+});
+
+
+test('outbound remark uses Ark invoice text verbatim instead of the OKKI order remark',()=> {
+  const remark = '分箱包装\n请附标签 & 保留空格  ';
+  const payload = buildPayload({...order,remark:'stale OKKI order note'}, 'INV123', remark);
+  assert.equal(payload.remark, remark);
+  for (const empty of [null, undefined, '']) assert.equal(buildPayload(order, 'INV123', empty).remark, '');
+  assert.throws(()=>buildPayload(order, 'INV123', {text:'invalid'}), /Invalid Ark invoice remark/);
+});
+
+test('creation sends and verifies the invoice remark', async t=> {
+  const invoiceRemark='请按两箱发货\n箱内附清单'; let posts=0;
+  const result=await createOne('123',{invoiceNo:'INV123',invoiceRemark,directory:dir(t),api:async(route,payload)=>{
+    if(payload){posts++;assert.equal(payload.remark,invoiceRemark);return {outbound_invoice_id:88,serial_id:'INV123'};}
+    if(route.includes('/order/info'))return {...order,remark:'old order note'};
+    if(route.includes('/outbound/list'))return {count:0,list:[]};
+    return {record_list:[{order_id:123}],remark:invoiceRemark};
+  }});
+  assert.equal(posts,1);assert.equal(result.outcome,'created');
+});
+
+test('ignored or truncated remark is quarantined without automatic resubmission',async t=>{
+  const directory=dir(t);let posts=0;
+  const options={invoiceNo:'INV123',invoiceRemark:'完整备注\n第二行',directory,api:async(route,payload)=>{
+    if(payload){posts++;return {outbound_invoice_id:88,serial_id:'INV123'};}
+    if(route.includes('/order/info'))return order;
+    if(route.includes('/outbound/list'))return {count:0,list:[]};
+    return {record_list:[{order_id:123}],remark:'完整备注'};
+  }};
+  await assert.rejects(createOne('123',options),e=>e.uncertain===true && /remark differs/.test(e.message));
+  await assert.rejects(createOne('123',options),/Prior submission intent/);
+  assert.equal(posts,1);
+  assert.equal(fs.existsSync(path.join(directory,'logs','created-outbound.jsonl')),false);
+});
+
+
+test('task invoice lookup loads number and remark from the same linked invoice', async()=> {
+  const invoice=await loadInvoiceForOrder({query:async(sql,params)=>{
+    assert.match(sql,/SELECT i\.invoice_no, i\.remark FROM ark_invoices/);
+    assert.match(sql,/t\.invoice_id=i\.id WHERE t\.order_id=\?/);
+    assert.deepEqual(params,['123']);return [[{invoice_no:'INV123',remark:'发票备注'}]];
+  }},'123');
+  assert.deepEqual(invoice,{invoiceNo:'INV123',invoiceRemark:'发票备注'});
+  for(const rows of [[],[{invoice_no:'A'},{invoice_no:'B'}]]){
+    await assert.rejects(loadInvoiceForOrder({query:async()=>[rows]},'123'),/Expected one Ark invoice/);
+  }
 });
