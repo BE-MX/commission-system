@@ -23,10 +23,12 @@ def digest(content):
 
 def render(original, snippet, region, feature="voucher"):
     _, port, expected = SPECS[region]
-    if feature not in {"voucher", "shipping-video"}:
+    if feature not in {"voucher", "shipping-video", "receipt"}:
         raise ValueError("Unknown routing feature")
     begin, end, conflict = (BEGIN, END, "/api/domestic/") if feature == "voucher" else (
         "# BEGIN ARK SHIPPING VIDEO ROUTING", "# END ARK SHIPPING VIDEO ROUTING", "/api/mini/shipping-inspection/videos")
+    if feature == "receipt":
+        begin, end, conflict = "# BEGIN ARK RECEIPT ROUTING", "# END ARK RECEIPT ROUTING", "/api/receipts"
     # Replace only our blocks. Unknown layout or conflicting rules must be reviewed.
     clean = re.sub(re.escape(begin) + r".*?" + re.escape(end) + r"\n?", "", original, flags=re.S)
     if begin in clean or end in clean or conflict in clean or (feature == 'shipping-video' and '/api/shipping-inspection/station/' in clean):
@@ -69,7 +71,7 @@ def execute(request):
     original = path.read_text()
     feature = request.get("feature", "voucher")
     candidate = render(original, request["snippet"], region, feature)
-    state = STATE if feature == "voucher" else STATE.parent / "shipping-video"
+    state = STATE if feature == "voucher" else STATE.parent / feature
     baseline = digest(original)
     if request["action"] == "prepare":
         state.mkdir(parents=True, exist_ok=True, mode=0o700)

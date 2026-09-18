@@ -44,6 +44,10 @@ def validate(inventory, pending):
     if not inventory.get("migration_writers_verified") or not writers:
         raise RuntimeError("Database migration pending: verify every office/cloud writer in deploy/platforms.json first; no services stopped and no DDL executed")
     for writer in writers:
+        if writer.get("kind") == "systemd_timer":
+            from timer_writer import validate as validate_timer
+            validate_timer(writer)
+            continue
         if writer.get("kind") not in {"nssm", "systemd", "pm2"} or not re.fullmatch(r"[A-Za-z0-9_-]+", writer.get("service", "")):
             raise ValueError("Invalid registered database writer")
         if writer["kind"] == "systemd" and writer.get("host") not in {"ubuntu@154.8.205.162", "root@119.28.107.92"}:
@@ -58,6 +62,10 @@ def validate(inventory, pending):
                 ("pm2", "root@119.28.107.92", "shipment-tracking-mcp")}
     if not required.issubset({(w["kind"],w.get("host"),w["service"]) for w in writers}):
         raise ValueError("Required application writers missing from migration inventory")
+    if any(s.get("name") == "ark-okki-outbound-poller" for s in inventory.get("external_services", [])):
+        from timer_writer import WRITER
+        if WRITER not in writers:
+            raise ValueError("Required outbound timer writer missing from migration inventory")
     return writers
 
 
@@ -68,6 +76,9 @@ def pm2_command(writer):
 
 
 def writer_state(writer, nssm):
+    if writer["kind"] == "systemd_timer":
+        from timer_writer import writer_state as timer_state
+        return timer_state(writer)
     if writer["kind"] == "nssm":
         state = run([nssm, "status", writer["service"]], capture=True)
         if state in {"SERVICE_RUNNING", "SERVICE_STOPPED"}:
@@ -94,6 +105,9 @@ def writer_state(writer, nssm):
 def control(writer, operation, nssm):
     if operation not in {"start", "stop"}:
         raise ValueError("Unsupported writer operation")
+    if writer["kind"] == "systemd_timer":
+        from timer_writer import control as timer_control
+        return timer_control(writer, operation)
     state = writer_state(writer, nssm)
     if (operation == "stop" and state == "stopped") or (operation == "start" and state == "running"):
         return False

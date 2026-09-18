@@ -38,6 +38,7 @@ export function useOutboundRecords() {
   const downloadingId = ref(null)
 
   async function downloadWord(row) {
+    if (!row.can_print) return
     if (downloadingId.value !== null) return
     downloadingId.value = row.outbound_record_id
     try {
@@ -48,6 +49,7 @@ export function useOutboundRecords() {
   }
 
   async function openPrint(row) {
+    if (!row.can_print) return
     if (printingId.value) return
     printingId.value = row.outbound_record_id
     try {

@@ -21,14 +21,14 @@ def execute(prepare_only, feature="voucher"):
 
     with publish.deployment_lock():
         journal = {"status": "preparing", "completed": []}
-        if feature not in {"voucher", "shipping-video"}:
+        if feature not in {"voucher", "shipping-video", "receipt"}:
             raise ValueError("Unknown routing feature")
         record = publish.STATE / f"{feature}-routing.json"
         publish.atomic_json(record, journal)
         try:
             prepared = []
             for region, host in TARGETS:
-                prefix = "domestic-voucher" if feature == "voucher" else "shipping-video"
+                prefix = "domestic-voucher" if feature == "voucher" else feature
                 snippet = (HERE / "nginx" / f"{prefix}-{region}.conf").read_text()
                 payload = {"region": region, "snippet": snippet, "action": "prepare", "feature": feature}
                 result = remote(host, payload)

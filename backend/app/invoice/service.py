@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.invoice import accessory_price_service, delegation_service, price_service, product_service
+from app.invoice.customer_profile_service import get_customer_grade, save_customer_grade
 from app.invoice.models import Invoice, InvoiceDelegateGrant, InvoiceItem
 from app.invoice.schemas import InvoiceCreate, InvoiceUpdate
 from app.invoice.screenshot_token import verify_preview_token
@@ -109,6 +110,7 @@ def get_customer_contact_defaults(db: Session, customer_id: str) -> dict:
     has_xiaoman_orders 供前端预判「是否新成交」开关默认值。
     """
     defaults: dict = {
+        "customer_grade": get_customer_grade(db, customer_id),
         "has_xiaoman_orders": customer_has_xiaoman_orders(db, customer_id),
         # 首返旁展示「上次订单成交日期」参考（仅展示，不落库不推 OKKI）；
         # 新成交（无历史单）时为 None → 前端留空
@@ -317,6 +319,8 @@ def create_invoice(
     # OKKI 业务标记空值兜底（null=自动判定）
     for field, value in resolve_okki_flags(db, invoice).items():
         setattr(invoice, field, value)
+    invoice.customer_grade = (body.customer_grade if "customer_grade" in body.model_fields_set
+                              else get_customer_grade(db, body.customer_id))
     db.add(invoice)
     _replace_items(db, invoice, body, user_id=user_id)
     _refresh_invoice_totals(invoice)
@@ -332,6 +336,8 @@ def create_invoice(
     db.flush()
     from app.receipt.invoice_link import save_draft
     save_draft(db, invoice, body.receipt_draft, user_id, new=True)
+    if "customer_grade" in body.model_fields_set:
+        save_customer_grade(db, invoice.customer_id, invoice.customer_grade, user_id)
     db.flush()
     return invoice
 
@@ -358,6 +364,13 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
         if invoice_no_exists(db, new_no, exclude_id=invoice.id):
             raise ValueError(f"发票号 {new_no} 已存在，请更换")
         invoice.invoice_no = new_no
+    grade_changed = "customer_grade" in body.model_fields_set and (
+        body.customer_grade != invoice.customer_grade or body.customer_id != invoice.customer_id
+    )
+    if "customer_grade" in body.model_fields_set:
+        invoice.customer_grade = body.customer_grade
+    elif body.customer_id != invoice.customer_id:
+        invoice.customer_grade = get_customer_grade(db, body.customer_id)
     for field in _HEADER_FIELDS:
         setattr(invoice, field, getattr(body, field))
     sales_user = db.get(ArkUser, invoice.sales_user_id) if invoice.sales_user_id else None
@@ -383,6 +396,8 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
     if invoice.total_amount < receipt_floor:
         raise ValueError("订单金额不能低于已登记回款及待处理金额")
     invoice_link.save_draft(db, invoice, body.receipt_draft, user_id)
+    if grade_changed:
+        save_customer_grade(db, invoice.customer_id, invoice.customer_grade, user_id)
     db.flush()
     return invoice
 
@@ -474,6 +489,7 @@ def serialize_detail(invoice: Invoice, db: Session | None = None) -> dict:
     return {
         **_invoice_list_row(invoice, len(invoice.items)),
         "receipt_draft": describe_receipt(db, invoice) if db is not None else None,
+        "customer_grade": invoice.customer_grade,
         "contact_name": invoice.contact_name,
         "contact_phone": invoice.contact_phone,
         "contact_email": invoice.contact_email,

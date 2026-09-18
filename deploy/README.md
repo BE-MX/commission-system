@@ -45,6 +45,10 @@ deploy\deploy.bat --shipping-video-routing-only
 
 ## 数据库
 
+2026-09-17 回款/公告补发：新加坡 `ark-okki-outbound-poller.timer` 已作为 `systemd_timer` writer 纳管。迁移前只停止计时器，等待对应 oneshot 为 inactive 且 MainPID=0（最多120秒），不强杀正在提交小满的任务；排空失败阻断DDL并按原基线恢复计时器。原来未运行的计时器不自动启用。迁移后仅恢复本次暂停的调度；原应用/PM2 writer 检查照常执行。配置中的外部出库轮询器存在时，遗漏此writer会直接阻断。
+
+生产菜单缺失排障先核对实际运行HEAD和静态入口；`publish-current.json` 的 failed 可能沿用此前版本/完成列表（预检在写新journal之前失败），不能据其中 completed 认定新版本已上线。9e5cd2dd 发布预检已复现旧writer清单不完整，办公室和北京仍为2609626f，schema最近成功记录154；修复后的候选需重新prepare再经授权完整发布155/156。
+
 办公室与北京共享 `commission_db`，每次发布都读数据库 revision，并检查发布代码的唯一 head 和迁移链。数据库已到目标则跳过 DDL；未知 revision、数据库领先、分叉均阻断。不会复制、覆盖或 downgrade 数据库。
 
 有待执行迁移时，必须核实 `platforms.json` 中所有 writer 的归属。2026-09-07 已按生产连接与进程核实并登记办公室 `CommissionSystem` / `WhatsAppConnector`、北京 `ark-backend`、新加坡 PM2 `shipment-tracking-mcp`；PM2 只控制该进程，不操作整个 PM2 管理器。新增或迁移写入实例后必须重新核实清单，不能沿用旧确认。数据库 revision 每次读取，不使用历史版本号推断是否有 DDL。
@@ -216,3 +220,7 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 `--recover-migration-151` 仅用于 2026-09-16 的外键符号类型不匹配事故：原日志为数据库152、目标154、pending151/153/154，四个原writer均running且有完整停机证据。恢复完整保留 `recovery_original`，重新核对当前数据库结构和迁移链；无stamp/downgrade/清日志操作。
 
 必须固定经审查的完整 `--revision`，执行完整办公室+云发布。先带 `--prepare-only` 验证；去掉该参数才停止writers、执行迁移并切换两端应用和静态站，最终完成健康验证后关闭事故日志。旧安装目录缺少该入口时，可从 `.deploy_state/sources/<revision>/deploy/deploy.bat` 加 `--live-root <安装目录>` 启动候选部署器；服务和状态始终归安装目录。数据库已完成部分revision时重新校验；不完整的未知结构或缺失原始writer证据仍阻断。中途失败不得启动不兼容旧程序。
+
+## 回款固定办公室入口
+
+`deploy/deploy.bat --receipt-routing-only --prepare-only`预检，去掉`--prepare-only`正式应用。两站`/api/receipts`及其子路径统一到办公室，保留用户鉴权、关闭缓存和上游重试；北京使用校验证书的HTTPS连接新加坡入口。网关11MiB覆盖multipart开销，后端仍严格限制每张10MiB。先归集并核对历史凭证SHA256，保留来源备份，切换后再核对新增文件。此模式通过入口路由固定存储，无需配置北京应用级RECEIPT_STORAGE_PROXY_URL；局域网入口须直达办公室。

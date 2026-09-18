@@ -1079,7 +1079,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/outbound-records?keyword=&date_from=&date_to=&page=&page_size=` | 出库单分页列表，含检验状态 none/draft/submitted 与照片数；按 OKKI 归属过滤（见下） |
+| GET | `/outbound-records?keyword=&date_from=&date_to=&page=&page_size=` | 正式出库单与方舟待出库记录的统一分页列表，含出库状态、缺货详情、检验状态与照片数；按业务员归属过滤（见下） |
 | GET | `/outbound-records/{record_id}/print-data` | 出库单打印数据：单头+明细+`qr_code_base64`（二维码内容 `ARK-I:{record_id}:{hmac8}`）；同样按归属过滤，不可见返回 404 |
 | GET | `/outbound-records/{record_id}/word` | 下载可编辑 DOCX，保持当前 A4 版式、列宽、二维码及灰色斑马纹；数据范围同 print-data；二进制响应 |
 | GET | `/records?keyword=&date_from=&date_to=&page=&page_size=` | 已提交验货单分页列表（按提交时间过滤） |
@@ -1099,6 +1099,8 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 字段口径已于 2026-09-01 实库摸底校准（`scripts/show_okki_outbound_columns.py`），明细经 `outbound_invoice_id` 桥接关联单头，见 `docs/database.md` 发货检验一节。
 
 2026-09-18：手机网页和小程序的扫码、刷新响应 `items` 与出库单打印、Word 共用排序函数：规格自然升序，同规格按尺寸数值升序；相同排序键保持原相对顺序。数量及照片/视频的 `item_id` 归属不变。
+
+2026-09-18 方舟待出库记录：列表新增 `record_source`（okki/ark_task）、`outbound_state`（ready/pending/running/waiting_stock/awaiting_sync/failed/uncertain）、`can_print`、`stock_shortages`（商品名、sku_id、required/available/shortage）及 `stock_checked_at`。本地记录 ID 为 `task:<任务ID>`，`outbound_date=null`，`requested_date` 为任务北京时间创建日期；日期筛选对本地记录按创建日期、正式记录按出库日期。库存不足状态显示“部分库存不足”，缺货数量是最近一次库存检查快照；日志缺失或截断时详情为空，不暴露执行日志。原任务行复用为待出库预览，不新建业务单或扣库存。非标通用产品主动跳过不进入预览；任务完成或已有单跳过但镜像未到时显示“待同步”。只有当前业务员可见的正式记录匹配单号+客户或实际订单关联，才去除本地预览；下次查询自动替换，计数和分页不重复。`can_print=false` 隐藏打印/下载，服务端对 `task:` 返回404；本地记录不能用于扫码验货。
 
 2026-09-18 出库单数据范围：方舟首推成功的订单无需等待 `okki_orders` 同步。通过出库明细 `order_id` 精确关联 `ark_invoices.xiaoman_order_id`，客户一致且存在 `action=create/success=1` 推单日志时，按发票 `sales_user_id` 的有效 OKKI 绑定放行业务员；不按发票创建人、制单人、单号或客户名称推断。此分支不受后续编辑重推失败影响。原镜像同客户订单归属规则继续有效（`okki_outbound_records.company_id` 命中 `okki_orders` 同客户且 `user_id` = 当前用户绑定的 OKKI id）。列表、打印/Word、验货记录及媒体权限共用此范围；未绑定返回 422，全部范围权限和小程序仓管扫码规则不变。仍需出库单及其订单关联明细同步到方舟，仅免除订单镜像的等待。
 
@@ -1378,3 +1380,9 @@ Agent research context now includes `fact_contract.version=registered_research_f
 保存参数：title、content（Tiptap JSON）、category_id、base_revision_id（更新必需）、important、effective_at、expires_at、change_note。列表参数 q/category_id/status/page/page_size。审核中禁止改稿；已发布公告更新后，读者仍看上一发布版本。时间按北京时间保存。
 
 平台权限 `announcement:read/write/admin`；审批端点允许 `knowledge:review/knowledge:admin/announcement:admin`，仍需公告阅读权限和库审核 ACL。普通知识库接口不能修改 managed 公告库。
+
+
+### 发票客户等级与出库单金额
+
+- 发票创建/编辑请求及详情新增可空 `customer_grade`（仅 S/A/B/C/D）；`GET /api/invoice/customers/contact-defaults` 返回客户最新等级。字段省略时保留/继承，显式 null 表示清空；沿用发票录入权限，等级不影响价格。
+- 出库单 `print-data` 的 `record` 新增 `customer_grade`、`order_amount_text`；Word 使用同一服务。等级取方舟客户资料当前值；金额按出库明细精确关联订单、按订单 ID 去重，优先已同步发票的含手续费总额与原币种，否则取订单镜像 `amount_usd`（USD）。未同步修改不覆盖已确认订单金额；多个币种分别列示，不换汇相加；缺少客户或任一订单关联/金额时显示 `—`，不展示部分合计。原有出库归属权限和客户名称脱敏不变。

@@ -25,29 +25,54 @@
       <el-table :data="list" v-loading="loading" border class="list-table" style="width: 100%">
         <el-table-column prop="outbound_no" label="出库单号" min-width="140" show-overflow-tooltip />
         <el-table-column prop="customer_name" label="客户名称" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="outbound_date" label="出库日期" min-width="105" />
+        <el-table-column label="出库日期" min-width="120">
+          <template #default="{ row }">
+            <template v-if="row.record_source === 'ark_task'">
+              <span class="queue-note">待出库</span><small class="queue-note">{{ row.requested_date }} 创建</small>
+            </template>
+            <template v-else>{{ row.outbound_date }}</template>
+          </template>
+        </el-table-column>
         <el-table-column label="明细 / 数量" min-width="110">
           <template #default="{ row }">{{ row.item_count }} 行 / {{ row.total_qty }} 件</template>
         </el-table-column>
+        <el-table-column label="出库单状态" min-width="170">
+          <template #default="{ row }">
+            <el-tag :type="OUTBOUND_STATE_TAGS[row.outbound_state] || 'info'">
+              {{ OUTBOUND_STATE_LABELS[row.outbound_state] || '状态待确认' }}
+            </el-tag>
+            <el-popover v-if="row.stock_shortages?.length" trigger="click" placement="bottom" :width="360">
+              <template #reference><GlassButton variant="link">缺货详情</GlassButton></template>
+              <p v-for="item in row.stock_shortages" :key="item.sku_id" class="shortage-item">
+                <strong>{{ item.product_name }}</strong><br>
+                需要 {{ item.required }}，可用 {{ item.available }}，缺 {{ item.shortage }}
+              </p>
+              <small class="queue-note">库存检查时间：{{ row.stock_checked_at || '待确认' }}</small>
+              <p class="queue-note">系统约每 15 分钟复查库存，满足后自动生成出库单。</p>
+            </el-popover>
+          </template>
+        </el-table-column>
         <el-table-column label="检验状态" min-width="90">
           <template #default="{ row }">
-            <el-tag size="small" :type="INSPECTION_STATUS_TAGS[row.status] || 'info'">
+            <span v-if="row.record_source === 'ark_task'" class="queue-note">—</span>
+            <el-tag v-else size="small" :type="INSPECTION_STATUS_TAGS[row.status] || 'info'">
               {{ INSPECTION_STATUS_LABELS[row.status] || row.status }}
             </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="照片数" min-width="80" align="right">
-          <template #default="{ row }">{{ row.photo_count }}</template>
+          <template #default="{ row }">{{ row.record_source === 'ark_task' ? '—' : row.photo_count }}</template>
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">
           <template #default="{ row }">
             <GlassButton
-              variant="link" left-icon="Printer"
+              v-if="row.can_print" variant="link" left-icon="Printer"
               :loading="printingId === row.outbound_record_id"
               @click="openPrint(row)"
             >打印出库单</GlassButton>
-            <GlassButton variant="link" left-icon="Download"
+            <GlassButton v-if="row.can_print" variant="link" left-icon="Download"
               :loading="downloadingId === row.outbound_record_id" @click="downloadWord(row)">下载 Word</GlassButton>
+            <span v-if="!row.can_print" class="queue-note">{{ outboundPendingHint(row.outbound_state) }}</span>
           </template>
         </el-table-column>
       </el-table>
@@ -67,6 +92,7 @@
 import { INSPECTION_STATUS_LABELS, INSPECTION_STATUS_TAGS } from '@/api/shipping'
 import GlassButton from '@/components/GlassButton.vue'
 import { useOutboundRecords } from './composables/useOutboundRecords'
+import { OUTBOUND_STATE_LABELS, OUTBOUND_STATE_TAGS, outboundPendingHint } from './composables/outboundStates'
 
 const {
   loading, list, total, page, pageSize, searchForm,
@@ -103,4 +129,7 @@ const {
 .outbound-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
 
 .pager { margin: 12px; justify-content: flex-end; }
+.queue-note { color: var(--text-secondary); }
+small.queue-note { display: block; margin-top: 4px; }
+.shortage-item { margin: 0 0 12px; overflow-wrap: anywhere; }
 </style>

@@ -1,3 +1,18 @@
+## 2026-09-18 回款生产部署与单笔验证（Codex）
+
+办公室/北京已通过统一入口部署 `aed61c43`，分支 `codex/receipt-production-enable` 基于实际生产 `dab19815`，用户已授权合并 main 并推送 origin，本轮不追加部署。两站回款 API 固定办公室，单张 10MiB、入口 11MiB，历史凭证已归集；最后校验办公室 28/28 份大小及 SHA256 一致，来源备份保留。原凭证缺失的自动生成阻塞已消除。
+
+小满分页同秒边界重复已修复，18,325 条真实完整只读扫描通过。原单 id=1 重试后成功，远端 ID `105794024173578`，回读 `collect_status=1`（有效）。创建接口权限已证实可用。最后 1 张 synced、16 张 pending，发送总开关仍 False，本轮未批量发送其他单。76 项相关回归通过，独立审查无阻断；增量约定通过，完整门禁仍有生产基点 13 项既有 UI 基线问题，no-fetch 巡检已执行。
+
+未完成项：`.cloud` 10MiB 端到端上传仍受北京至新加坡重传/低速影响；办公室及 `.work` 网关 10MiB 传输已到达鉴权。浏览器连接不可用，未做登录态 UI 验收。详见[验证记录](reports/2026-09-18-receipt-production-verification.md)。保留发布备份和主目录 `tmp/receipt-enable/` 证据；合并推送验证后清理本任务 worktree。
+
+## 2026-09-18 库存不足出库单列表预览（Codex，合并推送交付）
+
+- 分支 `codex/outbound-stock-status`，worktree `D:/MyProgram/commission-system-codex-outbound-stock-status`。复用出库任务表提供只读待出库记录，无 schema 或生产数据写入。库存不足显示“部分库存不足”，可查看商品、需求、可用及缺口；待生成、重试和等待镜像期间保留记录，打印/Word 按钮隐藏，`task:` 标识在服务端拒绝打印/下载/验货读取。
+- 正式记录与本地记录在 SQL 中统一筛选、计数和分页。本地按发票业务员有效 OKKI 绑定限定范围；正式单据对当前用户可见时才替换预览，覆盖单头先到、明细及订单镜像未到的同步顺序。预览日期显示创建日期，不冒充已出库日期。
+- 前端构建和导出调用防护测试通过；CUA 在真实 Vue 列表配隔离数据验证缺货详情、按钮显隐和待同步状态。生产 MySQL 只读查询成功：“宋皓月浅色库存 0917”已存在正式记录 91212，联合查询仅返回一条正式记录。未改变重试策略或操作库存；用户已授权合并 main 并推送 origin，本轮不部署。
+- 相关后端 78 项测试通过，另单跑原列表回归通过。独立审查发现并修复“镜像头先到导致预览过早消失”，补测后复查通过。增量约定与 diff 检查通过；完整门禁仍报 7 项既有前端行数基线告警，未改基线。Git 巡检已执行 `--no-fetch`，合并后清理本任务分支与 worktree，隔离页面夹具转存主目录 `tmp/outbound-stock-status-merge/`。
+
 ## 2026-09-18 方舟订单出库单本地归属（Codex，合并推送交付）
 
 - 分支 `codex/outbound-local-owner`，worktree `D:/MyProgram/commission-system-codex-outbound-local-owner`。方舟首推成功订单通过出库明细 order_id 精确关联发票业务员有效 OKKI 绑定，可直接通过出库单/打印/验货记录共用归属检查，不等待订单镜像；原镜像范围保留。要求客户一致及成功 create 日志，排除导入更新、失败首推和同客户无关出库单。
@@ -1438,3 +1453,14 @@ Mac 同事的英文网页中私聊按钮标识为 `Profile details`，原选择�
 发布：经 `deploy/deploy.bat --cloud-only --no-pull --revision ba475d55af2ae6371b15899db42751cc3605b32f`（先 prepare-only）完成。发布日志和北京 colorwork/current.json 均 succeeded；主站后端 changed=false、schema_changed=false，其他静态站零变化。两个公网入口健康200。前后只读摘要一致：23套当前源仍全为S1，869条inventory_states、23个master_versions和1个artifact未变；验证证据在任务 worktree 的 colorwork-workbench/outputs。独立复核已通过装饰修复。发布基点上的约定检查为10项已有主站UI债务，直接增量 check(80996982) 无违规。
 
 用户已授权合并 main 并推送 origin，本轮整合仅同步已发布修复，不重复发布站点。两个本地隔离测试目录 .wrangler/source-rules-test 和 source-rules-final 的清理被自动审批以 blocked by policy 拒绝，未绕过；保留测试目录及发布恢复材料，不影响生产。
+
+## 2026-09-18 发票客户等级与出库单顶部字段（合并推送交付）
+
+- 工作树：`commission-system-codex-invoice-customer-grade`；分支：`codex/invoice-customer-grade`。用户已确认等级保存到方舟客户资料，不写小满 customer_info 镜像。
+- 发票客户信息增加 S/A/B/C/D 下拉；保存更新客户默认等级，后续选客户回填、支持修改和清空。旧发票保留等级快照，未修改等级不会覆盖客户后来的变更；回填防串客户、防覆盖手动编辑，读取失败不清除等级。
+- 出库打印/Word：客户名称后新增客户等级、订单金额；已同步发票金额优先，否则用精确订单镜像金额；缺关联不显示部分合计，跨币种分别展示。
+- 迁移 `157_invoice_customer_grade` 接 `156_receipt_management`，仅改方舟库。用户已授权合并 main 并推送 origin；本轮不部署、不执行生产迁移，上线须通过既有发布入口执行迁移。合并验证后清理本任务临时分支与 worktree。
+- 独立审查提出的 NULL 订单关联和未同步草稿金额问题均已修复并补回归测试。浏览器已核对打印版式；`npm run build` 通过；前端 19 项测试通过；后端受影响回归 90 项通过，随后新增迁移和边界验证也通过（客户等级 15 项、出库等级/金额 11 项）。生产出库 invoice bridge 的打印接口与 Word 一致性已通过隔离 SQLite 测试。
+- `check_conventions.py` 被既有 UI 基线阻断：AssetLibrary、TagDimensionManage、DesignManage、KnowledgeWorkbench、KnowledgeEditor、ProductionOrderManage、AIManager 共 7 个文件的 lines_over_500 基线过期，本次未修改这些文件。单独调用 `check('HEAD')` 检查增量规则无违规，完整约定命令仍按失败记录；`git diff --check` 通过。Git 巡检为 `--no-fetch` 本地快照。
+
+- 合并前已整合主线 `6b75d267` 的待出库列表改动，隔离后端回归 113 项、前端 20 项及生产构建通过；无代码冲突。完整约定检查仍为上述 7 项既有基线错误，按该主线基点检查本次增量无违规。

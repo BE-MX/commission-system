@@ -24,6 +24,27 @@ def config(region):
 
 
 @pytest.mark.parametrize("region", ["office", "cloud"])
+def test_receipts_route_only_receipt_api_to_office(region):
+    source = (DEPLOY / "nginx" / f"receipt-{region}.conf").read_text()
+    candidate = routing.render(config(region), source, region, "receipt")
+    assert routing.render(candidate, source, region, "receipt") == candidate
+    pattern = re.search(r"location ~ (.+) \{", source).group(1)
+    for path in ["/api/receipts", "/api/receipts/attachments", "/api/receipts/attachments/abc", "/api/receipts/types"]:
+        assert re.match(pattern, path)
+    for path in ["/api/receipts-other", "/api/invoice", "/api/domestic/customers"]:
+        assert not re.match(pattern, path)
+    assert "client_max_body_size 11m;" in source
+    assert "proxy_request_buffering off;" in source
+    assert "proxy_send_timeout 300s;" in source
+    assert "proxy_next_upstream off;" in source
+    assert "proxy_set_header Authorization $http_authorization;" in source
+    if region == "cloud":
+        assert "proxy_ssl_verify on;" in source and "proxy_ssl_name leshine.work;" in source
+    with pytest.raises(ValueError):
+        routing.render(config(region) + "\nlocation /api/receipts {}", source, region, "receipt")
+
+
+@pytest.mark.parametrize("region", ["office", "cloud"])
 def test_routing_changes_only_voucher_paths_and_is_repeatable(region):
     original = config(region)
     candidate = routing.render(original, snippet(region), region)

@@ -23,9 +23,10 @@ from app.auth.models import ArkUserExternalBinding
 from app.core.database import get_db
 from app.core.response import ok, page_result
 from app.shipping_inspection import constants as C
-from app.shipping_inspection import file_service, outbound_service, qr_service, service
+from app.shipping_inspection import file_service, outbound_service, outbound_queue_service, qr_service, service
 from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto
 from app.shipping_inspection.schemas import ShippingRecallRequest
+from app.shipping_inspection.print_customer_service import with_customer_order_info
 from app.shipping_inspection.print_service import with_owner_chinese_name
 
 logger = logging.getLogger("commission")
@@ -116,7 +117,7 @@ def list_outbound_records(
 ):
     scope_okki_user = _outbound_scope(db, user)
     try:
-        rows, total = outbound_service.list_outbound_records(
+        rows, total = outbound_queue_service.list_outbound_records(
             db, keyword=keyword, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
             okki_user_id=scope_okki_user,
         )
@@ -174,7 +175,7 @@ def outbound_print_data(
     items = sort_outbound_print_items(items)
     qr_data = qr_service.generate_qr_data(record_id)
     return ok({
-        "record": with_owner_chinese_name(db, record),
+        "record": with_customer_order_info(db, with_owner_chinese_name(db, record)),
         "items": items,
         "qr_data": qr_data,
         "qr_code_base64": _qr_png_base64(qr_data),
@@ -199,7 +200,7 @@ def outbound_word(
         items = outbound_service.list_outbound_items(db, record_id)
     except outbound_service.OutboundTableError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    content = build_outbound_word(with_owner_chinese_name(db, record), items, qr_service.generate_qr_data(record_id))
+    content = build_outbound_word(with_customer_order_info(db, with_owner_chinese_name(db, record)), items, qr_service.generate_qr_data(record_id))
     filename = quote(f"出库单-{record['outbound_no']}.docx", safe="")
     return Response(content, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"})

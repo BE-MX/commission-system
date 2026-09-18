@@ -25,7 +25,7 @@ okki_outbound_records / okki_outbound_record_items 是 OKKI 同步作业维护�
 import logging
 from datetime import date, timedelta
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -200,6 +200,7 @@ def _map_record_row(row) -> dict:
         "outbound_no": outbound_no or record_id,
         "outbound_date": _str_or_none(row["outbound_date"]),
         "customer_name": _str_or_none(row["customer_name"]),
+        "company_id": _str_or_none(row.get("company_id")),
         "owner_name": _str_or_none(row["owner_name"]),
         "remark": _str_or_none(row["remark"]),
         "item_count": int(row["item_count"] or 0),
@@ -228,9 +229,32 @@ def _record_select(rm: dict[str, str | None]) -> str:
         f"{_col(rm, 'outbound_no', 'r')} AS outbound_no, "
         f"{_col(rm, 'outbound_date', 'r')} AS outbound_date, "
         f"{_col(rm, 'customer_name', 'r')} AS customer_name, "
+        f"{_col(rm, 'company_id', 'r')} AS company_id, "
         f"{_col(rm, 'owner_name', 'r')} AS owner_name, "
         f"{_col(rm, 'remark', 'r')} AS remark"
     )
+
+
+def record_list_filters(db, rm, *, keyword=None, date_from=None, date_to=None, okki_user_id=None):
+    """Shared filters for mirror-only reads and the combined outbound queue."""
+    params = {}
+    clauses = []
+    if okki_user_id:
+        clauses.append(_owner_scope_clause(db, rm))
+        params["scope_okki_user_id"] = okki_user_id
+    if keyword:
+        columns = [rm[key] for key in ("outbound_no", "customer_name") if rm[key]]
+        if columns:
+            clauses.append("(" + " OR ".join(f"r.`{col}` LIKE :kw" for col in columns) + ")")
+            params["kw"] = f"%{keyword}%"
+    if rm["outbound_date"]:
+        if date_from:
+            clauses.append(f"r.`{rm['outbound_date']}` >= :date_from")
+            params["date_from"] = date_from.isoformat()
+        if date_to:
+            clauses.append(f"r.`{rm['outbound_date']}` < :date_to_next")
+            params["date_to_next"] = (date_to + timedelta(days=1)).isoformat()
+    return clauses, params
 
 
 def list_outbound_records(
@@ -242,6 +266,7 @@ def list_outbound_records(
     page: int = 1,
     page_size: int = 20,
     okki_user_id: str | None = None,
+    record_ids: list[str] | None = None,
 ) -> tuple[list[dict], int]:
     """出库单分页列表：keyword 匹配单号/客户，date 按出库日期过滤（含当日）。
 
@@ -251,30 +276,15 @@ def list_outbound_records(
     im = _item_columns(db)
     schema = _schema()
 
-    params: dict[str, object] = {}
-    clauses: list[str] = []
-    if okki_user_id:
-        clauses.append(_owner_scope_clause(db, rm))
-        params["scope_okki_user_id"] = okki_user_id
-    if keyword:
-        like_parts = []
-        if rm["outbound_no"]:
-            like_parts.append(f"r.`{rm['outbound_no']}` LIKE :kw")
-        if rm["customer_name"]:
-            like_parts.append(f"r.`{rm['customer_name']}` LIKE :kw")
-        if like_parts:
-            clauses.append("(" + " OR ".join(like_parts) + ")")
-            params["kw"] = f"%{keyword}%"
-    if rm["outbound_date"]:
-        if date_from:
-            clauses.append(f"r.`{rm['outbound_date']}` >= :date_from")
-            # 绑定 ISO 字符串而非 date 对象：sqlite 无日期类型，MySQL 字符串比较同样成立
-            params["date_from"] = date_from.isoformat()
-        if date_to:
-            # 出库日期列在实库可能是 DATETIME，右端用次日开区间包住当天
-            clauses.append(f"r.`{rm['outbound_date']}` < :date_to_next")
-            params["date_to_next"] = (date_to + timedelta(days=1)).isoformat()
+    clauses, params = record_list_filters(db, rm, keyword=keyword, date_from=date_from,
+                                         date_to=date_to, okki_user_id=okki_user_id)
+    if record_ids is not None:
+        clauses.append(f"r.`{rm['id']}` IN :record_ids")
+        params["record_ids"] = record_ids
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    def statement(sql):
+        query = text(sql)
+        return query.bindparams(bindparam("record_ids", expanding=True)) if record_ids is not None else query
 
     # 明细统计左连：明细表缺关联列时降级为 0，不拖垮主查询
     link, rm, im = _link(db)
@@ -302,11 +312,11 @@ def list_outbound_records(
         total_qty_expr = "COALESCE(s.total_qty, 0)" if im["quantity"] else "0"
 
     order_by = f"r.`{rm['outbound_date']}` DESC, " if rm["outbound_date"] else ""
-    total = db.execute(text(f"""
+    total = db.execute(statement(f"""
         SELECT COUNT(*) FROM `{schema}`.`{RECORDS_TABLE}` r {where}
     """), params).scalar() or 0
 
-    rows = db.execute(text(f"""
+    rows = db.execute(statement(f"""
         SELECT {_record_select(rm)},
                {item_count_expr} AS item_count,
                {total_qty_expr} AS total_qty
@@ -321,6 +331,8 @@ def list_outbound_records(
 
 def get_outbound_record(db: Session, record_id: str, okki_user_id: str | None = None) -> dict | None:
     """单条出库单头；不存在（或归属过滤后不可见）返回 None。"""
+    if str(record_id).startswith("task:"):
+        return None  # Local queue entries never authorize printing, downloading or inspection.
     rm = _record_columns(db)
     schema = _schema()
     scope = ""
