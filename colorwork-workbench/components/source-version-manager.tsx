@@ -369,6 +369,13 @@ export function SourceVersionManager({
   const statusesReady = requiredStatuses.every((item) => initialStatuses[`${item.candidateId}\u001f${item.length}`]);
   const issuesReady = blockingIssues.every((issue) => acknowledged[sourceIssueKey(issue)]);
 
+  function acknowledgeAllIssues() {
+    setAcknowledged((current) => ({
+      ...current,
+      ...Object.fromEntries(blockingIssues.map((issue) => [sourceIssueKey(issue), true])),
+    }));
+  }
+
   function updateMapping(candidateId: string, patch: Partial<MappingDraft>) {
     setMappings((current) => ({
       ...current,
@@ -561,7 +568,10 @@ export function SourceVersionManager({
 
           {config.parseIssues.length > 0 && (
             <div className="source-issues">
-              <h3>无法可靠识别／需要核对</h3>
+              <div className="source-issues-heading">
+                <div><h3>无法可靠识别／需要核对</h3><p>请先整体对照新版 PSD／JPG；确认无误后可一次性确认下面所有提醒。</p></div>
+                {blockingIssues.length > 0 && <button type="button" className="source-issues-bulk" onClick={acknowledgeAllIssues} disabled={issuesReady || running || activating || disabled}>{issuesReady ? '已全部确认' : `一键确认全部（${blockingIssues.length}）`}</button>}
+              </div>
               {config.parseIssues.map((issue) => (
                 <label key={sourceIssueKey(issue)} className={issue.blocking ? 'blocking' : ''}>
                   {issue.blocking ? <input type="checkbox" checked={Boolean(acknowledged[sourceIssueKey(issue)])} onChange={(event) => setAcknowledged((current) => ({ ...current, [sourceIssueKey(issue)]: event.target.checked }))} /> : <CheckCircle2 size={15} />}
