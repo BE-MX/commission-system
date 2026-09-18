@@ -1,3 +1,11 @@
+## 2026-09-18 手机 Safari 发货质检视频压缩停滞修复（Codex，本地待集成）
+
+分支 `codex/shipping-video-compression`，worktree `D:/MyProgram/commission-system-codex-shipping-video`。用户反馈 iPhone Safari 产品明细拍摄几秒至十几秒视频后停在压缩、无百分比和上传。代码原先先等待 loadeddata 再 play，且 finally await AudioContext.close；回归模拟了不预解码和关闭 Promise 不结束时的阻塞。改为文件选择/重试点击事件内先请求播放，录制前暂停并定位回开头；10 秒无播放进展报错，音频关闭不阻塞退出，提前创建的音轨也独立停止。明细/整单按钮下显示百分比与错误；失败保留拍摄文件，用户可点击“重试压缩并上传”，网络重试仍复用压缩文件与请求幂等键。
+
+验证：18 项压缩/工作台/安装回归通过（新测试先红后绿）；主站构建通过；Chromium 390px 实际组件+模拟 API 验证带声音 3 秒视频压缩、IT2 明细归属、错误就地反馈及点击重试，两次上传均属于 IT2；输出 290693 字节，ffprobe H264 1280x720 + AAC，音量 mean -21.1dB，非静音。独立审查发现早期失败音轨清理遗漏，已修复并补断言。证据在本 worktree `frontend/tmp/video-check/`，构建日志 `tmp/video-build.log`。未向生产上传业务文件、未修改数据库、未合并/推送/部署；iPhone Safari 原生相机、权限与音画仍待真机验收，桌面模拟不代表现场根因已实测确认。
+
+`git diff --check` 与增量约定检查通过；完整约定门禁被 7 个既有页面 UI 行数基线过期阻断，与本次修改无关。`python scripts/git_sweep.py --no-fetch` 已运行，仅本地快照。
+
 ## 2026-09-18 回款归属权限收紧（Codex，本地实现）
 
 分支codex/receipt-owner-permissions：普通回款访问仅按订单sales_user_id，取消代录人范围；独立receipt:read_all保持全量数据范围，与receipt:read页面权限搭配。详情、列表、订单选择、余额和已绑定回款凭证统一校验，invoice:read_all不再通过凭证fallback绕过。未绑定的发票凭证保留代录权限。83项回款/凭证/订单隔离测试通过，独立权限审查通过；增量规则无违规，完整门禁仍为7项既有UI基线问题。未部署或修改生产角色授权。

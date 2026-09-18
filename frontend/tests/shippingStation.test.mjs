@@ -121,6 +121,26 @@ test('compression failure sends nothing and releases session lock', async () => 
   assert.equal(calls.some(c => c[0] === 'upload'), false)
 })
 
+test('compression can be retried by a new tap using the captured file and product', async () => {
+  let attempts = 0
+  const original = new Blob(['original']), files = [], products = []
+  const { s, people } = setup({ upload: async (_id, _type, form) => { products.push(form.get('item_id')) } }, async file => {
+    files.push(file)
+    if (++attempts === 1) throw new Error('浏览器未允许视频处理')
+    return new Blob(['compressed'])
+  })
+  await flush(); s.choose(people[0]); await s.decoded('ARK-I:OB001:signature')
+  await s.upload(original, 'IT2', 'videos')
+  assert.equal(s.uploadItemId.value, 'IT2')
+  assert.equal(s.uploadError.value, '浏览器未允许视频处理')
+  assert.equal(s.pendingCompression.value.file, original)
+  await s.retryCompression()
+  assert.deepEqual(files, [original, original])
+  assert.deepEqual(products, ['IT2'])
+  assert.equal(s.pendingCompression.value, null)
+  assert.equal(s.uploadError.value, '')
+})
+
 
 test('return home ends the scanned session and requires choosing a person again', async () => {
   const ended = []
