@@ -358,6 +358,21 @@ export function SourceVersionManager({
     }
     return result;
   }, [config, currentSpecKeys, mappings]);
+  useEffect(() => {
+    if (!candidate || requiredStatuses.length === 0) return;
+    setInitialStatuses((current) => {
+      const next = { ...current };
+      let changed = false;
+      for (const item of requiredStatuses) {
+        const key = `${item.candidateId}\u001f${item.length}`;
+        if (!next[key]) {
+          next[key] = 'normal';
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [candidate, requiredStatuses]);
   const blockingIssues = config?.parseIssues.filter((issue) => issue.blocking) ?? [];
   const mappingsReady = Boolean(config && config.template.initialCards.every((card) => {
     const mapping = mappings[card.candidateId];
@@ -583,11 +598,11 @@ export function SourceVersionManager({
 
           {requiredStatuses.length > 0 && (
             <div className="source-statuses">
-              <h3>新增规格初始缺货状态</h3>
-              <p>可准确对应且规格未改变的项目会自动保留原状态；以下新增规格必须由管理员核实。</p>
+              <h3>新增规格初始库存状态</h3>
+              <p>新增规格默认按“到货正常”创建；如确实需要显示低库存或补货，请在这里手动修改。可准确对应且规格未改变的项目会自动保留原库存状态。</p>
               {requiredStatuses.map((item) => {
                 const key = `${item.candidateId}\u001f${item.length}`;
-                return <label key={key}><span>{item.label}</span><select value={initialStatuses[key] || ''} onChange={(event) => setInitialStatuses((current) => ({ ...current, [key]: event.target.value as InventoryStatus }))}><option value="">选择初始状态</option>{INVENTORY_SELECTABLE_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label>;
+                return <label key={key}><span>{item.label}</span><select value={initialStatuses[key] || ''} onChange={(event) => setInitialStatuses((current) => ({ ...current, [key]: event.target.value as InventoryStatus }))}><option value="">选择状态</option>{INVENTORY_SELECTABLE_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label>;
               })}
             </div>
           )}
