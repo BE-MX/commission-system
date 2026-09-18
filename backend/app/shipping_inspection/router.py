@@ -23,7 +23,7 @@ from app.auth.models import ArkUserExternalBinding
 from app.core.database import get_db
 from app.core.response import ok, page_result
 from app.shipping_inspection import constants as C
-from app.shipping_inspection import file_service, outbound_service, qr_service, service
+from app.shipping_inspection import file_service, outbound_service, outbound_queue_service, qr_service, service
 from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto
 from app.shipping_inspection.schemas import ShippingRecallRequest
 from app.shipping_inspection.print_service import with_owner_chinese_name
@@ -116,7 +116,7 @@ def list_outbound_records(
 ):
     scope_okki_user = _outbound_scope(db, user)
     try:
-        rows, total = outbound_service.list_outbound_records(
+        rows, total = outbound_queue_service.list_outbound_records(
             db, keyword=keyword, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
             okki_user_id=scope_okki_user,
         )
