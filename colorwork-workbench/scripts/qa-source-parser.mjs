@@ -358,11 +358,15 @@ try {
   assert(new Set(issueIds).size === issueIds.length && issueIds.every(Boolean), '解析问题缺少逐项唯一 ID。');
   assert(issueCodes.includes('UNRECOGNIZED_SWATCH_LAYER'), '未报告无法识别的方形图层。');
   assert(issueCodes.includes('UNCLASSIFIED_VISIBLE_LAYER'), '未报告业务区内无法分类的可见图层。');
-  assert(issueCodes.includes('UNSUPPORTED_LAYER_STRUCTURE') && result.config.issues.some((issue) => issue.code === 'UNSUPPORTED_LAYER_STRUCTURE' && issue.blocking), '不支持的 Photoshop 图层结构没有被阻断并要求人工确认。');
+  const parserStructureIssue = result.config.issues.find((issue) => issue.code === 'UNSUPPORTED_LAYER_STRUCTURE');
+  assert(issueCodes.includes('UNSUPPORTED_LAYER_STRUCTURE') && parserStructureIssue?.blocking, '不支持的 Photoshop 图层结构没有被阻断并要求人工确认。');
+  assert(parserStructureIssue?.details?.layerCount >= 1 && parserStructureIssue.details.layerNames?.length && parserStructureIssue.details.structureTypes?.length, '批量结构提醒缺少数量、代表图层或结构类型。');
   assert(result.diff.added.some((item) => item.colorCode === '#62'), '变化清单未识别新增颜色 #62。');
   assert(result.diff.removed.some((item) => item.colorCode === '#2'), '变化清单未识别移除颜色 #2。');
   assert(result.diff.unchanged.some((item) => item.colorCode === '#1006'), '变化清单未识别保持不变的 #1006。');
   assert(result.diff.resized.some((item) => item.colorCode === '#1B' && item.nextLengths.includes(24)), '变化清单未识别 #1B 尺寸改为 18／24。');
+  assert(result.diff.addedLengths.some((item) => item.colorCode === '#1B' && item.lengths.includes(24)), '变化清单未识别新增尺寸。');
+  assert(result.diff.removedLengths.some((item) => item.colorCode === '#1B' && item.lengths.includes(22)), '变化清单未识别移除尺寸。');
   assert(result.diff.reordered.some((item) => item.colorCode === '#1006'), '变化清单未识别 #1006 重排。');
   assert(result.diff.dimensionsChanged?.after.width === width && result.diff.dimensionsChanged?.after.height === height, '变化清单未识别画布尺寸调整。');
   assert(result.preview.width === width && result.preview.height === height && result.preview.bytes > 1000, '新版母版预览未成功渲染。');
@@ -370,7 +374,9 @@ try {
   assert(ambiguousSizeIssues.length === 2 && ambiguousSizeIssues.every((issue) => issue.blocking), '共享尺寸文字没有逐色阻断并要求人工确认。');
   assert(new Set(ambiguousSizeIssues.map((issue) => issue.candidateId)).size === 2, '共享尺寸文字的阻断问题未绑定到两个独立色块。');
 
+  const serverStructureIssue = result.rules.issues.find((issue) => issue.code === 'UNSUPPORTED_LAYER_STRUCTURE');
   assert(result.rules.issues.filter((issue) => issue.code === 'UNSUPPORTED_LAYER_STRUCTURE').length === 1, '结构问题没有合并');
+  assert(serverStructureIssue?.details?.layerCount >= 1 && serverStructureIssue.details.layerNames?.length && serverStructureIssue.details.structureTypes?.length, '服务端批量结构提醒缺少详情');
   assert(result.rules.issues.some((issue) => issue.code === 'NEW_COLOR_SWATCH_REVIEW' && issue.blocking), '新颜色缺少人工确认提醒');
   assert(result.rules.issues.some((issue) => issue.code === 'LENGTH_OUTSIDE_S1' && issue.blocking), '超长缺少提醒');
   assert(!result.rules.availableLengths.includes(28), '新版自动扩展了允许长度');

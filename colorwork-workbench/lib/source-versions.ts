@@ -16,6 +16,14 @@ export type SourceParseIssue = {
   message: string;
   candidateId?: string;
   blocking: boolean;
+  details?: SourceIssueDetails;
+};
+
+export type SourceIssueDetails = {
+  layerCount?: number;
+  layerNames?: string[];
+  structureTypes?: string[];
+  swatchStatus?: '待确认／待补充色块图';
 };
 
 export type SourceCard = InitialCard & {
@@ -58,6 +66,8 @@ export type SourceResizedItem = SourceChangeItem & {
 export type SourceChangeSummary = {
   added: SourceChangeItem[];
   removed: SourceChangeItem[];
+  addedLengths: SourceChangeItem[];
+  removedLengths: SourceChangeItem[];
   unchanged: SourceChangeItem[];
   resized: SourceResizedItem[];
   reordered: SourceChangeItem[];

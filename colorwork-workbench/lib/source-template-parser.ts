@@ -252,17 +252,24 @@ function imageDimensions(file: File) {
 }
 
 function isDecorative(item: FlatLayer) {
-  const decoration = /(?:^|[\s_-])(?:title|header|logo|decoration|decorative|ornament)(?:$|[\s_\-\d])|标题|页眉|装饰|标志/i;
+  const decoration = /(?:^|[\s_-])(?:title|header|footer|logo|decoration|decorative|ornament|bottom|headline|branding)(?:$|[\s_\-\d])|标题|页眉|页脚|底部|装饰|标志|页头/i;
   const name = cleanText(item.layer.name);
   // Explicit color identities still take precedence over a decorative parent.
   if (name.startsWith('#') || normalizedColorCode(item.text)) return false;
   if (decoration.test(name)) return true;
   if (normalizedColorCode(name)) return false;
+  const opacity = Number(item.layer.opacity);
+  if (item.layer.placedLayer && Number.isFinite(opacity) && opacity < 0.2) return true;
   return item.path.some((part) => decoration.test(part));
 }
 
 function looksLikeSwatchGeometry(item: FlatLayer, psd: Psd) {
   if (isDecorative(item) || !item.bounds || item.layer.children?.length || item.hidden || item.text || !item.layer.canvas) return false;
+  const opacity = Number(item.layer.opacity);
+  if (item.layer.placedLayer && Number.isFinite(opacity) && opacity < 0.2) return false;
+  if (item.layer.placedLayer && (
+    item.bounds[0] < 0 || item.bounds[1] < 0 || item.bounds[2] > psd.width || item.bounds[3] > psd.height
+  )) return false;
   const itemWidth = width(item.bounds);
   const itemHeight = height(item.bounds);
   const ratio = itemWidth / itemHeight;
@@ -323,7 +330,7 @@ export async function parseTemplateSource(args: {
   const flat = flatten(psd.children);
   const issues: SourceParseIssue[] = [];
   for (const item of flat) {
-    if (item.hidden) continue;
+    if (item.hidden || isDecorative(item)) continue;
     const reasons: string[] = [];
     if (item.layer.adjustment) reasons.push('调整图层');
     if (item.layer.effects) reasons.push('图层效果');
@@ -344,6 +351,11 @@ export async function parseTemplateSource(args: {
         code: 'UNSUPPORTED_LAYER_STRUCTURE',
         message: `图层“${item.path.join(' › ')}”包含${reasons.join('、')}，浏览器无法保证与 Photoshop 合成结果完全一致。请对照新版 JPG 人工确认，或栅格化／简化结构后重新上传。`,
         blocking: true,
+        details: {
+          layerCount: 1,
+          layerNames: [item.path.join(' › ')],
+          structureTypes: reasons,
+        },
       });
     }
   }
