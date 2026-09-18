@@ -1100,7 +1100,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 2026-09-18：手机网页和小程序的扫码、刷新响应 `items` 与出库单打印、Word 共用排序函数：规格自然升序，同规格按尺寸数值升序；相同排序键保持原相对顺序。数量及照片/视频的 `item_id` 归属不变。
 
-2026-09-14 出库单数据范围：`/outbound-records` 列表与 print-data 按 OKKI 归属过滤——业务员只能看本人订单客户的出库单（`okki_outbound_records.company_id` 命中 `okki_orders` 同客户且 `user_id` = 当前用户绑定的 OKKI 业务员 id，绑定解析同 order_intelligence 的 active/primary 规则，未绑定返回 422）；`shipping_inspection:read_all`（数据范围权限，启动 seed 时由通用逻辑补授 admin 角色）或 super_admin 看全部。小程序验货端点不加归属门槛（仓管扫码场景，维持既有口径）。
+2026-09-18 出库单数据范围：方舟首推成功的订单无需等待 `okki_orders` 同步。通过出库明细 `order_id` 精确关联 `ark_invoices.xiaoman_order_id`，客户一致且存在 `action=create/success=1` 推单日志时，按发票 `sales_user_id` 的有效 OKKI 绑定放行业务员；不按发票创建人、制单人、单号或客户名称推断。此分支不受后续编辑重推失败影响。原镜像同客户订单归属规则继续有效（`okki_outbound_records.company_id` 命中 `okki_orders` 同客户且 `user_id` = 当前用户绑定的 OKKI id）。列表、打印/Word、验货记录及媒体权限共用此范围；未绑定返回 422，全部范围权限和小程序仓管扫码规则不变。仍需出库单及其订单关联明细同步到方舟，仅免除订单镜像的等待。
 
 2026-09-07 显示字段：扫码及出库打印数据的 `record.remark` 来自 `okki_outbound_records.remark`；`items[].model/size/color` 通过明细 `product_id` 左连 `okki_products.product_id` 读取，同一产品的多条出库明细保留各自数量和照片归属。产品未匹配或字段为空时返回 `null`，不以名称或明细旧规格替代型号。小程序首行用深绿色 40rpx/800 显示型号（缺失提示“未维护型号”），次行 32rpx 显示 `size / color`；顶部发货备注与底部提交的检验备注独立。出库单打印新增发货备注并移除 SKU 列，验货单打印保持原样。
 

@@ -7,9 +7,9 @@ okki_outbound_records / okki_outbound_record_items 是 OKKI 同步作业维护�
   规格 = product_model，SKU = sku_code。
 - 小程序型号/尺寸/颜色 = okki_products.model/size/color，按 product_id 左连；
   发货备注 = records.remark（2026-09-07 实库列核验）。
-- 归属过滤（2026-09-14 实库核验）：records.company_id → okki_orders 同客户且
-  user_id = 当前用户绑定的 OKKI 业务员 id；无 shipping_inspection:read_all 权限时
-  由 router 强制传入。实库 4290 单 company_id 全部能命中 okki_orders。
+- 归属过滤：方舟首推成功的订单可按明细 order_id → ark_invoices.sales_user_id
+  的有效 OKKI 绑定直接放行，不等待 okki_orders；原同客户订单归属规则继续有效。
+  无 shipping_inspection:read_all 权限时由 router 强制传入当前用户的 OKKI id。
 - 关键：明细关联出库单走 outbound_invoice_id 桥（两表都有此列且 14125/14125 命中）；
   items.outbound_record_id 是 OKKI 侧另一个实体 id，与 records.id 完全不相交，
   绝不能拿它做 join。无 outbound_invoice_id 列的库（如单元测试种子表）才回退
@@ -132,7 +132,7 @@ def _col(mapping: dict[str, str | None], key: str, alias: str) -> str:
 
 
 def _owner_scope_clause(db: Session, rm: dict[str, str | None]) -> str:
-    """按 OKKI 归属过滤：出库单客户在该业务员的订单里出现（okki_orders.user_id）。
+    """方舟首推订单按本地业务员放行，或沿用镜像中同客户订单的归属。
 
     company_id 列缺失时抛错（fail-closed），绝不降级为未过滤查询。
     """
@@ -142,10 +142,34 @@ def _owner_scope_clause(db: Session, rm: dict[str, str | None]) -> str:
             f"业务库表 {_schema()}.{RECORDS_TABLE} 缺少 company_id 列，无法按归属过滤；实际列：{columns}"
         )
     schema = _schema()
-    return (
+    mirror_scope = (
         f"EXISTS (SELECT 1 FROM `{schema}`.`okki_orders` o "
         f"WHERE o.`company_id` = r.`{rm['company_id']}` AND o.`user_id` = :scope_okki_user_id)"
     )
+    link, _, im = _link(db)
+    if link is None or "order_id" not in _table_columns(db, ITEMS_TABLE):
+        return mirror_scope
+    item_key = im["invoice_id"] if link == "invoice" else im["record_id"]
+    record_key = rm["invoice_id"] if link == "invoice" else rm["id"]
+    # Exact order linkage is mandatory: matching a name or customer alone could
+    # expose unrelated outbound records. A successful create log excludes imports.
+    local_scope = f"""EXISTS (
+        SELECT 1 FROM `{schema}`.`{ITEMS_TABLE}` local_item
+        JOIN ark_invoices local_invoice
+          ON local_invoice.xiaoman_order_id = local_item.order_id
+        JOIN ark_user_external_bindings local_owner
+          ON local_owner.ark_user_id = local_invoice.sales_user_id
+         AND local_owner.provider = 'okki'
+         AND local_owner.binding_status = 'active'
+         AND local_owner.deleted_at IS NULL
+         AND local_owner.external_account_id = :scope_okki_user_id
+        WHERE local_item.`{item_key}` = r.`{record_key}`
+          AND local_invoice.customer_id = r.`{rm['company_id']}`
+          AND EXISTS (SELECT 1 FROM ark_invoice_sync_logs local_sync
+              WHERE local_sync.invoice_id = local_invoice.id
+                AND local_sync.action = 'create' AND local_sync.success = 1)
+    )"""
+    return f"({local_scope} OR {mirror_scope})"
 
 
 def _str_or_none(value) -> str | None:
@@ -221,7 +245,7 @@ def list_outbound_records(
 ) -> tuple[list[dict], int]:
     """出库单分页列表：keyword 匹配单号/客户，date 按出库日期过滤（含当日）。
 
-    okki_user_id 非空时按 OKKI 归属过滤：只保留客户在该业务员订单中出现的出库单。
+    okki_user_id 非空时按本地方舟订单归属或既有 OKKI 镜像归属过滤。
     """
     rm = _record_columns(db)
     im = _item_columns(db)

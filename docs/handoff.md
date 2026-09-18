@@ -1,3 +1,10 @@
+## 2026-09-18 方舟订单出库单本地归属（Codex，合并推送交付）
+
+- 分支 `codex/outbound-local-owner`，worktree `D:/MyProgram/commission-system-codex-outbound-local-owner`。方舟首推成功订单通过出库明细 order_id 精确关联发票业务员有效 OKKI 绑定，可直接通过出库单/打印/验货记录共用归属检查，不等待订单镜像；原镜像范围保留。要求客户一致及成功 create 日志，排除导入更新、失败首推和同客户无关出库单。
+- 隔离 SQLite 新回归先复现不可见，覆盖无订单镜像时的可见性、越权拒绝、两种明细关联、镜像追上后的去重及失效/删除绑定。生产数据只读运行新查询：Ivy 能查到出库记录 91189（罗馨瑜浅色库存0936），总数 1，详情归属通过。该订单镜像在 09:00:08 自然追上，现旧规则也可见；无镜像场景的验证来自隔离回归。未调用生产写入或真实打印 API。
+- 相关后端测试 63 项通过，独立权限审查通过。增量约定检查无违规；完整约定检查被 7 项既有前端 UI 基线告警阻挡，未改基线。`git diff --check` 通过，Git 巡检已执行 `--no-fetch`（本地快照）。
+- 不涉及 schema、前端或数据修复；用户已授权合并 main 并推送 origin，本轮不部署。合并验证后清理本任务分支与 worktree，主目录他人未提交成果保留。
+
 ## 2026-09-18 发货检验扫码明细排序（Codex，合并推送交付）
 
 - 分支 `codex/shipping-item-order`，worktree `D:/MyProgram/commission-system-codex-shipping-item-order`。手机网页、小程序扫码及刷新共用 `scan_payload`，现复用出库打印的规格自然升序、尺寸数值升序；同键稳定排序，明细字段及媒体 item_id 关联不变。无需前端或小程序代码变更。
