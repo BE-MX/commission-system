@@ -271,6 +271,29 @@ function canvasBlob(value: HTMLCanvasElement) {
   });
 }
 
+function clearReferenceRegions(
+  context: CanvasRenderingContext2D,
+  cards: SourceCard[],
+  widthValue: number,
+  heightValue: number,
+) {
+  context.save();
+  for (const card of cards) {
+    const geometry = card.geometry;
+    for (const bounds of [geometry.swatch, geometry.colorLabel, geometry.sizeLabel, geometry.hotBadge]) {
+      if (!bounds) continue;
+      const [left, top, right, bottom] = bounds;
+      const padding = 3;
+      const x = Math.max(0, left - padding);
+      const y = Math.max(0, top - padding);
+      const endX = Math.min(widthValue, right + padding);
+      const endY = Math.min(heightValue, bottom + padding);
+      context.clearRect(x, y, Math.max(0, endX - x), Math.max(0, endY - y));
+    }
+  }
+  context.restore();
+}
+
 function imageDimensions(file: File) {
   return createImageBitmap(file).then((bitmap) => {
     const dimensions = { width: bitmap.width, height: bitmap.height };
@@ -341,6 +364,26 @@ function boundsUnion(values: Bounds[], documentWidth: number, documentHeight: nu
   const right = Math.min(documentWidth, Math.ceil(Math.max(...values.map((value) => value[2]))));
   const bottom = Math.min(documentHeight, Math.ceil(Math.max(...values.map((value) => value[3]))));
   return [left, top, right, bottom];
+}
+
+function hotBoundsForCard(
+  flat: FlatLayer[],
+  hotText: FlatLayer[],
+  swatch: Bounds,
+  documentWidth: number,
+  documentHeight: number,
+) {
+  const marker = hotText.find((item) => item.bounds && (
+    Math.abs(centerX(item.bounds) - swatch[2]) < width(swatch) * 0.55 &&
+    item.bounds[1] >= swatch[1] - height(swatch) * 0.35 &&
+    item.bounds[1] <= swatch[1] + height(swatch) * 0.45
+  ));
+  if (!marker?.bounds) return null;
+  const root = hotPath(marker);
+  const related = root
+    ? flat.filter((item) => !item.hidden && item.layer.canvas && item.bounds && item.path.join('\u001f').startsWith(root))
+    : [marker];
+  return boundsUnion(related.map((item) => item.bounds!), documentWidth, documentHeight);
 }
 
 function hotPath(item: FlatLayer) {
@@ -581,7 +624,7 @@ export async function parseTemplateSource(args: {
         swatch: bounds,
         colorLabel: colorLabel?.bounds ?? null,
         sizeLabel: sizeLabel?.bounds ?? null,
-        hotBadge: null,
+        hotBadge: hotBoundsForCard(flat, hotText, bounds, psd.width, psd.height),
       },
       matchState,
       matchedEntryId,
@@ -660,9 +703,10 @@ export async function parseTemplateSource(args: {
   const baseCanvas = canvas(psd.width, psd.height);
   const baseContext = baseCanvas.getContext('2d');
   if (!baseContext) throw new Error('当前浏览器无法生成新版底图。');
-  baseContext.clearRect(0, 0, psd.width, psd.height);
-  const fixedLeaves = flat.filter((item) => !item.hidden && item.layer.canvas && !item.layer.children?.length && !excluded.has(item.layer));
-  for (const item of [...fixedLeaves].reverse()) drawLayer(baseContext, item);
+  const reference = await createImageBitmap(jpgFile);
+  baseContext.drawImage(reference, 0, 0, psd.width, psd.height);
+  reference.close();
+  clearReferenceRegions(baseContext, cards, psd.width, psd.height);
   assets.push({ name: 'base.png', blob: await canvasBlob(baseCanvas) });
   const parsedHot = await hotAsset(flat, hotText);
   if (parsedHot) assets.push({ name: 'hot.png', blob: parsedHot });
