@@ -2,7 +2,7 @@
 
 ## 回款管理（2026-09-17，本地实现，迁移 156 后可用）
 
-前缀 `/api/receipts`，登录认证、标准 `ok()` 信封。数据范围沿用订单归属/代理授权；`receipt:read_all` 可看全部。详见[实现说明](requirements/2026-09-17-receipt-management-implementation.md)。
+前缀 `/api/receipts`，登录认证、标准 `ok()` 信封。普通用户仅可访问 `Invoice.sales_user_id` 等于当前用户的订单回款；创建人/代录授权不扩大回款范围。`receipt:read_all` 可看全部（数据范围权限，仍需 `receipt:read/write/admin` 页面或操作权限）；`invoice:read_all` 不扩大回款范围。列表、详情、订单选择、余额、已绑定回款凭证和写操作统一校验；已绑定回款凭证必须具有回款动作权限，未绑定回款的订单截图仍按发票编辑权限访问。详见[实现说明](requirements/2026-09-17-receipt-management-implementation.md)。
 
 | 方法与路径 | 参数 / 行为 | 权限 |
 | --- | --- | --- |
@@ -20,7 +20,7 @@
 | POST `/{id}/reconcile` | 读取小满结果，不创建；返回候选或已核验单 | receipt:write/admin |
 | POST `/{id}/resolve` | resolution=bind_receipt/confirm_not_created、reason、可选 xiaoman_receipt_id；已知远端 ID 不允许换绑或确认未创建 | receipt:admin |
 
-回款字段：amount（>0，最多2位小数）、collection_date、payment_type、attachment_ids（1–5个不重复ID）、bank_charge（默认0且≤amount）、remark（≤500字）。币种、客户和远端订单 ID 由关联发票冻结，不接收客户端指定。request_key 为16–64位字母数字下划线/连字符；balance_version 为余额响应中的64位摘要。相同幂等键不同内容拒绝，余额变更返回409并要求刷新；参数错误422、资源/权限404或403、存储入口不可用503。代理上传超过限制413。
+回款字段：amount（>0，最多2位小数）、collection_date、payment_type、attachment_ids（1–5个不重复ID）、bank_charge（默认0，留空/null/空串均按0处理，且≤amount）、remark（≤500字）。币种、客户和远端订单 ID 由关联发票冻结，不接收客户端指定。request_key 为16–64位字母数字下划线/连字符；balance_version 为余额响应中的64位摘要。相同幂等键不同内容拒绝，余额变更返回409并要求刷新；参数错误422、资源/权限404或403、存储入口不可用503。代理上传超过限制413。
 
 库存发票 create/update 新增 `receipt_draft`（amount、collection_date、payment_type、remark、attachment_ids），detail 原样返回意图及生成状态；同步成功增加 receipt_generation_status/receipt_id。保存草稿可缺项，同步库存单前必须有截图；符合自动资格的新单还须完整回款字段。`pending/syncing/synced/failed/uncertain` 是传输状态，`collect_status=0/1/null` 是小满财务状态，二者不得混用。
 
@@ -1386,3 +1386,12 @@ Agent research context now includes `fact_contract.version=registered_research_f
 
 - 发票创建/编辑请求及详情新增可空 `customer_grade`（仅 S/A/B/C/D）；`GET /api/invoice/customers/contact-defaults` 返回客户最新等级。字段省略时保留/继承，显式 null 表示清空；沿用发票录入权限，等级不影响价格。
 - 出库单 `print-data` 的 `record` 新增 `customer_grade`、`order_amount_text`；Word 使用同一服务。等级取方舟客户资料当前值；金额按出库明细精确关联订单、按订单 ID 去重，优先已同步发票的含手续费总额与原币种，否则取订单镜像 `amount_usd`（USD）。未同步修改不覆盖已确认订单金额；多个币种分别列示，不换汇相加；缺少客户或任一订单关联/金额时显示 `—`，不展示部分合计。原有出库归属权限和客户名称脱敏不变。
+
+
+### 回款手续费口径（2026-09-18）
+
+小满订单金额以方舟 `total_amount - surcharge_amount` 核对；回款 `amount` 为含手续费原币金额、`bank_charge` 为分摊手续费，详情回读必须满足 `real_amount = amount - bank_charge`。不向未确认可写的 `real_amount` 字段赋值，使用小满计算结果核验。
+
+自动回款按 `本次金额 × 订单手续费 / 含费订单总额` 四舍五入至两位；最后一笔用订单手续费减去已分摊手续费吸收舍入差额。已登记未发送/失败单继续占用金额及手续费，作废单不占用；同一远端ID不重复统计。手工手续费默认0，留空/null/空串均为0，显式手续费（包括0）保留，若已分摊费用超过订单手续费或剩余费用超过尾款金额，停止自动分摊并提示核对。已有远端记录只读取当前订单详情，不重扫全库。
+
+旧零手续费自动失败单在重试原单时补算并记审计；旧待发送零手续费自动单先阻断，需重试后发送。已取得远端ID或结果待核对的单不自动更改/重发。同步回读手续费、净到账异常时转待核对，保留远端ID。

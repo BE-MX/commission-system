@@ -1,14 +1,11 @@
 """OKKI receipt protocol, read-back and complete pagination. No mirror writes."""
 from decimal import Decimal, InvalidOperation
+import json
 from datetime import datetime, timedelta
 import httpx
 
 from app.invoice import okki_client
 from app.core.time import beijing_now
-
-
-class _PageOverlap(ValueError):
-    pass
 
 
 def read(db, path, params=None):
@@ -42,17 +39,11 @@ def receipt_info(db, receipt_id):
 
 
 def order_receipts(db, order_id):
-    try:
-        return _paged_order_receipts(db, order_id)
-    except _PageOverlap:
-        # Restart completely: never combine an incomplete page scan with another scan.
-        try:
-            return _window_order_receipts(db, order_id)
-        except ValueError as exc:
-            raise ValueError("小满回款分页重复且时间窗口核验失败，请刷新余额或联系管理员") from exc
+    from app.receipt.receipt_index import verified_rows
+    return [row for row in verified_rows(db) if str(row["order_id"]) == str(order_id)]
 
 
-def _window_order_receipts(db, order_id):
+def _window_order_receipts(db, order_id, *, include_watermark=False):
     """Walk descending update-time windows, replacing each tied boundary in full."""
     upper = beijing_now().replace(microsecond=0)
     lower = "1970-01-01 00:00:00"
@@ -67,9 +58,9 @@ def _window_order_receipts(db, order_id):
         if len(rows) != min(100, int(total)):
             raise ValueError("回款时间窗口条数不完整")
         return rows, int(total)
-    _, expected = fetch()
-    remaining, seen, found = expected, set(), []
     end = upper.strftime("%Y-%m-%d %H:%M:%S")
+    _, expected = fetch(lower, end)
+    remaining, seen, found = expected, set(), []
     def validate(rows, start, finish):
         for row in rows:
             if not isinstance(row, dict) or "order_id" not in row or not row.get("cash_collection_id"):
@@ -101,48 +92,48 @@ def _window_order_receipts(db, order_id):
             if identity in seen:
                 raise ValueError("回款时间窗口ID重复")
             seen.add(identity)
-            if str(row["order_id"]) == str(order_id):
+            if order_id is None or str(row["order_id"]) == str(order_id):
                 found.append(row)
         remaining -= len(rows)
         if remaining == 0:
-            # Recheck both unfiltered and frozen-window totals before using this balance.
-            if len(seen) != expected or fetch()[1] != expected or fetch(lower, upper.strftime("%Y-%m-%d %H:%M:%S"))[1] != expected:
-                raise ValueError("回款扫描期间发生变化")
-            return found
+            # New receipts outside the frozen baseline are expected during a long scan.
+            # A shrinking/changing historical window is still an incomplete baseline.
+            if len(seen) != expected or fetch(lower, upper.strftime("%Y-%m-%d %H:%M:%S"))[1] != expected:
+                raise ValueError("回款历史窗口发生变化，请刷新后重试")
+            delta_start = (upper - timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M:%S")
+            delta_end = beijing_now().replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
+            if delta_end < upper.strftime("%Y-%m-%d %H:%M:%S"):
+                raise ValueError("回款核验时钟异常")
+            def delta():
+                changes, total = fetch(delta_start, delta_end)
+                validate(changes, delta_start, delta_end)
+                identities = {str(row["cash_collection_id"]) for row in changes}
+                if total > 100 or len(identities) != total:
+                    raise ValueError("回款增量窗口不完整，请刷新后重试")
+                return changes
+            changes, confirmed = delta(), delta()
+            canonical = lambda rows: json.dumps(sorted(rows, key=lambda r: str(r["cash_collection_id"])), sort_keys=True)
+            if canonical(changes) != canonical(confirmed):
+                raise ValueError("回款增量发生变化，请刷新后重试")
+            # Replace by ID, including receipts moved out of/into this order.
+            matching = {str(row["cash_collection_id"]): row for row in found}
+            for row in confirmed:
+                identity = str(row["cash_collection_id"])
+                seen.add(identity)
+                matching.pop(identity, None)
+                if order_id is None or str(row["order_id"]) == str(order_id):
+                    matching[identity] = row
+            latest, current_total = fetch()
+            # A same-count edit after delta_end is not covered by either delta read.
+            # The latest page must still be inside the verified watermark.
+            validate(latest, lower, delta_end)
+            if current_total != len(seen):
+                raise ValueError("回款扫描期间发生变化，请刷新后重试")
+            result = list(matching.values())
+            return (result, delta_end) if include_watermark else result
         if remaining < 0 or not rows:
             break
     raise ValueError("回款时间窗口未完整读取")
-
-
-def _paged_order_receipts(db, order_id):
-    # Official list has no order filter: exhaust pagination and filter locally.
-    # Fail closed if the data changes during pagination or the scan is incomplete.
-    found, seen, expected = [], set(), None
-    for page in range(1, 501):
-        data = read(db, "/v1/invoices/receipt/list", {"start_index": page, "count": 100, "removed": "0"})
-        rows, total = data.get("list"), data.get("totalItem")
-        if not isinstance(rows, list) or not str(total).isdigit():
-            raise ValueError("小满回款列表不完整，余额待核验")
-        total = int(total)
-        if expected is not None and expected != total:
-            raise ValueError("小满回款发生变动，请刷新余额重试")
-        expected = total
-        for row in rows:
-            if not isinstance(row, dict) or "order_id" not in row:
-                raise ValueError("小满回款列表缺少关联订单，余额待核验")
-            identity = str(row.get("cash_collection_id") or "")
-            if identity in seen:
-                raise _PageOverlap("小满回款分页重复")
-            if not identity:
-                raise ValueError("小满回款分页重复或缺少 ID，余额待核验")
-            seen.add(identity)
-            if str(row.get("order_id")) == str(order_id):
-                found.append(row)
-        if len(seen) == total:
-            return found
-        if not rows or len(seen) > total:
-            break
-    raise ValueError("小满回款分页未完整读取，暂不能登记回款")
 
 
 def money(value):
@@ -155,6 +146,11 @@ def money(value):
     return amount
 
 
+def invoice_binding(invoice):
+    return [invoice.xiaoman_order_id, invoice.customer_id, invoice.currency,
+            str(invoice.total_amount), str(invoice.surcharge_amount or 0)]
+
+
 def order_snapshot(db, invoice):
     if not invoice.xiaoman_order_id:
         return {"rows": [], "exchange_rate": None}
@@ -162,10 +158,10 @@ def order_snapshot(db, invoice):
     if (str(data.get("order_id")) != str(invoice.xiaoman_order_id)
             or str(data.get("company_id")) != str(invoice.customer_id)
             or data.get("currency") != invoice.currency
-            or money(data.get("amount")) != invoice.total_amount):
+            or money(data.get("amount")) != invoice.total_amount - money(invoice.surcharge_amount or 0)):
         raise ValueError("小满订单客户、币种或金额与方舟不一致，请先核对订单")
     return {"rows": order_receipts(db, invoice.xiaoman_order_id), "exchange_rate": data.get("exchange_rate"),
-            "invoice_binding": [invoice.xiaoman_order_id, invoice.customer_id, invoice.currency, str(invoice.total_amount)]}
+            "invoice_binding": invoice_binding(invoice)}
 
 
 def push(db, receipt, snapshot, before_send=None):

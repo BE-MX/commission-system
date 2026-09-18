@@ -90,25 +90,11 @@ def test_custom_required_field_blocks_before_post(monkeypatch, payload_row):
         remote.push(None, payload_row, {"exchange_rate": 725})
 
 
-def test_list_exhausts_pages_filters_order_and_rejects_changed_total(monkeypatch):
-    pages = {1: {"list": [{"cash_collection_id": "1", "order_id": "other"}], "totalItem": 2},
-             2: {"list": [{"cash_collection_id": "2", "order_id": "2001"}], "totalItem": 2}}
-    monkeypatch.setattr(remote, "read", lambda db, path, params: pages[params["start_index"]])
-    assert remote.order_receipts(None, "2001") == pages[2]["list"]
-    pages[2]["totalItem"] = 3
-    with pytest.raises(ValueError, match="变动"):
-        remote.order_receipts(None, "2001")
-    pages[2]["totalItem"] = 2
-    pages[2]["list"][0]["cash_collection_id"] = "1"
-    with pytest.raises(ValueError, match="重复"):
-        remote.order_receipts(None, "2001")
-
-
 def test_unassociated_remote_receipt_does_not_block_other_orders(monkeypatch):
-    monkeypatch.setattr(remote, "read", lambda *args: {"totalItem": 2, "list": [
-        {"cash_collection_id": "1", "order_id": 0, "opportunity_id": 0},
-        {"cash_collection_id": "2", "order_id": 2001, "amount": 500}]})
-    assert remote.order_receipts(None, "2001")[0]["cash_collection_id"] == "2"
+    rows = [{"cash_collection_id": "1", "order_id": 0, "update_time": "2026-06-06 00:00:00"},
+            {"cash_collection_id": "2", "order_id": 2001, "amount": 500, "update_time": "2026-06-06 00:00:00"}]
+    monkeypatch.setattr(remote, "read", window_reader(rows))
+    assert remote._window_order_receipts(None, "2001")[0]["cash_collection_id"] == "2"
 
 
 def window_rows():
@@ -128,10 +114,7 @@ def window_reader(rows, mutation=None):
 def test_time_window_recovers_entire_tied_boundary_without_using_bad_pages(monkeypatch):
     rows = window_rows()
     monkeypatch.setattr(remote, "read", window_reader(rows))
-    def overlap(*args):
-        raise remote._PageOverlap("duplicate")
-    monkeypatch.setattr(remote, "_paged_order_receipts", overlap)
-    result = remote.order_receipts(None, "2001")
+    result = remote._window_order_receipts(None, "2001")
     assert {r["cash_collection_id"] for r in result} == {r["cash_collection_id"] for r in rows if r["order_id"] == "2001"}
     assert len(result) == 101
 
@@ -163,11 +146,11 @@ def test_time_window_rejects_final_root_total_change(monkeypatch, root):
         key = (params.get("start_time"), params.get("end_time"))
         calls[key] = calls.get(key, 0) + 1
         selected = key == (None, None) if root == "unfiltered" else key[0] == "1970-01-01 00:00:00"
-        if selected and calls[key] == 2:
+        if selected and calls[key] == (1 if root == "unfiltered" else 3):
             result["totalItem"] += 1
         return result
     monkeypatch.setattr(remote, "read", window_reader(window_rows(), mutate))
-    with pytest.raises(ValueError, match="扫描期间"):
+    with pytest.raises(ValueError, match="变化"):
         remote._window_order_receipts(None, "2001")
 
 
@@ -191,3 +174,120 @@ def test_worker_does_not_post_after_lease_expires_during_read(db, monkeypatch):
     prepare(monkeypatch)
     sync_service.deliver(db, row.id); db.refresh(row)
     assert row.sync_status == "uncertain" and row.xiaoman_receipt_id is None
+
+
+@pytest.mark.parametrize("kind", ["unrelated", "target", "moved"])
+def test_window_merges_changes_after_frozen_baseline(monkeypatch, kind):
+    from datetime import datetime
+    rows = window_rows()
+    added = {"cash_collection_id": "new", "order_id": "2001" if kind == "target" else "other",
+             "update_time": "2026-06-07 10:00:10", "amount": "5.00"}
+    changed = False
+    def read(db, path, params):
+        nonlocal changed
+        result = window_reader(rows)(db, path, params)
+        if params.get("end_time") == "2026-06-05 21:42:13" and not changed:
+            changed = True
+            if kind == "moved":
+                rows[0] = {**rows[0], "order_id": "other", "update_time": "2026-06-07 10:00:10"}
+            else:
+                rows.append(added)
+        return result
+    clock = iter([datetime(2026, 6, 7, 10), datetime(2026, 6, 7, 10, 1)])
+    monkeypatch.setattr(remote, "beijing_now", lambda: next(clock))
+    monkeypatch.setattr(remote, "read", read)
+    if kind == "moved":
+        with pytest.raises(ValueError): remote._window_order_receipts(None, "2001")
+    else:
+        result = remote._window_order_receipts(None, "2001")
+        assert len(result) == (102 if kind == "target" else 101)
+        assert any(r["cash_collection_id"] == "new" for r in result) == (kind == "target")
+
+
+@pytest.mark.parametrize("kind", ["out", "in", "amount"])
+def test_window_delta_replaces_existing_id_after_baseline_verified(monkeypatch, kind):
+    from datetime import datetime
+    rows = window_rows()
+    roots = 0
+    def read(db, path, params):
+        nonlocal roots
+        result = window_reader(rows)(db, path, params)
+        if params.get("start_time") == "1970-01-01 00:00:00" and params.get("end_time") == "2026-06-07 10:00:00":
+            roots += 1
+            if roots == 3:
+                index = -1 if kind == "in" else 0
+                rows[index] = {**rows[index], "order_id": "other" if kind == "out" else "2001",
+                               "amount": "9.00", "update_time": "2026-06-07 10:00:10"}
+        return result
+    clock = iter([datetime(2026,6,7,10), datetime(2026,6,7,10,1)])
+    monkeypatch.setattr(remote, "beijing_now", lambda: next(clock))
+    monkeypatch.setattr(remote, "read", read)
+    result = remote._window_order_receipts(None, "2001")
+    assert len(result) == {"out": 100, "in": 102, "amount": 101}[kind]
+    if kind == "amount": assert next(r for r in result if r["cash_collection_id"] == "0")["amount"] == "9.00"
+
+
+@pytest.mark.parametrize("kind", ["duplicate", "missing", "overflow", "changed", "out_of_range"])
+def test_window_delta_rejects_unverified_results(monkeypatch, kind):
+    from datetime import datetime
+    rows = window_rows()
+    calls = 0
+    def read(db,path,params):
+        nonlocal calls
+        if params.get("start_time") == "2026-06-07 09:59:00":
+            calls += 1
+            row = {"cash_collection_id": "new", "order_id": "2001", "update_time": "2026-06-07 10:00:10"}
+            if kind == "duplicate":return {"list": [row,row], "totalItem": 2}
+            if kind == "missing":return {"list": [], "totalItem": 1}
+            if kind == "overflow":return {"list": [dict(row,cash_collection_id=str(i)) for i in range(100)], "totalItem": 101}
+            if kind == "changed":return {"list": [dict(row,amount=str(calls))], "totalItem": 1}
+            return {"list": [dict(row,update_time="2026-06-07 11:00:00")], "totalItem": 1}
+        return window_reader(rows)(db,path,params)
+    clock=iter([datetime(2026,6,7,10),datetime(2026,6,7,10,1)])
+    monkeypatch.setattr(remote,"beijing_now",lambda:next(clock))
+    monkeypatch.setattr(remote,"read",read)
+    with pytest.raises(ValueError):remote._window_order_receipts(None,"2001")
+
+
+@pytest.mark.parametrize("kind", ["increase", "move"])
+def test_window_rejects_same_count_update_after_delta_upper(monkeypatch, kind):
+    from datetime import datetime
+    rows = window_rows()
+    def read(db,path,params):
+        if "start_time" not in params:
+            index = 0 if kind == "increase" else -1
+            rows[index] = {**rows[index], "order_id": "2001", "amount": "50.00", "update_time": "2026-06-07 10:01:01"}
+            rows.sort(key=lambda r:r["update_time"],reverse=True)
+        return window_reader(rows)(db,path,params)
+    clock=iter([datetime(2026,6,7,10),datetime(2026,6,7,10,1)])
+    monkeypatch.setattr(remote,"beijing_now",lambda:next(clock))
+    monkeypatch.setattr(remote,"read",read)
+    with pytest.raises(ValueError,match="超出"):
+        remote._window_order_receipts(None,"2001")
+
+
+def test_full_snapshot_contains_all_orders_and_final_watermark(monkeypatch):
+    monkeypatch.setattr(remote,"read",window_reader(window_rows()))
+    rows,watermark=remote._window_order_receipts(None,None,include_watermark=True)
+    assert len(rows)==102 and {r["order_id"] for r in rows}=={"2001","other"}
+    assert len(watermark)==19
+
+
+def test_order_snapshot_compares_net_order_total(monkeypatch):
+    invoice = SimpleNamespace(xiaoman_order_id="2001", customer_id="101", currency="USD",
+                              total_amount=Decimal("367.87"), surcharge_amount=Decimal("17.52"))
+    data = dict(order_id="2001", company_id="101", currency="USD", amount="350.35", exchange_rate=668.55)
+    monkeypatch.setattr(remote, "read", lambda *a: data)
+    monkeypatch.setattr(remote, "order_receipts", lambda *a: [])
+    assert remote.order_snapshot(None, invoice)["exchange_rate"] == 668.55
+    data["amount"] = "350.34"
+    with pytest.raises(ValueError, match="不一致"):
+        remote.order_snapshot(None, invoice)
+
+
+@pytest.mark.parametrize("fee,net,expected", [("2.34", "121.11", True), ("0", "123.45", False),
+    ("2.34", "121.10", False), (None, "121.11", False), ("2.34", None, False)])
+def test_readback_verifies_fee_and_net(payload_row, fee, net, expected):
+    data = dict(order_id="2001", currency="USD", amount="123.45", collection_date="2026-09-17",
+                bank_charge=fee, real_amount=net)
+    assert sync_service.matches(payload_row, data) is expected

@@ -2,7 +2,7 @@
 from datetime import date
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ReceiptFields(BaseModel):
@@ -13,6 +13,11 @@ class ReceiptFields(BaseModel):
     bank_charge: Decimal = Field(default=Decimal("0"), ge=0, max_digits=14, decimal_places=2)
     remark: str = Field(default="", max_length=500)
     attachment_ids: list[str] = Field(min_length=1, max_length=5)
+
+    @field_validator("bank_charge", mode="before")
+    @classmethod
+    def empty_charge_is_zero(cls, value):
+        return Decimal("0") if value is None or value == "" else value
 
     @model_validator(mode="after")
     def check_charge(self):

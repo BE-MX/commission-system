@@ -84,7 +84,11 @@ def proof(identity: str, request: Request, db: Session = Depends(get_db), user=D
         has_receipt_access = "super_admin" in user.get("roles", []) or any(p in permissions for p in ("receipt:read", "receipt:write", "receipt:admin"))
         intent = db.query(ReceiptIntent).filter(ReceiptIntent.invoice_id == row.invoice_id).first()
         invoice_proof = intent and identity in intent.attachment_ids and any(p in permissions for p in ("invoice:read", "invoice:write", "invoice:sync"))
-        if has_receipt_access:
+        if row.receipt_id:
+            if not has_receipt_access:
+                raise HTTPException(404, "凭证不存在")
+            access.ensure_invoice(db, invoice, user)
+        elif has_receipt_access:
             try:
                 access.ensure_invoice(db, invoice, user)
             except HTTPException:

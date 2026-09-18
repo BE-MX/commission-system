@@ -36,7 +36,7 @@ def no_real_remote(monkeypatch, tmp_path):
     monkeypatch.setattr(remote, "order_receipts", lambda *a: [])
     monkeypatch.setattr(remote, "receipt_info", lambda db, identity: {"cash_collection_id": identity,
         "cash_collection_no": "TEST-HK", "order_id": "2001", "currency": "USD", "amount": "500",
-        "collection_date": "2026-09-17", "collect_status": 0})
+        "collection_date": "2026-09-17", "bank_charge": "0", "real_amount": "500", "collect_status": 0})
     def forbidden(*a, **k):
         raise AssertionError("Unexpected real remote call")
     monkeypatch.setattr(okki_client, "ensure_access_token", forbidden)
@@ -262,7 +262,7 @@ def test_manual_cannot_reuse_automatic_intent_proof(db, order):
     assert db.query(Receipt).count() == 0
 
 
-def test_revoked_or_inactive_delegate_cannot_list_receipts(db, order):
+def test_delegate_cannot_list_other_salespersons_receipts(db, order):
     from app.auth.models import ArkUser
     from app.invoice.models import InvoiceDelegateGrant
     register(db, order)
@@ -270,7 +270,7 @@ def test_revoked_or_inactive_delegate_cannot_list_receipts(db, order):
     if not db.get(ArkUser, 1):
         db.add(ArkUser(id=1, username="receipt-owner", real_name="Test owner", password_hash="x", is_active=True))
     db.add(InvoiceDelegateGrant(sales_user_id=1, delegate_user_id=2, created_by=1)); db.commit()
-    assert service.list_receipts(db, {**USER, "sub": "2"})["total"] == 1
+    assert service.list_receipts(db, {**USER, "sub": "2"})["total"] == 0
     db.get(ArkUser, 1).is_active = False; db.commit()
     assert service.list_receipts(db, {**USER, "sub": "2"})["total"] == 0
 
@@ -406,3 +406,158 @@ def test_old_invoice_attempt_cannot_finish_or_release_new_claim(db, order):
     order.xiaoman_order_id = None
     invoice_link.release_rejected(db, order, "old-attempt")
     assert intent.status == "armed" and intent.attempt_token == token
+
+
+@pytest.mark.parametrize("amount,charge", [("367.87", "17.52"), ("100.00", "4.76")])
+def test_automatic_receipt_allocates_fee_proportionally(db, order, amount, charge):
+    order.total_amount = Decimal("367.87")
+    order.surcharge_amount = Decimal("17.52")
+    draft = ReceiptDraft(**fields(db, amount).model_dump(exclude={"bank_charge"}))
+    invoice_link.save_draft(db, order, draft, 1, new=True)
+    invoice_link.arm(db, order, 1); invoice_link.mark_success(db, order); db.commit()
+    sync_service.generate_ready(db)
+    row = db.query(Receipt).one()
+    assert row.amount == Decimal(amount)
+    assert row.bank_charge == Decimal(charge)
+
+
+def test_proportional_allocation_final_rounding():
+    from app.receipt.fees import proportional
+    total, fee = Decimal("3.00"), Decimal("0.01")
+    registered, charged, charges = Decimal("0"), Decimal("0"), []
+    for _ in range(3):
+        charge = proportional(total, fee, Decimal("1"), registered, charged)
+        charges.append(charge); registered += Decimal("1"); charged += charge
+    assert charges == [Decimal("0"), Decimal("0"), Decimal("0.01")]
+    assert charged == fee
+
+
+def test_fee_allocation_deduplicates_remote_and_local(db, order, monkeypatch):
+    from app.receipt import fees
+    order.total_amount = Decimal("367.87"); order.surcharge_amount = Decimal("17.52"); db.commit()
+    first, _ = register(db, order, "100")
+    first.bank_charge = Decimal("4.76")
+    first.xiaoman_receipt_id = "701"; first.sync_status = "synced"; db.commit()
+    monkeypatch.setattr(remote, "order_receipts", lambda *a: [dict(cash_collection_id="701", amount="100")])
+    monkeypatch.setattr(remote, "receipt_info", lambda *a: dict(order_id="2001", currency="USD", amount="100",
+                                                              bank_charge="4.76", real_amount="95.24"))
+    assert fees.allocate(db, order, Decimal("267.87")) == Decimal("12.76")
+    first.sync_status = "uncertain"; db.commit()
+    with pytest.raises(ValueError, match="待核对"):
+        fees.allocate(db, order, Decimal("267.87"))
+
+
+def test_explicit_manual_fee_is_preserved(db, order):
+    order.surcharge_amount = Decimal("17.52"); db.commit()
+    data = ReceiptCreate(**fields(db, "100").model_copy(update={"bank_charge": Decimal("1.23")}).model_dump(),
+        invoice_id=order.id, request_key="explicit_fee_request_001", balance_version=service.order_balance(db, order)["version"])
+    row = service.create(db, data, USER)
+    assert row.bank_charge == Decimal("1.23")
+
+
+def test_fee_allocation_rejects_inconsistent_net(db, order, monkeypatch):
+    from app.receipt import fees
+    monkeypatch.setattr(remote, "order_receipts", lambda *a: [dict(cash_collection_id="701", amount="500")])
+    monkeypatch.setattr(remote, "receipt_info", lambda *a: dict(order_id="2001", currency="USD", amount="500",
+                                                              bank_charge="2", real_amount="500"))
+    with pytest.raises(ValueError, match="实到账"):
+        fees.allocate(db, order, Decimal("100"))
+
+
+def test_old_failed_auto_retry_allocates_without_duplicate(db, order):
+    order.total_amount = Decimal("367.87"); order.surcharge_amount = Decimal("17.52"); db.commit()
+    row, _ = register(db, order, "367.87")
+    row.source = "auto"; row.bank_charge = Decimal("0"); row.sync_status = "failed"; db.commit()
+    service.retry(db, row, 1); db.commit()
+    assert row.bank_charge == Decimal("17.52") and row.sync_status == "pending"
+    assert db.query(Receipt).count() == 1
+
+
+def test_old_pending_auto_never_sends_zero_fee(db, order, monkeypatch):
+    order.surcharge_amount = Decimal("17.52"); db.commit()
+    row, _ = register(db, order)
+    row.source = "auto"; row.bank_charge = Decimal("0"); db.commit()
+    monkeypatch.setattr(remote, "push", lambda *a: pytest.fail("must not POST old zero fee"))
+    sync_service.deliver(db, row.id); db.refresh(row)
+    assert row.sync_status == "failed" and row.xiaoman_receipt_id is None
+
+
+@pytest.mark.parametrize("fee", ["NaN", "-1", "bad"])
+def test_invalid_remote_fee_freezes_accepted_receipt(db, order, monkeypatch, fee):
+    row, _ = register(db, order)
+    monkeypatch.setattr(remote, "receipt_info", lambda *a: dict(order_id="2001", currency="USD", amount="500",
+        collection_date="2026-09-17", cash_collection_id="701", bank_charge=fee, real_amount="500", collect_status=1))
+    sync_service.deliver(db, row.id); db.refresh(row)
+    assert row.sync_status == "uncertain" and row.xiaoman_receipt_id == "701"
+    with pytest.raises(ValueError): service.retry(db, row, 1)
+
+
+@pytest.mark.parametrize("status", ["pending", "failed", "syncing", "uncertain"])
+def test_pending_receipt_freezes_fee_basis(db, order, status):
+    row, _ = register(db, order)
+    row.sync_status = status; db.commit()
+    previous = (order.total_amount, order.surcharge_amount)
+    invoice_link.guard_fee_basis(db, order, previous)
+    order.total_amount += Decimal("10"); order.surcharge_amount += Decimal("10")
+    with pytest.raises(ValueError, match="总额或手续费"):
+        invoice_link.guard_fee_basis(db, order, previous)
+
+
+@pytest.mark.parametrize("value", [None, "", 0, "0.00"])
+def test_empty_manual_fee_is_zero(db, order, value):
+    order.surcharge_amount = Decimal("17.52"); db.commit()
+    data = fields(db, "100").model_dump(); data["bank_charge"] = value
+    body = ReceiptCreate(**data, invoice_id=order.id, request_key="empty_fee_request_001",
+                         balance_version=service.order_balance(db, order)["version"])
+    row = service.create(db, body, USER)
+    assert row.bank_charge == Decimal("0")
+
+
+@pytest.mark.parametrize("permissions,expected", [(["receipt:read"], 0),
+    (["receipt:read", "invoice:read_all"], 0), (["receipt:admin"], 0),
+    (["receipt:read", "receipt:read_all"], 1)])
+def test_receipt_scope_covers_all_read_endpoints(db, order, permissions, expected):
+    from app.auth.models import ArkUser
+    from app.invoice.models import InvoiceDelegateGrant
+    row, _ = register(db, order)
+    order.created_by = 2
+    if not db.get(ArkUser, 1):
+        db.add(ArkUser(id=1, username="scope-owner", real_name="Owner", password_hash="x", is_active=True))
+    db.add(InvoiceDelegateGrant(sales_user_id=1, delegate_user_id=2, created_by=1))
+    # A converted automatic intent must not grant invoice-scope access to receipt proof.
+    db.add(ReceiptIntent(invoice_id=order.id, status="converted", eligible=1, created_by=2,
+                         receipt_id=row.id, attachment_ids=row.attachment_ids))
+    db.commit()
+    user = {"sub": "2", "roles": [], "permissions": permissions + ["invoice:read"]}
+    with api_client(db, user) as client:
+        assert client.get("/api/receipts").json()["data"]["total"] == expected
+        assert client.get("/api/receipts/order-options").json()["data"]["total"] == expected
+        code = 200 if expected else 404
+        assert client.get(f"/api/receipts/{row.id}").status_code == code
+        assert client.get(f"/api/receipts/order-balance/{order.id}").status_code == code
+        assert client.get(f"/api/receipts/attachments/{row.attachment_ids[0]}").status_code == code
+
+
+def test_order_owner_sees_receipt_created_by_someone_else(db, order):
+    row, _ = register(db, order)
+    order.created_by = 2; row.created_by = 2; db.commit()
+    assert service.list_receipts(db, USER)["total"] == 1
+    assert service.get(db, row.id, USER)[0].id == row.id
+
+
+@pytest.mark.parametrize("permissions", [["invoice:read"], ["invoice:read", "receipt:read_all"]])
+def test_bound_receipt_proof_requires_receipt_action_permission(db, order, permissions):
+    row, _ = register(db, order)
+    db.add(ReceiptIntent(invoice_id=order.id, status="converted", eligible=1, created_by=1,
+                         receipt_id=row.id, attachment_ids=row.attachment_ids)); db.commit()
+    with api_client(db, {**USER, "permissions": permissions}) as client:
+        assert client.get(f"/api/receipts/attachments/{row.attachment_ids[0]}").status_code == 404
+
+
+def test_all_receipts_permission_does_not_grant_write(db, order):
+    row, _ = register(db, order)
+    user = {"sub": "2", "roles": [], "permissions": ["receipt:read", "receipt:read_all"]}
+    with api_client(db, user) as client:
+        assert client.get(f"/api/receipts/{row.id}").status_code == 200
+        assert client.post(f"/api/receipts/{row.id}/retry").status_code == 403
+        assert client.post(f"/api/receipts/{row.id}/void", json={"reason": "test"}).status_code == 403

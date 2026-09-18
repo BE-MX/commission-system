@@ -8,7 +8,7 @@ from sqlalchemy import update
 from app.core.time import beijing_now
 from app.invoice import okki_client
 from app.invoice.models import Invoice
-from app.receipt import attachments, balance, remote, service
+from app.receipt import attachments, balance, fees, remote, service
 from app.receipt.models import Receipt, ReceiptIntent
 from app.receipt.schemas import ReceiptFields
 
@@ -85,6 +85,9 @@ def deliver(db, receipt_id):
         row = db.get(Receipt, receipt_id)
         invoice = db.get(Invoice, row.invoice_id)
         service.ensure_order_ready(db, invoice)
+        if row.source == "auto" and row.bank_charge == 0 and invoice.surcharge_amount:
+            if fees.allocate(db, invoice, row.amount, exclude_receipt=row.id) != 0:
+                raise ValueError("旧自动回款尚未分摊手续费，请重试原单后同步")
         snapshot = remote.order_snapshot(db, invoice)
         summary = balance.calculate(db, invoice, snapshot, exclude_receipt=row.id)
         balance.ensure_available(summary, row.amount)
@@ -131,7 +134,7 @@ def refresh_accepted(db, receipt_id):
         db.refresh(row, with_for_update=True)
         if not matches(row, data):
             row.sync_status = "uncertain"
-            row.last_error = "小满已创建回款，但金额、币种或关联订单不匹配，请核对远端原单"
+            row.last_error = "小满已创建回款，但金额、手续费、实到账金额、币种或关联订单不匹配，请核对远端原单"
             service.log(db, row, "uncertain", row.last_error)
         else:
             bind_remote(db, row, data, None)
@@ -145,15 +148,27 @@ def refresh_accepted(db, receipt_id):
         db.commit()
 
 
-def matches(row, data):
+def candidate_matches(row, data):
     return (str(data.get("order_id")) == row.xiaoman_order_id
             and data.get("currency") == row.currency and remote.money(data.get("amount")) == row.amount
             and str(data.get("collection_date"))[:10] == row.collection_date.isoformat())
 
 
+def matches(row, data):
+    try:
+        if not candidate_matches(row, data) or data.get("bank_charge") is None or data.get("real_amount") is None:
+            return False
+        return (remote.money(data["bank_charge"]) == row.bank_charge
+                and remote.money(data["real_amount"]) == row.amount - row.bank_charge)
+    except ValueError:
+        logger.warning("receipt read-back contains invalid money")
+        print("[receipt] read-back contains invalid money", flush=True)
+        return False
+
+
 def bind_remote(db, row, data, actor):
     if not matches(row, data):
-        raise ValueError("小满回款的订单、金额、币种或日期不匹配，禁止绑定")
+        raise ValueError("小满回款的订单、金额、手续费、实到账金额、币种或日期不匹配，禁止绑定")
     identity = str(data["cash_collection_id"])
     if row.xiaoman_receipt_id and row.xiaoman_receipt_id != identity:
         raise ValueError("已取得小满回款 ID，不能改绑其他回款，请核对远端原单")
@@ -175,7 +190,7 @@ def reconcile(db, row, actor):
     if row.xiaoman_receipt_id:
         bind_remote(db, row, remote.receipt_info(db, row.xiaoman_receipt_id), actor)
         return []
-    candidates = [r for r in remote.order_receipts(db, row.xiaoman_order_id) if matches(row, r)]
+    candidates = [r for r in remote.order_receipts(db, row.xiaoman_order_id) if candidate_matches(row, r)]
     # Conservative: no automatic bind until OKKI's custom-number preservation
     # has been verified for this tenant; even one same-day amount is ambiguous.
     return [{"xiaoman_receipt_id": str(r["cash_collection_id"]),
@@ -192,7 +207,7 @@ def resolve(db, row, body, actor):
     else:
         if row.xiaoman_receipt_id:
             raise ValueError("已取得小满回款 ID，不能确认未创建，请核对远端原单")
-        candidates = [r for r in remote.order_receipts(db, row.xiaoman_order_id) if matches(row, r)]
+        candidates = [r for r in remote.order_receipts(db, row.xiaoman_order_id) if candidate_matches(row, r)]
         if candidates:
             raise ValueError("小满存在同订单同额回款候选，不能确认未创建，请核对后绑定")
         row.sync_status, row.last_error = "pending", None
