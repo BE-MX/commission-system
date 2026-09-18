@@ -98,13 +98,19 @@ test('zero exit without validated result never marks done',()=> {
 test('claim leases only one task immediately and increments attempt version',async()=> {
   const calls=[];
   const result=await claimBatch({query:async(sql,params)=> {
+    if (/^(START|COMMIT|ROLLBACK)/.test(sql)) return [];
+    if (sql.includes('SELECT linked_sync_id')) return [[{linked_sync_id:null}]];
     calls.push({sql,params});return calls.length===1?[[{id:7,order_id:'123',attempts:2}]]:[{affectedRows:1}];
   }});
   assert.equal(calls[0].params.at(-1),1);assert.equal(result.length,1);assert.equal(result[0].attempts,3);
 });
 test('lost optimistic claim does not execute task',async()=> {
   let calls=0;
-  const result=await claimBatch({query:async()=> ++calls===1?[[{id:7,attempts:0}]]:[{affectedRows:0}]});
+  const result=await claimBatch({query:async(sql)=> {
+    if (/^(START|COMMIT|ROLLBACK)/.test(sql)) return [];
+    if (sql.includes('SELECT linked_sync_id')) return [[{linked_sync_id:null}]];
+    return ++calls===1?[[{id:7,attempts:0}]]:[{affectedRows:0}];
+  }});
   assert.deepEqual(result,[]);
 });
 test('stale worker cannot overwrite new claim result',async()=> {
@@ -270,6 +276,8 @@ test('waiting envelope requires matching order and reason',()=>{
 test('waiting claim has fixed interval without attempt cap and retains prior state',async()=>{
   const calls=[];
   const tasks=await claimBatch({query:async(sql,params)=>{
+    if (/^(START|COMMIT|ROLLBACK)/.test(sql)) return [];
+    if (sql.includes('SELECT linked_sync_id')) return [[{linked_sync_id:null}]];
     calls.push({sql,params});return calls.length===1?[[{id:7,order_id:'123',attempts:100,status:'waiting_stock'}]]:[{affectedRows:1}];
   }});
   for(const c of calls){assert.match(c.sql,/status = 'waiting_stock' AND updated_at <= DATE_SUB\(\?, INTERVAL 15 MINUTE\)/);assert.equal((c.sql.match(/\?/g)||[]).length,c.params.length);}
@@ -280,6 +288,8 @@ test('waiting claim has fixed interval without attempt cap and retains prior sta
 test('stale running after many stock checks can be reclaimed with intent protection',async()=> {
   const calls=[];
   const tasks=await claimBatch({query:async(sql,params)=>{
+    if (/^(START|COMMIT|ROLLBACK)/.test(sql)) return [];
+    if (sql.includes('SELECT linked_sync_id')) return [[{linked_sync_id:null}]];
     calls.push({sql,params});return calls.length===1?[[{id:7,order_id:'123',attempts:101,status:'running'}]]:[{affectedRows:1}];
   }});
   for(const c of calls){assert.match(c.sql,/status = 'running' AND updated_at <= DATE_SUB/);assert.equal((c.sql.match(/\?/g)||[]).length,c.params.length);}
@@ -311,4 +321,15 @@ test('concurrent restock retries share the same exclusive next intent',async t=>
   };
   const results=await Promise.allSettled([createOne('123',{invoiceNo:'INV123',directory,api}),createOne('123',{invoiceNo:'INV123',directory,api})]);
   assert.equal(posts,1);assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
+});
+
+
+test('linked synchronization fence prevents an outbound worker claim', async()=> {
+  const result = await claimBatch({query: async(sql)=> {
+    if (/^(START|COMMIT|ROLLBACK)/.test(sql)) return [];
+    if (sql.includes('SELECT linked_sync_id')) return [[{linked_sync_id:'change-1'}]];
+    if (sql.includes('UPDATE ark_okki_outbound_tasks')) assert.fail('must not claim fenced invoice');
+    return [[{id:7, invoice_id:4, order_id:'123', attempts:0}]];
+  }});
+  assert.deepEqual(result, []);
 });

@@ -76,6 +76,7 @@ class Invoice(Base):
     xiaoman_order_no = Column(String(64), nullable=True, comment="OKKI 订单编号")
     sync_status = Column(String(32), nullable=False, default="not_synced", comment="OKKI 推单状态 not_synced/synced/sync_failed/sync_uncertain")
     xiaoman_removed_lines = Column(Text, nullable=True, comment="已推OKKI后本地删除的明细快照JSON[{unique_id,product_id,sku_id}]，下次推单发remove:1，成功后清空")
+    linked_sync_id = Column(String(64), nullable=True, comment="当前关联同步任务ID；非空时冻结其他写入")
     sync_error = Column(Text, nullable=True, comment="最近一次推单失败信息")
     synced_at = Column(DateTime, nullable=True, comment="最近成功推单时间")
     created_by = Column(Integer, nullable=True, comment="创建人 user_id")
@@ -389,3 +390,21 @@ class CustomerProfile(Base):
     customer_id = Column(String(64), primary_key=True, comment="customer_info.company_id")
     customer_grade = Column(String(1), nullable=True, comment="客户等级 S/A/B/C/D")
     updated_by = Column(Integer, nullable=True, comment="最后修改人 user_id")
+
+
+class InvoiceLinkedSync(Base):
+    """Durable change snapshot and step results, never a financial transaction rewrite."""
+    __tablename__ = "ark_invoice_linked_syncs"
+    id = Column(String(64), primary_key=True, comment="关联同步任务ID")
+    invoice_id = Column(BigInteger, ForeignKey("ark_invoices.id"), nullable=False, index=True, comment="关联发票ID")
+    request_key = Column(String(64), nullable=False, unique=True, comment="保存请求幂等键")
+    request_hash = Column(String(64), nullable=False, comment="请求内容摘要")
+    status = Column(String(24), nullable=False, default="pending", comment="pending/running/failed/uncertain/manual/done")
+    before = Column(JSON, nullable=False, comment="修改前业务快照")
+    after = Column(JSON, nullable=False, comment="修改后业务快照")
+    steps = Column(JSON, nullable=False, comment="订单、出库、回款分步状态与说明")
+    run_token = Column(String(64), nullable=True, comment="执行租约令牌")
+    lease_until = Column(DateTime, nullable=True, comment="执行租约截止时间，北京时间")
+    created_by = Column(Integer, nullable=False, comment="操作人ID")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间，北京时间")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间，北京时间")

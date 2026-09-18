@@ -182,7 +182,7 @@
 
     <el-drawer v-model="drawerVisible" :title="drawerTitle" size="94%">
       <template #default>
-        <el-form ref="formRef" :model="form" label-width="80px" class="invoice-form">
+        <el-form ref="formRef" :model="form" label-width="80px" class="invoice-form" :disabled="linkedLocked">
           <section class="head-section">
             <div class="col-title">客户信息</div>
             <div class="head-grid">
@@ -378,6 +378,7 @@
           />
 
         </el-form>
+      <LinkedSyncResult :operation="linkedOperation" :busy="linkedBusy" @refresh="refreshLinked" @retry="retryLinked" @recheck="recheckLinked" @close="closeLinked" @resolve="resolveLinked" />
       </template>
 
       <template #footer>
@@ -390,7 +391,8 @@
           :accessory-amount="formAccessoryAmount"
           :accessory-discount="formAccessoryDiscount"
           :money="money"
-          :syncing="saveAndSyncSubmitting"
+          :syncing="saveAndSyncSubmitting || linkedBusy"
+          :linked-locked="linkedLocked"
           @cancel="drawerVisible = false"
           @save="saveDraft"
           @sync="saveAndSync"
@@ -425,6 +427,7 @@
 </template>
 
 <script setup>
+import LinkedSyncResult from './components/LinkedSyncResult.vue'
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, Delete, Document, Download, Edit, Picture, Plus, Refresh, Search } from '@element-plus/icons-vue'
@@ -454,6 +457,7 @@ const {
   customerTotal, customerHasMore, loadMoreCustomers, privateOnlyCompany,
   canTogglePrivate, okkiBound, invoiceNoTaken, entryOptions, form, hairItems, accessoryItems,
   saveAndSyncSubmitting,
+  linkedOperation, linkedBusy, refreshLinked, retryLinked, recheckLinked, closeLinked, resolveLinked,
   accessoryOptions, accessoryLoading, formHairPrice, formLineDiscountTotal, formAccessoryAmount,
   formAccessoryDiscount, formBaseAmount, formTotal, lastOrderDate, settlementError, isProduction,
   searchCustomers, selectSyncedCustomer,
@@ -486,6 +490,7 @@ function appendPastedLines({ rows, fingerprint }) {
   }
   ElMessage.success(`已加入 ${rows.length} 条产品明细，发票尚未保存`)
 }
+const linkedLocked = computed(() => linkedBusy.value || ['pending', 'running', 'failed', 'uncertain'].includes(linkedOperation.value?.status))
 </script>
 
 <style scoped src="./invoice-manage.css"></style>

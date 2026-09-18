@@ -1,4 +1,5 @@
 import { computed, reactive, ref, watch } from 'vue'
+import { useLinkedInvoiceSync } from './useLinkedInvoiceSync'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   checkInvoiceNo,
@@ -55,6 +56,12 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const entryOptions = ref({ displays: [], models: [], colors: [], sizes: [], units: [] })
 
   const form = reactive(emptyInvoiceForm())
+  const linked = useLinkedInvoiceSync(async id => {
+    const current = await getInvoice(id)
+    if (form.id === id) resetForm(current)
+    onSaved?.()
+  })
+  const loadedUpdatedAt = ref(null)
   const customerSearch = useInvoiceCustomerSearch({
     request: searchInvoiceCustomerOptions,
     scope: () => ({ private_only: privateOnlyCompany.value, sales_user_id: form.sales_user_id }),
@@ -172,6 +179,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
   let invoiceNoEdited = false
 
   function resetForm(data = emptyInvoiceForm()) {
+    loadedUpdatedAt.value = data.edit_version || null
     contactFillSeq++
     gradeEditSeq++
     customerGradeReady = true
@@ -343,6 +351,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     applySalesUserSnapshot()
     addBlankLine()
     drawerVisible.value = true
+    linked.load(null)
     searchCustomers('')
     fetchSuggestedInvoiceNo()
     if (orderType === 'production') loadEntryOptions()
@@ -351,6 +360,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
   async function openEdit(id) {
     const data = await getInvoice(id)
     resetForm(data)
+    await linked.load(id)
     await loadSalesUsers()
     drawerVisible.value = true
     searchCustomers('')
@@ -459,7 +469,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   // ── 保存 ────────────────────────────────────────────
 
-  async function saveDraft() {
+  async function saveDraft(options = {}) {
     const contextSeq = customerContextSeq
     await customerDefaultsPromise
     if (contextSeq !== customerContextSeq) return null
@@ -479,11 +489,14 @@ export function useInvoiceEditor({ onSaved } = {}) {
     const payload = buildInvoicePayload(form, formLineDiscountTotal.value)
     // A failed defaults request must not erase an existing customer grade.
     if (!customerGradeReady) delete payload.customer_grade
-    const saved = form.id
+    const saved = options.linked
+      ? await linked.save(form.id, payload, loadedUpdatedAt.value)
+      : form.id
       ? await updateInvoice(form.id, payload)
       : form.source_type === 'okki_screenshot'
         ? await createInvoiceFromScreenshot(payload)
         : await createInvoice(payload)
+    if (!saved) return null
     resetForm(saved)
     ElMessage.success('发票已保存')
     onSaved?.()
@@ -499,8 +512,13 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
     saveAndSyncSubmitting.value = true
     try {
-      const saved = await saveDraft() // saveDraft 内已触发 onSaved 刷新列表
+      const useLinked = Boolean(form.id && form.xiaoman_order_id)
+      const saved = await saveDraft({ linked: useLinked })
       if (!saved) return
+      if (useLinked) {
+        await linked.run()
+        return
+      }
       const outcome = await validateThenSync(form.id, showIssues)
       if (outcome === INVOICE_SYNC_OUTCOME.DUPLICATE) return
       onSaved?.() // 同步会改单据状态，列表需按最新状态再刷一次
@@ -538,6 +556,12 @@ export function useInvoiceEditor({ onSaved } = {}) {
     okkiBound,
     invoiceNoTaken,
     saveAndSyncSubmitting,
+    linkedOperation: linked.operation,
+    linkedBusy: linked.busy,
+    refreshLinked: () => linked.load(form.id),
+    retryLinked: () => linked.run(false),
+    recheckLinked: () => linked.run(true),
+    closeLinked: linked.close, resolveLinked: linked.resolve,
     entryOptions,
     form,
     hairItems: accessories.hairItems,

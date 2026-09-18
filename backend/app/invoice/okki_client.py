@@ -123,16 +123,20 @@ def get_order_enums(db: Session) -> dict:
     }
 
 
-def push_order(db: Session, payload: dict) -> dict:
+def push_order(db: Session, payload: dict, *, before_send=None) -> dict:
     """POST /v1/invoices/order/push — create or edit (payload carries order_id).
 
     NO SANDBOX: this creates/edits a REAL order in OKKI. Retries once with a
     forced token refresh on auth failure, same as get_order_enums.
     """
     token = ensure_access_token(db)
+    if before_send:
+        before_send()
     data = _post_json("/v1/invoices/order/push", token, payload, context="订单推送")
     if data is None:  # auth failure → one forced refresh
         token = ensure_access_token(db, force=True)
+        if before_send:
+            before_send()
         data = _post_json("/v1/invoices/order/push", token, payload, context="订单推送")
         if data is None:
             raise OkkiApiError("OKKI 订单推送失败：token 刷新后仍被拒绝，请检查凭证与 scope")

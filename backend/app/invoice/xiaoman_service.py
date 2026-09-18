@@ -56,7 +56,7 @@ def sync_invoice(
     invoice: Invoice,
     operator_id: int | None = None,
     inventory_operation_key: str | None = None,
-    receipt_sync_token: str | None = None,
+    receipt_sync_token: str | None = None, linked_id=None, linked_token=None,
 ) -> dict:
     """Push one invoice to OKKI (create or edit). Never raises for expected
     failures — state + sync log are always persisted.
@@ -110,8 +110,13 @@ def sync_invoice(
         ensure_attempt(db, invoice, receipt_sync_token)
     except ValueError as exc:
         return {"ok": False, "message": str(exc), "issues": []}
+    from app.invoice.linked_sync_service import LostExecution
     try:
-        data = okki_client.push_order(db, payload)
+        from app.invoice.linked_sync_service import ensure_running
+        ensure_running(db, invoice, linked_id, linked_token)
+        data = okki_client.push_order(db, payload, **({"before_send": lambda: ensure_running(db, invoice, linked_id, linked_token)} if linked_id else {}))
+    except LostExecution:
+        raise
     except okki_client.OkkiOutcomeUncertainError as exc:
         _mark_sync_uncertain(db, invoice, str(exc), action, payload, operator_id)
         return {"ok": False, "message": str(exc), "issues": []}
@@ -140,6 +145,9 @@ def sync_invoice(
         inventory_operation_key=inventory_operation_key,
     )
     db.commit()
+
+    if linked_id:
+        ensure_running(db, invoice, linked_id, linked_token)
 
     # 第二段：unique_id 回写与状态收尾（由 router 的 commit 落库）
     unassigned = _assign_unique_ids(invoice, line_binding, (data or {}).get("product_list") or [])

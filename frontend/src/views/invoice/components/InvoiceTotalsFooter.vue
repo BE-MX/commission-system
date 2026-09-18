@@ -22,11 +22,11 @@
     <div class="footer-actions">
       <el-button @click="$emit('cancel')">取消</el-button>
       <!-- 无同步权限时「保存」升为主按钮，避免抽屉底部没有主操作 -->
-      <el-button v-permission="'invoice:write'" :type="canSync && !syncBlocked ? '' : 'primary'" @click="$emit('save')">保存</el-button>
+      <el-button v-permission="'invoice:write'" :disabled="linkedLocked || syncing" :type="canSync && !syncBlocked ? '' : 'primary'" @click="$emit('save')">保存</el-button>
       <el-tooltip :disabled="!syncBlocked" :content="syncBlockedReason">
         <span>
-          <el-button v-permission="'invoice:sync'" type="primary" :disabled="syncBlocked" :loading="syncing" @click="$emit('sync')">
-            {{ syncing ? '保存并同步中' : '保存并同步' }}
+          <el-button v-permission="'invoice:sync'" type="primary" :disabled="syncBlocked || linkedLocked" :loading="syncing" @click="$emit('sync')">
+            {{ syncing ? '保存并同步中' : form.xiaoman_order_id ? '保存并同步关联单据' : '保存并同步' }}
           </el-button>
         </span>
       </el-tooltip>
@@ -47,6 +47,7 @@ defineProps({
   accessoryAmount: { type: Number, required: true },
   accessoryDiscount: { type: Number, required: true },
   money: { type: Function, required: true },
+  linkedLocked: { type: Boolean, default: false },
   syncing: { type: Boolean, default: false },
   syncBlocked: { type: Boolean, default: false },
   syncBlockedReason: { type: String, default: '' },

@@ -1668,3 +1668,7 @@ journalctl -u leshine-ark-dsh-worker -n 200 --no-pager
 站点应用生成的 `ARK_AI_BASE_URL` 使用固定公网入口 `https://leshine.work/api/ai-gateway`，与管理员通过公网、局域网或本机访问管理页无关。更换公网入口时同步更新 `AiGatewayApps.vue` 中的 `gatewayBase`，验证公网路由后重新发布前端。既有站点配置若使用局域网地址，改为上述公网地址即可，不必重置密钥。
 
 “复制配置”优先使用 Clipboard API；内网 HTTP 或浏览器拒绝权限时，在密钥弹窗内通过文本选区复制。浏览器同时阻止两种机制时会保留全选，可按 Ctrl+C / ⌘C；关闭弹窗后密钥清空。
+
+## 关联单据同步待处理
+
+在订单编辑器查看“关联单据同步结果”。failed重试未完成步骤；uncertain不重发，管理员先核对小满原单与半成品pending，原租约结束后填写依据人工结束。不要直接清数据库锁或删除任务。出库差异目前在小满人工处理后重新核对。详见[invoice-linked-sync.md](invoice-linked-sync.md)。

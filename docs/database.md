@@ -534,3 +534,7 @@ AI Worker 用 `status + lease_token + lease_expires_at` 领取任务，模型网
 
 - `ark_invoice_customer_profiles`：方舟本地客户资料，`customer_id` 主键关联只读镜像 `customer_info.company_id`，`customer_grade` 为可空的 S/A/B/C/D，`updated_by` 记录修改人。客户等级与发票共用事务保存，原子 upsert 防止首次建档冲突；不写 `lsordertest.customer_info`。
 - `ark_invoices.customer_grade`：本单等级快照。存量 NULL 不做回填；客户端未提交字段时，新建继承客户默认等级、编辑保留本单值。显式修改等级（包括清空）更新客户资料，编辑旧单但未改变等级不会覆盖客户的新默认值。
+
+## 158 订单关联同步
+
+ark_invoices.linked_sync_id：当前关联任务写锁标识，结束后清除。新增ark_invoice_linked_syncs：id、invoice_id（索引/FK）、request_key（唯一）、request_hash、status、before/after/steps（JSON）、run_token、lease_until、created_by、created_at、updated_at。日期统一北京时间。保存与占用订单在同一事务；运行令牌保护中间提交与恢复。降级禁止删除审计记录，使用前向迁移。详见[invoice-linked-sync.md](invoice-linked-sync.md)。
