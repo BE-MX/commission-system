@@ -7,7 +7,7 @@ import type { InventoryStatus, InventorySpec } from '@/lib/inventory';
  *
  * 工作台规格的共享状态原本完全由站内手动维护（inventory_states 表）。接入方舟后，
  * 「实时库存图修改」页读到的状态以 lsordertest.okki_inventory.enable_count 为准：
- * 方舟后端 /api/colorwork/inventory-status 按模板返回「{颜色}|{尺寸} → normal|restocking」，
+ * 方舟后端 /api/colorwork/inventory-status 按模板返回「{颜色}|{尺寸} → normal|low_stock|restocking」，
  * 这里在快照返回前逐规格覆盖；手动保存在站内的状态仍保留，仅作为 okki 未覆盖规格
  * （映射未配置/接口不可达）的兜底显示。
  */
@@ -37,7 +37,7 @@ async function fetchArkStatuses(templateId: string): Promise<StatusResponse | nu
 }
 
 function isOkkiStatus(value: string): value is InventoryStatus {
-  return value === 'normal' || value === 'restocking';
+  return value === 'normal' || value === 'low_stock' || value === 'restocking';
 }
 
 /** 就地把 okki 状态覆盖到快照 specs 上，返回覆盖条数（供日志/调试）。 */

@@ -61,6 +61,8 @@ export function computeSourceChanges(
   const matchedIds = new Set<string>();
   const added: SourceChangeItem[] = [];
   const unchanged: SourceChangeItem[] = [];
+  const addedLengths: SourceChangeItem[] = [];
+  const removedLengths: SourceChangeItem[] = [];
   const resized: SourceChangeSummary['resized'] = [];
   const reordered: SourceChangeItem[] = [];
   const resectioned: SourceChangeItem[] = [];
@@ -71,6 +73,7 @@ export function computeSourceChanges(
     const matched = card.matchedEntryId ? currentById.get(card.matchedEntryId) : null;
     if (!matched) {
       added.push(nextValue);
+      if (nextValue.lengths.length) addedLengths.push(nextValue);
       return;
     }
     matchedIds.add(matched.entry.entryId);
@@ -81,6 +84,10 @@ export function computeSourceChanges(
       if (sameSection) unchanged.push(nextValue);
     } else {
       resized.push({ ...nextValue, previousLengths: previous.lengths, nextLengths: nextValue.lengths });
+      const nextOnly = nextValue.lengths.filter((length) => !previous.lengths.includes(length));
+      const previousOnly = previous.lengths.filter((length) => !nextValue.lengths.includes(length));
+      if (nextOnly.length) addedLengths.push({ ...nextValue, lengths: nextOnly });
+      if (previousOnly.length) removedLengths.push({ ...nextValue, lengths: previousOnly });
     }
     if (!sameSection) resectioned.push(nextValue);
   });
@@ -106,6 +113,8 @@ export function computeSourceChanges(
   return {
     added,
     removed,
+    addedLengths,
+    removedLengths,
     unchanged,
     resized,
     reordered,

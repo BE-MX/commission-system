@@ -222,6 +222,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid #b39a84; outline-
 .inventory-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0 12px; }
 .inventory-summary span { padding: 7px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
 .inventory-summary .normal { color: #416a49; background: #e8f1e9; }
+.inventory-summary .low-stock { color: #7a4d00; background: #fff3cd; }
 .inventory-summary .out { color: #913c35; background: #f7e6e4; }
 .inventory-summary .restocking { color: #77592a; background: #f8efd8; }
 .inventory-toolbar { display: grid; grid-template-columns: minmax(230px, 1fr) auto auto; gap: 8px; margin-bottom: 12px; }
@@ -242,6 +243,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid #b39a84; outline-
 .spec-status select { width: 100%; height: 25px; padding: 0 5px; border: 0; color: #5f665d; background: transparent; font-size: 10px; }
 .spec-status.out_of_stock { border-color: #d9a6a2; background: #fff3f1; }
 .spec-status.out_of_stock select { color: #9a3f37; }
+.spec-status.low_stock { border-color: #d6a64b; background: #fff9e8; }
+.spec-status.low_stock select { color: #7a4d00; }
 .spec-status.restocking { border-color: #d7c289; background: #fff9ea; }
 .spec-status.restocking select { color: #7a5a23; }
 .whole-color-actions { display: grid; gap: 4px; }

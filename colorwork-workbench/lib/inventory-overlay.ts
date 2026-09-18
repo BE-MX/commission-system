@@ -33,6 +33,7 @@ export type InventoryOverlayPlan = {
 const LENGTH_ORDER: InventoryLength[] = [16, 18, 20, 22, 24];
 const STATUS_ORDER: Array<Exclude<InventoryStatus, 'normal'>> = [
   'out_of_stock',
+  'low_stock',
   'restocking',
 ];
 
@@ -212,6 +213,12 @@ export function drawInventoryOverlayPlan(
       context.strokeStyle = 'rgba(249, 240, 238, 0.95)';
       context.stroke();
       context.fillStyle = '#ffffff';
+    } else if (badge.status === 'low_stock') {
+      context.fillStyle = 'rgba(255, 243, 205, 0.96)';
+      context.fill();
+      context.strokeStyle = '#d6a64b';
+      context.stroke();
+      context.fillStyle = '#7a4d00';
     } else {
       context.fillStyle = 'rgba(249, 240, 238, 0.95)';
       context.fill();

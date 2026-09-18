@@ -93,6 +93,7 @@ export function SourceVersionManager({
   const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [flowStep, setFlowStep] = useState<1 | 2 | 3 | 4>(1);
   const [previewState, setPreviewState] = useState<'idle' | 'rendering' | 'ready' | 'failed'>('idle');
   const previewRef = useRef<HTMLCanvasElement>(null);
   const config = candidate?.config ?? null;
@@ -150,6 +151,7 @@ export function SourceVersionManager({
     setError('');
     setNotice('');
     setProgress('');
+    setFlowStep(1);
     setPreviewState('idle');
   }, [state.templateId]);
 
@@ -219,6 +221,7 @@ export function SourceVersionManager({
     setCandidate(null);
     try {
       setProgress('步骤 1／4：正在建立新版上传草稿…');
+      setFlowStep(1);
       const started = await responseJson<{
         sourceVersion: { id: string; number: number };
         uploadId: string;
@@ -256,6 +259,7 @@ export function SourceVersionManager({
       ));
 
       setProgress('步骤 2／4：正在解析 PSD 图层、颜色、尺寸、分区与底图…');
+      setFlowStep(2);
       const { parseTemplateSource } = await import('@/lib/source-template-parser');
       const parsed = await parseTemplateSource({
         psdFile: psd,
@@ -283,12 +287,14 @@ export function SourceVersionManager({
         },
       ));
       setCandidate(detail);
+      setFlowStep(3);
       setProgress('步骤 3／4：请查看新版预览、变化和无法可靠识别的内容。');
       setNotice(`源文件 S${detail.number} 已完成解析；确认启用前，业务继续使用 S${state.sourceVersion.number ?? '—'}。`);
       await loadVersions();
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : '新版源文件解析失败。';
       setError(`${message} 原有效版本保持不变。`);
+      setFlowStep(2);
       setProgress('解析失败：原有效版本仍可正常使用。');
       if (versionId) {
         await workbenchFetch(`/api/template-sources/${state.templateId}/${versionId}`, {
@@ -375,6 +381,7 @@ export function SourceVersionManager({
         }),
       }));
       setProgress('步骤 4／4：新版已启用。');
+      setFlowStep(4);
       setNotice(`源文件 S${candidate.number} 已启用；新打开页面与新导出将使用新版。`);
       setCandidate(null);
       await onActivated();
@@ -398,6 +405,7 @@ export function SourceVersionManager({
         { cache: 'no-store' },
       ));
       setCandidate(detail);
+      setFlowStep(3);
       setProgress('步骤 3／4：已重新载入候选，请继续查看变化并完成人工确认。');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '候选版本读取失败。');
@@ -428,7 +436,7 @@ export function SourceVersionManager({
 
       <div className="source-steps" aria-label="更新流程">
         {['上传 PSD＋JPG', '解析与校验', '预览变化与人工确认', '确认启用'].map((label, index) => (
-          <span key={label} className={candidate ? (index < 3 ? 'done' : 'current') : running ? (index === 1 ? 'current' : index === 0 ? 'done' : '') : index === 0 ? 'current' : ''}>{index + 1}<small>{label}</small></span>
+          <span key={label} className={index + 1 < flowStep ? 'done' : index + 1 === flowStep ? 'current' : ''}>{index + 1}<small>{label}</small></span>
         ))}
       </div>
 
@@ -454,8 +462,10 @@ export function SourceVersionManager({
           <div className="source-diff">
             <h3>主要变化</h3><p>移除项目仅影响新版画面与规格，历史库存状态、母版版本和导出记录仍保留。</p>
             <div className="diff-groups">
-              <article><strong>新增 {reviewDiff?.added.length ?? 0}</strong><p>{reviewDiff?.added.map((item) => item.colorCode).join('、') || '无'}</p></article>
-              <article><strong>移除 {reviewDiff?.removed.length ?? 0}</strong><p>{reviewDiff?.removed.map((item) => `${item.colorCode}（${item.lengths.join('／')}″）`).join('、') || '无'}</p></article>
+              <article><strong>新增颜色 {reviewDiff?.added.length ?? 0}</strong><p>{reviewDiff?.added.map((item) => item.colorCode).join('、') || '无'}</p></article>
+              <article><strong>移除颜色 {reviewDiff?.removed.filter((item) => item.candidateId == null).length ?? 0}</strong><p>{reviewDiff?.removed.filter((item) => item.candidateId == null).map((item) => item.colorCode).join('、') || '无'}</p></article>
+              <article><strong>新增尺寸 {reviewDiff?.addedLengths.length ?? 0}</strong><p>{reviewDiff?.addedLengths.map((item) => `${item.colorCode}（${item.lengths.join('／')}″）`).join('、') || '无'}</p></article>
+              <article><strong>移除尺寸 {reviewDiff?.removedLengths.length ?? 0}</strong><p>{reviewDiff?.removedLengths.map((item) => `${item.colorCode}（${item.lengths.join('／')}″）`).join('、') || '无'}</p></article>
               <article><strong>保持不变 {reviewDiff?.unchanged.length ?? 0}</strong><p>{reviewDiff?.unchanged.map((item) => item.colorCode).join('、') || '无'}</p></article>
               <article><strong>重新排列 {reviewDiff?.reordered.length ?? 0}</strong><p>{reviewDiff?.reordered.map((item) => item.colorCode).join('、') || '无'}</p></article>
               <article><strong>分区调整 {reviewDiff?.resectioned.length ?? 0}</strong><p>{reviewDiff?.resectioned.map((item) => item.colorCode).join('、') || '无'}</p></article>
@@ -495,7 +505,7 @@ export function SourceVersionManager({
               {config.parseIssues.map((issue) => (
                 <label key={sourceIssueKey(issue)} className={issue.blocking ? 'blocking' : ''}>
                   {issue.blocking ? <input type="checkbox" checked={Boolean(acknowledged[sourceIssueKey(issue)])} onChange={(event) => setAcknowledged((current) => ({ ...current, [sourceIssueKey(issue)]: event.target.checked }))} /> : <CheckCircle2 size={15} />}
-                  <span><strong>{issue.code}</strong>{issue.message}{issue.blocking && <small>我已对照 PSD／JPG，确认该项处理方式无误后才可勾选</small>}</span>
+                  <span><strong>{issue.code}</strong>{issue.message}{issue.details?.swatchStatus && <small>状态：{issue.details.swatchStatus}；当前版本暂不支持在此处覆盖候选色块，若提取色块不一致，请重新上传新版源文件。</small>}{issue.details?.layerNames?.length && <small>代表图层：{issue.details.layerNames.join('、')}</small>}{issue.details?.structureTypes?.length && <small>结构类型：{issue.details.structureTypes.join('、')}</small>}{issue.blocking && <small>我已对照 PSD／JPG，确认该项处理方式无误后才可勾选</small>}</span>
                 </label>
               ))}
             </div>

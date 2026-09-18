@@ -11,6 +11,7 @@ import { computeSourceChanges } from '@/lib/source-diff';
 import {
   sourceAssetUrl,
   type SourceCard,
+  type SourceIssueDetails,
   type SourceParseIssue,
   type SourceTemplateConfig,
   type SourceVersionStatus,
@@ -465,13 +466,41 @@ function canonicalColorCode(value: unknown) {
     : '';
 }
 
+function sourceIssueDetails(value: unknown): SourceIssueDetails | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const input = value as Record<string, unknown>;
+  const layerCount = input.layerCount == null ? null : Number(input.layerCount);
+  const layerNames = Array.isArray(input.layerNames)
+    ? input.layerNames.filter((item): item is string => typeof item === 'string').map((item) => item.slice(0, 240)).slice(0, 8)
+    : undefined;
+  const structureTypes = Array.isArray(input.structureTypes)
+    ? input.structureTypes.filter((item): item is string => typeof item === 'string').map((item) => item.slice(0, 120)).slice(0, 8)
+    : undefined;
+  const swatchStatus = input.swatchStatus === '待确认／待补充色块图' ? input.swatchStatus : undefined;
+  if (
+    (layerCount != null && (!Number.isInteger(layerCount) || layerCount < 1 || layerCount > 1000)) ||
+    (layerNames && layerNames.some((item) => !item.trim())) ||
+    (structureTypes && structureTypes.some((item) => !item.trim())) ||
+    (!layerNames && input.layerNames != null) ||
+    (!structureTypes && input.structureTypes != null) ||
+    (input.swatchStatus != null && !swatchStatus)
+  ) fail(422, 'INVALID_PARSE_ISSUES', '解析问题详情格式无效。');
+  if (layerCount == null && !layerNames?.length && !structureTypes?.length && !swatchStatus) return undefined;
+  return {
+    ...(Number.isInteger(layerCount) ? { layerCount: layerCount as number } : {}),
+    ...(layerNames?.length ? { layerNames } : {}),
+    ...(structureTypes?.length ? { structureTypes } : {}),
+    ...(swatchStatus ? { swatchStatus } : {}),
+  };
+}
+
 function cleanBounds(value: unknown, width: number, height: number, label: string) {
   if (!Array.isArray(value) || value.length !== 4) fail(422, 'INVALID_SOURCE_BOUNDS', `${label} 坐标无法读取。`);
   const result = value.map(finiteNumber);
   if (result.some((item) => item == null)) fail(422, 'INVALID_SOURCE_BOUNDS', `${label} 坐标无法读取。`);
   const [left, top, right, bottom] = result as number[];
   if (left < 0 || top < 0 || right <= left || bottom <= top || right > width || bottom > height) {
-    fail(422, 'INVALID_SOURCE_BOUNDS', `${label} 超出母版画布。`);
+    fail(422, 'INVALID_SOURCE_BOUNDS', `${label} 超出新版 PSD 画布 ${width}×${height}。`);
   }
   return [left, top, right, bottom] as [number, number, number, number];
 }
@@ -615,6 +644,7 @@ async function validateParsedConfig(row: StoredSourceVersion, input: unknown) {
     !issue || typeof issue.code !== 'string' || typeof issue.message !== 'string' || typeof issue.blocking !== 'boolean' ||
     (issue.issueId != null && (typeof issue.issueId !== 'string' || !issue.issueId.trim() || issue.issueId.length > 160))
   ))) fail(422, 'INVALID_PARSE_ISSUES', '解析问题列表格式无效。');
+  for (const issue of issues) sourceIssueDetails(issue.details);
   const issueIds = new Set<string>();
   const normalizedIssues = sourceReviewIssues(issues, validatedCards, CATALOG.colors, availableLengths).map((issue, index) => {
     const issueId = issue.issueId?.trim() || `issue-${index + 1}-${issue.code.slice(0, 60)}`;
@@ -626,6 +656,7 @@ async function validateParsedConfig(row: StoredSourceVersion, input: unknown) {
       message: issue.message.slice(0, 500),
       candidateId: issue.candidateId?.slice(0, 120),
       blocking: issue.blocking,
+      details: sourceIssueDetails(issue.details),
     };
   });
   const expectedBase = sourceAssetUrl(row.id, 'base.png');
@@ -682,7 +713,7 @@ async function validateParsedConfig(row: StoredSourceVersion, input: unknown) {
 }
 
 async function requireSourceAssets(row: StoredSourceVersion, config: SourceTemplateConfig) {
-  const assets = new Set(['base.png', ...config.colors.map((color) => {
+  const assets = new Set(['source.psd', 'reference.jpg', 'base.png', ...config.colors.map((color) => {
     const marker = `/api/template-source-assets/${encodeURIComponent(row.id)}/`;
     return decodeURIComponent(color.image.slice(marker.length));
   })]);

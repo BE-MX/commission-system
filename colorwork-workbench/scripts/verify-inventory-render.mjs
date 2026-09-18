@@ -57,7 +57,10 @@ function inventoryFor(selection) {
   const first = selection[0];
   const second = selection[1];
   const third = selection[2];
-  if (first?.lengths.length) inventory[first.entryId] = { [first.lengths[0]]: 'out_of_stock' };
+  if (first?.lengths.length) {
+    inventory[first.entryId] = { [first.lengths[0]]: 'out_of_stock' };
+    if (first.lengths[1]) inventory[first.entryId][first.lengths[1]] = 'low_stock';
+  }
   if (second?.lengths.length) {
     inventory[second.entryId] = Object.fromEntries(second.lengths.map((length) => [length, 'restocking']));
   }
@@ -66,6 +69,7 @@ function inventoryFor(selection) {
       [third.lengths[0]]: 'out_of_stock',
       [third.lengths[1]]: 'restocking',
     };
+    if (third.lengths[2]) inventory[third.entryId][third.lengths[2]] = 'low_stock';
   }
   return inventory;
 }
@@ -418,7 +422,7 @@ try {
     );
     if (
       !badgeTexts.every((text) =>
-        /^(?:.+″ · )?(?:Temporarily Out of Stock|Restocking)$/.test(text),
+        /^(?:.+″ · )?(?:Temporarily Out of Stock|Low Stock|Restocking)$/.test(text),
       )
     ) {
       throw new Error(
@@ -427,7 +431,7 @@ try {
     }
     if (
       !badgeTexts.some((text) =>
-        /^\d+″ · (?:Temporarily Out of Stock|Restocking)$/.test(text),
+        /^\d+″ · (?:Temporarily Out of Stock|Low Stock|Restocking)$/.test(text),
       )
     ) {
       throw new Error(`${id} 没有生成只指向对应单尺寸的英文提示。`);

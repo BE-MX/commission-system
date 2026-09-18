@@ -46,6 +46,9 @@ def colorwork_db(db, monkeypatch):
         ("p3", "Standard Double Drawn Genius Weft/16/#1/50g", "#1", "16", 0),
         # 已停用产品不参与
         ("p4", "Standard Double Drawn Genius Weft/18/#1/20g", "#1", "18", 1),
+        ("p5", "Standard Double Drawn Genius Weft/16/#2/20g", "#2", "16", 0),
+        ("p6", "Standard Double Drawn Genius Weft/16/#3/20g", "#3", "16", 0),
+        ("p7", "Standard Double Drawn Genius Weft/16/#4/20g", "#4", "16", 0),
     ]
     for pid, name, color, size, flag in products:
         db.execute(
@@ -57,6 +60,9 @@ def colorwork_db(db, monkeypatch):
     db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p3', 99, 0)"))
     # p4 库存存在但产品已停用
     db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p4', 30, 0)"))
+    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p5', 19, 0)"))
+    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p6', 20, 0)"))
+    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p7', 1, 0)"))
     db.commit()
     return db
 
@@ -66,8 +72,11 @@ def test_statuses_normal_and_restocking(colorwork_db):
     assert result["unmapped"] is False
     assert result["statuses"]["#1|16"] == "normal"        # 57 > 0
     assert result["statuses"]["#1B|16"] == "restocking"   # 0 → 正在补货
+    assert result["statuses"]["#2|16"] == "low_stock"    # 19 → 低库存
+    assert result["statuses"]["#3|16"] == "normal"        # 20 → 无提醒
+    assert result["statuses"]["#4|16"] == "low_stock"    # 1 → 低库存
     # 50g 产品不混入 20g 模板：#1|16 只统计 p1
-    assert result["matched_products"] == 2
+    assert result["matched_products"] == 5
 
 
 def test_weight_suffix_separates_50g_template(colorwork_db):

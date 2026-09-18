@@ -19,6 +19,7 @@ type FlatLayer = {
   path: string[];
   order: number;
   bounds: Bounds | null;
+  rawBounds: Bounds | null;
   text: string;
   hidden: boolean;
 };
@@ -85,25 +86,37 @@ function layerBounds(layer: Layer): Bounds | null {
   return [left, top, right, bottom];
 }
 
+function visibleBounds(bounds: Bounds | null, psd: Pick<Psd, 'width' | 'height'>): Bounds | null {
+  if (!bounds) return null;
+  const left = Math.max(0, bounds[0]);
+  const top = Math.max(0, bounds[1]);
+  const right = Math.min(psd.width, bounds[2]);
+  const bottom = Math.min(psd.height, bounds[3]);
+  return right > left && bottom > top ? [left, top, right, bottom] : null;
+}
+
 function flatten(
   layers: Layer[] | undefined,
   parents: string[] = [],
   output: FlatLayer[] = [],
   parentHidden = false,
+  psd: Pick<Psd, 'width' | 'height'>,
 ) {
   for (const layer of layers ?? []) {
     const name = cleanText(layer.name) || '未命名图层';
     const path = [...parents, name];
+    const rawBounds = layerBounds(layer);
     const hidden = parentHidden || Boolean(layer.hidden);
     output.push({
       layer,
       path,
       order: output.length,
-      bounds: layerBounds(layer),
+      bounds: visibleBounds(rawBounds, psd),
+      rawBounds,
       text: cleanText(layer.text?.text),
       hidden,
     });
-    flatten(layer.children, path, output, hidden);
+    flatten(layer.children, path, output, hidden, psd);
   }
   return output;
 }
@@ -228,13 +241,28 @@ const CANVAS_BLEND_MODES: Record<string, GlobalCompositeOperation> = {
 };
 
 function drawLayer(target: CanvasRenderingContext2D, item: FlatLayer, offsetX = 0, offsetY = 0) {
-  if (!item.layer.canvas || !item.bounds || item.hidden) return;
+  const renderBounds = item.rawBounds ?? item.bounds;
+  if (!item.layer.canvas || !renderBounds || item.hidden) return;
   target.save();
   const opacity = Number(item.layer.opacity);
   target.globalAlpha = Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1;
   target.globalCompositeOperation = CANVAS_BLEND_MODES[item.layer.blendMode || 'normal'] ?? 'source-over';
-  target.drawImage(item.layer.canvas, item.bounds[0] - offsetX, item.bounds[1] - offsetY, width(item.bounds), height(item.bounds));
+  target.drawImage(item.layer.canvas, renderBounds[0] - offsetX, renderBounds[1] - offsetY, width(renderBounds), height(renderBounds));
   target.restore();
+}
+
+function drawVisibleLayerAsset(target: CanvasRenderingContext2D, item: FlatLayer, bounds: Bounds) {
+  const source = item.layer.canvas;
+  const renderBounds = item.rawBounds ?? item.bounds;
+  if (!source || !renderBounds) return;
+  const scaleX = source.width / width(renderBounds);
+  const scaleY = source.height / height(renderBounds);
+  const sourceX = Math.max(0, (bounds[0] - renderBounds[0]) * scaleX);
+  const sourceY = Math.max(0, (bounds[1] - renderBounds[1]) * scaleY);
+  const sourceWidth = Math.min(source.width - sourceX, width(bounds) * scaleX);
+  const sourceHeight = Math.min(source.height - sourceY, height(bounds) * scaleY);
+  if (sourceWidth <= 0 || sourceHeight <= 0) return;
+  target.drawImage(source, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, width(bounds), height(bounds));
 }
 
 function canvasBlob(value: HTMLCanvasElement) {
@@ -252,17 +280,54 @@ function imageDimensions(file: File) {
 }
 
 function isDecorative(item: FlatLayer) {
-  const decoration = /(?:^|[\s_-])(?:title|header|logo|decoration|decorative|ornament)(?:$|[\s_\-\d])|标题|页眉|装饰|标志/i;
+  const decoration = /(?:^|[\s_-])(?:title|header|footer|logo|decoration|decorative|ornament|bottom|headline|branding)(?:$|[\s_\-\d])|标题|页眉|页脚|底部|装饰|标志|页头/i;
   const name = cleanText(item.layer.name);
-  // Explicit color identities still take precedence over a decorative parent.
+  // A placed layer inside a known decorative group is not a business swatch,
+  // even when a designer happened to give the asset a color-like name.
+  // This prevents header/footer/logo smart objects from being rejected by
+  // the business bounds check below.
+  if (item.path.slice(0, -1).some((part) => decoration.test(part))) return true;
   if (name.startsWith('#') || normalizedColorCode(item.text)) return false;
   if (decoration.test(name)) return true;
   if (normalizedColorCode(name)) return false;
-  return item.path.some((part) => decoration.test(part));
+  const opacity = Number(item.layer.opacity);
+  if (item.layer.placedLayer && Number.isFinite(opacity) && opacity < 0.2) return true;
+  return false;
+}
+
+function boundsOverflow(bounds: Bounds, documentWidth: number, documentHeight: number) {
+  const sides: string[] = [];
+  if (bounds[0] < 0) sides.push(`左侧超出 ${Math.ceil(-bounds[0])} px`);
+  if (bounds[1] < 0) sides.push(`顶部超出 ${Math.ceil(-bounds[1])} px`);
+  if (bounds[2] > documentWidth) sides.push(`右侧超出 ${Math.ceil(bounds[2] - documentWidth)} px`);
+  if (bounds[3] > documentHeight) sides.push(`底部超出 ${Math.ceil(bounds[3] - documentHeight)} px`);
+  return sides;
+}
+
+function layerStructureLabel(item: FlatLayer) {
+  const labels: string[] = [];
+  if (item.layer.placedLayer) labels.push('智能对象／置入图层');
+  if (item.layer.children?.length) labels.push('图层组');
+  if (item.layer.effects) labels.push('图层效果');
+  if (item.layer.mask || item.layer.realMask || item.layer.vectorMask || item.layer.filterMask) labels.push('蒙版');
+  return labels.join('、') || '普通像素图层';
+}
+
+function outOfBoundsMessage(item: FlatLayer, psd: Psd) {
+  const bounds = item.rawBounds ?? item.bounds!;
+  const [left, top, right, bottom] = bounds.map((value) => Math.round(value));
+  const sides = boundsOverflow(bounds, psd.width, psd.height);
+  return `业务色块“${item.path.join(' › ')}”超出新版 PSD 画布 ${psd.width}×${psd.height}：实际边界为 [${left}, ${top}, ${right}, ${bottom}]，${sides.join('、')}；图层类型为${layerStructureLabel(item)}。请检查该图层是否为真实业务色块；若是，请移回画布内后重新上传。`;
 }
 
 function looksLikeSwatchGeometry(item: FlatLayer, psd: Psd) {
   if (isDecorative(item) || !item.bounds || item.layer.children?.length || item.hidden || item.text || !item.layer.canvas) return false;
+  const opacity = Number(item.layer.opacity);
+  if (item.layer.placedLayer && Number.isFinite(opacity) && opacity < 0.2) return false;
+  const rawBounds = item.rawBounds ?? item.bounds;
+  if (item.layer.placedLayer && (
+    rawBounds![0] < 0 || rawBounds![1] < 0 || rawBounds![2] > psd.width || rawBounds![3] > psd.height
+  )) return false;
   const itemWidth = width(item.bounds);
   const itemHeight = height(item.bounds);
   const ratio = itemWidth / itemHeight;
@@ -320,10 +385,10 @@ export async function parseTemplateSource(args: {
     throw new Error(`PSD 画布为 ${psd.width}×${psd.height}，对应 JPG 为 ${jpg.width}×${jpg.height}，尺寸不一致。`);
   }
 
-  const flat = flatten(psd.children);
+  const flat = flatten(psd.children, [], [], false, psd);
   const issues: SourceParseIssue[] = [];
   for (const item of flat) {
-    if (item.hidden) continue;
+    if (item.hidden || isDecorative(item)) continue;
     const reasons: string[] = [];
     if (item.layer.adjustment) reasons.push('调整图层');
     if (item.layer.effects) reasons.push('图层效果');
@@ -344,14 +409,23 @@ export async function parseTemplateSource(args: {
         code: 'UNSUPPORTED_LAYER_STRUCTURE',
         message: `图层“${item.path.join(' › ')}”包含${reasons.join('、')}，浏览器无法保证与 Photoshop 合成结果完全一致。请对照新版 JPG 人工确认，或栅格化／简化结构后重新上传。`,
         blocking: true,
+        details: {
+          layerCount: 1,
+          layerNames: [item.path.join(' › ')],
+          structureTypes: reasons,
+        },
       });
     }
   }
+  const oldMaps = oldSemanticMap(currentSelection, currentColors, currentTemplate);
+  const canvasChanged = psd.width !== currentTemplate.width || psd.height !== currentTemplate.height;
   for (const item of flat) {
     if (item.hidden || isDecorative(item) || item.layer.children?.length || item.text || !item.bounds) continue;
-    if (normalizedColorCode(item.layer.name || '') && (
-      item.bounds[0] < 0 || item.bounds[1] < 0 || item.bounds[2] > psd.width || item.bounds[3] > psd.height
-    )) throw new Error(`业务色块“${item.path.join(' › ')}”超出新版 PSD 画布 ${psd.width}×${psd.height}，请修正后重新上传。`);
+    const colorCode = normalizedColorCode(item.layer.name || '');
+    const rawBounds = item.rawBounds ?? item.bounds;
+    const outside = rawBounds[0] < 0 || rawBounds[1] < 0 || rawBounds[2] > psd.width || rawBounds[3] > psd.height;
+    const isExistingColor = Boolean(colorCode && oldMaps.byColor.has(semanticColorKey(colorCode)));
+    if (colorCode && outside && (!canvasChanged || !isExistingColor)) throw new Error(outOfBoundsMessage(item, psd));
   }
   const swatches = flat.filter((item) => isCandidateSwatch(item, psd));
   if (!swatches.length) throw new Error('没有识别到可用颜色图层。请保留以色号命名的独立色块图层。');
@@ -393,7 +467,6 @@ export async function parseTemplateSource(args: {
       sizeLabelUsage.set(match.item.layer, (sizeLabelUsage.get(match.item.layer) ?? 0) + 1);
     }
   }
-  const oldMaps = oldSemanticMap(currentSelection, currentColors, currentTemplate);
   const excluded = new Set<Layer>();
   const colorsById = new Map<string, StockColor>();
   const assets: ParsedSourceAsset[] = [];
@@ -403,9 +476,6 @@ export async function parseTemplateSource(args: {
     (a.bounds![1] - b.bounds![1]) || (a.bounds![0] - b.bounds![0]) || (a.order - b.order)
   )).entries()) {
     const bounds = swatch.bounds!;
-    if (bounds[0] < 0 || bounds[1] < 0 || bounds[2] > psd.width || bounds[3] > psd.height) {
-      throw new Error(`业务色块“${swatch.path.join(' › ')}”超出新版 PSD 画布 ${psd.width}×${psd.height}，请修正后重新上传。`);
-    }
     const colorCode = displayColorCode(swatch.layer.name || '', currentColors);
     const section = sectionFor(bounds, sectionsWithTop);
     const sectionLabel = sections.find((value) => value.key === section)?.label ?? '';
@@ -478,7 +548,7 @@ export async function parseTemplateSource(args: {
     const colorCanvas = canvas(width(bounds), height(bounds));
     const colorContext = colorCanvas.getContext('2d');
     if (!colorContext || !swatch.layer.canvas) throw new Error(`${colorCode} 色块像素无法读取。`);
-    colorContext.drawImage(swatch.layer.canvas, 0, 0, colorCanvas.width, colorCanvas.height);
+    drawVisibleLayerAsset(colorContext, swatch, bounds);
     assets.push({ name: assetName, blob: await canvasBlob(colorCanvas) });
     if (!colorsById.has(colorId)) {
       colorsById.set(colorId, {

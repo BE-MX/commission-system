@@ -83,11 +83,25 @@ const rulesChildren = psd.children.map((layer) => layer.name === '#62' ? { ...la
   : layer.name === 'color label 62' ? textLayer('color label 999', '#999', 380, 310, 80)
   : layer.name === 'size label 62' ? textLayer('size label 999', '28″', 360, 342) : layer);
 const rulesPsdBuffer = writePsdBuffer({ ...psd, children: [...rulesChildren,
-  { name: 'Header', children: [pixelLayer('Decorative 1', -40, -40, 100, 100, [0, 0, 0], { effects: { disabled: true } })] },
+  { name: 'Header', children: [
+    pixelLayer('Decorative 1', -40, -40, 100, 100, [0, 0, 0], { effects: { disabled: true } }),
+    pixelLayer('048A6127', -24, -24, 100, 100, [0, 0, 0], {
+      placedLayer: {
+        id: '20953ddb-9391-11ec-b4f1-c15674f50bc4', type: 'raster',
+        transform: [1, 0, 0, 1, 0, 0, 0, 0], width: 100, height: 100,
+      },
+    }),
+  ] },
   { name: 'Another adjustment', adjustment: { type: 'brightness/contrast', brightness: 5, contrast: 5 } },
 ] });
 const outsidePsdBuffer = writePsdBuffer({ ...psd, children: [...psd.children,
   pixelLayer('#999', -20, 100, 120, 120, [0, 0, 0]),
+] });
+const knownOutsidePsdBuffer = writePsdBuffer({ ...psd, children: [
+  ...psd.children.filter((layer) => !['#1B', 'color label 1B', 'size label 1B'].includes(layer.name)),
+  pixelLayer('#1B', -20, 100, 120, 120, [50, 35, 30, 255]),
+  textLayer('color label 1B outside', '#1B', 0, 240, 80),
+  textLayer('size label 1B outside', '18″, 22″', 0, 272, 80),
 ] });
 const ambiguousPsdBuffer = writePsdBuffer({
   width,
@@ -161,6 +175,10 @@ try {
     await parseTemplateSource({ psdFile: await fileFrom('/outside.psd', 'outside.psd', 'image/vnd.adobe.photoshop'),
       jpgFile, sourceVersionId: 'outside', currentTemplate, currentColors: catalog.colors, currentSelection });
   } catch (error) { outsideError = error.message; }
+  const knownOutside = await parseTemplateSource({
+    psdFile: await fileFrom('/known-outside.psd', 'known-outside.psd', 'image/vnd.adobe.photoshop'),
+    jpgFile, sourceVersionId: 'known-outside', currentTemplate, currentColors: catalog.colors, currentSelection,
+  });
   const mismatchCanvas = document.createElement('canvas');
   mismatchCanvas.width = 300; mismatchCanvas.height = 300;
   const mismatchBlob = await new Promise((resolve) => mismatchCanvas.toBlob(resolve, 'image/jpeg'));
@@ -203,7 +221,8 @@ try {
       summary: parsed.config.parseSummary,
     },
     rules: { issues: rules.config.parseIssues, availableLengths: rules.config.availableLengths,
-      cards: rules.config.template.initialCards, assets: rules.assets.map((asset) => asset.name), outsideError, mismatchError },
+      cards: rules.config.template.initialCards, assets: rules.assets.map((asset) => asset.name), outsideError, mismatchError,
+      knownOutsideCards: knownOutside.config.template.initialCards, knownOutsideIssues: knownOutside.config.parseIssues },
     diff,
     preview: { width: preview.width, height: preview.height, bytes: previewBlob.size },
     ambiguity: {
@@ -296,6 +315,7 @@ try {
         '/catalog.json': ['application/json', catalogBuffer],
         '/rules.psd': ['image/vnd.adobe.photoshop', rulesPsdBuffer],
         '/outside.psd': ['image/vnd.adobe.photoshop', outsidePsdBuffer],
+        '/known-outside.psd': ['image/vnd.adobe.photoshop', knownOutsidePsdBuffer],
         '/fixture.psd': ['image/vnd.adobe.photoshop', psdBuffer],
         '/ambiguous.psd': ['image/vnd.adobe.photoshop', ambiguousPsdBuffer],
         '/fixture.jpg': ['image/jpeg', jpgBuffer],
@@ -358,11 +378,15 @@ try {
   assert(new Set(issueIds).size === issueIds.length && issueIds.every(Boolean), '解析问题缺少逐项唯一 ID。');
   assert(issueCodes.includes('UNRECOGNIZED_SWATCH_LAYER'), '未报告无法识别的方形图层。');
   assert(issueCodes.includes('UNCLASSIFIED_VISIBLE_LAYER'), '未报告业务区内无法分类的可见图层。');
-  assert(issueCodes.includes('UNSUPPORTED_LAYER_STRUCTURE') && result.config.issues.some((issue) => issue.code === 'UNSUPPORTED_LAYER_STRUCTURE' && issue.blocking), '不支持的 Photoshop 图层结构没有被阻断并要求人工确认。');
+  const parserStructureIssue = result.config.issues.find((issue) => issue.code === 'UNSUPPORTED_LAYER_STRUCTURE');
+  assert(issueCodes.includes('UNSUPPORTED_LAYER_STRUCTURE') && parserStructureIssue?.blocking, '不支持的 Photoshop 图层结构没有被阻断并要求人工确认。');
+  assert(parserStructureIssue?.details?.layerCount >= 1 && parserStructureIssue.details.layerNames?.length && parserStructureIssue.details.structureTypes?.length, '批量结构提醒缺少数量、代表图层或结构类型。');
   assert(result.diff.added.some((item) => item.colorCode === '#62'), '变化清单未识别新增颜色 #62。');
   assert(result.diff.removed.some((item) => item.colorCode === '#2'), '变化清单未识别移除颜色 #2。');
   assert(result.diff.unchanged.some((item) => item.colorCode === '#1006'), '变化清单未识别保持不变的 #1006。');
   assert(result.diff.resized.some((item) => item.colorCode === '#1B' && item.nextLengths.includes(24)), '变化清单未识别 #1B 尺寸改为 18／24。');
+  assert(result.diff.addedLengths.some((item) => item.colorCode === '#1B' && item.lengths.includes(24)), '变化清单未识别新增尺寸。');
+  assert(result.diff.removedLengths.some((item) => item.colorCode === '#1B' && item.lengths.includes(22)), '变化清单未识别移除尺寸。');
   assert(result.diff.reordered.some((item) => item.colorCode === '#1006'), '变化清单未识别 #1006 重排。');
   assert(result.diff.dimensionsChanged?.after.width === width && result.diff.dimensionsChanged?.after.height === height, '变化清单未识别画布尺寸调整。');
   assert(result.preview.width === width && result.preview.height === height && result.preview.bytes > 1000, '新版母版预览未成功渲染。');
@@ -370,14 +394,19 @@ try {
   assert(ambiguousSizeIssues.length === 2 && ambiguousSizeIssues.every((issue) => issue.blocking), '共享尺寸文字没有逐色阻断并要求人工确认。');
   assert(new Set(ambiguousSizeIssues.map((issue) => issue.candidateId)).size === 2, '共享尺寸文字的阻断问题未绑定到两个独立色块。');
 
+  const serverStructureIssue = result.rules.issues.find((issue) => issue.code === 'UNSUPPORTED_LAYER_STRUCTURE');
   assert(result.rules.issues.filter((issue) => issue.code === 'UNSUPPORTED_LAYER_STRUCTURE').length === 1, '结构问题没有合并');
+  assert(serverStructureIssue?.details?.layerCount >= 1 && serverStructureIssue.details.layerNames?.length && serverStructureIssue.details.structureTypes?.length, '服务端批量结构提醒缺少详情');
   assert(result.rules.issues.some((issue) => issue.code === 'NEW_COLOR_SWATCH_REVIEW' && issue.blocking), '新颜色缺少人工确认提醒');
   assert(result.rules.issues.some((issue) => issue.code === 'LENGTH_OUTSIDE_S1' && issue.blocking), '超长缺少提醒');
   assert(!result.rules.availableLengths.includes(28), '新版自动扩展了允许长度');
   assert(result.rules.cards.some((card) => card.colorCode === '#999' && card.lengths.includes(28)), '新颜色或待纠正的原始长度丢失');
   assert(result.rules.assets.some((name) => name.startsWith('colors/999-')), '新颜色候选色块没有提取');
   assert(!result.rules.issues.some((issue) => issue.message.includes('Header') || issue.message.includes('Logo')), '装饰被误判为业务色块');
+  assert(result.rules.knownOutsideCards.some((card) => card.colorCode === '#1B'), '画布变化时，原有标准色号色块未能按可见区域解析');
+  assert(!result.rules.knownOutsideIssues.some((issue) => issue.message.includes('超出新版 PSD')), '画布变化时，原有标准色号仍被错误阻断');
   assert(result.rules.outsideError.includes('超出新版 PSD'), '真实业务色块越界未阻止');
+  assert(result.rules.outsideError.includes('实际边界') && result.rules.outsideError.includes('px'), '越界提醒缺少实际边界与方向');
   assert(result.rules.mismatchError.includes('尺寸不一致'), 'PSD/JPG 不一致未阻止');
   assert(result.diff.removed.some((item) => item.colorCode === '#1B' && item.lengths.includes(22)), '删除尺寸未进入移除项目');
   const report = {

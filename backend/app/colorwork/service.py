@@ -119,8 +119,9 @@ def compute_template_statuses(db: Session, template_id: str) -> dict:
     """按模板计算各规格的实时库存状态。
 
     口径：okki_products 按名称前缀（+克重尾段）选中产品集合，LEFT JOIN 聚合
-    okki_inventory.enable_count（disable_flag=0），合计 > 0 → normal（到货正常），
-    否则 restocking（正在补货）。与 stock/public_service 的有货口径一致。
+    okki_inventory.enable_count（disable_flag=0）按颜色和尺寸汇总：
+    合计为 0 → restocking（正在补货），1–19 → low_stock（低库存），
+    合计 ≥ 20 → normal（到货正常）。
     """
     rule = TEMPLATE_MATCH.get(template_id)
     if rule is None:
@@ -181,7 +182,12 @@ def compute_template_statuses(db: Session, template_id: str) -> dict:
         if size.endswith(".0"):
             size = size[:-2]
         matched_products += int(row["product_count"])
-        statuses[f"{color}|{size}"] = "normal" if float(row["available"]) > 0 else "restocking"
+        available = float(row["available"])
+        statuses[f"{color}|{size}"] = (
+            "restocking" if available <= 0
+            else "low_stock" if available < 20
+            else "normal"
+        )
 
     return {
         "template_id": template_id,
