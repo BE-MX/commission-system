@@ -2,9 +2,14 @@
 import base64
 import json
 import tempfile
+import sys
+from urllib.parse import quote
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright, expect
+
+BASE_URL = sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:3077'
+FIXTURE_URL = BASE_URL + '/tests/fixtures/customer-media-qa.html'
 
 PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNu8AAAAASUVORK5CYII=')
 batch = {'id': 1, 'task_id': 1, 'status': 'draft', 'directories': [
@@ -35,7 +40,27 @@ with sync_playwright() as p, tempfile.TemporaryDirectory() as temp:
     page = browser.new_page(viewport={'width': 1440, 'height': 1000})
     page.on('pageerror', lambda error: errors.append(str(error)))
     page.route('**/api/customer-media/**', api)
-    page.goto('http://127.0.0.1:3077/tests/fixtures/customer-media-qa.html')
+    # Check actual clipping, not only Playwright's visibility: overflowing buttons
+    # still have a bounding box and click() can silently scroll them into view.
+    for width in [1440, 900, 800]:
+        page.set_viewport_size({'width': width, 'height': 1000})
+        for name in ['产品图', '客户拍摄素材目录' * 16, 'CustomerMediaFolder' * 7]:
+            page.goto(FIXTURE_URL + '?name=' + quote(name))
+            button = page.get_by_role('button', name='删除目录 ' + name, exact=True)
+            expect(button).to_be_visible()
+            bounds = button.evaluate("""el => {
+                const button = el.getBoundingClientRect();
+                const list = el.closest('.dir-list').getBoundingClientRect();
+                const icon = el.querySelector('svg').getBoundingClientRect();
+                return {right: button.right, listRight: list.right, iconWidth: icon.width};
+            }""")
+            assert bounds['right'] <= bounds['listRight'] + 1, (width, name, bounds)
+            assert bounds['iconWidth'] >= 12, bounds
+    page.goto(FIXTURE_URL + '?readonly')
+    expect(page.get_by_role('dialog')).to_be_visible()
+    expect(page.get_by_role('button', name='删除目录 产品图', exact=True)).to_have_count(0)
+    page.set_viewport_size({'width': 1440, 'height': 1000})
+    page.goto(FIXTURE_URL)
     page.wait_for_load_state('networkidle')
     expect(page.get_by_role('dialog')).to_be_visible()
     photo = page.locator('.asset-card img')
@@ -66,5 +91,5 @@ with sync_playwright() as p, tempfile.TemporaryDirectory() as temp:
     expect(page.locator('.asset-card')).to_have_count(0)
     assert len(deletes) == 1 and deletes[0].endswith('/batches/1/directories/7')
     assert not errors, errors
-    print(json.dumps({'passed': ['image rendered', 'lightbox teleported and closed', 'folder picker name overrides selection', 'delete cancellation', 'confirmed delete refreshes directory and assets'], 'page_errors': errors}))
+    print(json.dumps({'passed': ['directory actions fit short/long names at 3 widths', 'readonly hides deletion', 'image rendered', 'lightbox teleported and closed', 'folder picker name overrides selection', 'delete cancellation', 'confirmed delete refreshes directory and assets'], 'page_errors': errors}))
     browser.close()

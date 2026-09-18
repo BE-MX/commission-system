@@ -287,10 +287,10 @@ async function removeAsset(asset) {
 .portal-dialog { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 18px; min-height: 480px; max-height: 72vh; }
 .dir-sidebar { display: flex; min-height: 0; flex-direction: column; border-right: 1px solid var(--border-color); padding-right: 14px; }
 .dir-create { display: flex; gap: 8px; margin-bottom: 12px; }
-.dir-list { flex: 1; overflow-y: auto; display: grid; gap: 4px; align-content: start; }
+.dir-list { flex: 1; min-width: 0; overflow-y: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; align-content: start; }
 .dir-actions { display: flex; align-items: center; gap: 4px; }
 .dir-actions .dir-row { flex: 1; min-width: 0; }
-.dir-actions .el-button { margin-left: 0; }
+.dir-actions .el-button { flex: 0 0 auto; margin-left: 0; }
 .dir-row { display: flex; width: 100%; align-items: center; gap: 8px; padding: 8px 10px; border: 0; border-radius: 8px; color: var(--text-primary); background: transparent; cursor: pointer; text-align: left; font-size: 13px; }
 .dir-row:hover { background: var(--color-primary-light); }
 .dir-row.active { background: var(--color-primary-light); color: var(--color-primary-hover); font-weight: 600; }
