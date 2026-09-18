@@ -97,6 +97,12 @@ const rulesPsdBuffer = writePsdBuffer({ ...psd, children: [...rulesChildren,
 const outsidePsdBuffer = writePsdBuffer({ ...psd, children: [...psd.children,
   pixelLayer('#999', -20, 100, 120, 120, [0, 0, 0]),
 ] });
+const knownOutsidePsdBuffer = writePsdBuffer({ ...psd, children: [
+  ...psd.children.filter((layer) => !['#1B', 'color label 1B', 'size label 1B'].includes(layer.name)),
+  pixelLayer('#1B', -20, 100, 120, 120, [50, 35, 30, 255]),
+  textLayer('color label 1B outside', '#1B', 0, 240, 80),
+  textLayer('size label 1B outside', '18″, 22″', 0, 272, 80),
+] });
 const ambiguousPsdBuffer = writePsdBuffer({
   width,
   height,
@@ -169,6 +175,10 @@ try {
     await parseTemplateSource({ psdFile: await fileFrom('/outside.psd', 'outside.psd', 'image/vnd.adobe.photoshop'),
       jpgFile, sourceVersionId: 'outside', currentTemplate, currentColors: catalog.colors, currentSelection });
   } catch (error) { outsideError = error.message; }
+  const knownOutside = await parseTemplateSource({
+    psdFile: await fileFrom('/known-outside.psd', 'known-outside.psd', 'image/vnd.adobe.photoshop'),
+    jpgFile, sourceVersionId: 'known-outside', currentTemplate, currentColors: catalog.colors, currentSelection,
+  });
   const mismatchCanvas = document.createElement('canvas');
   mismatchCanvas.width = 300; mismatchCanvas.height = 300;
   const mismatchBlob = await new Promise((resolve) => mismatchCanvas.toBlob(resolve, 'image/jpeg'));
@@ -211,7 +221,8 @@ try {
       summary: parsed.config.parseSummary,
     },
     rules: { issues: rules.config.parseIssues, availableLengths: rules.config.availableLengths,
-      cards: rules.config.template.initialCards, assets: rules.assets.map((asset) => asset.name), outsideError, mismatchError },
+      cards: rules.config.template.initialCards, assets: rules.assets.map((asset) => asset.name), outsideError, mismatchError,
+      knownOutsideCards: knownOutside.config.template.initialCards, knownOutsideIssues: knownOutside.config.parseIssues },
     diff,
     preview: { width: preview.width, height: preview.height, bytes: previewBlob.size },
     ambiguity: {
@@ -304,6 +315,7 @@ try {
         '/catalog.json': ['application/json', catalogBuffer],
         '/rules.psd': ['image/vnd.adobe.photoshop', rulesPsdBuffer],
         '/outside.psd': ['image/vnd.adobe.photoshop', outsidePsdBuffer],
+        '/known-outside.psd': ['image/vnd.adobe.photoshop', knownOutsidePsdBuffer],
         '/fixture.psd': ['image/vnd.adobe.photoshop', psdBuffer],
         '/ambiguous.psd': ['image/vnd.adobe.photoshop', ambiguousPsdBuffer],
         '/fixture.jpg': ['image/jpeg', jpgBuffer],
@@ -391,6 +403,8 @@ try {
   assert(result.rules.cards.some((card) => card.colorCode === '#999' && card.lengths.includes(28)), '新颜色或待纠正的原始长度丢失');
   assert(result.rules.assets.some((name) => name.startsWith('colors/999-')), '新颜色候选色块没有提取');
   assert(!result.rules.issues.some((issue) => issue.message.includes('Header') || issue.message.includes('Logo')), '装饰被误判为业务色块');
+  assert(result.rules.knownOutsideCards.some((card) => card.colorCode === '#1B'), '画布变化时，原有标准色号色块未能按可见区域解析');
+  assert(!result.rules.knownOutsideIssues.some((issue) => issue.message.includes('超出新版 PSD')), '画布变化时，原有标准色号仍被错误阻断');
   assert(result.rules.outsideError.includes('超出新版 PSD'), '真实业务色块越界未阻止');
   assert(result.rules.outsideError.includes('实际边界') && result.rules.outsideError.includes('px'), '越界提醒缺少实际边界与方向');
   assert(result.rules.mismatchError.includes('尺寸不一致'), 'PSD/JPG 不一致未阻止');
