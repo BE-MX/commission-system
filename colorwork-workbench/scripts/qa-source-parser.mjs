@@ -99,7 +99,12 @@ const outsidePsdBuffer = writePsdBuffer({ ...psd, children: [...psd.children,
 ] });
 const knownOutsidePsdBuffer = writePsdBuffer({ ...psd, children: [
   ...psd.children.filter((layer) => !['#1B', 'color label 1B', 'size label 1B'].includes(layer.name)),
-  pixelLayer('#1B', -20, 100, 120, 120, [50, 35, 30, 255]),
+  pixelLayer('#1B', -20, 100, 120, 120, [50, 35, 30, 255], {
+    placedLayer: {
+      id: '20953ddb-9391-11ec-b4f1-c15674f50bc4', type: 'raster',
+      transform: [1, 0, 0, 1, 0, 0, 0, 0], width: 120, height: 120,
+    },
+  }),
   textLayer('color label 1B outside', '#1B', 0, 240, 80),
   textLayer('size label 1B outside', '18″, 22″', 0, 272, 80),
 ] });
