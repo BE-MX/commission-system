@@ -1,5 +1,6 @@
 """OKKI receipt protocol, read-back and complete pagination. No mirror writes."""
 from decimal import Decimal, InvalidOperation
+import json
 from datetime import datetime, timedelta
 import httpx
 
@@ -49,7 +50,7 @@ def order_receipts(db, order_id):
         try:
             return _window_order_receipts(db, order_id)
         except ValueError as exc:
-            raise ValueError("小满回款分页重复且时间窗口核验失败，请刷新余额或联系管理员") from exc
+            raise ValueError(f"小满回款分页重复；{exc}") from exc
 
 
 def _window_order_receipts(db, order_id):
@@ -67,9 +68,9 @@ def _window_order_receipts(db, order_id):
         if len(rows) != min(100, int(total)):
             raise ValueError("回款时间窗口条数不完整")
         return rows, int(total)
-    _, expected = fetch()
-    remaining, seen, found = expected, set(), []
     end = upper.strftime("%Y-%m-%d %H:%M:%S")
+    _, expected = fetch(lower, end)
+    remaining, seen, found = expected, set(), []
     def validate(rows, start, finish):
         for row in rows:
             if not isinstance(row, dict) or "order_id" not in row or not row.get("cash_collection_id"):
@@ -105,10 +106,40 @@ def _window_order_receipts(db, order_id):
                 found.append(row)
         remaining -= len(rows)
         if remaining == 0:
-            # Recheck both unfiltered and frozen-window totals before using this balance.
-            if len(seen) != expected or fetch()[1] != expected or fetch(lower, upper.strftime("%Y-%m-%d %H:%M:%S"))[1] != expected:
-                raise ValueError("回款扫描期间发生变化")
-            return found
+            # New receipts outside the frozen baseline are expected during a long scan.
+            # A shrinking/changing historical window is still an incomplete baseline.
+            if len(seen) != expected or fetch(lower, upper.strftime("%Y-%m-%d %H:%M:%S"))[1] != expected:
+                raise ValueError("回款历史窗口发生变化，请刷新后重试")
+            delta_start = (upper - timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M:%S")
+            delta_end = beijing_now().replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
+            if delta_end < upper.strftime("%Y-%m-%d %H:%M:%S"):
+                raise ValueError("回款核验时钟异常")
+            def delta():
+                changes, total = fetch(delta_start, delta_end)
+                validate(changes, delta_start, delta_end)
+                identities = {str(row["cash_collection_id"]) for row in changes}
+                if total > 100 or len(identities) != total:
+                    raise ValueError("回款增量窗口不完整，请刷新后重试")
+                return changes
+            changes, confirmed = delta(), delta()
+            canonical = lambda rows: json.dumps(sorted(rows, key=lambda r: str(r["cash_collection_id"])), sort_keys=True)
+            if canonical(changes) != canonical(confirmed):
+                raise ValueError("回款增量发生变化，请刷新后重试")
+            # Replace by ID, including receipts moved out of/into this order.
+            matching = {str(row["cash_collection_id"]): row for row in found}
+            for row in confirmed:
+                identity = str(row["cash_collection_id"])
+                seen.add(identity)
+                matching.pop(identity, None)
+                if str(row["order_id"]) == str(order_id):
+                    matching[identity] = row
+            latest, current_total = fetch()
+            # A same-count edit after delta_end is not covered by either delta read.
+            # The latest page must still be inside the verified watermark.
+            validate(latest, lower, delta_end)
+            if current_total != len(seen):
+                raise ValueError("回款扫描期间发生变化，请刷新后重试")
+            return list(matching.values())
         if remaining < 0 or not rows:
             break
     raise ValueError("回款时间窗口未完整读取")
