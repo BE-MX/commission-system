@@ -523,7 +523,7 @@ export function SourceVersionManager({
           )}
 
           <div className="source-activate-bar">
-            <p>{!mappingsReady ? '还有颜色对应或尺寸待确认。' : !issuesReady ? '还有解析问题待逐项确认。' : !statusesReady ? '还有新增规格待设置初始状态。' : previewState === 'rendering' ? '正在验证新版实际预览。' : previewState === 'failed' ? '新版预览失败，不能启用。' : '已满足启用条件；原版本仍保留并可从母版历史回退。'}</p>
+            <p>{!mappingsReady ? '还有颜色对应或尺寸待确认。' : !issuesReady ? '还有解析问题待按类别确认。' : !statusesReady ? '还有新增规格待设置初始状态。' : previewState === 'rendering' ? '正在验证新版实际预览。' : previewState === 'failed' ? '新版预览失败，不能启用。' : '已满足启用条件；原版本仍保留并可从母版历史回退。'}</p>
             <button onClick={() => void activate()} disabled={!mappingsReady || !issuesReady || !statusesReady || previewState !== 'ready' || activating || disabled}><CheckCircle2 size={17} />{activating ? '正在启用…' : `确认启用源 S${candidate.number}`}</button>
           </div>
         </div>

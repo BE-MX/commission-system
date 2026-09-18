@@ -324,10 +324,6 @@ function looksLikeSwatchGeometry(item: FlatLayer, psd: Psd) {
   if (isDecorative(item) || !item.bounds || item.layer.children?.length || item.hidden || item.text || !item.layer.canvas) return false;
   const opacity = Number(item.layer.opacity);
   if (item.layer.placedLayer && Number.isFinite(opacity) && opacity < 0.2) return false;
-  const rawBounds = item.rawBounds ?? item.bounds;
-  if (item.layer.placedLayer && (
-    rawBounds![0] < 0 || rawBounds![1] < 0 || rawBounds![2] > psd.width || rawBounds![3] > psd.height
-  )) return false;
   const itemWidth = width(item.bounds);
   const itemHeight = height(item.bounds);
   const ratio = itemWidth / itemHeight;
