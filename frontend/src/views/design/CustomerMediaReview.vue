@@ -34,7 +34,7 @@
                   class="tag-chip"
                 >{{ tagLabel(tag) }}</el-tag>
                 <span v-if="!(asset.tags || []).length" class="no-tag">未打标签</span>
-                <el-button link type="primary" size="small" class="tag-edit" @click="openTagPicker(asset)">编辑标签</el-button>
+                <el-button link type="primary" class="tag-edit" @click="openTagPicker(asset)">编辑标签</el-button>
               </div>
             </div>
           </article>

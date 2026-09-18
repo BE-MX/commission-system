@@ -20,7 +20,6 @@
             v-if="dim.is_single_select && selection[dim.id] != null"
             link
             type="primary"
-            size="small"
             @click="selection[dim.id] = null"
           >清除</el-button>
         </div>
@@ -62,10 +61,10 @@
               class="picker-create-input"
               @keyup.enter="submitCreate(dim)"
             />
-            <el-button size="small" type="primary" :loading="creating" @click="submitCreate(dim)">新建</el-button>
-            <el-button size="small" link @click="cancelCreate">取消</el-button>
+            <el-button type="primary" :loading="creating" @click="submitCreate(dim)">新建</el-button>
+            <el-button link @click="cancelCreate">取消</el-button>
           </template>
-          <el-button v-else link type="primary" size="small" @click="startCreate(dim)">+ 新建标签</el-button>
+          <el-button v-else link type="primary" @click="startCreate(dim)">+ 新建标签</el-button>
         </div>
       </div>
     </div>

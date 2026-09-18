@@ -1,3 +1,7 @@
+## 2026-09-18 六处旧按钮尺寸修复（合并推送交付）
+
+分支 `codex/fix-small-buttons`，worktree `D:/MyProgram/commission-system-codex-small-buttons`。仅移除CustomerMediaReview的编辑标签、AssetTagEditor的清除、CustomerMediaTagPicker的清除/新建/取消/新建标签共6处el-button的small尺寸，沿用默认尺寸；输入框、标签、选择控件及事件逻辑保持原样。`npm run build`、`git diff --check`通过；约定检查的6项legacy small告警消失，仍有7项既有行数基线告警，未修改基线。未做登录页面浏览器验收。用户已授权合并main并推送origin；本轮不部署，完成交付后清理本任务分支及worktree。
+
 ## 2026-09-17 库存单自动回款与回款管理（Codex，合并推送交付，未部署）
 
 - worktree `D:/MyProgram/commission-system-codex-receipts`，分支 `codex/receipt-management`。库存单截图必填同步校验、完整同步后唯一自动建回款、手工回款、列表/详情/私有凭证、失败重试与未知结果核对已落地。
