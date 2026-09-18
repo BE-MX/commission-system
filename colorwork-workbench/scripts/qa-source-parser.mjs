@@ -83,7 +83,15 @@ const rulesChildren = psd.children.map((layer) => layer.name === '#62' ? { ...la
   : layer.name === 'color label 62' ? textLayer('color label 999', '#999', 380, 310, 80)
   : layer.name === 'size label 62' ? textLayer('size label 999', '28″', 360, 342) : layer);
 const rulesPsdBuffer = writePsdBuffer({ ...psd, children: [...rulesChildren,
-  { name: 'Header', children: [pixelLayer('Decorative 1', -40, -40, 100, 100, [0, 0, 0], { effects: { disabled: true } })] },
+  { name: 'Header', children: [
+    pixelLayer('Decorative 1', -40, -40, 100, 100, [0, 0, 0], { effects: { disabled: true } }),
+    pixelLayer('048A6127', -24, -24, 100, 100, [0, 0, 0], {
+      placedLayer: {
+        id: '20953ddb-9391-11ec-b4f1-c15674f50bc4', type: 'raster',
+        transform: [1, 0, 0, 1, 0, 0, 0, 0], width: 100, height: 100,
+      },
+    }),
+  ] },
   { name: 'Another adjustment', adjustment: { type: 'brightness/contrast', brightness: 5, contrast: 5 } },
 ] });
 const outsidePsdBuffer = writePsdBuffer({ ...psd, children: [...psd.children,
@@ -384,6 +392,7 @@ try {
   assert(result.rules.assets.some((name) => name.startsWith('colors/999-')), '新颜色候选色块没有提取');
   assert(!result.rules.issues.some((issue) => issue.message.includes('Header') || issue.message.includes('Logo')), '装饰被误判为业务色块');
   assert(result.rules.outsideError.includes('超出新版 PSD'), '真实业务色块越界未阻止');
+  assert(result.rules.outsideError.includes('实际边界') && result.rules.outsideError.includes('px'), '越界提醒缺少实际边界与方向');
   assert(result.rules.mismatchError.includes('尺寸不一致'), 'PSD/JPG 不一致未阻止');
   assert(result.diff.removed.some((item) => item.colorCode === '#1B' && item.lengths.includes(22)), '删除尺寸未进入移除项目');
   const report = {

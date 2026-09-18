@@ -254,13 +254,42 @@ function imageDimensions(file: File) {
 function isDecorative(item: FlatLayer) {
   const decoration = /(?:^|[\s_-])(?:title|header|footer|logo|decoration|decorative|ornament|bottom|headline|branding)(?:$|[\s_\-\d])|标题|页眉|页脚|底部|装饰|标志|页头/i;
   const name = cleanText(item.layer.name);
-  // Explicit color identities still take precedence over a decorative parent.
+  // A placed layer inside a known decorative group is not a business swatch,
+  // even when a designer happened to give the asset a color-like name.
+  // This prevents header/footer/logo smart objects from being rejected by
+  // the business bounds check below.
+  if (item.path.slice(0, -1).some((part) => decoration.test(part))) return true;
   if (name.startsWith('#') || normalizedColorCode(item.text)) return false;
   if (decoration.test(name)) return true;
   if (normalizedColorCode(name)) return false;
   const opacity = Number(item.layer.opacity);
   if (item.layer.placedLayer && Number.isFinite(opacity) && opacity < 0.2) return true;
-  return item.path.some((part) => decoration.test(part));
+  return false;
+}
+
+function boundsOverflow(bounds: Bounds, documentWidth: number, documentHeight: number) {
+  const sides: string[] = [];
+  if (bounds[0] < 0) sides.push(`左侧超出 ${Math.ceil(-bounds[0])} px`);
+  if (bounds[1] < 0) sides.push(`顶部超出 ${Math.ceil(-bounds[1])} px`);
+  if (bounds[2] > documentWidth) sides.push(`右侧超出 ${Math.ceil(bounds[2] - documentWidth)} px`);
+  if (bounds[3] > documentHeight) sides.push(`底部超出 ${Math.ceil(bounds[3] - documentHeight)} px`);
+  return sides;
+}
+
+function layerStructureLabel(item: FlatLayer) {
+  const labels: string[] = [];
+  if (item.layer.placedLayer) labels.push('智能对象／置入图层');
+  if (item.layer.children?.length) labels.push('图层组');
+  if (item.layer.effects) labels.push('图层效果');
+  if (item.layer.mask || item.layer.realMask || item.layer.vectorMask || item.layer.filterMask) labels.push('蒙版');
+  return labels.join('、') || '普通像素图层';
+}
+
+function outOfBoundsMessage(item: FlatLayer, psd: Psd) {
+  const bounds = item.bounds!;
+  const [left, top, right, bottom] = bounds.map((value) => Math.round(value));
+  const sides = boundsOverflow(bounds, psd.width, psd.height);
+  return `业务色块“${item.path.join(' › ')}”超出新版 PSD 画布 ${psd.width}×${psd.height}：实际边界为 [${left}, ${top}, ${right}, ${bottom}]，${sides.join('、')}；图层类型为${layerStructureLabel(item)}。请检查该图层是否为真实业务色块；若是，请移回画布内后重新上传。`;
 }
 
 function looksLikeSwatchGeometry(item: FlatLayer, psd: Psd) {
@@ -363,7 +392,7 @@ export async function parseTemplateSource(args: {
     if (item.hidden || isDecorative(item) || item.layer.children?.length || item.text || !item.bounds) continue;
     if (normalizedColorCode(item.layer.name || '') && (
       item.bounds[0] < 0 || item.bounds[1] < 0 || item.bounds[2] > psd.width || item.bounds[3] > psd.height
-    )) throw new Error(`业务色块“${item.path.join(' › ')}”超出新版 PSD 画布 ${psd.width}×${psd.height}，请修正后重新上传。`);
+    )) throw new Error(outOfBoundsMessage(item, psd));
   }
   const swatches = flat.filter((item) => isCandidateSwatch(item, psd));
   if (!swatches.length) throw new Error('没有识别到可用颜色图层。请保留以色号命名的独立色块图层。');
@@ -416,7 +445,7 @@ export async function parseTemplateSource(args: {
   )).entries()) {
     const bounds = swatch.bounds!;
     if (bounds[0] < 0 || bounds[1] < 0 || bounds[2] > psd.width || bounds[3] > psd.height) {
-      throw new Error(`业务色块“${swatch.path.join(' › ')}”超出新版 PSD 画布 ${psd.width}×${psd.height}，请修正后重新上传。`);
+      throw new Error(outOfBoundsMessage(swatch, psd));
     }
     const colorCode = displayColorCode(swatch.layer.name || '', currentColors);
     const section = sectionFor(bounds, sectionsWithTop);
