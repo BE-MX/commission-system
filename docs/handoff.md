@@ -4,6 +4,12 @@
 - 产品明细复制最后一条产品行时显式保留当前客户成交价（含手改价格）与客户规则参考价，并按复制后的数量、单价、折扣重算金额；清空原行 ID，物料计划保持独立。
 - 验证：27项目标回归、前端构建、独立审查、增量约定规则和 diff 检查通过。发票全套93项中91通过，2项客户切换/同步的源码断言在未修改主目录也失败；全局约定检查仍有7项无关行数基线告警。Git巡检为 `--no-fetch` 本地快照。未做真实登录页面的浏览器操作验收；用户已授权合并 main 并推送 origin；本轮不部署。
 
+## 2026-09-18 发货检验扫码明细排序（Codex，合并推送交付）
+
+- 分支 `codex/shipping-item-order`，worktree `D:/MyProgram/commission-system-codex-shipping-item-order`。手机网页、小程序扫码及刷新共用 `scan_payload`，现复用出库打印的规格自然升序、尺寸数值升序；同键稳定排序，明细字段及媒体 item_id 关联不变。无需前端或小程序代码变更。
+- 两项新增接口回归先复现失败，修复后通过；相关后端测试 38 项通过。另有既有 `test_audit_beijing_midnight_ignores_server_timezone` 失败，在未修改主目录单独运行同样复现，本次未改该时间测试。小程序视图、手机交互、打印模板共 33 项 Node 测试通过；未做真实扫码浏览器/手机验收。
+- 独立审查通过：两端入口无遗漏，前端无二次排序，媒体仍按 item_id 关联。增量约定检查无违规，完整约定检查被 7 项已有前端行数基线告警阻挡；`git diff --check` 通过，Git 巡检已执行 `--no-fetch`（本地快照）。用户已授权合并 main 并推送 origin；本轮不部署，交付后清理本任务分支与 worktree。
+
 ## 2026-09-18 六处旧按钮尺寸修复（合并推送交付）
 
 分支 `codex/fix-small-buttons`，worktree `D:/MyProgram/commission-system-codex-small-buttons`。仅移除CustomerMediaReview的编辑标签、AssetTagEditor的清除、CustomerMediaTagPicker的清除/新建/取消/新建标签共6处el-button的small尺寸，沿用默认尺寸；输入框、标签、选择控件及事件逻辑保持原样。`npm run build`、`git diff --check`通过；约定检查的6项legacy small告警消失，仍有7项既有行数基线告警，未修改基线。未做登录页面浏览器验收。用户已授权合并main并推送origin；本轮不部署，完成交付后清理本任务分支及worktree。

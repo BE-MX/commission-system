@@ -16,6 +16,7 @@ from app.core.time import beijing_now
 from app.shipping_inspection import constants as C
 from app.shipping_inspection import file_service, outbound_service, audit_service
 from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto
+from app.shipping_inspection.print_service import sort_outbound_print_items
 
 logger = logging.getLogger("commission")
 
@@ -249,11 +250,11 @@ def recall(db: Session, inspection_id: int, user_id: int, edit_version: int) -> 
 
 
 def scan_payload(db: Session, outbound_record_id: str) -> dict:
-    """小程序扫码返回：单头 + 明细 + 已有照片 + 当前状态。"""
+    """手机与小程序扫码返回；明细顺序与出库单打印一致。"""
     record = outbound_service.get_outbound_record(db, outbound_record_id)
     if record is None:
         raise ValueError("出库单不存在，请核对二维码")
-    items = outbound_service.list_outbound_items(db, outbound_record_id)
+    items = sort_outbound_print_items(outbound_service.list_outbound_items(db, outbound_record_id))
     inspection = _get_by_outbound_id(db, outbound_record_id)
     photos = list_photos(db, inspection.id) if inspection is not None else []
     videos = list_photos(db, inspection.id, "video") if inspection is not None else []
