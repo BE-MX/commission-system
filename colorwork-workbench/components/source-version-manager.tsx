@@ -54,6 +54,30 @@ function parseLengths(value: string) {
   return [...new Set(values)].sort((a, b) => a - b);
 }
 
+async function asPng(file: File): Promise<Blob> {
+  if (file.type === 'image/png') return file;
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const value = new Image();
+      value.onload = () => resolve(value);
+      value.onerror = () => reject(new Error('无法读取这个色块图。'));
+      value.src = url;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext('2d');
+    if (!context || !canvas.width || !canvas.height) throw new Error('无法读取这个色块图。');
+    context.drawImage(image, 0, 0);
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('色块图转换 PNG 失败。')), 'image/png');
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 function mergeColors(current: StockColor[], next: StockColor[]) {
   const merged = new Map(current.map((color) => [color.id, color]));
   for (const color of next) merged.set(color.id, color);
@@ -85,6 +109,7 @@ export function SourceVersionManager({
   const [jpg, setJpg] = useState<File | null>(null);
   const [versions, setVersions] = useState<SourceVersionSummary[]>([]);
   const [candidate, setCandidate] = useState<SourceVersionSummary | null>(null);
+  const [swatchFiles, setSwatchFiles] = useState<Record<string, File | null>>({});
   const [mappings, setMappings] = useState<Record<string, MappingDraft>>({});
   const [initialStatuses, setInitialStatuses] = useState<Record<string, InventoryStatus | ''>>({});
   const [acknowledged, setAcknowledged] = useState<Record<string, boolean>>({});
@@ -96,6 +121,7 @@ export function SourceVersionManager({
   const [flowStep, setFlowStep] = useState<1 | 2 | 3 | 4>(1);
   const [previewState, setPreviewState] = useState<'idle' | 'rendering' | 'ready' | 'failed'>('idle');
   const previewRef = useRef<HTMLCanvasElement>(null);
+  const initializedCandidateIdRef = useRef<string | null>(null);
   const config = candidate?.config ?? null;
   const reviewConfig = useMemo(() => {
     if (!config) return null;
@@ -142,7 +168,9 @@ export function SourceVersionManager({
 
   useEffect(() => { void loadVersions(); }, [loadVersions]);
   useEffect(() => {
+    initializedCandidateIdRef.current = null;
     setCandidate(null);
+    setSwatchFiles({});
     setMappings({});
     setInitialStatuses({});
     setAcknowledged({});
@@ -157,7 +185,8 @@ export function SourceVersionManager({
 
   useEffect(() => {
     const config = candidate?.config;
-    if (!config) return;
+    if (!config || initializedCandidateIdRef.current === candidate.id) return;
+    initializedCandidateIdRef.current = candidate.id;
     const next: Record<string, MappingDraft> = {};
     for (const card of config.template.initialCards) {
       next[card.candidateId] = {
@@ -412,6 +441,31 @@ export function SourceVersionManager({
     }
   }
 
+  async function replaceCandidateColor(card: SourceCard) {
+    const file = swatchFiles[card.candidateId];
+    if (!candidate || !file) return;
+    setRunning(true);
+    setError('');
+    setNotice('');
+    try {
+      setProgress(`正在替换 ${card.colorCode} 的候选色块图…`);
+      const png = await asPng(file);
+      const detail = await responseJson<SourceVersionSummary>(await workbenchFetch(
+        `/api/template-sources/${state.templateId}/${candidate.id}/colors/${encodeURIComponent(card.colorId)}`,
+        { method: 'PUT', headers: { 'content-type': 'image/png' }, body: png },
+      ));
+      setCandidate(detail);
+      setSwatchFiles((current) => ({ ...current, [card.candidateId]: null }));
+      setProgress('');
+      setNotice(`${card.colorCode} 的候选色块图已替换；原有版本和历史素材保持不变。`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '候选色块图替换失败。');
+      setProgress('');
+    } finally {
+      setRunning(false);
+    }
+  }
+
   async function markStalledFailed(version: SourceVersionSummary) {
     setError('');
     try {
@@ -433,6 +487,7 @@ export function SourceVersionManager({
         <button onClick={() => void loadVersions()} disabled={running || activating}><RefreshCw size={15} />刷新版本</button>
       </header>
       <p>固定更新当前产品与 Radio，不新建重复模板。流程完成前，业务继续使用源 S{state.sourceVersion.number ?? '—'}。</p>
+      <p>旧版 S1、历史色块图和库存数据保持不变；只有新版出现新增颜色时，才在人工确认区单独替换该颜色的候选色块图。</p>
 
       <div className="source-steps" aria-label="更新流程">
         {['上传 PSD＋JPG', '解析与校验', '预览变化与人工确认', '确认启用'].map((label, index) => (
@@ -484,6 +539,11 @@ export function SourceVersionManager({
                 <article key={card.candidateId} className={card.matchState === 'unresolved' ? 'needs-review' : ''}>
                   <img src={workbenchUrl(colorForId(mergeColors(state.colors, config.colors), config.template, card.colorId)?.image)} alt="" />
                   <div><strong>{card.colorCode}</strong><small>{card.matchReason}</small></div>
+                  {card.matchState === 'new' && <div className="candidate-swatch-upload">
+                    <small>新增颜色只需补这一张色块图；原有色块图无需重新上传。</small>
+                    <label>选择新增色块图<input type="file" accept="image/png,image/jpeg" disabled={running || activating || disabled} onChange={(event) => setSwatchFiles((current) => ({ ...current, [card.candidateId]: event.target.files?.[0] ?? null }))} /></label>
+                    {swatchFiles[card.candidateId] && <button type="button" onClick={() => void replaceCandidateColor(card)} disabled={running || activating || disabled}>替换候选色块图</button>}
+                  </div>}
                   <select value={mapping?.mode || ''} onChange={(event) => updateMapping(card.candidateId, { mode: event.target.value as MappingDraft['mode'], entryId: '' })}>
                     <option value="">请选择对应方式</option>
                     {eligible.length > 0 && <option value="existing">映射到现有颜色</option>}
@@ -505,7 +565,7 @@ export function SourceVersionManager({
               {config.parseIssues.map((issue) => (
                 <label key={sourceIssueKey(issue)} className={issue.blocking ? 'blocking' : ''}>
                   {issue.blocking ? <input type="checkbox" checked={Boolean(acknowledged[sourceIssueKey(issue)])} onChange={(event) => setAcknowledged((current) => ({ ...current, [sourceIssueKey(issue)]: event.target.checked }))} /> : <CheckCircle2 size={15} />}
-                  <span><strong>{issue.code}</strong>{issue.message}{issue.details?.swatchStatus && <small>状态：{issue.details.swatchStatus}；当前版本暂不支持在此处覆盖候选色块，若提取色块不一致，请重新上传新版源文件。</small>}{issue.details?.layerNames?.length && <small>代表图层：{issue.details.layerNames.join('、')}</small>}{issue.details?.structureTypes?.length && <small>结构类型：{issue.details.structureTypes.join('、')}</small>}{issue.blocking && <small>我已对照 PSD／JPG，确认该项处理方式无误后才可勾选</small>}</span>
+                  <span><strong>{issue.code}</strong>{issue.message}{issue.details?.swatchStatus && <small>状态：{issue.details.swatchStatus}；如需独立色块图，只替换对应新增颜色的候选图即可，无需重新上传原有色块图。</small>}{issue.details?.layerNames?.length && <small>代表图层：{issue.details.layerNames.join('、')}</small>}{issue.details?.structureTypes?.length && <small>结构类型：{issue.details.structureTypes.join('、')}</small>}{issue.blocking && <small>我已对照 PSD／JPG，确认该项处理方式无误后才可勾选</small>}</span>
                 </label>
               ))}
             </div>

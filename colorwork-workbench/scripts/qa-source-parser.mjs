@@ -176,9 +176,11 @@ try {
     sourceVersionId: 'rules', currentTemplate, currentColors: catalog.colors, currentSelection,
   });
   let outsideError = '';
+  let outsideIssues = [];
   try {
-    await parseTemplateSource({ psdFile: await fileFrom('/outside.psd', 'outside.psd', 'image/vnd.adobe.photoshop'),
+    const outside = await parseTemplateSource({ psdFile: await fileFrom('/outside.psd', 'outside.psd', 'image/vnd.adobe.photoshop'),
       jpgFile, sourceVersionId: 'outside', currentTemplate, currentColors: catalog.colors, currentSelection });
+    outsideIssues = outside.config.parseIssues;
   } catch (error) { outsideError = error.message; }
   const knownOutside = await parseTemplateSource({
     psdFile: await fileFrom('/known-outside.psd', 'known-outside.psd', 'image/vnd.adobe.photoshop'),
@@ -226,7 +228,7 @@ try {
       summary: parsed.config.parseSummary,
     },
     rules: { issues: rules.config.parseIssues, availableLengths: rules.config.availableLengths,
-      cards: rules.config.template.initialCards, assets: rules.assets.map((asset) => asset.name), outsideError, mismatchError,
+      cards: rules.config.template.initialCards, assets: rules.assets.map((asset) => asset.name), outsideError, outsideIssues, mismatchError,
       knownOutsideCards: knownOutside.config.template.initialCards, knownOutsideIssues: knownOutside.config.parseIssues },
     diff,
     preview: { width: preview.width, height: preview.height, bytes: previewBlob.size },
@@ -409,10 +411,11 @@ try {
   assert(result.rules.assets.some((name) => name.startsWith('colors/999-')), '新颜色候选色块没有提取');
   assert(!result.rules.issues.some((issue) => issue.message.includes('Header') || issue.message.includes('Logo')), '装饰被误判为业务色块');
   assert(result.rules.knownOutsideCards.some((card) => card.colorCode === '#1B'), '画布变化时，原有标准色号色块未能按可见区域解析');
-  assert(!result.rules.knownOutsideIssues.some((issue) => issue.message.includes('超出新版 PSD')), '画布变化时，原有标准色号仍被错误阻断');
-  assert(result.rules.outsideError.includes('超出新版 PSD'), '真实业务色块越界未阻止');
-  assert(result.rules.outsideError.includes('实际边界') && result.rules.outsideError.includes('px'), '越界提醒缺少实际边界与方向');
-  assert(result.rules.mismatchError.includes('尺寸不一致'), 'PSD/JPG 不一致未阻止');
+   assert(result.rules.knownOutsideIssues.some((issue) => issue.code === 'COLOR_LAYER_OUT_OF_BOUNDS_REVIEW'), '画布变化时，原有标准色号越界未进入人工确认提醒');
+   assert(!result.rules.outsideError, '真实业务色块越界不应再阻止候选版本生成');
+   assert(result.rules.outsideIssues.some((issue) => issue.code === 'COLOR_LAYER_OUT_OF_BOUNDS_REVIEW'), '越界色块未进入人工确认提醒');
+   assert(result.rules.outsideIssues.some((issue) => issue.message.includes('实际边界') && issue.message.includes('px')), '越界提醒缺少实际边界与方向');
+   assert(result.rules.mismatchError.includes('尺寸不一致'), 'PSD/JPG 不一致未阻止');
   assert(result.diff.removed.some((item) => item.colorCode === '#1B' && item.lengths.includes(22)), '删除尺寸未进入移除项目');
   const report = {
     passed: true,

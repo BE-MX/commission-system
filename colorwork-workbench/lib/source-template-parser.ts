@@ -317,7 +317,7 @@ function outOfBoundsMessage(item: FlatLayer, psd: Psd) {
   const bounds = item.rawBounds ?? item.bounds!;
   const [left, top, right, bottom] = bounds.map((value) => Math.round(value));
   const sides = boundsOverflow(bounds, psd.width, psd.height);
-  return `业务色块“${item.path.join(' › ')}”超出新版 PSD 画布 ${psd.width}×${psd.height}：实际边界为 [${left}, ${top}, ${right}, ${bottom}]，${sides.join('、')}；图层类型为${layerStructureLabel(item)}。请检查该图层是否为真实业务色块；若是，请移回画布内后重新上传。`;
+  return `业务色块“${item.path.join(' › ')}”超出新版 PSD 画布 ${psd.width}×${psd.height}：实际边界为 [${left}, ${top}, ${right}, ${bottom}]，${sides.join('、')}；图层类型为${layerStructureLabel(item)}。系统已按画布内可见区域提取，候选版本仍可继续，请对照新版 JPG 人工确认。`;
 }
 
 function looksLikeSwatchGeometry(item: FlatLayer, psd: Psd) {
@@ -414,14 +414,18 @@ export async function parseTemplateSource(args: {
     }
   }
   const oldMaps = oldSemanticMap(currentSelection, currentColors, currentTemplate);
-  const canvasChanged = psd.width !== currentTemplate.width || psd.height !== currentTemplate.height;
   for (const item of flat) {
     if (item.hidden || isDecorative(item) || item.layer.children?.length || item.text || !item.bounds) continue;
     const colorCode = normalizedColorCode(item.layer.name || '');
     const rawBounds = item.rawBounds ?? item.bounds;
     const outside = rawBounds[0] < 0 || rawBounds[1] < 0 || rawBounds[2] > psd.width || rawBounds[3] > psd.height;
-    const isExistingColor = Boolean(colorCode && oldMaps.byColor.has(semanticColorKey(colorCode)));
-    if (colorCode && outside && (!canvasChanged || !isExistingColor)) throw new Error(outOfBoundsMessage(item, psd));
+    if (colorCode && outside) {
+      issues.push({
+        code: 'COLOR_LAYER_OUT_OF_BOUNDS_REVIEW',
+        message: outOfBoundsMessage(item, psd),
+        blocking: true,
+      });
+    }
   }
   const swatches = flat.filter((item) => isCandidateSwatch(item, psd));
   if (!swatches.length) throw new Error('没有识别到可用颜色图层。请保留以色号命名的独立色块图层。');

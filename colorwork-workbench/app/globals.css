@@ -359,6 +359,12 @@ button:focus-visible, input:focus-visible { outline: 3px solid #b39a84; outline-
 .source-mapping article > div strong, .source-mapping article > div small { display: block; }
 .source-mapping article > div strong { font-size: 11px; }
 .source-mapping article > div small { margin-top: 3px; color: #81797a; font-size: 8px; line-height: 1.3; }
+.source-mapping .candidate-swatch-upload { display: grid; align-content: center; gap: 4px; }
+.source-mapping .candidate-swatch-upload > small { margin: 0; color: #946627; font-size: 8px; line-height: 1.35; }
+.source-mapping .candidate-swatch-upload label { color: #746d6f; font-size: 9px; }
+.source-mapping .candidate-swatch-upload input { min-height: 25px; padding: 3px; font-size: 9px; }
+.source-mapping .candidate-swatch-upload button { min-height: 25px; padding: 0 8px; border: 0; border-radius: 5px; color: #fff; background: #0a1e54; font-size: 9px; font-weight: 700; }
+.source-mapping .candidate-swatch-upload button:disabled { opacity: .45; }
 .source-mapping select, .source-mapping input, .source-statuses select { width: 100%; min-height: 31px; padding: 0 7px; border: 1px solid #d8cecc; border-radius: 5px; color: #4c4849; background: #fff; font-size: 10px; }
 .source-mapping label { color: #746d6f; font-size: 9px; }
 .source-mapping label input, .source-mapping label select { display: block; margin-top: 3px; }
@@ -435,7 +441,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid #b39a84; outline-
   .source-review { display: block; }
   .source-review > div { margin-top: 9px; }
   .source-mapping > article { grid-template-columns: 38px 1fr; }
-  .source-mapping > article > select, .source-mapping article > label { grid-column: 1 / -1; }
+  .source-mapping > article > select, .source-mapping article > label, .source-mapping article > .candidate-swatch-upload { grid-column: 1 / -1; }
   .source-statuses > label { grid-template-columns: 1fr; }
   .source-activate-bar { align-items: stretch; flex-direction: column; }
   .source-activate-bar > button { width: 100%; }
