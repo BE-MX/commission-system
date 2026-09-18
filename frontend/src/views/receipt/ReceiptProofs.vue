@@ -1,7 +1,7 @@
 <template>
   <div class="receipt-proofs">
     <AppUpload v-if="!readonly" :model-value="files" :upload-fn="upload" :show-list="false"
-      accept="image/png,image/jpeg,image/webp" :max-size-mb="10" :limit="5" multiple button-text="上传回款截图" />
+      accept="image/png,image/jpeg,image/webp" :max-size-mb="10" :limit="5" multiple transfer button-text="上传回款截图" />
     <p v-if="!readonly" class="help">PNG / JPG / WebP，每张不超过 10MB，最多 5 张。截图仅方舟留存。</p>
     <div class="proof-grid">
       <div v-for="file in files" :key="file.id" class="proof">

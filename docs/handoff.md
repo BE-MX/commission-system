@@ -5,6 +5,12 @@
 - 相关后端测试 63 项通过，独立权限审查通过。增量约定检查无违规；完整约定检查被 7 项既有前端 UI 基线告警阻挡，未改基线。`git diff --check` 通过，Git 巡检已执行 `--no-fetch`（本地快照）。
 - 不涉及 schema、前端或数据修复；用户已授权合并 main 并推送 origin，本轮不部署。合并验证后清理本任务分支与 worktree，主目录他人未提交成果保留。
 
+## 2026-09-18 订单发票录入优化（Codex，合并推送交付）
+
+- 分支 `codex/invoice-entry-ux`，worktree `D:/MyProgram/commission-system-codex-invoice-entry-ux`。回款截图上传区支持拖放与聚焦后 Ctrl+V 粘贴，共用原有上传、预览、10MB/5张限制；普通文本粘贴不拦截，只读状态不显示上传入口。共享 ReceiptProofs 的回款管理同步受益。
+- 产品明细复制最后一条产品行时显式保留当前客户成交价（含手改价格）与客户规则参考价，并按复制后的数量、单价、折扣重算金额；清空原行 ID，物料计划保持独立。
+- 验证：27项目标回归、前端构建、独立审查、增量约定规则和 diff 检查通过。发票全套93项中91通过，2项客户切换/同步的源码断言在未修改主目录也失败；全局约定检查仍有7项无关行数基线告警。Git巡检为 `--no-fetch` 本地快照。未做真实登录页面的浏览器操作验收；用户已授权合并 main 并推送 origin；本轮不部署。
+
 ## 2026-09-18 发货检验扫码明细排序（Codex，合并推送交付）
 
 - 分支 `codex/shipping-item-order`，worktree `D:/MyProgram/commission-system-codex-shipping-item-order`。手机网页、小程序扫码及刷新共用 `scan_payload`，现复用出库打印的规格自然升序、尺寸数值升序；同键稳定排序，明细字段及媒体 item_id 关联不变。无需前端或小程序代码变更。

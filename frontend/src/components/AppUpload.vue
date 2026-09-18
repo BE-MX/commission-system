@@ -1,5 +1,7 @@
 <template>
-  <div class="app-upload">
+  <div class="app-upload" :class="{ 'transfer-zone': transfer, 'is-dragging': dragging }"
+    :tabindex="transfer ? 0 : undefined" :aria-label="transfer ? '截图上传区，可拖入图片或按 Ctrl+V 粘贴' : undefined"
+    @dragover="onDragOver" @dragleave="dragging = false" @drop="onDrop" @paste="onPaste">
     <!-- 数量上限只走 beforeUpload 计数：el-upload 自身 :limit 按内部只增不减的
          fileList 累计，删除文件不回收额度且超限时整批静默丢弃、零提示 -->
     <el-upload
@@ -13,6 +15,7 @@
         <el-button :loading="uploading">{{ uploading ? `上传中 ${inflight.length} 个…` : buttonText }}</el-button>
       </slot>
     </el-upload>
+    <p v-if="transfer" class="transfer-help">拖动截图到此处，或点击此区域后按 Ctrl+V 粘贴</p>
 
     <div v-if="inflight.length" class="progress-list">
       <div v-for="it in inflight" :key="it.uid" class="progress-item">
@@ -70,10 +73,13 @@ const props = defineProps({
   limit: { type: Number, default: 9 },
   buttonText: { type: String, default: '选择文件' },
   showList: { type: Boolean, default: true },
+  transfer: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:modelValue'])
 
 const inflight = ref([])   // [{ uid, name, percent }]
+const dragging = ref(false)
+const reserved = new Set()
 let uidSeq = 0
 const uploading = computed(() => inflight.value.length > 0)
 const imageUrls = computed(() => props.modelValue.filter(isImage).map(f => f.url))
@@ -83,18 +89,57 @@ function isImage(file) {
 }
 
 function beforeUpload(file) {
+  if (props.transfer && !props.accept.split(',').some(type => type.trim() === file.type)) {
+    msgError('请上传 PNG / JPG / WebP 图片')
+    return false
+  }
   if (file.size > props.maxSizeMb * 1024 * 1024) {
     msgError(`文件超过 ${props.maxSizeMb}MB 限制`)
     return false
   }
-  if (props.modelValue.length + inflight.value.length >= props.limit) {
+  if (props.modelValue.length + inflight.value.length + reserved.size >= props.limit) {
     msgError(`最多上传 ${props.limit} 个文件`)
     return false
   }
+  if (props.transfer) reserved.add(file)
   return true
 }
 
+function onDragOver(event) {
+  if (!props.transfer) return
+  event.preventDefault()
+  dragging.value = true
+}
+
+function onDrop(event) {
+  if (!props.transfer) return
+  event.preventDefault()
+  dragging.value = false
+  return uploadFiles(Array.from(event.dataTransfer?.files || []))
+}
+
+function onPaste(event) {
+  if (!props.transfer) return
+  const files = Array.from(event.clipboardData?.items || [])
+    .filter(item => item.kind === 'file').map(item => item.getAsFile()).filter(Boolean)
+  if (!files.length) return
+  event.preventDefault()
+  return uploadFiles(files)
+}
+
+async function uploadFiles(files) {
+  // Reserve each slot synchronously in doUpload before accepting the next file.
+  await Promise.all(files.map(async file => {
+    if (!beforeUpload(file)) return
+    try { await doUpload({ file }) }
+    catch (error) {
+      if (!error?.isAxiosError) msgError('截图上传失败，请重试')
+    }
+  }))
+}
+
 async function doUpload({ file }) {
+  reserved.delete(file)
   const item = reactive({ uid: ++uidSeq, name: file.name, percent: 0 })
   inflight.value.push(item)
   try {
@@ -113,6 +158,9 @@ function remove(index) {
 </script>
 
 <style scoped>
+.transfer-zone { width: 100%; padding: 16px; border: 1px dashed var(--border-color); border-radius: 8px; }
+.transfer-zone:focus, .transfer-zone:focus-within, .transfer-zone.is-dragging { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.transfer-help { margin: 8px 0 0; font-size: 12px; color: var(--text-secondary); }
 .progress-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; width: 100%; }
 .progress-item { display: flex; align-items: center; gap: 10px; }
 .progress-name { font-size: 12px; color: var(--text-secondary); max-width: 200px;
