@@ -1,8 +1,8 @@
 """发货检验 — PC 端 API 路由
 
 权限：shipping_inspection:read（查看）/ shipping_inspection:write / shipping_inspection:admin，
-读接口任一即可。出库单（列表 + 打印数据）另按 OKKI 归属过滤：业务员只能看本人
-订单（okki_orders.user_id）客户的出库单；shipping_inspection:read_all 或 super_admin 看全部。
+读接口任一即可。出库单（列表 + 打印数据）按本地方舟首推订单业务员或既有
+OKKI 镜像客户归属过滤；shipping_inspection:read_all 或 super_admin 看全部。
 统一信封 ok()；业务库（lsordertest）只读。
 """
 
@@ -23,7 +23,7 @@ from app.auth.models import ArkUserExternalBinding
 from app.core.database import get_db
 from app.core.response import ok, page_result
 from app.shipping_inspection import constants as C
-from app.shipping_inspection import file_service, outbound_service, qr_service, service
+from app.shipping_inspection import file_service, outbound_service, outbound_queue_service, qr_service, service
 from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto
 from app.shipping_inspection.schemas import ShippingRecallRequest
 from app.shipping_inspection.print_service import with_owner_chinese_name
@@ -116,7 +116,7 @@ def list_outbound_records(
 ):
     scope_okki_user = _outbound_scope(db, user)
     try:
-        rows, total = outbound_service.list_outbound_records(
+        rows, total = outbound_queue_service.list_outbound_records(
             db, keyword=keyword, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
             okki_user_id=scope_okki_user,
         )

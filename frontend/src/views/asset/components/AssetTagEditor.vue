@@ -24,7 +24,6 @@
             v-if="dim.is_single_select && selection[dim.id]"
             link
             type="primary"
-            size="small"
             @click="selection[dim.id] = null"
           >清除</el-button>
         </div>

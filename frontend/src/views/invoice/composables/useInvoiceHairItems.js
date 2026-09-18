@@ -28,7 +28,10 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions)
     const last = hairItems.value.at(-1)
     if (!last) return
     const { options, matching, id, ...data } = last
-    form.items.push({ ...normalizeHairRow(data), quantity: last.quantity, discount_amount: last.discount_amount })
+    const copied = { ...normalizeHairRow(data), quantity: last.quantity, discount_amount: last.discount_amount,
+      price_per_piece: last.price_per_piece, customer_price: last.customer_price }
+    updateLineTotal(copied)
+    form.items.push(copied)
   }
   function removeLine(rowOrIndex) {
     const row = typeof rowOrIndex === 'number' ? hairItems.value[rowOrIndex] : rowOrIndex

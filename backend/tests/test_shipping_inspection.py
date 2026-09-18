@@ -137,13 +137,14 @@ def test_scan_valid_code_returns_record_items_and_null_inspection(db):
     assert body["record"]["outbound_no"] == "CK2026001"
     assert body["record"]["customer_name"] == "客户甲"
     assert body["record"]["remark"] == "分箱包装\n附标签"
-    assert [item["item_id"] for item in body["items"]] == ["IT001", "IT002"]
-    assert body["items"][0]["qty"] == 10
-    assert body["items"][0]["model"] == "MODEL-13x4"
-    assert body["items"][0]["size"] == "20inch"
-    assert body["items"][0]["color"] == "#1B"
-    assert body["items"][1]["model"] is None
-    assert body["items"][1]["qty"] == 5
+    # Match outbound printing: 18inch precedes 20inch, regardless of source ID.
+    assert [item["item_id"] for item in body["items"]] == ["IT002", "IT001"]
+    assert body["items"][1]["qty"] == 10
+    assert body["items"][1]["model"] == "MODEL-13x4"
+    assert body["items"][1]["size"] == "20inch"
+    assert body["items"][1]["color"] == "#1B"
+    assert body["items"][0]["model"] is None
+    assert body["items"][0]["qty"] == 5
     assert body["inspection"] is None
     assert body["photos"] == []
 

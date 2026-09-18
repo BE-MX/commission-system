@@ -11,17 +11,17 @@
       <GlassButton variant="primary" left-icon="Download" :loading="downloading" @click="downloadPdf(noticePdf)">下载验货单 PDF</GlassButton>
       <p>含验货照片。若单据已撤回或更新，请使用最新通知或下方列表。</p>
     </section>
-    <el-alert v-if="pdfError" :title="pdfError" type="error" :closable="false" show-icon />
+    <el-alert v-if="pdfError" class="page-alert" :title="pdfError" type="error" :closable="false" show-icon />
     <div v-if="route.query.from === 'station'" class="inspection-return">
       <router-link to="/shipping/scan">← 返回出库检验主页</router-link>
     </div>
     <form class="inspection-filters" @submit.prevent="handleSearch">
-      <label>验货单号 / 客户<input v-model="searchForm.keyword" type="search" placeholder="输入单号或客户名称" /></label>
-      <label>提交检验人员<input v-model="searchForm.submittedByName" maxlength="100" placeholder="输入提交人姓名" /></label>
-      <label>对应业务员<input v-model="searchForm.salespersonName" maxlength="100" placeholder="输入业务员姓名" /></label>
-      <label>提交日期起<input v-model="searchForm.dateFrom" type="date" :max="searchForm.dateTo || undefined" /></label>
-      <label>提交日期止<input v-model="searchForm.dateTo" type="date" :min="searchForm.dateFrom || undefined" /></label>
-      <div class="filter-actions"><button type="submit" :disabled="loading">查询</button><button type="button" :disabled="loading" @click="handleReset">重置</button></div>
+      <label>验货单号 / 客户<el-input v-model="searchForm.keyword" clearable placeholder="输入单号或客户名称" /></label>
+      <label>提交检验人员<el-input v-model="searchForm.submittedByName" maxlength="100" clearable placeholder="输入提交人姓名" /></label>
+      <label>对应业务员<el-input v-model="searchForm.salespersonName" maxlength="100" clearable placeholder="输入业务员姓名" /></label>
+      <label>提交日期起<el-date-picker v-model="searchForm.dateFrom" type="date" value-format="YYYY-MM-DD" :disabled-date="disableFromDate" placeholder="选择开始日期" /></label>
+      <label>提交日期止<el-date-picker v-model="searchForm.dateTo" type="date" value-format="YYYY-MM-DD" :disabled-date="disableToDate" placeholder="选择结束日期" /></label>
+      <div class="filter-actions"><GlassButton variant="primary" native-type="submit" left-icon="Search" :loading="loading">查询</GlassButton><GlassButton left-icon="RefreshLeft" :disabled="loading" @click="handleReset">重置</GlassButton></div>
     </form>
     <section v-loading="loading" class="inspection-mobile-list" aria-label="验货单查询结果">
       <p>共 {{ total }} 张验货单</p>
@@ -122,42 +122,67 @@ const {
   detailVisible, detailLoading, detail, openDetail,
   printDialog, openPrint, recallingId, recallForEdit,
 } = useInspectionRecords()
+
+// 日期起止互相约束（替代原原生 date input 的 min/max）：起不晚于止，止不早于起
+const disableFromDate = d => Boolean(searchForm.dateTo) && d.getTime() > new Date(`${searchForm.dateTo}T23:59:59`).getTime()
+const disableToDate = d => Boolean(searchForm.dateFrom) && d.getTime() < new Date(`${searchForm.dateFrom}T00:00:00`).getTime()
 </script>
 
 <style scoped>
-.inspection-return { position: relative; margin-bottom: 16px; }
+.inspection-page { position: relative; }
+.inspection-aurora { inset: -24px -28px; }
+/* 内容压到极光之上。点名内容块，不用 > :not(.lg-aurora) 通配——
+   通配会覆盖就地渲染抽屉的 .el-overlay position: fixed（DESIGN.md 红线） */
+.inspection-page .notice-download,
+.inspection-page .page-alert,
+.inspection-page .inspection-return,
+.inspection-page .inspection-filters,
+.inspection-page .inspection-mobile-list,
+.inspection-page .inspection-panel { position: relative; z-index: 1; }
+
+.page-alert { margin-bottom: 16px; }
+
+.inspection-return { margin-bottom: 16px; }
 .inspection-return a { color: var(--color-primary-hover); display: inline-flex; align-items: center; min-height: 44px; }
-.inspection-filters { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 16px; margin-bottom: 16px; background: var(--card-bg); border-radius: 12px; border: 1px solid var(--border-color); }
+
+/* 筛选卡与通知卡：同款渐变玻璃（与表格面板一致，无 backdrop-filter，移动端滚动不掉帧） */
+.inspection-filters,
+.notice-download,
+.inspection-result {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+}
+
+.inspection-filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 16px; margin-bottom: 16px; }
 .inspection-filters label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-secondary); min-width: 0; }
-.inspection-filters input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; border: 1px solid var(--border-color); border-radius: 8px; padding: 8px; background: var(--card-bg); color: var(--text-primary); font: inherit; font-size: 16px; }
+.inspection-filters :deep(.el-date-editor) { width: 100%; }
 .filter-actions { display: flex; align-items: end; gap: 12px; }
-.filter-actions button { min-height: 44px; padding: 8px 24px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--card-bg); color: var(--text-primary); cursor: pointer; }
-.filter-actions button[type=submit] { background: var(--color-primary); color: var(--card-bg); border-color: var(--color-primary); }
-.inspection-mobile-list { display: none; position: relative; }
-.inspection-result { margin-bottom: 12px; padding: 16px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-bg); }
+
+.inspection-mobile-list { display: none; }
+.inspection-result { margin-bottom: 12px; padding: 16px; }
 .inspection-result h2 { font-size: 18px; margin: 0; overflow-wrap: anywhere; }
 .inspection-result p { color: var(--text-secondary); }
 .inspection-result dl { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px; font-size: 14px; }
 .inspection-result dt { color: var(--text-secondary); }
 .inspection-result dd { margin: 0; overflow-wrap: anywhere; }
 .result-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
 @media (max-width: 767px) {
   .inspection-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .inspection-filters label:first-child, .filter-actions { grid-column: 1 / -1; }
-  .filter-actions button { flex: 1; }
+  /* 共用手机触控：44px 命中区 + 16px 输入字号（避免 iOS 聚焦自动放大） */
+  .inspection-filters :deep(.el-input__wrapper) { min-height: 44px; }
+  .inspection-filters :deep(.el-input__inner) { font-size: 16px; }
+  .filter-actions .glass-button { flex: 1; min-height: 44px; }
   .inspection-mobile-list { display: block; }
   .inspection-desktop-list { display: none; }
 }
 
-.notice-download { position: relative; margin-bottom: 16px; padding: 16px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; }
+.notice-download { margin-bottom: 16px; padding: 16px; }
 .notice-download strong { display: block; margin-bottom: 12px; overflow-wrap: anywhere; }
 .notice-download p { color: var(--text-secondary); font-size: 13px; }
-.inspection-page { position: relative; }
-.inspection-aurora { inset: -24px -28px; }
-.inspection-page .toolbar,
-.inspection-page .inspection-panel { position: relative; z-index: 1; }
-
-.toolbar { margin-bottom: 16px; }
 
 .inspection-panel {
   border: 1px solid var(--dash-glass-border);
@@ -166,6 +191,7 @@ const {
   box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
 }
 
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
 .inspection-panel :deep(.el-table) {
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
@@ -174,6 +200,7 @@ const {
   background: transparent;
 }
 
+/* 右侧固定操作列磨砂不透明（Element 2.13 sticky 单元格 background: inherit 会透影，DESIGN.md） */
 .inspection-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
 .inspection-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
 .inspection-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }

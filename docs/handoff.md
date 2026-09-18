@@ -1,10 +1,40 @@
 ## 2026-09-18 回款生产部署与单笔验证（Codex）
 
-办公室/北京已通过统一入口部署 `aed61c43`，分支 `codex/receipt-production-enable` 基于实际生产 `dab19815`，尚未合并/推送 GitHub。两站回款 API 固定办公室，单张 10MiB、入口 11MiB，历史凭证已归集；最后校验办公室 28/28 份大小及 SHA256 一致，来源备份保留。原凭证缺失的自动生成阻塞已消除。
+办公室/北京已通过统一入口部署 `aed61c43`，分支 `codex/receipt-production-enable` 基于实际生产 `dab19815`，用户已授权合并 main 并推送 origin，本轮不追加部署。两站回款 API 固定办公室，单张 10MiB、入口 11MiB，历史凭证已归集；最后校验办公室 28/28 份大小及 SHA256 一致，来源备份保留。原凭证缺失的自动生成阻塞已消除。
 
 小满分页同秒边界重复已修复，18,325 条真实完整只读扫描通过。原单 id=1 重试后成功，远端 ID `105794024173578`，回读 `collect_status=1`（有效）。创建接口权限已证实可用。最后 1 张 synced、16 张 pending，发送总开关仍 False，本轮未批量发送其他单。76 项相关回归通过，独立审查无阻断；增量约定通过，完整门禁仍有生产基点 13 项既有 UI 基线问题，no-fetch 巡检已执行。
 
-未完成项：`.cloud` 10MiB 端到端上传仍受北京至新加坡重传/低速影响；办公室及 `.work` 网关 10MiB 传输已到达鉴权。浏览器连接不可用，未做登录态 UI 验收。详见[验证记录](reports/2026-09-18-receipt-production-verification.md)。保留修复 worktree、发布备份和 `tmp/receipt-enable/` 证据，后续主线集成不要遗漏生产补丁。
+未完成项：`.cloud` 10MiB 端到端上传仍受北京至新加坡重传/低速影响；办公室及 `.work` 网关 10MiB 传输已到达鉴权。浏览器连接不可用，未做登录态 UI 验收。详见[验证记录](reports/2026-09-18-receipt-production-verification.md)。保留发布备份和主目录 `tmp/receipt-enable/` 证据；合并推送验证后清理本任务 worktree。
+
+## 2026-09-18 库存不足出库单列表预览（Codex，合并推送交付）
+
+- 分支 `codex/outbound-stock-status`，worktree `D:/MyProgram/commission-system-codex-outbound-stock-status`。复用出库任务表提供只读待出库记录，无 schema 或生产数据写入。库存不足显示“部分库存不足”，可查看商品、需求、可用及缺口；待生成、重试和等待镜像期间保留记录，打印/Word 按钮隐藏，`task:` 标识在服务端拒绝打印/下载/验货读取。
+- 正式记录与本地记录在 SQL 中统一筛选、计数和分页。本地按发票业务员有效 OKKI 绑定限定范围；正式单据对当前用户可见时才替换预览，覆盖单头先到、明细及订单镜像未到的同步顺序。预览日期显示创建日期，不冒充已出库日期。
+- 前端构建和导出调用防护测试通过；CUA 在真实 Vue 列表配隔离数据验证缺货详情、按钮显隐和待同步状态。生产 MySQL 只读查询成功：“宋皓月浅色库存 0917”已存在正式记录 91212，联合查询仅返回一条正式记录。未改变重试策略或操作库存；用户已授权合并 main 并推送 origin，本轮不部署。
+- 相关后端 78 项测试通过，另单跑原列表回归通过。独立审查发现并修复“镜像头先到导致预览过早消失”，补测后复查通过。增量约定与 diff 检查通过；完整门禁仍报 7 项既有前端行数基线告警，未改基线。Git 巡检已执行 `--no-fetch`，合并后清理本任务分支与 worktree，隔离页面夹具转存主目录 `tmp/outbound-stock-status-merge/`。
+
+## 2026-09-18 方舟订单出库单本地归属（Codex，合并推送交付）
+
+- 分支 `codex/outbound-local-owner`，worktree `D:/MyProgram/commission-system-codex-outbound-local-owner`。方舟首推成功订单通过出库明细 order_id 精确关联发票业务员有效 OKKI 绑定，可直接通过出库单/打印/验货记录共用归属检查，不等待订单镜像；原镜像范围保留。要求客户一致及成功 create 日志，排除导入更新、失败首推和同客户无关出库单。
+- 隔离 SQLite 新回归先复现不可见，覆盖无订单镜像时的可见性、越权拒绝、两种明细关联、镜像追上后的去重及失效/删除绑定。生产数据只读运行新查询：Ivy 能查到出库记录 91189（罗馨瑜浅色库存0936），总数 1，详情归属通过。该订单镜像在 09:00:08 自然追上，现旧规则也可见；无镜像场景的验证来自隔离回归。未调用生产写入或真实打印 API。
+- 相关后端测试 63 项通过，独立权限审查通过。增量约定检查无违规；完整约定检查被 7 项既有前端 UI 基线告警阻挡，未改基线。`git diff --check` 通过，Git 巡检已执行 `--no-fetch`（本地快照）。
+- 不涉及 schema、前端或数据修复；用户已授权合并 main 并推送 origin，本轮不部署。合并验证后清理本任务分支与 worktree，主目录他人未提交成果保留。
+
+## 2026-09-18 订单发票录入优化（Codex，合并推送交付）
+
+- 分支 `codex/invoice-entry-ux`，worktree `D:/MyProgram/commission-system-codex-invoice-entry-ux`。回款截图上传区支持拖放与聚焦后 Ctrl+V 粘贴，共用原有上传、预览、10MB/5张限制；普通文本粘贴不拦截，只读状态不显示上传入口。共享 ReceiptProofs 的回款管理同步受益。
+- 产品明细复制最后一条产品行时显式保留当前客户成交价（含手改价格）与客户规则参考价，并按复制后的数量、单价、折扣重算金额；清空原行 ID，物料计划保持独立。
+- 验证：27项目标回归、前端构建、独立审查、增量约定规则和 diff 检查通过。发票全套93项中91通过，2项客户切换/同步的源码断言在未修改主目录也失败；全局约定检查仍有7项无关行数基线告警。Git巡检为 `--no-fetch` 本地快照。未做真实登录页面的浏览器操作验收；用户已授权合并 main 并推送 origin；本轮不部署。
+
+## 2026-09-18 发货检验扫码明细排序（Codex，合并推送交付）
+
+- 分支 `codex/shipping-item-order`，worktree `D:/MyProgram/commission-system-codex-shipping-item-order`。手机网页、小程序扫码及刷新共用 `scan_payload`，现复用出库打印的规格自然升序、尺寸数值升序；同键稳定排序，明细字段及媒体 item_id 关联不变。无需前端或小程序代码变更。
+- 两项新增接口回归先复现失败，修复后通过；相关后端测试 38 项通过。另有既有 `test_audit_beijing_midnight_ignores_server_timezone` 失败，在未修改主目录单独运行同样复现，本次未改该时间测试。小程序视图、手机交互、打印模板共 33 项 Node 测试通过；未做真实扫码浏览器/手机验收。
+- 独立审查通过：两端入口无遗漏，前端无二次排序，媒体仍按 item_id 关联。增量约定检查无违规，完整约定检查被 7 项已有前端行数基线告警阻挡；`git diff --check` 通过，Git 巡检已执行 `--no-fetch`（本地快照）。用户已授权合并 main 并推送 origin；本轮不部署，交付后清理本任务分支与 worktree。
+
+## 2026-09-18 六处旧按钮尺寸修复（合并推送交付）
+
+分支 `codex/fix-small-buttons`，worktree `D:/MyProgram/commission-system-codex-small-buttons`。仅移除CustomerMediaReview的编辑标签、AssetTagEditor的清除、CustomerMediaTagPicker的清除/新建/取消/新建标签共6处el-button的small尺寸，沿用默认尺寸；输入框、标签、选择控件及事件逻辑保持原样。`npm run build`、`git diff --check`通过；约定检查的6项legacy small告警消失，仍有7项既有行数基线告警，未修改基线。未做登录页面浏览器验收。用户已授权合并main并推送origin；本轮不部署，完成交付后清理本任务分支及worktree。
 
 ## 2026-09-17 库存单自动回款与回款管理（Codex，合并推送交付，未部署）
 
