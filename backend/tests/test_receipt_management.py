@@ -36,7 +36,7 @@ def no_real_remote(monkeypatch, tmp_path):
     monkeypatch.setattr(remote, "order_receipts", lambda *a: [])
     monkeypatch.setattr(remote, "receipt_info", lambda db, identity: {"cash_collection_id": identity,
         "cash_collection_no": "TEST-HK", "order_id": "2001", "currency": "USD", "amount": "500",
-        "collection_date": "2026-09-17", "collect_status": 0})
+        "collection_date": "2026-09-17", "bank_charge": "0", "real_amount": "500", "collect_status": 0})
     def forbidden(*a, **k):
         raise AssertionError("Unexpected real remote call")
     monkeypatch.setattr(okki_client, "ensure_access_token", forbidden)
@@ -406,3 +406,108 @@ def test_old_invoice_attempt_cannot_finish_or_release_new_claim(db, order):
     order.xiaoman_order_id = None
     invoice_link.release_rejected(db, order, "old-attempt")
     assert intent.status == "armed" and intent.attempt_token == token
+
+
+@pytest.mark.parametrize("amount,charge", [("367.87", "17.52"), ("100.00", "4.76")])
+def test_automatic_receipt_allocates_fee_proportionally(db, order, amount, charge):
+    order.total_amount = Decimal("367.87")
+    order.surcharge_amount = Decimal("17.52")
+    draft = ReceiptDraft(**fields(db, amount).model_dump(exclude={"bank_charge"}))
+    invoice_link.save_draft(db, order, draft, 1, new=True)
+    invoice_link.arm(db, order, 1); invoice_link.mark_success(db, order); db.commit()
+    sync_service.generate_ready(db)
+    row = db.query(Receipt).one()
+    assert row.amount == Decimal(amount)
+    assert row.bank_charge == Decimal(charge)
+
+
+def test_proportional_allocation_final_rounding():
+    from app.receipt.fees import proportional
+    total, fee = Decimal("3.00"), Decimal("0.01")
+    registered, charged, charges = Decimal("0"), Decimal("0"), []
+    for _ in range(3):
+        charge = proportional(total, fee, Decimal("1"), registered, charged)
+        charges.append(charge); registered += Decimal("1"); charged += charge
+    assert charges == [Decimal("0"), Decimal("0"), Decimal("0.01")]
+    assert charged == fee
+
+
+def test_fee_allocation_deduplicates_remote_and_local(db, order, monkeypatch):
+    from app.receipt import fees
+    order.total_amount = Decimal("367.87"); order.surcharge_amount = Decimal("17.52"); db.commit()
+    first, _ = register(db, order, "100")
+    first.bank_charge = Decimal("4.76")
+    first.xiaoman_receipt_id = "701"; first.sync_status = "synced"; db.commit()
+    monkeypatch.setattr(remote, "order_receipts", lambda *a: [dict(cash_collection_id="701", amount="100")])
+    monkeypatch.setattr(remote, "receipt_info", lambda *a: dict(order_id="2001", currency="USD", amount="100",
+                                                              bank_charge="4.76", real_amount="95.24"))
+    assert fees.allocate(db, order, Decimal("267.87")) == Decimal("12.76")
+    first.sync_status = "uncertain"; db.commit()
+    with pytest.raises(ValueError, match="待核对"):
+        fees.allocate(db, order, Decimal("267.87"))
+
+
+def test_explicit_manual_fee_is_preserved(db, order):
+    order.surcharge_amount = Decimal("17.52"); db.commit()
+    data = ReceiptCreate(**fields(db, "100").model_copy(update={"bank_charge": Decimal("1.23")}).model_dump(),
+        invoice_id=order.id, request_key="explicit_fee_request_001", balance_version=service.order_balance(db, order)["version"])
+    row = service.create(db, data, USER)
+    assert row.bank_charge == Decimal("1.23")
+
+
+def test_fee_allocation_rejects_inconsistent_net(db, order, monkeypatch):
+    from app.receipt import fees
+    monkeypatch.setattr(remote, "order_receipts", lambda *a: [dict(cash_collection_id="701", amount="500")])
+    monkeypatch.setattr(remote, "receipt_info", lambda *a: dict(order_id="2001", currency="USD", amount="500",
+                                                              bank_charge="2", real_amount="500"))
+    with pytest.raises(ValueError, match="实到账"):
+        fees.allocate(db, order, Decimal("100"))
+
+
+def test_old_failed_auto_retry_allocates_without_duplicate(db, order):
+    order.total_amount = Decimal("367.87"); order.surcharge_amount = Decimal("17.52"); db.commit()
+    row, _ = register(db, order, "367.87")
+    row.source = "auto"; row.bank_charge = Decimal("0"); row.sync_status = "failed"; db.commit()
+    service.retry(db, row, 1); db.commit()
+    assert row.bank_charge == Decimal("17.52") and row.sync_status == "pending"
+    assert db.query(Receipt).count() == 1
+
+
+def test_old_pending_auto_never_sends_zero_fee(db, order, monkeypatch):
+    order.surcharge_amount = Decimal("17.52"); db.commit()
+    row, _ = register(db, order)
+    row.source = "auto"; row.bank_charge = Decimal("0"); db.commit()
+    monkeypatch.setattr(remote, "push", lambda *a: pytest.fail("must not POST old zero fee"))
+    sync_service.deliver(db, row.id); db.refresh(row)
+    assert row.sync_status == "failed" and row.xiaoman_receipt_id is None
+
+
+@pytest.mark.parametrize("fee", ["NaN", "-1", "bad"])
+def test_invalid_remote_fee_freezes_accepted_receipt(db, order, monkeypatch, fee):
+    row, _ = register(db, order)
+    monkeypatch.setattr(remote, "receipt_info", lambda *a: dict(order_id="2001", currency="USD", amount="500",
+        collection_date="2026-09-17", cash_collection_id="701", bank_charge=fee, real_amount="500", collect_status=1))
+    sync_service.deliver(db, row.id); db.refresh(row)
+    assert row.sync_status == "uncertain" and row.xiaoman_receipt_id == "701"
+    with pytest.raises(ValueError): service.retry(db, row, 1)
+
+
+@pytest.mark.parametrize("status", ["pending", "failed", "syncing", "uncertain"])
+def test_pending_receipt_freezes_fee_basis(db, order, status):
+    row, _ = register(db, order)
+    row.sync_status = status; db.commit()
+    previous = (order.total_amount, order.surcharge_amount)
+    invoice_link.guard_fee_basis(db, order, previous)
+    order.total_amount += Decimal("10"); order.surcharge_amount += Decimal("10")
+    with pytest.raises(ValueError, match="总额或手续费"):
+        invoice_link.guard_fee_basis(db, order, previous)
+
+
+@pytest.mark.parametrize("value", [None, "", 0, "0.00"])
+def test_empty_manual_fee_is_zero(db, order, value):
+    order.surcharge_amount = Decimal("17.52"); db.commit()
+    data = fields(db, "100").model_dump(); data["bank_charge"] = value
+    body = ReceiptCreate(**data, invoice_id=order.id, request_key="empty_fee_request_001",
+                         balance_version=service.order_balance(db, order)["version"])
+    row = service.create(db, body, USER)
+    assert row.bank_charge == Decimal("0")

@@ -146,6 +146,11 @@ def money(value):
     return amount
 
 
+def invoice_binding(invoice):
+    return [invoice.xiaoman_order_id, invoice.customer_id, invoice.currency,
+            str(invoice.total_amount), str(invoice.surcharge_amount or 0)]
+
+
 def order_snapshot(db, invoice):
     if not invoice.xiaoman_order_id:
         return {"rows": [], "exchange_rate": None}
@@ -153,10 +158,10 @@ def order_snapshot(db, invoice):
     if (str(data.get("order_id")) != str(invoice.xiaoman_order_id)
             or str(data.get("company_id")) != str(invoice.customer_id)
             or data.get("currency") != invoice.currency
-            or money(data.get("amount")) != invoice.total_amount):
+            or money(data.get("amount")) != invoice.total_amount - money(invoice.surcharge_amount or 0)):
         raise ValueError("小满订单客户、币种或金额与方舟不一致，请先核对订单")
     return {"rows": order_receipts(db, invoice.xiaoman_order_id), "exchange_rate": data.get("exchange_rate"),
-            "invoice_binding": [invoice.xiaoman_order_id, invoice.customer_id, invoice.currency, str(invoice.total_amount)]}
+            "invoice_binding": invoice_binding(invoice)}
 
 
 def push(db, receipt, snapshot, before_send=None):

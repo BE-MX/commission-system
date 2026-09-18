@@ -8,7 +8,7 @@ from sqlalchemy import func, or_
 from app.core.time import beijing_now
 from app.invoice.models import Invoice
 from app.invoice.service import get_invoice
-from app.receipt import access, attachments, balance, remote
+from app.receipt import access, attachments, balance, fees, remote
 from app.receipt.models import Receipt, ReceiptAttachment, ReceiptIntent, ReceiptLog
 
 
@@ -90,6 +90,8 @@ def order_balance(db, invoice):
 
 
 def new_row(db, invoice, fields, actor, request_key, request_hash, *, source="manual"):
+    if source == "auto":
+        fields = fields.model_copy(update={"bank_charge": fees.allocate(db, invoice, fields.amount)})
     row = Receipt(receipt_no="HK" + beijing_now().strftime("%Y%m%d") + "-" + uuid4().hex[:16],
                   invoice_id=invoice.id, source=source, request_key=request_key, request_hash=request_hash,
                   auto_key=f"invoice:{invoice.id}:initial" if source == "auto" else None,
@@ -160,6 +162,11 @@ def change(db, row, invoice, body, actor):
 def retry(db, row, actor):
     if row.status != "active" or row.sync_status != "failed" or row.xiaoman_receipt_id:
         raise ValueError("仅明确失败且未取得小满单号的回款可重试；待核对不能重发")
+    if row.source == "auto" and row.bank_charge == 0:
+        invoice = db.query(Invoice).filter(Invoice.id == row.invoice_id).with_for_update().one()
+        if invoice.surcharge_amount:
+            row.bank_charge = fees.allocate(db, invoice, row.amount, exclude_receipt=row.id)
+            log(db, row, "fee_allocated", f"重试前按比例分摊手续费：{row.bank_charge}", actor)
     row.sync_status, row.last_error = "pending", None
     row.version += 1
     log(db, row, "retry", "重试原回款单", actor)

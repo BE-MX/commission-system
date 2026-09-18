@@ -138,6 +138,16 @@ def guard_edit(db, invoice, body):
     return Decimal("0")
 
 
+
+def guard_fee_basis(db, invoice, previous):
+    if previous == (invoice.total_amount, invoice.surcharge_amount):
+        return
+    pending = db.query(Receipt.id).filter(Receipt.invoice_id == invoice.id,
+        Receipt.status == "active", Receipt.sync_status != "synced").first()
+    if pending:
+        raise ValueError("存在待处理回款，不能更改订单总额或手续费，请先处理或作废原回款")
+
+
 def guard_delete(db, invoice):
     if db.query(Receipt.id).filter(Receipt.invoice_id == invoice.id).first():
         raise ValueError("存在回款记录的订单不允许删除")

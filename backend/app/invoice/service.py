@@ -345,6 +345,7 @@ def create_invoice(
 def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: int | None = None) -> Invoice:
     from app.receipt import invoice_link
     receipt_floor = invoice_link.guard_edit(db, invoice, body)
+    receipt_fee_basis = (invoice.total_amount, invoice.surcharge_amount)
     from app.semifinished.models import InvoiceAllocation
 
     pending = db.query(InvoiceAllocation.id).filter(
@@ -393,6 +394,7 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
     _refresh_invoice_totals(invoice)
     _validate_internal_settlement(invoice)
     _validate_screenshot_source(db, invoice)
+    invoice_link.guard_fee_basis(db, invoice, receipt_fee_basis)
     if invoice.total_amount < receipt_floor:
         raise ValueError("订单金额不能低于已登记回款及待处理金额")
     invoice_link.save_draft(db, invoice, body.receipt_draft, user_id)

@@ -8,7 +8,7 @@ from app.receipt.models import Receipt, ReceiptIntent
 
 
 def calculate(db, invoice, snapshot, *, exclude_receipt=None, exclude_intent=False):
-    if snapshot.get("invoice_binding") and snapshot["invoice_binding"] != [invoice.xiaoman_order_id, invoice.customer_id, invoice.currency, str(invoice.total_amount)]:
+    if snapshot.get("invoice_binding") and snapshot["invoice_binding"] != remote.invoice_binding(invoice):
         raise ValueError("订单信息已变化，请重新核验余额")
     remote_rows = snapshot["rows"]
     remote_ids, registered, effective = set(), Decimal("0"), Decimal("0")
@@ -39,7 +39,7 @@ def calculate(db, invoice, snapshot, *, exclude_receipt=None, exclude_intent=Fal
     if not exclude_intent and intent and intent.eligible and intent.status in {"armed", "ready"}:
         registered += intent.amount or Decimal("0")
     fingerprint = {
-        "invoice": [invoice.id, invoice.xiaoman_order_id, str(invoice.total_amount), invoice.currency, invoice.customer_id, invoice.sync_status],
+        "invoice": [invoice.id, invoice.xiaoman_order_id, str(invoice.total_amount), str(invoice.surcharge_amount or 0), invoice.currency, invoice.customer_id, invoice.sync_status],
         "remote": sorted((str(r["cash_collection_id"]), str(r["amount"]), str(r.get("collect_status"))) for r in remote_rows),
         "local": sorted((r.id, r.version, r.sync_status, r.status, str(r.amount)) for r in local),
         "intent": [intent.status, str(intent.amount)] if intent else None,

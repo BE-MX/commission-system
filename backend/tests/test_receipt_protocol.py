@@ -271,3 +271,23 @@ def test_full_snapshot_contains_all_orders_and_final_watermark(monkeypatch):
     rows,watermark=remote._window_order_receipts(None,None,include_watermark=True)
     assert len(rows)==102 and {r["order_id"] for r in rows}=={"2001","other"}
     assert len(watermark)==19
+
+
+def test_order_snapshot_compares_net_order_total(monkeypatch):
+    invoice = SimpleNamespace(xiaoman_order_id="2001", customer_id="101", currency="USD",
+                              total_amount=Decimal("367.87"), surcharge_amount=Decimal("17.52"))
+    data = dict(order_id="2001", company_id="101", currency="USD", amount="350.35", exchange_rate=668.55)
+    monkeypatch.setattr(remote, "read", lambda *a: data)
+    monkeypatch.setattr(remote, "order_receipts", lambda *a: [])
+    assert remote.order_snapshot(None, invoice)["exchange_rate"] == 668.55
+    data["amount"] = "350.34"
+    with pytest.raises(ValueError, match="不一致"):
+        remote.order_snapshot(None, invoice)
+
+
+@pytest.mark.parametrize("fee,net,expected", [("2.34", "121.11", True), ("0", "123.45", False),
+    ("2.34", "121.10", False), (None, "121.11", False), ("2.34", None, False)])
+def test_readback_verifies_fee_and_net(payload_row, fee, net, expected):
+    data = dict(order_id="2001", currency="USD", amount="123.45", collection_date="2026-09-17",
+                bank_charge=fee, real_amount=net)
+    assert sync_service.matches(payload_row, data) is expected
