@@ -1,4 +1,4 @@
-"""Shared outbound print ordering for the HTML payload and Word export."""
+"""Shared outbound item ordering for printing, Word export and scanner clients."""
 import logging
 import re
 
@@ -25,7 +25,7 @@ def _size(item):
 
 
 def sort_outbound_print_items(items: list[dict]) -> list[dict]:
-    """Stable sort, without mutating source items or inspection/photo ordering."""
+    """Stable sort by spec and size, without mutating source items or media links."""
     return sorted(items, key=lambda item: (_natural_spec(item.get("spec")), _size(item)))
 
 
