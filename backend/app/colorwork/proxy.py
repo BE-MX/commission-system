@@ -27,6 +27,27 @@ def internal_origin() -> str:
     return origin
 
 
+def _allows_mutation_origin(request: Request, origin: str | None) -> bool:
+    """Allow the loopback dev frontend to call the local API proxy.
+
+    Production traffic remains same-origin.  The development frontend runs on
+    port 3000 while the API runs on 8001, so rejecting every cross-origin
+    mutation prevents local PSD/JPG uploads before they reach the workbench.
+    """
+    if not origin:
+        return True
+    if origin == str(request.base_url).rstrip("/"):
+        return True
+    if getattr(get_settings(), "APP_ENV", "production") == "production":
+        return False
+    parsed = urlsplit(origin)
+    return (
+        parsed.scheme == "http"
+        and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+        and parsed.port in {3000, 5173, 5174}
+    )
+
+
 async def _close(response, client):
     with anyio.CancelScope(shield=True):
         if response is not None:
@@ -75,7 +96,7 @@ def _gateway_headers(headers, gateway, secure):
 @router.api_route("/workbench/{path:path}", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
 async def workbench_proxy(request: Request, path: str = ""):
     origin = request.headers.get("origin")
-    if request.method not in {"GET", "HEAD"} and origin and origin != str(request.base_url).rstrip("/"):
+    if request.method not in {"GET", "HEAD"} and not _allows_mutation_origin(request, origin):
         raise HTTPException(403, "不允许跨站修改工作台数据")
     # Fixed origin + original encoded path prevents traversal from becoming an open proxy.
     raw_path = request.scope.get("raw_path", request.url.path.encode()).decode("ascii")
@@ -98,8 +119,9 @@ async def workbench_proxy(request: Request, path: str = ""):
     headers["x-forwarded-host"] = request.url.netloc
     if gateway:
         headers[RELAY_HEADER] = "1"
-        # Browser origin was checked above. Beijing sees its own HTTPS origin.
-        if origin == str(request.base_url).rstrip("/"):
+        # Browser origin was checked above. The owner must see its own HTTPS
+        # origin even when the local development frontend is on port 3000.
+        if origin:
             headers["origin"] = gateway
         headers["x-forwarded-proto"] = "https"
         headers["x-forwarded-host"] = urlsplit(gateway).netloc

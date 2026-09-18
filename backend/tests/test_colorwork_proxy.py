@@ -42,6 +42,7 @@ def harness(monkeypatch):
     settings = SimpleNamespace(
         COLORWORK_INTERNAL_ORIGIN="http://127.0.0.1:8787",
         COLORWORK_GATEWAY_ORIGIN="",
+        APP_ENV="development",
     )
     monkeypatch.setattr(proxy, "get_settings", lambda: settings)
     monkeypatch.setattr(service, "get_settings", lambda: settings)
@@ -82,9 +83,12 @@ def test_binary_upload_and_cross_origin_rejection(harness):
                headers={"origin": "https://leshine.cloud", "content-type": "application/octet-stream"})
     assert seen[0][1] == content
     response = client.put("/api/colorwork/workbench/api/upload", content=content,
+                          headers={"origin": "http://127.0.0.1:3000", "content-type": "application/octet-stream"})
+    assert response.status_code == 206
+    response = client.put("/api/colorwork/workbench/api/upload", content=content,
                           headers={"origin": "https://evil.example"})
     assert response.status_code == 403
-    assert len(seen) == 1
+    assert len(seen) == 2
 
 
 def test_runtime_failure_is_readable_without_token(harness, monkeypatch):
