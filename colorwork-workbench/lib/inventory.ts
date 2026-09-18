@@ -1,7 +1,7 @@
 import type { Selection, StockColor, TemplateSummary } from '@/lib/catalog';
 
-export const INVENTORY_STATUSES = ['normal', 'out_of_stock', 'restocking'] as const;
-export const INVENTORY_SELECTABLE_STATUSES = ['normal', 'restocking'] as const;
+export const INVENTORY_STATUSES = ['normal', 'low_stock', 'out_of_stock', 'restocking'] as const;
+export const INVENTORY_SELECTABLE_STATUSES = ['normal', 'low_stock', 'restocking'] as const;
 export type InventoryStatus = (typeof INVENTORY_STATUSES)[number];
 
 export type ActorRef = { id: string; email: string; displayName: string };
@@ -55,11 +55,13 @@ export type InventoryStatusMap = Record<string, Partial<Record<number, Inventory
 
 export const STATUS_LABELS: Record<InventoryStatus, string> = {
   normal: '到货正常',
+  low_stock: '低库存',
   out_of_stock: '暂时缺货',
   restocking: '正在补货',
 };
 
 export const STATUS_IMAGE_LABELS: Record<Exclude<InventoryStatus, 'normal'>, string> = {
+  low_stock: 'Low Stock',
   out_of_stock: 'Temporarily Out of Stock',
   restocking: 'Restocking',
 };

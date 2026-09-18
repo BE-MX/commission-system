@@ -350,7 +350,7 @@ export function InventoryBoard({ catalog, user, previewOnly = false, initialTemp
   }
 
   const counts = useMemo(() => {
-    const result: Record<InventoryStatus, number> = { normal: 0, out_of_stock: 0, restocking: 0 };
+    const result: Record<InventoryStatus, number> = { normal: 0, low_stock: 0, out_of_stock: 0, restocking: 0 };
     if (state) for (const spec of state.specs) result[draft[spec.specId] ?? spec.status] += 1;
     return result;
   }, [draft, state]);
@@ -361,7 +361,7 @@ export function InventoryBoard({ catalog, user, previewOnly = false, initialTemp
         <header className="panel-intro">
           <span>SHARED INVENTORY STATUS</span>
           <h1>维护当前库存与补货状态</h1>
-          <p>{user.role === 'admin' ? '管理员也可以在这里执行与业务相同的库存操作。' : '业务只修改标准母版中已经存在的规格。'} 所有账号共享同一份状态，保存后再导出最新图片。库存状态每 30 秒与小满实时库存自动同步：有可用库存为「到货正常」，无库存自动转「正在补货」。</p>
+          <p>{user.role === 'admin' ? '管理员也可以在这里执行与业务相同的库存操作。' : '业务只修改标准母版中已经存在的规格。'} 所有账号共享同一份状态，保存后再导出最新图片。库存状态每 30 秒与小满实时库存自动同步：库存为 0 显示「正在补货」，1–19 显示「低库存」，20 及以上显示「到货正常」。</p>
         </header>
 
         <div className="template-fields">
@@ -379,6 +379,7 @@ export function InventoryBoard({ catalog, user, previewOnly = false, initialTemp
 
         <div className="inventory-summary">
           <span className="normal">正常 {counts.normal}</span>
+          <span className="low-stock">低库存 {counts.low_stock}</span>
           <span className="restocking">正在补货 {counts.restocking}</span>
         </div>
 

@@ -180,7 +180,7 @@ export const masterVersionSpecs = sqliteTable('master_version_specs', {
   versionId: text('version_id').notNull(),
   specId: text('spec_id').notNull(),
   displayOrder: integer('display_order').notNull(),
-  statusSnapshot: text('status_snapshot', { enum: ['normal', 'out_of_stock', 'restocking'] }),
+  statusSnapshot: text('status_snapshot', { enum: ['normal', 'low_stock', 'out_of_stock', 'restocking'] }),
   statusUpdatedAt: text('status_updated_at'),
 }, (table) => [
   primaryKey({ columns: [table.versionId, table.specId] }),
@@ -200,7 +200,7 @@ export const inventoryTemplateState = sqliteTable('inventory_template_state', {
 export const inventoryStates = sqliteTable('inventory_states', {
   specId: text('spec_id').primaryKey(),
   templateId: text('template_id').notNull(),
-  status: text('status', { enum: ['normal', 'out_of_stock', 'restocking'] }).notNull(),
+  status: text('status', { enum: ['normal', 'low_stock', 'out_of_stock', 'restocking'] }).notNull(),
   revision: integer('revision').notNull().default(1),
   updatedByUserId: text('updated_by_user_id').notNull(),
   updatedByEmail: text('updated_by_email').notNull(),
@@ -215,8 +215,8 @@ export const inventoryEvents = sqliteTable('inventory_events', {
   templateId: text('template_id').notNull(),
   specId: text('spec_id').notNull(),
   eventType: text('event_type', { enum: ['status_change', 'activated', 'reactivated'] }).notNull(),
-  fromStatus: text('from_status', { enum: ['normal', 'out_of_stock', 'restocking'] }),
-  toStatus: text('to_status', { enum: ['normal', 'out_of_stock', 'restocking'] }).notNull(),
+  fromStatus: text('from_status', { enum: ['normal', 'low_stock', 'out_of_stock', 'restocking'] }),
+  toStatus: text('to_status', { enum: ['normal', 'low_stock', 'out_of_stock', 'restocking'] }).notNull(),
   inventoryRevision: integer('inventory_revision').notNull(),
   actorUserId: text('actor_user_id').notNull(),
   actorEmail: text('actor_email').notNull(),

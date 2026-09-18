@@ -23,7 +23,7 @@
 `next.config.ts` 的 basePath 与 `lib/workbench-url.ts` 对齐；生成目录和已存储源文件 URL 保持原有相对路径，
 仅在浏览器请求、图像加载和下载时补前缀，不迁移或重写已有业务数据。
 
-实时库存仍回源方舟 `/api/colorwork/inventory-status`；23 套模板按 okki 库存口径计算，未改业务规则。
+实时库存仍回源方舟 `/api/colorwork/inventory-status`；23 套模板按 okki 库存口径计算：库存 0 为 Restocking，1–19 为 Low Stock，20 及以上不显示提醒。
 
 ## 库存图直接下载
 

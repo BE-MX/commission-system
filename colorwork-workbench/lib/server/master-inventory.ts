@@ -29,7 +29,7 @@ import type {
 } from '@/lib/source-versions';
 import { sourceIssueKey } from '@/lib/source-versions';
 
-export const INVENTORY_STATUSES = ['normal', 'out_of_stock', 'restocking'] as const;
+export const INVENTORY_STATUSES = ['normal', 'low_stock', 'out_of_stock', 'restocking'] as const;
 export type InventoryStatus = (typeof INVENTORY_STATUSES)[number];
 
 type SqlValue = string | number | null;
