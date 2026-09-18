@@ -220,3 +220,7 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 `--recover-migration-151` 仅用于 2026-09-16 的外键符号类型不匹配事故：原日志为数据库152、目标154、pending151/153/154，四个原writer均running且有完整停机证据。恢复完整保留 `recovery_original`，重新核对当前数据库结构和迁移链；无stamp/downgrade/清日志操作。
 
 必须固定经审查的完整 `--revision`，执行完整办公室+云发布。先带 `--prepare-only` 验证；去掉该参数才停止writers、执行迁移并切换两端应用和静态站，最终完成健康验证后关闭事故日志。旧安装目录缺少该入口时，可从 `.deploy_state/sources/<revision>/deploy/deploy.bat` 加 `--live-root <安装目录>` 启动候选部署器；服务和状态始终归安装目录。数据库已完成部分revision时重新校验；不完整的未知结构或缺失原始writer证据仍阻断。中途失败不得启动不兼容旧程序。
+
+## 回款固定办公室入口
+
+`deploy/deploy.bat --receipt-routing-only --prepare-only`预检，去掉`--prepare-only`正式应用。两站`/api/receipts`及其子路径统一到办公室，保留用户鉴权、关闭缓存和上游重试；北京使用校验证书的HTTPS连接新加坡入口。网关11MiB覆盖multipart开销，后端仍严格限制每张10MiB。先归集并核对历史凭证SHA256，保留来源备份，切换后再核对新增文件。此模式通过入口路由固定存储，无需配置北京应用级RECEIPT_STORAGE_PROXY_URL；局域网入口须直达办公室。

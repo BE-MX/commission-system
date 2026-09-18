@@ -45,7 +45,7 @@ def test_real_helper_unwraps_types_fields_and_preserves_rate(monkeypatch, payloa
     result = remote.push(None, payload_row, {"exchange_rate": 725}, lambda: fence.append(True))
     assert result["cash_collection_id"] == 700 and fence == [True]
     assert calls[0]["amount"] == "123.45" and calls[0]["bank_charge"] == "2.34"
-    assert calls[0]["exchange_rate"] == "725" and calls[0]["collect_status"] == 0
+    assert calls[0]["exchange_rate"] == "725" and calls[0]["collect_status"] == 1
     assert "file_list" not in calls[0] and "exchange_rate_usd" not in calls[0]
 
 

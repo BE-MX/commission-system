@@ -92,7 +92,7 @@ def push(db, receipt, snapshot, before_send=None):
         "currency": receipt.currency, "collection_date": receipt.collection_date.isoformat(),
         "type": receipt.payment_type, "bank_charge": str(receipt.bank_charge),
         "cash_collection_no": receipt.receipt_no, "comment": receipt.remark or "",
-        "collect_status": 0,
+        "collect_status": 1,
     }
     rate = Decimal(str(snapshot.get("exchange_rate") or "0"))
     if not rate.is_finite() or rate <= 0:
