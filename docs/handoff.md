@@ -1,3 +1,11 @@
+## 2026-09-18 回款生产部署与单笔验证（Codex）
+
+办公室/北京已通过统一入口部署 `aed61c43`，分支 `codex/receipt-production-enable` 基于实际生产 `dab19815`，尚未合并/推送 GitHub。两站回款 API 固定办公室，单张 10MiB、入口 11MiB，历史凭证已归集；最后校验办公室 28/28 份大小及 SHA256 一致，来源备份保留。原凭证缺失的自动生成阻塞已消除。
+
+小满分页同秒边界重复已修复，18,325 条真实完整只读扫描通过。原单 id=1 重试后成功，远端 ID `105794024173578`，回读 `collect_status=1`（有效）。创建接口权限已证实可用。最后 1 张 synced、16 张 pending，发送总开关仍 False，本轮未批量发送其他单。76 项相关回归通过，独立审查无阻断；增量约定通过，完整门禁仍有生产基点 13 项既有 UI 基线问题，no-fetch 巡检已执行。
+
+未完成项：`.cloud` 10MiB 端到端上传仍受北京至新加坡重传/低速影响；办公室及 `.work` 网关 10MiB 传输已到达鉴权。浏览器连接不可用，未做登录态 UI 验收。详见[验证记录](reports/2026-09-18-receipt-production-verification.md)。保留修复 worktree、发布备份和 `tmp/receipt-enable/` 证据，后续主线集成不要遗漏生产补丁。
+
 ## 2026-09-17 库存单自动回款与回款管理（Codex，合并推送交付，未部署）
 
 - worktree `D:/MyProgram/commission-system-codex-receipts`，分支 `codex/receipt-management`。库存单截图必填同步校验、完整同步后唯一自动建回款、手工回款、列表/详情/私有凭证、失败重试与未知结果核对已落地。
