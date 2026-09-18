@@ -213,6 +213,13 @@ def release_invoice_sync(db: Session, invoice_id: int, operation_key: str | None
 
 
 def recover_invoice_sync(db: Session, invoice_id: int, action: str, operator_id: int | None) -> dict:
+    from app.invoice.linked_sync_service import ensure_idle
+    invoice = db.query(Invoice).filter_by(id=invoice_id).with_for_update().one()
+    if invoice.linked_sync_id:
+        from app.invoice.models import InvoiceLinkedSync
+        linked = db.get(InvoiceLinkedSync, invoice.linked_sync_id)
+        if linked.status != "uncertain" or (linked.lease_until and linked.lease_until > beijing_now()):
+            ensure_idle(invoice)
     rows = (
         db.query(InvoiceAllocation)
         .filter(InvoiceAllocation.invoice_id == invoice_id, InvoiceAllocation.status == "pending")

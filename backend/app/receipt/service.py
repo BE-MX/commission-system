@@ -28,6 +28,8 @@ def get(db, identity, user, *, lock=False):
 
 
 def ensure_order_ready(db, invoice):
+    from app.invoice.linked_sync_service import ensure_idle
+    ensure_idle(invoice)
     from app.semifinished.models import InvoiceAllocation
     if invoice.sync_status != "synced" or not invoice.xiaoman_order_id:
         raise ValueError("请先将订单完整同步小满，再登记回款")

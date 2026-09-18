@@ -1395,3 +1395,15 @@ Agent research context now includes `fact_contract.version=registered_research_f
 自动回款按 `本次金额 × 订单手续费 / 含费订单总额` 四舍五入至两位；最后一笔用订单手续费减去已分摊手续费吸收舍入差额。已登记未发送/失败单继续占用金额及手续费，作废单不占用；同一远端ID不重复统计。手工手续费默认0，留空/null/空串均为0，显式手续费（包括0）保留，若已分摊费用超过订单手续费或剩余费用超过尾款金额，停止自动分摊并提示核对。已有远端记录只读取当前订单详情，不重扫全库。
 
 旧零手续费自动失败单在重试原单时补算并记审计；旧待发送零手续费自动单先阻断，需重试后发送。已取得远端ID或结果待核对的单不自动更改/重发。同步回读手续费、净到账异常时转待核对，保留远端ID。
+
+## 订单发票关联同步
+
+|方法|路径（/api/invoice前缀）|说明|
+|---|---|---|
+|POST|/invoices/{id}/linked-sync|保存并登记；invoice、request_key、expected_version内容哈希；write+sync|
+|GET|/invoices/{id}/linked-sync|最新结果及过期租约检查；read/write/sync|
+|POST|/invoices/{id}/linked-sync/{operation}/run|继续未完成步骤；recheck=true仅重新核对；sync|
+|POST|/invoices/{id}/linked-sync/{operation}/close|结束明确失败任务，保留已成功结果；sync|
+|POST|/invoices/{id}/linked-sync/{operation}/resolve|管理员人工核对留证结束；reason、confirmed；admin|
+
+均校验发票可见范围；回款摘要另校验回款动作及数据范围。发票详情增加edit_version。边界及恢复见[invoice-linked-sync.md](invoice-linked-sync.md)。

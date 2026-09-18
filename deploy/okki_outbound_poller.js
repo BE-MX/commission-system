@@ -92,15 +92,26 @@ export const CLAIMABLE = `(
 export async function claimBatch(conn) {
   const now = beijingNow();
   const [rows] = await conn.query(
-    `SELECT id, order_id, attempts, status
+    `SELECT id, invoice_id, order_id, attempts, status
        FROM ark_okki_outbound_tasks
       WHERE ${CLAIMABLE}
+        AND invoice_id IN (SELECT id FROM ark_invoices WHERE linked_sync_id IS NULL)
       ORDER BY updated_at, id
       LIMIT ?`,
     [now, config.maxAttempts, now, now, STALE_RUNNING_MINUTES, 1],
   );
   const claimed = [];
   for (const row of rows) {
+    // The invoice lock serializes claims against linked-change saves. Recheck
+    // the task predicate under that lock before starting an external writer.
+    await conn.query('START TRANSACTION');
+    try {
+      const [[invoice]] = await conn.query(
+        'SELECT linked_sync_id FROM ark_invoices WHERE id=? FOR UPDATE', [row.invoice_id]);
+      if (!invoice || invoice.linked_sync_id) {
+        await conn.query('ROLLBACK');
+        continue;
+      }
     // 乐观认领：谓词完整复核，只有一处能把行翻成 running（attempts 记认领次数）
     const [result] = await conn.query(
       `UPDATE ark_okki_outbound_tasks
@@ -109,6 +120,11 @@ export async function claimBatch(conn) {
       [now, row.id, now, config.maxAttempts, now, now, STALE_RUNNING_MINUTES],
     );
     if (result.affectedRows === 1) claimed.push({...row, priorStatus: row.status, attempts: Number(row.attempts) + 1});
+      await conn.query('COMMIT');
+    } catch (error) {
+      await conn.query('ROLLBACK');
+      throw error;
+    }
   }
   return claimed;
 }

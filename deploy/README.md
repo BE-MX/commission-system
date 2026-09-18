@@ -227,3 +227,7 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 
 
 回款核验私有索引位于 `backend/data/receipt-index`，与凭证一样不作为代码制品覆盖或复制。首次全量核验后后续请求增量刷新，重启保留。办公室该目录仅授予SYSTEM、Administrators、服务维护账户访问；云端文件权限0600。损坏可自动重建，但重建耗时数分钟；部署不得通过清空业务data目录来更新代码。应用与小满时间须保持同步（增量重叠60秒）。
+
+### 158 关联单据同步发布约束
+
+此版本同时修改后端、前端及Singapore的okki_outbound_poller.js。发布关联同步前暂停旧poller，经统一deploy.bat完成158迁移和相关实例更新后才恢复，避免旧执行器绕过ark_invoices.linked_sync_id。若候选入口将poller列为deferred，关联同步功能不得启用，需将Singapore执行器更新纳入本次发布。参见[关联同步说明](../docs/invoice-linked-sync.md)。

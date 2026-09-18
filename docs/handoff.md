@@ -1,3 +1,7 @@
+## 2026-09-18 保存并同步关联单据（Codex，待部署）
+
+工作树commission-system-codex-invoice-linked-sync，分支codex/invoice-linked-sync。已接入原订单编辑、持久分步结果、失败续跑、旧编辑内容哈希、任务令牌、回款摘要权限与人工核对结束。迁移158；需配套更新Singapore出库poller再启用。出库自动写回因小满未明确服务端并发保护暂不开放，显示实时关联单据和SKU差异；回款财务事实不改写。171项隔离后端测试、41项Node测试、前端构建与本地模拟界面验证通过，独立审查通过。详细边界见[invoice-linked-sync.md](invoice-linked-sync.md)。生产尚未部署；合并与推送以Git记录为准。完整规则门禁仍为7项既有UI基线问题。
+
 ## 2026-09-18 回款归属权限收紧（Codex，本地实现）
 
 分支codex/receipt-owner-permissions：普通回款访问仅按订单sales_user_id，取消代录人范围；独立receipt:read_all保持全量数据范围，与receipt:read页面权限搭配。详情、列表、订单选择、余额和已绑定回款凭证统一校验，invoice:read_all不再通过凭证fallback绕过。未绑定的发票凭证保留代录权限。83项回款/凭证/订单隔离测试通过，独立权限审查通过；增量规则无违规，完整门禁仍为7项既有UI基线问题。未部署或修改生产角色授权。
@@ -349,7 +353,7 @@ Windows Settings 默认 `COLORWORK_GATEWAY_ORIGIN=https://leshine.cloud`，办�
 
 用户要求扫描按钮采用外贸报工同款动效，并加入提供的出库单示例图。发货检验待扫码页现有旋转光圈、二维码点阵和往返扫描线，下方示例突出右上角二维码，可点击调用微信图片预览。隐藏页面暂停动效，减少动态偏好关闭连续动画。示例原图原样存于 `miniprogram/assets/shipping-scan-example.png`。
 
-验证：37项Node测试、JavaScript语法、页面显示/隐藏动效状态和图片预览回调检查通过；浏览器按WXML/WXSS渲染确认布局。约定检查仍为4项既有主站UI债务；未执行微信真机验收，未改扫码、上传和提交业务逻辑；用户已授权合并并推送 origin/main，未发布。
+验证：41项Node测试、JavaScript语法、页面显示/隐藏动效状态和图片预览回调检查通过；浏览器按WXML/WXSS渲染确认布局。约定检查仍为4项既有主站UI债务；未执行微信真机验收，未改扫码、上传和提交业务逻辑；用户已授权合并并推送 origin/main，未发布。
 
 ## 2026-09-15 小程序工作台导航（合并推送，未发布）
 

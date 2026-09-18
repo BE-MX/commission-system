@@ -342,8 +342,10 @@ def create_invoice(
     return invoice
 
 
-def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: int | None = None) -> Invoice:
+def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: int | None = None, *, linked_change=False) -> Invoice:
     from app.receipt import invoice_link
+    from app.invoice.linked_sync_service import ensure_idle
+    ensure_idle(invoice)
     receipt_floor = invoice_link.guard_edit(db, invoice, body)
     receipt_fee_basis = (invoice.total_amount, invoice.surcharge_amount)
     from app.semifinished.models import InvoiceAllocation
@@ -394,8 +396,9 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
     _refresh_invoice_totals(invoice)
     _validate_internal_settlement(invoice)
     _validate_screenshot_source(db, invoice)
-    invoice_link.guard_fee_basis(db, invoice, receipt_fee_basis)
-    if invoice.total_amount < receipt_floor:
+    if not linked_change:
+        invoice_link.guard_fee_basis(db, invoice, receipt_fee_basis)
+    if not linked_change and invoice.total_amount < receipt_floor:
         raise ValueError("订单金额不能低于已登记回款及待处理金额")
     invoice_link.save_draft(db, invoice, body.receipt_draft, user_id)
     if grade_changed:
@@ -460,6 +463,7 @@ def mark_ready_if_valid(invoice: Invoice) -> list[dict]:
 
 
 def serialize_detail(invoice: Invoice, db: Session | None = None) -> dict:
+    from app.invoice.linked_sync_service import edit_version
     summary = summarize_items(invoice)
     material_state: dict[int, dict] = {}
     if db is not None:
@@ -528,6 +532,7 @@ def serialize_detail(invoice: Invoice, db: Session | None = None) -> dict:
         "sync_error": invoice.sync_error,
         "synced_at": to_beijing_time(invoice.synced_at),
         "updated_at": to_beijing_time(invoice.updated_at),
+        "edit_version": edit_version(invoice),
         "items": [_serialize_item(item, material_state) for item in invoice.items],
     }
 
