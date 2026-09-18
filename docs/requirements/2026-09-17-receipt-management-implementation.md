@@ -39,7 +39,7 @@
 | 实例 | 配置 | 行为 |
 | --- | --- | --- |
 | 办公室凭证主存储 | `RECEIPT_STORAGE_PROXY_URL` 留空 | 在仓库 `backend/data/receipt-proofs` 保存私有文件 |
-| 北京入口 | `/api/receipts` 统一代理至办公室 | 经新加坡 HTTPS 入口；北京应用级代理留空，避免循环 |
+| 北京入口 | `/api/receipts` 统一代理至办公室 | 经新加坡 HTTPS 入口；北京配置 `RECEIPT_STORAGE_PROXY_URL=https://leshine.work`，办公室留空，保证北京订单保存可绑定办公室凭证 |
 
 两端均验证用户权限；转发保留当前用户 Authorization，只允许配置中的 HTTPS origin、固定 API 路径，不跟随重定向，hop 标记阻止循环。读取先检查本地对象范围，再转发。代理实例绑定凭证信任主存储已经校验并提交的共享数据库记录；办公室文件后来丢失会在读取时暴露，不能通过数据库备份恢复图片。
 

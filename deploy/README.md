@@ -223,4 +223,7 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 
 ## 回款固定办公室入口
 
-`deploy/deploy.bat --receipt-routing-only --prepare-only`预检，去掉`--prepare-only`正式应用。两站`/api/receipts`及其子路径统一到办公室，保留用户鉴权、关闭缓存和上游重试；北京使用校验证书的HTTPS连接新加坡入口。网关11MiB覆盖multipart开销，后端仍严格限制每张10MiB。先归集并核对历史凭证SHA256，保留来源备份，切换后再核对新增文件。此模式通过入口路由固定存储，无需配置北京应用级RECEIPT_STORAGE_PROXY_URL；局域网入口须直达办公室。
+`deploy/deploy.bat --receipt-routing-only --prepare-only`预检，去掉`--prepare-only`正式应用。两站`/api/receipts`及其子路径统一到办公室，保留用户鉴权、关闭缓存和上游重试；北京使用校验证书的HTTPS连接新加坡入口。网关11MiB覆盖multipart开销，后端仍严格限制每张10MiB。先归集并核对历史凭证SHA256，保留来源备份，切换后再核对新增文件。此模式通过入口路由固定存储，但北京订单保存仍须配置 `RECEIPT_STORAGE_PROXY_URL=https://leshine.work`，办公室保持空并负责真实文件校验；局域网入口须直达办公室。
+
+
+回款核验私有索引位于 `backend/data/receipt-index`，与凭证一样不作为代码制品覆盖或复制。首次全量核验后后续请求增量刷新，重启保留。办公室该目录仅授予SYSTEM、Administrators、服务维护账户访问；云端文件权限0600。损坏可自动重建，但重建耗时数分钟；部署不得通过清空业务data目录来更新代码。应用与小满时间须保持同步（增量重叠60秒）。
