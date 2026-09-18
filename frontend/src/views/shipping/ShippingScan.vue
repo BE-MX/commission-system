@@ -25,8 +25,8 @@
     <template v-else>
       <section class="station-card record-card"><div class="section-heading"><h1>{{ view.record.outbound_no }}</h1><span class="record-badge">{{ submitted ? '已提交' : '待提交' }}</span></div><p>{{ view.record.customer_name }}</p><small>出库日期 {{ view.record.outbound_date || '—' }}</small><div class="record-note">发货备注：{{ view.record.remark || '无' }}</div><button class="station-link" :disabled="busy || invalid || !!pendingSubmit" @click="refresh"><RefreshCw :size="15" />刷新状态及已上传内容</button></section>
       <p v-if="submitted" class="readonly-hint">本单已提交，照片和视频只读。撤回后可刷新继续编辑。</p>
-      <section v-if="!invalid" class="station-card"><div class="section-heading"><h2>整单照片与视频</h2><span>整单留档</span></div><StationMediaGroup :media="mediaFor(null)" :session-id="sessionId" :editable="!submitted" :disabled="!canWrite" @upload="upload" @remove="remove" @error="fail" /></section>
-      <section v-for="(item, index) in invalid ? [] : view.items" :key="item.item_id" class="station-card item-card"><div class="item-top"><span class="item-index">{{ String(index + 1).padStart(2, '0') }}</span><span>数量 <b>{{ item.qty }} {{ item.unit }}</b></span></div><h2 class="item-model">{{ item.model || '未维护型号' }}</h2><p class="item-attributes">{{ [item.size, item.color].filter(Boolean).join(' / ') || item.product_name }}</p><p v-if="item.spec" class="item-spec">规格：{{ item.spec }}</p><StationMediaGroup :media="mediaFor(item.item_id)" :session-id="sessionId" :item-id="item.item_id" :editable="!submitted" :disabled="!canWrite" @upload="upload" @remove="remove" @error="fail" /></section>
+      <section v-if="!invalid" class="station-card"><div class="section-heading"><h2>整单照片与视频</h2><span>整单留档</span></div><StationMediaGroup :media="mediaFor(null)" :feedback="uploadFeedbackFor(null)" @retry="retryMedia" :session-id="sessionId" :editable="!submitted" :disabled="!canWrite" @upload="upload" @remove="remove" @error="fail" /></section>
+      <section v-for="(item, index) in invalid ? [] : view.items" :key="item.item_id" class="station-card item-card"><div class="item-top"><span class="item-index">{{ String(index + 1).padStart(2, '0') }}</span><span>数量 <b>{{ item.qty }} {{ item.unit }}</b></span></div><h2 class="item-model">{{ item.model || '未维护型号' }}</h2><p class="item-attributes">{{ [item.size, item.color].filter(Boolean).join(' / ') || item.product_name }}</p><p v-if="item.spec" class="item-spec">规格：{{ item.spec }}</p><StationMediaGroup :media="mediaFor(item.item_id)" :feedback="uploadFeedbackFor(item.item_id)" @retry="retryMedia" :session-id="sessionId" :item-id="item.item_id" :editable="!submitted" :disabled="!canWrite" @upload="upload" @remove="remove" @error="fail" /></section>
       <section v-if="!invalid" class="station-card"><label class="remark-label" for="station-remark">检验备注</label><textarea id="station-remark" v-model="remark" maxlength="500" rows="3" :disabled="!canWrite" placeholder="填写需要说明的情况（选填）" /><p class="station-help">已上传 {{ photos.length }} 张照片、{{ videos.length }} 段视频。至少需要一张照片，视频不进入验货打印。</p></section>
       <div v-if="busy" class="upload-progress" role="status">{{ uploadStage || '正在处理，请勿切换人员' }}<progress v-if="uploadStage" :value="progress" max="100" /><span v-if="uploadStage">{{ progress }}%</span></div>
       <button v-if="pendingUpload && !busy && !invalid" class="station-secondary" @click="retryUpload">重试本次上传（不会重复保存）</button>
@@ -45,12 +45,20 @@ import StationOperatorPicker from './components/StationOperatorPicker.vue'
 import StationScanner from './components/StationScanner.vue'
 import StationMediaGroup from './components/StationMediaGroup.vue'
 import StationInstallHint from './components/StationInstallHint.vue'
+const station = useShippingStation()
 const { operators, selected, operator, view, remark, busy, loading, scannerOpen, error, invalid, loginRequired,
   prompt, selectionVersion, receipt, progress, uploadStage, photos, videos, submitted, canWrite, sessionId, dirty, pendingUpload, pendingSubmit,
-  choose, startScan, decoded, refresh, upload, retryUpload, remove, submit, end, loadOperators, fail } = useShippingStation()
+  choose, startScan, decoded, refresh, upload, retryUpload, remove, submit, end, loadOperators, fail } = station
+const { uploadItemId, uploadError, pendingCompression, retryCompression } = station
 const picker = ref(null)
 const allMedia = computed(() => [...photos.value, ...videos.value])
 const mediaFor = id => allMedia.value.filter(media => (media.item_id || null) === (id || null))
+const uploadFeedbackFor = id => uploadItemId.value === id ? {
+  stage: uploadStage.value, progress: progress.value, error: uploadError.value,
+  retryLabel: !busy.value && !invalid.value && !submitted.value && !pendingSubmit.value
+    ? pendingCompression.value ? '重试压缩并上传' : pendingUpload.value ? '重试上传' : '' : '',
+} : null
+const retryMedia = () => pendingCompression.value ? retryCompression() : retryUpload()
 const loginUrl = '/login?redirect=%2Fshipping%2Fscan'
 function scanTap() {
   if (startScan() === false) picker.value?.$el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })

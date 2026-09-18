@@ -10,6 +10,7 @@ export function useShippingStation(api = stationApi) {
   const invalid = ref(false), loginRequired = ref(false), prompt = ref('请选择本次操作人')
   const selectionVersion = ref(0), receipt = ref(null), progress = ref(0), pendingUpload = ref(null), pendingSubmit = ref(null)
   const uploadStage = ref('')
+  const uploadItemId = ref(undefined), uploadError = ref(''), pendingCompression = ref(null)
   let compressionController
   let promptTimer, idleTimer, lastActive = Date.now(), alive = true, scanIntent = null
   const sessionId = computed(() => view.value?.session_id)
@@ -93,20 +94,24 @@ export function useShippingStation(api = stationApi) {
   async function upload(file, itemId, type, retry = false) {
     if (!canWrite.value || !file) return
     busy.value = true; progress.value = 0; error.value = ''
+    uploadItemId.value = itemId || null; uploadError.value = ''
     let intent
     try {
       if (!retry && type === 'videos') {
+        pendingCompression.value = { file, itemId, type }
         uploadStage.value = '正在压缩视频，请保持页面在前台'
         compressionController = new AbortController()
         file = await compressInspectionVideo(file, { signal: compressionController.signal, onProgress: value => { progress.value = value } })
         if (!alive) return
       }
+      pendingCompression.value = null
       const limit = type === 'videos' ? 100 : 20
       if (file.size > limit * 1024 * 1024) throw new Error(`文件不能超过 ${limit}MB`)
       if (!retry) pendingUpload.value = { file, itemId, type, request_id: requestId(), edit_version: editVersion() }
       intent = pendingUpload.value
     } catch (e) {
       error.value = e.message || '视频压缩失败，请重新选择视频'
+      uploadError.value = error.value
       return
     } finally {
       compressionController = null
@@ -124,8 +129,12 @@ export function useShippingStation(api = stationApi) {
       })
       pendingUpload.value = null
       accept((await api.refresh(sessionId.value)).data, true)
-    } catch (e) { await fail(e) }
+    } catch (e) { await fail(e); uploadError.value = error.value }
     finally { busy.value = false; uploadStage.value = '' }
+  }
+  function retryCompression() {
+    const p = pendingCompression.value
+    if (p) return upload(p.file, p.itemId, p.type)
   }
   function retryUpload() {
     const p = pendingUpload.value
@@ -161,13 +170,14 @@ export function useShippingStation(api = stationApi) {
   function clearSession() {
     view.value = null; selected.value = null; remark.value = ''; error.value = ''; invalid.value = false
     pendingUpload.value = null; pendingSubmit.value = null; scanIntent = null; prompt.value = '请选择本次操作人'
+    pendingCompression.value = null; uploadItemId.value = undefined; uploadError.value = ''
     clearTimeout(promptTimer)
   }
   async function end() {
     if (busy.value) return
     busy.value = true
-    if (dirty.value || pendingUpload.value || pendingSubmit.value) {
-      try { await confirmDanger('结束本次操作', '', '已上传文件保留；未提交备注不会保存。未确认请求可由接手人扫码核对。') }
+    if (dirty.value || pendingUpload.value || pendingSubmit.value || pendingCompression.value) {
+      try { await confirmDanger('结束本次操作', '', '已上传文件保留；未上传视频和未提交备注不会保存。未确认请求可由接手人扫码核对。') }
       catch { busy.value = false; return }
     }
     try {
@@ -189,9 +199,11 @@ export function useShippingStation(api = stationApi) {
   })
   onBeforeUnmount(() => {
     alive = false; compressionController?.abort(); clearTimeout(promptTimer); clearInterval(idleTimer)
+    pendingCompression.value = null
     window.removeEventListener('beforeunload', warnLeave)
   })
   return { operators, selected, operator, view, remark, busy, loading, scannerOpen, error, invalid, loginRequired,
     prompt, selectionVersion, receipt, progress, uploadStage, photos, videos, submitted, canWrite, sessionId, dirty, pendingUpload, pendingSubmit,
+    uploadItemId, uploadError, pendingCompression, retryCompression,
     choose, startScan, decoded, refresh, upload, retryUpload, remove, submit, end, loadOperators, fail }
 }
