@@ -429,7 +429,6 @@ export async function parseTemplateSource(args: {
   }
   const swatches = flat.filter((item) => isCandidateSwatch(item, psd));
   if (!swatches.length) throw new Error('没有识别到可用颜色图层。请保留以色号命名的独立色块图层。');
-  if (swatches.length > 100) throw new Error('识别到的颜色图层超过 100 个，无法安全建立母版。');
 
   const sectionsWithTop = parsedSections(flat, currentTemplate);
   const detectedSections = sectionsWithTop.map(({ key, label }) => ({ key, label }));
