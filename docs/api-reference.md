@@ -2,7 +2,7 @@
 
 ## 回款管理（2026-09-17，本地实现，迁移 156 后可用）
 
-前缀 `/api/receipts`，登录认证、标准 `ok()` 信封。数据范围沿用订单归属/代理授权；`receipt:read_all` 可看全部。详见[实现说明](requirements/2026-09-17-receipt-management-implementation.md)。
+前缀 `/api/receipts`，登录认证、标准 `ok()` 信封。普通用户仅可访问 `Invoice.sales_user_id` 等于当前用户的订单回款；创建人/代录授权不扩大回款范围。`receipt:read_all` 可看全部（数据范围权限，仍需 `receipt:read/write/admin` 页面或操作权限）；`invoice:read_all` 不扩大回款范围。列表、详情、订单选择、余额、已绑定回款凭证和写操作统一校验；已绑定回款凭证必须具有回款动作权限，未绑定回款的订单截图仍按发票编辑权限访问。详见[实现说明](requirements/2026-09-17-receipt-management-implementation.md)。
 
 | 方法与路径 | 参数 / 行为 | 权限 |
 | --- | --- | --- |

@@ -262,7 +262,7 @@ def test_manual_cannot_reuse_automatic_intent_proof(db, order):
     assert db.query(Receipt).count() == 0
 
 
-def test_revoked_or_inactive_delegate_cannot_list_receipts(db, order):
+def test_delegate_cannot_list_other_salespersons_receipts(db, order):
     from app.auth.models import ArkUser
     from app.invoice.models import InvoiceDelegateGrant
     register(db, order)
@@ -270,7 +270,7 @@ def test_revoked_or_inactive_delegate_cannot_list_receipts(db, order):
     if not db.get(ArkUser, 1):
         db.add(ArkUser(id=1, username="receipt-owner", real_name="Test owner", password_hash="x", is_active=True))
     db.add(InvoiceDelegateGrant(sales_user_id=1, delegate_user_id=2, created_by=1)); db.commit()
-    assert service.list_receipts(db, {**USER, "sub": "2"})["total"] == 1
+    assert service.list_receipts(db, {**USER, "sub": "2"})["total"] == 0
     db.get(ArkUser, 1).is_active = False; db.commit()
     assert service.list_receipts(db, {**USER, "sub": "2"})["total"] == 0
 
@@ -511,3 +511,53 @@ def test_empty_manual_fee_is_zero(db, order, value):
                          balance_version=service.order_balance(db, order)["version"])
     row = service.create(db, body, USER)
     assert row.bank_charge == Decimal("0")
+
+
+@pytest.mark.parametrize("permissions,expected", [(["receipt:read"], 0),
+    (["receipt:read", "invoice:read_all"], 0), (["receipt:admin"], 0),
+    (["receipt:read", "receipt:read_all"], 1)])
+def test_receipt_scope_covers_all_read_endpoints(db, order, permissions, expected):
+    from app.auth.models import ArkUser
+    from app.invoice.models import InvoiceDelegateGrant
+    row, _ = register(db, order)
+    order.created_by = 2
+    if not db.get(ArkUser, 1):
+        db.add(ArkUser(id=1, username="scope-owner", real_name="Owner", password_hash="x", is_active=True))
+    db.add(InvoiceDelegateGrant(sales_user_id=1, delegate_user_id=2, created_by=1))
+    # A converted automatic intent must not grant invoice-scope access to receipt proof.
+    db.add(ReceiptIntent(invoice_id=order.id, status="converted", eligible=1, created_by=2,
+                         receipt_id=row.id, attachment_ids=row.attachment_ids))
+    db.commit()
+    user = {"sub": "2", "roles": [], "permissions": permissions + ["invoice:read"]}
+    with api_client(db, user) as client:
+        assert client.get("/api/receipts").json()["data"]["total"] == expected
+        assert client.get("/api/receipts/order-options").json()["data"]["total"] == expected
+        code = 200 if expected else 404
+        assert client.get(f"/api/receipts/{row.id}").status_code == code
+        assert client.get(f"/api/receipts/order-balance/{order.id}").status_code == code
+        assert client.get(f"/api/receipts/attachments/{row.attachment_ids[0]}").status_code == code
+
+
+def test_order_owner_sees_receipt_created_by_someone_else(db, order):
+    row, _ = register(db, order)
+    order.created_by = 2; row.created_by = 2; db.commit()
+    assert service.list_receipts(db, USER)["total"] == 1
+    assert service.get(db, row.id, USER)[0].id == row.id
+
+
+@pytest.mark.parametrize("permissions", [["invoice:read"], ["invoice:read", "receipt:read_all"]])
+def test_bound_receipt_proof_requires_receipt_action_permission(db, order, permissions):
+    row, _ = register(db, order)
+    db.add(ReceiptIntent(invoice_id=order.id, status="converted", eligible=1, created_by=1,
+                         receipt_id=row.id, attachment_ids=row.attachment_ids)); db.commit()
+    with api_client(db, {**USER, "permissions": permissions}) as client:
+        assert client.get(f"/api/receipts/attachments/{row.attachment_ids[0]}").status_code == 404
+
+
+def test_all_receipts_permission_does_not_grant_write(db, order):
+    row, _ = register(db, order)
+    user = {"sub": "2", "roles": [], "permissions": ["receipt:read", "receipt:read_all"]}
+    with api_client(db, user) as client:
+        assert client.get(f"/api/receipts/{row.id}").status_code == 200
+        assert client.post(f"/api/receipts/{row.id}/retry").status_code == 403
+        assert client.post(f"/api/receipts/{row.id}/void", json={"reason": "test"}).status_code == 403
