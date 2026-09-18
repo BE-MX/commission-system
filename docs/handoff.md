@@ -1445,3 +1445,14 @@ Mac 同事的英文网页中私聊按钮标识为 `Profile details`，原选择�
 发布：经 `deploy/deploy.bat --cloud-only --no-pull --revision ba475d55af2ae6371b15899db42751cc3605b32f`（先 prepare-only）完成。发布日志和北京 colorwork/current.json 均 succeeded；主站后端 changed=false、schema_changed=false，其他静态站零变化。两个公网入口健康200。前后只读摘要一致：23套当前源仍全为S1，869条inventory_states、23个master_versions和1个artifact未变；验证证据在任务 worktree 的 colorwork-workbench/outputs。独立复核已通过装饰修复。发布基点上的约定检查为10项已有主站UI债务，直接增量 check(80996982) 无违规。
 
 用户已授权合并 main 并推送 origin，本轮整合仅同步已发布修复，不重复发布站点。两个本地隔离测试目录 .wrangler/source-rules-test 和 source-rules-final 的清理被自动审批以 blocked by policy 拒绝，未绕过；保留测试目录及发布恢复材料，不影响生产。
+
+## 2026-09-18 发票客户等级与出库单顶部字段（合并推送交付）
+
+- 工作树：`commission-system-codex-invoice-customer-grade`；分支：`codex/invoice-customer-grade`。用户已确认等级保存到方舟客户资料，不写小满 customer_info 镜像。
+- 发票客户信息增加 S/A/B/C/D 下拉；保存更新客户默认等级，后续选客户回填、支持修改和清空。旧发票保留等级快照，未修改等级不会覆盖客户后来的变更；回填防串客户、防覆盖手动编辑，读取失败不清除等级。
+- 出库打印/Word：客户名称后新增客户等级、订单金额；已同步发票金额优先，否则用精确订单镜像金额；缺关联不显示部分合计，跨币种分别展示。
+- 迁移 `157_invoice_customer_grade` 接 `156_receipt_management`，仅改方舟库。用户已授权合并 main 并推送 origin；本轮不部署、不执行生产迁移，上线须通过既有发布入口执行迁移。合并验证后清理本任务临时分支与 worktree。
+- 独立审查提出的 NULL 订单关联和未同步草稿金额问题均已修复并补回归测试。浏览器已核对打印版式；`npm run build` 通过；前端 19 项测试通过；后端受影响回归 90 项通过，随后新增迁移和边界验证也通过（客户等级 15 项、出库等级/金额 11 项）。生产出库 invoice bridge 的打印接口与 Word 一致性已通过隔离 SQLite 测试。
+- `check_conventions.py` 被既有 UI 基线阻断：AssetLibrary、TagDimensionManage、DesignManage、KnowledgeWorkbench、KnowledgeEditor、ProductionOrderManage、AIManager 共 7 个文件的 lines_over_500 基线过期，本次未修改这些文件。单独调用 `check('HEAD')` 检查增量规则无违规，完整约定命令仍按失败记录；`git diff --check` 通过。Git 巡检为 `--no-fetch` 本地快照。
+
+- 合并前已整合主线 `6b75d267` 的待出库列表改动，隔离后端回归 113 项、前端 20 项及生产构建通过；无代码冲突。完整约定检查仍为上述 7 项既有基线错误，按该主线基点检查本次增量无违规。

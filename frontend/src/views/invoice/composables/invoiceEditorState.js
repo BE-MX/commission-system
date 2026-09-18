@@ -17,6 +17,7 @@ export function emptyInvoiceForm() {
   return {
     receipt_draft: null, receipt_uploading: false,
     id: null, invoice_no: '', order_type: 'stock', sales_user_id: null, customer_id: '', customer_name: '',
+    customer_grade: null,
     contact_name: '', contact_phone: '', contact_email: '', delivery_address: '',
     sales_user_name: '', sales_phone: '', sales_email: '',
     invoice_date: currentBeijingDate(), currency: 'USD', express_channel: '',
@@ -79,6 +80,7 @@ export function buildInvoicePayload(form, hairDiscount) {
       attachment_ids: draft.attachment_ids || [], remark: draft.remark || "" } : null,
     invoice_no: (form.invoice_no || '').trim() || null, sales_user_id: form.sales_user_id,
     order_type: form.order_type, customer_id: form.customer_id, customer_name: form.customer_name,
+    customer_grade: form.customer_grade || null,
     contact_name: form.contact_name || null, contact_phone: form.contact_phone || null,
     contact_email: form.contact_email || null, delivery_address: form.delivery_address || null,
     sales_user_name: form.sales_user_name || null, sales_phone: form.sales_phone || null,

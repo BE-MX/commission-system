@@ -1380,3 +1380,9 @@ Agent research context now includes `fact_contract.version=registered_research_f
 保存参数：title、content（Tiptap JSON）、category_id、base_revision_id（更新必需）、important、effective_at、expires_at、change_note。列表参数 q/category_id/status/page/page_size。审核中禁止改稿；已发布公告更新后，读者仍看上一发布版本。时间按北京时间保存。
 
 平台权限 `announcement:read/write/admin`；审批端点允许 `knowledge:review/knowledge:admin/announcement:admin`，仍需公告阅读权限和库审核 ACL。普通知识库接口不能修改 managed 公告库。
+
+
+### 发票客户等级与出库单金额
+
+- 发票创建/编辑请求及详情新增可空 `customer_grade`（仅 S/A/B/C/D）；`GET /api/invoice/customers/contact-defaults` 返回客户最新等级。字段省略时保留/继承，显式 null 表示清空；沿用发票录入权限，等级不影响价格。
+- 出库单 `print-data` 的 `record` 新增 `customer_grade`、`order_amount_text`；Word 使用同一服务。等级取方舟客户资料当前值；金额按出库明细精确关联订单、按订单 ID 去重，优先已同步发票的含手续费总额与原币种，否则取订单镜像 `amount_usd`（USD）。未同步修改不覆盖已确认订单金额；多个币种分别列示，不换汇相加；缺少客户或任一订单关联/金额时显示 `—`，不展示部分合计。原有出库归属权限和客户名称脱敏不变。

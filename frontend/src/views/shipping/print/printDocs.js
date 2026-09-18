@@ -94,6 +94,12 @@ function outboundProductCells(productName, spec) {
 // 独立打印文档不加载主站 tokens；纸张使用共用单据的黑白灰配色。
 const OUTBOUND_CSS = `
 .sheet{padding:12mm 6mm}
+.left{min-width:0}
+.info-table{table-layout:fixed}
+.info-table td{overflow-wrap:anywhere}
+.info-table td:first-child{width:24mm}
+.info-table .grade-cell{width:32mm}
+.info-table .amount-cell{width:55mm}
 .items-table{table-layout:fixed}
 .items-table th,.items-table td{padding:6px 5px;overflow-wrap:anywhere}
 .items-table tbody tr{height:12mm;break-inside:avoid}
@@ -148,9 +154,9 @@ export function buildOutboundDoc({ record, items = [], qr_code_base64 = '' }) {
   <div class="body-row">
     <div class="left">
       <table class="info-table">
-        <tr><td>客户名称</td><td><strong>${esc(maskedCustomerName)}</strong></td></tr>
-        <tr><td>出库日期</td><td>${esc(record.outbound_date)}</td></tr>
-        <tr><td>负责人</td><td>${esc(record.owner_name)}</td></tr>
+        <tr><td>客户名称</td><td><strong>${esc(maskedCustomerName)}</strong></td><td class="grade-cell">客户等级<br>${esc(record.customer_grade || '—')}</td><td class="amount-cell">订单金额<br>${esc(record.order_amount_text || '—')}</td></tr>
+        <tr><td>出库日期</td><td colspan="3">${esc(record.outbound_date)}</td></tr>
+        <tr><td>负责人</td><td colspan="3">${esc(record.owner_name)}</td></tr>
       </table>
     </div>
     ${qrSection}

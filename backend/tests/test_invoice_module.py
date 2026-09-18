@@ -434,6 +434,7 @@ def test_customer_contact_defaults_latest_snapshot(db):
     assert service.get_customer_contact_defaults(db, "no-such") == {
         "has_xiaoman_orders": False,
         "last_order_date": None,
+        "customer_grade": None,
     }
 
 

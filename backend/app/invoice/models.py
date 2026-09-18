@@ -37,6 +37,7 @@ class Invoice(Base):
     order_type = Column(String(16), nullable=False, default="stock", comment="stock/production")
     customer_id = Column(String(64), nullable=False, comment="customer_info.company_id")
     customer_name = Column(String(256), nullable=False, comment="客户名称")
+    customer_grade = Column(String(1), nullable=True, comment="客户等级快照 S/A/B/C/D")
     contact_name = Column(String(256), nullable=True, comment="联系人姓名快照")
     contact_phone = Column(String(100), nullable=True, comment="联系人电话快照")
     contact_email = Column(String(256), nullable=True, comment="联系人邮箱快照")
@@ -378,3 +379,13 @@ class InvoiceCustomerOverlay(Base):
     updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="最近同步时间")
 
     __table_args__ = ({"comment": "发票客户手动同步 overlay（补只读镜像延迟，镜像追上后自动让位）"},)
+
+
+class CustomerProfile(Base):
+    """Ark-owned customer attributes; the OKKI customer mirror remains read-only."""
+
+    __tablename__ = "ark_invoice_customer_profiles"
+
+    customer_id = Column(String(64), primary_key=True, comment="customer_info.company_id")
+    customer_grade = Column(String(1), nullable=True, comment="客户等级 S/A/B/C/D")
+    updated_by = Column(Integer, nullable=True, comment="最后修改人 user_id")
