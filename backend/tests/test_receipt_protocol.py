@@ -34,6 +34,22 @@ def prepare(monkeypatch, fields=None):
     monkeypatch.setattr(httpx, "get", get)
 
 
+@pytest.mark.parametrize("persistent", [False, True])
+def test_receipt_get_retries_network_timeout_only_once(monkeypatch, persistent):
+    calls = []
+    def get(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1 or persistent:
+            raise httpx.ReadTimeout("test timeout")
+        return httpx.Response(200, json={"code": 200, "data": ["T/T"]})
+    monkeypatch.setattr(httpx, "get", get)
+    if persistent:
+        with pytest.raises(okki_client.OkkiApiError): remote.receipt_types(None)
+    else:
+        assert remote.receipt_types(None) == ["T/T"]
+    assert len(calls) == 2
+
+
 def test_real_helper_unwraps_types_fields_and_preserves_rate(monkeypatch, payload_row):
     prepare(monkeypatch, [{"id": "exchange_rate_usd", "require": 1}])
     calls = []
@@ -93,6 +109,66 @@ def test_unassociated_remote_receipt_does_not_block_other_orders(monkeypatch):
         {"cash_collection_id": "1", "order_id": 0, "opportunity_id": 0},
         {"cash_collection_id": "2", "order_id": 2001, "amount": 500}]})
     assert remote.order_receipts(None, "2001")[0]["cash_collection_id"] == "2"
+
+
+def window_rows():
+    return ([{"cash_collection_id": str(i), "order_id": "2001", "update_time": "2026-06-06 00:00:00"} for i in range(99)]
+            + [{"cash_collection_id": "tie" + str(i), "order_id": "2001", "update_time": "2026-06-05 21:42:14"} for i in range(2)]
+            + [{"cash_collection_id": "old", "order_id": "other", "update_time": "2026-06-04 00:00:00"}])
+
+
+def window_reader(rows, mutation=None):
+    def read(db, path, params):
+        filtered = [r for r in rows if "start_time" not in params or params["start_time"] <= r["update_time"] <= params["end_time"]]
+        result = {"list": filtered[:100], "totalItem": len(filtered)}
+        return mutation(params, result) if mutation else result
+    return read
+
+
+def test_time_window_recovers_entire_tied_boundary_without_using_bad_pages(monkeypatch):
+    rows = window_rows()
+    monkeypatch.setattr(remote, "read", window_reader(rows))
+    def overlap(*args):
+        raise remote._PageOverlap("duplicate")
+    monkeypatch.setattr(remote, "_paged_order_receipts", overlap)
+    result = remote.order_receipts(None, "2001")
+    assert {r["cash_collection_id"] for r in result} == {r["cash_collection_id"] for r in rows if r["order_id"] == "2001"}
+    assert len(result) == 101
+
+
+@pytest.mark.parametrize("problem", ["missing_boundary", "duplicate_boundary", "moved_row", "changed_total"])
+def test_time_window_rejects_incomplete_or_changed_boundaries(monkeypatch, problem):
+    def mutate(params, result):
+        if params.get("start_time") == "2026-06-05 21:42:14":
+            if problem == "missing_boundary": result["list"] = result["list"][:1]
+            if problem == "duplicate_boundary": result["list"] = [result["list"][0]] * 2
+            if problem == "moved_row": result["list"] = [{**r, "update_time": "2026-06-06 00:00:00"} for r in result["list"]]
+        if problem == "changed_total" and params.get("end_time") == "2026-06-05 21:42:13": result["totalItem"] += 1
+        return result
+    monkeypatch.setattr(remote, "read", window_reader(window_rows(), mutate))
+    with pytest.raises(ValueError): remote._window_order_receipts(None, "2001")
+
+
+def test_time_window_rejects_more_than_one_page_in_one_second(monkeypatch):
+    rows = [{"cash_collection_id": str(i), "order_id": "2001", "update_time": "2026-06-05 21:42:14"} for i in range(101)]
+    monkeypatch.setattr(remote, "read", window_reader(rows))
+    with pytest.raises(ValueError, match="同秒"):
+        remote._window_order_receipts(None, "2001")
+
+
+@pytest.mark.parametrize("root", ["unfiltered", "frozen"])
+def test_time_window_rejects_final_root_total_change(monkeypatch, root):
+    calls = {}
+    def mutate(params, result):
+        key = (params.get("start_time"), params.get("end_time"))
+        calls[key] = calls.get(key, 0) + 1
+        selected = key == (None, None) if root == "unfiltered" else key[0] == "1970-01-01 00:00:00"
+        if selected and calls[key] == 2:
+            result["totalItem"] += 1
+        return result
+    monkeypatch.setattr(remote, "read", window_reader(window_rows(), mutate))
+    with pytest.raises(ValueError, match="扫描期间"):
+        remote._window_order_receipts(None, "2001")
 
 
 def test_worker_does_not_post_after_lease_expires_during_read(db, monkeypatch):

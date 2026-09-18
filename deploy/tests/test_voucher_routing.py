@@ -34,6 +34,8 @@ def test_receipts_route_only_receipt_api_to_office(region):
     for path in ["/api/receipts-other", "/api/invoice", "/api/domestic/customers"]:
         assert not re.match(pattern, path)
     assert "client_max_body_size 11m;" in source
+    assert "proxy_request_buffering off;" in source
+    assert "proxy_send_timeout 300s;" in source
     assert "proxy_next_upstream off;" in source
     assert "proxy_set_header Authorization $http_authorization;" in source
     if region == "cloud":
