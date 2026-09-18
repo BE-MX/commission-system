@@ -90,25 +90,11 @@ def test_custom_required_field_blocks_before_post(monkeypatch, payload_row):
         remote.push(None, payload_row, {"exchange_rate": 725})
 
 
-def test_list_exhausts_pages_filters_order_and_rejects_changed_total(monkeypatch):
-    pages = {1: {"list": [{"cash_collection_id": "1", "order_id": "other"}], "totalItem": 2},
-             2: {"list": [{"cash_collection_id": "2", "order_id": "2001"}], "totalItem": 2}}
-    monkeypatch.setattr(remote, "read", lambda db, path, params: pages[params["start_index"]])
-    assert remote.order_receipts(None, "2001") == pages[2]["list"]
-    pages[2]["totalItem"] = 3
-    with pytest.raises(ValueError, match="变动"):
-        remote.order_receipts(None, "2001")
-    pages[2]["totalItem"] = 2
-    pages[2]["list"][0]["cash_collection_id"] = "1"
-    with pytest.raises(ValueError, match="重复"):
-        remote.order_receipts(None, "2001")
-
-
 def test_unassociated_remote_receipt_does_not_block_other_orders(monkeypatch):
-    monkeypatch.setattr(remote, "read", lambda *args: {"totalItem": 2, "list": [
-        {"cash_collection_id": "1", "order_id": 0, "opportunity_id": 0},
-        {"cash_collection_id": "2", "order_id": 2001, "amount": 500}]})
-    assert remote.order_receipts(None, "2001")[0]["cash_collection_id"] == "2"
+    rows = [{"cash_collection_id": "1", "order_id": 0, "update_time": "2026-06-06 00:00:00"},
+            {"cash_collection_id": "2", "order_id": 2001, "amount": 500, "update_time": "2026-06-06 00:00:00"}]
+    monkeypatch.setattr(remote, "read", window_reader(rows))
+    assert remote._window_order_receipts(None, "2001")[0]["cash_collection_id"] == "2"
 
 
 def window_rows():
@@ -128,10 +114,7 @@ def window_reader(rows, mutation=None):
 def test_time_window_recovers_entire_tied_boundary_without_using_bad_pages(monkeypatch):
     rows = window_rows()
     monkeypatch.setattr(remote, "read", window_reader(rows))
-    def overlap(*args):
-        raise remote._PageOverlap("duplicate")
-    monkeypatch.setattr(remote, "_paged_order_receipts", overlap)
-    result = remote.order_receipts(None, "2001")
+    result = remote._window_order_receipts(None, "2001")
     assert {r["cash_collection_id"] for r in result} == {r["cash_collection_id"] for r in rows if r["order_id"] == "2001"}
     assert len(result) == 101
 
@@ -281,3 +264,10 @@ def test_window_rejects_same_count_update_after_delta_upper(monkeypatch, kind):
     monkeypatch.setattr(remote,"read",read)
     with pytest.raises(ValueError,match="超出"):
         remote._window_order_receipts(None,"2001")
+
+
+def test_full_snapshot_contains_all_orders_and_final_watermark(monkeypatch):
+    monkeypatch.setattr(remote,"read",window_reader(window_rows()))
+    rows,watermark=remote._window_order_receipts(None,None,include_watermark=True)
+    assert len(rows)==102 and {r["order_id"] for r in rows}=={"2001","other"}
+    assert len(watermark)==19
