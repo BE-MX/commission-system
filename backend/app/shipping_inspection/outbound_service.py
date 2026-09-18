@@ -200,6 +200,7 @@ def _map_record_row(row) -> dict:
         "outbound_no": outbound_no or record_id,
         "outbound_date": _str_or_none(row["outbound_date"]),
         "customer_name": _str_or_none(row["customer_name"]),
+        "company_id": _str_or_none(row.get("company_id")),
         "owner_name": _str_or_none(row["owner_name"]),
         "remark": _str_or_none(row["remark"]),
         "item_count": int(row["item_count"] or 0),
@@ -228,6 +229,7 @@ def _record_select(rm: dict[str, str | None]) -> str:
         f"{_col(rm, 'outbound_no', 'r')} AS outbound_no, "
         f"{_col(rm, 'outbound_date', 'r')} AS outbound_date, "
         f"{_col(rm, 'customer_name', 'r')} AS customer_name, "
+        f"{_col(rm, 'company_id', 'r')} AS company_id, "
         f"{_col(rm, 'owner_name', 'r')} AS owner_name, "
         f"{_col(rm, 'remark', 'r')} AS remark"
     )

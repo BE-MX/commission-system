@@ -240,6 +240,11 @@
                 <InvoiceCustomerSyncEntry :on-select="selectSyncedCustomer" />
                 <div v-if="customerRule" class="rule-badge">该客户价格规则：{{ describeCustomerRule(customerRule) }}</div>
               </el-form-item>
+              <el-form-item label="客户等级">
+                <el-select v-model="form.customer_grade" @change="markCustomerGradeTouched" clearable placeholder="请选择等级" :disabled="!form.customer_id">
+                  <el-option v-for="grade in ['S', 'A', 'B', 'C', 'D']" :key="grade" :label="grade" :value="grade" />
+                </el-select>
+              </el-form-item>
               <el-form-item label="联系人" class="span-2">
                 <el-input v-model="form.contact_name" maxlength="100" placeholder="To" />
               </el-form-item>
@@ -457,7 +462,7 @@ const {
   addBlankLine, copyLine, addAccessory, selectAccessory, removeAccessory, searchAccessoryOptions,
   updateAccessoryTotal, removeLine, loadLineOptions, onLineFilterChange, onCustomFieldChange,
   onPriceInput, onLineDiscountChange, updateLineTotal, appendImportedLines, saveDraft,
-  saveAndSync, showIssues, markOkkiFlagTouched, onPaymentMethodChange, markHandlingFeeTouched,
+  saveAndSync, showIssues, markCustomerGradeTouched, markOkkiFlagTouched, onPaymentMethodChange, markHandlingFeeTouched,
 } = useInvoiceEditor({ onSaved: loadInvoices })
 bindIssueHandler(showIssues)
 const pasteImportVisible = ref(false)

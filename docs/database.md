@@ -528,3 +528,9 @@ AI Worker 用 `status + lease_token + lease_expires_at` 领取任务，模型网
 | ark_announcement_deliveries | 唯一 source_key+sequence；内容和目标快照、授权指纹、租约、尝试、回执、错误 |
 
 新迁移接 154_okki_outbound_tasks，重复执行检查已存在结构，保留数据；降级拒绝自动删除历史。已验证 SQLite 升级/重复执行与 MySQL DDL 编译，未执行真实 MySQL 升级。生产按既有发布入口先备份与迁移演练。
+
+
+### 发票客户等级（157）
+
+- `ark_invoice_customer_profiles`：方舟本地客户资料，`customer_id` 主键关联只读镜像 `customer_info.company_id`，`customer_grade` 为可空的 S/A/B/C/D，`updated_by` 记录修改人。客户等级与发票共用事务保存，原子 upsert 防止首次建档冲突；不写 `lsordertest.customer_info`。
+- `ark_invoices.customer_grade`：本单等级快照。存量 NULL 不做回填；客户端未提交字段时，新建继承客户默认等级、编辑保留本单值。显式修改等级（包括清空）更新客户资料，编辑旧单但未改变等级不会覆盖客户的新默认值。

@@ -155,6 +155,13 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   // 竞态守卫（cerebrum 2026-05-26 loadMore/doSearch 同款教训）：
   // 快速切换客户或切换 drawer 时，先发后至的过期响应不得覆盖当前表单
+  let gradeEditSeq = 0
+  let customerGradeReady = true
+  function markCustomerGradeTouched() {
+    gradeEditSeq++
+    customerGradeReady = true
+  }
+
   let contactFillSeq = 0
   let customerRuleSeq = 0
   let customerSelectionSeq = 0
@@ -166,6 +173,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   function resetForm(data = emptyInvoiceForm()) {
     contactFillSeq++
+    gradeEditSeq++
+    customerGradeReady = true
     customerSelectionSeq++
     customerContextSeq++
     customerSearch.reset()
@@ -279,15 +288,24 @@ export function useInvoiceEditor({ onSaved } = {}) {
   // 残留上一个客户的地址是错单风险
   async function fillContactDefaults() {
     const seq = ++contactFillSeq
+    form.customer_grade = null
+    customerGradeReady = false
+    const gradeSeq = gradeEditSeq
+    let defaultsLoaded = false
     let defaults = {}
     if (form.customer_id) {
       try {
         defaults = await getCustomerContactDefaults(form.customer_id) || {}
+        defaultsLoaded = true
       } catch {
         defaults = {} // 拦截器已统一提示，回填静默跳过
       }
     }
     if (seq !== contactFillSeq) return // 期间又切了客户/换了单据，丢弃过期响应
+    if (gradeSeq === gradeEditSeq && defaultsLoaded) {
+      form.customer_grade = defaults.customer_grade || null
+      customerGradeReady = true
+    }
     form.contact_name = defaults.contact_name || ''
     form.contact_phone = defaults.contact_phone || ''
     form.contact_email = defaults.contact_email || ''
@@ -391,6 +409,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     customerRuleSeq++
     form.customer_id = ''
     form.customer_name = ''
+    form.customer_grade = null
     form.contact_name = ''
     form.contact_phone = ''
     form.contact_email = ''
@@ -441,6 +460,9 @@ export function useInvoiceEditor({ onSaved } = {}) {
   // ── 保存 ────────────────────────────────────────────
 
   async function saveDraft() {
+    const contextSeq = customerContextSeq
+    await customerDefaultsPromise
+    if (contextSeq !== customerContextSeq) return null
     if (form.receipt_uploading) { ElMessage.warning("请等待回款截图上传完成"); return null }
     if (form.items.some(line => Number(line.total_price || 0) < 0)) {
       ElMessage.warning('产品行折扣不能超过该行金额')
@@ -455,6 +477,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
       return null
     }
     const payload = buildInvoicePayload(form, formLineDiscountTotal.value)
+    // A failed defaults request must not erase an existing customer grade.
+    if (!customerGradeReady) delete payload.customer_grade
     const saved = form.id
       ? await updateInvoice(form.id, payload)
       : form.source_type === 'okki_screenshot'
@@ -558,6 +582,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     saveDraft,
     saveAndSync,
     showIssues,
+    markCustomerGradeTouched,
     markOkkiFlagTouched,
     onPaymentMethodChange,
     markHandlingFeeTouched,
