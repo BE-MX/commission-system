@@ -120,6 +120,7 @@
           </div>
         </div>
         <h2 class="detail-title">{{ currentCase.title }}</h2>
+        <el-button v-if="currentCase.image_path" link type="primary" @click="downloadScreenshot">下载原始截图</el-button>
 
         <!-- 基本信息 -->
         <div class="detail-section info-section">
@@ -392,7 +393,7 @@ const {
   openAddDialog, openEdit, openEditFromDetail,
   handleFileChange, submitCase,
   confirmPublishDraft,
-  toggleLike, handleDelete, deleteCurrentCase,
+  toggleLike, handleDelete, deleteCurrentCase, downloadScreenshot,
 } = useCaseLibrary()
 </script>
 

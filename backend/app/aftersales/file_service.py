@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from uuid import uuid4
+from app.core.storage import files as cloud_files
 
 
 class FileValidationError(ValueError):
@@ -51,7 +52,7 @@ def resolve_private_path(storage_root: str | Path, relative_path: str) -> Path:
     target = (root / relative_path).resolve()
     if not target.is_relative_to(root):
         raise FileValidationError("非法文件路径")
-    return target
+    return cloud_files.read_path('aftersales', relative_path, root)
 
 
 def store_bytes(
@@ -62,6 +63,8 @@ def store_bytes(
 ) -> str:
     suffix = Path(original_filename).suffix.lower()
     relative = Path(purpose) / uuid4().hex[:2] / f"{uuid4().hex}{suffix}"
+    if cloud_files.put_bytes('aftersales', relative.as_posix(), content):
+        return relative.as_posix()
     target = resolve_private_path(storage_root, relative.as_posix())
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(content)

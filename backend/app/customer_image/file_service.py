@@ -37,8 +37,10 @@ def business_now() -> datetime:
 
 
 def _delete_stored_files(
-    relative_path: str, thumbnail_relative_path: str, context: str
+    db: Session, relative_path: str, thumbnail_relative_path: str, context: str
 ) -> None:
+    if shared_files.cloud_reference_exists(db, relative_path):
+        return
     for path in (relative_path, thumbnail_relative_path):
         try:
             delete_private_file(path)
@@ -103,7 +105,7 @@ def _replace_with_normalized(
     except Exception:
         db.rollback()
         _delete_stored_files(
-            stored.relative_path, stored.thumbnail_relative_path, "product asset"
+            db, stored.relative_path, stored.thumbnail_relative_path, "product asset"
         )
         raise
     db.refresh(asset)
@@ -181,7 +183,7 @@ def _append_reference_with_normalized(
     except Exception:
         db.rollback()
         _delete_stored_files(
-            stored.relative_path, stored.thumbnail_relative_path, "product reference"
+            db, stored.relative_path, stored.thumbnail_relative_path, "product reference"
         )
         raise
     db.refresh(asset)
@@ -304,7 +306,7 @@ def save_invite_image(
     except Exception:
         db.rollback()
         _delete_stored_files(
-            stored.relative_path, stored.thumbnail_relative_path, "invite asset"
+            db, stored.relative_path, stored.thumbnail_relative_path, "invite asset"
         )
         raise
     db.refresh(asset)
@@ -340,7 +342,7 @@ def replace_current_logo(
         db.commit()
     except Exception:
         db.rollback()
-        _delete_stored_files(stored.relative_path, stored.thumbnail_relative_path, "current logo")
+        _delete_stored_files(db, stored.relative_path, stored.thumbnail_relative_path, "current logo")
         raise
     db.refresh(asset)
     return asset

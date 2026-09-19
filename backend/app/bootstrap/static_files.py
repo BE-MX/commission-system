@@ -44,8 +44,51 @@ class PublicUploadFiles(StaticFiles):
 
 def mount_uploads(app: FastAPI) -> None:
     """挂载头像等用户上传目录"""
+    from app.core.storage import files as cloud_files
+    from fastapi import Depends
+    from app.core.database import get_db
+    for public_domain in ('avatars', 'card', 'expo', 'festival', 'hair', 'video', 'tag_images'):
+        if cloud_files.managed(public_domain):
+            def make_public_reader(domain):
+                # These legacy namespaces are already public file URLs.
+                # An explicit namespace per route cannot reach private domains.
+                def read_public_image(key: str, db=Depends(get_db)):
+                    if domain == 'expo':
+                        from app.core.storage.models import StorageTransfer
+                        from app.core.storage.transfers import transfer_id
+                        from fastapi import HTTPException
+                        record = db.get(StorageTransfer, transfer_id(domain, key))
+                        if record is not None and record.status == 'deleted':
+                            raise HTTPException(404, '文件已删除')
+                        from app.expo.storage import ensure_public_reference
+                        ensure_public_reference(db, key)
+                        db.rollback()
+                    if domain == 'expo' and key.split('/')[0] in {'pending', 'beautify_previews'}:
+                        # Short-lived processing inputs retain their existing
+                        # local expiration/cleanup flow and never enter COS.
+                        from fastapi import HTTPException
+                        path = cloud_files.local_path(UPLOADS_DIR / 'expo', key)
+                        if not path.is_file():
+                            raise HTTPException(404, '文件不存在或已过期')
+                        return FileResponse(path, headers={'Cache-Control':'private, no-store'})
+                    path = cloud_files.cached_path(domain, key)
+                    return FileResponse(path, headers={'Cache-Control':'private, no-store', 'X-Content-Type-Options':'nosniff', 'X-Ark-Storage':'cos'})
+                return read_public_image
+            app.add_api_route('/uploads/' + public_domain + '/{key:path}',
+                              make_public_reader(public_domain), methods=['GET','HEAD'], include_in_schema=False)
+    from app.core.storage import transfers
+    if transfers.managed('asset'):
+        from fastapi import Depends
+        from app.core.database import get_db
+        from app.asset.media_service import preview
+
+        # Legacy public preview contract; the service checks business references
+        # and preview permission. The private bucket itself remains inaccessible.
+        @app.api_route('/uploads/assets/{key:path}', methods=['GET', 'HEAD'], include_in_schema=False)
+        def asset_preview(key: str, db=Depends(get_db)):
+            return preview(db, key)
     # 素材文件挂载必须先注册（路径更长，避免被 /uploads 拦截）
-    if ASSET_STORAGE_ROOT.is_dir():
+    elif ASSET_STORAGE_ROOT.is_dir():
         app.mount("/uploads/assets", PublicUploadFiles(directory=ASSET_STORAGE_ROOT), name="asset_uploads")
     if UPLOADS_DIR.is_dir():
         app.mount("/uploads", PublicUploadFiles(directory=UPLOADS_DIR), name="uploads")

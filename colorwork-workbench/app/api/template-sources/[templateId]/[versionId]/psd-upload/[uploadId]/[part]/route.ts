@@ -1,3 +1,4 @@
+import { getFiles } from '@/lib/server/storage';
 import { env } from 'cloudflare:workers';
 import { authErrorResponse, requireView } from '@/lib/server/auth';
 import { readSourceVersion, templateSourceErrorResponse } from '@/lib/server/template-sources';
@@ -22,7 +23,7 @@ export async function PUT(
     if (!buffer.byteLength || buffer.byteLength > PSD_PART_SIZE || (partNumber === 1 && !isPsd(new Uint8Array(buffer)))) {
       return Response.json({ error: partNumber === 1 ? 'PSD 文件头无效。' : 'PSD 分片信息无效。' }, { status: 400 });
     }
-    const upload = env.FILES.resumeMultipartUpload(row.sourcePsdKey, uploadId);
+    const upload = getFiles().resumeMultipartUpload(row.sourcePsdKey, uploadId);
     const uploaded = await upload.uploadPart(partNumber, buffer);
     return Response.json({ partNumber: uploaded.partNumber, etag: uploaded.etag });
   } catch (error) {

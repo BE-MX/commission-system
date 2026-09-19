@@ -1,3 +1,4 @@
+import { getFiles } from '@/lib/server/storage';
 import { env } from 'cloudflare:workers';
 import { authErrorResponse, requireView } from '@/lib/server/auth';
 import { SERVER_TEMPLATES } from '@/lib/server/catalog';
@@ -32,12 +33,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
     const sourcePsdKey = `templates/${id}/versions/${versionId}/source.psd`;
     const referenceJpgKey = `templates/${id}/versions/${versionId}/reference.jpg`;
-    const reference = await env.FILES.head(referenceJpgKey);
+    const reference = await getFiles().head(referenceJpgKey);
     if (!reference) return Response.json({ error: '请先上传对应 JPG。' }, { status: 409 });
-    const upload = env.FILES.resumeMultipartUpload(sourcePsdKey, uploadId);
+    const upload = getFiles().resumeMultipartUpload(sourcePsdKey, uploadId);
     const completed = await upload.complete(parts);
     if (completed.size > PSD_LIMIT) {
-      await env.FILES.delete([sourcePsdKey, referenceJpgKey]);
+      await getFiles().delete([sourcePsdKey, referenceJpgKey]);
       return Response.json({ error: 'PSD 文件不得超过 256 MB。' }, { status: 400 });
     }
     const now = new Date().toISOString();
@@ -49,7 +50,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       ON CONFLICT(template_id) DO NOTHING
     `).bind(id, sourcePsdKey, referenceJpgKey, sourcePsdName, referenceJpgName, admin.email, now, now).run();
     if (!inserted.meta.changes) {
-      await env.FILES.delete([sourcePsdKey, referenceJpgKey]);
+      await getFiles().delete([sourcePsdKey, referenceJpgKey]);
       return Response.json({
         error: '这个产品与 Radio 已有源文件，请使用“更新现有模板源文件”，避免生成重复模板。',
         code: 'TEMPLATE_ALREADY_IMPORTED',

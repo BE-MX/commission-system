@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
 from app.core.time import beijing_now
+from app.core.storage import transfers
 from app.shipping_inspection import constants as C
 from app.shipping_inspection import file_service, outbound_service, audit_service
 from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto
@@ -32,16 +33,23 @@ def _commit(db: Session) -> None:
 
 
 def _photo_to_dict(photo: ShippingInspectionPhoto) -> dict:
-    return {"id": photo.id, "item_id": photo.item_id, "file_path": photo.file_path, "sort": photo.sort, "media_type": photo.media_type}
+    return {"id": photo.id, "item_id": photo.item_id, "file_path": photo.file_path, "sort": photo.sort, "media_type": photo.media_type,
+            "storage_state": getattr(photo, '_storage_state', 'local')}
 
 
 def list_photos(db: Session, inspection_id: int, media_type: str = "image") -> list[ShippingInspectionPhoto]:
-    return (
+    photos = (
         db.query(ShippingInspectionPhoto)
         .filter(ShippingInspectionPhoto.inspection_id == inspection_id, ShippingInspectionPhoto.media_type == media_type)
         .order_by(ShippingInspectionPhoto.sort.asc(), ShippingInspectionPhoto.id.asc())
         .all()
     )
+    if transfers.managed('shipping-inspection') and photos:
+        identities = [transfers.transfer_id('shipping-inspection', p.file_path) for p in photos]
+        states = {r.id: r.status for r in db.query(transfers.StorageTransfer).filter(transfers.StorageTransfer.id.in_(identities)).all()}
+        for photo in photos:
+            photo._storage_state = states.get(transfers.transfer_id('shipping-inspection', photo.file_path), 'local')
+    return photos
 
 
 def _photo_count(db: Session, inspection_id: int) -> int:
@@ -148,6 +156,8 @@ def add_photo(
         created_by=user_id,
     )
     db.add(photo)
+    transfer = transfers.register(db, 'shipping-inspection', file_path)
+    photo._storage_state = transfer.status if transfer else 'local'
     inspection.updated_at = beijing_now()
     inspection.updated_by = user_id
     db.flush()
@@ -169,6 +179,7 @@ def delete_photo(db: Session, photo_id: int, user_id: int, *, edit_version: int 
     if inspection is not None and inspection.status == C.STATUS_SUBMITTED:
         raise ValueError("该发货单已提交验货，不能删除照片")
     rel_path = photo.file_path
+    transfers.tombstone(db, 'shipping-inspection', rel_path)
     if inspection is not None:
         inspection.updated_at = beijing_now()
         inspection.updated_by = user_id
@@ -178,6 +189,8 @@ def delete_photo(db: Session, photo_id: int, user_id: int, *, edit_version: int 
         return rel_path
     audit_service.record(db, 'delete', user_id, inspection.outbound_record_id, inspection=inspection, media_id=photo_id)
     _commit(db)
+    if transfers.managed('shipping-inspection'):
+        return
     try:
         abs_path = file_service.resolve_path(rel_path)
         if abs_path.is_file():

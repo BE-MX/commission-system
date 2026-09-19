@@ -126,7 +126,19 @@ def capture_batch(db: Session, session, rows: list[ExpoResult], version_id: int 
     wigs = {wig.id: wig for wig in db.query(ExpoWig).filter(ExpoWig.id.in_(wig_ids)).all()} if wig_ids else {}
     snapshots = []
     for row in rows:
-        prompt, images, size = render_prompt(session, row, wigs.get(row.wig_id), config, ai_pipeline.to_abs)
+        originals = {}
+        def resolve_for_snapshot(relative):
+            path = ai_pipeline.to_abs(relative)
+            from pathlib import Path
+            original = Path(relative)
+            if not original.is_absolute():
+                original = ai_pipeline.REPO_ROOT / original
+            from app.core.storage.files import managed
+            from app.expo.storage import reference_key
+            originals[str(path)] = ('uploads/expo/' + reference_key(relative)
+                                    if managed('expo') else ai_pipeline.to_rel(original))
+            return path
+        prompt, images, size = render_prompt(session, row, wigs.get(row.wig_id), config, resolve_for_snapshot)
         input_hash = None
         if images[0].exists():
             digest = hashlib.sha256()
@@ -137,7 +149,7 @@ def capture_batch(db: Session, session, rows: list[ExpoResult], version_id: int 
         processing_mode = getattr(session, "photo_processing_mode", None) or "original"
         beauty = getattr(session, "beautify_snapshot", None) or {}
         snapshots.append({"version_id": version.id, "version_name": version.name, "revision": version.revision,
-                          "text": prompt, "image_paths": [ai_pipeline.to_rel(path) for path in images], "size": size,
+                          "text": prompt, "image_paths": [originals[str(path)] for path in images], "size": size,
                           "photo_processing_mode": processing_mode,
                           "input_hash": input_hash,
                           "beautify_version": ({

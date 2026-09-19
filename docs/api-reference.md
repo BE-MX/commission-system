@@ -1,5 +1,17 @@
 # 莱莎方舟 API 参考
 
+## 云存储接口行为（本地实现，尚未切换生产）
+
+原上传、下载业务端点和鉴权保持原契约。发货检验媒体列表新增 `storage_state`：pending/running表示文件已在所属服务器持久接收，ready表示已同步云端；跨实例访问尚未同步文件返回503与Retry-After，删除对象返回404。局域网上传成功不代表云同步完成，工作台分别显示两种状态。
+
+客户素材授权后可303跳转到短时签名下载URL；链接不持久化进数据库或日志。公开命名空间 `/uploads/{avatars,card,tag_images,expo,festival,hair,video}/...` 在对应域启用后由应用读取私有桶；Expo人物图片还验证有效业务引用和删除墓碑。此处的hair/video网关实现不代表站点Nginx已切换。
+
+洞见案例截图上传保持 `POST /api/insight/cases/upload`，JPG/PNG/WebP上限5MiB并检查真实格式。新增 `GET /api/insight/cases/{case_id}/image`，使用案例查看权限，返回带图片文件名的私有响应，已归档/无截图404。`/uploads/insight/...`仅为数据库稳定引用，不开放公共静态读取；OCR经统一AI facade发送真实图片内容。
+
+展会场景上传返回带不可变版本key的新URL。新图片上传失败保留旧图；首次并发创建引用冲突返回409。素材批量ZIP总原件大小上限256MiB，缓存繁忙时不删除仍被响应使用的文件。
+
+色块工作台保留原用户API和D1引用。内部 `/api/colorwork/storage/object`（GET/PUT/DELETE）与 `/metadata`（GET）仅允许回环来源及专用机器密钥；公网Nginx显式404，不接受用户JWT代替机器认证。PUT按声明和实际字节双重限制256MiB，条件创建冲突412，别名竞争409；Range读取返回原对象元数据。分片仍在R2暂存，完成后进入COS并保存持久回执，失败可重试；COS密钥不会进入workerd或浏览器。
+
 ## 回款管理（2026-09-17，本地实现，迁移 156 后可用）
 
 前缀 `/api/receipts`，登录认证、标准 `ok()` 信封。普通用户仅可访问 `Invoice.sales_user_id` 等于当前用户的订单回款；创建人/代录授权不扩大回款范围。`receipt:read_all` 可看全部（数据范围权限，仍需 `receipt:read/write/admin` 页面或操作权限）；`invoice:read_all` 不扩大回款范围。列表、详情、订单选择、余额、已绑定回款凭证和写操作统一校验；已绑定回款凭证必须具有回款动作权限，未绑定回款的订单截图仍按发票编辑权限访问。详见[实现说明](requirements/2026-09-17-receipt-management-implementation.md)。

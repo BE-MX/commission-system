@@ -946,6 +946,10 @@ def execute_folder_upload(
                         elif file_type == "video":
                             thumbnail_path = _generate_video_thumbnail(abs_storage, rel_path)
 
+                        from app.core.storage import transfers
+                        transfers.register(db, 'asset', rel_path)
+                        if thumbnail_path:
+                            transfers.register(db, 'asset', thumbnail_path)
                         version = AssetVersion(
                             asset_id=eid,
                             version_number=ver_num,
@@ -999,6 +1003,10 @@ def execute_folder_upload(
                         elif file_type == "video":
                             thumbnail_path = _generate_video_thumbnail(abs_storage, rel_path)
 
+                        from app.core.storage import transfers
+                        transfers.register(db, 'asset', rel_path)
+                        if thumbnail_path:
+                            transfers.register(db, 'asset', thumbnail_path)
                         asset = Asset(
                             file_name=file_name,
                             file_type=file_type,

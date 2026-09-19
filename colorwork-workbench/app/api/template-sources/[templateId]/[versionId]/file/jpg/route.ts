@@ -1,3 +1,4 @@
+import { getFiles } from '@/lib/server/storage';
 import { env } from 'cloudflare:workers';
 import { authErrorResponse, requireView } from '@/lib/server/auth';
 import {
@@ -32,7 +33,7 @@ export async function PUT(
       return Response.json({ error: 'JPG 上传内容与开始上传时选择的文件大小不一致，请重新开始更新。' }, { status: 422 });
     }
     const sha256 = hex(await crypto.subtle.digest('SHA-256', buffer));
-    const existing = await env.FILES.head(row.referenceJpgKey);
+    const existing = await getFiles().head(row.referenceJpgKey);
     if (existing) {
       if (existing.size !== buffer.byteLength || existing.customMetadata?.sha256 !== sha256) {
         return Response.json({
@@ -42,7 +43,7 @@ export async function PUT(
       }
       return Response.json({ ok: true, size: buffer.byteLength, sha256, idempotent: true, ...dimensions });
     }
-    const stored = await env.FILES.put(row.referenceJpgKey, buffer, {
+    const stored = await getFiles().put(row.referenceJpgKey, buffer, {
       onlyIf: { etagDoesNotMatch: '*' },
       httpMetadata: { contentType: 'image/jpeg' },
       customMetadata: {
@@ -53,7 +54,7 @@ export async function PUT(
       },
     });
     if (!stored) {
-      const concurrent = await env.FILES.head(row.referenceJpgKey);
+      const concurrent = await getFiles().head(row.referenceJpgKey);
       if (concurrent?.size !== buffer.byteLength || concurrent.customMetadata?.sha256 !== sha256) {
         return Response.json({
           error: '这个版本的 JPG 已被另一上传封存，不能覆盖。请重新开始更新。',

@@ -1,3 +1,4 @@
+import { getFiles } from '@/lib/server/storage';
 import { env } from 'cloudflare:workers';
 import { authErrorResponse, requireView } from '@/lib/server/auth';
 import { SERVER_TEMPLATES } from '@/lib/server/catalog';
@@ -18,7 +19,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
     }
     const versionId = crypto.randomUUID();
     const key = `templates/${id}/versions/${versionId}/source.psd`;
-    const upload = await env.FILES.createMultipartUpload(key, {
+    const upload = await getFiles().createMultipartUpload(key, {
       httpMetadata: { contentType: 'image/vnd.adobe.photoshop' },
     });
     return Response.json({ uploadId: upload.uploadId, versionId, partSize: PSD_PART_SIZE });

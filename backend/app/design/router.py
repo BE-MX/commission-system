@@ -972,8 +972,9 @@ async def upload_attachment(
     # 生成唯一文件名，保留原始后缀
     ext = Path(file.filename).suffix if file.filename else ""
     stored_name = f"{request_id}_{uuid.uuid4().hex[:12]}{ext}"
-    file_path = UPLOAD_DIR / stored_name
-    file_path.write_bytes(contents)
+    from app.design import attachment_storage
+    from starlette.concurrency import run_in_threadpool
+    await run_in_threadpool(attachment_storage.save, stored_name, contents, file.content_type, UPLOAD_DIR)
 
     attachment = DesignRequestAttachment(
         request_id=request_id,
@@ -1043,12 +1044,13 @@ def download_attachment(
     if not attachment:
         return {"code": 404, "message": "附件不存在", "data": None}
 
-    file_path = UPLOAD_DIR / attachment.file_path
+    from app.design import attachment_storage
+    file_path = attachment_storage.read(attachment.file_path, UPLOAD_DIR)
     if not file_path.is_file():
         return {"code": 404, "message": "文件不存在", "data": None}
 
     return FileResponse(
-        path=str(file_path),
+        path=file_path,
         filename=attachment.file_name,
         media_type=attachment.content_type or "application/octet-stream",
     )
@@ -1076,12 +1078,14 @@ def delete_attachment(
     if not _can_upload_request_attachment(request, operator_id, _user):
         return {"code": 403, "message": "只能删除本人预约的附件", "data": None}
 
-    # 删除物理文件
-    file_path = UPLOAD_DIR / attachment.file_path
-    if file_path.is_file():
-        file_path.unlink()
-
+    from app.design import attachment_storage
+    key = attachment.file_path
     db.delete(attachment)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    attachment_storage.cleanup_unreferenced(db, key, UPLOAD_DIR)
 
     return {"code": 200, "message": "删除成功", "data": None}

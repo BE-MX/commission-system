@@ -9,6 +9,7 @@ from PIL import Image, UnidentifiedImageError
 
 from app.receipt.models import Receipt, ReceiptAttachment, ReceiptIntent
 from app.receipt.storage_proxy import origin
+from app.core.storage import files as cloud_files
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 STORAGE_ROOT = REPO_ROOT / "backend" / "data" / "receipt-proofs"
@@ -20,7 +21,7 @@ def path_for(row):
     path = (root / row.storage_key).resolve()
     if not path.is_relative_to(root):
         raise HTTPException(404, "回款凭证不存在")
-    return path
+    return cloud_files.read_path('receipt-proofs', row.storage_key, root)
 
 
 def upload(db, content, filename, actor):
@@ -39,8 +40,9 @@ def upload(db, content, filename, actor):
     row = ReceiptAttachment(id=identity, filename=Path(filename or "receipt").name[:255],
                             storage_key=f"{identity}.{ext}", content_type=f"image/{'jpeg' if ext == 'jpg' else ext}",
                             size=len(content), sha256=hashlib.sha256(content).hexdigest(), created_by=actor)
-    STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
-    path_for(row).write_bytes(content)
+    if not cloud_files.put_bytes('receipt-proofs', row.storage_key, content, row.content_type):
+        STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
+        path_for(row).write_bytes(content)
     db.add(row)
     db.flush()
     return row

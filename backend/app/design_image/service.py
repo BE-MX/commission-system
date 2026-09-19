@@ -482,9 +482,10 @@ def create_draft_asset(
         db.commit()
     except Exception:
         db.rollback()
-        _delete_files_best_effort(
-            [stored.relative_path, stored.thumbnail_relative_path], "draft database rollback"
-        )
+        if not file_service.cloud_reference_exists(db, stored.relative_path):
+            _delete_files_best_effort(
+                [stored.relative_path, stored.thumbnail_relative_path], "draft database rollback"
+            )
         raise
     db.refresh(row)
     return row

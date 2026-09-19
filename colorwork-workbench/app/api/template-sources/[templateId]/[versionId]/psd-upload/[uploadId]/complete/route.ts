@@ -1,3 +1,4 @@
+import { getFiles } from '@/lib/server/storage';
 import { env } from 'cloudflare:workers';
 import { authErrorResponse, requireView } from '@/lib/server/auth';
 import { readSourceVersion, templateSourceErrorResponse } from '@/lib/server/template-sources';
@@ -16,11 +17,11 @@ export async function POST(
     const input = await request.json<{ parts?: unknown }>().catch(() => null);
     const parts = normalizedParts(input?.parts);
     if (!parts) return Response.json({ error: 'PSD 上传分片不完整。' }, { status: 400 });
-    const reference = await env.FILES.head(row.referenceJpgKey);
+    const reference = await getFiles().head(row.referenceJpgKey);
     if (!reference) return Response.json({ error: '请先上传对应 JPG。' }, { status: 409 });
-    const upload = env.FILES.resumeMultipartUpload(row.sourcePsdKey, uploadId);
+    const upload = getFiles().resumeMultipartUpload(row.sourcePsdKey, uploadId);
     const completed = await upload.complete(parts);
-    const prefixObject = await env.FILES.get(row.sourcePsdKey, { range: { offset: 0, length: 26 } });
+    const prefixObject = await getFiles().get(row.sourcePsdKey, { range: { offset: 0, length: 26 } });
     const prefix = prefixObject ? new Uint8Array(await prefixObject.arrayBuffer()) : new Uint8Array();
     const psd = psdDimensions(prefix);
     const jpgWidth = Number(reference.customMetadata?.width);
@@ -29,7 +30,7 @@ export async function POST(
       completed.size > PSD_LIMIT || completed.size !== row.sourcePsdSize || !psd ||
       reference.size !== row.referenceJpgSize || psd.width !== jpgWidth || psd.height !== jpgHeight
     ) {
-      await env.FILES.delete([row.sourcePsdKey, row.referenceJpgKey]);
+      await getFiles().delete([row.sourcePsdKey, row.referenceJpgKey]);
       await env.DB.prepare(`
         UPDATE template_source_versions SET status = 'failed', failure_reason = ?, updated_at = ?
         WHERE id = ? AND template_id = ?

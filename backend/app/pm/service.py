@@ -16,6 +16,7 @@ from typing import Any, Optional
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.storage import files as cloud_files
 from app.pm.models import PmActivityLog, PmProject, bj_now
 
 logger = logging.getLogger("commission")
@@ -35,9 +36,9 @@ def ensure_storage_root() -> Path:
 def to_abs(rel_path: str) -> Path:
     """相对存储路径 → 绝对路径。拒绝穿越。"""
     abs_path = (PM_STORAGE_ROOT / rel_path).resolve()
-    if not str(abs_path).startswith(str(PM_STORAGE_ROOT.resolve())):
+    if not abs_path.is_relative_to(PM_STORAGE_ROOT.resolve()):
         raise ValueError("非法文件路径")
-    return abs_path
+    return cloud_files.read_path('pm', rel_path, PM_STORAGE_ROOT)
 
 
 # ── 下载/预览签名（照抄素材模块模式：HMAC-SHA256 截断 16 位）───────────────

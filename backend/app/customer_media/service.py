@@ -2,6 +2,7 @@
 
 import hashlib
 import hmac
+import logging
 import secrets
 import time
 from datetime import datetime, timedelta
@@ -23,6 +24,8 @@ from app.customer_media.storage import StoredUpload, storage_for
 from app.design.models import DesignDesigner, DesignScheduleRequest, DesignScheduleTask
 from app.models.business import CustomerInfo
 from app.models.customer import CustomerCommissionSnapshot
+
+logger = logging.getLogger('commission')
 
 
 class CustomerMediaError(ValueError):
@@ -548,9 +551,24 @@ async def upload_asset(
     except Exception:
         db.rollback()
         if stored:
-            storage_for(stored.provider).delete(stored.object_key)
+            _cleanup_unbound_upload(db, stored)
         raise
     return get_batch(db, batch.id)
+
+
+def _cleanup_unbound_upload(db, stored):
+    """A lost commit response is not proof of rollback: preserve uncertain originals."""
+    try:
+        referenced = db.scalar(select(CustomerMediaAsset.id).where(
+            CustomerMediaAsset.storage_provider == stored.provider,
+            CustomerMediaAsset.object_key == stored.object_key,
+        ).limit(1))
+        if referenced is None:
+            storage_for(stored.provider).delete(stored.object_key)
+    except Exception:
+        db.rollback()
+        logger.warning('Customer media upload cleanup deferred; reference or storage unavailable')
+        print('[customer_media] Upload cleanup deferred; original preserved for reconciliation', flush=True)
 
 
 def delete_asset(db: Session, batch_id: int, asset_id: int, payload: dict) -> CustomerMediaBatch:

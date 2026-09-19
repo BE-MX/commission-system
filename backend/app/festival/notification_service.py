@@ -243,6 +243,14 @@ def _event_token(dedup_key: str) -> str:
 
 def _public_url(path: Path) -> str:
     rel = path.resolve().relative_to(_REPO_ROOT.resolve()).as_posix()
+    from app.core.storage import files as cloud_files
+    if cloud_files.managed('festival'):
+        from app.core.storage.cos import file_digest
+        relative = path.resolve().relative_to((_REPO_ROOT / 'uploads' / 'festival').resolve())
+        digest = file_digest(path)[1]
+        key = relative.with_name(f'{relative.stem}-{digest}{relative.suffix}').as_posix()
+        cloud_files.publish_local('festival', key, path)
+        rel = 'uploads/festival/' + key
     return f"{get_settings().SHORT_LINK_BASE_URL.rstrip('/')}/{rel}"
 
 

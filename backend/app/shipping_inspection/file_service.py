@@ -7,6 +7,7 @@
 
 import uuid
 import logging
+import os
 from pathlib import Path
 
 from app.core.config import get_settings
@@ -54,13 +55,14 @@ async def store_video(upload) -> str:
     rel_path = f"{name[:2]}/{name}"
     target = resolve_path(rel_path)
     target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_suffix(target.suffix + '.part')
     try:
         first = await upload.read(1024 * 1024)
         # ISO BMFF/QuickTime 文件头；拒绝仅更改扩展名的非视频文件。
         if len(first) < 12 or first[4:8] not in {b"ftyp", b"moov", b"mdat", b"wide"}:
             raise FileValidationError("无法识别视频文件，请从相册重新选择")
         total = 0
-        with target.open("wb") as stream:
+        with temporary.open("xb") as stream:
             chunk = first
             while chunk:
                 total += len(chunk)
@@ -68,7 +70,11 @@ async def store_video(upload) -> str:
                     raise FileValidationError("视频不能超过 100MB")
                 stream.write(chunk)
                 chunk = await upload.read(1024 * 1024)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(target)
     except BaseException:
+        temporary.unlink(missing_ok=True)
         remove_file(rel_path)
         raise
     return rel_path
@@ -93,7 +99,15 @@ def store_bytes(original_filename: str, content: bytes) -> str:
     rel = Path(name[:2]) / name
     abs_path = storage_root() / rel
     abs_path.parent.mkdir(parents=True, exist_ok=True)
-    abs_path.write_bytes(content)
+    temporary = abs_path.with_suffix(abs_path.suffix + '.part')
+    try:
+        with temporary.open('xb') as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(abs_path)
+    finally:
+        temporary.unlink(missing_ok=True)
     return rel.as_posix()
 
 

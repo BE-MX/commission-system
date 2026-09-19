@@ -1,3 +1,17 @@
+## 2026-09-20 LighthouseCOS 代码准备合并（生产尚未切换）
+
+用户已授权COS迁移代码合并推送，本次不执行存储生产切换。私有桶leshine-ark-1259007308 / ap-beijing / ark/production；公网北京代理到COS，手机检验局域网持久接收并后台同步。完整覆盖与放行条件见[附件验收](requirements/2026-09-19-attachment-cutover-audit.md)。接口、队列、缓存、各附件域和Colorwork已实现，开关默认关闭；迁移159依赖158，只允许统一部署入口检查并执行，不stamp/downgrade。
+
+初始素材30,560文件/123,568,602,783字节已全部上传、北京内网逐字节SHA256回读，最终回执与原manifest严格匹配。设计生图1718、设计附件22、office展会417、采购节1201及先前PM/回款/检验/客户素材/内贸/售后/培训/AI/头像/纪要已回读；北京展会2392、Colorwork262、新加坡hair96/video16已核验。展会2张冲突旧色板单独归档。密钥、清单、原始业务回执仅保留受限.deploy_state和服务器旁路，源文件未删除。
+
+用户已明确接受素材14158和14159各自原件及缩略图共4个缺失作为迁移例外，不再要求找回；切换校验器仍须接入精确例外白名单，不能全局跳过引用覆盖。旧color swatch仍有空PNG占位实现，不计作真实生成功能完成。
+
+仍待生产切换：冻结写入与最终增量、跨实例manifest并集、159队列ready及客户素材provider受控回填、配套配置、5个公网入口激活、办公室/cloud/work登录态读写与真实手机Wi-Fi上传测速。Colorwork24个未完成R2上传需在冻结时重查。5个候选Nginx此前prepare-only通过，未激活；不是线上COS已可用。上次确认生产应用HEAD799ebb13，DB157，发布前必须重新读取现场版本并明确158的发布范围。
+
+内网换址已完成且单独合并推送d64a56db：DNSPod及办公室网关192.168.100.1均将lan.leshine.cloud解析到192.168.100.3，ArkOfficeHttps监听及防火墙同步更新；默认DNS下HTTPS /health、/shipping/scan、/pm/均200，证书校验正常。原配置受限备份保留。PM地址提示代码已改且构建通过，前端本次未发布。SSH alias office-prod经本机2223连接lys-acciowork，映射曾反复失联，重建后恢复。
+
+已做多轮隔离测试与独立审查；最近附件回归217passed/1skipped，主站/PM构建及Colorwork真实workerd用例通过。完整规则检查仍有UI行数基线问题，不修改baseline隐藏告警。合并前将基于最新main复验；COS工作树保留恢复材料直至生产切换完成。
+
 ## 2026-09-18 保存并同步关联单据（Codex，待部署）
 
 工作树commission-system-codex-invoice-linked-sync，分支codex/invoice-linked-sync。已接入原订单编辑、持久分步结果、失败续跑、旧编辑内容哈希、任务令牌、回款摘要权限与人工核对结束。迁移158；需配套更新Singapore出库poller再启用。出库自动写回因小满未明确服务端并发保护暂不开放，显示实时关联单据和SKU差异；回款财务事实不改写。171项隔离后端测试、41项Node测试、前端构建与本地模拟界面验证通过，独立审查通过。详细边界见[invoice-linked-sync.md](invoice-linked-sync.md)。生产尚未部署；合并与推送以Git记录为准。完整规则门禁仍为7项既有UI基线问题。

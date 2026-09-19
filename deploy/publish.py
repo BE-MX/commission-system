@@ -226,6 +226,7 @@ def publish(args):
 if __name__ == "__main__":
     sys.modules["publish"] = sys.modules[__name__]
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser.add_argument("--storage-routing-only", metavar="PROBES_JSON", help="Prepare/activate public COS routing with explicit cloud object probes")
     parser.add_argument("--okki-outbound-only", action="store_true", help="Deploy and enable only the Singapore outbound worker")
     parser.add_argument("--cloud-only", action="store_true")
     parser.add_argument("--no-pull", action="store_true")
@@ -244,7 +245,12 @@ if __name__ == "__main__":
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
-        if args.receipt_routing_only:
+        if args.storage_routing_only:
+            if any(value for key, value in vars(args).items() if key not in {"storage_routing_only", "prepare_only"}):
+                raise RuntimeError('Storage routing only accepts --prepare-only')
+            from storage_routing import execute
+            execute(args.prepare_only, args.storage_routing_only)
+        elif args.receipt_routing_only:
             if any(value for key, value in vars(args).items() if key not in {"receipt_routing_only", "prepare_only"}):
                 raise RuntimeError("Receipt routing only accepts --prepare-only")
             from voucher_routing import execute
@@ -287,7 +293,7 @@ if __name__ == "__main__":
         else:
             publish(args)
     except Exception as error:
-        if not getattr(locals().get("args"), "receipt_routing_only", False) and not getattr(locals().get("args"), "okki_outbound_only", False) and STATE.exists() and not getattr(locals().get("args"), "restore_pre151", None) and not getattr(locals().get("args"), "office_lan_https", None) and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False) and not getattr(locals().get("args"), "shipping_video_routing_only", False):
+        if not getattr(locals().get("args"), "storage_routing_only", None) and not getattr(locals().get("args"), "receipt_routing_only", False) and not getattr(locals().get("args"), "okki_outbound_only", False) and STATE.exists() and not getattr(locals().get("args"), "restore_pre151", None) and not getattr(locals().get("args"), "office_lan_https", None) and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False) and not getattr(locals().get("args"), "shipping_video_routing_only", False):
             journal = marker("publish-current")
             journal.update(status="failed", error_type=type(error).__name__)
             atomic_json(STATE / "publish-current.json", journal)

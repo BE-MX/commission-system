@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 
 from app.core.config import get_settings
+from app.core.storage import files as cloud_files
 
 # 后缀 → (大小上限 MB, 允许的 MIME 前缀集合；空集 = 不校验 MIME)
 UPLOAD_LIMITS: dict[str, tuple[int, set[str]]] = {
@@ -62,6 +63,8 @@ def store_bytes(original_filename: str, content: bytes) -> str:
     ext = Path(original_filename or "").suffix.lower()
     name = f"{uuid.uuid4().hex}{ext}"
     rel = Path(name[:2]) / name
+    if cloud_files.put_bytes('training', rel.as_posix(), content):
+        return rel.as_posix()
     abs_path = storage_root() / rel
     abs_path.parent.mkdir(parents=True, exist_ok=True)
     abs_path.write_bytes(content)
@@ -74,7 +77,7 @@ def resolve_private_path(relative_path: str) -> Path:
     p = (root / relative_path).resolve()
     if not p.is_relative_to(root):
         raise FileValidationError("非法文件路径")
-    return p
+    return cloud_files.read_path('training', relative_path, root)
 
 
 def remove_quietly(relative_path: str) -> None:
@@ -82,9 +85,7 @@ def remove_quietly(relative_path: str) -> None:
     import logging
 
     try:
-        p = resolve_private_path(relative_path)
-        if p.is_file():
-            p.unlink()
+        cloud_files.delete('training', relative_path, storage_root())
     except Exception as e:  # noqa: BLE001
         logging.getLogger("commission").warning("training file cleanup failed %s: %s", relative_path, e)
         print(f"[training] file cleanup failed {relative_path}: {e}", flush=True)

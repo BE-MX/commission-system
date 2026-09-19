@@ -13,9 +13,10 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   listCases, getCaseDetail, manualCreateCase, uploadCase, publishCase,
-  updateCase, deleteCase, toggleCaseLike,
+  updateCase, deleteCase, toggleCaseLike, getCaseImage,
 } from '@/api/insight'
 import { useAuthStore } from '@/stores/auth'
+import { downloadBlob } from '@/utils/download'
 
 
 export const TAGS = ['开发跟进', '谈判技巧', '定制流程', '物流处理', '纠纷解决', '竞品应对']
@@ -336,6 +337,10 @@ export function useCaseLibrary() {
 
   onMounted(reload)
 
+  async function downloadScreenshot() {
+    if (currentCase.value?.image_path) downloadBlob(await getCaseImage(currentCase.value.id))
+  }
+
   return {
     TAGS, dimensionMap,
     resultTagType, correctionLabel, formatDateOnly,
@@ -352,6 +357,6 @@ export function useCaseLibrary() {
     openAddDialog, openEdit, openEditFromDetail,
     handleFileChange, submitCase,
     loadDraft, confirmPublishDraft,
-    toggleLike, handleDelete, deleteCurrentCase,
+    toggleLike, handleDelete, deleteCurrentCase, downloadScreenshot,
   }
 }

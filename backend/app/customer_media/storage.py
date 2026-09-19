@@ -4,12 +4,14 @@ import hashlib
 import os
 import re
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from fastapi import UploadFile
 
 from app.core.config import get_settings
+from app.core.storage.cos import CosObjectStore, ObjectMissing, StorageError, enabled
 
 
 CHUNK_BYTES = 4 * 1024 * 1024
@@ -136,6 +138,57 @@ class LocalMediaStorage:
         if object_key:
             self.resolve(object_key).unlink(missing_ok=True)
 
+    def response(self, asset, *, download: bool = False):
+        from fastapi import HTTPException
+        from fastapi.responses import FileResponse
+        path = self.resolve(asset.object_key)
+        if not path.is_file():
+            raise HTTPException(404, "素材文件不存在")
+        return FileResponse(path, media_type=asset.content_type,
+                            filename=asset.file_name if download else None,
+                            content_disposition_type="attachment" if download else "inline",
+                            headers={"Cache-Control": "private, no-store"})
+
+
+class CosMediaStorage:
+    """Validate in a private temporary workspace; only verified objects are bound."""
+    provider = "cos"
+
+    def __init__(self, store=None):
+        self.store = store or CosObjectStore("customer-media")
+
+    async def save_upload(self, upload, *, customer_id, batch_id, max_bytes):
+        from starlette.concurrency import run_in_threadpool
+        cache = Path(get_settings().COS_CACHE_ROOT)
+        cache.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(prefix="customer-media-", dir=cache) as directory:
+            local = LocalMediaStorage(directory)
+            stored = await local.save_upload(upload, customer_id=customer_id,
+                                            batch_id=batch_id, max_bytes=max_bytes)
+            result = await run_in_threadpool(self.store.put_file, stored.object_key,
+                                             local.resolve(stored.object_key), stored.content_type)
+            if result.sha256 != stored.sha256 or result.size != stored.file_size:
+                raise MediaStorageError("云端素材校验失败")
+            return replace(stored, provider=self.provider)
+
+    def delete(self, object_key):
+        if object_key:
+            self.store.delete(object_key)
+
+    def response(self, asset, *, download=False):
+        from fastapi import HTTPException
+        from fastapi.responses import RedirectResponse
+        try:
+            self.store.head(asset.object_key)
+            url = self.store.download_url(asset.object_key, filename=asset.file_name,
+                                          content_type=asset.content_type, download=download)
+        except ObjectMissing:
+            raise HTTPException(404, "素材文件不存在") from None
+        except StorageError:
+            raise HTTPException(503, "云存储暂时不可用，请稍后重试", headers={"Retry-After": "10"}) from None
+        return RedirectResponse(url, status_code=303,
+                                headers={"Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer"})
+
 
 def _detect_file_type(header: bytes) -> tuple[str, str]:
     if header.startswith(b"\xff\xd8\xff"):
@@ -156,7 +209,10 @@ def _detect_file_type(header: bytes) -> tuple[str, str]:
     raise MediaStorageError("无法识别文件真实格式")
 
 
-def storage_for(provider: str = "local") -> LocalMediaStorage:
-    if provider != "local":
-        raise MediaStorageError(f"暂不支持存储类型 {provider}")
-    return LocalMediaStorage()
+def storage_for(provider: str | None = None):
+    provider = provider or ("cos" if enabled("customer-media") else "local")
+    if provider == "local":
+        return LocalMediaStorage()
+    if provider == "cos":
+        return CosMediaStorage()
+    raise MediaStorageError(f"暂不支持存储类型 {provider}")

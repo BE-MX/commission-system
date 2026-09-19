@@ -113,31 +113,43 @@ def delete_customer(db: Session, customer_id: int) -> bool:
     results_by_session: dict[int, list[ExpoResult]] = {}
     for result in results:
         results_by_session.setdefault(result.session_id, []).append(result)
+    paths = []
     for session in sessions:
-        _remove_file(session.photo_path)
-        _remove_file(session.beautified_photo_path)
+        paths.extend([session.photo_path, session.beautified_photo_path])
         for result in results_by_session.get(session.id, []):
-            _remove_file(result.image_path)
+            paths.append(result.image_path)
+    from app.core.storage import transfers
+    from app.expo import storage
+    if transfers.managed('expo'):
+        for path in filter(None, paths):
+            original = Path(storage.reference_key(path))
+            for file in (original, original.with_name(original.stem + ai_pipeline.DISPLAY_SUFFIX)):
+                transfers.tombstone(db, 'expo', file.as_posix())
     # 扫码上传的待取照片（uploads/expo/pending/）是与 photos/、results/ 平级的
     # 第二个照片仓库，本函数原逻辑只走 sessions 关联的 photo_path/image_path，
     # 够不着这里；本靠 sweep_stale 兜底 2 小时清理，但客户主动要求删除时不该
     # 让他们再多等这 2 小时（I3，上传页承诺「可随时联系我们删除」）
-    upload_service.purge_pending(customer_id)
     db.delete(customer)  # FK CASCADE 带走 sessions/results/feedback
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    upload_service.purge_pending(customer_id)
+    if not transfers.managed('expo'):
+        _remove_files_quietly(paths)
     return True
 
 
 def _remove_file(path: str | None) -> None:
     if not path:
         return
-    target = ai_pipeline.to_abs(path)
-    if target.exists():
-        target.unlink(missing_ok=True)
+    from app.expo import storage
+    target = Path(path) if Path(path).is_absolute() else ai_pipeline.REPO_ROOT / path
+    storage.remove(target)
     # 结果图的 kiosk 展示版（{stem}_disp.jpg）随原图一并清理，不留孤儿文件
-    disp = target.with_name(target.stem + ai_pipeline.DISPLAY_SUFFIX)
-    if disp.exists():
-        disp.unlink(missing_ok=True)
+    for suffix in (ai_pipeline.DISPLAY_SUFFIX, ai_pipeline.THUMB_SUFFIX):
+        storage.remove(target.with_name(target.stem + suffix))
 
 
 def _remove_files_quietly(paths) -> None:
@@ -152,15 +164,14 @@ def _remove_files_quietly(paths) -> None:
             print(msg, flush=True)
 
 
-def _remove_wig_color_files(db: Session, *, wig_id: int | None = None, color_id: int | None = None) -> None:
-    """删发型/发色前，清掉将被 FK CASCADE 带走的组合行的三角度图文件（否则文件成孤儿占盘）。"""
+def _wig_color_paths(db: Session, *, wig_id: int | None = None, color_id: int | None = None) -> list[str]:
+    """Capture cascade-owned paths before deleting rows; clean only after commit."""
     q = db.query(ExpoWigColor)
     if wig_id is not None:
         q = q.filter(ExpoWigColor.wig_id == wig_id)
     if color_id is not None:
         q = q.filter(ExpoWigColor.hair_color_id == color_id)
-    for combo in q.all():
-        _remove_files_quietly(combo.angle_photos)
+    return [path for combo in q.all() for path in (combo.angle_photos or [])]
 
 
 # ---------------- 会话 ----------------
@@ -256,6 +267,7 @@ def create_session(
     # photo_url 会作为"佩戴前"对比图经 frp 隧道回源展示。扫码上传的已在 save_pending
     # 压过一次，downscale_inplace 幂等，重复调用只是空转
     ai_pipeline.downscale_inplace(photo_path)
+    from app.expo import storage
 
     beautify_snapshot = None
     if photo_processing_mode == "beauty":
@@ -282,6 +294,7 @@ def create_session(
         operator_user_id=operator_user_id,
         store_id=store.id if store else None,
     )
+    storage.publish(photo_path)
     db.add(session)
     try:
         db.commit()
@@ -667,6 +680,9 @@ def _to_url(path: str | None) -> str | None:
     if not path:
         return None
     normalized = str(path).replace("\\", "/")
+    if not normalized.startswith(('https://', 'http://')) and 'uploads/expo/' in normalized:
+        from app.expo.storage import reference_key
+        return '/uploads/expo/' + reference_key(normalized)
     if normalized.startswith("uploads/"):
         return f"/{normalized}"
     return normalized
@@ -756,10 +772,14 @@ def delete_hair_color(db: Session, color_id: int) -> bool:
     row = db.get(ExpoHairColor, color_id)
     if not row:
         return False
-    _remove_file(row.swatch_path)
-    _remove_wig_color_files(db, color_id=color_id)
+    paths = [row.swatch_path, *_wig_color_paths(db, color_id=color_id)]
     db.delete(row)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    _remove_files_quietly(paths)
     return True
 
 
@@ -1195,11 +1215,7 @@ def delete_wig(db: Session, wig_id: int) -> bool:
     if used:
         raise ValueError(f"该发型已产生 {used} 条试戴记录，无法删除；如需下架请改用「停用」")
     # 无引用才删：清掉该发型独占的封面与多角度图（不影响任何效果图）
-    _remove_file(wig.cover_path)
-    for path in wig.angle_photos or []:
-        _remove_file(path)
-    # 该发型各发色的组合图（ark_expo_wig_colors）由 FK CASCADE 删行，落盘文件手动清
-    _remove_wig_color_files(db, wig_id=wig_id)
+    paths = [wig.cover_path, *(wig.angle_photos or []), *_wig_color_paths(db, wig_id=wig_id)]
     db.delete(wig)
     try:
         db.commit()
@@ -1208,6 +1224,10 @@ def delete_wig(db: Session, wig_id: int) -> bool:
         # 归一为 ValueError → router 转 409，与"已被引用"给用户同一提示，不冒 500
         db.rollback()
         raise ValueError("该发型刚产生了新的试戴记录，无法删除；如需下架请改用「停用」")
+    except Exception:
+        db.rollback()
+        raise
+    _remove_files_quietly(paths)
     return True
 
 

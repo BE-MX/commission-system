@@ -201,7 +201,7 @@ def create_attachment(
         return row
     except Exception:
         db.rollback()
-        file_service.delete_private_file(stored.storage_path)
+        _cleanup_unreferenced_attachment(db, stored.storage_path)
         raise
 
 
@@ -210,13 +210,25 @@ def delete_draft_attachment(db: Session, owner_user_id: int, attachment_id: int)
     if row.status != "draft" or row.message_id is not None:
         _not_found()
     storage_path = row.storage_path
-    file_service.delete_private_file(storage_path)
     try:
         db.delete(row)
         db.commit()
     except Exception:
         db.rollback()
         raise
+    _cleanup_unreferenced_attachment(db, storage_path)
+
+
+def _cleanup_unreferenced_attachment(db: Session, storage_path: str):
+    try:
+        if db.query(AiChatAttachment.id).filter(AiChatAttachment.storage_path == storage_path).first():
+            return
+        file_service.delete_private_file(storage_path)
+    except Exception as exc:
+        db.rollback()
+        import logging
+        logging.getLogger('commission').warning('Attachment cleanup failed type=%s; preserving file', type(exc).__name__)
+        print('[ai-chat] attachment cleanup failed; preserving file', flush=True)
 
 
 def _paired_assistant(db: Session, user: AiChatMessage) -> AiChatMessage:

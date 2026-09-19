@@ -1,3 +1,4 @@
+import { getFiles } from '@/lib/server/storage';
 import { env } from 'cloudflare:workers';
 import { authErrorResponse, requireView } from '@/lib/server/auth';
 import { serverTemplateById } from '@/lib/server/catalog';
@@ -40,7 +41,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       return Response.json({ error: 'JPG 图片尺寸与当前模板不一致。' }, { status: 422 });
     }
     const sha256 = hex(await crypto.subtle.digest('SHA-256', buffer));
-    const existing = await env.FILES.head(artifact.jpgKey);
+    const existing = await getFiles().head(artifact.jpgKey);
     if (existing) {
       if (existing.size !== size || existing.customMetadata?.sha256 !== sha256) {
         return Response.json({
@@ -50,13 +51,13 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       }
       return Response.json({ ok: true, kind: 'jpg', size, sha256, idempotent: true });
     }
-    const stored = await env.FILES.put(artifact.jpgKey, buffer, {
+    const stored = await getFiles().put(artifact.jpgKey, buffer, {
       onlyIf: { etagDoesNotMatch: '*' },
       httpMetadata: { contentType: 'image/jpeg' },
       customMetadata: { sha256, size: String(size) },
     });
     if (!stored) {
-      const concurrent = await env.FILES.head(artifact.jpgKey);
+      const concurrent = await getFiles().head(artifact.jpgKey);
       if (concurrent?.size !== size || concurrent.customMetadata?.sha256 !== sha256) {
         return Response.json({
           error: '这个历史成品的 JPG 已被另一上传封存，不能覆盖。',
@@ -71,7 +72,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     if (!updated.meta.changes) {
       const current = await env.DB.prepare(`SELECT status FROM artifacts WHERE id = ? AND owner_user_id = ?`)
         .bind(id, user.id).first<{ status: string }>();
-      if (current?.status === 'failed') await env.FILES.delete(artifact.jpgKey);
+      if (current?.status === 'failed') await getFiles().delete(artifact.jpgKey);
       return Response.json({ error: '这个文件已被其他操作封存，请刷新。' }, { status: 409 });
     }
     return Response.json({ ok: true, kind: 'jpg', size, sha256 });

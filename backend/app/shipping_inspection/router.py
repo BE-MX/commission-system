@@ -297,6 +297,6 @@ def get_image(
     if photo is None:
         raise HTTPException(status_code=404, detail="图片不存在")
     _require_inspection_scope(db, _user, photo.inspection_id)
-    if not abs_path.is_file():
-        raise HTTPException(status_code=404, detail="图片不存在")
-    return FileResponse(abs_path)
+    record = service.transfers.snapshot(db, 'shipping-inspection', photo.file_path)
+    db.rollback()
+    return service.transfers.response('shipping-inspection', rel_path, record)

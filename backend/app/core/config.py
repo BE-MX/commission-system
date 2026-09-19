@@ -20,6 +20,23 @@ _PublicPoolQuota = Annotated[int, Field(gt=0, le=100)]
 
 
 class Settings(BaseSettings):
+    # Object storage is enabled per domain only after its migration is verified.
+    COS_BUCKET: str = ""
+    COS_REGION: str = "ap-beijing"
+    COS_SECRET_ID: str = Field(default="", repr=False)
+    COS_SECRET_KEY: str = Field(default="", repr=False)
+    COS_SECURITY_TOKEN: str = Field(default="", repr=False)
+    COS_KEY_PREFIX: str = "ark/production"
+    COS_ENABLED_DOMAINS: list[str] = []
+    COS_MANAGED_DOMAINS: list[str] = []
+    COS_SIGN_TTL_SECONDS: Annotated[int, Field(ge=30, le=900)] = 300
+    COS_REQUEST_TIMEOUT_SECONDS: Annotated[int, Field(ge=5, le=120)] = 30
+    COS_CACHE_ROOT: str = str(_BACKEND_DIR / "data" / "cos-cache")
+    COS_INSTANCE_ID: str = ""
+    COS_WORKER_ENABLED: bool = False
+    COS_LOCAL_OWNER: str = "office"
+    COS_CACHE_MAX_BYTES: int = 2 * 1024 * 1024 * 1024
+
     # ── 应用环境 ──────────────────────────────────────────
     APP_ENV: str = "development"  # development / production
     AI_GATEWAY_MAX_OUTPUT_TOKENS: Annotated[int, Field(gt=0, le=4096)] = 4096

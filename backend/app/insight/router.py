@@ -561,7 +561,11 @@ async def upload_case(
     if source_type == "screenshot":
         if not file:
             raise HTTPException(status_code=400, detail="screenshot 模式需要上传文件")
-        file_path = service._save_uploaded_image(file.file, file.filename or "upload.png")
+        from app.insight.file_service import save
+        try:
+            file_path = save(file.file, file.filename or 'upload.png')
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
     elif source_type == "text_paste":
         if not text or not text.strip():
             raise HTTPException(status_code=400, detail="text_paste 模式需要传入 text")
@@ -681,6 +685,13 @@ def get_case_detail(
     user_id = int(user.get("sub")) if user.get("sub") else None
     case = service.get_case_detail(db, case_id, user_id)
     return _ok(_serialize_case(case, user_id))
+
+
+@router.get('/cases/{case_id}/image')
+# require_permission exemption: uses the same explicit case-view dependency as detail.
+def case_image(case_id: int, db: Session = Depends(get_db), user: dict = Depends(_require_case_view)):
+    from app.insight.file_service import response
+    return response(db, case_id)
 
 
 @router.delete("/cases/{case_id}")

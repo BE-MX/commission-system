@@ -4,6 +4,9 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from app.core.database import get_db
+from app.core.storage import transfers
+from app.shipping_inspection.models import ShippingInspectionPhoto
+from starlette.concurrency import run_in_threadpool
 from app.auth.models import ArkUser
 from app.mini.access import require_mini_entry
 from app.shipping_inspection import file_service as shipping_file_service
@@ -156,6 +159,7 @@ async def shipping_submit(
 async def shipping_image(
     rel_path: str,
     current_user: ArkUser = Depends(require_mini_entry("shipping")),
+    db: Session = Depends(get_db),
 ):
     """小程序 token 里没有 RBAC 声明，走不了主站那个 shipping_inspection:read 图片端点，
     所以这里给一个同源的 mini 版本——小程序显示缩略图用。"""
@@ -164,9 +168,12 @@ async def shipping_image(
         abs_path = shipping_file_service.resolve_path(rel_path)
     except shipping_file_service.FileValidationError as exc:
         raise HTTPException(status_code=400, detail={"code": "BAD_PATH", "message": str(exc)})
-    if not abs_path.is_file():
+    photo = db.query(ShippingInspectionPhoto).filter_by(file_path=rel_path).first()
+    if photo is None:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "图片不存在"})
-    return FileResponse(abs_path)
+    record = transfers.snapshot(db, 'shipping-inspection', rel_path)
+    db.rollback()
+    return await run_in_threadpool(transfers.response, 'shipping-inspection', rel_path, record)
 
 
 @router.delete("/shipping-inspection/videos/{video_id}", summary="发货检验：删除视频（仅草稿）")

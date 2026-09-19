@@ -1,5 +1,16 @@
 # 莱莎方舟 数据库表参考
 
+## 云存储队列与可替换文件引用（159，本地实现，未部署）
+
+| 表 | 责任与关键约束 |
+| --- | --- |
+| `ark_storage_transfers` | `id=SHA256(domain + NUL + key)`；保存不可变文件键、源实例、大小、SHA256、MIME、pending/running/ready/deleted状态、重试次数、租约令牌/到期与下次执行时间。按实例/status/next_attempt_at索引领取；删除墓碑保留，防止迟到上传重新暴露文件 |
+| `ark_storage_aliases` | 同样以domain+logical_key摘要为主键；`target_key`指向不可变对象，NULL表示显式删除。用于展会固定场景名和色块工作台逻辑文件名；先上传新对象，再在行锁事务中切换引用并登记旧对象墓碑 |
+
+| `ark_storage_publications` | 色块分片完成操作的不可变回执，主键绑定domain/key/upload identity，与别名切换同事务提交；响应丢失后重试只返回原结果，不复活已删除或被替换文件 |
+
+时间列均为北京时间。客户素材继续使用原表的 `storage_provider/object_key`，仅在完整回读校验后受控切换provider。159依赖158，禁止开发机升级共享生产库；downgrade不自动删除队列或引用数据。
+
 ## 回款管理（156_receipt_management，本地实现）
 
 | 表 | 责任与关键约束 |

@@ -1,0 +1,27 @@
+{
+  "version": "2.0",
+  "statement": [
+    {
+      "effect": "allow",
+      "action": [
+        "cos:GetBucket",
+        "cos:HeadBucket",
+        "cos:GetBucketCORS",
+        "cos:PutBucketCORS",
+        "cos:GetObject",
+        "cos:HeadObject",
+        "cos:PutObject",
+        "cos:DeleteObject",
+        "cos:InitiateMultipartUpload",
+        "cos:UploadPart",
+        "cos:ListParts",
+        "cos:CompleteMultipartUpload",
+        "cos:AbortMultipartUpload",
+        "cos:ListMultipartUploads"
+      ],
+      "resource": [
+        "qcs::cos:ap-beijing:uid/1259007308:leshine-ark-1259007308/*"
+      ]
+    }
+  ]
+}

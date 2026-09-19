@@ -53,7 +53,9 @@ def to_rel(path: Path) -> str:
 def to_abs(rel: str | None) -> Path:
     """存库相对路径 → 读文件用的绝对路径（兼容历史绝对路径）。"""
     p = Path(rel or "")
-    return p if p.is_absolute() else REPO_ROOT / p
+    path = p if p.is_absolute() else REPO_ROOT / p
+    from app.expo import storage
+    return storage.read(path)
 
 ANALYSIS_PRESET = "expo_face_analysis"
 COMPOSITE_PRESET = "expo_wig_composite"
@@ -540,6 +542,8 @@ def make_display_image(src: Path) -> Path | None:
                 flat.thumbnail((DISPLAY_MAX_EDGE, DISPLAY_MAX_EDGE), Image.LANCZOS)
             _save_atomic(flat, target, "JPEG",
                          quality=_DISPLAY_JPEG_QUALITY, optimize=True)
+        from app.expo import storage
+        storage.publish(target)
         return target
     except Exception as exc:  # noqa: BLE001
         msg = f"[expo] display image skipped ({src.name}): {exc}"
@@ -565,6 +569,8 @@ def make_thumb_image(src: Path) -> Path | None:
                 flat.thumbnail((THUMB_MAX_EDGE, THUMB_MAX_EDGE), Image.LANCZOS)
             _save_atomic(flat, target, "JPEG",
                          quality=_THUMB_JPEG_QUALITY, optimize=True)
+        from app.expo import storage
+        storage.publish(target)
         return target
     except Exception as exc:  # noqa: BLE001
         msg = f"[expo] thumb image skipped ({src.name}): {exc}"
@@ -581,9 +587,15 @@ def thumb_url_for(rel_path: str | None) -> str | None:
     """
     if not rel_path:
         return None
-    abs_src = to_abs(rel_path)
+    from app.expo import storage
+    if storage.files.managed('expo'):
+        source = Path(storage.reference_key(rel_path))
+        relative = 'uploads/expo/' + source.with_name(source.stem + THUMB_SUFFIX).as_posix()
+        return '/' + relative if storage.exists(relative) else None
+    abs_src = Path(rel_path) if Path(rel_path).is_absolute() else REPO_ROOT / rel_path
     thumb = abs_src.with_name(abs_src.stem + THUMB_SUFFIX)
-    if not thumb.exists():
+    from app.expo import storage
+    if not storage.exists(thumb):
         return None
     return "/" + to_rel(thumb)
 
@@ -592,9 +604,15 @@ def display_rel_for(rel: str | None) -> str | None:
     """结果图存库路径 → 展示版相对路径；不存在（历史结果/生成失败）返回 None。"""
     if not rel:
         return None
-    src = to_abs(rel)
+    from app.expo import storage
+    if storage.files.managed('expo'):
+        source = Path(storage.reference_key(rel))
+        relative = 'uploads/expo/' + source.with_name(source.stem + DISPLAY_SUFFIX).as_posix()
+        return relative if storage.exists(relative) else None
+    src = Path(rel) if Path(rel).is_absolute() else REPO_ROOT / rel
     disp = src.with_name(src.stem + DISPLAY_SUFFIX)
-    return to_rel(disp) if disp.exists() else None
+    from app.expo import storage
+    return to_rel(disp) if storage.exists(disp) else None
 
 
 def _parse_json(content: str) -> dict:
@@ -798,33 +816,56 @@ _SCENE_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
 _SCENE_IMG_MAX_EDGE = 1200  # kiosk 一屏加载多张，超边长降采样控体积
 
 
-def scene_image_url(key: str) -> str | None:
+def scene_image_url(key: str, db=None) -> str | None:
     """场景 key → 示意图公开 URL（/uploads/...），文件不存在返回 None。
 
     URL 带 ?v=<mtime> 版本号：场景图是全部素材里唯一固定文件名、覆盖式替换的
     （其余 wig/swatch/结果图均 uuid 命名换图即换名）。云 Nginx 对 /uploads/expo/
     开了代理缓存且缓存 key 含 query string（2026-07-22，见 docs/runbook.md）——
     换图 mtime 变则 URL 变，云缓存与浏览器缓存同时自然失效"""
+    from app.core.storage.files import managed
+    if managed('expo'):
+        if db is None:
+            raise ValueError('Scene storage requires a database session')
+        from app.expo import scene_storage
+        found, value = scene_storage.url(db, key)
+        if found:
+            return value
     for ext in _SCENE_IMAGE_EXTS:
         p = SCENE_IMAGE_DIR / f"{key}{ext}"
+        from app.core.storage import files as cloud_files
+        if cloud_files.managed('expo'):
+            from app.core.storage.cos import CosObjectStore, ObjectMissing
+            try:
+                head = CosObjectStore('expo').head(f'scenes/{key}{ext}')
+            except ObjectMissing:
+                continue
+            return f"/uploads/expo/scenes/{key}{ext}?v={head['x-cos-meta-sha256']}"
         if p.exists():
             rel = "/" + p.resolve().relative_to(REPO_ROOT).as_posix()
             return f"{rel}?v={int(p.stat().st_mtime)}"
     return None
 
 
-def delete_scene_image(key: str) -> bool:
+def delete_scene_image(key: str, db=None) -> bool:
     """删除某场景的示意图（各扩展名都清，避免探测歧义）。返回是否删了文件。"""
+    from app.core.storage.files import managed
+    if managed('expo'):
+        if db is None:
+            raise ValueError('Scene storage requires a database session')
+        from app.expo import scene_storage
+        return scene_storage.delete(db, key)
     removed = False
     for ext in _SCENE_IMAGE_EXTS:
         p = SCENE_IMAGE_DIR / f"{key}{ext}"
-        if p.exists():
-            p.unlink()
+        from app.expo import storage
+        if storage.exists(p):
+            storage.remove(p)
             removed = True
     return removed
 
 
-def save_scene_image(key: str, upload) -> str:
+def save_scene_image(key: str, upload, db=None) -> str:
     """存场景示意图为 uploads/expo/scenes/<key>.<ext>；先删同 key 旧图（各扩展名）避免探测歧义。
     key 必须是 TRYON_SCENES 里的合法场景；扩展名限 jpg/jpeg/png/webp。返回公开 URL。"""
     if resolve_tryon_scene(key) is None:
@@ -832,12 +873,20 @@ def save_scene_image(key: str, upload) -> str:
     suffix = Path(getattr(upload, "filename", "") or "").suffix.lower()
     if suffix not in _SCENE_IMAGE_EXTS:
         raise ValueError("仅支持 jpg / jpeg / png / webp 图片")
+    from app.core.storage.files import managed
+    if managed('expo'):
+        if db is None:
+            raise ValueError('Scene storage requires a database session')
+        from app.expo import scene_storage
+        return scene_storage.save(db, key, upload, suffix)
     SCENE_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
     delete_scene_image(key)
     target = SCENE_IMAGE_DIR / f"{key}{suffix}"
     with open(target, "wb") as f:
         shutil.copyfileobj(upload.file, f)
     downscale_inplace(target, _SCENE_IMG_MAX_EDGE)
+    from app.expo import storage
+    storage.publish(target)
     return scene_image_url(key)  # 统一出口，带 ?v= 版本号（文件刚落盘必非 None）
 
 
@@ -996,6 +1045,8 @@ def _run_composite(session_id: int, result_id: int) -> None:
         )
         stamp_logo(image_path)          # 品牌水印，必须早于展示版派生
         make_display_image(image_path)  # kiosk 展示版，失败不阻断（回退原图）
+        from app.expo import storage
+        storage.publish(image_path)
 
         row.image_path = to_rel(image_path)
         row.gen_ms = int((time.monotonic() - started) * 1000)

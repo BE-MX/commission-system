@@ -1,5 +1,19 @@
 # 莱莎方舟平台 运维手册
 
+## COS 切换与恢复约束（待部署）
+
+三入口逐模块验收见[附件切换清单](requirements/2026-09-19-attachment-cutover-audit.md)。新增域 `insight`（backend/uploads/insight）和 `tag_images`（uploads/tag_images）必须清点所有写实例并加入对应开关；洞见截图不开放公共静态目录。上传网关按业务端点设置大小，默认5MiB不能代表所有附件的上限；候选Nginx语法通过后仍须实际验证上传与下载。临时素材上传及字节上传也计入共享缓存预算，繁忙时拒绝并重试，不驱逐正在读取的文件。
+
+`COS_ENABLED_DOMAINS`允许新上传；`COS_MANAGED_DOMAINS`保留已迁移对象读取。暂停新上传时只移出enabled，保留managed；不能关闭全部开关后悄悄读回旧本地副本。每个写实例设置稳定 `COS_INSTANCE_ID`，开启独立 `COS_WORKER_ENABLED`；业务Scheduler仍保持单活。`COS_CACHE_ROOT`必须是本机缓存目录，容量由 `COS_CACHE_MAX_BYTES`限制。
+
+正式切换前冻结所有相关写入口、获取最终增量清单、逐对象回读SHA256、校验全部DB引用，再通过统一部署入口执行159和历史ready/provider回填，最后启用域配置及网关。stage/HEAD记录不算完成证据；只有目标桶、前缀、源实例、key、大小和SHA均匹配的verified回执可用于切换。原件和运行配置备份保留；旧代码不理解新provider时不得直接回滚。
+
+R2工作台迁移按对象元数据重组已完成分片，校验每片MD5、完整ETag和SHA256，并保留width/height等custom metadata；D1数据库和未完成multipart状态不复制为对象。切换前必须核对尚未完成的上传和对应业务记录。腾讯云分片接口依据[官方Python SDK文档](https://cloud.tencent.com/document/product/436/65820)。
+
+色块发布入口仅在colorwork域启用时向受保护的`.dev.vars`注入回环网关地址及专用派生密钥；不得将COS密钥交给workerd。首次切换要冻结旧分片写入，再核对未完成upload ID是否已存在同名完成对象；旧上传保留R2状态，新分片使用独立暂存键，COS失败保留暂存对象用于重试。
+
+公网文件路由使用 `deploy.bat --storage-routing-only <probes.json> --prepare-only`。准备只写受限候选与检查文件，不重载Nginx；激活需每个重定向命名空间的真实迁移文件探针，要求200和应用产生的`X-Ark-Storage: cos`，不跟随重定向。先验证北京，再验证各实际域名；单站失败恢复该站原配置，已经成功的前序站点保留并记入journal。此入口不修改业务API归属。展会平板IP入口独立验收，沿用现有自签证书作为唯一信任证书，保持CERT_REQUIRED；准备后证书摘要变化则阻断。平板APK证书pinning配置不变。
+
 ## 站点 AI 网关接入与核查
 
 上线候选须包含迁移 `146_ai_site_gateway`、前后端代码及 `deploy/nginx/ark-ai-gateway-location.conf`。该片段放入 leshine.work HTTPS server，沿用该入口的 `127.0.0.1:8002` 转发；北京或其他入口按现有拓扑选择自身后端。Docker 示例同步 `frontend/nginx.conf`。均限制 64 KiB，代理等待 75 秒，禁用 proxy_next_upstream 重试。配置变更和生产迁移只在获得该环境发布授权后，通过项目部署入口执行；本文不表示生产已上线。
@@ -12,7 +26,7 @@ Settings：`AI_GATEWAY_MAX_OUTPUT_TOKENS=4096`、`AI_GATEWAY_TIMEOUT_SEC=60`（�
 
 本地 MySQL 并发验证使用独立回环地址实例、独立随机 `ark_ai_gateway_test_*` schema，由 `backend/tests/test_ai_gateway_mysql.py` 创建并清理；禁止将公司业务库 URL 用于测试。测试专用变量 `AI_GATEWAY_TEST_MYSQL_URL` 必须没有数据库名，且 host 只能为回环地址。不读取 backend/.env 的业务连接。
 
-> 2026-09-05 部署入口已改为候选准备、SHA-256 增量发布与共享 schema 校验，操作及真实纳管范围以 [deploy/README.md](../deploy/README.md) 为准。旧 rollback.bat 已阻断，不再使用旧 dist_backup 直接覆盖云目录。COS 文件迁移暂缓。
+> 2026-09-05 部署入口已改为候选准备、SHA-256 增量发布与共享 schema 校验，操作及真实纳管范围以 [deploy/README.md](../deploy/README.md) 为准。旧 rollback.bat 已阻断，不再使用旧 dist_backup 直接覆盖云目录。COS 文件迁移现按用户授权推进；实际切换状态见 docs/handoff.md。
 
 > **版本**：v1.0  
 > **最后更新**：2026-07-03  
@@ -1672,3 +1686,20 @@ journalctl -u leshine-ark-dsh-worker -n 200 --no-pager
 ## 关联单据同步待处理
 
 在订单编辑器查看“关联单据同步结果”。failed重试未完成步骤；uncertain不重发，管理员先核对小满原单与半成品pending，原租约结束后填写依据人工结束。不要直接清数据库锁或删除任务。出库差异目前在小满人工处理后重新核对。详见[invoice-linked-sync.md](invoice-linked-sync.md)。
+
+## 云存储初始复制与切换约束
+
+迁移入口：`backend/scripts/storage_migrate.py`。仅做原件盘点和可恢复复制，不修改数据库，不删除原件，不覆盖云端同名对象。凭据文件须置于受限、Git 忽略的目录；不得将密钥作为命令行参数、文档或日志输出。
+
+```powershell
+.venv/Scripts/python.exe backend/scripts/storage_migrate.py inventory --root <absolute-source-directory> --domain <domain> --source-instance <instance> --manifest .deploy_state/source-manifest.json
+.venv/Scripts/python.exe backend/scripts/storage_migrate.py copy --manifest .deploy_state/source-manifest.json --credentials-file .deploy_state/cos.env --journal .deploy_state/copy-journal.jsonl --apply
+```
+
+执行前核对有效 `COS_BUCKET`、`COS_REGION`、`COS_KEY_PREFIX`；环境变量可能覆盖文件配置。同一个目标前缀串行复制。journal 与缓存必须在源目录之外；清单不能覆盖旧证据。源文件变动、云端同名内容冲突、读取不完整或 SHA-256 不符均应停止，核对来源后生成新的清单；禁止以覆盖或删除对象方式绕过冲突。
+
+全量回读校验产生下载流量。大批量原件优先从已确认同地域内网访问的验证节点回读；未确认网络计费路径时，不可直接按本地小样本方式回读超过套餐额度的大批数据。
+
+客户素材新代码以数据库 `storage_provider` 选择读取方式；`COS_ENABLED_DOMAINS` 只决定新增上传的存储。已有 local 记录不能仅凭切开关自动视为 cos。只有文件清单、数据库引用、最终增量、鉴权与下载验证全部通过，并通过统一部署入口发布所有读写实例后，才能执行数据库引用切换。首次复制完成不代表线上迁移完成。回退时必须覆盖切换后新增的 cos 记录，不得只关闭开关或还原旧目录。
+
+LighthouseCOS 无法通过已测桶级 API 配置 CORS。浏览器 fetch/blob 跨域读取、直传 PUT 均须真实浏览器验收；普通 `<img>`、`<video>` 或下载跳转可用不代表 fetch 可用。不得放开私有桶 ACL 解决跨域问题。手机检验的目标链路为局域网可靠落盘、数据库同事务登记持久同步任务、后台校验上传；此机制未实现和验证前保留原上传链路。

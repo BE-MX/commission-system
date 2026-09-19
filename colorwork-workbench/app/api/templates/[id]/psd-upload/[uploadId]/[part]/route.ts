@@ -1,3 +1,4 @@
+import { getFiles } from '@/lib/server/storage';
 import { env } from 'cloudflare:workers';
 import { authErrorResponse, requireView } from '@/lib/server/auth';
 import { SERVER_TEMPLATES } from '@/lib/server/catalog';
@@ -20,7 +21,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       return Response.json({ error: partNumber === 1 ? 'PSD 文件头无效。' : '分片信息无效。' }, { status: 400 });
     }
     const key = `templates/${id}/versions/${versionId}/source.psd`;
-    const upload = env.FILES.resumeMultipartUpload(key, uploadId);
+    const upload = getFiles().resumeMultipartUpload(key, uploadId);
     const uploaded = await upload.uploadPart(partNumber, buffer);
     return Response.json({ partNumber: uploaded.partNumber, etag: uploaded.etag });
   } catch (error) {

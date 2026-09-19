@@ -11,6 +11,9 @@ HOP_HEADER = "X-Ark-Receipt-Proxy-Hop"
 
 
 def origin():
+    from app.core.storage.files import managed
+    if managed('receipt-proofs'):
+        return ''
     value = get_settings().RECEIPT_STORAGE_PROXY_URL.strip().rstrip("/")
     if not value:
         return ""

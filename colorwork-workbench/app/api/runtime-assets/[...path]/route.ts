@@ -1,3 +1,4 @@
+import { getFiles } from '@/lib/server/storage';
 import { env } from 'cloudflare:workers';
 import { authErrorResponse, requireApiUser, requireView } from '@/lib/server/auth';
 import { RUNTIME_ASSET_BY_KEY } from '@/lib/server/catalog';
@@ -27,7 +28,7 @@ export async function GET(_request: Request, context: { params: Promise<{ path: 
     const key = assetKey((await context.params).path);
     const expected = RUNTIME_ASSET_BY_KEY.get(key);
     if (!expected) return Response.json({ error: '素材编号无效。' }, { status: 404, headers: responseHeaders() });
-    const object = await env.FILES.get(`${R2_PREFIX}${key}`);
+    const object = await getFiles().get(`${R2_PREFIX}${key}`);
     if (!object) return Response.json({ error: '工作台素材尚未完成导入。' }, { status: 404, headers: responseHeaders() });
     return new Response(object.body, {
       headers: {
@@ -60,7 +61,7 @@ export async function PUT(request: Request, context: { params: Promise<{ path: s
       return Response.json({ error: '素材内容与已核对版本不一致。' }, { status: 400, headers: responseHeaders() });
     }
     const now = new Date().toISOString();
-    await env.FILES.put(`${R2_PREFIX}${key}`, buffer, { httpMetadata: { contentType: expected.contentType } });
+    await getFiles().put(`${R2_PREFIX}${key}`, buffer, { httpMetadata: { contentType: expected.contentType } });
     await env.DB.prepare(`
       INSERT INTO runtime_assets (asset_key, sha256, size, uploaded_by, updated_at)
       VALUES (?, ?, ?, ?, ?)

@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.storage.cos import StorageError
 from app.pm.models import PmMaterial, PmMaterialVersion, bj_now
 from app.pm.service import audit, ensure_storage_root, to_abs
 
@@ -310,9 +311,11 @@ def upload_version(db: Session, material: PmMaterial, username: str,
 
     ext = Path(filename).suffix.lower()
     rel_path = f"{material.id}/{uuid.uuid4().hex}{ext}"
-    abs_path = to_abs(rel_path)
-    abs_path.parent.mkdir(parents=True, exist_ok=True)
-    abs_path.write_bytes(content)
+    from app.core.storage import files as cloud_files
+    if not cloud_files.put_bytes('pm', rel_path, content, content_type):
+        abs_path = to_abs(rel_path)
+        abs_path.parent.mkdir(parents=True, exist_ok=True)
+        abs_path.write_bytes(content)
 
     for attempt in range(UPLOAD_RETRY):
         next_no = _next_version_no(db, material.id)
@@ -349,9 +352,9 @@ def upload_version(db: Session, material: PmMaterial, username: str,
     )
     try:
         db.commit()
-    except Exception:  # DB 失败必须带走已落盘文件，否则留下无 DB 引用的孤儿
+    except Exception:  # A commit may succeed even when its acknowledgement is lost.
         db.rollback()
-        _remove_file_quietly(rel_path)
+        _remove_unreferenced_file(db, rel_path)
         raise
     db.refresh(version)
     return version
@@ -417,10 +420,24 @@ def inline_disposition_allowed(version: PmMaterialVersion) -> bool:
     return ext in PREVIEWABLE_EXTS
 
 
+def _remove_unreferenced_file(db: Session, rel_path: str) -> None:
+    try:
+        referenced = db.query(PmMaterialVersion.id).filter(PmMaterialVersion.file_path == rel_path).first()
+    except Exception as exc:
+        db.rollback()
+        logger.warning('PM cleanup reference check failed type=%s; preserving file', type(exc).__name__)
+        print('[PM] cleanup reference check failed; preserving file', flush=True)
+        return
+    if referenced is None:
+        _remove_file_quietly(rel_path)
+
+
 def _remove_file_quietly(rel_path: str) -> None:
     try:
-        to_abs(rel_path).unlink(missing_ok=True)
-    except OSError as exc:  # 文件清理失败不该顶成 500（cerebrum 2026-07-15）
+        from app.core.storage import files as cloud_files
+        from app.pm.service import PM_STORAGE_ROOT
+        cloud_files.delete('pm', rel_path, PM_STORAGE_ROOT)
+    except (OSError, StorageError) as exc:  # Preserve the original database error.
         logger.warning("[PM] remove file failed %s: %s", rel_path, exc)
         print(f"[PM] remove file failed {rel_path}: {exc}", flush=True)
 

@@ -173,9 +173,14 @@ def prepare(root, source, python):
 import json, os
 from pathlib import Path
 from app.colorwork.service import _sso_secret, sync_secret
+from app.colorwork.storage_service import secret as storage_secret
+from app.core.storage.files import managed
 p = Path(__import__('sys').argv[1])
 values = {'ARK_SSO_SECRET': _sso_secret(), 'ARK_SYNC_KEY': sync_secret(),
           'ARK_STATUS_ENDPOINT': 'http://127.0.0.1:8001/api/colorwork/inventory-status'}
+if managed('colorwork'):
+    values.update(ARK_STORAGE_ENDPOINT='http://127.0.0.1:8001/api/colorwork/storage',
+                  ARK_STORAGE_SECRET=storage_secret())
 content = ''.join(k+'='+json.dumps(v)+'\\n' for k,v in values.items())
 if p.exists():
     if p.read_text() != content:

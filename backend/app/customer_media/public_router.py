@@ -1,7 +1,6 @@
 """media.leshine.cloud 客户只读门户 API。"""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -166,14 +165,7 @@ def content(
         asset = service.portal_asset(db, account, asset_id)
     except Exception as exc:
         _error(exc)
-    path = storage_for(asset.storage_provider).resolve(asset.object_key)
-    if not path.is_file():
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "素材文件不存在")
+    response = storage_for(asset.storage_provider).response(asset, download=download)
     if download:
         service.log_download(db, asset.id, account.id, client_ip(request))
-    return FileResponse(
-        path,
-        media_type=asset.content_type,
-        filename=asset.file_name if download else None,
-        content_disposition_type="attachment" if download else "inline",
-    )
+    return response

@@ -1,3 +1,4 @@
+import { getFiles } from '@/lib/server/storage';
 import { env } from 'cloudflare:workers';
 import { authErrorResponse, requireView } from '@/lib/server/auth';
 import { PSD_PART_SIZE } from '@/lib/server/uploads';
@@ -22,7 +23,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
     `).bind(new Date().toISOString(), id, user.id).run();
     if (!lock.meta.changes) return Response.json({ error: '这个文件已有 PSD 上传任务。' }, { status: 409 });
     try {
-      const upload = await env.FILES.createMultipartUpload(artifact.psdKey, {
+      const upload = await getFiles().createMultipartUpload(artifact.psdKey, {
         httpMetadata: { contentType: 'image/vnd.adobe.photoshop' },
       });
       return Response.json({ uploadId: upload.uploadId, partSize: PSD_PART_SIZE });

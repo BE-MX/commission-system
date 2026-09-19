@@ -173,6 +173,11 @@ def create_asset(
     elif file_type == "video":
         thumbnail_path = _generate_video_thumbnail(abs_path, rel_path)
 
+    from app.core.storage import transfers
+    transfers.register(db, 'asset', rel_path)
+    if thumbnail_path:
+        transfers.register(db, 'asset', thumbnail_path)
+
     # 创建素材主记录
     asset = Asset(
         file_name=file_name,
@@ -501,6 +506,10 @@ def upload_new_version(
 
     # 文件被替换，画幅重算
     asset.orientation = _compute_orientation(str(ASSET_STORAGE_ROOT / rel_path), asset.file_type)
+    from app.core.storage import transfers
+    transfers.register(db, 'asset', rel_path)
+    if thumbnail_path:
+        transfers.register(db, 'asset', thumbnail_path)
 
     # 计算版本号
     max_ver = (
@@ -568,11 +577,14 @@ def delete_asset(db: Session, asset_id: int) -> bool:
     if not asset:
         return False
 
-    # 删除物理文件
-    _delete_file(asset.storage_path)
-    _delete_file(asset.thumbnail_path)
-    for v in asset.versions:
-        _delete_file(v.storage_path)
+    from app.core.storage import transfers
+    paths = {asset.storage_path, asset.thumbnail_path, *(v.storage_path for v in asset.versions)} - {None, ''}
+    if transfers.managed('asset'):
+        for path in paths:
+            transfers.tombstone(db, 'asset', path)
+    else:
+        for path in paths:
+            _delete_file(path)
 
     # 子表关联行先行清理：5 张表 FK 指向 ark_assets 且无 ON DELETE CASCADE，
     # 直接 db.delete(asset) 会被 FK 拒绝（500）。标签关联含 version_id 引用，
