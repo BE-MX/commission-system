@@ -6,14 +6,14 @@
 // 实测：云端直推 256KB/512KB 过、1MB 挂；走完整公网路径 50KB/100KB 过、300KB 挂。
 // 取交集定 256KB —— 这不是后端限制，是跨境链路的物理上限，宁可保守也别让一次上传抖全站。
 //
-// 内网入口（deploy.bat --base=/pm/，直连 192.168.101.193:8001）不经隧道，
+// 内网入口（deploy.bat --base=/pm/，直连 192.168.100.3:8001）不经隧道，
 // 20MB 实测 3.3 秒，维持后端 PM_MAX_UPLOAD_MB 的 50MB。
 //
 // 隧道这条路的根治方案（文件直传国内 COS / 主站回国内）落地后，这里应一并撤掉。
 
 const IS_LAN_ENTRY = import.meta.env.BASE_URL.startsWith('/pm/')
 
-export const LAN_ENTRY_URL = 'http://192.168.101.193:8001/pm/'
+export const LAN_ENTRY_URL = 'http://192.168.100.3:8001/pm/'
 
 export const MAX_UPLOAD_BYTES = IS_LAN_ENTRY ? 50 * 1024 * 1024 : 256 * 1024
 
