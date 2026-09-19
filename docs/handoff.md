@@ -1,4 +1,15 @@
+## 2026-09-20 COS生产发布预检受阻（已授权，尚未切换）
+
+用户已明确授权办公室、leshine.cloud/leshine.work最新代码发布及COS切换，包含158与159及158配套出库轮询器。office-prod已连通；办公室与北京实际HEAD仍799ebb13，服务健康。已将4d17eda7通过Git bundle传入办公室并在受管候选执行deploy.bat --live-root/--revision/--no-pull/--prepare-only；候选COS依赖、pip check、字体、设计文档渲染及路由导入通过。独立DBA认证预检返回MySQL 1045，已确认凭据格式正确、非应用身份；需要管理员修复办公室.deploy_state/credentials/migration.env中的凭据或当前出口来源授权。未停止服务、未执行DDL、未改生产COS开关/业务引用/Nginx，不把此轮记为发布成功。
+
+等待期间补复制并完整SHA回读21个新增文件，共9,994,942字节：办公室domestic 2/festival 7/receipt-proofs 3，北京domestic 3/expo 6。增量manifest和回执独立保存，不改旧证据。素材数据库仍30,564个唯一引用，无新增/删除，已迁移30,560个原文件size/mtime未变，剩余仍为既定4个缺失；素材目录9,357个非清单文件不能当成新增数据库附件。设计生图2个源文件已不在目录，历史COS回读收据保留，不据此删除云对象或业务引用；后续应按活跃DB引用核验。尚未冻结，正式切换仍须再查最终增量与Colorwork活跃R2数据（本轮仅查导出快照）。
+
+精确缺失例外参数已落地cutover.py，默认不豁免；只允许asset当前实际缺失的引用，不制造ready记录，不豁免尺寸/SHA冲突。15项SQLite回归通过。切换协调还须接入统一入口：独立冻结office/BJ/Colorwork、事务登记、保护env备份及启用、再开流量；普通publish会提前重启，不能直接当作COS冻结事务。Colorwork .dev.vars按prepare时配置生成，同一candidate不可在开关修改后直接复用，须受控生成新配置并验证重启。
+
 ## 2026-09-20 LighthouseCOS 代码准备合并（生产尚未切换）
+
+2026-09-20 合并推送结果：main与origin/main已核对为4d17eda745efca74fc0675ab50f11eb2a025e724；COS主体提交69be6574，集成修复4d17eda7。323后端/部署测试、5项Node/workerd、合并后73项关键回归通过，主站与Colorwork构建通过。主目录17个不重叠文件原字节保留、7份重叠文档已对账恢复；密钥与业务回执未提交。生产COS开关、DB引用及Nginx未切换，保留本任务工作树及受限恢复材料供后续生产切换。
+
 
 用户已授权COS迁移代码合并推送，本次不执行存储生产切换。私有桶leshine-ark-1259007308 / ap-beijing / ark/production；公网北京代理到COS，手机检验局域网持久接收并后台同步。完整覆盖与放行条件见[附件验收](requirements/2026-09-19-attachment-cutover-audit.md)。接口、队列、缓存、各附件域和Colorwork已实现，开关默认关闭；迁移159依赖158，只允许统一部署入口检查并执行，不stamp/downgrade。
 

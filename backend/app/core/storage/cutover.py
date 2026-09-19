@@ -55,12 +55,22 @@ def verified_union(inputs, *, bucket, prefix):
     return {domain: list(rows.values()) for domain, rows in domains.items()}
 
 
-def check_reference_coverage(db, domain, rows):
+def check_reference_coverage(db, domain, rows, *, missing_reference_exceptions=()):
     """Read-only precondition: copying existing files cannot hide missing originals.
 
     Repeat inside the frozen cutover transaction, since an earlier report cannot
     prove that no new references were created during the bulk copy.
+    Explicit asset exceptions acknowledge missing originals only; they cannot
+    excuse existing files, incorrect bytes, or create ready transfer records.
     """
+    if isinstance(missing_reference_exceptions, (str, bytes)):
+        raise ValueError('Missing-reference exceptions must be a collection of exact keys')
+    exception_keys = [validate_key(key) for key in missing_reference_exceptions]
+    if len(exception_keys) != len(set(exception_keys)):
+        raise ValueError('Duplicate missing-reference exception')
+    exceptions = set(exception_keys)
+    if exceptions and domain != 'asset':
+        raise ValueError('Missing-reference exceptions are only supported for asset')
     by_key = {row['relative_path']: row for row in rows}
     references = []
     if domain == 'asset':
@@ -75,14 +85,17 @@ def check_reference_coverage(db, domain, rows):
         references.extend((key, None) for key, in db.query(ShippingInspectionPhoto.file_path))
     else:
         raise ValueError('Unsupported durable reference domain')
+    missing_keys = {key for key, _ in references if key not in by_key}
+    if not exceptions <= missing_keys:
+        raise StorageError('Exception must identify an actually missing database reference')
     missing = 0
     mismatched = 0
     for key, size in references:
         validate_key(key)
         row = by_key.get(key)
-        if row is None:
+        if row is None and key not in exceptions:
             missing += 1
-        elif size and size != row['size']:
+        elif row is not None and size and size != row['size']:
             mismatched += 1
     if missing or mismatched:
         # No customer filenames or keys in service logs.
@@ -90,10 +103,10 @@ def check_reference_coverage(db, domain, rows):
     return len(references)
 
 
-def register_ready(db, domain, rows, source_instance):
+def register_ready(db, domain, rows, source_instance, *, missing_reference_exceptions=()):
     if domain not in {'asset', 'shipping-inspection'}:
         raise ValueError('Domain does not use durable local transfers')
-    check_reference_coverage(db, domain, rows)
+    check_reference_coverage(db, domain, rows, missing_reference_exceptions=missing_reference_exceptions)
     for row in rows:
         key = validate_key(row['relative_path'])
         existing = db.get(StorageTransfer, transfer_id(domain, key))
