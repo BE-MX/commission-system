@@ -1,6 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCosFiles } from '../lib/server/cos-files.ts';
+import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+test('business routes and services cannot bypass the COS storage adapter', () => {
+  const root = fileURLToPath(new URL('../', import.meta.url));
+  for (const directory of ['app', 'lib/server']) {
+    for (const name of readdirSync(path.join(root, directory), { recursive: true })) {
+      if (!/\.tsx?$/.test(name)) continue;
+      const relative = path.join(directory, name).replaceAll('\\', '/');
+      if (relative === 'lib/server/storage.ts') continue;
+      assert.doesNotMatch(readFileSync(path.join(root, relative), 'utf8'), /\benv\.FILES\b/,
+        `${relative} must use getFiles() for business object access`);
+    }
+  }
+});
 
 function fixture() {
   const entries = new Map(); const uploads = new Map(); const calls = [];

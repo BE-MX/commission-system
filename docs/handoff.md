@@ -10,7 +10,7 @@
 
 内网换址已完成且单独合并推送d64a56db：DNSPod及办公室网关192.168.100.1均将lan.leshine.cloud解析到192.168.100.3，ArkOfficeHttps监听及防火墙同步更新；默认DNS下HTTPS /health、/shipping/scan、/pm/均200，证书校验正常。原配置受限备份保留。PM地址提示代码已改且构建通过，前端本次未发布。SSH alias office-prod经本机2223连接lys-acciowork，映射曾反复失联，重建后恢复。
 
-已做多轮隔离测试与独立审查；最近附件回归217passed/1skipped，主站/PM构建及Colorwork真实workerd用例通过。完整规则检查仍有UI行数基线问题，不修改baseline隐藏告警。合并前将基于最新main复验；COS工作树保留恢复材料直至生产切换完成。
+已做多轮隔离测试与独立审查；本次合并回归323passed/1skipped，主站及Colorwork构建、TypeScript检查通过；5项Node/workerd测试通过，修复新主分支候选色块替换绕过COS适配的问题并经独立复核。完整规则检查仍有UI行数基线问题，不修改baseline隐藏告警。已基于最新main复验，159为单head，增量约定无违规；COS工作树保留恢复材料直至生产切换完成。
 
 ## 2026-09-18 保存并同步关联单据（Codex，待部署）
 

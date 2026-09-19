@@ -863,7 +863,7 @@ export async function replaceCandidateColorAsset(
   const assetName = `colors/manual-${crypto.randomUUID().replaceAll('-', '')}.png`;
   const key = sourceObjectKey(row, assetName);
   const sha256 = hex(await crypto.subtle.digest('SHA-256', buffer));
-  await env.FILES.put(key, buffer, {
+  await getFiles().put(key, buffer, {
     httpMetadata: { contentType: 'image/png' },
     customMetadata: { sha256, size: String(buffer.byteLength), replacedColorId: colorId },
   });
@@ -887,7 +887,7 @@ export async function replaceCandidateColorAsset(
     row.templateId,
   ).run();
   if (!updated.meta.changes) {
-    await env.FILES.delete(key).catch(() => undefined);
+    await getFiles().delete(key).catch(() => undefined);
     fail(409, 'SOURCE_VERSION_CONFLICT', '候选版本状态已变化，请刷新后重试。');
   }
   return getSourceVersionDetail(templateId, versionId, actor);
