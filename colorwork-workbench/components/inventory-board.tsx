@@ -37,7 +37,10 @@ async function responseJson<T>(response: Response): Promise<T> {
 
 function canvasBlob(canvas: HTMLCanvasElement) {
   return new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('JPG 生成失败。')), 'image/jpeg', .96);
+    // The source JPG is already used as the visual base. Keep the live export
+    // at the encoder's highest quality so the unavoidable final JPEG pass does
+    // not add avoidable softness to titles, labels, or hair edges.
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('JPG 生成失败。')), 'image/jpeg', 1);
   });
 }
 

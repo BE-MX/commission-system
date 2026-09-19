@@ -42,6 +42,18 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   return imageCache.get(src)!;
 }
 
+async function loadBaseImage(item: TemplateSummary) {
+  if (item.referenceUrl) {
+    try {
+      return await loadImage(item.referenceUrl);
+    } catch {
+      // Older imported templates and isolated QA fixtures may not have a
+      // separately addressable reference JPG yet.
+    }
+  }
+  return loadImage(item.baseUrl);
+}
+
 export function activeColorsFor(
   colors: StockColor[],
   item: TemplateSummary,
@@ -235,6 +247,28 @@ function fitFont(
   return result;
 }
 
+function clearBusinessRegions(
+  context: CanvasRenderingContext2D,
+  item: TemplateSummary,
+) {
+  context.save();
+  for (const card of item.initialCards) {
+    const geometry = card.geometry;
+    for (const bounds of [geometry?.swatch, geometry?.colorLabel, geometry?.sizeLabel, geometry?.hotBadge]) {
+      if (!bounds) continue;
+      const [left, top, right, bottom] = bounds;
+      const padding = 3;
+      context.clearRect(
+        Math.max(0, left - padding),
+        Math.max(0, top - padding),
+        Math.min(item.width, right + padding) - Math.max(0, left - padding),
+        Math.min(item.height, bottom + padding) - Math.max(0, top - padding),
+      );
+    }
+  }
+  context.restore();
+}
+
 export function sizeText(lengths: number[]) {
   return [...new Set(lengths)]
     .sort((a, b) => a - b)
@@ -250,7 +284,7 @@ export async function paintPoster(
 ) {
   const active = activeColorsFor(colors, item, selection);
   const [base, photos, hot] = await Promise.all([
-    loadImage(item.baseUrl),
+    loadBaseImage(item),
     Promise.all(active.map(({ color }) => loadImage(color.image))),
     active.some(({ entry }) => entry.hot)
       ? loadImage(item.hotUrl ?? '/api/runtime-assets/hot.png')
@@ -265,6 +299,7 @@ export async function paintPoster(
   context.fillStyle = '#fff';
   context.fillRect(0, 0, output.width, output.height);
   context.drawImage(base, 0, 0, output.width, output.height);
+  clearBusinessRegions(context, item);
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = 'high';
   context.textAlign = 'center';

@@ -271,6 +271,29 @@ function canvasBlob(value: HTMLCanvasElement) {
   });
 }
 
+function clearReferenceRegions(
+  context: CanvasRenderingContext2D,
+  cards: SourceCard[],
+  widthValue: number,
+  heightValue: number,
+) {
+  context.save();
+  for (const card of cards) {
+    const geometry = card.geometry;
+    for (const bounds of [geometry.swatch, geometry.colorLabel, geometry.sizeLabel, geometry.hotBadge]) {
+      if (!bounds) continue;
+      const [left, top, right, bottom] = bounds;
+      const padding = 3;
+      const x = Math.max(0, left - padding);
+      const y = Math.max(0, top - padding);
+      const endX = Math.min(widthValue, right + padding);
+      const endY = Math.min(heightValue, bottom + padding);
+      context.clearRect(x, y, Math.max(0, endX - x), Math.max(0, endY - y));
+    }
+  }
+  context.restore();
+}
+
 function imageDimensions(file: File) {
   return createImageBitmap(file).then((bitmap) => {
     const dimensions = { width: bitmap.width, height: bitmap.height };
@@ -317,7 +340,7 @@ function outOfBoundsMessage(item: FlatLayer, psd: Psd) {
   const bounds = item.rawBounds ?? item.bounds!;
   const [left, top, right, bottom] = bounds.map((value) => Math.round(value));
   const sides = boundsOverflow(bounds, psd.width, psd.height);
-  return `业务色块“${item.path.join(' › ')}”超出新版 PSD 画布 ${psd.width}×${psd.height}：实际边界为 [${left}, ${top}, ${right}, ${bottom}]，${sides.join('、')}；图层类型为${layerStructureLabel(item)}。请检查该图层是否为真实业务色块；若是，请移回画布内后重新上传。`;
+  return `业务色块“${item.path.join(' › ')}”超出新版 PSD 画布 ${psd.width}×${psd.height}：实际边界为 [${left}, ${top}, ${right}, ${bottom}]，${sides.join('、')}；图层类型为${layerStructureLabel(item)}。系统已按画布内可见区域提取，候选版本仍可继续，请对照新版 JPG 人工确认。`;
 }
 
 function looksLikeSwatchGeometry(item: FlatLayer, psd: Psd) {
@@ -341,6 +364,26 @@ function boundsUnion(values: Bounds[], documentWidth: number, documentHeight: nu
   const right = Math.min(documentWidth, Math.ceil(Math.max(...values.map((value) => value[2]))));
   const bottom = Math.min(documentHeight, Math.ceil(Math.max(...values.map((value) => value[3]))));
   return [left, top, right, bottom];
+}
+
+function hotBoundsForCard(
+  flat: FlatLayer[],
+  hotText: FlatLayer[],
+  swatch: Bounds,
+  documentWidth: number,
+  documentHeight: number,
+) {
+  const marker = hotText.find((item) => item.bounds && (
+    Math.abs(centerX(item.bounds) - swatch[2]) < width(swatch) * 0.55 &&
+    item.bounds[1] >= swatch[1] - height(swatch) * 0.35 &&
+    item.bounds[1] <= swatch[1] + height(swatch) * 0.45
+  ));
+  if (!marker?.bounds) return null;
+  const root = hotPath(marker);
+  const related = root
+    ? flat.filter((item) => !item.hidden && item.layer.canvas && item.bounds && item.path.join('\u001f').startsWith(root))
+    : [marker];
+  return boundsUnion(related.map((item) => item.bounds!), documentWidth, documentHeight);
 }
 
 function hotPath(item: FlatLayer) {
@@ -414,18 +457,21 @@ export async function parseTemplateSource(args: {
     }
   }
   const oldMaps = oldSemanticMap(currentSelection, currentColors, currentTemplate);
-  const canvasChanged = psd.width !== currentTemplate.width || psd.height !== currentTemplate.height;
   for (const item of flat) {
     if (item.hidden || isDecorative(item) || item.layer.children?.length || item.text || !item.bounds) continue;
     const colorCode = normalizedColorCode(item.layer.name || '');
     const rawBounds = item.rawBounds ?? item.bounds;
     const outside = rawBounds[0] < 0 || rawBounds[1] < 0 || rawBounds[2] > psd.width || rawBounds[3] > psd.height;
-    const isExistingColor = Boolean(colorCode && oldMaps.byColor.has(semanticColorKey(colorCode)));
-    if (colorCode && outside && (!canvasChanged || !isExistingColor)) throw new Error(outOfBoundsMessage(item, psd));
+    if (colorCode && outside) {
+      issues.push({
+        code: 'COLOR_LAYER_OUT_OF_BOUNDS_REVIEW',
+        message: outOfBoundsMessage(item, psd),
+        blocking: true,
+      });
+    }
   }
   const swatches = flat.filter((item) => isCandidateSwatch(item, psd));
   if (!swatches.length) throw new Error('没有识别到可用颜色图层。请保留以色号命名的独立色块图层。');
-  if (swatches.length > 100) throw new Error('识别到的颜色图层超过 100 个，无法安全建立母版。');
 
   const sectionsWithTop = parsedSections(flat, currentTemplate);
   const detectedSections = sectionsWithTop.map(({ key, label }) => ({ key, label }));
@@ -578,7 +624,7 @@ export async function parseTemplateSource(args: {
         swatch: bounds,
         colorLabel: colorLabel?.bounds ?? null,
         sizeLabel: sizeLabel?.bounds ?? null,
-        hotBadge: null,
+        hotBadge: hotBoundsForCard(flat, hotText, bounds, psd.width, psd.height),
       },
       matchState,
       matchedEntryId,
@@ -657,9 +703,10 @@ export async function parseTemplateSource(args: {
   const baseCanvas = canvas(psd.width, psd.height);
   const baseContext = baseCanvas.getContext('2d');
   if (!baseContext) throw new Error('当前浏览器无法生成新版底图。');
-  baseContext.clearRect(0, 0, psd.width, psd.height);
-  const fixedLeaves = flat.filter((item) => !item.hidden && item.layer.canvas && !item.layer.children?.length && !excluded.has(item.layer));
-  for (const item of [...fixedLeaves].reverse()) drawLayer(baseContext, item);
+  const reference = await createImageBitmap(jpgFile);
+  baseContext.drawImage(reference, 0, 0, psd.width, psd.height);
+  reference.close();
+  clearReferenceRegions(baseContext, cards, psd.width, psd.height);
   assets.push({ name: 'base.png', blob: await canvasBlob(baseCanvas) });
   const parsedHot = await hotAsset(flat, hotText);
   if (parsedHot) assets.push({ name: 'hot.png', blob: parsedHot });

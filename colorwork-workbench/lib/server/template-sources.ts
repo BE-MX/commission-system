@@ -832,6 +832,67 @@ export async function recordParsedSource(templateId: string, versionId: string, 
   return getSourceVersionDetail(templateId, versionId, actor);
 }
 
+export async function replaceCandidateColorAsset(
+  templateId: string,
+  versionId: string,
+  colorId: string,
+  buffer: ArrayBuffer,
+  actor: AuthorizedUser,
+) {
+  const row = await readSourceVersion(templateId, versionId);
+  if (!row) fail(404, 'SOURCE_VERSION_NOT_FOUND', '没有找到这个源文件版本。');
+  if (!['needs_review', 'ready'].includes(row.status)) {
+    fail(409, 'SOURCE_VERSION_NOT_REVIEWABLE', '只有待确认或可启用的候选版本可以替换新增色块图。');
+  }
+  const config = parseJson<SourceTemplateConfig | null>(row.configJson, null);
+  if (!config) fail(409, 'SOURCE_CONFIG_MISSING', '这个源文件候选还没有可替换的解析配置。');
+  const card = config.template.initialCards.find((item) => item.colorId === colorId);
+  if (!card || card.matchState !== 'new') {
+    fail(422, 'SOURCE_COLOR_NOT_NEW', '只有新版新增颜色可以单独替换色块图。');
+  }
+  const color = config.colors.find((item) => item.id === colorId);
+  if (!color) fail(404, 'SOURCE_COLOR_NOT_FOUND', '没有找到这个候选颜色。');
+  const marker = `/api/template-source-assets/${encodeURIComponent(row.id)}/`;
+  if (!color.image.startsWith(marker) || !decodeURIComponent(color.image.slice(marker.length)).startsWith('colors/')) {
+    fail(422, 'INVALID_COLOR_ASSET', '这个颜色不是当前候选版本的可替换色块素材。');
+  }
+  if (!buffer.byteLength || buffer.byteLength > 16 * 1024 * 1024) {
+    fail(400, 'SOURCE_ASSET_TOO_LARGE', '新增色块图不得超过 16 MB。');
+  }
+
+  const assetName = `colors/manual-${crypto.randomUUID().replaceAll('-', '')}.png`;
+  const key = sourceObjectKey(row, assetName);
+  const sha256 = hex(await crypto.subtle.digest('SHA-256', buffer));
+  await env.FILES.put(key, buffer, {
+    httpMetadata: { contentType: 'image/png' },
+    customMetadata: { sha256, size: String(buffer.byteLength), replacedColorId: colorId },
+  });
+
+  const nextConfig: SourceTemplateConfig = {
+    ...config,
+    colors: config.colors.map((item) => item.id === colorId
+      ? { ...item, image: sourceAssetUrl(row.id, assetName), sourceVersionId: row.id }
+      : item),
+  };
+  const assets = await requireSourceAssets(row, nextConfig);
+  const updated = await env.DB.prepare(`
+    UPDATE template_source_versions
+    SET config_json = ?, asset_manifest_json = ?, updated_at = ?
+    WHERE id = ? AND template_id = ? AND status IN ('needs_review', 'ready')
+  `).bind(
+    JSON.stringify(nextConfig),
+    JSON.stringify(assets),
+    new Date().toISOString(),
+    row.id,
+    row.templateId,
+  ).run();
+  if (!updated.meta.changes) {
+    await env.FILES.delete(key).catch(() => undefined);
+    fail(409, 'SOURCE_VERSION_CONFLICT', '候选版本状态已变化，请刷新后重试。');
+  }
+  return getSourceVersionDetail(templateId, versionId, actor);
+}
+
 function publicSourceVersion(row: StoredSourceVersion, includeConfig = false): SourceVersionSummary {
   const unresolved = parseJson<SourceParseIssue[]>(row.unresolvedJson, []);
   return {

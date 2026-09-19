@@ -31,7 +31,7 @@ export function sourceReviewIssues(
     if (isNewColor) result.push({
       issueId: `new-color-${card.candidateId}`, code: 'NEW_COLOR_SWATCH_REVIEW', candidateId: card.candidateId, blocking: true,
       details: { swatchStatus: '待确认／待补充色块图' },
-      message: `${card.colorCode}：这是新版新增颜色，请确认色块图；如需独立色块图，请补充上传。当前候选色块由新版 PSD 提取，人工确认前不会继承旧颜色库存身份或自动启用。`,
+      message: `${card.colorCode}：这是新版新增颜色，请确认色块图；如需独立色块图，只需补充这一张。当前候选色块由新版 PSD 提取，人工确认前不会继承旧颜色库存身份或自动启用。`,
     });
     const invalid = card.lengths.filter((length) => !allowedLengths.includes(length));
     if (invalid.length) result.push({
