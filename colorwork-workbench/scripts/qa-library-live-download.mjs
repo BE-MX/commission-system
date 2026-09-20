@@ -166,6 +166,7 @@ test('preview-only board uses shared painter and validates before and after down
   assert.equal(calls[2].path, calls[0].path);
   assert.equal(calls[1].paint[1].id, item.id);
   assert.equal(calls[1].paint[3][card.entryId][card.lengths[0]], 'restocking');
+  assert.equal(calls[1].paint[4], true);
   assert.equal(calls[3], 'download');
   assert.ok(anchor.download.endsWith('.jpg'));
 });

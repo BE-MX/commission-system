@@ -16,7 +16,7 @@ export type InventoryOverlaySlot = {
 };
 
 export type InventoryOverlayBadge = {
-  status: Exclude<InventoryStatus, 'normal'>;
+  status: keyof typeof STATUS_IMAGE_LABELS;
   text: string;
   x: number;
   y: number;
@@ -31,8 +31,7 @@ export type InventoryOverlayPlan = {
 };
 
 const LENGTH_ORDER: InventoryLength[] = [16, 18, 20, 22, 24];
-const STATUS_ORDER: Array<Exclude<InventoryStatus, 'normal'>> = [
-  'out_of_stock',
+const STATUS_ORDER: Array<keyof typeof STATUS_IMAGE_LABELS> = [
   'low_stock',
   'restocking',
 ];
@@ -207,13 +206,7 @@ export function drawInventoryOverlayPlan(
       badge.height,
       radius,
     );
-    if (badge.status === 'out_of_stock') {
-      context.fillStyle = 'rgba(10, 30, 84, 0.94)';
-      context.fill();
-      context.strokeStyle = 'rgba(249, 240, 238, 0.95)';
-      context.stroke();
-      context.fillStyle = '#ffffff';
-    } else if (badge.status === 'low_stock') {
+    if (badge.status === 'low_stock') {
       context.fillStyle = 'rgba(255, 243, 205, 0.96)';
       context.fill();
       context.strokeStyle = '#d6a64b';

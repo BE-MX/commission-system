@@ -45,13 +45,13 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 async function loadBaseImage(item: TemplateSummary) {
   if (item.referenceUrl) {
     try {
-      return await loadImage(item.referenceUrl);
+      return { image: await loadImage(item.referenceUrl), fromReference: true };
     } catch {
       // Older imported templates and isolated QA fixtures may not have a
       // separately addressable reference JPG yet.
     }
   }
-  return loadImage(item.baseUrl);
+  return { image: await loadImage(item.baseUrl), fromReference: false };
 }
 
 export function activeColorsFor(
@@ -96,12 +96,33 @@ function slotFromGeometry(
 
 function exactSourceLayout(item: TemplateSummary, active: ActiveColor[]) {
   if (active.length !== item.initialCards.length) return null;
+  return sourceLayoutForActive(item, active);
+}
+
+function sourceLayoutForActive(item: TemplateSummary, active: ActiveColor[]) {
   const sourceByEntry = new Map(
     item.initialCards.map((card) => [card.entryId, card]),
   );
   const cards = active.map(({ entry }) => sourceByEntry.get(entry.entryId));
   if (cards.some((card) => !card?.geometry?.swatch)) return null;
   return cards.map((card) => slotFromGeometry(card!));
+}
+
+function sameReferenceComposition(item: TemplateSummary, active: ActiveColor[]) {
+  if (!item.referenceUrl || active.length !== item.initialCards.length) return false;
+  const sourceCards = [...item.initialCards].sort(
+    (left, right) => left.order - right.order || left.entryId.localeCompare(right.entryId),
+  );
+  return active.every(({ entry }, index) => {
+    const card = sourceCards[index];
+    if (!card || card.entryId !== entry.entryId || card.colorId !== entry.colorId) return false;
+    if (card.hot !== entry.hot || card.section !== entry.section || card.order !== entry.order) return false;
+    const cardLengths = [...card.lengths].sort((left, right) => left - right);
+    const entryLengths = [...entry.lengths].sort((left, right) => left - right);
+    return cardLengths.length === entryLengths.length && cardLengths.every(
+      (length, lengthIndex) => length === entryLengths[lengthIndex],
+    );
+  });
 }
 
 function layoutWithin(
@@ -252,13 +273,17 @@ function clearBusinessRegions(
   item: TemplateSummary,
 ) {
   context.save();
+  // clearRect leaves transparent pixels. Those pixels become black when the
+  // canvas is exported as JPG, which is especially visible under labels.
+  // The repaint path uses white business panels instead.
+  context.fillStyle = '#ffffff';
   for (const card of item.initialCards) {
     const geometry = card.geometry;
     for (const bounds of [geometry?.swatch, geometry?.colorLabel, geometry?.sizeLabel, geometry?.hotBadge]) {
       if (!bounds) continue;
       const [left, top, right, bottom] = bounds;
       const padding = 3;
-      context.clearRect(
+      context.fillRect(
         Math.max(0, left - padding),
         Math.max(0, top - padding),
         Math.min(item.width, right + padding) - Math.max(0, left - padding),
@@ -281,12 +306,18 @@ export async function paintPoster(
   item: TemplateSummary,
   selection: Selection,
   inventory?: InventoryStatusMap,
+  preserveSourceComposition = false,
 ) {
   const active = activeColorsFor(colors, item, selection);
-  const [base, photos, hot] = await Promise.all([
-    loadBaseImage(item),
-    Promise.all(active.map(({ color }) => loadImage(color.image))),
-    active.some(({ entry }) => entry.hot)
+  const baseResult = await loadBaseImage(item);
+  const preserveReferenceComposition = baseResult.fromReference && (
+    preserveSourceComposition || sameReferenceComposition(item, active)
+  );
+  const [photos, hot] = await Promise.all([
+    preserveReferenceComposition
+      ? Promise.resolve([] as HTMLImageElement[])
+      : Promise.all(active.map(({ color }) => loadImage(color.image))),
+    !preserveReferenceComposition && active.some(({ entry }) => entry.hot)
       ? loadImage(item.hotUrl ?? '/api/runtime-assets/hot.png')
       : Promise.resolve(null),
   ]);
@@ -298,35 +329,39 @@ export async function paintPoster(
 
   context.fillStyle = '#fff';
   context.fillRect(0, 0, output.width, output.height);
-  context.drawImage(base, 0, 0, output.width, output.height);
-  clearBusinessRegions(context, item);
+  context.drawImage(baseResult.image, 0, 0, output.width, output.height);
+  if (!preserveReferenceComposition) clearBusinessRegions(context, item);
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = 'high';
   context.textAlign = 'center';
   context.textBaseline = 'middle';
 
-  const slots = layoutFor(item, active);
+  const slots = preserveReferenceComposition
+    ? sourceLayoutForActive(item, active) ?? layoutFor(item, active)
+    : layoutFor(item, active);
   if (slots.length !== active.length)
     throw new Error('当前颜色数量无法排入这个模板。');
   slots.forEach((slot, index) => {
     const { color, entry } = active[index];
-    context.drawImage(photos[index], slot.x, slot.y, slot.size, slot.size);
-    context.strokeStyle = '#e2bd30';
-    context.lineWidth = 1;
-    context.strokeRect(
-      slot.x - 0.5,
-      slot.y - 0.5,
-      slot.size + 1,
-      slot.size + 1,
-    );
-    context.fillStyle = '#050505';
-    fitFont(context, color.code, slot.codeSize, slot.size + 8);
-    context.fillText(color.code, slot.x + slot.size / 2, slot.codeY);
-    const lengths = sizeText(entry.lengths);
-    fitFont(context, lengths, slot.lengthSize, slot.size + 12);
-    context.fillText(lengths, slot.x + slot.size / 2, slot.lengthY);
+    if (!preserveReferenceComposition) {
+      context.drawImage(photos[index], slot.x, slot.y, slot.size, slot.size);
+      context.strokeStyle = '#e2bd30';
+      context.lineWidth = 1;
+      context.strokeRect(
+        slot.x - 0.5,
+        slot.y - 0.5,
+        slot.size + 1,
+        slot.size + 1,
+      );
+      context.fillStyle = '#050505';
+      fitFont(context, color.code, slot.codeSize, slot.size + 8);
+      context.fillText(color.code, slot.x + slot.size / 2, slot.codeY);
+      const lengths = sizeText(entry.lengths);
+      fitFont(context, lengths, slot.lengthSize, slot.size + 12);
+      context.fillText(lengths, slot.x + slot.size / 2, slot.lengthY);
+    }
     drawInventoryOverlay(context, slot, entry, inventory);
-    if (entry.hot && hot) {
+    if (!preserveReferenceComposition && entry.hot && hot) {
       const width = slot.size >= 240 ? 65 : 47;
       context.drawImage(
         hot,
