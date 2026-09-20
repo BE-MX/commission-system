@@ -518,6 +518,7 @@ def seed_role_permissions(db: Session):
         ("shipping_station:write", "shipping_station", "write", "共用手机发货质检（选择操作人）"),
         ("shipping_inspection:read",  "shipping_inspection", "read",  "查看出库单与验货单"),
         ("shipping_inspection:write", "shipping_inspection", "write", "打印出库单 / 维护验货照片"),
+        ("shipping_inspection:delete", "shipping_inspection", "delete", "删除小满待出库单"),
         ("shipping_inspection:admin", "shipping_inspection", "admin", "发货检验模块管理"),
         # read_all 仅扩展出库单数据范围（默认本人 OKKI 客户）；admin 角色由通用补齐逻辑自动授予
         ("shipping_inspection:read_all", "shipping_inspection", "read_all", "查看全部出库单（数据范围）"),

@@ -62,3 +62,36 @@ def test_matching_certificate_preflight(tmp_path):
 def test_config_rejects_newline_in_paths(tmp_path):
     with pytest.raises(ValueError):
         module.configuration('192.168.101.193', tmp_path / 'bad\npath')
+
+
+@pytest.mark.parametrize('fail', [False, True])
+def test_readdress_preserves_backup_and_rolls_back_on_failed_health(tmp_path, monkeypatch, fail):
+    import json
+    record = {'domain':module.DOMAIN, 'version':module.VERSION, 'address':'192.168.101.193'}
+    old = module.configuration(record['address'], tmp_path)
+    (tmp_path/'Caddyfile').write_text(old, encoding='utf-8')
+    (tmp_path/'installed.json').write_text(json.dumps(record), encoding='utf-8')
+    (tmp_path/'Caddyfile.next').write_text(module.configuration('192.168.100.3',tmp_path), encoding='utf-8')
+    commands=[]
+    monkeypatch.setattr(module, 'run', lambda *args: commands.append(args) or 'SERVICE_RUNNING')
+    firewall=[]
+    monkeypatch.setattr(module, 'powershell', lambda command: firewall.append(command))
+    monkeypatch.setattr(module.time, 'sleep', lambda seconds: None)
+    def verify(address, directory):
+        assert address == '192.168.100.3'
+        assert 'bind 192.168.100.3' in (directory/'Caddyfile').read_text()
+        if fail:
+            raise RuntimeError('unhealthy')
+    monkeypatch.setattr(module, 'verify', verify)
+    if fail:
+        with pytest.raises(RuntimeError,match='unhealthy'):
+            module.readdress('nssm',tmp_path,record,'192.168.100.3','expiry')
+        assert (tmp_path/'Caddyfile').read_text() == old
+    else:
+        module.readdress('nssm',tmp_path,record,'192.168.100.3','expiry')
+    expected = record['address'] if fail else '192.168.100.3'
+    assert json.loads((tmp_path/'installed.json').read_text())['address'] == expected
+    assert firewall[-1].endswith('-LocalAddress '+expected)
+    assert all(args[-1] == module.SERVICE for args in commands)
+    backups=list(tmp_path.glob('readdress-backup-*'))
+    assert len(backups)==1 and (backups[0]/'Caddyfile').read_text()==old

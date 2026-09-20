@@ -271,7 +271,7 @@ def serve_file(version_id: int, token: str = Query(""), expires: int = Query(0),
     if inline and ext in (".md", ".markdown", ".txt", ".log", ".csv", ".json"):
         media_type = "text/plain; charset=utf-8"  # MD 由前端 sanitize 后渲染，不内联 HTML
     return FileResponse(
-        str(abs_path),
+        abs_path,
         filename=material_service.download_name(material.name, version),
         media_type=media_type,
         content_disposition_type="inline" if inline else "attachment",

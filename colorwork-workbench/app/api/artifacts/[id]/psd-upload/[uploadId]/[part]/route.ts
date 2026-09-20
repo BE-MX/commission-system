@@ -1,3 +1,4 @@
+import { getFiles } from '@/lib/server/storage';
 import { env } from 'cloudflare:workers';
 import { authErrorResponse, requireView } from '@/lib/server/auth';
 import { isPsd, PSD_MAX_PARTS, PSD_PART_SIZE } from '@/lib/server/uploads';
@@ -25,7 +26,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     if (!buffer.byteLength || buffer.byteLength > PSD_PART_SIZE || (partNumber === 1 && !isPsd(new Uint8Array(buffer)))) {
       return Response.json({ error: partNumber === 1 ? 'PSD 文件头无效。' : '分片信息无效。' }, { status: 400 });
     }
-    const upload = env.FILES.resumeMultipartUpload(artifact.psdKey, uploadId);
+    const upload = getFiles().resumeMultipartUpload(artifact.psdKey, uploadId);
     const uploaded = await upload.uploadPart(partNumber, buffer);
     return Response.json({ partNumber: uploaded.partNumber, etag: uploaded.etag });
   } catch (error) {

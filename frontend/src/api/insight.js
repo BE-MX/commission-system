@@ -129,6 +129,10 @@ export function getCaseDetail(id) {
   return insightApi.get(`/cases/${id}`, { showLoading: false })
 }
 
+export function getCaseImage(id) {
+  return insightApi.get(`/cases/${id}/image`, { responseType: 'blob', showLoading: false })
+}
+
 export function getCaseStatus(id) {
   return insightApi.get(`/cases/${id}/status`, { showLoading: false })
 }

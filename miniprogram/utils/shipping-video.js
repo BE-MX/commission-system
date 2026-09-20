@@ -7,44 +7,73 @@ module.exports = {
   onWholeAlbumVideoTap: function () { this._chooseVideo(null, 'album') },
   onItemAlbumVideoTap: function (e) { this._chooseVideo(e.currentTarget.dataset.itemId, 'album') },
   _chooseVideo: function (itemId, sourceType) {
-    if (this.data.submitted || this.data.state !== 'ready' || this.data.uploading) return
+    if (this.data.submitted || this.data.state !== 'ready' || this.data.uploading || this.data.pendingMedia) return
     if (typeof wx.compressVideo !== 'function') { this._error('微信版本过旧', '请更新微信后重试'); return }
     var self = this
     var batch = this._imageBatch
     this.setData({ uploading: true })
-    function unlock() { if (batch === self._imageBatch) self.setData({ uploading: false }); wx.hideLoading() }
     wx.chooseMedia({
       count: 1, mediaType: ['video'], sourceType: [sourceType || 'camera'], camera: 'back',
       success: function (res) {
         if (batch !== self._imageBatch) return
+        self.setData({ uploading: false })
         var file = res.tempFiles && res.tempFiles[0]
-        if (!file) { unlock(); return }
-        wx.showLoading({ title: '压缩视频中…', mask: true })
-        wx.compressVideo({
-          src: file.tempFilePath, quality: 'medium',
-          success: function (compressed) {
-            if (batch !== self._imageBatch) return
-            wx.getFileInfo({
-              filePath: compressed.tempFilePath,
-              success: function (info) {
-                if (batch !== self._imageBatch) return
-                unlock()
-                if (!info.size || info.size > 100 * 1024 * 1024) {
-                  self._error('视频过大', '压缩后视频仍超过100MB或内容为空，请分段拍摄')
-                  return
-                }
-                self._upload(compressed.tempFilePath, itemId, 'video')
-              },
-              fail: function () { if (batch !== self._imageBatch) return; unlock(); self._error('读取视频失败', '请重新拍摄或选择视频') }
-            })
-          },
-          fail: function () { if (batch !== self._imageBatch) return; unlock(); self._error('视频压缩失败', '请重新拍摄或选择视频') }
-        })
+        if (!file) return
+        self._pendingVideo = { filePath: file.tempFilePath, itemId: itemId }
+        self._compressPendingVideo()
       },
       fail: function (err) {
         if (batch !== self._imageBatch) return
-        unlock()
+        self.setData({ uploading: false })
         if ((err.errMsg || '').indexOf('cancel') < 0) self._error('无法选择视频', '请检查相机和相册权限后重试')
+      }
+    })
+  },
+  _mediaFailure: function (title, message) {
+    wx.hideLoading()
+    this.setData({ uploading: false, pendingMedia: true, mediaStage: '', mediaError: message })
+    this._error(title, message)
+  },
+  _compressPendingVideo: function () {
+    var self = this, pending = this._pendingVideo, batch = this._imageBatch
+    if (!pending || this.data.uploading || this.data.submitted || this.data.state !== 'ready') return
+    this.setData({ uploading: true, pendingMedia: false, mediaError: '', mediaStage: '压缩视频中，请保持页面在前台', mediaItemId: pending.itemId == null ? null : pending.itemId })
+    wx.compressVideo({ src: pending.filePath, quality: 'medium',
+      success: function (compressed) {
+        if (batch !== self._imageBatch) return
+        wx.getFileInfo({ filePath: compressed.tempFilePath,
+          success: function (info) {
+            if (batch !== self._imageBatch) return
+            if (!info.size || info.size > 100 * 1024 * 1024) {
+              self._mediaFailure('视频过大', '压缩后视频仍超过100MB或内容为空，请放弃后分段拍摄'); return
+            }
+            self._pendingVideo = null
+            self.setData({ uploading: false })
+            self._upload(compressed.tempFilePath, pending.itemId, 'video')
+          },
+          fail: function () { if (batch === self._imageBatch) self._mediaFailure('读取视频失败', '请重试压缩或放弃此视频') }
+        })
+      },
+      fail: function () { if (batch === self._imageBatch) self._mediaFailure('视频压缩失败', '视频已保留，请重试压缩并上传') }
+    })
+  },
+  onRetryMedia: function () {
+    if (this.data.uploading || this.data.submitted || this.data.state !== 'ready') return
+    this.setData({ pendingMedia: false, errorVisible: false })
+    if (this._pendingVideo) this._compressPendingVideo()
+    else if (this._pendingUpload) {
+      var p = this._pendingUpload
+      this._upload(p.filePath, p.itemId, p.mediaType, p)
+    }
+  },
+  onDiscardMedia: function () {
+    if (this.data.uploading || !this.data.pendingMedia) return
+    var self = this, batch = this._imageBatch
+    wx.showModal({ title: '放弃待处理文件', content: '尚未上传的文件将不再保留。上传结果未确认时，请刷新核对已上传内容。',
+      success: function (res) {
+        if (!res.confirm || batch !== self._imageBatch || self.data.uploading) return
+        self._pendingVideo = null; self._pendingUpload = null
+        self.setData({ pendingMedia: false, mediaError: '', mediaStage: '', errorVisible: false })
       }
     })
   },
@@ -90,14 +119,14 @@ module.exports = {
     })
   },
   onDeleteVideo: function (e) {
-    if (this.data.submitted || this.data.state !== 'ready' || this.data.uploading) return
+    if (this.data.submitted || this.data.state !== 'ready' || this.data.uploading || this.data.pendingMedia) return
     var id = e.currentTarget.dataset.videoId
     var self = this
     var version = this.data.editVersion
     var batch = this._imageBatch
     wx.showModal({ title: '删除视频', content: '确定删除这段视频吗？',
       success: function (res) {
-        if (!res.confirm || batch !== self._imageBatch || self.data.submitted || self.data.uploading) return
+        if (!res.confirm || batch !== self._imageBatch || self.data.submitted || self.data.uploading || self.data.pendingMedia) return
         var app = getApp()
         self.setData({ uploading: true })
         wx.request({

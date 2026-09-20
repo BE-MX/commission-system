@@ -25,6 +25,7 @@ from uuid import uuid4
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.core.config import get_settings
+from app.core.storage import files as cloud_files
 
 
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
@@ -311,7 +312,8 @@ def validate_storage_boundary(relative_path: str | None = None) -> Path:
 def resolve_private_path(relative_path: str) -> Path:
     """Resolve a path inside the trusted, non-reparse private storage boundary."""
     with _STORAGE_LOCK:
-        return _validate_storage_boundary_unlocked(relative_path)
+        target = _validate_storage_boundary_unlocked(relative_path)
+        return cloud_files.read_path('design-image', relative_path, _storage_root()) if cloud_files.managed('design-image') else target
 
 
 def _cleanup_best_effort(path: Path, context: str) -> None:
@@ -369,12 +371,26 @@ def save_private_image(
         target = _validate_storage_boundary_unlocked(relative)
         thumbnail_target = _validate_storage_boundary_unlocked(thumbnail_relative)
 
-        _write_atomic(target, image.content)
+        cloud = cloud_files.put_bytes('design-image', relative, image.content, image.mime_type)
+        if not cloud:
+            _write_atomic(target, image.content)
         try:
             thumbnail = _thumbnail_content(image, fmt)
-            _write_atomic(thumbnail_target, thumbnail)
+            if cloud:
+                cloud_files.put_bytes('design-image', thumbnail_relative, thumbnail, image.mime_type)
+            else:
+                _write_atomic(thumbnail_target, thumbnail)
         except Exception:
-            _cleanup_best_effort(target, "original rollback")
+            if cloud:
+                # No DB reference has been returned yet; preserve original on
+                # uncertain cleanup so a secondary failure cannot hide the cause.
+                try:
+                    cloud_files.delete('design-image', relative, _storage_root())
+                except Exception as exc:
+                    logger.warning('Image cloud rollback failed type=%s', type(exc).__name__)
+                    print('[design-image] cloud rollback failed; original retained', flush=True)
+            else:
+                _cleanup_best_effort(target, "original rollback")
             raise
 
     return StoredImage(
@@ -391,8 +407,29 @@ def save_private_image(
 def delete_private_file(relative_path: str) -> None:
     with _STORAGE_LOCK:
         target = _validate_storage_boundary_unlocked(relative_path)
+        if cloud_files.managed('design-image'):
+            cloud_files.delete('design-image', relative_path, _storage_root())
+            return
         if target.is_file():
             target.unlink()
+
+
+def cloud_reference_exists(db, relative_path: str) -> bool:
+    """Uncertain commits may not authorize deleting an already referenced image."""
+    from app.design_image.models import DesignImageAsset, DesignImageLibraryAsset
+    from app.customer_image.models import CustomerImageAsset, CustomerImageProductAsset
+    if not cloud_files.managed('design-image'):
+        return False
+    try:
+        for model in (DesignImageAsset, DesignImageLibraryAsset, CustomerImageAsset, CustomerImageProductAsset):
+            if db.query(model.id).filter(model.storage_path == relative_path).first() is not None:
+                return True
+    except Exception as exc:
+        db.rollback()
+        logger.warning('Image reference check failed type=%s; preserving original', type(exc).__name__)
+        print('[design-image] reference check failed; preserving original', flush=True)
+        return True
+    return False
 
 
 def _normalize_host(host: str) -> str:

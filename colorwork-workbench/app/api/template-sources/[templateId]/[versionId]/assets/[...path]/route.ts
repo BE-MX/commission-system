@@ -1,3 +1,4 @@
+import { getFiles } from '@/lib/server/storage';
 import { env } from 'cloudflare:workers';
 import { authErrorResponse, requireView } from '@/lib/server/auth';
 import {
@@ -36,7 +37,7 @@ export async function PUT(
     }
     const key = sourceObjectKey(row, assetName);
     const sha256 = hex(await crypto.subtle.digest('SHA-256', buffer));
-    const existing = await env.FILES.head(key);
+    const existing = await getFiles().head(key);
     if (existing) {
       if (existing.size === buffer.byteLength && existing.customMetadata?.sha256 === sha256) {
         return Response.json({ ok: true, assetName, size: buffer.byteLength, sha256, idempotent: true });
@@ -46,13 +47,13 @@ export async function PUT(
         code: 'SOURCE_ASSET_IMMUTABLE',
       }, { status: 409 });
     }
-    const stored = await env.FILES.put(key, buffer, {
+    const stored = await getFiles().put(key, buffer, {
       onlyIf: { etagDoesNotMatch: '*' },
       httpMetadata: { contentType: 'image/png' },
       customMetadata: { sha256, size: String(buffer.byteLength) },
     });
     if (!stored) {
-      const concurrent = await env.FILES.head(key);
+      const concurrent = await getFiles().head(key);
       if (concurrent?.size === buffer.byteLength && concurrent.customMetadata?.sha256 === sha256) {
         return Response.json({ ok: true, assetName, size: buffer.byteLength, sha256, idempotent: true });
       }

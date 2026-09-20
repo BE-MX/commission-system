@@ -1,3 +1,4 @@
+import { getFiles } from '@/lib/server/storage';
 import { env } from 'cloudflare:workers';
 import { authErrorResponse, requireView } from '@/lib/server/auth';
 
@@ -78,14 +79,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       if (!failed.meta.changes) {
         return Response.json({ error: '这个文件已被其他操作更新，请刷新。' }, { status: 409 });
       }
-      await env.FILES.delete([artifact.jpgKey, artifact.psdKey]);
+      await getFiles().delete([artifact.jpgKey, artifact.psdKey]);
       return Response.json({ artifact: { id, status: 'failed' } });
     }
     if (input.jpgOnly === true) {
       if (artifact.status !== 'uploading') {
         return Response.json({ error: '这个文件已经结束上传。' }, { status: 409 });
       }
-      const jpg = await env.FILES.head(artifact.jpgKey);
+      const jpg = await getFiles().head(artifact.jpgKey);
       if (!jpg) return Response.json({ error: 'JPG 尚未上传完成。' }, { status: 409 });
       const completed = await env.DB.prepare(`
         UPDATE artifacts SET status = 'ready', jpg_size = ?, psd_size = 0, updated_at = ?
@@ -97,7 +98,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     if (artifact.status !== 'psd_uploading') {
       return Response.json({ error: '这个文件已经结束上传。' }, { status: 409 });
     }
-    const [jpg, psd] = await Promise.all([env.FILES.head(artifact.jpgKey), env.FILES.head(artifact.psdKey)]);
+    const [jpg, psd] = await Promise.all([getFiles().head(artifact.jpgKey), getFiles().head(artifact.psdKey)]);
     if (!jpg || !psd) return Response.json({ error: 'JPG 或 PSD 尚未上传完成。' }, { status: 409 });
     const completed = await env.DB.prepare(`
       UPDATE artifacts SET status = 'ready', jpg_size = ?, psd_size = ?, updated_at = ?

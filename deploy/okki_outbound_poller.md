@@ -1,7 +1,7 @@
 # OKKI 出库单轮询器（新加坡）
 
 发票首推成功 → `ark_okki_outbound_tasks` → `okki_outbound_poller.js` →
-受管 `okki_outbound_creator.mjs` → OKKI 待出库单（status=1，不扣库存）。出库单号 serial_id 默认取对应方舟发票 invoice_no，缺少发票号则阻止创建，不让 OKKI 自动生成另一套编号。
+受管 `okki_outbound_creator.mjs` → OKKI 待出库单（status=1，不扣库存）。出库单号 serial_id 默认取对应方舟发票 invoice_no，缺少发票号则阻止创建。提交前按 serial_id 全局实时查重（不受订单创建日期窗口限制）；其他订单已占用时改用 `invoice_no [order_id]` 并再次查重，两者均被占用则阻止提交。只有该精确查询返回 `HTTP 200 / code 404 / Not Found Resource` 才证明单号空闲，其他错误不得当成不存在。
 出库备注 `remark` 取同一任务关联方舟发票的 `remark`，保留换行与空格，空值写空串；不取 OKKI 订单备注。创建后回读备注，不一致进入 `uncertain` 待人工核对，不重复提交。已有单据仍跳过，不自动补填或覆盖备注。
 原独立 `create-outbound.js` 保留，轮询器不再调用它。
 
@@ -76,3 +76,13 @@ journalctl -u ark-okki-outbound-poller.service -n 80 --no-pager
 因此 platforms.json 已登记该服务，并把 migration_writers_verified 置 false：含待执行 DDL 的发布
 在迁移前阻断；无 DDL 的普通发布不受此标记影响。解除条件是补齐“停 timer → 排空 service →
 确认无写入 → 迁移 → 恢复原调度状态”的支持并验证，不能仅因服务已登记就改回 true。
+
+## 2026-09-20 重名单号混单修复
+
+实证：`outbound/push` 即使不传 outbound_invoice_id，同 serial_id 仍可能编辑旧单并追加明细。
+创建前的订单关联检查不能代替全局单号检查。已有关联混入其他订单时进入 uncertain，不能当 existing 成功跳过。
+创建后按出库 ID、单号、客户、待出库状态以及全部明细的订单/订单行/产品/SKU/数量/单价逐项回读；任何额外行、缺行或差异进入 uncertain，不写成功 ledger，不自动重复提交。
+外部人工在查重与提交之间并发使用同一单号仍存在竞态；回读负责发现并隔离，不能声称上游提供了原子新建保护。
+验证：`node --test deploy/tests/test_okki_outbound.mjs deploy/tests/test_okki_outbound_isolation.mjs`。
+
+提交意图保存实际 payload；异常恢复发现已有关联单时，有本服务意图的单据须按最后一次提交快照重新核验，错误数量等不能在重试时绕过检查。旧意图缺快照时按当前订单保守核验，人工部分单无意图则继续防重跳过。

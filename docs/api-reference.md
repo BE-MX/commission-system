@@ -1,5 +1,17 @@
 # 莱莎方舟 API 参考
 
+## 云存储接口行为（本地实现，尚未切换生产）
+
+原上传、下载业务端点和鉴权保持原契约。发货检验媒体列表新增 `storage_state`：pending/running表示文件已在所属服务器持久接收，ready表示已同步云端；跨实例访问尚未同步文件返回503与Retry-After，删除对象返回404。局域网上传成功不代表云同步完成，工作台分别显示两种状态。
+
+客户素材授权后可303跳转到短时签名下载URL；链接不持久化进数据库或日志。公开命名空间 `/uploads/{avatars,card,tag_images,expo,festival,hair,video}/...` 在对应域启用后由应用读取私有桶；Expo人物图片还验证有效业务引用和删除墓碑。此处的hair/video网关实现不代表站点Nginx已切换。
+
+洞见案例截图上传保持 `POST /api/insight/cases/upload`，JPG/PNG/WebP上限5MiB并检查真实格式。新增 `GET /api/insight/cases/{case_id}/image`，使用案例查看权限，返回带图片文件名的私有响应，已归档/无截图404。`/uploads/insight/...`仅为数据库稳定引用，不开放公共静态读取；OCR经统一AI facade发送真实图片内容。
+
+展会场景上传返回带不可变版本key的新URL。新图片上传失败保留旧图；首次并发创建引用冲突返回409。素材批量ZIP总原件大小上限256MiB，缓存繁忙时不删除仍被响应使用的文件。
+
+色块工作台保留原用户API和D1引用。内部 `/api/colorwork/storage/object`（GET/PUT/DELETE）与 `/metadata`（GET）仅允许回环来源及专用机器密钥；公网Nginx显式404，不接受用户JWT代替机器认证。PUT按声明和实际字节双重限制256MiB，条件创建冲突412，别名竞争409；Range读取返回原对象元数据。分片仍在R2暂存，完成后进入COS并保存持久回执，失败可重试；COS密钥不会进入workerd或浏览器。
+
 ## 回款管理（2026-09-17，本地实现，迁移 156 后可用）
 
 前缀 `/api/receipts`，登录认证、标准 `ok()` 信封。普通用户仅可访问 `Invoice.sales_user_id` 等于当前用户的订单回款；创建人/代录授权不扩大回款范围。`receipt:read_all` 可看全部（数据范围权限，仍需 `receipt:read/write/admin` 页面或操作权限）；`invoice:read_all` 不扩大回款范围。列表、详情、订单选择、余额、已绑定回款凭证和写操作统一校验；已绑定回款凭证必须具有回款动作权限，未绑定回款的订单截图仍按发票编辑权限访问。详见[实现说明](requirements/2026-09-17-receipt-management-implementation.md)。
@@ -1080,6 +1092,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/outbound-records?keyword=&date_from=&date_to=&page=&page_size=` | 正式出库单与方舟待出库记录的统一分页列表，含出库状态、缺货详情、检验状态与照片数；按业务员归属过滤（见下） |
+| DELETE | `/outbound-records/{record_id}` | 删除小满待出库单；需 `shipping_inspection:delete` 且满足出库单数据范围。使用镜像记录 ID 定位真实 outbound_invoice_id；小满确认不存在后返回 `{outbound_record_id, deleted:true}`。锁定、已出库、自动任务执行中、关联同步中或结果待核对返回409；无权限403、不可见404。 |
 | GET | `/outbound-records/{record_id}/print-data` | 出库单打印数据：单头+明细+`qr_code_base64`（二维码内容 `ARK-I:{record_id}:{hmac8}`）；同样按归属过滤，不可见返回 404 |
 | GET | `/outbound-records/{record_id}/word` | 下载可编辑 DOCX，保持当前 A4 版式、列宽、二维码及灰色斑马纹；数据范围同 print-data；二进制响应 |
 | GET | `/records?keyword=&date_from=&date_to=&page=&page_size=` | 已提交验货单分页列表（按提交时间过滤） |
@@ -1087,7 +1100,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | POST | `/records/{id}/recall` | 请求必填 edit_version；submitted → draft，版本加一，保留备注与全部媒体，记录撤回人/时间；过期状态 409 |
 | GET | `/images/{rel_path:path}` | 鉴权读图（FileResponse，私有存储不挂静态目录） |
 | POST | `/api/mini/shipping-inspection/scan` | 验签二维码原文 → 单头+明细+photos/videos+状态/edit_version/已存备注；前缀/签名错 400 |
-| POST | `/api/mini/shipping-inspection/photos` | multipart 上传一张照片（file + outbound_record_id + item_id? + edit_version）；draft 懒创建；已提交拒绝 |
+| POST | `/api/mini/shipping-inspection/photos` | multipart 上传一张照片（file + outbound_record_id + item_id? + edit_version + request_id?）；draft 懒创建；已提交拒绝 |
 | POST | `/api/mini/shipping-inspection/videos` | 同照片表单字段；相册视频 MP4/MOV/M4V，单文件最多 100 MiB；校验扩展名、MIME、文件头及实际读取大小 |
 | DELETE | `/api/mini/shipping-inspection/photos/{photo_id}?edit_version=` | 仅当前版本 draft 可删，删行同时清文件 |
 | DELETE | `/api/mini/shipping-inspection/videos/{video_id}?edit_version=` | 同照片删除规则，拒绝跨媒体类型删除 |
@@ -1384,7 +1397,7 @@ Agent research context now includes `fact_contract.version=registered_research_f
 
 ### 发票客户等级与出库单金额
 
-- 发票创建/编辑请求及详情新增可空 `customer_grade`（仅 S/A/B/C/D）；`GET /api/invoice/customers/contact-defaults` 返回客户最新等级。字段省略时保留/继承，显式 null 表示清空；沿用发票录入权限，等级不影响价格。
+- 发票创建/编辑请求及详情新增可空 `customer_grade`（仅 S/A/B/C/D/E）；`GET /api/invoice/customers/contact-defaults` 返回客户最新等级。字段省略时保留/继承，显式 null 表示清空；沿用发票录入权限，等级不影响价格。
 - 出库单 `print-data` 的 `record` 新增 `customer_grade`、`order_amount_text`；Word 使用同一服务。等级取方舟客户资料当前值；金额按出库明细精确关联订单、按订单 ID 去重，优先已同步发票的含手续费总额与原币种，否则取订单镜像 `amount_usd`（USD）。未同步修改不覆盖已确认订单金额；多个币种分别列示，不换汇相加；缺少客户或任一订单关联/金额时显示 `—`，不展示部分合计。原有出库归属权限和客户名称脱敏不变。
 
 
@@ -1407,3 +1420,16 @@ Agent research context now includes `fact_contract.version=registered_research_f
 |POST|/invoices/{id}/linked-sync/{operation}/resolve|管理员人工核对留证结束；reason、confirmed；admin|
 
 均校验发票可见范围；回款摘要另校验回款动作及数据范围。发票详情增加edit_version。边界及恢复见[invoice-linked-sync.md](invoice-linked-sync.md)。
+
+
+### 小程序验货上传重试（2026-09-20）
+
+照片与视频上传表单新增可选 `request_id`（1～64 字符）。新版小程序对同一文件的重试复用编号、文件、明细和编辑版本；服务端以 `mini:{user_id}` 范围、单据行锁及既有事件唯一键防重复。相同参数和内容摘要返回已有媒体，不新增事件或文件；同编号用于不同内容返回 400。历史小程序不传编号仍按单次上传处理。重放已删除的文件返回 400，提示刷新。上线顺序：先部署后端，再上传发布小程序，避免新版重试请求遇到旧后端时重复入库。
+
+### 出库删除（2026-09-20）
+
+方舟不写业务镜像。按小满出库 ID 调用 `/v1/invoices/outbound/remove`（POST，query 参数 `outbound_invoice_id`），只接受明确成功/精确不存在证据并回读验证。提交前在现有 `ark_shipping_operation_events` 持久记录删除意图（scope=`outbound-delete`，request_id=小满出库ID，唯一）；状态为 delete_pending/delete_uncertain/delete_failed/outbound_deleted，保留修改前快照、操作者及任务状态。
+
+删除待确认时不隐藏单据、不自动重发，用户再次点击只核对结果。明确锁定/鉴权拒绝可保留失败回执后重新尝试；已完成删除幂等返回。相关自动任务在订单锁下暂停；成功后维持 skipped/deleted，避免镜像删除后旧任务重新显示或重建。异常持久意图和暂停状态留待核对，不自动解锁。
+
+完成回执在方舟查询层屏蔽过期镜像（含分页总数、打印与新扫码），无需等待同步；镜像行、订单发票、验货单及媒体不删除。已存在的验货资料仍走原归属鉴权读取；小满外部删除造成镜像头消失后的历史归属问题沿用现有规则。此版本无新表或迁移，需已有153迁移及启动权限 seed；删除权限单独在角色管理授权，更新令牌后生效。外部仓库在GET与POST之间改变状态的最终拒绝由小满控制，接口无已确认的版本条件写能力。

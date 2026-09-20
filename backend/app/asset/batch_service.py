@@ -7,7 +7,6 @@ import logging
 import os
 import zipfile
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -31,28 +30,30 @@ def batch_download(
     if not assets:
         raise ValueError("未找到可下载的素材")
 
-    # 创建临时 ZIP 文件
-    with NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
-        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
-            for asset in assets:
-                abs_path = ASSET_STORAGE_ROOT / asset.storage_path
-                if not abs_path.exists():
-                    continue
-                # ZIP 内使用原始文件名
-                arcname = asset.file_name
-                # 处理重名
-                counter = 1
-                original_arcname = arcname
-                while arcname in zf.namelist():
-                    name, ext = os.path.splitext(original_arcname)
-                    arcname = f"{name}_{counter}{ext}"
-                    counter += 1
-                zf.write(abs_path, arcname)
-        tmp_path = tmp.name
-
-    with open(tmp_path, "rb") as f:
-        data = f.read()
-    os.unlink(tmp_path)
+    from app.core.storage import transfers
+    from app.core.storage.files import reserve_processing_bytes
+    total_size = sum(asset.file_size for asset in assets)
+    if total_size > 256 * 1024 * 1024:
+        raise ValueError('批量下载原件合计不能超过 256 MiB，请分批下载')
+    # Snapshot only authorized references; release the transaction before file I/O.
+    entries = [(asset.storage_path, asset.file_name,
+                transfers.snapshot(db, 'asset', asset.storage_path)) for asset in assets]
+    db.rollback()
+    from tempfile import TemporaryDirectory
+    with reserve_processing_bytes(total_size + len(assets) * 2048 + 65536), TemporaryDirectory(prefix='asset-batch-') as directory:
+        tmp_path = Path(directory) / 'assets.zip'
+        with zipfile.ZipFile(tmp_path, 'w', zipfile.ZIP_STORED) as zf:
+            for key, filename, record in entries:
+                with transfers.materialize('asset', key, record) as abs_path:
+                    arcname = Path(filename.replace('\\', '/')).name
+                    original_arcname = arcname
+                    counter = 1
+                    while arcname in zf.namelist():
+                        name, ext = os.path.splitext(original_arcname)
+                        arcname = f"{name}_{counter}{ext}"
+                        counter += 1
+                    zf.write(abs_path, arcname)
+        data = tmp_path.read_bytes()
 
     timestamp = beijing_now().strftime("%Y%m%d_%H%M%S")
     return data, f"leshine_assets_{timestamp}.zip"

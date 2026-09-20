@@ -4,6 +4,8 @@
     <video v-else-if="url" :src="url" controls playsinline preload="metadata" />
     <button v-else type="button" class="media-load" :disabled="loading" @click="load">{{ loading ? '加载中…' : media.media_type === 'video' ? '▶ 点击预览视频' : '点击加载照片' }}</button>
     <span v-if="failed" role="status">加载失败，可重试</span>
+    <small v-if="['pending', 'running'].includes(media.storage_state)" role="status">已在本地接收 · 等待云同步</small>
+    <small v-else-if="media.storage_state === 'ready'">已同步到云端</small>
     <button v-if="editable" type="button" class="media-delete" :disabled="disabled" @click="$emit('remove', media)">删除{{ media.media_type === 'video' ? '视频' : '照片' }}</button>
   </div>
 </template>

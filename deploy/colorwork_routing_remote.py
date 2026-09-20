@@ -26,7 +26,17 @@ def render(original, snippet, region):
     _, port, expected = SPECS[region]
     # Replace only our blocks. Unknown layout or conflicting rules must be reviewed.
     clean = re.sub(re.escape(BEGIN) + r".*?" + re.escape(END) + r"\n?", "", original, flags=re.S)
-    if BEGIN in clean or END in clean or "/api/colorwork/" in clean:
+    # COS owns an explicit public deny for its internal storage gateway. Ignore
+    # only that exact rule inside its managed block when checking for conflicts;
+    # retain the original block byte-for-byte in the rendered configuration.
+    inspection = re.sub(
+        r"(?ms)^[ \t]*# BEGIN ARK STORAGE PUBLIC ROUTING\r?\n.*?^[ \t]*# END ARK STORAGE PUBLIC ROUTING[ \t]*$",
+        lambda match: re.sub(
+            r"(?m)^[ \t]*location\s+\^~\s+/api/colorwork/storage/\s*\{\s*return\s+404;\s*\}[ \t]*$",
+            "", match.group(0)),
+        clean,
+    )
+    if BEGIN in clean or END in clean or "/api/colorwork/" in inspection:
         raise ValueError("Conflicting colorwork routing; inspect the current configuration")
     anchor = re.compile(r"location /api/\s*\{\s*proxy_pass http://127\.0\.0\.1:" + port + r";")
     if len(anchor.findall(clean)) != expected:

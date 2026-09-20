@@ -64,6 +64,30 @@ def test_handoff_preserves_upload_author_and_submit_receipt(db, storage, people)
     assert (event.operator_user_id, event.login_user_id) == (bob.id, login.id)
 
 
+def test_lan_upload_commits_durable_queue_without_cloud_request(db, storage, people, monkeypatch):
+    from app.core.storage import transfers
+    from app.core.storage.models import StorageTransfer
+    settings = station.get_settings()
+    monkeypatch.setattr(settings, 'COS_ENABLED_DOMAINS', ['shipping-inspection'])
+    monkeypatch.setattr(settings, 'COS_INSTANCE_ID', 'office')
+    monkeypatch.setattr(transfers, 'CosObjectStore', lambda *a, **kw: pytest.fail('LAN upload must not wait for COS'))
+    login, alice, _ = people
+    with _pc_client(db, login, []) as client:
+        sid = scan(client, alice).json()['data']['session_id']
+        result = photo(client, sid, 'cloud-offline-upload')
+        assert result.status_code == 200, result.json()
+        assert result.json()['data']['storage_state'] == 'pending'
+        assert db.query(StorageTransfer).one().status == 'pending'
+        retry = photo(client, sid, 'cloud-offline-upload')
+        assert retry.json() == result.json()
+        assert db.query(StorageTransfer).count() == 1
+        assert db.query(ShippingInspectionPhoto).count() == 1
+        submitted = client.post(f'/api/shipping-inspection/station/sessions/{sid}/submit', json={
+            'edit_version': 0, 'request_id': 'offline-submit', 'remark': '已本地接收'})
+        assert submitted.status_code == 200, submitted.json()
+        assert db.query(ShippingInspection).one().status == 'submitted'
+
+
 def test_invalid_operator_revocation_and_cross_record_media(db, storage, people):
     login, alice, bob = people
     with _pc_client(db, login, []) as client:
@@ -147,10 +171,16 @@ def test_audit_beijing_midnight_ignores_server_timezone(db, people, monkeypatch)
     from app.core import time as clock
     class UTCServerClock(datetime):
         @classmethod
+        def utcnow(cls):
+            return cls(2026, 9, 15, 16, 0, 1)
+        @classmethod
         def now(cls, tz=None):
-            instant = datetime(2026, 9, 15, 16, 0, 1, tzinfo=timezone.utc)
+            instant = cls(2026, 9, 15, 16, 0, 1, tzinfo=timezone.utc)
             return instant.astimezone(tz) if tz else instant.replace(tzinfo=None)
     monkeypatch.setattr(clock, 'datetime', UTCServerClock)
+    # Freeze token validation too: otherwise this historical midnight fixture
+    # issues expired JWTs when the suite runs after 2026-09-16.
+    monkeypatch.setattr('jose.jwt.datetime', UTCServerClock)
     login, alice, _ = people
     with _pc_client(db, login, []) as client:
         sid = scan(client, alice).json()['data']['session_id']

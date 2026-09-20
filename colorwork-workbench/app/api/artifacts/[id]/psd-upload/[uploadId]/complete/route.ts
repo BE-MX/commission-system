@@ -1,3 +1,4 @@
+import { getFiles } from '@/lib/server/storage';
 import { env } from 'cloudflare:workers';
 import { authErrorResponse, requireView } from '@/lib/server/auth';
 import { normalizedParts, PSD_LIMIT } from '@/lib/server/uploads';
@@ -23,10 +24,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (artifact.status !== 'psd_uploading') {
       return Response.json({ error: '这个文件已经结束上传。' }, { status: 409 });
     }
-    const upload = env.FILES.resumeMultipartUpload(artifact.psdKey, uploadId);
+    const upload = getFiles().resumeMultipartUpload(artifact.psdKey, uploadId);
     const completed = await upload.complete(parts);
     if (completed.size > PSD_LIMIT) {
-      await env.FILES.delete(artifact.psdKey);
+      await getFiles().delete(artifact.psdKey);
       return Response.json({ error: 'PSD 文件不得超过 256 MB。' }, { status: 400 });
     }
     const updated = await env.DB.prepare(`
@@ -36,7 +37,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!updated.meta.changes) {
       const current = await env.DB.prepare(`SELECT status FROM artifacts WHERE id = ? AND owner_user_id = ?`)
         .bind(id, user.id).first<{ status: string }>();
-      if (current?.status === 'failed') await env.FILES.delete(artifact.psdKey);
+      if (current?.status === 'failed') await getFiles().delete(artifact.psdKey);
       return Response.json({ error: '这个文件已被其他操作封存，请刷新。' }, { status: 409 });
     }
     return Response.json({ ok: true, size: completed.size });

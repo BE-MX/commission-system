@@ -3,12 +3,12 @@
 import json
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok
+from app.core.storage.cos import StorageError
 from app.customer_media import service
 from app.customer_media.schemas import (
     AssetTagsUpdateIn, BatchReviewIn, BatchSubmitIn, CustomerMediaTagItem,
@@ -24,6 +24,8 @@ router = APIRouter()
 def _call(function, *args, **kwargs):
     try:
         return function(*args, **kwargs)
+    except StorageError as exc:
+        raise HTTPException(503, "云存储暂时不可用，请稍后重试", headers={"Retry-After": "10"}) from exc
     except service.CustomerMediaNotFound as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     except service.CustomerMediaForbidden as exc:
@@ -39,6 +41,8 @@ def _call(function, *args, **kwargs):
 async def _call_async(function, *args, **kwargs):
     try:
         return await function(*args, **kwargs)
+    except StorageError as exc:
+        raise HTTPException(503, "云存储暂时不可用，请稍后重试", headers={"Retry-After": "10"}) from exc
     except service.CustomerMediaNotFound as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     except service.CustomerMediaForbidden as exc:
@@ -412,15 +416,7 @@ def internal_asset_content(
     asset = db.get(service.CustomerMediaAsset, asset_id)
     if not asset or asset.deleted_at:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "素材不存在")
-    path = storage_for(asset.storage_provider).resolve(asset.object_key)
-    if not path.is_file():
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "素材文件不存在")
-    return FileResponse(
-        path,
-        media_type=asset.content_type,
-        filename=asset.file_name if download else None,
-        content_disposition_type="attachment" if download else "inline",
-    )
+    return storage_for(asset.storage_provider).response(asset, download=download)
 
 
 @router.get("/sales-portal/assets/{asset_id}/content")
@@ -436,15 +432,7 @@ def sales_portal_asset_content(
     if not service.verify_sales_portal_preview(asset_id, expires, token):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "预览链接无效或已过期")
     asset = _call(service.sales_portal_asset, db, asset_id)
-    path = storage_for(asset.storage_provider).resolve(asset.object_key)
-    if not path.is_file():
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "素材文件不存在")
-    return FileResponse(
-        path,
-        media_type=asset.content_type,
-        filename=asset.file_name if download else None,
-        content_disposition_type="attachment" if download else "inline",
-    )
+    return storage_for(asset.storage_provider).response(asset, download=download)
 
 
 @router.get("/portal-accounts")

@@ -9,6 +9,7 @@ import uuid
 from pathlib import Path
 
 from app.core.config import get_settings
+from app.core.storage import files as cloud_files
 
 # 后缀 → (大小上限 MB, 允许的 MIME)
 UPLOAD_LIMITS: dict[str, tuple[int, set[str]]] = {
@@ -59,6 +60,8 @@ def store_bytes(original_filename: str, content: bytes) -> str:
     ext = Path(original_filename or "").suffix.lower()
     name = f"{uuid.uuid4().hex}{ext}"
     rel = Path(name[:2]) / name
+    if cloud_files.put_bytes('domestic', rel.as_posix(), content):
+        return rel.as_posix()
     abs_path = storage_root() / rel
     abs_path.parent.mkdir(parents=True, exist_ok=True)
     abs_path.write_bytes(content)
@@ -75,4 +78,4 @@ def resolve_path(rel_path: str) -> Path:
     target = (root / (rel_path or "")).resolve()
     if not target.is_relative_to(root):
         raise FileValidationError("非法的图片路径")
-    return target
+    return cloud_files.read_path('domestic', rel_path, root)

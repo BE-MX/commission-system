@@ -18,7 +18,7 @@ from urllib.parse import quote
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import require_any_permission
+from app.auth.dependencies import require_any_permission, require_permission
 from app.auth.models import ArkUserExternalBinding
 from app.core.database import get_db
 from app.core.response import ok, page_result
@@ -79,7 +79,7 @@ def _require_inspection_scope(db: Session, user: dict, inspection_id: int):
         raise HTTPException(status_code=404, detail="验货单不存在")
     if scope is not None:
         try:
-            record = outbound_service.get_outbound_record(db, inspection.outbound_record_id, okki_user_id=scope)
+            record = outbound_service.get_outbound_record(db, inspection.outbound_record_id, okki_user_id=scope, include_deleted=True)
         except outbound_service.OutboundTableError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         if record is None:
@@ -103,6 +103,37 @@ def _qr_png_base64(qr_data: str) -> str | None:
 
 
 # ── 出库单（业务库只读）────────────────────────────────────
+
+
+@router.delete('/outbound-records/{record_id}', summary='删除小满待出库单并同步方舟显示')
+def delete_outbound_record(
+    record_id: str,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission('shipping_inspection:delete')),
+):
+    from app.shipping_inspection import outbound_delete_service as deletion
+    from app.shipping_inspection.outbound_delete_client import DeleteRemoteError
+    from app.invoice.okki_client import OkkiApiError
+    scope = _outbound_scope(db, user)
+    record = outbound_service.get_outbound_record(db, record_id, okki_user_id=scope, include_deleted=True)
+    if record is None:
+        # A normal mirror sync may remove the header after an ambiguous POST.
+        # Only the original actor or an all-scope deleter can recover that intent.
+        from app.shipping_inspection.models import ShippingOperationEvent
+        event = db.query(ShippingOperationEvent).filter_by(
+            scope=deletion.SCOPE, outbound_record_id=record_id,
+        ).first()
+        if event is None or (scope is not None and event.login_user_id != int(user['sub'])):
+            raise HTTPException(404, '出库单不存在')
+        if event.action not in (deletion.PENDING, deletion.UNCERTAIN, deletion.DELETED):
+            raise HTTPException(404, '出库单不存在')
+        record = {'outbound_record_id': record_id, 'outbound_invoice_id': event.request_id,
+                  'outbound_no': event.payload['outbound_no']}
+    try:
+        return ok(deletion.delete_outbound(db, record, int(user['sub'])))
+    except (deletion.OutboundDeleteError, DeleteRemoteError, OkkiApiError) as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
 
 
 @router.get("/outbound-records", summary="出库单分页列表（含检验状态）")
@@ -297,6 +328,6 @@ def get_image(
     if photo is None:
         raise HTTPException(status_code=404, detail="图片不存在")
     _require_inspection_scope(db, _user, photo.inspection_id)
-    if not abs_path.is_file():
-        raise HTTPException(status_code=404, detail="图片不存在")
-    return FileResponse(abs_path)
+    record = service.transfers.snapshot(db, 'shipping-inspection', photo.file_path)
+    db.rollback()
+    return service.transfers.response('shipping-inspection', rel_path, record)

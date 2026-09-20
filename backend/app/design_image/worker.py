@@ -371,6 +371,9 @@ def _estimated_cost(pricing: dict | None, usage: dict) -> int | None:
 
 
 def _delete_stored(stored, context: str) -> None:
+    with SessionLocal() as db:
+        if file_service.cloud_reference_exists(db, stored.relative_path):
+            return
     for path in (stored.relative_path, stored.thumbnail_relative_path):
         try:
             file_service.delete_private_file(path)

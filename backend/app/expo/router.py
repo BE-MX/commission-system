@@ -304,6 +304,7 @@ def list_hair_colors(
 
 @router.get("/scenes", summary="可选场景列表（mode=scene 场景大片 / mode=tryon 试戴生成场景）")
 def list_scenes(
+    db: Session = Depends(get_db),
     mode: str = Query("scene", pattern="^(scene|tryon)$"),
     # expo_scene:read=场景示意图页面码（063 拆分）；保留旧码兼容 kiosk 设备账号
     _user=Depends(require_any_permission("expo_scene:read", "expo:read", "expo:write", "expo:admin")),
@@ -315,7 +316,7 @@ def list_scenes(
     return ok([
         {
             "key": s["key"], "label": s["label"], "tagline": s["tagline"],
-            "image": ai_pipeline.scene_image_url(s["key"]) if is_tryon else None,
+            "image": ai_pipeline.scene_image_url(s["key"], db=db) if is_tryon else None,
             "category": ai_pipeline.tryon_scene_category(s["key"]) if is_tryon else None,
         }
         for s in source
@@ -325,11 +326,12 @@ def list_scenes(
 @router.post("/scenes/{key}/image", summary="上传/替换场景示意图（存 uploads/expo/scenes/<key>.*）")
 def upload_scene_image(
     key: str,
+    db: Session = Depends(get_db),
     photo: UploadFile = File(...),
     _user=Depends(require_permission("expo:admin")),
 ):
     try:
-        url = ai_pipeline.save_scene_image(key, photo)
+        url = ai_pipeline.save_scene_image(key, photo, db=db)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return ok({"key": key, "url": url}, code=201)
@@ -338,11 +340,12 @@ def upload_scene_image(
 @router.delete("/scenes/{key}/image", summary="删除场景示意图")
 def remove_scene_image(
     key: str,
+    db: Session = Depends(get_db),
     _user=Depends(require_permission("expo:admin")),
 ):
     if ai_pipeline.resolve_tryon_scene(key) is None:
         raise HTTPException(404, "场景不存在")
-    ai_pipeline.delete_scene_image(key)
+    ai_pipeline.delete_scene_image(key, db=db)
     return ok()
 
 
@@ -840,6 +843,8 @@ def upload_wig_photo(
     # 列表缩略图：甄选页/发型库只显示 76px 见方，原图 1024×1536 PNG 约 2MB，
     # 每次进屏都要解码 150 万像素。失败不阻断上传，序列化侧回退原图
     ai_pipeline.make_thumb_image(target)
+    from app.expo import storage
+    storage.publish(target)
     rel = ai_pipeline.to_rel(target)
     return ok({"path": rel, "url": f"/{rel}"}, code=201)
 
@@ -959,6 +964,8 @@ def upload_hair_color_swatch(
     # 列表缩略图：甄选页/发型库只显示 76px 见方，原图 1024×1536 PNG 约 2MB，
     # 每次进屏都要解码 150 万像素。失败不阻断上传，序列化侧回退原图
     ai_pipeline.make_thumb_image(target)
+    from app.expo import storage
+    storage.publish(target)
     rel = ai_pipeline.to_rel(target)
 
     # 系统承担复杂性：色板图主色自动提取，管理员免手填 hex；失败不阻断上传。

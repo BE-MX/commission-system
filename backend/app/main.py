@@ -11,6 +11,7 @@ from sqlalchemy.exc import OperationalError, TimeoutError as DBTimeoutError
 
 from app.core.config import get_settings
 from app.core.database import engine
+from app.core.storage.cos import ObjectMissing, StorageError
 from app.bootstrap import (
     check_database_connection, load_business_rules,
     seed_admin_and_permissions, auto_init_ai_presets,
@@ -54,10 +55,13 @@ async def lifespan(app: FastAPI):
 
         from app.pm.bootstrap import init_pm_module
         init_pm_module()  # PM 协作站：存储目录自检 + pm_diff preset + 差异看门狗
-
-        yield
-        # --- 关闭 ---
-        shutdown_scheduler(_scheduler)
+        from app.core.storage.worker import start_worker, stop_worker
+        storage_worker = start_worker()
+        try:
+            yield
+        finally:
+            stop_worker(storage_worker)
+            shutdown_scheduler(_scheduler)
     engine.dispose()
 
 
@@ -99,6 +103,14 @@ async def db_error_handler(request: Request, exc):
         status_code=500,
         content={"code": 500, "message": "数据库连接失败，请稍后重试", "data": None},
     )
+
+
+@app.exception_handler(StorageError)
+async def storage_error_handler(request: Request, exc: StorageError):
+    status_code = 404 if isinstance(exc, ObjectMissing) else 503
+    return JSONResponse(status_code=status_code,
+        content={"code": status_code, "message": "文件不存在" if status_code == 404 else "云存储暂时不可用，请稍后重试", "data": None},
+        headers={"Cache-Control": "private, no-store", "Retry-After": "10"})
 
 
 @app.exception_handler(Exception)

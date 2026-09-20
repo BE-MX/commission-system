@@ -1,3 +1,4 @@
+import { getFiles } from '@/lib/server/storage';
 import { env } from 'cloudflare:workers';
 import { authErrorResponse, requireView } from '@/lib/server/auth';
 import { readSourceVersion, templateSourceErrorResponse } from '@/lib/server/template-sources';
@@ -15,7 +16,7 @@ export async function GET(
     const row = await readSourceVersion(templateId, versionId);
     if (!row) return Response.json({ error: '没有找到这个源文件版本。' }, { status: 404 });
     const key = kind === 'jpg' ? row.referenceJpgKey : row.sourcePsdKey;
-    const object = await env.FILES.get(key);
+    const object = await getFiles().get(key);
     if (!object) return Response.json({ error: '源文件不存在。' }, { status: 404 });
     const name = kind === 'jpg' ? row.referenceJpgName : row.sourcePsdName;
     return new Response(object.body, {

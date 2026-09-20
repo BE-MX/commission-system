@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import logging
-import shutil
-import uuid
 from datetime import date
 from app.core.time import beijing_today
 from pathlib import Path
@@ -18,6 +16,7 @@ from app.insight.models import (
     InsightCase,
 )
 from app.insight.schemas import (
+    CaseBase,
     CaseManualCreate,
     CasePublish,
     CaseUpdate,
@@ -41,24 +40,9 @@ _jinja_env = Environment(
 from app.insight.ai_helpers import _invoke_ocr, _invoke_case_format
 
 
-def _save_uploaded_image(file_obj, original_filename: str) -> str:
-    """保存上传图片,返回相对路径 uploads/insight/xxx.png"""
-    ext = Path(original_filename).suffix.lower()
-    if ext not in ALLOWED_IMG_EXTS:
-        raise ValueError(f"不支持的图片格式: {ext}")
-    safe_name = f"case_{uuid.uuid4().hex}{ext}"
-    dest = INSIGHT_UPLOAD_DIR / safe_name
-    with dest.open("wb") as out:
-        shutil.copyfileobj(file_obj, out)
-    if dest.stat().st_size > MAX_IMG_SIZE:
-        dest.unlink(missing_ok=True)
-        raise ValueError("图片超过 5MB 限制")
-    return f"/uploads/insight/{safe_name}"
-
-
 def _apply_case_fields(case: InsightCase, payload: dict) -> None:
     """将 AI 输出或用户表单数据映射到案例模型字段。"""
-    for k in _CASE_FIELD_MAP:
+    for k in CaseBase.model_fields:
         if k in payload:
             v = payload[k]
             if k == "total_rounds" and v is not None:

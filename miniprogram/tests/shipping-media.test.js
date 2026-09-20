@@ -5,9 +5,42 @@ const path = require('node:path')
 const vm = require('node:vm')
 const sc = require('../utils/shipping-check')
 
+test('album photo selection locks submit and uploads to the selected item', () => {
+  const { page, calls } = harness()
+  page.onItemAlbumPhotoTap({ currentTarget: { dataset: { itemId: 'IT1' } } })
+  assert.deepEqual(Array.from(calls.choose[0].sourceType), ['album'])
+  page.onSubmitTap()
+  assert.equal(calls.requests.length, 0)
+  calls.choose[0].success({ tempFiles: [{ tempFilePath: '/photo.jpg' }] })
+  assert.equal(calls.uploads[0].formData.item_id, 'IT1')
+})
+
+test('compression and upload retries retain file, item, version and request id', () => {
+  const { page, calls } = harness()
+  page.onItemVideoTap({ currentTarget: { dataset: { itemId: 'IT1' } } })
+  calls.choose[0].success({ tempFiles: [{ tempFilePath: '/clip.mp4' }] })
+  calls.compress[0].fail({})
+  page.onWholeCameraTap()
+  page.onRefreshInspection()
+  page.onSubmitTap()
+  assert.equal(calls.choose.length, 1)
+  assert.equal(calls.requests.length, 0)
+  page.onRetryMedia()
+  assert.equal(calls.compress[1].src, '/clip.mp4')
+  calls.compress[1].success({ tempFilePath: '/small.mp4' })
+  calls.info[0].success({ size: 100 })
+  calls.uploads[0].fail({})
+  page.onRetryMedia()
+  assert.equal(calls.compress.length, 2)
+  assert.equal(calls.uploads[1].filePath, '/small.mp4')
+  assert.equal(calls.uploads[1].formData.item_id, 'IT1')
+  assert.ok(calls.uploads[0].formData.request_id)
+  assert.deepEqual(calls.uploads[1].formData, calls.uploads[0].formData)
+})
+
 function harness() {
   let page, videoMethods
-  const calls = { choose: [], uploads: [], requests: [], previews: [], compress: [], info: [] }
+  const calls = { choose: [], uploads: [], requests: [], previews: [], compress: [], info: [], progress: [], modals: [], confirm: true }
   const context = vm.createContext({
     module: { exports: {} },
     getApp: () => ({ globalData: { baseUrl: 'https://example.test', token: 'test' }, logout() {} }),
@@ -16,9 +49,9 @@ function harness() {
     setTimeout() {},
     wx: {
       compressVideo: args => calls.compress.push(args), getFileInfo: args => calls.info.push(args),
-      chooseMedia: args => calls.choose.push(args), uploadFile: args => calls.uploads.push(args),
+      chooseMedia: args => calls.choose.push(args), uploadFile: args => { calls.uploads.push(args); return { onProgressUpdate: fn => calls.progress.push(fn) } },
       request: args => calls.requests.push(args), previewMedia: args => calls.previews.push(args),
-      showModal: args => args.success({ confirm: true }), showLoading() {}, hideLoading() {},
+      showModal: args => { calls.modals.push(args); args.success({ confirm: calls.confirm }) }, showLoading() {}, hideLoading() {},
     },
   })
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../utils/shipping-video.js'), 'utf8'), context)
@@ -133,4 +166,57 @@ test('stale compression callback does not upload to another record', () => {
   calls.compress[0].success({ tempFilePath: '/compressed.mp4' })
   assert.equal(calls.uploads.length, 0)
   assert.equal(calls.info.length, 0)
+})
+
+
+test('whole album photo, cancel, failure, read-only and stale picker boundaries', () => {
+  const { page, calls } = harness()
+  page.onWholeAlbumPhotoTap()
+  assert.deepEqual(Array.from(calls.choose[0].mediaType), ['image'])
+  calls.choose[0].fail({ errMsg: 'cancel' })
+  assert.equal(page.data.uploading, false)
+  assert.equal(page.data.errorVisible, false)
+  page.onWholeAlbumPhotoTap()
+  calls.choose[1].success({ tempFiles: [{ tempFilePath: '/a.jpg' }] })
+  assert.equal(calls.uploads[0].formData.item_id, undefined)
+  calls.progress[0]({ progress: 42 })
+  assert.equal(page.data.mediaProgress, 42)
+  calls.uploads[0].success({ statusCode: 200, data: '{"id":1,"file_path":"a.jpg"}' })
+  page.onWholeCameraTap()
+  page.onUnload()
+  calls.choose[2].success({ tempFiles: [{ tempFilePath: '/stale.jpg' }] })
+  assert.equal(calls.uploads.length, 1)
+  page.data.uploading = false
+  page.data.submitted = true
+  page.onWholeAlbumPhotoTap()
+  page.onWholeVideoTap()
+  assert.equal(calls.choose.length, 3)
+})
+
+test('discard needs confirmation and preserves pending file on cancel', () => {
+  const { page, calls } = harness()
+  page.onWholeVideoTap()
+  calls.choose[0].success({ tempFiles: [{ tempFilePath: '/clip.mp4' }] })
+  calls.compress[0].fail({})
+  calls.confirm = false
+  page.onDiscardMedia()
+  assert.equal(page.data.pendingMedia, true)
+  assert.equal(page._pendingVideo.filePath, '/clip.mp4')
+  calls.confirm = true
+  page.onDiscardMedia()
+  assert.equal(page.data.pendingMedia, false)
+  assert.equal(page._pendingVideo, null)
+  page.onWholeCameraTap()
+  assert.equal(calls.choose.length, 2)
+})
+
+test('unloaded upload callbacks do not append files or change progress', () => {
+  const { page, calls } = harness()
+  page.onWholeAlbumPhotoTap()
+  calls.choose[0].success({ tempFiles: [{ tempFilePath: '/a.jpg' }] })
+  page.onUnload()
+  calls.progress[0]({ progress: 100 })
+  calls.uploads[0].success({ statusCode: 200, data: '{"id":1,"file_path":"a.jpg"}' })
+  assert.equal(page.data.wholePhotos.length, 0)
+  assert.equal(page.data.mediaProgress, 0)
 })

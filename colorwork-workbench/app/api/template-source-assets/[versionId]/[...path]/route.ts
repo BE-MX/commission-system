@@ -1,3 +1,4 @@
+import { getFiles } from '@/lib/server/storage';
 import { env } from 'cloudflare:workers';
 import { authErrorResponse, requireApiUser } from '@/lib/server/auth';
 import {
@@ -24,7 +25,7 @@ export async function GET(
     if (!source || !(await mayReadSourceAsset(source, user)) || (user.role !== 'admin' && !businessAsset)) {
       return Response.json({ error: '没有权限读取这个源文件素材。' }, { status: 403 });
     }
-    const object = await env.FILES.get(sourceObjectKey(source, assetName));
+    const object = await getFiles().get(sourceObjectKey(source, assetName));
     if (!object) return Response.json({ error: '源文件素材不存在。' }, { status: 404 });
     return new Response(object.body, {
       headers: {

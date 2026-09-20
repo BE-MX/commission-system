@@ -1,6 +1,7 @@
 """Private A4 inspection PDF, using the existing Pillow/CJK font pipeline."""
 from io import BytesIO
 import logging
+from types import SimpleNamespace
 
 from fastapi import HTTPException
 from PIL import Image, ImageDraw, ImageOps
@@ -8,6 +9,7 @@ from pypdf import PdfWriter
 
 from app.auth.models import ArkUser
 from app.core.config import get_settings
+from app.core.storage import transfers
 from app.invoice.pdf_font import load_configured_cjk_font
 from app.shipping_inspection import constants as C, file_service, outbound_service
 from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto
@@ -101,6 +103,12 @@ def export_inspection_pdf(db, inspection_id, edit_version=None):
             inspection_id=inspection.id, media_type="image",
         ).order_by(ShippingInspectionPhoto.sort, ShippingInspectionPhoto.id).populate_existing().with_for_update().all()
         submitter = db.get(ArkUser, inspection.submitted_by) if inspection.submitted_by else None
+        submitter = SimpleNamespace(real_name=submitter.real_name) if submitter else None
+        photos = [SimpleNamespace(file_path=p.file_path, item_id=p.item_id,
+                  storage=transfers.snapshot(db, 'shipping-inspection', p.file_path)) for p in photos]
+        inspection = SimpleNamespace(**{name: getattr(inspection, name) for name in
+            ('id', 'outbound_no', 'customer_name', 'submitted_at', 'remark', 'edit_version')})
+        db.rollback()  # Network reads and PDF rendering must not retain row locks.
         doc = InspectionPages(f"验货单-{inspection.outbound_no}")
         doc.text("发货验货单")
         doc.text(f"出库单号：{inspection.outbound_no}")
@@ -119,8 +127,18 @@ def export_inspection_pdf(db, inspection_id, edit_version=None):
         for index, photo in enumerate(photos, 1):
             doc.space(640)
             doc.text(f"照片 {index} · {names.get(str(photo.item_id), '整单照片')}")
-            doc.photo(file_service.resolve_path(photo.file_path))
+            with transfers.materialize('shipping-inspection', photo.file_path, photo.storage) as path:
+                doc.photo(path)
+        current = db.query(ShippingInspection).filter_by(id=inspection.id).populate_existing().first()
+        if current is None or current.status != C.STATUS_SUBMITTED or current.edit_version != inspection.edit_version:
+            raise HTTPException(409, '验货单已撤回或更新，请重新下载')
         return doc.finish(), inspection.outbound_no
+    except HTTPException as exc:
+        if exc.status_code == 409:
+            raise
+        logger.warning('Inspection PDF dependency unavailable inspection=%s status=%s', inspection_id, exc.status_code)
+        print(f'[SHIPPING] PDF dependency unavailable inspection={inspection_id} status={exc.status_code}', flush=True)
+        raise HTTPException(503, '验货单原件暂时不可用，请等待云同步或联系管理员') from exc
     except Exception as exc:
         logger.warning("Inspection PDF failed: inspection=%s type=%s", inspection_id, type(exc).__name__)
         print(f"[SHIPPING] PDF failed: inspection={inspection_id} type={type(exc).__name__}", flush=True)

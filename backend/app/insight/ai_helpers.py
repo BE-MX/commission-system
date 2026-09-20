@@ -82,12 +82,12 @@ def _safe_json_parse(text: str) -> Optional[Any]:
 
 def _invoke_ocr(db: Session, image_path: str, user_id: Optional[int]) -> str:
     """图片 OCR — 通过 ark_ai_presets 中的 ocr_extract preset。"""
-    # 注意:当前 ai.service.chat 仅支持纯文本 messages。多模态 OCR 需要扩展为 image_url 消息体。
-    # 当 preset 不存在或调用失败时,返回友好提示文本,案例字段由用户手动补充。
+    from app.insight.file_service import image_data
     text = _try_invoke_ai(
         db,
         "ocr_extract",
-        f"请从以下图片(image path: {image_path})中提取所有文字,保持原有格式输出。",
+        [{'type': 'text', 'text': '请提取图片中的所有文字，保持原有格式。'},
+         {'type': 'image_url', 'image_url': {'url': image_data(image_path)}}],
         user_id,
     )
     if text:

@@ -165,7 +165,8 @@ async def upload(db, login_id, session_id, file, item_id, edit_version, request_
             return prior
         photo = service.add_photo(db, outbound_record_id=session.outbound_record_id, item_id=item_id,
             user_id=session.operator_user_id, file_path=rel_path, media_type=media_type, edit_version=edit_version, commit=False)
-        result = {'id': photo.id, 'file_path': photo.file_path, 'media_type': photo.media_type}
+        result = {'id': photo.id, 'file_path': photo.file_path, 'media_type': photo.media_type,
+                  'storage_state': getattr(photo, '_storage_state', 'local')}
         _event(db, session, 'upload', request_id, payload, result, inspection=db.get(ShippingInspection, photo.inspection_id), media_id=photo.id)
         service._commit(db)
         return result
@@ -190,7 +191,8 @@ def delete_media(db, login_id, session_id, media_id, edit_version, request_id):
     result = {'deleted': True}
     _event(db, session, 'delete', request_id, payload, result, inspection=inspection, media_id=media_id)
     service._commit(db)
-    file_service.remove_file(path)
+    if not service.transfers.managed('shipping-inspection'):
+        file_service.remove_file(path)
     return result
 
 

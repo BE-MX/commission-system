@@ -769,24 +769,28 @@ async def upload_avatar(
     if len(content) > 2 * 1024 * 1024:
         return ResponseModel(code=400, message="图片大小不能超过 2MB")
 
-    # 删除旧头像
-    if user.avatar_url:
-        old_path = AVATAR_UPLOAD_DIR / os.path.basename(user.avatar_url)
-        if old_path.exists():
-            old_path.unlink()
-
     # 保存新头像
-    ext = os.path.splitext(file.filename or "")[1].lower() or ".png"
-    filename = f"avatar_{user_id}_{int(beijing_now().timestamp())}{ext}"
+    from app.core.storage import files as cloud_files
+    from starlette.concurrency import run_in_threadpool
+    from uuid import uuid4
+    ext = {"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp"}[file.content_type]
+    filename = f"avatar_{user_id}_{uuid4().hex}{ext}"
     file_path = AVATAR_UPLOAD_DIR / filename
-    with open(file_path, "wb") as f:
-        f.write(content)
+    if not await run_in_threadpool(cloud_files.put_bytes, 'avatars', filename, content, file.content_type):
+        with open(file_path, "wb") as f:
+            f.write(content)
 
     # 更新用户头像 URL
     avatar_url = f"/uploads/avatars/{filename}"
     user.avatar_url = avatar_url
     user.updated_at = beijing_now()
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        # Keep originals when commit outcome is uncertain. Old avatars are
+        # retained with the migration backup; cleanup follows reference audit.
+        raise
 
     return ResponseModel(message="头像上传成功", data={"avatar_url": avatar_url})
 

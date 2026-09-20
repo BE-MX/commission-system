@@ -1,3 +1,4 @@
+import { getFiles } from '@/lib/server/storage';
 import { sourceReviewIssues } from '@/lib/source-review';
 import { env } from 'cloudflare:workers';
 import {
@@ -118,11 +119,11 @@ function hex(bytes: ArrayBuffer) {
 }
 
 async function assetFingerprint(key: string, name: string): Promise<SourceAssetManifestItem | null> {
-  const object = await env.FILES.head(key);
+  const object = await getFiles().head(key);
   if (!object) return null;
   let sha256 = object.customMetadata?.sha256 ?? '';
   if (!/^[a-f0-9]{64}$/.test(sha256)) {
-    const body = await env.FILES.get(key);
+    const body = await getFiles().get(key);
     if (!body) return null;
     sha256 = hex(await crypto.subtle.digest('SHA-256', await body.arrayBuffer()));
   }
@@ -230,8 +231,8 @@ export async function ensureSourceHistory(templateId: string) {
     const mutationId = crypto.randomUUID();
     const now = new Date().toISOString();
     const [psd, jpg] = await Promise.all([
-      env.FILES.head(files.sourcePsdKey),
-      env.FILES.head(files.referenceJpgKey),
+      getFiles().head(files.sourcePsdKey),
+      getFiles().head(files.referenceJpgKey),
     ]);
     if (!psd || !jpg) fail(409, 'INITIAL_SOURCE_FILES_MISSING', '首次导入的 PSD 或 JPG 文件不存在，请重新完成首次导入。');
     const config = staticConfig(template, sourceId);
@@ -373,7 +374,7 @@ export async function createSourceUpload(templateId: string, actor: AuthorizedUs
   const id = crypto.randomUUID();
   const sourcePsdKey = `template-sources/${template.id}/versions/${id}/source.psd`;
   const referenceJpgKey = `template-sources/${template.id}/versions/${id}/reference.jpg`;
-  const upload = await env.FILES.createMultipartUpload(sourcePsdKey, {
+  const upload = await getFiles().createMultipartUpload(sourcePsdKey, {
     httpMetadata: { contentType: 'image/vnd.adobe.photoshop' },
   });
   const mutationId = crypto.randomUUID();
@@ -517,8 +518,8 @@ async function validateParsedConfig(row: StoredSourceVersion, input: unknown) {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 200 || height < 200 || width > 12000 || height > 12000) {
     fail(422, 'INVALID_DOCUMENT_SIZE', 'PSD 画布尺寸无法用于工作台。');
   }
-  const reference = await env.FILES.head(row.referenceJpgKey);
-  const psdObject = await env.FILES.get(row.sourcePsdKey, { range: { offset: 0, length: 26 } });
+  const reference = await getFiles().head(row.referenceJpgKey);
+  const psdObject = await getFiles().get(row.sourcePsdKey, { range: { offset: 0, length: 26 } });
   const psd = psdObject ? psdDimensions(new Uint8Array(await psdObject.arrayBuffer())) : null;
   const jpgWidth = Number(reference?.customMetadata?.width);
   const jpgHeight = Number(reference?.customMetadata?.height);
@@ -731,8 +732,8 @@ async function requireSourceAssets(row: StoredSourceVersion, config: SourceTempl
 
 export async function verifySourceVersionAssets(row: StoredSourceVersion) {
   const [psd, jpg] = await Promise.all([
-    env.FILES.head(row.sourcePsdKey),
-    env.FILES.head(row.referenceJpgKey),
+    getFiles().head(row.sourcePsdKey),
+    getFiles().head(row.referenceJpgKey),
   ]);
   if (!psd || !jpg || psd.size !== row.sourcePsdSize || jpg.size !== row.referenceJpgSize) {
     fail(409, 'SOURCE_FILES_CHANGED', '这个源文件版本的 PSD/JPG 缺失或大小发生变化，不能启用。');
@@ -862,7 +863,7 @@ export async function replaceCandidateColorAsset(
   const assetName = `colors/manual-${crypto.randomUUID().replaceAll('-', '')}.png`;
   const key = sourceObjectKey(row, assetName);
   const sha256 = hex(await crypto.subtle.digest('SHA-256', buffer));
-  await env.FILES.put(key, buffer, {
+  await getFiles().put(key, buffer, {
     httpMetadata: { contentType: 'image/png' },
     customMetadata: { sha256, size: String(buffer.byteLength), replacedColorId: colorId },
   });
@@ -886,7 +887,7 @@ export async function replaceCandidateColorAsset(
     row.templateId,
   ).run();
   if (!updated.meta.changes) {
-    await env.FILES.delete(key).catch(() => undefined);
+    await getFiles().delete(key).catch(() => undefined);
     fail(409, 'SOURCE_VERSION_CONFLICT', '候选版本状态已变化，请刷新后重试。');
   }
   return getSourceVersionDetail(templateId, versionId, actor);

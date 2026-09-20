@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.core.response import ok
+from app.core.storage import transfers
+from starlette.concurrency import run_in_threadpool
 from app.shipping_inspection import file_service, station_service as service
 
 router = APIRouter(prefix='/station')
@@ -109,10 +111,7 @@ async def media(session_id: str, media_id: int, user=Depends(login_id), db: Sess
     def path_for(db):
         session = service.session_for(db, user, session_id)
         media = service.media_for(db, session, media_id)
-        path = file_service.resolve_path(media.file_path)
-        if not path.is_file():
-            raise service.StationError('MEDIA_NOT_FOUND', '文件不存在', 404)
-        return str(path)
+        return {'key': media.file_path, 'record': transfers.snapshot(db, 'shipping-inspection', media.file_path)}
     result = await invoke(db, path_for)
     db.rollback()  # Release row locks before streaming the private object.
-    return FileResponse(result['data'], headers={'Cache-Control': 'private, no-store'})
+    return await run_in_threadpool(transfers.response, 'shipping-inspection', result['data']['key'], result['data']['record'])

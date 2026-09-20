@@ -21,7 +21,7 @@ function harness(request) {
 test('new invoice starts empty and payload preserves selected grade', () => {
   const form = emptyInvoiceForm()
   assert.equal(form.customer_grade, null)
-  for (const grade of ['S', 'A', 'B', 'C', 'D', null]) {
+  for (const grade of ['S', 'A', 'B', 'C', 'D', 'E', null]) {
     form.customer_grade = grade
     assert.equal(buildInvoicePayload(form, 0).customer_grade, grade)
   }
@@ -39,7 +39,7 @@ test('customer switch clears old grade and ignores stale response', async () => 
   assert.equal(h.form.customer_grade, 'B')
 })
 
-for (const edited of ['D', null]) {
+for (const edited of ['D', 'E', null]) {
   test(`manual edit ${edited} survives late defaults`, async () => {
     let resolve
     const h = harness(() => new Promise(done => { resolve = done }))

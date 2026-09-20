@@ -171,6 +171,8 @@ def _run(session_id: int) -> None:
             transport_allow_parameter_fallback=False,
         )
         output = ai_pipeline.save_ai_image(result, BEAUTY_DIR, f"beauty_{session_id}")
+        from app.expo import storage
+        storage.publish(output)
         snapshot["output_hash"] = source_hash(output)
         updated = (db.query(ExpoSession)
                    .filter(ExpoSession.id == session_id,

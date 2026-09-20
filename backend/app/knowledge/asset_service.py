@@ -78,8 +78,19 @@ def create_image_asset(db, identity: dict, library_id: int, *, original_name: st
         return row
     except Exception:
         db.rollback()
-        image_service.remove_quietly(stored.storage_path)
+        _cleanup_unreferenced(db, stored.storage_path)
         raise
+
+
+def _cleanup_unreferenced(db, path):
+    try:
+        if db.query(KnowledgeAsset.id).filter(KnowledgeAsset.storage_path == path).first() is None:
+            image_service.remove_quietly(path)
+    except Exception as exc:
+        db.rollback()
+        import logging
+        logging.getLogger('commission').warning('Knowledge cleanup check failed type=%s; preserving file', type(exc).__name__)
+        print('[knowledge] cleanup check failed; preserving file', flush=True)
 
 
 def _asset_is_visible(db, identity: dict, asset: KnowledgeAsset) -> bool:

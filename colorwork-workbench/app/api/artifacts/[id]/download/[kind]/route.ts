@@ -1,3 +1,4 @@
+import { getFiles } from '@/lib/server/storage';
 import { env } from 'cloudflare:workers';
 import { authErrorResponse, requireView } from '@/lib/server/auth';
 
@@ -18,7 +19,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     if (!artifact || (artifact.ownerUserId !== user.id && artifact.ownerRole !== 'admin' && user.role !== 'admin')) {
       return Response.json({ error: '没有权限下载这个文件。' }, { status: 403 });
     }
-    const object = await env.FILES.get(kind === 'jpg' ? artifact.jpgKey : artifact.psdKey);
+    const object = await getFiles().get(kind === 'jpg' ? artifact.jpgKey : artifact.psdKey);
     if (!object) return Response.json({ error: '文件不存在。' }, { status: 404 });
     const safeName = artifact.name.replace(/[\\/:*?"<>|]/g, '-');
     const inline = new URL(request.url).searchParams.get('inline') === '1';

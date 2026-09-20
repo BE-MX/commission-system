@@ -1,3 +1,4 @@
+import { getFiles } from '@/lib/server/storage';
 import { env } from 'cloudflare:workers';
 import { authErrorResponse, requireView } from '@/lib/server/auth';
 
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
         const allowed = await env.DB.prepare(`SELECT 1 AS ok FROM artifacts a JOIN users u ON u.id = a.owner_user_id WHERE a.id = ? AND (a.owner_user_id = ? OR u.role = 'admin')`).bind(item.id, user.id).first();
         if (!allowed) continue;
       }
-      const object = await env.FILES.get(row.key);
+      const object = await getFiles().get(row.key);
       if (!object) continue;
       const safe = (item.name || row.name || `${item.id}.jpg`).replace(/[\\/:*?"<>|]/g, '-').replace(/\.jpg$/i, '') + '.jpg';
       files.push({ name: safe, data: new Uint8Array(await object.arrayBuffer()) });

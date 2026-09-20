@@ -1115,9 +1115,9 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 
 ### 出库检验视频拍摄与本地压缩（2026-09-16）
 
-整单/明细均提供拍视频、相册视频。网页拍摄通过video file input的capture=environment唤起设备界面；选择后本地保留音轨重编码MP4，最长边1280、不放大、24fps、视频目标1.8Mbps。浏览器必须支持MP4 MediaRecorder、Canvas.captureStream和AudioContext；不支持时提示更新浏览器或使用小程序。压缩近实时且需前台运行，失败不自动上传原大文件；已紧凑的原MP4/MOV若小于重编码结果则保留原件。压缩后仍限100MB。微信使用wx.compressVideo medium。拍摄确认即进入压缩上传，不承诺另存手机相册；视频仍不进入验货打印。
+整单/明细均提供拍照上传、相册照片、拍视频、相册视频；相册照片选择器不设 capture，单张选择后自动走原照片上传流程，直接拍照入口仍保留 environment。网页拍摄通过video file input的capture=environment唤起设备界面；选择后本地保留音轨重编码MP4，最长边1280、不放大、24fps、视频目标1.8Mbps。浏览器必须支持MP4 MediaRecorder、Canvas.captureStream和AudioContext；不支持时提示更新浏览器或使用小程序。压缩近实时且需前台运行，失败不自动上传原大文件；已紧凑的原MP4/MOV若小于重编码结果则保留原件。压缩后仍限100MB。微信使用wx.compressVideo medium。拍摄确认即进入压缩上传，不承诺另存手机相册；视频仍不进入验货打印。
 
-网页在文件选择/重试点击事件内同步请求视频播放和声音处理，避免 Safari 先等解码数据再播放造成等待；先暂停并定位回开头再录制。连续10秒没有播放进度会报错退出，音频关闭不阻塞结果与资源清理。整单/明细的拍摄按钮下显示百分比、错误和重试入口；压缩失败保留当前拍摄文件，点击“重试压缩并上传”重新获得用户手势，无需重拍。网页网络重试保持压缩结果、request_id与edit_version，压缩期间禁止切换/提交，卸载取消；小程序onUnload作废批次回调。不能用桌面文件输入测试替代iPhone/微信真机相机与权限验收。参考：[capture](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/capture)、[WebKit MediaRecorder](https://webkit.org/blog/11353/mediarecorder-api/)。
+网页在“拍视频/相册视频”的原始按钮点击内预激活 video 与 AudioContext，原生相机返回后复用同一实例自动压缩上传，不把第二次点击设为默认步骤。取消选择、结束或卸载释放未消费实例；已消费实例由压缩器清理。Safari 仍返回 NotAllowedError 时，保留当前文件并展示正常的“开始压缩并上传”恢复入口，真实解码失败仍报错。待处理视频期间禁止新文件覆盖和直接提交，可明确确认放弃。此自动预激活路径已完成模拟与桌面媒体验证，iPhone 相机返回后是否保留授权仍需真机验证。网页在文件选择/重试点击事件内同步请求视频播放和声音处理，避免 Safari 先等解码数据再播放造成等待；先暂停并定位回开头再录制。连续10秒没有播放进度会报错退出，音频关闭不阻塞结果与资源清理。整单/明细的拍摄按钮下显示百分比、错误和重试入口；压缩失败保留当前拍摄文件，点击“重试压缩并上传”重新获得用户手势，无需重拍。网页网络重试保持压缩结果、request_id与edit_version，压缩期间禁止切换/提交，卸载取消；小程序onUnload作废批次回调。不能用桌面文件输入测试替代iPhone/微信真机相机与权限验收。参考：[capture](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/capture)、[WebKit MediaRecorder](https://webkit.org/blog/11353/mediarecorder-api/)。
 
 
 ### 出库检验完成通知（2026-09-17）
@@ -1176,3 +1176,14 @@ ly914首返出库单的处理人为Eva。详情获取失败时返回502提示重
 调度器单活：announcement dispatch 每 10 秒领取一个可执行分片，weekly 每分钟检查到期任务。默认北京时间周一 09:00，统计上周一零点至本周一零点；宕机恢复后补当期一份。每周唯一约束防重复。AI 从冻结发布版本选择有证据的原句，失败生成公告目录；草稿和撤回的普通发布不进入摘要，撤回事件列出原因。手动生成默认仅预览，定时任务自动入发送队列。重生成保留旧版历史；历史版本对比界面未纳入此版本。
 
 配置 ANNOUNCEMENT_WORKER_ENABLED（默认 true）、ANNOUNCEMENT_PUBLIC_BASE_URL（默认 https://leshine.work）；库内开关默认关闭。上线启用需配置应用机器人凭据、群 openConversationId/robotCode、真实执行账号、有效 AI 预设。管理员在公告设置显式发送测试，核对图片可见后确认，再开启推送/周报。群成员应与公告阅读范围匹配；仍有已发布公告或未结案投递时禁止切群。
+
+
+## 发货扫描两端功能对齐（2026-09-20）
+
+手机网页 `/shipping/scan` 与小程序 `pages/shipping/check/check` 的整单和产品明细均提供：拍照、相册照片、拍视频、相册视频；选择后自动上传，视频先压缩，压缩后不超过 100 MiB。至少一张照片才可提交，视频不替代照片；提交后只读，撤回后刷新继续编辑。
+
+两端失败处理均保留待处理文件，可重试或确认放弃。小程序重试沿用同一文件与版本，上传请求编号配合后端防重复。待处理期间禁用新媒体、刷新和提交，异步回调校验页面批次，避免串单。小程序压缩阶段仅展示真实状态（原生 API 不提供进度回调），上传阶段使用 UploadTask 进度；网页维持浏览器压缩反馈和 Safari 激活失败兜底。文件只在当前页面生命周期内保留，不承诺关闭微信后恢复。
+
+入口身份各自保持原设计：网页共用手机选择操作人，小程序使用已登录绑定人员。后续变更扫描业务能力时同时核对两端上述路径；平台 API 实现可以不同。回归入口：`node --test miniprogram/tests/shipping-media.test.js`，网页 `frontend/tests/shippingStation.test.mjs` 与 `compressInspectionVideo.test.mjs`，后端 `backend/tests/test_shipping_media_recall.py`。
+
+发布需要后端 deploy 与微信小程序独立上传发布，deploy 不会自动发布微信版本；先后端、再小程序。本次不涉及数据库迁移。

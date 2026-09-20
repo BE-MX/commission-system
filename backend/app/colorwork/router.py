@@ -83,3 +83,7 @@ def inventory_status(
             detail="同步密钥无效",
         )
     return compute_template_statuses(db, template_id)
+
+
+from app.colorwork.storage_router import router as storage_router
+router.include_router(storage_router)

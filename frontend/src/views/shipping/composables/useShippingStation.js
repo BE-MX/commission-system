@@ -1,6 +1,6 @@
 import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import { stationApi } from '@/api/shippingStation'
-import { compressInspectionVideo } from './compressInspectionVideo'
+import { compressInspectionVideo, prepareInspectionVideo } from './compressInspectionVideo'
 import { confirmDanger } from '@/utils/feedback'
 
 const requestId = () => crypto.randomUUID()
@@ -11,7 +11,9 @@ export function useShippingStation(api = stationApi) {
   const selectionVersion = ref(0), receipt = ref(null), progress = ref(0), pendingUpload = ref(null), pendingSubmit = ref(null)
   const uploadStage = ref('')
   const uploadItemId = ref(undefined), uploadError = ref(''), pendingCompression = ref(null)
+  const awaitingVideoActivation = ref(false)
   let compressionController
+  let preparedVideo
   let promptTimer, idleTimer, lastActive = Date.now(), alive = true, scanIntent = null
   const sessionId = computed(() => view.value?.session_id)
   const operator = computed(() => view.value?.operator || selected.value)
@@ -91,17 +93,29 @@ export function useShippingStation(api = stationApi) {
     catch (e) { await fail(e) }
     finally { busy.value = false }
   }
-  async function upload(file, itemId, type, retry = false) {
+  function cancelVideoPreparation() {
+    preparedVideo?.dispose(); preparedVideo = null
+  }
+  function prepareVideo() {
+    if (!canWrite.value || pendingCompression.value) return
+    cancelVideoPreparation()
+    try { preparedVideo = prepareInspectionVideo() }
+    catch (e) { console.warn('Video preparation unavailable; compression will report capability errors', e) }
+  }
+  async function upload(file, itemId, type, retry = false, resumeCompression = false) {
     if (!canWrite.value || !file) return
+    if (pendingCompression.value && !resumeCompression) return
     busy.value = true; progress.value = 0; error.value = ''
     uploadItemId.value = itemId || null; uploadError.value = ''
+    awaitingVideoActivation.value = false
     let intent
     try {
       if (!retry && type === 'videos') {
         pendingCompression.value = { file, itemId, type }
         uploadStage.value = '正在压缩视频，请保持页面在前台'
         compressionController = new AbortController()
-        file = await compressInspectionVideo(file, { signal: compressionController.signal, onProgress: value => { progress.value = value } })
+        const prepared = preparedVideo; preparedVideo = null
+        file = await compressInspectionVideo(file, { prepared, signal: compressionController.signal, onProgress: value => { progress.value = value } })
         if (!alive) return
       }
       pendingCompression.value = null
@@ -110,6 +124,10 @@ export function useShippingStation(api = stationApi) {
       if (!retry) pendingUpload.value = { file, itemId, type, request_id: requestId(), edit_version: editVersion() }
       intent = pendingUpload.value
     } catch (e) {
+      if (e.code === 'VIDEO_ACTIVATION_REQUIRED' && alive) {
+        awaitingVideoActivation.value = true
+        return
+      }
       error.value = e.message || '视频压缩失败，请重新选择视频'
       uploadError.value = error.value
       return
@@ -134,7 +152,17 @@ export function useShippingStation(api = stationApi) {
   }
   function retryCompression() {
     const p = pendingCompression.value
-    if (p) return upload(p.file, p.itemId, p.type)
+    if (p) return upload(p.file, p.itemId, p.type, false, true)
+  }
+  async function discardCompression() {
+    if (!canWrite.value || !pendingCompression.value) return
+    busy.value = true
+    try {
+      await confirmDanger('放弃这段未上传的视频', '', '这段视频尚未保存到验货单，放弃后需要重新拍摄或选择。')
+      pendingCompression.value = null; awaitingVideoActivation.value = false
+      uploadItemId.value = undefined; uploadError.value = ''; error.value = ''
+    } catch { /* Keep the selected file when dismissal is cancelled. */ }
+    finally { busy.value = false }
   }
   function retryUpload() {
     const p = pendingUpload.value
@@ -153,6 +181,7 @@ export function useShippingStation(api = stationApi) {
   }
   async function submit() {
     if (busy.value || invalid.value || (!canWrite.value && !pendingSubmit.value)) return
+    if (pendingCompression.value) { error.value = '已选择的视频尚未上传，请先完成视频上传'; return }
     if (!photos.value.length) { error.value = '每张出库单至少上传一张照片'; return }
     busy.value = true
     pendingSubmit.value ||= { edit_version: editVersion(), request_id: requestId(), remark: remark.value }
@@ -168,9 +197,11 @@ export function useShippingStation(api = stationApi) {
     finally { busy.value = false }
   }
   function clearSession() {
+    cancelVideoPreparation()
     view.value = null; selected.value = null; remark.value = ''; error.value = ''; invalid.value = false
     pendingUpload.value = null; pendingSubmit.value = null; scanIntent = null; prompt.value = '请选择本次操作人'
     pendingCompression.value = null; uploadItemId.value = undefined; uploadError.value = ''
+    awaitingVideoActivation.value = false
     clearTimeout(promptTimer)
   }
   async function end() {
@@ -187,7 +218,7 @@ export function useShippingStation(api = stationApi) {
     } catch (e) { await fail(e) }
     finally { busy.value = false }
   }
-  const warnLeave = event => { if (dirty.value || busy.value) { event.preventDefault(); event.returnValue = '' } }
+  const warnLeave = event => { if (dirty.value || busy.value || pendingCompression.value) { event.preventDefault(); event.returnValue = '' } }
   onMounted(() => {
     loadOperators()
     window.addEventListener('beforeunload', warnLeave)
@@ -198,12 +229,13 @@ export function useShippingStation(api = stationApi) {
     }, 5000)
   })
   onBeforeUnmount(() => {
+    cancelVideoPreparation()
     alive = false; compressionController?.abort(); clearTimeout(promptTimer); clearInterval(idleTimer)
     pendingCompression.value = null
     window.removeEventListener('beforeunload', warnLeave)
   })
   return { operators, selected, operator, view, remark, busy, loading, scannerOpen, error, invalid, loginRequired,
     prompt, selectionVersion, receipt, progress, uploadStage, photos, videos, submitted, canWrite, sessionId, dirty, pendingUpload, pendingSubmit,
-    uploadItemId, uploadError, pendingCompression, retryCompression,
+    uploadItemId, uploadError, pendingCompression, retryCompression, awaitingVideoActivation, discardCompression, prepareVideo, cancelVideoPreparation,
     choose, startScan, decoded, refresh, upload, retryUpload, remove, submit, end, loadOperators, fail }
 }

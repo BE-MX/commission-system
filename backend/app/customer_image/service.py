@@ -220,6 +220,7 @@ def delete_product(db: Session, product_id: int) -> None:
 
     for relative_path in asset_paths:
         file_service._delete_stored_files(
+            db,
             relative_path,
             _thumbnail_path(relative_path),
             "deleted product asset",

@@ -6,6 +6,7 @@
 """
 
 import logging
+import hashlib
 
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
@@ -13,9 +14,10 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
 from app.core.time import beijing_now
+from app.core.storage import transfers
 from app.shipping_inspection import constants as C
 from app.shipping_inspection import file_service, outbound_service, audit_service
-from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto
+from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto, ShippingOperationEvent
 from app.shipping_inspection.print_service import sort_outbound_print_items
 
 logger = logging.getLogger("commission")
@@ -32,16 +34,23 @@ def _commit(db: Session) -> None:
 
 
 def _photo_to_dict(photo: ShippingInspectionPhoto) -> dict:
-    return {"id": photo.id, "item_id": photo.item_id, "file_path": photo.file_path, "sort": photo.sort, "media_type": photo.media_type}
+    return {"id": photo.id, "item_id": photo.item_id, "file_path": photo.file_path, "sort": photo.sort, "media_type": photo.media_type,
+            "storage_state": getattr(photo, '_storage_state', 'local')}
 
 
 def list_photos(db: Session, inspection_id: int, media_type: str = "image") -> list[ShippingInspectionPhoto]:
-    return (
+    photos = (
         db.query(ShippingInspectionPhoto)
         .filter(ShippingInspectionPhoto.inspection_id == inspection_id, ShippingInspectionPhoto.media_type == media_type)
         .order_by(ShippingInspectionPhoto.sort.asc(), ShippingInspectionPhoto.id.asc())
         .all()
     )
+    if transfers.managed('shipping-inspection') and photos:
+        identities = [transfers.transfer_id('shipping-inspection', p.file_path) for p in photos]
+        states = {r.id: r.status for r in db.query(transfers.StorageTransfer).filter(transfers.StorageTransfer.id.in_(identities)).all()}
+        for photo in photos:
+            photo._storage_state = states.get(transfers.transfer_id('shipping-inspection', photo.file_path), 'local')
+    return photos
 
 
 def _photo_count(db: Session, inspection_id: int) -> int:
@@ -124,11 +133,30 @@ def add_photo(
     media_type: str = "image",
     edit_version: int = 0,
     commit: bool = True,
+    request_id: str | None = None,
 ) -> ShippingInspectionPhoto:
     """上传一张照片：draft 检验单懒创建；已提交的单拒绝再传。"""
     inspection = get_or_create_draft(db, outbound_record_id, user_id)
     # 行锁串行化 上传/删除/提交：先锁再判状态、再数照片
     inspection = _lock_inspection(db, inspection.id) or inspection
+    payload = None
+    if request_id:
+        with file_service.resolve_path(file_path).open('rb') as stream:
+            digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+        payload = dict(outbound_record_id=outbound_record_id, item_id=item_id or None,
+                       edit_version=edit_version, media_type=media_type, sha256=digest)
+        # Inspection row lock serializes retries for the same outbound record.
+        prior = db.query(ShippingOperationEvent).filter_by(
+            scope=f'mini:{user_id}', request_id=request_id,
+        ).populate_existing().with_for_update().first()
+        if prior:
+            if prior.action != 'upload' or prior.payload != payload:
+                raise ValueError('上传请求编号已用于其他内容，请刷新后重新选择文件')
+            # A retry may have opened its RR snapshot before the first upload committed.
+            photo = db.query(ShippingInspectionPhoto).filter_by(id=prior.media_id).populate_existing().with_for_update().first()
+            if photo is None:
+                raise ValueError('该文件已被删除，请刷新核对')
+            return photo
     if inspection.edit_version != edit_version:
         raise ValueError("验货单已撤回更新，请重新扫码后上传")
     if media_type not in {"image", "video"}:
@@ -148,11 +176,14 @@ def add_photo(
         created_by=user_id,
     )
     db.add(photo)
+    transfer = transfers.register(db, 'shipping-inspection', file_path)
+    photo._storage_state = transfer.status if transfer else 'local'
     inspection.updated_at = beijing_now()
     inspection.updated_by = user_id
     db.flush()
     if commit:
-        audit_service.record(db, 'upload', user_id, outbound_record_id, inspection=inspection, media_id=photo.id)
+        audit_service.record(db, 'upload', user_id, outbound_record_id, inspection=inspection, media_id=photo.id,
+                             request_id=request_id, payload=payload)
         _commit(db)
         db.refresh(photo)
     return photo
@@ -169,6 +200,7 @@ def delete_photo(db: Session, photo_id: int, user_id: int, *, edit_version: int 
     if inspection is not None and inspection.status == C.STATUS_SUBMITTED:
         raise ValueError("该发货单已提交验货，不能删除照片")
     rel_path = photo.file_path
+    transfers.tombstone(db, 'shipping-inspection', rel_path)
     if inspection is not None:
         inspection.updated_at = beijing_now()
         inspection.updated_by = user_id
@@ -178,6 +210,8 @@ def delete_photo(db: Session, photo_id: int, user_id: int, *, edit_version: int 
         return rel_path
     audit_service.record(db, 'delete', user_id, inspection.outbound_record_id, inspection=inspection, media_id=photo_id)
     _commit(db)
+    if transfers.managed('shipping-inspection'):
+        return
     try:
         abs_path = file_service.resolve_path(rel_path)
         if abs_path.is_file():

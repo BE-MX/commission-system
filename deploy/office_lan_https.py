@@ -11,6 +11,7 @@ import subprocess
 import time
 import urllib.request
 import zipfile
+from uuid import uuid4
 
 DOMAIN = 'lan.leshine.cloud'
 SERVICE = 'ArkOfficeHttps'
@@ -27,7 +28,7 @@ def powershell(command):
 
 
 def validate_plan(plan):
-    if set(plan) != {'live_root', 'address', 'subnet', 'backend_port'}:
+    if set(plan) - {'live_root', 'address', 'subnet', 'backend_port', 'previous_address'} or not {'live_root', 'address', 'subnet', 'backend_port'} <= set(plan):
         raise ValueError('Unexpected HTTPS plan fields')
     address = ipaddress.ip_address(plan['address'])
     subnet = ipaddress.ip_network(plan['subnet'])
@@ -35,6 +36,10 @@ def validate_plan(plan):
         raise ValueError('HTTPS must bind to a specific office IPv4 subnet')
     if plan['backend_port'] != 8001:
         raise ValueError('Unexpected office backend port')
+    if 'previous_address' in plan:
+        previous = ipaddress.ip_address(plan['previous_address'])
+        if previous not in subnet or previous == address:
+            raise ValueError('Previous address must be distinct and in the office subnet')
     root = Path(plan['live_root']).resolve()
     if not (root / 'backend/app/main.py').is_file():
         raise ValueError('Office checkout is missing')
@@ -136,20 +141,32 @@ def execute(plan_file, prepare_only=False):
         if not marker.exists() or Path(run(nssm, 'get', SERVICE, 'Application')).resolve() != executable:
             raise RuntimeError('HTTPS service is not owned by this installer')
         record = json.loads(marker.read_text(encoding='utf-8'))
-        if any(record.get(k) != v for k, v in {'domain':DOMAIN, 'version':VERSION, 'address':plan['address']}.items()):
+        installed_address = record.get('address')
+        if any(record.get(k) != v for k, v in {'domain':DOMAIN, 'version':VERSION}.items()) or installed_address not in {plan['address'], plan.get('previous_address', plan['address'])}:
             raise RuntimeError('HTTPS ownership marker differs from plan')
+        if config.read_text(encoding='utf-8') != configuration(installed_address, directory):
+            raise RuntimeError('Installed HTTPS configuration has drifted')
         expected_parameters = f'run --config {config} --adapter caddyfile'
         if run(nssm, 'get', SERVICE, 'AppParameters').replace('"', '') != expected_parameters or Path(run(nssm, 'get', SERVICE, 'AppDirectory')).resolve() != directory:
             raise RuntimeError('HTTPS service parameters or working directory have drifted')
         if run(nssm, 'get', SERVICE, 'ObjectName').lower() not in ['localsystem', 'nt authority\\system']:
             raise RuntimeError('HTTPS service account has drifted')
         firewall = json.loads(powershell(f'$r=Get-NetFirewallRule -Name {SERVICE}; $a=$r | Get-NetFirewallAddressFilter; $p=$r | Get-NetFirewallPortFilter; [pscustomobject]@{{enabled=[string]$r.Enabled;action=[string]$r.Action;direction=[string]$r.Direction;local=@($a.LocalAddress);remote=@($a.RemoteAddress);port=@($p.LocalPort);protocol=[string]$p.Protocol}} | ConvertTo-Json -Compress'))
-        if firewall['enabled'] != 'True' or firewall['action'] != 'Allow' or firewall['direction'] != 'Inbound' or firewall['local'] != [plan['address']] or firewall['port'] != ['443'] or firewall['protocol'] != 'TCP' or [str(ipaddress.ip_network(n)) for n in firewall['remote']] != [plan['subnet']]:
+        if firewall['enabled'] != 'True' or firewall['action'] != 'Allow' or firewall['direction'] != 'Inbound' or firewall['local'] != [installed_address] or firewall['port'] != ['443'] or firewall['protocol'] != 'TCP' or [str(ipaddress.ip_network(n)) for n in firewall['remote']] != [plan['subnet']]:
             raise RuntimeError('HTTPS firewall rule differs from plan')
+    if 'previous_address' in plan:
+        if not existing:
+            raise RuntimeError('Address migration requires an owned installation')
+        if powershell(f'if(Get-NetIPAddress -AddressFamily IPv4 -IPAddress {plan["address"]} -ErrorAction SilentlyContinue){{"assigned"}}') != 'assigned':
+            raise RuntimeError('New address is not assigned to this server')
     if prepare_only:
         print(json.dumps({'status': 'prepared', 'domain': DOMAIN, 'expires_at': expiry}))
         return
     if existing:
+        if installed_address != plan['address']:
+            readdress(nssm, directory, record, plan['address'], expiry)
+            print(json.dumps({'status': 'readdressed', 'domain': DOMAIN, 'address': plan['address'], 'expires_at': expiry}))
+            return
         if config.read_text(encoding='utf-8') != candidate.read_text(encoding='utf-8'):
             raise RuntimeError('Existing configuration differs; review before replacement')
         if run(nssm, 'status', SERVICE) != 'SERVICE_RUNNING':
@@ -195,4 +212,42 @@ def execute(plan_file, prepare_only=False):
             residue = powershell(f'$s=Get-Service -Name {SERVICE} -ErrorAction SilentlyContinue; $r=Get-NetFirewallRule -Name {SERVICE} -ErrorAction SilentlyContinue; $l=Get-NetTCPConnection -State Listen | Where-Object {{$_.LocalAddress -eq "{plan["address"]}" -and $_.LocalPort -eq 443}}; if($s -or $r -or $l){{"residue"}}')
             if residue:
                 raise RuntimeError('HTTPS rollback incomplete; service, listener or firewall remains') from original
+        raise
+
+
+def readdress(nssm, directory, record, address, expiry):
+    """Called only after ownership, old config/firewall and new NIC checks."""
+    config = directory / 'Caddyfile'
+    marker = directory / 'installed.json'
+    old_config, old_marker = config.read_bytes(), marker.read_bytes()
+    backup = directory / ('readdress-backup-' + uuid4().hex)
+    backup.mkdir()
+    (backup / 'Caddyfile').write_bytes(old_config)
+    (backup / 'installed.json').write_bytes(old_marker)
+    original_status = run(nssm, 'status', SERVICE)
+    try:
+        if original_status != 'SERVICE_STOPPED':
+            run(nssm, 'stop', SERVICE)
+        (directory / 'Caddyfile.next').replace(config)
+        powershell(f'Get-NetFirewallRule -Name {SERVICE} | Get-NetFirewallAddressFilter | Set-NetFirewallAddressFilter -LocalAddress {address}')
+        run(nssm, 'start', SERVICE)
+        for attempt in range(10):
+            try:
+                verify(address, directory)
+                break
+            except (OSError, RuntimeError):
+                if attempt == 9:
+                    raise
+                time.sleep(1)
+        next_marker = directory / 'installed.json.next'
+        next_marker.write_text(json.dumps({**record, 'address': address, 'expires_at': expiry}), encoding='utf-8')
+        next_marker.replace(marker)
+    except Exception:
+        if run(nssm, 'status', SERVICE) != 'SERVICE_STOPPED':
+            run(nssm, 'stop', SERVICE)
+        config.write_bytes(old_config)
+        marker.write_bytes(old_marker)
+        powershell(f'Get-NetFirewallRule -Name {SERVICE} | Get-NetFirewallAddressFilter | Set-NetFirewallAddressFilter -LocalAddress {record["address"]}')
+        if original_status != 'SERVICE_STOPPED':
+            run(nssm, 'start', SERVICE)
         raise

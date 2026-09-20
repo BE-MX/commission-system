@@ -1,4 +1,4 @@
-# 统一部署入口（COS 文件迁移暂缓）
+# 统一部署入口
 
 `deploy.bat` 默认在办公室已安装 NSSM 服务的仓库运行。先在候选 worktree 准备源码、依赖、主站和 PM 制品，再切换办公室服务、北京后端和已登记的云静态站。完整目标清单见 `platforms.json`；未纳管服务和未开通域名会明确列出，不计作已更新。
 
@@ -9,6 +9,12 @@ deploy\deploy.bat --cloud-only --no-pull    # 明确只处理云端，不代表�
 deploy\deploy.bat --cloud-only --no-pull --prepare-only # 准备并校验，暂不切换
 deploy\deploy.bat --revision <full-commit-sha> --migration-credentials <protected-file> --prepare-only
 ```
+
+## COS 公网文件路由
+
+`deploy.bat --storage-routing-only <probes.json> --prepare-only` 仅准备五个入口的Nginx候选（两主域、北京平板IP、hair、video）并验证语法，不改变线上流量。去掉prepare-only前必须完成应用、schema、历史引用和域配置切换；探针JSON为各公开命名空间的真实已迁移文件URL相对路径列表，空列表仅允许准备。切换失败按站回滚，跨站已完成记录保留在`.deploy_state/storage-routing.json`。该入口只调整公开文件和封闭色块机器网关，办公室业务API、LAN上传归属与Scheduler保持原配置。
+
+源码发布制品仍不包含uploads或其他业务数据。用户授权的COS历史迁移使用独立清单及SHA256回执；代码发布成功不等于数据迁移和实际手机验收完成。
 
 ## OKKI 出库轮询器专项
 
@@ -76,6 +82,12 @@ deploy\deploy.bat --shipping-video-routing-only
 此历史专项入口仍遵守主线 `.deploy_state/schema-writers.json` 恢复保护：无 pending 也检查未完成记录，恢复与健康核验成功后才标记共享日志完成。候选由计划指定，不能与 `--revision`、`--cloud-only` 或 `--no-pull` 混用；不适用于 138 之后的迁移。
 
 办公室 Windows 自带 OpenSSH 在 Python 子进程内发生过建立连接前卡住；已用同机 Git SSH 验证可运行。执行时可仅在当前进程 PATH 中将 `C:/Program Files/Git/usr/bin` 置于系统 OpenSSH 前，保留非交互认证与严格主机密钥校验，不修改系统 PATH。
+
+## 色块路由与 COS 安全封禁共存
+
+COS 公共文件规则会在受管 `ARK STORAGE PUBLIC ROUTING` 块内增加 `location ^~ /api/colorwork/storage/ { return 404; }`，封闭内部机器网关。旧 colorwork 部署器把它误判成 `Conflicting colorwork routing`；不得删除这条封禁或改成代理来绕过。修复后的冲突检查仅识别受管块里的精确 404 规则，实际配置原样保留，其他色块路由仍拒绝。
+
+如果失败发生在 colorwork prepare、日志只到 `Beijing backend: ... prepared`，本轮尚未切换服务或静态目录；以 publish-current 的阶段复核。服务器安装目录仍是旧部署器时，应按下节“候选已含部署器修复”流程，从包含本修复的受管候选 `deploy.bat --live-root ... --revision ...` 启动；只给旧入口换 revision 不会替换已启动的 Python 模块。`frontend: unchanged, build skipped` 表示复用候选构建缓存，不代表候选未包含新前端。
 
 ## 状态与恢复
 
@@ -201,7 +213,7 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 
 `deploy.bat --office-lan-https PLAN_JSON --prepare-only` 校验指定办公室安装、健康、证书和 Caddy 配置；移除 `--prepare-only` 才安装独立 `ArkOfficeHttps` NSSM 服务。此入口不发布应用、不运行迁移、不触碰其他服务。
 
-计划只含 `live_root`、`address`、`subnet`、`backend_port`；当前已核验分别为 `D:/commission-system`、`192.168.101.193`、`192.168.100.0/23`、`8001`。入口固定 `lan.leshine.cloud`。证书放运行根目录 `.deploy_state/office-lan-https/certs/fullchain.pem` 和 `privkey.pem`，目录权限仅管理员和 SYSTEM；不得提交或作为代码制品传输。证书应覆盖域名、密钥匹配且有效，最终使用系统 CA 和真实 SNI 校验线上证书及本地 PEM 一致。
+计划包含 `live_root`、`address`、`subnet`、`backend_port`；当前已核验分别为 `D:/commission-system`、`192.168.100.3`、`192.168.100.0/23`、`8001`。入口固定 `lan.leshine.cloud`。证书放运行根目录 `.deploy_state/office-lan-https/certs/fullchain.pem` 和 `privkey.pem`，目录权限仅管理员和 SYSTEM；不得提交或作为代码制品传输。证书应覆盖域名、密钥匹配且有效，最终使用系统 CA 和真实 SNI 校验线上证书及本地 PEM 一致。
 
 使用固定 Caddy 2.11.4 官方 Windows 包及 SHA-512 校验，只绑定指定内网地址 443；防火墙仅允许指定局域网，反向代理本机 8001。保留现有 HTTP 入口。首次安装失败清理本次服务与规则并核验残留，已有服务配置漂移则拒绝覆盖。
 
@@ -231,3 +243,18 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 ### 158 关联单据同步发布约束
 
 此版本同时修改后端、前端及Singapore的okki_outbound_poller.js。发布关联同步前暂停旧poller，经统一deploy.bat完成158迁移和相关实例更新后才恢复，避免旧执行器绕过ark_invoices.linked_sync_id。若候选入口将poller列为deferred，关联同步功能不得启用，需将Singapore执行器更新纳入本次发布。参见[关联同步说明](../docs/invoice-linked-sync.md)。
+
+换址时可额外指定 `previous_address`，必须匹配已安装地址且处于原子网。入口核验旧配置、归属、防火墙与新网卡，备份后仅重启 ArkOfficeHttps，HTTPS 校验成功才更新 marker；失败恢复原配置，但旧 IP 已移除时无法保证旧地址可访问。
+
+
+## COS 生产切换入口
+
+`deploy.bat --storage-maintenance PLAN [--prepare-only]` 独立记录 API 与办公室 LAN 维护状态；计划包含 attempt、action（freeze/restore）。恢复只移除本轮维护规则，保留期间新增的路由。
+
+`deploy.bat --storage-cutover PLAN [--prepare-only]` 分 prepare、stop、configure、register、start 五步，固定实际发布 revision 与维护 attempt。配置和共享引用登记前，两机文件写入服务必须停止；最终回执 SHA 和域/来源矩阵固定证据。register 只由办公室在一个数据库事务中执行；start 要求登记完成记录、运行配置及 Colorwork 配置一致。保留原件、受限环境备份和 R2 未完成分片；不可删除状态日志强行重跑，产生新云文件后不可直接改回本地存储。
+
+`storage_snapshot.py` 只复制文件，默认计算当前原件 SHA 后复用匹配的云回读收据；缺少源目录需显式空源审计。用户明确同意时可指定 `--reuse-asset-receipts`，对大小/mtime 未变的素材复用原回执，不能把该模式称为新一轮完整内容校验。
+
+`--storage-routing-only` 切换公开文件与上传入口，新加坡到北京仍启用 TLS 校验，链深度为3。Nginx reload 后短暂等待新 worker 接管。办公室原件保留，局域网上传先持久化原件与队列，再由后台同步 COS。
+
+`--finalize-release PLAN` 仅恢复已经完成办公室/北京后端激活与 schema 升级、但后续静态发布失败的已记录发布；重新核对日志、revision、tracked 状态及受管候选，不重复DDL。

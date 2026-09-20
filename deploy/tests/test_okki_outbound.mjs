@@ -3,10 +3,23 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {createOne, findExisting, buildPayload, requestOkki, loadInvoiceForOrder, stockShortages} from '../okki_outbound_creator.mjs';
+import {createOne as createOneImpl, findExisting, buildPayload, requestOkki, loadInvoiceForOrder, stockShortages} from '../okki_outbound_creator.mjs';
 const order = {order_id: 123, create_time: '2026-09-17 08:00:00', handler: [9], company_id: 2,
   currency: 'USD', exchange_rate: 669, exchange_rate_usd: 100,
   product_list: [{product_id: 4, sku_id: 5, unique_id: 6, count: 2, unit_price: 10, to_outbound_count: 0}]};
+function createOne(id, options) {
+  const api=options.api;
+  return createOneImpl(id,{...options,api:async(route,payload)=>{
+    if(route.includes('/outbound/info?serial_id='))return null;
+    const result=await api(route,payload);
+    if(route.includes('/outbound/list'))return {...result,list:result.list.map(r=>({serial_id:options.invoiceNo,...r}))};
+    if(route.includes('/outbound/info?outbound_invoice_id=') && result.record_list){
+      return {outbound_invoice_id:Number(route.split('=').at(-1)),serial_id:options.invoiceNo,status:1,company_info:{id:2},...result,
+        record_list:result.record_list.map(r=>({order_record_id:6,product_id:4,sku_id:5,outbound_count:2,sale_price:10,...r}))};
+    }
+    return result;
+  }});
+}
 function dir(t) {const d=fs.mkdtempSync(path.join(os.tmpdir(),'ark-outbound-test-')); t.after(()=>fs.rmSync(d,{recursive:true,force:true})); return d;}
 test('manual pending outbound with zero order outbound count prevents POST', async t => {
   let posts=0;

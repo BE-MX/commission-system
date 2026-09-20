@@ -1,5 +1,16 @@
 # 莱莎方舟 数据库表参考
 
+## 云存储队列与可替换文件引用（159，本地实现，未部署）
+
+| 表 | 责任与关键约束 |
+| --- | --- |
+| `ark_storage_transfers` | `id=SHA256(domain + NUL + key)`；保存不可变文件键、源实例、大小、SHA256、MIME、pending/running/ready/deleted状态、重试次数、租约令牌/到期与下次执行时间。按实例/status/next_attempt_at索引领取；删除墓碑保留，防止迟到上传重新暴露文件 |
+| `ark_storage_aliases` | 同样以domain+logical_key摘要为主键；`target_key`指向不可变对象，NULL表示显式删除。用于展会固定场景名和色块工作台逻辑文件名；先上传新对象，再在行锁事务中切换引用并登记旧对象墓碑 |
+
+| `ark_storage_publications` | 色块分片完成操作的不可变回执，主键绑定domain/key/upload identity，与别名切换同事务提交；响应丢失后重试只返回原结果，不复活已删除或被替换文件 |
+
+时间列均为北京时间。客户素材继续使用原表的 `storage_provider/object_key`，仅在完整回读校验后受控切换provider。159依赖158，禁止开发机升级共享生产库；downgrade不自动删除队列或引用数据。
+
 ## 回款管理（156_receipt_management，本地实现）
 
 | 表 | 责任与关键约束 |
@@ -532,9 +543,13 @@ AI Worker 用 `status + lease_token + lease_expires_at` 领取任务，模型网
 
 ### 发票客户等级（157）
 
-- `ark_invoice_customer_profiles`：方舟本地客户资料，`customer_id` 主键关联只读镜像 `customer_info.company_id`，`customer_grade` 为可空的 S/A/B/C/D，`updated_by` 记录修改人。客户等级与发票共用事务保存，原子 upsert 防止首次建档冲突；不写 `lsordertest.customer_info`。
+- `ark_invoice_customer_profiles`：方舟本地客户资料，`customer_id` 主键关联只读镜像 `customer_info.company_id`，`customer_grade` 为可空的 S/A/B/C/D/E，`updated_by` 记录修改人。客户等级与发票共用事务保存，原子 upsert 防止首次建档冲突；不写 `lsordertest.customer_info`。
 - `ark_invoices.customer_grade`：本单等级快照。存量 NULL 不做回填；客户端未提交字段时，新建继承客户默认等级、编辑保留本单值。显式修改等级（包括清空）更新客户资料，编辑旧单但未改变等级不会覆盖客户的新默认值。
 
 ## 158 订单关联同步
 
 ark_invoices.linked_sync_id：当前关联任务写锁标识，结束后清除。新增ark_invoice_linked_syncs：id、invoice_id（索引/FK）、request_key（唯一）、request_hash、status、before/after/steps（JSON）、run_token、lease_until、created_by、created_at、updated_at。日期统一北京时间。保存与占用订单在同一事务；运行令牌保护中间提交与恢复。降级禁止删除审计记录，使用前向迁移。详见[invoice-linked-sync.md](invoice-linked-sync.md)。
+
+### 出库删除审计复用（2026-09-20，无迁移）
+
+`ark_shipping_operation_events` 复用 `(scope,request_id)` 唯一约束，`scope=outbound-delete`、`request_id=小满outbound_invoice_id`；`outbound_record_id` 保存本地镜像记录 ID，`action` 为 delete_pending/delete_uncertain/delete_failed/outbound_deleted。payload 保存删除前小满快照、关联订单及自动任务原状态，result 保存状态与北京时间核对时间。outbound_deleted 为单调完成标识，用于屏蔽迟到镜像；不直接删除 lsordertest 记录。相关 ark_okki_outbound_tasks 暂停为 skipped/delete_pending:<id>，成功改为 skipped/deleted:<id>；明确失败恢复原状态，不确定状态不自动恢复。

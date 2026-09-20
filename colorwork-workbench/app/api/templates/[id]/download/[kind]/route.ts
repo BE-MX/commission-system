@@ -1,3 +1,4 @@
+import { getFiles } from '@/lib/server/storage';
 import { env } from 'cloudflare:workers';
 import { authErrorResponse, requireView } from '@/lib/server/auth';
 import { SERVER_TEMPLATES } from '@/lib/server/catalog';
@@ -24,7 +25,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       jpgName: currentSource.referenceJpgName,
     } : initialRow;
     if (!row) return Response.json({ error: '模板文件尚未导入。' }, { status: 404 });
-    const object = await env.FILES.get(kind === 'jpg' ? row.jpgKey : row.psdKey);
+    const object = await getFiles().get(kind === 'jpg' ? row.jpgKey : row.psdKey);
     if (!object) return Response.json({ error: '文件不存在。' }, { status: 404 });
     const name = kind === 'jpg' ? row.jpgName : row.psdName;
     const inline = new URL(request.url).searchParams.get('inline') === '1';

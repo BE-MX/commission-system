@@ -1,3 +1,4 @@
+import { getFiles } from '@/lib/server/storage';
 import { env } from 'cloudflare:workers';
 import { authErrorResponse, requireView } from '@/lib/server/auth';
 import { SERVER_TEMPLATES } from '@/lib/server/catalog';
@@ -20,7 +21,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       return Response.json({ error: 'JPG 文件格式无效，或文件超过 25 MB。' }, { status: 400 });
     }
     const key = `templates/${id}/versions/${versionId}/reference.jpg`;
-    await env.FILES.put(key, buffer, { httpMetadata: { contentType: 'image/jpeg' } });
+    await getFiles().put(key, buffer, { httpMetadata: { contentType: 'image/jpeg' } });
     return Response.json({ ok: true, key, size });
   } catch (error) {
     return authErrorResponse(error);

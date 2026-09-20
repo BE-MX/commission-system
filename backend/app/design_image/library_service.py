@@ -252,9 +252,10 @@ def create_library_asset(
         db.commit()
     except Exception:
         db.rollback()
-        _delete_files_best_effort(
-            [stored.relative_path, stored.thumbnail_relative_path], "library database rollback"
-        )
+        if not file_service.cloud_reference_exists(db, stored.relative_path):
+            _delete_files_best_effort(
+                [stored.relative_path, stored.thumbnail_relative_path], "library database rollback"
+            )
         raise
     db.refresh(row)
     return row
@@ -353,9 +354,10 @@ def clone_library_asset_to_session(
         db.commit()
     except Exception:
         db.rollback()
-        _delete_files_best_effort(
-            [stored.relative_path, stored.thumbnail_relative_path], "library clone rollback"
-        )
+        if not file_service.cloud_reference_exists(db, stored.relative_path):
+            _delete_files_best_effort(
+                [stored.relative_path, stored.thumbnail_relative_path], "library clone rollback"
+            )
         raise
     db.refresh(asset)
     return asset

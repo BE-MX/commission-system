@@ -4,7 +4,8 @@
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getOutboundPrintData, listOutboundRecords } from '@/api/shipping'
+import { getOutboundPrintData, listOutboundRecords, deleteOutboundRecord } from '@/api/shipping'
+import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import { useListPage } from '@/composables/useListPage'
 import { buildOutboundDoc, printDocHtml } from '../print/printDocs'
 import { downloadOutboundWord } from '@/api/shipping'
@@ -36,6 +37,26 @@ export function useOutboundRecords() {
   // printingId 给按钮上 loading，同时挡住重复点击
   const printingId = ref(null)
   const downloadingId = ref(null)
+  const deletingId = ref(null)
+
+  async function deleteRecord(row) {
+    if (row.record_source !== 'okki' || !row.outbound_invoice_id || deletingId.value !== null) return
+    deletingId.value = row.outbound_record_id
+    try {
+      try {
+        await confirmDanger('删除出库单', row.outbound_no,
+          '将同时删除小满中的整张待出库单。订单发票和已上传的验货资料保留。')
+      } catch {
+        return
+      }
+      await deleteOutboundRecord(row.outbound_record_id)
+      msgSuccess('删除出库单并同步小满')
+      if (listApi.list.value.length === 1 && listApi.page.value > 1) listApi.page.value--
+      await listApi.fetchList()
+    } finally {
+      deletingId.value = null
+    }
+  }
 
   async function downloadWord(row) {
     if (!row.can_print) return
@@ -69,6 +90,6 @@ export function useOutboundRecords() {
 
   return {
     ...listApi,
-    printingId, openPrint, downloadingId, downloadWord,
+    printingId, openPrint, downloadingId, downloadWord, deletingId, deleteRecord,
   }
 }

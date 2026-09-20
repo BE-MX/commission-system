@@ -179,8 +179,12 @@ def upload_tag_image(
     filename = f"tag_{now.strftime('%Y%m%d%H%M%S')}_{os.urandom(4).hex()}{ext}"
     save_path = tag_dir / filename
 
-    with open(save_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    content = file.file.read(20 * 1024 * 1024 + 1)
+    if not content or len(content) > 20 * 1024 * 1024:
+        raise HTTPException(413, '标签图片不能为空且不能超过20MiB')
+    from app.core.storage import files as cloud_files
+    if not cloud_files.put_bytes('tag_images', filename, content):
+        save_path.write_bytes(content)
 
     rel_path = f"tag_images/{filename}"
     return _ok({"image_path": rel_path})
@@ -264,14 +268,6 @@ def upload_asset(
 
     user_id = int(user.get("sub") or user.get("user_id") or 0)
 
-    # 校验文件大小
-    file_size = 0
-    temp_path = f"/tmp/upload_{file.filename}_{user_id}"
-    with open(temp_path, "wb") as f:
-        while chunk := file.file.read(8192):
-            f.write(chunk)
-            file_size += len(chunk)
-
     # 文件格式
     ext = os.path.splitext(file.filename)[1].lower().lstrip(".")
 
@@ -287,22 +283,24 @@ def upload_asset(
         allow_download=allow_download,
     )
 
-    try:
-        asset = service.create_asset(
-            db,
-            file_name=file.filename,
-            file_type=file_type,
-            file_format=ext,
-            file_size=file_size,
-            temp_storage_path=temp_path,
-            uploader_id=user_id,
-            tags=tags,
-            permission=perm,
-            remark=remark,
-        )
-    except SingleSelectViolation as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    return _ok({"id": asset.id, "file_name": asset.file_name})
+    from app.asset.upload_storage import staged_upload
+    with staged_upload(file) as (temp_path, file_size):
+        try:
+            asset = service.create_asset(
+                db,
+                file_name=file.filename,
+                file_type=file_type,
+                file_format=ext,
+                file_size=file_size,
+                temp_storage_path=temp_path,
+                uploader_id=user_id,
+                tags=tags,
+                permission=perm,
+                remark=remark,
+            )
+        except SingleSelectViolation as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return _ok({"id": asset.id, "file_name": asset.file_name})
 
 
 # ── 素材列表 ────────────────────────────────────────────
@@ -944,20 +942,15 @@ def upload_version(
     """上传新版本"""
     user_id = int(user.get("sub") or user.get("user_id") or 0)
 
-    temp_path = f"/tmp/upload_{file.filename}_{user_id}"
-    file_size = 0
-    with open(temp_path, "wb") as f:
-        while chunk := file.file.read(8192):
-            f.write(chunk)
-            file_size += len(chunk)
-
-    version = service.upload_new_version(
-        db, asset_id, file.filename, file_size,
-        temp_path, user_id, remark,
-    )
-    if not version:
-        raise HTTPException(status_code=404, detail="素材不存在")
-    return _ok({"version_id": version.id, "version_number": version.version_number})
+    from app.asset.upload_storage import staged_upload
+    with staged_upload(file) as (temp_path, file_size):
+        version = service.upload_new_version(
+            db, asset_id, file.filename, file_size,
+            temp_path, user_id, remark,
+        )
+        if not version:
+            raise HTTPException(status_code=404, detail="素材不存在")
+        return _ok({"version_id": version.id, "version_number": version.version_number})
 
 
 # ── 删除素材 ────────────────────────────────────────────
@@ -1019,6 +1012,17 @@ def download_asset(
     if user_id:
         service.log_download(db, asset_id, user_id, asset.current_version_id)
 
+    from app.core.storage import transfers
+    if transfers.managed('asset'):
+        record = transfers.snapshot(db, 'asset', asset.storage_path)
+        key = asset.storage_path
+        from app.asset.asset_service import build_download_filename
+        filename = build_download_filename(asset)
+        db.rollback()
+        response = transfers.response('asset', key, record)
+        from urllib.parse import quote
+        response.headers['Content-Disposition'] = "attachment; filename*=UTF-8''" + quote(filename, safe='')
+        return response
     abs_path = ASSET_STORAGE_ROOT / asset.storage_path
     if not abs_path.exists():
         raise HTTPException(status_code=404, detail="文件不存在")

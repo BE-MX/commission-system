@@ -258,8 +258,11 @@ async def upload_attachment(
         raise HTTPException(422, f"附件超过 {_MAX_UPLOAD_MB}MB")
     name = f"{uuid.uuid4().hex}{ext}"
     abs_path = UPLOAD_ROOT / name
-    abs_path.parent.mkdir(parents=True, exist_ok=True)
-    abs_path.write_bytes(content)
+    from app.core.storage import files as cloud_files
+    from starlette.concurrency import run_in_threadpool
+    if not await run_in_threadpool(cloud_files.put_bytes, 'card', name, content, file.content_type):
+        abs_path.parent.mkdir(parents=True, exist_ok=True)
+        abs_path.write_bytes(content)
     rel = f"card/{name}"
     return ok({"attachment_path": rel, "url": f"/uploads/{rel}"})
 

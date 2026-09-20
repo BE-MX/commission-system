@@ -20,6 +20,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from pypdf import PdfReader
 
 from app.core.config import get_settings
+from app.core.storage import files as cloud_files
 
 
 MAX_IMAGE_PIXELS = 60_000_000
@@ -398,7 +399,19 @@ def _resolve_unlocked(relative_path: str) -> Path:
 
 def resolve_private_path(relative_path: str) -> Path:
     with _STORAGE_LOCK:
+        if cloud_files.managed('ai-chat'):
+            return cloud_files.cached_path('ai-chat', _cloud_key(relative_path))
         return _resolve_unlocked(relative_path)
+
+
+def _cloud_key(relative_path: str) -> str:
+    from app.core.storage.cos import validate_key
+    try:
+        if PureWindowsPath(relative_path).drive:
+            raise ValueError('Absolute Windows path')
+        return validate_key(relative_path)
+    except (ValueError, TypeError):
+        raise FileStorageError('非法私有文件路径') from None
 
 
 def _cleanup_best_effort(path: Path) -> None:
@@ -450,8 +463,8 @@ def normalize_and_store(
     category = "images" if prepared.attachment_type == "image" else "documents"
     relative = (Path(category) / f"{uuid4().hex}{prepared.suffix}").as_posix()
     with _STORAGE_LOCK:
-        target = _resolve_unlocked(relative)
-        _write_atomic(target, prepared.content)
+        if not cloud_files.put_bytes('ai-chat', relative, prepared.content, prepared.mime_type):
+            _write_atomic(_resolve_unlocked(relative), prepared.content)
     return StoredAttachment(
         storage_path=relative,
         original_name=original_name,
@@ -468,7 +481,7 @@ def normalize_and_store(
 
 def read_private_file(relative_path: str) -> bytes:
     with _STORAGE_LOCK:
-        target = _resolve_unlocked(relative_path)
+        target = resolve_private_path(relative_path)
         try:
             return target.read_bytes()
         except OSError as exc:
@@ -477,6 +490,9 @@ def read_private_file(relative_path: str) -> bytes:
 
 def delete_private_file(relative_path: str) -> None:
     with _STORAGE_LOCK:
+        if cloud_files.managed('ai-chat'):
+            cloud_files.delete('ai-chat', _cloud_key(relative_path), None)
+            return
         target = _resolve_unlocked(relative_path)
         try:
             if target.exists() and not target.is_file():

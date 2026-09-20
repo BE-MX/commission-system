@@ -1,3 +1,91 @@
+## 2026-09-20 出库列表排序规则冲突（codex/outbound-collation-fix）
+
+- 已只读复现：`lsordertest.okki_outbound_records` 可访问（4519条）；单数 `okki_outbound_record` 不存在。列表失败来自删除回执 `request_id` 的 `utf8mb4_unicode_ci` 与 `CAST(outbound_invoice_id AS CHAR)` 继承的连接 `utf8mb4_0900_ai_ci` 比较，MySQL报1267，被统一提示为数据库连接失败。
+- 修复删除过滤在MySQL上的字符串比较，显式指定 `utf8mb4_unicode_ci`；列表和详情共用，保留字符串精确ID比较，不改表、不改数据、无迁移。
+- 隔离SQLite回归54项通过；修复代码对真实库只读验证列表20条/合并总数4521、详情可读、无归属匹配返回0条。未做生产页面验收；用户已授权本次合并 main 并推送 origin，未授权或执行部署。
+- 独立审查无发现，删除回执隐藏和归属权限不变。增量约定检查无违规；完整约定检查仍被8项既有前端UI基线过期阻断；Git巡检已执行 `--no-fetch`，仅为本地快照。
+
+## 2026-09-20 方舟删除小满出库单（codex/outbound-delete）
+
+- 出库单页面新增受 `shipping_inspection:delete` 控制的删除按钮与整单确认；按原归属范围校验，远端实时核对客户和待出库状态。
+- 小满删除及回读确认后才隐藏本地过期镜像；复用shipping操作事件的唯一键记录持久删除意图与完成回执，无迁移。不写业务镜像、不删除发票及验货媒体；相关自动出库任务暂停防重建，超时只核对不重发。
+- 实现与验证在独立 worktree；此次交付范围为合并 main 并推送 origin，生产发布另行执行，未执行真实业务删除测试。上线需后端启动 seed 并分配删除权限。后端相关101项、前端行为4项通过，前端构建通过；独立审查发现的缺任务防重建与同订单双删除持有冲突已修复并复查通过。增量约定无违规，完整检查被8项既有UI基线过期阻断。浏览器连接不可用，未做实点验收；MySQL实锁竞争和外部仓库并发需上线验证，不把SQLite测试当生产锁证明。
+
+## 2026-09-20 发货扫描网页／小程序功能同步（codex/shipping-scan-parity）
+
+- 小程序补齐整单/明细相册照片、自动压缩失败保留重试/放弃、上传进度；选取/压缩/上传/待重试阶段防止新文件覆盖、刷新和提交，过期回调不回填。
+- 后端 mini 照片/视频接受可选 request_id，复用现有事件表实现同文件重试去重；无迁移。先部署后端，再单独上传发布微信小程序。
+- 验证：小程序 Node 测试 49 通过；后端媒体/检验/工作站 45 通过（隔离 SQLite）；微信官方 WXML/WXSS 编译通过。约定增量无违规；全量 UI 债务门禁仍有 8 个既有基线过期错误。
+- 未合并、未推送、未部署，未做微信/iPhone 真机测试。独立审查已通过；修复并发重试时媒体快照旧读，并断言 MySQL 方言重放查询使用 FOR UPDATE。
+
+## 2026-09-20 出库单混单修复（codex/outbound-order-isolation）
+
+- 数据已修复并通过正常 OKKI 同步刷新：旧出库 64703599253896（本地 91258）仅保留订单 19054 的发帘 4 件，客户按旧订单恢复为 heidrunopitz；新出库 105798528011219（本地 91266）为「张笑浅色库存#0925 [25924]」，仅订单 25924 的贴发 20+40=60 件，日期 2026-09-20。
+- 根因：09:19 自动创建请求 serial_id 撞到 2025 年旧单；OKKI push 以同名旧单执行追加，旧的创建成功核验只检查存在目标订单行，漏掉其他订单行。
+- 修复前快照、创建/拆分请求及响应保存在新加坡 okki-sync 的受限 `logs/repair-outbound-25924-20260920/`。未删除旧业务单。旧单历史备注无事故前快照，未猜测还原；原 09:19 创建日志保留为事故证据。
+- 功能修复：全局单号实时查重，冲突用订单 ID 后缀；创建后全量明细核验；已有混单不能按 existing 放行。代码与专项测试在当前独立 worktree；生产功能发布尚未执行。42 项 Node 测试通过；prepare-only 及真实单据只读核验通过。约定检查受 8 项既有前端 UI 基线陈旧问题阻断；Git 巡检为 --no-fetch 本地快照。
+
+## 2026-09-20 COS 封禁被色块部署误判冲突（Codex，本地修复）
+
+分支 `codex/fix-colorwork-storage-routing`，基于 d0accd9f。用户以 ba79159c 固定候选发布，colorwork prepare 报 Conflicting colorwork routing。只读核实北京两个 server 与新加坡一个 server 的受管 STORAGE PUBLIC 块均有 `/api/colorwork/storage/` 精确404封禁；旧检查仅按路径子串判冲突。修复只在检查副本忽略受管块内精确404规则，输出原样保留，未知代理/其它色块路径/缺失标记/未受管规则仍阻断。
+
+19 项色块路由回归及独立审查通过（新增共存用例先红后绿）；真实两站配置读取后本地 render 成功，3 个 storage 块逐字保留且重复渲染幂等，证据 tmp/routing-evidence/live-render.json。组合 storage 套件共62通过/1失败：test_bad_public_route_rolls_back 的 Mock StopIteration 在未修改 main 同样复现，未顺手修改。未改生产 Nginx、未 reload、未部署。生产旧入口需从含修复的受管候选启动，见 deploy/README.md；本地待合并推送。
+
+## 2026-09-20 订单发票客户等级增加 E（Codex）
+
+分支 `codex/invoice-grade-e`，worktree `D:/MyProgram/commission-system-codex-invoice-grade-e`。订单发票录入/编辑客户等级增加 E，后端创建/编辑校验同步放行；沿用客户默认等级记忆和本单快照，不改变价格规则。现有 String(1) 可直接存储，无需数据库迁移。API 与数据库说明同步更新。
+
+验证：先确认 E 新建/编辑回归在旧校验下失败，再修复并通过后端等级测试 22 项（隔离内存 SQLite）、前端等级测试 7 项、主站 npm run build、git diff --check；增量约定检查无违规。完整 check_conventions 受 8 项既有 UI 行数基线过期阻断，未修改无关页面；git_sweep --no-fetch 已运行，仅本地快照。等级迁移旧测试写死 157 为最新 head，已改为检查单 head 且 157 在迁移链中，保留数据与回滚断言。独立 agent 只读审查通过，无待修问题。本轮未做浏览器人工验收。用户已授权合并并推送 origin/main；不包含生产部署。
+
+## 2026-09-20 发货质检支持相册照片（Codex，本地）
+
+在同一 `codex/shipping-video-activation` 分支继续完善上传入口。整单和产品明细新增独立“相册照片”按钮，使用不带 capture 的 image/* 选择器；原“拍照上传”保留 environment 相机入口，选好一张照片后复用原 photos 上传流程。四个入口按两列排列。沿用上传中/视频待处理禁用与已提交只读规则；不新增后端接口。
+
+Chromium 实际组件 + 模拟 API 验证通过：整单 item_id 为空、产品 IT2 归属正确、相同照片重复选择可触发上传、busy 禁用、submitted 隐藏、320px 无横向溢出与页面错误。主站构建通过。证据 `frontend/tmp/video-check/verify-photo-album.mjs`、`photo-album-320.png`、`tmp/photo-album-build.log`。本轮未合并/推送/部署；原视频自动处理修改一并保留。
+
+## 2026-09-20 Safari 原生拍摄返回后自动压缩（Codex，本地待验证）
+
+用户确认此前首次提示“浏览器未允许视频处理”，点击重试即可成功；进一步明确要求“使用视频后直接自动压缩上传”，不接受把第二次点击设成默认流程。分支 `codex/shipping-video-activation`，基于 `4d17eda7`，worktree `D:/MyProgram/commission-system-codex-video-activation`。改为在拍视频/相册按钮原始 click 内同步预激活空 video 与 AudioContext，返回后把同一实例交给压缩器；默认仍自动上传。此方法依据 WebKit play 的 per-element 激活行为，不能用桌面证据保证 iPhone 相机返回必定保留授权。只有实际 NotAllowedError 才显示普通恢复入口；真实解码错误继续报错。保留文件期间禁新拍摄覆盖/直接提交，可确认放弃；取消 picker、清单结束和卸载释放预备资源。
+
+24 项压缩/工作台/安装回归通过；Chromium 390px 实际按钮→文件选择→自动压缩→模拟上传，正确关联 IT2；模拟 NotAllowed 后恢复按钮正常、无红色失败提示、没有横向溢出或页面错误。真实 3 秒视频输出 289603 字节，H264 1280x720 + AAC，音量 mean -21.1dB，声音保留。独立审查通过（发现的视频覆盖与无取消出口已修复并补回归）。前端构建及增量规则通过；完整门禁 8 项既有 UI 行数基线问题。证据 `frontend/tmp/video-check/` 与 `tmp/video-activation-build.log`。本次未合并/推送/部署，仍需 iPhone Safari 原生相机真机复验。
+
+## 2026-09-20 生产 COS 已切换，办公室与云入口已恢复
+
+已执行用户授权的办公室、leshine.cloud/leshine.work生产更新：两后端/办公室前端为4995759814b5a207f1bc2d6752019112cc800481，数据库159。两域主站artifact c517100b03161b8b41b2d78acbd57827e9351e288a96970806e66b83e58f32fe，PM d70da50938277be7ae36b240826c5c9f4226aea8af5dcf3df7229cd02f4897b6；Singapore OKKI poller同步完成。DDL成功后静态收尾故障通过受控finalize完成，未重复DDL，发布/schema日志已关闭。
+
+COS attempt cos-storage-20260920b已完成configure/register/start，21域启用和managed、两机worker启用，Colorwork改用方舟COS存储接口。事务登记30560素材对象、476检验附件，275条本地客户素材provider改为cos。最终联合清单含客户素材308、设计图1728、内贸87、培训15、售后9、AI聊天3、头像1、名片11、Expo2591、节日1210、tag_images1（明确部署探针）、设计附件22、回款凭证64、PM24、Colorwork262、发型96、视频16；knowledge/insight为空。办公室与北京原件和环境备份均保留；R2未完成24个multipart保留。4个历史素材/缩略图缺失按用户明确例外处理，不制造ready记录。
+
+用户先要求跳过素材逐个校验，随后要求直接切换、不要再校验：中止素材全量重哈希，复用既有完整云回读记录并核对size/mtime；其他域当时已完成最终清单。不宣称本轮重新完整校验123GB素材。未再做全量私有接口/真机上传速度回归。手机检验仍按局域网持久接收+同事务队列+后台COS同步；真实手机Wi-Fi吞吐未实测。
+
+公开文件路由cloud/cloud-ip/work/hair/video已由统一入口激活。新加坡TLS链验证深度修为3（不关闭TLS验证）；Nginx reload短暂等待新worker。切换过程中受管启动、事务与路由入口完成必要readiness，不代表所有业务操作都人工复测。两机后端健康；维护规则已全部恢复。办公室0.0.0.0:8001监听，临时ArkStorageMaintenance8001规则不存在；服务器自身访问http://192.168.100.3:8001/、/health及https://lan.leshine.cloud/均200。用户反馈内网打不开时仍处维护窗口，随后已解除。
+
+恢复证据位于各机.deploy_state/storage-cutover/cos-storage-20260920b及storage-maintenance同名目录；最终回执bundle SHA256 26ccec441881fd6f64eca4d746762a815fa681f7b7235ff33072a8fb2ffc8f85。已有新云写入可能发生，不可简单关COS或回滚本地旧读路径。切换登记首次因ORM关联模型漏导入回滚，补齐auth/design后事务成功；北京环境root-owned，切换器使用限定脚本sudo执行。Colorwork启动首次早于监听，按同一marker重入成功。新切换工具在本任务分支交付，保留受限迁移材料与本地工作树以便后续维护。
+
+## 2026-09-20 COS生产发布预检受阻（已授权，尚未切换）
+
+用户已明确授权办公室、leshine.cloud/leshine.work最新代码发布及COS切换，包含158与159及158配套出库轮询器。office-prod已连通；办公室与北京实际HEAD仍799ebb13，服务健康。已将4d17eda7通过Git bundle传入办公室并在受管候选执行deploy.bat --live-root/--revision/--no-pull/--prepare-only；候选COS依赖、pip check、字体、设计文档渲染及路由导入通过。独立DBA认证预检返回MySQL 1045，已确认凭据格式正确、非应用身份；需要管理员修复办公室.deploy_state/credentials/migration.env中的凭据或当前出口来源授权。未停止服务、未执行DDL、未改生产COS开关/业务引用/Nginx，不把此轮记为发布成功。
+
+等待期间补复制并完整SHA回读21个新增文件，共9,994,942字节：办公室domestic 2/festival 7/receipt-proofs 3，北京domestic 3/expo 6。增量manifest和回执独立保存，不改旧证据。素材数据库仍30,564个唯一引用，无新增/删除，已迁移30,560个原文件size/mtime未变，剩余仍为既定4个缺失；素材目录9,357个非清单文件不能当成新增数据库附件。设计生图2个源文件已不在目录，历史COS回读收据保留，不据此删除云对象或业务引用；后续应按活跃DB引用核验。尚未冻结，正式切换仍须再查最终增量与Colorwork活跃R2数据（本轮仅查导出快照）。
+
+精确缺失例外参数已落地cutover.py，默认不豁免；只允许asset当前实际缺失的引用，不制造ready记录，不豁免尺寸/SHA冲突。15项SQLite回归通过。切换协调还须接入统一入口：独立冻结office/BJ/Colorwork、事务登记、保护env备份及启用、再开流量；普通publish会提前重启，不能直接当作COS冻结事务。Colorwork .dev.vars按prepare时配置生成，同一candidate不可在开关修改后直接复用，须受控生成新配置并验证重启。
+
+## 2026-09-20 LighthouseCOS 代码准备合并（生产尚未切换）
+
+2026-09-20 合并推送结果：main与origin/main已核对为4d17eda745efca74fc0675ab50f11eb2a025e724；COS主体提交69be6574，集成修复4d17eda7。323后端/部署测试、5项Node/workerd、合并后73项关键回归通过，主站与Colorwork构建通过。主目录17个不重叠文件原字节保留、7份重叠文档已对账恢复；密钥与业务回执未提交。生产COS开关、DB引用及Nginx未切换，保留本任务工作树及受限恢复材料供后续生产切换。
+
+
+用户已授权COS迁移代码合并推送，本次不执行存储生产切换。私有桶leshine-ark-1259007308 / ap-beijing / ark/production；公网北京代理到COS，手机检验局域网持久接收并后台同步。完整覆盖与放行条件见[附件验收](requirements/2026-09-19-attachment-cutover-audit.md)。接口、队列、缓存、各附件域和Colorwork已实现，开关默认关闭；迁移159依赖158，只允许统一部署入口检查并执行，不stamp/downgrade。
+
+初始素材30,560文件/123,568,602,783字节已全部上传、北京内网逐字节SHA256回读，最终回执与原manifest严格匹配。设计生图1718、设计附件22、office展会417、采购节1201及先前PM/回款/检验/客户素材/内贸/售后/培训/AI/头像/纪要已回读；北京展会2392、Colorwork262、新加坡hair96/video16已核验。展会2张冲突旧色板单独归档。密钥、清单、原始业务回执仅保留受限.deploy_state和服务器旁路，源文件未删除。
+
+用户已明确接受素材14158和14159各自原件及缩略图共4个缺失作为迁移例外，不再要求找回；切换校验器仍须接入精确例外白名单，不能全局跳过引用覆盖。旧color swatch仍有空PNG占位实现，不计作真实生成功能完成。
+
+仍待生产切换：冻结写入与最终增量、跨实例manifest并集、159队列ready及客户素材provider受控回填、配套配置、5个公网入口激活、办公室/cloud/work登录态读写与真实手机Wi-Fi上传测速。Colorwork24个未完成R2上传需在冻结时重查。5个候选Nginx此前prepare-only通过，未激活；不是线上COS已可用。上次确认生产应用HEAD799ebb13，DB157，发布前必须重新读取现场版本并明确158的发布范围。
+
+内网换址已完成且单独合并推送d64a56db：DNSPod及办公室网关192.168.100.1均将lan.leshine.cloud解析到192.168.100.3，ArkOfficeHttps监听及防火墙同步更新；默认DNS下HTTPS /health、/shipping/scan、/pm/均200，证书校验正常。原配置受限备份保留。PM地址提示代码已改且构建通过，前端本次未发布。SSH alias office-prod经本机2223连接lys-acciowork，映射曾反复失联，重建后恢复。
+
+已做多轮隔离测试与独立审查；本次合并回归323passed/1skipped，主站及Colorwork构建、TypeScript检查通过；5项Node/workerd测试通过，修复新主分支候选色块替换绕过COS适配的问题并经独立复核。完整规则检查仍有UI行数基线问题，不修改baseline隐藏告警。已基于最新main复验，159为单head，增量约定无违规；COS工作树保留恢复材料直至生产切换完成。
+
 ## 2026-09-18 保存并同步关联单据（Codex，待部署）
 
 工作树commission-system-codex-invoice-linked-sync，分支codex/invoice-linked-sync。已接入原订单编辑、持久分步结果、失败续跑、旧编辑内容哈希、任务令牌、回款摘要权限与人工核对结束。迁移158；需配套更新Singapore出库poller再启用。出库自动写回因小满未明确服务端并发保护暂不开放，显示实时关联单据和SKU差异；回款财务事实不改写。171项隔离后端测试、41项Node测试、前端构建与本地模拟界面验证通过，独立审查通过。详细边界见[invoice-linked-sync.md](invoice-linked-sync.md)。生产尚未部署；合并与推送以Git记录为准。完整规则门禁仍为7项既有UI基线问题。

@@ -14,6 +14,7 @@ from uuid import uuid4
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.core.config import get_settings
+from app.core.storage import files as cloud_files
 
 
 MEBIBYTE = 1024 * 1024
@@ -67,7 +68,7 @@ def resolve_private_path(relative_path: str) -> Path:
         path.relative_to(root)
     except ValueError:
         raise ImageStorageError("非法知识库图片路径") from None
-    return path
+    return cloud_files.read_path('knowledge', relative_path, root)
 
 
 def _normalized_bytes(content: bytes, declared_mime: str) -> tuple[bytes, str, int, int]:
@@ -130,6 +131,9 @@ def store_upload(library_id: int, content: bytes, declared_mime: str) -> StoredK
     suffix = _FORMAT_SUFFIX[_MIME_FORMAT[mime]]
     name = f"{uuid4().hex}{suffix}"
     relative = Path(str(library_id)) / name[:2] / name
+    if cloud_files.put_bytes('knowledge', relative.as_posix(), normalized, mime):
+        return StoredKnowledgeImage(storage_path=relative.as_posix(), mime_type=mime,
+                                    file_size=len(normalized), width=width, height=height, sha256=digest)
     path = resolve_private_path(relative.as_posix())
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -151,7 +155,7 @@ def store_upload(library_id: int, content: bytes, declared_mime: str) -> StoredK
 
 def remove_quietly(relative_path: str) -> bool:
     try:
-        resolve_private_path(relative_path).unlink(missing_ok=True)
+        cloud_files.delete('knowledge', relative_path, storage_root())
         return True
     except Exception as exc:  # noqa: BLE001
         logger.warning("knowledge image cleanup failed path=%s error=%s", relative_path, exc)

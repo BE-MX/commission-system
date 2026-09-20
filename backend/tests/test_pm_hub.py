@@ -87,6 +87,18 @@ def _upload(db, material, username="liang.xz26", name="v.txt", content=b"hello")
     return material_service.upload_version(db, material, username, name, content, "text/plain", None)
 
 
+def test_commit_acknowledgement_lost_preserves_referenced_file(db, pm_seed, monkeypatch):
+    original_commit = db.commit
+    def uncertain_commit():
+        original_commit()
+        raise RuntimeError('commit acknowledgement lost')
+    monkeypatch.setattr(db, 'commit', uncertain_commit)
+    with pytest.raises(RuntimeError, match='acknowledgement'):
+        _upload(db, pm_seed['material'])
+    version = db.query(PmMaterialVersion).one()
+    assert material_service.to_abs(version.file_path).read_bytes() == b'hello'
+
+
 # ── token 生命周期 ───────────────────────────────────────────────────
 
 class TestToken:

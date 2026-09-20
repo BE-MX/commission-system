@@ -58,6 +58,25 @@ def test_unknown_or_conflicting_layout_is_rejected(bad):
         routing.render(bad, snippet("cloud"), "cloud")
 
 
+@pytest.mark.parametrize("region", ["office", "cloud"])
+def test_managed_storage_deny_is_preserved_without_masking_conflicts(region):
+    storage = "# BEGIN ARK STORAGE PUBLIC ROUTING\nlocation ^~ /api/colorwork/storage/ { return 404; }\n# END ARK STORAGE PUBLIC ROUTING\n"
+    original = config(region).replace("    location /api/", storage + "    location /api/")
+    candidate = routing.render(original, snippet(region), region)
+    assert candidate.count(storage) == routing.SPECS[region][2]
+    assert routing.render(candidate, snippet(region), region) == candidate
+    for unsafe in [
+        storage.replace("return 404;", "proxy_pass http://127.0.0.1:8001;"),
+        storage.replace("/api/colorwork/storage/", "/api/colorwork/"),
+        storage.replace("# END ARK STORAGE PUBLIC ROUTING", ""),
+        storage.replace("# BEGIN ARK STORAGE PUBLIC ROUTING", ""),
+        storage.replace("# END ARK STORAGE PUBLIC ROUTING", "location /api/colorwork/sso { return 200; }\n# END ARK STORAGE PUBLIC ROUTING"),
+        "location ^~ /api/colorwork/storage/ { return 404; }\n",
+    ]:
+        with pytest.raises(ValueError, match="Conflicting colorwork"):
+            routing.render(config(region).replace("    location /api/", unsafe + "    location /api/"), snippet(region), region)
+
+
 @pytest.fixture
 def site(tmp_path, monkeypatch):
     path = tmp_path / "site.conf"
