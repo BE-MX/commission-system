@@ -2,7 +2,14 @@
 
 import { workbenchFetch, workbenchUrl } from '@/lib/workbench-url';
 
-import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ChangeEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -11,7 +18,11 @@ import {
   RefreshCw,
   UploadCloud,
 } from 'lucide-react';
-import { activeMasterSelection, colorForId, type StockColor } from '@/lib/catalog';
+import {
+  activeMasterSelection,
+  colorForId,
+  type StockColor,
+} from '@/lib/catalog';
 import {
   INVENTORY_SELECTABLE_STATUSES,
   STATUS_LABELS,
@@ -20,7 +31,11 @@ import {
 } from '@/lib/inventory';
 import { paintPoster } from '@/lib/poster';
 import { computeSourceChanges } from '@/lib/source-diff';
-import { sourceIssueKey, type SourceCard, type SourceVersionSummary } from '@/lib/source-versions';
+import {
+  sourceIssueKey,
+  type SourceCard,
+  type SourceVersionSummary,
+} from '@/lib/source-versions';
 
 type SourceList = {
   currentVersionId: string | null;
@@ -37,7 +52,11 @@ type MappingDraft = {
 type ApiError = Error & { status?: number; code?: string; details?: unknown };
 
 async function responseJson<T>(response: Response): Promise<T> {
-  const data = await response.json() as T & { error?: string; code?: string; details?: unknown };
+  const data = (await response.json()) as T & {
+    error?: string;
+    code?: string;
+    details?: unknown;
+  };
   if (!response.ok) {
     const error = new Error(data.error || '操作失败。') as ApiError;
     error.status = response.status;
@@ -49,8 +68,16 @@ async function responseJson<T>(response: Response): Promise<T> {
 }
 
 function parseLengths(value: string) {
-  const values = value.trim().split(/[，,、\s/]+/).map(Number);
-  if (values.some((length) => !Number.isInteger(length) || length <= 0 || length > 100)) return [];
+  const values = value
+    .trim()
+    .split(/[，,、\s/]+/)
+    .map(Number);
+  if (
+    values.some(
+      (length) => !Number.isInteger(length) || length <= 0 || length > 100,
+    )
+  )
+    return [];
   return [...new Set(values)].sort((a, b) => a - b);
 }
 
@@ -68,10 +95,15 @@ async function asPng(file: File): Promise<Blob> {
     canvas.width = image.naturalWidth;
     canvas.height = image.naturalHeight;
     const context = canvas.getContext('2d');
-    if (!context || !canvas.width || !canvas.height) throw new Error('无法读取这个色块图。');
+    if (!context || !canvas.width || !canvas.height)
+      throw new Error('无法读取这个色块图。');
     context.drawImage(image, 0, 0);
     return await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('色块图转换 PNG 失败。')), 'image/png');
+      canvas.toBlob(
+        (blob) =>
+          blob ? resolve(blob) : reject(new Error('色块图转换 PNG 失败。')),
+        'image/png',
+      );
     });
   } finally {
     URL.revokeObjectURL(url);
@@ -109,9 +141,13 @@ export function SourceVersionManager({
   const [jpg, setJpg] = useState<File | null>(null);
   const [versions, setVersions] = useState<SourceVersionSummary[]>([]);
   const [candidate, setCandidate] = useState<SourceVersionSummary | null>(null);
-  const [swatchFiles, setSwatchFiles] = useState<Record<string, File | null>>({});
+  const [swatchFiles, setSwatchFiles] = useState<Record<string, File | null>>(
+    {},
+  );
   const [mappings, setMappings] = useState<Record<string, MappingDraft>>({});
-  const [initialStatuses, setInitialStatuses] = useState<Record<string, InventoryStatus | ''>>({});
+  const [initialStatuses, setInitialStatuses] = useState<
+    Record<string, InventoryStatus | ''>
+  >({});
   const [acknowledged, setAcknowledged] = useState<Record<string, boolean>>({});
   const [running, setRunning] = useState(false);
   const [activating, setActivating] = useState(false);
@@ -119,54 +155,92 @@ export function SourceVersionManager({
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [flowStep, setFlowStep] = useState<1 | 2 | 3 | 4>(1);
-  const [previewState, setPreviewState] = useState<'idle' | 'rendering' | 'ready' | 'failed'>('idle');
+  const [previewState, setPreviewState] = useState<
+    'idle' | 'rendering' | 'ready' | 'failed'
+  >('idle');
   const previewRef = useRef<HTMLCanvasElement>(null);
   const initializedCandidateIdRef = useRef<string | null>(null);
   const config = candidate?.config ?? null;
   const reviewConfig = useMemo(() => {
     if (!config) return null;
-    const cards = config.template.initialCards.flatMap((card) => {
-      const mapping = mappings[card.candidateId];
-      if (mapping?.mode === 'ignore') return [];
-      const lengths = parseLengths(mapping?.lengthText ?? '');
-      const existing = mapping?.mode === 'existing' && mapping.entryId;
-      return [{
-        ...card,
-        entryId: existing ? mapping.entryId : card.entryId,
-        lengths: lengths.length ? lengths : card.lengths,
-        section: mapping ? mapping.section || null : card.section,
-        matchState: existing ? 'exact' as const : mapping?.mode === 'new' ? 'new' as const : card.matchState,
-        matchedEntryId: existing ? mapping.entryId : mapping?.mode === 'new' ? null : card.matchedEntryId,
-      }];
-    }).map((card, order) => ({ ...card, order }));
+    const cards = config.template.initialCards
+      .flatMap((card) => {
+        const mapping = mappings[card.candidateId];
+        if (mapping?.mode === 'ignore') return [];
+        const lengths = parseLengths(mapping?.lengthText ?? '');
+        const existing = mapping?.mode === 'existing' && mapping.entryId;
+        return [
+          {
+            ...card,
+            entryId: existing ? mapping.entryId : card.entryId,
+            lengths: lengths.length ? lengths : card.lengths,
+            section: mapping ? mapping.section || null : card.section,
+            matchState: existing
+              ? ('exact' as const)
+              : mapping?.mode === 'new'
+                ? ('new' as const)
+                : card.matchState,
+            matchedEntryId: existing
+              ? mapping.entryId
+              : mapping?.mode === 'new'
+                ? null
+                : card.matchedEntryId,
+          },
+        ];
+      })
+      .map((card, order) => ({ ...card, order }));
     const availableLengths = config.availableLengths;
-    const usedSections = new Set(cards.map((card) => card.section).filter(Boolean));
-    const sections = config.template.sections.filter((section) => usedSections.has(section.key));
+    const usedSections = new Set(
+      cards.map((card) => card.section).filter(Boolean),
+    );
+    const sections = config.template.sections.filter((section) =>
+      usedSections.has(section.key),
+    );
     const usedColorIds = new Set(cards.map((card) => card.colorId));
     return {
       ...config,
       colors: config.colors.filter((color) => usedColorIds.has(color.id)),
       availableLengths,
-      template: { ...config.template, availableLengths, initialCards: cards, initialColorCount: cards.length, sections },
+      template: {
+        ...config.template,
+        availableLengths,
+        initialCards: cards,
+        initialColorCount: cards.length,
+        sections,
+      },
     };
   }, [config, mappings]);
   const reviewDiff = useMemo(
-    () => reviewConfig
-      ? computeSourceChanges(state.template, state.colors, state.selection, reviewConfig)
-      : null,
+    () =>
+      reviewConfig
+        ? computeSourceChanges(
+            state.template,
+            state.colors,
+            state.selection,
+            reviewConfig,
+          )
+        : null,
     [reviewConfig, state.colors, state.selection, state.template],
   );
 
   const loadVersions = useCallback(async () => {
     try {
-      const data = await responseJson<SourceList>(await workbenchFetch(`/api/template-sources/${state.templateId}`, { cache: 'no-store' }));
+      const data = await responseJson<SourceList>(
+        await workbenchFetch(`/api/template-sources/${state.templateId}`, {
+          cache: 'no-store',
+        }),
+      );
       setVersions(data.versions);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '源文件版本读取失败。');
+      setError(
+        reason instanceof Error ? reason.message : '源文件版本读取失败。',
+      );
     }
   }, [state.templateId]);
 
-  useEffect(() => { void loadVersions(); }, [loadVersions]);
+  useEffect(() => {
+    void loadVersions();
+  }, [loadVersions]);
   useEffect(() => {
     initializedCandidateIdRef.current = null;
     setCandidate(null);
@@ -210,7 +284,12 @@ export function SourceVersionManager({
     let cancelled = false;
     setPreviewState('rendering');
     const colors = mergeColors(state.colors, reviewConfig.colors);
-    void paintPoster(colors, reviewConfig.template, activeMasterSelection(reviewConfig.template.initialCards), {})
+    void paintPoster(
+      colors,
+      reviewConfig.template,
+      activeMasterSelection(reviewConfig.template.initialCards),
+      {},
+    )
       .then((poster) => {
         if (cancelled) return;
         canvas.width = poster.width;
@@ -226,10 +305,15 @@ export function SourceVersionManager({
         setPreviewState('failed');
         setError(`新版预览失败：${reason.message}`);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [reviewConfig, state.colors]);
 
-  function chooseFile(kind: 'psd' | 'jpg', event: ChangeEvent<HTMLInputElement>) {
+  function chooseFile(
+    kind: 'psd' | 'jpg',
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
     const file = event.target.files?.[0] ?? null;
     if (kind === 'psd') setPsd(file);
     else setJpg(file);
@@ -239,7 +323,10 @@ export function SourceVersionManager({
 
   async function uploadAndParse() {
     if (!psd || !jpg || running || disabled) return;
-    if (!psd.name.toLowerCase().endsWith('.psd') || !jpg.name.toLowerCase().endsWith('.jpg')) {
+    if (
+      !psd.name.toLowerCase().endsWith('.psd') ||
+      !jpg.name.toLowerCase().endsWith('.jpg')
+    ) {
       setError('请选择一份 PSD 和一份对应 JPG。');
       return;
     }
@@ -255,41 +342,67 @@ export function SourceVersionManager({
         sourceVersion: { id: string; number: number };
         uploadId: string;
         partSize: number;
-      }>(await workbenchFetch(`/api/template-sources/${state.templateId}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ psdName: psd.name, jpgName: jpg.name, psdSize: psd.size, jpgSize: jpg.size }),
-      }));
+      }>(
+        await workbenchFetch(`/api/template-sources/${state.templateId}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            psdName: psd.name,
+            jpgName: jpg.name,
+            psdSize: psd.size,
+            jpgSize: jpg.size,
+          }),
+        }),
+      );
       versionId = started.sourceVersion.id;
-      await responseJson(await workbenchFetch(`/api/template-sources/${state.templateId}/${versionId}/file/jpg`, {
-        method: 'PUT',
-        headers: { 'content-type': 'image/jpeg' },
-        body: jpg,
-      }));
+      await responseJson(
+        await workbenchFetch(
+          `/api/template-sources/${state.templateId}/${versionId}/file/jpg`,
+          {
+            method: 'PUT',
+            headers: { 'content-type': 'image/jpeg' },
+            body: jpg,
+          },
+        ),
+      );
 
       const parts: Array<{ partNumber: number; etag: string }> = [];
       const totalParts = Math.ceil(psd.size / started.partSize);
       for (let index = 0; index < totalParts; index += 1) {
         const partNumber = index + 1;
         setProgress(`步骤 1／4：正在上传 PSD ${partNumber}／${totalParts}…`);
-        const chunk = psd.slice(index * started.partSize, Math.min(psd.size, partNumber * started.partSize));
-        parts.push(await responseJson<{ partNumber: number; etag: string }>(await workbenchFetch(
-          `/api/template-sources/${state.templateId}/${versionId}/psd-upload/${encodeURIComponent(started.uploadId)}/${partNumber}`,
-          { method: 'PUT', headers: { 'content-type': 'application/octet-stream' }, body: chunk },
-        )));
+        const chunk = psd.slice(
+          index * started.partSize,
+          Math.min(psd.size, partNumber * started.partSize),
+        );
+        parts.push(
+          await responseJson<{ partNumber: number; etag: string }>(
+            await workbenchFetch(
+              `/api/template-sources/${state.templateId}/${versionId}/psd-upload/${encodeURIComponent(started.uploadId)}/${partNumber}`,
+              {
+                method: 'PUT',
+                headers: { 'content-type': 'application/octet-stream' },
+                body: chunk,
+              },
+            ),
+          ),
+        );
       }
-      await responseJson(await workbenchFetch(
-        `/api/template-sources/${state.templateId}/${versionId}/psd-upload/${encodeURIComponent(started.uploadId)}/complete`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ parts }),
-        },
-      ));
+      await responseJson(
+        await workbenchFetch(
+          `/api/template-sources/${state.templateId}/${versionId}/psd-upload/${encodeURIComponent(started.uploadId)}/complete`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ parts }),
+          },
+        ),
+      );
 
       setProgress('步骤 2／4：正在解析 PSD 图层、颜色、尺寸、分区与底图…');
       setFlowStep(2);
-      const { parseTemplateSource } = await import('@/lib/source-template-parser');
+      const { parseTemplateSource } =
+        await import('@/lib/source-template-parser');
       const parsed = await parseTemplateSource({
         psdFile: psd,
         jpgFile: jpg,
@@ -299,38 +412,53 @@ export function SourceVersionManager({
         currentSelection: state.selection,
       });
       for (const [index, asset] of parsed.assets.entries()) {
-        setProgress(`步骤 2／4：正在保存解析素材 ${index + 1}／${parsed.assets.length}…`);
+        setProgress(
+          `步骤 2／4：正在保存解析素材 ${index + 1}／${parsed.assets.length}…`,
+        );
         const path = asset.name.split('/').map(encodeURIComponent).join('/');
-        await responseJson(await workbenchFetch(`/api/template-sources/${state.templateId}/${versionId}/assets/${path}`, {
-          method: 'PUT',
-          headers: { 'content-type': 'image/png' },
-          body: asset.blob,
-        }));
+        await responseJson(
+          await workbenchFetch(
+            `/api/template-sources/${state.templateId}/${versionId}/assets/${path}`,
+            {
+              method: 'PUT',
+              headers: { 'content-type': 'image/png' },
+              body: asset.blob,
+            },
+          ),
+        );
       }
-      const detail = await responseJson<SourceVersionSummary>(await workbenchFetch(
-        `/api/template-sources/${state.templateId}/${versionId}/parse`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(parsed.config),
-        },
-      ));
+      const detail = await responseJson<SourceVersionSummary>(
+        await workbenchFetch(
+          `/api/template-sources/${state.templateId}/${versionId}/parse`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(parsed.config),
+          },
+        ),
+      );
       setCandidate(detail);
       setFlowStep(3);
       setProgress('步骤 3／4：请查看新版预览、变化和无法可靠识别的内容。');
-      setNotice(`源文件 S${detail.number} 已完成解析；确认启用前，业务继续使用 S${state.sourceVersion.number ?? '—'}。`);
+      setNotice(
+        `源文件 S${detail.number} 已完成解析；确认启用前，业务继续使用 S${state.sourceVersion.number ?? '—'}。`,
+      );
       await loadVersions();
     } catch (reason) {
-      const message = reason instanceof Error ? reason.message : '新版源文件解析失败。';
+      const message =
+        reason instanceof Error ? reason.message : '新版源文件解析失败。';
       setError(`${message} 原有效版本保持不变。`);
       setFlowStep(2);
       setProgress('解析失败：原有效版本仍可正常使用。');
       if (versionId) {
-        await workbenchFetch(`/api/template-sources/${state.templateId}/${versionId}`, {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ failureReason: message }),
-        }).catch(() => undefined);
+        await workbenchFetch(
+          `/api/template-sources/${state.templateId}/${versionId}`,
+          {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ failureReason: message }),
+          },
+        ).catch(() => undefined);
         await loadVersions();
       }
     } finally {
@@ -339,20 +467,39 @@ export function SourceVersionManager({
   }
 
   const currentSpecKeys = useMemo(
-    () => new Set(state.specs.map((spec) => `${spec.entryId}\u001f${spec.length}`)),
+    () =>
+      new Set(state.specs.map((spec) => `${spec.entryId}\u001f${spec.length}`)),
     [state.specs],
   );
   const requiredStatuses = useMemo(() => {
-    if (!config) return [] as Array<{ candidateId: string; length: number; label: string }>;
-    const result: Array<{ candidateId: string; length: number; label: string }> = [];
+    if (!config)
+      return [] as Array<{
+        candidateId: string;
+        length: number;
+        label: string;
+      }>;
+    const result: Array<{
+      candidateId: string;
+      length: number;
+      label: string;
+    }> = [];
     for (const card of config.template.initialCards) {
       const mapping = mappings[card.candidateId];
       if (!mapping?.mode || mapping.mode === 'ignore') continue;
-      const entryId = mapping.mode === 'existing' ? mapping.entryId : `new:${card.candidateId}`;
-      const sectionLabel = config.template.sections.find((section) => section.key === mapping.section)?.label;
+      const entryId =
+        mapping.mode === 'existing'
+          ? mapping.entryId
+          : `new:${card.candidateId}`;
+      const sectionLabel = config.template.sections.find(
+        (section) => section.key === mapping.section,
+      )?.label;
       for (const length of parseLengths(mapping.lengthText)) {
         if (!entryId || !currentSpecKeys.has(`${entryId}\u001f${length}`)) {
-          result.push({ candidateId: card.candidateId, length, label: `${card.colorCode}${sectionLabel ? ` · ${sectionLabel}` : ''} · ${length}″` });
+          result.push({
+            candidateId: card.candidateId,
+            length,
+            label: `${card.colorCode}${sectionLabel ? ` · ${sectionLabel}` : ''} · ${length}″`,
+          });
         }
       }
     }
@@ -373,21 +520,37 @@ export function SourceVersionManager({
       return changed ? next : current;
     });
   }, [candidate, requiredStatuses]);
-  const blockingIssues = config?.parseIssues.filter((issue) => issue.blocking) ?? [];
-  const mappingsReady = Boolean(config && config.template.initialCards.every((card) => {
-    const mapping = mappings[card.candidateId];
-    return mapping?.mode === 'ignore' || (mapping?.mode && parseLengths(mapping.lengthText).length > 0 &&
-      parseLengths(mapping.lengthText).every((length) => config.availableLengths.includes(length)) &&
-      (mapping.mode === 'new' || Boolean(mapping.entryId)) &&
-      (!config.template.sections.length || Boolean(mapping.section)));
-  }));
-  const statusesReady = requiredStatuses.every((item) => initialStatuses[`${item.candidateId}\u001f${item.length}`]);
-  const issuesReady = blockingIssues.every((issue) => acknowledged[sourceIssueKey(issue)]);
+  const blockingIssues =
+    config?.parseIssues.filter((issue) => issue.blocking) ?? [];
+  const mappingsReady = Boolean(
+    config &&
+    config.template.initialCards.every((card) => {
+      const mapping = mappings[card.candidateId];
+      return (
+        mapping?.mode === 'ignore' ||
+        (mapping?.mode &&
+          parseLengths(mapping.lengthText).length > 0 &&
+          parseLengths(mapping.lengthText).every((length) =>
+            config.availableLengths.includes(length),
+          ) &&
+          (mapping.mode === 'new' || Boolean(mapping.entryId)) &&
+          (!config.template.sections.length || Boolean(mapping.section)))
+      );
+    }),
+  );
+  const statusesReady = requiredStatuses.every(
+    (item) => initialStatuses[`${item.candidateId}\u001f${item.length}`],
+  );
+  const issuesReady = blockingIssues.every(
+    (issue) => acknowledged[sourceIssueKey(issue)],
+  );
 
   function acknowledgeAllIssues() {
     setAcknowledged((current) => ({
       ...current,
-      ...Object.fromEntries(blockingIssues.map((issue) => [sourceIssueKey(issue), true])),
+      ...Object.fromEntries(
+        blockingIssues.map((issue) => [sourceIssueKey(issue), true]),
+      ),
     }));
   }
 
@@ -400,7 +563,17 @@ export function SourceVersionManager({
   }
 
   async function activate() {
-    if (!candidate || !config || !mappingsReady || !statusesReady || !issuesReady || previewState !== 'ready' || activating || disabled) return;
+    if (
+      !candidate ||
+      !config ||
+      !mappingsReady ||
+      !statusesReady ||
+      !issuesReady ||
+      previewState !== 'ready' ||
+      activating ||
+      disabled
+    )
+      return;
     setActivating(true);
     setError('');
     setNotice('');
@@ -412,28 +585,37 @@ export function SourceVersionManager({
           entryId: mapping.mode === 'existing' ? mapping.entryId : null,
           treatAsNew: mapping.mode === 'new',
           ignore: mapping.mode === 'ignore',
-          lengths: mapping.mode === 'ignore' ? [] : parseLengths(mapping.lengthText),
+          lengths:
+            mapping.mode === 'ignore' ? [] : parseLengths(mapping.lengthText),
           section: mapping.mode === 'ignore' ? null : mapping.section || null,
         };
       });
-      await responseJson(await workbenchFetch(`/api/template-sources/${state.templateId}/${candidate.id}/activate`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          expectedMasterRevision: state.masterRevision,
-          mappings: payloadMappings,
-          acknowledgedIssues: blockingIssues.map(sourceIssueKey),
-          initialStatuses: requiredStatuses.map((item) => ({
-            candidateId: item.candidateId,
-            length: item.length,
-            status: initialStatuses[`${item.candidateId}\u001f${item.length}`],
-          })),
-          note: `启用源文件 S${candidate.number}：${candidate.psdName}`,
-        }),
-      }));
+      await responseJson(
+        await workbenchFetch(
+          `/api/template-sources/${state.templateId}/${candidate.id}/activate`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              expectedMasterRevision: state.masterRevision,
+              mappings: payloadMappings,
+              acknowledgedIssues: blockingIssues.map(sourceIssueKey),
+              initialStatuses: requiredStatuses.map((item) => ({
+                candidateId: item.candidateId,
+                length: item.length,
+                status:
+                  initialStatuses[`${item.candidateId}\u001f${item.length}`],
+              })),
+              note: `启用源文件 S${candidate.number}：${candidate.psdName}`,
+            }),
+          },
+        ),
+      );
       setProgress('步骤 4／4：新版已启用。');
       setFlowStep(4);
-      setNotice(`源文件 S${candidate.number} 已启用；新打开页面与新导出将使用新版。`);
+      setNotice(
+        `源文件 S${candidate.number} 已启用；新打开页面与新导出将使用新版。`,
+      );
       setCandidate(null);
       await onActivated();
       await loadVersions();
@@ -445,16 +627,20 @@ export function SourceVersionManager({
   }
 
   function eligibleEntries(card: SourceCard) {
-    return activeMasterSelection(state.selection).filter((entry) => entry.colorId === card.colorId);
+    return activeMasterSelection(state.selection).filter(
+      (entry) => entry.colorId === card.colorId,
+    );
   }
 
   async function continueReview(version: SourceVersionSummary) {
     setError('');
     try {
-      const detail = await responseJson<SourceVersionSummary>(await workbenchFetch(
-        `/api/template-sources/${state.templateId}/${version.id}`,
-        { cache: 'no-store' },
-      ));
+      const detail = await responseJson<SourceVersionSummary>(
+        await workbenchFetch(
+          `/api/template-sources/${state.templateId}/${version.id}`,
+          { cache: 'no-store' },
+        ),
+      );
       setCandidate(detail);
       setFlowStep(3);
       setProgress('步骤 3／4：已重新载入候选，请继续查看变化并完成人工确认。');
@@ -472,16 +658,26 @@ export function SourceVersionManager({
     try {
       setProgress(`正在替换 ${card.colorCode} 的候选色块图…`);
       const png = await asPng(file);
-      const detail = await responseJson<SourceVersionSummary>(await workbenchFetch(
-        `/api/template-sources/${state.templateId}/${candidate.id}/colors/${encodeURIComponent(card.colorId)}`,
-        { method: 'PUT', headers: { 'content-type': 'image/png' }, body: png },
-      ));
+      const detail = await responseJson<SourceVersionSummary>(
+        await workbenchFetch(
+          `/api/template-sources/${state.templateId}/${candidate.id}/colors/${encodeURIComponent(card.colorId)}`,
+          {
+            method: 'PUT',
+            headers: { 'content-type': 'image/png' },
+            body: png,
+          },
+        ),
+      );
       setCandidate(detail);
       setSwatchFiles((current) => ({ ...current, [card.candidateId]: null }));
       setProgress('');
-      setNotice(`${card.colorCode} 的候选色块图已替换；原有版本和历史素材保持不变。`);
+      setNotice(
+        `${card.colorCode} 的候选色块图已替换；原有版本和历史素材保持不变。`,
+      );
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '候选色块图替换失败。');
+      setError(
+        reason instanceof Error ? reason.message : '候选色块图替换失败。',
+      );
       setProgress('');
     } finally {
       setRunning(false);
@@ -491,11 +687,18 @@ export function SourceVersionManager({
   async function markStalledFailed(version: SourceVersionSummary) {
     setError('');
     try {
-      await responseJson(await workbenchFetch(`/api/template-sources/${state.templateId}/${version.id}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ failureReason: '上传或解析未完成，管理员已结束本次候选。' }),
-      }));
+      await responseJson(
+        await workbenchFetch(
+          `/api/template-sources/${state.templateId}/${version.id}`,
+          {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              failureReason: '上传或解析未完成，管理员已结束本次候选。',
+            }),
+          },
+        ),
+      );
       await loadVersions();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '候选状态更新失败。');
@@ -505,77 +708,365 @@ export function SourceVersionManager({
   return (
     <section className="source-update-card" aria-label="更新现有模板源文件">
       <header>
-        <div><span>SOURCE VERSION</span><h2>更新现有模板源文件</h2></div>
-        <button onClick={() => void loadVersions()} disabled={running || activating}><RefreshCw size={15} />刷新版本</button>
+        <div>
+          <span>SOURCE VERSION</span>
+          <h2>更新现有模板源文件</h2>
+        </div>
+        <button
+          onClick={() => void loadVersions()}
+          disabled={running || activating}
+        >
+          <RefreshCw size={15} />
+          刷新版本
+        </button>
       </header>
-      <p>固定更新当前产品与 Radio，不新建重复模板。流程完成前，业务继续使用源 S{state.sourceVersion.number ?? '—'}。</p>
-      <p>旧版 S1、历史色块图和库存数据保持不变；只有新版出现新增颜色时，才在人工确认区单独替换该颜色的候选色块图。</p>
+      <p>
+        固定更新当前产品与 Radio，不新建重复模板。流程完成前，业务继续使用源 S
+        {state.sourceVersion.number ?? '—'}。
+      </p>
+      <p>
+        旧版 S1、历史色块图和库存数据保持不变；新版色块默认直接从 PSD 提取。只有
+        PSD 提取结果不符合实际时，才需要单独替换候选色块图。
+      </p>
 
       <div className="source-steps" aria-label="更新流程">
-        {['上传 PSD＋JPG', '解析与校验', '预览变化与人工确认', '确认启用'].map((label, index) => (
-          <span key={label} className={index + 1 < flowStep ? 'done' : index + 1 === flowStep ? 'current' : ''}>{index + 1}<small>{label}</small></span>
-        ))}
+        {['上传 PSD＋JPG', '解析与校验', '预览变化与人工确认', '确认启用'].map(
+          (label, index) => (
+            <span
+              key={label}
+              className={
+                index + 1 < flowStep
+                  ? 'done'
+                  : index + 1 === flowStep
+                    ? 'current'
+                    : ''
+              }
+            >
+              {index + 1}
+              <small>{label}</small>
+            </span>
+          ),
+        )}
       </div>
 
       <div className="source-upload-grid">
-        <label><strong>新版 PSD</strong><input type="file" accept=".psd,image/vnd.adobe.photoshop" onChange={(event) => chooseFile('psd', event)} disabled={running || activating || disabled} /><small>{psd?.name || '保留可解析图层结构'}</small></label>
-        <label><strong>对应 JPG</strong><input type="file" accept=".jpg,image/jpeg" onChange={(event) => chooseFile('jpg', event)} disabled={running || activating || disabled} /><small>{jpg?.name || '必须与 PSD 画布尺寸一致'}</small></label>
-        <button onClick={() => void uploadAndParse()} disabled={!psd || !jpg || running || activating || disabled}><UploadCloud size={17} />{running ? '正在上传并解析…' : '上传并解析新版'}</button>
+        <label>
+          <strong>新版 PSD</strong>
+          <input
+            type="file"
+            accept=".psd,image/vnd.adobe.photoshop"
+            onChange={(event) => chooseFile('psd', event)}
+            disabled={running || activating || disabled}
+          />
+          <small>{psd?.name || '保留可解析图层结构'}</small>
+        </label>
+        <label>
+          <strong>对应 JPG</strong>
+          <input
+            type="file"
+            accept=".jpg,image/jpeg"
+            onChange={(event) => chooseFile('jpg', event)}
+            disabled={running || activating || disabled}
+          />
+          <small>{jpg?.name || '必须与 PSD 画布尺寸一致'}</small>
+        </label>
+        <button
+          onClick={() => void uploadAndParse()}
+          disabled={!psd || !jpg || running || activating || disabled}
+        >
+          <UploadCloud size={17} />
+          {running ? '正在上传并解析…' : '上传并解析新版'}
+        </button>
       </div>
-      {progress && <output className="source-progress"><FileSearch size={15} />{progress}</output>}
-      {error && <div className="source-error" role="alert"><AlertTriangle size={16} />{error}</div>}
-      {notice && <output className="source-notice"><CheckCircle2 size={16} />{notice}</output>}
+      {progress && (
+        <output className="source-progress">
+          <FileSearch size={15} />
+          {progress}
+        </output>
+      )}
+      {error && (
+        <div className="source-error" role="alert">
+          <AlertTriangle size={16} />
+          {error}
+        </div>
+      )}
+      {notice && (
+        <output className="source-notice">
+          <CheckCircle2 size={16} />
+          {notice}
+        </output>
+      )}
 
       {candidate && config && (
         <div className="source-review">
           <div className="source-candidate-preview">
             <h3>新版母版实际预览</h3>
-            <div className="canvas-frame" style={{ aspectRatio: `${config.template.width} / ${config.template.height}` }}>
-              <canvas ref={previewRef} width={config.template.width} height={config.template.height} />
+            <div
+              className="canvas-frame"
+              style={{
+                aspectRatio: `${config.template.width} / ${config.template.height}`,
+              }}
+            >
+              <canvas
+                ref={previewRef}
+                width={config.template.width}
+                height={config.template.height}
+              />
             </div>
-            <p>{config.template.width}×{config.template.height} px · {reviewConfig?.template.initialCards.length ?? 0} 个颜色 · {reviewConfig?.template.initialCards.reduce((sum, card) => sum + card.lengths.length, 0) ?? 0} 个规格</p>
+            <p>
+              {config.template.width}×{config.template.height} px ·{' '}
+              {reviewConfig?.template.initialCards.length ?? 0} 个颜色 ·{' '}
+              {reviewConfig?.template.initialCards.reduce(
+                (sum, card) => sum + card.lengths.length,
+                0,
+              ) ?? 0}{' '}
+              个规格
+            </p>
           </div>
 
           <div className="source-diff">
-            <h3>主要变化</h3><p>移除项目仅影响新版画面与规格，历史库存状态、母版版本和导出记录仍保留。</p>
+            <h3>主要变化</h3>
+            <p>
+              移除项目仅影响新版画面与规格，历史库存状态、母版版本和导出记录仍保留。
+            </p>
             <div className="diff-groups">
-              <article><strong>新增颜色 {reviewDiff?.added.length ?? 0}</strong><p>{reviewDiff?.added.map((item) => item.colorCode).join('、') || '无'}</p></article>
-              <article><strong>移除颜色 {reviewDiff?.removed.filter((item) => item.candidateId == null).length ?? 0}</strong><p>{reviewDiff?.removed.filter((item) => item.candidateId == null).map((item) => item.colorCode).join('、') || '无'}</p></article>
-              <article><strong>新增尺寸 {reviewDiff?.addedLengths.length ?? 0}</strong><p>{reviewDiff?.addedLengths.map((item) => `${item.colorCode}（${item.lengths.join('／')}″）`).join('、') || '无'}</p></article>
-              <article><strong>移除尺寸 {reviewDiff?.removedLengths.length ?? 0}</strong><p>{reviewDiff?.removedLengths.map((item) => `${item.colorCode}（${item.lengths.join('／')}″）`).join('、') || '无'}</p></article>
-              <article><strong>保持不变 {reviewDiff?.unchanged.length ?? 0}</strong><p>{reviewDiff?.unchanged.map((item) => item.colorCode).join('、') || '无'}</p></article>
-              <article><strong>重新排列 {reviewDiff?.reordered.length ?? 0}</strong><p>{reviewDiff?.reordered.map((item) => item.colorCode).join('、') || '无'}</p></article>
-              <article><strong>分区调整 {reviewDiff?.resectioned.length ?? 0}</strong><p>{reviewDiff?.resectioned.map((item) => item.colorCode).join('、') || '无'}</p></article>
+              <article>
+                <strong>新增颜色 {reviewDiff?.added.length ?? 0}</strong>
+                <p>
+                  {reviewDiff?.added.map((item) => item.colorCode).join('、') ||
+                    '无'}
+                </p>
+              </article>
+              <article>
+                <strong>
+                  移除颜色{' '}
+                  {reviewDiff?.removed.filter(
+                    (item) => item.candidateId == null,
+                  ).length ?? 0}
+                </strong>
+                <p>
+                  {reviewDiff?.removed
+                    .filter((item) => item.candidateId == null)
+                    .map((item) => item.colorCode)
+                    .join('、') || '无'}
+                </p>
+              </article>
+              <article>
+                <strong>新增尺寸 {reviewDiff?.addedLengths.length ?? 0}</strong>
+                <p>
+                  {reviewDiff?.addedLengths
+                    .map(
+                      (item) =>
+                        `${item.colorCode}（${item.lengths.join('／')}″）`,
+                    )
+                    .join('、') || '无'}
+                </p>
+              </article>
+              <article>
+                <strong>
+                  移除尺寸 {reviewDiff?.removedLengths.length ?? 0}
+                </strong>
+                <p>
+                  {reviewDiff?.removedLengths
+                    .map(
+                      (item) =>
+                        `${item.colorCode}（${item.lengths.join('／')}″）`,
+                    )
+                    .join('、') || '无'}
+                </p>
+              </article>
+              <article>
+                <strong>保持不变 {reviewDiff?.unchanged.length ?? 0}</strong>
+                <p>
+                  {reviewDiff?.unchanged
+                    .map((item) => item.colorCode)
+                    .join('、') || '无'}
+                </p>
+              </article>
+              <article>
+                <strong>重新排列 {reviewDiff?.reordered.length ?? 0}</strong>
+                <p>
+                  {reviewDiff?.reordered
+                    .map((item) => item.colorCode)
+                    .join('、') || '无'}
+                </p>
+              </article>
+              <article>
+                <strong>分区调整 {reviewDiff?.resectioned.length ?? 0}</strong>
+                <p>
+                  {reviewDiff?.resectioned
+                    .map((item) => item.colorCode)
+                    .join('、') || '无'}
+                </p>
+              </article>
             </div>
-            {(reviewDiff?.resized.length ?? 0) > 0 && <div className="size-changes"><strong>尺寸变化</strong>{reviewDiff!.resized.map((item) => <p key={item.candidateId}>{item.colorCode}：{item.previousLengths.join('／')} → {item.nextLengths.join('／')}</p>)}</div>}
-            <p className="asset-change">新版底图与相关素材已独立生成，像素差异需对照预览人工确认；{reviewDiff?.dimensionsChanged ? `画布由 ${reviewDiff.dimensionsChanged.before.width}×${reviewDiff.dimensionsChanged.before.height} 调整为 ${reviewDiff.dimensionsChanged.after.width}×${reviewDiff.dimensionsChanged.after.height}` : '画布尺寸保持不变'}。</p>
+            {(reviewDiff?.resized.length ?? 0) > 0 && (
+              <div className="size-changes">
+                <strong>尺寸变化</strong>
+                {reviewDiff!.resized.map((item) => (
+                  <p key={item.candidateId}>
+                    {item.colorCode}：{item.previousLengths.join('／')} →{' '}
+                    {item.nextLengths.join('／')}
+                  </p>
+                ))}
+              </div>
+            )}
+            <p className="asset-change">
+              新版底图与相关素材已独立生成，像素差异需对照预览人工确认；
+              {reviewDiff?.dimensionsChanged
+                ? `画布由 ${reviewDiff.dimensionsChanged.before.width}×${reviewDiff.dimensionsChanged.before.height} 调整为 ${reviewDiff.dimensionsChanged.after.width}×${reviewDiff.dimensionsChanged.after.height}`
+                : '画布尺寸保持不变'}
+              。
+            </p>
           </div>
 
           <div className="source-mapping">
             <h3>人工映射与尺寸确认</h3>
-            <p>只允许按色号业务身份人工对应；系统不会按位置、排列序号或文件名迁移库存。尺寸仅限旧母版 S1：{config.availableLengths.join("／")}″；超出时请修改或排除该颜色。</p>
+            <p>
+              只允许按色号业务身份人工对应；系统不会按位置、排列序号或文件名迁移库存。尺寸仅限旧母版
+              S1：{config.availableLengths.join('／')}
+              ″；超出时请修改或排除该颜色。
+            </p>
             {config.template.initialCards.map((card) => {
               const mapping = mappings[card.candidateId];
               const eligible = eligibleEntries(card);
               return (
-                <article key={card.candidateId} className={card.matchState === 'unresolved' ? 'needs-review' : ''}>
-                  <img src={workbenchUrl(colorForId(mergeColors(state.colors, config.colors), config.template, card.colorId)?.image)} alt="" />
-                  <div><strong>{card.colorCode}</strong><small>{card.matchReason}</small></div>
-                  {card.matchState === 'new' && <div className="candidate-swatch-upload">
-                    <small>新增颜色只需补这一张色块图；原有色块图无需重新上传。</small>
-                    <label>选择新增色块图<input type="file" accept="image/png,image/jpeg" disabled={running || activating || disabled} onChange={(event) => setSwatchFiles((current) => ({ ...current, [card.candidateId]: event.target.files?.[0] ?? null }))} /></label>
-                    {swatchFiles[card.candidateId] && <button type="button" onClick={() => void replaceCandidateColor(card)} disabled={running || activating || disabled}>替换候选色块图</button>}
-                  </div>}
-                  <select value={mapping?.mode || ''} onChange={(event) => updateMapping(card.candidateId, { mode: event.target.value as MappingDraft['mode'], entryId: '' })}>
+                <article
+                  key={card.candidateId}
+                  className={
+                    card.matchState === 'unresolved' ? 'needs-review' : ''
+                  }
+                >
+                  <img
+                    src={workbenchUrl(
+                      colorForId(
+                        mergeColors(state.colors, config.colors),
+                        config.template,
+                        card.colorId,
+                      )?.image,
+                    )}
+                    alt=""
+                  />
+                  <div>
+                    <strong>{card.colorCode}</strong>
+                    <small>{card.matchReason}</small>
+                  </div>
+                  {card.matchState === 'new' && (
+                    <div className="candidate-swatch-upload">
+                      <small>
+                        {state.colors.some((color) => color.id === card.colorId)
+                          ? '该颜色已在现有 38 色库中；系统会直接使用新版 PSD 提取的色块图，不需要再次上传。'
+                          : '该颜色不在现有色库中；系统已直接从新版 PSD 提取候选色块图，请先对照 JPG 确认。需要修正时再选择替换（可选）。'}
+                      </small>
+                      {!state.colors.some(
+                        (color) => color.id === card.colorId,
+                      ) && (
+                        <label>
+                          替换候选色块图（可选）
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg"
+                            disabled={running || activating || disabled}
+                            onChange={(event) =>
+                              setSwatchFiles((current) => ({
+                                ...current,
+                                [card.candidateId]:
+                                  event.target.files?.[0] ?? null,
+                              }))
+                            }
+                          />
+                        </label>
+                      )}
+                      {swatchFiles[card.candidateId] && (
+                        <button
+                          type="button"
+                          onClick={() => void replaceCandidateColor(card)}
+                          disabled={running || activating || disabled}
+                        >
+                          替换候选色块图
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  <select
+                    value={mapping?.mode || ''}
+                    onChange={(event) =>
+                      updateMapping(card.candidateId, {
+                        mode: event.target.value as MappingDraft['mode'],
+                        entryId: '',
+                      })
+                    }
+                  >
                     <option value="">请选择对应方式</option>
-                    {eligible.length > 0 && <option value="existing">映射到现有颜色</option>}
+                    {eligible.length > 0 && (
+                      <option value="existing">映射到现有颜色</option>
+                    )}
                     <option value="new">确认为新增颜色</option>
                     <option value="ignore">从画面与业务中排除</option>
                   </select>
-                  {mapping?.mode === 'existing' && <select value={mapping.entryId} onChange={(event) => updateMapping(card.candidateId, { entryId: event.target.value })}><option value="">选择现有条目</option>{eligible.map((entry) => <option key={entry.entryId} value={entry.entryId}>{card.colorCode} · {state.template.sections.find((section) => section.key === entry.section)?.label || '未分区'}</option>)}</select>}
-                  {mapping?.mode !== 'ignore' && <label>尺寸（英寸，逗号分隔）<input value={mapping?.lengthText || ''} onChange={(event) => updateMapping(card.candidateId, { lengthText: event.target.value })} /></label>}
-                  {mapping?.mode !== 'ignore' && (!parseLengths(mapping?.lengthText || '').length || parseLengths(mapping?.lengthText || '').some((length) => !config.availableLengths.includes(length))) && <small role="alert">尺寸不在 S1 允许集合内，请修改或排除该颜色。</small>}
-                  {mapping?.mode !== 'ignore' && config.template.sections.length > 0 && <label>分区<select value={mapping?.section || ''} onChange={(event) => updateMapping(card.candidateId, { section: event.target.value })}><option value="">请选择分区</option>{config.template.sections.map((section) => <option key={section.key} value={section.key}>{section.label}</option>)}</select></label>}
+                  {mapping?.mode === 'existing' && (
+                    <select
+                      value={mapping.entryId}
+                      onChange={(event) =>
+                        updateMapping(card.candidateId, {
+                          entryId: event.target.value,
+                        })
+                      }
+                    >
+                      <option value="">选择现有条目</option>
+                      {eligible.map((entry) => (
+                        <option key={entry.entryId} value={entry.entryId}>
+                          {card.colorCode} ·{' '}
+                          {state.template.sections.find(
+                            (section) => section.key === entry.section,
+                          )?.label || '未分区'}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {mapping?.mode !== 'ignore' && (
+                    <label>
+                      尺寸（英寸，逗号分隔）
+                      <input
+                        value={mapping?.lengthText || ''}
+                        onChange={(event) =>
+                          updateMapping(card.candidateId, {
+                            lengthText: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                  )}
+                  {mapping?.mode !== 'ignore' &&
+                    (!parseLengths(mapping?.lengthText || '').length ||
+                      parseLengths(mapping?.lengthText || '').some(
+                        (length) => !config.availableLengths.includes(length),
+                      )) && (
+                      <small role="alert">
+                        尺寸不在 S1 允许集合内，请修改或排除该颜色。
+                      </small>
+                    )}
+                  {mapping?.mode !== 'ignore' &&
+                    config.template.sections.length > 0 && (
+                      <label>
+                        分区
+                        <select
+                          value={mapping?.section || ''}
+                          onChange={(event) =>
+                            updateMapping(card.candidateId, {
+                              section: event.target.value,
+                            })
+                          }
+                        >
+                          <option value="">请选择分区</option>
+                          {config.template.sections.map((section) => (
+                            <option key={section.key} value={section.key}>
+                              {section.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                 </article>
               );
             })}
@@ -584,13 +1075,70 @@ export function SourceVersionManager({
           {config.parseIssues.length > 0 && (
             <div className="source-issues">
               <div className="source-issues-heading">
-                <div><h3>无法可靠识别／需要核对</h3><p>请先整体对照新版 PSD／JPG；确认无误后可一次性确认下面所有提醒。</p></div>
-                {blockingIssues.length > 0 && <button type="button" className="source-issues-bulk" onClick={acknowledgeAllIssues} disabled={issuesReady || running || activating || disabled}>{issuesReady ? '已全部确认' : `一键确认全部（${blockingIssues.length}）`}</button>}
+                <div>
+                  <h3>无法可靠识别／需要核对</h3>
+                  <p>
+                    请先整体对照新版
+                    PSD／JPG；确认无误后可一次性确认下面所有提醒。
+                  </p>
+                </div>
+                {blockingIssues.length > 0 && (
+                  <button
+                    type="button"
+                    className="source-issues-bulk"
+                    onClick={acknowledgeAllIssues}
+                    disabled={issuesReady || running || activating || disabled}
+                  >
+                    {issuesReady
+                      ? '已全部确认'
+                      : `一键确认全部（${blockingIssues.length}）`}
+                  </button>
+                )}
               </div>
               {config.parseIssues.map((issue) => (
-                <label key={sourceIssueKey(issue)} className={issue.blocking ? 'blocking' : ''}>
-                  {issue.blocking ? <input type="checkbox" checked={Boolean(acknowledged[sourceIssueKey(issue)])} onChange={(event) => setAcknowledged((current) => ({ ...current, [sourceIssueKey(issue)]: event.target.checked }))} /> : <CheckCircle2 size={15} />}
-                  <span><strong>{issue.code}</strong>{issue.message}{issue.details?.swatchStatus && <small>状态：{issue.details.swatchStatus}；如需独立色块图，只替换对应新增颜色的候选图即可，无需重新上传原有色块图。</small>}{issue.details?.layerNames?.length && <small>代表图层：{issue.details.layerNames.join('、')}</small>}{issue.details?.structureTypes?.length && <small>结构类型：{issue.details.structureTypes.join('、')}</small>}{issue.blocking && <small>我已对照 PSD／JPG，确认该项处理方式无误后才可勾选</small>}</span>
+                <label
+                  key={sourceIssueKey(issue)}
+                  className={issue.blocking ? 'blocking' : ''}
+                >
+                  {issue.blocking ? (
+                    <input
+                      type="checkbox"
+                      checked={Boolean(acknowledged[sourceIssueKey(issue)])}
+                      onChange={(event) =>
+                        setAcknowledged((current) => ({
+                          ...current,
+                          [sourceIssueKey(issue)]: event.target.checked,
+                        }))
+                      }
+                    />
+                  ) : (
+                    <CheckCircle2 size={15} />
+                  )}
+                  <span>
+                    <strong>{issue.code}</strong>
+                    {issue.message}
+                    {issue.details?.swatchStatus && (
+                      <small>
+                        状态：{issue.details.swatchStatus}
+                        ；如需独立色块图，只替换对应新增颜色的候选图即可，无需重新上传原有色块图。
+                      </small>
+                    )}
+                    {issue.details?.layerNames?.length && (
+                      <small>
+                        代表图层：{issue.details.layerNames.join('、')}
+                      </small>
+                    )}
+                    {issue.details?.structureTypes?.length && (
+                      <small>
+                        结构类型：{issue.details.structureTypes.join('、')}
+                      </small>
+                    )}
+                    {issue.blocking && (
+                      <small>
+                        我已对照 PSD／JPG，确认该项处理方式无误后才可勾选
+                      </small>
+                    )}
+                  </span>
                 </label>
               ))}
             </div>
@@ -599,17 +1147,64 @@ export function SourceVersionManager({
           {requiredStatuses.length > 0 && (
             <div className="source-statuses">
               <h3>新增规格初始库存状态</h3>
-              <p>新增规格默认按“到货正常”创建；如确实需要显示低库存或补货，请在这里手动修改。可准确对应且规格未改变的项目会自动保留原库存状态。</p>
+              <p>
+                新增规格默认按“到货正常”创建；如确实需要显示低库存或补货，请在这里手动修改。可准确对应且规格未改变的项目会自动保留原库存状态。
+              </p>
               {requiredStatuses.map((item) => {
                 const key = `${item.candidateId}\u001f${item.length}`;
-                return <label key={key}><span>{item.label}</span><select value={initialStatuses[key] || ''} onChange={(event) => setInitialStatuses((current) => ({ ...current, [key]: event.target.value as InventoryStatus }))}><option value="">选择状态</option>{INVENTORY_SELECTABLE_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select></label>;
+                return (
+                  <label key={key}>
+                    <span>{item.label}</span>
+                    <select
+                      value={initialStatuses[key] || ''}
+                      onChange={(event) =>
+                        setInitialStatuses((current) => ({
+                          ...current,
+                          [key]: event.target.value as InventoryStatus,
+                        }))
+                      }
+                    >
+                      <option value="">选择状态</option>
+                      {INVENTORY_SELECTABLE_STATUSES.map((status) => (
+                        <option key={status} value={status}>
+                          {STATUS_LABELS[status]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                );
               })}
             </div>
           )}
 
           <div className="source-activate-bar">
-            <p>{!mappingsReady ? '还有颜色对应或尺寸待确认。' : !issuesReady ? '还有解析问题待按类别确认。' : !statusesReady ? '还有新增规格待设置初始状态。' : previewState === 'rendering' ? '正在验证新版实际预览。' : previewState === 'failed' ? '新版预览失败，不能启用。' : '已满足启用条件；原版本仍保留并可从母版历史回退。'}</p>
-            <button onClick={() => void activate()} disabled={!mappingsReady || !issuesReady || !statusesReady || previewState !== 'ready' || activating || disabled}><CheckCircle2 size={17} />{activating ? '正在启用…' : `确认启用源 S${candidate.number}`}</button>
+            <p>
+              {!mappingsReady
+                ? '还有颜色对应或尺寸待确认。'
+                : !issuesReady
+                  ? '还有解析问题待按类别确认。'
+                  : !statusesReady
+                    ? '还有新增规格待设置初始状态。'
+                    : previewState === 'rendering'
+                      ? '正在验证新版实际预览。'
+                      : previewState === 'failed'
+                        ? '新版预览失败，不能启用。'
+                        : '已满足启用条件；原版本仍保留并可从母版历史回退。'}
+            </p>
+            <button
+              onClick={() => void activate()}
+              disabled={
+                !mappingsReady ||
+                !issuesReady ||
+                !statusesReady ||
+                previewState !== 'ready' ||
+                activating ||
+                disabled
+              }
+            >
+              <CheckCircle2 size={17} />
+              {activating ? '正在启用…' : `确认启用源 S${candidate.number}`}
+            </button>
           </div>
         </div>
       )}
@@ -617,15 +1212,49 @@ export function SourceVersionManager({
       <details className="source-history">
         <summary>源文件版本记录（{versions.length}）</summary>
         {versions.map((version) => (
-          <article key={version.id} className={version.id === state.sourceVersion.id ? 'current' : ''}>
-            <div><strong>源 S{version.number}</strong><span>{statusText(version.status)}</span></div>
-            <p>{version.psdName}<br />{version.jpgName}</p>
+          <article
+            key={version.id}
+            className={version.id === state.sourceVersion.id ? 'current' : ''}
+          >
+            <div>
+              <strong>源 S{version.number}</strong>
+              <span>{statusText(version.status)}</span>
+            </div>
+            <p>
+              {version.psdName}
+              <br />
+              {version.jpgName}
+            </p>
             {version.failureReason && <small>{version.failureReason}</small>}
             <nav>
-              {(version.status === 'ready' || version.status === 'needs_review') && <button onClick={() => void continueReview(version)}>继续审阅</button>}
-              {(version.status === 'uploading' || version.status === 'parsing') && <button onClick={() => void markStalledFailed(version)}>结束未完成候选</button>}
-              <a href={workbenchUrl(`/api/template-sources/${state.templateId}/${version.id}/download/psd`)}><Download size={13} />PSD</a>
-              <a href={workbenchUrl(`/api/template-sources/${state.templateId}/${version.id}/download/jpg`)}><Download size={13} />JPG</a>
+              {(version.status === 'ready' ||
+                version.status === 'needs_review') && (
+                <button onClick={() => void continueReview(version)}>
+                  继续审阅
+                </button>
+              )}
+              {(version.status === 'uploading' ||
+                version.status === 'parsing') && (
+                <button onClick={() => void markStalledFailed(version)}>
+                  结束未完成候选
+                </button>
+              )}
+              <a
+                href={workbenchUrl(
+                  `/api/template-sources/${state.templateId}/${version.id}/download/psd`,
+                )}
+              >
+                <Download size={13} />
+                PSD
+              </a>
+              <a
+                href={workbenchUrl(
+                  `/api/template-sources/${state.templateId}/${version.id}/download/jpg`,
+                )}
+              >
+                <Download size={13} />
+                JPG
+              </a>
             </nav>
           </article>
         ))}

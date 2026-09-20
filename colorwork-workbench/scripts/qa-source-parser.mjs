@@ -1,6 +1,13 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,7 +15,10 @@ import { writePsdBuffer } from 'ag-psd';
 import sharp from 'sharp';
 import { build } from 'vite';
 
-const projectDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const projectDir = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+);
 const outputPath = path.join(projectDir, 'outputs', 'qa-source-parser.json');
 const tempDir = await mkdtemp(path.join(tmpdir(), 'source-parser-qa-'));
 const profileDir = path.join(tempDir, 'browser-profile');
@@ -30,8 +40,22 @@ function imageData(imageWidth, imageHeight, [red, green, blue, alpha = 255]) {
   return { width: imageWidth, height: imageHeight, data };
 }
 
-function pixelLayer(name, left, top, layerWidth, layerHeight, color, extra = {}) {
-  return { name, left, top, imageData: imageData(layerWidth, layerHeight, color), ...extra };
+function pixelLayer(
+  name,
+  left,
+  top,
+  layerWidth,
+  layerHeight,
+  color,
+  extra = {},
+) {
+  return {
+    name,
+    left,
+    top,
+    imageData: imageData(layerWidth, layerHeight, color),
+    ...extra,
+  };
 }
 
 function textLayer(name, text, left, top, layerWidth = 120) {
@@ -69,7 +93,10 @@ const psd = {
     textLayer('size label 62', '20″, 24″', 360, 342),
     pixelLayer('Layer 1', 40, 450, 80, 80, [220, 80, 80, 255]),
     pixelLayer('mystery strip', 200, 470, 160, 30, [80, 120, 220, 255]),
-    { name: 'QA brightness adjustment', adjustment: { type: 'brightness/contrast', brightness: 10, contrast: 5 } },
+    {
+      name: 'QA brightness adjustment',
+      adjustment: { type: 'brightness/contrast', brightness: 10, contrast: 5 },
+    },
     {
       name: 'hidden old color',
       hidden: true,
@@ -79,35 +106,69 @@ const psd = {
 };
 
 const psdBuffer = writePsdBuffer(psd);
-const rulesChildren = psd.children.map((layer) => layer.name === '#62' ? { ...layer, name: '#999' }
-  : layer.name === 'color label 62' ? textLayer('color label 999', '#999', 380, 310, 80)
-  : layer.name === 'size label 62' ? textLayer('size label 999', '28″', 360, 342) : layer);
-const rulesPsdBuffer = writePsdBuffer({ ...psd, children: [...rulesChildren,
-  { name: 'Header', children: [
-    pixelLayer('Decorative 1', -40, -40, 100, 100, [0, 0, 0], { effects: { disabled: true } }),
-    pixelLayer('048A6127', -24, -24, 100, 100, [0, 0, 0], {
+const rulesChildren = psd.children.map((layer) =>
+  layer.name === '#62'
+    ? { ...layer, name: '#999' }
+    : layer.name === 'color label 62'
+      ? textLayer('color label 999', '#999', 380, 310, 80)
+      : layer.name === 'size label 62'
+        ? textLayer('size label 999', '28″', 360, 342)
+        : layer,
+);
+const rulesPsdBuffer = writePsdBuffer({
+  ...psd,
+  children: [
+    ...rulesChildren,
+    {
+      name: 'Header',
+      children: [
+        pixelLayer('Decorative 1', -40, -40, 100, 100, [0, 0, 0], {
+          effects: { disabled: true },
+        }),
+        pixelLayer('048A6127', -24, -24, 100, 100, [0, 0, 0], {
+          placedLayer: {
+            id: '20953ddb-9391-11ec-b4f1-c15674f50bc4',
+            type: 'raster',
+            transform: [1, 0, 0, 1, 0, 0, 0, 0],
+            width: 100,
+            height: 100,
+          },
+        }),
+      ],
+    },
+    {
+      name: 'Another adjustment',
+      adjustment: { type: 'brightness/contrast', brightness: 5, contrast: 5 },
+    },
+  ],
+});
+const outsidePsdBuffer = writePsdBuffer({
+  ...psd,
+  children: [
+    ...psd.children,
+    pixelLayer('#999', -20, 100, 120, 120, [0, 0, 0]),
+  ],
+});
+const knownOutsidePsdBuffer = writePsdBuffer({
+  ...psd,
+  children: [
+    ...psd.children.filter(
+      (layer) =>
+        !['#1B', 'color label 1B', 'size label 1B'].includes(layer.name),
+    ),
+    pixelLayer('#1B', -20, 100, 120, 120, [50, 35, 30, 255], {
       placedLayer: {
-        id: '20953ddb-9391-11ec-b4f1-c15674f50bc4', type: 'raster',
-        transform: [1, 0, 0, 1, 0, 0, 0, 0], width: 100, height: 100,
+        id: '20953ddb-9391-11ec-b4f1-c15674f50bc4',
+        type: 'raster',
+        transform: [1, 0, 0, 1, 0, 0, 0, 0],
+        width: 120,
+        height: 120,
       },
     }),
-  ] },
-  { name: 'Another adjustment', adjustment: { type: 'brightness/contrast', brightness: 5, contrast: 5 } },
-] });
-const outsidePsdBuffer = writePsdBuffer({ ...psd, children: [...psd.children,
-  pixelLayer('#999', -20, 100, 120, 120, [0, 0, 0]),
-] });
-const knownOutsidePsdBuffer = writePsdBuffer({ ...psd, children: [
-  ...psd.children.filter((layer) => !['#1B', 'color label 1B', 'size label 1B'].includes(layer.name)),
-  pixelLayer('#1B', -20, 100, 120, 120, [50, 35, 30, 255], {
-    placedLayer: {
-      id: '20953ddb-9391-11ec-b4f1-c15674f50bc4', type: 'raster',
-      transform: [1, 0, 0, 1, 0, 0, 0, 0], width: 120, height: 120,
-    },
-  }),
-  textLayer('color label 1B outside', '#1B', 0, 240, 80),
-  textLayer('size label 1B outside', '18″, 22″', 0, 272, 80),
-] });
+    textLayer('color label 1B outside', '#1B', 0, 240, 80),
+    textLayer('size label 1B outside', '18″, 22″', 0, 272, 80),
+  ],
+});
 const ambiguousPsdBuffer = writePsdBuffer({
   width,
   height,
@@ -122,14 +183,25 @@ const ambiguousPsdBuffer = writePsdBuffer({
   ],
 });
 const jpgBuffer = await sharp({
-  create: { width, height, channels: 3, background: { r: 247, g: 245, b: 240 } },
-}).jpeg({ quality: 92 }).toBuffer();
-const catalogBuffer = await readFile(path.join(projectDir, 'lib', 'generated-catalog.json'));
+  create: {
+    width,
+    height,
+    channels: 3,
+    background: { r: 247, g: 245, b: 240 },
+  },
+})
+  .jpeg({ quality: 92 })
+  .toBuffer();
+const catalogBuffer = await readFile(
+  path.join(projectDir, 'lib', 'generated-catalog.json'),
+);
 
 const entrySource = String.raw`
 import { parseTemplateSource } from '@/lib/source-template-parser.ts';
 import { computeSourceChanges } from '@/lib/source-diff.ts';
 import { paintPoster } from '@/lib/poster.ts';
+import { knownColorForCode } from '@/lib/color-code.ts';
+import { sourceReviewIssues } from '@/lib/source-review.ts';
 
 function fileFrom(path, name, type) {
   return fetch(path).then(async (response) => new File([await response.arrayBuffer()], name, { type }));
@@ -175,6 +247,13 @@ try {
     psdFile: await fileFrom('/rules.psd', 'rules.psd', 'image/vnd.adobe.photoshop'), jpgFile,
     sourceVersionId: 'rules', currentTemplate, currentColors: catalog.colors, currentSelection,
   });
+  const knownColorAliases = [
+    ['#COOKISCREAM', 'color-cookies-cream'],
+    ['#5TP8A/24', 'color-5atp8a-24'],
+  ].map(([input, expectedId]) => ({ input, expectedId, actualId: knownColorForCode(input, catalog.colors)?.id ?? null }));
+  const knownAliasReview = sourceReviewIssues([], [{
+    candidateId: 'known-alias', colorCode: '#COOKISCREAM', matchState: 'new', matchedEntryId: null, lengths: [18],
+  }], catalog.colors, [18]);
   let outsideError = '';
   let outsideIssues = [];
   try {
@@ -229,7 +308,8 @@ try {
     },
     rules: { issues: rules.config.parseIssues, availableLengths: rules.config.availableLengths,
       cards: rules.config.template.initialCards, assets: rules.assets.map((asset) => asset.name), outsideError, outsideIssues, mismatchError,
-      knownOutsideCards: knownOutside.config.template.initialCards, knownOutsideIssues: knownOutside.config.parseIssues },
+      knownOutsideCards: knownOutside.config.template.initialCards, knownOutsideIssues: knownOutside.config.parseIssues,
+      knownColorAliases, knownAliasReview },
     diff,
     preview: { width: preview.width, height: preview.height, bytes: previewBlob.size },
     ambiguity: {
@@ -275,7 +355,10 @@ async function browserPath() {
 
 function listenForResult() {
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('真实 PSD 解析验证超时。')), 90_000);
+    const timeout = setTimeout(
+      () => reject(new Error('真实 PSD 解析验证超时。')),
+      90_000,
+    );
     globalThis.__finishSourceParserQa = (value, failed = false) => {
       clearTimeout(timeout);
       if (failed) reject(value);
@@ -318,18 +401,26 @@ try {
     try {
       const url = new URL(request.url || '/', 'http://127.0.0.1');
       const staticFiles = {
-        '/bundle.js': ['text/javascript; charset=utf-8', await readFile(path.join(bundleDir, 'bundle.js'))],
+        '/bundle.js': [
+          'text/javascript; charset=utf-8',
+          await readFile(path.join(bundleDir, 'bundle.js')),
+        ],
         '/catalog.json': ['application/json', catalogBuffer],
         '/rules.psd': ['image/vnd.adobe.photoshop', rulesPsdBuffer],
         '/outside.psd': ['image/vnd.adobe.photoshop', outsidePsdBuffer],
-        '/known-outside.psd': ['image/vnd.adobe.photoshop', knownOutsidePsdBuffer],
+        '/known-outside.psd': [
+          'image/vnd.adobe.photoshop',
+          knownOutsidePsdBuffer,
+        ],
         '/fixture.psd': ['image/vnd.adobe.photoshop', psdBuffer],
         '/ambiguous.psd': ['image/vnd.adobe.photoshop', ambiguousPsdBuffer],
         '/fixture.jpg': ['image/jpeg', jpgBuffer],
       };
       if (request.method === 'GET' && url.pathname === '/') {
         response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-        response.end('<!doctype html><html><body><script type="module" src="/bundle.js"></script></body></html>');
+        response.end(
+          '<!doctype html><html><body><script type="module" src="/bundle.js"></script></body></html>',
+        );
         return;
       }
       if (request.method === 'GET' && staticFiles[url.pathname]) {
@@ -339,7 +430,9 @@ try {
         return;
       }
       if (request.method === 'POST' && url.pathname === '/result') {
-        const result = JSON.parse((await requestBody(request)).toString('utf8'));
+        const result = JSON.parse(
+          (await requestBody(request)).toString('utf8'),
+        );
         response.writeHead(204).end();
         globalThis.__finishSourceParserQa?.(result);
         return;
@@ -361,73 +454,252 @@ try {
     server.listen(0, '127.0.0.1', resolve);
   });
   const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('无法取得验证服务端口。');
+  if (!address || typeof address === 'string')
+    throw new Error('无法取得验证服务端口。');
   const resultPromise = listenForResult();
-  browser = spawn(await browserPath(), [
-    '--headless=new', '--disable-gpu', '--disable-breakpad', '--disable-crash-reporter',
-    '--disable-dev-shm-usage', '--no-sandbox', `--user-data-dir=${profileDir}`,
-    `http://127.0.0.1:${address.port}/`,
-  ], { stdio: ['ignore', 'ignore', 'pipe'] });
+  browser = spawn(
+    await browserPath(),
+    [
+      '--headless=new',
+      '--disable-gpu',
+      '--disable-breakpad',
+      '--disable-crash-reporter',
+      '--disable-dev-shm-usage',
+      '--no-sandbox',
+      `--user-data-dir=${profileDir}`,
+      `http://127.0.0.1:${address.port}/`,
+    ],
+    { stdio: ['ignore', 'ignore', 'pipe'] },
+  );
   let browserErrors = '';
-  browser.stderr.on('data', (chunk) => { browserErrors += chunk.toString(); });
-  browser.once('error', (error) => globalThis.__finishSourceParserQa?.(error, true));
+  browser.stderr.on('data', (chunk) => {
+    browserErrors += chunk.toString();
+  });
+  browser.once('error', (error) =>
+    globalThis.__finishSourceParserQa?.(error, true),
+  );
   browser.once('exit', (code) => {
-    if (code) globalThis.__finishSourceParserQa?.(new Error(`浏览器异常退出（${code}）：${browserErrors.slice(-1200)}`), true);
+    if (code)
+      globalThis.__finishSourceParserQa?.(
+        new Error(`浏览器异常退出（${code}）：${browserErrors.slice(-1200)}`),
+        true,
+      );
   });
   const result = await resultPromise;
   const codes = result.config.cards.map((card) => card.colorCode);
   const issueCodes = result.config.issues.map((issue) => issue.code);
   const issueIds = result.config.issues.map((issue) => issue.issueId);
-  const ambiguousSizeIssues = result.ambiguity.issues.filter((issue) => issue.code === 'AMBIGUOUS_SIZE_LABEL');
-  assert(JSON.stringify(codes) === JSON.stringify(['#1006', '#1B', '#62']), `颜色或重排解析错误：${JSON.stringify(codes)}`);
+  const ambiguousSizeIssues = result.ambiguity.issues.filter(
+    (issue) => issue.code === 'AMBIGUOUS_SIZE_LABEL',
+  );
+  assert(
+    JSON.stringify(codes) === JSON.stringify(['#1006', '#1B', '#62']),
+    `颜色或重排解析错误：${JSON.stringify(codes)}`,
+  );
   assert(!codes.includes('#2B'), '隐藏父组中的 #2B 被错误解析。');
   assert(!codes.includes('#LAYER1'), '默认图层名 Layer 1 被错误解析为色号。');
-  assert(new Set(issueIds).size === issueIds.length && issueIds.every(Boolean), '解析问题缺少逐项唯一 ID。');
-  assert(issueCodes.includes('UNRECOGNIZED_SWATCH_LAYER'), '未报告无法识别的方形图层。');
-  assert(issueCodes.includes('UNCLASSIFIED_VISIBLE_LAYER'), '未报告业务区内无法分类的可见图层。');
-  const parserStructureIssue = result.config.issues.find((issue) => issue.code === 'UNSUPPORTED_LAYER_STRUCTURE');
-  assert(issueCodes.includes('UNSUPPORTED_LAYER_STRUCTURE') && parserStructureIssue?.blocking, '不支持的 Photoshop 图层结构没有被阻断并要求人工确认。');
-  assert(parserStructureIssue?.details?.layerCount >= 1 && parserStructureIssue.details.layerNames?.length && parserStructureIssue.details.structureTypes?.length, '批量结构提醒缺少数量、代表图层或结构类型。');
-  assert(result.diff.added.some((item) => item.colorCode === '#62'), '变化清单未识别新增颜色 #62。');
-  assert(result.diff.removed.some((item) => item.colorCode === '#2'), '变化清单未识别移除颜色 #2。');
-  assert(result.diff.unchanged.some((item) => item.colorCode === '#1006'), '变化清单未识别保持不变的 #1006。');
-  assert(result.diff.resized.some((item) => item.colorCode === '#1B' && item.nextLengths.includes(24)), '变化清单未识别 #1B 尺寸改为 18／24。');
-  assert(result.diff.addedLengths.some((item) => item.colorCode === '#1B' && item.lengths.includes(24)), '变化清单未识别新增尺寸。');
-  assert(result.diff.removedLengths.some((item) => item.colorCode === '#1B' && item.lengths.includes(22)), '变化清单未识别移除尺寸。');
-  assert(result.diff.reordered.some((item) => item.colorCode === '#1006'), '变化清单未识别 #1006 重排。');
-  assert(result.diff.dimensionsChanged?.after.width === width && result.diff.dimensionsChanged?.after.height === height, '变化清单未识别画布尺寸调整。');
-  assert(result.preview.width === width && result.preview.height === height && result.preview.bytes > 1000, '新版母版预览未成功渲染。');
-  assert(result.config.assets.some((asset) => asset.name === 'base.png' && asset.size > 0), '解析后的底图素材缺失。');
-  assert(ambiguousSizeIssues.length === 2 && ambiguousSizeIssues.every((issue) => issue.blocking), '共享尺寸文字没有逐色阻断并要求人工确认。');
-  assert(new Set(ambiguousSizeIssues.map((issue) => issue.candidateId)).size === 2, '共享尺寸文字的阻断问题未绑定到两个独立色块。');
+  assert(
+    new Set(issueIds).size === issueIds.length && issueIds.every(Boolean),
+    '解析问题缺少逐项唯一 ID。',
+  );
+  assert(
+    issueCodes.includes('UNRECOGNIZED_SWATCH_LAYER'),
+    '未报告无法识别的方形图层。',
+  );
+  assert(
+    issueCodes.includes('UNCLASSIFIED_VISIBLE_LAYER'),
+    '未报告业务区内无法分类的可见图层。',
+  );
+  const parserStructureIssue = result.config.issues.find(
+    (issue) => issue.code === 'UNSUPPORTED_LAYER_STRUCTURE',
+  );
+  assert(
+    issueCodes.includes('UNSUPPORTED_LAYER_STRUCTURE') &&
+      parserStructureIssue?.blocking,
+    '不支持的 Photoshop 图层结构没有被阻断并要求人工确认。',
+  );
+  assert(
+    parserStructureIssue?.details?.layerCount >= 1 &&
+      parserStructureIssue.details.layerNames?.length &&
+      parserStructureIssue.details.structureTypes?.length,
+    '批量结构提醒缺少数量、代表图层或结构类型。',
+  );
+  assert(
+    result.diff.added.some((item) => item.colorCode === '#62'),
+    '变化清单未识别新增颜色 #62。',
+  );
+  assert(
+    result.diff.removed.some((item) => item.colorCode === '#2'),
+    '变化清单未识别移除颜色 #2。',
+  );
+  assert(
+    result.diff.unchanged.some((item) => item.colorCode === '#1006'),
+    '变化清单未识别保持不变的 #1006。',
+  );
+  assert(
+    result.diff.resized.some(
+      (item) => item.colorCode === '#1B' && item.nextLengths.includes(24),
+    ),
+    '变化清单未识别 #1B 尺寸改为 18／24。',
+  );
+  assert(
+    result.diff.addedLengths.some(
+      (item) => item.colorCode === '#1B' && item.lengths.includes(24),
+    ),
+    '变化清单未识别新增尺寸。',
+  );
+  assert(
+    result.diff.removedLengths.some(
+      (item) => item.colorCode === '#1B' && item.lengths.includes(22),
+    ),
+    '变化清单未识别移除尺寸。',
+  );
+  assert(
+    result.diff.reordered.some((item) => item.colorCode === '#1006'),
+    '变化清单未识别 #1006 重排。',
+  );
+  assert(
+    result.diff.dimensionsChanged?.after.width === width &&
+      result.diff.dimensionsChanged?.after.height === height,
+    '变化清单未识别画布尺寸调整。',
+  );
+  assert(
+    result.preview.width === width &&
+      result.preview.height === height &&
+      result.preview.bytes > 1000,
+    '新版母版预览未成功渲染。',
+  );
+  assert(
+    result.config.assets.some(
+      (asset) => asset.name === 'base.png' && asset.size > 0,
+    ),
+    '解析后的底图素材缺失。',
+  );
+  assert(
+    ambiguousSizeIssues.length === 2 &&
+      ambiguousSizeIssues.every((issue) => issue.blocking),
+    '共享尺寸文字没有逐色阻断并要求人工确认。',
+  );
+  assert(
+    new Set(ambiguousSizeIssues.map((issue) => issue.candidateId)).size === 2,
+    '共享尺寸文字的阻断问题未绑定到两个独立色块。',
+  );
 
-  const serverStructureIssue = result.rules.issues.find((issue) => issue.code === 'UNSUPPORTED_LAYER_STRUCTURE');
-  assert(result.rules.issues.filter((issue) => issue.code === 'UNSUPPORTED_LAYER_STRUCTURE').length === 1, '结构问题没有合并');
-  assert(serverStructureIssue?.details?.layerCount >= 1 && serverStructureIssue.details.layerNames?.length && serverStructureIssue.details.structureTypes?.length, '服务端批量结构提醒缺少详情');
-  assert(result.rules.issues.some((issue) => issue.code === 'NEW_COLOR_SWATCH_REVIEW' && issue.blocking), '新颜色缺少人工确认提醒');
-  assert(result.rules.issues.some((issue) => issue.code === 'LENGTH_OUTSIDE_S1' && issue.blocking), '超长缺少提醒');
+  const serverStructureIssue = result.rules.issues.find(
+    (issue) => issue.code === 'UNSUPPORTED_LAYER_STRUCTURE',
+  );
+  assert(
+    result.rules.issues.filter(
+      (issue) => issue.code === 'UNSUPPORTED_LAYER_STRUCTURE',
+    ).length === 1,
+    '结构问题没有合并',
+  );
+  assert(
+    serverStructureIssue?.details?.layerCount >= 1 &&
+      serverStructureIssue.details.layerNames?.length &&
+      serverStructureIssue.details.structureTypes?.length,
+    '服务端批量结构提醒缺少详情',
+  );
+  assert(
+    result.rules.issues.some(
+      (issue) => issue.code === 'NEW_COLOR_SWATCH_REVIEW' && issue.blocking,
+    ),
+    '新颜色缺少人工确认提醒',
+  );
+  assert(
+    result.rules.knownColorAliases.every(
+      (item) => item.actualId === item.expectedId,
+    ),
+    `现有 38 色库别名没有正确复用：${JSON.stringify(result.rules.knownColorAliases)}`,
+  );
+  assert(
+    !result.rules.knownAliasReview.some(
+      (issue) => issue.code === 'NEW_COLOR_SWATCH_REVIEW',
+    ),
+    '现有色库中的颜色仍被要求补传色块图',
+  );
+  assert(
+    result.rules.issues.some(
+      (issue) => issue.code === 'LENGTH_OUTSIDE_S1' && issue.blocking,
+    ),
+    '超长缺少提醒',
+  );
   assert(!result.rules.availableLengths.includes(28), '新版自动扩展了允许长度');
-  assert(result.rules.cards.some((card) => card.colorCode === '#999' && card.lengths.includes(28)), '新颜色或待纠正的原始长度丢失');
-  assert(result.rules.assets.some((name) => name.startsWith('colors/999-')), '新颜色候选色块没有提取');
-  assert(!result.rules.issues.some((issue) => issue.message.includes('Header') || issue.message.includes('Logo')), '装饰被误判为业务色块');
-  assert(result.rules.knownOutsideCards.some((card) => card.colorCode === '#1B'), '画布变化时，原有标准色号色块未能按可见区域解析');
-   assert(result.rules.knownOutsideIssues.some((issue) => issue.code === 'COLOR_LAYER_OUT_OF_BOUNDS_REVIEW'), '画布变化时，原有标准色号越界未进入人工确认提醒');
-   assert(!result.rules.outsideError, '真实业务色块越界不应再阻止候选版本生成');
-   assert(result.rules.outsideIssues.some((issue) => issue.code === 'COLOR_LAYER_OUT_OF_BOUNDS_REVIEW'), '越界色块未进入人工确认提醒');
-   assert(result.rules.outsideIssues.some((issue) => issue.message.includes('实际边界') && issue.message.includes('px')), '越界提醒缺少实际边界与方向');
-   assert(result.rules.mismatchError.includes('尺寸不一致'), 'PSD/JPG 不一致未阻止');
-  assert(result.diff.removed.some((item) => item.colorCode === '#1B' && item.lengths.includes(22)), '删除尺寸未进入移除项目');
+  assert(
+    result.rules.cards.some(
+      (card) => card.colorCode === '#999' && card.lengths.includes(28),
+    ),
+    '新颜色或待纠正的原始长度丢失',
+  );
+  assert(
+    result.rules.assets.some((name) => name.startsWith('colors/999-')),
+    '新颜色候选色块没有提取',
+  );
+  assert(
+    !result.rules.issues.some(
+      (issue) =>
+        issue.message.includes('Header') || issue.message.includes('Logo'),
+    ),
+    '装饰被误判为业务色块',
+  );
+  assert(
+    result.rules.knownOutsideCards.some((card) => card.colorCode === '#1B'),
+    '画布变化时，原有标准色号色块未能按可见区域解析',
+  );
+  assert(
+    result.rules.knownOutsideIssues.some(
+      (issue) => issue.code === 'COLOR_LAYER_OUT_OF_BOUNDS_REVIEW',
+    ),
+    '画布变化时，原有标准色号越界未进入人工确认提醒',
+  );
+  assert(!result.rules.outsideError, '真实业务色块越界不应再阻止候选版本生成');
+  assert(
+    result.rules.outsideIssues.some(
+      (issue) => issue.code === 'COLOR_LAYER_OUT_OF_BOUNDS_REVIEW',
+    ),
+    '越界色块未进入人工确认提醒',
+  );
+  assert(
+    result.rules.outsideIssues.some(
+      (issue) =>
+        issue.message.includes('实际边界') && issue.message.includes('px'),
+    ),
+    '越界提醒缺少实际边界与方向',
+  );
+  assert(
+    result.rules.mismatchError.includes('尺寸不一致'),
+    'PSD/JPG 不一致未阻止',
+  );
+  assert(
+    result.diff.removed.some(
+      (item) => item.colorCode === '#1B' && item.lengths.includes(22),
+    ),
+    '删除尺寸未进入移除项目',
+  );
   const report = {
     passed: true,
-    fixture: { psdBytes: psdBuffer.length, ambiguousPsdBytes: ambiguousPsdBuffer.length, jpgBytes: jpgBuffer.length, width, height },
+    fixture: {
+      psdBytes: psdBuffer.length,
+      ambiguousPsdBytes: ambiguousPsdBuffer.length,
+      jpgBytes: jpgBuffer.length,
+      width,
+      height,
+    },
     ...result,
   };
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`);
-  process.stdout.write(`${JSON.stringify({ passed: true, reportPath: outputPath, cards: codes, issues: issueCodes, preview: result.preview }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify({ passed: true, reportPath: outputPath, cards: codes, issues: issueCodes, preview: result.preview }, null, 2)}\n`,
+  );
 } finally {
   delete globalThis.__finishSourceParserQa;
   await stopBrowser(browser);
   if (server) await new Promise((resolve) => server.close(resolve));
-  await rm(tempDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 150 });
+  await rm(tempDir, {
+    recursive: true,
+    force: true,
+    maxRetries: 20,
+    retryDelay: 150,
+  });
 }
