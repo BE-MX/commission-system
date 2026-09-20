@@ -239,3 +239,16 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 此版本同时修改后端、前端及Singapore的okki_outbound_poller.js。发布关联同步前暂停旧poller，经统一deploy.bat完成158迁移和相关实例更新后才恢复，避免旧执行器绕过ark_invoices.linked_sync_id。若候选入口将poller列为deferred，关联同步功能不得启用，需将Singapore执行器更新纳入本次发布。参见[关联同步说明](../docs/invoice-linked-sync.md)。
 
 换址时可额外指定 `previous_address`，必须匹配已安装地址且处于原子网。入口核验旧配置、归属、防火墙与新网卡，备份后仅重启 ArkOfficeHttps，HTTPS 校验成功才更新 marker；失败恢复原配置，但旧 IP 已移除时无法保证旧地址可访问。
+
+
+## COS 生产切换入口
+
+`deploy.bat --storage-maintenance PLAN [--prepare-only]` 独立记录 API 与办公室 LAN 维护状态；计划包含 attempt、action（freeze/restore）。恢复只移除本轮维护规则，保留期间新增的路由。
+
+`deploy.bat --storage-cutover PLAN [--prepare-only]` 分 prepare、stop、configure、register、start 五步，固定实际发布 revision 与维护 attempt。配置和共享引用登记前，两机文件写入服务必须停止；最终回执 SHA 和域/来源矩阵固定证据。register 只由办公室在一个数据库事务中执行；start 要求登记完成记录、运行配置及 Colorwork 配置一致。保留原件、受限环境备份和 R2 未完成分片；不可删除状态日志强行重跑，产生新云文件后不可直接改回本地存储。
+
+`storage_snapshot.py` 只复制文件，默认计算当前原件 SHA 后复用匹配的云回读收据；缺少源目录需显式空源审计。用户明确同意时可指定 `--reuse-asset-receipts`，对大小/mtime 未变的素材复用原回执，不能把该模式称为新一轮完整内容校验。
+
+`--storage-routing-only` 切换公开文件与上传入口，新加坡到北京仍启用 TLS 校验，链深度为3。Nginx reload 后短暂等待新 worker 接管。办公室原件保留，局域网上传先持久化原件与队列，再由后台同步 COS。
+
+`--finalize-release PLAN` 仅恢复已经完成办公室/北京后端激活与 schema 升级、但后续静态发布失败的已记录发布；重新核对日志、revision、tracked 状态及受管候选，不重复DDL。

@@ -73,3 +73,79 @@ def test_complete_file_copy_cannot_hide_missing_database_originals(db):
     rows[-1]['size'] = 1
     with pytest.raises(StorageError, match='size_mismatch=1'):
         check_reference_coverage(db,'asset',rows)
+
+
+@pytest.fixture
+def asset_reference_rows(db):
+    from app.asset.models import Asset, AssetVersion
+    asset = Asset(file_name='missing.jpg', file_type='image', file_format='jpg', uploader_id=1,
+                  storage_path='missing.jpg', thumbnail_path='thumb.jpg', file_size=3)
+    db.add(asset)
+    db.flush()
+    # One exception covers the exact object even if multiple records reference it.
+    db.add(AssetVersion(asset_id=asset.id, uploader_id=1, storage_path='missing.jpg', file_size=3))
+    db.commit()
+    return [{'relative_path': 'thumb.jpg', 'size': 2, 'sha256': 'a' * 64}]
+
+
+def test_exact_missing_exception_is_transactional_and_does_not_invent_transfer(db, asset_reference_rows):
+    from app.core.storage.cutover import check_reference_coverage
+    rows = asset_reference_rows
+    with pytest.raises(StorageError, match='missing=2'):
+        register_ready(db, 'asset', rows, 'office')
+    assert db.query(StorageTransfer).count() == 0
+    assert check_reference_coverage(db, 'asset', rows,
+                                    missing_reference_exceptions=['missing.jpg']) == 3
+    register_ready(db, 'asset', rows, 'office', missing_reference_exceptions=['missing.jpg'])
+    assert [row.object_key for row in db.query(StorageTransfer)] == ['thumb.jpg']
+    db.rollback()
+    assert db.query(StorageTransfer).count() == 0
+
+
+@pytest.mark.parametrize('exceptions,error', [
+    (['missing.jpg', 'missing.jpg'], ValueError),
+    (['thumb.jpg'], StorageError),
+    (['unreferenced.jpg'], StorageError),
+    (['missing.jpg', 'unreferenced.jpg'], StorageError),
+    (['*.jpg'], StorageError),
+    (['../missing.jpg'], ValueError),
+    ('missing.jpg', ValueError),
+])
+def test_missing_exceptions_cannot_be_stale_broad_or_duplicated(db, asset_reference_rows, exceptions, error):
+    with pytest.raises(error):
+        register_ready(db, 'asset', asset_reference_rows, 'office', missing_reference_exceptions=exceptions)
+    assert db.query(StorageTransfer).count() == 0
+
+
+def test_missing_exception_cannot_silence_another_missing_reference(db, asset_reference_rows):
+    with pytest.raises(StorageError, match='missing=1'):
+        register_ready(db, 'asset', [], 'office', missing_reference_exceptions=['missing.jpg'])
+    assert db.query(StorageTransfer).count() == 0
+
+
+def test_exceptions_are_rejected_outside_asset(db):
+    from app.core.storage.cutover import check_reference_coverage
+    for function in (
+        lambda: check_reference_coverage(db, 'shipping-inspection', [], missing_reference_exceptions=['missing.jpg']),
+        lambda: register_ready(db, 'shipping-inspection', [], 'office', missing_reference_exceptions=['missing.jpg']),
+    ):
+        with pytest.raises(ValueError, match='only supported for asset'):
+            function()
+
+
+def test_exception_never_bypasses_size_or_registered_hash_checks(db, asset_reference_rows):
+    from app.asset.models import Asset
+    asset = db.query(Asset).one()
+    asset.storage_path = 'present.jpg'
+    db.commit()
+    rows = asset_reference_rows + [{'relative_path': 'present.jpg', 'size': 1, 'sha256': 'b' * 64}]
+    with pytest.raises(StorageError, match='size_mismatch=1'):
+        register_ready(db, 'asset', rows, 'office', missing_reference_exceptions=['missing.jpg'])
+    rows[-1]['size'] = 3
+    register_ready(db, 'asset', rows, 'office', missing_reference_exceptions=['missing.jpg'])
+    db.commit()
+    rows[-1]['sha256'] = 'c' * 64
+    with pytest.raises(StorageError, match='conflicts'):
+        register_ready(db, 'asset', rows, 'office', missing_reference_exceptions=['missing.jpg'])
+    db.rollback()
+    assert db.query(StorageTransfer).filter_by(object_key='present.jpg').one().sha256 == 'b' * 64
