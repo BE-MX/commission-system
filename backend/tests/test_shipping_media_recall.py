@@ -162,3 +162,37 @@ def test_word_download_preserves_layout_qr_and_scope(db):
     with ZipFile(io.BytesIO(response.content)) as package:
         xml = package.read('word/document.xml').decode()
     assert 'F5F5F5' in xml and 'w:val="center"' in xml and 'w:tblLayout w:type="fixed"' in xml
+
+
+@pytest.mark.parametrize("kind,filename,content,mime", [
+    ('photos', 'a.jpg', b'jpeg-bytes', 'image/jpeg'),
+    ('videos', 'a.mp4', VIDEO, 'video/mp4'),
+])
+def test_mini_upload_retry_is_idempotent(db, storage, kind, filename, content, mime):
+    from app.shipping_inspection.models import ShippingInspectionPhoto, ShippingOperationEvent
+    user = _user(db)
+    with _mini_client(db, user) as mini:
+        data = dict(outbound_record_id='OB001', edit_version=0, item_id='IT001', request_id='media-retry')
+        def send(payload=data, body=content):
+            return mini.post('/api/mini/shipping-inspection/' + kind, data=payload,
+                             files={'file': (filename, body, mime)})
+        first = send()
+        assert first.status_code == 200
+        statements = []
+        def capture(state):
+            if state.is_select:
+                statements.append(str(state.statement.compile(dialect=mysql.dialect())))
+        event.listen(db, 'do_orm_execute', capture)
+        try:
+            second = send()
+        finally:
+            event.remove(db, 'do_orm_execute', capture)
+        reads = [sql for sql in statements if 'FROM ark_shipping_inspection_photos' in sql]
+        assert reads and all('FOR UPDATE' in sql for sql in reads)
+        assert second.status_code == 200
+        assert second.json() == first.json()
+        assert db.query(ShippingInspectionPhoto).count() == 1
+        assert db.query(ShippingOperationEvent).filter_by(action='upload').count() == 1
+        assert send(dict(data, item_id='IT002')).status_code == 400
+        assert send(body=content + b'changed').status_code == 400
+        assert len(list(storage.rglob('*.' + filename.split('.')[-1]))) == 1

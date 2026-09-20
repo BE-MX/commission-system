@@ -71,10 +71,21 @@
             <view wx:else class="si-thumb si-thumb--loading"></view>
           </view>
         </scroll-view>
-        <view class="si-capture-actions" wx:if="{{!submitted}}">
+        <view class="si-capture-actions {{(uploading || pendingMedia || state !== 'ready') ? 'si-capture--disabled' : ''}}" wx:if="{{!submitted}}">
           <view class="si-camera-btn" bindtap="onWholeCameraTap" hover-class="si-press">拍整单照</view>
+          <view class="si-camera-btn si-camera-btn--row" bindtap="onWholeAlbumPhotoTap" hover-class="si-press">相册照片</view>
           <view class="si-camera-btn si-camera-btn--row" bindtap="onWholeVideoTap" hover-class="si-press">拍视频</view>
           <view class="si-camera-btn si-camera-btn--row" bindtap="onWholeAlbumVideoTap" hover-class="si-press">相册视频</view>
+        </view>
+
+        <view class="si-media-feedback" wx:if="{{mediaItemId === null && (mediaStage || pendingMedia)}}">
+          <text wx:if="{{mediaStage}}">{{mediaStage}}{{mediaStage === '上传中' ? ' · ' + mediaProgress + '%' : ''}}</text>
+          <progress wx:if="{{mediaStage === '上传中'}}" percent="{{mediaProgress}}" />
+          <text wx:if="{{mediaError}}">{{mediaError}}</text>
+          <block wx:if="{{pendingMedia}}">
+            <button size="mini" bindtap="onRetryMedia">重试处理并上传</button>
+            <button size="mini" bindtap="onDiscardMedia">放弃此文件</button>
+          </block>
         </view>
         <view class="si-video-entry" wx:for="{{wholeVideos}}" wx:key="id">
           <text data-video-id="{{item.id}}" bindtap="onPreviewVideo">▶ 整单视频 {{index + 1}}</text>
@@ -102,12 +113,23 @@
             <view wx:else class="si-thumb si-thumb--loading"></view>
           </view>
         </scroll-view>
-        <view class="si-capture-actions" wx:if="{{!submitted}}">
+        <view class="si-capture-actions {{(uploading || pendingMedia || state !== 'ready') ? 'si-capture--disabled' : ''}}" wx:if="{{!submitted}}">
           <view class="si-camera-btn si-camera-btn--row" data-item-id="{{it.item_id}}" bindtap="onItemCameraTap"
                 hover-class="si-press">拍照（{{it.photoCount}}张）</view>
+          <view class="si-camera-btn si-camera-btn--row" data-item-id="{{it.item_id}}" bindtap="onItemAlbumPhotoTap" hover-class="si-press">相册照片</view>
           <view class="si-camera-btn si-camera-btn--row" data-item-id="{{it.item_id}}" bindtap="onItemVideoTap"
                 hover-class="si-press">拍视频</view>
           <view class="si-camera-btn si-camera-btn--row" data-item-id="{{it.item_id}}" bindtap="onItemAlbumVideoTap" hover-class="si-press">相册视频</view>
+        </view>
+
+        <view class="si-media-feedback" wx:if="{{mediaItemId == it.item_id && (mediaStage || pendingMedia)}}">
+          <text wx:if="{{mediaStage}}">{{mediaStage}}{{mediaStage === '上传中' ? ' · ' + mediaProgress + '%' : ''}}</text>
+          <progress wx:if="{{mediaStage === '上传中'}}" percent="{{mediaProgress}}" />
+          <text wx:if="{{mediaError}}">{{mediaError}}</text>
+          <block wx:if="{{pendingMedia}}">
+            <button size="mini" bindtap="onRetryMedia">重试处理并上传</button>
+            <button size="mini" bindtap="onDiscardMedia">放弃此文件</button>
+          </block>
         </view>
         <view class="si-video-entry" wx:for="{{it.videos}}" wx:key="id" wx:for-item="video">
           <text data-video-id="{{video.id}}" bindtap="onPreviewVideo">▶ 明细视频 {{index + 1}}</text>
@@ -123,7 +145,7 @@
 
       <!-- 提交：显示已传照片总数，至少 1 张由后端校验兜底 -->
       <view class="si-footer" wx:if="{{!submitted}}">
-        <view class="si-submit {{(state === 'submitting' || uploading) ? 'si-submit--disabled' : ''}}"
+        <view class="si-submit {{(state === 'submitting' || uploading || pendingMedia) ? 'si-submit--disabled' : ''}}"
               bindtap="onSubmitTap" hover-class="si-press" hover-stay-time="80">
           {{state === 'submitting' ? '提交中…' : '提交检验（已传 ' + totalPhotos + ' 张）'}}
         </view>

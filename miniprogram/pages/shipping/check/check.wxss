@@ -386,8 +386,15 @@
   font-weight: 700;
 }
 
-.si-capture-actions { display: flex; gap: 16rpx; }
+.si-capture-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12rpx; }
 .si-capture-actions .si-camera-btn { flex: 1; min-width: 0; font-size: 28rpx; }
 .si-video-entry { display: flex; justify-content: space-between; gap: 20rpx; margin-top: 18rpx; color: var(--brand-green-d); font-size: 28rpx; }
 .si-video-entry text { padding: 12rpx 0; }
 .si-refresh { display: block; margin-top: 12rpx; font-weight: 700; }
+
+.si-capture-actions .si-camera-btn { margin-top: 0; }
+.si-capture-actions { margin-top: 18rpx; }
+.si-capture--disabled { opacity: .5; }
+.si-media-feedback { margin-top: 16rpx; font-size: 26rpx; color: var(--text-secondary); }
+.si-media-feedback text { display: block; margin-bottom: 12rpx; }
+.si-media-feedback button { margin-right: 12rpx; }

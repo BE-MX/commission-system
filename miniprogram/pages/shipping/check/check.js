@@ -10,7 +10,7 @@ Page(Object.assign({
   onShow: function () {
     if (!navigation.guard('shipping')) return
     this.setData({ scanActive: true })
-    if (this.data.submitted && !this.data.uploading && this._qrRaw) this._loadByQr(this._qrRaw, true)
+    if (this.data.submitted && !this.data.uploading && !this.data.pendingMedia && this._qrRaw) this._loadByQr(this._qrRaw, true)
   },
   onHide: function () { this.setData({ scanActive: false }) },
   onPreviewScanExample: function () {
@@ -34,6 +34,11 @@ Page(Object.assign({
     submitted: false,         // 已提交：整页只读
     statusText: '',
     remark: '',
+    mediaStage: '',
+    mediaProgress: 0,
+    pendingMedia: false,
+    mediaError: '',
+    mediaItemId: null,
     uploading: false,         // 有照片在传时挡住提交/再拍，避免顺序错乱
     successVisible: false,
     successTitle: '',
@@ -49,7 +54,7 @@ Page(Object.assign({
   _imageBatch: 0,
   _qrRaw: '',
   onRefreshInspection: function () {
-    if (this._qrRaw && !this.data.uploading && this.data.state === 'ready') this._loadByQr(this._qrRaw, true)
+    if (this._qrRaw && !this.data.uploading && !this.data.pendingMedia && this.data.state === 'ready') this._loadByQr(this._qrRaw, true)
   },
 
   onLoad: function () {
@@ -181,31 +186,47 @@ Page(Object.assign({
 
   onItemCameraTap: function (e) { this._choosePhoto(e.currentTarget.dataset.itemId) },
 
-  _choosePhoto: function (itemId) {
-    if (this.data.submitted || this.data.state === 'submitting' || this.data.uploading) return
+  onWholeAlbumPhotoTap: function () { this._choosePhoto(null, 'album') },
+  onItemAlbumPhotoTap: function (e) { this._choosePhoto(e.currentTarget.dataset.itemId, 'album') },
+
+  _choosePhoto: function (itemId, sourceType) {
+    if (this.data.submitted || this.data.state !== 'ready' || this.data.uploading || this.data.pendingMedia) return
     var self = this
+    var batch = this._imageBatch
+    this.setData({ uploading: true })
     wx.chooseMedia({
       count: 1,
       mediaType: ['image'],
-      sourceType: ['camera'],
+      sourceType: [sourceType || 'camera'],
       sizeType: ['compressed'],
       success: function (res) {
+        if (batch !== self._imageBatch) return
+        self.setData({ uploading: false })
         if (res.tempFiles && res.tempFiles.length > 0) {
           self._upload(res.tempFiles[0].tempFilePath, itemId === undefined ? null : itemId)
         }
+      },
+      fail: function (err) {
+        if (batch !== self._imageBatch) return
+        self.setData({ uploading: false })
+        if ((err.errMsg || '').indexOf('cancel') < 0) self._error('无法选择照片', '请检查相机和相册权限后重试')
       }
     })
   },
 
-  _upload: function (filePath, itemId, mediaType) {
-    if (this.data.submitted || this.data.state !== 'ready' || this.data.uploading) return
+  _upload: function (filePath, itemId, mediaType, retry) {
+    if (this.data.submitted || this.data.state !== 'ready' || this.data.uploading || this.data.pendingMedia) return
     var self = this
-    this.setData({ uploading: true })
-    wx.showLoading({ title: '上传中…', mask: true })
+    var batch = this._imageBatch
+    var intent = retry || { filePath: filePath, itemId: itemId, mediaType: mediaType,
+      recordId: this.data.record.outbound_record_id, version: this.data.editVersion,
+      requestId: 'media-' + Date.now() + '-' + Math.random().toString(36).slice(2) }
+    this._pendingUpload = intent
+    this.setData({ uploading: true, mediaStage: '上传中', mediaProgress: 0, mediaError: '', mediaItemId: itemId == null ? null : itemId })
     // multipart 的 formData 只收字符串；整单照片不传 item_id
-    var formData = { outbound_record_id: String(this.data.record.outbound_record_id), edit_version: String(this.data.editVersion) }
+    var formData = { outbound_record_id: String(intent.recordId), edit_version: String(intent.version), request_id: intent.requestId }
     if (itemId !== null && itemId !== undefined) formData.item_id = String(itemId)
-    wx.uploadFile({
+    var task = wx.uploadFile({
       url: app.globalData.baseUrl + '/api/mini/shipping-inspection/' + (mediaType === 'video' ? 'videos' : 'photos'),
       timeout: 300000,
       filePath: filePath,
@@ -213,19 +234,22 @@ Page(Object.assign({
       header: { 'Authorization': 'Bearer ' + app.globalData.token },
       formData: formData,
       success: function (uploadRes) {
+        if (batch !== self._imageBatch) return
         wx.hideLoading()
-        self.setData({ uploading: false })
-        if (uploadRes.statusCode === 401) { app.logout(); return }
+        self.setData({ uploading: false, mediaStage: '' })
+        if (uploadRes.statusCode === 401) { self._mediaFailure('登录已过期', '请重新登录后核对上传结果'); app.logout(); return }
         var body = {}
         try { body = JSON.parse(uploadRes.data) } catch (e) {}
         // mini 端惯例：成功返回裸 dict {id, file_path}；错误走 detail.message
         if (uploadRes.statusCode >= 400) {
           var detail = body.detail || {}
-          self._error('上传失败', detail.message || '请重试')
+          self._mediaFailure('上传失败', detail.message || '请重试')
           return
         }
         // 刚拍的本地临时路径直接用于显示，省一次回源下载
-        if (!body.id || !body.file_path) { self._error('上传未确认', '请刷新出库单核对后重试'); return }
+        if (!body.id || !body.file_path) { self._mediaFailure('上传未确认', '请重试上传'); return }
+        self._pendingUpload = null
+        self.setData({ pendingMedia: false, mediaError: '' })
         var append = mediaType === 'video' ? self._appendVideo : self._appendPhoto
         append.call(self, {
           id: body.id,
@@ -235,10 +259,12 @@ Page(Object.assign({
         })
       },
       fail: function () {
-        wx.hideLoading()
-        self.setData({ uploading: false })
-        self._error('网络异常', '请检查网络后重试')
+        if (batch !== self._imageBatch) return
+        self._mediaFailure('上传失败', '网络异常，请重试上传')
       }
+    })
+    if (task && task.onProgressUpdate) task.onProgressUpdate(function (event) {
+      if (batch === self._imageBatch && self.data.uploading) self.setData({ mediaProgress: event.progress })
     })
   },
 
@@ -248,7 +274,7 @@ Page(Object.assign({
       obj['wholePhotos[' + this.data.wholePhotos.length + ']'] = photo
     } else {
       for (var i = 0; i < this.data.items.length; i++) {
-        if (this.data.items[i].item_id === photo.itemId) {
+        if (String(this.data.items[i].item_id) === String(photo.itemId)) {
           var n = this.data.items[i].photos.length
           obj['items[' + i + '].photos[' + n + ']'] = photo
           obj['items[' + i + '].photoCount'] = n + 1
@@ -287,8 +313,9 @@ Page(Object.assign({
   },
 
   onDeletePhoto: function (e) {
-    if (this.data.submitted || this.data.state === 'submitting' || this.data.uploading) return
+    if (this.data.submitted || this.data.state !== 'ready' || this.data.uploading || this.data.pendingMedia) return
     var photoId = e.currentTarget.dataset.photoId
+    var batch = this._imageBatch
     var self = this
     wx.showModal({
       title: '删除照片',
@@ -296,12 +323,15 @@ Page(Object.assign({
       confirmText: '删除',
       confirmColor: '#E53935',
       success: function (res) {
-        if (res.confirm) self._deletePhoto(photoId)
+        if (res.confirm && batch === self._imageBatch) self._deletePhoto(photoId)
       }
     })
   },
 
   _deletePhoto: function (photoId) {
+    if (this.data.submitted || this.data.state !== 'ready' || this.data.uploading || this.data.pendingMedia) return
+    var batch = this._imageBatch
+    this.setData({ uploading: true })
     var self = this
     wx.request({
       url: app.globalData.baseUrl + '/api/mini/shipping-inspection/photos/' + photoId + '?edit_version=' + this.data.editVersion,
@@ -309,6 +339,7 @@ Page(Object.assign({
       header: this._header(),
       timeout: 30000,
       success: function (res) {
+        if (batch !== self._imageBatch) return
         if (res.statusCode === 401) { app.logout(); return }
         if (res.statusCode >= 400) {
           var detail = (res.data && res.data.detail) || {}
@@ -327,7 +358,8 @@ Page(Object.assign({
         self.setData({ wholePhotos: whole, items: items })
         self._recount()
       },
-      fail: function () { self._error('网络异常', '请检查网络后重试') }
+      fail: function () { if (batch === self._imageBatch) self._error('网络异常', '请检查网络后重试') },
+      complete: function () { if (batch === self._imageBatch) self.setData({ uploading: false }) }
     })
   },
 
@@ -336,7 +368,7 @@ Page(Object.assign({
   onRemarkInput: function (e) { this.setData({ remark: e.detail.value }) },
 
   onSubmitTap: function () {
-    if (this.data.state !== 'ready' || this.data.submitted || this.data.uploading) return
+    if (this.data.state !== 'ready' || this.data.submitted || this.data.uploading || this.data.pendingMedia) return
     var self = this
     // 幂等键在同一次提交里复用：弱网下"已提交但响应丢了"时再点一次不会报两单
     if (!this._requestId) {
@@ -391,8 +423,11 @@ Page(Object.assign({
     this._imageBatch += 1
     this._requestId = ''
     this._qrRaw = ''
+    this._pendingUpload = null
+    this._pendingVideo = null
     this.setData({
       state: 'idle',
+      uploading: false, pendingMedia: false, mediaError: '', mediaStage: '',
       record: null,
       items: [],
       wholePhotos: [],

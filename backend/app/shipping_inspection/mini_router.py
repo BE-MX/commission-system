@@ -63,13 +63,14 @@ async def shipping_upload_photo(
     outbound_record_id: str = Form(...),
     item_id: str | None = Form(None),
     edit_version: int = Form(0, ge=0),
+    request_id: str | None = Form(None, min_length=1, max_length=64),
     current_user: ArkUser = Depends(require_mini_entry("shipping")),
     db: Session = Depends(get_db),
 ):
-    return await _upload_media(file, outbound_record_id, item_id, edit_version, current_user, db, "image")
+    return await _upload_media(file, outbound_record_id, item_id, edit_version, current_user, db, "image", request_id)
 
 
-async def _upload_media(file, outbound_record_id, item_id, edit_version, current_user, db, media_type):
+async def _upload_media(file, outbound_record_id, item_id, edit_version, current_user, db, media_type, request_id=None):
     rel_path = None
     try:
         if media_type == "video":
@@ -80,9 +81,13 @@ async def _upload_media(file, outbound_record_id, item_id, edit_version, current
             rel_path = shipping_file_service.store_bytes(file.filename, content)
         photo = shipping_service.add_photo(
             db, outbound_record_id=outbound_record_id, item_id=item_id or None,
-            file_path=rel_path, user_id=current_user.id, media_type=media_type, edit_version=edit_version,
+            file_path=rel_path, user_id=current_user.id, media_type=media_type, edit_version=edit_version, request_id=request_id,
         )
-        return {"id": photo.id, "file_path": photo.file_path, "media_type": photo.media_type}
+        result = {"id": photo.id, "file_path": photo.file_path, "media_type": photo.media_type}
+        if photo.file_path != rel_path:
+            shipping_file_service.remove_file(rel_path)
+            db.rollback()  # release the replay lock without creating another event
+        return result
     except Exception as exc:
         db.rollback()
         if rel_path:
@@ -106,10 +111,11 @@ async def shipping_upload_video(
     outbound_record_id: str = Form(...),
     item_id: str | None = Form(None),
     edit_version: int = Form(0, ge=0),
+    request_id: str | None = Form(None, min_length=1, max_length=64),
     current_user: ArkUser = Depends(require_mini_entry("shipping")),
     db: Session = Depends(get_db),
 ):
-    return await _upload_media(file, outbound_record_id, item_id, edit_version, current_user, db, "video")
+    return await _upload_media(file, outbound_record_id, item_id, edit_version, current_user, db, "video", request_id)
 
 
 @router.delete("/shipping-inspection/photos/{photo_id}", summary="发货检验：删除照片（仅提交前）")

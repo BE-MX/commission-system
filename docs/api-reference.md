@@ -1099,7 +1099,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | POST | `/records/{id}/recall` | 请求必填 edit_version；submitted → draft，版本加一，保留备注与全部媒体，记录撤回人/时间；过期状态 409 |
 | GET | `/images/{rel_path:path}` | 鉴权读图（FileResponse，私有存储不挂静态目录） |
 | POST | `/api/mini/shipping-inspection/scan` | 验签二维码原文 → 单头+明细+photos/videos+状态/edit_version/已存备注；前缀/签名错 400 |
-| POST | `/api/mini/shipping-inspection/photos` | multipart 上传一张照片（file + outbound_record_id + item_id? + edit_version）；draft 懒创建；已提交拒绝 |
+| POST | `/api/mini/shipping-inspection/photos` | multipart 上传一张照片（file + outbound_record_id + item_id? + edit_version + request_id?）；draft 懒创建；已提交拒绝 |
 | POST | `/api/mini/shipping-inspection/videos` | 同照片表单字段；相册视频 MP4/MOV/M4V，单文件最多 100 MiB；校验扩展名、MIME、文件头及实际读取大小 |
 | DELETE | `/api/mini/shipping-inspection/photos/{photo_id}?edit_version=` | 仅当前版本 draft 可删，删行同时清文件 |
 | DELETE | `/api/mini/shipping-inspection/videos/{video_id}?edit_version=` | 同照片删除规则，拒绝跨媒体类型删除 |
@@ -1419,3 +1419,8 @@ Agent research context now includes `fact_contract.version=registered_research_f
 |POST|/invoices/{id}/linked-sync/{operation}/resolve|管理员人工核对留证结束；reason、confirmed；admin|
 
 均校验发票可见范围；回款摘要另校验回款动作及数据范围。发票详情增加edit_version。边界及恢复见[invoice-linked-sync.md](invoice-linked-sync.md)。
+
+
+### 小程序验货上传重试（2026-09-20）
+
+照片与视频上传表单新增可选 `request_id`（1～64 字符）。新版小程序对同一文件的重试复用编号、文件、明细和编辑版本；服务端以 `mini:{user_id}` 范围、单据行锁及既有事件唯一键防重复。相同参数和内容摘要返回已有媒体，不新增事件或文件；同编号用于不同内容返回 400。历史小程序不传编号仍按单次上传处理。重放已删除的文件返回 400，提示刷新。上线顺序：先部署后端，再上传发布小程序，避免新版重试请求遇到旧后端时重复入库。
