@@ -75,6 +75,7 @@ function unitLabelFontSize(text, maximum, height) {
 
 // 逐件标签：规格、实际单件序号、客户、系统单号、日期。
 export function buildUnitLabelDoc({ data }) {
+  const body = (data.groups || [data]).map(data => {
   const units = data.units || []
   const attrs = data.item?.attrs || {}
   const specification = attrs.product_type === 'piece'
@@ -86,7 +87,7 @@ export function buildUnitLabelDoc({ data }) {
   const customerFont = unitLabelFontSize(customerName, 2, 3.2)
   const orderFont = unitLabelFontSize(orderNo, 1.25, 3)
   const orderDate = esc(data.order_date || '-').replace(/^(\d{4}-)(\d{2}-\d{2})$/, '<span>$1</span><span>$2</span>')
-  const body = units.map(unit => `<div class="label unit-label">
+  return units.map(unit => `<div class="label unit-label">
     <div class="unit-meta">
       <strong class="unit-spec"><span style="font-size:${specFont}mm">${esc(specification)}</span></strong>
       <strong class="unit-serial">${esc(String(unit.unit_no).padStart(2, '0'))}</strong>
@@ -96,6 +97,7 @@ export function buildUnitLabelDoc({ data }) {
     </div>
     ${img(unit.qr_image, 'unit-qr', `单件 ${unit.unit_code}`)}
   </div>`).join('')
+  }).join('')
   const css = `${LABEL_CSS}
     .unit-label{gap:.6mm}
     .unit-meta{width:10.6mm;height:100%;display:grid;grid-template-rows:3.2mm 2.6mm 3.2mm 3mm 5.2mm;row-gap:.2mm;min-width:0;text-align:center}

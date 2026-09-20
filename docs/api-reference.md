@@ -664,6 +664,11 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 
 ## 内贸订单（`/api/domestic`，081～140 相关迁移，2026-07-27 至 2026-09-07）
 
+- 2026-09-20：业务单仅在商品成交价偏离系统默认会员价时进入价格审核，正常会员优惠直接生效。详情明细新增 `default_discount_price`（不含手工费）、`default_line_amount`、`price_changed`；`unit_price` 和 `line_amount` 含手工费。`current_expected_quotes.discount_price` 不含手工费。
+- 订单类型新增 `sample=样单`，普货样单允许 `manual_discount_price=0`；普通订单人工商品价仍必须大于 0。零价样单在草稿设置/追加并提交审核，禁止在制订单直接新增或改为零价；已有零价样单不能直接改成普通类型。
+- 订单列表整单逐件码打印沿用明细 `unit-qrcodes` API，以每批最多 200 件按明细序号获取全部标签；失败不提供部分打印。充值仍按单笔金额重新核定等级，覆盖人工指定等级，申请及审批界面明确提示。
+
+
 - 2026-09-07 下单与列表：业务 `POST /orders` 的 `order_no` 选填，省略/null/空白均规范化为空串，系统 `domestic_no` 始终自动生成；`PUT /orders/{id}` 可显式传空/null清空客户订单号，省略则保留原值。渠道字典改为 `recharge=充值扣账`、`cash=现金结账`，新建页按客户 `settle_mode` 默认选择并允许调整，标签不改变结算逻辑。历史转换工具 `backend/scripts/domestic_order_channel_cutover.py` 按 prepay→recharge、credit→cash 更新业务单，先预览再持独占备份和指纹执行；旧字典停用，生产单保持无渠道。
 - 订单客户查询（2026-09-11）：`GET /orders` 接受 `customer_name`（可选，最多 200 字符），去除首尾空格后按客户当前店名做包含匹配，`%` / `_` 按普通字符处理；空白不筛选。与订单号 `keyword`、状态、客户 ID、日期和分类条件取交集，分页前生效，创建人数据范围保持不变；无客户的生产单不会匹配“公司备货”展示文案。主站常用查询保留订单号、客户名称、订单状态；下单日期、订单类别/类型/渠道和客户来源移入高级查询弹框，应用后显示可移除标签，取消不改变条件，重置保留当前订单大类页签。
 - `GET /orders` 新增 `customer_source` 精确筛选（分页前生效，不扩大创建人数据范围），返回客户当前档案的 `customer_source/customer_source_label`。未填写显示“未填写”，未关联客户的生产单显示“—”；`GET /options` 的 `customer_sources` 复用启用的 `domestic_customer_source` 字典。主站客户来源列紧跟客户/用途列，切换到生产订单时清除该筛选。

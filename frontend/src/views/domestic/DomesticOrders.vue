@@ -60,6 +60,7 @@
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
             <GlassButton variant="link" left-icon="Download" @click="handleExport(row)">导出</GlassButton>
+            <GlassButton variant="link" left-icon="Printer" @click="openOrderQrLabels(row)">批量打印逐件码</GlassButton>
             <GlassButton v-if="row.status === 5 && canReviewOrder(row)" variant="link" left-icon="Stamp" :loading="reviewingOrderIds.has(row.id)" :disabled="reviewingOrderIds.has(row.id)" @click="handleReviewApprove(row)">通过</GlassButton>
             <GlassButton v-if="row.status === 5 && canReviewOrder(row)" variant="link" link-tone="danger" left-icon="CircleClose" :disabled="reviewingOrderIds.has(row.id)" @click="handleReviewReject(row)">驳回</GlassButton>
             <GlassButton v-if="canOperateOrder(row) && row.status < 3" v-permission="'domestic:write'" variant="link" left-icon="EditPen" @click="openEdit(row)">编辑</GlassButton>
@@ -89,6 +90,7 @@
             <span v-if="detail.order_kind !== 'production'">订单类型：{{ detail.order_type_label }}</span>
             <span v-if="detail.order_kind !== 'production'">订单渠道：{{ detail.order_channel_label }}</span>
             <span>状态：{{ detail.status_label }}</span>
+            <span v-if="detail.order_kind !== 'production'"><strong>订单总金额：¥{{ Number(detail.total_amount || 0).toFixed(2) }}</strong></span>
             <span v-if="detail.customer_custom_code">客户编码：{{ detail.customer_custom_code }}</span>
             <span v-if="detail.order_kind !== 'production'">当前会员：{{ membershipLevelLabel(detail.customer_membership_level) }}</span>
             <span v-if="detail.customer_province || detail.customer_city">地区：{{ [detail.customer_province, detail.customer_city].filter(Boolean).join(' / ') }}</span>
@@ -115,6 +117,15 @@
             <span v-for="field in visibleAttributeFields(item.attrs, detail.order_kind)" :key="field" class="item-attribute">
               <template v-if="item.attrs[field]">{{ attributeFieldLabel(item.attrs.product_type, field) }}：{{ item.attrs[field] }}</template>
             </span>
+          </div>
+
+          <div v-if="detail.order_kind !== 'production'" class="item-price-summary">
+            <span>数量：{{ item.order_qty }}</span>
+            <span>默认优惠价：¥{{ Number(item.default_discount_price).toFixed(2) }}</span>
+            <span :class="{ 'price-review-highlight': detail.status === 5 && item.price_changed }">优惠价：¥{{ (Number(item.unit_price) - Number(item.labor_fee || 0)).toFixed(2) }}</span>
+            <span>手工费：¥{{ Number(item.labor_fee || 0).toFixed(2) }}</span>
+            <strong :class="{ 'price-review-highlight': detail.status === 5 && item.price_changed }">明细金额：¥{{ Number(item.line_amount).toFixed(2) }}</strong>
+            <span v-if="item.price_changed">默认明细金额：¥{{ Number(item.default_line_amount).toFixed(2) }}（成交价已调整）</span>
           </div>
 
           <div class="item-actions">
@@ -288,7 +299,7 @@
 
     <DomesticPrintDialog
       v-model:visible="printDialog.visible"
-      :mode="printDialog.mode" :item-id="printDialog.itemId"
+      :mode="printDialog.mode" :item-id="printDialog.itemId" :order-id="printDialog.orderId"
     />
 
     <el-dialog v-model="wxacodeDialog.visible" title="产品进度码" width="420px">
@@ -357,7 +368,7 @@ const {
   skipAuditDialog, openSkipAudits, loadSkipAudits, handleRevokeSkip,
   logDialog, openLogs, handleRevokeReport,
   attachDialog, openAttachRoute, confirmAttachRoute,
-  printDialog, openPrintCard, openQrLabel, openWxacodeLabel,
+  printDialog, openPrintCard, openQrLabel, openOrderQrLabels, openWxacodeLabel,
   wxacodeDialog, openWxacode, downloadWxacode,
   handleExport, handleSubmitDraft, submittingOrderIds, handleTerminate, handleDelete, goCreate,
   canOperateOrder,

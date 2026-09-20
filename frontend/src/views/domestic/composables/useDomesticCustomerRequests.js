@@ -6,6 +6,7 @@ import {
   approveCustomerRequest, fetchVoucherBlob, listCustomerRequests, rejectCustomerRequest,
 } from '@/api/domestic'
 import { useListPage } from '@/composables/useListPage'
+import { membershipPreview } from './domesticMemberPricing'
 import { msgSuccess } from '@/utils/feedback'
 
 export const REQUEST_STATUS = [
@@ -70,7 +71,7 @@ export function useDomesticCustomerRequests() {
   async function handleApprove(row) {
     try {
       await ElMessageBox.confirm(
-        `确认通过${row.customer_name || ''}的${REQUEST_TYPE_LABELS[row.request_type]}申请？通过即入账生效。`,
+        `确认通过${row.customer_name || ''}的${REQUEST_TYPE_LABELS[row.request_type]}申请？通过即入账生效。${row.request_type === 'recharge' ? `本次充值将覆盖当前会员等级（含人工调整），重新核定为「${membershipPreview(row.amount)}」。` : '人工调整的等级会在下一次充值审批通过时被重新核定。'}`,
         '审核通过',
         { type: 'warning', confirmButtonText: '通过并入账', cancelButtonText: '再想想' },
       )
@@ -111,6 +112,7 @@ export function useDomesticCustomerRequests() {
   }
 
   function membershipText(row) {
+    if (row.request_type === 'recharge') return `充值后：${membershipPreview(row.amount)}`
     if (!row.change_membership) return '—'
     return row.membership_label || '取消会员'
   }

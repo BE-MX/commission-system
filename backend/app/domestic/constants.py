@@ -62,7 +62,7 @@ ORDER_PRODUCING = 1
 ORDER_DONE = 2
 ORDER_SHIPPED = 3
 ORDER_TERMINATED = 4
-# 优惠价低于原始价的业务订单先落待审核：不扣款、不能报工、不能改明细，
+# 成交价偏离系统默认价的业务订单先落待审核：不扣款、不能报工、不能改明细，
 # 审核通过才转生产中并扣款；驳回落已驳回，等同终止态（从未扣款，无退款）。
 ORDER_PENDING_REVIEW = 5
 ORDER_REJECTED = 6

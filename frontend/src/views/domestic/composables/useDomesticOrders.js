@@ -411,7 +411,7 @@ export function useDomesticOrders() {
       }
       draftSubmitRequestIds.delete(row.id)
       if (submitRes.data?.status === 5) {
-        ElMessage.success('订单已提交，待审核：优惠价低于原始价，审核通过后正式生效并扣款')
+        ElMessage.success('订单已提交，待审核：成交价与系统默认价不一致，审核通过后正式生效并扣款')
       } else {
         msgSuccess('提交订单')
       }
@@ -445,10 +445,14 @@ export function useDomesticOrders() {
 
   // 打印弹框：内容渲染在 iframe 里的独立文档中，打印只出那份文档，
   // 但弹框本身停在订单页上——关掉就回到原来的列表和抽屉，不用按浏览器后退
-  const printDialog = reactive({ visible: false, mode: 'card', itemId: null })
+  const printDialog = reactive({ visible: false, mode: 'card', itemId: null, orderId: null })
 
   function openPrintCard(item) {
     Object.assign(printDialog, { visible: true, mode: 'card', itemId: item.id })
+  }
+
+  function openOrderQrLabels(order) {
+    Object.assign(printDialog, { visible: true, mode: 'order-label', itemId: null, orderId: order.id })
   }
 
   function openQrLabel(item) {
@@ -513,7 +517,7 @@ export function useDomesticOrders() {
     skipAuditDialog, openSkipAudits, loadSkipAudits, handleRevokeSkip,
     logDialog, openLogs, handleRevokeReport,
     attachDialog, openAttachRoute, confirmAttachRoute,
-    printDialog, openPrintCard, openQrLabel, openWxacodeLabel,
+    printDialog, openPrintCard, openQrLabel, openOrderQrLabels, openWxacodeLabel,
     wxacodeDialog, openWxacode, downloadWxacode,
     handleExport, handleSubmitDraft, submittingOrderIds, handleTerminate, handleDelete, goCreate,
     canOperateOrder,

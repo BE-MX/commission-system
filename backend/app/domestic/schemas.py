@@ -451,8 +451,8 @@ class OrderItemInput(BaseModel):
         None, description="报价快照；特单不报价，传 None"
     )
     manual_discount_price: Decimal | None = Field(
-        None, gt=0, le=Decimal("999999999999.99"), max_digits=14, decimal_places=2,
-        description="手工改价后的优惠价；不传则按系统报价成交，传入也不得高于原价",
+        None, ge=0, le=Decimal("999999999999.99"), max_digits=14, decimal_places=2,
+        description="手工改价后的优惠价；样单允许为0，不传按系统报价成交，传入不得高于原价",
     )
     labor_fee: Decimal = Field(
         default=Decimal("0"), ge=0, le=Decimal("999999999999.99"),
@@ -652,8 +652,8 @@ class OrderItemUpdate(BaseModel):
 
     order_qty: int | None = Field(None, gt=0, le=2000)
     unit_price: Decimal | None = Field(
-        None, gt=0, le=Decimal("999999999999.99"), max_digits=14, decimal_places=2,
-        description="含手工费的成交单价；减去手工费后须大于0且不高于原价快照，改后记为 manual_override",
+        None, ge=0, le=Decimal("999999999999.99"), max_digits=14, decimal_places=2,
+        description="含手工费的成交单价；减去手工费后样单允许为0，其他订单须大于0，且不高于原价快照，改后记为 manual_override",
     )
     attrs: dict | None = Field(
         None,

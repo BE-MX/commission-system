@@ -1,5 +1,13 @@
 ## 2026-09-20 出库列表排序规则冲突（codex/outbound-collation-fix）
 
+## 2026-09-20 内贸订单优化（Codex，待生产发布）
+
+- 分支 `codex/domestic-order-improvements`，独立工作目录 `commission-system-codex-domestic-order-improvements`。
+- 会员问题只读核实：客户 550 黑卡调整于 9/17 17:25:15 通过，2,994 元充值于 17:25:36 通过后重核为非会员。用户确认保留规则，只加强充值及审核提示。
+- DO20260919-002 商品原价 1198、系统至尊会员价 960，旧规则误进审核；查询时已生产中。本次修复审核判定、金额详情高亮、整单逐件码打印、样单零价及草稿手工费保存。
+- 新增迁移 160（默认价快照 + 样单字典）。用户已授权合并推送；未执行生产迁移或数据修复。验证与限制见 `docs/reports/2026-09-20-domestic-order-improvements.md`。
+
+
 - 已只读复现：`lsordertest.okki_outbound_records` 可访问（4519条）；单数 `okki_outbound_record` 不存在。列表失败来自删除回执 `request_id` 的 `utf8mb4_unicode_ci` 与 `CAST(outbound_invoice_id AS CHAR)` 继承的连接 `utf8mb4_0900_ai_ci` 比较，MySQL报1267，被统一提示为数据库连接失败。
 - 修复删除过滤在MySQL上的字符串比较，显式指定 `utf8mb4_unicode_ci`；列表和详情共用，保留字符串精确ID比较，不改表、不改数据、无迁移。
 - 隔离SQLite回归54项通过；修复代码对真实库只读验证列表20条/合并总数4521、详情可读、无归属匹配返回0条。未做生产页面验收；用户已授权本次合并 main 并推送 origin，未授权或执行部署。

@@ -3211,17 +3211,14 @@ def test_submit_draft_reprices_membership_atomically_then_charges_confirmed_quot
     db.refresh(item)
     db.refresh(customer)
     assert result["replayed"] is False
-    # 会员价提交先落待审核：明细快照已重算，但未扣款
-    assert order.status == domestic_constants.ORDER_PENDING_REVIEW
+    # 默认会员价提交直接生效，按重算后的快照扣款
+    assert order.status == domestic_constants.ORDER_PRODUCING
     assert order.total_amount == D("880.00")
-    assert order.charged_amount == D("0.00")
+    assert order.charged_amount == D("880.00")
     assert item.membership_level_snapshot == "black"
     assert item.unit_price == D("880.00")
-    assert customer.balance == balance_before
+    assert customer.balance == balance_before - D("880.00")
 
-    reviewer = _operator(db, "draft-submit-membership-reviewer")
-    _approve_pending_review(db, order.id, reviewer)
-    db.refresh(customer)
     assert order.status == domestic_constants.ORDER_PRODUCING
     assert order.charged_amount == D("880.00")
     assert customer.balance == balance_before - D("880.00")
@@ -3351,26 +3348,21 @@ def test_submit_draft_flushes_repriced_items_with_autoflush_disabled(db):
         saved_customer = session.get(domestic_models.DomesticCustomer, customer.id)
         # 会员价提交先落待审核：明细已重算并 flush，但状态与余额未动
         assert result["total_amount"] == 880.0
-        assert result["status"] == domestic_constants.ORDER_PENDING_REVIEW
+        assert result["status"] == domestic_constants.ORDER_PRODUCING
         assert saved_item.unit_price == D("880.00")
         assert saved_order.total_amount == D("880.00")
-        assert saved_order.charged_amount == D("0.00")
-        assert saved_customer.balance == D("5000.00")
+        assert saved_order.charged_amount == D("880.00")
+        assert saved_customer.balance == D("4120.00")
         assert session.query(domestic_models.DomesticCustomerLedger).filter_by(
             order_id=order.id
-        ).count() == 0
-
-        reviewed = order_service.review_order(
-            session, order.id, decision="approve", remark=None,
-            reviewer_id=reviewer.id, can_admin=False,
-        )
+        ).count() == 1
 
         saved_order = session.get(domestic_models.DomesticOrder, order.id)
         saved_customer = session.get(domestic_models.DomesticCustomer, customer.id)
         ledger = session.query(domestic_models.DomesticCustomerLedger).filter_by(
             order_id=order.id
         ).one()
-        assert reviewed["charged_amount"] == 880.0
+        assert result["charged_amount"] == 880.0
         assert saved_order.status == domestic_constants.ORDER_PRODUCING
         assert saved_order.charged_amount == D("880.00")
         assert ledger.amount == D("-880.00")
@@ -3812,9 +3804,8 @@ def test_formal_black_order_charges_discount_and_persists_pricing_snapshot(db):
 
     # 黑卡立减单先落待审核：不扣款，审核通过才按快照结算
     db.refresh(customer)
-    assert customer.balance == D("10000.00")
-    reviewer = _operator(db, "black-reduction-reviewer")
-    _approve_pending_review(db, created["id"], reviewer)
+    assert customer.balance == D("8240.00")
+    assert created["status"] == domestic_constants.ORDER_PRODUCING
 
     item = db.query(domestic_models.DomesticOrderItem).one()
     order = db.get(domestic_models.DomesticOrder, created["id"])
@@ -3910,11 +3901,7 @@ def test_discount_balance_threshold_and_draft_charge_contract(db):
     )
     assert formal["total_amount"] == 880.0
     # 优惠价先落待审核：扣款发生在审核通过时
-    assert formal["status"] == domestic_constants.ORDER_PENDING_REVIEW
-    db.refresh(customer)
-    assert customer.balance == D("880.00")
-    reviewer = _operator(db, "discount-balance-reviewer")
-    _approve_pending_review(db, formal["id"], reviewer)
+    assert formal["status"] == domestic_constants.ORDER_PRODUCING
     db.refresh(customer)
     assert customer.balance == D("0.00")
 
@@ -4244,8 +4231,7 @@ def test_append_quotes_server_side_replays_and_quantity_uses_frozen_price(db):
         ),
         user.id,
     )
-    reviewer = _operator(db, "append-reviewer")
-    _approve_pending_review(db, created["id"], reviewer)
+    assert created["status"] == domestic_constants.ORDER_PRODUCING
     append = OrderItemAppend.model_validate(
         {
             **_order_item_payload(
@@ -4292,8 +4278,7 @@ def test_append_quote_change_is_409_and_leaves_no_side_effects(db):
         ),
         user.id,
     )
-    reviewer = _operator(db, "append-change-reviewer")
-    _approve_pending_review(db, created["id"], reviewer)
+    assert created["status"] == domestic_constants.ORDER_PRODUCING
     base.version += 1
     db.commit()
     append = OrderItemAppend.model_validate(
@@ -5006,14 +4991,12 @@ def test_manual_price_schema_contract():
         _order_item_payload(manual_discount_price="950.00")
     )
     assert manual.manual_discount_price == D("950.00")
-    with pytest.raises(ValidationError):
-        OrderItemInput.model_validate(_order_item_payload(manual_discount_price="0"))
+    assert OrderItemInput.model_validate(_order_item_payload(manual_discount_price="0")).manual_discount_price == D("0")
     with pytest.raises(ValidationError):
         OrderItemInput.model_validate(_order_item_payload(manual_discount_price="-1"))
 
     assert OrderItemUpdate.model_validate({"unit_price": "950.00"}).unit_price == D("950.00")
-    with pytest.raises(ValidationError):
-        OrderItemUpdate.model_validate({"unit_price": "0"})
+    assert OrderItemUpdate.model_validate({"unit_price": "0"}).unit_price == D("0")
     with pytest.raises(ValidationError):
         OrderItemUpdate.model_validate({"discount_price": "1.00"})
 
@@ -5439,10 +5422,7 @@ def test_update_item_unit_price_settles_balance_delta(db):
     ).one()
     assert item.unit_price == D("880.00")
     db.refresh(customer)
-    assert customer.balance == D("10000.00")
-    reviewer = _operator(db, "manual-edit-reviewer")
-    _approve_pending_review(db, created["id"], reviewer)
-    db.refresh(customer)
+    assert created["status"] == domestic_constants.ORDER_PRODUCING
     assert customer.balance == D("8240.00")
 
     # 往低改：差额退回客户余额
@@ -5768,16 +5748,8 @@ def test_append_from_saved_draft_preserves_balance_and_guards_submitted_order(db
     result = order_service.submit_draft(db, created["id"], submit, user.id)
     db.refresh(customer)
     # 会员优惠价提交后先落待审核：不扣款，审核通过才结算
-    assert result["status"] == domestic_constants.ORDER_PENDING_REVIEW
-    assert D(str(result["charged_amount"])) == D("0.00")
-    assert customer.balance == D("10000.00")
-    approver = _operator(db, "draft-append-approver")
-    approved = order_service.review_order(
-        db, created["id"], decision="approve", remark=None,
-        reviewer_id=approver.id, can_admin=False,
-    )
-    db.refresh(customer)
-    assert D(str(approved["charged_amount"])) == D("2640.00")
+    assert result["status"] == domestic_constants.ORDER_PRODUCING
+    assert D(str(result["charged_amount"])) == D("2640.00")
     assert customer.balance == D("7360.00")
 
     replay_after_submit = client.post(f"/api/domestic/orders/{created['id']}/items?draft_only=true", json=payload)
