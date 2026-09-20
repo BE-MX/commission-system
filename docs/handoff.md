@@ -1,3 +1,9 @@
+## 2026-09-20 订单发票客户等级增加 E（Codex）
+
+分支 `codex/invoice-grade-e`，worktree `D:/MyProgram/commission-system-codex-invoice-grade-e`。订单发票录入/编辑客户等级增加 E，后端创建/编辑校验同步放行；沿用客户默认等级记忆和本单快照，不改变价格规则。现有 String(1) 可直接存储，无需数据库迁移。API 与数据库说明同步更新。
+
+验证：先确认 E 新建/编辑回归在旧校验下失败，再修复并通过后端等级测试 22 项（隔离内存 SQLite）、前端等级测试 7 项、主站 npm run build、git diff --check；增量约定检查无违规。完整 check_conventions 受 8 项既有 UI 行数基线过期阻断，未修改无关页面；git_sweep --no-fetch 已运行，仅本地快照。等级迁移旧测试写死 157 为最新 head，已改为检查单 head 且 157 在迁移链中，保留数据与回滚断言。独立 agent 只读审查通过，无待修问题。本轮未做浏览器人工验收。用户已授权合并并推送 origin/main；不包含生产部署。
+
 ## 2026-09-20 发货质检支持相册照片（Codex，本地）
 
 在同一 `codex/shipping-video-activation` 分支继续完善上传入口。整单和产品明细新增独立“相册照片”按钮，使用不带 capture 的 image/* 选择器；原“拍照上传”保留 environment 相机入口，选好一张照片后复用原 photos 上传流程。四个入口按两列排列。沿用上传中/视频待处理禁用与已提交只读规则；不新增后端接口。

@@ -543,7 +543,7 @@ AI Worker 用 `status + lease_token + lease_expires_at` 领取任务，模型网
 
 ### 发票客户等级（157）
 
-- `ark_invoice_customer_profiles`：方舟本地客户资料，`customer_id` 主键关联只读镜像 `customer_info.company_id`，`customer_grade` 为可空的 S/A/B/C/D，`updated_by` 记录修改人。客户等级与发票共用事务保存，原子 upsert 防止首次建档冲突；不写 `lsordertest.customer_info`。
+- `ark_invoice_customer_profiles`：方舟本地客户资料，`customer_id` 主键关联只读镜像 `customer_info.company_id`，`customer_grade` 为可空的 S/A/B/C/D/E，`updated_by` 记录修改人。客户等级与发票共用事务保存，原子 upsert 防止首次建档冲突；不写 `lsordertest.customer_info`。
 - `ark_invoices.customer_grade`：本单等级快照。存量 NULL 不做回填；客户端未提交字段时，新建继承客户默认等级、编辑保留本单值。显式修改等级（包括清空）更新客户资料，编辑旧单但未改变等级不会覆盖客户的新默认值。
 
 ## 158 订单关联同步

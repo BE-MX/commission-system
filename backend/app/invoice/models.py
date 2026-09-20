@@ -37,7 +37,7 @@ class Invoice(Base):
     order_type = Column(String(16), nullable=False, default="stock", comment="stock/production")
     customer_id = Column(String(64), nullable=False, comment="customer_info.company_id")
     customer_name = Column(String(256), nullable=False, comment="客户名称")
-    customer_grade = Column(String(1), nullable=True, comment="客户等级快照 S/A/B/C/D")
+    customer_grade = Column(String(1), nullable=True, comment="客户等级快照 S/A/B/C/D/E")
     contact_name = Column(String(256), nullable=True, comment="联系人姓名快照")
     contact_phone = Column(String(100), nullable=True, comment="联系人电话快照")
     contact_email = Column(String(256), nullable=True, comment="联系人邮箱快照")
@@ -388,7 +388,7 @@ class CustomerProfile(Base):
     __tablename__ = "ark_invoice_customer_profiles"
 
     customer_id = Column(String(64), primary_key=True, comment="customer_info.company_id")
-    customer_grade = Column(String(1), nullable=True, comment="客户等级 S/A/B/C/D")
+    customer_grade = Column(String(1), nullable=True, comment="客户等级 S/A/B/C/D/E")
     updated_by = Column(Integer, nullable=True, comment="最后修改人 user_id")
 
 
