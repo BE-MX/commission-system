@@ -1,3 +1,9 @@
+## 2026-09-20 COS 封禁被色块部署误判冲突（Codex，本地修复）
+
+分支 `codex/fix-colorwork-storage-routing`，基于 d0accd9f。用户以 ba79159c 固定候选发布，colorwork prepare 报 Conflicting colorwork routing。只读核实北京两个 server 与新加坡一个 server 的受管 STORAGE PUBLIC 块均有 `/api/colorwork/storage/` 精确404封禁；旧检查仅按路径子串判冲突。修复只在检查副本忽略受管块内精确404规则，输出原样保留，未知代理/其它色块路径/缺失标记/未受管规则仍阻断。
+
+19 项色块路由回归及独立审查通过（新增共存用例先红后绿）；真实两站配置读取后本地 render 成功，3 个 storage 块逐字保留且重复渲染幂等，证据 tmp/routing-evidence/live-render.json。组合 storage 套件共62通过/1失败：test_bad_public_route_rolls_back 的 Mock StopIteration 在未修改 main 同样复现，未顺手修改。未改生产 Nginx、未 reload、未部署。生产旧入口需从含修复的受管候选启动，见 deploy/README.md；本地待合并推送。
+
 ## 2026-09-20 订单发票客户等级增加 E（Codex）
 
 分支 `codex/invoice-grade-e`，worktree `D:/MyProgram/commission-system-codex-invoice-grade-e`。订单发票录入/编辑客户等级增加 E，后端创建/编辑校验同步放行；沿用客户默认等级记忆和本单快照，不改变价格规则。现有 String(1) 可直接存储，无需数据库迁移。API 与数据库说明同步更新。

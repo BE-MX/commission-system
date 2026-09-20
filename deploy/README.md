@@ -83,6 +83,12 @@ deploy\deploy.bat --shipping-video-routing-only
 
 办公室 Windows 自带 OpenSSH 在 Python 子进程内发生过建立连接前卡住；已用同机 Git SSH 验证可运行。执行时可仅在当前进程 PATH 中将 `C:/Program Files/Git/usr/bin` 置于系统 OpenSSH 前，保留非交互认证与严格主机密钥校验，不修改系统 PATH。
 
+## 色块路由与 COS 安全封禁共存
+
+COS 公共文件规则会在受管 `ARK STORAGE PUBLIC ROUTING` 块内增加 `location ^~ /api/colorwork/storage/ { return 404; }`，封闭内部机器网关。旧 colorwork 部署器把它误判成 `Conflicting colorwork routing`；不得删除这条封禁或改成代理来绕过。修复后的冲突检查仅识别受管块里的精确 404 规则，实际配置原样保留，其他色块路由仍拒绝。
+
+如果失败发生在 colorwork prepare、日志只到 `Beijing backend: ... prepared`，本轮尚未切换服务或静态目录；以 publish-current 的阶段复核。服务器安装目录仍是旧部署器时，应按下节“候选已含部署器修复”流程，从包含本修复的受管候选 `deploy.bat --live-root ... --revision ...` 启动；只给旧入口换 revision 不会替换已启动的 Python 模块。`frontend: unchanged, build skipped` 表示复用候选构建缓存，不代表候选未包含新前端。
+
 ## 状态与恢复
 
 ### 候选已含部署器修复，但安装目录仍在运行旧部署器
