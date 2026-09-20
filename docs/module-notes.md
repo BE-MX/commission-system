@@ -1115,9 +1115,9 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 
 ### 出库检验视频拍摄与本地压缩（2026-09-16）
 
-整单/明细均提供拍视频、相册视频。网页拍摄通过video file input的capture=environment唤起设备界面；选择后本地保留音轨重编码MP4，最长边1280、不放大、24fps、视频目标1.8Mbps。浏览器必须支持MP4 MediaRecorder、Canvas.captureStream和AudioContext；不支持时提示更新浏览器或使用小程序。压缩近实时且需前台运行，失败不自动上传原大文件；已紧凑的原MP4/MOV若小于重编码结果则保留原件。压缩后仍限100MB。微信使用wx.compressVideo medium。拍摄确认即进入压缩上传，不承诺另存手机相册；视频仍不进入验货打印。
+整单/明细均提供拍照上传、相册照片、拍视频、相册视频；相册照片选择器不设 capture，单张选择后自动走原照片上传流程，直接拍照入口仍保留 environment。网页拍摄通过video file input的capture=environment唤起设备界面；选择后本地保留音轨重编码MP4，最长边1280、不放大、24fps、视频目标1.8Mbps。浏览器必须支持MP4 MediaRecorder、Canvas.captureStream和AudioContext；不支持时提示更新浏览器或使用小程序。压缩近实时且需前台运行，失败不自动上传原大文件；已紧凑的原MP4/MOV若小于重编码结果则保留原件。压缩后仍限100MB。微信使用wx.compressVideo medium。拍摄确认即进入压缩上传，不承诺另存手机相册；视频仍不进入验货打印。
 
-网页在文件选择/重试点击事件内同步请求视频播放和声音处理，避免 Safari 先等解码数据再播放造成等待；先暂停并定位回开头再录制。连续10秒没有播放进度会报错退出，音频关闭不阻塞结果与资源清理。整单/明细的拍摄按钮下显示百分比、错误和重试入口；压缩失败保留当前拍摄文件，点击“重试压缩并上传”重新获得用户手势，无需重拍。网页网络重试保持压缩结果、request_id与edit_version，压缩期间禁止切换/提交，卸载取消；小程序onUnload作废批次回调。不能用桌面文件输入测试替代iPhone/微信真机相机与权限验收。参考：[capture](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/capture)、[WebKit MediaRecorder](https://webkit.org/blog/11353/mediarecorder-api/)。
+网页在“拍视频/相册视频”的原始按钮点击内预激活 video 与 AudioContext，原生相机返回后复用同一实例自动压缩上传，不把第二次点击设为默认步骤。取消选择、结束或卸载释放未消费实例；已消费实例由压缩器清理。Safari 仍返回 NotAllowedError 时，保留当前文件并展示正常的“开始压缩并上传”恢复入口，真实解码失败仍报错。待处理视频期间禁止新文件覆盖和直接提交，可明确确认放弃。此自动预激活路径已完成模拟与桌面媒体验证，iPhone 相机返回后是否保留授权仍需真机验证。网页在文件选择/重试点击事件内同步请求视频播放和声音处理，避免 Safari 先等解码数据再播放造成等待；先暂停并定位回开头再录制。连续10秒没有播放进度会报错退出，音频关闭不阻塞结果与资源清理。整单/明细的拍摄按钮下显示百分比、错误和重试入口；压缩失败保留当前拍摄文件，点击“重试压缩并上传”重新获得用户手势，无需重拍。网页网络重试保持压缩结果、request_id与edit_version，压缩期间禁止切换/提交，卸载取消；小程序onUnload作废批次回调。不能用桌面文件输入测试替代iPhone/微信真机相机与权限验收。参考：[capture](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/capture)、[WebKit MediaRecorder](https://webkit.org/blog/11353/mediarecorder-api/)。
 
 
 ### 出库检验完成通知（2026-09-17）

@@ -13,7 +13,7 @@ def payload(**extra):
                 okki_new_deal=1, okki_free_shipping=1, okki_first_return=0, items=[], **extra)
 
 
-@pytest.mark.parametrize("grade", ["S", "A", "B", "C", "D", None])
+@pytest.mark.parametrize("grade", ["S", "A", "B", "C", "D", "E", None])
 def test_save_and_reuse_grade(db, grade):
     first = service.create_invoice(db, InvoiceCreate(**payload(customer_grade=grade)))
     db.commit()
@@ -56,10 +56,11 @@ def test_customer_profile_upsert_rolls_back_with_transaction(db):
     assert get_customer_grade(db, "C1") == "A"
 
 
-@pytest.mark.parametrize("grade", ["E", "AA", "a", "", "S\n"])
-def test_reject_invalid_grades(grade):
+@pytest.mark.parametrize("grade", ["F", "AA", "a", "", "S\n"])
+@pytest.mark.parametrize("schema", [InvoiceCreate, InvoiceUpdate])
+def test_reject_invalid_grades(grade, schema):
     with pytest.raises(ValidationError):
-        InvoiceCreate(**payload(customer_grade=grade))
+        schema(**payload(customer_grade=grade))
 
 
 def test_migration_adds_nullable_grade_without_changing_existing_data():
@@ -87,4 +88,17 @@ def test_migration_adds_nullable_grade_without_changing_existing_data():
         assert connection.execute(text("SELECT customer_name FROM ark_invoices")).scalar() == "Existing customer"
     config = Config()
     config.set_main_option("script_location", str(path.parents[1]))
-    assert ScriptDirectory.from_config(config).get_heads() == [migration.revision]
+    scripts = ScriptDirectory.from_config(config)
+    assert len(scripts.get_heads()) == 1
+    assert migration.revision in {revision.revision for revision in scripts.walk_revisions()}
+
+
+def test_edit_to_e_updates_snapshot_customer_defaults_and_next_invoice(db):
+    invoice = service.create_invoice(db, InvoiceCreate(**payload(customer_grade="A")))
+    service.update_invoice(db, invoice, InvoiceUpdate(**payload(customer_grade="E")))
+    db.commit()
+    db.expire_all()
+    assert service.serialize_detail(invoice)["customer_grade"] == "E"
+    assert service.get_customer_contact_defaults(db, "C1")["customer_grade"] == "E"
+    following = service.create_invoice(db, InvoiceCreate(**payload()))
+    assert following.customer_grade == "E"

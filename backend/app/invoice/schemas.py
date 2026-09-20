@@ -228,7 +228,7 @@ class _InvoiceHeaderPayload(BaseModel):
     sales_user_id: Optional[int] = Field(None, gt=0)
     customer_id: str = Field(..., max_length=64)
     customer_name: str = Field(..., max_length=256)
-    customer_grade: Optional[str] = Field(None, pattern="^[SABCD]$")
+    customer_grade: Optional[str] = Field(None, pattern="^[SABCDE]$")
     order_type: str = Field(default="stock", pattern="^(stock|production)$")
     contact_name: Optional[str] = Field(None, max_length=256)
     contact_phone: Optional[str] = Field(None, max_length=100)

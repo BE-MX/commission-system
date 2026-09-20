@@ -5,6 +5,30 @@
 - 修复前快照、创建/拆分请求及响应保存在新加坡 okki-sync 的受限 `logs/repair-outbound-25924-20260920/`。未删除旧业务单。旧单历史备注无事故前快照，未猜测还原；原 09:19 创建日志保留为事故证据。
 - 功能修复：全局单号实时查重，冲突用订单 ID 后缀；创建后全量明细核验；已有混单不能按 existing 放行。代码与专项测试在当前独立 worktree；生产功能发布尚未执行。42 项 Node 测试通过；prepare-only 及真实单据只读核验通过。约定检查受 8 项既有前端 UI 基线陈旧问题阻断；Git 巡检为 --no-fetch 本地快照。
 
+## 2026-09-20 COS 封禁被色块部署误判冲突（Codex，本地修复）
+
+分支 `codex/fix-colorwork-storage-routing`，基于 d0accd9f。用户以 ba79159c 固定候选发布，colorwork prepare 报 Conflicting colorwork routing。只读核实北京两个 server 与新加坡一个 server 的受管 STORAGE PUBLIC 块均有 `/api/colorwork/storage/` 精确404封禁；旧检查仅按路径子串判冲突。修复只在检查副本忽略受管块内精确404规则，输出原样保留，未知代理/其它色块路径/缺失标记/未受管规则仍阻断。
+
+19 项色块路由回归及独立审查通过（新增共存用例先红后绿）；真实两站配置读取后本地 render 成功，3 个 storage 块逐字保留且重复渲染幂等，证据 tmp/routing-evidence/live-render.json。组合 storage 套件共62通过/1失败：test_bad_public_route_rolls_back 的 Mock StopIteration 在未修改 main 同样复现，未顺手修改。未改生产 Nginx、未 reload、未部署。生产旧入口需从含修复的受管候选启动，见 deploy/README.md；本地待合并推送。
+
+## 2026-09-20 订单发票客户等级增加 E（Codex）
+
+分支 `codex/invoice-grade-e`，worktree `D:/MyProgram/commission-system-codex-invoice-grade-e`。订单发票录入/编辑客户等级增加 E，后端创建/编辑校验同步放行；沿用客户默认等级记忆和本单快照，不改变价格规则。现有 String(1) 可直接存储，无需数据库迁移。API 与数据库说明同步更新。
+
+验证：先确认 E 新建/编辑回归在旧校验下失败，再修复并通过后端等级测试 22 项（隔离内存 SQLite）、前端等级测试 7 项、主站 npm run build、git diff --check；增量约定检查无违规。完整 check_conventions 受 8 项既有 UI 行数基线过期阻断，未修改无关页面；git_sweep --no-fetch 已运行，仅本地快照。等级迁移旧测试写死 157 为最新 head，已改为检查单 head 且 157 在迁移链中，保留数据与回滚断言。独立 agent 只读审查通过，无待修问题。本轮未做浏览器人工验收。用户已授权合并并推送 origin/main；不包含生产部署。
+
+## 2026-09-20 发货质检支持相册照片（Codex，本地）
+
+在同一 `codex/shipping-video-activation` 分支继续完善上传入口。整单和产品明细新增独立“相册照片”按钮，使用不带 capture 的 image/* 选择器；原“拍照上传”保留 environment 相机入口，选好一张照片后复用原 photos 上传流程。四个入口按两列排列。沿用上传中/视频待处理禁用与已提交只读规则；不新增后端接口。
+
+Chromium 实际组件 + 模拟 API 验证通过：整单 item_id 为空、产品 IT2 归属正确、相同照片重复选择可触发上传、busy 禁用、submitted 隐藏、320px 无横向溢出与页面错误。主站构建通过。证据 `frontend/tmp/video-check/verify-photo-album.mjs`、`photo-album-320.png`、`tmp/photo-album-build.log`。本轮未合并/推送/部署；原视频自动处理修改一并保留。
+
+## 2026-09-20 Safari 原生拍摄返回后自动压缩（Codex，本地待验证）
+
+用户确认此前首次提示“浏览器未允许视频处理”，点击重试即可成功；进一步明确要求“使用视频后直接自动压缩上传”，不接受把第二次点击设成默认流程。分支 `codex/shipping-video-activation`，基于 `4d17eda7`，worktree `D:/MyProgram/commission-system-codex-video-activation`。改为在拍视频/相册按钮原始 click 内同步预激活空 video 与 AudioContext，返回后把同一实例交给压缩器；默认仍自动上传。此方法依据 WebKit play 的 per-element 激活行为，不能用桌面证据保证 iPhone 相机返回必定保留授权。只有实际 NotAllowedError 才显示普通恢复入口；真实解码错误继续报错。保留文件期间禁新拍摄覆盖/直接提交，可确认放弃；取消 picker、清单结束和卸载释放预备资源。
+
+24 项压缩/工作台/安装回归通过；Chromium 390px 实际按钮→文件选择→自动压缩→模拟上传，正确关联 IT2；模拟 NotAllowed 后恢复按钮正常、无红色失败提示、没有横向溢出或页面错误。真实 3 秒视频输出 289603 字节，H264 1280x720 + AAC，音量 mean -21.1dB，声音保留。独立审查通过（发现的视频覆盖与无取消出口已修复并补回归）。前端构建及增量规则通过；完整门禁 8 项既有 UI 行数基线问题。证据 `frontend/tmp/video-check/` 与 `tmp/video-activation-build.log`。本次未合并/推送/部署，仍需 iPhone Safari 原生相机真机复验。
+
 ## 2026-09-20 生产 COS 已切换，办公室与云入口已恢复
 
 已执行用户授权的办公室、leshine.cloud/leshine.work生产更新：两后端/办公室前端为4995759814b5a207f1bc2d6752019112cc800481，数据库159。两域主站artifact c517100b03161b8b41b2d78acbd57827e9351e288a96970806e66b83e58f32fe，PM d70da50938277be7ae36b240826c5c9f4226aea8af5dcf3df7229cd02f4897b6；Singapore OKKI poller同步完成。DDL成功后静态收尾故障通过受控finalize完成，未重复DDL，发布/schema日志已关闭。
