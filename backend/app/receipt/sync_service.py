@@ -154,7 +154,10 @@ def refresh_accepted(db, receipt_id):
 
 def candidate_matches(row, data):
     return (str(data.get("order_id")) == row.xiaoman_order_id
-            and data.get("currency") == row.currency and remote.money(data.get("amount")) == row.amount
+            and data.get("currency") == row.currency
+            # Include old gross-amount candidates: an uncertain legacy POST
+            # must never be mistaken for absence and sent a second time.
+            and remote.money(data.get("amount")) in {row.amount, remote.net_amount(row)}
             and str(data.get("collection_date"))[:10] == row.collection_date.isoformat())
 
 
@@ -162,8 +165,11 @@ def matches(row, data):
     try:
         if not candidate_matches(row, data) or data.get("bank_charge") is None or data.get("real_amount") is None:
             return False
-        return (remote.money(data["bank_charge"]) == row.bank_charge
-                and remote.money(data["real_amount"]) == row.amount - row.bank_charge)
+        return (remote.money(data["amount"]) == remote.net_amount(row)
+                and remote.money(data["bank_charge"]) == 0
+                and remote.money(data["real_amount"]) == remote.net_amount(row)
+                and all(remote.money(data[key]) == 0 for key in
+                        ("bank_charge_rmb", "bank_charge_usd") if key in data))
     except ValueError:
         logger.warning("receipt read-back contains invalid money")
         print("[receipt] read-back contains invalid money", flush=True)

@@ -1,3 +1,10 @@
+## 2026-09-20 回款小满净额口径调整（已发布并核验）
+
+- 生产办公室与北京版本 `fea48d6c22937f3064a40546292ea4e03927d2b9`，统一deploy入口发布，schema159不变；两域health 200/database connected。
+- 小满amount/real_amount按本笔扣费净额，三项bank_charge均0；本地保留含费金额及分摊费用，余额与分期去重已调整。193项相关测试通过，独立审查完成。
+- 18张小满原单按原cash_collection_id更新，1张仅规范化本地已净额登记；共19条审计。最终49张关联单全为净额/零手续费且余额0，目标订单52条远端ID集合未增加。4张无关联ID单保留核对（2张已有人工回款，2张没有远端原单），未重复创建。
+- 用户已授权合并推送，本次集成到 `main` 并同步 `origin/main`。约定检查仍被8项既有前端基线失配阻断，本次未改这些文件。详见[核对报告](reports/2026-09-20-receipt-net-amount.md)，私有证据在主目录 `backend/tmp/receipt-net-amount/`。
+
 ## 2026-09-20 出库列表排序规则冲突（codex/outbound-collation-fix）
 
 ## 2026-09-20 内贸订单优化（Codex，待生产发布）

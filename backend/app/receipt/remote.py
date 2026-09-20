@@ -164,6 +164,20 @@ def order_snapshot(db, invoice):
             "invoice_binding": invoice_binding(invoice)}
 
 
+def net_amount(receipt):
+    """Local ledger retains gross and fee; OKKI receives only the net amount."""
+    amount, charge = money(receipt.amount), money(receipt.bank_charge)
+    if charge > amount:
+        raise ValueError("手续费超过回款金额，不能同步小满")
+    return amount - charge
+
+
+def amount_fields(receipt):
+    net = str(net_amount(receipt))
+    return {"amount": net, "real_amount": net, "bank_charge": "0",
+            "bank_charge_rmb": "0", "bank_charge_usd": "0"}
+
+
 def push(db, receipt, snapshot, before_send=None):
     if receipt.payment_type not in receipt_types(db):
         raise ValueError("回款方式已失效，请修改后重试")
@@ -172,9 +186,9 @@ def push(db, receipt, snapshot, before_send=None):
     if not isinstance(fields, list):
         raise ValueError("小满回款字段不可用，暂不能同步")
     payload = {
-        "order_id": int(receipt.xiaoman_order_id), "amount": str(receipt.amount),
+        "order_id": int(receipt.xiaoman_order_id), **amount_fields(receipt),
         "currency": receipt.currency, "collection_date": receipt.collection_date.isoformat(),
-        "type": receipt.payment_type, "bank_charge": str(receipt.bank_charge),
+        "type": receipt.payment_type,
         "cash_collection_no": receipt.receipt_no, "comment": receipt.remark or "",
         "collect_status": 1,
     }
