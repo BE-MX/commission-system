@@ -227,6 +227,7 @@ if __name__ == "__main__":
     sys.modules["publish"] = sys.modules[__name__]
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument('--storage-maintenance', metavar='PLAN_JSON', help='Freeze/restore API ingress and direct office LAN access')
+    parser.add_argument('--recover-colorwork-start-order', metavar='PLAN_JSON', help='Recover the inspected schema-160 dependency-order interruption')
     parser.add_argument('--finalize-release', metavar='PLAN_JSON', help='Complete the inspected post-DDL activated release without repeating migrations')
     parser.add_argument('--storage-cutover', metavar='PLAN_JSON', help='Execute a journalled COS cutover phase')
     parser.add_argument("--storage-routing-only", metavar="PROBES_JSON", help="Prepare/activate public COS routing with explicit cloud object probes")
@@ -248,7 +249,12 @@ if __name__ == "__main__":
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
-        if args.storage_cutover:
+        if args.recover_colorwork_start_order:
+            if any(value for key, value in vars(args).items() if key not in {'recover_colorwork_start_order', 'prepare_only'}):
+                raise RuntimeError('Start-order recovery only accepts --prepare-only')
+            from recover_colorwork_order import execute
+            execute(args.recover_colorwork_start_order, args.prepare_only)
+        elif args.storage_cutover:
             if any(value for key, value in vars(args).items() if key not in {'storage_cutover', 'prepare_only'}):
                 raise RuntimeError('Storage cutover only accepts --prepare-only')
             from storage_cutover import execute
@@ -311,7 +317,7 @@ if __name__ == "__main__":
         else:
             publish(args)
     except Exception as error:
-        if any(getattr(locals().get('args'), key, None) for key in ['storage_maintenance', 'finalize_release', 'storage_cutover']):
+        if any(getattr(locals().get('args'), key, None) for key in ['storage_maintenance', 'finalize_release', 'storage_cutover', 'recover_colorwork_start_order']):
             print('STORAGE MAINTENANCE FAILED: ' + str(error), file=sys.stderr, flush=True)
             sys.exit(1)
         if not getattr(locals().get("args"), "storage_routing_only", None) and not getattr(locals().get("args"), "receipt_routing_only", False) and not getattr(locals().get("args"), "okki_outbound_only", False) and STATE.exists() and not getattr(locals().get("args"), "restore_pre151", None) and not getattr(locals().get("args"), "office_lan_https", None) and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False) and not getattr(locals().get("args"), "shipping_video_routing_only", False):
