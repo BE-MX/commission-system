@@ -235,19 +235,24 @@ def _record_select(rm: dict[str, str | None]) -> str:
     )
 
 
-def deleted_clause(rm):
+def deleted_clause(db, rm):
     """Local deletion receipts suppress stale mirror rows without writing lsordertest."""
     if not rm.get('invoice_id'):
         return '1=1'
+    invoice_id = f"CAST(r.`{rm['invoice_id']}` AS CHAR)"
+    if db.get_bind().dialect.name == 'mysql':
+        # CAST inherits the connection collation (MySQL 8: 0900_ai_ci), while
+        # deletion receipts use unicode_ci. Make this comparison explicit.
+        invoice_id += " COLLATE utf8mb4_unicode_ci"
     return ("NOT EXISTS (SELECT 1 FROM ark_shipping_operation_events deletion "
             "WHERE deletion.scope='outbound-delete' AND deletion.action='outbound_deleted' "
-            f"AND deletion.request_id=CAST(r.`{rm['invoice_id']}` AS CHAR))")
+            f"AND deletion.request_id={invoice_id})")
 
 
 def record_list_filters(db, rm, *, keyword=None, date_from=None, date_to=None, okki_user_id=None):
     """Shared filters for mirror-only reads and the combined outbound queue."""
     params = {}
-    clauses = [deleted_clause(rm)]
+    clauses = [deleted_clause(db, rm)]
     if okki_user_id:
         clauses.append(_owner_scope_clause(db, rm))
         params["scope_okki_user_id"] = okki_user_id
@@ -346,7 +351,7 @@ def get_outbound_record(db: Session, record_id: str, okki_user_id: str | None = 
     schema = _schema()
     scope = ""
     if not include_deleted:
-        scope += f" AND {deleted_clause(rm)}"
+        scope += f" AND {deleted_clause(db, rm)}"
     params: dict[str, object] = {"rid": record_id}
     if okki_user_id:
         scope += f" AND {_owner_scope_clause(db, rm)}"

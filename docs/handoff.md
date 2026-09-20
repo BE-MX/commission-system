@@ -1,3 +1,10 @@
+## 2026-09-20 出库列表排序规则冲突（codex/outbound-collation-fix）
+
+- 已只读复现：`lsordertest.okki_outbound_records` 可访问（4519条）；单数 `okki_outbound_record` 不存在。列表失败来自删除回执 `request_id` 的 `utf8mb4_unicode_ci` 与 `CAST(outbound_invoice_id AS CHAR)` 继承的连接 `utf8mb4_0900_ai_ci` 比较，MySQL报1267，被统一提示为数据库连接失败。
+- 修复删除过滤在MySQL上的字符串比较，显式指定 `utf8mb4_unicode_ci`；列表和详情共用，保留字符串精确ID比较，不改表、不改数据、无迁移。
+- 隔离SQLite回归54项通过；修复代码对真实库只读验证列表20条/合并总数4521、详情可读、无归属匹配返回0条。未做生产页面验收；用户已授权本次合并 main 并推送 origin，未授权或执行部署。
+- 独立审查无发现，删除回执隐藏和归属权限不变。增量约定检查无违规；完整约定检查仍被8项既有前端UI基线过期阻断；Git巡检已执行 `--no-fetch`，仅为本地快照。
+
 ## 2026-09-20 方舟删除小满出库单（codex/outbound-delete）
 
 - 出库单页面新增受 `shipping_inspection:delete` 控制的删除按钮与整单确认；按原归属范围校验，远端实时核对客户和待出库状态。
