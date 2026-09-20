@@ -5,17 +5,17 @@
 - 小满推送 `amount = real_amount = 本笔含费回款金额 - 本笔手续费`；`bank_charge`、`bank_charge_rmb`、`bank_charge_usd` 均为 0。方舟本地金额、手续费继续保留，用于分期分摊与含费余额。
 - 用户确认分笔只同步本笔实际净额，已扣过手续费不再扣。现有含费输入契约不变，不凭金额巧合猜测未来输入来源。
 - 回读校验净额与零手续费；已映射回款从净额还原含费占额。旧含费金额仍作为未知结果的防重复候选，但不当作新口径核验成功。
-- 对齐已部署生产基点 `f49fe630c639ca1f377d690ac44e6ecb62f2edc2`；没有新增迁移、前端改动或远端 Git 推送。
-- **尚未部署，尚未执行小满更新或方舟账务修正。**
+- 对齐已部署生产基点 `f49fe630c639ca1f377d690ac44e6ecb62f2edc2`；没有新增迁移、前端改动或 origin 写入；部署专用引用由统一入口传输。
+- **已通过统一入口发布到办公室与北京生产服务，版本 `fea48d6c22937f3064a40546292ea4e03927d2b9`；18张小满原单更新、1张本地口径规范化完成。**
 
 ## 历史只读核验
 
 范围为方舟回款模块2026-09-18至2026-09-20已生成记录，共53张，其中49张有远端ID。逐张读取49张小满详情，并用完整索引校验18535条小满回款（目标订单共52条）核对额外回款。不是只取列表第一页。
 
-- 18张需要原单更新（下表）。
+- 18张已按原 `cash_collection_id` 更新（下表）。
 - 30张原金额/实到账/零手续费已经符合新口径，无需重复写入。
-- 1张（本地661）远端金额1942.25、费用0已经正确，计划只把本地含费账本从1942.25/0规范为2039.36/97.11，并留原值审计。
-- 本地659已按净额517.02登记，但旧逻辑又分摊24.76导致远端实到账492.26。唯一订单回款已核验，计划本地规范为543.02/26，小满金额与实到账均517.02，手续费0。
+- 1张（本地661）远端金额1942.25、费用0已经正确，已把本地含费账本从1942.25/0规范为2039.36/97.11，并留原值审计；未重写已正确的小满原单。
+- 本地659已按净额517.02登记，但旧逻辑又分摊24.76导致远端实到账492.26。唯一订单回款已核验，已将本地规范为543.02/26，小满金额与实到账均517.02，手续费0。
 
 | 本地ID | 发票编号 | 小满原回款金额 | 原手续费 | 新回款金额=实到账 |
 |---|---|---:|---:|---:|
@@ -52,15 +52,21 @@
 ## 验证
 
 - 对齐生产基点后，193项 pytest 通过：receipt_protocol、receipt_management、receipt_index、invoice_linked_sync、receipt_storage、receipt_migration、invoice_okki_push。使用内存SQLite与模拟小满，无生产测试写入。
-- 57项离线历史计划/请求字段/身份变更拒绝/写入锁检查通过；19项目标逐条只读dry-run通过，原记录/完整远端快照均与计划一致。
-- 独立代理审查业务差异无阻断；历史执行脚本审查识别了下述更新定位契约缺口，已关闭脚本apply能力。
+- 49份目标请求离线字段校验通过；19项目标逐条只读dry-run通过，原记录/完整远端快照均与计划一致。此前身份变更拒绝及暂缓写入的离线检查也通过。
+- 独立代理审查业务差异和历史执行脚本；用户明确按cash_collection_id定位原单后解除接口语义阻塞。先更新1张并回读，再执行其余清单，全程无自动POST重试。
 - `check_conventions.py --base f49fe630` 被8项已有前端行数基线失配阻断；相关文件本次未修改，未调整基线掩盖。`git diff --check`修复文档尾空行后通过。
 - `git_sweep.py --no-fetch` 已执行，属于本地远端引用快照，不授权自动合并/推送/清理他人分支。
 
-## 阻塞与恢复
+## 生产发布与真实更新结果
 
-[小满官方回款新建/编辑接口](https://open.xiaoman.cn/api-3478278)列出cash_collection_no，但请求schema未列cash_collection_id，且未明确按原单号更新的语义。不能仅凭标题推断为可靠更新；在真实单据上试POST，事后检测返回新ID已经来不及防止重复创建。用户再次提供同一官方链接后已重新读取公开请求schema，仍无cash_collection_id请求字段或明确原编号更新规则，公开schema片段保存为official-request-schema.txt。浏览器工具本轮返回`Browsers: nodeRepl.fetch request failed`，未能使用明确的原单编辑入口。
+用户已确认原单定位字段为 `cash_collection_id`，并明确授权发布到办公室和北京生产服务、执行历史回款更新。
 
-继续条件：取得小满编辑定位契约/同租户已成功更新请求证据，或恢复已登录小满的可用浏览器原单编辑入口。应用发布另需按项目AGENTS取得办公室和北京生产发布授权。新应用的余额校验与历史更新需协调执行，不能先把旧数据留在与新校验不一致的状态。
+- 发布走 `deploy/deploy.bat --no-pull --revision fea48d6c22937f3064a40546292ea4e03927d2b9`，先prepare-only再完整发布；journal为succeeded，两地后端均更新，无deferred。schema仍为159_storage_transfers，无迁移。前端制品未变，增量传输0字节。
+- `https://leshine.work/health` 与 `https://leshine.cloud/health` 均HTTP 200，数据库connected。
+- 18次小满POST全部返回原cash_collection_id；逐笔回读确认金额与实到账均为本笔净额，原币及人民币/美元手续费均为0，单号、日期、汇率、客户/订单、归属、附件及财务状态等均未改变。
+- 1张仅规范化本地记录；19条net_update_verified审计日志均已落库，原金额与目标金额记录在net_update_started中。
+- 最终核验时间：2026-09-20 19:12:11.750198（北京时间）。49张关联回款全部synced，金额=实到账=本笔净额，三项手续费均0；49个本地订单余额均0。目标订单原有52条远端回款ID集合完全一致，没有重复新建。全局回款索引18535条。
+- 4张无已关联远端ID记录保持原状态（3 failed、1 uncertain），详情见上表：两张已有人工回款不擅自改绑，两张未找到远端原单，不以更新名义创建新回款。
+- Git仅通过部署入口传输专用deploy引用，没有push origin/main。代码与本轮文档仍保留在codex/receipt-net-amount任务分支；主工作区已有其他代理未提交文档未改动。
 
-恢复材料在主目录 `backend/tmp/receipt-net-amount/`：local-before.json、remote-before.json、verified-order-receipts.json、candidate-*.json、order-*.json、plan.json、repair.py。这些是私有操作证据，不提交Git。脚本默认dry-run且apply被显式阻断；确认契约后再调整实现、独立审查、预检并按原ID逐笔回读，不重置pending调用创建流程。
+私有证据在主目录 `backend/tmp/receipt-net-amount/`：原始local-before.json/remote-before.json、完整verified-order-receipts.json、plan.json、repair.py、repair-results.jsonl、final-verification.json、deploy-result.json、health-after-deploy.json。原始快照、逐笔返回与审计证据保留，不提交Git。再次执行旧计划会因版本变化被拦截，不能直接重跑；后续修复必须重新只读核验。
