@@ -1,3 +1,15 @@
+## 2026-09-20 发货质检支持相册照片（Codex，本地）
+
+在同一 `codex/shipping-video-activation` 分支继续完善上传入口。整单和产品明细新增独立“相册照片”按钮，使用不带 capture 的 image/* 选择器；原“拍照上传”保留 environment 相机入口，选好一张照片后复用原 photos 上传流程。四个入口按两列排列。沿用上传中/视频待处理禁用与已提交只读规则；不新增后端接口。
+
+Chromium 实际组件 + 模拟 API 验证通过：整单 item_id 为空、产品 IT2 归属正确、相同照片重复选择可触发上传、busy 禁用、submitted 隐藏、320px 无横向溢出与页面错误。主站构建通过。证据 `frontend/tmp/video-check/verify-photo-album.mjs`、`photo-album-320.png`、`tmp/photo-album-build.log`。本轮未合并/推送/部署；原视频自动处理修改一并保留。
+
+## 2026-09-20 Safari 原生拍摄返回后自动压缩（Codex，本地待验证）
+
+用户确认此前首次提示“浏览器未允许视频处理”，点击重试即可成功；进一步明确要求“使用视频后直接自动压缩上传”，不接受把第二次点击设成默认流程。分支 `codex/shipping-video-activation`，基于 `4d17eda7`，worktree `D:/MyProgram/commission-system-codex-video-activation`。改为在拍视频/相册按钮原始 click 内同步预激活空 video 与 AudioContext，返回后把同一实例交给压缩器；默认仍自动上传。此方法依据 WebKit play 的 per-element 激活行为，不能用桌面证据保证 iPhone 相机返回必定保留授权。只有实际 NotAllowedError 才显示普通恢复入口；真实解码错误继续报错。保留文件期间禁新拍摄覆盖/直接提交，可确认放弃；取消 picker、清单结束和卸载释放预备资源。
+
+24 项压缩/工作台/安装回归通过；Chromium 390px 实际按钮→文件选择→自动压缩→模拟上传，正确关联 IT2；模拟 NotAllowed 后恢复按钮正常、无红色失败提示、没有横向溢出或页面错误。真实 3 秒视频输出 289603 字节，H264 1280x720 + AAC，音量 mean -21.1dB，声音保留。独立审查通过（发现的视频覆盖与无取消出口已修复并补回归）。前端构建及增量规则通过；完整门禁 8 项既有 UI 行数基线问题。证据 `frontend/tmp/video-check/` 与 `tmp/video-activation-build.log`。本次未合并/推送/部署，仍需 iPhone Safari 原生相机真机复验。
+
 ## 2026-09-20 LighthouseCOS 代码准备合并（生产尚未切换）
 
 用户已授权COS迁移代码合并推送，本次不执行存储生产切换。私有桶leshine-ark-1259007308 / ap-beijing / ark/production；公网北京代理到COS，手机检验局域网持久接收并后台同步。完整覆盖与放行条件见[附件验收](requirements/2026-09-19-attachment-cutover-audit.md)。接口、队列、缓存、各附件域和Colorwork已实现，开关默认关闭；迁移159依赖158，只允许统一部署入口检查并执行，不stamp/downgrade。

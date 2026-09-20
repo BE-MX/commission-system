@@ -7,7 +7,7 @@ import { isShippingStationPath } from '../src/router/shippingStationRoute.js'
 
 const source = fs.readFileSync(new URL('../src/views/shipping/composables/useShippingStation.js', import.meta.url), 'utf8')
   .replace(/^import .*$/gm, '').replace('export function', 'function')
-function setup(overrides = {}, compressor = async file => file) {
+function setup(overrides = {}, compressor = async file => file, confirm = async () => {}, prepare = () => null) {
   const calls = [], timers = new Map()
   const people = [{ id: 1, name: '张三' }, { id: 2, name: '李四' }]
   const payload = { session_id: 'session-one', operator: people[1], record: { outbound_no: 'CK001' }, items: [], photos: [{ id: 5 }], videos: [], inspection: { status: 'draft', edit_version: 3, remark: '' } }
@@ -23,9 +23,9 @@ function setup(overrides = {}, compressor = async file => file) {
   const context = vm.createContext({
     ref: value => ({ value }), computed: getter => ({ get value() { return getter() } }),
     onMounted: fn => { mounted = fn }, onBeforeUnmount() {}, stationApi: api,
-    confirmDanger: async () => {}, setTimeout: fn => { const id=randomUUID(); timers.set(id,fn); return id },
+    confirmDanger: confirm, setTimeout: fn => { const id=randomUUID(); timers.set(id,fn); return id },
     clearTimeout: id => timers.delete(id), setInterval() {}, clearInterval() {},
-    crypto: { randomUUID }, Date, FormData, Blob, console, AbortController, compressInspectionVideo: compressor,
+    crypto: { randomUUID }, Date, FormData, Blob, console, AbortController, compressInspectionVideo: compressor, prepareInspectionVideo: prepare,
     window: { addEventListener() {}, removeEventListener() {} },
   })
   vm.runInContext(source + '\nthis.state=useShippingStation()', context)
@@ -119,6 +119,67 @@ test('compression failure sends nothing and releases session lock', async () => 
   assert.equal(s.busy.value, false)
   assert.equal(s.pendingUpload.value, null)
   assert.equal(calls.some(c => c[0] === 'upload'), false)
+})
+
+test('capture prepares before file selection, consumes preparation once and disposes cancelled selection', async () => {
+  let disposed = 0, received
+  const prepared = { dispose() { disposed++ } }
+  const { s, people } = setup({}, async (file, options) => { received = options.prepared; return file }, undefined, () => prepared)
+  await flush(); s.choose(people[0]); await s.decoded('ARK-I:OB001:signature')
+  s.prepareVideo()
+  await s.upload(new Blob(['video']), 'IT2', 'videos')
+  assert.equal(received, prepared)
+  s.cancelVideoPreparation()
+  assert.equal(disposed, 0, 'consumed preparation is owned by the compressor')
+  s.prepareVideo(); s.cancelVideoPreparation()
+  assert.equal(disposed, 1)
+})
+
+test('Safari activation denial offers a normal start action without reporting failure', async () => {
+  let attempts = 0
+  const original = new Blob(['video']), products = []
+  const { s, people, calls } = setup({ upload: async (_id, _type, form) => { products.push(form.get('item_id')) } }, async file => {
+    assert.equal(file, original)
+    if (++attempts === 1) throw Object.assign(new Error('User gesture required'), { code: 'VIDEO_ACTIVATION_REQUIRED' })
+    return new Blob(['compressed'])
+  })
+  await flush(); s.choose(people[0]); await s.decoded('ARK-I:OB001:signature')
+  await s.upload(original, 'IT2', 'videos')
+  assert.equal(s.error.value, '')
+  assert.equal(s.uploadError.value, '')
+  assert.equal(s.awaitingVideoActivation.value, true)
+  assert.equal(s.busy.value, false)
+  assert.equal(products.length, 0)
+  await s.upload(new Blob(['photo']), 'IT1', 'photos')
+  assert.equal(s.pendingCompression.value.file, original, 'another capture cannot silently replace this video')
+  assert.equal(s.awaitingVideoActivation.value, true)
+  await s.submit()
+  assert.equal(calls.some(call => call[0] === 'submit'), false, 'do not submit before the selected video is uploaded')
+  await s.retryCompression()
+  assert.deepEqual(products, ['IT2'])
+  assert.equal(s.awaitingVideoActivation.value, false)
+  assert.equal(s.pendingCompression.value, null)
+})
+
+test('a broken video can be explicitly discarded to allow submission', async () => {
+  const { s, people, calls } = setup({}, async () => { throw new Error('bad video') })
+  await flush(); s.choose(people[0]); await s.decoded('ARK-I:OB001:signature')
+  await s.upload(new Blob(['bad']), 'IT2', 'videos')
+  await s.discardCompression()
+  assert.equal(s.pendingCompression.value, null)
+  assert.equal(s.uploadError.value, '')
+  await s.submit()
+  assert.equal(calls.some(call => call[0] === 'submit'), true)
+})
+
+test('cancelling discard keeps the captured file available', async () => {
+  const file = new Blob(['video'])
+  const { s, people } = setup({}, async () => { throw new Error('bad video') }, async () => { throw new Error('cancel') })
+  await flush(); s.choose(people[0]); await s.decoded('ARK-I:OB001:signature')
+  await s.upload(file, 'IT2', 'videos')
+  await s.discardCompression()
+  assert.equal(s.pendingCompression.value.file, file)
+  assert.equal(s.busy.value, false)
 })
 
 test('compression can be retried by a new tap using the captured file and product', async () => {
