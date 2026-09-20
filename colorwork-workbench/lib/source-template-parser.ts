@@ -1,6 +1,7 @@
 'use client';
 
 import { sourceReviewIssues } from '@/lib/source-review';
+import { knownColorForCode } from '@/lib/color-code';
 import { readPsd, type Layer, type Psd } from 'ag-psd';
 import {
   colorForId,
@@ -10,7 +11,12 @@ import {
   type TemplateSection,
   type TemplateSummary,
 } from '@/lib/catalog';
-import { sourceAssetUrl, type SourceCard, type SourceParseIssue, type SourceTemplateConfig } from '@/lib/source-versions';
+import {
+  sourceAssetUrl,
+  type SourceCard,
+  type SourceParseIssue,
+  type SourceTemplateConfig,
+} from '@/lib/source-versions';
 
 type Bounds = [number, number, number, number];
 
@@ -43,28 +49,35 @@ export function normalizedColorCode(value: string) {
     .toUpperCase();
   const explicitlyPrefixed = cleaned.startsWith('#');
   const body = cleaned.replace(/^#/, '');
-  const genericLayerName = /^(?:LAYER|GROUP|SHAPE|RECTANGLE|ELLIPSE|OBJECT|SMARTOBJECT|IMAGE|PHOTO|PICTURE|BACKGROUND|BACKDROP|BG|TITLE|HEADER|LOGO|DECORATION|ORNAMENT|COPY|VECTOR|MASK|TEXT|LABEL|SWATCH|COLOR|COLOUR|ARTBOARD|FRAME|FOLDER|CURVE|LEVELS|HUESATURATION|BRIGHTNESSCONTRAST)\d*$/;
+  const genericLayerName =
+    /^(?:LAYER|GROUP|SHAPE|RECTANGLE|ELLIPSE|OBJECT|SMARTOBJECT|IMAGE|PHOTO|PICTURE|BACKGROUND|BACKDROP|BG|TITLE|HEADER|LOGO|DECORATION|ORNAMENT|COPY|VECTOR|MASK|TEXT|LABEL|SWATCH|COLOR|COLOUR|ARTBOARD|FRAME|FOLDER|CURVE|LEVELS|HUESATURATION|BRIGHTNESSCONTRAST)\d*$/;
   if (
     !body ||
     !/^[A-Z0-9]+(?:\/[A-Z0-9]+)*$/.test(body) ||
     (!explicitlyPrefixed && genericLayerName.test(body)) ||
     (!/\d/.test(body) && !explicitlyPrefixed)
-  ) return null;
+  )
+    return null;
   return `#${body}`;
 }
 
 function semanticColorKey(value: string) {
-  return normalizedColorCode(value)?.replace(/^#/, '') ?? value.trim().toUpperCase();
+  return (
+    normalizedColorCode(value)?.replace(/^#/, '') ?? value.trim().toUpperCase()
+  );
 }
 
 function displayColorCode(value: string, colors: StockColor[]) {
   const normalized = normalizedColorCode(value)!;
-  const matches = colors.filter((color) => semanticColorKey(color.code) === semanticColorKey(normalized));
-  return matches.length === 1 ? matches[0].code : normalized;
+  return knownColorForCode(normalized, colors)?.code ?? normalized;
 }
 
 function slug(value: string) {
-  const result = value.toLowerCase().replace(/^#/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const result = value
+    .toLowerCase()
+    .replace(/^#/, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
   return result || 'color';
 }
 
@@ -82,11 +95,19 @@ function layerBounds(layer: Layer): Bounds | null {
   const top = Number(layer.top);
   const right = Number(layer.right);
   const bottom = Number(layer.bottom);
-  if (![left, top, right, bottom].every(Number.isFinite) || right <= left || bottom <= top) return null;
+  if (
+    ![left, top, right, bottom].every(Number.isFinite) ||
+    right <= left ||
+    bottom <= top
+  )
+    return null;
   return [left, top, right, bottom];
 }
 
-function visibleBounds(bounds: Bounds | null, psd: Pick<Psd, 'width' | 'height'>): Bounds | null {
+function visibleBounds(
+  bounds: Bounds | null,
+  psd: Pick<Psd, 'width' | 'height'>,
+): Bounds | null {
   if (!bounds) return null;
   const left = Math.max(0, bounds[0]);
   const top = Math.max(0, bounds[1]);
@@ -134,70 +155,126 @@ function centerX(bounds: Bounds) {
 }
 
 function parseLengths(value: string) {
-  const matches = [...value.matchAll(/(?:^|\D)(\d{1,2})\s*[″”"“](?=\D|$)/g)].map((match) => Number(match[1]));
-  return [...new Set(matches.filter((item) => Number.isInteger(item) && item > 0 && item <= 100))].sort((a, b) => a - b);
+  const matches = [
+    ...value.matchAll(/(?:^|\D)(\d{1,2})\s*[″”"“](?=\D|$)/g),
+  ].map((match) => Number(match[1]));
+  return [
+    ...new Set(
+      matches.filter(
+        (item) => Number.isInteger(item) && item > 0 && item <= 100,
+      ),
+    ),
+  ].sort((a, b) => a - b);
 }
 
 function sectionName(value: string, current: TemplateSummary) {
   const match = value.match(/^\[\s*(.+?)\s*\]$/);
   if (match?.[1]?.trim()) return match[1].trim();
-  const explicit = value.match(/^(?:section|分区|区域)\s*[:：-]\s*(.+)$/i)?.[1]?.trim();
+  const explicit = value
+    .match(/^(?:section|分区|区域)\s*[:：-]\s*(.+)$/i)?.[1]
+    ?.trim();
   if (explicit) return explicit;
   const normalized = value.trim().toLowerCase();
-  return current.sections.find((section) => section.label.trim().toLowerCase() === normalized)?.label ?? null;
+  return (
+    current.sections.find(
+      (section) => section.label.trim().toLowerCase() === normalized,
+    )?.label ?? null
+  );
 }
 
 function overlapX(left: Bounds, right: Bounds) {
   return Math.max(0, Math.min(left[2], right[2]) - Math.max(left[0], right[0]));
 }
 
-function rankedBelow(candidates: FlatLayer[], bounds: Bounds, maximumDistance: number) {
+function rankedBelow(
+  candidates: FlatLayer[],
+  bounds: Bounds,
+  maximumDistance: number,
+) {
   return candidates
-    .filter((item) => item.bounds && item.bounds[1] >= bounds[3] - 8 && item.bounds[1] - bounds[3] <= maximumDistance)
-    .filter((item) => overlapX(item.bounds!, bounds) > 0 || Math.abs(centerX(item.bounds!) - centerX(bounds)) < width(bounds) * 0.65)
+    .filter(
+      (item) =>
+        item.bounds &&
+        item.bounds[1] >= bounds[3] - 8 &&
+        item.bounds[1] - bounds[3] <= maximumDistance,
+    )
+    .filter(
+      (item) =>
+        overlapX(item.bounds!, bounds) > 0 ||
+        Math.abs(centerX(item.bounds!) - centerX(bounds)) <
+          width(bounds) * 0.65,
+    )
     .map((item) => {
       const vertical = Math.max(0, item.bounds![1] - bounds[3]);
       const horizontal = Math.abs(centerX(item.bounds!) - centerX(bounds));
-      const overlapPenalty = overlapX(item.bounds!, bounds) > 0 ? 0 : width(bounds) * 0.4;
+      const overlapPenalty =
+        overlapX(item.bounds!, bounds) > 0 ? 0 : width(bounds) * 0.4;
       return { item, score: vertical * 2 + horizontal + overlapPenalty };
     })
     .sort((a, b) => a.score - b.score || a.item.order - b.item.order);
 }
 
-function nearestBelow(candidates: FlatLayer[], bounds: Bounds, maximumDistance: number) {
+function nearestBelow(
+  candidates: FlatLayer[],
+  bounds: Bounds,
+  maximumDistance: number,
+) {
   return rankedBelow(candidates, bounds, maximumDistance)[0]?.item ?? null;
 }
 
-function nearestBelowMatch(candidates: FlatLayer[], bounds: Bounds, maximumDistance: number) {
+function nearestBelowMatch(
+  candidates: FlatLayer[],
+  bounds: Bounds,
+  maximumDistance: number,
+) {
   const ranked = rankedBelow(candidates, bounds, maximumDistance);
   const first = ranked[0];
   const second = ranked[1];
   return {
     item: first?.item ?? null,
-    ambiguous: Boolean(first && second && second.score - first.score <= Math.max(12, width(bounds) * 0.08)),
+    ambiguous: Boolean(
+      first &&
+      second &&
+      second.score - first.score <= Math.max(12, width(bounds) * 0.08),
+    ),
   };
 }
 
 function knownSectionKey(label: string, current: TemplateSummary) {
   const normalized = label.trim().toLowerCase();
-  return current.sections.find((section) => section.label.trim().toLowerCase() === normalized)?.key ?? null;
+  return (
+    current.sections.find(
+      (section) => section.label.trim().toLowerCase() === normalized,
+    )?.key ?? null
+  );
 }
 
-function parsedSections(flat: FlatLayer[], current: TemplateSummary): Array<TemplateSection & { top: number }> {
+function parsedSections(
+  flat: FlatLayer[],
+  current: TemplateSummary,
+): Array<TemplateSection & { top: number }> {
   const result: Array<TemplateSection & { top: number }> = [];
   for (const item of flat) {
     if (item.hidden || !item.bounds || !item.text) continue;
     const label = sectionName(item.text, current);
     if (!label) continue;
-    const key = knownSectionKey(label, current) ?? `section-${slug(label)}-${hash(label).slice(0, 5)}`;
-    if (!result.some((section) => section.key === key)) result.push({ key, label, top: item.bounds[1] });
+    const key =
+      knownSectionKey(label, current) ??
+      `section-${slug(label)}-${hash(label).slice(0, 5)}`;
+    if (!result.some((section) => section.key === key))
+      result.push({ key, label, top: item.bounds[1] });
   }
   return result.sort((a, b) => a.top - b.top);
 }
 
-function sectionFor(bounds: Bounds, sections: Array<TemplateSection & { top: number }>) {
+function sectionFor(
+  bounds: Bounds,
+  sections: Array<TemplateSection & { top: number }>,
+) {
   const candidates = sections.filter((section) => section.top < bounds[1]);
-  return candidates.at(-1)?.key ?? (sections.length === 1 ? sections[0].key : null);
+  return (
+    candidates.at(-1)?.key ?? (sections.length === 1 ? sections[0].key : null)
+  );
 }
 
 function oldSemanticMap(
@@ -208,9 +285,12 @@ function oldSemanticMap(
   const byColorSection = new Map<string, string[]>();
   const byColor = new Map<string, string[]>();
   for (const entry of selection.filter((value) => value.lengths.length)) {
-    const code = colorForId(colors, template, entry.colorId)?.code ?? entry.colorId;
+    const code =
+      colorForId(colors, template, entry.colorId)?.code ?? entry.colorId;
     const colorKey = semanticColorKey(code);
-    const section = template.sections.find((value) => value.key === entry.section)?.label ?? '';
+    const section =
+      template.sections.find((value) => value.key === entry.section)?.label ??
+      '';
     const key = `${colorKey}\u001f${section.trim().toLowerCase()}`;
     const entries = byColorSection.get(key) ?? [];
     entries.push(entry.entryId);
@@ -222,9 +302,13 @@ function oldSemanticMap(
   return { byColorSection, byColor };
 }
 
-function colorIdFor(code: string, colors: StockColor[], sourceVersionId: string) {
-  const matches = colors.filter((color) => semanticColorKey(color.code) === semanticColorKey(code));
-  if (matches.length === 1) return matches[0].id;
+function colorIdFor(
+  code: string,
+  colors: StockColor[],
+  sourceVersionId: string,
+) {
+  const knownColor = knownColorForCode(code, colors);
+  if (knownColor) return knownColor.id;
   return `source-color-${slug(code)}-${hash(`${sourceVersionId}:${semanticColorKey(code)}`).slice(0, 7)}`;
 }
 
@@ -236,22 +320,50 @@ function canvas(widthValue: number, heightValue: number) {
 }
 
 const CANVAS_BLEND_MODES: Record<string, GlobalCompositeOperation> = {
-  normal: 'source-over', multiply: 'multiply', screen: 'screen', overlay: 'overlay', darken: 'darken', lighten: 'lighten',
-  difference: 'difference', exclusion: 'exclusion', hue: 'hue', saturation: 'saturation', color: 'color', luminosity: 'luminosity',
+  normal: 'source-over',
+  multiply: 'multiply',
+  screen: 'screen',
+  overlay: 'overlay',
+  darken: 'darken',
+  lighten: 'lighten',
+  difference: 'difference',
+  exclusion: 'exclusion',
+  hue: 'hue',
+  saturation: 'saturation',
+  color: 'color',
+  luminosity: 'luminosity',
 };
 
-function drawLayer(target: CanvasRenderingContext2D, item: FlatLayer, offsetX = 0, offsetY = 0) {
+function drawLayer(
+  target: CanvasRenderingContext2D,
+  item: FlatLayer,
+  offsetX = 0,
+  offsetY = 0,
+) {
   const renderBounds = item.rawBounds ?? item.bounds;
   if (!item.layer.canvas || !renderBounds || item.hidden) return;
   target.save();
   const opacity = Number(item.layer.opacity);
-  target.globalAlpha = Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1;
-  target.globalCompositeOperation = CANVAS_BLEND_MODES[item.layer.blendMode || 'normal'] ?? 'source-over';
-  target.drawImage(item.layer.canvas, renderBounds[0] - offsetX, renderBounds[1] - offsetY, width(renderBounds), height(renderBounds));
+  target.globalAlpha = Number.isFinite(opacity)
+    ? Math.max(0, Math.min(1, opacity))
+    : 1;
+  target.globalCompositeOperation =
+    CANVAS_BLEND_MODES[item.layer.blendMode || 'normal'] ?? 'source-over';
+  target.drawImage(
+    item.layer.canvas,
+    renderBounds[0] - offsetX,
+    renderBounds[1] - offsetY,
+    width(renderBounds),
+    height(renderBounds),
+  );
   target.restore();
 }
 
-function drawVisibleLayerAsset(target: CanvasRenderingContext2D, item: FlatLayer, bounds: Bounds) {
+function drawVisibleLayerAsset(
+  target: CanvasRenderingContext2D,
+  item: FlatLayer,
+  bounds: Bounds,
+) {
   const source = item.layer.canvas;
   const renderBounds = item.rawBounds ?? item.bounds;
   if (!source || !renderBounds) return;
@@ -260,14 +372,31 @@ function drawVisibleLayerAsset(target: CanvasRenderingContext2D, item: FlatLayer
   const sourceX = Math.max(0, (bounds[0] - renderBounds[0]) * scaleX);
   const sourceY = Math.max(0, (bounds[1] - renderBounds[1]) * scaleY);
   const sourceWidth = Math.min(source.width - sourceX, width(bounds) * scaleX);
-  const sourceHeight = Math.min(source.height - sourceY, height(bounds) * scaleY);
+  const sourceHeight = Math.min(
+    source.height - sourceY,
+    height(bounds) * scaleY,
+  );
   if (sourceWidth <= 0 || sourceHeight <= 0) return;
-  target.drawImage(source, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, width(bounds), height(bounds));
+  target.drawImage(
+    source,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    0,
+    0,
+    width(bounds),
+    height(bounds),
+  );
 }
 
 function canvasBlob(value: HTMLCanvasElement) {
   return new Promise<Blob>((resolve, reject) => {
-    value.toBlob((blob) => blob ? resolve(blob) : reject(new Error('无法生成解析后的 PNG 素材。')), 'image/png');
+    value.toBlob(
+      (blob) =>
+        blob ? resolve(blob) : reject(new Error('无法生成解析后的 PNG 素材。')),
+      'image/png',
+    );
   });
 }
 
@@ -280,7 +409,12 @@ function clearReferenceRegions(
   context.save();
   for (const card of cards) {
     const geometry = card.geometry;
-    for (const bounds of [geometry.swatch, geometry.colorLabel, geometry.sizeLabel, geometry.hotBadge]) {
+    for (const bounds of [
+      geometry.swatch,
+      geometry.colorLabel,
+      geometry.sizeLabel,
+      geometry.hotBadge,
+    ]) {
       if (!bounds) continue;
       const [left, top, right, bottom] = bounds;
       const padding = 3;
@@ -303,7 +437,8 @@ function imageDimensions(file: File) {
 }
 
 function isDecorative(item: FlatLayer) {
-  const decoration = /(?:^|[\s_-])(?:title|header|footer|logo|decoration|decorative|ornament|bottom|headline|branding)(?:$|[\s_\-\d])|标题|页眉|页脚|底部|装饰|标志|页头/i;
+  const decoration =
+    /(?:^|[\s_-])(?:title|header|footer|logo|decoration|decorative|ornament|bottom|headline|branding)(?:$|[\s_\-\d])|标题|页眉|页脚|底部|装饰|标志|页头/i;
   const name = cleanText(item.layer.name);
   // A placed layer inside a known decorative group is not a business swatch,
   // even when a designer happened to give the asset a color-like name.
@@ -314,16 +449,23 @@ function isDecorative(item: FlatLayer) {
   if (decoration.test(name)) return true;
   if (normalizedColorCode(name)) return false;
   const opacity = Number(item.layer.opacity);
-  if (item.layer.placedLayer && Number.isFinite(opacity) && opacity < 0.2) return true;
+  if (item.layer.placedLayer && Number.isFinite(opacity) && opacity < 0.2)
+    return true;
   return false;
 }
 
-function boundsOverflow(bounds: Bounds, documentWidth: number, documentHeight: number) {
+function boundsOverflow(
+  bounds: Bounds,
+  documentWidth: number,
+  documentHeight: number,
+) {
   const sides: string[] = [];
   if (bounds[0] < 0) sides.push(`左侧超出 ${Math.ceil(-bounds[0])} px`);
   if (bounds[1] < 0) sides.push(`顶部超出 ${Math.ceil(-bounds[1])} px`);
-  if (bounds[2] > documentWidth) sides.push(`右侧超出 ${Math.ceil(bounds[2] - documentWidth)} px`);
-  if (bounds[3] > documentHeight) sides.push(`底部超出 ${Math.ceil(bounds[3] - documentHeight)} px`);
+  if (bounds[2] > documentWidth)
+    sides.push(`右侧超出 ${Math.ceil(bounds[2] - documentWidth)} px`);
+  if (bounds[3] > documentHeight)
+    sides.push(`底部超出 ${Math.ceil(bounds[3] - documentHeight)} px`);
   return sides;
 }
 
@@ -332,7 +474,13 @@ function layerStructureLabel(item: FlatLayer) {
   if (item.layer.placedLayer) labels.push('智能对象／置入图层');
   if (item.layer.children?.length) labels.push('图层组');
   if (item.layer.effects) labels.push('图层效果');
-  if (item.layer.mask || item.layer.realMask || item.layer.vectorMask || item.layer.filterMask) labels.push('蒙版');
+  if (
+    item.layer.mask ||
+    item.layer.realMask ||
+    item.layer.vectorMask ||
+    item.layer.filterMask
+  )
+    labels.push('蒙版');
   return labels.join('、') || '普通像素图层';
 }
 
@@ -344,25 +492,59 @@ function outOfBoundsMessage(item: FlatLayer, psd: Psd) {
 }
 
 function looksLikeSwatchGeometry(item: FlatLayer, psd: Psd) {
-  if (isDecorative(item) || !item.bounds || item.layer.children?.length || item.hidden || item.text || !item.layer.canvas) return false;
+  if (
+    isDecorative(item) ||
+    !item.bounds ||
+    item.layer.children?.length ||
+    item.hidden ||
+    item.text ||
+    !item.layer.canvas
+  )
+    return false;
   const opacity = Number(item.layer.opacity);
-  if (item.layer.placedLayer && Number.isFinite(opacity) && opacity < 0.2) return false;
+  if (item.layer.placedLayer && Number.isFinite(opacity) && opacity < 0.2)
+    return false;
   const itemWidth = width(item.bounds);
   const itemHeight = height(item.bounds);
   const ratio = itemWidth / itemHeight;
-  return ratio >= 0.72 && ratio <= 1.38 && itemWidth >= 40 && itemHeight >= 40 &&
-    itemWidth <= psd.width * 0.48 && itemHeight <= psd.height * 0.48;
+  return (
+    ratio >= 0.72 &&
+    ratio <= 1.38 &&
+    itemWidth >= 40 &&
+    itemHeight >= 40 &&
+    itemWidth <= psd.width * 0.48 &&
+    itemHeight <= psd.height * 0.48
+  );
 }
 
 function isCandidateSwatch(item: FlatLayer, psd: Psd) {
-  return looksLikeSwatchGeometry(item, psd) && Boolean(normalizedColorCode(item.layer.name || ''));
+  return (
+    looksLikeSwatchGeometry(item, psd) &&
+    Boolean(normalizedColorCode(item.layer.name || ''))
+  );
 }
 
-function boundsUnion(values: Bounds[], documentWidth: number, documentHeight: number): Bounds {
-  const left = Math.max(0, Math.floor(Math.min(...values.map((value) => value[0]))));
-  const top = Math.max(0, Math.floor(Math.min(...values.map((value) => value[1]))));
-  const right = Math.min(documentWidth, Math.ceil(Math.max(...values.map((value) => value[2]))));
-  const bottom = Math.min(documentHeight, Math.ceil(Math.max(...values.map((value) => value[3]))));
+function boundsUnion(
+  values: Bounds[],
+  documentWidth: number,
+  documentHeight: number,
+): Bounds {
+  const left = Math.max(
+    0,
+    Math.floor(Math.min(...values.map((value) => value[0]))),
+  );
+  const top = Math.max(
+    0,
+    Math.floor(Math.min(...values.map((value) => value[1]))),
+  );
+  const right = Math.min(
+    documentWidth,
+    Math.ceil(Math.max(...values.map((value) => value[2]))),
+  );
+  const bottom = Math.min(
+    documentHeight,
+    Math.ceil(Math.max(...values.map((value) => value[3]))),
+  );
   return [left, top, right, bottom];
 }
 
@@ -373,17 +555,29 @@ function hotBoundsForCard(
   documentWidth: number,
   documentHeight: number,
 ) {
-  const marker = hotText.find((item) => item.bounds && (
-    Math.abs(centerX(item.bounds) - swatch[2]) < width(swatch) * 0.55 &&
-    item.bounds[1] >= swatch[1] - height(swatch) * 0.35 &&
-    item.bounds[1] <= swatch[1] + height(swatch) * 0.45
-  ));
+  const marker = hotText.find(
+    (item) =>
+      item.bounds &&
+      Math.abs(centerX(item.bounds) - swatch[2]) < width(swatch) * 0.55 &&
+      item.bounds[1] >= swatch[1] - height(swatch) * 0.35 &&
+      item.bounds[1] <= swatch[1] + height(swatch) * 0.45,
+  );
   if (!marker?.bounds) return null;
   const root = hotPath(marker);
   const related = root
-    ? flat.filter((item) => !item.hidden && item.layer.canvas && item.bounds && item.path.join('\u001f').startsWith(root))
+    ? flat.filter(
+        (item) =>
+          !item.hidden &&
+          item.layer.canvas &&
+          item.bounds &&
+          item.path.join('\u001f').startsWith(root),
+      )
     : [marker];
-  return boundsUnion(related.map((item) => item.bounds!), documentWidth, documentHeight);
+  return boundsUnion(
+    related.map((item) => item.bounds!),
+    documentWidth,
+    documentHeight,
+  );
 }
 
 function hotPath(item: FlatLayer) {
@@ -394,13 +588,24 @@ function hotPath(item: FlatLayer) {
 async function hotAsset(flat: FlatLayer[], hotText: FlatLayer[]) {
   const root = hotText.map(hotPath).find(Boolean);
   if (!root) return null;
-  const related = flat.filter((item) => !item.hidden && item.layer.canvas && item.bounds && item.path.join('\u001f').startsWith(root));
+  const related = flat.filter(
+    (item) =>
+      !item.hidden &&
+      item.layer.canvas &&
+      item.bounds &&
+      item.path.join('\u001f').startsWith(root),
+  );
   if (!related.length) return null;
-  const bounds = boundsUnion(related.map((item) => item.bounds!), 100000, 100000);
+  const bounds = boundsUnion(
+    related.map((item) => item.bounds!),
+    100000,
+    100000,
+  );
   const output = canvas(width(bounds), height(bounds));
   const context = output.getContext('2d');
   if (!context) return null;
-  for (const item of [...related].reverse()) drawLayer(context, item, bounds[0], bounds[1]);
+  for (const item of [...related].reverse())
+    drawLayer(context, item, bounds[0], bounds[1]);
   return canvasBlob(output);
 }
 
@@ -412,16 +617,26 @@ export async function parseTemplateSource(args: {
   currentColors: StockColor[];
   currentSelection: Selection;
 }): Promise<ParsedTemplateSource> {
-  const { psdFile, jpgFile, sourceVersionId, currentTemplate, currentColors, currentSelection } = args;
+  const {
+    psdFile,
+    jpgFile,
+    sourceVersionId,
+    currentTemplate,
+    currentColors,
+    currentSelection,
+  } = args;
   const psd = readPsd(await psdFile.arrayBuffer(), {
     skipThumbnail: true,
     skipLinkedFilesData: true,
     totalMemoryLimit: 768 * 1024 * 1024,
   });
-  if (!psd.children?.length) throw new Error('PSD 没有可解析图层；原版本保持使用。');
+  if (!psd.children?.length)
+    throw new Error('PSD 没有可解析图层；原版本保持使用。');
   const jpg = await imageDimensions(jpgFile);
   if (jpg.width !== psd.width || jpg.height !== psd.height) {
-    throw new Error(`PSD 画布为 ${psd.width}×${psd.height}，对应 JPG 为 ${jpg.width}×${jpg.height}，尺寸不一致。`);
+    throw new Error(
+      `PSD 画布为 ${psd.width}×${psd.height}，对应 JPG 为 ${jpg.width}×${jpg.height}，尺寸不一致。`,
+    );
   }
 
   const flat = flatten(psd.children, [], [], false, psd);
@@ -431,18 +646,30 @@ export async function parseTemplateSource(args: {
     const reasons: string[] = [];
     if (item.layer.adjustment) reasons.push('调整图层');
     if (item.layer.effects) reasons.push('图层效果');
-    if (item.layer.mask || item.layer.realMask || item.layer.vectorMask || item.layer.filterMask) reasons.push('图层蒙版');
+    if (
+      item.layer.mask ||
+      item.layer.realMask ||
+      item.layer.vectorMask ||
+      item.layer.filterMask
+    )
+      reasons.push('图层蒙版');
     if (item.layer.placedLayer) reasons.push('智能对象／置入图层');
     if (item.layer.patterns?.length) reasons.push('图案素材');
     if (item.layer.clipping) reasons.push('剪贴图层');
-    if (item.layer.blendMode && item.layer.blendMode !== 'pass through' && !CANVAS_BLEND_MODES[item.layer.blendMode]) {
+    if (
+      item.layer.blendMode &&
+      item.layer.blendMode !== 'pass through' &&
+      !CANVAS_BLEND_MODES[item.layer.blendMode]
+    ) {
       reasons.push(`不支持的混合模式 ${item.layer.blendMode}`);
     }
     const opacity = Number(item.layer.opacity);
-    if (item.layer.children?.length && (
-      (Number.isFinite(opacity) && opacity < 0.999) ||
-      (item.layer.blendMode && item.layer.blendMode !== 'pass through')
-    )) reasons.push('非透传的组混合／透明度');
+    if (
+      item.layer.children?.length &&
+      ((Number.isFinite(opacity) && opacity < 0.999) ||
+        (item.layer.blendMode && item.layer.blendMode !== 'pass through'))
+    )
+      reasons.push('非透传的组混合／透明度');
     if (reasons.length) {
       issues.push({
         code: 'UNSUPPORTED_LAYER_STRUCTURE',
@@ -456,12 +683,27 @@ export async function parseTemplateSource(args: {
       });
     }
   }
-  const oldMaps = oldSemanticMap(currentSelection, currentColors, currentTemplate);
+  const oldMaps = oldSemanticMap(
+    currentSelection,
+    currentColors,
+    currentTemplate,
+  );
   for (const item of flat) {
-    if (item.hidden || isDecorative(item) || item.layer.children?.length || item.text || !item.bounds) continue;
+    if (
+      item.hidden ||
+      isDecorative(item) ||
+      item.layer.children?.length ||
+      item.text ||
+      !item.bounds
+    )
+      continue;
     const colorCode = normalizedColorCode(item.layer.name || '');
     const rawBounds = item.rawBounds ?? item.bounds;
-    const outside = rawBounds[0] < 0 || rawBounds[1] < 0 || rawBounds[2] > psd.width || rawBounds[3] > psd.height;
+    const outside =
+      rawBounds[0] < 0 ||
+      rawBounds[1] < 0 ||
+      rawBounds[2] > psd.width ||
+      rawBounds[3] > psd.height;
     if (colorCode && outside) {
       issues.push({
         code: 'COLOR_LAYER_OUT_OF_BOUNDS_REVIEW',
@@ -471,25 +713,37 @@ export async function parseTemplateSource(args: {
     }
   }
   const swatches = flat.filter((item) => isCandidateSwatch(item, psd));
-  if (!swatches.length) throw new Error('没有识别到可用颜色图层。请保留以色号命名的独立色块图层。');
+  if (!swatches.length)
+    throw new Error('没有识别到可用颜色图层。请保留以色号命名的独立色块图层。');
 
   const sectionsWithTop = parsedSections(flat, currentTemplate);
-  const detectedSections = sectionsWithTop.map(({ key, label }) => ({ key, label }));
+  const detectedSections = sectionsWithTop.map(({ key, label }) => ({
+    key,
+    label,
+  }));
   const sections = [...detectedSections];
   for (const section of currentTemplate.sections) {
-    if (!sections.some((item) => item.key === section.key)) sections.push(section);
+    if (!sections.some((item) => item.key === section.key))
+      sections.push(section);
   }
-  const currentSectionLabels = currentTemplate.sections.map((section) => section.label.trim().toLowerCase());
-  const detectedSectionLabels = detectedSections.map((section) => section.label.trim().toLowerCase());
+  const currentSectionLabels = currentTemplate.sections.map((section) =>
+    section.label.trim().toLowerCase(),
+  );
+  const detectedSectionLabels = detectedSections.map((section) =>
+    section.label.trim().toLowerCase(),
+  );
   if (currentTemplate.sections.length && !detectedSections.length) {
     issues.push({
       code: 'SECTIONS_NOT_RECOGNIZED',
-      message: '新版 PSD 没有可靠识别到分区标题。已保留旧分区作为人工映射选项；每个颜色必须重新确认分区，不能静默清空。',
+      message:
+        '新版 PSD 没有可靠识别到分区标题。已保留旧分区作为人工映射选项；每个颜色必须重新确认分区，不能静默清空。',
       blocking: true,
     });
   } else if (
     currentSectionLabels.length !== detectedSectionLabels.length ||
-    currentSectionLabels.some((label, index) => label !== detectedSectionLabels[index])
+    currentSectionLabels.some(
+      (label, index) => label !== detectedSectionLabels[index],
+    )
   ) {
     issues.push({
       code: 'SECTION_STRUCTURE_CHANGED',
@@ -497,16 +751,33 @@ export async function parseTemplateSource(args: {
       blocking: true,
     });
   }
-  const colorText = flat.filter((item) => !item.hidden && item.bounds && item.text && normalizedColorCode(item.text));
-  const lengthText = flat.filter((item) => !item.hidden && item.bounds && item.text && parseLengths(item.text).length);
-  const hotText = flat.filter((item) => !item.hidden && item.bounds && /^hot$/i.test(item.text));
+  const colorText = flat.filter(
+    (item) =>
+      !item.hidden &&
+      item.bounds &&
+      item.text &&
+      normalizedColorCode(item.text),
+  );
+  const lengthText = flat.filter(
+    (item) =>
+      !item.hidden &&
+      item.bounds &&
+      item.text &&
+      parseLengths(item.text).length,
+  );
+  const hotText = flat.filter(
+    (item) => !item.hidden && item.bounds && /^hot$/i.test(item.text),
+  );
   const sizeMatches = new Map<Layer, ReturnType<typeof nearestBelowMatch>>();
   const sizeLabelUsage = new Map<Layer, number>();
   for (const swatch of swatches) {
     const match = nearestBelowMatch(lengthText, swatch.bounds!, 190);
     sizeMatches.set(swatch.layer, match);
     if (match.item && !match.ambiguous) {
-      sizeLabelUsage.set(match.item.layer, (sizeLabelUsage.get(match.item.layer) ?? 0) + 1);
+      sizeLabelUsage.set(
+        match.item.layer,
+        (sizeLabelUsage.get(match.item.layer) ?? 0) + 1,
+      );
     }
   }
   const excluded = new Set<Layer>();
@@ -514,30 +785,50 @@ export async function parseTemplateSource(args: {
   const assets: ParsedSourceAsset[] = [];
 
   const cards: SourceCard[] = [];
-  for (const [index, swatch] of [...swatches].sort((a, b) => (
-    (a.bounds![1] - b.bounds![1]) || (a.bounds![0] - b.bounds![0]) || (a.order - b.order)
-  )).entries()) {
+  for (const [index, swatch] of [...swatches]
+    .sort(
+      (a, b) =>
+        a.bounds![1] - b.bounds![1] ||
+        a.bounds![0] - b.bounds![0] ||
+        a.order - b.order,
+    )
+    .entries()) {
     const bounds = swatch.bounds!;
     const colorCode = displayColorCode(swatch.layer.name || '', currentColors);
     const section = sectionFor(bounds, sectionsWithTop);
-    const sectionLabel = sections.find((value) => value.key === section)?.label ?? '';
+    const sectionLabel =
+      sections.find((value) => value.key === section)?.label ?? '';
     const semanticKey = `${semanticColorKey(colorCode)}\u001f${sectionLabel.trim().toLowerCase()}`;
     const oldMatches = oldMaps.byColorSection.get(semanticKey) ?? [];
-    const sameColorMatches = oldMaps.byColor.get(semanticColorKey(colorCode)) ?? [];
+    const sameColorMatches =
+      oldMaps.byColor.get(semanticColorKey(colorCode)) ?? [];
     const colorLabel = nearestBelow(
-      colorText.filter((item) => semanticColorKey(item.text) === semanticColorKey(colorCode)),
+      colorText.filter(
+        (item) => semanticColorKey(item.text) === semanticColorKey(colorCode),
+      ),
       bounds,
       130,
     );
-    const sizeMatch = sizeMatches.get(swatch.layer) ?? { item: null, ambiguous: false };
-    const sizeLabelShared = Boolean(sizeMatch.item && (sizeLabelUsage.get(sizeMatch.item.layer) ?? 0) > 1);
+    const sizeMatch = sizeMatches.get(swatch.layer) ?? {
+      item: null,
+      ambiguous: false,
+    };
+    const sizeLabelShared = Boolean(
+      sizeMatch.item && (sizeLabelUsage.get(sizeMatch.item.layer) ?? 0) > 1,
+    );
     const sizeLabelAmbiguous = sizeMatch.ambiguous || sizeLabelShared;
     const sizeLabel = sizeLabelAmbiguous ? null : sizeMatch.item;
     const matchedEntryId = oldMatches.length === 1 ? oldMatches[0] : null;
-    const currentEntry = matchedEntryId ? currentSelection.find((entry) => entry.entryId === matchedEntryId) : null;
+    const currentEntry = matchedEntryId
+      ? currentSelection.find((entry) => entry.entryId === matchedEntryId)
+      : null;
     const parsedLengthValues = sizeLabel ? parseLengths(sizeLabel.text) : [];
-    const fallbackLengths = currentEntry?.lengths.length ? currentEntry.lengths : lengthsForTemplate(currentTemplate).slice(0, 1);
-    const lengths = parsedLengthValues.length ? parsedLengthValues : fallbackLengths;
+    const fallbackLengths = currentEntry?.lengths.length
+      ? currentEntry.lengths
+      : lengthsForTemplate(currentTemplate).slice(0, 1);
+    const lengths = parsedLengthValues.length
+      ? parsedLengthValues
+      : fallbackLengths;
     const candidateId = `candidate-${swatch.layer.id ?? hash(`${swatch.path.join('/')}:${colorCode}:${index}`)}`;
     if (sizeLabelAmbiguous) {
       issues.push({
@@ -570,17 +861,19 @@ export async function parseTemplateSource(args: {
         blocking: true,
       });
     }
-    const matchState: SourceCard['matchState'] = oldMatches.length === 1
-      ? 'exact'
-      : oldMatches.length === 0 && sameColorMatches.length === 0
-        ? 'new'
-        : 'unresolved';
+    const matchState: SourceCard['matchState'] =
+      oldMatches.length === 1
+        ? 'exact'
+        : oldMatches.length === 0 && sameColorMatches.length === 0
+          ? 'new'
+          : 'unresolved';
     if (matchState === 'unresolved') {
       issues.push({
         code: 'AMBIGUOUS_ENTRY_MATCH',
-        message: oldMatches.length > 1
-          ? `${colorCode} 在同一分区对应多个旧条目，不能按位置自动迁移库存。`
-          : `${colorCode} 在旧版存在，但新版分区不同或分区无法唯一对应，必须人工确认。`,
+        message:
+          oldMatches.length > 1
+            ? `${colorCode} 在同一分区对应多个旧条目，不能按位置自动迁移库存。`
+            : `${colorCode} 在旧版存在，但新版分区不同或分区无法唯一对应，必须人工确认。`,
         candidateId,
         blocking: true,
       });
@@ -589,7 +882,8 @@ export async function parseTemplateSource(args: {
     const assetName = `colors/${slug(colorCode)}-${hash(`${colorCode}:${index}`).slice(0, 6)}.png`;
     const colorCanvas = canvas(width(bounds), height(bounds));
     const colorContext = colorCanvas.getContext('2d');
-    if (!colorContext || !swatch.layer.canvas) throw new Error(`${colorCode} 色块像素无法读取。`);
+    if (!colorContext || !swatch.layer.canvas)
+      throw new Error(`${colorCode} 色块像素无法读取。`);
     drawVisibleLayerAsset(colorContext, swatch, bounds);
     assets.push({ name: assetName, blob: await canvasBlob(colorCanvas) });
     if (!colorsById.has(colorId)) {
@@ -607,13 +901,18 @@ export async function parseTemplateSource(args: {
         blocking: false,
       });
     }
-    const isHot = hotText.some((item) => item.bounds && (
-      Math.abs(centerX(item.bounds) - bounds[2]) < width(bounds) * 0.55 &&
-      item.bounds[1] >= bounds[1] - height(bounds) * 0.35 && item.bounds[1] <= bounds[1] + height(bounds) * 0.45
-    ));
+    const isHot = hotText.some(
+      (item) =>
+        item.bounds &&
+        Math.abs(centerX(item.bounds) - bounds[2]) < width(bounds) * 0.55 &&
+        item.bounds[1] >= bounds[1] - height(bounds) * 0.35 &&
+        item.bounds[1] <= bounds[1] + height(bounds) * 0.45,
+    );
     cards.push({
       candidateId,
-      entryId: matchedEntryId ?? `source-entry-${hash(`${sourceVersionId}:${candidateId}`)}`,
+      entryId:
+        matchedEntryId ??
+        `source-entry-${hash(`${sourceVersionId}:${candidateId}`)}`,
       colorId,
       colorCode,
       lengths: [...new Set(lengths)].sort((a, b) => a - b),
@@ -624,15 +923,22 @@ export async function parseTemplateSource(args: {
         swatch: bounds,
         colorLabel: colorLabel?.bounds ?? null,
         sizeLabel: sizeLabel?.bounds ?? null,
-        hotBadge: hotBoundsForCard(flat, hotText, bounds, psd.width, psd.height),
+        hotBadge: hotBoundsForCard(
+          flat,
+          hotText,
+          bounds,
+          psd.width,
+          psd.height,
+        ),
       },
       matchState,
       matchedEntryId,
-      matchReason: matchState === 'exact'
-        ? '按唯一规范色号＋稳定分区对应旧条目'
-        : matchState === 'new'
-          ? '当前母版中没有同色号＋同分区条目'
-          : '同色号存在多个候选或分区发生变化，需人工映射',
+      matchReason:
+        matchState === 'exact'
+          ? '按唯一规范色号＋稳定分区对应旧条目'
+          : matchState === 'new'
+            ? '当前母版中没有同色号＋同分区条目'
+            : '同色号存在多个候选或分区发生变化，需人工映射',
     });
     excluded.add(swatch.layer);
     if (colorLabel) excluded.add(colorLabel.layer);
@@ -642,17 +948,28 @@ export async function parseTemplateSource(args: {
   const swatchBounds = swatches.map((item) => item.bounds!);
   const swatchEnvelope: Bounds = [
     0,
-    Math.max(0, Math.min(...swatchBounds.map((bounds) => bounds[1])) - Math.max(...swatchBounds.map(height))),
+    Math.max(
+      0,
+      Math.min(...swatchBounds.map((bounds) => bounds[1])) -
+        Math.max(...swatchBounds.map(height)),
+    ),
     psd.width,
-    Math.min(psd.height, Math.max(...swatchBounds.map((bounds) => bounds[3])) + Math.max(...swatchBounds.map(height)) * 2.4),
+    Math.min(
+      psd.height,
+      Math.max(...swatchBounds.map((bounds) => bounds[3])) +
+        Math.max(...swatchBounds.map(height)) * 2.4,
+    ),
   ];
-  const intersects = (left: Bounds, right: Bounds) => (
+  const intersects = (left: Bounds, right: Bounds) =>
     Math.min(left[2], right[2]) > Math.max(left[0], right[0]) &&
-    Math.min(left[3], right[3]) > Math.max(left[1], right[1])
-  );
-  const currentDynamicBounds = currentTemplate.dynamicBounds.map((value, index) => (
-    value * (index % 2 === 0 ? psd.width / currentTemplate.width : psd.height / currentTemplate.height)
-  )) as Bounds;
+    Math.min(left[3], right[3]) > Math.max(left[1], right[1]);
+  const currentDynamicBounds = currentTemplate.dynamicBounds.map(
+    (value, index) =>
+      value *
+      (index % 2 === 0
+        ? psd.width / currentTemplate.width
+        : psd.height / currentTemplate.height),
+  ) as Bounds;
   for (const item of flat) {
     if (hotPath(item)) excluded.add(item.layer);
   }
@@ -687,10 +1004,16 @@ export async function parseTemplateSource(args: {
         blocking: true,
       });
     } else if (
-      item.bounds && item.layer.canvas && !item.layer.children?.length && !item.text &&
-      width(item.bounds) * height(item.bounds) < psd.width * psd.height * 0.32 &&
-      width(item.bounds) < psd.width * 0.78 && height(item.bounds) < psd.height * 0.78 &&
-      (intersects(item.bounds, swatchEnvelope) || intersects(item.bounds, currentDynamicBounds))
+      item.bounds &&
+      item.layer.canvas &&
+      !item.layer.children?.length &&
+      !item.text &&
+      width(item.bounds) * height(item.bounds) <
+        psd.width * psd.height * 0.32 &&
+      width(item.bounds) < psd.width * 0.78 &&
+      height(item.bounds) < psd.height * 0.78 &&
+      (intersects(item.bounds, swatchEnvelope) ||
+        intersects(item.bounds, currentDynamicBounds))
     ) {
       issues.push({
         code: 'UNCLASSIFIED_VISIBLE_LAYER',
@@ -710,11 +1033,12 @@ export async function parseTemplateSource(args: {
   assets.push({ name: 'base.png', blob: await canvasBlob(baseCanvas) });
   const parsedHot = await hotAsset(flat, hotText);
   if (parsedHot) assets.push({ name: 'hot.png', blob: parsedHot });
-  else if (hotText.length) issues.push({
-    code: 'HOT_ASSET_UNAVAILABLE',
-    message: '识别到 Hot 标记文字，但无法可靠提取对应图形素材，请人工核对。',
-    blocking: true,
-  });
+  else if (hotText.length)
+    issues.push({
+      code: 'HOT_ASSET_UNAVAILABLE',
+      message: '识别到 Hot 标记文字，但无法可靠提取对应图形素材，请人工核对。',
+      blocking: true,
+    });
 
   const geometryBounds = cards.flatMap((card) => [
     card.geometry.swatch,
@@ -723,9 +1047,16 @@ export async function parseTemplateSource(args: {
   ]);
   const dynamicBounds = boundsUnion(geometryBounds, psd.width, psd.height);
   const availableLengths = lengthsForTemplate(currentTemplate);
-  const identifiedIssues = sourceReviewIssues(issues, cards, currentColors, availableLengths).map((issue, index) => ({
+  const identifiedIssues = sourceReviewIssues(
+    issues,
+    cards,
+    currentColors,
+    availableLengths,
+  ).map((issue, index) => ({
     ...issue,
-    issueId: issue.issueId || `issue-${index + 1}-${hash(`${issue.code}:${issue.candidateId || ''}:${issue.message}`).slice(0, 8)}`,
+    issueId:
+      issue.issueId ||
+      `issue-${index + 1}-${hash(`${issue.code}:${issue.candidateId || ''}:${issue.message}`).slice(0, 8)}`,
   }));
   const config: SourceTemplateConfig = {
     schemaVersion: 1,
@@ -738,7 +1069,9 @@ export async function parseTemplateSource(args: {
       referenceJpgName: jpgFile.name,
       referenceUrl: sourceAssetUrl(sourceVersionId, 'reference.jpg'),
       baseUrl: sourceAssetUrl(sourceVersionId, 'base.png'),
-      hotUrl: parsedHot ? sourceAssetUrl(sourceVersionId, 'hot.png') : undefined,
+      hotUrl: parsedHot
+        ? sourceAssetUrl(sourceVersionId, 'hot.png')
+        : undefined,
       dynamicBounds,
       availableLengths,
       sourceVersionId,
@@ -753,7 +1086,10 @@ export async function parseTemplateSource(args: {
     parseSummary: {
       layerCount: flat.length,
       parsedColorCount: cards.length,
-      parsedSpecCount: cards.reduce((sum, card) => sum + card.lengths.length, 0),
+      parsedSpecCount: cards.reduce(
+        (sum, card) => sum + card.lengths.length,
+        0,
+      ),
       sectionCount: detectedSections.length,
       documentWidth: psd.width,
       documentHeight: psd.height,
