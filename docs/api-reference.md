@@ -1092,6 +1092,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/outbound-records?keyword=&date_from=&date_to=&page=&page_size=` | 正式出库单与方舟待出库记录的统一分页列表，含出库状态、缺货详情、检验状态与照片数；按业务员归属过滤（见下） |
+| DELETE | `/outbound-records/{record_id}` | 删除小满待出库单；需 `shipping_inspection:delete` 且满足出库单数据范围。使用镜像记录 ID 定位真实 outbound_invoice_id；小满确认不存在后返回 `{outbound_record_id, deleted:true}`。锁定、已出库、自动任务执行中、关联同步中或结果待核对返回409；无权限403、不可见404。 |
 | GET | `/outbound-records/{record_id}/print-data` | 出库单打印数据：单头+明细+`qr_code_base64`（二维码内容 `ARK-I:{record_id}:{hmac8}`）；同样按归属过滤，不可见返回 404 |
 | GET | `/outbound-records/{record_id}/word` | 下载可编辑 DOCX，保持当前 A4 版式、列宽、二维码及灰色斑马纹；数据范围同 print-data；二进制响应 |
 | GET | `/records?keyword=&date_from=&date_to=&page=&page_size=` | 已提交验货单分页列表（按提交时间过滤） |
@@ -1424,3 +1425,11 @@ Agent research context now includes `fact_contract.version=registered_research_f
 ### 小程序验货上传重试（2026-09-20）
 
 照片与视频上传表单新增可选 `request_id`（1～64 字符）。新版小程序对同一文件的重试复用编号、文件、明细和编辑版本；服务端以 `mini:{user_id}` 范围、单据行锁及既有事件唯一键防重复。相同参数和内容摘要返回已有媒体，不新增事件或文件；同编号用于不同内容返回 400。历史小程序不传编号仍按单次上传处理。重放已删除的文件返回 400，提示刷新。上线顺序：先部署后端，再上传发布小程序，避免新版重试请求遇到旧后端时重复入库。
+
+### 出库删除（2026-09-20）
+
+方舟不写业务镜像。按小满出库 ID 调用 `/v1/invoices/outbound/remove`（POST，query 参数 `outbound_invoice_id`），只接受明确成功/精确不存在证据并回读验证。提交前在现有 `ark_shipping_operation_events` 持久记录删除意图（scope=`outbound-delete`，request_id=小满出库ID，唯一）；状态为 delete_pending/delete_uncertain/delete_failed/outbound_deleted，保留修改前快照、操作者及任务状态。
+
+删除待确认时不隐藏单据、不自动重发，用户再次点击只核对结果。明确锁定/鉴权拒绝可保留失败回执后重新尝试；已完成删除幂等返回。相关自动任务在订单锁下暂停；成功后维持 skipped/deleted，避免镜像删除后旧任务重新显示或重建。异常持久意图和暂停状态留待核对，不自动解锁。
+
+完成回执在方舟查询层屏蔽过期镜像（含分页总数、打印与新扫码），无需等待同步；镜像行、订单发票、验货单及媒体不删除。已存在的验货资料仍走原归属鉴权读取；小满外部删除造成镜像头消失后的历史归属问题沿用现有规则。此版本无新表或迁移，需已有153迁移及启动权限 seed；删除权限单独在角色管理授权，更新令牌后生效。外部仓库在GET与POST之间改变状态的最终拒绝由小满控制，接口无已确认的版本条件写能力。

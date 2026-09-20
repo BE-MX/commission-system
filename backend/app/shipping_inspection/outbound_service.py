@@ -235,10 +235,19 @@ def _record_select(rm: dict[str, str | None]) -> str:
     )
 
 
+def deleted_clause(rm):
+    """Local deletion receipts suppress stale mirror rows without writing lsordertest."""
+    if not rm.get('invoice_id'):
+        return '1=1'
+    return ("NOT EXISTS (SELECT 1 FROM ark_shipping_operation_events deletion "
+            "WHERE deletion.scope='outbound-delete' AND deletion.action='outbound_deleted' "
+            f"AND deletion.request_id=CAST(r.`{rm['invoice_id']}` AS CHAR))")
+
+
 def record_list_filters(db, rm, *, keyword=None, date_from=None, date_to=None, okki_user_id=None):
     """Shared filters for mirror-only reads and the combined outbound queue."""
     params = {}
-    clauses = []
+    clauses = [deleted_clause(rm)]
     if okki_user_id:
         clauses.append(_owner_scope_clause(db, rm))
         params["scope_okki_user_id"] = okki_user_id
@@ -329,16 +338,18 @@ def list_outbound_records(
     return [_map_record_row(row) for row in rows], int(total)
 
 
-def get_outbound_record(db: Session, record_id: str, okki_user_id: str | None = None) -> dict | None:
+def get_outbound_record(db: Session, record_id: str, okki_user_id: str | None = None, *, include_deleted=False) -> dict | None:
     """单条出库单头；不存在（或归属过滤后不可见）返回 None。"""
     if str(record_id).startswith("task:"):
         return None  # Local queue entries never authorize printing, downloading or inspection.
     rm = _record_columns(db)
     schema = _schema()
     scope = ""
+    if not include_deleted:
+        scope += f" AND {deleted_clause(rm)}"
     params: dict[str, object] = {"rid": record_id}
     if okki_user_id:
-        scope = f" AND {_owner_scope_clause(db, rm)}"
+        scope += f" AND {_owner_scope_clause(db, rm)}"
         params["scope_okki_user_id"] = okki_user_id
     row = db.execute(text(f"""
         SELECT {_record_select(rm)}, 0 AS item_count, 0 AS total_qty

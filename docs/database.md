@@ -549,3 +549,7 @@ AI Worker 用 `status + lease_token + lease_expires_at` 领取任务，模型网
 ## 158 订单关联同步
 
 ark_invoices.linked_sync_id：当前关联任务写锁标识，结束后清除。新增ark_invoice_linked_syncs：id、invoice_id（索引/FK）、request_key（唯一）、request_hash、status、before/after/steps（JSON）、run_token、lease_until、created_by、created_at、updated_at。日期统一北京时间。保存与占用订单在同一事务；运行令牌保护中间提交与恢复。降级禁止删除审计记录，使用前向迁移。详见[invoice-linked-sync.md](invoice-linked-sync.md)。
+
+### 出库删除审计复用（2026-09-20，无迁移）
+
+`ark_shipping_operation_events` 复用 `(scope,request_id)` 唯一约束，`scope=outbound-delete`、`request_id=小满outbound_invoice_id`；`outbound_record_id` 保存本地镜像记录 ID，`action` 为 delete_pending/delete_uncertain/delete_failed/outbound_deleted。payload 保存删除前小满快照、关联订单及自动任务原状态，result 保存状态与北京时间核对时间。outbound_deleted 为单调完成标识，用于屏蔽迟到镜像；不直接删除 lsordertest 记录。相关 ark_okki_outbound_tasks 暂停为 skipped/delete_pending:<id>，成功改为 skipped/deleted:<id>；明确失败恢复原状态，不确定状态不自动恢复。

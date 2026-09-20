@@ -63,7 +63,7 @@
         <el-table-column label="照片数" min-width="80" align="right">
           <template #default="{ row }">{{ row.record_source === 'ark_task' ? '—' : row.photo_count }}</template>
         </el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="285" fixed="right">
           <template #default="{ row }">
             <GlassButton
               v-if="row.can_print" variant="link" left-icon="Printer"
@@ -73,6 +73,10 @@
             <GlassButton v-if="row.can_print" variant="link" left-icon="Download"
               :loading="downloadingId === row.outbound_record_id" @click="downloadWord(row)">下载 Word</GlassButton>
             <span v-if="!row.can_print" class="queue-note">{{ outboundPendingHint(row.outbound_state) }}</span>
+            <GlassButton v-if="row.record_source === 'okki' && row.outbound_invoice_id"
+              v-permission="'shipping_inspection:delete'" variant="link" link-tone="danger" left-icon="Delete"
+              :loading="deletingId === row.outbound_record_id" :disabled="deletingId !== null"
+              @click="deleteRecord(row)">删除</GlassButton>
           </template>
         </el-table-column>
       </el-table>
@@ -97,7 +101,7 @@ import { OUTBOUND_STATE_LABELS, OUTBOUND_STATE_TAGS, outboundPendingHint } from 
 const {
   loading, list, total, page, pageSize, searchForm,
   handleSearch, handlePageChange, handleSizeChange,
-  printingId, openPrint, downloadingId, downloadWord,
+  printingId, openPrint, downloadingId, downloadWord, deletingId, deleteRecord,
 } = useOutboundRecords()
 </script>
 

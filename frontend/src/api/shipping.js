@@ -10,6 +10,10 @@ export function listOutboundRecords(params) {
   return shippingClient.get('/outbound-records', { params })
 }
 
+export function deleteOutboundRecord(id) {
+  return shippingClient.delete(`/outbound-records/${encodeURIComponent(id)}`)
+}
+
 export function getOutboundPrintData(id) {
   return shippingClient.get(`/outbound-records/${id}/print-data`)
 }
