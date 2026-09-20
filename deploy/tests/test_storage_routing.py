@@ -231,3 +231,17 @@ def test_attachment_upload_budget_covers_business_limit(path,minimum):
     assert '127.0.0.1:8001' in snippet('cloud')
     assert not any(re.fullmatch(pattern,'/api/receipts') for pattern,_ in LIMITS)
     assert not any(re.fullmatch(pattern,'/api/customer-media/batches/2/assets/unrelated') for pattern,_ in LIMITS)
+
+@pytest.mark.parametrize('local_body,cloud_header,passes', [(b'same','cos',True),(b'changed','cos',False),(b'same',None,False)])
+def test_office_durable_asset_requires_identical_cloud_bytes(monkeypatch,local_body,cloud_header,passes):
+    class Response(io.BytesIO):
+        status=200
+        def __init__(self,data,header):
+            super().__init__(data);self.headers={} if header is None else {'X-Ark-Storage':header}
+    monkeypatch.setattr(routing,'probe_urls',lambda probes,region:['https://leshine.work/uploads/assets/probe.jpg'])
+    opener=Mock()
+    opener.open.side_effect=[Response(b'',None),Response(b'same',cloud_header),Response(local_body,None)]
+    monkeypatch.setattr(routing.urllib.request,'build_opener',lambda *args:opener)
+    if passes: routing.healthy(PROBES,'office')
+    else:
+        with pytest.raises(RuntimeError): routing.healthy(PROBES,'office')

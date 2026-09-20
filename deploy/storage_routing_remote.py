@@ -8,6 +8,7 @@ import subprocess
 import sys
 import ssl
 import uuid
+import time
 import urllib.request
 import urllib.parse
 
@@ -96,8 +97,29 @@ def healthy(probes, region='cloud'):
     for url in probe_urls(probes, region):
         request = urllib.request.Request(url, method='HEAD')
         with opener.open(request, timeout=30) as response:
-            if response.status != 200 or response.headers.get('X-Ark-Storage') != 'cos':
+            if response.status != 200:
                 raise RuntimeError('COS application is not ready; public routing unchanged')
+            if response.headers.get('X-Ark-Storage') == 'cos':
+                continue
+            # Durable assets intentionally prefer the office original. Require
+            # identical bytes from the cloud-backed Beijing route, not a label
+            # claiming the local response came from COS.
+            if region != 'office' or not urllib.parse.urlsplit(url).path.startswith('/uploads/assets/'):
+                raise RuntimeError('COS application is not ready; public routing unchanged')
+        cloud_url = url.replace('https://leshine.work/', 'https://leshine.cloud/', 1)
+        with opener.open(cloud_url, timeout=30) as cloud, opener.open(url, timeout=30) as local:
+            if cloud.status != 200 or local.status != 200 or cloud.headers.get('X-Ark-Storage') != 'cos':
+                raise RuntimeError('Durable asset cloud readiness failed')
+            def stream_hash(response):
+                value = hashlib.sha256()
+                for block in iter(lambda: response.read(1048576), b''):
+                    value.update(block)
+                return value.digest()
+            cloud_hash = stream_hash(cloud)
+            local_hash = stream_hash(local)
+            if cloud_hash != local_hash:
+                raise RuntimeError('Office asset differs from verified cloud original')
+
 
 
 def syntax_config(snippet, scratch):
@@ -160,7 +182,15 @@ def execute(request):
         path.write_text(candidate)
         run(["nginx", "-t"])
         run(["systemctl", "reload", "nginx"])
-        healthy(request.get("probes"), region)
+        # Reload is asynchronous: old workers may answer the first request.
+        for attempt in range(5):
+            try:
+                healthy(request.get("probes"), region)
+                break
+            except Exception:
+                if attempt == 4:
+                    raise
+                time.sleep(1)
     except Exception:
         path.write_bytes(backup.read_bytes())
         run(["nginx", "-t"])
