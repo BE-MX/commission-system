@@ -60,7 +60,8 @@ def test_real_helper_unwraps_types_fields_and_preserves_rate(monkeypatch, payloa
     fence = []
     result = remote.push(None, payload_row, {"exchange_rate": 725}, lambda: fence.append(True))
     assert result["cash_collection_id"] == 700 and fence == [True]
-    assert calls[0]["amount"] == "123.45" and calls[0]["bank_charge"] == "2.34"
+    assert calls[0]["amount"] == calls[0]["real_amount"] == "121.11"
+    assert all(calls[0][key] == "0" for key in ("bank_charge", "bank_charge_rmb", "bank_charge_usd"))
     assert calls[0]["exchange_rate"] == "725" and calls[0]["collect_status"] == 1
     assert "file_list" not in calls[0] and "exchange_rate_usd" not in calls[0]
 
@@ -285,9 +286,30 @@ def test_order_snapshot_compares_net_order_total(monkeypatch):
         remote.order_snapshot(None, invoice)
 
 
-@pytest.mark.parametrize("fee,net,expected", [("2.34", "121.11", True), ("0", "123.45", False),
+@pytest.mark.parametrize("fee,net,expected", [("0", "121.11", True), ("0", "123.45", False),
     ("2.34", "121.10", False), (None, "121.11", False), ("2.34", None, False)])
 def test_readback_verifies_fee_and_net(payload_row, fee, net, expected):
-    data = dict(order_id="2001", currency="USD", amount="123.45", collection_date="2026-09-17",
+    data = dict(order_id="2001", currency="USD", amount="121.11", collection_date="2026-09-17",
                 bank_charge=fee, real_amount=net)
     assert sync_service.matches(payload_row, data) is expected
+
+
+def test_legacy_gross_candidate_blocks_duplicate_but_cannot_bind(payload_row):
+    data = dict(order_id="2001", currency="USD", amount="123.45", collection_date="2026-09-17",
+                bank_charge="2.34", real_amount="121.11")
+    assert sync_service.candidate_matches(payload_row, data)
+    assert not sync_service.matches(payload_row, data)
+
+
+@pytest.mark.parametrize("fee", ["0", "2.34", "123.45"])
+def test_net_payload_preserves_exact_cents(payload_row, fee):
+    payload_row.bank_charge = Decimal(fee)
+    payload = remote.amount_fields(payload_row)
+    assert Decimal(payload["amount"]) == Decimal("123.45") - Decimal(fee)
+    assert payload["amount"] == payload["real_amount"]
+
+
+def test_net_payload_rejects_excessive_fee(payload_row):
+    payload_row.bank_charge = Decimal("123.46")
+    with pytest.raises(ValueError, match="手续费"):
+        remote.amount_fields(payload_row)

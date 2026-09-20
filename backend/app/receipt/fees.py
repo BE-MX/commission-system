@@ -35,13 +35,15 @@ def allocate(db, invoice, amount, *, exclude_receipt=None):
             raise ValueError("小满回款手续费或实到账金额异常")
         ids[identity] = (value, charge); registered += value; charged += charge
     for row in db.query(Receipt).filter(Receipt.invoice_id == invoice.id, Receipt.status == "active").all():
-        if row.id == exclude_receipt:
-            continue
         if row.sync_status == "uncertain":
             raise ValueError("已有回款结果待核对，暂不能分摊手续费")
         if row.xiaoman_receipt_id in ids:
-            if ids[row.xiaoman_receipt_id] != (row.amount, row.bank_charge):
+            if ids[row.xiaoman_receipt_id] != (remote.net_amount(row), Decimal("0")):
                 raise ValueError("小满已修改关联回款金额或手续费，请先核对原单")
+            registered += row.bank_charge
+            charged += row.bank_charge
+            continue
+        if row.id == exclude_receipt:
             continue
         if row.xiaoman_receipt_id:
             raise ValueError("已有回款结果待核对，暂不能分摊手续费")

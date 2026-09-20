@@ -121,6 +121,35 @@ def test_remote_original_currency_and_id_dedupe(db, order):
     with pytest.raises(ValueError, match="币种"): balance.calculate(db, order, snapshot)
 
 
+@pytest.mark.parametrize("effective", [0, 1])
+def test_net_remote_receipt_keeps_gross_reservation(db, order, effective):
+    order.total_amount = Decimal("367.87"); order.surcharge_amount = Decimal("17.52"); db.commit()
+    row, _ = register(db, order, "367.87")
+    row.bank_charge = Decimal("17.52"); row.xiaoman_receipt_id = "701"
+    row.sync_status = "synced"; db.commit()
+    snapshot = {"rows": [dict(cash_collection_id="701", amount="350.35", currency="USD",
+                              collect_status=effective)]}
+    result = balance.calculate(db, order, snapshot)
+    assert Decimal(result["registered_amount"]) == Decimal("367.87")
+    assert Decimal(result["remaining_amount"]) == 0
+    assert Decimal(result["effective_amount"]) == (Decimal("367.87") if effective else 0)
+    with pytest.raises(ValueError, match="余额"):
+        balance.ensure_available(result, Decimal("0.01"))
+    snapshot["rows"][0]["amount"] = "367.87"
+    with pytest.raises(ValueError, match="金额"):
+        balance.calculate(db, order, snapshot)
+
+
+def test_legacy_uncertain_gross_receipt_cannot_be_confirmed_absent(db, order, monkeypatch):
+    row, _ = register(db, order)
+    row.bank_charge = Decimal("10"); row.sync_status = "uncertain"; db.commit()
+    monkeypatch.setattr(remote, "order_receipts", lambda *a: [dict(cash_collection_id="701",
+        order_id="2001", amount="500", currency="USD", collection_date="2026-09-17")])
+    with pytest.raises(ValueError, match="候选"):
+        sync_service.resolve(db, row, Resolution(resolution="confirm_not_created", reason="人工核验"), 1)
+    assert row.sync_status == "uncertain"
+
+
 def test_ready_intent_reserves_then_transfers_once(db, order):
     draft = ReceiptDraft(**fields(db, "600").model_dump(exclude={"bank_charge"}))
     invoice_link.save_draft(db, order, draft, 1, new=True); db.commit()
@@ -438,9 +467,9 @@ def test_fee_allocation_deduplicates_remote_and_local(db, order, monkeypatch):
     first, _ = register(db, order, "100")
     first.bank_charge = Decimal("4.76")
     first.xiaoman_receipt_id = "701"; first.sync_status = "synced"; db.commit()
-    monkeypatch.setattr(remote, "order_receipts", lambda *a: [dict(cash_collection_id="701", amount="100")])
-    monkeypatch.setattr(remote, "receipt_info", lambda *a: dict(order_id="2001", currency="USD", amount="100",
-                                                              bank_charge="4.76", real_amount="95.24"))
+    monkeypatch.setattr(remote, "order_receipts", lambda *a: [dict(cash_collection_id="701", amount="95.24")])
+    monkeypatch.setattr(remote, "receipt_info", lambda *a: dict(order_id="2001", currency="USD", amount="95.24",
+                                                              bank_charge="0", real_amount="95.24"))
     assert fees.allocate(db, order, Decimal("267.87")) == Decimal("12.76")
     first.sync_status = "uncertain"; db.commit()
     with pytest.raises(ValueError, match="待核对"):

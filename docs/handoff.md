@@ -1,3 +1,9 @@
+## 2026-09-20 回款小满净额口径调整（进行中）
+
+- 分支 `codex/receipt-net-amount`：小满回款 amount/real_amount 为本笔扣费净额，三项 bank_charge 均为 0；本地保留含费金额与分摊手续费，余额和分期去重同步调整。
+- 用户明确：分笔按本笔实际净额，已扣过不再扣；历史只更新原回款，不重复创建。53 张本地单已核查，49 张有远端ID，计划18张远端金额更新、1张仅规范化本地已净额记录、30张符合新口径。其余4张无远端ID单保留核对，2张订单已有人工回款。
+- 193 项相关测试通过，独立代码审查无阻断。约定检查被8项既有前端基线失配阻断，未改动这些文件。尚未部署或执行历史更新：官方接口缺少编辑定位语义，浏览器连接不可用，已关闭执行脚本apply。需补小满可靠更新契约/明确原单编辑入口及生产发布授权。详见[核对报告](reports/2026-09-20-receipt-net-amount.md)，私有操作证据位于主目录 `backend/tmp/receipt-net-amount/`。
+
 ## 2026-09-20 出库列表排序规则冲突（codex/outbound-collation-fix）
 
 - 已只读复现：`lsordertest.okki_outbound_records` 可访问（4519条）；单数 `okki_outbound_record` 不存在。列表失败来自删除回执 `request_id` 的 `utf8mb4_unicode_ci` 与 `CAST(outbound_invoice_id AS CHAR)` 继承的连接 `utf8mb4_0900_ai_ci` 比较，MySQL报1267，被统一提示为数据库连接失败。
