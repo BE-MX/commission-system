@@ -31,6 +31,7 @@ export async function findExisting(order, api, knownIds = []) {
     const detail = await api('/v1/invoices/outbound/info?outbound_invoice_id=' + id);
     if (!Array.isArray(detail.record_list)) throw new Error('Outbound detail missing record_list');
     if (detail.record_list.some(r => String(r.order_id) === String(order.order_id))) {
+      assertSingleOrder(detail, order);
       return {outbound_invoice_id: id, serial_id: detail.serial_id};
     }
   }
@@ -54,6 +55,7 @@ export async function findExisting(order, api, knownIds = []) {
       const detail = await api('/v1/invoices/outbound/info?outbound_invoice_id=' + id);
       if (!Array.isArray(detail.record_list)) throw new Error('Outbound detail missing record_list');
       if (detail.record_list.some(r => String(r.order_id) === String(order.order_id))) {
+        assertSingleOrder(detail, order);
         return { outbound_invoice_id: row.outbound_invoice_id, serial_id: row.serial_id };
       }
     }
@@ -61,6 +63,39 @@ export async function findExisting(order, api, knownIds = []) {
     if (seen.size >= Number(data.count)) return null;
   }
   throw new Error('Outbound scan limit exceeded; no creation attempted');
+}
+
+// OKKI push upserts by serial_id even when outbound_invoice_id is omitted.
+// Probe the global serial namespace, including documents older than this order.
+function assertSingleOrder(detail, order) {
+  if (!Array.isArray(detail.record_list) || !detail.record_list.length ||
+      detail.record_list.some(r => String(r.order_id) !== String(order.order_id))) {
+    throw Object.assign(new Error('Outbound contains unrelated order lines; manual reconciliation required'), {uncertain: true});
+  }
+}
+
+export async function selectSerial(order, invoiceNo, api) {
+  for (const serial of [invoiceNo, `${invoiceNo} [${order.order_id}]`]) {
+    const detail = await api('/v1/invoices/outbound/info?' + new URLSearchParams({serial_id: serial}));
+    if (detail === null) return {serial};
+    if (!detail?.outbound_invoice_id || detail.serial_id !== serial || !Array.isArray(detail.record_list)) throw new Error('Invalid serial lookup response');
+    if (detail.record_list.some(r => String(r.order_id) === String(order.order_id))) {
+      assertSingleOrder(detail, order);
+      return {existing: {outbound_invoice_id: detail.outbound_invoice_id, serial_id: serial}};
+    }
+  }
+  throw new Error('Outbound serial collision; no submission attempted');
+}
+
+export function verifyCreated(detail, result, payload) {
+  if (String(detail.outbound_invoice_id) !== String(result.outbound_invoice_id) ||
+      detail.serial_id !== payload.serial_id || Number(detail.status) !== 1 ||
+      String(detail.company_info?.id) !== String(payload.company_id)) throw new Error('Created outbound identity/customer/status differs');
+  const signature = row => JSON.stringify([String(row.order_id), String(row.order_record_id),
+    String(row.product_id), String(row.sku_id), Number(row.outbound_count), Number(row.sale_price)]);
+  const actual = (detail.record_list || []).map(signature).sort();
+  const expected = payload.record_list.map(signature).sort();
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error('Created outbound items differ from requested order');
 }
 
 // Inventory is checked against the exact destination warehouse, not order enable_count.
@@ -97,6 +132,25 @@ function nextSubmissionIntent(baseIntent, orderId) {
   return {intent, retry};
 }
 
+async function recoverExisting(existing, order, {api, directory, invoiceNo, invoiceRemark}) {
+  const intent = path.join(directory, 'logs', 'ark-outbound-intents', String(order.order_id) + '.json');
+  // A previously submitted document cannot bypass strict verification on recovery.
+  // Manual partial outbounds without our intent continue to prevent duplicate creation.
+  if (fs.existsSync(intent)) {
+    try {
+      const detail = await api('/v1/invoices/outbound/info?outbound_invoice_id=' + existing.outbound_invoice_id);
+      let latest = intent;
+      for (let retry = 1; fs.existsSync(intent + '.retry-' + retry); retry++) latest = intent + '.retry-' + retry;
+      const saved = JSON.parse(fs.readFileSync(latest, 'utf8'));
+      if (saved.order_id !== String(order.order_id)) throw new Error('Submission intent order mismatch');
+      const expected = saved.payload || {...buildPayload(order, invoiceNo, invoiceRemark), serial_id: existing.serial_id};
+      verifyCreated(detail, existing, expected);
+      if ((detail.remark ?? '') !== expected.remark) throw new Error('Recovered outbound remark differs');
+    } catch (error) { error.uncertain = true; throw error; }
+  }
+  return {outcome: 'existing', order_id: String(order.order_id), ...existing};
+}
+
 export async function createOne(orderId, options) {
   try { return await createOneAttempt(orderId, options); }
   catch (error) {
@@ -120,13 +174,16 @@ async function createOneAttempt(orderId, {api, directory, invoiceNo, invoiceRema
   const order = await api('/v1/invoices/order/info?order_id=' + orderId);
   if (String(order.order_id) !== orderId) throw new Error('Order ID mismatch');
   const existing = await findExisting(order, api, knownIds);
-  if (existing) return { outcome: 'existing', order_id: orderId, ...existing };
+  if (existing) return recoverExisting(existing, order, {api, directory, invoiceNo, invoiceRemark});
   const ledger = path.join(directory, 'logs', 'created-outbound.jsonl');
   if (fs.existsSync(ledger)) {
     const records = fs.readFileSync(ledger, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
     if (records.some(r => String(r.order_id) === orderId)) throw Object.assign(new Error('Local ledger exists but no live association; manual review required'), {uncertain: true});
   }
   const payload = buildPayload(order, invoiceNo, invoiceRemark);
+  const selection = await selectSerial(order, invoiceNo, api);
+  if (selection.existing) return recoverExisting(selection.existing, order, {api, directory, invoiceNo, invoiceRemark});
+  payload.serial_id = selection.serial;
   const intents = path.join(directory, 'logs', 'ark-outbound-intents');
   const baseIntent = path.join(intents, orderId + '.json');
   const {intent, retry} = nextSubmissionIntent(baseIntent, orderId);
@@ -144,15 +201,16 @@ async function createOneAttempt(orderId, {api, directory, invoiceNo, invoiceRema
   let fd;
   try { fd = fs.openSync(intent, 'wx', 0o600); }
   catch (error) { if (error.code === 'EEXIST') error.uncertain = true; throw error; }
-  try { fs.writeFileSync(fd, JSON.stringify({order_id: orderId, started_at: now()})); fs.fsyncSync(fd); }
+  try { fs.writeFileSync(fd, JSON.stringify({order_id: orderId, started_at: now(), payload})); fs.fsyncSync(fd); }
   finally { fs.closeSync(fd); }
   // Once intent is durable, every ambiguous failure is quarantined, never retried.
   try {
     const result = await api('/v1/invoices/outbound/push', payload);
     if (!result.outbound_invoice_id || !result.serial_id) throw new Error('Creation response missing outbound ID/number');
-    if (result.serial_id !== invoiceNo) throw new Error('Created outbound number differs from Ark invoice');
+    if (result.serial_id !== payload.serial_id) throw new Error('Created outbound number differs from Ark invoice');
     const detail = await api('/v1/invoices/outbound/info?outbound_invoice_id=' + result.outbound_invoice_id);
     if (!Array.isArray(detail.record_list) || !detail.record_list.some(r => String(r.order_id) === orderId)) throw new Error('Created outbound association not verified');
+    verifyCreated(detail, result, payload);
     if ((detail.remark ?? '') !== payload.remark) throw new Error('Created outbound remark differs from Ark invoice');
     const row = {order_id: orderId, outbound_invoice_id: result.outbound_invoice_id, serial_id: result.serial_id, at: now()};
     fs.appendFileSync(ledger, JSON.stringify(row) + '\n', {mode: 0o600});
@@ -161,7 +219,7 @@ async function createOneAttempt(orderId, {api, directory, invoiceNo, invoiceRema
     if (error.stockRejected === true) {
       // Preserve rejection evidence. A crash during this write fails closed on next read.
       const fd = fs.openSync(intent, 'w', 0o600);
-      try { fs.writeFileSync(fd, JSON.stringify({order_id: orderId, outcome: 'stock_rejected', rejected_at: now(), error: error.message})); fs.fsyncSync(fd); }
+      try { fs.writeFileSync(fd, JSON.stringify({order_id: orderId, outcome: 'stock_rejected', rejected_at: now(), error: error.message, payload})); fs.fsyncSync(fd); }
       finally { fs.closeSync(fd); }
       return {outcome: 'waiting_stock', order_id: orderId, reason: error.message};
     }
@@ -182,6 +240,8 @@ export async function requestOkki(auth, base, route, payload, fetchImpl = fetch)
         continue;
       }
       const data = await response.json();
+      if (!payload && route.startsWith('/v1/invoices/outbound/info?serial_id=') &&
+          response.status === 200 && data.code === 404 && data.message === 'Not Found Resource' && !data.data) return null;
       if (!response.ok || data.code !== 200 || !data.data) {
         const message = typeof data.message === 'string' ? data.message.trim() : '';
         const error = new Error('OKKI ' + route.split('?')[0] + ' HTTP=' + response.status + ' code=' + data.code + ' ' + message.slice(0, 500));
