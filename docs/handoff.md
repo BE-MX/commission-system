@@ -1602,3 +1602,12 @@ Mac 同事的英文网页中私聊按钮标识为 `Profile details`，原选择�
 - `check_conventions.py` 被既有 UI 基线阻断：AssetLibrary、TagDimensionManage、DesignManage、KnowledgeWorkbench、KnowledgeEditor、ProductionOrderManage、AIManager 共 7 个文件的 lines_over_500 基线过期，本次未修改这些文件。单独调用 `check('HEAD')` 检查增量规则无违规，完整约定命令仍按失败记录；`git diff --check` 通过。Git 巡检为 `--no-fetch` 本地快照。
 
 - 合并前已整合主线 `6b75d267` 的待出库列表改动，隔离后端回归 113 项、前端 20 项及生产构建通过；无代码冲突。完整约定检查仍为上述 7 项既有基线错误，按该主线基点检查本次增量无违规。
+
+
+## 2026-09-20 发布中断排查（色块健康检查）
+
+- 故障候选 `d021ece8b5fbe261fe95cb6f48ef87def85fedfc`，迁移160已完成，办公室健康；北京仍停在旧代码 `fea48d6c`，后端与色块服务均停止。
+- 根因：旧 `remote_backend.activate_locked` 在后端恢复前启动色块；COS readiness 需要北京后端8001，连续503使发布中断。
+- 本地修复：北京后端健康后才启动色块；色块失败不再触发已成功后端回滚。原生产恢复日志和备份保留。
+- 用户明确授权后，已通过统一入口专项恢复同一候选 d021ece8，未重复DDL；两端后端、色块健康，五个writer恢复原running基线，静态发布完成。publish-current=succeeded、schema-writers=completed；原始日志与备份保留。
+- 验证：相关23项测试通过；部署全套290通过/11跳过/1既有失败（storage routing mock耗尽，在main复现）；约定检查仍有8项既有UI基线过期。独立审查通过。

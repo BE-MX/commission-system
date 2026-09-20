@@ -143,11 +143,9 @@ def activate_locked(revision):
     source = STATE / "checkouts" / revision
     python = Path(info["environment"]) / "bin/python" if info["environment"] else ROOT / "backend/.venv/bin/python"
     schema_check(source, python)
-    if info.get("colorwork"):
-        run([str(python), str(source / "deploy/colorwork_release.py"), "activate",
-             "--root", str(ROOT), "--source", str(source)])
     if not info["changed"] and not info.get("schema_changed"):
         healthy()
+        activate_colorwork(info, source, python)
         return {"status": "unchanged", "schema": info["schema"]}
     run(["sudo", "-n", "systemctl", "stop", SERVICE])
     venv = ROOT / "backend/.venv"
@@ -179,7 +177,6 @@ def activate_locked(revision):
                 time.sleep(2)
         info["status"] = "updated"
         (STATE / "backend-success.json").write_text(json.dumps(info))
-        return {"status": "updated", "revision": revision, "schema": info["schema"]}
     except Exception:
         run(["sudo", "-n", "systemctl", "stop", SERVICE])
         if info.get("schema_changed"):
@@ -190,6 +187,17 @@ def activate_locked(revision):
             venv.symlink_to(info["previous_environment"], target_is_directory=True)
         run(["sudo", "-n", "systemctl", "start", SERVICE])
         raise
+    # COS readiness calls the backend storage bridge. Only activate this dependent
+    # service once the target backend is healthy; a colorwork failure must not
+    # roll back or stop the successfully activated backend.
+    activate_colorwork(info, source, python)
+    return {"status": "updated", "revision": revision, "schema": info["schema"]}
+
+
+def activate_colorwork(info, source, python):
+    if info.get("colorwork"):
+        run([str(python), str(source / "deploy/colorwork_release.py"), "activate",
+             "--root", str(ROOT), "--source", str(source)])
 
 
 def main():
