@@ -170,7 +170,7 @@ flowchart TD
 | [回款字段](https://open.xiaoman.cn/api-3478276) | 获取租户必填、自定义字段，不照抄示例字段 ID |
 | [回款方式](https://open.xiaoman.cn/api-3485302) | 获取可用回款方式，内部付款方式需明确映射，不直接传内部中文标签 |
 
-推送映射：关联订单→`order_id`；金额/币种→`amount/currency`；日期→`collection_date`；方式→`type`；银行扣费→`bank_charge`；备注→`comment`；财务状态→`collect_status`；方舟编号作为 `cash_collection_no` 的候选关联标识。字段格式、金额小数、汇率单位及编号唯一性需要联调，不将订单接口经验直接套入回款接口。
+推送映射：关联订单→`order_id`；本笔扣费后金额→`amount/real_amount`、币种→`currency`；日期→`collection_date`；方式→`type`；`bank_charge/bank_charge_rmb/bank_charge_usd` 均为 0（2026-09-20 调整，本地仍保留原始金额和费用）；备注→`comment`；财务状态→`collect_status`；方舟编号作为 `cash_collection_no` 的候选关联标识。字段格式、金额小数、汇率单位及编号唯一性需要联调，不将订单接口经验直接套入回款接口。
 
 公开文档的金额类型与列表小数示例、汇率默认和必填描述存在需验证之处。实施前需在经授权的测试租户验证两位小数、USD/CNY 换算、返回净额与原额、付款方式映射及企业自定义必填；测试失败不得静默取整或猜汇率。该 API 域名含 sandbox，但项目客户端注明实际用于生产，不能因域名将其当成隔离测试环境。
 

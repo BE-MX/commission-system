@@ -664,6 +664,11 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 
 ## 内贸订单（`/api/domestic`，081～140 相关迁移，2026-07-27 至 2026-09-07）
 
+- 2026-09-20：业务单仅在商品成交价偏离系统默认会员价时进入价格审核，正常会员优惠直接生效。详情明细新增 `default_discount_price`（不含手工费）、`default_line_amount`、`price_changed`；`unit_price` 和 `line_amount` 含手工费。`current_expected_quotes.discount_price` 不含手工费。
+- 订单类型新增 `sample=样单`，普货样单允许 `manual_discount_price=0`；普通订单人工商品价仍必须大于 0。零价样单在草稿设置/追加并提交审核，禁止在制订单直接新增或改为零价；已有零价样单不能直接改成普通类型。
+- 订单列表整单逐件码打印沿用明细 `unit-qrcodes` API，以每批最多 200 件按明细序号获取全部标签；失败不提供部分打印。充值仍按单笔金额重新核定等级，覆盖人工指定等级，申请及审批界面明确提示。
+
+
 - 2026-09-07 下单与列表：业务 `POST /orders` 的 `order_no` 选填，省略/null/空白均规范化为空串，系统 `domestic_no` 始终自动生成；`PUT /orders/{id}` 可显式传空/null清空客户订单号，省略则保留原值。渠道字典改为 `recharge=充值扣账`、`cash=现金结账`，新建页按客户 `settle_mode` 默认选择并允许调整，标签不改变结算逻辑。历史转换工具 `backend/scripts/domestic_order_channel_cutover.py` 按 prepay→recharge、credit→cash 更新业务单，先预览再持独占备份和指纹执行；旧字典停用，生产单保持无渠道。
 - 订单客户查询（2026-09-11）：`GET /orders` 接受 `customer_name`（可选，最多 200 字符），去除首尾空格后按客户当前店名做包含匹配，`%` / `_` 按普通字符处理；空白不筛选。与订单号 `keyword`、状态、客户 ID、日期和分类条件取交集，分页前生效，创建人数据范围保持不变；无客户的生产单不会匹配“公司备货”展示文案。主站常用查询保留订单号、客户名称、订单状态；下单日期、订单类别/类型/渠道和客户来源移入高级查询弹框，应用后显示可移除标签，取消不改变条件，重置保留当前订单大类页签。
 - `GET /orders` 新增 `customer_source` 精确筛选（分页前生效，不扩大创建人数据范围），返回客户当前档案的 `customer_source/customer_source_label`。未填写显示“未填写”，未关联客户的生产单显示“—”；`GET /options` 的 `customer_sources` 复用启用的 `domestic_customer_source` 字典。主站客户来源列紧跟客户/用途列，切换到生产订单时清除该筛选。
@@ -1401,9 +1406,11 @@ Agent research context now includes `fact_contract.version=registered_research_f
 - 出库单 `print-data` 的 `record` 新增 `customer_grade`、`order_amount_text`；Word 使用同一服务。等级取方舟客户资料当前值；金额按出库明细精确关联订单、按订单 ID 去重，优先已同步发票的含手续费总额与原币种，否则取订单镜像 `amount_usd`（USD）。未同步修改不覆盖已确认订单金额；多个币种分别列示，不换汇相加；缺少客户或任一订单关联/金额时显示 `—`，不展示部分合计。原有出库归属权限和客户名称脱敏不变。
 
 
-### 回款手续费口径（2026-09-18）
+### 回款手续费口径（2026-09-20）
 
-小满订单金额以方舟 `total_amount - surcharge_amount` 核对；回款 `amount` 为含手续费原币金额、`bank_charge` 为分摊手续费，详情回读必须满足 `real_amount = amount - bank_charge`。不向未确认可写的 `real_amount` 字段赋值，使用小满计算结果核验。
+小满净额回款按远端 ID 与本地记录去重，关联成功后用本地手续费还原含费占额，避免虚假欠款或重复登记尾款。分摊累计也保留本地手续费；未知结果核对同时查旧含费金额与新净额候选，旧口径候选阻止重复创建但不能直接绑定为新口径成功。
+
+小满订单金额以方舟 `total_amount - surcharge_amount` 核对。方舟回款仍保留含费原币 `amount` 和分摊手续费 `bank_charge`；小满推送 `amount = real_amount = 本笔方舟 amount - bank_charge`，`bank_charge/bank_charge_rmb/bank_charge_usd` 一律传 0。小满派生折算字段以详情回读核验：原币金额与实到账金额均须等于本笔净额，手续费须为 0。分笔回款只推本笔净额，不扩为整张订单金额；已确认按净额登记的历史单须逐笔核对并留审计，禁止再次扣费。
 
 自动回款按 `本次金额 × 订单手续费 / 含费订单总额` 四舍五入至两位；最后一笔用订单手续费减去已分摊手续费吸收舍入差额。已登记未发送/失败单继续占用金额及手续费，作废单不占用；同一远端ID不重复统计。手工手续费默认0，留空/null/空串均为0，显式手续费（包括0）保留，若已分摊费用超过订单手续费或剩余费用超过尾款金额，停止自动分摊并提示核对。已有远端记录只读取当前订单详情，不重扫全库。
 

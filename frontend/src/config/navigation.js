@@ -57,6 +57,7 @@ export const MENU_GROUPS = {
     icon: Document,
     anyPermission: [
       'invoice:read', 'invoice:write', 'invoice:sync',
+      'shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin',
       'invoice_price:read', 'invoice_okki:read', 'invoice_repair:read',
       FESTIVAL_PERMISSION, FESTIVAL_ORDER_PERMISSION,
       ORDER_INTELLIGENCE_PERMISSION,
@@ -400,9 +401,9 @@ export const NAV_ENTRIES = [
     path: '/invoice/receipts',
     name: 'ReceiptManage',
     component: () => import('@/views/receipt/ReceiptManage.vue'),
-    title: '回款单',
+    title: '回款单管理',
     anyPermission: ['receipt:read', 'receipt:write', 'receipt:admin'],
-    menu: { group: 'invoice', title: '回款单', icon: Document, order: 15,
+    menu: { group: 'invoice', title: '回款单管理', icon: Document, order: 15,
       anyPermission: ['receipt:read', 'receipt:write', 'receipt:admin'] },
   },
   {
@@ -932,7 +933,7 @@ export const NAV_ENTRIES = [
     title: '出库单打印',
     anyPermission: ['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin'],
     menu: {
-      group: 'shipping', title: '出库单打印', icon: Printer, order: 10,
+      group: 'invoice', title: '出库单打印', icon: Printer, order: 11,
       anyPermission: ['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin'],
     },
   },
@@ -943,7 +944,7 @@ export const NAV_ENTRIES = [
     title: '验货单列表',
     anyPermission: ['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin'],
     menu: {
-      group: 'shipping', title: '验货单列表', icon: List, order: 20,
+      group: 'invoice', title: '验货单列表', icon: List, order: 12,
       anyPermission: ['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin'],
     },
   },

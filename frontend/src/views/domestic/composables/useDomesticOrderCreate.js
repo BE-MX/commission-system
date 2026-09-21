@@ -241,11 +241,11 @@ export function useDomesticOrderCreate(orderKind = 'business') {
   }
 
   // 手工改价：null/等于系统报价都视为未改；改动不影响报价有效性，
-  // 但金额必须大于 0 且不高于原价（服务端建单时还会再校验一次）
+  // 样单允许 0，其他订单必须大于 0，均不得高于原价（服务端再次校验）
   function onManualPrice(item, value) {
     const system = Number(item.quote?.discount_price || 0)
     const manual = Number(value)
-    if (!value || !(manual > 0) || manual === system) {
+    if (value == null || value === '' || !Number.isFinite(manual) || manual < 0 || (manual === 0 && form.order_type !== 'sample') || manual === system) {
       item.manualDiscountPrice = null
       return
     }
@@ -448,7 +448,7 @@ export function useDomesticOrderCreate(orderKind = 'business') {
       if (!res) return
       const data = res.data || {}
       if (data.status === 5) {
-        ElMessage.success(`订单已提交，待审核：${data.domestic_no}（优惠价低于原始价，审核通过后才正式生效）`)
+        ElMessage.success(`订单已提交，待审核：${data.domestic_no}（成交价与系统默认价不一致，审核通过后才正式生效）`)
       } else {
         ElMessage.success(`${isDraft ? '草稿已保存' : '下单成功'}：${data.domestic_no}`)
       }

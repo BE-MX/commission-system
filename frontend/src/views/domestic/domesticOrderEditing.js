@@ -48,10 +48,10 @@ export function itemEditDelta(item, form) {
     - Math.round(Number(item.unit_price) * 100) * Number(item.order_qty)) / 100
 }
 
-export function itemPriceError(item, patch) {
+export function itemPriceError(item, patch, orderType) {
   if (!Object.hasOwn(patch, 'unit_price')) return ''
   const goodsPrice = Math.round(Number(patch.unit_price) * 100) - Math.round(Number(item.labor_fee || 0) * 100)
-  if (!Number.isFinite(goodsPrice) || goodsPrice <= 0) return '成交单价必须高于手工费'
+  if (!Number.isFinite(goodsPrice) || goodsPrice < 0 || (goodsPrice === 0 && orderType !== 'sample')) return '成交单价必须高于手工费'
   if (goodsPrice > Math.round(Number(item.original_price || 0) * 100)) return '优惠后商品单价不能高于原价'
   return ''
 }

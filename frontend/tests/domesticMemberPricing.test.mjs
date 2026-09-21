@@ -117,7 +117,7 @@ test('草稿提交 body 直接回传 item_id 报价快照', () => {
     id: 12, original_price: '1198.00', base_price_version: 2, unit_price: '998.00',
     membership_level_snapshot: 'black', pricing_rule: 'member_fixed', pricing_version: '2026-09-01',
   }] }, () => 'fallback-request'), {
-    request_id: 'fallback-request', expected_quotes: [{ item_id: 12, client_key: null, ...expected }],
+    request_id: 'fallback-request', expected_quotes: [{ item_id: 12, client_key: null, ...expected, discount_price: 998 }],
   })
 })
 

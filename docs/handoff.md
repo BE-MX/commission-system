@@ -1,4 +1,24 @@
+## 2026-09-20 订单管理导航调整（已授权合并推送，未发布）
+
+- `codex/order-shipping-navigation`：出库单打印、验货单列表移到订单管理，紧接订单发票管理，排在回款单管理前；回款导航及页签名称统一为「回款单管理」；订单管理分组补充发货检验权限，保证仅有该权限的用户仍能看到入口。
+- 菜单实际配置顺序与分组权限核验通过；前端构建成功，8项导航测试通过。约定检查仍为8项既有前端基线失配，Git巡检已执行。
+
+## 2026-09-20 回款小满净额口径调整（已发布并核验）
+
+- 生产办公室与北京版本 `fea48d6c22937f3064a40546292ea4e03927d2b9`，统一deploy入口发布，schema159不变；两域health 200/database connected。
+- 小满amount/real_amount按本笔扣费净额，三项bank_charge均0；本地保留含费金额及分摊费用，余额与分期去重已调整。193项相关测试通过，独立审查完成。
+- 18张小满原单按原cash_collection_id更新，1张仅规范化本地已净额登记；共19条审计。最终49张关联单全为净额/零手续费且余额0，目标订单52条远端ID集合未增加。4张无关联ID单保留核对（2张已有人工回款，2张没有远端原单），未重复创建。
+- 用户已授权合并推送，本次集成到 `main` 并同步 `origin/main`。约定检查仍被8项既有前端基线失配阻断，本次未改这些文件。详见[核对报告](reports/2026-09-20-receipt-net-amount.md)，私有证据在主目录 `backend/tmp/receipt-net-amount/`。
+
 ## 2026-09-20 出库列表排序规则冲突（codex/outbound-collation-fix）
+
+## 2026-09-20 内贸订单优化（Codex，待生产发布）
+
+- 分支 `codex/domestic-order-improvements`，独立工作目录 `commission-system-codex-domestic-order-improvements`。
+- 会员问题只读核实：客户 550 黑卡调整于 9/17 17:25:15 通过，2,994 元充值于 17:25:36 通过后重核为非会员。用户确认保留规则，只加强充值及审核提示。
+- DO20260919-002 商品原价 1198、系统至尊会员价 960，旧规则误进审核；查询时已生产中。本次修复审核判定、金额详情高亮、整单逐件码打印、样单零价及草稿手工费保存。
+- 新增迁移 160（默认价快照 + 样单字典）。用户已授权合并推送；未执行生产迁移或数据修复。验证与限制见 `docs/reports/2026-09-20-domestic-order-improvements.md`。
+
 
 - 已只读复现：`lsordertest.okki_outbound_records` 可访问（4519条）；单数 `okki_outbound_record` 不存在。列表失败来自删除回执 `request_id` 的 `utf8mb4_unicode_ci` 与 `CAST(outbound_invoice_id AS CHAR)` 继承的连接 `utf8mb4_0900_ai_ci` 比较，MySQL报1267，被统一提示为数据库连接失败。
 - 修复删除过滤在MySQL上的字符串比较，显式指定 `utf8mb4_unicode_ci`；列表和详情共用，保留字符串精确ID比较，不改表、不改数据、无迁移。
@@ -1582,3 +1602,12 @@ Mac 同事的英文网页中私聊按钮标识为 `Profile details`，原选择�
 - `check_conventions.py` 被既有 UI 基线阻断：AssetLibrary、TagDimensionManage、DesignManage、KnowledgeWorkbench、KnowledgeEditor、ProductionOrderManage、AIManager 共 7 个文件的 lines_over_500 基线过期，本次未修改这些文件。单独调用 `check('HEAD')` 检查增量规则无违规，完整约定命令仍按失败记录；`git diff --check` 通过。Git 巡检为 `--no-fetch` 本地快照。
 
 - 合并前已整合主线 `6b75d267` 的待出库列表改动，隔离后端回归 113 项、前端 20 项及生产构建通过；无代码冲突。完整约定检查仍为上述 7 项既有基线错误，按该主线基点检查本次增量无违规。
+
+
+## 2026-09-20 发布中断排查（色块健康检查）
+
+- 故障候选 `d021ece8b5fbe261fe95cb6f48ef87def85fedfc`，迁移160已完成，办公室健康；北京仍停在旧代码 `fea48d6c`，后端与色块服务均停止。
+- 根因：旧 `remote_backend.activate_locked` 在后端恢复前启动色块；COS readiness 需要北京后端8001，连续503使发布中断。
+- 本地修复：北京后端健康后才启动色块；色块失败不再触发已成功后端回滚。原生产恢复日志和备份保留。
+- 用户明确授权后，已通过统一入口专项恢复同一候选 d021ece8，未重复DDL；两端后端、色块健康，五个writer恢复原running基线，静态发布完成。publish-current=succeeded、schema-writers=completed；原始日志与备份保留。
+- 验证：相关23项测试通过；部署全套290通过/11跳过/1既有失败（storage routing mock耗尽，在main复现）；约定检查仍有8项既有UI基线过期。独立审查通过。

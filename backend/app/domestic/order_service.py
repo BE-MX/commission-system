@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from app.auth.models import ArkUser
 from app.domestic import constants as C
+from app.domestic import price_review
 from app.domestic import (
     attribute_service,
     balance_service,
@@ -196,6 +197,7 @@ def _lock_and_validate_saved_item_quotes(
     customer: DomesticCustomer,
     items: list[DomesticOrderItem],
     expected_quotes: list,
+    allow_zero_manual: bool = False,
 ) -> list[pricing_service.LockedOrderQuote]:
     expected_by_id = {quote.item_id: quote for quote in expected_quotes}
     product_ids = {item.product_id for item in items}
@@ -215,6 +217,7 @@ def _lock_and_validate_saved_item_quotes(
                 item_id=item.id,
                 client_key=None,
                 expected_quote=expected_by_id[item.id],
+                default_discount_price=item.default_discount_price,
             ),
             product,
         ))
@@ -223,6 +226,7 @@ def _lock_and_validate_saved_item_quotes(
         customer_id=customer.id,
         item_products=item_products,
         locked_customer=customer,
+        allow_zero_manual=allow_zero_manual,
     )
     return quotes
 
@@ -233,7 +237,8 @@ def _apply_saved_item_quotes(
 ) -> None:
     for item, quote in zip(items, quotes):
         item.original_price = quote.discount.original_price
-        item.unit_price = quote.discount.final_price
+        item.unit_price = quote.discount.final_price + balance_service.money(item.labor_fee)
+        item.default_discount_price = quote.default_price
         item.discount_amount = quote.discount.discount_amount
         item.membership_level_snapshot = quote.membership_level
         item.pricing_rule = quote.discount.pricing_rule
@@ -341,6 +346,7 @@ def _build_item(
         order_qty=payload.order_qty,
         original_price=0 if production else quote.discount.original_price,
         unit_price=unit_price,
+        default_discount_price=0 if production else quote.default_price,
         discount_amount=0 if production else quote.discount.discount_amount,
         labor_fee=labor_fee,
         membership_level_snapshot=None if production else quote.membership_level,
@@ -502,6 +508,7 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
                 db,
                 customer_id=customer.id,
                 item_products=prepared,
+                allow_zero_manual=payload.order_type == "sample",
             )
 
         # Check the discounted total before the order-number savepoint. The definitive
@@ -523,7 +530,7 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
                 f"本次需扣 ¥{estimated_total:.2f}"
             )
 
-        # 优惠价低于原始价（会员价/手工改价）的业务正式单先落待审核：
+        # 实际优惠价偏离系统默认会员价的业务正式单先落待审核：
         # 不扣款、不能报工、不能改明细，审核通过才转生产中并结算。
         # 带销售价的特单直录（discount 恒 0）不触发；存量回填特单走报价路径时仍按优惠判定。
         requires_review = (
@@ -531,7 +538,7 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
             and not payload.is_draft
             and any(
                 quote is not None
-                and balance_service.money(quote.discount.discount_amount) > 0
+                and quote.discount.final_price != quote.default_price
                 for quote in quotes
             )
         )
@@ -1110,6 +1117,7 @@ def get_order_detail(
             "pricing_version": item.pricing_version,
             "base_price_version": item.base_price_version_snapshot,
             "line_amount": float(balance_service.money(item.unit_price) * item.order_qty),
+            **price_review.item_price_view(item),
             "status": item.status,
             "status_label": C.ITEM_STATUS_LABELS.get(item.status, str(item.status)),
             "current_process": (
@@ -1173,7 +1181,7 @@ def get_order_detail(
             "item_id": item.id,
             "original_price": float(item.original_price),
             "base_price_version": item.base_price_version_snapshot,
-            "discount_price": float(item.unit_price),
+            "discount_price": float(balance_service.money(item.unit_price) - balance_service.money(item.labor_fee)),
             "membership_level": item.membership_level_snapshot,
             "pricing_rule": item.pricing_rule,
             "pricing_version": item.pricing_version,
@@ -1313,6 +1321,7 @@ def update_order(
                 customer=customer,
                 items=items,
                 expected_quotes=payload.expected_quotes,
+                allow_zero_manual=data.get("order_type", order.order_type) == "sample",
             )
         else:
             if order.status == C.ORDER_TERMINATED:
@@ -1321,6 +1330,14 @@ def update_order(
                 raise ValueError("订单待审核/已驳回，审核通过前不能编辑")
             items = None
             quotes = None
+
+        if order.order_type == "sample" and data.get("order_type", "sample") != "sample":
+            free_item = db.query(DomesticOrderItem.id).filter(
+                DomesticOrderItem.order_id == order.id,
+                DomesticOrderItem.unit_price <= DomesticOrderItem.labor_fee,
+            ).first()
+            if free_item:
+                raise ValueError("请先将零价样单明细调整为正价，再修改订单类型")
 
         attribute_service.validate_order_dimensions(
             db,
@@ -1454,7 +1471,10 @@ def add_item(
                 db,
                 customer_id=customer.id,
                 item_products=prepared,
+                allow_zero_manual=order.order_type == "sample",
             )
+        if not production and order.status != C.ORDER_DRAFT and quotes[0].discount.final_price == 0:
+            raise ValueError("零价样单明细必须在草稿中添加并提交审核")
         product = prepared[0][1]
 
         line_no = order.next_line_no or 1
@@ -1582,13 +1602,14 @@ def update_item(
         price = balance_service.money(new_price)
         original = balance_service.money(item.original_price)
         labor_fee = balance_service.money(item.labor_fee)
-        if price <= 0:
-            raise ValueError("优惠价必须大于 0")
-        if price <= labor_fee:
+        if price < labor_fee or (price == labor_fee and order.order_type != "sample"):
             raise ValueError("成交单价必须高于手工费，优惠后商品单价必须大于 0")
         if price > original + labor_fee:
             raise ValueError(f"优惠价不能高于原价 ¥{original:.2f}（成交单价上限含手工费 ¥{original + labor_fee:.2f}）")
+        if price == labor_fee and price != balance_service.money(item.unit_price) and order.status != C.ORDER_DRAFT:
+            raise ValueError("零价样单明细必须在草稿中设置并提交审核")
         if price != balance_service.money(item.unit_price):
+            item.default_discount_price = price_review.default_price(item)
             item.unit_price = price
             item.discount_amount = balance_service.money(original - (price - labor_fee))
             item.pricing_rule = "manual_override"
@@ -1763,6 +1784,7 @@ def submit_draft(
                 customer=customer,
                 items=items,
                 expected_quotes=payload.expected_quotes,
+                allow_zero_manual=order.order_type == "sample",
             )
             total = balance_service.money(sum(
                 (balance_service.money(quote.discount.final_price) + balance_service.money(item.labor_fee))
@@ -1776,11 +1798,11 @@ def submit_draft(
                     f"本次需扣 ¥{total:.2f}"
                 )
             _apply_saved_item_quotes(items, quotes)
-        # 优惠价低于原始价的提交先落待审核（不扣款），审核通过才转生产中
+        # 偏离系统默认价的提交先落待审核（不扣款），审核通过才转生产中
         requires_review = (
             not production
             and any(
-                balance_service.money(item.discount_amount or 0) > 0
+                price_review.item_price_changed(item)
                 for item in items
             )
         )

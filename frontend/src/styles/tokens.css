@@ -5,6 +5,7 @@
    =================================================== */
 
 :root {
+  --domestic-price-review-bg: #f4ff5c;
   --font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
   /* Shared GlassButton semantic states. */
   --button-primary-hover-from: #c4891a;

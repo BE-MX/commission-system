@@ -56,7 +56,7 @@
         <div class="order-edit-grid">
           <el-form-item label="数量" required><el-input-number v-model="itemDialog.form.order_qty" :min="1" :max="2000" :precision="0" /></el-form-item>
           <el-form-item v-if="!production" label="成交单价（含手工费）" required>
-            <el-input-number v-if="Number(itemDialog.item.original_price) > 0" v-model="itemDialog.form.unit_price" :min="Number(itemDialog.item.labor_fee || 0) + 0.01"
+            <el-input-number v-if="Number(itemDialog.item.original_price) > 0" v-model="itemDialog.form.unit_price" :min="Number(itemDialog.item.labor_fee || 0) + (detail.order_type === 'sample' ? 0 : 0.01)"
               :max="Number(itemDialog.item.original_price || 0) + Number(itemDialog.item.labor_fee || 0)" :precision="2" :controls="false" />
             <el-input v-else :model-value="Number(itemDialog.item.unit_price || 0).toFixed(2)" disabled />
             <span v-if="!Number(itemDialog.item.original_price)" class="order-edit-hint">历史明细尚无原价，完成报价后才能改价。</span>
@@ -243,7 +243,7 @@ async function saveItem() {
     const attrError = validateItemAttributes({ ...patch.attrs }, detail.value.order_kind)
     if (attrError) return ElMessage.warning(attrError)
   }
-  const priceError = itemPriceError(item, patch)
+  const priceError = itemPriceError(item, patch, detail.value.order_type)
   if (priceError) return ElMessage.warning(priceError)
   if (!Object.keys(patch).length) return
   itemDialog.saving = true

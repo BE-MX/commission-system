@@ -22,9 +22,9 @@
           <el-input-number v-model="rangeStart" :min="1" :max="rangeEnd" size="small" controls-position="right" />
           <span>至</span>
           <el-input-number v-model="rangeEnd" :min="rangeStart" :max="Math.min(unitTotal, rangeStart + 199)" size="small" controls-position="right" />
-          <GlassButton variant="ghost" size="small" :disabled="loading" @click="loadUnitLabels">更新预览</GlassButton>
+          <GlassButton variant="ghost" size="small" :disabled="loading" @click="loadUnitLabels()">更新预览</GlassButton>
         </div>
-        <div v-else-if="isLabel" class="copies">
+        <div v-else-if="mode === 'wxacode'" class="copies">
           <span class="copies-label">份数</span>
           <el-input-number v-model="copies" :min="1" :max="50" size="small" />
         </div>
@@ -50,14 +50,16 @@
  */
 import { computed, ref, watch } from 'vue'
 import { Loading } from '@element-plus/icons-vue'
-import { fetchImageDataUrl, getItemUnitQrcodes, getItemWxacode, getPrintCard } from '@/api/domestic'
+import { fetchImageDataUrl, getOrder, getItemUnitQrcodes, getItemWxacode, getPrintCard } from '@/api/domestic'
 import GlassButton from '@/components/GlassButton.vue'
+import { loadOrderUnitLabels } from './orderUnitLabels'
 import logoUrl from '@/assets/domestic-logo.png'
 import { buildCardDoc, buildUnitLabelDoc, buildWxacodeLabelDoc } from './printDocs'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
   mode: { type: String, default: 'card' },   // card=流转卡 / label=二维码标签 / wxacode=进度码标签
+  orderId: { type: [Number, String], default: null },
   itemId: { type: [Number, String], default: null },   // 三种模式都是明细级
 })
 const emit = defineEmits(['update:visible'])
@@ -74,6 +76,7 @@ const frameRef = ref(null)
 const isLabel = computed(() => props.mode !== 'card')
 const title = computed(() => ({
   label: '二维码标签（30×20mm）',
+  'order-label': '批量打印逐件码（按产品顺序 · 30×20mm）',
   wxacode: '进度码标签（30×20mm）',
 }[props.mode] || '工艺流转卡'))
 
@@ -87,7 +90,7 @@ const docHtml = computed(() => {
       copies: copies.value,
     })
   }
-  return props.mode === 'label'
+  return ['label', 'order-label'].includes(props.mode)
     ? buildUnitLabelDoc({ data: card.value })
     : buildCardDoc({ card: card.value, imageMap: imageMap.value })
 })
@@ -109,35 +112,54 @@ async function loadReferenceImages(item) {
   return Object.fromEntries(entries.filter(([, url]) => url))
 }
 
+let generation = 0
 async function load() {
+  const current = ++generation
   loading.value = true
   loadError.value = ''
   card.value = null
   imageMap.value = {}
   copies.value = 1
   try {
-    if (props.mode === 'wxacode') {
+    if (props.mode === 'order-label') {
+      const order = (await getOrder(props.orderId)).data
+      const isCurrent = () => props.visible && current === generation
+      const data = await loadOrderUnitLabels(order, getItemUnitQrcodes, isCurrent)
+      if (!data || !isCurrent()) return
+      const QRCode = (await import('qrcode')).default
+      for (const group of data.groups) {
+        if (!isCurrent()) return
+        group.units = await Promise.all(group.units.map(async unit => ({
+          ...unit, qr_image: await QRCode.toDataURL(unit.qr_data, { margin: 1, width: 256 }),
+        })))
+      }
+      if (isCurrent()) card.value = data
+    } else if (props.mode === 'wxacode') {
       const res = await getItemWxacode(props.itemId)
+      if (current !== generation) return
       card.value = res.data
     } else if (props.mode === 'label') {
-      await loadUnitLabels()
+      await loadUnitLabels(current)
     } else {
       const res = await getPrintCard(props.itemId)
+      if (current !== generation) return
       card.value = res.data
       if (props.mode === 'card') {
-        imageMap.value = await loadReferenceImages(res.data.item || {})
+        const images = await loadReferenceImages(res.data.item || {})
+        if (current === generation) imageMap.value = images
       }
     }
   } catch {
-    loadError.value = props.mode === 'wxacode'
+    if (current !== generation) return
+    loadError.value = props.mode === 'order-label' ? '整单逐件码生成失败，请关闭后重试；未提供部分打印，避免漏件' : props.mode === 'wxacode'
       ? '进度码没生成出来，原因见右上角报错提示'
       : '这张卡对应的明细已经不存在了（订单可能已被删除）'
   } finally {
-    loading.value = false
+    if (current === generation) loading.value = false
   }
 }
 
-async function loadUnitLabels() {
+async function loadUnitLabels(current = ++generation) {
   loading.value = true
   loadError.value = ''
   try {
@@ -145,6 +167,7 @@ async function loadUnitLabels() {
       start_no: rangeStart.value,
       end_no: rangeEnd.value,
     })
+    if (current !== generation) return
     const data = res.data || {}
     unitTotal.value = data.order_qty || 1
     rangeEnd.value = data.end_no || rangeStart.value
@@ -153,11 +176,12 @@ async function loadUnitLabels() {
       ...unit,
       qr_image: await QRCode.toDataURL(unit.qr_data, { margin: 1, width: 256 }),
     })))
-    card.value = data
+    if (current === generation) card.value = data
   } catch {
+    if (current !== generation) return
     loadError.value = '逐件二维码生成失败，请检查打印范围后重试'
   } finally {
-    loading.value = false
+    if (current === generation) loading.value = false
   }
 }
 
@@ -173,8 +197,9 @@ function close() {
   emit('update:visible', false)
 }
 
-watch(() => [props.visible, props.itemId, props.mode], ([isOpen]) => {
-  if (isOpen && props.itemId) {
+watch(() => [props.visible, props.itemId, props.orderId, props.mode], ([isOpen]) => {
+  generation += 1
+  if (isOpen && (props.itemId || props.orderId)) {
     if (props.mode === 'label') {
       rangeStart.value = 1
       rangeEnd.value = 50
