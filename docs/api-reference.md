@@ -1097,7 +1097,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/outbound-records?keyword=&date_from=&date_to=&page=&page_size=` | 正式出库单与方舟待出库记录的统一分页列表，含出库状态、缺货详情、检验状态与照片数；按业务员归属过滤（见下） |
-| DELETE | `/outbound-records/{record_id}` | 删除小满待出库单；需 `shipping_inspection:delete` 且满足出库单数据范围。使用镜像记录 ID 定位真实 outbound_invoice_id；小满确认不存在后返回 `{outbound_record_id, deleted:true}`。锁定、已出库、自动任务执行中、关联同步中或结果待核对返回409；无权限403、不可见404。 |
+| DELETE | `/outbound-records/{record_id}` | 删除小满待出库单；需 `shipping_inspection:delete` 且满足出库单数据范围。使用镜像记录 ID 定位真实 outbound_invoice_id；明确 Not Found 或两轮完整有效列表均不含原 ID 后返回 `{outbound_record_id, deleted:true}`，即使详情仍显示旧“待出库”。锁定、有效已出库、自动任务执行中、关联同步中或结果待核对返回409；无权限403、不可见404。 |
 | GET | `/outbound-records/{record_id}/print-data` | 出库单打印数据：单头+明细+`qr_code_base64`（二维码内容 `ARK-I:{record_id}:{hmac8}`）；同样按归属过滤，不可见返回 404 |
 | GET | `/outbound-records/{record_id}/word` | 下载可编辑 DOCX，保持当前 A4 版式、列宽、二维码及灰色斑马纹；数据范围同 print-data；二进制响应 |
 | GET | `/records?keyword=&date_from=&date_to=&page=&page_size=` | 已提交验货单分页列表（按提交时间过滤） |

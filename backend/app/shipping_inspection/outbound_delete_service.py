@@ -47,7 +47,9 @@ def _finish(db, event, action, message):
     # Task holds stop deletion from causing a new automatic outbound.
     for saved in (event.payload or {}).get('tasks', []):
         task = db.query(OkkiOutboundTask).filter_by(id=saved['id']).with_for_update().first()
-        if task and task.status == 'skipped' and task.reason == f'delete_pending:{event.request_id}':
+        if task and task.status == 'skipped' and task.reason in (
+            f'delete_pending:{event.request_id}', f'delete_abandoned:{event.request_id}',
+        ):
             if action == FAILED:
                 if saved.get('created'):
                     db.delete(task)
@@ -70,26 +72,42 @@ def _mirror_order_ids(db, invoice_id):
 
 
 def delete_outbound(db, record, user_id):
+    return _delete_outbound(db, record, user_id)
+
+
+def task_version(task):
+    return (task.id, task.status, task.reason, task.attempts, task.updated_at)
+
+
+def sync_absent_outbound(db, record, active_ids, task_versions, retained_orders):
+    """Scheduler-only receipt for a verified complete active-list snapshot. No POST."""
+    if str(record['outbound_invoice_id']) in active_ids:
+        raise OutboundDeleteError('小满出库单仍在有效列表，不能标记删除')
+    return _delete_outbound(db, record, 0, missing=True, task_versions=task_versions,
+                            retained_orders=retained_orders)
+
+
+def _delete_outbound(db, record, user_id, *, missing=False, task_versions=None, retained_orders=()):
     invoice_id = str(record.get('outbound_invoice_id') or '')
     if not invoice_id.isdigit() or int(invoice_id) <= 0:
         raise OutboundDeleteError('该记录尚未生成有效的小满出库单，不能删除')
     # Refreshing credentials is done before reserving an irreversible operation.
-    event = db.query(ShippingOperationEvent).filter_by(scope=SCOPE, request_id=invoice_id).with_for_update().first()
-    if event and event.action == "delete_abandoned":
-        raise OutboundDeleteError("原删除已人工终止，请在小满处理后重新核对，禁止重发原请求")
+    event = db.query(ShippingOperationEvent).filter_by(scope=SCOPE, request_id=invoice_id).populate_existing().with_for_update().first()
     if event and event.action == DELETED:
         return {'outbound_record_id': record['outbound_record_id'], 'deleted': True}
-    token = ensure_access_token(db)
-    if event and event.action in (PENDING, UNCERTAIN):
+    token = None if missing else ensure_access_token(db)
+    if event and event.action in (PENDING, UNCERTAIN, 'delete_abandoned'):
         try:
-            current = remote.read(token, invoice_id)
+            current = None if missing else remote.read(token, invoice_id)
         except remote.DeleteRemoteError as exc:
             raise OutboundDeleteError('删除结果待核对，请稍后重新核对；不会重复发送删除') from exc
         if current is None:
             return _finish(db, event, DELETED, '已核实小满出库单不存在')
+        if event.action == 'delete_abandoned':
+            raise OutboundDeleteError('原删除已人工终止，请在小满处理后重新核对，禁止重发原请求')
         raise OutboundDeleteError('删除正在处理或结果待核对；小满单据仍存在，未重复发送删除')
 
-    current = remote.read(token, invoice_id)
+    current = None if missing else remote.read(token, invoice_id)
     if current is not None:
         if str(current.get('company_info', {}).get('id')) != str(record.get('company_id')):
             raise OutboundDeleteError('小满客户归属已变化，请刷新后核对')
@@ -100,12 +118,17 @@ def delete_outbound(db, record, user_id):
     order_ids = sorted({str(row['order_id']) for row in (current or {}).get('record_list', []) if row.get('order_id')})
     if current is None:
         order_ids = sorted(_mirror_order_ids(db, invoice_id))
+    # A replacement/partial live outbound still owns its existing task. Preserve
+    # it when retiring an old mirror row for the same order.
+    order_ids = [identity for identity in order_ids if identity not in retained_orders]
     # Match the poller's invoice -> task locking order, so a claimed writer wins
     # before our hold or observes skipped after our durable intent commits.
-    invoices = db.query(Invoice).filter(Invoice.xiaoman_order_id.in_(order_ids)).order_by(Invoice.id).with_for_update().all()
+    invoices = db.query(Invoice).filter(Invoice.xiaoman_order_id.in_(order_ids)).order_by(Invoice.id).populate_existing().with_for_update().all()
     if any(inv.linked_sync_id for inv in invoices):
         raise OutboundDeleteError('关联订单正在同步，请处理完成后再删除')
-    tasks = db.query(OkkiOutboundTask).filter(OkkiOutboundTask.order_id.in_(order_ids)).order_by(OkkiOutboundTask.id).with_for_update().all()
+    tasks = db.query(OkkiOutboundTask).filter(OkkiOutboundTask.order_id.in_(order_ids)).order_by(OkkiOutboundTask.id).populate_existing().with_for_update().all()
+    if task_versions is not None and any(task_versions.get(t.id) != task_version(t) for t in tasks):
+        raise OutboundDeleteError('出库任务在核对期间变化，下轮重新核对')
     if any(task.status in ('running', 'uncertain') for task in tasks):
         raise OutboundDeleteError('关联自动出库任务正在执行或结果待核对，暂不能删除')
     if any((task.reason or '').startswith('delete_pending:') for task in tasks):
@@ -132,7 +155,9 @@ def delete_outbound(db, record, user_id):
                 'order_ids': order_ids, 'tasks': saved_tasks, 'before': current}
     if event is None:
         event = audit_service.record(db, PENDING, user_id, record['outbound_record_id'],
-            context={'scope': SCOPE, 'source': 'pc'}, request_id=invoice_id, payload=snapshot)
+            context={'scope': SCOPE, 'source': 'scheduler' if missing else 'pc'}, request_id=invoice_id, payload=snapshot)
+        if missing:
+            event.operator_name = event.login_name = '系统同步'
     else:
         snapshot['previous_attempts'] = [*(event.payload or {}).get('previous_attempts', []),
             {'operator_user_id': event.operator_user_id, 'operator_name': event.operator_name,
@@ -141,6 +166,9 @@ def delete_outbound(db, record, user_id):
         actor = db.get(ArkUser, user_id)
         event.operator_user_id = event.login_user_id = user_id
         event.operator_name = event.login_name = actor.real_name if actor else str(user_id)
+        if missing:
+            event.source = 'scheduler'
+            event.operator_name = event.login_name = '系统同步'
     event.result = {'status': PENDING, 'started_at': str(beijing_now())}
     for task in tasks:
         task.status, task.reason = 'skipped', f'delete_pending:{invoice_id}'

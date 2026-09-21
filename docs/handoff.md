@@ -1,3 +1,10 @@
+## 2026-09-21 小满已删除出库单同步（Codex，待发布）
+
+- 分支 `codex/outbound-delete-reconcile`，独立目录 `commission-system-codex-outbound-delete-reconcile`。修复小满详情仍返回旧 `status=1` 时方舟误判删除未完成：两轮完整有效列表均无原 ID 后登记删除回执，异常/分页不完整/列表变化不判删除。
+- 新增每15分钟单活 Scheduler 对账，覆盖直接在小满删除及历史待核对回执。保留镜像、验货及审计资料，阻止已删除订单任务自动重新生成。未进入镜像的替代单补读关联；任务版本快照和行锁保护同秒并发更新。
+- 隔离 SQLite + 模拟 HTTP 验证158项通过；独立审查发现的替代单镜像延迟与秒精度问题已修复并复审通过。`git diff --check` 和增量约定函数检查通过；完整 `check_conventions.py` 被9项已有前端行数基线失配阻断。Scheduler 测试结束时出现既有后台 job-run 持久化 OperationalError 日志（无生产配置，未连生产）；业务回归均通过。
+- 用户已授权合并推送，已拉取并核对远端 main；本次不部署，也不运行生产删除对账。无新迁移。Git 巡检仅作报告，不清理其他任务。规则与运行机制见 [invoice-lifecycle.md](invoice-lifecycle.md#小满出库删除同步2026-09-21)。
+
 ## 2026-09-21 生命周期合并远端更新
 
 - 整合 origin/main 3b2ee9c4 的内贸、净额回款和部署修复；未发布的本任务迁移改为161，串接160_domestic_price_review，避免multiple heads。

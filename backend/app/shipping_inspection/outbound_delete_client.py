@@ -53,7 +53,18 @@ def _request(token, invoice_id, *, remove=False):
 
 
 def read(token, invoice_id):
-    return _request(token, invoice_id)
+    from app.shipping_inspection import outbound_presence
+    detail = _request(token, invoice_id)
+    if detail is None:
+        return None
+    # OKKI can return status=1 from a soft-deleted detail. The active list is
+    # authoritative; never interpret a failed/incomplete list as absence.
+    try:
+        start = outbound_presence.creation_floor(detail.get('create_time'))
+        active = outbound_presence.is_active(token, str(invoice_id), start)
+    except outbound_presence.PresenceError as exc:
+        raise DeleteRemoteError(str(exc)) from exc
+    return detail if active else None
 
 
 def remove(token, invoice_id):

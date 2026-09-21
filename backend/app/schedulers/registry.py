@@ -65,6 +65,7 @@ JOB_DINGTALK_GMV_DAILY = "dingtalk_gmv_daily"
 JOB_WHATSAPP_TRANSLATION_PAIRING_CLEANUP = "whatsapp_translation_pairing_cleanup"
 JOB_DOMESTIC_PUBLIC_SEA_DAILY = "domestic_public_sea_daily"
 JOB_OKKI_OUTBOUND_RECONCILE = "okki_outbound_reconcile"
+JOB_OKKI_OUTBOUND_DELETE_RECONCILE = "okki_outbound_delete_reconcile"
 
 
 def _console_safe(value: object, encoding: str | None = None) -> str:
@@ -375,6 +376,19 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         coalesce=True,
         misfire_grace_time=3600,
     )
+
+    def _okki_outbound_delete_reconcile_job():
+        from app.shipping_inspection.outbound_reconcile_service import reconcile_deleted_outbounds
+        with SessionLocal() as db:
+            reconcile_deleted_outbounds(db)
+
+    # Deletion sync is independent of the automatic-creation switch.
+    if settings.OKKI_CLIENT_ID and settings.OKKI_CLIENT_SECRET:
+        scheduler.add_job(
+            _okki_outbound_delete_reconcile_job,
+            trigger="interval", minutes=15, id=JOB_OKKI_OUTBOUND_DELETE_RECONCILE,
+            replace_existing=True, max_instances=1, coalesce=True, misfire_grace_time=300,
+        )
 
     # ── OKKI 出库单自动生成：对账补入队 ─────────────────────
     # 同步钩子是主路径，本 job 只补「首推成功但任务行缺失」的缝隙（入队异常等）
