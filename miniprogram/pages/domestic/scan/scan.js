@@ -167,12 +167,16 @@ Page({
   },
 
   _loadUnit: function (unitId, sign) {
-    this._loadScan('/api/mini/domestic/unit-scan/' + unitId + '?sign=' + sign, sign)
+    this._loadScan('/api/mini/domestic/unit-scan/' + unitId + '?sign=' + sign, sign, unitId)
   },
 
-  _loadScan: function (path, unitSign) {
+  _loadScan: function (path, unitSign, unitId) {
     var self = this
-    this.setData({ loading: true })
+    this._errorUnit = null
+    this._scanUnit = null
+    var batch = this._scanBatch = (this._scanBatch || 0) + 1
+    this._imageBatch += 1
+    this.setData({ loading: true, submitting: false, state: 'idle', scanned: null, nextStep: null, images: [], errorVisible: false })
     this._syncTabBar()
     wx.request({
       url: app.globalData.baseUrl + path,
@@ -180,6 +184,7 @@ Page({
       header: this._header(),
       timeout: 30000,
       success: function (res) {
+        if (batch !== self._scanBatch) return
         self.setData({ loading: false })
         self._syncTabBar()
         if (res.statusCode === 401) { app.logout(); return }
@@ -190,9 +195,12 @@ Page({
         }
         var data = res.data || {}
         data.unit_sign = unitSign || ''
+        var target = unitId && (data.unit_id === unitId || data.scanned_unit_id === unitId)
+          ? { id: unitId, sign: unitSign } : null
+        self._scanUnit = target
         if (!data.can_submit) {
           self._error('暂时不能报工',
-            data.block_message || BLOCK_MESSAGES[data.block_reason] || '请联系跟单')
+            data.block_message || BLOCK_MESSAGES[data.block_reason] || '请联系跟单', target)
           return
         }
         self._requestId = ''
@@ -201,6 +209,7 @@ Page({
         self._loadImages(data)
       },
       fail: function () {
+        if (batch !== self._scanBatch) return
         self.setData({ loading: false })
         self._syncTabBar()
         self._error('网络异常', '请检查网络后重试')
@@ -251,6 +260,8 @@ Page({
 
   onConfirmSubmit: function (e) {
     var self = this
+    var batch = this._scanBatch
+    var target = this._scanUnit
     var qty = e.detail.qty
     var outcomes = e.detail.outcomes || null
     // 幂等键在同一次确认里复用：弱网下"已提交但响应丢了"时再点一次不会报两次
@@ -275,12 +286,13 @@ Page({
       timeout: 30000,
       data: submitData,
       success: function (res) {
+        if (batch !== self._scanBatch) return
         self.setData({ submitting: false })
         self._syncTabBar()
         if (res.statusCode === 401) { app.logout(); return }
         if (res.statusCode >= 400) {
           var detail = (res.data && res.data.detail) || {}
-          self._error('报工失败', detail.message || '请重试')
+          self._error('报工失败', detail.message || '请重试', res.statusCode === 422 ? target : null)
           return
         }
         var data = res.data || {}
@@ -299,6 +311,7 @@ Page({
         setTimeout(function () { self.setData({ successVisible: false }); self._syncTabBar() }, 2200)
       },
       fail: function () {
+        if (batch !== self._scanBatch) return
         self.setData({ submitting: false })
         self._syncTabBar()
         self._error('网络异常', '请检查网络后重试')
@@ -406,7 +419,8 @@ Page({
   onAllRecordsTap: function () { wx.navigateTo({ url: '/pages/domestic/orders/orders' }) },
   onSwitchModuleTap: function () { wx.reLaunch({ url: '/pages/entry/entry' }) },
 
-  _error: function (title, message) {
+  _error: function (title, message, unit) {
+    this._errorUnit = unit || null
     this.setData({ errorVisible: true, errorTitle: title, errorMessage: message })
     this._syncTabBar()
   },
@@ -414,6 +428,18 @@ Page({
   // catch 需要真实存在的方法名，catchtap="" 挡不住冒泡（点弹层内容会误关）
   noop: function () {},
 
-  onErrorTap: function () { this.setData({ errorVisible: false }); this._syncTabBar() },
+  onErrorTap: function () {
+    var target = this._errorUnit
+    this._errorUnit = null
+    this.setData({ errorVisible: false })
+    if (target) {
+      this.onCancelConfirm()
+      wx.navigateTo({
+        url: '/pages/domestic/unit-history/unit-history?unitId=' + target.id + '&sign=' + encodeURIComponent(target.sign),
+        fail: function () { wx.showToast({ title: '记录页打开失败，请重新扫码', icon: 'none' }) }
+      })
+    }
+    this._syncTabBar()
+  },
   onSuccessTap: function () { this.setData({ successVisible: false }); this._syncTabBar() }
 })

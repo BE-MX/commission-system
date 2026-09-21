@@ -1458,3 +1458,10 @@ Agent research context now includes `fact_contract.version=registered_research_f
 - `POST /api/shipping-inspection/outbound-records/{id}/delete-recovery`：shipping_inspection:admin + 原出库归属；confirmed=true 和至少10字 reason，租约结束后核实原删除，禁止重放。
 
 业务处理规则见 [单据生命周期](invoice-lifecycle.md)。
+
+
+### 小程序逐件码工序记录（2026-09-21）
+
+`GET /api/mini/domestic/unit-history/{unit_id}?sign=...`：沿用小程序内贸报工的实时权限与逐件码HMAC验签，返回该单件的 `unit_code`、`domestic_no`、`active` 和按工序排序的 `steps`。每道工序返回当前状态及仅属于本件的报工/跳过流水（操作人、北京时间、撤销标记与撤销时间）；未报工与已撤销记录区分展示。不返回价格或客户资料，不创建单件、不更新生产进度。无权限403、签名错误400、记录不存在404。
+
+小程序内贸扫码遇到已识别单件的业务阻断（包括全部完成），关闭提示后打开 `pages/domestic/unit-history/unit-history`。提交报工返回422时也支持查看该件记录；网络错误、签名无效和普通整条流转卡不自动跳转。
