@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     SCHEDULER_ENABLED: bool = True
     SCHEDULER_TIMEZONE: str = "Asia/Shanghai"
     ANNOUNCEMENT_WORKER_ENABLED: bool = True
+    DOMESTIC_REVIEW_NOTICE_BASE_URL: str = "https://leshine.work"
     ANNOUNCEMENT_PUBLIC_BASE_URL: str = "https://leshine.work"
 
     # ── 智能获客公海背调批次 ─────────────────────────────

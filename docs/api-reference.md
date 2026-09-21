@@ -1440,3 +1440,11 @@ Agent research context now includes `fact_contract.version=registered_research_f
 删除待确认时不隐藏单据、不自动重发，用户再次点击只核对结果。明确锁定/鉴权拒绝可保留失败回执后重新尝试；已完成删除幂等返回。相关自动任务在订单锁下暂停；成功后维持 skipped/deleted，避免镜像删除后旧任务重新显示或重建。异常持久意图和暂停状态留待核对，不自动解锁。
 
 完成回执在方舟查询层屏蔽过期镜像（含分页总数、打印与新扫码），无需等待同步；镜像行、订单发票、验货单及媒体不删除。已存在的验货资料仍走原归属鉴权读取；小满外部删除造成镜像头消失后的历史归属问题沿用现有规则。此版本无新表或迁移，需已有153迁移及启动权限 seed；删除权限单独在角色管理授权，更新令牌后生效。外部仓库在GET与POST之间改变状态的最终拒绝由小满控制，接口无已确认的版本条件写能力。
+
+
+### 充值调整审核提醒（2026-09-21）
+
+- `GET /api/domestic/customer-requests/pending-count`：返回 `data.count`，统计 pending 申请。权限与审核列表一致：`domestic:review`/`domestic:admin`/super_admin 查看全部，只有 `domestic:recharge` 的用户仅统计本人申请。不受列表分页和临时搜索条件影响。
+- 充值和调整提交成功后，按当前角色权限寻找有效且绑定钉钉的审核账号，发送工作通知并链接 `/domestic/customer-requests`。普通审核者提交自己的申请不会收到自审提醒；管理员可审核本人申请。幂等重放不重复通知，发送失败记录日志，不撤销已保存申请。
+- 通知地址配置 `DOMESTIC_REVIEW_NOTICE_BASE_URL`，默认 `https://leshine.work`。
+- 导航数字为0时隐藏；提交/审核操作成功后即时刷新，页面可见时每30秒刷新，并在窗口重新激活时刷新。

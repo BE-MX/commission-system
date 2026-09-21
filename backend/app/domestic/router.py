@@ -34,6 +34,7 @@ from app.domestic import (
     progress_service,
     report_service,
     request_service,
+    request_notification_service,
     route_rule_service,
     unit_service,
 )
@@ -412,6 +413,7 @@ async def recharge_customer(
     except Exception:
         db.rollback()
         raise
+    await request_notification_service.notify_submitted(db, data)
     return ok(
         data,
         message=(
@@ -420,6 +422,16 @@ async def recharge_customer(
             else "充值申请已提交，审核通过后生效"
         ),
     )
+
+
+@router.get("/customer-requests/pending-count", summary="当前用户可见的待审核充值/调整申请数量")
+def customer_request_pending_count(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_any_permission("domestic:review", "domestic:admin", "domestic:recharge")),
+):
+    return ok({"count": request_service.pending_request_count(
+        db, viewer_user_id=_uid(current_user), can_review_all=_can_review(current_user),
+    )})
 
 
 @router.get("/customer-requests", summary="充值/调整申请列表（审核员看全部，申请人看自己）")
@@ -536,7 +548,7 @@ def initialize_customer(
 
 
 @router.post("/customers/{customer_id}/adjust", summary="调整申请（审核通过后生效）")
-def adjust_customer(
+async def adjust_customer(
     customer_id: int,
     payload: CustomerAdjust,
     db: Session = Depends(get_db),
@@ -554,6 +566,7 @@ def adjust_customer(
     except Exception:
         db.rollback()
         raise
+    await request_notification_service.notify_submitted(db, data)
     return ok(
         data,
         message=(
