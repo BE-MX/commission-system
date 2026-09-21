@@ -62,7 +62,7 @@ export function useInvoiceManagePage() {
         xiaomanOrderId = result.value.trim()
       }
       const reasonResult = await ElMessageBox.prompt(
-        resolution === 'bind_order' ? '请填写绑定依据' : '请填写确认 OKKI 未生成订单的依据',
+        resolution === 'confirm_existing' ? '请填写至少10字原订单核对依据；系统将核验数量、价格和金额' : resolution === 'bind_order' ? '请填写绑定依据' : '请填写确认 OKKI 未生成订单的依据',
         '人工核对原因',
         { inputPattern: /\S{2,}/, inputErrorMessage: '请至少填写 2 个非空字符' },
       )
@@ -126,7 +126,7 @@ export function useInvoiceManagePage() {
   const formatDateTime = formatInvoiceDateTime
   const money = value => Number(value || 0).toFixed(2)
   const money4 = value => Number(value || 0).toFixed(4)
-  const statusText = status => ({ draft: '草稿', ready: '可同步', synced: '已同步', sync_failed: '同步失败', sync_uncertain: '同步结果待核对' })[status] || status
+  const statusText = status => ({ cancel_pending: '取消处理中', cancelled: '已取消', draft: '草稿', ready: '可同步', synced: '已同步', sync_failed: '同步失败', sync_uncertain: '同步结果待核对' })[status] || status
   const statusType = status => ({ draft: 'info', ready: 'success', synced: 'success', sync_failed: 'danger', sync_uncertain: 'warning' })[status] || 'info'
   const syncText = status => ({ not_synced: '未同步', synced: '已同步', sync_failed: '失败', sync_uncertain: '待核对' })[status] || status
   const syncType = status => ({ not_synced: 'info', synced: 'success', sync_failed: 'danger', sync_uncertain: 'warning' })[status] || 'info'

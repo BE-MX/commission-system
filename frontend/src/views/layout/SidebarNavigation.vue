@@ -70,7 +70,12 @@
           </a>
           <el-menu-item v-else :index="item.path">
             <el-icon><component :is="item.icon" /></el-icon>
-            <template #title>{{ item.title }}</template>
+            <template #title>
+              <el-badge v-if="item.badge === 'domesticReviews'" :value="pendingReviews" :max="Number.MAX_SAFE_INTEGER" :hidden="pendingReviews === 0" class="nav-review-badge" :aria-label="`${item.title}，${pendingReviews}笔待审核`">
+                <span>{{ item.title }}</span>
+              </el-badge>
+              <span v-else>{{ item.title }}</span>
+            </template>
           </el-menu-item>
         </template>
       </el-sub-menu>
@@ -88,6 +93,7 @@
 </template>
 
 <script setup>
+import { useDomesticReviewBadge } from './useDomesticReviewBadge'
 import { computed, ref, watch } from 'vue'
 import { Search, TopRight } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
@@ -99,6 +105,7 @@ const props = defineProps({
   collapsed: { type: Boolean, default: false },
 })
 
+const pendingReviews = useDomesticReviewBadge()
 const route = useRoute()
 const authStore = useAuthStore()
 const searchQuery = ref('')
@@ -133,6 +140,7 @@ const accessibleGroups = computed(() => Object.entries(MENU_GROUPS)
         title: entry.menu.title ?? entry.title,
         icon: entry.menu.icon,
         external: entry.external === true,
+        badge: entry.menu.badge,
       }))
     return { key, ...group, items }
   })
@@ -168,6 +176,9 @@ function rememberClosedGroup(key) {
 </script>
 
 <style scoped>
+.nav-review-badge { line-height: 20px; margin-right: 22px; }
+.nav-review-badge :deep(.el-badge__content) { font-variant-numeric: tabular-nums; }
+
 .nav-group-icon { position: relative; overflow: visible; }
 .nav-icon-badge {
   position: absolute;

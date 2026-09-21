@@ -33,6 +33,7 @@
         <el-select v-model="searchForm.status" clearable placeholder="单据状态" class="filter-select">
           <el-option label="有效" value="active" />
           <el-option label="已作废" value="voided" />
+          <el-option label="远端删除已核实" value="remote_deleted" />
         </el-select>
         <el-date-picker v-model="dates" type="daterange" value-format="YYYY-MM-DD" start-placeholder="回款开始日期" end-placeholder="结束日期" class="filter-dates" />
         <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
@@ -50,7 +51,7 @@
         </el-table-column>
         <el-table-column label="同步状态" min-width="120" max-width="170">
           <template #default="{ row }">
-            <el-tag size="small" effect="plain" :type="statusTone(row.sync_status)">{{ row.status === 'voided' ? '已作废' : statusLabel(row.sync_status) }}</el-tag>
+            <el-tag size="small" effect="plain" :type="statusTone(row.sync_status)">{{ row.status === 'remote_deleted' ? '远端删除已核实' : row.status === 'voided' ? '已作废' : statusLabel(row.sync_status) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="invoice_no" label="订单发票" min-width="150" max-width="210" show-overflow-tooltip />
@@ -102,7 +103,7 @@
         <h3>同步记录</h3><el-timeline><el-timeline-item v-for="(log,i) in detail.logs" :key="i" :timestamp="formatBeijingDateTime(log.created_at)">{{ log.message }}</el-timeline-item></el-timeline>
         <el-alert v-if="candidates.length" title="以下仅为候选，管理员需核对真实凭证后绑定。" type="warning" :closable="false" /><p v-for="c in candidates" :key="c.xiaoman_receipt_id">小满 ID {{ c.xiaoman_receipt_id }} · {{ c.xiaoman_receipt_no }} · {{ money(c.amount) }}</p>
       </template>
-      <template #footer><template v-if="detail"><GlassButton v-if="editable" v-permission="'receipt:write'" @click="editCurrent">修正资料</GlassButton><GlassButton v-if="editable" v-permission="'receipt:write'" @click="voidCurrent">作废</GlassButton><GlassButton v-if="detail.sync_status === 'failed' && detail.status === 'active'" v-permission="'receipt:write'" variant="primary" :loading="saving" @click="retry(detail)">重试同步</GlassButton><GlassButton v-if="['synced','uncertain'].includes(detail.sync_status)" v-any-permission="['receipt:write','receipt:admin']" :loading="saving" @click="reconcile">刷新小满结果</GlassButton><template v-if="detail.sync_status === 'uncertain' && !detail.xiaoman_receipt_id"><GlassButton v-permission="'receipt:admin'" @click="resolve('bind_receipt')">绑定已生成回款</GlassButton><GlassButton v-permission="'receipt:admin'" @click="resolve('confirm_not_created')">确认未创建</GlassButton></template></template></template>
+      <template #footer><template v-if="detail"><ReceiptRemoteChange v-if="detail.status === 'active' && detail.xiaoman_receipt_id" :receipt-id="detail.id" @updated="row => { detail = row; handleSearch() }" /><GlassButton v-if="editable" v-permission="'receipt:write'" @click="editCurrent">修正资料</GlassButton><GlassButton v-if="editable" v-permission="'receipt:write'" @click="voidCurrent">作废</GlassButton><GlassButton v-if="detail.sync_status === 'failed' && detail.status === 'active'" v-permission="'receipt:write'" variant="primary" :loading="saving" @click="retry(detail)">重试同步</GlassButton><GlassButton v-if="['synced','uncertain'].includes(detail.sync_status)" v-any-permission="['receipt:write','receipt:admin']" :loading="saving" @click="reconcile">刷新小满结果</GlassButton><template v-if="detail.sync_status === 'uncertain' && !detail.xiaoman_receipt_id"><GlassButton v-permission="'receipt:admin'" @click="resolve('bind_receipt')">绑定已生成回款</GlassButton><GlassButton v-permission="'receipt:admin'" @click="resolve('confirm_not_created')">确认未创建</GlassButton></template></template></template>
     </DetailDrawer>
   </div>
 </template>
@@ -111,6 +112,7 @@ import { Document, Refresh, View } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import ReceiptFields from './ReceiptFields.vue'
+import ReceiptRemoteChange from './ReceiptRemoteChange.vue'
 import ReceiptProofs from './ReceiptProofs.vue'
 import { formatBeijingDateTime } from '@/utils/datetime'
 import { useReceipts, statusLabel, statusTone, financeLabel, money } from './useReceipts'

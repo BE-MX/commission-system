@@ -19,3 +19,6 @@ export function uploadReceiptProof(file, onProgress) {
     onUploadProgress: e => onProgress?.(e.total ? Math.round(e.loaded / e.total * 100) : 0),
   }))
 }
+
+export const previewReceiptRemoteChange = id => unwrap(request.get(`/${id}/remote-change`))
+export const acceptReceiptRemoteChange = (id, body) => unwrap(request.post(`/${id}/remote-change`, body))

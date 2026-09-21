@@ -54,3 +54,10 @@ class Resolution(BaseModel):
 
 class Reason(BaseModel):
     reason: str = Field(min_length=2, max_length=500)
+
+
+class RemoteChange(BaseModel):
+    version: int = Field(gt=0)
+    evidence_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    reason: str = Field(min_length=10, max_length=500)
+    confirmed: bool

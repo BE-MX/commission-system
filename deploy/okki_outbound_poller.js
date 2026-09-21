@@ -95,7 +95,7 @@ export async function claimBatch(conn) {
     `SELECT id, invoice_id, order_id, attempts, status
        FROM ark_okki_outbound_tasks
       WHERE ${CLAIMABLE}
-        AND invoice_id IN (SELECT id FROM ark_invoices WHERE linked_sync_id IS NULL)
+        AND invoice_id IN (SELECT id FROM ark_invoices WHERE linked_sync_id IS NULL AND sync_status='synced' AND status NOT IN ('cancel_pending','cancelled'))
       ORDER BY updated_at, id
       LIMIT ?`,
     [now, config.maxAttempts, now, now, STALE_RUNNING_MINUTES, 1],
@@ -107,8 +107,8 @@ export async function claimBatch(conn) {
     await conn.query('START TRANSACTION');
     try {
       const [[invoice]] = await conn.query(
-        'SELECT linked_sync_id FROM ark_invoices WHERE id=? FOR UPDATE', [row.invoice_id]);
-      if (!invoice || invoice.linked_sync_id) {
+        "SELECT linked_sync_id, sync_status, status FROM ark_invoices WHERE id=? FOR UPDATE", [row.invoice_id]);
+      if (!invoice || invoice.linked_sync_id || invoice.sync_status !== 'synced' || ['cancel_pending','cancelled'].includes(invoice.status)) {
         await conn.query('ROLLBACK');
         continue;
       }

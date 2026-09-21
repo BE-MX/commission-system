@@ -60,11 +60,10 @@ export const STATUS_LABELS: Record<InventoryStatus, string> = {
   restocking: '正在补货',
 };
 
-export const STATUS_IMAGE_LABELS: Record<Exclude<InventoryStatus, 'normal'>, string> = {
+export const STATUS_IMAGE_LABELS = {
   low_stock: 'Low Stock',
-  out_of_stock: 'Temporarily Out of Stock',
   restocking: 'Restocking',
-};
+} as const;
 
 export function isInventoryStatus(value: unknown): value is InventoryStatus {
   return typeof value === 'string' && INVENTORY_STATUSES.includes(value as InventoryStatus);

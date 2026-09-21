@@ -36,6 +36,8 @@ def calculate(db, invoice, snapshot, *, exclude_receipt=None, exclude_intent=Fal
             if str(counterpart.get("collect_status")) == "1":
                 effective += row.bank_charge
             continue
+        if row.xiaoman_receipt_id:
+            raise ValueError("小满关联回款已缺失或转移，请管理员核实远端变更后再登记")
         if row.id == exclude_receipt:
             continue
         registered += row.amount

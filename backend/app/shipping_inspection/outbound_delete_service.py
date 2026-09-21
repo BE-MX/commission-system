@@ -3,6 +3,7 @@
 Never writes the business mirror. An uncertain delete is read back, not resent.
 """
 import logging
+from datetime import datetime, timedelta
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -74,6 +75,8 @@ def delete_outbound(db, record, user_id):
         raise OutboundDeleteError('该记录尚未生成有效的小满出库单，不能删除')
     # Refreshing credentials is done before reserving an irreversible operation.
     event = db.query(ShippingOperationEvent).filter_by(scope=SCOPE, request_id=invoice_id).with_for_update().first()
+    if event and event.action == "delete_abandoned":
+        raise OutboundDeleteError("原删除已人工终止，请在小满处理后重新核对，禁止重发原请求")
     if event and event.action == DELETED:
         return {'outbound_record_id': record['outbound_record_id'], 'deleted': True}
     token = ensure_access_token(db)
@@ -148,6 +151,9 @@ def delete_outbound(db, record, user_id):
     if current is None:
         return _finish(db, event, DELETED, '小满出库单已不存在')
 
+    event = db.query(ShippingOperationEvent).filter_by(id=event.id).populate_existing().with_for_update().one()
+    if event.action != PENDING or datetime.fromisoformat(event.result['started_at']) + timedelta(minutes=5) <= beijing_now():
+        raise OutboundDeleteError('删除执行权已失效，请重新核对原任务')
     try:
         remote.remove(token, invoice_id)
     except remote.DeleteRemoteError as exc:
@@ -166,3 +172,32 @@ def delete_outbound(db, record, user_id):
         _finish(db, event, UNCERTAIN, '小满仍返回原单，未确认删除成功')
         raise OutboundDeleteError('小满尚未确认删除，请稍后重新核对；不会重复发送删除')
     return _finish(db, event, DELETED, '小满删除成功并已核实')
+
+
+def abandon_pending(db, record, actor, reason):
+    """End an ambiguous attempt without replay or automatic recreation."""
+    identity = str(record['outbound_invoice_id'])
+    token = ensure_access_token(db)
+    event = db.query(ShippingOperationEvent).filter_by(scope=SCOPE, request_id=identity).with_for_update().first()
+    if not event or event.action not in (PENDING, UNCERTAIN):
+        raise OutboundDeleteError('没有待恢复的删除任务')
+    # The event row is held across remote.remove by every live sender. Waiting
+    # out the original lease also fences a process paused before taking it.
+    stamp = (event.result or {}).get('started_at') or (event.result or {}).get('checked_at')
+    if not stamp or datetime.fromisoformat(stamp) + timedelta(minutes=5) > beijing_now():
+        raise OutboundDeleteError('原删除任务尚未过期，请至少等待5分钟后核对')
+    current = remote.read(token, identity)
+    if current is None:
+        return _finish(db, event, DELETED, '人工核对时确认小满出库单已不存在')
+    before = (event.payload or {}).get('before') or {}
+    if str(current.get('company_info', {}).get('id')) != str(before.get('company_info', {}).get('id')):
+        raise OutboundDeleteError('小满客户归属已变化，不能恢复原任务')
+    event.action = 'delete_abandoned'
+    event.result = {'status': 'delete_abandoned', 'message': reason, 'operator_id': actor,
+                    'checked_at': str(beijing_now()), 'remote_status': current.get('status')}
+    for saved in event.payload.get('tasks', []):
+        task = db.query(OkkiOutboundTask).filter_by(id=saved['id']).with_for_update().first()
+        if task and task.reason == f'delete_pending:{identity}':
+            task.reason = f'delete_abandoned:{identity}'
+    _commit(db)
+    return {'deleted': False, 'message': '已保留小满原单并终止原删除；自动重建仍暂停，原请求不会重发'}

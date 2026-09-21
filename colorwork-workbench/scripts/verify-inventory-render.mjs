@@ -422,7 +422,7 @@ try {
     );
     if (
       !badgeTexts.every((text) =>
-        /^(?:.+″ · )?(?:Temporarily Out of Stock|Low Stock|Restocking)$/.test(text),
+        /^(?:.+″ · )?(?:Low Stock|Restocking)$/.test(text),
       )
     ) {
       throw new Error(
@@ -431,10 +431,16 @@ try {
     }
     if (
       !badgeTexts.some((text) =>
-        /^\d+″ · (?:Temporarily Out of Stock|Low Stock|Restocking)$/.test(text),
+        /^\d+″ · (?:Low Stock|Restocking)$/.test(text),
       )
     ) {
       throw new Error(`${id} 没有生成只指向对应单尺寸的英文提示。`);
+    }
+    if (!badgeTexts.some((text) => text.includes('Low Stock'))) {
+      throw new Error(`${id} 没有生成 Low Stock 提示。`);
+    }
+    if (badgeTexts.some((text) => text.includes('No stock'))) {
+      throw new Error(`${id} 不应生成 No stock 提示。`);
     }
     results.push({
       templateId: id,

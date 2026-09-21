@@ -383,7 +383,7 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
 
         with SessionLocal() as db:
             reconcile_missing_outbound_tasks(
-                db, window_hours=settings.OKKI_OUTBOUND_RECONCILE_WINDOW_HOURS,
+                db,
             )
             db.commit()
 

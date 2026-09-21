@@ -46,13 +46,18 @@ def find_related(db, order):
 def summarize(db, invoice, order):
     related = find_related(db, order)
     wanted, actual = defaultdict(Decimal), defaultdict(Decimal)
-    for item in invoice.items:
-        wanted[(str(item.product_id), str(item.sku_id))] += Decimal(item.quantity)
+    from app.invoice import xiaoman_service
+    rows, _, issues, _ = xiaoman_service._build_product_rows(
+        db, invoice, xiaoman_service.get_settings_row(db), editing=True)
+    if issues:
+        raise ValueError("订单产品映射尚未完整核对")
+    for item in rows:
+        wanted[(str(item.get("unique_id") or ""), str(item["product_id"]), str(item["sku_id"]))] += Decimal(str(item["count"]))
     for document in related:
         for row in document["record_list"]:
             if str(row.get("order_id")) == str(order["order_id"]):
-                actual[(str(row.get("product_id")), str(row.get("sku_id")))] += remote.money(row.get("outbound_count"))
-    difference = [{"product_id": key[0], "sku_id": key[1], "ordered": str(wanted[key]),
+                actual[(str(row.get("order_record_id") or ""), str(row.get("product_id")), str(row.get("sku_id")))] += remote.money(row.get("outbound_count"))
+    difference = [{"order_record_id": key[0], "product_id": key[1], "sku_id": key[2], "ordered": str(wanted[key]),
                    "outbound": str(actual[key]), "difference": str(wanted[key] - actual[key])}
                   for key in sorted(wanted.keys() | actual.keys()) if wanted[key] != actual[key]]
     documents = [{"id": str(d["outbound_invoice_id"]), "number": d.get("serial_id"), "status": d.get("status")}
@@ -64,4 +69,5 @@ def summarize(db, invoice, order):
                    "小满编辑接口尚未确认并发状态保护，未自动覆盖出库单")
     else:
         message = "已核对出库数量；价格、地址、备注等资料如有变更，仍需在小满确认。方舟正式出库单由镜像刷新"
-    return {"status": "manual", "message": message, "documents": documents, "differences": difference}
+    return {"status": "manual", "category": "documents_missing" if not related else "quantity_or_link_difference" if difference else "metadata_review",
+            "message": message, "documents": documents, "differences": difference}
