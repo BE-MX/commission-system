@@ -90,7 +90,7 @@ export function buildUnitLabelDoc({ data }) {
   return units.map(unit => `<div class="label unit-label">
     <div class="unit-meta">
       <strong class="unit-spec"><span style="font-size:${specFont}mm">${esc(specification)}</span></strong>
-      <strong class="unit-serial">${esc(String(unit.unit_no).padStart(2, '0'))}</strong>
+      <strong class="unit-serial">${esc(unit.unit_code)}</strong>
       <strong class="unit-customer"><span style="font-size:${customerFont}mm">${esc(customerName)}</span></strong>
       <span class="unit-order"><span style="font-size:${orderFont}mm">${esc(orderNo)}</span></span>
       <span class="unit-date">${orderDate}</span>
