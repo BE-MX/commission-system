@@ -164,3 +164,23 @@ def resolve(identity: int, body: Resolution, db: Session = Depends(get_db), user
         sync_service.resolve(db, row, body, access.user_id(user))
         return service.describe(db, row, invoice, detail=True)
     return execute(db, apply)
+
+
+@router.get("/{identity}/remote-change", summary="Preview verified remote receipt changes")
+def remote_change_preview(identity: int, db: Session = Depends(get_db), user=Depends(require_permission("receipt:admin"))):
+    from app.receipt import remote_change_service
+    row, _ = service.get(db, identity, user, lock=True)
+    return execute(db, lambda: remote_change_service.evidence(db, row))
+
+
+from app.receipt.schemas import RemoteChange
+
+
+@router.post("/{identity}/remote-change", summary="Accept reviewed remote receipt changes with audit")
+def accept_remote_change(identity: int, body: RemoteChange, db: Session = Depends(get_db), user=Depends(require_permission("receipt:admin"))):
+    from app.receipt import remote_change_service
+    def apply():
+        row, invoice = service.get(db, identity, user, lock=True)
+        remote_change_service.accept(db, row, body, access.user_id(user))
+        return service.describe(db, row, invoice, detail=True)
+    return execute(db, apply)

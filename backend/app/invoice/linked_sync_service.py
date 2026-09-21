@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 
 def ensure_idle(invoice, linked_id=None):
+    from app.invoice.lifecycle_guard import ensure_active
+    ensure_active(invoice)
     if invoice.linked_sync_id and invoice.linked_sync_id != linked_id:
         raise ValueError("订单关联同步尚未结束，请先查看处理结果")
 
@@ -111,7 +113,10 @@ def ensure_running(db, invoice, identity=None, token=None):
     # Lock survives the following HTTP request. A recovered old runner must
     # fail even when an administrator has already cleared the invoice pointer.
     with db.no_autoflush:
-        pointer = db.query(Invoice.linked_sync_id).filter(Invoice.id == invoice.id).with_for_update().scalar()
+        current = db.query(Invoice.linked_sync_id, Invoice.status).filter(Invoice.id == invoice.id).with_for_update().one()
+        pointer = current[0]
+        if current[1] in {"cancel_pending", "cancelled"}:
+            raise LostExecution("订单已进入取消流程，停止发送")
         if identity is None:
             if pointer:
                 raise LostExecution("订单关联同步尚未结束")
@@ -250,3 +255,27 @@ def resolve_manually(db, identity, actor, reason):
     # must use existing order recovery if its status is still uncertain.
     db.commit()
     return row
+
+
+def acknowledge_outbound(db, invoice, actor, reason, expected_version):
+    ensure_idle(invoice)
+    if edit_version(invoice) != expected_version:
+        raise ValueError("订单已变化，请重新核对")
+    row = latest(db, invoice.id)
+    if not row or row.status != "manual" or row.steps["order"]["status"] != "done" or snapshot(invoice) != row.after:
+        raise ValueError("请先执行本版本关联同步")
+    order = remote.read(db, "/v1/invoices/order/info", {"order_id": invoice.xiaoman_order_id})
+    result = linked_outbound_service.summarize(db, invoice, order)
+    if result["differences"] or not result["documents"]:
+        raise ValueError("出库数量、明细关联仍有差异或尚无出库单，不能标记完成")
+    if any(str(d["status"]) not in {"1", "2"} for d in result["documents"]):
+        raise ValueError("出库单状态异常，请核对")
+    invoice = service.get_invoice(db, invoice.id, for_update=True)
+    if edit_version(invoice) != expected_version or invoice.linked_sync_id or latest(db, invoice.id).id != row.id:
+        raise ValueError("核对期间订单已变化，请刷新")
+    result.update(status="done", category="manually_verified", message="已人工核对价格、地址、备注：" + reason,
+                  operator_id=actor, confirmed_at=beijing_now().isoformat())
+    row.steps = {**row.steps, "outbound": result}
+    row.status = "done" if all(s["status"] == "done" for s in row.steps.values()) else "manual"
+    db.commit()
+    return {"status": row.status, "outbound": result}

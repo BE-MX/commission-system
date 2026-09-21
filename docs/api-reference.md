@@ -1448,3 +1448,13 @@ Agent research context now includes `fact_contract.version=registered_research_f
 - 充值和调整提交成功后，按当前角色权限寻找有效且绑定钉钉的审核账号，发送工作通知并链接 `/domestic/customer-requests`。普通审核者提交自己的申请不会收到自审提醒；管理员可审核本人申请。幂等重放不重复通知，发送失败记录日志，不撤销已保存申请。
 - 通知地址配置 `DOMESTIC_REVIEW_NOTICE_BASE_URL`，默认 `https://leshine.work`。
 - 导航数字为0时隐藏；提交/审核操作成功后即时刷新，页面可见时每30秒刷新，并在窗口重新激活时刷新。
+
+## 单据生命周期与异常恢复（2026-09-21）
+
+- `GET /api/invoice/invoices/{id}/lifecycle`：invoice:admin + 发票范围；返回版本、取消状态与出库任务摘要。
+- `POST /api/invoice/invoices/{id}/lifecycle`：同权限；action 为 begin/refresh/remove/retain/abort/outbound_retry/ack_outbound；reason 至少10字，涉及版本检查时提供 expected_version；所有操作须 confirmed=true。409 表示当前版本、执行权或关联证据不允许操作。不能用重试 POST 推断未知结果。
+- 原订单同步不确定恢复接口增加 resolution=confirm_existing，用于已绑定原订单的受理核对，不创建/替换订单 ID。
+- `GET /api/receipts/{id}/remote-change`、`POST /api/receipts/{id}/remote-change`：receipt:admin + 原回款范围；提交 version、evidence_hash、reason（至少10字）、confirmed=true。登记核实的远端变化，不退款。
+- `POST /api/shipping-inspection/outbound-records/{id}/delete-recovery`：shipping_inspection:admin + 原出库归属；confirmed=true 和至少10字 reason，租约结束后核实原删除，禁止重放。
+
+业务处理规则见 [单据生命周期](invoice-lifecycle.md)。

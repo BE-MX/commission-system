@@ -331,3 +331,29 @@ def get_image(
     record = service.transfers.snapshot(db, 'shipping-inspection', photo.file_path)
     db.rollback()
     return service.transfers.response('shipping-inspection', rel_path, record)
+
+
+from pydantic import BaseModel, Field
+
+
+class DeleteRecovery(BaseModel):
+    reason: str = Field(min_length=10, max_length=500)
+    confirmed: bool
+
+
+@router.post('/outbound-records/{record_id}/delete-recovery', summary='人工终止待核对删除，保留远端出库单')
+def recover_outbound_delete(record_id: str, body: DeleteRecovery, db: Session = Depends(get_db),
+                            user: dict = Depends(require_permission('shipping_inspection:admin'))):
+    from app.shipping_inspection import outbound_delete_service as deletion
+    from app.shipping_inspection.outbound_delete_client import DeleteRemoteError
+    from app.invoice.okki_client import OkkiApiError
+    record = outbound_service.get_outbound_record(db, record_id, okki_user_id=_outbound_scope(db, user), include_deleted=True)
+    if record is None:
+        raise HTTPException(404, '请使用原删除入口核对已消失的出库单')
+    if not body.confirmed:
+        raise HTTPException(400, '请确认已核实小满原单')
+    try:
+        return ok(deletion.abandon_pending(db, record, int(user['sub']), body.reason.strip()))
+    except (ValueError, DeleteRemoteError, OkkiApiError) as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc

@@ -61,6 +61,8 @@
         </el-select>
         <el-select v-model="filters.status" clearable placeholder="状态" style="width: 150px">
           <el-option label="草稿" value="draft" />
+          <el-option label="取消处理中" value="cancel_pending" />
+          <el-option label="已取消" value="cancelled" />
           <el-option label="可同步" value="ready" />
           <el-option label="已同步" value="synced" />
           <el-option label="同步失败" value="sync_failed" />
@@ -112,7 +114,7 @@
         <el-table-column class-name="table-action-column" label="操作" min-width="356" max-width="390" fixed="right">
           <template #default="{ row }">
             <div class="table-actions">
-              <el-button v-permission="'invoice:write'" link type="primary" @click="openEdit(row.id)">
+              <el-button v-permission="'invoice:write'" link type="primary" :disabled="['cancel_pending','cancelled'].includes(row.status)" @click="openEdit(row.id)">
                 <el-icon><Edit /></el-icon>
                 编辑
               </el-button>
@@ -135,6 +137,7 @@
                 link
                 type="warning"
                 :loading="isInvoiceSyncing(row.id)"
+                :disabled="['cancel_pending','cancelled'].includes(row.status)"
                 @click="validateAndSync(row.id)"
               >
                 <el-icon><Refresh /></el-icon>
@@ -153,12 +156,14 @@
                 <el-button link type="danger">处理待核对</el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item command="bind_order">绑定已生成订单</el-dropdown-item>
-                    <el-dropdown-item command="confirm_not_created">确认未生成并允许重试</el-dropdown-item>
+                    <el-dropdown-item v-if="!row.xiaoman_order_id" command="bind_order">绑定已生成订单</el-dropdown-item>
+                    <el-dropdown-item v-if="!row.xiaoman_order_id" command="confirm_not_created">确认未生成并允许重试</el-dropdown-item>
+                    <el-dropdown-item v-if="row.xiaoman_order_id" command="confirm_existing">核实原订单更新结果</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
-              <el-button v-permission="'invoice:write'" link type="danger" @click="removeInvoice(row)">
+              <InvoiceLifecycle :invoice-id="row.id" @changed="loadInvoices" />
+              <el-button v-if="!row.xiaoman_order_id && !['cancel_pending','cancelled'].includes(row.status)" v-permission="'invoice:write'" link type="danger" @click="removeInvoice(row)">
                 <el-icon><Delete /></el-icon>
                 删除
               </el-button>
@@ -428,6 +433,7 @@
 
 <script setup>
 import LinkedSyncResult from './components/LinkedSyncResult.vue'
+import InvoiceLifecycle from './components/InvoiceLifecycle.vue'
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, Delete, Document, Download, Edit, Picture, Plus, Refresh, Search } from '@element-plus/icons-vue'

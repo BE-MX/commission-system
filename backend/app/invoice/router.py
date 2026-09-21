@@ -912,7 +912,10 @@ def validate_invoice(
     if not invoice:
         raise HTTPException(404, "发票不存在")
     _ensure_invoice_visible(db, invoice, current_user)
-    issues = service.mark_ready_if_valid(invoice)
+    try:
+        issues = service.mark_ready_if_valid(invoice)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
     db.commit()
     return ok({"ok": not issues, "issues": issues})
 
@@ -932,7 +935,7 @@ def sync_invoice(
 
 
 class ResolveSyncUncertainPayload(BaseModel):
-    resolution: str = Field(..., pattern="^(bind_order|confirm_not_created)$")
+    resolution: str = Field(..., pattern="^(bind_order|confirm_not_created|confirm_existing)$")
     reason: str = Field(..., min_length=2, max_length=500)
     xiaoman_order_id: str | None = Field(None, max_length=64)
 
@@ -950,6 +953,7 @@ def resolve_sync_uncertain(
     invoice = service.get_invoice(db, invoice_id, for_update=True)
     if not invoice:
         raise HTTPException(404, "发票不存在")
+    _ensure_invoice_visible(db, invoice, current_user)
     try:
         xiaoman_service.resolve_sync_uncertain(
             db,
@@ -1202,3 +1206,7 @@ def resolve_linked(invoice_id: int, identity: str, body: LinkedResolutionPayload
         db.rollback()
         raise HTTPException(409, str(exc)) from exc
     return ok(_linked_result(row, invoice, user))
+
+
+from app.invoice.lifecycle_router import router as lifecycle_router
+router.include_router(lifecycle_router)

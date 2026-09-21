@@ -3,8 +3,8 @@
  */
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { getOutboundPrintData, listOutboundRecords, deleteOutboundRecord } from '@/api/shipping'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { getOutboundPrintData, listOutboundRecords, deleteOutboundRecord, recoverOutboundDeletion } from '@/api/shipping'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import { useListPage } from '@/composables/useListPage'
 import { buildOutboundDoc, printDocHtml } from '../print/printDocs'
@@ -58,6 +58,19 @@ export function useOutboundRecords() {
     }
   }
 
+  async function recoverDeletion(row) {
+    if (deletingId.value !== null) return
+    let reason
+    try { reason = (await ElMessageBox.prompt('仅处理超时待核对的删除。确认保留小满原单并终止原请求，自动重建仍暂停。请填写至少10字核对依据。', '恢复删除任务', { inputValidator: v => v?.trim().length >= 10 || '请填写至少10字依据' })).value.trim() }
+    catch { return }
+    deletingId.value = row.outbound_record_id
+    try {
+      const result = await recoverOutboundDeletion(row.outbound_record_id, { reason, confirmed: true })
+      ElMessage.success(result.data?.message || (result.data?.deleted ? '已核实小满出库单删除' : '已保存处理结果'))
+      await listApi.fetchList()
+    } finally { deletingId.value = null }
+  }
+
   async function downloadWord(row) {
     if (!row.can_print) return
     if (downloadingId.value !== null) return
@@ -90,6 +103,6 @@ export function useOutboundRecords() {
 
   return {
     ...listApi,
-    printingId, openPrint, downloadingId, downloadWord, deletingId, deleteRecord,
+    printingId, openPrint, downloadingId, downloadWord, deletingId, deleteRecord, recoverDeletion,
   }
 }

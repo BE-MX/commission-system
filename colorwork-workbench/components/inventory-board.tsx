@@ -186,7 +186,7 @@ export function InventoryBoard({ catalog, user, previewOnly = false, initialTemp
     if (!target) return;
     const revision = ++renderRevision.current;
     setReady(false);
-    void paintPoster(colors, item, masterSelection, statusMap).then((poster) => {
+    void paintPoster(colors, item, masterSelection, statusMap, previewOnly).then((poster) => {
       if (revision !== renderRevision.current) return;
       target.width = poster.width;
       target.height = poster.height;
@@ -198,7 +198,7 @@ export function InventoryBoard({ catalog, user, previewOnly = false, initialTemp
     }).catch((reason: Error) => {
       if (revision === renderRevision.current) setError(reason.message);
     });
-  }, [colors, item, masterSelection, state, statusMap]);
+  }, [colors, item, masterSelection, previewOnly, state, statusMap]);
 
   function chooseTemplate(nextId: string) {
     setTemplateId(nextId);
@@ -310,6 +310,7 @@ export function InventoryBoard({ catalog, user, previewOnly = false, initialTemp
         exportItem,
         activeMasterSelection(exportState.selection),
         statusMapForSpecs(exportState.specs),
+        previewOnly,
       );
       const jpg = await canvasBlob(exportPoster);
       await validateCurrent(exportState, exportItem.id);

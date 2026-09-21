@@ -135,14 +135,14 @@ def _tasks(db):
     return db.query(OkkiOutboundTask).order_by(OkkiOutboundTask.id).all()
 
 
-def _fake_push_stock_only(_db, _payload):
+def _fake_push_stock_only(_db, _payload, *, before_send=None):
     return {
         "order_id": 424242,
         "product_list": [{"unique_id": 111, "product_id": "1", "sku_id": "9001"}],
     }
 
 
-def _fake_push_with_merged(_db, _payload):
+def _fake_push_with_merged(_db, _payload, *, before_send=None):
     return {
         "order_id": 424242,
         "product_list": [
@@ -203,7 +203,7 @@ def test_backfilled_custom_lines_still_enqueue_pending(db, monkeypatch, no_recon
     invoice.items.append(_custom_item(cp.id))
     db.flush()
 
-    def fake_push(_db, _payload):
+    def fake_push(_db, _payload, *, before_send=None):
         return {
             "order_id": 424242,
             "product_list": [{"unique_id": 111, "product_id": "555", "sku_id": "556"}],
@@ -224,7 +224,7 @@ def test_edit_repush_does_not_enqueue(db, monkeypatch, no_reconcile):
     invoice.items.append(_stock_item(xiaoman_unique_id="111"))
     db.flush()
 
-    def fake_push(_db, _payload):
+    def fake_push(_db, _payload, *, before_send=None):
         return {
             "order_id": 424242,
             "product_list": [{"unique_id": 111, "product_id": "1", "sku_id": "9001"}],
@@ -261,7 +261,7 @@ def test_failed_sync_does_not_enqueue(db, monkeypatch, no_reconcile):
     invoice.items.append(_stock_item())
     db.flush()
 
-    def fake_push(_db, _payload):
+    def fake_push(_db, _payload, *, before_send=None):
         raise okki_client.OkkiApiError("OKKI 订单推送失败：boom")
 
     monkeypatch.setattr(okki_client, "push_order", fake_push)
@@ -347,9 +347,10 @@ def _seed_create_log(db, invoice, *, hours_ago=1, success=1):
 def test_reconcile_backfills_task_for_recent_first_push(db):
     invoice = _make_invoice(db, xiaoman_order_id="424242", sync_status="synced")
     invoice.items.append(_stock_item())
+    invoice.outbound_auto_requested = 1
     _seed_create_log(db, invoice, hours_ago=2)
 
-    stats = outbound_task_service.reconcile_missing_outbound_tasks(db, window_hours=24)
+    stats = outbound_task_service.reconcile_missing_outbound_tasks(db)
 
     assert stats == {"scanned": 1, "enqueued": 1, "skipped": 0}
     assert [t.order_id for t in _tasks(db)] == ["424242"]
@@ -361,7 +362,7 @@ def test_reconcile_ignores_first_push_outside_window(db):
     invoice.items.append(_stock_item())
     _seed_create_log(db, invoice, hours_ago=72)
 
-    stats = outbound_task_service.reconcile_missing_outbound_tasks(db, window_hours=24)
+    stats = outbound_task_service.reconcile_missing_outbound_tasks(db)
 
     assert stats == {"scanned": 0, "enqueued": 0, "skipped": 0}
     assert _tasks(db) == []
@@ -376,7 +377,7 @@ def test_reconcile_ignores_non_synced_and_failed_logs(db):
     no_success_log.items.append(_stock_item(sort_order=1))
     _seed_create_log(db, no_success_log, hours_ago=2, success=0)
 
-    stats = outbound_task_service.reconcile_missing_outbound_tasks(db, window_hours=24)
+    stats = outbound_task_service.reconcile_missing_outbound_tasks(db)
 
     assert stats == {"scanned": 0, "enqueued": 0, "skipped": 0}
     assert _tasks(db) == []
@@ -388,6 +389,7 @@ def test_reconcile_keeps_existing_task_and_marks_generic_merge_skipped(db):
     with_custom = _make_invoice(db, xiaoman_order_id="424242", sync_status="synced")
     with_custom.items.append(_stock_item())
     with_custom.items.append(_custom_item(cp.id))
+    with_custom.outbound_auto_requested = 1
     _seed_create_log(db, with_custom, hours_ago=2)
     existing = _make_invoice(db, invoice_no="INV20260916-004", xiaoman_order_id="333333", sync_status="synced")
     existing.items.append(_stock_item())
@@ -395,7 +397,7 @@ def test_reconcile_keeps_existing_task_and_marks_generic_merge_skipped(db):
     outbound_task_service.enqueue_outbound_task(db, existing)
     db.flush()
 
-    stats = outbound_task_service.reconcile_missing_outbound_tasks(db, window_hours=24)
+    stats = outbound_task_service.reconcile_missing_outbound_tasks(db)
 
     assert stats == {"scanned": 1, "enqueued": 0, "skipped": 1}
     tasks = _tasks(db)
@@ -403,3 +405,16 @@ def test_reconcile_keeps_existing_task_and_marks_generic_merge_skipped(db):
     by_order = {t.order_id: t for t in tasks}
     assert by_order["424242"].status == outbound_task_service.STATUS_SKIPPED
     assert by_order["333333"].status == outbound_task_service.STATUS_PENDING
+
+
+def test_explicit_enrollment_survives_long_outage(db):
+    invoice = _make_invoice(db, xiaoman_order_id="424242", sync_status="synced", outbound_auto_requested=1)
+    invoice.items.append(_stock_item())
+    _seed_create_log(db, invoice, hours_ago=240)
+    assert outbound_task_service.reconcile_missing_outbound_tasks(db)["enqueued"] == 1
+
+
+def test_cancellation_never_backfills_even_enrolled(db):
+    invoice = _make_invoice(db, xiaoman_order_id="424242", sync_status="synced", status="cancelled", outbound_auto_requested=1)
+    _seed_create_log(db, invoice)
+    assert outbound_task_service.reconcile_missing_outbound_tasks(db)["enqueued"] == 0

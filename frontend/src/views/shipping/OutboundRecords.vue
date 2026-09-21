@@ -77,6 +77,7 @@
               v-permission="'shipping_inspection:delete'" variant="link" link-tone="danger" left-icon="Delete"
               :loading="deletingId === row.outbound_record_id" :disabled="deletingId !== null"
               @click="deleteRecord(row)">删除</GlassButton>
+            <GlassButton v-if="row.record_source === 'okki'" v-permission="'shipping_inspection:admin'" variant="link" :disabled="deletingId !== null" @click="recoverDeletion(row)">恢复删除任务</GlassButton>
           </template>
         </el-table-column>
       </el-table>
@@ -101,7 +102,7 @@ import { OUTBOUND_STATE_LABELS, OUTBOUND_STATE_TAGS, outboundPendingHint } from 
 const {
   loading, list, total, page, pageSize, searchForm,
   handleSearch, handlePageChange, handleSizeChange,
-  printingId, openPrint, downloadingId, downloadWord, deletingId, deleteRecord,
+  printingId, openPrint, downloadingId, downloadWord, deletingId, deleteRecord, recoverDeletion,
 } = useOutboundRecords()
 </script>
 
