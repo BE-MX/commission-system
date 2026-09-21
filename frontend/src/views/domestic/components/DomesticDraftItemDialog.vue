@@ -30,7 +30,7 @@
           <GlassButton v-if="item.quoteStatus !== 'priced'" variant="link" :disabled="saving || quoteLoading" @click="refreshQuote">重新报价</GlassButton>
           <div class="draft-item-grid">
             <el-form-item label="优惠价" required>
-              <el-input-number v-if="item.quoteStatus === 'priced'" :model-value="effectiveDiscountPrice(item)" :min="Number(item.quote.original_price) > 0 ? 0.01 : 0" :max="Number(item.quote.original_price)" :precision="2" :controls="false" @change="value => item.manualDiscountPrice = value" />
+              <el-input-number v-if="item.quoteStatus === 'priced'" :model-value="effectiveDiscountPrice(item)" :min="order.order_type === 'sample' || Number(item.quote.original_price) === 0 ? 0 : 0.01" :max="Number(item.quote.original_price)" :precision="2" :controls="false" @change="value => item.manualDiscountPrice = value" />
               <el-input v-else model-value="完成规格后自动报价" disabled />
             </el-form-item>
             <el-form-item label="手工费"><el-input-number v-model="item.laborFee" :min="0" :precision="2" :controls="false" /></el-form-item>

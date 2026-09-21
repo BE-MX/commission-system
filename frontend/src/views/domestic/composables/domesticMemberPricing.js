@@ -43,7 +43,7 @@ export function pricingRuleLabelForQuote(quote) {
 // 用户手改后的实际成交优惠价；null/未改时回落系统报价
 export function effectiveDiscountPrice(item) {
   const manual = Number(item?.manualDiscountPrice)
-  if (manual > 0) return manual
+  if (item?.manualDiscountPrice != null && Number.isFinite(manual) && manual >= 0) return manual
   return Number(item?.quote?.discount_price || 0)
 }
 
@@ -152,7 +152,7 @@ export function buildCreateItems(items, normalizeAttrs) {
     attrs: normalizeAttrs(item.attrs),
     order_qty: item.order_qty,
     expected_quote: item.expectedQuote,
-    manual_discount_price: item.manualDiscountPrice > 0 ? item.manualDiscountPrice : null,
+    manual_discount_price: item.manualDiscountPrice != null ? item.manualDiscountPrice : null,
     labor_fee: item.laborFee > 0 ? Number(item.laborFee) : 0,
     special_price: item.specialPrice > 0 ? Number(item.specialPrice) : null,
     guest_name: item.guest_name?.trim() || null,
@@ -208,7 +208,7 @@ export function buildDraftSubmitPayload(detail, requestIdFactory) {
       item_id: item.id,
       original_price: item.original_price,
       base_price_version: item.base_price_version,
-      discount_price: item.unit_price,
+      discount_price: Number(item.unit_price || 0) - Number(item.labor_fee || 0),
       membership_level: item.membership_level_snapshot,
       pricing_rule: item.pricing_rule,
       pricing_version: item.pricing_version,

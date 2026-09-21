@@ -304,7 +304,7 @@
     </el-dialog>
 
     <el-dialog v-model="rechargeDialog.visible" title="客户充值（提交后需审核）" width="440px">
-      <el-alert type="info" show-icon :closable="false" class="tips" title="充值申请提交后进入审核，审核通过才入账并重新核定会员等级。" />
+      <el-alert type="info" show-icon :closable="false" class="tips" title="充值审核通过后，将按本次充值金额重新核定会员等级，覆盖当前等级（含人工调整）；不足 1 万元会变为非会员。" />
       <el-form label-width="90px">
         <el-form-item label="客户"><strong>{{ rechargeDialog.customer?.shop_name }}</strong></el-form-item>
         <el-form-item label="当前余额">¥{{ Number(rechargeDialog.customer?.balance || 0).toFixed(2) }}</el-form-item>

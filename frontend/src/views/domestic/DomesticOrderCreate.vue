@@ -250,12 +250,12 @@
               <div v-if="item.quoteStatus === 'priced'" class="price-edit">
                 <el-input-number
                   :model-value="effectiveDiscountPrice(item)"
-                  :min="0.01" :max="Number(item.quote.original_price)" :precision="2"
+                  :min="form.order_type === 'sample' ? 0 : 0.01" :max="Number(item.quote.original_price)" :precision="2"
                   :controls="false" class="price-input"
                   @change="value => onManualPrice(item, value)"
                 />
                 <GlassButton
-                  v-if="item.manualDiscountPrice" variant="link" link-tone="danger"
+                  v-if="item.manualDiscountPrice != null" variant="link" link-tone="danger"
                   @click="onManualPrice(item, null)"
                 >恢复报价</GlassButton>
               </div>
@@ -285,7 +285,7 @@
         <el-row v-if="form.order_category !== 'special'" :gutter="16" class="price-note-row">
           <el-col :span="24">
             <span v-if="item.quoteStatus === 'priced'" class="rule-text">
-              {{ item.manualDiscountPrice ? '手工改价' : item.quote.pricing_rule_label }}
+              {{ item.manualDiscountPrice != null ? '手工改价' : item.quote.pricing_rule_label }}
             </span>
             <GlassButton v-else-if="item.quoteStatus === 'pending'" variant="link" :loading="quoteLoading" @click="refreshQuotes">重新报价</GlassButton>
             <span v-else-if="item.quoteStatus === 'missing_base_price'" class="danger-text">

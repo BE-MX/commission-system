@@ -168,6 +168,11 @@ class LockedOrderQuote:
     base_row: DomesticBasePrice
     discount: DiscountResult
     membership_level: str | None
+    default_discount_price: Decimal | None = None
+
+    @property
+    def default_price(self) -> Decimal:
+        return self.discount.final_price if self.default_discount_price is None else self.default_discount_price
 
     def expected_quote(self) -> dict:
         return {
@@ -566,6 +571,7 @@ def lock_and_validate_order_quotes(
     customer_id: int,
     item_products: list[tuple[object, DomesticProduct]],
     locked_customer: DomesticCustomer | None = None,
+    allow_zero_manual: bool = False,
 ) -> tuple[DomesticCustomer, list[LockedOrderQuote]]:
     """Lock customer first, then every distinct price row in stable id order."""
 
@@ -648,6 +654,7 @@ def lock_and_validate_order_quotes(
             original_price=base_row.original_price,
             membership_level=customer.membership_level,
         )
+        default_price = discount.final_price
         current = LockedOrderQuote(
             product=product,
             base_row=base_row,
@@ -666,9 +673,9 @@ def lock_and_validate_order_quotes(
             manual = previous.discount_price
         if manual is not None:
             manual = _money(manual)
-            if manual <= 0 or manual > base_row.original_price:
+            if manual < 0 or (manual == 0 and not allow_zero_manual) or manual > base_row.original_price:
                 raise ValueError(
-                    f"手工优惠价必须大于 0 且不高于当前原价 ¥{base_row.original_price:.2f}"
+                    f"手工优惠价仅样单允许为 0，且不得高于当前原价 ¥{base_row.original_price:.2f}"
                 )
         if echo_manual:
             current_expected_quotes.append({
@@ -684,6 +691,10 @@ def lock_and_validate_order_quotes(
                     "manual_override",
                 ),
                 membership_level=previous.membership_level,
+                default_discount_price=getattr(item, "default_discount_price", None) if getattr(item, "default_discount_price", None) is not None else resolve_discount(
+                    product_type=product.product_type, craft=product.craft, length=product.length,
+                    size=product.size, original_price=previous.original_price, membership_level=previous.membership_level,
+                ).final_price,
             ))
             continue
 
@@ -713,6 +724,7 @@ def lock_and_validate_order_quotes(
             base_row=base_row,
             discount=discount,
             membership_level=customer.membership_level,
+            default_discount_price=default_price,
         ))
 
     if changes:

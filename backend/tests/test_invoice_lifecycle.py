@@ -145,10 +145,11 @@ def test_detail_absence_with_active_index_is_not_deletion(db,order,monkeypatch):
 @pytest.mark.parametrize("changed",["remote","local","unchanged"])
 def test_review_version_and_audit(db,order,monkeypatch,changed):
     row=receipt(db,order)
-    data={"order_id":"123","currency":"USD","amount":"80","bank_charge":"2","real_amount":"78","collection_date":"2026-09-20","collect_status":1}
+    row.bank_charge=2;db.commit()
+    data={"order_id":"123","currency":"USD","amount":"78","bank_charge":"0","real_amount":"78","collection_date":"2026-09-20","collect_status":1}
     monkeypatch.setattr(lifecycle_remote,"read",lambda *a:data)
     proof=changes.evidence(db,row);review=body(row,proof)
-    if changed=="remote": data.update(amount="90",real_amount="88")
+    if changed=="remote": data.update(amount="88",real_amount="88")
     elif changed=="local": row.version+=1;db.commit()
     if changed!="unchanged":
         with pytest.raises(ValueError,match="变化"): changes.accept(db,row,review,1)
@@ -280,3 +281,24 @@ def test_uncertain_update_preserves_linked_fence_and_original_line(db,order,monk
     else:
         with pytest.raises(ValueError): uncertain_recovery.confirm_existing(db,order,'已核对原订单明细和金额完全一致',1)
         assert order.sync_status=='sync_uncertain'
+
+
+def test_remote_fee_cannot_replace_local_allocation(db,order,monkeypatch):
+    row=receipt(db,order);row.bank_charge=2;db.commit()
+    monkeypatch.setattr(lifecycle_remote,"read",lambda *a:{"order_id":"123","currency":"USD","amount":"80",
+        "bank_charge":"1","real_amount":"79","collection_date":"2026-09-20","collect_status":1})
+    with pytest.raises(ValueError,match="手续费非零"):
+        changes.evidence(db,row)
+    assert row.amount==100 and row.bank_charge==2
+
+
+@pytest.mark.parametrize("net,fee,extra,accepted", [("0",2,{},True),("0",0,{},False),("78",2,{"bank_charge_usd":"1"},False),("78",2,{"bank_charge_rmb":"1"},False)])
+def test_remote_net_amount_boundaries(db,order,monkeypatch,net,fee,extra,accepted):
+    row=receipt(db,order);row.bank_charge=fee;db.commit()
+    monkeypatch.setattr(lifecycle_remote,"read",lambda *a:{"order_id":"123","currency":"USD","amount":net,
+        "bank_charge":"0","real_amount":net,"collection_date":"2026-09-20","collect_status":1,**extra})
+    if accepted:
+        proof=changes.evidence(db,row);changes.accept(db,row,body(row,proof),1)
+        assert row.amount==Decimal(net)+fee and row.bank_charge==fee
+    else:
+        with pytest.raises(ValueError): changes.evidence(db,row)

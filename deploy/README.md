@@ -258,3 +258,31 @@ backend\.venv\Scripts\python.exe -m pytest deploy/tests -q
 `--storage-routing-only` 切换公开文件与上传入口，新加坡到北京仍启用 TLS 校验，链深度为3。Nginx reload 后短暂等待新 worker 接管。办公室原件保留，局域网上传先持久化原件与队列，再由后台同步 COS。
 
 `--finalize-release PLAN` 仅恢复已经完成办公室/北京后端激活与 schema 升级、但后续静态发布失败的已记录发布；重新核对日志、revision、tracked 状态及受管候选，不重复DDL。
+
+
+### 色块服务与北京后端的启动顺序
+
+色块服务启用 COS 后，`/api/colorwork/workbench/api/health` 会调用北京后端
+`127.0.0.1:8001` 的存储桥。部署必须先激活并验证北京后端，再激活色块服务。
+色块服务单独失败仍判定整次发布失败，但不能回滚或停止已经验证健康的北京后端。
+
+2026-09-20 的 `d021ece8` 发布在 schema 160 已升级、办公室已激活后，因旧启动顺序
+导致色块健康检查持续 503，停在北京激活阶段。此状态不适用普通重跑，也不适用
+只接受 schema 159 且两端后端已激活的 `--finalize-release`。恢复必须保留原始
+`schema-writers.json`、`publish-current.json` 和色块 `current.json`/备份，核对候选、
+实际 schema 与原始 writer 基线，先恢复同版本北京后端，再恢复色块及其余发布步骤；
+不得清日志绕过保护或再次执行 DDL。
+
+
+本次专项恢复入口（仅匹配上述事故）：
+
+```bat
+deploy\deploy.bat --recover-colorwork-start-order PLAN_JSON --prepare-only
+deploy\deploy.bat --recover-colorwork-start-order PLAN_JSON
+```
+
+计划内容为 `{"revision":"d021ece8b5fbe261fe95cb6f48ef87def85fedfc"}`。
+恢复脚本核验两端代码、schema160、原始五个writer基线、色块已安装unit和备份；
+先恢复北京后端/色块，再恢复外部writer并完成路由、静态发布。
+原始证据另存 `start-order-original-<revision>.json`，成功后才关闭恢复状态。
+此入口不适用于其他候选或未完成的DDL，不可用于绕过普通发布保护。

@@ -234,6 +234,7 @@ class DomesticOrderItem(Base):
     order_qty = Column(Integer, nullable=False, comment="下单数量")
     unit_price = Column(Numeric(14, 2), nullable=False, comment="产品成交价 = 优惠价 + 手工费")
     original_price = Column(Numeric(14, 2), nullable=False, comment="原价快照")
+    default_discount_price = Column(Numeric(14, 2), nullable=True, comment="系统默认优惠价快照，不含手工费")
     discount_amount = Column(Numeric(14, 2), nullable=False, comment="优惠金额快照")
     labor_fee = Column(Numeric(14, 2), nullable=False, default=0, comment="手工费（仅普单）")
     membership_level_snapshot = Column(

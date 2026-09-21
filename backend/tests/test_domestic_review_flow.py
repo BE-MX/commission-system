@@ -4,7 +4,7 @@
 - 充值必须带凭证（银行流水/转账截图），申请落库为 pending，余额不变；
 - 审核通过才入账（账本幂等键沿用 recharge:/adjust: 口径），驳回不动余额；
 - 不能审自己提交的申请（admin 兜底除外）；驳回必须填原因；
-- 业务订单任一明细优惠价低于原始价 → 落待审核（5），不扣款、不能改明细/报工；
+- 业务订单任一明细成交价偏离系统默认价 → 落待审核（5），不扣款、不能改明细/报工；
   审核通过转生产中（1）并按快照扣款；驳回转已驳回（6），全程无扣款。
 """
 
@@ -409,7 +409,7 @@ def _pricing_context(
     return user, customer, expected, attrs
 
 
-def _order_payload(customer, attrs, expected, request_id, *, is_draft=False, qty=1):
+def _order_payload(customer, attrs, expected, request_id, *, is_draft=False, qty=1, manual=None):
     return OrderCreate.model_validate({
         "request_id": request_id,
         "order_no": request_id,
@@ -425,6 +425,7 @@ def _order_payload(customer, attrs, expected, request_id, *, is_draft=False, qty
             "attrs": attrs,
             "order_qty": qty,
             "expected_quote": expected,
+            "manual_discount_price": manual,
         }],
     })
 
@@ -437,14 +438,14 @@ def _approve(db, order_id, reviewer):
 
 
 def test_discount_order_pends_review_then_approve_charges(db):
-    # 黑卡会员：1000 原价立减 120 → 优惠价 880 ≠ 原始价 → 待审核
+    # 非会员默认 1000，手工改成 880 → 待审核
     user, customer, expected, attrs = _pricing_context(
-        db, "black-pending", membership_level="black",
+        db, "black-pending", membership_level=None,
     )
     reviewer = _user(db, "review-order-approver")
 
     created = order_service.create_order(
-        db, _order_payload(customer, attrs, expected, "review-order-create-1", qty=2), user.id,
+        db, _order_payload(customer, attrs, expected, "review-order-create-1", qty=2, manual=D("880")), user.id,
     )
     db.refresh(customer)
     order = db.get(DomesticOrder, created["id"])
@@ -492,11 +493,11 @@ def test_full_price_order_skips_review(db):
 
 def test_reject_order_leaves_no_charge_and_blocks_resubmit(db):
     user, customer, expected, attrs = _pricing_context(
-        db, "reject", membership_level="silver",
+        db, "reject", membership_level=None,
     )
     reviewer = _user(db, "review-order-rejecter")
     created = order_service.create_order(
-        db, _order_payload(customer, attrs, expected, "review-order-reject-1"), user.id,
+        db, _order_payload(customer, attrs, expected, "review-order-reject-1", manual=D("880")), user.id,
     )
     order = db.get(DomesticOrder, created["id"])
 
@@ -539,12 +540,12 @@ def test_reject_order_leaves_no_charge_and_blocks_resubmit(db):
 
 def test_draft_submit_with_discount_pends_review_until_approved(db):
     user, customer, expected, attrs = _pricing_context(
-        db, "draft-review", membership_level="black",
+        db, "draft-review", membership_level=None,
     )
     reviewer = _user(db, "review-draft-approver")
     created = order_service.create_order(
         db, _order_payload(
-            customer, attrs, expected, "review-draft-create", is_draft=True, qty=2,
+            customer, attrs, expected, "review-draft-create", is_draft=True, qty=2, manual=D("880"),
         ), user.id,
     )
     order = db.get(DomesticOrder, created["id"])
@@ -582,10 +583,10 @@ def test_draft_submit_with_discount_pends_review_until_approved(db):
 
 def test_pending_review_order_blocks_mutations_and_scan(db):
     user, customer, expected, attrs = _pricing_context(
-        db, "frozen", membership_level="black",
+        db, "frozen", membership_level=None,
     )
     created = order_service.create_order(
-        db, _order_payload(customer, attrs, expected, "review-frozen-1"), user.id,
+        db, _order_payload(customer, attrs, expected, "review-frozen-1", manual=D("880")), user.id,
     )
     order = db.get(DomesticOrder, created["id"])
     item = db.query(DomesticOrderItem).filter_by(order_id=order.id).one()
@@ -614,7 +615,7 @@ def test_approve_fails_and_stays_pending_when_balance_insufficient(db):
     )
     reviewer = _user(db, "review-insufficient-approver")
     created = order_service.create_order(
-        db, _order_payload(customer, attrs, expected, "review-insufficient-1", qty=2), user.id,
+        db, _order_payload(customer, attrs, expected, "review-insufficient-1", qty=2, manual=D("800")), user.id,
     )
     # 提交后客户余额被其他业务占用，审核时不够扣
     customer.balance = D("100.00")

@@ -69,6 +69,7 @@ STANDARD_DICTIONARIES = {
         ("return_order", "返单"),
         ("supplementary", "补单"),
         ("after_sales_remake", "售后重做"),
+        ("sample", "样单"),
     ],
     C.ORDER_CHANNEL_DICT: [
         ("recharge", "充值扣账"),

@@ -158,3 +158,6 @@
 
 .item-guest { font-size: 20px; margin: 0 0 12px; overflow-wrap: anywhere; }
 .item-attribute { display: inline-block; margin-right: 16px; }
+
+.item-price-summary { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 12px 0; font-variant-numeric: tabular-nums; }
+.price-review-highlight { background: var(--domestic-price-review-bg); color: var(--el-text-color-primary); padding: 2px 6px; border-radius: 4px; font-weight: 700; }

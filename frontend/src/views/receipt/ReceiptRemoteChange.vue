@@ -2,14 +2,14 @@
   <el-button v-permission="'receipt:admin'" @click="open">核实远端删改</el-button>
   <el-dialog v-model="visible" title="核实小满回款变更" width="min(600px, 94vw)" append-to-body :close-on-click-modal="false">
     <div v-loading="busy">
-      <el-alert title="此操作只登记已核实的小满变更，不执行退款。原小满ID、凭证和变更前记录保留。" type="warning" :closable="false" />
+      <el-alert title="此操作只登记已核实的小满变更，不执行退款。按小满净额加本地分摊费用登记，保留原小满ID、凭证和变更前记录。" type="warning" :closable="false" />
       <template v-if="proof">
         <p>小满回款 ID：{{ proof.remote_id }}</p>
         <p v-if="!proof.after">已查询到原回款不存在；确认后释放该笔登记额度。</p>
         <el-table :data="rows" class="list-table" border>
           <el-table-column prop="label" label="项目" />
           <el-table-column prop="before" label="方舟原记录" />
-          <el-table-column prop="after" label="小满当前记录" />
+          <el-table-column prop="after" label="核对后方舟记录" />
         </el-table>
         <el-input v-model="reason" type="textarea" placeholder="填写实际收款、退款及远端变更的核对依据（至少10字）" maxlength="500" />
         <el-checkbox v-model="confirmed">已核实真实资金情况，确认登记以上变更</el-checkbox>

@@ -248,6 +248,9 @@
 
 ## 内贸订单（迁移 081～145，2026-07-27 至 2026-09-11）
 
+迁移 `160_domestic_price_review` 新增 `ark_domestic_order_items.default_discount_price DECIMAL(14,2) NULL`，保存系统默认商品优惠价，供审核比较，独立于手工成交价且不含手工费。新报价写入；历史 NULL 使用已保存系统价或按原价、会员及属性快照重建人工价的默认对照。新增 `sys_dict.domestic_order_type` 的 `sample=样单`，保留已有同编码配置。迁移不更改历史订单状态、金额或客户等级，生产由统一部署入口执行。
+
+
 迁移 `150_domestic_item_guest` 在 `ark_domestic_order_items` 新增 `guest_name VARCHAR(120) NULL`，业务顾客按产品明细保存；同一未发布迁移增加 `guest_order_date DATE NULL` 保存顾客下单日期，历史日期未知保持 NULL，不以订单创建日期回填。将历史业务订单头顾客复制到其已有明细，不覆盖已有明细顾客；订单头的旧列仅保留历史数据，应用不再录入或展示。生产明细不使用。迁移由正式部署入口执行，开发机不升级共享库。
 
 业务订单客户订单号现为选填，`order_no` 未填存空串，沿用现有 NOT NULL 列，无 schema 迁移。渠道字典改为 recharge/cash，历史按客户 prepay/credit 结算属性转换，仅改订单渠道及更新时间；客户来源直接查询客户档案 `customer_source`，订单不新增来源副本。
@@ -554,6 +557,6 @@ ark_invoices.linked_sync_id：当前关联任务写锁标识，结束后清除�
 
 `ark_shipping_operation_events` 复用 `(scope,request_id)` 唯一约束，`scope=outbound-delete`、`request_id=小满outbound_invoice_id`；`outbound_record_id` 保存本地镜像记录 ID，`action` 为 delete_pending/delete_uncertain/delete_failed/outbound_deleted。payload 保存删除前小满快照、关联订单及自动任务原状态，result 保存状态与北京时间核对时间。outbound_deleted 为单调完成标识，用于屏蔽迟到镜像；不直接删除 lsordertest 记录。相关 ark_okki_outbound_tasks 暂停为 skipped/delete_pending:<id>，成功改为 skipped/deleted:<id>；明确失败恢复原状态，不确定状态不自动恢复。
 
-## 160_invoice_lifecycle
+## 161_invoice_lifecycle
 
 ark_invoices 新增 nullable JSON sync_attempt（推单令牌/北京时间租约）、nullable JSON cancellation（取消阶段/原因/执行权/证据）、非空 SmallInteger outbound_auto_requested 默认0（自动出库登记，历史数据不追建）。复用 InvoiceSyncLog 保存取消及恢复审计，ReceiptLog 保存回款变更前后证据；回款业务状态增加 remote_deleted，原远端ID和凭证仍保留。迁移可重入，不允许降级删除审计字段。

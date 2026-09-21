@@ -22,11 +22,17 @@ def evidence(db, row):
         if str(data.get("order_id")) != row.xiaoman_order_id or data.get("currency") != row.currency:
             raise ValueError("远端回款已改关联订单或币种，请在小满恢复原关联后再处理")
         amount, charge = remote.money(data.get("amount")), remote.money(data.get("bank_charge"))
-        if amount <= 0 or charge > amount or remote.money(data.get("real_amount")) != amount - charge:
+        if charge > amount or remote.money(data.get("real_amount")) != amount - charge:
             raise ValueError("远端回款金额、手续费或实到账不一致")
         if str(data.get("collect_status")) not in {"0", "1"}:
             raise ValueError("远端财务状态无效")
-        current = {"amount": str(amount), "bank_charge": str(charge),
+        if charge != 0 or any(key in data and remote.money(data[key]) != 0 for key in ("bank_charge_rmb", "bank_charge_usd")):
+            raise ValueError("小满回款手续费非零，请按净额规则核对原单后处理")
+        # OKKI stores net only; Ark retains the separately allocated local fee.
+        local_charge = remote.money(row.bank_charge)
+        if amount + local_charge <= 0:
+            raise ValueError("核对后的含费回款金额必须大于零")
+        current = {"amount": str(amount + local_charge), "bank_charge": str(local_charge),
                    "collection_date": date.fromisoformat(str(data.get("collection_date"))[:10]).isoformat(),
                    "collect_status": int(data["collect_status"])}
     result = {"remote_id": row.xiaoman_receipt_id, "version": row.version,

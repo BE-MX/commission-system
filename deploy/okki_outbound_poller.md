@@ -87,6 +87,6 @@ journalctl -u ark-okki-outbound-poller.service -n 80 --no-pager
 
 提交意图保存实际 payload；异常恢复发现已有关联单时，有本服务意图的单据须按最后一次提交快照重新核验，错误数量等不能在重试时绕过检查。旧意图缺快照时按当前订单保守核验，人工部分单无意图则继续防重跳过。
 
-## 订单生命周期冻结（160）
+## 订单生命周期冻结（161）
 
-poller 仅认领关联发票 sync_status=synced 且 status 不为 cancel_pending/cancelled、没有 linked_sync_id 的任务。后端漏建对账改按 outbound_auto_requested 登记，移除 OKKI_OUTBOUND_RECONCILE_WINDOW_HOURS；不再受24小时窗口限制，也不追建未登记历史订单。升级本功能须先暂停poller，通过统一入口完成迁移160和应用发布，再更新poller并恢复；本页 outbound-only 入口不能代替数据库迁移及后端发布。
+poller 仅认领关联发票 sync_status=synced 且 status 不为 cancel_pending/cancelled、没有 linked_sync_id 的任务。后端漏建对账改按 outbound_auto_requested 登记，移除 OKKI_OUTBOUND_RECONCILE_WINDOW_HOURS；不再受24小时窗口限制，也不追建未登记历史订单。升级本功能须先暂停poller，通过统一入口完成迁移161和应用发布，再更新poller并恢复；本页 outbound-only 入口不能代替数据库迁移及后端发布。

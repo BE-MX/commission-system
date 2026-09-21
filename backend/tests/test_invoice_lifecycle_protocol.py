@@ -26,7 +26,7 @@ def test_only_exact_missing_proves_deletion(monkeypatch,http_status,body,missing
 
 
 def test_additive_migration_repeat_preserves_existing_rows():
-    spec=importlib.util.spec_from_file_location('lifecycle_migration',Path(__file__).parents[1]/'alembic/versions/160_invoice_lifecycle.py')
+    spec=importlib.util.spec_from_file_location('lifecycle_migration',Path(__file__).parents[1]/'alembic/versions/161_invoice_lifecycle.py')
     migration=importlib.util.module_from_spec(spec);spec.loader.exec_module(migration)
     engine=sa.create_engine('sqlite:///:memory:')
     with engine.begin() as connection:

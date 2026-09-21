@@ -62,6 +62,7 @@ EXPECTED_STANDARD_VALUES = {
         ("return_order", "返单"),
         ("supplementary", "补单"),
         ("after_sales_remake", "售后重做"),
+        ("sample", "样单"),
     ],
     "domestic_order_channel": [
         ("recharge", "充值扣账"),

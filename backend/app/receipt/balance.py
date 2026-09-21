@@ -29,8 +29,12 @@ def calculate(db, invoice, snapshot, *, exclude_receipt=None, exclude_intent=Fal
             raise ValueError("关联小满回款待核对，余额暂冻结，请先处理原单")
         if row.xiaoman_receipt_id in remote_ids:
             counterpart = next(r for r in remote_rows if str(r["cash_collection_id"]) == row.xiaoman_receipt_id)
-            if remote.money(counterpart["amount"]) != row.amount:
+            if remote.money(counterpart["amount"]) != remote.net_amount(row):
                 raise ValueError("小满已修改关联回款金额，请先核对原单，余额暂冻结")
+            # Remote totals are net, while the local order/intent ledger is gross.
+            registered += row.bank_charge
+            if str(counterpart.get("collect_status")) == "1":
+                effective += row.bank_charge
             continue
         if row.xiaoman_receipt_id:
             raise ValueError("小满关联回款已缺失或转移，请管理员核实远端变更后再登记")
@@ -43,7 +47,7 @@ def calculate(db, invoice, snapshot, *, exclude_receipt=None, exclude_intent=Fal
     fingerprint = {
         "invoice": [invoice.id, invoice.xiaoman_order_id, str(invoice.total_amount), str(invoice.surcharge_amount or 0), invoice.currency, invoice.customer_id, invoice.sync_status],
         "remote": sorted((str(r["cash_collection_id"]), str(r["amount"]), str(r.get("collect_status"))) for r in remote_rows),
-        "local": sorted((r.id, r.version, r.sync_status, r.status, str(r.amount)) for r in local),
+        "local": sorted((r.id, r.version, r.sync_status, r.status, str(r.amount), str(r.bank_charge)) for r in local),
         "intent": [intent.status, str(intent.amount)] if intent else None,
     }
     return {"invoice_id": invoice.id, "total_amount": str(invoice.total_amount), "currency": invoice.currency,
