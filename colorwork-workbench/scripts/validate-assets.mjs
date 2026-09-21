@@ -4,7 +4,9 @@ import path from 'node:path';
 import sharp from 'sharp';
 
 const projectDir = path.resolve(import.meta.dirname, '..');
-const workspaceDir = path.resolve(projectDir, '..');
+const workspaceDir = path.resolve(
+  process.env.COLORWORK_ASSET_WORKSPACE || path.resolve(projectDir, '..'),
+);
 const runtimeAssetsDir = path.join(workspaceDir, '首次上线导入包', '工作台素材', 'assets');
 const sourcePackageDir = path.join(workspaceDir, '首次上线导入包', '源文件');
 const catalog = JSON.parse(await readFile(path.join(projectDir, 'lib', 'generated-catalog.json'), 'utf8'));
@@ -49,7 +51,7 @@ for (const template of catalog.templates) {
   const base = await imageMetadata(template.baseUrl);
   check(base.format === 'png' && base.width === template.width && base.height === template.height, `${template.id} 底图尺寸不一致`);
   const reference = await imageMetadata(template.referenceUrl);
-  check(reference.format === 'jpeg' && reference.width > 0 && reference.height > 0, `${template.id} 参考缩略图不可读`);
+  check(reference.format === 'jpeg' && reference.width === template.width && reference.height === template.height, `${template.id} 参考 JPG 必须与画布同尺寸，当前为 ${reference.width}x${reference.height}`);
   await Promise.all([
     access(path.join(workspaceDir, '加程专属目录', template.sourcePsdName)),
     access(path.join(workspaceDir, '加程专属目录', template.referenceJpgName)),

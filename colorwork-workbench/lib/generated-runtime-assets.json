@@ -284,8 +284,8 @@
     {
       "key": "templates/20g-genius-weft-regular/reference.jpg",
       "relativePath": "工作台素材/assets/templates/20g-genius-weft-regular/reference.jpg",
-      "size": 82466,
-      "sha256": "aee7e9817dac0f329190ec104c1189aab5b544bec00362ea3fa5414f184e51fd",
+      "size": 1070861,
+      "sha256": "f754d73457e6342f86625a5ed917ac8eebf9f5b0b39890184ceb49893475017e",
       "contentType": "image/jpeg"
     },
     {
@@ -298,8 +298,8 @@
     {
       "key": "templates/20g-genius-weft-super/reference.jpg",
       "relativePath": "工作台素材/assets/templates/20g-genius-weft-super/reference.jpg",
-      "size": 81117,
-      "sha256": "edebdd3651a7a6b347e0bac58e6271642e21c017379bb79ec571f7a4bfa78154",
+      "size": 1058920,
+      "sha256": "a0e08c1a67a7805204087369c5a0c136590ef4080b7e3d2d1bf1a182fe4ff7f5",
       "contentType": "image/jpeg"
     },
     {
@@ -312,8 +312,8 @@
     {
       "key": "templates/20g-genius-weft-ultra/reference.jpg",
       "relativePath": "工作台素材/assets/templates/20g-genius-weft-ultra/reference.jpg",
-      "size": 74759,
-      "sha256": "fdf54917b8bed49a10028fb0a468669e20892ef1e89f54f07852a647dbe0c493",
+      "size": 1026168,
+      "sha256": "0b2b97afec9d1a76341ecdead5b1d87cda008060a707602b8b5802058e7bb2c8",
       "contentType": "image/jpeg"
     },
     {
@@ -326,8 +326,8 @@
     {
       "key": "templates/50g-genius-weft-regular/reference.jpg",
       "relativePath": "工作台素材/assets/templates/50g-genius-weft-regular/reference.jpg",
-      "size": 54096,
-      "sha256": "3fe43f74b050fc208fc1d92b4d8742ec9b086b3e6446fd527bfdd7069ca56067",
+      "size": 802863,
+      "sha256": "ea3dfb3329c1963ce393a9ac5d98755e9ab8082f204ff196db705dff4b454e90",
       "contentType": "image/jpeg"
     },
     {
@@ -354,8 +354,8 @@
     {
       "key": "templates/50g-genius-weft-super/reference.jpg",
       "relativePath": "工作台素材/assets/templates/50g-genius-weft-super/reference.jpg",
-      "size": 56153,
-      "sha256": "9d1967dbf601fa7376d06ee49b05012560ae9b5a2e5bff5725a4be2d330a2c85",
+      "size": 817756,
+      "sha256": "6deda8d71b9338aa4fd409942abb95f1ce73ae8f4574d22ad82f7da33078f654",
       "contentType": "image/jpeg"
     },
     {
@@ -368,8 +368,8 @@
     {
       "key": "templates/50g-genius-weft-ultra/reference.jpg",
       "relativePath": "工作台素材/assets/templates/50g-genius-weft-ultra/reference.jpg",
-      "size": 49827,
-      "sha256": "5c76cf06c65772747bbd06426b3b8dd248bf2ccea894166b04d87201ea5384eb",
+      "size": 755970,
+      "sha256": "cd4a13ac784aa3e980ff653b331ee216e1321a8dd14ef61ce9f83485b28818c2",
       "contentType": "image/jpeg"
     },
     {
@@ -382,8 +382,8 @@
     {
       "key": "templates/butterfly-weft-genius-genius-regular/reference.jpg",
       "relativePath": "工作台素材/assets/templates/butterfly-weft-genius-genius-regular/reference.jpg",
-      "size": 43939,
-      "sha256": "823a40cd417cb381f72be5cb91174d9fc3b75a072ac9912e6b13a4c83af4d092",
+      "size": 597997,
+      "sha256": "0907b05c308ec3497499234d169ef7944fe0c9f2ee863cf8d65625eae1b48427",
       "contentType": "image/jpeg"
     },
     {
@@ -396,8 +396,8 @@
     {
       "key": "templates/butterfly-weft-genius-genius-super/reference.jpg",
       "relativePath": "工作台素材/assets/templates/butterfly-weft-genius-genius-super/reference.jpg",
-      "size": 66585,
-      "sha256": "633d870632d7667ddc3dd9862e2bc83946159006af89c9a4af4fd764d8f3d721",
+      "size": 412358,
+      "sha256": "1b240e89a87f80bbdd3ac9071c90dbfc866b4e6f8c50d2d9cae78a6b7ccb10a8",
       "contentType": "image/jpeg"
     },
     {
@@ -410,8 +410,8 @@
     {
       "key": "templates/flex-weft-regular/reference.jpg",
       "relativePath": "工作台素材/assets/templates/flex-weft-regular/reference.jpg",
-      "size": 58418,
-      "sha256": "a3c969a2ef75d279a6238ce6c04bef81590ba60b377991ab7edba85b19ec3d58",
+      "size": 1037145,
+      "sha256": "ff345ee2b4fde3811195acbc86cca32de2d32daf2ba0fcfb6b52fcdae031630b",
       "contentType": "image/jpeg"
     },
     {
@@ -424,8 +424,8 @@
     {
       "key": "templates/i-tip-hair-regular/reference.jpg",
       "relativePath": "工作台素材/assets/templates/i-tip-hair-regular/reference.jpg",
-      "size": 48412,
-      "sha256": "041be940b7fcd7c945be32112c051aa65cb41e4b2267ee7aa87210f7b4c649b9",
+      "size": 784665,
+      "sha256": "586bb32f2759d5b20744b58de0fb9cf9143cb5e9a36d1aff96f9f54eeff3610b",
       "contentType": "image/jpeg"
     },
     {
@@ -438,8 +438,8 @@
     {
       "key": "templates/i-tip-hair-ultra/reference.jpg",
       "relativePath": "工作台素材/assets/templates/i-tip-hair-ultra/reference.jpg",
-      "size": 37325,
-      "sha256": "82548362b8a7f9baedb64c68ab5e2ddc3dba4ba2547dca2c4a5084249c1a78fb",
+      "size": 634193,
+      "sha256": "7e9dec17a5d41c408ecea30424413e7f3b372190b443556a6601604852391023",
       "contentType": "image/jpeg"
     },
     {
@@ -452,8 +452,8 @@
     {
       "key": "templates/injection-tape-hair-super/reference.jpg",
       "relativePath": "工作台素材/assets/templates/injection-tape-hair-super/reference.jpg",
-      "size": 58228,
-      "sha256": "030179e48adb9063c903a1834535c82fa4f232d22813e7f4ad00a0f248d2d96c",
+      "size": 1023787,
+      "sha256": "7926837003b738ef4a5ec0e6f8c949e0eae94957db2b4546ab2d7c49318464ff",
       "contentType": "image/jpeg"
     },
     {
@@ -466,8 +466,8 @@
     {
       "key": "templates/invisible-tape-weft-super/reference.jpg",
       "relativePath": "工作台素材/assets/templates/invisible-tape-weft-super/reference.jpg",
-      "size": 64503,
-      "sha256": "523f46ce341714f2dfb00b05d6233845ba184c3911d9691d6827f57b4b0635ab",
+      "size": 849535,
+      "sha256": "a1fb2be351c78354fd3aa30d895a582938585ac27f46a4a6da61dd455c35034d",
       "contentType": "image/jpeg"
     },
     {
@@ -480,8 +480,8 @@
     {
       "key": "templates/k-tip-hair-regular/reference.jpg",
       "relativePath": "工作台素材/assets/templates/k-tip-hair-regular/reference.jpg",
-      "size": 67288,
-      "sha256": "a209d963da6a31d9118f323c369b25e113d021bf86114e5a15e17d84160f31c3",
+      "size": 890359,
+      "sha256": "f5536dcdc724a483cf4dce084906b07316495f3a50d43584ac2e9c2c555ffe74",
       "contentType": "image/jpeg"
     },
     {
@@ -494,8 +494,8 @@
     {
       "key": "templates/k-tip-hair-super/reference.jpg",
       "relativePath": "工作台素材/assets/templates/k-tip-hair-super/reference.jpg",
-      "size": 64799,
-      "sha256": "f8e9ad0868de17ed59eb022f6c252ee6c1716006115c2eeea97e60409b0f8f4b",
+      "size": 873439,
+      "sha256": "5c2e10b698c13b4554fbca2f248ac1e4a424ef72a3954bb9689f5403172795f5",
       "contentType": "image/jpeg"
     },
     {
@@ -508,8 +508,8 @@
     {
       "key": "templates/k-tip-hair-ultra/reference.jpg",
       "relativePath": "工作台素材/assets/templates/k-tip-hair-ultra/reference.jpg",
-      "size": 38346,
-      "sha256": "320c31453316fc02ba13f6e7ad4a13ab730ac86cb1194eefe4455dd62e6004a6",
+      "size": 618360,
+      "sha256": "adc9f8d6a4ef4a735adfa4da7240c55c2b392c0e707fdbf5b112ba00cb63c95f",
       "contentType": "image/jpeg"
     },
     {
@@ -522,8 +522,8 @@
     {
       "key": "templates/nano-tip-hair-regular/reference.jpg",
       "relativePath": "工作台素材/assets/templates/nano-tip-hair-regular/reference.jpg",
-      "size": 39978,
-      "sha256": "d409e73c40da4860a33dc5072ad5a048e599322731044ef0f1c3ddb0237890c3",
+      "size": 624407,
+      "sha256": "363744e58438125f20d183c8577357f6d887532b2fb0e7fe231b3d89c2eb6ab1",
       "contentType": "image/jpeg"
     },
     {
@@ -536,8 +536,8 @@
     {
       "key": "templates/nano-tip-hair-super/reference.jpg",
       "relativePath": "工作台素材/assets/templates/nano-tip-hair-super/reference.jpg",
-      "size": 70432,
-      "sha256": "553b64d3461dc8cf4e3414183dcf4e983fb401198a526987c6b83f6fc6d36a0d",
+      "size": 944124,
+      "sha256": "f2fd6bd2904cf2983e3b7a8fe0275cc6fe290ddd89c164dba5e645f5bd348bf0",
       "contentType": "image/jpeg"
     },
     {
@@ -550,8 +550,8 @@
     {
       "key": "templates/nano-tip-hair-ultra/reference.jpg",
       "relativePath": "工作台素材/assets/templates/nano-tip-hair-ultra/reference.jpg",
-      "size": 37956,
-      "sha256": "cedb61c8b482e519c4f41c6f88a9daf42636c26e39dd8efa823e888b0995ee91",
+      "size": 601407,
+      "sha256": "e4be1d577e46702e4eea2f361a5387a398665527bf8511345efb885f8bf58164",
       "contentType": "image/jpeg"
     },
     {
@@ -564,8 +564,8 @@
     {
       "key": "templates/silk-genius-weft-regular/reference.jpg",
       "relativePath": "工作台素材/assets/templates/silk-genius-weft-regular/reference.jpg",
-      "size": 51239,
-      "sha256": "bc5a02bc141aa0b9e4ee339f8b70f437e4a178386069325ff621cdc357ec85ee",
+      "size": 887645,
+      "sha256": "9cef9fcf38ac8360981a64a71d00f79bedcfd8ef2747ff9b0a158858f3ddfdcc",
       "contentType": "image/jpeg"
     },
     {
@@ -578,8 +578,8 @@
     {
       "key": "templates/tape-hair-regular/reference.jpg",
       "relativePath": "工作台素材/assets/templates/tape-hair-regular/reference.jpg",
-      "size": 42152,
-      "sha256": "5121f12b2c1ddfc93f7ed2fca40402e420cfddd11ddcb0e93e4a690a777e3d90",
+      "size": 643877,
+      "sha256": "7d0018c9a79bbcf23b550b16baf39e3cdd6c3e7e075e0336ec7ddf85bb47ff6c",
       "contentType": "image/jpeg"
     },
     {
@@ -592,8 +592,8 @@
     {
       "key": "templates/tape-hair-super/reference.jpg",
       "relativePath": "工作台素材/assets/templates/tape-hair-super/reference.jpg",
-      "size": 42310,
-      "sha256": "29a25f7b0bb25ac2b310584c1cbd92007eeb683ef18e589143f64919c2330191",
+      "size": 645729,
+      "sha256": "7db0c05483e59f98ad44351b8650dfa16843936536f9e568d50848857b2b384d",
       "contentType": "image/jpeg"
     },
     {
@@ -606,8 +606,8 @@
     {
       "key": "templates/tape-hair-ultra/reference.jpg",
       "relativePath": "工作台素材/assets/templates/tape-hair-ultra/reference.jpg",
-      "size": 39293,
-      "sha256": "ca964449e08f3f34e06e0cd96c33443f27f1f664ca325dc522965ed88832221e",
+      "size": 621292,
+      "sha256": "979bad2d0de370531be909918791e80584db9684d93b4567a78ba66e1cc9449f",
       "contentType": "image/jpeg"
     }
   ]
