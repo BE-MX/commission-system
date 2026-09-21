@@ -213,6 +213,8 @@ def delete_invoice(db: Session, invoice: Invoice) -> None:
     """Judge by xiaoman_order_id, not sync_status: editing flips a synced invoice
     back to not_synced while the real OKKI order still exists, and deleting would
     orphan it AND cascade-drop its push audit logs."""
+    from app.invoice.lifecycle_guard import ensure_mutable
+    ensure_mutable(db, invoice)
     from app.receipt.invoice_link import guard_delete
     guard_delete(db, invoice)
     if invoice.xiaoman_order_id or invoice.sync_status in {"synced", "sync_uncertain"}:
@@ -346,6 +348,8 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
     from app.receipt import invoice_link
     from app.invoice.linked_sync_service import ensure_idle
     ensure_idle(invoice)
+    from app.invoice.lifecycle_guard import ensure_mutable
+    ensure_mutable(db, invoice)
     receipt_floor = invoice_link.guard_edit(db, invoice, body)
     receipt_fee_basis = (invoice.total_amount, invoice.surcharge_amount)
     from app.semifinished.models import InvoiceAllocation
@@ -456,6 +460,8 @@ def validate_invoice(invoice: Invoice) -> list[dict]:
 
 
 def mark_ready_if_valid(invoice: Invoice) -> list[dict]:
+    if invoice.status in {"cancel_pending", "cancelled"}:
+        raise ValueError("订单正在取消或已取消，不能重新同步")
     issues = validate_invoice(invoice)
     if not issues and invoice.sync_status not in {"synced", "sync_uncertain"}:
         invoice.status = "ready"
@@ -834,6 +840,7 @@ def _invoice_list_row(invoice: Invoice, item_count: int, creator_name: str | Non
         "currency": invoice.currency,
         "status": invoice.status,
         "sync_status": invoice.sync_status,
+        "xiaoman_order_id": invoice.xiaoman_order_id,
         "source_type": invoice.source_type,
         "source_order_id": invoice.source_order_id,
         "source_order_no": invoice.source_order_no,

@@ -553,3 +553,7 @@ ark_invoices.linked_sync_id：当前关联任务写锁标识，结束后清除�
 ### 出库删除审计复用（2026-09-20，无迁移）
 
 `ark_shipping_operation_events` 复用 `(scope,request_id)` 唯一约束，`scope=outbound-delete`、`request_id=小满outbound_invoice_id`；`outbound_record_id` 保存本地镜像记录 ID，`action` 为 delete_pending/delete_uncertain/delete_failed/outbound_deleted。payload 保存删除前小满快照、关联订单及自动任务原状态，result 保存状态与北京时间核对时间。outbound_deleted 为单调完成标识，用于屏蔽迟到镜像；不直接删除 lsordertest 记录。相关 ark_okki_outbound_tasks 暂停为 skipped/delete_pending:<id>，成功改为 skipped/deleted:<id>；明确失败恢复原状态，不确定状态不自动恢复。
+
+## 160_invoice_lifecycle
+
+ark_invoices 新增 nullable JSON sync_attempt（推单令牌/北京时间租约）、nullable JSON cancellation（取消阶段/原因/执行权/证据）、非空 SmallInteger outbound_auto_requested 默认0（自动出库登记，历史数据不追建）。复用 InvoiceSyncLog 保存取消及恢复审计，ReceiptLog 保存回款变更前后证据；回款业务状态增加 remote_deleted，原远端ID和凭证仍保留。迁移可重入，不允许降级删除审计字段。

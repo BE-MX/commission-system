@@ -13,7 +13,14 @@ class BeforeSendError(HTTPException):
 
 def synchronize(db, invoice, operator_id, *, linked_id=None, linked_token=None):
     from app.invoice.linked_sync_service import ensure_idle, ensure_running, LostExecution
-    ensure_idle(invoice, linked_id)
+    from app.invoice.lifecycle_guard import ensure_mutable
+    try:
+        ensure_idle(invoice, linked_id)
+        ensure_mutable(db, invoice)
+    except ValueError as exc:
+        raise BeforeSendError(409, str(exc)) from exc
+    # Persisted by any preparatory commit: no worker may claim the old version.
+    invoice.sync_status = "not_synced"
     ensure_running(db, invoice, linked_id, linked_token)
     invoice_id = invoice.id
     operation_key = None
@@ -85,10 +92,10 @@ def synchronize(db, invoice, operator_id, *, linked_id=None, linked_token=None):
         else:
             result.update(invoice_link.mark_success(db, invoice, receipt_token))
             db.commit()
-    elif result.get("okki_accepted") and operation_key:
+    elif (result.get("okki_accepted") or invoice.sync_status == "sync_uncertain") and operation_key:
         # OKKI 已建单但响应缺行：无法可靠判断哪些产品已经生效，保留整批预占，
         # 由管理员核对 OKKI 后选择 finalize/release，禁止恢复为可用库存造成超卖。
-        result["message"] = f"{result.get('message') or 'OKKI 已受理但回写不完整'}；半成品库存保持预占，请核对后恢复"
+        result["message"] = f"{result.get('message') or 'OKKI 受理结果待核对'}；半成品库存保持预占，请核对后恢复"
         result["inventory_pending"] = True
         try:
             db.commit()

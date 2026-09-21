@@ -1,3 +1,12 @@
+## 2026-09-21 订单／出库／回款生命周期修复（codex/okki-sync-lifecycle）
+
+- 工作目录 `D:/commission-system/tmp/commission-system-sync-lifecycle`，基于 main f49fe630。实现取消冻结、可靠回读后删除/保留原单取消、订单推送持久执行令牌、结果未知保留库存预占、已绑定更新受理恢复、回款远端删改核实、出库漏建和删除结果恢复，以及按订单行核对与人工资料确认。
+- 迁移160增加发票取消审计、发送租约和自动出库登记字段；未合并、未推送、未发布，未连接生产执行写入。操作和协调发布说明见 [单据生命周期](invoice-lifecycle.md)。
+- 最终受影响 pytest 294 项通过；Node 出库轮询37项和前端行为11项通过；Vite构建通过（既有大包/混合导入警告）。迁移在隔离SQLite验证可重入、旧数据保留；独立复审已确认本轮范围无剩余阻断项。
+- 完整约定检查仍失败：8项已有UI行数基线过期，另本次InvoiceManage.vue为502行，生命周期主体已拆独立组件，未为消除2行门禁机械拆分或放宽基线。新增回款表格list-table问题已修复，git diff --check通过。
+- 扩展执行 invoiceSyncGuard.test.mjs 时1项旧源码断言失败：测试要求仅saveAndSyncSubmitting，HEAD实际已使用saveAndSyncSubmitting || linkedBusy；与本次生命周期改动无关，未弱化或删除断言。其余目标行为测试通过。未做真实浏览器视觉验收/MySQL并发锁/真实OKKI写操作验收。
+- 已执行 git_sweep.py --no-fetch，仅本地快照；本分支修改保留供审阅。上线需统一入口迁移/发布前后端并协调暂停及更新Singapore poller，禁止旧poller与新冻结状态混跑。
+
 ## 2026-09-20 出库列表排序规则冲突（codex/outbound-collation-fix）
 
 - 已只读复现：`lsordertest.okki_outbound_records` 可访问（4519条）；单数 `okki_outbound_record` 不存在。列表失败来自删除回执 `request_id` 的 `utf8mb4_unicode_ci` 与 `CAST(outbound_invoice_id AS CHAR)` 继承的连接 `utf8mb4_0900_ai_ci` 比较，MySQL报1267，被统一提示为数据库连接失败。

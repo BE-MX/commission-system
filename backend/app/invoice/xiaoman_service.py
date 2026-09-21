@@ -114,7 +114,15 @@ def sync_invoice(
     try:
         from app.invoice.linked_sync_service import ensure_running
         ensure_running(db, invoice, linked_id, linked_token)
-        data = okki_client.push_order(db, payload, **({"before_send": lambda: ensure_running(db, invoice, linked_id, linked_token)} if linked_id else {}))
+        # Durable uncertainty before every POST, including production orders.
+        # A killed process cannot roll back to a retryable first-create state.
+        from app.invoice import push_attempt
+        send_token = push_attempt.begin(db, invoice)
+        def fence():
+            push_attempt.ensure(db, invoice, send_token)
+            ensure_running(db, invoice, linked_id, linked_token)
+        fence()
+        data = okki_client.push_order(db, payload, before_send=fence)
     except LostExecution:
         raise
     except okki_client.OkkiOutcomeUncertainError as exc:
@@ -126,7 +134,7 @@ def sync_invoice(
     except Exception as exc:  # noqa: BLE001 - 意外异常也必须落状态+日志
         logger.warning("OKKI push unexpected failure invoice=%s: %s", invoice.id, exc)
         print(f"[xiaoman] push unexpected failure invoice={invoice.id}: {exc}", flush=True)
-        _mark_sync_failed(db, invoice, f"推单异常：{exc}", action, payload, operator_id)
+        _mark_sync_uncertain(db, invoice, "推单结果异常，请核对原单", action, payload, operator_id)
         return {"ok": False, "message": f"推单异常：{exc}", "issues": []}
 
     order_id = (data or {}).get("order_id")
@@ -135,6 +143,9 @@ def sync_invoice(
         message = "OKKI 响应异常（未返回 order_id）：订单可能已生成，请先到 OKKI 后台确认，禁止直接重试"
         _mark_sync_uncertain(db, invoice, message, action, payload, operator_id, response=data)
         return {"ok": False, "message": message, "issues": []}
+
+    if action == "create" and get_settings().OKKI_OUTBOUND_AUTO_ENABLED:
+        invoice.outbound_auto_requested = 1
 
     # 第一段落库：order_id + 审计日志立即固化（此后任何回写失败都不会丢单号）
     if order_id:
@@ -146,8 +157,7 @@ def sync_invoice(
     )
     db.commit()
 
-    if linked_id:
-        ensure_running(db, invoice, linked_id, linked_token)
+    fence()
 
     # 第二段：unique_id 回写与状态收尾（由 router 的 commit 落库）
     unassigned = _assign_unique_ids(invoice, line_binding, (data or {}).get("product_list") or [])
@@ -167,6 +177,7 @@ def sync_invoice(
             "okki_accepted": True,
         }
 
+    push_attempt.finish(invoice)
     invoice.sync_status = "synced"
     invoice.status = "synced"
     invoice.sync_error = None
@@ -272,6 +283,11 @@ def resolve_sync_uncertain(
     operator_id: int | None,
     xiaoman_order_id: str | None = None,
 ) -> Invoice:
+    from app.invoice.push_attempt import allow_recovery, finish
+    allow_recovery(invoice)
+    if resolution == "confirm_existing":
+        from app.invoice.uncertain_recovery import confirm_existing
+        return confirm_existing(db, invoice, reason, operator_id)
     if invoice.sync_status != "sync_uncertain" or invoice.xiaoman_order_id:
         raise ValueError("该发票当前不是待核对的首次推送")
     note = str(reason or "").strip()
@@ -324,6 +340,7 @@ def resolve_sync_uncertain(
     else:
         raise ValueError("不支持的待核对处理方式")
 
+    finish(invoice)
     invoice.sync_status = "not_synced"
     invoice.status = "ready"
     _write_sync_log(
@@ -731,6 +748,8 @@ def _mark_sync_failed(
     operator_id: int | None,
     response: dict | None = None,
 ) -> None:
+    from app.invoice.push_attempt import finish
+    finish(invoice)
     invoice.sync_status = "sync_failed"
     invoice.status = "sync_failed"
     invoice.sync_error = message
@@ -749,6 +768,8 @@ def _mark_sync_uncertain(
     operator_id: int | None,
     response: dict | None = None,
 ) -> None:
+    from app.invoice.push_attempt import finish
+    finish(invoice)
     invoice.sync_status = "sync_uncertain"
     invoice.status = "sync_uncertain"
     invoice.sync_error = message

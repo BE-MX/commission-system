@@ -22,7 +22,7 @@ def generate_ready(db):
         try:
             invoice = db.query(Invoice).filter(Invoice.id == invoice_id).with_for_update().one()
             intent = db.query(ReceiptIntent).filter(ReceiptIntent.invoice_id == invoice_id).with_for_update().one()
-            if invoice.linked_sync_id or intent.status != "ready" or not intent.eligible:
+            if invoice.status in {"cancel_pending", "cancelled"} or invoice.linked_sync_id or intent.status != "ready" or not intent.eligible:
                 db.rollback()
                 continue
             service.ensure_order_ready(db, invoice)
@@ -63,7 +63,7 @@ def deliver(db, receipt_id):
     # Lock order then row, same ordering used by edit/void/create.
     invoice = db.query(Invoice).filter(Invoice.id == row.invoice_id).with_for_update().one()
     db.refresh(invoice)
-    if invoice.linked_sync_id:
+    if invoice.status in {"cancel_pending", "cancelled"} or invoice.linked_sync_id:
         db.rollback()
         return
     token = uuid4().hex

@@ -63,3 +63,5 @@ export function downloadInspectionPdf(id, version) {
     params: { edit_version: version }, responseType: 'blob', suppressToast: true, redirectOnUnauthorized: false,
   })
 }
+
+export const recoverOutboundDeletion = (id, body) => shippingClient.post(`/outbound-records/${encodeURIComponent(id)}/delete-recovery`, body)

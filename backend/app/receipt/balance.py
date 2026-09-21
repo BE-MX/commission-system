@@ -32,6 +32,8 @@ def calculate(db, invoice, snapshot, *, exclude_receipt=None, exclude_intent=Fal
             if remote.money(counterpart["amount"]) != row.amount:
                 raise ValueError("小满已修改关联回款金额，请先核对原单，余额暂冻结")
             continue
+        if row.xiaoman_receipt_id:
+            raise ValueError("小满关联回款已缺失或转移，请管理员核实远端变更后再登记")
         if row.id == exclude_receipt:
             continue
         registered += row.amount

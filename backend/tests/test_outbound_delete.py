@@ -218,3 +218,21 @@ def test_only_exact_not_found_proves_absence(monkeypatch, code, message, missing
     if missing: assert remote.read('test', '77') is None
     else:
         with pytest.raises(remote.DeleteRemoteError): remote.read('test', '77')
+
+def test_outbound_recovery_abandons_expired_intent_without_replay(db, case, monkeypatch):
+    from datetime import timedelta
+    user, _, task, state = case
+    now=deletion.beijing_now()
+    monkeypatch.setattr(deletion,'beijing_now',lambda:now)
+    def timeout(*args):
+        state['posts']+=1
+        raise remote.DeleteRemoteError('timeout',uncertain=True)
+    monkeypatch.setattr(remote,'remove',timeout)
+    record=outbound_service.get_outbound_record(db,'OB001')
+    with pytest.raises(deletion.OutboundDeleteError): deletion.delete_outbound(db,record,user.id)
+    with pytest.raises(deletion.OutboundDeleteError,match='5分钟'): deletion.abandon_pending(db,record,user.id,'核对保留原出库单')
+    now+=timedelta(minutes=6)
+    assert not deletion.abandon_pending(db,record,user.id,'已核实仍存在，保留原出库单')['deleted']
+    assert task.reason=='delete_abandoned:77'
+    with pytest.raises(deletion.OutboundDeleteError): deletion.delete_outbound(db,record,user.id)
+    assert state['posts']==1

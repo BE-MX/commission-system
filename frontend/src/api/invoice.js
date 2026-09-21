@@ -275,3 +275,6 @@ export const runInvoiceLinked = (id, operationId, recheck = false) => unwrap(req
 export const closeInvoiceLinked = (id, operationId) => unwrap(request.post(`/invoices/${id}/linked-sync/${operationId}/close`))
 
 export const resolveInvoiceLinked = (id, identity, body) => unwrap(request.post(`/invoices/${id}/linked-sync/${identity}/resolve`, body))
+
+export const getInvoiceLifecycle = id => unwrap(request.get(`/invoices/${id}/lifecycle`, { showLoading: false }))
+export const applyInvoiceLifecycle = (id, body) => unwrap(request.post(`/invoices/${id}/lifecycle`, body, { timeout: 180000, showLoading: false }))

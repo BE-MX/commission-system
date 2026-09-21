@@ -11,7 +11,6 @@ okki_outbound_creator.mjs。任务表是跨系统唯一事实来源：
 """
 
 import logging
-from datetime import timedelta
 
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -86,16 +85,14 @@ def enqueue_outbound_task(db: Session, invoice: Invoice) -> OkkiOutboundTask | N
 def reconcile_missing_outbound_tasks(
     db: Session,
     *,
-    window_hours: int = 24,
     limit: int = RECONCILE_LIMIT,
 ) -> dict:
-    """对账补入队：窗口内首推成功、当前 synced、但无任务行的发票。
+    """对账补入队：已登记自动出库、首推成功、当前 synced、但无任务行的发票。
 
     「首推」按首张 action=create 且 success=1 的同步日志时间判定——历史订单
     编辑重推（update）不补，避免给功能上线前的老订单回头建出库单。首推部分
     受理（sync_status≠synced）由人工核对重推，成功后自然进入本口径。
     """
-    cutoff = beijing_now() - timedelta(hours=window_hours)
     first_create = (
         db.query(
             InvoiceSyncLog.invoice_id.label("invoice_id"),
@@ -113,7 +110,8 @@ def reconcile_missing_outbound_tasks(
             Invoice.sync_status == "synced",
             Invoice.xiaoman_order_id.isnot(None),
             Invoice.xiaoman_order_id != "",
-            first_create.c.first_at >= cutoff,
+            Invoice.outbound_auto_requested == 1,
+            Invoice.status.notin_(["cancel_pending", "cancelled"]),
             OkkiOutboundTask.id.is_(None),
         )
         .order_by(Invoice.id)
@@ -140,3 +138,35 @@ def reconcile_missing_outbound_tasks(
         logger.info("okki outbound reconcile: %s", stats)
         print(f"[outbound] reconcile missing tasks: {stats}", flush=True)
     return stats
+
+
+def retry_reviewed(db, invoice, actor, reason, expected_version):
+    """Explicitly recover a missed or definitively unsent task; never replay uncertainty."""
+    from app.invoice import linked_outbound_service, service
+    from app.invoice.linked_sync_service import ensure_idle, edit_version
+    from app.invoice.lifecycle_guard import ensure_mutable
+    from app.invoice.cancellation_service import audit
+    from app.receipt import remote
+    ensure_idle(invoice)
+    ensure_mutable(db, invoice)
+    if invoice.sync_status != "synced" or edit_version(invoice) != expected_version:
+        raise ValueError("订单未同步或已变化，请刷新后处理")
+    remote.order_snapshot(db, invoice)
+    order = remote.read(db, "/v1/invoices/order/info", {"order_id": invoice.xiaoman_order_id})
+    if linked_outbound_service.find_related(db, order):
+        raise ValueError("已有出库单，请在小满办理补发或退货，不能整单重建")
+    invoice = service.get_invoice(db, invoice.id, for_update=True)
+    ensure_mutable(db, invoice)
+    if edit_version(invoice) != expected_version or invoice.sync_status != "synced":
+        raise ValueError("核对期间订单已变化，请重新处理")
+    if has_unbackfilled_custom_lines(db, invoice):
+        raise ValueError("非标产品尚未补齐真实产品与SKU，请先建品并重新同步订单")
+    task = db.query(OkkiOutboundTask).filter_by(invoice_id=invoice.id).with_for_update().first()
+    if task and not (task.status == "failed" or
+                     (task.status == "skipped" and task.reason == SKIP_REASON_GENERIC_MERGE)):
+        raise ValueError("仅明确未发送、非标建品后或漏建任务可恢复；已创建、已删除及待核对任务请人工处理")
+    invoice.outbound_auto_requested = 1
+    task = task or enqueue_outbound_task(db, invoice)
+    task.status, task.reason, task.last_error, task.attempts = "pending", None, None, 0
+    audit(db, invoice, "outbound_retry", actor, {"reason": reason, "task_id": task.id})
+    return {"status": "pending", "message": "已核实无关联出库单，恢复自动出库；执行端仍会实时查重"}

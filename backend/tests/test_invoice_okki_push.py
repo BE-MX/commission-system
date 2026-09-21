@@ -317,7 +317,7 @@ def test_sync_blocks_stale_accessory_identity_before_calling_okki(
     db.flush()
     called = {"value": False}
 
-    def unexpected_push(_db, _payload):
+    def unexpected_push(_db, _payload, *, before_send=None):
         called["value"] = True
         return {
             "order_id": 999,
@@ -579,7 +579,7 @@ def test_sync_invoice_success_state_and_unique_id_writeback(db, monkeypatch, no_
 
     captured = {}
 
-    def fake_push(db_, payload):
+    def fake_push(db_, payload, *, before_send=None):
         captured["payload"] = payload
         return {
             "order_id": 424242,
@@ -622,7 +622,7 @@ def test_sync_invoice_failure_state_and_log(db, monkeypatch, no_reconcile):
     invoice.items.append(_stock_item())
     db.flush()
 
-    def fake_push(db_, payload):
+    def fake_push(db_, payload, *, before_send=None):
         raise okki_client.OkkiApiError("OKKI 订单推送失败：boom")
 
     monkeypatch.setattr(okki_client, "push_order", fake_push)
@@ -661,7 +661,7 @@ def test_sync_create_without_order_id_marks_failed(db, monkeypatch, no_reconcile
     invoice.items.append(_stock_item())
     db.flush()
 
-    monkeypatch.setattr(okki_client, "push_order", lambda db_, payload: {})
+    monkeypatch.setattr(okki_client, "push_order", lambda db_, payload, **kwargs: {})
     result = xiaoman_service.sync_invoice(db, invoice)
 
     assert result["ok"] is False and "order_id" in result["message"]
@@ -710,7 +710,7 @@ def test_sync_partial_response_fails_but_keeps_order_id(db, monkeypatch, no_reco
     invoice.items.append(_custom_item(cp.id))
     db.flush()
 
-    def fake_push(db_, payload):
+    def fake_push(db_, payload, *, before_send=None):
         return {
             "order_id": 424242,
             # custom 行被 OKKI 静默忽略，响应只有库存行

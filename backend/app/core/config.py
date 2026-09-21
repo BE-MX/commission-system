@@ -359,7 +359,6 @@ class Settings(BaseSettings):
 
     # ── OKKI 出库单自动生成（发票首推成功 → ark_okki_outbound_tasks → singapore 轮询执行）─
     OKKI_OUTBOUND_AUTO_ENABLED: bool = True  # 总开关：关后不入队、不跑对账，运维免发版止血
-    OKKI_OUTBOUND_RECONCILE_WINDOW_HOURS: int = 24  # 对账补入队只覆盖近 N 小时首推的订单
 
     # ── PM 项目资料协作站 ─────────────────────────────────
     PM_TOKEN_SECRET: str = ""  # HMAC 签名密钥；留空回退 JWT_SECRET_KEY

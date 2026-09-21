@@ -1433,3 +1433,13 @@ Agent research context now includes `fact_contract.version=registered_research_f
 删除待确认时不隐藏单据、不自动重发，用户再次点击只核对结果。明确锁定/鉴权拒绝可保留失败回执后重新尝试；已完成删除幂等返回。相关自动任务在订单锁下暂停；成功后维持 skipped/deleted，避免镜像删除后旧任务重新显示或重建。异常持久意图和暂停状态留待核对，不自动解锁。
 
 完成回执在方舟查询层屏蔽过期镜像（含分页总数、打印与新扫码），无需等待同步；镜像行、订单发票、验货单及媒体不删除。已存在的验货资料仍走原归属鉴权读取；小满外部删除造成镜像头消失后的历史归属问题沿用现有规则。此版本无新表或迁移，需已有153迁移及启动权限 seed；删除权限单独在角色管理授权，更新令牌后生效。外部仓库在GET与POST之间改变状态的最终拒绝由小满控制，接口无已确认的版本条件写能力。
+
+## 单据生命周期与异常恢复（2026-09-21）
+
+- `GET /api/invoice/invoices/{id}/lifecycle`：invoice:admin + 发票范围；返回版本、取消状态与出库任务摘要。
+- `POST /api/invoice/invoices/{id}/lifecycle`：同权限；action 为 begin/refresh/remove/retain/abort/outbound_retry/ack_outbound；reason 至少10字，涉及版本检查时提供 expected_version；所有操作须 confirmed=true。409 表示当前版本、执行权或关联证据不允许操作。不能用重试 POST 推断未知结果。
+- 原订单同步不确定恢复接口增加 resolution=confirm_existing，用于已绑定原订单的受理核对，不创建/替换订单 ID。
+- `GET /api/receipts/{id}/remote-change`、`POST /api/receipts/{id}/remote-change`：receipt:admin + 原回款范围；提交 version、evidence_hash、reason（至少10字）、confirmed=true。登记核实的远端变化，不退款。
+- `POST /api/shipping-inspection/outbound-records/{id}/delete-recovery`：shipping_inspection:admin + 原出库归属；confirmed=true 和至少10字 reason，租约结束后核实原删除，禁止重放。
+
+业务处理规则见 [单据生命周期](invoice-lifecycle.md)。
