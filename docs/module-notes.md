@@ -1190,4 +1190,4 @@ ly914首返出库单的处理人为Eva。详情获取失败时返回502提示重
 
 ## 临时战报海报与群推送
 
-采用固定红金主题资产+Jinja模板+Playwright截图，运行时没有AI调用。海报与总览复用 battle_report 的只读订单集合和 Decimal 进度；工作日按明确日期列表、北京时间16:00累加。群机器人使用专用配置，不复用日报接收人或其他模块默认群。活动每天13:00/17:30分别发送团队及个人两张图；两图共享持久快照，各自状态保证部分成功后的重试不重复已成功图片。未知结果隔离为uncertain并由管理员人工核对。浏览器解析顺序：`BATTLE_REPORT_BROWSER_PATH` → Playwright Chromium → 本机 Chrome/Edge；失败提示区分浏览器缺失与渲染/字体问题。详见 [功能及部署说明](requirements/2026-09-22-battle-posters.md)。
+采用固定红金主题资产+Jinja模板+Playwright截图，运行时没有AI调用。海报与总览复用 battle_report 的只读订单集合和 Decimal 进度；工作日按明确日期列表、北京时间16:00累加。群机器人使用专用配置，不复用日报接收人或其他模块默认群。活动每天13:00/17:00分别发送团队及个人两张图；两图共享持久快照，各自状态保证部分成功后的重试不重复已成功图片。未知结果隔离为uncertain并由管理员人工核对。浏览器解析顺序：`BATTLE_REPORT_BROWSER_PATH` → Playwright Chromium → 本机 Chrome/Edge；失败提示区分浏览器缺失与渲染/字体问题。详见 [功能及部署说明](requirements/2026-09-22-battle-posters.md)。

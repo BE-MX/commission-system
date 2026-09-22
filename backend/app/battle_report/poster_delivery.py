@@ -25,8 +25,8 @@ def due_slot(now):
     now = to_beijing_naive(now)
     if now.hour == 13 and now.minute in (0, 5, 15):
         return "13:00"
-    if now.hour == 17 and now.minute in (30, 35, 45):
-        return "17:30"
+    if now.hour == 17 and now.minute in (0, 5, 15):
+        return "17:00"
     return None
 
 
