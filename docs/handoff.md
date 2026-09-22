@@ -1,3 +1,9 @@
+## 2026-09-22 内贸订单编辑删除明细（Codex，合并推送交付）
+
+- 分支 `codex/domestic-item-delete`，工作树 `D:/MyProgram/commission-system-codex-domestic-item-delete`。补齐编辑窗口缺失的「删除明细」入口和已有 DELETE API 接入；确认/防重、成功刷新和未保存表头保留，复用后端报工历史保护与余额差额结算。
+- 前端21项、隔离 SQLite 删除及审核24项、生产构建、Chrome桌面/390px交互通过，独立审查无阻断；增量约定0项，完整约定仍被9项既有UI基线过期阻断。扩展旧回归有69项建单/审核等基线失败，具体范围和证据见[修复报告](reports/2026-09-22-domestic-item-delete.md)。
+- 用户已授权合并 main 并推送 origin/main，本轮不部署；无迁移、无生产数据操作。浏览器截图和复现脚本保留到主目录 `tmp/domestic-item-delete/`。
+
 ## 2026-09-22 临时战报（已授权合并推送，未部署）
 
 - 工作树 `C:/Users/lys-m/.codex/worktrees/commission-system-battle-report/commission-system`，基于 main `b4e5c04d`。入口「订单管理 → 临时战报」。实现任意周期草稿/发布、个人目标、活动组/个人GMV和进度、每日成交矩阵、订单筛选/分页/单笔明细、归档恢复及修改记录。

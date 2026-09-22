@@ -221,6 +221,10 @@ export function updateOrderItem(itemId, data) {
   return domesticClient.put(`/items/${itemId}`, data)
 }
 
+export function deleteOrderItem(itemId) {
+  return domesticClient.delete(`/items/${itemId}`)
+}
+
 export function attachItemRoute(itemId, routeId) {
   return domesticClient.post(`/items/${itemId}/attach-route`, { route_id: routeId })
 }
