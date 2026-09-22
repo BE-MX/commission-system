@@ -48,6 +48,7 @@ def posters(setup, monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "BATTLE_REPORT_WEBHOOK_URL", "https://oapi.dingtalk.com/robot/send?access_token=test-only")
     monkeypatch.setattr(settings, "BATTLE_REPORT_PUBLIC_BASE_URL", "https://example.test")
     monkeypatch.setattr(poster_images, "CACHE_ROOT", tmp_path)
+    monkeypatch.setattr(poster_images, "UPLOADS_ROOT", tmp_path / "uploads")
     monkeypatch.setattr(poster_delivery, "beijing_now", lambda: datetime(2026, 9, 22, 13))
     monkeypatch.setattr(poster_service, "beijing_now", lambda: datetime(2026, 9, 22, 13))
     report = s.db.get(BattleReport, s.report["id"])
@@ -193,6 +194,28 @@ def test_capability_is_expiring_and_kind_bound(posters, monkeypatch):
         poster_images.public_image(s.db, row.id, "team", expires, sig)
 
 
+def test_public_image_route_serves_jpeg_and_rebuild_failure_is_503(posters, monkeypatch):
+    s = posters; enable(s); mock_render(monkeypatch)
+    poster_delivery.send_slot(s.db, s.report_obj.id, sender=s.sender)
+    row = s.db.query(BattleReportDelivery).one()
+    expires = poster_images.expiry(row)
+    sig = poster_images.signature(row.id, "team", expires)
+    url = f"/api/battle-reports/poster-images/{row.id}/team.jpg?expires={expires}&signature={sig}"
+    response = s.client.get(url)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/jpeg")
+    assert response.content[:2] == b"\xff\xd8"
+
+    for cached in poster_images.CACHE_ROOT.glob("*.jpg"):
+        cached.unlink()
+    monkeypatch.setattr(poster_images, "render_posters",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("browser missing")))
+    response = s.client.get(url)
+    assert response.status_code == 503
+    body = response.json()
+    assert "海报生成失败" in (body.get("message") or body.get("detail") or "")
+
+
 def test_compress_poster_jpeg_shrinks_tall_png():
     import os
     from io import BytesIO
@@ -203,6 +226,17 @@ def test_compress_poster_jpeg_shrinks_tall_png():
     jpeg = poster_images.compress_poster(raw)
     assert jpeg[:2] == b"\xff\xd8" and len(jpeg) < len(raw)
     assert Image.open(BytesIO(jpeg)).size == (1080, 800)
+
+
+def test_image_url_is_cloud_public_uploads_path(posters, monkeypatch):
+    s = posters; enable(s); mock_render(monkeypatch)
+    poster_delivery.send_slot(s.db, s.report_obj.id, sender=s.sender)
+    row = s.db.query(BattleReportDelivery).one()
+    url = poster_images.image_url(row, "team")
+    assert url.startswith("https://example.test/uploads/festival/battle-report-posters/")
+    assert url.endswith(".jpg")
+    assert (poster_images.UPLOADS_ROOT / "battle-report-posters").is_dir()
+    assert list((poster_images.UPLOADS_ROOT / "battle-report-posters").glob("*.jpg"))
 
 
 def test_template_escapes_names_and_has_no_external_assets(posters):

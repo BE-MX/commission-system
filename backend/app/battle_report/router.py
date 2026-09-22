@@ -26,7 +26,14 @@ _require_battle_admin = require_permission("battle_report:admin")
 def poster_image(delivery_id: int, kind: Literal["team", "personal"], expires: int,
                  signature: str = Query(min_length=64, max_length=64), db: Session = Depends(get_db)):
     from app.battle_report.poster_images import public_image
-    return FileResponse(public_image(db, delivery_id, kind, expires, signature), media_type="image/jpeg",
+    try:
+        path = public_image(db, delivery_id, kind, expires, signature)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # Missing cache + failed rebuild must not surface as an opaque 500.
+        raise HTTPException(503, f"海报生成失败（{type(exc).__name__}），请稍后重试或检查浏览器环境") from None
+    return FileResponse(path, media_type="image/jpeg",
                         headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
 
 
