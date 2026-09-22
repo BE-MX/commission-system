@@ -4,6 +4,15 @@
 - 前端21项、隔离 SQLite 删除及审核24项、生产构建、Chrome桌面/390px交互通过，独立审查无阻断；增量约定0项，完整约定仍被9项既有UI基线过期阻断。扩展旧回归有69项建单/审核等基线失败，具体范围和证据见[修复报告](reports/2026-09-22-domestic-item-delete.md)。
 - 用户已授权合并 main 并推送 origin/main，本轮不部署；无迁移、无生产数据操作。浏览器截图和复现脚本保留到主目录 `tmp/domestic-item-delete/`。
 
+## 2026-09-22 出库单 Word 下载加固（Codex，已授权合并推送，未部署）
+
+- 分支 `codex/outbound-word-download`，工作树 `D:/commission-system/tmp/commission-system-word-download`。共享 `downloadBlob` 保留原 Blob MIME，未带类型时采用响应 Content-Type；临时 URL 延迟60秒释放，避免触发下载后立即销毁。60秒仅是浏览器接管宽限期，不表示写盘完成。
+- 出库单显式传入 `出库单-{单号或记录ID}.docx` 兜底；UTF-8文件名解析失败时降级到普通文件名或兜底，去除普通文件名引号及Windows非法字符。现有Excel默认文件名和其他调用接口保持可用。
+- `node --test frontend/tests/download.test.mjs frontend/tests/shippingPrintDocs.test.mjs` 17项通过；`pnpm run build`通过（执行现有 `vite build` 脚本，保留既有混合导入和大包警告）。Chrome隔离浏览器实测正常中文、缺失响应文件名、损坏编码三种下载均完成，56460字节与已校验Word样本逐字节一致，无页面JS错误；脚本保留于主目录 `tmp/word-download-browser-check.cjs`，不连接生产。
+- 共享下载调用方独立审查通过；增量约定检查0项、`git diff --check`通过。完整约定检查仍为9项已有UI行数基线过期，在未修改主目录复现；未调整基线。`git_sweep.py --no-fetch`已运行，仅本地远端快照。
+- 不涉及数据库、权限或后端API改动。此次为前端稳健性加固，未证明用户样本残留 `.crdownload` 的具体原因；本轮按用户授权合并 main 并推送 origin/main，不部署。
+- 合并前整合远端 `c0b0e80d`，保留双方交接记录；整合后18项下载/打印测试、Chrome三种下载场景、前端构建再次通过。增量约定0项，完整检查仍为上述9项已有UI基线问题。
+
 ## 2026-09-22 临时战报（已授权合并推送，未部署）
 
 - 工作树 `C:/Users/lys-m/.codex/worktrees/commission-system-battle-report/commission-system`，基于 main `b4e5c04d`。入口「订单管理 → 临时战报」。实现任意周期草稿/发布、个人目标、活动组/个人GMV和进度、每日成交矩阵、订单筛选/分页/单笔明细、归档恢复及修改记录。
