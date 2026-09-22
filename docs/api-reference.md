@@ -35,7 +35,7 @@
 
 色块工作台保留原用户API和D1引用。内部 `/api/colorwork/storage/object`（GET/PUT/DELETE）与 `/metadata`（GET）仅允许回环来源及专用机器密钥；公网Nginx显式404，不接受用户JWT代替机器认证。PUT按声明和实际字节双重限制256MiB，条件创建冲突412，别名竞争409；Range读取返回原对象元数据。分片仍在R2暂存，完成后进入COS并保存持久回执，失败可重试；COS密钥不会进入workerd或浏览器。
 
-## 回款管理（2026-09-17，本地实现，迁移 156 后可用）
+## 回款管理（2026-09-17，应用及迁移156已发布，小满发送未启用）
 
 前缀 `/api/receipts`，登录认证、标准 `ok()` 信封。普通用户仅可访问 `Invoice.sales_user_id` 等于当前用户的订单回款；创建人/代录授权不扩大回款范围。`receipt:read_all` 可看全部（数据范围权限，仍需 `receipt:read/write/admin` 页面或操作权限）；`invoice:read_all` 不扩大回款范围。列表、详情、订单选择、余额、已绑定回款凭证和写操作统一校验；已绑定回款凭证必须具有回款动作权限，未绑定回款的订单截图仍按发票编辑权限访问。详见[实现说明](requirements/2026-09-17-receipt-management-implementation.md)。
 
@@ -1371,7 +1371,7 @@ Agent research context now includes `fact_contract.version=registered_research_f
 
 ### 出库检验提交后通知补充（2026-09-17）
 
-`POST /api/mini/shipping-inspection/submit` 和 `POST /api/shipping-inspection/station/sessions/{session_id}/submit`：请求/回执结构不变。新一次检验提交成功后，向客户当前OKKI负责业务员已绑定的钉钉发送“客户【客户名称】的【出库单号】出库单已出库检验完成，请及时验货。”重复提交/回执重放不重复发送；撤回重提重新通知。缺少有效客户归属或钉钉绑定、提供商失败不会撤销提交；发送最多等待10秒，无自动补发队列。
+`POST /api/mini/shipping-inspection/submit` 和 `POST /api/shipping-inspection/station/sessions/{session_id}/submit`：请求/回执结构不变。新一次检验提交成功后，向客户当前OKKI负责业务员已绑定的钉钉发送“客户【客户名称】的【出库单号】出库单已出库检验完成，请及时验货。”重复提交/回执重放不重复发送；撤回重提重新通知。多人归属中未接入绑定的协同人跳过不阻断；任一归属绑定歧义或全部无法定位时跳过发送。缺少有效客户归属或钉钉绑定、提供商失败不会撤销提交；发送最多等待10秒，无自动补发队列。
 
 
 ### 2026-09-17 验货单 PDF 下载

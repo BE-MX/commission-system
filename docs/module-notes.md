@@ -1122,7 +1122,7 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 
 ### 出库检验完成通知（2026-09-17）
 
-小程序/网页提交成功后，按同一业务库的出库company_id→customer_info.owner_user_ids查询当前OKKI业务员，叠加最新InvoiceCustomerOverlay手动同步归属，再精确匹配有效OKKI账号绑定与有效方舟用户的钉钉绑定。镜像update_time>=overlay.source_update_time取镜像；缺失/不可比时间取overlay，与发票客户选择口径相同。时间按北京解析（epoch由UTC转换）。多个当前负责人去重通知；任一负责人的外部账号绑定缺失/歧义时整体跳过，可能同时不通知其他已确定负责人；公海不发送。生产统一客户域尚无OKKI归属，不使用制单人或历史订单替代当前负责人。
+小程序/网页提交成功后，按同一业务库的出库company_id→customer_info.owner_user_ids查询当前OKKI业务员，叠加最新InvoiceCustomerOverlay手动同步归属，再精确匹配有效OKKI账号绑定与有效方舟用户的钉钉绑定。镜像update_time>=overlay.source_update_time取镜像；缺失/不可比时间取overlay，与发票客户选择口径相同。时间按北京解析（epoch由UTC转换）。多个当前负责人去重通知；外部账号绑定缺失（未接入协同人）跳过该人并继续通知其余可唯一定位者，任一负责人绑定歧义（一对多）时整体跳过不猜人；全部无法定位或公海不发送。生产统一客户域尚无OKKI归属，不使用制单人或历史订单替代当前负责人。
 
 发送仅发生在提交事务成功之后，重复提交不重发；撤回重提再通知。发送失败不影响提交，超时10秒，无持久队列及不确定结果自动重试，进程中断或提供商异常可能漏发。日志按`[SHIPPING] notification`查跳过/失败；上线须有正确的当前OKKI归属、有效账号绑定和钉钉绑定。测试不发送真实通知。
 
@@ -1190,4 +1190,4 @@ ly914首返出库单的处理人为Eva。详情获取失败时返回502提示重
 
 ## 临时战报海报与群推送
 
-采用固定红金主题资产+Jinja模板+Playwright截图，运行时没有AI调用。海报与总览复用 battle_report 的只读订单集合和 Decimal 进度；工作日按明确日期列表、北京时间16:00累加。群机器人使用专用配置，不复用日报接收人或其他模块默认群。活动每天13:00/17:30分别发送团队及个人两张图；两图共享持久快照，各自状态保证部分成功后的重试不重复已成功图片。未知结果隔离为uncertain并由管理员人工核对。详见 [功能及部署说明](requirements/2026-09-22-battle-posters.md)。
+采用固定红金主题资产+Jinja模板+Playwright截图，运行时没有AI调用。海报与总览复用 battle_report 的只读订单集合和 Decimal 进度；工作日按明确日期列表、北京时间16:00累加。群机器人使用专用配置，不复用日报接收人或其他模块默认群。活动每天13:00/17:30分别发送团队及个人两张图；两图共享持久快照，各自状态保证部分成功后的重试不重复已成功图片。未知结果隔离为uncertain并由管理员人工核对。浏览器解析顺序：`BATTLE_REPORT_BROWSER_PATH` → Playwright Chromium → 本机 Chrome/Edge；失败提示区分浏览器缺失与渲染/字体问题。详见 [功能及部署说明](requirements/2026-09-22-battle-posters.md)。

@@ -64,8 +64,10 @@ def current_salespeople(db, outbound_record_id):
             ArkUserExternalBinding.deleted_at.is_(None),
             ArkUser.deleted_at.is_(None),
         ).all()
-        if len(matches) != 1:
-            return []  # Ambiguous or missing binding: never guess the responsible user.
+        if len(matches) > 1:
+            return []  # Ambiguous binding: never guess the responsible user.
+        if not matches:
+            continue  # Unbound co-owner: skip, still notify resolvable owners
         user = matches[0]
         if user.is_active and (user.dingtalk_id or '').strip():
             users[user.id] = user
