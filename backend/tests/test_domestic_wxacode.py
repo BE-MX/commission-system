@@ -50,16 +50,26 @@ def _user(db, username="wxacode-user"):
     return user
 
 
-def _attrs(craft="递针旋全头套"):
+def _attrs(craft="中分界"):
     return ProductAttrs(
         product_type="cap", craft=craft, net_color="呼吸红",
-        size="s", length="15厘米", density="65%",
+        size="s", length="40厘米",
         hair_style_series="直发",
     )
 
 
 def _create_order(db, user, item_count=1):
-    attrs_list = [_attrs(f"递针旋全头套{i or ''}") for i in range(item_count)]
+    attrs_list = [
+        ProductAttrs(
+            product_type="cap",
+            craft="中分界",
+            net_color=f"呼吸红{i or ''}",
+            size="s",
+            length="40厘米",
+            hair_style_series="直发",
+        )
+        for i in range(item_count)
+    ]
     values = {
         (C.ORDER_TYPE_DICT, "first_order"),
         (C.ORDER_CHANNEL_DICT, "wechat"),
@@ -77,33 +87,45 @@ def _create_order(db, user, item_count=1):
         shop_name=f"马姐假发-{uuid4()}",
         owner_user_id=user.id,
         membership_level="black",
-        balance=0,
+        balance=100000,
         created_by=user.id,
     )
     db.add(customer)
     db.flush()
     items = []
+    shared_base = None
+    from app.domestic import pricing_service
+
     for i, attrs in enumerate(attrs_list):
-        base = DomesticBasePrice(
+        if shared_base is None:
+            shared_base = DomesticBasePrice(
+                product_type=attrs.product_type,
+                craft=attrs.craft,
+                length=attrs.length,
+                original_price=120,
+                version=1,
+            )
+            db.add(shared_base)
+            db.flush()
+        discount = pricing_service.resolve_discount(
             product_type=attrs.product_type,
             craft=attrs.craft,
             length=attrs.length,
-            original_price=120,
-            version=1,
+            size=None,
+            original_price=shared_base.original_price,
+            membership_level="black",
         )
-        db.add(base)
-        db.flush()
         items.append(OrderItemInput(
             client_key=f"wx-line-{i + 1}",
             attrs=attrs,
             order_qty=10 + i,
             expected_quote={
-                "original_price": "120.00",
-                "base_price_version": base.version,
-                "discount_price": "0.00",
+                "original_price": str(discount.original_price),
+                "base_price_version": shared_base.version,
+                "discount_price": str(discount.final_price),
                 "membership_level": "black",
-                "pricing_rule": "member_reduction",
-                "pricing_version": "domestic-member-v1",
+                "pricing_rule": discount.pricing_rule,
+                "pricing_version": pricing_service.PRICING_VERSION,
             },
         ))
     payload = OrderCreate(
@@ -118,12 +140,16 @@ def _create_order(db, user, item_count=1):
         items=items,
     )
     created = order_service.create_order(db, payload, user.id)
-    # 会员优惠价单先落待审核：审核通过转生产中后才能生成客户进度码
-    reviewer = _user(db, f"wx-reviewer-{uuid4().hex[:8]}")
-    order_service.review_order(
-        db, created["id"], decision="approve", remark=None,
-        reviewer_id=reviewer.id, can_admin=False,
-    )
+    # 仅当成交价偏离系统默认价时才待审核
+    from app.domestic.models import DomesticOrder
+
+    order = db.query(DomesticOrder).get(created["id"])
+    if order.status == C.ORDER_PENDING_REVIEW:
+        reviewer = _user(db, f"wx-reviewer-{uuid4().hex[:8]}")
+        order_service.review_order(
+            db, created["id"], decision="approve", remark=None,
+            reviewer_id=reviewer.id, can_admin=False,
+        )
     return created
 
 

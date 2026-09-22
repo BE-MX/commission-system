@@ -27,8 +27,12 @@ export function membershipChangeLabel(change) {
 
 export function pricingRuleLabelForQuote(quote) {
   if (!quote) return '报价已更新'
-  const member = membershipLevelLabel(quote.membership_level)
-  if (quote.pricing_rule === 'base_price') return '非会员原价'
+  // 与后端 pricing_rule_label 对齐：短前缀「银卡/黑卡/至尊」
+  const member = ({ silver: '银卡', black: '黑卡', supreme: '至尊' })[quote.membership_level] || '非会员'
+  if (quote.pricing_rule === 'base_price') {
+    if (!quote.membership_level) return '非会员原价'
+    return `${member}原价（该规格无优惠）`
+  }
   if (quote.pricing_rule === 'member_fixed') return `${member}固定会员价`
   if (quote.pricing_rule === 'member_fixed_capped') return '命中固定会员价，但原价更低，已按原价'
   if (quote.pricing_rule === 'manual_override') return '手工改价'

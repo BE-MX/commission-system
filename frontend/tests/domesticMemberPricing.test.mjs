@@ -70,7 +70,7 @@ test('409 必须替换报价并生成新幂等键', () => {
   assert.equal(newId, 'new-request')
   assert.equal(item.expectedQuote.discount_price, '960.00')
   assert.equal(item.quoteStatus, 'priced')
-  assert.equal(item.quote.pricing_rule_label, '至尊会员固定会员价')
+  assert.equal(item.quote.pricing_rule_label, '至尊固定会员价')
   assert.notEqual(item.quote.pricing_rule_label, '旧规则文案')
   assert.equal(quoteChangeReasonLabel('membership_changed'), '客户会员等级已变化')
 })
@@ -84,8 +84,10 @@ test('409 变化摘要同时展示原价、优惠价和规则，价格相同也�
   assert.equal(rows.length, 1)
   assert.match(rows[0], /原价 ¥1198\.00 → ¥1198\.00/)
   assert.match(rows[0], /优惠价 ¥998\.00 → ¥998\.00/)
-  assert.match(rows[0], /规则 黑卡会员固定会员价 → 命中固定会员价，但原价更低，已按原价/)
-  assert.equal(pricingRuleLabelForQuote({ ...expected, pricing_rule: 'member_reduction', discount_price: '1078.00' }), '黑卡会员立减 ¥120.00')
+  assert.match(rows[0], /规则 黑卡固定会员价 → 命中固定会员价，但原价更低，已按原价/)
+  assert.equal(pricingRuleLabelForQuote({ ...expected, pricing_rule: 'member_reduction', discount_price: '1078.00' }), '黑卡立减 ¥120.00')
+  assert.equal(pricingRuleLabelForQuote({ ...expected, pricing_rule: 'base_price', discount_price: '1198.00' }), '黑卡原价（该规格无优惠）')
+  assert.equal(pricingRuleLabelForQuote({ membership_level: null, pricing_rule: 'base_price' }), '非会员原价')
 })
 
 test('建单幂等键按 payload 指纹管理', () => {
