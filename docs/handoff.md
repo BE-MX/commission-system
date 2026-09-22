@@ -1,3 +1,11 @@
+## 2026-09-22 普通发布纳入出库脚本（Codex，合并推送交付）
+
+- 分支 `codex/outbound-release-integration`，工作目录 `D:/MyProgram/commission-system-codex-outbound-release-integration`。解决普通生产发布遗漏新加坡出库 creator/poller，应用成功但独立脚本继续运行旧版本的问题。
+- 普通 full/cloud-only 发布从同一候选 revision 准备出库制品；暂停并排空在途任务后再切换应用/schema/static，最后替换出库脚本、恢复 timer 原 active/enabled 状态、核验远端文件摘要。出库验证失败不得写整体成功标记；未纳管服务明确列为 not_deployed。
+- 本地和远端 journal 绑定唯一 release_id、revision；本地恢复还绑定 scope。其他机器/范围/版本及专项入口不能接管未完成协调发布。重试保留暂停前基线；首次部署须从含修复的受管候选入口启动，操作见 deploy/README.md。
+- 相关部署回归 57 项通过；独立审查发现同版本发布事务串用后已加唯一 release_id 并复核通过。最终完整部署测试为 311 passed / 11 skipped / 1 failed；失败为既有 storage_routing 回滚 Mock 耗尽，已在原主目录独立复现。全量约定检查被 9 项既有 UI 基线陈旧问题阻断，本次增量规则检查 0 findings，diff 检查通过。
+- 用户已授权合并 main 并推送 origin/main；本轮不部署。无数据库迁移，无生产操作；保留主工作区他人修改。此前本会话已单独修复0955混单并发布现有最新版worker，本条是新增发布机制的后续代码变更，不能混同为已上线。
+
 ## 2026-09-21 小满已删除出库单同步（Codex，待发布）
 
 - 分支 `codex/outbound-delete-reconcile`，独立目录 `commission-system-codex-outbound-delete-reconcile`。修复小满详情仍返回旧 `status=1` 时方舟误判删除未完成：两轮完整有效列表均无原 ID 后登记删除回执，异常/分页不完整/列表变化不判删除。

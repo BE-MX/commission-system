@@ -7,7 +7,9 @@
 
 ## 部署
 
-统一入口，只更新这项服务，不发布其他应用或执行数据库迁移：
+普通 `deploy.bat`（含 `--cloud-only`）已纳入本服务：从同一候选 revision 准备脚本，应用切换前暂停并排空，在应用/schema就绪后替换并校验，恢复原启用/运行状态，最后将出库版本校验计入整体发布成功判据。`--prepare-only` 不暂停服务。完整顺序和失败恢复见 [统一发布说明](README.md#okki-出库轮询器专项)。
+
+单独维修入口仍保留；以下命令只更新本服务，不发布其他应用或执行数据库迁移，激活时显式启用调度：
 
 ```powershell
 deploy\deploy.bat --okki-outbound-only --prepare-only
@@ -72,10 +74,10 @@ journalctl -u ark-okki-outbound-poller.service -n 80 --no-pager
 
 ## 数据库迁移保护
 
-此服务是新增 commission_db 任务表 writer。现有迁移控制器不能完整冻结 timer 与在途 oneshot，
-因此 platforms.json 已登记该服务，并把 migration_writers_verified 置 false：含待执行 DDL 的发布
-在迁移前阻断；无 DDL 的普通发布不受此标记影响。解除条件是补齐“停 timer → 排空 service →
-确认无写入 → 迁移 → 恢复原调度状态”的支持并验证，不能仅因服务已登记就改回 true。
+此服务是 commission_db 任务表 writer，已登记在 platforms.json 的迁移 writer 清单。
+迁移控制器支持停止 timer 并排空在途 oneshot，不强杀提交中的服务。普通应用发布还会先保存
+本服务原始调度状态并冻结，待应用与出库脚本共同就绪后恢复；数据库迁移模块看到的已暂停
+状态不能覆盖发布模块保存的原基线。writer 清单仍须现场核实，不能因代码已支持而跳过核对。
 
 ## 2026-09-20 重名单号混单修复
 
@@ -89,4 +91,4 @@ journalctl -u ark-okki-outbound-poller.service -n 80 --no-pager
 
 ## 订单生命周期冻结（161）
 
-poller 仅认领关联发票 sync_status=synced 且 status 不为 cancel_pending/cancelled、没有 linked_sync_id 的任务。后端漏建对账改按 outbound_auto_requested 登记，移除 OKKI_OUTBOUND_RECONCILE_WINDOW_HOURS；不再受24小时窗口限制，也不追建未登记历史订单。升级本功能须先暂停poller，通过统一入口完成迁移161和应用发布，再更新poller并恢复；本页 outbound-only 入口不能代替数据库迁移及后端发布。
+poller 仅认领关联发票 sync_status=synced 且 status 不为 cancel_pending/cancelled、没有 linked_sync_id 的任务。后端漏建对账改按 outbound_auto_requested 登记，移除 OKKI_OUTBOUND_RECONCILE_WINDOW_HOURS；不再受24小时窗口限制，也不追建未登记历史订单。普通完整发布现在自动协调暂停poller、迁移161及应用更新、出库脚本更新与恢复，不再要求另跑专项发布；outbound-only 入口不能代替数据库迁移及后端发布。
