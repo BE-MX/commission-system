@@ -5,9 +5,7 @@ import process from 'node:process';
 import sharp from 'sharp';
 
 const projectDir = path.resolve(import.meta.dirname, '..');
-const workspaceDir = path.resolve(
-  process.env.COLORWORK_ASSET_WORKSPACE || path.resolve(projectDir, '..'),
-);
+const workspaceDir = path.resolve(projectDir, '..');
 const stagingDir = path.join(workspaceDir, 'generated-assets-staging');
 const extractedDir = path.resolve(process.argv[2] || path.join(stagingDir, 'full-assets'));
 const initialPath = path.join(stagingDir, 'initial-configs.json');
@@ -50,14 +48,9 @@ for (const source of initial.templates) {
   if (!asset) throw new Error(`没有找到 ${source.sourceFiles.psd} 的底图。`);
   const templateDir = path.join(runtimeAssetsDir, 'templates', source.id);
   await mkdir(templateDir, { recursive: true });
-  const referenceJpg = path.join(sourceDir, source.sourceFiles.jpg);
-  const referenceMetadata = await sharp(referenceJpg).metadata();
-  if (referenceMetadata.width !== source.canvas.width || referenceMetadata.height !== source.canvas.height) {
-    throw new Error(`${source.sourceFiles.jpg} 尺寸 ${referenceMetadata.width}x${referenceMetadata.height} 与画布 ${source.canvas.width}x${source.canvas.height} 不一致。`);
-  }
   await Promise.all([
     copyFile(path.join(extractedDir, asset.baseAsset), path.join(templateDir, 'base.png')),
-    copyFile(referenceJpg, path.join(templateDir, 'reference.jpg')),
+    copyFile(path.join(extractedDir, asset.referenceThumbnail), path.join(templateDir, 'reference.jpg')),
   ]);
 
   const legacyColors = [];
