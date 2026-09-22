@@ -1,3 +1,9 @@
+## 2026-09-22 出库删除对账快照限流修复（Codex，处理中）
+
+- 生产 `okki_outbound_delete_reconcile` 已写入 `lys-acciowork` 持久暂停策略；旧实例于14:39失败结束，14:50重启 `CommissionSystem` 后策略已由新调度器加载，健康检查恢复为 `ok/database=connected`。故障根因是把候选创建时间作为 `time_type=1` 更新时间下界，全历史双扫198页后又逐张补查约5232个镜像缺口。
+- 分支 `codex/okki-delete-reconcile`、Codex managed worktree。改为 `time_type=2` 精确创建日双快照；迁移163持久化日期覆盖、逐单列表版本/订单关联、待补查ID和失败状态。每轮8日、全局16次详情补查且单次15秒，逐张提交进度、跨轮续跑；版本变化只重查对应单，当天补查后再次双扫且只做替代单保护。完整覆盖前不登记删除，覆盖后仅处理本轮新鲜历史日期。
+- 待完成：扩大回归、独立审查、统一入口生产迁移/发布、确认任务保持暂停后恢复并观察首轮。
+
 ## 2026-09-22 临时战报（已授权合并推送，未部署）
 
 - 工作树 `C:/Users/lys-m/.codex/worktrees/commission-system-battle-report/commission-system`，基于 main `b4e5c04d`。入口「订单管理 → 临时战报」。实现任意周期草稿/发布、个人目标、活动组/个人GMV和进度、每日成交矩阵、订单筛选/分页/单笔明细、归档恢复及修改记录。

@@ -5,7 +5,7 @@
 约束/索引名与迁移文件显式对齐，避免 autogenerate 漂移。
 """
 
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, JSON
+from sqlalchemy import BigInteger, Column, Date, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, JSON
 
 from app.core.database import Base
 from app.core.time import beijing_now
@@ -94,3 +94,22 @@ class ShippingOperationEvent(Base):
     payload = Column(JSON, comment="幂等内容摘要与业务参数")
     result = Column(JSON, comment="原操作回执")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间（北京时间）")
+
+
+class OkkiOutboundPresenceDay(Base):
+    """Stable active-outbound snapshot for one immutable OKKI creation day."""
+
+    __tablename__ = 'ark_okki_outbound_presence_days'
+
+    creation_date = Column(Date, primary_key=True, comment="OKKI 出库单创建日期（北京时间）")
+    status = Column(String(16), nullable=False, default='pending', server_default='pending', comment="pending/ready/error")
+    active_ids = Column(JSON, nullable=False, default=list, comment="两轮一致的有效出库单 ID")
+    active_versions = Column(JSON, nullable=False, default=dict, comment="有效出库单列表行版本摘要")
+    detail_order_ids = Column(JSON, nullable=False, default=dict, comment="已补查出库单到订单 ID 的关联")
+    retained_order_ids = Column(JSON, nullable=False, default=list, comment="有效出库单关联订单 ID")
+    pending_detail_ids = Column(JSON, nullable=False, default=list, comment="待增量补查关联的有效出库单 ID")
+    record_count = Column(Integer, nullable=False, default=0, server_default='0', comment="有效出库单数量")
+    snapshot_hash = Column(String(64), comment="有效 ID 集合 SHA-256")
+    last_error = Column(String(255), comment="最近失败的可行动摘要")
+    attempted_at = Column(DateTime, nullable=False, default=beijing_now, comment="最近尝试时间（北京时间）")
+    refreshed_at = Column(DateTime, comment="最近完成时间（北京时间）")
