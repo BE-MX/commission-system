@@ -14,10 +14,70 @@ ASSETS = Path(__file__).resolve().parent / "assets"
 _RENDER_SLOTS = BoundedSemaphore(1)
 logger = logging.getLogger(__name__)
 
+# Fallback when Playwright's bundled Chromium is missing (stale cache after upgrade)
+# and BATTLE_REPORT_BROWSER_PATH is unset. First existing executable wins.
+_SYSTEM_BROWSER_CANDIDATES = (
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+)
+
+_BROWSER_HINT = (
+    "请安装 Playwright Chromium（python -m playwright install chromium），"
+    "或设置 BATTLE_REPORT_BROWSER_PATH 指向本机 chrome.exe / msedge.exe；"
+    "Linux 另需 Noto Sans CJK，Windows 使用 Microsoft YaHei。"
+)
+
 
 @lru_cache(maxsize=2)
 def asset_uri(name):
     return "data:image/png;base64," + base64.b64encode((ASSETS / name).read_bytes()).decode("ascii")
+
+
+def configured_browser_path():
+    path = (get_settings().BATTLE_REPORT_BROWSER_PATH or "").strip()
+    if not path:
+        return None
+    resolved = Path(path)
+    if not resolved.is_file():
+        raise RuntimeError(f"BATTLE_REPORT_BROWSER_PATH 不存在：{path}。请改为空值（自动发现）或指向已安装的浏览器。")
+    return str(resolved)
+
+
+def system_browser_path():
+    for candidate in _SYSTEM_BROWSER_CANDIDATES:
+        if Path(candidate).is_file():
+            return candidate
+    return None
+
+
+def _launch_chromium(playwright):
+    configured = configured_browser_path()
+    if configured:
+        return playwright.chromium.launch(headless=True, executable_path=configured)
+    attempts = []
+    try:
+        return playwright.chromium.launch(headless=True)
+    except Exception as exc:
+        attempts.append(f"Playwright Chromium（{type(exc).__name__}）")
+        logger.info("Playwright Chromium unavailable: %s", exc)
+    fallback = system_browser_path()
+    if fallback:
+        try:
+            return playwright.chromium.launch(headless=True, executable_path=fallback)
+        except Exception as exc:
+            attempts.append(f"{fallback}（{type(exc).__name__}）")
+            logger.info("System browser launch failed: %s", exc)
+    else:
+        attempts.append("未找到系统 Chrome/Edge")
+    raise RuntimeError(f"无法启动浏览器生成海报（尝试：{'；'.join(attempts)}）。{_BROWSER_HINT}")
 
 
 def render_html(snapshot, kind):
@@ -51,12 +111,8 @@ def render_posters(snapshot, kinds=("team", "personal")):
     if not _RENDER_SLOTS.acquire(timeout=30):
         raise RuntimeError("海报生成繁忙，请稍后重试")
     try:
-        settings = get_settings()
         with sync_playwright() as playwright:
-            options = {"headless": True}
-            if settings.BATTLE_REPORT_BROWSER_PATH:
-                options["executable_path"] = settings.BATTLE_REPORT_BROWSER_PATH
-            browser = playwright.chromium.launch(**options)
+            browser = _launch_chromium(playwright)
             try:
                 page = browser.new_page(viewport={"width": 1080, "height": 1800}, device_scale_factor=1)
                 page.set_default_timeout(30000)
@@ -75,9 +131,14 @@ def render_posters(snapshot, kinds=("team", "personal")):
                 return result
             finally:
                 browser.close()
+    except RuntimeError:
+        raise
     except Exception as exc:
-        logger.warning("Battle poster rendering failed: %s", type(exc).__name__)
-        print(f"Battle poster rendering failed: {type(exc).__name__}", flush=True)
-        raise RuntimeError("海报生成失败，请检查 Chrome/Chromium 和中文字体配置") from None
+        logger.warning("Battle poster rendering failed: %s: %s", type(exc).__name__, exc)
+        print(f"Battle poster rendering failed: {type(exc).__name__}: {exc}", flush=True)
+        raise RuntimeError(
+            f"海报渲染失败（{type(exc).__name__}）。请查看后端日志；"
+            f"若中文显示为方框，请检查中文字体（Windows: Microsoft YaHei，Linux: Noto Sans CJK）。"
+        ) from None
     finally:
         _RENDER_SLOTS.release()
