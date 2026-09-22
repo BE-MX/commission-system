@@ -237,7 +237,10 @@ def _post_json(path: str, token: str, payload: dict, *, context: str) -> dict | 
     return body.get("data") if isinstance(body.get("data"), dict) else body
 
 
-def _get_json(path: str, token: str, *, context: str, params: dict | None = None) -> dict | None:
+def _get_json(
+    path: str, token: str, *, context: str, params: dict | None = None,
+    timeout: float = REQUEST_TIMEOUT,
+) -> dict | None:
     """GET with Bearer auth. Returns payload data; None means auth failure
     (caller may retry with a fresh token); other failures raise.
     """
@@ -247,7 +250,7 @@ def _get_json(path: str, token: str, *, context: str, params: dict | None = None
         resp = httpx.get(
             f"{_base_url()}{path}",
             headers={"Authorization": f"Bearer {token}"},
-            timeout=REQUEST_TIMEOUT,
+            timeout=timeout,
             **extra,
         )
     except httpx.HTTPError as exc:

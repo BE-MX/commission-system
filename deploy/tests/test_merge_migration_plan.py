@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'backend'))
 
 
-@pytest.mark.parametrize('current_revision', ['150_domestic_item_guest', '146_expo_beautify_prompt', '145_domestic_order_guest', '152_shipping_media_recall', '151_customer_media_tags'])
+@pytest.mark.parametrize('current_revision', ['150_domestic_item_guest', '146_expo_beautify_prompt', '145_domestic_order_guest', '152_shipping_media_recall', '151_customer_media_tags', '163_okki_presence_days'])
 @pytest.mark.parametrize('filename', ['remote_backend.py', 'migration_runner.py'])
 def test_preflight_pending_matches_alembic_upgrade(current_revision, filename):
     script = ScriptDirectory(str(ROOT / 'backend/alembic'))
@@ -28,6 +28,8 @@ def test_preflight_pending_matches_alembic_upgrade(current_revision, filename):
         pending.reverse()
     actual = [step.revision.revision for step in script._upgrade_revs(head, current_revision)]
     assert pending == actual
+    if current_revision == '163_okki_presence_days':
+        assert pending == ['164_battle_posters']
     if current_revision == '150_domestic_item_guest':
         assert pending[:2] == ['146_expo_beautify_prompt', '152_shipping_media_recall']
         assert pending[-1] == head

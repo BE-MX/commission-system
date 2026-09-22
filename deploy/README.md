@@ -50,6 +50,11 @@ deploy\deploy.bat --shipping-video-routing-only
 - 远程 Python 脚本和 JSON 请求通过 SSH 标准输入传递，命令参数保持短小，避免 Windows SSH 启动链截断长脚本。换机器或更新 Git 后先用 `--prepare-only` 验证连接和制品。
 - 默认 fetch 后只接收可快进的新提交；本地已审查提交领先远端时保留本地 HEAD，分叉时停止发布。无需为了部署先推送 main。
 - 维护窗口使用 `--revision` 固定审查过的完整 40 位提交 SHA；即使远端有更新也不改变本次候选，拒绝倒退或分叉。`--no-pull` 仅控制是否 fetch。
+
+遇到 `Deployment source is not a fast-forward; reconcile Git first` 时，在实际安装目录只读查看 `git log --left-right --oneline HEAD...@{upstream}`。生产独有的热修复应保留并集成回主线，候选必须同时包含生产 HEAD 和远端 main；不能用强制 reset 覆盖生产分支，`--no-pull` 只会继续使用旧 HEAD，并不能更新到远端新功能。合并前核对生产数据库 revision 和所有分支迁移图，避免两个分支各自新增同一编号造成 multiple heads。
+
+2026-09-22 实例：生产源码 `5ae1f07b` 已执行 `163_okki_presence_days`，远端 `698dd57f` 尚未包含该提交且新增了战报迁移。集成保留生产163，未上线的战报迁移顺延为 `164_battle_posters`、父163；从生产当前数据库仅执行164。修复合入并推送 main 后，可重跑统一入口，候选准备成功再切换。此处记录不代表修复已发布或迁移已执行。
+
 - 本地源码以内容及 Node 版本计算构建指纹；相同输入复用同一制品。扩展包缓存也复用，避免仅因打包时间变化导致全站重建。
 - 每个云目标一次计算 SHA-256 清单，变化文件打成一个包传输。未变文件零传输，不按单文件重复建立 SSH。
 - 制品全部校验后才切换。首次发布用 Linux `renameat2` 原子地将原 Nginx 根目录换成受管符号链接；Nginx 原配置与别名仍指向相同路径。

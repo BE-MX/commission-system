@@ -14,7 +14,7 @@
 
 ## 启用与运行
 
-1. 用统一 `deploy/deploy.bat` 发布入口部署前后端并执行迁移 163（父162）；开发机不可升级共享生产库。
+1. 用统一 `deploy/deploy.bat` 发布入口部署前后端并执行迁移 164（父163_okki_presence_days）；开发机不可升级共享生产库。2026-09-22 已核验生产在 `163_okki_presence_days`，战报迁移尚未执行，因此从原163顺延，保留已上线出库快照迁移及数据。
 2. 配置专用 `BATTLE_REPORT_WEBHOOK_URL`、`BATTLE_REPORT_WEBHOOK_SECRET`、`BATTLE_REPORT_GROUP_NAME`、`BATTLE_REPORT_PUBLIC_BASE_URL`。根地址须为可从钉钉访问且路由到本后端的 HTTPS 地址。不会回退全局默认群；密钥只在运行环境，前端不返回密钥。
 3. 后端依赖含 `playwright==1.58.0`。每个会处理图片请求的后端运行账号需安装 Chromium（`python -m playwright install chromium`，Linux 还需对应系统依赖及 Noto Sans CJK），或将 `BATTLE_REPORT_BROWSER_PATH` 指向已安装的 Chrome。Windows 使用 Microsoft YaHei；必须在正式运行账号下预览验证中文字体。
 4. 管理页核对工作日、目标、海报，保存并显式开启推送。草稿只预览，只有 `published`、全活动可见、周期内且开关开启才发送。变更周期会清空计时配置并关闭推送；改为团队/个人可见也关闭推送。

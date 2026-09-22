@@ -432,6 +432,7 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 - 迁移 152（2026-09-15）：检验单增加 `edit_version INT NOT NULL DEFAULT 0`、`recalled_at DATETIME`、`recalled_by BIGINT`；媒体表增加 `media_type VARCHAR(10) NOT NULL DEFAULT 'image'`（image/video）。历史照片自动归为 image，表名保留；`item_id=NULL` 同样代表整单视频。撤回保留照片、视频、备注与上次提交信息，递增编辑版本并记录最新撤回人/时间；再次提交刷新提交信息，`photo_count` 始终只计图片。迁移可续跑已部分完成的同型 DDL，禁止 downgrade 删除字段和历史数据。
 - `ark_shipping_inspections`：每个 OKKI 出库单一行，`outbound_record_id` 唯一键（存业务库出库单 id 字符串，不建跨库外键）；冗余 `outbound_no / customer_name` 便于检索；`status` 为 `draft/submitted`，提交时落 `photo_count / submitted_at / submitted_by`（BigInteger 存 ark_users.id，未建 FK——ark_users.id 为 INT UNSIGNED，类型不匹配）。
 - `ark_shipping_inspection_photos`：`inspection_id → ark_shipping_inspections.id CASCADE`；`item_id` 为出库明细 id 字符串、NULL 表示整单照片；`file_path` 存相对路径（私有存储根 `SHIPPING_INSPECTION_STORAGE_ROOT`，鉴权端点读图，不挂静态目录）。
+- `ark_okki_outbound_presence_days`（迁移 163）：以 `creation_date` 为主键保存 OKKI 有效出库单两轮一致快照，包含 active_ids、列表行版本摘要、逐出库单已解析订单关联、待补查详情 ID、数量、摘要、最近尝试/完成时间及 pending/ready/error 状态。删除对账每轮最多刷新8个创建日，全局最多补查16张缺少镜像关联的详情（单次15秒），逐张持久化进度供下轮续跑；列表行变化只重查对应单。完整日期覆盖之前不据此登记删除，当天在补查后再次确认，只保护替代单、不证明当天候选缺席。
 - 数据源 `lsordertest.okki_outbound_records / okki_outbound_record_items` 为 OKKI 同步只读镜像（2026-09-01 已实库摸底，3966 单 / 14125 明细）：单头单号 `serial_id`、出库时间 `warehouse_invoice_time`、客户 `company_name`、制单人 `create_user_name`；明细数量 `outbound_count`、单位 `product_unit`、规格 `product_model`、SKU `sku_code`。**明细关联单头走 `outbound_invoice_id` 桥**（两表都有此列，全量命中）；`items.outbound_record_id` 是 OKKI 侧另一实体 id，与 `records.id` 完全不相交，不能 join。自适应候选映射见 `app/shipping_inspection/outbound_service.py`。
 - 归属过滤（2026-09-14 实库核验）：`okki_outbound_records.company_id`（bigint，4290 单全量命中 `okki_orders.company_id`）→ `okki_orders.user_id`（varchar(50)，单值）= 当前用户绑定的 OKKI 业务员 id；无 `shipping_inspection:read_all` 时强制，`company_id` 列缺失时 fail-closed 报错而非返回未过滤数据。
 
@@ -571,7 +572,7 @@ ark_invoices.linked_sync_id：当前关联任务写锁标识，结束后清除�
 
 ark_invoices 新增 nullable JSON sync_attempt（推单令牌/北京时间租约）、nullable JSON cancellation（取消阶段/原因/执行权/证据）、非空 SmallInteger outbound_auto_requested 默认0（自动出库登记，历史数据不追建）。复用 InvoiceSyncLog 保存取消及恢复审计，ReceiptLog 保存回款变更前后证据；回款业务状态增加 remote_deleted，原远端ID和凭证仍保留。迁移可重入，不允许降级删除审计字段。
 
-## 163_battle_posters（父162）
+## 164_battle_posters（父163_okki_presence_days）
 
 `ark_battle_reports` 增加 nullable JSON `work_dates`（北京时间计时日期数组）、Boolean `poster_push_enabled`（非空、默认false）。新增 `ark_battle_report_deliveries`：id、report_id(FK)、report_date、slot、snapshot(JSON)、destination_hash(SHA256，无凭据)、deliveries(JSON，两图各自状态/次数/安全错误)、created_at/updated_at（北京时间）。唯一约束 `(report_id,report_date,slot)` 防重复时段；report_id索引支持历史查询。新迁移仅增量加字段和表，不自动启用群推送，不删除或重算已有目标。
 
