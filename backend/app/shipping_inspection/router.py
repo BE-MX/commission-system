@@ -202,8 +202,8 @@ def outbound_print_data(
         items = outbound_service.list_outbound_items(db, record_id)
     except outbound_service.OutboundTableError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
-    from app.shipping_inspection.print_service import sort_outbound_print_items
-    items = sort_outbound_print_items(items)
+    from app.shipping_inspection.print_service import annotate_print_items, sort_outbound_print_items
+    items = sort_outbound_print_items(annotate_print_items(db, items))
     qr_data = qr_service.generate_qr_data(record_id)
     return ok({
         "record": with_customer_order_info(db, with_owner_chinese_name(db, record)),
@@ -222,6 +222,7 @@ def outbound_word(
     db: Session = Depends(get_db),
     user: dict = Depends(require_any_permission(*_READ)),
 ):
+    from app.shipping_inspection.print_service import annotate_print_items
     from app.shipping_inspection.word_service import build_outbound_word
     scope = _outbound_scope(db, user)
     try:
@@ -231,7 +232,11 @@ def outbound_word(
         items = outbound_service.list_outbound_items(db, record_id)
     except outbound_service.OutboundTableError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    content = build_outbound_word(with_customer_order_info(db, with_owner_chinese_name(db, record)), items, qr_service.generate_qr_data(record_id))
+    content = build_outbound_word(
+        with_customer_order_info(db, with_owner_chinese_name(db, record)),
+        annotate_print_items(db, items),
+        qr_service.generate_qr_data(record_id),
+    )
     filename = quote(f"出库单-{record['outbound_no']}.docx", safe="")
     return Response(content, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"})

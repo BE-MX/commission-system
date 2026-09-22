@@ -211,6 +211,7 @@ def _map_record_row(row) -> dict:
 def _map_item_row(row) -> dict:
     return {
         "item_id": str(row["item_id"]),
+        "product_id": _str_or_none(row["product_id"]),
         "product_name": _str_or_none(row["product_name"]),
         "model": _str_or_none(row["model"]),
         "size": _str_or_none(row["size"]),
@@ -388,6 +389,7 @@ def list_outbound_items(db: Session, record_id: str) -> list[dict]:
         where = f"i.`{im['record_id']}` = :rid"
     rows = db.execute(text(f"""
         SELECT i.`{im['id']}` AS item_id,
+               {_col(im, 'product_id', 'i')} AS product_id,
                {_col(im, 'product_name', 'i')} AS product_name,
                p.model AS model, p.size AS size, p.color AS color,
                {_col(im, 'spec', 'i')} AS spec,

@@ -1141,6 +1141,8 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 2026-09-18：手机网页和小程序的扫码、刷新响应 `items` 与出库单打印、Word 共用排序函数：规格自然升序，同规格按尺寸数值升序；相同排序键保持原相对顺序。数量及照片/视频的 `item_id` 归属不变。
 
+2026-09-22 出库单打印分表：`print-data` 与 Word 的 `items[]` 增加 `product_kind`（`hair`/`accessory`，按 `ark_std_prices`/`ark_invoice_items` 的 accessory 身份匹配 `product_id`，未命中默认 `hair`）；Name 为 `Other` 的配件行从打印/Word 明细中剔除（扫码/验货仍含全部行）。HTML 打印与 Word 均拆为「产品明细」「配件明细」上下两表，每表末行数量合计；无对应类别时不渲染该表。列结构不变。
+
 2026-09-18 方舟待出库记录：列表新增 `record_source`（okki/ark_task）、`outbound_state`（ready/pending/running/waiting_stock/awaiting_sync/failed/uncertain）、`can_print`、`stock_shortages`（商品名、sku_id、required/available/shortage）及 `stock_checked_at`。本地记录 ID 为 `task:<任务ID>`，`outbound_date=null`，`requested_date` 为任务北京时间创建日期；日期筛选对本地记录按创建日期、正式记录按出库日期。库存不足状态显示“部分库存不足”，缺货数量是最近一次库存检查快照；日志缺失或截断时详情为空，不暴露执行日志。原任务行复用为待出库预览，不新建业务单或扣库存。非标通用产品主动跳过不进入预览；任务完成或已有单跳过但镜像未到时显示“待同步”。只有当前业务员可见的正式记录匹配单号+客户或实际订单关联，才去除本地预览；下次查询自动替换，计数和分页不重复。`can_print=false` 隐藏打印/下载，服务端对 `task:` 返回404；本地记录不能用于扫码验货。
 
 2026-09-18 出库单数据范围：方舟首推成功的订单无需等待 `okki_orders` 同步。通过出库明细 `order_id` 精确关联 `ark_invoices.xiaoman_order_id`，客户一致且存在 `action=create/success=1` 推单日志时，按发票 `sales_user_id` 的有效 OKKI 绑定放行业务员；不按发票创建人、制单人、单号或客户名称推断。此分支不受后续编辑重推失败影响。原镜像同客户订单归属规则继续有效（`okki_outbound_records.company_id` 命中 `okki_orders` 同客户且 `user_id` = 当前用户绑定的 OKKI id）。列表、打印/Word、验货记录及媒体权限共用此范围；未绑定返回 422，全部范围权限和小程序仓管扫码规则不变。仍需出库单及其订单关联明细同步到方舟，仅免除订单镜像的等待。

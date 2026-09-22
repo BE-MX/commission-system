@@ -14,6 +14,7 @@ from app.core.time import beijing_now
 from app.shipping_inspection.print_service import sort_outbound_print_items
 
 WIDTHS = [7.92, 35.64, 64.35, 45.54, 13.86, 30.69]  # 198mm × 4/18/32.5/23/7/15.5%
+ITEM_HEADER = ["#", "产品类别", "规格", "颜色/尺寸/克重", "数量", "批次号"]
 
 
 def _xml(tag, **attrs):
@@ -81,6 +82,33 @@ def _line(paragraph):
         borders, "w:shd", "w:tabs", "w:suppressAutoHyphens", "w:spacing", "w:ind", "w:contextualSpacing", "w:jc", "w:rPr")
 
 
+def _item_table(doc, items: list[dict], start_index: int) -> int:
+    rows = list(items)
+    if not rows:
+        return start_index
+    table = _table(doc, WIDTHS, rows=len(rows) + 2)
+    table.rows[0]._tr.get_or_add_trPr().append(_xml("tblHeader"))
+    for index, label in enumerate(ITEM_HEADER):
+        _cell(table.cell(0, index), label, bold=True, shade="F0F0F0", center=index == 4)
+    for offset, item in enumerate(sort_outbound_print_items(rows)):
+        index = start_index + offset
+        parts = re.split(r"[/／]", _text(item.get("product_name")).strip(), maxsplit=1)
+        values = [index, parts[0].strip(), item.get("spec"), parts[1].strip() if len(parts) > 1 else "", str(item.get("qty", "")), ""]
+        row = table.rows[offset + 1]
+        row.height, row.height_rule = Mm(12), WD_ROW_HEIGHT_RULE.AT_LEAST
+        row._tr.get_or_add_trPr().append(_xml("cantSplit"))
+        for column, value in enumerate(values):
+            _cell(row.cells[column], value, size=9 if column == 1 else 10.5 if column == 3 else 9.75,
+                  bold=column == 3, shade="F5F5F5" if index % 2 == 0 else None, center=column == 4, spec=column == 2)
+    total = sum(float(item.get("qty") or 0) for item in rows)
+    total_text = str(int(total)) if total == int(total) else str(total)
+    summary = table.rows[-1]
+    summary._tr.get_or_add_trPr().append(_xml("cantSplit"))
+    for column, value in enumerate(["合计", "", "", "", total_text, ""]):
+        _cell(summary.cells[column], value, bold=True, shade="E8E8E8", center=column == 4)
+    return start_index + len(rows)
+
+
 def build_outbound_word(record: dict, items: list[dict], qr_data: str) -> bytes:
     customer_name = str(record.get("customer_name") or "").strip()
     masked_customer_name = customer_name[:3] + "***" if customer_name else ""
@@ -127,24 +155,20 @@ def build_outbound_word(record: dict, items: list[dict], qr_data: str) -> bytes:
     remark = _table(doc, [198])
     _cell(remark.cell(0, 0), "发货备注", bold=True)
     _run(remark.cell(0, 0).add_paragraph(), record.get("remark") or "无")
-    heading = doc.add_paragraph()
-    heading.paragraph_format.space_before = Pt(9)
-    heading.paragraph_format.space_after = Pt(4.5)
-    _run(heading, "出库明细", 10.5, True)
-    if items:
-        table = _table(doc, WIDTHS, rows=len(items) + 1)
-        table.rows[0]._tr.get_or_add_trPr().append(_xml("tblHeader"))
-        for index, label in enumerate(["#", "产品类别", "规格", "颜色/尺寸/克重", "数量", "批次号"]):
-            _cell(table.cell(0, index), label, bold=True, shade="F0F0F0", center=index == 4)
-        for index, item in enumerate(sort_outbound_print_items(items), start=1):
-            parts = re.split(r"[/／]", _text(item.get("product_name")).strip(), maxsplit=1)
-            values = [index, parts[0].strip(), item.get("spec"), parts[1].strip() if len(parts) > 1 else "", str(item.get("qty", "")), ""]
-            row = table.rows[index]
-            row.height, row.height_rule = Mm(12), WD_ROW_HEIGHT_RULE.AT_LEAST
-            row._tr.get_or_add_trPr().append(_xml("cantSplit"))
-            for column, value in enumerate(values):
-                _cell(row.cells[column], value, size=9 if column == 1 else 10.5 if column == 3 else 9.75,
-                      bold=column == 3, shade="F5F5F5" if index % 2 == 0 else None, center=column == 4, spec=column == 2)
+    products = [item for item in (items or []) if str(item.get("product_kind") or "hair") != "accessory"]
+    accessories = [item for item in (items or []) if str(item.get("product_kind") or "hair") == "accessory"]
+    if products:
+        heading = doc.add_paragraph()
+        heading.paragraph_format.space_before = Pt(9)
+        heading.paragraph_format.space_after = Pt(4.5)
+        _run(heading, "产品明细", 10.5, True)
+        _item_table(doc, products, 1)
+    if accessories:
+        heading = doc.add_paragraph()
+        heading.paragraph_format.space_before = Pt(9)
+        heading.paragraph_format.space_after = Pt(4.5)
+        _run(heading, "配件明细", 10.5, True)
+        _item_table(doc, accessories, 1)
     footer = doc.add_paragraph()
     footer.paragraph_format.space_before = Pt(9)
     _line(footer)

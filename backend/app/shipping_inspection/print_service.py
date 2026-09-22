@@ -29,6 +29,65 @@ def sort_outbound_print_items(items: list[dict]) -> list[dict]:
     return sorted(items, key=lambda item: (_natural_spec(item.get("spec")), _size(item)))
 
 
+OTHER_ACCESSORY_NAME = "other"
+
+
+def is_other_accessory(item: dict) -> bool:
+    """Name 为 Other 的配件打印时忽略；产品行不受影响。"""
+    if str(item.get("product_kind") or "hair") != "accessory":
+        return False
+    return str(item.get("product_name") or "").strip().lower() == OTHER_ACCESSORY_NAME
+
+
+def _product_id_key(value) -> str | None:
+    if value is None or value == "":
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return str(int(text))
+    except ValueError:
+        return text
+
+
+def _accessory_product_ids(db) -> set[str]:
+    """OKKI product_id 命中配件身份（标准价或发票明细）即视为配件。"""
+    from sqlalchemy import text
+    from sqlalchemy.exc import SQLAlchemyError
+
+    keys: set[str] = set()
+    for sql in (
+        "SELECT DISTINCT product_id FROM ark_std_prices "
+        "WHERE product_kind = 'accessory' AND product_id IS NOT NULL",
+        "SELECT DISTINCT product_id FROM ark_invoice_items "
+        "WHERE product_kind = 'accessory' AND product_id IS NOT NULL",
+    ):
+        try:
+            for row in db.execute(text(sql)):
+                key = _product_id_key(row[0])
+                if key:
+                    keys.add(key)
+        except SQLAlchemyError as exc:
+            logger.warning("product_kind lookup failed: %s", exc)
+            print(f"[shipping_print] product_kind lookup failed: {exc}", flush=True)
+    return keys
+
+
+def annotate_print_items(db, items: list[dict]) -> list[dict]:
+    """打印/Word 专用：补 product_kind，去掉 Name=Other 的配件；不改动扫描/验货明细。"""
+    accessory_ids = _accessory_product_ids(db)
+    result = []
+    for item in items or []:
+        product_id = _product_id_key(item.get("product_id"))
+        kind = "accessory" if product_id and product_id in accessory_ids else "hair"
+        annotated = {**item, "product_kind": kind}
+        if is_other_accessory(annotated):
+            continue
+        result.append(annotated)
+    return result
+
+
 def _with_live_outbound_handler(db, record: dict) -> dict:
     """Printed responsibility belongs to handlers, not the API account creator."""
     from fastapi import HTTPException
