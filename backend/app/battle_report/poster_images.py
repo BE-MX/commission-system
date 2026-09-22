@@ -30,6 +30,10 @@ KINDS = ("team", "personal")
 CACHE_SUFFIX = "v1.jpg"
 
 
+class PosterBuildError(RuntimeError):
+    """Safe to surface in delivery status; never contains paths or secrets."""
+
+
 def expiry(delivery):
     return int((to_beijing_time(delivery.created_at) + timedelta(days=7)).timestamp())
 
@@ -86,19 +90,24 @@ def _atomic_write(path, data):
 
 
 def store_image(delivery_id, kind, data):
-    from app.core.storage import files as cloud_files
-    from app.core.storage.cos import file_digest
-
     jpeg = compress_poster(data)
     local = cache_path(delivery_id, kind)
     _atomic_write(local, jpeg)
     # Local public tree so StaticFiles can serve without COS (dev / single-host).
     public_local = UPLOADS_ROOT / PUBLIC_PREFIX / local.name
     _atomic_write(public_local, jpeg)
+    from app.core.storage.cos import file_digest
     digest = file_digest(local)[1]
     key = public_key(delivery_id, kind, digest)
-    if cloud_files.managed(PUBLIC_DOMAIN) or cloud_files.enabled(PUBLIC_DOMAIN):
-        cloud_files.publish_local(PUBLIC_DOMAIN, key, local)
+    from app.core.storage import files as cloud_files
+    try:
+        if cloud_files.managed(PUBLIC_DOMAIN) or cloud_files.enabled(PUBLIC_DOMAIN):
+            cloud_files.publish_local(PUBLIC_DOMAIN, key, local)
+    except ModuleNotFoundError as exc:
+        missing = getattr(exc, "name", None) or "unknown"
+        raise PosterBuildError(
+            f"COS 发布依赖缺失（{missing}），请在运行账号的 Python 环境安装 cos-python-sdk-v5"
+        ) from None
     return key
 
 

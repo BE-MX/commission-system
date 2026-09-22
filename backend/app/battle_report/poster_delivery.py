@@ -114,10 +114,19 @@ def send_slot(db, report_id, now=None, sender=None):
                 for kind, data in render_posters(delivery.snapshot, tuple(pending)).items():
                     store_image(delivery.id, kind, data)
             except Exception as exc:
-                logger.warning("Battle poster render failed: report=%s type=%s", report_id, type(exc).__name__)
-                print(f"Battle poster render failed: report={report_id} type={type(exc).__name__}", flush=True)
+                from app.battle_report.poster_images import PosterBuildError
+                if isinstance(exc, ModuleNotFoundError):
+                    detail = f"missing module {getattr(exc, 'name', '?')}"
+                elif isinstance(exc, PosterBuildError):
+                    detail = str(exc)[:120]
+                else:
+                    detail = type(exc).__name__
+                logger.warning("Battle poster render failed: report=%s type=%s detail=%s",
+                               report_id, type(exc).__name__, detail)
+                print(f"Battle poster render failed: report={report_id} type={type(exc).__name__} detail={detail}", flush=True)
                 for kind in pending:
-                    set_status(db, delivery, kind, "failed", "海报生成失败，请检查浏览器运行环境；本时段稍后重试")
+                    set_status(db, delivery, kind, "failed",
+                               f"海报生成失败（{detail}），请检查浏览器/依赖运行环境；本时段稍后重试")
                 return {"status": "finished", "deliveries": delivery.deliveries}
         notifier = sender or WebhookSender(settings.BATTLE_REPORT_WEBHOOK_URL, settings.BATTLE_REPORT_WEBHOOK_SECRET)
         for kind in pending:
@@ -129,7 +138,7 @@ def send_slot(db, report_id, now=None, sender=None):
             set_status(db, delivery, kind, "sending")
             label = "团队" if kind == "team" else "个人"
             # No user-controlled markdown; report name is already safely rendered into PNG.
-            title = f"销售战报 · {label}目标完成榜"
+            title = f"九月百团冲刺·{label}目标完成榜"
             content = f"### {title}\n\n{delivery.report_date} {slot}（北京时间）\n\n![{label}海报]({image_url(delivery, kind)})\n\n[查看完整海报]({image_url(delivery, kind)})"
             try:
                 result = asyncio.run(notifier.send_markdown(title, content))
