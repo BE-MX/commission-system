@@ -60,6 +60,7 @@ export const MENU_GROUPS = {
       'shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:admin',
       'invoice_price:read', 'invoice_okki:read', 'invoice_repair:read',
       FESTIVAL_PERMISSION, FESTIVAL_ORDER_PERMISSION,
+      'battle_report:read', 'battle_report:admin',
       ORDER_INTELLIGENCE_PERMISSION,
     ],
   },
@@ -448,6 +449,17 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'invoice', title: '采购节数据明细', icon: List, order: 35,
       permission: FESTIVAL_ORDER_PERMISSION,
+    },
+  },
+  {
+    path: '/invoice/battle-reports',
+    name: 'BattleReports',
+    component: () => import('@/views/battle-report/BattleReports.vue'),
+    title: '临时战报',
+    anyPermission: ['battle_report:read', 'battle_report:admin'],
+    menu: {
+      group: 'invoice', title: '临时战报', icon: DataBoard, order: 37,
+      anyPermission: ['battle_report:read', 'battle_report:admin'],
     },
   },
   {

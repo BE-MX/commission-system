@@ -1,5 +1,28 @@
 # 莱莎方舟 API 参考
 
+## 临时战报（2026-09-22，本地实现，迁移 162）
+
+前缀 `/api/battle-reports`，登录认证与标准 `ok()` 信封，金额以两位小数字符串返回。权限均使用 `battle_report:` 前缀；admin 包含本模块 read/write。查询逐次校验参与人身份及授权范围；汇总 visibility 不扩大订单/客户明细权限。详见 [实现说明](requirements/2026-09-22-battle-report.md)。
+
+| 方法与路径 | 参数 / 行为 | 权限 |
+| --- | --- | --- |
+| GET 空路径 | archived=false/true，返回有权查看的战报及阶段 | read/admin |
+| GET `/participants` | 返回有唯一有效 OKKI 主账号绑定的可选人员 | admin |
+| POST 空路径 | name/start_date/end_date/target_deadline/visibility/members，创建草稿 | admin |
+| GET `/{id}` | 配置、可见成员、成员 version/can_edit、detail_member_ids | read/admin |
+| PUT `/{id}` | 完整配置 + version/reason；开始后更正需原因；使旧目标表单版本失效 | admin |
+| POST `/{id}/state` | action=publish/archive/restore，version；合法状态流转 | admin |
+| PUT `/{id}/targets` | targets=[member_id, target_usd, version]，reason；截止后管理员更正需原因；批量原子保存 | write/admin |
+| GET `/{id}/overview` | 可选 team；summary/teams/people/daily、时间进度、计算时间、异常数 | read/admin |
+| GET `/{id}/daily` | 可选 team/start；默认最近七天，返回 dates/rows/cells/subtotal | read/admin |
+| GET `/{id}/orders` | team/member_id/day/keyword、sort=date或amount、page/page_size≤100；items/total/gmv/issues；完整筛选总计 | read/admin |
+| GET `/{id}/orders/{order_id}` | 有权查看的单笔摘要、计入额及计入原因；不在范围返回404 | read/admin |
+| GET `/{id}/audits` | page/page_size≤100；动作、前后值、操作者、原因、北京时间 | admin |
+
+成员输入为 ark_user_id/team/is_captain；visibility 为 activity/team/self。周期最长366天、最多200人；目标为正数，NUMERIC(16,2)。普通用户只能在截止前修改本人目标。普通用户明细仅本人，活动组长本组，管理员全活动。403表示越权/填报已截止；404表示不可见对象；409表示版本冲突或非法状态；422表示校验失败或绑定需修复。刷新后重新填写可解决版本冲突，客户端保留失败输入。
+
+源订单只读，按核算日和活动小组统计；source_synced_at=null 明确表示源同步时间未知，calculated_at 不能充当同步时间。归档不冻结镜像数据，不提供删除接口。
+
 ## 云存储接口行为（本地实现，尚未切换生产）
 
 原上传、下载业务端点和鉴权保持原契约。发货检验媒体列表新增 `storage_state`：pending/running表示文件已在所属服务器持久接收，ready表示已同步云端；跨实例访问尚未同步文件返回503与Retry-After，删除对象返回404。局域网上传成功不代表云同步完成，工作台分别显示两种状态。

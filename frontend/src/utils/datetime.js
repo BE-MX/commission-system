@@ -125,4 +125,10 @@ export function beijingCalendarDate(dateValue = currentBeijingDate()) {
   return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
 }
 
+/** Date-picker values represent calendar labels, not instants to convert to Beijing. */
+export function formatCalendarDate(value) {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return ''
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
+}
+
 export { BEIJING_TIME_ZONE }

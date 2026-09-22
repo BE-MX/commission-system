@@ -59,6 +59,7 @@ export const announcementClient = createApiClient({ baseURL: '/api/announcements
 export const mcpClient = createApiClient({ baseURL: '/api/mcp', timeout: 30000 })
 export const integrationClient = createApiClient({ baseURL: '/api/integrations/admin', timeout: 30000 })
 export const festivalClient = createApiClient({ baseURL: '/api/festival', timeout: 30000 })
+export const battleReportClient = createApiClient({ baseURL: '/api/battle-reports', timeout: 30000 })
 export const orderIntelligenceClient = createApiClient({ baseURL: '/api/order-intelligence', timeout: 120000 })
 export const operationsClient = createApiClient({ baseURL: '/api/operations', timeout: 15000 })
 export const dingtalkClient = createApiClient({ baseURL: '/api/dingtalk', timeout: 120000 })

@@ -38,6 +38,7 @@ export const PREFIX_LABELS = {
   invoice_private_filter: '私海客户筛选',
   festival: '采购节看板',
   festival_order: '采购节数据明细',
+  battle_report: '临时战报',
   tracking: '物流跟踪',
   stock: '备货一览',
   stock_daily: '安全库存日报',
@@ -149,7 +150,7 @@ const ROW_GROUPS = [
   { label: '小程序 · 功能入口', prefixes: ['mini_export', 'mini_domestic', 'mini_lookup', 'mini_shipping'] },
   { label: '经营 · 提成与客户', prefixes: ['commission', 'commission_my', 'payment', 'customer', 'sales_automation', 'customer_opportunity', 'customer_radar', 'employee', 'supervisor'] },
   { label: '单据 · 订单与物流', prefixes: [
-    'invoice', 'invoice_price', 'invoice_okki', 'invoice_repair', 'invoice_private_filter', 'festival', 'festival_order', 'order_intelligence', 'domestic',
+    'invoice', 'invoice_price', 'invoice_okki', 'invoice_repair', 'invoice_private_filter', 'festival', 'festival_order', 'battle_report', 'order_intelligence', 'domestic',
     'domestic_customer', 'domestic_quantity_report', 'domestic_unit_report',
     'aftersales', 'aftersales_analytics', 'tracking', 'shipping_inspection',
     'stock', 'stock_daily',

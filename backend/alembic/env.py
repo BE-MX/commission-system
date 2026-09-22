@@ -16,6 +16,7 @@ from app.core.database import Base
 # 导入所有模型，确保 Base.metadata 包含它们
 import app.models  # noqa: F401
 import app.core.storage.models  # noqa: F401
+import app.battle_report.models  # noqa: F401
 
 config = context.config
 

@@ -1,0 +1,43 @@
+.battle-page { color: var(--text-primary); min-width: 0; }
+.battle-header, .battle-section-title, .battle-actions, .battle-meta, .battle-footer, .battle-order-summary { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.battle-header, .battle-section-title, .battle-footer { justify-content: space-between; }
+.battle-header h2 { margin: 0; font-size: 25px; }
+.battle-header p, .battle-muted, .battle-meta, .battle-footer, .battle-section-title > span { color: var(--text-secondary); font-size: 12px; }
+.battle-picker, .battle-manage, .battle-meta { margin: 16px 0; }
+.battle-actions > .el-select { width: 210px; }
+.battle-actions > .el-input { width: 220px; }
+.battle-panel .battle-section-title > .el-select { width: 155px; }
+.battle-metrics, .battle-teams { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 16px 0 24px; }
+.battle-metrics article, .battle-teams article { padding: 20px; min-width: 0; }
+.battle-metrics strong, .battle-teams strong { display: block; font-size: 28px; margin: 10px 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.battle-teams strong { font-size: 23px; }
+.battle-metrics small { font-size: 14px; }
+.battle-metrics p, .battle-teams p { color: var(--text-secondary); font-size: 12px; }
+.battle-teams .battle-section-title { margin-top: 12px; }
+.battle-panel { padding: 20px; margin-top: 20px; }
+.battle-panel h3 { font-size: 16px; margin: 0; }
+.battle-panel .battle-section-title { margin-bottom: 16px; }
+.battle-panel .el-table { margin-top: 14px; }
+.battle-panel .el-table p { margin: 0; color: var(--text-secondary); font-size: 12px; }
+.battle-panel .el-pagination { margin-top: 18px; flex-wrap: wrap; gap: 8px; }
+.battle-panel .el-alert { margin: 12px 0; }
+.battle-panel .el-progress { margin: 5px 0; }
+.battle-chart { display: flex; gap: 8px; overflow-x: auto; padding: 8px 0; }
+.battle-chart button { flex: 1 0 66px; border: 0; padding: 0 4px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 11px; cursor: pointer; }
+.battle-chart button:disabled { cursor: default; opacity: .55; }
+.battle-chart-track { display: flex; align-items: end; justify-content: center; height: 140px; margin: 8px 0; border-bottom: 1px solid var(--border-color); }
+.battle-chart-track i { display: block; width: 75%; background: var(--color-primary); border-radius: 5px 5px 0 0; }
+.battle-cell { padding: 10px; text-align: left; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text-primary); width: 100%; font: inherit; cursor: pointer; }
+.battle-cell small { display: block; color: var(--text-secondary); }
+.battle-cell.selected { border-color: var(--color-primary); background: var(--color-primary-light); }
+.battle-cell:disabled { cursor: default; }
+.battle-cell:focus-visible, .battle-chart button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+.battle-order-summary { margin: 18px 0; }
+.battle-reason { margin: 20px 0; }
+.battle-footer { margin: 24px 0; }
+.battle-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; }
+.battle-form-grid .el-select, .battle-form-grid .el-date-editor { width: 100%; }
+.battle-audit { border-bottom: 1px solid var(--border-color); padding: 14px 0; }
+.battle-audit pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+@media (max-width: 900px) { .battle-metrics, .battle-teams { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .battle-panel { padding: 12px; } .battle-form-grid { grid-template-columns: 1fr; } .battle-header h2 { font-size: 22px; } .battle-actions > .el-select, .battle-actions > .el-input { width: 100%; } }

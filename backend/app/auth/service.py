@@ -385,6 +385,9 @@ def seed_role_permissions(db: Session):
         ("invoice_private_filter:read", "invoice", "read",    "客户私海筛选（录入页「仅私海」勾选）"),
         # 采购节看板：与展会试戴权限完全独立，入口归属「订单管理」菜单。
         ("festival:read",         "festival", "read",       "查看采购节看板"),
+        ("battle_report:read", "battle_report", "read", "查看参与的临时战报"),
+        ("battle_report:write", "battle_report", "write", "填报本人战报目标"),
+        ("battle_report:admin", "battle_report", "admin", "管理战报、查看全部订单和更正目标"),
         ("festival_order:read",     "festival_order", "read",     "查看采购节数据明细"),
         ("festival_order:read_all", "festival_order", "read_all", "查看全部采购节订单（数据范围）"),
         # 订单经营智能分析：默认仅本人，read_all 放开全公司/团队/个人筛选。

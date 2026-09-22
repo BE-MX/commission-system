@@ -1,5 +1,15 @@
 # 莱莎方舟 数据库表参考
 
+## 临时战报（162_battle_reports，本地实现，未部署）
+
+| 表 | 责任与关键约束 |
+| --- | --- |
+| `ark_battle_reports` | 名称、日期范围、目标截止时间、draft/published/archived、visibility、USD币种、order_gmv_roster_v1口径、version、创建人及时间 |
+| `ark_battle_report_members` | report_id/ark_user_id外键（用户ID匹配MySQL INT UNSIGNED），OKKI账号与姓名/活动小组快照、组长标记、可空NUMERIC(16,2)目标、目标version与修改时间；唯一(report_id,ark_user_id)及(report_id,okki_user_id) |
+| `ark_battle_report_audits` | report_id外键及索引，actor_id、action、before/after JSON、reason和创建时间；与目标或配置修改同事务提交 |
+
+北京时间日期/时间，目标未填为NULL。成员表report_id索引；已有绑定改变不自动替换历史OKKI身份。查询只读业务镜像 `okki_orders` 与 `customer_info`，不复制成交账本、不改订单、不依赖采购节固定周期。162父节点161_invoice_lifecycle，downgrade拒绝删除目标/审计，不执行生产迁移或历史回填。详见 [实现与验收](requirements/2026-09-22-battle-report.md)。
+
 ## 云存储队列与可替换文件引用（159，本地实现，未部署）
 
 | 表 | 责任与关键约束 |
