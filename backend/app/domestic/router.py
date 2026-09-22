@@ -760,6 +760,7 @@ def create_order(
         raise HTTPException(status_code=409, detail=exc.detail)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    request_notification_service.notify_order_submitted_sync(db, data)
     if data["status"] == C.ORDER_PENDING_REVIEW:
         message = "订单已提交：优惠价低于原始价，审核通过后正式生效"
     else:
@@ -876,6 +877,7 @@ def submit_draft_order(
         raise HTTPException(status_code=409, detail=exc.detail)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    request_notification_service.notify_order_submitted_sync(db, result)
     if result["status"] == C.ORDER_PENDING_REVIEW:
         return ok(result, message="订单已提交：优惠价低于原始价，审核通过后正式生效")
     return ok(result, message="订单已提交，余额扣款成功")
