@@ -1,8 +1,8 @@
-## 2026-09-22 生产部署源码分叉修复（Codex，本地集成候选）
+## 2026-09-22 生产部署源码分叉修复（Codex，合并推送交付）
 
 - 只读核验办公室 `D:/commission-system`：HEAD为已部署的 `5ae1f07b`，origin/main为 `698dd57f`，ahead 1 / behind 8；工作区干净，两项办公室服务运行。源码准备的快进保护正确阻止覆盖本地出库对账修复，本轮失败未进入服务切换。
 - 共享生产库版本为 `163_okki_presence_days`；远端未上线战报迁移也从162分出。候选保留已部署163逐字不变，将战报迁移改为 `164_battle_posters` 并以163为父；部署保护保持不变，不reset/stamp/downgrade。
-- 工作树 `D:/MyProgram/commission-system-codex-deploy-source-reconcile`，分支 `codex/deploy-source-reconcile`，合并两边提交并保留交接记录。当前仅本地候选，未合并main、未推送、未部署。
+- 工作树 `D:/MyProgram/commission-system-codex-deploy-source-reconcile`，分支 `codex/deploy-source-reconcile`，合并两边提交并保留交接记录。用户已授权合并main并推送origin/main，本轮不部署、不执行生产迁移。
 - 业务与迁移81项、部署源码8项、两站迁移预检12项通过；验证从生产163仅执行164、已有快照证据保留。完整约定仍为9项既有UI基线过期，增量0项；详细现场与发布边界见[修复报告](reports/2026-09-22-deployment-source-divergence.md)。
 
 ## 2026-09-22 战报海报与跑赢时间（已授权合并推送，未部署）
