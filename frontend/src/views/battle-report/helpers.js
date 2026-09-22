@@ -11,15 +11,17 @@ export const errorText = error => {
 export const addDays = (day, count) => formatBeijingDate(new Date(parseApiDateTime(day).getTime() + count * 86400000))
 
 export function rankPeople(people, sort = 'gmv') {
-  const score = p => !p.data_complete ? null : sort === 'rate' ? p.progress_percent : Number(p.gmv)
-  const sorted = [...people].sort((a, b) => (score(b) ?? -1) - (score(a) ?? -1) || a.member_id - b.member_id)
-  let previous, rank = 0
-  return sorted.map((p, i) => {
-    const value = score(p)
-    if (value !== previous) rank = i + 1
-    previous = value
-    return { ...p, rank: value == null ? '—' : rank }
+  const cents = value => { const [whole, fraction = ''] = String(value).split('.'); return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0')) }
+  const valid = p => p.data_complete && (sort !== 'rate' || (p.progress_percent != null && Number(p.target ?? p.target_usd) > 0))
+  const sorted = [...people].sort((a, b) => {
+    if (valid(a) !== valid(b)) return valid(a) ? -1 : 1
+    if (!valid(a)) return a.member_id - b.member_id
+    const diff = sort === 'rate'
+      ? cents(b.gmv) * cents(a.target ?? a.target_usd) - cents(a.gmv) * cents(b.target ?? b.target_usd)
+      : cents(b.gmv) - cents(a.gmv)
+    return diff > 0n ? 1 : diff < 0n ? -1 : a.member_id - b.member_id
   })
+  return sorted.map((p, i) => ({ ...p, rank: valid(p) ? i + 1 : '—' }))
 }
 
 export function targetChanges(members, values) {

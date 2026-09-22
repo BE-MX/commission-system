@@ -250,6 +250,13 @@ class Settings(BaseSettings):
     DINGTALK_WEBHOOK_URL: str = ""
     DINGTALK_WEBHOOK_SECRET: str = ""
 
+    # 战报专用群机器人；留空不会使用其他业务的群。
+    BATTLE_REPORT_WEBHOOK_URL: str = Field(default="", repr=False)
+    BATTLE_REPORT_WEBHOOK_SECRET: str = Field(default="", repr=False)
+    BATTLE_REPORT_GROUP_NAME: str = "战报群"
+    BATTLE_REPORT_PUBLIC_BASE_URL: str = ""
+    BATTLE_REPORT_BROWSER_PATH: str = ""  # 空值使用 Playwright 安装的 Chromium
+
     # ── 钉钉企业内部应用（工作通知、审批）────────────────
     DINGTALK_APP_KEY: str = ""
     DINGTALK_APP_SECRET: str = ""

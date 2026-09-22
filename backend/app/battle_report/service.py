@@ -133,7 +133,13 @@ def update_report(db, report_id, user, payload):
             raise HTTPException(422, "进行中或已结束战报更正必须填写原因；更正将重算整个周期")
         before = {**report_payload(report), "members": [member_payload(m, report, own, user) for m in members]}
         roster = validate_roster(db, payload.members, members)
-        bump_report(db, report, payload.version, **payload.model_dump(exclude={"members", "reason", "version"}))
+        changes = payload.model_dump(exclude={"members", "reason", "version"})
+        # A changed campaign period needs an explicitly rechecked calendar before pushing.
+        if (payload.start_date, payload.end_date) != (report.start_date, report.end_date):
+            changes.update(work_dates=None, poster_push_enabled=False)
+        elif payload.visibility != "activity":
+            changes["poster_push_enabled"] = False
+        bump_report(db, report, payload.version, **changes)
         keep = {r["ark_user_id"] for r in roster}
         old = {m.ark_user_id: m for m in members}
         for m in members:

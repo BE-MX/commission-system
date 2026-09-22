@@ -6,6 +6,7 @@ from sqlalchemy import bindparam, text
 
 from app.core.config import get_settings
 from app.dingtalk.gmv_daily_service import VALID_ORDER_SQL
+from app.battle_report.pace import calendar_progress, pace_metrics
 
 CENT = Decimal("0.01")
 
@@ -112,7 +113,12 @@ def overview(report, members, orders, issues, now, detail_ids):
         summary = summarize(members, [o for o in orders if o["account_date"] == day.isoformat()], issues)
         daily.append({"date": day.isoformat(), "gmv": summary["gmv"], "order_count": summary["order_count"],
                       "state": "future" if day > now.date() else "ok" if summary["data_complete"] else "incomplete"})
-    return {"summary": summarize(members, orders, issues), "people": people, "teams": teams,
-            "daily": daily, "time_progress": time_progress(report, now),
+    summary = summarize(members, orders, issues)
+    progress = calendar_progress(report, now)
+    for row in [summary, *people, *teams]:
+        row.update(pace_metrics(row, progress))
+    return {"summary": summary, "people": people, "teams": teams,
+            "daily": daily, "time_progress": progress["percent"] if progress else time_progress(report, now),
+            "workday_progress": progress,
             "calculated_at": now.isoformat(), "source_synced_at": None,
             "issue_count": len(issues), "basis": "核算日期 · 订单 GMV · USD · 活动小组"}

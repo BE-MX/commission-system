@@ -1187,3 +1187,7 @@ ly914首返出库单的处理人为Eva。详情获取失败时返回502提示重
 入口身份各自保持原设计：网页共用手机选择操作人，小程序使用已登录绑定人员。后续变更扫描业务能力时同时核对两端上述路径；平台 API 实现可以不同。回归入口：`node --test miniprogram/tests/shipping-media.test.js`，网页 `frontend/tests/shippingStation.test.mjs` 与 `compressInspectionVideo.test.mjs`，后端 `backend/tests/test_shipping_media_recall.py`。
 
 发布需要后端 deploy 与微信小程序独立上传发布，deploy 不会自动发布微信版本；先后端、再小程序。本次不涉及数据库迁移。
+
+## 临时战报海报与群推送
+
+采用固定红金主题资产+Jinja模板+Playwright截图，运行时没有AI调用。海报与总览复用 battle_report 的只读订单集合和 Decimal 进度；工作日按明确日期列表、北京时间16:00累加。群机器人使用专用配置，不复用日报接收人或其他模块默认群。活动每天13:00/17:30分别发送团队及个人两张图；两图共享持久快照，各自状态保证部分成功后的重试不重复已成功图片。未知结果隔离为uncertain并由管理员人工核对。详见 [功能及部署说明](requirements/2026-09-22-battle-posters.md)。

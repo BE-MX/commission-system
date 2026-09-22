@@ -62,6 +62,8 @@ JOB_AGENT_REPURCHASE_ENQUEUE = "agent_repurchase_enqueue"
 JOB_AGENT_LEASE_RECONCILE = "agent_lease_reconcile"
 JOB_AGENT_RAW_EVENT_REDACTION = "agent_raw_event_redaction"
 JOB_DINGTALK_GMV_DAILY = "dingtalk_gmv_daily"
+JOB_BATTLE_POSTERS_NOON = "battle_posters_noon"
+JOB_BATTLE_POSTERS_AFTERNOON = "battle_posters_afternoon"
 JOB_WHATSAPP_TRANSLATION_PAIRING_CLEANUP = "whatsapp_translation_pairing_cleanup"
 JOB_DOMESTIC_PUBLIC_SEA_DAILY = "domestic_public_sea_daily"
 JOB_OKKI_OUTBOUND_RECONCILE = "okki_outbound_reconcile"
@@ -107,6 +109,7 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     from app.agent_runtime.maintenance import redact_expired_raw_events_job
     from app.agent_runtime.worker_service import reconcile_expired_runs_job
     from app.dingtalk.gmv_daily_scheduler import send_gmv_daily_report_job
+    from app.battle_report.poster_scheduler import send_battle_posters_job
     from app.whatsapp_translation.pairing_service import prune_unconsumed_pairings
     from app.domestic.customer_service import release_stale_private_customers
 
@@ -269,6 +272,14 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         id=JOB_DINGTALK_GMV_DAILY, replace_existing=True,
         max_instances=1, coalesce=True, misfire_grace_time=3600,
     )
+
+    # Two independent slots; retries only touch definitively failed/pending images.
+    scheduler.add_job(send_battle_posters_job, trigger="cron", hour=13, minute="0,5,15",
+                      timezone="Asia/Shanghai", id=JOB_BATTLE_POSTERS_NOON, replace_existing=True,
+                      max_instances=1, coalesce=True, misfire_grace_time=60)
+    scheduler.add_job(send_battle_posters_job, trigger="cron", hour=17, minute="30,35,45",
+                      timezone="Asia/Shanghai", id=JOB_BATTLE_POSTERS_AFTERNOON, replace_existing=True,
+                      max_instances=1, coalesce=True, misfire_grace_time=60)
 
     # ── 色彩趋势 ──────────────────────────────────────────
     # 注意：这两个管线是纯同步（HTTP + OpenCV），注册为同步函数让

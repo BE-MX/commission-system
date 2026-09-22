@@ -1,0 +1,27 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><style>{{ css | safe }}</style>
+<main class="{{ kind }}">
+ <div class="hero{% if month != 9 %} generic{% endif %}"><div class="badge"><span>销售冲刺战报 · {{ '草稿预览' if report.status == 'draft' else '目标完成榜' }}</span></div>{% if month != 9 %}<h1 class="gold generic-title">{{ month }}月冲刺战报</h1>{% endif %}</div>
+ <div class="middle"><header class="intro">
+  <p class="report-name">{{ report.name }}</p><h1 class="gold">{{ '团队' if kind == 'team' else '个人' }}目标完成榜</h1>
+  <p class="period">{{ report.start_date | replace('-', '.') }} — {{ report.end_date | replace('-', '.') }}</p>
+  <div class="metrics">
+   <div class="metric"><div class="metric-label">总目标 / USD</div><div class="metric-value gold">{{ target_display }}</div></div>
+   <div class="metric"><div class="metric-label">累计 GMV / USD</div><div class="metric-value gold">{{ summary.gmv | money }}</div></div>
+   <div class="metric"><div class="metric-label">整体完成率</div><div class="metric-value gold">{{ '%.1f' | format(summary.progress_percent) }}<small>%</small></div></div>
+  </div>
+  <div class="facts"><span>{{ teams | length }} 个业务组 · {{ people | length }} 位业务员</span><span>目标已填 {{ summary.filled }}/{{ summary.member_count }} · 成交 {{ summary.order_count }} 单</span></div>
+  <div class="pace-summary"><div class="pace-title"><span>工作日时间进度</span><strong>{{ '%.2f' | format(workday_progress.percent) }}% <small>（{{ workday_progress.completed }}/{{ workday_progress.total }} 天）</small></strong></div><div class="pace-note">截至 {{ calculated_at | stamp }} · 北京时间<br>工作日 16:00 后累计 · 白线为时间刻度<br><span class="legend-green">绿色：完成率 &gt; 时间进度</span>　<span class="legend-red">红色：完成率 ≤ 时间进度</span></div></div>
+ </header>
+ <div class="sectionline"><span>按目标完成率从高到低排序</span><span>金额单位：USD</span></div>
+ <section class="cards">{% for row in rows %}
+  <article class="card rank{{ row.rank }} {{ 'ahead' if row.ahead_of_time else 'behind' }}"><div class="card-inner">
+   <div class="card-top"><div class="rank">{{ '%02d' | format(row.rank) }}</div><div class="person"><span class="name {{ 'team-name' if kind == 'team' else '' }} {{ 'long' if row.label | length > 7 else '' }}">{{ row.label }}</span>{% if kind != 'team' %}<span class="team-tag">{{ row.team }}</span>{% endif %}</div><div class="percentage gold">{{ '%.1f' | format(row.progress_percent) }}<small>%</small></div></div>
+   <div class="details"><span>目标<b>{{ row.target | money }}</b></span><span class="sep"></span><span>已完成<b>{{ row.gmv | money }}</b></span></div>
+   <div class="progress"><div class="fill" style="width:{{ row.fill }}%"></div><div class="time-line" style="left:clamp(2px, {{ workday_progress.percent }}%, calc(100% - 2px))"></div></div>
+   <div class="pace-row"><span class="pace-status">{{ '跑赢时间' if row.ahead_of_time else '未跑赢时间' }} · {{ row.pace_label }}</span><span class="pace-time">时间 {{ '%.2f' | format(workday_progress.percent) }}%</span></div>
+   {% if kind == 'team' %}<div class="group-meta"><span>{{ row.member_count }} 位业务员 · {{ row.order_count }} 单</span><span>距目标 {{ row.gap | money }}</span></div>{% endif %}
+  </div></article>
+ {% endfor %}</section>
+ <div class="footnote"><div>数据读取：{{ calculated_at | stamp }}（北京时间）</div><div>订单核算日 · 活动小组 · 同完成率按名单顺序 · 连续编号</div><div class="small">{{ workday_progress.total }} 个工作日 · 每日 16:00 累计 {{ workday_progress.step }} 个百分点 · 最后一天达到 100%<br>源同步时间未知 · 以当前业务镜像数据为准</div></div>
+ </div><div class="ending"><img class="company-logo" src="{{ logo }}" alt="leShine Hair"></div>
+</main></html>

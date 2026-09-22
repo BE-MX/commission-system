@@ -74,3 +74,16 @@ class TargetUpdate(Command):
         if len(ids) != len(set(ids)):
             raise ValueError("目标列表不能重复提交同一业务员")
         return self
+
+
+class PosterConfigUpdate(Command):
+    version: int = Field(gt=0)
+    work_dates: list[date] = Field(min_length=1, max_length=366)
+    push_enabled: bool = False
+
+    @field_validator("work_dates")
+    @classmethod
+    def distinct_dates(cls, values):
+        if len(set(values)) != len(values):
+            raise ValueError("工作日不能重复")
+        return sorted(values)

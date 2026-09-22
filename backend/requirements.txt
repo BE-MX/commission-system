@@ -21,6 +21,7 @@ python-jose[cryptography]==3.3.*
 passlib[bcrypt]==1.7.*
 bcrypt==4.*
 jinja2==3.1.*
+playwright==1.58.0  # 战报海报服务端截图；运行账号须安装 Chromium 或配置 Chrome 路径
 apscheduler>=3.10.0
 # 发色数字化体系依赖
 colour-science>=0.4.4

@@ -1,14 +1,16 @@
 """Authenticated battle-report endpoints."""
+import base64
 from datetime import date
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_any_permission, require_permission
-from app.battle_report import query_service, service
+from app.battle_report import query_service, service, poster_service
 from app.battle_report.access import bound_accounts
-from app.battle_report.schemas import ReportInput, ReportUpdate, StateChange, TargetUpdate
+from app.battle_report.schemas import ReportInput, ReportUpdate, StateChange, TargetUpdate, PosterConfigUpdate
 from app.core.database import get_db
 from app.core.response import ok
 
@@ -16,6 +18,40 @@ router = APIRouter()
 _require_battle_read = require_any_permission("battle_report:read", "battle_report:admin")
 _require_battle_write = require_any_permission("battle_report:write", "battle_report:admin")
 _require_battle_admin = require_permission("battle_report:admin")
+
+
+# Capability-authenticated PNG only: DingTalk cannot attach platform login headers.
+# HMAC binds delivery ID, image kind and 7-day expiry; no raw business JSON is public.
+@router.get("/poster-images/{delivery_id}/{kind}.png", include_in_schema=False)
+def poster_image(delivery_id: int, kind: Literal["team", "personal"], expires: int,
+                 signature: str = Query(min_length=64, max_length=64), db: Session = Depends(get_db)):
+    from app.battle_report.poster_images import public_image
+    return FileResponse(public_image(db, delivery_id, kind, expires, signature), media_type="image/png",
+                        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
+
+
+@router.get("/{report_id}/poster-config")
+def poster_config(report_id: int, db: Session = Depends(get_db), user=Depends(_require_battle_admin)):
+    return ok(poster_service.get_config(db, report_id, user))
+
+
+@router.put("/{report_id}/poster-config")
+def configure_posters(report_id: int, payload: PosterConfigUpdate,
+                      db: Session = Depends(get_db), user=Depends(_require_battle_admin)):
+    return ok(poster_service.save_config(db, report_id, user, payload))
+
+
+@router.post("/{report_id}/posters/preview")
+def preview_posters(report_id: int, db: Session = Depends(get_db), user=Depends(_require_battle_admin)):
+    from app.battle_report.poster_renderer import render_posters
+    snapshot = poster_service.preview_snapshot(db, report_id, user)
+    try:
+        images = render_posters(snapshot)
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from None
+    return ok({"calculated_at": snapshot["calculated_at"], "time_progress": snapshot["workday_progress"],
+               "images": {kind: "data:image/png;base64," + base64.b64encode(data).decode("ascii")
+                          for kind, data in images.items()}})
 
 
 @router.get("")

@@ -22,6 +22,8 @@ class BattleReport(Base):
     currency = Column(String(3), nullable=False, default="USD", comment="统计币种")
     basis_version = Column(String(32), nullable=False, default="order_gmv_roster_v1", comment="统计口径版本")
     version = Column(Integer, nullable=False, default=1, comment="并发修改版本")
+    work_dates = Column(JSON, nullable=True, comment="北京时间计时工作日，ISO 日期数组")
+    poster_push_enabled = Column(Boolean, nullable=False, default=False, comment="13:00/17:30 群海报开关")
     created_by = Column(Integer, nullable=False, comment="创建人方舟账号ID")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间（北京时间）")
     updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="更新时间（北京时间）")
@@ -57,3 +59,18 @@ class BattleReportAudit(Base):
     after = Column(JSON, nullable=True, comment="修改后内容")
     reason = Column(String(500), nullable=False, default="", comment="修改原因")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间（北京时间）")
+
+
+class BattleReportDelivery(Base):
+    __tablename__ = "ark_battle_report_deliveries"
+    __table_args__ = (UniqueConstraint("report_id", "report_date", "slot", name="uq_battle_delivery_slot"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    report_id = Column(Integer, ForeignKey("ark_battle_reports.id"), nullable=False, index=True, comment="战报ID")
+    report_date = Column(Date, nullable=False, comment="投递日期（北京时间）")
+    slot = Column(String(5), nullable=False, comment="投递时段：13:00 或 17:30")
+    snapshot = Column(JSON, nullable=False, comment="两张海报共同的不可变业务快照")
+    destination_hash = Column(String(64), nullable=False, comment="Webhook 指纹，不存凭据")
+    deliveries = Column(JSON, nullable=False, comment="两张图独立状态；不确定送达不自动重试")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="快照创建时间（北京时间）")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="状态更新时间（北京时间）")

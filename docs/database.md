@@ -570,3 +570,9 @@ ark_invoices.linked_sync_id：当前关联任务写锁标识，结束后清除�
 ## 161_invoice_lifecycle
 
 ark_invoices 新增 nullable JSON sync_attempt（推单令牌/北京时间租约）、nullable JSON cancellation（取消阶段/原因/执行权/证据）、非空 SmallInteger outbound_auto_requested 默认0（自动出库登记，历史数据不追建）。复用 InvoiceSyncLog 保存取消及恢复审计，ReceiptLog 保存回款变更前后证据；回款业务状态增加 remote_deleted，原远端ID和凭证仍保留。迁移可重入，不允许降级删除审计字段。
+
+## 163_battle_posters（父162）
+
+`ark_battle_reports` 增加 nullable JSON `work_dates`（北京时间计时日期数组）、Boolean `poster_push_enabled`（非空、默认false）。新增 `ark_battle_report_deliveries`：id、report_id(FK)、report_date、slot、snapshot(JSON)、destination_hash(SHA256，无凭据)、deliveries(JSON，两图各自状态/次数/安全错误)、created_at/updated_at（北京时间）。唯一约束 `(report_id,report_date,slot)` 防重复时段；report_id索引支持历史查询。新迁移仅增量加字段和表，不自动启用群推送，不删除或重算已有目标。
+
+JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发，未知结果不自动重发。snapshot保存两张图共用的统计时间、名单、目标、GMV、精确判色结果及计时日历。图片位于私有缓存，业务JSON不走匿名端点。降级拒绝删除投递历史，需前向迁移。

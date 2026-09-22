@@ -18,15 +18,23 @@ test('battle report tables default to attainment rate and cap visible member row
   assert.match(styles, /\.battle-matrix-table \.el-table__body tr \{ height: 72px; \}/)
 })
 
-test('equal amounts share ranks; missing target and anomalous data have no attainment rank', () => {
+test('equal amounts keep roster order and consecutive ranks; incomplete data has no attainment rank', () => {
   const people = [
-    { member_id: 1, gmv: '100', progress_percent: 100, data_complete: true },
-    { member_id: 2, gmv: '100', progress_percent: 100, data_complete: true },
+    { member_id: 1, gmv: '100', target: '100', progress_percent: 100, data_complete: true },
+    { member_id: 2, gmv: '100', target: '100', progress_percent: 100, data_complete: true },
     { member_id: 3, gmv: '1000', progress_percent: null, data_complete: true },
     { member_id: 4, gmv: '20', progress_percent: 20, data_complete: false },
   ]
-  assert.deepEqual(rankPeople(people, 'rate').map(p => p.rank), [1, 1, '—', '—'])
-  assert.deepEqual(rankPeople(people, 'gmv').map(p => p.rank), [1, 2, 2, '—'])
+  assert.deepEqual(rankPeople(people, 'rate').map(p => p.rank), [1, 2, '—', '—'])
+  assert.deepEqual(rankPeople(people, 'gmv').map(p => p.rank), [1, 2, 3, '—'])
+})
+
+test('completion ranking uses exact amounts even when displayed percentages tie', () => {
+  const people = [{ member_id: 1, gmv: '1666', target: '10000', progress_percent: 16.7, data_complete: true },
+    { member_id: 2, gmv: '1666.01', target: '10000', progress_percent: 16.7, data_complete: true }]
+  assert.deepEqual(rankPeople(people, 'rate').map(p => p.member_id), [2, 1])
+  const zeros = Array.from({ length: 22 }, (_, i) => ({ member_id: i + 1, gmv: '0', target: '100', progress_percent: 0, data_complete: true }))
+  assert.deepEqual(rankPeople(zeros, 'rate').map(p => p.rank), Array.from({ length: 22 }, (_, i) => i + 1))
 })
 
 test('target changes preserve decimal strings, versions and only editable members', () => {

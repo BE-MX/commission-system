@@ -111,6 +111,8 @@ class TestSchedulerRegistration:
                 "operations_history_cleanup",
                 "agent_raw_event_redaction",
                 "dingtalk_gmv_daily",
+                "battle_posters_noon",
+                "battle_posters_afternoon",
                 "announcement_dispatch",
                 "announcement_weekly",
                 "whatsapp_translation_pairing_cleanup",
@@ -156,6 +158,12 @@ class TestSchedulerRegistration:
             assert gmv_daily_fields["hour"] == "8"
             assert gmv_daily_fields["minute"] == "0,5,15,30"
             assert gmv_daily.max_instances == 1
+            for job_id, hour, minutes in [('battle_posters_noon', '13', '0,5,15'), ('battle_posters_afternoon', '17', '30,35,45')]:
+                poster = scheduler.get_job(job_id)
+                fields = {field.name: str(field) for field in poster.trigger.fields}
+                assert fields['hour'] == hour and fields['minute'] == minutes
+                assert str(poster.trigger.timezone) == 'Asia/Shanghai'
+                assert poster.max_instances == 1
         finally:
             shutdown_scheduler(scheduler)
 
