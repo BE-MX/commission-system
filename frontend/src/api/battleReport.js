@@ -15,4 +15,7 @@ export const battleReportApi = {
   orders: (id, params) => unwrap(client.get(`/${id}/orders`, options(params))),
   order: (id, orderId) => unwrap(client.get(`/${id}/orders/${encodeURIComponent(orderId)}`, options())),
   audits: (id, params) => unwrap(client.get(`/${id}/audits`, options(params))),
+  posterConfig: id => unwrap(client.get(`/${id}/poster-config`, options())),
+  savePosterConfig: (id, payload) => unwrap(client.put(`/${id}/poster-config`, payload)),
+  previewPosters: id => unwrap(client.post(`/${id}/posters/preview`, {}, { timeout: 120000, showLoading: false })),
 }

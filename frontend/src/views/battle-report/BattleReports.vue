@@ -10,6 +10,7 @@
       <GlassButton v-if="report.status === 'published'" v-permission="'battle_report:admin'" :loading="busy" @click="transition('archive')">归档战报</GlassButton>
       <GlassButton v-if="report.status === 'archived'" v-permission="'battle_report:admin'" :loading="busy" @click="transition('restore')">恢复战报</GlassButton>
       <GlassButton v-permission="'battle_report:admin'" left-icon="Clock" @click="openAudits">修改记录</GlassButton>
+      <GlassButton v-permission="'battle_report:admin'" left-icon="Picture" @click="postersVisible = true">战报海报</GlassButton>
     </div>
     <el-alert v-if="report?.status === 'draft'" type="info" :closable="false" title="当前为草稿，仅管理员可查看。核对名单和日期后发布，参与人即可填报目标。" />
     <div v-loading="loading" class="battle-content">
@@ -22,6 +23,7 @@
     </div>
     <footer v-if="overview" class="battle-footer"><span>计算时间：{{ formatBeijingDateTime(overview.calculated_at) }}（北京时间）</span><span>源同步时间未知 · 以当前业务镜像数据为准</span></footer>
     <ReportSettings v-model="settingsVisible" :report="editingReport" @saved="settingsSaved" />
+    <ReportPosters v-if="postersVisible && report" v-model="postersVisible" :report="report" @saved="refresh" />
     <DetailDrawer v-model="auditsVisible" title="战报修改记录" :loading="auditsLoading"><el-alert v-if="auditError" type="error" :title="auditError" :closable="false" /><article v-for="item in audits" :key="item.id" class="battle-audit"><h4>{{ auditLabels[item.action] || item.action }} · {{ formatBeijingDateTime(item.created_at) }}</h4><p>操作人 ID：{{ item.actor_id }} · {{ item.reason || '常规操作' }}</p><details><summary>查看修改前后内容</summary><p>修改前</p><pre>{{ JSON.stringify(item.before, null, 2) }}</pre><p>修改后</p><pre>{{ JSON.stringify(item.after, null, 2) }}</pre></details></article><el-pagination v-model:current-page="auditPage" :total="auditTotal" :page-size="20" layout="prev, pager, next" @current-change="loadAudits" /></DetailDrawer>
   </div>
 </template>
@@ -36,12 +38,14 @@ import ReportOverview from './components/ReportOverview.vue'
 import ReportDaily from './components/ReportDaily.vue'
 import ReportTargets from './components/ReportTargets.vue'
 import ReportSettings from './components/ReportSettings.vue'
+import ReportPosters from './components/ReportPosters.vue'
 import { errorText, stageLabels } from './helpers'
 
 const reports = ref([]), report = ref(null), overview = ref(null), selectedId = ref(null), archived = ref(false)
+const postersVisible = ref(false)
 const team = ref(''), tab = ref('overview'), selection = ref({}), loading = ref(false), busy = ref(false), error = ref(''), refreshKey = ref(0)
 const settingsVisible = ref(false), editingReport = ref(null), auditsVisible = ref(false), auditsLoading = ref(false), auditError = ref(''), audits = ref([]), auditPage = ref(1), auditTotal = ref(0)
-const auditLabels = { create: '创建战报', configure: '更正设置', targets: '修改目标', publish: '发布', archive: '归档', restore: '恢复' }
+const auditLabels = { create: '创建战报', configure: '更正设置', targets: '修改目标', publish: '发布', archive: '归档', restore: '恢复', poster_config: '海报与群推送设置' }
 const teams = computed(() => [...new Set(report.value?.members.map(m => m.team) || [])])
 let request = 0, listRequest = 0, auditRequest = 0
 async function loadReports(preferred) {

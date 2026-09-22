@@ -1488,3 +1488,13 @@ Agent research context now includes `fact_contract.version=registered_research_f
 `GET /api/mini/domestic/unit-history/{unit_id}?sign=...`：沿用小程序内贸报工的实时权限与逐件码HMAC验签，返回该单件的 `unit_code`、`domestic_no`、`active` 和按工序排序的 `steps`。每道工序返回当前状态及仅属于本件的报工/跳过流水（操作人、北京时间、撤销标记与撤销时间）；未报工与已撤销记录区分展示。不返回价格或客户资料，不创建单件、不更新生产进度。无权限403、签名错误400、记录不存在404。
 
 小程序内贸扫码遇到已识别单件的业务阻断（包括全部完成），关闭提示后打开 `pages/domestic/unit-history/unit-history`。提交报工返回422时也支持查看该件记录；网络错误、签名无效和普通整条流转卡不自动跳转。
+
+## 临时战报海报（2026-09-22）
+
+- `GET /api/battle-reports/{id}/poster-config`：battle_report:admin；工作日、推送开关、配置就绪状态、目标群显示名和最近10个时段的投递状态，不返回群凭据。
+- `PUT /api/battle-reports/{id}/poster-config`：同权限；version、work_dates（周期内非重复日期数组）、push_enabled；版本冲突409，日期/推送配置不合法422，归档409，保存写审计。
+- `POST /api/battle-reports/{id}/posters/preview`：同权限；读取同一业务快照返回 calculated_at、time_progress、images.team/personal（PNG data URI）。不写投递记录、不发送消息。目标/数据不完整422，渲染服务不可用503。
+- `GET /api/battle-reports/poster-images/{delivery_id}/{team|personal}.png?expires=...&signature=...`：钉钉图片读取能力链接，无登录头；HMAC绑定记录、类型和7天到期，失效404；返回私有缓存PNG，非JSON信封。
+- 原 overview 增加 workday_progress，以及 summary/teams/people 的 ahead_of_time（true/false/null）、pace_delta；配置工作日时 time_progress 改用16:00累加口径，无工作日配置保持既有日历参考。
+
+业务和启用说明见 [战报海报](requirements/2026-09-22-battle-posters.md)。

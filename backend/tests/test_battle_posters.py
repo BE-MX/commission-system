@@ -1,0 +1,241 @@
+"""Isolated SQLite; never send real webhook messages or read production data."""
+from datetime import date, datetime, timezone
+from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import httpx
+import pytest
+from fastapi import HTTPException
+
+from app.battle_report import pace, poster_delivery, poster_images, poster_renderer, poster_service
+from app.battle_report.models import BattleReport, BattleReportDelivery
+from app.battle_report.schemas import PosterConfigUpdate
+from app.core.config import get_settings
+from app.dingtalk.webhook import DingTalkWebhookError
+from tests.test_battle_reports import setup, become  # shared real-route, isolated-DB fixture
+
+
+def campaign(**values):
+    return SimpleNamespace(start_date=date(2026, 9, 22), end_date=date(2026, 9, 30), work_dates=None, **values)
+
+
+@pytest.mark.parametrize("stamp,completed,percent", [
+    ("2026-09-21T23:59:59+08:00", 0, 0), ("2026-09-22T15:59:59+08:00", 0, 0),
+    ("2026-09-22T16:00:00+08:00", 1, 16.66), ("2026-09-22T08:00:00+00:00", 1, 16.66),
+    ("2026-09-22T16:00:00-07:00", 1, 16.66), ("2026-09-23T16:00:00+08:00", 2, 33.32),
+    ("2026-09-24T16:00:00+08:00", 3, 49.98), ("2026-09-25T17:30:00+08:00", 3, 49.98),
+    ("2026-09-26T17:30:00+08:00", 3, 49.98), ("2026-09-27T17:30:00+08:00", 3, 49.98),
+    ("2026-09-28T16:00:00+08:00", 4, 66.64), ("2026-09-29T16:00:00+08:00", 5, 83.30),
+    ("2026-09-30T15:59:59+08:00", 5, 83.30), ("2026-09-30T16:00:00+08:00", 6, 100),
+    ("2026-10-01T00:00:00+08:00", 6, 100), ("2026-09-22T16:00:00+00:00", 1, 16.66),
+])
+def test_calendar_boundaries(stamp, completed, percent):
+    result = pace.calendar_progress(campaign(), datetime.fromisoformat(stamp))
+    assert (result["completed"], result["percent"]) == (completed, percent)
+
+
+@pytest.mark.parametrize("gmv,expected", [("1666.01", True), ("1666", False), ("1665.99", False)])
+def test_compare_without_rounded_percentage(gmv, expected):
+    row = {"gmv": gmv, "target": "10000", "progress_percent": 16.7}
+    assert pace.pace_metrics(row, {"percent": 16.66})["ahead_of_time"] is expected
+
+
+@pytest.fixture
+def posters(setup, monkeypatch, tmp_path):
+    s = setup
+    settings = get_settings()
+    monkeypatch.setattr(settings, "BATTLE_REPORT_WEBHOOK_URL", "https://oapi.dingtalk.com/robot/send?access_token=test-only")
+    monkeypatch.setattr(settings, "BATTLE_REPORT_PUBLIC_BASE_URL", "https://example.test")
+    monkeypatch.setattr(poster_images, "CACHE_ROOT", tmp_path)
+    monkeypatch.setattr(poster_delivery, "beijing_now", lambda: datetime(2026, 9, 22, 13))
+    monkeypatch.setattr(poster_service, "beijing_now", lambda: datetime(2026, 9, 22, 13))
+    report = s.db.get(BattleReport, s.report["id"])
+    report.start_date, report.end_date = date(2026, 9, 22), date(2026, 9, 30)
+    s.db.commit()
+    targets = [{"member_id": m["id"], "version": 1, "target_usd": "100.00"} for m in s.report["members"]]
+    assert s.client.put(s.url+"/targets", json={"targets": targets}).status_code == 200
+    s.sender = SimpleNamespace(send_markdown=AsyncMock(return_value={"errcode": 0}))
+    s.report_obj = report
+    return s
+
+
+def enable(s):
+    report = s.db.get(BattleReport, s.report["id"])
+    result = s.client.put(s.url+"/poster-config", json={"version": report.version,
+        "work_dates": pace.SEPTEMBER_WORK_DATES, "push_enabled": True})
+    assert result.status_code == 200, result.text
+
+
+def mock_render(monkeypatch):
+    monkeypatch.setattr(poster_delivery, "render_posters", lambda snapshot, kinds: {k: b"fake-png" for k in kinds})
+
+
+def test_admin_preview_same_snapshot_no_delivery(posters, monkeypatch):
+    s = posters
+    calls = []
+    def render(snapshot):
+        calls.append(snapshot)
+        return {"team": b"a", "personal": b"b"}
+    monkeypatch.setattr(poster_renderer, "render_posters", render)
+    result = s.client.post(s.url+"/posters/preview")
+    assert result.status_code == 200, result.text
+    assert len(calls) == 1 and result.json()["data"]["time_progress"]["percent"] == 0
+    assert calls[0]["summary"]["gmv"] == "90.90"
+    assert [p["rank"] for p in calls[0]["people"]] == [1, 2, 3]
+    assert s.db.query(BattleReportDelivery).count() == 0
+    become(s, 1)
+    assert s.client.post(s.url+"/posters/preview").status_code == 403
+    assert s.client.get(s.url+"/poster-config").status_code == 403
+
+
+def test_calendar_config_validation_and_stale_version(posters):
+    s = posters
+    assert s.client.get(s.url+"/poster-config").json()["data"]["work_dates"] == pace.SEPTEMBER_WORK_DATES
+    body = {"version": s.report_obj.version, "work_dates": ["2026-10-01"], "push_enabled": False}
+    assert s.client.put(s.url+"/poster-config", json=body).status_code == 422
+    body["work_dates"] = ["2026-09-22", "2026-09-22"]
+    assert s.client.put(s.url+"/poster-config", json=body).status_code == 422
+    body["work_dates"] = pace.SEPTEMBER_WORK_DATES
+    assert s.client.put(s.url+"/poster-config", json=body).status_code == 200
+    assert s.client.put(s.url+"/poster-config", json=body).status_code == 409
+
+
+def test_two_images_once_across_retries_and_same_snapshot(posters, monkeypatch):
+    s = posters; enable(s); mock_render(monkeypatch)
+    first = poster_delivery.send_slot(s.db, s.report_obj.id, sender=s.sender)
+    assert all(v["status"] == "sent" for v in first["deliveries"].values())
+    poster_delivery.send_slot(s.db, s.report_obj.id, sender=s.sender)
+    assert s.sender.send_markdown.call_count == 2
+    assert s.db.query(BattleReportDelivery).count() == 1
+    frozen = s.db.query(BattleReportDelivery).one().snapshot
+    assert frozen["summary"]["gmv"] == "90.90"
+
+
+def test_only_definitively_failed_image_retries(posters, monkeypatch):
+    s = posters; enable(s); mock_render(monkeypatch)
+    s.sender.send_markdown.side_effect = [{"errcode": 0}, DingTalkWebhookError(310000, "invalid")]
+    first = poster_delivery.send_slot(s.db, s.report_obj.id, sender=s.sender)
+    assert first["deliveries"]["team"]["status"] == "sent"
+    assert first["deliveries"]["personal"]["status"] == "failed"
+    s.sender.send_markdown.side_effect = None
+    poster_delivery.send_slot(s.db, s.report_obj.id, sender=s.sender)
+    assert s.sender.send_markdown.call_count == 3
+
+
+@pytest.mark.parametrize("error", [httpx.ReadTimeout("secret-url"), DingTalkWebhookError(-1, "系统繁忙")])
+def test_uncertain_outcome_never_automatically_resends(posters, monkeypatch, error):
+    s = posters; enable(s); mock_render(monkeypatch)
+    s.sender.send_markdown.side_effect = error
+    result = poster_delivery.send_slot(s.db, s.report_obj.id, sender=s.sender)
+    assert all(v["status"] == "uncertain" for v in result["deliveries"].values())
+    poster_delivery.send_slot(s.db, s.report_obj.id, sender=s.sender)
+    assert s.sender.send_markdown.call_count == 2
+    assert "secret-url" not in str(result)
+
+
+def test_interrupted_sending_is_quarantined_and_destination_change_blocks(posters, monkeypatch):
+    s = posters; enable(s); mock_render(monkeypatch)
+    poster_delivery.send_slot(s.db, s.report_obj.id, sender=s.sender)
+    row = s.db.query(BattleReportDelivery).one()
+    row.deliveries = {"team": {"status": "sending"}, "personal": {"status": "sent"}}
+    s.db.commit()
+    poster_delivery.send_slot(s.db, s.report_obj.id, sender=s.sender)
+    assert row.deliveries["team"]["status"] == "uncertain"
+    assert s.sender.send_markdown.call_count == 2
+    monkeypatch.setattr(get_settings(), "BATTLE_REPORT_WEBHOOK_URL", "https://oapi.dingtalk.com/robot/send?access_token=different")
+    assert poster_delivery.send_slot(s.db, s.report_obj.id, sender=s.sender)["status"] == "blocked"
+
+
+def test_invalid_slot_and_empty_dedicated_group_never_use_default(posters, monkeypatch):
+    s = posters; enable(s); mock_render(monkeypatch)
+    assert poster_delivery.send_slot(s.db, s.report_obj.id, datetime(2026, 9, 22, 14), s.sender)["status"] == "skipped"
+    monkeypatch.setattr(get_settings(), "BATTLE_REPORT_WEBHOOK_URL", "")
+    assert poster_delivery.send_slot(s.db, s.report_obj.id, sender=s.sender)["status"] == "skipped"
+    assert s.sender.send_markdown.call_count == 0
+
+
+def test_group_visibility_checked_before_second_image(posters, monkeypatch):
+    s = posters; enable(s); mock_render(monkeypatch)
+    async def send(title, content):
+        s.db.get(BattleReport, s.report_obj.id).visibility = "self"
+        s.db.commit()
+        return {"errcode": 0}
+    s.sender.send_markdown.side_effect = send
+    result = poster_delivery.send_slot(s.db, s.report_obj.id, sender=s.sender)
+    assert s.sender.send_markdown.call_count == 1
+    assert result["deliveries"]["personal"]["status"] == "pending"
+
+
+def test_capability_is_expiring_and_kind_bound(posters, monkeypatch):
+    s = posters; enable(s); mock_render(monkeypatch)
+    poster_delivery.send_slot(s.db, s.report_obj.id, sender=s.sender)
+    row = s.db.query(BattleReportDelivery).one()
+    expires = poster_images.expiry(row)
+    monkeypatch.setattr(poster_images, "beijing_now_aware", lambda: datetime(2026, 9, 22, tzinfo=timezone.utc))
+    sig = poster_images.signature(row.id, "team", expires)
+    assert poster_images.public_image(s.db, row.id, "team", expires, sig).read_bytes() == b"fake-png"
+    for kind, exp, signature in [("personal", expires, sig), ("team", expires+1, sig), ("../bad", expires, sig)]:
+        with pytest.raises(HTTPException):
+            poster_images.public_image(s.db, row.id, kind, exp, signature)
+    monkeypatch.setattr(poster_images, "beijing_now_aware", lambda: datetime(2026, 10, 1, tzinfo=timezone.utc))
+    with pytest.raises(HTTPException):
+        poster_images.public_image(s.db, row.id, "team", expires, sig)
+
+
+def test_template_escapes_names_and_has_no_external_assets(posters):
+    snapshot = poster_service.preview_snapshot(posters.db, posters.report_obj.id, posters.identity)
+    snapshot["people"][0]["user_name"] = '<img src="https://evil.test/">'
+    html = poster_renderer.render_html(snapshot, "personal")
+    assert '&lt;img src=' in html and '<img src="https://evil.test/' not in html
+    assert 'class="company-logo"' in html and 'data:image/png;base64,' in html
+
+
+def test_rest_day_keeps_push_schedule_but_not_pace(posters, monkeypatch):
+    s = posters; enable(s); mock_render(monkeypatch)
+    monkeypatch.setattr(poster_delivery, "beijing_now", lambda: datetime(2026, 9, 26, 13))
+    result = poster_delivery.send_slot(s.db, s.report_obj.id, sender=s.sender)
+    assert all(v["status"] == "sent" for v in result["deliveries"].values())
+    assert s.db.query(BattleReportDelivery).one().snapshot["workday_progress"]["percent"] == 49.98
+
+
+def test_recovery_covers_past_final_retry_without_resending(posters, monkeypatch):
+    s = posters; enable(s); mock_render(monkeypatch)
+    poster_delivery.send_slot(s.db, s.report_obj.id, sender=s.sender)
+    row = s.db.query(BattleReportDelivery).one()
+    row.deliveries = {"team": {"status": "sent"}, "personal": {"status": "sending", "attempts": 3}}
+    row.updated_at = datetime(2026, 9, 22, 13, 15)
+    s.db.commit()
+    assert poster_delivery.recover_interrupted(s.db, datetime(2026, 9, 22, 13, 20)) == 0
+    with poster_delivery.delivery_lock(s.db, s.report_obj.id):
+        assert poster_delivery.recover_interrupted(s.db, datetime(2026, 9, 22, 17, 30)) == 0
+    assert poster_delivery.recover_interrupted(s.db, datetime(2026, 9, 22, 17, 30)) == 1
+    assert s.db.query(BattleReportDelivery).one().deliveries["personal"]["status"] == "uncertain"
+    assert s.sender.send_markdown.call_count == 2
+
+
+def test_read_transaction_ends_before_every_outgoing_message(posters, monkeypatch):
+    s = posters; enable(s); mock_render(monkeypatch)
+    boundaries = []
+    original = s.db.rollback
+    def rollback():
+        boundaries.append('rollback')
+        original()
+    monkeypatch.setattr(s.db, 'rollback', rollback)
+    async def send(title, content):
+        boundaries.append('send')
+        return {"errcode": 0}
+    s.sender.send_markdown.side_effect = send
+    poster_delivery.send_slot(s.db, s.report_obj.id, sender=s.sender)
+    assert boundaries == ['rollback', 'send', 'rollback', 'send']
+
+
+def test_render_failure_is_recorded_without_sending(posters, monkeypatch):
+    s = posters; enable(s)
+    def fail(*args):
+        raise RuntimeError('private path')
+    monkeypatch.setattr(poster_delivery, 'render_posters', fail)
+    result = poster_delivery.send_slot(s.db, s.report_obj.id, sender=s.sender)
+    assert all(v['status']=='failed' for v in result['deliveries'].values())
+    assert s.sender.send_markdown.call_count == 0
+    assert 'private path' not in str(result)
