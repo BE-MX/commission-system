@@ -22,6 +22,37 @@ from app.colorwork.constants import (
 from app.core.config import get_settings
 from app.core.time import utc_now
 
+# okki_inventory 上可能的同步/更新时间列（按优先级探测；库存新鲜度只看库存表）
+_INVENTORY_TIME_COLUMNS = (
+    "synced_at",
+    "update_time",
+    "updated_at",
+    "modify_time",
+    "modified_at",
+    "last_synced_at",
+    "create_time",
+    "created_at",
+)
+
+
+def _table_columns(db: Session, table_name: str) -> set[str]:
+    bind = db.get_bind()
+    dialect = bind.dialect.name if bind is not None else ""
+    business_db = get_settings().BUSINESS_DB_NAME
+    if dialect == "sqlite":
+        rows = db.execute(text(f"PRAGMA {business_db}.table_info({table_name})")).mappings().all()
+        return {str(row["name"]) for row in rows}
+    rows = db.execute(text(f"SHOW COLUMNS FROM `{business_db}`.`{table_name}`")).mappings().all()
+    return {str(row["Field"]) for row in rows}
+
+
+def _inventory_time_column(db: Session) -> str | None:
+    columns = _table_columns(db, "okki_inventory")
+    for name in _INVENTORY_TIME_COLUMNS:
+        if name in columns:
+            return name
+    return None
+
 
 def _sso_secret() -> str:
     settings = get_settings()
@@ -122,6 +153,9 @@ def compute_template_statuses(db: Session, template_id: str) -> dict:
     okki_inventory.enable_count（disable_flag=0）按颜色和尺寸汇总：
     合计为 0 → restocking（正在补货），1–19 → low_stock（低库存），
     合计 ≥ 20 → normal（到货正常）。
+
+    source_synced_at 只反映库存表时间（okki_inventory 时间列），不用产品表
+    synced_at——产品目录刷新不代表库存新鲜度。
     """
     rule = TEMPLATE_MATCH.get(template_id)
     if rule is None:
@@ -140,6 +174,8 @@ def compute_template_statuses(db: Session, template_id: str) -> dict:
         }
 
     business_db = get_settings().BUSINESS_DB_NAME
+    inv_time_col = _inventory_time_column(db)
+    inv_time_select = f"MAX(i.`{inv_time_col}`)" if inv_time_col else "NULL"
     like_clauses = []
     params: dict = {}
     for index, prefix in enumerate(rule["prefixes"]):
@@ -156,11 +192,12 @@ def compute_template_statuses(db: Session, template_id: str) -> dict:
             SELECT p.color AS color, p.size AS size,
                    COALESCE(SUM(inv.enable_count), 0) AS available,
                    COUNT(DISTINCT p.product_id) AS product_count,
-                   MAX(p.synced_at) AS product_synced_at
+                   MAX(inv.inventory_synced_at) AS inventory_synced_at
             FROM `{business_db}`.okki_products p
             LEFT JOIN (
-                SELECT product_id, SUM(enable_count) AS enable_count
-                FROM `{business_db}`.okki_inventory
+                SELECT product_id, SUM(enable_count) AS enable_count,
+                       {inv_time_select} AS inventory_synced_at
+                FROM `{business_db}`.okki_inventory i
                 WHERE disable_flag = 0
                 GROUP BY product_id
             ) inv ON inv.product_id = p.product_id
@@ -191,13 +228,13 @@ def compute_template_statuses(db: Session, template_id: str) -> dict:
             else "low_stock" if available < 20
             else "normal"
         )
-        product_synced_at = row["product_synced_at"]
-        if product_synced_at is not None:
+        inventory_synced_at = row["inventory_synced_at"]
+        if inventory_synced_at is not None:
             # SQLite 测试库可能回字符串，MySQL 回 datetime；统一成可比较的 ISO 文本
             stamp = (
-                product_synced_at.isoformat()
-                if hasattr(product_synced_at, "isoformat")
-                else str(product_synced_at)
+                inventory_synced_at.isoformat()
+                if hasattr(inventory_synced_at, "isoformat")
+                else str(inventory_synced_at)
             )
             if source_synced_at is None or stamp > source_synced_at:
                 source_synced_at = stamp

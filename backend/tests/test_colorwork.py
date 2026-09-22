@@ -37,7 +37,8 @@ def colorwork_db(db, monkeypatch):
     ))
     db.execute(text(
         "CREATE TABLE IF NOT EXISTS lsordertest.okki_inventory ("
-        "product_id TEXT, enable_count REAL, disable_flag INTEGER DEFAULT 0)"
+        "product_id TEXT, enable_count REAL, disable_flag INTEGER DEFAULT 0, "
+        "synced_at TIMESTAMP)"
     ))
     products = [
         # 20g Genius Weft（Regular → Standard 命名）
@@ -56,14 +57,14 @@ def colorwork_db(db, monkeypatch):
             text("INSERT INTO lsordertest.okki_products VALUES (:a, :b, :c, :d, :e, :f)"),
             {"a": pid, "b": name, "c": color, "d": size, "e": flag, "f": "2026-09-21 10:00:00"},
         )
-    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p1', 57, 0)"))
-    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p2', 0, 0)"))
-    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p3', 99, 0)"))
+    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p1', 57, 0, '2026-09-22 08:00:00')"))
+    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p2', 0, 0, '2026-09-22 08:00:00')"))
+    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p3', 99, 0, '2026-09-22 08:00:00')"))
     # p4 库存存在但产品已停用
-    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p4', 30, 0)"))
-    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p5', 19, 0)"))
-    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p6', 20, 0)"))
-    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p7', 1, 0)"))
+    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p4', 30, 0, '2026-09-22 08:00:00')"))
+    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p5', 19, 0, '2026-09-22 08:00:00')"))
+    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p6', 20, 0, '2026-09-22 08:00:00')"))
+    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p7', 1, 0, '2026-09-22 09:30:00')"))
     db.commit()
     return db
 
@@ -78,7 +79,9 @@ def test_statuses_normal_and_restocking(colorwork_db):
     assert result["statuses"]["#4|16"] == "low_stock"    # 1 → 低库存
     # 50g 产品不混入 20g 模板：#1|16 只统计 p1
     assert result["matched_products"] == 5
+    # 数据截至 = 库存表时间（p7 最新），不用产品表 synced_at（2026-09-21）
     assert result["source_synced_at"] is not None
+    assert result["source_synced_at"].startswith("2026-09-22")
 
 
 def test_weight_suffix_separates_50g_template(colorwork_db):
@@ -217,7 +220,8 @@ def test_inventory_status_requires_sync_key(db, monkeypatch):
     ))
     db.execute(text(
         "CREATE TABLE IF NOT EXISTS lsordertest.okki_inventory ("
-        "product_id TEXT, enable_count REAL, disable_flag INTEGER DEFAULT 0)"
+        "product_id TEXT, enable_count REAL, disable_flag INTEGER DEFAULT 0, "
+        "synced_at TIMESTAMP)"
     ))
     db.commit()
     with _client(db, user, ["colorwork_edit:read"], monkeypatch) as client:

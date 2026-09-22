@@ -49,7 +49,7 @@ export type TemplateState = {
   specs: InventorySpec[];
   inventoryUpdatedBy: ActorRef | null;
   inventoryUpdatedAt: string | null;
-  /** 小满镜像最近同步时间（okki_products.synced_at）；null = 同步时间未知 */
+  /** 库存表时间（okki_inventory 时间列 MAX）；null = 库存同步时间未知。不用产品表 synced_at */
   sourceSyncedAt: string | null;
 };
 

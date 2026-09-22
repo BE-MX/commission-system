@@ -10,7 +10,7 @@ import type { InventoryStatus, InventorySpec } from '@/lib/inventory';
  * 方舟后端 /api/colorwork/inventory-status 按模板返回「{颜色}|{尺寸} → normal|low_stock|restocking」，
  * 这里在快照返回前逐规格覆盖。业务口径（2026-09-21）：映射不到 okki 的规格直接显示
  * Restocking（正在补货），不再保留站内手动状态；接口不可达时才回退站内已保存状态。
- * 同时透传镜像 source_synced_at，供页面标注「数据截至」。
+ * 同时透传库存表 source_synced_at（非产品表时间），供页面标注「数据截至」。
  */
 
 type StatusResponse = {
