@@ -12,8 +12,8 @@ const outboundPayload = {
     remark: '分箱包装\n附标签 <script>alert("x")</script>',
   },
   items: [
-    { item_id: 1, product_name: '真人发头套', spec: '自然色 16寸', sku: 'TT-16', qty: 2, unit: '件' },
-    { item_id: 2, product_name: '发片', spec: '深棕', sku: 'FP-DB', qty: 5, unit: '片' },
+    { item_id: 1, product_name: '真人发头套', spec: '自然色 16寸', sku: 'TT-16', qty: 2, unit: '件', product_kind: 'hair' },
+    { item_id: 2, product_name: '发片', spec: '深棕', sku: 'FP-DB', qty: 5, unit: '片', product_kind: 'hair' },
   ],
   qr_code_base64: 'data:image/png;base64,aGVsbG8=',
 }
@@ -38,6 +38,37 @@ test('出库单文档：A4 自含样式 + 单头字段 + 明细表 + 二维码�
   assert.ok(!doc.includes('<script>'))
   // 后端给纯 base64，进 <img> 必须带 data URL 头
   assert.match(doc, /src="data:image\/png;base64,aGVsbG8="/)
+})
+
+test('出库单文档：产品/配件分表 + 各表数量汇总；缺类隐藏；无 product_kind 视为产品', () => {
+  const mixed = buildOutboundDoc({
+    ...outboundPayload,
+    items: [
+      { product_name: '真人发头套/16寸', spec: 'B1', qty: 2, product_kind: 'hair' },
+      { product_name: '发片', spec: 'B3', qty: 3, product_kind: 'hair' },
+      { product_name: 'Hair Gripper', spec: 'Tape', qty: 10, product_kind: 'accessory' },
+      { product_name: '未标注类型', spec: 'X', qty: 1 },
+    ],
+  })
+  assert.match(mixed, /<h3>产品明细<\/h3>/)
+  assert.match(mixed, /<h3>配件明细<\/h3>/)
+  const productIdx = mixed.indexOf('产品明细')
+  const accessoryIdx = mixed.indexOf('配件明细')
+  assert.ok(productIdx > -1 && productIdx < accessoryIdx, '产品表在配件表上方')
+  assert.match(mixed, /<tfoot><tr>\s*<td>合计<\/td><td><\/td><td><\/td><td><\/td>\s*<td class="num">6<\/td>/)
+  assert.match(mixed, /<td class="num">10<\/td>\s*<td class="batch-no"><\/td>/)
+  // 两表各自合计：产品 2+3+1=6，配件 10
+  const totals = [...mixed.matchAll(/<td class="num">(\d+)<\/td>\s*<td><\/td>\s*<\/tr><\/tfoot>/g)].map(m => m[1])
+  assert.deepEqual(totals, ['6', '10'])
+
+  const onlyHair = buildOutboundDoc({ ...outboundPayload, items: [{ product_name: 'A/1', qty: 1, product_kind: 'hair' }] })
+  assert.match(onlyHair, /<h3>产品明细<\/h3>/)
+  assert.ok(!onlyHair.includes('<h3>配件明细</h3>'))
+
+  const onlyAcc = buildOutboundDoc({ ...outboundPayload, items: [{ product_name: 'Clip', qty: 4, product_kind: 'accessory' }] })
+  assert.ok(!onlyAcc.includes('<h3>产品明细</h3>'))
+  assert.match(onlyAcc, /<h3>配件明细<\/h3>/)
+  assert.match(onlyAcc, /<td class="num">4<\/td>/)
 })
 
 test('出库单文档：空备注明确显示无', () => {

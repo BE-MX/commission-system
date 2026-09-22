@@ -1,7 +1,22 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import fs from 'node:fs'
 import { addDays, errorText, money, rankPeople, targetChanges } from '../src/views/battle-report/helpers.js'
+
+test('battle report tables default to attainment rate and cap visible member rows', () => {
+  const overview = fs.readFileSync(new URL('../src/views/battle-report/components/ReportOverview.vue', import.meta.url), 'utf8')
+  const daily = fs.readFileSync(new URL('../src/views/battle-report/components/ReportDaily.vue', import.meta.url), 'utf8')
+  const styles = fs.readFileSync(new URL('../src/views/battle-report/battle-report.css', import.meta.url), 'utf8')
+
+  assert.match(overview, /const sort = ref\('rate'\)/)
+  assert.match(overview, /const PERSONAL_REPORT_TABLE_HEIGHT = 608/)
+  assert.match(overview, /:max-height="PERSONAL_REPORT_TABLE_HEIGHT"/)
+  assert.match(daily, /const DAILY_MATRIX_TABLE_HEIGHT = 408/)
+  assert.match(daily, /:max-height="DAILY_MATRIX_TABLE_HEIGHT"/)
+  assert.match(styles, /\.battle-personal-table \.el-table__body tr \{ height: 56px; \}/)
+  assert.match(styles, /\.battle-matrix-table \.el-table__body tr \{ height: 72px; \}/)
+})
 
 test('equal amounts keep roster order and consecutive ranks; incomplete data has no attainment rank', () => {
   const people = [

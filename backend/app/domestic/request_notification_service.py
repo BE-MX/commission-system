@@ -1,10 +1,12 @@
-"""Post-commit recharge/adjustment reminders to currently authorized reviewers."""
+"""Post-commit domestic review reminders to currently authorized reviewers."""
 import asyncio
 import logging
 from sqlalchemy import or_
 from app.auth.models import ArkUser, ArkRole, ArkPermission
 from app.core.config import get_settings
 from app.dingtalk.work_notify import get_work_notifier
+from app.domestic import constants as C
+from app.domestic.models import DomesticCustomer, DomesticOrder
 from app.domestic.request_service import pending_request_count
 
 logger = logging.getLogger(__name__)
@@ -32,6 +34,12 @@ async def notify_submitted(db, result):
         with db.begin_nested():
             recipients = reviewer_ids(db, result['created_by'])
             count = pending_request_count(db, viewer_user_id=result['created_by'], can_review_all=True)
+            applicant_name = db.query(ArkUser.real_name).filter(
+                ArkUser.id == result['created_by']
+            ).scalar()
+            customer_name = db.query(DomesticCustomer.shop_name).filter(
+                DomesticCustomer.id == result['customer_id']
+            ).scalar()
         if not recipients:
             logger.warning('Domestic review notice skipped: no bound reviewers request=%s', result['id'])
             print(f"[DOMESTIC] no bound reviewers request={result['id']}", flush=True)
@@ -40,7 +48,11 @@ async def notify_submitted(db, result):
         url = get_settings().DOMESTIC_REVIEW_NOTICE_BASE_URL.rstrip('/') + '/domestic/customer-requests'
         sent = await asyncio.wait_for(get_work_notifier().send_oa_notice(
             recipients, '充值调整待审核',
-            f"有新的{kind}申请（#{result['id']}）待审核，当前共 {count} 笔待审核申请，请及时处理。",
+            f"提交人：{applicant_name}\n"
+            f"客户名称：{customer_name}\n"
+            f"申请类型：{kind}\n"
+            f"申请编号：#{result['id']}\n"
+            f"当前共 {count} 笔充值/调整待审核申请，请及时处理。",
             url,
         ), timeout=10)
         if not sent:
@@ -49,3 +61,57 @@ async def notify_submitted(db, result):
     except Exception as exc:
         logger.warning('Domestic review notice failed: request=%s type=%s', result['id'], type(exc).__name__)
         print(f"[DOMESTIC] notice failed request={result['id']} type={type(exc).__name__}", flush=True)
+
+
+async def notify_order_submitted(db, result):
+    """Notify reviewers when a newly submitted order needs amount review."""
+    if result.get('replayed') or result.get('status') != C.ORDER_PENDING_REVIEW:
+        return
+    try:
+        with db.begin_nested():
+            order = db.query(DomesticOrder).filter(
+                DomesticOrder.id == result['id']
+            ).one()
+            recipients = reviewer_ids(db, order.created_by)
+            applicant_name = db.query(ArkUser.real_name).filter(
+                ArkUser.id == order.created_by
+            ).scalar()
+            customer_name = db.query(DomesticCustomer.shop_name).filter(
+                DomesticCustomer.id == order.customer_id
+            ).scalar()
+        if not recipients:
+            logger.warning('Domestic order review notice skipped: no bound reviewers order=%s', result['id'])
+            print(f"[DOMESTIC] no bound reviewers order={result['id']}", flush=True)
+            return
+        customer_order_line = (
+            f"\n客户单号：{order.order_no}"
+            if order.order_no and order.order_no != order.domestic_no else ''
+        )
+        url = get_settings().DOMESTIC_REVIEW_NOTICE_BASE_URL.rstrip('/') + '/domestic/orders?status=5'
+        sent = await asyncio.wait_for(get_work_notifier().send_oa_notice(
+            recipients, '内贸订单金额待审核',
+            f"提交人：{applicant_name}\n"
+            f"系统单号：{order.domestic_no}"
+            f"{customer_order_line}\n"
+            f"客户名称：{customer_name}\n"
+            f"订单金额：¥{order.total_amount:.2f}\n"
+            "请及时处理。",
+            url,
+        ), timeout=10)
+        if not sent:
+            logger.warning('Domestic order review notice failed: order=%s', result['id'])
+            print(f"[DOMESTIC] order notice failed order={result['id']}", flush=True)
+    except Exception as exc:
+        logger.warning(
+            'Domestic order review notice failed: order=%s type=%s',
+            result['id'], type(exc).__name__,
+        )
+        print(
+            f"[DOMESTIC] order notice failed order={result['id']} type={type(exc).__name__}",
+            flush=True,
+        )
+
+
+def notify_order_submitted_sync(db, result):
+    """Run the post-commit notifier from FastAPI's sync endpoint worker thread."""
+    asyncio.run(notify_order_submitted(db, result))

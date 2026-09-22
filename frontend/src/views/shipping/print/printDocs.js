@@ -108,10 +108,21 @@ const OUTBOUND_CSS = `
 .items-table .product-details{font-size:14px;font-weight:700}
 .items-table .num{text-align:center}
 .items-table tbody tr:nth-child(even){background:rgb(245,245,245)}
+.items-table tfoot tr{background:#e8e8e8;font-weight:700}
+.items-table tfoot td{padding:6px 5px}
 .items-table{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+.items-section + .items-section{margin-top:10px}
 `
 
-function itemsTable(items, { outbound = false } = {}) {
+function sumQty(items) {
+  return (items || []).reduce((sum, item) => sum + (Number(item.qty) || 0), 0)
+}
+
+function formatQtyTotal(total) {
+  return Number.isInteger(total) ? String(total) : String(total)
+}
+
+function itemsTable(items, { outbound = false, title = '出库明细' } = {}) {
   const rows = (items || []).map((item, index) => `<tr>
       <td>${index + 1}</td>
       ${outbound ? outboundProductCells(item.product_name, item.spec) : `<td>${esc(item.product_name)}</td><td>${esc(item.spec)}</td>`}
@@ -120,14 +131,32 @@ function itemsTable(items, { outbound = false } = {}) {
       ${outbound ? '<td class="batch-no"></td>' : `<td>${esc(item.unit)}</td>`}
     </tr>`).join('')
   if (!rows) return ''
+  const summary = outbound
+    ? `<tfoot><tr>
+        <td>合计</td><td></td><td></td><td></td>
+        <td class="num">${esc(formatQtyTotal(sumQty(items)))}</td>
+        <td></td>
+      </tr></tfoot>`
+    : ''
   return `<div class="items-section">
-    <h3>出库明细</h3>
+    <h3>${esc(title)}</h3>
     <table class="items-table">
       ${outbound ? '<colgroup><col style="width:4%"><col style="width:18%"><col style="width:32.5%"><col style="width:23%"><col style="width:7%"><col style="width:15.5%"></colgroup>' : ''}
       <thead><tr><th>#</th>${outbound ? '<th>产品类别</th><th>规格</th><th>颜色/尺寸/克重</th>' : '<th>产品名称</th><th>规格</th><th>SKU</th>'}<th${outbound ? ' class="num"' : ''}>数量</th><th>${outbound ? '批次号' : '单位'}</th></tr></thead>
       <tbody>${rows}</tbody>
+      ${summary}
     </table>
   </div>`
+}
+
+function splitOutboundItems(items) {
+  const products = []
+  const accessories = []
+  for (const item of items || []) {
+    if (String(item.product_kind || 'hair') === 'accessory') accessories.push(item)
+    else products.push(item)
+  }
+  return { products, accessories }
 }
 
 // ── 出库单 A4 ─────────────────────────────────────────
@@ -142,6 +171,13 @@ export function buildOutboundDoc({ record, items = [], qr_code_base64 = '' }) {
   const qrSection = qr
     ? `<div class="qr-section">${qr}<div class="qr-hint">扫码查看出库信息</div></div>`
     : ''
+
+  const remarkSection = `<div class="remark-section"><div class="remark-label">发货备注</div><div class="remark-content">${esc(record.remark || '无')}</div></div>`
+
+  // 产品/配件分表；无对应类别时整表隐藏。Name=Other Items 的配件由后端已过滤。
+  const { products, accessories } = splitOutboundItems(items)
+  const productSection = itemsTable(products, { outbound: true, title: '产品明细' })
+  const accessorySection = itemsTable(accessories, { outbound: true, title: '配件明细' })
 
   const body = `<div class="sheet">
   <div class="header">
@@ -162,9 +198,10 @@ export function buildOutboundDoc({ record, items = [], qr_code_base64 = '' }) {
     ${qrSection}
   </div>
 
-  <div class="remark-section"><div class="remark-label">发货备注</div><div class="remark-content">${esc(record.remark || '无')}</div></div>
+  ${remarkSection}
 
-  ${itemsTable(items, { outbound: true })}
+  ${productSection}
+  ${accessorySection}
 
   <div class="footer">
     <span>莱莎方舟平台 · 发货检验</span>

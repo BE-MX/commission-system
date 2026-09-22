@@ -8,7 +8,7 @@
           <span>{{ production ? `生产订单 · ${detail.customer_name || '公司备货'}` : `客户编码：${detail.customer_custom_code || '未填写'} · ${detail.order_category_label}` }}</span>
           <span>{{ detail.status_label }}</span>
         </div>
-        <el-form label-position="top" :disabled="headerSaving || !editable">
+        <el-form label-position="top" :disabled="headerSaving || deletingItemId !== null || !editable">
           <div class="order-edit-grid">
             <el-form-item v-if="production" label="客户店名">
               <el-select v-model="header.production_customer_id" filterable clearable remote :remote-method="searchProductionCustomers" :loading="customerLoading" placeholder="选填，不选则为公司备货">
@@ -28,16 +28,20 @@
           <el-form-item label="订单备注"><el-input v-model="header.remark" type="textarea" :rows="2" maxlength="1000" /></el-form-item>
         </el-form>
         <div class="order-edit-actions">
-          <GlassButton v-permission="'domestic:write'" variant="primary" :loading="headerSaving" :disabled="!editable || !headerDirty" @click="saveHeader">保存订单信息</GlassButton>
+          <GlassButton v-permission="'domestic:write'" variant="primary" :loading="headerSaving" :disabled="busy || !editable || !headerDirty" @click="saveHeader">保存订单信息</GlassButton>
         </div>
         <div class="order-edit-item-heading">
           <h3>产品明细</h3>
           <GlassButton v-if="detail.status === 0 && editable" v-permission="'domestic:write'" variant="secondary" left-icon="Plus" :disabled="busy" @click="appendVisible = true">添加明细</GlassButton>
         </div>
         <p class="order-edit-hint">每条明细独立保存。改规格不重新报价，产品类型与工艺路线不可改；数量不能少于已完成报工的件数。</p>
+        <p class="order-edit-hint">删除立即生效，订单至少保留一条明细；已有报工或跳过记录的明细不能删除。待审核、已驳回、已发货或已终止的订单不能删除明细。</p>
         <div v-for="item in detail.items" :key="item.id" class="order-edit-item">
           <div><strong>{{ item.line_code }} · {{ item.product_name }}</strong><div class="order-edit-hint">{{ item.order_qty }} 件<span v-if="!production"> · 成交单价 ¥{{ Number(item.unit_price).toFixed(2) }}</span></div></div>
-          <GlassButton v-permission="'domestic:write'" variant="secondary" left-icon="EditPen" :disabled="!editable || item.status === 2" @click="openItem(item)">编辑明细</GlassButton>
+          <div class="order-edit-item-actions">
+            <GlassButton v-permission="'domestic:write'" variant="secondary" left-icon="EditPen" :disabled="busy || !editable || item.status === 2" @click="openItem(item)">编辑明细</GlassButton>
+            <GlassButton v-permission="'domestic:write'" variant="link" link-tone="danger" left-icon="Delete" :loading="deletingItemId === item.id" :disabled="busy || !canDeleteItem" @click="removeItem(item)">删除明细</GlassButton>
+          </div>
         </div>
       </template>
     </div>
@@ -106,7 +110,7 @@
 import { beijingCalendarDate } from '@/utils/datetime'
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { DETAIL_SECTIONS, PRODUCT_TYPE_LABELS, getOptions, getOrder, listCustomers, updateOrder, updateOrderItem, uploadImage } from '@/api/domestic'
+import { DETAIL_SECTIONS, PRODUCT_TYPE_LABELS, getOptions, getOrder, listCustomers, updateOrder, updateOrderItem, deleteOrderItem, uploadImage } from '@/api/domestic'
 import { useAuthStore } from '@/stores/auth'
 import AppUpload from '@/components/AppUpload.vue'
 import GlassButton from '@/components/GlassButton.vue'
@@ -121,6 +125,7 @@ const props = defineProps({ modelValue: Boolean, orderId: Number, initialItemId:
 const emit = defineEmits(['update:modelValue', 'saved'])
 const auth = useAuthStore()
 const detail = ref(null), loading = ref(false), headerSaving = ref(false), pendingUploads = ref(0)
+const deletingItemId = ref(null)
 const options = ref({ order_types: [], order_channels: [] })
 const header = reactive(orderHeaderForm(null))
 const customerOptions = ref([]), customerLoading = ref(false)
@@ -142,6 +147,7 @@ const itemDialog = reactive({ visible: false, item: null, form: {}, saving: fals
 let loadSequence = 0
 const production = computed(() => detail.value?.order_kind === 'production')
 const editable = computed(() => detail.value?.created_by === auth.user?.id && ![3, 4].includes(detail.value?.status))
+const canDeleteItem = computed(() => editable.value && [0, 1, 2].includes(detail.value?.status) && detail.value.items.length > 1)
 const sections = computed(() => detailSectionsForKind(detail.value?.order_kind, DETAIL_SECTIONS))
 const special = computed(() => !production.value && detail.value?.order_category === 'special')
 const itemAttrFields = computed(() => itemDialog.form.attrs ? visibleAttributeFields(itemDialog.form.attrs, detail.value?.order_kind) : [])
@@ -150,7 +156,7 @@ const headerDirty = computed(() => detail.value && Object.keys(buildHeaderPatch(
 const itemDirty = computed(() => itemDialog.item && Object.keys(buildItemPatch(detail.value, itemDialog.item, itemDialog.form)).length > 0)
 const amountDelta = computed(() => itemDialog.item ? itemEditDelta(itemDialog.item, itemDialog.form) : 0)
 const itemBusy = computed(() => itemDialog.saving || pendingUploads.value > 0)
-const busy = computed(() => loading.value || headerSaving.value || itemBusy.value || itemDialog.visible || appendVisible.value)
+const busy = computed(() => loading.value || headerSaving.value || deletingItemId.value !== null || itemBusy.value || itemDialog.visible || appendVisible.value)
 
 watch(() => [props.modelValue, props.orderId], async ([visible, id]) => {
   const sequence = ++loadSequence
@@ -200,7 +206,7 @@ async function reloadAfterAppend() {
 }
 
 async function saveHeader() {
-  if (!editable.value || headerSaving.value) return
+  if (!editable.value || busy.value) return
   if (!header.order_date || (!production.value && (!header.required_ship_date || !header.order_type || !header.order_channel))) {
     return ElMessage.warning('请补齐日期、订单类型和渠道等必填项')
   }
@@ -220,8 +226,29 @@ async function saveHeader() {
 }
 
 function openItem(item) {
-  if (!editable.value || item.status === 2) return
+  if (!editable.value || deletingItemId.value !== null || item.status === 2) return
   Object.assign(itemDialog, { visible: true, item, form: orderItemForm(item), saving: false })
+}
+
+async function removeItem(item) {
+  if (busy.value || !canDeleteItem.value) return
+  const order = detail.value, sequence = loadSequence
+  deletingItemId.value = item.id
+  try {
+    const settlement = !production.value && order.status !== 0 ? '删除后将重新计算订单金额，并按实际差额退回客户余额。' : ''
+    try {
+      await ElMessageBox.confirm(`确定删除明细「${item.line_code} · ${item.product_name}」？此操作立即生效且不可恢复。${settlement}`, '删除明细确认', {
+        type: 'warning', confirmButtonText: '确定删除', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger',
+      })
+    } catch { return }
+    if (sequence !== loadSequence) return
+    await deleteOrderItem(item.id)
+    order.items = order.items.filter(row => row.id !== item.id)
+    ElMessage.success('明细已删除')
+    emit('saved')
+    const res = await getOrder(order.id)
+    if (sequence === loadSequence) detail.value = res.data
+  } catch { /* API interceptor reports deletion or refresh errors. */ } finally { deletingItemId.value = null }
 }
 
 async function uploadReference(key, file) {
@@ -272,6 +299,7 @@ async function saveItem() {
 .order-edit-hint { color: var(--el-text-color-secondary); font-size: 13px; line-height: 1.6; margin: 8px 0; }
 .order-edit-item-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .order-edit-item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid var(--el-border-color-lighter); }
+.order-edit-item-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .order-edit-images { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
 @media (max-width: 600px) { .order-edit-grid { grid-template-columns: minmax(0, 1fr); } .order-edit-item { align-items: flex-start; flex-wrap: wrap; } }
 </style>

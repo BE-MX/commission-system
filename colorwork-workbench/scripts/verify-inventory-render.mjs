@@ -12,9 +12,7 @@ const projectDir = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '..',
 );
-const workspaceDir = path.resolve(
-  process.env.COLORWORK_ASSET_WORKSPACE || path.resolve(projectDir, '..'),
-);
+const workspaceDir = path.resolve(projectDir, '..');
 const runtimeAssetsDir = path.join(
   workspaceDir,
   '首次上线导入包',

@@ -76,7 +76,10 @@ export function useOutboundRecords() {
     if (downloadingId.value !== null) return
     downloadingId.value = row.outbound_record_id
     try {
-      downloadBlob(await downloadOutboundWord(row.outbound_record_id))
+      downloadBlob(
+        await downloadOutboundWord(row.outbound_record_id),
+        `出库单-${row.outbound_no || row.outbound_record_id}.docx`,
+      )
     } finally {
       downloadingId.value = null
     }
