@@ -29,11 +29,11 @@ def sort_outbound_print_items(items: list[dict]) -> list[dict]:
     return sorted(items, key=lambda item: (_natural_spec(item.get("spec")), _size(item)))
 
 
-OTHER_ACCESSORY_NAME = "other"
+OTHER_ACCESSORY_NAME = "other items"
 
 
 def is_other_accessory(item: dict) -> bool:
-    """Name 为 Other 的配件打印时忽略；产品行不受影响。"""
+    """Name 为 Other Items 的配件打印时忽略；产品行及名为 Other 的配件不受影响。"""
     if str(item.get("product_kind") or "hair") != "accessory":
         return False
     return str(item.get("product_name") or "").strip().lower() == OTHER_ACCESSORY_NAME
@@ -75,7 +75,7 @@ def _accessory_product_ids(db) -> set[str]:
 
 
 def annotate_print_items(db, items: list[dict]) -> list[dict]:
-    """打印/Word 专用：补 product_kind，去掉 Name=Other 的配件；不改动扫描/验货明细。"""
+    """打印/Word 专用：补 product_kind，去掉 Name=Other Items 的配件；不改动扫描/验货明细。"""
     accessory_ids = _accessory_product_ids(db)
     result = []
     for item in items or []:

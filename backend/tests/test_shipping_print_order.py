@@ -85,12 +85,13 @@ def test_word_masks_customer_name_without_changing_source():
         assert record["customer_name"] == name
 
 
-def test_is_other_accessory_only_matches_accessory_named_other():
-    assert is_other_accessory({"product_kind": "accessory", "product_name": "Other"})
-    assert is_other_accessory({"product_kind": "accessory", "product_name": " other "})
+def test_is_other_accessory_only_matches_accessory_named_other_items():
+    assert is_other_accessory({"product_kind": "accessory", "product_name": "Other Items"})
+    assert is_other_accessory({"product_kind": "accessory", "product_name": " other items "})
+    assert not is_other_accessory({"product_kind": "accessory", "product_name": "Other"})
     assert not is_other_accessory({"product_kind": "accessory", "product_name": "Hair Gripper"})
-    assert not is_other_accessory({"product_kind": "hair", "product_name": "Other"})
-    assert not is_other_accessory({"product_name": "Other"})
+    assert not is_other_accessory({"product_kind": "hair", "product_name": "Other Items"})
+    assert not is_other_accessory({"product_name": "Other Items"})
 
 
 def test_annotate_print_items_marks_kind_and_drops_other_accessories(db):
@@ -100,7 +101,9 @@ def test_annotate_print_items_marks_kind_and_drops_other_accessories(db):
     db.query(Invoice).delete()
     db.add(StdPrice(product_kind="accessory", product_id=901, sku_id=1, accessory_name="Hair Gripper",
                     accessory_model="Tape", accessory_color="Black", currency="USD", price=0))
-    db.add(StdPrice(product_kind="accessory", product_id=902, sku_id=2, accessory_name="Other",
+    db.add(StdPrice(product_kind="accessory", product_id=902, sku_id=2, accessory_name="Other Items",
+                    accessory_model="Misc", accessory_color="—", currency="USD", price=0))
+    db.add(StdPrice(product_kind="accessory", product_id=904, sku_id=4, accessory_name="Other",
                     accessory_model="Misc", accessory_color="—", currency="USD", price=0))
     from datetime import date
     invoice = Invoice(invoice_no="IV-PRINT-1", customer_id="C1", customer_name="C",
@@ -114,12 +117,13 @@ def test_annotate_print_items_marks_kind_and_drops_other_accessories(db):
     items = [
         {"item_id": "h", "product_id": 100, "product_name": "Weft/22", "qty": 2},
         {"item_id": "a", "product_id": 901, "product_name": "Hair Gripper", "qty": 5},
-        {"item_id": "o", "product_id": 902, "product_name": "Other", "qty": 9},
+        {"item_id": "o", "product_id": 902, "product_name": "Other Items", "qty": 9},
+        {"item_id": "plain-other", "product_id": 904, "product_name": "Other", "qty": 2},
         {"item_id": "i", "product_id": 903, "product_name": "Clip", "qty": 1},
     ]
     result = annotate_print_items(db, items)
-    assert [i["item_id"] for i in result] == ["h", "a", "i"]
-    assert [i["product_kind"] for i in result] == ["hair", "accessory", "accessory"]
+    assert [i["item_id"] for i in result] == ["h", "a", "plain-other", "i"]
+    assert [i["product_kind"] for i in result] == ["hair", "accessory", "accessory", "accessory"]
     # 源明细不被就地修改
     assert "product_kind" not in items[0] and items[2]["item_id"] == "o"
 

@@ -174,7 +174,7 @@ export function buildOutboundDoc({ record, items = [], qr_code_base64 = '' }) {
 
   const remarkSection = `<div class="remark-section"><div class="remark-label">发货备注</div><div class="remark-content">${esc(record.remark || '无')}</div></div>`
 
-  // 产品/配件分表；无对应类别时整表隐藏。Name=Other 的配件由后端已过滤。
+  // 产品/配件分表；无对应类别时整表隐藏。Name=Other Items 的配件由后端已过滤。
   const { products, accessories } = splitOutboundItems(items)
   const productSection = itemsTable(products, { outbound: true, title: '产品明细' })
   const accessorySection = itemsTable(accessories, { outbound: true, title: '配件明细' })
