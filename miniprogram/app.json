@@ -9,6 +9,7 @@
     "pages/domestic/scan/scan",
     "pages/domestic/orders/orders",
     "pages/domestic/lookup/lookup",
+    "pages/domestic/unit-history/unit-history",
     "pages/domestic/track/track",
     "pages/shipping/check/check"
   ],

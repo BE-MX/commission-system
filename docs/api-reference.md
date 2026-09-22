@@ -1120,7 +1120,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/outbound-records?keyword=&date_from=&date_to=&page=&page_size=` | 正式出库单与方舟待出库记录的统一分页列表，含出库状态、缺货详情、检验状态与照片数；按业务员归属过滤（见下） |
-| DELETE | `/outbound-records/{record_id}` | 删除小满待出库单；需 `shipping_inspection:delete` 且满足出库单数据范围。使用镜像记录 ID 定位真实 outbound_invoice_id；小满确认不存在后返回 `{outbound_record_id, deleted:true}`。锁定、已出库、自动任务执行中、关联同步中或结果待核对返回409；无权限403、不可见404。 |
+| DELETE | `/outbound-records/{record_id}` | 删除小满待出库单；需 `shipping_inspection:delete` 且满足出库单数据范围。使用镜像记录 ID 定位真实 outbound_invoice_id；明确 Not Found 或两轮完整有效列表均不含原 ID 后返回 `{outbound_record_id, deleted:true}`，即使详情仍显示旧“待出库”。锁定、有效已出库、自动任务执行中、关联同步中或结果待核对返回409；无权限403、不可见404。 |
 | GET | `/outbound-records/{record_id}/print-data` | 出库单打印数据：单头+明细+`qr_code_base64`（二维码内容 `ARK-I:{record_id}:{hmac8}`）；同样按归属过滤，不可见返回 404 |
 | GET | `/outbound-records/{record_id}/word` | 下载可编辑 DOCX，保持当前 A4 版式、列宽、二维码及灰色斑马纹；数据范围同 print-data；二进制响应 |
 | GET | `/records?keyword=&date_from=&date_to=&page=&page_size=` | 已提交验货单分页列表（按提交时间过滤） |
@@ -1464,6 +1464,14 @@ Agent research context now includes `fact_contract.version=registered_research_f
 
 完成回执在方舟查询层屏蔽过期镜像（含分页总数、打印与新扫码），无需等待同步；镜像行、订单发票、验货单及媒体不删除。已存在的验货资料仍走原归属鉴权读取；小满外部删除造成镜像头消失后的历史归属问题沿用现有规则。此版本无新表或迁移，需已有153迁移及启动权限 seed；删除权限单独在角色管理授权，更新令牌后生效。外部仓库在GET与POST之间改变状态的最终拒绝由小满控制，接口无已确认的版本条件写能力。
 
+
+### 充值调整审核提醒（2026-09-21）
+
+- `GET /api/domestic/customer-requests/pending-count`：返回 `data.count`，统计 pending 申请。权限与审核列表一致：`domestic:review`/`domestic:admin`/super_admin 查看全部，只有 `domestic:recharge` 的用户仅统计本人申请。不受列表分页和临时搜索条件影响。
+- 充值和调整提交成功后，按当前角色权限寻找有效且绑定钉钉的审核账号，发送工作通知并链接 `/domestic/customer-requests`。普通审核者提交自己的申请不会收到自审提醒；管理员可审核本人申请。幂等重放不重复通知，发送失败记录日志，不撤销已保存申请。
+- 通知地址配置 `DOMESTIC_REVIEW_NOTICE_BASE_URL`，默认 `https://leshine.work`。
+- 导航数字为0时隐藏；提交/审核操作成功后即时刷新，页面可见时每30秒刷新，并在窗口重新激活时刷新。
+
 ## 单据生命周期与异常恢复（2026-09-21）
 
 - `GET /api/invoice/invoices/{id}/lifecycle`：invoice:admin + 发票范围；返回版本、取消状态与出库任务摘要。
@@ -1473,3 +1481,10 @@ Agent research context now includes `fact_contract.version=registered_research_f
 - `POST /api/shipping-inspection/outbound-records/{id}/delete-recovery`：shipping_inspection:admin + 原出库归属；confirmed=true 和至少10字 reason，租约结束后核实原删除，禁止重放。
 
 业务处理规则见 [单据生命周期](invoice-lifecycle.md)。
+
+
+### 小程序逐件码工序记录（2026-09-21）
+
+`GET /api/mini/domestic/unit-history/{unit_id}?sign=...`：沿用小程序内贸报工的实时权限与逐件码HMAC验签，返回该单件的 `unit_code`、`domestic_no`、`active` 和按工序排序的 `steps`。每道工序返回当前状态及仅属于本件的报工/跳过流水（操作人、北京时间、撤销标记与撤销时间）；未报工与已撤销记录区分展示。不返回价格或客户资料，不创建单件、不更新生产进度。无权限403、签名错误400、记录不存在404。
+
+小程序内贸扫码遇到已识别单件的业务阻断（包括全部完成），关闭提示后打开 `pages/domestic/unit-history/unit-history`。提交报工返回422时也支持查看该件记录；网络错误、签名无效和普通整条流转卡不自动跳转。

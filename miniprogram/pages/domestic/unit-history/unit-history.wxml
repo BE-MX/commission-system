@@ -1,0 +1,19 @@
+<view class="lk-page">
+  <view class="lk-top" style="padding-top: {{statusBarHeight}}px">
+    <view class="lk-top-inner"><text class="lk-back" bindtap="onBack">‹ 返回</text><text class="lk-title">工序扫描记录</text></view>
+  </view>
+  <view class="lk-order" wx:if="{{loading}}">正在加载记录…</view>
+  <view class="lk-order" wx:elif="{{errorText}}">{{errorText}}</view>
+  <block wx:elif="{{unit}}">
+    <view class="lk-order"><text class="lk-order-no">{{unit.unit_code}}</text><view>{{unit.domestic_no}}</view><view wx:if="{{!unit.active}}">此逐件码已停用</view></view>
+    <view class="lk-item" wx:for="{{unit.steps}}" wx:key="progress_id" wx:for-item="step">
+      <view class="lk-step-top"><text class="lk-step-name">{{step.step_order}}. {{step.process_name}}</text><text class="lk-step-state">{{step.status}}</text></view>
+      <view wx:for="{{step.records}}" wx:key="id" wx:for-item="record" class="lk-last">
+        <view>{{record.kind}} · {{record.operator}} · {{record.timeText}}</view>
+        <view wx:if="{{record.revoked}}">已撤销 · {{record.revokedText}}</view>
+      </view>
+      <view wx:if="{{!step.records.length}}" class="lk-last lk-last--none">暂无扫描记录</view>
+    </view>
+    <view wx:if="{{!unit.steps.length}}" class="lk-order">未配置工序，暂无扫描记录</view>
+  </block>
+</view>

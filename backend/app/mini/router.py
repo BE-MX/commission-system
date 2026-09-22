@@ -291,6 +291,26 @@ async def domestic_unit_scan(
     return data
 
 
+@router.get("/domestic/unit-history/{unit_id}", summary="内贸逐件码工序扫描记录（只读）")
+async def domestic_unit_history(
+    unit_id: int,
+    sign: str = Query(...),
+    current_user: ArkUser = Depends(require_mini_entry("domestic")),
+    db: Session = Depends(get_db),
+):
+    # Same signed-label and current reporting capability boundary as unit-scan.
+    valid, signed_id = domestic_report_service.verify_unit_qr_data(
+        f"{domestic_constants.UNIT_QR_PREFIX}:{unit_id}:{sign}"
+    )
+    if not valid or signed_id != unit_id:
+        raise HTTPException(status_code=400, detail={"code": "SIGN_INVALID", "message": "逐件码无效，请重新扫码"})
+    from app.domestic.unit_history_service import get_unit_history
+    try:
+        return get_unit_history(db, unit_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": str(exc)}) from exc
+
+
 @router.post("/domestic/scan/submit", summary="内贸报工（带数量，可拆批）")
 async def domestic_submit(
     body: DomesticSubmitRequest,

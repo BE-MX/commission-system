@@ -11,6 +11,7 @@ class JobMetadata:
 
 
 JOB_METADATA = {
+    "okki_outbound_delete_reconcile": JobMetadata("小满出库删除同步", "发货检验", "供应链"),
     "design_shoot_reminder": JobMetadata("设计拍摄提醒", "设计预约", "设计中心"),
     "shipping_daily_report": JobMetadata("物流日报生成", "物流跟踪", "物流团队"),
     "staging_scan": JobMetadata("运单暂存区扫描", "物流跟踪", "物流团队"),

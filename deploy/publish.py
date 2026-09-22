@@ -9,6 +9,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import uuid
 
 import cloud_backend
 import static_sync
@@ -156,9 +157,22 @@ def publish(args):
         if recover_151:
             office["recover_151"] = True
         inventory = json.loads((ROOT / "deploy/platforms.json").read_text(encoding="utf-8-sig"))
+        import okki_outbound_release as outbound_release
+        outbound_targets = [item for item in inventory.get('external_services', [])
+                            if item.get('name') == 'ark-okki-outbound-poller']
+        if len(outbound_targets) != 1 or outbound_targets[0].get('source') != 'deploy/okki_outbound_poller.js':
+            raise RuntimeError('Required managed outbound service missing from release inventory')
         if office:
             schema_release.preflight(office, inventory, args.migration_credentials)
-        journal = {"revision": revision, "scope": "cloud-only" if args.cloud_only else "office-and-cloud", "status": "preparing", "completed": [], "deferred": []}
+        previous_release = marker('publish-current')
+        scope = 'cloud-only' if args.cloud_only else 'office-and-cloud'
+        release_id = (previous_release.get('release_id') if previous_release.get('revision') == revision
+                      and previous_release.get('scope') == scope
+                      and previous_release.get('status') != 'succeeded' else None) or uuid.uuid4().hex
+        journal = {"revision": revision, "release_id": release_id,
+                   "scope": scope, "status": "preparing", "completed": [], "deferred": []}
+        outbound = outbound_release.prepare(ROOT, revision, release_id, allow_pending=bool(office and office.get('pending')))
+        journal['outbound'] = outbound['receipt']
         atomic_json(STATE / "publish-current.json", journal)
         outputs = build_frontends()
         if office:
@@ -186,6 +200,8 @@ def publish(args):
             return
         journal["status"] = "activating"
         atomic_json(STATE / "publish-current.json", journal)
+        journal['outbound'] = outbound_release.phase(outbound, 'freeze')
+        atomic_json(STATE / "publish-current.json", journal)
         stopped = schema_release.migrate(office, inventory, args.migration_credentials) if office else []
         if office:
             print(json.dumps(office_activate(office)), flush=True)
@@ -194,8 +210,6 @@ def publish(args):
         print(json.dumps(cloud_backend.activate(revision)), flush=True)
         journal["completed"].append("beijing-backend")
         atomic_json(STATE / "publish-current.json", journal)
-        if stopped:
-            schema_release.resume_external(stopped, office)
         for item in colorwork_routes:
             result = colorwork_routing.activate(item, ROOT / "deploy")
             journal["completed"].append("colorwork-routing:" + result["region"])
@@ -209,10 +223,21 @@ def publish(args):
             print(json.dumps(static_sync.activate(item)), flush=True)
             journal["completed"].append(item["target"] + ":" + item["request"]["root"])
             atomic_json(STATE / "publish-current.json", journal)
+        journal['outbound'] = outbound_release.phase(outbound, 'activate')
+        atomic_json(STATE / "publish-current.json", journal)
+        if stopped:
+            schema_release.resume_external(stopped, office)
+        journal['outbound'] = outbound_release.phase(outbound, 'verify')
+        journal['completed'].append('singapore-outbound')
+        atomic_json(STATE / "publish-current.json", journal)
         if office:
             schema_release.complete(office)
         summary = {"revision": revision, "scope": "cloud-only" if args.cloud_only else "office-and-cloud",
-                   "schema": backend["schema"], "transfer_bytes": sum(item["bytes"] for item in prepared), "deferred": journal["deferred"]}
+                   "schema": backend["schema"], "transfer_bytes": sum(item["bytes"] for item in prepared),
+                   "deferred": journal["deferred"], "outbound": journal['outbound'],
+                   "unmanaged_services": [dict(name=item['name'], status='not_deployed')
+                                          for item in inventory.get('external_services', [])
+                                          if item['name'] != 'ark-okki-outbound-poller']}
         atomic_json(STATE / "publish-success.json", summary)
         journal["status"] = "succeeded"
         atomic_json(STATE / "publish-current.json", journal)

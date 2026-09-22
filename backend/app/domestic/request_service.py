@@ -185,6 +185,15 @@ def _request_view(req: DomesticCustomerRequest, *, replayed: bool = False) -> di
     }
 
 
+def pending_request_count(db: Session, *, viewer_user_id: int, can_review_all: bool) -> int:
+    query = db.query(DomesticCustomerRequest).filter(
+        DomesticCustomerRequest.status == C.REQUEST_STATUS_PENDING,
+    )
+    if not can_review_all:
+        query = query.filter(DomesticCustomerRequest.created_by == viewer_user_id)
+    return query.count()
+
+
 def list_requests(
     db: Session,
     *,

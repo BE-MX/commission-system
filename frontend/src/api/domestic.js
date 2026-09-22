@@ -1,3 +1,4 @@
+import { requestReviewsChanged } from '@/utils/domesticReviewEvents'
 // 内贸订单 API（响应拦截器已解包信封，调用方取数用 res.data）
 import { domesticClient } from './clients'
 
@@ -94,9 +95,9 @@ export function rechargeCustomer(id, { amount, remark, request_id, file }) {
   form.append('request_id', request_id)
   if (remark) form.append('remark', remark)
   form.append('file', file)
-  return domesticClient.post(`/customers/${id}/recharges`, form, {
+  return requestReviewsChanged(domesticClient.post(`/customers/${id}/recharges`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
-  })
+  }))
 }
 
 // 期初初始化（仅 admin，且无流水时才可用）与临时调整（余额增减/等级覆盖，审核通过后生效）
@@ -105,7 +106,7 @@ export function initializeCustomer(id, data) {
 }
 
 export function adjustCustomer(id, data) {
-  return domesticClient.post(`/customers/${id}/adjust`, data)
+  return requestReviewsChanged(domesticClient.post(`/customers/${id}/adjust`, data))
 }
 
 // ── 充值/调整申请审核 ──
@@ -114,11 +115,11 @@ export function listCustomerRequests(params) {
 }
 
 export function approveCustomerRequest(id, remark) {
-  return domesticClient.post(`/customer-requests/${id}/approve`, { remark: remark || null })
+  return requestReviewsChanged(domesticClient.post(`/customer-requests/${id}/approve`, { remark: remark || null }))
 }
 
 export function rejectCustomerRequest(id, remark) {
-  return domesticClient.post(`/customer-requests/${id}/reject`, { remark: remark || null })
+  return requestReviewsChanged(domesticClient.post(`/customer-requests/${id}/reject`, { remark: remark || null }))
 }
 
 // 凭证走鉴权端点，<img>/新窗口不带 token —— 取 blob 转 object URL（同参考图做法）
@@ -284,4 +285,8 @@ export async function fetchImageDataUrl(path) {
     reader.onerror = reject
     reader.readAsDataURL(res.data)
   })
+}
+
+export function getCustomerRequestPendingCount() {
+  return domesticClient.get('/customer-requests/pending-count', { suppressToast: true })
 }

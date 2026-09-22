@@ -21,6 +21,7 @@ import publish
 import schema_release
 import source_release
 import static_sync
+import okki_outbound_release
 
 
 def test_static_archive_includes_nested_public_artifacts_and_uses_ssh_retries(tmp_path, monkeypatch):
@@ -90,6 +91,7 @@ def pipeline(tmp_path, monkeypatch):
     (tmp_path / "deploy/platforms.json").write_text(json.dumps({
         "static_targets": [{"component": "frontend", "host": "example.test", "root": "/registered", "domain": "example.test"}],
         "pending_targets": [],
+        "external_services": [{"name": "ark-okki-outbound-poller", "source": "deploy/okki_outbound_poller.js"}],
     }))
     state = tmp_path / "state"
     state.mkdir()
@@ -119,8 +121,13 @@ def pipeline(tmp_path, monkeypatch):
     monkeypatch.setattr(static_sync, "activate", activate)
     command = Mock()
     monkeypatch.setattr(publish, "run", command)
+    outbound_prepare = Mock(return_value={'receipt': {'status': 'prepared', 'digest': 'candidate'}})
+    outbound_phase = Mock(side_effect=lambda _, action: {'status': action, 'digest': 'candidate'})
+    monkeypatch.setattr(okki_outbound_release, 'prepare', outbound_prepare)
+    monkeypatch.setattr(okki_outbound_release, 'phase', outbound_phase)
     return SimpleNamespace(args=SimpleNamespace(no_pull=True, cloud_only=False, migration_credentials=None, prepare_only=False, revision=None),
-                           state=state, prepare=prepare, activate=activate, office_activate=office_activate, command=command)
+                           state=state, prepare=prepare, activate=activate, office_activate=office_activate, command=command,
+                           outbound_prepare=outbound_prepare, outbound_phase=outbound_phase)
 
 
 def test_publish_preserves_pantone_seed_and_only_marks_success_after_activation(pipeline):
@@ -177,6 +184,79 @@ def test_colorwork_failure_never_marks_publish_success(pipeline):
         publish.publish(pipeline.args)
     pipeline.activate.assert_not_called()
     assert not (pipeline.state / "publish-success.json").exists()
+
+
+@pytest.mark.parametrize('cloud_only', [False, True])
+def test_outbound_is_part_of_full_and_cloud_release(pipeline, monkeypatch, cloud_only):
+    pipeline.args.cloud_only = cloud_only
+    events = []
+    def phase(_, action):
+        events.append(action)
+        return {'status': action, 'digest': 'candidate'}
+    pipeline.outbound_phase.side_effect = phase
+    monkeypatch.setattr(schema_release, 'migrate', lambda *_: events.append('migrate') or [])
+    monkeypatch.setattr(cloud_backend, 'activate', lambda _: events.append('backend'))
+    pipeline.activate.side_effect = lambda _: events.append('static')
+    publish.publish(pipeline.args)
+    assert events == ['freeze', *([] if cloud_only else ['migrate']), 'backend', 'static', 'activate', 'verify']
+    summary = json.loads((pipeline.state / 'publish-success.json').read_text())
+    assert summary['outbound']['digest'] == 'candidate'
+    assert 'singapore-outbound' in json.loads((pipeline.state / 'publish-current.json').read_text())['completed']
+    pipeline.outbound_prepare.assert_called_once()
+
+
+@pytest.mark.parametrize('failure', ['freeze', 'activate', 'verify'])
+def test_outbound_failure_blocks_overall_success(pipeline, failure):
+    def phase(_, action):
+        if action == failure:
+            raise RuntimeError('outbound failed')
+        return {'status': action}
+    pipeline.outbound_phase.side_effect = phase
+    with pytest.raises(RuntimeError, match='outbound failed'):
+        publish.publish(pipeline.args)
+    assert not (pipeline.state / 'publish-success.json').exists()
+    if failure == 'freeze':
+        pipeline.office_activate.assert_not_called()
+        schema_release.migrate.assert_not_called()
+
+
+def test_outbound_prepare_only_never_freezes(pipeline):
+    pipeline.args.prepare_only = True
+    publish.publish(pipeline.args)
+    pipeline.outbound_prepare.assert_called_once()
+    pipeline.outbound_phase.assert_not_called()
+
+
+def test_static_failure_keeps_outbound_paused(pipeline):
+    pipeline.activate.side_effect = RuntimeError('static failed')
+    with pytest.raises(RuntimeError, match='static failed'):
+        publish.publish(pipeline.args)
+    assert [call.args[1] for call in pipeline.outbound_phase.call_args_list] == ['freeze']
+
+
+def test_required_outbound_cannot_silently_disappear_from_inventory(pipeline):
+    inventory = publish.ROOT / 'deploy/platforms.json'
+    data = json.loads(inventory.read_text()); data['external_services'] = []
+    inventory.write_text(json.dumps(data))
+    with pytest.raises(RuntimeError, match='missing from release inventory'):
+        publish.publish(pipeline.args)
+    assert not (pipeline.state / 'publish-success.json').exists()
+
+
+def test_failed_release_retains_identity_only_for_same_scope_and_revision(pipeline):
+    pipeline.activate.side_effect = RuntimeError('static failed')
+    with pytest.raises(RuntimeError):
+        publish.publish(pipeline.args)
+    first = json.loads((pipeline.state / 'publish-current.json').read_text())['release_id']
+    with pytest.raises(RuntimeError):
+        publish.publish(pipeline.args)
+    assert pipeline.outbound_prepare.call_args.args[2] == first
+    pipeline.args.cloud_only = True
+    pipeline.outbound_prepare.side_effect = RuntimeError('other release owner')
+    with pytest.raises(RuntimeError):
+        publish.publish(pipeline.args)
+    assert pipeline.outbound_prepare.call_args.args[2] != first
+    assert json.loads((pipeline.state / 'publish-current.json').read_text())['release_id'] == first
 
 
 def test_render_preflight_runs_as_module_before_connector_or_activation():

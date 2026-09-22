@@ -18,7 +18,15 @@ deploy\deploy.bat --revision <full-commit-sha> --migration-credentials <protecte
 
 ## OKKI 出库轮询器专项
 
-`deploy\deploy.bat --okki-outbound-only --prepare-only` 预检，去掉 `--prepare-only` 部署并启用新加坡出库轮询器。仅更新该服务，无应用发布或迁移；运行配置、已有单跳过与不确定提交处置见 [轮询器说明](okki_outbound_poller.md)。
+普通完整发布和 `--cloud-only` 现在都包含新加坡出库轮询器。脚本及 systemd 配置从本次候选源码取件，与应用绑定同一 revision；不再依赖另跑专项命令。发布成功回执包含出库制品摘要，缺少部署登记、准备失败、更新失败或版本核验不一致均阻断整体成功。
+
+顺序为：准备所有制品 → 保存出库 timer 原始启用/运行状态并暂停、排空在途任务 → 迁移与应用/静态站切换 → 替换出库脚本并校验所需数据库字段 → 恢复 timer 原状态 → 核验线上摘要与调度状态 → 写整体成功标记。普通发布不会把原本停用或暂停的 timer 启用；未变化文件不替换。`--prepare-only` 不暂停服务、不切换代码；有待执行迁移时，新增字段检查延迟至激活阶段，激活前必须通过。
+
+独立维修仍可用 `deploy\deploy.bat --okki-outbound-only --prepare-only` 预检，去掉 `--prepare-only` 仅更新并启用该服务，不做应用发布或迁移。此专项入口显式启用调度，与普通发布保留原状态不同；存在未完成的协调发布时拒绝穿越其暂停边界。
+
+普通发布中途失败，出库可能保持暂停。先检查本机 `.deploy_state/publish-current.json` 的 `outbound` 阶段及新加坡 `.deploy-state/ark-outbound/release-current.json`，核实应用/schema状态后从同一本地发布目录、同一完整 revision 和发布范围重试；本地持久 `release_id` 与原调度基线会被保留。不同机器、发布范围、revision 或专项发布不能覆盖未完成的恢复记录，即使脚本摘要相同也不能接管；不要删除日志或直接启动旧脚本来绕过恢复。迁移自身失败仍遵循下方数据库恢复规则。
+
+首次启用这个机制时，应从包含本修复的受管候选 `deploy.bat --live-root ... --revision ...` 启动：正在运行的旧部署器不会因为候选里有新代码而自动更换自身。其他不属于本仓库的独立服务仍逐项列为 `unmanaged_services / not_deployed`，不计入本次已更新范围。运行配置与单据防重规则见 [轮询器说明](okki_outbound_poller.md)。
 
 ## 目录与版本规则
 

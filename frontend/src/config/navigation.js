@@ -929,7 +929,7 @@ export const NAV_ENTRIES = [
     title: '充值调整审核',
     anyPermission: ['domestic:review', 'domestic:admin', 'domestic:recharge'],
     menu: {
-      group: 'domestic', title: '充值调整审核', icon: Stamp, order: 14,
+      group: 'domestic', title: '充值调整审核', icon: Stamp, order: 14, badge: 'domesticReviews',
       anyPermission: ['domestic:review', 'domestic:admin', 'domestic:recharge'],
     },
   },
