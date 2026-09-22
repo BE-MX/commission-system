@@ -17,7 +17,7 @@
     </div>
     <section class="table-card battle-panel">
       <div class="battle-section-title"><h3>个人战报</h3><el-select v-model="sort" aria-label="个人排名排序"><el-option label="按累计 GMV" value="gmv" /><el-option label="按完成率" value="rate" /></el-select></div>
-      <el-table :data="ranked" class="list-table" border>
+      <el-table :data="ranked" :max-height="PERSONAL_REPORT_TABLE_HEIGHT" class="list-table battle-personal-table" border>
         <el-table-column prop="rank" label="排名" min-width="75" max-width="100" />
         <el-table-column label="业务员" min-width="120" max-width="160"><template #default="{ row }"><el-button link type="primary" :disabled="!row.can_view_orders" @click="$emit('review', { memberId: row.member_id })"><el-icon><ArrowRight /></el-icon>{{ row.user_name }}</el-button></template></el-table-column>
         <el-table-column prop="team" label="业务组" min-width="120" max-width="180" show-overflow-tooltip />
@@ -45,7 +45,8 @@ import { ArrowRight } from '@element-plus/icons-vue'
 import { money, rankPeople, rate } from '../helpers'
 const props = defineProps({ data: { type: Object, required: true } })
 defineEmits(['team', 'review'])
-const sort = ref('gmv')
+const PERSONAL_REPORT_TABLE_HEIGHT = 608 // 48px header + 10 × 56px rows
+const sort = ref('rate')
 const ranked = computed(() => rankPeople(props.data.people, sort.value))
 const peak = computed(() => Math.max(1, ...props.data.daily.map(d => Number(d.gmv))))
 </script>

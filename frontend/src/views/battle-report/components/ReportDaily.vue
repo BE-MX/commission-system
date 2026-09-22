@@ -3,7 +3,7 @@
     <el-alert v-if="error" type="error" :title="error" :closable="false" show-icon />
     <section class="table-card battle-panel">
       <div class="battle-section-title"><div><h3>每日成交矩阵</h3><span>每格显示 GMV（USD）与订单数；仅可下钻本人或授权组的订单。</span></div><div class="battle-actions"><GlassButton :disabled="!matrix || matrix.dates[0] <= report.start_date" @click="shift(-7)">上一周</GlassButton><span>{{ matrix?.dates[0] }} — {{ matrix?.dates.at(-1) }}</span><GlassButton :disabled="!matrix || matrix.dates.at(-1) >= report.end_date" @click="shift(7)">下一周</GlassButton></div></div>
-      <el-table v-loading="matrixLoading" :data="matrix?.rows || []" border class="list-table">
+      <el-table v-loading="matrixLoading" :data="matrix?.rows || []" :max-height="DAILY_MATRIX_TABLE_HEIGHT" border class="list-table battle-matrix-table">
         <el-table-column label="业务员" min-width="120" max-width="160"><template #default="{ row }"><el-button link type="primary" :disabled="!row.can_view_orders" @click="select(row.member_id, '')"><el-icon><ArrowRight /></el-icon>{{ row.user_name }}</el-button><p>{{ row.team }}</p></template></el-table-column>
         <el-table-column v-for="(day, index) in matrix?.dates || []" :key="day" :label="day.slice(5)" min-width="125" max-width="150"><template #default="{ row }"><button type="button" class="battle-cell" :class="{ selected: memberId === row.member_id && selectedDay === day }" :disabled="!row.can_view_orders || row.cells[index].state === 'future'" :aria-label="`${row.user_name} ${day} 订单`" @click="select(row.member_id, day)"><b>{{ row.cells[index].state === 'future' ? '—' : money(row.cells[index].gmv) }}</b><small>{{ row.cells[index].state === 'future' ? '未到' : row.cells[index].state === 'incomplete' ? '待核对' : `${row.cells[index].order_count} 单` }}</small></button></template></el-table-column>
         <el-table-column label="本页小计 / USD" min-width="155" max-width="190"><template #default="{ row }">{{ money(row.subtotal) }}</template></el-table-column>
@@ -50,6 +50,7 @@ import { battleReportApi } from '@/api/battleReport'
 import { currentBeijingDate, formatCalendarDate } from '@/utils/datetime'
 import { addDays, errorText, money } from '../helpers'
 const props = defineProps({ report: { type: Object, required: true }, team: { type: String, default: '' }, selection: { type: Object, default: () => ({}) } })
+const DAILY_MATRIX_TABLE_HEIGHT = 408 // 48px header + 5 × 72px rows
 const matrix = ref(null), matrixLoading = ref(false), error = ref(''), start = ref('')
 const memberId = ref(props.selection.memberId || ''), selectedDay = ref(props.selection.day || '')
 const orderMeta = ref({ gmv: '0', issues: [] }), orderError = ref('')

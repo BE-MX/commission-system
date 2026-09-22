@@ -22,6 +22,9 @@
 .battle-panel .el-pagination { margin-top: 18px; flex-wrap: wrap; gap: 8px; }
 .battle-panel .el-alert { margin: 12px 0; }
 .battle-panel .el-progress { margin: 5px 0; }
+.battle-personal-table .el-table__header tr, .battle-matrix-table .el-table__header tr { height: 48px; }
+.battle-personal-table .el-table__body tr { height: 56px; }
+.battle-matrix-table .el-table__body tr { height: 72px; }
 .battle-chart { display: flex; gap: 8px; overflow-x: auto; padding: 8px 0; }
 .battle-chart button { flex: 1 0 66px; border: 0; padding: 0 4px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 11px; cursor: pointer; }
 .battle-chart button:disabled { cursor: default; opacity: .55; }
