@@ -67,8 +67,17 @@ def enable(s):
     assert result.status_code == 200, result.text
 
 
+def _tiny_png():
+    from io import BytesIO
+    from PIL import Image
+    buf = BytesIO()
+    Image.new("RGB", (8, 8), "#420403").save(buf, "PNG")
+    return buf.getvalue()
+
+
 def mock_render(monkeypatch):
-    monkeypatch.setattr(poster_delivery, "render_posters", lambda snapshot, kinds: {k: b"fake-png" for k in kinds})
+    png = _tiny_png()
+    monkeypatch.setattr(poster_delivery, "render_posters", lambda snapshot, kinds: {k: png for k in kinds})
 
 
 def test_admin_preview_same_snapshot_no_delivery(posters, monkeypatch):
@@ -174,13 +183,26 @@ def test_capability_is_expiring_and_kind_bound(posters, monkeypatch):
     expires = poster_images.expiry(row)
     monkeypatch.setattr(poster_images, "beijing_now_aware", lambda: datetime(2026, 9, 22, tzinfo=timezone.utc))
     sig = poster_images.signature(row.id, "team", expires)
-    assert poster_images.public_image(s.db, row.id, "team", expires, sig).read_bytes() == b"fake-png"
+    served = poster_images.public_image(s.db, row.id, "team", expires, sig).read_bytes()
+    assert served == poster_images.compress_poster(_tiny_png()) and served[:2] == b"\xff\xd8"
     for kind, exp, signature in [("personal", expires, sig), ("team", expires+1, sig), ("../bad", expires, sig)]:
         with pytest.raises(HTTPException):
             poster_images.public_image(s.db, row.id, kind, exp, signature)
     monkeypatch.setattr(poster_images, "beijing_now_aware", lambda: datetime(2026, 10, 1, tzinfo=timezone.utc))
     with pytest.raises(HTTPException):
         poster_images.public_image(s.db, row.id, "team", expires, sig)
+
+
+def test_compress_poster_jpeg_shrinks_tall_png():
+    import os
+    from io import BytesIO
+    from PIL import Image
+    source = BytesIO()
+    Image.frombytes("RGB", (1080, 800), os.urandom(1080 * 800 * 3)).save(source, "PNG", compress_level=0)
+    raw = source.getvalue()
+    jpeg = poster_images.compress_poster(raw)
+    assert jpeg[:2] == b"\xff\xd8" and len(jpeg) < len(raw)
+    assert Image.open(BytesIO(jpeg)).size == (1080, 800)
 
 
 def test_template_escapes_names_and_has_no_external_assets(posters):
@@ -239,3 +261,65 @@ def test_render_failure_is_recorded_without_sending(posters, monkeypatch):
     assert all(v['status']=='failed' for v in result['deliveries'].values())
     assert s.sender.send_markdown.call_count == 0
     assert 'private path' not in str(result)
+
+
+def test_configured_browser_path_validation(monkeypatch, tmp_path):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "BATTLE_REPORT_BROWSER_PATH", "")
+    assert poster_renderer.configured_browser_path() is None
+    missing = tmp_path / "missing-chrome.exe"
+    monkeypatch.setattr(settings, "BATTLE_REPORT_BROWSER_PATH", str(missing))
+    with pytest.raises(RuntimeError, match="BATTLE_REPORT_BROWSER_PATH 不存在"):
+        poster_renderer.configured_browser_path()
+    chrome = tmp_path / "chrome.exe"
+    chrome.write_bytes(b"stub")
+    monkeypatch.setattr(settings, "BATTLE_REPORT_BROWSER_PATH", str(chrome))
+    assert poster_renderer.configured_browser_path() == str(chrome)
+
+
+def test_launch_prefers_configured_then_system_fallback(monkeypatch, tmp_path):
+    settings = get_settings()
+    chrome = tmp_path / "chrome.exe"
+    chrome.write_bytes(b"stub")
+    monkeypatch.setattr(settings, "BATTLE_REPORT_BROWSER_PATH", str(chrome))
+    launched = []
+
+    class Chromium:
+        def launch(self, **options):
+            launched.append(options)
+            return object()
+
+    poster_renderer._launch_chromium(SimpleNamespace(chromium=Chromium()))
+    assert launched == [{"headless": True, "executable_path": str(chrome)}]
+
+    monkeypatch.setattr(settings, "BATTLE_REPORT_BROWSER_PATH", "")
+    monkeypatch.setattr(poster_renderer, "system_browser_path", lambda: str(chrome))
+    launched.clear()
+
+    class DefaultThenFallback:
+        def launch(self, **options):
+            launched.append(options)
+            if "executable_path" not in options:
+                raise RuntimeError("Executable doesn't exist at chromium_headless_shell")
+            return object()
+
+    assert poster_renderer._launch_chromium(SimpleNamespace(chromium=DefaultThenFallback())) is not None
+    assert launched == [{"headless": True}, {"headless": True, "executable_path": str(chrome)}]
+
+
+def test_launch_error_is_actionable_when_no_browser(monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "BATTLE_REPORT_BROWSER_PATH", "")
+    monkeypatch.setattr(poster_renderer, "system_browser_path", lambda: None)
+
+    class BrokenChromium:
+        def launch(self, **options):
+            raise RuntimeError("Executable doesn't exist at missing-shell")
+
+    with pytest.raises(RuntimeError) as excinfo:
+        poster_renderer._launch_chromium(SimpleNamespace(chromium=BrokenChromium()))
+    message = str(excinfo.value)
+    assert "无法启动浏览器生成海报" in message
+    assert "playwright install chromium" in message
+    assert "BATTLE_REPORT_BROWSER_PATH" in message
+    assert "Microsoft YaHei" in message

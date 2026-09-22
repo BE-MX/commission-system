@@ -20,13 +20,13 @@ _require_battle_write = require_any_permission("battle_report:write", "battle_re
 _require_battle_admin = require_permission("battle_report:admin")
 
 
-# Capability-authenticated PNG only: DingTalk cannot attach platform login headers.
+# Capability-authenticated JPEG only: DingTalk cannot attach platform login headers.
 # HMAC binds delivery ID, image kind and 7-day expiry; no raw business JSON is public.
-@router.get("/poster-images/{delivery_id}/{kind}.png", include_in_schema=False)
+@router.get("/poster-images/{delivery_id}/{kind}.jpg", include_in_schema=False)
 def poster_image(delivery_id: int, kind: Literal["team", "personal"], expires: int,
                  signature: str = Query(min_length=64, max_length=64), db: Session = Depends(get_db)):
     from app.battle_report.poster_images import public_image
-    return FileResponse(public_image(db, delivery_id, kind, expires, signature), media_type="image/png",
+    return FileResponse(public_image(db, delivery_id, kind, expires, signature), media_type="image/jpeg",
                         headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
 
 
