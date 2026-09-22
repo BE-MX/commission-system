@@ -71,6 +71,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid #b39a84; outline-
 .preview-heading { display: flex; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
 .preview-heading h2 { font-size: 18px; }
 .preview-heading p { margin: 4px 0 0; color: #70776e; font-size: 13px; }
+.preview-heading p.source-synced-at { color: #8a7159; font-size: 12px; }
 .preview-heading > span { align-self: start; padding: 5px 8px; border-radius: 20px; color: #8a7159; background: #f4eee8; font-size: 11px; white-space: nowrap; }
 .preview-heading > span.render-ready { color: #527259; background: #eaf3eb; }
 .canvas-frame { width: min(100%, 440px); min-width: 250px; margin: 0 auto; overflow: hidden; border: 1px solid #e0e2dd; background: #fff; box-shadow: 0 7px 22px rgb(25 29 23 / 12%); }

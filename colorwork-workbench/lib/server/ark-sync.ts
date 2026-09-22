@@ -8,13 +8,15 @@ import type { InventoryStatus, InventorySpec } from '@/lib/inventory';
  * 工作台规格的共享状态原本完全由站内手动维护（inventory_states 表）。接入方舟后，
  * 「实时库存图修改」页读到的状态以 lsordertest.okki_inventory.enable_count 为准：
  * 方舟后端 /api/colorwork/inventory-status 按模板返回「{颜色}|{尺寸} → normal|low_stock|restocking」，
- * 这里在快照返回前逐规格覆盖；手动保存在站内的状态仍保留，仅作为 okki 未覆盖规格
- * （映射未配置/接口不可达）的兜底显示。
+ * 这里在快照返回前逐规格覆盖。业务口径（2026-09-21）：映射不到 okki 的规格直接显示
+ * Restocking（正在补货），不再保留站内手动状态；接口不可达时才回退站内已保存状态。
+ * 同时透传镜像 source_synced_at，供页面标注「数据截至」。
  */
 
 type StatusResponse = {
   statuses?: Record<string, string>;
   unmapped?: boolean;
+  source_synced_at?: string | null;
 };
 
 const FETCH_TIMEOUT_MS = 3500;
@@ -40,25 +42,38 @@ function isOkkiStatus(value: string): value is InventoryStatus {
   return value === 'normal' || value === 'low_stock' || value === 'restocking';
 }
 
-/** 就地把 okki 状态覆盖到快照 specs 上，返回覆盖条数（供日志/调试）。 */
+export type ArkInventoryOverlayResult = {
+  overlaid: number;
+  sourceSyncedAt: string | null;
+  /** 方舟是否成功返回（含 unmapped）；false = 接口不可达，保留站内状态 */
+  applied: boolean;
+};
+
+/** 就地把 okki 状态覆盖到快照 specs 上。映射不到的规格显示 Restocking。 */
 export async function applyArkInventoryOverlay(
   templateId: string,
   colors: StockColor[],
   template: TemplateSummary,
   specs: InventorySpec[],
-): Promise<number> {
+): Promise<ArkInventoryOverlayResult> {
   const data = await fetchArkStatuses(templateId);
-  if (!data?.statuses) return 0;
+  if (!data || !data.statuses) {
+    return { overlaid: 0, sourceSyncedAt: null, applied: false };
+  }
   const codeById = new Map(colorsForTemplate(colors, template).map((color) => [color.id, color.code]));
   let overlaid = 0;
   for (const spec of specs) {
     const code = codeById.get(spec.colorId);
-    if (!code) continue;
-    const status = data.statuses[`${code}|${spec.length}`];
-    if (status && isOkkiStatus(status) && spec.status !== status) {
-      spec.status = status;
+    const key = code ? `${code}|${spec.length}` : '';
+    const raw = key ? data.statuses[key] : undefined;
+    const next: InventoryStatus = raw && isOkkiStatus(raw) ? raw : 'restocking';
+    if (spec.status !== next) {
+      spec.status = next;
       overlaid += 1;
     }
   }
-  return overlaid;
+  const sourceSyncedAt = typeof data.source_synced_at === 'string' && data.source_synced_at
+    ? data.source_synced_at
+    : null;
+  return { overlaid, sourceSyncedAt, applied: true };
 }

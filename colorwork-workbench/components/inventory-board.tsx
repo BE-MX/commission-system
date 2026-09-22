@@ -65,6 +65,10 @@ function formatTime(value: string | null) {
   return value ? new Date(value).toLocaleString('zh-CN') : '尚未修改';
 }
 
+function formatSourceSyncedAt(value: string | null) {
+  return value ? `数据截至 ${new Date(value).toLocaleString('zh-CN')}` : '小满同步时间未知';
+}
+
 export function InventoryBoard({ catalog, user, previewOnly = false, initialTemplateId }: InventoryBoardProps) {
   const { colors: catalogColors, templates } = catalog;
   const products = useMemo(() => productNames(templates), [templates]);
@@ -160,8 +164,8 @@ export function InventoryBoard({ catalog, user, previewOnly = false, initialTemp
   const dirty = Boolean(state && !inventoryMapsEqual(statusMap, persistedMap, masterSelection));
   useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
 
-  // okki 实时库存自动生效：每 30 秒静默同步一次（快照接口已按 enable_count 覆盖状态）；
-  // 有未保存修改或页面不可见时跳过，不打断编辑。
+  // okki 实时库存自动生效：每 30 秒静默同步一次（快照接口已按 enable_count 覆盖状态，
+  // 未匹配规格显示 Restocking，并带「数据截至」时间）；有未保存修改或页面不可见时跳过。
   useEffect(() => {
     if (!state) return;
     const timer = window.setInterval(() => {
@@ -365,7 +369,7 @@ export function InventoryBoard({ catalog, user, previewOnly = false, initialTemp
         <header className="panel-intro">
           <span>SHARED INVENTORY STATUS</span>
           <h1>维护当前库存与补货状态</h1>
-          <p>{user.role === 'admin' ? '管理员也可以在这里执行与业务相同的库存操作。' : '业务只修改标准母版中已经存在的规格。'} 所有账号共享同一份状态，保存后再导出最新图片。库存状态每 30 秒与小满实时库存自动同步：库存为 0 显示「正在补货」，1–19 显示「低库存」，20 及以上显示「到货正常」。</p>
+          <p>{user.role === 'admin' ? '管理员也可以在这里执行与业务相同的库存操作。' : '业务只修改标准母版中已经存在的规格。'} 所有账号共享同一份状态，保存后再导出最新图片。库存状态每 30 秒与小满实时库存自动同步：库存为 0 或未匹配到小满规格显示「正在补货」，1–19 显示「低库存」，20 及以上显示「到货正常」。</p>
         </header>
 
         <div className="template-fields">
@@ -377,6 +381,7 @@ export function InventoryBoard({ catalog, user, previewOnly = false, initialTemp
           <div className="revision-strip">
             <span><ShieldCheck size={15} />源 S{state.sourceVersion.number ?? '—'} · 标准母版 v{state.version.number}</span>
             <span>库存状态 r{state.inventoryRevision}</span>
+            <span>{formatSourceSyncedAt(state.sourceSyncedAt)}</span>
             <span>最后修改：{state.inventoryUpdatedBy?.displayName || state.version.createdBy.displayName} · {formatTime(state.inventoryUpdatedAt || state.version.createdAt)}</span>
           </div>
         )}
@@ -442,7 +447,7 @@ export function InventoryBoard({ catalog, user, previewOnly = false, initialTemp
       </section>}
 
       <aside className="inventory-preview" aria-label="库存提示图预览">
-        <div className="preview-heading"><div><span>LIVE PREVIEW</span><h2>{item.productName}</h2><p>{item.radio}</p></div><span className={ready ? 'render-ready' : ''}>{ready ? dirty ? '未保存预览' : '最新预览' : '正在更新'}</span></div>
+        <div className="preview-heading"><div><span>LIVE PREVIEW</span><h2>{item.productName}</h2><p>{item.radio}</p>{state && <p className="source-synced-at">{formatSourceSyncedAt(state.sourceSyncedAt)}</p>}</div><span className={ready ? 'render-ready' : ''}>{ready ? dirty ? '未保存预览' : '最新预览' : '正在更新'}</span></div>
         {previewOnly && error && <p className="error" role="alert">{error}</p>}
         {previewOnly && notice && <output className="success">{notice}</output>}
         <div className="canvas-frame" style={{ aspectRatio: `${item.width} / ${item.height}` }}><canvas ref={canvasRef} width={item.width} height={item.height} aria-label="库存提示图预览" /></div>

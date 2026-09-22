@@ -135,6 +135,7 @@ def compute_template_statuses(db: Session, template_id: str) -> dict:
             "unmapped": True,
             "statuses": {},
             "matched_products": 0,
+            "source_synced_at": None,
             "synced_at": utc_now().isoformat(),
         }
 
@@ -154,7 +155,8 @@ def compute_template_statuses(db: Session, template_id: str) -> dict:
         text(f"""
             SELECT p.color AS color, p.size AS size,
                    COALESCE(SUM(inv.enable_count), 0) AS available,
-                   COUNT(DISTINCT p.product_id) AS product_count
+                   COUNT(DISTINCT p.product_id) AS product_count,
+                   MAX(p.synced_at) AS product_synced_at
             FROM `{business_db}`.okki_products p
             LEFT JOIN (
                 SELECT product_id, SUM(enable_count) AS enable_count
@@ -172,6 +174,7 @@ def compute_template_statuses(db: Session, template_id: str) -> dict:
 
     statuses: dict[str, str] = {}
     matched_products = 0
+    source_synced_at = None
     for row in rows:
         color = (row["color"] or "").strip()
         size = (row["size"] or "").strip()
@@ -188,11 +191,22 @@ def compute_template_statuses(db: Session, template_id: str) -> dict:
             else "low_stock" if available < 20
             else "normal"
         )
+        product_synced_at = row["product_synced_at"]
+        if product_synced_at is not None:
+            # SQLite 测试库可能回字符串，MySQL 回 datetime；统一成可比较的 ISO 文本
+            stamp = (
+                product_synced_at.isoformat()
+                if hasattr(product_synced_at, "isoformat")
+                else str(product_synced_at)
+            )
+            if source_synced_at is None or stamp > source_synced_at:
+                source_synced_at = stamp
 
     return {
         "template_id": template_id,
         "unmapped": False,
         "statuses": statuses,
         "matched_products": matched_products,
+        "source_synced_at": source_synced_at,
         "synced_at": utc_now().isoformat(),
     }

@@ -32,7 +32,8 @@ def colorwork_db(db, monkeypatch):
     monkeypatch.setattr(service, "get_settings", lambda: S())
     db.execute(text(
         "CREATE TABLE IF NOT EXISTS lsordertest.okki_products ("
-        "product_id TEXT PRIMARY KEY, name TEXT, color TEXT, size TEXT, disable_flag INTEGER DEFAULT 0)"
+        "product_id TEXT PRIMARY KEY, name TEXT, color TEXT, size TEXT, "
+        "disable_flag INTEGER DEFAULT 0, synced_at TIMESTAMP)"
     ))
     db.execute(text(
         "CREATE TABLE IF NOT EXISTS lsordertest.okki_inventory ("
@@ -52,8 +53,8 @@ def colorwork_db(db, monkeypatch):
     ]
     for pid, name, color, size, flag in products:
         db.execute(
-            text("INSERT INTO lsordertest.okki_products VALUES (:a, :b, :c, :d, :e)"),
-            {"a": pid, "b": name, "c": color, "d": size, "e": flag},
+            text("INSERT INTO lsordertest.okki_products VALUES (:a, :b, :c, :d, :e, :f)"),
+            {"a": pid, "b": name, "c": color, "d": size, "e": flag, "f": "2026-09-21 10:00:00"},
         )
     db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p1', 57, 0)"))
     db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p2', 0, 0)"))
@@ -77,6 +78,7 @@ def test_statuses_normal_and_restocking(colorwork_db):
     assert result["statuses"]["#4|16"] == "low_stock"    # 1 → 低库存
     # 50g 产品不混入 20g 模板：#1|16 只统计 p1
     assert result["matched_products"] == 5
+    assert result["source_synced_at"] is not None
 
 
 def test_weight_suffix_separates_50g_template(colorwork_db):
@@ -92,6 +94,7 @@ def test_unmapped_template_keeps_manual_status(colorwork_db, monkeypatch):
     result = compute_template_statuses(colorwork_db, "flex-weft-regular")
     assert result["unmapped"] is True
     assert result["statuses"] == {}
+    assert result["source_synced_at"] is None
 
 
 def test_unknown_template_404(colorwork_db):
@@ -209,7 +212,8 @@ def test_inventory_status_requires_sync_key(db, monkeypatch):
     user = _user(db)
     db.execute(text(
         "CREATE TABLE IF NOT EXISTS lsordertest.okki_products ("
-        "product_id TEXT PRIMARY KEY, name TEXT, color TEXT, size TEXT, disable_flag INTEGER DEFAULT 0)"
+        "product_id TEXT PRIMARY KEY, name TEXT, color TEXT, size TEXT, "
+        "disable_flag INTEGER DEFAULT 0, synced_at TIMESTAMP)"
     ))
     db.execute(text(
         "CREATE TABLE IF NOT EXISTS lsordertest.okki_inventory ("
