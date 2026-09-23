@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {createOne as createOneImpl, findExisting, buildPayload, requestOkki, loadInvoiceForOrder, stockShortages} from '../okki_outbound_creator.mjs';
+import {createOne as createOneImpl, findExisting, buildPayload, requestOkki, loadInvoiceForOrder, stockShortages, selectSerial,
+  regenerationDirectory, assertRegenerationTask} from '../okki_outbound_creator.mjs';
 const order = {order_id: 123, create_time: '2026-09-17 08:00:00', handler: [9], company_id: 2,
   currency: 'USD', exchange_rate: 669, exchange_rate_usd: 100,
   product_list: [{product_id: 4, sku_id: 5, unique_id: 6, count: 2, unit_price: 10, to_outbound_count: 0}]};
@@ -73,6 +74,47 @@ test('successful creation verifies association and persists ledger',async t=> {
   assert.equal(result.outcome,'created');assert.equal(posts,1);
   assert.match(fs.readFileSync(path.join(directory,'logs','created-outbound.jsonl'),'utf8'),/INV123/);
 });
+test('regeneration uses a new durable intent and never reuses an uncertain attempt', async t => {
+  const root=dir(t), original=path.join(root,'logs');fs.mkdirSync(original);
+  fs.writeFileSync(path.join(original,'created-outbound.jsonl'),JSON.stringify({order_id:'123',outbound_invoice_id:77})+'\n');
+  const directory=regenerationDirectory(root,824);fs.mkdirSync(path.join(directory,'logs'),{recursive:true});
+  let posts=0;
+  const api=async(route,payload)=>{
+    if(payload){posts++;throw Error('response lost');}
+    if(route.includes('/order/info'))return order;
+    return {count:0,list:[]};
+  };
+  await assert.rejects(createOne('123',{invoiceNo:'INV123',directory,api}),e=>e.uncertain===true);
+  await assert.rejects(createOne('123',{invoiceNo:'INV123',directory,api}),/Prior submission intent/);
+  assert.equal(posts,1);
+  assert.match(fs.readFileSync(path.join(original,'created-outbound.jsonl'),'utf8'),/"outbound_invoice_id":77/);
+});
+test('regeneration requires the same claimed task and latest successful sync',()=>{
+  const task={status:'running',reason:'regenerate:824',latest_sync_log_id:824,sync_status:'synced',linked_sync_id:null};
+  assert.doesNotThrow(()=>assertRegenerationTask(task,824));
+  assert.throws(()=>assertRegenerationTask({...task,latest_sync_log_id:825},824),/changed/);
+  assert.throws(()=>assertRegenerationTask({...task,status:'uncertain'},824),/changed/);
+  assert.throws(()=>regenerationDirectory('root','../824'),/Invalid/);
+});
+test('regeneration never treats a deleted same-order serial detail as active',async()=>{
+  let lookups=0;
+  const selection=await selectSerial(order,'INV123',async route=>{
+    lookups++;
+    return route.includes('%5B')?null:{outbound_invoice_id:77,serial_id:'INV123',record_list:[{order_id:123}]};
+  },{regeneration:true});
+  assert.equal(selection.serial,'INV123 [123]');
+  assert.equal(lookups,2);
+});
+test('changed sync before intent never submits or leaves an uncertain marker',async t=>{
+  const directory=dir(t);let posts=0;
+  await assert.rejects(createOne('123',{invoiceNo:'INV123',directory,
+    beforeSubmit:async()=>{throw Error('newer sync');},api:async(route,payload)=>{
+      if(payload)posts++;
+      return route.includes('/order/info')?order:{count:0,list:[]};
+    }}),/newer sync/);
+  assert.equal(posts,0);
+  assert.equal(fs.existsSync(path.join(directory,'logs','ark-outbound-intents')),false);
+});
 test('invalid product stops whole order instead of partial creation',()=> {
   assert.throws(()=>buildPayload({...order,product_list:[...order.product_list,{count:1}]}, 'INV123'),/Invalid order item/);
 });
@@ -101,7 +143,24 @@ test('concurrent creators share exclusive intent; only one POST',async t=> {
   assert.equal(posts,1);assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
 });
 
-const {resultFromOutput, finishTask, claimBatch} = await import('../okki_outbound_poller.js');
+const {resultFromOutput, finishTask, claimBatch, generationFromReason, advanceGeneration} = await import('../okki_outbound_poller.js');
+test('claimed generation marker survives stock wait and invalid reasons do not trigger it',()=>{
+  assert.equal(generationFromReason('regenerate:824 Insufficient warehouse stock'),'824');
+  assert.equal(generationFromReason('regenerate:824'), '824');
+  assert.equal(generationFromReason('deleted:77'),null);
+  assert.equal(generationFromReason('regenerate:8240suffix'),null);
+});
+test('definite pre-submit failure advances to a newer successful sync',async()=>{
+  const calls=[];
+  const conn={query:async(sql,params)=>{
+    calls.push({sql,params});
+    return sql.startsWith('SELECT')?[[{id:825}]]:[{affectedRows:1}];
+  }};
+  await advanceGeneration(conn,{id:7,invoice_id:4,attempts:2},'824','failed','regenerate:824 See last_error');
+  assert.equal(calls.length,2);
+  assert.match(calls[1].sql,/status='pending'/);
+  assert.equal(calls[1].params[0],'regenerate:825');
+});
 test('zero exit without validated result never marks done',()=> {
   assert.equal(resultFromOutput(0, 'failed but exit zero', '123'),null);
   assert.equal(resultFromOutput(0, 'ARK_OUTBOUND_RESULT={"outcome":"created","order_id":"999","outbound_invoice_id":88}', '123'),null);
@@ -294,6 +353,7 @@ test('waiting claim has fixed interval without attempt cap and retains prior sta
     calls.push({sql,params});return calls.length===1?[[{id:7,order_id:'123',attempts:100,status:'waiting_stock'}]]:[{affectedRows:1}];
   }});
   for(const c of calls){assert.match(c.sql,/status = 'waiting_stock' AND updated_at <= DATE_SUB\(\?, INTERVAL 15 MINUTE\)/);assert.equal((c.sql.match(/\?/g)||[]).length,c.params.length);}
+  assert.match(calls.at(-1).sql,/reason <=> \?/);
   assert.equal(tasks[0].attempts,101);assert.equal(tasks[0].priorStatus,'waiting_stock');
 });
 

@@ -1,10 +1,11 @@
 """Isolated SQLite and fake OKKI only; no shared database or network writes."""
 from copy import deepcopy
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 import pytest
 from sqlalchemy import text
-from app.invoice.models import InvoiceItem
+from app.invoice.models import InvoiceItem, InvoiceSyncLog, OkkiOutboundTask
 from app.invoice import lifecycle_guard, okki_client
 from app.invoice import outbound_followup_service as followup
 from app.invoice.xiaoman_service import _build_product_rows as build_product_rows
@@ -123,6 +124,76 @@ def test_invoice_sync_followup_requeues_shortage_without_creating(db, sync_case,
     assert result['status'] == 'pending'
     assert task.status == 'pending' and task.last_error is None
     assert fake['posts'] == []
+
+
+def test_deleted_outbound_is_requeued_only_after_new_successful_sync(db, sync_case, monkeypatch):
+    user, inv, _, fake = sync_case
+    task = db.query(OkkiOutboundTask).filter_by(invoice_id=inv.id).one()
+    task.status, task.reason = 'skipped', 'deleted:77'
+    task.updated_at = datetime(2026, 9, 23, 10)
+    db.add(ShippingOperationEvent(scope='outbound-delete', request_id='77', source='pc',
+                                  action='outbound_deleted', login_user_id=user.id,
+                                  operator_user_id=user.id, operator_name='Test', login_name='Test',
+                                  outbound_record_id='OB001', created_at=datetime(2026, 9, 23, 10)))
+    db.add(InvoiceSyncLog(invoice_id=inv.id, action='update', success=1,
+                          created_at=datetime(2026, 9, 23, 9)))
+    db.commit()
+    monkeypatch.setattr(followup.linked_outbound_service, 'find_related', lambda *args: [])
+    actor = {'sub': str(user.id), 'permissions': PERMS, 'roles': []}
+    before = followup.run(db, inv, actor)
+    assert before['status'] == 'manual'
+    assert task.status == 'skipped'
+    latest = InvoiceSyncLog(invoice_id=inv.id, action='update', success=1,
+                            created_at=datetime(2026, 9, 23, 11))
+    db.add(latest)
+    db.commit()
+    result = followup.run(db, inv, actor)
+    assert result['status'] == 'pending'
+    assert task.status == 'pending' and task.reason == f'regenerate:{latest.id}'
+    assert fake['posts'] == []
+
+
+def test_uncertain_outbound_never_requeues_after_sync(db, sync_case, monkeypatch):
+    user, inv, _, _ = sync_case
+    task = db.query(OkkiOutboundTask).filter_by(invoice_id=inv.id).one()
+    task.status = 'uncertain'
+    db.add(InvoiceSyncLog(invoice_id=inv.id, action='update', success=1,
+                          created_at=datetime.now() + timedelta(minutes=1)))
+    db.commit()
+    monkeypatch.setattr(followup.linked_outbound_service, 'find_related', lambda *args: [])
+    result = followup.run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
+    assert result['status'] == 'manual'
+    assert task.status == 'uncertain' and not (task.reason or '').startswith('regenerate:')
+
+
+def test_new_sync_wakes_regeneration_stock_wait_without_backend_stock_access(db, sync_case, monkeypatch):
+    user, inv, _, _ = sync_case
+    task = db.query(OkkiOutboundTask).filter_by(invoice_id=inv.id).one()
+    previous = InvoiceSyncLog(invoice_id=inv.id, action='update', success=1,
+                              created_at=datetime(2026, 9, 23, 11))
+    db.add(previous)
+    db.flush()
+    task.status, task.reason = 'waiting_stock', f'regenerate:{previous.id} Insufficient warehouse stock'
+    latest = InvoiceSyncLog(invoice_id=inv.id, action='update', success=1,
+                            created_at=datetime(2026, 9, 23, 12))
+    db.add(latest)
+    db.commit()
+    monkeypatch.setattr(followup.linked_outbound_service, 'find_related', lambda *args: [])
+    monkeypatch.setattr(followup, '_stock_shortages', lambda *args: (_ for _ in ()).throw(AssertionError('No backend stock call')))
+    result = followup.run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
+    assert result['status'] == 'pending'
+    assert task.status == 'pending' and task.reason == f'regenerate:{latest.id}'
+
+
+def test_missing_outbound_without_verified_deletion_stays_manual(db, sync_case, monkeypatch):
+    user, inv, _, _ = sync_case
+    db.add(InvoiceSyncLog(invoice_id=inv.id, action='update', success=1,
+                          created_at=datetime.now() + timedelta(minutes=1)))
+    db.commit()
+    monkeypatch.setattr(followup.linked_outbound_service, 'find_related', lambda *args: [])
+    result = followup.run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
+    assert result['status'] == 'manual'
+    assert db.query(OkkiOutboundTask).filter_by(invoice_id=inv.id).one().status == 'done'
 
 
 def test_invoice_sync_followup_refreshes_current_shortages_without_creating(db, sync_case, monkeypatch):

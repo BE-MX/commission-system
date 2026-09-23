@@ -92,7 +92,7 @@ export const CLAIMABLE = `(
 export async function claimBatch(conn) {
   const now = beijingNow();
   const [rows] = await conn.query(
-    `SELECT id, invoice_id, order_id, attempts, status
+    `SELECT id, invoice_id, order_id, attempts, status, reason
        FROM ark_okki_outbound_tasks
       WHERE ${CLAIMABLE}
         AND invoice_id IN (SELECT id FROM ark_invoices WHERE linked_sync_id IS NULL AND sync_status='synced' AND status NOT IN ('cancel_pending','cancelled'))
@@ -116,8 +116,8 @@ export async function claimBatch(conn) {
     const [result] = await conn.query(
       `UPDATE ark_okki_outbound_tasks
           SET status = 'running', attempts = attempts + 1, updated_at = ?
-        WHERE id = ? AND ${CLAIMABLE}`,
-      [now, row.id, now, config.maxAttempts, now, now, STALE_RUNNING_MINUTES],
+        WHERE id = ? AND reason <=> ? AND ${CLAIMABLE}`,
+      [now, row.id, row.reason ?? null, now, config.maxAttempts, now, now, STALE_RUNNING_MINUTES],
     );
     if (result.affectedRows === 1) claimed.push({...row, priorStatus: row.status, attempts: Number(row.attempts) + 1});
       await conn.query('COMMIT');
@@ -129,11 +129,16 @@ export async function claimBatch(conn) {
   return claimed;
 }
 
-function runCreateOutbound(orderId) {
+export function generationFromReason(reason) {
+  return /^regenerate:([1-9]\d*)(?:\s|$)/.exec(reason || '')?.[1] || null;
+}
+
+function runCreateOutbound(orderId, generationSyncLogId) {
   return new Promise((resolve) => {
     const child = spawn(
       process.execPath,
-      [path.join(config.scriptDir, 'okki_outbound_creator.mjs'), String(orderId), '--run'],
+      [path.join(config.scriptDir, 'okki_outbound_creator.mjs'), String(orderId), '--run',
+        ...(generationSyncLogId ? ['--regeneration-sync-log=' + generationSyncLogId] : [])],
       { cwd: config.scriptDir, env: process.env },
     );
     let output = '';
@@ -179,6 +184,17 @@ export async function finishTask(conn, task, status, reason, error = null) {
   if (result.affectedRows !== 1) throw new Error('Task ownership changed: ' + task.id);
 }
 
+export async function advanceGeneration(conn, task, generation, status, reason) {
+  if (!generation || !['failed', 'waiting_stock'].includes(status)) return;
+  const [[latest]] = await conn.query(
+    'SELECT MAX(id) AS id FROM ark_invoice_sync_logs WHERE invoice_id=? AND success=1', [task.invoice_id]);
+  if (!latest?.id || BigInt(latest.id) <= BigInt(generation)) return;
+  await conn.query(
+    `UPDATE ark_okki_outbound_tasks SET status='pending', reason=?, attempts=0, last_error=NULL, updated_at=?
+      WHERE id=? AND status=? AND attempts=? AND reason=?`,
+    [`regenerate:${latest.id}`, beijingNow(), task.id, status, task.attempts, reason.slice(0, 255)]);
+}
+
 async function runOnce(conn) {
   let ok = 0, failed = 0;
   for (let n = 0; n < config.batch; n++) {
@@ -186,19 +202,26 @@ async function runOnce(conn) {
     const [task] = await claimBatch(conn);
     if (!task) break;
     log(`start task#${task.id} order=${task.order_id} attempt=${task.attempts}`);
-    const {code, output} = await runCreateOutbound(task.order_id);
+    const generation = generationFromReason(task.reason);
+    const {code, output} = await runCreateOutbound(task.order_id, generation);
     const result = resultFromOutput(code, output, task.order_id);
     if (result) {
       const status = result.outcome === 'waiting_stock' ? 'waiting_stock' : result.outcome === 'existing' ? 'skipped' : 'done';
-      const reason = status === 'waiting_stock' ? result.reason : `${result.outcome}: ${result.serial_id || result.outbound_invoice_id}`;
-      await finishTask(conn, task, status, reason.slice(0, 255), status === 'waiting_stock' ? JSON.stringify(result).slice(-1500) : null);
+      const reason = (generation && status === 'waiting_stock' ? `regenerate:${generation} ` : '') +
+        (status === 'waiting_stock' ? result.reason : `${result.outcome}: ${result.serial_id || result.outbound_invoice_id}`);
+      const storedReason = reason.slice(0, 255);
+      await finishTask(conn, task, status, storedReason, status === 'waiting_stock' ? JSON.stringify(result).slice(-1500) : null);
+      await advanceGeneration(conn, task, generation, status, storedReason);
       ok++;
       log(`task#${task.id} ${status}`, result);
     } else {
       // code 1 is a definite pre-submit failure. Kill/unknown/intent failures
       // are quarantined instead of risking a duplicate after a lost response.
       const status = code === 1 ? (task.priorStatus === 'waiting_stock' ? 'waiting_stock' : 'failed') : 'uncertain';
-      await finishTask(conn, task, status, 'See last_error', `exit=${code}\n${output}`.slice(-1500));
+      const reason = (generation && status !== 'uncertain' ? `regenerate:${generation} ` : '') + 'See last_error';
+      await finishTask(conn, task, status, reason,
+        `exit=${code}\n${output}`.slice(-1500));
+      if (code === 1) await advanceGeneration(conn, task, generation, status, reason);
       failed++;
       log(`task#${task.id} ${status}`, output.slice(-500));
     }
