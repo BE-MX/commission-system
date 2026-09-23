@@ -13,7 +13,7 @@ from app.invoice.models import Invoice, InvoiceItem, OkkiOutboundTask
 from app.invoice.linked_sync_service import edit_version
 from app.receipt import remote
 from app.shipping_inspection import audit_service, outbound_sync_plan as plans, outbound_sync_state as state
-from app.shipping_inspection.models import ShippingInspection, ShippingOperationEvent
+from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto, ShippingOperationEvent
 
 logger = logging.getLogger(__name__)
 
@@ -66,8 +66,6 @@ def _idle(db, invoice, record_id):
     task = db.query(OkkiOutboundTask).filter_by(invoice_id=invoice.id).with_for_update().first()
     if task and (task.status in ('running', 'uncertain') or (task.reason or '').startswith('delete_')):
         raise ValueError('关联出库任务正在执行或待处理，请先核对任务')
-    if db.query(ShippingInspection.id).filter_by(outbound_record_id=record_id).with_for_update().first():
-        raise ValueError('该出库单已开始验货，不能覆盖验货依据，请先人工核对')
     deletion = db.query(ShippingOperationEvent).filter_by(scope='outbound-delete', outbound_record_id=record_id).with_for_update().first()
     if deletion and deletion.action != 'delete_failed':
         raise ValueError('该出库单存在删除任务，请先完成删除核对')
@@ -102,6 +100,17 @@ def _prepare(db, record, user):
         product = {**live[str(row['unique_id'])], **row, 'product_name': item.product_name}
         products.append(product)
     plan = plans.build(before, order, products, invoice.remark or '')
+    inspection = db.query(ShippingInspection).filter_by(outbound_record_id=record['outbound_record_id']).with_for_update().populate_existing().first()
+    media = db.query(ShippingInspectionPhoto).filter_by(inspection_id=inspection.id).with_for_update().all() if inspection else []
+    plan['inspection'] = {'id': inspection.id, 'status': inspection.status, 'edit_version': inspection.edit_version,
+                          'media_ids': [photo.id for photo in media]} if inspection else None
+    plan['requires_recheck'] = bool(plan['material_changed'] and media)
+    if plan['requires_recheck']:
+        event.action = state.RECHECK
+        event.payload = {'invoice_id': invoice.id, 'plan': plan}
+        event.result = {**(event.result or {}), 'message': '订单已更新，出库单待仓库同步并重新验货'}
+    elif event.action == state.RECHECK:
+        event.action = 'sync_idle'
     # Re-read after association scan; never submit a baseline from before a long scan.
     if _read(db, record['outbound_invoice_id']) != before:
         raise ValueError('出库单在核对期间发生变化，请重新预览')
@@ -117,7 +126,8 @@ def preview(db, record, user):
     commit(db)
     if plan is None:
         return {'status': event.action, 'recover': True, 'message': '上次同步结果待核对；仅查询结果，不重复发送', 'invoice_no': invoice.invoice_no}
-    return {k: plan[k] for k in ('version', 'invoice_no', 'changes', 'remark_before', 'remark_after', 'changed')}
+    return {k: plan[k] for k in ('version', 'invoice_no', 'changes', 'remark_before', 'remark_after', 'changed',
+                                  'requires_recheck')} | {'inspection_status': (plan['inspection'] or {}).get('status')}
 
 
 def _snapshot(plan, after):
@@ -142,8 +152,38 @@ def _verify_finish(db, event):
         event.result = {**(event.result or {}), 'message': str(exc), 'checked_at': str(beijing_now())}
         commit(db)
         return {'status': 'sync_uncertain', 'recover': True, 'message': '同步结果待核对：' + str(exc)}
+    recheck = plan.get('inspection')
+    previous = event.result or {}
+    stale_ids = set(previous.get('stale_media_ids') or [])
+    required_ids = set(previous.get('required_recheck_ids') or [])
+    if plan.get('material_changed') and recheck:
+        inspection = db.query(ShippingInspection).filter_by(id=recheck['id']).with_for_update().populate_existing().first()
+        if inspection is None or inspection.edit_version != recheck['edit_version'] or inspection.status != recheck['status']:
+            event.action = 'sync_uncertain'
+            event.result = {**previous, 'message': '出库已同步，但验货记录发生变化，需人工核对'}
+            commit(db)
+            return {'status': 'sync_uncertain', 'recover': True, 'message': event.result['message']}
+        media = db.query(ShippingInspectionPhoto).filter_by(inspection_id=inspection.id).with_for_update().all()
+        if {photo.id for photo in media} != set(recheck['media_ids']):
+            event.action = 'sync_uncertain'
+            event.result = {**previous, 'message': '出库已同步，但验货媒体发生变化，需人工核对'}
+            commit(db)
+            return {'status': 'sync_uncertain', 'recover': True, 'message': event.result['message']}
+        if media:
+            # Business-mirror item IDs are not guaranteed to equal OKKI outbound_record_id.
+            # For changed item sets, invalidate all old evidence and recheck the current mirror rows.
+            if plan['material_order_ids'] or plan['removed_order_ids']:
+                stale_ids.update(photo.id for photo in media)
+                required_ids.add('__all_items__')
+            elif plan['remark_changed']:
+                stale_ids.update(photo.id for photo in media if photo.item_id is None)
+            if plan['requires_whole_recheck']:
+                required_ids.add('__whole__')
+        inspection.edit_version += 1  # Reject every workstation page opened against the old outbound version.
     event.action = 'sync_done'
-    event.result = {'verified': _snapshot(plan, after), 'checked_at': str(beijing_now()), 'message': '已同步最新订单资料，可直接打印'}
+    event.result = {'verified': _snapshot(plan, after), 'checked_at': str(beijing_now()),
+                    'stale_media_ids': sorted(stale_ids), 'required_recheck_ids': sorted(required_ids),
+                    'message': '已同步最新订单资料；请补验变更明细' if required_ids else '已同步最新订单资料，可直接打印'}
     commit(db)
     return {'status': 'sync_done', 'message': event.result['message']}
 
@@ -163,7 +203,7 @@ def _recover(db, event):
     return _verify_finish(db, event)
 
 
-def synchronize(db, record, user, version, *, check_only=False):
+def synchronize(db, record, user, version, *, check_only=False, confirm_recheck=False):
     invoice, event, plan = _prepare(db, record, user)
     if event.action in state.ACTIVE:
         return _recover(db, event)
@@ -174,6 +214,11 @@ def synchronize(db, record, user, version, *, check_only=False):
         return _verify_finish(db, event)
     if plan['version'] != version:
         raise ValueError('订单或出库单已变化，请重新预览后同步')
+    if plan['requires_recheck'] and not confirm_recheck:
+        commit(db)
+        return {'status': state.RECHECK, 'message': '订单已更新，出库单需要仓库确认“同步并重验”'}
+    if plan['requires_recheck'] and plan['inspection']['status'] == 'submitted':
+        raise ValueError('验货单已提交，请先撤回验货，再同步并重新验货')
     if not plan['changed']:
         event.payload = {'invoice_id': invoice.id, 'plan': plan}
         return _verify_finish(db, event)
@@ -205,6 +250,13 @@ def synchronize(db, record, user, version, *, check_only=False):
         raise ValueError('原同步执行权已失效，请重新核对结果')
     try:
         _idle(db, invoice, record['outbound_record_id'])
+        current_inspection = db.query(ShippingInspection).filter_by(outbound_record_id=record['outbound_record_id']).with_for_update().populate_existing().first()
+        current_media = db.query(ShippingInspectionPhoto.id).filter_by(inspection_id=current_inspection.id).with_for_update().all() if current_inspection else []
+        baseline = plan.get('inspection')
+        if (bool(baseline) != bool(current_inspection) or (baseline and
+                (current_inspection.edit_version != baseline['edit_version'] or current_inspection.status != baseline['status']
+                 or {row.id for row in current_media} != set(baseline['media_ids'])))):
+            raise ValueError('验货资料已变化，请重新预览')
         if edit_version(invoice) != plan['invoice_version'] or _read(db, record['outbound_invoice_id']) != plan['before']:
             raise ValueError('发送前订单或出库单发生变化，请重新预览')
         order = remote.read(db, '/v1/invoices/order/info', {'order_id': invoice.xiaoman_order_id})

@@ -1,7 +1,7 @@
 <template>
   <div class="video-list">
     <figure v-for="video in entries" :key="video.id" class="video-entry">
-      <figcaption>{{ caption(video) }}</figcaption>
+      <figcaption>{{ caption(video) }}{{ video.stale ? ' · 旧版本证据，不作本次验货依据' : '' }}</figcaption>
       <video v-if="video.url" :src="video.url" controls preload="metadata" />
       <GlassButton v-else variant="ghost" left-icon="VideoPlay" :loading="video.loading" @click="load(video)">
         {{ video.failed ? '重新加载视频' : '加载视频' }}

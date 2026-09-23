@@ -5,12 +5,14 @@ from app.shipping_inspection.models import ShippingOperationEvent
 
 SCOPE = 'outbound-invoice-sync'
 ACTIVE = ('sync_pending', 'sync_sending', 'sync_uncertain')
+RECHECK = 'recheck_required'
+BLOCKED = ACTIVE + (RECHECK,)
 
 
 def ensure_printable(db, record_id):
     event = db.query(ShippingOperationEvent).filter_by(scope=SCOPE, request_id=str(record_id)).populate_existing().with_for_update().first()
-    if event and event.action in ACTIVE:
-        raise ValueError('出库单正在同步或结果待核对，暂不能打印，请先核对同步结果')
+    if event and (event.action in BLOCKED or (event.result or {}).get('required_recheck_ids')):
+        raise ValueError('出库单正在同步或等待重新验货核对，暂不能打印')
     return event
 
 
@@ -69,8 +71,39 @@ def apply_header(db, record, *, event=None):
 def ensure_inspection_idle(db, record_id, actor):
     # Inspection writers take this same row lock before creating their draft.
     event = lock(db, record_id, actor)
-    if event.action in ACTIVE:
-        raise ValueError('出库单正在同步或结果待核对，请稍后重新扫码')
+    if event.action in BLOCKED:
+        raise ValueError('出库单正在同步或等待重新验货核对，请先处理出库资料')
     from app.shipping_inspection import outbound_service
     if overlay(db, outbound_service.get_outbound_record(db, record_id), event=event):
         raise ValueError('出库单已更新，验货资料正在刷新，请稍后重新扫码')
+
+
+def evidence(db, record_id):
+    event = db.query(ShippingOperationEvent).filter_by(scope=SCOPE, request_id=str(record_id)).first()
+    result = event.result or {} if event else {}
+    return result.get('stale_media_ids', []), result.get('required_recheck_ids', [])
+
+
+def ensure_submission_ready(db, record_id, actor, inspection):
+    event = lock(db, record_id, actor)
+    if event.action in BLOCKED:
+        raise ValueError('出库单资料待同步或重新验货，暂不能提交验货')
+    required = (event.result or {}).get('required_recheck_ids') or []
+    if required:
+        from app.shipping_inspection.models import ShippingInspectionPhoto
+        stale = set((event.result or {}).get('stale_media_ids') or [])
+        photos = db.query(ShippingInspectionPhoto).filter_by(inspection_id=inspection.id, media_type='image').with_for_update().all()
+        fresh = {str(photo.item_id) if photo.item_id is not None else '__whole__'
+                 for photo in photos if photo.id not in stale}
+        needed = set(required)
+        if '__all_items__' in needed:
+            needed.remove('__all_items__')
+            from app.shipping_inspection import outbound_service
+            items = outbound_service.list_outbound_items(db, record_id, use_overlay=False)
+            if not items:
+                raise ValueError('出库明细尚未刷新，请稍后重新验货')
+            needed.update(str(item['item_id']) for item in items)
+        missing = needed - fresh
+        if missing:
+            raise ValueError('变更后的出库明细尚未补拍验货照片，请重新验货后提交')
+    return event

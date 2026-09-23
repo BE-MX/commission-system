@@ -13,7 +13,7 @@ test('preview makes no write; apply blocks double clicks and refreshes only on v
   const calls = []; let release
   const pending = new Promise(resolve => { release = resolve })
   const api = factory(ref, {success: msg => calls.push(msg)}, async () => ({data:preview}),
-    async (id, version, check) => { calls.push([id,version,check]); await pending; return {data:{status:'sync_done',message:'done'}} })(async () => calls.push('refresh'))
+    async (id, version, check, confirm) => { calls.push([id,version,check,confirm]); await pending; return {data:{status:'sync_done',message:'done'}} })(async () => calls.push('refresh'))
   await api.previewSync({...row,record_source:'ark_task'})
   assert.equal(api.syncVisible.value, false)
   await api.previewSync(row)
@@ -21,7 +21,7 @@ test('preview makes no write; apply blocks double clicks and refreshes only on v
   const first = api.applySync(); await api.applySync()
   assert.equal(calls.length, 1)
   release(); await first
-  assert.deepEqual(calls, [['1',preview.version,false], 'done', 'refresh'])
+  assert.deepEqual(calls, [['1',preview.version,false,false], 'done', 'refresh'])
   assert.equal(api.syncVisible.value, false)
   assert.equal(api.syncingId.value, null)
 })
@@ -42,5 +42,25 @@ test('check-only with no accepted operation returns to preview without a write',
     async (id, version, check) => { calls.push(check); return {data:{requires_preview:true}} })(async () => {})
   await api.previewSync(row); await api.applySync()
   assert.deepEqual(calls,[true]); assert.equal(reads,2)
+  assert.equal(api.syncPreview.value.recover, undefined)
+})
+
+test('inspection preview sends explicit recheck confirmation only on the manual action', async () => {
+  const calls = []
+  const api = factory(ref, {success: () => {}}, async () => ({data:{...preview,requires_recheck:true,inspection_status:'draft'}}),
+    async (...args) => { calls.push(args); return {data:{status:'sync_done',message:'done'}} })(async () => {})
+  await api.previewSync(row)
+  assert.deepEqual(calls, [])
+  await api.applySync()
+  assert.deepEqual(calls, [['1', preview.version, false, true]])
+})
+
+test('definitive conflict reloads the inspection preview instead of treating it as an uncertain send', async () => {
+  let reads = 0
+  const api = factory(ref, {}, async () => ({data:{...preview,version:String(++reads).padStart(64,'a')}}),
+    async () => { throw {response:{status:409}} })(async () => {})
+  await api.previewSync(row)
+  await api.applySync()
+  assert.equal(reads, 2)
   assert.equal(api.syncPreview.value.recover, undefined)
 })

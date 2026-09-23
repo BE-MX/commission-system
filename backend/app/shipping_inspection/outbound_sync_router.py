@@ -14,6 +14,7 @@ router = APIRouter()
 class SyncRequest(BaseModel):
     expected_version: str | None = Field(None, min_length=64, max_length=64)
     check_only: bool = False
+    confirm_recheck: bool = False
 
 
 def _record(db, record_id, user):
@@ -40,7 +41,8 @@ def synchronize(record_id: str, body: SyncRequest, db: Session = Depends(get_db)
                 user=Depends(require_permission('shipping_inspection:write')),
                 _sync=Depends(require_permission('invoice:sync'))):
     try:
-        return ok(outbound_sync_service.synchronize(db, _record(db, record_id, user), user, body.expected_version, check_only=body.check_only))
+        return ok(outbound_sync_service.synchronize(db, _record(db, record_id, user), user, body.expected_version,
+                                                    check_only=body.check_only, confirm_recheck=body.confirm_recheck))
     except (ValueError, OkkiApiError) as exc:
         db.rollback()
         raise HTTPException(409, str(exc)) from exc

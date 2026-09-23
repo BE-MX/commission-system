@@ -5,7 +5,7 @@
         :src="photo.url" :preview-src-list="urls" :initial-index="i"
         preview-teleported fit="cover" class="photo-img"
       />
-      <figcaption class="photo-caption">{{ photo.caption }}</figcaption>
+      <figcaption class="photo-caption">{{ photo.caption }}{{ photo.stale ? ' · 旧版本证据，不作本次验货依据' : '' }}</figcaption>
     </figure>
   </div>
   <span v-else-if="photos?.length" class="photos-loading">照片加载中…</span>
@@ -52,7 +52,7 @@ function orderedPhotos() {
     })
     .map(photo => ({
       ...photo,
-      caption: photo.item_id == null ? '整单照片' : (nameOf(photo.item_id) || '整单照片'),
+      caption: photo.item_id == null ? '整单照片' : (nameOf(photo.item_id) || '已删除明细'),
     }))
 }
 

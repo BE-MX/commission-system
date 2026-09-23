@@ -6,6 +6,7 @@ import pytest
 from tests.test_shipping_inspection import _user, _pc_client, _mini_client, _qr, storage, product_display_source
 from app.auth.models import ArkRole, ArkPermission
 from app.shipping_inspection import station_service as station
+from app.shipping_inspection import outbound_sync_state as sync_state
 from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto, ShippingStationSession, ShippingOperationEvent
 
 
@@ -152,6 +153,20 @@ def test_recall_version_and_submit_attribution(db, storage, people):
         result = client.post(f'/api/shipping-inspection/station/sessions/{next_session}/submit', json={'edit_version':1, 'request_id':'resubmit'})
         assert result.status_code == 200
     assert db.get(ShippingInspection, inspection_id).submitted_by == bob.id
+
+
+def test_old_station_submit_receipt_cannot_claim_success_during_outbound_recheck(db, storage, people):
+    login, alice, _ = people
+    with _pc_client(db, login, []) as client:
+        sid = scan(client, alice).json()['data']['session_id']
+        assert photo(client, sid).status_code == 200
+        url = f'/api/shipping-inspection/station/sessions/{sid}/submit'
+        body = {'edit_version': 0, 'request_id': 'submitted-before-order-change'}
+        assert client.post(url, json=body).status_code == 200
+        event = sync_state.lock(db, 'OB001', alice.id)
+        event.action = sync_state.RECHECK
+        db.commit()
+        assert client.post(url, json=body).status_code == 409
 
 
 def test_audit_failure_rolls_back_photo_and_draft(db, storage, people, monkeypatch):

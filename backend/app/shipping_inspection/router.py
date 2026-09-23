@@ -24,7 +24,7 @@ from app.core.database import get_db
 from app.core.response import ok, page_result
 from app.shipping_inspection import constants as C
 from app.shipping_inspection import file_service, outbound_service, outbound_queue_service, qr_service, service
-from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto
+from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto, ShippingOperationEvent
 from app.shipping_inspection.schemas import ShippingRecallRequest
 from app.shipping_inspection.print_customer_service import with_customer_order_info
 from app.shipping_inspection.print_service import with_owner_chinese_name
@@ -159,6 +159,8 @@ def list_outbound_records(
 
     # 检验状态按 outbound_record_id 批量查自有表组装：none=未验 / draft / submitted
     record_ids = [row["outbound_record_id"] for row in rows]
+    sync_events = {event.outbound_record_id: event for event in db.query(ShippingOperationEvent).filter(
+        ShippingOperationEvent.scope == 'outbound-invoice-sync', ShippingOperationEvent.outbound_record_id.in_(record_ids)).all()} if record_ids else {}
     status_map: dict[str, ShippingInspection] = {}
     if record_ids:
         inspections = (
@@ -179,6 +181,10 @@ def list_outbound_records(
         )
     for row in rows:
         insp = status_map.get(row["outbound_record_id"])
+        event = sync_events.get(row["outbound_record_id"])
+        row['recheck_status'] = ('pending_sync' if event and event.action == 'recheck_required'
+                                 else 'pending_inspection' if event and (event.result or {}).get('required_recheck_ids')
+                                 else None)
         row["status"] = insp.status if insp else "none"
         if insp is None:
             row["photo_count"] = 0

@@ -24,7 +24,8 @@ export function useOutboundInvoiceSync(refresh) {
     if (syncingId.value !== null || !syncRow.value || !syncPreview.value) return
     syncingId.value = syncRow.value.outbound_record_id
     try {
-      const response = await syncOutboundInvoice(syncRow.value.outbound_record_id, syncPreview.value.version || null, !!syncPreview.value.recover)
+      const response = await syncOutboundInvoice(syncRow.value.outbound_record_id, syncPreview.value.version || null,
+        !!syncPreview.value.recover, !!syncPreview.value.requires_recheck)
       if (response.data.requires_preview) {
         syncPreview.value = (await previewOutboundInvoiceSync(syncRow.value.outbound_record_id)).data
         return
@@ -36,10 +37,14 @@ export function useOutboundInvoiceSync(refresh) {
       syncVisible.value = false
       ElMessage.success(response.data.message)
       await refresh()
-    } catch {
-      // A network timeout does not prove failure. Reopen preview to recover without a second POST.
-      syncPreview.value = { ...syncPreview.value, recover: true,
-        message: '请求未完成，请重新核对结果。系统会检查上次操作，不会重复发送。' }
+    } catch (error) {
+      if (error?.response?.status === 409) {
+        syncPreview.value = (await previewOutboundInvoiceSync(syncRow.value.outbound_record_id)).data
+      } else {
+        // A network timeout does not prove failure. Reopen preview to recover without a second POST.
+        syncPreview.value = { ...syncPreview.value, recover: true,
+          message: '请求未完成，请重新核对结果。系统会检查上次操作，不会重复发送。' }
+      }
     } finally { syncingId.value = null }
   }
 

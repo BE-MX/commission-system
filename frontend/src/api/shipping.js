@@ -2,7 +2,7 @@
 import { shippingClient } from './clients'
 
 export const previewOutboundInvoiceSync = id => shippingClient.post(`/outbound-records/${encodeURIComponent(id)}/invoice-sync/preview`, {}, { timeout: 180000 })
-export const syncOutboundInvoice = (id, expected_version, check_only = false) => shippingClient.post(`/outbound-records/${encodeURIComponent(id)}/invoice-sync`, { expected_version, check_only }, { timeout: 180000 })
+export const syncOutboundInvoice = (id, expected_version, check_only = false, confirm_recheck = false) => shippingClient.post(`/outbound-records/${encodeURIComponent(id)}/invoice-sync`, { expected_version, check_only, confirm_recheck }, { timeout: 180000 })
 
 // 出库单检验状态（与后端 shipping_inspection 同一套口径）
 export const INSPECTION_STATUS_LABELS = { none: '未检验', draft: '检验中', submitted: '已提交' }

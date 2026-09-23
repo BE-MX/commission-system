@@ -124,6 +124,10 @@ def run(db, invoice, user):
     preview = outbound_sync_service.preview(db, record, user)
     if preview.get('recover'):
         result = outbound_sync_service.synchronize(db, record, user, None, check_only=True)
+    elif preview.get('requires_recheck'):
+        return {'status': 'manual', 'message': '订单已同步；出库单已有验货资料，请到出库单确认“同步并重验”'
+                if preview.get('inspection_status') != 'submitted' else
+                '订单已同步；请先撤回已提交验货单，再到出库单确认“同步并重验”'}
     else:
         result = outbound_sync_service.synchronize(db, record, user, preview['version'])
     if result['status'] == 'sync_done':
