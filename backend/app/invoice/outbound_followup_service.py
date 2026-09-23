@@ -8,7 +8,8 @@ from sqlalchemy.orm import selectinload
 
 from app.invoice import linked_outbound_service
 from app.invoice.linked_sync_service import edit_version
-from app.invoice.models import Invoice, OkkiOutboundTask
+from app.invoice.models import Invoice, InvoiceSyncLog, OkkiOutboundTask
+from app.shipping_inspection.models import ShippingOperationEvent
 from app.receipt import remote
 from app.shipping_inspection import outbound_service, outbound_sync_service
 
@@ -59,6 +60,60 @@ def _stock_shortages(db, order):
     return shortages
 
 
+def _queue_missing_after_sync(db, invoice, task, order, invoice_version):
+    """A fresh successful sync is the durable authorization for one new generation."""
+    from app.invoice.outbound_task_service import has_unbackfilled_custom_lines
+
+    deleted_id = (task.reason or '').removeprefix('deleted:') if task and task.status == 'skipped' else ''
+    if not deleted_id.isdigit():
+        return {'status': 'manual', 'message': '缺少已核实删除的原出库单，请人工核对后处理'}
+    deletion = db.query(ShippingOperationEvent).filter_by(
+        scope='outbound-delete', request_id=deleted_id, action='outbound_deleted').first()
+    if deletion is None:
+        return {'status': 'manual', 'message': '原出库单删除结果未核实，不能自动重建'}
+
+    if has_unbackfilled_custom_lines(db, invoice):
+        return {'status': 'manual', 'message': '非标产品尚未补齐真实产品与SKU，不能自动生成出库单'}
+    latest = (db.query(InvoiceSyncLog).filter_by(invoice_id=invoice.id, success=1)
+              .order_by(InvoiceSyncLog.id.desc()).first())
+    if latest is None:
+        return {'status': 'manual', 'message': '没有成功的订单同步记录，不能重新生成出库单'}
+    if latest.created_at <= deletion.created_at:
+        return {'status': 'manual', 'message': '删除出库单后请重新点击保存并同步，才能生成新单'}
+    fresh_order = remote.read(db, '/v1/invoices/order/info', {'order_id': invoice.xiaoman_order_id})
+    if fresh_order != order:
+        return {'status': 'manual', 'message': '核对期间小满订单发生变化，请重新核对'}
+    current = db.query(Invoice).options(selectinload(Invoice.items)).filter_by(
+        id=invoice.id).populate_existing().with_for_update().one()
+    task = db.query(OkkiOutboundTask).filter_by(invoice_id=invoice.id).populate_existing().with_for_update().first()
+    newest = (db.query(InvoiceSyncLog).filter_by(invoice_id=invoice.id, success=1)
+              .order_by(InvoiceSyncLog.id.desc()).first())
+    if (current.sync_status != 'synced' or str(current.xiaoman_order_id) != str(order['order_id'])
+            or edit_version(current) != invoice_version or newest is None or newest.id != latest.id):
+        return {'status': 'manual', 'message': '核对期间订单发生变化，请重新保存并同步'}
+    if task is None or task.status != 'skipped' or task.reason != f'deleted:{deleted_id}':
+        return {'status': 'manual', 'message': '出库任务状态已变化，请刷新后核对'}
+    current.outbound_auto_requested = 1
+    task.status, task.reason, task.last_error, task.attempts = 'pending', f'regenerate:{latest.id}', None, 0
+    db.commit()
+    return {'status': 'pending', 'message': '已确认小满无关联出库单，正在自动生成新单；请稍后刷新出库列表'}
+
+
+def _refresh_pending_generation(db, invoice, order, invoice_version):
+    current = db.query(Invoice).options(selectinload(Invoice.items)).filter_by(
+        id=invoice.id).populate_existing().with_for_update().one()
+    task = db.query(OkkiOutboundTask).filter_by(invoice_id=invoice.id).populate_existing().with_for_update().one()
+    if (current.sync_status != 'synced' or str(current.xiaoman_order_id) != str(order['order_id'])
+            or edit_version(current) != invoice_version or task.status != 'pending'):
+        return {'status': 'manual', 'message': '核对期间任务或订单发生变化，请刷新后核对'}
+    latest = (db.query(InvoiceSyncLog.id).filter_by(invoice_id=invoice.id, success=1)
+              .order_by(InvoiceSyncLog.id.desc()).first())
+    if latest and (task.reason or '').startswith('regenerate:') and task.reason != f'regenerate:{latest.id}':
+        task.reason = f'regenerate:{latest.id}'
+        db.commit()
+    return {'status': 'pending', 'message': '订单已更新，出库任务将按最新订单及库存核对后生成'}
+
+
 def run(db, invoice, user):
     """Never create an outbound here: the fenced worker owns that operation."""
     if invoice.sync_status != 'synced' or not invoice.xiaoman_order_id:
@@ -76,10 +131,28 @@ def run(db, invoice, user):
     related = linked_outbound_service.find_related(db, order)
     if not related:
         if task and task.status == 'pending':
-            return {'status': 'pending', 'message': '订单已更新，出库任务将按最新订单及库存核对后生成'}
-        if task and task.status == 'skipped' and not (task.reason or '').startswith('existing:'):
+            return (_refresh_pending_generation(db, invoice, order, invoice_version)
+                    if (task.reason or '').startswith('regenerate:') else
+                    {'status': 'pending', 'message': '订单已更新，出库任务将按最新订单及库存核对后生成'})
+        if task and task.status == 'skipped' and not (task.reason or '').startswith('deleted:'):
             return {'status': 'manual', 'message': task.reason or '该订单不自动生成出库单，请人工核对'}
         if task and task.status == 'waiting_stock':
+            generation = (task.reason or '').split(' ', 1)[0] if (task.reason or '').startswith('regenerate:') else ''
+            latest = (db.query(InvoiceSyncLog.id).filter_by(invoice_id=invoice.id, success=1)
+                      .order_by(InvoiceSyncLog.id.desc()).first())
+            if generation and latest and generation != f'regenerate:{latest.id}':
+                current = db.query(Invoice).options(selectinload(Invoice.items)).filter_by(
+                    id=invoice.id).populate_existing().with_for_update().one()
+                task = db.query(OkkiOutboundTask).filter_by(invoice_id=invoice.id).populate_existing().with_for_update().one()
+                newest = (db.query(InvoiceSyncLog.id).filter_by(invoice_id=invoice.id, success=1)
+                          .order_by(InvoiceSyncLog.id.desc()).first())
+                if (current.sync_status != 'synced' or str(current.xiaoman_order_id) != str(order['order_id'])
+                        or edit_version(current) != invoice_version or task.status != 'waiting_stock'
+                        or not (task.reason or '').startswith(generation) or not newest or newest.id != latest.id):
+                    return {'status': 'manual', 'message': '核对期间任务或订单发生变化，请刷新后核对'}
+                task.status, task.reason, task.last_error, task.attempts = 'pending', f'regenerate:{latest.id}', None, 0
+                db.commit()
+                return {'status': 'pending', 'message': '订单已重新同步，出库任务将重新核对最新库存并生成'}
             shortages = _stock_shortages(db, order)
             fresh_order = remote.read(db, '/v1/invoices/order/info', {'order_id': invoice.xiaoman_order_id})
             if fresh_order != order:
@@ -95,8 +168,14 @@ def run(db, invoice, user):
             if task.status != 'waiting_stock':
                 return {'status': 'pending' if task.status in ('pending', 'running') else 'manual',
                         'message': '出库任务状态已变化，请刷新出库列表核对'}
+            generation = (task.reason or '').split(' ', 1)[0] if (task.reason or '').startswith('regenerate:') else ''
+            if generation:
+                latest = (db.query(InvoiceSyncLog.id).filter_by(invoice_id=invoice.id, success=1)
+                          .order_by(InvoiceSyncLog.id.desc()).first())
+                if latest:
+                    generation = f'regenerate:{latest.id}'
             if shortages:
-                task.reason = 'Insufficient warehouse stock'
+                task.reason = (generation + ' ' if generation else '') + 'Insufficient warehouse stock'
                 task.last_error = json.dumps({'outcome': 'waiting_stock', 'order_id': str(order['order_id']),
                                               'reason': task.reason, 'shortages': shortages})
                 db.commit()
@@ -104,11 +183,11 @@ def run(db, invoice, user):
                         'shortages': shortages}
             # Only the fenced worker may create; wake it for a fresh live check.
             task.status = 'pending'
-            task.reason = None
+            task.reason = generation or None
             task.last_error = None
             db.commit()
             return {'status': 'pending', 'message': '订单已更新，当前核查库存已齐；执行端将再次核对并生成出库单'}
-        return {'status': 'manual', 'message': '未找到关联出库单；历史或失败任务不会自动重建，请核对出库任务'}
+        return _queue_missing_after_sync(db, invoice, task, order, invoice_version)
     if len(related) != 1:
         return {'status': 'manual', 'message': '订单关联多张出库单，请分别核对，不能整单覆盖'}
     if 'super_admin' not in user.get('roles', []) and 'shipping_inspection:write' not in user.get('permissions', []):

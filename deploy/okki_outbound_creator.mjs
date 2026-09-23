@@ -74,14 +74,17 @@ function assertSingleOrder(detail, order) {
   }
 }
 
-export async function selectSerial(order, invoiceNo, api) {
+export async function selectSerial(order, invoiceNo, api, {regeneration = false} = {}) {
   for (const serial of [invoiceNo, `${invoiceNo} [${order.order_id}]`]) {
     const detail = await api('/v1/invoices/outbound/info?' + new URLSearchParams({serial_id: serial}));
     if (detail === null) return {serial};
     if (!detail?.outbound_invoice_id || detail.serial_id !== serial || !Array.isArray(detail.record_list)) throw new Error('Invalid serial lookup response');
     if (detail.record_list.some(r => String(r.order_id) === String(order.order_id))) {
       assertSingleOrder(detail, order);
-      return {existing: {outbound_invoice_id: detail.outbound_invoice_id, serial_id: serial}};
+      if (!regeneration) return {existing: {outbound_invoice_id: detail.outbound_invoice_id, serial_id: serial}};
+      // A soft-deleted detail can still resolve by serial even though the
+      // active list has proved that it is no longer an outbound.
+      continue;
     }
   }
   throw new Error('Outbound serial collision; no submission attempted');
@@ -169,7 +172,7 @@ export async function createOne(orderId, options) {
   }
 }
 
-async function createOneAttempt(orderId, {api, directory, invoiceNo, invoiceRemark, dryRun = false, knownIds = []}) {
+async function createOneAttempt(orderId, {api, directory, invoiceNo, invoiceRemark, dryRun = false, knownIds = [], beforeSubmit, regeneration = false}) {
   if (!/^\d+$/.test(orderId)) throw new Error('Invalid order ID');
   const order = await api('/v1/invoices/order/info?order_id=' + orderId);
   if (String(order.order_id) !== orderId) throw new Error('Order ID mismatch');
@@ -181,7 +184,7 @@ async function createOneAttempt(orderId, {api, directory, invoiceNo, invoiceRema
     if (records.some(r => String(r.order_id) === orderId)) throw Object.assign(new Error('Local ledger exists but no live association; manual review required'), {uncertain: true});
   }
   const payload = buildPayload(order, invoiceNo, invoiceRemark);
-  const selection = await selectSerial(order, invoiceNo, api);
+  const selection = await selectSerial(order, invoiceNo, api, {regeneration});
   if (selection.existing) return recoverExisting(selection.existing, order, {api, directory, invoiceNo, invoiceRemark});
   payload.serial_id = selection.serial;
   const intents = path.join(directory, 'logs', 'ark-outbound-intents');
@@ -197,6 +200,7 @@ async function createOneAttempt(orderId, {api, directory, invoiceNo, invoiceRema
     if (shortages.length) return {outcome: 'waiting_stock', order_id: orderId, reason: 'Insufficient warehouse stock', shortages};
   }
   if (dryRun) return { outcome: 'dry_run', order_id: orderId, serial_id: payload.serial_id, items: payload.record_list.length, quantity: payload.record_list.reduce((n, r) => n + r.outbound_count, 0) };
+  if (beforeSubmit) await beforeSubmit(order);
   fs.mkdirSync(intents, {recursive: true, mode: 0o700});
   let fd;
   try { fd = fs.openSync(intent, 'wx', 0o600); }
@@ -264,23 +268,68 @@ export async function loadInvoiceForOrder(conn, orderId) {
   return {invoiceNo: invoices[0].invoice_no, invoiceRemark: invoices[0].remark};
 }
 
+export function regenerationDirectory(root, generation) {
+  if (!/^[1-9]\d*$/.test(String(generation))) throw new Error('Invalid regeneration sync log ID');
+  return path.join(root, 'logs', 'ark-outbound-regenerations', 'sync-' + generation);
+}
+
+export function assertRegenerationTask(task, generation) {
+  if (!/^[1-9]\d*$/.test(String(generation)) || task?.status !== 'running' ||
+      String(task.reason || '').split(' ', 1)[0] !== 'regenerate:' + generation ||
+      !/^regenerate:[1-9]\d*(?:\s|$)/.test(String(task.reason || '')) ||
+      String(task.latest_sync_log_id) !== String(generation) || task.sync_status !== 'synced' ||
+      task.linked_sync_id) throw new Error('Regeneration task or successful sync changed; no creation attempted');
+}
+
 async function main() {
-  const directory = process.env.OUTBOUND_SCRIPT_DIR || path.dirname(fileURLToPath(import.meta.url));
+  const root = process.env.OUTBOUND_SCRIPT_DIR || path.dirname(fileURLToPath(import.meta.url));
   const {OkkiAuth, OKKI_CONFIG} = await import('./auth.js');
   const auth = new OkkiAuth();
   const api = (route, payload) => requestOkki(auth, OKKI_CONFIG.baseUrl, route, payload);
   const mysql = await import('mysql2/promise');
   const conn = await mysql.createConnection({host: process.env.ARK_DB_HOST, port: Number(process.env.ARK_DB_PORT || 3306),
     user: process.env.ARK_DB_USER, password: process.env.ARK_DB_PASSWORD, database: process.env.ARK_DB_NAME});
-  let knownIds, invoice;
+  let knownIds, invoice, generation;
   try {
     const schema = process.env.ARK_BUSINESS_DB_NAME;
     if (!/^[A-Za-z0-9_]+$/.test(schema || '')) throw new Error('Invalid business schema');
     const [rows] = await conn.query(`SELECT DISTINCT outbound_invoice_id FROM \`${schema}\`.okki_outbound_record_items WHERE order_id=?`, [process.argv[2]]);
     knownIds = rows.map(row => String(row.outbound_invoice_id));
     invoice = await loadInvoiceForOrder(conn, process.argv[2]);
+    const [[task]] = await conn.query(
+      `SELECT t.status, t.reason, i.sync_status, i.linked_sync_id,
+              (SELECT MAX(id) FROM ark_invoice_sync_logs WHERE invoice_id=i.id AND success=1) AS latest_sync_log_id
+         FROM ark_okki_outbound_tasks t JOIN ark_invoices i ON i.id=t.invoice_id WHERE t.order_id=?`,
+      [process.argv[2]]);
+    const argument = process.argv.find(value => value.startsWith('--regeneration-sync-log='));
+    if (argument) {
+      generation = argument.slice('--regeneration-sync-log='.length);
+      assertRegenerationTask(task, generation);
+      // Mirror details of a soft-deleted document remain readable by ID.
+      // Only the complete active list can prove whether an outbound exists.
+      knownIds = [];
+    } else if (String(task?.reason || '').startsWith('regenerate:')) {
+      throw new Error('Regeneration generation missing; no creation attempted');
+    }
   } finally { await conn.end(); }
-  const result = await createOne(process.argv[2], {api, directory, ...invoice, knownIds, dryRun: !process.argv.includes('--run')});
+  const directory = generation ? regenerationDirectory(root, generation) : root;
+  if (generation) fs.mkdirSync(path.join(directory, 'logs'), {recursive: true, mode: 0o700});
+  const beforeSubmit = generation ? async original => {
+    const fresh = await api('/v1/invoices/order/info?order_id=' + process.argv[2]);
+    if (JSON.stringify(fresh) !== JSON.stringify(original)) throw new Error('Order changed during regeneration; no submission attempted');
+    const check = await mysql.createConnection({host: process.env.ARK_DB_HOST, port: Number(process.env.ARK_DB_PORT || 3306),
+      user: process.env.ARK_DB_USER, password: process.env.ARK_DB_PASSWORD, database: process.env.ARK_DB_NAME});
+    try {
+      const [[current]] = await check.query(
+        `SELECT t.status, t.reason, i.sync_status, i.linked_sync_id,
+                (SELECT MAX(id) FROM ark_invoice_sync_logs WHERE invoice_id=i.id AND success=1) AS latest_sync_log_id
+           FROM ark_okki_outbound_tasks t JOIN ark_invoices i ON i.id=t.invoice_id WHERE t.order_id=?`,
+        [process.argv[2]]);
+      assertRegenerationTask(current, generation);
+    } finally { await check.end(); }
+  } : undefined;
+  const result = await createOne(process.argv[2], {api, directory, ...invoice, knownIds,
+    dryRun: !process.argv.includes('--run'), beforeSubmit, regeneration: Boolean(generation)});
   console.log('ARK_OUTBOUND_RESULT=' + JSON.stringify(result));
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
