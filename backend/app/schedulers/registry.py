@@ -277,7 +277,7 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     scheduler.add_job(send_battle_posters_job, trigger="cron", hour=13, minute="0,5,15",
                       timezone="Asia/Shanghai", id=JOB_BATTLE_POSTERS_NOON, replace_existing=True,
                       max_instances=1, coalesce=True, misfire_grace_time=60)
-    scheduler.add_job(send_battle_posters_job, trigger="cron", hour=17, minute="0,5,15",
+    scheduler.add_job(send_battle_posters_job, trigger="cron", hour=17, minute="1,6,16",
                       timezone="Asia/Shanghai", id=JOB_BATTLE_POSTERS_AFTERNOON, replace_existing=True,
                       max_instances=1, coalesce=True, misfire_grace_time=60)
 

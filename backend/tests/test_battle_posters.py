@@ -35,6 +35,20 @@ def test_calendar_boundaries(stamp, completed, percent):
     assert (result["completed"], result["percent"]) == (completed, percent)
 
 
+@pytest.mark.parametrize("stamp,slot", [
+    ("2026-09-22T13:00:00+08:00", "13:00"),
+    ("2026-09-22T13:05:00+08:00", "13:00"),
+    ("2026-09-22T17:00:00+08:00", None),
+    ("2026-09-22T17:01:00+08:00", "17:01"),
+    ("2026-09-22T09:01:00+00:00", "17:01"),
+    ("2026-09-22T17:06:00+08:00", "17:01"),
+    ("2026-09-22T17:16:00+08:00", "17:01"),
+    ("2026-09-22T17:05:00+08:00", None),
+])
+def test_poster_due_slot_uses_beijing_time(stamp, slot):
+    assert poster_delivery.due_slot(datetime.fromisoformat(stamp)) == slot
+
+
 @pytest.mark.parametrize("gmv,expected", [("1666.01", True), ("1666", False), ("1665.99", False)])
 def test_compare_without_rounded_percentage(gmv, expected):
     row = {"gmv": gmv, "target": "10000", "progress_percent": 16.7}
@@ -101,7 +115,9 @@ def test_admin_preview_same_snapshot_no_delivery(posters, monkeypatch):
 
 def test_calendar_config_validation_and_stale_version(posters):
     s = posters
-    assert s.client.get(s.url+"/poster-config").json()["data"]["work_dates"] == pace.SEPTEMBER_WORK_DATES
+    config = s.client.get(s.url+"/poster-config").json()["data"]
+    assert config["work_dates"] == pace.SEPTEMBER_WORK_DATES
+    assert config["send_times"] == ["13:00", "17:01"]
     body = {"version": s.report_obj.version, "work_dates": ["2026-10-01"], "push_enabled": False}
     assert s.client.put(s.url+"/poster-config", json=body).status_code == 422
     body["work_dates"] = ["2026-09-22", "2026-09-22"]
@@ -120,6 +136,21 @@ def test_two_images_once_across_retries_and_same_snapshot(posters, monkeypatch):
     assert s.db.query(BattleReportDelivery).count() == 1
     frozen = s.db.query(BattleReportDelivery).one().snapshot
     assert frozen["summary"]["gmv"] == "90.90"
+
+
+def test_afternoon_release_reuses_old_1700_delivery(posters, monkeypatch):
+    s = posters; enable(s); mock_render(monkeypatch)
+    now = datetime(2026, 9, 22, 17, 1)
+    first = poster_delivery.send_slot(s.db, s.report_obj.id, now, s.sender)
+    assert all(v["status"] == "sent" for v in first["deliveries"].values())
+    row = s.db.query(BattleReportDelivery).one()
+    row.slot = "17:00"
+    s.db.commit()
+
+    poster_delivery.send_slot(s.db, s.report_obj.id, now.replace(minute=6), s.sender)
+    assert s.db.query(BattleReportDelivery).count() == 1
+    assert s.db.query(BattleReportDelivery).one().slot == "17:00"
+    assert s.sender.send_markdown.call_count == 2
 
 
 def test_only_definitively_failed_image_retries(posters, monkeypatch):

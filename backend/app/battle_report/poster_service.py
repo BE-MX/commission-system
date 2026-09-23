@@ -30,7 +30,7 @@ def get_config(db, report_id, user):
     logs = db.query(BattleReportDelivery).filter_by(report_id=report_id).order_by(BattleReportDelivery.id.desc()).limit(10).all()
     return {"version": report.version, "work_dates": work_dates(report),
             "push_enabled": bool(report.poster_push_enabled), "push_ready": bool(push_ready(settings)),
-            "group_name": settings.BATTLE_REPORT_GROUP_NAME, "send_times": ["13:00", "17:00"],
+            "group_name": settings.BATTLE_REPORT_GROUP_NAME, "send_times": ["13:00", "17:01"],
             "history": [{"id": row.id, "date": row.report_date.isoformat(), "slot": row.slot,
                          "deliveries": row.deliveries, "calculated_at": row.snapshot["calculated_at"]} for row in logs]}
 
