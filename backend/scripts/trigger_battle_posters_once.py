@@ -1,6 +1,6 @@
 """One-off battle-poster push. Paste onto production and run from backend/.
 
-Works with old (17:30) or new (17:00) due_slot — forces the requested slot.
+Forces the requested slot independently of the 13:00/17:01 schedule.
   .venv\\Scripts\\python.exe scripts\\trigger_battle_posters_once.py
 """
 from __future__ import annotations
@@ -20,7 +20,7 @@ from app.core.time import beijing_now, to_beijing_naive
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--slot", default="17:30", help="slot label to deliver, e.g. 17:30 or 17:00")
+    parser.add_argument("--slot", default="17:01", help="slot label to deliver, e.g. 17:01 or 13:00")
     parser.add_argument("--redo", action="store_true", help="reset sent/uncertain to failed so this slot resends")
     args = parser.parse_args()
     slot = args.slot
@@ -49,10 +49,11 @@ def main() -> int:
         print(f"reports={ids} slot={slot} date={now.date()}")
         if args.redo:
             from app.battle_report.models import BattleReportDelivery
+            slots = ("17:01", "17:00") if slot == "17:01" else (slot,)
             for row in db.query(BattleReportDelivery).filter(
                 BattleReportDelivery.report_id.in_(ids),
                 BattleReportDelivery.report_date == now.date(),
-                BattleReportDelivery.slot == slot,
+                BattleReportDelivery.slot.in_(slots),
             ).all():
                 states = {k: {**v, "status": "failed", "attempts": 0} for k, v in row.deliveries.items()}
                 row.deliveries = states

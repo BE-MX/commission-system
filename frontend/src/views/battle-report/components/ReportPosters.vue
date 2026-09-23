@@ -10,7 +10,7 @@
           <p class="poster-help">共 {{ dates?.length || 0 }} 个工作日，每个工作日北京时间 16:00 累计 {{ dailyStep }} 个百分点，最后一天达到 100%。完成率严格高于时间进度为绿色，相等或落后为红色。</p>
           <el-form-item label="钉钉群定时推送">
             <el-switch v-model="enabled" :disabled="!config.push_ready || report.visibility !== 'activity'" />
-            <span class="poster-switch-label">活动周期内每天 13:00、17:00 各推送团队和个人海报至「{{ config.group_name }}」</span>
+            <span class="poster-switch-label">活动周期内每天 {{ config.send_times.join('、') }} 各推送团队和个人海报至「{{ config.group_name }}」</span>
           </el-form-item>
           <el-alert v-if="!config.push_ready" type="warning" :closable="false" title="尚未配置战报专用群机器人及公网海报地址，当前可预览下载，不能开启自动推送。" />
           <el-alert v-else-if="report.visibility !== 'activity'" type="warning" :closable="false" title="群海报展示全部参与人；须将战报可见范围设为全活动后才能启用推送。" />

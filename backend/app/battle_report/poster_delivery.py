@@ -25,8 +25,8 @@ def due_slot(now):
     now = to_beijing_naive(now)
     if now.hour == 13 and now.minute in (0, 5, 15):
         return "13:00"
-    if now.hour == 17 and now.minute in (0, 5, 15):
-        return "17:00"
+    if now.hour == 17 and now.minute in (1, 6, 16):
+        return "17:01"
     return None
 
 
@@ -92,6 +92,10 @@ def send_slot(db, report_id, now=None, sender=None):
         settings = get_settings()
         destination = sha256(settings.BATTLE_REPORT_WEBHOOK_URL.encode()).hexdigest()
         delivery = db.query(BattleReportDelivery).filter_by(report_id=report_id, report_date=now.date(), slot=slot).first()
+        if delivery is None and slot == "17:01":
+            # A release after the old 17:00 run must reuse its delivery instead of sending both posters again.
+            delivery = db.query(BattleReportDelivery).filter_by(
+                report_id=report_id, report_date=now.date(), slot="17:00").first()
         if delivery is None:
             members = db.query(BattleReportMember).filter_by(report_id=report_id).order_by(BattleReportMember.id).all()
             delivery = BattleReportDelivery(report_id=report_id, report_date=now.date(), slot=slot,
