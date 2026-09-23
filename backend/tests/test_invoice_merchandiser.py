@@ -80,7 +80,7 @@ def test_previous_invoice_no_scoped_by_salesperson_and_type(db):
     assert service.previous_invoice_no(db, None, "stock") is None
 
 
-def test_migration_165_adds_nullable_merchandiser_columns():
+def test_migration_167_adds_nullable_merchandiser_columns():
     import importlib.util
     from pathlib import Path
 
@@ -90,7 +90,7 @@ def test_migration_165_adds_nullable_merchandiser_columns():
     from alembic.script import ScriptDirectory
     from sqlalchemy import create_engine, text
 
-    path = Path(__file__).resolve().parents[1] / "alembic/versions/165_invoice_merchandiser.py"
+    path = Path(__file__).resolve().parents[1] / "alembic/versions/167_invoice_merchandiser.py"
     spec = importlib.util.spec_from_file_location("merchandiser_migration", path)
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
