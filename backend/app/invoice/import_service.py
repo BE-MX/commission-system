@@ -97,10 +97,11 @@ def preview_import(
     product_ids = {int(hit["product_id"]) for hits in hits_by_row for hit in hits}
     sku_map = _load_sku_map(db, product_ids)
     stock_warnings = product_service.load_stock_warnings(db, product_ids)
+    available_stocks = product_service.load_available_stocks(db, product_ids)
     pricing_context = _load_pricing_context(db, customer_id=str(customer_id))
     valid_results = iter([
         _apply_pricing(
-            _build_match_result(row, hits, sku_map, order_type, stock_warnings),
+            _build_match_result(row, hits, sku_map, order_type, stock_warnings, available_stocks),
             pricing_context,
             str(currency).upper(),
         )
@@ -245,7 +246,7 @@ def _product_key(row: Mapping[str, object]) -> tuple[str, str, str, str]:
     )
 
 
-def _build_match_result(row: dict, hits: list[dict], sku_map: dict[int, list[int]], order_type: str, stock_warnings: dict | None = None) -> dict:
+def _build_match_result(row: dict, hits: list[dict], sku_map: dict[int, list[int]], order_type: str, stock_warnings: dict | None = None, available_stocks: dict | None = None) -> dict:
     number_conflict = any(hit.get("_product_no_conflict") for hit in hits)
     number_missing = any(hit.get("_product_no_missing") for hit in hits)
     candidates = []
@@ -269,6 +270,9 @@ def _build_match_result(row: dict, hits: list[dict], sku_map: dict[int, list[int
     for candidate in candidates:
         candidate["stock_warning"] = (stock_warnings or {}).get(
             (candidate["product_id"], candidate["sku_id"]), "",
+        )
+        candidate["available_stock"] = (available_stocks or {}).get(
+            (candidate["product_id"], candidate["sku_id"]),
         )
     matched = candidates[0] if len(candidates) == 1 else None
     errors: list[str] = []

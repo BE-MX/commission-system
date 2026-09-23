@@ -13,6 +13,7 @@ import {
   handlingFeeRate,
   normalizeDiscount,
   settlementMatchesTotal,
+  splitDiscountCents,
 } from '../src/views/invoice/composables/invoiceSettlement.js'
 
 const invoiceView = readFileSync(
@@ -27,6 +28,10 @@ const settlementFields = readFileSync(
   new URL('../src/views/invoice/components/InvoiceSettlementFields.vue', import.meta.url),
   'utf8',
 )
+const summaryCard = readFileSync(
+  new URL('../src/views/invoice/components/InvoiceSummaryCard.vue', import.meta.url),
+  'utf8',
+)
 const hairTable = readFileSync(
   new URL('../src/views/invoice/components/InvoiceHairTable.vue', import.meta.url),
   'utf8',
@@ -37,21 +42,27 @@ const totalsFooter = readFileSync(
 )
 
 test('settlement and accessory numeric controls fill their bounded containers', () => {
-  assert.match(settlementFields, /\.head-grid :deep\(\.el-input-number\)[^}]*width:\s*100%/s)
+  assert.match(settlementFields, /\.sgrid :deep\(\.el-input-number\)[^}]*width:\s*100%/s)
+  // 预付款/包装数量/包装费用/运费/手续费/折扣（总折扣均分录入框）
   const numericControls = settlementFields.match(/<el-input-number\b/g) || []
-  assert.equal(numericControls.length, 5)
+  assert.equal(numericControls.length, 6)
 })
 
 test('settlement options use the approved fixed values', () => {
-  // 3 个店铺信保各拆便捷发货/报关，共 8 项
+  // 3 个店铺信保各拆便捷发货/报关（8 项）+ 现金/支付宝/微信/对公转账（莱莎/旭和）（2026-09-23 增补）
   assert.deepEqual(PAYMENT_METHOD_OPTIONS, [
     'PayPal',
     '大莱莎信保（便捷发货）', '大莱莎信保（报关）',
     '小莱莎信保（便捷发货）', '小莱莎信保（报关）',
     '新莱莎信保（便捷发货）', '新莱莎信保（报关）',
     'TT',
+    '现金', '支付宝', '微信', '对公转账（莱莎）', '对公转账（旭和）',
   ])
-  assert.deepEqual(EXPRESS_CHANNEL_OPTIONS, ['DHL', 'FEDEX', '其他'])
+  assert.deepEqual(EXPRESS_CHANNEL_OPTIONS, ['DHL', 'FEDEX', '顺丰', '其他快递'])
+  // 新增付款方式均无自动费率：手续费手填
+  for (const method of ['现金', '支付宝', '微信', '对公转账（莱莎）', '对公转账（旭和）']) {
+    assert.equal(handlingFeeRate(method), null)
+  }
 })
 
 test('handling fee rate: paypal 5%, 便捷发货 3%, TT 0, 报关/未选 manual', () => {
@@ -141,36 +152,61 @@ test('settlement validation rejects missing, excessive, and mismatched amounts',
   assert.equal(settlementMatchesTotal(100, 30, null), false)
 })
 
-test('fee settlement is always visible before product details and exposes derived balance', () => {
-  const settlementIndex = invoiceView.indexOf('<InvoiceSettlementFields')
-  const productIndex = invoiceView.indexOf('<InvoiceHairTable')
-  assert.ok(settlementIndex >= 0 && settlementIndex < productIndex)
+test('settlement inputs live in the side pane; derived amounts moved to the summary card', () => {
+  const sideStart = invoiceView.indexOf('<aside class="pane pane-side">')
+  assert.ok(sideStart >= 0)
+  const sidePane = invoiceView.slice(sideStart)
+  assert.ok(sidePane.includes('<InvoiceSummaryCard'), 'summary card should sit in the side pane')
+  assert.ok(sidePane.includes('<InvoiceSettlementFields'), 'settlement inputs should sit in the side pane')
+  assert.ok(sidePane.includes('<InvoiceReceiptFields'), 'receipt card should sit in the side pane')
   assert.doesNotMatch(invoiceView, /<el-collapse[^>]*class="internal-collapse"/)
   assert.match(settlementFields, /<el-select v-model="form\.internal_payment_method"/)
-  assert.match(settlementFields, /<el-select v-model="form\.express_channel"/)
   assert.match(settlementFields, /label="预付款"/)
   assert.match(settlementFields, /label="尾款"/)
   assert.match(settlementFields, /根据订单总额与预付款自动计算/)
-  assert.match(settlementFields, /label="头发金额"[\s\S]*readonly[\s\S]*Hair Price/)
-  assert.match(settlementFields, /label="头发折扣"/)
-  assert.match(settlementFields, /label="配件金额"/)
-  assert.match(settlementFields, /label="配件折扣"/)
-  assert.doesNotMatch(invoiceView, /v-model="form\.internal_discount"/)
   assert.match(settlementFields, /label="包装费用"/)
   assert.match(settlementFields, /label="手续费"/)
-  assert.doesNotMatch(invoiceView, /label="[^\"]+（(?:Hair Price|Discount|Packaging|Shipping Fee|Handling Fee)）"/)
+  // 快递渠道移到底部「物流与备注」卡：必填横向单选，不再出现在结算卡
+  assert.doesNotMatch(settlementFields, /express_channel/)
+  assert.match(invoiceView, /<el-radio-group v-model="form\.express_channel"/)
+  // 总折扣录入框：默认=产品行折扣合计，手改后均分到产品行
+  assert.match(settlementFields, /label="折扣"/)
+  assert.match(settlementFields, /:model-value="totalDiscount"/)
+  assert.match(settlementFields, /@change="onTotalDiscountChange"/)
+  assert.match(invoiceView, /:total-discount="formHairDiscountAbs"/)
+  assert.match(invoiceView, /:on-total-discount-change="applyTotalDiscount"/)
+  // 只读推导金额不再伪装成输入框，集中展示在金额汇总卡
+  assert.doesNotMatch(settlementFields, /label="头发金额"|label="头发折扣"|label="配件金额"|label="配件折扣"/)
+  assert.match(summaryCard, /头发金额/)
+  assert.match(summaryCard, /头发折扣/)
+  assert.match(summaryCard, /配件金额/)
+  assert.match(summaryCard, /配件折扣/)
+  assert.match(invoiceView, /:hair-amount="formHairPrice"/)
+  assert.doesNotMatch(invoiceView, /v-model="form\.internal_discount"/)
+  assert.doesNotMatch(invoiceView, /label="[^"]+（(?:Hair Price|Discount|Packaging|Shipping Fee|Handling Fee)）"/)
 })
 
-test('order section only contains the approved five fields', () => {
-  const start = invoiceView.indexOf('<div class="col-title">订单信息</div>')
-  const end = invoiceView.indexOf('<div class="col-title">费用与结算信息</div>')
+test('order subsection only contains the approved fields', () => {
+  const start = invoiceView.indexOf('<div class="subdiv">订单信息</div>')
+  const end = invoiceView.indexOf('<InvoiceHairTable', start)
   const orderSection = invoiceView.slice(start, end)
-  assert.match(orderSection, /label="发票号"/)
-  assert.match(orderSection, /label="日期"/)
+  assert.match(orderSection, /label="订单号\/发票号"/)
+  assert.match(orderSection, /label="下单日期"/)
   assert.match(orderSection, /label="币种"/)
   assert.match(orderSection, /label="小满标记"[^>]*required/)
-  assert.match(orderSection, /label="备注"/)
-  assert.doesNotMatch(orderSection, /label="快递渠道"|label="运费"|label="附加费"|label="付款条款"/)
+  // 备注移到底部「物流与备注」卡
+  assert.doesNotMatch(orderSection, /label="快递渠道"|label="运费"|label="附加费"|label="付款条款"|label="备注"/)
+})
+
+test('total discount splits evenly across lines with the remainder on the last line', () => {
+  assert.deepEqual(splitDiscountCents(1000, 3), [333, 333, 334])
+  assert.deepEqual(splitDiscountCents(500, 2), [250, 250])
+  assert.deepEqual(splitDiscountCents(0, 3), [0, 0, 0])
+  assert.deepEqual(splitDiscountCents(100, 0), [])
+  // 负数输入按绝对值处理（折扣内部存负值，录入框用正数）
+  assert.deepEqual(splitDiscountCents(-999, 2), [499, 500])
+  assert.match(invoiceEditor, /function applyTotalDiscount/)
+  assert.match(invoiceEditor, /没有可分摊折扣的产品行/)
 })
 
 test('product discount precedes TotalPrice and packaging quantity precedes its fee', () => {
@@ -182,11 +218,14 @@ test('product discount precedes TotalPrice and packaging quantity precedes its f
   const packagingFeeIndex = settlementFields.indexOf('label="包装费用"')
   assert.ok(packagingQuantityIndex >= 0 && packagingQuantityIndex < packagingFeeIndex)
 
-  const footer = totalsFooter
   for (const label of ['头发金额', '头发折扣', '配件金额', '配件折扣', '包装费用', '运费', '手续费']) {
-    assert.ok(footer.includes(label), `${label} should appear in the footer`)
+    assert.ok(summaryCard.includes(label), `${label} should appear in the summary card`)
   }
-  assert.doesNotMatch(footer, /Hair Price|Line Discount|Packaging|Shipping Fee|Handling Fee/)
+  assert.doesNotMatch(summaryCard, /Hair Price|Line Discount|Packaging|Shipping Fee|Handling Fee/)
+  // 页脚只留合计口径：订单总金额 · 手续费 → 应付合计
+  for (const label of ['订单总金额', '手续费', '应付合计']) {
+    assert.ok(totalsFooter.includes(label), `${label} should stay in the footer`)
+  }
 })
 
 test('new invoices take the salesperson snapshot from the selected assignee', () => {

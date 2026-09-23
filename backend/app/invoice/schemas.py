@@ -237,6 +237,8 @@ class _InvoiceHeaderPayload(BaseModel):
     sales_user_name: Optional[str] = Field(None, max_length=100)
     sales_phone: Optional[str] = Field(None, max_length=100)
     sales_email: Optional[str] = Field(None, max_length=256)
+    # 指定跟单员（仅传 ID；姓名快照由服务端按 ark_users 回填，不信客户端文本）
+    merchandiser_id: Optional[int] = Field(None, gt=0)
     invoice_date: date
     currency: str = Field(default="USD", pattern="^[A-Z]{3}$")
     express_channel: Optional[str] = Field(None, max_length=64)

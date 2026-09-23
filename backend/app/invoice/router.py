@@ -790,6 +790,25 @@ def check_invoice_no(
     return ok({"available": not service.invoice_no_exists(db, invoice_no.strip(), exclude_id=exclude_id)})
 
 
+@router.get("/invoices/previous-no", summary="Previous invoice number of the same salesperson and order type")
+def previous_invoice_no(
+    sales_user_id: int = Query(..., gt=0),
+    order_type: str = Query(..., pattern="^(stock|production)$"),
+    exclude_id: int | None = Query(None, description="编辑既有发票时排除自身"),
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("invoice:write")),
+):
+    return ok({"previous_invoice_no": service.previous_invoice_no(db, sales_user_id, order_type, exclude_id=exclude_id)})
+
+
+@router.get("/invoices/merchandiser-options", summary="Active users with the 跟单员 role")
+def merchandiser_options(
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("invoice:write")),
+):
+    return ok({"items": delegation_service.list_merchandisers(db)})
+
+
 def _write_invoice_or_400(db: Session, write):
     """执行发票写入（service 调用 + commit），业务校验失败与唯一约束竞态统一转 400。
 

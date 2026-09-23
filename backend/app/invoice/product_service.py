@@ -333,12 +333,39 @@ def match_product(
 
     matches = [_map_product_row(row) for row in rows]
     stock_warnings = load_stock_warnings(db, {item["product_id"] for item in matches})
+    available_stocks = load_available_stocks(db, {item["product_id"] for item in matches})
     for item in matches:
         item["stock_warning"] = stock_warnings.get((item["product_id"], item["sku_id"]), "")
+        item["available_stock"] = available_stocks.get((item["product_id"], item["sku_id"]))
     return {
         "is_unique": len(matches) == 1,
         "item": matches[0] if len(matches) == 1 else None,
         "matches": matches,
+    }
+
+
+def load_available_stocks(db: Session, product_ids: set[int]) -> dict[tuple[int, int], float]:
+    """可用库存（小满 enable_count）按 (product_id, sku_id) 汇总；仅展示，不参与匹配判定。"""
+    if not product_ids:
+        return {}
+    columns = _table_columns(db, "okki_inventory")
+    if not {"product_id", "sku_id", "enable_count"}.issubset(columns):
+        return {}
+    schema = _schema()
+    statement = text(f"""
+        SELECT s.product_id, s.sku_id, SUM(i.enable_count) AS enable_count
+        FROM `{schema}`.okki_product_skus s
+        LEFT JOIN `{schema}`.okki_inventory i
+          ON i.product_id = s.product_id AND i.sku_id = s.sku_id
+          AND {_disable_filter("okki_inventory", columns, alias="i")}
+        WHERE s.product_id IN :product_ids
+        GROUP BY s.product_id, s.sku_id
+    """).bindparams(bindparam("product_ids", expanding=True))
+    rows = db.execute(statement, {"product_ids": sorted(product_ids)}).mappings().all()
+    return {
+        (int(row["product_id"]), int(row["sku_id"])): float(row["enable_count"])
+        for row in rows
+        if row["sku_id"] is not None and row["enable_count"] is not None
     }
 
 

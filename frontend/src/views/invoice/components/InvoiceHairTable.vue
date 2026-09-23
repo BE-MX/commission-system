@@ -1,20 +1,16 @@
 <template>
   <section class="invoice-hair-table">
     <div class="line-header">
-      <div>
-        <strong>产品明细</strong>
-        <span v-if="isProduction">生产单：关键词下拉可选可输，已有属性直接选，没有就按输入沉淀新产品。</span>
-        <span v-else>四个关键词选择完整后自动匹配唯一 Product_name。</span>
+      <div class="line-title">
+        <span class="step">2</span><strong>产品明细</strong>
+        <span v-if="isProduction" class="line-hint">生产单：关键词下拉可选可输，已有属性直接选，没有就按输入沉淀新产品。</span>
+        <span v-else class="line-hint">四个关键词选择完整后自动匹配唯一 Product_name。</span>
       </div>
       <div class="line-header-actions">
-        <el-tooltip :disabled="canPasteImport" :content="pasteImportDisabledReason">
-          <span>
-            <el-button v-permission="'invoice:write'" :disabled="!canPasteImport" @click="$emit('paste')">
-              <el-icon><DocumentCopy /></el-icon>
-              从 Excel 粘贴
-            </el-button>
-          </span>
-        </el-tooltip>
+        <el-button link type="primary" @click="collapseSpecs = !collapseSpecs">
+          <el-icon><component :is="collapseSpecs ? ArrowDown : ArrowUp" /></el-icon>
+          {{ collapseSpecs ? '展开规格列' : '收起规格列' }}
+        </el-button>
         <el-button link type="primary" @click="showOptionalCols = !showOptionalCols">
           <el-icon><component :is="showOptionalCols ? ArrowUp : ArrowDown" /></el-icon>
           {{ showOptionalCols ? '收起选填列' : '展开选填列' }}
@@ -24,8 +20,8 @@
       </div>
     </div>
     <div class="line-table-wrap">
-      <el-table :data="items" border class="list-table line-table">
-        <el-table-column label="#" type="index" min-width="48" max-width="60" fixed />
+      <el-table :data="pagedItems" border class="list-table line-table" max-height="560">
+        <el-table-column label="#" type="index" :index="indexBase" min-width="48" max-width="60" fixed />
         <el-table-column v-if="isProduction" label="Product" min-width="190" max-width="260">
           <template #default="{ row }">
             <el-select v-model="row.product_display" filterable allow-create default-first-option placeholder="系列描述，可输入" @change="onCustomFieldChange(row)">
@@ -34,7 +30,7 @@
             <el-text v-if="row.stock_warning" type="warning">{{ row.stock_warning }}</el-text>
           </template>
         </el-table-column>
-        <el-table-column v-if="showOptionalCols || !isProduction" label="Model" min-width="120" max-width="180">
+        <el-table-column v-if="(showOptionalCols || !isProduction) && !collapseSpecs" label="Model" min-width="120" max-width="180">
           <template #default="{ row }">
             <el-select v-if="isProduction" v-model="row.model" filterable allow-create clearable default-first-option placeholder="可选" @change="onCustomFieldChange(row)">
               <el-option v-for="value in entryOptions.models" :key="value" :label="value" :value="value" />
@@ -51,7 +47,7 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column label="Color" min-width="120" max-width="170">
+        <el-table-column v-if="!collapseSpecs" label="Color" min-width="120" max-width="170">
           <template #default="{ row }">
             <el-select v-if="isProduction" v-model="row.color" filterable allow-create default-first-option placeholder="Color" @change="onCustomFieldChange(row)">
               <el-option v-for="value in entryOptions.colors" :key="value" :label="value" :value="value" />
@@ -68,7 +64,7 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column label="Length" min-width="95" max-width="130">
+        <el-table-column v-if="!collapseSpecs" label="Length" min-width="95" max-width="130">
           <template #default="{ row }">
             <el-select v-if="isProduction" v-model="row.length" filterable allow-create default-first-option placeholder="Length" @change="onCustomFieldChange(row)">
               <el-option v-for="value in entryOptions.sizes" :key="value" :label="value" :value="value" />
@@ -85,7 +81,7 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column label="Net Weight" min-width="105" max-width="150">
+        <el-table-column v-if="!collapseSpecs" label="Net Weight" min-width="105" max-width="150">
           <template #default="{ row }">
             <el-select v-if="isProduction" v-model="row.net_weight_grams" filterable allow-create default-first-option placeholder="Unit" @change="onCustomFieldChange(row)">
               <el-option v-for="value in entryOptions.units" :key="value" :label="value" :value="value" />
@@ -121,7 +117,7 @@
           <template #default="{ row }">
             <div :class="['product-cell', row.product_name ? 'is-matched' : 'is-pending']">
               <span>{{ row.product_name || '待匹配' }}</span>
-              <el-tag v-if="row.sku_id" size="small" effect="plain">SKU {{ row.sku_id }}</el-tag>
+              <span v-if="row.sku_id" class="stock-count">库存 {{ row.available_stock == null ? '—' : Math.round(row.available_stock) }}</span>
               <el-tag v-else-if="row.matching" size="small" type="info" effect="plain">匹配中</el-tag>
             </div>
             <el-text v-if="row.stock_warning" type="warning">{{ row.stock_warning }}</el-text>
@@ -167,11 +163,23 @@
         </el-table-column>
       </el-table>
     </div>
+    <!-- 明细可能几十上百行：窗内分页，行号跨页连续；新增/导入后跳到末页 -->
+    <div v-if="items.length" class="line-pagination">
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :total="items.length"
+        :page-sizes="[10, 20, 50]"
+        layout="total, sizes, prev, pager, next"
+        small
+        background
+      />
+    </div>
   </section>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, ArrowUp, Delete, DocumentCopy, Plus } from '@element-plus/icons-vue'
 import { CURL_OPTIONS } from '../composables/useInvoiceEditor'
@@ -194,6 +202,19 @@ const props = defineProps({
 })
 defineEmits(['paste', 'copy', 'add-blank', 'remove'])
 const showOptionalCols = ref(false)
+const collapseSpecs = ref(false)
+
+// 窗内分页：几十上百行时表格窗口高度固定；行号跨页连续
+const page = ref(1)
+const pageSize = ref(10)
+const pagedItems = computed(() => props.items.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
+const indexBase = computed(() => (page.value - 1) * pageSize.value + 1)
+watch(() => props.items.length, (now, before) => {
+  const pages = Math.max(1, Math.ceil(now / pageSize.value))
+  if (!before) page.value = 1 // 编辑单初次装载：从第一页开始审阅
+  else if (now > before) page.value = pages // 添加空行/复制/Excel 粘贴：跟到末页
+  else if (page.value > pages) page.value = pages // 删除行后收敛页码
+})
 
 async function loadSemifinished(row) {
   if (!row.product_id) {
@@ -247,11 +268,15 @@ function lineOptionGroups(options, key) {
 
 <style scoped>
 .line-header { display: flex; align-items: center; justify-content: space-between; margin: 18px 0 12px; }
-.line-header span { margin-left: 10px; color: var(--text-secondary); font-size: 13px; }
+.line-title { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.line-title .line-hint { color: var(--text-secondary); font-size: 13px; }
+.step { display: inline-flex; width: 20px; height: 20px; flex: none; align-items: center; justify-content: center; border-radius: 6px; background: var(--color-primary); color: #fff; font-size: 12px; font-weight: 700; }
 .line-header-actions, .price-cell, .product-cell { display: flex; align-items: center; gap: 8px; }
 .line-table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: var(--card-radius); }
+.line-pagination { display: flex; justify-content: flex-end; margin-top: 10px; }
 .line-table { width: 100%; }
 .product-cell { min-height: 28px; }
+.stock-count { font-size: 11px; color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: 6px; padding: 1px 7px; background: var(--table-header-bg); white-space: nowrap; }
 .product-cell.is-pending { color: var(--text-muted); }
 .std-price { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .price-cell.is-manual :deep(.el-input__wrapper) { background: var(--color-warning-bg); }

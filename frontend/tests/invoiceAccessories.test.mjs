@@ -54,8 +54,8 @@ const editorState = readFileSync(
   new URL('../src/views/invoice/composables/invoiceEditorState.js', import.meta.url),
   'utf8',
 )
-const totalsFooter = readFileSync(
-  new URL('../src/views/invoice/components/InvoiceTotalsFooter.vue', import.meta.url),
+const summaryCard = readFileSync(
+  new URL('../src/views/invoice/components/InvoiceSummaryCard.vue', import.meta.url),
   'utf8',
 )
 const tokens = readFileSync(new URL('../src/styles/tokens.css', import.meta.url), 'utf8')
@@ -272,16 +272,18 @@ test('invoice payload round-trips mixed rows and preserves accessory identity', 
   assert.equal(payload.items[1].length, undefined)
 })
 
-test('footer uses eight token-backed amount chips without new motion', () => {
-  for (const kind of ['hair', 'hair-discount', 'accessory', 'accessory-discount', 'packaging', 'shipping', 'handling', 'total']) {
-    assert.match(totalsFooter, new RegExp(`summary-chip ${kind}`))
+test('amount summary card uses eight token-backed colors without new motion', () => {
+  for (const kind of ['hair', 'hair-discount', 'accessory', 'accessory-discount', 'packaging', 'shipping', 'handling']) {
+    assert.match(summaryCard, new RegExp(`dotk ${kind}`))
     assert.match(tokens, new RegExp(`--invoice-summary-${kind}-fg:`))
     assert.match(tokens, new RegExp(`--invoice-summary-${kind}-bg:`))
-    assert.match(totalsFooter, new RegExp(`--invoice-summary-${kind}-fg`))
+    assert.match(summaryCard, new RegExp(`--invoice-summary-${kind}-fg`))
   }
+  // total 档用于「应付合计」高亮块
+  assert.match(summaryCard, /sum-total/)
+  assert.match(summaryCard, /--invoice-summary-total-fg/)
+  assert.match(summaryCard, /--invoice-summary-total-bg/)
   assert.doesNotMatch(accessoryTable, /transition\s*:|animation\s*:|@keyframes/)
-  assert.match(totalsFooter, /\.summary-chip[^}]*color:\s*var\(--text-secondary\)/)
-  assert.match(totalsFooter, /\.summary-chip strong[^}]*color:\s*var\(--invoice-summary-fg\)/)
 })
 
 test('price configuration separates hair and accessory prices without duplicating shared panels', () => {

@@ -133,9 +133,10 @@ test('invoice editor exposes a contextual Excel paste entry and append-only inte
   const hairEditor = readFileSync(new URL('../src/views/invoice/composables/useInvoiceHairItems.js', import.meta.url), 'utf8')
 
   assert.match(view, /InvoicePasteImport/)
-  assert.match(hairTable, /从 Excel 粘贴/)
-  assert.match(hairTable, /:disabled="!canPasteImport"/)
   assert.match(view, /@append="appendPastedLines"/)
+  // 明细区的独立粘贴入口已并入卡片①的「整单粘贴」（2026-09-23），表头不再单独出现
+  assert.doesNotMatch(hairTable, /从 Excel 粘贴/)
+  assert.match(view, /InvoiceWholeOrderPaste/)
   assert.match(hairEditor, /function appendImportedLines/)
   assert.match(hairEditor, /_importBatchFingerprint/)
   assert.match(hairEditor, /if \(!row\._importBatchFingerprint\)/)

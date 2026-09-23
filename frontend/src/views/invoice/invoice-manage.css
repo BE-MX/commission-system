@@ -146,11 +146,9 @@
   background-color: rgba(245, 236, 220, 0.98);
 }
 
-.invoice-table,
-.line-table {
+.invoice-table {
   width: 100%;
 }
-
 
 .empty-state {
   display: flex;
@@ -173,9 +171,183 @@
   padding: 16px 0;
 }
 
+/* ============ 下单抽屉：左右两个独立滚动窗格 ============ */
+
 .invoice-form {
   --el-component-size: 36px;
-  padding-right: 12px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 抽屉 body 只作窗格容器，自身不滚动；滚动发生在左右两个 pane 内部 */
+.invoice-page :deep(.el-drawer__body) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 16px 20px;
+  background: var(--page-bg);
+}
+
+.drawer-panes {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 372px;
+  gap: 0 20px;
+}
+
+.pane {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pane-main {
+  padding: 2px 6px 2px 2px;
+}
+
+.pane-side {
+  padding: 2px 2px 2px 20px;
+  border-left: 1px solid var(--border-warm);
+}
+
+/* 卡片：抽屉底为浅灰、卡片为白，分组边界靠底色差而不是分割线 */
+.form-card {
+  background: var(--invoice-surface);
+  border: 1px solid var(--invoice-border);
+  border-radius: var(--card-radius);
+  padding: 14px 16px 16px;
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--invoice-ink);
+}
+
+.card-title-action {
+  margin-left: auto;
+}
+
+.step {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: var(--invoice-gold);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* 卡片内的明细表自己的头部（组件 scoped 样式）不再重复顶距 */
+.pane-main :deep(.line-header) {
+  margin-top: 0;
+}
+
+/* 顶部标签 + 3 列等宽网格：替代原 6 列 span 混排，行列严格对齐 */
+.fgrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 16px;
+  align-items: start;
+}
+
+.fgrid-c2 {
+  grid-column: span 2;
+}
+
+.fgrid-c3 {
+  grid-column: 1 / -1;
+}
+
+.subdiv {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 12px;
+  color: var(--invoice-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.subdiv::before,
+.subdiv::after {
+  content: '';
+  height: 1px;
+  flex: 1;
+  background: var(--invoice-border);
+}
+
+/* 业务员只读资料条：From 姓名 · 电话 · 邮箱 · 上次订单成交日期 */
+.sales-readout {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border: 1px dashed var(--invoice-border);
+  border-radius: 8px;
+  background: var(--invoice-soft);
+  font-size: 12.5px;
+  color: var(--invoice-muted);
+}
+
+.sales-readout b {
+  color: var(--invoice-ink);
+  font-weight: 600;
+}
+
+.sales-readout .sep {
+  color: var(--invoice-border);
+}
+
+.field-tip {
+  margin-top: 4px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--invoice-muted);
+}
+
+/* 订单号旁「上一单」红色提醒 */
+.prev-order-tip {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--color-danger);
+}
+
+/* 快递渠道：横向单选组 */
+.express-radio-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 22px;
+}
+
+/* 备注：深金色加粗字体 + 深金色加粗边框 */
+.remark-gold :deep(.el-textarea__inner) {
+  border: 2px solid var(--color-gold-muted);
+  box-shadow: none;
+  color: var(--color-gold-muted);
+  font-weight: 700;
+}
+
+.remark-gold :deep(.el-textarea__inner:focus) {
+  border-color: var(--color-gold-muted);
+  box-shadow: 0 0 0 2px var(--invoice-gold-light);
 }
 
 .source-order-alert {
@@ -200,89 +372,15 @@
 }
 
 .invoice-form :deep(.el-form-item__label) {
+  margin-bottom: 4px !important;
   color: var(--invoice-muted);
   font-weight: 600;
+  line-height: 1.4;
 }
 
-/* 头部录入区整体走紧凑密度：表单项默认 18px 下边距对多行网格来说太奢侈 */
+/* 头部录入区整体走紧凑密度 */
 .invoice-form :deep(.el-form-item) {
-  margin-bottom: 10px;
-}
-
-.col-title {
-  margin: 2px 0 10px;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--invoice-muted);
-  letter-spacing: 0.02em;
-}
-
-/* 头部三段（客户/业务员/订单）：6 列网格 + span-N 控宽，行数压到最少 */
-.head-section {
-  max-width: 1400px;
-  padding-bottom: 2px;
-  margin-bottom: 10px;
-  border-bottom: 1px solid var(--invoice-border);
-}
-
-.head-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 0 16px;
-  /* 取消默认 stretch：同行两个 form-item 高度不同时（如按联系人带提示行），
-     被拉高的一侧因 __content 垂直居中而与邻格输入框错位 */
-  align-items: start;
-}
-
-.head-grid .span-1 { grid-column: span 1; }
-.head-grid .span-2 { grid-column: span 2; }
-.head-grid .span-3 { grid-column: span 3; }
-.head-grid .span-6 { grid-column: 1 / -1; }
-
-.head-grid :deep(.el-form-item__content) {
-  width: 100%;
-  min-width: 0;
-}
-
-.head-grid .span-1 :deep(.el-form-item__content) { max-width: 180px; }
-.head-grid .span-2 :deep(.el-form-item__content) { max-width: 360px; }
-.head-grid .span-3 :deep(.el-form-item__content) { max-width: 560px; }
-.head-grid .span-6 :deep(.el-form-item__content) { max-width: 720px; }
-.settlement-section {
-  margin-top: 18px;
-}
-
-.balance-field :deep(.el-input-group__append) {
-  padding: 0 10px;
-  color: var(--invoice-muted);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.calculated-amount :deep(.el-input__wrapper) {
-  background: var(--invoice-soft);
-}
-
-.calculated-amount :deep(.el-input__inner) {
-  font-variant-numeric: tabular-nums;
-}
-
-.amount-note {
-  color: var(--invoice-placeholder);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.negative-field :deep(input),
-.line-discount-input :deep(input) {
-  color: var(--color-danger);
-  font-variant-numeric: tabular-nums;
-}
-
-.line-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .rule-badge {
@@ -320,11 +418,12 @@
   flex-shrink: 0;
 }
 
+/* 小满标记：开关芯片组 */
 .okki-flags-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px 14px;
+  gap: 8px 10px;
   width: 100%;
 }
 
@@ -332,6 +431,10 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  padding: 4px 12px;
+  border: 1px solid var(--invoice-border);
+  border-radius: 999px;
+  background: var(--invoice-surface);
   font-size: 13px;
   color: var(--invoice-ink);
 }
@@ -339,68 +442,6 @@
 .okki-flag-tip {
   font-size: 12px;
   color: var(--invoice-muted);
-}
-
-.okki-last-order {
-  font-size: 12px;
-  color: var(--invoice-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.line-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 18px 0 12px;
-}
-
-.line-header span {
-  margin-left: 10px;
-  color: var(--invoice-muted);
-  font-size: 13px;
-}
-
-.line-table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--invoice-border);
-  border-radius: 12px;
-}
-
-.product-cell {
-  display: flex;
-  min-height: 28px;
-  align-items: center;
-  gap: 8px;
-  transition: opacity 160ms var(--invoice-ease-out), transform 160ms var(--invoice-ease-out);
-  will-change: opacity, transform;
-}
-
-.product-cell.is-pending {
-  color: var(--invoice-placeholder);
-}
-
-.product-cell.is-matched {
-  color: var(--invoice-ink);
-  transform: translateY(0);
-}
-
-.std-price {
-  color: var(--invoice-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.price-cell {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.price-cell.is-manual :deep(.el-input__wrapper) {
-  background: var(--invoice-warn-bg);
-}
-
-.invoice-page :deep(.el-drawer__body) {
-  padding-top: 18px;
 }
 
 .invoice-page :deep(.el-drawer__footer) {
@@ -434,7 +475,6 @@
     animation: none;
   }
 
-  .product-cell,
   .invoice-page :deep(.el-button) {
     transition: opacity 120ms var(--invoice-ease-out), background-color 120ms var(--invoice-ease-out), border-color 120ms var(--invoice-ease-out);
   }
@@ -444,38 +484,38 @@
   }
 }
 
-@media (max-width: 1100px) {
-  .head-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+/* 窄屏降级：双窗格还原为单栏整页滚动 */
+@media (max-width: 1200px) {
+  .drawer-panes {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
   }
 
-  .head-grid .span-1,
-  .head-grid .span-2 {
-    grid-column: span 1;
+  .pane {
+    overflow: visible;
   }
 
-  .head-grid .span-3,
-  .head-grid .span-6 {
-    grid-column: 1 / -1;
+  .pane-side {
+    padding-left: 2px;
+    border-left: 0;
+    border-top: 1px solid var(--border-warm);
+    padding-top: 16px;
   }
 }
 
 @media (max-width: 900px) {
   .page-header,
-  .toolbar,
-  .drawer-footer {
+  .toolbar {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .head-grid {
+  .fgrid {
     grid-template-columns: 1fr;
   }
 
-  .head-grid .span-1,
-  .head-grid .span-2,
-  .head-grid .span-3,
-  .head-grid .span-6 {
+  .fgrid-c2,
+  .fgrid-c3 {
     grid-column: 1 / -1;
   }
 
@@ -487,12 +527,6 @@
 @media (max-width: 560px) {
   .invoice-page { padding: 0; }
   .toolbar > :deep(.el-input), .toolbar > :deep(.el-select) { max-width: 100%; }
-  .head-grid .span-1 :deep(.el-form-item__content),
-  .head-grid .span-2 :deep(.el-form-item__content),
-  .head-grid .span-3 :deep(.el-form-item__content),
-  .head-grid .span-6 :deep(.el-form-item__content) {
-    max-width: none;
-  }
 
   .summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

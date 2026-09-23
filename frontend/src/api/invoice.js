@@ -43,6 +43,16 @@ export function checkInvoiceNo(params) {
   return unwrap(request.get('/invoices/check-no', { params, showLoading: false }))
 }
 
+// 同业务员同类型的上一张订单号（下单页红色提醒）
+export function getPreviousInvoiceNo(params) {
+  return unwrap(request.get('/invoices/previous-no', { params, showLoading: false }))
+}
+
+// 具有「跟单员」角色的在职用户（指定跟单员下拉）
+export function getInvoiceMerchandisers() {
+  return unwrap(request.get('/invoices/merchandiser-options', { showLoading: false }))
+}
+
 export function getCustomerContactDefaults(customerId) {
   return unwrap(request.get('/customers/contact-defaults', {
     params: { customer_id: customerId }, showLoading: false,

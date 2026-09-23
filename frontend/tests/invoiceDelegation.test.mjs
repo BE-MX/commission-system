@@ -27,7 +27,11 @@ test('invoice entry loads assignees and scopes private searches to selected sale
   assert.match(invoiceView, /v-model="form\.sales_user_id"/)
   assert.match(invoiceView, /@change="onSalesUserChange"/)
   assert.match(invoiceView, /未绑定OKKI/)
-  assert.match(invoiceView, /v-model="form\.sales_user_name"[^>]*readonly/)
+  // 业务员信息压缩为只读资料条（From 姓名 · 电话 · 邮箱），不再占三个输入框
+  assert.match(invoiceView, /class="fgrid-c3 sales-readout"/)
+  assert.match(invoiceView, /\{\{ form\.sales_user_name \|\| '—' \}\}/)
+  assert.match(invoiceView, /\{\{ form\.sales_phone \|\| '—' \}\}/)
+  assert.match(invoiceView, /\{\{ form\.sales_email \|\| '—' \}\}/)
 })
 
 test('user management exposes and persists delegated salesperson grants', () => {

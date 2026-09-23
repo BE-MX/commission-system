@@ -257,6 +257,19 @@ def get_invoice(db: Session, invoice_id: int, *, for_update: bool = False) -> In
     return query.first()
 
 
+def _apply_merchandiser(db: Session, invoice: Invoice, merchandiser_id: int | None) -> None:
+    """跟单员快照：姓名以 ark_users 实时值为准；None/空 = 清空。"""
+    if not merchandiser_id:
+        invoice.merchandiser_id = None
+        invoice.merchandiser_name = None
+        return
+    user = delegation_service.get_active_user(db, merchandiser_id)
+    if user is None:
+        raise ValueError("指定跟单员不存在或已停用")
+    invoice.merchandiser_id = user.id
+    invoice.merchandiser_name = user.real_name or user.username
+
+
 def create_invoice(
     db: Session,
     body: InvoiceCreate,
@@ -325,6 +338,7 @@ def create_invoice(
         invoice.sales_user_name = sales_user.username
         invoice.sales_phone = sales_user.phone
         invoice.sales_email = sales_user.email
+    _apply_merchandiser(db, invoice, body.merchandiser_id)
     # OKKI 业务标记空值兜底（null=自动判定）
     for field, value in resolve_okki_flags(db, invoice).items():
         setattr(invoice, field, value)
@@ -396,6 +410,8 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
         invoice.customer_grade = get_customer_grade(db, body.customer_id)
     for field in _HEADER_FIELDS:
         setattr(invoice, field, getattr(body, field))
+    if "merchandiser_id" in body.model_fields_set:
+        _apply_merchandiser(db, invoice, body.merchandiser_id)
     sales_user = db.get(ArkUser, invoice.sales_user_id) if invoice.sales_user_id else None
     if sales_user:
         invoice.sales_user_name = sales_user.username
@@ -522,6 +538,8 @@ def serialize_detail(invoice: Invoice, db: Session | None = None) -> dict:
         "contact_phone": invoice.contact_phone,
         "contact_email": invoice.contact_email,
         "sales_user_id": invoice.sales_user_id,
+        "merchandiser_id": invoice.merchandiser_id,
+        "merchandiser_name": invoice.merchandiser_name,
         "delivery_address": invoice.delivery_address,
         "sales_user_name": invoice.sales_user_name,
         "sales_phone": invoice.sales_phone,
@@ -609,6 +627,20 @@ def suggest_invoice_no(db: Session, user_id: int | None, order_type: str) -> str
     while invoice_no_exists(db, f"{prefix}{seq:02d}"):
         seq += 1
     return f"{prefix}{seq:02d}"
+
+
+def previous_invoice_no(db: Session, sales_user_id: int | None, order_type: str, exclude_id: int | None = None) -> str | None:
+    """下单页红色提醒：同业务员、同类型的上一张订单号（按 id 倒序）。"""
+    if not sales_user_id:
+        return None
+    query = db.query(Invoice.invoice_no).filter(
+        Invoice.sales_user_id == sales_user_id,
+        Invoice.order_type == order_type,
+    )
+    if exclude_id is not None:
+        query = query.filter(Invoice.id != exclude_id)
+    row = query.order_by(Invoice.id.desc()).first()
+    return row[0] if row else None
 
 
 def _next_invoice_no(db: Session) -> str:

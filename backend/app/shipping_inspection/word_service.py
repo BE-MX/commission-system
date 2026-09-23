@@ -129,15 +129,16 @@ def build_outbound_word(record: dict, items: list[dict], qr_data: str) -> bytes:
     _line(number)
     number.paragraph_format.space_after = Pt(10)
 
-    head = _table(doc, [24, 50, 32, 55, 37], rows=3)
+    head = _table(doc, [24, 50, 32, 55, 37], rows=4)
     _cell(head.cell(0, 0), "客户名称", 10.5, shade="F0F0F0")
     _cell(head.cell(0, 1), masked_customer_name, 10.5, bold=True)
     _cell(head.cell(0, 2), f"客户等级\n{record.get('customer_grade') or '—'}", 10.5)
     _cell(head.cell(0, 3), f"订单金额\n{record.get('order_amount_text') or '—'}", 10.5)
-    for index, (label, key) in enumerate([("出库日期", "outbound_date"), ("负责人", "owner_name")], start=1):
+    for index, (label, key) in enumerate([("出库日期", "outbound_date"), ("负责人", "owner_name"), ("跟单员", "merchandiser_name")], start=1):
         _cell(head.cell(index, 0), label, 10.5, shade="F0F0F0")
-        _cell(head.cell(index, 1).merge(head.cell(index, 3)), record.get(key), 10.5)
-    qr_cell = head.cell(0, 4).merge(head.cell(2, 4))
+        # 跟单员未指定时留空（不显示占位符）
+        _cell(head.cell(index, 1).merge(head.cell(index, 3)), record.get(key) or "", 10.5)
+    qr_cell = head.cell(0, 4).merge(head.cell(3, 4))
     qr_cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
     image = io.BytesIO()
     qrcode.make(qr_data).save(image, format="PNG")
@@ -152,6 +153,10 @@ def build_outbound_word(record: dict, items: list[dict], qr_data: str) -> bytes:
         borders.append(_xml(side, val="nil"))
     qr_cell._tc.get_or_add_tcPr().insert_element_before(borders, "w:shd", "w:noWrap", "w:tcMar", "w:textDirection", "w:tcFitText", "w:vAlign")
     doc.add_paragraph().paragraph_format.space_after = Pt(4)
+    # 快递渠道显示在发货备注框正上方（与 A4 打印版式一致）
+    channel = doc.add_paragraph()
+    _run(channel, f"快递渠道：{record.get('express_channel') or '—'}", 10.5, True)
+    channel.paragraph_format.space_after = Pt(2)
     remark = _table(doc, [198])
     _cell(remark.cell(0, 0), "发货备注", bold=True)
     _run(remark.cell(0, 0).add_paragraph(), record.get("remark") or "无")

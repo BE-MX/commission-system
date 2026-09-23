@@ -9,6 +9,8 @@ import {
   getCustomerRule,
   getInvoice,
   getInvoiceAssignees,
+  getInvoiceMerchandisers,
+  getPreviousInvoiceNo,
   searchInvoiceCustomerOptions,
   suggestInvoiceNo,
   updateInvoice,
@@ -22,7 +24,9 @@ import {
   handlingFeeRate,
   normalizeDiscount,
   settlementMatchesTotal,
+  splitDiscountCents,
   sumLineNet,
+  toMoneyCents,
 } from './invoiceSettlement'
 import { normalizeAccessoryRow } from './accessoryPricing'
 import { useInvoiceAccessories } from './useInvoiceAccessories'
@@ -41,6 +45,8 @@ export const CURL_OPTIONS = ['Straight', 'Body Wave', 'Deep Wave', 'Loose Wave',
 
 export function useInvoiceEditor({ onSaved } = {}) {
   const drawerVisible = ref(false)
+  // 旧版下单入口（过渡期）：与新版抽屉共享同一份表单状态，同一时间只开一个
+  const legacyVisible = ref(false)
   const salesUserOptions = ref([])
   const selectedCustomer = ref(null)
   const customerRule = ref(null)
@@ -54,6 +60,9 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const invoiceNoTaken = ref(false)
   const saveAndSyncSubmitting = ref(false)
   const entryOptions = ref({ displays: [], models: [], colors: [], sizes: [], units: [] })
+  // 指定跟单员候选（「跟单员」角色在职用户）；同业务员同类型上一单号（订单号旁的红色提醒）
+  const merchandiserOptions = ref([])
+  const previousInvoiceNo = ref('')
 
   const form = reactive(emptyInvoiceForm())
   const linked = useLinkedInvoiceSync(async id => {
@@ -80,6 +89,20 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   const formHairPrice = accessories.hairAmount
   const formLineDiscountTotal = accessories.hairDiscount
+  // 总折扣录入框（费用与结算卡底部）：默认=产品行折扣合计（正数展示）；手改后均分到产品行
+  const formHairDiscountAbs = computed(() => Math.abs(Number(formLineDiscountTotal.value || 0)))
+  function applyTotalDiscount(value) {
+    const rows = hairItems.value.filter(line => Number(line.quantity) > 0 && Number(line.price_per_piece) > 0)
+    if (!rows.length) {
+      ElMessage.warning('没有可分摊折扣的产品行')
+      return
+    }
+    const shares = splitDiscountCents(toMoneyCents(value), rows.length)
+    rows.forEach((row, index) => {
+      row.discount_amount = shares[index] ? -(shares[index] / 100) : 0
+      updateLineTotal(row)
+    })
+  }
   const formProductTotal = computed(() => sumLineNet(form.items))
   // 订单总金额（基数）= 产品+包装+运费，不含手续费（重定义 2026-07-24）：
   // 既是手续费自动计算的乘数基数，也是页脚「订单总金额」展示口径
@@ -175,6 +198,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
   let customerContextSeq = 0
   let customerDefaultsPromise = Promise.resolve()
   let invoiceNoSeq = 0
+  let prevNoSeq = 0
   // 用户手输过发票号后，建议号不再覆盖
   let invoiceNoEdited = false
 
@@ -189,6 +213,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
     customerDefaultsPromise = Promise.resolve()
     customerRuleSeq++
     invoiceNoSeq++
+    prevNoSeq++
+    previousInvoiceNo.value = ''
     // 每次开单复位为默认私海（上一单里切过全量不带到下一单）
     privateOnlyCompany.value = true
     // 编辑既有单（有 id）：发票号视为已确认，建议号不覆盖
@@ -255,6 +281,65 @@ export function useInvoiceEditor({ onSaved } = {}) {
     } catch {
       if (seq === customerRuleSeq) customerRule.value = null
     }
+  }
+
+  // 整单粘贴：TO 名称 → 私海候选中唯一公司级匹配才自动选用；多候选/无匹配交还人工
+  async function matchWholeOrderCustomer(name) {
+    await searchCustomers(String(name || '').trim())
+    const companies = customerOptions.value.filter(option => option.kind !== 'contact')
+    if (companies.length === 1) return { status: 'matched', option: companies[0] }
+    if (companies.length > 1) return { status: 'multiple', count: companies.length }
+    return { status: 'none' }
+  }
+
+  // 整单粘贴应用：付款方式先于手续费（选付款方式会触发费率重算，手填手续费随后覆盖并标记手改）
+  async function applyWholeOrderPaste(parsed) {
+    const applied = []
+    const skipped = []
+    if (parsed._customerOption) {
+      selectedCustomer.value = parsed._customerOption
+      await onCustomerChange(parsed._customerOption)
+      applied.push('客户')
+    } else if (parsed.customer_name) {
+      skipped.push(`客户「${parsed.customer_name}」需手动选择`)
+    }
+    if (parsed.contact_phone) { form.contact_phone = parsed.contact_phone; applied.push('电话') }
+    if (parsed.contact_email) { form.contact_email = parsed.contact_email; applied.push('邮箱') }
+    if (parsed.delivery_address) { form.delivery_address = parsed.delivery_address; applied.push('收货地址') }
+    if (parsed.payment_method) {
+      form.internal_payment_method = parsed.payment_method
+      onPaymentMethodChange()
+      applied.push('付款方式')
+    } else if (parsed.payment_raw) {
+      skipped.push(`付款方式「${parsed.payment_raw}」未匹配，请手选`)
+    }
+    if (parsed.express_channel) { form.express_channel = parsed.express_channel; applied.push('快递渠道') }
+    if (parsed.handling_fee != null) {
+      form.surcharge_amount = parsed.handling_fee
+      markHandlingFeeTouched()
+      applied.push('手续费')
+    }
+    if (parsed.packaging_fee != null) { form.internal_accessory = parsed.packaging_fee; applied.push('包装费用') }
+    if (parsed.shipping_fee != null) { form.shipping_fee = parsed.shipping_fee; applied.push('运费') }
+    // 产品明细先于折扣：整单粘贴的折扣总价需要产品行就位后才能均分
+    if (parsed.productPreview?.rows?.length) {
+      if (appendImportedLines(parsed.productPreview.rows, parsed.productPreview.fingerprint)) {
+        applied.push(`产品明细 ${parsed.productPreview.rows.length} 行`)
+      } else {
+        skipped.push('产品明细与当前发票已有批次重复，未重复加入')
+      }
+    }
+    if (parsed.discount_total != null) {
+      const rows = hairItems.value.filter(line => Number(line.quantity) > 0 && Number(line.price_per_piece) > 0)
+      if (rows.length) {
+        applyTotalDiscount(parsed.discount_total)
+        applied.push('折扣总价（已均分到产品行）')
+      } else {
+        skipped.push('折扣总价：暂无产品行可分摊，请录入产品后在折扣框填写')
+      }
+    }
+    if (applied.length) ElMessage.success(`整单粘贴已填入：${applied.join('、')}`)
+    if (skipped.length) ElMessage.warning(skipped.join('；'))
   }
 
   async function onCustomerChange(customer) {
@@ -342,7 +427,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     if (seq === lastOrderSeq) lastOrderDate.value = date
   }
 
-  async function openCreate(orderType = 'stock') {
+  async function prepareCreate(orderType = 'stock') {
     resetForm()
     form.order_type = orderType
     await loadSalesUsers()
@@ -350,11 +435,23 @@ export function useInvoiceEditor({ onSaved } = {}) {
     form.sales_user_id = me?.id || salesUserOptions.value[0]?.id || null
     applySalesUserSnapshot()
     addBlankLine()
-    drawerVisible.value = true
     linked.load(null)
     searchCustomers('')
     fetchSuggestedInvoiceNo()
+    loadMerchandisers()
+    refreshPreviousInvoiceNo()
     if (orderType === 'production') loadEntryOptions()
+  }
+
+  async function openCreate(orderType = 'stock') {
+    await prepareCreate(orderType)
+    drawerVisible.value = true
+  }
+
+  // 旧版下单入口：同样的初始化流程，只是打开旧版布局抽屉
+  async function openLegacyCreate(orderType = 'stock') {
+    await prepareCreate(orderType)
+    legacyVisible.value = true
   }
 
   async function openEdit(id) {
@@ -364,6 +461,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
     await loadSalesUsers()
     drawerVisible.value = true
     searchCustomers('')
+    loadMerchandisers()
+    refreshPreviousInvoiceNo()
     if (form.order_type === 'production') loadEntryOptions()
   }
 
@@ -387,6 +486,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
     ensureCustomerOption(selectedCustomer.value)
     await Promise.all([loadCustomerRule(), fillContactDefaults()])
     drawerVisible.value = true
+    loadMerchandisers()
+    refreshPreviousInvoiceNo()
     if (!invoiceNo) fetchSuggestedInvoiceNo()
     if (patch.order_type === 'production') loadEntryOptions()
     let successMessage = '订单名称已填入发票号，请确认缺失的结算和联系信息后保存'
@@ -400,6 +501,30 @@ export function useInvoiceEditor({ onSaved } = {}) {
   async function loadSalesUsers() {
     const res = await getInvoiceAssignees()
     salesUserOptions.value = res.items || []
+  }
+
+  async function loadMerchandisers() {
+    try {
+      const res = await getInvoiceMerchandisers()
+      merchandiserOptions.value = res.items || []
+    } catch {
+      merchandiserOptions.value = [] // 拦截器已统一提示；候选加载失败不阻塞下单
+    }
+  }
+
+  // 订单号旁的「上一单」红色提醒：同业务员同类型最近一张订单；提醒性信息，失败静默
+  async function refreshPreviousInvoiceNo() {
+    previousInvoiceNo.value = ''
+    if (!form.sales_user_id) return
+    const seq = ++prevNoSeq
+    try {
+      const res = await getPreviousInvoiceNo({
+        sales_user_id: form.sales_user_id,
+        order_type: form.order_type,
+        exclude_id: form.id || undefined,
+      })
+      if (seq === prevNoSeq) previousInvoiceNo.value = res.previous_invoice_no || ''
+    } catch { /* 提醒性信息静默失败 */ }
   }
 
   function applySalesUserSnapshot() {
@@ -426,6 +551,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     form.delivery_address = ''
     customerRule.value = null
     accessories.invalidateCustomerContext()
+    refreshPreviousInvoiceNo()
     await Promise.all([
       searchCustomers(''),
       ...accessories.hairItems.value.map(line => refreshLinePrice(line)),
@@ -486,6 +612,22 @@ export function useInvoiceEditor({ onSaved } = {}) {
       ElMessage.warning(settlementError.value)
       return null
     }
+    // 客户等级必填（2026-09 下单页改版）：等级决定价格规则，缺等级不允许保存
+    if (!form.customer_grade) {
+      ElMessage.warning('请选择客户等级')
+      return null
+    }
+    // 联系信息与快递渠道必填（2026-09-23 下单页改版）
+    const missingRequired = []
+    if (!String(form.contact_name || '').trim()) missingRequired.push('联系人')
+    if (!String(form.contact_phone || '').trim()) missingRequired.push('电话')
+    if (!String(form.contact_email || '').trim()) missingRequired.push('邮箱')
+    if (!String(form.delivery_address || '').trim()) missingRequired.push('收货地址')
+    if (!form.express_channel) missingRequired.push('快递渠道')
+    if (missingRequired.length) {
+      ElMessage.warning(`请完善必填项：${missingRequired.join('、')}`)
+      return null
+    }
     const payload = buildInvoicePayload(form, formLineDiscountTotal.value)
     // A failed defaults request must not erase an existing customer grade.
     if (!customerGradeReady) delete payload.customer_grade
@@ -543,6 +685,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   return {
     drawerVisible,
+    legacyVisible,
     customerLoading,
     customerOptions,
     salesUserOptions,
@@ -570,6 +713,10 @@ export function useInvoiceEditor({ onSaved } = {}) {
     accessoryLoading: accessories.accessoryLoading,
     formHairPrice,
     formLineDiscountTotal,
+    formHairDiscountAbs,
+    applyTotalDiscount,
+    merchandiserOptions,
+    previousInvoiceNo,
     formAccessoryAmount: accessories.accessoryAmount,
     formAccessoryDiscount: accessories.accessoryDiscountTotal,
     formProductTotal,
@@ -580,12 +727,15 @@ export function useInvoiceEditor({ onSaved } = {}) {
     isProduction,
     searchCustomers,
     selectSyncedCustomer,
+    matchWholeOrderCustomer,
+    applyWholeOrderPaste,
     onCustomerChange,
     onSalesUserChange,
     onCurrencyChange,
     onInvoiceNoInput,
     onInvoiceNoBlur,
     openCreate,
+    openLegacyCreate,
     openEdit,
     applyScreenshotPreview,
     addBlankLine,

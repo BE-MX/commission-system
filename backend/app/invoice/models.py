@@ -46,6 +46,8 @@ class Invoice(Base):
     sales_user_name = Column(String(100), nullable=True, comment="业务员姓名快照")
     sales_phone = Column(String(100), nullable=True, comment="业务员电话快照")
     sales_email = Column(String(256), nullable=True, comment="业务员邮箱快照")
+    merchandiser_id = Column(Integer, nullable=True, comment="指定跟单员用户ID（ark_users.id）")
+    merchandiser_name = Column(String(100), nullable=True, comment="跟单员姓名快照")
     invoice_date = Column(Date, nullable=False, comment="发票日期")
     currency = Column(String(16), nullable=False, default="USD", comment="币种，默认 USD")
     status = Column(String(32), nullable=False, default="draft", comment="draft/ready/synced/sync_failed/sync_uncertain")
