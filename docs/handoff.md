@@ -1,3 +1,10 @@
+## 2026-09-23 临时战报海报白金主题（已授权合并推送，未部署）
+
+- 工作树 `D:/MyProgram/commission-system-codex-battle-poster-light`，分支 `codex/battle-poster-light`。底图改为白金/浅香槟金，保留原标题、口号、奔跑人物和公司标志；数据卡片改暖白底、深棕文字、古金数字，红绿进度使用浅轨道和深填充，白色时间刻度增加深色描边。
+- 仅调整版本化底图和海报 CSS；排序、金额、完成率、投递逻辑不变。历史图片缓存保持原图，新渲染使用新主题。用户已确认配色并授权合并 main、推送 origin/main；本轮不部署。
+- Chrome 离线渲染团队 4 组、个人 22 人示例，覆盖超额、领先、持平、落后、零进度；无金额/卡片横向溢出，0% 填充仍为零。预览与复现脚本交付至主目录 `tmp/battle-poster-light/`，全部为示例数据，不连接生产、不发送群消息。
+- `python -m pytest tests/test_battle_posters.py -q`：40 passed；`git diff --check` 通过。完整约定检查仍被 9 项未改动前端文件的既有 UI 基线过期阻断。已执行 `python scripts/git_sweep.py --no-fetch`，结果仅为本地快照。
+
 ## 2026-09-22 生产部署源码分叉修复（Codex，合并推送交付）
 
 - 只读核验办公室 `D:/commission-system`：HEAD为已部署的 `5ae1f07b`，origin/main为 `698dd57f`，ahead 1 / behind 8；工作区干净，两项办公室服务运行。源码准备的快进保护正确阻止覆盖本地出库对账修复，本轮失败未进入服务切换。
