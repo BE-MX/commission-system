@@ -55,7 +55,11 @@ def describe(row):
 def bind(db, ids, actor, invoice_id, receipt_id=None):
     if len(ids) != len(set(ids)) or not 1 <= len(ids) <= 5:
         raise ValueError("请上传 1 至 5 张不重复的回款截图")
-    rows = db.query(ReceiptAttachment).filter(ReceiptAttachment.id.in_(ids)).with_for_update().all()
+    from app.invoice.settlement_models import BatchAttachment
+    rows = db.query(ReceiptAttachment).filter(ReceiptAttachment.id.in_(ids)).order_by(
+        ReceiptAttachment.id).populate_existing().with_for_update().all()
+    if db.query(BatchAttachment).filter(BatchAttachment.attachment_id.in_(ids)).with_for_update().first():
+        raise ValueError("凭证属于汇总回款，请通过原批次读取")
     if len(rows) != len(ids):
         raise ValueError("回款凭证不存在或上传未完成")
     if receipt_id:

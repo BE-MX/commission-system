@@ -20,6 +20,8 @@ _PublicPoolQuota = Annotated[int, Field(gt=0, le=100)]
 
 
 class Settings(BaseSettings):
+    PRESALE_SETTLEMENT_ENABLED: bool = False
+
     # Object storage is enabled per domain only after its migration is verified.
     COS_BUCKET: str = ""
     COS_REGION: str = "ap-beijing"

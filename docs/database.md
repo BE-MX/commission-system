@@ -1,5 +1,22 @@
 # 莱莎方舟 数据库表参考
 
+## 预售结算与汇总回款（166_presale_settlement，未部署）
+
+父 revision 为 `164_battle_posters`。八个新账本表，不更新原订单金额、不回填推测历史预售记录；详细实施限制见 [实现报告](reports/2026-09-23-presale-implementation.md)。
+
+| 表 | 责任及约束 |
+| --- | --- |
+| ark_shipment_settlements | 每批报价快照/状态/版本/请求摘要；唯一 invoice_id+sequence、settlement_no、request_key |
+| ark_shipment_settlement_items | 原始商品行 ID、数量、金额及远端行快照；唯一 settlement_id+invoice_item_id，商品行删除 RESTRICT |
+| ark_receivables | 商品/运费应收、客户币种、远端映射；business_key 与可空 remote_order_id 唯一 |
+| ark_receipt_batches | 一笔客户付款的总额、手续费、日期、方式、幂等键和版本 |
+| ark_receipt_batch_attachments | 共享凭证关联；attachment_id 唯一，不能跨付款批次复用 |
+| ark_settlement_applications | 款项对结算的 reserved/applied/released 分配；settlement_id+receipt_id+component 唯一 |
+| ark_shipment_outbounds | 未来投递器的冻结 payload/hash、租约和远端映射；settlement_id、outbound_no、可空 remote_id 各唯一，目前无投递执行器 |
+| ark_settlement_events | 创建、暂停、恢复、取消的操作者、原因与北京时间审计 |
+
+`ark_receipts` 新增 batch_id、receivable_id 外键和索引，purpose 默认 ordinary（新增用途 presale_deposit/presale_goods/freight）；唯一 batch_id+receivable_id；xiaoman_order_id 改可空以表达运费目标未建立。金额 NUMERIC(14,2)，时间由 beijing_now 写入。单活动批次由原订单锁和服务校验保证。迁移只做新增/放宽可空，不允许 downgrade 删除财务事实。
+
 ## 临时战报（162_battle_reports，本地实现，未部署）
 
 | 表 | 责任与关键约束 |

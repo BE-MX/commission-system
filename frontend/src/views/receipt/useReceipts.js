@@ -5,7 +5,7 @@ import { currentBeijingDate } from '@/utils/datetime'
 import { msgSuccess, msgError } from '@/utils/feedback'
 import * as api from '@/api/receipt'
 
-export const statusLabel = value => ({ pending: '待同步', syncing: '同步中', synced: '已同步', failed: '同步失败', uncertain: '待核对' })[value] || value
+export const statusLabel = value => ({ pending: '待同步', waiting_target: '等待集成验证', syncing: '同步中', synced: '已同步', failed: '同步失败', uncertain: '待核对' })[value] || value
 export const statusTone = value => ({ synced: 'success', failed: 'danger', uncertain: 'warning', pending: 'info', syncing: 'warning' })[value] || 'info'
 export const money = value => Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 export const financeLabel = value => value === 1 ? '已生效' : value === 0 ? '未生效' : '未取得'
@@ -24,7 +24,7 @@ export function useReceipts() {
   let searchSequence = 0, balanceSequence = 0, detailSequence = 0, initialForm = '', idempotencyKey = ''
   const selectedOrder = computed(() => orders.value.find(o => o.id === form.invoice_id))
   const remainingAfter = computed(() => Number(balance.value?.remaining_amount || 0) - Number(form.amount || 0))
-  const editable = computed(() => detail.value?.status === 'active' && ['pending', 'failed'].includes(detail.value.sync_status))
+  const editable = computed(() => detail.value?.status === 'active' && !detail.value.batch_id && detail.value.purpose !== 'presale_deposit' && ['pending', 'failed'].includes(detail.value.sync_status))
 
   async function searchOrders(keyword = '') {
     const sequence = ++searchSequence
@@ -101,7 +101,7 @@ export function useReceipts() {
       const fields = { amount: String(form.amount), collection_date: form.collection_date, payment_type: form.payment_type,
         bank_charge: String(form.bank_charge || 0), remark: form.remark, attachment_ids: [...form.attachment_ids] }
       const row = editing.value ? await api.updateReceipt(editing.value, { ...fields, version: detail.value.version })
-        : await api.createReceipt({ ...fields, invoice_id: form.invoice_id, request_key: idempotencyKey, balance_version: balance.value.version })
+        : await api.createReceipt({ ...fields, invoice_id: form.invoice_id, request_key: idempotencyKey, balance_version: balance.value.version, settlement_id: balance.value.settlement_id || null })
       editorVisible.value = false; detail.value = row; detailVisible.value = true; candidates.value = []
       msgSuccess(editing.value ? '回款已修正，请重试同步' : deliveryEnabled.value === false ? '回款已创建，同步启用后自动处理' : '回款已创建，等待同步小满')
       await page.fetchList()

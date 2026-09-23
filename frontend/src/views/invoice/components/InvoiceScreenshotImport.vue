@@ -18,6 +18,7 @@
         <el-radio-group v-model="orderType">
           <el-radio-button value="stock">库存单</el-radio-button>
           <el-radio-button value="production">生产单</el-radio-button>
+          <el-radio-button value="presale" :disabled="!presaleEnabled">预售单</el-radio-button>
         </el-radio-group>
       </div>
       <el-upload
@@ -208,7 +209,8 @@ import { ElMessage } from 'element-plus'
 import { DocumentCopy, Picture } from '@element-plus/icons-vue'
 import { previewInvoiceScreenshot, resolveInvoiceScreenshot } from '@/api/invoice'
 
-const props = defineProps({ modelValue: { type: Boolean, default: false } })
+const props = defineProps({
+  presaleEnabled: Boolean, modelValue: { type: Boolean, default: false } })
 const emit = defineEmits(['update:modelValue', 'apply'])
 const visible = computed({
   get: () => props.modelValue,

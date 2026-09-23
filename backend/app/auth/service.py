@@ -367,6 +367,9 @@ def seed_role_permissions(db: Session):
         ("production_dashboard:read", "production", "read",   "查看生产看板"),
         ("production_route:read",     "production", "read",   "查看工序路线"),
         # 订单发票管理（2026-07-12 三个 admin 配置页拆出独立页面码，invoice:admin 保留为操作码）
+        ("shipment:read", "shipment", "read", "查看订单发货结算"),
+        ("shipment:write", "shipment", "write", "创建及处理发货结算"),
+        ("shipment:admin", "shipment", "admin", "核对发货结算异常"),
         ("receipt:read", "receipt", "read", "查看本人订单回款单"),
         ("receipt:write", "receipt", "write", "登记和同步回款单"),
         ("receipt:admin", "receipt", "admin", "核对回款同步结果"),

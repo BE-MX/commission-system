@@ -1,5 +1,22 @@
 # 莱莎方舟 API 参考
 
+## 预售结算与汇总回款（2026-09-23，本地部分实现，未上线）
+
+统一 `/api` 前缀、RBAC、`ok(data)` 信封。商业规则及未完成的外发闭环见 [实现报告](reports/2026-09-23-presale-implementation.md)。
+
+| 方法与路径 | 权限 / 用途 |
+| --- | --- |
+| GET `/shipments/capabilities` | invoice:read/write、receipt:write 或 shipment:read；返回登记开关及两项外发能力，后两者目前固定 false |
+| POST `/invoices/{id}/shipment-quotes` | invoice:read/write；items[{invoice_item_id,quantity}]、freight_amount，返回金额分解与 quote_hash |
+| POST `/invoices/{id}/shipment-settlements` | invoice:write + shipment:write；报价字段加 quote_hash/request_key，可选 payment（另需 receipt:write） |
+| GET `/shipments/order/{id}`、`/shipments/{id}` | shipment:read/write；items 列表或含 quote/balance/outbound/capabilities 的详情 |
+| POST `/shipments/{id}/cancel`、`pause`、`resume` | shipment:write；version/reason，订单归属与状态二次检查 |
+| POST `/receipts/batches` | receipt:write；amount/date/type/remark/attachment_ids、request_key、allocations[{invoice_id,settlement_id?,amount,balance_version}]。日期字段 collection_date，方式字段 payment_type；bank_charge 只能零，服务端自动分摊 |
+| GET `/receipts/batches/{id}` | receipt:read/write/admin；batch_no/amount/bank_charge/currency/status/version/items/attachment_ids，须能访问全部子订单 |
+| POST `/receipts/batches/{id}/void-entry` | receipt:admin；version/reason，仅本地且无远端效果的整批录入纠错 |
+
+`/api/receipts/order-options` 增加 customer_id/currency 过滤；预售 `/balance` 返回当前活动结算 ID 和带远端证据的余额版本。提交使用十进制金额字符串；版本失效或超额不部分保存。新批次凭证复用和单笔改单被禁止。尚无可调用的预售出库投递接口。
+
 ## 临时战报（2026-09-22，本地实现，迁移 162）
 
 前缀 `/api/battle-reports`，登录认证与标准 `ok()` 信封，金额以两位小数字符串返回。权限均使用 `battle_report:` 前缀；admin 包含本模块 read/write。查询逐次校验参与人身份及授权范围；汇总 visibility 不扩大订单/客户明细权限。详见 [实现说明](requirements/2026-09-22-battle-report.md)。

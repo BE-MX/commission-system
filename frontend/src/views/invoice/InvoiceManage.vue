@@ -22,9 +22,11 @@
         <GlassButton v-permission="'invoice:write'" variant="secondary" :left-icon="Plus" @click="openCreate('production')">
           新建生产单
         </GlassButton>
+        <GlassButton v-permission="'invoice:write'" :disabled="!shipmentCapabilities.enabled" @click="openCreate('presale')">新建预售单</GlassButton>
       </div>
     </div>
 
+    <el-alert v-if="!shipmentCapabilities.enabled" :title="shipmentCapabilities.reason || '预售出库暂未启用'" type="info" :closable="false" />
     <div class="summary-grid">
       <div class="summary-card lg-card">
         <span>发票数</span>
@@ -58,6 +60,7 @@
         <el-select v-model="filters.order_type" clearable placeholder="订单类型" style="width: 130px">
           <el-option label="库存单" value="stock" />
           <el-option label="生产单" value="production" />
+          <el-option label="预售单" value="presale" />
         </el-select>
         <el-select v-model="filters.status" clearable placeholder="状态" style="width: 150px">
           <el-option label="草稿" value="draft" />
@@ -85,7 +88,7 @@
         <el-table-column label="类型" min-width="76" max-width="96">
           <template #default="{ row }">
             <el-tag :type="row.order_type === 'production' ? 'warning' : 'info'" effect="plain">
-              {{ row.order_type === 'production' ? '生产单' : '库存单' }}
+              {{ orderTypeLabel(row.order_type) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -162,6 +165,7 @@
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
+              <el-button v-if="row.order_type === 'presale'" v-permission="'shipment:write'" link type="primary" :disabled="!shipmentCapabilities.enabled || row.sync_status !== 'synced' || ['cancel_pending','cancelled'].includes(row.status)" @click="shipmentInvoice = row">生成出库单</el-button>
               <InvoiceLifecycle :invoice-id="row.id" @changed="loadInvoices" />
               <el-button v-if="!row.xiaoman_order_id && !['cancel_pending','cancelled'].includes(row.status)" v-permission="'invoice:write'" link type="danger" @click="removeInvoice(row)">
                 <el-icon><Delete /></el-icon>
@@ -415,7 +419,9 @@
       @append="appendPastedLines"
     />
 
+    <ShipmentSettlementDialog v-if="shipmentInvoice" :invoice="shipmentInvoice" @close="shipmentInvoice = null" @saved="loadInvoices" />
     <InvoiceScreenshotImport
+      :presale-enabled="shipmentCapabilities.enabled"
       v-model="screenshotImportVisible"
       @apply="applyScreenshotPreview"
     />
@@ -432,10 +438,12 @@
 </template>
 
 <script setup>
+import ShipmentSettlementDialog from './components/ShipmentSettlementDialog.vue'
+import { useInvoiceShipments, orderTypeLabel } from './composables/useInvoiceShipments'
+import { useInvoiceImportDialogs } from './composables/useInvoiceImportDialogs'
 import LinkedSyncResult from './components/LinkedSyncResult.vue'
 import InvoiceLifecycle from './components/InvoiceLifecycle.vue'
-import { computed, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed } from 'vue'
 import { ArrowDown, Delete, Document, Download, Edit, Picture, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { EXPRESS_CHANNEL_OPTIONS, PAYMENT_METHOD_OPTIONS } from './composables/invoiceSettlement'
 import { customerOptionLabel } from './composables/useInvoiceCustomerSearch'
@@ -451,6 +459,7 @@ import InvoiceSettlementFields from './components/InvoiceSettlementFields.vue'
 import InvoiceTotalsFooter from './components/InvoiceTotalsFooter.vue'
 import InvoiceHairTable from './components/InvoiceHairTable.vue'
 
+const { shipmentInvoice, shipmentCapabilities } = useInvoiceShipments()
 const page = useInvoiceManagePage()
 const {
   actionText, bindIssueHandler, filters, formatDateTime, handleExport, invoices, loadInvoices,
@@ -475,27 +484,12 @@ const {
   saveAndSync, showIssues, markCustomerGradeTouched, markOkkiFlagTouched, onPaymentMethodChange, markHandlingFeeTouched,
 } = useInvoiceEditor({ onSaved: loadInvoices })
 bindIssueHandler(showIssues)
-const pasteImportVisible = ref(false)
-const screenshotImportVisible = ref(false)
-const canPasteImport = computed(() => Boolean(form.customer_id && form.order_type && form.currency))
-const pasteImportDisabledReason = computed(() => {
-  const missing = []
-  if (!form.customer_id) missing.push('客户')
-  if (!form.order_type) missing.push('订单类型')
-  if (!form.currency) missing.push('币种')
-  return missing.length ? `请先选择${missing.join('、')}` : ''
-})
+const { pasteImportVisible, screenshotImportVisible, canPasteImport, pasteImportDisabledReason,
+  appendPastedLines } = useInvoiceImportDialogs(form, appendImportedLines)
 const drawerTitle = computed(() => {
-  const typeLabel = form.order_type === 'production' ? '生产单' : '库存单'
+  const typeLabel = orderTypeLabel(form.order_type)
   return form.id ? `编辑${typeLabel} ${form.invoice_no}` : `新建${typeLabel}`
 })
-function appendPastedLines({ rows, fingerprint }) {
-  if (!appendImportedLines(rows, fingerprint)) {
-    ElMessage.warning('这批数据已经加入当前发票')
-    return
-  }
-  ElMessage.success(`已加入 ${rows.length} 条产品明细，发票尚未保存`)
-}
 const linkedLocked = computed(() => linkedBusy.value || ['pending', 'running', 'failed', 'uncertain'].includes(linkedOperation.value?.status))
 </script>
 

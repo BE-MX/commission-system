@@ -21,7 +21,7 @@ def calculate(db, invoice, snapshot, *, exclude_receipt=None, exclude_intent=Fal
         registered += value
         if str(row.get("collect_status")) == "1":
             effective += value
-    local = db.query(Receipt).filter(Receipt.invoice_id == invoice.id, Receipt.status == "active").all()
+    local = db.query(Receipt).filter(Receipt.invoice_id == invoice.id, Receipt.status == "active", Receipt.purpose != "freight").all()
     for row in local:
         if row.currency != invoice.currency or row.customer_id != invoice.customer_id:
             raise ValueError("方舟回款与订单身份不一致，请核对")

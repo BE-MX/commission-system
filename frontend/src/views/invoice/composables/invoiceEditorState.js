@@ -86,7 +86,7 @@ export function buildInvoicePayload(form, hairDiscount) {
     sales_user_name: form.sales_user_name || null, sales_phone: form.sales_phone || null,
     sales_email: form.sales_email || null, invoice_date: form.invoice_date,
     currency: form.currency || 'USD', express_channel: form.express_channel || null,
-    shipping_fee: Number(form.shipping_fee || 0),
+    shipping_fee: form.order_type === 'presale' ? 0 : Number(form.shipping_fee || 0),
     surcharge_name: Number(form.surcharge_amount || 0) ? 'Handling Fee' : null,
     surcharge_amount: Number(form.surcharge_amount || 0), payment_term: form.payment_term || null,
     internal_payment_method: form.internal_payment_method || null, internal_discount: hairDiscount,

@@ -66,6 +66,12 @@ def deliver(db, receipt_id):
     if invoice.status in {"cancel_pending", "cancelled"} or invoice.linked_sync_id:
         db.rollback()
         return
+    if invoice.order_type == "presale" and row.batch_id:
+        if row.sync_status == "pending":
+            row.sync_status = "waiting_target"
+        row.last_error = "小满预售分批集成尚未验证，已保留付款与占额，未发送"
+        db.commit()
+        return
     token = uuid4().hex
     count = db.execute(update(Receipt).where(Receipt.id == receipt_id, Receipt.status == "active",
         Receipt.sync_status == "pending").values(sync_status="syncing", attempt_token=token,
@@ -95,7 +101,11 @@ def deliver(db, receipt_id):
         snapshot = remote.order_snapshot(db, invoice)
         summary = balance.calculate(db, invoice, snapshot, exclude_receipt=row.id)
         balance.ensure_available(summary, row.amount)
-        attachments.bind(db, row.attachment_ids, row.created_by, invoice.id, row.id)
+        if row.batch_id:
+            from app.receipt.batch_service import validate_bound_proofs
+            validate_bound_proofs(db, row)
+        else:
+            attachments.bind(db, row.attachment_ids, row.created_by, invoice.id, row.id)
         db.commit()
         result = remote.push(db, row, snapshot, before_send)
         # Remote ID is persisted immediately; any DB failure leaves syncing,

@@ -45,8 +45,9 @@ def list_rows(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=10
 
 @router.get("/order-options", summary="Search available invoice associations")
 def options(keyword: str = Query("", max_length=100), page: int = Query(1, ge=1),
+            customer_id: str = "", currency: str = "",
             db: Session = Depends(get_db), user=Depends(require_any_permission("receipt:read", "receipt:write", "receipt:admin"))):
-    return ok(service.order_options(db, user, keyword, page))
+    return ok(service.order_options(db, user, keyword, page, customer_id, currency))
 
 
 @router.get("/types", summary="Read receipt payment methods from OKKI")
@@ -78,7 +79,16 @@ def proof(identity: str, request: Request, db: Session = Depends(get_db), user=D
     row = db.get(ReceiptAttachment, identity)
     if not row:
         raise HTTPException(404, "凭证不存在")
-    if row.invoice_id:
+    from app.invoice.settlement_models import BatchAttachment, ReceiptBatch
+    from app.receipt.batch_service import ensure_batch_access
+    linked_batch = db.query(BatchAttachment).filter_by(attachment_id=row.id).first()
+    if linked_batch:
+        if "super_admin" not in user.get("roles", []) and not any(
+            p in user.get("permissions", []) for p in ("receipt:read", "receipt:write", "receipt:admin")
+        ):
+            raise HTTPException(404, "凭证不存在")
+        ensure_batch_access(db, db.get(ReceiptBatch, linked_batch.batch_id), user)
+    elif row.invoice_id:
         invoice = db.get(Invoice, row.invoice_id)
         permissions = user.get("permissions", [])
         has_receipt_access = "super_admin" in user.get("roles", []) or any(p in permissions for p in ("receipt:read", "receipt:write", "receipt:admin"))

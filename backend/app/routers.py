@@ -104,6 +104,8 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(governance_router, prefix="/api/governance", tags=["数据概念治理"])
     app.include_router(training_router, prefix="/api/training", tags=["培训速递"])
     app.include_router(whatsapp_router, prefix="/api/whatsapp", tags=["WhatsApp 同步"])
+    from app.invoice.settlement_router import router as settlement_router
+    app.include_router(settlement_router, prefix="/api", tags=["发货结算"])
     app.include_router(receipt_router, prefix="/api/receipts", tags=["回款单"])
     app.include_router(invoice_router, prefix="/api/invoice", tags=["Order Invoice"])
     app.include_router(expo_router, prefix="/api/expo", tags=["展会 AI 试戴"])

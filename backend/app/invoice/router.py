@@ -310,7 +310,7 @@ def preview_invoice_import(
 @router.post("/import/screenshot/preview", summary="Recognize and preview one OKKI order screenshot")
 async def preview_invoice_screenshot(
     image: UploadFile = File(...),
-    order_type: str = Query("stock", pattern="^(stock|production)$"),
+    order_type: str = Query("stock", pattern="^(stock|production|presale)$"),
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("invoice:write")),
 ):
@@ -749,7 +749,7 @@ def list_invoices(
     page_size: int = Query(20, ge=1, le=100),
     keyword: str | None = Query(None),
     status: str | None = Query(None),
-    order_type: str | None = Query(None, pattern="^(stock|production)$"),
+    order_type: str | None = Query(None, pattern="^(stock|production|presale)$"),
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("invoice:read")),
 ):
@@ -773,7 +773,7 @@ def list_invoices(
 
 @router.get("/invoices/suggest-no", summary="Suggested invoice number for a new invoice")
 def suggest_invoice_no(
-    order_type: str = Query("stock", pattern="^(stock|production)$"),
+    order_type: str = Query("stock", pattern="^(stock|production|presale)$"),
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("invoice:write")),
 ):

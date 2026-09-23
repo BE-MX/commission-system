@@ -50,6 +50,8 @@ def enqueue_outbound_task(db: Session, invoice: Invoice) -> OkkiOutboundTask | N
     只 flush，commit 由调用方负责——同步钩子路径上任务行与同步状态同事务落库，
     上层回滚（如半成品 finalize 失败）会连带丢弃任务行，不会产生孤儿任务。
     """
+    if invoice.order_type == "presale":
+        return None
     order_id = str(invoice.xiaoman_order_id or "").strip()
     if not order_id:
         return None
@@ -111,6 +113,7 @@ def reconcile_missing_outbound_tasks(
             Invoice.xiaoman_order_id.isnot(None),
             Invoice.xiaoman_order_id != "",
             Invoice.outbound_auto_requested == 1,
+            Invoice.order_type != "presale",
             Invoice.status.notin_(["cancel_pending", "cancelled"]),
             OkkiOutboundTask.id.is_(None),
         )
@@ -142,6 +145,8 @@ def reconcile_missing_outbound_tasks(
 
 def retry_reviewed(db, invoice, actor, reason, expected_version):
     """Explicitly recover a missed or definitively unsent task; never replay uncertainty."""
+    if invoice.order_type == "presale":
+        raise ValueError("预售单请处理原发货结算，不补建整单出库")
     from app.invoice import linked_outbound_service, service
     from app.invoice.linked_sync_service import ensure_idle, edit_version
     from app.invoice.lifecycle_guard import ensure_mutable

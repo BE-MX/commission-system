@@ -43,6 +43,8 @@ def evidence(db, row):
 
 
 def accept(db, row, body, actor):
+    if row.batch_id or row.purpose == "presale_deposit":
+        raise ValueError("预售及汇总回款的远端变更需先核对整批资金，不能单独调整")
     if not body.confirmed or len(body.reason.strip()) < 10:
         raise ValueError("请确认已核实实际收款及退款，并填写至少10字依据")
     # Token refresh can commit. Obtain the invoice and receipt locks again and

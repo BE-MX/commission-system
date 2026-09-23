@@ -60,7 +60,7 @@ class InvoiceImportRow(BaseModel):
 
 class InvoiceImportPreviewRequest(BaseModel):
     customer_id: str = Field(..., min_length=1, max_length=64)
-    order_type: str = Field(..., pattern="^(stock|production)$")
+    order_type: str = Field(..., pattern="^(stock|production|presale)$")
     currency: str = Field(..., pattern="^[A-Z]{3}$")
     rows: list[InvoiceImportRow] = Field(..., min_length=1, max_length=200)
 
@@ -162,7 +162,7 @@ class ScreenshotProductSelection(BaseModel):
 class ScreenshotResolveRequest(BaseModel):
     extraction: ScreenshotExtraction
     source_image_sha256: str = Field(..., min_length=64, max_length=64, pattern="^[0-9a-f]{64}$")
-    order_type: str = Field(default="stock", pattern="^(stock|production)$")
+    order_type: str = Field(default="stock", pattern="^(stock|production|presale)$")
     customer_id: Optional[str] = Field(None, max_length=64)
     sales_user_id: Optional[int] = Field(None, gt=0)
     product_selections: list[ScreenshotProductSelection] = Field(default_factory=list, max_length=200)
@@ -229,7 +229,7 @@ class _InvoiceHeaderPayload(BaseModel):
     customer_id: str = Field(..., max_length=64)
     customer_name: str = Field(..., max_length=256)
     customer_grade: Optional[str] = Field(None, pattern="^[SABCDE]$")
-    order_type: str = Field(default="stock", pattern="^(stock|production)$")
+    order_type: str = Field(default="stock", pattern="^(stock|production|presale)$")
     contact_name: Optional[str] = Field(None, max_length=256)
     contact_phone: Optional[str] = Field(None, max_length=100)
     contact_email: Optional[str] = Field(None, max_length=256)

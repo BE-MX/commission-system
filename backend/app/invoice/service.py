@@ -265,6 +265,13 @@ def create_invoice(
     allow_screenshot_source: bool = False,
     allow_external_source: bool = False,
 ) -> Invoice:
+    if body.order_type == "presale":
+        from app.invoice.settlement_policy import require_enabled
+        require_enabled()
+        if body.shipping_fee:
+            raise ValueError("预售主单不含运费，请在发货结算时填写")
+        if len(body.invoice_no or "") > 56:
+            raise ValueError("预售发票号最多56字符，需预留分批出库编号")
     if allow_screenshot_source and allow_external_source:
         raise ValueError("发票创建入口来源授权冲突")
     if body.source_type == "okki_screenshot" and not allow_screenshot_source:
@@ -350,6 +357,15 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
     ensure_idle(invoice)
     from app.invoice.lifecycle_guard import ensure_mutable
     ensure_mutable(db, invoice)
+    if body.order_type == "presale":
+        from app.invoice.settlement_policy import require_enabled
+        require_enabled()
+        if body.shipping_fee:
+            raise ValueError("预售主单不含运费")
+        if len(body.invoice_no or "") > 56:
+            raise ValueError("预售发票号最多56字符，需预留分批出库编号")
+    if body.order_type != invoice.order_type and "presale" in {body.order_type, invoice.order_type}:
+        raise ValueError("预售单与普通订单不能互相转换，请新建正确类型的订单")
     receipt_floor = invoice_link.guard_edit(db, invoice, body)
     receipt_fee_basis = (invoice.total_amount, invoice.surcharge_amount)
     from app.semifinished.models import InvoiceAllocation

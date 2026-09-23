@@ -13,7 +13,7 @@
         <p>每笔回款关联订单，凭证与同步结果集中查看。</p>
       </div>
       <div class="header-actions">
-        <GlassButton v-permission="'receipt:write'" variant="primary" left-icon="Plus" @click="openCreate()">新建回款单</GlassButton>
+        <GlassButton v-permission="'receipt:write'" variant="primary" left-icon="Plus" @click="batchVisible = true">新建回款单</GlassButton>
       </div>
     </div>
 
@@ -70,6 +70,7 @@
           <template #default="{ row }">
             <div class="table-actions">
               <el-button link type="primary" @click="showDetail(row)"><el-icon><View /></el-icon>查看</el-button>
+              <el-button v-if="row.batch_id" link type="primary" @click="showBatch(row.batch_id)">整笔回款</el-button>
               <el-button v-if="row.sync_status === 'failed' && row.status === 'active'" v-permission="'receipt:write'" link type="primary" :loading="saving" @click="retry(row)"><el-icon><Refresh /></el-icon>重试</el-button>
             </div>
           </template>
@@ -94,6 +95,16 @@
       <template #footer><div class="drawer-actions"><GlassButton :disabled="saving || uploading" @click="closeEditor()">取消</GlassButton><GlassButton v-permission="'receipt:write'" variant="primary" :loading="saving" :disabled="uploading || (!editing && !balance)" @click="submit">{{ editing ? '保存修正' : '创建回款单' }}</GlassButton></div></template>
     </el-drawer>
 
+    <BatchReceiptDialog v-if="batchVisible" @close="batchVisible = false" @saved="handleSearch" />
+    <DetailDrawer v-model="batchDetailVisible" title="整笔回款" :loading="batchLoading">
+      <el-alert v-if="batchError" :title="batchError" type="error" :closable="false" />
+      <template v-if="batchDetail">
+        <h2>{{ batchDetail.currency }} {{ money(batchDetail.amount) }}</h2>
+        <p>{{ batchDetail.collection_date }} · {{ batchDetail.payment_type }}</p>
+        <el-table class="list-table" :data="batchDetail.items || batchDetail.receipts || batchDetail.allocations || []" border><el-table-column prop="invoice_no" label="订单发票" /><el-table-column prop="amount" label="分配金额" /><el-table-column label="同步状态"><template #default="{ row }">{{ statusLabel(row.sync_status) }}</template></el-table-column></el-table>
+        <ReceiptProofs :model-value="batchDetail.attachments?.map(a => a.id) || batchDetail.attachment_ids || []" readonly />
+      </template>
+    </DetailDrawer>
     <DetailDrawer v-model="detailVisible" :title="detail?.receipt_no || '回款单详情'" :loading="!detail">
       <template v-if="detail"><div class="detail-status"><el-tag size="small" effect="plain" :type="statusTone(detail.sync_status)">{{ detail.status === 'voided' ? '已作废' : statusLabel(detail.sync_status) }}</el-tag><el-tag size="small" effect="plain">财务：{{ financeLabel(detail.collect_status) }}</el-tag></div>
         <h1 class="detail-amount">{{ detail.currency }} {{ money(detail.amount) }}</h1>
@@ -108,6 +119,9 @@
   </div>
 </template>
 <script setup>
+import { ref } from 'vue'
+import BatchReceiptDialog from './BatchReceiptDialog.vue'
+import { getReceiptBatch } from '@/api/receipt'
 import { Document, Refresh, View } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
 import DetailDrawer from '@/components/DetailDrawer.vue'
@@ -116,6 +130,14 @@ import ReceiptRemoteChange from './ReceiptRemoteChange.vue'
 import ReceiptProofs from './ReceiptProofs.vue'
 import { formatBeijingDateTime } from '@/utils/datetime'
 import { useReceipts, statusLabel, statusTone, financeLabel, money } from './useReceipts'
+const batchVisible = ref(false), batchDetailVisible = ref(false), batchDetail = ref(null), batchLoading = ref(false), batchError = ref('')
+let batchSequence = 0
+async function showBatch(id) {
+  const sequence = ++batchSequence; batchDetailVisible.value = true; batchDetail.value = null; batchLoading.value = true; batchError.value = ''
+  try { const data = await getReceiptBatch(id); if (sequence === batchSequence) batchDetail.value = data }
+  catch (e) { if (sequence === batchSequence) batchError.value = e.message || '整笔回款加载失败' }
+  finally { if (sequence === batchSequence) batchLoading.value = false }
+}
 const states = ['pending','syncing','synced','failed','uncertain']
 const { loading,list,total,page,pageSize,searchForm,dates,handleSearch,handlePageChange,handleSizeChange,reset,
   editorVisible,detailVisible,detail,saving,uploading,orders,ordersLoading,balance,balanceLoading,error,candidates,

@@ -45,6 +45,8 @@ def _invoice(db, current, user):
         Invoice.xiaoman_order_id == next(iter(ids))).populate_existing().with_for_update().first()
     if invoice is None:
         raise ValueError('未找到关联的方舟订单发票，不能同步')
+    if invoice.order_type == 'presale':
+        raise ValueError('预售出库单必须按发货批次核对，禁止整单覆盖')
     _load_items(db, invoice)
     if 'super_admin' not in user.get('roles', []) and 'invoice:read_all' not in user.get('permissions', []):
         if not delegation_service.can_access_invoice(db, int(user['sub']), invoice):

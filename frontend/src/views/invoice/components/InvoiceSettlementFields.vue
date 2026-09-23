@@ -43,7 +43,7 @@
         </el-select>
       </el-form-item>
       <el-form-item label="运费" class="span-2">
-        <el-input-number v-model="form.shipping_fee" :min="0" :precision="2" controls-position="right" />
+        <el-input-number v-model="form.shipping_fee" :disabled="form.order_type === 'presale'" :min="0" :precision="2" controls-position="right" />
       </el-form-item>
       <el-form-item label="手续费" class="span-2">
         <el-input-number
@@ -60,7 +60,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { computeHandlingFee, handlingFeeRate } from '../composables/invoiceSettlement'
 
 const props = defineProps({
@@ -77,6 +77,8 @@ const props = defineProps({
   onPaymentMethodChange: { type: Function, default: () => {} },
   onHandlingFeeInput: { type: Function, default: () => {} },
 })
+
+watch(() => props.form.order_type, type => { if (type === 'presale') props.form.shipping_fee = 0 }, { immediate: true })
 
 // 手续费提示：比例方式显示自动费率；当前值与费率×基数不符时（如编辑单改了产品、
 // 或手动改过）给出重算引导；报关提示手填，其余留空

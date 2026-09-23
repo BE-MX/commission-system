@@ -60,6 +60,8 @@ def _stock_shortages(db, order):
 
 
 def run(db, invoice, user):
+    if invoice.order_type == "presale":
+        return {"status": "manual", "message": "预售单由发货结算按批次安排，不执行整单自动出库"}
     """Never create an outbound here: the fenced worker owns that operation."""
     if invoice.sync_status != 'synced' or not invoice.xiaoman_order_id:
         return {'status': 'manual', 'message': '订单尚未完整同步到小满，出库未处理'}

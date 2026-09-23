@@ -145,7 +145,7 @@ def sync_invoice(
         return {"ok": False, "message": message, "issues": []}
 
     if action == "create" and get_settings().OKKI_OUTBOUND_AUTO_ENABLED:
-        invoice.outbound_auto_requested = 1
+        invoice.outbound_auto_requested = int(invoice.order_type != "presale")
 
     # 第一段落库：order_id + 审计日志立即固化（此后任何回写失败都不会丢单号）
     if order_id:

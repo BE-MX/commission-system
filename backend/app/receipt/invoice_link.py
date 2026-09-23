@@ -16,7 +16,7 @@ def get_intent(db, invoice_id):
 
 
 def save_draft(db, invoice, draft, actor, *, new=False):
-    if invoice.order_type != "stock":
+    if invoice.order_type not in {"stock", "presale"}:
         return
     row = get_intent(db, invoice.id)
     if row is None:
@@ -42,7 +42,7 @@ def save_draft(db, invoice, draft, actor, *, new=False):
 
 
 def preflight(db, invoice, actor):
-    if invoice.order_type != "stock":
+    if invoice.order_type not in {"stock", "presale"}:
         return
     row = get_intent(db, invoice.id)
     if not row or not row.attachment_ids:
@@ -54,12 +54,17 @@ def preflight(db, invoice, actor):
         raise ValueError("回款资料与订单客户或币种不一致，请重新核对")
     ReceiptFields(amount=row.amount, collection_date=row.collection_date, payment_type=row.payment_type,
                   attachment_ids=row.attachment_ids, remark=row.remark or "")
+    if invoice.order_type == "presale":
+        from app.receipt.fees import proportional
+        charge = proportional(invoice.total_amount, invoice.surcharge_amount or 0, row.amount)
+        if row.amount - charge <= 0 or row.amount - charge > invoice.product_amount:
+            raise ValueError("预付款净额必须大于零且不能超过商品净额")
     if row.amount > invoice.total_amount:
         raise ValueError("本次回款不能超过订单金额")
 
 
 def arm(db, invoice, actor):
-    if invoice.order_type != "stock":
+    if invoice.order_type not in {"stock", "presale"}:
         return None
     preflight(db, invoice, actor)
     row = get_intent(db, invoice.id)
@@ -128,6 +133,8 @@ def guard_edit(db, invoice, body):
     row = get_intent(db, invoice.id)
     if row and (row.attempt_token or row.status == "ready" or invoice.sync_status == "sync_uncertain"):
         raise ValueError("订单回款正在处理或等待恢复，暂不能编辑")
+    if invoice.order_type == "presale" and row and row.status != "draft":
+        raise ValueError("预售首款已提交，商业合同已冻结；发货地址和备注请在批次中处理")
     local = db.query(Receipt).filter(Receipt.invoice_id == invoice.id, Receipt.status == "active").count()
     snapshot = {"rows": remote.order_receipts(db, invoice.xiaoman_order_id) if invoice.xiaoman_order_id else []}
     if local or snapshot["rows"] or (row and row.status in {"armed", "converted"}):
