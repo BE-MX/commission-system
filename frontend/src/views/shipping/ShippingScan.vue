@@ -25,12 +25,15 @@
     <template v-else>
       <section class="station-card record-card"><div class="section-heading"><h1>{{ view.record.outbound_no }}</h1><span class="record-badge">{{ submitted ? '已提交' : '待提交' }}</span></div><p>{{ view.record.customer_name }}</p><small>出库日期 {{ view.record.outbound_date || '—' }}</small><div class="record-note">发货备注：{{ view.record.remark || '无' }}</div><button class="station-link" :disabled="busy || invalid || !!pendingSubmit" @click="refresh"><RefreshCw :size="15" />刷新状态及已上传内容</button></section>
       <p v-if="submitted" class="readonly-hint">本单已提交，照片和视频只读。撤回后可刷新继续编辑。</p>
+      <p v-if="view.outbound_sync_pending" class="readonly-hint">订单已修改，出库单等待仓库确认“同步并重验”。请暂缓上传、提交和使用旧纸单。</p>
+      <p v-if="view.required_recheck_ids?.length" class="readonly-hint">出库资料已更新。旧版本照片仅作留档；请为变更明细补拍照片后提交。</p>
+      <p v-if="missingRecheck.length" class="readonly-hint">还需补拍：{{ missingRecheck.join('、') }}</p>
       <section v-if="!invalid" class="station-card"><div class="section-heading"><h2>整单照片与视频</h2><span>整单留档</span></div><StationMediaGroup :media="mediaFor(null)" :feedback="uploadFeedbackFor(null)" @prepare-video="prepareVideo" @cancel-video="cancelVideoPreparation" @retry="retryMedia" @discard="discardCompression" :capture-disabled="!!pendingCompression" :session-id="sessionId" :editable="!submitted" :disabled="!canWrite" @upload="upload" @remove="remove" @error="fail" /></section>
       <section v-for="(item, index) in invalid ? [] : view.items" :key="item.item_id" class="station-card item-card"><div class="item-top"><span class="item-index">{{ String(index + 1).padStart(2, '0') }}</span><span>数量 <b>{{ item.qty }} {{ item.unit }}</b></span></div><h2 class="item-model">{{ item.model || '未维护型号' }}</h2><p class="item-attributes">{{ [item.size, item.color].filter(Boolean).join(' / ') || item.product_name }}</p><p v-if="item.spec" class="item-spec">规格：{{ item.spec }}</p><StationMediaGroup :media="mediaFor(item.item_id)" :feedback="uploadFeedbackFor(item.item_id)" @prepare-video="prepareVideo" @cancel-video="cancelVideoPreparation" @retry="retryMedia" @discard="discardCompression" :capture-disabled="!!pendingCompression" :session-id="sessionId" :item-id="item.item_id" :editable="!submitted" :disabled="!canWrite" @upload="upload" @remove="remove" @error="fail" /></section>
       <section v-if="!invalid" class="station-card"><label class="remark-label" for="station-remark">检验备注</label><textarea id="station-remark" v-model="remark" maxlength="500" rows="3" :disabled="!canWrite" placeholder="填写需要说明的情况（选填）" /><p class="station-help">已上传 {{ photos.length }} 张照片、{{ videos.length }} 段视频。至少需要一张照片，视频不进入验货打印。</p></section>
       <div v-if="busy" class="upload-progress" role="status">{{ uploadStage || '正在处理，请勿切换人员' }}<progress v-if="uploadStage" :value="progress" max="100" /><span v-if="uploadStage">{{ progress }}%</span></div>
       <button v-if="pendingUpload && !busy && !invalid" class="station-secondary" @click="retryUpload">重试本次上传（不会重复保存）</button>
-      <footer class="station-actions"><button v-if="!submitted && !invalid" class="submit-button" :disabled="busy || (!pendingSubmit && (!canWrite || !photos.length))" @click="submit"><Check :size="20" />{{ pendingSubmit ? '确认上次提交结果' : `由 ${operator.name} 提交验货` }}</button><button class="station-secondary" :disabled="busy" @click="end">{{ invalid ? '重新选择人员并扫码' : '返回主页 / 重新选择人员' }}</button></footer>
+      <footer class="station-actions"><button v-if="!submitted && !invalid" class="submit-button" :disabled="busy || (!pendingSubmit && (!canWrite || !photos.length || missingRecheck.length))" @click="submit"><Check :size="20" />{{ pendingSubmit ? '确认上次提交结果' : `由 ${operator.name} 提交验货` }}</button><button class="station-secondary" :disabled="busy" @click="end">{{ invalid ? '重新选择人员并扫码' : '返回主页 / 重新选择人员' }}</button></footer>
     </template>
     <div class="station-footnote">莱莎方舟 · 发货检验</div>
   </main>
@@ -47,7 +50,7 @@ import StationMediaGroup from './components/StationMediaGroup.vue'
 import StationInstallHint from './components/StationInstallHint.vue'
 const station = useShippingStation()
 const { operators, selected, operator, view, remark, busy, loading, scannerOpen, error, invalid, loginRequired,
-  prompt, selectionVersion, receipt, progress, uploadStage, photos, videos, submitted, canWrite, sessionId, dirty, pendingUpload, pendingSubmit,
+  prompt, selectionVersion, receipt, progress, uploadStage, photos, videos, submitted, canWrite, missingRecheck, sessionId, dirty, pendingUpload, pendingSubmit,
   choose, startScan, decoded, refresh, upload, retryUpload, remove, submit, end, loadOperators, fail } = station
 const { uploadItemId, uploadError, pendingCompression, retryCompression, awaitingVideoActivation, discardCompression, prepareVideo, cancelVideoPreparation } = station
 const picker = ref(null)

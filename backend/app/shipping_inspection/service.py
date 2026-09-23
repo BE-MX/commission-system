@@ -33,9 +33,9 @@ def _commit(db: Session) -> None:
         raise
 
 
-def _photo_to_dict(photo: ShippingInspectionPhoto) -> dict:
+def _photo_to_dict(photo: ShippingInspectionPhoto, stale_ids=()) -> dict:
     return {"id": photo.id, "item_id": photo.item_id, "file_path": photo.file_path, "sort": photo.sort, "media_type": photo.media_type,
-            "storage_state": getattr(photo, '_storage_state', 'local')}
+            "storage_state": getattr(photo, '_storage_state', 'local'), "stale": photo.id in stale_ids}
 
 
 def list_photos(db: Session, inspection_id: int, media_type: str = "image") -> list[ShippingInspectionPhoto]:
@@ -196,6 +196,15 @@ def delete_photo(db: Session, photo_id: int, user_id: int, *, edit_version: int 
     photo = db.get(ShippingInspectionPhoto, photo_id)
     if photo is None or photo.media_type != media_type:
         raise ValueError("照片不存在")
+    source = db.get(ShippingInspection, photo.inspection_id)
+    if source is None:
+        raise ValueError("验货单不存在")
+    from app.shipping_inspection.outbound_sync_state import ensure_inspection_idle
+    ensure_inspection_idle(db, source.outbound_record_id, user_id)
+    from app.shipping_inspection.outbound_sync_state import evidence
+    stale_ids, _ = evidence(db, source.outbound_record_id)
+    if photo.id in stale_ids:
+        raise ValueError('旧版本验货媒体需保留归档，不能删除')
     inspection = _lock_inspection(db, photo.inspection_id)
     if inspection is not None and inspection.edit_version != edit_version:
         raise ValueError("验货单已撤回更新，请重新扫码后删除")
@@ -234,6 +243,8 @@ def submit(
 ) -> ShippingInspection:
     """提交验货：照片总数 ≥ 1；已提交幂等返回原单（request_id 靠状态幂等，不落库）。"""
     inspection = _get_by_outbound_id(db, outbound_record_id)
+    from app.shipping_inspection.outbound_sync_state import ensure_submission_ready
+    sync_event = ensure_submission_ready(db, outbound_record_id, user_id, inspection) if inspection else None
     if inspection is not None:
         # 行锁挡住并发的上传/删除，保证 photo_count 快照与实际一致
         inspection = _lock_inspection(db, inspection.id)
@@ -252,6 +263,8 @@ def submit(
         inspection.remark = remark
     inspection.updated_at = beijing_now()
     inspection.updated_by = user_id
+    if sync_event and (sync_event.result or {}).get('required_recheck_ids'):
+        sync_event.result = {**sync_event.result, 'required_recheck_ids': [], 'recheck_completed_at': str(beijing_now())}
     if commit:
         audit_service.record(db, 'submit', user_id, outbound_record_id, inspection=inspection)
         _commit(db)
@@ -265,6 +278,13 @@ def submit(
 
 def recall(db: Session, inspection_id: int, user_id: int, edit_version: int) -> ShippingInspection:
     """撤回保留全部媒体/备注，版本令牌阻止旧提交或旧撤回请求越过编辑轮次。"""
+    current = db.get(ShippingInspection, inspection_id)
+    if current is None:
+        raise ValueError("验货单不存在")
+    from app.shipping_inspection.outbound_sync_state import lock, ACTIVE
+    sync_event = lock(db, current.outbound_record_id, user_id)
+    if sync_event.action in ACTIVE:
+        raise ValueError('出库单正在同步或结果待核对，暂不能撤回验货')
     inspection = _lock_inspection(db, inspection_id)
     if inspection is None:
         raise ValueError("验货单不存在")
@@ -294,6 +314,9 @@ def scan_payload(db: Session, outbound_record_id: str) -> dict:
     inspection = _get_by_outbound_id(db, outbound_record_id)
     photos = list_photos(db, inspection.id) if inspection is not None else []
     videos = list_photos(db, inspection.id, "video") if inspection is not None else []
+    from app.shipping_inspection.outbound_sync_state import evidence, BLOCKED
+    stale_ids, required_ids = evidence(db, outbound_record_id)
+    sync_event = db.query(ShippingOperationEvent).filter_by(scope='outbound-invoice-sync', request_id=str(outbound_record_id)).first()
     return {
         "record": record,
         "items": items,
@@ -302,8 +325,10 @@ def scan_payload(db: Session, outbound_record_id: str) -> dict:
              "edit_version": inspection.edit_version, "remark": inspection.remark}
             if inspection is not None else None
         ),
-        "photos": [_photo_to_dict(p) for p in photos],
-        "videos": [_photo_to_dict(p) for p in videos],
+        "photos": [_photo_to_dict(p, stale_ids) for p in photos],
+        "videos": [_photo_to_dict(p, stale_ids) for p in videos],
+        "required_recheck_ids": required_ids,
+        "outbound_sync_pending": bool(sync_event and sync_event.action in BLOCKED),
     }
 
 
@@ -390,6 +415,9 @@ def get_record_detail(db: Session, inspection_id: int) -> dict | None:
     if inspection is None:
         return None
     photos = list_photos(db, inspection.id)
+    from app.shipping_inspection.outbound_sync_state import evidence, BLOCKED
+    stale_ids, required_ids = evidence(db, inspection.outbound_record_id)
+    sync_event = db.query(ShippingOperationEvent).filter_by(scope='outbound-invoice-sync', request_id=inspection.outbound_record_id).first()
     try:
         items = outbound_service.list_outbound_items(db, inspection.outbound_record_id)
     except Exception as exc:  # noqa: BLE001 - 历史验货单不该被业务库结构变化卡死
@@ -407,6 +435,8 @@ def get_record_detail(db: Session, inspection_id: int) -> dict | None:
         "submitted_at": inspection.submitted_at,
         "submitted_by_name": submitter.real_name if submitter else None,
         "items": items,
-        "photos": [_photo_to_dict(p) for p in photos],
-        "videos": [_photo_to_dict(p) for p in list_photos(db, inspection.id, "video")],
+        "photos": [_photo_to_dict(p, stale_ids) for p in photos],
+        "videos": [_photo_to_dict(p, stale_ids) for p in list_photos(db, inspection.id, "video")],
+        "required_recheck_ids": required_ids,
+        "outbound_sync_pending": bool(sync_event and sync_event.action in BLOCKED),
     }

@@ -102,12 +102,20 @@ def export_inspection_pdf(db, inspection_id, edit_version=None):
         photos = db.query(ShippingInspectionPhoto).filter_by(
             inspection_id=inspection.id, media_type="image",
         ).order_by(ShippingInspectionPhoto.sort, ShippingInspectionPhoto.id).populate_existing().with_for_update().all()
+        from app.shipping_inspection.outbound_sync_state import evidence
+        stale_ids, required_ids = evidence(db, inspection.outbound_record_id)
+        from app.shipping_inspection.outbound_sync_state import SCOPE, BLOCKED
+        from app.shipping_inspection.models import ShippingOperationEvent
+        sync_event = db.query(ShippingOperationEvent).filter_by(scope=SCOPE, request_id=inspection.outbound_record_id).first()
+        if required_ids or (sync_event and sync_event.action in BLOCKED):
+            raise HTTPException(409, '出库资料已更新，需重新验货后下载')
+        photos = [photo for photo in photos if photo.id not in stale_ids]
         submitter = db.get(ArkUser, inspection.submitted_by) if inspection.submitted_by else None
         submitter = SimpleNamespace(real_name=submitter.real_name) if submitter else None
         photos = [SimpleNamespace(file_path=p.file_path, item_id=p.item_id,
                   storage=transfers.snapshot(db, 'shipping-inspection', p.file_path)) for p in photos]
         inspection = SimpleNamespace(**{name: getattr(inspection, name) for name in
-            ('id', 'outbound_no', 'customer_name', 'submitted_at', 'remark', 'edit_version')})
+            ('id', 'outbound_record_id', 'outbound_no', 'customer_name', 'submitted_at', 'remark', 'edit_version')})
         db.rollback()  # Network reads and PDF rendering must not retain row locks.
         doc = InspectionPages(f"验货单-{inspection.outbound_no}")
         doc.text("发货验货单")
@@ -132,6 +140,9 @@ def export_inspection_pdf(db, inspection_id, edit_version=None):
         current = db.query(ShippingInspection).filter_by(id=inspection.id).populate_existing().first()
         if current is None or current.status != C.STATUS_SUBMITTED or current.edit_version != inspection.edit_version:
             raise HTTPException(409, '验货单已撤回或更新，请重新下载')
+        current_sync = db.query(ShippingOperationEvent).filter_by(scope=SCOPE, request_id=inspection.outbound_record_id).populate_existing().first()
+        if current_sync and (current_sync.action in BLOCKED or (current_sync.result or {}).get('required_recheck_ids')):
+            raise HTTPException(409, '出库资料已更新，需重新验货后下载')
         return doc.finish(), inspection.outbound_no
     except HTTPException as exc:
         if exc.status_code == 409:

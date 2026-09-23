@@ -50,6 +50,7 @@ def build(before, order, products, remark):
     if any(str(r.get('order_id')) != str(order['order_id']) for r in old.values()):
         raise ValueError('出库单包含其他订单，不能整单覆盖')
     edits, expected, changes = [], [], []
+    material_order_ids = []
     for identity, product in wanted.items():
         previous = old.get(identity)
         row = dict(order_id=order['order_id'], order_record_id=int(identity),
@@ -62,12 +63,18 @@ def build(before, order, products, remark):
         if previous:
             row['outbound_record_id'] = previous['outbound_record_id']
             row['cost_unit_price_rmb'] = previous.get('cost_unit_price_rmb', 0)
+        if previous is None or any(str(previous.get(k, '')) != str(row.get(k, '')) for k in (
+                'product_id', 'sku_id', 'product_name', 'product_model', 'product_cn_name', 'product_unit')) \
+                or number(previous['outbound_count']) != number(row['outbound_count']):
+            material_order_ids.append(str(identity))
         edits.append(row)
         expected.append(row)
-        if previous is None or any(str(previous.get(k, '')) != str(row.get(k, '')) for k in ('product_id', 'sku_id', 'product_name', 'product_model', 'product_unit')) or any(number(previous[k]) != number(row[k]) for k in ('outbound_count', 'sale_price')):
+        if previous is None or any(str(previous.get(k, '')) != str(row.get(k, '')) for k in ('product_id', 'sku_id', 'product_name', 'product_model', 'product_cn_name', 'product_unit')) or any(number(previous[k]) != number(row[k]) for k in ('outbound_count', 'sale_price')):
             changes.append({'action': '修改' if previous else '新增', 'before': display(previous), 'after': display(row)})
+    removed_order_ids = []
     for identity, previous in old.items():
         if identity not in wanted:
+            removed_order_ids.append(str(identity))
             # OKKI validates row fields before applying remove, so retain the
             # original values even though the row will be deleted.
             removed = {key: previous[key] for key in (
@@ -82,9 +89,14 @@ def build(before, order, products, remark):
     # Deliberately omit status: never turn an externally shipped document back into pending.
     payload = {'outbound_invoice_id': before['outbound_invoice_id'], 'handler': handler,
                'remark': remark, 'record_list': edits}
+    remark_changed = (before.get('remark') or '') != remark
     return {'payload': payload, 'expected': expected, 'changes': changes,
             'remark_before': before.get('remark') or '', 'remark_after': remark,
-            'changed': bool(changes) or (before.get('remark') or '') != remark}
+            'changed': bool(changes) or remark_changed,
+            'material_order_ids': material_order_ids, 'removed_order_ids': removed_order_ids,
+            'remark_changed': remark_changed,
+            'requires_whole_recheck': remark_changed or bool(removed_order_ids),
+            'material_changed': bool(material_order_ids or removed_order_ids or remark_changed)}
 
 
 def display(row):

@@ -58,6 +58,7 @@
             <el-tag v-else size="small" :type="INSPECTION_STATUS_TAGS[row.status] || 'info'">
               {{ INSPECTION_STATUS_LABELS[row.status] || row.status }}
             </el-tag>
+            <el-tag v-if="row.recheck_status" size="small" type="warning">{{ row.recheck_status === 'pending_sync' ? '待同步重验' : '待补验' }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="照片数" min-width="80" align="right">
@@ -66,13 +67,13 @@
         <el-table-column class-name="table-action-column" label="操作" min-width="390" fixed="right">
           <template #default="{ row }">
             <GlassButton
-              v-if="row.can_print" variant="link" left-icon="Printer"
+              v-if="row.can_print && !row.recheck_status" variant="link" left-icon="Printer"
               :loading="printingId === row.outbound_record_id"
               @click="openPrint(row)"
             >打印出库单</GlassButton>
-            <GlassButton v-if="row.can_print" variant="link" left-icon="Download"
+            <GlassButton v-if="row.can_print && !row.recheck_status" variant="link" left-icon="Download"
               :loading="downloadingId === row.outbound_record_id" @click="downloadWord(row)">下载 Word</GlassButton>
-            <span v-if="!row.can_print" class="queue-note">{{ outboundPendingHint(row.outbound_state) }}</span>
+            <span v-if="!row.can_print || row.recheck_status" class="queue-note">{{ row.recheck_status === 'pending_sync' ? '待同步并重验' : row.recheck_status === 'pending_inspection' ? '待补验' : outboundPendingHint(row.outbound_state) }}</span>
             <span v-if="row.record_source === 'okki' && row.outbound_invoice_id" v-permission="'invoice:sync'">
               <GlassButton v-permission="'shipping_inspection:write'" variant="link" left-icon="Refresh"
                 :loading="syncingId === row.outbound_record_id" :disabled="syncingId !== null || deletingId !== null"

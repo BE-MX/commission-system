@@ -20,7 +20,20 @@ export function useShippingStation(api = stationApi) {
   const submitted = computed(() => view.value?.inspection?.status === 'submitted')
   const photos = computed(() => view.value?.photos || [])
   const videos = computed(() => view.value?.videos || [])
-  const canWrite = computed(() => !!sessionId.value && !busy.value && !invalid.value && !submitted.value && !pendingSubmit.value)
+  const missingRecheck = computed(() => {
+    const required = view.value?.required_recheck_ids || []
+    const fresh = photos.value.filter(photo => !photo.stale)
+    const missing = []
+    if (required.includes('__all_items__')) {
+      for (const item of view.value?.items || []) {
+        if (!fresh.some(photo => photo.item_id === item.item_id)) missing.push(item.product_name || item.item_id)
+      }
+    }
+    if (required.includes('__whole__') && !fresh.some(photo => photo.item_id == null)) missing.push('整单')
+    return missing
+  })
+  const canWrite = computed(() => !!sessionId.value && !busy.value && !invalid.value && !submitted.value
+    && !pendingSubmit.value && !view.value?.outbound_sync_pending)
   const editVersion = () => view.value?.inspection?.edit_version || 0
   const dirty = computed(() => !!view.value && remark.value !== (view.value.inspection?.remark || ''))
 
@@ -182,6 +195,7 @@ export function useShippingStation(api = stationApi) {
   async function submit() {
     if (busy.value || invalid.value || (!canWrite.value && !pendingSubmit.value)) return
     if (pendingCompression.value) { error.value = '已选择的视频尚未上传，请先完成视频上传'; return }
+    if (missingRecheck.value.length) { error.value = `请补拍：${missingRecheck.value.join('、')}`; return }
     if (!photos.value.length) { error.value = '每张出库单至少上传一张照片'; return }
     busy.value = true
     pendingSubmit.value ||= { edit_version: editVersion(), request_id: requestId(), remark: remark.value }
@@ -235,7 +249,7 @@ export function useShippingStation(api = stationApi) {
     window.removeEventListener('beforeunload', warnLeave)
   })
   return { operators, selected, operator, view, remark, busy, loading, scannerOpen, error, invalid, loginRequired,
-    prompt, selectionVersion, receipt, progress, uploadStage, photos, videos, submitted, canWrite, sessionId, dirty, pendingUpload, pendingSubmit,
+    prompt, selectionVersion, receipt, progress, uploadStage, photos, videos, submitted, canWrite, missingRecheck, sessionId, dirty, pendingUpload, pendingSubmit,
     uploadItemId, uploadError, pendingCompression, retryCompression, awaitingVideoActivation, discardCompression, prepareVideo, cancelVideoPreparation,
     choose, startScan, decoded, refresh, upload, retryUpload, remove, submit, end, loadOperators, fail }
 }

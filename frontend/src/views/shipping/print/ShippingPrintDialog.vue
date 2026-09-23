@@ -81,11 +81,15 @@ async function load() {
     if (props.mode === 'inspection') {
       const res = await getInspectionRecord(props.recordId)
       const data = res.data || {}
+      if (data.status !== 'submitted' || data.outbound_sync_pending || data.required_recheck_ids?.length) {
+        loadError.value = '出库资料待同步或待补验，请完成重新验货后打印'
+        return
+      }
       const items = data.items || []
       payload.value = {
         record: data,
         items,
-        photosDataUrls: await loadInspectionPhotos(data.photos),
+        photosDataUrls: await loadInspectionPhotos((data.photos || []).filter(photo => !photo.stale)),
         photoItemMap: Object.fromEntries(items.map(item => [item.item_id, item.product_name])),
       }
     } else {
@@ -106,12 +110,31 @@ async function load() {
   }
 }
 
-function doPrint() {
-  const frame = frameRef.value
-  if (!frame?.contentWindow) return
-  // 必须先 focus：不聚焦时部分浏览器会把打印指令派给父文档，又变成打印整页
-  frame.contentWindow.focus()
-  frame.contentWindow.print()
+async function doPrint() {
+  if (loading.value || loadError.value || !payload.value) return
+  loading.value = true
+  try {
+    if (props.mode === 'inspection') {
+      const latest = (await getInspectionRecord(props.recordId)).data || {}
+      if (latest.status !== 'submitted' || latest.outbound_sync_pending || latest.required_recheck_ids?.length
+          || latest.edit_version !== payload.value.record.edit_version) {
+        throw new Error('inspection changed')
+      }
+    } else {
+      const latest = (await getOutboundPrintData(props.recordId)).data || {}
+      if (JSON.stringify(latest.record) !== JSON.stringify(payload.value.record)
+          || JSON.stringify(latest.items) !== JSON.stringify(payload.value.items)) {
+        throw new Error('outbound changed')
+      }
+    }
+    const frame = frameRef.value
+    if (!frame?.contentWindow) return
+    // 必须先 focus：不聚焦时部分浏览器会把打印指令派给父文档，又变成打印整页
+    frame.contentWindow.focus()
+    frame.contentWindow.print()
+  } catch {
+    loadError.value = '单据资料已变化，请关闭后重新打开打印预览'
+  } finally { loading.value = false }
 }
 
 function close() {

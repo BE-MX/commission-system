@@ -11,7 +11,7 @@ from app.invoice import outbound_followup_service as followup
 from app.invoice.xiaoman_service import _build_product_rows as build_product_rows
 from app.shipping_inspection import outbound_sync_service as sync, outbound_sync_state as state
 from app.shipping_inspection import outbound_sync_plan as plans, outbound_service, service
-from app.shipping_inspection.models import ShippingOperationEvent, ShippingInspection
+from app.shipping_inspection.models import ShippingOperationEvent, ShippingInspection, ShippingInspectionPhoto
 from tests.test_outbound_delete import case, BASE
 from tests.test_shipping_inspection import _pc_client, _user, _bind_okki, outbound_scope_seed, product_display_source
 
@@ -289,7 +289,10 @@ def test_invoice_sync_followup_uses_live_outbound_even_if_queue_is_not_done(db, 
 
 def test_invoice_sync_followup_preserves_inspection_and_reports_partial_success(db, sync_case):
     user, inv, _, fake = sync_case
-    db.add(ShippingInspection(outbound_record_id='OB001', status='submitted', created_by=user.id))
+    inspection = ShippingInspection(outbound_record_id='OB001', status='submitted', created_by=user.id)
+    db.add(inspection)
+    db.flush()
+    db.add(ShippingInspectionPhoto(inspection_id=inspection.id, item_id='okki:701', file_path='old.jpg'))
     db.commit()
     result = followup.safely_run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
     assert result['status'] == 'manual' and '验货' in result['message']
@@ -366,11 +369,10 @@ def test_stale_preview_never_posts(db, sync_case):
     assert not fake['posts']
 
 
-@pytest.mark.parametrize('block', ['shipped', 'inspection', 'split', 'unsynced', 'order_changed', 'duplicate'])
+@pytest.mark.parametrize('block', ['shipped', 'split', 'unsynced', 'order_changed', 'duplicate'])
 def test_unsafe_states_never_post(db, sync_case, monkeypatch, block):
     user, inv, item, fake = sync_case
     if block == 'shipped': fake['outbound']['status'] = 2
-    if block == 'inspection': db.add(ShippingInspection(outbound_record_id='OB001', status='draft', created_by=user.id))
     if block == 'split': monkeypatch.setattr(sync.linked_outbound_service, 'find_related', lambda *args: [fake['outbound'], {'outbound_invoice_id':88}])
     if block == 'unsynced': inv.sync_status = 'not_synced'
     if block == 'order_changed': fake['order']['product_list'][0]['count'] = 9
@@ -380,6 +382,149 @@ def test_unsafe_states_never_post(db, sync_case, monkeypatch, block):
         response = client.post(f'{BASE}/OB001/invoice-sync/preview')
         assert response.status_code == 409, response.text
     assert not fake['posts']
+
+
+def test_empty_inspection_draft_syncs_and_invalidates_open_station(db, sync_case):
+    user, inv, _, fake = sync_case
+    inspection = ShippingInspection(outbound_record_id='OB001', status='draft', created_by=user.id)
+    db.add(inspection)
+    db.commit()
+    result = followup.run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
+    assert result['status'] == 'done'
+    db.refresh(inspection)
+    assert inspection.edit_version == 1
+    assert len(fake['posts']) == 1
+
+
+def test_price_only_syncs_with_submitted_inspection_and_keeps_evidence(db, sync_case):
+    user, inv, item, fake = sync_case
+    item.product_id, item.sku_id, item.product_name, item.length, item.quantity = 18, 180, 'Weft/18/#1006/60g', '18', 1
+    item.price_per_piece = Decimal('99')
+    inv.remark = 'old note'
+    fake['order']['product_list'][0].update(product_id=18, sku_id=180, product_name=item.product_name, count=1, unit_price=99)
+    inspection = ShippingInspection(outbound_record_id='OB001', status='submitted', created_by=user.id)
+    db.add(inspection)
+    db.flush()
+    old = ShippingInspectionPhoto(inspection_id=inspection.id, item_id='IT001', file_path='old.jpg')
+    db.add(old)
+    db.commit()
+    result = followup.run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
+    assert result['status'] == 'done'
+    db.refresh(inspection)
+    assert inspection.status == 'submitted' and inspection.edit_version == 0
+    assert old.id not in state.evidence(db, 'OB001')[0]
+    assert fake['outbound']['record_list'][0]['sale_price'] == 99
+
+
+def test_product_chinese_name_change_is_a_real_sync_not_check_only(db, sync_case):
+    user, inv, item, fake = sync_case
+    item.product_id, item.sku_id, item.product_name, item.length, item.quantity = 18, 180, 'Weft/18/#1006/60g', '18', 1
+    item.price_per_piece = Decimal('81.84')
+    inv.remark = 'old note'
+    fake['order']['product_list'][0].update(product_id=18, sku_id=180, product_name=item.product_name,
+                                            count=1, unit_price=81.84, product_cn_name='新中文名')
+    fake['outbound']['record_list'][0]['product_cn_name'] = '旧中文名'
+    db.commit()
+    actor = {'sub': str(user.id), 'permissions': PERMS, 'roles': []}
+    record = outbound_service.get_outbound_record(db, 'OB001')
+    preview = sync.preview(db, record, actor)
+    assert preview['changed']
+    assert sync.synchronize(db, record, actor, preview['version'])['status'] == 'sync_done'
+    assert len(fake['posts']) == 1
+    assert fake['outbound']['record_list'][0]['product_cn_name'] == '新中文名'
+
+
+def test_remark_only_with_inspection_media_requires_new_whole_order_photo(db, sync_case):
+    user, inv, item, fake = sync_case
+    item.product_id, item.sku_id, item.product_name, item.length, item.quantity = 18, 180, 'Weft/18/#1006/60g', '18', 1
+    item.price_per_piece = Decimal('81.84')
+    fake['order']['product_list'][0].update(product_id=18, sku_id=180, product_name=item.product_name,
+                                            count=1, unit_price=81.84)
+    inspection = ShippingInspection(outbound_record_id='OB001', status='draft', created_by=user.id)
+    db.add(inspection)
+    db.flush()
+    old_item = ShippingInspectionPhoto(inspection_id=inspection.id, item_id='IT001', file_path='old-item.jpg')
+    old_whole = ShippingInspectionPhoto(inspection_id=inspection.id, item_id=None, file_path='old-whole.jpg')
+    db.add_all([old_item, old_whole])
+    db.commit()
+    actor = {'sub': str(user.id), 'permissions': PERMS, 'roles': []}
+    record = outbound_service.get_outbound_record(db, 'OB001')
+    preview = sync.preview(db, record, actor)
+    assert preview['requires_recheck']
+    assert sync.synchronize(db, record, actor, preview['version'], confirm_recheck=True)['status'] == 'sync_done'
+    stale, required = state.evidence(db, 'OB001')
+    assert old_whole.id in stale and old_item.id not in stale
+    assert required == ['__whole__']
+
+
+def test_material_change_with_photos_waits_for_confirm_then_requires_fresh_evidence(db, sync_case, monkeypatch):
+    user, inv, _, fake = sync_case
+    inspection = ShippingInspection(outbound_record_id='OB001', status='draft', created_by=user.id)
+    db.add(inspection)
+    db.flush()
+    old = ShippingInspectionPhoto(inspection_id=inspection.id, item_id='IT001', file_path='old.jpg')
+    db.add(old)
+    db.commit()
+    actor = {'sub': str(user.id), 'permissions': PERMS, 'roles': []}
+    assert followup.run(db, inv, actor)['status'] == 'manual'
+    assert not fake['posts']
+    with _pc_client(db, user, PERMS) as client:
+        assert client.get(f'{BASE}/OB001/print-data').status_code == 409
+        preview = client.post(f'{BASE}/OB001/invoice-sync/preview').json()['data']
+        assert preview['requires_recheck'] and preview['inspection_status'] == 'draft'
+        result = client.post(f'{BASE}/OB001/invoice-sync', json={'expected_version': preview['version']}).json()['data']
+        assert result['status'] == state.RECHECK
+        assert not fake['posts']
+        result = client.post(f'{BASE}/OB001/invoice-sync', json={
+            'expected_version': preview['version'], 'confirm_recheck': True})
+        assert result.status_code == 200, result.text
+        assert result.json()['data']['status'] == 'sync_done'
+    db.refresh(inspection)
+    assert inspection.edit_version == 1
+    stale, required = state.evidence(db, 'OB001')
+    assert old.id in stale and set(required) == {'__all_items__', '__whole__'}
+    assert service.scan_payload(db, 'OB001')['photos'][0]['stale'] is True
+    with _pc_client(db, user, PERMS) as client:
+        assert client.get(f'{BASE}/OB001/print-data').status_code == 409
+    monkeypatch.setattr(state, 'overlay', lambda *args, **kwargs: None)
+    with pytest.raises(ValueError, match='旧版本'):
+        service.delete_photo(db, old.id, user.id, edit_version=1)
+    db.rollback()
+    with pytest.raises(ValueError, match='补拍'):
+        service.submit(db, outbound_record_id='OB001', user_id=user.id, edit_version=1)
+    db.rollback()
+    db.add_all([
+        ShippingInspectionPhoto(inspection_id=inspection.id, item_id='IT001', file_path='fresh-item.jpg'),
+        ShippingInspectionPhoto(inspection_id=inspection.id, item_id='IT002', file_path='fresh-other-item.jpg'),
+        ShippingInspectionPhoto(inspection_id=inspection.id, item_id=None, file_path='fresh-whole.jpg'),
+    ])
+    db.commit()
+    submitted = service.submit(db, outbound_record_id='OB001', user_id=user.id, edit_version=1)
+    assert submitted.status == 'submitted'
+    assert state.evidence(db, 'OB001')[1] == []
+    with _pc_client(db, user, PERMS) as client:
+        assert client.get(f'{BASE}/OB001/print-data').status_code == 200
+
+
+def test_submitted_material_change_requires_recall_before_confirm(db, sync_case):
+    user, inv, _, fake = sync_case
+    inspection = ShippingInspection(outbound_record_id='OB001', status='submitted', created_by=user.id)
+    db.add(inspection)
+    db.flush()
+    db.add(ShippingInspectionPhoto(inspection_id=inspection.id, item_id='okki:701', file_path='old.jpg'))
+    db.commit()
+    with _pc_client(db, user, PERMS) as client:
+        preview = client.post(f'{BASE}/OB001/invoice-sync/preview').json()['data']
+        blocked = client.post(f'{BASE}/OB001/invoice-sync', json={
+            'expected_version': preview['version'], 'confirm_recheck': True})
+        assert blocked.status_code == 409 and not fake['posts']
+    service.recall(db, inspection.id, user.id, 0)
+    with _pc_client(db, user, PERMS) as client:
+        preview = client.post(f'{BASE}/OB001/invoice-sync/preview').json()['data']
+        applied = client.post(f'{BASE}/OB001/invoice-sync', json={
+            'expected_version': preview['version'], 'confirm_recheck': True})
+        assert applied.status_code == 200, applied.text
+    assert len(fake['posts']) == 1
 
 
 def test_timeout_recovers_by_read_only_and_blocks_invoice_mutation(db, sync_case):

@@ -2,7 +2,7 @@
 from io import BytesIO
 from pypdf import PdfReader
 from PIL import Image
-from app.shipping_inspection import pdf_service, file_service, service
+from app.shipping_inspection import pdf_service, file_service, service, outbound_sync_state
 from tests.test_shipping_inspection import _pc_client, storage, product_display_source, outbound_scope_seed
 from tests.test_shipping_inspection_scope import scoped_inspections, READ
 
@@ -43,6 +43,21 @@ def test_pdf_fails_instead_of_omitting_photo_or_items(db, scoped_inspections, mo
             raise RuntimeError('source unavailable')
         monkeypatch.setattr(pdf_service.outbound_service, 'list_outbound_items', broken)
         assert client.get(url).status_code == 503
+
+
+def test_pdf_blocks_old_submitted_evidence_while_outbound_requires_recheck(db, scoped_inspections):
+    sales, records, photos = scoped_inspections
+    Image.new('RGB', (600, 400), 'blue').save(file_service.resolve_path(photos[0].file_path), format='JPEG')
+    event = outbound_sync_state.lock(db, records[0].outbound_record_id, sales.id)
+    event.action = outbound_sync_state.RECHECK
+    db.commit()
+    url = f'/api/shipping-inspection/records/{records[0].id}/pdf'
+    with _pc_client(db, sales, [READ]) as client:
+        assert client.get(url).status_code == 409
+        event.action = 'sync_done'
+        event.result = {'required_recheck_ids': ['__all_items__']}
+        db.commit()
+        assert client.get(url).status_code == 409
 
 
 def test_pdf_wraps_long_fields_and_paginates_photos(tmp_path):

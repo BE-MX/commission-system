@@ -1166,6 +1166,8 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 2026-09-07 显示字段：扫码及出库打印数据的 `record.remark` 来自 `okki_outbound_records.remark`；`items[].model/size/color` 通过明细 `product_id` 左连 `okki_products.product_id` 读取，同一产品的多条出库明细保留各自数量和照片归属。产品未匹配或字段为空时返回 `null`，不以名称或明细旧规格替代型号。小程序首行用深绿色 40rpx/800 显示型号（缺失提示“未维护型号”），次行 32rpx 显示 `size / color`；顶部发货备注与底部提交的检验备注独立。出库单打印新增发货备注并移除 SKU 列，验货单打印保持原样。
 
+2026-09-23 验货中订单变更：`POST /outbound-records/{record_id}/invoice-sync/preview` 返回 `requires_recheck`、`inspection_status`；已有验货媒体且实物或出库备注变化时保存待重验状态，出库列表 `recheck_status=pending_sync`。`POST /outbound-records/{record_id}/invoice-sync` 新增布尔 `confirm_recheck`，只有仓库在差异预览后显式确认且验货单未提交才更新出库。成功后列表 `recheck_status=pending_inspection`，扫码及验货详情返回 `required_recheck_ids`，媒体返回 `stale`；产品/数量等明细变化时要求镜像中每条现存明细有新照片，备注变化或删除明细要求整单新照片。待同步/待补验期间不允许出库单及验货单打印、验货提交；旧媒体保留归档，不进入新验货打印。无媒体草稿、纯价格改动仍自动同步；已出库和已提交的实物变更不覆盖。
+
 ## 库存色块图工作台集成（`/api/colorwork`，2026-09-14）
 
 工作台下载页新增只读接口（完整前缀 `/api/colorwork/workbench`，模块会话鉴权）：
