@@ -152,24 +152,28 @@ def _owner_scope_clause(db: Session, rm: dict[str, str | None]) -> str:
         return mirror_scope
     item_key = im["invoice_id"] if link == "invoice" else im["record_id"]
     record_key = rm["invoice_id"] if link == "invoice" else rm["id"]
-    # Exact order linkage is mandatory: matching a name or customer alone could
-    # expose unrelated outbound records. A successful create log excludes imports.
-    local_scope = f"""EXISTS (
-        SELECT 1 FROM `{schema}`.`{ITEMS_TABLE}` local_item
-        JOIN ark_invoices local_invoice
-          ON local_invoice.xiaoman_order_id = local_item.order_id
-        JOIN ark_user_external_bindings local_owner
-          ON local_owner.ark_user_id = local_invoice.sales_user_id
-         AND local_owner.provider = 'okki'
-         AND local_owner.binding_status = 'active'
-         AND local_owner.deleted_at IS NULL
-         AND local_owner.external_account_id = :scope_okki_user_id
-        WHERE local_item.`{item_key}` = r.`{record_key}`
-          AND local_invoice.customer_id = r.`{rm['company_id']}`
-          AND EXISTS (SELECT 1 FROM ark_invoice_sync_logs local_sync
-              WHERE local_sync.invoice_id = local_invoice.id
-                AND local_sync.action = 'create' AND local_sync.success = 1)
-    )"""
+    # Materialize the small set of exact (outbound link, customer) pairs once.
+    # A correlated join scanned ark_invoices for every mirror row on MySQL.
+    # The successful create log excludes imports, and the customer check prevents
+    # an order with the same outbound link from granting access to another customer.
+    join = "STRAIGHT_JOIN" if db.get_bind().dialect.name == "mysql" else "JOIN"
+    local_scope = f"""EXISTS (SELECT 1 FROM (
+        SELECT DISTINCT local_item.`{item_key}` AS link_key,
+                        local_invoice.customer_id AS customer_id
+        FROM ark_user_external_bindings local_owner
+        {join} ark_invoices local_invoice
+          ON local_invoice.sales_user_id = local_owner.ark_user_id
+        {join} `{schema}`.`{ITEMS_TABLE}` local_item
+          ON local_item.order_id = local_invoice.xiaoman_order_id
+        {join} ark_invoice_sync_logs local_sync
+          ON local_sync.invoice_id = local_invoice.id
+         AND local_sync.action = 'create' AND local_sync.success = 1
+        WHERE local_owner.provider = 'okki'
+          AND local_owner.binding_status = 'active'
+          AND local_owner.deleted_at IS NULL
+          AND local_owner.external_account_id = :scope_okki_user_id
+    ) owned WHERE owned.link_key = r.`{record_key}`
+        AND owned.customer_id = r.`{rm['company_id']}`)"""
     return f"({local_scope} OR {mirror_scope})"
 
 
@@ -345,7 +349,21 @@ def list_outbound_records(
         LIMIT :limit OFFSET :offset
     """), {**params, "limit": page_size, "offset": (page - 1) * page_size}).mappings().all()
     from app.shipping_inspection.outbound_sync_state import apply_header
-    return [apply_header(db, _map_record_row(row)) for row in rows], int(total)
+    records = [_map_record_row(row) for row in rows]
+    if records:
+        from app.shipping_inspection.models import ShippingOperationEvent
+        from app.shipping_inspection.outbound_sync_state import SCOPE
+
+        events = db.query(ShippingOperationEvent).filter(
+            ShippingOperationEvent.scope == SCOPE,
+            ShippingOperationEvent.request_id.in_(r["outbound_record_id"] for r in records),
+        ).all()
+        by_record = {event.request_id: event for event in events}
+        for record in records:
+            event = by_record.get(record["outbound_record_id"])
+            if event is not None:
+                apply_header(db, record, event=event)
+    return records, int(total)
 
 
 def get_outbound_record(db: Session, record_id: str, okki_user_id: str | None = None, *, include_deleted=False) -> dict | None:

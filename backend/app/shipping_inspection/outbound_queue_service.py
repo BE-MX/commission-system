@@ -136,11 +136,13 @@ def list_outbound_records(db, *, keyword=None, date_from=None, date_to=None,
                           page=1, page_size=20, okki_user_id=None):
     query, params = _queue_query(db, keyword=keyword, date_from=date_from,
                                date_to=date_to, okki_user_id=okki_user_id)
-    total = db.execute(text(f"SELECT COUNT(*) FROM ({query}) q"), params).scalar() or 0
-    keys = db.execute(text(f"""SELECT * FROM ({query}) q
+    keys = db.execute(text(f"""SELECT q.*, COUNT(*) OVER () AS total FROM ({query}) q
         ORDER BY sort_date DESC, local_entry DESC, sort_id DESC, entry_id DESC
         LIMIT :limit OFFSET :offset"""),
         {**params, "limit": page_size, "offset": (page - 1) * page_size}).mappings().all()
+    # An out-of-range page has no window row to carry the total.
+    total = (keys[0]["total"] if keys else
+             db.execute(text(f"SELECT COUNT(*) FROM ({query}) q"), params).scalar() or 0)
     mirror_ids = [k["entry_id"] for k in keys if not k["local_entry"]]
     mirror_rows = []
     if mirror_ids:
