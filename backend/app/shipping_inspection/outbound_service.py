@@ -47,6 +47,7 @@ _RECORD_CANDIDATES: dict[str, list[str]] = {
     "company_id": ["company_id"],
     "owner_name": ["create_user_name", "owner_name", "salesman_name", "user_name", "operator_name"],
     "remark": ["remark"],
+    "updated_at": ["update_time", "updated_at"],
 }
 
 _ITEM_CANDIDATES: dict[str, list[str]] = {
@@ -203,6 +204,7 @@ def _map_record_row(row) -> dict:
         "company_id": _str_or_none(row.get("company_id")),
         "owner_name": _str_or_none(row["owner_name"]),
         "remark": _str_or_none(row["remark"]),
+        "mirror_updated_at": _str_or_none(row.get("mirror_updated_at")),
         "item_count": int(row["item_count"] or 0),
         "total_qty": _num(row["total_qty"]) or 0,
     }
@@ -232,7 +234,8 @@ def _record_select(rm: dict[str, str | None]) -> str:
         f"{_col(rm, 'customer_name', 'r')} AS customer_name, "
         f"{_col(rm, 'company_id', 'r')} AS company_id, "
         f"{_col(rm, 'owner_name', 'r')} AS owner_name, "
-        f"{_col(rm, 'remark', 'r')} AS remark"
+        f"{_col(rm, 'remark', 'r')} AS remark, "
+        f"{_col(rm, 'updated_at', 'r')} AS mirror_updated_at"
     )
 
 
@@ -341,7 +344,8 @@ def list_outbound_records(
         ORDER BY {order_by} r.`{rm['id']}` DESC
         LIMIT :limit OFFSET :offset
     """), {**params, "limit": page_size, "offset": (page - 1) * page_size}).mappings().all()
-    return [_map_record_row(row) for row in rows], int(total)
+    from app.shipping_inspection.outbound_sync_state import apply_header
+    return [apply_header(db, _map_record_row(row)) for row in rows], int(total)
 
 
 def get_outbound_record(db: Session, record_id: str, okki_user_id: str | None = None, *, include_deleted=False) -> dict | None:
@@ -368,11 +372,16 @@ def get_outbound_record(db: Session, record_id: str, okki_user_id: str | None = 
     result = _map_record_row(row)
     result.pop("item_count", None)
     result.pop("total_qty", None)
-    return result
+    from app.shipping_inspection.outbound_sync_state import apply_header
+    return apply_header(db, result)
 
 
-def list_outbound_items(db: Session, record_id: str) -> list[dict]:
+def list_outbound_items(db: Session, record_id: str, *, use_overlay=True, sync_event=None) -> list[dict]:
     """出库明细附产品表 model/size/color；LEFT JOIN 保留产品缺失的原始明细。"""
+    from app.shipping_inspection.outbound_sync_state import overlay
+    snapshot = overlay(db, get_outbound_record(db, record_id), event=sync_event) if use_overlay else None
+    if snapshot:
+        return snapshot['items']
     link, rm, im = _link(db)
     if link is None:
         logger.warning("%s 缺少出库单关联列，明细查询降级为空", ITEMS_TABLE)

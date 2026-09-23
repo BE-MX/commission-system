@@ -1500,3 +1500,11 @@ Agent research context now includes `fact_contract.version=registered_research_f
 - 原 overview 增加 workday_progress，以及 summary/teams/people 的 ahead_of_time（true/false/null）、pace_delta；配置工作日时 time_progress 改用16:00累加口径，无工作日配置保持既有日历参考。
 
 业务和启用说明见 [战报海报](requirements/2026-09-22-battle-posters.md)。
+# 出库单手动同步补充
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| POST | `/api/shipping-inspection/outbound-records/{record_id}/invoice-sync/preview` | 预览最新方舟发票与小满待出库单差异；返回 version、changes 和备注前后值；已有在途任务返回 recover |
+| POST | `/api/shipping-inspection/outbound-records/{record_id}/invoice-sync` | 请求 `{expected_version, check_only:false}` 执行已预览的同步；`check_only:true` 只核对，绝不发送；返回 sync_done / sync_pending / sync_sending / sync_uncertain 或 requires_preview |
+
+两接口均要求 `shipping_inspection:write` + `invoice:sync`，双重数据范围校验。业务冲突返回409。详见[手动同步说明](outbound-invoice-sync.md)。

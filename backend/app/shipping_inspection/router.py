@@ -34,6 +34,8 @@ logger = logging.getLogger("commission")
 router = APIRouter()
 from app.shipping_inspection.station_router import router as station_router
 router.include_router(station_router)
+from app.shipping_inspection.outbound_sync_router import router as outbound_sync_router
+router.include_router(outbound_sync_router)
 
 _READ = ("shipping_inspection:read", "shipping_inspection:write", "shipping_inspection:admin")
 
@@ -199,7 +201,12 @@ def outbound_print_data(
         record = outbound_service.get_outbound_record(db, record_id, okki_user_id=scope_okki_user)
         if record is None:
             raise HTTPException(status_code=404, detail="出库单不存在")
-        items = outbound_service.list_outbound_items(db, record_id)
+        from app.shipping_inspection.outbound_sync_state import ensure_printable, apply_header
+        sync_event = ensure_printable(db, record_id)
+        record = apply_header(db, record, event=sync_event)
+        items = outbound_service.list_outbound_items(db, record_id, sync_event=sync_event)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except outbound_service.OutboundTableError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     from app.shipping_inspection.print_service import annotate_print_items, sort_outbound_print_items
@@ -229,7 +236,12 @@ def outbound_word(
         record = outbound_service.get_outbound_record(db, record_id, okki_user_id=scope)
         if record is None:
             raise HTTPException(status_code=404, detail="出库单不存在")
-        items = outbound_service.list_outbound_items(db, record_id)
+        from app.shipping_inspection.outbound_sync_state import ensure_printable, apply_header
+        sync_event = ensure_printable(db, record_id)
+        record = apply_header(db, record, event=sync_event)
+        items = outbound_service.list_outbound_items(db, record_id, sync_event=sync_event)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except outbound_service.OutboundTableError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     content = build_outbound_word(

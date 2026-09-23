@@ -63,7 +63,7 @@
         <el-table-column label="照片数" min-width="80" align="right">
           <template #default="{ row }">{{ row.record_source === 'ark_task' ? '—' : row.photo_count }}</template>
         </el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" min-width="285" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="390" fixed="right">
           <template #default="{ row }">
             <GlassButton
               v-if="row.can_print" variant="link" left-icon="Printer"
@@ -73,9 +73,14 @@
             <GlassButton v-if="row.can_print" variant="link" left-icon="Download"
               :loading="downloadingId === row.outbound_record_id" @click="downloadWord(row)">下载 Word</GlassButton>
             <span v-if="!row.can_print" class="queue-note">{{ outboundPendingHint(row.outbound_state) }}</span>
+            <span v-if="row.record_source === 'okki' && row.outbound_invoice_id" v-permission="'invoice:sync'">
+              <GlassButton v-permission="'shipping_inspection:write'" variant="link" left-icon="Refresh"
+                :loading="syncingId === row.outbound_record_id" :disabled="syncingId !== null || deletingId !== null"
+                @click="previewSync(row)">同步订单</GlassButton>
+            </span>
             <GlassButton v-if="row.record_source === 'okki' && row.outbound_invoice_id"
               v-permission="'shipping_inspection:delete'" variant="link" link-tone="danger" left-icon="Delete"
-              :loading="deletingId === row.outbound_record_id" :disabled="deletingId !== null"
+              :loading="deletingId === row.outbound_record_id" :disabled="deletingId !== null || syncingId !== null"
               @click="deleteRecord(row)">删除</GlassButton>
             <GlassButton v-if="row.record_source === 'okki'" v-permission="'shipping_inspection:admin'" variant="link" :disabled="deletingId !== null" @click="recoverDeletion(row)">恢复删除任务</GlassButton>
           </template>
@@ -87,6 +92,7 @@
         class="pager" @current-change="handlePageChange" @size-change="handleSizeChange"
       />
     </div>
+    <OutboundSyncDialog v-model:visible="syncVisible" :busy="syncingId !== null" :preview="syncPreview" :row="syncRow" @apply="applySync" />
   </div>
 </template>
 
@@ -97,13 +103,16 @@
 import { INSPECTION_STATUS_LABELS, INSPECTION_STATUS_TAGS } from '@/api/shipping'
 import GlassButton from '@/components/GlassButton.vue'
 import { useOutboundRecords } from './composables/useOutboundRecords'
+import { useOutboundInvoiceSync } from './composables/useOutboundInvoiceSync'
+import OutboundSyncDialog from './OutboundSyncDialog.vue'
 import { OUTBOUND_STATE_LABELS, OUTBOUND_STATE_TAGS, outboundPendingHint } from './composables/outboundStates'
 
 const {
-  loading, list, total, page, pageSize, searchForm,
+  loading, list, total, page, pageSize, searchForm, fetchList,
   handleSearch, handlePageChange, handleSizeChange,
   printingId, openPrint, downloadingId, downloadWord, deletingId, deleteRecord, recoverDeletion,
 } = useOutboundRecords()
+const { syncingId, syncVisible, syncPreview, syncRow, previewSync, applySync } = useOutboundInvoiceSync(fetchList)
 </script>
 
 <style scoped>

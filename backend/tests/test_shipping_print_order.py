@@ -65,7 +65,7 @@ def test_word_order_and_only_grade_is_large_bold():
 
 def test_print_api_and_word_share_order(db, monkeypatch):
     from app.shipping_inspection import outbound_service
-    monkeypatch.setattr(outbound_service, "list_outbound_items", lambda *args: sample_items())
+    monkeypatch.setattr(outbound_service, "list_outbound_items", lambda *args, **kwargs: sample_items())
     with _pc_client(db, _user(db), [], roles=["super_admin"]) as client:
         response = client.get("/api/shipping-inspection/outbound-records/OB001/print-data")
         assert response.status_code == 200

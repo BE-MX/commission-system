@@ -93,6 +93,8 @@ def get_or_create_draft(db: Session, outbound_record_id: str, user_id: int) -> S
     回退为复用已有行。MySQL REPEATABLE READ 下使用 savepoint 回滚与当前读，
     既看到对方已提交的行，也保留共用手机会话锁与外层审计事务。
     """
+    from app.shipping_inspection.outbound_sync_state import ensure_inspection_idle
+    ensure_inspection_idle(db, outbound_record_id, user_id)
     inspection = _get_by_outbound_id(db, outbound_record_id)
     if inspection is not None:
         return inspection
