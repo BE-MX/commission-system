@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy import text
 from app.invoice.models import InvoiceItem
 from app.invoice import lifecycle_guard, okki_client
+from app.invoice import outbound_followup_service as followup
 from app.invoice.xiaoman_service import _build_product_rows as build_product_rows
 from app.shipping_inspection import outbound_sync_service as sync, outbound_sync_state as state
 from app.shipping_inspection import outbound_sync_plan as plans, outbound_service, service
@@ -96,6 +97,142 @@ def test_sync_updates_original_line_quantity_price_remark_and_prints_before_mirr
         service.get_or_create_draft(db, 'OB001', user.id)
 
 
+def test_invoice_sync_followup_updates_unique_pending_outbound(db, sync_case):
+    user, inv, _, fake = sync_case
+    actor = {'sub': str(user.id), 'permissions': PERMS, 'roles': []}
+    result = followup.run(db, inv, actor)
+    assert result['status'] == 'done'
+    assert len(fake['posts']) == 1
+    assert fake['outbound']['record_list'][0]['product_name'] == 'Weft/22/#1006/60g'
+
+
+def test_invoice_sync_followup_requeues_shortage_without_creating(db, sync_case, monkeypatch):
+    user, inv, _, fake = sync_case
+    from app.invoice.models import OkkiOutboundTask
+    task = db.query(OkkiOutboundTask).filter_by(invoice_id=inv.id).one()
+    task.status = 'waiting_stock'
+    task.last_error = '{"outcome":"waiting_stock","shortages":[{"sku_id":"180","required":2,"available":0}]}'
+    db.commit()
+    monkeypatch.setattr(followup.linked_outbound_service, 'find_related', lambda *args: [])
+    original_read = followup.remote.read
+    monkeypatch.setattr(followup.remote, 'read', lambda db, path, params: (
+        {'count': 1, 'list': [{'sku_id': 220, 'warehouse_id': followup.DESTINATION_WAREHOUSE_ID,
+                              'enable_count': 2, 'disable_flag': 0}]}
+        if path.endswith('inventory-list') else original_read(db, path, params)))
+    result = followup.run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
+    assert result['status'] == 'pending'
+    assert task.status == 'pending' and task.last_error is None
+    assert fake['posts'] == []
+
+
+def test_invoice_sync_followup_refreshes_current_shortages_without_creating(db, sync_case, monkeypatch):
+    user, inv, _, fake = sync_case
+    from app.invoice.models import OkkiOutboundTask
+    task = db.query(OkkiOutboundTask).filter_by(invoice_id=inv.id).one()
+    task.status = 'waiting_stock'
+    db.commit()
+    monkeypatch.setattr(followup.linked_outbound_service, 'find_related', lambda *args: [])
+    original_read = followup.remote.read
+    monkeypatch.setattr(followup.remote, 'read', lambda db, path, params: (
+        {'count': 1, 'list': [{'sku_id': 220, 'warehouse_id': followup.DESTINATION_WAREHOUSE_ID,
+                              'enable_count': 1, 'disable_flag': 0}]}
+        if path.endswith('inventory-list') else original_read(db, path, params)))
+    result = followup.run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
+    assert result['status'] == 'waiting_stock' and result['shortages'] == [{'sku_id': '220', 'required': 2.0, 'available': 1.0}]
+    assert task.status == 'waiting_stock' and '"sku_id": "220"' in task.last_error
+    assert fake['posts'] == []
+
+
+def test_invoice_sync_followup_keeps_shortage_task_on_incomplete_inventory(db, sync_case, monkeypatch):
+    user, inv, _, fake = sync_case
+    from app.invoice.models import OkkiOutboundTask
+    task = db.query(OkkiOutboundTask).filter_by(invoice_id=inv.id).one()
+    task.status = 'waiting_stock'
+    task.last_error = 'previous shortage'
+    db.commit()
+    monkeypatch.setattr(followup.linked_outbound_service, 'find_related', lambda *args: [])
+    original_read = followup.remote.read
+    monkeypatch.setattr(followup.remote, 'read', lambda db, path, params: (
+        {'count': 2, 'list': []} if path.endswith('inventory-list') else original_read(db, path, params)))
+    result = followup.safely_run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
+    assert result['status'] == 'manual' and '库存列表不完整' in result['message']
+    assert task.status == 'waiting_stock' and task.last_error == 'previous shortage'
+    assert fake['posts'] == []
+
+
+@pytest.mark.parametrize('change', ['remote', 'local'])
+def test_invoice_sync_followup_does_not_store_stale_shortages(db, sync_case, monkeypatch, change):
+    user, inv, _, fake = sync_case
+    from app.invoice.models import OkkiOutboundTask
+    task = db.query(OkkiOutboundTask).filter_by(invoice_id=inv.id).one()
+    task.status = 'waiting_stock'
+    task.last_error = 'previous shortage'
+    db.commit()
+    monkeypatch.setattr(followup.linked_outbound_service, 'find_related', lambda *args: [])
+    original_read = followup.remote.read
+    order_reads = 0
+    def read(db, path, params):
+        nonlocal order_reads
+        if path.endswith('inventory-list'):
+            if change == 'local':
+                inv.remark = 'changed during stock read'
+                db.commit()
+            return {'count': 1, 'list': [{'sku_id': 220, 'warehouse_id': followup.DESTINATION_WAREHOUSE_ID,
+                                         'enable_count': 1, 'disable_flag': 0}]}
+        order_reads += 1
+        order = original_read(db, path, params)
+        if change == 'remote' and order_reads == 2:
+            order['product_list'][0]['count'] = 3
+        return order
+    monkeypatch.setattr(followup.remote, 'read', read)
+    result = followup.run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
+    assert result['status'] == 'manual' and '发生变化' in result['message']
+    assert task.status == 'waiting_stock' and task.last_error == 'previous shortage'
+    assert fake['posts'] == []
+
+
+def test_invoice_sync_followup_handles_existing_outbound_even_if_queue_says_shortage(db, sync_case):
+    user, inv, _, fake = sync_case
+    from app.invoice.models import OkkiOutboundTask
+    task = db.query(OkkiOutboundTask).filter_by(invoice_id=inv.id).one()
+    task.status = 'waiting_stock'
+    db.commit()
+    result = followup.run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
+    assert result['status'] == 'done'
+    assert task.status == 'waiting_stock'
+    assert len(fake['posts']) == 1
+
+
+@pytest.mark.parametrize('status', ['pending', 'skipped'])
+def test_invoice_sync_followup_uses_live_outbound_even_if_queue_is_not_done(db, sync_case, status):
+    user, inv, _, fake = sync_case
+    from app.invoice.models import OkkiOutboundTask
+    task = db.query(OkkiOutboundTask).filter_by(invoice_id=inv.id).one()
+    task.status = status
+    if status == 'skipped': task.reason = '含未建品非标行'
+    db.commit()
+    result = followup.run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
+    assert result['status'] == 'done'
+    assert len(fake['posts']) == 1
+
+
+def test_invoice_sync_followup_preserves_inspection_and_reports_partial_success(db, sync_case):
+    user, inv, _, fake = sync_case
+    db.add(ShippingInspection(outbound_record_id='OB001', status='submitted', created_by=user.id))
+    db.commit()
+    result = followup.safely_run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
+    assert result['status'] == 'manual' and '验货' in result['message']
+    assert fake['posts'] == []
+
+
+def test_invoice_sync_followup_respects_outbound_scope_and_write_permission(db, sync_case):
+    user, inv, _, fake = sync_case
+    assert outbound_service.get_record_by_outbound_invoice_id(db, '77', okki_user_id='9002') is None
+    result = followup.run(db, inv, {'sub': str(user.id), 'permissions': ['invoice:sync'], 'roles': []})
+    assert result['status'] == 'manual' and '权限' in result['message']
+    assert fake['posts'] == []
+
+
 @pytest.mark.parametrize('operation', ['add', 'replace', 'remove'])
 def test_accessories_sync_with_hair_and_appear_in_print(db, sync_case, monkeypatch, operation):
     user, inv, _, fake = sync_case
@@ -122,8 +259,12 @@ def test_accessories_sync_with_hair_and_appear_in_print(db, sync_case, monkeypat
         data = preview.json()['data']
         change = next(c for c in data['changes'] if (c['after'] or c['before'])['name'] in ('Tool Kit', 'hair hangers'))
         assert change['action'] == {'add': '新增', 'replace': '修改', 'remove': '删除'}[operation]
-        applied = client.post(f'{BASE}/OB001/invoice-sync', json={'expected_version': data['version']})
-        assert applied.status_code == 200 and applied.json()['data']['status'] == 'sync_done'
+        if operation == 'add':
+            # Saving the invoice now follows the same accessory-aware plan.
+            assert followup.run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})['status'] == 'done'
+        else:
+            applied = client.post(f'{BASE}/OB001/invoice-sync', json={'expected_version': data['version']})
+            assert applied.status_code == 200 and applied.json()['data']['status'] == 'sync_done'
         printed = client.get(f'{BASE}/OB001/print-data')
         assert printed.status_code == 200, printed.text
         items = printed.json()['data']['items']

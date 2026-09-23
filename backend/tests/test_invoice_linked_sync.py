@@ -5,8 +5,10 @@ from types import SimpleNamespace
 import pytest
 from app.core.time import beijing_now
 from app.invoice import linked_sync_service as linked, linked_outbound_service as outbound, sync_coordinator
+from app.invoice import outbound_followup_service as followup
 from app.invoice.models import Invoice, InvoiceLinkedSync
 from app.invoice.router import _linked_result
+from app.invoice import router as invoice_router
 from app.receipt import remote
 
 
@@ -40,14 +42,50 @@ def successful_reads(monkeypatch):
     monkeypatch.setattr(outbound, "summarize", lambda *a: {"status": "manual", "message": "Preserved shipped records"})
 
 
+def test_plain_invoice_sync_returns_outbound_followup_separately(db, order, monkeypatch):
+    monkeypatch.setattr(invoice_router, '_ensure_invoice_visible', lambda *a: None)
+    monkeypatch.setattr(sync_coordinator, 'synchronize', lambda *a: {'ok': True, 'message': '已同步到小满'})
+    monkeypatch.setattr(followup, 'safely_run', lambda *a: {'status': 'pending', 'message': '缺货核查已排队'})
+    response = invoice_router.sync_invoice(order.id, db, {'sub': '1', 'permissions': ['invoice:sync']})
+    assert response['data']['ok'] is True
+    assert response['data']['outbound_sync']['status'] == 'pending'
+
+
+def test_linked_invoice_sync_stores_outbound_followup_result(db, order, monkeypatch):
+    row = operation(db, order, 'manual')
+    order.linked_sync_id = None
+    row.steps = {key: {'status': 'done'} for key in ('order', 'receipt')}
+    row.steps = {**row.steps, 'outbound': {'status': 'manual', 'message': '旧出库资料'}}
+    db.commit()
+    monkeypatch.setattr(invoice_router, '_linked_scope', lambda *a: order)
+    monkeypatch.setattr(linked, 'run', lambda *a, **kw: row)
+    monkeypatch.setattr(followup, 'safely_run', lambda *a: {'status': 'done', 'message': '出库已更新'})
+    response = invoice_router.run_linked(order.id, row.id, False, db, {'sub': '1', 'permissions': ['invoice:sync']})
+    assert response['data']['status'] == 'done'
+    assert row.steps['outbound']['message'] == '出库已更新'
+
+
+def test_linked_receipt_read_failure_does_not_hold_outbound_followup(db, order, monkeypatch):
+    row = operation(db, order)
+    monkeypatch.setattr(sync_coordinator, 'synchronize', lambda *a, **kw: {'ok': True})
+    monkeypatch.setattr(invoice_router, '_linked_scope', lambda *a: order)
+    monkeypatch.setattr(linked.balance, 'calculate', lambda *a: (_ for _ in ()).throw(ValueError('回款暂不可用')))
+    monkeypatch.setattr(followup, 'safely_run', lambda *a: {'status': 'done', 'message': '出库已更新'})
+    result = invoice_router.run_linked(order.id, row.id, False, db, {'sub': '1', 'permissions': ['invoice:sync']})
+    assert result['data']['steps']['order']['status'] == 'done'
+    assert result['data']['steps']['outbound']['status'] == 'done'
+    assert result['data']['steps']['receipt']['status'] == 'manual'
+    assert order.linked_sync_id is None
+
+
 def test_retry_reads_never_posts_order_again(db, order, monkeypatch):
     row = operation(db, order)
     calls = []
     monkeypatch.setattr(sync_coordinator, "synchronize", lambda *a, **kw: calls.append(1) or {"ok": True})
-    assert linked.run(db, row.id, 1).status == "failed"
+    assert linked.run(db, row.id, 1).status == "manual"
     assert row.steps["order"]["status"] == "done"
     successful_reads(monkeypatch)
-    assert linked.run(db, row.id, 1).status == "manual"
+    assert linked.run(db, row.id, 1, recheck=True).status == "manual"
     assert calls == [1] and order.linked_sync_id is None
 
 

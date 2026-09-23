@@ -1500,7 +1500,9 @@ Agent research context now includes `fact_contract.version=registered_research_f
 - 原 overview 增加 workday_progress，以及 summary/teams/people 的 ahead_of_time（true/false/null）、pace_delta；配置工作日时 time_progress 改用16:00累加口径，无工作日配置保持既有日历参考。
 
 业务和启用说明见 [战报海报](requirements/2026-09-22-battle-posters.md)。
-# 出库单手动同步补充
+# 订单与出库资料同步补充
+
+`POST /api/invoice/invoices/{invoice_id}/sync` 成功响应新增 `outbound_sync`（`status`/`message`，可为 `done`、`pending`、`waiting_stock`、`manual`）；`POST /api/invoice/invoices/{invoice_id}/linked-sync/{identity}/run` 在订单成功后更新 `steps.outbound`。缺货任务即时读取目标仓库库存并刷新缺货明细，齐货后才重新排队；仅原执行端负责建单，不从发票 API 直接创建出库。已有唯一待出库单复用下述同步计划和回读保护；出库失败不会抹去已成功的订单结果。
 
 | 方法 | 路径 | 用途 |
 |---|---|---|

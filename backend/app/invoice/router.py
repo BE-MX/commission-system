@@ -931,7 +931,11 @@ def sync_invoice(
         raise HTTPException(404, "发票不存在")
     _ensure_invoice_visible(db, invoice, current_user)
     from app.invoice.sync_coordinator import synchronize
-    return ok(synchronize(db, invoice, _user_id(current_user)))
+    result = synchronize(db, invoice, _user_id(current_user))
+    if result.get('ok'):
+        from app.invoice import outbound_followup_service
+        result['outbound_sync'] = outbound_followup_service.safely_run(db, invoice, current_user)
+    return ok(result)
 
 
 class ResolveSyncUncertainPayload(BaseModel):
@@ -1163,6 +1167,14 @@ def run_linked(invoice_id: int, identity: str, recheck: bool = False, db: Sessio
         raise HTTPException(404, "关联同步记录不存在")
     try:
         row = linked.run(db, identity, _user_id(user), recheck=recheck)
+        if (row.status in {'done', 'manual'} and row.steps['order']['status'] == 'done'
+                and row.steps['outbound']['status'] != 'done' and invoice.linked_sync_id is None):
+            from app.invoice import outbound_followup_service
+            outbound = outbound_followup_service.safely_run(db, invoice, user)
+            row.steps = {**row.steps, 'outbound': outbound}
+            row.status = ('done' if all(step['status'] == 'done' for step in row.steps.values())
+                          else 'manual')
+            db.commit()
     except ValueError as exc:
         db.rollback()
         raise HTTPException(409, str(exc)) from exc

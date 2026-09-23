@@ -50,6 +50,11 @@ export function useLinkedInvoiceSync(onSaved) {
     try {
       const result = await runInvoiceLinked(id, identity, recheck)
       if (activeId === id) operation.value = result
+      const outbound = result.steps?.outbound
+      if (outbound?.message && result.steps?.order?.status === 'done') {
+        const feedback = outbound.status === 'done' ? ElMessage.success : ElMessage.warning
+        feedback(`出库：${outbound.message}`)
+      }
       await onSaved?.(id)
     } catch {
       // A lost response must not trigger another POST. Read the durable result.

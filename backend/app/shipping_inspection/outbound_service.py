@@ -376,6 +376,27 @@ def get_outbound_record(db: Session, record_id: str, okki_user_id: str | None = 
     return apply_header(db, result)
 
 
+def get_record_by_outbound_invoice_id(db: Session, outbound_invoice_id: str,
+                                      okki_user_id: str | None = None) -> dict | None:
+    """Resolve a live OKKI document to its mirror row without using a fuzzy number search."""
+    rm = _record_columns(db)
+    if not rm["invoice_id"]:
+        return None
+    schema = _schema()
+    scope = f" AND {_owner_scope_clause(db, rm)}" if okki_user_id else ""
+    params = {"outbound_invoice_id": str(outbound_invoice_id)}
+    if okki_user_id:
+        params["scope_okki_user_id"] = okki_user_id
+    rows = db.execute(text(f"""
+        SELECT r.`{rm['id']}` FROM `{schema}`.`{RECORDS_TABLE}` r
+        WHERE r.`{rm['invoice_id']}` = :outbound_invoice_id{scope}
+        LIMIT 2
+    """), params).scalars().all()
+    if len(rows) > 1:
+        raise OutboundTableError("同一小满出库单存在多条镜像记录，请先核对")
+    return get_outbound_record(db, str(rows[0]), okki_user_id=okki_user_id) if rows else None
+
+
 def list_outbound_items(db: Session, record_id: str, *, use_overlay=True, sync_event=None) -> list[dict]:
     """出库明细附产品表 model/size/color；LEFT JOIN 保留产品缺失的原始明细。"""
     from app.shipping_inspection.outbound_sync_state import overlay
