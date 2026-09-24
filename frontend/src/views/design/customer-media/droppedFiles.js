@@ -1,4 +1,4 @@
-// 拖拽上传的目录遍历工具：FileSystemEntry 递归读取，按顶层文件夹名分组。
+// 拖拽上传的目录遍历工具：递归提取文件；路径仅供清单展示。
 // dataTransfer.items 必须在 drop 事件回调内同步取出，因此 collectDroppedFiles
 // 先同步 webkitGetAsEntry()，再异步逐层 readEntries（需循环读到空，Chrome 单次最多 100 条）。
 
@@ -16,22 +16,20 @@ function readAllEntries(reader) {
   })
 }
 
-async function collectEntryFiles(entry, files, directoryName = '', segments = []) {
+async function collectEntryFiles(entry, files, segments = []) {
   if (entry.isFile) {
     const file = await new Promise((resolve, reject) => entry.file(resolve, reject))
-    // pathSegments：文件所在的完整相对路径段（不含文件名），如 ['婚纱', '外景']；
-    // 散文件为空数组。directoryName 仍只保留顶层文件夹名（目录归组行为不变）。
-    files.push({ file, directoryName, pathSegments: segments })
+    files.push({ file, pathSegments: segments })
   } else if (entry.isDirectory) {
-    // 多级嵌套只取顶层文件夹名作目录名，下层文件打平归入；路径段逐层累积供标签提取
+    // 路径段仅供上传清单显示，不参与标签或目录创建。
     const children = await readAllEntries(entry.createReader())
     for (const child of children) {
-      await collectEntryFiles(child, files, directoryName || entry.name, [...segments, entry.name])
+      await collectEntryFiles(child, files, [...segments, entry.name])
     }
   }
 }
 
-/** @returns {Promise<{files: Array<{file: File, directoryName: string, pathSegments: string[]}>, hasDirectory: boolean}>} */
+/** @returns {Promise<{files: Array<{file: File, pathSegments: string[]}>, hasDirectory: boolean}>} */
 export async function collectDroppedFiles(dataTransfer) {
   const items = dataTransfer?.items
   if (!items) return { files: [], hasDirectory: false }
@@ -46,13 +44,6 @@ export function dropHasDirectory(dataTransfer) {
   const items = dataTransfer?.items
   if (!items) return false
   return [...items].some(it => it.webkitGetAsEntry?.()?.isDirectory)
-}
-
-// 文件夹始终按顶层名称归组，散文件使用入队时选中的目录。
-export function uploadDirectoryOptions(file, directoryName, selected) {
-  const folder = directoryName || file.webkitRelativePath?.split('/').slice(0, -1)[0]
-  if (folder) return { directoryName: folder }
-  return typeof selected === 'number' ? { directoryId: selected } : {}
 }
 
 /** webkitdirectory 场景：从 file.webkitRelativePath 解析完整相对路径段（不含文件名） */

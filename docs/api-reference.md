@@ -901,8 +901,14 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 | 方法 | 路径 | 权限 / 会话 | 契约 |
 |---|---|---|---|
+| GET / POST | `/customers/{customer_id}/tags` | `design:write/manage` 或 `customer_media:admin` + 当前客户数据权限 | 读取或追加客户级标签；POST 请求体为 `{"tags":[{"dimension_id":1,"tag_value_ids":[2]}]}`。客户标签跨预约复用，重复追加幂等。 |
+| GET / POST | `/tasks/{task_id}/customer-tags` | `customer_media:write/admin` + 当前任务维护权限 | 设计师读取或追加该任务所属客户的标签；与预约页操作同一客户标签集合。 |
+| GET | `/tags/dimensions` | 客户素材读写或设计预约写权限 | 仅返回可见的客户标签维度和值。 |
+| POST | `/tags/values` | 同上 | 在客户标签维度中创建值；同名复用。创建标签值后仍需通过客户标签 POST 绑定到客户。 |
+| POST | `/batches/{batch_id}/assets` | `customer_media:write/admin` + 当前任务维护权限 | 上传图片或视频；multipart `tags_json` 至少包含一个有效客户标签。保存文件标签时，也把这些标签追加到客户标签集合。 |
 | GET | `/sales-portal/customers?search=` | `customer_media_portal:read` 或 `customer_media:admin` | 返回调用者范围内已配置门户的客户摘要、门户状态、图片/视频/交付批次数和最近更新时间。 |
 | GET | `/sales-portal/customers/{customer_id}` | 同上 | 返回客户摘要及其实际可见的已发布批次；批次标题与拍摄类型也由客户公开门户返回。停用账号不签发素材 URL。 |
+| GET | `/sales-portal/customers/{customer_id}/tags` | 同上 | 仅返回该客户已发布素材实际用到的标签维度与标签；停用账号返回空列表。业务预览据此筛选，与客户外部站保持一致。 |
 | GET | `/sales-portal/assets/{asset_id}/content?expires=&token=&download=` | 业务预览 purpose-bound HMAC | 返回业务预览或下载文件；签名绑定用途、素材 ID 与过期时间，并在每次读取时重验门户账号仍启用、所属批次仍为 published，停用或下架立即 404。 |
 | GET | `/assets/{asset_id}/content?expires=&token=&download=` | 内部审核 HMAC | 返回设计审核工作流中的内部预览或下载文件；与业务预览签名不可互换。 |
 | GET | `/batches/{batch_id}/directories` | `customer_media:write/admin` + 任务维护权限 | 客户共享目录，`asset_count` 为本批次数量，`total_asset_count` 为目录跨批次未删素材总数。 |
@@ -915,7 +921,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 业务预览页面位于 `/design/media/portal`，左侧客户导航只展示 API 已授权的门户；右侧直接渲染详情响应，不模拟草稿或审核中素材。`search` 只是授权结果集上的名称、客户 ID、登录邮箱过滤条件，不能扩大数据范围。
 
-素材上传的客户门户弹窗支持拖入或选择文件夹，按顶层文件夹名通过 `POST /batches/{batch_id}/assets` 的 `directory_name` 自动建目录（同名复用），嵌套文件打平归入顶层目录；散文件使用入队时选中目录的 `directory_id`。内部签名 URL 返回 `/api/customer-media/...` 相对地址，前端跟随素材 API origin 解析，兼容同源代理及 `VITE_CUSTOMER_MEDIA_API_BASE` 云端直传。目录删除沿用原有可编辑状态约束，不绕过审核/发布流程。
+当前界面只有“上传素材”一个上传入口：设计师先选至少一个客户标签，再选多个文件或拖入文件夹。文件夹只用于提取文件，不从名称识别、新建标签或目录；文件加入清单时固定本次选中标签，上传后素材按维度和标签显示。旧目录弹框仅用于维护既有目录与素材，不再上传。审核弹框、业务预览和客户外部站均按维度与标签组织素材，并提供标签筛选；同一素材可显示在多个分类下，下载仍是同一文件。历史未打标签素材显示在“未打标签”下。内部签名 URL 返回 `/api/customer-media/...` 相对地址，前端跟随素材 API origin 解析，兼容同源代理及 `VITE_CUSTOMER_MEDIA_API_BASE` 云端直传。目录删除沿用原有可编辑状态约束，不绕过审核/发布流程。
 
 ## 客户 AI 方案对话（`/api/ai-chat`，100 迁移，2026-08-09）
 
