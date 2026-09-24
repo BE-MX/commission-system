@@ -100,6 +100,8 @@ deploy\deploy.bat --shipping-video-routing-only
 
 专用入口 `deploy.bat --invoice-schema-only PLAN_JSON --prepare-only` 从受管候选执行预检；去掉 `--prepare-only` 才暂停登记的写入实例、运行两步 Alembic、验证订单两列并恢复原本运行的实例。计划固定安装根目录、候选源码与完整提交 SHA、NSSM 路径、两台应用当前提交和完整 `migration_writers` 清单；候选脚本锁定两份迁移文件的摘要，并只接受办公室 `491f5a62`、北京 `8939da1b`。DBA 凭据仍取安装目录受限文件。此入口不发布应用、前端或出库脚本；它使用独立 `migration-167-current.json` 记录并遵守共享 `schema-writers.json` 恢复门禁。任何应用版本变化都要重新审查，不应放宽固定版本检查。
 
+2026-09-24 首次执行 166 时，`ark_receipt_batch_attachments.attachment_id` 继承库默认 `utf8mb4_unicode_ci`，但所引用的 `ark_receipt_attachments.id` 使用 `utf8mb4_0900_ai_ci`，外键建表失败。四张新表已建且为空、版本仍为 164，五个 writer 保持停止，共享日志为 `failed-after-ddl`。修正后的迁移显式指定相同排序规则；从受管候选运行 `deploy.bat --recover-invoice-166 PLAN_JSON --prepare-only` 核对原始日志、实际结构及全部停止状态，去掉 `--prepare-only` 才在共享数据库锁下逐张清理这四张空表，重跑 166→167 并恢复原始 writer 基线。恢复入口保留原始日志和每步清理进度；其他迁移入口继续受共享恢复日志阻断。
+
 办公室 Windows 自带 OpenSSH 在 Python 子进程内发生过建立连接前卡住；已用同机 Git SSH 验证可运行。执行时可仅在当前进程 PATH 中将 `C:/Program Files/Git/usr/bin` 置于系统 OpenSSH 前，保留非交互认证与严格主机密钥校验，不修改系统 PATH。
 
 ## 色块路由与 COS 安全封禁共存

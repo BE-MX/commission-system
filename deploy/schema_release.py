@@ -136,6 +136,8 @@ def invoke(prepared, writers, credential_file, action):
         request["recover_149"] = True
     if prepared.get("recover_151"):
         request["recover_151"] = True
+    if prepared.get("recover_166"):
+        request["recover_166"] = True
     runner = prepared.get("runner", ROOT / "deploy/migration_runner.py")
     result = subprocess.run([str(prepared["python"]), str(runner)],
         cwd=ROOT / "backend", input=json.dumps(request), text=True, capture_output=True, timeout=1200)

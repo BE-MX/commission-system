@@ -17,7 +17,7 @@ PARENT = "164_battle_posters"
 TARGET = "167_invoice_merchandiser"
 PENDING = ["166_presale_settlement", TARGET]
 MIGRATIONS = {
-    "166_presale_settlement.py": "ed4d556a1583891723797f5364cd6e5c04cb91cc6f1582c42684359953f926e9",
+    "166_presale_settlement.py": "ab2211b9188087a2fd9a2eeffea1d75af7350b8029b9455b0896dbfca290cc93",
     "167_invoice_merchandiser.py": "ef393948c17b55814f74b7b9c00641329b314cdfbde4be0ee60b73bcc357ca18",
 }
 COMPATIBLE_REVISIONS = {
@@ -200,6 +200,60 @@ def execute(plan_path, credential_file, prepare_only=False):
             record["status"] = "succeeded"
             publish.atomic_json(journal, record)
             print("MIGRATION COMPLETED: " + TARGET + "; application versions unchanged", flush=True)
+        except Exception as error:
+            record.update(status="failed", failed_phase=record["status"], error_type=type(error).__name__)
+            publish.atomic_json(journal, record)
+            raise
+
+
+def recover_execute(plan_path, credential_file, prepare_only=False):
+    """Resume only the inspected failed 166 DDL while keeping its writer baseline."""
+    plan, source, prepared = load_plan(plan_path, credential_file)
+    prepared["recover_166"] = True
+    journal = publish.STATE / "migration-167-current.json"
+    with publish.deployment_lock():
+        original = json.loads(journal.read_text(encoding="utf-8"))
+        if (original.get("status") != "failed"
+                or original.get("failed_phase") != "migrating"
+                or original.get("target") != TARGET
+                or original.get("source_revision") != "0426a760bae8ea097b1812480b7c03f3f7a0e9a8"):
+            raise RuntimeError("Dedicated recovery record differs from the inspected incident")
+        baseline = original.get("writer_states_before", {})
+        if (set(baseline) != {writer_key(writer) for writer in plan["migration_writers"]}
+                or any(state != "running" for state in baseline.values())):
+            raise RuntimeError("Original writer baseline differs from the inspected incident")
+        check_applications(plan)
+        schema_release.invoke(prepared, plan["migration_writers"], credential_file, "check")
+        if prepare_only:
+            print("RECOVERY PREPARED; partial 166 structures and stopped writers verified", flush=True)
+            return
+        record = {**original, "status": "recovering",
+                  "recovery_source_revision": plan["revision"], "recovery_original": original}
+        publish.atomic_json(journal, record)
+        try:
+            result = schema_release.invoke(prepared, plan["migration_writers"], credential_file, "apply")
+            record.update(status="verifying", stopped=result["stopped"])
+            publish.atomic_json(journal, record)
+            with schema_release.database_lock(source, prepared["python"]):
+                schema_release.schema_check(source, prepared["python"])
+                verify_invoice_columns(source, prepared)
+                check_applications(plan)
+                record["status"] = "restoring"
+                publish.atomic_json(journal, record)
+                failures = []
+                for writer in reversed(result["stopped"]):
+                    try:
+                        schema_release.control(writer, "start", prepared["nssm"])
+                    except Exception:
+                        failures.append(writer_key(writer))
+                if failures:
+                    raise RuntimeError("Writer restore incomplete: " + ", ".join(failures))
+                check_health(plan, prepared, baseline)
+                prepared["schema_changed"] = True
+                schema_release.complete(prepared)
+            record["status"] = "succeeded"
+            publish.atomic_json(journal, record)
+            print("INVOICE SCHEMA RECOVERED: " + TARGET + "; application versions unchanged", flush=True)
         except Exception as error:
             record.update(status="failed", failed_phase=record["status"], error_type=type(error).__name__)
             publish.atomic_json(journal, record)

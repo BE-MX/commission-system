@@ -270,6 +270,7 @@ if __name__ == "__main__":
     parser.add_argument("--colorwork-routing-only", action="store_true", help="Route colorwork to the existing healthy Beijing module")
     parser.add_argument("--migrate-only", metavar="PLAN", help="Execute only the reviewed 137 -> 138 migration using a verified local plan")
     parser.add_argument("--invoice-schema-only", metavar="PLAN", help="Repair only the reviewed 164 -> 167 invoice schema gap")
+    parser.add_argument("--recover-invoice-166", metavar="PLAN", help="Resume only the inspected partial invoice migration 166")
     parser.add_argument("--recover-migration-151", action="store_true", help="Resume only the reviewed 151 foreign-key failure preserving original writer evidence")
     parser.add_argument("--recover-migration-149", action="store_true", help="Resume only the inspected revision-149 overflow with original writer evidence")
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
@@ -335,6 +336,12 @@ if __name__ == "__main__":
                 raise RuntimeError("Voucher routing only accepts --prepare-only")
             from voucher_routing import execute
             execute(args.prepare_only)
+        elif args.recover_invoice_166:
+            if any(value for key, value in vars(args).items()
+                   if key not in {"recover_invoice_166", "prepare_only", "migration_credentials"}):
+                raise RuntimeError("Invoice 166 recovery accepts only its plan and migration credential")
+            from invoice_schema_repair import recover_execute
+            recover_execute(args.recover_invoice_166, args.migration_credentials, args.prepare_only)
         elif args.invoice_schema_only:
             if any(value for key, value in vars(args).items()
                    if key not in {"invoice_schema_only", "prepare_only", "migration_credentials"}):
@@ -352,7 +359,7 @@ if __name__ == "__main__":
         if any(getattr(locals().get('args'), key, None) for key in ['storage_maintenance', 'finalize_release', 'storage_cutover', 'recover_colorwork_start_order']):
             print('STORAGE MAINTENANCE FAILED: ' + str(error), file=sys.stderr, flush=True)
             sys.exit(1)
-        if not getattr(locals().get("args"), "storage_routing_only", None) and not getattr(locals().get("args"), "receipt_routing_only", False) and not getattr(locals().get("args"), "okki_outbound_only", False) and STATE.exists() and not getattr(locals().get("args"), "restore_pre151", None) and not getattr(locals().get("args"), "office_lan_https", None) and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "invoice_schema_only", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False) and not getattr(locals().get("args"), "shipping_video_routing_only", False):
+        if not getattr(locals().get("args"), "storage_routing_only", None) and not getattr(locals().get("args"), "receipt_routing_only", False) and not getattr(locals().get("args"), "okki_outbound_only", False) and STATE.exists() and not getattr(locals().get("args"), "restore_pre151", None) and not getattr(locals().get("args"), "office_lan_https", None) and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "invoice_schema_only", None) and not getattr(locals().get("args"), "recover_invoice_166", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False) and not getattr(locals().get("args"), "shipping_video_routing_only", False):
             journal = marker("publish-current")
             journal.update(status="failed", error_type=type(error).__name__)
             atomic_json(STATE / "publish-current.json", journal)

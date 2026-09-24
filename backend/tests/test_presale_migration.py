@@ -22,6 +22,7 @@ def test_presale_migration_compiles_mysql_and_keeps_financial_history():
     assert "uq_receipt_batch_target" in sql
     assert "uq_shipment_sequence" in sql
     assert "ON DELETE RESTRICT" in sql
+    assert "VARCHAR(32) COLLATE utf8mb4_0900_ai_ci" in sql
     assert "DROP TABLE" not in sql and "UPDATE " not in sql and "DELETE " not in sql.replace("ON DELETE RESTRICT", "")
     config=Config()
     config.set_main_option("script_location",str(path.parents[1]))

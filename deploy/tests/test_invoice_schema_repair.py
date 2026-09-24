@@ -11,6 +11,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import invoice_schema_repair
+import invoice_schema_recovery
 import publish
 import schema_release
 
@@ -170,3 +171,35 @@ def test_already_current_preserves_unresolved_shared_journal(migration):
         invoice_schema_repair.execute("plan.json", None)
     assert journal.read_text() == original
     migration.control.assert_not_called()
+
+
+def test_recovery_accepts_only_the_original_stopped_writer_baseline(tmp_path):
+    writers = [
+        {"kind": "nssm", "host": "office", "service": "CommissionSystem"},
+        {"kind": "nssm", "host": "office", "service": "WhatsAppConnector"},
+        {"kind": "systemd", "host": "ubuntu@154.8.205.162", "service": "ark-backend"},
+        {"kind": "pm2", "host": "root@119.28.107.92", "service": "shipment-tracking-mcp"},
+        {"kind": "systemd_timer", "host": "root@119.28.107.92", "service": "ark-okki-outbound-poller"},
+    ]
+    original = {"status": "failed-after-ddl", "database": invoice_schema_recovery.PARENT,
+                "schema": invoice_schema_recovery.TARGET,
+                "pending": invoice_schema_recovery.PENDING,
+                "writers": [{"writer": writer, "before": "running"} for writer in writers],
+                "stopped": writers}
+    journal = tmp_path / "schema-writers.json"
+    journal.write_text(json.dumps(original))
+    assert invoice_schema_recovery.read_record(journal, writers)[1] == original
+    with pytest.raises(RuntimeError, match="baseline"):
+        invoice_schema_recovery.read_record(journal, writers[:-1])
+    original["stopped"] = writers[:-1]
+    journal.write_text(json.dumps(original))
+    with pytest.raises(RuntimeError, match="baseline"):
+        invoice_schema_recovery.read_record(journal, writers)
+
+
+def test_recovery_rejects_unknown_progress_state(tmp_path):
+    journal = tmp_path / "schema-writers.json"
+    journal.write_text(json.dumps({"status": "upgraded", "recovery": invoice_schema_recovery.TAG,
+                                   "recovery_original": {"status": "failed-after-ddl"}}))
+    with pytest.raises(RuntimeError, match="inspected partial"):
+        invoice_schema_recovery.read_record(journal, [])
