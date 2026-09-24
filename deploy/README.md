@@ -94,6 +94,12 @@ deploy\deploy.bat --shipping-video-routing-only
 
 此历史专项入口仍遵守主线 `.deploy_state/schema-writers.json` 恢复保护：无 pending 也检查未完成记录，恢复与健康核验成功后才标记共享日志完成。候选由计划指定，不能与 `--revision`、`--cloud-only` 或 `--no-pull` 混用；不适用于 138 之后的迁移。
 
+### 164 → 167 订单字段紧急修复
+
+办公室应用已使用 `ark_invoices.merchandiser_id`，而共享生产库仍为 `164_battle_posters` 时，订单列表和出库打印会报 MySQL 1054。固定的迁移链是 `166_presale_settlement` → `167_invoice_merchandiser`；166 同时新增发运结算与回款账本表，并调整 `ark_receipts`。不可仅手工增加两列或修改版本号。
+
+专用入口 `deploy.bat --invoice-schema-only PLAN_JSON --prepare-only` 从受管候选执行预检；去掉 `--prepare-only` 才暂停登记的写入实例、运行两步 Alembic、验证订单两列并恢复原本运行的实例。计划固定安装根目录、候选源码与完整提交 SHA、NSSM 路径、两台应用当前提交和完整 `migration_writers` 清单；候选脚本锁定两份迁移文件的摘要，并只接受办公室 `491f5a62`、北京 `8939da1b`。DBA 凭据仍取安装目录受限文件。此入口不发布应用、前端或出库脚本；它使用独立 `migration-167-current.json` 记录并遵守共享 `schema-writers.json` 恢复门禁。任何应用版本变化都要重新审查，不应放宽固定版本检查。
+
 办公室 Windows 自带 OpenSSH 在 Python 子进程内发生过建立连接前卡住；已用同机 Git SSH 验证可运行。执行时可仅在当前进程 PATH 中将 `C:/Program Files/Git/usr/bin` 置于系统 OpenSSH 前，保留非交互认证与严格主机密钥校验，不修改系统 PATH。
 
 ## 色块路由与 COS 安全封禁共存

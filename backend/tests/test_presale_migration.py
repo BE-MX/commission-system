@@ -25,4 +25,8 @@ def test_presale_migration_compiles_mysql_and_keeps_financial_history():
     assert "DROP TABLE" not in sql and "UPDATE " not in sql and "DELETE " not in sql.replace("ON DELETE RESTRICT", "")
     config=Config()
     config.set_main_option("script_location",str(path.parents[1]))
-    assert ScriptDirectory.from_config(config).get_heads() == ["166_presale_settlement"]
+    script = ScriptDirectory.from_config(config)
+    assert script.get_heads() == ["167_invoice_merchandiser"]
+    assert [revision.revision for revision in script.iterate_revisions(
+        "167_invoice_merchandiser", "164_battle_posters"
+    )] == ["167_invoice_merchandiser", "166_presale_settlement"]
