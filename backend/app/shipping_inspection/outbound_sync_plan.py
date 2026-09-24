@@ -134,3 +134,18 @@ def verify(before, after, plan):
         raise ValueError('出库备注未同步，需人工核对')
     if after.get('serial_id') != plan['serial_after']:
         raise ValueError('出库单号未同步，需人工核对')
+
+
+def missing_only(before, after, plan):
+    """Return missing order IDs only when every present row and header matches the target."""
+    actual = index(after.get('record_list', []), 'order_record_id')
+    expected = index(plan['expected'], 'order_record_id')
+    if not actual or not set(actual) < set(expected):
+        raise ValueError('出库单并非仅缺少新增明细，需人工核对')
+    missing = [identity for identity in expected if identity not in actual]
+    if any(expected[identity].get('outbound_record_id') for identity in missing):
+        raise ValueError('原有出库明细缺失，不能作为新增明细自动补齐')
+    partial = {**plan, 'expected': [row for row in plan['expected']
+                                    if str(row['order_record_id']) in actual]}
+    verify(before, after, partial)
+    return missing

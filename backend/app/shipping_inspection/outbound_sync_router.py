@@ -15,6 +15,7 @@ class SyncRequest(BaseModel):
     expected_version: str | None = Field(None, min_length=64, max_length=64)
     check_only: bool = False
     confirm_recheck: bool = False
+    repair: bool = False
 
 
 def _record(db, record_id, user):
@@ -36,13 +37,14 @@ def preview(record_id: str, db: Session = Depends(get_db),
         raise HTTPException(409, str(exc)) from exc
 
 
-@router.post('/outbound-records/{record_id}/invoice-sync', summary='同步待出库单或只读核对上次同步结果')
+@router.post('/outbound-records/{record_id}/invoice-sync', summary='同步待出库单并核对或补齐缺失明细')
 def synchronize(record_id: str, body: SyncRequest, db: Session = Depends(get_db),
                 user=Depends(require_permission('shipping_inspection:write')),
                 _sync=Depends(require_permission('invoice:sync'))):
     try:
         return ok(outbound_sync_service.synchronize(db, _record(db, record_id, user), user, body.expected_version,
-                                                    check_only=body.check_only, confirm_recheck=body.confirm_recheck))
+                                                    check_only=body.check_only, confirm_recheck=body.confirm_recheck,
+                                                    repair=body.repair))
     except (ValueError, OkkiApiError) as exc:
         db.rollback()
         raise HTTPException(409, str(exc)) from exc

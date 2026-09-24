@@ -38,7 +38,7 @@
     <template #footer>
       <GlassButton :disabled="busy" @click="$emit('update:visible', false)">取消</GlassButton>
       <GlassButton variant="primary" :loading="busy" :disabled="preview?.requires_recheck && preview?.inspection_status === 'submitted'" @click="$emit('apply')">
-        {{ busy ? '正在核对同步结果…' : preview?.recover ? '重新核对结果' : preview?.requires_recheck ? '同步并重验' : preview?.changed ? '确认同步' : '刷新打印资料' }}
+        {{ busy ? '正在核对并补齐明细…' : preview?.recover ? '继续核对并补齐缺失明细' : preview?.requires_recheck ? '同步并重验' : preview?.changed ? '确认同步' : '刷新打印资料' }}
       </GlassButton>
     </template>
   </el-dialog>
