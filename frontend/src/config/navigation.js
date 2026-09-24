@@ -62,6 +62,7 @@ export const MENU_GROUPS = {
       FESTIVAL_PERMISSION, FESTIVAL_ORDER_PERMISSION,
       'battle_report:read', 'battle_report:admin',
       ORDER_INTELLIGENCE_PERMISSION,
+      'fx_settlement:read',
     ],
   },
   aftersales: {
@@ -472,6 +473,15 @@ export const NAV_ENTRIES = [
       group: 'invoice', title: '订单经营决策台', icon: TrendCharts, order: 32,
       permission: ORDER_INTELLIGENCE_PERMISSION,
     },
+  },
+
+  {
+    path: '/invoice/fx-settlement',
+    name: 'FxSettlement',
+    component: () => import('@/views/fx-settlement/FxSettlement.vue'),
+    title: '结汇决策助手',
+    permission: 'fx_settlement:read',
+    menu: { group: 'invoice', title: '结汇决策助手', icon: TrendCharts, order: 33, permission: 'fx_settlement:read' },
   },
 
   // ── 客户售后管理 ───────────────────────────────────────

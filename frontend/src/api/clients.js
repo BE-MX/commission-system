@@ -62,6 +62,7 @@ export const festivalClient = createApiClient({ baseURL: '/api/festival', timeou
 export const battleReportClient = createApiClient({ baseURL: '/api/battle-reports', timeout: 30000 })
 export const orderIntelligenceClient = createApiClient({ baseURL: '/api/order-intelligence', timeout: 120000 })
 export const operationsClient = createApiClient({ baseURL: '/api/operations', timeout: 15000 })
+export const fxSettlementClient = createApiClient({ baseURL: '/api/fx-settlement', timeout: 150000 })
 export const dingtalkClient = createApiClient({ baseURL: '/api/dingtalk', timeout: 120000 })
 export const agentRuntimeClient = createApiClient({ baseURL: '/api/agent-runtime', timeout: 30000 })
 export const customerMediaClient = createApiClient({
