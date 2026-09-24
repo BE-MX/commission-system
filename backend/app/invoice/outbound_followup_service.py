@@ -192,7 +192,15 @@ def run(db, invoice, user):
         return _queue_missing_after_sync(db, invoice, task, order, invoice_version)
     if len(related) != 1:
         return {'status': 'manual', 'message': '订单关联多张出库单，请分别核对，不能整单覆盖'}
-    if 'super_admin' not in user.get('roles', []) and 'shipping_inspection:write' not in user.get('permissions', []):
+    from app.invoice.linked_sync_service import latest
+    linked = latest(db, invoice.id)
+    desired_serial_id = (invoice.invoice_no if linked and linked.status in {'done', 'manual'}
+                         and linked.steps.get('order', {}).get('status') == 'done'
+                         and linked.before.get('invoice_no') != linked.after.get('invoice_no')
+                         and linked.after.get('invoice_no') == invoice.invoice_no else None)
+    can_edit_outbound = ('super_admin' in user.get('roles', []) or
+                         'shipping_inspection:write' in user.get('permissions', []))
+    if not can_edit_outbound and not desired_serial_id:
         return {'status': 'manual', 'message': '订单已同步；当前账号没有出库修改权限，请由仓库同步待出库单'}
     live = related[0]
     from app.shipping_inspection.router import _outbound_scope
@@ -202,15 +210,20 @@ def run(db, invoice, user):
         return {'status': 'manual', 'message': '小满出库单已存在，方舟镜像尚未更新；镜像到达后可重新核对'}
     if str(record['outbound_invoice_id']) != str(live['outbound_invoice_id']):
         raise ValueError('出库镜像与小满单据身份不一致，出库未处理')
-    preview = outbound_sync_service.preview(db, record, user)
+    preview = outbound_sync_service.preview(db, record, user, desired_serial_id=desired_serial_id,
+                                             number_only=not can_edit_outbound)
     if preview.get('recover'):
-        result = outbound_sync_service.synchronize(db, record, user, None, check_only=True)
+        result = outbound_sync_service.synchronize(db, record, user, None, check_only=True,
+                                                    desired_serial_id=desired_serial_id,
+                                                    number_only=not can_edit_outbound)
     elif preview.get('requires_recheck'):
         return {'status': 'manual', 'message': '订单已同步；出库单已有验货资料，请到出库单确认“同步并重验”'
                 if preview.get('inspection_status') != 'submitted' else
                 '订单已同步；请先撤回已提交验货单，再到出库单确认“同步并重验”'}
     else:
-        result = outbound_sync_service.synchronize(db, record, user, preview['version'])
+        result = outbound_sync_service.synchronize(db, record, user, preview['version'],
+                                                    desired_serial_id=desired_serial_id,
+                                                    number_only=not can_edit_outbound)
     if result['status'] == 'sync_done':
         return {'status': 'done', 'message': result['message'], 'outbound_invoice_id': str(live['outbound_invoice_id'])}
     return {'status': 'manual', 'message': result.get('message') or '出库同步结果待核对，请在出库单查看'}

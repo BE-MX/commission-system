@@ -4,8 +4,9 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 import pytest
+import httpx
 from sqlalchemy import text
-from app.invoice.models import InvoiceItem, InvoiceSyncLog, OkkiOutboundTask
+from app.invoice.models import InvoiceItem, InvoiceLinkedSync, InvoiceSyncLog, OkkiOutboundTask
 from app.invoice import lifecycle_guard, okki_client
 from app.invoice import outbound_followup_service as followup
 from app.invoice.xiaoman_service import _build_product_rows as build_product_rows
@@ -16,6 +17,16 @@ from tests.test_outbound_delete import case, BASE
 from tests.test_shipping_inspection import _pc_client, _user, _bind_okki, outbound_scope_seed, product_display_source
 
 PERMS = ['shipping_inspection:read', 'shipping_inspection:write', 'shipping_inspection:read_all', 'invoice:sync', 'invoice:read_all']
+
+
+def test_serial_lookup_accepts_only_exact_not_found_response(db, monkeypatch):
+    monkeypatch.setattr(okki_client, 'ensure_access_token', lambda *a, **kw: 'token')
+    response = {'code': 404, 'message': 'Not Found Resource', 'data': None}
+    monkeypatch.setattr(okki_client.httpx, 'get', lambda *a, **kw: httpx.Response(200, json=response))
+    assert okki_client.find_outbound_by_serial(db, 'NEW-NO') is None
+    response['message'] = 'Another error'
+    with pytest.raises(okki_client.OkkiApiError):
+        okki_client.find_outbound_by_serial(db, 'NEW-NO')
 
 
 @pytest.fixture
@@ -37,7 +48,7 @@ def sync_case(db, case, monkeypatch):
     outbound = dict(outbound_invoice_id=77, serial_id='CK2026001', status=1, company_info={'id': 'C1'},
         currency='USD', handler_info=[{'user_id':'9001', 'nickname':'Test owner'}], invoice_warehouse_info={'id':1},
         remark='old note', update_time='2026-09-23 08:00:00', record_list=[old])
-    fake = dict(order=order, outbound=outbound, posts=[], timeout=False, reject=False)
+    fake = dict(order=order, outbound=outbound, posts=[], timeout=False, reject=False, serial_occupant=None)
 
     def read(db, path, params):
         return deepcopy(fake['outbound'] if path.endswith('outbound/info') else fake['order'])
@@ -58,7 +69,9 @@ def sync_case(db, case, monkeypatch):
             else:
                 identity = patch.get('outbound_record_id', 800 + len(rows))
                 rows[identity] = {**rows.get(identity, {}), **patch, 'outbound_record_id': identity, 'sku_code': str(patch['product_id']), 'cost_unit_price_rmb': '0'}
-        fake['outbound'].update(record_list=list(rows.values()), remark=payload['remark'], update_time='2026-09-23 10:00:00')
+        fake['outbound'].update(record_list=list(rows.values()), remark=payload['remark'],
+                                serial_id=payload.get('serial_id', fake['outbound']['serial_id']),
+                                update_time='2026-09-23 10:00:00')
         if fake['timeout']:
             raise okki_client.OkkiApiError('timeout')
         return {'outbound_invoice_id':77}
@@ -67,6 +80,7 @@ def sync_case(db, case, monkeypatch):
     monkeypatch.setattr(sync.okki_client, 'ensure_access_token', lambda db: 'test')
     monkeypatch.setattr(sync.okki_client, 'get_outbound_info', lambda *args: deepcopy(fake['outbound']))
     monkeypatch.setattr(sync.okki_client, '_post_json', post)
+    monkeypatch.setattr(sync.okki_client, 'find_outbound_by_serial', lambda db, serial: fake['serial_occupant'])
     monkeypatch.setattr(sync.linked_outbound_service, 'find_related', lambda *args: [deepcopy(fake['outbound'])])
     monkeypatch.setattr(sync.xiaoman_service, 'get_settings_row', lambda db: None)
     def products(db, invoice, settings, **kwargs):
@@ -75,6 +89,114 @@ def sync_case(db, case, monkeypatch):
         return [r for _, r in bindings], bindings, [], []
     monkeypatch.setattr(sync.xiaoman_service, '_build_product_rows', products)
     return user, inv, item, fake
+
+
+def _renamed_link(db, invoice, new_no):
+    old_no = invoice.invoice_no
+    invoice.invoice_no = new_no
+    link = InvoiceLinkedSync(id='rename-outbound-test', invoice_id=invoice.id, request_key='rename-outbound-key',
+        request_hash='a' * 64, created_by=1, status='manual',
+        before={'invoice_no': old_no}, after={'invoice_no': new_no},
+        steps={'order': {'status': 'done'}, 'outbound': {'status': 'manual'}, 'receipt': {'status': 'done'}})
+    db.add(link)
+    db.commit()
+
+
+def test_invoice_rename_updates_same_pending_outbound_and_draft_number(db, sync_case):
+    user, invoice, _, fake = sync_case
+    _renamed_link(db, invoice, 'RENAMED-2026')
+    draft = ShippingInspection(outbound_record_id='OB001', outbound_no='CK2026001', status='draft')
+    db.add(draft); db.commit()
+    actor = {'sub': str(user.id), 'permissions': PERMS, 'roles': []}
+    result = followup.run(db, invoice, actor)
+    assert result['status'] == 'done'
+    assert len(fake['posts']) == 1
+    assert fake['posts'][0]['outbound_invoice_id'] == 77
+    assert fake['posts'][0]['serial_id'] == 'RENAMED-2026'
+    assert fake['outbound']['serial_id'] == 'RENAMED-2026'
+    assert db.get(ShippingInspection, draft.id).outbound_no == 'RENAMED-2026'
+    assert outbound_service.get_outbound_record(db, 'OB001')['outbound_no'] == 'RENAMED-2026'
+    found, total = outbound_service.list_outbound_records(db, keyword='RENAMED-2026')
+    assert total == 1 and found[0]['outbound_no'] == 'RENAMED-2026'
+
+
+def test_invoice_rename_serial_collision_does_not_post(db, sync_case):
+    user, invoice, _, fake = sync_case
+    _renamed_link(db, invoice, 'TAKEN-2026')
+    fake['serial_occupant'] = {'outbound_invoice_id': 999, 'serial_id': 'TAKEN-2026'}
+    result = followup.safely_run(db, invoice, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
+    assert result['status'] == 'manual'
+    assert '占用' in result['message']
+    assert fake['posts'] == []
+
+
+def test_invoice_sync_permission_can_rename_only_when_outbound_contents_match(db, sync_case):
+    user, invoice, item, fake = sync_case
+    # Align product and remark so the only outbound change is the serial.
+    fake['outbound']['record_list'][0].update(product_id=22, sku_id=220, outbound_count=2,
+        sale_price=120.27, product_name=item.product_name)
+    fake['outbound']['remark'] = invoice.remark
+    _renamed_link(db, invoice, 'RENAMED-LIMITED')
+    actor = {'sub': str(user.id), 'permissions': ['invoice:sync'], 'roles': []}
+    result = followup.run(db, invoice, actor)
+    assert result['status'] == 'done'
+    assert [p['serial_id'] for p in fake['posts']] == ['RENAMED-LIMITED']
+
+
+def test_invoice_sync_permission_does_not_change_outbound_contents(db, sync_case):
+    user, invoice, _, fake = sync_case
+    _renamed_link(db, invoice, 'RENAMED-LIMITED')
+    actor = {'sub': str(user.id), 'permissions': ['invoice:sync'], 'roles': []}
+    result = followup.safely_run(db, invoice, actor)
+    assert result['status'] == 'manual'
+    assert fake['posts'] == []
+
+
+@pytest.mark.parametrize('drift', ['price', 'remark'])
+def test_invoice_rename_does_not_report_done_when_serial_matches_but_contents_drift(db, sync_case, drift):
+    user, invoice, item, fake = sync_case
+    fake['outbound']['record_list'][0].update(product_id=22, sku_id=220, outbound_count=2,
+        sale_price=120.27, product_name=item.product_name)
+    fake['outbound']['remark'] = invoice.remark
+    _renamed_link(db, invoice, 'RENAMED-LIMITED')
+    fake['outbound']['serial_id'] = 'RENAMED-LIMITED'
+    if drift == 'price':
+        fake['outbound']['record_list'][0]['sale_price'] = 119.27
+    else:
+        fake['outbound']['remark'] = 'stale note'
+    actor = {'sub': str(user.id), 'permissions': ['invoice:sync'], 'roles': []}
+    result = followup.safely_run(db, invoice, actor)
+    assert result['status'] == 'manual'
+    assert fake['posts'] == []
+
+
+def test_invoice_rename_can_verify_already_matching_outbound_without_edit_permission(db, sync_case):
+    user, invoice, item, fake = sync_case
+    fake['outbound']['record_list'][0].update(product_id=22, sku_id=220, outbound_count=2,
+        sale_price=120.27, product_name=item.product_name)
+    fake['outbound']['remark'] = invoice.remark
+    _renamed_link(db, invoice, 'RENAMED-LIMITED')
+    fake['outbound']['serial_id'] = 'RENAMED-LIMITED'
+    actor = {'sub': str(user.id), 'permissions': ['invoice:sync'], 'roles': []}
+    result = followup.run(db, invoice, actor)
+    assert result['status'] == 'done'
+    assert fake['posts'] == []
+
+
+def test_invoice_rename_does_not_report_done_when_inspection_number_is_stale(db, sync_case):
+    user, invoice, item, fake = sync_case
+    fake['outbound']['record_list'][0].update(product_id=22, sku_id=220, outbound_count=2,
+        sale_price=120.27, product_name=item.product_name)
+    fake['outbound']['remark'] = invoice.remark
+    _renamed_link(db, invoice, 'RENAMED-LIMITED')
+    fake['outbound']['serial_id'] = 'RENAMED-LIMITED'
+    db.add(ShippingInspection(outbound_record_id='OB001', outbound_no='CK2026001', status='draft'))
+    db.commit()
+    actor = {'sub': str(user.id), 'permissions': ['invoice:sync'], 'roles': []}
+    result = followup.safely_run(db, invoice, actor)
+    assert result['status'] == 'manual'
+    assert '验货单号' in result['message']
+    assert fake['posts'] == []
 
 
 def test_sync_updates_original_line_quantity_price_remark_and_prints_before_mirror_catches_up(db, sync_case):

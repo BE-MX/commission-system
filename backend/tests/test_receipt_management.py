@@ -93,6 +93,19 @@ def test_manual_amount_and_replay_are_exactly_once(db, order):
         service.create(db, body.model_copy(update={"amount": Decimal("501")}), USER)
 
 
+def test_receipt_order_id_column_and_exact_filter_survive_invoice_rename(db, order):
+    row, _ = register(db, order)
+    original_number = row.receipt_no
+    order.invoice_no = 'RENAMED-INVOICE'
+    db.commit()
+    matching = service.list_receipts(db, USER, order_id='2001')
+    assert matching['total'] == 1
+    assert matching['items'][0]['order_id'] == '2001'
+    assert matching['items'][0]['invoice_no'] == 'RENAMED-INVOICE'
+    assert matching['items'][0]['receipt_no'] == original_number
+    assert service.list_receipts(db, USER, order_id='2002')['total'] == 0
+
+
 def test_stale_balance_rejects_second_registration(db, order):
     version = service.order_balance(db, order)["version"]
     register(db, order, "4000")

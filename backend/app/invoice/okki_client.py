@@ -187,6 +187,22 @@ def get_outbound_info(db: Session, outbound_invoice_id: str) -> dict:
     return data or {}
 
 
+def find_outbound_by_serial(db: Session, serial_id: str) -> dict | None:
+    """Only the observed exact 200/code=404 response proves a serial is unused."""
+    params = {"serial_id": serial_id}
+    for force in (False, True):
+        token = ensure_access_token(db, force=force)
+        data = _get_json('/v1/invoices/outbound/info', token, context='出库单号查重',
+                         params=params, allow_missing=True)
+        if data is False:
+            return None
+        if data is not None:
+            if not isinstance(data, dict) or not data.get('outbound_invoice_id') or data.get('serial_id') != serial_id:
+                raise OkkiApiError('小满出库单号查重结果无效，停止改号')
+            return data
+    raise OkkiApiError('小满出库单号查重鉴权失败，停止改号')
+
+
 def _post_json(path: str, token: str, payload: dict, *, context: str) -> dict | None:
     """POST with Bearer auth. Returns payload data; None means auth failure
     (caller may retry with a fresh token); other failures raise.
@@ -239,8 +255,8 @@ def _post_json(path: str, token: str, payload: dict, *, context: str) -> dict | 
 
 def _get_json(
     path: str, token: str, *, context: str, params: dict | None = None,
-    timeout: float = REQUEST_TIMEOUT,
-) -> dict | None:
+    timeout: float = REQUEST_TIMEOUT, allow_missing: bool = False,
+) -> dict | bool | None:
     """GET with Bearer auth. Returns payload data; None means auth failure
     (caller may retry with a fresh token); other failures raise.
     """
@@ -261,6 +277,9 @@ def _get_json(
     if resp.status_code == 401:
         return None
     body = _parse_json(resp, context=context)
+    if (allow_missing and resp.status_code == 200 and body.get('code') == 404
+            and body.get('message') == 'Not Found Resource' and not body.get('data')):
+        return False
     if body.get("error") == "access_denied":
         return None
     if resp.status_code != 200 or (body.get("code") not in (None, 0, 200)):

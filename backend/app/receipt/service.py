@@ -51,6 +51,7 @@ def describe(db, row, invoice=None, *, detail=False):
         "remark", "status", "sync_status", "attachment_status", "last_error", "version", "created_by",
         "created_at", "updated_at", "synced_at", "xiaoman_receipt_id", "xiaoman_receipt_no", "collect_status")}
     data.update(batch_id=row.batch_id, purpose=row.purpose, amount=str(row.amount), bank_charge=str(row.bank_charge), invoice_no=invoice.invoice_no,
+                order_id=row.xiaoman_order_id or invoice.xiaoman_order_id,
                 customer_name=invoice.customer_name, attachment_count=len(row.attachment_ids))
     if detail:
         data["attachments"] = [attachments.describe(a) for a in db.query(ReceiptAttachment).filter(
@@ -62,12 +63,15 @@ def describe(db, row, invoice=None, *, detail=False):
 
 
 def list_receipts(db, user, page=1, page_size=20, keyword="", sync_status="", source="", status="",
-                  date_from=None, date_to=None):
+                  date_from=None, date_to=None, order_id=None):
     query = access.scope(db.query(Receipt, Invoice).join(Invoice, Invoice.id == Receipt.invoice_id), db, user)
     if keyword:
         term = f"%{keyword}%"
         query = query.filter(or_(Receipt.receipt_no.like(term), Invoice.invoice_no.like(term),
                                  Invoice.customer_name.like(term), Receipt.xiaoman_receipt_no.like(term)))
+    if order_id:
+        query = query.filter(or_(Receipt.xiaoman_order_id == order_id,
+                                 (Receipt.xiaoman_order_id.is_(None)) & (Invoice.xiaoman_order_id == order_id)))
     for column, value in ((Receipt.sync_status, sync_status), (Receipt.source, source), (Receipt.status, status)):
         if value:
             query = query.filter(column == value)

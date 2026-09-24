@@ -59,6 +59,12 @@ def test_waiting_rows_obey_scope_and_all_permissions(db, waiting):
         assert client.get("/api/shipping-inspection/outbound-records", params={"keyword": "WAIT"}).json()["data"]["total"] == 1
 
 
+def test_order_id_filter_keeps_matching_local_task_before_mirror_arrives(db, waiting):
+    rows, total = queue.list_outbound_records(db, order_id='ORDER-WAIT')
+    assert total == 1 and rows[0]['order_id'] == 'ORDER-WAIT'
+    assert queue.list_outbound_records(db, order_id='ANOTHER')[1] == 0
+
+
 def test_combined_pagination_and_beijing_date_boundaries(db, waiting, monkeypatch):
     monkeypatch.setenv("TZ", "America/Los_Angeles")
     pages = [queue.list_outbound_records(db, page=page, page_size=1, okki_user_id="9001") for page in (1, 2, 3)]

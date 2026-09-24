@@ -15,7 +15,7 @@ from app.auth.models import ArkUser, ArkUserExternalBinding, ArkRole, ArkPermiss
 from app.auth.utils import create_access_token
 from app.core.database import get_db
 from app.mini.auth import create_mini_token
-from app.shipping_inspection import outbound_service, qr_service
+from app.shipping_inspection import outbound_service, qr_service, service as inspection_service
 from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto
 
 
@@ -178,6 +178,21 @@ def test_product_join_preserves_invoice_bridge_and_multiple_lines(db):
     record = next(r for r in records if r["outbound_record_id"] == "OB001")
     assert record["item_count"] == 2
     assert record["total_qty"] == 15
+
+
+def test_order_id_filter_uses_item_link_for_outbound_and_inspection(db):
+    db.execute(text("ALTER TABLE lsordertest.okki_outbound_record_items ADD COLUMN order_id TEXT"))
+    db.execute(text("UPDATE lsordertest.okki_outbound_record_items SET order_id='123456' WHERE outbound_record_id='OB001'"))
+    db.execute(text("UPDATE lsordertest.okki_outbound_record_items SET order_id='999999' WHERE outbound_record_id='OB002'"))
+    inspection = ShippingInspection(outbound_record_id='OB001', outbound_no='CK2026001', status='submitted')
+    db.add(inspection); db.commit()
+    outbound_service._columns_cache.clear()
+    rows, total = outbound_service.list_outbound_records(db, order_id='123456')
+    assert total == 1 and rows[0]['order_id'] == '123456'
+    assert outbound_service.list_outbound_records(db, order_id='123457')[1] == 0
+    inspected, count = inspection_service.list_records(db, order_id='123456')
+    assert count == 1 and inspected[0]['order_id'] == '123456'
+    assert inspection_service.list_records(db, order_id='123457')[1] == 0
 
 
 def test_scan_rejects_forged_sign(db):

@@ -748,6 +748,7 @@ def list_invoices(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     keyword: str | None = Query(None),
+    order_id: str | None = Query(None, pattern=r"^[1-9][0-9]*$", max_length=64),
     status: str | None = Query(None),
     order_type: str | None = Query(None, pattern="^(stock|production|presale)$"),
     db: Session = Depends(get_db),
@@ -762,7 +763,7 @@ def list_invoices(
             # fail-closed：身份解析不出时宁可拒绝，不能落到"不过滤=全量"
             raise HTTPException(403, "无法确认用户身份，禁止访问发票列表")
     items, total = service.list_invoices(
-        db, page=page, page_size=page_size, keyword=keyword, status=status, order_type=order_type,
+        db, page=page, page_size=page_size, keyword=keyword, order_id=order_id, status=status, order_type=order_type,
         created_by=created_by if _can_read_all(current_user) else None,
         viewer_user_id=None if _can_read_all(current_user) else viewer_user_id,
     )

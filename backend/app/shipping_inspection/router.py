@@ -141,6 +141,7 @@ def delete_outbound_record(
 @router.get("/outbound-records", summary="出库单分页列表（含检验状态）")
 def list_outbound_records(
     keyword: str | None = Query(None, description="匹配出库单号/客户"),
+    order_id: str | None = Query(None, pattern=r"^[1-9][0-9]*$", max_length=64),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
     page: int = Query(1, ge=1),
@@ -151,7 +152,7 @@ def list_outbound_records(
     scope_okki_user = _outbound_scope(db, user)
     try:
         rows, total = outbound_queue_service.list_outbound_records(
-            db, keyword=keyword, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
+            db, keyword=keyword, order_id=order_id, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
             okki_user_id=scope_okki_user,
         )
     except outbound_service.OutboundTableError as exc:
@@ -278,6 +279,7 @@ def recall_record(
 @router.get("/records", summary="已提交验货单分页列表")
 def list_records(
     keyword: str | None = Query(None, description="匹配出库单号/客户"),
+    order_id: str | None = Query(None, pattern=r"^[1-9][0-9]*$", max_length=64),
     salesperson_name: str | None = Query(None, max_length=100, description="关联订单业务员姓名"),
     submitted_by_name: str | None = Query(None, max_length=100, description="提交检验人员姓名"),
     date_from: date | None = Query(None, description="提交日期起"),
@@ -292,7 +294,7 @@ def list_records(
     scope = _inspection_scope(db, _user)
     try:
         items, total = service.list_records(
-            db, keyword=keyword, submitted_by_name=submitted_by_name, salesperson_name=salesperson_name, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
+            db, keyword=keyword, order_id=order_id, submitted_by_name=submitted_by_name, salesperson_name=salesperson_name, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
             okki_user_id=scope,
         )
     except outbound_service.OutboundTableError as exc:

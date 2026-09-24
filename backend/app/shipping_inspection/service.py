@@ -352,6 +352,7 @@ def list_records(
     db: Session,
     *,
     keyword: str | None = None,
+    order_id: str | None = None,
     salesperson_name: str | None = None,
     submitted_by_name: str | None = None,
     date_from=None,
@@ -376,6 +377,10 @@ def list_records(
             ShippingInspection.outbound_no.like(like),
             ShippingInspection.customer_name.like(like),
         ))
+    if order_id:
+        from app.shipping_inspection import record_query_service
+        query = query.filter(ShippingInspection.outbound_record_id.in_(
+            record_query_service.order_record_ids(db, order_id)))
     if salesperson_name and salesperson_name.strip():
         query = query.filter(ShippingInspection.outbound_record_id.in_(
             record_query_service.salesperson_record_ids(db, salesperson_name)))
@@ -394,11 +399,13 @@ def list_records(
         .all()
     )
     salespeople = record_query_service.salesperson_names(db, [str(insp.outbound_record_id) for insp, _ in rows])
+    order_ids = outbound_service.order_ids_for_records(db, [str(insp.outbound_record_id) for insp, _ in rows])
     items = [{
         "id": insp.id,
         "edit_version": insp.edit_version,
         "outbound_record_id": insp.outbound_record_id,
         "outbound_no": insp.outbound_no,
+        "order_id": "、".join(order_ids.get(str(insp.outbound_record_id), [])) or None,
         "customer_name": insp.customer_name,
         "photo_count": insp.photo_count,
         "submitted_at": insp.submitted_at,
@@ -430,6 +437,8 @@ def get_record_detail(db: Session, inspection_id: int) -> dict | None:
         "edit_version": inspection.edit_version,
         "outbound_record_id": inspection.outbound_record_id,
         "outbound_no": inspection.outbound_no,
+        "order_id": "、".join(outbound_service.order_ids_for_records(
+            db, [inspection.outbound_record_id]).get(str(inspection.outbound_record_id), [])) or None,
         "customer_name": inspection.customer_name,
         "remark": inspection.remark,
         "submitted_at": inspection.submitted_at,

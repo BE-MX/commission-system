@@ -8,11 +8,11 @@ from sqlalchemy import bindparam, text
 from app.shipping_inspection import outbound_service as records
 
 
-def _queue_query(db, *, keyword, date_from, date_to, okki_user_id):
+def _queue_query(db, *, keyword, order_id, date_from, date_to, okki_user_id):
     rm = records._record_columns(db)
     schema = records._schema()
     clauses, params = records.record_list_filters(
-        db, rm, keyword=keyword, date_from=date_from, date_to=date_to, okki_user_id=okki_user_id,
+        db, rm, keyword=keyword, order_id=order_id, date_from=date_from, date_to=date_to, okki_user_id=okki_user_id,
     )
     mirror_where = "WHERE " + " AND ".join(clauses) if clauses else ""
     local_clauses = [
@@ -28,6 +28,9 @@ def _queue_query(db, *, keyword, date_from, date_to, okki_user_id):
     if keyword:
         local_clauses.append("(f.invoice_no LIKE :kw OR f.customer_name LIKE :kw)")
         params["kw"] = f"%{keyword}%"
+    if order_id:
+        local_clauses.append("t.order_id=:order_id")
+        params["order_id"] = order_id
     if date_from:
         local_clauses.append("t.created_at >= :date_from")
         params["date_from"] = date_from.isoformat()
@@ -105,7 +108,7 @@ def _shortages(raw, items):
 def _local_rows(db, ids):
     if not ids:
         return {}
-    query = text("""SELECT t.id, t.invoice_id, t.status, t.last_error, t.processed_at,
+    query = text("""SELECT t.id, t.invoice_id, t.order_id, t.status, t.last_error, t.processed_at,
         t.created_at, f.invoice_no, f.customer_name, f.sales_user_name
         FROM ark_okki_outbound_tasks t JOIN ark_invoices f ON f.id=t.invoice_id
         WHERE t.id IN :ids""").bindparams(bindparam("ids", expanding=True))
@@ -122,6 +125,7 @@ def _local_rows(db, ids):
         result[str(task["id"])] = {
             "outbound_record_id": f"task:{task['id']}", "outbound_invoice_id": None,
             "outbound_no": task["invoice_no"], "customer_name": task["customer_name"],
+            "order_id": str(task["order_id"]),
             "outbound_date": None, "requested_date": str(task["created_at"])[:10],
             "owner_name": task["sales_user_name"], "remark": None,
             "item_count": len(items), "total_qty": sum(i["quantity"] for i in items),
@@ -132,9 +136,9 @@ def _local_rows(db, ids):
     return result
 
 
-def list_outbound_records(db, *, keyword=None, date_from=None, date_to=None,
+def list_outbound_records(db, *, keyword=None, order_id=None, date_from=None, date_to=None,
                           page=1, page_size=20, okki_user_id=None):
-    query, params = _queue_query(db, keyword=keyword, date_from=date_from,
+    query, params = _queue_query(db, keyword=keyword, order_id=order_id, date_from=date_from,
                                date_to=date_to, okki_user_id=okki_user_id)
     keys = db.execute(text(f"""SELECT q.*, COUNT(*) OVER () AS total FROM ({query}) q
         ORDER BY sort_date DESC, local_entry DESC, sort_id DESC, entry_id DESC
