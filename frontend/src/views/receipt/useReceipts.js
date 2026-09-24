@@ -13,11 +13,13 @@ export const financeLabel = value => value === 1 ? '已生效' : value === 0 ? '
 export function useReceipts() {
   const dates = ref([]), deliveryEnabled = ref(null)
   const page = useListPage(async params => {
+    if (params.order_id) params.order_id = params.order_id.trim()
+    if (!params.order_id) delete params.order_id
     const result = await api.listReceipts({ ...params, date_from: dates.value?.[0], date_to: dates.value?.[1] })
     deliveryEnabled.value = result.delivery_enabled
     return result
   },
-    { searchForm: { keyword: '', sync_status: '', source: '', status: '' } })
+    { searchForm: { keyword: '', order_id: '', sync_status: '', source: '', status: '' } })
   const editorVisible = ref(false), detailVisible = ref(false), detail = ref(null), saving = ref(false), uploading = ref(false)
   const orders = ref([]), ordersLoading = ref(false), balance = ref(null), balanceLoading = ref(false), error = ref('')
   const candidates = ref([]), form = reactive({}), editing = ref(null)

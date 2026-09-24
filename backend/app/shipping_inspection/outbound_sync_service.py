@@ -73,7 +73,7 @@ def _idle(db, invoice, record_id):
         raise ValueError('该出库单存在删除任务，请先完成删除核对')
 
 
-def _prepare(db, record, user):
+def _prepare(db, record, user, *, desired_serial_id=None, number_only=False):
     before = _read(db, record['outbound_invoice_id'])
     if str(before.get('company_info', {}).get('id')) != str(record.get('company_id')):
         raise ValueError('出库单客户归属发生变化，请刷新后核对')
@@ -101,9 +101,18 @@ def _prepare(db, record, user):
             raise ValueError('新增产品尚未同步小满订单，请先同步订单发票')
         product = {**live[str(row['unique_id'])], **row, 'product_name': item.product_name}
         products.append(product)
-    plan = plans.build(before, order, products, invoice.remark or '')
+    plan = plans.build(before, order, products, invoice.remark or '', serial_id=desired_serial_id)
+    if number_only and (plan['changes'] or plan['remark_changed']):
+        raise ValueError('出库单还有明细或备注变化，请由仓库同步并核对，未自动改号')
+    if plan['serial_changed']:
+        occupant = okki_client.find_outbound_by_serial(db, desired_serial_id)
+        if occupant and str(occupant['outbound_invoice_id']) != str(before['outbound_invoice_id']):
+            raise ValueError('新出库单号已被其他小满出库单占用，请先核对')
     inspection = db.query(ShippingInspection).filter_by(outbound_record_id=record['outbound_record_id']).with_for_update().populate_existing().first()
     media = db.query(ShippingInspectionPhoto).filter_by(inspection_id=inspection.id).with_for_update().all() if inspection else []
+    if (number_only and not plan['serial_changed'] and inspection
+            and inspection.outbound_no != before.get('serial_id')):
+        raise ValueError('小满出库号已更新，但方舟验货单号尚未核对，请由仓库处理')
     plan['inspection'] = {'id': inspection.id, 'status': inspection.status, 'edit_version': inspection.edit_version,
                           'media_ids': [photo.id for photo in media]} if inspection else None
     plan['requires_recheck'] = bool(plan['material_changed'] and media)
@@ -123,12 +132,14 @@ def _prepare(db, record, user):
     return invoice, event, plan
 
 
-def preview(db, record, user):
-    invoice, event, plan = _prepare(db, record, user)
+def preview(db, record, user, *, desired_serial_id=None, number_only=False):
+    invoice, event, plan = _prepare(db, record, user, desired_serial_id=desired_serial_id,
+                                    number_only=number_only)
     commit(db)
     if plan is None:
         return {'status': event.action, 'recover': True, 'message': '上次同步结果待核对；仅查询结果，不重复发送', 'invoice_no': invoice.invoice_no}
-    return {k: plan[k] for k in ('version', 'invoice_no', 'changes', 'remark_before', 'remark_after', 'changed',
+    return {k: plan[k] for k in ('version', 'invoice_no', 'changes', 'remark_before', 'remark_after', 'serial_before',
+                                  'serial_after', 'serial_changed', 'changed',
                                   'requires_recheck')} | {'inspection_status': (plan['inspection'] or {}).get('status')}
 
 
@@ -141,7 +152,8 @@ def _snapshot(plan, after):
             'product_name': row['product_name'], 'model': local['model'] or row.get('product_model'),
             'size': local['size'], 'color': local['color'], 'spec': row.get('product_model'),
             'sku': row.get('sku_code'), 'qty': float(row['outbound_count']), 'unit': row['product_unit']})
-    return {'update_time': after['update_time'], 'remark': after.get('remark'), 'items': items}
+    return {'update_time': after['update_time'], 'serial_id': after.get('serial_id'),
+            'remark': after.get('remark'), 'items': items}
 
 
 def _verify_finish(db, event):
@@ -171,6 +183,8 @@ def _verify_finish(db, event):
             event.result = {**previous, 'message': '出库已同步，但验货媒体发生变化，需人工核对'}
             commit(db)
             return {'status': 'sync_uncertain', 'recover': True, 'message': event.result['message']}
+        if plan.get('serial_changed'):
+            inspection.outbound_no = after['serial_id']
         if media:
             # Business-mirror item IDs are not guaranteed to equal OKKI outbound_record_id.
             # For changed item sets, invalidate all old evidence and recheck the current mirror rows.
@@ -205,8 +219,10 @@ def _recover(db, event):
     return _verify_finish(db, event)
 
 
-def synchronize(db, record, user, version, *, check_only=False, confirm_recheck=False):
-    invoice, event, plan = _prepare(db, record, user)
+def synchronize(db, record, user, version, *, check_only=False, confirm_recheck=False,
+                desired_serial_id=None, number_only=False):
+    invoice, event, plan = _prepare(db, record, user, desired_serial_id=desired_serial_id,
+                                    number_only=number_only)
     if event.action in state.ACTIVE:
         return _recover(db, event)
     if check_only and plan['changed']:
@@ -261,6 +277,10 @@ def synchronize(db, record, user, version, *, check_only=False, confirm_recheck=
             raise ValueError('验货资料已变化，请重新预览')
         if edit_version(invoice) != plan['invoice_version'] or _read(db, record['outbound_invoice_id']) != plan['before']:
             raise ValueError('发送前订单或出库单发生变化，请重新预览')
+        if plan['serial_changed']:
+            occupant = okki_client.find_outbound_by_serial(db, plan['serial_after'])
+            if occupant and str(occupant['outbound_invoice_id']) != str(record['outbound_invoice_id']):
+                raise ValueError('发送前新出库单号已被占用，请重新预览')
         order = remote.read(db, '/v1/invoices/order/info', {'order_id': invoice.xiaoman_order_id})
         if order != plan['order']:
             raise ValueError('发送前小满订单发生变化，请重新预览')

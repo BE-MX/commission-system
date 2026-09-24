@@ -18,6 +18,7 @@ export function useOutboundRecords() {
     async ({ page, page_size, ...form }) => {
       const params = { page, page_size }
       if (form.keyword) params.keyword = form.keyword
+      if (form.orderId?.trim()) params.order_id = form.orderId.trim()
       if (form.dateRange?.length === 2) {
         params.date_from = form.dateRange[0]
         params.date_to = form.dateRange[1]
@@ -28,6 +29,7 @@ export function useOutboundRecords() {
     {
       searchForm: {
         keyword: route.query.keyword || '',
+        orderId: route.query.order_id || '',
         dateRange: [],
       },
     },

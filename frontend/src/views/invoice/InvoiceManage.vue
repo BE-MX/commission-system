@@ -69,6 +69,7 @@
         >
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
+        <el-input v-model="filters.order_id" clearable placeholder="订单 ID" style="width: 175px" @keyup.enter="loadInvoices" />
         <el-select v-model="filters.order_type" clearable placeholder="订单类型" style="width: 130px">
           <el-option label="库存单" value="stock" />
           <el-option label="生产单" value="production" />
@@ -97,6 +98,7 @@
           </div>
         </template>
         <el-table-column prop="invoice_no" label="发票号" min-width="132" max-width="170" show-overflow-tooltip />
+        <el-table-column prop="xiaoman_order_id" label="订单 ID" min-width="155" show-overflow-tooltip><template #default="{ row }">{{ row.xiaoman_order_id || '—' }}</template></el-table-column>
         <el-table-column label="类型" min-width="76" max-width="96">
           <template #default="{ row }">
             <el-tag :type="row.order_type === 'production' ? 'warning' : 'info'" effect="plain">

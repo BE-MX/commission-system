@@ -28,7 +28,7 @@ def number(value):
     return result
 
 
-def build(before, order, products, remark):
+def build(before, order, products, remark, *, serial_id=None):
     if before.get('status') != 1:
         raise ValueError('仅待出库单可同步；已出库单请按实际发货办理补发或退货')
     if str(before.get('company_info', {}).get('id')) != str(order['company_id']) or before.get('currency') != order.get('currency'):
@@ -89,14 +89,19 @@ def build(before, order, products, remark):
     # Deliberately omit status: never turn an externally shipped document back into pending.
     payload = {'outbound_invoice_id': before['outbound_invoice_id'], 'handler': handler,
                'remark': remark, 'record_list': edits}
+    serial_changed = serial_id is not None and serial_id != before.get('serial_id')
+    if serial_changed:
+        payload['serial_id'] = serial_id
     remark_changed = (before.get('remark') or '') != remark
     return {'payload': payload, 'expected': expected, 'changes': changes,
+            'serial_before': before.get('serial_id'),
+            'serial_after': serial_id if serial_changed else before.get('serial_id'), 'serial_changed': serial_changed,
             'remark_before': before.get('remark') or '', 'remark_after': remark,
-            'changed': bool(changes) or remark_changed,
+            'changed': bool(changes) or remark_changed or serial_changed,
             'material_order_ids': material_order_ids, 'removed_order_ids': removed_order_ids,
             'remark_changed': remark_changed,
             'requires_whole_recheck': remark_changed or bool(removed_order_ids),
-            'material_changed': bool(material_order_ids or removed_order_ids or remark_changed)}
+            'material_changed': bool(material_order_ids or removed_order_ids or remark_changed or serial_changed)}
 
 
 def display(row):
@@ -121,9 +126,11 @@ def verify(before, after, plan):
             raise ValueError('同步改变了原明细身份，需人工核对')
         if row.get('outbound_record_id') and number(actual[identity]['cost_unit_price_rmb']) != number(row['cost_unit_price_rmb']):
             raise ValueError('成本价发生了非预期变化，需人工核对')
-    allowed = {'record_list', 'remark', 'update_time', 'update_user_info', 'product_total_count',
+    allowed = {'record_list', 'remark', 'serial_id', 'update_time', 'update_user_info', 'product_total_count',
                'product_total_amount', 'product_total_amount_rmb', 'product_total_amount_usd'}
     if any(before.get(k) != after.get(k) for k in before if k not in allowed):
         raise ValueError('出库单状态或其他单头资料发生变化，需人工核对')
     if (after.get('remark') or '') != plan['remark_after']:
         raise ValueError('出库备注未同步，需人工核对')
+    if after.get('serial_id') != plan['serial_after']:
+        raise ValueError('出库单号未同步，需人工核对')

@@ -257,7 +257,7 @@ def deleted_clause(db, rm):
             f"AND deletion.request_id={invoice_id})")
 
 
-def record_list_filters(db, rm, *, keyword=None, date_from=None, date_to=None, okki_user_id=None):
+def record_list_filters(db, rm, *, keyword=None, order_id=None, date_from=None, date_to=None, okki_user_id=None):
     """Shared filters for mirror-only reads and the combined outbound queue."""
     params = {}
     clauses = [deleted_clause(db, rm)]
@@ -266,9 +266,24 @@ def record_list_filters(db, rm, *, keyword=None, date_from=None, date_to=None, o
         params["scope_okki_user_id"] = okki_user_id
     if keyword:
         columns = [rm[key] for key in ("outbound_no", "customer_name") if rm[key]]
-        if columns:
-            clauses.append("(" + " OR ".join(f"r.`{col}` LIKE :kw" for col in columns) + ")")
+        matches = [f"r.`{col}` LIKE :kw" for col in columns]
+        for index, record_id in enumerate(_overlay_keyword_record_ids(db, keyword)):
+            key = f'overlay_record_id_{index}'
+            matches.append(f"r.`{rm['id']}` = :{key}")
+            params[key] = record_id
+        if matches:
+            clauses.append("(" + " OR ".join(matches) + ")")
             params["kw"] = f"%{keyword}%"
+    if order_id:
+        link, _, im = _link(db)
+        if not link or "order_id" not in _table_columns(db, ITEMS_TABLE):
+            clauses.append("1=0")  # Legacy mirror has no order association; local queue can still match.
+        else:
+            item_key = im["invoice_id"] if link == "invoice" else im["record_id"]
+            record_key = rm["invoice_id"] if link == "invoice" else rm["id"]
+            clauses.append(f"EXISTS (SELECT 1 FROM `{_schema()}`.`{ITEMS_TABLE}` oi "
+                           f"WHERE oi.`{item_key}`=r.`{record_key}` AND oi.order_id=:order_id)")
+            params["order_id"] = order_id
     if rm["outbound_date"]:
         if date_from:
             clauses.append(f"r.`{rm['outbound_date']}` >= :date_from")
@@ -279,10 +294,28 @@ def record_list_filters(db, rm, *, keyword=None, date_from=None, date_to=None, o
     return clauses, params
 
 
+def _overlay_keyword_record_ids(db, keyword):
+    """Include verified new serials while the read-only OKKI mirror still has the old serial."""
+    from app.shipping_inspection.models import ShippingOperationEvent
+    from app.shipping_inspection.outbound_sync_state import SCOPE
+
+    candidates = db.query(ShippingOperationEvent.request_id).filter(
+        ShippingOperationEvent.scope == SCOPE,
+        ShippingOperationEvent.result['verified']['serial_id'].as_string().like(f'%{keyword}%'),
+    ).all()
+    result = []
+    for (record_id,) in candidates:
+        record = get_outbound_record(db, record_id)
+        if record and keyword in (record.get('outbound_no') or ''):
+            result.append(record_id)
+    return result
+
+
 def list_outbound_records(
     db: Session,
     *,
     keyword: str | None = None,
+    order_id: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
     page: int = 1,
@@ -298,7 +331,7 @@ def list_outbound_records(
     im = _item_columns(db)
     schema = _schema()
 
-    clauses, params = record_list_filters(db, rm, keyword=keyword, date_from=date_from,
+    clauses, params = record_list_filters(db, rm, keyword=keyword, order_id=order_id, date_from=date_from,
                                          date_to=date_to, okki_user_id=okki_user_id)
     if record_ids is not None:
         clauses.append(f"r.`{rm['id']}` IN :record_ids")
@@ -351,6 +384,9 @@ def list_outbound_records(
     from app.shipping_inspection.outbound_sync_state import apply_header
     records = [_map_record_row(row) for row in rows]
     if records:
+        ids = order_ids_for_records(db, [record["outbound_record_id"] for record in records])
+        for record in records:
+            record["order_id"] = "、".join(ids.get(record["outbound_record_id"], [])) or None
         from app.shipping_inspection.models import ShippingOperationEvent
         from app.shipping_inspection.outbound_sync_state import SCOPE
 
@@ -388,10 +424,31 @@ def get_outbound_record(db: Session, record_id: str, okki_user_id: str | None = 
     if row is None:
         return None
     result = _map_record_row(row)
+    result["order_id"] = "、".join(order_ids_for_records(db, [record_id]).get(str(record_id), [])) or None
     result.pop("item_count", None)
     result.pop("total_qty", None)
     from app.shipping_inspection.outbound_sync_state import apply_header
     return apply_header(db, result)
+
+
+def order_ids_for_records(db: Session, record_ids: list[str]) -> dict[str, list[str]]:
+    """Read exact order associations from outbound items; never infer from the document number."""
+    if not record_ids:
+        return {}
+    link, rm, im = _link(db)
+    if not link or "order_id" not in _table_columns(db, ITEMS_TABLE):
+        return {}
+    item_key = im["invoice_id"] if link == "invoice" else im["record_id"]
+    record_key = rm["invoice_id"] if link == "invoice" else rm["id"]
+    rows = db.execute(text(f"""SELECT DISTINCT r.`{rm['id']}` AS rid, i.order_id AS order_id
+        FROM `{_schema()}`.`{RECORDS_TABLE}` r
+        JOIN `{_schema()}`.`{ITEMS_TABLE}` i ON i.`{item_key}`=r.`{record_key}`
+        WHERE r.`{rm['id']}` IN :record_ids AND i.order_id IS NOT NULL""").bindparams(
+            bindparam("record_ids", expanding=True)), {"record_ids": record_ids}).mappings()
+    result: dict[str, list[str]] = {}
+    for row in rows:
+        result.setdefault(str(row["rid"]), []).append(str(row["order_id"]))
+    return {key: sorted(values) for key, values in result.items()}
 
 
 def get_record_by_outbound_invoice_id(db: Session, outbound_invoice_id: str,

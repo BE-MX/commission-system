@@ -10,13 +10,16 @@
       <el-col :span="7">
         <el-input v-model="searchForm.keyword" placeholder="搜索出库单号 / 客户名称" clearable prefix-icon="Search" @keyup.enter="handleSearch" @clear="handleSearch" />
       </el-col>
-      <el-col :span="8">
+      <el-col :span="5">
+        <el-input v-model="searchForm.orderId" placeholder="订单 ID" clearable @keyup.enter="handleSearch" @clear="handleSearch" />
+      </el-col>
+      <el-col :span="7">
         <el-date-picker
           v-model="searchForm.dateRange" type="daterange" value-format="YYYY-MM-DD"
           start-placeholder="出库起" end-placeholder="出库止" style="width: 100%" @change="handleSearch"
         />
       </el-col>
-      <el-col :span="9">
+      <el-col :span="5">
         <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
       </el-col>
     </el-row>
@@ -24,6 +27,7 @@
     <div class="table-card outbound-panel">
       <el-table :data="list" v-loading="loading" border class="list-table" style="width: 100%">
         <el-table-column prop="outbound_no" label="出库单号" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="order_id" label="订单 ID" min-width="155" show-overflow-tooltip><template #default="{ row }">{{ row.order_id || '—' }}</template></el-table-column>
         <el-table-column prop="customer_name" label="客户名称" min-width="130" show-overflow-tooltip />
         <el-table-column label="出库日期" min-width="120">
           <template #default="{ row }">

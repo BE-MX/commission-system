@@ -55,7 +55,9 @@ def overlay(db, record, *, event=None):
         def signature(rows):
             keys = ('product_id', 'product_name', 'sku', 'unit', 'size', 'color', 'spec')
             return sorted(tuple(str(r.get(k) or '') for k in keys) + (float(r['qty']),) for r in rows)
-        if signature(items) == signature(snapshot['items']) and (record.get('remark') or '') == (snapshot.get('remark') or ''):
+        if (signature(items) == signature(snapshot['items']) and
+                (record.get('remark') or '') == (snapshot.get('remark') or '') and
+                record.get('outbound_no') == snapshot.get('serial_id', record.get('outbound_no'))):
             return None
     return snapshot
 
@@ -63,7 +65,8 @@ def overlay(db, record, *, event=None):
 def apply_header(db, record, *, event=None):
     snapshot = overlay(db, record, event=event)
     if snapshot:
-        record.update(remark=snapshot.get('remark'), item_count=len(snapshot['items']),
+        record.update(outbound_no=snapshot.get('serial_id') or record.get('outbound_no'),
+                      remark=snapshot.get('remark'), item_count=len(snapshot['items']),
                       total_qty=sum(x['qty'] for x in snapshot['items']))
     return record
 

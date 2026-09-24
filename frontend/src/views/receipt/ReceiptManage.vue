@@ -23,6 +23,7 @@
     <section class="table-card receipt-panel">
       <div class="toolbar">
         <el-input v-model="searchForm.keyword" clearable placeholder="回款单号 / 发票号 / 客户" class="filter-keyword" @keyup.enter="handleSearch" />
+        <el-input v-model="searchForm.order_id" clearable placeholder="订单 ID" class="filter-order-id" @keyup.enter="handleSearch" />
         <el-select v-model="searchForm.sync_status" clearable placeholder="同步状态" class="filter-select">
           <el-option v-for="s in states" :key="s" :value="s" :label="statusLabel(s)" />
         </el-select>
@@ -46,6 +47,7 @@
             <el-button link type="primary" @click="showDetail(row)"><el-icon><Document /></el-icon>{{ row.receipt_no }}</el-button>
           </template>
         </el-table-column>
+        <el-table-column prop="order_id" label="订单 ID" min-width="155" show-overflow-tooltip><template #default="{ row }">{{ row.order_id || '—' }}</template></el-table-column>
         <el-table-column label="本次回款金额" min-width="150" max-width="210" align="right">
           <template #default="{ row }">{{ row.currency }} {{ money(row.amount) }}</template>
         </el-table-column>
@@ -170,6 +172,7 @@ const { loading,list,total,page,pageSize,searchForm,dates,handleSearch,handlePag
 
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px; border-bottom: 1px solid var(--border-color); border-radius: var(--dash-card-radius) var(--dash-card-radius) 0 0; background: rgba(255, 255, 255, 0.4); }
 .filter-keyword { width: 240px; }
+.filter-order-id { width: 175px; }
 .filter-select { width: 145px; }
 .toolbar :deep(.el-date-editor.filter-dates) { width: 260px; max-width: 100%; flex-grow: 0; }
 
@@ -201,6 +204,7 @@ const { loading,list,total,page,pageSize,searchForm,dates,handleSearch,handlePag
 
 @media (max-width: 768px) {
   .filter-keyword { width: 100%; }
+  .filter-order-id { width: 100%; }
   .filter-select { width: calc(50% - 5px); }
   .toolbar :deep(.el-date-editor.filter-dates) { width: 100%; }
 }

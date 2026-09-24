@@ -16,7 +16,7 @@ import { formatInvoiceDateTime } from './invoiceDateTime'
 export function useInvoiceManagePage() {
   const loading = ref(false)
   const invoices = ref([])
-  const filters = reactive({ keyword: '', status: '', order_type: '' })
+  const filters = reactive({ keyword: '', order_id: '', status: '', order_type: '' })
   const pagination = reactive({ page: 1, page_size: 20, total: 0 })
   const syncLogsVisible = ref(false)
   const syncLogsLoading = ref(false)
@@ -36,6 +36,8 @@ export function useInvoiceManagePage() {
     loading.value = true
     try {
       const params = { ...filters, page: pagination.page, page_size: pagination.page_size }
+      if (params.order_id) params.order_id = params.order_id.trim()
+      if (!params.order_id) delete params.order_id
       if (!params.order_type) delete params.order_type
       const result = await listInvoices(params)
       invoices.value = result.items || []

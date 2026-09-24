@@ -35,10 +35,11 @@ def execute(db, fn):
 
 @router.get("", summary="List receipts within invoice ownership scope")
 def list_rows(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
-              keyword: str = Query("", max_length=100), sync_status: str = "", source: str = "", status: str = "",
+              keyword: str = Query("", max_length=100), order_id: str | None = Query(None, pattern=r"^[1-9][0-9]*$", max_length=64),
+              sync_status: str = "", source: str = "", status: str = "",
               date_from: date | None = None, date_to: date | None = None,
               db: Session = Depends(get_db), user=Depends(require_any_permission("receipt:read", "receipt:write", "receipt:admin"))):
-    data = service.list_receipts(db, user, page, page_size, keyword, sync_status, source, status, date_from, date_to)
+    data = service.list_receipts(db, user, page, page_size, keyword, sync_status, source, status, date_from, date_to, order_id=order_id)
     data["delivery_enabled"] = get_settings().RECEIPT_SYNC_ENABLED
     return ok(data)
 

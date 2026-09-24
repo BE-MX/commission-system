@@ -41,6 +41,7 @@ def list_invoices(
     page: int = 1,
     page_size: int = 20,
     keyword: str | None = None,
+    order_id: str | None = None,
     status: str | None = None,
     order_type: str | None = None,
     created_by: int | None = None,
@@ -70,6 +71,8 @@ def list_invoices(
             (Invoice.customer_name.like(like)) |
             (Invoice.customer_id.like(like))
         )
+    if order_id:
+        query = query.filter(Invoice.xiaoman_order_id == order_id)
     if status:
         query = query.filter(Invoice.status == status)
     if order_type:

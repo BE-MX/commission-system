@@ -58,7 +58,7 @@
 
 | 方法与路径 | 参数 / 行为 | 权限 |
 | --- | --- | --- |
-| GET 空路径 | page/page_size、keyword、sync_status、source、status、date_from/date_to；返回列表与 delivery_enabled | read/write/admin 任一 |
+| GET 空路径 | page/page_size、keyword、order_id（精确小满订单 ID）、sync_status、source、status、date_from/date_to；返回列表与 delivery_enabled，每行含 order_id | read/write/admin 任一 |
 | GET `/order-options` | keyword/page；可关联的已同步订单 | read/write/admin 任一 |
 | GET `/types` | 当前小满回款方式 | 回款 read/write/admin 或发票 read/write/sync |
 | GET `/order-balance/{invoice_id}` | 最新原币余额与 version；读取小满核验 | read/write/admin 任一 |
@@ -1523,9 +1523,13 @@ Agent research context now includes `fact_contract.version=registered_research_f
 
 `POST /api/invoice/invoices/{invoice_id}/sync` 成功响应新增 `outbound_sync`（`status`/`message`，可为 `done`、`pending`、`waiting_stock`、`manual`）；`POST /api/invoice/invoices/{invoice_id}/linked-sync/{identity}/run` 在订单成功后更新 `steps.outbound`。缺货任务即时读取目标仓库库存并刷新缺货明细，齐货后才重新排队；仅原执行端负责建单，不从发票 API 直接创建出库。已有唯一待出库单复用下述同步计划和回读保护；出库失败不会抹去已成功的订单结果。
 
+四个方舟列表均可按小满订单 ID 精确筛选，并在单号后返回/显示该 ID：`GET /api/invoice/invoices?order_id=` 按发票的 `xiaoman_order_id`；`GET /api/shipping-inspection/outbound-records?order_id=` 按镜像出库明细关联的订单 ID 或方舟待出库任务的订单 ID；`GET /api/shipping-inspection/records?order_id=` 按关联出库明细订单 ID；`GET /api/receipts?order_id=` 按回款保存的订单 ID，旧回款缺少快照时回退关联发票的订单 ID。各接口原有权限与数据范围不变。
+
+方舟订单发票号变更并完成小满订单同步时，小满订单用原 `order_id` 更新 `name`，原生 `order_no` 不变。唯一关联的待出库单可用原 `outbound_invoice_id` 更新 `serial_id`，先查单号冲突，成功须回读核对；方舟出库单/验货单按同一关联展示新号。方舟与小满回款单号保持原编号，关联依靠稳定订单 ID。只有单号变化且出库明细和备注无差异时，发票同步入口可仅凭 `invoice:sync` 执行出库改单号；其他出库资料修改仍需 `shipping_inspection:write`。已出库、分批、冲突、验货证据需重验或远端结果不确定时返回需处理状态，不重复建单或盲重发。
+
 | 方法 | 路径 | 用途 |
 |---|---|---|
-| POST | `/api/shipping-inspection/outbound-records/{record_id}/invoice-sync/preview` | 预览最新方舟发票与小满待出库单差异；返回 version、changes 和备注前后值；已有在途任务返回 recover |
+| POST | `/api/shipping-inspection/outbound-records/{record_id}/invoice-sync/preview` | 预览最新方舟发票与小满待出库单差异；返回 version、changes 和备注前后值；关联改单号时另含 serial_before/serial_after；已有在途任务返回 recover |
 | POST | `/api/shipping-inspection/outbound-records/{record_id}/invoice-sync` | 请求 `{expected_version, check_only:false}` 执行已预览的同步；`check_only:true` 只核对，绝不发送；返回 sync_done / sync_pending / sync_sending / sync_uncertain 或 requires_preview |
 
 两接口均要求 `shipping_inspection:write` + `invoice:sync`，双重数据范围校验。业务冲突返回409。详见[手动同步说明](outbound-invoice-sync.md)。
