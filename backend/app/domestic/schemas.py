@@ -56,6 +56,39 @@ class CustomerCreate(BaseModel):
         return value or None
 
 
+class CustomerManagementCreate(CustomerCreate):
+    """客户管理手工新增需要完整的客户档案；下单就地建档走独立链路。"""
+
+    custom_code: str = Field(..., max_length=64)
+    contact: str = Field(..., max_length=60)
+    phone: str = Field(..., max_length=40)
+    province: str = Field(..., max_length=64)
+    city: str = Field(..., max_length=64)
+    owner_user_id: int = Field(..., gt=0)
+    customer_source: str = Field(..., max_length=32)
+    customer_level: str = Field(..., max_length=8)
+    lifecycle_status: str = Field(..., max_length=16)
+    store_type: str = Field(..., max_length=32)
+    first_contact_date: date
+    first_order_date: date
+    last_order_date: date
+
+    @model_validator(mode="after")
+    def _require_profile(self):
+        required = {
+            "custom_code": "客户编码", "contact": "联系人", "phone": "手机号",
+            "province": "省份", "city": "城市", "owner_user_id": "归属销售",
+            "customer_source": "客户来源", "customer_level": "客户等级",
+            "lifecycle_status": "客户状态", "store_type": "门店类型",
+            "first_contact_date": "首次联系", "first_order_date": "首次下单",
+            "last_order_date": "最近下单",
+        }
+        for field, label in required.items():
+            if getattr(self, field) is None:
+                raise ValueError(f"{label}不能为空")
+        return self
+
+
 class CustomerUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
