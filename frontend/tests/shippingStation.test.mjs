@@ -106,6 +106,27 @@ test('definitive stale-version rejection unlocks refresh instead of trapping an 
   await s.refresh(); assert.equal(refreshed, true); assert.equal(s.view.value.inspection.edit_version, 4)
 })
 
+test('refresh reports success only after updating the session and keeps an unsaved remark', async () => {
+  const { s, people } = setup({ refresh: async () => ({ data: {
+    session_id: 'session-one', operator: people[1], record: { outbound_no: 'CK001' }, items: [], photos: [], videos: [],
+    inspection: { status: 'draft', edit_version: 4, remark: 'server remark' },
+  } }) })
+  await flush(); s.choose(people[1]); await s.decoded('ARK-I:OB001:signature')
+  s.remark.value = 'unfinished local note'
+  assert.equal(await s.refresh(), true)
+  assert.equal(s.remark.value, 'unfinished local note')
+  assert.equal(s.view.value.inspection.edit_version, 4)
+  assert.equal(s.busy.value, false)
+})
+
+test('a failed refresh does not report success or discard the current order', async () => {
+  const { s, people } = setup({ refresh: async () => { throw new Error('refresh failed') } })
+  await flush(); s.choose(people[1]); await s.decoded('ARK-I:OB001:signature')
+  assert.equal(await s.refresh(), false)
+  assert.equal(s.view.value.record.outbound_no, 'CK001')
+  assert.match(s.error.value, /网络异常/)
+})
+
 
 test('compression locks the session and uploads only the result; network retry does not recompress', async () => {
   let finish, count = 0

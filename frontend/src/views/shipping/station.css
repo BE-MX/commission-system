@@ -21,3 +21,9 @@ button:focus-visible,textarea:focus-visible{outline:3px solid var(--color-primar
 @media(max-width:360px){.shipping-station{padding:calc(14px + env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left))}.station-brand{font-size:14px}}
 
 .station-query{box-sizing:border-box;text-decoration:none;margin-bottom:16px}
+
+/* Leave room to reach the last product and actions beneath the fixed shortcuts. */
+.shipping-station.has-quick-actions{padding-bottom:calc(194px + env(safe-area-inset-bottom))}
+.item-card.item-landed{border-color:var(--color-primary);box-shadow:0 0 0 2px var(--color-primary-glow)}
+.item-card.item-landed .item-index{background:var(--color-primary);border-color:var(--color-primary);color:var(--card-bg)}
+.station-quick-notice{position:fixed;z-index:23;bottom:calc(28px + env(safe-area-inset-bottom));left:max(20px,calc((100vw - 580px)/2 + 20px));max-width:min(255px,calc(100vw - 112px));padding:11px 15px;border-radius:12px;background:var(--text-primary);color:var(--card-bg);font-size:12px;box-shadow:0 5px 18px color-mix(in srgb,var(--text-primary) 14%,transparent);pointer-events:none}
