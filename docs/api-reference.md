@@ -1,5 +1,17 @@
 # 莱莎方舟 API 参考
 
+## 结汇决策助手（2026-09-24，本地实现）
+
+前缀 `/api/fx-settlement`，需登录，使用标准 `ok(data)` 信封。结果是带时间戳的参考测算，不会下单或保存输入。详见 [功能与口径](requirements/2026-09-24-fx-settlement-advisor.md)。
+
+| 方法与路径 | 权限 | 请求与结果 |
+| --- | --- | --- |
+| GET `/market` | `fx_settlement:read` | 返回 `checked_at`、中国银行 `quote`（人民币/美元、`as_of`、`usable`）、当日 `intraday`、FRED `history`/`trend`（含 `as_of`、`lag_days`、`usable`）及警告；报价 60 秒、历史 1 小时缓存。 |
+| POST `/calculate` | `fx_settlement:read` | 按已到账美元、人民币需求与风险预算返回三个候选金额、压力情景、分批日期、现金缺口、假设及所用行情；无可用公开价时须提供新鲜的银行报价。 |
+| POST `/advice` | `fx_settlement:read` + `fx_settlement:write` | 重算后请求平台 AI 在候选方案中选择，返回 `selection_source=ai` 与服务端生成的解释；模型不可用时返回规则测算和 `ai_status=unavailable`。单用户 30 秒限频。 |
+
+两个 POST 共用 JSON 字段：`usd_balance`（>0）、`reserved_usd`、`immediate_cny_need`、`settle_by`（北京时间今天至 365 天）、`max_loss_cny`、`stress_drop_pct`（0.1–30，默认 2）；可选 `bank_rate` 与 `bank_quote_at`（须成对，15 分钟内）、`fee_bps`（默认 0）、`usd_interest_pct`、`cny_interest_pct`。金额单位分别为美元/人民币，费用单位基点，利率单位百分比。输入非法或报价过期返回 422；AI 限频返回 429。公开价仅作参考，实际操作前核对银行成交价。
+
 ## 预售结算与汇总回款（2026-09-23，本地部分实现，未上线）
 
 统一 `/api` 前缀、RBAC、`ok(data)` 信封。商业规则及未完成的外发闭环见 [实现报告](reports/2026-09-23-presale-implementation.md)。

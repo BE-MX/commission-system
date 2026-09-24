@@ -502,6 +502,8 @@ def seed_role_permissions(db: Session):
         # 外部站点接入凭证：只管理应用生命周期，不替代 owner 的发票写权限。
         ("integration:admin", "integration", "admin", "管理站点接入凭证"),
         # 运行与自动化中心：读取状态与控制任务严格分离；不提供任意远程命令执行。
+        ("fx_settlement:read", "fx_settlement", "read", "查看汇率行情并进行结汇测算"),
+        ("fx_settlement:write", "fx_settlement", "write", "生成结汇 AI 策略分析"),
         ("operations:read", "operations", "read", "查看运行服务与定时任务状态"),
         ("operations:admin", "operations", "admin", "立即执行、暂停或恢复本实例定时任务"),
         # AI Agent 任务中心：read_all 仅扩展数据范围，Worker 使用独立机器凭证。
