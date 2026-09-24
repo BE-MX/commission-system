@@ -477,6 +477,11 @@ def seed_role_permissions(db: Session):
         ("customer_radar:read",   "customer_radar", "read",   "查看客户经营雷达"),
         ("customer_radar:write",  "customer_radar", "write",  "完成/延后/反馈行动"),
         ("customer_radar:manage", "customer_radar", "manage", "管理所有客户档案/手动分配"),
+        # 私海客户工作台（PCW）
+        ("customer_pcw:read",   "customer_pcw", "read",   "查看私海工作台概览/监控/计划/订单分析"),
+        ("customer_pcw:write",  "customer_pcw", "write",  "完成行动/确认监控事件/维护计划改约"),
+        ("customer_profile:write", "customer_profile", "write", "客户档案普通字段修订与AI建议审核"),
+        ("customer_campaign:admin", "customer_campaign", "admin", "新品/优惠活动创建发布与名单管理"),
         # 智能获客：外部候选发现、联系人完善与企业研究
         ("sales_automation:read",  "sales_automation", "read",  "查看智能获客"),
         ("sales_automation:write", "sales_automation", "write", "创建搜索任务并确认候选客户"),

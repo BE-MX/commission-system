@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "check": "vite build",
     "test:invoice-layout": "node --test tests/invoiceLayout.test.mjs",
+    "test:customer-workspace": "node --test tests/customerWorkspace.test.mjs",
     "test:invoice-import": "node --test tests/invoicePasteImport.test.mjs",
     "test:invoice-screenshot": "node --test tests/invoiceScreenshotImport.test.mjs",
     "test:invoice-settlement": "node --test tests/invoiceSettlement.test.mjs",

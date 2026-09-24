@@ -1,5 +1,31 @@
 # 莱莎方舟 API 参考
 
+## 私海客户工作台 PCW（2026-09-25，本地实现，迁移 169）
+
+统一前缀 `/api/customer-hub`，`ok(data)` 信封；业务写请求携带 `Idempotency-Key`（同键同内容重放原结果、不同内容 409 `IDEMPOTENCY_CONFLICT`）。版本冲突 409 带 `current_*` 详情；失权/不存在统一 404 `CUSTOMER_NOT_FOUND_OR_FORBIDDEN`。契约详见 [PCW 开发规格](requirements/private-customer-workbench-prototype/api-contracts.md)。权限：`customer_pcw:read/write`、`customer_profile:write`、`customer_campaign:admin`。
+
+| 方法与路径 | 权限 / 用途 |
+| --- | --- |
+| GET `/workbench/overview` | customer_pcw:read；四指标（范围内客户/待办/原期限逾期/复购窗口）+ 扫描与来源水位，customer_scope=primary/collaborator/authorized |
+| POST `/evaluation-runs` | customer:admin；每日规则评估（dry_run/run_kind），202 返回 run_uid，支持幂等 |
+| GET `/evaluation-runs/{run_uid}` | customer_pcw:read；逐客户规则/AI 状态与失败原因 |
+| POST `/customers/{id}/actions` | customer_pcw:write；事项(business_key,business_cycle)+行动轮次创建，返回 action/work_item 版本 |
+| PUT `/actions/{id}` | customer_radar:write；携带 expected_action_version 即走 v2 闭环：complete/snooze/dismiss + work_item_transition + 维护实例 expected_occurrence_version，结果/后续原子 |
+| POST/GET `/customers/{id}/profile-revisions` | customer_profile:write/read；字段白名单修订（Annotation v2 覆盖层+新档案版本），强版本前置 409 PROFILE_VERSION_CONFLICT 带 visible_diff |
+| GET `/customers/{id}/profile-suggestions`、POST `/profile-suggestions/{id}/decisions` | 建议审核 accept/edit_accept/reject/defer；SUGGESTION_STALE/版本 409 |
+| POST/GET `/customers/{id}/notes` | 私人备注（visibility=private，按作者隔离） |
+| GET `/conversation-bindings/pending`、POST `/conversation-bindings` | WhatsApp 会话待绑定队列与绑定（expected_binding_version=0 首绑）；POST `/conversation-bindings/{id}/rebind|unbind` 需 customer:admin |
+| GET `/customers/{id}/conversations`、GET `/conversations/{id}/messages` | 会话与游标消息（(sent_at,id) 稳定排序） |
+| POST `/conversations/{id}/analysis-jobs`（202）、GET `/analysis-jobs/{id}` | 增量 AI 摘要任务；输入哈希+绑定版本幂等，撤权 404 |
+| GET `/customers/{id}/orders`、`/orders/{order_id}`、`/order-analytics`、`/reorder-windows` | 订单只读明细与确定性统计（币种/单位不混加、覆盖率服务端分母）；复购窗口（≥4 批次、中位数±7 天、极差/中位>0.6 降级 irregular） |
+| GET/POST `/customers/{id}/monitor-subscriptions`、PATCH `/monitor-subscriptions/{id}`、POST `.../runs` | 监控订阅（HTTPS/DNS/内网校验 URL_NOT_ALLOWED）；enabled 与 collection_status=baseline/active/failed/restricted 分列 |
+| GET `/customers/{id}/monitor-events`、POST `/monitor-events/{id}/decisions` | 事件 confirm（生成一次任务）/ignore（必填原因），版本前置 |
+| GET/POST `/customers/{id}/maintenance-plans`、PATCH `/maintenance-plans/{id}` | 六类维护计划（manual/birthday/holiday/campaign/shipping/sample）；PATCH 带 occurrence_id 即实例改约（原期限保留、done 行动拒绝改约） |
+| GET `/maintenance-calendar` | 按北京时间业务日分组的日历 |
+| POST/GET `/customers/{id}/sample-cases`、GET/PATCH `/sample-cases/{id}` | 样品事项 ordered→…→closed 状态机；reschedule/start_test/record_feedback/close，三版本原子 |
+| POST `/shipment-order-links` | 物流-订单显式多对多关联（数量 Decimal 校验，unknown 不猜） |
+| POST/GET `/campaigns`、GET/PATCH `/campaigns/{id}`、POST `.../publications|state-transitions|preview|actions` | 活动管理；preview 给合格/排除原因，actions 名单⊆本次预览，逐客户 created/existing/suppressed/failed 诚实分列 |
+
 ## 预售结算与汇总回款（2026-09-23，本地部分实现，未上线）
 
 统一 `/api` 前缀、RBAC、`ok(data)` 信封。商业规则及未完成的外发闭环见 [实现报告](reports/2026-09-23-presale-implementation.md)。

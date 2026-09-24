@@ -1472,6 +1472,11 @@ class CustomerAction(Base):
             "action_fingerprint",
             name="uq_ark_customer_actions_action_fingerprint",
         ),
+        UniqueConstraint(
+            "work_item_id",
+            "action_round",
+            name="uq_customer_action_item_round",
+        ),
         Index(
             "ix_ark_customer_actions_opportunity_id_customer_id",
             "opportunity_id",
@@ -1481,6 +1486,12 @@ class CustomerAction(Base):
             "ix_ark_customer_actions_profile_version_id_customer_id",
             "profile_version_id",
             "customer_id",
+        ),
+        Index(
+            "ix_ark_customer_actions_owner_status_due",
+            "owner_user_id",
+            "status",
+            "business_due_at",
         ),
         {
             "comment": "客户经营雷达给业务员的待执行、完成、忽略和延后行动表；建议与真实销售活动严格分开。"
@@ -1594,6 +1605,34 @@ class CustomerAction(Base):
     action_fingerprint = Column(String(64).with_variant(mysql.CHAR(64), "mysql"), nullable=False, comment="客户、行动日期、策略、触发事实和目标对象生成的SHA-256")
     evidence_status = Column(String(16), nullable=False, index=True, comment="证据状态：valid、stale、invalid")
     generated_at = Column(DateTime, nullable=False, comment="行动建议完成生成的北京时间")
+    work_item_id = Column(
+        BigInteger,
+        ForeignKey(
+            "ark_customer_work_items.id",
+            name="fk_customer_action_work_item",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=True,
+        index=True,
+        comment="私海工作台工作项ID；雷达存量行动为空，PCW 新建行动由业务代码保证必填",
+    )
+    action_round = Column(Integer, nullable=True, comment="同一工作项内的行动轮次，从1开始递增；与work_item_id组合唯一，历史行动为空")
+    parent_action_id = Column(
+        BigInteger,
+        ForeignKey(
+            "ark_customer_actions.id",
+            name="fk_customer_action_parent_action",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=True,
+        comment="重试或升级时指向同一工作项内的上一轮行动ID，构成行动链",
+    )
+    row_version = Column(Integer, nullable=False, default=1, comment="乐观锁版本号，每次状态变更由业务代码加1，冲突时拒绝写入")
+    original_due_at = Column(DateTime, nullable=True, comment="首次生成时承诺的业务截止时间，延期后保持不变用于审计")
+    business_due_at = Column(DateTime, nullable=True, index=True, comment="当前生效的业务截止时间，延期时更新")
+    due_provenance = Column(String(24), nullable=True, comment="业务截止时间来源：rule、agent、manual、migration；历史行动无可靠来源可空")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="行动创建的北京时间")
     updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="行动当前态最后更新的北京时间")
 

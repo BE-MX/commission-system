@@ -1,0 +1,15 @@
+[UI] frontend/src/views/invoice/InvoiceManage.vue: button 9 uses legacy small size
+[UI] frontend/src/views/invoice/components/InvoiceWholeOrderPaste.vue: column 1 uses fixed width
+[UI] frontend/src/views/invoice/components/InvoiceWholeOrderPaste.vue: column 3 uses fixed width
+[UI] frontend/src/views/invoice/components/legacy/InvoiceLegacyDrawer.vue: button 1 uses legacy small size
+[UI] frontend/src/views/asset/AssetLibrary.vue: lines_over_500 baseline is stale (baseline=234, actual=349); regenerate it only after intentional cleanup
+[UI] frontend/src/views/asset/TagDimensionManage.vue: lines_over_500 baseline is stale (baseline=185, actual=220); regenerate it only after intentional cleanup
+[UI] frontend/src/views/design/DesignManage.vue: lines_over_500 baseline is stale (baseline=262, actual=272); regenerate it only after intentional cleanup
+[UI] frontend/src/views/insight/CaseLibraryView.vue: lines_over_500 baseline is stale (baseline=246, actual=247); regenerate it only after intentional cleanup
+[UI] frontend/src/views/invoice/InvoiceManage.vue: lines_over_500 baseline is stale (baseline=0, actual=79); regenerate it only after intentional cleanup
+[UI] frontend/src/views/knowledge/KnowledgeWorkbench.vue: lines_over_500 baseline is stale (baseline=0, actual=3); regenerate it only after intentional cleanup
+[UI] frontend/src/views/knowledge/components/KnowledgeEditor.vue: lines_over_500 baseline is stale (baseline=0, actual=2); regenerate it only after intentional cleanup
+[UI] frontend/src/views/stock/ProductionOrderManage.vue: lines_over_500 baseline is stale (baseline=389, actual=391); regenerate it only after intentional cleanup
+[UI] frontend/src/views/system/AIManager.vue: lines_over_500 baseline is stale (baseline=288, actual=292); regenerate it only after intentional cleanup
+audit_frontend_ui: 13 failure(s)
+check_conventions: UI 债务门禁失败

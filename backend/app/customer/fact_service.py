@@ -203,6 +203,28 @@ EVENT_REGISTRY: Mapping[str, EventRegistration] = MappingProxyType({
         required=("annotation_type",), reference="annotation", human=True,
         classification=DataClassification.RESTRICTED_INTERNAL,
     ),
+    "profile.field_revised": _event_registration(
+        ("manual",),
+        {
+            "annotation_id": int,
+            "field_key": str,
+            "value_type": str,
+            "reason": str,
+            "profile_before": int,
+            "profile_after": int,
+        },
+        required=(
+            "annotation_id",
+            "field_key",
+            "value_type",
+            "reason",
+            "profile_before",
+            "profile_after",
+        ),
+        reference="annotation",
+        human=True,
+        bump_profile_input_seq=False,
+    ),
     "policy.dnc_set": _event_registration(
         ("governance",),
         {
@@ -2223,8 +2245,16 @@ def _validate_event_reference_semantics(
             and payload.get("annotation_type") == row.annotation_type
             and actor_user_id == row.authored_by
         )
+        profile_revision_valid = bool(
+            event_type == "profile.field_revised"
+            and row is not None
+            and row.status == "active"
+            and row.content_schema_version == "v2"
+            and payload.get("annotation_id") == object_id
+            and actor_user_id == row.authored_by
+        )
         if not (
-            policy_valid or annotation_created_valid
+            policy_valid or annotation_created_valid or profile_revision_valid
         ):
             raise CustomerDomainError("EVENT_REFERENCE_INVALID")
     elif source_ref_type == "assignment":

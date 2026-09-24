@@ -355,6 +355,16 @@ class Settings(BaseSettings):
     # Run 委托 JWT 独立密钥；开发留空时回退 JWT_SECRET_KEY，生产必须显式配置。
     AGENT_RUNTIME_RUN_TOKEN_SECRET: str = ""
 
+    # ── 私海客户工作台（PCW）─────────────────────────────
+    # 三个功能开关默认全关，灰度节奏见上线 runbook；先开评估，再开 AI 分析，最后开监控采集。
+    PCW_EVALUATION_ENABLED: bool = False  # 每日客户评估批次（规则评估）
+    PCW_EVALUATION_HOUR: _PositiveInt = 7  # 每日评估启动小时（北京时间）
+    PCW_AI_ANALYSIS_ENABLED: bool = False  # 评估后的 AI 增量分析
+    PCW_MONITOR_ENABLED: bool = False  # 客户官网/社媒监控采集
+    PCW_AI_TIMEOUT_SECONDS: _PositiveInt = 60  # 单次 AI 分析调用超时
+    PCW_MONITOR_FETCH_MAX_BYTES: _PositiveInt = 2_000_000  # 单次监控采集响应体上限
+    PCW_MONITOR_MAX_SUBSCRIPTIONS_PER_CUSTOMER: _PositiveInt = 20  # 单客户监控订阅上限
+
     # ── 微信小程序 ────────────────────────────────────────
     WX_MINI_APPID: str = ""  # 微信小程序 AppID
     WX_MINI_SECRET: str = ""  # 微信小程序 AppSecret

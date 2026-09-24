@@ -1,0 +1,29 @@
+R1 Solace bind -> profile: stale suggestion shown, neither accept nor edit-accept button exists.
+R1 fresh analysis v1 edit-accept -> profile v4, accepted; old suggestion stays stale.
+R1 Novelle Alibaba: only b-ali messages and 100 pcs/MOQ summary; no sample-test statement.
+R1 Novelle WhatsApp: b-wa-2 states testing not begun; summary matches.
+Focus: save profile market -> replacement edit-field/market button focused, not main.
+R2 complete t3 awaiting reply -> calendar 09.26 current task-7; reschedule -> calendar and side panel 09.29; old action remains completed (next screen).
+R3 Instagram pause/resume retains collection failure, last success 09.22 07:30, one pending monitor event.
+R4 U01 unrelated bundle order: amount unknown, partial total explicit; hairpiece window remains 09.22-10.06.
+R4 A05 associated hairpiece order cancels old task; recalculated median29 window10.16-10.30.
+Layout 390 客户档案: {"client":375,"scroll":375}
+Layout 390 沟通与询盘: {"client":375,"scroll":375}
+Layout 390 订单与复购: {"client":375,"scroll":375}
+Layout 390 官网与社媒: {"client":375,"scroll":375}
+Layout 390 维护日历: {"client":375,"scroll":375}
+Long dialog 390: {"client":635,"left":17,"right":358,"scroll":635,"width":390}
+Layout 1024 客户档案: {"client":1009,"scroll":1009}
+Layout 1024 沟通与询盘: {"client":1009,"scroll":1009}
+Layout 1024 订单与复购: {"client":1009,"scroll":1009}
+Layout 1024 官网与社媒: {"client":1024,"scroll":1024}
+Layout 1024 维护日历: {"client":1024,"scroll":1024}
+Long dialog 1024: {"client":459,"left":232,"right":792,"scroll":459,"width":1024}
+Layout 1440 客户档案: {"client":1425,"scroll":1425}
+Layout 1440 沟通与询盘: {"client":1425,"scroll":1425}
+Layout 1440 订单与复购: {"client":1425,"scroll":1425}
+Layout 1440 官网与社媒: {"client":1440,"scroll":1440}
+Layout 1440 维护日历: {"client":1440,"scroll":1440}
+Long dialog 1440: {"client":459,"left":440,"right":1000,"scroll":459,"width":1440}
+Cancel focus -> edit-field/market; save focus already independently checked.
+Reduced motion 0s; console warn/error [].

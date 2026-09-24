@@ -1,3 +1,11 @@
+## 2026-09-25 私海客户工作台 PCW（kimi 本地开发，未合并未部署）
+
+- 工作树 `D:/MyProgram/commission-system-kimi`，分支 `kimi/private-customer-workbench`（基于 main `401a2a42`）。按 `docs/requirements/private-customer-workbench-prototype/` 开发规格/API 契约/数据蓝图实现 PCW-01..06 后端与前端，**未 commit 前状态见本轮报告；未合并、未推送、未部署、未动生产库**。
+- 后端：迁移 `169_pcw_customer_workbench`（父 168——main 已占用 168_customer_media_customer_tags，合并前必须先 rebase 到最新 main 并验证单 head）；19 张新表 + `ark_customer_actions` 扩展 7 列（事项/行动轮次/原期限）；服务 `pcw_workitem/evaluation/overview/profile/conversation/order/monitor/maintenance_service`（事项跨日去重、结果+后续原子、409 版本前置、幂等回执、DNC/失权 404）；路由 `/api/customer-hub` 扩展 30+ 端点；权限种子 `customer_pcw:read/write`、`customer_profile:write`、`customer_campaign:admin`；调度 `pcw_daily_evaluation`（`PCW_EVALUATION_ENABLED` 门控默认关）。
+- 前端：今日工作台概览（四指标/扫描/水位）、客户工作区六页签、跟进日历、customerHubContract 扩展、customerWorkspaceController 纯逻辑。
+- 验证：后端 PCW 测试 123 项 + 存量 customer 回归 287 项全过；前端 node:test 14 项全过、`npm run build` 通过；`check_conventions` 仅剩 13 项既有 UI 基线债（本任务文件已清零）。独立审查（B1 迁移撞号、B2 幂等败者副作用、H1-H7 权限/死行动/行锁、M1-M7）已修复并回归。
+- 待办：合并授权后 rebase 最新 main 解决迁移链；AI 增量分析/监控真实抓取/邮件通知默认关闭（`PCW_AI_ANALYSIS_ENABLED`/`PCW_MONITOR_ENABLED`），需灰度与业务签定规则阈值；`projection_okki_order` 未接 `on_order_projected` 钩子（新单覆盖窗口需投影侧一行接线）。
+
 ## 2026-09-23 预售分批结算与汇总回款（本地开发，外部闭环阻塞）
 
 - 工作树 `D:/MyProgram/commission-system-codex-presale-settlement`，分支 `codex/presale-settlement`。已授权合并推送，本次不部署，未操作共享数据库。预售迁移顺延为166（父164），避开主目录未提交跟单员迁移165；后者集成时需重接已发布迁移链。

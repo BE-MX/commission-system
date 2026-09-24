@@ -3190,6 +3190,19 @@ def test_unified_workflow_models_match_frozen_126_contract():
     contract = json.loads(contract_path.read_text(encoding="utf-8"))[
         "customer_domain_physical_contract"
     ]["tables"]
+    # 126 冻结契约描述迁移 126 时点的物理结构，资源文件按字节哈希锁定不可改。
+    # 后续迁移的加列在此显式登记：migration 168（PCW 私海工作台）扩展的行动列。
+    post_126_columns = {
+        "ark_customer_actions": {
+            "work_item_id",
+            "action_round",
+            "parent_action_id",
+            "row_version",
+            "original_due_at",
+            "business_due_at",
+            "due_provenance",
+        },
+    }
     for model in (
         customer_models.CustomerOpportunity,
         customer_models.CustomerOpportunityEvent,
@@ -3200,7 +3213,7 @@ def test_unified_workflow_models_match_frozen_126_contract():
         assert actual.comment == expected["table_comment"]
         assert {column.name for column in actual.columns} == {
             column["name"] for column in expected["columns"]
-        }
+        } | post_126_columns.get(model.__tablename__, set())
         assert all(column.comment for column in actual.columns)
     expected_owner = next(
         column

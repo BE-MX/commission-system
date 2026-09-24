@@ -375,6 +375,26 @@ export const NAV_ENTRIES = [
     },
   },
   {
+    path: '/customer-hub/calendar',
+    name: 'CustomerHubCalendar',
+    component: () => import('@/views/customer_hub/MaintenanceCalendar.vue'),
+    title: '跟进日历',
+    anyPermission: ['customer_pcw:read', 'customer_radar:read'],
+    menu: {
+      group: 'customerOperations', title: '跟进日历', icon: Calendar, order: 15,
+      anyPermission: ['customer_pcw:read', 'customer_radar:read'],
+    },
+  },
+  {
+    path: '/customer-hub/workspace/:id',
+    name: 'CustomerHubWorkspaceDetail',
+    component: () => import('@/views/customer_hub/CustomerWorkspace.vue'),
+    title: '客户工作区',
+    hideInMenu: true,
+    activeMenu: '/customer-hub/customers',
+    anyPermission: ['customer:read'],
+  },
+  {
     path: '/mail-outreach',
     name: 'MailOutreachQueue',
     component: () => import('@/views/mail_outreach/MailOutreachQueue.vue'),

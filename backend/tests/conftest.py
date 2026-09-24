@@ -41,6 +41,13 @@ from app.shipping_inspection import models as _shipping_inspection_models  # noq
 from app.whatsapp_translation import models as _whatsapp_translation_models  # noqa: F401
 # 邮件触达表 FK 指向 ark_users / ark_customer_*，显式导入保证单跑测试文件时 create_all 覆盖到
 from app.mail_outreach import models as _mail_outreach_models  # noqa: F401
+# 物流跟踪表是 PCW 运单关联的 FK 目标，显式导入保证单跑测试文件时 create_all 覆盖到
+from app.tracking import models as _tracking_models  # noqa: F401
+from app.whatsapp import models as _whatsapp_models  # noqa: F401
+# 客户域表是 PCW 各表的主要 FK 目标，显式导入保证单跑测试文件时 create_all 覆盖到
+from app.customer import models as _customer_models  # noqa: F401
+# 私海客户工作台（PCW）表 FK 指向 ark_customer_* / ark_users / shipment_tracking
+from app.customer import pcw_models as _pcw_models  # noqa: F401
 # sys_dict 供术语表（whatsapp_glossary_*）检索使用
 from app.system import models as _system_models  # noqa: F401
 

@@ -53,6 +53,11 @@
           <el-table-column prop="relationship_stage" label="关系阶段" min-width="120" max-width="180" show-overflow-tooltip />
           <el-table-column label="归属" min-width="118"><template #default="{ row }">{{ row.is_public_pool ? '公海' : '已分配' }}</template></el-table-column>
           <el-table-column label="完整度" min-width="105"><template #default="{ row }">{{ row.profile_completeness }}%</template></el-table-column>
+          <el-table-column label="操作" min-width="120" max-width="150" class-name="table-action-column" fixed="right">
+            <template #default="{ row }">
+              <GlassButton variant="link" left-icon="FolderOpened" @click="$router.push(`/customer-hub/workspace/${row.customer_id}`)">工作区</GlassButton>
+            </template>
+          </el-table-column>
         </template>
 
         <template v-else-if="kind === 'acquisition'">
