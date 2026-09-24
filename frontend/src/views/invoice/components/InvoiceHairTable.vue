@@ -7,6 +7,15 @@
         <span v-else class="line-hint">四个关键词选择完整后自动匹配唯一 Product_name。</span>
       </div>
       <div class="line-header-actions">
+        <!-- 独立粘贴入口只在旧版抽屉显示（showPasteEntry）；新版统一走卡片①的整单粘贴 -->
+        <el-tooltip v-if="showPasteEntry" :disabled="canPasteImport" :content="pasteImportDisabledReason">
+          <span>
+            <el-button v-permission="'invoice:write'" :disabled="!canPasteImport" @click="$emit('paste')">
+              <el-icon><DocumentCopy /></el-icon>
+              从 Excel 粘贴
+            </el-button>
+          </span>
+        </el-tooltip>
         <el-button link type="primary" @click="collapseSpecs = !collapseSpecs">
           <el-icon><component :is="collapseSpecs ? ArrowDown : ArrowUp" /></el-icon>
           {{ collapseSpecs ? '展开规格列' : '收起规格列' }}
@@ -191,6 +200,8 @@ const props = defineProps({
   entryOptions: { type: Object, required: true },
   canPasteImport: Boolean,
   pasteImportDisabledReason: { type: String, default: '' },
+  // 旧版抽屉显示独立「从 Excel 粘贴」入口；新版不显示（统一走整单粘贴）
+  showPasteEntry: Boolean,
   loadLineOptions: { type: Function, required: true },
   onLineFilterChange: { type: Function, required: true },
   onCustomFieldChange: { type: Function, required: true },

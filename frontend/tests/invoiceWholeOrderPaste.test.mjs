@@ -119,9 +119,18 @@ test('editor appends product rows before distributing the discount', () => {
   assert.match(applyFn, /产品明细 \$\{parsed\.productPreview\.rows\.length\} 行/)
 })
 
-test('standalone product paste entry is removed in favor of whole-order paste', () => {
+test('standalone product paste entry shows only in the legacy drawer', () => {
   const hairTable = read('../src/views/invoice/components/InvoiceHairTable.vue')
-  assert.doesNotMatch(hairTable, /从 Excel 粘贴/)
+  const legacyDrawer = read('../src/views/invoice/components/legacy/InvoiceLegacyDrawer.vue')
+  // 按钮保留在组件里，但由 showPasteEntry 门控：新版不传 = 不显示，旧版传 = 显示
+  assert.match(hairTable, /v-if="showPasteEntry"/)
+  assert.match(hairTable, /showPasteEntry: Boolean/)
+  assert.match(legacyDrawer, /show-paste-entry/)
+  assert.match(legacyDrawer, /@paste="\$emit\('open-legacy-paste'\)"/)
+  assert.match(invoiceView, /@open-legacy-paste="pasteImportVisible = true"/)
+  // 新版抽屉的明细表不带该 prop
+  const newDrawerTable = invoiceView.slice(invoiceView.indexOf('<InvoiceHairTable'), invoiceView.indexOf('<InvoiceAccessoryTable'))
+  assert.doesNotMatch(newDrawerTable, /show-paste-entry/)
   assert.match(invoiceView, /整单粘贴/)
 })
 

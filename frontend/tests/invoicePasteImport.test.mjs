@@ -134,8 +134,8 @@ test('invoice editor exposes a contextual Excel paste entry and append-only inte
 
   assert.match(view, /InvoicePasteImport/)
   assert.match(view, /@append="appendPastedLines"/)
-  // 明细区的独立粘贴入口已并入卡片①的「整单粘贴」（2026-09-23），表头不再单独出现
-  assert.doesNotMatch(hairTable, /从 Excel 粘贴/)
+  // 独立明细粘贴入口保留但仅旧版抽屉可见（showPasteEntry）；新版统一走「整单粘贴」
+  assert.match(hairTable, /v-if="showPasteEntry"[\s\S]*?从 Excel 粘贴/)
   assert.match(view, /InvoiceWholeOrderPaste/)
   assert.match(hairEditor, /function appendImportedLines/)
   assert.match(hairEditor, /_importBatchFingerprint/)

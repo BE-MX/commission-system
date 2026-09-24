@@ -493,8 +493,15 @@
       @apply="applyWholeOrderPaste"
     />
 
-    <!-- 旧版下单抽屉（过渡期）：与新版共享编辑器状态；整单粘贴对话框两版共用 -->
-    <InvoiceLegacyDrawer :editor="editor" :money="money" :money4="money4" @open-paste="wholeOrderPasteVisible = true" />
+    <!-- 旧版下单抽屉（过渡期）：与新版共享编辑器状态；整单粘贴对话框两版共用，
+         旧版明细区另保留独立「从 Excel 粘贴」入口（open-legacy-paste） -->
+    <InvoiceLegacyDrawer
+      :editor="editor"
+      :money="money"
+      :money4="money4"
+      @open-paste="wholeOrderPasteVisible = true"
+      @open-legacy-paste="pasteImportVisible = true"
+    />
 
     <InvoiceSyncLogsDialog
       v-model="syncLogsVisible"

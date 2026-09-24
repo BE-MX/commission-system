@@ -17,7 +17,7 @@ test('legacy create entry coexists with the redesigned drawer', () => {
   assert.match(view, /库存单（旧版）/)
   assert.match(view, /生产单（旧版）/)
   assert.match(view, /@command="openLegacyCreate"/)
-  assert.match(view, /<InvoiceLegacyDrawer :editor="editor"/)
+  assert.match(view, /<InvoiceLegacyDrawer\s+:editor="editor"/)
   // 整单粘贴对话框两版共用
   assert.match(view, /@open-paste="wholeOrderPasteVisible = true"/)
 })
@@ -49,4 +49,8 @@ test('legacy drawer restores the HEAD-era layout with legacy companions', () => 
   }
   // 旧版回款：独立小满回款方式下拉（不使用 hide-payment-type）
   assert.doesNotMatch(legacyReceipt, /hide-payment-type/)
+  // 旧版明细区保留独立「从 Excel 粘贴」入口
+  assert.match(legacyDrawer, /show-paste-entry/)
+  assert.match(legacyDrawer, /@paste="\$emit\('open-legacy-paste'\)"/)
+  assert.match(view, /@open-legacy-paste="pasteImportVisible = true"/)
 })

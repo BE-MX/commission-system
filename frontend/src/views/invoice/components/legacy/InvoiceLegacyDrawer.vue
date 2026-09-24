@@ -176,6 +176,9 @@
           :items="hairItems"
           :is-production="isProduction"
           :entry-options="entryOptions"
+          :can-paste-import="canPasteImport"
+          :paste-import-disabled-reason="pasteImportDisabledReason"
+          show-paste-entry
           :load-line-options="loadLineOptions"
           :on-line-filter-change="onLineFilterChange"
           :on-custom-field-change="onCustomFieldChange"
@@ -184,6 +187,7 @@
           :update-line-total="updateLineTotal"
           :money="money"
           :money4="money4"
+          @paste="$emit('open-legacy-paste')"
           @copy="copyLine"
           @add-blank="addBlankLine"
           @remove="removeLine"
@@ -241,7 +245,17 @@ const props = defineProps({
   money: { type: Function, required: true },
   money4: { type: Function, required: true },
 })
-defineEmits(['open-paste'])
+defineEmits(['open-paste', 'open-legacy-paste'])
+
+// 与新版同口径的粘贴前置条件（客户/类型/币种齐备才能校验导入）
+const canPasteImport = computed(() => Boolean(form.customer_id && form.order_type && form.currency))
+const pasteImportDisabledReason = computed(() => {
+  const missing = []
+  if (!form.customer_id) missing.push('客户')
+  if (!form.order_type) missing.push('订单类型')
+  if (!form.currency) missing.push('币种')
+  return missing.length ? `请先选择${missing.join('、')}` : ''
+})
 
 const {
   legacyVisible, form, selectedCustomer, customerOptions, customerLoading, salesUserOptions,
