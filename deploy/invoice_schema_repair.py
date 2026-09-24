@@ -251,6 +251,8 @@ def recover_execute(plan_path, credential_file, prepare_only=False):
                 check_health(plan, prepared, baseline)
                 prepared["schema_changed"] = True
                 schema_release.complete(prepared)
+                publish.atomic_json(publish.STATE / "schema-current.json",
+                                    {"status": "upgraded", "schema": TARGET})
             record["status"] = "succeeded"
             publish.atomic_json(journal, record)
             print("INVOICE SCHEMA RECOVERED: " + TARGET + "; application versions unchanged", flush=True)
