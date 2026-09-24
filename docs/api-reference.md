@@ -1530,6 +1530,6 @@ Agent research context now includes `fact_contract.version=registered_research_f
 | 方法 | 路径 | 用途 |
 |---|---|---|
 | POST | `/api/shipping-inspection/outbound-records/{record_id}/invoice-sync/preview` | 预览最新方舟发票与小满待出库单差异；返回 version、changes 和备注前后值；关联改单号时另含 serial_before/serial_after；已有在途任务返回 recover |
-| POST | `/api/shipping-inspection/outbound-records/{record_id}/invoice-sync` | 请求 `{expected_version, check_only:false}` 执行已预览的同步；`check_only:true` 只核对，绝不发送；返回 sync_done / sync_pending / sync_sending / sync_uncertain 或 requires_preview |
+| POST | `/api/shipping-inspection/outbound-records/{record_id}/invoice-sync` | 请求 `{expected_version, check_only:false}` 执行已预览的同步；`repair:true` 在不确定状态下核验并逐次只补一条安全缺失明细，返回 `repairable:true` 时客户端可继续下一步；`check_only:true` 始终只核对，绝不发送；返回 sync_done / sync_pending / sync_sending / sync_uncertain 或 requires_preview |
 
 两接口均要求 `shipping_inspection:write` + `invoice:sync`，双重数据范围校验。业务冲突返回409。详见[手动同步说明](outbound-invoice-sync.md)。

@@ -678,6 +678,169 @@ def test_timeout_after_remote_success_is_verified_without_replay(db, sync_case):
     assert len(fake['posts']) == 1
 
 
+def _partial_additions(db, sync_case, monkeypatch):
+    user, invoice, _, fake = sync_case
+    for unique_id in (101, 102, 103):
+        item = InvoiceItem(invoice_id=invoice.id, sort_order=unique_id, product_id=unique_id,
+            sku_id=unique_id * 10, product_name=f'Weft/{unique_id}', product_display='Weft',
+            length='22', color='#1006', quantity=2, price_per_piece=Decimal('120.27'),
+            total_price=Decimal('240.54'), xiaoman_unique_id=str(unique_id))
+        db.add(item)
+        fake['order']['product_list'].append(dict(unique_id=unique_id, product_id=unique_id,
+            sku_id=unique_id * 10, count=2, unit_price=120.27, product_name=item.product_name,
+            unit='Piece', product_model='Weft'))
+    db.commit()
+    original_post = sync.okki_client._post_json
+
+    def partial_post(path, token, payload, **kwargs):
+        if not fake['posts']:
+            additions = [row for row in payload['record_list'] if not row.get('outbound_record_id')]
+            payload = {**payload, 'record_list': [row for row in payload['record_list']
+                if row.get('outbound_record_id')] + additions[-1:]}
+        return original_post(path, token, payload, **kwargs)
+
+    monkeypatch.setattr(sync.okki_client, '_post_json', partial_post)
+    record = outbound_service.get_outbound_record(db, 'OB001')
+    actor = {'sub': str(user.id), 'permissions': PERMS}
+    version = sync.preview(db, record, actor)['version']
+    assert sync.synchronize(db, record, actor, version)['status'] == 'sync_uncertain'
+    assert len(fake['outbound']['record_list']) == 2
+    return user, fake, record, actor
+
+
+def test_partial_additions_are_repaired_one_at_a_time_and_printable(db, sync_case, monkeypatch):
+    user, fake, record, actor = _partial_additions(db, sync_case, monkeypatch)
+    first = sync.synchronize(db, record, actor, None, repair=True)
+    assert first['status'] == 'sync_uncertain' and first['repairable']
+    assert len(fake['posts']) == 2
+    assert len([row for row in fake['posts'][1]['record_list'] if not row.get('outbound_record_id')]) == 1
+    second = sync.synchronize(db, record, actor, None, repair=True)
+    assert second['status'] == 'sync_done'
+    assert len(fake['posts']) == 3
+    assert {row['order_record_id'] for row in fake['outbound']['record_list']} == {100, 101, 102, 103}
+    with _pc_client(db, user, PERMS) as client:
+        assert client.get(f'{BASE}/OB001/print-data').status_code == 200
+
+
+def test_replace_all_rows_partial_result_recovers_to_printable(db, sync_case, monkeypatch):
+    user, invoice, old_item, fake = sync_case
+    db.delete(old_item)
+    old = fake['outbound']['record_list'][0]
+    fake['outbound']['record_list'].extend([
+        {**old, 'outbound_record_id': 702, 'order_record_id': 200},
+        {**old, 'outbound_record_id': 703, 'order_record_id': 201},
+    ])
+    fake['order']['product_list'] = []
+    for unique_id in (101, 102, 103):
+        item = InvoiceItem(invoice_id=invoice.id, sort_order=unique_id, product_id=unique_id,
+            sku_id=unique_id * 10, product_name=f'Weft/{unique_id}', product_display='Weft',
+            length='22', color='#1006', quantity=20, price_per_piece=Decimal('120.27'),
+            total_price=Decimal('2405.40'), xiaoman_unique_id=str(unique_id))
+        db.add(item)
+        fake['order']['product_list'].append(dict(unique_id=unique_id, product_id=unique_id,
+            sku_id=unique_id * 10, count=20, unit_price=120.27, product_name=item.product_name,
+            unit='Piece', product_model='Weft'))
+    db.commit()
+    original_post = sync.okki_client._post_json
+
+    def partial_post(path, token, payload, **kwargs):
+        if not fake['posts']:
+            removals = [row for row in payload['record_list'] if row.get('remove')]
+            additions = [row for row in payload['record_list'] if not row.get('outbound_record_id')]
+            payload = {**payload, 'record_list': removals + additions[-1:]}
+        return original_post(path, token, payload, **kwargs)
+
+    monkeypatch.setattr(sync.okki_client, '_post_json', partial_post)
+    record = outbound_service.get_outbound_record(db, 'OB001')
+    actor = {'sub': str(user.id), 'permissions': PERMS}
+    version = sync.preview(db, record, actor)['version']
+    assert sync.synchronize(db, record, actor, version)['status'] == 'sync_uncertain'
+    assert len(fake['outbound']['record_list']) == 1
+    assert sync.synchronize(db, record, actor, None, repair=True)['repairable']
+    assert sync.synchronize(db, record, actor, None, repair=True)['status'] == 'sync_done'
+    assert len(fake['posts']) == 3
+    assert sum(row['outbound_count'] for row in fake['outbound']['record_list']) == 60
+    with _pc_client(db, user, PERMS) as client:
+        assert client.get(f'{BASE}/OB001/print-data').status_code == 200
+
+
+def test_partial_repair_refuses_changed_row_and_does_not_repost(db, sync_case, monkeypatch):
+    _, fake, record, actor = _partial_additions(db, sync_case, monkeypatch)
+    fake['outbound']['record_list'][0]['sale_price'] = 1
+    result = sync.synchronize(db, record, actor, None, repair=True)
+    assert result['status'] == 'sync_uncertain'
+    assert len(fake['posts']) == 1
+
+
+def test_partial_repair_refuses_missing_original_row(db, sync_case, monkeypatch):
+    _, fake, record, actor = _partial_additions(db, sync_case, monkeypatch)
+    fake['outbound']['record_list'] = [row for row in fake['outbound']['record_list']
+        if row['outbound_record_id'] != 701]
+    result = sync.synchronize(db, record, actor, None, repair=True)
+    assert result['status'] == 'sync_uncertain'
+    assert len(fake['posts']) == 1
+
+
+def test_partial_repair_does_not_repeat_unconfirmed_row(db, sync_case, monkeypatch):
+    _, fake, record, actor = _partial_additions(db, sync_case, monkeypatch)
+    fake['reject'] = True
+    assert sync.synchronize(db, record, actor, None, repair=True)['status'] == 'sync_uncertain'
+    assert len(fake['posts']) == 2
+    fake['reject'] = False
+    result = sync.synchronize(db, record, actor, None, repair=True)
+    assert result['status'] == 'sync_uncertain'
+    assert len(fake['posts']) == 2
+
+
+def test_check_only_with_repair_flag_never_posts(db, sync_case, monkeypatch):
+    _, fake, record, actor = _partial_additions(db, sync_case, monkeypatch)
+    assert sync.synchronize(db, record, actor, None, check_only=True, repair=True)['status'] == 'sync_uncertain'
+    assert len(fake['posts']) == 1
+
+
+def test_second_repair_request_sees_durable_claim_before_post(db, sync_case, monkeypatch):
+    _, fake, record, actor = _partial_additions(db, sync_case, monkeypatch)
+    original_commit = sync.commit
+    intercepted = []
+
+    def interleave(session):
+        original_commit(session)
+        event = session.query(ShippingOperationEvent).filter_by(scope=state.SCOPE).one()
+        if event.action == 'sync_pending' and event.payload.get('repair_step') and not intercepted:
+            intercepted.append(sync.synchronize(session, record, actor, None, repair=True)['status'])
+
+    monkeypatch.setattr(sync, 'commit', interleave)
+    result = sync.synchronize(db, record, actor, None, repair=True)
+    assert result['repairable']
+    assert intercepted == ['sync_pending']
+    assert len(fake['posts']) == 2
+
+
+def test_stale_normal_sender_cannot_take_over_repair_step(db, sync_case, monkeypatch):
+    user, fake, record, actor = _partial_additions(db, sync_case, monkeypatch)
+    # Create a fresh ordinary preview after clearing the old uncertain event.
+    event = db.query(ShippingOperationEvent).filter_by(scope=state.SCOPE).one()
+    event.action = 'sync_failed'
+    db.commit()
+    version = sync.preview(db, record, actor)['version']
+    original_commit = sync.commit
+    changed = []
+
+    def interleave(session):
+        original_commit(session)
+        current = session.query(ShippingOperationEvent).filter_by(scope=state.SCOPE).one()
+        if current.action == 'sync_sending' and not changed:
+            current.payload = {**current.payload, 'repair_step': {'nonce': 'another-sender'}}
+            original_commit(session)
+            changed.append(True)
+
+    monkeypatch.setattr(sync, 'commit', interleave)
+    with pytest.raises(ValueError, match='执行权已失效'):
+        sync.synchronize(db, record, actor, version)
+    assert changed and len(fake['posts']) == 1
+    assert event.action == 'sync_sending'
+
+
 def test_permissions_and_invoice_scope(db, sync_case):
     user, _, _, fake = sync_case
     for missing in ('invoice:sync', 'shipping_inspection:write'):

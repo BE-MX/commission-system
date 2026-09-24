@@ -26,23 +26,44 @@ test('preview makes no write; apply blocks double clicks and refreshes only on v
   assert.equal(api.syncingId.value, null)
 })
 
-test('uncertain or network failure uses check-only and never claims success', async () => {
+test('network failure retries through readback repair and never claims success without verification', async () => {
   const calls = []
   const api = factory(ref, {success: () => assert.fail('unexpected success')}, async () => ({data:preview}),
-    async (id, version, check) => { calls.push(check); if (!check) throw Error('timeout'); return {data:{status:'sync_uncertain',recover:true,message:'check'}} })(async () => assert.fail('unexpected refresh'))
+    async (id, version, check, confirm, repair) => {
+      calls.push(repair)
+      if (!repair) throw Error('timeout')
+      return {data:{status:'sync_uncertain',recover:true,message:'check'}}
+    })(async () => assert.fail('unexpected refresh'))
   await api.previewSync(row); await api.applySync(); await api.applySync()
-  assert.deepEqual(calls, [false,true])
+  assert.deepEqual(calls, [undefined,true])
   assert.equal(api.syncVisible.value, true)
   assert.equal(api.syncPreview.value.recover, true)
 })
 
-test('check-only with no accepted operation returns to preview without a write', async () => {
+test('recovery on row click returns to preview when no accepted operation exists', async () => {
   let reads = 0; const calls = []
   const api = factory(ref, {}, async () => ({data:++reads === 1 ? {...preview,recover:true} : preview}),
-    async (id, version, check) => { calls.push(check); return {data:{requires_preview:true}} })(async () => {})
-  await api.previewSync(row); await api.applySync()
+    async (id, version, check, confirm, repair) => { calls.push(repair); return {data:{requires_preview:true}} })(async () => {})
+  await api.previewSync(row)
   assert.deepEqual(calls,[true]); assert.equal(reads,2)
   assert.equal(api.syncPreview.value.recover, undefined)
+})
+
+test('one row click continues verified missing-row repairs until printing is available', async () => {
+  const calls = []; let refreshes = 0
+  const api = factory(ref, {success: msg => calls.push(msg)},
+    async () => ({data:{...preview,recover:true,message:'pending'}}),
+    async (id, version, check, confirm, repair) => {
+      assert.equal(repair, true)
+      calls.push(id)
+      return {data:calls.length === 1
+        ? {status:'sync_uncertain',repairable:true,message:'one repaired'}
+        : {status:'sync_done',message:'done'}}
+    })(async () => { refreshes += 1 })
+  await api.previewSync(row)
+  assert.deepEqual(calls, ['1','1','done'])
+  assert.equal(refreshes, 1)
+  assert.equal(api.syncVisible.value, false)
 })
 
 test('inspection preview sends explicit recheck confirmation only on the manual action', async () => {

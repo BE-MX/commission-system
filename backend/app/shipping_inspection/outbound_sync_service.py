@@ -1,4 +1,4 @@
-"""Explicit manual synchronization. No business-mirror writes and no POST replay."""
+"""Outbound synchronization with verified, one-row recovery of partial writes."""
 import logging
 from datetime import datetime, timedelta
 from uuid import uuid4
@@ -137,7 +137,7 @@ def preview(db, record, user, *, desired_serial_id=None, number_only=False):
                                     number_only=number_only)
     commit(db)
     if plan is None:
-        return {'status': event.action, 'recover': True, 'message': '上次同步结果待核对；仅查询结果，不重复发送', 'invoice_no': invoice.invoice_no}
+        return {'status': event.action, 'recover': True, 'message': '正在核对上次同步结果，并检查能否安全补齐缺失明细', 'invoice_no': invoice.invoice_no}
     return {k: plan[k] for k in ('version', 'invoice_no', 'changes', 'remark_before', 'remark_after', 'serial_before',
                                   'serial_after', 'serial_changed', 'changed',
                                   'requires_recheck')} | {'inspection_status': (plan['inspection'] or {}).get('status')}
@@ -219,12 +219,135 @@ def _recover(db, event):
     return _verify_finish(db, event)
 
 
+def _repair_missing(db, record, user, invoice, event):
+    """Send one missing row after proving the previous write and all guards are stable."""
+    invoice = db.query(Invoice).filter_by(id=invoice.id).populate_existing().with_for_update().one()
+    _load_items(db, invoice)
+    event = state.lock(db, record['outbound_record_id'], int(user['sub']))
+    if event.action != 'sync_uncertain':
+        return {'status': event.action, 'recover': event.action in state.ACTIVE,
+                'message': (event.result or {}).get('message', '同步状态已变化，请重新核对')}
+    plan = event.payload['plan']
+    if edit_version(invoice) != plan['invoice_version']:
+        return {'status': 'sync_uncertain', 'message': '订单发票已变化，需人工核对'}
+    _idle(db, invoice, record['outbound_record_id'])
+    order = remote.read(db, '/v1/invoices/order/info', {'order_id': invoice.xiaoman_order_id})
+    if (str(order.get('order_id')) != str(plan['order'].get('order_id'))
+            or order.get('company_id') != plan['order'].get('company_id')
+            or order.get('currency') != plan['order'].get('currency')
+            or order.get('product_list') != plan['order'].get('product_list')):
+        return {'status': 'sync_uncertain', 'message': '小满订单已变化，需人工核对'}
+    related = linked_outbound_service.find_related(db, order)
+    if len(related) != 1 or str(related[0]['outbound_invoice_id']) != str(record['outbound_invoice_id']):
+        return {'status': 'sync_uncertain', 'message': '订单关联出库单已变化，需人工核对'}
+    inspection = db.query(ShippingInspection).filter_by(outbound_record_id=record['outbound_record_id']).with_for_update().populate_existing().first()
+    baseline = plan.get('inspection')
+    media = db.query(ShippingInspectionPhoto).filter_by(inspection_id=inspection.id).with_for_update().all() if inspection else []
+    if (bool(inspection) != bool(baseline) or (baseline and
+            (inspection.id != baseline['id'] or inspection.status != baseline['status']
+             or inspection.edit_version != baseline['edit_version']
+             or {photo.id for photo in media} != set(baseline['media_ids'])))):
+        return {'status': 'sync_uncertain', 'message': '验货资料已变化，需人工核对'}
+    current = _read(db, record['outbound_invoice_id'])
+    try:
+        missing = plans.missing_only(plan['before'], current, plan)
+    except (ValueError, KeyError, TypeError) as exc:
+        return {'status': 'sync_uncertain', 'message': str(exc)}
+    last_step = event.payload.get('repair_step')
+    if last_step and str(last_step['order_record_id']) in missing:
+        return {'status': 'sync_uncertain', 'message': '上次补齐明细尚未在小满出现，需人工核对；不会重复推送'}
+    identity = missing[0]
+    actual = plans.index(current['record_list'], 'order_record_id')
+    expected = plans.index(plan['expected'], 'order_record_id')
+    rows = []
+    for key, row in expected.items():
+        if key in actual:
+            rows.append({**row, 'outbound_record_id': actual[key]['outbound_record_id'],
+                         'cost_unit_price_rmb': actual[key].get('cost_unit_price_rmb', 0)})
+        elif key == identity:
+            rows.append(dict(row))
+    payload = {'outbound_invoice_id': current['outbound_invoice_id'],
+               'handler': [str(x['user_id']) for x in current['handler_info']],
+               'remark': plan['remark_after'], 'record_list': rows}
+    if not payload['handler']:
+        return {'status': 'sync_uncertain', 'message': '小满出库单处理人缺失，需人工核对'}
+    token = okki_client.ensure_access_token(db)
+    audit_service.record(db, event.action, event.operator_user_id, event.outbound_record_id,
+        context={'scope': 'outbound-sync-history', 'source': 'auto_repair'}, request_id=str(uuid4()),
+        payload=event.payload, result=event.result)
+    step_nonce = str(uuid4())
+    event.payload = {**event.payload, 'repair_step': {'order_record_id': identity,
+                     'missing_before': len(missing), 'nonce': step_nonce}}
+    event.operator_user_id = event.login_user_id = int(user['sub'])
+    from app.auth.models import ArkUser
+    actor = db.get(ArkUser, int(user['sub']))
+    event.operator_name = event.login_name = actor.real_name if actor else str(user['sub'])
+    event.result = {**(event.result or {}), 'started_at': str(beijing_now())}
+    event.action = 'sync_pending'
+    commit(db)
+
+    # The durable pending/sending transition is the same mutex used by normal sync.
+    invoice = db.query(Invoice).filter_by(id=invoice.id).populate_existing().with_for_update().one()
+    _load_items(db, invoice)
+    event = state.lock(db, record['outbound_record_id'], int(user['sub']))
+    if (event.action != 'sync_pending' or _expired(event)
+            or event.payload.get('repair_step', {}).get('nonce') != step_nonce):
+        raise ValueError('补齐执行权已失效，请重新核对')
+    event.action = 'sync_sending'
+    commit(db)
+
+    invoice = db.query(Invoice).filter_by(id=invoice.id).populate_existing().with_for_update().one()
+    _load_items(db, invoice)
+    event = state.lock(db, record['outbound_record_id'], int(user['sub']))
+    try:
+        _idle(db, invoice, record['outbound_record_id'])
+        if (event.action != 'sync_sending' or _expired(event)
+                or event.payload.get('repair_step', {}).get('nonce') != step_nonce
+                or edit_version(invoice) != plan['invoice_version']):
+            raise ValueError('补齐前订单发票已变化，请重新核对')
+        if _read(db, record['outbound_invoice_id']) != current:
+            raise ValueError('补齐前小满出库单已变化，请重新核对')
+        fresh_order = remote.read(db, '/v1/invoices/order/info', {'order_id': invoice.xiaoman_order_id})
+        if (fresh_order.get('product_list') != order.get('product_list')
+                or fresh_order.get('company_id') != order.get('company_id')
+                or fresh_order.get('currency') != order.get('currency')):
+            raise ValueError('补齐前小满订单已变化，请重新核对')
+    except (ValueError, okki_client.OkkiApiError):
+        event.action = 'sync_uncertain'
+        commit(db)
+        raise
+    try:
+        response = okki_client._post_json('/v1/invoices/outbound/push', token, payload, context='出库单缺失明细补齐')
+        if response is None:
+            event.action = 'sync_uncertain'
+            commit(db)
+            return {'status': 'sync_uncertain', 'message': '小满凭证失效，补齐未发送；请重新核对'}
+    except okki_client.OkkiApiError:
+        logger.warning('Outbound repair response uncertain record=%s order_record=%s', record['outbound_record_id'], identity)
+        print(f"[outbound_sync] repair response uncertain record={record['outbound_record_id']} order_record={identity}", flush=True)
+    result = _verify_finish(db, event)
+    if result['status'] != 'sync_uncertain':
+        return result
+    try:
+        after = _read(db, record['outbound_invoice_id'])
+        remaining = plans.missing_only(plan['before'], after, plan)
+    except (ValueError, KeyError, TypeError, okki_client.OkkiApiError):
+        return result
+    if identity not in remaining and len(remaining) < len(missing):
+        return {'status': 'sync_uncertain', 'recover': True, 'repairable': True,
+                'message': f'已补齐一条明细，正在继续核对剩余 {len(remaining)} 条'}
+    return {'status': 'sync_uncertain', 'message': '补齐结果未生效，需人工核对；不会重复推送'}
+
+
 def synchronize(db, record, user, version, *, check_only=False, confirm_recheck=False,
-                desired_serial_id=None, number_only=False):
+                desired_serial_id=None, number_only=False, repair=False):
     invoice, event, plan = _prepare(db, record, user, desired_serial_id=desired_serial_id,
                                     number_only=number_only)
     if event.action in state.ACTIVE:
-        return _recover(db, event)
+        result = _recover(db, event)
+        if repair and not check_only and result['status'] == 'sync_uncertain' and event.action == 'sync_uncertain':
+            return _repair_missing(db, record, user, invoice, event)
+        return result
     if check_only and plan['changed']:
         return {'status': 'sync_failed', 'requires_preview': True, 'message': '尚未确认同步成功，请重新预览差异'}
     if check_only:
@@ -245,8 +368,9 @@ def synchronize(db, record, user, version, *, check_only=False, confirm_recheck=
         audit_service.record(db, event.action, event.operator_user_id, event.outbound_record_id,
             context={'scope': 'outbound-sync-history', 'source': 'pc'}, request_id=str(uuid4()),
             payload=event.payload, result=event.result)
+    send_nonce = str(uuid4())
     event.action = 'sync_pending'
-    event.payload = {'invoice_id': invoice.id, 'plan': plan}
+    event.payload = {'invoice_id': invoice.id, 'plan': plan, 'send_nonce': send_nonce}
     event.operator_user_id = event.login_user_id = int(user['sub'])
     from app.auth.models import ArkUser
     actor = db.get(ArkUser, int(user['sub']))
@@ -257,14 +381,16 @@ def synchronize(db, record, user, version, *, check_only=False, confirm_recheck=
     invoice = db.query(Invoice).options(selectinload(Invoice.items)).filter_by(id=invoice.id).populate_existing().with_for_update().one()
     _load_items(db, invoice)
     event = state.lock(db, record['outbound_record_id'], int(user['sub']))
-    if event.action != 'sync_pending' or event.payload['plan']['version'] != version or _expired(event):
+    if (event.action != 'sync_pending' or event.payload['plan']['version'] != version
+            or event.payload.get('send_nonce') != send_nonce or event.payload.get('repair_step') or _expired(event)):
         raise ValueError('原同步执行权已失效，请重新核对结果')
     event.action = 'sync_sending'
     commit(db)  # Distinguish safely cancellable preparation from potentially sent requests.
     invoice = db.query(Invoice).filter_by(id=invoice.id).populate_existing().with_for_update().one()
     _load_items(db, invoice)
     event = state.lock(db, record['outbound_record_id'], int(user['sub']))
-    if event.action != 'sync_sending' or event.payload['plan']['version'] != version or _expired(event):
+    if (event.action != 'sync_sending' or event.payload['plan']['version'] != version
+            or event.payload.get('send_nonce') != send_nonce or event.payload.get('repair_step') or _expired(event)):
         raise ValueError('原同步执行权已失效，请重新核对结果')
     try:
         _idle(db, invoice, record['outbound_record_id'])
