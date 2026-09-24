@@ -13,7 +13,7 @@ from app.customer_media.models import CustomerMediaAsset, CustomerMediaBatch, Cu
 from app.customer_media import router as media_router
 from app.customer_media.storage import LocalMediaStorage
 from app.design.models import DesignDesigner, DesignScheduleTask
-from tests.test_customer_media import _add_customer, _payload, _png, _seed_workflow, _upload_png
+from tests.test_customer_media import _add_customer, _payload, _png, _sample_tags, _seed_workflow, _upload_png
 
 
 @pytest.fixture
@@ -26,7 +26,7 @@ def media(db, tmp_path, monkeypatch):
     monkeypatch.setattr(service, "storage_for", lambda provider="local": storage)
     monkeypatch.setattr(media_router, "storage_for", lambda provider="local": storage)
     updated = asyncio.run(service.upload_asset(
-        db, batch.id, writer, _upload_png(), directory_name="产品图",
+        db, batch.id, writer, _upload_png(), directory_name="产品图", tags=_sample_tags(db),
     ))
     asset = updated.assets[0]
     return applicant, designer, request, task, writer, batch, asset, storage
@@ -42,7 +42,7 @@ def add_shared_batch(db, media):
     db.commit()
     second = service.get_or_create_batch(db, second_task.id, writer)
     return asyncio.run(service.upload_asset(
-        db, second.id, writer, _upload_png("shared.png"), directory_id=asset.directory_id,
+        db, second.id, writer, _upload_png("shared.png"), directory_id=asset.directory_id, tags=_sample_tags(db),
     ))
 
 
@@ -51,7 +51,7 @@ def test_delete_shared_directory_removes_all_files_and_preserves_unrelated(db, m
     directory_id, asset_id, object_key = asset.directory_id, asset.id, asset.object_key
     second = add_shared_batch(db, media)
     second_asset_id, second_key = second.assets[0].id, second.assets[0].object_key
-    updated = asyncio.run(service.upload_asset(db, batch.id, writer, _upload_png("loose.png")))
+    updated = asyncio.run(service.upload_asset(db, batch.id, writer, _upload_png("loose.png"), tags=_sample_tags(db)))
     loose_id = next(row.id for row in updated.assets if row.file_name == "loose.png")
     assert service.list_batch_directories(db, batch.id, writer)[0]["total_asset_count"] == 2
     service.delete_directory(db, batch.id, directory_id, writer)
@@ -151,7 +151,7 @@ def test_upload_refreshes_batch_status_after_waiting_for_directory(db, media):
     try:
         with pytest.raises(service.CustomerMediaConflict, match='状态已变化'):
             asyncio.run(service.upload_asset(
-                db, batch_id, writer, _upload_png('late.png'), directory_name='产品图',
+                db, batch_id, writer, _upload_png('late.png'), directory_name='产品图', tags=_sample_tags(db),
             ))
     finally:
         event.remove(db, 'do_orm_execute', submit_before_final_lock)

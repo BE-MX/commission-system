@@ -1,5 +1,9 @@
 # 莱莎方舟 数据库表参考
 
+## 客户级素材标签（168_customer_media_customer_tags，本地实现，未部署）
+
+`ark_customer_media_customer_tags` 以 `(customer_id, dimension_id, tag_value_id)` 为联合主键，保存客户长期持有的标签，独立于预约单、设计任务和素材批次。`dimension_id`、`tag_value_id` 关联现有标签库，`created_by` 关联方舟用户，`created_at` 使用北京时间；按 `(tag_value_id, customer_id)` 建索引。新增标签采取追加和重复写幂等语义。迁移从未删除素材的既有打标记录按客户去重回填，不改动现有素材标签、目录或文件。生产数据库迁移仍按既有发布流程执行。
+
 ## 预售结算与汇总回款（166_presale_settlement，未部署）
 
 父 revision 为 `164_battle_posters`。八个新账本表，不更新原订单金额、不回填推测历史预售记录；详细实施限制见 [实现报告](reports/2026-09-23-presale-implementation.md)。

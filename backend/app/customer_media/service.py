@@ -17,7 +17,7 @@ from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.auth.utils import hash_password, verify_password
 from app.customer_media.models import (
     CustomerMediaAsset, CustomerMediaAssetTag, CustomerMediaBatch,
-    CustomerMediaDirectory, CustomerMediaDownload, CustomerMediaReview,
+    CustomerMediaCustomerTag, CustomerMediaDirectory, CustomerMediaDownload, CustomerMediaReview,
     CustomerPortalAccount, CustomerPortalSession,
 )
 from app.customer_media.storage import StoredUpload, storage_for
@@ -212,6 +212,7 @@ def sales_portal_customer_detail(
     # 停用账号的真实客户体验是无法登录；业务预览不签发任何素材 URL。
     batches = portal_library(db, account) if account.is_active else []
     return {
+        "account": account,
         "customer": summaries[0],
         "batches": batches,
         "task_meta": portal_task_meta(db, batches),
@@ -475,6 +476,9 @@ async def upload_asset(
     _assert_writer(db, payload, task)
     if batch.status not in EDITABLE_STATUSES:
         raise CustomerMediaConflict("当前状态不能上传素材")
+    if not tags or not any(_tag_item_fields(item)[1] for item in tags):
+        raise CustomerMediaError("请先选择至少一个客户标签再上传")
+    _validate_customer_tag_items(db, tags)
 
     from app.core.config import get_settings
     settings = get_settings()
@@ -542,10 +546,8 @@ async def upload_asset(
         )
         db.add(asset)
         db.flush()
-        if tags:
-            # 客户标签与素材同事务写入：scope/单选校验失败整单回滚。
-            _validate_customer_tag_items(db, tags)
-            _insert_asset_tags(db, asset.id, tags)
+        _insert_asset_tags(db, asset.id, tags)
+        _ensure_customer_tag_links(db, batch.customer_id, tags, user_id)
         batch.updated_at = beijing_now()
         db.commit()
     except Exception:
@@ -662,6 +664,16 @@ def review_batch(db: Session, batch_id: int, payload: dict, action: str, comment
             raise CustomerMediaConflict("退回时必须填写修改原因")
         batch.status = "changes_requested"
         batch.review_comment = comment.strip()
+        # Keep the designer's in-progress task entry available for correction.
+        task, request = _load_task(db, batch.task_id)
+        task.status = "in_progress"
+        task.actual_end_date = None
+        task.actual_end_period = None
+        task.updated_at = now
+        request.status = "in_progress"
+        request.actual_end_date = None
+        request.actual_end_period = None
+        request.updated_at = now
     elif action == "approve":
         batch.status = "published"
         batch.review_comment = comment.strip() if comment else None
@@ -719,6 +731,71 @@ def list_customer_tag_dimensions(db: Session) -> list[dict]:
     """上传页/审核页可选的客户标签维度（可见的 customer scope）。"""
     from app.asset.tag_service import list_dimensions_cached
     return [d for d in list_dimensions_cached(db, CUSTOMER_TAG_SCOPE) if d.get("is_visible", 1)]
+
+
+def list_customer_tags(db: Session, customer_id: str) -> list[dict]:
+    """The reusable labels assigned to a customer, regardless of bookings."""
+    rows = db.execute(select(
+        CustomerMediaCustomerTag.dimension_id,
+        TagDimension.label,
+        CustomerMediaCustomerTag.tag_value_id,
+        TagValue.value,
+    ).join(
+        TagDimension, TagDimension.id == CustomerMediaCustomerTag.dimension_id,
+    ).join(
+        TagValue, TagValue.id == CustomerMediaCustomerTag.tag_value_id,
+    ).where(
+        CustomerMediaCustomerTag.customer_id == customer_id,
+        TagDimension.tag_scope == CUSTOMER_TAG_SCOPE,
+        TagDimension.is_visible == 1,
+        TagValue.is_active == 1,
+    ).order_by(TagDimension.sort_order, TagDimension.id, TagValue.value)).all()
+    return [{
+        "dimension_id": dim_id, "dimension_label": label,
+        "tag_value_id": value_id, "value": value,
+    } for dim_id, label, value_id, value in rows]
+
+
+def _ensure_customer_tag_links(
+    db: Session, customer_id: str, tags: list, user_id: int,
+) -> None:
+    for item in tags:
+        dim_id, value_ids = _tag_item_fields(item)
+        for value_id in dict.fromkeys(value_ids):
+            key = (customer_id, dim_id, value_id)
+            if db.get(CustomerMediaCustomerTag, key) is not None:
+                continue
+            # A concurrent editor may have added the same label after the read.
+            try:
+                with db.begin_nested():
+                    db.add(CustomerMediaCustomerTag(
+                        customer_id=customer_id, dimension_id=dim_id,
+                        tag_value_id=value_id, created_by=user_id,
+                    ))
+                    db.flush()
+            except IntegrityError:
+                if db.get(CustomerMediaCustomerTag, key) is None:
+                    raise
+
+
+def add_customer_tags(
+    db: Session, customer_id: str, payload: dict, tags: list,
+) -> list[dict]:
+    if not tags or not any(_tag_item_fields(item)[1] for item in tags):
+        raise CustomerMediaError("请至少选择一个客户标签")
+    user_id, _, _ = user_identity(db, payload)
+    _validate_customer_tag_items(db, tags)
+    _ensure_customer_tag_links(db, customer_id, tags, user_id)
+    db.commit()
+    return list_customer_tags(db, customer_id)
+
+
+def task_customer_id(db: Session, task_id: int, payload: dict) -> str:
+    task, request = _load_task(db, task_id)
+    _assert_writer(db, payload, task)
+    if not request.customer_id:
+        raise CustomerMediaConflict("该任务未绑定客户")
+    return request.customer_id
 
 
 def validate_tags(db: Session, tag_names: list[str]):
@@ -845,6 +922,7 @@ def update_asset_tags(db: Session, batch_id: int, asset_id: int, payload: dict, 
             CustomerMediaAssetTag.dimension_id.in_(dim_ids),
         ))
         _insert_asset_tags(db, asset.id, tags)
+        _ensure_customer_tag_links(db, batch.customer_id, tags, user_id)
         db.add(CustomerMediaReview(
             batch_id=batch.id, revision=batch.revision, action="update_tags",
             remark=f"更新素材[{asset.file_name}]客户标签", actor_user_id=user_id,

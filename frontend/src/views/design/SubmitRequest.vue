@@ -45,6 +45,8 @@
           </el-col>
         </el-row>
 
+        <BookingCustomerTags :customer-id="form.customer_id" />
+
         <el-row :gutter="24">
           <el-col :span="12">
             <el-form-item label="业务员" prop="salesperson_name">
@@ -208,6 +210,7 @@ import { useAuthStore } from '@/stores/auth'
 import { submitRequest, checkConflict, getUnavailableDates, uploadAttachment, getDesigners } from '@/api/design'
 import { getDictItems } from '@/api/system'
 import ConflictAlert from '@/components/design/ConflictAlert.vue'
+import BookingCustomerTags from './customer-media/BookingCustomerTags.vue'
 import CustomerInfoPicker from '@/components/design/CustomerInfoPicker.vue'
 import DatePeriodPicker from '@/components/design/DatePeriodPicker.vue'
 import { beijingCalendarDate } from '@/utils/datetime'

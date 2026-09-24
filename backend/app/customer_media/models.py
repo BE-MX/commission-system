@@ -134,6 +134,23 @@ class CustomerMediaAssetTag(Base):
     )
 
 
+class CustomerMediaCustomerTag(Base):
+    """A customer's reusable labels, independent of bookings and media batches."""
+
+    __tablename__ = "ark_customer_media_customer_tags"
+
+    customer_id = Column(String(64), primary_key=True, comment="customer_info.company_id")
+    dimension_id = Column(Integer, ForeignKey("ark_tag_dimensions.id"), primary_key=True)
+    tag_value_id = Column(Integer, ForeignKey("ark_tag_values.id"), primary_key=True)
+    created_by = Column(USER_ID, ForeignKey("ark_users.id"), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
+
+    __table_args__ = (
+        Index("idx_customer_media_customer_tag_value", "tag_value_id", "customer_id"),
+        {"comment": "客户标签集合，跨预约与拍摄任务复用"},
+    )
+
+
 class CustomerPortalAccount(Base):
     __tablename__ = "ark_customer_portal_accounts"
 
