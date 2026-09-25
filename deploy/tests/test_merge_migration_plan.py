@@ -29,7 +29,8 @@ def test_preflight_pending_matches_alembic_upgrade(current_revision, filename):
     actual = [step.revision.revision for step in script._upgrade_revs(head, current_revision)]
     assert pending == actual
     if current_revision == '163_okki_presence_days':
-        assert pending == ['164_battle_posters']
+        assert pending[0] == '164_battle_posters'
+        assert pending[-1] == head
     if current_revision == '150_domestic_item_guest':
         assert pending[:2] == ['146_expo_beautify_prompt', '152_shipping_media_recall']
         assert pending[-1] == head
