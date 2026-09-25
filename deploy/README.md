@@ -299,3 +299,12 @@ deploy\deploy.bat --recover-colorwork-start-order PLAN_JSON
 先恢复北京后端/色块，再恢复外部writer并完成路由、静态发布。
 原始证据另存 `start-order-original-<revision>.json`，成功后才关闭恢复状态。
 此入口不适用于其他候选或未完成的DDL，不可用于绕过普通发布保护。
+
+
+## 168 客户标签排序规则事故恢复
+
+`deploy.bat --recover-migration-168 --revision <完整修复SHA> --no-pull --prepare-only` 预检，移除 `--prepare-only` 接续完整发布。旧安装入口不含此参数时，从同一固定候选的 `.deploy_state/sources/<SHA>/deploy/deploy.bat` 加 `--live-root D:/commission-system` 启动。
+
+仅接受2026-09-25原284c399b发布、release_id ed95cba16bf44357bbc6f08a9662011b、167→168失败记录和原五writer基线。原publish日志归档为recovery-168-original-publish.json，schema日志保留recovery_original。验证目标列/外键/索引/排序规则、167空目标表或168完整回填；共享锁内停止writers后正常Alembic升级，不stamp/删表/清日志。168已完成时跳过升级并复验完整性。
+
+仅本次未变化的出库工件在digest一致时沿用原revision/release_id完成被冻结的远端事务，主应用使用修复revision；通用writer恢复仅包含原running四项，timer由原事务恢复其active/enabled基线。准备阶段不激活服务，完成阶段按标准流程校验应用和静态站；任何失败保留证据，不自动启动不兼容旧代码。该入口不允许夹带其他业务变更或与其他专项参数混用。

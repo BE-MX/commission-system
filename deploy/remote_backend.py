@@ -67,7 +67,7 @@ print(json.dumps({'schema':heads[0], 'database':current[0], 'pending':list(rever
     return result
 
 
-def prepare(revision, allow_pending=False, recover_149=False, recover_151=False):
+def prepare(revision, allow_pending=False, recover_149=False, recover_151=False, recover_168=False):
     if run(["git", "status", "--porcelain", "--untracked-files=no"], capture=True):
         raise RuntimeError("Beijing checkout has tracked changes; refusing to overwrite")
     run(["git", "fetch", "/home/ubuntu/repo.git", revision])
@@ -98,6 +98,8 @@ def prepare(revision, allow_pending=False, recover_149=False, recover_151=False)
             marker.write_text(digest(requirements))
         python = candidate_env / "bin/python"
     checked = schema_check(source, python, allow_pending=allow_pending)
+    if recover_168 and checked["schema"] != "168_customer_media_customer_tags":
+        raise RuntimeError("Recovery 168 requires code head 168")
     if recover_151 and checked["schema"] != "154_okki_outbound_tasks":
         raise RuntimeError("Recovery 151 requires the reviewed 154 code head")
     if recover_149 and checked["schema"] != "149_dom_order_review_columns":
@@ -112,7 +114,7 @@ def prepare(revision, allow_pending=False, recover_149=False, recover_151=False)
     previous = run(["git", "rev-parse", "HEAD"], capture=True)
     changes = run(["git", "diff", "--name-only", previous, revision, "--", "backend", "config"], capture=True)
     info = {"revision": revision, "previous": previous, "schema": checked["schema"],
-            "schema_changed": bool(checked["pending"]) or recover_149 or recover_151,
+            "schema_changed": bool(checked["pending"]) or recover_149 or recover_151 or recover_168,
             "changed": bool(changes), "environment": str(candidate_env) if requirements_changed else None,
             "colorwork": colorwork}
     STATE.mkdir(exist_ok=True)
@@ -210,7 +212,7 @@ def main():
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise ValueError("Expected a complete commit SHA")
     if request["action"] == "prepare":
-        result = prepare(revision, request.get("allow_pending", False), request.get("recover_149", False), request.get("recover_151", False))
+        result = prepare(revision, request.get("allow_pending", False), request.get("recover_149", False), request.get("recover_151", False), request.get("recover_168", False))
     elif request["action"] == "activate":
         result = activate(revision)
     else:

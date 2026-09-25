@@ -1,3 +1,10 @@
+## 2026-09-25 168迁移故障已恢复生产
+
+- 用户授权恢复后，经统一deploy.bat专项入口发布 `8bd7759f7df2bcb132438e68ca3f424b6f44162d`；办公室/北京Git版本一致，schema168，9组客户标签完整回填、缺失0。
+- 五个登记writer全部running；出库timer恢复原active/enabled；publish-current=succeeded，schema-writers=completed，原始事故证据保留。办公室本地与leshine.work/leshine.cloud健康接口均HTTP200、ok、connected。
+- 本地分支 `codex/migration168-collation` 基于原失败284c399b，仅追加SQL修复与恢复入口；已走生产专用deploy引用，现按用户授权合入本地开发main，包含8bd7759f且保留main已有169迁移；未向origin推送，本轮不再次部署。下次常规发布前需同步发布源，保持生产版本可快进。不要通过reset回退线上版本。
+- 103项部署定向测试、4项迁移测试、独立审查通过。全部署测试存在3项旧基线失败，约定检查存在13项既有前端问题。证据和边界见[恢复报告](reports/2026-09-25-migration168-collation.md)。
+
 ## 2026-09-25 私海客户工作台 PCW（kimi 本地开发，未合并未部署）
 
 - 工作树 `D:/MyProgram/commission-system-kimi`，分支 `kimi/private-customer-workbench`（基于 main `401a2a42`）。按 `docs/requirements/private-customer-workbench-prototype/` 开发规格/API 契约/数据蓝图实现 PCW-01..06 后端与前端，**未 commit 前状态见本轮报告；未合并、未推送、未部署、未动生产库**。
