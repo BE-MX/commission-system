@@ -316,3 +316,11 @@ deploy\deploy.bat --recover-colorwork-start-order PLAN_JSON
 仅接受2026-09-25原284c399b发布、release_id ed95cba16bf44357bbc6f08a9662011b、167→168失败记录和原五writer基线。原publish日志归档为recovery-168-original-publish.json，schema日志保留recovery_original。验证目标列/外键/索引/排序规则、167空目标表或168完整回填；共享锁内停止writers后正常Alembic升级，不stamp/删表/清日志。168已完成时跳过升级并复验完整性。
 
 仅本次未变化的出库工件在digest一致时沿用原revision/release_id完成被冻结的远端事务，主应用使用修复revision；通用writer恢复仅包含原running四项，timer由原事务恢复其active/enabled基线。准备阶段不激活服务，完成阶段按标准流程校验应用和静态站；任何失败保留证据，不自动启动不兼容旧代码。该入口不允许夹带其他业务变更或与其他专项参数混用。
+
+## 出库检验媒体统一办公室归属
+
+`--shipping-video-routing-only` 同时纳管整个 `/api/shipping-inspection` 与 `/api/mini/shipping-inspection` 模块。北京经验证 TLS 的新加坡 HTTPS 转发到办公室 8002 隧道；新加坡直达该隧道。原用户 Authorization/URI 保留，业务权限在办公室后端照常验证，禁止公开静态媒体和失败自动重试/缓存。具体上传规则先匹配：视频 101m，照片/其他模块请求 21m、300 秒超时，其他业务 API 不变。打印签名、扫描会话、上传、删除和读取均由同一后端处理，避免共享 DB 记录与两台机器私有文件分离。
+
+激活前核实现存媒体的实际存储、办公室后端版本/健康及云端已无独有媒体，再经同一入口 prepare-only、正式激活。本入口不迁移文件或修改数据库。候选渲染替换既有受管 shipping 块，发现未知块外 shipping 路由即拒绝；激活前检查配置摘要，失败恢复原配置，备份保留在各机 `/etc/nginx/.ark-backups/shipping-video/`。
+
+办公室已有独立的 exact `/api/mini/shipping-inspection/photos` 规则保留原文：21m、办公室 8002、120 秒超时。渲染器只允许该完整固定内容且仅出现一次；其他内容、重复规则或云端同类规则仍阻断。上述 300 秒、禁缓存/重试保证仅适用于本次受管规则。

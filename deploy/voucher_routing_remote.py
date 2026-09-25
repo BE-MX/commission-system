@@ -16,6 +16,18 @@ BEGIN = "# BEGIN ARK DOMESTIC VOUCHER ROUTING"
 END = "# END ARK DOMESTIC VOUCHER ROUTING"
 STATE = Path("/etc/nginx/.ark-backups/domestic-voucher")
 
+# Existing, independently deployed office photo limit. Preserve it byte for byte;
+# allow only this inspected body, not arbitrary unowned shipping routes.
+OFFICE_PHOTO_RULE = """location = /api/mini/shipping-inspection/photos {
+    client_max_body_size 21m;
+    proxy_pass http://127.0.0.1:8002;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 120s;
+}"""
+
 
 def digest(content):
     return hashlib.sha256(content.encode()).hexdigest()
@@ -31,7 +43,10 @@ def render(original, snippet, region, feature="voucher"):
         begin, end, conflict = "# BEGIN ARK RECEIPT ROUTING", "# END ARK RECEIPT ROUTING", "/api/receipts"
     # Replace only our blocks. Unknown layout or conflicting rules must be reviewed.
     clean = re.sub(re.escape(begin) + r".*?" + re.escape(end) + r"\n?", "", original, flags=re.S)
-    if begin in clean or end in clean or conflict in clean or (feature == 'shipping-video' and '/api/shipping-inspection/station/' in clean):
+    checked = clean
+    if feature == 'shipping-video' and region == 'office' and checked.count(OFFICE_PHOTO_RULE) == 1:
+        checked = checked.replace(OFFICE_PHOTO_RULE, '')
+    if begin in checked or end in checked or conflict in checked or (feature == 'shipping-video' and 'shipping-inspection' in checked):
         raise ValueError("Conflicting domestic routing; inspect the current configuration")
     anchor = re.compile(r"location /api/\s*\{\s*proxy_pass http://127\.0\.0\.1:" + port + r";")
     if len(anchor.findall(clean)) != expected:
