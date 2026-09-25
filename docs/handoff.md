@@ -2,6 +2,13 @@
 
 按日期核对各条状态；历史交接另有[2026-09-17 快照](archive/handoff-2026-09-17.md)，本文件保留后续追加在旧条目末尾的记录，避免遗漏未完成事项。
 
+## 2026-09-25 main 合并与全平台纳管目标发布
+
+- 已将 `codex/invoice-schema-repair`、`codex/shipping-media-owner`、`codex/project-knowledge-tidy` 合入 main 并推送；统一部署固定提交 `ce465a7241f76b14f0687dcd5155f6d5977a9c78`，发布回执 `release_id=d9d11923d9574fa7a6948458bcd6a838`、`status=succeeded`。办公室与北京后端、两站主前端已更新；PM 和客户素材静态站无文件变化；新加坡出库轮询器制品核验并恢复原启用状态。共享数据库从 168 升至 `169_pcw_customer_workbench`，`schema-writers=completed`；两站 `/health` 返回 `ok/connected`，首页 HTTP 200。
+- 发货质检媒体 Nginx 专项入口另经 prepare 后在办公室与北京激活，两个区域均返回 `activated`。普通源码发布不会自动切换该路由。
+- 客户工作台已随本次发布；会话 AI 摘要缺少异步消费者且开关默认关闭，前端暂不提供生成入口，API 在无可执行路径时返回 `AI_ANALYSIS_UNAVAILABLE`。待补队列消费者、预设和灰度验收后再开放。PCW 每日评估等门控仍按默认配置，不能将代码上线等同于业务启用。
+- `deploy/platforms.json` 所列独立服务（如 deputy-relay、openclaw、n8n）及待开通目标 hair/video、北京 PM 未由统一发布器管理，本次不计作已更新；各自需要明确权威源码和发布入口。
+
 ## 2026-09-25 168迁移故障已恢复生产
 
 - 用户授权恢复后，经统一deploy.bat专项入口发布 `8bd7759f7df2bcb132438e68ca3f424b6f44162d`；办公室/北京Git版本一致，schema168，9组客户标签完整回填、缺失0。
@@ -9,13 +16,13 @@
 - 本地分支 `codex/migration168-collation` 基于原失败284c399b，仅追加SQL修复与恢复入口；已走生产专用deploy引用，现按用户授权合入本地开发main，包含8bd7759f且保留main已有169迁移；未向origin推送，本轮不再次部署。下次常规发布前需同步发布源，保持生产版本可快进。不要通过reset回退线上版本。
 - 103项部署定向测试、4项迁移测试、独立审查通过。全部署测试存在3项旧基线失败，约定检查存在13项既有前端问题。证据和边界见[恢复报告](reports/2026-09-25-migration168-collation.md)。
 
-## 2026-09-25 私海客户工作台 PCW（kimi 本地开发，未合并未部署）
+## 2026-09-25 私海客户工作台 PCW（开发阶段记录；现已合并部署）
 
-- 工作树 `D:/MyProgram/commission-system-kimi`，分支 `kimi/private-customer-workbench`（基于 main `401a2a42`）。按 `docs/requirements/private-customer-workbench-prototype/` 开发规格/API 契约/数据蓝图实现 PCW-01..06 后端与前端，**未 commit 前状态见本轮报告；未合并、未推送、未部署、未动生产库**。
+- 开发阶段工作树 `D:/MyProgram/commission-system-kimi`，分支 `kimi/private-customer-workbench`（当时基于 main `401a2a42`）。按 `docs/requirements/private-customer-workbench-prototype/` 开发规格/API 契约/数据蓝图实现 PCW-01..06 后端与前端；后续已合并并于本日按上方发布记录部署。
 - 后端：迁移 `169_pcw_customer_workbench`（父 168——main 已占用 168_customer_media_customer_tags，合并前必须先 rebase 到最新 main 并验证单 head）；19 张新表 + `ark_customer_actions` 扩展 7 列（事项/行动轮次/原期限）；服务 `pcw_workitem/evaluation/overview/profile/conversation/order/monitor/maintenance_service`（事项跨日去重、结果+后续原子、409 版本前置、幂等回执、DNC/失权 404）；路由 `/api/customer-hub` 扩展 30+ 端点；权限种子 `customer_pcw:read/write`、`customer_profile:write`、`customer_campaign:admin`；调度 `pcw_daily_evaluation`（`PCW_EVALUATION_ENABLED` 门控默认关）。
 - 前端：今日工作台概览（四指标/扫描/水位）、客户工作区六页签、跟进日历、customerHubContract 扩展、customerWorkspaceController 纯逻辑。
 - 验证：后端 PCW 测试 123 项 + 存量 customer 回归 287 项全过；前端 node:test 14 项全过、`npm run build` 通过；`check_conventions` 仅剩 13 项既有 UI 基线债（本任务文件已清零）。独立审查（B1 迁移撞号、B2 幂等败者副作用、H1-H7 权限/死行动/行锁、M1-M7）已修复并回归。
-- 待办：合并授权后 rebase 最新 main 解决迁移链；AI 增量分析/监控真实抓取/邮件通知默认关闭（`PCW_AI_ANALYSIS_ENABLED`/`PCW_MONITOR_ENABLED`），需灰度与业务签定规则阈值；`projection_okki_order` 未接 `on_order_projected` 钩子（新单覆盖窗口需投影侧一行接线）。
+- 待办：AI 增量分析/监控真实抓取/邮件通知默认关闭（`PCW_AI_ANALYSIS_ENABLED`/`PCW_MONITOR_ENABLED`），需灰度与业务签定规则阈值；`projection_okki_order` 未接 `on_order_projected` 钩子（新单覆盖窗口需投影侧一行接线）。
 
 ## 2026-09-24 结汇决策助手（Codex，合并推送，未部署）
 

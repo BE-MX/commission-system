@@ -599,7 +599,7 @@ ark_invoices 新增 nullable JSON sync_attempt（推单令牌/北京时间租约
 
 JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发，未知结果不自动重发。snapshot保存两张图共用的统计时间、名单、目标、GMV、精确判色结果及计时日历。图片位于私有缓存，业务JSON不走匿名端点。降级拒绝删除投递历史，需前向迁移。
 
-## 169_pcw_customer_workbench（父168_customer_media_customer_tags）
+## 169_pcw_customer_workbench（父168_customer_media_customer_tags，2026-09-25 生产迁移完成）
 
 私海客户工作台（PCW-01..06）。新增 19 张表：`ark_customer_work_items`（事项，unique(business_key,business_cycle) 跨日去重）、`ark_customer_evaluation_runs/items`（每日评估批次与逐客户结果，unique(business_date,rule_version,scope_hash,run_kind,attempt) 与 unique(run_id,customer_id)）、`ark_customer_fact_reviews`（AI 建议审核，unique(candidate_fact_id)）、`ark_customer_conversation_bindings/_events`（会话绑定与不可变审计，unique(source_system,account,conversation)）、`ark_customer_conversation_analysis_jobs`（分析任务，unique(conversation,input_hash,binding_version,rule_version)）、`ark_customer_order_batch_map`（商业采购批次映射）、`ark_customer_reorder_windows`（复购窗口，unique(occurrence_key)）、`ark_customer_monitor_subscriptions/_events/_event_sources`（监控订阅/变化事件/多源证据）、`ark_customer_maintenance_plans/_occurrences`（六类维护计划与稳定实例，unique(plan_id,occurrence_key)）、`ark_customer_sample_cases`（样品阶段机，unique(sample_order_id,item_set_hash,feedback_round)）、`ark_customer_shipment_order_links`（物流-订单多对多）、`ark_customer_campaigns`（活动）、`ark_customer_operation_receipts`（幂等回执，unique(actor,scope,key_hash)）、`ark_customer_notification_deliveries`（通知 outbox）。
 

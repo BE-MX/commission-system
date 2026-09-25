@@ -1,6 +1,6 @@
 # 莱莎方舟 API 参考
 
-## 私海客户工作台 PCW（2026-09-25，本地实现，迁移 169）
+## 私海客户工作台 PCW（2026-09-25 已部署，迁移 169）
 
 统一前缀 `/api/customer-hub`，`ok(data)` 信封；业务写请求携带 `Idempotency-Key`（同键同内容重放原结果、不同内容 409 `IDEMPOTENCY_CONFLICT`）。版本冲突 409 带 `current_*` 详情；失权/不存在统一 404 `CUSTOMER_NOT_FOUND_OR_FORBIDDEN`。契约详见 [PCW 开发规格](requirements/private-customer-workbench-prototype/api-contracts.md)。权限：`customer_pcw:read/write`、`customer_profile:write`、`customer_campaign:admin`。
 
