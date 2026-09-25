@@ -1,7 +1,9 @@
-## 2026-09-25 168迁移排序规则故障（本地修复，生产待恢复）
+## 2026-09-25 168迁移故障已恢复生产
 
-- `codex/migration168-collation` 基于失败候选284c399b；MySQL只读EXPLAIN复现1267，新表0900_ai_ci与源表unicode_ci冲突。数据库仍167、新表0行，办公室两服务已停止，出库暂停。
-- 回填比较显式COLLATE修复，4项隔离测试和修复SQL只读EXPLAIN通过；未提交/推送/发布。普通重跑仍受事故日志保护，需准备168专用恢复流程并获得生产授权。证据与边界见[诊断报告](reports/2026-09-25-migration168-collation.md)。
+- 用户授权恢复后，经统一deploy.bat专项入口发布 `8bd7759f7df2bcb132438e68ca3f424b6f44162d`；办公室/北京Git版本一致，schema168，9组客户标签完整回填、缺失0。
+- 五个登记writer全部running；出库timer恢复原active/enabled；publish-current=succeeded，schema-writers=completed，原始事故证据保留。办公室本地与leshine.work/leshine.cloud健康接口均HTTP200、ok、connected。
+- 本地分支 `codex/migration168-collation` 基于原失败284c399b，仅追加SQL修复与恢复入口；已走生产专用deploy引用，未向origin推送、未合并开发main。下次常规发布前必须将本修复合入主线，使候选包含8bd7759f，避免生产与开发分支非快进。不要通过reset回退线上版本。
+- 103项部署定向测试、4项迁移测试、独立审查通过。全部署测试存在3项旧基线失败，约定检查存在13项既有前端问题。证据和边界见[恢复报告](reports/2026-09-25-migration168-collation.md)。
 
 ## 2026-09-24 结汇决策助手（Codex，合并推送，未部署）
 
