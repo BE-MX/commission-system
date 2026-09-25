@@ -26,6 +26,18 @@
 | POST `/shipment-order-links` | 物流-订单显式多对多关联（数量 Decimal 校验，unknown 不猜） |
 | POST/GET `/campaigns`、GET/PATCH `/campaigns/{id}`、POST `.../publications|state-transitions|preview|actions` | 活动管理；preview 给合格/排除原因，actions 名单⊆本次预览，逐客户 created/existing/suppressed/failed 诚实分列 |
 
+## 结汇决策助手（2026-09-24，本地实现）
+
+前缀 `/api/fx-settlement`，需登录，使用标准 `ok(data)` 信封。结果是带时间戳的参考测算，不会下单或保存输入。详见 [功能与口径](requirements/2026-09-24-fx-settlement-advisor.md)。
+
+| 方法与路径 | 权限 | 请求与结果 |
+| --- | --- | --- |
+| GET `/market` | `fx_settlement:read` | 返回 `checked_at`、中国银行 `quote`（人民币/美元、`as_of`、`usable`）、当日 `intraday`、FRED `history`/`trend`（含 `as_of`、`lag_days`、`usable`）及警告；报价 60 秒、历史 1 小时缓存。 |
+| POST `/calculate` | `fx_settlement:read` | 按已到账美元、人民币需求与风险预算返回三个候选金额、压力情景、分批日期、现金缺口、假设及所用行情；无可用公开价时须提供新鲜的银行报价。 |
+| POST `/advice` | `fx_settlement:read` + `fx_settlement:write` | 重算后请求平台 AI 在候选方案中选择，返回 `selection_source=ai` 与服务端生成的解释；模型不可用时返回规则测算和 `ai_status=unavailable`。单用户 30 秒限频。 |
+
+两个 POST 共用 JSON 字段：`usd_balance`（>0）、`reserved_usd`、`immediate_cny_need`、`settle_by`（北京时间今天至 365 天）、`max_loss_cny`、`stress_drop_pct`（0.1–30，默认 2）；可选 `bank_rate` 与 `bank_quote_at`（须成对，15 分钟内）、`fee_bps`（默认 0）、`usd_interest_pct`、`cny_interest_pct`。金额单位分别为美元/人民币，费用单位基点，利率单位百分比。输入非法或报价过期返回 422；AI 限频返回 429。公开价仅作参考，实际操作前核对银行成交价。
+
 ## 预售结算与汇总回款（2026-09-23，本地部分实现，未上线）
 
 统一 `/api` 前缀、RBAC、`ok(data)` 信封。商业规则及未完成的外发闭环见 [实现报告](reports/2026-09-23-presale-implementation.md)。
@@ -747,7 +759,7 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 - 值域与路线：`GET /options` 返回 `product_types`、`order_categories`、`order_types`、`order_channels`、`attr_dicts`、`special_attr_dicts`、`standard_values`、`special_values` 、`default_routes` 和 `order_routes`。其中订单类别是结构枚举 `normal=普货 / special=特单`；订单类型是 `first_order=首单 / repurchase=复购 / return_order=返单 / supplementary=补单 / after_sales_remake=售后重做`；订单渠道是 `wechat=微信 / phone=电话 / exhibition=展会 / offline_visit=线下拜访 / other=其他`。`attr_dicts` 把产品类型和可见属性映射到标准字典，`special_attr_dicts` 是对应的 `_special` 字典；标准值和特单专属值分别放在 `standard_values`、`special_values`。`default_routes` 只返回存在、启用且至少有一道工序的“头套网帽（递针）”和“发片网底（递针）”。`order_routes` 按 `production/normal/special` 分组，每组按 `cap/piece` 返回可用路线，供下单页预览与后端固定匹配一致。`GET /craft-routes` 仍用于产品档案的工艺映射维护。另有 `GET /process-routes`（可选工艺路线含工序链）、`GET /process-workers?process_id=`（该工序绑定的工人，代报工选人用）。`GET /process-routes/{route_id}/rules` 查询内贸条件规则；步骤和规则需要一起调整时，必须使用 `PUT /process-routes/{route_id}/configuration` 一次提交 `steps + rules`，服务端在同一事务校验并保存。三种规则为默认 `required`、`decision` 和 `optional`；有条件规则的路线会拒绝生产域单独改步骤，避免暂时形成无效配置。
 - 客户：`GET /customers`（分页 keyword/status/owner_scope/province/city/customer_level/owner_user_id；等级与归属销售可组合精确筛选）返回派生会员标签、最近充值金额/时间与余额、`settle_mode`/`settle_mode_label`（2026-09-02 起：`prepay`=先充值后下单，默认；`credit`=先下单后付款），以及 `initialized`（是否已有资金流水）。`POST /customers`、`PUT /customers/{id}` 可传 `settle_mode`；`POST /customers`、`PUT /customers/{id}`、`DELETE /customers/{id}` 均不接受手工会员等级。会员默认只由**最近一次成功充值金额**决定：`[10000,30000)` 银卡、`[30000,100000)` 黑卡、`>=100000` 至尊，低于 10000 为普通客户。`POST /customers/{id}/recharges` 改为 **multipart/form-data**：必填 `amount/request_id/file`（银行流水或转账截图，图片或 PDF，≤20MB），可选 `remark`；提交后只落**待审核申请**（`ark_domestic_customer_requests`），余额与会员等级不变，同一 `request_id` 同内容重放原申请、改内容拒绝。`GET /customers/{id}/balance-ledger` 查余额流水；两者需 `domestic:recharge` 或 `domestic:admin`。两个资金例外入口需 `domestic:recharge` 或 `domestic:admin`（与充值同一权限域，内贸业务员默认可用）：`POST /customers/{id}/initialize` 在客户**还没有任何资金流水**时期初写入 `balance/membership_level/remark`（幂等键固定 `init:{id}`，重复初始化不同金额拒绝，已有流水后只能用调整）；`POST /customers/{id}/adjust` 同样先落待审核申请，body 为 `amount`（有符号，0 表示不动余额）、可选 `membership_level`（传入才修改，null=取消会员）、必填 `remark` 和 `request_id` 幂等键——审核通过后余额变动记 `adjust` 流水，等级变化记零金额 `level_adjust` 审计行；等级覆盖是临时的，下一次成功充值仍按当次金额重新核定。充值/调整申请的审核入口（2026-09-14 起）：`GET /customer-requests`（分页 status/request_type/keyword；持 `domestic:review`/`domestic:admin` 看全部，`domestic:recharge` 仅看本人申请）、`POST /customer-requests/{id}/approve`（通过即入账，执行沿用账本 `recharge:/adjust:` 幂等键，重复审批不重复入账；prepay 客户负向调整余额不足时 400 且申请保持待审核）、`POST /customer-requests/{id}/reject`（body `remark` 必填 ≥2 字）、`GET /customer-requests/{id}/voucher`（凭证鉴权读取，审核员或申请人本人）。审核需 `domestic:review` 或 `domestic:admin`，且不能审自己提交的申请（`domestic:admin`/super_admin 兜底除外）。
 - 客户公海与地区筛选（2026-09-03）：`GET /customers` 追加 `owner_scope=private|public`、`province`、`city`；`GET /customers/options` 返回现有 `provinces/cities`。释放基准取正式订单最近日期、档案最近下单/首次联系日期或建档日期的最新值；基准超过 3 个月时，每日任务和列表前兜底会把私海客户释放为公海并置 `owner_user_id=NULL`。客户编辑、删除、充值、期初、调整和余额流水默认要求当前登录人是该客户归属销售；`domestic_customer:admin`（按钮权限「管理员可以显示所有客户的操作按钮」）或 super_admin 可跨归属操作私海/公海客户，但仍需对应动作的原有权限。该权限在角色管理「内贸客户管理」行单独分配，启动不会自动授予普通 admin。列表顶部用私海/公海标签页切换，默认私海，切换保留搜索/地区条件并回到第一页。
-- 客户档案（133 迁移，《莱莎客户信息录入表》口径）：`CustomerCreate/CustomerUpdate` 在基础联系字段外接受 `customer_source`（客户来源）、`store_type`（门店类型）、`customer_level`（S/A/B/C 级）、`lifecycle_status`（活跃/潜在/沉默/流失，与停用开关 `status` 是两回事）、`owner_user_id`（归属销售，FK ark_users）、`first_contact_date/first_order_date/last_order_date`、`total_order_count/total_sales_amount`（累计订单/销售额为**历史档案口径**，不随系统订单自动累计）。四个枚举值域走 sys_dict（`domestic_customer_source / domestic_store_type / domestic_customer_level / domestic_customer_lifecycle`），与省市级联一起由前端表单下拉约束；`GET /customers/options` 一次返回四组字典 + 在职用户（归属销售候选）。`POST /customers/import`（仅 `domestic:admin`）上传录入表 xlsx：按客户编码命中→覆盖档案，按店名命中→只补空档且保留既有归属并记 collision，否则新建；归属销售按 `归属销售` 列（留空取 sheet 名）匹配 `ark_users.real_name`；每行独立 savepoint，坏行不拖垮整批；字段级脏数据（坏日期/坏数字）置空并记 warning。运维侧同逻辑脚本：`scripts/import_domestic_customers.py <xlsx> --operator-id N [--dry-run]`。
+- 客户档案（133 迁移，《莱莎客户信息录入表》口径）：客户管理手工新增 `POST /customers` 要求客户编码、店名、联系人、手机号、省份、城市、归属销售、客户来源、客户等级、客户状态、门店类型、首次联系、首次下单、最近下单全部非空；编辑 `PUT /customers/{id}` 保持局部更新，下单时就地建档与 Excel 导入沿用各自规则。档案字段还包括 `total_order_count/total_sales_amount`（累计订单/销售额为**历史档案口径**，不随系统订单自动累计）；客户状态 `lifecycle_status`（活跃/潜在/沉默/流失）与停用开关 `status` 分离。四个枚举值域走 sys_dict（`domestic_customer_source / domestic_store_type / domestic_customer_level / domestic_customer_lifecycle`），与省市级联一起由前端表单下拉约束；`GET /customers/options` 一次返回四组字典 + 在职用户（归属销售候选）。`POST /customers/import`（仅 `domestic:admin`）上传录入表 xlsx：按客户编码命中→覆盖档案，按店名命中→只补空档且保留既有归属并记 collision，否则新建；归属销售按 `归属销售` 列（留空取 sheet 名）匹配 `ark_users.real_name`；每行独立 savepoint，坏行不拖垮整批；字段级脏数据（坏日期/坏数字）置空并记 warning。运维侧同逻辑脚本：`scripts/import_domestic_customers.py <xlsx> --operator-id N [--dry-run]`。
 - 产品、原价与工艺映射：`GET /products` 支持 `keyword/product_type/route_bound/price_status=configured|missing`，逐 SKU 返回共享价格键、原始价格和版本。`PUT /products/{id}/base-price`（body `original_price`）维护该 SKU 对应的共享原价，`DELETE /products/{id}/base-price` 删除；响应的 `affected_sku_count` 表示同一 `(product_type, craft, length)` 价格键影响的 SKU 数，二者仅 `domestic:admin` 可用。`PUT /products/{id}/route` 人工改绑路线；另有 `GET /craft-routes`、`POST /craft-routes` 和 `DELETE /craft-routes/{id}`。头套原价只由工艺和发长决定；发片把尺寸合并进 `craft`，原价只由合并后的工艺/尺寸与发长决定。未配置原价的标准或特单 SKU 可以沉淀到产品清单，但不能报价或创建业务订单；生产订单无需原价，必须先由管理员补价。
 - 头套标准值：工艺为递旋/中分界/左分界/大U型/递顶；发长为 15～60厘米、每 5厘米一档；发量为 65%/80%/90%；网帽颜色为紫网全头套/绿网全头套/红网全头套/绿网九分头/黑网九分头/特单网帽；尺码为 SS/S/M/L/XL/51/53/57/59/取模定制；发型系列为直发/纹理/卷发/毛坯/来图直发/来图纹理/来图卷发。
 - 发片标准值：“发片工艺/尺寸”为 U型13*15/U型14*16/U型16*18/全递针9*14/全递针12*14/全递针13*15/全递针14*16/全递针15*17/特单发片；发长为 20/25/30/35/40厘米。乘号按业务值存半角 `*`。
@@ -927,8 +939,14 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 | 方法 | 路径 | 权限 / 会话 | 契约 |
 |---|---|---|---|
+| GET / POST | `/customers/{customer_id}/tags` | `design:write/manage` 或 `customer_media:admin` + 当前客户数据权限 | 读取或追加客户级标签；POST 请求体为 `{"tags":[{"dimension_id":1,"tag_value_ids":[2]}]}`。客户标签跨预约复用，重复追加幂等。 |
+| GET / POST | `/tasks/{task_id}/customer-tags` | `customer_media:write/admin` + 当前任务维护权限 | 设计师读取或追加该任务所属客户的标签；与预约页操作同一客户标签集合。 |
+| GET | `/tags/dimensions` | 客户素材读写或设计预约写权限 | 仅返回可见的客户标签维度和值。 |
+| POST | `/tags/values` | 同上 | 在客户标签维度中创建值；同名复用。创建标签值后仍需通过客户标签 POST 绑定到客户。 |
+| POST | `/batches/{batch_id}/assets` | `customer_media:write/admin` + 当前任务维护权限 | 上传图片或视频；multipart `tags_json` 至少包含一个有效客户标签。保存文件标签时，也把这些标签追加到客户标签集合。 |
 | GET | `/sales-portal/customers?search=` | `customer_media_portal:read` 或 `customer_media:admin` | 返回调用者范围内已配置门户的客户摘要、门户状态、图片/视频/交付批次数和最近更新时间。 |
 | GET | `/sales-portal/customers/{customer_id}` | 同上 | 返回客户摘要及其实际可见的已发布批次；批次标题与拍摄类型也由客户公开门户返回。停用账号不签发素材 URL。 |
+| GET | `/sales-portal/customers/{customer_id}/tags` | 同上 | 仅返回该客户已发布素材实际用到的标签维度与标签；停用账号返回空列表。业务预览据此筛选，与客户外部站保持一致。 |
 | GET | `/sales-portal/assets/{asset_id}/content?expires=&token=&download=` | 业务预览 purpose-bound HMAC | 返回业务预览或下载文件；签名绑定用途、素材 ID 与过期时间，并在每次读取时重验门户账号仍启用、所属批次仍为 published，停用或下架立即 404。 |
 | GET | `/assets/{asset_id}/content?expires=&token=&download=` | 内部审核 HMAC | 返回设计审核工作流中的内部预览或下载文件；与业务预览签名不可互换。 |
 | GET | `/batches/{batch_id}/directories` | `customer_media:write/admin` + 任务维护权限 | 客户共享目录，`asset_count` 为本批次数量，`total_asset_count` 为目录跨批次未删素材总数。 |
@@ -941,7 +959,7 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 业务预览页面位于 `/design/media/portal`，左侧客户导航只展示 API 已授权的门户；右侧直接渲染详情响应，不模拟草稿或审核中素材。`search` 只是授权结果集上的名称、客户 ID、登录邮箱过滤条件，不能扩大数据范围。
 
-素材上传的客户门户弹窗支持拖入或选择文件夹，按顶层文件夹名通过 `POST /batches/{batch_id}/assets` 的 `directory_name` 自动建目录（同名复用），嵌套文件打平归入顶层目录；散文件使用入队时选中目录的 `directory_id`。内部签名 URL 返回 `/api/customer-media/...` 相对地址，前端跟随素材 API origin 解析，兼容同源代理及 `VITE_CUSTOMER_MEDIA_API_BASE` 云端直传。目录删除沿用原有可编辑状态约束，不绕过审核/发布流程。
+当前界面只有“上传素材”一个上传入口：设计师先选至少一个客户标签，再选多个文件或拖入文件夹。文件夹只用于提取文件，不从名称识别、新建标签或目录；文件加入清单时固定本次选中标签，上传后素材按维度和标签显示。旧目录弹框仅用于维护既有目录与素材，不再上传。审核弹框、业务预览和客户外部站均按维度与标签组织素材，并提供标签筛选；同一素材可显示在多个分类下，下载仍是同一文件。历史未打标签素材显示在“未打标签”下。内部签名 URL 返回 `/api/customer-media/...` 相对地址，前端跟随素材 API origin 解析，兼容同源代理及 `VITE_CUSTOMER_MEDIA_API_BASE` 云端直传。目录删除沿用原有可编辑状态约束，不绕过审核/发布流程。
 
 ## 客户 AI 方案对话（`/api/ai-chat`，100 迁移，2026-08-09）
 

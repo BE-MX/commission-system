@@ -165,8 +165,8 @@
       <el-form :model="dialog" label-width="100px">
         <el-row :gutter="12">
           <el-col :span="12">
-            <el-form-item label="客户编码">
-              <el-input v-model="dialog.custom_code" maxlength="64" placeholder="自定义，可不填" />
+            <el-form-item label="客户编码" :required="!dialog.id">
+              <el-input v-model="dialog.custom_code" maxlength="64" :placeholder="dialog.id ? '自定义，可不填' : '请输入客户编码'" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -176,10 +176,10 @@
           </el-col>
         </el-row>
         <el-row :gutter="12">
-          <el-col :span="12"><el-form-item label="联系人"><el-input v-model="dialog.contact" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="手机号"><el-input v-model="dialog.phone" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="联系人" :required="!dialog.id"><el-input v-model="dialog.contact" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="手机号" :required="!dialog.id"><el-input v-model="dialog.phone" /></el-form-item></el-col>
         </el-row>
-        <el-form-item label="省份 / 城市">
+        <el-form-item label="省份 / 城市" :required="!dialog.id">
           <el-cascader
             v-model="dialog.region" :options="chinaRegions" :props="{ expandTrigger: 'hover' }"
             filterable clearable placeholder="选择省份 / 城市" style="width: 100%"
@@ -187,14 +187,14 @@
         </el-form-item>
         <el-row :gutter="12">
           <el-col :span="12">
-            <el-form-item label="归属销售">
+            <el-form-item label="归属销售" :required="!dialog.id">
               <el-select v-model="dialog.owner_user_id" filterable clearable style="width: 100%">
                 <el-option v-for="opt in options.owners" :key="opt.value" :label="opt.label" :value="opt.value" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="客户来源">
+            <el-form-item label="客户来源" :required="!dialog.id">
               <el-select v-model="dialog.customer_source" clearable style="width: 100%">
                 <el-option v-for="opt in options.customer_source" :key="opt.value" :label="opt.label" :value="opt.value" />
               </el-select>
@@ -203,21 +203,21 @@
         </el-row>
         <el-row :gutter="12">
           <el-col :span="8">
-            <el-form-item label="客户等级">
+            <el-form-item label="客户等级" :required="!dialog.id">
               <el-select v-model="dialog.customer_level" clearable style="width: 100%">
                 <el-option v-for="opt in options.customer_level" :key="opt.value" :label="opt.label" :value="opt.value" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="客户状态">
+            <el-form-item label="客户状态" :required="!dialog.id">
               <el-select v-model="dialog.lifecycle_status" clearable style="width: 100%">
                 <el-option v-for="opt in options.lifecycle_status" :key="opt.value" :label="opt.label" :value="opt.value" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="门店类型">
+            <el-form-item label="门店类型" :required="!dialog.id">
               <el-select v-model="dialog.store_type" clearable style="width: 100%">
                 <el-option v-for="opt in options.store_type" :key="opt.value" :label="opt.label" :value="opt.value" />
               </el-select>
@@ -226,17 +226,17 @@
         </el-row>
         <el-row :gutter="12">
           <el-col :span="8">
-            <el-form-item label="首次联系">
+            <el-form-item label="首次联系" :required="!dialog.id">
               <el-date-picker v-model="dialog.first_contact_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="首次下单">
+            <el-form-item label="首次下单" :required="!dialog.id">
               <el-date-picker v-model="dialog.first_order_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="最近下单">
+            <el-form-item label="最近下单" :required="!dialog.id">
               <el-date-picker v-model="dialog.last_order_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
             </el-form-item>
           </el-col>

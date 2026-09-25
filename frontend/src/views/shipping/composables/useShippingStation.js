@@ -100,10 +100,10 @@ export function useShippingStation(api = stationApi) {
     finally { busy.value = false }
   }
   async function refresh() {
-    if (busy.value || invalid.value || pendingSubmit.value || !sessionId.value) return
+    if (busy.value || invalid.value || pendingSubmit.value || !sessionId.value) return false
     busy.value = true
-    try { accept((await api.refresh(sessionId.value)).data, true); error.value = '' }
-    catch (e) { await fail(e) }
+    try { accept((await api.refresh(sessionId.value)).data, true); error.value = ''; return true }
+    catch (e) { await fail(e); return false }
     finally { busy.value = false }
   }
   function cancelVideoPreparation() {

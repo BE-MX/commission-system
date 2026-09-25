@@ -104,8 +104,12 @@
               </div>
               <span v-if="batch.shoot_type" class="shoot-tag">{{ batch.shoot_type }}</span>
             </header>
-            <div class="asset-gallery">
-              <article v-for="(asset, assetIndex) in batch.assets" :key="asset.id" class="asset-card">
+            <div v-for="group in groupMediaByTags(batch.assets, tagDimensions)" :key="group.id" class="portal-dimension">
+              <h3>{{ group.label }}</h3>
+              <section v-for="bucket in group.buckets" :key="bucket.id" class="portal-tag-group">
+                <h4>{{ bucket.label }} <span>{{ bucket.assets.length }} files</span></h4>
+                <div class="asset-gallery">
+              <article v-for="(asset, assetIndex) in bucket.assets" :key="asset.id" class="asset-card">
                 <button v-if="asset.media_type === 'image'" class="asset-preview" type="button" :aria-label="`Open ${asset.file_name}`" @click="previewAsset = asset">
                   <img :src="asset.content_url" :alt="asset.file_name" loading="lazy" />
                 </button>
@@ -120,6 +124,8 @@
                   <span v-for="tag in asset.tags" :key="`${tag.dimension_id}-${tag.tag_value_id}`" class="asset-tag">{{ tag.value }}</span>
                 </div>
               </article>
+                </div>
+              </section>
             </div>
           </section>
         </div>
@@ -167,6 +173,7 @@ import {
   initials,
   portalStatusMeta,
 } from './portalPreviewState'
+import { groupMediaByTags } from './customerMediaGrouping'
 
 const props = defineProps({
   customer: { type: Object, default: null },
@@ -220,6 +227,11 @@ watch(() => props.customer?.customer_id, () => {
 </script>
 
 <style scoped>
+.portal-dimension { margin: 24px 0; }
+.portal-dimension h3 { margin: 0 0 14px; color: var(--text-primary); font-size: 18px; }
+.portal-tag-group { margin-bottom: 24px; }
+.portal-tag-group h4 { margin: 0 0 12px; color: var(--color-primary-hover); font-size: 14px; }
+.portal-tag-group h4 span { margin-left: 6px; color: var(--text-secondary); font-weight: 400; }
 .client-library { min-height: 100%; color: var(--text-primary); background: linear-gradient(145deg, var(--dash-wash-from), var(--dash-wash-mid) 54%, var(--dash-wash-to)); }
 .preview-topbar { display: flex; min-height: 76px; align-items: center; justify-content: space-between; gap: 22px; padding: 12px 30px; border-bottom: 1px solid rgba(61, 51, 35, 0.12); background: rgba(255, 255, 255, 0.72); }
 .brand-lockup { display: flex; align-items: center; gap: 10px; }
