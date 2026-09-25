@@ -85,7 +85,7 @@ def upgrade():
     )
     op.create_table('ark_receipt_batch_attachments',
     sa.Column('batch_id', sa.BigInteger(), nullable=False),
-    sa.Column('attachment_id', sa.String(length=32), nullable=False),
+    sa.Column('attachment_id', sa.String(length=32, collation='utf8mb4_0900_ai_ci'), nullable=False),
     sa.ForeignKeyConstraint(['attachment_id'], ['ark_receipt_attachments.id'], ),
     sa.ForeignKeyConstraint(['batch_id'], ['ark_receipt_batches.id'], ),
     sa.PrimaryKeyConstraint('batch_id', 'attachment_id'),

@@ -17,7 +17,8 @@ def execute(request):
         raise ValueError("Unsupported migration action")
     journal = Path(request["journal_path"])
     from schema_release import check_recovery
-    check_recovery(journal, recover_149=request.get("recover_149", False), recover_151=request.get("recover_151", False), recover_168=request.get("recover_168", False))
+    if not request.get("recover_166"):
+        check_recovery(journal, recover_149=request.get("recover_149", False), recover_151=request.get("recover_151", False), recover_168=request.get("recover_168", False))
     credentials = dotenv_values(request["credential_file"])
     allowed = {"COMMISSION_DB_USER", "COMMISSION_DB_PASSWORD"}
     if set(credentials) != allowed or not all(credentials.values()):
@@ -41,6 +42,9 @@ def execute(request):
             return recover(request, connection, settings)
         if request.get("recover_151"):
             from migration_recovery151 import execute as recover
+            return recover(request, connection, settings)
+        if request.get("recover_166"):
+            from invoice_schema_recovery import execute as recover
             return recover(request, connection, settings)
         if request.get("recover_149"):
             from migration_recovery149 import execute as recover
