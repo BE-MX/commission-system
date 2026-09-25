@@ -17,7 +17,7 @@ def execute(request):
         raise ValueError("Unsupported migration action")
     journal = Path(request["journal_path"])
     from schema_release import check_recovery
-    check_recovery(journal, recover_149=request.get("recover_149", False), recover_151=request.get("recover_151", False))
+    check_recovery(journal, recover_149=request.get("recover_149", False), recover_151=request.get("recover_151", False), recover_168=request.get("recover_168", False))
     credentials = dotenv_values(request["credential_file"])
     allowed = {"COMMISSION_DB_USER", "COMMISSION_DB_PASSWORD"}
     if set(credentials) != allowed or not all(credentials.values()):
@@ -36,6 +36,9 @@ def execute(request):
         required = {"SELECT","INSERT","UPDATE","DELETE","CREATE","ALTER","DROP","INDEX","REFERENCES"}
         if "ALL PRIVILEGES" not in privileges and not required.issubset(privileges):
             raise RuntimeError("DBA identity lacks required migration privileges; no writer stopped")
+        if request.get("recover_168"):
+            from migration_recovery168 import execute as recover
+            return recover(request, connection, settings)
         if request.get("recover_151"):
             from migration_recovery151 import execute as recover
             return recover(request, connection, settings)

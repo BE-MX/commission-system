@@ -31,7 +31,16 @@ def upgrade():
 
     # Historical asset labels become reusable customer labels. A file may be removed
     # without erasing the customer's label vocabulary, so only live files seed it.
-    bind.execute(sa.text("""
+    # A partially applied migration may already have created the destination
+    # using MySQL 8's default collation. Compare with the source's established
+    # unicode_ci semantics without altering or deleting that existing table.
+    customer_match = "existing.customer_id = b.customer_id"
+    if bind.dialect.name == "mysql":
+        customer_match = (
+            "existing.customer_id COLLATE utf8mb4_unicode_ci = "
+            "b.customer_id COLLATE utf8mb4_unicode_ci"
+        )
+    bind.execute(sa.text(f"""
         INSERT INTO ark_customer_media_customer_tags
             (customer_id, dimension_id, tag_value_id, created_by, created_at)
         SELECT b.customer_id, t.dimension_id, t.tag_value_id,
@@ -40,7 +49,7 @@ def upgrade():
         JOIN ark_customer_media_assets AS a ON a.id = t.asset_id
         JOIN ark_customer_media_batches AS b ON b.id = a.batch_id
         LEFT JOIN ark_customer_media_customer_tags AS existing
-          ON existing.customer_id = b.customer_id
+          ON {customer_match}
          AND existing.dimension_id = t.dimension_id
          AND existing.tag_value_id = t.tag_value_id
         WHERE a.deleted_at IS NULL AND existing.customer_id IS NULL

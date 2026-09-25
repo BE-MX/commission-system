@@ -136,6 +136,9 @@ def build_lan():
 
 def publish(args):
     global ROOT
+    recover_168 = getattr(args, "recover_migration_168", False)
+    if recover_168 and (args.cloud_only or not args.revision or args.recover_migration_149 or args.recover_migration_151):
+        raise RuntimeError("Recovery 168 requires a pinned full release")
     recover_149 = getattr(args, "recover_migration_149", False)
     recover_151 = getattr(args, "recover_migration_151", False)
     if recover_151 and (recover_149 or args.cloud_only or not args.revision):
@@ -148,14 +151,16 @@ def publish(args):
         ROOT, revision, previous = source_release.prepare(live, STATE, not args.no_pull,
                                                          pinned_revision=args.revision)
         import schema_release
-        schema_release.check_recovery(recover_149=recover_149, recover_151=recover_151)
+        schema_release.check_recovery(recover_149=recover_149, recover_151=recover_151, recover_168=recover_168)
         from office_release import prepare as office_prepare, activate as office_activate, stage_static
-        office_options = {"recover_149": True} if recover_149 else {"recover_151": True} if recover_151 else {}
+        office_options = {"recover_168": True} if recover_168 else {"recover_149": True} if recover_149 else {"recover_151": True} if recover_151 else {}
         office = None if args.cloud_only else office_prepare(live, previous, revision, **office_options)
         if recover_149:
             office["recover_149"] = True
         if recover_151:
             office["recover_151"] = True
+        if recover_168:
+            office["recover_168"] = True
         inventory = json.loads((ROOT / "deploy/platforms.json").read_text(encoding="utf-8-sig"))
         import okki_outbound_release as outbound_release
         outbound_targets = [item for item in inventory.get('external_services', [])
@@ -165,13 +170,23 @@ def publish(args):
         if office:
             schema_release.preflight(office, inventory, args.migration_credentials)
         previous_release = marker('publish-current')
+        recovery_original = None
+        if recover_168:
+            from migration_recovery168 import prepare_release
+            recovery_original = prepare_release(STATE, ROOT, revision, previous_release)
         scope = 'cloud-only' if args.cloud_only else 'office-and-cloud'
         release_id = (previous_release.get('release_id') if previous_release.get('revision') == revision
                       and previous_release.get('scope') == scope
                       and previous_release.get('status') != 'succeeded' else None) or uuid.uuid4().hex
+        if recovery_original:
+            release_id = recovery_original["release_id"]
         journal = {"revision": revision, "release_id": release_id,
                    "scope": scope, "status": "preparing", "completed": [], "deferred": []}
-        outbound = outbound_release.prepare(ROOT, revision, release_id, allow_pending=bool(office and office.get('pending')))
+        outbound_revision = recovery_original["revision"] if recovery_original else revision
+        if recovery_original:
+            journal["recovery_original"] = recovery_original
+            journal["outbound_artifact_revision"] = outbound_revision
+        outbound = outbound_release.prepare(ROOT, outbound_revision, release_id, allow_pending=bool(office and office.get('pending')))
         journal['outbound'] = outbound['receipt']
         atomic_json(STATE / "publish-current.json", journal)
         outputs = build_frontends()
@@ -201,6 +216,8 @@ def publish(args):
         journal["status"] = "activating"
         atomic_json(STATE / "publish-current.json", journal)
         journal['outbound'] = outbound_release.phase(outbound, 'freeze')
+        if recovery_original and journal['outbound'].get('schedule') != recovery_original['outbound']['schedule']:
+            raise RuntimeError('Recovery 168 outbound baseline drift')
         atomic_json(STATE / "publish-current.json", journal)
         stopped = schema_release.migrate(office, inventory, args.migration_credentials) if office else []
         if office:
@@ -269,11 +286,14 @@ if __name__ == "__main__":
     parser.add_argument("--receipt-routing-only", action="store_true", help="Route receipts and 10MiB proofs to the office only")
     parser.add_argument("--colorwork-routing-only", action="store_true", help="Route colorwork to the existing healthy Beijing module")
     parser.add_argument("--migrate-only", metavar="PLAN", help="Execute only the reviewed 137 -> 138 migration using a verified local plan")
+    parser.add_argument("--recover-migration-168", action="store_true", help="Recover only the inspected 168 collation incident")
     parser.add_argument("--recover-migration-151", action="store_true", help="Resume only the reviewed 151 foreign-key failure preserving original writer evidence")
     parser.add_argument("--recover-migration-149", action="store_true", help="Resume only the inspected revision-149 overflow with original writer evidence")
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
+        if args.recover_migration_168 and any(value for key, value in vars(args).items() if key not in {"recover_migration_168", "prepare_only", "revision", "live_root", "no_pull", "migration_credentials"}):
+            raise RuntimeError("Recovery 168 only accepts a pinned full release")
         if args.recover_colorwork_start_order:
             if any(value for key, value in vars(args).items() if key not in {'recover_colorwork_start_order', 'prepare_only'}):
                 raise RuntimeError('Start-order recovery only accepts --prepare-only')

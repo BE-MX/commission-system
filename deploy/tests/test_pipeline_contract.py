@@ -425,3 +425,26 @@ def test_extension_changes_rebuild_frontend_and_corrupt_cache_is_rejected(tmp_pa
     (package / "latest.json").write_text("corrupt")
     with pytest.raises(RuntimeError, match="corrupt"):
         publish.build_frontends()
+
+
+def test_recovery168_prepare_only_keeps_outbound_identity_and_never_activates(pipeline, monkeypatch):
+    import migration_recovery168 as recovery
+    pipeline.args.recover_migration_168 = True
+    pipeline.args.recover_migration_149 = False
+    pipeline.args.recover_migration_151 = False
+    pipeline.args.revision = "a" * 40
+    pipeline.args.prepare_only = True
+    monkeypatch.setattr(schema_release, "check_recovery", Mock())
+    original = {"revision": recovery.FAILED_REVISION, "release_id": recovery.RELEASE_ID}
+    monkeypatch.setattr(recovery, "prepare_release", Mock(return_value=original))
+    publish.publish(pipeline.args)
+    assert pipeline.outbound_prepare.call_args.args[1:3] == (recovery.FAILED_REVISION, recovery.RELEASE_ID)
+    assert pipeline.prepare.call_args.kwargs == {"recover_168": True}
+    pipeline.outbound_phase.assert_not_called()
+    schema_release.migrate.assert_not_called()
+    pipeline.office_activate.assert_not_called()
+    cloud_backend.activate.assert_not_called()
+    pipeline.activate.assert_not_called()
+    journal = json.loads((pipeline.state / "publish-current.json").read_text())
+    assert journal["status"] == "prepared"
+    assert journal["recovery_original"] == original

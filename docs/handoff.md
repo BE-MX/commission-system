@@ -1,3 +1,8 @@
+## 2026-09-25 168迁移排序规则故障（本地修复，生产待恢复）
+
+- `codex/migration168-collation` 基于失败候选284c399b；MySQL只读EXPLAIN复现1267，新表0900_ai_ci与源表unicode_ci冲突。数据库仍167、新表0行，办公室两服务已停止，出库暂停。
+- 回填比较显式COLLATE修复，4项隔离测试和修复SQL只读EXPLAIN通过；未提交/推送/发布。普通重跑仍受事故日志保护，需准备168专用恢复流程并获得生产授权。证据与边界见[诊断报告](reports/2026-09-25-migration168-collation.md)。
+
 ## 2026-09-24 结汇决策助手（Codex，合并推送，未部署）
 
 - 工作树 `D:/MyProgram/commission-system-codex-fx-settlement`，分支 `codex/fx-settlement-advisor`；现有系统登录页内新增「订单管理 → 结汇决策助手」，`fx_settlement:read/write` 分级授权。无迁移、不保存测算输入、不执行交易。
