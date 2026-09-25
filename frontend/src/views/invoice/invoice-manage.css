@@ -77,8 +77,10 @@
 }
 
 /* 玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影 + hover 上浮），
-   这里只留布局 */
-.summary-card {
+   这里只留布局。限定 .summary-grid 前缀：避免与右栏 InvoiceSummaryCard 的
+   .summary-card 同名类串味（2026-09-25 实翻车：KPI 的 justify-content:center
+   把金额汇总行上下裁切） */
+.summary-grid .summary-card {
   display: flex;
   min-height: 76px;
   flex-direction: column;
@@ -87,12 +89,12 @@
   padding: 14px 16px;
 }
 
-.summary-card span {
+.summary-grid .summary-card span {
   color: var(--invoice-muted);
   font-size: 13px;
 }
 
-.summary-card strong {
+.summary-grid .summary-card strong {
   font-family: var(--font-display);
   font-size: 24px;
   font-weight: 700;
@@ -101,7 +103,7 @@
 }
 
 /* 强调卡：金调渐变玻璃（scoped 优先级高于全局 .lg-card，可覆盖其背景/描边） */
-.summary-card.emphasis {
+.summary-grid .summary-card.emphasis {
   background: linear-gradient(165deg, rgba(255, 255, 255, 0.8) 0%, rgba(245, 203, 92, 0.16) 100%);
   border-color: rgba(212, 148, 28, 0.4);
 }
@@ -203,6 +205,12 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* 卡片按内容自然高度占位，超高时由 pane 滚动；
+   不禁止 shrink 的话 flex 会把卡片压扁，内容上下溢出被裁 */
+.pane > * {
+  flex: 0 0 auto;
 }
 
 .pane-main {

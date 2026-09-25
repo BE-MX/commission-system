@@ -37,6 +37,16 @@ test('drawer body splits into two independently scrolling panes', () => {
   assert.match(invoiceStyles, /@media \(max-width: 1200px\)[\s\S]*\.drawer-panes\s*{[^}]*grid-template-columns:\s*1fr/s)
 })
 
+test('side pane cards keep natural height so fee summary is not clipped', () => {
+  // flex 默认会把超高卡片压扁，金额汇总上下被裁（2026-09-25）
+  assert.match(invoiceStyles, /\.pane\s*>\s*\*\s*{[^}]*flex:\s*0\s*0\s*auto/s)
+  // KPI 卡样式不得串到右栏金额汇总卡
+  assert.match(invoiceStyles, /\.summary-grid\s+\.summary-card\s*{/)
+  assert.doesNotMatch(invoiceStyles, /(?<!\.summary-grid\s)\.summary-card\s*{[^}]*justify-content:\s*center/s)
+  // 金额汇总卡与结算/回款卡同级白卡
+  assert.match(invoiceView, /<InvoiceSummaryCard\s+class="form-card"/)
+})
+
 test('order entry uses card sections with a three-column top-label grid', () => {
   assert.match(invoiceStyles, /\.form-card\s*{[^}]*border-radius:\s*var\(--card-radius\)/s)
   assert.match(invoiceStyles, /\.card-title\s*{[^}]*font-size:\s*14px/s)

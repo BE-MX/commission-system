@@ -426,6 +426,7 @@
             <!-- 右窗格：金额/结算/回款，独立滚动 -->
             <aside class="pane pane-side">
               <InvoiceSummaryCard
+                class="form-card"
                 :form="form"
                 :total="formTotal"
                 :base-amount="formBaseAmount"
