@@ -28,8 +28,7 @@ Settings：`AI_GATEWAY_MAX_OUTPUT_TOKENS=4096`、`AI_GATEWAY_TIMEOUT_SEC=60`（�
 
 > 2026-09-05 部署入口已改为候选准备、SHA-256 增量发布与共享 schema 校验，操作及真实纳管范围以 [deploy/README.md](../deploy/README.md) 为准。旧 rollback.bat 已阻断，不再使用旧 dist_backup 直接覆盖云目录。COS 文件迁移现按用户授权推进；实际切换状态见 docs/handoff.md。
 
-> **版本**：v1.0  
-> **最后更新**：2026-07-03  
+> **文档口径核对**：2026-09-17（不代表本文所有专题已重新生产验收）
 > **目标读者**：运维人员、项目交接人员
 
 ## 环境准备
@@ -179,7 +178,7 @@ GRANT UPDATE (collection_date) ON lsordertest.okki_receipts TO 'ark_app'@'%';
 
 页面入口为 `/system/operations`。先给日常查看角色分配 `operations:read`；`operations:admin` 只分配给受信任运维管理员，它允许立即执行、暂停、恢复当前进程内的白名单 APScheduler 任务。
 
-部署前确认 `alembic heads` 唯一为 `111_runtime_observability`；备份数据库后执行 `alembic upgrade head`，再重启应用。未完成 110 迁移时控制接口会因为审计不可用而拒绝操作；未完成 111 时运行历史和云实例心跳不可用。
+110/111是此模块的历史最低迁移，不是当前发布head。部署入口须检查候选唯一head及生产revision，统一执行待迁移链并重启，禁止开发机手工升级共享生产库。未完成 110 迁移时控制接口会因为审计不可用而拒绝操作；未完成 111 时运行历史和云实例心跳不可用。
 
 上线时逐项检查：
 
@@ -252,10 +251,9 @@ npm install
 
 ### 5. 数据库迁移
 
-```bash
-cd backend
-alembic upgrade head
-```
+生产只通过[统一部署入口](../deploy/README.md)核验候选、独立DBA凭据、全部writer及恢复记录后执行。开发机仅可对已确认的隔离数据库运行Alembic，不得把生产RDS作为快速开始目标。
+
+以下123/126/127小节保留历史维护方案，受各自前置条件限制，不是当前数据库的升级指令。新维护窗口须重新核对代码、数据和恢复证据，不照抄旧revision重跑。
 
 #### 123 全平台北京时间迁移（仅维护窗口）
 
@@ -269,7 +267,7 @@ alembic upgrade head
 
 #### 126 统一客户域重建（一次性破坏性维护窗口）
 
-迁移 126 会清空并重建历史客户、智能获客、公海、机会台和经营雷达表，且没有 downgrade。禁止沿用上面的裸 `alembic upgrade head`；必须使用仓库根目录的 `scripts/customer_domain_cutover.py`，所有证据只允许写入已忽略的 `backend/tmp/customer-domain-cutover/`。抑制名单只导出 HMAC，不把明文邮箱/电话写入证据目录。
+迁移 126 会清空并重建历史客户、智能获客、公海、机会台和经营雷达表，且没有 downgrade。禁止裸执行 `alembic upgrade head`；必须使用仓库根目录的 `scripts/customer_domain_cutover.py`，所有证据只允许写入已忽略的 `backend/tmp/customer-domain-cutover/`。抑制名单只导出 HMAC，不把明文邮箱/电话写入证据目录。
 
 上线前置：
 
@@ -339,30 +337,7 @@ python scripts/customer_domain_cutover.py verify-after `
 deploy\setup-server.bat
 ```
 
-手动配置（若脚本失败）：
-
-```bash
-# 方舟主服务
-nssm install CommissionSystem "D:\MyProgram\commission-system\backend\venv\Scripts\python.exe"
-nssm set CommissionSystem AppDirectory "D:\MyProgram\commission-system\backend"
-nssm set CommissionSystem AppParameters "-m uvicorn app.main:app --host 0.0.0.0 --port 8001"
-nssm set CommissionSystem DisplayName "莱莎方舟平台"
-nssm set CommissionSystem Description "莱莎方舟平台后端服务"
-nssm set CommissionSystem Start SERVICE_AUTO_START
-nssm set CommissionSystem AppStdout "D:\MyProgram\commission-system\logs\service.log"
-nssm set CommissionSystem AppStderr "D:\MyProgram\commission-system\logs\service-error.log"
-nssm start CommissionSystem
-
-# WhatsApp Connector 服务
-nssm install WhatsAppConnector "C:\Program Files\nodejs\node.exe"
-nssm set WhatsAppConnector AppDirectory "D:\MyProgram\commission-system\services\whatsapp-connector"
-nssm set WhatsAppConnector AppParameters "src/index.js"
-nssm set WhatsAppConnector DisplayName "WhatsApp Connector"
-nssm set WhatsAppConnector Start SERVICE_AUTO_START
-nssm set WhatsAppConnector AppStdout "D:\MyProgram\commission-system\services\whatsapp-connector\logs\connector.log"
-nssm set WhatsAppConnector AppStderr "D:\MyProgram\commission-system\services\whatsapp-connector\logs\connector-error.log"
-nssm start WhatsAppConnector
-```
+已安装实例的服务目录、解释器和参数由统一部署入口核对及切换。setup或发布失败先检查日志及实际服务注册，不另建手动uvicorn/NSSM实例作为fallback，以免占用端口或将旧代码接回新schema。首次安装步骤以脚本预检及[部署说明](../deploy/README.md)为准。
 
 ### 7. 配置腾讯云 Nginx（前端静态文件）
 
@@ -489,7 +464,7 @@ location = /api/customer-image/public/logo {
 
 | 项目 | 必须证据 | 未满足时的处理 |
 |---|---|---|
-| 1. 数据库迁移 | `alembic heads` 唯一为 `104_ci_generation_snapshots`；`101_knowledge_poc`→104 offline SQL 可生成；隔离 MySQL 实跑通过 | 禁止部署数据库变更 |
+| 1. 数据库迁移 | 候选Alembic单head且包含104及其依赖；历史101→104门禁不能替代当前待迁移链核验；隔离MySQL验证按本次变更执行 | 禁止部署数据库变更 |
 | 2. 后端分层 | models/schemas/service/router/worker/cleanup 测试全绿，路由只做协议转换 | 回到领域 service 修复，不在路由堆业务逻辑 |
 | 3. 注册与权限 | router 已注册；read/write/admin 真实数据库权限矩阵通过 | 禁止给业务员发入口 |
 | 4. 前端 API client | 内部 client 集中注册；Invite client 无 Bearer、401 不跳登录 | 禁止公开邀请 |
@@ -585,15 +560,9 @@ done
 
 ## 日常更新
 
-运行 `deploy\deploy.bat`，自动执行：
+日常发布只使用 [deploy/README.md](../deploy/README.md) 中的统一入口。该文档维护候选准备、依赖与制品校验、全部writer停写、一次共享schema迁移、服务与静态指针切换、失败恢复的执行顺序；这里不复制第二套发布命令。
 
-1. `git pull` 拉取最新代码
-2. `pip install -r requirements.txt` 更新后端依赖
-3. `npm install` 更新 Connector 依赖
-4. 停止 `CommissionSystem`，执行 `alembic upgrade head` 并校验版本；迁移失败时保持停服，禁止旧代码继续写入
-5. `npm run build` 构建前端
-6. `scp dist/* → root@119.28.107.92:/var/www/ark/dist/` 同步静态文件到云端
-7. 确认迁移后已用新代码重启的 `CommissionSystem`，并重启 `WhatsAppConnector`
+先读 `.deploy_state/publish-current.json` 的status与revision，再看schema-writers恢复记录和实际服务健康。prepared不等于已切换，旧publish-success也不代表本轮成功。数据库改变后的失败不得自行回滚旧代码或删除恢复日志。
 
 ## 开发机 git 巡检（多智能体协作）
 
@@ -751,15 +720,13 @@ nssm restart CommissionSystem
 
 ### Q3.5：部署成功但页面还是旧版（2026-07-13 实case）
 
-**先别重跑 deploy，八成云端已经是新的，是客户端缓存。** 判定方法（开发机可做）：
+先核对服务和制品，再判断客户端缓存。2026-09-17回款/公告缺失实际是迁移预检阻断，线上仍为旧版本；案例见[发布记录](reports/2026-09-17-receipt-release-fix.md)。
 
-1. `curl -sI https://leshine.work/ | findstr Last-Modified` — 时间是不是刚部署的时刻
-2. 拉云端 chunk 验证代码内容：`curl -s https://leshine.work/` 找到 `assets/index-*.js` → 下载后搜其中的懒加载 chunk 名 → 下载目标 chunk 用 `grep` 搜本次改动的特征字符串（比对内容，不要比对 hash——本地构建与服务器构建可能差一个提交）
-3. 若云端确认是新的 → 测试设备强刷（PC Ctrl+F5 / iPad Safari 清除历史与网站数据）
+1. 比对publish-current的status/revision、办公室与北京实际HEAD；确认不是prepared/failed或部分目标完成。
+2. 从实际域名获取index.html，按其中script src下载当前主文件，核对目标路由/页面模块；主文件名可能是main-*.js，不硬编码index-*.js。发布器以同一候选制品摘要核验，不凭Last-Modified判断完成。
+3. 线上制品已更新但旧标签页仍显示旧菜单时，再刷新或重新登录以更新前端与权限会话；随后核验目标接口。
 
-根治已落地（2026-07-13）：云端 nginx 对所有 `.html` 返回 `Cache-Control: no-cache`（每次 ETag 回源验证，未变 304），`/etc/nginx/conf.d/leshine.conf`（改前备份 `leshine.conf.bak-20260713`）；带 hash 的 `/assets/` 维持一年 immutable 缓存。此后部署即刻全员生效，不再需要用户清缓存。
-
-另：deploy.bat 的 assets 增量上传循环**每传一个文件打一行进度**（2026-07-13 加固前全程静默数分钟，曾被误判卡死而手动中断）；所有 ssh/scp 带 `BatchMode=yes -o ConnectTimeout=10`，网络/密钥问题会立即报错而不是无限假死。若报 BatchMode 相关错误 = SSH 免密失效，在服务器上手动 `ssh root@119.28.107.92 "echo ok"` 按提示修复后重跑。
+当前制品按SHA-256清单打包增量传输并切换指针，不再逐个SCP覆盖线上assets。HTML缓存和代理细节查实际目标配置，不把旧单域配置当作所有入口都已验收。
 
 ### Q4：定时任务未执行
 

@@ -2,7 +2,7 @@
 
 # 回款管理实现与交付说明
 
-2026-09-17；来源分支 `codex/receipt-management`。用户已授权合并 main 并推送 origin，本轮不部署。设计依据：[功能设计](2026-09-17-receipt-management.md)。
+2026-09-17；功能已合并 main 并推送，随后以 `dab19815` 正式部署。发布证据见[发布记录](../reports/2026-09-17-receipt-release-fix.md)，后续变更见下方 2026-09-18 记录。设计依据：[功能设计](2026-09-17-receipt-management.md)。
 
 ## 已实现的行为
 
