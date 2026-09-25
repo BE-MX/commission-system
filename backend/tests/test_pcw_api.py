@@ -64,6 +64,18 @@ def _setup_customer(db, code="C-PCW-API", user_id=9401):
     return account, user
 
 
+def test_analysis_job_is_unavailable_without_runtime(client, monkeypatch):
+    from types import SimpleNamespace
+    from app.core import config
+
+    monkeypatch.setattr(
+        config, "get_settings", lambda: SimpleNamespace(PCW_AI_ANALYSIS_ENABLED=False)
+    )
+    response = client.post("/api/customer-hub/conversations/1/analysis-jobs")
+    assert response.status_code == 503
+    assert response.json()["data"]["error_code"] == "AI_ANALYSIS_UNAVAILABLE"
+
+
 def test_workbench_overview_envelope(client, db):
     _setup_customer(db)
     response = client.get("/api/customer-hub/workbench/overview")

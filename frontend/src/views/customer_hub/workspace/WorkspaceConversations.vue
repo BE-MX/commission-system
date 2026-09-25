@@ -1,18 +1,13 @@
 <template>
   <div class="workspace-conversations">
     <section class="lg-card panel">
-      <h3>会话与摘要</h3>
+      <h3>会话 <span class="hint">AI 摘要待启用</span></h3>
       <el-empty v-if="!conversations.length" description="暂无已绑定会话" :image-size="60" />
       <el-table class="list-table" v-else :data="conversations" size="small" border @row-click="selectConversation">
         <el-table-column prop="channel" label="渠道" min-width="110" />
         <el-table-column prop="contact_name" label="联系人" min-width="120" show-overflow-tooltip />
         <el-table-column prop="message_count" label="消息数" min-width="90" />
         <el-table-column prop="last_message_at" label="最近消息" min-width="170" />
-        <el-table-column label="操作" min-width="130" class-name="table-action-column" fixed="right">
-          <template #default="{ row }">
-            <GlassButton variant="link" v-permission="'customer_pcw:write'" @click.stop="triggerAnalysis(row)">生成摘要</GlassButton>
-          </template>
-        </el-table-column>
       </el-table>
     </section>
 
@@ -26,27 +21,6 @@
         </div>
       </div>
       <el-button v-if="hasMore" @click="loadMoreMessages">加载更多</el-button>
-    </section>
-
-    <section v-if="analysisJob" class="lg-card panel">
-      <h3>分析任务 <el-tag size="small">{{ analysisJob.status }}</el-tag></h3>
-      <p v-if="analysisJob.failure_reason" class="message-warn">{{ analysisJob.failure_reason }}</p>
-      <template v-if="analysisJob.result">
-        <p><strong>摘要：</strong>{{ analysisJob.result.summary }}</p>
-        <div v-for="(items, section) in analysisSections" :key="section">
-          <strong>{{ sectionLabels[section] || section }}</strong>
-          <ul>
-            <li v-for="(item, index) in items" :key="index">
-              {{ item.text }}
-              <span v-if="item.evidence_message_ids?.length" class="hint">（消息 {{ item.evidence_message_ids.join(', ') }}）</span>
-            </li>
-          </ul>
-        </div>
-      </template>
-      <p v-if="analysisJob.coverage" class="hint">
-        覆盖：{{ analysisJob.coverage.sync_from }} ~ {{ analysisJob.coverage.sync_to }}
-        <span v-if="analysisJob.coverage.attachments_unread"> · {{ analysisJob.coverage.attachments_unread }} 个附件未读取</span>
-      </p>
     </section>
 
     <section class="lg-card panel">
@@ -73,10 +47,9 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import {
-  createAnalysisJob, createConversationBinding,
-  getAnalysisJob, listConversationMessages, listCustomerConversations, listPendingBindings,
+  createConversationBinding, listConversationMessages, listCustomerConversations, listPendingBindings,
 } from '@/api/customerHub'
 import { msgSuccess } from '@/utils/feedback'
 import { buildBindingPayload } from '../customerWorkspaceController'
@@ -88,18 +61,6 @@ const activeConversation = ref(null)
 const messages = ref([])
 const cursor = ref(null)
 const hasMore = ref(false)
-const analysisJob = ref(null)
-const sectionLabels = {
-  demands: '需求', objections: '异议', commitments: '双方承诺',
-  open_questions: '未决问题', next_steps: '建议下一步', profile_candidates: '画像候选',
-}
-const analysisSections = computed(() => {
-  const result = analysisJob.value?.result
-  if (!result) return {}
-  return Object.fromEntries(
-    Object.entries(result).filter(([key, value]) => Array.isArray(value) && key !== 'evidence_message_ids'),
-  )
-})
 
 async function loadAll() {
   try {
@@ -129,26 +90,6 @@ async function loadMoreMessages() {
     cursor.value = response.data?.next_cursor ?? null
     hasMore.value = Boolean(response.data?.has_more)
   } catch { /* 拦截器已提示 */ }
-}
-
-async function triggerAnalysis(row) {
-  try {
-    const response = await createAnalysisJob(row.id, `analysis-${row.id}-${Date.now()}`)
-    const jobId = response.data?.job_id ?? response.data?.id
-    msgSuccess('分析任务已创建')
-    if (jobId) await pollJob(jobId)
-  } catch { /* 拦截器已提示 */ }
-}
-
-async function pollJob(jobId, attempts = 5) {
-  for (let index = 0; index < attempts; index += 1) {
-    try {
-      const response = await getAnalysisJob(jobId)
-      analysisJob.value = response.data
-      if (['succeeded', 'failed', 'stale', 'cancelled'].includes(response.data?.status)) return
-      await new Promise(resolve => setTimeout(resolve, 2000))
-    } catch { return }
-  }
 }
 
 async function bind(row) {

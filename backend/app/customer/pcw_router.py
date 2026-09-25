@@ -518,6 +518,12 @@ def create_analysis_job(
     user: dict = Depends(require_any_permission(*PCW_WRITE)),
 ):
     from app.customer.pcw_conversation_service import create_analysis_job
+    from app.core.config import get_settings
+
+    if not get_settings().PCW_AI_ANALYSIS_ENABLED or not run_inline:
+        raise pcw_errors.unavailable(
+            "会话 AI 摘要尚未开放", error_code="AI_ANALYSIS_UNAVAILABLE"
+        )
 
     result = _call(
         create_analysis_job, db,

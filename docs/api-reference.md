@@ -16,7 +16,7 @@
 | POST/GET `/customers/{id}/notes` | 私人备注（visibility=private，按作者隔离） |
 | GET `/conversation-bindings/pending`、POST `/conversation-bindings` | WhatsApp 会话待绑定队列与绑定（expected_binding_version=0 首绑）；POST `/conversation-bindings/{id}/rebind|unbind` 需 customer:admin |
 | GET `/customers/{id}/conversations`、GET `/conversations/{id}/messages` | 会话与游标消息（(sent_at,id) 稳定排序） |
-| POST `/conversations/{id}/analysis-jobs`（202）、GET `/analysis-jobs/{id}` | 增量 AI 摘要任务；输入哈希+绑定版本幂等，撤权 404 |
+| POST `/conversations/{id}/analysis-jobs`（仅启用 AI 且 `run_inline=true` 时 202）、GET `/analysis-jobs/{id}` | 增量 AI 摘要；当前无异步消费者，默认关闭，创建请求返回 `AI_ANALYSIS_UNAVAILABLE`（503）；输入哈希+绑定版本幂等，撤权 404 |
 | GET `/customers/{id}/orders`、`/orders/{order_id}`、`/order-analytics`、`/reorder-windows` | 订单只读明细与确定性统计（币种/单位不混加、覆盖率服务端分母）；复购窗口（≥4 批次、中位数±7 天、极差/中位>0.6 降级 irregular） |
 | GET/POST `/customers/{id}/monitor-subscriptions`、PATCH `/monitor-subscriptions/{id}`、POST `.../runs` | 监控订阅（HTTPS/DNS/内网校验 URL_NOT_ALLOWED）；enabled 与 collection_status=baseline/active/failed/restricted 分列 |
 | GET `/customers/{id}/monitor-events`、POST `/monitor-events/{id}/decisions` | 事件 confirm（生成一次任务）/ignore（必填原因），版本前置 |
