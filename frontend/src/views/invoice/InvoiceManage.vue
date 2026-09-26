@@ -13,9 +13,6 @@
         <p>客户发票、产品明细、价格管控、导出与小满同步集中处理。</p>
       </div>
       <div class="header-actions">
-        <GlassButton v-permission="'invoice:write'" variant="secondary" :left-icon="Picture" @click="screenshotImportVisible = true">
-          AI 识别 OKKI 截图
-        </GlassButton>
         <GlassButton v-permission="'invoice:write'" variant="primary" :left-icon="Plus" class="primary-action" @click="openCreate('stock')">
           新建库存单
         </GlassButton>
@@ -523,7 +520,7 @@ import { useInvoiceShipments, orderTypeLabel } from './composables/useInvoiceShi
 import { useInvoiceImportDialogs } from './composables/useInvoiceImportDialogs'
 import InvoiceLifecycle from './components/InvoiceLifecycle.vue'
 import { computed, ref } from 'vue'
-import { ArrowDown, Delete, Document, DocumentCopy, Download, Edit, Picture, Plus, Refresh, Search } from '@element-plus/icons-vue'
+import { ArrowDown, Delete, Document, DocumentCopy, Download, Edit, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { EXPRESS_CHANNEL_OPTIONS, PAYMENT_METHOD_OPTIONS } from './composables/invoiceSettlement'
 import { customerOptionLabel } from './composables/useInvoiceCustomerSearch'
 import { describeCustomerRule, useInvoiceEditor } from './composables/useInvoiceEditor'
