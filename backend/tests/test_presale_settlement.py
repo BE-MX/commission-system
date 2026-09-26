@@ -48,6 +48,18 @@ def test_partial_keeps_deposit_and_original_total(db,presale):
     assert db.query(SettlementApplication).count()==0
 
 
+def test_presale_quote_rejects_unmapped_or_shared_okki_product_line(db,presale):
+    presale.items[0].product_id = None
+    with pytest.raises(ValueError, match="独立 OKKI 产品行"):
+        make(db,presale)
+    presale.items[0].product_id = 1
+    presale.items.append(InvoiceItem(product_id=1, sku_id=2, product_name="Other", product_display="Other",
+        color="Black", quantity=1, price_per_piece=100, total_price=100, xiaoman_unique_id="11"))
+    db.flush()
+    with pytest.raises(ValueError, match="共享 OKKI 明细"):
+        make(db,presale)
+
+
 def test_duplicate_returns_same_and_blocks_second_batch(db,presale):
     first=make(db,presale); db.commit()
     assert db.query(ShipmentSettlement).count()==1

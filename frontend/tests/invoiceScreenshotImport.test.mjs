@@ -19,8 +19,8 @@ const api = read('../src/api/invoice.js')
 const footer = read('../src/views/invoice/components/InvoiceTotalsFooter.vue')
 
 
-test('AI screenshot flow has upload, clipboard, preview, and resolve endpoints', () => {
-  assert.match(view, /AI 识别 OKKI 截图/)
+test('AI screenshot entry is hidden while its import flow remains available for later use', () => {
+  assert.doesNotMatch(view, /AI 识别 OKKI 截图/)
   assert.match(view, /InvoiceScreenshotImport/)
   assert.match(component, /image\/png,image\/jpeg,image\/webp/)
   assert.match(component, /onPaste/)

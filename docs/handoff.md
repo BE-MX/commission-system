@@ -5,7 +5,7 @@
 - 用户授权调整自动备份策略。已通过 `deploy.bat --colorwork-backup-policy` 在北京安装 `ark-colorwork-backup-retention.timer`，enabled/active；每小时执行、最多5分钟随机延迟，首次手动执行completed且未额外删除（当前两份）。验收时下一次为北京时间19:04:25，主站与工作台公网健康200、数据库connected，磁盘35%，服务器Git tracked diff为空。
 - 发布前完整备份保持不变；清理保留最近两份加成功恢复引用。与发布器共用backend.lock，发布中跳过，失败/恢复异常/服务不健康则拒绝删除。检查保留SQLite、R2对象与分片文件存在/大小/分片合计；不等同完整恢复演练。只处理colorwork/backups，不处理data、checkouts、迁移中转和前端版本。
 - 安装独立互斥锁、停timer后检查在途oneshot，失败恢复策略文件及timer基线。首次线上执行完成但systemd已回收InvocationID属性，安装验收因无法核实而自动撤回；随后改成安装UUID+脚本SHA+worker InvocationID绑定回执，重新安装验收通过。最终制品SHA256 `8c3e4ffe9724d096522544e891617354235fca51b0f0ffce3aab31bd2129ee41`；执行InvocationID `cc11612738cb4db7aedbd5184a37de27`与journald对应。
-- 部署回归434 passed / 12 skipped / 2 deselected（此前确认的storage mock用例）；最终专项新增旧安装/错误SHA/完成单元GC校验后，policy+retention为22 passed / 1 Windows symlink skipped。Linux隔离六项验证了安装锁、发布锁、symlink、缺失R2 blob、保留两份与重复noop。独立审查通过；约定检查仍有13项既有前端问题。
+- 集成最新 main（基点 `5d954a06`）后部署回归435 passed / 12 skipped / 2 deselected（此前确认的storage mock用例）；最终专项新增旧安装/错误SHA/完成单元GC校验后，policy+retention为22 passed / 1 Windows symlink skipped。Linux隔离六项验证了安装锁、发布锁、symlink、缺失R2 blob、保留两份与重复noop。独立审查通过；约定检查仍有13项既有前端问题，覆盖本次提交的增量检查无违规；社媒服务16项回归通过。
 - 维护命令与暂停恢复流程见 [运维手册](runbook.md) 和 [部署说明](../deploy/README.md)。本地非敏感回执 `.deploy_state/colorwork-backup-retention/verified.json`；服务端 `colorwork/maintenance/retention-outcome.json` / `retention-last.json`。本次交付来自 `codex/agent-cloud-migration`，亮哥已授权合并并推送 `origin/main`；已安装策略独立于Git工作树和业务版本切换持续生效。
 
 
@@ -22,6 +22,18 @@
 - 北京迁移后磁盘曾剩余约8.54 GiB（95%已用）。9月26日18:16经用户明确授权，核验当前/成功恢复引用、两份保留备份的10个SQLite、R2结构及进程引用，并持有部署锁后，删除41份色卡工作台旧全量备份；保留最近两份（含当前恢复点），释放103.12 GiB，可用约111.67 GiB，使用率降至35%。主站及工作台公网健康均200、数据库connected，相关服务active。未删除运行数据、候选代码、迁移中转资料、前端历史版本；当次手工清理未修改自动策略，后续策略已上线（见本页上节）。逐目录删除回执在北京 `/var/lib/ark-storage-cleanup/20260926T181626/receipt.json`。
 
 按日期核对各条状态；历史交接另有[2026-09-17 快照](archive/handoff-2026-09-17.md)，本文件保留后续追加在旧条目末尾的记录，避免遗漏未完成事项。
+
+## 2026-09-26 预售本地契约模拟与截图入口隐藏（未上线）
+
+- 分支 `codex/invoice-presale-button`：订单发票页隐藏 AI 识别 OKKI 截图入口；预售按钮不可用的原因是默认关闭的发布开关，后端也会拦截建单。页面现在明确提示预售建单暂未开放。
+- 分批出库与独立运费目标已增加不发送的载荷构建器，并用两批次与异常身份/金额 fixture 模拟；没有隔离 OKKI 租户和隔离 MySQL，未进行真实联调，预售开关保持关闭。后续验证与发送器门槛见[本地适配报告](reports/2026-09-26-presale-local-adapter.md)。
+
+## 2026-09-26 结汇助手手机应用（代码交付，未部署）
+
+- 分支 `codex/forex-mobile`，新增 `/fx-settlement` 全屏入口与桌面安装配置；手机采用行情/测算/方案底部导航、触屏表单及方案卡片。桌面原入口保持双栏；复用现有资金计算和权限，无迁移。说明见 [结汇助手](requirements/2026-09-24-fx-settlement-advisor.md)。
+- 手机登录及会话过期回跳已补齐，不再误入素材 `/m/`；安装元数据与发货质检统一管理，已回归两个应用之间切换及普通页面恢复。
+- 构建、41 项 Node 回归、Chrome 320/390/430/768px 与 1440px 模拟接口流程通过。独立审查发现的折叠无效字段定位问题已修复并通过浏览器回归。截图和构建证据保留于主工作树 `tmp/fx-mobile-integration/`。
+- 完整约定检查被 13 项既有未改动页面的 UI 基线问题阻挡；增量规则单独核验。Git 巡检已运行 `--no-fetch`，仅本地快照。本轮按用户授权合并推送至 main；未部署，目标环境发布与真实手机安装验收仍待进行。
 
 ## 2026-09-25 main 合并与全平台纳管目标发布
 

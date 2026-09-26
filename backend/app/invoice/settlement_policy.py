@@ -10,7 +10,7 @@ def require_enabled():
 def capabilities():
     return {"enabled": get_settings().PRESALE_SETTLEMENT_ENABLED,
             "freight_delivery_enabled": False, "outbound_delivery_enabled": False,
-            "reason": "小满运费承载、统计分类及分批出库契约尚待隔离验证，自动外发未启用"}
+            "reason": "预售建单暂未开放：小满运费承载、统计分类及分批出库契约尚待隔离验证"}
 
 
 def require_delivery():

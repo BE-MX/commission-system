@@ -2,7 +2,7 @@
   <section class="market-panel lg-card is-static" aria-label="美元兑人民币行情">
     <div class="panel-heading">
       <div><span class="eyebrow">USD / CNY</span><h3>先看行情，再定金额</h3></div>
-      <GlassButton variant="ghost" :loading="loading" @click="$emit('refresh')">刷新行情</GlassButton>
+      <GlassButton class="refresh-button" variant="ghost" :loading="loading" @click="$emit('refresh')">刷新行情</GlassButton>
     </div>
     <p v-if="error" class="warning" role="alert">{{ error }}。可填写银行当前报价继续测算。</p>
     <div class="quote-grid">
@@ -89,5 +89,5 @@ h3 { margin: 5px 0 20px; font-size: 17px; }
 .history-chart { height: 200px; width: 100%; margin-top: 12px; }
 .market-source { display: grid; gap: 4px; line-height: 1.6; }
 a { color: var(--color-primary-hover); text-underline-offset: 3px; }
-@media(max-width:650px) { .market-panel { padding: 18px; }.quote-grid { grid-template-columns: 1fr 1fr; gap: 12px; }.current-rate { grid-column: 1/-1; }.history-chart { height: 180px; } }
+@media(max-width:650px) { .market-panel { padding: 18px; }.quote-grid { grid-template-columns: 1fr 1fr; gap: 12px; }.current-rate { grid-column: 1/-1; }.history-chart { height: 180px; }.panel-heading { gap: 8px; }.panel-heading h3 { font-size: 15px; }.refresh-button { min-height: 44px; flex-shrink: 0; } }
 </style>
