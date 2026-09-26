@@ -1,5 +1,26 @@
 # 当前交接与待办
 
+## 2026-09-26 色卡工作台自动备份保留策略（线上已启用）
+
+- 用户授权调整自动备份策略。已通过 `deploy.bat --colorwork-backup-policy` 在北京安装 `ark-colorwork-backup-retention.timer`，enabled/active；每小时执行、最多5分钟随机延迟，首次手动执行completed且未额外删除（当前两份）。验收时下一次为北京时间19:04:25，主站与工作台公网健康200、数据库connected，磁盘35%，服务器Git tracked diff为空。
+- 发布前完整备份保持不变；清理保留最近两份加成功恢复引用。与发布器共用backend.lock，发布中跳过，失败/恢复异常/服务不健康则拒绝删除。检查保留SQLite、R2对象与分片文件存在/大小/分片合计；不等同完整恢复演练。只处理colorwork/backups，不处理data、checkouts、迁移中转和前端版本。
+- 安装独立互斥锁、停timer后检查在途oneshot，失败恢复策略文件及timer基线。首次线上执行完成但systemd已回收InvocationID属性，安装验收因无法核实而自动撤回；随后改成安装UUID+脚本SHA+worker InvocationID绑定回执，重新安装验收通过。最终制品SHA256 `8c3e4ffe9724d096522544e891617354235fca51b0f0ffce3aab31bd2129ee41`；执行InvocationID `cc11612738cb4db7aedbd5184a37de27`与journald对应。
+- 部署回归434 passed / 12 skipped / 2 deselected（此前确认的storage mock用例）；最终专项新增旧安装/错误SHA/完成单元GC校验后，policy+retention为22 passed / 1 Windows symlink skipped。Linux隔离六项验证了安装锁、发布锁、symlink、缺失R2 blob、保留两份与重复noop。独立审查通过；约定检查仍有13项既有前端问题。
+- 维护命令与暂停恢复流程见 [运维手册](runbook.md) 和 [部署说明](../deploy/README.md)。本地非敏感回执 `.deploy_state/colorwork-backup-retention/verified.json`；服务端 `colorwork/maintenance/retention-outcome.json` / `retention-last.json`。本次交付来自 `codex/agent-cloud-migration`，亮哥已授权合并并推送 `origin/main`；已安装策略独立于Git工作树和业务版本切换持续生效。
+
+
+## 2026-09-26 OpenClaw / Agent 服务迁到北京（线上完成）
+
+- 北京 `leshine.cloud / 154.8.205.162` 已运行原 OpenClaw 2026.6.6、钉钉监听、客户/库存 MCP、物流 MCP、社媒 MCP、中继、OKKI 同步/出库轮询，以及从源 crontab 精确搬迁的 10 项 OKKI/Shopify 任务。飞书通道 running；钉钉 service active 且持有已建立的 Stream TCP 连接，无新启动错误，未发送测试群消息。
+- 原 Node 22.22.1、Chrome 146 和全部配置、会话、游标、SQLite、MCP OAuth 状态已迁移。最终镜像在源调度停用、9 个 Node cron 任务空闲并冻结、所有服务 PID 归零后执行；三个 OpenClaw SQLite 与 relay SQLite quick_check 均为 ok。旧 gateway 30 秒停止超时产生 SIGKILL，确认 PID=0 后清除 failed 状态并完成两端数据检查，未把超时当正常停止。
+- 北京 `/inventory-mcp/sse`、`/shipment-mcp/sse`、`/mcp/social-customer/`、`/relay/ws` 已经 HTTPS 生效。库存/物流完整握手与实际只读调用成功；社媒五项真实只读查询通过，无/无效 token 返回401。中继新域、旧主域和旧 relay 子域均通过带认证 WebSocket 握手，WebSocket query token 路由禁用 access_log。
+- 新加坡旧单元 disable/mask、三项 PM2 注册移除、root Agent cron 为0；只保留旧域名到北京的 TLS 校验转发。北京全部开机启动已 enabled，服务端口仅回环。库存已自动完成两轮同步，出库 oneshot Result=success，Shopify HTTPS 可达（匿名请求401）；未额外触发同步或对外消息。
+- 后续 Agent 部署规则已写入北京 OpenClaw 的 AGENTS.md/TOOLS.md 和本分支 CLAUDE.md、platforms.json。发布器与 DDL writer 改为北京 ubuntu SSH + sudo 控制 root 进程；新版出库 `--prepare-only` 线上通过。旧源 mask 会阻断旧发布器复活任务。
+- 本次交付来自 `codex/agent-cloud-migration`，包含指向北京的部署器与清单，亮哥已授权合并推送；主应用后续发布使用集成后的版本，不能使用仍指向新加坡的旧发布器。操作与回滚见 [部署说明](../deploy/agent-cloud-migration.md)，非敏感执行回执在该 worktree `.deploy_state/agent-cloud-migration/`，源和目标受限恢复资料在 `/var/lib/ark-agent-migration/`。
+- 临时传输公钥授权、源私钥及中断的首次传输目录已清理；保留原始源数据与受限回滚证据。源历史 `okki-sync.service` 也已 mask，防止旧别名复活。
+- 部署回归 413 passed / 11 skipped；排除 `test_bad_public_route_rolls_back` 的2个用例（其中1项既有 mock 耗尽失败，相关文件未改，独立复现）。社媒测试16项通过，约定检查仍有13项既有前端问题。独立审查修复历史 restore_152 拓扑误用，旧日志保持原拓扑校验，实际恢复遇迁移后清单则在触碰服务前拒绝。
+- 北京迁移后磁盘曾剩余约8.54 GiB（95%已用）。9月26日18:16经用户明确授权，核验当前/成功恢复引用、两份保留备份的10个SQLite、R2结构及进程引用，并持有部署锁后，删除41份色卡工作台旧全量备份；保留最近两份（含当前恢复点），释放103.12 GiB，可用约111.67 GiB，使用率降至35%。主站及工作台公网健康均200、数据库connected，相关服务active。未删除运行数据、候选代码、迁移中转资料、前端历史版本；当次手工清理未修改自动策略，后续策略已上线（见本页上节）。逐目录删除回执在北京 `/var/lib/ark-storage-cleanup/20260926T181626/receipt.json`。
+
 按日期核对各条状态；历史交接另有[2026-09-17 快照](archive/handoff-2026-09-17.md)，本文件保留后续追加在旧条目末尾的记录，避免遗漏未完成事项。
 
 ## 2026-09-25 main 合并与全平台纳管目标发布

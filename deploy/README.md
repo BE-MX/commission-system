@@ -1,5 +1,7 @@
 # 统一部署入口
 
+OpenClaw、MCP、中继及配套同步已于 2026-09-26 统一到北京 `leshine.cloud`；后续新增 Agent 服务同样部署北京。部署归属、迁移入口、回滚和验证见 [Agent 服务部署](agent-cloud-migration.md)。出库发布与 DDL writer 必须使用本次主机调整后的部署器，旧新加坡 unit 已 mask。
+
 `deploy.bat` 默认在办公室已安装 NSSM 服务的仓库运行。先在候选 worktree 准备源码、依赖、主站和 PM 制品，再切换办公室服务、北京后端和已登记的云静态站。完整目标清单见 `platforms.json`；未纳管服务和未开通域名会明确列出，不计作已更新。
 
 ```powershell
@@ -10,6 +12,14 @@ deploy\deploy.bat --cloud-only --no-pull --prepare-only # 准备并校验，暂�
 deploy\deploy.bat --revision <full-commit-sha> --migration-credentials <protected-file> --prepare-only
 ```
 
+## 色卡工作台备份保留策略
+
+`deploy\deploy.bat --colorwork-backup-policy --prepare-only` 在北京只读核验候选策略与保留备份；去掉 `--prepare-only` 安装独立的 `ark-colorwork-backup-retention.timer` 并核验首次执行。该专项不发布业务代码、不重启应用，也不修改服务器受 Git 管理的文件。不得与普通发布参数混用。
+
+发布前 D1/R2 完整备份保持原流程。定时任务每小时检查一次（最多5分钟随机延迟，错过的执行会在开机后补跑），保留最近两份及当前成功恢复引用；因此受保护恢复点较老时可能保留超过两份。任务取得既有 `backend.lock`，仅在 `current.json`、`success.json` 都成功且一致、服务健康时清理。发布中跳过，失败或恢复异常时保留全部。保留备份必须通过 SQLite quick_check、R2对象/分片文件存在及大小检查；不把这些检查等同于完整恢复演练。
+
+仅能写 `.deploy_state/colorwork/backups`、`maintenance` 和部署锁文件；不清理运行 `data`、候选代码、迁移资料或前端版本。脚本固定在 `/usr/local/lib/ark-colorwork-backup-retention.py`，不随候选代码切换消失。安装有独立锁，先停timer并确认旧oneshot无在途进程，再更新；失败恢复原策略文件和timer基线。运行回执为 `maintenance/retention-outcome.json`（绑定唯一安装批次、实际脚本SHA和systemd InvocationID），排序/删除审计为 `maintenance/retention-last.json`；跳过执行不会冒用旧删除结果。完成的首次oneshot可能被systemd回收，安装不依赖其仍保留InvocationID属性，日志可按worker回执中的InvocationID查询。暂停与排障见 [运维手册](../docs/runbook.md)。
+
 ## COS 公网文件路由
 
 `deploy.bat --storage-routing-only <probes.json> --prepare-only` 仅准备五个入口的Nginx候选（两主域、北京平板IP、hair、video）并验证语法，不改变线上流量。去掉prepare-only前必须完成应用、schema、历史引用和域配置切换；探针JSON为各公开命名空间的真实已迁移文件URL相对路径列表，空列表仅允许准备。切换失败按站回滚，跨站已完成记录保留在`.deploy_state/storage-routing.json`。该入口只调整公开文件和封闭色块机器网关，办公室业务API、LAN上传归属与Scheduler保持原配置。
@@ -18,13 +28,13 @@ deploy\deploy.bat --revision <full-commit-sha> --migration-credentials <protecte
 
 ## OKKI 出库轮询器专项
 
-普通完整发布和 `--cloud-only` 现在都包含新加坡出库轮询器。脚本及 systemd 配置从本次候选源码取件，与应用绑定同一 revision；不再依赖另跑专项命令。发布成功回执包含出库制品摘要，缺少部署登记、准备失败、更新失败或版本核验不一致均阻断整体成功。
+普通完整发布和 `--cloud-only` 现在都包含北京出库轮询器。脚本及 systemd 配置从本次候选源码取件，与应用绑定同一 revision；不再依赖另跑专项命令。发布成功回执包含出库制品摘要，缺少部署登记、准备失败、更新失败或版本核验不一致均阻断整体成功。
 
 顺序为：准备所有制品 → 保存出库 timer 原始启用/运行状态并暂停、排空在途任务 → 迁移与应用/静态站切换 → 替换出库脚本并校验所需数据库字段 → 恢复 timer 原状态 → 核验线上摘要与调度状态 → 写整体成功标记。普通发布不会把原本停用或暂停的 timer 启用；未变化文件不替换。`--prepare-only` 不暂停服务、不切换代码；有待执行迁移时，新增字段检查延迟至激活阶段，激活前必须通过。
 
 独立维修仍可用 `deploy\deploy.bat --okki-outbound-only --prepare-only` 预检，去掉 `--prepare-only` 仅更新并启用该服务，不做应用发布或迁移。此专项入口显式启用调度，与普通发布保留原状态不同；存在未完成的协调发布时拒绝穿越其暂停边界。
 
-普通发布中途失败，出库可能保持暂停。先检查本机 `.deploy_state/publish-current.json` 的 `outbound` 阶段及新加坡 `.deploy-state/ark-outbound/release-current.json`，核实应用/schema状态后从同一本地发布目录、同一完整 revision 和发布范围重试；本地持久 `release_id` 与原调度基线会被保留。不同机器、发布范围、revision 或专项发布不能覆盖未完成的恢复记录，即使脚本摘要相同也不能接管；不要删除日志或直接启动旧脚本来绕过恢复。迁移自身失败仍遵循下方数据库恢复规则。
+普通发布中途失败，出库可能保持暂停。先检查本机 `.deploy_state/publish-current.json` 的 `outbound` 阶段及北京 `.deploy-state/ark-outbound/release-current.json`，核实应用/schema状态后从同一本地发布目录、同一完整 revision 和发布范围重试；本地持久 `release_id` 与原调度基线会被保留。不同机器、发布范围、revision 或专项发布不能覆盖未完成的恢复记录，即使脚本摘要相同也不能接管；不要删除日志或直接启动旧脚本来绕过恢复。迁移自身失败仍遵循下方数据库恢复规则。
 
 首次启用这个机制时，应从包含本修复的受管候选 `deploy.bat --live-root ... --revision ...` 启动：正在运行的旧部署器不会因为候选里有新代码而自动更换自身。其他不属于本仓库的独立服务仍逐项列为 `unmanaged_services / not_deployed`，不计入本次已更新范围。运行配置与单据防重规则见 [轮询器说明](okki_outbound_poller.md)。
 

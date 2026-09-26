@@ -4,16 +4,16 @@
 
 | 项目 | 值 |
 |---|---|
-| MCP Endpoint | `https://leshine.work/mcp/social-customer/` |
+| MCP Endpoint | `https://leshine.cloud/mcp/social-customer/` |
 | Transport | Streamable HTTP，stateless JSON |
 | MCP server name | `social_customer_mcp` |
 | 鉴权 | 每个 MCP transport 请求必须携带 `Authorization: Bearer <token>`；`/health` 例外 |
 | 工具 | `social_customer_search` |
-| 云服务器 | `119.28.107.92` |
-| 云端进程 | systemd `social-customer-mcp.service` |
+| 云服务器 | 北京 `154.8.205.162`，SSH `ubuntu` + `sudo` |
+| 北京云端进程 | systemd `social-customer-mcp.service` |
 | 本机监听 | `127.0.0.1:8100`，不开放公网端口 |
 | 安装目录 | `/opt/social-customer-mcp` |
-| Nginx 配置 | `/etc/nginx/conf.d/leshine.conf` |
+| Nginx 配置 | `/etc/nginx/sites-available/ark-cloud.conf` |
 | 日志 | `journalctl -u social-customer-mcp` |
 
 服务直接运行在腾讯云服务器，通过只读数据库账号连接 RDS `lsordertest`，不经过 Windows Server 和 frp。公网只允许 HTTPS Nginx 入口访问。
@@ -31,7 +31,7 @@
   "mcpServers": {
     "leshine-social-customer": {
       "type": "streamable-http",
-      "url": "https://leshine.work/mcp/social-customer/",
+      "url": "https://leshine.cloud/mcp/social-customer/",
       "headers": {
         "Authorization": "Bearer <TOKEN>"
       }
@@ -141,7 +141,7 @@ async def main():
     headers = {"Authorization": f"Bearer {os.environ['SOCIAL_CUSTOMER_MCP_TOKEN']}"}
     async with httpx.AsyncClient(headers=headers, timeout=30) as client:
         async with streamable_http_client(
-            "https://leshine.work/mcp/social-customer/",
+            "https://leshine.cloud/mcp/social-customer/",
             http_client=client,
         ) as (read_stream, write_stream, _):
             async with ClientSession(read_stream, write_stream) as session:
@@ -207,10 +207,7 @@ ALTER TABLE lsordertest.customer_contact_socials
 
 ### 3. 上传代码
 
-```bash
-install -d -o root -g root -m 0750 /opt/social-customer-mcp
-scp -r services/social-customer-mcp/* root@119.28.107.92:/opt/social-customer-mcp/
-```
+本次迁移从 `deploy/deploy.bat --agent-cloud-migration` 进入，见 [迁移说明](../deploy/agent-cloud-migration.md)。下面是独立服务的手动安装说明，不表示普通主应用发布会更新本服务。初次安装时，由管理员把不含 `.env`、`.venv` 和凭据的代码包上传到 `ubuntu` 可写的临时目录，再通过 `sudo` 安装到 `/opt/social-customer-mcp`；不要直接以 `ubuntu` 向该 root 管理目录执行 scp。下面的服务器安装命令均在 `sudo -i` 会话中执行。
 
 ### 4. 创建 root-only 环境文件
 
@@ -219,9 +216,11 @@ scp -r services/social-customer-mcp/* root@119.28.107.92:/opt/social-customer-mc
 ```dotenv
 SOCIAL_CUSTOMER_MCP_DB_URL=mysql+pymysql://social_customer_mcp:<URL_ENCODED_PASSWORD>@<RDS_HOST>:3306/lsordertest?charset=utf8mb4
 SOCIAL_CUSTOMER_MCP_TOKEN=<openssl-rand-generated-token>
-SOCIAL_CUSTOMER_MCP_ALLOWED_HOSTS=leshine.work,www.leshine.work,127.0.0.1:8100,localhost:8100
-SOCIAL_CUSTOMER_MCP_ALLOWED_ORIGINS=https://leshine.work,https://www.leshine.work
+SOCIAL_CUSTOMER_MCP_ALLOWED_HOSTS=leshine.cloud,www.leshine.cloud,127.0.0.1:8100,localhost:8100
+SOCIAL_CUSTOMER_MCP_ALLOWED_ORIGINS=https://leshine.cloud,https://www.leshine.cloud
 ```
+
+旧 `leshine.work` 入口仍转发期间，生产 `ALLOWED_ORIGINS` 另外保留 `https://leshine.work,https://www.leshine.work`，避免已有调用方的 Origin 被拒绝；新调用方统一使用 cloud 入口。
 
 ```bash
 chown root:root /opt/social-customer-mcp/.env
@@ -244,7 +243,7 @@ chmod 0750 /opt/social-customer-mcp/deploy/install.sh
 仓库提供两个按 Nginx 上下文拆分、可直接 include 的配置片段：
 
 - `deploy/nginx-http.conf` 放在 Nginx `http {}` 级别，只定义限速 zone
-- `deploy/nginx-server.conf` include 到 `leshine.work` 的 HTTPS `server {}` 中
+- `deploy/nginx-server.conf` include 到 `leshine.cloud` 的 HTTPS `server {}` 中
 - `proxy_pass` 指向 `http://127.0.0.1:8100/`
 - 必须转发 `Authorization`、`Host` 和 `Origin`
 
@@ -266,7 +265,7 @@ curl -fsS http://127.0.0.1:8100/health
 
 ```bash
 curl -o /dev/null -sS -w '%{http_code}\n' \
-  -X POST https://leshine.work/mcp/social-customer/
+  -X POST https://leshine.cloud/mcp/social-customer/
 ```
 
 然后用第四节官方 MCP 客户端完成 `initialize → tools/list → tools/call`。只验证 curl 200 不算 MCP 链路验证完成。

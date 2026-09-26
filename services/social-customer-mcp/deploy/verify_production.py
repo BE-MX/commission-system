@@ -130,7 +130,7 @@ async def main():
     settings = get_settings()
     endpoint = os.getenv(
         "SOCIAL_CUSTOMER_MCP_ENDPOINT",
-        "https://leshine.work/mcp/social-customer/",
+        "https://leshine.cloud/mcp/social-customer/",
     )
     headers = {"Authorization": f"Bearer {settings.token.get_secret_value()}"}
     samples = _sample_lookups()

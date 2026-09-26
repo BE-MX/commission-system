@@ -1,5 +1,7 @@
 # 莱莎方舟平台 文档导航
 
+- [Agent 服务统一部署到 leshine.cloud](../deploy/agent-cloud-migration.md)：OpenClaw、MCP、中继与配套同步的当前归属、迁移和恢复规则。
+
 > **目标读者**：接入方舟的开发者、运维人员、项目交接人员
 
 ## 快速开始

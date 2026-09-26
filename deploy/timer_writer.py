@@ -1,16 +1,42 @@
 """Pause a registered timer and drain its oneshot without killing financial work."""
+import json
+from pathlib import Path
+import re
 import time
 
 from publish import run
 from static_sync import SSH_OPTIONS
 
-WRITER = {"kind": "systemd_timer", "host": "root@119.28.107.92",
-          "service": "ark-okki-outbound-poller", "timer": "ark-okki-outbound-poller.timer"}
 DRAIN_SECONDS = 120
 
 
+def registered_writer(service, root=None):
+    """Read the candidate's exact Agent writer, never a launcher-host default."""
+    root = Path(root) if root is not None else Path(__file__).resolve().parent
+    inventory = json.loads((root / "platforms.json").read_text(encoding="utf-8"))
+    matches = [writer for writer in inventory.get("migration_writers", [])
+               if writer.get("service") == service]
+    if len(matches) != 1:
+        raise ValueError("Agent writer registration is missing or ambiguous")
+    writer = matches[0]
+    if writer.get("host") != "ubuntu@154.8.205.162":
+        raise ValueError("Agent writer must run on the leshine.cloud host")
+    if service == "ark-okki-outbound-poller":
+        if writer != {"kind": "systemd_timer", "host": writer["host"], "service": service,
+                      "timer": "ark-okki-outbound-poller.timer"}:
+            raise ValueError("Invalid outbound timer registration")
+    elif service == "shipment-tracking-mcp":
+        if (set(writer) != {"kind", "host", "service", "executable"}
+                or writer.get("kind") != "pm2"
+                or not re.fullmatch(r"/root/\.nvm/versions/node/v[0-9.]+/bin/pm2", writer.get("executable", ""))):
+            raise ValueError("Invalid root PM2 writer registration")
+    else:
+        raise ValueError("Unknown Agent database writer")
+    return writer
+
+
 def validate(writer):
-    if writer != WRITER:
+    if writer != registered_writer("ark-okki-outbound-poller"):
         raise ValueError("Unregistered timer writer")
 
 
@@ -47,14 +73,14 @@ def control(writer, operation):
     was_running = timer["ActiveState"] == "active"
     if operation == "start":
         if not was_running:
-            run(["ssh", *SSH_OPTIONS, writer["host"], "systemctl start " + writer["timer"]])
+            run(["ssh", *SSH_OPTIONS, writer["host"], "sudo -n systemctl start " + writer["timer"]])
         if writer_state(writer) != "running":
             raise RuntimeError("Timer did not restart")
         return not was_running
     if operation != "stop":
         raise ValueError("Unsupported timer operation")
     if was_running:
-        run(["ssh", *SSH_OPTIONS, writer["host"], "systemctl stop " + writer["timer"]])
+        run(["ssh", *SSH_OPTIONS, writer["host"], "sudo -n systemctl stop " + writer["timer"]])
     deadline = time.monotonic() + DRAIN_SECONDS
     while True:
         timer, service = state(writer)

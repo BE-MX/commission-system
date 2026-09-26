@@ -146,4 +146,18 @@ def test_wrong_remote_receipt_rejected(monkeypatch):
     monkeypatch.setattr(release, 'remote_python', Mock(return_value=SimpleNamespace(
         returncode=0, stdout='{"status":"enabled","digest":"wrong"}', stderr='')))
     with pytest.raises(RuntimeError, match='does not match'):
-        release.invoke(Path('.'), 'activate', {})
+        release.invoke(Path(__file__).resolve().parents[1], 'activate', {})
+
+
+def test_outbound_uses_candidate_host_and_root_privileges(tmp_path, monkeypatch):
+    writer = {'kind': 'systemd_timer', 'host': 'ubuntu@154.8.205.162',
+              'service': 'ark-okki-outbound-poller', 'timer': 'ark-okki-outbound-poller.timer'}
+    (tmp_path / 'platforms.json').write_text(json.dumps({'migration_writers': [writer]}))
+    digest = hashlib.sha256(b'{}').hexdigest()
+    remote_call = Mock(return_value=SimpleNamespace(returncode=0, stderr='',
+                       stdout=json.dumps({'status': 'prepared', 'digest': digest})))
+    monkeypatch.setattr(release, 'remote_python', remote_call)
+    release.invoke(tmp_path, 'prepare', {})
+    assert remote_call.call_args.args[0] == 'ubuntu@154.8.205.162'
+    assert remote_call.call_args.args[1] == tmp_path / 'okki_outbound_remote.py'
+    assert remote_call.call_args.kwargs == {'sudo': True}

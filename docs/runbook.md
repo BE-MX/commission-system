@@ -1,5 +1,13 @@
 # 莱莎方舟平台 运维手册
 
+## 色卡工作台备份容量控制
+
+北京 `ark-colorwork-backup-retention.timer` 每小时保留最近两份备份及当前成功恢复点。发布锁忙时跳过；发布失败、服务异常或保留备份验证失败时不删除，查看 `journalctl -u ark-colorwork-backup-retention.service`。脚本仅管理 `/home/ubuntu/commission-system/.deploy_state/colorwork/backups`，运行数据 `colorwork/data` 不在删除范围。安装/更新从 `deploy.bat --colorwork-backup-policy` 进入，详见 [部署说明](../deploy/README.md)。
+
+开始手工恢复前，管理员执行 `sudo systemctl disable --now ark-colorwork-backup-retention.timer`，然后确认对应 `.service` 为 inactive/failed 且 MainPID=0，再保留恢复资料并按恢复流程操作；停timer不会终止已经开始的清理任务。恢复结束且成功记录与实际运行版本一致后，用 `sudo systemctl enable --now ark-colorwork-backup-retention.timer` 恢复策略。不要绕过部署锁或伪造成功记录来强制清理。
+
+最新执行与逐项删除回执分别为 `colorwork/maintenance/retention-outcome.json` 和 `retention-last.json`；前者的 InvocationID 可与systemd对应。保护条件不满足时备份数量可能超过两份，应先处理发布/恢复异常。完整备份仍会在发布时短暂增加约一份数据大小，容量规划需包含这部分余量。
+
 ## COS 切换与恢复约束（待部署）
 
 三入口逐模块验收见[附件切换清单](requirements/2026-09-19-attachment-cutover-audit.md)。新增域 `insight`（backend/uploads/insight）和 `tag_images`（uploads/tag_images）必须清点所有写实例并加入对应开关；洞见截图不开放公共静态目录。上传网关按业务端点设置大小，默认5MiB不能代表所有附件的上限；候选Nginx语法通过后仍须实际验证上传与下载。临时素材上传及字节上传也计入共享缓存预算，繁忙时拒绝并重试，不驱逐正在读取的文件。

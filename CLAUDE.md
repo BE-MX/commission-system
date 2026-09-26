@@ -10,6 +10,7 @@
 - 前端：Vue 3 + Element Plus + Vite 5；微信小程序（生产报工）
 - 数据库：腾讯云 RDS MySQL 双库——`commission_db`（读写）+ `lsordertest`（业务镜像默认只读跨查；唯一写例外是管理员回款日期修复对 `okki_receipts.collection_date` 的受审计单列 UPDATE）。**生产迁移由部署入口统一检查并只执行一次，禁止开发机自行升级共享生产库**（2026-09-05 部署调整）。数据库未知 revision、领先于发布代码或多 head 必须阻断；不能 stamp/downgrade 掩盖差异。涉及破坏性 schema 的迁移必须先冻结全部相关写实例；普通发布不复制或覆盖数据库。开发验证使用隔离库，现存开发配置尚未隔离前不得执行迁移或写入型测试。
 - 部署：统一使用 `deploy/deploy.bat` 候选发布入口；目标、增量传输、迁移和恢复规则见 `deploy/README.md`，已验证拓扑见 `docs/architecture.md`。Scheduler 保持单活，不把历史 `git push cloud` 流程作为发布入口。
+- Agent 服务部署归属：OpenClaw 及后续新增 Agent、MCP、Agent 中继统一部署在北京 `leshine.cloud`（`154.8.205.162`）；在 `deploy/platforms.json` 登记服务管理器、健康入口和数据库 writer，按 `deploy/agent-cloud-migration.md` 的单活与回滚规则切换，不能重新在新加坡启用已迁服务。
 - 环境变量：`backend/.env`（不进 git）；配置一律走 `app/core/config.py` 的 Settings，**禁止直读 os.environ**
 
 ## 命令与端口

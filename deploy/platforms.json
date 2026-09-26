@@ -48,54 +48,72 @@
   ],
   "external_services": [
     {
-      "host": "singapore",
+      "host": "beijing",
+      "name": "ark-colorwork-backup-retention",
+      "manager": "systemd",
+      "timer": "ark-colorwork-backup-retention.timer",
+      "source": "deploy/colorwork_backup_retention.py",
+      "retention": "two recent backups plus successful recovery reference",
+      "schedule": "hourly"
+    },
+    {
+      "host": "beijing",
       "name": "ark-okki-outbound-poller",
       "manager": "systemd",
       "timer": "ark-okki-outbound-poller.timer",
       "source": "deploy/okki_outbound_poller.js",
-      "database_writer": "commission_db.ark_okki_outbound_tasks"
+      "database_writer": "commission_db.ark_okki_outbound_tasks",
+      "migration_status": "verified-2026-09-26"
     },
     {
-      "host": "singapore",
+      "host": "beijing",
       "name": "deputy-relay",
       "manager": "systemd",
-      "source": "/opt/deputy-relay"
+      "source": "/opt/deputy-relay",
+      "migration_status": "verified-2026-09-26"
     },
     {
-      "host": "singapore",
+      "host": "beijing",
       "name": "dingtalk-monitor",
-      "manager": "systemd"
+      "manager": "systemd",
+      "migration_status": "verified-2026-09-26"
     },
     {
       "host": "singapore",
       "name": "okki-sync",
-      "manager": "systemd"
+      "manager": "systemd",
+      "state": "masked legacy unit; runtime moved as okki-index"
     },
     {
-      "host": "singapore",
+      "host": "beijing",
       "name": "social-customer-mcp",
       "manager": "systemd",
-      "source": "services/social-customer-mcp"
+      "source": "services/social-customer-mcp",
+      "migration_status": "verified-2026-09-26"
     },
     {
-      "host": "singapore",
+      "host": "beijing",
       "name": "leshine-customer-mcp",
-      "manager": "pm2"
+      "manager": "pm2",
+      "migration_status": "verified-2026-09-26"
     },
     {
-      "host": "singapore",
+      "host": "beijing",
       "name": "okki-index",
-      "manager": "pm2"
+      "manager": "pm2",
+      "migration_status": "verified-2026-09-26"
     },
     {
       "host": "singapore",
       "name": "okki-inventory",
-      "manager": "pm2"
+      "manager": "pm2",
+      "state": "not present in inspected PM2; not enabled by migration"
     },
     {
-      "host": "singapore",
+      "host": "beijing",
       "name": "shipment-tracking-mcp",
-      "manager": "pm2"
+      "manager": "pm2",
+      "migration_status": "verified-2026-09-26"
     },
     {
       "host": "singapore",
@@ -103,9 +121,12 @@
       "manager": "systemd"
     },
     {
-      "host": "singapore",
+      "host": "beijing",
       "name": "openclaw",
-      "manager": "unconfirmed"
+      "manager": "systemd-user",
+      "migration_status": "verified-2026-09-26",
+      "unit": "openclaw-gateway.service",
+      "user": "root"
     },
     {
       "host": "office",
@@ -116,6 +137,14 @@
       "host": "beijing",
       "name": "wlai-tunnel",
       "manager": "systemd"
+    },
+    {
+      "host": "beijing",
+      "name": "okki-shopify-cron",
+      "manager": "cron",
+      "source": "/etc/cron.d/ark-agent-sync",
+      "jobs": 10,
+      "migration_status": "verified-2026-09-26"
     }
   ],
   "terminals": [
@@ -125,13 +154,35 @@
   ],
   "migration_writers_verified": true,
   "migration_writers": [
-    {"kind": "nssm", "host": "office", "service": "CommissionSystem"},
-    {"kind": "nssm", "host": "office", "service": "WhatsAppConnector"},
-    {"kind": "systemd", "host": "ubuntu@154.8.205.162", "service": "ark-backend"},
-    {"kind": "pm2", "host": "root@119.28.107.92", "service": "shipment-tracking-mcp", "executable": "/root/.nvm/versions/node/v22.22.1/bin/pm2"},
-    {"kind": "systemd_timer", "host": "root@119.28.107.92", "service": "ark-okki-outbound-poller", "timer": "ark-okki-outbound-poller.timer"}
+    {
+      "kind": "nssm",
+      "host": "office",
+      "service": "CommissionSystem"
+    },
+    {
+      "kind": "nssm",
+      "host": "office",
+      "service": "WhatsAppConnector"
+    },
+    {
+      "kind": "systemd",
+      "host": "ubuntu@154.8.205.162",
+      "service": "ark-backend"
+    },
+    {
+      "kind": "pm2",
+      "host": "ubuntu@154.8.205.162",
+      "service": "shipment-tracking-mcp",
+      "executable": "/root/.nvm/versions/node/v22.22.1/bin/pm2"
+    },
+    {
+      "kind": "systemd_timer",
+      "host": "ubuntu@154.8.205.162",
+      "service": "ark-okki-outbound-poller",
+      "timer": "ark-okki-outbound-poller.timer"
+    }
   ],
-  "migration_note": "2026-09-17 SSH recheck: office CommissionSystem/WhatsAppConnector running, Beijing ark-backend active, Singapore shipment-tracking-mcp has a live PID; outbound timer active and oneshot inactive/MainPID=0. Timer control now pauses scheduling, waits at most 120 seconds for inactive/MainPID=0 without killing the service, and restores only the original active schedule. Every migration still rechecks all writer states and independent DBA access; any failure blocks DDL. Reverify after adding or moving writers.",
+  "migration_note": "2026-09-26 live cutover verified: Beijing root PM2 shipment-tracking-mcp online, outbound timer active and last oneshot success. Both writers are controlled over ubuntu SSH with sudo. Singapore units masked, three migrated PM2 registrations removed, Agent root cron entries removed. Existing office and ark-backend writers unchanged. Every later migration must recheck all writer states and independent DBA access.",
   "cos_file_migration": "deferred by owner",
   "internal_modules": [
     {
@@ -144,5 +195,11 @@
       "owner": "beijing",
       "deploy": "remote_backend -> colorwork_release (deploy.bat)"
     }
-  ]
+  ],
+  "agent_deployment_policy": {
+    "host": "ubuntu@154.8.205.162",
+    "domain": "leshine.cloud",
+    "new_agent_services": "Deploy on Beijing; register manager, health endpoint, state and any database writer before activation.",
+    "existing_openclaw_user": "root"
+  }
 }

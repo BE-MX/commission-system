@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 from static_sync import remote_python
+from timer_writer import registered_writer
 
 
 def artifact(root):
@@ -18,9 +19,10 @@ def artifact(root):
 
 
 def invoke(root, action, files, *, coordinated=False, allow_pending=False, revision=None, release_id=None):
-    result = remote_python('root@119.28.107.92', Path(root) / 'okki_outbound_remote.py',
+    writer = registered_writer('ark-okki-outbound-poller', root)
+    result = remote_python(writer['host'], Path(root) / 'okki_outbound_remote.py',
                            {'action': action, 'files': files, 'coordinated': coordinated,
-                            'allow_pending': allow_pending, 'revision': revision, 'release_id': release_id})
+                            'allow_pending': allow_pending, 'revision': revision, 'release_id': release_id}, sudo=True)
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or 'Outbound remote deployment failed')
     summary = json.loads(result.stdout)

@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import schema_release
 
 
-WRITER = {"kind": "pm2", "host": "root@119.28.107.92", "service": "shipment-tracking-mcp",
+WRITER = {"kind": "pm2", "host": "ubuntu@154.8.205.162", "service": "shipment-tracking-mcp",
           "executable": "/root/.nvm/versions/node/v22.22.1/bin/pm2"}
 
 
@@ -37,7 +37,8 @@ def test_stops_only_registered_process(monkeypatch):
     assert schema_release.control(WRITER, "stop", "unused") is True
     command = run.call_args_list[1].args[0][-1]
     assert command.endswith("/bin/pm2 stop shipment-tracking-mcp")
-    assert command.startswith("PATH=/root/.nvm/versions/node/v22.22.1/bin:$PATH ")
+    assert command.startswith("sudo -n -H -u root env HOME=/root PM2_HOME=/root/.pm2 PATH=/root/.nvm/versions/node/v22.22.1/bin:")
+    assert all(call.args[0][-2] == "ubuntu@154.8.205.162" for call in run.call_args_list)
 
 
 def test_already_stopped_does_not_mutate_pm2(monkeypatch):
@@ -69,3 +70,14 @@ def test_start_must_be_verified_before_reporting_success(monkeypatch):
     monkeypatch.setattr(schema_release, "run", Mock(side_effect=[stopped, "", stopped]))
     with pytest.raises(RuntimeError, match="did not reach running"):
         schema_release.control(WRITER, "start", "unused")
+
+
+@pytest.mark.parametrize("change", [{"host": "root@119.28.107.92"},
+                                   {"executable": "/home/ubuntu/.nvm/versions/node/v22.22.1/bin/pm2"}])
+def test_wrong_host_or_pm2_owner_rejected(change):
+    inventory = json.loads((Path(__file__).resolve().parents[1] / "platforms.json").read_text())
+    inventory["migration_writers_verified"] = True
+    inventory["migration_writers"] = [{**writer, **change} if writer["kind"] == "pm2" else writer
+                                      for writer in inventory["migration_writers"]]
+    with pytest.raises(ValueError, match="Unregistered PM2"):
+        schema_release.validate(inventory, ["139_expo_prompt_versions"])
