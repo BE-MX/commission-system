@@ -81,6 +81,14 @@ def check_outbounds(db, invoice, evidence):
 
 
 def build_quote(db, invoice, body, evidence):
+    remote_line_ids = set()
+    for item in invoice.items:
+        if not item.product_id or not item.sku_id or not item.xiaoman_unique_id:
+            raise ValueError("预售分批出库暂不支持未映射到独立 OKKI 产品行的明细")
+        identity = str(item.xiaoman_unique_id)
+        if identity in remote_line_ids:
+            raise ValueError("预售分批出库暂不支持共享 OKKI 明细的通用产品合并行")
+        remote_line_ids.add(identity)
     active = db.query(ShipmentSettlement.id).filter(ShipmentSettlement.invoice_id == invoice.id,
         ShipmentSettlement.state.notin_(["shipped", "cancelled"])).first()
     if active:

@@ -2,6 +2,11 @@
 
 按日期核对各条状态；历史交接另有[2026-09-17 快照](archive/handoff-2026-09-17.md)，本文件保留后续追加在旧条目末尾的记录，避免遗漏未完成事项。
 
+## 2026-09-26 预售本地契约模拟与截图入口隐藏（未上线）
+
+- 分支 `codex/invoice-presale-button`：订单发票页隐藏 AI 识别 OKKI 截图入口；预售按钮不可用的原因是默认关闭的发布开关，后端也会拦截建单。页面现在明确提示预售建单暂未开放。
+- 分批出库与独立运费目标已增加不发送的载荷构建器，并用两批次与异常身份/金额 fixture 模拟；没有隔离 OKKI 租户和隔离 MySQL，未进行真实联调，预售开关保持关闭。后续验证与发送器门槛见[本地适配报告](reports/2026-09-26-presale-local-adapter.md)。
+
 ## 2026-09-25 main 合并与全平台纳管目标发布
 
 - 已将 `codex/invoice-schema-repair`、`codex/shipping-media-owner`、`codex/project-knowledge-tidy` 合入 main 并推送；统一部署固定提交 `ce465a7241f76b14f0687dcd5155f6d5977a9c78`，发布回执 `release_id=d9d11923d9574fa7a6948458bcd6a838`、`status=succeeded`。办公室与北京后端、两站主前端已更新；PM 和客户素材静态站无文件变化；新加坡出库轮询器制品核验并恢复原启用状态。共享数据库从 168 升至 `169_pcw_customer_workbench`，`schema-writers=completed`；两站 `/health` 返回 `ok/connected`，首页 HTTP 200。
