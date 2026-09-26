@@ -7,6 +7,13 @@
 - 分支 `codex/invoice-presale-button`：订单发票页隐藏 AI 识别 OKKI 截图入口；预售按钮不可用的原因是默认关闭的发布开关，后端也会拦截建单。页面现在明确提示预售建单暂未开放。
 - 分批出库与独立运费目标已增加不发送的载荷构建器，并用两批次与异常身份/金额 fixture 模拟；没有隔离 OKKI 租户和隔离 MySQL，未进行真实联调，预售开关保持关闭。后续验证与发送器门槛见[本地适配报告](reports/2026-09-26-presale-local-adapter.md)。
 
+## 2026-09-26 结汇助手手机应用（代码交付，未部署）
+
+- 分支 `codex/forex-mobile`，新增 `/fx-settlement` 全屏入口与桌面安装配置；手机采用行情/测算/方案底部导航、触屏表单及方案卡片。桌面原入口保持双栏；复用现有资金计算和权限，无迁移。说明见 [结汇助手](requirements/2026-09-24-fx-settlement-advisor.md)。
+- 手机登录及会话过期回跳已补齐，不再误入素材 `/m/`；安装元数据与发货质检统一管理，已回归两个应用之间切换及普通页面恢复。
+- 构建、41 项 Node 回归、Chrome 320/390/430/768px 与 1440px 模拟接口流程通过。独立审查发现的折叠无效字段定位问题已修复并通过浏览器回归。截图和构建证据保留于主工作树 `tmp/fx-mobile-integration/`。
+- 完整约定检查被 13 项既有未改动页面的 UI 基线问题阻挡；增量规则单独核验。Git 巡检已运行 `--no-fetch`，仅本地快照。本轮按用户授权合并推送至 main；未部署，目标环境发布与真实手机安装验收仍待进行。
+
 ## 2026-09-25 main 合并与全平台纳管目标发布
 
 - 已将 `codex/invoice-schema-repair`、`codex/shipping-media-owner`、`codex/project-knowledge-tidy` 合入 main 并推送；统一部署固定提交 `ce465a7241f76b14f0687dcd5155f6d5977a9c78`，发布回执 `release_id=d9d11923d9574fa7a6948458bcd6a838`、`status=succeeded`。办公室与北京后端、两站主前端已更新；PM 和客户素材静态站无文件变化；新加坡出库轮询器制品核验并恢复原启用状态。共享数据库从 168 升至 `169_pcw_customer_workbench`，`schema-writers=completed`；两站 `/health` 返回 `ok/connected`，首页 HTTP 200。

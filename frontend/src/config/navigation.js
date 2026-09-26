@@ -503,6 +503,14 @@ export const NAV_ENTRIES = [
     permission: 'fx_settlement:read',
     menu: { group: 'invoice', title: '结汇决策助手', icon: TrendCharts, order: 33, permission: 'fx_settlement:read' },
   },
+  {
+    path: '/fx-settlement',
+    name: 'FxSettlementApp',
+    component: () => import('@/views/fx-settlement/FxSettlement.vue'),
+    title: '结汇决策助手',
+    permission: 'fx_settlement:read',
+    fullscreen: true,
+  },
 
   // ── 客户售后管理 ───────────────────────────────────────
   {
