@@ -68,17 +68,17 @@
         <el-table-column label="照片数" min-width="80" align="right">
           <template #default="{ row }">{{ row.record_source === 'ark_task' ? '—' : row.photo_count }}</template>
         </el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="270" fixed="right">
           <template #default="{ row }">
             <GlassButton v-if="row.can_print && !row.recheck_status" variant="link" left-icon="Download"
               :loading="downloadingId === row.outbound_record_id" @click="downloadWord(row)">下载 Word</GlassButton>
+            <GlassButton v-if="row.can_print && !row.recheck_status" variant="link" left-icon="Printer"
+              :loading="printingId === row.outbound_record_id" @click="openPrint(row)">打印出库单</GlassButton>
             <span v-if="!row.can_print || row.recheck_status" class="queue-note">{{ row.recheck_status === 'pending_sync' ? '待同步并重验' : row.recheck_status === 'pending_inspection' ? '待补验' : outboundPendingHint(row.outbound_state) }}</span>
             <el-dropdown v-if="canShowMore(row)" trigger="click" placement="bottom-end">
               <GlassButton variant="link" right-icon="ArrowDown">更多</GlassButton>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item v-if="row.can_print && !row.recheck_status" icon="Printer"
-                    :disabled="printingId === row.outbound_record_id" @click="openPrint(row)">打印出库单</el-dropdown-item>
                   <div v-if="row.record_source === 'okki' && row.outbound_invoice_id" v-permission="'invoice:sync'" role="none">
                     <div v-permission="'shipping_inspection:write'" role="none">
                       <el-dropdown-item icon="Refresh" :disabled="syncingId !== null || deletingId !== null"
@@ -128,7 +128,6 @@ const {
 const { syncingId, syncVisible, syncPreview, syncRow, previewSync, applySync } = useOutboundInvoiceSync(fetchList)
 const auth = useAuthStore()
 function canShowMore(row) {
-  if (row.can_print && !row.recheck_status) return true
   if (row.record_source !== 'okki') return false
   if (auth.hasPermission('shipping_inspection:admin')) return true
   if (!row.outbound_invoice_id) return false
