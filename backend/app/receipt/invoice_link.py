@@ -52,6 +52,15 @@ def preflight(db, invoice, actor):
         return
     if row.currency != invoice.currency or row.customer_id != invoice.customer_id:
         raise ValueError("回款资料与订单客户或币种不一致，请重新核对")
+    missing = []
+    if row.amount is None:
+        missing.append("回款金额")
+    if row.collection_date is None:
+        missing.append("回款日期")
+    if not row.payment_type or not row.payment_type.strip():
+        missing.append("回款方式（付款方式）")
+    if missing:
+        raise ValueError(f"请编辑订单，补填{'、'.join(missing)}，保存后重新同步小满")
     ReceiptFields(amount=row.amount, collection_date=row.collection_date, payment_type=row.payment_type,
                   attachment_ids=row.attachment_ids, remark=row.remark or "")
     if invoice.order_type == "presale":
