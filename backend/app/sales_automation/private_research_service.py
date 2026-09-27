@@ -167,6 +167,7 @@ def create_private_research_tasks(
     run_tag: str,
     operator_id: int | None,
     limit: int | None = None,
+    customer_ids: list[int] | None = None,
     commit: bool = True,
 ) -> dict:
     """为指定业务员的有效主负责客户批量创建 full_research 研究任务。
@@ -204,6 +205,9 @@ def create_private_research_tasks(
         amount = projection.valid_order_amount_usd if projection else None
         return (-(Decimal(amount) if amount is not None else Decimal("0")), pair[0])
 
+    if customer_ids is not None:
+        allowed_ids = {int(customer_id) for customer_id in customer_ids}
+        candidates = [pair for pair in candidates if pair[0] in allowed_ids]
     candidates.sort(key=_sort_key)
     if limit is not None:
         candidates = candidates[: max(0, int(limit))]

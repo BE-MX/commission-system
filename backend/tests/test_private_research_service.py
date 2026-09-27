@@ -129,6 +129,19 @@ def test_create_tasks_only_for_primary_private_customers(db):
         assert task.input_snapshot["owner_user_id"] == 1
 
 
+def test_create_tasks_limits_candidates_to_requested_customers(db):
+    _sales(db, 1, "alice")
+    selected = _account(db, "CUS-SELECTED")
+    excluded = _account(db, "CUS-EXCLUDED")
+    _assign(db, selected.id, 1)
+    _assign(db, excluded.id, 1)
+
+    summary = _create(db, [1], customer_ids=[selected.id])
+
+    assert summary["candidate_count"] == 1
+    assert [task["customer_id"] for task in summary["tasks"]] == [selected.id]
+
+
 def test_commerce_snapshot_freezes_order_and_product_context(db):
     _sales(db, 1, "alice")
     account = _account(db, "CUS-COMMERCE")
