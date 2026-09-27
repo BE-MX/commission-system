@@ -68,26 +68,33 @@
         <el-table-column label="照片数" min-width="80" align="right">
           <template #default="{ row }">{{ row.record_source === 'ark_task' ? '—' : row.photo_count }}</template>
         </el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" min-width="390" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="230" fixed="right">
           <template #default="{ row }">
-            <GlassButton
-              v-if="row.can_print && !row.recheck_status" variant="link" left-icon="Printer"
-              :loading="printingId === row.outbound_record_id"
-              @click="openPrint(row)"
-            >打印出库单</GlassButton>
             <GlassButton v-if="row.can_print && !row.recheck_status" variant="link" left-icon="Download"
               :loading="downloadingId === row.outbound_record_id" @click="downloadWord(row)">下载 Word</GlassButton>
             <span v-if="!row.can_print || row.recheck_status" class="queue-note">{{ row.recheck_status === 'pending_sync' ? '待同步并重验' : row.recheck_status === 'pending_inspection' ? '待补验' : outboundPendingHint(row.outbound_state) }}</span>
-            <span v-if="row.record_source === 'okki' && row.outbound_invoice_id" v-permission="'invoice:sync'">
-              <GlassButton v-permission="'shipping_inspection:write'" variant="link" left-icon="Refresh"
-                :loading="syncingId === row.outbound_record_id" :disabled="syncingId !== null || deletingId !== null"
-                @click="previewSync(row)">同步订单</GlassButton>
-            </span>
-            <GlassButton v-if="row.record_source === 'okki' && row.outbound_invoice_id"
-              v-permission="'shipping_inspection:delete'" variant="link" link-tone="danger" left-icon="Delete"
-              :loading="deletingId === row.outbound_record_id" :disabled="deletingId !== null || syncingId !== null"
-              @click="deleteRecord(row)">删除</GlassButton>
-            <GlassButton v-if="row.record_source === 'okki'" v-permission="'shipping_inspection:admin'" variant="link" :disabled="deletingId !== null" @click="recoverDeletion(row)">恢复删除任务</GlassButton>
+            <el-dropdown v-if="canShowMore(row)" trigger="click" placement="bottom-end">
+              <GlassButton variant="link" right-icon="ArrowDown">更多</GlassButton>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-if="row.can_print && !row.recheck_status" icon="Printer"
+                    :disabled="printingId === row.outbound_record_id" @click="openPrint(row)">打印出库单</el-dropdown-item>
+                  <div v-if="row.record_source === 'okki' && row.outbound_invoice_id" v-permission="'invoice:sync'" role="none">
+                    <div v-permission="'shipping_inspection:write'" role="none">
+                      <el-dropdown-item icon="Refresh" :disabled="syncingId !== null || deletingId !== null"
+                        @click="previewSync(row)">同步订单</el-dropdown-item>
+                    </div>
+                  </div>
+                  <div v-if="row.record_source === 'okki' && row.outbound_invoice_id" v-permission="'shipping_inspection:delete'" role="none">
+                    <el-dropdown-item icon="Delete" :disabled="deletingId !== null || syncingId !== null"
+                      @click="deleteRecord(row)">删除</el-dropdown-item>
+                  </div>
+                  <div v-if="row.record_source === 'okki'" v-permission="'shipping_inspection:admin'" role="none">
+                    <el-dropdown-item :disabled="deletingId !== null" @click="recoverDeletion(row)">恢复删除任务</el-dropdown-item>
+                  </div>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>
@@ -107,6 +114,7 @@
  */
 import { INSPECTION_STATUS_LABELS, INSPECTION_STATUS_TAGS } from '@/api/shipping'
 import GlassButton from '@/components/GlassButton.vue'
+import { useAuthStore } from '@/stores/auth'
 import { useOutboundRecords } from './composables/useOutboundRecords'
 import { useOutboundInvoiceSync } from './composables/useOutboundInvoiceSync'
 import OutboundSyncDialog from './OutboundSyncDialog.vue'
@@ -118,6 +126,15 @@ const {
   printingId, openPrint, downloadingId, downloadWord, deletingId, deleteRecord, recoverDeletion,
 } = useOutboundRecords()
 const { syncingId, syncVisible, syncPreview, syncRow, previewSync, applySync } = useOutboundInvoiceSync(fetchList)
+const auth = useAuthStore()
+function canShowMore(row) {
+  if (row.can_print && !row.recheck_status) return true
+  if (row.record_source !== 'okki') return false
+  if (auth.hasPermission('shipping_inspection:admin')) return true
+  if (!row.outbound_invoice_id) return false
+  return auth.hasPermission('shipping_inspection:delete') ||
+    (auth.hasPermission('invoice:sync') && auth.hasPermission('shipping_inspection:write'))
+}
 </script>
 
 <style scoped>

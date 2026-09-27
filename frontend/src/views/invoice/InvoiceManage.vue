@@ -125,27 +125,13 @@
         <el-table-column label="创建时间" min-width="130" max-width="160" show-overflow-tooltip>
           <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" min-width="356" max-width="390" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="300" max-width="360" fixed="right">
           <template #default="{ row }">
             <div class="table-actions">
               <el-button v-permission="'invoice:write'" link type="primary" :disabled="['cancel_pending','cancelled'].includes(row.status)" @click="openEdit(row.id)">
                 <el-icon><Edit /></el-icon>
                 编辑
               </el-button>
-              <el-dropdown trigger="click" @command="cmd => handleExport(cmd, row)">
-                <el-button link>
-                  <el-icon><Download /></el-icon>
-                  导出
-                  <el-icon><ArrowDown /></el-icon>
-                </el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="excel">Excel</el-dropdown-item>
-                    <el-dropdown-item command="pdf">PDF</el-dropdown-item>
-                    <el-dropdown-item command="print">打印 / 预览</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
               <el-button
                 v-permission="'invoice:sync'"
                 link
@@ -156,10 +142,6 @@
               >
                 <el-icon><Refresh /></el-icon>
                 {{ isInvoiceSyncing(row.id) ? '同步中' : '同步' }}
-              </el-button>
-              <el-button v-permission="'invoice:read'" link @click="openSyncLogs(row)">
-                <el-icon><Document /></el-icon>
-                日志
               </el-button>
               <el-dropdown
                 v-if="row.sync_status === 'sync_uncertain'"
@@ -177,7 +159,22 @@
                 </template>
               </el-dropdown>
               <el-button v-if="row.order_type === 'presale'" v-permission="'shipment:write'" link type="primary" :disabled="!shipmentCapabilities.enabled || row.sync_status !== 'synced' || ['cancel_pending','cancelled'].includes(row.status)" @click="shipmentInvoice = row">生成出库单</el-button>
-              <InvoiceLifecycle :invoice-id="row.id" @changed="loadInvoices" />
+              <el-dropdown trigger="click" placement="bottom-end">
+                <el-button link>更多<el-icon><ArrowDown /></el-icon></el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item :icon="Download" @click="handleExport('excel', row)">导出 Excel</el-dropdown-item>
+                    <el-dropdown-item :icon="Download" @click="handleExport('pdf', row)">导出 PDF</el-dropdown-item>
+                    <el-dropdown-item :icon="Download" @click="handleExport('print', row)">打印 / 预览</el-dropdown-item>
+                    <div v-permission="'invoice:read'" role="none">
+                      <el-dropdown-item :icon="Document" @click="openSyncLogs(row)">日志</el-dropdown-item>
+                    </div>
+                    <div v-permission="'invoice:admin'" role="none">
+                      <el-dropdown-item @click="openLifecycle(row)">取消 / 恢复</el-dropdown-item>
+                    </div>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
               <el-button v-if="!row.xiaoman_order_id && !['cancel_pending','cancelled'].includes(row.status)" v-permission="'invoice:write'" link type="danger" @click="removeInvoice(row)">
                 <el-icon><Delete /></el-icon>
                 删除
@@ -503,6 +500,8 @@
       @open-legacy-paste="pasteImportVisible = true"
     />
 
+    <InvoiceLifecycle v-if="lifecycleInvoiceId !== null" :key="lifecycleInvoiceId" ref="lifecycleRef" :invoice-id="lifecycleInvoiceId" @changed="loadInvoices" />
+
     <InvoiceSyncLogsDialog
       v-model="syncLogsVisible"
       :title="syncLogsTitle"
@@ -519,7 +518,7 @@ import ShipmentSettlementDialog from './components/ShipmentSettlementDialog.vue'
 import { useInvoiceShipments, orderTypeLabel } from './composables/useInvoiceShipments'
 import { useInvoiceImportDialogs } from './composables/useInvoiceImportDialogs'
 import InvoiceLifecycle from './components/InvoiceLifecycle.vue'
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { ArrowDown, Delete, Document, DocumentCopy, Download, Edit, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { EXPRESS_CHANNEL_OPTIONS, PAYMENT_METHOD_OPTIONS } from './composables/invoiceSettlement'
 import { customerOptionLabel } from './composables/useInvoiceCustomerSearch'
@@ -568,6 +567,14 @@ bindIssueHandler(showIssues)
 const { pasteImportVisible, screenshotImportVisible, canPasteImport, pasteImportDisabledReason,
   appendPastedLines } = useInvoiceImportDialogs(form, appendImportedLines)
 const wholeOrderPasteVisible = ref(false)
+const lifecycleInvoiceId = ref(null)
+const lifecycleRef = ref(null)
+async function openLifecycle(row) {
+  const invoiceId = row.id
+  lifecycleInvoiceId.value = invoiceId
+  await nextTick()
+  if (lifecycleInvoiceId.value === invoiceId) lifecycleRef.value?.open()
+}
 const drawerTitle = computed(() => {
   const typeLabel = orderTypeLabel(form.order_type)
   return form.id ? `编辑${typeLabel} ${form.invoice_no}` : `新建${typeLabel}`
