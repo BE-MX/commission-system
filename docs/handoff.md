@@ -1,3 +1,14 @@
+## 2026-09-28 Windows 远程更新中心（Codex，本地交付，未接入生产）
+
+- 工作树 `D:/commission-system/tmp/commission-system-deploy-console`，分支 `codex/windows-deploy-console`，基于 `698dd57f`。交付原生 Windows `ArkDeploy.exe`：操作者电脑经 SSH 控制办公室，办公室复用统一 deploy 入口更新受管环境。
+- 已实现办公室/cloud/work 逐项只读自检、固定候选 SHA 与改动文件/迁移展示、真实组件事件进度、更新后检查、失败诊断与报告导出。新加坡到办公室隧道、匿名公网 API 鉴权契约、PM2 正 PID 等避免静态站可达但业务失效的误报。
+- SSH 请求无常驻监听服务；后台 worker 使用 breakaway + detached，持久 run id、互斥锁和本轮回执。重复请求不重发；缺失回执、启动陈旧、进程死亡或 PID 复用标为待核实并保留锁；切换连接清除旧报告与准备授权。独立审查发现的问题均已修复。
+- 本地 124 项部署回归通过（含无害真实后台假部署器、原有迁移/源码/出库契约）；原生 EXE 构建与窗体自测通过，演示界面已渲染检查。完整约定检查被 9 项既有前端 UI 基线过期阻断，同样在未修改主工作区复现，未修改基线。详细验证见 `deploy/desktop/README.md`。
+- 未合并、未推送、未更新生产服务。用户完成 `acciowork@127.0.0.1:2233` 到办公室22端口的公钥授权，本机私钥留在用户 `.ssh/ark_office`。程序已预填账号/地址/端口和本机密钥路径；BatchMode + 严格主机指纹校验已实测成功，办公室 Python 3.12.10。
+- 2026-09-28 16:23:51 北京时间，经实际 EXE Transport 执行只读检查39项：34通过、1必要项失败（桌面进度协议缺失）、1告警（旧okki-sync masked/inactive）、3未知（okki-inventory、办公室n8n、okki-shopify-cron最近作业）。办公室后端/连接器/数据库、北京后端/色块/Nginx、两站匿名API与HTTPS、新加坡到办公室隧道、已登记北京PM2及OpenClaw用户服务均通过。报告保存在本任务 `.deploy_state/live-probe.json`，交付包附副本。
+- 实机安装仓库 HEAD `9eae9be811dbc7ba052bf557a7e9e94303649b48`，干净且无发布/迁移恢复阻断。该服务器比本地任务基点新，包含服务迁北京及迁移168保护；接入进度协议前须按当前版本整合，不能用本任务旧基点的整个 publish.py 覆盖。PM2只读探针已按现用schema_release固定root HOME/PM2_HOME与sudo上下文，组件名称不再假定出库轮询器仍在新加坡。真实SSH断线后的后台保活演练仍未执行。
+- 首次使用前，办公室部署器必须集成 `publish.py` 事件改动及 `desktop_events.py`；客户端会明确检查并阻断旧部署器，不自动覆盖服务器受管源码。原项目未跟踪 `.pnpm-store/` 未改动。
+
 ## 2026-09-22 战报海报与跑赢时间（已授权合并推送，未部署）
 
 - 工作树 `D:/commission-system/tmp/commission-system-posters`，分支 `codex/battle-report-posters`，基于本地 main `2b79cd1e`。入口新增「临时战报 → 战报海报」，管理员配置工作日、预览/下载两图、开关定时推送和查看投递记录。

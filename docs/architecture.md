@@ -39,6 +39,7 @@ hair.leshine.work / video.leshine.work → 新加坡现有静态站
 
 - 北京后端、主站和素材门户已通过统一入口更新；新加坡 PM 页面与制品一致，已接入受管静态目录。新加坡主站新版前端等待办公室后端一起发布。
 - 代码发布入口为 `deploy/deploy.bat`，先在候选 worktree 构建，再按 SHA-256 只传变化文件。共享数据库每轮核对一次目标版本，云节点不单独重复迁移。运行细节见 [部署说明](../deploy/README.md)。
+- Windows 桌面更新中心通过现有 SSH 连接办公室，辅助 worker 在 `.deploy_state/desktop/` 持久化逐次任务，并调用同一 `deploy.bat`。桌面仅承担自检、候选确认、进度和诊断，不持有生产数据库凭据、不创建远程 HTTP 管理服务。组件成功由运行中的部署器关联 run id 事件与退出码证明；客户端断线后重新读取原任务。构建及接入条件见 [桌面程序说明](../deploy/desktop/README.md)，实际接入状态以 handoff 为准。
 - COS 文件迁移暂缓；办公室素材、PM、知识库等文件仍归原实例，北京客户素材仍在 `/data/customer-media`。在文件依赖与登录契约验证前，不能把全部业务 API 无差别切到北京。
 - 办公室 NSSM 管理 `CommissionSystem`、`WhatsAppConnector`；新加坡保留 frps、中继、MCP、同步器等既有独立服务。完整登记与未纳管项见 [platforms.json](../deploy/platforms.json)。
 - 已有主域、发型 `.cloud`、素材 `.cloud`、中继 `.work` 的证书已修复并接入自动续期；新加坡 PM/hair/video 沿用既有自动续期。
