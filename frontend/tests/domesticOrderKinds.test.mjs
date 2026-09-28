@@ -48,6 +48,21 @@ test('production draft submit excludes zero-price snapshots', () => {
   })
 })
 
+test('special draft submit excludes direct sale price snapshots', () => {
+  const detail = {
+    order_kind: 'business', order_category: 'special',
+    current_expected_quotes: [{
+      client_key: null, item_id: 336, original_price: 1050,
+      base_price_version: 0, discount_price: 1050,
+      membership_level: null, pricing_rule: 'manual_override',
+      pricing_version: 'domestic-member-v2',
+    }],
+  }
+  assert.deepEqual(buildDraftSubmitPayload(detail, () => 'request-2'), {
+    request_id: 'request-2', expected_quotes: [],
+  })
+})
+
 test('production flow card shows internal storage purpose without sales or hairstyle fields', () => {
   const html = buildCardDoc({ card: { order_kind: 'production', domestic_no: 'DP20260907-001',
     item: { product_name: '头套', order_qty: 4, hairstyle: 'should not print', color: '黑色', steps: [] } } })

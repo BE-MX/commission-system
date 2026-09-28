@@ -202,7 +202,7 @@ export function applyQuoteChange(items, currentExpectedQuotes, requestIdFactory)
 }
 
 export function buildDraftSubmitPayload(detail, requestIdFactory) {
-  if (detail?.order_kind === 'production') {
+  if (detail?.order_kind === 'production' || detail?.order_category === 'special') {
     return { request_id: requestIdFactory(), expected_quotes: [] }
   }
   const expectedQuotes = detail?.current_expected_quotes?.length
