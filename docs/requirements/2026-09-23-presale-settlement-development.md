@@ -2,7 +2,7 @@
 
 日期：2026-09-23。交付物类型：经对抗性审查修订的开发规格，不是实现或上线证明。
 
-开发更新：用户已授权进入开发；当前本地实现范围、与规格差异及 P0 阻塞以 [实现报告](../reports/2026-09-23-presale-implementation.md) 为准。下文是目标规格，其中执行器与外部联调尚未完成。
+开发更新：用户已授权进入开发；当前本地实现范围、与规格差异及 P0 阻塞以 [实现报告](../reports/2026-09-23-presale-implementation.md) 和 [当前租户联调报告](../reports/2026-09-27-presale-live-contract.md) 为准。下文保留原目标规格。现有分支已实现运费订单、回款、待出库发送、方舟显式确认实际出库及异常核对入口；远端派发能力仍固定关闭，状态 2、权限隔离和生产迁移尚待验证。
 
 本规格取代 [V1 设计](2026-09-23-presale-outbound-batch-receipt-design.md) 中的业务规则、金额模型与接口建议。审查发现及外部验证门槛见 [审查报告](../reports/2026-09-23-presale-settlement-adversarial-review.md)。规格编写阶段没有修改业务代码、执行迁移、推送或发布；后续开发状态见上方实现报告。
 
@@ -239,6 +239,8 @@ flowchart TD
 
 路由只做鉴权、输入验证、事务异常转换，业务写 service；统一 ok() 信封。以下路径均为设计，不应写入已实现 API 清单。
 
+2026-09-27 实现补充：实际接口使用 `/api/shipments/{id}` 前缀。`confirm-outbound` 由 `shipment:write` 操作者显式发起，只编辑已绑定待出库单为状态 2，必须携带小满回读的每条 `outbound_record_id` 并再次核验资金、订单和数量。`reconcile-freight`、`reconcile-outbound` 可核对已知 ID；输入未知结果的远端 ID 进行人工绑定还须 `shipment:admin`。`retry-freight`、`retry-outbound` 只接收明确失败且无已知远端效果的任务，结果未知不重发。这些接口已在任务分支实现，生产远端派发门槛仍关闭。
+
 | 方法与路径 | 输入与输出 | 权限 |
 | --- | --- | --- |
 | POST `/api/invoices/{id}/shipment-quotes` | items[{invoice_item_id,quantity}]、freight_amount；返回行金额、费用、末批/抵扣、new_payment_due、quote_hash、blocking_reasons；不占用 | invoice:read 且主单可见 |
@@ -306,7 +308,7 @@ flowchart TD
 - 当前 dingtalk/gmv_daily_service、battle_report/statistics、festival/service 存在直接累计小满 amount_usd 的路径；必须覆盖所有读取路径及相关提成消费。不得通过 status、业务员归属置空等歪曲业务数据规避统计。
 - 主单汇率/核算日期按当前成交统计快照固定；运费另有发生日期和币种金额，不回写主单日期/汇率。若主单远端被手改金额，标异常而非静默刷新历史 GMV。实施时验证现有汇率转换与统计快照覆盖范围。
 - 回款汇总只选 Batch 原额或其 Receipt 子额之一汇总，不叠加二者；Application（含预付款末批核销）从不进入新增回款统计。物流成本另账，不拿应收运费当实际支付成本。
-- 小满自身原生报表是否能排除运费目标也属 P0 检查；仅修改方舟统计不能承诺小满报表不受影响。不能排除时需向用户说明该差异并暂停该目标方案启用。
+- 小满原生销售报表会计入独立运费订单；亮哥于 2026-09-27 确认接受该口径。预售发货结算页面和交付说明须明确标注；方舟商品 GMV、订单数、战报、提成和回款统计仍按持久角色排除运费目标，不得让原生报表口径混入方舟商品口径。
 
 ## 8. 页面行为与权限
 

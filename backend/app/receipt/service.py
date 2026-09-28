@@ -196,6 +196,8 @@ def change(db, row, invoice, body, actor):
 def retry(db, row, actor):
     if row.status != "active" or row.sync_status != "failed" or row.xiaoman_receipt_id:
         raise ValueError("仅明确失败且未取得小满单号的回款可重试；待核对不能重发")
+    from app.invoice.settlement_guard import ensure_receipt_sendable
+    ensure_receipt_sendable(db, row)
     if row.source == "auto" and row.bank_charge == 0:
         invoice = db.query(Invoice).filter(Invoice.id == row.invoice_id).with_for_update().one()
         if invoice.surcharge_amount:

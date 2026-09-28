@@ -8,11 +8,42 @@ from sqlalchemy import update
 from app.core.time import beijing_now
 from app.invoice import okki_client
 from app.invoice.models import Invoice
+from app.invoice.settlement_guard import ensure_receipt_sendable
+from app.invoice.settlement_models import Receivable
 from app.receipt import attachments, balance, fees, remote, service
 from app.receipt.models import Receipt, ReceiptIntent
 from app.receipt.schemas import ReceiptFields
 
 logger = logging.getLogger(__name__)
+
+
+def release_targets(db):
+    """Turn a presale component into a sendable row only after exact target binding."""
+    ids = [identity for (identity,) in db.query(Receipt.id).filter(
+        Receipt.status == "active", Receipt.sync_status == "waiting_target",
+        Receipt.batch_id.isnot(None)).order_by(Receipt.id).limit(20)]
+    db.commit()
+    for identity in ids:
+        row = db.get(Receipt, identity)
+        if not row:
+            continue
+        db.query(Invoice.id).filter(Invoice.id == row.invoice_id).with_for_update().one()
+        db.refresh(row, with_for_update=True)
+        try:
+            ensure_receipt_sendable(db, row)
+        except ValueError:
+            db.rollback()
+            continue
+        target = db.get(Receivable, row.receivable_id) if row.receivable_id else None
+        if (row.sync_status == "waiting_target" and row.status == "active"
+                and target and target.invoice_id == row.invoice_id
+                and target.remote_status == "bound" and target.remote_order_id):
+            row.xiaoman_order_id = target.remote_order_id
+            row.sync_status = "pending"
+            row.last_error = None
+            row.version += 1
+            service.log(db, row, "target_bound", "小满应收目标已核验，待发送回款")
+        db.commit()
 
 
 def generate_ready(db):
@@ -60,18 +91,30 @@ def deliver(db, receipt_id):
     row = db.get(Receipt, receipt_id)
     if row is None:
         return
+    invoice_id = row.invoice_id
+    db.commit()  # End the lookup snapshot before the invoice locking read.
     # Lock order then row, same ordering used by edit/void/create.
-    invoice = db.query(Invoice).filter(Invoice.id == row.invoice_id).with_for_update().one()
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).with_for_update().one()
     db.refresh(invoice)
+    db.refresh(row, with_for_update=True)
     if invoice.status in {"cancel_pending", "cancelled"} or invoice.linked_sync_id:
         db.rollback()
         return
-    if invoice.order_type == "presale" and row.batch_id:
-        if row.sync_status == "pending":
-            row.sync_status = "waiting_target"
-        row.last_error = "小满预售分批集成尚未验证，已保留付款与占额，未发送"
-        db.commit()
+    try:
+        ensure_receipt_sendable(db, row)
+    except ValueError:
+        db.rollback()
         return
+    target = None
+    if invoice.order_type == "presale" and row.batch_id:
+        target = db.get(Receivable, row.receivable_id) if row.receivable_id else None
+        if (target is None or target.invoice_id != invoice.id
+                or target.remote_status != "bound" or not target.remote_order_id
+                or row.xiaoman_order_id != target.remote_order_id):
+            row.sync_status = "waiting_target"
+            row.last_error = "小满应收目标尚未核验，回款等待目标绑定"
+            db.commit()
+            return
     token = uuid4().hex
     count = db.execute(update(Receipt).where(Receipt.id == receipt_id, Receipt.status == "active",
         Receipt.sync_status == "pending").values(sync_status="syncing", attempt_token=token,
@@ -95,11 +138,15 @@ def deliver(db, receipt_id):
         row = db.get(Receipt, receipt_id)
         invoice = db.get(Invoice, row.invoice_id)
         service.ensure_order_ready(db, invoice)
+        ensure_receipt_sendable(db, row)
         if row.source == "auto" and row.bank_charge == 0 and invoice.surcharge_amount:
             if fees.allocate(db, invoice, row.amount, exclude_receipt=row.id) != 0:
                 raise ValueError("旧自动回款尚未分摊手续费，请重试原单后同步")
-        snapshot = remote.order_snapshot(db, invoice)
-        summary = balance.calculate(db, invoice, snapshot, exclude_receipt=row.id)
+        snapshot = (remote.target_snapshot(db, target) if target and target.kind == "freight"
+                    else remote.order_snapshot(db, invoice))
+        summary = (balance.calculate_target(db, target, snapshot, exclude_receipt=row.id)
+                   if target and target.kind == "freight"
+                   else balance.calculate(db, invoice, snapshot, exclude_receipt=row.id))
         balance.ensure_available(summary, row.amount)
         if row.batch_id:
             from app.receipt.batch_service import validate_bound_proofs

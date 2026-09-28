@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import text
 
 from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.core.time import beijing_now
@@ -362,6 +363,25 @@ def test_okki_valid_order_and_items_project_atomically_link_exact_opportunity_an
     assert db.get(CustomerOpportunity, opportunity.id).linked_order_id == order.id
     assert db.get(CustomerAccount, customer_receipt.customer_id).relationship_stage == "active_customer"
     assert db.query(CustomerEvent).filter_by(event_type="order.placed").count() == 1
+
+
+def test_reserved_freight_order_does_not_activate_customer_or_count_as_sale(db):
+    customer = _project_okki_customer(db)
+    db.execute(text("""
+        INSERT INTO ark_receivables
+          (invoice_id, business_key, kind, amount, handling_amount, currency,
+           customer_id, remote_order_name, remote_status, created_at)
+        VALUES (1, 'freight:projection', 'freight', 1, 0, 'USD', 'COMP-1',
+                'PRE-1-F', 'unverified', '2026-08-30 00:00:00')
+    """))
+    payload = _okki_order_payload(order_id="FREIGHT-1")
+    payload["order_name"] = "PRE-1-F"
+    receipt = project_okki_order(db, source_account_key="tenant-a", payload=payload)
+    assert receipt.status == "processed"
+    order = db.get(CustomerOrder, receipt.order_id)
+    assert order.is_valid_business_order is False
+    assert order.invalid_reason == "presale_freight_target"
+    assert db.get(CustomerAccount, customer.customer_id).relationship_stage != "active_customer"
 
 
 def test_okki_invalid_order_does_not_activate_and_cross_customer_opportunity_ref_quarantines(db):

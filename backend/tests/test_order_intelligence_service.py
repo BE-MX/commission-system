@@ -83,6 +83,7 @@ def test_valid_business_order_rule_is_shared_by_sql_and_python(
     assert service.ORDER_STATUS_ENDED in service.VALID_ORDER_SQL
     assert service.ORDER_STATUS_TERMINATED in service.VALID_ORDER_SQL
     assert service.ORDER_STATUS_SETTLED_NAME in service.VALID_ORDER_SQL
+    assert "freight_role.remote_order_id" in service.VALID_ORDER_SQL
 
 
 @pytest.mark.parametrize("source_raw", [None, "", False, 0, [], {}])

@@ -10,6 +10,14 @@ def ensure_active(invoice):
 
 def ensure_mutable(db, invoice):
     ensure_active(invoice)
+    if invoice.order_type == "presale":
+        from app.invoice.settlement_models import ShipmentSettlement
+        active = db.query(ShipmentSettlement.id).filter(
+            ShipmentSettlement.invoice_id == invoice.id,
+            ShipmentSettlement.state.notin_(["cancelled", "shipped"]),
+        ).first()
+        if active:
+            raise ValueError("预售订单有未完成的发货结算，请先处理本批，暂不能修改或取消主单")
     from app.shipping_inspection.outbound_sync_state import ensure_invoice_idle
     ensure_invoice_idle(db, invoice)
     if invoice.sync_status == "sync_uncertain":
