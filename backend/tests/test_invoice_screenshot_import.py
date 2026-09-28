@@ -109,7 +109,6 @@ def _seed_example(db) -> None:
             (company_id, company_name, country_name)
         VALUES ('105720449849411', 'hair_madebymads', 'Denmark')
     """))
-    db.execute(text("ALTER TABLE lsordertest.okki_orders ADD COLUMN name TEXT"))
     db.execute(text("""
         INSERT INTO lsordertest.okki_orders
             (order_id, order_no, name, company_id, amount_usd, user_id,
@@ -713,6 +712,7 @@ def test_admin_resolves_uncertain_sync_with_audit_log(db):
         source_image_sha256="f" * 64,
         status="sync_uncertain",
         sync_status="sync_uncertain",
+        sales_user_id=27,
         created_by=27,
     )
     db.add(invoice)
@@ -763,7 +763,8 @@ def test_admin_resolves_uncertain_sync_with_audit_log(db):
         .filter(InvoiceSyncLog.invoice_id == invoice.id)
         .order_by(InvoiceSyncLog.id)
     ]
-    assert actions == ["resolve_uncertain_clear", "resolve_uncertain_bind"]
+    assert actions == ["uncertain_clear", "uncertain_bind"]
+    assert all(len(action) <= InvoiceSyncLog.__table__.c.action.type.length for action in actions)
 
 
 def test_admin_uncertain_binding_rejects_missing_wrong_customer_and_wrong_name(db):
@@ -781,6 +782,7 @@ def test_admin_uncertain_binding_rejects_missing_wrong_customer_and_wrong_name(d
         source_image_sha256="e" * 64,
         status="sync_uncertain",
         sync_status="sync_uncertain",
+        sales_user_id=27,
         created_by=27,
     )
     db.add(invoice)

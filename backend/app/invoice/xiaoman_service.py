@@ -330,11 +330,11 @@ def resolve_sync_uncertain(
                 db.flush()
         except IntegrityError as exc:
             raise ValueError("该 OKKI 订单 ID 已绑定其他发票") from exc
-        action = "resolve_uncertain_bind"
+        action = "uncertain_bind"
         audit_payload = {"resolution": resolution, "xiaoman_order_id": order_id, "reason": note}
         invoice.sync_error = f"管理员已绑定 OKKI 订单 {order_id}，待重新同步核对：{note}"
     elif resolution == "confirm_not_created":
-        action = "resolve_uncertain_clear"
+        action = "uncertain_clear"
         audit_payload = {"resolution": resolution, "reason": note}
         invoice.sync_error = f"管理员确认 OKKI 未生成订单，已允许重试：{note}"
     else:
