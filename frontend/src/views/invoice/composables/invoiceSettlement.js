@@ -104,6 +104,16 @@ export function splitDiscountCents(totalCents, count) {
   return Array.from({ length: n }, (_, index) => (index === n - 1 ? per + remainder : per))
 }
 
+export function applyTotalDiscountToRows(hairItems, value) {
+  const rows = hairItems.filter(line => Number(line.quantity) > 0 && Number(line.price_per_piece) > 0)
+  const shares = splitDiscountCents(toMoneyCents(value), rows.length)
+  rows.forEach((row, index) => {
+    row.discount_amount = shares[index] ? -(shares[index] / 100) : 0
+    row.total_price = calculateLineTotal(row.quantity, row.price_per_piece, row.discount_amount)
+  })
+  return rows.length
+}
+
 export function settlementMatchesTotal(total, prepayment, balance) {
   if (prepayment == null && balance == null) return true
   if (prepayment == null || balance == null) return false

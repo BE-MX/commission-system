@@ -115,7 +115,7 @@ test('whole-order dialog validates product rows through the existing backend pre
 
 test('editor appends product rows before distributing the discount', () => {
   const applyFn = editor.slice(editor.indexOf('async function applyWholeOrderPaste'))
-  assert.ok(applyFn.indexOf('appendImportedLines') < applyFn.indexOf('applyTotalDiscount(parsed.discount_total)'))
+  assert.ok(applyFn.indexOf('appendImportedLines') < applyFn.indexOf('applyTotalDiscountToRows(accessories.hairItems.value, parsed.discount_total)'))
   assert.match(applyFn, /产品明细 \$\{parsed\.productPreview\.rows\.length\} 行/)
 })
 

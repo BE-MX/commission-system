@@ -18,15 +18,14 @@ import {
 import { INVOICE_SYNC_OUTCOME, validateThenSync } from './invoiceSyncFlow'
 import { useAuthStore } from '@/stores/auth'
 import {
+  applyTotalDiscountToRows,
   calculateBalance,
   calculateInvoiceTotal,
   computeHandlingFee,
   handlingFeeRate,
   normalizeDiscount,
   settlementMatchesTotal,
-  splitDiscountCents,
   sumLineNet,
-  toMoneyCents,
 } from './invoiceSettlement'
 import { normalizeAccessoryRow } from './accessoryPricing'
 import { useInvoiceAccessories } from './useInvoiceAccessories'
@@ -92,16 +91,11 @@ export function useInvoiceEditor({ onSaved } = {}) {
   // 总折扣录入框（费用与结算卡底部）：默认=产品行折扣合计（正数展示）；手改后均分到产品行
   const formHairDiscountAbs = computed(() => Math.abs(Number(formLineDiscountTotal.value || 0)))
   function applyTotalDiscount(value) {
-    const rows = hairItems.value.filter(line => Number(line.quantity) > 0 && Number(line.price_per_piece) > 0)
-    if (!rows.length) {
+    const count = applyTotalDiscountToRows(accessories.hairItems.value, value)
+    if (!count) {
       ElMessage.warning('没有可分摊折扣的产品行')
-      return
     }
-    const shares = splitDiscountCents(toMoneyCents(value), rows.length)
-    rows.forEach((row, index) => {
-      row.discount_amount = shares[index] ? -(shares[index] / 100) : 0
-      updateLineTotal(row)
-    })
+    return count
   }
   const formProductTotal = computed(() => sumLineNet(form.items))
   // 订单总金额（基数）= 产品+包装+运费，不含手续费（重定义 2026-07-24）：
@@ -330,9 +324,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
       }
     }
     if (parsed.discount_total != null) {
-      const rows = hairItems.value.filter(line => Number(line.quantity) > 0 && Number(line.price_per_piece) > 0)
-      if (rows.length) {
-        applyTotalDiscount(parsed.discount_total)
+      if (applyTotalDiscountToRows(accessories.hairItems.value, parsed.discount_total)) {
         applied.push('折扣总价（已均分到产品行）')
       } else {
         skipped.push('折扣总价：暂无产品行可分摊，请录入产品后在折扣框填写')

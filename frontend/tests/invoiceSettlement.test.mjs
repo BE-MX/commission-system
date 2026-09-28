@@ -9,6 +9,7 @@ import {
   calculateBalance,
   calculateInvoiceTotal,
   calculateLineTotal,
+  applyTotalDiscountToRows,
   computeHandlingFee,
   handlingFeeRate,
   normalizeDiscount,
@@ -207,6 +208,20 @@ test('total discount splits evenly across lines with the remainder on the last l
   assert.deepEqual(splitDiscountCents(-999, 2), [499, 500])
   assert.match(invoiceEditor, /function applyTotalDiscount/)
   assert.match(invoiceEditor, /没有可分摊折扣的产品行/)
+})
+
+test('entered total discount updates eligible product rows and their totals', () => {
+  const rows = [
+    { quantity: 2, price_per_piece: 20, discount_amount: 0, total_price: 40 },
+    { quantity: 1, price_per_piece: 30, discount_amount: 0, total_price: 30 },
+    { quantity: null, price_per_piece: null, discount_amount: null, total_price: 0 },
+  ]
+  assert.equal(applyTotalDiscountToRows(rows, 10.01), 2)
+  assert.deepEqual(rows.map(row => row.discount_amount), [-5, -5.01, null])
+  assert.deepEqual(rows.map(row => row.total_price), [35, 24.99, 0])
+  assert.equal(applyTotalDiscountToRows(rows, 0), 2)
+  assert.deepEqual(rows.map(row => row.discount_amount), [0, 0, null])
+  assert.equal(applyTotalDiscountToRows([rows[2]], 8), 0)
 })
 
 test('product discount precedes TotalPrice and packaging quantity precedes its fee', () => {
