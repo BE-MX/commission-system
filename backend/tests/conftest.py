@@ -1,12 +1,14 @@
 """pytest 公共 fixtures：内存 SQLite 数据库 + 预填充数据"""
 
 import pytest
+import sqlite3
 from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import create_engine, event, text, BigInteger, Integer
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+from sqlalchemy.engine import Engine
 
 from app.core.database import Base
 from app.models.employee import EmployeeAttributeHistory, SupervisorRelationHistory
@@ -70,6 +72,16 @@ def _compile_longtext_sqlite(type_, compiler, **kw):
 @compiles(MEDIUMTEXT, "sqlite")
 def _compile_mediumtext_sqlite(type_, compiler, **kw):
     return "TEXT"
+
+
+@event.listens_for(Engine, "connect")
+def _register_ark_collation(dbapi_conn, _record):
+    if isinstance(dbapi_conn, sqlite3.Connection):
+        # MySQL has this collation on every connection; SQLite needs a test equivalent.
+        dbapi_conn.create_collation(
+            "utf8mb4_unicode_ci",
+            lambda a, b: (a.casefold() > b.casefold()) - (a.casefold() < b.casefold()),
+        )
 
 
 @pytest.fixture

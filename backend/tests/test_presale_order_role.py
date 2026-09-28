@@ -8,6 +8,10 @@ from app.invoice.order_role import goods_order_sql
 
 def test_freight_name_reservation_and_verified_id_both_exclude_sales():
     db = sqlite3.connect(":memory:")
+    db.create_collation(
+        "utf8mb4_unicode_ci",
+        lambda a, b: (a.casefold() > b.casefold()) - (a.casefold() < b.casefold()),
+    )
     db.execute("CREATE TABLE ark_receivables (kind TEXT, remote_order_id TEXT, remote_order_name TEXT, customer_id TEXT)")
     db.execute("CREATE TABLE okki_orders (order_id INTEGER, name TEXT, company_id INTEGER)")
     db.executemany("INSERT INTO okki_orders VALUES (?, ?, ?)", [
