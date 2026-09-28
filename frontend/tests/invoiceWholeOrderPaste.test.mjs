@@ -10,6 +10,7 @@ import {
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
 const invoiceView = read('../src/views/invoice/InvoiceManage.vue')
+const orderFields = read('../src/views/invoice/components/InvoiceOrderCustomerFields.vue')
 const editor = read('../src/views/invoice/composables/useInvoiceEditor.js')
 
 // 复刻附件《刘源发票+Stephanie Powers + 9.22.xlsx》C6:I23 的剪贴板形态：
@@ -119,24 +120,21 @@ test('editor appends product rows before distributing the discount', () => {
   assert.match(applyFn, /产品明细 \$\{parsed\.productPreview\.rows\.length\} 行/)
 })
 
-test('standalone product paste entry shows only in the legacy drawer', () => {
+test('standalone product paste entry works in both invoice drawers', () => {
   const hairTable = read('../src/views/invoice/components/InvoiceHairTable.vue')
   const legacyDrawer = read('../src/views/invoice/components/legacy/InvoiceLegacyDrawer.vue')
-  // 按钮保留在组件里，但由 showPasteEntry 门控：新版不传 = 不显示，旧版传 = 显示
-  assert.match(hairTable, /v-if="showPasteEntry"/)
-  assert.match(hairTable, /showPasteEntry: Boolean/)
-  assert.match(legacyDrawer, /show-paste-entry/)
+  assert.match(hairTable, /@click="\$emit\('paste'\)"/)
   assert.match(legacyDrawer, /@paste="\$emit\('open-legacy-paste'\)"/)
   assert.match(invoiceView, /@open-legacy-paste="pasteImportVisible = true"/)
-  // 新版抽屉的明细表不带该 prop
   const newDrawerTable = invoiceView.slice(invoiceView.indexOf('<InvoiceHairTable'), invoiceView.indexOf('<InvoiceAccessoryTable'))
-  assert.doesNotMatch(newDrawerTable, /show-paste-entry/)
-  assert.match(invoiceView, /整单粘贴/)
+  assert.match(newDrawerTable, /@paste="pasteImportVisible = true"/)
+  assert.match(orderFields, /整单粘贴/)
 })
 
 test('whole-order paste is wired into the drawer and applies in a safe order', () => {
   // 入口按钮 + 对话框挂载
-  assert.match(invoiceView, /整单粘贴/)
+  assert.match(orderFields, /整单粘贴/)
+  assert.match(invoiceView, /@open-whole-order-paste="wholeOrderPasteVisible = true"/)
   assert.match(invoiceView, /<InvoiceWholeOrderPaste/)
   assert.match(invoiceView, /:match-customer="matchWholeOrderCustomer"/)
   assert.match(invoiceView, /@apply="applyWholeOrderPaste"/)

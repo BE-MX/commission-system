@@ -11,9 +11,10 @@ const nginx = readFileSync(new URL('../nginx.conf', import.meta.url), 'utf8')
 
 test('customer portal route is public top-level and registered before MainLayout', () => {
   const createRoute = source.indexOf("path: '/create/:token?'")
-  const mainLayout = source.indexOf("path: '/'")
+  const mainLayout = /^\s*path: '\/',\s*$/m.exec(source)?.index ?? -1
 
   assert.ok(createRoute >= 0)
+  assert.ok(mainLayout >= 0)
   assert.ok(createRoute < mainLayout)
   const routeBlock = source.slice(createRoute, mainLayout)
   assert.match(routeBlock, /name:\s*['"]CustomerImagePortal['"]/)

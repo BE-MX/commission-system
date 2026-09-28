@@ -50,7 +50,7 @@ test('legacy drawer restores the HEAD-era layout with legacy companions', () => 
   // 旧版回款：独立小满回款方式下拉（不使用 hide-payment-type）
   assert.doesNotMatch(legacyReceipt, /hide-payment-type/)
   // 旧版明细区保留独立「从 Excel 粘贴」入口
-  assert.match(legacyDrawer, /show-paste-entry/)
+  assert.match(legacyDrawer, /<InvoiceHairTable/)
   assert.match(legacyDrawer, /@paste="\$emit\('open-legacy-paste'\)"/)
   assert.match(view, /@open-legacy-paste="pasteImportVisible = true"/)
 })

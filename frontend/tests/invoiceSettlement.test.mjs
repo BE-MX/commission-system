@@ -21,6 +21,10 @@ const invoiceView = readFileSync(
   new URL('../src/views/invoice/InvoiceManage.vue', import.meta.url),
   'utf8',
 )
+const orderFields = readFileSync(
+  new URL('../src/views/invoice/components/InvoiceOrderCustomerFields.vue', import.meta.url),
+  'utf8',
+)
 const invoiceEditor = readFileSync(
   new URL('../src/views/invoice/composables/useInvoiceEditor.js', import.meta.url),
   'utf8',
@@ -126,8 +130,8 @@ test('footer marks the handling fee as Ark-only', () => {
 })
 
 test('first-return shows the customer last order date reference', () => {
-  assert.match(invoiceView, /lastOrderDate/)
-  assert.match(invoiceView, /上次订单成交日期/)
+  assert.match(invoiceView, /:last-order-date="lastOrderDate"/)
+  assert.match(orderFields, /上次订单成交日期/)
 })
 
 test('line discounts are negative and invoice totals do not subtract them twice', () => {
@@ -188,9 +192,9 @@ test('settlement inputs live in the side pane; derived amounts moved to the summ
 })
 
 test('order subsection only contains the approved fields', () => {
-  const start = invoiceView.indexOf('<div class="subdiv">订单信息</div>')
-  const end = invoiceView.indexOf('<InvoiceHairTable', start)
-  const orderSection = invoiceView.slice(start, end)
+  const start = orderFields.indexOf('<div class="subdiv">订单信息</div>')
+  const end = orderFields.indexOf('</section>', start)
+  const orderSection = orderFields.slice(start, end)
   assert.match(orderSection, /label="订单号\/发票号"/)
   assert.match(orderSection, /label="下单日期"/)
   assert.match(orderSection, /label="币种"/)

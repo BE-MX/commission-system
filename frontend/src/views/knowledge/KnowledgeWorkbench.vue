@@ -460,14 +460,12 @@ async function runSearch() {
     searching.value = false
   }
 }
-
 async function openSearchResult(item) {
   const library = libraries.value.find(row => row.id === item.library_id)
   if (library && !(await selectLibrary(library.id))) return
   await selectDocument(item.document_id)
   searchDialog.value = false
 }
-
 async function allowDiscard() {
   if (!dirty.value) return true
   try {
@@ -482,7 +480,6 @@ function beforeUnload(event) {
   event.preventDefault()
   event.returnValue = ''
 }
-
 onBeforeRouteLeave(() => allowDiscard())
 onMounted(() => { window.addEventListener('beforeunload', beforeUnload); loadLibraries() })
 onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))

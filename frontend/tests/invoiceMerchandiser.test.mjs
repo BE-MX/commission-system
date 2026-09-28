@@ -10,6 +10,7 @@ const api = read('../src/api/invoice.js')
 const editor = read('../src/views/invoice/composables/useInvoiceEditor.js')
 const hairItems = read('../src/views/invoice/composables/useInvoiceHairItems.js')
 const invoiceView = read('../src/views/invoice/InvoiceManage.vue')
+const orderFields = read('../src/views/invoice/components/InvoiceOrderCustomerFields.vue')
 const hairTable = read('../src/views/invoice/components/InvoiceHairTable.vue')
 
 test('merchandiser select loads role-based options and posts only the id', () => {
@@ -31,8 +32,9 @@ test('previous invoice number reminder loads per salesperson and order type', ()
   assert.match(editor, /async function refreshPreviousInvoiceNo/)
   assert.match(editor, /sales_user_id: form\.sales_user_id,[\s\S]*?order_type: form\.order_type/)
   assert.match(editor, /exclude_id: form\.id \|\| undefined/)
-  assert.match(invoiceView, /class="prev-order-tip"/)
-  assert.match(invoiceView, /\{\{ previousInvoiceNo \}\}/)
+  assert.match(invoiceView, /:previous-invoice-no="previousInvoiceNo"/)
+  assert.match(orderFields, /class="prev-order-tip"/)
+  assert.match(orderFields, /\{\{ previousInvoiceNo \}\}/)
 })
 
 test('hair line carries available stock from the matched product instead of showing SKU', () => {

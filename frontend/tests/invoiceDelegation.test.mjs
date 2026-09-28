@@ -8,6 +8,7 @@ const invoiceApi = read('../src/api/invoice.js')
 const userApi = read('../src/api/userManagement.js')
 const editor = read('../src/views/invoice/composables/useInvoiceEditor.js')
 const invoiceView = read('../src/views/invoice/InvoiceManage.vue')
+const orderFields = read('../src/views/invoice/components/InvoiceOrderCustomerFields.vue')
 const userView = read('../src/views/system/UserManagement.vue')
 
 test('invoice payload carries structured sales ownership', () => {
@@ -23,15 +24,16 @@ test('invoice entry loads assignees and scopes private searches to selected sale
   assert.match(editor, /sales_user_id:\s*form\.sales_user_id/)
   assert.match(editor, /async function onSalesUserChange/)
   assert.match(editor, /onSalesUserChange\(\)[\s\S]*refreshLinePrice\(line\)[\s\S]*refreshAccessoryPrices\(\)/)
-  assert.match(invoiceView, /订单归属业务员/)
-  assert.match(invoiceView, /v-model="form\.sales_user_id"/)
-  assert.match(invoiceView, /@change="onSalesUserChange"/)
-  assert.match(invoiceView, /未绑定OKKI/)
+  assert.match(invoiceView, /<InvoiceOrderCustomerFields/)
+  assert.match(orderFields, /订单归属业务员/)
+  assert.match(orderFields, /v-model="form\.sales_user_id"/)
+  assert.match(orderFields, /@change="onSalesUserChange"/)
+  assert.match(orderFields, /未绑定OKKI/)
   // 业务员信息压缩为只读资料条（From 姓名 · 电话 · 邮箱），不再占三个输入框
-  assert.match(invoiceView, /class="fgrid-c3 sales-readout"/)
-  assert.match(invoiceView, /\{\{ form\.sales_user_name \|\| '—' \}\}/)
-  assert.match(invoiceView, /\{\{ form\.sales_phone \|\| '—' \}\}/)
-  assert.match(invoiceView, /\{\{ form\.sales_email \|\| '—' \}\}/)
+  assert.match(orderFields, /class="fgrid-c3 sales-readout"/)
+  assert.match(orderFields, /\{\{ form\.sales_user_name \|\| '—' \}\}/)
+  assert.match(orderFields, /\{\{ form\.sales_phone \|\| '—' \}\}/)
+  assert.match(orderFields, /\{\{ form\.sales_email \|\| '—' \}\}/)
 })
 
 test('user management exposes and persists delegated salesperson grants', () => {

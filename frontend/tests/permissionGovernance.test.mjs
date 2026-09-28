@@ -24,8 +24,16 @@ test('new domains have Chinese permission ownership instead of falling into Engl
   assert.match(matrix, /label: '系统 · 接入与运维'/)
   assert.match(matrix, /read_all: '查看全部'/)
   assert.match(matrix, /invoke: 'Agent 调用'/)
-  assert.match(matrix, /festival_order', 'order_intelligence', 'domestic'/)
-  assert.match(matrix, /'expo_lead', 'expo_store', 'card'/)
+  const orderGroup = matrix.match(/label: '单据 · 订单与物流', prefixes: \[([\s\S]*?)\]/)?.[1]
+  const marketingGroup = matrix.match(/label: '营销 · 展会与洞见', prefixes: \[([\s\S]*?)\]/)?.[1]
+  assert.ok(orderGroup, 'missing order and logistics permission group')
+  assert.ok(marketingGroup, 'missing marketing permission group')
+  for (const prefix of ['festival_order', 'order_intelligence', 'domestic']) {
+    assert.match(orderGroup, new RegExp(`'${prefix}'`))
+  }
+  for (const prefix of ['expo_lead', 'expo_store', 'card']) {
+    assert.match(marketingGroup, new RegExp(`'${prefix}'`))
+  }
 })
 
 test('operations center is permission-gated and task controls use the permission directive', () => {

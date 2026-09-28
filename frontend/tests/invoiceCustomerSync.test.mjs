@@ -6,6 +6,10 @@ const invoiceView = readFileSync(
   new URL('../src/views/invoice/InvoiceManage.vue', import.meta.url),
   'utf8',
 )
+const orderFields = readFileSync(
+  new URL('../src/views/invoice/components/InvoiceOrderCustomerFields.vue', import.meta.url),
+  'utf8',
+)
 const syncEntry = readFileSync(
   new URL('../src/views/invoice/components/InvoiceCustomerSyncEntry.vue', import.meta.url),
   'utf8',
@@ -25,7 +29,8 @@ const api = readFileSync(
 
 test('customer selector offers a manual OKKI sync entry next to it', () => {
   // 客户选择框旁（同一 form-item 内）挂同步入口组件
-  assert.match(invoiceView, /<InvoiceCustomerSyncEntry :on-select="selectSyncedCustomer" \/>/)
+  assert.match(invoiceView, /<InvoiceOrderCustomerFields/)
+  assert.match(orderFields, /<InvoiceCustomerSyncEntry :on-select="selectSyncedCustomer" \/>/)
   assert.match(syncEntry, /搜索不到客户？点击这里同步最新客户信息/)
 })
 
@@ -41,7 +46,8 @@ test('sync dialog collects company name and shows the sync result', () => {
 test('selecting a synced customer re-passes the current private-sea filter', () => {
   // 选用必须重新走带私海筛选的搜索，找不到就明确提示，不静默绕过归属限制
   assert.match(editor, /async function selectSyncedCustomer\(res\)/)
-  assert.match(editor, /await searchCustomers\(res\.company_name\)/)
+  assert.match(editor, /await searchCustomers\(String\(res\.company_id\)\)/)
+  assert.match(editor, /customerSearch\.findCustomer\(res\.company_id\)/)
   assert.match(editor, /不在当前私海范围内/)
 })
 

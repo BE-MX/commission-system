@@ -437,11 +437,9 @@ watch([() => props.document, editor], ([value]) => {
   closeSlashMenu()
   refreshDerivedState()
 }, { immediate: true })
-
 watch(actions, value => editor.value?.setEditable(Boolean(props.document && value.canSave), false))
 onBeforeUnmount(() => editor.value?.destroy())
 </script>
-
 <style scoped>
 .editor-shell { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; background: var(--surface-card, #fff); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }

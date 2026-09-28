@@ -27,11 +27,11 @@
     <div v-else class="preview-stage">
       <h4 class="section-heading">订单字段</h4>
       <el-table :data="fieldRows" border size="small" class="list-table">
-        <el-table-column prop="label" label="字段" width="120" />
+        <el-table-column prop="label" label="字段" min-width="120" />
         <el-table-column label="识别内容">
           <template #default="{ row }"><span class="value-cell">{{ row.value || '—' }}</span></template>
         </el-table-column>
-        <el-table-column label="状态" width="130">
+        <el-table-column label="状态" min-width="130">
           <template #default="{ row }"><el-tag :type="row.statusType" effect="plain">{{ row.statusText }}</el-tag></template>
         </el-table-column>
       </el-table>

@@ -50,8 +50,8 @@
     "transition_all": 0
   },
   "frontend/src/views/asset/AssetLibrary.vue": {
-    "hex_colors": 2,
-    "lines_over_500": 234,
+    "hex_colors": 0,
+    "lines_over_500": 210,
     "transition_all": 0
   },
   "frontend/src/views/asset/AssetStats.vue": {
@@ -61,7 +61,7 @@
   },
   "frontend/src/views/asset/TagDimensionManage.vue": {
     "hex_colors": 9,
-    "lines_over_500": 185,
+    "lines_over_500": 180,
     "transition_all": 0
   },
   "frontend/src/views/card/CardButler.vue": {
@@ -121,7 +121,7 @@
   },
   "frontend/src/views/design/DesignManage.vue": {
     "hex_colors": 2,
-    "lines_over_500": 262,
+    "lines_over_500": 104,
     "transition_all": 0
   },
   "frontend/src/views/design/GanttView.vue": {

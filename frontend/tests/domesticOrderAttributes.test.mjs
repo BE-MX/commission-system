@@ -11,6 +11,7 @@ import {
   visibleAttributeFields,
 } from '../src/views/domestic/domesticAttributeRules.js'
 import { createLatestRequestRunner } from '../src/views/domestic/composables/latestRequest.js'
+import { BUSINESS_FILTERS, buildOrderListParams } from '../src/views/domestic/composables/useDomesticOrderFilters.js'
 
 const options = {
   attr_dicts: {
@@ -177,8 +178,16 @@ test('下单、列表和产品页保持新属性合约', () => {
 
   for (const field of ['order_category', 'order_type', 'order_channel']) {
     assert.match(ordersView, new RegExp(`searchForm\\.${field}`))
-    assert.match(ordersLogic, new RegExp(`'${field}'`))
+    assert.ok(BUSINESS_FILTERS.some(filter => filter.key === field), `${field} must remain a list filter`)
   }
+  assert.match(ordersLogic, /buildOrderListParams\(form\)/)
+  assert.deepEqual(buildOrderListParams({
+    page: 1, page_size: 20, order_kind: 'stock',
+    order_category: 'normal', order_type: 'sample', order_channel: 'offline',
+  }), {
+    page: 1, page_size: 20, order_kind: 'stock',
+    order_category: 'normal', order_type: 'sample', order_channel: 'offline',
+  })
   assert.match(productsView, /label="工艺\/尺寸"/)
   assert.match(productsView, /prop="hair_style_series"/)
   assert.match(productsView, /row\.product_type === 'cap'/)

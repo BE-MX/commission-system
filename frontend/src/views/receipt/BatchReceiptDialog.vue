@@ -11,7 +11,7 @@
         <el-table-column prop="invoice_no" label="订单发票" min-width="150" />
         <el-table-column label="可登记余额" min-width="130"><template #default="{ row }">{{ row.balance ? money(row.balance.remaining_amount) : '未核验' }}</template></el-table-column>
         <el-table-column label="本次分配" min-width="185"><template #default="{ row }"><el-input-number v-model="row.amount" :min="0.01" :precision="2" controls-position="right" /></template></el-table-column>
-        <el-table-column label="操作" min-width="120"><template #default="{ row }"><el-button link :loading="row.loading" @click="refresh(row)">刷新</el-button><el-button link @click="remove(row)">移除</el-button></template></el-table-column>
+        <el-table-column label="操作" class-name="table-action-column" min-width="120"><template #default="{ row }"><el-button link :loading="row.loading" @click="refresh(row)">刷新</el-button><el-button link @click="remove(row)">移除</el-button></template></el-table-column>
       </el-table>
       <p>分配合计：{{ allocatedTotal }} {{ rows[0]?.currency }}</p>
       <ReceiptFields :form="form" :currency="rows[0]?.currency" :readonly="saving" show-charge @uploading="v => uploading = v" />

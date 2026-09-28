@@ -713,7 +713,6 @@ const {
 .correction-item { margin-bottom: 8px; }
 .correction-key { font-size: 11px; font-weight: 600; color: var(--text-primary, #1a1a2e); margin-bottom: 2px; }
 .correction-val { font-size: 12px; color: var(--text-secondary, #4a5568); background: #fff; padding: 6px 8px; border-radius: 4px; }
-
 /* 草稿弹窗 */
 .draft-form { max-height: 60vh; overflow-y: auto; padding-right: 8px; }
 .draft-group { margin-bottom: 20px; }
