@@ -10,6 +10,10 @@ const invoiceStyles = readFileSync(
   new URL('../src/views/invoice/invoice-manage.css', import.meta.url),
   'utf8',
 )
+const legacyDrawer = readFileSync(
+  new URL('../src/views/invoice/components/legacy/InvoiceLegacyDrawer.vue', import.meta.url),
+  'utf8',
+)
 const settlementFields = readFileSync(
   new URL('../src/views/invoice/components/InvoiceSettlementFields.vue', import.meta.url),
   'utf8',
@@ -31,8 +35,11 @@ test('drawer body splits into two independently scrolling panes', () => {
   assert.match(invoiceStyles, /\.drawer-panes\s*{[^}]*display:\s*grid/s)
   assert.match(invoiceStyles, /\.drawer-panes\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*372px/s)
   assert.match(invoiceStyles, /\.pane\s*{[^}]*overflow-y:\s*auto/s)
-  // 抽屉 body 自身不滚动，滚动发生在两个 pane 内部
-  assert.match(invoiceStyles, /\.invoice-page\s+:deep\(\.el-drawer__body\)[^}]*overflow:\s*hidden/s)
+  // 仅新版抽屉 body 不滚动；旧版表单依赖 Drawer body 自身滚动到明细
+  assert.match(invoiceView, /body-class="invoice-modern-drawer-body"/)
+  assert.match(invoiceStyles, /\.invoice-page\s+:deep\(\.invoice-modern-drawer-body\)[^}]*overflow:\s*hidden/s)
+  assert.doesNotMatch(invoiceStyles, /\.invoice-page\s+:deep\(\.el-drawer__body\)/)
+  assert.doesNotMatch(legacyDrawer, /invoice-modern-drawer-body/)
   // 窄屏降级为单栏整页滚动
   assert.match(invoiceStyles, /@media \(max-width: 1200px\)[\s\S]*\.drawer-panes\s*{[^}]*grid-template-columns:\s*1fr/s)
 })
