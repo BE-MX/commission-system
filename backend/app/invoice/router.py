@@ -794,7 +794,7 @@ def check_invoice_no(
 @router.get("/invoices/previous-no", summary="Previous invoice number of the same salesperson and order type")
 def previous_invoice_no(
     sales_user_id: int = Query(..., gt=0),
-    order_type: str = Query(..., pattern="^(stock|production)$"),
+    order_type: str = Query(..., pattern="^(stock|production|presale)$"),
     exclude_id: int | None = Query(None, description="编辑既有发票时排除自身"),
     db: Session = Depends(get_db),
     _user=Depends(require_permission("invoice:write")),
