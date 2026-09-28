@@ -701,6 +701,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     saveAndSyncSubmitting,
     linkedOperation: linked.operation,
     linkedBusy: linked.busy,
+    linkedLoading: linked.loading,
     refreshLinked: () => linked.load(form.id),
     retryLinked: () => linked.run(false),
     recheckLinked: () => linked.run(true),
