@@ -11,12 +11,13 @@ export const money = value => Number(value || 0).toLocaleString('en-US', { minim
 export const financeLabel = value => value === 1 ? '已生效' : value === 0 ? '未生效' : '未取得'
 
 export function useReceipts() {
-  const dates = ref([]), deliveryEnabled = ref(null)
+  const dates = ref([]), deliveryEnabled = ref(null), presaleDeliveryEnabled = ref(null)
   const page = useListPage(async params => {
     if (params.order_id) params.order_id = params.order_id.trim()
     if (!params.order_id) delete params.order_id
     const result = await api.listReceipts({ ...params, date_from: dates.value?.[0], date_to: dates.value?.[1] })
     deliveryEnabled.value = result.delivery_enabled
+    presaleDeliveryEnabled.value = result.presale_delivery_enabled
     return result
   },
     { searchForm: { keyword: '', order_id: '', sync_status: '', source: '', status: '' } })
@@ -105,7 +106,8 @@ export function useReceipts() {
       const row = editing.value ? await api.updateReceipt(editing.value, { ...fields, version: detail.value.version })
         : await api.createReceipt({ ...fields, invoice_id: form.invoice_id, request_key: idempotencyKey, balance_version: balance.value.version, settlement_id: balance.value.settlement_id || null })
       editorVisible.value = false; detail.value = row; detailVisible.value = true; candidates.value = []
-      msgSuccess(editing.value ? '回款已修正，请重试同步' : deliveryEnabled.value === false ? '回款已创建，同步启用后自动处理' : '回款已创建，等待同步小满')
+      const canDeliver = selectedOrder.value?.order_type === 'presale' ? presaleDeliveryEnabled.value : deliveryEnabled.value
+      msgSuccess(editing.value ? '回款已修正，请重试同步' : canDeliver === false ? '回款已创建，同步启用后自动处理' : '回款已创建，等待同步小满')
       await page.fetchList()
     } catch (e) {
       error.value = e.response?.data?.detail || e.message || '保存失败，资料已保留'
@@ -135,7 +137,7 @@ export function useReceipts() {
     candidates.value = []; await page.fetchList()
   }
   function reset() { dates.value = []; return page.handleReset() }
-  return { ...page, dates, deliveryEnabled, editorVisible, detailVisible, detail, saving, uploading, orders, ordersLoading, balance,
+  return { ...page, dates, deliveryEnabled, presaleDeliveryEnabled, editorVisible, detailVisible, detail, saving, uploading, orders, ordersLoading, balance,
     balanceLoading, error, candidates, form, editing, selectedOrder, remainingAfter, editable, searchOrders,
     selectOrder, refreshBalance, openCreate, showDetail, editCurrent, closeEditor, submit, retry, voidCurrent, reconcile, resolve, reset }
 }

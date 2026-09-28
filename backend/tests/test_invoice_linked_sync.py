@@ -179,6 +179,48 @@ def test_outbound_incomplete_page_is_not_absence(monkeypatch):
     with pytest.raises(ValueError): outbound.find_related(None, {"order_id": "123", "create_time": "2026-09-18"})
 
 
+def test_outbound_scan_does_not_hide_cross_customer_order_link(monkeypatch):
+    calls = []
+    rows = [
+        {"outbound_invoice_id": 1, "company_info": {"id": "99"}},
+        {"outbound_invoice_id": 2, "company_info": {"id": "10"}},
+        {"outbound_invoice_id": 3},
+    ]
+    def read(_db, path, params):
+        if path.endswith("/list"):
+            return {"list": rows, "count": 3}
+        identity = str(params["outbound_invoice_id"])
+        calls.append(identity)
+        return {"outbound_invoice_id": identity, "record_list": [
+            {"order_id": "456" if identity == "3" else "123"}]}
+    monkeypatch.setattr(remote, "read", read)
+    monkeypatch.setattr(outbound, "_read_details", lambda db, identities: [
+        read(db, "/v1/invoices/outbound/info", {"outbound_invoice_id": identity})
+        for identity in identities])
+
+    found = outbound.find_related(None, {"order_id": "123", "company_id": "10",
+                                         "create_time": "2026-09-18 10:00:00"})
+    assert [str(row["outbound_invoice_id"]) for row in found] == ["1", "2"]
+    assert calls == ["1", "2", "3"]
+
+
+def test_outbound_parallel_details_read_every_id_and_fail_closed(monkeypatch):
+    monkeypatch.setattr(outbound.okki_client, "ensure_access_token", lambda _: "test-token")
+    calls = []
+    def get(_path, _token, *, context, params):
+        identity = params["outbound_invoice_id"]
+        calls.append(identity)
+        return {"outbound_invoice_id": identity, "record_list": []}
+    monkeypatch.setattr(outbound.okki_client, "_get_json", get)
+    rows = outbound._read_details(None, ["1", "2", "3"])
+    assert [row["outbound_invoice_id"] for row in rows] == ["1", "2", "3"]
+    assert sorted(calls) == ["1", "2", "3"]
+    monkeypatch.setattr(outbound.okki_client, "_get_json", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(remote, "read", lambda *_args: (_ for _ in ()).throw(ValueError("auth failed")))
+    with pytest.raises(ValueError, match="auth failed"):
+        outbound._read_details(None, ["1"])
+
+
 def test_shipped_outbound_only_reports_difference(db, order, monkeypatch):
     monkeypatch.setattr(outbound, "find_related", lambda *a: [{"outbound_invoice_id": 9, "status": 2,
         "record_list": [{"order_id": "123", "product_id": 1, "sku_id": 2, "outbound_count": "3"}]}])

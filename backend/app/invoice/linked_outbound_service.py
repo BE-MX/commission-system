@@ -1,9 +1,35 @@
 """Live outbound reconciliation. No writes without a server-side state fence."""
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from datetime import datetime
+import httpx
 
+from app.invoice import okki_client
 from app.receipt import remote
+
+
+def _read_details(db, identities):
+    """Read every listed document without sharing the SQLAlchemy session across threads."""
+    if not identities:
+        return []
+    token = okki_client.ensure_access_token(db)
+
+    def fetch(identity):
+        for attempt in range(2):
+            try:
+                return okki_client._get_json("/v1/invoices/outbound/info", token,
+                    context="关联出库详情", params={"outbound_invoice_id": identity})
+            except okki_client.OkkiApiError as exc:
+                if attempt or not isinstance(exc.__cause__, (httpx.TimeoutException, httpx.NetworkError)):
+                    raise
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        rows = list(pool.map(fetch, identities))
+    # One token refresh is safe here because these are GETs. A failed result
+    # still stops the entire scan rather than treating a document as absent.
+    return [remote.read(db, "/v1/invoices/outbound/info", {"outbound_invoice_id": identity})
+            if row is None else row for identity, row in zip(identities, rows)]
 
 
 def find_related(db, order):
@@ -22,12 +48,14 @@ def find_related(db, order):
         if expected is not None and count != expected:
             raise ValueError("出库单列表已变化，请重新核对")
         expected = count
+        identities = []
         for row in rows:
             identity = str(row.get("outbound_invoice_id") or "")
             if not identity or identity in seen:
                 raise ValueError("出库单分页重复或缺少ID，请重新核对")
             seen.add(identity)
-            detail = remote.read(db, "/v1/invoices/outbound/info", {"outbound_invoice_id": identity})
+            identities.append(identity)
+        for identity, detail in zip(identities, _read_details(db, identities)):
             records = detail.get("record_list")
             if str(detail.get("outbound_invoice_id")) != identity or not isinstance(records, list):
                 raise ValueError("出库单详情不完整")

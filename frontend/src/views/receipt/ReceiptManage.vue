@@ -18,7 +18,7 @@
     </div>
 
     <el-alert class="page-alert" title="库存单完整同步后自动生成回款；失败和待核对单仍占用订单登记额度，请在原单上处理。" type="info" :closable="false" show-icon />
-    <el-alert v-if="deliveryEnabled === false" class="page-alert" title="小满回款同步暂未启用。已创建的回款保留在方舟，启用后自动处理。" type="warning" :closable="false" show-icon />
+    <el-alert v-if="deliveryEnabled === false" class="page-alert" :title="presaleDeliveryEnabled ? '普通订单回款同步暂未启用；预售回款按预售开关独立同步。' : '小满回款同步暂未启用。已创建的回款保留在方舟，启用后自动处理。'" type="warning" :closable="false" show-icon />
 
     <section class="table-card receipt-panel">
       <div class="toolbar">
@@ -144,7 +144,7 @@ const states = ['pending','syncing','synced','failed','uncertain']
 const { loading,list,total,page,pageSize,searchForm,dates,handleSearch,handlePageChange,handleSizeChange,reset,
   editorVisible,detailVisible,detail,saving,uploading,orders,ordersLoading,balance,balanceLoading,error,candidates,
   form,editing,selectedOrder,remainingAfter,editable,searchOrders,selectOrder,openCreate,showDetail,editCurrent,
-  closeEditor,submit,retry,voidCurrent,reconcile,resolve,refreshBalance,deliveryEnabled } = useReceipts()
+  closeEditor,submit,retry,voidCurrent,reconcile,resolve,refreshBalance,deliveryEnabled,presaleDeliveryEnabled } = useReceipts()
 </script>
 <style scoped>
 .receipt-page { position: relative; }
