@@ -70,15 +70,18 @@
         </el-table-column>
         <el-table-column class-name="table-action-column" label="操作" min-width="270" fixed="right">
           <template #default="{ row }">
-            <GlassButton v-if="row.can_print && !row.recheck_status" variant="link" left-icon="Download"
+            <GlassButton v-if="row.can_print && (!row.recheck_status || row.print_before_recheck)" variant="link" left-icon="Download"
               :loading="downloadingId === row.outbound_record_id" @click="downloadWord(row)">下载 Word</GlassButton>
-            <GlassButton v-if="row.can_print && !row.recheck_status" variant="link" left-icon="Printer"
+            <GlassButton v-if="row.can_print && (!row.recheck_status || row.print_before_recheck)" variant="link" left-icon="Printer"
               :loading="printingId === row.outbound_record_id" @click="openPrint(row)">打印出库单</GlassButton>
             <span v-if="!row.can_print || row.recheck_status" class="queue-note">{{ row.recheck_status === 'pending_sync' ? '待同步并重验' : row.recheck_status === 'pending_inspection' ? '待补验' : outboundPendingHint(row.outbound_state) }}</span>
             <el-dropdown v-if="canShowMore(row)" trigger="click" placement="bottom-end">
               <GlassButton variant="link" right-icon="ArrowDown">更多</GlassButton>
               <template #dropdown>
                 <el-dropdown-menu>
+                  <div v-if="row.can_allow_print_before_recheck" v-permission="'shipping_inspection:admin'" role="none">
+                    <el-dropdown-item :disabled="allowingPrintId !== null" @click="allowPrintBeforeRecheck(row)">允许先打印（仍需补验）</el-dropdown-item>
+                  </div>
                   <div v-if="row.record_source === 'okki' && row.outbound_invoice_id" v-permission="'invoice:sync'" role="none">
                     <div v-permission="'shipping_inspection:write'" role="none">
                       <el-dropdown-item icon="Refresh" :disabled="syncingId !== null || deletingId !== null"
@@ -124,6 +127,7 @@ const {
   loading, list, total, page, pageSize, searchForm, fetchList,
   handleSearch, handlePageChange, handleSizeChange,
   printingId, openPrint, downloadingId, downloadWord, deletingId, deleteRecord, recoverDeletion,
+  allowingPrintId, allowPrintBeforeRecheck,
 } = useOutboundRecords()
 const { syncingId, syncVisible, syncPreview, syncRow, previewSync, applySync } = useOutboundInvoiceSync(fetchList)
 const auth = useAuthStore()

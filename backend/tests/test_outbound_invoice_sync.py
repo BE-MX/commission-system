@@ -601,6 +601,10 @@ def test_material_change_with_photos_waits_for_confirm_then_requires_fresh_evide
             'expected_version': preview['version'], 'confirm_recheck': True})
         assert result.status_code == 200, result.text
         assert result.json()['data']['status'] == 'sync_done'
+    db.execute(text('ALTER TABLE lsordertest.okki_outbound_records ADD COLUMN update_time TEXT'))
+    db.execute(text("UPDATE lsordertest.okki_outbound_records SET update_time='2026-09-23 10:00:00' WHERE id='OB001'"))
+    db.commit()
+    outbound_service._columns_cache.clear()
     db.refresh(inspection)
     assert inspection.edit_version == 1
     stale, required = state.evidence(db, 'OB001')
@@ -608,6 +612,42 @@ def test_material_change_with_photos_waits_for_confirm_then_requires_fresh_evide
     assert service.scan_payload(db, 'OB001')['photos'][0]['stale'] is True
     with _pc_client(db, user, PERMS) as client:
         assert client.get(f'{BASE}/OB001/print-data').status_code == 409
+        assert client.post(f'{BASE}/OB001/allow-print-before-recheck', json={
+            'reason': 'Print current outbound before fresh inspection'}).status_code == 403
+    with _pc_client(db, user, PERMS + ['shipping_inspection:admin']) as client:
+        before = client.get(BASE, params={'keyword': 'CK2026001'}).json()['data']['items']
+        assert next(row for row in before if row['outbound_record_id'] == 'OB001')['can_allow_print_before_recheck'] is True
+        granted = client.post(f'{BASE}/OB001/allow-print-before-recheck', json={
+            'reason': 'Print current outbound before fresh inspection'})
+        assert granted.status_code == 200, granted.text
+        assert granted.json()['data'] == {'print_before_recheck': True, 'recheck_required': True}
+        listed = client.get(BASE, params={'keyword': 'CK2026001'}).json()['data']['items']
+        current = next(row for row in listed if row['outbound_record_id'] == 'OB001')
+        assert current['recheck_status'] == 'pending_inspection'
+        assert current['print_before_recheck'] is True
+        assert current['can_allow_print_before_recheck'] is False
+        assert client.get(f'{BASE}/OB001/print-data').status_code == 200
+        assert client.post(f'{BASE}/OB001/allow-print-before-recheck', json={
+            'reason': 'Print current outbound before fresh inspection'}).status_code == 200
+        assert db.query(ShippingOperationEvent).filter_by(action='allow_print', outbound_record_id='OB001').count() == 1
+        db.execute(text("UPDATE lsordertest.okki_outbound_records SET update_time='2026-09-23 11:00:00' WHERE id='OB001'"))
+        db.commit()
+        changed = client.get(BASE, params={'keyword': 'CK2026001'}).json()['data']['items']
+        assert next(row for row in changed if row['outbound_record_id'] == 'OB001')['print_before_recheck'] is False
+        assert client.get(f'{BASE}/OB001/print-data').status_code == 409
+        assert client.get(f'{BASE}/OB001/word').status_code == 409
+        db.execute(text("UPDATE lsordertest.okki_outbound_records SET update_time='2026-09-23 08:00:00' WHERE id='OB001'"))
+        event = db.query(ShippingOperationEvent).filter_by(scope=state.SCOPE, request_id='OB001').one()
+        event.action = 'sync_pending'
+        db.commit()
+        pending = client.get(BASE, params={'keyword': 'CK2026001'}).json()['data']['items']
+        pending_row = next(row for row in pending if row['outbound_record_id'] == 'OB001')
+        assert pending_row['recheck_status'] == 'pending_sync'
+        assert pending_row['can_allow_print_before_recheck'] is False
+        assert client.get(f'{BASE}/OB001/print-data').status_code == 409
+        event.action = 'sync_done'
+        db.commit()
+    assert state.evidence(db, 'OB001')[1]
     monkeypatch.setattr(state, 'overlay', lambda *args, **kwargs: None)
     with pytest.raises(ValueError, match='旧版本'):
         service.delete_photo(db, old.id, user.id, edit_version=1)

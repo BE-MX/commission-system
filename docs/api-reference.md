@@ -1213,6 +1213,8 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 2026-09-23 验货中订单变更：`POST /outbound-records/{record_id}/invoice-sync/preview` 返回 `requires_recheck`、`inspection_status`；已有验货媒体且实物或出库备注变化时保存待重验状态，出库列表 `recheck_status=pending_sync`。`POST /outbound-records/{record_id}/invoice-sync` 新增布尔 `confirm_recheck`，只有仓库在差异预览后显式确认且验货单未提交才更新出库。成功后列表 `recheck_status=pending_inspection`，扫码及验货详情返回 `required_recheck_ids`，媒体返回 `stale`；产品/数量等明细变化时要求镜像中每条现存明细有新照片，备注变化或删除明细要求整单新照片。待同步/待补验期间不允许出库单及验货单打印、验货提交；旧媒体保留归档，不进入新验货打印。无媒体草稿、纯价格改动仍自动同步；已出库和已提交的实物变更不覆盖。
 
+2026-09-28 单张先打印例外：管理员可对已同步、待补验且验货单仍为草稿的正式出库单调用 `POST /outbound-records/{record_id}/allow-print-before-recheck`，提交 `{"reason":"至少8个字符的处理依据"}`。接口按当前已核实的小满出库版本落审计，返回 `print_before_recheck=true`、`recheck_required=true`；列表同步返回 `print_before_recheck`，允许该单打印出库单或下载 Word，同时继续显示“待补验”。后续出库资料再次变化时例外失效。旧照片仍标记过期，补拍要求、验货提交校验及验货单打印限制保持有效；`pending_sync` 和不确定状态不能使用例外。
+
 ## 库存色块图工作台集成（`/api/colorwork`，2026-09-14）
 
 工作台下载页新增只读接口（完整前缀 `/api/colorwork/workbench`，模块会话鉴权）：

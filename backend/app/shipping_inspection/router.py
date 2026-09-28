@@ -24,6 +24,7 @@ from app.core.database import get_db
 from app.core.response import ok, page_result
 from app.shipping_inspection import constants as C
 from app.shipping_inspection import file_service, outbound_service, outbound_queue_service, qr_service, service
+from app.shipping_inspection.outbound_sync_state import BLOCKED, can_allow_print_before_recheck, can_print_before_recheck
 from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto, ShippingOperationEvent
 from app.shipping_inspection.schemas import ShippingRecallRequest
 from app.shipping_inspection.print_customer_service import with_customer_order_info
@@ -183,9 +184,11 @@ def list_outbound_records(
     for row in rows:
         insp = status_map.get(row["outbound_record_id"])
         event = sync_events.get(row["outbound_record_id"])
-        row['recheck_status'] = ('pending_sync' if event and event.action == 'recheck_required'
+        row['recheck_status'] = ('pending_sync' if event and event.action in BLOCKED
                                  else 'pending_inspection' if event and (event.result or {}).get('required_recheck_ids')
                                  else None)
+        row['print_before_recheck'] = can_print_before_recheck(event, row.get('mirror_updated_at'))
+        row['can_allow_print_before_recheck'] = can_allow_print_before_recheck(event, row, insp)
         row["status"] = insp.status if insp else "none"
         if insp is None:
             row["photo_count"] = 0
@@ -209,7 +212,7 @@ def outbound_print_data(
         if record is None:
             raise HTTPException(status_code=404, detail="出库单不存在")
         from app.shipping_inspection.outbound_sync_state import ensure_printable, apply_header
-        sync_event = ensure_printable(db, record_id)
+        sync_event = ensure_printable(db, record_id, record)
         record = apply_header(db, record, event=sync_event)
         items = outbound_service.list_outbound_items(db, record_id, sync_event=sync_event)
     except ValueError as exc:
@@ -244,7 +247,7 @@ def outbound_word(
         if record is None:
             raise HTTPException(status_code=404, detail="出库单不存在")
         from app.shipping_inspection.outbound_sync_state import ensure_printable, apply_header
-        sync_event = ensure_printable(db, record_id)
+        sync_event = ensure_printable(db, record_id, record)
         record = apply_header(db, record, event=sync_event)
         items = outbound_service.list_outbound_items(db, record_id, sync_event=sync_event)
     except ValueError as exc:
