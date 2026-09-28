@@ -491,8 +491,8 @@
       @apply="applyWholeOrderPaste"
     />
 
-    <!-- 旧版下单抽屉（过渡期）：与新版共享编辑器状态；整单粘贴对话框两版共用，
-         旧版明细区另保留独立「从 Excel 粘贴」入口（open-legacy-paste） -->
+    <!-- 旧版下单抽屉（过渡期）：与新版共享编辑器状态和整单粘贴对话框，
+         产品明细的「从 Excel 粘贴」入口也在两版中共用。 -->
     <InvoiceLegacyDrawer
       :editor="editor"
       :money="money"

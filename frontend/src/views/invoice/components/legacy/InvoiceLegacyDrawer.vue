@@ -178,7 +178,6 @@
           :entry-options="entryOptions"
           :can-paste-import="canPasteImport"
           :paste-import-disabled-reason="pasteImportDisabledReason"
-          show-paste-entry
           :load-line-options="loadLineOptions"
           :on-line-filter-change="onLineFilterChange"
           :on-custom-field-change="onCustomFieldChange"
