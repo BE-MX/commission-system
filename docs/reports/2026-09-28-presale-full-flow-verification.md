@@ -6,7 +6,7 @@
 
 方舟创建预售主单、发送首款、建立独立运费订单、发送运费回款、核验资金、创建待出库单及确认实际出库，已在当前 OKKI 租户用专用测试单据贯通。真实单笔链路耗时 28 分 27 秒，主要由首次建立全量回款索引和多次逐张读取关联出库单造成；出库扫描改为每页最多 4 路并发只读请求后，同一天完整扫描的单次实测为 53.25 秒。并发扫描仍读取每张出库详情，不按客户头字段跳过记录。
 
-生产按钮仍由 `PRESALE_SETTLEMENT_ENABLED`、`PRESALE_DELIVERY_ENABLED` 和正整数 `OKKI_PRESALE_WAREHOUSE_ID` 共同控制，默认保持关闭。当前分支尚未合并、推送或部署，生产未开放预售入口。生产数据库只读核验显示迁移版本为 `170_presale_freight_name`，预售订单数为 0。
+生产按钮由 `PRESALE_SETTLEMENT_ENABLED`、`PRESALE_DELIVERY_ENABLED` 和正整数 `OKKI_PRESALE_WAREHOUSE_ID` 共同控制，默认保持关闭。初次联调时生产数据库只读核验显示迁移版本为 `170_presale_freight_name`，预售订单数为 0；本日后续发布与开关状态见文末。
 
 ## 当前租户真实链路
 
@@ -36,10 +36,10 @@
 
 在本报告完成后，任务分支又合入最新 `main` 的订单重同步后重新排队待出库任务修复（`46a2f171`）。合并无文件冲突；合并后预售与出库相关后端回归 103 项、小满出库执行器 Node 回归 48 项通过。该合并未再发起真实小满写入探针。
 
-## 发布时必须执行
+## 生产发布与剩余验收
 
-1. 合并、推送并通过项目 `deploy/deploy.bat` 发布本分支改动；核对目标环境与部署版本。
-2. 在目标后端设置 `PRESALE_SETTLEMENT_ENABLED=true`、`PRESALE_DELIVERY_ENABLED=true`、实际有效的正整数 `OKKI_PRESALE_WAREHOUSE_ID`，重启后端并核对 `/shipments/capabilities` 返回启用。普通回款总开关可以维持关闭。
-3. 用授权人员在正式页面创建一张预售测试单，核对按钮、首款状态、结算报价和出库记录；随后按精确 ID 清理。若客户回款或远端出库扫描失败，保持预售开关关闭并核查原单。
+1. 已合并并推送 `main`，固定提交 `de689e3bd7f21c57b286a81c5b4bf5a20c5119cd` 经 `deploy/deploy.bat --prepare-only` 预检后完成办公室和北京完整发布。办公室回执 `release_id=9d5247df872d4057a14a570fdedc0610`、`status=succeeded`，`deferred=[]`，出库调度 `verified/active/enabled`；两站代码版本一致、共享数据库仍为 `170_presale_freight_name`。
+2. 两站后端运行配置已设置 `PRESALE_SETTLEMENT_ENABLED=true`、`PRESALE_DELIVERY_ENABLED=true`、`OKKI_PRESALE_WAREHOUSE_ID=8193514242746`，保留原文件受限备份。重启后两站服务端 `capabilities()` 均返回结算、运费和出库启用；办公室与北京本机及公网 `/health` 均为 `ok/connected`，两站首页 HTTP 200。
+3. 正式页面目前停在登录页，仍需授权用户登录后核对新建预售单按钮和结算/出库入口。当前租户的真实小满写入链路已用专用单据完成并清理；如再次创建页面测试单，须按精确 ID 清理关联回款、出库单和订单。
 
 小满原生销售报表会包含独立运费订单；方舟页面已经标注这一口径，方舟商品 GMV、订单数和提成统计排除该角色。
