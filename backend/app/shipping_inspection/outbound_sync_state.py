@@ -1,7 +1,7 @@
 """Shared outbound synchronization mutex, durable audit and mirror overlay."""
 from sqlalchemy.exc import IntegrityError
 from app.shipping_inspection import audit_service
-from app.shipping_inspection.models import ShippingOperationEvent
+from app.shipping_inspection.models import ShippingInspection, ShippingOperationEvent
 
 SCOPE = 'outbound-invoice-sync'
 ACTIVE = ('sync_pending', 'sync_sending', 'sync_uncertain')
@@ -9,11 +9,68 @@ RECHECK = 'recheck_required'
 BLOCKED = ACTIVE + (RECHECK,)
 
 
-def ensure_printable(db, record_id):
+def can_print_before_recheck(event, mirror_updated_at=None):
+    """A scoped exception permits the current outbound sheet, not old inspection evidence."""
+    if not event or event.action != 'sync_done':
+        return False
+    result = event.result or {}
+    grant = result.get('print_before_recheck')
+    verified = result.get('verified') or {}
+    return (bool(result.get('required_recheck_ids')) and isinstance(grant, dict)
+            and bool(verified.get('update_time'))
+            and grant.get('verified_update_time') == verified['update_time']
+            and bool(mirror_updated_at) and str(mirror_updated_at) <= str(verified['update_time']))
+
+
+def can_allow_print_before_recheck(event, record, inspection):
+    if not event or event.action != 'sync_done' or not inspection or inspection.status != 'draft':
+        return False
+    result = event.result or {}
+    verified = result.get('verified') or {}
+    mirror_time = record.get('mirror_updated_at')
+    return (bool(result.get('required_recheck_ids')) and bool(verified.get('update_time'))
+            and bool(mirror_time) and str(mirror_time) <= str(verified['update_time'])
+            and not can_print_before_recheck(event, mirror_time))
+
+
+def ensure_printable(db, record_id, record=None):
     event = db.query(ShippingOperationEvent).filter_by(scope=SCOPE, request_id=str(record_id)).populate_existing().with_for_update().first()
-    if event and (event.action in BLOCKED or (event.result or {}).get('required_recheck_ids')):
+    if event and (event.action in BLOCKED or
+                  ((event.result or {}).get('required_recheck_ids') and not can_print_before_recheck(
+                      event, record.get('mirror_updated_at') if record else None))):
         raise ValueError('出库单正在同步或等待重新验货核对，暂不能打印')
     return event
+
+
+def allow_print_before_recheck(db, record, actor_id, reason):
+    """Allow printing this verified outbound while fresh inspection remains mandatory."""
+    if len(reason.strip()) < 8:
+        raise ValueError('请填写至少8个字符的处理依据')
+    record_id = str(record['outbound_record_id'])
+    event = db.query(ShippingOperationEvent).filter_by(scope=SCOPE, request_id=record_id).populate_existing().with_for_update().first()
+    result = event.result or {} if event else {}
+    verified = result.get('verified') or {}
+    if (event is None or event.action != 'sync_done' or not result.get('required_recheck_ids')
+            or not verified.get('update_time')):
+        raise ValueError('出库单不处于已同步待补验状态，请刷新后核对')
+    mirror_time = record.get('mirror_updated_at')
+    if not mirror_time or str(mirror_time) > str(verified['update_time']):
+        raise ValueError('小满出库资料已再次变化，请先同步并核对')
+    inspection = db.query(ShippingInspection).filter_by(outbound_record_id=record_id).populate_existing().with_for_update().first()
+    if inspection is None or inspection.status != 'draft':
+        raise ValueError('原验货单状态已变化，请刷新后核对')
+    if can_print_before_recheck(event, mirror_time):
+        return {'print_before_recheck': True, 'recheck_required': True}
+    event.result = {**result, 'print_before_recheck': {
+        'verified_update_time': verified['update_time'], 'inspection_id': inspection.id,
+    }}
+    audit_service.record(db, 'allow_print', actor_id, record_id, inspection=inspection,
+                         context={'scope': f'pc:{actor_id}', 'source': 'pc'},
+                         payload={'reason': reason, 'verified_update_time': verified['update_time']},
+                         result={'recheck_required': True})
+    from app.shipping_inspection.outbound_sync_service import commit
+    commit(db)
+    return {'print_before_recheck': True, 'recheck_required': True}
 
 
 def lock(db, record_id, actor):

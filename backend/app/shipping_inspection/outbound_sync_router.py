@@ -6,7 +6,7 @@ from app.auth.dependencies import require_permission
 from app.core.database import get_db
 from app.core.response import ok
 from app.invoice.okki_client import OkkiApiError
-from app.shipping_inspection import outbound_service, outbound_sync_service
+from app.shipping_inspection import outbound_service, outbound_sync_service, outbound_sync_state
 
 router = APIRouter()
 
@@ -16,6 +16,10 @@ class SyncRequest(BaseModel):
     check_only: bool = False
     confirm_recheck: bool = False
     repair: bool = False
+
+
+class AllowPrintBeforeRecheckRequest(BaseModel):
+    reason: str = Field(min_length=8, max_length=300)
 
 
 def _record(db, record_id, user):
@@ -46,5 +50,17 @@ def synchronize(record_id: str, body: SyncRequest, db: Session = Depends(get_db)
                                                     check_only=body.check_only, confirm_recheck=body.confirm_recheck,
                                                     repair=body.repair))
     except (ValueError, OkkiApiError) as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.post('/outbound-records/{record_id}/allow-print-before-recheck', summary='允许单张已同步出库单先打印，保留补验要求')
+def allow_print_before_recheck(record_id: str, body: AllowPrintBeforeRecheckRequest,
+                               db: Session = Depends(get_db),
+                               user=Depends(require_permission('shipping_inspection:admin'))):
+    try:
+        return ok(outbound_sync_state.allow_print_before_recheck(
+            db, _record(db, record_id, user), int(user['sub']), body.reason.strip()))
+    except ValueError as exc:
         db.rollback()
         raise HTTPException(409, str(exc)) from exc
