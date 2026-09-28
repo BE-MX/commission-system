@@ -143,17 +143,18 @@ def test_invoice_sync_permission_can_rename_only_when_outbound_contents_match(db
     assert [p['serial_id'] for p in fake['posts']] == ['RENAMED-LIMITED']
 
 
-def test_invoice_sync_permission_does_not_change_outbound_contents(db, sync_case):
+def test_invoice_sync_permission_updates_its_own_outbound_contents(db, sync_case):
     user, invoice, _, fake = sync_case
     _renamed_link(db, invoice, 'RENAMED-LIMITED')
     actor = {'sub': str(user.id), 'permissions': ['invoice:sync'], 'roles': []}
     result = followup.safely_run(db, invoice, actor)
-    assert result['status'] == 'manual'
-    assert fake['posts'] == []
+    assert result['status'] == 'done'
+    assert len(fake['posts']) == 1
+    assert fake['outbound']['record_list'][0]['outbound_count'] == 2
 
 
 @pytest.mark.parametrize('drift', ['price', 'remark'])
-def test_invoice_rename_does_not_report_done_when_serial_matches_but_contents_drift(db, sync_case, drift):
+def test_invoice_rename_reconciles_contents_even_when_serial_already_matches(db, sync_case, drift):
     user, invoice, item, fake = sync_case
     fake['outbound']['record_list'][0].update(product_id=22, sku_id=220, outbound_count=2,
         sale_price=120.27, product_name=item.product_name)
@@ -166,8 +167,10 @@ def test_invoice_rename_does_not_report_done_when_serial_matches_but_contents_dr
         fake['outbound']['remark'] = 'stale note'
     actor = {'sub': str(user.id), 'permissions': ['invoice:sync'], 'roles': []}
     result = followup.safely_run(db, invoice, actor)
-    assert result['status'] == 'manual'
-    assert fake['posts'] == []
+    assert result['status'] == 'done'
+    assert len(fake['posts']) == 1
+    assert fake['outbound']['record_list'][0]['sale_price'] == 120.27
+    assert fake['outbound']['remark'] == invoice.remark
 
 
 def test_invoice_rename_can_verify_already_matching_outbound_without_edit_permission(db, sync_case):
@@ -417,16 +420,104 @@ def test_invoice_sync_followup_preserves_inspection_and_reports_partial_success(
     db.add(ShippingInspectionPhoto(inspection_id=inspection.id, item_id='okki:701', file_path='old.jpg'))
     db.commit()
     result = followup.safely_run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})
-    assert result['status'] == 'manual' and '验货' in result['message']
-    assert fake['posts'] == []
+    assert result['status'] == 'manual' and result['outbound_updated'] is True
+    assert len(fake['posts']) == 1
+    db.refresh(inspection)
+    assert inspection.status == 'draft' and inspection.recalled_by == user.id
+    assert db.query(ShippingOperationEvent).filter_by(action='recall', source='invoice_sync').count() == 1
+    assert state.evidence(db, 'OB001')[1]
+    assert db.query(ShippingOperationEvent).filter_by(scope=state.SCOPE).one().source == 'invoice_sync'
 
 
-def test_invoice_sync_followup_respects_outbound_scope_and_write_permission(db, sync_case):
+def test_submitted_inspection_is_not_recalled_when_remote_update_is_uncertain(db, sync_case):
+    user, inv, _, fake = sync_case
+    inspection = ShippingInspection(outbound_record_id='OB001', status='submitted', created_by=user.id)
+    db.add(inspection)
+    db.flush()
+    db.add(ShippingInspectionPhoto(inspection_id=inspection.id, item_id='okki:701', file_path='old.jpg'))
+    db.commit()
+    fake['reject'] = True
+    result = followup.safely_run(db, inv, {'sub': str(user.id), 'permissions': ['invoice:sync'], 'roles': []})
+    db.refresh(inspection)
+    assert result['status'] == 'manual'
+    assert inspection.status == 'submitted' and inspection.recalled_at is None
+    assert len(fake['posts']) == 1
+    assert db.query(ShippingOperationEvent).filter_by(scope=state.SCOPE).one().action == 'sync_uncertain'
+    assert db.query(ShippingOperationEvent).filter_by(action='recall', source='invoice_sync').count() == 0
+
+
+def test_rechecking_updated_outbound_keeps_same_version_print_exception(db, sync_case):
+    user, inv, _, fake = sync_case
+    inspection = ShippingInspection(outbound_record_id='OB001', status='submitted', created_by=user.id)
+    db.add(inspection)
+    db.flush()
+    db.add(ShippingInspectionPhoto(inspection_id=inspection.id, item_id='okki:701', file_path='old.jpg'))
+    db.commit()
+    actor = {'sub': str(user.id), 'permissions': ['invoice:sync'], 'roles': []}
+    assert followup.run(db, inv, actor)['category'] == 'inspection_recheck'
+    event = db.query(ShippingOperationEvent).filter_by(scope=state.SCOPE).one()
+    grant = {'verified_update_time': event.result['verified']['update_time'], 'reason': 'reviewed'}
+    event.result = {**event.result, 'print_before_recheck': grant}
+    db.commit()
+    assert followup.run(db, inv, actor)['category'] == 'inspection_recheck'
+    db.refresh(event)
+    assert event.result['print_before_recheck'] == grant
+    assert len(fake['posts']) == 1
+    assert db.query(ShippingOperationEvent).filter_by(action='recall', source='invoice_sync').count() == 1
+
+
+def test_invoice_sync_followup_uses_exact_invoice_binding_without_warehouse_permission(db, sync_case):
     user, inv, _, fake = sync_case
     assert outbound_service.get_record_by_outbound_invoice_id(db, '77', okki_user_id='9002') is None
     result = followup.run(db, inv, {'sub': str(user.id), 'permissions': ['invoice:sync'], 'roles': []})
-    assert result['status'] == 'manual' and '权限' in result['message']
+    assert result['status'] == 'done'
+    assert len(fake['posts']) == 1
+
+
+def test_invoice_sync_followup_rejects_another_users_invoice(db, sync_case):
+    _, inv, _, fake = sync_case
+    result = followup.safely_run(db, inv, {'sub': '99999', 'permissions': ['invoice:sync'], 'roles': []})
+    assert result['status'] == 'manual'
     assert fake['posts'] == []
+
+
+def test_serial_only_update_refreshes_existing_inspection_number(db, sync_case):
+    user, invoice, item, fake = sync_case
+    fake['outbound']['record_list'][0].update(product_id=22, sku_id=220, outbound_count=2,
+        sale_price=120.27, product_name=item.product_name)
+    fake['outbound']['remark'] = invoice.remark
+    _renamed_link(db, invoice, 'RENAMED-SERIAL-ONLY')
+    inspection = ShippingInspection(outbound_record_id='OB001', outbound_no='CK2026001', status='draft')
+    db.add(inspection)
+    db.commit()
+    result = followup.run(db, invoice, {'sub': str(user.id), 'permissions': ['invoice:sync'], 'roles': []})
+    db.refresh(inspection)
+    assert result['status'] == 'done'
+    assert inspection.outbound_no == 'RENAMED-SERIAL-ONLY' and inspection.edit_version == 1
+    assert len(fake['posts']) == 1
+
+
+def test_serial_only_update_preserves_submitted_inspection_and_photos(db, sync_case):
+    user, invoice, item, fake = sync_case
+    fake['outbound']['record_list'][0].update(product_id=22, sku_id=220, outbound_count=2,
+        sale_price=120.27, product_name=item.product_name)
+    fake['outbound']['remark'] = invoice.remark
+    _renamed_link(db, invoice, 'RENAMED-WITH-INSPECTION')
+    inspection = ShippingInspection(outbound_record_id='OB001', outbound_no='CK2026001',
+                                    status='submitted', created_by=user.id)
+    db.add(inspection)
+    db.flush()
+    photo = ShippingInspectionPhoto(inspection_id=inspection.id, item_id='okki:701', file_path='old.jpg')
+    db.add(photo)
+    db.commit()
+    result = followup.run(db, invoice, {'sub': str(user.id), 'permissions': ['invoice:sync'], 'roles': []})
+    db.refresh(inspection)
+    assert result['status'] == 'done'
+    assert inspection.status == 'submitted' and inspection.recalled_at is None
+    assert inspection.outbound_no == 'RENAMED-WITH-INSPECTION'
+    assert photo.id not in state.evidence(db, 'OB001')[0]
+    assert not state.evidence(db, 'OB001')[1]
+    assert db.query(ShippingOperationEvent).filter_by(action='recall', source='invoice_sync').count() == 0
 
 
 @pytest.mark.parametrize('operation', ['add', 'replace', 'remove'])
@@ -455,12 +546,8 @@ def test_accessories_sync_with_hair_and_appear_in_print(db, sync_case, monkeypat
         data = preview.json()['data']
         change = next(c for c in data['changes'] if (c['after'] or c['before'])['name'] in ('Tool Kit', 'hair hangers'))
         assert change['action'] == {'add': '新增', 'replace': '修改', 'remove': '删除'}[operation]
-        if operation == 'add':
-            # Saving the invoice now follows the same accessory-aware plan.
-            assert followup.run(db, inv, {'sub': str(user.id), 'permissions': PERMS, 'roles': []})['status'] == 'done'
-        else:
-            applied = client.post(f'{BASE}/OB001/invoice-sync', json={'expected_version': data['version']})
-            assert applied.status_code == 200 and applied.json()['data']['status'] == 'sync_done'
+        # All three item mutations are reconciled by the invoice follow-up.
+        assert followup.run(db, inv, {'sub': str(user.id), 'permissions': ['invoice:sync'], 'roles': []})['status'] == 'done'
         printed = client.get(f'{BASE}/OB001/print-data')
         assert printed.status_code == 200, printed.text
         items = printed.json()['data']['items']
@@ -588,19 +675,13 @@ def test_material_change_with_photos_waits_for_confirm_then_requires_fresh_evide
     db.add(old)
     db.commit()
     actor = {'sub': str(user.id), 'permissions': PERMS, 'roles': []}
-    assert followup.run(db, inv, actor)['status'] == 'manual'
-    assert not fake['posts']
+    result = followup.run(db, inv, actor)
+    assert result['status'] == 'manual' and result['outbound_updated'] is True
+    assert len(fake['posts']) == 1
     with _pc_client(db, user, PERMS) as client:
         assert client.get(f'{BASE}/OB001/print-data').status_code == 409
         preview = client.post(f'{BASE}/OB001/invoice-sync/preview').json()['data']
-        assert preview['requires_recheck'] and preview['inspection_status'] == 'draft'
-        result = client.post(f'{BASE}/OB001/invoice-sync', json={'expected_version': preview['version']}).json()['data']
-        assert result['status'] == state.RECHECK
-        assert not fake['posts']
-        result = client.post(f'{BASE}/OB001/invoice-sync', json={
-            'expected_version': preview['version'], 'confirm_recheck': True})
-        assert result.status_code == 200, result.text
-        assert result.json()['data']['status'] == 'sync_done'
+        assert not preview['requires_recheck'] and not preview['changed']
     db.execute(text('ALTER TABLE lsordertest.okki_outbound_records ADD COLUMN update_time TEXT'))
     db.execute(text("UPDATE lsordertest.okki_outbound_records SET update_time='2026-09-23 10:00:00' WHERE id='OB001'"))
     db.commit()
