@@ -200,34 +200,38 @@ async function createOneAttempt(orderId, {api, directory, invoiceNo, invoiceRema
     if (shortages.length) return {outcome: 'waiting_stock', order_id: orderId, reason: 'Insufficient warehouse stock', shortages};
   }
   if (dryRun) return { outcome: 'dry_run', order_id: orderId, serial_id: payload.serial_id, items: payload.record_list.length, quantity: payload.record_list.reduce((n, r) => n + r.outbound_count, 0) };
-  if (beforeSubmit) await beforeSubmit(order);
-  fs.mkdirSync(intents, {recursive: true, mode: 0o700});
-  let fd;
-  try { fd = fs.openSync(intent, 'wx', 0o600); }
-  catch (error) { if (error.code === 'EEXIST') error.uncertain = true; throw error; }
-  try { fs.writeFileSync(fd, JSON.stringify({order_id: orderId, started_at: now(), payload})); fs.fsyncSync(fd); }
-  finally { fs.closeSync(fd); }
-  // Once intent is durable, every ambiguous failure is quarantined, never retried.
+  const releaseFence = beforeSubmit && await beforeSubmit(order);
   try {
-    const result = await api('/v1/invoices/outbound/push', payload);
-    if (!result.outbound_invoice_id || !result.serial_id) throw new Error('Creation response missing outbound ID/number');
-    if (result.serial_id !== payload.serial_id) throw new Error('Created outbound number differs from Ark invoice');
-    const detail = await api('/v1/invoices/outbound/info?outbound_invoice_id=' + result.outbound_invoice_id);
-    if (!Array.isArray(detail.record_list) || !detail.record_list.some(r => String(r.order_id) === orderId)) throw new Error('Created outbound association not verified');
-    verifyCreated(detail, result, payload);
-    if ((detail.remark ?? '') !== payload.remark) throw new Error('Created outbound remark differs from Ark invoice');
-    const row = {order_id: orderId, outbound_invoice_id: result.outbound_invoice_id, serial_id: result.serial_id, at: now()};
-    fs.appendFileSync(ledger, JSON.stringify(row) + '\n', {mode: 0o600});
-    return {outcome: 'created', ...row};
-  } catch (error) {
-    if (error.stockRejected === true) {
-      // Preserve rejection evidence. A crash during this write fails closed on next read.
-      const fd = fs.openSync(intent, 'w', 0o600);
-      try { fs.writeFileSync(fd, JSON.stringify({order_id: orderId, outcome: 'stock_rejected', rejected_at: now(), error: error.message, payload})); fs.fsyncSync(fd); }
-      finally { fs.closeSync(fd); }
-      return {outcome: 'waiting_stock', order_id: orderId, reason: error.message};
+    fs.mkdirSync(intents, {recursive: true, mode: 0o700});
+    let fd;
+    try { fd = fs.openSync(intent, 'wx', 0o600); }
+    catch (error) { if (error.code === 'EEXIST') error.uncertain = true; throw error; }
+    try { fs.writeFileSync(fd, JSON.stringify({order_id: orderId, started_at: now(), payload})); fs.fsyncSync(fd); }
+    finally { fs.closeSync(fd); }
+    // Once intent is durable, every ambiguous failure is quarantined, never retried.
+    try {
+      const result = await api('/v1/invoices/outbound/push', payload);
+      if (!result.outbound_invoice_id || !result.serial_id) throw new Error('Creation response missing outbound ID/number');
+      if (result.serial_id !== payload.serial_id) throw new Error('Created outbound number differs from Ark invoice');
+      const detail = await api('/v1/invoices/outbound/info?outbound_invoice_id=' + result.outbound_invoice_id);
+      if (!Array.isArray(detail.record_list) || !detail.record_list.some(r => String(r.order_id) === orderId)) throw new Error('Created outbound association not verified');
+      verifyCreated(detail, result, payload);
+      if ((detail.remark ?? '') !== payload.remark) throw new Error('Created outbound remark differs from Ark invoice');
+      const row = {order_id: orderId, outbound_invoice_id: result.outbound_invoice_id, serial_id: result.serial_id, at: now()};
+      fs.appendFileSync(ledger, JSON.stringify(row) + '\n', {mode: 0o600});
+      return {outcome: 'created', ...row};
+    } catch (error) {
+      if (error.stockRejected === true) {
+        // Preserve rejection evidence. A crash during this write fails closed on next read.
+        const fd = fs.openSync(intent, 'w', 0o600);
+        try { fs.writeFileSync(fd, JSON.stringify({order_id: orderId, outcome: 'stock_rejected', rejected_at: now(), error: error.message, payload})); fs.fsyncSync(fd); }
+        finally { fs.closeSync(fd); }
+        return {outcome: 'waiting_stock', order_id: orderId, reason: error.message};
+      }
+      error.uncertain = true; throw error;
     }
-    error.uncertain = true; throw error;
+  } finally {
+    if (releaseFence) await releaseFence();
   }
 }
 
@@ -281,6 +285,17 @@ export function assertRegenerationTask(task, generation) {
       task.linked_sync_id) throw new Error('Regeneration task or successful sync changed; no creation attempted');
 }
 
+export function assertClaimedTask(task, syncLogId, attempt, generation = null) {
+  if (!/^[1-9]\d*$/.test(String(syncLogId)) || !/^[1-9]\d*$/.test(String(attempt)) ||
+      task?.status !== 'running' || String(task.attempts) !== String(attempt) ||
+      String(task.latest_sync_log_id) !== String(syncLogId) || task.sync_status !== 'synced' ||
+      task.linked_sync_id || task.order_type === 'presale' ||
+      (!generation && String(task.reason || '').startsWith('regenerate:'))) {
+    throw new Error('Claimed outbound task or successful sync changed; no creation attempted');
+  }
+  if (generation) assertRegenerationTask(task, generation);
+}
+
 async function main() {
   const root = process.env.OUTBOUND_SCRIPT_DIR || path.dirname(fileURLToPath(import.meta.url));
   const {OkkiAuth, OKKI_CONFIG} = await import('./auth.js');
@@ -289,7 +304,11 @@ async function main() {
   const mysql = await import('mysql2/promise');
   const conn = await mysql.createConnection({host: process.env.ARK_DB_HOST, port: Number(process.env.ARK_DB_PORT || 3306),
     user: process.env.ARK_DB_USER, password: process.env.ARK_DB_PASSWORD, database: process.env.ARK_DB_NAME});
-  let knownIds, invoice, generation;
+  let knownIds, invoice, generation, invoiceId;
+  const claimedSyncLogId = process.argv.find(value => value.startsWith('--claimed-sync-log='))?.split('=')[1];
+  const claimedAttempt = process.argv.find(value => value.startsWith('--claimed-attempt='))?.split('=')[1];
+  const managedClaim = claimedSyncLogId !== undefined || claimedAttempt !== undefined;
+  if (managedClaim && (!claimedSyncLogId || !claimedAttempt)) throw new Error('Incomplete outbound claim; no creation attempted');
   try {
     const schema = process.env.ARK_BUSINESS_DB_NAME;
     if (!/^[A-Za-z0-9_]+$/.test(schema || '')) throw new Error('Invalid business schema');
@@ -297,10 +316,11 @@ async function main() {
     knownIds = rows.map(row => String(row.outbound_invoice_id));
     invoice = await loadInvoiceForOrder(conn, process.argv[2]);
     const [[task]] = await conn.query(
-      `SELECT t.status, t.reason, i.sync_status, i.linked_sync_id,
+      `SELECT t.invoice_id, t.status, t.reason, t.attempts, i.sync_status, i.linked_sync_id, i.order_type,
               (SELECT MAX(id) FROM ark_invoice_sync_logs WHERE invoice_id=i.id AND success=1) AS latest_sync_log_id
          FROM ark_okki_outbound_tasks t JOIN ark_invoices i ON i.id=t.invoice_id WHERE t.order_id=?`,
       [process.argv[2]]);
+    invoiceId = task?.invoice_id;
     const argument = process.argv.find(value => value.startsWith('--regeneration-sync-log='));
     if (argument) {
       generation = argument.slice('--regeneration-sync-log='.length);
@@ -311,22 +331,36 @@ async function main() {
     } else if (String(task?.reason || '').startsWith('regenerate:')) {
       throw new Error('Regeneration generation missing; no creation attempted');
     }
+    if (managedClaim) assertClaimedTask(task, claimedSyncLogId, claimedAttempt, generation);
   } finally { await conn.end(); }
   const directory = generation ? regenerationDirectory(root, generation) : root;
   if (generation) fs.mkdirSync(path.join(directory, 'logs'), {recursive: true, mode: 0o700});
-  const beforeSubmit = generation ? async original => {
-    const fresh = await api('/v1/invoices/order/info?order_id=' + process.argv[2]);
-    if (JSON.stringify(fresh) !== JSON.stringify(original)) throw new Error('Order changed during regeneration; no submission attempted');
+  const beforeSubmit = (generation || managedClaim) ? async original => {
     const check = await mysql.createConnection({host: process.env.ARK_DB_HOST, port: Number(process.env.ARK_DB_PORT || 3306),
       user: process.env.ARK_DB_USER, password: process.env.ARK_DB_PASSWORD, database: process.env.ARK_DB_NAME});
     try {
+      await check.query('START TRANSACTION');
+      const [[lockedInvoice]] = await check.query(
+        'SELECT id FROM ark_invoices WHERE id=? FOR UPDATE', [invoiceId]);
+      if (!lockedInvoice) throw new Error('Claimed invoice missing; no creation attempted');
       const [[current]] = await check.query(
-        `SELECT t.status, t.reason, i.sync_status, i.linked_sync_id,
+        `SELECT t.status, t.reason, t.attempts, i.sync_status, i.linked_sync_id, i.order_type,
                 (SELECT MAX(id) FROM ark_invoice_sync_logs WHERE invoice_id=i.id AND success=1) AS latest_sync_log_id
-           FROM ark_okki_outbound_tasks t JOIN ark_invoices i ON i.id=t.invoice_id WHERE t.order_id=?`,
+           FROM ark_okki_outbound_tasks t JOIN ark_invoices i ON i.id=t.invoice_id WHERE t.order_id=? FOR UPDATE`,
         [process.argv[2]]);
-      assertRegenerationTask(current, generation);
-    } finally { await check.end(); }
+      if (managedClaim) assertClaimedTask(current, claimedSyncLogId, claimedAttempt, generation);
+      else assertRegenerationTask(current, generation);
+      const fresh = await api('/v1/invoices/order/info?order_id=' + process.argv[2]);
+      if (JSON.stringify(fresh) !== JSON.stringify(original)) throw new Error('Order changed before outbound submission; no creation attempted');
+      return async () => {
+        try { await check.query('ROLLBACK'); }
+        catch (error) { error.uncertain = true; throw error; }
+        finally { await check.end(); }
+      };
+    } catch (error) {
+      try { await check.query('ROLLBACK'); } finally { await check.end(); }
+      throw error;
+    }
   } : undefined;
   const result = await createOne(process.argv[2], {api, directory, ...invoice, knownIds,
     dryRun: !process.argv.includes('--run'), beforeSubmit, regeneration: Boolean(generation)});
