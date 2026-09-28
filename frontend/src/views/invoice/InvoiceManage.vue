@@ -197,7 +197,8 @@
       />
     </div>
 
-    <el-drawer v-model="drawerVisible" :title="drawerTitle" size="94%">
+    <el-drawer v-model="drawerVisible" :title="drawerTitle" size="94%"
+               body-class="invoice-modern-drawer-body" footer-class="invoice-modern-drawer-footer">
       <template #default>
         <el-form ref="formRef" :model="form" label-position="top" class="invoice-form">
           <div class="drawer-panes">

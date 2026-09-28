@@ -183,7 +183,7 @@
 }
 
 /* 抽屉 body 只作窗格容器，自身不滚动；滚动发生在左右两个 pane 内部 */
-.invoice-page :deep(.el-drawer__body) {
+.invoice-page :deep(.invoice-modern-drawer-body) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -452,7 +452,7 @@
   color: var(--invoice-muted);
 }
 
-.invoice-page :deep(.el-drawer__footer) {
+.invoice-page :deep(.invoice-modern-drawer-footer) {
   border-top: 1px solid var(--invoice-border);
   background: rgba(250, 251, 254, 0.96);
 }
