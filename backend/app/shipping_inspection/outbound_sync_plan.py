@@ -101,7 +101,7 @@ def build(before, order, products, remark, *, serial_id=None):
             'material_order_ids': material_order_ids, 'removed_order_ids': removed_order_ids,
             'remark_changed': remark_changed,
             'requires_whole_recheck': remark_changed or bool(removed_order_ids),
-            'material_changed': bool(material_order_ids or removed_order_ids or remark_changed or serial_changed)}
+            'material_changed': bool(material_order_ids or removed_order_ids or remark_changed)}
 
 
 def display(row):
