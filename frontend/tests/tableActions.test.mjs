@@ -17,7 +17,9 @@ test('every action column opts into the shared wrapping layout', t => {
     const visit = node => {
       if (node.tag === 'el-table-column') {
         const attr = name => node.props.find(prop => prop.name === name)?.value?.content
-        if (['操作', '处理', '匹配结果 / 处理'].includes(attr('label'))) {
+        // A data field named "操作" describes a change; it has no action buttons to wrap.
+        const descriptiveAction = attr('prop') === 'action' && node.children.length === 0
+        if (['操作', '处理', '匹配结果 / 处理'].includes(attr('label')) && !descriptiveAction) {
           columns++
           assert.ok(attr('class-name')?.split(/\s+/).includes('table-action-column'),
             `${path.relative(src, file)}:${node.loc.start.line} action column would inherit ellipsis`)

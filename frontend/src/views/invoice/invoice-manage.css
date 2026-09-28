@@ -230,7 +230,8 @@
   padding: 14px 16px 16px;
 }
 
-.card-title {
+.card-title,
+.invoice-order-fields :deep(.card-title) {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -240,11 +241,13 @@
   color: var(--invoice-ink);
 }
 
-.card-title-action {
+.card-title-action,
+.invoice-order-fields :deep(.card-title-action) {
   margin-left: auto;
 }
 
-.step {
+.step,
+.invoice-order-fields :deep(.step) {
   display: inline-flex;
   width: 20px;
   height: 20px;
@@ -264,7 +267,8 @@
 }
 
 /* 顶部标签 + 3 列等宽网格：替代原 6 列 span 混排，行列严格对齐 */
-.fgrid {
+.fgrid,
+.invoice-order-fields :deep(.fgrid) {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0 16px;
@@ -275,11 +279,13 @@
   grid-column: span 2;
 }
 
-.fgrid-c3 {
+.fgrid-c3,
+.invoice-order-fields :deep(.fgrid-c3) {
   grid-column: 1 / -1;
 }
 
-.subdiv {
+.subdiv,
+.invoice-order-fields :deep(.subdiv) {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -291,7 +297,9 @@
 }
 
 .subdiv::before,
-.subdiv::after {
+.subdiv::after,
+.invoice-order-fields :deep(.subdiv::before),
+.invoice-order-fields :deep(.subdiv::after) {
   content: '';
   height: 1px;
   flex: 1;
@@ -299,7 +307,8 @@
 }
 
 /* 业务员只读资料条：From 姓名 · 电话 · 邮箱 · 上次订单成交日期 */
-.sales-readout {
+.sales-readout,
+.invoice-order-fields :deep(.sales-readout) {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -313,12 +322,14 @@
   color: var(--invoice-muted);
 }
 
-.sales-readout b {
+.sales-readout b,
+.invoice-order-fields :deep(.sales-readout b) {
   color: var(--invoice-ink);
   font-weight: 600;
 }
 
-.sales-readout .sep {
+.sales-readout .sep,
+.invoice-order-fields :deep(.sales-readout .sep) {
   color: var(--invoice-border);
 }
 
@@ -330,7 +341,8 @@
 }
 
 /* 订单号旁「上一单」红色提醒 */
-.prev-order-tip {
+.prev-order-tip,
+.invoice-order-fields :deep(.prev-order-tip) {
   margin-top: 4px;
   font-size: 12px;
   font-weight: 600;
@@ -358,7 +370,8 @@
   box-shadow: 0 0 0 2px var(--invoice-gold-light);
 }
 
-.source-order-alert {
+.source-order-alert,
+.invoice-order-fields :deep(.source-order-alert) {
   margin-bottom: 14px;
 }
 
@@ -391,7 +404,8 @@
   margin-bottom: 12px;
 }
 
-.rule-badge {
+.rule-badge,
+.invoice-order-fields :deep(.rule-badge) {
   margin-top: 4px;
   padding: 2px 10px;
   border-radius: 999px;
@@ -402,7 +416,8 @@
   width: fit-content;
 }
 
-.binding-helper {
+.binding-helper,
+.invoice-order-fields :deep(.binding-helper) {
   margin-top: 6px;
   color: var(--color-warning-text);
   font-size: 12px;
@@ -410,24 +425,28 @@
 }
 
 /* 客户/联系人筛选：下拉 + 「仅私海」勾选同行 */
-.customer-filter-row {
+.customer-filter-row,
+.invoice-order-fields :deep(.customer-filter-row) {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
 }
 
-.customer-filter-select {
+.customer-filter-select,
+.invoice-order-fields :deep(.customer-filter-select) {
   flex: 1;
   min-width: 0;
 }
 
-.customer-filter-check {
+.customer-filter-check,
+.invoice-order-fields :deep(.customer-filter-check) {
   flex-shrink: 0;
 }
 
 /* 小满标记：开关芯片组 */
-.okki-flags-row {
+.okki-flags-row,
+.invoice-order-fields :deep(.okki-flags-row) {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -435,7 +454,8 @@
   width: 100%;
 }
 
-.okki-flag {
+.okki-flag,
+.invoice-order-fields :deep(.okki-flag) {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -447,7 +467,8 @@
   color: var(--invoice-ink);
 }
 
-.okki-flag-tip {
+.okki-flag-tip,
+.invoice-order-fields :deep(.okki-flag-tip) {
   font-size: 12px;
   color: var(--invoice-muted);
 }
@@ -518,12 +539,14 @@
     flex-direction: column;
   }
 
-  .fgrid {
+  .fgrid,
+  .invoice-order-fields :deep(.fgrid) {
     grid-template-columns: 1fr;
   }
 
   .fgrid-c2,
-  .fgrid-c3 {
+  .fgrid-c3,
+  .invoice-order-fields :deep(.fgrid-c3) {
     grid-column: 1 / -1;
   }
 

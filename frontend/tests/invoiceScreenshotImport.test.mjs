@@ -12,6 +12,7 @@ import {
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
 const view = read('../src/views/invoice/InvoiceManage.vue')
+const orderFields = read('../src/views/invoice/components/InvoiceOrderCustomerFields.vue')
 const component = read('../src/views/invoice/components/InvoiceScreenshotImport.vue')
 const editor = read('../src/views/invoice/composables/useInvoiceEditor.js')
 const page = read('../src/views/invoice/composables/useInvoiceManagePage.js')
@@ -90,7 +91,7 @@ test('recognized order name becomes the screenshot invoice number', () => {
 
 
 test('external OKKI screenshots may sync and are checked for duplicates by backend', () => {
-  assert.match(view, /来自外部 OKKI 截图/)
+  assert.match(orderFields, /来自外部 OKKI 截图/)
   assert.doesNotMatch(view, /:disabled="row\.source_type === 'okki_screenshot'"/)
   assert.doesNotMatch(view, /:sync-blocked="form\.source_type === 'okki_screenshot'"/)
   assert.doesNotMatch(editor, /if \(form\.source_type === 'okki_screenshot'\)/)

@@ -34,7 +34,7 @@
       <el-table class="list-table" :data="settlements" border empty-text="暂无出库结算记录">
         <el-table-column label="结算单号" min-width="180"><template #default="{ row }"><el-button link type="primary" @click="showDetail(row)">{{ row.settlement_no }}</el-button></template></el-table-column>
         <el-table-column label="状态" min-width="160"><template #default="{ row }">{{ stateLabel(row.state) }}</template></el-table-column>
-        <el-table-column label="操作" min-width="200"><template #default="{ row }">
+        <el-table-column label="操作" class-name="table-action-column" min-width="200"><template #default="{ row }">
           <el-button v-permission="'shipment:write'" v-if="!['cancelled','completed','shipped'].includes(row.state)" link :disabled="saving" @click="change(row, 'cancel')">取消</el-button>
           <el-button v-permission="'shipment:write'" v-if="!['cancelled','completed','shipped'].includes(row.state)" link :disabled="saving" @click="change(row, row.state === 'paused' ? 'resume' : 'pause')">{{ row.state === 'paused' ? '恢复' : '暂停' }}</el-button>
           <el-button v-permission="'shipment:write'" v-if="row.outbound?.status === 'pending_remote'" link type="primary" :disabled="saving" @click="confirmOutbound(row)">确认实际出库</el-button>

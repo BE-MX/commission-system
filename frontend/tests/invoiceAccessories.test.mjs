@@ -206,7 +206,7 @@ test('changing customer immediately clears accessory options and rejects stale c
   assert.match(accessoryState, /_customer_id: customerId/)
   assert.match(accessoryState, /_currency: currency/)
   assert.match(accessoryState, /applyAccessorySelection\(row, option, form\.customer_id, form\.currency\)/)
-  assert.match(invoiceEditor, /form\.customer_name = customer\?\.company_name \|\| ''\s*\n\s*accessories\.invalidateCustomerContext\(\)/)
+  assert.match(invoiceEditor, /form\.customer_name = customer\?\.company_name \|\| ''[\s\S]*if \(!sameCompanyContact\)\s*{\s*accessories\.invalidateCustomerContext\(\)/)
   // 请求开始不清空旧选项（清空会让 el-select 下拉在响应落地瞬间闪烁空窗）——
   // 只发 token + 置 loading；清空由 invalidateCustomerContext / catch 守卫负责
   assert.match(accessoryState, /const token = searchGate\.issue\(pricingContext\(\)\)\s*\n\s*accessoryLoading\.value = true/)

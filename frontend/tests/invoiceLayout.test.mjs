@@ -6,6 +6,10 @@ const invoiceView = readFileSync(
   new URL('../src/views/invoice/InvoiceManage.vue', import.meta.url),
   'utf8',
 )
+const orderFields = readFileSync(
+  new URL('../src/views/invoice/components/InvoiceOrderCustomerFields.vue', import.meta.url),
+  'utf8',
+)
 const invoiceStyles = readFileSync(
   new URL('../src/views/invoice/invoice-manage.css', import.meta.url),
   'utf8',
@@ -56,27 +60,28 @@ test('side pane cards keep natural height so fee summary is not clipped', () => 
 
 test('order entry uses card sections with a three-column top-label grid', () => {
   assert.match(invoiceStyles, /\.form-card\s*{[^}]*border-radius:\s*var\(--card-radius\)/s)
-  assert.match(invoiceStyles, /\.card-title\s*{[^}]*font-size:\s*14px/s)
-  assert.match(invoiceStyles, /\.fgrid\s*{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/s)
+  assert.match(invoiceStyles, /\.invoice-order-fields :deep\(\.card-title\)\s*{[^}]*font-size:\s*14px/s)
+  assert.match(invoiceStyles, /\.invoice-order-fields :deep\(\.fgrid\)\s*{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/s)
   assert.match(invoiceView, /label-position="top"/)
-  assert.match(invoiceView, /<span class="step">1<\/span>订单与客户/)
+  assert.match(invoiceView, /<InvoiceOrderCustomerFields/)
+  assert.match(orderFields, /<span class="step">1<\/span>订单与客户/)
   assert.match(settlementFields, /label="运费"/)
 })
 
 test('redesigned drawer keeps the agreed entry rules', () => {
   // 客户等级必填
-  assert.match(invoiceView, /<el-form-item label="客户等级" required>/)
+  assert.match(orderFields, /<el-form-item label="客户等级" required>/)
   // 联系人/电话/邮箱/收货地址必填
-  assert.match(invoiceView, /<el-form-item label="联系人" required>/)
-  assert.match(invoiceView, /<el-form-item label="电话" required>/)
-  assert.match(invoiceView, /<el-form-item label="邮箱" required>/)
-  assert.match(invoiceView, /<el-form-item label="收货地址" required/)
+  assert.match(orderFields, /<el-form-item label="联系人" required>/)
+  assert.match(orderFields, /<el-form-item label="电话" required>/)
+  assert.match(orderFields, /<el-form-item label="邮箱" required>/)
+  assert.match(orderFields, /<el-form-item label="收货地址" required/)
   // 发票号 → 订单号/发票号；日期 → 下单日期
-  assert.match(invoiceView, /label="订单号\/发票号"/)
-  assert.match(invoiceView, /label="下单日期" required/)
+  assert.match(orderFields, /label="订单号\/发票号"/)
+  assert.match(orderFields, /label="下单日期" required/)
   // 业务员信息只读资料条
-  assert.match(invoiceView, /class="fgrid-c3 sales-readout"/)
-  assert.match(invoiceView, /\{\{ form\.sales_user_name \|\| '—' \}\}/)
+  assert.match(orderFields, /class="fgrid-c3 sales-readout"/)
+  assert.match(orderFields, /\{\{ form\.sales_user_name \|\| '—' \}\}/)
 })
 
 test('logistics and remark card sits below the accessory card with gold remark styling', () => {
@@ -86,16 +91,16 @@ test('logistics and remark card sits below the accessory card with gold remark s
   assert.match(invoiceView, /<span class="step">4<\/span>物流与备注/)
   assert.match(invoiceView, /备注内容将自动带入到出库单中/)
   // 订单号旁的红色「上一单」提醒
-  assert.match(invoiceView, /class="prev-order-tip"/)
-  assert.match(invoiceStyles, /\.prev-order-tip\s*{[^}]*color:\s*var\(--color-danger\)/s)
+  assert.match(orderFields, /class="prev-order-tip"/)
+  assert.match(invoiceStyles, /\.invoice-order-fields :deep\(\.prev-order-tip\)\s*{[^}]*color:\s*var\(--color-danger\)/s)
   // 备注：深金色加粗字体 + 深金色加粗边框
   assert.match(invoiceStyles, /\.remark-gold :deep\(\.el-textarea__inner\)\s*{[^}]*border:\s*2px solid var\(--color-gold-muted\)/s)
   assert.match(invoiceStyles, /\.remark-gold :deep\(\.el-textarea__inner\)\s*{[^}]*font-weight:\s*700/s)
 })
 
 test('unbound OKKI guidance is concise helper text rather than a warning pill', () => {
-  assert.match(invoiceView, /class="binding-helper"/)
-  assert.match(invoiceView, /未绑定 OKKI，私海筛选无结果/)
-  assert.doesNotMatch(invoiceView, /class="rule-badge warn"/)
-  assert.match(invoiceStyles, /\.binding-helper\s*{[^}]*line-height:\s*1\.5;/s)
+  assert.match(orderFields, /class="binding-helper"/)
+  assert.match(orderFields, /未绑定 OKKI，私海筛选无结果/)
+  assert.doesNotMatch(orderFields, /class="rule-badge warn"/)
+  assert.match(invoiceStyles, /\.invoice-order-fields :deep\(\.binding-helper\)\s*{[^}]*line-height:\s*1\.5;/s)
 })

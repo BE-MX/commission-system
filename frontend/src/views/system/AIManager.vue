@@ -752,7 +752,6 @@ const {
   box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
 }
 
-/* Tab 容器：同款渐变玻璃面板 */
 .ai-tabs {
   border: 1px solid var(--dash-glass-border);
   border-radius: var(--dash-card-radius);
@@ -760,7 +759,6 @@ const {
   box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   overflow: hidden;
 }
-
 .ai-tabs :deep(.el-tabs__header) {
   border-radius: var(--dash-card-radius) var(--dash-card-radius) 0 0;
   background: rgba(255, 255, 255, 0.4);
@@ -770,7 +768,6 @@ const {
   background: rgba(255, 255, 255, 0.72);
 }
 
-/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
 .ai-tabs :deep(.el-table) {
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
@@ -779,7 +776,6 @@ const {
   background: transparent;
 }
 
-/* 右侧固定操作列：磨砂但不透明的暖白，表头/hover 态同步 */
 .ai-tabs :deep(.el-table-fixed-column--right) {
   background-color: rgba(249, 244, 234, 0.97);
 }

@@ -4,7 +4,7 @@
   <el-drawer v-model="legacyVisible" :title="drawerTitle" size="94%" class="legacy-editor-drawer">
     <template #default>
       <div class="legacy-toolbar">
-        <el-button size="small" v-permission="'invoice:write'" @click="$emit('open-paste')">
+        <el-button v-permission="'invoice:write'" @click="$emit('open-paste')">
           <el-icon><DocumentCopy /></el-icon>整单粘贴
         </el-button>
         <span class="legacy-note">旧版布局 · 过渡期内提供；快递渠道、联系人、客户等级为必填（与新版同口径）</span>
