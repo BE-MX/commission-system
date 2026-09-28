@@ -204,6 +204,15 @@
           <div class="drawer-panes">
             <!-- 左窗格：录入主流（客户/订单 → 产品明细 → 配件明细），独立滚动 -->
             <main class="pane pane-main">
+              <LinkedSyncResult
+                :operation="linkedOperation"
+                :busy="linkedBusy"
+                @refresh="refreshLinked"
+                @retry="retryLinked"
+                @recheck="recheckLinked"
+                @close="closeLinked"
+                @resolve="resolveLinked"
+              />
               <section class="form-card">
                 <div class="card-title">
                   <span class="step">1</span>订单与客户
@@ -458,6 +467,8 @@
           :base-amount="formBaseAmount"
           :money="money"
           :syncing="saveAndSyncSubmitting"
+          :sync-blocked="linkedTaskActive"
+          sync-blocked-reason="请先在上方处理未结束的关联同步任务"
           @cancel="drawerVisible = false"
           @save="saveDraft"
           @sync="saveAndSync"
@@ -536,6 +547,7 @@ import InvoiceReceiptFields from './components/InvoiceReceiptFields.vue'
 import InvoiceSettlementFields from './components/InvoiceSettlementFields.vue'
 import InvoiceSummaryCard from './components/InvoiceSummaryCard.vue'
 import InvoiceTotalsFooter from './components/InvoiceTotalsFooter.vue'
+import LinkedSyncResult from './components/LinkedSyncResult.vue'
 import InvoiceHairTable from './components/InvoiceHairTable.vue'
 
 const { shipmentInvoice, shipmentCapabilities } = useInvoiceShipments()
@@ -552,6 +564,7 @@ const {
   customerTotal, customerHasMore, loadMoreCustomers, privateOnlyCompany,
   canTogglePrivate, okkiBound, invoiceNoTaken, entryOptions, form, hairItems, accessoryItems,
   saveAndSyncSubmitting,
+  linkedOperation, linkedBusy, linkedLoading, refreshLinked, retryLinked, recheckLinked, closeLinked, resolveLinked,
   accessoryOptions, accessoryLoading, formHairPrice, formLineDiscountTotal, formAccessoryAmount,
   formAccessoryDiscount, formBaseAmount, formTotal, lastOrderDate, settlementError, isProduction,
   searchCustomers, selectSyncedCustomer,
@@ -564,6 +577,8 @@ const {
   merchandiserOptions, previousInvoiceNo, formHairDiscountAbs, applyTotalDiscount,
   matchWholeOrderCustomer, applyWholeOrderPaste, openLegacyCreate,
 } = editor
+const linkedTaskActive = computed(() => linkedLoading.value || linkedBusy.value ||
+  ['pending', 'running', 'failed', 'uncertain'].includes(linkedOperation.value?.status))
 bindIssueHandler(showIssues)
 const { pasteImportVisible, screenshotImportVisible, canPasteImport, pasteImportDisabledReason,
   appendPastedLines } = useInvoiceImportDialogs(form, appendImportedLines)

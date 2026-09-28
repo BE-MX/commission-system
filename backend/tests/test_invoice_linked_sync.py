@@ -156,6 +156,24 @@ def test_create_idempotency(db, order, monkeypatch):
     with pytest.raises(ValueError): linked.ensure_idle(order)
 
 
+def test_saved_linked_snapshot_matches_reloaded_decimal_values(db, order, monkeypatch):
+    def update(_db, invoice, _body, _actor, **_kwargs):
+        invoice.surcharge_amount = Decimal("19.6")
+        invoice.total_amount = Decimal("119.6")
+        _db.flush()
+
+    monkeypatch.setattr(linked.service, "update_invoice", update)
+    body = SimpleNamespace(request_key="decimal-key", expected_version=linked.edit_version(order),
+        invoice=SimpleNamespace(customer_id=order.customer_id, currency=order.currency,
+                                order_type=order.order_type), model_dump_json=lambda: "{}")
+    task = linked.create(db, order, body, 1)
+    db.commit()
+    db.expire_all()
+
+    saved = linked.service.get_invoice(db, order.id)
+    assert linked.snapshot(saved) == task.after
+
+
 def test_outbound_incomplete_page_is_not_absence(monkeypatch):
     monkeypatch.setattr(remote, "read", lambda *a: {"list": [], "count": 2})
     with pytest.raises(ValueError): outbound.find_related(None, {"order_id": "123", "create_time": "2026-09-18"})

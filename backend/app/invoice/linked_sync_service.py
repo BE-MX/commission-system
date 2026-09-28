@@ -77,6 +77,12 @@ def create(db, invoice, body, actor):
     # Identity and receipt evidence remain frozen; only the amount floor and fee
     # basis restrictions are replaced by a preserved-payment reconciliation.
     service.update_invoice(db, invoice, body.invoice, actor, linked_change=True)
+    # MySQL/SQLite Numeric columns can reload with a different Decimal scale
+    # (19.6 -> 19.60). Persist the version from the stored representation so a
+    # later recheck does not mistake that formatting change for a new edit.
+    db.flush()
+    db.refresh(invoice)
+    db.expire(invoice, ["items"])
     row = InvoiceLinkedSync(id=beijing_now().strftime("%Y%m%d%H%M%S%f") + "_" + uuid4().hex, invoice_id=invoice.id, request_key=body.request_key,
         request_hash=digest, created_by=actor, status="pending", before=before, after=snapshot(invoice),
         steps={k: {"status": "pending", "message": "等待处理"} for k in ("order", "outbound", "receipt")})

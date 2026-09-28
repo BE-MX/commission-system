@@ -1660,7 +1660,7 @@ journalctl -u leshine-ark-dsh-worker -n 200 --no-pager
 
 ## 关联单据同步待处理
 
-在订单编辑器查看“关联单据同步结果”。failed重试未完成步骤；uncertain不重发，管理员先核对小满原单与半成品pending，原租约结束后填写依据人工结束。不要直接清数据库锁或删除任务。出库差异目前在小满人工处理后重新核对。详见[invoice-linked-sync.md](invoice-linked-sync.md)。
+在订单发票编辑器顶部查看“关联单据同步结果”。pending继续同步，failed重试未完成步骤或保留结果结束；uncertain不重发，管理员先核对小满原单与半成品pending，原租约结束后填写依据人工结束。任务未结束时不要再次保存，也不要直接清数据库锁或删除任务。订单成功后若出库仍有差异，在出库单列表预览并同步，详见[invoice-linked-sync.md](invoice-linked-sync.md)与[outbound-invoice-sync.md](outbound-invoice-sync.md)。
 
 ## 云存储初始复制与切换约束
 
