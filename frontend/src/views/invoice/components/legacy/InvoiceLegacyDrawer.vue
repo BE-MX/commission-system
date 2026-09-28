@@ -69,7 +69,7 @@
             </el-form-item>
             <el-form-item label="客户等级" required>
               <el-select v-model="form.customer_grade" @change="markCustomerGradeTouched" placeholder="请选择等级" :disabled="!form.customer_id">
-                <el-option v-for="grade in ['S', 'A', 'B', 'C', 'D']" :key="grade" :label="grade" :value="grade" />
+                <el-option v-for="grade in ['S', 'A', 'B', 'C', 'D', 'E']" :key="grade" :label="grade" :value="grade" />
               </el-select>
             </el-form-item>
             <el-form-item label="联系人" required class="span-2">

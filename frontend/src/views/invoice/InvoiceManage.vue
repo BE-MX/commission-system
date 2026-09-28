@@ -268,7 +268,7 @@
                   </el-form-item>
                   <el-form-item label="客户等级" required>
                     <el-select v-model="form.customer_grade" @change="markCustomerGradeTouched" placeholder="请选择等级" :disabled="!form.customer_id">
-                      <el-option v-for="grade in ['S', 'A', 'B', 'C', 'D']" :key="grade" :label="grade" :value="grade" />
+                      <el-option v-for="grade in ['S', 'A', 'B', 'C', 'D', 'E']" :key="grade" :label="grade" :value="grade" />
                     </el-select>
                   </el-form-item>
                   <!-- 业务员信息只读资料条：替代原来 3 个独占一整段的只读输入框 -->
