@@ -2,10 +2,11 @@
   <section class="weekly-highs" aria-label="近四周每周最高汇率">
     <div class="weekly-heading">
       <h4>近四周每周最高汇率</h4>
-      <span v-if="summary">截至 {{ summary.latestDate }} 已公布数据</span>
+      <span v-if="summary">最近完整周至 {{ summary.weeks.at(-1).end }} · FRED 更新至 {{ summary.latestDate }}</span>
     </div>
     <div v-show="summary" ref="chartElement" class="weekly-chart" role="img" :aria-label="chartDescription" />
     <p v-if="!summary" class="weekly-note">日度历史暂不可用，无法比较每周最高汇率。</p>
+    <p v-else-if="latestWeek && !latestWeek.high" class="weekly-note weekly-note--missing">{{ latestWeek.start }} 至 {{ latestWeek.end }} 尚无 FRED 已公布观测值，暂不能计算这一周的最高汇率；中国银行买入价不参与这张图。</p>
     <p v-else class="weekly-note">按周一至周日分组，仅比较 FRED 已公布日度汇率；中国银行当前买入价不参与。空白周表示暂无观测值。</p>
   </section>
 </template>
@@ -21,6 +22,7 @@ import { buildWeeklyHighs } from './weeklyHighs'
 echarts.use([BarChart, GridComponent, TooltipComponent, CanvasRenderer])
 const props = defineProps({ history: Array, today: String })
 const summary = computed(() => buildWeeklyHighs(props.history, props.today))
+const latestWeek = computed(() => summary.value?.weeks.at(-1))
 const chartDescription = computed(() => summary.value?.weeks.map(week =>
   `${week.start} 至 ${week.end}：${week.high ? `${week.high.weekdays.join('、')}最高，${week.high.rate.toFixed(4)}人民币每美元` : '暂无观测值'}`,
 ).join('；') || '暂无可用历史数据')
@@ -69,5 +71,6 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.dispose() })
 .weekly-heading span, .weekly-note { color: var(--text-secondary); font-size: 12px; }
 .weekly-chart { height: 220px; width: 100%; }
 .weekly-note { margin: 2px 0 0; line-height: 1.6; }
+.weekly-note--missing { color: var(--color-warning-text); }
 @media(max-width:650px) { .weekly-chart { height: 205px; } }
 </style>

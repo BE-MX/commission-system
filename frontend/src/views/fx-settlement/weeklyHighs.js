@@ -24,13 +24,14 @@ function mondayOf(value) {
 }
 
 export function buildWeeklyHighs(history, today) {
+  const currentMonday = mondayOf(today)
   const rows = (history || [])
-    .filter(row => row.date <= today && Number(row.rate) >= 1 && Number(row.rate) <= 20)
+    .filter(row => row.date < currentMonday && Number(row.rate) >= 1 && Number(row.rate) <= 20)
     .sort((left, right) => left.date.localeCompare(right.date))
   if (!rows.length) return null
 
   const latestDate = rows.at(-1).date
-  const latestMonday = mondayOf(latestDate)
+  const latestMonday = addDays(currentMonday, -7)
   const weeks = Array.from({ length: 4 }, (_, index) => {
     const start = addDays(latestMonday, (index - 3) * 7)
     const end = addDays(start, 6)
