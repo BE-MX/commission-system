@@ -11,9 +11,14 @@ import pytest
 from sqlalchemy import text
 
 from app.auth.models import ArkUser, ArkUserExternalBinding
+from app.core.config import get_settings
 from app.invoice import okki_client, product_service, service, xiaoman_service
-from app.invoice.models import CustomProduct, Invoice, InvoiceItem, InvoiceSyncLog, XiaomanSettings
+from app.invoice.models import CustomProduct, Invoice, InvoiceItem, InvoiceSyncLog, OkkiOutboundTask, XiaomanSettings
 from app.invoice.schemas import InvoiceCreate, InvoiceItemPayload, InvoiceUpdate
+from app.invoice import settlement_policy
+from app.receipt import attachments
+from app.receipt.models import ReceiptAttachment
+from app.receipt.schemas import ReceiptDraft
 
 
 # ── 数据工厂 ──────────────────────────────────────────────
@@ -139,6 +144,41 @@ def _make_custom_product(db, match_key, **overrides):
 def no_reconcile(monkeypatch):
     """跳过推单前对账（测试库无 okki_products 投影表）"""
     monkeypatch.setattr(product_service, "reconcile_custom_products", lambda db: {"checked": 0, "linked": 0})
+
+
+@pytest.fixture
+def presale_for_push(db, monkeypatch, tmp_path):
+    """Create a presale through Ark with the proof required by sync preflight."""
+    _seed_settings(db)
+    _seed_binding(db)
+    monkeypatch.setattr(settlement_policy, "require_enabled", lambda: None)
+    monkeypatch.setattr(product_service, "reconcile_custom_products", lambda _db: {})
+    monkeypatch.setattr(product_service, "valid_okki_product_skus", lambda _db, pairs: pairs)
+    monkeypatch.setattr(attachments, "path_for", lambda row: tmp_path / row.storage_key)
+    proof_id = "a" * 32
+    (tmp_path / "presale-proof.png").write_bytes(b"test proof")
+    db.add(ReceiptAttachment(
+        id=proof_id, filename="presale-proof.png", storage_key="presale-proof.png",
+        content_type="image/png", size=10, sha256="b" * 64, created_by=1,
+    ))
+    db.flush()
+    invoice = service.create_invoice(db, InvoiceCreate(
+        invoice_no="ARK-PRESALE-PUSH-TEST", order_type="presale",
+        customer_id="123456", customer_name="Test Customer",
+        invoice_date=date(2026, 9, 28), currency="USD", shipping_fee=Decimal("0"),
+        receipt_draft=ReceiptDraft(
+            amount=Decimal("0.01"), collection_date=date(2026, 9, 28),
+            payment_type="T/T", attachment_ids=[proof_id],
+        ),
+        items=[InvoiceItemPayload(
+            product_id=1, sku_id=9001, product_name="Test Hair",
+            product_display="Test Hair", net_weight_grams="100g",
+            color="Black", length="18", quantity=2,
+            price_per_piece=Decimal("0.01"),
+        )],
+    ), user_id=1)
+    db.flush()
+    return invoice
 
 
 # ── payload 映射 ──────────────────────────────────────────
@@ -613,6 +653,60 @@ def test_sync_invoice_success_state_and_unique_id_writeback(db, monkeypatch, no_
     assert log.action == "create" and log.success == 1 and log.operator_id == 7
     assert log.inventory_operation_key == "inventory-batch-1"
     assert json.loads(log.request_digest)["company_id"] == 123456
+
+
+def test_ark_presale_create_push_records_exact_okki_order(db, monkeypatch, presale_for_push):
+    monkeypatch.setattr(get_settings(), "OKKI_OUTBOUND_AUTO_ENABLED", True)
+    captured = []
+
+    def accepted(_db, payload, *, before_send=None):
+        captured.append(payload)
+        return {"order_id": 424242, "product_list": [
+            {"unique_id": 111, "product_id": "1", "sku_id": "9001"},
+        ]}
+
+    monkeypatch.setattr(okki_client, "push_order", accepted)
+    result = xiaoman_service.sync_invoice(db, presale_for_push, operator_id=1)
+
+    assert result["ok"] is True, result
+    assert len(captured) == 1
+    payload = captured[0]
+    assert payload["name"] == "ARK-PRESALE-PUSH-TEST"
+    assert payload["company_id"] == 123456 and payload["currency"] == "USD"
+    assert payload[xiaoman_service.FIELD_ORDER_TYPE] == "规格品"
+    assert len(payload["product_list"]) == 1
+    assert payload["product_list"][0]["count"] == 2
+    assert payload["product_list"][0]["unit_price"] == 0.01
+    assert presale_for_push.xiaoman_order_id == "424242"
+    assert presale_for_push.items[0].xiaoman_unique_id == "111"
+    assert presale_for_push.sync_status == "synced"
+    assert not presale_for_push.outbound_auto_requested
+    assert db.query(OkkiOutboundTask).filter_by(invoice_id=presale_for_push.id).count() == 0
+
+
+@pytest.mark.parametrize("response, status, has_order_id", [
+    (okki_client.OkkiApiError("rejected"), "sync_failed", False),
+    (okki_client.OkkiOutcomeUncertainError("timeout"), "sync_uncertain", False),
+    ({}, "sync_uncertain", False),
+    ({"order_id": 424242, "product_list": []}, "sync_failed", True),
+])
+def test_ark_presale_push_failure_preserves_remote_identity(
+    db, monkeypatch, presale_for_push, response, status, has_order_id,
+):
+    def push(_db, _payload, *, before_send=None):
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    monkeypatch.setattr(okki_client, "push_order", push)
+    result = xiaoman_service.sync_invoice(db, presale_for_push, operator_id=1)
+
+    assert result["ok"] is False
+    assert presale_for_push.sync_status == status
+    assert bool(presale_for_push.xiaoman_order_id) is has_order_id
+    if status == "sync_uncertain":
+        monkeypatch.setattr(okki_client, "push_order", lambda *_a, **_k: pytest.fail("must not resend"))
+        assert xiaoman_service.sync_invoice(db, presale_for_push, operator_id=1)["ok"] is False
 
 
 def test_sync_invoice_failure_state_and_log(db, monkeypatch, no_reconcile):
