@@ -9,7 +9,7 @@ from contextlib import contextmanager
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import event, text
 
 from app.auth.models import ArkUser, ArkUserExternalBinding, ArkRole, ArkPermission
 from app.auth.utils import create_access_token
@@ -178,6 +178,28 @@ def test_product_join_preserves_invoice_bridge_and_multiple_lines(db):
     record = next(r for r in records if r["outbound_record_id"] == "OB001")
     assert record["item_count"] == 2
     assert record["total_qty"] == 15
+
+
+def test_list_aggregates_items_only_for_the_selected_page(db):
+    statements = []
+
+    def capture(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(statement)
+
+    engine = db.get_bind()
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        first, total = outbound_service.list_outbound_records(db, page_size=1)
+        second, _ = outbound_service.list_outbound_records(db, page=2, page_size=1)
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+
+    assert total == 2
+    assert [(row["outbound_record_id"], row["item_count"], row["total_qty"])
+            for row in first + second] == [("OB002", 1, 2), ("OB001", 2, 15)]
+    aggregates = [sql for sql in statements if "GROUP BY i.`outbound_record_id`" in sql]
+    assert len(aggregates) == 2
+    assert all("WHERE i.`outbound_record_id` IN" in sql for sql in aggregates)
 
 
 def test_order_id_filter_uses_item_link_for_outbound_and_inspection(db):

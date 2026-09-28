@@ -152,6 +152,7 @@ def list_outbound_records(db, *, keyword=None, order_id=None, date_from=None, da
     if mirror_ids:
         mirror_rows, _ = records.list_outbound_records(
             db, record_ids=mirror_ids, page_size=page_size, okki_user_id=okki_user_id,
+            count_total=False,
         )
     mirror = {r["outbound_record_id"]: {**r, "record_source": "okki", "outbound_state": "ready",
               "can_print": True, "stock_shortages": []} for r in mirror_rows}
