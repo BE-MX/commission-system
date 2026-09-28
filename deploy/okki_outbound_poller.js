@@ -119,7 +119,12 @@ export async function claimBatch(conn) {
         WHERE id = ? AND reason <=> ? AND ${CLAIMABLE}`,
       [now, row.id, row.reason ?? null, now, config.maxAttempts, now, now, STALE_RUNNING_MINUTES],
     );
-    if (result.affectedRows === 1) claimed.push({...row, priorStatus: row.status, attempts: Number(row.attempts) + 1});
+    if (result.affectedRows === 1) {
+      const [[latest]] = await conn.query(
+        'SELECT MAX(id) AS id FROM ark_invoice_sync_logs WHERE invoice_id=? AND success=1', [row.invoice_id]);
+      claimed.push({...row, priorStatus: row.status, attempts: Number(row.attempts) + 1,
+        claimedSyncLogId: latest?.id ?? null});
+    }
       await conn.query('COMMIT');
     } catch (error) {
       await conn.query('ROLLBACK');
@@ -133,11 +138,13 @@ export function generationFromReason(reason) {
   return /^regenerate:([1-9]\d*)(?:\s|$)/.exec(reason || '')?.[1] || null;
 }
 
-function runCreateOutbound(orderId, generationSyncLogId) {
+function runCreateOutbound(task, generationSyncLogId) {
   return new Promise((resolve) => {
     const child = spawn(
       process.execPath,
-      [path.join(config.scriptDir, 'okki_outbound_creator.mjs'), String(orderId), '--run',
+      [path.join(config.scriptDir, 'okki_outbound_creator.mjs'), String(task.order_id), '--run',
+        '--claimed-sync-log=' + String(task.claimedSyncLogId ?? ''),
+        '--claimed-attempt=' + String(task.attempts),
         ...(generationSyncLogId ? ['--regeneration-sync-log=' + generationSyncLogId] : [])],
       { cwd: config.scriptDir, env: process.env },
     );
@@ -185,14 +192,27 @@ export async function finishTask(conn, task, status, reason, error = null) {
 }
 
 export async function advanceGeneration(conn, task, generation, status, reason) {
-  if (!generation || !['failed', 'waiting_stock'].includes(status)) return;
+  if (status !== 'waiting_stock' && !(generation && status === 'failed')) return;
+  const baseline = generation || task.claimedSyncLogId;
+  if (!baseline) return;
   const [[latest]] = await conn.query(
-    'SELECT MAX(id) AS id FROM ark_invoice_sync_logs WHERE invoice_id=? AND success=1', [task.invoice_id]);
-  if (!latest?.id || BigInt(latest.id) <= BigInt(generation)) return;
+    `SELECT i.sync_status,
+            (SELECT MAX(l.id) FROM ark_invoice_sync_logs l WHERE l.invoice_id=i.id AND l.success=1) AS id
+       FROM ark_invoices i WHERE i.id=?`, [task.invoice_id]);
+  if (latest?.sync_status !== 'synced' || !latest.id || BigInt(latest.id) <= BigInt(baseline)) return;
+  const [[custom]] = await conn.query(
+    `SELECT COUNT(*) AS count FROM ark_invoice_items item
+       LEFT JOIN ark_custom_products product ON product.id=item.custom_product_id
+      WHERE item.invoice_id=? AND item.item_type='custom'
+        AND (product.okki_product_id IS NULL OR product.okki_sku_id IS NULL)`, [task.invoice_id]);
+  const skipped = Number(custom?.count || 0) > 0;
+  const nextStatus = skipped ? 'skipped' : 'pending';
+  const nextReason = skipped ? '含未建品非标行（合并通用产品推送），不自动生成出库单'
+    : generation ? `regenerate:${latest.id}` : null;
   await conn.query(
-    `UPDATE ark_okki_outbound_tasks SET status='pending', reason=?, attempts=0, last_error=NULL, updated_at=?
+    `UPDATE ark_okki_outbound_tasks SET status=?, reason=?, attempts=0, last_error=NULL, updated_at=?
       WHERE id=? AND status=? AND attempts=? AND reason=?`,
-    [`regenerate:${latest.id}`, beijingNow(), task.id, status, task.attempts, reason.slice(0, 255)]);
+    [nextStatus, nextReason, beijingNow(), task.id, status, task.attempts, reason.slice(0, 255)]);
 }
 
 async function runOnce(conn) {
@@ -203,7 +223,7 @@ async function runOnce(conn) {
     if (!task) break;
     log(`start task#${task.id} order=${task.order_id} attempt=${task.attempts}`);
     const generation = generationFromReason(task.reason);
-    const {code, output} = await runCreateOutbound(task.order_id, generation);
+    const {code, output} = await runCreateOutbound(task, generation);
     const result = resultFromOutput(code, output, task.order_id);
     if (result) {
       const status = result.outcome === 'waiting_stock' ? 'waiting_stock' : result.outcome === 'existing' ? 'skipped' : 'done';

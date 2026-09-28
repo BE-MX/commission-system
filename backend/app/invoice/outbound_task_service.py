@@ -11,6 +11,7 @@ okki_outbound_creator.mjs。任务表是跨系统唯一事实来源：
 """
 
 import logging
+import re
 
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 STATUS_PENDING = "pending"
 STATUS_SKIPPED = "skipped"
+REGENERATION_REASON = re.compile(r"^regenerate:[1-9]\d*(?:\s|$)")
 
 RECONCILE_LIMIT = 200
 
@@ -82,6 +84,46 @@ def enqueue_outbound_task(db: Session, invoice: Invoice) -> OkkiOutboundTask | N
             .first()
         )
     return row
+
+
+def requeue_waiting_stock_after_invoice_sync(db: Session, invoice: Invoice) -> OkkiOutboundTask | None:
+    """Wake an existing stock wait only after the edited order is fully synchronized.
+
+    The managed creator re-reads the order, checks for an existing outbound and
+    checks current warehouse stock before it may submit anything. Keep the
+    regeneration marker so a previously deleted outbound retains its fence.
+    The caller commits this transition together with the final invoice state.
+    """
+    if (invoice.order_type == "presale" or invoice.sync_status != "synced"
+            or not invoice.xiaoman_order_id):
+        return None
+    task = (db.query(OkkiOutboundTask)
+            .filter_by(invoice_id=invoice.id, order_id=str(invoice.xiaoman_order_id))
+            .with_for_update().first())
+    if task is None or task.status != "waiting_stock":
+        return None
+    if has_unbackfilled_custom_lines(db, invoice):
+        task.status = STATUS_SKIPPED
+        task.reason = SKIP_REASON_GENERIC_MERGE
+        task.last_error = None
+        return task
+    reason = task.reason or ""
+    if reason.startswith("regenerate:"):
+        if not REGENERATION_REASON.match(reason):
+            logger.warning("invalid outbound regeneration marker invoice=%s task=%s", invoice.id, task.id)
+            print(f"[outbound] invalid regeneration marker invoice={invoice.id} task={task.id}", flush=True)
+            return None
+        latest = (db.query(InvoiceSyncLog.id).filter_by(invoice_id=invoice.id, success=1)
+                  .order_by(InvoiceSyncLog.id.desc()).first())
+        if latest is None:
+            return None
+        task.reason = f"regenerate:{latest.id}"
+    else:
+        task.reason = None
+    task.status = STATUS_PENDING
+    task.attempts = 0
+    task.last_error = None
+    return task
 
 
 def reconcile_missing_outbound_tasks(
