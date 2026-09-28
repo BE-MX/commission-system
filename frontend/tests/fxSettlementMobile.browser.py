@@ -85,8 +85,14 @@ with sync_playwright() as p:
         expect(page.get_by_role('heading', name='结汇决策助手', level=2)).to_be_visible()
         expect(page.locator('link[rel=manifest]')).to_have_attribute('href', '/fx-app/manifest.webmanifest')
         expect(page.locator('.current-rate strong')).to_be_visible()
+        expect(page.locator('.weekly-heading h4')).to_have_text('近四周每周最高汇率')
+        expect(page.locator('.weekly-chart')).to_be_visible()
+        expect(page.locator('.weekly-heading')).to_contain_text('截至 2026-09-24 已公布数据')
         no_overflow(page)
         if width == 390: page.screenshot(path=str(OUT / 'market-390.png'), full_page=True)
+        if width == 390:
+            page.evaluate("window.scrollTo(0, document.querySelector('.weekly-chart').getBoundingClientRect().top + window.scrollY - 220)")
+            page.screenshot(path=str(OUT / 'weekly-highs-390.png'))
         fill_form(page)
         assert page.locator('[name=usd_balance]').evaluate('(el) => getComputedStyle(el).fontSize') == '16px'
         # Invalid optional field inside a closed section must be revealed and focusable.
