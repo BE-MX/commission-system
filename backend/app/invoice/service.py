@@ -41,6 +41,7 @@ def list_invoices(
     page: int = 1,
     page_size: int = 20,
     keyword: str | None = None,
+    order_id: str | None = None,
     status: str | None = None,
     order_type: str | None = None,
     created_by: int | None = None,
@@ -70,6 +71,8 @@ def list_invoices(
             (Invoice.customer_name.like(like)) |
             (Invoice.customer_id.like(like))
         )
+    if order_id:
+        query = query.filter(Invoice.xiaoman_order_id == order_id)
     if status:
         query = query.filter(Invoice.status == status)
     if order_type:
@@ -257,6 +260,19 @@ def get_invoice(db: Session, invoice_id: int, *, for_update: bool = False) -> In
     return query.first()
 
 
+def _apply_merchandiser(db: Session, invoice: Invoice, merchandiser_id: int | None) -> None:
+    """跟单员快照：姓名以 ark_users 实时值为准；None/空 = 清空。"""
+    if not merchandiser_id:
+        invoice.merchandiser_id = None
+        invoice.merchandiser_name = None
+        return
+    user = delegation_service.get_active_user(db, merchandiser_id)
+    if user is None:
+        raise ValueError("指定跟单员不存在或已停用")
+    invoice.merchandiser_id = user.id
+    invoice.merchandiser_name = user.real_name or user.username
+
+
 def create_invoice(
     db: Session,
     body: InvoiceCreate,
@@ -265,6 +281,13 @@ def create_invoice(
     allow_screenshot_source: bool = False,
     allow_external_source: bool = False,
 ) -> Invoice:
+    if body.order_type == "presale":
+        from app.invoice.settlement_policy import require_enabled
+        require_enabled()
+        if body.shipping_fee:
+            raise ValueError("预售主单不含运费，请在发货结算时填写")
+        if len(body.invoice_no or "") > 56:
+            raise ValueError("预售发票号最多56字符，需预留分批出库编号")
     if allow_screenshot_source and allow_external_source:
         raise ValueError("发票创建入口来源授权冲突")
     if body.source_type == "okki_screenshot" and not allow_screenshot_source:
@@ -318,6 +341,7 @@ def create_invoice(
         invoice.sales_user_name = sales_user.username
         invoice.sales_phone = sales_user.phone
         invoice.sales_email = sales_user.email
+    _apply_merchandiser(db, invoice, body.merchandiser_id)
     # OKKI 业务标记空值兜底（null=自动判定）
     for field, value in resolve_okki_flags(db, invoice).items():
         setattr(invoice, field, value)
@@ -350,6 +374,15 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
     ensure_idle(invoice)
     from app.invoice.lifecycle_guard import ensure_mutable
     ensure_mutable(db, invoice)
+    if body.order_type == "presale":
+        from app.invoice.settlement_policy import require_enabled
+        require_enabled()
+        if body.shipping_fee:
+            raise ValueError("预售主单不含运费")
+        if len(body.invoice_no or "") > 56:
+            raise ValueError("预售发票号最多56字符，需预留分批出库编号")
+    if body.order_type != invoice.order_type and "presale" in {body.order_type, invoice.order_type}:
+        raise ValueError("预售单与普通订单不能互相转换，请新建正确类型的订单")
     receipt_floor = invoice_link.guard_edit(db, invoice, body)
     receipt_fee_basis = (invoice.total_amount, invoice.surcharge_amount)
     from app.semifinished.models import InvoiceAllocation
@@ -380,6 +413,8 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
         invoice.customer_grade = get_customer_grade(db, body.customer_id)
     for field in _HEADER_FIELDS:
         setattr(invoice, field, getattr(body, field))
+    if "merchandiser_id" in body.model_fields_set:
+        _apply_merchandiser(db, invoice, body.merchandiser_id)
     sales_user = db.get(ArkUser, invoice.sales_user_id) if invoice.sales_user_id else None
     if sales_user:
         invoice.sales_user_name = sales_user.username
@@ -506,6 +541,8 @@ def serialize_detail(invoice: Invoice, db: Session | None = None) -> dict:
         "contact_phone": invoice.contact_phone,
         "contact_email": invoice.contact_email,
         "sales_user_id": invoice.sales_user_id,
+        "merchandiser_id": invoice.merchandiser_id,
+        "merchandiser_name": invoice.merchandiser_name,
         "delivery_address": invoice.delivery_address,
         "sales_user_name": invoice.sales_user_name,
         "sales_phone": invoice.sales_phone,
@@ -593,6 +630,20 @@ def suggest_invoice_no(db: Session, user_id: int | None, order_type: str) -> str
     while invoice_no_exists(db, f"{prefix}{seq:02d}"):
         seq += 1
     return f"{prefix}{seq:02d}"
+
+
+def previous_invoice_no(db: Session, sales_user_id: int | None, order_type: str, exclude_id: int | None = None) -> str | None:
+    """下单页红色提醒：同业务员、同类型的上一张订单号（按 id 倒序）。"""
+    if not sales_user_id:
+        return None
+    query = db.query(Invoice.invoice_no).filter(
+        Invoice.sales_user_id == sales_user_id,
+        Invoice.order_type == order_type,
+    )
+    if exclude_id is not None:
+        query = query.filter(Invoice.id != exclude_id)
+    row = query.order_by(Invoice.id.desc()).first()
+    return row[0] if row else None
 
 
 def _next_invoice_no(db: Session) -> str:

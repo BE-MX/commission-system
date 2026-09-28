@@ -109,7 +109,6 @@ def _seed_example(db) -> None:
             (company_id, company_name, country_name)
         VALUES ('105720449849411', 'hair_madebymads', 'Denmark')
     """))
-    db.execute(text("ALTER TABLE lsordertest.okki_orders ADD COLUMN name TEXT"))
     db.execute(text("""
         INSERT INTO lsordertest.okki_orders
             (order_id, order_no, name, company_id, amount_usd, user_id,
@@ -596,14 +595,19 @@ def test_external_screenshot_syncs_when_current_okki_has_no_same_order(db, monke
         "reconcile_custom_products",
         lambda _db: {"checked": 0, "linked": 0},
     )
-    monkeypatch.setattr(okki_client, "push_order", lambda _db, payload: {
-        "order_id": "created-in-current-okki",
-        "product_list": [{
-            "unique_id": "line-1",
-            "product_id": payload["product_list"][0]["product_id"],
-            "sku_id": payload["product_list"][0]["sku_id"],
-        }],
-    })
+    def push_order(_db, payload, *, before_send=None):
+        if before_send:
+            before_send()
+        return {
+            "order_id": "created-in-current-okki",
+            "product_list": [{
+                "unique_id": "line-1",
+                "product_id": payload["product_list"][0]["product_id"],
+                "sku_id": payload["product_list"][0]["sku_id"],
+            }],
+        }
+
+    monkeypatch.setattr(okki_client, "push_order", push_order)
 
     result = xiaoman_service.sync_invoice(db, invoice, operator_id=27)
 
@@ -662,7 +666,7 @@ def test_legacy_screenshot_sync_claim_is_unique_by_customer_and_order_name(db):
     second_issue = xiaoman_service._screenshot_sync_issue(db, second)
 
     assert first.source_order_id == external_source_key("C-1", name)
-    assert "投影缺少订单名称" in first_issue["message"]
+    assert first_issue is None
     assert "另一张发票占用" in second_issue["message"]
 
 
@@ -713,6 +717,7 @@ def test_admin_resolves_uncertain_sync_with_audit_log(db):
         source_image_sha256="f" * 64,
         status="sync_uncertain",
         sync_status="sync_uncertain",
+        sales_user_id=27,
         created_by=27,
     )
     db.add(invoice)
@@ -763,7 +768,8 @@ def test_admin_resolves_uncertain_sync_with_audit_log(db):
         .filter(InvoiceSyncLog.invoice_id == invoice.id)
         .order_by(InvoiceSyncLog.id)
     ]
-    assert actions == ["resolve_uncertain_clear", "resolve_uncertain_bind"]
+    assert actions == ["uncertain_clear", "uncertain_bind"]
+    assert all(len(action) <= InvoiceSyncLog.__table__.c.action.type.length for action in actions)
 
 
 def test_admin_uncertain_binding_rejects_missing_wrong_customer_and_wrong_name(db):
@@ -781,6 +787,7 @@ def test_admin_uncertain_binding_rejects_missing_wrong_customer_and_wrong_name(d
         source_image_sha256="e" * 64,
         status="sync_uncertain",
         sync_status="sync_uncertain",
+        sales_user_id=27,
         created_by=27,
     )
     db.add(invoice)

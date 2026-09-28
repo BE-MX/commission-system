@@ -2,6 +2,7 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { useLoading } from '@/composables/useLoading'
 import { getAccessToken, clearAuthState } from '@/stores/auth'
+import { isFxSettlementPath } from '@/router/fxSettlementRoute'
 
 const loading = useLoading()
 
@@ -99,7 +100,10 @@ export function createApiClient({
       if (shouldRedirectOnUnauthorized && (error.response?.status === 401
           || (error.response?.status === 403 && detail === 'Not authenticated'))) {
         clearAuthState()
-        window.location.href = '/login'
+        const returnTo = window.location.pathname + window.location.search + window.location.hash
+        window.location.href = isFxSettlementPath(window.location.pathname)
+          ? '/login?redirect=' + encodeURIComponent(returnTo)
+          : '/login'
         return Promise.reject(error)
       }
       // 调用方自行处理错误 UI（如对外公开页，不能弹中文 toast）

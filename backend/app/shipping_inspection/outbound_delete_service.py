@@ -124,6 +124,12 @@ def _delete_outbound(db, record, user_id, *, missing=False, task_versions=None, 
     # Match the poller's invoice -> task locking order, so a claimed writer wins
     # before our hold or observes skipped after our durable intent commits.
     invoices = db.query(Invoice).filter(Invoice.xiaoman_order_id.in_(order_ids)).order_by(Invoice.id).populate_existing().with_for_update().all()
+    from app.shipping_inspection import outbound_sync_state
+    for invoice in invoices:
+        try:
+            outbound_sync_state.ensure_invoice_idle(db, invoice)
+        except ValueError as exc:
+            raise OutboundDeleteError(str(exc)) from exc
     if any(inv.linked_sync_id for inv in invoices):
         raise OutboundDeleteError('关联订单正在同步，请处理完成后再删除')
     tasks = db.query(OkkiOutboundTask).filter(OkkiOutboundTask.order_id.in_(order_ids)).order_by(OkkiOutboundTask.id).populate_existing().with_for_update().all()

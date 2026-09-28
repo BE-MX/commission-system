@@ -133,9 +133,11 @@ test('invoice editor exposes a contextual Excel paste entry and append-only inte
   const hairEditor = readFileSync(new URL('../src/views/invoice/composables/useInvoiceHairItems.js', import.meta.url), 'utf8')
 
   assert.match(view, /InvoicePasteImport/)
-  assert.match(hairTable, /从 Excel 粘贴/)
-  assert.match(hairTable, /:disabled="!canPasteImport"/)
   assert.match(view, /@append="appendPastedLines"/)
+  // 新旧抽屉都允许在明细表直接粘贴，整单粘贴入口仍独立保留。
+  assert.match(hairTable, /@click="\$emit\('paste'\)"[\s\S]*?从 Excel 粘贴/)
+  assert.match(view, /@paste="pasteImportVisible = true"/)
+  assert.match(view, /InvoiceWholeOrderPaste/)
   assert.match(hairEditor, /function appendImportedLines/)
   assert.match(hairEditor, /_importBatchFingerprint/)
   assert.match(hairEditor, /if \(!row\._importBatchFingerprint\)/)

@@ -73,10 +73,10 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { getCustomerTagDimensions } from '@/api/customerMedia'
+import { getSalesPortalCustomerTags } from '@/api/customerMedia'
 import CustomerMediaClientLibrary from './CustomerMediaClientLibrary.vue'
 import { initials, portalStatusMeta } from './portalPreviewState'
 import { useCustomerMediaPortalPreview } from './useCustomerMediaPortalPreview'
@@ -108,9 +108,16 @@ async function chooseCustomer(customerId) {
   await selectCustomer(customerId)
 }
 
-onMounted(async () => {
+let tagsRequestVersion = 0
+watch(selectedCustomerId, async customerId => {
+  const version = ++tagsRequestVersion
+  tagDimensions.value = []
+  if (!customerId) return
   try {
-    tagDimensions.value = (await getCustomerTagDimensions()).data || []
+    const groups = (await getSalesPortalCustomerTags(customerId)).data || []
+    if (version === tagsRequestVersion) tagDimensions.value = groups.map(group => ({
+      id: group.dimension_id, label: group.label, values: group.values,
+    }))
   } catch { /* 标签筛选条不可用不阻断预览 */ }
 })
 </script>

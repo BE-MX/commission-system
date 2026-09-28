@@ -17,16 +17,18 @@ from app.core.time import BEIJING_TIMEZONE, beijing_now, beijing_now_aware
 from app.dingtalk.gmv_daily_config import admin_users, decorate_config, load_config, okki_user_bindings
 from app.dingtalk.models import DingTalkMessageLog
 from app.dingtalk.work_notify import get_work_notifier
+from app.invoice.order_role import goods_order_sql
 
 
 logger = logging.getLogger("commission.dingtalk.gmv_daily")
 CENT = Decimal("0.01")
 HUNDRED = Decimal("100")
 MESSAGE_TITLE_MAX_LENGTH = 128
-VALID_ORDER_SQL = """
+VALID_ORDER_SQL = f"""
     (o.status = '13972831656'
      OR (o.status = '13972831654' AND o.status_name = '已结清'))
     AND (o.trail IS NULL OR CAST(o.trail AS CHAR) NOT LIKE '%个人%')
+    AND {goods_order_sql('o')}
 """
 _LOCAL_REPORT_LOCK = threading.Lock()
 

@@ -233,6 +233,35 @@ def test_same_piece_sku_keeps_three_independent_order_route_snapshots(db, contex
     assert db.query(DomesticCustomerLedger).filter_by(order_id=production_id).count() == 0
 
 
+def test_special_draft_submits_direct_sale_price_without_expected_quotes(db, context, monkeypatch):
+    from tests.test_domestic_member_pricing import _order_pricing_context, _priced_order_payload
+
+    user, customer, _product, _base, expected, item_attrs = _order_pricing_context(
+        db, "special-draft-submit", balance="5000.00"
+    )
+    draft = _priced_order_payload(
+        customer, item_attrs, expected, request_id="special-draft-create", is_draft=True
+    )
+    draft.order_category = "special"
+    draft.items[0].special_price = Decimal("1050.00")
+    order_id = order_service.create_order(db, draft, user.id)["id"]
+    detail = order_service.get_order_detail(db, order_id)
+    assert detail["current_expected_quotes"][0]["base_price_version"] == 0
+    assert detail["current_expected_quotes"][0]["pricing_rule"] == "manual_override"
+
+    monkeypatch.setattr(
+        pricing_service, "lock_and_validate_order_quotes",
+        lambda *args, **kwargs: pytest.fail("Special draft must not reprice"),
+    )
+    request = DraftSubmitRequest(request_id="special-draft-submit", expected_quotes=[])
+    submitted = order_service.submit_draft(db, order_id, request, user.id)
+    assert submitted["total_amount"] == 1050.00
+    assert submitted["charged_amount"] == 1050.00
+    assert order_service.submit_draft(db, order_id, request, user.id)["replayed"] is True
+    db.refresh(customer)
+    assert customer.balance == Decimal("3950.00")
+
+
 def test_number_sequence_crosses_three_digits(db, context):
     order_id = order_service.create_order(db, payload(), context.id)["id"]
     order = db.get(DomesticOrder, order_id)

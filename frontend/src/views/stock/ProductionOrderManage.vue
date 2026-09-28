@@ -873,7 +873,6 @@ function exportOrder(row) {
 /* 工序进度看板 */
 .progress-panel { margin-top: 12px; padding: 16px; background: #fafbfc; border-radius: 8px; border: 1px solid #ebeef5; }
 .progress-panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.progress-content { }
 .progress-bar-wrap { margin-bottom: 12px; }
 .progress-summary { font-size: 13px; color: #606266; }
 .step-timeline { display: flex; flex-direction: column; gap: 4px; }
@@ -887,5 +886,4 @@ function exportOrder(row) {
 .step-process-name { font-weight: 500; min-width: 80px; }
 .step-meta { color: #909399; font-size: 12px; }
 .progress-empty { text-align: center; padding: 16px; }
-
 </style>

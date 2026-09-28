@@ -1,6 +1,10 @@
 // 发货检验 API（响应拦截器已解包信封，调用方取数用 res.data）
 import { shippingClient } from './clients'
 
+export const previewOutboundInvoiceSync = id => shippingClient.post(`/outbound-records/${encodeURIComponent(id)}/invoice-sync/preview`, {}, { timeout: 180000 })
+export const syncOutboundInvoice = (id, expected_version, check_only = false, confirm_recheck = false, repair = false) => shippingClient.post(`/outbound-records/${encodeURIComponent(id)}/invoice-sync`, { expected_version, check_only, confirm_recheck, repair }, { timeout: 180000 })
+export const allowOutboundPrintBeforeRecheck = (id, reason) => shippingClient.post(`/outbound-records/${encodeURIComponent(id)}/allow-print-before-recheck`, { reason })
+
 // 出库单检验状态（与后端 shipping_inspection 同一套口径）
 export const INSPECTION_STATUS_LABELS = { none: '未检验', draft: '检验中', submitted: '已提交' }
 export const INSPECTION_STATUS_TAGS = { none: 'info', draft: 'warning', submitted: 'success' }

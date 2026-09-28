@@ -54,6 +54,19 @@ test('scan freezes server-bound identity; submit uses returned edit version and 
   assert.equal(s.receipt.value.operator_name, '李四')
 })
 
+test('old evidence never satisfies recheck; each current item and whole order needs a fresh photo', async () => {
+  const { s, people, calls } = setup(); await flush()
+  s.choose(people[1]); await s.decoded('ARK-I:OB001:signature')
+  s.view.value = { ...s.view.value, items: [{ item_id: 'IT001', product_name: 'Hair' }],
+    required_recheck_ids: ['__all_items__', '__whole__'],
+    photos: [{ id: 5, item_id: 'IT001', stale: true }] }
+  assert.deepEqual(Array.from(s.missingRecheck.value), ['Hair', '整单'])
+  await s.submit()
+  assert.equal(calls.some(call => call[0] === 'submit'), false)
+  s.view.value.photos.push({ id: 6, item_id: 'IT001', stale: false }, { id: 7, item_id: null, stale: false })
+  assert.deepEqual(Array.from(s.missingRecheck.value), [])
+})
+
 test('uncertain upload retry keeps the same request id and version', async () => {
   const intents = []
   const { s, people } = setup({ upload: async (id, type, form) => { intents.push([form.get('request_id'), form.get('edit_version')]); if (intents.length === 1) throw new Error('lost response') } })
@@ -91,6 +104,27 @@ test('definitive stale-version rejection unlocks refresh instead of trapping an 
   await flush(); s.choose(people[1]); await s.decoded('ARK-I:OB001:signature'); await s.submit()
   assert.equal(s.pendingSubmit.value, null)
   await s.refresh(); assert.equal(refreshed, true); assert.equal(s.view.value.inspection.edit_version, 4)
+})
+
+test('refresh reports success only after updating the session and keeps an unsaved remark', async () => {
+  const { s, people } = setup({ refresh: async () => ({ data: {
+    session_id: 'session-one', operator: people[1], record: { outbound_no: 'CK001' }, items: [], photos: [], videos: [],
+    inspection: { status: 'draft', edit_version: 4, remark: 'server remark' },
+  } }) })
+  await flush(); s.choose(people[1]); await s.decoded('ARK-I:OB001:signature')
+  s.remark.value = 'unfinished local note'
+  assert.equal(await s.refresh(), true)
+  assert.equal(s.remark.value, 'unfinished local note')
+  assert.equal(s.view.value.inspection.edit_version, 4)
+  assert.equal(s.busy.value, false)
+})
+
+test('a failed refresh does not report success or discard the current order', async () => {
+  const { s, people } = setup({ refresh: async () => { throw new Error('refresh failed') } })
+  await flush(); s.choose(people[1]); await s.decoded('ARK-I:OB001:signature')
+  assert.equal(await s.refresh(), false)
+  assert.equal(s.view.value.record.outbound_no, 'CK001')
+  assert.match(s.error.value, /网络异常/)
 })
 
 

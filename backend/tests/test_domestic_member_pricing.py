@@ -75,7 +75,7 @@ def _expected_quote_payload(**overrides):
         "discount_price": "1198.00",
         "membership_level": None,
         "pricing_rule": "base_price",
-        "pricing_version": "domestic-member-v1",
+        "pricing_version": "domestic-member-v2",
     }
     payload.update(overrides)
     return payload
@@ -203,7 +203,7 @@ def test_draft_submit_accepts_only_a_consistent_legacy_snapshot_for_migrated_dra
     for field, value in (
         ("membership_level", "silver"),
         ("base_price_version", 1),
-        ("pricing_version", "domestic-member-v1"),
+        ("pricing_version", "domestic-member-v2"),
         ("discount_price", "1.00"),
     ):
         with pytest.raises(ValidationError):
@@ -1023,52 +1023,182 @@ def test_fixed_member_prices_take_priority(craft, length, level, expected):
 
 
 @pytest.mark.parametrize(
-    ("length", "original", "level", "expected"),
+    ("craft", "length", "original", "level", "expected"),
     [
-        (length, original, level, expected)
-        for length, original, prices in (
-            ("20厘米", "1498.00", ("1428.00", "1378.00", "1368.00")),
-            ("25厘米", "1798.00", ("1728.00", "1678.00", "1668.00")),
-            ("30厘米", "1998.00", ("1928.00", "1878.00", "1868.00")),
-            ("35厘米", "2050.00", ("1980.00", "1930.00", "1920.00")),
-            ("40厘米", "2700.00", ("2630.00", "2580.00", "2570.00")),
-        )
-        for level, expected in zip(("silver", "black", "supreme"), prices)
+        # 海报立减：35/40厘米 递针顶、递针分界
+        ("递顶", "35厘米", "2650.00", "silver", "2580.00"),
+        ("递顶", "35厘米", "2650.00", "black", "2530.00"),
+        ("递顶", "40厘米", "3300.00", "supreme", "3170.00"),
+        ("中分界", "35厘米", "2298.00", "black", "2178.00"),
+        ("左分界", "40厘米", "2900.00", "silver", "2830.00"),
     ],
 )
-def test_cap_spin_non_fixed_lengths_use_member_reductions(
-    length, original, level, expected
+def test_poster_reduction_scope_caps_use_member_reductions(
+    craft, length, original, level, expected
 ):
-    base_price = pricing_service.get_base_price(
-        product_type="cap",
-        craft="递旋",
-        size=None,
-        length=length,
-    )
     result = pricing_service.resolve_discount(
         product_type="cap",
-        craft="递旋",
+        craft=craft,
         size=None,
         length=length,
-        original_price=base_price,
+        original_price=D(original),
         membership_level=level,
     )
-
-    assert base_price == D(original)
     assert result.final_price == D(expected)
     assert result.discount_amount == pricing_service.MEMBERSHIP_REDUCTIONS[level]
     assert result.pricing_rule == "member_reduction"
 
 
 @pytest.mark.parametrize(
+    ("craft", "length"),
+    [
+        # 分界 20 厘米：海报未列，黑卡也不应优惠
+        ("中分界", "20厘米"),
+        ("左分界", "20厘米"),
+        # 递旋非固定价发长
+        ("递旋", "20厘米"),
+        ("递旋", "35厘米"),
+        # 递顶 30 厘米不在立减白名单
+        ("递顶", "30厘米"),
+    ],
+)
+def test_out_of_poster_scope_cap_has_no_member_discount(craft, length):
+    original = pricing_service.get_base_price(
+        product_type="cap", craft=craft, size=None, length=length
+    )
+    result = pricing_service.resolve_discount(
+        product_type="cap",
+        craft=craft,
+        size=None,
+        length=length,
+        original_price=original,
+        membership_level="black",
+    )
+    assert result.final_price == original
+    assert result.discount_amount == D("0.00")
+    assert result.pricing_rule == "base_price"
+    assert (
+        pricing_service.pricing_rule_label(result, "black")
+        == "黑卡原价（该规格无优惠）"
+    )
+
+
+@pytest.mark.parametrize(
+    ("craft", "size", "length", "level", "expected"),
+    [
+        # 全递针白名单尺寸，不限发长
+        ("全递针", "12*14", "25厘米", "silver", "970.00"),
+        ("全递针", "14*16", "40厘米", "black", "1510.00"),
+        ("全递针", "15*17", "30厘米", "supreme", "1450.00"),
+        ("递针旋", "12*14", "35厘米", "black", "1080.00"),
+        # u型白名单尺寸
+        ("U型递针", "13*15", "25厘米", "black", "940.00"),
+        ("U型递针", "16*18", "40厘米", "silver", "1850.00"),
+    ],
+)
+def test_poster_reduction_scope_pieces_use_member_reductions(
+    craft, size, length, level, expected
+):
+    result = pricing_service.resolve_discount(
+        product_type="piece",
+        craft=craft,
+        size=size,
+        length=length,
+        original_price=pricing_service.get_base_price(
+            product_type="piece", craft=craft, size=size, length=length
+        ),
+        membership_level=level,
+    )
+    assert result.final_price == D(expected)
+    assert result.pricing_rule == "member_reduction"
+
+
+@pytest.mark.parametrize(
+    ("craft", "size"),
+    [
+        ("全递针", "9*14"),
+        ("全递针", "13*15"),
+        ("U型递针", "15*17"),
+        ("递针中分界", "13*15"),
+        ("递针左分界", "12*14"),
+    ],
+)
+def test_out_of_poster_scope_piece_has_no_member_discount(craft, size):
+    result = pricing_service.resolve_discount(
+        product_type="piece",
+        craft=craft,
+        size=size,
+        length="25厘米",
+        original_price=D("1000.00"),
+        membership_level="black",
+    )
+    assert result.final_price == D("1000.00")
+    assert result.discount_amount == D("0.00")
+    assert result.pricing_rule == "base_price"
+
+
+def test_combined_piece_craft_uses_same_reduction_scope():
+    in_scope = pricing_service.resolve_discount(
+        product_type="piece",
+        craft="全递针12*14",
+        size=None,
+        length="30厘米",
+        original_price=D("1140.00"),
+        membership_level="black",
+    )
+    alias_in_scope = pricing_service.resolve_discount(
+        product_type="piece",
+        craft="递针旋14*16",
+        size=None,
+        length="35厘米",
+        original_price=D("1380.00"),
+        membership_level="black",
+    )
+    u_in_scope = pricing_service.resolve_discount(
+        product_type="piece",
+        craft="U型13*15",
+        size=None,
+        length="25厘米",
+        original_price=D("1060.00"),
+        membership_level="black",
+    )
+    out_scope = pricing_service.resolve_discount(
+        product_type="piece",
+        craft="全递针9*14",
+        size=None,
+        length="30厘米",
+        original_price=D("960.00"),
+        membership_level="black",
+    )
+    u_out_scope = pricing_service.resolve_discount(
+        product_type="piece",
+        craft="U型15*17",
+        size=None,
+        length="30厘米",
+        original_price=D("1550.00"),
+        membership_level="black",
+    )
+    assert in_scope.pricing_rule == "member_reduction"
+    assert in_scope.final_price == D("1020.00")
+    assert alias_in_scope.pricing_rule == "member_reduction"
+    assert alias_in_scope.final_price == D("1260.00")
+    assert u_in_scope.pricing_rule == "member_reduction"
+    assert u_in_scope.final_price == D("940.00")
+    assert out_scope.pricing_rule == "base_price"
+    assert out_scope.final_price == D("960.00")
+    assert u_out_scope.pricing_rule == "base_price"
+    assert u_out_scope.final_price == D("1550.00")
+
+
+@pytest.mark.parametrize(
     ("level", "expected"),
     [("silver", "930.00"), ("black", "880.00"), ("supreme", "870.00")],
 )
-def test_non_fixed_member_price_uses_reduction(level, expected):
+def test_in_scope_member_price_uses_reduction(level, expected):
     result = pricing_service.resolve_discount(
         product_type="piece",
         craft="全递针",
-        size="9*14",
+        size="12*14",
         length="30厘米",
         original_price=D("1000"),
         membership_level=level,
@@ -1096,7 +1226,7 @@ def test_reduction_below_zero_raises_configuration_error():
         pricing_service.resolve_discount(
             product_type="piece",
             craft="全递针",
-            size="9*14",
+            size="12*14",
             length="25厘米",
             original_price=D("50"),
             membership_level="silver",
@@ -1416,7 +1546,7 @@ def test_order_item_database_rejects_invalid_final_price_snapshot(
         "discount_amount": D("0.00"),
         "membership_level_snapshot": None,
         "pricing_rule": "base_price",
-        "pricing_version": "domestic-member-v1",
+        "pricing_version": "domestic-member-v2",
         "base_price_version_snapshot": 1,
     }
     values.update(overrides)
@@ -1792,7 +1922,7 @@ def _valid_snapshot_row(**overrides):
         "discount_amount": D("120.00"),
         "membership_level_snapshot": "black",
         "pricing_rule": "member_reduction",
-        "pricing_version": "domestic-member-v1",
+        "pricing_version": "domestic-member-v2",
         "base_price_version_snapshot": 1,
     }
     row.update(overrides)
@@ -1945,7 +2075,7 @@ def _cap_attrs(**overrides):
 def _piece_attrs(**overrides):
     values = {
         "product_type": "piece",
-        "craft": "全递针9*14",
+        "craft": "全递针12*14",
         "length": "25厘米",
     }
     values.update(overrides)
@@ -2560,14 +2690,14 @@ def test_quote_returns_non_member_and_current_member_contracts(
     assert priced["status"] == "priced"
     assert priced["discount_price"] == D(expected_price)
     assert priced["pricing_rule"] == expected_rule
-    assert priced["pricing_version"] == "domestic-member-v1"
+    assert priced["pricing_version"] == "domestic-member-v2"
     assert priced["expected_quote"] == {
         "original_price": D("1198.00"),
         "base_price_version": 4,
         "discount_price": D(expected_price),
         "membership_level": membership_level,
         "pricing_rule": expected_rule,
-        "pricing_version": "domestic-member-v1",
+        "pricing_version": "domestic-member-v2",
     }
     assert priced["pricing_rule_label"] == expected_rule_label
     assert product.use_count == original_use_count
@@ -2591,7 +2721,9 @@ def test_quote_batch_labels_reduction_fixed_and_fixed_price_cap(db):
     fixed = _configured_product(
         db, _cap_attrs(length="15厘米", density="100%"), "1198.00"
     )
-    reduced = _configured_product(db, _piece_attrs(), "840.00")
+    reduced = _configured_product(
+        db, _piece_attrs(craft="全递针12*14"), "840.00"
+    )
     capped = _configured_product(
         db, _cap_attrs(craft="递顶", length="20厘米"), "1600.00"
     )
@@ -2744,14 +2876,14 @@ def test_quote_api_returns_priced_and_missing_json_contract_with_exact_labels(db
         "discount_amount": 120.0,
         "pricing_rule": "member_reduction",
         "pricing_rule_label": "黑卡立减 ¥120.00",
-        "pricing_version": "domestic-member-v1",
+        "pricing_version": "domestic-member-v2",
         "expected_quote": {
             "original_price": 840.0,
             "base_price_version": 7,
             "discount_price": 720.0,
             "membership_level": "black",
             "pricing_rule": "member_reduction",
-            "pricing_version": "domestic-member-v1",
+            "pricing_version": "domestic-member-v2",
         },
     }
     assert missing["client_key"] == "missing"
@@ -2821,10 +2953,11 @@ def test_custom_sku_can_move_from_missing_to_priced_and_back(db, attrs):
     ).json()["data"]["items"][0]
     assert priced["status"] == "priced"
     assert priced["original_price"] == 1000.0
-    assert priced["discount_price"] == 880.0
-    assert priced["discount_amount"] == 120.0
-    assert priced["pricing_rule"] == "member_reduction"
-    assert priced["pricing_rule_label"] == "黑卡立减 ¥120.00"
+    # 特单自定义工艺不在海报立减白名单：黑卡也按原价
+    assert priced["discount_price"] == 1000.0
+    assert priced["discount_amount"] == 0.0
+    assert priced["pricing_rule"] == "base_price"
+    assert priced["pricing_rule_label"] == "黑卡原价（该规格无优惠）"
 
     deleted = admin.delete(f"/api/domestic/products/{product.id}/base-price")
     assert deleted.status_code == 200
@@ -2953,7 +3086,8 @@ def _order_pricing_context(
     membership_level="black",
     balance="10000.00",
 ):
-    attrs = attrs or _cap_attrs(length="20厘米")
+    # 默认落在海报立减白名单：女士头套 40厘米递针分界
+    attrs = attrs or _cap_attrs(craft="中分界", length="40厘米")
     user = _operator(db, f"order-pricing-{suffix}")
     customer = domestic_models.DomesticCustomer(
         shop_name=f"订单锁价客户-{suffix}",
@@ -3822,7 +3956,7 @@ def test_formal_black_order_charges_discount_and_persists_pricing_snapshot(db):
     assert item.discount_amount == D("120.00")
     assert item.membership_level_snapshot == "black"
     assert item.pricing_rule == "member_reduction"
-    assert item.pricing_version == "domestic-member-v1"
+    assert item.pricing_version == "domestic-member-v2"
     assert item.base_price_version_snapshot == 1
     assert product.use_count == 1
     assert detail_item["original_price"] == 1000.0
@@ -3831,7 +3965,7 @@ def test_formal_black_order_charges_discount_and_persists_pricing_snapshot(db):
     assert detail_item["membership_level_snapshot"] == "black"
     assert detail_item["pricing_rule"] == "member_reduction"
     assert detail_item["pricing_rule_label"] == "黑卡立减 ¥120.00"
-    assert detail_item["pricing_version"] == "domestic-member-v1"
+    assert detail_item["pricing_version"] == "domestic-member-v2"
     assert detail_item["base_price_version"] == 1
     assert detail["current_expected_quotes"] == [{
         "client_key": None,
@@ -3841,7 +3975,7 @@ def test_formal_black_order_charges_discount_and_persists_pricing_snapshot(db):
         "discount_price": 880.0,
         "membership_level": "black",
         "pricing_rule": "member_reduction",
-        "pricing_version": "domestic-member-v1",
+        "pricing_version": "domestic-member-v2",
     }]
 
 
@@ -3948,7 +4082,8 @@ def test_discount_balance_threshold_and_draft_charge_contract(db):
     db.refresh(customer3)
     draft_order = db.get(domestic_models.DomesticOrder, draft["id"])
     assert customer3.balance == D("0.00")
-    assert draft_order.total_amount == D("880.00")
+    # 自定义工艺不在立减白名单：草稿也按原价
+    assert draft_order.total_amount == D("1000.00")
     assert draft_order.charged_amount == D("0.00")
 
 
@@ -3990,7 +4125,7 @@ def test_create_returns_409_for_each_stale_or_tampered_quote_field(
     assert len(detail["current_expected_quotes"]) == 1
     assert (
         detail["current_expected_quotes"][0]["pricing_version"]
-        == "domestic-member-v1"
+        == "domestic-member-v2"
     )
     assert db.query(domestic_models.DomesticOrder).count() == 0
     db.refresh(product)
@@ -4330,7 +4465,7 @@ def test_order_router_returns_typed_quote_change_as_409(db):
         "discount_price": 1380.0,
         "membership_level": "black",
         "pricing_rule": "member_reduction",
-        "pricing_version": "domestic-member-v1",
+        "pricing_version": "domestic-member-v2",
     }]
     assert db.query(domestic_models.DomesticOrder).count() == 0
 
@@ -4344,14 +4479,14 @@ def test_order_detects_server_pricing_version_change_as_rule_change(
     payload = _priced_order_payload(
         customer, attrs, expected, request_id="pricing-version-change-order"
     )
-    monkeypatch.setattr(pricing_service, "PRICING_VERSION", "domestic-member-v2")
+    monkeypatch.setattr(pricing_service, "PRICING_VERSION", "domestic-member-v3")
 
     with pytest.raises(pricing_service.DomesticQuoteChangedError) as caught:
         order_service.create_order(db, payload, user.id)
 
     change = caught.value.detail["changes"][0]
     assert change["reasons"] == ["rule_changed"]
-    assert change["current_quote"]["pricing_version"] == "domestic-member-v2"
+    assert change["current_quote"]["pricing_version"] == "domestic-member-v3"
     assert db.query(domestic_models.DomesticOrder).count() == 0
 
 
@@ -4495,7 +4630,8 @@ def test_inline_customer_special_order_quote_409_rolls_back_entire_graph(db):
 
 
 def test_order_pricing_configuration_error_rolls_back_new_product_and_order(db):
-    attrs = _cap_attrs(craft="异常低价工艺", length="27厘米")
+    # 必须落在立减白名单，才会触发「立减后低于 0」的配置错误
+    attrs = _cap_attrs(craft="中分界", length="40厘米")
     user = _operator(db, "order-config-rollback")
     customer = domestic_models.DomesticCustomer(
         shop_name="异常低价客户",
@@ -4565,7 +4701,7 @@ def test_order_price_locks_customer_before_sorted_unique_base_rows(db):
         "discount_price": discount_b.final_price,
         "membership_level": "black",
         "pricing_rule": discount_b.pricing_rule,
-        "pricing_version": "domestic-member-v1",
+        "pricing_version": "domestic-member-v2",
     }
     db.commit()
     payload = _priced_order_payload(
@@ -4967,7 +5103,7 @@ def test_manual_price_migration_downgrade_blocks_on_manual_rows(db):
         discount_amount=D("50.00"),
         membership_level_snapshot="black",
         pricing_rule="manual_override",
-        pricing_version="domestic-member-v1",
+        pricing_version="domestic-member-v2",
         base_price_version_snapshot=1,
     ))
     db.flush()
@@ -5310,7 +5446,7 @@ def test_mixed_draft_quote_change_retry_preserves_manual_line(db):
     user, customer, product_a, base_a, expected_a, attrs_a = _order_pricing_context(
         db, "manual-mixed", balance="10000.00"
     )
-    attrs_b = _cap_attrs(length="25厘米")
+    attrs_b = _cap_attrs(craft="递顶", length="35厘米")
     _seed_order_dicts(db, attrs_b)
     product_b = _persist_product(db, attrs_b)
     key_b = pricing_service.price_key_for_product(product_b)

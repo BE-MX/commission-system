@@ -1,0 +1,42 @@
+✔ customer scope and action counts remain distinct (6.964712ms)
+✔ same completion replay returns one result and one next action (0.956965ms)
+✔ unresolved completion requires next step and leaves no partial state (0.225587ms)
+✔ snooze preserves deadline and overdue risk (0.216089ms)
+✔ scan never revives closed events or collapses distinct events for one customer (0.338381ms)
+✔ stale profile revision fails without changing fields (0.191156ms)
+✔ manual revision invalidates old suggestions and cannot alter governed identity (0.210153ms)
+✔ acceptance records prior value and new version (0.170972ms)
+✔ unbound and unauthorized sources cannot analyze or become profile facts (0.262394ms)
+✔ cycle uses median of commercial dates, excludes sample and same-day duplicates (1.930553ms)
+✔ money and units stay isolated; unknown values stay visible (0.438114ms)
+✔ order coverage uses orders rather than share of lines (0.200654ms)
+✔ order date and attribute filters constrain the denominator (0.390622ms)
+✔ new commercial order closes previous window once and scan does not resurrect it (0.439302ms)
+✔ monitor baseline creates no past events and rejects duplicate subscription (0.42268ms)
+✔ multi-source monitor event creates one task and correctly typed evidence (0.664889ms)
+✔ contact restriction failure does not partially confirm monitor event (0.200654ms)
+✔ sample reschedule updates active plan and task, preserving original due (0.192343ms)
+✔ sample reschedule cannot reopen a completed action or mutate plan on failure (0.178096ms)
+✔ restricted customer blocks contact plan before writing either object (0.414368ms)
+✔ private notes never appear in shared conversation summary and inputs escape (0.942717ms)
+✔ binding invalidates both acceptance paths until fresh versioned analysis (0.514102ms)
+✔ suggestion checks binding analysis and profile versions without mutation (0.374ms)
+✔ channel filtering keeps stable message content and matching sample summaries (0.470171ms)
+✔ sample followup atomically moves occurrence and reschedules current action only (0.46186ms)
+✔ resolved plan moves to history without claiming sample testing complete (1.086382ms)
+✔ future snooze suppresses recommendation but retains original deadline risk (0.161473ms)
+✔ monitor schedule toggles preserve collection failure until explicit success (0.201841ms)
+✔ uncollected subscription resume still needs baseline without historical events (0.144851ms)
+✔ unknown amount and quantity retain missingness with separate quality coverage (5.025848ms)
+✔ cycle windows are computed by product family and irregular intervals downgrade (0.218463ms)
+✔ new unrelated or sample order cannot close a window and matching order closes only its family (0.189968ms)
+ℹ tests 32
+ℹ suites 0
+ℹ pass 32
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 149.499099
+
+EXIT_CODE=0

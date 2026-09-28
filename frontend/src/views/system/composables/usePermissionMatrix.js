@@ -17,6 +17,7 @@ import { ROLE_TEMPLATES } from '@/config/roleTemplates'
 
 /** 前缀 → 中文行名（矩阵行头） */
 export const PREFIX_LABELS = {
+  fx_settlement: '结汇决策助手',
   mini_export: '小程序 · 外贸报工',
   mini_domestic: '小程序 · 内贸报工',
   mini_lookup: '小程序 · 订单速查',

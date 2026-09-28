@@ -13,10 +13,10 @@ class Settings(BaseSettings):
     db_url: SecretStr = Field(description="SQLAlchemy URL for the read-only lsordertest database")
     token: SecretStr = Field(min_length=32, description="Bearer token accepted by the MCP endpoint")
     allowed_hosts: Annotated[list[str], NoDecode] = Field(
-        default=["leshine.work", "www.leshine.work", "127.0.0.1:8100", "localhost:8100"]
+        default=["leshine.cloud", "www.leshine.cloud", "127.0.0.1:8100", "localhost:8100"]
     )
     allowed_origins: Annotated[list[str], NoDecode] = Field(
-        default=["https://leshine.work", "https://www.leshine.work"]
+        default=["https://leshine.cloud", "https://www.leshine.cloud"]
     )
 
     model_config = SettingsConfigDict(

@@ -14,6 +14,10 @@ export const renameMediaDirectory = (batchId, directoryId, name) => customerMedi
 
 // ── 客户标签（tag_scope='customer' 维度） ────────────────
 export const getCustomerTagDimensions = () => customerMediaClient.get('/tags/dimensions', { showLoading: false })
+export const getCustomerTags = customerId => customerMediaClient.get(`/customers/${encodeURIComponent(customerId)}/tags`, { showLoading: false })
+export const addCustomerTags = (customerId, tags) => customerMediaClient.post(`/customers/${encodeURIComponent(customerId)}/tags`, { tags })
+export const getTaskCustomerTags = taskId => customerMediaClient.get(`/tasks/${taskId}/customer-tags`, { showLoading: false })
+export const addTaskCustomerTags = (taskId, tags) => customerMediaClient.post(`/tasks/${taskId}/customer-tags`, { tags })
 export const validateCustomerTags = tagNames => customerMediaClient.post('/tags/validate', { tag_names: tagNames }, {
   showLoading: false,
   timeout: 30000,
@@ -57,4 +61,7 @@ export const getSalesPortalCustomer = (customerId, tagValueIds) => customerMedia
   showLoading: false,
   suppressToast: true,
   params: tagValueIds?.length ? { tag_value_ids: tagValueIds.join(',') } : undefined,
+})
+export const getSalesPortalCustomerTags = customerId => customerMediaClient.get(`/sales-portal/customers/${encodeURIComponent(customerId)}/tags`, {
+  showLoading: false, suppressToast: true,
 })

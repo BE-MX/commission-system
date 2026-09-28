@@ -1,9 +1,9 @@
 <template>
   <section class="accessory-detail-section">
     <div class="line-header">
-      <div>
-        <strong>配件明细</strong>
-        <span>Hair ExtensionsTools Fee · 仅可选择已配置标准价的真实 OKKI SKU</span>
+      <div class="line-title">
+        <span class="step">3</span><strong>配件明细</strong>
+        <span class="line-hint">Hair ExtensionsTools Fee · 仅可选择已配置标准价的真实 OKKI SKU</span>
       </div>
       <el-button @click="$emit('add')">
         <el-icon><Plus /></el-icon>
@@ -11,8 +11,8 @@
       </el-button>
     </div>
     <div class="line-table-wrap accessory-line-table-wrap">
-      <el-table :data="items" border class="list-table line-table accessory-line-table">
-        <el-table-column label="#" type="index" min-width="48" max-width="60" fixed />
+      <el-table :data="pagedItems" border class="list-table line-table accessory-line-table" max-height="560">
+        <el-table-column label="#" type="index" :index="indexBase" min-width="48" max-width="60" fixed />
         <el-table-column label="Name" min-width="190" max-width="300">
           <template #default="{ row }">
             <!-- 不要加 @visible-change 预取：EP 2.13 起该事件绑内部 dropdownMenuVisible
@@ -94,10 +94,23 @@
         </el-table-column>
       </el-table>
     </div>
+    <!-- 配件也可能几十行：与产品明细同款窗内分页，行号跨页连续 -->
+    <div v-if="items.length" class="line-pagination">
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :total="items.length"
+        :page-sizes="[10, 20, 50]"
+        layout="total, sizes, prev, pager, next"
+        small
+        background
+      />
+    </div>
   </section>
 </template>
 
 <script setup>
+import { computed, ref, watch } from 'vue'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import { accessoryStandardPriceState } from '../composables/accessoryPricing.js'
 
@@ -111,6 +124,18 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['add', 'select', 'change', 'remove'])
+
+// 窗内分页：与产品明细同款；新增行后跳到末页
+const page = ref(1)
+const pageSize = ref(10)
+const pagedItems = computed(() => props.items.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
+const indexBase = computed(() => (page.value - 1) * pageSize.value + 1)
+watch(() => props.items.length, (now, before) => {
+  const pages = Math.max(1, Math.ceil(now / pageSize.value))
+  if (!before) page.value = 1
+  else if (now > before) page.value = pages
+  else if (page.value > pages) page.value = pages
+})
 
 const optionKey = option => `${option.product_id}:${option.sku_id}`
 const identityValue = row => row.product_id && row.sku_id ? optionKey(row) : null
@@ -134,10 +159,14 @@ const handleSelect = (row, key) => {
 </script>
 
 <style scoped>
-.accessory-detail-section { margin-top: 18px; }
+/* 卡片间距由父级 .pane-main 的 gap 提供，不再自带顶距 */
+.accessory-detail-section { margin-top: 0; }
 .line-header { display: flex; align-items: center; justify-content: space-between; margin: 18px 0 12px; }
-.line-header span { margin-left: 10px; color: var(--text-secondary); font-size: 13px; }
+.line-title { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.line-title .line-hint { color: var(--text-secondary); font-size: 13px; }
+.step { display: inline-flex; width: 20px; height: 20px; flex: none; align-items: center; justify-content: center; border-radius: 6px; background: var(--color-primary); color: #fff; font-size: 12px; font-weight: 700; }
 .line-table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: var(--card-radius); }
+.line-pagination { display: flex; justify-content: flex-end; margin-top: 10px; }
 .line-table { width: 100%; }
 .price-cell { display: flex; align-items: center; gap: 6px; }
 .price-cell :deep(.el-input-number) { min-width: 0; flex: 1; }

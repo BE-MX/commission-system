@@ -137,6 +137,9 @@ def build_lan():
 
 def publish(args):
     global ROOT
+    recover_168 = getattr(args, "recover_migration_168", False)
+    if recover_168 and (args.cloud_only or not args.revision or args.recover_migration_149 or args.recover_migration_151):
+        raise RuntimeError("Recovery 168 requires a pinned full release")
     recover_149 = getattr(args, "recover_migration_149", False)
     recover_151 = getattr(args, "recover_migration_151", False)
     if recover_151 and (recover_149 or args.cloud_only or not args.revision):
@@ -153,14 +156,16 @@ def publish(args):
             emit("plan", revision=revision, previous=previous,
                  files=run(["git", "diff", "--name-status", previous, revision], cwd=live, capture=True).splitlines())
         import schema_release
-        schema_release.check_recovery(recover_149=recover_149, recover_151=recover_151)
+        schema_release.check_recovery(recover_149=recover_149, recover_151=recover_151, recover_168=recover_168)
         from office_release import prepare as office_prepare, activate as office_activate, stage_static
-        office_options = {"recover_149": True} if recover_149 else {"recover_151": True} if recover_151 else {}
+        office_options = {"recover_168": True} if recover_168 else {"recover_149": True} if recover_149 else {"recover_151": True} if recover_151 else {}
         office = None if args.cloud_only else step("office-prepare", "办公室服务、依赖与迁移链预检", office_prepare, live, previous, revision, **office_options)
         if recover_149:
             office["recover_149"] = True
         if recover_151:
             office["recover_151"] = True
+        if recover_168:
+            office["recover_168"] = True
         inventory = json.loads((ROOT / "deploy/platforms.json").read_text(encoding="utf-8-sig"))
         import okki_outbound_release as outbound_release
         outbound_targets = [item for item in inventory.get('external_services', [])
@@ -171,13 +176,23 @@ def publish(args):
             step("schema-preflight", "共享数据库与全部写入实例预检", schema_release.preflight, office, inventory, args.migration_credentials)
             emit("schema", target=office.get("schema"), pending=office.get("pending", []))
         previous_release = marker('publish-current')
+        recovery_original = None
+        if recover_168:
+            from migration_recovery168 import prepare_release
+            recovery_original = prepare_release(STATE, ROOT, revision, previous_release)
         scope = 'cloud-only' if args.cloud_only else 'office-and-cloud'
         release_id = (previous_release.get('release_id') if previous_release.get('revision') == revision
                       and previous_release.get('scope') == scope
                       and previous_release.get('status') != 'succeeded' else None) or uuid.uuid4().hex
+        if recovery_original:
+            release_id = recovery_original["release_id"]
         journal = {"revision": revision, "release_id": release_id,
                    "scope": scope, "status": "preparing", "completed": [], "deferred": []}
-        outbound = step("outbound-prepare", "准备已登记的出库轮询器", outbound_release.prepare, ROOT, revision, release_id, allow_pending=bool(office and office.get('pending')))
+        outbound_revision = recovery_original["revision"] if recovery_original else revision
+        if recovery_original:
+            journal["recovery_original"] = recovery_original
+            journal["outbound_artifact_revision"] = outbound_revision
+        outbound = step("outbound-prepare", "准备已登记的出库轮询器", outbound_release.prepare, ROOT, outbound_revision, release_id, allow_pending=bool(office and office.get('pending')))
         journal['outbound'] = outbound['receipt']
         atomic_json(STATE / "publish-current.json", journal)
         outputs = step("build", "构建主站、PM 站与浏览器扩展", build_frontends)
@@ -208,6 +223,8 @@ def publish(args):
         journal["status"] = "activating"
         atomic_json(STATE / "publish-current.json", journal)
         journal['outbound'] = step("freeze", "暂停并排空出库轮询器", outbound_release.phase, outbound, 'freeze')
+        if recovery_original and journal['outbound'].get('schedule') != recovery_original['outbound']['schedule']:
+            raise RuntimeError('Recovery 168 outbound baseline drift')
         atomic_json(STATE / "publish-current.json", journal)
         stopped = step("migration", "共享数据库迁移（无变更则跳过）", schema_release.migrate, office, inventory, args.migration_credentials) if office else []
         if office:
@@ -260,12 +277,14 @@ def publish(args):
 if __name__ == "__main__":
     sys.modules["publish"] = sys.modules[__name__]
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser.add_argument('--colorwork-backup-policy', action='store_true', help='Install hourly retention of two recent Colorwork recovery backups')
+    parser.add_argument('--agent-cloud-migration', choices=['prepare', 'validate-staged', 'freeze-source', 'copy-frozen-state', 'configure-target', 'activate-target', 'verify-target', 'retire-source', 'nginx-prepare', 'nginx-activate', 'nginx-verify', 'source-routes-prepare', 'source-routes-activate', 'source-routes-verify'], help='Execute one journalled phase of the inspected Agent migration')
     parser.add_argument('--storage-maintenance', metavar='PLAN_JSON', help='Freeze/restore API ingress and direct office LAN access')
     parser.add_argument('--recover-colorwork-start-order', metavar='PLAN_JSON', help='Recover the inspected schema-160 dependency-order interruption')
     parser.add_argument('--finalize-release', metavar='PLAN_JSON', help='Complete the inspected post-DDL activated release without repeating migrations')
     parser.add_argument('--storage-cutover', metavar='PLAN_JSON', help='Execute a journalled COS cutover phase')
     parser.add_argument("--storage-routing-only", metavar="PROBES_JSON", help="Prepare/activate public COS routing with explicit cloud object probes")
-    parser.add_argument("--okki-outbound-only", action="store_true", help="Deploy and enable only the Singapore outbound worker")
+    parser.add_argument("--okki-outbound-only", action="store_true", help="Deploy and enable only the Beijing outbound worker")
     parser.add_argument("--cloud-only", action="store_true")
     parser.add_argument("--no-pull", action="store_true")
     parser.add_argument("--revision", help="Pin a reviewed full commit SHA; fetch still runs unless --no-pull")
@@ -278,12 +297,27 @@ if __name__ == "__main__":
     parser.add_argument("--receipt-routing-only", action="store_true", help="Route receipts and 10MiB proofs to the office only")
     parser.add_argument("--colorwork-routing-only", action="store_true", help="Route colorwork to the existing healthy Beijing module")
     parser.add_argument("--migrate-only", metavar="PLAN", help="Execute only the reviewed 137 -> 138 migration using a verified local plan")
+    parser.add_argument("--recover-migration-168", action="store_true", help="Recover only the inspected 168 collation incident")
+    parser.add_argument("--invoice-schema-only", metavar="PLAN", help="Repair only the reviewed 164 -> 167 invoice schema gap")
+    parser.add_argument("--recover-invoice-166", metavar="PLAN", help="Resume only the inspected partial invoice migration 166")
     parser.add_argument("--recover-migration-151", action="store_true", help="Resume only the reviewed 151 foreign-key failure preserving original writer evidence")
     parser.add_argument("--recover-migration-149", action="store_true", help="Resume only the inspected revision-149 overflow with original writer evidence")
     parser.add_argument("--migration-credentials", help="Override protected DBA user/password file; defaults to .deploy_state/credentials/migration.env when DDL is pending")
     try:
         args = parser.parse_args()
-        if args.recover_colorwork_start_order:
+        if args.recover_migration_168 and any(value for key, value in vars(args).items() if key not in {"recover_migration_168", "prepare_only", "revision", "live_root", "no_pull", "migration_credentials"}):
+            raise RuntimeError("Recovery 168 only accepts a pinned full release")
+        if args.colorwork_backup_policy:
+            if any(value for key, value in vars(args).items() if key not in {'colorwork_backup_policy', 'prepare_only'}):
+                raise RuntimeError('Backup policy only accepts --prepare-only')
+            from colorwork_backup_policy import execute
+            execute(args.prepare_only)
+        elif args.agent_cloud_migration:
+            if any(value for key, value in vars(args).items() if key != 'agent_cloud_migration'):
+                raise RuntimeError('Agent migration cannot be combined with other release actions')
+            from agent_cloud_migration import execute
+            execute(args.agent_cloud_migration)
+        elif args.recover_colorwork_start_order:
             if any(value for key, value in vars(args).items() if key not in {'recover_colorwork_start_order', 'prepare_only'}):
                 raise RuntimeError('Start-order recovery only accepts --prepare-only')
             from recover_colorwork_order import execute
@@ -343,6 +377,18 @@ if __name__ == "__main__":
                 raise RuntimeError("Voucher routing only accepts --prepare-only")
             from voucher_routing import execute
             execute(args.prepare_only)
+        elif args.recover_invoice_166:
+            if any(value for key, value in vars(args).items()
+                   if key not in {"recover_invoice_166", "prepare_only", "migration_credentials"}):
+                raise RuntimeError("Invoice 166 recovery accepts only its plan and migration credential")
+            from invoice_schema_repair import recover_execute
+            recover_execute(args.recover_invoice_166, args.migration_credentials, args.prepare_only)
+        elif args.invoice_schema_only:
+            if any(value for key, value in vars(args).items()
+                   if key not in {"invoice_schema_only", "prepare_only", "migration_credentials"}):
+                raise RuntimeError("Invoice schema repair accepts only its plan and migration credential")
+            from invoice_schema_repair import execute
+            execute(args.invoice_schema_only, args.migration_credentials, args.prepare_only)
         elif args.migrate_only:
             if args.cloud_only or args.no_pull or args.revision or args.recover_migration_149 or args.recover_migration_151:
                 raise RuntimeError("Migration-only uses its pinned plan; cloud-only/no-pull/revision do not apply")
@@ -351,10 +397,10 @@ if __name__ == "__main__":
         else:
             publish(args)
     except Exception as error:
-        if any(getattr(locals().get('args'), key, None) for key in ['storage_maintenance', 'finalize_release', 'storage_cutover', 'recover_colorwork_start_order']):
+        if any(getattr(locals().get('args'), key, None) for key in ['colorwork_backup_policy', 'storage_maintenance', 'finalize_release', 'storage_cutover', 'recover_colorwork_start_order']):
             print('STORAGE MAINTENANCE FAILED: ' + str(error), file=sys.stderr, flush=True)
             sys.exit(1)
-        if not getattr(locals().get("args"), "storage_routing_only", None) and not getattr(locals().get("args"), "receipt_routing_only", False) and not getattr(locals().get("args"), "okki_outbound_only", False) and STATE.exists() and not getattr(locals().get("args"), "restore_pre151", None) and not getattr(locals().get("args"), "office_lan_https", None) and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False) and not getattr(locals().get("args"), "shipping_video_routing_only", False):
+        if not getattr(locals().get("args"), "storage_routing_only", None) and not getattr(locals().get("args"), "receipt_routing_only", False) and not getattr(locals().get("args"), "okki_outbound_only", False) and STATE.exists() and not getattr(locals().get("args"), "restore_pre151", None) and not getattr(locals().get("args"), "office_lan_https", None) and not getattr(locals().get("args"), "migrate_only", None) and not getattr(locals().get("args"), "invoice_schema_only", None) and not getattr(locals().get("args"), "recover_invoice_166", None) and not getattr(locals().get("args"), "voucher_routing_only", False) and not getattr(locals().get("args"), "colorwork_routing_only", False) and not getattr(locals().get("args"), "shipping_video_routing_only", False):
             journal = marker("publish-current")
             journal.update(status="failed", error_type=type(error).__name__)
             atomic_json(STATE / "publish-current.json", journal)

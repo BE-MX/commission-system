@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>过去一年人民币兑美元汇率与工作日分析｜结汇口径</title>
+  <style>
+    :root { color-scheme: light; --ink:#17243b; --muted:#607087; --gold:#a36c12; --line:#dce4ed; --paper:#f7f8fa; --blue:#3569a8; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--paper); color:var(--ink); font:15px/1.7 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+    a { color:var(--blue); text-underline-offset:3px; }
+    .wrap { max-width:1120px; margin:auto; padding:0 24px 72px; }
+    .hero { background:linear-gradient(115deg,#192b44,#2b4260); color:white; padding:60px 0 52px; }
+    .hero .wrap { padding-bottom:0; }
+    .kicker { text-transform:uppercase; letter-spacing:.15em; font-size:12px; font-weight:700; color:#e4bb74; }
+    h1 { max-width:770px; font-size:clamp(28px,4vw,46px); line-height:1.17; letter-spacing:-.03em; margin:14px 0; }
+    .hero p { max-width:760px; margin:0; color:#dbe5f2; }
+    .meta { display:flex; flex-wrap:wrap; gap:10px; margin-top:26px; }
+    .meta span { border:1px solid #7790ac; border-radius:999px; padding:4px 12px; color:#e5ebf3; font-size:12px; }
+    .cards { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin:-25px 0 24px; position:relative; }
+    .card,.panel { background:white; border:1px solid var(--line); border-radius:16px; box-shadow:0 8px 28px #17243b08; }
+    .card { padding:19px; min-height:130px; }
+    .card small { display:block; color:var(--muted); font-size:12px; }
+    .card strong { display:block; font-size:26px; letter-spacing:-.04em; margin:8px 0 1px; font-variant-numeric:tabular-nums; }
+    .card em { display:block; color:var(--muted); font-size:11px; font-style:normal; }
+    .negative { color:#b34842; }
+    .panel { padding:28px; margin:20px 0; }
+    h2 { font-size:21px; letter-spacing:-.02em; margin:0 0 14px; }
+    h3 { font-size:16px; margin:28px 0 9px; }
+    p { margin:9px 0 14px; }
+    .lead { font-size:17px; font-weight:600; }
+    .note { color:var(--muted); font-size:13px; }
+    .takeaways { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+    .takeaways article { border-left:3px solid var(--gold); padding:2px 12px; }
+    .takeaways b { display:block; margin-bottom:5px; }
+    .takeaways p { font-size:13px; margin:0; color:var(--muted); }
+    .chart-wrap { position:relative; }
+    svg { display:block; width:100%; height:auto; overflow:visible; }
+    .grid { stroke:#e4e9f0; stroke-width:1; }
+    .axis { fill:#718096; font:12px system-ui,sans-serif; }
+    .rate-path { fill:none; stroke:#a87519; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; }
+    #hover-line { stroke:#426283; stroke-width:1; stroke-dasharray:4 3; display:none; }
+    #hover-dot { fill:#a87519; stroke:white; stroke-width:2; display:none; }
+    .chart-tip { position:absolute; display:none; top:8px; right:8px; padding:7px 10px; background:#1d2d43; color:white; border-radius:7px; font-size:12px; pointer-events:none; font-variant-numeric:tabular-nums; }
+    .table-wrap { overflow-x:auto; }
+    table { border-collapse:collapse; width:100%; min-width:620px; font-variant-numeric:tabular-nums; }
+    th,td { padding:11px 12px; border-bottom:1px solid var(--line); text-align:right; }
+    th:first-child,td:first-child { text-align:left; }
+    thead th { background:#f5f7fa; font-size:12px; color:#506078; }
+    tbody tr:nth-child(odd) { background:#fcfdfe; }
+    .high { color:#936112; font-weight:700; }
+    .bars { display:grid; gap:11px; margin:24px 0 13px; }
+    .bar-row { display:grid; grid-template-columns:56px 1fr 76px; gap:12px; align-items:center; font-size:13px; }
+    .bar-track { height:21px; position:relative; background:linear-gradient(90deg,#f1f4f8 49.8%,#73859a 49.8%,#73859a 50.2%,#f1f4f8 50.2%); border-radius:4px; }
+    .bar { position:absolute; height:13px; top:4px; background:#b38743; border-radius:2px; }
+    .bar.negative-bar { background:#6284a8; }
+    .method { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+    .method p { color:var(--muted); font-size:13px; }
+    .callout { background:#fff6e6; border-left:4px solid #c28b2d; border-radius:8px; padding:15px 18px; margin:20px 0 0; }
+    footer { color:var(--muted); font-size:12px; line-height:1.8; }
+    @media(max-width:800px) { .cards { grid-template-columns:repeat(2,1fr); }.takeaways,.method { grid-template-columns:1fr; }.hero { padding-top:42px; }.panel { padding:20px; } }
+    @media(max-width:450px) { .wrap { padding-left:14px; padding-right:14px; }.cards { gap:8px; }.card { padding:12px; min-height:110px; }.card strong { font-size:22px; }.bar-row { grid-template-columns:46px 1fr 69px; gap:6px; } }
+    @media print { body { background:white; }.hero { color:var(--ink); background:white; border-bottom:2px solid var(--ink); padding:20px 0; }.hero p,.meta span { color:var(--ink); }.cards { margin:20px 0; }.card,.panel { break-inside:avoid; box-shadow:none; }.wrap { padding-bottom:0; } }
+  </style>
+</head>
+<body>
+  <header class="hero"><div class="wrap">
+    <div class="kicker">USD / CNY · WEEKDAY STUDY</div>
+    <h1>过去一年人民币兑美元汇率：周几较高？</h1>
+    <p>为结汇决策统一采用 <b>USD/CNY，即 1 美元可兑换多少人民币</b>。这个数值越高，卖出美元所得人民币越多。</p>
+    <div class="meta"><span>观察窗口 2025-09-24—2026-09-24</span><span>最新历史观测 2026-09-18</span><span>美联储 H.10 / FRED DEXCHUS</span></div>
+  </div></header>
+  <main class="wrap">
+    <section class="cards" aria-label="关键数据">
+      <div class="card"><small>一年首末观测变化</small><strong class="negative">−6.09%</strong><em>7.1315 → 6.6975 CNY/USD</em></div>
+      <div class="card"><small>有效工作日观测</small><strong>247 天</strong><em>节假日及缺失日未补值</em></div>
+      <div class="card"><small>直接按星期平均</small><strong>周五最高</strong><em>6.9037 CNY/USD；样本数不等</em></div>
+      <div class="card"><small>同一完整周内比较</small><strong>周一偏高</strong><em>相对该周均值 +5.41 基点</em></div>
+    </section>
+
+    <section class="panel">
+      <h2>先看结论</h2>
+      <div class="takeaways">
+        <article><b>全年明显下行</b><p>美元对人民币从 7.1315 降至 6.6975；最高 7.1384 出现在 2025-10-14，最低 6.6975 出现在 2026-09-18。</p></article>
+        <article><b>“哪天最高”取决于算法</b><p>直接平均是周五最高；只比较有完整五天报价的同一周，周一较高。两种排序相反，说明不能用原始均值直接定交易日。</p></article>
+        <article><b>不建议固定等周几</b><p>完整周的周一优势与全年下行趋势高度重合。线性趋势调整后，周一与周五平均只差约 0.00052 元/美元，不能据此保证以后周一更优。</p></article>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>一年走势</h2>
+      <p class="note">仅绘制 247 个有效日度观察值；横轴为日期，纵轴为人民币/美元。鼠标移到曲线上可查看日期和数值。</p>
+      <div class="chart-wrap"><svg id="trend" viewBox="0 0 1000 330" role="img" aria-label="2025年9月至2026年9月美元兑人民币历史汇率折线图"></svg><div id="chart-tip" class="chart-tip"></div></div>
+      <p class="note">走势线用于观察年度方向。H.10 日度数据按周发布，与银行此刻的结汇报价并不同步。</p>
+    </section>
+
+    <section class="panel">
+      <h2>周一到周五：原始汇率水平</h2>
+      <p>按每个交易日直接求均值，<b>周五 6.9037 最高</b>，周四 6.8912 最低。由于各星期的样本数量和所处月份不同，这组均值容易混入全年趋势与假日缺口。</p>
+      <div class="table-wrap"><table><thead><tr><th>星期</th><th>观测数</th><th>平均 USD/CNY</th><th>中位数</th><th>最低</th><th>最高</th></tr></thead><tbody>
+        <tr><td>周一</td><td>46</td><td>6.9013</td><td>6.8814</td><td>6.7082</td><td>7.1222</td></tr>
+        <tr><td>周二</td><td>50</td><td>6.8940</td><td>6.8798</td><td>6.7105</td><td class="high">7.1384</td></tr>
+        <tr><td>周三</td><td>52</td><td>6.9004</td><td>6.8706</td><td>6.7059</td><td>7.1315</td></tr>
+        <tr><td>周四</td><td>49</td><td>6.8912</td><td>6.8409</td><td>6.7061</td><td>7.1338</td></tr>
+        <tr><td class="high">周五</td><td>50</td><td class="high">6.9037</td><td>6.8909</td><td class="high">6.6975</td><td>7.1340</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <section class="panel">
+      <h2>控制不同月份：40 个完整周的同周偏差</h2>
+      <p>仅保留周一至周五都有观测值的 40 周。每一天先减去该周五日均值，再把差值换成基点（1 基点 = 0.01%）。正数表示当天相对同周均值更高。</p>
+      <div id="weekday-bars" class="bars" aria-label="完整周各星期相对同周均值的平均偏差"></div>
+      <p><b>周一高于周五 27 / 40 周</b>；这些周的“周五 − 周一”平均为 −0.00569 元/美元（约每 10 万美元差 569 元）。但这一年汇率整体下行。用全年最简单的线性时间趋势扣除四天自然下行后，平均差额缩小为约 −0.00052 元/美元（约每 10 万美元 52 元）。线性调整是敏感性分析，不是因果识别。</p>
+      <div class="callout"><b>用于结汇的行动规则：</b>以实际银行可成交价、人民币付款日期、必须预留的美元和可承受的下跌金额为先。现金缺口先覆盖；剩余部分可按风险预算分批。每次要交易时重新比较当前报价与自己的约束，不因“今天是周一/周五”单独推迟或提前。</div>
+    </section>
+
+    <section class="panel method">
+      <div><h2>数据与算法</h2><p>数据取自美国联邦储备系统 H.10 的 <a href="https://fred.stlouisfed.org/series/DEXCHUS" target="_blank" rel="noopener">FRED DEXCHUS</a>（人民币/美元）。查询窗口 2025-09-24 至 2026-09-24；实际有效观测止于 2026-09-18。点位、均值、中位数均未补值。完整周采用 ISO 周，只有五个工作日均有报价才纳入配对比较。年度变化为末值/首值−1。</p></div>
+      <div><h2>使用限制</h2><p>H.10 是按周发布的历史日度参考序列，不代表中国银行的实时“现汇买入价”，也不是可执行价。结汇时应向银行核实实际价格；可参考 <a href="https://www.boc.cn/sourcedb/whpj/" target="_blank" rel="noopener">中国银行外汇牌价</a>。年度下行、节假日分布和样本量会影响星期比较；历史差异不能当未来收益承诺。统计未纳入点差、手续费、利息和到账限制。</p></div>
+    </section>
+    <footer>报告生成日期：2026-09-24（北京时间）。本报告为历史数据分析与结汇决策辅助，不执行交易。数据序列内嵌在 HTML 中，可离线查看图表。</footer>
+  </main>
+  <script>
+    const series = [{"date":"2025-09-24","rate":7.1315},{"date":"2025-09-25","rate":7.1338},{"date":"2025-09-26","rate":7.1328},{"date":"2025-09-29","rate":7.1194},{"date":"2025-09-30","rate":7.119},{"date":"2025-10-01","rate":7.12},{"date":"2025-10-02","rate":7.12},{"date":"2025-10-03","rate":7.12},{"date":"2025-10-06","rate":7.12},{"date":"2025-10-07","rate":7.12},{"date":"2025-10-08","rate":7.12},{"date":"2025-10-09","rate":7.1275},{"date":"2025-10-10","rate":7.134},{"date":"2025-10-14","rate":7.1384},{"date":"2025-10-15","rate":7.1262},{"date":"2025-10-16","rate":7.123},{"date":"2025-10-17","rate":7.1264},{"date":"2025-10-20","rate":7.1195},{"date":"2025-10-21","rate":7.1218},{"date":"2025-10-22","rate":7.1257},{"date":"2025-10-23","rate":7.1221},{"date":"2025-10-24","rate":7.1211},{"date":"2025-10-27","rate":7.1102},{"date":"2025-10-28","rate":7.0988},{"date":"2025-10-29","rate":7.098},{"date":"2025-10-30","rate":7.1097},{"date":"2025-10-31","rate":7.1169},{"date":"2025-11-03","rate":7.1222},{"date":"2025-11-04","rate":7.1295},{"date":"2025-11-05","rate":7.126},{"date":"2025-11-06","rate":7.1195},{"date":"2025-11-07","rate":7.1219},{"date":"2025-11-10","rate":7.1193},{"date":"2025-11-12","rate":7.112},{"date":"2025-11-13","rate":7.095},{"date":"2025-11-14","rate":7.0992},{"date":"2025-11-17","rate":7.1075},{"date":"2025-11-18","rate":7.1074},{"date":"2025-11-19","rate":7.1106},{"date":"2025-11-20","rate":7.1098},{"date":"2025-11-21","rate":7.1066},{"date":"2025-11-24","rate":7.102},{"date":"2025-11-25","rate":7.0845},{"date":"2025-11-26","rate":7.0758},{"date":"2025-11-28","rate":7.0751},{"date":"2025-12-01","rate":7.0717},{"date":"2025-12-02","rate":7.07},{"date":"2025-12-03","rate":7.0636},{"date":"2025-12-04","rate":7.0714},{"date":"2025-12-05","rate":7.0696},{"date":"2025-12-08","rate":7.071},{"date":"2025-12-09","rate":7.0633},{"date":"2025-12-10","rate":7.064},{"date":"2025-12-11","rate":7.0579},{"date":"2025-12-12","rate":7.0548},{"date":"2025-12-15","rate":7.047},{"date":"2025-12-16","rate":7.0417},{"date":"2025-12-17","rate":7.0431},{"date":"2025-12-18","rate":7.0404},{"date":"2025-12-19","rate":7.0409},{"date":"2025-12-22","rate":7.0367},{"date":"2025-12-23","rate":7.028},{"date":"2025-12-24","rate":7.0142},{"date":"2025-12-26","rate":7.0063},{"date":"2025-12-29","rate":7.0056},{"date":"2025-12-30","rate":6.9961},{"date":"2025-12-31","rate":6.9931},{"date":"2026-01-02","rate":6.9877},{"date":"2026-01-05","rate":6.988},{"date":"2026-01-06","rate":6.9834},{"date":"2026-01-07","rate":6.9965},{"date":"2026-01-08","rate":6.9835},{"date":"2026-01-09","rate":6.9772},{"date":"2026-01-12","rate":6.9731},{"date":"2026-01-13","rate":6.9775},{"date":"2026-01-14","rate":6.973},{"date":"2026-01-15","rate":6.966},{"date":"2026-01-16","rate":6.9681},{"date":"2026-01-20","rate":6.9599},{"date":"2026-01-21","rate":6.9637},{"date":"2026-01-22","rate":6.97},{"date":"2026-01-23","rate":6.9631},{"date":"2026-01-26","rate":6.9542},{"date":"2026-01-27","rate":6.9545},{"date":"2026-01-28","rate":6.9462},{"date":"2026-01-29","rate":6.948},{"date":"2026-01-30","rate":6.951},{"date":"2026-02-02","rate":6.9463},{"date":"2026-02-03","rate":6.9377},{"date":"2026-02-04","rate":6.9415},{"date":"2026-02-05","rate":6.9378},{"date":"2026-02-06","rate":6.9388},{"date":"2026-02-09","rate":6.92},{"date":"2026-02-10","rate":6.9106},{"date":"2026-02-11","rate":6.9125},{"date":"2026-02-12","rate":6.901},{"date":"2026-02-13","rate":6.908},{"date":"2026-02-17","rate":6.9031},{"date":"2026-02-18","rate":6.9031},{"date":"2026-02-19","rate":6.9031},{"date":"2026-02-20","rate":6.9031},{"date":"2026-02-23","rate":6.9031},{"date":"2026-02-24","rate":6.883},{"date":"2026-02-25","rate":6.8692},{"date":"2026-02-26","rate":6.8409},{"date":"2026-02-27","rate":6.8579},{"date":"2026-03-02","rate":6.8821},{"date":"2026-03-03","rate":6.8996},{"date":"2026-03-04","rate":6.8969},{"date":"2026-03-05","rate":6.8912},{"date":"2026-03-06","rate":6.8965},{"date":"2026-03-09","rate":6.9066},{"date":"2026-03-10","rate":6.8766},{"date":"2026-03-11","rate":6.8655},{"date":"2026-03-12","rate":6.8689},{"date":"2026-03-13","rate":6.8961},{"date":"2026-03-16","rate":6.8955},{"date":"2026-03-17","rate":6.8863},{"date":"2026-03-18","rate":6.8726},{"date":"2026-03-19","rate":6.8998},{"date":"2026-03-20","rate":6.8857},{"date":"2026-03-23","rate":6.8807},{"date":"2026-03-24","rate":6.8918},{"date":"2026-03-25","rate":6.9011},{"date":"2026-03-26","rate":6.9107},{"date":"2026-03-27","rate":6.9116},{"date":"2026-03-30","rate":6.9119},{"date":"2026-03-31","rate":6.898},{"date":"2026-04-01","rate":6.872},{"date":"2026-04-02","rate":6.8856},{"date":"2026-04-03","rate":6.8824},{"date":"2026-04-06","rate":6.8778},{"date":"2026-04-07","rate":6.8567},{"date":"2026-04-08","rate":6.8287},{"date":"2026-04-09","rate":6.8314},{"date":"2026-04-10","rate":6.8278},{"date":"2026-04-13","rate":6.8303},{"date":"2026-04-14","rate":6.8157},{"date":"2026-04-15","rate":6.818},{"date":"2026-04-16","rate":6.8208},{"date":"2026-04-17","rate":6.817},{"date":"2026-04-20","rate":6.8172},{"date":"2026-04-21","rate":6.8208},{"date":"2026-04-22","rate":6.8275},{"date":"2026-04-23","rate":6.826},{"date":"2026-04-24","rate":6.8359},{"date":"2026-04-27","rate":6.8228},{"date":"2026-04-28","rate":6.8374},{"date":"2026-04-29","rate":6.8375},{"date":"2026-04-30","rate":6.8273},{"date":"2026-05-01","rate":6.8276},{"date":"2026-05-04","rate":6.83},{"date":"2026-05-05","rate":6.8276},{"date":"2026-05-06","rate":6.811},{"date":"2026-05-07","rate":6.8014},{"date":"2026-05-08","rate":6.8005},{"date":"2026-05-11","rate":6.7948},{"date":"2026-05-12","rate":6.792},{"date":"2026-05-13","rate":6.7908},{"date":"2026-05-14","rate":6.7851},{"date":"2026-05-15","rate":6.8092},{"date":"2026-05-18","rate":6.8},{"date":"2026-05-19","rate":6.8145},{"date":"2026-05-20","rate":6.8005},{"date":"2026-05-21","rate":6.8025},{"date":"2026-05-22","rate":6.7945},{"date":"2026-05-26","rate":6.786},{"date":"2026-05-27","rate":6.7788},{"date":"2026-05-28","rate":6.7796},{"date":"2026-05-29","rate":6.7662},{"date":"2026-06-01","rate":6.765},{"date":"2026-06-02","rate":6.7622},{"date":"2026-06-03","rate":6.7692},{"date":"2026-06-04","rate":6.7735},{"date":"2026-06-05","rate":6.7655},{"date":"2026-06-08","rate":6.7832},{"date":"2026-06-09","rate":6.7722},{"date":"2026-06-10","rate":6.7745},{"date":"2026-06-11","rate":6.7756},{"date":"2026-06-12","rate":6.7626},{"date":"2026-06-15","rate":6.757},{"date":"2026-06-16","rate":6.7562},{"date":"2026-06-17","rate":6.7577},{"date":"2026-06-18","rate":6.7686},{"date":"2026-06-22","rate":6.7745},{"date":"2026-06-23","rate":6.79},{"date":"2026-06-24","rate":6.8106},{"date":"2026-06-25","rate":6.7976},{"date":"2026-06-26","rate":6.798},{"date":"2026-06-29","rate":6.7936},{"date":"2026-06-30","rate":6.7851},{"date":"2026-07-01","rate":6.7942},{"date":"2026-07-02","rate":6.7886},{"date":"2026-07-06","rate":6.7958},{"date":"2026-07-07","rate":6.7934},{"date":"2026-07-08","rate":6.8025},{"date":"2026-07-09","rate":6.7921},{"date":"2026-07-10","rate":6.7766},{"date":"2026-07-13","rate":6.7795},{"date":"2026-07-14","rate":6.77},{"date":"2026-07-15","rate":6.7682},{"date":"2026-07-16","rate":6.7726},{"date":"2026-07-17","rate":6.776},{"date":"2026-07-20","rate":6.7668},{"date":"2026-07-21","rate":6.7656},{"date":"2026-07-22","rate":6.7725},{"date":"2026-07-23","rate":6.7701},{"date":"2026-07-24","rate":6.7719},{"date":"2026-07-27","rate":6.7657},{"date":"2026-07-28","rate":6.771},{"date":"2026-07-29","rate":6.7661},{"date":"2026-07-30","rate":6.755},{"date":"2026-07-31","rate":6.7509},{"date":"2026-08-03","rate":6.7563},{"date":"2026-08-04","rate":6.7532},{"date":"2026-08-05","rate":6.7483},{"date":"2026-08-06","rate":6.7488},{"date":"2026-08-07","rate":6.7474},{"date":"2026-08-10","rate":6.7452},{"date":"2026-08-11","rate":6.745},{"date":"2026-08-12","rate":6.7433},{"date":"2026-08-13","rate":6.7428},{"date":"2026-08-14","rate":6.7412},{"date":"2026-08-17","rate":6.7399},{"date":"2026-08-18","rate":6.743},{"date":"2026-08-19","rate":6.7295},{"date":"2026-08-20","rate":6.7225},{"date":"2026-08-21","rate":6.721},{"date":"2026-08-24","rate":6.7219},{"date":"2026-08-25","rate":6.7203},{"date":"2026-08-26","rate":6.7225},{"date":"2026-08-27","rate":6.7198},{"date":"2026-08-28","rate":6.726},{"date":"2026-08-31","rate":6.7197},{"date":"2026-09-01","rate":6.7202},{"date":"2026-09-02","rate":6.719},{"date":"2026-09-03","rate":6.7181},{"date":"2026-09-04","rate":6.7108},{"date":"2026-09-08","rate":6.7105},{"date":"2026-09-09","rate":6.7059},{"date":"2026-09-10","rate":6.7061},{"date":"2026-09-11","rate":6.708},{"date":"2026-09-14","rate":6.7082},{"date":"2026-09-15","rate":6.7112},{"date":"2026-09-16","rate":6.706},{"date":"2026-09-17","rate":6.7074},{"date":"2026-09-18","rate":6.6975}];
+    const weekday = [{name:'周一',bps:5.4132},{name:'周二',bps:2.0820},{name:'周三',bps:-1.1446},{name:'周四',bps:-3.4291},{name:'周五',bps:-2.9215}];
+    const svg = document.getElementById('trend');
+    const tip = document.getElementById('chart-tip');
+    const x0=48,x1=982,y0=26,y1=278;
+    const rates=series.map(row=>row.rate), min=Math.min(...rates)-.025,max=Math.max(...rates)+.025;
+    const x=index=>x0+index*(x1-x0)/(series.length-1);
+    const y=rate=>y1-(rate-min)*(y1-y0)/(max-min);
+    const node=(tag,attrs)=>{const n=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,v);svg.appendChild(n);return n;};
+    for(let i=0;i<5;i++){const value=min+(max-min)*i/4,py=y(value);node('line',{x1:x0,x2:x1,y1:py,y2:py,class:'grid'});const label=node('text',{x:1,y:py+4,class:'axis'});label.textContent=value.toFixed(2);}
+    const path=series.map((row,i)=>`${i?'L':'M'}${x(i).toFixed(2)},${y(row.rate).toFixed(2)}`).join(' ');
+    node('path',{d:path,class:'rate-path'});
+    for(const i of [0,Math.floor((series.length-1)/4),Math.floor((series.length-1)/2),Math.floor(3*(series.length-1)/4),series.length-1]){const label=node('text',{x:x(i),y:311,class:'axis','text-anchor':i===0?'start':i===series.length-1?'end':'middle'});label.textContent=series[i].date.slice(0,7);}
+    const line=node('line',{id:'hover-line',y1:y0,y2:y1}),dot=node('circle',{id:'hover-dot',r:5});
+    svg.addEventListener('pointermove',event=>{const rect=svg.getBoundingClientRect(),px=(event.clientX-rect.left)*1000/rect.width;const i=Math.max(0,Math.min(series.length-1,Math.round((px-x0)*(series.length-1)/(x1-x0))));line.setAttribute('x1',x(i));line.setAttribute('x2',x(i));dot.setAttribute('cx',x(i));dot.setAttribute('cy',y(series[i].rate));line.style.display=dot.style.display='block';tip.textContent=`${series[i].date} · ${series[i].rate.toFixed(4)}`;tip.style.display='block';});
+    svg.addEventListener('pointerleave',()=>{line.style.display=dot.style.display=tip.style.display='none';});
+    document.getElementById('weekday-bars').innerHTML=weekday.map(row=>{const percent=Math.abs(row.bps)/12*100;const left=row.bps>=0?50:50-percent;return `<div class="bar-row"><b>${row.name}</b><div class="bar-track"><span class="bar ${row.bps<0?'negative-bar':''}" style="left:${left}%;width:${percent}%"></span></div><span>${row.bps>0?'+':''}${row.bps.toFixed(2)} bp</span></div>`}).join('');
+  </script>
+</body>
+</html>

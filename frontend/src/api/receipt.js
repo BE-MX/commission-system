@@ -22,3 +22,6 @@ export function uploadReceiptProof(file, onProgress) {
 
 export const previewReceiptRemoteChange = id => unwrap(request.get(`/${id}/remote-change`))
 export const acceptReceiptRemoteChange = (id, body) => unwrap(request.post(`/${id}/remote-change`, body))
+
+export const createReceiptBatch = body => unwrap(request.post('/batches', body))
+export const getReceiptBatch = id => unwrap(request.get(`/batches/${id}`, { showLoading: false }))

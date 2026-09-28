@@ -126,6 +126,26 @@ def test_ambiguous_external_binding_is_not_guessed(db, owner):
     assert notices.current_salespeople(db, 'OB001') == []
 
 
+def test_unbound_co_owner_does_not_block_resolvable_owner(db, owner):
+    db.execute(text("UPDATE lsordertest.customer_info SET owner_user_ids='[1001,9999]' WHERE company_id='C001'"))
+    db.flush()
+    assert [u.id for u in notices.current_salespeople(db, 'OB001')] == [owner[0].id]
+
+
+def test_unbound_co_owner_still_yields_to_ambiguous_binding(db, owner):
+    other = _user(db, 'other-salesperson')
+    db.add(ArkUserExternalBinding(ark_user_id=other.id, provider='okki', external_account_id='1001', binding_status='active'))
+    db.execute(text("UPDATE lsordertest.customer_info SET owner_user_ids='[9999,1001]' WHERE company_id='C001'"))
+    db.flush()
+    assert notices.current_salespeople(db, 'OB001') == []
+
+
+def test_only_unbound_owners_send_nothing(db, owner):
+    db.execute(text("UPDATE lsordertest.customer_info SET owner_user_ids='[9999,8888]' WHERE company_id='C001'"))
+    db.flush()
+    assert notices.current_salespeople(db, 'OB001') == []
+
+
 @pytest.mark.parametrize('mirror_time,overlay_time,expected', [
     ('2026-09-17 00:00:00','2026-09-17 00:00:01',False),
     ('2026-09-17 00:00:01','2026-09-17 00:00:01',True),

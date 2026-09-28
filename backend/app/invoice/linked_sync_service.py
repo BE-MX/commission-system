@@ -77,6 +77,12 @@ def create(db, invoice, body, actor):
     # Identity and receipt evidence remain frozen; only the amount floor and fee
     # basis restrictions are replaced by a preserved-payment reconciliation.
     service.update_invoice(db, invoice, body.invoice, actor, linked_change=True)
+    # MySQL/SQLite Numeric columns can reload with a different Decimal scale
+    # (19.6 -> 19.60). Persist the version from the stored representation so a
+    # later recheck does not mistake that formatting change for a new edit.
+    db.flush()
+    db.refresh(invoice)
+    db.expire(invoice, ["items"])
     row = InvoiceLinkedSync(id=beijing_now().strftime("%Y%m%d%H%M%S%f") + "_" + uuid4().hex, invoice_id=invoice.id, request_key=body.request_key,
         request_hash=digest, created_by=actor, status="pending", before=before, after=snapshot(invoice),
         steps={k: {"status": "pending", "message": "等待处理"} for k in ("order", "outbound", "receipt")})
@@ -168,12 +174,19 @@ def run(db, identity, actor, *, recheck=False):
         # A successful step is never POSTed again, but the live binding is checked
         # before continuing after a partial failure.
         key = "outbound"
-        live = remote.order_snapshot(db, invoice)
         db.refresh(row)
         if row.steps[key]["status"] not in {"done", "manual"}:
-            order = remote.read(db, "/v1/invoices/order/info", {"order_id": invoice.xiaoman_order_id})
-            _save_step(db, identity, token, key, linked_outbound_service.summarize(db, invoice, order))
+            try:
+                order = remote.read(db, "/v1/invoices/order/info", {"order_id": invoice.xiaoman_order_id})
+                outbound_result = linked_outbound_service.summarize(db, invoice, order)
+            except Exception as exc:  # noqa: BLE001 - read-only summary must not strand a pushed order
+                logger.warning("linked outbound summary failed invoice=%s: %s", invoice.id, exc)
+                print(f"[linked-sync] outbound summary failed invoice={invoice.id}: {type(exc).__name__}", flush=True)
+                db.rollback()
+                outbound_result = {"status": "manual", "message": "订单已同步，出库摘要暂不可用；将继续核对实际出库单"}
+            _save_step(db, identity, token, key, outbound_result)
         key = "receipt"
+        live = remote.order_snapshot(db, invoice)
         summary = balance.calculate(db, invoice, live)
         effective, total = remote.money(summary["effective_amount"]), remote.money(summary["total_amount"])
         message = "已有方舟及小满回款金额、手续费保持不变；新增收款或退款需另行登记"
@@ -199,6 +212,12 @@ def run(db, identity, actor, *, recheck=False):
         current = expire(db, identity)
         if current.status != "running" or current.run_token != token:
             return current
+        if key == "receipt" and current.steps["order"]["status"] == "done":
+            # Receipt reconciliation here is read-only. Preserve its failure as
+            # a manual step and release the linked pointer so the already-pushed
+            # order can continue through the separately fenced outbound sync.
+            _save_step(db, identity, token, key, {"status": "manual", "message": message[:500]})
+            return _finish(db, identity, token)
         _save_step(db, identity, token, key, {"status": status, "message": message[:500]})
         return _finish(db, identity, token, status)
 

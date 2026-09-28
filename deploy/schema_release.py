@@ -9,10 +9,15 @@ import subprocess
 from publish import ROOT, STATE, atomic_json, run
 from static_sync import SSH_OPTIONS
 from remote_backend import database_lock, schema_check
+from timer_writer import registered_writer
 
 
-def check_recovery(path=None, recover_149=False, recover_151=False):
+def check_recovery(path=None, recover_149=False, recover_151=False, recover_168=False):
     journal = Path(path) if path else STATE / "schema-writers.json"
+    if recover_168:
+        from migration_recovery168 import read_record
+        read_record(journal)
+        return
     if recover_151:
         from migration_recovery151 import read_record
         read_record(journal)
@@ -55,16 +60,15 @@ def validate(inventory, pending):
         if writer["kind"] == "nssm" and writer.get("host") != "office":
             raise ValueError("NSSM writer must belong to the office host")
         if writer["kind"] == "pm2":
-            if writer.get("host") != "root@119.28.107.92" or not re.fullmatch(r"/root/\.nvm/versions/node/v[0-9.]+/bin/pm2", writer.get("executable", "")):
+            if writer != registered_writer("shipment-tracking-mcp"):
                 raise ValueError("Unregistered PM2 writer executable or host")
     required = {("nssm", "office", "CommissionSystem"), ("nssm", "office", "WhatsAppConnector"),
                 ("systemd", "ubuntu@154.8.205.162", "ark-backend"),
-                ("pm2", "root@119.28.107.92", "shipment-tracking-mcp")}
+                ("pm2", registered_writer("shipment-tracking-mcp")["host"], "shipment-tracking-mcp")}
     if not required.issubset({(w["kind"],w.get("host"),w["service"]) for w in writers}):
         raise ValueError("Required application writers missing from migration inventory")
     if any(s.get("name") == "ark-okki-outbound-poller" for s in inventory.get("external_services", [])):
-        from timer_writer import WRITER
-        if WRITER not in writers:
+        if registered_writer("ark-okki-outbound-poller") not in writers:
             raise ValueError("Required outbound timer writer missing from migration inventory")
     return writers
 
@@ -72,7 +76,11 @@ def validate(inventory, pending):
 def pm2_command(writer):
     binary = writer["executable"]
     directory = binary.rsplit("/", 1)[0]
-    return "PATH=" + shlex.quote(directory) + ":$PATH " + shlex.quote(binary)
+    # PM2 belongs to root even though SSH uses ubuntu. Pin HOME/PM2_HOME and
+    # Node's PATH so sudo cannot select or create an unrelated user's daemon.
+    return ("sudo -n -H -u root env HOME=/root PM2_HOME=/root/.pm2 PATH="
+            + shlex.quote(directory + ":/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+            + " " + shlex.quote(binary))
 
 
 def writer_state(writer, nssm):
@@ -136,6 +144,10 @@ def invoke(prepared, writers, credential_file, action):
         request["recover_149"] = True
     if prepared.get("recover_151"):
         request["recover_151"] = True
+    if prepared.get("recover_168"):
+        request["recover_168"] = True
+    if prepared.get("recover_166"):
+        request["recover_166"] = True
     runner = prepared.get("runner", ROOT / "deploy/migration_runner.py")
     result = subprocess.run([str(prepared["python"]), str(runner)],
         cwd=ROOT / "backend", input=json.dumps(request), text=True, capture_output=True, timeout=1200)
@@ -145,15 +157,15 @@ def invoke(prepared, writers, credential_file, action):
 
 
 def preflight(prepared, inventory, credential_file):
-    check_recovery(recover_149=prepared.get("recover_149", False), recover_151=prepared.get("recover_151", False))
-    writers = validate(inventory, prepared["pending"] or prepared.get("recover_149") or prepared.get("recover_151"))
+    check_recovery(recover_149=prepared.get("recover_149", False), recover_151=prepared.get("recover_151", False), recover_168=prepared.get("recover_168", False))
+    writers = validate(inventory, prepared["pending"] or prepared.get("recover_149") or prepared.get("recover_151") or prepared.get("recover_168"))
     if writers:
         invoke(prepared, writers, credential_file, "check")
 
 
 def migrate(prepared, inventory, credential_file=None):
-    check_recovery(recover_149=prepared.get("recover_149", False), recover_151=prepared.get("recover_151", False))
-    writers = validate(inventory, prepared["pending"] or prepared.get("recover_149") or prepared.get("recover_151"))
+    check_recovery(recover_149=prepared.get("recover_149", False), recover_151=prepared.get("recover_151", False), recover_168=prepared.get("recover_168", False))
+    writers = validate(inventory, prepared["pending"] or prepared.get("recover_149") or prepared.get("recover_151") or prepared.get("recover_168"))
     if not writers:
         return []
     atomic_json(STATE / "schema-current.json", {"status": "migrating", "pending": prepared["pending"]})

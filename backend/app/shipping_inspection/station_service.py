@@ -201,10 +201,16 @@ def submit(db, login_id, session_id, edit_version, request_id, remark, submitted
     payload = {'edit_version': edit_version, 'remark': remark}
     prior = _replay(db, session, 'submit', request_id, payload)
     if prior is not None:
+        from app.shipping_inspection.outbound_sync_state import lock, BLOCKED
+        sync_event = lock(db, session.outbound_record_id, session.operator_user_id)
+        if sync_event.action in BLOCKED or (sync_event.result or {}).get('required_recheck_ids'):
+            raise StationError('OUTBOUND_RECHECK', '出库单已更新，原提交回执不能作为本次验货结果，请重新核对')
         return prior
     _active(session)
     inspection = service._get_by_outbound_id(db, session.outbound_record_id)
     if inspection:
+        from app.shipping_inspection.outbound_sync_state import ensure_submission_ready
+        ensure_submission_ready(db, session.outbound_record_id, session.operator_user_id, inspection)
         inspection = service._lock_inspection(db, inspection.id)
         if inspection.status == 'submitted':
             raise StationError('ALREADY_SUBMITTED', '本单已由其他操作提交，请刷新查看')

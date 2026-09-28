@@ -17,7 +17,7 @@ Codex 必须执行下述流程，不能只总结文档，也不能仅在对话�
 ## 2. 最终目标
 
 - MCP server 名称：`leshine_social_customer`
-- MCP URL：`https://leshine.work/mcp/social-customer/`
+- MCP URL：`https://leshine.cloud/mcp/social-customer/`
 - transport：Streamable HTTP
 - 原始 MCP tool name：`social_customer_search`
 - Windows：token 保存到当前用户环境变量 `SOCIAL_CUSTOMER_MCP_TOKEN`
@@ -48,7 +48,7 @@ Codex 检查：
 
 - 操作系统是 Windows；
 - PowerShell 可用；
-- `https://leshine.work/mcp/social-customer/health` 返回 `status=ok`；
+- `https://leshine.cloud/mcp/social-customer/health` 返回 `status=ok`；
 - 当前用户目录可确定；
 - 是否能执行 `codex mcp --help`；如果不能，再确认 `python` 或 `py -3` 可导入 Python 3.11+ 标准库 `tomllib`。两种方式至少有一种可用。
 
@@ -108,7 +108,7 @@ if target is None:
     print("ABSENT")
 elif (
     isinstance(target, dict)
-    and target.get("url") == "https://leshine.work/mcp/social-customer/"
+    and target.get("url") == "https://leshine.cloud/mcp/social-customer/"
     and target.get("bearer_token_env_var") == "SOCIAL_CUSTOMER_MCP_TOKEN"
     and target.get("enabled", True) is not False
     and (
@@ -135,12 +135,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 $serviceName = "leshine_social_customer"
-$endpoint = "https://leshine.work/mcp/social-customer/"
-$healthEndpoint = "https://leshine.work/mcp/social-customer/health"
+$endpoint = "https://leshine.cloud/mcp/social-customer/"
+$healthEndpoint = "https://leshine.cloud/mcp/social-customer/health"
 $tokenVariableName = "SOCIAL_CUSTOMER_MCP_TOKEN"
 $serverBlock = @'
 [mcp_servers.leshine_social_customer]
-url = "https://leshine.work/mcp/social-customer/"
+url = "https://leshine.cloud/mcp/social-customer/"
 bearer_token_env_var = "SOCIAL_CUSTOMER_MCP_TOKEN"
 '@
 
@@ -369,7 +369,7 @@ try {
     }
 }
 catch {
-    Stop-Setup "无法访问服务健康检查，请确认网络可访问 leshine.work"
+    Stop-Setup "无法访问服务健康检查，请确认网络可访问 leshine.cloud"
 }
 
 $initializeResponse = Invoke-McpWebRequest @{
@@ -608,7 +608,7 @@ Codex 先确认：
 - 当前用户不是 root；
 - /bin/sh、/usr/bin/curl 可用；
 - 能找到下述任一配置校验器：可导入 tomllib 的 Python 3.11+，或当前 Codex host 自带/正在使用的 Codex 可执行文件；
-- https://leshine.work/mcp/social-customer/health 返回 status=ok；
+- https://leshine.cloud/mcp/social-customer/health 返回 status=ok；
 - 当前用户的 HOME 可确定。
 
 校验器按以下顺序自动选择：
@@ -663,7 +663,7 @@ from pathlib import Path
 
 
 SERVICE_NAME = "leshine_social_customer"
-URL = "https://leshine.work/mcp/social-customer/"
+URL = "https://leshine.cloud/mcp/social-customer/"
 TOOL_NAME = "social_customer_search"
 TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._~+/=-]{32,512}$")
 
@@ -783,8 +783,8 @@ set -eu
 umask 077
 
 service_name="leshine_social_customer"
-endpoint="https://leshine.work/mcp/social-customer/"
-health_endpoint="https://leshine.work/mcp/social-customer/health"
+endpoint="https://leshine.cloud/mcp/social-customer/"
+health_endpoint="https://leshine.cloud/mcp/social-customer/health"
 completed=0
 config_written=0
 persistent_config_backup=""
@@ -1056,7 +1056,7 @@ Windows 的 `~/.codex/config.toml` 至少应包含：
 
 ```toml
 [mcp_servers.leshine_social_customer]
-url = "https://leshine.work/mcp/social-customer/"
+url = "https://leshine.cloud/mcp/social-customer/"
 bearer_token_env_var = "SOCIAL_CUSTOMER_MCP_TOKEN"
 ```
 
@@ -1064,7 +1064,7 @@ macOS 的用户级 `config.toml` 至少应包含下列语义，其中 `<token>` 
 
 ```toml
 [mcp_servers.leshine_social_customer]
-url = "https://leshine.work/mcp/social-customer/"
+url = "https://leshine.cloud/mcp/social-customer/"
 http_headers = { Authorization = "Bearer <token>" }
 ```
 

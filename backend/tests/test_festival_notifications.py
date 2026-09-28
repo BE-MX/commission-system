@@ -440,9 +440,9 @@ def test_daily_target_recovers_yesterday_across_midnight_without_historical_back
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     monkeypatch.setattr(notification_service, "SessionLocal", session_factory)
 
-    # 首次启用只以最近已到 17:30 的 8 月 4 日为基线，不倒灌 8 月 1~3 日。
+    # 首次启用只以最近已到 17:00 的 8 月 4 日为基线，不倒灌 8 月 1~3 日。
     assert notification_service._daily_target_date(datetime(2026, 8, 4, 18, 0)) == date(2026, 8, 4)
-    # 即使服务直到次日 17:30 后才恢复，也先补昨天，不会直接跳到今天。
+    # 即使服务直到次日 17:00 后才恢复，也先补昨天，不会直接跳到今天。
     assert notification_service._daily_target_date(datetime(2026, 8, 5, 18, 0)) == date(2026, 8, 4)
 
     assert notification_service._daily_claim(date(2026, 8, 4)) is True
@@ -454,8 +454,8 @@ def test_daily_target_waits_until_first_activity_report_is_due(engine, monkeypat
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     monkeypatch.setattr(notification_service, "SessionLocal", session_factory)
 
-    assert notification_service._daily_target_date(datetime(2026, 8, 1, 17, 29)) is None
-    assert notification_service._daily_target_date(datetime(2026, 8, 1, 17, 30)) == date(2026, 8, 1)
+    assert notification_service._daily_target_date(datetime(2026, 8, 1, 16, 59)) is None
+    assert notification_service._daily_target_date(datetime(2026, 8, 1, 17, 0)) == date(2026, 8, 1)
 
 
 def test_daily_target_does_not_backfill_before_first_enablement(engine, monkeypatch):
@@ -464,7 +464,7 @@ def test_daily_target_does_not_backfill_before_first_enablement(engine, monkeypa
 
     # 8 月 5 日上午首次启用：昨天不是本功能运行期间的欠报，不应倒灌。
     assert notification_service._daily_target_date(datetime(2026, 8, 5, 9, 0)) is None
-    assert notification_service._daily_target_date(datetime(2026, 8, 5, 17, 30)) == date(2026, 8, 5)
+    assert notification_service._daily_target_date(datetime(2026, 8, 5, 17, 0)) == date(2026, 8, 5)
 
 
 def test_daily_force_bypasses_time_only_not_activity_window(engine, monkeypatch):

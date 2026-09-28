@@ -35,6 +35,20 @@ def test_calendar_boundaries(stamp, completed, percent):
     assert (result["completed"], result["percent"]) == (completed, percent)
 
 
+@pytest.mark.parametrize("stamp,slot", [
+    ("2026-09-22T13:00:00+08:00", "13:00"),
+    ("2026-09-22T13:05:00+08:00", "13:00"),
+    ("2026-09-22T17:00:00+08:00", None),
+    ("2026-09-22T17:01:00+08:00", "17:01"),
+    ("2026-09-22T09:01:00+00:00", "17:01"),
+    ("2026-09-22T17:06:00+08:00", "17:01"),
+    ("2026-09-22T17:16:00+08:00", "17:01"),
+    ("2026-09-22T17:05:00+08:00", None),
+])
+def test_poster_due_slot_uses_beijing_time(stamp, slot):
+    assert poster_delivery.due_slot(datetime.fromisoformat(stamp)) == slot
+
+
 @pytest.mark.parametrize("gmv,expected", [("1666.01", True), ("1666", False), ("1665.99", False)])
 def test_compare_without_rounded_percentage(gmv, expected):
     row = {"gmv": gmv, "target": "10000", "progress_percent": 16.7}
@@ -48,6 +62,7 @@ def posters(setup, monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "BATTLE_REPORT_WEBHOOK_URL", "https://oapi.dingtalk.com/robot/send?access_token=test-only")
     monkeypatch.setattr(settings, "BATTLE_REPORT_PUBLIC_BASE_URL", "https://example.test")
     monkeypatch.setattr(poster_images, "CACHE_ROOT", tmp_path)
+    monkeypatch.setattr(poster_images, "UPLOADS_ROOT", tmp_path / "uploads")
     monkeypatch.setattr(poster_delivery, "beijing_now", lambda: datetime(2026, 9, 22, 13))
     monkeypatch.setattr(poster_service, "beijing_now", lambda: datetime(2026, 9, 22, 13))
     report = s.db.get(BattleReport, s.report["id"])
@@ -67,8 +82,17 @@ def enable(s):
     assert result.status_code == 200, result.text
 
 
+def _tiny_png():
+    from io import BytesIO
+    from PIL import Image
+    buf = BytesIO()
+    Image.new("RGB", (8, 8), "#420403").save(buf, "PNG")
+    return buf.getvalue()
+
+
 def mock_render(monkeypatch):
-    monkeypatch.setattr(poster_delivery, "render_posters", lambda snapshot, kinds: {k: b"fake-png" for k in kinds})
+    png = _tiny_png()
+    monkeypatch.setattr(poster_delivery, "render_posters", lambda snapshot, kinds: {k: png for k in kinds})
 
 
 def test_admin_preview_same_snapshot_no_delivery(posters, monkeypatch):
@@ -91,7 +115,9 @@ def test_admin_preview_same_snapshot_no_delivery(posters, monkeypatch):
 
 def test_calendar_config_validation_and_stale_version(posters):
     s = posters
-    assert s.client.get(s.url+"/poster-config").json()["data"]["work_dates"] == pace.SEPTEMBER_WORK_DATES
+    config = s.client.get(s.url+"/poster-config").json()["data"]
+    assert config["work_dates"] == pace.SEPTEMBER_WORK_DATES
+    assert config["send_times"] == ["13:00", "17:01"]
     body = {"version": s.report_obj.version, "work_dates": ["2026-10-01"], "push_enabled": False}
     assert s.client.put(s.url+"/poster-config", json=body).status_code == 422
     body["work_dates"] = ["2026-09-22", "2026-09-22"]
@@ -110,6 +136,21 @@ def test_two_images_once_across_retries_and_same_snapshot(posters, monkeypatch):
     assert s.db.query(BattleReportDelivery).count() == 1
     frozen = s.db.query(BattleReportDelivery).one().snapshot
     assert frozen["summary"]["gmv"] == "90.90"
+
+
+def test_afternoon_release_reuses_old_1700_delivery(posters, monkeypatch):
+    s = posters; enable(s); mock_render(monkeypatch)
+    now = datetime(2026, 9, 22, 17, 1)
+    first = poster_delivery.send_slot(s.db, s.report_obj.id, now, s.sender)
+    assert all(v["status"] == "sent" for v in first["deliveries"].values())
+    row = s.db.query(BattleReportDelivery).one()
+    row.slot = "17:00"
+    s.db.commit()
+
+    poster_delivery.send_slot(s.db, s.report_obj.id, now.replace(minute=6), s.sender)
+    assert s.db.query(BattleReportDelivery).count() == 1
+    assert s.db.query(BattleReportDelivery).one().slot == "17:00"
+    assert s.sender.send_markdown.call_count == 2
 
 
 def test_only_definitively_failed_image_retries(posters, monkeypatch):
@@ -174,13 +215,59 @@ def test_capability_is_expiring_and_kind_bound(posters, monkeypatch):
     expires = poster_images.expiry(row)
     monkeypatch.setattr(poster_images, "beijing_now_aware", lambda: datetime(2026, 9, 22, tzinfo=timezone.utc))
     sig = poster_images.signature(row.id, "team", expires)
-    assert poster_images.public_image(s.db, row.id, "team", expires, sig).read_bytes() == b"fake-png"
+    served = poster_images.public_image(s.db, row.id, "team", expires, sig).read_bytes()
+    assert served == poster_images.compress_poster(_tiny_png()) and served[:2] == b"\xff\xd8"
     for kind, exp, signature in [("personal", expires, sig), ("team", expires+1, sig), ("../bad", expires, sig)]:
         with pytest.raises(HTTPException):
             poster_images.public_image(s.db, row.id, kind, exp, signature)
     monkeypatch.setattr(poster_images, "beijing_now_aware", lambda: datetime(2026, 10, 1, tzinfo=timezone.utc))
     with pytest.raises(HTTPException):
         poster_images.public_image(s.db, row.id, "team", expires, sig)
+
+
+def test_public_image_route_serves_jpeg_and_rebuild_failure_is_503(posters, monkeypatch):
+    s = posters; enable(s); mock_render(monkeypatch)
+    poster_delivery.send_slot(s.db, s.report_obj.id, sender=s.sender)
+    row = s.db.query(BattleReportDelivery).one()
+    expires = poster_images.expiry(row)
+    sig = poster_images.signature(row.id, "team", expires)
+    url = f"/api/battle-reports/poster-images/{row.id}/team.jpg?expires={expires}&signature={sig}"
+    response = s.client.get(url)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/jpeg")
+    assert response.content[:2] == b"\xff\xd8"
+
+    for cached in poster_images.CACHE_ROOT.glob("*.jpg"):
+        cached.unlink()
+    monkeypatch.setattr(poster_images, "render_posters",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("browser missing")))
+    response = s.client.get(url)
+    assert response.status_code == 503
+    body = response.json()
+    assert "海报生成失败" in (body.get("message") or body.get("detail") or "")
+
+
+def test_compress_poster_jpeg_shrinks_tall_png():
+    import os
+    from io import BytesIO
+    from PIL import Image
+    source = BytesIO()
+    Image.frombytes("RGB", (1080, 800), os.urandom(1080 * 800 * 3)).save(source, "PNG", compress_level=0)
+    raw = source.getvalue()
+    jpeg = poster_images.compress_poster(raw)
+    assert jpeg[:2] == b"\xff\xd8" and len(jpeg) < len(raw)
+    assert Image.open(BytesIO(jpeg)).size == (1080, 800)
+
+
+def test_image_url_is_cloud_public_uploads_path(posters, monkeypatch):
+    s = posters; enable(s); mock_render(monkeypatch)
+    poster_delivery.send_slot(s.db, s.report_obj.id, sender=s.sender)
+    row = s.db.query(BattleReportDelivery).one()
+    url = poster_images.image_url(row, "team")
+    assert url.startswith("https://example.test/uploads/festival/battle-report-posters/")
+    assert url.endswith(".jpg")
+    assert (poster_images.UPLOADS_ROOT / "battle-report-posters").is_dir()
+    assert list((poster_images.UPLOADS_ROOT / "battle-report-posters").glob("*.jpg"))
 
 
 def test_template_escapes_names_and_has_no_external_assets(posters):
@@ -239,3 +326,65 @@ def test_render_failure_is_recorded_without_sending(posters, monkeypatch):
     assert all(v['status']=='failed' for v in result['deliveries'].values())
     assert s.sender.send_markdown.call_count == 0
     assert 'private path' not in str(result)
+
+
+def test_configured_browser_path_validation(monkeypatch, tmp_path):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "BATTLE_REPORT_BROWSER_PATH", "")
+    assert poster_renderer.configured_browser_path() is None
+    missing = tmp_path / "missing-chrome.exe"
+    monkeypatch.setattr(settings, "BATTLE_REPORT_BROWSER_PATH", str(missing))
+    with pytest.raises(RuntimeError, match="BATTLE_REPORT_BROWSER_PATH 不存在"):
+        poster_renderer.configured_browser_path()
+    chrome = tmp_path / "chrome.exe"
+    chrome.write_bytes(b"stub")
+    monkeypatch.setattr(settings, "BATTLE_REPORT_BROWSER_PATH", str(chrome))
+    assert poster_renderer.configured_browser_path() == str(chrome)
+
+
+def test_launch_prefers_configured_then_system_fallback(monkeypatch, tmp_path):
+    settings = get_settings()
+    chrome = tmp_path / "chrome.exe"
+    chrome.write_bytes(b"stub")
+    monkeypatch.setattr(settings, "BATTLE_REPORT_BROWSER_PATH", str(chrome))
+    launched = []
+
+    class Chromium:
+        def launch(self, **options):
+            launched.append(options)
+            return object()
+
+    poster_renderer._launch_chromium(SimpleNamespace(chromium=Chromium()))
+    assert launched == [{"headless": True, "executable_path": str(chrome)}]
+
+    monkeypatch.setattr(settings, "BATTLE_REPORT_BROWSER_PATH", "")
+    monkeypatch.setattr(poster_renderer, "system_browser_path", lambda: str(chrome))
+    launched.clear()
+
+    class DefaultThenFallback:
+        def launch(self, **options):
+            launched.append(options)
+            if "executable_path" not in options:
+                raise RuntimeError("Executable doesn't exist at chromium_headless_shell")
+            return object()
+
+    assert poster_renderer._launch_chromium(SimpleNamespace(chromium=DefaultThenFallback())) is not None
+    assert launched == [{"headless": True}, {"headless": True, "executable_path": str(chrome)}]
+
+
+def test_launch_error_is_actionable_when_no_browser(monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "BATTLE_REPORT_BROWSER_PATH", "")
+    monkeypatch.setattr(poster_renderer, "system_browser_path", lambda: None)
+
+    class BrokenChromium:
+        def launch(self, **options):
+            raise RuntimeError("Executable doesn't exist at missing-shell")
+
+    with pytest.raises(RuntimeError) as excinfo:
+        poster_renderer._launch_chromium(SimpleNamespace(chromium=BrokenChromium()))
+    message = str(excinfo.value)
+    assert "无法启动浏览器生成海报" in message
+    assert "playwright install chromium" in message
+    assert "BATTLE_REPORT_BROWSER_PATH" in message
+    assert "Microsoft YaHei" in message

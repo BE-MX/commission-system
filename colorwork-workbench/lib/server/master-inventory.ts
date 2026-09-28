@@ -938,9 +938,9 @@ export async function getCurrentSnapshot(templateId: string, actor: AuthorizedUs
     ) continue;
 
     const specs = publicInventory(inventory);
-    // 方舟 okki 实时库存覆盖：enable_count > 0 → 到货正常，否则正在补货；
-    // 接口未配置/不可达或模板未配置映射时保持站内已保存状态（见 lib/server/ark-sync.ts）。
-    await applyArkInventoryOverlay(identity.id, source.colors, source.template, specs);
+    // 方舟 okki 实时库存覆盖：映射不到的规格显示 Restocking；接口不可达时保留站内状态。
+    // 同时透传镜像 source_synced_at，供页面标注「数据截至」（见 lib/server/ark-sync.ts）。
+    const arkOverlay = await applyArkInventoryOverlay(identity.id, source.colors, source.template, specs);
     const inventoryUpdatedBy = inventoryState.updatedByUserId && inventoryState.updatedByEmail
       ? {
           id: inventoryState.updatedByUserId,
@@ -961,6 +961,7 @@ export async function getCurrentSnapshot(templateId: string, actor: AuthorizedUs
       specs,
       inventoryUpdatedBy,
       inventoryUpdatedAt: inventoryState.updatedAt,
+      sourceSyncedAt: arkOverlay.sourceSyncedAt,
       inventory: specs,
     };
   }

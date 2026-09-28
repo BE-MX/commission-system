@@ -57,7 +57,7 @@
             <div>
               <div class="breadcrumb">PRIVATE COLLECTION <span>/</span> <b id="crumb-name"></b></div>
               <div class="title-line"><h1 id="collection-title"></h1></div>
-              <p>Browse and download your product photos and videos by delivery batch.</p>
+              <p>Browse and download your product photos and videos by tag and delivery batch.</p>
             </div>
           </div>
         </div>
@@ -125,6 +125,7 @@
     let previewState = null;     // { batchId, assetId }
     let tagGroups = [];          // [{ dimension_id, label, values: [{id, value, count}] }]
     let activeTags = new Set();  // 已选 tag_value_id（同维度 OR、跨维度 AND，服务端过滤）
+    let libraryRequestVersion = 0;
     let toastTimer = 0;
 
     async function request(path, opt = {}) {
@@ -163,6 +164,29 @@
         .filter(b => b.viewAssets.length > 0);
     }
     function allAssets() { return batches.flatMap(b => b.assets); }
+    function groupBatchAssets(assets) {
+      const groups = new Map();
+      const unlabeled = [];
+      for (const asset of assets) {
+        if (!(asset.tags || []).length) unlabeled.push(asset);
+        for (const tag of asset.tags || []) {
+          if (!groups.has(tag.dimension_id)) groups.set(tag.dimension_id, {
+            id: tag.dimension_id,
+            label: tag.dimension_label || tagGroups.find(group => group.dimension_id === tag.dimension_id)?.label || 'Client tags',
+            buckets: new Map(),
+          });
+          const group = groups.get(tag.dimension_id);
+          if (!group.buckets.has(tag.tag_value_id)) group.buckets.set(tag.tag_value_id, { id: tag.tag_value_id, label: tag.value, assets: [] });
+          group.buckets.get(tag.tag_value_id).assets.push(asset);
+        }
+      }
+      const rank = new Map(tagGroups.map((group, index) => [group.dimension_id, index]));
+      const result = [...groups.values()]
+        .sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity) || a.id - b.id)
+        .map(group => ({ ...group, buckets: [...group.buckets.values()] }));
+      if (unlabeled.length) result.push({ id: 'unlabeled', label: 'Unlabeled', buckets: [{ id: 'unlabeled', label: 'Unlabeled', assets: unlabeled }] });
+      return result;
+    }
 
     function render() {
       const assets = allAssets();
@@ -192,7 +216,11 @@
             <h2>${escapeHtml(title)}</h2>
             <p>${fmtDate(b.published_at)} · ${b.viewAssets.length} ${b.viewAssets.length === 1 ? 'asset' : 'assets'} · ${imgs} photos · ${vids} videos${shootType}</p>
           </div></header>
-          <div class="asset-gallery">${b.viewAssets.map((a, i) => `
+          ${groupBatchAssets(b.viewAssets).map(group => `<div class="portal-dimension">
+            <h3>${escapeHtml(group.label)}</h3>
+            ${group.buckets.map(bucket => `<section class="portal-tag-group">
+              <h4>${escapeHtml(bucket.label)} <span>${bucket.assets.length} files</span></h4>
+              <div class="asset-gallery">${bucket.assets.map((a, i) => `
             <article class="asset-card ${selected.has(a.id) ? 'selected' : ''}" data-card="${a.id}">
               <label class="asset-select"><input type="checkbox" data-select="${a.id}" ${selected.has(a.id) ? 'checked' : ''} /><span>Select</span></label>
               <button class="asset-preview" data-preview-batch="${b.id}" data-preview-asset="${a.id}" aria-label="Open ${escapeAttr(a.file_name)}">
@@ -202,8 +230,9 @@
                 ${cornerTags(a)}
               </button>
               <div class="asset-footer"><span>View ${pad(i + 1)}</span><a href="${a.content_url}?download=true">Download ↓</a></div>
-            </article>`).join('')}
-          </div>
+            </article>`).join('')}</div>
+            </section>`).join('')}
+          </div>`).join('')}
         </section>`;
       }).join('');
 
@@ -275,8 +304,11 @@
       $('collection-logo').textContent = initials(session.customer_name);
     }
     async function loadLibrary() {
+      const version = ++libraryRequestVersion;
       const query = activeTags.size ? '?tag_value_ids=' + [...activeTags].join(',') : '';
-      batches = await request('/library' + query);
+      const loaded = await request('/library' + query);
+      if (version !== libraryRequestVersion) return;
+      batches = loaded;
       batches.sort((a, b) => String(b.published_at || '').localeCompare(String(a.published_at || '')));
       [...batches].sort((a, b) => String(a.published_at || '').localeCompare(String(b.published_at || '')))
         .forEach((b, i) => { b.seq = i + 1; });
@@ -290,6 +322,7 @@
     async function loadTags() {
       try { tagGroups = await request('/tags'); } catch { tagGroups = []; }
       renderTagFilters();
+      render();
     }
     function renderTagFilters() {
       const box = $('tag-filters');
@@ -345,6 +378,7 @@
       }
     };
     $('logout').onclick = async () => {
+      libraryRequestVersion++;
       await request('/logout', { method: 'POST' }).catch(() => {});
       session = null; batches = []; selected = new Set(); previewState = null;
       tagGroups = []; activeTags = new Set(); renderTagFilters();

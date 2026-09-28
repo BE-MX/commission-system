@@ -55,13 +55,19 @@ def gmv_db():
         table.create(engine, checkfirst=True)
     with engine.begin() as connection:
         connection.execute(text("""
+            CREATE TABLE ark_receivables (
+                kind TEXT, remote_order_id TEXT, remote_order_name TEXT, customer_id TEXT
+            )
+        """))
+        connection.execute(text("""
             CREATE TABLE lsordertest.user_basic (
                 user_id TEXT PRIMARY KEY, full_name TEXT, nickname TEXT, user_mobile TEXT
             )
         """))
         connection.execute(text("""
             CREATE TABLE lsordertest.okki_orders (
-                order_id TEXT PRIMARY KEY, order_no TEXT, amount_usd REAL, user_id TEXT,
+                order_id TEXT PRIMARY KEY, order_no TEXT, name TEXT, company_id TEXT,
+                amount_usd REAL, user_id TEXT,
                 account_date TEXT, status TEXT, status_name TEXT, trail TEXT, departments TEXT
             )
         """))
@@ -185,11 +191,26 @@ def test_valid_order_query_uses_confirmed_business_rule(gmv_db):
             "status_name": status_name, "trail": trail,
             "departments": '[{"department_id":1,"name":"甲队","rate":100}]',
         })
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_orders
+          (order_id, order_no, name, company_id, amount_usd, user_id, account_date,
+           status, status_name, departments)
+        VALUES ('F', 'F', 'PRE-01-F', 'C1', 999, 'CAP1', '2026-08-25',
+                '13972831656', '待回款', '[]')
+    """))
+    db.execute(text("""
+        INSERT INTO ark_receivables (kind, remote_order_name, customer_id)
+        VALUES ('freight', 'PRE-01-F', 'C1')
+    """))
     db.commit()
 
     loaded = load_valid_orders(db, date(2026, 8, 25))
     assert {row["order_id"] for row in loaded} == {"A", "B", "E"}
     assert sum(Decimal(str(row["amount_usd"])) for row in loaded) == Decimal("250")
+
+    db.execute(text("UPDATE ark_receivables SET remote_order_id='F' WHERE remote_order_name='PRE-01-F'"))
+    db.execute(text("UPDATE lsordertest.okki_orders SET name='remote rename' WHERE order_id='F'"))
+    assert {row["order_id"] for row in load_valid_orders(db, date(2026, 8, 25))} == {"A", "B", "E"}
 
 
 def _user_with_binding(db, *, user_id: int, okki_id: str, name: str) -> ArkUser:

@@ -157,6 +157,7 @@ import WorldMapCanvas from '@/components/WorldMapCanvas.vue'
 import logoGold from '@/assets/leshine-logo-gold.png'
 import { EXPO_KIOSK_PATH } from '@/router/expoKioskRoute'
 import { isShippingInspectionPath, isShippingStationPath } from '@/router/shippingStationRoute'
+import { isFxSettlementPath } from '@/router/fxSettlementRoute'
 import { readSessionItem } from '@/utils/safeSessionStorage'
 
 // Deterministic stagger keeps the wake continuous from the first frame.
@@ -200,12 +201,16 @@ const handleSubmit = async () => {
     // 或目标是展会 kiosk（展位 iPad 不进移动端素材页）
     const isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
     const desktopMode = readSessionItem('ark_desktop_mode') === '1'
-    if (isMobileUA && !desktopMode && !redirect.startsWith('/expo') && !isShippingStationPath(redirect) && !isShippingInspectionPath(redirect)) {
+    if (isMobileUA && !desktopMode && !redirect.startsWith('/expo') && !isShippingStationPath(redirect) && !isShippingInspectionPath(redirect) && !isFxSettlementPath(redirect)) {
       window.location.href = '/m/'
       return
     }
     if (redirect === EXPO_KIOSK_PATH && !authStore.hasPermission('expo:write')) {
       ElMessage.error('当前账号没有展会试戴权限，请更换展会设备账号')
+      return
+    }
+    if (isFxSettlementPath(redirect) && !authStore.hasPermission('fx_settlement:read')) {
+      ElMessage.error('当前账号没有结汇助手权限，请联系管理员开通或更换账号')
       return
     }
     router.push(redirect.startsWith('/') ? redirect : '/')

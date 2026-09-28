@@ -13,18 +13,29 @@
         <p>客户发票、产品明细、价格管控、导出与小满同步集中处理。</p>
       </div>
       <div class="header-actions">
-        <GlassButton v-permission="'invoice:write'" variant="secondary" :left-icon="Picture" @click="screenshotImportVisible = true">
-          AI 识别 OKKI 截图
-        </GlassButton>
         <GlassButton v-permission="'invoice:write'" variant="primary" :left-icon="Plus" class="primary-action" @click="openCreate('stock')">
           新建库存单
         </GlassButton>
         <GlassButton v-permission="'invoice:write'" variant="secondary" :left-icon="Plus" @click="openCreate('production')">
           新建生产单
         </GlassButton>
+        <GlassButton v-permission="'invoice:write'" :disabled="!shipmentCapabilities.enabled" @click="openCreate('presale')">新建预售单</GlassButton>
+        <!-- 旧版下单入口（过渡期）：新版为默认，旧版布局给习惯老流程的同事 -->
+        <el-dropdown v-permission="'invoice:write'" trigger="click" @command="openLegacyCreate">
+          <GlassButton variant="secondary">
+            旧版入口<el-icon><ArrowDown /></el-icon>
+          </GlassButton>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="stock">库存单（旧版）</el-dropdown-item>
+              <el-dropdown-item command="production">生产单（旧版）</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
     </div>
 
+    <el-alert v-if="!shipmentCapabilities.enabled" :title="shipmentCapabilities.reason || '预售出库暂未启用'" type="info" :closable="false" />
     <div class="summary-grid">
       <div class="summary-card lg-card">
         <span>发票数</span>
@@ -55,9 +66,11 @@
         >
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
+        <el-input v-model="filters.order_id" clearable placeholder="订单 ID" style="width: 175px" @keyup.enter="loadInvoices" />
         <el-select v-model="filters.order_type" clearable placeholder="订单类型" style="width: 130px">
           <el-option label="库存单" value="stock" />
           <el-option label="生产单" value="production" />
+          <el-option label="预售单" value="presale" />
         </el-select>
         <el-select v-model="filters.status" clearable placeholder="状态" style="width: 150px">
           <el-option label="草稿" value="draft" />
@@ -82,10 +95,11 @@
           </div>
         </template>
         <el-table-column prop="invoice_no" label="发票号" min-width="132" max-width="170" show-overflow-tooltip />
+        <el-table-column prop="xiaoman_order_id" label="订单 ID" min-width="155" show-overflow-tooltip><template #default="{ row }">{{ row.xiaoman_order_id || '—' }}</template></el-table-column>
         <el-table-column label="类型" min-width="76" max-width="96">
           <template #default="{ row }">
             <el-tag :type="row.order_type === 'production' ? 'warning' : 'info'" effect="plain">
-              {{ row.order_type === 'production' ? '生产单' : '库存单' }}
+              {{ orderTypeLabel(row.order_type) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -111,27 +125,13 @@
         <el-table-column label="创建时间" min-width="130" max-width="160" show-overflow-tooltip>
           <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" min-width="356" max-width="390" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="300" max-width="360" fixed="right">
           <template #default="{ row }">
             <div class="table-actions">
               <el-button v-permission="'invoice:write'" link type="primary" :disabled="['cancel_pending','cancelled'].includes(row.status)" @click="openEdit(row.id)">
                 <el-icon><Edit /></el-icon>
                 编辑
               </el-button>
-              <el-dropdown trigger="click" @command="cmd => handleExport(cmd, row)">
-                <el-button link>
-                  <el-icon><Download /></el-icon>
-                  导出
-                  <el-icon><ArrowDown /></el-icon>
-                </el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="excel">Excel</el-dropdown-item>
-                    <el-dropdown-item command="pdf">PDF</el-dropdown-item>
-                    <el-dropdown-item command="print">打印 / 预览</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
               <el-button
                 v-permission="'invoice:sync'"
                 link
@@ -142,10 +142,6 @@
               >
                 <el-icon><Refresh /></el-icon>
                 {{ isInvoiceSyncing(row.id) ? '同步中' : '同步' }}
-              </el-button>
-              <el-button v-permission="'invoice:read'" link @click="openSyncLogs(row)">
-                <el-icon><Document /></el-icon>
-                日志
               </el-button>
               <el-dropdown
                 v-if="row.sync_status === 'sync_uncertain'"
@@ -162,7 +158,23 @@
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
-              <InvoiceLifecycle :invoice-id="row.id" @changed="loadInvoices" />
+              <el-button v-if="row.order_type === 'presale'" v-permission="'shipment:write'" link type="primary" :disabled="!shipmentCapabilities.enabled || row.sync_status !== 'synced' || ['cancel_pending','cancelled'].includes(row.status)" @click="shipmentInvoice = row">生成出库单</el-button>
+              <el-dropdown trigger="click" placement="bottom-end">
+                <el-button link>更多<el-icon><ArrowDown /></el-icon></el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item :icon="Download" @click="handleExport('excel', row)">导出 Excel</el-dropdown-item>
+                    <el-dropdown-item :icon="Download" @click="handleExport('pdf', row)">导出 PDF</el-dropdown-item>
+                    <el-dropdown-item :icon="Download" @click="handleExport('print', row)">打印 / 预览</el-dropdown-item>
+                    <div v-permission="'invoice:read'" role="none">
+                      <el-dropdown-item :icon="Document" @click="openSyncLogs(row)">日志</el-dropdown-item>
+                    </div>
+                    <div v-permission="'invoice:admin'" role="none">
+                      <el-dropdown-item @click="openLifecycle(row)">取消 / 恢复</el-dropdown-item>
+                    </div>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
               <el-button v-if="!row.xiaoman_order_id && !['cancel_pending','cancelled'].includes(row.status)" v-permission="'invoice:write'" link type="danger" @click="removeInvoice(row)">
                 <el-icon><Delete /></el-icon>
                 删除
@@ -185,205 +197,142 @@
       />
     </div>
 
-    <el-drawer v-model="drawerVisible" :title="drawerTitle" size="94%">
+    <el-drawer v-model="drawerVisible" :title="drawerTitle" size="94%"
+               body-class="invoice-modern-drawer-body" footer-class="invoice-modern-drawer-footer">
       <template #default>
-        <el-form ref="formRef" :model="form" label-width="80px" class="invoice-form" :disabled="linkedLocked">
-          <section class="head-section">
-            <div class="col-title">客户信息</div>
-            <div class="head-grid">
-              <el-form-item label="订单归属业务员" required class="span-3">
-                <el-select
-                  v-model="form.sales_user_id"
-                  filterable
-                  :disabled="Boolean(form.id)"
-                  placeholder="选择客户及业绩归属业务员"
-                  style="width: 100%"
-                  @change="onSalesUserChange"
-                >
-                  <el-option
-                    v-for="user in salesUserOptions"
-                    :key="user.id"
-                    :label="`${user.real_name}（${user.username}）${user.okki_bound ? '' : ' · 未绑定OKKI'}${user.okki_department_configured ? '' : ' · 未配置部门'}`"
-                    :value="user.id"
-                  />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="客户" required class="span-3">
-                <div class="customer-filter-row">
+        <el-form ref="formRef" :model="form" label-position="top" class="invoice-form">
+          <div class="drawer-panes">
+            <!-- 左窗格：录入主流（客户/订单 → 产品明细 → 配件明细），独立滚动 -->
+            <main class="pane pane-main">
+              <LinkedSyncResult
+                :operation="linkedOperation"
+                :busy="linkedBusy"
+                @refresh="refreshLinked"
+                @retry="retryLinked"
+                @recheck="recheckLinked"
+                @close="closeLinked"
+                @resolve="resolveLinked"
+              />
+              <InvoiceOrderCustomerFields
+                v-model:selected-customer="selectedCustomer"
+                v-model:private-only-company="privateOnlyCompany"
+                :form="form" :sales-user-options="salesUserOptions" :customer-options="customerOptions"
+                :customer-loading="customerLoading" :customer-total="customerTotal"
+                :customer-has-more="customerHasMore" :okki-bound="okkiBound"
+                :can-toggle-private="canTogglePrivate" :customer-rule="customerRule"
+                :last-order-date="lastOrderDate" :invoice-no-taken="invoiceNoTaken"
+                :previous-invoice-no="previousInvoiceNo" :on-sales-user-change="onSalesUserChange"
+                :search-customers="searchCustomers" :on-customer-change="onCustomerChange"
+                :load-more-customers="loadMoreCustomers" :select-synced-customer="selectSyncedCustomer"
+                :mark-customer-grade-touched="markCustomerGradeTouched"
+                :on-invoice-no-input="onInvoiceNoInput" :on-invoice-no-blur="onInvoiceNoBlur"
+                :on-currency-change="onCurrencyChange" :mark-okki-flag-touched="markOkkiFlagTouched"
+                @open-whole-order-paste="wholeOrderPasteVisible = true"
+              />
+
+              <InvoiceHairTable
+                class="form-card"
+                :items="hairItems"
+                :is-production="isProduction"
+                :entry-options="entryOptions"
+                :can-paste-import="canPasteImport"
+                :paste-import-disabled-reason="pasteImportDisabledReason"
+                :load-line-options="loadLineOptions"
+                :on-line-filter-change="onLineFilterChange"
+                :on-custom-field-change="onCustomFieldChange"
+                :on-price-input="onPriceInput"
+                :on-line-discount-change="onLineDiscountChange"
+                :update-line-total="updateLineTotal"
+                :money="money"
+                :money4="money4"
+                @paste="pasteImportVisible = true"
+                @copy="copyLine"
+                @add-blank="addBlankLine"
+                @remove="removeLine"
+              />
+
+              <InvoiceAccessoryTable
+                class="form-card"
+                :items="accessoryItems"
+                :options="accessoryOptions"
+                :loading="accessoryLoading"
+                :search-options="searchAccessoryOptions"
+                :money="money"
+                :money4="money4"
+                @add="addAccessory"
+                @select="selectAccessory"
+                @change="updateAccessoryTotal"
+                @remove="removeAccessory"
+              />
+
+              <!-- 卡片 4：物流与备注（快递渠道必填单选 → 指定跟单员 → 备注） -->
+              <section class="form-card">
+                <div class="card-title"><span class="step">4</span>物流与备注</div>
+                <el-form-item label="快递渠道" required>
+                  <el-radio-group v-model="form.express_channel" class="express-radio-row">
+                    <el-radio v-for="option in EXPRESS_CHANNEL_OPTIONS" :key="option" :value="option">{{ option }}</el-radio>
+                  </el-radio-group>
+                </el-form-item>
+                <el-form-item label="指定跟单员">
                   <el-select
-                    v-model="selectedCustomer"
-                    value-key="option_key"
+                    v-model="form.merchandiser_id"
+                    clearable
                     filterable
-                    remote
-                    reserve-keyword
-                    :remote-method="searchCustomers"
-                    :loading="customerLoading"
-                    placeholder="输入客户名称、ID 或联系人姓名"
-                    class="customer-filter-select"
-                    @change="onCustomerChange"
+                    placeholder="选择具有「跟单员」角色的用户"
+                    style="width: 320px"
                   >
                     <el-option
-                      v-for="customer in customerOptions"
-                      :key="customer.option_key"
-                      :label="customerOptionLabel(customer)"
-                      :value="customer"
+                      v-for="user in merchandiserOptions"
+                      :key="user.id"
+                      :label="`${user.real_name}（${user.username}）`"
+                      :value="user.id"
                     />
-                    <template #footer>
-                      <span>共 {{ customerTotal }} 项匹配</span>
-                      <el-button v-if="customerHasMore" link type="primary" :loading="customerLoading" @click="loadMoreCustomers">
-                        加载更多
-                      </el-button>
-                    </template>
                   </el-select>
-                  <el-checkbox v-permission="'invoice_private_filter:read'" v-model="privateOnlyCompany" class="customer-filter-check">仅私海</el-checkbox>
-                </div>
-                <div v-if="!okkiBound && privateOnlyCompany" class="binding-helper">
-                  {{ canTogglePrivate
-                    ? '未绑定 OKKI，私海筛选无结果。请取消“仅私海”或前往外部账号绑定。'
-                    : '未绑定 OKKI，暂无法搜索私海客户。请到 系统管理 → 外部账号绑定 处理。' }}
-                </div>
-                <InvoiceCustomerSyncEntry :on-select="selectSyncedCustomer" />
-                <div v-if="customerRule" class="rule-badge">该客户价格规则：{{ describeCustomerRule(customerRule) }}</div>
-              </el-form-item>
-              <el-form-item label="客户等级">
-                <el-select v-model="form.customer_grade" @change="markCustomerGradeTouched" clearable placeholder="请选择等级" :disabled="!form.customer_id">
-                  <el-option v-for="grade in ['S', 'A', 'B', 'C', 'D', 'E']" :key="grade" :label="grade" :value="grade" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="联系人" class="span-2">
-                <el-input v-model="form.contact_name" maxlength="100" placeholder="To" />
-              </el-form-item>
-              <el-form-item label="电话" class="span-2">
-                <el-input v-model="form.contact_phone" maxlength="50" placeholder="TEL/Fax" />
-              </el-form-item>
-              <el-form-item label="邮箱" class="span-2">
-                <el-input v-model="form.contact_email" maxlength="100" placeholder="E-mail" />
-              </el-form-item>
-              <el-form-item label="收货地址" class="span-6">
-                <el-input v-model="form.delivery_address" type="textarea" :autosize="{ minRows: 1, maxRows: 3 }" maxlength="500" placeholder="Delivery address" />
-              </el-form-item>
-            </div>
-          </section>
+                </el-form-item>
+                <el-form-item label="备注" class="remark-gold-item">
+                  <el-input
+                    v-model="form.remark"
+                    type="textarea"
+                    class="remark-gold"
+                    :autosize="{ minRows: 2, maxRows: 4 }"
+                    maxlength="500"
+                  />
+                  <div class="field-tip">备注内容将自动带入到出库单中</div>
+                </el-form-item>
+              </section>
+            </main>
 
-          <section class="head-section">
-            <div class="col-title">业务员信息</div>
-            <div class="head-grid">
-              <el-form-item label="业务员" class="span-2">
-                <el-input v-model="form.sales_user_name" maxlength="50" placeholder="From" readonly />
-              </el-form-item>
-              <el-form-item label="业务电话" class="span-2">
-                <el-input v-model="form.sales_phone" maxlength="50" readonly />
-              </el-form-item>
-              <el-form-item label="业务邮箱" class="span-2">
-                <el-input v-model="form.sales_email" maxlength="100" readonly />
-              </el-form-item>
-            </div>
-          </section>
-
-          <section class="head-section">
-            <div class="col-title">订单信息</div>
-            <div class="head-grid">
-              <el-alert
-                v-if="form.source_type === 'okki_screenshot'"
-                class="span-6 source-order-alert"
-                title="来自外部 OKKI 截图；保存并同步时会校验本系统 OKKI 是否已有同一订单。"
-                type="info"
-                :closable="false"
-                show-icon
+            <!-- 右窗格：金额/结算/回款，独立滚动 -->
+            <aside class="pane pane-side">
+              <InvoiceSummaryCard
+                class="form-card"
+                :form="form"
+                :total="formTotal"
+                :base-amount="formBaseAmount"
+                :hair-amount="formHairPrice"
+                :hair-discount="formLineDiscountTotal"
+                :accessory-amount="formAccessoryAmount"
+                :accessory-discount="formAccessoryDiscount"
+                :money="money"
               />
-              <el-form-item label="发票号" class="span-2" :error="invoiceNoTaken ? '发票号已存在，请更换' : ''">
-                <el-input
-                  v-model="form.invoice_no"
-                  maxlength="64"
-                  placeholder="已自动生成，可修改"
-                  @input="onInvoiceNoInput"
-                  @blur="onInvoiceNoBlur"
-                />
-              </el-form-item>
-              <el-form-item label="日期" required class="span-2">
-                <el-date-picker v-model="form.invoice_date" value-format="YYYY-MM-DD" style="width: 100%" />
-              </el-form-item>
-              <el-form-item label="币种" class="span-1">
-                <el-input v-model="form.currency" maxlength="16" @change="onCurrencyChange" />
-              </el-form-item>
-              <el-form-item label="小满标记" required class="span-3">
-                <div class="okki-flags-row">
-                  <span class="okki-flag">
-                    新成交
-                    <el-switch v-model="form.okki_new_deal" :active-value="1" :inactive-value="0"
-                               @change="markOkkiFlagTouched('newDeal')" />
-                  </span>
-                  <span class="okki-flag">
-                    包邮
-                    <el-switch v-model="form.okki_free_shipping" :active-value="1" :inactive-value="0"
-                               @change="markOkkiFlagTouched('freeShipping')" />
-                  </span>
-                  <span class="okki-flag">
-                    首返
-                    <el-switch v-model="form.okki_first_return" :active-value="1" :inactive-value="0" />
-                  </span>
-                  <span v-if="lastOrderDate" class="okki-last-order">上次订单成交日期：{{ lastOrderDate }}</span>
-                  <span class="okki-flag-tip">推小满必填，已按历史预判</span>
-                </div>
-              </el-form-item>
-              <el-form-item label="备注" class="span-3">
-                <el-input v-model="form.remark" type="textarea" :autosize="{ minRows: 1, maxRows: 3 }" maxlength="500" />
-              </el-form-item>
-            </div>
-          </section>
 
-          <InvoiceSettlementFields
-            :form="form"
-            :total="formTotal"
-            :settlement-error="settlementError"
-            :hair-amount="formHairPrice"
-            :hair-discount="formLineDiscountTotal"
-            :accessory-amount="formAccessoryAmount"
-            :accessory-discount="formAccessoryDiscount"
-            :payment-methods="PAYMENT_METHOD_OPTIONS"
-            :express-channels="EXPRESS_CHANNEL_OPTIONS"
-            :money="money"
-            :on-payment-method-change="onPaymentMethodChange"
-            :on-handling-fee-input="markHandlingFeeTouched"
-          />
+              <InvoiceSettlementFields
+                class="form-card"
+                :form="form"
+                :total="formTotal"
+                :settlement-error="settlementError"
+                :payment-methods="PAYMENT_METHOD_OPTIONS"
+                :total-discount="formHairDiscountAbs"
+                :money="money"
+                :on-payment-method-change="onPaymentMethodChange"
+                :on-handling-fee-input="markHandlingFeeTouched"
+                :on-total-discount-change="applyTotalDiscount"
+              />
 
-          <InvoiceReceiptFields :form="form" :total="formTotal" />
-
-          <InvoiceHairTable
-            :items="hairItems"
-            :is-production="isProduction"
-            :entry-options="entryOptions"
-            :can-paste-import="canPasteImport"
-            :paste-import-disabled-reason="pasteImportDisabledReason"
-            :load-line-options="loadLineOptions"
-            :on-line-filter-change="onLineFilterChange"
-            :on-custom-field-change="onCustomFieldChange"
-            :on-price-input="onPriceInput"
-            :on-line-discount-change="onLineDiscountChange"
-            :update-line-total="updateLineTotal"
-            :money="money"
-            :money4="money4"
-            @paste="pasteImportVisible = true"
-            @copy="copyLine"
-            @add-blank="addBlankLine"
-            @remove="removeLine"
-          />
-
-          <InvoiceAccessoryTable
-            :items="accessoryItems"
-            :options="accessoryOptions"
-            :loading="accessoryLoading"
-            :search-options="searchAccessoryOptions"
-            :money="money"
-            :money4="money4"
-            @add="addAccessory"
-            @select="selectAccessory"
-            @change="updateAccessoryTotal"
-            @remove="removeAccessory"
-          />
-
+              <InvoiceReceiptFields class="form-card" :form="form" />
+            </aside>
+          </div>
         </el-form>
-      <LinkedSyncResult :operation="linkedOperation" :busy="linkedBusy" @refresh="refreshLinked" @retry="retryLinked" @recheck="recheckLinked" @close="closeLinked" @resolve="resolveLinked" />
       </template>
 
       <template #footer>
@@ -391,13 +340,10 @@
           :form="form"
           :total="formTotal"
           :base-amount="formBaseAmount"
-          :hair-amount="formHairPrice"
-          :hair-discount="formLineDiscountTotal"
-          :accessory-amount="formAccessoryAmount"
-          :accessory-discount="formAccessoryDiscount"
           :money="money"
-          :syncing="saveAndSyncSubmitting || linkedBusy"
-          :linked-locked="linkedLocked"
+          :syncing="saveAndSyncSubmitting"
+          :sync-blocked="linkedTaskActive"
+          sync-blocked-reason="请先在上方处理未结束的关联同步任务"
           @cancel="drawerVisible = false"
           @save="saveDraft"
           @sync="saveAndSync"
@@ -415,10 +361,33 @@
       @append="appendPastedLines"
     />
 
+    <ShipmentSettlementDialog v-if="shipmentInvoice" :invoice="shipmentInvoice" @close="shipmentInvoice = null" @saved="loadInvoices" />
     <InvoiceScreenshotImport
+      :presale-enabled="shipmentCapabilities.enabled"
       v-model="screenshotImportVisible"
       @apply="applyScreenshotPreview"
     />
+
+    <InvoiceWholeOrderPaste
+      v-model="wholeOrderPasteVisible"
+      :match-customer="matchWholeOrderCustomer"
+      :customer-id="form.customer_id"
+      :order-type="form.order_type"
+      :currency="form.currency"
+      @apply="applyWholeOrderPaste"
+    />
+
+    <!-- 旧版下单抽屉（过渡期）：与新版共享编辑器状态和整单粘贴对话框，
+         产品明细的「从 Excel 粘贴」入口也在两版中共用。 -->
+    <InvoiceLegacyDrawer
+      :editor="editor"
+      :money="money"
+      :money4="money4"
+      @open-paste="wholeOrderPasteVisible = true"
+      @open-legacy-paste="pasteImportVisible = true"
+    />
+
+    <InvoiceLifecycle v-if="lifecycleInvoiceId !== null" :key="lifecycleInvoiceId" ref="lifecycleRef" :invoice-id="lifecycleInvoiceId" @changed="loadInvoices" />
 
     <InvoiceSyncLogsDialog
       v-model="syncLogsVisible"
@@ -432,25 +401,30 @@
 </template>
 
 <script setup>
-import LinkedSyncResult from './components/LinkedSyncResult.vue'
+import ShipmentSettlementDialog from './components/ShipmentSettlementDialog.vue'
+import { useInvoiceShipments, orderTypeLabel } from './composables/useInvoiceShipments'
+import { useInvoiceImportDialogs } from './composables/useInvoiceImportDialogs'
 import InvoiceLifecycle from './components/InvoiceLifecycle.vue'
-import { computed, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import { ArrowDown, Delete, Document, Download, Edit, Picture, Plus, Refresh, Search } from '@element-plus/icons-vue'
+import { computed, nextTick, ref } from 'vue'
+import { ArrowDown, Delete, Document, Download, Edit, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { EXPRESS_CHANNEL_OPTIONS, PAYMENT_METHOD_OPTIONS } from './composables/invoiceSettlement'
-import { customerOptionLabel } from './composables/useInvoiceCustomerSearch'
-import { describeCustomerRule, useInvoiceEditor } from './composables/useInvoiceEditor'
+import { useInvoiceEditor } from './composables/useInvoiceEditor'
 import { useInvoiceManagePage } from './composables/useInvoiceManagePage'
 import InvoicePasteImport from './components/InvoicePasteImport.vue'
-import InvoiceCustomerSyncEntry from './components/InvoiceCustomerSyncEntry.vue'
+import InvoiceWholeOrderPaste from './components/InvoiceWholeOrderPaste.vue'
+import InvoiceLegacyDrawer from './components/legacy/InvoiceLegacyDrawer.vue'
+import InvoiceOrderCustomerFields from './components/InvoiceOrderCustomerFields.vue'
 import InvoiceScreenshotImport from './components/InvoiceScreenshotImport.vue'
 import InvoiceSyncLogsDialog from './components/InvoiceSyncLogsDialog.vue'
 import InvoiceAccessoryTable from './components/InvoiceAccessoryTable.vue'
 import InvoiceReceiptFields from './components/InvoiceReceiptFields.vue'
 import InvoiceSettlementFields from './components/InvoiceSettlementFields.vue'
+import InvoiceSummaryCard from './components/InvoiceSummaryCard.vue'
 import InvoiceTotalsFooter from './components/InvoiceTotalsFooter.vue'
+import LinkedSyncResult from './components/LinkedSyncResult.vue'
 import InvoiceHairTable from './components/InvoiceHairTable.vue'
 
+const { shipmentInvoice, shipmentCapabilities } = useInvoiceShipments()
 const page = useInvoiceManagePage()
 const {
   actionText, bindIssueHandler, filters, formatDateTime, handleExport, invoices, loadInvoices,
@@ -458,12 +432,13 @@ const {
   summary, syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
   isInvoiceSyncing, resolveUncertain, validateAndSync,
 } = page
+const editor = useInvoiceEditor({ onSaved: loadInvoices })
 const {
-  drawerVisible, customerLoading, customerOptions, salesUserOptions, selectedCustomer, customerRule,
+  drawerVisible, legacyVisible, customerLoading, customerOptions, salesUserOptions, selectedCustomer, customerRule,
   customerTotal, customerHasMore, loadMoreCustomers, privateOnlyCompany,
   canTogglePrivate, okkiBound, invoiceNoTaken, entryOptions, form, hairItems, accessoryItems,
   saveAndSyncSubmitting,
-  linkedOperation, linkedBusy, refreshLinked, retryLinked, recheckLinked, closeLinked, resolveLinked,
+  linkedOperation, linkedBusy, linkedLoading, refreshLinked, retryLinked, recheckLinked, closeLinked, resolveLinked,
   accessoryOptions, accessoryLoading, formHairPrice, formLineDiscountTotal, formAccessoryAmount,
   formAccessoryDiscount, formBaseAmount, formTotal, lastOrderDate, settlementError, isProduction,
   searchCustomers, selectSyncedCustomer,
@@ -473,30 +448,27 @@ const {
   updateAccessoryTotal, removeLine, loadLineOptions, onLineFilterChange, onCustomFieldChange,
   onPriceInput, onLineDiscountChange, updateLineTotal, appendImportedLines, saveDraft,
   saveAndSync, showIssues, markCustomerGradeTouched, markOkkiFlagTouched, onPaymentMethodChange, markHandlingFeeTouched,
-} = useInvoiceEditor({ onSaved: loadInvoices })
+  merchandiserOptions, previousInvoiceNo, formHairDiscountAbs, applyTotalDiscount,
+  matchWholeOrderCustomer, applyWholeOrderPaste, openLegacyCreate,
+} = editor
+const linkedTaskActive = computed(() => linkedLoading.value || linkedBusy.value ||
+  ['pending', 'running', 'failed', 'uncertain'].includes(linkedOperation.value?.status))
 bindIssueHandler(showIssues)
-const pasteImportVisible = ref(false)
-const screenshotImportVisible = ref(false)
-const canPasteImport = computed(() => Boolean(form.customer_id && form.order_type && form.currency))
-const pasteImportDisabledReason = computed(() => {
-  const missing = []
-  if (!form.customer_id) missing.push('客户')
-  if (!form.order_type) missing.push('订单类型')
-  if (!form.currency) missing.push('币种')
-  return missing.length ? `请先选择${missing.join('、')}` : ''
-})
+const { pasteImportVisible, screenshotImportVisible, canPasteImport, pasteImportDisabledReason,
+  appendPastedLines } = useInvoiceImportDialogs(form, appendImportedLines)
+const wholeOrderPasteVisible = ref(false)
+const lifecycleInvoiceId = ref(null)
+const lifecycleRef = ref(null)
+async function openLifecycle(row) {
+  const invoiceId = row.id
+  lifecycleInvoiceId.value = invoiceId
+  await nextTick()
+  if (lifecycleInvoiceId.value === invoiceId) lifecycleRef.value?.open()
+}
 const drawerTitle = computed(() => {
-  const typeLabel = form.order_type === 'production' ? '生产单' : '库存单'
+  const typeLabel = orderTypeLabel(form.order_type)
   return form.id ? `编辑${typeLabel} ${form.invoice_no}` : `新建${typeLabel}`
 })
-function appendPastedLines({ rows, fingerprint }) {
-  if (!appendImportedLines(rows, fingerprint)) {
-    ElMessage.warning('这批数据已经加入当前发票')
-    return
-  }
-  ElMessage.success(`已加入 ${rows.length} 条产品明细，发票尚未保存`)
-}
-const linkedLocked = computed(() => linkedBusy.value || ['pending', 'running', 'failed', 'uncertain'].includes(linkedOperation.value?.status))
 </script>
 
 <style scoped src="./invoice-manage.css"></style>

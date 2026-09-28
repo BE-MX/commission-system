@@ -48,6 +48,7 @@ body{margin:0;font-family:"Microsoft YaHei","PingFang SC",sans-serif;color:#000}
 .items-table th,.items-table td{border:1px solid #333;padding:6px 8px;text-align:left}
 .items-table th{background:#f0f0f0}
 .items-table .num{text-align:right}
+.express-line{margin-top:10px;font-size:14px;font-weight:700}
 .remark-section{margin-top:10px;border:1px solid #333;padding:6px 8px;font-size:13px}
 .remark-label{font-weight:700;margin-bottom:4px}
 .remark-content{white-space:pre-wrap;overflow-wrap:anywhere}
@@ -193,10 +194,13 @@ export function buildOutboundDoc({ record, items = [], qr_code_base64 = '' }) {
         <tr><td>客户名称</td><td><strong>${esc(maskedCustomerName)}</strong></td><td class="grade-cell">客户等级<br>${esc(record.customer_grade || '—')}</td><td class="amount-cell">订单金额<br>${esc(record.order_amount_text || '—')}</td></tr>
         <tr><td>出库日期</td><td colspan="3">${esc(record.outbound_date)}</td></tr>
         <tr><td>负责人</td><td colspan="3">${esc(record.owner_name)}</td></tr>
+        <tr><td>跟单员</td><td colspan="3">${esc(record.merchandiser_name || '')}</td></tr>
       </table>
     </div>
     ${qrSection}
   </div>
+
+  <div class="express-line">快递渠道：${esc(record.express_channel || '—')}</div>
 
   ${remarkSection}
 

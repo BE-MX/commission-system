@@ -1,5 +1,4 @@
 <template>
-  <el-button v-permission="'invoice:admin'" link @click="open">取消 / 恢复</el-button>
   <el-drawer v-model="visible" title="订单取消与异常恢复" size="min(600px, 94vw)" append-to-body :close-on-click-modal="false">
     <div v-loading="busy" class="lifecycle-body">
       <template v-if="data">
@@ -48,7 +47,8 @@ const prompts = {
   ack_outbound: '系统会重新核对数量与明细关联；请确认价格、地址、备注已经人工核对，填写依据。',
 }
 async function load() { data.value = await getInvoiceLifecycle(props.invoiceId) }
-async function open() { visible.value = true; busy.value = true; error.value = ''; try { await load() } catch (e) { error.value = e.response?.data?.detail || '暂时无法读取订单状态，请稍后重试' } finally { busy.value = false } }
+async function open() { visible.value = true; busy.value = true; data.value = null; error.value = ''; try { await load() } catch (e) { error.value = e.response?.data?.detail || '暂时无法读取订单状态，请稍后重试' } finally { busy.value = false } }
+defineExpose({ open })
 async function act(action) {
   if (busy.value) return
   busy.value = true

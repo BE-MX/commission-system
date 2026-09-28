@@ -1,6 +1,6 @@
 # 方舟 Windows 更新中心
 
-`ArkDeploy.exe` 在操作者的 Windows 电脑运行，通过现有 SSH `office-prod` 连接办公室，由办公室原有 `deploy/deploy.bat` 完成全环境发布。界面使用 Windows 原生窗体，无需在操作者电脑安装 Python、Node 或浏览器运行时。需要 Windows .NET Framework 4.5+ 与 OpenSSH 客户端（或 Git for Windows）。不新增公网管理端口，不在客户端保存服务器密码、数据库凭据或私钥副本。
+`ArkDeploy.exe` 在操作者的 Windows 电脑运行，通过已配置的 SSH 连接办公室，由办公室原有 `deploy/deploy.bat` 完成全环境发布。界面使用 Windows 原生窗体，无需在操作者电脑安装 Python、Node 或浏览器运行时。需要 Windows .NET Framework 4.5+ 与 OpenSSH 客户端（或 Git for Windows）。不新增公网管理端口，不在客户端保存服务器密码、数据库凭据或私钥副本。
 
 ## 使用
 

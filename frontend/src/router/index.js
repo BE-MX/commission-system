@@ -13,6 +13,7 @@ import {
 } from './expoKioskRoute'
 import { readSessionItem } from '@/utils/safeSessionStorage'
 import { isShippingInspectionPath, isShippingStationPath, shippingStationLogin } from './shippingStationRoute'
+import { FX_APP_PATH, FX_DESKTOP_PATH, isFxSettlementPath, fxSettlementLogin } from './fxSettlementRoute'
 
 // NAV_ENTRIES 中每条记录映射成 vue-router 的 children 路由
 // path 去掉前导 '/' 因为父路由是 '/'
@@ -93,11 +94,14 @@ router.beforeEach(async (to, from, next) => {
 
   const isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
   const desktopMode = readSessionItem('ark_desktop_mode') === '1'
+  if (isMobileUA && !desktopMode && to.path.replace(/\/+$/, '') === FX_DESKTOP_PATH) {
+    return next({ path: FX_APP_PATH, query: to.query, hash: to.hash, replace: true })
+  }
 
   // 移动端访问登录页：直接走移动端独立登录页
   // 例外：目标是展会 kiosk（展位 iPad 用主站登录，不进移动端素材页）
   const redirectTarget = String(to.query.redirect || '')
-  if (isMobileUA && !desktopMode && to.path === '/login' && !redirectTarget.startsWith('/expo') && !isShippingStationPath(redirectTarget) && !isShippingInspectionPath(redirectTarget)) {
+  if (isMobileUA && !desktopMode && to.path === '/login' && !redirectTarget.startsWith('/expo') && !isShippingStationPath(redirectTarget) && !isShippingInspectionPath(redirectTarget) && !isFxSettlementPath(redirectTarget)) {
     window.location.href = '/m/login.html'
     return false
   }
@@ -131,6 +135,7 @@ router.beforeEach(async (to, from, next) => {
     const { ElMessage } = await import('element-plus')
     ElMessage.error('权限不足')
     if (isShippingStationPath(to.path)) return next(shippingStationLogin())
+    if (isFxSettlementPath(to.path)) return next(fxSettlementLogin())
     // 首次打开 kiosk 时 from.fullPath 是 '/'；沿用通用兜底会把展会设备送进后台。
     // kiosk 只允许回专用登录页，重新认证后仍固定回 kiosk。
     if (isExpoKioskTarget(to)) {

@@ -1,5 +1,5 @@
 """Receipt ledger. The receipt row is also its durable delivery outbox."""
-from sqlalchemy import BigInteger, Column, Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text
+from sqlalchemy import BigInteger, Column, Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint
 
 from app.core.database import Base
 from app.core.time import beijing_now
@@ -7,9 +7,13 @@ from app.core.time import beijing_now
 
 class Receipt(Base):
     __tablename__ = "ark_receipts"
+    __table_args__ = (UniqueConstraint("batch_id", "receivable_id", name="uq_receipt_batch_target"),)
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     receipt_no = Column(String(64), nullable=False, unique=True, comment='方舟回款编号')
     invoice_id = Column(BigInteger, ForeignKey("ark_invoices.id"), nullable=False, index=True, comment='关联方舟订单发票 ID')
+    batch_id = Column(BigInteger, ForeignKey("ark_receipt_batches.id"), nullable=True, index=True)
+    receivable_id = Column(BigInteger, ForeignKey("ark_receivables.id"), nullable=True, index=True)
+    purpose = Column(String(24), nullable=False, default="ordinary", server_default="ordinary")
     source = Column(String(16), nullable=False, comment='创建来源：auto/manual')
     auto_key = Column(String(64), unique=True, comment='自动回款唯一业务键')
     request_key = Column(String(64), nullable=False, unique=True, comment='创建请求幂等键')
@@ -22,7 +26,7 @@ class Receipt(Base):
     remark = Column(String(500), comment='回款备注')
     attachment_ids = Column(JSON, nullable=False, default=list, comment='私有回款凭证资源 ID 列表')
     customer_id = Column(String(64), nullable=False, comment='小满客户 ID 快照')
-    xiaoman_order_id = Column(String(64), nullable=False, comment='关联小满订单 ID 快照')
+    xiaoman_order_id = Column(String(64), nullable=True, comment='关联小满订单 ID 快照')
     xiaoman_receipt_id = Column(String(64), unique=True, comment='小满回款 ID，唯一映射')
     xiaoman_receipt_no = Column(String(64), comment='小满回款编号')
     collect_status = Column(Integer, comment='最近核验财务状态：0未生效/1已生效/NULL未核验')
@@ -84,3 +88,6 @@ class ReceiptLog(Base):
     message = Column(Text, nullable=False, comment='审计说明，不含凭证地址或密钥')
     created_by = Column(Integer, comment='创建或操作人，ark_users.id')
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment='创建时间，北京时间')
+
+# Register linked ledger tables for isolated tests and migration metadata.
+from app.invoice import settlement_models as _settlement_models  # noqa: E402,F401

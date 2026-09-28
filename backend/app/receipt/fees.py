@@ -34,7 +34,7 @@ def allocate(db, invoice, amount, *, exclude_receipt=None):
         if charge > value or remote.money(detail.get("real_amount")) != value - charge or identity in ids:
             raise ValueError("小满回款手续费或实到账金额异常")
         ids[identity] = (value, charge); registered += value; charged += charge
-    for row in db.query(Receipt).filter(Receipt.invoice_id == invoice.id, Receipt.status == "active").all():
+    for row in db.query(Receipt).filter(Receipt.invoice_id == invoice.id, Receipt.status == "active", Receipt.purpose != "freight").all():
         if row.sync_status == "uncertain":
             raise ValueError("已有回款结果待核对，暂不能分摊手续费")
         if row.xiaoman_receipt_id in ids:

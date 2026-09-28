@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="modelValue"
-    title="客户素材门户"
+    title="历史目录管理"
     width="1080px"
     top="6vh"
     @update:model-value="$emit('update:modelValue', $event)"
@@ -37,8 +37,8 @@
               <span class="dir-name" :title="dir.name">{{ dir.name }}</span>
               <span class="dir-count">{{ dir.asset_count }}</span>
             </button>
-            <el-button v-if="editable" link :icon="Edit" :disabled="uploading || deleting" :aria-label="`重命名 ${dir.name}`" @click="startRename(dir)" />
-            <el-button v-if="editable" link type="danger" :icon="Delete" :disabled="uploading || deleting" :aria-label="`删除目录 ${dir.name}`" @click="removeDirectory(dir)" />
+            <el-button v-if="editable" link :icon="Edit" :disabled="deleting" :aria-label="`重命名 ${dir.name}`" @click="startRename(dir)" />
+            <el-button v-if="editable" link type="danger" :icon="Delete" :disabled="deleting" :aria-label="`删除目录 ${dir.name}`" @click="removeDirectory(dir)" />
             </div>
           </div>
           <div v-if="!directories.length" class="dir-empty">尚无目录，可在上方新建</div>
@@ -46,29 +46,6 @@
       </aside>
 
       <div class="dir-content">
-        <div v-if="editable" class="upload-drop" @drop.capture="onDropFolders">
-          <el-upload
-            drag
-            multiple
-            :auto-upload="false"
-            :show-file-list="false"
-            :disabled="uploading || deleting"
-            accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm"
-            :on-change="queueFile"
-          >
-            <div class="el-upload__text">拖入文件或文件夹；文件夹自动按名称创建目录</div>
-            <div class="el-upload__tip">散文件上传到「{{ selectedLabel }}」；嵌套文件夹归入顶层目录</div>
-          </el-upload>
-          <el-button :disabled="uploading || deleting" @click="folderInput.click()">选择文件夹上传</el-button>
-          <input ref="folderInput" type="file" webkitdirectory multiple hidden @change="onFolderSelected" />
-        </div>
-        <div v-if="uploadQueue.length" class="queue-list">
-          <div v-for="item in uploadQueue" :key="item.uid" class="queue-item">
-            <span>{{ item.name }}</span>
-            <el-progress :percentage="item.progress" :status="item.error ? 'exception' : item.done ? 'success' : ''" />
-          </div>
-        </div>
-
         <div v-if="filteredAssets.length" class="asset-grid">
           <article v-for="asset in filteredAssets" :key="asset.id" class="asset-card">
             <img v-if="asset.media_type === 'image'" :src="asset.content_url" :alt="asset.file_name" @click="previewUrl = asset.content_url" />
@@ -94,9 +71,8 @@ import { ElImageViewer, ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Edit } from '@element-plus/icons-vue'
 import {
   createMediaDirectory, deleteMediaAsset, deleteMediaDirectory, getTaskMediaBatch,
-  renameMediaDirectory, uploadMediaAsset,
+  renameMediaDirectory,
 } from '@/api/customerMedia'
-import { collectDroppedFiles, dropHasDirectory, uploadDirectoryOptions } from './droppedFiles'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -112,10 +88,7 @@ const creating = ref(false)
 const renamingId = ref(null)
 const renamingName = ref('')
 const renaming = ref(false)
-const uploading = ref(false)
-const uploadQueue = ref([])
 const previewUrl = ref('')
-const folderInput = ref(null)
 const deleting = ref(false)
 
 const assets = computed(() => props.batch?.assets || [])
@@ -182,83 +155,8 @@ async function confirmRename() {
   } finally { renaming.value = false }
 }
 
-async function uploadOne(item, file, options) {
-  try {
-    const res = await uploadMediaAsset(props.batch.id, file, event => {
-      item.progress = event.total ? Math.round(event.loaded / event.total * 100) : 0
-    }, options)
-    item.progress = 100
-    item.done = true
-    emit('update:batch', res.data)
-  } catch {
-    item.error = true
-  }
-}
-
-let queueSeq = 0
-function pushQueueItem(name) {
-  const item = { uid: `${Date.now()}-${queueSeq++}`, name, progress: 0, done: false, error: false }
-  uploadQueue.value.push(item)
-  return uploadQueue.value[uploadQueue.value.length - 1]
-}
-
-function scheduleQueueCleanup() {
-  window.setTimeout(() => { uploadQueue.value = uploadQueue.value.filter(row => !row.done) }, 1200)
-}
-
-function warnIfAllSelected() {
-  if (selected.value === ALL) ElMessage.info('当前为「全部素材」视图，文件将归入未分类')
-}
-
-async function queueFile(uploadFile) {
-  if (!props.editable || deleting.value) return
-  warnIfAllSelected()
-  uploading.value = true
-  const item = pushQueueItem(uploadFile.name)
-  await uploadOne(item, uploadFile.raw, uploadDirectoryOptions(uploadFile.raw, '', selected.value))
-  uploading.value = uploadQueue.value.some(row => !row.done && !row.error)
-  scheduleQueueCleanup()
-}
-
-const FOLDER_ACCEPT_RE = /\.(jpe?g|png|webp|gif|mp4|mov|webm)$/i
-
-async function onDropFolders(e) {
-  if (!dropHasDirectory(e.dataTransfer)) return
-  e.preventDefault()
-  e.stopPropagation()
-  if (!props.editable || uploading.value || deleting.value) return
-  const target = selected.value
-  uploading.value = true
-  try {
-    const { files } = await collectDroppedFiles(e.dataTransfer)
-    await uploadFolderFiles(files, target)
-  } catch (error) {
-    ElMessage.error(`读取文件夹失败：${error.message || '请重新选择文件夹'}`)
-  } finally { uploading.value = false }
-}
-
-async function onFolderSelected(event) {
-  const files = [...event.target.files].map(file => ({ file, directoryName: '' }))
-  event.target.value = ''
-  if (!props.editable || uploading.value || deleting.value) return
-  uploading.value = true
-  try { await uploadFolderFiles(files, selected.value) } finally { uploading.value = false }
-}
-
-async function uploadFolderFiles(files, target) {
-  const accepted = files.filter(({ file }) => FOLDER_ACCEPT_RE.test(file.name))
-  const skipped = files.length - accepted.length
-  if (skipped > 0) ElMessage.warning(`已忽略 ${skipped} 个不支持的文件（仅支持 JPG、PNG、WebP、GIF、MP4、MOV、WebM）`)
-  if (!accepted.length) return
-  for (const { file, directoryName } of accepted) {
-    const item = pushQueueItem(file.name)
-    await uploadOne(item, file, uploadDirectoryOptions(file, directoryName, target))
-  }
-  scheduleQueueCleanup()
-}
-
 async function removeDirectory(dir) {
-  if (!props.editable || uploading.value || deleting.value) return
+  if (!props.editable || deleting.value) return
   deleting.value = true
   try {
     try {
@@ -301,9 +199,6 @@ async function removeAsset(asset) {
 .dir-rename { display: flex; align-items: center; gap: 4px; padding: 2px 0; }
 .dir-empty { padding: 18px 8px; color: var(--text-secondary); font-size: 12px; text-align: center; }
 .dir-content { min-width: 0; overflow-y: auto; padding-right: 4px; }
-.upload-drop { margin-bottom: 14px; }
-.queue-list { margin-bottom: 14px; display: grid; gap: 8px; }
-.queue-item { display: grid; grid-template-columns: minmax(160px, 1fr) 2fr; align-items: center; gap: 16px; }
 .asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
 .asset-card { overflow: hidden; border: 1px solid var(--border-color); border-radius: 10px; background: var(--card-bg); padding-bottom: 8px; }
 .asset-card img, .asset-card video { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--page-bg); cursor: pointer; }

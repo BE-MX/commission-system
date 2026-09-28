@@ -24,7 +24,8 @@ from app.core.database import get_db
 from app.core.response import ok, page_result
 from app.shipping_inspection import constants as C
 from app.shipping_inspection import file_service, outbound_service, outbound_queue_service, qr_service, service
-from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto
+from app.shipping_inspection.outbound_sync_state import BLOCKED, can_allow_print_before_recheck, can_print_before_recheck
+from app.shipping_inspection.models import ShippingInspection, ShippingInspectionPhoto, ShippingOperationEvent
 from app.shipping_inspection.schemas import ShippingRecallRequest
 from app.shipping_inspection.print_customer_service import with_customer_order_info
 from app.shipping_inspection.print_service import with_owner_chinese_name
@@ -34,6 +35,8 @@ logger = logging.getLogger("commission")
 router = APIRouter()
 from app.shipping_inspection.station_router import router as station_router
 router.include_router(station_router)
+from app.shipping_inspection.outbound_sync_router import router as outbound_sync_router
+router.include_router(outbound_sync_router)
 
 _READ = ("shipping_inspection:read", "shipping_inspection:write", "shipping_inspection:admin")
 
@@ -139,6 +142,7 @@ def delete_outbound_record(
 @router.get("/outbound-records", summary="出库单分页列表（含检验状态）")
 def list_outbound_records(
     keyword: str | None = Query(None, description="匹配出库单号/客户"),
+    order_id: str | None = Query(None, pattern=r"^[1-9][0-9]*$", max_length=64),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
     page: int = Query(1, ge=1),
@@ -149,7 +153,7 @@ def list_outbound_records(
     scope_okki_user = _outbound_scope(db, user)
     try:
         rows, total = outbound_queue_service.list_outbound_records(
-            db, keyword=keyword, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
+            db, keyword=keyword, order_id=order_id, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
             okki_user_id=scope_okki_user,
         )
     except outbound_service.OutboundTableError as exc:
@@ -157,6 +161,8 @@ def list_outbound_records(
 
     # 检验状态按 outbound_record_id 批量查自有表组装：none=未验 / draft / submitted
     record_ids = [row["outbound_record_id"] for row in rows]
+    sync_events = {event.outbound_record_id: event for event in db.query(ShippingOperationEvent).filter(
+        ShippingOperationEvent.scope == 'outbound-invoice-sync', ShippingOperationEvent.outbound_record_id.in_(record_ids)).all()} if record_ids else {}
     status_map: dict[str, ShippingInspection] = {}
     if record_ids:
         inspections = (
@@ -177,6 +183,12 @@ def list_outbound_records(
         )
     for row in rows:
         insp = status_map.get(row["outbound_record_id"])
+        event = sync_events.get(row["outbound_record_id"])
+        row['recheck_status'] = ('pending_sync' if event and event.action in BLOCKED
+                                 else 'pending_inspection' if event and (event.result or {}).get('required_recheck_ids')
+                                 else None)
+        row['print_before_recheck'] = can_print_before_recheck(event, row.get('mirror_updated_at'))
+        row['can_allow_print_before_recheck'] = can_allow_print_before_recheck(event, row, insp)
         row["status"] = insp.status if insp else "none"
         if insp is None:
             row["photo_count"] = 0
@@ -199,7 +211,12 @@ def outbound_print_data(
         record = outbound_service.get_outbound_record(db, record_id, okki_user_id=scope_okki_user)
         if record is None:
             raise HTTPException(status_code=404, detail="出库单不存在")
-        items = outbound_service.list_outbound_items(db, record_id)
+        from app.shipping_inspection.outbound_sync_state import ensure_printable, apply_header
+        sync_event = ensure_printable(db, record_id, record)
+        record = apply_header(db, record, event=sync_event)
+        items = outbound_service.list_outbound_items(db, record_id, sync_event=sync_event)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except outbound_service.OutboundTableError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     from app.shipping_inspection.print_service import annotate_print_items, sort_outbound_print_items
@@ -229,7 +246,12 @@ def outbound_word(
         record = outbound_service.get_outbound_record(db, record_id, okki_user_id=scope)
         if record is None:
             raise HTTPException(status_code=404, detail="出库单不存在")
-        items = outbound_service.list_outbound_items(db, record_id)
+        from app.shipping_inspection.outbound_sync_state import ensure_printable, apply_header
+        sync_event = ensure_printable(db, record_id, record)
+        record = apply_header(db, record, event=sync_event)
+        items = outbound_service.list_outbound_items(db, record_id, sync_event=sync_event)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except outbound_service.OutboundTableError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     content = build_outbound_word(
@@ -260,6 +282,7 @@ def recall_record(
 @router.get("/records", summary="已提交验货单分页列表")
 def list_records(
     keyword: str | None = Query(None, description="匹配出库单号/客户"),
+    order_id: str | None = Query(None, pattern=r"^[1-9][0-9]*$", max_length=64),
     salesperson_name: str | None = Query(None, max_length=100, description="关联订单业务员姓名"),
     submitted_by_name: str | None = Query(None, max_length=100, description="提交检验人员姓名"),
     date_from: date | None = Query(None, description="提交日期起"),
@@ -274,7 +297,7 @@ def list_records(
     scope = _inspection_scope(db, _user)
     try:
         items, total = service.list_records(
-            db, keyword=keyword, submitted_by_name=submitted_by_name, salesperson_name=salesperson_name, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
+            db, keyword=keyword, order_id=order_id, submitted_by_name=submitted_by_name, salesperson_name=salesperson_name, date_from=date_from, date_to=date_to, page=page, page_size=page_size,
             okki_user_id=scope,
         )
     except outbound_service.OutboundTableError as exc:

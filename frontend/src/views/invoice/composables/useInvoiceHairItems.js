@@ -53,7 +53,7 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions)
     }
   }
   async function onLineFilterChange(row) {
-    Object.assign(row, { product_id: null, sku_id: null, product_name: '', product_display: '', stock_warning: '' })
+    Object.assign(row, { product_id: null, sku_id: null, product_name: '', product_display: '', stock_warning: '', available_stock: null })
     await loadLineOptions(row)
     if (!row.model || !row.color || !row.length || !row.net_weight_grams) return
     row.matching = true
@@ -67,6 +67,7 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions)
       Object.assign(row, {
         product_id: result.item.product_id, sku_id: result.item.sku_id,
         stock_warning: result.item.stock_warning || '',
+        available_stock: result.item.available_stock == null ? null : Number(result.item.available_stock),
         product_name: result.item.product_name, product_display: result.item.product_display,
       })
       await refreshLinePrice(row)

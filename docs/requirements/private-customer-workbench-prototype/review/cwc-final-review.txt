@@ -1,0 +1,164 @@
+- heading "ChatGPT 说：" [level=4]
+  - button "思考了 4m 49s":
+    - text: 思考了 4m 49s
+  - paragraph:
+    - text: "[C2C]"
+    - text: "STATE: DONE"
+    - text: "TASK_ID: c2c_pcw24"
+    - text: "ITERATION: 2"
+    - text: "WORKSPACE: commission-system"
+    - text: "REVIEW_RESULT: ACCEPTED_FOR_SPEC_AND_PROTOTYPE"
+    - text: "BASELINE: codex/private-customer-workbench / 401a2a42"
+    - text: "DELIVERABLE_ROOT: docs/requirements/private-customer-workbench-prototype/"
+    - text: "PRODUCTION_IMPLEMENTATION: NOT_INCLUDED"
+  - heading "复核结论" [level=2]
+  - paragraph:
+    - strong: R1–R5 及保存后焦点问题可以关闭。没有发现阻止本轮中文开发规格与交互原型交付的剩余阻断项，不要求新增功能修正轮次。
+  - paragraph:
+    - text: 本次重新读取了 manifest 所列
+    - strong: 14 份完整快照
+    - text: 、第二轮测试与浏览器记录、隔离 worktree 范围输出，并重新核对了生产代码中的行动结果枚举、偏好事实键／类型、Annotation 模型及档案编译逻辑。审阅对象是 iteration 2 的快照版本，不是 main 上的无关变更。
+  - paragraph:
+    - text: 以下文件简称均对应本次
+    - code: tmp/cwc-private-customer-workbench/review/
+    - text: 下的审阅快照。
+  - heading "修正项关闭依据" [level=2]
+  - table:
+    - rowgroup:
+      - row "项目 独立复核结果 主要依据":
+        - columnheader "项目"
+        - columnheader "独立复核结果"
+        - columnheader "主要依据"
+    - rowgroup:
+      - row "R1：绑定、分析、建议与引用 绑定变化会失效旧消息建议；重新分析产生带绑定／分析版本的新建议。普通采纳与编辑后采纳共用校验入口，提交时检查档案版本。渠道切换改为筛选稳定消息集合，Novelle 的阿里询盘与 WhatsApp 摘要不再串用。 domain.js::bind/analyze/suggestion、app.js::editField/accept/source-message、views.js::communication；新增绑定、版本及渠道回归测试。":
+        - cell "R1：绑定、分析、建议与引用":
+          - strong: R1：绑定、分析、建议与引用
+        - cell "绑定变化会失效旧消息建议；重新分析产生带绑定／分析版本的新建议。普通采纳与编辑后采纳共用校验入口，提交时检查档案版本。渠道切换改为筛选稳定消息集合，Novelle 的阿里询盘与 WhatsApp 摘要不再串用。"
+        - cell "domain.js::bind/analyze/suggestion、app.js::editField/accept/source-message、views.js::communication；新增绑定、版本及渠道回归测试。":
+          - code: domain.js::bind/analyze/suggestion
+          - text: 、
+          - code: app.js::editField/accept/source-message
+          - text: 、
+          - code: views.js::communication
+          - text: ；新增绑定、版本及渠道回归测试。
+      - row "R2：完成、后续与维护日历 完成未解决行动后，维护计划指向新行动并更新日期；再次改约更新当前行动，旧行动保持 done。已完成计划进入历史，不宣称样品测试结束。未来时间的 snoozed 项退出主动推荐，但仍保留在未结束任务及期限检查中。 domain.js::complete/changeSample/recommendable、views.js::overview/maintenance；样品后续再改约、完成历史和延后推荐测试。":
+        - cell "R2：完成、后续与维护日历":
+          - strong: R2：完成、后续与维护日历
+        - cell "完成未解决行动后，维护计划指向新行动并更新日期；再次改约更新当前行动，旧行动保持 done。已完成计划进入历史，不宣称样品测试结束。未来时间的 snoozed 项退出主动推荐，但仍保留在未结束任务及期限检查中。"
+        - cell "domain.js::complete/changeSample/recommendable、views.js::overview/maintenance；样品后续再改约、完成历史和延后推荐测试。":
+          - code: domain.js::complete/changeSample/recommendable
+          - text: 、
+          - code: views.js::overview/maintenance
+          - text: ；样品后续再改约、完成历史和延后推荐测试。
+      - row "R3：调度与采集健康 enabled 与采集状态分离。暂停／恢复不再清除失败状态或改变成功水位；只有显式成功采集才恢复健康状态。首次采集仍只建立基线。 domain.js::toggleSubscription/collectSubscription、views.js::monitoring；失败订阅暂停恢复、未建基线恢复测试。":
+        - cell "R3：调度与采集健康":
+          - strong: R3：调度与采集健康
+        - cell "enabled 与采集状态分离。暂停／恢复不再清除失败状态或改变成功水位；只有显式成功采集才恢复健康状态。首次采集仍只建立基线。":
+          - code: enabled
+          - text: 与采集状态分离。暂停／恢复不再清除失败状态或改变成功水位；只有显式成功采集才恢复健康状态。首次采集仍只建立基线。
+        - cell "domain.js::toggleSubscription/collectSubscription、views.js::monitoring；失败订阅暂停恢复、未建基线恢复测试。":
+          - code: domain.js::toggleSubscription/collectSubscription
+          - text: 、
+          - code: views.js::monitoring
+          - text: ；失败订阅暂停恢复、未建基线恢复测试。
+      - row "R4：订单质量与窗口关联 缺失金额显示未知，部分合计及指标缺值有说明。周期按选定产品族计算，窗口日期来自计算结果；不规则间隔有明确的演示降级规则。新单必须满足客户、产品族、窗口关联及日期条件，才取消对应旧任务。 domain.js::analytics/cycle/newOrder、views.js::money/orders；未知值、产品族、不规则样本、无关订单与样品订单负面测试。":
+        - cell "R4：订单质量与窗口关联":
+          - strong: R4：订单质量与窗口关联
+        - cell "缺失金额显示未知，部分合计及指标缺值有说明。周期按选定产品族计算，窗口日期来自计算结果；不规则间隔有明确的演示降级规则。新单必须满足客户、产品族、窗口关联及日期条件，才取消对应旧任务。"
+        - cell "domain.js::analytics/cycle/newOrder、views.js::money/orders；未知值、产品族、不规则样本、无关订单与样品订单负面测试。":
+          - code: domain.js::analytics/cycle/newOrder
+          - text: 、
+          - code: views.js::money/orders
+          - text: ；未知值、产品族、不规则样本、无关订单与样品订单负面测试。
+      - row "R5：开发契约衔接 行动结果保留现有六项枚举，事项状态独立；偏好键及类型有映射，普通修订明确采用拟扩展的 Annotation v2，而非假造现有 confirmed 偏好能力。私人备注复用 Annotation；版本前置条件、事项与行动轮次、六类维护载荷及活动／样品入口已补齐。 api-contracts.md 第 4、6 节；schema-migrations.md 第 1、5、6 节；development-spec.md 第 7 节。":
+        - cell "R5：开发契约衔接":
+          - strong: R5：开发契约衔接
+        - cell "行动结果保留现有六项枚举，事项状态独立；偏好键及类型有映射，普通修订明确采用拟扩展的 Annotation v2，而非假造现有 confirmed 偏好能力。私人备注复用 Annotation；版本前置条件、事项与行动轮次、六类维护载荷及活动／样品入口已补齐。"
+        - cell "api-contracts.md 第 4、6 节；schema-migrations.md 第 1、5、6 节；development-spec.md 第 7 节。":
+          - code: api-contracts.md
+          - text: 第 4、6 节；
+          - code: schema-migrations.md
+          - text: 第 1、5、6 节；
+          - code: development-spec.md
+          - text: 第 7 节。
+      - row "保存后焦点 重渲染后通过 data-action + data-id 定位替代控件；原操作消失时才使用工作区兜底。浏览器记录分别覆盖保存与取消关闭，不再以取消路径代替保存路径。 app.js::closeDialog/finish；browser-checks-2.txt.md 的两类焦点断言。":
+        - cell "保存后焦点":
+          - strong: 保存后焦点
+        - cell "重渲染后通过 data-action + data-id 定位替代控件；原操作消失时才使用工作区兜底。浏览器记录分别覆盖保存与取消关闭，不再以取消路径代替保存路径。":
+          - text: 重渲染后通过
+          - code: data-action + data-id
+          - text: 定位替代控件；原操作消失时才使用工作区兜底。浏览器记录分别覆盖保存与取消关闭，不再以取消路径代替保存路径。
+        - cell "app.js::closeDialog/finish；browser-checks-2.txt.md 的两类焦点断言。":
+          - code: app.js::closeDialog/finish
+          - text: ；
+          - code: browser-checks-2.txt.md
+          - text: 的两类焦点断言。
+  - button "复制表格":
+  - paragraph:
+    - text: R5 的当前代码依据也已复核：
+    - code: backend/app/customer/workflow_service.py:71–78
+    - text: 保留原结果枚举；
+    - code: contracts.py:228–310
+    - text: 保留分层偏好键及其类型；
+    - code: models.py:431–463
+    - text: 已有私人 Annotation；
+    - code: profile_service.py:788–826
+    - text: 展示的是纠错抑制和事实选择逻辑。新版文档把替代值投影列为
+    - strong: B 阶段待开发内容
+    - text: ，没有把它写成现成功能。
+  - heading "验证证据与范围" [level=2]
+  - paragraph:
+    - strong: 测试输出已实际读取。
+    - code: execution_output
+    - text: 按 list → read 读取了
+    - code: taskId=c2c_pcw24、iteration=2、id=2
+    - text: 的完整输出：
+    - strong: 32 项通过，0 失败，退出码 0
+    - text: 。测试源码保留原 21 项并增加 11 项回归；对应断言与修正代码一致。语法检查通过记录见
+    - code: acceptance.md.md
+    - text: 。
+  - paragraph:
+    - strong: 浏览器证据覆盖了本次关键链路。
+    - code: browser-checks-2.txt.md
+    - text: 记录了绑定后禁止旧建议采纳、分渠道摘要、样品后续再改约、失败监控暂停恢复、无关与相关新单、保存／取消焦点，以及 390／1024／1440px 客户页面、长弹层、减少动态和控制台检查。本次没有重新运行浏览器，也没有通过 MCP 独立查看截图；结论依据源码审查和已发布的执行记录，不表述为独立视觉验收。
+  - paragraph:
+    - strong: 范围记录未显示生产文件变更。
+    - code: scope-2.txt.md
+    - text: 的命令输出指向隔离 worktree 和正确分支，
+    - code: git status --short
+    - text: 仅列出本任务交付目录，
+    - code: git diff --check
+    - text: 退出码为 0。该记录仍是未跟踪目录状态，
+    - strong: 本回执不代表已经提交、合并或发布
+    - text: 。
+  - heading "保留的交付边界" [level=2]
+  - paragraph:
+    - text: 本次 DONE 仅适用于
+    - strong: 中文规格、接口与迁移蓝图、合成数据交互原型
+    - text: 。真实账号权限、WhatsApp 持续接入、AI 调用、后台调度、订单及物流数据质量、数据库迁移、通知投递和客户消息发送，仍属于后续生产阶段的独立实现与验收，不由本次原型测试证明。
+  - paragraph:
+    - code: "file:"
+    - text: 打开方式继续标记未验证，HTTP 本地预览为已记录验证路径；13 项全仓 convention 基线失败继续披露，不称全仓检查通过，也不扩大范围清理。上述限制已在验收材料中保留，不阻断本次交付。
+  - paragraph: "NEXT_EXPECTED_STEP: Codex 归档本 DONE 回执，更新 acceptance.md 的最终 CWC 状态及相应 manifest，交付现有文档和原型；无需再做功能返工。生产实施、迁移或部署须另起明确授权任务。"
+  - group "回复操作":
+    - button "复制回复":
+    - button "Pro 反馈":
+    - button "切换模型":
+    - button "回应":
+    - button "回复不佳":
+    - button "更多操作":
+  - generic: ChatGPT 也可能会犯错。请核查重要信息。
+  - button:
+  - button "添加文件等":
+  - textbox "与 ChatGPT 聊天":
+    - paragraph: 问问 ChatGPT
+  - button "6 Pro":
+    - generic: "6"
+    - generic: Pro
+  - button "开始听写":
+  - button "启动语音功能":
+  - button
+  - button
+  - button
+- alert
+- status

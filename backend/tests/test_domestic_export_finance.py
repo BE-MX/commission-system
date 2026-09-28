@@ -2,6 +2,7 @@ from decimal import Decimal
 import pytest
 
 from app.domestic import balance_service, order_service
+from app.domestic import constants as C
 from app.domestic.models import DomesticCustomerLedger, DomesticOrder, DomesticOrderItem
 from app.domestic.schemas import OrderItemUpdate
 from tests.test_domestic_member_pricing import (
@@ -15,8 +16,8 @@ def create_order(db, suffix, is_draft=False):
     user, customer, _, _, quote, attrs = _order_pricing_context(db, suffix)
     payload = _priced_order_payload(customer, attrs, quote, request_id=f"export-{suffix}", is_draft=is_draft)
     result = order_service.create_order(db, payload, user.id)
-    if not is_draft:
-        # 优惠价单落待审核：审核通过才扣款，账本里才有「订单扣款」快照行
+    order = db.get(DomesticOrder, result["id"])
+    if not is_draft and order.status == C.ORDER_PENDING_REVIEW:
         reviewer = _operator(db, f"export-review-{suffix}")
         order_service.review_order(
             db, result["id"], decision="approve", remark=None,
@@ -74,12 +75,13 @@ def test_edit_total_unit_price_preserves_labor_and_correct_discount(db):
     payload = _priced_order_payload(customer, attrs, quote, request_id="labor-edit-order")
     payload.items[0].labor_fee = Decimal("30")
     result = order_service.create_order(db, payload, user.id)
-    # 优惠价单先落待审核，审核通过转生产中后才能改价
-    reviewer = _operator(db, "labor-edit-reviewer")
-    order_service.review_order(
-        db, result["id"], decision="approve", remark=None,
-        reviewer_id=reviewer.id, can_admin=False,
-    )
+    order = db.get(DomesticOrder, result["id"])
+    if order.status == C.ORDER_PENDING_REVIEW:
+        reviewer = _operator(db, "labor-edit-reviewer")
+        order_service.review_order(
+            db, result["id"], decision="approve", remark=None,
+            reviewer_id=reviewer.id, can_admin=False,
+        )
     item = db.query(DomesticOrderItem).filter_by(order_id=result["id"]).one()
     order_service.update_item(db, item.id, OrderItemUpdate(unit_price=Decimal("980")), user.id)
     assert item.labor_fee == Decimal("30")

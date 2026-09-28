@@ -18,6 +18,7 @@ from app.domestic.models import (
     DomesticBasePrice,
     DomesticCustomer,
     DomesticItemProgress,
+    DomesticOrder,
     DomesticOrderItem,
     DomesticReportLog,
 )
@@ -75,16 +76,17 @@ def workers(db, route):
 @pytest.fixture
 def craft_mapping(db, route):
     route.name = "业务普单 · 头套网帽（递针）"
-    db.add(DomesticCraftRoute(product_type="cap", craft="递针旋全头套", route_id=route.id))
+    db.add(DomesticCraftRoute(product_type="cap", craft="中分界", route_id=route.id))
     _seed_order_values(db, _attrs())
     db.flush()
     return route
 
 
-def _attrs(craft="递针旋全头套"):
+def _attrs(craft="中分界"):
+    # 默认落在海报立减白名单：黑卡 120 立减后可到 0
     return ProductAttrs(
         product_type="cap", craft=craft, net_color="呼吸红",
-        size="s", length="15厘米", density="65%",
+        size="s", length="40厘米",
         hair_style_series="直发",
     )
 
@@ -111,7 +113,7 @@ def _pricing_customer(db, user):
             shop_name="马姐假发",
             owner_user_id=user.id,
             membership_level="black",
-            balance=Decimal("0.00"),
+            balance=Decimal("100000.00"),
             created_by=user.id,
         )
         db.add(customer)
@@ -123,6 +125,8 @@ def _pricing_customer(db, user):
 
 
 def _zero_price_item(db, attrs, qty, client_key):
+    from app.domestic import pricing_service
+
     row = db.query(DomesticBasePrice).filter_by(
         product_type=attrs.product_type,
         craft=attrs.craft,
@@ -138,22 +142,30 @@ def _zero_price_item(db, attrs, qty, client_key):
         )
         db.add(row)
         db.flush()
+    discount = pricing_service.resolve_discount(
+        product_type=attrs.product_type,
+        craft=attrs.craft,
+        length=attrs.length,
+        size=attrs.size if attrs.product_type == "piece" else None,
+        original_price=row.original_price,
+        membership_level="black",
+    )
     return OrderItemInput(
         client_key=client_key,
         attrs=attrs,
         order_qty=qty,
         expected_quote={
-            "original_price": "120.00",
+            "original_price": str(discount.original_price),
             "base_price_version": row.version,
-            "discount_price": "0.00",
+            "discount_price": str(discount.final_price),
             "membership_level": "black",
-            "pricing_rule": "member_reduction",
-            "pricing_version": "domestic-member-v1",
+            "pricing_rule": discount.pricing_rule,
+            "pricing_version": pricing_service.PRICING_VERSION,
         },
     )
 
 
-def _create_order(db, user, qty=20, craft="递针旋全头套"):
+def _create_order(db, user, qty=20, craft="中分界"):
     attrs = _attrs(craft)
     _seed_order_values(db, attrs)
     customer = _pricing_customer(db, user)
@@ -169,12 +181,14 @@ def _create_order(db, user, qty=20, craft="递针旋全头套"):
         items=[_zero_price_item(db, attrs, qty, "reporting-line-1")],
     )
     created = order_service.create_order(db, payload, user.id)
-    # 会员优惠价单先落待审核：由另一人审核通过转生产中后才可报工
-    reviewer = _user(db, f"reviewer-{uuid4().hex[:8]}")
-    order_service.review_order(
-        db, created["id"], decision="approve", remark=None,
-        reviewer_id=reviewer.id, can_admin=False,
-    )
+    # 仅当成交价偏离系统默认价时才待审核；系统会员价直接生产中
+    order = db.query(DomesticOrder).get(created["id"])
+    if order.status == C.ORDER_PENDING_REVIEW:
+        reviewer = _user(db, f"reviewer-{uuid4().hex[:8]}")
+        order_service.review_order(
+            db, created["id"], decision="approve", remark=None,
+            reviewer_id=reviewer.id, can_admin=False,
+        )
     return created
 
 
@@ -568,7 +582,7 @@ def test_same_attrs_reuse_one_product(db, craft_mapping, workers):
     assert first.product_id == second.product_id
     product = db.query(product_service.DomesticProduct).get(first.product_id)
     assert product.use_count == 2
-    assert product.name == "头套/递针旋全头套/呼吸红/s/15厘米/65%/直发"
+    assert product.name == "头套/中分界/呼吸红/s/40厘米/直发"
 
 
 def test_report_history_returns_all_order_dimensions(db, craft_mapping, workers):
@@ -759,12 +773,13 @@ def test_multi_item_order_status_rolls_up_partially(db, craft_mapping, workers, 
         ],
     )
     order_id = order_service.create_order(db, payload, creator.id)["id"]
-    # 会员优惠价单先落待审核：审核通过转生产中后才可报工
-    reviewer = _user(db, f"reviewer-{uuid4().hex[:8]}")
-    order_service.review_order(
-        db, order_id, decision="approve", remark=None,
-        reviewer_id=reviewer.id, can_admin=False,
-    )
+    order = db.query(DomesticOrder).get(order_id)
+    if order.status == C.ORDER_PENDING_REVIEW:
+        reviewer = _user(db, f"reviewer-{uuid4().hex[:8]}")
+        order_service.review_order(
+            db, order_id, decision="approve", remark=None,
+            reviewer_id=reviewer.id, can_admin=False,
+        )
     items = db.query(DomesticOrderItem).filter(DomesticOrderItem.order_id == order_id).all()
     assert len(items) == 2
     db.autoflush = autoflush

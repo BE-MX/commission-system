@@ -166,6 +166,27 @@ def customers(
     return ok(_call(service.list_customers, db, payload, search))
 
 
+@router.get("/customers/{customer_id}/tags")
+def customer_tags_for_booking(
+    customer_id: str,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission("design:write", "design:manage", "customer_media:admin")),
+):
+    _call(service.validate_customer_access, db, payload, customer_id)
+    return ok(_call(service.list_customer_tags, db, customer_id))
+
+
+@router.post("/customers/{customer_id}/tags")
+def add_customer_tags_for_booking(
+    customer_id: str,
+    data: AssetTagsUpdateIn,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission("design:write", "design:manage", "customer_media:admin")),
+):
+    _call(service.validate_customer_access, db, payload, customer_id)
+    return ok(_call(service.add_customer_tags, db, customer_id, payload, data.tags), "客户标签已更新")
+
+
 @router.get("/sales-portal/customers")
 def sales_portal_customers(
     search: str = Query(default="", max_length=200),
@@ -205,6 +226,19 @@ def sales_portal_customer(
     })
 
 
+@router.get("/sales-portal/customers/{customer_id}/tags")
+def sales_portal_customer_tags(
+    customer_id: str,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission(
+        "customer_media_portal:read", "customer_media:admin",
+    )),
+):
+    detail = _call(service.sales_portal_customer_detail, db, payload, customer_id)
+    account = detail["account"]
+    return ok(_call(service.portal_used_tags, db, account) if account.is_active else [])
+
+
 @router.get("/tasks/{task_id}/batch")
 def task_batch(
     task_id: int,
@@ -212,6 +246,27 @@ def task_batch(
     payload: dict = Depends(require_any_permission("customer_media:write", "customer_media:admin")),
 ):
     return ok(_batch_full(db, _call(service.get_or_create_batch, db, task_id, payload)))
+
+
+@router.get("/tasks/{task_id}/customer-tags")
+def task_customer_tags(
+    task_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission("customer_media:write", "customer_media:admin")),
+):
+    customer_id = _call(service.task_customer_id, db, task_id, payload)
+    return ok(_call(service.list_customer_tags, db, customer_id))
+
+
+@router.post("/tasks/{task_id}/customer-tags")
+def add_task_customer_tags(
+    task_id: int,
+    data: AssetTagsUpdateIn,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission("customer_media:write", "customer_media:admin")),
+):
+    customer_id = _call(service.task_customer_id, db, task_id, payload)
+    return ok(_call(service.add_customer_tags, db, customer_id, payload, data.tags), "客户标签已更新")
 
 
 @router.get("/batches/{batch_id}/directories")
@@ -292,6 +347,7 @@ def customer_tag_dimensions(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_any_permission(
         "customer_media:read", "customer_media:write", "customer_media:admin",
+        "design:write", "design:manage",
     )),
 ):
     """上传页/审核页可选的客户标签维度（tag_scope='customer' 且可见）。"""
@@ -331,6 +387,7 @@ def create_customer_tag_value(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_any_permission(
         "customer_media:read", "customer_media:write", "customer_media:admin",
+        "design:write", "design:manage",
     )),
 ):
     """上传页/审核页现场新建客户标签；同名直接复用。"""

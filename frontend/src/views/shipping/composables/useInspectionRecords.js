@@ -39,6 +39,7 @@ export function useInspectionRecords() {
     async ({ page, page_size, ...form }) => {
       const params = { page, page_size }
       if (form.keyword) params.keyword = form.keyword
+      if (form.orderId?.trim()) params.order_id = form.orderId.trim()
       if (form.submittedByName?.trim()) params.submitted_by_name = form.submittedByName.trim()
       if (form.salespersonName?.trim()) params.salesperson_name = form.salespersonName.trim()
       if (form.dateFrom) params.date_from = form.dateFrom
@@ -49,6 +50,7 @@ export function useInspectionRecords() {
     {
       searchForm: {
         keyword: route.query.keyword || '',
+        orderId: route.query.order_id || '',
         submittedByName: '', salespersonName: '', dateFrom: '', dateTo: '',
       },
     },

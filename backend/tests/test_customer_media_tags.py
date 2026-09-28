@@ -15,17 +15,18 @@ from app.asset.folder_upload_service import validate_folder_tags
 from app.asset.models import TagDimension, TagValue
 from app.asset.router import router as asset_router
 from app.auth.dependencies import get_current_user
-from app.auth.models import ArkUser
+from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.auth.utils import hash_password
 from app.core.database import get_db
 from app.customer_media import service
 from app.customer_media.models import (
-    CustomerMediaAsset, CustomerMediaAssetTag, CustomerMediaBatch,
+    CustomerMediaAsset, CustomerMediaAssetTag, CustomerMediaBatch, CustomerMediaCustomerTag,
 )
 from app.customer_media.public_router import router as public_router
 from app.customer_media.router import router as internal_router
 from app.customer_media.storage import LocalMediaStorage
 from app.design.models import DesignDesigner, DesignScheduleRequest, DesignScheduleTask
+from app.models.customer import CustomerCommissionSnapshot
 
 
 def _png() -> bytes:
@@ -238,6 +239,50 @@ def test_upload_with_tags_json_persists_and_rejects_bad_scope(db, tmp_path, monk
     assert db.query(CustomerMediaAsset).filter_by(file_name="bad.png").count() == 0
 
 
+def test_customer_labels_survive_new_booking_and_upload_requires_label(db, tmp_path, monkeypatch):
+    dim, values = _make_dim(db, "customer_series", "客户系列", values=["春季", "夏季"])
+    _add_customer(db, "CUST-TAG-1", "标签客户甲")
+    applicant, designer, _outsider, first_request, first_task = _seed_workflow(db)
+    salesperson = _payload(applicant, "design:write")
+    writer = _payload(designer, "customer_media:write")
+    spring = [{"dimension_id": dim.id, "tag_value_ids": [values[0].id]}]
+    summer = [{"dimension_id": dim.id, "tag_value_ids": [values[1].id]}]
+    assert service.add_customer_tags(db, first_request.customer_id, salesperson, spring)[0]["value"] == "春季"
+    assert service.add_customer_tags(db, first_request.customer_id, salesperson, spring) == service.list_customer_tags(db, first_request.customer_id)
+
+    second_request = DesignScheduleRequest(
+        request_no="DR-TAG-002", customer_id=first_request.customer_id,
+        customer_name=first_request.customer_name, salesperson_id=applicant.id,
+        salesperson_name=applicant.real_name, shoot_type="product",
+        expect_start_date=date(2026, 9, 2), expect_end_date=date(2026, 9, 2),
+        status="in_progress",
+    )
+    db.add(second_request)
+    db.flush()
+    second_task = DesignScheduleTask(
+        request_id=second_request.id, task_no="DT-TAG-002", designer_id=first_task.designer_id,
+        customer_id=first_request.customer_id, customer_name=first_request.customer_name,
+        status="in_progress",
+    )
+    db.add(second_task)
+    db.commit()
+    assert service.task_customer_id(db, second_task.id, writer) == first_request.customer_id
+    assert [tag["value"] for tag in service.list_customer_tags(db, second_request.customer_id)] == ["春季"]
+
+    service.add_customer_tags(db, second_request.customer_id, writer, summer)
+    assert {tag["value"] for tag in service.list_customer_tags(db, first_request.customer_id)} == {"春季", "夏季"}
+    assert db.query(CustomerMediaCustomerTag).filter_by(customer_id=first_request.customer_id).count() == 2
+
+    batch = service.get_or_create_batch(db, second_task.id, writer)
+    monkeypatch.setattr(service, "storage_for", lambda provider="local": LocalMediaStorage(tmp_path))
+    with pytest.raises(service.CustomerMediaError, match="至少一个客户标签"):
+        asyncio.run(service.upload_asset(db, batch.id, writer, _upload_png("untagged.png")))
+    assert list(tmp_path.rglob("*.png")) == []
+    updated = asyncio.run(service.upload_asset(db, batch.id, writer, _upload_png("summer.png"), tags=summer))
+    uploaded = next(asset for asset in updated.assets if asset.file_name == "summer.png")
+    assert [(tag.dimension_id, tag.tag_value_id) for tag in _tag_rows(db, uploaded.id)] == [(dim.id, values[1].id)]
+
+
 def test_update_asset_tags_permission_and_dimension_overwrite(db):
     customer_dim, values = _make_dim(db, "customer_general", "客户标签", values=["白底图", "场景图"])
     other_dim, other_values = _make_dim(db, "customer_series", "客户系列", values=["夏季"])
@@ -329,6 +374,51 @@ def _internal_app(db, payload):
     return app
 
 
+def test_booking_and_designer_customer_tag_endpoints_share_customer_labels(db):
+    dim, values = _make_dim(db, "customer_use", "用途", values=["白底", "场景"])
+    applicant, designer, outsider, batch, _asset = _seed_batch_with_asset(db)
+    db.connection().exec_driver_sql(
+        "UPDATE lsordertest.customer_info SET owner_user_ids = ? WHERE company_id = ?",
+        ('[1007]', 'CUST-TAG-1'),
+    )
+    db.add_all([
+        ArkUserExternalBinding(
+            ark_user_id=applicant.id, provider="okki", external_account_id="1007",
+            binding_status="active", is_primary=True,
+        ),
+        ArkUserExternalBinding(
+            ark_user_id=outsider.id, provider="okki", external_account_id="1008",
+            binding_status="active", is_primary=True,
+        ),
+        CustomerCommissionSnapshot(
+            customer_id="CUST-TAG-1", salesperson_id="1007", is_current=True, source="auto",
+        ),
+    ])
+    db.commit()
+    customer_path = "/api/customer-media/customers/CUST-TAG-1/tags"
+    task_path = f"/api/customer-media/tasks/{batch.task_id}/customer-tags"
+    with TestClient(_internal_app(db, _payload(applicant, "design:write"))) as client:
+        response = client.post(customer_path, json={"tags": [
+            {"dimension_id": dim.id, "tag_value_ids": [values[0].id]},
+        ]})
+        assert response.status_code == 200
+        assert [tag["value"] for tag in client.get(customer_path).json()["data"]] == ["白底"]
+        assert client.get("/api/customer-media/tags/dimensions").status_code == 200
+
+    with TestClient(_internal_app(db, _payload(designer, "customer_media:write"))) as client:
+        assert [tag["value"] for tag in client.get(task_path).json()["data"]] == ["白底"]
+        response = client.post(task_path, json={"tags": [
+            {"dimension_id": dim.id, "tag_value_ids": [values[1].id]},
+        ]})
+        assert response.status_code == 200
+
+    with TestClient(_internal_app(db, _payload(applicant, "design:write"))) as client:
+        assert {tag["value"] for tag in client.get(customer_path).json()["data"]} == {"白底", "场景"}
+    with TestClient(_internal_app(db, _payload(outsider, "design:write"))) as client:
+        assert client.get(customer_path).status_code == 403
+    tag_service.invalidate_dim_cache()
+
+
 def test_patch_tags_http_forbidden_and_review_list_carries_tags(db):
     customer_dim, values = _make_dim(db, "customer_general", "客户标签", values=["白底图"])
     applicant, designer, outsider, batch, asset = _seed_batch_with_asset(db)
@@ -361,6 +451,49 @@ def test_patch_tags_http_forbidden_and_review_list_carries_tags(db):
         dimensions = client.get("/api/customer-media/tags/dimensions")
         assert {d["name"] for d in dimensions.json()["data"]} == {"customer_general"}
     tag_service.invalidate_dim_cache()
+
+
+def test_sales_preview_tags_use_current_customer_scope_and_published_media(db):
+    dim, values = _make_dim(db, "customer_scene", "场景", values=["白底", "户外"])
+    applicant, designer, outsider, batch, asset = _seed_batch_with_asset(db)
+    service.update_asset_tags(db, batch.id, asset.id, _payload(applicant, "customer_media:read"), [
+        {"dimension_id": dim.id, "tag_value_ids": [values[0].id]},
+    ])
+    batch.status = "published"
+    batch.published_at = datetime(2026, 9, 3, 10, 0)
+    account = service.create_portal_account(
+        db, _payload(applicant, "customer_media:admin"), "CUST-TAG-1",
+        "client-tags@example.com", "ClientPass123",
+    )
+    db.add_all([
+        ArkUserExternalBinding(
+            ark_user_id=applicant.id, provider="okki", external_account_id="1007",
+            binding_status="active", is_primary=True,
+        ),
+        ArkUserExternalBinding(
+            ark_user_id=outsider.id, provider="okki", external_account_id="1008",
+            binding_status="active", is_primary=True,
+        ),
+        CustomerCommissionSnapshot(
+            customer_id="CUST-TAG-1", salesperson_id="1007", is_current=True, source="auto",
+        ),
+    ])
+    db.commit()
+
+    path = "/api/customer-media/sales-portal/customers/CUST-TAG-1/tags"
+    with TestClient(_internal_app(db, _payload(applicant, "customer_media_portal:read"))) as client:
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.json()["data"] == [{
+            "dimension_id": dim.id, "label": "场景",
+            "values": [{"id": values[0].id, "value": "白底", "count": 1}],
+        }]
+        account.is_active = False
+        db.commit()
+        assert client.get(path).json()["data"] == []
+
+    with TestClient(_internal_app(db, _payload(outsider, "customer_media_portal:read"))) as client:
+        assert client.get(path).status_code == 404
 
 
 # ── 门户筛选与跨客户隔离 ─────────────────────────────────

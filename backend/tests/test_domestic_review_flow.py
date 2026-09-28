@@ -346,12 +346,13 @@ def test_recharge_api_requires_voucher_file_and_creates_pending_request(db, tmp_
 
 
 def _cap_attrs(**overrides):
+    # 默认落在立减白名单：黑卡 1000-120=880，便于对照手工价
     values = {
         "product_type": "cap",
-        "craft": "递旋",
+        "craft": "中分界",
         "net_color": "自然色",
         "size": "12*14",
-        "length": "20厘米",
+        "length": "40厘米",
         "hair_style_series": "标准款",
     }
     values.update(overrides)

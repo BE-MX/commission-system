@@ -3,7 +3,7 @@ import json
 from datetime import date, datetime
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import event, text
 
 from app.invoice.models import Invoice, InvoiceItem, InvoiceSyncLog, OkkiOutboundTask
 from app.shipping_inspection import outbound_queue_service as queue, outbound_service
@@ -59,15 +59,43 @@ def test_waiting_rows_obey_scope_and_all_permissions(db, waiting):
         assert client.get("/api/shipping-inspection/outbound-records", params={"keyword": "WAIT"}).json()["data"]["total"] == 1
 
 
+def test_order_id_filter_keeps_matching_local_task_before_mirror_arrives(db, waiting):
+    rows, total = queue.list_outbound_records(db, order_id='ORDER-WAIT')
+    assert total == 1 and rows[0]['order_id'] == 'ORDER-WAIT'
+    assert queue.list_outbound_records(db, order_id='ANOTHER')[1] == 0
+
+
 def test_combined_pagination_and_beijing_date_boundaries(db, waiting, monkeypatch):
     monkeypatch.setenv("TZ", "America/Los_Angeles")
     pages = [queue.list_outbound_records(db, page=page, page_size=1, okki_user_id="9001") for page in (1, 2, 3)]
     assert [total for _, total in pages] == [2, 2, 2]
     ids = [row["outbound_record_id"] for rows, _ in pages for row in rows]
     assert len(ids) == len(set(ids)) == 2
+    assert pages[2] == ([], 2)
     for day, expected in [(17, 0), (18, 1), (19, 0)]:
         _, total = queue.list_outbound_records(db, keyword="WAIT", date_from=date(2026, 9, day), date_to=date(2026, 9, day))
         assert total == expected
+
+
+def test_list_batches_sync_events_and_counts_nonempty_page_once(db, waiting):
+    statements = []
+
+    def capture(_conn, _cursor, statement, _parameters, _context, _executemany):
+        statements.append(statement)
+
+    engine = db.get_bind()
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        rows, total = queue.list_outbound_records(db, page_size=20, okki_user_id="9001")
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+
+    assert len(rows) == total == 2
+    assert sum("COUNT(*) OVER ()" in sql for sql in statements) == 1
+    assert not any("SELECT COUNT(*) FROM (" in sql for sql in statements)
+    assert sum("FROM ark_shipping_operation_events" in sql
+               and "ark_shipping_operation_events.scope" in sql
+               for sql in statements) == 1
 
 
 @pytest.mark.parametrize("state", ["pending", "running", "done", "failed", "uncertain"])

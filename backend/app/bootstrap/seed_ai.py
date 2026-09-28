@@ -429,6 +429,8 @@ def auto_init_ai_presets() -> None:
         parameters={"temperature": 0.2, "max_tokens": 4096},
         description="订单经营智能分析：基于确定性指标生成证据化经营简报",
     )
+    from app.bootstrap.seed_fx_settlement import auto_init_fx_settlement_preset
+    auto_init_fx_settlement_preset()
     for preset_name, max_tokens, description in (
         ("agent_runtime_copilot", 4000, "Agent Runtime：客户与订单经营副驾驶模型边界"),
         ("agent_runtime_repurchase", 2500, "Agent Runtime：复购与流失干预模型边界"),

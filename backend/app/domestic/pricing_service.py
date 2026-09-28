@@ -49,6 +49,25 @@ MEMBER_FIXED_PRICES = {
     ("递顶", "25厘米", "supreme"): Decimal("1948.00"),
 }
 
+# 会员立减 70/120/130 只覆盖海报列出的规格，不是「有原价就立减」。
+# 头套：35/40厘米 递针顶、递针分界（中/左分界）。
+_CAP_REDUCTION_SCOPE = frozenset({
+    ("递顶", "35厘米"),
+    ("递顶", "40厘米"),
+    ("中分界", "35厘米"),
+    ("中分界", "40厘米"),
+    ("左分界", "35厘米"),
+    ("左分界", "40厘米"),
+})
+
+# 发块：全递针 12*14/14*16/15*17、u型递针 13*15/14*16/16*18（不限发长）。
+# 递针旋与全递针同价同规格，一并覆盖。
+_PIECE_REDUCTION_SIZES = {
+    "全递针": frozenset({"12*14", "14*16", "15*17"}),
+    "递针旋": frozenset({"12*14", "14*16", "15*17"}),
+    "U型递针": frozenset({"13*15", "14*16", "16*18"}),
+}
+
 
 _FULL_NEEDLE_ROWS = {
     "9*14": (840, 960, 1040, 1290),
@@ -460,6 +479,28 @@ def iter_base_price_seeds(
         yield *persistence_key, price
 
 
+def _piece_craft_size(craft: str, size: str | None) -> tuple[str, str] | None:
+    if size:
+        return craft, size
+    return COMBINED_PIECE_CRAFT_SIZE.get(craft)
+
+
+def in_member_reduction_scope(
+    *, product_type: str, craft: str, length: str, size: str | None = None
+) -> bool:
+    """立减是否命中海报白名单；范围外会员一律无优惠。"""
+
+    if product_type == "cap":
+        return (craft, length) in _CAP_REDUCTION_SCOPE
+    if product_type != "piece":
+        return False
+    pair = _piece_craft_size(craft, size)
+    if pair is None:
+        return False
+    piece_craft, piece_size = pair
+    return piece_size in _PIECE_REDUCTION_SIZES.get(piece_craft, frozenset())
+
+
 def resolve_discount(
     *,
     product_type: str,
@@ -469,7 +510,7 @@ def resolve_discount(
     membership_level: str | None,
     size: str | None = None,
 ) -> DiscountResult:
-    """按固定会员价优先、普通立减其次的顺序计算成交价。"""
+    """固定会员价优先；立减仅限海报范围；其余规格会员也按原价。"""
 
     if membership_level is not None and membership_level not in MEMBERSHIP_REDUCTIONS:
         raise PricingConfigurationError(f"未知会员等级：{membership_level!r}")
@@ -494,6 +535,14 @@ def resolve_discount(
             "member_fixed",
         )
 
+    if not in_member_reduction_scope(
+        product_type=product_type,
+        craft=craft,
+        length=length,
+        size=size,
+    ):
+        return DiscountResult(original, original, Decimal("0.00"), "base_price")
+
     final_price = _money(original - reduction)
     if final_price < 0:
         raise PricingConfigurationError("会员立减后价格低于 0，请检查原始价或优惠配置")
@@ -505,14 +554,16 @@ def resolve_discount(
     )
 
 
-PRICING_VERSION = "domestic-member-v1"
+PRICING_VERSION = "domestic-member-v2"
 
 
 def pricing_rule_label(
     result: DiscountResult, membership_level: str | None
 ) -> str:
     if result.pricing_rule == "base_price":
-        return "非会员原价"
+        if membership_level is None:
+            return "非会员原价"
+        return f"{MEMBERSHIP_SHORT_LABELS[membership_level]}原价（该规格无优惠）"
     if result.pricing_rule == "manual_override":
         return "手工改价"
     if result.pricing_rule == "legacy_manual":

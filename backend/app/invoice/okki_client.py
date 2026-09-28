@@ -143,6 +143,21 @@ def push_order(db: Session, payload: dict, *, before_send=None) -> dict:
     return data
 
 
+def push_outbound(db: Session, payload: dict, *, before_send=None) -> dict:
+    """Create one pending outbound; an ambiguous result must never be replayed."""
+    for force in (False, True):
+        token = ensure_access_token(db, force=force)
+        if before_send:
+            before_send()
+        data = _post_json("/v1/invoices/outbound/push", token, payload, context="分批出库单创建")
+        if data is not None:
+            if (not isinstance(data, dict)
+                    or not str(data.get("outbound_invoice_id") or "").isdigit()):
+                raise OkkiOutcomeUncertainError("小满分批出库响应缺少出库单 ID，请核对原单")
+            return data
+    raise OkkiApiError("小满分批出库鉴权被拒绝，请检查应用权限")
+
+
 def query_companies_by_name(db: Session, word: str, *, count: int = 20) -> list[dict]:
     """GET /v1/company/query — 客户查重（search_field=name：公司名/简称模糊）。
 
@@ -185,6 +200,22 @@ def get_outbound_info(db: Session, outbound_invoice_id: str) -> dict:
         if data is None:
             raise OkkiApiError("OKKI 出库单详情拉取失败：刷新凭证后仍被拒绝")
     return data or {}
+
+
+def find_outbound_by_serial(db: Session, serial_id: str) -> dict | None:
+    """Only the observed exact 200/code=404 response proves a serial is unused."""
+    params = {"serial_id": serial_id}
+    for force in (False, True):
+        token = ensure_access_token(db, force=force)
+        data = _get_json('/v1/invoices/outbound/info', token, context='出库单号查重',
+                         params=params, allow_missing=True)
+        if data is False:
+            return None
+        if data is not None:
+            if not isinstance(data, dict) or not data.get('outbound_invoice_id') or data.get('serial_id') != serial_id:
+                raise OkkiApiError('小满出库单号查重结果无效，停止改号')
+            return data
+    raise OkkiApiError('小满出库单号查重鉴权失败，停止改号')
 
 
 def _post_json(path: str, token: str, payload: dict, *, context: str) -> dict | None:
@@ -237,7 +268,10 @@ def _post_json(path: str, token: str, payload: dict, *, context: str) -> dict | 
     return body.get("data") if isinstance(body.get("data"), dict) else body
 
 
-def _get_json(path: str, token: str, *, context: str, params: dict | None = None) -> dict | None:
+def _get_json(
+    path: str, token: str, *, context: str, params: dict | None = None,
+    timeout: float = REQUEST_TIMEOUT, allow_missing: bool = False,
+) -> dict | bool | None:
     """GET with Bearer auth. Returns payload data; None means auth failure
     (caller may retry with a fresh token); other failures raise.
     """
@@ -247,7 +281,7 @@ def _get_json(path: str, token: str, *, context: str, params: dict | None = None
         resp = httpx.get(
             f"{_base_url()}{path}",
             headers={"Authorization": f"Bearer {token}"},
-            timeout=REQUEST_TIMEOUT,
+            timeout=timeout,
             **extra,
         )
     except httpx.HTTPError as exc:
@@ -258,6 +292,9 @@ def _get_json(path: str, token: str, *, context: str, params: dict | None = None
     if resp.status_code == 401:
         return None
     body = _parse_json(resp, context=context)
+    if (allow_missing and resp.status_code == 200 and body.get('code') == 404
+            and body.get('message') == 'Not Found Resource' and not body.get('data')):
+        return False
     if body.get("error") == "access_denied":
         return None
     if resp.status_code != 200 or (body.get("code") not in (None, 0, 200)):

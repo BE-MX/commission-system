@@ -17,6 +17,7 @@
     </div>
     <form class="inspection-filters" @submit.prevent="handleSearch">
       <label>验货单号 / 客户<el-input v-model="searchForm.keyword" clearable placeholder="输入单号或客户名称" /></label>
+      <label>订单 ID<el-input v-model="searchForm.orderId" clearable placeholder="输入小满订单 ID" /></label>
       <label>提交检验人员<el-input v-model="searchForm.submittedByName" maxlength="100" clearable placeholder="输入提交人姓名" /></label>
       <label>对应业务员<el-input v-model="searchForm.salespersonName" maxlength="100" clearable placeholder="输入业务员姓名" /></label>
       <label>提交日期起<el-date-picker v-model="searchForm.dateFrom" type="date" value-format="YYYY-MM-DD" :disabled-date="disableFromDate" placeholder="选择开始日期" /></label>
@@ -27,7 +28,7 @@
       <p>共 {{ total }} 张验货单</p>
       <el-empty v-if="!loading && !list.length" description="没有符合条件的验货单" />
       <article v-for="row in list" :key="row.id" class="inspection-result">
-        <h2>{{ row.outbound_no }}</h2><p>{{ row.customer_name }}</p>
+        <h2>{{ row.outbound_no }}</h2><p>{{ row.customer_name }}</p><p>订单 ID：{{ row.order_id || '—' }}</p>
         <dl><dt>提交人</dt><dd>{{ row.submitted_by_name || '—' }}</dd><dt>提交日期</dt><dd>{{ row.submitted_at || '—' }}</dd><dt>业务员</dt><dd>{{ row.salesperson_name || '未匹配' }}</dd><dt>照片</dt><dd>{{ row.photo_count }} 张</dd></dl>
         <div class="result-actions"><GlassButton variant="primary" @click="openDetail(row)">查看验货单</GlassButton><GlassButton :loading="downloading" @click="downloadPdf(row)">下载 PDF</GlassButton></div>
       </article>
@@ -37,6 +38,7 @@
     <div class="table-card inspection-panel inspection-desktop-list">
       <el-table :data="list" v-loading="loading" border class="list-table" style="width: 100%">
         <el-table-column prop="outbound_no" label="验货单号" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="order_id" label="订单 ID" min-width="155" show-overflow-tooltip><template #default="{ row }">{{ row.order_id || '—' }}</template></el-table-column>
         <el-table-column prop="customer_name" label="客户名称" min-width="130" show-overflow-tooltip />
         <el-table-column label="照片数" min-width="80" align="right">
           <template #default="{ row }">{{ row.photo_count }}</template>
@@ -69,6 +71,7 @@
       <template v-if="detail">
         <el-descriptions :column="2" border class="detail-descriptions">
           <el-descriptions-item label="出库单号">{{ detail.outbound_no }}</el-descriptions-item>
+          <el-descriptions-item label="订单 ID">{{ detail.order_id || '—' }}</el-descriptions-item>
           <el-descriptions-item label="客户名称">{{ detail.customer_name }}</el-descriptions-item>
           <el-descriptions-item label="提交人">{{ detail.submitted_by_name }}</el-descriptions-item>
           <el-descriptions-item label="提交时间">{{ detail.submitted_at }}</el-descriptions-item>

@@ -21,7 +21,7 @@ def calculate(db, invoice, snapshot, *, exclude_receipt=None, exclude_intent=Fal
         registered += value
         if str(row.get("collect_status")) == "1":
             effective += value
-    local = db.query(Receipt).filter(Receipt.invoice_id == invoice.id, Receipt.status == "active").all()
+    local = db.query(Receipt).filter(Receipt.invoice_id == invoice.id, Receipt.status == "active", Receipt.purpose != "freight").all()
     for row in local:
         if row.currency != invoice.currency or row.customer_id != invoice.customer_id:
             raise ValueError("方舟回款与订单身份不一致，请核对")
@@ -60,3 +60,45 @@ def calculate(db, invoice, snapshot, *, exclude_receipt=None, exclude_intent=Fal
 def ensure_available(summary, amount):
     if amount > Decimal(summary["remaining_amount"]):
         raise ValueError("本次回款超过可登记余额，请刷新金额；待同步、失败和待核对单仍占用余额")
+
+
+def calculate_target(db, target, snapshot, *, exclude_receipt=None):
+    """Freight has its own order cap; it never consumes the goods invoice cap."""
+    binding = [target.id, target.remote_order_id, str(target.amount),
+               target.currency, target.customer_id, target.version]
+    if snapshot.get("target_binding") != binding:
+        raise ValueError("运费目标身份已变化，请重新核验余额")
+    local = db.query(Receipt).filter(Receipt.receivable_id == target.id,
+        Receipt.status == "active").all()
+    by_remote = {str(row.xiaoman_receipt_id): row for row in local if row.xiaoman_receipt_id}
+    registered = effective = Decimal(0)
+    seen = set()
+    for row in snapshot["rows"]:
+        identity = str(row.get("cash_collection_id") or "")
+        if not identity or identity in seen or identity not in by_remote:
+            raise ValueError("运费目标存在未分配或重复的远端回款，请先核对")
+        seen.add(identity)
+        local_row = by_remote[identity]
+        if (row.get("currency") != target.currency
+                or remote.money(row.get("amount")) != remote.net_amount(local_row)):
+            raise ValueError("运费目标远端回款金额或币种已变化")
+        registered += local_row.amount
+        if str(row.get("collect_status")) == "1":
+            effective += local_row.amount
+    for row in local:
+        if (row.customer_id != target.customer_id or row.currency != target.currency
+                or row.xiaoman_order_id != target.remote_order_id):
+            raise ValueError("运费回款目标身份不一致")
+        if row.xiaoman_receipt_id:
+            if row.xiaoman_receipt_id not in seen or row.sync_status == "uncertain":
+                raise ValueError("运费远端回款缺失或待核对")
+        elif row.id != exclude_receipt:
+            registered += row.amount
+    remaining = Decimal(target.amount) - registered
+    if remaining < 0:
+        raise ValueError("运费目标回款已超额，请核对")
+    fingerprint = {"target": binding, "remote": sorted(seen),
+        "local": sorted((row.id, row.version, row.sync_status, str(row.amount)) for row in local)}
+    return {"registered_amount": str(registered), "effective_amount": str(effective),
+            "remaining_amount": str(remaining), "currency": target.currency,
+            "version": hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest()}

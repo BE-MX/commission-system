@@ -310,7 +310,7 @@ def preview_invoice_import(
 @router.post("/import/screenshot/preview", summary="Recognize and preview one OKKI order screenshot")
 async def preview_invoice_screenshot(
     image: UploadFile = File(...),
-    order_type: str = Query("stock", pattern="^(stock|production)$"),
+    order_type: str = Query("stock", pattern="^(stock|production|presale)$"),
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("invoice:write")),
 ):
@@ -748,8 +748,9 @@ def list_invoices(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     keyword: str | None = Query(None),
+    order_id: str | None = Query(None, pattern=r"^[1-9][0-9]*$", max_length=64),
     status: str | None = Query(None),
-    order_type: str | None = Query(None, pattern="^(stock|production)$"),
+    order_type: str | None = Query(None, pattern="^(stock|production|presale)$"),
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("invoice:read")),
 ):
@@ -762,7 +763,7 @@ def list_invoices(
             # fail-closed：身份解析不出时宁可拒绝，不能落到"不过滤=全量"
             raise HTTPException(403, "无法确认用户身份，禁止访问发票列表")
     items, total = service.list_invoices(
-        db, page=page, page_size=page_size, keyword=keyword, status=status, order_type=order_type,
+        db, page=page, page_size=page_size, keyword=keyword, order_id=order_id, status=status, order_type=order_type,
         created_by=created_by if _can_read_all(current_user) else None,
         viewer_user_id=None if _can_read_all(current_user) else viewer_user_id,
     )
@@ -773,7 +774,7 @@ def list_invoices(
 
 @router.get("/invoices/suggest-no", summary="Suggested invoice number for a new invoice")
 def suggest_invoice_no(
-    order_type: str = Query("stock", pattern="^(stock|production)$"),
+    order_type: str = Query("stock", pattern="^(stock|production|presale)$"),
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("invoice:write")),
 ):
@@ -788,6 +789,25 @@ def check_invoice_no(
     _user=Depends(require_permission("invoice:write")),
 ):
     return ok({"available": not service.invoice_no_exists(db, invoice_no.strip(), exclude_id=exclude_id)})
+
+
+@router.get("/invoices/previous-no", summary="Previous invoice number of the same salesperson and order type")
+def previous_invoice_no(
+    sales_user_id: int = Query(..., gt=0),
+    order_type: str = Query(..., pattern="^(stock|production)$"),
+    exclude_id: int | None = Query(None, description="编辑既有发票时排除自身"),
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("invoice:write")),
+):
+    return ok({"previous_invoice_no": service.previous_invoice_no(db, sales_user_id, order_type, exclude_id=exclude_id)})
+
+
+@router.get("/invoices/merchandiser-options", summary="Active users with the 跟单员 role")
+def merchandiser_options(
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("invoice:write")),
+):
+    return ok({"items": delegation_service.list_merchandisers(db)})
 
 
 def _write_invoice_or_400(db: Session, write):
@@ -931,7 +951,11 @@ def sync_invoice(
         raise HTTPException(404, "发票不存在")
     _ensure_invoice_visible(db, invoice, current_user)
     from app.invoice.sync_coordinator import synchronize
-    return ok(synchronize(db, invoice, _user_id(current_user)))
+    result = synchronize(db, invoice, _user_id(current_user))
+    if result.get('ok'):
+        from app.invoice import outbound_followup_service
+        result['outbound_sync'] = outbound_followup_service.safely_run(db, invoice, current_user)
+    return ok(result)
 
 
 class ResolveSyncUncertainPayload(BaseModel):
@@ -1163,6 +1187,14 @@ def run_linked(invoice_id: int, identity: str, recheck: bool = False, db: Sessio
         raise HTTPException(404, "关联同步记录不存在")
     try:
         row = linked.run(db, identity, _user_id(user), recheck=recheck)
+        if (row.status in {'done', 'manual'} and row.steps['order']['status'] == 'done'
+                and row.steps['outbound']['status'] != 'done' and invoice.linked_sync_id is None):
+            from app.invoice import outbound_followup_service
+            outbound = outbound_followup_service.safely_run(db, invoice, user)
+            row.steps = {**row.steps, 'outbound': outbound}
+            row.status = ('done' if all(step['status'] == 'done' for step in row.steps.values())
+                          else 'manual')
+            db.commit()
     except ValueError as exc:
         db.rollback()
         raise HTTPException(409, str(exc)) from exc

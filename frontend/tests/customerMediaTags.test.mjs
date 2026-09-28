@@ -4,7 +4,6 @@ import {
   flattenSelection,
   groupTagsByDimension,
   selectionFromTags,
-  unionTags,
 } from '../src/views/design/customer-media/customerMediaTags.js'
 import { webkitPathSegments } from '../src/views/design/customer-media/droppedFiles.js'
 
@@ -30,16 +29,6 @@ test('groupTagsByDimension emits the tags_json contract and dedupes values', () 
     { dimension_id: 1, tag_value_ids: [11, 12] },
     { dimension_id: 2, tag_value_ids: [21] },
   ])
-})
-
-test('unionTags merges folder/batch/per-file sources, dedupes and keeps single-select to one value', () => {
-  const folder = [{ dimension_id: 2, tag_value_id: 21 }, { dimension_id: 1, tag_value_id: 11 }]
-  const batch = [{ dimension_id: 2, tag_value_id: 22 }]
-  const extra = [{ dimension_id: 1, tag_value_id: 11 }, { dimension_id: 1, tag_value_id: 12 }]
-  const merged = unionTags([folder, batch, extra], dimensions)
-  assert.deepEqual(merged.map(t => [t.dimension_id, t.tag_value_id]), [[2, 21], [1, 11], [1, 12]])
-  assert.equal(merged.find(t => t.tag_value_id === 11).value, '婚纱')
-  assert.equal(merged.find(t => t.tag_value_id === 11).dimension_label, '客户标签')
 })
 
 test('selection round-trip: tags -> picker selection -> flat tags with labels', () => {

@@ -1,6 +1,6 @@
 """发票首推成功后自动生成 OKKI 出库单的任务队列测试。
 
-覆盖：首推入队 / 编辑重推不入队 / 部分受理不入队 / 非标合并行落 skipped /
+覆盖：首推入队 / 编辑重推唤醒等待库存 / 部分受理不入队 / 非标合并行落 skipped /
 同 order_id 幂等 / 总开关关闭 / 对账补入队窗口口径。okki_client.push_order
 一律 monkeypatch，不打真实接口。
 """
@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.auth.models import ArkUser, ArkUserExternalBinding
-from app.invoice import okki_client, outbound_task_service, product_service, xiaoman_service
+from app.invoice import okki_client, outbound_followup_service, outbound_task_service, product_service, xiaoman_service
 from app.invoice.models import CustomProduct, Invoice, InvoiceItem, InvoiceSyncLog, OkkiOutboundTask, XiaomanSettings
 from app.invoice.time_utils import beijing_now
 
@@ -217,7 +217,7 @@ def test_backfilled_custom_lines_still_enqueue_pending(db, monkeypatch, no_recon
 
 
 def test_edit_repush_does_not_enqueue(db, monkeypatch, no_reconcile):
-    # 编辑重推（action=update）：出库单首张已建，数量变化走 --remaining 人工补
+    # 编辑重推（action=update）：不为已建单创建新任务
     _seed_settings(db)
     _seed_binding(db)
     invoice = _make_invoice(db, xiaoman_order_id="424242")
@@ -235,6 +235,114 @@ def test_edit_repush_does_not_enqueue(db, monkeypatch, no_reconcile):
 
     assert result["ok"] is True
     assert _tasks(db) == []
+
+
+@pytest.mark.parametrize("regeneration", [False, True])
+def test_successful_edit_requeues_waiting_stock_for_current_order(db, monkeypatch, no_reconcile, regeneration):
+    _seed_settings(db)
+    _seed_binding(db)
+    invoice = _make_invoice(db, xiaoman_order_id="424242")
+    invoice.items.append(_stock_item(xiaoman_unique_id="111", quantity=2))
+    db.flush()
+    old_log = InvoiceSyncLog(invoice_id=invoice.id, action="update", success=1)
+    db.add(old_log)
+    db.flush()
+    task = OkkiOutboundTask(invoice_id=invoice.id, order_id="424242", status="waiting_stock",
+                            reason=(f"regenerate:{old_log.id} " if regeneration else "") + "Insufficient warehouse stock",
+                            attempts=5, last_error='{"shortages":[{"sku_id":"old-sku"}]}')
+    db.add(task)
+    db.commit()
+
+    monkeypatch.setattr(okki_client, "push_order", _fake_push_stock_only)
+    result = xiaoman_service.sync_invoice(db, invoice)
+    assert result["ok"] is True
+    db.commit()
+    db.refresh(task)
+    newest = db.query(InvoiceSyncLog).filter_by(invoice_id=invoice.id).order_by(InvoiceSyncLog.id.desc()).first()
+    assert task.status == "pending"
+    assert task.attempts == 0
+    assert task.last_error is None
+    assert task.reason == (f"regenerate:{newest.id}" if regeneration else None)
+    monkeypatch.setattr(outbound_followup_service.remote, "read", lambda *_args: {"order_id": 424242})
+    monkeypatch.setattr(outbound_followup_service.linked_outbound_service, "find_related", lambda *_args: [])
+    monkeypatch.setattr(outbound_followup_service, "_stock_shortages",
+                        lambda *_args: pytest.fail("backend stock API must not block the queued task"))
+    assert outbound_followup_service.run(db, invoice, {"sub": "1", "permissions": [], "roles": []})["status"] == "pending"
+
+
+@pytest.mark.parametrize("status", ["running", "uncertain", "done", "skipped"])
+def test_successful_edit_does_not_requeue_other_outbound_states(db, monkeypatch, no_reconcile, status):
+    _seed_settings(db)
+    _seed_binding(db)
+    invoice = _make_invoice(db, xiaoman_order_id="424242")
+    invoice.items.append(_stock_item(xiaoman_unique_id="111"))
+    task = OkkiOutboundTask(invoice_id=invoice.id, order_id="424242", status=status,
+                            reason="preserve", attempts=3, last_error="preserve")
+    db.add(task)
+    db.commit()
+    monkeypatch.setattr(okki_client, "push_order", _fake_push_stock_only)
+
+    assert xiaoman_service.sync_invoice(db, invoice)["ok"] is True
+    db.commit()
+    db.refresh(task)
+    assert (task.status, task.reason, task.attempts, task.last_error) == (
+        status, "preserve", 3, "preserve")
+
+
+def test_incomplete_edit_does_not_requeue_waiting_stock(db, monkeypatch, no_reconcile):
+    _seed_settings(db)
+    _seed_binding(db)
+    invoice = _make_invoice(db, xiaoman_order_id="424242")
+    invoice.items.append(_stock_item())
+    task = OkkiOutboundTask(invoice_id=invoice.id, order_id="424242", status="waiting_stock",
+                            reason="Insufficient warehouse stock", attempts=4, last_error="old shortage")
+    db.add(task)
+    db.commit()
+    monkeypatch.setattr(okki_client, "push_order", lambda *args, **kwargs: {"order_id": 424242, "product_list": []})
+
+    result = xiaoman_service.sync_invoice(db, invoice)
+    assert result["ok"] is False and result["okki_accepted"] is True
+    db.refresh(task)
+    assert (task.status, task.attempts, task.last_error) == ("waiting_stock", 4, "old shortage")
+
+
+def test_waiting_stock_requeue_rolls_back_with_incomplete_invoice_finalize(db, monkeypatch, no_reconcile):
+    _seed_settings(db)
+    _seed_binding(db)
+    invoice = _make_invoice(db, xiaoman_order_id="424242")
+    invoice.items.append(_stock_item(xiaoman_unique_id="111"))
+    task = OkkiOutboundTask(invoice_id=invoice.id, order_id="424242", status="waiting_stock",
+                            reason="Insufficient warehouse stock", attempts=4, last_error="old shortage")
+    db.add(task)
+    db.commit()
+    monkeypatch.setattr(okki_client, "push_order", _fake_push_stock_only)
+
+    assert xiaoman_service.sync_invoice(db, invoice)["ok"] is True
+    assert task.status == "pending"
+    db.rollback()  # Simulate a later inventory-finalization failure.
+    db.refresh(task)
+    assert (task.status, task.attempts, task.last_error) == ("waiting_stock", 4, "old shortage")
+
+
+def test_edited_order_with_unbackfilled_custom_line_skips_old_stock_task(db, monkeypatch, no_reconcile):
+    _seed_settings(db)
+    _seed_binding(db)
+    custom = _make_custom_product(db, "new-custom-after-stock-wait")
+    invoice = _make_invoice(db, xiaoman_order_id="424242")
+    invoice.items.append(_stock_item(xiaoman_unique_id="111"))
+    invoice.items.append(_custom_item(custom.id))
+    task = OkkiOutboundTask(invoice_id=invoice.id, order_id="424242", status="waiting_stock",
+                            reason="Insufficient warehouse stock", attempts=4, last_error="old shortage")
+    db.add(task)
+    db.commit()
+    monkeypatch.setattr(okki_client, "push_order", _fake_push_with_merged)
+
+    assert xiaoman_service.sync_invoice(db, invoice)["ok"] is True
+    db.commit()
+    db.refresh(task)
+    assert task.status == "skipped"
+    assert task.reason == outbound_task_service.SKIP_REASON_GENERIC_MERGE
+    assert task.last_error is None
 
 
 def test_partial_accept_does_not_enqueue(db, monkeypatch, no_reconcile):

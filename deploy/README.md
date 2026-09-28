@@ -1,10 +1,12 @@
 # 统一部署入口
 
+OpenClaw、MCP、中继及配套同步已于 2026-09-26 统一到北京 `leshine.cloud`；后续新增 Agent 服务同样部署北京。部署归属、迁移入口、回滚和验证见 [Agent 服务部署](agent-cloud-migration.md)。出库发布与 DDL writer 必须使用本次主机调整后的部署器，旧新加坡 unit 已 mask。
+
 ## Windows 远程更新界面
 
 操作者电脑可运行 `ArkDeploy.exe`，通过办公室 SSH 由原 `deploy.bat` 完成全环境发布，显示逐项自检、固定候选版本与改动文件、真实组件进度、更新后健康检查及错误诊断。构建与使用见 [桌面更新中心](desktop/README.md)。该入口不新增公网服务，不绕过原迁移、锁与恢复规则；准备成功只代表候选就绪，完整更新及后检都有独立结果。
 
-桌面进度协议由 `desktop_events.py` 提供，只在带有效桌面 run id 的子进程中输出，普通命令行行为不变。桌面运行证据位于 `.deploy_state/desktop/`；断线恢复使用本轮 run id，不读取旧成功标记推断本轮结果。尚未完成办公室真实接入验证，首次使用需将本次部署器改动按正常流程集成到服务器。
+桌面进度协议由 `desktop_events.py` 提供，只在带有效桌面 run id 的子进程中输出，普通命令行行为不变。桌面运行证据位于 `.deploy_state/desktop/`；断线恢复使用本轮 run id，不读取旧成功标记推断本轮结果。办公室 SSH 与逐项只读自检已实测；进度协议安装、真实发布和 SSH 断线保活演练尚未完成，首次使用需将本次部署器改动按正常流程集成到服务器。
 
 `deploy.bat` 默认在办公室已安装 NSSM 服务的仓库运行。先在候选 worktree 准备源码、依赖、主站和 PM 制品，再切换办公室服务、北京后端和已登记的云静态站。完整目标清单见 `platforms.json`；未纳管服务和未开通域名会明确列出，不计作已更新。
 
@@ -16,6 +18,14 @@ deploy\deploy.bat --cloud-only --no-pull --prepare-only # 准备并校验，暂�
 deploy\deploy.bat --revision <full-commit-sha> --migration-credentials <protected-file> --prepare-only
 ```
 
+## 色卡工作台备份保留策略
+
+`deploy\deploy.bat --colorwork-backup-policy --prepare-only` 在北京只读核验候选策略与保留备份；去掉 `--prepare-only` 安装独立的 `ark-colorwork-backup-retention.timer` 并核验首次执行。该专项不发布业务代码、不重启应用，也不修改服务器受 Git 管理的文件。不得与普通发布参数混用。
+
+发布前 D1/R2 完整备份保持原流程。定时任务每小时检查一次（最多5分钟随机延迟，错过的执行会在开机后补跑），保留最近两份及当前成功恢复引用；因此受保护恢复点较老时可能保留超过两份。任务取得既有 `backend.lock`，仅在 `current.json`、`success.json` 都成功且一致、服务健康时清理。发布中跳过，失败或恢复异常时保留全部。保留备份必须通过 SQLite quick_check、R2对象/分片文件存在及大小检查；不把这些检查等同于完整恢复演练。
+
+仅能写 `.deploy_state/colorwork/backups`、`maintenance` 和部署锁文件；不清理运行 `data`、候选代码、迁移资料或前端版本。脚本固定在 `/usr/local/lib/ark-colorwork-backup-retention.py`，不随候选代码切换消失。安装有独立锁，先停timer并确认旧oneshot无在途进程，再更新；失败恢复原策略文件和timer基线。运行回执为 `maintenance/retention-outcome.json`（绑定唯一安装批次、实际脚本SHA和systemd InvocationID），排序/删除审计为 `maintenance/retention-last.json`；跳过执行不会冒用旧删除结果。完成的首次oneshot可能被systemd回收，安装不依赖其仍保留InvocationID属性，日志可按worker回执中的InvocationID查询。暂停与排障见 [运维手册](../docs/runbook.md)。
+
 ## COS 公网文件路由
 
 `deploy.bat --storage-routing-only <probes.json> --prepare-only` 仅准备五个入口的Nginx候选（两主域、北京平板IP、hair、video）并验证语法，不改变线上流量。去掉prepare-only前必须完成应用、schema、历史引用和域配置切换；探针JSON为各公开命名空间的真实已迁移文件URL相对路径列表，空列表仅允许准备。切换失败按站回滚，跨站已完成记录保留在`.deploy_state/storage-routing.json`。该入口只调整公开文件和封闭色块机器网关，办公室业务API、LAN上传归属与Scheduler保持原配置。
@@ -24,13 +34,13 @@ deploy\deploy.bat --revision <full-commit-sha> --migration-credentials <protecte
 
 ## OKKI 出库轮询器专项
 
-普通完整发布和 `--cloud-only` 现在都包含新加坡出库轮询器。脚本及 systemd 配置从本次候选源码取件，与应用绑定同一 revision；不再依赖另跑专项命令。发布成功回执包含出库制品摘要，缺少部署登记、准备失败、更新失败或版本核验不一致均阻断整体成功。
+普通完整发布和 `--cloud-only` 现在都包含北京出库轮询器。脚本及 systemd 配置从本次候选源码取件，与应用绑定同一 revision；不再依赖另跑专项命令。发布成功回执包含出库制品摘要，缺少部署登记、准备失败、更新失败或版本核验不一致均阻断整体成功。
 
 顺序为：准备所有制品 → 保存出库 timer 原始启用/运行状态并暂停、排空在途任务 → 迁移与应用/静态站切换 → 替换出库脚本并校验所需数据库字段 → 恢复 timer 原状态 → 核验线上摘要与调度状态 → 写整体成功标记。普通发布不会把原本停用或暂停的 timer 启用；未变化文件不替换。`--prepare-only` 不暂停服务、不切换代码；有待执行迁移时，新增字段检查延迟至激活阶段，激活前必须通过。
 
 独立维修仍可用 `deploy\deploy.bat --okki-outbound-only --prepare-only` 预检，去掉 `--prepare-only` 仅更新并启用该服务，不做应用发布或迁移。此专项入口显式启用调度，与普通发布保留原状态不同；存在未完成的协调发布时拒绝穿越其暂停边界。
 
-普通发布中途失败，出库可能保持暂停。先检查本机 `.deploy_state/publish-current.json` 的 `outbound` 阶段及新加坡 `.deploy-state/ark-outbound/release-current.json`，核实应用/schema状态后从同一本地发布目录、同一完整 revision 和发布范围重试；本地持久 `release_id` 与原调度基线会被保留。不同机器、发布范围、revision 或专项发布不能覆盖未完成的恢复记录，即使脚本摘要相同也不能接管；不要删除日志或直接启动旧脚本来绕过恢复。迁移自身失败仍遵循下方数据库恢复规则。
+普通发布中途失败，出库可能保持暂停。先检查本机 `.deploy_state/publish-current.json` 的 `outbound` 阶段及北京 `.deploy-state/ark-outbound/release-current.json`，核实应用/schema状态后从同一本地发布目录、同一完整 revision 和发布范围重试；本地持久 `release_id` 与原调度基线会被保留。不同机器、发布范围、revision 或专项发布不能覆盖未完成的恢复记录，即使脚本摘要相同也不能接管；不要删除日志或直接启动旧脚本来绕过恢复。迁移自身失败仍遵循下方数据库恢复规则。
 
 首次启用这个机制时，应从包含本修复的受管候选 `deploy.bat --live-root ... --revision ...` 启动：正在运行的旧部署器不会因为候选里有新代码而自动更换自身。其他不属于本仓库的独立服务仍逐项列为 `unmanaged_services / not_deployed`，不计入本次已更新范围。运行配置与单据防重规则见 [轮询器说明](okki_outbound_poller.md)。
 
@@ -56,6 +66,11 @@ deploy\deploy.bat --shipping-video-routing-only
 - 远程 Python 脚本和 JSON 请求通过 SSH 标准输入传递，命令参数保持短小，避免 Windows SSH 启动链截断长脚本。换机器或更新 Git 后先用 `--prepare-only` 验证连接和制品。
 - 默认 fetch 后只接收可快进的新提交；本地已审查提交领先远端时保留本地 HEAD，分叉时停止发布。无需为了部署先推送 main。
 - 维护窗口使用 `--revision` 固定审查过的完整 40 位提交 SHA；即使远端有更新也不改变本次候选，拒绝倒退或分叉。`--no-pull` 仅控制是否 fetch。
+
+遇到 `Deployment source is not a fast-forward; reconcile Git first` 时，在实际安装目录只读查看 `git log --left-right --oneline HEAD...@{upstream}`。生产独有的热修复应保留并集成回主线，候选必须同时包含生产 HEAD 和远端 main；不能用强制 reset 覆盖生产分支，`--no-pull` 只会继续使用旧 HEAD，并不能更新到远端新功能。合并前核对生产数据库 revision 和所有分支迁移图，避免两个分支各自新增同一编号造成 multiple heads。
+
+2026-09-22 实例：生产源码 `5ae1f07b` 已执行 `163_okki_presence_days`，远端 `698dd57f` 尚未包含该提交且新增了战报迁移。集成保留生产163，未上线的战报迁移顺延为 `164_battle_posters`、父163；从生产当前数据库仅执行164。修复合入并推送 main 后，可重跑统一入口，候选准备成功再切换。此处记录不代表修复已发布或迁移已执行。
+
 - 本地源码以内容及 Node 版本计算构建指纹；相同输入复用同一制品。扩展包缓存也复用，避免仅因打包时间变化导致全站重建。
 - 每个云目标一次计算 SHA-256 清单，变化文件打成一个包传输。未变文件零传输，不按单文件重复建立 SSH。
 - 制品全部校验后才切换。首次发布用 Linux `renameat2` 原子地将原 Nginx 根目录换成受管符号链接；Nginx 原配置与别名仍指向相同路径。
@@ -67,7 +82,7 @@ deploy\deploy.bat --shipping-video-routing-only
 
 2026-09-17 回款/公告补发：新加坡 `ark-okki-outbound-poller.timer` 已作为 `systemd_timer` writer 纳管。迁移前只停止计时器，等待对应 oneshot 为 inactive 且 MainPID=0（最多120秒），不强杀正在提交小满的任务；排空失败阻断DDL并按原基线恢复计时器。原来未运行的计时器不自动启用。迁移后仅恢复本次暂停的调度；原应用/PM2 writer 检查照常执行。配置中的外部出库轮询器存在时，遗漏此writer会直接阻断。
 
-生产菜单缺失排障先核对实际运行HEAD和静态入口；`publish-current.json` 的 failed 可能沿用此前版本/完成列表（预检在写新journal之前失败），不能据其中 completed 认定新版本已上线。9e5cd2dd 发布预检已复现旧writer清单不完整，办公室和北京仍为2609626f，schema最近成功记录154；修复后的候选需重新prepare再经授权完整发布155/156。
+生产菜单缺失排障先核对实际运行HEAD和静态入口；`publish-current.json` 的 failed 可能沿用此前版本/完成列表（预检在写新journal之前失败），不能据其中 completed 认定新版本已上线。2026-09-17 公告/回款已由固定候选 `dab19815` 完成155/156生产迁移，详见[发布记录](../docs/reports/2026-09-17-receipt-release-fix.md)。后续生产版本与迁移状态以部署日志和实时核查为准。
 
 办公室与北京共享 `commission_db`，每次发布都读数据库 revision，并检查发布代码的唯一 head 和迁移链。数据库已到目标则跳过 DDL；未知 revision、数据库领先、分叉均阻断。不会复制、覆盖或 downgrade 数据库。
 
@@ -94,6 +109,14 @@ deploy\deploy.bat --shipping-video-routing-only
 状态写入 `.deploy_state/migration-138-current.json`。若上次停留在迁移、验证或恢复阶段（含这些阶段失败），普通重跑会保留原记录并阻断，必须先根据原始 writer 基线检查恢复；不能把服务仍停着的新基线误报为成功。
 
 此历史专项入口仍遵守主线 `.deploy_state/schema-writers.json` 恢复保护：无 pending 也检查未完成记录，恢复与健康核验成功后才标记共享日志完成。候选由计划指定，不能与 `--revision`、`--cloud-only` 或 `--no-pull` 混用；不适用于 138 之后的迁移。
+
+### 164 → 167 订单字段紧急修复
+
+办公室应用已使用 `ark_invoices.merchandiser_id`，而共享生产库仍为 `164_battle_posters` 时，订单列表和出库打印会报 MySQL 1054。固定的迁移链是 `166_presale_settlement` → `167_invoice_merchandiser`；166 同时新增发运结算与回款账本表，并调整 `ark_receipts`。不可仅手工增加两列或修改版本号。
+
+专用入口 `deploy.bat --invoice-schema-only PLAN_JSON --prepare-only` 从受管候选执行预检；去掉 `--prepare-only` 才暂停登记的写入实例、运行两步 Alembic、验证订单两列并恢复原本运行的实例。计划固定安装根目录、候选源码与完整提交 SHA、NSSM 路径、两台应用当前提交和完整 `migration_writers` 清单；候选脚本锁定两份迁移文件的摘要，并只接受办公室 `491f5a62`、北京 `8939da1b`。DBA 凭据仍取安装目录受限文件。此入口不发布应用、前端或出库脚本；它使用独立 `migration-167-current.json` 记录并遵守共享 `schema-writers.json` 恢复门禁。任何应用版本变化都要重新审查，不应放宽固定版本检查。
+
+2026-09-24 首次执行 166 时，`ark_receipt_batch_attachments.attachment_id` 继承库默认 `utf8mb4_unicode_ci`，但所引用的 `ark_receipt_attachments.id` 使用 `utf8mb4_0900_ai_ci`，外键建表失败。四张新表已建且为空、版本仍为 164，五个 writer 保持停止，共享日志为 `failed-after-ddl`。修正后的迁移显式指定相同排序规则；从受管候选运行 `deploy.bat --recover-invoice-166 PLAN_JSON --prepare-only` 核对原始日志、实际结构及全部停止状态，去掉 `--prepare-only` 才在共享数据库锁下逐张清理这四张空表，重跑 166→167 并恢复原始 writer 基线。恢复入口保留原始日志和每步清理进度；其他迁移入口继续受共享恢复日志阻断。
 
 办公室 Windows 自带 OpenSSH 在 Python 子进程内发生过建立连接前卡住；已用同机 Git SSH 验证可运行。执行时可仅在当前进程 PATH 中将 `C:/Program Files/Git/usr/bin` 置于系统 OpenSSH 前，保留非交互认证与严格主机密钥校验，不修改系统 PATH。
 
@@ -300,3 +323,20 @@ deploy\deploy.bat --recover-colorwork-start-order PLAN_JSON
 先恢复北京后端/色块，再恢复外部writer并完成路由、静态发布。
 原始证据另存 `start-order-original-<revision>.json`，成功后才关闭恢复状态。
 此入口不适用于其他候选或未完成的DDL，不可用于绕过普通发布保护。
+
+
+## 168 客户标签排序规则事故恢复
+
+`deploy.bat --recover-migration-168 --revision <完整修复SHA> --no-pull --prepare-only` 预检，移除 `--prepare-only` 接续完整发布。旧安装入口不含此参数时，从同一固定候选的 `.deploy_state/sources/<SHA>/deploy/deploy.bat` 加 `--live-root D:/commission-system` 启动。
+
+仅接受2026-09-25原284c399b发布、release_id ed95cba16bf44357bbc6f08a9662011b、167→168失败记录和原五writer基线。原publish日志归档为recovery-168-original-publish.json，schema日志保留recovery_original。验证目标列/外键/索引/排序规则、167空目标表或168完整回填；共享锁内停止writers后正常Alembic升级，不stamp/删表/清日志。168已完成时跳过升级并复验完整性。
+
+仅本次未变化的出库工件在digest一致时沿用原revision/release_id完成被冻结的远端事务，主应用使用修复revision；通用writer恢复仅包含原running四项，timer由原事务恢复其active/enabled基线。准备阶段不激活服务，完成阶段按标准流程校验应用和静态站；任何失败保留证据，不自动启动不兼容旧代码。该入口不允许夹带其他业务变更或与其他专项参数混用。
+
+## 出库检验媒体统一办公室归属
+
+`--shipping-video-routing-only` 同时纳管整个 `/api/shipping-inspection` 与 `/api/mini/shipping-inspection` 模块。北京经验证 TLS 的新加坡 HTTPS 转发到办公室 8002 隧道；新加坡直达该隧道。原用户 Authorization/URI 保留，业务权限在办公室后端照常验证，禁止公开静态媒体和失败自动重试/缓存。具体上传规则先匹配：视频 101m，照片/其他模块请求 21m、300 秒超时，其他业务 API 不变。打印签名、扫描会话、上传、删除和读取均由同一后端处理，避免共享 DB 记录与两台机器私有文件分离。
+
+激活前核实现存媒体的实际存储、办公室后端版本/健康及云端已无独有媒体，再经同一入口 prepare-only、正式激活。本入口不迁移文件或修改数据库。候选渲染替换既有受管 shipping 块，发现未知块外 shipping 路由即拒绝；激活前检查配置摘要，失败恢复原配置，备份保留在各机 `/etc/nginx/.ark-backups/shipping-video/`。
+
+办公室已有独立的 exact `/api/mini/shipping-inspection/photos` 规则保留原文：21m、办公室 8002、120 秒超时。渲染器只允许该完整固定内容且仅出现一次；其他内容、重复规则或云端同类规则仍阻断。上述 300 秒、禁缓存/重试保证仅适用于本次受管规则。

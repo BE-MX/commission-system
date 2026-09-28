@@ -75,6 +75,8 @@ class TestSchedulerRegistration:
         monkeypatch.setattr(real_settings, "SCHEDULER_ENABLED", True)
         monkeypatch.setattr(real_settings, "SCHEDULER_TIMEZONE", "Asia/Shanghai")
         monkeypatch.setattr(real_settings, "WHATSAPP_AUTO_SYNC_ENABLED", True)
+        monkeypatch.setattr(real_settings, "OKKI_CLIENT_ID", "test-only")
+        monkeypatch.setattr(real_settings, "OKKI_CLIENT_SECRET", "test-only")
 
         from app.schedulers.registry import start_scheduler, shutdown_scheduler
         recovery = MagicMock()
@@ -119,6 +121,7 @@ class TestSchedulerRegistration:
                 "domestic_public_sea_daily",
                 "okki_outbound_reconcile",
                 "receipt_delivery",
+                "okki_outbound_delete_reconcile",
             }
             design_image = scheduler.get_job("design_image_queue")
             assert design_image.max_instances == 1
@@ -149,7 +152,7 @@ class TestSchedulerRegistration:
             daily = scheduler.get_job("festival_daily_report")
             daily_fields = {field.name: str(field) for field in daily.trigger.fields}
             assert daily_fields["hour"] == "17"
-            assert daily_fields["minute"] == "30"
+            assert daily_fields["minute"] == "0"
             assert daily.kwargs == {}
             festival_monitor = scheduler.get_job("festival_event_monitor")
             assert festival_monitor.misfire_grace_time == 60
@@ -158,7 +161,7 @@ class TestSchedulerRegistration:
             assert gmv_daily_fields["hour"] == "8"
             assert gmv_daily_fields["minute"] == "0,5,15,30"
             assert gmv_daily.max_instances == 1
-            for job_id, hour, minutes in [('battle_posters_noon', '13', '0,5,15'), ('battle_posters_afternoon', '17', '30,35,45')]:
+            for job_id, hour, minutes in [('battle_posters_noon', '13', '0,5,15'), ('battle_posters_afternoon', '17', '1,6,16')]:
                 poster = scheduler.get_job(job_id)
                 fields = {field.name: str(field) for field in poster.trigger.fields}
                 assert fields['hour'] == hour and fields['minute'] == minutes

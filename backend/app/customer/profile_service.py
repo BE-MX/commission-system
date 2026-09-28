@@ -182,6 +182,7 @@ class _Snapshot:
     assignments: tuple[dict, ...]
     orders: tuple[dict, ...]
     annotations: tuple[dict, ...]
+    revision_overlays: tuple[dict, ...]
     opportunities: tuple[dict, ...]
     actions: tuple[dict, ...]
 
@@ -572,9 +573,31 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
     } for row in order_rows]
 
     annotations = []
+    revision_overlays = []
     for row in logical_root_query(
         db, CustomerAnnotation, "annotation", customer.id,
     ):
+        if (
+            row.content_schema_version == "v2"
+            and isinstance(row.content_json, Mapping)
+            and row.content_json.get("revision_kind") == "profile_field_revision"
+            and row.status == "active"
+            and row.visibility in _SHARED_VISIBILITIES
+            and row.annotation_type in {"correction", "note"}
+        ):
+            content = dict(row.content_json)
+            revision_overlays.append({
+                "id": row.id,
+                "annotation_id": row.id,
+                "field_key": content.get("field_key"),
+                "value_type": content.get("value_type"),
+                "value": content.get("value"),
+                "reason": content.get("reason"),
+                "created_at": row.created_at,
+                "target_fact_id": row.target_fact_id,
+                "visibility_scope": row.visibility,
+                "data_classification": row.data_classification,
+            })
         if row.annotation_type == "do_not_contact":
             track_lineage("risks", row.policy_effective_at, row.revoked_at)
             if row.status == "active":
@@ -723,6 +746,7 @@ def _load_snapshot(db: Session, customer: CustomerAccount, now: datetime) -> _Sn
         assignments=tuple(assignments),
         orders=tuple(orders),
         annotations=tuple(annotations),
+        revision_overlays=tuple(revision_overlays),
         opportunities=tuple(opportunities),
         actions=tuple(actions),
     )
@@ -783,6 +807,78 @@ def _section_for_fact_key(fact_key: str) -> str:
     if fact_key.startswith("risk."):
         return "risks"
     return "quality"
+
+
+_REVISION_SECTION_MAP = {
+    "preference.expressed.color": ("preferences", "expressed"),
+    "preference.expressed.product_family": ("preferences", "expressed"),
+    "preference.expressed.model": ("preferences", "expressed"),
+    "preference.expressed.length": ("preferences", "expressed"),
+    "preference.expressed.delivery_window": ("preferences", "expressed"),
+    "preference.expressed.quantity": ("preferences", "expressed"),
+    "preference.expressed.price_range": ("preferences", "expressed"),
+    "profile.business_type": ("business", None),
+}
+
+
+def _revision_entry(overlay: dict) -> dict:
+    """Annotation v2 人工修订投影条目；不伪造 confirmed 事实。"""
+    created_at = overlay.get("created_at")
+    return {
+        "fact_id": None,
+        "fact_key": overlay.get("field_key"),
+        "value": overlay.get("value"),
+        "value_type": overlay.get("value_type"),
+        "fact_layer": "manual_revision",
+        "verification_status": "human_confirmed",
+        "confidence": 1.0,
+        "data_classification": overlay.get("data_classification") or "internal_business",
+        "visibility_scope": overlay.get("visibility_scope") or "customer_team",
+        "observed_at": _json_value(created_at) if created_at is not None else None,
+        "source": "manual_revision",
+        "annotation_id": overlay.get("annotation_id"),
+        "revision_kind": "profile_field_revision",
+        "reason": overlay.get("reason"),
+        "fact_fingerprint": None,
+    }
+
+
+def _apply_annotation_v2_overlay(profile: dict, overlays) -> dict:
+    """把 active 的 v2 人工修订投影为当前生效值（同字段新建覆盖旧建）。
+
+    原事实条目保留并标注 superseded_by_annotation_id；v1 correction 仍走
+    原有"仅抑制"语义；visibility=private 的备注在快照阶段已排除。
+    """
+    if not overlays:
+        return profile
+    newest: dict[str, dict] = {}
+    for overlay in sorted(
+        overlays,
+        key=lambda item: (item.get("created_at") or datetime.min, item.get("id") or 0),
+    ):
+        field_key = overlay.get("field_key")
+        if field_key in _REVISION_SECTION_MAP:
+            newest[field_key] = overlay
+    for field_key, overlay in newest.items():
+        section, subsection = _REVISION_SECTION_MAP[field_key]
+        entry = _revision_entry(overlay)
+        annotation_id = entry["annotation_id"]
+        if subsection is None:
+            business = dict(profile.get(section) or {})
+            business["business_type"] = entry
+            profile[section] = business
+            continue
+        section_value = dict(profile.get(section) or {})
+        entries = list(section_value.get(subsection) or [])
+        for index, item in enumerate(entries):
+            if item.get("fact_key") == field_key:
+                replaced = dict(item)
+                replaced["superseded_by_annotation_id"] = annotation_id
+                entries[index] = replaced
+        entries.insert(0, entry)
+        section_value[subsection] = entries
+        profile[section] = section_value
+    return profile
 
 
 def _build_profile(snapshot: _Snapshot, now: datetime):
@@ -1227,6 +1323,7 @@ def _build_profile(snapshot: _Snapshot, now: datetime):
         "recommended_actions": recommended_actions,
         "quality": quality,
     }
+    _apply_annotation_v2_overlay(profile, snapshot.revision_overlays)
     effective_fact_ids = {fact["id"] for fact in current_facts}
     evidence_fact_ids = sorted(_collect_fact_ids(profile) & effective_fact_ids)
 

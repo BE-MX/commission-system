@@ -1,0 +1,42 @@
+/* Standalone snapshot of DESIGN.md and frontend/src/styles/tokens.css.
+   Prototype-only additions stay here; production must use shared tokens. */
+:root {
+  --color-primary: #D4941C;
+  --color-primary-hover: #BB8218;
+  --color-primary-light: rgba(212,148,28,.08);
+  --color-gold: #F5CB5C;
+  --color-gold-soft: #FDF4DC;
+  --color-warning-text: #8B6914;
+  --sidebar-glass-from: #262a33;
+  --sidebar-glass-to: #1e2129;
+  --color-success: #2D9F6F;
+  --color-success-text: #1E7D50;
+  --color-success-bg: rgba(45,159,111,.08);
+  --color-danger: #DC3545;
+  --color-danger-text: #A93226;
+  --color-danger-bg: rgba(192,57,43,.08);
+  --color-info-text: #426490;
+  --color-info-bg: rgba(107,140,186,.1);
+  --text-primary: #1a1a2e;
+  --text-secondary: #4a5568;
+  --text-subtle: #697386;
+  --border-color: #e2e5ef;
+  --border-warm: #e5dfd6;
+  --card-bg: #ffffff;
+  --toolbar-bg: #fafbfe;
+  --table-row-hover: #fef9f0;
+  --dash-wash-from: #fdf8ec;
+  --dash-wash-mid: #f8f3ea;
+  --dash-wash-to: #f9efe7;
+  --sidebar-text: #c6cbd5;
+  --sidebar-active-bg: rgba(245,203,92,.13);
+  --card-shadow: 0 3px 18px rgba(78,61,30,.045);
+  --dialog-shadow: 0 24px 100px rgba(26,24,22,.2);
+  --overlay: rgba(26,24,22,.36);
+  --color-white: #ffffff;
+  --color-chart-secondary: #8b9d96;
+  --color-chart-tertiary: #cbc3b5;
+  --ease-out-strong: cubic-bezier(.23,1,.32,1);
+  --font-body: 'DM Sans', 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  --font-display: 'Outfit', 'Segoe UI', 'Microsoft YaHei', sans-serif;
+}

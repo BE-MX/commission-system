@@ -14,7 +14,7 @@
 
     <div class="context-bar">
       <span><small>客户</small>{{ customerName || customerId }}</span>
-      <span><small>订单类型</small>{{ orderType === 'production' ? '生产单' : '库存单' }}</span>
+      <span><small>订单类型</small>{{ orderType === 'presale' ? '预售单' : orderType === 'production' ? '生产单' : '库存单' }}</span>
       <span><small>币种</small>{{ currency }}</span>
     </div>
 

@@ -48,7 +48,7 @@ from app.domestic.schemas import (
     BasePriceUpdate,
     CraftRouteUpsert,
     CustomerAdjust,
-    CustomerCreate,
+    CustomerManagementCreate,
     CustomerInitialize,
     CustomerUpdate,
     DraftSubmitRequest,
@@ -306,7 +306,7 @@ def list_customers(
 
 @router.post("/customers", summary="新建客户")
 def create_customer(
-    payload: CustomerCreate,
+    payload: CustomerManagementCreate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_permission("domestic:write")),
 ):

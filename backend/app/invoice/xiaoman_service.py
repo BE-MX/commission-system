@@ -145,7 +145,7 @@ def sync_invoice(
         return {"ok": False, "message": message, "issues": []}
 
     if action == "create" and get_settings().OKKI_OUTBOUND_AUTO_ENABLED:
-        invoice.outbound_auto_requested = 1
+        invoice.outbound_auto_requested = int(invoice.order_type != "presale")
 
     # 第一段落库：order_id + 审计日志立即固化（此后任何回写失败都不会丢单号）
     if order_id:
@@ -189,9 +189,9 @@ def sync_invoice(
             .where(Invoice.id == invoice.id, Invoice.xiaoman_removed_lines == removed_snapshot)
             .values(xiaoman_removed_lines=None)
         )
-    # 首推成功 → OKKI 出库任务入队（仅 create；编辑重推由 --remaining 补出口径另行决策）。
-    # 尽力而为：异常只记日志，对账 job 兜底补齐，绝不阻断同步收尾。任务行随上层
-    # commit 落库；半成品 finalize 失败的整体回滚会连带丢弃它，不产生孤儿任务。
+    # 首推入队；编辑成功则唤醒已有的等待库存任务，由执行端按新版订单重新核库存。
+    # 只改 waiting_stock，已建单、执行中和结果不确定的任务不能重发。
+    # 状态转换随上层最终 commit 落库；半成品收尾失败时一起回滚。
     if action == "create" and get_settings().OKKI_OUTBOUND_AUTO_ENABLED:
         try:
             task = outbound_task_service.enqueue_outbound_task(db, invoice)
@@ -200,6 +200,8 @@ def sync_invoice(
         except Exception as exc:  # noqa: BLE001 - 出库触发失败不允许影响已受理的同步结果
             logger.warning("outbound task enqueue failed invoice=%s: %s", invoice.id, exc)
             print(f"[outbound] enqueue failed invoice={invoice.id}: {exc}", flush=True)
+    elif action == "update":
+        outbound_task_service.requeue_waiting_stock_after_invoice_sync(db, invoice)
     return {
         "ok": True,
         "message": "已同步到小满",
@@ -330,11 +332,11 @@ def resolve_sync_uncertain(
                 db.flush()
         except IntegrityError as exc:
             raise ValueError("该 OKKI 订单 ID 已绑定其他发票") from exc
-        action = "resolve_uncertain_bind"
+        action = "uncertain_bind"
         audit_payload = {"resolution": resolution, "xiaoman_order_id": order_id, "reason": note}
         invoice.sync_error = f"管理员已绑定 OKKI 订单 {order_id}，待重新同步核对：{note}"
     elif resolution == "confirm_not_created":
-        action = "resolve_uncertain_clear"
+        action = "uncertain_clear"
         audit_payload = {"resolution": resolution, "reason": note}
         invoice.sync_error = f"管理员确认 OKKI 未生成订单，已允许重试：{note}"
     else:

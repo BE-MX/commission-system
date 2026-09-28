@@ -33,6 +33,12 @@ class ActionUpdate(BaseModel):
     note: str | None = Field(None, max_length=1000)
     snoozed_until: datetime | None = None
     feedback: str | None = Field(None, max_length=32)
+    # PCW v2 版本前置（api-contracts 第 6 节版本矩阵）：携带任一版本字段即走新闭环
+    expected_action_version: int | None = Field(None, gt=0)
+    expected_work_item_version: int | None = Field(None, gt=0)
+    expected_occurrence_version: int | None = Field(None, gt=0)
+    work_item_transition: Literal["await_reply", "keep_open", "resolve"] | None = None
+    evidence_message_ids: list[int] = Field(default_factory=list, max_length=100)
 
     @model_validator(mode="after")
     def validate_followup(self):

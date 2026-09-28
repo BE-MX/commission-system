@@ -1,20 +1,125 @@
-## 2026-09-28 Windows 远程更新中心（Codex，本地交付，未接入生产）
+# 当前交接与待办
 
-- 工作树 `D:/commission-system/tmp/commission-system-deploy-console`，分支 `codex/windows-deploy-console`，基于 `698dd57f`。交付原生 Windows `ArkDeploy.exe`：操作者电脑经 SSH 控制办公室，办公室复用统一 deploy 入口更新受管环境。
+## 2026-09-28 Windows 远程更新中心（Codex，已授权合并推送，未部署）
+
+- 工作树 `D:/commission-system/tmp/commission-system-deploy-console`，分支 `codex/windows-deploy-console`，已整合远端 main `46a2f171`。交付原生 Windows `ArkDeploy.exe`：操作者电脑经 SSH 控制办公室，办公室复用统一 deploy 入口更新受管环境。
 - 已实现办公室/cloud/work 逐项只读自检、固定候选 SHA 与改动文件/迁移展示、真实组件事件进度、更新后检查、失败诊断与报告导出。新加坡到办公室隧道、匿名公网 API 鉴权契约、PM2 正 PID 等避免静态站可达但业务失效的误报。
 - SSH 请求无常驻监听服务；后台 worker 使用 breakaway + detached，持久 run id、互斥锁和本轮回执。重复请求不重发；缺失回执、启动陈旧、进程死亡或 PID 复用标为待核实并保留锁；切换连接清除旧报告与准备授权。独立审查发现的问题均已修复。
-- 本地 124 项部署回归通过（含无害真实后台假部署器、原有迁移/源码/出库契约）；原生 EXE 构建与窗体自测通过，演示界面已渲染检查。完整约定检查被 9 项既有前端 UI 基线过期阻断，同样在未修改主工作区复现，未修改基线。详细验证见 `deploy/desktop/README.md`。
-- 未合并、未推送、未更新生产服务。用户完成 `acciowork@127.0.0.1:2233` 到办公室22端口的公钥授权，本机私钥留在用户 `.ssh/ark_office`。程序已预填账号/地址/端口和本机密钥路径；BatchMode + 严格主机指纹校验已实测成功，办公室 Python 3.12.10。
+- 整合 main 后部署全套回归 477 passed、12 skipped、13 subtests passed；唯一失败 `test_storage_routing.py::test_bad_public_route_rolls_back` 的 mock `StopIteration` 在未加入本次改动的 main `46a2f171` 同样复现。新增桌面、发布流水线及迁移168恢复回归通过；原生 EXE 构建与5项窗体自测、以 `46a2f171` 为基点的完整约定检查通过。独立合并审查确认迁移168原发布版本/调度基线保护完整保留。详细使用及验证方法见 `deploy/desktop/README.md`。
+- 用户已授权合并推送；未更新生产服务。用户完成 `acciowork@127.0.0.1:2233` 到办公室22端口的公钥授权，本机私钥留在用户 `.ssh/ark_office`。程序已预填账号/地址/端口和本机密钥路径；BatchMode + 严格主机指纹校验已实测成功，办公室 Python 3.12.10。
 - 2026-09-28 16:23:51 北京时间，经实际 EXE Transport 执行只读检查39项：34通过、1必要项失败（桌面进度协议缺失）、1告警（旧okki-sync masked/inactive）、3未知（okki-inventory、办公室n8n、okki-shopify-cron最近作业）。办公室后端/连接器/数据库、北京后端/色块/Nginx、两站匿名API与HTTPS、新加坡到办公室隧道、已登记北京PM2及OpenClaw用户服务均通过。报告保存在本任务 `.deploy_state/live-probe.json`，交付包附副本。
-- 实机安装仓库 HEAD `9eae9be811dbc7ba052bf557a7e9e94303649b48`，干净且无发布/迁移恢复阻断。该服务器比本地任务基点新，包含服务迁北京及迁移168保护；接入进度协议前须按当前版本整合，不能用本任务旧基点的整个 publish.py 覆盖。PM2只读探针已按现用schema_release固定root HOME/PM2_HOME与sudo上下文，组件名称不再假定出库轮询器仍在新加坡。真实SSH断线后的后台保活演练仍未执行。
+- 实机安装仓库 HEAD `9eae9be811dbc7ba052bf557a7e9e94303649b48`，干净且无发布/迁移恢复阻断。本次已整合更新的 main，保留服务迁北京及迁移168保护；不得以旧基点部署器覆盖服务器。PM2只读探针已按现用schema_release固定root HOME/PM2_HOME与sudo上下文，组件名称不再假定出库轮询器仍在新加坡。真实SSH断线后的后台保活演练仍未执行。
 - 首次使用前，办公室部署器必须集成 `publish.py` 事件改动及 `desktop_events.py`；客户端会明确检查并阻断旧部署器，不自动覆盖服务器受管源码。原项目未跟踪 `.pnpm-store/` 未改动。
+
+## 2026-09-28 临时战报总览 500（本地已修复，未发布）
+
+- `codex/battle-report-500`：总览读取触发 MySQL 1267。近期加入的运费订单排除条件在 `commission_db.ark_receivables`（`utf8mb4_unicode_ci`）与 `lsordertest.okki_orders`（`utf8mb4_0900_ai_ci`）之间直接比较订单 ID、订单名和客户 ID；回款排除条件有同类问题。只在这些跨库比较的镜像侧显式使用方舟列的排序规则，不改表结构或业务数据。
+- 修复前以只读调用复现：战报详情成功、总览抛 1267；三个订单比较和回款订单 ID 比较的 `EXPLAIN` 均报 1267。修复后用共享 MySQL 只读调用验证战报 1 总览返回 22 名成员、异常数 0，回款排除查询 `EXPLAIN` 通过；受影响的 189 项隔离测试通过。增量约定检查无违规，全量检查仍被既有 13 项前端 UI 基线问题拦截。仍需按发布流程合并、部署并用登录页面复验，当前生产应用尚未切换到修复代码。
+
+## 2026-09-27 预售当前租户外部契约联调（开发中，未开放）
+
+- 分支 `codex/presale-full-flow`；亮哥授权在当前租户创建专用测试客户/订单/回款/出库单，测试订单暂用 API 账号默认归属。测试客户及单据均带 `ARK-PRESALE-CONTRACT-20260927-2149` 标识；原始一次性意图与回读回执保留在该任务 worktree 的 `tmp/presale-live-test/`，不要重复提交已有请求。
+- 已确认同一小满订单能生成两张各 1 件、不同编号且关联同一订单明细的待出库单；无商品的运费订单能单独收款。**小满也接受第三张使待出库合计超出订单数量**。亮哥授权清理后，四张待出库测试单及两张主测试订单均已按精确 ID 删除，并两轮有效列表确认不再活动；两张主单先从“已完成”改为“草稿”后才被删除。亮哥自行删除测试回款 `105815086705101`，本任务两次有效列表确认已消失；运费订单 `105815085959831` 改草稿后删除并确认不在有效列表；客户 `105815081003965` 从公海删除，详情返回 404 且有效列表无记录。均无实际银行转账或实物出库。
+- 完整 ID、金额、读回证据及待处理门槛见[当前租户联调报告](reports/2026-09-27-presale-live-contract.md)。业务已接受小满原生销售报表包含运费订单，须明确标注；亮哥表示已配置预售出库及关联回款写权限仅方舟 API 账号可用，**尚无非授权账号失败的独立验证**。任务分支已加入商品统计排除、运费目标冻结发送、目标级回款、分批待出库与显式确认实际出库、异常核对/明确失败重试。状态 2 回读及确认前现逐笔核验远端有效回款全集及状态 1 明细基线；已出库资金定时复核并公平轮转失败任务，下一批报价校验历史有效回款。40 项预售隔离回归、受影响领域 205 项通过。代码尚未合并/发布，生产预售开关及远端派发固定关闭。2026-09-28 的专用测试单已真实完成状态 1→2 编辑并按 ID 回读，明细 ID/数量/售价/单位/成本均未变化，随后出库单、订单、客户均清理并核验。仍缺方舟执行器端到端联调及非授权账号权限验证；迁移 170 已生成 MySQL 离线 SQL，但未在隔离 MySQL 执行。完成后方可开放按钮。
+- 共享只读业务镜像在 2026-09-28 00:00 增量同步后仍留有 18 行远端已删的测试客户/单据/明细，测试回款尚未进入 `synced_payment`。精确 ID 备份、校验和事务清理脚本已准备在本任务忽略目录；`CLAUDE.md` 只允许对业务镜像执行受审计回款日期单列修复，镜像清理须获专门例外授权或由维护方处理。
+
+## 2026-09-26 色卡工作台自动备份保留策略（线上已启用）
+
+- 用户授权调整自动备份策略。已通过 `deploy.bat --colorwork-backup-policy` 在北京安装 `ark-colorwork-backup-retention.timer`，enabled/active；每小时执行、最多5分钟随机延迟，首次手动执行completed且未额外删除（当前两份）。验收时下一次为北京时间19:04:25，主站与工作台公网健康200、数据库connected，磁盘35%，服务器Git tracked diff为空。
+- 发布前完整备份保持不变；清理保留最近两份加成功恢复引用。与发布器共用backend.lock，发布中跳过，失败/恢复异常/服务不健康则拒绝删除。检查保留SQLite、R2对象与分片文件存在/大小/分片合计；不等同完整恢复演练。只处理colorwork/backups，不处理data、checkouts、迁移中转和前端版本。
+- 安装独立互斥锁、停timer后检查在途oneshot，失败恢复策略文件及timer基线。首次线上执行完成但systemd已回收InvocationID属性，安装验收因无法核实而自动撤回；随后改成安装UUID+脚本SHA+worker InvocationID绑定回执，重新安装验收通过。最终制品SHA256 `8c3e4ffe9724d096522544e891617354235fca51b0f0ffce3aab31bd2129ee41`；执行InvocationID `cc11612738cb4db7aedbd5184a37de27`与journald对应。
+- 集成最新 main（基点 `5d954a06`）后部署回归435 passed / 12 skipped / 2 deselected（此前确认的storage mock用例）；最终专项新增旧安装/错误SHA/完成单元GC校验后，policy+retention为22 passed / 1 Windows symlink skipped。Linux隔离六项验证了安装锁、发布锁、symlink、缺失R2 blob、保留两份与重复noop。独立审查通过；约定检查仍有13项既有前端问题，覆盖本次提交的增量检查无违规；社媒服务16项回归通过。
+- 维护命令与暂停恢复流程见 [运维手册](runbook.md) 和 [部署说明](../deploy/README.md)。本地非敏感回执 `.deploy_state/colorwork-backup-retention/verified.json`；服务端 `colorwork/maintenance/retention-outcome.json` / `retention-last.json`。本次交付来自 `codex/agent-cloud-migration`，亮哥已授权合并并推送 `origin/main`；已安装策略独立于Git工作树和业务版本切换持续生效。
+
+
+## 2026-09-26 OpenClaw / Agent 服务迁到北京（线上完成）
+
+- 北京 `leshine.cloud / 154.8.205.162` 已运行原 OpenClaw 2026.6.6、钉钉监听、客户/库存 MCP、物流 MCP、社媒 MCP、中继、OKKI 同步/出库轮询，以及从源 crontab 精确搬迁的 10 项 OKKI/Shopify 任务。飞书通道 running；钉钉 service active 且持有已建立的 Stream TCP 连接，无新启动错误，未发送测试群消息。
+- 原 Node 22.22.1、Chrome 146 和全部配置、会话、游标、SQLite、MCP OAuth 状态已迁移。最终镜像在源调度停用、9 个 Node cron 任务空闲并冻结、所有服务 PID 归零后执行；三个 OpenClaw SQLite 与 relay SQLite quick_check 均为 ok。旧 gateway 30 秒停止超时产生 SIGKILL，确认 PID=0 后清除 failed 状态并完成两端数据检查，未把超时当正常停止。
+- 北京 `/inventory-mcp/sse`、`/shipment-mcp/sse`、`/mcp/social-customer/`、`/relay/ws` 已经 HTTPS 生效。库存/物流完整握手与实际只读调用成功；社媒五项真实只读查询通过，无/无效 token 返回401。中继新域、旧主域和旧 relay 子域均通过带认证 WebSocket 握手，WebSocket query token 路由禁用 access_log。
+- 新加坡旧单元 disable/mask、三项 PM2 注册移除、root Agent cron 为0；只保留旧域名到北京的 TLS 校验转发。北京全部开机启动已 enabled，服务端口仅回环。库存已自动完成两轮同步，出库 oneshot Result=success，Shopify HTTPS 可达（匿名请求401）；未额外触发同步或对外消息。
+- 后续 Agent 部署规则已写入北京 OpenClaw 的 AGENTS.md/TOOLS.md 和本分支 CLAUDE.md、platforms.json。发布器与 DDL writer 改为北京 ubuntu SSH + sudo 控制 root 进程；新版出库 `--prepare-only` 线上通过。旧源 mask 会阻断旧发布器复活任务。
+- 本次交付来自 `codex/agent-cloud-migration`，包含指向北京的部署器与清单，亮哥已授权合并推送；主应用后续发布使用集成后的版本，不能使用仍指向新加坡的旧发布器。操作与回滚见 [部署说明](../deploy/agent-cloud-migration.md)，非敏感执行回执在该 worktree `.deploy_state/agent-cloud-migration/`，源和目标受限恢复资料在 `/var/lib/ark-agent-migration/`。
+- 临时传输公钥授权、源私钥及中断的首次传输目录已清理；保留原始源数据与受限回滚证据。源历史 `okki-sync.service` 也已 mask，防止旧别名复活。
+- 部署回归 413 passed / 11 skipped；排除 `test_bad_public_route_rolls_back` 的2个用例（其中1项既有 mock 耗尽失败，相关文件未改，独立复现）。社媒测试16项通过，约定检查仍有13项既有前端问题。独立审查修复历史 restore_152 拓扑误用，旧日志保持原拓扑校验，实际恢复遇迁移后清单则在触碰服务前拒绝。
+- 北京迁移后磁盘曾剩余约8.54 GiB（95%已用）。9月26日18:16经用户明确授权，核验当前/成功恢复引用、两份保留备份的10个SQLite、R2结构及进程引用，并持有部署锁后，删除41份色卡工作台旧全量备份；保留最近两份（含当前恢复点），释放103.12 GiB，可用约111.67 GiB，使用率降至35%。主站及工作台公网健康均200、数据库connected，相关服务active。未删除运行数据、候选代码、迁移中转资料、前端历史版本；当次手工清理未修改自动策略，后续策略已上线（见本页上节）。逐目录删除回执在北京 `/var/lib/ark-storage-cleanup/20260926T181626/receipt.json`。
+
+按日期核对各条状态；历史交接另有[2026-09-17 快照](archive/handoff-2026-09-17.md)，本文件保留后续追加在旧条目末尾的记录，避免遗漏未完成事项。
+
+## 2026-09-26 预售本地契约模拟与截图入口隐藏（未上线）
+
+- 分支 `codex/invoice-presale-button`：订单发票页隐藏 AI 识别 OKKI 截图入口；预售按钮不可用的原因是默认关闭的发布开关，后端也会拦截建单。页面现在明确提示预售建单暂未开放。
+- 分批出库与独立运费目标已增加不发送的载荷构建器，并用两批次与异常身份/金额 fixture 模拟；没有隔离 OKKI 租户和隔离 MySQL，未进行真实联调，预售开关保持关闭。后续验证与发送器门槛见[本地适配报告](reports/2026-09-26-presale-local-adapter.md)。
+
+## 2026-09-26 结汇助手手机应用（代码交付，未部署）
+
+- 分支 `codex/forex-mobile`，新增 `/fx-settlement` 全屏入口与桌面安装配置；手机采用行情/测算/方案底部导航、触屏表单及方案卡片。桌面原入口保持双栏；复用现有资金计算和权限，无迁移。说明见 [结汇助手](requirements/2026-09-24-fx-settlement-advisor.md)。
+- 手机登录及会话过期回跳已补齐，不再误入素材 `/m/`；安装元数据与发货质检统一管理，已回归两个应用之间切换及普通页面恢复。
+- 构建、41 项 Node 回归、Chrome 320/390/430/768px 与 1440px 模拟接口流程通过。独立审查发现的折叠无效字段定位问题已修复并通过浏览器回归。截图和构建证据保留于主工作树 `tmp/fx-mobile-integration/`。
+- 完整约定检查被 13 项既有未改动页面的 UI 基线问题阻挡；增量规则单独核验。Git 巡检已运行 `--no-fetch`，仅本地快照。本轮按用户授权合并推送至 main；未部署，目标环境发布与真实手机安装验收仍待进行。
+
+## 2026-09-25 main 合并与全平台纳管目标发布
+
+- 已将 `codex/invoice-schema-repair`、`codex/shipping-media-owner`、`codex/project-knowledge-tidy` 合入 main 并推送；统一部署固定提交 `ce465a7241f76b14f0687dcd5155f6d5977a9c78`，发布回执 `release_id=d9d11923d9574fa7a6948458bcd6a838`、`status=succeeded`。办公室与北京后端、两站主前端已更新；PM 和客户素材静态站无文件变化；新加坡出库轮询器制品核验并恢复原启用状态。共享数据库从 168 升至 `169_pcw_customer_workbench`，`schema-writers=completed`；两站 `/health` 返回 `ok/connected`，首页 HTTP 200。
+- 发货质检媒体 Nginx 专项入口另经 prepare 后在办公室与北京激活，两个区域均返回 `activated`。普通源码发布不会自动切换该路由。
+- 客户工作台已随本次发布；会话 AI 摘要缺少异步消费者且开关默认关闭，前端暂不提供生成入口，API 在无可执行路径时返回 `AI_ANALYSIS_UNAVAILABLE`。待补队列消费者、预设和灰度验收后再开放。PCW 每日评估等门控仍按默认配置，不能将代码上线等同于业务启用。
+- `deploy/platforms.json` 所列独立服务（如 deputy-relay、openclaw、n8n）及待开通目标 hair/video、北京 PM 未由统一发布器管理，本次不计作已更新；各自需要明确权威源码和发布入口。
+
+## 2026-09-25 168迁移故障已恢复生产
+
+- 用户授权恢复后，经统一deploy.bat专项入口发布 `8bd7759f7df2bcb132438e68ca3f424b6f44162d`；办公室/北京Git版本一致，schema168，9组客户标签完整回填、缺失0。
+- 五个登记writer全部running；出库timer恢复原active/enabled；publish-current=succeeded，schema-writers=completed，原始事故证据保留。办公室本地与leshine.work/leshine.cloud健康接口均HTTP200、ok、connected。
+- 本地分支 `codex/migration168-collation` 基于原失败284c399b，仅追加SQL修复与恢复入口；已走生产专用deploy引用，现按用户授权合入本地开发main，包含8bd7759f且保留main已有169迁移；未向origin推送，本轮不再次部署。下次常规发布前需同步发布源，保持生产版本可快进。不要通过reset回退线上版本。
+- 103项部署定向测试、4项迁移测试、独立审查通过。全部署测试存在3项旧基线失败，约定检查存在13项既有前端问题。证据和边界见[恢复报告](reports/2026-09-25-migration168-collation.md)。
+
+## 2026-09-25 私海客户工作台 PCW（开发阶段记录；现已合并部署）
+
+- 开发阶段工作树 `D:/MyProgram/commission-system-kimi`，分支 `kimi/private-customer-workbench`（当时基于 main `401a2a42`）。按 `docs/requirements/private-customer-workbench-prototype/` 开发规格/API 契约/数据蓝图实现 PCW-01..06 后端与前端；后续已合并并于本日按上方发布记录部署。
+- 后端：迁移 `169_pcw_customer_workbench`（父 168——main 已占用 168_customer_media_customer_tags，合并前必须先 rebase 到最新 main 并验证单 head）；19 张新表 + `ark_customer_actions` 扩展 7 列（事项/行动轮次/原期限）；服务 `pcw_workitem/evaluation/overview/profile/conversation/order/monitor/maintenance_service`（事项跨日去重、结果+后续原子、409 版本前置、幂等回执、DNC/失权 404）；路由 `/api/customer-hub` 扩展 30+ 端点；权限种子 `customer_pcw:read/write`、`customer_profile:write`、`customer_campaign:admin`；调度 `pcw_daily_evaluation`（`PCW_EVALUATION_ENABLED` 门控默认关）。
+- 前端：今日工作台概览（四指标/扫描/水位）、客户工作区六页签、跟进日历、customerHubContract 扩展、customerWorkspaceController 纯逻辑。
+- 验证：后端 PCW 测试 123 项 + 存量 customer 回归 287 项全过；前端 node:test 14 项全过、`npm run build` 通过；`check_conventions` 仅剩 13 项既有 UI 基线债（本任务文件已清零）。独立审查（B1 迁移撞号、B2 幂等败者副作用、H1-H7 权限/死行动/行锁、M1-M7）已修复并回归。
+- 待办：AI 增量分析/监控真实抓取/邮件通知默认关闭（`PCW_AI_ANALYSIS_ENABLED`/`PCW_MONITOR_ENABLED`），需灰度与业务签定规则阈值；`projection_okki_order` 未接 `on_order_projected` 钩子（新单覆盖窗口需投影侧一行接线）。
+
+## 2026-09-24 结汇决策助手（Codex，合并推送，未部署）
+
+- 工作树 `D:/MyProgram/commission-system-codex-fx-settlement`，分支 `codex/fx-settlement-advisor`；现有系统登录页内新增「订单管理 → 结汇决策助手」，`fx_settlement:read/write` 分级授权。无迁移、不保存测算输入、不执行交易。
+- 中国银行现汇买入公开参考价与当日变化每分钟刷新，FRED H.10 日度历史提供 5/20 观测日趋势；报价与历史分别显示时间戳和过期状态。现需人民币、美元预留与压力预算由确定性计算约束，AI 只能选服务端候选 ID 与证据 ID。模型缺失或不可用回退规则测算。
+- 后端定向测试、前端导航/权限测试及构建通过；Chrome 模拟登录态 1440px/390px 计算、AI、变更提示与无横向溢出通过。目标环境数据源连通性、真实 AI 模型与银行成交价仍需发布前验收。完整约定检查有 13 项未改动页面的既有 UI 基线问题，增量检查无问题。
+- 另交付 [过去一年星期汇率 HTML 报告](reports/2026-09-24-usd-cny-weekday.html)：247 个 FRED 观测，原始均值周五最高；40 个完整周的同周比较周一偏高，但控制年度下行后差异很小，不作为固定星期交易信号。HTML 在 Chrome 桌面/390px 离线打开，无脚本错误或横向溢出。接口和口径见 [功能说明](requirements/2026-09-24-fx-settlement-advisor.md) 与 [API](api-reference.md)。本次合并推送仅交付代码，未部署；生产启用需管理员分配权限、确认文本模型预设，并走项目发布入口。
+
+## 2026-09-23 预售分批结算与汇总回款（本地开发，外部闭环阻塞）
+
+- 工作树 `D:/MyProgram/commission-system-codex-presale-settlement`，分支 `codex/presale-settlement`。已授权合并推送，本次不部署，未操作共享数据库。预售迁移顺延为166（父164），避开主目录未提交跟单员迁移165；后者集成时需重接已发布迁移链。
+- 已实现预售类型、固定主单金额、首款末批抵扣、结算报价与数量限制、同客户同币种汇总回款、共享凭证及原子分配、前后端权限和生命周期保护。独立审查所发现的余额/并发/凭证/历史读取问题已修复并复核。
+- **尚未实现完整出库执行闭环**，小满运费承载、GMV分类、超额控制与未知结果回查缺少隔离租户证据。预售开关默认关闭，外发能力固定关闭，不能开配置视为上线。需隔离小满及 MySQL 环境完成适配、实迁移、并发和浏览器联调。
+- API 与数据库文档已同步，测试与限制详见 [实现报告](reports/2026-09-23-presale-implementation.md)。不要将规格中的 ready/shipped 状态当成已实现的实际出库链路。
+
+## 2026-09-23 临时战报海报下午时段调整（本地分支，未部署）
+
+- 分支 `codex/battle-posters-1701` 将海报推送保持在北京时间 13:00，并把下午首次发送改为 17:01；失败重试为 17:06/17:16，避开采购节 17:00 任务。页面、配置 API 和运行中心名称同步更新。
+- 同日若已有旧版 17:00 投递记录，下午任务沿用原记录，防止发布当天重复发送；既有数据库迁移和历史记录不改。生产生效需发布后端与前端并重启调度实例。
+- 隔离 SQLite/mock 定向测试 `66 passed`，前端 `npm run build` 通过，增量约定检查 `[]`；完整约定脚本仍被 9 项未改动页面的既有 UI 基线差异阻断。`git_sweep.py --no-fetch` 已运行，仅为本地快照。独立审查无阻断；17:01 仅错开启动分钟，采购节 17:00 任务若运行超过一分钟仍可能与实际发送交叠。
+
+## 2026-09-23 临时战报海报白金主题（已授权合并推送，未部署）
+
+- 工作树 `D:/MyProgram/commission-system-codex-battle-poster-light`，分支 `codex/battle-poster-light`。底图改为白金/浅香槟金，保留原标题、口号、奔跑人物和公司标志；数据卡片改暖白底、深棕文字、古金数字，红绿进度使用浅轨道和深填充，白色时间刻度增加深色描边。
+- 仅调整版本化底图和海报 CSS；排序、金额、完成率、投递逻辑不变。历史图片缓存保持原图，新渲染使用新主题。用户已确认配色并授权合并 main、推送 origin/main；本轮不部署。
+- Chrome 离线渲染团队 4 组、个人 22 人示例，覆盖超额、领先、持平、落后、零进度；无金额/卡片横向溢出，0% 填充仍为零。预览与复现脚本交付至主目录 `tmp/battle-poster-light/`，全部为示例数据，不连接生产、不发送群消息。
+- `python -m pytest tests/test_battle_posters.py -q`：40 passed；`git diff --check` 通过。完整约定检查仍被 9 项未改动前端文件的既有 UI 基线过期阻断。已执行 `python scripts/git_sweep.py --no-fetch`，结果仅为本地快照。
+
+## 2026-09-22 生产部署源码分叉修复（Codex，合并推送交付）
+
+- 只读核验办公室 `D:/commission-system`：HEAD为已部署的 `5ae1f07b`，origin/main为 `698dd57f`，ahead 1 / behind 8；工作区干净，两项办公室服务运行。源码准备的快进保护正确阻止覆盖本地出库对账修复，本轮失败未进入服务切换。
+- 共享生产库版本为 `163_okki_presence_days`；远端未上线战报迁移也从162分出。候选保留已部署163逐字不变，将战报迁移改为 `164_battle_posters` 并以163为父；部署保护保持不变，不reset/stamp/downgrade。
+- 工作树 `D:/MyProgram/commission-system-codex-deploy-source-reconcile`，分支 `codex/deploy-source-reconcile`，合并两边提交并保留交接记录。用户已授权合并main并推送origin/main，本轮不部署、不执行生产迁移。
+- 业务与迁移81项、部署源码8项、两站迁移预检12项通过；验证从生产163仅执行164、已有快照证据保留。完整约定仍为9项既有UI基线过期，增量0项；详细现场与发布边界见[修复报告](reports/2026-09-22-deployment-source-divergence.md)。
 
 ## 2026-09-22 战报海报与跑赢时间（已授权合并推送，未部署）
 
 - 工作树 `D:/commission-system/tmp/commission-system-posters`，分支 `codex/battle-report-posters`，基于本地 main `2b79cd1e`。入口新增「临时战报 → 战报海报」，管理员配置工作日、预览/下载两图、开关定时推送和查看投递记录。
 - 已确认红金主题、原奔跑底图、右下角公司 LOGO；放弃团队 LOGO/头像。海报固定资产+服务端浏览器渲染，数据每次读取当前战报。按精确完成率排序，个人连续编号；总览也接入工作日时间刻度及红绿状态。
 - 计时默认用户确认的9/22、23、24、28、29、30，16:00累计16.66个百分点，最后100%。每天13:00/17:30两张海报共用一个冻结快照；明确失败仅重试未成功图，不确定结果不自动重发。专用群机器人，无默认群回退，开关默认关闭。
-- 迁移163（父162）增量加工作日/开关、独立时段投递表；SQLite实迁移保留旧数据、MySQL离线DDL、Alembic单head均通过。未连接/写入生产库、未执行真实发送。上线前需经统一部署入口执行迁移，配置专用群、公网图链和Chrome/Chromium+中文字体，再在已发布的全活动战报中启用。
+- 战报迁移在生产分叉修复中顺延为164（父163_okki_presence_days），增量加工作日/开关、独立时段投递表；原实施的SQLite实迁移保留旧数据、MySQL离线DDL验证通过。未执行战报生产迁移或真实发送。上线前需经统一部署入口执行迁移，配置专用群、公网图链和Chrome/Chromium+中文字体，再在已发布的全活动战报中启用。
 - 后端80项、前端Node8项通过；生产构建通过（既有大包/混合导入警告）；Chrome真实渲染22人、1绿21红的16:00演示通过，桌面/390px管理组件保存/预览/下载验证通过，无JS错误。图片使用之前授权读取的13:32真实数据快照，仅作渲染验证。
 - 独立审查修复MySQL REPEATABLE READ权限复核及最后重试中断的历史状态恢复；定向复核通过。没有进行真实MySQL多连接并发或钉钉实际送达测试。
 - 完整约定检查仍为main同样复现的9个既有UI基线过期；增量规则0项，diff空白检查通过。本轮整合远端main `b0dd3a55`，保留表格限高和连续排名；整合后80项后端、8项前端、生产构建与迁移163单head再次通过。用户已授权合并推送，不部署。
@@ -34,6 +139,12 @@
 - 共享下载调用方独立审查通过；增量约定检查0项、`git diff --check`通过。完整约定检查仍为9项已有UI行数基线过期，在未修改主目录复现；未调整基线。`git_sweep.py --no-fetch`已运行，仅本地远端快照。
 - 不涉及数据库、权限或后端API改动。此次为前端稳健性加固，未证明用户样本残留 `.crdownload` 的具体原因；本轮按用户授权合并 main 并推送 origin/main，不部署。
 - 合并前整合远端 `c0b0e80d`，保留双方交接记录；整合后18项下载/打印测试、Chrome三种下载场景、前端构建再次通过。增量约定0项，完整检查仍为上述9项已有UI基线问题。
+
+## 2026-09-22 出库删除对账快照限流修复（Codex，处理中）
+
+- 生产 `okki_outbound_delete_reconcile` 已写入 `lys-acciowork` 持久暂停策略；旧实例于14:39失败结束，14:50重启 `CommissionSystem` 后策略已由新调度器加载，健康检查恢复为 `ok/database=connected`。故障根因是把候选创建时间作为 `time_type=1` 更新时间下界，全历史双扫198页后又逐张补查约5232个镜像缺口。
+- 分支 `codex/okki-delete-reconcile`、Codex managed worktree。改为 `time_type=2` 精确创建日双快照；迁移163持久化日期覆盖、逐单列表版本/订单关联、待补查ID和失败状态。每轮8日、全局16次详情补查且单次15秒，逐张提交进度、跨轮续跑；版本变化只重查对应单，当天补查后再次双扫且只做替代单保护。完整覆盖前不登记删除，覆盖后仅处理本轮新鲜历史日期。
+- 待完成：扩大回归、独立审查、统一入口生产迁移/发布、确认任务保持暂停后恢复并观察首轮。
 
 ## 2026-09-22 临时战报（已授权合并推送，未部署）
 
@@ -395,6 +506,10 @@ Tessie-KC-0913 回款656失败原因已只读确认：方舟367.87与小满350.3
 任务 codex/shipping-video-capture，基于3799bda6。网页/小程序整单与明细增加直接拍视频入口，保留相册；拍摄确认后自动压缩上传。网页本地Canvas/MediaRecorder转1280最长边、24fps、目标1.8Mbps视频/96kbps音频MP4，保留声音；小程序wx.compressVideo medium，压缩完成后校验100MB限额。网页输出更大时保留已足够小的原MP4/MOV；不支持压缩或失败时提示重试，不静默跳过处理。未新增后端端点/依赖/迁移。网页压缩按视频时长近实时进行，必须保持前台；不承诺固定压缩率或自动保存一份到手机相册。
 
 压缩/上传期间锁定单据操作；网络重试复用压缩结果和原request_id，网页卸载中止处理；小程序卸载作废回调，避免离开后上传。18项流程/安装回归通过，主站构建通过。Chrome真实3秒带声音1080p测试视频4368514字节压到249051字节；ffprobe确认H264 1280x720+AAC，音量检测非静音。320px真实组件验证拍摄capture/相册选择/上传事件无横向溢出，证据任务tmp/video-capture。未代替iPhone真机原生相机、Safari音画及微信实际压缩验收。独立审查发现的卸载后继续上传已补防护和测试。默认约定门禁10项既有UI债务，本次增量另验。实现提交4ef80423；用户已授权本轮合并推送main，合并后验证并核对远端。不执行生产部署或上传小程序版本。
+
+## 2026-09-16 验货照片跨域 404 路由修复
+
+现场核验共享库 73 条媒体全部存在办公室 `D:/commission-system/uploads/shipping-inspection`，北京无对应文件。原因是小程序上传办公室，而 cloud 的照片读取原先指向北京本地。在 `codex/shipping-media-owner` 中将整个出库检验模块路由到办公室：cloud 经 TLS 验证转发，保留 Authorization/URI、大小限制和业务权限；办公室既有 mini/photos 规则逐字保留。该专项路由当时已在两站激活并完成 Nginx 校验与 reload，未迁移文件或数据库；真实登录账号的照片 200 验收仍未完成。本轮将其未合并代码纳入 main，路由现状仍须由发布预检核对。
 
 ## 2026-09-16 出库检验桌面 Web App（授权合并交付）
 
@@ -1709,3 +1824,27 @@ Mac 同事的英文网页中私聊按钮标识为 `Profile details`，原选择�
 
 - `codex/unit-label-number`：打印模板使用接口已有的完整 `unit_code`，标签显示产品明细号与单件流水号（如 A1-01、A2-01），单明细与整单批量打印共用。二维码内容及编号规则不变。
 - 验证：相关现有测试4项通过；直接生成多产品标签核验 A1-01、A1-02、A2-01 的完整显示与顺序；前端生产构建通过。约定检查仍有9项既有UI基线问题。未合并推送或发布。
+## 2026-09-23 出库单手动同步订单资料（授权合并推送，未发布）
+
+分支 `codex/outbound-invoice-sync`：出库单列表增加「同步订单」及差异预览，更新唯一关联订单的待出库单产品增删、规格、数量、价格和备注。持久化发送状态防重，回读核验后立即提供打印快照；业务镜像只读。权限复用、无迁移。实现与协议边界见 [outbound-invoice-sync.md](outbound-invoice-sync.md)。用户已授权本次提交、合并与推送 origin/main；不执行生产发布。主目录已有其他任务改动，集成时保留它们。
+
+验证：受影响后端回归 148 项、前端 17 项通过，生产构建通过；本地真实 Vue 页面配模拟 API 验证差异预览、确认和刷新。独立审查发现的恢复并发、打印快照与当前读问题已修复并复核通过。约定检查仍被 9 项既有 UI 基线过期阻断，单独增量检查无违规；`git diff --check` 通过，Git 巡检为 `--no-fetch` 本地快照。未执行新功能的生产写入或 MySQL 双连接并发验收。
+
+- 2026-09-23 单笔生产同步确认：小满删除明细仍校验数量、销售单价、产品和 SKU；仅传 ID/remove 会整体拒绝且回读未改变。补齐原行字段后成功回读验证，已同步修复未发布按钮逻辑；18 项专项回归通过。
+
+- 配件范围补充：手工同步读取全部发票明细（含 accessory），新增真实发票构建器的配件新增/替换/删除专项回归及打印分类断言，21 项专项测试与前端构建通过；弹窗明确发制品及配件范围。已提交或已有验货资料的单据仍阻止普通按钮覆盖；单笔维护例外需核对实物、明确撤回授权并保护照片关联。
+
+## 2026-09-23 发票同步后接续出库（Codex，已合并推送，未发布）
+
+发票普通同步与已关联订单的「保存并同步」在小满订单成功后继续出库核对。缺货任务即时刷新目标仓库缺货状态，齐货后才重新排队给原执行端；唯一现有待出库单复用出库同步的审计与回读。已出库、验货中、分批、权限不足或回款核对暂时失败时独立提示，不影响已成功订单和出库接续。保留出库列表的预览按钮用于单独补同步。实现见 [outbound-invoice-sync.md](outbound-invoice-sync.md)。功能提交 `598e0d44` 已合并推送 main/origin/main，合并后受影响后端回归 103 项与前端构建通过；约定检查仍有 9 项既有 UI 基线过期，前端相关 Node 测试 29 项中 2 项既有断言与当前代码不符。未执行生产发布。
+
+## 2026-09-24 手机发货质检快捷导航（Codex，本地开发）
+
+- 分支 `codex/shipping-station-quick-nav`：扫码进入出库单后增加「顶部 / 刷新 / 明细」悬浮按钮。明细数字按当前出库单产品顺序生成，点击后避让吸顶操作人卡片并定位；刷新复用现有会话 API，按产品锚点恢复屏幕位置，保留未提交备注。
+- 模拟真实 Vue 页面覆盖 18 项明细、390px 和 320px 手机宽度：第 08 项刷新前后产品顶部约 148px，刷新使单头增高后仍保持原位置；短屏第 18 项顶部约 140px，高于吸顶卡片底部 124px。前端构建及发货质检/滚动测试通过。已获授权合并推送 main，未部署、未使用真实出库单验证。
+
+## 2026-09-27 私海回填与回款同步预检
+
+- 私海客户工作台功能已在主线；补入 `backend/scripts/sync_okki_private_pool.py`，从 OKKI 业务镜像按业务员归属回填客户、订单与归属，可先用 `--dry-run` 查看范围。订单来源沿用经营分析字段口径，明细按完整快照重放；`--create-research-tasks` 只覆盖本次成功回填的客户。未运行生产回填。
+- 发票关联订单同步前，回款金额、日期、付款方式缺失时提示编辑订单并补填；在同步意图变更前阻断，历史无需回款的订单仍按原条件跳过。
+- 相关后端回归 154 项通过；`check_conventions.py` 仍被 13 项既有前端 UI 基线错误阻断，本次未修改这些文件。未部署、未执行生产数据写入。

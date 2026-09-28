@@ -10,13 +10,16 @@
       <el-col :span="7">
         <el-input v-model="searchForm.keyword" placeholder="搜索出库单号 / 客户名称" clearable prefix-icon="Search" @keyup.enter="handleSearch" @clear="handleSearch" />
       </el-col>
-      <el-col :span="8">
+      <el-col :span="5">
+        <el-input v-model="searchForm.orderId" placeholder="订单 ID" clearable @keyup.enter="handleSearch" @clear="handleSearch" />
+      </el-col>
+      <el-col :span="7">
         <el-date-picker
           v-model="searchForm.dateRange" type="daterange" value-format="YYYY-MM-DD"
           start-placeholder="出库起" end-placeholder="出库止" style="width: 100%" @change="handleSearch"
         />
       </el-col>
-      <el-col :span="9">
+      <el-col :span="5">
         <GlassButton variant="primary" left-icon="Search" @click="handleSearch">查询</GlassButton>
       </el-col>
     </el-row>
@@ -24,6 +27,7 @@
     <div class="table-card outbound-panel">
       <el-table :data="list" v-loading="loading" border class="list-table" style="width: 100%">
         <el-table-column prop="outbound_no" label="出库单号" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="order_id" label="订单 ID" min-width="155" show-overflow-tooltip><template #default="{ row }">{{ row.order_id || '—' }}</template></el-table-column>
         <el-table-column prop="customer_name" label="客户名称" min-width="130" show-overflow-tooltip />
         <el-table-column label="出库日期" min-width="120">
           <template #default="{ row }">
@@ -58,26 +62,42 @@
             <el-tag v-else size="small" :type="INSPECTION_STATUS_TAGS[row.status] || 'info'">
               {{ INSPECTION_STATUS_LABELS[row.status] || row.status }}
             </el-tag>
+            <el-tag v-if="row.recheck_status" size="small" type="warning">{{ row.recheck_status === 'pending_sync' ? '待同步重验' : '待补验' }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="照片数" min-width="80" align="right">
           <template #default="{ row }">{{ row.record_source === 'ark_task' ? '—' : row.photo_count }}</template>
         </el-table-column>
-        <el-table-column class-name="table-action-column" label="操作" min-width="285" fixed="right">
+        <el-table-column class-name="table-action-column" label="操作" min-width="270" fixed="right">
           <template #default="{ row }">
-            <GlassButton
-              v-if="row.can_print" variant="link" left-icon="Printer"
-              :loading="printingId === row.outbound_record_id"
-              @click="openPrint(row)"
-            >打印出库单</GlassButton>
-            <GlassButton v-if="row.can_print" variant="link" left-icon="Download"
+            <GlassButton v-if="row.can_print && (!row.recheck_status || row.print_before_recheck)" variant="link" left-icon="Download"
               :loading="downloadingId === row.outbound_record_id" @click="downloadWord(row)">下载 Word</GlassButton>
-            <span v-if="!row.can_print" class="queue-note">{{ outboundPendingHint(row.outbound_state) }}</span>
-            <GlassButton v-if="row.record_source === 'okki' && row.outbound_invoice_id"
-              v-permission="'shipping_inspection:delete'" variant="link" link-tone="danger" left-icon="Delete"
-              :loading="deletingId === row.outbound_record_id" :disabled="deletingId !== null"
-              @click="deleteRecord(row)">删除</GlassButton>
-            <GlassButton v-if="row.record_source === 'okki'" v-permission="'shipping_inspection:admin'" variant="link" :disabled="deletingId !== null" @click="recoverDeletion(row)">恢复删除任务</GlassButton>
+            <GlassButton v-if="row.can_print && (!row.recheck_status || row.print_before_recheck)" variant="link" left-icon="Printer"
+              :loading="printingId === row.outbound_record_id" @click="openPrint(row)">打印出库单</GlassButton>
+            <span v-if="!row.can_print || row.recheck_status" class="queue-note">{{ row.recheck_status === 'pending_sync' ? '待同步并重验' : row.recheck_status === 'pending_inspection' ? '待补验' : outboundPendingHint(row.outbound_state) }}</span>
+            <el-dropdown v-if="canShowMore(row)" trigger="click" placement="bottom-end">
+              <GlassButton variant="link" right-icon="ArrowDown">更多</GlassButton>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <div v-if="row.can_allow_print_before_recheck" v-permission="'shipping_inspection:admin'" role="none">
+                    <el-dropdown-item :disabled="allowingPrintId !== null" @click="allowPrintBeforeRecheck(row)">允许先打印（仍需补验）</el-dropdown-item>
+                  </div>
+                  <div v-if="row.record_source === 'okki' && row.outbound_invoice_id" v-permission="'invoice:sync'" role="none">
+                    <div v-permission="'shipping_inspection:write'" role="none">
+                      <el-dropdown-item icon="Refresh" :disabled="syncingId !== null || deletingId !== null"
+                        @click="previewSync(row)">同步订单</el-dropdown-item>
+                    </div>
+                  </div>
+                  <div v-if="row.record_source === 'okki' && row.outbound_invoice_id" v-permission="'shipping_inspection:delete'" role="none">
+                    <el-dropdown-item icon="Delete" :disabled="deletingId !== null || syncingId !== null"
+                      @click="deleteRecord(row)">删除</el-dropdown-item>
+                  </div>
+                  <div v-if="row.record_source === 'okki'" v-permission="'shipping_inspection:admin'" role="none">
+                    <el-dropdown-item :disabled="deletingId !== null" @click="recoverDeletion(row)">恢复删除任务</el-dropdown-item>
+                  </div>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>
@@ -87,6 +107,7 @@
         class="pager" @current-change="handlePageChange" @size-change="handleSizeChange"
       />
     </div>
+    <OutboundSyncDialog v-model:visible="syncVisible" :busy="syncingId !== null" :preview="syncPreview" :row="syncRow" @apply="applySync" />
   </div>
 </template>
 
@@ -96,14 +117,27 @@
  */
 import { INSPECTION_STATUS_LABELS, INSPECTION_STATUS_TAGS } from '@/api/shipping'
 import GlassButton from '@/components/GlassButton.vue'
+import { useAuthStore } from '@/stores/auth'
 import { useOutboundRecords } from './composables/useOutboundRecords'
+import { useOutboundInvoiceSync } from './composables/useOutboundInvoiceSync'
+import OutboundSyncDialog from './OutboundSyncDialog.vue'
 import { OUTBOUND_STATE_LABELS, OUTBOUND_STATE_TAGS, outboundPendingHint } from './composables/outboundStates'
 
 const {
-  loading, list, total, page, pageSize, searchForm,
+  loading, list, total, page, pageSize, searchForm, fetchList,
   handleSearch, handlePageChange, handleSizeChange,
   printingId, openPrint, downloadingId, downloadWord, deletingId, deleteRecord, recoverDeletion,
+  allowingPrintId, allowPrintBeforeRecheck,
 } = useOutboundRecords()
+const { syncingId, syncVisible, syncPreview, syncRow, previewSync, applySync } = useOutboundInvoiceSync(fetchList)
+const auth = useAuthStore()
+function canShowMore(row) {
+  if (row.record_source !== 'okki') return false
+  if (auth.hasPermission('shipping_inspection:admin')) return true
+  if (!row.outbound_invoice_id) return false
+  return auth.hasPermission('shipping_inspection:delete') ||
+    (auth.hasPermission('invoice:sync') && auth.hasPermission('shipping_inspection:write'))
+}
 </script>
 
 <style scoped>

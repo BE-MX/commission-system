@@ -16,6 +16,7 @@ from app.auth.models import (
 )
 from app.auth.service import seed_role_permissions
 from app.auth.utils import hash_password
+from app.asset.models import TagDimension, TagValue
 from app.core.database import get_db
 from app.customer_media import service
 from app.customer_media.models import (
@@ -151,6 +152,31 @@ def test_submit_approve_publish_and_portal_customer_isolation(db):
     with pytest.raises(IntegrityError):
         db.commit()
     db.rollback()
+
+
+def test_review_rejection_reopens_task_for_designer_corrections(db):
+    _add_customer(db, "CUST-MEDIA-1", "客户甲")
+    applicant, designer, request, task = _seed_workflow(db)
+    batch = service.get_or_create_batch(db, task.id, _payload(designer, "customer_media:write"))
+    db.add(CustomerMediaAsset(
+        batch_id=batch.id, file_name="needs-fix.png", media_type="image",
+        content_type="image/png", file_size=100, sha256="a" * 64,
+        storage_provider="local", object_key="customers/fix.png", uploaded_by=designer.id,
+    ))
+    db.commit()
+    submitted = service.submit_batch(db, batch.id, _payload(designer, "customer_media:write"), batch.lock_version)
+    assert task.status == request.status == "completed"
+    rejected = service.review_batch(
+        db, batch.id, _payload(applicant, "customer_media:read"),
+        "request_changes", "补拍细节", submitted.lock_version,
+    )
+    assert rejected.status == "changes_requested"
+    assert task.status == request.status == "in_progress"
+    assert task.actual_end_date is None and request.actual_end_date is None
+    rejected_revision = rejected.revision
+    resubmitted = service.submit_batch(db, batch.id, _payload(designer, "customer_media:write"), rejected.lock_version)
+    assert resubmitted.revision == rejected_revision + 1
+    assert task.status == request.status == "completed"
 
 
 def test_password_change_invalidates_existing_portal_session(db):
@@ -387,37 +413,51 @@ def _upload_png(name="asset.png"):
     return UploadFile(BytesIO(_png()), filename=name)
 
 
+def _sample_tags(db):
+    """A reusable customer label for legacy directory behavior tests."""
+    dim = db.query(TagDimension).filter_by(name="media_test_label").first()
+    if dim is None:
+        dim = TagDimension(name="media_test_label", label="用途", tag_scope="customer", is_visible=1, is_managed=0)
+        db.add(dim)
+        db.flush()
+        db.add(TagValue(dimension_id=dim.id, value="产品图", is_active=1))
+        db.commit()
+    value = db.query(TagValue).filter_by(dimension_id=dim.id).first()
+    return [{"dimension_id": dim.id, "tag_value_ids": [value.id]}]
+
+
 def test_directory_find_or_create_rename_and_upload_assignment(db, tmp_path, monkeypatch):
     _add_customer(db, "CUST-MEDIA-1", "客户甲")
     _applicant, designer, _request, task = _seed_workflow(db)
     writer = _payload(designer, "customer_media:write")
     batch = service.get_or_create_batch(db, task.id, writer)
+    tags = _sample_tags(db)
     monkeypatch.setattr(
         service, "storage_for", lambda provider="local": LocalMediaStorage(tmp_path),
     )
 
     # 入口一：上传带 directory_name，自动建目录；同名（含大小写/空白差异）复用不新建
     updated = asyncio.run(service.upload_asset(
-        db, batch.id, writer, _upload_png("1.png"), directory_name=" 白底图 ",
+        db, batch.id, writer, _upload_png("1.png"), directory_name=" 白底图 ", tags=tags,
     ))
     directory_id = updated.assets[0].directory_id
     assert directory_id is not None
     updated = asyncio.run(service.upload_asset(
-        db, batch.id, writer, _upload_png("2.png"), directory_name="白底图",
+        db, batch.id, writer, _upload_png("2.png"), directory_name="白底图", tags=tags,
     ))
     assert updated.assets[1].directory_id == directory_id
     directories = service.list_batch_directories(db, batch.id, writer)
     assert [(row["name"], row["asset_count"]) for row in directories] == [("白底图", 2)]
 
     # 散文件归入未分类
-    updated = asyncio.run(service.upload_asset(db, batch.id, writer, _upload_png("3.png")))
+    updated = asyncio.run(service.upload_asset(db, batch.id, writer, _upload_png("3.png"), tags=tags))
     assert updated.assets[2].directory_id is None
 
     # 入口二：手动新建目录幂等，按 directory_id 上传归入
     created = service.create_directory(db, batch.id, writer, "场景图")
     assert service.create_directory(db, batch.id, writer, " 场景图 ")["id"] == created["id"]
     updated = asyncio.run(service.upload_asset(
-        db, batch.id, writer, _upload_png("4.png"), directory_id=created["id"],
+        db, batch.id, writer, _upload_png("4.png"), directory_id=created["id"], tags=tags,
     ))
     assert updated.assets[3].directory_id == created["id"]
     counts = {row["id"]: row["asset_count"] for row in service.list_batch_directories(db, batch.id, writer)}
@@ -438,5 +478,5 @@ def test_directory_find_or_create_rename_and_upload_assignment(db, tmp_path, mon
         service.rename_directory(db, batch.id, other.id, writer, "越权")
     with pytest.raises(service.CustomerMediaNotFound):
         asyncio.run(service.upload_asset(
-            db, batch.id, writer, _upload_png("5.png"), directory_id=other.id,
+            db, batch.id, writer, _upload_png("5.png"), directory_id=other.id, tags=tags,
         ))

@@ -367,6 +367,9 @@ def seed_role_permissions(db: Session):
         ("production_dashboard:read", "production", "read",   "查看生产看板"),
         ("production_route:read",     "production", "read",   "查看工序路线"),
         # 订单发票管理（2026-07-12 三个 admin 配置页拆出独立页面码，invoice:admin 保留为操作码）
+        ("shipment:read", "shipment", "read", "查看订单发货结算"),
+        ("shipment:write", "shipment", "write", "创建及处理发货结算"),
+        ("shipment:admin", "shipment", "admin", "核对发货结算异常"),
         ("receipt:read", "receipt", "read", "查看本人订单回款单"),
         ("receipt:write", "receipt", "write", "登记和同步回款单"),
         ("receipt:admin", "receipt", "admin", "核对回款同步结果"),
@@ -474,6 +477,11 @@ def seed_role_permissions(db: Session):
         ("customer_radar:read",   "customer_radar", "read",   "查看客户经营雷达"),
         ("customer_radar:write",  "customer_radar", "write",  "完成/延后/反馈行动"),
         ("customer_radar:manage", "customer_radar", "manage", "管理所有客户档案/手动分配"),
+        # 私海客户工作台（PCW）
+        ("customer_pcw:read",   "customer_pcw", "read",   "查看私海工作台概览/监控/计划/订单分析"),
+        ("customer_pcw:write",  "customer_pcw", "write",  "完成行动/确认监控事件/维护计划改约"),
+        ("customer_profile:write", "customer_profile", "write", "客户档案普通字段修订与AI建议审核"),
+        ("customer_campaign:admin", "customer_campaign", "admin", "新品/优惠活动创建发布与名单管理"),
         # 智能获客：外部候选发现、联系人完善与企业研究
         ("sales_automation:read",  "sales_automation", "read",  "查看智能获客"),
         ("sales_automation:write", "sales_automation", "write", "创建搜索任务并确认候选客户"),
@@ -499,6 +507,8 @@ def seed_role_permissions(db: Session):
         # 外部站点接入凭证：只管理应用生命周期，不替代 owner 的发票写权限。
         ("integration:admin", "integration", "admin", "管理站点接入凭证"),
         # 运行与自动化中心：读取状态与控制任务严格分离；不提供任意远程命令执行。
+        ("fx_settlement:read", "fx_settlement", "read", "查看汇率行情并进行结汇测算"),
+        ("fx_settlement:write", "fx_settlement", "write", "生成结汇 AI 策略分析"),
         ("operations:read", "operations", "read", "查看运行服务与定时任务状态"),
         ("operations:admin", "operations", "admin", "立即执行、暂停或恢复本实例定时任务"),
         # AI Agent 任务中心：read_all 仅扩展数据范围，Worker 使用独立机器凭证。

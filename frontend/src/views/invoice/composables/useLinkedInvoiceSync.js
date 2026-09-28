@@ -5,16 +5,33 @@ import { resolveInvoiceLinked, closeInvoiceLinked, getInvoiceLinked, runInvoiceL
 export function useLinkedInvoiceSync(onSaved) {
   const operation = ref(null)
   const busy = ref(false)
+  const loading = ref(false)
   let activeId = null
+  let loadSequence = 0
   const requests = new Map()
   async function load(id) {
-    const wasLocked = activeId === id && ['pending', 'running', 'failed', 'uncertain'].includes(operation.value?.status)
+    const sequence = ++loadSequence
+    const sameInvoice = activeId === id
+    const wasLocked = sameInvoice && ['pending', 'running', 'failed', 'uncertain'].includes(operation.value?.status)
+    loading.value = Boolean(id)
     activeId = id
-    operation.value = null
+    if (!sameInvoice || !id) operation.value = null
     if (!id) return
-    const result = await getInvoiceLinked(id)
-    if (activeId === id) operation.value = result
-    if (wasLocked && ['manual', 'done'].includes(result?.status)) await onSaved?.(id)
+    try {
+      const result = await getInvoiceLinked(id)
+      if (sequence !== loadSequence) return
+      operation.value = result
+      if (wasLocked && ['manual', 'done'].includes(result?.status)) await onSaved?.(id)
+    } catch (error) {
+      if (sequence !== loadSequence) return
+      if (sameInvoice) {
+        ElMessage.error('关联同步结果刷新失败，请重试')
+        return
+      }
+      throw error
+    } finally {
+      if (sequence === loadSequence) loading.value = false
+    }
   }
   async function save(id, invoice, updatedAt) {
     const signature = JSON.stringify({ id, invoice, updatedAt })
@@ -50,6 +67,11 @@ export function useLinkedInvoiceSync(onSaved) {
     try {
       const result = await runInvoiceLinked(id, identity, recheck)
       if (activeId === id) operation.value = result
+      const outbound = result.steps?.outbound
+      if (outbound?.message && result.steps?.order?.status === 'done') {
+        const feedback = outbound.status === 'done' ? ElMessage.success : ElMessage.warning
+        feedback(`出库：${outbound.message}`)
+      }
       await onSaved?.(id)
     } catch {
       // A lost response must not trigger another POST. Read the durable result.
@@ -83,5 +105,5 @@ export function useLinkedInvoiceSync(onSaved) {
       await onSaved?.(id)
     } finally { busy.value = false }
   }
-  return { operation, busy, load, save, run, close, resolve }
+  return { operation, busy, loading, load, save, run, close, resolve }
 }

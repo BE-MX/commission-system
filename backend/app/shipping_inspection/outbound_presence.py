@@ -1,5 +1,5 @@
 """Authoritative active-list membership; deleted OKKI details can remain readable."""
-from datetime import datetime
+from datetime import date, datetime
 import logging
 
 import httpx
@@ -24,10 +24,10 @@ def creation_floor(value):
     return stamp.strftime('%Y-%m-%d 00:00:00')
 
 
-def _page(token, start, page):
+def _page(token, start, end, page):
     try:
         response = httpx.request('GET', okki_client._base_url() + '/v1/invoices/outbound/list',
-            params={'start_time': start, 'time_type': 1, 'removed': 0,
+            params={'start_time': start, 'end_time': end, 'time_type': 2, 'removed': 0,
                     'count': PAGE_SIZE, 'start_index': page},
             headers={'Authorization': f'Bearer {token}'}, timeout=30)
         body = response.json()
@@ -46,10 +46,10 @@ def _page(token, start, page):
     return data['list'], int(count)
 
 
-def _scan(token, start, target=None):
-    seen, expected = set(), None
+def _scan(token, start, end, target=None):
+    seen, rows_by_id, expected = set(), {}, None
     for page in range(1, MAX_PAGES + 1):
-        rows, count = _page(token, start, page)
+        rows, count = _page(token, start, end, page)
         if expected is not None and count != expected:
             raise PresenceError('小满有效出库单列表数量变化，请稍后核对')
         expected = count
@@ -60,28 +60,43 @@ def _scan(token, start, target=None):
             if not identity.isdigit() or int(identity) <= 0 or identity in seen:
                 raise PresenceError('小满有效出库单列表ID缺失或重复，未判定删除')
             seen.add(identity)
+            rows_by_id[identity] = row
         if target in seen:
-            return seen
+            return rows_by_id
         if len(seen) == count:
-            return seen
+            return rows_by_id
     raise PresenceError('小满有效出库单列表超出核验上限，未判定删除')
 
 
-def active_ids(token, start):
-    """Two complete identical ID sets, no status filter and no moving upper bound."""
-    start = creation_floor(start)
-    first = _scan(token, start)
-    if first != _scan(token, start):
+def _creation_day_bounds(value):
+    try:
+        day = date.fromisoformat(str(value)[:10])
+    except (ValueError, TypeError) as exc:
+        raise PresenceError('缺少有效的小满创建时间，不能判断出库单已删除') from exc
+    return f'{day.isoformat()} 00:00:00', f'{day.isoformat()} 23:59:59'
+
+
+def active_rows_for_day(token, creation_day):
+    """Return one stable active-ID snapshot bounded to an immutable creation day."""
+    start, end = _creation_day_bounds(creation_day)
+    first = _scan(token, start, end)
+    second = _scan(token, start, end)
+    if set(first) != set(second):
         raise PresenceError('小满有效出库单列表发生变化，请稍后核对')
-    return first
+    return second
+
+
+def active_ids(token, start):
+    """Compatibility wrapper for exact creation-day membership checks."""
+    return set(active_rows_for_day(token, start))
 
 
 def is_active(token, identity, start):
     """Finding the exact ID needs no absence proof or second full scan."""
-    start = creation_floor(start)
-    first = _scan(token, start, target=identity)
+    start, end = _creation_day_bounds(start)
+    first = _scan(token, start, end, target=identity)
     if identity in first:
         return True
-    if first != _scan(token, start):
+    if set(first) != set(_scan(token, start, end)):
         raise PresenceError('小满有效出库单列表发生变化，请稍后核对')
     return False

@@ -66,6 +66,7 @@ JOB_BATTLE_POSTERS_NOON = "battle_posters_noon"
 JOB_BATTLE_POSTERS_AFTERNOON = "battle_posters_afternoon"
 JOB_WHATSAPP_TRANSLATION_PAIRING_CLEANUP = "whatsapp_translation_pairing_cleanup"
 JOB_DOMESTIC_PUBLIC_SEA_DAILY = "domestic_public_sea_daily"
+JOB_PCW_DAILY_EVALUATION = "pcw_daily_evaluation"
 JOB_OKKI_OUTBOUND_RECONCILE = "okki_outbound_reconcile"
 JOB_OKKI_OUTBOUND_DELETE_RECONCILE = "okki_outbound_delete_reconcile"
 
@@ -112,6 +113,7 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     from app.battle_report.poster_scheduler import send_battle_posters_job
     from app.whatsapp_translation.pairing_service import prune_unconsumed_pairings
     from app.domestic.customer_service import release_stale_private_customers
+    from app.customer.pcw_evaluation_service import run_scheduled_evaluation
 
     settings = get_settings()
     from app.receipt.scheduler import process_receipts
@@ -187,7 +189,7 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     )
     scheduler.add_job(
         send_daily_report_if_due,
-        trigger="cron", hour=17, minute=30,
+        trigger="cron", hour=17, minute=0,
         id=JOB_FESTIVAL_DAILY_REPORT, replace_existing=True,
         max_instances=1, coalesce=True, misfire_grace_time=3600,
     )
@@ -226,6 +228,19 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         id=JOB_DOMESTIC_PUBLIC_SEA_DAILY, replace_existing=True,
         max_instances=1, coalesce=True, misfire_grace_time=3600,
     )
+    if settings.PCW_EVALUATION_ENABLED:
+        scheduler.add_job(
+            run_scheduled_evaluation,
+            trigger="cron",
+            hour=settings.PCW_EVALUATION_HOUR,
+            minute=0,
+            timezone="Asia/Shanghai",
+            id=JOB_PCW_DAILY_EVALUATION,
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=3600,
+        )
     scheduler.add_job(
         process_customer_image_queue,
         trigger="interval",
@@ -277,7 +292,7 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     scheduler.add_job(send_battle_posters_job, trigger="cron", hour=13, minute="0,5,15",
                       timezone="Asia/Shanghai", id=JOB_BATTLE_POSTERS_NOON, replace_existing=True,
                       max_instances=1, coalesce=True, misfire_grace_time=60)
-    scheduler.add_job(send_battle_posters_job, trigger="cron", hour=17, minute="30,35,45",
+    scheduler.add_job(send_battle_posters_job, trigger="cron", hour=17, minute="1,6,16",
                       timezone="Asia/Shanghai", id=JOB_BATTLE_POSTERS_AFTERNOON, replace_existing=True,
                       max_instances=1, coalesce=True, misfire_grace_time=60)
 

@@ -14,6 +14,25 @@ def _active_user_query(db: Session):
     )
 
 
+def get_active_user(db: Session, user_id: int) -> ArkUser | None:
+    return _active_user_query(db).filter(ArkUser.id == user_id).first()
+
+
+def list_merchandisers(db: Session) -> list[dict]:
+    """具有「跟单员」角色的在职用户。角色是业务数据，按中文 label 匹配。"""
+    from app.auth.models import ArkRole, ArkUserRole
+
+    users = (
+        _active_user_query(db)
+        .join(ArkUserRole, ArkUserRole.user_id == ArkUser.id)
+        .join(ArkRole, ArkRole.id == ArkUserRole.role_id)
+        .filter(ArkRole.label == "跟单员")
+        .order_by(ArkUser.id)
+        .all()
+    )
+    return [{"id": user.id, "username": user.username, "real_name": user.real_name} for user in users]
+
+
 def granted_sales_user_ids(db: Session, delegate_user_id: int) -> set[int]:
     return {
         int(row[0])

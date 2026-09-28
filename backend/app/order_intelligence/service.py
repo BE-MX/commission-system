@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUserExternalBinding
 from app.core.config import get_settings
+from app.invoice.order_role import goods_order_sql
 from app.order_intelligence.filtering import (
     AnalysisFilters,
     color_expression,
@@ -69,6 +70,7 @@ VALID_ORDER_SQL = f"""
     ({{a}}.status = '{ORDER_STATUS_ENDED}'
      OR ({{a}}.status = '{ORDER_STATUS_TERMINATED}' AND {{a}}.status_name = '{ORDER_STATUS_SETTLED_NAME}'))
     AND ({{a}}.trail IS NULL OR CAST({{a}}.trail AS CHAR) NOT LIKE '%个人%')
+    AND {goods_order_sql('o')}
 """
 
 

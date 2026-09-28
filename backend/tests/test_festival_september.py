@@ -22,7 +22,9 @@ def september_db(monkeypatch):
         conn.execute(text('CREATE TABLE lsordertest.user_rel_team (user_id TEXT, Team TEXT)'))
         conn.execute(text('CREATE TABLE lsordertest.okki_orders (order_id TEXT PRIMARY KEY, company_id TEXT, '
                           'user_id TEXT, account_date TEXT, amount_usd NUMERIC, custom_fields TEXT, '
-                          'trail TEXT, status TEXT, status_name TEXT)'))
+                          'trail TEXT, status TEXT, status_name TEXT, name TEXT)'))
+        conn.execute(text('CREATE TABLE ark_receivables (kind TEXT, remote_order_id TEXT, '
+                          'remote_order_name TEXT, customer_id TEXT)'))
         conn.commit()
     with Session(engine) as db:
         for index, (name, _) in enumerate(svc.TARGETS):
@@ -36,7 +38,9 @@ def september_db(monkeypatch):
 
 
 def order(db, oid, cid, uid='U0a', day='2026-09-10', amount=100, mark='是', status='13972831656', trail='公司'):
-    db.execute(text('INSERT INTO lsordertest.okki_orders VALUES (:oid,:cid,:uid,:day,:amt,:mark,:trail,:status,:sn)'),
+    db.execute(text('INSERT INTO lsordertest.okki_orders '
+                    '(order_id,company_id,user_id,account_date,amount_usd,custom_fields,trail,status,status_name) '
+                    'VALUES (:oid,:cid,:uid,:day,:amt,:mark,:trail,:status,:sn)'),
                {'oid': oid, 'cid': cid, 'uid': uid, 'day': day, 'amt': amount,
                 'mark': json.dumps({'22595163468': mark}, ensure_ascii=False), 'trail': trail,
                 'status': status, 'sn': '已结清' if status == '13972831656' else '待回款'})

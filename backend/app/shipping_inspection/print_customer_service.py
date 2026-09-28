@@ -9,7 +9,7 @@ from app.shipping_inspection import outbound_service as source
 
 
 def with_customer_order_info(db, record):
-    record = {**record, "customer_grade": None, "order_amount_text": "—"}
+    record = {**record, "customer_grade": None, "order_amount_text": "—", "merchandiser_name": "", "express_channel": ""}
     customer_id = record.get("company_id")
     if not customer_id:
         return record
@@ -34,6 +34,11 @@ def with_customer_order_info(db, record):
         Invoice.sync_status == "synced",
     ).all()
     local = {str(invoice.xiaoman_order_id): invoice for invoice in invoices}
+    # 出库单打印/Word 用：跟单员与快递渠道取自本单关联的发票（多单时去重并列）
+    record["merchandiser_name"] = " / ".join(dict.fromkeys(
+        str(invoice.merchandiser_name) for invoice in local.values() if invoice.merchandiser_name))
+    record["express_channel"] = " / ".join(dict.fromkeys(
+        str(invoice.express_channel) for invoice in local.values() if invoice.express_channel))
     missing = [order_id for order_id in order_ids if order_id not in local]
     mirror = {}
     if missing:

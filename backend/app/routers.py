@@ -69,11 +69,13 @@ from app.mail_outreach.router import router as mail_outreach_router
 from app.colorwork.router import router as colorwork_router
 from app.colorwork.proxy import router as colorwork_proxy_router
 from app.battle_report.router import router as battle_report_router
+from app.fx_settlement.router import router as fx_settlement_router
 
 
 def register_routers(app: FastAPI) -> None:
     """注册所有业务路由到 FastAPI app"""
     app.add_middleware(PublicSecurityHeadersMiddleware)
+    app.include_router(fx_settlement_router, prefix="/api/fx-settlement", tags=["结汇决策"])
     app.add_middleware(PortalSecurityHeadersMiddleware)
     app.include_router(auth_router, prefix="/api/auth", tags=["认证"])
     app.include_router(admin_router, prefix="/api/auth", tags=["用户角色管理"])
@@ -104,6 +106,8 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(governance_router, prefix="/api/governance", tags=["数据概念治理"])
     app.include_router(training_router, prefix="/api/training", tags=["培训速递"])
     app.include_router(whatsapp_router, prefix="/api/whatsapp", tags=["WhatsApp 同步"])
+    from app.invoice.settlement_router import router as settlement_router
+    app.include_router(settlement_router, prefix="/api", tags=["发货结算"])
     app.include_router(receipt_router, prefix="/api/receipts", tags=["回款单"])
     app.include_router(invoice_router, prefix="/api/invoice", tags=["Order Invoice"])
     app.include_router(expo_router, prefix="/api/expo", tags=["展会 AI 试戴"])

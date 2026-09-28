@@ -29,6 +29,17 @@ def salesperson_record_ids(db, name):
            OR a.real_name LIKE :salesperson ESCAPE '!'""").bindparams(salesperson=f"%{escaped}%")
 
 
+def order_record_ids(db, order_id):
+    link, rm, im = outbound._link(db)
+    if not link or 'order_id' not in outbound._table_columns(db, outbound.ITEMS_TABLE):
+        raise outbound.OutboundTableError('出库明细缺少订单关联字段，无法按订单 ID 筛选')
+    rk, ik = (rm['invoice_id'], im['invoice_id']) if link == 'invoice' else (rm['id'], im['record_id'])
+    schema = outbound._schema()
+    return text(f"""SELECT DISTINCT r.`{rm['id']}` FROM `{schema}`.`{outbound.RECORDS_TABLE}` r
+        JOIN `{schema}`.`{outbound.ITEMS_TABLE}` i ON i.`{ik}`=r.`{rk}`
+        WHERE i.order_id=:order_id""").bindparams(order_id=order_id)
+
+
 def salesperson_names(db, record_ids):
     if not record_ids:
         return {}

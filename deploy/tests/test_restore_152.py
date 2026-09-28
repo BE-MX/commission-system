@@ -1,9 +1,11 @@
 import copy
 import sys
 from pathlib import Path
+from unittest.mock import Mock
 import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from restore_152 import validate_schema, validate_journal
+import restore_152
 
 
 def snapshot():
@@ -55,3 +57,71 @@ def test_only_observed_beijing_runtime_files_are_allowed():
     validate_beijing_untracked(['backend/.env.bak-20260731', 'backend/D:/WORKSOURCE/domestic/example.jpg', ''])
     with pytest.raises(RuntimeError):
         validate_beijing_untracked(['backend/app/unknown.py'])
+
+
+@pytest.mark.parametrize('change', [
+    {'host': 'ubuntu@154.8.205.162'},
+    {'host': 'root@203.0.113.10'},
+    {'executable': '/root/.nvm/versions/node/v99.0.0/bin/pm2'},
+    {'service': 'unrelated-worker'},
+])
+def test_historical_writer_identity_is_exact_even_if_stopped_matches(change):
+    record = journal()
+    record['writers'][3]['writer'].update(change)
+    record['stopped'][3].update(change)
+    with pytest.raises(RuntimeError, match='Writer evidence differs'):
+        validate_journal(record)
+
+
+def test_duplicate_historical_writer_cannot_replace_another():
+    record = journal()
+    record['writers'][3] = copy.deepcopy(record['writers'][0])
+    record['stopped'][3] = copy.deepcopy(record['stopped'][0])
+    with pytest.raises(RuntimeError, match='Writer evidence differs'):
+        validate_journal(record)
+
+
+def test_evidence_validation_is_independent_of_current_schema_validator(monkeypatch):
+    current_validator = Mock(side_effect=AssertionError('Current topology must not validate old evidence'))
+    monkeypatch.setattr(restore_152.schema_release, 'validate', current_validator)
+    assert validate_journal(journal()) == journal()['stopped']
+    current_validator.assert_not_called()
+
+
+def test_identical_verified_topology_is_accepted():
+    writers = validate_journal(journal())
+    restore_152.validate_current_topology(writers, {
+        'migration_writers_verified': True, 'migration_writers': list(reversed(writers)),
+    })
+
+
+@pytest.mark.parametrize('change', ['moved', 'added', 'removed', 'unverified', 'duplicate'])
+def test_changed_current_topology_cannot_authorize_historical_recovery(change):
+    writers = validate_journal(journal())
+    inventory = {'migration_writers_verified': True, 'migration_writers': copy.deepcopy(writers)}
+    if change == 'moved':
+        inventory['migration_writers'][3]['host'] = 'ubuntu@154.8.205.162'
+    elif change == 'added':
+        inventory['migration_writers'].append({'kind': 'systemd_timer', 'host': 'ubuntu@154.8.205.162',
+                                              'service': 'ark-okki-outbound-poller'})
+    elif change == 'removed':
+        inventory['migration_writers'].pop()
+    elif change == 'duplicate':
+        inventory['migration_writers'][3] = copy.deepcopy(writers[0])
+    else:
+        inventory['migration_writers_verified'] = False
+    with pytest.raises(RuntimeError, match='topology has changed'):
+        restore_152.validate_current_topology(writers, inventory)
+
+
+def test_current_migrated_inventory_blocks_legacy_execute_before_external_actions(monkeypatch):
+    if restore_152.os.name != 'nt':
+        pytest.skip('Recovery entry is restricted to the installed Windows server')
+    external = Mock(side_effect=AssertionError('No installed service may be contacted'))
+    control = Mock(side_effect=AssertionError('No historical process may be started'))
+    monkeypatch.setattr(restore_152.subprocess, 'check_output', external)
+    monkeypatch.setattr(restore_152.schema_release, 'control', control)
+    with pytest.raises(RuntimeError, match='topology has changed'):
+        restore_152.execute('unused-plan.json')
+    external.assert_not_called()
+    control.assert_not_called()

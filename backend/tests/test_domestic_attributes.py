@@ -50,7 +50,7 @@ def _expected_quote():
         "discount_price": Decimal("1000.00"),
         "membership_level": None,
         "pricing_rule": "base_price",
-        "pricing_version": "domestic-member-v1",
+        "pricing_version": "domestic-member-v2",
     }
 
 

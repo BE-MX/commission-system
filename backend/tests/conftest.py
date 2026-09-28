@@ -1,12 +1,14 @@
 """pytest 公共 fixtures：内存 SQLite 数据库 + 预填充数据"""
 
 import pytest
+import sqlite3
 from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import create_engine, event, text, BigInteger, Integer
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+from sqlalchemy.engine import Engine
 
 from app.core.database import Base
 from app.models.employee import EmployeeAttributeHistory, SupervisorRelationHistory
@@ -41,6 +43,15 @@ from app.shipping_inspection import models as _shipping_inspection_models  # noq
 from app.whatsapp_translation import models as _whatsapp_translation_models  # noqa: F401
 # 邮件触达表 FK 指向 ark_users / ark_customer_*，显式导入保证单跑测试文件时 create_all 覆盖到
 from app.mail_outreach import models as _mail_outreach_models  # noqa: F401
+# 物流跟踪表是 PCW 运单关联的 FK 目标，显式导入保证单跑测试文件时 create_all 覆盖到
+from app.tracking import models as _tracking_models  # noqa: F401
+from app.whatsapp import models as _whatsapp_models  # noqa: F401
+# 客户域表是 PCW 各表的主要 FK 目标，显式导入保证单跑测试文件时 create_all 覆盖到
+from app.customer import models as _customer_models  # noqa: F401
+# 私海客户工作台（PCW）表 FK 指向 ark_customer_* / ark_users / shipment_tracking
+from app.customer import pcw_models as _pcw_models  # noqa: F401
+from app.invoice import models as _invoice_models, settlement_models as _settlement_models  # noqa: F401
+from app.receipt import models as _receipt_models  # noqa: F401
 # sys_dict 供术语表（whatsapp_glossary_*）检索使用
 from app.system import models as _system_models  # noqa: F401
 
@@ -61,6 +72,16 @@ def _compile_longtext_sqlite(type_, compiler, **kw):
 @compiles(MEDIUMTEXT, "sqlite")
 def _compile_mediumtext_sqlite(type_, compiler, **kw):
     return "TEXT"
+
+
+@event.listens_for(Engine, "connect")
+def _register_ark_collation(dbapi_conn, _record):
+    if isinstance(dbapi_conn, sqlite3.Connection):
+        # MySQL has this collation on every connection; SQLite needs a test equivalent.
+        dbapi_conn.create_collation(
+            "utf8mb4_unicode_ci",
+            lambda a, b: (a.casefold() > b.casefold()) - (a.casefold() < b.casefold()),
+        )
 
 
 @pytest.fixture
@@ -129,6 +150,7 @@ def engine():
             CREATE TABLE IF NOT EXISTS lsordertest.okki_orders (
                 order_id TEXT PRIMARY KEY,
                 order_no TEXT,
+                name TEXT,
                 company_id TEXT,
                 amount_usd REAL,
                 user_id TEXT,

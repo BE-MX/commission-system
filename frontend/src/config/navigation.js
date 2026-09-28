@@ -62,6 +62,7 @@ export const MENU_GROUPS = {
       FESTIVAL_PERMISSION, FESTIVAL_ORDER_PERMISSION,
       'battle_report:read', 'battle_report:admin',
       ORDER_INTELLIGENCE_PERMISSION,
+      'fx_settlement:read',
     ],
   },
   aftersales: {
@@ -375,6 +376,26 @@ export const NAV_ENTRIES = [
     },
   },
   {
+    path: '/customer-hub/calendar',
+    name: 'CustomerHubCalendar',
+    component: () => import('@/views/customer_hub/MaintenanceCalendar.vue'),
+    title: '跟进日历',
+    anyPermission: ['customer_pcw:read', 'customer_radar:read'],
+    menu: {
+      group: 'customerOperations', title: '跟进日历', icon: Calendar, order: 15,
+      anyPermission: ['customer_pcw:read', 'customer_radar:read'],
+    },
+  },
+  {
+    path: '/customer-hub/workspace/:id',
+    name: 'CustomerHubWorkspaceDetail',
+    component: () => import('@/views/customer_hub/CustomerWorkspace.vue'),
+    title: '客户工作区',
+    hideInMenu: true,
+    activeMenu: '/customer-hub/customers',
+    anyPermission: ['customer:read'],
+  },
+  {
     path: '/mail-outreach',
     name: 'MailOutreachQueue',
     component: () => import('@/views/mail_outreach/MailOutreachQueue.vue'),
@@ -472,6 +493,23 @@ export const NAV_ENTRIES = [
       group: 'invoice', title: '订单经营决策台', icon: TrendCharts, order: 32,
       permission: ORDER_INTELLIGENCE_PERMISSION,
     },
+  },
+
+  {
+    path: '/invoice/fx-settlement',
+    name: 'FxSettlement',
+    component: () => import('@/views/fx-settlement/FxSettlement.vue'),
+    title: '结汇决策助手',
+    permission: 'fx_settlement:read',
+    menu: { group: 'invoice', title: '结汇决策助手', icon: TrendCharts, order: 33, permission: 'fx_settlement:read' },
+  },
+  {
+    path: '/fx-settlement',
+    name: 'FxSettlementApp',
+    component: () => import('@/views/fx-settlement/FxSettlement.vue'),
+    title: '结汇决策助手',
+    permission: 'fx_settlement:read',
+    fullscreen: true,
   },
 
   // ── 客户售后管理 ───────────────────────────────────────

@@ -1109,7 +1109,7 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 
 - **入口与权限**：侧边栏「库存色块图」分组下三个页面（库存图直接下载 `/colorwork/download`、实时库存图修改 `/colorwork/edit`、原始库存图文件 `/colorwork/master`），各挂独立页面权限码。前端 `ColorworkFrame.vue` 调 `GET /api/colorwork/sso?view=…` 换短命 HS256 令牌（120s，含 views 清单），iframe 载入同源 `/api/colorwork/workbench/api/auth/ark` 落座（站内会话 Cookie + 视图清单存 local_sessions.views_json）。
 - **站内逐视图校验**：工作台 API 用 `requireView('library'|'inventory'|'master')` 兜底；master 视图持有者映射为站内 admin 角色。无方舟会话直开站点只见进入提示，原站内登录页/账号管理 API 已删除。
-- **实时库存状态**：`GET /api/colorwork/inventory-status?template_id=`（共享密钥头 `x-colorwork-sync-key`，仅供工作台服务端回源）按 `TEMPLATE_MATCH`（`app/colorwork/constants.py`）把 23 个模板映射到 okki_products 名称前缀（Regular=Standard Double Drawn；Butterfly=Double Genius Holes Weft；Injection=Invisible Tape Hair；Flex=Volume Weft——2026-09-14 业务确认），按「颜色|尺寸」聚合 SUM(enable_count)：0 → 正在补货，1–19 → 低库存，≥20 → 到货正常且不显示提醒。工作台 `getCurrentSnapshot` 返回前实时覆盖（`lib/server/ark-sync.ts`，3.5s 超时，失败回退站内手动状态），页面每 30 秒静默轮询（有未保存修改时跳过）。okki 无对应产品的规格不覆盖、保留站内状态。
+- **实时库存状态**：`GET /api/colorwork/inventory-status?template_id=`（共享密钥头 `x-colorwork-sync-key`，仅供工作台服务端回源）按 `TEMPLATE_MATCH`（`app/colorwork/constants.py`）把 23 个模板映射到 okki_products 名称前缀（Regular=Standard Double Drawn；Butterfly=Double Genius Holes Weft；Injection=Invisible Tape Hair；Flex=Volume Weft——2026-09-14 业务确认），按「颜色|尺寸」聚合 SUM(enable_count)：0 → 正在补货，1–19 → 低库存，≥20 → 到货正常且不显示提醒。工作台 `getCurrentSnapshot` 返回前实时覆盖（`lib/server/ark-sync.ts`，3.5s 超时）；**映射不到 okki 的规格显示 Restocking（2026-09-21）**，接口不可达才回退站内手动状态。响应含 `source_synced_at`（**库存表 `okki_inventory` 时间列 MAX**，不用产品表 `synced_at`），页面标注「数据截至」。页面每 30 秒静默轮询（有未保存修改时跳过）。
 - **部署与配置**：浏览器固定走 `/api/colorwork/workbench/`，方舟后端代理到 COLORWORK_INTERNAL_ORIGIN（默认回环8787），不需要独立域名。统一部署入口自动构建并管理北京内部运行服务、隔离验证迁移、备份持久数据及生成受限密钥配置；详见 `colorwork-workbench/README.md`。SSO 默认从 JWT 密钥按用途派生，回源密钥按用途派生；支持显式配置覆盖。
 
 
@@ -1122,7 +1122,7 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 
 ### 出库检验完成通知（2026-09-17）
 
-小程序/网页提交成功后，按同一业务库的出库company_id→customer_info.owner_user_ids查询当前OKKI业务员，叠加最新InvoiceCustomerOverlay手动同步归属，再精确匹配有效OKKI账号绑定与有效方舟用户的钉钉绑定。镜像update_time>=overlay.source_update_time取镜像；缺失/不可比时间取overlay，与发票客户选择口径相同。时间按北京解析（epoch由UTC转换）。多个当前负责人去重通知；任一负责人的外部账号绑定缺失/歧义时整体跳过，可能同时不通知其他已确定负责人；公海不发送。生产统一客户域尚无OKKI归属，不使用制单人或历史订单替代当前负责人。
+小程序/网页提交成功后，按同一业务库的出库company_id→customer_info.owner_user_ids查询当前OKKI业务员，叠加最新InvoiceCustomerOverlay手动同步归属，再精确匹配有效OKKI账号绑定与有效方舟用户的钉钉绑定。镜像update_time>=overlay.source_update_time取镜像；缺失/不可比时间取overlay，与发票客户选择口径相同。时间按北京解析（epoch由UTC转换）。多个当前负责人去重通知；外部账号绑定缺失（未接入协同人）跳过该人并继续通知其余可唯一定位者，任一负责人绑定歧义（一对多）时整体跳过不猜人；全部无法定位或公海不发送。生产统一客户域尚无OKKI归属，不使用制单人或历史订单替代当前负责人。
 
 发送仅发生在提交事务成功之后，重复提交不重发；撤回重提再通知。发送失败不影响提交，超时10秒，无持久队列及不确定结果自动重试，进程中断或提供商异常可能漏发。日志按`[SHIPPING] notification`查跳过/失败；上线须有正确的当前OKKI归属、有效账号绑定和钉钉绑定。测试不发送真实通知。
 
@@ -1135,6 +1135,10 @@ create_user_info/create_user_name 仅表示制单账号（例如Rainy），不�
 ly914首返出库单的处理人为Eva。详情获取失败时返回502提示重试，不回退打印制单人。
 多个处理人去重并列；无处理人显示空值。打印权限仍先走出库记录的数据范围过滤。
 打印GET惰性刷新token后提交保存，避免请求结束回滚导致每次重新鉴权。无镜像写入或表结构变更。
+
+### 2026-09-23 出库单列表加载
+
+`/shipping/outbound` 首次加载慢的主要耗时在后端归属过滤：旧查询对每张镜像单重复扫描本地发票，并把同一出库队列的计数、分页各算一次。`outbound_service._owner_scope_clause` 现在先按有效 OKKI 绑定、成功创建日志、精确订单和客户关系汇成可见出库关联；MySQL 固定从绑定/发票走索引连接，避免相关子查询放大。`outbound_queue_service` 用窗口计数与分页同查，空页单独补总数；当页同步状态批量读取。权限口径、待出库去重和打印数据未变。只读实库同一 20 条列表口径：普通业务员约 12.2 秒降到 0.73 秒，管理员约 1.8 秒降到 0.75 秒；这是服务层单次测量，不含浏览器网络和渲染。
 
 
 ### 2026-09-17 扫描返回主页与通知 PDF
@@ -1155,6 +1159,10 @@ ly914首返出库单的处理人为Eva。详情获取失败时返回502提示重
 ### 2026-09-17 自动出库备注映射修复
 
 受管 creator 先前只查询发票 invoice_no，创建 payload 没有 remark，导致发票备注不进入出库单。现在同一次任务关联发票查询取得 invoice_no/remark，直接传出库 serial_id/remark；备注保持原文（空值为空串），不用可能过期的 OKKI 订单备注。创建回读备注不符进入 uncertain，保留提交意图且不重发。历史已有出库单仍按原规则跳过，补填需要单独确定订单范围及是否覆盖，不能重置创建任务批量补单。
+
+### 2026-09-28 出库单待补验时先打印
+
+尹德魁 260970 在出库资料变更后，旧验货照片已作废、验货单为草稿；仓库仍需新照片，但打印当前出库单可作为重新验货的纸单入口。管理员可按单填写依据允许先打印，授权绑定本次已核实的小满出库版本并留操作审计；当前出库单打印/Word 解锁，旧媒体仍过期，补拍与提交校验不放松。再次同步或进入待同步状态时不继承该授权。
 
 ### 发票统一客户选择器（2026-09-17）
 
@@ -1190,4 +1198,4 @@ ly914首返出库单的处理人为Eva。详情获取失败时返回502提示重
 
 ## 临时战报海报与群推送
 
-采用固定红金主题资产+Jinja模板+Playwright截图，运行时没有AI调用。海报与总览复用 battle_report 的只读订单集合和 Decimal 进度；工作日按明确日期列表、北京时间16:00累加。群机器人使用专用配置，不复用日报接收人或其他模块默认群。活动每天13:00/17:30分别发送团队及个人两张图；两图共享持久快照，各自状态保证部分成功后的重试不重复已成功图片。未知结果隔离为uncertain并由管理员人工核对。详见 [功能及部署说明](requirements/2026-09-22-battle-posters.md)。
+采用固定红金主题资产+Jinja模板+Playwright截图，运行时没有AI调用。海报与总览复用 battle_report 的只读订单集合和 Decimal 进度；工作日按明确日期列表、北京时间16:00累加。群机器人使用专用配置，不复用日报接收人或其他模块默认群。活动每天13:00/17:01分别发送团队及个人两张图；两图共享持久快照，各自状态保证部分成功后的重试不重复已成功图片。未知结果隔离为uncertain并由管理员人工核对。浏览器解析顺序：`BATTLE_REPORT_BROWSER_PATH` → Playwright Chromium → 本机 Chrome/Edge；失败提示区分浏览器缺失与渲染/字体问题。详见 [功能及部署说明](requirements/2026-09-22-battle-posters.md)。

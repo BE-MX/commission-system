@@ -499,48 +499,8 @@ onMounted(() => {
 })
 </script>
 
+<style scoped src="./tag-dimension-layout.css"></style>
 <style scoped>
-.tag-dimension-page {
-  padding: 20px 28px;
-  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
-  position: relative;
-}
-
-/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环 */
-.tag-dimension-aurora {
-  inset: -24px -28px;
-}
-
-/* 内容压到极光之上（点名内容块，不能用 > :not(.lg-aurora) 通配——
-   会压掉就地渲染的 el-dialog .el-overlay 的 position: fixed） */
-.tag-dimension-page .toolbar,
-.tag-dimension-page .loading-wrap,
-.tag-dimension-page .empty-wrap,
-.tag-dimension-page .dimension-list {
-  position: relative;
-  z-index: 1;
-}
-
-.toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.scope-hint {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  line-height: 1.4;
-}
-
 .page-title {
   font-size: 17px;
   font-weight: 700;

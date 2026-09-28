@@ -1,5 +1,28 @@
 # 莱莎方舟 数据库表参考
 
+## 客户级素材标签（168_customer_media_customer_tags，已部署）
+
+`ark_customer_media_customer_tags` 以 `(customer_id, dimension_id, tag_value_id)` 为联合主键，保存客户长期持有的标签，独立于预约单、设计任务和素材批次。`dimension_id`、`tag_value_id` 关联现有标签库，`created_by` 关联方舟用户，`created_at` 使用北京时间；按 `(tag_value_id, customer_id)` 建索引。新增标签采取追加和重复写幂等语义。迁移从未删除素材的既有打标记录按客户去重回填，不改动现有素材标签、目录或文件。2026-09-25 的生产恢复与验证见[恢复报告](reports/2026-09-25-migration168-collation.md)。
+
+## 预售结算与汇总回款（166_presale_settlement，未部署）
+
+开发分支新增 `170_presale_freight_name`（父 `169_pcw_customer_workbench`）：为 `ark_receivables` 增加唯一的 `remote_order_name`、冻结的 `remote_payload` 和摘要，以及发送令牌、租约、错误和版本列；为 `ark_shipment_outbounds` 增加首次远端明细核验快照和 `last_check_attempt_at`，分别用于确认实际出库时固定行 ID/成本单价、以及远端读取失败后的公平轮询。运费目标在远端写入前先预留可匹配名称；远端 ID 回读核验后绑定。生产迁移仍只能经候选发布入口执行，本地未对共享数据库升级。
+
+父 revision 为 `164_battle_posters`。八个新账本表，不更新原订单金额、不回填推测历史预售记录；详细实施限制见 [实现报告](reports/2026-09-23-presale-implementation.md)。
+
+| 表 | 责任及约束 |
+| --- | --- |
+| ark_shipment_settlements | 每批报价快照/状态/版本/请求摘要；唯一 invoice_id+sequence、settlement_no、request_key |
+| ark_shipment_settlement_items | 原始商品行 ID、数量、金额及远端行快照；唯一 settlement_id+invoice_item_id，商品行删除 RESTRICT |
+| ark_receivables | 商品/运费应收、客户币种、远端映射；business_key 与可空 remote_order_id 唯一 |
+| ark_receipt_batches | 一笔客户付款的总额、手续费、日期、方式、幂等键和版本 |
+| ark_receipt_batch_attachments | 共享凭证关联；attachment_id 唯一，不能跨付款批次复用 |
+| ark_settlement_applications | 款项对结算的 reserved/applied/released 分配；settlement_id+receipt_id+component 唯一 |
+| ark_shipment_outbounds | 未来投递器的冻结 payload/hash、租约和远端映射；settlement_id、outbound_no、可空 remote_id 各唯一，目前无投递执行器 |
+| ark_settlement_events | 创建、暂停、恢复、取消的操作者、原因与北京时间审计 |
+
+`ark_receipts` 新增 batch_id、receivable_id 外键和索引，purpose 默认 ordinary（新增用途 presale_deposit/presale_goods/freight）；唯一 batch_id+receivable_id；xiaoman_order_id 改可空以表达运费目标未建立。金额 NUMERIC(14,2)，时间由 beijing_now 写入。单活动批次由原订单锁和服务校验保证。迁移只做新增/放宽可空，不允许 downgrade 删除财务事实。
+
 ## 临时战报（162_battle_reports，本地实现，未部署）
 
 | 表 | 责任与关键约束 |
@@ -21,7 +44,7 @@
 
 时间列均为北京时间。客户素材继续使用原表的 `storage_provider/object_key`，仅在完整回读校验后受控切换provider。159依赖158，禁止开发机升级共享生产库；downgrade不自动删除队列或引用数据。
 
-## 回款管理（156_receipt_management，本地实现）
+## 回款管理（156_receipt_management，生产迁移已完成）
 
 | 表 | 责任与关键约束 |
 | --- | --- |
@@ -432,6 +455,7 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 - 迁移 152（2026-09-15）：检验单增加 `edit_version INT NOT NULL DEFAULT 0`、`recalled_at DATETIME`、`recalled_by BIGINT`；媒体表增加 `media_type VARCHAR(10) NOT NULL DEFAULT 'image'`（image/video）。历史照片自动归为 image，表名保留；`item_id=NULL` 同样代表整单视频。撤回保留照片、视频、备注与上次提交信息，递增编辑版本并记录最新撤回人/时间；再次提交刷新提交信息，`photo_count` 始终只计图片。迁移可续跑已部分完成的同型 DDL，禁止 downgrade 删除字段和历史数据。
 - `ark_shipping_inspections`：每个 OKKI 出库单一行，`outbound_record_id` 唯一键（存业务库出库单 id 字符串，不建跨库外键）；冗余 `outbound_no / customer_name` 便于检索；`status` 为 `draft/submitted`，提交时落 `photo_count / submitted_at / submitted_by`（BigInteger 存 ark_users.id，未建 FK——ark_users.id 为 INT UNSIGNED，类型不匹配）。
 - `ark_shipping_inspection_photos`：`inspection_id → ark_shipping_inspections.id CASCADE`；`item_id` 为出库明细 id 字符串、NULL 表示整单照片；`file_path` 存相对路径（私有存储根 `SHIPPING_INSPECTION_STORAGE_ROOT`，鉴权端点读图，不挂静态目录）。
+- `ark_okki_outbound_presence_days`（迁移 163）：以 `creation_date` 为主键保存 OKKI 有效出库单两轮一致快照，包含 active_ids、列表行版本摘要、逐出库单已解析订单关联、待补查详情 ID、数量、摘要、最近尝试/完成时间及 pending/ready/error 状态。删除对账每轮最多刷新8个创建日，全局最多补查16张缺少镜像关联的详情（单次15秒），逐张持久化进度供下轮续跑；列表行变化只重查对应单。完整日期覆盖之前不据此登记删除，当天在补查后再次确认，只保护替代单、不证明当天候选缺席。
 - 数据源 `lsordertest.okki_outbound_records / okki_outbound_record_items` 为 OKKI 同步只读镜像（2026-09-01 已实库摸底，3966 单 / 14125 明细）：单头单号 `serial_id`、出库时间 `warehouse_invoice_time`、客户 `company_name`、制单人 `create_user_name`；明细数量 `outbound_count`、单位 `product_unit`、规格 `product_model`、SKU `sku_code`。**明细关联单头走 `outbound_invoice_id` 桥**（两表都有此列，全量命中）；`items.outbound_record_id` 是 OKKI 侧另一实体 id，与 `records.id` 完全不相交，不能 join。自适应候选映射见 `app/shipping_inspection/outbound_service.py`。
 - 归属过滤（2026-09-14 实库核验）：`okki_outbound_records.company_id`（bigint，4290 单全量命中 `okki_orders.company_id`）→ `okki_orders.user_id`（varchar(50)，单值）= 当前用户绑定的 OKKI 业务员 id；无 `shipping_inspection:read_all` 时强制，`company_id` 列缺失时 fail-closed 报错而非返回未过滤数据。
 
@@ -571,8 +595,14 @@ ark_invoices.linked_sync_id：当前关联任务写锁标识，结束后清除�
 
 ark_invoices 新增 nullable JSON sync_attempt（推单令牌/北京时间租约）、nullable JSON cancellation（取消阶段/原因/执行权/证据）、非空 SmallInteger outbound_auto_requested 默认0（自动出库登记，历史数据不追建）。复用 InvoiceSyncLog 保存取消及恢复审计，ReceiptLog 保存回款变更前后证据；回款业务状态增加 remote_deleted，原远端ID和凭证仍保留。迁移可重入，不允许降级删除审计字段。
 
-## 163_battle_posters（父162）
+## 164_battle_posters（父163_okki_presence_days）
 
 `ark_battle_reports` 增加 nullable JSON `work_dates`（北京时间计时日期数组）、Boolean `poster_push_enabled`（非空、默认false）。新增 `ark_battle_report_deliveries`：id、report_id(FK)、report_date、slot、snapshot(JSON)、destination_hash(SHA256，无凭据)、deliveries(JSON，两图各自状态/次数/安全错误)、created_at/updated_at（北京时间）。唯一约束 `(report_id,report_date,slot)` 防重复时段；report_id索引支持历史查询。新迁移仅增量加字段和表，不自动启用群推送，不删除或重算已有目标。
 
 JSON状态：pending/sending/sent/failed/uncertain；先提交sending再外发，未知结果不自动重发。snapshot保存两张图共用的统计时间、名单、目标、GMV、精确判色结果及计时日历。图片位于私有缓存，业务JSON不走匿名端点。降级拒绝删除投递历史，需前向迁移。
+
+## 169_pcw_customer_workbench（父168_customer_media_customer_tags，2026-09-25 生产迁移完成）
+
+私海客户工作台（PCW-01..06）。新增 19 张表：`ark_customer_work_items`（事项，unique(business_key,business_cycle) 跨日去重）、`ark_customer_evaluation_runs/items`（每日评估批次与逐客户结果，unique(business_date,rule_version,scope_hash,run_kind,attempt) 与 unique(run_id,customer_id)）、`ark_customer_fact_reviews`（AI 建议审核，unique(candidate_fact_id)）、`ark_customer_conversation_bindings/_events`（会话绑定与不可变审计，unique(source_system,account,conversation)）、`ark_customer_conversation_analysis_jobs`（分析任务，unique(conversation,input_hash,binding_version,rule_version)）、`ark_customer_order_batch_map`（商业采购批次映射）、`ark_customer_reorder_windows`（复购窗口，unique(occurrence_key)）、`ark_customer_monitor_subscriptions/_events/_event_sources`（监控订阅/变化事件/多源证据）、`ark_customer_maintenance_plans/_occurrences`（六类维护计划与稳定实例，unique(plan_id,occurrence_key)）、`ark_customer_sample_cases`（样品阶段机，unique(sample_order_id,item_set_hash,feedback_round)）、`ark_customer_shipment_order_links`（物流-订单多对多）、`ark_customer_campaigns`（活动）、`ark_customer_operation_receipts`（幂等回执，unique(actor,scope,key_hash)）、`ark_customer_notification_deliveries`（通知 outbox）。
+
+`ark_customer_actions` 扩展 7 列：work_item_id（FK，存量行为空）、action_round、parent_action_id（自引用行动链）、row_version（server_default 1）、original_due_at（原期限，改约不变）、business_due_at（当前期限）、due_provenance；unique(work_item_id,action_round)（历史 NULL 行不受约束）+ 索引 (owner,status,business_due_at)。126 冻结契约测试以显式 post-126 列登记方式扩展，冻结资源文件不动。

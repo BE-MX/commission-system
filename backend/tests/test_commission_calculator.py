@@ -2,6 +2,7 @@
 
 from datetime import date
 from decimal import Decimal
+from sqlalchemy import text
 
 from app.models.commission import (
     CommissionBatch, CommissionDetail, SyncedPayment, PaymentCommissionStatus,
@@ -14,6 +15,23 @@ from app.services.commission_calculator import (
 
 class TestCommissionCalculator:
     """提成计算测试"""
+
+    def test_existing_freight_payment_is_excluded_from_calculation(
+        self, db, seed_employees, seed_synced_payments, seed_complete_snapshot, seed_draft_batch,
+    ):
+        db.execute(text("""
+            INSERT INTO ark_receivables
+              (invoice_id, business_key, kind, amount, handling_amount, currency,
+               customer_id, remote_order_id, remote_status, created_at)
+            VALUES (1, 'freight:commission', 'freight', 1, 0, 'USD', 'CUST001',
+                    'FREIGHT-ORDER', 'bound', '2026-04-01 00:00:00')
+        """))
+        db.add(SyncedPayment(payment_id="FREIGHT-R1", order_id="FREIGHT-ORDER",
+                             customer_id="CUST001", payment_date=date(2026, 4, 2),
+                             payment_amount=Decimal("1.00"), service_fee=Decimal("0")))
+        db.flush()
+        calculate_commission(db, seed_draft_batch.id)
+        assert db.query(CommissionDetail).filter_by(payment_id="FREIGHT-R1").first() is None
 
     def test_dual_develop(self, db, seed_employees, seed_synced_payments,
                           seed_complete_snapshot, seed_draft_batch):

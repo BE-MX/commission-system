@@ -161,6 +161,12 @@ def test_list_invoices_created_by_filter(db):
     other, other_total = service.list_invoices(db, created_by=7)
     assert other_total == 0 and other == []
 
+    legacy.xiaoman_order_id = '12345'
+    db.commit()
+    matched, count = service.list_invoices(db, order_id='12345')
+    assert count == 1 and matched[0]['xiaoman_order_id'] == '12345'
+    assert service.list_invoices(db, order_id='12346')[1] == 0
+
 
 # ── 端点级集成：守卫接线不许回归 ─────────────────────────
 

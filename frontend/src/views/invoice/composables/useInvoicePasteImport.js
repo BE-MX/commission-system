@@ -30,7 +30,7 @@ function normalizeHeader(value) {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, '')
 }
 
-function resolveHeaderMapping(headers) {
+export function resolveHeaderMapping(headers) {
   const selected = new Map()
   headers.forEach((header, index) => {
     const alias = HEADER_ALIASES.get(normalizeHeader(header))
@@ -60,7 +60,7 @@ function resolveHeaderMapping(headers) {
   }
 }
 
-function mapCells(cells, mapping, sourceRow) {
+export function mapCells(cells, mapping, sourceRow) {
   const indexes = Object.values(mapping.fields)
   if (indexes.some(index => index >= cells.length)) throw new Error(`第 ${sourceRow} 行列数不足`)
   return Object.fromEntries([
@@ -107,6 +107,7 @@ export function mapPreviewRowToInvoiceLine(row, batchFingerprint, orderType) {
     sku_id: matched.sku_id || null,
     product_name: matched.product_name || '',
     stock_warning: matched.stock_warning || '',
+    available_stock: matched.available_stock == null ? null : Number(matched.available_stock),
     product_display: normalized.product,
     net_weight_grams: normalized.weight,
     curl: '',

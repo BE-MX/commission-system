@@ -1,12 +1,13 @@
 """Thin human-facing routes for unified customer operations."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok, page_result
-from app.customer import evidence_service, proposal_router, qualification_service, query_service, workbench_service
+from app.core.time import beijing_now
+from app.customer import evidence_service, proposal_router, pcw_maintenance_router, pcw_router, qualification_service, query_service, workbench_service
 from app.customer.access_service import CustomerAccessDenied, require_customer_access
 from app.customer.logical_customer_service import logical_owner_expression
 from app.customer.models import CustomerAction, CustomerOpportunity, CustomerResearchTask
@@ -25,6 +26,8 @@ from app.sales_automation.schemas import (
 
 router = APIRouter()
 router.include_router(proposal_router.router)
+router.include_router(pcw_router.router)
+router.include_router(pcw_maintenance_router.router)
 CUSTOMER_READ = ("customer:read", "customer:read_all")
 RESEARCH_READ = ("sales_automation:read", "customer:read_all")
 OPPORTUNITY_READ = ("customer_opportunity:read", "customer:read_all")
@@ -383,6 +386,7 @@ def workbench(
 @router.put("/actions/{action_id}")
 def update_action(
     action_id: int, payload: ActionUpdate, db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     user=Depends(require_any_permission("customer_radar:write", "customer:admin")),
 ):
     scoped, logical_id = _logical_record(
@@ -397,6 +401,71 @@ def update_action(
     ):
         raise HTTPException(status.HTTP_409_CONFLICT, "ACTION_OWNER_REQUIRED")
     can_manage = access.can_manage or scoped.customer_id != int(logical_id)
+    v2_fields_present = any(
+        value is not None
+        for value in (
+            payload.expected_action_version,
+            payload.expected_work_item_version,
+            payload.expected_occurrence_version,
+            payload.work_item_transition,
+        )
+    ) or bool(payload.evidence_message_ids)
+    if v2_fields_present:
+        # PCW v2 闭环：版本前置 + 事项/维护实例原子联动（api-contracts 4.1/6）
+        from app.customer import pcw_workitem_service
+
+        if payload.expected_action_version is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "expected_action_version必填")
+        if payload.feedback or payload.note:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "版本前置模式不支持feedback/note字段")
+        if payload.operation == "complete":
+            result = pcw_workitem_service.complete_action_v2(
+                db,
+                action_id=action_id,
+                actor_user_id=uid,
+                can_manage=can_manage,
+                expected_action_version=payload.expected_action_version,
+                expected_work_item_version=payload.expected_work_item_version,
+                expected_occurrence_version=payload.expected_occurrence_version,
+                work_item_transition=payload.work_item_transition,
+                outcome_code=payload.outcome_code or "other",
+                channel=payload.channel or "internal",
+                occurred_at=payload.occurred_at or beijing_now(),
+                summary=payload.summary or "",
+                evidence_message_ids=payload.evidence_message_ids,
+                next_step=payload.next_step,
+                next_step_due_at=payload.next_step_due_at,
+                followup_action_type=payload.followup_action_type,
+                followup_channel=payload.followup_channel,
+                idempotency_key=idempotency_key,
+            )
+            db.commit()
+            return ok(result)
+        if payload.operation == "snooze":
+            if payload.snoozed_until is None:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "snoozed_until必填")
+            result = pcw_workitem_service.snooze_action_v2(
+                db,
+                action_id=action_id,
+                actor_user_id=uid,
+                can_manage=can_manage,
+                expected_action_version=payload.expected_action_version,
+                snoozed_until=payload.snoozed_until,
+            )
+            db.commit()
+            return ok(result)
+        if payload.operation == "dismiss":
+            result = pcw_workitem_service.dismiss_action_v2(
+                db,
+                action_id=action_id,
+                actor_user_id=uid,
+                can_manage=can_manage,
+                expected_action_version=payload.expected_action_version,
+                dismissal_reason=payload.reason_code or payload.note or "",
+            )
+            db.commit()
+            return ok(result)
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "feedback操作不支持版本前置")
     if payload.operation == "complete":
         row = _service_call(
             service.complete_action, db, action_id, uid, payload.feedback, payload.note,

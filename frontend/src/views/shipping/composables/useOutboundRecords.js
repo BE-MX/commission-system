@@ -4,7 +4,7 @@
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getOutboundPrintData, listOutboundRecords, deleteOutboundRecord, recoverOutboundDeletion } from '@/api/shipping'
+import { getOutboundPrintData, listOutboundRecords, deleteOutboundRecord, recoverOutboundDeletion, allowOutboundPrintBeforeRecheck } from '@/api/shipping'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import { useListPage } from '@/composables/useListPage'
 import { buildOutboundDoc, printDocHtml } from '../print/printDocs'
@@ -18,6 +18,7 @@ export function useOutboundRecords() {
     async ({ page, page_size, ...form }) => {
       const params = { page, page_size }
       if (form.keyword) params.keyword = form.keyword
+      if (form.orderId?.trim()) params.order_id = form.orderId.trim()
       if (form.dateRange?.length === 2) {
         params.date_from = form.dateRange[0]
         params.date_to = form.dateRange[1]
@@ -28,6 +29,7 @@ export function useOutboundRecords() {
     {
       searchForm: {
         keyword: route.query.keyword || '',
+        orderId: route.query.order_id || '',
         dateRange: [],
       },
     },
@@ -38,6 +40,29 @@ export function useOutboundRecords() {
   const printingId = ref(null)
   const downloadingId = ref(null)
   const deletingId = ref(null)
+  const allowingPrintId = ref(null)
+
+  async function allowPrintBeforeRecheck(row) {
+    if (!row.can_allow_print_before_recheck || allowingPrintId.value !== null) return
+    let reason
+    try {
+      reason = (await ElMessageBox.prompt(
+        '仅允许先打印当前出库单；原验货照片仍留档，仓库必须按新明细补拍并重新提交验货。请填写处理依据。',
+        '允许先打印', {
+          inputValidator: value => value?.trim().length >= 8 || '请填写至少8个字符的处理依据',
+          type: 'warning',
+        },
+      )).value.trim()
+    } catch { return }
+    allowingPrintId.value = row.outbound_record_id
+    try {
+      await allowOutboundPrintBeforeRecheck(row.outbound_record_id, reason)
+      ElMessage.success('已允许先打印，仍需补拍并提交验货')
+      await listApi.fetchList()
+    } finally {
+      allowingPrintId.value = null
+    }
+  }
 
   async function deleteRecord(row) {
     if (row.record_source !== 'okki' || !row.outbound_invoice_id || deletingId.value !== null) return
@@ -107,5 +132,6 @@ export function useOutboundRecords() {
   return {
     ...listApi,
     printingId, openPrint, downloadingId, downloadWord, deletingId, deleteRecord, recoverDeletion,
+    allowingPrintId, allowPrintBeforeRecheck,
   }
 }

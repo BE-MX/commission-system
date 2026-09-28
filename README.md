@@ -2,7 +2,9 @@
 
 ## 项目概述
 
-莱莎方舟平台，企业内部综合后台。包含提成管理、物流跟踪（含关键状态推送 + 物流日报）、运单上传（AI OCR）、客户归属、设计预约、素材管理（标签化素材中台/AI 打标签/版本迭代/收藏分享/**移动端素材检索**）、发色数字化管理（色板数据库/色彩趋势/AI 色板图生成）、用户/权限、AI 接入、方舟洞见（信源配置/情报采集库/行业情报速览/行业情报日报/AI 工具速递/案例库/周会纪要/**客户机会台（阿里询盘导入/归属解析/机会卡/话术/状态管理）**/**客户经营雷达（活画像/事件流/6线索分组/行动推荐）**）、备货管理（安全库存/销量备货一览/库存日报 + 手动钉钉推送）、**生产订单管理（购物车→批量下单→订单跟踪→入库录入）**、**生产报工（工序管理→路线配置→产品绑定→扫码报工→进度跟踪→打印卡）**、**报表中心（Stimulsoft Reports.JS 设计器+查看器，前端 DOM 挂载，后端 JSON 数据 API）**、**微信小程序（扫码报工/报工历史/报工总览/登录绑定）**、**数据概念治理（概念注册表/8分区编辑器/关联关系/全景图谱/变更历史）**、**WhatsApp 客户沟通同步（扫码绑定/会话消息拉取/附件投影）**、**订单发票管理（发票 CRUD/产品级联选择/导出/OKKI 真实推单闭环/配件双类型）**、**展会 AI 试戴（内贸「莱莎健康假发」：H5 kiosk/面容分析/发型匹配/效果图合成/销售话术）**、**培训速递（参训自助发布/AI 提炼/钉钉推送）**、**PM 项目资料协作站（独立子站 pm.leshine.work，独立鉴权与前端）**、**内贸订单管理（下单沉淀产品/自动配工艺路线/按数量拆批报工/流转卡与二维码标签打印）**、钉钉集成，共 23 个业务模块。
+企业内部综合平台，采用 FastAPI + Vue 3 模块化单体。业务覆盖客户经营、订单发票与回款、外贸/内贸履约、提成薪资、物流售后、设计素材、知识公告与 AI 工作流；另有 PM 协作站、小程序和客户门户。
+
+模块和页面以源码注册为准，不维护容易失真的固定模块总数。先看[文档导航](docs/README.md)，按领域查[完整文档目录](docs/document-catalog.md)。当前发布状态和待办只在[交接文档](docs/handoff.md)维护。
 
 **详细说明**：
 - **AI 协作指南** → [CLAUDE.md](./CLAUDE.md)（给 AI 看）
@@ -21,7 +23,7 @@
 ```bash
 # 1. 复制环境变量
 cp backend/.env.example backend/.env
-# 编辑 .env 填入实际数据库连接信息和 SHORT_LINK_BASE_URL
+# 编辑 .env，使用隔离开发数据库；不要复制生产连接用于本地写入测试
 
 # 2. 安装依赖（后端建 venv + 前端）
 #    注意：必须用 venv 里的 python，不要依赖 PATH——开发机上其他软件自带的 Python 会污染 PATH
@@ -31,7 +33,7 @@ cd frontend && npm install && cd ..
 # 3. 本地开发（使用 start.bat 一键启动）
 start.bat
 
-# 4. 数据库迁移（开发/生产共用同一套 RDS，迁移一次生效）
+# 4. 仅在确认连接隔离开发库后执行迁移；生产迁移只走 deploy/deploy.bat
 cd backend && .venv\Scripts\python.exe -m alembic upgrade head
 
 # 5. 健康检查
@@ -39,6 +41,8 @@ curl http://localhost:8001/health
 ```
 
 ## 项目结构
+
+下列树是入口速查，不是完整模块清单；服务注册见 `backend/app/routers.py`，页面注册见 `frontend/src/config/navigation.js`。
 
 ```
 commission-system/
@@ -66,6 +70,8 @@ commission-system/
 │   │   ├── report/       # 报表中心 Stimulsoft (router/models/schemas/data_service — 模板 CRUD + JSON 数据组装)
 │   │   ├── production/   # 生产报工 (router/models/schemas/service facade + process/route/binding/report_service 子模块)
 │   │   ├── governance/   # 数据概念治理 (router/models/schemas/service facade + concept/relationship/changelog/import_service)
+│   │   ├── receipt/      # 方舟回款、私有凭证与小满发送队列
+│   │   ├── announcement/ # 公告与周报、知识库关联和推送记录
 │   │   ├── invoice/      # 订单发票 (router/models/schemas/service + product_service/export_service/import_service/xiaoman_service OKKI 推单)
 │   │   ├── expo/         # 展会 AI 试戴 (router/models/schemas/service + matching 匹配引擎 + ai_pipeline 三管线 + script_service 话术)
 │   │   ├── training/     # 培训速递 (router/models/schemas/service + draft_service AI 提炼 + file_service + push_service 钉钉)
@@ -113,7 +119,7 @@ commission-system/
 | [AGENTS.md](./AGENTS.md) | 多智能体 Git 协作约定（分支/worktree/合并纪律） | AI Agent、多人协作 |
 | [DESIGN.md](./DESIGN.md) | 设计系统，UI 决策以此为准 | 前端开发、设计 |
 | [docs/README.md](./docs/README.md) | 文档总导航 | 所有人 |
-| [docs/architecture.md](./docs/architecture.md) | 系统架构、数据库表结构 | 技术接手人 |
+| [docs/architecture.md](./docs/architecture.md) | 系统架构、数据流及已核验拓扑 | 技术接手人 |
 | [docs/integration-guide.md](./docs/integration-guide.md) | API 接入指南、示例代码 | 下游系统开发者 |
 | [docs/runbook.md](./docs/runbook.md) | 部署步骤、运维命令、故障排查 | 运维人员 |
 | [docs/handoff.md](./docs/handoff.md) | 项目状态、已完成功能、待办清单 | 项目交接 |

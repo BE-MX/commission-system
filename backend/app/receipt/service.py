@@ -22,6 +22,10 @@ def get(db, identity, user, *, lock=False):
         raise HTTPException(404, "回款单不存在")
     invoice = get_invoice(db, row.invoice_id, for_update=lock)
     access.ensure_invoice(db, invoice, user)
+    if row.batch_id:
+        from app.receipt.batch_service import ensure_batch_access
+        from app.invoice.settlement_models import ReceiptBatch
+        ensure_batch_access(db, db.get(ReceiptBatch, row.batch_id), user)
     if lock:
         db.refresh(row, with_for_update=True)
     return row, invoice
@@ -46,7 +50,8 @@ def describe(db, row, invoice=None, *, detail=False):
         "id", "receipt_no", "invoice_id", "source", "currency", "collection_date", "payment_type",
         "remark", "status", "sync_status", "attachment_status", "last_error", "version", "created_by",
         "created_at", "updated_at", "synced_at", "xiaoman_receipt_id", "xiaoman_receipt_no", "collect_status")}
-    data.update(amount=str(row.amount), bank_charge=str(row.bank_charge), invoice_no=invoice.invoice_no,
+    data.update(batch_id=row.batch_id, purpose=row.purpose, amount=str(row.amount), bank_charge=str(row.bank_charge), invoice_no=invoice.invoice_no,
+                order_id=row.xiaoman_order_id or invoice.xiaoman_order_id,
                 customer_name=invoice.customer_name, attachment_count=len(row.attachment_ids))
     if detail:
         data["attachments"] = [attachments.describe(a) for a in db.query(ReceiptAttachment).filter(
@@ -58,12 +63,15 @@ def describe(db, row, invoice=None, *, detail=False):
 
 
 def list_receipts(db, user, page=1, page_size=20, keyword="", sync_status="", source="", status="",
-                  date_from=None, date_to=None):
+                  date_from=None, date_to=None, order_id=None):
     query = access.scope(db.query(Receipt, Invoice).join(Invoice, Invoice.id == Receipt.invoice_id), db, user)
     if keyword:
         term = f"%{keyword}%"
         query = query.filter(or_(Receipt.receipt_no.like(term), Invoice.invoice_no.like(term),
                                  Invoice.customer_name.like(term), Receipt.xiaoman_receipt_no.like(term)))
+    if order_id:
+        query = query.filter(or_(Receipt.xiaoman_order_id == order_id,
+                                 (Receipt.xiaoman_order_id.is_(None)) & (Invoice.xiaoman_order_id == order_id)))
     for column, value in ((Receipt.sync_status, sync_status), (Receipt.source, source), (Receipt.status, status)):
         if value:
             query = query.filter(column == value)
@@ -75,14 +83,19 @@ def list_receipts(db, user, page=1, page_size=20, keyword="", sync_status="", so
         Receipt.id.desc()).offset((page - 1) * page_size).limit(page_size).all()]}
 
 
-def order_options(db, user, keyword="", page=1):
+def order_options(db, user, keyword="", page=1, customer_id="", currency=""):
+    # Identity filters are applied before pagination, not client-side.
     query = access.scope(db.query(Invoice), db, user)
+    if customer_id:
+        query = query.filter(Invoice.customer_id == customer_id)
+    if currency:
+        query = query.filter(Invoice.currency == currency)
     if keyword:
         term = f"%{keyword}%"
         query = query.filter(or_(Invoice.invoice_no.like(term), Invoice.customer_name.like(term),
                                 Invoice.xiaoman_order_no.like(term)))
     return {"total": query.count(), "items": [{"id": i.id, "invoice_no": i.invoice_no,
-        "customer_name": i.customer_name, "currency": i.currency, "total_amount": str(i.total_amount),
+        "customer_id": i.customer_id, "customer_name": i.customer_name, "currency": i.currency, "total_amount": str(i.total_amount),
         "sync_status": i.sync_status, "order_type": i.order_type} for i in query.order_by(
             Invoice.id.desc()).offset((page - 1) * 20).limit(20).all()]}
 
@@ -90,7 +103,18 @@ def order_options(db, user, keyword="", page=1):
 def order_balance(db, invoice):
     ensure_order_ready(db, invoice)
     snapshot = remote.order_snapshot(db, invoice)
-    return balance.calculate(db, invoice, snapshot)
+    summary = balance.calculate(db, invoice, snapshot)
+    if invoice.order_type == "presale":
+        from app.invoice import settlement_service
+        from app.invoice.settlement_models import ShipmentSettlement
+        summary = settlement_service.goods_balance(db, invoice, snapshot)
+        row = db.query(ShipmentSettlement).filter(ShipmentSettlement.invoice_id == invoice.id, ShipmentSettlement.state.in_(["awaiting_payment", "awaiting_verification"])).first()
+        if not row:
+            raise ValueError("请先为预售订单准备发货结算")
+        data = settlement_service.funding_balance(db, row)
+        data["version"] = settlement_service.digest([data["version"], summary["version"]])
+        return data
+    return summary
 
 
 def new_row(db, invoice, fields, actor, request_key, request_hash, *, source="manual"):
@@ -103,6 +127,8 @@ def new_row(db, invoice, fields, actor, request_key, request_hash, *, source="ma
                   xiaoman_order_id=invoice.xiaoman_order_id, created_by=actor,
                   **fields.model_dump(include={"amount", "collection_date", "payment_type", "bank_charge",
                                                "remark", "attachment_ids"}))
+    if source == "auto" and invoice.order_type == "presale":
+        row.purpose = "presale_deposit"
     db.add(row)
     db.flush()
     attachments.bind(db, row.attachment_ids, actor, invoice.id, row.id)
@@ -122,6 +148,8 @@ def create(db, body, user):
     invoice = get_invoice(db, body.invoice_id)
     access.ensure_invoice(db, invoice, user)
     ensure_order_ready(db, invoice)
+    if invoice.order_type == "presale":
+        raise ValueError("预售回款请通过发货结算或批量回款登记")
     snapshot = remote.order_snapshot(db, invoice)
     if body.payment_type not in remote.receipt_types(db):
         raise ValueError("请选择有效的小满回款方式")
@@ -144,6 +172,8 @@ def create(db, body, user):
 
 
 def change(db, row, invoice, body, actor):
+    if row.batch_id or row.purpose == "presale_deposit":
+        raise ValueError("关联预售或批次的回款不能单独修改/作废，请核对原批次")
     if row.status != "active" or row.sync_status not in {"pending", "failed"} or row.xiaoman_receipt_id:
         raise ValueError("仅未发送或明确失败的回款可修改")
     if row.version != body.version:
@@ -166,6 +196,8 @@ def change(db, row, invoice, body, actor):
 def retry(db, row, actor):
     if row.status != "active" or row.sync_status != "failed" or row.xiaoman_receipt_id:
         raise ValueError("仅明确失败且未取得小满单号的回款可重试；待核对不能重发")
+    from app.invoice.settlement_guard import ensure_receipt_sendable
+    ensure_receipt_sendable(db, row)
     if row.source == "auto" and row.bank_charge == 0:
         invoice = db.query(Invoice).filter(Invoice.id == row.invoice_id).with_for_update().one()
         if invoice.surcharge_amount:
@@ -177,6 +209,8 @@ def retry(db, row, actor):
 
 
 def void(db, row, reason, actor):
+    if row.batch_id or row.purpose == "presale_deposit":
+        raise ValueError("关联预售或批次的回款不能单独修改/作废，请核对原批次")
     if row.status != "active" or row.sync_status not in {"pending", "failed"} or row.xiaoman_receipt_id:
         raise ValueError("只有确认未在小满创建的本地回款可以作废")
     row.status = "voided"

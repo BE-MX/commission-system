@@ -28,6 +28,15 @@ const DIALOG_DEFAULTS = {
   settle_mode: 'prepay',
 }
 
+const REQUIRED_CREATE_FIELDS = [
+  ['custom_code', '客户编码'], ['shop_name', '客户店名'],
+  ['contact', '联系人'], ['phone', '手机号'],
+  ['owner_user_id', '归属销售'], ['customer_source', '客户来源'],
+  ['customer_level', '客户等级'], ['lifecycle_status', '客户状态'],
+  ['store_type', '门店类型'], ['first_contact_date', '首次联系'],
+  ['first_order_date', '首次下单'], ['last_order_date', '最近下单'],
+]
+
 export function useDomesticCustomers() {
   const auth = useAuthStore()
   const saving = ref(false)
@@ -99,13 +108,22 @@ export function useDomesticCustomers() {
   async function save() {
     if (!dialog.shop_name.trim()) return ElMessage.warning('请填写客户店名')
     const [province, city] = dialog.region || []
+    if (!dialog.id) {
+      for (const [field, label] of REQUIRED_CREATE_FIELDS) {
+        const value = dialog[field]
+        if (value == null || (typeof value === 'string' && !value.trim())) {
+          return ElMessage.warning(`请填写${label}`)
+        }
+      }
+      if (!province || !city) return ElMessage.warning('请选择省份 / 城市')
+    }
     const payload = {
       custom_code: dialog.custom_code.trim() || null,
       shop_name: dialog.shop_name.trim(),
       province: province || null,
       city: city || null,
-      contact: dialog.contact || null,
-      phone: dialog.phone || null,
+      contact: dialog.contact.trim() || null,
+      phone: dialog.phone.trim() || null,
       address: dialog.address || null,
       customer_source: dialog.customer_source || null,
       store_type: dialog.store_type || null,

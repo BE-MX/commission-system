@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { AxiosHeaders, isCancel } from 'axios'
+import { isFxSettlementPath } from '../src/router/fxSettlementRoute.js'
 
 import {
   INVITE_KEY,
@@ -52,6 +53,7 @@ function loadCreateApiClient({ accessToken = 'ark-token' } = {}) {
     'useLoading',
     'getAccessToken',
     'clearAuthState',
+    'isFxSettlementPath',
     `${body}; return createApiClient`,
   )(
     axios,
@@ -59,6 +61,7 @@ function loadCreateApiClient({ accessToken = 'ark-token' } = {}) {
     () => ({ show() {}, hide() {} }),
     () => accessToken,
     () => { cleared += 1 },
+    isFxSettlementPath,
   )
   return { factory, handlers, cleared: () => cleared }
 }
@@ -201,7 +204,7 @@ test('invite interceptor replaces or removes case-insensitive Axios authorizatio
 
 test('default client injects Ark Bearer auth and redirects a 401 after clearing login', async () => {
   const originalWindow = globalThis.window
-  globalThis.window = { location: { href: '/dashboard' } }
+  globalThis.window = { location: { href: '/dashboard', pathname: '/dashboard', search: '', hash: '' } }
   try {
     const harness = loadCreateApiClient()
     harness.factory({ baseURL: '/api/v1' })

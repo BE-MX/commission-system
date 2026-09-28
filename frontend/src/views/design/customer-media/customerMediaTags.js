@@ -27,28 +27,6 @@ export function groupTagsByDimension(tags) {
   return [...grouped.entries()].map(([dimension_id, tag_value_ids]) => ({ dimension_id, tag_value_ids }))
 }
 
-/**
- * 合并多个来源的标签（文件夹映射 ∪ 批量 ∪ 单文件追加），按 (dimension_id, tag_value_id) 去重；
- * 单选维度只保留先出现的值，避免上传被后端单选校验拒绝。
- */
-export function unionTags(sources, dimensions = []) {
-  const merged = []
-  const seen = new Set()
-  for (const list of sources) {
-    for (const raw of list || []) {
-      const tag = normalizeTag(raw, dimensions)
-      if (tag.tag_value_id == null) continue
-      const key = `${tag.dimension_id}:${tag.tag_value_id}`
-      if (seen.has(key)) continue
-      const dim = dimensions.find(d => d.id === tag.dimension_id)
-      if (dim?.is_single_select && merged.some(t => t.dimension_id === tag.dimension_id)) continue
-      seen.add(key)
-      merged.push(tag)
-    }
-  }
-  return merged
-}
-
 /** 维度选择状态（{dimId: [ids] | id}）→ 拍平标签数组（带维度/值文案，供 chip 展示与上传） */
 export function flattenSelection(selection, dimensions = []) {
   const flat = []

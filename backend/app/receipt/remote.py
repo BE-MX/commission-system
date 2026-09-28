@@ -164,6 +164,64 @@ def order_snapshot(db, invoice):
             "invoice_binding": invoice_binding(invoice)}
 
 
+def target_snapshot(db, target):
+    """Verify a separately billed freight order before sending its receipt."""
+    if target.kind != "freight" or target.remote_status != "bound" or not target.remote_order_id:
+        raise ValueError("运费目标小满订单尚未核验")
+    data = read(db, "/v1/invoices/order/info", {"order_id": target.remote_order_id})
+    if (not order_active(db, data)
+            or str(data.get("order_id")) != str(target.remote_order_id)
+            or data.get("name") != target.remote_order_name
+            or str(data.get("company_id")) != str(target.customer_id)
+            or data.get("currency") != target.currency
+            or money(data.get("amount")) != target.amount
+            or money(data.get("product_total_amount")) != 0
+            or data.get("product_list") != []):
+        raise ValueError("小满运费订单身份或金额已变化，回款暂停发送")
+    return {"rows": order_receipts(db, target.remote_order_id),
+            "exchange_rate": data.get("exchange_rate"),
+            "target_binding": [target.id, target.remote_order_id, str(target.amount),
+                               target.currency, target.customer_id, target.version]}
+
+
+def order_active(db, detail):
+    """A deleted OKKI order detail may remain readable; require active-list membership."""
+    try:
+        day = datetime.strptime(str(detail.get("create_time")), "%Y-%m-%d %H:%M:%S").date().isoformat()
+    except (TypeError, ValueError) as exc:
+        raise ValueError("小满订单缺少创建时间，无法核验有效状态") from exc
+    expected_id = str(detail.get("order_id") or "")
+    if not expected_id.isdigit():
+        raise ValueError("小满订单 ID 无效")
+    params = {"start_time": day, "end_time": day, "time_type": 2,
+              "removed": 0, "count": 100}
+    def scan():
+        seen, total = set(), None
+        for page in range(1, 501):
+            data = read(db, "/v1/invoices/order/list", {**params, "start_index": page})
+            rows, count = data.get("list"), data.get("count")
+            if not isinstance(rows, list) or not str(count).isdigit():
+                raise ValueError("小满有效订单列表不完整")
+            if total is not None and int(count) != total:
+                raise ValueError("小满有效订单列表查询期间变化")
+            total = int(count)
+            for row in rows:
+                identity = str(row.get("order_id") or "") if isinstance(row, dict) else ""
+                if not identity.isdigit() or identity in seen:
+                    raise ValueError("小满有效订单列表 ID 重复或缺失")
+                seen.add(identity)
+            if len(seen) == total:
+                return seen
+            if not rows or len(seen) > total:
+                break
+        raise ValueError("小满有效订单列表未完整读取")
+    first = scan()
+    second = scan()
+    if first != second:
+        raise ValueError("小满有效订单列表发生变化，请稍后核对")
+    return expected_id in second
+
+
 def net_amount(receipt):
     """Local ledger retains gross and fee; OKKI receives only the net amount."""
     amount, charge = money(receipt.amount), money(receipt.bank_charge)

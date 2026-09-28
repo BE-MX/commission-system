@@ -16,6 +16,17 @@ REVISION = "ba491dfece056ca14e0e6cf1a848eacfcfca1ef2"
 DATABASE = "152_shipping_media_recall"
 PENDING = ["151_customer_media_tags", "153_shipping_station", "154_okki_outbound_tasks"]
 BJ = "ubuntu@154.8.205.162"
+REVIEWED_WRITERS = [
+    {"kind": "nssm", "host": "office", "service": "CommissionSystem"},
+    {"kind": "nssm", "host": "office", "service": "WhatsAppConnector"},
+    {"kind": "systemd", "host": BJ, "service": "ark-backend"},
+    {"kind": "pm2", "host": "root@119.28.107.92", "service": "shipment-tracking-mcp",
+     "executable": "/root/.nvm/versions/node/v22.22.1/bin/pm2"},
+]
+
+
+def writer_fingerprints(writers):
+    return sorted(json.dumps(writer, sort_keys=True) for writer in writers)
 
 
 def validate_journal(record):
@@ -26,8 +37,19 @@ def validate_journal(record):
     writers = [entry["writer"] for entry in record["writers"]]
     if any(entry.get("before") != "running" for entry in record["writers"]) or record.get("stopped") != writers:
         raise RuntimeError("Original running/stopped writer evidence is incomplete")
-    schema_release.validate({"migration_writers_verified": True, "migration_writers": writers}, PENDING)
+    # Historical evidence is immutable; current deployment topology must not
+    # rewrite which processes belonged to this reviewed incident.
+    if writer_fingerprints(writers) != writer_fingerprints(REVIEWED_WRITERS):
+        raise RuntimeError("Writer evidence differs from the reviewed 152 incident")
     return writers
+
+
+def validate_current_topology(writers, inventory=None):
+    if inventory is None:
+        inventory = json.loads(Path(__file__).with_name("platforms.json").read_text(encoding="utf-8"))
+    if (not inventory.get("migration_writers_verified")
+            or writer_fingerprints(inventory.get("migration_writers", [])) != writer_fingerprints(writers)):
+        raise RuntimeError("Recovery topology has changed since the 152 incident; no recorded writer may be started")
 
 
 def validate_schema(snapshot):
@@ -79,6 +101,9 @@ def validate_beijing_untracked(paths):
 def execute(plan_path, prepare_only=False):
     if os.name != "nt":
         raise RuntimeError("Recovery must run on the installed office server")
+    # Reject an obsolete recovery before touching installed services or reading
+    # their state. A historical journal passing validation never authorizes it.
+    validate_current_topology(REVIEWED_WRITERS)
     plan = json.loads(Path(plan_path).read_text(encoding="utf-8"))
     live = Path(plan["live_root"]).resolve()
     state = live / ".deploy_state"
@@ -112,6 +137,7 @@ def execute(plan_path, prepare_only=False):
             raise RuntimeError("Migration evidence changed")
         record = json.loads(raw)
         writers = validate_journal(record)
+        validate_current_topology(writers)
         snapshot = json.loads(run([python, "-c", SCHEMA_CHECK], cwd=live / "backend"))
         validate_schema(snapshot)
         states = [schema_release.writer_state(writer, nssm) for writer in writers]
@@ -123,6 +149,7 @@ def execute(plan_path, prepare_only=False):
         if prepare_only:
             print(json.dumps(evidence))
             return
+        validate_current_topology(writers)
         publish.atomic_json(output, evidence)
         try:
             for writer in writers:

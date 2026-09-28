@@ -17,8 +17,8 @@ def mock_pages(monkeypatch, pages):
     calls = []
     def request(method, url, **kw):
         assert method == 'GET' and url.endswith('/outbound/list')
-        assert kw['params']['removed'] == 0 and kw['params']['time_type'] == 1
-        assert 'status' not in kw['params'] and 'end_time' not in kw['params']
+        assert kw['params']['removed'] == 0 and kw['params']['time_type'] == 2
+        assert 'status' not in kw['params']
         calls.append(kw['params'])
         body = pages.pop(0)
         if isinstance(body, Exception):
@@ -33,12 +33,193 @@ def page(ids, count=None):
             'list': [{'outbound_invoice_id': identity} for identity in ids]}
 
 
+def rows(*ids):
+    return {str(identity): {'outbound_invoice_id': str(identity)} for identity in ids}
+
+
 def test_complete_stable_pagination_and_all_statuses(monkeypatch):
     monkeypatch.setattr(presence, 'PAGE_SIZE', 2)
     calls = mock_pages(monkeypatch, [page([11, 22], 3), page([33], 3)] * 2)
     assert presence.active_ids('test', '2026-09-01 12:10:11') == {'11', '22', '33'}
     assert [p['start_index'] for p in calls] == [1, 2, 1, 2]
     assert all(p['start_time'] == '2026-09-01 00:00:00' for p in calls)
+
+
+def test_creation_day_snapshot_has_fixed_bounds_and_creation_time_filter(monkeypatch):
+    monkeypatch.setattr(presence, 'PAGE_SIZE', 2)
+    calls = mock_pages(monkeypatch, [page([11, 22], 3), page([33], 3)] * 2)
+
+    rows = presence.active_rows_for_day('test', '2026-09-01')
+
+    assert set(rows) == {'11', '22', '33'}
+    assert [p['start_index'] for p in calls] == [1, 2, 1, 2]
+    assert all(p['start_time'] == '2026-09-01 00:00:00' for p in calls)
+    assert all(p['end_time'] == '2026-09-01 23:59:59' for p in calls)
+    assert all(p['time_type'] == 2 for p in calls)
+
+
+def test_reconcile_refreshes_only_bounded_creation_days(db, sync_case, monkeypatch):
+    monkeypatch.setattr(reconciliation, 'MAX_SNAPSHOT_DAYS_PER_RUN', 2)
+    monkeypatch.setattr(reconciliation, 'beijing_today', lambda: __import__('datetime').date(2026, 9, 21))
+    db.execute(text("UPDATE lsordertest.okki_outbound_records SET create_time='2026-09-20 14:16:08'"))
+    db.commit()
+    called = []
+
+    def snapshot(_token, creation_day):
+        called.append(str(creation_day))
+        return {
+            '77': {'outbound_invoice_id': '77', 'create_time': f'{creation_day} 14:16:08'},
+            '88': {'outbound_invoice_id': '88', 'create_time': f'{creation_day} 14:17:08'},
+        }
+
+    monkeypatch.setattr(presence, 'active_rows_for_day', snapshot)
+    stats = reconciliation.reconcile_deleted_outbounds(db)
+
+    assert called == ['2026-09-20', '2026-09-21', '2026-09-21']
+    assert stats['snapshot_days'] == 2
+    assert stats['checked'] == 2
+    saved = db.execute(text(
+        "SELECT status, record_count FROM ark_okki_outbound_presence_days "
+        "WHERE creation_date='2026-09-20'"
+    )).mappings().one()
+    assert saved == {'status': 'ready', 'record_count': 2}
+
+
+def test_snapshot_detail_lookup_is_capped_without_deletion(db, sync_case, monkeypatch):
+    monkeypatch.setattr(reconciliation, 'MAX_SNAPSHOT_DAYS_PER_RUN', 2)
+    monkeypatch.setattr(reconciliation, 'MAX_SNAPSHOT_DETAIL_LOOKUPS', 1)
+    monkeypatch.setattr(presence, 'active_rows_for_day', lambda *_: {
+        '88': {'outbound_invoice_id': '88', 'create_time': '2026-09-21 14:16:08'},
+        '99': {'outbound_invoice_id': '99', 'create_time': '2026-09-21 14:17:08'},
+    })
+    db.execute(text('DELETE FROM lsordertest.okki_outbound_record_items'))
+    db.commit()
+
+    calls = []
+    monkeypatch.setattr(reconciliation.okki_client, '_get_json', lambda *a, **k: (
+        calls.append(k['params']['outbound_invoice_id']) or
+        {'outbound_invoice_id': k['params']['outbound_invoice_id'], 'record_list': []}
+    ))
+    stats = reconciliation.reconcile_deleted_outbounds(db)
+
+    assert stats['snapshot_errors'] == 0
+    assert len(calls) == 1
+    assert db.query(ShippingOperationEvent).count() == 0
+    saved = db.execute(text(
+        "SELECT status, pending_detail_ids FROM ark_okki_outbound_presence_days "
+        "WHERE creation_date='2026-09-22'"
+    )).mappings().one()
+    assert saved['status'] == 'pending'
+    assert len(__import__('json').loads(saved['pending_detail_ids'])) == 2
+
+
+def test_snapshot_detail_lookup_uses_short_timeout(db, sync_case, monkeypatch):
+    monkeypatch.setattr(presence, 'active_rows_for_day', lambda *_: rows(99))
+    calls = []
+
+    def detail(*args, **kwargs):
+        calls.append(kwargs)
+        return {'outbound_invoice_id': '99', 'record_list': []}
+
+    monkeypatch.setattr(reconciliation.okki_client, '_get_json', detail)
+    row = reconciliation._scan_snapshot_day(
+        db, 'test', __import__('datetime').date(2026, 9, 21), {},
+    )
+    complete = reconciliation._hydrate_snapshot_day(db, 'test', row, {'remaining': 1})
+
+    assert complete
+    assert calls[0]['timeout'] == reconciliation.SNAPSHOT_DETAIL_TIMEOUT_SECONDS == 15
+
+
+def test_snapshot_detail_progress_resumes_across_bounded_runs(db, sync_case, monkeypatch):
+    monkeypatch.setattr(presence, 'active_rows_for_day', lambda *_: rows(101, 102, 103))
+    calls = []
+
+    def detail(*args, **kwargs):
+        identity = kwargs['params']['outbound_invoice_id']
+        calls.append(identity)
+        return {'outbound_invoice_id': identity, 'record_list': [{'order_id': int(identity) + 1000}]}
+
+    monkeypatch.setattr(reconciliation.okki_client, '_get_json', detail)
+    day = __import__('datetime').date(2026, 9, 21)
+    for remaining in (2, 1, 0):
+        row = reconciliation._scan_snapshot_day(db, 'test', day, {})
+        reconciliation._hydrate_snapshot_day(db, 'test', row, {'remaining': 1})
+        db.refresh(row)
+        assert len(row.pending_detail_ids) == remaining
+    assert calls == ['101', '102', '103']
+    assert row.status == 'ready'
+    assert set(row.retained_order_ids) == {'1101', '1102', '1103'}
+
+
+def test_changed_active_row_requeues_only_its_detail_association(db, sync_case, monkeypatch):
+    day = __import__('datetime').date(2026, 9, 21)
+    version = {'value': 'A'}
+    monkeypatch.setattr(presence, 'active_rows_for_day', lambda *_: {
+        '101': {'outbound_invoice_id': '101', 'update_time': version['value']}
+    })
+    monkeypatch.setattr(reconciliation.okki_client, '_get_json', lambda *a, **k: {
+        'outbound_invoice_id': '101', 'record_list': [{'order_id': 1101}]
+    })
+    row = reconciliation._scan_snapshot_day(db, 'test', day, {'101': {'999'}})
+    assert row.status == 'ready' and row.retained_order_ids == ['999']
+    version['value'] = 'B'
+    row = reconciliation._scan_snapshot_day(db, 'test', day, {'101': {'999'}})
+    assert row.status == 'pending' and row.pending_detail_ids == ['101']
+    assert row.detail_order_ids == {} and row.retained_order_ids == []
+    row = reconciliation._scan_snapshot_day(db, 'test', day, {'101': {'999'}})
+    assert row.status == 'pending' and row.pending_detail_ids == ['101']
+
+    assert reconciliation._hydrate_snapshot_day(db, 'test', row, {'remaining': 1})
+    assert row.detail_order_ids == {'101': ['1101']}
+    assert row.retained_order_ids == ['1101']
+
+
+def test_failed_detail_consumes_global_budget_and_keeps_cursor(db, sync_case, monkeypatch):
+    monkeypatch.setattr(presence, 'active_rows_for_day', lambda *_: rows(101, 102))
+    day = __import__('datetime').date(2026, 9, 21)
+    row = reconciliation._scan_snapshot_day(db, 'test', day, {})
+    calls = []
+
+    def fail(*args, **kwargs):
+        calls.append(kwargs['params']['outbound_invoice_id'])
+        raise reconciliation.okki_client.OkkiApiError('timeout')
+
+    monkeypatch.setattr(reconciliation.okki_client, '_get_json', fail)
+    budget = {'remaining': 1}
+    with pytest.raises(reconciliation.okki_client.OkkiApiError):
+        reconciliation._hydrate_snapshot_day(db, 'test', row, budget)
+    db.rollback()
+    db.refresh(row)
+    assert budget['remaining'] == 0 and calls == ['101']
+    assert row.pending_detail_ids == ['101', '102']
+
+
+def test_shared_budget_stays_hard_capped_after_one_day_fails(db, sync_case, monkeypatch):
+    day_type = __import__('datetime').date
+    current = {'ids': ('101',)}
+    monkeypatch.setattr(presence, 'active_rows_for_day', lambda *_: rows(*current['ids']))
+    first = reconciliation._scan_snapshot_day(db, 'test', day_type(2026, 9, 20), {})
+    current['ids'] = tuple(str(value) for value in range(201, 221))
+    second = reconciliation._scan_snapshot_day(db, 'test', day_type(2026, 9, 21), {})
+    calls = []
+
+    def detail(*args, **kwargs):
+        identity = kwargs['params']['outbound_invoice_id']
+        calls.append(identity)
+        if identity == '101':
+            raise reconciliation.okki_client.OkkiApiError('timeout')
+        return {'outbound_invoice_id': identity, 'record_list': []}
+
+    monkeypatch.setattr(reconciliation.okki_client, '_get_json', detail)
+    budget = {'remaining': 16}
+    with pytest.raises(reconciliation.okki_client.OkkiApiError):
+        reconciliation._hydrate_snapshot_day(db, 'test', first, budget)
+    db.rollback()
+    reconciliation._hydrate_snapshot_day(db, 'test', second, budget)
+
+    assert len(calls) == 16 and budget['remaining'] == 0
+    assert len(second.pending_detail_ids) == 5
 
 
 @pytest.mark.parametrize('pages', [
@@ -115,8 +296,9 @@ def sync_case(db, case, monkeypatch):
     db.execute(text("UPDATE lsordertest.okki_outbound_records SET outbound_invoice_id='88' WHERE id != 'OB001'"))
     db.commit()
     outbound_service._columns_cache.clear()
+    monkeypatch.setattr(reconciliation, 'beijing_today', lambda: __import__('datetime').date(2026, 9, 22))
     monkeypatch.setattr(reconciliation, 'ensure_access_token', lambda db: 'test')
-    monkeypatch.setattr(presence, 'active_ids', lambda *args: {'88'})
+    monkeypatch.setattr(presence, 'active_rows_for_day', lambda *args: rows(88))
     monkeypatch.setattr(reconciliation.okki_client, '_get_json', lambda *a, **k:
                         {'outbound_invoice_id': k['params']['outbound_invoice_id'], 'record_list': []})
     return case
@@ -137,13 +319,46 @@ def test_direct_xiaoman_deletion_auto_hides_mirror_without_post_or_media_loss(db
     assert reconciliation.reconcile_deleted_outbounds(db)['deleted'] == 0
 
 
+def test_current_day_snapshot_never_proves_candidate_absence(db, sync_case, monkeypatch):
+    _, _, task, _ = sync_case
+    today = reconciliation.beijing_today().isoformat()
+    db.execute(text("UPDATE lsordertest.okki_outbound_records SET create_time=:stamp"),
+               {'stamp': f'{today} 09:00:00'})
+    db.commit()
+    monkeypatch.setattr(presence, 'active_rows_for_day', lambda *args: rows(88))
+
+    stats = reconciliation.reconcile_deleted_outbounds(db)
+
+    assert stats['coverage_ready'] and stats['checked'] == 0 and stats['deleted'] == 0
+    assert stats['deferred'] == 2
+    assert task.status == 'done'
+    assert db.query(ShippingOperationEvent).count() == 0
+
+
+def test_current_day_change_after_hydration_blocks_historical_deletion(db, sync_case, monkeypatch):
+    _, _, task, _ = sync_case
+    calls = []
+
+    def snapshot(_token, creation_day):
+        calls.append(str(creation_day))
+        if str(creation_day) == '2026-09-22' and calls.count('2026-09-22') == 2:
+            return rows(88, 99)
+        return rows(88)
+
+    monkeypatch.setattr(presence, 'active_rows_for_day', snapshot)
+    stats = reconciliation.reconcile_deleted_outbounds(db)
+
+    assert stats['snapshot_errors'] == 1 and stats['deleted'] == 0
+    assert not stats['coverage_ready'] and stats['deferred'] == 2
+    assert task.status == 'done' and db.query(ShippingOperationEvent).count() == 0
+
+
 def test_failed_snapshot_does_not_write_tombstone_or_task(db, sync_case, monkeypatch):
     _, _, task, _ = sync_case
     def fail(*args):
         raise presence.PresenceError('incomplete')
-    monkeypatch.setattr(presence, 'active_ids', fail)
-    with pytest.raises(presence.PresenceError):
-        reconciliation.reconcile_deleted_outbounds(db)
+    monkeypatch.setattr(presence, 'active_rows_for_day', fail)
+    assert reconciliation.reconcile_deleted_outbounds(db)['snapshot_errors'] > 0
     assert db.query(ShippingOperationEvent).count() == 0
     assert task.status == 'done'
 
@@ -158,8 +373,8 @@ def test_scheduler_defers_concurrent_business_changes(db, sync_case, monkeypatch
             task.reason = 'created: replacement'
             task.attempts += 1
             db.commit()
-            return {'88'}
-        monkeypatch.setattr(presence, 'active_ids', change_during_scan)
+            return rows(88)
+        monkeypatch.setattr(presence, 'active_rows_for_day', change_during_scan)
     else:
         task.status = state
     db.commit()
@@ -239,7 +454,7 @@ def test_live_replacement_without_any_mirror_rows_keeps_task(db, sync_case, monk
     _, _, task, _ = sync_case
     task.reason = 'created: replacement'
     db.commit()
-    monkeypatch.setattr(presence, 'active_ids', lambda *a: {'88', '99'})
+    monkeypatch.setattr(presence, 'active_rows_for_day', lambda *a: rows(88, 99))
     monkeypatch.setattr(reconciliation.okki_client, '_get_json', lambda *a, **k:
                         {'outbound_invoice_id': k['params']['outbound_invoice_id'],
                          'record_list': [{'order_id': 123}] if k['params']['outbound_invoice_id'] == '99' else []})
@@ -256,18 +471,17 @@ def test_same_second_poller_completion_during_snapshot_is_deferred(db, sync_case
         task.attempts += 1
         task.updated_at = stamp  # Production poller and MySQL DATETIME use seconds.
         db.commit()
-        return {'88'}
-    monkeypatch.setattr(presence, 'active_ids', complete)
+        return rows(88)
+    monkeypatch.setattr(presence, 'active_rows_for_day', complete)
     assert reconciliation.reconcile_deleted_outbounds(db)['deferred'] == 1
     assert task.status == 'done' and task.reason == 'created: OLD'
 
 
 def test_live_replacement_lookup_failure_never_changes_local_state(db, sync_case, monkeypatch):
     _, _, task, _ = sync_case
-    monkeypatch.setattr(presence, 'active_ids', lambda *a: {'88', '99'})
+    monkeypatch.setattr(presence, 'active_rows_for_day', lambda *a: rows(88, 99))
     monkeypatch.setattr(reconciliation.okki_client, '_get_json', lambda *a, **k: None)
-    with pytest.raises(presence.PresenceError):
-        reconciliation.reconcile_deleted_outbounds(db)
+    assert reconciliation.reconcile_deleted_outbounds(db)['snapshot_errors'] > 0
     assert task.status == 'done' and db.query(ShippingOperationEvent).count() == 0
 
 

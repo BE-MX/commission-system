@@ -613,7 +613,7 @@ def _daily_finish(target_date: date, success: bool) -> None:
 
 def _daily_target_date(now: datetime, allow_today: bool = False) -> date | None:
     """返回最早待补发日报日期；首次启用只从最近一个已到点日期建基线。"""
-    latest_due = (now.date() if allow_today or now.time() >= dt_time(17, 30)
+    latest_due = (now.date() if allow_today or now.time() >= dt_time(17, 0)
                   else now.date() - timedelta(days=1))
     activity_start = date.fromisoformat(service.ACTIVITY_GMV_WINDOW[0])
     activity_end = date.fromisoformat(service.ACTIVITY_GMV_WINDOW[1])
@@ -763,12 +763,12 @@ async def send_daily_report_if_due(*, force: bool = False,
 
 
 async def monitor_festival_and_recover_daily() -> dict:
-    """分钟任务：事件主链路 + 17:30 后日报失败/停机恢复。"""
+    """分钟任务：事件主链路 + 17:00 后日报失败/停机恢复。"""
     event_error = None
     try:
         result = await monitor_festival_events()
     except Exception as exc:
-        # 事件消息失败不能阻断 17:30 日报恢复，两条投递链路独立推进。
+        # 事件消息失败不能阻断 17:00 日报恢复，两条投递链路独立推进。
         event_error = exc
         result = {"error": str(exc)}
     try:

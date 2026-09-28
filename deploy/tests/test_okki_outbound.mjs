@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {createOne as createOneImpl, findExisting, buildPayload, requestOkki, loadInvoiceForOrder, stockShortages} from '../okki_outbound_creator.mjs';
+import {createOne as createOneImpl, findExisting, buildPayload, requestOkki, loadInvoiceForOrder, stockShortages, selectSerial,
+  regenerationDirectory, assertRegenerationTask, assertClaimedTask} from '../okki_outbound_creator.mjs';
 const order = {order_id: 123, create_time: '2026-09-17 08:00:00', handler: [9], company_id: 2,
   currency: 'USD', exchange_rate: 669, exchange_rate_usd: 100,
   product_list: [{product_id: 4, sku_id: 5, unique_id: 6, count: 2, unit_price: 10, to_outbound_count: 0}]};
@@ -73,6 +74,68 @@ test('successful creation verifies association and persists ledger',async t=> {
   assert.equal(result.outcome,'created');assert.equal(posts,1);
   assert.match(fs.readFileSync(path.join(directory,'logs','created-outbound.jsonl'),'utf8'),/INV123/);
 });
+test('regeneration uses a new durable intent and never reuses an uncertain attempt', async t => {
+  const root=dir(t), original=path.join(root,'logs');fs.mkdirSync(original);
+  fs.writeFileSync(path.join(original,'created-outbound.jsonl'),JSON.stringify({order_id:'123',outbound_invoice_id:77})+'\n');
+  const directory=regenerationDirectory(root,824);fs.mkdirSync(path.join(directory,'logs'),{recursive:true});
+  let posts=0;
+  const api=async(route,payload)=>{
+    if(payload){posts++;throw Error('response lost');}
+    if(route.includes('/order/info'))return order;
+    return {count:0,list:[]};
+  };
+  await assert.rejects(createOne('123',{invoiceNo:'INV123',directory,api}),e=>e.uncertain===true);
+  await assert.rejects(createOne('123',{invoiceNo:'INV123',directory,api}),/Prior submission intent/);
+  assert.equal(posts,1);
+  assert.match(fs.readFileSync(path.join(original,'created-outbound.jsonl'),'utf8'),/"outbound_invoice_id":77/);
+});
+test('regeneration requires the same claimed task and latest successful sync',()=>{
+  const task={status:'running',reason:'regenerate:824',latest_sync_log_id:824,sync_status:'synced',linked_sync_id:null};
+  assert.doesNotThrow(()=>assertRegenerationTask(task,824));
+  assert.throws(()=>assertRegenerationTask({...task,latest_sync_log_id:825},824),/changed/);
+  assert.throws(()=>assertRegenerationTask({...task,status:'uncertain'},824),/changed/);
+  assert.throws(()=>regenerationDirectory('root','../824'),/Invalid/);
+});
+test('normal claim must still match invoice sync and attempt at submission',()=>{
+  const task={status:'running',reason:'stock retry',attempts:5,latest_sync_log_id:100,
+    sync_status:'synced',linked_sync_id:null,order_type:'stock'};
+  assert.doesNotThrow(()=>assertClaimedTask(task,100,5));
+  assert.throws(()=>assertClaimedTask({...task,latest_sync_log_id:101},100,5),/changed/);
+  assert.throws(()=>assertClaimedTask({...task,sync_status:'not_synced'},100,5),/changed/);
+  assert.throws(()=>assertClaimedTask({...task,attempts:6},100,5),/changed/);
+  assert.throws(()=>assertClaimedTask({...task,reason:'regenerate:100'},100,5),/changed/);
+});
+test('regeneration never treats a deleted same-order serial detail as active',async()=>{
+  let lookups=0;
+  const selection=await selectSerial(order,'INV123',async route=>{
+    lookups++;
+    return route.includes('%5B')?null:{outbound_invoice_id:77,serial_id:'INV123',record_list:[{order_id:123}]};
+  },{regeneration:true});
+  assert.equal(selection.serial,'INV123 [123]');
+  assert.equal(lookups,2);
+});
+test('changed sync before intent never submits or leaves an uncertain marker',async t=>{
+  const directory=dir(t);let posts=0;
+  await assert.rejects(createOne('123',{invoiceNo:'INV123',directory,
+    beforeSubmit:async()=>{throw Error('newer sync');},api:async(route,payload)=>{
+      if(payload)posts++;
+      return route.includes('/order/info')?order:{count:0,list:[]};
+    }}),/newer sync/);
+  assert.equal(posts,0);
+  assert.equal(fs.existsSync(path.join(directory,'logs','ark-outbound-intents')),false);
+});
+test('submission fence remains held through POST and is released afterwards',async t=>{
+  const directory=dir(t);let held=false,posts=0;
+  await createOne('123',{invoiceNo:'INV123',directory,
+    beforeSubmit:async()=>{held=true;return async()=>{held=false;};},
+    api:async(route,payload)=>{
+      if(payload){assert.equal(held,true);posts++;return {outbound_invoice_id:88,serial_id:'INV123'};}
+      if(route.includes('/order/info'))return order;
+      if(route.includes('/outbound/list'))return {count:0,list:[]};
+      return {record_list:[{order_id:123}]};
+    }});
+  assert.equal(posts,1);assert.equal(held,false);
+});
 test('invalid product stops whole order instead of partial creation',()=> {
   assert.throws(()=>buildPayload({...order,product_list:[...order.product_list,{count:1}]}, 'INV123'),/Invalid order item/);
 });
@@ -101,7 +164,62 @@ test('concurrent creators share exclusive intent; only one POST',async t=> {
   assert.equal(posts,1);assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
 });
 
-const {resultFromOutput, finishTask, claimBatch} = await import('../okki_outbound_poller.js');
+const {resultFromOutput, finishTask, claimBatch, generationFromReason, advanceGeneration} = await import('../okki_outbound_poller.js');
+test('claimed generation marker survives stock wait and invalid reasons do not trigger it',()=>{
+  assert.equal(generationFromReason('regenerate:824 Insufficient warehouse stock'),'824');
+  assert.equal(generationFromReason('regenerate:824'), '824');
+  assert.equal(generationFromReason('deleted:77'),null);
+  assert.equal(generationFromReason('regenerate:8240suffix'),null);
+});
+test('definite pre-submit failure advances to a newer successful sync',async()=>{
+  const calls=[];
+  const conn={query:async(sql,params)=>{
+    calls.push({sql,params});
+    if(sql.includes('FROM ark_invoices i'))return [[{id:825,sync_status:'synced'}]];
+    if(sql.includes('FROM ark_invoice_items'))return [[{count:0}]];
+    return [{affectedRows:1}];
+  }};
+  await advanceGeneration(conn,{id:7,invoice_id:4,attempts:2},'824','failed','regenerate:824 See last_error');
+  assert.equal(calls.length,3);
+  assert.match(calls[2].sql,/status=\?/);
+  assert.deepEqual(calls[2].params.slice(0,2),['pending','regenerate:825']);
+});
+test('a successful edit during a normal stock worker wakes its old waiting result',async()=>{
+  const calls=[];
+  const conn={query:async(sql,params)=>{
+    calls.push({sql,params});
+    if(sql.includes('FROM ark_invoices i'))return [[{id:101,sync_status:'synced'}]];
+    if(sql.includes('FROM ark_invoice_items'))return [[{count:0}]];
+    return [{affectedRows:1}];
+  }};
+  await advanceGeneration(conn,{id:7,invoice_id:4,attempts:5,claimedSyncLogId:100},null,
+    'waiting_stock','Insufficient warehouse stock');
+  assert.deepEqual(calls.at(-1).params.slice(0,2),['pending',null]);
+  assert.equal(calls.at(-1).params.at(-1),'Insufficient warehouse stock');
+});
+test('a concurrent edit with unbackfilled custom lines skips the old stock worker',async()=>{
+  const calls=[];
+  const conn={query:async(sql,params)=>{
+    calls.push({sql,params});
+    if(sql.includes('FROM ark_invoices i'))return [[{id:101,sync_status:'synced'}]];
+    if(sql.includes('FROM ark_invoice_items'))return [[{count:1}]];
+    return [{affectedRows:1}];
+  }};
+  await advanceGeneration(conn,{id:7,invoice_id:4,attempts:5,claimedSyncLogId:100},null,
+    'waiting_stock','Insufficient warehouse stock');
+  assert.equal(calls.at(-1).params[0],'skipped');
+  assert.match(calls.at(-1).params[1],/非标/);
+});
+test('unfinished or unchanged invoice sync cannot wake a stock worker',async()=>{
+  for(const latest of [{id:101,sync_status:'not_synced'},{id:100,sync_status:'synced'}]){
+    const calls=[];
+    await advanceGeneration({query:async(sql,params)=>{
+      calls.push({sql,params});return [[latest]];
+    }},{id:7,invoice_id:4,attempts:5,claimedSyncLogId:100},null,
+    'waiting_stock','Insufficient warehouse stock');
+    assert.equal(calls.length,1);
+  }
+});
 test('zero exit without validated result never marks done',()=> {
   assert.equal(resultFromOutput(0, 'failed but exit zero', '123'),null);
   assert.equal(resultFromOutput(0, 'ARK_OUTBOUND_RESULT={"outcome":"created","order_id":"999","outbound_invoice_id":88}', '123'),null);
@@ -113,9 +231,11 @@ test('claim leases only one task immediately and increments attempt version',asy
   const result=await claimBatch({query:async(sql,params)=> {
     if (/^(START|COMMIT|ROLLBACK)/.test(sql)) return [];
     if (sql.includes('SELECT linked_sync_id')) return [[{linked_sync_id:null,sync_status:'synced',status:'synced'}]];
+    if (sql.includes('SELECT MAX(id)')) return [[{id:100}]];
     calls.push({sql,params});return calls.length===1?[[{id:7,order_id:'123',attempts:2}]]:[{affectedRows:1}];
   }});
-  assert.equal(calls[0].params.at(-1),1);assert.equal(result.length,1);assert.equal(result[0].attempts,3);
+  assert.equal(calls[0].params.at(-1),1);assert.equal(result.length,1);
+  assert.equal(result[0].attempts,3);assert.equal(result[0].claimedSyncLogId,100);
 });
 test('lost optimistic claim does not execute task',async()=> {
   let calls=0;
@@ -291,10 +411,13 @@ test('waiting claim has fixed interval without attempt cap and retains prior sta
   const tasks=await claimBatch({query:async(sql,params)=>{
     if (/^(START|COMMIT|ROLLBACK)/.test(sql)) return [];
     if (sql.includes('SELECT linked_sync_id')) return [[{linked_sync_id:null,sync_status:'synced',status:'synced'}]];
+    if (sql.includes('SELECT MAX(id)')) return [[{id:100}]];
     calls.push({sql,params});return calls.length===1?[[{id:7,order_id:'123',attempts:100,status:'waiting_stock'}]]:[{affectedRows:1}];
   }});
   for(const c of calls){assert.match(c.sql,/status = 'waiting_stock' AND updated_at <= DATE_SUB\(\?, INTERVAL 15 MINUTE\)/);assert.equal((c.sql.match(/\?/g)||[]).length,c.params.length);}
+  assert.match(calls.at(-1).sql,/reason <=> \?/);
   assert.equal(tasks[0].attempts,101);assert.equal(tasks[0].priorStatus,'waiting_stock');
+  assert.equal(tasks[0].claimedSyncLogId,100);
 });
 
 
@@ -303,6 +426,7 @@ test('stale running after many stock checks can be reclaimed with intent protect
   const tasks=await claimBatch({query:async(sql,params)=>{
     if (/^(START|COMMIT|ROLLBACK)/.test(sql)) return [];
     if (sql.includes('SELECT linked_sync_id')) return [[{linked_sync_id:null,sync_status:'synced',status:'synced'}]];
+    if (sql.includes('SELECT MAX(id)')) return [[{id:100}]];
     calls.push({sql,params});return calls.length===1?[[{id:7,order_id:'123',attempts:101,status:'running'}]]:[{affectedRows:1}];
   }});
   for(const c of calls){assert.match(c.sql,/status = 'running' AND updated_at <= DATE_SUB/);assert.equal((c.sql.match(/\?/g)||[]).length,c.params.length);}

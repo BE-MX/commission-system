@@ -71,11 +71,10 @@ def _customer(db, user, name="余额客户"):
 def _attrs():
     return ProductAttrs(
         product_type="cap",
-        craft="逐件工艺",
+        craft="中分界",
         net_color="呼吸红",
         size="S",
-        length="15厘米",
-        density="65%",
+        length="40厘米",
         hair_style_series="直发",
     )
 
@@ -113,7 +112,7 @@ def _route_and_workers(db):
         worker = _user(db, f"unit-worker-{index}")
         db.add(UserProcessBinding(user_id=worker.id, process_id=process.id))
         workers.append(worker)
-    db.add(DomesticCraftRoute(product_type="cap", craft="逐件工艺", route_id=route.id))
+    db.add(DomesticCraftRoute(product_type="cap", craft="中分界", route_id=route.id))
     db.flush()
     return route, workers
 
@@ -121,7 +120,13 @@ def _route_and_workers(db):
 def _expected_for_price(db, customer, attrs, price):
     price = Decimal(price)
     customer.membership_level = "black"
-    original = price + Decimal("120.00")
+    in_scope = pricing_service.in_member_reduction_scope(
+        product_type=attrs.product_type,
+        craft=attrs.craft,
+        length=attrs.length,
+        size=attrs.size if attrs.product_type == "piece" else None,
+    )
+    original = price + Decimal("120.00") if in_scope else price
     row = db.query(DomesticBasePrice).filter_by(
         product_type=attrs.product_type,
         craft=attrs.craft,
@@ -140,12 +145,20 @@ def _expected_for_price(db, customer, attrs, price):
         row.original_price = original
         row.version += 1
     db.flush()
+    discount = pricing_service.resolve_discount(
+        product_type=attrs.product_type,
+        craft=attrs.craft,
+        length=attrs.length,
+        size=attrs.size if attrs.product_type == "piece" else None,
+        original_price=row.original_price,
+        membership_level="black",
+    )
     return {
-        "original_price": original,
+        "original_price": discount.original_price,
         "base_price_version": row.version,
-        "discount_price": price,
+        "discount_price": discount.final_price,
         "membership_level": "black",
-        "pricing_rule": "member_reduction",
+        "pricing_rule": discount.pricing_rule,
         "pricing_version": pricing_service.PRICING_VERSION,
     }
 
@@ -187,9 +200,10 @@ def _item(db, order_id):
 
 
 def _approve_pending_order(db, order_id, reviewer):
-    """优惠价单先落待审核（不扣款）：审核通过才转生产中并按快照扣款。"""
+    """系统默认会员价不进待审核；仅偏离默认价时审核通过转生产中。"""
     order = db.query(DomesticOrder).get(order_id)
-    assert order.status == C.ORDER_PENDING_REVIEW
+    if order.status != C.ORDER_PENDING_REVIEW:
+        return None
     assert order.charged_amount == Decimal("0.00")
     result = order_service.review_order(
         db, order_id, decision="approve", remark=None,
@@ -327,13 +341,11 @@ def test_draft_does_not_charge_until_submit(db):
     submitted = order_service.submit_draft(db, order.id, payload, creator.id)
     db.refresh(customer)
     db.refresh(order)
-    assert submitted["status"] == C.ORDER_PENDING_REVIEW
-    assert order.status == C.ORDER_PENDING_REVIEW
-    assert order.charged_amount == Decimal("0.00")
-    assert customer.balance == Decimal("100.00")
-
-    _approve_pending_order(db, order.id, _user(db, "draft-order-reviewer"))
-    db.refresh(customer)
+    # 系统会员价不偏离默认价：提交直接生产中并扣款
+    assert submitted["status"] == C.ORDER_PRODUCING
+    assert order.status == C.ORDER_PRODUCING
+    assert order.charged_amount == Decimal("45.00")
+    assert customer.balance == Decimal("55.00")
     db.refresh(order)
     assert order.status == C.ORDER_PRODUCING
     assert order.charged_amount == Decimal("45.00")
@@ -395,10 +407,7 @@ def test_formal_order_request_id_prevents_double_charge(db):
     db.refresh(customer)
     assert replay["id"] == first["id"]
     assert replay["replayed"] is True
-    assert customer.balance == Decimal("100.00")
-
-    _approve_pending_order(db, first["id"], _user(db, "formal-retry-reviewer"))
-    db.refresh(customer)
+    # 系统会员价创建即扣款；重放不重复扣
     assert customer.balance == Decimal("80.00")
     assert db.query(DomesticOrder).count() == 1
     mini_rows, _ = order_service.list_orders(db, include_finance=False)
@@ -465,7 +474,7 @@ def test_order_scale_limits_creation_and_append(db):
             "discount_price": "0.00",
             "membership_level": "black",
             "pricing_rule": "member_reduction",
-            "pricing_version": "domestic-member-v1",
+            "pricing_version": "domestic-member-v2",
         },
     )
     base = {
@@ -535,8 +544,9 @@ def test_item_amount_edits_settle_difference_and_termination_refunds(db):
     order_service.update_item(db, item.id, OrderItemUpdate(unit_price=Decimal("5.00")), creator.id)
     db.refresh(customer)
     assert customer.balance == Decimal("85.00")
-    with pytest.raises(ValidationError):
-        OrderItemUpdate(unit_price=Decimal("0"))
+    # 手工价必须为正：0 由服务端拒绝（样单另有显式契约）
+    with pytest.raises(ValueError, match="手工|样单|0"):
+        order_service.update_item(db, item.id, OrderItemUpdate(unit_price=Decimal("0")), creator.id)
 
     order_service.terminate_order(db, created["id"], "客户取消", creator.id)
     db.refresh(customer)
@@ -561,28 +571,30 @@ def test_item_attrs_edit_relinks_product_without_repricing(db):
     old_product = db.get(DomesticProduct, item.product_id)
     old_use_count = old_product.use_count
 
-    # 普单不接受标准字典之外的属性值
+    # 普单不接受标准字典之外的属性值（用尺码校验，40 厘米会忽略发量）
     with pytest.raises(ValueError, match="标准选项"):
         order_service.update_item(
             db, item.id,
-            OrderItemUpdate(attrs={**item.attrs_snapshot, "density": "80%"}),
+            OrderItemUpdate(attrs={**item.attrs_snapshot, "size": "非标尺码"}),
             creator.id,
         )
 
     db.add(SysDict(
-        type=C.ATTR_DICTS["cap"]["density"], code="80%", label="80%", sort=2, is_active=True,
+        type=C.ATTR_DICTS["cap"]["size"], code="非标尺码", label="非标尺码", sort=2, is_active=True,
     ))
     db.flush()
     order_service.update_item(
         db, item.id,
-        OrderItemUpdate(attrs={**item.attrs_snapshot, "density": "80%"}),
+        OrderItemUpdate(attrs={**item.attrs_snapshot, "size": "非标尺码"}),
         creator.id,
     )
     db.refresh(item)
+    assert item.attrs_snapshot["size"] == "非标尺码"
+    db.refresh(item)
     db.refresh(old_product)
-    assert item.attrs_snapshot["density"] == "80%"
+    assert item.attrs_snapshot["size"] == "非标尺码"
     assert item.product_id != old_product.id
-    assert "80%" in item.product_name
+    assert "非标尺码" in item.product_name
     # 改规格不重算成交价，也不动工艺路线
     assert item.unit_price == Decimal("10.00")
     assert item.route_id is not None
@@ -662,13 +674,17 @@ def test_revoked_report_history_still_blocks_item_delete(db):
     _, workers = _route_and_workers(db)
     creator = _user(db, "audit-delete-planner")
     customer = _customer(db, creator, "审计删除客户")
-    created = _create_order(db, creator, customer, qty=2, price="0")
+    balance_service.recharge_customer(
+        db, customer_id=customer.id, amount=Decimal("100.00"), user_id=creator.id,
+        request_id="audit-delete-recharge",
+    )
+    created = _create_order(db, creator, customer, qty=2, price="10.00")
     _approve_pending_order(db, created["id"], _user(db, "audit-delete-reviewer"))
     original = _item(db, created["id"])
     order_service.add_item(
         db, created["id"],
         _priced_item(
-            db, customer, request_id="audit-delete-append", qty=1, price="0"
+            db, customer, request_id="audit-delete-append", qty=1, price="10.00"
         ),
         creator.id,
     )
@@ -849,12 +865,7 @@ def test_credit_customer_orders_without_balance(db):
 
     db.refresh(customer)
     order = db.query(DomesticOrder).get(created["id"])
-    assert order.status == C.ORDER_PENDING_REVIEW
-    assert customer.balance == Decimal("0.00")
-
-    _approve_pending_order(db, order.id, _user(db, "credit-order-reviewer"))
-    db.refresh(customer)
-    db.refresh(order)
+    # 系统会员价直接生效；赊账客户扣款后可为负
     assert order.status == C.ORDER_PRODUCING
     assert customer.balance == Decimal("-20.00")
     charge = db.query(DomesticCustomerLedger).filter_by(
@@ -901,12 +912,7 @@ def test_credit_customer_draft_submit_without_balance(db):
 
     db.refresh(customer)
     db.refresh(order)
-    assert order.status == C.ORDER_PENDING_REVIEW
-    assert customer.balance == Decimal("0.00")
-
-    _approve_pending_order(db, order.id, _user(db, "credit-draft-reviewer"))
-    db.refresh(customer)
-    db.refresh(order)
+    # 系统会员价直接生效；赊账扣款后可为负
     assert order.status == C.ORDER_PRODUCING
     assert customer.balance == Decimal("-45.00")
 

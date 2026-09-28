@@ -47,6 +47,7 @@ _RECORD_CANDIDATES: dict[str, list[str]] = {
     "company_id": ["company_id"],
     "owner_name": ["create_user_name", "owner_name", "salesman_name", "user_name", "operator_name"],
     "remark": ["remark"],
+    "updated_at": ["update_time", "updated_at"],
 }
 
 _ITEM_CANDIDATES: dict[str, list[str]] = {
@@ -151,24 +152,28 @@ def _owner_scope_clause(db: Session, rm: dict[str, str | None]) -> str:
         return mirror_scope
     item_key = im["invoice_id"] if link == "invoice" else im["record_id"]
     record_key = rm["invoice_id"] if link == "invoice" else rm["id"]
-    # Exact order linkage is mandatory: matching a name or customer alone could
-    # expose unrelated outbound records. A successful create log excludes imports.
-    local_scope = f"""EXISTS (
-        SELECT 1 FROM `{schema}`.`{ITEMS_TABLE}` local_item
-        JOIN ark_invoices local_invoice
-          ON local_invoice.xiaoman_order_id = local_item.order_id
-        JOIN ark_user_external_bindings local_owner
-          ON local_owner.ark_user_id = local_invoice.sales_user_id
-         AND local_owner.provider = 'okki'
-         AND local_owner.binding_status = 'active'
-         AND local_owner.deleted_at IS NULL
-         AND local_owner.external_account_id = :scope_okki_user_id
-        WHERE local_item.`{item_key}` = r.`{record_key}`
-          AND local_invoice.customer_id = r.`{rm['company_id']}`
-          AND EXISTS (SELECT 1 FROM ark_invoice_sync_logs local_sync
-              WHERE local_sync.invoice_id = local_invoice.id
-                AND local_sync.action = 'create' AND local_sync.success = 1)
-    )"""
+    # Materialize the small set of exact (outbound link, customer) pairs once.
+    # A correlated join scanned ark_invoices for every mirror row on MySQL.
+    # The successful create log excludes imports, and the customer check prevents
+    # an order with the same outbound link from granting access to another customer.
+    join = "STRAIGHT_JOIN" if db.get_bind().dialect.name == "mysql" else "JOIN"
+    local_scope = f"""EXISTS (SELECT 1 FROM (
+        SELECT DISTINCT local_item.`{item_key}` AS link_key,
+                        local_invoice.customer_id AS customer_id
+        FROM ark_user_external_bindings local_owner
+        {join} ark_invoices local_invoice
+          ON local_invoice.sales_user_id = local_owner.ark_user_id
+        {join} `{schema}`.`{ITEMS_TABLE}` local_item
+          ON local_item.order_id = local_invoice.xiaoman_order_id
+        {join} ark_invoice_sync_logs local_sync
+          ON local_sync.invoice_id = local_invoice.id
+         AND local_sync.action = 'create' AND local_sync.success = 1
+        WHERE local_owner.provider = 'okki'
+          AND local_owner.binding_status = 'active'
+          AND local_owner.deleted_at IS NULL
+          AND local_owner.external_account_id = :scope_okki_user_id
+    ) owned WHERE owned.link_key = r.`{record_key}`
+        AND owned.customer_id = r.`{rm['company_id']}`)"""
     return f"({local_scope} OR {mirror_scope})"
 
 
@@ -203,6 +208,7 @@ def _map_record_row(row) -> dict:
         "company_id": _str_or_none(row.get("company_id")),
         "owner_name": _str_or_none(row["owner_name"]),
         "remark": _str_or_none(row["remark"]),
+        "mirror_updated_at": _str_or_none(row.get("mirror_updated_at")),
         "item_count": int(row["item_count"] or 0),
         "total_qty": _num(row["total_qty"]) or 0,
     }
@@ -232,7 +238,8 @@ def _record_select(rm: dict[str, str | None]) -> str:
         f"{_col(rm, 'customer_name', 'r')} AS customer_name, "
         f"{_col(rm, 'company_id', 'r')} AS company_id, "
         f"{_col(rm, 'owner_name', 'r')} AS owner_name, "
-        f"{_col(rm, 'remark', 'r')} AS remark"
+        f"{_col(rm, 'remark', 'r')} AS remark, "
+        f"{_col(rm, 'updated_at', 'r')} AS mirror_updated_at"
     )
 
 
@@ -250,7 +257,7 @@ def deleted_clause(db, rm):
             f"AND deletion.request_id={invoice_id})")
 
 
-def record_list_filters(db, rm, *, keyword=None, date_from=None, date_to=None, okki_user_id=None):
+def record_list_filters(db, rm, *, keyword=None, order_id=None, date_from=None, date_to=None, okki_user_id=None):
     """Shared filters for mirror-only reads and the combined outbound queue."""
     params = {}
     clauses = [deleted_clause(db, rm)]
@@ -259,9 +266,24 @@ def record_list_filters(db, rm, *, keyword=None, date_from=None, date_to=None, o
         params["scope_okki_user_id"] = okki_user_id
     if keyword:
         columns = [rm[key] for key in ("outbound_no", "customer_name") if rm[key]]
-        if columns:
-            clauses.append("(" + " OR ".join(f"r.`{col}` LIKE :kw" for col in columns) + ")")
+        matches = [f"r.`{col}` LIKE :kw" for col in columns]
+        for index, record_id in enumerate(_overlay_keyword_record_ids(db, keyword)):
+            key = f'overlay_record_id_{index}'
+            matches.append(f"r.`{rm['id']}` = :{key}")
+            params[key] = record_id
+        if matches:
+            clauses.append("(" + " OR ".join(matches) + ")")
             params["kw"] = f"%{keyword}%"
+    if order_id:
+        link, _, im = _link(db)
+        if not link or "order_id" not in _table_columns(db, ITEMS_TABLE):
+            clauses.append("1=0")  # Legacy mirror has no order association; local queue can still match.
+        else:
+            item_key = im["invoice_id"] if link == "invoice" else im["record_id"]
+            record_key = rm["invoice_id"] if link == "invoice" else rm["id"]
+            clauses.append(f"EXISTS (SELECT 1 FROM `{_schema()}`.`{ITEMS_TABLE}` oi "
+                           f"WHERE oi.`{item_key}`=r.`{record_key}` AND oi.order_id=:order_id)")
+            params["order_id"] = order_id
     if rm["outbound_date"]:
         if date_from:
             clauses.append(f"r.`{rm['outbound_date']}` >= :date_from")
@@ -272,10 +294,28 @@ def record_list_filters(db, rm, *, keyword=None, date_from=None, date_to=None, o
     return clauses, params
 
 
+def _overlay_keyword_record_ids(db, keyword):
+    """Include verified new serials while the read-only OKKI mirror still has the old serial."""
+    from app.shipping_inspection.models import ShippingOperationEvent
+    from app.shipping_inspection.outbound_sync_state import SCOPE
+
+    candidates = db.query(ShippingOperationEvent.request_id).filter(
+        ShippingOperationEvent.scope == SCOPE,
+        ShippingOperationEvent.result['verified']['serial_id'].as_string().like(f'%{keyword}%'),
+    ).all()
+    result = []
+    for (record_id,) in candidates:
+        record = get_outbound_record(db, record_id)
+        if record and keyword in (record.get('outbound_no') or ''):
+            result.append(record_id)
+    return result
+
+
 def list_outbound_records(
     db: Session,
     *,
     keyword: str | None = None,
+    order_id: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
     page: int = 1,
@@ -291,7 +331,7 @@ def list_outbound_records(
     im = _item_columns(db)
     schema = _schema()
 
-    clauses, params = record_list_filters(db, rm, keyword=keyword, date_from=date_from,
+    clauses, params = record_list_filters(db, rm, keyword=keyword, order_id=order_id, date_from=date_from,
                                          date_to=date_to, okki_user_id=okki_user_id)
     if record_ids is not None:
         clauses.append(f"r.`{rm['id']}` IN :record_ids")
@@ -341,7 +381,25 @@ def list_outbound_records(
         ORDER BY {order_by} r.`{rm['id']}` DESC
         LIMIT :limit OFFSET :offset
     """), {**params, "limit": page_size, "offset": (page - 1) * page_size}).mappings().all()
-    return [_map_record_row(row) for row in rows], int(total)
+    from app.shipping_inspection.outbound_sync_state import apply_header
+    records = [_map_record_row(row) for row in rows]
+    if records:
+        ids = order_ids_for_records(db, [record["outbound_record_id"] for record in records])
+        for record in records:
+            record["order_id"] = "、".join(ids.get(record["outbound_record_id"], [])) or None
+        from app.shipping_inspection.models import ShippingOperationEvent
+        from app.shipping_inspection.outbound_sync_state import SCOPE
+
+        events = db.query(ShippingOperationEvent).filter(
+            ShippingOperationEvent.scope == SCOPE,
+            ShippingOperationEvent.request_id.in_(r["outbound_record_id"] for r in records),
+        ).all()
+        by_record = {event.request_id: event for event in events}
+        for record in records:
+            event = by_record.get(record["outbound_record_id"])
+            if event is not None:
+                apply_header(db, record, event=event)
+    return records, int(total)
 
 
 def get_outbound_record(db: Session, record_id: str, okki_user_id: str | None = None, *, include_deleted=False) -> dict | None:
@@ -366,13 +424,60 @@ def get_outbound_record(db: Session, record_id: str, okki_user_id: str | None = 
     if row is None:
         return None
     result = _map_record_row(row)
+    result["order_id"] = "、".join(order_ids_for_records(db, [record_id]).get(str(record_id), [])) or None
     result.pop("item_count", None)
     result.pop("total_qty", None)
-    return result
+    from app.shipping_inspection.outbound_sync_state import apply_header
+    return apply_header(db, result)
 
 
-def list_outbound_items(db: Session, record_id: str) -> list[dict]:
+def order_ids_for_records(db: Session, record_ids: list[str]) -> dict[str, list[str]]:
+    """Read exact order associations from outbound items; never infer from the document number."""
+    if not record_ids:
+        return {}
+    link, rm, im = _link(db)
+    if not link or "order_id" not in _table_columns(db, ITEMS_TABLE):
+        return {}
+    item_key = im["invoice_id"] if link == "invoice" else im["record_id"]
+    record_key = rm["invoice_id"] if link == "invoice" else rm["id"]
+    rows = db.execute(text(f"""SELECT DISTINCT r.`{rm['id']}` AS rid, i.order_id AS order_id
+        FROM `{_schema()}`.`{RECORDS_TABLE}` r
+        JOIN `{_schema()}`.`{ITEMS_TABLE}` i ON i.`{item_key}`=r.`{record_key}`
+        WHERE r.`{rm['id']}` IN :record_ids AND i.order_id IS NOT NULL""").bindparams(
+            bindparam("record_ids", expanding=True)), {"record_ids": record_ids}).mappings()
+    result: dict[str, list[str]] = {}
+    for row in rows:
+        result.setdefault(str(row["rid"]), []).append(str(row["order_id"]))
+    return {key: sorted(values) for key, values in result.items()}
+
+
+def get_record_by_outbound_invoice_id(db: Session, outbound_invoice_id: str,
+                                      okki_user_id: str | None = None) -> dict | None:
+    """Resolve a live OKKI document to its mirror row without using a fuzzy number search."""
+    rm = _record_columns(db)
+    if not rm["invoice_id"]:
+        return None
+    schema = _schema()
+    scope = f" AND {_owner_scope_clause(db, rm)}" if okki_user_id else ""
+    params = {"outbound_invoice_id": str(outbound_invoice_id)}
+    if okki_user_id:
+        params["scope_okki_user_id"] = okki_user_id
+    rows = db.execute(text(f"""
+        SELECT r.`{rm['id']}` FROM `{schema}`.`{RECORDS_TABLE}` r
+        WHERE r.`{rm['invoice_id']}` = :outbound_invoice_id{scope}
+        LIMIT 2
+    """), params).scalars().all()
+    if len(rows) > 1:
+        raise OutboundTableError("同一小满出库单存在多条镜像记录，请先核对")
+    return get_outbound_record(db, str(rows[0]), okki_user_id=okki_user_id) if rows else None
+
+
+def list_outbound_items(db: Session, record_id: str, *, use_overlay=True, sync_event=None) -> list[dict]:
     """出库明细附产品表 model/size/color；LEFT JOIN 保留产品缺失的原始明细。"""
+    from app.shipping_inspection.outbound_sync_state import overlay
+    snapshot = overlay(db, get_outbound_record(db, record_id), event=sync_event) if use_overlay else None
+    if snapshot:
+        return snapshot['items']
     link, rm, im = _link(db)
     if link is None:
         logger.warning("%s 缺少出库单关联列，明细查询降级为空", ITEMS_TABLE)

@@ -49,6 +49,8 @@ export type TemplateState = {
   specs: InventorySpec[];
   inventoryUpdatedBy: ActorRef | null;
   inventoryUpdatedAt: string | null;
+  /** 库存表时间（okki_inventory 时间列 MAX）；null = 库存同步时间未知。不用产品表 synced_at */
+  sourceSyncedAt: string | null;
 };
 
 export type InventoryStatusMap = Record<string, Partial<Record<number, InventoryStatus>>>;
