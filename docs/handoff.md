@@ -6,6 +6,17 @@
 - 修复首批出库占用初始化、预售与普通回款派发隔离、待处理队列饥饿和关联出库完整扫描；受影响后端 293 项、前端 21 项及生产构建通过，独立审查未发现新增 P0/P1。真实探针覆盖一件商品、一次最终出库、零手续费；多批次和手续费路径由隔离测试覆盖。
 - 本分支尚未合并、推送或部署。生产按钮继续关闭；发布时须核对目标环境和版本，设置 `PRESALE_SETTLEMENT_ENABLED=true`、`PRESALE_DELIVERY_ENABLED=true` 及有效正整数 `OKKI_PRESALE_WAREHOUSE_ID`，再做正式页面冒烟验证。小满原生销售报表包含独立运费单，方舟已明确标注并从商品统计中排除。
 
+## 2026-09-28 Windows 远程更新中心（Codex，已授权合并推送，未部署）
+
+- 工作树 `D:/commission-system/tmp/commission-system-deploy-console`，分支 `codex/windows-deploy-console`，已整合远端 main `46a2f171`。交付原生 Windows `ArkDeploy.exe`：操作者电脑经 SSH 控制办公室，办公室复用统一 deploy 入口更新受管环境。
+- 已实现办公室/cloud/work 逐项只读自检、固定候选 SHA 与改动文件/迁移展示、真实组件事件进度、更新后检查、失败诊断与报告导出。新加坡到办公室隧道、匿名公网 API 鉴权契约、PM2 正 PID 等避免静态站可达但业务失效的误报。
+- SSH 请求无常驻监听服务；后台 worker 使用 breakaway + detached，持久 run id、互斥锁和本轮回执。重复请求不重发；缺失回执、启动陈旧、进程死亡或 PID 复用标为待核实并保留锁；切换连接清除旧报告与准备授权。独立审查发现的问题均已修复。
+- 整合 main 后部署全套回归 477 passed、12 skipped、13 subtests passed；唯一失败 `test_storage_routing.py::test_bad_public_route_rolls_back` 的 mock `StopIteration` 在未加入本次改动的 main `46a2f171` 同样复现。新增桌面、发布流水线及迁移168恢复回归通过；原生 EXE 构建与5项窗体自测、以 `46a2f171` 为基点的完整约定检查通过。独立合并审查确认迁移168原发布版本/调度基线保护完整保留。详细使用及验证方法见 `deploy/desktop/README.md`。
+- 用户已授权合并推送；未更新生产服务。用户完成 `acciowork@127.0.0.1:2233` 到办公室22端口的公钥授权，本机私钥留在用户 `.ssh/ark_office`。程序已预填账号/地址/端口和本机密钥路径；BatchMode + 严格主机指纹校验已实测成功，办公室 Python 3.12.10。
+- 2026-09-28 16:23:51 北京时间，经实际 EXE Transport 执行只读检查39项：34通过、1必要项失败（桌面进度协议缺失）、1告警（旧okki-sync masked/inactive）、3未知（okki-inventory、办公室n8n、okki-shopify-cron最近作业）。办公室后端/连接器/数据库、北京后端/色块/Nginx、两站匿名API与HTTPS、新加坡到办公室隧道、已登记北京PM2及OpenClaw用户服务均通过。报告保存在本任务 `.deploy_state/live-probe.json`，交付包附副本。
+- 实机安装仓库 HEAD `9eae9be811dbc7ba052bf557a7e9e94303649b48`，干净且无发布/迁移恢复阻断。本次已整合更新的 main，保留服务迁北京及迁移168保护；不得以旧基点部署器覆盖服务器。PM2只读探针已按现用schema_release固定root HOME/PM2_HOME与sudo上下文，组件名称不再假定出库轮询器仍在新加坡。真实SSH断线后的后台保活演练仍未执行。
+- 首次使用前，办公室部署器必须集成 `publish.py` 事件改动及 `desktop_events.py`；客户端会明确检查并阻断旧部署器，不自动覆盖服务器受管源码。原项目未跟踪 `.pnpm-store/` 未改动。
+
 ## 2026-09-28 临时战报总览 500（本地已修复，未发布）
 
 - `codex/battle-report-500`：总览读取触发 MySQL 1267。近期加入的运费订单排除条件在 `commission_db.ark_receivables`（`utf8mb4_unicode_ci`）与 `lsordertest.okki_orders`（`utf8mb4_0900_ai_ci`）之间直接比较订单 ID、订单名和客户 ID；回款排除条件有同类问题。只在这些跨库比较的镜像侧显式使用方舟列的排序规则，不改表结构或业务数据。

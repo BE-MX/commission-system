@@ -137,6 +137,36 @@ def test_publish_preserves_pantone_seed_and_only_marks_success_after_activation(
     assert json.loads((pipeline.state / "publish-success.json").read_text())["revision"] == "new"
 
 
+@pytest.mark.parametrize("prepare_only", [True, False])
+def test_desktop_protocol_matches_actual_scope_and_terminal_state(pipeline, monkeypatch, capsys, prepare_only):
+    monkeypatch.setenv("ARK_DESKTOP_RUN_ID", "a" * 32)
+    pipeline.args.prepare_only = prepare_only
+    pipeline.command.side_effect = lambda command, **_: "M\tfrontend/src/App.vue" if command[:2] == ["git", "diff"] else ""
+    publish.publish(pipeline.args)
+    events = [json.loads(line.removeprefix("ARK_DEPLOY_EVENT ")) for line in capsys.readouterr().out.splitlines() if line.startswith("ARK_DEPLOY_EVENT ")]
+    assert all(event["run_id"] == "a" * 32 for event in events)
+    assert next(event for event in events if event["kind"] == "plan")["files"] == ["M\tfrontend/src/App.vue"]
+    terminal = next(event for event in events if event["kind"] == "result")
+    assert terminal["status"] == ("prepared" if prepare_only else "succeeded")
+    if prepare_only:
+        assert not any(event.get("key") == "migration" for event in events)
+        pipeline.office_activate.assert_not_called()
+    else:
+        assert "office" in terminal["completed"] and "singapore-outbound" in terminal["completed"]
+
+
+def test_desktop_partial_failure_keeps_completed_steps_without_success(pipeline, monkeypatch, capsys):
+    monkeypatch.setenv("ARK_DESKTOP_RUN_ID", "a" * 32)
+    pipeline.command.side_effect = lambda *_, **__: ""
+    pipeline.activate.side_effect = RuntimeError("activation failed")
+    with pytest.raises(RuntimeError):
+        publish.publish(pipeline.args)
+    events = [json.loads(line.removeprefix("ARK_DEPLOY_EVENT ")) for line in capsys.readouterr().out.splitlines() if line.startswith("ARK_DEPLOY_EVENT ")]
+    assert any(event.get("key") == "office-activate" and event["status"] == "succeeded" for event in events)
+    assert any(event.get("key", "").startswith("static-activate:") and event["status"] == "failed" for event in events)
+    assert not any(event["kind"] == "result" for event in events)
+
+
 def test_failed_static_activation_never_advances_success_marker(pipeline):
     pipeline.activate.side_effect = RuntimeError("activation failed")
     with pytest.raises(RuntimeError, match="activation failed"):

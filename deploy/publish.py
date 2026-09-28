@@ -13,6 +13,7 @@ import uuid
 
 import cloud_backend
 import static_sync
+from desktop_events import emit, step, enabled as desktop_enabled
 from runtime_root import resolve_live_root
 
 ROOT = resolve_live_root(sys.argv[1:], __file__)
@@ -147,14 +148,18 @@ def publish(args):
         raise RuntimeError("Recovery 149 requires a pinned --revision and a full office/cloud release")
     import source_release
     live = ROOT
+    emit("begin", prepare_only=args.prepare_only)
     with deployment_lock():
-        ROOT, revision, previous = source_release.prepare(live, STATE, not args.no_pull,
+        ROOT, revision, previous = step("source", "获取并校验候选源码", source_release.prepare, live, STATE, not args.no_pull,
                                                          pinned_revision=args.revision)
+        if desktop_enabled():
+            emit("plan", revision=revision, previous=previous,
+                 files=run(["git", "diff", "--name-status", previous, revision], cwd=live, capture=True).splitlines())
         import schema_release
         schema_release.check_recovery(recover_149=recover_149, recover_151=recover_151, recover_168=recover_168)
         from office_release import prepare as office_prepare, activate as office_activate, stage_static
         office_options = {"recover_168": True} if recover_168 else {"recover_149": True} if recover_149 else {"recover_151": True} if recover_151 else {}
-        office = None if args.cloud_only else office_prepare(live, previous, revision, **office_options)
+        office = None if args.cloud_only else step("office-prepare", "办公室服务、依赖与迁移链预检", office_prepare, live, previous, revision, **office_options)
         if recover_149:
             office["recover_149"] = True
         if recover_151:
@@ -168,7 +173,8 @@ def publish(args):
         if len(outbound_targets) != 1 or outbound_targets[0].get('source') != 'deploy/okki_outbound_poller.js':
             raise RuntimeError('Required managed outbound service missing from release inventory')
         if office:
-            schema_release.preflight(office, inventory, args.migration_credentials)
+            step("schema-preflight", "共享数据库与全部写入实例预检", schema_release.preflight, office, inventory, args.migration_credentials)
+            emit("schema", target=office.get("schema"), pending=office.get("pending", []))
         previous_release = marker('publish-current')
         recovery_original = None
         if recover_168:
@@ -186,15 +192,15 @@ def publish(args):
         if recovery_original:
             journal["recovery_original"] = recovery_original
             journal["outbound_artifact_revision"] = outbound_revision
-        outbound = outbound_release.prepare(ROOT, outbound_revision, release_id, allow_pending=bool(office and office.get('pending')))
+        outbound = step("outbound-prepare", "准备已登记的出库轮询器", outbound_release.prepare, ROOT, outbound_revision, release_id, allow_pending=bool(office and office.get('pending')))
         journal['outbound'] = outbound['receipt']
         atomic_json(STATE / "publish-current.json", journal)
-        outputs = build_frontends()
+        outputs = step("build", "构建主站、PM 站与浏览器扩展", build_frontends)
         if office:
-            stage_static({**outputs, "pm-lan": build_lan()}, office)
-        backend = cloud_backend.prepare(ROOT, revision, allow_pending=bool(office), **office_options)
+            step("office-static", "准备办公室静态文件与内网 PM 站", stage_static, {**outputs, "pm-lan": build_lan()}, office)
+        backend = step("beijing-prepare", "准备北京后端与色块服务", cloud_backend.prepare, ROOT, revision, allow_pending=bool(office), **office_options)
         import colorwork_routing
-        colorwork_routes = colorwork_routing.prepare(ROOT / "deploy")
+        colorwork_routes = step("routing-prepare", "校验色块路由配置", colorwork_routing.prepare, ROOT / "deploy")
         prepared = []
         outputs["customer-media"] = outputs["frontend"] / "customer-media"
         for target in inventory["static_targets"]:
@@ -206,45 +212,46 @@ def publish(args):
                     print("DEFERRED " + journal["deferred"][-1], flush=True)
                     atomic_json(STATE / "publish-current.json", journal)
                     continue
-            prepared.append(static_sync.prepare(outputs[target["component"]], target["host"], target["root"],
+            prepared.append(step("static-prepare:" + target["domain"], "增量准备 " + target["domain"], static_sync.prepare, outputs[target["component"]], target["host"], target["root"],
                             STATE / "transfers", target["domain"]))
         if args.prepare_only:
             journal["status"] = "prepared"
             atomic_json(STATE / "publish-current.json", journal)
             print("Prepared and verified; no service or live static pointer activated.")
+            emit("result", status="prepared", revision=revision)
             return
         journal["status"] = "activating"
         atomic_json(STATE / "publish-current.json", journal)
-        journal['outbound'] = outbound_release.phase(outbound, 'freeze')
+        journal['outbound'] = step("freeze", "暂停并排空出库轮询器", outbound_release.phase, outbound, 'freeze')
         if recovery_original and journal['outbound'].get('schedule') != recovery_original['outbound']['schedule']:
             raise RuntimeError('Recovery 168 outbound baseline drift')
         atomic_json(STATE / "publish-current.json", journal)
-        stopped = schema_release.migrate(office, inventory, args.migration_credentials) if office else []
+        stopped = step("migration", "共享数据库迁移（无变更则跳过）", schema_release.migrate, office, inventory, args.migration_credentials) if office else []
         if office:
-            print(json.dumps(office_activate(office)), flush=True)
+            print(json.dumps(step("office-activate", "切换并验证办公室应用及静态文件", office_activate, office)), flush=True)
             journal["completed"].append("office")
             atomic_json(STATE / "publish-current.json", journal)
-        print(json.dumps(cloud_backend.activate(revision)), flush=True)
+        print(json.dumps(step("beijing-activate", "切换并验证北京后端与色块服务", cloud_backend.activate, revision)), flush=True)
         journal["completed"].append("beijing-backend")
         atomic_json(STATE / "publish-current.json", journal)
         for item in colorwork_routes:
-            result = colorwork_routing.activate(item, ROOT / "deploy")
+            result = step("routing:" + item["payload"]["region"], "激活色块路由 " + item["payload"]["region"], colorwork_routing.activate, item, ROOT / "deploy")
             journal["completed"].append("colorwork-routing:" + result["region"])
             atomic_json(STATE / "publish-current.json", journal)
         if office:
             with schema_release.database_lock(ROOT, office["python"]):
                 schema_release.schema_check(ROOT, office["python"])
-                run([office["python"], "scripts/seed_pm.py"], cwd=ROOT / "backend")
-                run([office["python"], "scripts/import_pantone.py"], cwd=ROOT / "backend")
+                step("seed-pm", "同步 PM 基础数据", run, [office["python"], "scripts/seed_pm.py"], cwd=ROOT / "backend")
+                step("seed-pantone", "同步色卡基础数据", run, [office["python"], "scripts/import_pantone.py"], cwd=ROOT / "backend")
         for item in prepared:
-            print(json.dumps(static_sync.activate(item)), flush=True)
+            print(json.dumps(step("static-activate:" + item["request"].get("host", item["target"]), "切换并验证静态站 " + item["request"].get("host", item["target"]), static_sync.activate, item)), flush=True)
             journal["completed"].append(item["target"] + ":" + item["request"]["root"])
             atomic_json(STATE / "publish-current.json", journal)
-        journal['outbound'] = outbound_release.phase(outbound, 'activate')
+        journal['outbound'] = step("outbound-activate", "更新已登记的出库脚本并恢复原调度状态", outbound_release.phase, outbound, 'activate')
         atomic_json(STATE / "publish-current.json", journal)
         if stopped:
-            schema_release.resume_external(stopped, office)
-        journal['outbound'] = outbound_release.phase(outbound, 'verify')
+            step("writers-resume", "恢复原本运行的关联写入服务", schema_release.resume_external, stopped, office)
+        journal['outbound'] = step("outbound-verify", "核验出库版本摘要与调度状态", outbound_release.phase, outbound, 'verify')
         journal['completed'].append('singapore-outbound')
         atomic_json(STATE / "publish-current.json", journal)
         if office:
@@ -258,6 +265,8 @@ def publish(args):
         atomic_json(STATE / "publish-success.json", summary)
         journal["status"] = "succeeded"
         atomic_json(STATE / "publish-current.json", journal)
+        emit("result", status="succeeded", revision=revision, completed=journal["completed"],
+             unmanaged_services=summary["unmanaged_services"], deferred=journal["deferred"])
         print("CLOUD RELEASE COMPLETED (office not included)" if args.cloud_only else "MANAGED APPLICATION RELEASE COMPLETED")
         print(json.dumps(summary), flush=True)
         print("Independent service and terminal installation coverage: deploy/platforms.json")
