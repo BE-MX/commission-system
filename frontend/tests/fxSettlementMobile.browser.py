@@ -13,12 +13,13 @@ MARKET = {'checked_at': NOW, 'quote': {'rate': 6.98, 'as_of': NOW, 'usable': Tru
           'history': [{'date': f'2026-09-{i:02}', 'rate': 6.97 + i / 1000} for i in range(1, 25)], 'warnings': []}
 
 
-def setup(browser, width=390, mobile=True, permissions=None, authenticated=True):
+def setup(browser, width=390, mobile=True, permissions=None, authenticated=True, market_override=None):
     context = browser.new_context(viewport={'width': width, 'height': 844}, is_mobile=mobile, has_touch=mobile,
         user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1' if mobile else None)
     if authenticated:
         context.add_init_script("localStorage.setItem('ark_access_token', 'isolated-test-token')")
     state = {'calls': [], 'expired': False, 'market_error': False, 'calculate_error': False, 'ai_error': False}
+    market_data = market_override or MARKET
     user = {'id': 1, 'username': 'qa', 'display_name': 'QA', 'roles': [], 'permissions': permissions if permissions is not None else ['fx_settlement:read', 'fx_settlement:write']}
 
     def api(route):
@@ -41,7 +42,7 @@ def setup(browser, width=390, mobile=True, permissions=None, authenticated=True)
             if state['market_error']:
                 route.fulfill(status=503, json={'detail': '行情暂不可用'})
             else:
-                route.fulfill(json={'code': 200, 'data': MARKET})
+                route.fulfill(json={'code': 200, 'data': market_data})
         elif path in ['/api/fx-settlement/calculate', '/api/fx-settlement/advice']:
             if state['calculate_error']:
                 route.fulfill(status=503, json={'detail': '测算暂不可用，请重试'})
@@ -52,7 +53,7 @@ def setup(browser, width=390, mobile=True, permissions=None, authenticated=True)
                            'scenarios': [{'label': label, 'total_cny': total} for label, total in [('美元下跌', 685000), ('汇率不变', 698000), ('美元上涨', 712000)]]}
                           for key, label, amount in [('immediate', '立即结汇', 100000), ('balanced', '均衡分批', 60000), ('flexible', '保留机动', 30000)]]
             ai = path.endswith('/advice')
-            result = {'input': data, 'generated_at': NOW, 'rate_at': NOW, 'rate': 6.98, 'rate_source': '测试参考价', 'market': MARKET,
+            result = {'input': data, 'generated_at': NOW, 'rate_at': NOW, 'rate': 6.98, 'rate_source': '测试参考价', 'market': market_data,
                       'reserved_usd': 0, 'maximum_later_usd': 70000, 'selected_id': 'balanced', 'candidates': candidates,
                       'selection_source': 'ai' if ai and not state['ai_error'] else 'rules', 'warnings': ['测试压力情景，不是预测。'], 'assumptions': ['测试口径'],
                       'ai': {'summary': '优先满足用款，再分批安排。', 'reasons': ['测试理由'], 'watchpoints': ['测试观察项']} if ai and not state['ai_error'] else None,
@@ -87,7 +88,7 @@ with sync_playwright() as p:
         expect(page.locator('.current-rate strong')).to_be_visible()
         expect(page.locator('.weekly-heading h4')).to_have_text('近四周每周最高汇率')
         expect(page.locator('.weekly-chart')).to_be_visible()
-        expect(page.locator('.weekly-heading')).to_contain_text('截至 2026-09-24 已公布数据')
+        expect(page.locator('.weekly-heading')).to_contain_text('FRED 更新至 2026-09-24')
         no_overflow(page)
         if width == 390: page.screenshot(path=str(OUT / 'market-390.png'), full_page=True)
         if width == 390:
@@ -185,4 +186,17 @@ with sync_playwright() as p:
     assert not state.get('errors'), state.get('errors')
     context.close()
     print('PASS desktop keeps main layout and two columns')
+
+    unpublished_week_market = {**MARKET, 'history': [row for row in MARKET['history'] if row['date'] <= '2026-09-18']}
+    context, page, state = setup(browser, market_override=unpublished_week_market)
+    page.goto(BASE + '/fx-settlement')
+    expect(page.locator('.weekly-heading')).to_contain_text('FRED 更新至 2026-09-18')
+    expect(page.locator('.weekly-note--missing')).to_contain_text('尚无 FRED 已公布观测值')
+    expect(page.locator('.weekly-chart')).to_be_visible()
+    page.evaluate("window.scrollTo(0, document.querySelector('.weekly-chart').getBoundingClientRect().top + window.scrollY - 220)")
+    page.screenshot(path=str(OUT / 'weekly-gap-390.png'))
+    no_overflow(page)
+    assert not state.get('errors'), state.get('errors')
+    context.close()
+    print('PASS unpublished latest week stays visible without a fabricated high')
     browser.close()
