@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.rule_config import build_batch_order_match_query
 from app.models.commission import SyncedPayment
+from app.invoice.order_role import goods_receipt_sql
 from app.models.customer import CustomerCommissionSnapshot
 from app.models.employee import EmployeeAttributeHistory, SupervisorRelationHistory
 from app.services.rate_utils import calc_commission_rates, to_date, get_employee_attribute_at_date_from_records
@@ -149,8 +150,9 @@ def sync_payments(db: Session, date_start: date, date_end: date) -> SyncResult:
         f"SELECT cash_collection_id, cash_collection_no, collection_date, "
         f"amount_usd, service_fee_amount_usd, exchange_rate, real_amount_rmb, "
         f"order_id, company_id, order_no, company_name "
-        f"FROM `{schema}`.`okki_receipts` "
-        f"WHERE `collection_date` >= :ds AND `collection_date` <= :de"
+        f"FROM `{schema}`.`okki_receipts` r "
+        f"WHERE r.`collection_date` >= :ds AND r.`collection_date` <= :de"
+        f" AND {goods_receipt_sql('r')}"
     )
     rows = db.execute(text(sql), {"ds": date_start, "de": date_end}).mappings().all()
     result.total_payments = len(rows)

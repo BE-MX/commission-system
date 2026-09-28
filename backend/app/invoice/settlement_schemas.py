@@ -34,6 +34,10 @@ class SettlementAction(BaseModel):
     reason: str = Field(min_length=2, max_length=500)
 
 
+class SettlementRemoteReview(SettlementAction):
+    remote_id: str | None = Field(default=None, pattern=r"^[1-9][0-9]*$", max_length=64)
+
+
 class BatchAllocation(BaseModel):
     model_config = ConfigDict(extra="forbid")
     invoice_id: int = Field(gt=0)

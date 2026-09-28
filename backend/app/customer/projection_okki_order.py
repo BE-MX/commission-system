@@ -6,6 +6,7 @@ from datetime import datetime, time as datetime_time
 from decimal import Decimal
 from typing import Mapping, Sequence
 
+from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
@@ -46,6 +47,7 @@ from app.customer.workflow_service import (
 )
 from app.insight.external_binding_service import resolve_projection_owner
 from app.order_intelligence.service import is_valid_business_order
+from app.invoice.settlement_models import Receivable
 
 
 _ITEM_TYPES = frozenset({"sample", "bulk", "unknown"})
@@ -212,7 +214,16 @@ def _project_okki_order(
     status, status_name, trail = (
         payload.get("status"), payload.get("status_name"), payload.get("trail")
     )
-    valid = is_valid_business_order(status, status_name, trail)
+    freight = db.query(Receivable.id).filter(
+        Receivable.kind == "freight",
+        or_(
+            Receivable.remote_order_id == external_id,
+            and_(Receivable.remote_order_id.is_(None),
+                 Receivable.remote_order_name == payload.get("order_name"),
+                 Receivable.customer_id == company_id),
+        ),
+    ).first() is not None
+    valid = is_valid_business_order(status, status_name, trail) and not freight
     owner_external_user_id = optional_string(
         payload.get("owner_external_user_id"), "OWNER_ID_INVALID"
     )
@@ -244,7 +255,7 @@ def _project_okki_order(
             payload.get("source_category"), "ORDER_SOURCE_INVALID"
         ),
         "is_valid_business_order": valid,
-        "invalid_reason": None if valid else "not_effective_business_order",
+        "invalid_reason": "presale_freight_target" if freight else None if valid else "not_effective_business_order",
         "is_new_deal": (
             payload.get("is_new_deal")
             if type(payload.get("is_new_deal")) is bool else None

@@ -47,7 +47,14 @@ class Receivable(Base):
     currency = Column(String(16), nullable=False)
     customer_id = Column(String(64), nullable=False)
     remote_order_id = Column(String(64), nullable=True, unique=True)
+    remote_order_name = Column(String(96), nullable=True, unique=True)
+    remote_payload = Column(JSON, nullable=True)
+    remote_payload_hash = Column(String(64), nullable=True)
     remote_status = Column(String(24), nullable=False, default="unverified")
+    attempt_token = Column(String(64), nullable=True)
+    lease_until = Column(DateTime, nullable=True)
+    last_error = Column(String(500), nullable=True)
+    version = Column(Integer, nullable=False, default=1, server_default="1")
     created_at = Column(DateTime, nullable=False, default=beijing_now)
 
 
@@ -98,6 +105,7 @@ class ShipmentOutbound(Base):
     status = Column(String(24), nullable=False, default="pending", index=True)
     payload = Column(JSON, nullable=False)
     payload_hash = Column(String(64), nullable=False)
+    remote_line_snapshot = Column(JSON, nullable=True)
     remote_id = Column(String(64), nullable=True, unique=True)
     attempt_token = Column(String(64), nullable=True)
     lease_until = Column(DateTime, nullable=True)
@@ -105,6 +113,7 @@ class ShipmentOutbound(Base):
     version = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime, nullable=False, default=beijing_now)
     verified_at = Column(DateTime, nullable=True)
+    last_check_attempt_at = Column(DateTime, nullable=True)
 
 
 class SettlementEvent(Base):

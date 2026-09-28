@@ -10,6 +10,7 @@
           <el-table-column label="本批数量" min-width="200"><template #default="{ row }"><el-input-number v-model="row.requested" :precision="0" :min="0" :max="row.remaining" :disabled="activeShipment" controls-position="right" /></template></el-table-column>
         </el-table>
         <el-form-item label="本批运费"><el-input-number v-model="freight" :precision="2" :min="0" controls-position="right" /></el-form-item>
+        <el-alert v-if="freight > 0" title="本批运费将在小满生成独立销售订单并单独回款。小满原生销售报表会计入这张运费订单；方舟商品 GMV、订单数和提成统计会排除它。" type="info" :closable="false" />
         <GlassButton :loading="quoting" :disabled="saving || loading || activeShipment" @click="preview">核算本批金额</GlassButton>
         <el-descriptions v-if="quote" :column="2" border class="quote-summary">
           <el-descriptions-item v-for="field in quoteFields" :key="field[0]" :label="field[1]">{{ invoice.currency }} {{ money(quote[field[0]]) }}</el-descriptions-item>
@@ -24,7 +25,11 @@
         <el-descriptions-item label="状态">{{ stateLabel(selectedSettlement.state) }}</el-descriptions-item>
         <el-descriptions-item label="待登记货款">{{ money(selectedSettlement.balance?.goods_remaining) }}</el-descriptions-item>
         <el-descriptions-item label="待登记运费">{{ money(selectedSettlement.balance?.freight_remaining) }}</el-descriptions-item>
+        <el-descriptions-item v-if="selectedSettlement.outbound" label="小满出库单">{{ selectedSettlement.outbound.number }} · {{ selectedSettlement.outbound.remote_id || '待同步' }}</el-descriptions-item>
+        <el-descriptions-item v-if="selectedSettlement.outbound" label="出库状态">{{ stateLabel(selectedSettlement.outbound.status) }}</el-descriptions-item>
+        <el-descriptions-item v-if="selectedSettlement.freight_target" label="运费订单">{{ selectedSettlement.freight_target.remote_order_id || '待核对' }} · {{ stateLabel(selectedSettlement.freight_target.status) }}</el-descriptions-item>
       </el-descriptions>
+      <el-alert v-if="selectedSettlement?.outbound?.last_error" :title="selectedSettlement.outbound.last_error" type="error" :closable="false" />
       <h3>出库结算记录</h3>
       <el-table class="list-table" :data="settlements" border empty-text="暂无出库结算记录">
         <el-table-column label="结算单号" min-width="180"><template #default="{ row }"><el-button link type="primary" @click="showDetail(row)">{{ row.settlement_no }}</el-button></template></el-table-column>
@@ -32,6 +37,11 @@
         <el-table-column label="操作" min-width="200"><template #default="{ row }">
           <el-button v-permission="'shipment:write'" v-if="!['cancelled','completed','shipped'].includes(row.state)" link :disabled="saving" @click="change(row, 'cancel')">取消</el-button>
           <el-button v-permission="'shipment:write'" v-if="!['cancelled','completed','shipped'].includes(row.state)" link :disabled="saving" @click="change(row, row.state === 'paused' ? 'resume' : 'pause')">{{ row.state === 'paused' ? '恢复' : '暂停' }}</el-button>
+          <el-button v-permission="'shipment:write'" v-if="row.outbound?.status === 'pending_remote'" link type="primary" :disabled="saving" @click="confirmOutbound(row)">确认实际出库</el-button>
+          <el-button v-permission="'shipment:write'" v-if="['uncertain','verifying'].includes(row.freight_target?.status) && (row.freight_target?.remote_order_id || auth.hasPermission('shipment:admin'))" link :disabled="saving" @click="reconcileTarget(row, 'freight')">核对运费单</el-button>
+          <el-button v-permission="'shipment:write'" v-if="row.freight_target?.status === 'failed'" link :disabled="saving" @click="retryTarget(row, 'freight')">重试运费单</el-button>
+          <el-button v-permission="'shipment:write'" v-if="['uncertain','verifying','confirm_uncertain','shipped_unfunded'].includes(row.outbound?.status) && (row.outbound?.remote_id || auth.hasPermission('shipment:admin'))" link :disabled="saving" @click="reconcileTarget(row, 'outbound')">核对出库单</el-button>
+          <el-button v-permission="'shipment:write'" v-if="row.outbound?.status === 'failed'" link :disabled="saving" @click="retryTarget(row, 'outbound')">重试出库单</el-button>
         </template></el-table-column>
       </el-table>
     </div>
@@ -42,7 +52,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { getInvoice } from '@/api/invoice'
-import { quoteShipment, createShipment, listShipments, getShipment, changeShipment } from '@/api/shipment'
+import { quoteShipment, createShipment, listShipments, getShipment, changeShipment, confirmShipmentOutbound, reconcileShipmentTarget, retryShipmentTarget } from '@/api/shipment'
 import { useAuthStore } from '@/stores/auth'
 import GlassButton from '@/components/GlassButton.vue'
 import ReceiptFields from '@/views/receipt/ReceiptFields.vue'
@@ -60,7 +70,7 @@ const quoteRequest = latestRequest(), detailRequest = latestRequest()
 const selectedSettlement = ref(null)
 const activeShipment = computed(() => hasActiveShipment(settlements.value))
 const quoteFields = [['goods_amount','货款'],['packaging_amount','包装费'],['handling_amount','手续费'],['freight_amount','运费'],['deposit_applied','本批抵扣定金'],['new_payment_due','本批需新付金额']]
-const stateLabel = state => ({ pending: '待处理', awaiting_verification: '待核验回款', outbound_uncertain: '出库结果待核对', review_required: '需人工复核', awaiting_payment: '待回款', ready: '待出库', queued: '已排队', outbound_pending: '出库待同步', completed: '已完成', shipped: '已出库', paused: '已暂停', cancelled: '已取消', failed: '处理失败', uncertain: '待核对' })[state] || state
+const stateLabel = state => ({ pending: '待处理', pending_remote: '待确认实际出库', confirming: '实际出库确认中', confirm_uncertain: '实际出库待核对', shipped_unfunded: '已出库·回款异常', awaiting_verification: '待核验回款', outbound_uncertain: '出库结果待核对', review_required: '需人工复核', awaiting_payment: '待回款', ready: '待出库', queued: '已排队', outbound_pending: '出库待同步', completed: '已完成', shipped: '已出库', paused: '已暂停', cancelled: '已取消', failed: '处理失败', uncertain: '待核对' })[state] || state
 const body = () => ({ items: lines.value.filter(row => row.requested > 0).map(row => ({ invoice_item_id: row.id, quantity: row.requested })), freight_amount: String(freight.value || 0) })
 watch(() => JSON.stringify(body()), () => { quoteRequest.next(); quote.value = null; quoting.value = false })
 async function reload() {
@@ -108,6 +118,42 @@ async function change(row, action) {
   saving.value = true
   try { await changeShipment(row.id, action, { version: row.version, reason }); await reload(); quote.value = null; emit('saved') }
   catch (e) { error.value = e.response?.data?.detail || e.message || '操作失败，请刷新后重试' }
+  finally { saving.value = false }
+}
+async function confirmOutbound(row) {
+  if (saving.value) return
+  let reason
+  try { reason = (await ElMessageBox.prompt('将把这张小满待出库单确认为实际出库，并影响库存。请核对本批回款、数量和仓库，填写操作原因。', '确认实际出库', { inputPattern: /\S.{1,}/, inputErrorMessage: '至少填写两个字符', confirmButtonText: '确认实际出库', type: 'warning' })).value } catch { return }
+  saving.value = true; error.value = ''
+  try { const result = await confirmShipmentOutbound(row.id, { version: row.version, reason }); await reload(); selectedSettlement.value = result; emit('saved') }
+  catch (e) { error.value = e.response?.data?.detail || e.message || '实际出库确认失败，请核对原单' }
+  finally { saving.value = false }
+}
+async function reconcileTarget(row, kind) {
+  if (saving.value) return
+  const target = kind === 'freight' ? row.freight_target : row.outbound
+  const knownId = kind === 'freight' ? target?.remote_order_id : target?.remote_id
+  let remoteId = null, reason
+  try {
+    if (!knownId) remoteId = (await ElMessageBox.prompt('请先在小满核对原单，再输入精确 ID。该操作只绑定已有单据，不会重新创建。', '绑定小满单据', { inputPattern: /^[1-9][0-9]*$/, inputErrorMessage: '请输入有效的小满单据 ID' })).value
+    reason = (await ElMessageBox.prompt('请填写核对依据', '核对小满结果', { inputPattern: /\S.{1,}/, inputErrorMessage: '至少填写两个字符' })).value
+  } catch { return }
+  saving.value = true; error.value = ''
+  try {
+    const result = await reconcileShipmentTarget(row.id, kind, { version: row.version, reason, ...(remoteId ? { remote_id: remoteId } : {}) })
+    await reload(); selectedSettlement.value = result; emit('saved')
+  } catch (e) { error.value = e.response?.data?.detail || e.message || '小满结果核对失败' }
+  finally { saving.value = false }
+}
+async function retryTarget(row, kind) {
+  if (saving.value) return
+  let reason
+  try { reason = (await ElMessageBox.prompt('仅明确未在小满创建的失败任务可以重试。请先核对原单并填写原因。', '重试同步', { inputPattern: /\S.{1,}/, inputErrorMessage: '至少填写两个字符', type: 'warning' })).value } catch { return }
+  saving.value = true; error.value = ''
+  try {
+    const result = await retryShipmentTarget(row.id, kind, { version: row.version, reason })
+    await reload(); selectedSettlement.value = result; emit('saved')
+  } catch (e) { error.value = e.response?.data?.detail || e.message || '重试失败，请核对原单' }
   finally { saving.value = false }
 }
 onMounted(async () => {

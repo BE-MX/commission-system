@@ -48,6 +48,8 @@ from app.whatsapp import models as _whatsapp_models  # noqa: F401
 from app.customer import models as _customer_models  # noqa: F401
 # 私海客户工作台（PCW）表 FK 指向 ark_customer_* / ark_users / shipment_tracking
 from app.customer import pcw_models as _pcw_models  # noqa: F401
+from app.invoice import models as _invoice_models, settlement_models as _settlement_models  # noqa: F401
+from app.receipt import models as _receipt_models  # noqa: F401
 # sys_dict 供术语表（whatsapp_glossary_*）检索使用
 from app.system import models as _system_models  # noqa: F401
 
@@ -136,6 +138,7 @@ def engine():
             CREATE TABLE IF NOT EXISTS lsordertest.okki_orders (
                 order_id TEXT PRIMARY KEY,
                 order_no TEXT,
+                name TEXT,
                 company_id TEXT,
                 amount_usd REAL,
                 user_id TEXT,

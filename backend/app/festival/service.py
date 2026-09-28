@@ -23,6 +23,7 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.invoice.order_role import goods_order_sql
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,8 @@ _ARK_JOIN = (
 _ARK_POOL = (
     "  AND ( EXISTS (SELECT 1 FROM lsordertest.okki_orders o"
     "               WHERE o.company_id = i.customer_id"
-    "                 AND o.custom_fields LIKE :mn AND o.account_date >= '2025-01-01')"
+    "                 AND o.custom_fields LIKE :mn AND o.account_date >= '2025-01-01'"
+    f"                 AND {goods_order_sql('o')})"
     "     OR EXISTS (SELECT 1 FROM ark_invoices o2"
     "               WHERE o2.customer_id = i.customer_id AND o2.okki_new_deal = 1"
     "                 AND o2.sync_status = 'synced' AND o2.invoice_date >= '2025-01-01') )"
@@ -113,6 +115,7 @@ def _common_filter(a: str) -> str:
         f" AND {a}.trail NOT LIKE '%个人%'"
         f" AND ({a}.status = '13972831656'"
         f"      OR ({a}.status = '13972831654' AND {a}.status_name = '已结清'))"
+        f" AND {goods_order_sql(a)}"
     )
 
 
@@ -399,7 +402,8 @@ def get_repurchase_stats(db: Session, date_from: str, date_to: str,
         "  AND EXISTS (SELECT 1 FROM lsordertest.okki_orders o"
         "              WHERE o.company_id = a2.company_id"
         "                AND o.custom_fields LIKE :mn"
-        "                AND o.account_date >= '2025-01-01')"
+        "                AND o.account_date >= '2025-01-01'"
+        f"                AND {goods_order_sql('o')})"
         " GROUP BY a2.user_id"
     ), {"mr": RE_MARK, "mn": NEW_ANY_MARK,
         "d1": date_from, "d2": date_to}).mappings().all()

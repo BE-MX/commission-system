@@ -100,7 +100,8 @@ def _order_rows(db: Session, order_type: OrderType,
             " AND EXISTS (SELECT 1 FROM lsordertest.okki_orders historical"
             "             WHERE historical.company_id = o.company_id"
             "               AND historical.custom_fields LIKE :new_mark"
-            "               AND historical.account_date >= '2025-01-01')"
+            "               AND historical.account_date >= '2025-01-01'"
+            f"               AND {service.goods_order_sql('historical')})"
         )
     user_filter = " AND o.user_id = :user_id" if scope.user_id else ""
     sql = (

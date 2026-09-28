@@ -10,9 +10,9 @@ def require_enabled():
 def capabilities():
     return {"enabled": get_settings().PRESALE_SETTLEMENT_ENABLED,
             "freight_delivery_enabled": False, "outbound_delivery_enabled": False,
-            "reason": "预售建单暂未开放：小满运费承载、统计分类及分批出库契约尚待隔离验证"}
+            "reason": "预售建单暂未开放：方舟全流程、权限和数据库迁移尚待验收"}
 
 
 def require_delivery():
     # Deliberately no operator boolean bypass: replace only with a verified adapter.
-    raise ValueError("REMOTE_CAPABILITY_UNVERIFIED：小满分批出库和运费能力尚未核验")
+    raise ValueError("REMOTE_CAPABILITY_UNVERIFIED：预售端到端发货能力尚未验收")

@@ -143,6 +143,21 @@ def push_order(db: Session, payload: dict, *, before_send=None) -> dict:
     return data
 
 
+def push_outbound(db: Session, payload: dict, *, before_send=None) -> dict:
+    """Create one pending outbound; an ambiguous result must never be replayed."""
+    for force in (False, True):
+        token = ensure_access_token(db, force=force)
+        if before_send:
+            before_send()
+        data = _post_json("/v1/invoices/outbound/push", token, payload, context="分批出库单创建")
+        if data is not None:
+            if (not isinstance(data, dict)
+                    or not str(data.get("outbound_invoice_id") or "").isdigit()):
+                raise OkkiOutcomeUncertainError("小满分批出库响应缺少出库单 ID，请核对原单")
+            return data
+    raise OkkiApiError("小满分批出库鉴权被拒绝，请检查应用权限")
+
+
 def query_companies_by_name(db: Session, word: str, *, count: int = 20) -> list[dict]:
     """GET /v1/company/query — 客户查重（search_field=name：公司名/简称模糊）。
 

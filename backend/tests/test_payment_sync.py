@@ -2,6 +2,7 @@
 
 from datetime import date
 from unittest.mock import patch
+from sqlalchemy import text
 
 from app.models.commission import SyncedPayment
 from app.models.customer import CustomerCommissionSnapshot
@@ -29,6 +30,26 @@ class TestPaymentSync:
         assert float(sp.service_fee) == 30.00
         assert float(sp.exchange_rate) == 7.12
         assert float(sp.real_amount_rmb) == 21360.00
+
+    def test_freight_receipt_is_not_imported_for_commission(self, db, seed_employees, seed_business_data):
+        db.execute(text("""
+            INSERT INTO ark_receivables
+              (invoice_id, business_key, kind, amount, handling_amount, currency,
+               customer_id, remote_order_id, remote_status, created_at)
+            VALUES (1, 'freight:test', 'freight', 1, 0, 'USD', 'CUST001',
+                    'FREIGHT-ORDER', 'bound', '2026-04-01 00:00:00')
+        """))
+        db.execute(text("""
+            INSERT INTO lsordertest.okki_receipts
+              (cash_collection_id, cash_collection_no, collection_date, amount_usd,
+               service_fee_amount_usd, exchange_rate, real_amount_rmb, order_id,
+               company_id, order_no, company_name)
+            VALUES ('FREIGHT-R1', 'FREIGHT-R1', '2026-04-02', 1, 0, 7, 7,
+                    'FREIGHT-ORDER', 'CUST001', 'FREIGHT-ORDER', 'Test')
+        """))
+        result = sync_payments(db, date(2026, 4, 1), date(2026, 4, 15))
+        assert result.total_payments == 4
+        assert db.query(SyncedPayment).filter_by(payment_id="FREIGHT-R1").first() is None
 
     def test_idempotent_sync(self, db, seed_employees, seed_business_data):
         """重复同步不产生重复记录"""

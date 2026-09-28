@@ -6,12 +6,14 @@ from datetime import datetime
 from app.core.time import beijing_now
 from decimal import Decimal
 
+from sqlalchemy import cast, exists, String
 from sqlalchemy.orm import Session
 
 from app.models.commission import (
     CommissionBatch, CommissionDetail, SyncedPayment, PaymentCommissionStatus,
 )
 from app.models.customer import CustomerCommissionSnapshot
+from app.invoice.settlement_models import Receivable
 
 logger = logging.getLogger("commission.calc")
 
@@ -66,6 +68,10 @@ def calculate_commission(db: Session, batch_id: int) -> CalcResult:
             SyncedPayment.payment_date <= period_end,
             ~SyncedPayment.payment_id.in_(
                 db.query(already_calculated.c.payment_id)
+            ),
+            ~exists().where(
+                Receivable.kind == "freight",
+                Receivable.remote_order_id == cast(SyncedPayment.order_id, String),
             ),
         )
         .all()
